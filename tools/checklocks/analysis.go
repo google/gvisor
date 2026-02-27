@@ -686,6 +686,15 @@ func (pc *passContext) checkInstruction(inst ssa.Instruction, lff *lockFunctionF
 			pc.checkCall(d, lff, ls)
 		}
 	case *ssa.MakeClosure:
+		clfn := x.Fn.(*ssa.Function)
+		// Range-over-func yield closures are called synchronously
+		// within the current goroutine, so they inherit the lock state
+		// from the enclosing function. We detect these by checking the
+		// Synthetic field which is set by the SSA builder.
+		if clfn.Synthetic == "range-over-func yield" {
+			pc.checkClosure(nil, x, lff, ls)
+			return nil, nil
+		}
 		if refs := x.Referrers(); refs != nil {
 			var (
 				calls    int
@@ -714,7 +723,6 @@ func (pc *passContext) checkInstruction(inst ssa.Instruction, lff *lockFunctionF
 		// Analyze the closure without bindings. This means that we
 		// assume no lock facts or have any existing lock state. Only
 		// trivial closures are acceptable in this case.
-		clfn := x.Fn.(*ssa.Function)
 		nlff := lockFunctionFacts{
 			Ignore: lff.Ignore, // Inherit ignore.
 		}
@@ -789,8 +797,18 @@ func (pc *passContext) checkBasicBlock(fn *ssa.Function, block *ssa.BasicBlock, 
 				}
 			}
 			// Check for other locks, but only if the above didn't trip.
-			if !failed && rls.count() != len(lff.HeldOnExit) && !lff.Ignore {
-				pc.maybeFail(rv.Pos(), "return with unexpected locks held (locks: %s)", rls.String())
+			if !failed && !lff.Ignore {
+				if fn.Synthetic == "range-over-func yield" {
+					// Range-over-func yield closures inherit lock state from
+					// their parent. We expect the same locks held on exit as
+					// on entry - any locks acquired in the closure should be
+					// released before yielding.
+					if rls.count() != parent.count() {
+						pc.maybeFail(rv.Pos(), "return with unexpected locks held (locks: %s)", rls.String())
+					}
+				} else if rls.count() != len(lff.HeldOnExit) {
+					pc.maybeFail(rv.Pos(), "return with unexpected locks held (locks: %s)", rls.String())
+				}
 			}
 		}
 	}
