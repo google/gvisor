@@ -700,6 +700,7 @@ func (e *Endpoint) LockUser() {
 	// Finally just give up and wait for the Lock.
 	e.mu.Lock()
 	e.ownedByUser.Store(1)
+	return // +checklocksforce: this locks e.snd.ep.mu
 }
 
 // UnlockUser will check if there are any segments already queued for processing
@@ -764,6 +765,7 @@ func (e *Endpoint) AssertLockHeld(locked *Endpoint) {
 	if e != locked {
 		panic("AssertLockHeld failed: locked endpoint != asserting endpoint")
 	}
+	return // +checklocksforce
 }
 
 // TryLock is a helper that calls TryLock on the endpoint's mutex and
