@@ -133,6 +133,10 @@ type ExecArgs struct {
 	// StdioIsPty indicates that FDs 0, 1, and 2 are connected to a host pty FD.
 	StdioIsPty bool
 
+	// SupportTTYs indicates whether TTYs other than the console TTY should be
+	// imported as TTYs.
+	SupportTTYs bool
+
 	// FilePayload determines the files to give to the new process.
 	FilePayload
 
@@ -280,9 +284,10 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 		Console: args.StdioIsPty,
 		// Exec sessions are not restorable because the caller will not be present after the restore.
 		// Exec'd processes are killed after the restore.
-		Restorable: false,
-		UID:        args.KUID,
-		GID:        args.KGID,
+		Restorable:  false,
+		UID:         args.KUID,
+		GID:         args.KGID,
+		SupportTTYs: args.SupportTTYs,
 	}
 	ttyFile, err := fdimport.Import(ctx, fdTable, fdMap, opts)
 	if err != nil {

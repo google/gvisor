@@ -1957,6 +1957,7 @@ func createFDTable(ctx context.Context, console bool, stdioFDs []*fd.FD, passFDs
 		UID:           auth.KUID(user.UID),
 		GID:           auth.KGID(user.GID),
 		ContainerName: containerName,
+		SupportTTYs:   true,
 	}
 	ttyFile, err := fdimport.Import(ctx, fdTable, fdMap, opts)
 	if err != nil {

@@ -144,6 +144,26 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		},
 		seccomp.PerArg{
 			seccomp.NonNegativeFD{}, /* fd */
+			seccomp.EqualTo(linux.TCGETS2),
+			seccomp.AnyValue{}, /* termios2 struct */
+		},
+		seccomp.PerArg{
+			seccomp.NonNegativeFD{}, /* fd */
+			seccomp.EqualTo(linux.TCSETS2),
+			seccomp.AnyValue{}, /* termios2 struct */
+		},
+		seccomp.PerArg{
+			seccomp.NonNegativeFD{}, /* fd */
+			seccomp.EqualTo(linux.TCSETSF2),
+			seccomp.AnyValue{}, /* termios2 struct */
+		},
+		seccomp.PerArg{
+			seccomp.NonNegativeFD{}, /* fd */
+			seccomp.EqualTo(linux.TCSETSW2),
+			seccomp.AnyValue{}, /* termios2 struct */
+		},
+		seccomp.PerArg{
+			seccomp.NonNegativeFD{}, /* fd */
 			seccomp.EqualTo(linux.TIOCSWINSZ),
 			seccomp.AnyValue{}, /* winsize struct */
 		},

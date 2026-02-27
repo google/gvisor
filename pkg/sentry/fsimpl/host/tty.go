@@ -135,6 +135,14 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysno uin
 		_, err = termios.CopyOut(task, args[2].Pointer())
 		return 0, err
 
+	case linux.TCGETS2:
+		termios, err := ioctlGetTermios2(fd)
+		if err != nil {
+			return 0, err
+		}
+		_, err = termios.CopyOut(task, args[2].Pointer())
+		return 0, err
+
 	case linux.TCSETS, linux.TCSETSW, linux.TCSETSF:
 		t.inode.termiosMu.Lock()
 		defer t.inode.termiosMu.Unlock()
@@ -150,6 +158,24 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysno uin
 		err := ioctlSetTermios(fd, ioctl, &termios)
 		if err == nil {
 			t.inode.termios.FromTermios(termios)
+		}
+		return 0, err
+
+	case linux.TCSETS2, linux.TCSETSW2, linux.TCSETSF2:
+		t.inode.termiosMu.Lock()
+		defer t.inode.termiosMu.Unlock()
+
+		if err := t.inode.tty.CheckChange(ctx, linux.SIGTTOU); err != nil {
+			return 0, err
+		}
+
+		var termios linux.KernelTermios
+		if _, err := termios.CopyIn(task, args[2].Pointer()); err != nil {
+			return 0, err
+		}
+		err := ioctlSetTermios2(fd, ioctl, &termios)
+		if err == nil {
+			t.inode.termios = termios
 		}
 		return 0, err
 

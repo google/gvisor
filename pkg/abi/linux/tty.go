@@ -54,6 +54,7 @@ type Termios struct {
 // uapi/asm-generic/termbits.h.
 //
 // +stateify savable
+// +marshal
 type KernelTermios struct {
 	_                 structs.HostLayout
 	InputFlags        uint32
