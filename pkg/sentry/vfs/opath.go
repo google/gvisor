@@ -155,7 +155,7 @@ func (vfs *VirtualFilesystem) openOPathFD(ctx context.Context, creds *auth.Crede
 		if err != nil {
 			return nil, err
 		}
-		if stat.Mode&linux.S_IFDIR == 0 {
+		if stat.Mode&linux.S_IFMT != linux.S_IFDIR {
 			return nil, linuxerr.ENOTDIR
 		}
 	}

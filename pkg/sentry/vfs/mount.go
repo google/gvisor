@@ -562,9 +562,35 @@ func (vfs *VirtualFilesystem) BindAt(ctx context.Context, creds *auth.Credential
 	if err != nil {
 		return err
 	}
+	defer targetVd.DecRef(ctx)
+
+	// Linux's graft_tree() (fs/namespace.c) returns ENOTDIR if the source and
+	// target have mismatched types (one is a directory, the other is not).
+	sourceStat, err := vfs.StatAt(ctx, creds, &PathOperation{
+		Root:  sourceVd,
+		Start: sourceVd,
+	}, &StatOptions{
+		Mask: linux.STATX_MODE,
+	})
+	if err != nil {
+		return err
+	}
+	targetStat, err := vfs.StatAt(ctx, creds, &PathOperation{
+		Root:  targetVd,
+		Start: targetVd,
+	}, &StatOptions{
+		Mask: linux.STATX_MODE,
+	})
+	if err != nil {
+		return err
+	}
+	if linux.FileMode(sourceStat.Mode).IsDir() != linux.FileMode(targetStat.Mode).IsDir() {
+		return linuxerr.ENOTDIR
+	}
 
 	vfs.lockMounts()
 	defer vfs.unlockMounts(ctx)
+	targetVd.IncRef() // consumed by lockMountpoint
 	mp, err := vfs.lockMountpoint(targetVd)
 	if err != nil {
 		return err
