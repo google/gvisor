@@ -205,7 +205,7 @@ func (c *CPU) CR4() uint64 {
 	if hasUMIP {
 		cr4 |= _CR4_UMIP
 	}
-	if hasLA57 {
+	if hasLA57 && cpuid.IsFiveLevelPagingEnabled {
 		cr4 |= _CR4_LA57
 	}
 	return cr4
@@ -222,6 +222,9 @@ func (c *CPU) EFER() uint64 {
 //
 //go:nosplit
 func IsCanonical(addr uint64) bool {
+	if hasLA57 && cpuid.IsFiveLevelPagingEnabled {
+		return addr <= 0x00ffffffffffffff || addr >= 0xff00000000000000
+	}
 	return addr <= 0x00007fffffffffff || addr >= 0xffff800000000000
 }
 

@@ -54,7 +54,7 @@ const (
 //go:nosplit
 func (p *PageTables) InitArch(allocator Allocator) {
 	featureSet := cpuid.HostFeatureSet()
-	if featureSet.HasFeature(cpuid.X86FeatureLA57) {
+	if featureSet.HasFeature(cpuid.X86FeatureLA57) && cpuid.IsFiveLevelPagingEnabled {
 		p.largeAddressesEnabled = true
 		lowerTop = 0x00FFFFFFFFFFFFFF
 		upperBottom = 0xFF00000000000000
