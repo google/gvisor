@@ -23,6 +23,7 @@ archs = [
     "_amd64",
     "_arm",
     "_arm64",
+    "_arm64_64k",
     "_mips",
     "_mips64",
     "_mips64le",
