@@ -14,7 +14,7 @@ const (
 )
 
 type bytecount interface {
-	~uint | ~uint16 | ~uint32 | ~uint64 | ~uintptr
+	~uint | ~uint32 | ~uint64 | ~uintptr
 }
 
 type hugebytecount interface {

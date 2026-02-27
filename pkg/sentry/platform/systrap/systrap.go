@@ -271,6 +271,10 @@ func (*Systrap) MinUserAddress() hostarch.Addr {
 
 // New returns a new seccomp-based implementation of the platform interface.
 func New(opts platform.Options) (*Systrap, error) {
+	if hostarch.PageSize != 4096 {
+		return nil, fmt.Errorf("systrap platform does not support %dK page size", hostarch.PageSize/1024)
+	}
+
 	if !disableSyscallPatching {
 		disableSyscallPatching = opts.DisableSyscallPatching
 	}

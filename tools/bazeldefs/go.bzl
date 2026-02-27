@@ -71,9 +71,11 @@ def go_binary(name, static = False, pure = False, x_defs = None, **kwargs):
         "//conditions:default": kwargs.pop("gc_goopts", []),
         "//tools:debug": kwargs.pop("gc_goopts", []) + ["-N", "-l"],
     })
+    base_gotags = kwargs.pop("gotags", [])
     kwargs["gotags"] = select({
-        "//conditions:default": kwargs.pop("gotags", []),
-        "//tools:debug": kwargs.pop("gotags", []) + ["debug"],
+        "//tools/bazeldefs:pagesize_64k": base_gotags + ["pagesize_64k"],
+        "//tools:debug": base_gotags + ["debug"],
+        "//conditions:default": base_gotags,
     })
     _go_binary(
         name = name,
@@ -123,6 +125,12 @@ def go_test(name, static = False, pure = False, library = None, **kwargs):
         kwargs["static"] = "on"
     if library:
         kwargs["embed"] = [library]
+    base_gotags = kwargs.pop("gotags", [])
+    kwargs["gotags"] = select({
+        "//tools/bazeldefs:pagesize_64k": base_gotags + ["pagesize_64k"],
+        "//tools:debug": base_gotags + ["debug"],
+        "//conditions:default": base_gotags,
+    })
     _go_test(
         name = name,
         **kwargs
