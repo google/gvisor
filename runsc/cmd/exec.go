@@ -222,11 +222,7 @@ func (ex *Exec) exec(conf *config.Config, c *container.Container, e *control.Exe
 
 func (ex *Exec) execChildAndWait(waitStatus *unix.WaitStatus) subcommands.ExitStatus {
 	var args []string
-	for _, a := range os.Args[1:] {
-		if !strings.Contains(a, "detach") {
-			args = append(args, a)
-		}
-	}
+	var pidFileArg string
 
 	// The command needs to write a pid file so that execChildAndWait can tell
 	// when it has started. If no pid-file was provided, we should use a
@@ -239,7 +235,17 @@ func (ex *Exec) execChildAndWait(waitStatus *unix.WaitStatus) subcommands.ExitSt
 		}
 		defer os.RemoveAll(tmpDir)
 		pidFile = filepath.Join(tmpDir, "pid")
-		args = append(args, "--pid-file="+pidFile)
+		pidFileArg = "--pid-file=" + pidFile
+	}
+
+	for _, a := range os.Args[1:] {
+		if !strings.Contains(a, "detach") {
+			if a == ex.Name() && pidFileArg != "" {
+				args = append(args, a, pidFileArg)
+			} else {
+				args = append(args, a)
+			}
+		}
 	}
 
 	cmd := exec.Command(specutils.ExePath, args...)
