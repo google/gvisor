@@ -40,11 +40,14 @@ const (
 
 	// maxStackRand64 is the maximum randomization to apply to the stack.
 	// It is defined by arch/arm64/mm/mmap.c:(STACK_RND_MASK << PAGE_SHIFT) in Linux.
-	maxStackRand64 = 0x3ffff << 12 // 16 GB
+	maxStackRand64 = 0x3ffff << hostarch.PageShift
 
 	// maxMmapRand64 is the maximum randomization to apply to the mmap
 	// layout. It is defined by arch/arm64/mm/mmap.c:arch_mmap_rnd in Linux.
-	maxMmapRand64 = (1 << 33) * hostarch.PageSize
+	// For 4K pages (PageShift=12): 1 << 45 = 32TB
+	// For 64K pages (PageShift=16): 1 << 45 = 32TB (same)
+	// We use a fixed value to avoid exceeding the 48-bit address space.
+	maxMmapRand64 = 1 << 45
 
 	// minGap64 is the minimum gap to leave at the top of the address space
 	// for the stack. It is defined by arch/arm64/mm/mmap.c:MIN_GAP in Linux.
@@ -72,7 +75,8 @@ const (
 
 	// minMmapRand64 is the smallest we are willing to make the
 	// randomization to stay above preferredTopDownBaseMin.
-	minMmapRand64 = (1 << 18) * hostarch.PageSize
+	// Use a fixed value (1GB) to be consistent across page sizes.
+	minMmapRand64 = 1 << 30
 )
 
 // Context64 represents an ARM64 context.

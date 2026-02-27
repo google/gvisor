@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build arm64 && !pagesize_64k
-// +build arm64,!pagesize_64k
+//go:build arm64 && pagesize_64k
+// +build arm64,pagesize_64k
 
 package pagetables
 
@@ -23,10 +23,11 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
-func Test2MAnd4K(t *testing.T) {
+// Test512MAnd64K tests mapping of 512MB sect pages and 64K pages.
+func Test512MAnd64K(t *testing.T) {
 	pt := New(NewRuntimeAllocator())
 
-	// Map a small page and a huge page.
+	// Map a small page (64K) and a huge page (512MB).
 	pt.Map(0x400000, pteSize, MapOpts{AccessType: hostarch.ReadWrite, User: true}, pteSize*42)
 	pt.Map(0x0000ff0000000000, pmdSize, MapOpts{AccessType: hostarch.Read, User: true}, pmdSize*47)
 
@@ -41,36 +42,11 @@ func Test2MAnd4K(t *testing.T) {
 	})
 }
 
-func Test1GAnd4K(t *testing.T) {
+// TestSplit512MPage tests splitting a 512MB sect page.
+func TestSplit512MPage(t *testing.T) {
 	pt := New(NewRuntimeAllocator())
 
-	// Map a small page and a super page.
-	pt.Map(0x400000, pteSize, MapOpts{AccessType: hostarch.ReadWrite, User: true}, pteSize*42)
-	pt.Map(0x0000ff0000000000, pudSize, MapOpts{AccessType: hostarch.Read, User: true}, pudSize*47)
-
-	checkMappings(t, pt, []mapping{
-		{0x400000, pteSize, pteSize * 42, MapOpts{AccessType: hostarch.ReadWrite, User: true}},
-		{0x0000ff0000000000, pudSize, pudSize * 47, MapOpts{AccessType: hostarch.Read, User: true}},
-	})
-}
-
-func TestSplit1GPage(t *testing.T) {
-	pt := New(NewRuntimeAllocator())
-
-	// Map a super page and knock out the middle.
-	pt.Map(0x0000ff0000000000, pudSize, MapOpts{AccessType: hostarch.Read, User: true}, pudSize*42)
-	pt.Unmap(hostarch.Addr(0x0000ff0000000000+pteSize), pudSize-(2*pteSize))
-
-	checkMappings(t, pt, []mapping{
-		{0x0000ff0000000000, pteSize, pudSize * 42, MapOpts{AccessType: hostarch.Read, User: true}},
-		{0x0000ff0000000000 + pudSize - pteSize, pteSize, pudSize*42 + pudSize - pteSize, MapOpts{AccessType: hostarch.Read, User: true}},
-	})
-}
-
-func TestSplit2MPage(t *testing.T) {
-	pt := New(NewRuntimeAllocator())
-
-	// Map a huge page and knock out the middle.
+	// Map a sect page (512MB) and knock out the middle.
 	pt.Map(0x0000ff0000000000, pmdSize, MapOpts{AccessType: hostarch.Read, User: true}, pmdSize*42)
 	pt.Unmap(hostarch.Addr(0x0000ff0000000000+pteSize), pmdSize-(2*pteSize))
 

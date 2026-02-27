@@ -13,21 +13,8 @@
 // limitations under the License.
 
 //go:build arm64
-// +build arm64
 
 package ring0
-
-// Useful bits.
-const (
-	_PGD_PGT_BASE = 0x1000
-	_PGD_PGT_SIZE = 0x1000
-	_PUD_PGT_BASE = 0x2000
-	_PUD_PGT_SIZE = 0x1000
-	_PMD_PGT_BASE = 0x3000
-	_PMD_PGT_SIZE = 0x4000
-	_PTE_PGT_BASE = 0x7000
-	_PTE_PGT_SIZE = 0x1000
-)
 
 const (
 	// VirtualAddressBits is fixed at 48.
