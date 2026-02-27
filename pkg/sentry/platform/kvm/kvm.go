@@ -90,6 +90,10 @@ func OpenDevice(devicePath string) (*fd.FD, error) {
 
 // New returns a new KVM-based implementation of the platform interface.
 func New(deviceFile *fd.FD, config Config) (*KVM, error) {
+	if hostarch.PageSize != 4096 {
+		return nil, fmt.Errorf("KVM platform does not support %dK page size", hostarch.PageSize/1024)
+	}
+
 	fd := deviceFile.FD()
 
 	// Ensure global initialization is done.
