@@ -11,5 +11,9 @@ go_library(
     visibility = [
         "//runsc/cmd:__subpackages__",
     ],
-    deps = ["//runsc/flag"],
+    deps = [
+        "//runsc/config",
+        "//runsc/flag",
+        "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
+    ],
 )

@@ -17,10 +17,12 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"time"
 
 	"github.com/google/subcommands"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
@@ -30,6 +32,7 @@ import (
 
 // Events implements subcommands.Command for the "events" command.
 type Events struct {
+	containerLoader
 	// The interval between stats reporting.
 	intervalSec int
 	// If true, events will print a single group of stats and exit.
@@ -65,6 +68,15 @@ func (evs *Events) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&evs.stats, "stats", false, "display the container's stats then exit")
 }
 
+// FetchSpec implements util.SubCommand.FetchSpec.
+func (evs *Events) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error) {
+	c, err := evs.loadContainer(conf, f, container.LoadOpts{})
+	if err != nil {
+		return "", nil, fmt.Errorf("loading container: %w", err)
+	}
+	return c.ID, c.Spec, nil
+}
+
 // Execute implements subcommands.Command.Execute.
 func (evs *Events) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if f.NArg() != 1 {
@@ -72,12 +84,11 @@ func (evs *Events) Execute(_ context.Context, f *flag.FlagSet, args ...any) subc
 		return subcommands.ExitUsageError
 	}
 
-	id := f.Arg(0)
 	conf := args[0].(*config.Config)
 
-	c, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
+	c, err := evs.loadContainer(conf, f, container.LoadOpts{})
 	if err != nil {
-		util.Fatalf("loading sandbox: %v", err)
+		util.Fatalf("loading container: %v", err)
 	}
 
 	// Repeatedly get stats from the container. Sleep a bit after every loop

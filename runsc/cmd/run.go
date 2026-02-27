@@ -16,9 +16,11 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"github.com/google/subcommands"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/cmd/util"
@@ -42,6 +44,9 @@ type Run struct {
 
 	// execFD is the host file descriptor used for program execution.
 	execFD int
+
+	// spec is the cached OCI spec from FetchSpec().
+	spec *specs.Spec
 }
 
 // Name implements subcommands.Command.Name.
@@ -67,6 +72,30 @@ func (r *Run) SetFlags(f *flag.FlagSet) {
 	r.Create.SetFlags(f)
 }
 
+// FetchSpec implements util.SubCommand.FetchSpec.
+func (r *Run) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error) {
+	if f.NArg() < 1 {
+		f.Usage()
+		return "", nil, fmt.Errorf("a container id is required")
+	}
+
+	id := f.Arg(0)
+	if r.spec != nil {
+		return id, r.spec, nil
+	}
+
+	bundleDir := r.bundleDir
+	if bundleDir == "" {
+		r.bundleDir = getwdOrDie()
+	}
+	spec, err := specutils.ReadSpec(bundleDir, conf)
+	if err != nil {
+		return "", nil, fmt.Errorf("reading spec: %w", err)
+	}
+	r.spec = spec
+	return id, spec, nil
+}
+
 // Execute implements subcommands.Command.Execute.
 func (r *Run) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if f.NArg() != 1 {
@@ -74,7 +103,6 @@ func (r *Run) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomman
 		return subcommands.ExitUsageError
 	}
 
-	id := f.Arg(0)
 	conf := args[0].(*config.Config)
 	waitStatus := args[1].(*unix.WaitStatus)
 
@@ -89,13 +117,9 @@ func (r *Run) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomman
 		// Execution will continue here if no more capabilities are needed...
 	}
 
-	bundleDir := r.bundleDir
-	if bundleDir == "" {
-		bundleDir = getwdOrDie()
-	}
-	spec, err := specutils.ReadSpec(bundleDir, conf)
+	id, spec, err := r.FetchSpec(conf, f)
 	if err != nil {
-		return util.Errorf("reading spec: %v", err)
+		return util.Errorf("FetchSpec: %v", err)
 	}
 	specutils.LogSpecDebug(spec, conf.OCISeccomp)
 
@@ -135,7 +159,7 @@ func (r *Run) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomman
 	runArgs := container.Args{
 		ID:            id,
 		Spec:          spec,
-		BundleDir:     bundleDir,
+		BundleDir:     r.bundleDir,
 		ConsoleSocket: r.consoleSocket,
 		PIDFile:       r.pidFile,
 		UserLog:       r.userLog,

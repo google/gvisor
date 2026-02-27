@@ -26,9 +26,39 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/runsc/container"
+	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
 	"gvisor.dev/gvisor/runsc/starttime"
 )
+
+// containerLoader is an embeddable struct for util.SubCommand implementations
+// that take the container ID as an argument. It helps load the container and
+// caches the result to avoid loading the same container multiple times.
+type containerLoader struct {
+	cachedContainer *container.Container
+}
+
+// loadContainer
+func (c *containerLoader) loadContainer(conf *config.Config, f *flag.FlagSet, loadOpts container.LoadOpts) (*container.Container, error) {
+	if c.cachedContainer != nil {
+		// Container is already loaded.
+		return c.cachedContainer, nil
+	}
+	// Assumes that the first argument is the container ID.
+	if f.NArg() < 1 {
+		f.Usage()
+		return nil, fmt.Errorf("a container-id is required")
+	}
+	id := f.Arg(0)
+	cont, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, loadOpts)
+	if err != nil {
+		return nil, err
+	}
+	c.cachedContainer = cont
+	return c.cachedContainer, nil
+}
 
 // intFlags can be used with int flags that appear multiple times. It supports
 // comma-separated lists too.

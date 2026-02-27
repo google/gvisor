@@ -41,6 +41,7 @@ import (
 
 // Exec implements subcommands.Command for the "exec" command.
 type Exec struct {
+	containerLoader
 	cwd string
 	env stringSlice
 	// user contains the UID and GID with which to run the new process.
@@ -110,20 +111,24 @@ func (ex *Exec) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&ex.execFD, "exec-fd", -1, "host file descriptor used for program execution")
 }
 
+// FetchSpec implements util.SubCommand.FetchSpec.
+func (ex *Exec) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error) {
+	c, err := ex.loadContainer(conf, f, container.LoadOpts{})
+	if err != nil {
+		return "", nil, fmt.Errorf("loading container: %w", err)
+	}
+	return c.ID, c.Spec, nil
+}
+
 // Execute implements subcommands.Command.Execute. It starts a process in an
 // already created container.
 func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	conf := args[0].(*config.Config)
 	waitStatus := args[1].(*unix.WaitStatus)
 
-	if f.NArg() < 1 {
-		f.Usage()
-		util.Fatalf("a container-id is required")
-	}
-	id := f.Arg(0)
-	c, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
+	c, err := ex.loadContainer(conf, f, container.LoadOpts{})
 	if err != nil {
-		util.Fatalf("loading sandbox: %v", err)
+		util.Fatalf("loading container failed: %v", err)
 	}
 
 	e, err := ex.parseArgs(f, c.Spec.Process, conf.EnableRaw)

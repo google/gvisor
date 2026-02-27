@@ -101,6 +101,12 @@ func SpecContainerType(spec *specs.Spec) ContainerType {
 	return ContainerTypeUnspecified
 }
 
+// IsRootContainer returns true if the spec represents the sandbox's root
+// container.
+func IsRootContainer(spec *specs.Spec) bool {
+	return SpecContainerType(spec) != ContainerTypeContainer
+}
+
 // SandboxID returns the ID of the sandbox to join and whether an ID was found
 // in the spec.
 func SandboxID(spec *specs.Spec) (string, bool) {

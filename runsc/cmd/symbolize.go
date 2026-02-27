@@ -22,8 +22,10 @@ import (
 	"strings"
 
 	"github.com/google/subcommands"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/coverage"
 	"gvisor.dev/gvisor/runsc/cmd/util"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
@@ -58,6 +60,12 @@ running symbolize on the same runsc binary.
 // SetFlags implements subcommands.Command.SetFlags.
 func (c *Symbolize) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&c.dumpAll, "all", false, "dump information on all coverage blocks along with their synthetic PCs")
+}
+
+// FetchSpec implements util.SubCommand.FetchSpec.
+func (c *Symbolize) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error) {
+	// This command does not operate on a single container, so nothing to fetch.
+	return "", nil, nil
 }
 
 // Execute implements subcommands.Command.Execute.
