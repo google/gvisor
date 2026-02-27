@@ -218,6 +218,12 @@ func (e *connectionlessEndpoint) Readiness(mask waiter.EventMask) waiter.EventMa
 		panic(fmt.Sprintf("connectionlessEndpoint.Readiness called with receiver=nil; closer:\n%s", b.String()))
 	}
 	ready := waiter.EventMask(0)
+	// e.receiver is nil only when the endpoint is closed, return empty
+	// events mask in this case.
+	if e.receiver == nil {
+		return ready
+	}
+
 	if mask&waiter.ReadableEvents != 0 && e.receiver.Readable() {
 		ready |= waiter.ReadableEvents
 	}
