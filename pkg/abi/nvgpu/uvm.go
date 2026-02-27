@@ -217,6 +217,27 @@ func (p *UVM_UNREGISTER_CHANNEL_PARAMS) SetStatus(status uint32) {
 	p.RMStatus = status
 }
 
+// UVM_UNREGISTER_CHANNEL_PARAMS_V590 is the updated version of
+// UVM_UNREGISTER_CHANNEL_PARAMS since 590.44.01.
+//
+// +marshal
+type UVM_UNREGISTER_CHANNEL_PARAMS_V590 struct {
+	_        structs.HostLayout
+	HClient  Handle
+	HChannel Handle
+	RMStatus uint32
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_UNREGISTER_CHANNEL_PARAMS_V590) GetStatus() uint32 {
+	return p.RMStatus
+}
+
+// SetStatus implements HasStatus.SetStatus.
+func (p *UVM_UNREGISTER_CHANNEL_PARAMS_V590) SetStatus(status uint32) {
+	p.RMStatus = status
+}
+
 // +marshal
 type UVM_ENABLE_PEER_ACCESS_PARAMS struct {
 	_        structs.HostLayout
@@ -357,6 +378,27 @@ func (p *UVM_FREE_PARAMS) GetStatus() uint32 {
 
 // SetStatus implements HasStatus.SetStatus.
 func (p *UVM_FREE_PARAMS) SetStatus(status uint32) {
+	p.RMStatus = status
+}
+
+// UVM_FREE_PARAMS_V590 is the updated version of
+// UVM_FREE_PARAMS since 590.44.01.
+//
+// +marshal
+type UVM_FREE_PARAMS_V590 struct {
+	_        structs.HostLayout
+	Base     uint64
+	RMStatus uint32
+	Pad0     [4]byte
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_FREE_PARAMS_V590) GetStatus() uint32 {
+	return p.RMStatus
+}
+
+// SetStatus implements HasStatus.SetStatus.
+func (p *UVM_FREE_PARAMS_V590) SetStatus(status uint32) {
 	p.RMStatus = status
 }
 

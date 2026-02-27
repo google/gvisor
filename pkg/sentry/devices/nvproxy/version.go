@@ -964,6 +964,26 @@ func Init() {
 		// The following versions exist on the "580" branch, which was branched
 		// from the main branch at 580.105.08.
 		_ = addDriverABI(580, 126, 9, "4cac53e48f8adff661d47c8788ed24059a248c9fd8098ceafd088a498986ec26", "7393c42b112fd6f0a498e1d2a33127b821be58b7570dc9f8d5589a51688da4ad", v580_105_08)
+
+		v590_44_01 := func() *driverABI {
+			abi := v580_105_08()
+			abi.uvmIoctl[nvgpu.UVM_UNREGISTER_CHANNEL] = uvmHandler(uvmIoctlSimple[nvgpu.UVM_UNREGISTER_CHANNEL_PARAMS_V590], compUtil)
+			abi.uvmIoctl[nvgpu.UVM_FREE] = uvmHandler(uvmIoctlSimple[nvgpu.UVM_FREE_PARAMS_V590], compUtil)
+			abi.allocationClass[nvgpu.NV50_P2P] = allocHandler(rmAllocSimple[nvgpu.NV503B_ALLOC_PARAMETERS_V590], compUtil)
+			abi.allocationClass[nvgpu.NV_MEMORY_MULTICAST_FABRIC] = allocHandler(rmAllocSimple[nvgpu.NV00FD_ALLOCATION_PARAMETERS_V590], compUtil)
+
+			prevGetInfo := abi.getInfo
+			abi.getInfo = func() *DriverABIInfo {
+				info := prevGetInfo()
+				info.UvmInfos[nvgpu.UVM_UNREGISTER_CHANNEL] = ioctlInfoWithStructName("UVM_UNREGISTER_CHANNEL", nvgpu.UVM_UNREGISTER_CHANNEL_PARAMS_V590{}, "UVM_UNREGISTER_CHANNEL_PARAMS")
+				info.UvmInfos[nvgpu.UVM_FREE] = ioctlInfoWithStructName("UVM_FREE", nvgpu.UVM_FREE_PARAMS_V590{}, "UVM_FREE_PARAMS")
+				info.AllocationInfos[nvgpu.NV50_P2P] = ioctlInfoWithStructName("NV50_P2P", nvgpu.NV503B_ALLOC_PARAMETERS_V590{}, "NV503B_ALLOC_PARAMETERS")
+				info.AllocationInfos[nvgpu.NV_MEMORY_MULTICAST_FABRIC] = ioctlInfoWithStructName("NV_MEMORY_MULTICAST_FABRIC", nvgpu.NV00FD_ALLOCATION_PARAMETERS_V590{}, "NV00FD_ALLOCATION_PARAMETERS")
+				return info
+			}
+			return abi
+		}
+		_ = addDriverABI(590, 48, 01, "b9e2f80693781431cc87f4cd29109e133dcecb50a50d6b68d4b3bf2d696bd689", "14ecfb7faa56d4d18cd9fef891b3fa2db3628f12a3e59b59d3c6e6d1a0befd80", v590_44_01)
 	})
 }
 
