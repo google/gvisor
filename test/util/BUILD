@@ -255,6 +255,8 @@ cc_library(
     deps = [
         ":file_descriptor",
         ":posix_error",
+        "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/strings",
     ],
 )
 

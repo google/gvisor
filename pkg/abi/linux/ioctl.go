@@ -19,9 +19,13 @@ package linux
 // These are ordered by request number (low byte).
 const (
 	TCGETS      = 0x00005401
+	TCGETS2     = 0x802c542a
 	TCSETS      = 0x00005402
+	TCSETS2     = 0x402c542b
 	TCSETSW     = 0x00005403
+	TCSETSW2    = 0x402c542c
 	TCSETSF     = 0x00005404
+	TCSETSF2    = 0x402c542d
 	TCSBRK      = 0x00005409
 	TIOCEXCL    = 0x0000540c
 	TIOCNXCL    = 0x0000540d
