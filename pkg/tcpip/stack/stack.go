@@ -2110,14 +2110,18 @@ func (s *Stack) ReplaceConfig(st *Stack) {
 
 // Restore restarts the stack after a restore. This must be called after the
 // entire system has been restored.
-func (s *Stack) Restore() {
+func (s *Stack) Restore(clock tcpip.Clock) {
 	// RestoredEndpoint.Restore() may call other methods on s, so we can't hold
 	// s.mu while restoring the endpoints.
 	s.mu.Lock()
+	s.clock = clock
+	s.tables.Restore(s.insecureRNG, s.clock)
+	s.icmpRateLimiter = NewICMPRateLimiter(s.clock)
 	eps := s.restoredEndpoints
 	s.restoredEndpoints = nil
 	saveRestoreEnabled := s.saveRestoreEnabled
 	s.mu.Unlock()
+
 	for _, e := range eps {
 		e.Restore(s)
 	}

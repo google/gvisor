@@ -393,7 +393,7 @@ func (*Stack) RemoveRoute(context.Context, *nlmsg.Message) *syserr.Error {
 func (*Stack) Pause() {}
 
 // Restore implements inet.Stack.Restore.
-func (*Stack) Restore() {}
+func (*Stack) Restore(_ tcpip.Clock) {}
 
 // ReplaceConfig implements inet.Stack.ReplaceConfig.
 func (s *Stack) ReplaceConfig(_ inet.Stack) {}

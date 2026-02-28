@@ -15,7 +15,6 @@
 package stack
 
 import (
-	"context"
 	"fmt"
 	"math/rand"
 	"reflect"
@@ -612,8 +611,10 @@ func (it *IPTables) beforeSave() {
 	it.connections.mu.Lock()
 }
 
-// afterLoad is invoked by stateify.
-func (it *IPTables) afterLoad(context.Context) {
+// Restore will initialize the variables in IPTables during restore.
+func (it *IPTables) Restore(rand *rand.Rand, clock tcpip.Clock) {
+	it.connections.rand = rand
+	it.connections.clock = clock
 	it.startReaper(reaperDelay)
 }
 
