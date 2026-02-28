@@ -1695,6 +1695,13 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 			s.detectSpuriousRecovery(hasDSACK, rcvdSeg.parsedOptions.TSEcr)
 		}
 
+		// It is possible for s.outstanding to drop below zero if we get
+		// a retransmit timeout, reset outstanding to zero but later
+		// get an ack that cover previously sent data.
+		if s.Outstanding < 0 {
+			s.Outstanding = 0
+		}
+
 		// If we are not in fast recovery then update the congestion
 		// window based on the number of acknowledged packets.
 		if !s.FastRecovery.Active {
@@ -1713,13 +1720,6 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 
 		// Update the send buffer usage and notify potential waiters.
 		s.ep.updateSndBufferUsage(int(acked))
-
-		// It is possible for s.outstanding to drop below zero if we get
-		// a retransmit timeout, reset outstanding to zero but later
-		// get an ack that cover previously sent data.
-		if s.Outstanding < 0 {
-			s.Outstanding = 0
-		}
 
 		s.SetPipe()
 
