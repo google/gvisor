@@ -39,6 +39,27 @@
         ]
       },
       {
+        "name": "syscall/write/enter",
+        "optional_fields": [
+          "fd_path"
+        ],
+        "context_fields": [
+          "time",
+          "container_id",
+          "thread_id"
+        ]
+      },
+      {
+        "name": "syscall/write/exit"
+      },
+      {
+        "name": "syscall/sysno/1/enter",
+        "context_fields": [
+          "time",
+          "container_id"
+        ]
+      },
+      {
         "name": "syscall/sysno/1/exit"
       }
     ],
@@ -47,7 +68,8 @@
         "name": "remote",
         "config": {
           "endpoint": "/tmp/gvisor_events.sock",
-          "retries": 3
+          "retries": 3,
+          "batch_interval": "5500ms"
         },
         "ignore_setup_error": true
       }
