@@ -15,7 +15,6 @@
 package stack
 
 import (
-	"context"
 	"fmt"
 	"math/rand"
 	"reflect"
@@ -606,15 +605,19 @@ func (it *IPTables) check(table Table, hook Hook, pkt *PacketBuffer, r *Route, a
 
 // beforeSave is invoked by stateify.
 func (it *IPTables) beforeSave() {
-	// Ensure the reaper exits cleanly.
-	it.reaper.Stop()
-	// Prevent others from modifying the connection table.
-	it.connections.mu.Lock()
+	if it.reaper != nil {
+		// Ensure the reaper exits cleanly.
+		it.reaper.Stop()
+	}
 }
 
-// afterLoad is invoked by stateify.
-func (it *IPTables) afterLoad(context.Context) {
-	it.startReaper(reaperDelay)
+func (it *IPTables) Resume() {
+	it.mu.Lock()
+	defer it.mu.Unlock()
+
+	if it.modified {
+		it.startReaper(reaperDelay)
+	}
 }
 
 // startReaper periodically reaps timed out connections.

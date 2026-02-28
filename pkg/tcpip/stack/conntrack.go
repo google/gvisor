@@ -229,7 +229,7 @@ type ConnTrack struct {
 
 	// clock provides timing used to determine conntrack reapings.
 	clock tcpip.Clock
-	// TODO(b/341946753): Restore when netstack is savable.
+
 	rand *rand.Rand `state:"nosave"`
 
 	mu connTrackRWMutex `state:"nosave"`

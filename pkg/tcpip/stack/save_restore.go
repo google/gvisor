@@ -51,4 +51,5 @@ func (s *Stack) beforeSave() {
 func (s *Stack) afterLoad(context.Context) {
 	s.insecureRNG = rand.New(rand.NewSource(time.Now().UnixNano()))
 	s.secureRNG = cryptorand.RNGFrom(cryptorand.Reader)
+	s.tables.connections.rand = s.insecureRNG
 }
