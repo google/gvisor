@@ -78,9 +78,12 @@ We distinguish the following type of issues, listed from most to least severe:
         -   This excludes things like causing CPU starvation when a sandbox is
             running without resource constraints.
 -   Issues that **remain confined to a single sandbox**:
-    -   `InternalEsc`: **Privilege escalation within the sandbox** (e.g. being
-        able to do what in-sandbox `root` would be able to do from an in-sandbox
-        non-`root` user).
+    -   `InternalEsc`: **In-sandbox escalation that results in arbitrary
+        in-sandbox code execution**. Being able to run arbitrary code as
+        in-sandbox `root`.
+    -   `InternalRead`: **In-sandbox escalation that results in arbitrary
+        in-sandbox reads**. Being able to read what in-sandbox `root` would be
+        able to read.
     -   `SelfDoS`: **Denial-of-service attacks** that affect a single sandbox
         and are **triggerable from user code** running in that sandbox.
     -   `Integrity`: **Data integrity issues** relative to Linux behavior.
@@ -144,17 +147,18 @@ The following table lists the types of issues that qualify for CVEs, provided
 that they are gVisor-specific (i.e. the same issue does not occur in a
 non-gVisor sandbox):
 
-**CVE?**      | `Remote` | `SandboxUser` | `SandboxRoot` | `SandboxImage` | `SandboxSpec` | `RuntimeFlags` | `HostRoot`
-------------- | -------- | ------------- | ------------- | -------------- | ------------- | -------------- | ----------
-`Integrity`   | ✔️       | ❌             | ❌             | ❌              | ❌             | ❌              | ❌
-`SelfDoS`     | *N/A*    | ❌             | ❌             | ❌              | ❌             | ❌              | ❌
-`InternalEsc` | *N/A*    | ✔️            | *N/A*         | ❌              | ❌             | ❌              | ❌
-`PeerDoS`     | ✔️       | ✔️            | ✔️            | ✔️             | ❌             | ❌              | ❌
-`HostDoS`     | ✔️       | ✔️            | ✔️            | ✔️             | ❌             | ❌              | ❌
-`Lateral`     | *N/A*    | ✔️            | ✔️            | ❌              | ❌             | ❌              | ❌
-`Exfil`       | ✔️       | ✔️            | ✔️            | ✔️             | ❌             | ❌              | ❌
-`HostLeak`    | ✔️       | ✔️            | ✔️            | ✔️             | ❌             | ❌              | ❌
-`Escape`      | ✔️       | ✔️            | ✔️            | ✔️             | ❌             | ❌              | ❌
+**CVE?**       | `Remote` | `SandboxUser` | `SandboxRoot` | `SandboxImage` | `SandboxSpec` | `RuntimeFlags` | `HostRoot`
+-------------- | -------- | ------------- | ------------- | -------------- | ------------- | -------------- | ----------
+`Integrity`    | ✔️       | ❌             | ❌             | ❌              | ❌             | ❌              | ❌
+`SelfDoS`      | *N/A*    | ❌             | ❌             | ❌              | ❌             | ❌              | ❌
+`InternalRead` | *N/A*    | ❌             | *N/A*         | ❌              | ❌             | ❌              | ❌
+`InternalEsc`  | *N/A*    | ✔️            | *N/A*         | ❌              | ❌             | ❌              | ❌
+`PeerDoS`      | ✔️       | ✔️            | ✔️            | ✔️             | ❌             | ❌              | ❌
+`HostDoS`      | ✔️       | ✔️            | ✔️            | ✔️             | ❌             | ❌              | ❌
+`Lateral`      | *N/A*    | ✔️            | ✔️            | ❌              | ❌             | ❌              | ❌
+`Exfil`        | ✔️       | ✔️            | ✔️            | ✔️             | ❌             | ❌              | ❌
+`HostLeak`     | ✔️       | ✔️            | ✔️            | ✔️             | ❌             | ❌              | ❌
+`Escape`       | ✔️       | ✔️            | ✔️            | ✔️             | ❌             | ❌              | ❌
 
 ### Examples of vulnerability classifications
 
