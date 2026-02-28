@@ -24,7 +24,6 @@ import (
 	"io"
 	"os"
 	"path"
-	"runtime"
 	"syscall"
 
 	"golang.org/x/sys/unix"
@@ -71,10 +70,6 @@ func run(options *Options, fork bool) (int, error) {
 	// The "flate.NewReader" below may be replaced by "io.Reader" when
 	// compression is off.
 	binaryReader := flate.NewReader(bytes.NewReader(compressedBinary))
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-	oldMask := unix.Umask(0077)
-	defer unix.Umask(oldMask)
 
 	tmpFD := -1
 	// /tmp is sometimes mounted noexec for "security" reasons. Handle this by
@@ -99,7 +94,6 @@ func run(options *Options, fork bool) (int, error) {
 		if err := os.RemoveAll(tmpDir); err != nil {
 			return 0, fmt.Errorf("cannot remove temp directory: %w", err)
 		}
-		unix.Umask(oldMask)
 		if _, err := io.Copy(tmpFile, binaryReader); err != nil {
 			tmpFile.Close()
 			return 0, fmt.Errorf("cannot decompress embedded binary or write it to temporary file: %w", err)
@@ -128,9 +122,14 @@ func run(options *Options, fork bool) (int, error) {
 		}
 		tmpFile := os.NewFile(uintptr(tmpFD), BinaryName)
 		defer tmpFile.Close()
-		unix.Umask(oldMask)
 		if _, err := io.Copy(tmpFile, binaryReader); err != nil {
 			return 0, fmt.Errorf("cannot decompress embedded binary or write it to temporary memfd: %w", err)
+		}
+		// The memfd can only be accessed externally via /proc/[pid]/fd, which
+		// is subject to a PTRACE_MODE_READ_FSCREDS check, so this is probably
+		// unnecessary, but consistent with the disk case above.
+		if err := tmpFile.Chmod(0o700); err != nil {
+			return 0, fmt.Errorf("cannot chmod memfd: %w", err)
 		}
 		// Prevent future writes to the memfd.
 		if _, err := unix.FcntlInt(uintptr(tmpFD), unix.F_ADD_SEALS, unix.F_SEAL_SEAL|unix.F_SEAL_SHRINK|unix.F_SEAL_GROW|unix.F_SEAL_WRITE); err != nil {
