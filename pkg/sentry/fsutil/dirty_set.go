@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/sentry/usage"
 )
 
 // DirtySet maps offsets into a memmap.Mappable to DirtyInfo. It is used to
@@ -71,6 +72,15 @@ func (dirtySetFunctions) Split(_ memmap.MappableRange, val DirtyInfo, _ uint64) 
 	return val, val
 }
 
+// RemoveAllAndAccount removes all dirty segments and decrements the global
+// dirty memory accounting for each removed segment.
+func (s *DirtySet) RemoveAllAndAccount() {
+	for seg := s.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
+		usage.DirtyMemoryAccounting.DecDirty(seg.Range().Length())
+	}
+	s.RemoveAll()
+}
+
 // MarkClean marks all offsets in mr as not dirty, except for those to which
 // KeepDirty has been applied.
 func (s *DirtySet) MarkClean(mr memmap.MappableRange) {
@@ -81,6 +91,7 @@ func (s *DirtySet) MarkClean(mr memmap.MappableRange) {
 			continue
 		}
 		seg = s.Isolate(seg, mr)
+		usage.DirtyMemoryAccounting.DecDirty(seg.Range().Length())
 		seg = s.Remove(seg).NextSegment()
 	}
 }
@@ -88,7 +99,9 @@ func (s *DirtySet) MarkClean(mr memmap.MappableRange) {
 // KeepClean marks all offsets in mr as not dirty, even those that were
 // previously kept dirty by KeepDirty.
 func (s *DirtySet) KeepClean(mr memmap.MappableRange) {
-	s.RemoveRange(mr)
+	s.RemoveRangeWith(mr, func(seg DirtyIterator) {
+		usage.DirtyMemoryAccounting.DecDirty(seg.Range().Length())
+	})
 }
 
 // MarkDirty marks all offsets in mr as dirty.
@@ -123,7 +136,9 @@ func (s *DirtySet) setDirty(mr memmap.MappableRange, keep bool) {
 
 		case gap.Ok() && gap.Start() < mr.End:
 			changedAny = true
-			seg = s.Insert(gap, gap.Range().Intersect(mr), DirtyInfo{keep})
+			gapMR := gap.Range().Intersect(mr)
+			usage.DirtyMemoryAccounting.IncDirty(gapMR.Length())
+			seg = s.Insert(gap, gapMR, DirtyInfo{keep})
 			seg, gap = seg.NextNonEmpty()
 
 		default:
@@ -176,12 +191,19 @@ func SyncDirty(ctx context.Context, mr memmap.MappableRange, cache *FileRangeSet
 			dseg = dirty.Isolate(dseg, mr)
 			dr = dseg.Range()
 		}
-		if err := syncDirtyRange(ctx, dr, cache, max, mem, writeAt); err != nil {
+		// Track writeback: these bytes are now being written to storage.
+		drLen := dr.Length()
+		usage.DirtyMemoryAccounting.IncWriteback(drLen)
+		err := syncDirtyRange(ctx, dr, cache, max, mem, writeAt)
+		usage.DirtyMemoryAccounting.DecWriteback(drLen)
+		if err != nil {
 			return err
 		}
 		if dseg.Value().Keep {
 			dseg = dseg.NextSegment()
 		} else {
+			// Segment is being removed, decrement dirty bytes.
+			usage.DirtyMemoryAccounting.DecDirty(dseg.Range().Length())
 			dseg = dirty.Remove(dseg).NextSegment()
 		}
 	}
@@ -196,12 +218,20 @@ func SyncDirty(ctx context.Context, mr memmap.MappableRange, cache *FileRangeSet
 func SyncDirtyAll(ctx context.Context, cache *FileRangeSet, dirty *DirtySet, max uint64, mem memmap.File, writeAt func(ctx context.Context, srcs safemem.BlockSeq, offset uint64) (uint64, error)) error {
 	dseg := dirty.FirstSegment()
 	for dseg.Ok() {
-		if err := syncDirtyRange(ctx, dseg.Range(), cache, max, mem, writeAt); err != nil {
+		dr := dseg.Range()
+		// Track writeback: these bytes are now being written to storage.
+		drLen := dr.Length()
+		usage.DirtyMemoryAccounting.IncWriteback(drLen)
+		err := syncDirtyRange(ctx, dr, cache, max, mem, writeAt)
+		usage.DirtyMemoryAccounting.DecWriteback(drLen)
+		if err != nil {
 			return err
 		}
 		if dseg.Value().Keep {
 			dseg = dseg.NextSegment()
 		} else {
+			// Segment is being removed, decrement dirty bytes.
+			usage.DirtyMemoryAccounting.DecDirty(dseg.Range().Length())
 			dseg = dirty.Remove(dseg).NextSegment()
 		}
 	}
