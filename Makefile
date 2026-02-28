@@ -485,6 +485,10 @@ endif
 	@$(call sudo,test/root:root_test,--runtime=$(RUNTIME) -test.v)
 containerd-tests-min: containerd-test-1.6.2
 
+kubernetes-smoke-test: ## Runs the Kubernetes hello test in a KIND cluster.
+	@test/kubernetes/scripts/run_kind_e2e.sh //test/kubernetes/tests:hello_test
+.PHONY: kubernetes-smoke-test
+
 ##
 ## Benchmarks.
 ##
