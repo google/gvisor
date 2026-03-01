@@ -154,7 +154,14 @@ func (tty *TTY) CheckChange(ctx context.Context, sig linux.Signal) error {
 	// handle -ERESTARTSYS in kernel.runApp.execute() even if the
 	// kernel.Task isn't interrupted.
 	//
-	// Linux ignores the result of kill_pgrp().
-	_ = pg.SendSignal(SignalInfoPriv(sig))
+	// Linux ignores the result of kill_pgrp(), but relies on setting TIF_SIGPENDING
+	// to ensure the process handles the signal. In gVisor, if SendSignal fails,
+	// the signal is not pending. Returning ERESTARTSYS without a pending signal
+	// causes an infinite tight loop. We must abort if signaling fails.
+	if err := pg.SendSignal(SignalInfoPriv(sig)); err != nil {
+		// Signal failed to queue. We cannot return ERESTARTSYS or we loop.
+		return linuxerr.EIO
+	}
+
 	return linuxerr.ERESTARTSYS
 }
