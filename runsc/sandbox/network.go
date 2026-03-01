@@ -509,6 +509,11 @@ func routesForIface(iface net.Interface, disableIPv6 bool) ([]boot.Route, *boot.
 	var routes []boot.Route
 	for _, r := range rs {
 		mtu := uint32(r.MTU)
+		// If the route MTU is unspecified or exceeds the interface MTU, use the
+		// interface MTU - in GKE this might not be set or you can completely break it in the configmap.
+		if mtu == 0 || mtu > uint32(iface.MTU) {
+			mtu = uint32(iface.MTU)
+		}
 
 		// Is it a default route?
 		if r.Dst == nil {
