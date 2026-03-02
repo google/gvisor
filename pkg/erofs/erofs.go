@@ -89,7 +89,11 @@ const (
 //
 // This is not exhaustive, unused features are not listed.
 const (
-	FeatureIncompatSupported = 0x0
+	// FeatureIncompatZeroPadding is used for compressed data layouts only
+	// and is safe to accept for uncompressed (flat) images.
+	FeatureIncompatZeroPadding = 0x00000001
+
+	FeatureIncompatSupported = FeatureIncompatZeroPadding
 )
 
 // Sizes of on-disk structures in bytes.
