@@ -16,17 +16,20 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/google/subcommands"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
-	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 // Start implements subcommands.Command for the "start" command.
-type Start struct{}
+type Start struct {
+	containerLoader
+}
 
 // Name implements subcommands.Command.Name.
 func (*Start) Name() string {
@@ -46,24 +49,27 @@ func (*Start) Usage() string {
 // SetFlags implements subcommands.Command.SetFlags.
 func (*Start) SetFlags(*flag.FlagSet) {}
 
+// FetchSpec implements util.SubCommand.FetchSpec.
+func (s *Start) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error) {
+	c, err := s.loadContainer(conf, f, container.LoadOpts{})
+	if err != nil {
+		return "", nil, fmt.Errorf("loading container: %w", err)
+	}
+	return c.ID, c.Spec, nil
+}
+
 // Execute implements subcommands.Command.Execute.
-func (*Start) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
+func (s *Start) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if f.NArg() != 1 {
 		f.Usage()
 		return subcommands.ExitUsageError
 	}
 
-	id := f.Arg(0)
 	conf := args[0].(*config.Config)
 
-	c, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
+	c, err := s.loadContainer(conf, f, container.LoadOpts{})
 	if err != nil {
 		util.Fatalf("loading container: %v", err)
-	}
-	// Read the spec again here to ensure flag annotations from the spec are
-	// applied to "conf".
-	if _, err := specutils.ReadSpec(c.BundleDir, conf); err != nil {
-		util.Fatalf("reading spec: %v", err)
 	}
 
 	if err := c.Start(conf); err != nil {

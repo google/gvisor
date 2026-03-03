@@ -17,6 +17,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"strconv"
 
@@ -35,6 +36,7 @@ func boolPtr(b bool) *bool    { return &b }
 
 // Update implements subcommands.Command for the "update" command.
 type Update struct {
+	containerLoader
 	resources string
 
 	blkioWeight int
@@ -132,6 +134,15 @@ other options are ignored.
 	f.StringVar(&u.memBwSchema, "mem-bw-schema", "", "The string of Intel RDT/MBA memory bandwidth schema")
 }
 
+// FetchSpec implements util.SubCommand.FetchSpec.
+func (u *Update) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error) {
+	c, err := u.loadContainer(conf, f, container.LoadOpts{})
+	if err != nil {
+		return "", nil, fmt.Errorf("loading container: %w", err)
+	}
+	return c.ID, c.Spec, nil
+}
+
 // Execute implements subcommands.Command.Execute.
 func (u *Update) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if f.NArg() != 1 {
@@ -139,10 +150,9 @@ func (u *Update) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcom
 		return subcommands.ExitUsageError
 	}
 
-	id := f.Arg(0)
 	conf := args[0].(*config.Config)
 
-	c, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
+	c, err := u.loadContainer(conf, f, container.LoadOpts{})
 	if err != nil {
 		util.Fatalf("loading container %v", err)
 	}

@@ -53,6 +53,10 @@ type Do struct {
 	uidMap  idMapSlice
 	gidMap  idMapSlice
 	volumes volumes
+
+	// cached values for FetchSpec().
+	spec *specs.Spec
+	cid  string
 }
 
 // Name implements subcommands.Command.Name.
@@ -152,6 +156,77 @@ func (c *Do) SetFlags(f *flag.FlagSet) {
 	f.Var(&c.volumes, "volume", "Add a volume path SRC[:DST]. This option can be used multiple times to add several volumes.")
 }
 
+// FetchSpec implements util.SubCommand.FetchSpec.
+func (c *Do) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error) {
+	if c.spec != nil {
+		return c.cid, c.spec, nil
+	}
+
+	hostname, err := os.Hostname()
+	if err != nil {
+		return "", nil, fmt.Errorf("error to retrieve hostname: %v", err)
+	}
+
+	// If c.overlay is set, then enable overlay.
+	conf.Overlay = false // conf.Overlay is deprecated.
+	if c.overlay {
+		conf.Overlay2.Set("all:memory")
+	} else {
+		conf.Overlay2.Set("none")
+	}
+	absRoot, err := resolvePath(c.root)
+	if err != nil {
+		return "", nil, fmt.Errorf("error resolving root: %v", err)
+	}
+	absCwd, err := resolvePath(c.cwd)
+	if err != nil {
+		return "", nil, fmt.Errorf("error resolving current directory: %v", err)
+	}
+
+	c.cid = fmt.Sprintf("runsc-%06d", rand.Int31n(1000000))
+	c.spec = &specs.Spec{
+		Root: &specs.Root{
+			Path: absRoot,
+		},
+		Process: &specs.Process{
+			Cwd:          absCwd,
+			Args:         f.Args(),
+			Env:          os.Environ(),
+			Capabilities: specutils.AllCapabilities(),
+			Terminal:     console.StdioIsPty(),
+		},
+		Hostname: hostname,
+	}
+	if c.erofs != "" {
+		c.spec.Annotations = map[string]string{
+			"dev.gvisor.spec.rootfs.source":  c.erofs,
+			"dev.gvisor.spec.rootfs.type":    "erofs",
+			"dev.gvisor.spec.rootfs.overlay": "memory",
+		}
+	}
+	for _, v := range c.volumes {
+		parts := strings.SplitN(v, ":", 2)
+		var src, dst string
+		if len(parts) == 2 {
+			src, dst = parts[0], parts[1]
+		} else {
+			src, dst = v, v
+		}
+		c.spec.Mounts = append(c.spec.Mounts, specs.Mount{
+			Type:        "bind",
+			Source:      src,
+			Destination: dst,
+		})
+	}
+	if c.uidMap != nil || c.gidMap != nil {
+		addNamespace(c.spec, specs.LinuxNamespace{Type: specs.UserNamespace})
+		c.spec.Linux.UIDMappings = c.uidMap
+		c.spec.Linux.GIDMappings = c.gidMap
+	}
+
+	return c.cid, c.spec, nil
+}
+
 // Execute implements subcommands.Command.Execute.
 func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if len(f.Args()) == 0 {
@@ -169,68 +244,9 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommand
 		// Execution will continue here if no more capabilities are needed...
 	}
 
-	hostname, err := os.Hostname()
+	cid, spec, err := c.FetchSpec(conf, f)
 	if err != nil {
-		return util.Errorf("Error to retrieve hostname: %v", err)
-	}
-
-	// If c.overlay is set, then enable overlay.
-	conf.Overlay = false // conf.Overlay is deprecated.
-	if c.overlay {
-		conf.Overlay2.Set("all:memory")
-	} else {
-		conf.Overlay2.Set("none")
-	}
-	absRoot, err := resolvePath(c.root)
-	if err != nil {
-		return util.Errorf("Error resolving root: %v", err)
-	}
-	absCwd, err := resolvePath(c.cwd)
-	if err != nil {
-		return util.Errorf("Error resolving current directory: %v", err)
-	}
-
-	spec := &specs.Spec{
-		Root: &specs.Root{
-			Path: absRoot,
-		},
-		Process: &specs.Process{
-			Cwd:          absCwd,
-			Args:         f.Args(),
-			Env:          os.Environ(),
-			Capabilities: specutils.AllCapabilities(),
-			Terminal:     console.StdioIsPty(),
-		},
-		Hostname: hostname,
-	}
-	if c.erofs != "" {
-		spec.Annotations = map[string]string{
-			"dev.gvisor.spec.rootfs.source":  c.erofs,
-			"dev.gvisor.spec.rootfs.type":    "erofs",
-			"dev.gvisor.spec.rootfs.overlay": "memory",
-		}
-	}
-	for _, v := range c.volumes {
-		parts := strings.SplitN(v, ":", 2)
-		var src, dst string
-		if len(parts) == 2 {
-			src, dst = parts[0], parts[1]
-		} else {
-			src, dst = v, v
-		}
-		spec.Mounts = append(spec.Mounts, specs.Mount{
-			Type:        "bind",
-			Source:      src,
-			Destination: dst,
-		})
-	}
-
-	cid := fmt.Sprintf("runsc-%06d", rand.Int31n(1000000))
-
-	if c.uidMap != nil || c.gidMap != nil {
-		addNamespace(spec, specs.LinuxNamespace{Type: specs.UserNamespace})
-		spec.Linux.UIDMappings = c.uidMap
-		spec.Linux.GIDMappings = c.gidMap
+		return util.Errorf("FetchSpec failed: %v", err)
 	}
 
 	if conf.Network == config.NetworkNone {
@@ -240,7 +256,6 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommand
 			c.notifyUser("*** Warning: sandbox network isn't supported with --rootless, switching to host ***")
 			conf.Network = config.NetworkHost
 		}
-
 	} else {
 		switch clean, err := c.setupNet(cid, spec); err {
 		case errNoDefaultInterface:

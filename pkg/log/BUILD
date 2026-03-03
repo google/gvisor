@@ -9,6 +9,7 @@ go_library(
     name = "log",
     srcs = [
         "bug.go",
+        "file.go",
         "glog.go",
         "json.go",
         "json_k8s.go",

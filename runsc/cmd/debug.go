@@ -16,6 +16,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"strconv"
@@ -24,6 +25,7 @@ import (
 	"time"
 
 	"github.com/google/subcommands"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
@@ -35,6 +37,7 @@ import (
 
 // Debug implements subcommands.Command for the "debug" command.
 type Debug struct {
+	containerLoader
 	pid          int
 	stacks       bool
 	signal       int
@@ -86,9 +89,53 @@ func (d *Debug) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&d.mount, "mount", "", "Mount a filesystem (-mount fstype:source:destination).")
 }
 
+// FetchSpec implements util.SubCommand.FetchSpec.
+func (d *Debug) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error) {
+	c, err := d.loadContainer(conf, f)
+	if err != nil {
+		return "", nil, fmt.Errorf("loading container: %w", err)
+	}
+	return c.ID, c.Spec, nil
+}
+
+func (d *Debug) loadContainer(conf *config.Config, f *flag.FlagSet) (*container.Container, error) {
+	if d.cachedContainer != nil {
+		return d.cachedContainer, nil
+	}
+	if d.pid == 0 {
+		// No pid, container ID must be provided as the first argument.
+		if f.NArg() != 1 {
+			f.Usage()
+			return nil, fmt.Errorf("container ID should be provided when -pid is not set")
+		}
+		return d.containerLoader.loadContainer(conf, f, container.LoadOpts{SkipCheck: true})
+	}
+	// Fetch the container associated with the PID.
+	if f.NArg() != 0 {
+		f.Usage()
+		return nil, fmt.Errorf("container ID should not be provided when -pid is set")
+	}
+	// Go over all sandboxes and find the one that matches PID.
+	ids, err := container.ListSandboxes(conf.RootDir)
+	if err != nil {
+		return nil, fmt.Errorf("listing containers: %v", err)
+	}
+	for _, id := range ids {
+		candidate, err := container.Load(conf.RootDir, id, container.LoadOpts{Exact: true, SkipCheck: true})
+		if err != nil {
+			log.Warningf("Skipping container %q: %v", id, err)
+			continue
+		}
+		if candidate.SandboxPid() == d.pid {
+			d.cachedContainer = candidate
+			return d.cachedContainer, nil
+		}
+	}
+	return nil, fmt.Errorf("container with PID %d not found", d.pid)
+}
+
 // Execute implements subcommands.Command.Execute.
 func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
-	var c *container.Container
 	conf := args[0].(*config.Config)
 
 	if conf.ProfileBlock != "" || conf.ProfileCPU != "" || conf.ProfileHeap != "" || conf.ProfileMutex != "" {
@@ -98,43 +145,9 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		return util.Errorf("global -trace flag has no effect on runsc debug. Pass runsc debug -trace instead")
 	}
 
-	if d.pid == 0 {
-		// No pid, container ID must have been provided.
-		if f.NArg() != 1 {
-			f.Usage()
-			return subcommands.ExitUsageError
-		}
-		id := f.Arg(0)
-
-		var err error
-		c, err = container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{SkipCheck: true})
-		if err != nil {
-			return util.Errorf("loading container %q: %v", f.Arg(0), err)
-		}
-	} else {
-		if f.NArg() != 0 {
-			f.Usage()
-			return subcommands.ExitUsageError
-		}
-		// Go over all sandboxes and find the one that matches PID.
-		ids, err := container.ListSandboxes(conf.RootDir)
-		if err != nil {
-			return util.Errorf("listing containers: %v", err)
-		}
-		for _, id := range ids {
-			candidate, err := container.Load(conf.RootDir, id, container.LoadOpts{Exact: true, SkipCheck: true})
-			if err != nil {
-				log.Warningf("Skipping container %q: %v", id, err)
-				continue
-			}
-			if candidate.SandboxPid() == d.pid {
-				c = candidate
-				break
-			}
-		}
-		if c == nil {
-			return util.Errorf("container with PID %d not found", d.pid)
-		}
+	c, err := d.loadContainer(conf, f)
+	if err != nil {
+		return util.Errorf("loading container: %v", err)
 	}
 
 	if !c.IsSandboxRunning() {

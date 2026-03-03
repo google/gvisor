@@ -242,11 +242,6 @@ func (s *runscService) Create(ctx context.Context, r *taskAPI.CreateTaskRequest)
 		}
 		logrus.SetLevel(lvl)
 	}
-	for _, emittedPath := range runsccmd.EmittedPaths(r.ID, s.opts.RunscConfig) {
-		if err := os.MkdirAll(filepath.Dir(emittedPath), 0777); err != nil {
-			return nil, fmt.Errorf("failed to create parent directories for file %v: %w", emittedPath, err)
-		}
-	}
 	if len(s.opts.LogPath) != 0 {
 		logPath := runsccmd.FormatShimLogPath(s.opts.LogPath, r.ID)
 		if err := os.MkdirAll(filepath.Dir(logPath), 0777); err != nil {
@@ -891,7 +886,6 @@ func newInit(path, workDir, namespace string, platform stdio.Platform, r *proc.C
 		}
 	}
 
-	runsccmd.FormatRunscPaths(r.ID, options.RunscConfig)
 	runtime := proc.NewRunsc(options.Root, path, namespace, options.BinaryName, options.RunscConfig, spec)
 	p := proc.New(r.ID, runtime, stdio.Stdio{
 		Stdin:    r.Stdin,

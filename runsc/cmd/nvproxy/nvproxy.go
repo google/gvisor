@@ -20,20 +20,26 @@ import (
 	"context"
 
 	"github.com/google/subcommands"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
+// Nvproxy implements subcommands.Command for the "nvproxy" command.
 type Nvproxy struct{}
 
+// Name implements subcommands.Command.
 func (*Nvproxy) Name() string {
 	return "nvproxy"
 }
 
+// Synopsis implements subcommands.Command.
 func (*Nvproxy) Synopsis() string {
 	return "shows information about nvproxy support"
 }
 
+// Usage implements subcommands.Command.
 func (*Nvproxy) Usage() string {
 	buf := bytes.Buffer{}
 	buf.WriteString("Usage: nvproxy <flags> <subcommand> <subcommand args>\n\n")
@@ -46,8 +52,16 @@ func (*Nvproxy) Usage() string {
 	return buf.String()
 }
 
+// SetFlags implements subcommands.Command.
 func (*Nvproxy) SetFlags(*flag.FlagSet) {}
 
+// FetchSpec implements util.SubCommand.FetchSpec.
+func (*Nvproxy) FetchSpec(_ *config.Config, _ *flag.FlagSet) (string, *specs.Spec, error) {
+	// None of the subcommands operate on a single container, so nothing to fetch.
+	return "", nil, nil
+}
+
+// Execute implements subcommands.Command.Execute.
 func (*Nvproxy) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	nvproxy.Init()
 	return createCommander(f).Execute(ctx, args...)

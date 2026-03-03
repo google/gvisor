@@ -79,6 +79,8 @@ var (
 // Boot implements subcommands.Command for the "boot" command which starts a
 // new sandbox. It should not be called directly.
 type Boot struct {
+	util.InternalSubCommand
+
 	// bundleDir is the directory containing the OCI spec.
 	bundleDir string
 
