@@ -17,7 +17,6 @@ package accel
 import (
 	"fmt"
 
-	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/gasket"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -27,7 +26,9 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/devices/tpuproxy/util"
+	"gvisor.dev/gvisor/pkg/sentry/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -43,11 +44,12 @@ type accelFD struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
+	memmap.MappableNoTrackMappings
 
 	hostFD     int32
 	device     *accelDevice
 	queue      waiter.Queue
-	memmapFile accelFDMemmapFile
+	memmapFile fsutil.MmapNoInternalFile
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
@@ -78,7 +80,8 @@ func (fd *accelFD) Release(context.Context) {
 		fd.device.owner = nil
 	}
 	fdnotifier.RemoveFD(fd.hostFD)
-	unix.Close(int(fd.hostFD))
+	fd.memmapFile.Closer = &fd.memmapFile
+	fd.memmapFile.MappableRelease() // eventually closes fd.hostFD
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.

@@ -27,14 +27,6 @@ func (d *Dentry) afterLoad(context.Context) {
 	}
 }
 
-// afterLoad is invoked by stateify.
-func (i *inodePlatformFile) afterLoad(context.Context) {
-	if i.fileMapper.IsInited() {
-		// Ensure that we don't call i.fileMapper.Init() again.
-		i.fileMapperInitOnce.Do(func() {})
-	}
-}
-
 // saveParent is called by stateify.
 func (d *Dentry) saveParent() *Dentry {
 	return d.parent.Load()

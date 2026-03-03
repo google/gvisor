@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/devices/tpuproxy/util"
+	"gvisor.dev/gvisor/pkg/sentry/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
@@ -45,6 +46,7 @@ type vfioFD struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
+	memmap.MappableNoTrackMappings
 
 	// If hostFD is -1, this file descriptor has been restored from a save state,
 	// and should be treated as invalid. Any operations on this file descriptor
@@ -53,7 +55,7 @@ type vfioFD struct {
 
 	device     *vfioDevice
 	queue      waiter.Queue
-	memmapFile vfioFDMemmapFile
+	memmapFile fsutil.MmapNoInternalFile
 
 	mu sync.Mutex `state:"nosave"`
 	// +checklocks:mu
@@ -72,9 +74,8 @@ func (fd *vfioFD) Release(context.Context) {
 	fd.unpinRange(DevAddrRange{0, ^uint64(0)})
 	fdnotifier.RemoveFD(fd.hostFD)
 	fd.queue.Notify(waiter.EventHUp)
-	if err := unix.Close(int(fd.hostFD)); err != nil {
-		log.Warningf("close(%d) vfioFD failed: %v", fd.hostFD, err)
-	}
+	fd.memmapFile.Closer = &fd.memmapFile
+	fd.memmapFile.MappableRelease() // eventually closes fd.hostFD
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.

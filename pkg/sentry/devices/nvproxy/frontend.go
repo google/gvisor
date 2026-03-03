@@ -79,7 +79,7 @@ func (dev *frontendDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.D
 		unix.Close(int(fd.hostFD))
 		return nil, err
 	}
-	fd.memmapFile.fd = fd
+	fd.memmapFile.SetFD(int(fd.hostFD))
 	fd.dev.nvp.fdsMu.Lock()
 	defer fd.dev.nvp.fdsMu.Unlock()
 	fd.dev.nvp.frontendFDs[fd] = struct{}{}
@@ -95,6 +95,7 @@ type frontendFD struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
+	memmap.MappableNoTrackMappings
 
 	dev           *frontendDevice
 	containerName string
@@ -125,15 +126,6 @@ type frontendFD struct {
 	cachedEvents  atomicbitops.Uint64
 	appQueue      waiter.Queue
 
-	// mmapMu protects the following fields.
-	mmapMu frontendMmapMutex `state:"nosave"`
-	// These fields are marked nosave since we do not automatically reinvoke
-	// NV_ESC_RM_MAP_MEMORY after restore, so restored FDs have no
-	// mmap_context.
-	mmapLength   uint64              `state:"nosave"`
-	mmapInternal uintptr             `state:"nosave"`
-	mmapMemType  hostarch.MemoryType `state:"nosave"`
-
 	// clients are handles of clients owned by this frontendFD. clients is
 	// protected by dev.nvp.clientsMu.
 	clients map[*rootClient]struct{}
@@ -141,12 +133,6 @@ type frontendFD struct {
 
 // Release implements vfs.FileDescriptionImpl.Release.
 func (fd *frontendFD) Release(ctx context.Context) {
-	fd.mmapMu.Lock()
-	if fd.mmapInternal != 0 {
-		unix.RawSyscall(unix.SYS_MUNMAP, fd.mmapInternal, uintptr(fd.mmapLength), 0)
-	}
-	fd.mmapMu.Unlock()
-
 	fdnotifier.RemoveFD(fd.hostFD)
 	fd.appQueue.Notify(waiter.EventHUp)
 
@@ -158,17 +144,10 @@ func (fd *frontendFD) Release(ctx context.Context) {
 	clients := fd.clients
 	fd.clients = nil
 	fd.dev.nvp.clientsMu.Unlock()
-	unix.Close(int(fd.hostFD))
-	// src/nvidia/arch/nvalloc/unix/src/osapi.c:rm_cleanup_file_private() =>
-	// RmFreeUnusedClients()
-	for client := range clients {
-		client.objsMu.Lock()
-		deferReleases := fd.dev.nvp.objFree(ctx, client, client.handle)
-		client.objsMu.Unlock()
-		for _, release := range deferReleases {
-			release()
-		}
-	}
+	fd.memmapFile.MmapFileRefs.Closer = &fd.memmapFile
+	fd.memmapFile.nvp = fd.dev.nvp
+	fd.memmapFile.clients = clients
+	fd.memmapFile.MappableRelease() // eventually closes fd.hostFD, releases clients
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
@@ -506,9 +485,9 @@ func rmAllocMemorySystem(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02P
 			((ioctlParams.Params.Flags>>nvgpu.NVOS02_FLAGS_MAPPING_SHIFT)&nvgpu.NVOS02_FLAGS_MAPPING_MASK) != nvgpu.NVOS02_FLAGS_MAPPING_NO_MAP
 
 	if createMmapCtx {
-		mapFile.mmapMu.Lock()
-		defer mapFile.mmapMu.Unlock()
-		if mapFile.mmapLength != 0 {
+		mapFile.memmapFile.mmapMu.Lock()
+		defer mapFile.memmapFile.mmapMu.Unlock()
+		if mapFile.memmapFile.mmapLength != 0 {
 			fi.ctx.Warningf("nvproxy: attempted to reuse FD %d for NV_ESC_RM_MAP_MEMORY", ioctlParams.FD)
 			return 0, linuxerr.EINVAL
 		}
@@ -524,8 +503,8 @@ func rmAllocMemorySystem(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02P
 	if err == nil && ioctlParams.Params.Status == nvgpu.NV_OK {
 		fi.fd.dev.nvp.objAdd(fi.ctx, client, ioctlParams.Params.HObjectNew, ioctlParams.Params.HClass, &miscObject{}, ioctlParams.Params.HObjectParent)
 		if createMmapCtx {
-			mapFile.mmapLength = ioctlParams.Params.Limit + 1
-			mapFile.mmapMemType = getMemoryType(fi.ctx, mapFile.dev, nvgpu.NVOS33_FLAGS_CACHING_TYPE_DEFAULT)
+			mapFile.memmapFile.mmapLength = ioctlParams.Params.Limit + 1
+			mapFile.memmapFile.memType = getMemoryType(fi.ctx, mapFile.dev, nvgpu.NVOS33_FLAGS_CACHING_TYPE_DEFAULT)
 		}
 	}
 	unlock()
@@ -1496,9 +1475,9 @@ func rmMapMemory(fi *frontendIoctlState) (uintptr, error) {
 		return 0, linuxerr.EINVAL
 	}
 
-	mapFile.mmapMu.Lock()
-	defer mapFile.mmapMu.Unlock()
-	if mapFile.mmapLength != 0 {
+	mapFile.memmapFile.mmapMu.Lock()
+	defer mapFile.memmapFile.mmapMu.Unlock()
+	if mapFile.memmapFile.mmapLength != 0 {
 		fi.ctx.Warningf("nvproxy: attempted to reuse FD %d for NV_ESC_RM_MAP_MEMORY", ioctlParams.FD)
 		return 0, linuxerr.EINVAL
 	}
@@ -1510,7 +1489,7 @@ func rmMapMemory(fi *frontendIoctlState) (uintptr, error) {
 		return n, err
 	}
 	if ioctlParams.Params.Status == nvgpu.NV_OK {
-		mapFile.mmapLength = ioctlParams.Params.Length
+		mapFile.memmapFile.mmapLength = ioctlParams.Params.Length
 		// src/nvidia/arch/nvalloc/unix/src/escape.c:RmIoctl() forces
 		// NVOS33_FLAGS_CACHING_TYPE_DEFAULT, but resMap implementations may
 		// override the "caching type", so in general the memory type depends
@@ -1519,7 +1498,7 @@ func rmMapMemory(fi *frontendIoctlState) (uintptr, error) {
 		// rm_create_mmap_context(), and pParms is subsequently copied back out
 		// by kernel-open/nvidia/nv.c:nvidia_ioctl(), so we can get the final
 		// caching type from the updated ioctl params.
-		mapFile.mmapMemType = getMemoryType(fi.ctx, mapFile.dev, (ioctlParams.Params.Flags>>nvgpu.NVOS33_FLAGS_CACHING_TYPE_SHIFT)&nvgpu.NVOS33_FLAGS_CACHING_TYPE_MASK)
+		mapFile.memmapFile.memType = getMemoryType(fi.ctx, mapFile.dev, (ioctlParams.Params.Flags>>nvgpu.NVOS33_FLAGS_CACHING_TYPE_SHIFT)&nvgpu.NVOS33_FLAGS_CACHING_TYPE_MASK)
 	}
 
 	ioctlParams.FD = origFD

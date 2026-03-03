@@ -32,20 +32,6 @@ func (fd *uvmFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error
 	return vfs.GenericProxyDeviceConfigureMMap(&fd.vfsfd, fd, opts)
 }
 
-// AddMapping implements memmap.Mappable.AddMapping.
-func (fd *uvmFD) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
-	return nil
-}
-
-// RemoveMapping implements memmap.Mappable.RemoveMapping.
-func (fd *uvmFD) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
-}
-
-// CopyMapping implements memmap.Mappable.CopyMapping.
-func (fd *uvmFD) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, writable bool) error {
-	return nil
-}
-
 // Translate implements memmap.Mappable.Translate.
 func (fd *uvmFD) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
 	return []memmap.Translation{
@@ -58,45 +44,20 @@ func (fd *uvmFD) Translate(ctx context.Context, required, optional memmap.Mappab
 	}, nil
 }
 
-// InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
-func (fd *uvmFD) InvalidateUnsavable(ctx context.Context) error {
-	return nil
-}
-
+// uvmFDMemmapFile implements fsutil.MmapFile by extending
+// fsutil.MmapPreciseFile with fallback buffered I/O.
+//
 // +stateify savable
 type uvmFDMemmapFile struct {
-	memmap.DefaultMemoryType
-
-	fd  *uvmFD
-	pfm fsutil.PreciseHostFileMapper
-}
-
-// IncRef implements memmap.File.IncRef.
-func (mf *uvmFDMemmapFile) IncRef(fr memmap.FileRange, memCgID uint32) {
-	mf.pfm.IncRefOn(memmap.MappableRange(fr))
-}
-
-// DecRef implements memmap.File.DecRef.
-func (mf *uvmFDMemmapFile) DecRef(fr memmap.FileRange) {
-	mf.pfm.DecRefOn(memmap.MappableRange(fr))
+	fsutil.MmapPreciseFile
 }
 
 // MapInternal implements memmap.File.MapInternal.
 func (mf *uvmFDMemmapFile) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (safemem.BlockSeq, error) {
-	bs, err := mf.pfm.MapInternal(fr, int(mf.fd.hostFD), at.Write)
+	bs, err := mf.MmapPreciseFile.MapInternal(fr, at)
 	if err != nil {
 		log.Warningf("uvmFDMemmapFile.MapInternal(%v) failed: %v; falling back to buffered I/O", fr, err)
 		return safemem.BlockSeq{}, memmap.BufferedIOFallbackErr{}
 	}
 	return bs, nil
-}
-
-// DataFD implements memmap.File.DataFD.
-func (mf *uvmFDMemmapFile) DataFD(fr memmap.FileRange) (int, error) {
-	return mf.FD(), nil
-}
-
-// FD implements memmap.File.FD.
-func (mf *uvmFDMemmapFile) FD() int {
-	return int(mf.fd.hostFD)
 }

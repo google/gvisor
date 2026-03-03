@@ -685,8 +685,6 @@ func (fd *regularFileFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpt
 			panic(fmt.Sprintf("unknown InteropMode %v", d.inode.fs.opts.interop))
 		}
 	}
-	// After this point, d may be used as a memmap.Mappable.
-	d.inode.pf.hostFileMapperInitOnce.Do(d.inode.pf.hostFileMapper.Init)
 	opts.SentryOwnedContent = d.inode.fs.opts.forcePageCache
 	return vfs.GenericConfigureMMap(&fd.vfsfd, d, opts)
 }
@@ -697,13 +695,12 @@ func (fs *filesystem) mayCachePagesInMemoryFile() bool {
 
 // AddMapping implements memmap.Mappable.AddMapping.
 func (d *dentry) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
-	d.inode.mapsMu.Lock()
-	mapped := d.inode.mappings.AddMapping(ms, ar, offset, writable)
 	// Do this unconditionally since whether we have a host FD can change
 	// across save/restore.
-	for _, r := range mapped {
-		d.inode.pf.hostFileMapper.IncRefOn(r)
-	}
+	d.inode.mmapFile.AddMapping(ar, offset)
+	d.inode.mapsMu.Lock()
+	defer d.inode.mapsMu.Unlock()
+	mapped := d.inode.mappings.AddMapping(ms, ar, offset, writable)
 	if d.inode.fs.mayCachePagesInMemoryFile() {
 		// d.Evict() will refuse to evict memory-mapped pages, so tell the
 		// MemoryFile to not bother trying.
@@ -712,32 +709,29 @@ func (d *dentry) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar host
 			mf.MarkUnevictable(d.inode, pgalloc.EvictableRange{Start: r.Start, End: r.End})
 		}
 	}
-	d.inode.mapsMu.Unlock()
 	return nil
 }
 
 // RemoveMapping implements memmap.Mappable.RemoveMapping.
 func (d *dentry) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
+	d.inode.mmapFile.RemoveMapping(ar, offset)
 	d.inode.mapsMu.Lock()
+	defer d.inode.mapsMu.Unlock()
 	unmapped := d.inode.mappings.RemoveMapping(ms, ar, offset, writable)
-	for _, r := range unmapped {
-		d.inode.pf.hostFileMapper.DecRefOn(r)
-	}
 	if d.inode.fs.mayCachePagesInMemoryFile() {
 		// Pages that are no longer referenced by any application memory
 		// mappings are now considered unused; allow MemoryFile to evict them
 		// when necessary.
 		mf := d.inode.fs.mf
 		d.inode.dataMu.Lock()
+		defer d.inode.dataMu.Unlock()
 		for _, r := range unmapped {
 			// Since these pages are no longer mapped, they are no longer
 			// concurrently dirtyable by a writable memory mapping.
 			d.inode.dirty.AllowClean(r)
 			mf.MarkEvictable(d.inode, pgalloc.EvictableRange{Start: r.Start, End: r.End})
 		}
-		d.inode.dataMu.Unlock()
 	}
-	d.inode.mapsMu.Unlock()
 }
 
 // CopyMapping implements memmap.Mappable.CopyMapping.
@@ -757,7 +751,7 @@ func (d *dentry) Translate(ctx context.Context, required, optional memmap.Mappab
 		return []memmap.Translation{
 			{
 				Source: mr,
-				File:   &d.inode.pf,
+				File:   &d.inode.mmapFile,
 				Offset: mr.Start,
 				Perms:  hostarch.AnyAccess,
 			},
@@ -894,63 +888,4 @@ func (i *inode) Evict(ctx context.Context, er pgalloc.EvictableRange) {
 		i.cache.Drop(mgapMR, mf)
 		i.dirty.KeepClean(mgapMR)
 	}
-}
-
-// inodePlatformFile implements memmap.File. It exists solely because dentry
-// cannot implement both vfs.DentryImpl.IncRef and memmap.File.IncRef.
-//
-// inodePlatformFile is only used when a host FD representing the remote file
-// is available (i.e. dentry.mmapFD >= 0), and that FD is used for application
-// memory mappings (i.e. !filesystem.opts.forcePageCache).
-//
-// +stateify savable
-type inodePlatformFile struct {
-	memmap.DefaultMemoryType
-	memmap.NoBufferedIOFallback
-
-	*inode
-
-	// fdRefs counts references on memmap.File offsets. fdRefs is protected
-	// by dentry.dataMu.
-	fdRefs fsutil.FrameRefSet
-
-	// If this dentry represents a regular file, and dentry.mmapFD >= 0,
-	// hostFileMapper caches mappings of dentry.mmapFD.
-	hostFileMapper fsutil.HostFileMapper
-
-	// hostFileMapperInitOnce is used to lazily initialize hostFileMapper.
-	hostFileMapperInitOnce sync.Once `state:"nosave"`
-}
-
-// IncRef implements memmap.File.IncRef.
-func (i *inodePlatformFile) IncRef(fr memmap.FileRange, memCgID uint32) {
-	i.dataMu.Lock()
-	i.fdRefs.IncRefAndAccount(fr, memCgID)
-	i.dataMu.Unlock()
-}
-
-// DecRef implements memmap.File.DecRef.
-func (i *inodePlatformFile) DecRef(fr memmap.FileRange) {
-	i.dataMu.Lock()
-	i.fdRefs.DecRefAndAccount(fr)
-	i.dataMu.Unlock()
-}
-
-// MapInternal implements memmap.File.MapInternal.
-func (i *inodePlatformFile) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (safemem.BlockSeq, error) {
-	i.handleMu.RLock()
-	defer i.handleMu.RUnlock()
-	return i.hostFileMapper.MapInternal(fr, int(i.mmapFD.RacyLoad()), at.Write)
-}
-
-// DataFD implements memmap.File.DataFD.
-func (i *inodePlatformFile) DataFD(fr memmap.FileRange) (int, error) {
-	return i.FD(), nil
-}
-
-// FD implements memmap.File.FD.
-func (i *inodePlatformFile) FD() int {
-	i.handleMu.RLock()
-	defer i.handleMu.RUnlock()
-	return int(i.mmapFD.RacyLoad())
 }

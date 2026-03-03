@@ -17,8 +17,6 @@ package vfio
 import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
-	"gvisor.dev/gvisor/pkg/safemem"
-	"gvisor.dev/gvisor/pkg/sentry/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
@@ -31,10 +29,7 @@ func (fd *pciDeviceFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts)
 // AddMapping implements memmap.Mappable.AddMapping.
 func (fd *pciDeviceFD) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
 	fd.mapsMu.Lock()
-	mapped := fd.mappings.AddMapping(ms, ar, offset, writable)
-	for _, r := range mapped {
-		fd.memmapFile.pfm.IncRefOn(r)
-	}
+	fd.mappings.AddMapping(ms, ar, offset, writable)
 	fd.mapsMu.Unlock()
 	return nil
 }
@@ -42,10 +37,7 @@ func (fd *pciDeviceFD) AddMapping(ctx context.Context, ms memmap.MappingSpace, a
 // RemoveMapping implements memmap.Mappable.RemoveMapping.
 func (fd *pciDeviceFD) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
 	fd.mapsMu.Lock()
-	unmapped := fd.mappings.RemoveMapping(ms, ar, offset, writable)
-	for _, r := range unmapped {
-		fd.memmapFile.pfm.DecRefOn(r)
-	}
+	fd.mappings.RemoveMapping(ms, ar, offset, writable)
 	fd.mapsMu.Unlock()
 }
 
@@ -72,42 +64,4 @@ func (fd *pciDeviceFD) InvalidateUnsavable(ctx context.Context) error {
 	defer fd.mapsMu.Unlock()
 	fd.mappings.InvalidateAll(memmap.InvalidateOpts{InvalidatePrivate: true})
 	return nil
-}
-
-// pciDeviceFdMemmapFile implements memmap.File for /dev/vfio/[0-9]+.
-//
-// +stateify savable
-type pciDeviceFdMemmapFile struct {
-	// FIXME(jamieliu): This is consistent with legacy behavior, but not
-	// clearly correct; drivers/vfio/pci/vfio_pci_core.c:vfio_pci_core_mmap()
-	// uses pgprot_noncached(), which would correspond to our
-	// MemoryTypeUncached.
-	memmap.DefaultMemoryType
-	memmap.NoBufferedIOFallback
-
-	fd  *pciDeviceFD
-	pfm fsutil.PreciseHostFileMapper
-}
-
-// IncRef implements memmap.File.IncRef.
-func (mf *pciDeviceFdMemmapFile) IncRef(fr memmap.FileRange, memCgID uint32) {
-}
-
-// DecRef implements memmap.File.DecRef.
-func (mf *pciDeviceFdMemmapFile) DecRef(fr memmap.FileRange) {
-}
-
-// MapInternal implements memmap.File.MapInternal.
-func (mf *pciDeviceFdMemmapFile) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (safemem.BlockSeq, error) {
-	return mf.pfm.MapInternal(fr, int(mf.fd.hostFD), at.Write)
-}
-
-// DataFD implements memmap.File.DataFD.
-func (mf *pciDeviceFdMemmapFile) DataFD(fr memmap.FileRange) (int, error) {
-	return mf.FD(), nil
-}
-
-// FD implements memmap.File.FD.
-func (mf *pciDeviceFdMemmapFile) FD() int {
-	return int(mf.fd.hostFD)
 }

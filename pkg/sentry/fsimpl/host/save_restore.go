@@ -85,6 +85,7 @@ func (i *inode) afterLoad(ctx context.Context) {
 	}
 	log.Debugf("Remapping host FD from %d to %d", i.hostFD, fd)
 	i.hostFD = fd
+	i.mmapFile.SetFD(fd)
 
 	if i.epollable {
 		if err := unix.SetNonblock(i.hostFD, true); err != nil {

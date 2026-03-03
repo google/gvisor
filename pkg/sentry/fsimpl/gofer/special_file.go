@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/metric"
-	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
 	"gvisor.dev/gvisor/pkg/sentry/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -44,8 +43,6 @@ import (
 type specialFileFD struct {
 	fileDescription
 	specialFDEntry
-	memmap.DefaultMemoryType
-	memmap.NoBufferedIOFallback
 
 	// releaseMu synchronizes the closing of fd.handle with fd.sync(). It's safe
 	// to access fd.handle without locking for operations that require a ref to
@@ -81,15 +78,13 @@ type specialFileFD struct {
 	haveBuf atomicbitops.Uint32
 	buf     []byte
 
-	// If handle.fd >= 0, hostFileMapper caches mappings of handle.fd, and
-	// hostFileMapperInitOnce is used to initialize it on first use.
-	hostFileMapperInitOnce sync.Once `state:"nosave"`
-	hostFileMapper         fsutil.HostFileMapper
-
-	// If handle.fd >= 0, fileRefs counts references on memmap.File offsets.
-	// fileRefs is protected by fileRefsMu.
-	fileRefsMu sync.Mutex `state:"nosave"`
-	fileRefs   fsutil.FrameRefSet
+	// If handle.fd >= 0, mmapFile provides mappings of it.
+	//
+	// The use of MmapCachedFile is consistent with legacy behavior (and the
+	// fact that historically most specialFileFD mmap() is on regular files on
+	// mounts with cache=none), but we should consider using MmapPreciseFile
+	// for any "really" special file types.
+	mmapFile fsutil.MmapCachedFile
 }
 
 func newSpecialFileFD(h handle, mnt *vfs.Mount, d *dentry, flags uint32, creds *auth.Credentials) (*specialFileFD, error) {
@@ -118,6 +113,7 @@ func newSpecialFileFD(h handle, mnt *vfs.Mount, d *dentry, flags uint32, creds *
 		}
 		return nil, err
 	}
+	fd.mmapFile.SetFD(int(h.fd))
 	d.inode.fs.syncMu.Lock()
 	d.inode.fs.specialFileFDs.PushBack(fd)
 	d.inode.fs.syncMu.Unlock()
@@ -138,6 +134,8 @@ func (fd *specialFileFD) Release(ctx context.Context) {
 		fdnotifier.RemoveFD(fd.handle.fd)
 	}
 	fd.releaseMu.Lock()
+	// Forget fd.handle.fd, which will be closed by fd.mmapFile.
+	fd.handle.fd = -1
 	fd.handle.close(ctx)
 	fd.releaseMu.Unlock()
 
@@ -145,6 +143,8 @@ func (fd *specialFileFD) Release(ctx context.Context) {
 	fs.syncMu.Lock()
 	fs.specialFileFDs.Remove(fd)
 	fs.syncMu.Unlock()
+
+	fd.mmapFile.MappableRelease()
 }
 
 // OnClose implements vfs.FileDescriptionImpl.OnClose.
@@ -437,28 +437,26 @@ func (fd *specialFileFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpt
 	if fd.handle.fd < 0 || fd.filesystem().opts.forcePageCache {
 		return linuxerr.ENODEV
 	}
-	// After this point, fd may be used as a memmap.Mappable and memmap.File.
-	fd.hostFileMapperInitOnce.Do(fd.hostFileMapper.Init)
 	return vfs.GenericConfigureMMap(&fd.vfsfd, fd, opts)
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.
 func (fd *specialFileFD) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
+	fd.mmapFile.AddMapping(ar, offset)
 	d := fd.dentry()
 	d.inode.mapsMu.Lock()
 	defer d.inode.mapsMu.Unlock()
 	d.inode.mappings.AddMapping(ms, ar, offset, writable)
-	fd.hostFileMapper.IncRefOn(memmap.MappableRange{offset, offset + uint64(ar.Length())})
 	return nil
 }
 
 // RemoveMapping implements memmap.Mappable.RemoveMapping.
 func (fd *specialFileFD) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
+	fd.mmapFile.RemoveMapping(ar, offset)
 	d := fd.dentry()
 	d.inode.mapsMu.Lock()
 	defer d.inode.mapsMu.Unlock()
 	d.inode.mappings.RemoveMapping(ms, ar, offset, writable)
-	fd.hostFileMapper.DecRefOn(memmap.MappableRange{offset, offset + uint64(ar.Length())})
 }
 
 // CopyMapping implements memmap.Mappable.CopyMapping.
@@ -475,7 +473,7 @@ func (fd *specialFileFD) Translate(ctx context.Context, required, optional memma
 	return []memmap.Translation{
 		{
 			Source: mr,
-			File:   fd,
+			File:   &fd.mmapFile,
 			Offset: mr.Start,
 			Perms:  hostarch.AnyAccess,
 		},
@@ -489,46 +487,6 @@ func (fd *specialFileFD) InvalidateUnsavable(ctx context.Context) error {
 	defer d.inode.mapsMu.Unlock()
 	d.inode.mappings.InvalidateAll(memmap.InvalidateOpts{})
 	return nil
-}
-
-// IncRef implements memmap.File.IncRef.
-func (fd *specialFileFD) IncRef(fr memmap.FileRange, memCgID uint32) {
-	fd.fileRefsMu.Lock()
-	defer fd.fileRefsMu.Unlock()
-	fd.fileRefs.IncRefAndAccount(fr, memCgID)
-}
-
-// DecRef implements memmap.File.DecRef.
-func (fd *specialFileFD) DecRef(fr memmap.FileRange) {
-	fd.fileRefsMu.Lock()
-	defer fd.fileRefsMu.Unlock()
-	fd.fileRefs.DecRefAndAccount(fr)
-}
-
-// MapInternal implements memmap.File.MapInternal.
-func (fd *specialFileFD) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (safemem.BlockSeq, error) {
-	fd.requireHostFD()
-	return fd.hostFileMapper.MapInternal(fr, int(fd.handle.fd), at.Write)
-}
-
-// DataFD implements memmap.File.DataFD.
-func (fd *specialFileFD) DataFD(fr memmap.FileRange) (int, error) {
-	return fd.FD(), nil
-}
-
-// FD implements memmap.File.FD.
-func (fd *specialFileFD) FD() int {
-	fd.requireHostFD()
-	return int(fd.handle.fd)
-}
-
-func (fd *specialFileFD) requireHostFD() {
-	if fd.handle.fd < 0 {
-		// This is possible if fd was successfully mmapped before saving, then
-		// was restored without a host FD. This is unrecoverable: without a
-		// host FD, we can't mmap this file post-restore.
-		panic("gofer.specialFileFD can no longer be memory-mapped without a host FD")
-	}
 }
 
 func (fd *specialFileFD) updateMetadata(ctx context.Context) error {

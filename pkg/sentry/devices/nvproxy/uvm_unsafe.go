@@ -50,7 +50,7 @@ func (mf *uvmFDMemmapFile) BufferReadAt(off uint64, dst []byte) (uint64, error) 
 		Size:     uint64(len(dst)),
 		TargetVA: off,
 	}
-	_, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(mf.fd.hostFD), nvgpu.UVM_TOOLS_READ_PROCESS_MEMORY, uintptr(unsafe.Pointer(&params)))
+	_, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(mf.FD()), nvgpu.UVM_TOOLS_READ_PROCESS_MEMORY, uintptr(unsafe.Pointer(&params)))
 	if errno != 0 {
 		return 0, errno
 	}
@@ -78,7 +78,7 @@ func (mf *uvmFDMemmapFile) BufferWriteAt(off uint64, src []byte) (uint64, error)
 		Size:     uint64(len(src)),
 		TargetVA: off,
 	}
-	_, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(mf.fd.hostFD), nvgpu.UVM_TOOLS_WRITE_PROCESS_MEMORY, uintptr(unsafe.Pointer(&params)))
+	_, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(mf.FD()), nvgpu.UVM_TOOLS_WRITE_PROCESS_MEMORY, uintptr(unsafe.Pointer(&params)))
 	if errno != 0 {
 		return 0, errno
 	}

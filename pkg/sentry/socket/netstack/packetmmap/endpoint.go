@@ -54,6 +54,8 @@ const (
 //
 // +stateify savable
 type Endpoint struct {
+	memmap.MappableNoTrackMappings
+
 	// mu protects specific fields within ringBuffer in addition to those marked
 	// with checklocks annotations in Endpoint. See the ringBuffer type for more
 	// details. The lock order for the ring buffers is:
@@ -83,10 +85,6 @@ type Endpoint struct {
 	dropped  atomicbitops.Uint32
 
 	wq *waiter.Queue
-
-	mappingsMu sync.Mutex `state:"nosave"`
-	// +checklocks:mappingsMu
-	mappings memmap.MappingSet
 }
 
 // Init initializes the endpoint. It is called when the endpoint is created
@@ -306,34 +304,6 @@ func (m *Endpoint) HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtoco
 	m.received.Add(1)
 	m.wq.Notify(waiter.ReadableEvents)
 	return true
-}
-
-// AddMapping implements memmap.Mappable.AddMapping.
-func (m *Endpoint) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
-	m.mappingsMu.Lock()
-	defer m.mappingsMu.Unlock()
-	m.mappings.AddMapping(ms, ar, offset, writable)
-	return nil
-}
-
-// RemoveMapping implements memmap.Mappable.RemoveMapping.
-func (m *Endpoint) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
-	m.mappingsMu.Lock()
-	defer m.mappingsMu.Unlock()
-	m.mappings.RemoveMapping(ms, ar, offset, writable)
-}
-
-// CopyMapping implements memmap.Mappable.CopyMapping.
-func (m *Endpoint) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, writable bool) error {
-	m.mappingsMu.Lock()
-	defer m.mappingsMu.Unlock()
-	m.mappings.AddMapping(ms, dstAR, offset, writable)
-	return nil
-}
-
-// InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
-func (*Endpoint) InvalidateUnsavable(context.Context) error {
-	return nil
 }
 
 // Translate implements memmap.Mappable.Translate.

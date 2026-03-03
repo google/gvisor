@@ -23,11 +23,11 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/hostarch"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/devices/tpuproxy/util"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/eventfd"
+	"gvisor.dev/gvisor/pkg/sentry/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -51,10 +51,14 @@ type pciDeviceFD struct {
 	hostFD int32
 	queue  waiter.Queue
 
+	// TODO: pciDeviceFD.InvalidateUnsavable uses this state, but AFAIU
+	// pciDeviceFD.Translate will return the same File and offset after
+	// save/restore, so this is unnecessary, and we can use
+	// memmap.MappableNoTrackMappings instead.
 	mapsMu sync.Mutex `state:"nosave"`
 	// +checklocks:mapsMu
 	mappings   memmap.MappingSet
-	memmapFile pciDeviceFdMemmapFile
+	memmapFile fsutil.MmapPreciseFile
 }
 
 func (fd *pciDeviceFD) isRestored() bool {
@@ -68,9 +72,7 @@ func (fd *pciDeviceFD) Release(context.Context) {
 	}
 	fdnotifier.RemoveFD(fd.hostFD)
 	fd.queue.Notify(waiter.EventHUp)
-	if err := unix.Close(int(fd.hostFD)); err != nil {
-		log.Warningf("close(%d) pciDeviceFD failed: %v", fd.hostFD, err)
-	}
+	fd.memmapFile.MappableRelease() // eventually closes fd.hostFD
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.

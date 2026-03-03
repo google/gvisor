@@ -23,11 +23,12 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/hostarch"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/devices/tpuproxy/util"
+	"gvisor.dev/gvisor/pkg/sentry/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -59,15 +60,18 @@ type tpuFD struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
+	memmap.MappableNoTrackMappings
 
 	// If hostFD is -1, this file descriptor has been restored from a save state,
 	// and should be treated as invalid. Any operations on this file descriptor
 	// will effectively be a no-op.
 	hostFD int32
 
-	device     *tpuDevice
-	queue      waiter.Queue
-	memmapFile tpuFDMemmapFile
+	device *tpuDevice
+	queue  waiter.Queue
+	// TODO: IIUC, tpuFD corresponds to Linux's
+	// drivers/vfio/vfio.c:vfio_group_fops, which does not support mmap at all.
+	memmapFile fsutil.MmapNoInternalFile
 }
 
 func (fd *tpuFD) isRestored() bool {
@@ -81,9 +85,8 @@ func (fd *tpuFD) Release(context.Context) {
 	}
 	fdnotifier.RemoveFD(fd.hostFD)
 	fd.queue.Notify(waiter.EventHUp)
-	if err := unix.Close(int(fd.hostFD)); err != nil {
-		log.Warningf("close(%d) tpuFD failed: %v", fd.hostFD, err)
-	}
+	fd.memmapFile.Closer = &fd.memmapFile
+	fd.memmapFile.MappableRelease() // eventually closes fd.hostFD
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
@@ -181,11 +184,11 @@ func (fd *tpuFD) getPciDeviceFd(t *kernel.Task, arg hostarch.Addr) (uintptr, fun
 	if err != nil {
 		return 0, func() {}, err
 	}
-	pciDevFD := &pciDeviceFD{
-		hostFD: int32(hostFD),
-	}
 	cleanup := func() {
 		unix.Close(int(hostFD))
+	}
+	pciDevFD := &pciDeviceFD{
+		hostFD: int32(hostFD),
 	}
 	// See drivers/vfio/group.c:vfio_device_open_file(), the PCI device
 	// is accessed for both reads and writes.
@@ -205,7 +208,11 @@ func (fd *tpuFD) getPciDeviceFd(t *kernel.Task, arg hostarch.Addr) (uintptr, fun
 		return 0, cleanup, err
 	}
 	// Initialize a mapping that is backed by a host FD.
-	pciDevFD.memmapFile.fd = pciDevFD
+	pciDevFD.memmapFile.SetFD(int(hostFD))
+	// TODO: Letting pciDevFD.memmapFile's memory type default to
+	// MemoryTypeWriteBack is consistent with legacy behavior, but not clearly
+	// correct; drivers/vfio/pci/vfio_pci_core.c:vfio_pci_core_mmap() uses
+	// pgprot_noncached(), which would correspond to our MemoryTypeUncached.
 	return uintptr(newFD), func() {}, nil
 }
 

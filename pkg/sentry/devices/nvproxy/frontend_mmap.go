@@ -15,10 +15,15 @@
 package nvproxy
 
 import (
+	"errors"
+	"fmt"
+
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
@@ -29,20 +34,6 @@ func (fd *frontendFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) 
 	// requires vm_pgoff == 0, so trying to lazily fault any subset of the
 	// mapping that doesn't include the beginning will fail.
 	return vfs.GenericProxyDeviceConfigureMMap(&fd.vfsfd, fd, opts)
-}
-
-// AddMapping implements memmap.Mappable.AddMapping.
-func (fd *frontendFD) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
-	return nil
-}
-
-// RemoveMapping implements memmap.Mappable.RemoveMapping.
-func (fd *frontendFD) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
-}
-
-// CopyMapping implements memmap.Mappable.CopyMapping.
-func (fd *frontendFD) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, writable bool) error {
-	return nil
 }
 
 // Translate implements memmap.Mappable.Translate.
@@ -57,31 +48,70 @@ func (fd *frontendFD) Translate(ctx context.Context, required, optional memmap.M
 	}, nil
 }
 
-// InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
-func (fd *frontendFD) InvalidateUnsavable(ctx context.Context) error {
-	return nil
-}
-
+// frontendFDMemmapFile is the subset of frontendFD that is used as a
+// memmap.File.
+//
 // +stateify savable
 type frontendFDMemmapFile struct {
 	memmap.NoBufferedIOFallback
+	fsutil.MmapFileRefs
 
-	fd *frontendFD
+	// Set before MappableRelease, used by Close
+	nvp     *nvproxy
+	clients map[*rootClient]struct{}
+
+	hostFD int32 // immutable after SetFD
+
+	// mmapMu protects the following fields.
+	mmapMu frontendMmapMutex `state:"nosave"`
+	// These fields are marked nosave since we do not automatically reinvoke
+	// NV_ESC_RM_MAP_MEMORY after restore, so restored FDs have no
+	// mmap_context.
+	mmapLength   uint64              `state:"nosave"`
+	mmapInternal uintptr             `state:"nosave"`
+	memType      hostarch.MemoryType `state:"nosave"`
 }
 
-// IncRef implements memmap.File.IncRef.
-func (mf *frontendFDMemmapFile) IncRef(fr memmap.FileRange, memCgID uint32) {
+// SetFD implements fsutil.MmapFile.SetFD.
+func (mf *frontendFDMemmapFile) SetFD(fd int) {
+	mf.hostFD = int32(fd)
 }
 
-// DecRef implements memmap.File.DecRef.
-func (mf *frontendFDMemmapFile) DecRef(fr memmap.FileRange) {
+// Close implements io.Closer.Close for mf.MmapFileRefs.Closer.
+func (mf *frontendFDMemmapFile) Close() error {
+	var munmapErr, closeErr error
+	if mf.mmapInternal != 0 {
+		if _, _, errno := unix.RawSyscall(unix.SYS_MUNMAP, mf.mmapInternal, uintptr(mf.mmapLength), 0); errno != 0 {
+			munmapErr = fmt.Errorf("munmap failed: %w", errno)
+		}
+		mf.mmapInternal = 0
+	}
+	if mf.hostFD >= 0 {
+		if err := unix.Close(int(mf.hostFD)); err != nil {
+			closeErr = fmt.Errorf("close failed: %w", err)
+		}
+		mf.hostFD = -1
+	}
+	// src/nvidia/arch/nvalloc/unix/src/osapi.c:rm_cleanup_file_private() =>
+	// RmFreeUnusedClients()
+	ctx := context.Background()
+	for client := range mf.clients {
+		client.objsMu.Lock()
+		deferReleases := mf.nvp.objFree(ctx, client, client.handle)
+		client.objsMu.Unlock()
+		for _, release := range deferReleases {
+			release()
+		}
+	}
+	mf.clients = nil
+	return errors.Join(munmapErr, closeErr)
 }
 
 // MemoryType implements memmap.File.MemoryType.
 func (mf *frontendFDMemmapFile) MemoryType() hostarch.MemoryType {
-	mf.fd.mmapMu.Lock()
-	defer mf.fd.mmapMu.Unlock()
-	return mf.fd.mmapMemType
+	mf.mmapMu.Lock()
+	defer mf.mmapMu.Unlock()
+	return mf.memType
 }
 
 // DataFD implements memmap.File.DataFD.
@@ -91,7 +121,7 @@ func (mf *frontendFDMemmapFile) DataFD(fr memmap.FileRange) (int, error) {
 
 // FD implements memmap.File.FD.
 func (mf *frontendFDMemmapFile) FD() int {
-	return int(mf.fd.hostFD)
+	return int(mf.hostFD)
 }
 
 func getMemoryType(ctx context.Context, mapDev *frontendDevice, cachingType uint32) hostarch.MemoryType {
