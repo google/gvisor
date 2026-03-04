@@ -124,7 +124,6 @@ func (fd *pciDeviceFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr,
 		panic("Ioctl should be called from a task context")
 	}
 	switch cmd {
-	// TODO(b/299303493): consider making VFIO's GET_INFO commands more generic.
 	case linux.VFIO_DEVICE_GET_INFO:
 		return fd.vfioDeviceInfo(ctx, t, args[2].Pointer())
 	case linux.VFIO_DEVICE_GET_REGION_INFO:
