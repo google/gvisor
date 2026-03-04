@@ -2,9 +2,9 @@
 # Fetches model/tokenizer assets from GCS
 FROM google/cloud-sdk:541.0.0-slim AS downloader
 RUN gcloud config set auth/disable_credentials true
-RUN gsutil -m cp -r gs://gvisor/tests/models/llama-2-7b-chat-hf /
+RUN gcloud storage cp --recursive gs://gvisor/tests/models/llama-2-7b-chat-hf /
 RUN mkdir -p /engines
-RUN gsutil -m cp -r gs://gvisor/tests/l4/engines/llama-2-7b-chat-hf /engines/
+RUN gcloud storage cp --recursive gs://gvisor/tests/l4/engines/llama-2-7b-chat-hf /engines/
 
 # --- Builder Stage for TensorRT-LLM ---
 # This stage uses 'git sparse-checkout' to download *only* the
