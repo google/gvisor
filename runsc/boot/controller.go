@@ -66,6 +66,9 @@ const (
 	// ContMgrExecuteAsync executes a command in a container.
 	ContMgrExecuteAsync = "containerManager.ExecuteAsync"
 
+	// ContMgrFSSave saves a filesystem checkpoint.
+	ContMgrFSSave = "containerManager.FSSave"
+
 	// ContMgrGetSavings gets the savings for restored sandboxes.
 	ContMgrGetSavings = "containerManager.GetSavings"
 
@@ -396,6 +399,9 @@ func (cm *containerManager) StartSubcontainer(args *StartArgs, _ *struct{}) erro
 		expectedFDs += 3
 	}
 	if args.IsRootfsUpperTarFilePresent {
+		if cm.l.fsRestore != nil {
+			return fmt.Errorf("rootfs upper tar file is mutually exclusive with filesystem checkpoint restore")
+		}
 		expectedFDs++
 	}
 	if len(args.Files) < expectedFDs {
@@ -565,6 +571,9 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 			cm.onRestoreFailed(fmt.Errorf("Restore failed: %w", retErr))
 		}
 	}()
+	if cm.l.fsRestore != nil {
+		return fmt.Errorf("cannot restore sandbox when filesystem restore is enabled")
+	}
 	if len(o.Files) == 0 {
 		return fmt.Errorf("at least one file must be passed to Restore")
 	}
@@ -1073,6 +1082,31 @@ func (cm *containerManager) ContainerRuntimeState(cid *string, state *ContainerR
 	log.Debugf("containerManager.ContainerRuntimeState: cid: %s", *cid)
 	*state = cm.l.containerRuntimeState(*cid)
 	return nil
+}
+
+// FSSaveArgs holds arguments to FSSave.
+type FSSaveArgs struct {
+	// FilePayload contains the following fscheckpoint files in order:
+	// 1. manifest file
+	// 2. multi-tar file
+	// 3. pages metadata file
+	// 4. pages file
+	urpc.FilePayload
+
+	// Equivalent to kernel.FSSaveOpts fields.
+	ExitAfterSaving bool
+
+	FSSaveArgsExtra
+}
+
+// FSSave collects a filesystem checkpoint.
+func (cm *containerManager) FSSave(args *FSSaveArgs, _ *struct{}) error {
+	log.Debugf("containerManager.FSSave")
+	kopts, err := convertToKernelFSSaveOpts(args)
+	if err != nil {
+		return err
+	}
+	return cm.l.k.FSSave(cm.l.k.SupervisorContext(), &kopts)
 }
 
 // Savings holds the savings with restore.

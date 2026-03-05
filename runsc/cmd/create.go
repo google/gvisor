@@ -51,6 +51,12 @@ type Create struct {
 	// consumed by developers.
 	userLog string
 
+	// fsRestoreImagePath is the path to the filesystem checkpoint to restore.
+	// fsRestoreDirect is true if files making up the filesystem checkpoint should
+	// be opened with O_DIRECT.
+	fsRestoreImagePath string
+	fsRestoreDirect    bool
+
 	// spec is the cached OCI spec.
 	spec *specs.Spec
 }
@@ -76,6 +82,8 @@ func (c *Create) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.consoleSocket, "console-socket", "", "path to an AF_UNIX socket which will receive a file descriptor referencing the master end of the console's pseudoterminal")
 	f.StringVar(&c.pidFile, "pid-file", "", "filename that the container pid will be written to")
 	f.StringVar(&c.userLog, "user-log", "", "filename to send user-visible logs to. Empty means no logging.")
+	f.StringVar(&c.fsRestoreImagePath, "fs-restore-image-path", "", "path to filesystem checkpoint to restore")
+	f.BoolVar(&c.fsRestoreDirect, "fs-restore-direct", false, "open files in fs-restore-image-path with O_DIRECT")
 }
 
 // FetchSpec implements util.SubCommand.FetchSpec.
@@ -121,12 +129,14 @@ func (c *Create) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcom
 	// container unless the metadata specifies that it should be run in an
 	// existing container.
 	contArgs := container.Args{
-		ID:            id,
-		Spec:          spec,
-		BundleDir:     c.bundleDir,
-		ConsoleSocket: c.consoleSocket,
-		PIDFile:       c.pidFile,
-		UserLog:       c.userLog,
+		ID:                 id,
+		Spec:               spec,
+		BundleDir:          c.bundleDir,
+		ConsoleSocket:      c.consoleSocket,
+		PIDFile:            c.pidFile,
+		UserLog:            c.userLog,
+		FSRestoreImagePath: c.fsRestoreImagePath,
+		FSRestoreDirect:    c.fsRestoreDirect,
 	}
 	if _, err := container.New(conf, contArgs); err != nil {
 		return util.Errorf("creating container: %v", err)

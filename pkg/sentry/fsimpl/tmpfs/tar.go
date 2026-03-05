@@ -32,15 +32,15 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-// UntarUpperLayer creates the corresponding dentry and its children from the
-// given snapshot tar file.
-func (fs *filesystem) UntarUpperLayer(ctx context.Context, inFile *os.File) error {
-	tr := tar.NewReader(inFile)
+// tarRead creates the corresponding dentry and its children from the given
+// snapshot tar file.
+func (fs *filesystem) tarRead(ctx context.Context, src io.Reader, cb tarReaderCallbacks) error {
+	tr := tar.NewReader(src)
 
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
-	return fs.readFromTar(ctx, tr)
+	return fs.readFromTar(ctx, tr, cb)
 }
 
 // readFromTar creates the corresponding dentry and its children from the given
@@ -48,13 +48,12 @@ func (fs *filesystem) UntarUpperLayer(ctx context.Context, inFile *os.File) erro
 //
 // Preconditions:
 //   - filesystem.mu must be locked.
-func (fs *filesystem) readFromTar(ctx context.Context, tr *tar.Reader) error {
+func (fs *filesystem) readFromTar(ctx context.Context, tr *tar.Reader, cb tarReaderCallbacks) error {
 	pathToInode := map[string]*inode{}
 	directoryToHeader := map[string]*tar.Header{}
 	fileToHeader := map[string]*tar.Header{}
 	symlinkToHeader := map[string]*tar.Header{}
 	linkToHeader := map[string]*tar.Header{}
-	fileToContent := map[string]*bytes.Buffer{}
 	for {
 		header, err := tr.Next()
 		if err != nil {
@@ -68,16 +67,8 @@ func (fs *filesystem) readFromTar(ctx context.Context, tr *tar.Reader) error {
 		case tar.TypeDir:
 			directoryToHeader[header.Name] = header
 		case tar.TypeReg:
-			var buffer bytes.Buffer
-			n, err := io.Copy(&buffer, tr)
-			if err != nil {
-				return fmt.Errorf("failed to read file content: %w", err)
-			}
-			if n != header.Size {
-				return fmt.Errorf("failed to read all file content, got %d bytes, want %d", n, header.Size)
-			}
-			if header.Size > 0 {
-				fileToContent[header.Name] = &buffer
+			if err := cb.regularFileRead(ctx, header, tr); err != nil {
+				return err
 			}
 			fileToHeader[header.Name] = header
 		case tar.TypeFifo, tar.TypeBlock, tar.TypeChar:
@@ -98,7 +89,7 @@ func (fs *filesystem) readFromTar(ctx context.Context, tr *tar.Reader) error {
 	}
 	// Re-create all regular files, FIFOs, block devices, and character devices.
 	for path, hdr := range fileToHeader {
-		if err := fs.mknodFromTar(ctx, hdr, pathToInode, fileToContent); err != nil {
+		if err := fs.mknodFromTar(ctx, hdr, pathToInode, cb); err != nil {
 			return fmt.Errorf("failed to make file %v: %w", path, err)
 		}
 	}
@@ -166,7 +157,7 @@ func (fs *filesystem) mkdirFromTar(hdr *tar.Header, pathToInode map[string]*inod
 // mknodFromTar creates a regular file,FIFO, block device, or character device file using
 // the provided header. It also writes the file content to the corresponding regular file if it
 // exists.
-func (fs *filesystem) mknodFromTar(ctx context.Context, hdr *tar.Header, pathToInode map[string]*inode, pathToContent map[string]*bytes.Buffer) error {
+func (fs *filesystem) mknodFromTar(ctx context.Context, hdr *tar.Header, pathToInode map[string]*inode, cb tarReaderCallbacks) error {
 	dir, name := filepath.Split(hdr.Name)
 	parentInode, ok := pathToInode[dir]
 	if !ok {
@@ -194,10 +185,10 @@ func (fs *filesystem) mknodFromTar(ctx context.Context, hdr *tar.Header, pathToI
 	parentDir.insertChildLocked(child, name)
 	pathToInode[hdr.Name] = childInode
 
-	// Write file contents to the corresponding regular files if they exist.
-	if buf, ok := pathToContent[hdr.Name]; ok {
-		if err := fs.writeTo(ctx, hdr.Name, pathToInode, int64(len(buf.Bytes())), buf); err != nil {
-			return fmt.Errorf("failed to write file content for %v: %w", hdr.Name, err)
+	// Write file contents to the corresponding regular files.
+	if rf, _ := childInode.impl.(*regularFile); rf != nil {
+		if err := cb.regularFileSetContents(ctx, hdr, rf); err != nil {
+			return err
 		}
 	}
 
@@ -236,9 +227,6 @@ func (fs *filesystem) symlinkFromTar(hdr *tar.Header, pathToInode map[string]*in
 	if !ok {
 		return fmt.Errorf("parent directory %v does not exist", dir)
 	}
-	if len(hdr.Linkname) >= shortSymlinkLen {
-		return fmt.Errorf("symlink %v is too long", hdr.Linkname)
-	}
 	parentDir, ok := parentInode.impl.(*directory)
 	if !ok {
 		return fmt.Errorf("%v is not a directory", dir)
@@ -250,12 +238,42 @@ func (fs *filesystem) symlinkFromTar(hdr *tar.Header, pathToInode map[string]*in
 	return nil
 }
 
-func (fs *filesystem) writeTo(ctx context.Context, path string, pathToInode map[string]*inode, size int64, buf *bytes.Buffer) error {
-	i, ok := pathToInode[path]
-	if !ok {
-		return fmt.Errorf("failed to find inode for %v", path)
+type tarReaderCallbacks interface {
+	// regularFileRead reads information about the regular file with header hdr
+	// from tr.
+	regularFileRead(ctx context.Context, hdr *tar.Header, tr *tar.Reader) error
+
+	// regularFileSetContents sets the contents and size of rf, using what was
+	// previously read for hdr.
+	regularFileSetContents(ctx context.Context, hdr *tar.Header, rf *regularFile) error
+}
+
+// tarDefaultReaderCallbacks implements tarReaderCallbacks by reading regular
+// file contents from the tar archive.
+type tarDefaultReaderCallbacks struct {
+	headerToContent map[*tar.Header]*bytes.Buffer
+}
+
+func (cb *tarDefaultReaderCallbacks) regularFileRead(ctx context.Context, hdr *tar.Header, tr *tar.Reader) error {
+	var buf bytes.Buffer
+	n, err := io.Copy(&buf, tr)
+	if err != nil {
+		return fmt.Errorf("failed to read file content: %w", err)
 	}
-	rf := i.impl.(*regularFile)
+	if n != hdr.Size {
+		return fmt.Errorf("failed to read all file content, got %d bytes, want %d", n, hdr.Size)
+	}
+	if hdr.Size > 0 {
+		cb.headerToContent[hdr] = &buf
+	}
+	return nil
+}
+
+func (cb *tarDefaultReaderCallbacks) regularFileSetContents(ctx context.Context, hdr *tar.Header, rf *regularFile) error {
+	buf, ok := cb.headerToContent[hdr]
+	if !ok {
+		return nil
+	}
 	rf.inode.mu.Lock()
 	defer rf.inode.mu.Unlock()
 	src := usermem.BytesIOSequence(buf.Bytes())
@@ -264,8 +282,8 @@ func (fs *filesystem) writeTo(ctx context.Context, path string, pathToInode map[
 	if err != nil {
 		return fmt.Errorf("failed to write file content: %w", err)
 	}
-	if n != size {
-		return fmt.Errorf("failed to write all file content to %v, got %d bytes, want %d", path, n, size)
+	if size := int64(len(buf.Bytes())); n != size {
+		return fmt.Errorf("failed to write all file content to %v, got %d bytes, want %d", hdr.Name, n, size)
 	}
 	putRegularFileReadWriter(rw)
 	return nil
@@ -273,12 +291,16 @@ func (fs *filesystem) writeTo(ctx context.Context, path string, pathToInode map[
 
 // TarUpperLayer implements vfs.TarSerializer.TarUpperLayer.
 func (fs *filesystem) TarUpperLayer(ctx context.Context, outFD *os.File) error {
-	tw := tar.NewWriter(outFD)
+	return fs.tarWrite(ctx, outFD, tarDefaultWriterCallbacks{})
+}
+
+func (fs *filesystem) tarWrite(ctx context.Context, dst io.Writer, cb tarWriterCallbacks) error {
+	tw := tar.NewWriter(dst)
 
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
 
-	err := fs.root.writeToTar(ctx, tw, ".", make(map[uint64]string))
+	err := fs.root.writeToTar(ctx, tw, ".", make(map[uint64]string), cb)
 	if err != nil {
 		return fmt.Errorf("failed to write dentry to tar: %w", err)
 	}
@@ -291,12 +313,12 @@ func (fs *filesystem) TarUpperLayer(ctx context.Context, outFD *os.File) error {
 }
 
 // writeToTar recursively writes a dentry and its children to the tar archive.
-func (d *dentry) writeToTar(ctx context.Context, tw *tar.Writer, baseDir string, inoToPath map[uint64]string) error {
+func (d *dentry) writeToTar(ctx context.Context, tw *tar.Writer, baseDir string, inoToPath map[uint64]string, cb tarWriterCallbacks) error {
 	path := baseDir
 	if d.name != "" {
 		path = path + "/" + d.name
 	}
-	header, err := d.createTarHeader(path, inoToPath)
+	header, err := d.createTarHeader(path, inoToPath, cb)
 	if err != nil {
 		return fmt.Errorf("failed to create tar header for %q: %w", path, err)
 	}
@@ -316,12 +338,12 @@ func (d *dentry) writeToTar(ctx context.Context, tw *tar.Writer, baseDir string,
 	switch impl := d.inode.impl.(type) {
 	case *directory:
 		for _, child := range impl.childMap {
-			if err := child.writeToTar(ctx, tw, path, inoToPath); err != nil {
+			if err := child.writeToTar(ctx, tw, path, inoToPath, cb); err != nil {
 				return err
 			}
 		}
 	case *regularFile:
-		if err := impl.writeToTar(ctx, tw); err != nil {
+		if err := cb.regularFileWrite(ctx, impl, tw); err != nil {
 			return fmt.Errorf("failed to write file content for %q: %w", path, err)
 		}
 	}
@@ -330,7 +352,7 @@ func (d *dentry) writeToTar(ctx context.Context, tw *tar.Writer, baseDir string,
 }
 
 // createTarHeader creates a tar header for the given dentry.
-func (d *dentry) createTarHeader(path string, inoToPath map[uint64]string) (*tar.Header, error) {
+func (d *dentry) createTarHeader(path string, inoToPath map[uint64]string, cb tarWriterCallbacks) (*tar.Header, error) {
 	if d.isSelfFilestoreWhiteout() {
 		// Skip the self filestore whiteout.
 		return nil, nil
@@ -356,7 +378,7 @@ func (d *dentry) createTarHeader(path string, inoToPath map[uint64]string) (*tar
 		header.Name += "/"
 	case *regularFile:
 		header.Typeflag = tar.TypeReg
-		header.Size = int64(impl.size.Load())
+		header.Size = cb.regularFileSize(impl)
 	case *symlink:
 		header.Typeflag = tar.TypeSymlink
 		header.Linkname = impl.target
@@ -381,8 +403,24 @@ func (d *dentry) createTarHeader(path string, inoToPath map[uint64]string) (*tar
 	return header, nil
 }
 
-// writeToTar writes the content of a regular file to the tar archive.
-func (rf *regularFile) writeToTar(ctx context.Context, tw *tar.Writer) error {
+type tarWriterCallbacks interface {
+	// regularFileSize returns the size of the given regular file as written to
+	// the tar archive.
+	regularFileSize(rf *regularFile) int64
+
+	// regularFileWrite writes the contents of the given regular file to tw.
+	regularFileWrite(ctx context.Context, rf *regularFile, tw *tar.Writer) error
+}
+
+// tarDefaultWriterCallbacks implements tarWriterCallbacks by writing regular
+// file contents to the tar archive.
+type tarDefaultWriterCallbacks struct{}
+
+func (tarDefaultWriterCallbacks) regularFileSize(rf *regularFile) int64 {
+	return int64(rf.size.Load())
+}
+
+func (tarDefaultWriterCallbacks) regularFileWrite(ctx context.Context, rf *regularFile, tw *tar.Writer) error {
 	// Note that regularFileReadWriter.ReadToBlocks() does not lock inode.mu. So
 	// it is safe to lock here to ensure no concurrent writes occur.
 	rf.inode.mu.Lock()
