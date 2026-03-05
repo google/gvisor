@@ -8,7 +8,7 @@ package(
 
 go_template(
     name = "generic_atomicptr",
-    srcs = ["generic_atomicptr_unsafe.go"],
+    srcs = ["generic_atomicptr.go"],
     types = [
         "Value",
     ],
@@ -17,7 +17,7 @@ go_template(
 
 go_template_instance(
     name = "atomicptr_int",
-    out = "atomicptr_int_unsafe.go",
+    out = "atomicptr_int.go",
     package = "atomicptr",
     suffix = "Int",
     template = ":generic_atomicptr",
@@ -28,7 +28,7 @@ go_template_instance(
 
 go_library(
     name = "atomicptr",
-    srcs = ["atomicptr_int_unsafe.go"],
+    srcs = ["atomicptr_int.go"],
 )
 
 go_test(
