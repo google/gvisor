@@ -56,12 +56,13 @@ func Install(ctx context.Context, c *cluster.Cluster, image string, options spec
 
 // Command implements subcommands.Command.
 type Command struct {
-	Image               string
-	Cluster             clusterflag.Flag
-	DaemonSetName       string
-	DaemonSetNamespace  string
-	PauseContainerImage string
-	RunscFlags          string
+	Cluster                  clusterflag.Flag
+	DaemonSetName            string
+	DaemonSetNamespace       string
+	EnablePerPodFlagOverride bool
+	Image                    string
+	PauseContainerImage      string
+	RunscFlags               string
 }
 
 // Name implements subcommands.Command.Name.
@@ -104,6 +105,7 @@ func (c *Command) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.DaemonSetName, "daemonset-name", "gvisor-runsc-installer", "name of the runsc installer DaemonSet; any previously-existing DaemonSet under this name will be deleted")
 	f.StringVar(&c.DaemonSetNamespace, "daemonset-namespace", spec.SystemNamespace, "namespace of the runsc installer DaemonSet")
 	f.StringVar(&c.PauseContainerImage, "pause-container-image", spec.PauseContainerImage, "container image that does nothing, used as placeholder in the DaemonSet")
+	f.BoolVar(&c.EnablePerPodFlagOverride, "per-pod-flag-override", false, "enable per-pod flag override")
 	f.StringVar(&c.RunscFlags, "runsc-flags", "", "space-separated list of --key=value flags to pass to runsc")
 }
 
@@ -126,9 +128,8 @@ func (c *Command) Execute(ctx context.Context, f *flag.FlagSet, _ ...any) subcom
 		nodeSelector = spec.GKESandboxNodeSelector
 	default:
 	}
-	var extraFlags map[string]string
+	extraFlags := make(map[string]string)
 	if c.RunscFlags != "" {
-		extraFlags = make(map[string]string)
 		for _, flag := range strings.Fields(c.RunscFlags) {
 			parts := strings.SplitN(flag, "=", 2)
 			if len(parts) != 2 {
@@ -141,6 +142,9 @@ func (c *Command) Execute(ctx context.Context, f *flag.FlagSet, _ ...any) subcom
 			}
 			extraFlags[flagName] = flagValue
 		}
+	}
+	if c.EnablePerPodFlagOverride {
+		extraFlags["allow-flag-override"] = "true"
 	}
 	if err := Install(ctx, clusterClient, c.Image, spec.InstallOptions{
 		DaemonSetName:       c.DaemonSetName,
