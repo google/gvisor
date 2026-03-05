@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kr/pty"
+	"github.com/creack/pty"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sync"

@@ -31,8 +31,8 @@ import (
 	sys "syscall"
 	"time"
 
+	"github.com/creack/pty"
 	"github.com/google/subcommands"
-	"github.com/kr/pty"
 	"gvisor.dev/gvisor/pkg/gvisordetect"
 	gvisorrand "gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/test/testutil"
