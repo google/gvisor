@@ -61,6 +61,7 @@ type Command struct {
 	DaemonSetName       string
 	DaemonSetNamespace  string
 	PauseContainerImage string
+	RunscFlags          string
 }
 
 // Name implements subcommands.Command.Name.
@@ -103,6 +104,7 @@ func (c *Command) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.DaemonSetName, "daemonset-name", "gvisor-runsc-installer", "name of the runsc installer DaemonSet; any previously-existing DaemonSet under this name will be deleted")
 	f.StringVar(&c.DaemonSetNamespace, "daemonset-namespace", spec.SystemNamespace, "namespace of the runsc installer DaemonSet")
 	f.StringVar(&c.PauseContainerImage, "pause-container-image", spec.PauseContainerImage, "container image that does nothing, used as placeholder in the DaemonSet")
+	f.StringVar(&c.RunscFlags, "runsc-flags", "", "space-separated list of --key=value flags to pass to runsc")
 }
 
 // Execute implements subcommands.Command.Execute.
@@ -124,12 +126,29 @@ func (c *Command) Execute(ctx context.Context, f *flag.FlagSet, _ ...any) subcom
 		nodeSelector = spec.GKESandboxNodeSelector
 	default:
 	}
+	var extraFlags map[string]string
+	if c.RunscFlags != "" {
+		extraFlags = make(map[string]string)
+		for _, flag := range strings.Fields(c.RunscFlags) {
+			parts := strings.SplitN(flag, "=", 2)
+			if len(parts) != 2 {
+				util.Fatalf("Invalid runsc flag: %q", flag)
+			}
+			flagName := parts[0]
+			flagValue := parts[1]
+			for strings.HasPrefix(flagName, "-") {
+				flagName = flagName[1:]
+			}
+			extraFlags[flagName] = flagValue
+		}
+	}
 	if err := Install(ctx, clusterClient, c.Image, spec.InstallOptions{
 		DaemonSetName:       c.DaemonSetName,
 		DaemonSetNamespace:  c.DaemonSetNamespace,
 		PauseContainerImage: c.PauseContainerImage,
 		Labels:              labels,
 		NodeSelector:        nodeSelector,
+		ExtraFlags:          extraFlags,
 	}); err != nil {
 		util.Fatalf("Install failed: %v", err)
 	}

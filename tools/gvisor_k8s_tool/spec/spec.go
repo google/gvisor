@@ -16,6 +16,11 @@
 package spec
 
 import (
+	"fmt"
+	"maps"
+	"slices"
+	"strings"
+
 	"google.golang.org/protobuf/proto"
 	appsv1 "k8s.io/api/apps/v1"
 	v13 "k8s.io/api/core/v1"
@@ -46,12 +51,28 @@ type InstallOptions struct {
 	Labels              map[string]string
 	NodeSelector        map[string]string
 	PauseContainerImage string
+	ExtraFlags          map[string]string
 }
 
 // RunscInstallDaemonSet returns a DaemonSet spec that installs runsc in
 // Kubernetes.
 func RunscInstallDaemonSet(image string, options InstallOptions) *appsv1.DaemonSet {
 	hpType := v13.HostPathDirectory
+	runscConfigFlagOverride := ""
+	if len(options.ExtraFlags) > 0 {
+		var flagStrings []string
+		for _, k := range slices.Sorted(maps.Keys(options.ExtraFlags)) {
+			flagStrings = append(flagStrings, fmt.Sprintf("--%s=%s", k, options.ExtraFlags[k]))
+		}
+		runscConfigFlagOverride = strings.Join(flagStrings, " ")
+	}
+	var envVars []v13.EnvVar
+	if runscConfigFlagOverride != "" {
+		envVars = append(envVars, v13.EnvVar{
+			Name:  "RUNSC_CONFIG_FLAG_OVERRIDE",
+			Value: runscConfigFlagOverride,
+		})
+	}
 	return &appsv1.DaemonSet{
 		TypeMeta: v1.TypeMeta{
 			Kind:       "DaemonSet",
@@ -95,6 +116,7 @@ func RunscInstallDaemonSet(image string, options InstallOptions) *appsv1.DaemonS
 									v13.ResourceMemory: resource.MustParse("5Mi"),
 								},
 							},
+							Env: envVars,
 							SecurityContext: &v13.SecurityContext{
 								Capabilities: &v13.Capabilities{
 									Add: []v13.Capability{"CAP_SYS_ADMIN"},
