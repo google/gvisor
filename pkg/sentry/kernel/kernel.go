@@ -622,7 +622,7 @@ func savePrivateMFs(ctx context.Context, w io.Writer, mfsToSave map[string]*pgal
 // pagesMetadata, and pagesFile, even if it returns a non-nil error.
 //
 // Preconditions: The kernel must be paused throughout the call to SaveTo.
-func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCloser, pagesFile stateio.AsyncWriter, appMFExcludeCommittedZeroPages, resume bool) error {
+func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCloser, pagesFile stateio.AsyncWriter, appMFExcludeCommittedZeroPages, resume, inplaceRestore bool) error {
 	saveStart := time.Now()
 
 	stateFileCleanup := cleanup.Make(func() { stateFile.Close() })
@@ -708,7 +708,9 @@ func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCl
 		// Pause the network stack.
 		netstackPauseStart := time.Now()
 		// Stack.removeConf should be true when resume=false and vice versa.
-		k.rootNetworkNamespace.Stack().SetRemoveConf(!resume)
+		if !resume && !inplaceRestore {
+			k.rootNetworkNamespace.Stack().SetRemoveConf(true /* removeConf */)
+		}
 		log.Infof("Pausing root network namespace")
 		k.rootNetworkNamespace.Stack().Pause()
 		defer k.rootNetworkNamespace.Stack().Resume()
@@ -855,7 +857,7 @@ func (k *Kernel) invalidateUnsavableMappings(ctx context.Context) error {
 }
 
 // LoadFrom returns a new Kernel loaded from args.
-func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *AsyncMFLoader, timeReady chan struct{}, net inet.Stack, clocks sentrytime.Clocks, vfsOpts *vfs.CompleteRestoreOptions, saveRestoreNet bool) error {
+func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *AsyncMFLoader, timeReady chan struct{}, net inet.Stack, clocks sentrytime.Clocks, vfsOpts *vfs.CompleteRestoreOptions, saveRestoreNet, inplaceRestore bool) error {
 	loadStart := time.Now()
 
 	k.runningTasksCond.L = &k.runningTasksMu
@@ -930,12 +932,12 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 		if s == nil {
 			panic("inet.Stack cannot be nil when netstack s/r is enabled")
 		}
-		if net != nil {
+		if net != nil && !inplaceRestore {
 			s.ReplaceConfig(net)
 		}
-		s.Restore()
+		s.Restore(inplaceRestore)
 	} else if net != nil {
-		net.Restore()
+		net.Restore(inplaceRestore)
 	}
 
 	if err := k.vfs.CompleteRestore(ctx, vfsOpts); err != nil {

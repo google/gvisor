@@ -52,7 +52,8 @@ func (ep *endpoint) afterLoad(ctx context.Context) {
 }
 
 // Restore implements tcpip.RestoredEndpoint.Restore.
-func (ep *endpoint) Restore(_ *stack.Stack) {
+func (ep *endpoint) Restore(_ *stack.Stack, inplaceRestore bool) {
+	log.Infof("inplace restore %v", inplaceRestore)
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
 
