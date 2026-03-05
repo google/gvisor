@@ -1,6 +1,6 @@
 FROM ubuntu:24.04
 
-ARG DOCKER_VERSION="5:27.5.1-1~ubuntu.24.04~noble"
+ARG DOCKER_VERSION="5:28.5.2-1~ubuntu.24.04~noble"
 
 ENV DEBIAN_FRONTEND="noninteractive"
 RUN apt-get update && apt-get -y install ca-certificates curl
