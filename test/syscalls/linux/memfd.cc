@@ -337,9 +337,29 @@ TEST(MemfdTest, SealWriteWithMmap) {
   void* ret = mmap(nullptr, kPageSize, PROT_WRITE, MAP_SHARED, memfd.get(), 0);
   EXPECT_EQ(ret, MAP_FAILED);
   EXPECT_EQ(errno, EPERM);
-  ret = mmap(nullptr, kPageSize, PROT_READ, MAP_SHARED, memfd.get(), 0);
-  EXPECT_EQ(ret, MAP_FAILED);
-  EXPECT_EQ(errno, EPERM);
+
+  // Starting with Linux 6.7, PROT_READ, MAP_SHARED mappings on F_SEAL_WRITE
+  // sealed memfds are allowed. This was unintentionally reverted in 6.12 and
+  // fixed in 6.13. See kernel commit 8ec396d05d1b ("mm: reinstate ability to
+  // map write-sealed memfd mappings read-only"). Note that this behavior might
+  // be backported to older LTS kernels. We skip verifying this specific
+  // behavior on kernels where support is known to be missing or ambiguous to
+  // avoid test flakiness. gVisor implements the latest Linux behavior.
+  bool check_read_shared = true;
+  if (!IsRunningOnGvisor()) {
+    auto version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
+    if (version.major < 6 || (version.major == 6 && version.minor < 13)) {
+      check_read_shared = false;
+    }
+  }
+  if (check_read_shared) {
+    void* ret_read =
+        mmap(nullptr, kPageSize, PROT_READ, MAP_SHARED, memfd.get(), 0);
+    EXPECT_NE(ret_read, MAP_FAILED);
+    if (ret_read != MAP_FAILED) {
+      munmap(ret_read, kPageSize);
+    }
+  }
 
   // However, private mappings are ok.
   EXPECT_NO_ERRNO(Mmap(nullptr, kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE,
