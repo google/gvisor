@@ -207,7 +207,7 @@ var _ io.Closer = (*SimpleWriter)(nil)
 // comments for details. chunkSize is the buffer size used for buffering. Large
 // writes are not buffered and written out directly as a single chunk.
 func NewSimpleWriter(out io.Writer, key []byte, chunkSize uint32) *SimpleWriter {
-	if key == nil {
+	if len(key) == 0 {
 		// Since there is no key, this image doesn't use the data integrity stream
 		// format mentioned in package comments. We can just use a bufio writer.
 		return &SimpleWriter{
