@@ -387,6 +387,7 @@ func (ex *Exec) argsFromCLI(p *specs.Process, argv []string, enableRaw bool) (*c
 		Capabilities:     caps,
 		StdioIsPty:       ex.consoleSocket != "" || console.StdioIsPty(),
 		NoNewPrivileges:  p.NoNewPrivileges,
+		SupportTTYs:      true,
 	}, nil
 }
 
@@ -454,6 +455,7 @@ func argsFromProcess(specProc *specs.Process, p *specs.Process, enableRaw bool) 
 		Capabilities:     caps,
 		StdioIsPty:       p.Terminal,
 		NoNewPrivileges:  p.NoNewPrivileges,
+		SupportTTYs:      true,
 	}, nil
 }
 
