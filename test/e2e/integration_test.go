@@ -1047,6 +1047,70 @@ func TestNonSearchableWorkingDirectory(t *testing.T) {
 	}
 }
 
+// NOTE(gvisor.dev/issue/11910): Regression test. Make sure that working
+// directory can be set to a symlinked path.
+func TestSymlinkWorkingDirectory(t *testing.T) {
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "symlink-workdir")
+	if err != nil {
+		t.Fatalf("MkdirTemp() failed: %v", err)
+	}
+	defer os.RemoveAll(dir)
+
+	// Create the actual target directory
+	targetDir := filepath.Join(dir, "actual-dir")
+	if err := os.Mkdir(targetDir, 0755); err != nil {
+		t.Fatalf("Mkdir() failed: %v", err)
+	}
+
+	// Create a symlink pointing to the target directory
+	symlinkPath := filepath.Join(dir, "symlink-to-dir")
+	if err := os.Symlink("actual-dir", symlinkPath); err != nil {
+		t.Fatalf("Symlink() failed: %v", err)
+	}
+
+	// Mount the temp directory and set working directory to the symlink
+	opts := dockerutil.RunOpts{
+		Image:   "basic/alpine",
+		WorkDir: "/test/symlink-to-dir",
+		Mounts: []mount.Mount{
+			{
+				Type:   mount.TypeBind,
+				Source: dir,
+				Target: "/test",
+			},
+		},
+	}
+
+	// Test that the container can start with symlinked working directory
+	// and that pwd returns the symlinked path
+	got, err := d.Run(ctx, opts, "sh", "-c", "pwd")
+	if err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
+	want := "/test/symlink-to-dir\n"
+	if got != want {
+		t.Errorf("working directory mismatch, want: %q, got: %q", want, got)
+	}
+
+	// Additional test: verify we can actually use the working directory
+	// by creating a file in it
+	_, err = d.Run(ctx, opts, "sh", "-c", "echo 'test content' > testfile && cat testfile")
+	if err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
+	// Verify the file was created in the actual target directory
+	createdFile := filepath.Join(targetDir, "testfile")
+	if _, err := os.Stat(createdFile); err != nil {
+		t.Errorf("file was not created in target directory: %v", err)
+	}
+}
+
 func TestCharDevice(t *testing.T) {
 	if testutil.IsRunningWithOverlay() {
 		t.Skip("files are not available outside the sandbox with overlay.")
