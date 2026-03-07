@@ -201,6 +201,15 @@ func (c *cgroupV2) Uninstall() error {
 			if os.IsNotExist(err) {
 				return nil
 			}
+
+			// When deleting cgroups beyond the top one (the one that we run in)
+			// be soft in the deletion because while we might have created the
+			// directory, there might be other processes that have joined it
+			// and we don't want to fail the deletion.
+			if i < len(c.Own)-1 {
+				return nil
+			}
+
 			return err
 		}
 		if err := backoff.Retry(fn, b); err != nil {
