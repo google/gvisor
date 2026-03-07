@@ -280,7 +280,7 @@ type pool struct {
 //
 // This should only be called once.
 func (p *pool) init(key []byte, workers int, compress bool, level int) {
-	if len(key) > 0 {
+	if key != nil {
 		p.hashPool = &hashPool{key: key}
 	}
 	p.workers = make([]worker, workers)
