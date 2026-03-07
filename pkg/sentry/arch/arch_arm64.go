@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
@@ -32,23 +33,34 @@ import (
 // Host specifies the host architecture.
 const Host = ARM64
 
-// These constants come directly from Linux.
-const (
+// These variables come directly from Linux.
+var (
 	// maxAddr64 is the maximum userspace address. It is TASK_SIZE in Linux
 	// for a 64-bit process.
-	maxAddr64 hostarch.Addr = (1 << 48)
+	maxAddr64 hostarch.Addr = hostarch.Addr(linux.TaskSize)
 
 	// maxStackRand64 is the maximum randomization to apply to the stack.
 	// It is defined by arch/arm64/mm/mmap.c:(STACK_RND_MASK << PAGE_SHIFT) in Linux.
-	maxStackRand64 = 0x3ffff << 12 // 16 GB
+	maxStackRand64 hostarch.Addr = 0x3ffff << 12 // 16 GB
 
 	// maxMmapRand64 is the maximum randomization to apply to the mmap
 	// layout. It is defined by arch/arm64/mm/mmap.c:arch_mmap_rnd in Linux.
-	maxMmapRand64 = (1 << 33) * hostarch.PageSize
+	maxMmapRand64 hostarch.Addr = func() hostarch.Addr {
+		switch linux.TaskSize {
+		case 1 << 52:
+			return hostarch.Addr((1 << 37) * hostarch.PageSize)
+		case 1 << 48:
+			return hostarch.Addr((1 << 33) * hostarch.PageSize)
+		case 1 << 39:
+			return hostarch.Addr((1 << 18) * hostarch.PageSize)
+		default:
+			return hostarch.Addr((1 << 33) * hostarch.PageSize)
+		}
+	}()
 
 	// minGap64 is the minimum gap to leave at the top of the address space
 	// for the stack. It is defined by arch/arm64/mm/mmap.c:MIN_GAP in Linux.
-	minGap64 = (128 << 20) + maxStackRand64
+	minGap64 hostarch.Addr = (128 << 20) + maxStackRand64
 
 	// preferredPIELoadAddr is the standard Linux position-independent
 	// executable base load address. It is ELF_ET_DYN_BASE in Linux.
@@ -63,16 +75,27 @@ var (
 	CPUIDInstruction = []byte{}
 )
 
-// These constants are selected as heuristics to help make the Platform's
+// These variables are selected as heuristics to help make the Platform's
 // potentially limited address space conform as closely to Linux as possible.
-const (
-	preferredTopDownAllocMin hostarch.Addr = 0x7e8000000000
-	preferredAllocationGap                 = 128 << 30 // 128 GB
-	preferredTopDownBaseMin                = preferredTopDownAllocMin + preferredAllocationGap
+var (
+	preferredTopDownAllocMin hostarch.Addr = hostarch.Addr(uint64(maxAddr64) / 8 * 7)
+	preferredAllocationGap   hostarch.Addr = hostarch.Addr(uint64(maxAddr64) / 256)
+	preferredTopDownBaseMin  hostarch.Addr = preferredTopDownAllocMin + preferredAllocationGap
 
 	// minMmapRand64 is the smallest we are willing to make the
 	// randomization to stay above preferredTopDownBaseMin.
-	minMmapRand64 = (1 << 18) * hostarch.PageSize
+	minMmapRand64 hostarch.Addr = func() hostarch.Addr {
+		switch linux.TaskSize {
+		case 1 << 52:
+			return hostarch.Addr((1 << 22) * hostarch.PageSize)
+		case 1 << 48:
+			return hostarch.Addr((1 << 18) * hostarch.PageSize)
+		case 1 << 39:
+			return hostarch.Addr((1 << 14) * hostarch.PageSize)
+		default:
+			return hostarch.Addr((1 << 18) * hostarch.PageSize)
+		}
+	}()
 )
 
 // Context64 represents an ARM64 context.
@@ -218,7 +241,7 @@ func (c *Context64) NewMmapLayout(min, max hostarch.Addr, r *limits.LimitSet) (M
 	}
 
 	topDownMin := max - gap - maxMmapRand64
-	maxRand := hostarch.Addr(maxMmapRand64)
+	maxRand := maxMmapRand64
 	if topDownMin < preferredTopDownBaseMin {
 		// Try to keep TopDownBase above preferredTopDownBaseMin by
 		// shrinking maxRand.
@@ -255,7 +278,7 @@ func (c *Context64) NewMmapLayout(min, max hostarch.Addr, r *limits.LimitSet) (M
 // PIELoadAddress implements Context.PIELoadAddress.
 func (c *Context64) PIELoadAddress(l MmapLayout) hostarch.Addr {
 	base := preferredPIELoadAddr
-	max, ok := base.AddLength(maxMmapRand64)
+	max, ok := base.AddLength(uint64(maxMmapRand64))
 	if !ok {
 		panic(fmt.Sprintf("preferredPIELoadAddr %#x too large", base))
 	}
@@ -268,7 +291,7 @@ func (c *Context64) PIELoadAddress(l MmapLayout) hostarch.Addr {
 		base = l.TopDownBase / 3 * 2
 	}
 
-	return base + mmapRand(maxMmapRand64)
+	return base + mmapRand(uint64(maxMmapRand64))
 }
 
 // PtracePeekUser implements Context.PtracePeekUser.
