@@ -14,13 +14,15 @@
 
 #ifdef __linux__
 
-#include "test/util/linux_capability_util.h"
-
 #include <linux/capability.h>
+#include <linux/if_ether.h>
+#include <netinet/in.h>
 #include <sched.h>
 #include <sys/mman.h>
+#include <sys/socket.h>
 #include <sys/wait.h>
 
+#include <cerrno>
 #include <iostream>
 
 #include "absl/strings/str_cat.h"
@@ -33,11 +35,56 @@ namespace gvisor {
 namespace testing {
 
 PosixErrorOr<bool> HaveRawIPSocketCapability() {
-  return HaveCapability(CAP_NET_RAW);
+  // Note that we can't just use HaveCapability(CAP_NET_RAW) because raw socket
+  // capability check is done using `ns_capable(net->user_ns, CAP_NET_RAW)` (on
+  // the network namespace's user namespace, which the test process may not be a
+  // part of). The only feasible way to check CAP_NET_RAW is to try to open a
+  // raw socket and see if it returns EPERM.
+  int fd = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
+  if (fd >= 0) {
+    close(fd);
+    return true;
+  }
+
+  int err = errno;
+  // If IPv4 is not supported, try IPv6.
+  if (err == EAFNOSUPPORT) {
+    int fd6 = socket(AF_INET6, SOCK_RAW, IPPROTO_RAW);
+    if (fd6 >= 0) {
+      close(fd6);
+      return true;
+    }
+    err = errno;
+  }
+
+  if (err == EPERM) {
+    return false;
+  }
+
+  return PosixError(err,
+                    "socket(AF_INET, SOCK_RAW, IPPROTO_RAW) failed with "
+                    "non-EPERM error, can not determine CAP_NET_RAW "
+                    "capability");
 }
 
 PosixErrorOr<bool> HavePacketSocketCapability() {
-  return HaveCapability(CAP_NET_RAW);
+  // Note that we can't just use HaveCapability(CAP_NET_RAW) because packet
+  // socket capability check is done using `ns_capable(net->user_ns,
+  // CAP_NET_RAW)` (on the network namespace's user namespace, which the test
+  // process may not be a part of). The only feasible way to check CAP_NET_RAW
+  // is to try to open a raw socket and see if it returns EPERM.
+  int fd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_IP));
+  if (fd >= 0) {
+    close(fd);
+    return true;
+  }
+  if (errno == EPERM) {
+    return false;
+  }
+  return PosixError(
+      errno,
+      "socket(AF_PACKET, SOCK_RAW, htons(ETH_P_IP)) failed with "
+      "non-EPERM error, can not determine CAP_NET_RAW capability");
 }
 
 PosixErrorOr<bool> CanCreateUserNamespace() {
