@@ -51,6 +51,7 @@ import (
 	"gvisor.dev/gvisor/pkg/eventchannel"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -623,6 +624,9 @@ func savePrivateMFs(ctx context.Context, w io.Writer, mfsToSave map[string]*pgal
 //
 // Preconditions: The kernel must be paused throughout the call to SaveTo.
 func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCloser, pagesFile stateio.AsyncWriter, appMFExcludeCommittedZeroPages, resume bool) error {
+	if hostarch.PageSize != 4096 {
+		return fmt.Errorf("save is not supported with %dK page size", hostarch.PageSize/1024)
+	}
 	saveStart := time.Now()
 
 	stateFileCleanup := cleanup.Make(func() { stateFile.Close() })
@@ -856,6 +860,9 @@ func (k *Kernel) invalidateUnsavableMappings(ctx context.Context) error {
 
 // LoadFrom returns a new Kernel loaded from args.
 func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *AsyncMFLoader, timeReady chan struct{}, net inet.Stack, clocks sentrytime.Clocks, vfsOpts *vfs.CompleteRestoreOptions, saveRestoreNet bool) error {
+	if hostarch.PageSize != 4096 {
+		return fmt.Errorf("restore is not supported with %dK page size", hostarch.PageSize/1024)
+	}
 	loadStart := time.Now()
 
 	k.runningTasksCond.L = &k.runningTasksMu

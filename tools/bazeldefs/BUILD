@@ -57,3 +57,18 @@ genrule(
     ],
     visibility = ["//:sandbox"],
 )
+
+# Page size configurations for ARM64
+config_setting(
+    name = "pagesize_64k",
+    define_values = {"pagesize": "64k"},
+)
+
+# Combined config: ARM64 with 64K page size
+config_setting(
+    name = "arm64_pagesize_64k",
+    constraint_values = [
+        "@platforms//cpu:aarch64",
+    ],
+    define_values = {"pagesize": "64k"},
+)

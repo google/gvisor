@@ -21,7 +21,7 @@ package(
         ],
         visibility = [":__pkg__"],
     )
-    for arch in ("amd64", "arm64")
+    for arch in ("amd64", "arm64", "arm64_64k")
 ]
 
 [
@@ -37,7 +37,7 @@ package(
         },
     )
     for op in ("map", "unmap", "lookup", "empty", "check")
-    for arch in ("amd64", "arm64")
+    for arch in ("amd64", "arm64", "arm64_64k")
 ]
 
 go_library(
@@ -49,6 +49,8 @@ go_library(
         "pagetables_aarch64.go",
         "pagetables_amd64.go",
         "pagetables_arm64.go",
+        "pagetables_arm64_4k.go",
+        "pagetables_arm64_64k.go",
         "pagetables_x86.go",
         "pcids.go",
         "pcids_aarch64.go",
@@ -56,15 +58,20 @@ go_library(
         "pcids_x86.go",
         "walker_amd64.go",
         "walker_arm64.go",
+        "walker_arm64_64k.go",
         "walker_generic.go",
         ":walker_empty_amd64",
         ":walker_empty_arm64",
+        ":walker_empty_arm64_64k",
         ":walker_lookup_amd64",
         ":walker_lookup_arm64",
+        ":walker_lookup_arm64_64k",
         ":walker_map_amd64",
         ":walker_map_arm64",
+        ":walker_map_arm64_64k",
         ":walker_unmap_amd64",
         ":walker_unmap_arm64",
+        ":walker_unmap_arm64_64k",
     ],
     visibility = [
         "//pkg/ring0:__subpackages__",
@@ -83,9 +90,12 @@ go_test(
     srcs = [
         "pagetables_amd64_test.go",
         "pagetables_arm64_test.go",
+        "pagetables_arm64_64k_test.go",
+        "pagetables_common_test.go",
         "pagetables_test.go",
         ":walker_check_amd64",
         ":walker_check_arm64",
+        ":walker_check_arm64_64k",
     ],
     library = ":pagetables",
     deps = [
