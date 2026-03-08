@@ -53,6 +53,7 @@ namespace testing {
 namespace {
 
 constexpr char kNatTablename[] = "nat";
+constexpr char kRawTablename[] = "raw";
 constexpr char kErrorTarget[] = "ERROR";
 constexpr size_t kEmptyStandardEntrySize =
     sizeof(struct ipt_entry) + sizeof(struct ipt_standard_target);
@@ -388,6 +389,53 @@ TEST_F(IPTablesTest, LargeReplacePayload) {
   memcpy(restore->entries, orig->entrytable, info.size);
   EXPECT_THAT(setsockopt(s_, SOL_IP, IPT_SO_SET_REPLACE, restore, restore_sz),
               SyscallSucceeds());
+}
+
+// Tests the initial state of the raw table. The raw table has PREROUTING and
+// OUTPUT hooks (no INPUT, FORWARD, or POSTROUTING).
+TEST_F(IPTablesTest, RawTableInitialState) {
+  SKIP_IF(!IsRunningOnGvisor());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+
+  struct ipt_getinfo info = {};
+  snprintf(info.name, XT_TABLE_MAXNAMELEN, "%s", kRawTablename);
+  socklen_t info_size = sizeof(info);
+  ASSERT_THAT(getsockopt(s_, SOL_IP, IPT_SO_GET_INFO, &info, &info_size),
+              SyscallSucceeds());
+
+  // The raw table supports PREROUTING and OUTPUT only.
+  unsigned int valid_hooks =
+      (1 << NF_IP_PRE_ROUTING) | (1 << NF_IP_LOCAL_OUT);
+  EXPECT_EQ(info.valid_hooks, valid_hooks);
+
+  // Two chain entries (PREROUTING, OUTPUT) plus one error entry.
+  EXPECT_EQ(info.num_entries, 3);
+  EXPECT_EQ(info.size, 2 * kEmptyStandardEntrySize + kEmptyErrorEntrySize);
+  EXPECT_EQ(strcmp(info.name, kRawTablename), 0);
+}
+
+// Tests that the CT target revision 0 is recognized.
+TEST(IPTablesBasic, CTTargetGetRevision) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+
+  int sock;
+  ASSERT_THAT(sock = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP),
+              SyscallSucceeds());
+
+  struct xt_get_revision rev = {};
+  socklen_t rev_len = sizeof(rev);
+
+  snprintf(rev.name, sizeof(rev.name), "CT");
+  rev.revision = 0;
+
+  // CT revision 0 should exist.
+  EXPECT_THAT(
+      getsockopt(sock, SOL_IP, IPT_SO_GET_REVISION_TARGET, &rev, &rev_len),
+      SyscallSucceeds());
+  EXPECT_EQ(rev.revision, 0);
+
+  EXPECT_THAT(close(sock), SyscallSucceeds());
+}
 }
 
 struct SockOptArgs {
