@@ -49,6 +49,7 @@ const (
 	natTable    = "nat"
 	mangleTable = "mangle"
 	filterTable = "filter"
+	rawTable    = "raw"
 )
 
 // nameToID is immutable.
@@ -56,6 +57,7 @@ var nameToID = map[string]stack.TableID{
 	natTable:    stack.NATID,
 	mangleTable: stack.MangleID,
 	filterTable: stack.FilterID,
+	rawTable:    stack.RawID,
 }
 
 // DefaultLinuxTables returns the rules of stack.DefaultTables() wrapped for
@@ -76,6 +78,8 @@ func DefaultLinuxTables(clock tcpip.Clock, rand *rand.Rand) *stack.IPTables {
 			return &returnTarget{ReturnTarget: *val}
 		case *stack.RedirectTarget:
 			return &redirectTarget{RedirectTarget: *val}
+		case *stack.CTTarget:
+			return &ctTarget{CTTarget: *val}
 		default:
 			panic(fmt.Sprintf("Unknown rule in default iptables of type %T", val))
 		}
@@ -192,6 +196,8 @@ func SetEntries(mapper IDMapper, stk *stack.Stack, optVal []byte, ipv6 bool) *sy
 		table = stack.EmptyFilterTable()
 	case natTable:
 		table = stack.EmptyNATTable()
+	case rawTable:
+		table = stack.EmptyRawTable()
 	default:
 		nflog("unknown iptables table %q", replace.Name.String())
 		return syserr.ErrInvalidArgument
