@@ -279,11 +279,10 @@ func (c *Context64) NewMmapLayout(min, max hostarch.Addr, r *limits.LimitSet) (M
 		BottomUpBase:     (max/3 + rnd).RoundDown(),
 		TopDownBase:      (max - gap - rnd).RoundDown(),
 		DefaultDirection: defaultDir,
-		// We may have reduced the maximum randomization to keep
-		// TopDownBase above preferredTopDownBaseMin while maintaining
-		// our stack gap. Stack allocations must use that max
-		// randomization to avoiding eating into the gap.
-		MaxStackRand: uint64(maxRand),
+		// Stack randomization uses STACK_RND_MASK (maxStackRand64),
+		// which is independent of mmap randomization (maxMmapRand64).
+		// On ARM64, STACK_RND_MASK is fixed at ~1 GB across all VA widths.
+		MaxStackRand: uint64(maxStackRand64),
 	}
 
 	// Final sanity check on the layout.
