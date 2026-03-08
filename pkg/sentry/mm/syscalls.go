@@ -16,12 +16,12 @@ package mm
 
 import (
 	"fmt"
-	mrand "math/rand"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/futex"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
@@ -279,7 +279,7 @@ func (mm *MemoryManager) MapStack(ctx context.Context) (hostarch.AddrRange, erro
 
 	// Determine the stack's desired location. Unlike Linux, address
 	// randomization can't be disabled.
-	stackEnd := mm.layout.MaxAddr - hostarch.Addr(mrand.Int63n(int64(mm.layout.MaxStackRand))).RoundDown()
+	stackEnd := mm.layout.MaxAddr - hostarch.Addr(rand.Int63n(int64(mm.layout.MaxStackRand))).RoundDown()
 	if stackEnd < szaddr {
 		return hostarch.AddrRange{}, linuxerr.ENOMEM
 	}
