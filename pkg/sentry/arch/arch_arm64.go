@@ -32,26 +32,33 @@ import (
 // Host specifies the host architecture.
 const Host = ARM64
 
-// These constants come directly from Linux.
-const (
+// These defaults come directly from Linux for 48-bit VA (4-level page tables).
+// They can be overridden by a platform via ConfigureAddressSpace() for other
+// VA widths (e.g., 39-bit or 52-bit).
+var (
 	// maxAddr64 is the maximum userspace address. It is TASK_SIZE in Linux
 	// for a 64-bit process.
+	//
+	// WARNING: This value is shared by ALL platforms (KVM, systrap, etc.).
+	// KVM requires maxAddr64 == 1<<48. Only systrap should override this
+	// via ConfigureAddressSpace().
 	maxAddr64 hostarch.Addr = (1 << 48)
 
 	// maxStackRand64 is the maximum randomization to apply to the stack.
 	// It is defined by arch/arm64/mm/mmap.c:(STACK_RND_MASK << PAGE_SHIFT) in Linux.
-	maxStackRand64 = 0x3ffff << hostarch.PageShift
+	// Fixed across all VA widths on ARM64.
+	maxStackRand64 hostarch.Addr = 0x3ffff << hostarch.PageShift
 
 	// maxMmapRand64 is the maximum randomization to apply to the mmap
 	// layout. It is defined by arch/arm64/mm/mmap.c:arch_mmap_rnd in Linux.
 	// For 4K pages (PageShift=12): 1 << 45 = 32TB
 	// For 64K pages (PageShift=16): 1 << 45 = 32TB (same)
 	// We use a fixed value to avoid exceeding the 48-bit address space.
-	maxMmapRand64 = 1 << 45
+	maxMmapRand64 hostarch.Addr = 1 << 45
 
 	// minGap64 is the minimum gap to leave at the top of the address space
 	// for the stack. It is defined by arch/arm64/mm/mmap.c:MIN_GAP in Linux.
-	minGap64 = (128 << 20) + maxStackRand64
+	minGap64 hostarch.Addr = (128 << 20) + maxStackRand64
 
 	// preferredPIELoadAddr is the standard Linux position-independent
 	// executable base load address. It is ELF_ET_DYN_BASE in Linux.
@@ -66,18 +73,49 @@ var (
 	CPUIDInstruction = []byte{}
 )
 
-// These constants are selected as heuristics to help make the Platform's
+// These defaults are selected as heuristics to help make the Platform's
 // potentially limited address space conform as closely to Linux as possible.
-const (
+// They can be overridden via ConfigureAddressSpace().
+var (
 	preferredTopDownAllocMin hostarch.Addr = 0x7e8000000000
-	preferredAllocationGap                 = 128 << 30 // 128 GB
-	preferredTopDownBaseMin                = preferredTopDownAllocMin + preferredAllocationGap
+	preferredAllocationGap   hostarch.Addr = 128 << 30 // 128 GB
+	preferredTopDownBaseMin  hostarch.Addr = preferredTopDownAllocMin + preferredAllocationGap
 
 	// minMmapRand64 is the smallest we are willing to make the
 	// randomization to stay above preferredTopDownBaseMin.
 	// Use a fixed value (1GB) to be consistent across page sizes.
-	minMmapRand64 = 1 << 30
+	minMmapRand64 hostarch.Addr = 1 << 30
 )
+
+// AddressSpaceConfig holds platform-specific address space parameters that
+// override the default 48-bit VA layout. This allows platforms like systrap
+// to support 39-bit and 52-bit VA widths without affecting platforms like
+// KVM that only support 48-bit.
+type AddressSpaceConfig struct {
+	MaxAddr64                hostarch.Addr
+	MaxMmapRand64            hostarch.Addr
+	MinMmapRand64            hostarch.Addr
+	PreferredTopDownAllocMin hostarch.Addr
+	PreferredAllocationGap   hostarch.Addr
+	PreferredPIELoadAddr     hostarch.Addr
+}
+
+// ConfigureAddressSpace allows a platform to override the default address
+// space layout parameters. This MUST be called before any Context64 is used
+// (typically during platform initialization).
+//
+// KVM should NOT call this function — it relies on the 48-bit defaults.
+// Only systrap calls this for 39-bit or 52-bit VA hosts.
+func ConfigureAddressSpace(cfg AddressSpaceConfig) {
+	maxAddr64 = cfg.MaxAddr64
+	maxMmapRand64 = cfg.MaxMmapRand64
+	minMmapRand64 = cfg.MinMmapRand64
+	preferredTopDownAllocMin = cfg.PreferredTopDownAllocMin
+	preferredAllocationGap = cfg.PreferredAllocationGap
+	preferredTopDownBaseMin = cfg.PreferredTopDownAllocMin + cfg.PreferredAllocationGap
+	preferredPIELoadAddr = cfg.PreferredPIELoadAddr
+	// minGap64 and maxStackRand64 are the same across all VA widths on ARM64.
+}
 
 // Context64 represents an ARM64 context.
 //
@@ -222,7 +260,7 @@ func (c *Context64) NewMmapLayout(min, max hostarch.Addr, r *limits.LimitSet) (M
 	}
 
 	topDownMin := max - gap - maxMmapRand64
-	maxRand := hostarch.Addr(maxMmapRand64)
+	maxRand := maxMmapRand64
 	if topDownMin < preferredTopDownBaseMin {
 		// Try to keep TopDownBase above preferredTopDownBaseMin by
 		// shrinking maxRand.
@@ -259,7 +297,7 @@ func (c *Context64) NewMmapLayout(min, max hostarch.Addr, r *limits.LimitSet) (M
 // PIELoadAddress implements Context.PIELoadAddress.
 func (c *Context64) PIELoadAddress(l MmapLayout) hostarch.Addr {
 	base := preferredPIELoadAddr
-	max, ok := base.AddLength(maxMmapRand64)
+	max, ok := base.AddLength(uint64(maxMmapRand64))
 	if !ok {
 		panic(fmt.Sprintf("preferredPIELoadAddr %#x too large", base))
 	}
@@ -272,7 +310,7 @@ func (c *Context64) PIELoadAddress(l MmapLayout) hostarch.Addr {
 		base = l.TopDownBase / 3 * 2
 	}
 
-	return base + mmapRand(maxMmapRand64)
+	return base + mmapRand(uint64(maxMmapRand64))
 }
 
 // PtracePeekUser implements Context.PtracePeekUser.
