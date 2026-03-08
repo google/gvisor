@@ -81,12 +81,16 @@ func (e *endpoint) Restore(s *stack.Stack) {
 		id.RemotePort = e.remotePort
 		id, e.boundBindToDevice, err = e.registerWithStack(e.effectiveNetProtos, id)
 		if err != nil {
-			panic("registering udp endpoint with the stack failed during restore")
+			log.Warningf("registerWithStack failed during restore for UDP endpoint: %v", err)
+			e.closeLocked()
+			return
 		}
 		e.localPort = id.LocalPort
 		e.remotePort = id.RemotePort
 	default:
-		panic("unhandled state")
+		log.Warningf("unhandled UDP endpoint state during restore: %s", state)
+		e.closeLocked()
+		return
 	}
 }
 
