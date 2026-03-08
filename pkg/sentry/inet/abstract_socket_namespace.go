@@ -16,9 +16,9 @@ package inet
 
 import (
 	"fmt"
-	"gvisor.dev/gvisor/pkg/rand"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/syserr"
