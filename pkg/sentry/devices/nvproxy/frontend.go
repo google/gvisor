@@ -825,6 +825,9 @@ func rmControlSimple(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETER
 	if ioctlParams.Params == 0 {
 		return 0, linuxerr.EINVAL
 	}
+	if ioctlParams.ParamsSize > nvgpu.RMAPI_PARAM_COPY_MAX_PARAMS_SIZE {
+		return 0, linuxerr.EINVAL
+	}
 
 	ctrlParams := make([]byte, ioctlParams.ParamsSize)
 	if _, err := fi.t.CopyInBytes(addrFromP64(ioctlParams.Params), ctrlParams); err != nil {
