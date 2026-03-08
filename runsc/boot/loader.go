@@ -28,7 +28,6 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/coverage"
@@ -84,7 +83,6 @@ import (
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/profile"
 	"gvisor.dev/gvisor/runsc/specutils"
-	"gvisor.dev/gvisor/runsc/specutils/seccomp"
 
 	// Top-level inet providers.
 	"gvisor.dev/gvisor/pkg/sentry/socket/hostinet"
@@ -1361,27 +1359,15 @@ func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGrou
 	info.procArgs.FDTable.DecRef(ctx)
 
 	// Install seccomp filters with the new task if there are any.
-	if info.conf.OCISeccomp {
-		if info.spec.Linux != nil && info.spec.Linux.Seccomp != nil {
-			program, err := seccomp.BuildProgram(info.spec.Linux.Seccomp)
-			if err != nil {
-				return nil, nil, fmt.Errorf("building seccomp program: %w", err)
-			}
-
-			if log.IsLogging(log.Debug) {
-				out, _ := bpf.DecodeProgram(program)
-				log.Debugf("Installing OCI seccomp filters\nProgram:\n%s", out)
-			}
-
-			task := tg.Leader()
-			// NOTE: It seems Flags are ignored by runc so we ignore them too.
-			if err := task.AppendSyscallFilter(program, true); err != nil {
-				return nil, nil, fmt.Errorf("appending seccomp filters: %w", err)
-			}
-		}
-	} else {
-		if info.spec.Linux != nil && info.spec.Linux.Seccomp != nil {
-			log.Warningf("Seccomp spec is being ignored")
+	program, err := buildOCISeccompProgram(info.conf, info.spec)
+	if err != nil {
+		return nil, nil, err
+	}
+	if program != nil {
+		task := tg.Leader()
+		// NOTE: It seems Flags are ignored by runc so we ignore them too.
+		if err := task.AppendSyscallFilter(*program, true); err != nil {
+			return nil, nil, fmt.Errorf("appending seccomp filters: %w", err)
 		}
 	}
 
@@ -1522,6 +1508,15 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 	args.Limits, err = createLimitSet(l.root.spec, specutils.TPUProxyIsEnabled(l.root.spec, l.root.conf))
 	if err != nil {
 		return 0, fmt.Errorf("creating limits: %w", err)
+	}
+
+	containerName := l.k.ContainerName(args.ContainerID)
+	spec := l.containerSpecs[containerName]
+	if spec != nil {
+		args.SeccompProgram, err = buildOCISeccompProgram(l.root.conf, spec)
+		if err != nil {
+			return 0, err
+		}
 	}
 
 	// Start the process.
