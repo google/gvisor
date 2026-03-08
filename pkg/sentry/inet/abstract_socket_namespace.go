@@ -16,7 +16,7 @@ package inet
 
 import (
 	"fmt"
-	"math/rand"
+	"gvisor.dev/gvisor/pkg/rand"
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/refs"
