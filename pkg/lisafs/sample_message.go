@@ -16,9 +16,9 @@ package lisafs
 
 import (
 	"fmt"
-	"math/rand"
 
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
+	"gvisor.dev/gvisor/pkg/rand"
 )
 
 // MsgSimple is a sample packed struct which can be used to test message passing.
