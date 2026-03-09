@@ -19,7 +19,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/rand"
 	"net"
 	"os"
 	"os/exec"
@@ -31,6 +30,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/console"
@@ -183,7 +183,7 @@ func (c *Do) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spe
 		return "", nil, fmt.Errorf("error resolving current directory: %v", err)
 	}
 
-	c.cid = fmt.Sprintf("runsc-%06d", rand.Int31n(1000000))
+	c.cid = fmt.Sprintf("runsc-%06d", rand.Int63n(1000000))
 	c.spec = &specs.Spec{
 		Root: &specs.Root{
 			Path: absRoot,
