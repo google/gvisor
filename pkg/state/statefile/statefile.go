@@ -166,8 +166,12 @@ func NewWriter(w io.Writer, key []byte, metadata map[string]string) (io.WriteClo
 	}
 
 	// Create our HMAC function.
-	h := hmac.New(sha256.New, key)
-	mw := io.MultiWriter(w, h)
+	mw := w
+	var h hash.Hash
+	if len(key) > 0 {
+		h = hmac.New(sha256.New, key)
+		mw = io.MultiWriter(w, h)
+	}
 
 	// First, write the header.
 	if _, err := mw.Write(magicHeader); err != nil {
@@ -204,12 +208,14 @@ func NewWriter(w io.Writer, key []byte, metadata map[string]string) (io.WriteClo
 		return nil, err
 	}
 	// Write the current hash.
-	cur := h.Sum(nil)
-	for done := 0; done < len(cur); {
-		n, err := mw.Write(cur[done:])
-		done += n
-		if err != nil {
-			return nil, err
+	if h != nil {
+		cur := h.Sum(nil)
+		for done := 0; done < len(cur); {
+			n, err := mw.Write(cur[done:])
+			done += n
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -240,8 +246,10 @@ func readMetadataLen(r io.Reader) (uint64, error) {
 
 // metadata validates the magic header and reads out the metadata from a state
 // data stream.
-func metadata(r io.Reader, h hash.Hash) (map[string]string, error) {
-	if h != nil {
+func metadata(r io.Reader, key []byte) (map[string]string, error) {
+	var h hash.Hash
+	if len(key) > 0 {
+		h = hmac.New(sha256.New, key)
 		r = io.TeeReader(r, h)
 	}
 
@@ -285,6 +293,9 @@ func metadata(r io.Reader, h hash.Hash) (map[string]string, error) {
 		cur := h.Sum(nil)
 		buf := make([]byte, len(cur))
 		if _, err := io.ReadFull(r, buf); err != nil {
+			if err == io.EOF {
+				return nil, io.ErrUnexpectedEOF
+			}
 			return nil, err
 		}
 		if !hmac.Equal(cur, buf) {
@@ -304,8 +315,7 @@ func metadata(r io.Reader, h hash.Hash) (map[string]string, error) {
 // NewReader returns a reader for a statefile.
 func NewReader(r io.ReadCloser, key []byte) (io.ReadCloser, map[string]string, error) {
 	// Read the metadata with the hash.
-	h := hmac.New(sha256.New, key)
-	metadata, err := metadata(r, h)
+	metadata, err := metadata(r, key)
 	if err != nil {
 		return nil, nil, err
 	}
