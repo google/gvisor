@@ -29,6 +29,7 @@
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_split.h"
 #include "test/util/capability_util.h"
+#include "test/util/cleanup.h"
 #include "test/util/proc_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"

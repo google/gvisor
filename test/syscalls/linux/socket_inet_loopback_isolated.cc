@@ -387,7 +387,8 @@ using SocketMultiProtocolInetLoopbackIsolatedTest =
 
 TEST_P(SocketMultiProtocolInetLoopbackIsolatedTest, BindToDeviceReusePort) {
   // setsockopt(SO_BINDTODEVICE) requires CAP_NET_RAW.
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HaveRawIPSocketCapability(AF_INET, IPPROTO_RAW)));
 
   ProtocolTestParam const& param = GetParam();
   TestAddress const& test_addr = V4Loopback();

@@ -14,30 +14,68 @@
 
 #ifdef __linux__
 
-#include "test/util/linux_capability_util.h"
-
 #include <linux/capability.h>
+#include <linux/if_ether.h>
+#include <netinet/in.h>
 #include <sched.h>
 #include <sys/mman.h>
+#include <sys/socket.h>
 #include <sys/wait.h>
 
+#include <cerrno>
 #include <iostream>
 
 #include "absl/strings/str_cat.h"
 #include "test/util/memory_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/save_util.h"
+#include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
 namespace testing {
 
-PosixErrorOr<bool> HaveRawIPSocketCapability() {
-  return HaveCapability(CAP_NET_RAW);
+PosixErrorOr<bool> HaveRawIPSocketCapability(int family, int protocol) {
+  // Note that we can't just use HaveCapability(CAP_NET_RAW) because raw socket
+  // capability check is done using `ns_capable(net->user_ns, CAP_NET_RAW)` (on
+  // the network namespace's user namespace, which the test process may not be a
+  // part of). The only feasible way to check CAP_NET_RAW is to try to open a
+  // raw socket and see if it returns EPERM.
+  auto fd = Socket(family, SOCK_RAW, protocol);
+  if (fd.ok()) {
+    return true;
+  }
+  int err = fd.error().errno_value();
+  if (err == EPERM) {
+    return false;
+  }
+  return PosixError(
+      err, absl::StrCat("socket(", family == AF_INET ? "AF_INET" : "AF_INET6",
+                        ", SOCK_RAW, ", protocol,
+                        ") failed with "
+                        "non-EPERM error, can not determine "
+                        "CAP_NET_RAW capability"));
 }
 
-PosixErrorOr<bool> HavePacketSocketCapability() {
-  return HaveCapability(CAP_NET_RAW);
+PosixErrorOr<bool> HavePacketSocketCapability(int type, int protocol) {
+  // Note that we can't just use HaveCapability(CAP_NET_RAW) because packet
+  // socket capability check is done using `ns_capable(net->user_ns,
+  // CAP_NET_RAW)` (on the network namespace's user namespace, which the test
+  // process may not be a part of). The only feasible way to check CAP_NET_RAW
+  // is to try to open a raw socket and see if it returns EPERM.
+  auto fd = Socket(AF_PACKET, type, htons(protocol));
+  if (fd.ok()) {
+    return true;
+  }
+  int err = fd.error().errno_value();
+  if (err == EPERM) {
+    return false;
+  }
+  return PosixError(
+      err, absl::StrCat(
+               "socket(AF_PACKET, ", type, ", ", protocol,
+               ") failed with "
+               "non-EPERM error, can not determine CAP_NET_RAW capability"));
 }
 
 PosixErrorOr<bool> CanCreateUserNamespace() {

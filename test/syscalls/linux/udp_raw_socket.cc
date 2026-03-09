@@ -54,7 +54,8 @@ class UdpSocketRawTest : public ::testing::TestWithParam<int> {};
 TEST_P(UdpSocketRawTest, ReceiveWithZeroSourcePort) {
   // UDP sockets can't bind to port 0, so send a UDP packet via a raw IP
   // socket instead. If those aren't available, skip the test.
-  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability())) {
+  if (!ASSERT_NO_ERRNO_AND_VALUE(
+          HaveRawIPSocketCapability(GetParam(), IPPROTO_UDP))) {
     GTEST_SKIP();
   }
 

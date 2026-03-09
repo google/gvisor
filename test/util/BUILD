@@ -18,7 +18,6 @@ cc_library(
         "linux_capability_util.h",
     ],
     deps = [
-        ":cleanup",
         ":memory_util",
         ":posix_error",
         ":save_util",

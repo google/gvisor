@@ -34,13 +34,13 @@ namespace testing {
 // raw IP sockets.
 //
 // Returns an error when raw IP socket access cannot be determined.
-PosixErrorOr<bool> HaveRawIPSocketCapability();
+PosixErrorOr<bool> HaveRawIPSocketCapability(int family, int protocol);
 
 // HavePacketSocketCapability returns whether or not the process has access to
 // packet sockets.
 //
 // Returns an error when packet socket access cannot be determined.
-PosixErrorOr<bool> HavePacketSocketCapability();
+PosixErrorOr<bool> HavePacketSocketCapability(int type, int protocol);
 
 }  // namespace testing
 }  // namespace gvisor

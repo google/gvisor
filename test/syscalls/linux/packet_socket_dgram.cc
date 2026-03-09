@@ -93,11 +93,8 @@ void SendUDPMessage(int sock) {
 
 // Send an IP packet and make sure ETH_P_<something else> doesn't pick it up.
 TEST(BasicCookedPacketTest, WrongType) {
-  if (!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability())) {
-    ASSERT_THAT(socket(AF_PACKET, SOCK_DGRAM, ETH_P_PUP),
-                SyscallFailsWithErrno(EPERM));
-    GTEST_SKIP();
-  }
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HavePacketSocketCapability(SOCK_DGRAM, ETH_P_PUP)));
 
   FileDescriptor sock = ASSERT_NO_ERRNO_AND_VALUE(
       Socket(AF_PACKET, SOCK_DGRAM, htons(ETH_P_PUP)));
@@ -135,11 +132,8 @@ class CookedPacketTest : public ::testing::TestWithParam<int> {
 };
 
 void CookedPacketTest::SetUp() {
-  if (!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability())) {
-    ASSERT_THAT(socket(AF_PACKET, SOCK_DGRAM, htons(GetParam())),
-                SyscallFailsWithErrno(EPERM));
-    GTEST_SKIP();
-  }
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HavePacketSocketCapability(SOCK_DGRAM, GetParam())));
 
   ASSERT_THAT(socket_ = socket(AF_PACKET, SOCK_DGRAM, htons(GetParam())),
               SyscallSucceeds());
@@ -159,7 +153,8 @@ void CookedPacketTest::TearDown() {
   }
 
   // TearDown will be run even if we skip the test.
-  if (ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability())) {
+  if (ASSERT_NO_ERRNO_AND_VALUE(
+          HavePacketSocketCapability(SOCK_DGRAM, GetParam()))) {
     EXPECT_THAT(close(socket_), SyscallSucceeds());
   }
 }

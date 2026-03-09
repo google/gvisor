@@ -74,12 +74,9 @@ class PacketSocketCreationTest
     : public ::testing::TestWithParam<std::tuple<int, int>> {
  protected:
   void SetUp() override {
-    if (!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability())) {
-      const auto [type, protocol] = GetParam();
-      ASSERT_THAT(socket(AF_PACKET, type, htons(protocol)),
-                  SyscallFailsWithErrno(EPERM));
-      GTEST_SKIP() << "Missing packet socket capability";
-    }
+    const auto [type, protocol] = GetParam();
+    SKIP_IF(
+        !ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability(type, protocol)));
   }
 };
 
@@ -98,11 +95,10 @@ INSTANTIATE_TEST_SUITE_P(AllPacketSocketTests, PacketSocketCreationTest,
 class PacketSocketTest : public ::testing::TestWithParam<int> {
  protected:
   void SetUp() override {
-    if (!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability())) {
-      ASSERT_THAT(socket(AF_PACKET, GetParam(), 0),
-                  SyscallFailsWithErrno(EPERM));
-      GTEST_SKIP() << "Missing packet socket capability";
-    }
+    // The tests need packet sockets with ETH_P_IP, even though socket_ is not
+    // bound to any protocol.
+    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+        HavePacketSocketCapability(GetParam(), ETH_P_IP)));
 
     socket_ = ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_PACKET, GetParam(), 0));
   }

@@ -25,7 +25,8 @@ void IPv4DatagramBasedUnboundSocketTest::SetUp() {
   // Require raw socket capability to create a raw socket. Note that
   // SocketKind.type is a bitmask.
   if (GetParam().type & SOCK_RAW) {
-    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+        HaveRawIPSocketCapability(GetParam().domain, GetParam().protocol)));
   }
 
   if (GetParam().protocol == IPPROTO_ICMP) {
@@ -34,7 +35,8 @@ void IPv4DatagramBasedUnboundSocketTest::SetUp() {
     // then require CAP_NET_RAW.
     // See https://lwn.net/Articles/443051/
     SKIP_IF(!IsRunningOnGvisor() || IsRunningWithHostinet() ||
-            ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+            ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability(
+                GetParam().domain, GetParam().protocol)));
   }
 }
 
