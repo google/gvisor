@@ -179,7 +179,8 @@ func (e *Endpoint) closeEndpointAtRestore() {
 }
 
 // Restore implements tcpip.RestoredEndpoint.Restore.
-func (e *Endpoint) Restore(s *stack.Stack) {
+func (e *Endpoint) Restore(s *stack.Stack, inplaceRestore bool) {
+	log.Infof("inplace restore %v", inplaceRestore)
 	if !e.EndpointState().closed() {
 		e.keepalive.timer.init(s.Clock(), timerHandler(e, e.keepaliveTimerExpired))
 	}

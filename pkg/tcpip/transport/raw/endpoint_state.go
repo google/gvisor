@@ -49,7 +49,8 @@ func (e *endpoint) beforeSave() {
 }
 
 // Restore implements tcpip.RestoredEndpoint.Restore.
-func (e *endpoint) Restore(s *stack.Stack) {
+func (e *endpoint) Restore(s *stack.Stack, inplaceRestore bool) {
+	log.Infof("inplace restore %v", inplaceRestore)
 	if err := e.net.Resume(s); err != nil {
 		log.Warningf("Closing the raw endpoint as it cannot be restored, err: %v", err)
 		e.Close()

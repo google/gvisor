@@ -108,6 +108,9 @@ type restorer struct {
 	// checkpointedSpecs contains the map of container specs used during
 	// checkpoint.
 	checkpointedSpecs map[string]*specs.Spec
+
+	// If true, restore is happening in-place.
+	inplaceRestore bool
 }
 
 // restoreSubcontainer restores a subcontainer.
@@ -279,7 +282,7 @@ func (r *restorer) restore(l *Loader) error {
 
 	// Load the state.
 	r.timer.Reached("loading kernel")
-	if err := l.k.LoadFrom(ctx, r.stateFile, r.asyncMFLoader, nil, oldInetStack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}, l.saveRestoreNet); err != nil {
+	if err := l.k.LoadFrom(ctx, r.stateFile, r.asyncMFLoader, nil, oldInetStack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}, l.saveRestoreNet, r.inplaceRestore); err != nil {
 		return fmt.Errorf("failed to load kernel: %w", err)
 	}
 	r.timer.Reached("kernel loaded")

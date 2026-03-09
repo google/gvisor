@@ -68,6 +68,9 @@ type SaveOpts struct {
 	// Resume indicates if the statefile is used for save-resume.
 	Resume bool
 
+	// InplaceRestore indicates if we are restoring inplace.
+	InplaceRestore bool
+
 	// Autosave indicates if the statefile is used for autosave.
 	Autosave bool
 
@@ -150,7 +153,7 @@ func (opts *SaveOpts) Save(ctx context.Context, k *kernel.Kernel, w *watchdog.Wa
 	} else {
 		opts.Destination = nil
 		// Save the kernel.
-		err = k.SaveTo(ctx, wc, opts.PagesMetadata, opts.PagesFile, opts.AppMFExcludeCommittedZeroPages, opts.Resume) // transfers ownership of wc, opts.PagesMetadata, opts.PagesFile
+		err = k.SaveTo(ctx, wc, opts.PagesMetadata, opts.PagesFile, opts.AppMFExcludeCommittedZeroPages, opts.Resume, opts.InplaceRestore) // transfers ownership of wc, opts.PagesMetadata, opts.PagesFile
 		opts.PagesMetadata = nil
 		opts.PagesFile = nil
 	}

@@ -538,6 +538,7 @@ type RestoreOpts struct {
 	HavePagesFile  bool
 	HaveDeviceFile bool
 	Background     bool
+	InplaceRestore bool
 
 	RestoreOptsExtra
 }
@@ -586,9 +587,10 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 	}()
 
 	cm.restorer = &restorer{
-		cm:         cm,
-		background: o.Background,
-		timer:      timer,
+		cm:             cm,
+		background:     o.Background,
+		timer:          timer,
+		inplaceRestore: o.InplaceRestore,
 	}
 
 	// Create the main MemoryFile.
