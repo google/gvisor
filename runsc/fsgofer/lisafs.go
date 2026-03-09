@@ -193,6 +193,7 @@ func (s *LisafsServer) SupportedMessages() []lisafs.MID {
 		lisafs.Listen,
 		lisafs.Accept,
 		lisafs.ConnectWithCreds,
+		lisafs.RenameAt2,
 	}
 }
 
@@ -994,6 +995,11 @@ func (fd *controlFDLisa) Unlink(name string, flags uint32) error {
 // RenameAt implements lisafs.ControlFDImpl.RenameAt.
 func (fd *controlFDLisa) RenameAt(oldName string, newDir lisafs.ControlFDImpl, newName string) error {
 	return fsutil.RenameAt(fd.hostFD, oldName, newDir.(*controlFDLisa).hostFD, newName)
+}
+
+// RenameAt2 implements lisafs.ControlFDImpl.RenameAt2.
+func (fd *controlFDLisa) RenameAt2(oldName string, newDir lisafs.ControlFDImpl, newName string, flags uint32) error {
+	return fsutil.RenameAt2(fd.hostFD, oldName, newDir.(*controlFDLisa).hostFD, newName, flags)
 }
 
 // Renamed implements lisafs.ControlFDImpl.Renamed.

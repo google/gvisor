@@ -59,6 +59,10 @@ constexpr int kOLargeFile = 00400000;
 #define RENAME_NOREPLACE (1 << 0)
 #endif  // RENAME_NOREPLACE
 
+#ifndef RENAME_EXCHANGE
+#define RENAME_EXCHANGE (1 << 1)
+#endif  // RENAME_EXCHANGE
+
 int renameat2(int olddirfd, const char* oldpath, int newdirfd,
               const char* newpath, unsigned int flags);
 #endif  // __Fuchsia__
