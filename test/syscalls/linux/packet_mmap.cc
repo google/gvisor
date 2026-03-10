@@ -32,9 +32,9 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
+#include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
-#include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
 #include "test/util/posix_error.h"
 #include "test/util/socket_util.h"
@@ -59,10 +59,8 @@ PosixErrorOr<void*> MakePacketMmapRing(int fd, const sockaddr* bind_addr,
 
 // Tests that setting the RX ring works and fails if constraints are not met.
 TEST(PacketMmapTest, SetRXRingFailsBadRequests) {
-  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
-    ASSERT_THAT(socket(AF_PACKET, SOCK_RAW, 0), SyscallFailsWithErrno(EPERM));
-    GTEST_SKIP() << "Missing packet socket capability";
-  }
+  SKIP_IF(
+      !ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability(SOCK_DGRAM, 0)));
   FileDescriptor mmap_sock =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_PACKET, SOCK_DGRAM, 0));
 
@@ -119,10 +117,8 @@ TEST(PacketMmapTest, SetRXRingFailsBadRequests) {
 }
 
 TEST(PacketMmapTest, Basic) {
-  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
-    ASSERT_THAT(socket(AF_PACKET, SOCK_RAW, 0), SyscallFailsWithErrno(EPERM));
-    GTEST_SKIP() << "Missing packet socket capability";
-  }
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HavePacketSocketCapability(SOCK_DGRAM, ETH_P_IP)));
   sockaddr_ll bind_addr = {
       .sll_family = AF_PACKET,
       .sll_protocol = htons(ETH_P_IP),
@@ -168,10 +164,8 @@ TEST(PacketMmapTest, Basic) {
 }
 
 TEST(PacketMmapTest, FillBlocks) {
-  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
-    ASSERT_THAT(socket(AF_PACKET, SOCK_RAW, 0), SyscallFailsWithErrno(EPERM));
-    GTEST_SKIP() << "Missing packet socket capability ";
-  }
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HavePacketSocketCapability(SOCK_DGRAM, ETH_P_IP)));
   sockaddr_ll bind_addr = {
       .sll_family = AF_PACKET,
       .sll_protocol = htons(ETH_P_IP),
@@ -258,10 +252,8 @@ TEST(PacketMmapTest, FillBlocks) {
 }
 
 TEST(PacketMmapTest, ZeroSizeRing) {
-  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
-    ASSERT_THAT(socket(AF_PACKET, SOCK_RAW, 0), SyscallFailsWithErrno(EPERM));
-    GTEST_SKIP() << "Missing packet socket capability";
-  }
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HavePacketSocketCapability(SOCK_DGRAM, ETH_P_IP)));
   sockaddr_ll bind_addr = {
       .sll_family = AF_PACKET,
       .sll_protocol = htons(ETH_P_IP),
@@ -284,10 +276,8 @@ TEST(PacketMmapTest, ZeroSizeRing) {
 }
 
 TEST(PacketMmapTest, ConcurrentReadWrite) {
-  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
-    ASSERT_THAT(socket(AF_PACKET, SOCK_RAW, 0), SyscallFailsWithErrno(EPERM));
-    GTEST_SKIP() << "Missing packet socket capability";
-  }
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HavePacketSocketCapability(SOCK_DGRAM, ETH_P_IP)));
   sockaddr_ll bind_addr = {
       .sll_family = AF_PACKET,
       .sll_protocol = htons(ETH_P_IP),
@@ -342,10 +332,8 @@ TEST(PacketMmapTest, ConcurrentReadWrite) {
 }
 
 TEST(PacketMmapTest, RawPacket) {
-  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
-    ASSERT_THAT(socket(AF_PACKET, SOCK_RAW, 0), SyscallFailsWithErrno(EPERM));
-    GTEST_SKIP() << "Missing packet socket capability";
-  }
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HavePacketSocketCapability(SOCK_RAW, ETH_P_ALL)));
   sockaddr_ll bind_addr = {
       .sll_family = AF_PACKET,
       .sll_protocol = htons(ETH_P_ALL),
@@ -401,10 +389,8 @@ TEST(PacketMmapTest, RawPacket) {
 }
 
 TEST(PacketMmapTest, SetRingAfterMmapFails) {
-  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
-    ASSERT_THAT(socket(AF_PACKET, SOCK_RAW, 0), SyscallFailsWithErrno(EPERM));
-    GTEST_SKIP() << "Missing packet socket capability";
-  }
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HavePacketSocketCapability(SOCK_RAW, ETH_P_ALL)));
   sockaddr_ll bind_addr = {
       .sll_family = AF_PACKET,
       .sll_protocol = htons(ETH_P_ALL),
@@ -437,10 +423,8 @@ TEST(PacketMmapTest, SetRingAfterMmapFails) {
 }
 
 TEST(PacketMmapTest, MmapCopy) {
-  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
-    ASSERT_THAT(socket(AF_PACKET, SOCK_RAW, 0), SyscallFailsWithErrno(EPERM));
-    GTEST_SKIP() << "Missing packet socket capability";
-  }
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HavePacketSocketCapability(SOCK_RAW, ETH_P_ALL)));
   sockaddr_ll bind_addr = {
       .sll_family = AF_PACKET,
       .sll_protocol = htons(ETH_P_ALL),
@@ -493,10 +477,8 @@ TEST(PacketMmapTest, MmapCopy) {
 }
 
 TEST(PacketMmapTest, SetVersion) {
-  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
-    ASSERT_THAT(socket(AF_PACKET, SOCK_RAW, 0), SyscallFailsWithErrno(EPERM));
-    GTEST_SKIP() << "Missing packet socket capability";
-  }
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HavePacketSocketCapability(SOCK_DGRAM, ETH_P_IP)));
   FileDescriptor mmap_sock =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_PACKET, SOCK_DGRAM, 0));
 
@@ -519,10 +501,8 @@ TEST(PacketMmapTest, SetVersion) {
 }
 
 TEST(PacketMmapTest, BasicV2) {
-  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
-    ASSERT_THAT(socket(AF_PACKET, SOCK_RAW, 0), SyscallFailsWithErrno(EPERM));
-    GTEST_SKIP() << "Missing packet socket capability";
-  }
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HavePacketSocketCapability(SOCK_DGRAM, ETH_P_IP)));
   sockaddr_ll bind_addr = {
       .sll_family = AF_PACKET,
       .sll_protocol = htons(ETH_P_IP),
@@ -568,10 +548,8 @@ TEST(PacketMmapTest, BasicV2) {
 }
 
 TEST(PacketMMmapTest, GetPacketHdrLen) {
-  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
-    ASSERT_THAT(socket(AF_PACKET, SOCK_RAW, 0), SyscallFailsWithErrno(EPERM));
-    GTEST_SKIP() << "Missing packet socket capability";
-  }
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HavePacketSocketCapability(SOCK_DGRAM, ETH_P_IP)));
 
   FileDescriptor mmap_sock =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_PACKET, SOCK_DGRAM, 0));
@@ -596,10 +574,8 @@ TEST(PacketMMmapTest, GetPacketHdrLen) {
 }
 
 TEST(PacketMmapTest, PacketReserve) {
-  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
-    ASSERT_THAT(socket(AF_PACKET, SOCK_RAW, 0), SyscallFailsWithErrno(EPERM));
-    GTEST_SKIP() << "Missing packet socket capability";
-  }
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HavePacketSocketCapability(SOCK_DGRAM, ETH_P_IP)));
   sockaddr_ll bind_addr = {
       .sll_family = AF_PACKET,
       .sll_protocol = htons(ETH_P_IP),
@@ -655,10 +631,8 @@ TEST(PacketMmapTest, PacketReserve) {
 }
 
 TEST(PacketMmapTest, PacketStatistics) {
-  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
-    ASSERT_THAT(socket(AF_PACKET, SOCK_RAW, 0), SyscallFailsWithErrno(EPERM));
-    GTEST_SKIP() << "Missing packet socket capability";
-  }
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HavePacketSocketCapability(SOCK_DGRAM, ETH_P_IP)));
   sockaddr_ll bind_addr = {
       .sll_family = AF_PACKET,
       .sll_protocol = htons(ETH_P_IP),
