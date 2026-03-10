@@ -16,6 +16,7 @@ package icmp
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/log"
@@ -77,13 +78,11 @@ func (e *endpoint) Restore(s *stack.Stack) {
 		info.ID.LocalPort = e.ident
 		info.ID, err = e.registerWithStack(info.NetProto, info.ID)
 		if err != nil {
-			log.Warningf("e.registerWithStack(%d, %#v) failed during restore for ICMP endpoint: %s", info.NetProto, info.ID, err)
-			return
+			panic(fmt.Sprintf("e.registerWithStack(%d, %#v): %s", info.NetProto, info.ID, err))
 		}
 		e.ident = info.ID.LocalPort
 	default:
-		log.Warningf("unhandled ICMP endpoint state during restore: %s", state)
-		return
+		panic(fmt.Sprintf("unhandled state = %s", state))
 	}
 }
 

@@ -67,9 +67,7 @@ func (e *endpoint) Restore(s *stack.Stack) {
 	if e.associated {
 		netProto := e.net.NetProto()
 		if err := e.stack.RegisterRawTransportEndpoint(netProto, e.transProto, e); err != nil {
-			log.Warningf("RegisterRawTransportEndpoint failed during restore for raw endpoint: %v", err)
-			e.Close()
-			return
+			panic("RegisterRawTransportEndpoint failed during restore")
 		}
 	}
 }
