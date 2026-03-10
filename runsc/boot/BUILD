@@ -24,6 +24,7 @@ go_library(
         "restore.go",
         "restore_impl.go",
         "seccheck.go",
+        "seccomp.go",
         "strace.go",
         "vfs.go",
     ],

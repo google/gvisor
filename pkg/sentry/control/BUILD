@@ -36,6 +36,7 @@ go_library(
     deps = [
         ":control_api_go_proto",
         "//pkg/abi/linux",
+        "//pkg/bpf",
         "//pkg/cleanup",
         "//pkg/context",
         "//pkg/eventchannel",
