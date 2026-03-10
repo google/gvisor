@@ -2,7 +2,10 @@ load("//tools:defs.bzl", "go_library")
 
 package(
     default_applicable_licenses = ["//:license"],
-    default_visibility = ["//:sandbox"],
+    default_visibility = [
+        "//:sandbox",
+        "//cloud/kubernetes/distro/components/podsnapshotaddon/test:__subpackages__",
+    ],
     licenses = ["notice"],
 )
 
