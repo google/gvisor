@@ -44,9 +44,10 @@ const (
 
 // --- 48-bit VA (4-level page tables, 256 TB) ---
 const (
-	maxAddr64VA48                hostarch.Addr = 1 << 48
-	maxMmapRand64VA48            hostarch.Addr = (1 << 33) * hostarch.PageSize // ARCH_MMAP_RND_BITS_MAX=33
-	minMmapRand64VA48            hostarch.Addr = (1 << 18) * hostarch.PageSize
+	maxAddr64VA48 hostarch.Addr = 1 << 48
+	// The following 2 value is synced from 2bdc95b
+	maxMmapRand64VA48            hostarch.Addr = 1 << 45 // ARCH_MMAP_RND_BITS_MAX=33
+	minMmapRand64VA48            hostarch.Addr = 1 << 30
 	preferredTopDownAllocMinVA48 hostarch.Addr = 0x7e8000000000
 	preferredAllocationGapVA48   hostarch.Addr = 128 << 30 // 128 GB
 	preferredPIELoadAddrVA48     hostarch.Addr = maxAddr64VA48 / 6 * 5
@@ -68,8 +69,8 @@ const (
 //     same process can mix 48-bit and 52-bit mmap calls.
 const (
 	maxAddr64VA52                hostarch.Addr = 1 << 52
-	maxMmapRand64VA52            hostarch.Addr = (1 << 33) * hostarch.PageSize // same as 48-bit
-	minMmapRand64VA52            hostarch.Addr = (1 << 18) * hostarch.PageSize
+	maxMmapRand64VA52            hostarch.Addr = 1 << 45 // same as 48-bit
+	minMmapRand64VA52            hostarch.Addr = 1 << 30
 	preferredTopDownAllocMinVA52 hostarch.Addr = 0x7e80000000000 // ~2024 TB
 	preferredAllocationGapVA52   hostarch.Addr = 128 << 30
 	preferredPIELoadAddrVA52     hostarch.Addr = maxAddr64VA52 / 6 * 5
@@ -93,7 +94,7 @@ var (
 	// For 4K pages (PageShift=12): 1 << 45 = 32TB
 	// For 64K pages (PageShift=16): 1 << 45 = 32TB (same)
 	// We use a fixed value to avoid exceeding the 48-bit address space.
-	maxMmapRand64 hostarch.Addr = 1 << 45
+	maxMmapRand64 hostarch.Addr = maxMmapRand64VA48
 
 	// minGap64 is the minimum gap to leave at the top of the address space
 	// for the stack. It is defined by arch/arm64/mm/mmap.c:MIN_GAP in Linux.
@@ -123,48 +124,6 @@ var (
 	CPUIDInstruction = []byte{}
 )
 
-// These defaults are selected as heuristics to help make the Platform's
-// potentially limited address space conform as closely to Linux as possible.
-// They can be overridden via ConfigureAddressSpace().
-var (
-	preferredTopDownAllocMin hostarch.Addr = 0x7e8000000000
-	preferredAllocationGap   hostarch.Addr = 128 << 30 // 128 GB
-	preferredTopDownBaseMin  hostarch.Addr = preferredTopDownAllocMin + preferredAllocationGap
-
-	// minMmapRand64 is the smallest we are willing to make the
-	// randomization to stay above preferredTopDownBaseMin.
-	// Use a fixed value (1GB) to be consistent across page sizes.
-	minMmapRand64 hostarch.Addr = 1 << 30
-)
-
-// AddressSpaceConfig holds platform-specific address space parameters that
-// override the default 48-bit VA layout. This allows platforms like systrap
-// to support 39-bit and 52-bit VA widths without affecting platforms like
-// KVM that only support 48-bit.
-type AddressSpaceConfig struct {
-	MaxAddr64                hostarch.Addr
-	MaxMmapRand64            hostarch.Addr
-	MinMmapRand64            hostarch.Addr
-	PreferredTopDownAllocMin hostarch.Addr
-	PreferredAllocationGap   hostarch.Addr
-	PreferredPIELoadAddr     hostarch.Addr
-}
-
-// ConfigureAddressSpace allows a platform to override the default address
-// space layout parameters. This MUST be called before any Context64 is used
-// (typically during platform initialization).
-//
-// KVM should NOT call this function — it relies on the 48-bit defaults.
-// Only systrap calls this for 39-bit or 52-bit VA hosts.
-func ConfigureAddressSpace(cfg AddressSpaceConfig) {
-	maxAddr64 = cfg.MaxAddr64
-	maxMmapRand64 = cfg.MaxMmapRand64
-	minMmapRand64 = cfg.MinMmapRand64
-	preferredTopDownAllocMin = cfg.PreferredTopDownAllocMin
-	preferredAllocationGap = cfg.PreferredAllocationGap
-	preferredTopDownBaseMin = cfg.PreferredTopDownAllocMin + cfg.PreferredAllocationGap
-	preferredPIELoadAddr = cfg.PreferredPIELoadAddr
-	// minGap64 and maxStackRand64 are the same across all VA widths on ARM64.
 // ConfigureAddressSpace sets the active address space layout parameters
 // based on the host virtual address space size (taskSize).
 //
