@@ -32,22 +32,61 @@ import (
 // Host specifies the host architecture.
 const Host = ARM64
 
-// These defaults come directly from Linux for 48-bit VA (4-level page tables).
-// They can be overridden by a platform via ConfigureAddressSpace() for other
-// VA widths (e.g., 39-bit or 52-bit).
-var (
-	// maxAddr64 is the maximum userspace address. It is TASK_SIZE in Linux
-	// for a 64-bit process.
-	//
-	// WARNING: This value is shared by ALL platforms (KVM, systrap, etc.).
-	// KVM requires maxAddr64 == 1<<48. Only systrap should override this
-	// via ConfigureAddressSpace().
-	maxAddr64 hostarch.Addr = (1 << 48)
+// --- 39-bit VA (3-level page tables, 512 GB) ---
+const (
+	maxAddr64VA39                hostarch.Addr = 1 << 39
+	maxMmapRand64VA39            hostarch.Addr = (1 << 24) * hostarch.PageSize // ARCH_MMAP_RND_BITS_MAX=24
+	minMmapRand64VA39            hostarch.Addr = (1 << 18) * hostarch.PageSize // ARCH_MMAP_RND_BITS_MIN=18
+	preferredTopDownAllocMinVA39 hostarch.Addr = 0x5800000000                  // ~352 GB, ~68.8%
+	preferredAllocationGapVA39   hostarch.Addr = 16 << 30                      // 16 GB
+	preferredPIELoadAddrVA39     hostarch.Addr = maxAddr64VA39 / 6 * 5
+)
 
+// --- 48-bit VA (4-level page tables, 256 TB) ---
+const (
+	maxAddr64VA48                hostarch.Addr = 1 << 48
+	maxMmapRand64VA48            hostarch.Addr = (1 << 33) * hostarch.PageSize // ARCH_MMAP_RND_BITS_MAX=33
+	minMmapRand64VA48            hostarch.Addr = (1 << 18) * hostarch.PageSize
+	preferredTopDownAllocMinVA48 hostarch.Addr = 0x7e8000000000
+	preferredAllocationGapVA48   hostarch.Addr = 128 << 30 // 128 GB
+	preferredPIELoadAddrVA48     hostarch.Addr = maxAddr64VA48 / 6 * 5
+)
+
+// --- 52-bit VA (5-level page tables, 4 PB) ---
+//
+// Critical notes:
+//
+//  1. PIE: Linux uses DEFAULT_MAP_WINDOW_64 (= 1<<48) rather than
+//     TASK_SIZE_64 (= 1<<52) for ELF_ET_DYN_BASE when
+//     CONFIG_ARM64_FORCE_52BIT is not set. Most processes do not
+//     need addresses above 48-bit; keeping PIE in the 48-bit
+//     window avoids compatibility issues with userspace code.
+//
+//  2. MMAP randomization: ARCH_MMAP_RND_BITS_MAX for 52-bit VA
+//     is 33 (same as 48-bit), NOT 37 as the formula would suggest.
+//     This is because mmap_rnd_bits is a global sysctl and the
+//     same process can mix 48-bit and 52-bit mmap calls.
+const (
+	maxAddr64VA52                hostarch.Addr = 1 << 52
+	maxMmapRand64VA52            hostarch.Addr = (1 << 33) * hostarch.PageSize // same as 48-bit
+	minMmapRand64VA52            hostarch.Addr = (1 << 18) * hostarch.PageSize
+	preferredTopDownAllocMinVA52 hostarch.Addr = 0x7e80000000000 // ~2024 TB
+	preferredAllocationGapVA52   hostarch.Addr = 128 << 30
+	preferredPIELoadAddrVA52     hostarch.Addr = maxAddr64VA52 / 6 * 5
+)
+
+// --- VA-width independent constants ---
+const (
 	// maxStackRand64 is the maximum randomization to apply to the stack.
 	// It is defined by arch/arm64/mm/mmap.c:(STACK_RND_MASK << PAGE_SHIFT) in Linux.
 	// Fixed across all VA widths on ARM64.
 	maxStackRand64 hostarch.Addr = 0x3ffff << hostarch.PageShift
+)
+
+var (
+	// maxAddr64 is the maximum userspace address. It is TASK_SIZE in Linux
+	// for a 64-bit process.
+	maxAddr64 hostarch.Addr = maxAddr64VA48
 
 	// maxMmapRand64 is the maximum randomization to apply to the mmap
 	// layout. It is defined by arch/arm64/mm/mmap.c:arch_mmap_rnd in Linux.
@@ -58,14 +97,25 @@ var (
 
 	// minGap64 is the minimum gap to leave at the top of the address space
 	// for the stack. It is defined by arch/arm64/mm/mmap.c:MIN_GAP in Linux.
-	minGap64 hostarch.Addr = (128 << 20) + maxStackRand64
+	minGap64 hostarch.Addr = hostarch.Addr(128<<20) + maxStackRand64
 
 	// preferredPIELoadAddr is the standard Linux position-independent
 	// executable base load address. It is ELF_ET_DYN_BASE in Linux.
 	//
 	// The Platform {Min,Max}UserAddress() may preclude loading at this
 	// address. See other preferredFoo comments below.
-	preferredPIELoadAddr hostarch.Addr = maxAddr64 / 6 * 5
+	preferredPIELoadAddr hostarch.Addr = preferredPIELoadAddrVA48
+
+	// These defaults are selected as heuristics to help make the Platform's
+	// potentially limited address space conform as closely to Linux as possible.
+	// They can be overridden via ConfigureAddressSpace().
+	preferredTopDownAllocMin hostarch.Addr = preferredTopDownAllocMinVA48
+	preferredAllocationGap   hostarch.Addr = preferredAllocationGapVA48
+	preferredTopDownBaseMin  hostarch.Addr = preferredTopDownAllocMinVA48 + preferredAllocationGapVA48
+
+	// minMmapRand64 is the smallest we are willing to make the
+	// randomization to stay above preferredTopDownBaseMin.
+	minMmapRand64 hostarch.Addr = minMmapRand64VA48
 )
 
 var (
@@ -115,6 +165,41 @@ func ConfigureAddressSpace(cfg AddressSpaceConfig) {
 	preferredTopDownBaseMin = cfg.PreferredTopDownAllocMin + cfg.PreferredAllocationGap
 	preferredPIELoadAddr = cfg.PreferredPIELoadAddr
 	// minGap64 and maxStackRand64 are the same across all VA widths on ARM64.
+// ConfigureAddressSpace sets the active address space layout parameters
+// based on the host virtual address space size (taskSize).
+//
+// Every platform MUST call this function exactly once during initialization,
+// before any Context64 is created.
+//
+//   - systrap: ConfigureAddressSpace(uintptr(linux.TaskSize))
+//   - KVM:     ConfigureAddressSpace(1 << 48)
+func ConfigureAddressSpace(taskSize uintptr) {
+	switch taskSize {
+	case 1 << 39:
+		maxAddr64 = maxAddr64VA39
+		maxMmapRand64 = maxMmapRand64VA39
+		minMmapRand64 = minMmapRand64VA39
+		preferredTopDownAllocMin = preferredTopDownAllocMinVA39
+		preferredAllocationGap = preferredAllocationGapVA39
+		preferredPIELoadAddr = preferredPIELoadAddrVA39
+	case 1 << 48:
+		maxAddr64 = maxAddr64VA48
+		maxMmapRand64 = maxMmapRand64VA48
+		minMmapRand64 = minMmapRand64VA48
+		preferredTopDownAllocMin = preferredTopDownAllocMinVA48
+		preferredAllocationGap = preferredAllocationGapVA48
+		preferredPIELoadAddr = preferredPIELoadAddrVA48
+	case 1 << 52:
+		maxAddr64 = maxAddr64VA52
+		maxMmapRand64 = maxMmapRand64VA52
+		minMmapRand64 = minMmapRand64VA52
+		preferredTopDownAllocMin = preferredTopDownAllocMinVA52
+		preferredAllocationGap = preferredAllocationGapVA52
+		preferredPIELoadAddr = preferredPIELoadAddrVA52
+	default:
+		panic(fmt.Sprintf("unsupported ARM64 task size: %#x", taskSize))
+	}
+	preferredTopDownBaseMin = preferredTopDownAllocMin + preferredAllocationGap
 }
 
 // Context64 represents an ARM64 context.
