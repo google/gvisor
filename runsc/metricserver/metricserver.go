@@ -19,6 +19,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"net"
 	"net/http"
 	"os"
@@ -35,7 +36,6 @@ import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/prometheus"
-	crand "gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -622,16 +622,7 @@ func queryMultiSandboxMetrics(ctx context.Context, loadedSandboxes []sandboxLoad
 	// being part of the "first `numGoroutines` sandboxes in line" to get their
 	// metric data loaded, such that a client repeatedly scraping metrics will
 	// eventually get data from each sandbox.
-	// Fisher-Yates shuffle using cryptographic PRNG.
-	perm := make([]int, len(loadedSandboxes))
-	for i := range perm {
-		perm[i] = i
-	}
-	for i := len(perm) - 1; i > 0; i-- {
-		j := int(crand.Int63n(int64(i + 1)))
-		perm[i], perm[j] = perm[j], perm[i]
-	}
-	for _, sandboxIndex := range perm {
+	for _, sandboxIndex := range rand.Perm(len(loadedSandboxes)) {
 		loadedSandboxCh <- loadedSandboxes[sandboxIndex]
 	}
 	close(loadedSandboxCh)
