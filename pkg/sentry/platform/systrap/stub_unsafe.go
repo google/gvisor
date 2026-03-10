@@ -239,7 +239,7 @@ func stubInit() {
 			if n == 0 {
 				panic("failed to map stub code")
 			}
-			r := regions[int(rand.Uint64())%n]
+			r := regions[rand.Uint64()%uint64(n)]
 			stubStart = r.start + uintptr(rand.Uint64())*hostarch.PageSize%(r.end-r.start-stubROMapEnd)
 		}
 		// Map the target address for the stub.

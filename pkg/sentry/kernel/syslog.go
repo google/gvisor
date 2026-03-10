@@ -15,10 +15,9 @@
 package kernel
 
 import (
-	"encoding/binary"
 	"fmt"
+	"math/rand"
 
-	crand "gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -89,15 +88,8 @@ func (s *syslog) Log() []byte {
 		"Politicking the oom killer...",
 	}
 
-	// cryptoFloat64 returns a cryptographically random float64 in [0, 1).
-	cryptoFloat64 := func() float64 {
-		var b [8]byte
-		crand.Read(b[:])
-		return float64(binary.NativeEndian.Uint64(b[:])>>11) / (1 << 53)
-	}
-
 	selectMessage := func() string {
-		i := int(crand.Int63n(int64(len(allMessages))))
+		i := rand.Intn(len(allMessages))
 		m := allMessages[i]
 
 		// Delete the selected message.
@@ -113,11 +105,11 @@ func (s *syslog) Log() []byte {
 
 	time := 0.1
 	for i := 0; i < 10; i++ {
-		time += cryptoFloat64() / 2
+		time += rand.Float64() / 2
 		s.msg = append(s.msg, []byte(fmt.Sprintf(format, time, selectMessage()))...)
 	}
 
-	time += cryptoFloat64() / 2
+	time += rand.Float64() / 2
 	s.msg = append(s.msg, []byte(fmt.Sprintf(format, time, "Ready!"))...)
 
 	// Return a copy.
