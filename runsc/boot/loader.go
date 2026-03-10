@@ -1491,10 +1491,11 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 	containerName := l.k.ContainerName(args.ContainerID)
 	spec := l.containerSpecs[containerName]
 	if spec != nil {
-		args.SeccompProgram, err = buildOCISeccompProgram(l.root.conf, spec)
+		seccompProgram, err := buildOCISeccompProgram(l.root.conf, spec)
 		if err != nil {
 			return 0, err
 		}
+		args.SeccompProgram = seccompProgram
 	}
 
 	// Start the process.

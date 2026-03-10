@@ -1,4 +1,4 @@
-// Copyright 2025 The gVisor Authors.
+// Copyright 2026 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ import (
 func buildOCISeccompProgram(conf *config.Config, spec *specs.Spec) (*bpf.Program, error) {
 	if !conf.OCISeccomp {
 		if spec.Linux != nil && spec.Linux.Seccomp != nil {
-			log.Warningf("Seccomp spec is being ignored")
+			log.Warningf("Seccomp spec is being ignored because oci-seccomp is disabled")
 		}
 		return nil, nil
 	}
