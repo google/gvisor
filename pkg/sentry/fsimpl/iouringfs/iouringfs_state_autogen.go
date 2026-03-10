@@ -60,6 +60,7 @@ func (sqemf *sqEntriesFile) StateTypeName() string {
 
 func (sqemf *sqEntriesFile) StateFields() []string {
 	return []string{
+		"MappableNoTrackMappings",
 		"fr",
 	}
 }
@@ -69,14 +70,16 @@ func (sqemf *sqEntriesFile) beforeSave() {}
 // +checklocksignore
 func (sqemf *sqEntriesFile) StateSave(stateSinkObject state.Sink) {
 	sqemf.beforeSave()
-	stateSinkObject.Save(0, &sqemf.fr)
+	stateSinkObject.Save(0, &sqemf.MappableNoTrackMappings)
+	stateSinkObject.Save(1, &sqemf.fr)
 }
 
 func (sqemf *sqEntriesFile) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (sqemf *sqEntriesFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &sqemf.fr)
+	stateSourceObject.Load(0, &sqemf.MappableNoTrackMappings)
+	stateSourceObject.Load(1, &sqemf.fr)
 }
 
 func (rbmf *ringsBufferFile) StateTypeName() string {
@@ -85,6 +88,7 @@ func (rbmf *ringsBufferFile) StateTypeName() string {
 
 func (rbmf *ringsBufferFile) StateFields() []string {
 	return []string{
+		"MappableNoTrackMappings",
 		"fr",
 	}
 }
@@ -94,14 +98,16 @@ func (rbmf *ringsBufferFile) beforeSave() {}
 // +checklocksignore
 func (rbmf *ringsBufferFile) StateSave(stateSinkObject state.Sink) {
 	rbmf.beforeSave()
-	stateSinkObject.Save(0, &rbmf.fr)
+	stateSinkObject.Save(0, &rbmf.MappableNoTrackMappings)
+	stateSinkObject.Save(1, &rbmf.fr)
 }
 
 func (rbmf *ringsBufferFile) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (rbmf *ringsBufferFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &rbmf.fr)
+	stateSourceObject.Load(0, &rbmf.MappableNoTrackMappings)
+	stateSourceObject.Load(1, &rbmf.fr)
 }
 
 func init() {

@@ -20,6 +20,7 @@ import (
 	"os"
 
 	"github.com/google/subcommands"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
@@ -29,6 +30,7 @@ import (
 
 // Delete implements subcommands.Command for the "delete" command.
 type Delete struct {
+	containerLoader
 	// force indicates that the container should be terminated if running.
 	force bool
 }
@@ -53,6 +55,18 @@ func (d *Delete) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&d.force, "force", false, "terminate container if running")
 }
 
+// FetchSpec implements util.SubCommand.FetchSpec.
+func (d *Delete) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error) {
+	c, err := d.loadContainer(conf, f, container.LoadOpts{})
+	if err != nil {
+		if os.IsNotExist(err) && d.force {
+			return "", nil, nil
+		}
+		return "", nil, fmt.Errorf("loading container: %w", err)
+	}
+	return c.ID, c.Spec, nil
+}
+
 // Execute implements subcommands.Command.Execute.
 func (d *Delete) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if f.NArg() == 0 {
@@ -61,15 +75,25 @@ func (d *Delete) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcom
 	}
 
 	conf := args[0].(*config.Config)
-	if err := d.execute(f.Args(), conf); err != nil {
+	if err := d.execute(f, conf); err != nil {
 		util.Fatalf("%v", err)
 	}
 	return subcommands.ExitSuccess
 }
 
-func (d *Delete) execute(ids []string, conf *config.Config) error {
-	for _, id := range ids {
-		c, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
+func (d *Delete) execute(f *flag.FlagSet, conf *config.Config) error {
+	ids := f.Args()
+	for i, id := range ids {
+		var (
+			c   *container.Container
+			err error
+		)
+		if i == 0 {
+			// The first container is cached via the FetchSpec() mechanism.
+			c, err = d.loadContainer(conf, f, container.LoadOpts{})
+		} else {
+			c, err = container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
+		}
 		if err != nil {
 			if os.IsNotExist(err) && d.force {
 				log.Warningf("couldn't find container %q: %v", id, err)

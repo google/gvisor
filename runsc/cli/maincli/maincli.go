@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/runsc/cmd"
 	"gvisor.dev/gvisor/runsc/cmd/nvproxy"
 	"gvisor.dev/gvisor/runsc/cmd/trace"
+	"gvisor.dev/gvisor/runsc/cmd/util"
 )
 
 // Main is the main entrypoint.
@@ -29,13 +30,13 @@ func Main() {
 	cli.Run(cmds, helpCmds)
 }
 
-func commands() (map[subcommands.Command]string, []subcommands.Command) {
+func commands() (map[util.SubCommand]string, []subcommands.Command) {
 	const helperGroup = "helpers"
 	const debugGroup = "debug"
 	const metricGroup = "metrics"
 	const internalGroup = "internal use only"
 
-	return map[subcommands.Command]string{
+	return map[util.SubCommand]string{
 			// Register OCI user-facing runsc commands.
 			new(cmd.Checkpoint):  "",
 			new(cmd.Create):      "",

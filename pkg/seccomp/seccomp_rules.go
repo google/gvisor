@@ -894,7 +894,7 @@ func (sr SyscallRules) String() string {
 	})
 	var sb strings.Builder
 	for _, sysno := range sysnums {
-		sb.WriteString(fmt.Sprintf("syscall %d: %v\n", sysno, sr.rules[sysno]))
+		fmt.Fprintf(&sb, "syscall %d: %v\n", sysno, sr.rules[sysno])
 	}
 	return strings.TrimSpace(sb.String())
 }

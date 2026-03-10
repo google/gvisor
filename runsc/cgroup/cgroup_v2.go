@@ -801,10 +801,10 @@ func convertBlkIOToIOWeightValue(blkIoWeight uint16) uint64 {
 // The value of -1 is converted to "max" for cgroupv1 compatibility
 // (which used to write -1 to remove the limit).
 func numToStr(value int64) (ret string) {
-	switch {
-	case value == 0:
+	switch value {
+	case 0:
 		ret = ""
-	case value == -1:
+	case -1:
 		ret = maxLimitStr
 	default:
 		ret = strconv.FormatInt(value, 10)

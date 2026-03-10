@@ -184,40 +184,6 @@ func (fd *pciDeviceFD) StateLoad(ctx context.Context, stateSourceObject state.So
 	stateSourceObject.Load(7, &fd.memmapFile)
 }
 
-func (mf *pciDeviceFdMemmapFile) StateTypeName() string {
-	return "pkg/sentry/devices/tpuproxy/vfio.pciDeviceFdMemmapFile"
-}
-
-func (mf *pciDeviceFdMemmapFile) StateFields() []string {
-	return []string{
-		"DefaultMemoryType",
-		"NoBufferedIOFallback",
-		"fd",
-		"pfm",
-	}
-}
-
-func (mf *pciDeviceFdMemmapFile) beforeSave() {}
-
-// +checklocksignore
-func (mf *pciDeviceFdMemmapFile) StateSave(stateSinkObject state.Sink) {
-	mf.beforeSave()
-	stateSinkObject.Save(0, &mf.DefaultMemoryType)
-	stateSinkObject.Save(1, &mf.NoBufferedIOFallback)
-	stateSinkObject.Save(2, &mf.fd)
-	stateSinkObject.Save(3, &mf.pfm)
-}
-
-func (mf *pciDeviceFdMemmapFile) afterLoad(context.Context) {}
-
-// +checklocksignore
-func (mf *pciDeviceFdMemmapFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &mf.DefaultMemoryType)
-	stateSourceObject.Load(1, &mf.NoBufferedIOFallback)
-	stateSourceObject.Load(2, &mf.fd)
-	stateSourceObject.Load(3, &mf.pfm)
-}
-
 func (fd *tpuFD) StateTypeName() string {
 	return "pkg/sentry/devices/tpuproxy/vfio.tpuFD"
 }
@@ -228,6 +194,7 @@ func (fd *tpuFD) StateFields() []string {
 		"FileDescriptionDefaultImpl",
 		"DentryMetadataFileDescriptionImpl",
 		"NoLockFD",
+		"MappableNoTrackMappings",
 		"hostFD",
 		"device",
 		"queue",
@@ -242,10 +209,11 @@ func (fd *tpuFD) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &fd.FileDescriptionDefaultImpl)
 	stateSinkObject.Save(2, &fd.DentryMetadataFileDescriptionImpl)
 	stateSinkObject.Save(3, &fd.NoLockFD)
-	stateSinkObject.Save(4, &fd.hostFD)
-	stateSinkObject.Save(5, &fd.device)
-	stateSinkObject.Save(6, &fd.queue)
-	stateSinkObject.Save(7, &fd.memmapFile)
+	stateSinkObject.Save(4, &fd.MappableNoTrackMappings)
+	stateSinkObject.Save(5, &fd.hostFD)
+	stateSinkObject.Save(6, &fd.device)
+	stateSinkObject.Save(7, &fd.queue)
+	stateSinkObject.Save(8, &fd.memmapFile)
 }
 
 func (fd *tpuFD) afterLoad(context.Context) {}
@@ -256,38 +224,11 @@ func (fd *tpuFD) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.Load(1, &fd.FileDescriptionDefaultImpl)
 	stateSourceObject.Load(2, &fd.DentryMetadataFileDescriptionImpl)
 	stateSourceObject.Load(3, &fd.NoLockFD)
-	stateSourceObject.Load(4, &fd.hostFD)
-	stateSourceObject.Load(5, &fd.device)
-	stateSourceObject.Load(6, &fd.queue)
-	stateSourceObject.Load(7, &fd.memmapFile)
-}
-
-func (mf *tpuFDMemmapFile) StateTypeName() string {
-	return "pkg/sentry/devices/tpuproxy/vfio.tpuFDMemmapFile"
-}
-
-func (mf *tpuFDMemmapFile) StateFields() []string {
-	return []string{
-		"NoMapInternal",
-		"fd",
-	}
-}
-
-func (mf *tpuFDMemmapFile) beforeSave() {}
-
-// +checklocksignore
-func (mf *tpuFDMemmapFile) StateSave(stateSinkObject state.Sink) {
-	mf.beforeSave()
-	stateSinkObject.Save(0, &mf.NoMapInternal)
-	stateSinkObject.Save(1, &mf.fd)
-}
-
-func (mf *tpuFDMemmapFile) afterLoad(context.Context) {}
-
-// +checklocksignore
-func (mf *tpuFDMemmapFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &mf.NoMapInternal)
-	stateSourceObject.Load(1, &mf.fd)
+	stateSourceObject.Load(4, &fd.MappableNoTrackMappings)
+	stateSourceObject.Load(5, &fd.hostFD)
+	stateSourceObject.Load(6, &fd.device)
+	stateSourceObject.Load(7, &fd.queue)
+	stateSourceObject.Load(8, &fd.memmapFile)
 }
 
 func (dev *tpuDevice) StateTypeName() string {
@@ -356,6 +297,7 @@ func (fd *vfioFD) StateFields() []string {
 		"FileDescriptionDefaultImpl",
 		"DentryMetadataFileDescriptionImpl",
 		"NoLockFD",
+		"MappableNoTrackMappings",
 		"hostFD",
 		"device",
 		"queue",
@@ -370,10 +312,11 @@ func (fd *vfioFD) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &fd.FileDescriptionDefaultImpl)
 	stateSinkObject.Save(2, &fd.DentryMetadataFileDescriptionImpl)
 	stateSinkObject.Save(3, &fd.NoLockFD)
-	stateSinkObject.Save(4, &fd.hostFD)
-	stateSinkObject.Save(5, &fd.device)
-	stateSinkObject.Save(6, &fd.queue)
-	stateSinkObject.Save(7, &fd.memmapFile)
+	stateSinkObject.Save(4, &fd.MappableNoTrackMappings)
+	stateSinkObject.Save(5, &fd.hostFD)
+	stateSinkObject.Save(6, &fd.device)
+	stateSinkObject.Save(7, &fd.queue)
+	stateSinkObject.Save(8, &fd.memmapFile)
 }
 
 func (fd *vfioFD) afterLoad(context.Context) {}
@@ -384,38 +327,11 @@ func (fd *vfioFD) StateLoad(ctx context.Context, stateSourceObject state.Source)
 	stateSourceObject.Load(1, &fd.FileDescriptionDefaultImpl)
 	stateSourceObject.Load(2, &fd.DentryMetadataFileDescriptionImpl)
 	stateSourceObject.Load(3, &fd.NoLockFD)
-	stateSourceObject.Load(4, &fd.hostFD)
-	stateSourceObject.Load(5, &fd.device)
-	stateSourceObject.Load(6, &fd.queue)
-	stateSourceObject.Load(7, &fd.memmapFile)
-}
-
-func (mf *vfioFDMemmapFile) StateTypeName() string {
-	return "pkg/sentry/devices/tpuproxy/vfio.vfioFDMemmapFile"
-}
-
-func (mf *vfioFDMemmapFile) StateFields() []string {
-	return []string{
-		"NoMapInternal",
-		"fd",
-	}
-}
-
-func (mf *vfioFDMemmapFile) beforeSave() {}
-
-// +checklocksignore
-func (mf *vfioFDMemmapFile) StateSave(stateSinkObject state.Sink) {
-	mf.beforeSave()
-	stateSinkObject.Save(0, &mf.NoMapInternal)
-	stateSinkObject.Save(1, &mf.fd)
-}
-
-func (mf *vfioFDMemmapFile) afterLoad(context.Context) {}
-
-// +checklocksignore
-func (mf *vfioFDMemmapFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &mf.NoMapInternal)
-	stateSourceObject.Load(1, &mf.fd)
+	stateSourceObject.Load(4, &fd.MappableNoTrackMappings)
+	stateSourceObject.Load(5, &fd.hostFD)
+	stateSourceObject.Load(6, &fd.device)
+	stateSourceObject.Load(7, &fd.queue)
+	stateSourceObject.Load(8, &fd.memmapFile)
 }
 
 func init() {
@@ -424,11 +340,8 @@ func init() {
 	state.Register((*DevAddrnode)(nil))
 	state.Register((*DevAddrFlatSegment)(nil))
 	state.Register((*pciDeviceFD)(nil))
-	state.Register((*pciDeviceFdMemmapFile)(nil))
 	state.Register((*tpuFD)(nil))
-	state.Register((*tpuFDMemmapFile)(nil))
 	state.Register((*tpuDevice)(nil))
 	state.Register((*vfioDevice)(nil))
 	state.Register((*vfioFD)(nil))
-	state.Register((*vfioFDMemmapFile)(nil))
 }

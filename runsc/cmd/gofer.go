@@ -103,6 +103,7 @@ type goferSyncFDs struct {
 // Gofer implements subcommands.Command for the "gofer" command, which starts a
 // filesystem gofer.  This command should not be called directly.
 type Gofer struct {
+	util.InternalSubCommand
 	bundleDir  string
 	ioFDs      intFlags
 	devIoFD    int
@@ -125,7 +126,7 @@ func (*Gofer) Name() string {
 
 // Synopsis implements subcommands.Command.
 func (g *Gofer) Synopsis() string {
-	return fmt.Sprintf("launch a gofer process that proxies access to container files")
+	return "launch a gofer process that proxies access to container files"
 }
 
 // Usage implements subcommands.Command.

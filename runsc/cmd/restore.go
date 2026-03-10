@@ -16,9 +16,11 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"github.com/google/subcommands"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
@@ -33,6 +35,8 @@ import (
 type Restore struct {
 	// Restore flags are a super-set of those for Create.
 	Create
+
+	containerLoader
 
 	// imagePath is the path to the saved container image
 	imagePath string
@@ -87,6 +91,31 @@ func (r *Restore) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&wp, "work-path", "", "ignored")
 }
 
+// FetchSpec implements util.SubCommand.FetchSpec.
+func (r *Restore) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error) {
+	if f.NArg() != 1 {
+		return "", nil, fmt.Errorf("a container id is required")
+	}
+	id := f.Arg(0)
+
+	// If the spec is already set via Create.FetchSpec(), use it.
+	if r.spec != nil {
+		return id, r.spec, nil
+	}
+
+	// Try loading the container first, similar to Execute().
+	c, err := r.loadContainer(conf, f, container.LoadOpts{})
+	if err == nil {
+		return c.ID, c.Spec, nil
+	}
+	if err != os.ErrNotExist {
+		return "", nil, fmt.Errorf("loading container: %w", err)
+	}
+
+	// Container not found. Fallback to reading spec from bundle.
+	return r.Create.FetchSpec(conf, f)
+}
+
 // Execute implements subcommands.Command.Execute.
 func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if f.NArg() != 1 {
@@ -124,7 +153,7 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 	}
 
 	log.Debugf("Restore container, cid: %s, rootDir: %q", id, conf.RootDir)
-	c, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
+	c, err := r.loadContainer(conf, f, container.LoadOpts{})
 	if err != nil {
 		if err != os.ErrNotExist {
 			return util.Errorf("loading container: %v", err)
@@ -132,11 +161,13 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 
 		log.Warningf("Container not found, creating new one, cid: %s, spec from: %s", id, bundleDir)
 
-		// Read the spec again here to ensure flag annotations from the spec are
-		// applied to "conf".
-		if runArgs.Spec, err = specutils.ReadSpec(bundleDir, conf); err != nil {
-			return util.Errorf("reading spec: %v", err)
+		// Read the spec from the bundle directory.
+		if r.spec == nil {
+			if r.spec, err = specutils.ReadSpec(bundleDir, conf); err != nil {
+				return util.Errorf("reading spec: %v", err)
+			}
 		}
+		runArgs.Spec = r.spec
 		specutils.LogSpecDebug(runArgs.Spec, conf.OCISeccomp)
 
 		if c, err = container.New(conf, runArgs); err != nil {

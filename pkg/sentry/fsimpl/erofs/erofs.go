@@ -267,6 +267,12 @@ type inode struct {
 	// +checklocks:dirMu
 	dirents []vfs.Dirent `state:"nosave"`
 
+	// TODO: Since EROFS is read-only, files can't be truncated or
+	// hole-punched, so mapsMu and mappings are only used by
+	// inode.InvalidateUnsavable. However, AFAIU inode.Translate will return
+	// the same File and offset after save/restore, so this is unnecessary, and
+	// we can use memmap.MappableNoTrackMappings instead.
+
 	// mapsMu protects mappings.
 	mapsMu sync.Mutex `state:"nosave"`
 

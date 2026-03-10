@@ -20,6 +20,7 @@ import (
 	"os"
 
 	"github.com/google/subcommands"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/prometheus"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/runsc/cmd/util"
@@ -31,6 +32,7 @@ import (
 
 // MetricExport implements subcommands.Command for the "metric-export" command.
 type MetricExport struct {
+	containerLoader
 	exporterPrefix       string
 	sandboxMetricsFilter string
 }
@@ -56,17 +58,24 @@ func (m *MetricExport) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&m.sandboxMetricsFilter, "sandbox-metrics-filter", "", "If set, filter exported metrics using the specified regular expression. This filtering is applied before adding --exporter-prefix.")
 }
 
+// FetchSpec implements util.SubCommand.FetchSpec.
+func (m *MetricExport) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error) {
+	c, err := m.loadContainer(conf, f, container.LoadOpts{})
+	if err != nil {
+		return "", nil, fmt.Errorf("loading container: %w", err)
+	}
+	return c.ID, c.Spec, nil
+}
+
 // Execute implements subcommands.Command.Execute.
 func (m *MetricExport) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
-	if f.NArg() < 1 {
+	if f.NArg() != 1 {
 		f.Usage()
 		return subcommands.ExitUsageError
 	}
 
-	id := f.Arg(0)
 	conf := args[0].(*config.Config)
-
-	cont, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
+	cont, err := m.loadContainer(conf, f, container.LoadOpts{})
 	if err != nil {
 		util.Fatalf("loading container: %v", err)
 	}

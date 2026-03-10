@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/google/subcommands"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/runsc/cmd/util"
@@ -32,6 +33,7 @@ import (
 
 // Checkpoint implements subcommands.Command for the "checkpoint" command.
 type Checkpoint struct {
+	containerLoader
 	imagePath                 string
 	leaveRunning              bool
 	compression               CheckpointCompression
@@ -80,6 +82,15 @@ func (c *Checkpoint) SetFlags(f *flag.FlagSet) {
 	c.setFlagsExtra(f)
 }
 
+// FetchSpec implements util.SubCommand.FetchSpec.
+func (c *Checkpoint) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error) {
+	cont, err := c.loadContainer(conf, f, container.LoadOpts{})
+	if err != nil {
+		return "", nil, fmt.Errorf("loading container: %w", err)
+	}
+	return cont.ID, cont.Spec, nil
+}
+
 // Execute implements subcommands.Command.Execute.
 func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if f.NArg() != 1 {
@@ -87,10 +98,9 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...any) su
 		return subcommands.ExitUsageError
 	}
 
-	id := f.Arg(0)
 	conf := args[0].(*config.Config)
 
-	cont, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
+	cont, err := c.loadContainer(conf, f, container.LoadOpts{})
 	if err != nil {
 		util.Fatalf("loading container: %v", err)
 	}
@@ -110,7 +120,7 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...any) su
 		ExcludeCommittedZeroPages:  c.excludeCommittedZeroPages,
 		SaveRestoreExecArgv:        c.saveRestoreExecArgv,
 		SaveRestoreExecTimeout:     c.saveRestoreExecTimeout,
-		SaveRestoreExecContainerID: id,
+		SaveRestoreExecContainerID: cont.ID,
 	}
 	c.setCheckpointOptsExtra(&opts)
 

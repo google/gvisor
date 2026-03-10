@@ -155,16 +155,21 @@ func (i *inode) updateHandles(ctx context.Context, h handle, readable, writable 
 //   - i.handleMu must be locked.
 //   - !d.isSynthetic().
 func (i *inode) closeHostFDs() {
+	// Close FDs, other than what is owned by i.mmapFile.
 	// We can use RacyLoad() because i.handleMu is locked.
-	if i.readFD.RacyLoad() >= 0 {
-		_ = unix.Close(int(i.readFD.RacyLoad()))
+	realMmapFD := i.mmapFile.FD()
+	readFD := int(i.readFD.RacyLoad())
+	if readFD >= 0 && readFD != realMmapFD {
+		_ = unix.Close(readFD)
 	}
-	if i.writeFD.RacyLoad() >= 0 && i.readFD.RacyLoad() != i.writeFD.RacyLoad() {
+	if writeFD := int(i.writeFD.RacyLoad()); writeFD >= 0 && readFD != writeFD && writeFD != realMmapFD {
 		_ = unix.Close(int(i.writeFD.RacyLoad()))
 	}
 	i.readFD = atomicbitops.FromInt32(-1)
 	i.writeFD = atomicbitops.FromInt32(-1)
 	i.mmapFD = atomicbitops.FromInt32(-1)
+
+	i.mmapFile.MappableRelease() // eventually closes realMmapFD
 
 	switch it := i.impl.(type) {
 	case *directfsInode:

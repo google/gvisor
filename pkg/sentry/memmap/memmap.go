@@ -78,9 +78,9 @@ type Mappable interface {
 	//
 	// Translations are valid until invalidated by a callback to
 	// MappingSpace.Invalidate or until the caller removes its mapping of the
-	// translated range. Mappable implementations must ensure that at least one
-	// reference is held on all pages in a File that may be the result
-	// of a valid Translation.
+	// translated range. Mappable implementations must ensure that IncRef may
+	// be called on all pages in a File that may be the result of a valid
+	// Translation.
 	//
 	// Preconditions:
 	//	* required.Length() > 0.
@@ -521,6 +521,12 @@ type File interface {
 	// file descriptor should not be used to implement
 	// platform.AddressSpace.MapFile, since the contents of the File may not be
 	// valid; use DataFD instead.
+	//
+	// Preconditions:
+	//	* Either at least one reference must be held on at least one page in
+	//	the File, or the caller must ensure that the file descriptor remains
+	//	valid during and after the call to FD based on knowledge of the File
+	//	implementation.
 	FD() int
 }
 
@@ -582,6 +588,35 @@ func (NoMapInternal) MapInternal(fr FileRange, at hostarch.AccessType) (safemem.
 // MemoryType implements File.MemoryType.
 func (NoMapInternal) MemoryType() hostarch.MemoryType {
 	panic("memmap.File.MemoryType called without MapInternal support")
+}
+
+// MappableNoTrackMappings implements Mappable.AddMapping,
+// Mappable.RemoveMapping, Mappable.CopyMapping, and
+// Mappable.InvalidateUnsavable as no-ops. It is used by Mappables representing
+// files that can't be truncated or hole-punched, and whose memmap.File and
+// offsets remain consistent across save/restore, and therefore don't need to
+// track mappings for invalidation.
+//
+// +stateify savable
+type MappableNoTrackMappings struct{}
+
+// AddMapping implements Mappable.AddMapping.
+func (MappableNoTrackMappings) AddMapping(ctx context.Context, ms MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
+	return nil
+}
+
+// RemoveMapping implements Mappable.RemoveMapping.
+func (MappableNoTrackMappings) RemoveMapping(ctx context.Context, ms MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
+}
+
+// CopyMapping implements Mappable.CopyMapping.
+func (MappableNoTrackMappings) CopyMapping(ctx context.Context, ms MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, writable bool) error {
+	return nil
+}
+
+// InvalidateUnsavable implements Mappable.InvalidateUnsavable.
+func (MappableNoTrackMappings) InvalidateUnsavable(ctx context.Context) error {
+	return nil
 }
 
 // FileRange represents a range of uint64 offsets into a File.

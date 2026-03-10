@@ -17,10 +17,13 @@ package v1
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 
+	"github.com/BurntSushi/toml"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/runtime/v2/shim"
 	taskapi "github.com/containerd/containerd/runtime/v2/task"
@@ -122,6 +125,13 @@ func (s *service) get() extension.TaskServiceExt {
 	return s.ext
 }
 
+const kubernetesGroupAnnotation = "io.kubernetes.cri.sandbox-id"
+
+type spec struct {
+	// Annotations contains arbitrary metadata for the container.
+	Annotations map[string]string `json:"annotations,omitempty"`
+}
+
 func (s *service) newCommand(ctx context.Context, containerdBinary, containerdAddress string) (*exec.Cmd, error) {
 	ns, err := namespaces.NamespaceRequired(ctx)
 	if err != nil {
@@ -152,14 +162,61 @@ func (s *service) newCommand(ctx context.Context, containerdBinary, containerdAd
 	return cmd, nil
 }
 
+func getEnableGrouping() bool {
+	shimConfigPaths := []string{"/run/containerd/runsc/config.toml", "/etc/containerd/runsc/config.toml"}
+
+	tomlPath := ""
+	for _, path := range shimConfigPaths {
+		if _, err := os.Stat(path); err == nil {
+			tomlPath = path
+			break
+		}
+	}
+	if len(tomlPath) == 0 {
+		return false
+	}
+
+	var opts runsc.Options
+	if _, err := toml.DecodeFile(tomlPath, &opts); err != nil {
+		log.L.Debugf("Failed to decode shim config file %q: %v", tomlPath, err)
+		return false
+	}
+
+	return opts.Grouping
+}
+
 func (s *service) StartShim(ctx context.Context, opts shim.StartOpts) (string, error) {
 	log.L.Debugf("StartShim, id: %s, binary: %q, address: %q", opts.ID, opts.ContainerdBinary, opts.Address)
+
+	grouping := opts.ID
+
+	enableGrouping := getEnableGrouping()
+	if enableGrouping {
+		// The OCI container spec is written by containerd in config.json file, check
+		// for group annotations in this file to enable grouping.
+		configFile, err := os.Open(filepath.Join(s.genericOptions.BundlePath, "config.json"))
+		if err != nil {
+			log.L.Debugf("StartShim, error to read config.json: %v, continue without shim grouping", err)
+		} else {
+			var readSpec spec
+			if err := json.NewDecoder(configFile).Decode(&readSpec); err != nil {
+				configFile.Close()
+				return "", err
+			}
+			configFile.Close()
+			log.L.Debugf("annotations: %+v", readSpec.Annotations)
+			if groupID, ok := readSpec.Annotations[kubernetesGroupAnnotation]; ok {
+				log.L.Debugf("group label found %v: %v", kubernetesGroupAnnotation, groupID)
+				grouping = groupID
+			}
+		}
+	}
 
 	cmd, err := s.newCommand(ctx, opts.ContainerdBinary, opts.Address)
 	if err != nil {
 		return "", err
 	}
-	address, err := shim.SocketAddress(ctx, opts.Address, opts.ID)
+	address, err := shim.SocketAddress(ctx, opts.Address, grouping)
 	if err != nil {
 		return "", err
 	}
@@ -342,9 +399,16 @@ func (s *service) Shutdown(ctx context.Context, r *taskapi.ShutdownRequest) (*ty
 	log.L.Debugf("Shutdown, id: %s", r.ID)
 	resp, err := s.get().Shutdown(ctx, r)
 	if err != nil {
-		return resp, errdefs.ToGRPC(err)
+		// The Shutdown call should return a nil error even if the shim did not
+		// shutdown due to running containers. Returning nil indicates that the
+		// request was successfully processed by the shim, regardless of whether the
+		// shim was exited. This aligns with standard runc behavior, where the shim
+		// stays alive as long as containers are present but acknowledges the shutdown
+		// signal without error. The error from runscService's Shutdown call is used
+		// as an indicator to identify if there are any active containers in the shim.
+		log.L.Debugf("Shutdown, shim did not shutdown due to: %v", err)
+		return resp, errdefs.ToGRPC(nil)
 	}
-
 	s.cancel()
 	if len(s.shimAddress) != 0 {
 		_ = shim.RemoveSocket(s.shimAddress)

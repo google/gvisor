@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build arm64
-// +build arm64
+//go:build arm64 && !pagesize_64k
+// +build arm64,!pagesize_64k
 
 package pagetables
 

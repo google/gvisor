@@ -24,6 +24,7 @@ import (
 	"regexp"
 
 	"github.com/google/subcommands"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -64,17 +65,17 @@ func (i *Install) SetFlags(fs *flag.FlagSet) {
 	fs.StringVar(&i.CgroupDriver, "cgroupdriver", "", "docker cgroup driver")
 }
 
+// FetchSpec implements util.SubCommand.FetchSpec.
+func (*Install) FetchSpec(_ *config.Config, _ *flag.FlagSet) (string, *specs.Spec, error) {
+	// This command does not operate on a single container, so nothing to fetch.
+	return "", nil, nil
+}
+
 // Execute implements subcommands.Command.Execute.
-func (i *Install) Execute(_ context.Context, f *flag.FlagSet, _ ...any) subcommands.ExitStatus {
+func (i *Install) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	// Grab the name and arguments.
 	i.runtimeArgs = f.Args()
-	testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
-	config.RegisterFlags(testFlags)
-	testFlags.Parse(i.runtimeArgs)
-	conf, err := config.NewFromFlags(testFlags)
-	if err != nil {
-		log.Fatalf("invalid runtime arguments: %v", err)
-	}
+	conf := args[0].(*config.Config)
 
 	// Check the platform.
 	p, err := platform.Lookup(conf.Platform)
@@ -167,7 +168,7 @@ func doInstallConfig(i *Install, rw configReaderWriter) error {
 			c["exec-opts"] = []string{fmt.Sprintf("native.cgroupdriver=%s", i.CgroupDriver)}
 		} else {
 			opts := v.([]any)
-			newOpts := []any{}
+			var newOpts []any
 			for _, opt := range opts {
 				if !i.Clobber {
 					newOpts = opts
@@ -218,6 +219,12 @@ func (*Uninstall) Usage() string {
 func (u *Uninstall) SetFlags(fs *flag.FlagSet) {
 	fs.StringVar(&u.ConfigFile, "config_file", "/etc/docker/daemon.json", "path to Docker daemon config file")
 	fs.StringVar(&u.Runtime, "runtime", "runsc", "runtime name")
+}
+
+// FetchSpec implements util.SubCommand.FetchSpec.
+func (*Uninstall) FetchSpec(_ *config.Config, _ *flag.FlagSet) (string, *specs.Spec, error) {
+	// This command does not operate on a single container, so nothing to fetch.
+	return "", nil, nil
 }
 
 // Execute implements subcommands.Command.Execute.

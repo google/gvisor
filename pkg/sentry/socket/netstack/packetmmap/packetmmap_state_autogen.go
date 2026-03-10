@@ -14,6 +14,7 @@ func (m *Endpoint) StateTypeName() string {
 
 func (m *Endpoint) StateFields() []string {
 	return []string{
+		"MappableNoTrackMappings",
 		"rxRingBuffer",
 		"txRingBuffer",
 		"mapped",
@@ -27,7 +28,6 @@ func (m *Endpoint) StateFields() []string {
 		"received",
 		"dropped",
 		"wq",
-		"mappings",
 	}
 }
 
@@ -36,40 +36,40 @@ func (m *Endpoint) beforeSave() {}
 // +checklocksignore
 func (m *Endpoint) StateSave(stateSinkObject state.Sink) {
 	m.beforeSave()
-	stateSinkObject.Save(0, &m.rxRingBuffer)
-	stateSinkObject.Save(1, &m.txRingBuffer)
-	stateSinkObject.Save(2, &m.mapped)
-	stateSinkObject.Save(3, &m.mode)
-	stateSinkObject.Save(4, &m.cooked)
-	stateSinkObject.Save(5, &m.stack)
-	stateSinkObject.Save(6, &m.packetEP)
-	stateSinkObject.Save(7, &m.reserve)
-	stateSinkObject.Save(8, &m.version)
-	stateSinkObject.Save(9, &m.headerLen)
-	stateSinkObject.Save(10, &m.received)
-	stateSinkObject.Save(11, &m.dropped)
-	stateSinkObject.Save(12, &m.wq)
-	stateSinkObject.Save(13, &m.mappings)
+	stateSinkObject.Save(0, &m.MappableNoTrackMappings)
+	stateSinkObject.Save(1, &m.rxRingBuffer)
+	stateSinkObject.Save(2, &m.txRingBuffer)
+	stateSinkObject.Save(3, &m.mapped)
+	stateSinkObject.Save(4, &m.mode)
+	stateSinkObject.Save(5, &m.cooked)
+	stateSinkObject.Save(6, &m.stack)
+	stateSinkObject.Save(7, &m.packetEP)
+	stateSinkObject.Save(8, &m.reserve)
+	stateSinkObject.Save(9, &m.version)
+	stateSinkObject.Save(10, &m.headerLen)
+	stateSinkObject.Save(11, &m.received)
+	stateSinkObject.Save(12, &m.dropped)
+	stateSinkObject.Save(13, &m.wq)
 }
 
 func (m *Endpoint) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (m *Endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &m.rxRingBuffer)
-	stateSourceObject.Load(1, &m.txRingBuffer)
-	stateSourceObject.Load(2, &m.mapped)
-	stateSourceObject.Load(3, &m.mode)
-	stateSourceObject.Load(4, &m.cooked)
-	stateSourceObject.Load(5, &m.stack)
-	stateSourceObject.Load(6, &m.packetEP)
-	stateSourceObject.Load(7, &m.reserve)
-	stateSourceObject.Load(8, &m.version)
-	stateSourceObject.Load(9, &m.headerLen)
-	stateSourceObject.Load(10, &m.received)
-	stateSourceObject.Load(11, &m.dropped)
-	stateSourceObject.Load(12, &m.wq)
-	stateSourceObject.Load(13, &m.mappings)
+	stateSourceObject.Load(0, &m.MappableNoTrackMappings)
+	stateSourceObject.Load(1, &m.rxRingBuffer)
+	stateSourceObject.Load(2, &m.txRingBuffer)
+	stateSourceObject.Load(3, &m.mapped)
+	stateSourceObject.Load(4, &m.mode)
+	stateSourceObject.Load(5, &m.cooked)
+	stateSourceObject.Load(6, &m.stack)
+	stateSourceObject.Load(7, &m.packetEP)
+	stateSourceObject.Load(8, &m.reserve)
+	stateSourceObject.Load(9, &m.version)
+	stateSourceObject.Load(10, &m.headerLen)
+	stateSourceObject.Load(11, &m.received)
+	stateSourceObject.Load(12, &m.dropped)
+	stateSourceObject.Load(13, &m.wq)
 }
 
 func (rb *ringBuffer) StateTypeName() string {

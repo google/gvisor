@@ -120,9 +120,31 @@ func (n *NoMapInternal) StateLoad(ctx context.Context, stateSourceObject state.S
 	stateSourceObject.Load(0, &n.NoBufferedIOFallback)
 }
 
+func (m *MappableNoTrackMappings) StateTypeName() string {
+	return "pkg/sentry/memmap.MappableNoTrackMappings"
+}
+
+func (m *MappableNoTrackMappings) StateFields() []string {
+	return []string{}
+}
+
+func (m *MappableNoTrackMappings) beforeSave() {}
+
+// +checklocksignore
+func (m *MappableNoTrackMappings) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+}
+
+func (m *MappableNoTrackMappings) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (m *MappableNoTrackMappings) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+}
+
 func init() {
 	state.Register((*FileRange)(nil))
 	state.Register((*MappableRange)(nil))
 	state.Register((*MappingOfRange)(nil))
 	state.Register((*NoMapInternal)(nil))
+	state.Register((*MappableNoTrackMappings)(nil))
 }

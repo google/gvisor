@@ -379,6 +379,12 @@ func (cm *containerManager) StartSubcontainer(args *StartArgs, _ *struct{}) erro
 	state := cm.l.state
 	cm.l.mu.Unlock()
 	if state != started {
+		if state == restoringUnstarted {
+			// Translate the `runsc start` to `runsc restore`.
+			// TODO(b/441106898): Move this to the shim once single-shim-per-pod is implemented.
+			log.Warningf("StartSubcontainer called on a restoring sandbox, restoring subcontainer instead: id=%s", args.CID)
+			return cm.RestoreSubcontainer(args, nil)
+		}
 		return fmt.Errorf("sandbox is not in started state, cannot start subcontainer: state=%s", state)
 	}
 	expectedFDs := 1 // At least one FD for the root filesystem.
@@ -740,8 +746,14 @@ func (cm *containerManager) RestoreSubcontainer(args *StartArgs, _ *struct{}) (r
 	}
 	expectedFDs := 1 // At least one FD for the root filesystem.
 	expectedFDs += args.NumGoferFilestoreFDs
+	if args.IsDevIoFilePresent {
+		expectedFDs++
+	}
 	if !args.Spec.Process.Terminal {
 		expectedFDs += 3
+	}
+	if args.IsRootfsUpperTarFilePresent {
+		return errors.New("rootfs upper tar file is not supported during restore")
 	}
 	if len(args.Files) < expectedFDs {
 		return fmt.Errorf("restore arguments must contain at least %d FDs, but only got %d", expectedFDs, len(args.Files))

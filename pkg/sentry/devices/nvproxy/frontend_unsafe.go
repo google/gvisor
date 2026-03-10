@@ -168,7 +168,7 @@ func ctrlDevFIFOGetChannelList(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54
 	if _, err := ctrlParams.CopyIn(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
 		return 0, err
 	}
-	if ctrlParams.NumChannels == 0 {
+	if !rmapiParamsSizeCheck(ctrlParams.NumChannels, 4 /* sizeof(NvU32) */) {
 		// Compare
 		// src/nvidia/src/kernel/gpu/fifo/kernel_fifo_ctrl.c:deviceCtrlCmdFifoGetChannelList_IMPL().
 		return 0, linuxerr.EINVAL
@@ -215,8 +215,11 @@ func ctrlClientSystemGetP2PCapsInitializeArray(origArr nvgpu.P64, gpuCount uint3
 	}
 
 	// Params size is gpuCount * gpuCount * sizeof(NvU32).
-	numEntries := gpuCount * gpuCount
-	if numEntries*4 > nvgpu.RMAPI_PARAM_COPY_MAX_PARAMS_SIZE {
+	// Use uint64 to handle overflow. In the driver, this is handled by
+	// portSafeMulU32(). See
+	// src/nvidia/src/kernel/rmapi/embedded_param_copy.c::embeddedParamCopyIn().
+	numEntries := uint64(gpuCount) * uint64(gpuCount)
+	if numEntries == 0 || numEntries*4 > nvgpu.RMAPI_PARAM_COPY_MAX_PARAMS_SIZE {
 		return 0, nil, false
 	}
 

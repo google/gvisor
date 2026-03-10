@@ -124,7 +124,7 @@ func (s *Stats) String() string {
 		total time.Duration
 	)
 	buf.WriteString("\n")
-	buf.WriteString(fmt.Sprintf("% 16s | % 8s | % 16s | %s\n", "total", "count", "per", "type"))
+	fmt.Fprintf(&buf, "% 16s | % 8s | % 16s | %s\n", "total", "count", "per", "type")
 	buf.WriteString("-----------------+----------+------------------+----------------\n")
 	for _, se := range ss {
 		if se.entry.count == 0 {
@@ -135,11 +135,11 @@ func (s *Stats) String() string {
 		count += se.entry.count
 		total += se.entry.total
 		per := se.entry.total / time.Duration(se.entry.count)
-		buf.WriteString(fmt.Sprintf("% 16s | %8d | % 16s | %s\n",
-			se.entry.total, se.entry.count, per, se.name))
+		fmt.Fprintf(&buf, "% 16s | %8d | % 16s | %s\n",
+			se.entry.total, se.entry.count, per, se.name)
 	}
 	buf.WriteString("-----------------+----------+------------------+----------------\n")
-	buf.WriteString(fmt.Sprintf("% 16s | % 8d | % 16s | [all]",
-		total, count, total/time.Duration(count)))
+	fmt.Fprintf(&buf, "% 16s | % 8d | % 16s | [all]",
+		total, count, total/time.Duration(count))
 	return buf.String()
 }

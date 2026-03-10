@@ -805,70 +805,6 @@ func (d *Dentry) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.AfterLoad(func() { d.afterLoad(ctx) })
 }
 
-func (i *inodePlatformFile) StateTypeName() string {
-	return "pkg/sentry/fsimpl/kernfs.inodePlatformFile"
-}
-
-func (i *inodePlatformFile) StateFields() []string {
-	return []string{
-		"DefaultMemoryType",
-		"NoBufferedIOFallback",
-		"hostFD",
-		"fdRefs",
-		"fileMapper",
-	}
-}
-
-func (i *inodePlatformFile) beforeSave() {}
-
-// +checklocksignore
-func (i *inodePlatformFile) StateSave(stateSinkObject state.Sink) {
-	i.beforeSave()
-	stateSinkObject.Save(0, &i.DefaultMemoryType)
-	stateSinkObject.Save(1, &i.NoBufferedIOFallback)
-	stateSinkObject.Save(2, &i.hostFD)
-	stateSinkObject.Save(3, &i.fdRefs)
-	stateSinkObject.Save(4, &i.fileMapper)
-}
-
-// +checklocksignore
-func (i *inodePlatformFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &i.DefaultMemoryType)
-	stateSourceObject.Load(1, &i.NoBufferedIOFallback)
-	stateSourceObject.Load(2, &i.hostFD)
-	stateSourceObject.Load(3, &i.fdRefs)
-	stateSourceObject.Load(4, &i.fileMapper)
-	stateSourceObject.AfterLoad(func() { i.afterLoad(ctx) })
-}
-
-func (i *CachedMappable) StateTypeName() string {
-	return "pkg/sentry/fsimpl/kernfs.CachedMappable"
-}
-
-func (i *CachedMappable) StateFields() []string {
-	return []string{
-		"mappings",
-		"pf",
-	}
-}
-
-func (i *CachedMappable) beforeSave() {}
-
-// +checklocksignore
-func (i *CachedMappable) StateSave(stateSinkObject state.Sink) {
-	i.beforeSave()
-	stateSinkObject.Save(0, &i.mappings)
-	stateSinkObject.Save(1, &i.pf)
-}
-
-func (i *CachedMappable) afterLoad(context.Context) {}
-
-// +checklocksignore
-func (i *CachedMappable) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &i.mappings)
-	stateSourceObject.Load(1, &i.pf)
-}
-
 func (l *slotList) StateTypeName() string {
 	return "pkg/sentry/fsimpl/kernfs.slotList"
 }
@@ -1098,8 +1034,6 @@ func init() {
 	state.Register((*InodeFSOwned)(nil))
 	state.Register((*Filesystem)(nil))
 	state.Register((*Dentry)(nil))
-	state.Register((*inodePlatformFile)(nil))
-	state.Register((*CachedMappable)(nil))
 	state.Register((*slotList)(nil))
 	state.Register((*slotEntry)(nil))
 	state.Register((*StaticDirectoryRefs)(nil))

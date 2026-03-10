@@ -251,20 +251,8 @@ func (i *directfsInode) afterLoad(goContext.Context) {
 }
 
 // afterLoad is invoked by stateify.
-func (i *inodePlatformFile) afterLoad(goContext.Context) {
-	if i.hostFileMapper.IsInited() {
-		// Ensure that we don't call d.hostFileMapper.Init() again.
-		i.hostFileMapperInitOnce.Do(func() {})
-	}
-}
-
-// afterLoad is invoked by stateify.
 func (fd *specialFileFD) afterLoad(goContext.Context) {
 	fd.handle.fd = -1
-	if fd.hostFileMapper.IsInited() {
-		// Ensure that we don't call fd.hostFileMapper.Init() again.
-		fd.hostFileMapperInitOnce.Do(func() {})
-	}
 }
 
 // saveParent is called by stateify.
@@ -499,6 +487,7 @@ func (fd *specialFileFD) completeRestore(ctx context.Context) error {
 		return fmt.Errorf("failed to open handle for specialFileFD for %q: %w", genericDebugPathname(d.inode.fs, d), err)
 	}
 	fd.handle = h
+	fd.mmapFile.SetFD(int(h.fd))
 
 	ftype := d.inode.fileType()
 	fd.haveQueue = (ftype == linux.S_IFIFO || ftype == linux.S_IFSOCK) && fd.handle.fd >= 0

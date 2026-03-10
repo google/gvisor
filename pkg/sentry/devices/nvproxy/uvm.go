@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -59,8 +60,8 @@ func (dev *uvmDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry
 		unix.Close(int(fd.hostFD))
 		return nil, err
 	}
-	fd.memmapFile.fd = fd
-	fd.memmapFile.pfm.RequireAddrEqualsFileOffset()
+	fd.memmapFile.SetFD(int(fd.hostFD))
+	fd.memmapFile.RequireAddrEqualsFileOffset()
 	return &fd.vfsfd, nil
 }
 
@@ -72,6 +73,7 @@ type uvmFD struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
+	memmap.MappableNoTrackMappings
 
 	dev           *uvmDevice
 	containerName string
@@ -85,7 +87,7 @@ type uvmFD struct {
 func (fd *uvmFD) Release(context.Context) {
 	fdnotifier.RemoveFD(fd.hostFD)
 	fd.queue.Notify(waiter.EventHUp)
-	unix.Close(int(fd.hostFD))
+	fd.memmapFile.MappableRelease()
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.

@@ -443,7 +443,7 @@ func (i *inode) StateFields() []string {
 		"cache",
 		"dirty",
 		"savedDeletedData",
-		"pf",
+		"mmapFile",
 		"haveTarget",
 		"target",
 		"endpoint",
@@ -479,7 +479,7 @@ func (i *inode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(16, &i.cache)
 	stateSinkObject.Save(17, &i.dirty)
 	stateSinkObject.Save(18, &i.savedDeletedData)
-	stateSinkObject.Save(19, &i.pf)
+	stateSinkObject.Save(19, &i.mmapFile)
 	stateSinkObject.Save(20, &i.haveTarget)
 	stateSinkObject.Save(21, &i.target)
 	stateSinkObject.Save(22, &i.endpoint)
@@ -511,7 +511,7 @@ func (i *inode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(16, &i.cache)
 	stateSourceObject.Load(17, &i.dirty)
 	stateSourceObject.Load(18, &i.savedDeletedData)
-	stateSourceObject.Load(19, &i.pf)
+	stateSourceObject.Load(19, &i.mmapFile)
 	stateSourceObject.Load(20, &i.haveTarget)
 	stateSourceObject.Load(21, &i.target)
 	stateSourceObject.Load(22, &i.endpoint)
@@ -744,42 +744,6 @@ func (fd *regularFileFD) StateLoad(ctx context.Context, stateSourceObject state.
 	stateSourceObject.Load(1, &fd.off)
 }
 
-func (i *inodePlatformFile) StateTypeName() string {
-	return "pkg/sentry/fsimpl/gofer.inodePlatformFile"
-}
-
-func (i *inodePlatformFile) StateFields() []string {
-	return []string{
-		"DefaultMemoryType",
-		"NoBufferedIOFallback",
-		"inode",
-		"fdRefs",
-		"hostFileMapper",
-	}
-}
-
-func (i *inodePlatformFile) beforeSave() {}
-
-// +checklocksignore
-func (i *inodePlatformFile) StateSave(stateSinkObject state.Sink) {
-	i.beforeSave()
-	stateSinkObject.Save(0, &i.DefaultMemoryType)
-	stateSinkObject.Save(1, &i.NoBufferedIOFallback)
-	stateSinkObject.Save(2, &i.inode)
-	stateSinkObject.Save(3, &i.fdRefs)
-	stateSinkObject.Save(4, &i.hostFileMapper)
-}
-
-// +checklocksignore
-func (i *inodePlatformFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &i.DefaultMemoryType)
-	stateSourceObject.Load(1, &i.NoBufferedIOFallback)
-	stateSourceObject.Load(2, &i.inode)
-	stateSourceObject.Load(3, &i.fdRefs)
-	stateSourceObject.Load(4, &i.hostFileMapper)
-	stateSourceObject.AfterLoad(func() { i.afterLoad(ctx) })
-}
-
 func (s *savedDentryRW) StateTypeName() string {
 	return "pkg/sentry/fsimpl/gofer.savedDentryRW"
 }
@@ -900,16 +864,13 @@ func (fd *specialFileFD) StateFields() []string {
 	return []string{
 		"fileDescription",
 		"specialFDEntry",
-		"DefaultMemoryType",
-		"NoBufferedIOFallback",
 		"isRegularFile",
 		"seekable",
 		"queue",
 		"off",
 		"haveBuf",
 		"buf",
-		"hostFileMapper",
-		"fileRefs",
+		"mmapFile",
 	}
 }
 
@@ -920,32 +881,26 @@ func (fd *specialFileFD) StateSave(stateSinkObject state.Sink) {
 	fd.beforeSave()
 	stateSinkObject.Save(0, &fd.fileDescription)
 	stateSinkObject.Save(1, &fd.specialFDEntry)
-	stateSinkObject.Save(2, &fd.DefaultMemoryType)
-	stateSinkObject.Save(3, &fd.NoBufferedIOFallback)
-	stateSinkObject.Save(4, &fd.isRegularFile)
-	stateSinkObject.Save(5, &fd.seekable)
-	stateSinkObject.Save(6, &fd.queue)
-	stateSinkObject.Save(7, &fd.off)
-	stateSinkObject.Save(8, &fd.haveBuf)
-	stateSinkObject.Save(9, &fd.buf)
-	stateSinkObject.Save(10, &fd.hostFileMapper)
-	stateSinkObject.Save(11, &fd.fileRefs)
+	stateSinkObject.Save(2, &fd.isRegularFile)
+	stateSinkObject.Save(3, &fd.seekable)
+	stateSinkObject.Save(4, &fd.queue)
+	stateSinkObject.Save(5, &fd.off)
+	stateSinkObject.Save(6, &fd.haveBuf)
+	stateSinkObject.Save(7, &fd.buf)
+	stateSinkObject.Save(8, &fd.mmapFile)
 }
 
 // +checklocksignore
 func (fd *specialFileFD) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fd.fileDescription)
 	stateSourceObject.Load(1, &fd.specialFDEntry)
-	stateSourceObject.Load(2, &fd.DefaultMemoryType)
-	stateSourceObject.Load(3, &fd.NoBufferedIOFallback)
-	stateSourceObject.Load(4, &fd.isRegularFile)
-	stateSourceObject.Load(5, &fd.seekable)
-	stateSourceObject.Load(6, &fd.queue)
-	stateSourceObject.Load(7, &fd.off)
-	stateSourceObject.Load(8, &fd.haveBuf)
-	stateSourceObject.Load(9, &fd.buf)
-	stateSourceObject.Load(10, &fd.hostFileMapper)
-	stateSourceObject.Load(11, &fd.fileRefs)
+	stateSourceObject.Load(2, &fd.isRegularFile)
+	stateSourceObject.Load(3, &fd.seekable)
+	stateSourceObject.Load(4, &fd.queue)
+	stateSourceObject.Load(5, &fd.off)
+	stateSourceObject.Load(6, &fd.haveBuf)
+	stateSourceObject.Load(7, &fd.buf)
+	stateSourceObject.Load(8, &fd.mmapFile)
 	stateSourceObject.AfterLoad(func() { fd.afterLoad(ctx) })
 }
 
@@ -1027,7 +982,6 @@ func init() {
 	state.Register((*inodeRefs)(nil))
 	state.Register((*lisafsInode)(nil))
 	state.Register((*regularFileFD)(nil))
-	state.Register((*inodePlatformFile)(nil))
 	state.Register((*savedDentryRW)(nil))
 	state.Register((*endpoint)(nil))
 	state.Register((*specialFDList)(nil))

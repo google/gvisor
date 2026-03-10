@@ -98,6 +98,18 @@ func Mmap(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *
 			opts.MaxPerms.Write = false
 		}
 
+		if shared {
+			// Check for any seal violations.
+			if seals, err := tmpfs.GetSeals(file); err == nil && seals&linux.F_SEAL_WRITE != 0 {
+				if opts.Perms.Write {
+					// Writable shared mapping on write-sealed file is not allowed.
+					return 0, nil, linuxerr.EPERM
+				}
+				// Read-only shared mapping. Prevent it from being upgraded to writable.
+				opts.MaxPerms.Write = false
+			}
+		}
+
 		// mmap requires volume NO_EXEC be false if request has PROT_EXEC flag.
 		if file.Mount().MountFlags()&linux.ST_NOEXEC != 0 {
 			if opts.Perms.Execute {

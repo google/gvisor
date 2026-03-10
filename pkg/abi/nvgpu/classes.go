@@ -300,6 +300,25 @@ type NV503B_ALLOC_PARAMETERS struct {
 	P2lBar1P2PDmaInfo          NV503B_BAR1_P2P_DMA_INFO
 }
 
+// NV503B_FABRIC_P2P_DMA_INFO from src/common/sdk/nvidia/inc/class/cl503b.h.
+//
+// +marshal
+type NV503B_FABRIC_P2P_DMA_INFO struct {
+	_   structs.HostLayout
+	Gpa uint64
+}
+
+// NV503B_ALLOC_PARAMETERS_V590 is the updated version of
+// NV503B_ALLOC_PARAMETERS since 590.44.01.
+//
+// +marshal
+type NV503B_ALLOC_PARAMETERS_V590 struct {
+	_ structs.HostLayout
+	NV503B_ALLOC_PARAMETERS
+	L2pFabricP2PInfo NV503B_FABRIC_P2P_DMA_INFO
+	P2lFabricP2PInfo NV503B_FABRIC_P2P_DMA_INFO
+}
+
 // NV503C_ALLOC_PARAMETERS is the alloc params type for NV50_THIRD_PARTY_P2P,
 // from src/common/sdk/nvidia/inc/class/cl503c.h.
 //
@@ -627,6 +646,23 @@ type NV00FD_ALLOCATION_PARAMETERS_V545 struct {
 	Index     uint16
 	_         [6]byte
 	NV00FD_ALLOCATION_PARAMETERS
+}
+
+// NV00FD_ALLOCATION_PARAMETERS_V590 is the updated version of
+// NV00FD_ALLOCATION_PARAMETERS since 590.44.01.
+//
+// +marshal
+type NV00FD_ALLOCATION_PARAMETERS_V590 struct {
+	_          structs.HostLayout
+	ExpPacket  NV_EXPORT_MEM_PACKET
+	Index      uint16
+	_          [6]byte
+	Alignment  uint64
+	AllocSize  uint64
+	PageSize   uint64
+	AllocFlags uint32
+	NumGPUs    uint32
+	POsEvent   P64
 }
 
 // NV_MEMORY_MAPPER_ALLOCATION_PARAMS is the alloc param type for

@@ -61,58 +61,6 @@ func (f *FrameRefSegInfo) StateLoad(ctx context.Context, stateSourceObject state
 	stateSourceObject.Load(1, &f.memCgID)
 }
 
-func (f *HostFileMapper) StateTypeName() string {
-	return "pkg/sentry/fsutil.HostFileMapper"
-}
-
-func (f *HostFileMapper) StateFields() []string {
-	return []string{
-		"refs",
-	}
-}
-
-func (f *HostFileMapper) beforeSave() {}
-
-// +checklocksignore
-func (f *HostFileMapper) StateSave(stateSinkObject state.Sink) {
-	f.beforeSave()
-	stateSinkObject.Save(0, &f.refs)
-}
-
-// +checklocksignore
-func (f *HostFileMapper) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &f.refs)
-	stateSourceObject.AfterLoad(func() { f.afterLoad(ctx) })
-}
-
-func (m *mapping) StateTypeName() string {
-	return "pkg/sentry/fsutil.mapping"
-}
-
-func (m *mapping) StateFields() []string {
-	return []string{
-		"addr",
-		"writable",
-	}
-}
-
-func (m *mapping) beforeSave() {}
-
-// +checklocksignore
-func (m *mapping) StateSave(stateSinkObject state.Sink) {
-	m.beforeSave()
-	stateSinkObject.Save(0, &m.addr)
-	stateSinkObject.Save(1, &m.writable)
-}
-
-func (m *mapping) afterLoad(context.Context) {}
-
-// +checklocksignore
-func (m *mapping) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &m.addr)
-	stateSourceObject.Load(1, &m.writable)
-}
-
 func (s *mappingSet) StateTypeName() string {
 	return "pkg/sentry/fsutil.mappingSet"
 }
@@ -217,35 +165,171 @@ func (m *mappingFlatSegment) StateLoad(ctx context.Context, stateSourceObject st
 	stateSourceObject.Load(2, &m.Value)
 }
 
-func (f *PreciseHostFileMapper) StateTypeName() string {
-	return "pkg/sentry/fsutil.PreciseHostFileMapper"
+func (f *MmapCachedFile) StateTypeName() string {
+	return "pkg/sentry/fsutil.MmapCachedFile"
 }
 
-func (f *PreciseHostFileMapper) StateFields() []string {
+func (f *MmapCachedFile) StateFields() []string {
 	return []string{
+		"DefaultMemoryType",
+		"NoBufferedIOFallback",
+		"fd",
+		"mappableReleased",
+		"refs",
+		"memAcct",
+	}
+}
+
+func (f *MmapCachedFile) beforeSave() {}
+
+// +checklocksignore
+func (f *MmapCachedFile) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.DefaultMemoryType)
+	stateSinkObject.Save(1, &f.NoBufferedIOFallback)
+	stateSinkObject.Save(2, &f.fd)
+	stateSinkObject.Save(3, &f.mappableReleased)
+	stateSinkObject.Save(4, &f.refs)
+	stateSinkObject.Save(5, &f.memAcct)
+}
+
+// +checklocksignore
+func (f *MmapCachedFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.DefaultMemoryType)
+	stateSourceObject.Load(1, &f.NoBufferedIOFallback)
+	stateSourceObject.Load(2, &f.fd)
+	stateSourceObject.Load(3, &f.mappableReleased)
+	stateSourceObject.Load(4, &f.refs)
+	stateSourceObject.Load(5, &f.memAcct)
+	stateSourceObject.AfterLoad(func() { f.afterLoad(ctx) })
+}
+
+func (m *mapping) StateTypeName() string {
+	return "pkg/sentry/fsutil.mapping"
+}
+
+func (m *mapping) StateFields() []string {
+	return []string{
+		"addr",
+		"writable",
+	}
+}
+
+func (m *mapping) beforeSave() {}
+
+// +checklocksignore
+func (m *mapping) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	stateSinkObject.Save(0, &m.addr)
+	stateSinkObject.Save(1, &m.writable)
+}
+
+func (m *mapping) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (m *mapping) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.addr)
+	stateSourceObject.Load(1, &m.writable)
+}
+
+func (r *MmapFileRefs) StateTypeName() string {
+	return "pkg/sentry/fsutil.MmapFileRefs"
+}
+
+func (r *MmapFileRefs) StateFields() []string {
+	return []string{
+		"Closer",
+		"refs",
+	}
+}
+
+func (r *MmapFileRefs) beforeSave() {}
+
+// +checklocksignore
+func (r *MmapFileRefs) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.Closer)
+	stateSinkObject.Save(1, &r.refs)
+}
+
+func (r *MmapFileRefs) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (r *MmapFileRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.Closer)
+	stateSourceObject.Load(1, &r.refs)
+}
+
+func (f *MmapNoInternalFile) StateTypeName() string {
+	return "pkg/sentry/fsutil.MmapNoInternalFile"
+}
+
+func (f *MmapNoInternalFile) StateFields() []string {
+	return []string{
+		"NoMapInternal",
+		"MmapFileRefs",
+		"fd",
+	}
+}
+
+func (f *MmapNoInternalFile) beforeSave() {}
+
+// +checklocksignore
+func (f *MmapNoInternalFile) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.NoMapInternal)
+	stateSinkObject.Save(1, &f.MmapFileRefs)
+	stateSinkObject.Save(2, &f.fd)
+}
+
+// +checklocksignore
+func (f *MmapNoInternalFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.NoMapInternal)
+	stateSourceObject.Load(1, &f.MmapFileRefs)
+	stateSourceObject.Load(2, &f.fd)
+	stateSourceObject.AfterLoad(func() { f.afterLoad(ctx) })
+}
+
+func (f *MmapPreciseFile) StateTypeName() string {
+	return "pkg/sentry/fsutil.MmapPreciseFile"
+}
+
+func (f *MmapPreciseFile) StateFields() []string {
+	return []string{
+		"NoBufferedIOFallback",
+		"fd",
+		"memType",
 		"addrMustEqualFileOffset",
+		"mappableReleased",
 		"refs",
 		"mappings",
 	}
 }
 
-func (f *PreciseHostFileMapper) beforeSave() {}
+func (f *MmapPreciseFile) beforeSave() {}
 
 // +checklocksignore
-func (f *PreciseHostFileMapper) StateSave(stateSinkObject state.Sink) {
+func (f *MmapPreciseFile) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
-	stateSinkObject.Save(0, &f.addrMustEqualFileOffset)
-	stateSinkObject.Save(1, &f.refs)
-	stateSinkObject.Save(2, &f.mappings)
+	stateSinkObject.Save(0, &f.NoBufferedIOFallback)
+	stateSinkObject.Save(1, &f.fd)
+	stateSinkObject.Save(2, &f.memType)
+	stateSinkObject.Save(3, &f.addrMustEqualFileOffset)
+	stateSinkObject.Save(4, &f.mappableReleased)
+	stateSinkObject.Save(5, &f.refs)
+	stateSinkObject.Save(6, &f.mappings)
 }
 
-func (f *PreciseHostFileMapper) afterLoad(context.Context) {}
-
 // +checklocksignore
-func (f *PreciseHostFileMapper) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &f.addrMustEqualFileOffset)
-	stateSourceObject.Load(1, &f.refs)
-	stateSourceObject.Load(2, &f.mappings)
+func (f *MmapPreciseFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.NoBufferedIOFallback)
+	stateSourceObject.Load(1, &f.fd)
+	stateSourceObject.Load(2, &f.memType)
+	stateSourceObject.Load(3, &f.addrMustEqualFileOffset)
+	stateSourceObject.Load(4, &f.mappableReleased)
+	stateSourceObject.Load(5, &f.refs)
+	stateSourceObject.Load(6, &f.mappings)
+	stateSourceObject.AfterLoad(func() { f.afterLoad(ctx) })
 }
 
 func (s *refsSet) StateTypeName() string {
@@ -355,12 +439,14 @@ func (r *refsFlatSegment) StateLoad(ctx context.Context, stateSourceObject state
 func init() {
 	state.Register((*DirtyInfo)(nil))
 	state.Register((*FrameRefSegInfo)(nil))
-	state.Register((*HostFileMapper)(nil))
-	state.Register((*mapping)(nil))
 	state.Register((*mappingSet)(nil))
 	state.Register((*mappingnode)(nil))
 	state.Register((*mappingFlatSegment)(nil))
-	state.Register((*PreciseHostFileMapper)(nil))
+	state.Register((*MmapCachedFile)(nil))
+	state.Register((*mapping)(nil))
+	state.Register((*MmapFileRefs)(nil))
+	state.Register((*MmapNoInternalFile)(nil))
+	state.Register((*MmapPreciseFile)(nil))
 	state.Register((*refsSet)(nil))
 	state.Register((*refsnode)(nil))
 	state.Register((*refsFlatSegment)(nil))

@@ -26,20 +26,6 @@ func (fd *tpuFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error
 	return vfs.GenericProxyDeviceConfigureMMap(&fd.vfsfd, fd, opts)
 }
 
-// AddMapping implements memmap.Mappable.AddMapping.
-func (fd *tpuFD) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
-	return nil
-}
-
-// RemoveMapping implements memmap.Mappable.RemoveMapping.
-func (fd *tpuFD) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
-}
-
-// CopyMapping implements memmap.Mappable.CopyMapping.
-func (fd *tpuFD) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, writable bool) error {
-	return nil
-}
-
 // Translate implements memmap.Mappable.Translate.
 func (fd *tpuFD) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
 	return []memmap.Translation{
@@ -50,36 +36,4 @@ func (fd *tpuFD) Translate(ctx context.Context, required, optional memmap.Mappab
 			Perms:  hostarch.AnyAccess,
 		},
 	}, nil
-}
-
-// InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
-func (fd *tpuFD) InvalidateUnsavable(ctx context.Context) error {
-	return nil
-}
-
-// +stateify savable
-type tpuFDMemmapFile struct {
-	// FIXME(jamieliu): IIUC, tpuFD corresponds to Linux's
-	// drivers/vfio/vfio.c:vfio_group_fops, which does not support mmap at all.
-	memmap.NoMapInternal
-
-	fd *tpuFD
-}
-
-// IncRef implements memmap.File.IncRef.
-func (mf *tpuFDMemmapFile) IncRef(memmap.FileRange, uint32) {
-}
-
-// DecRef implements memmap.File.DecRef.
-func (mf *tpuFDMemmapFile) DecRef(fr memmap.FileRange) {
-}
-
-// DataFD implements memmap.File.DataFD.
-func (mf *tpuFDMemmapFile) DataFD(fr memmap.FileRange) (int, error) {
-	return mf.FD(), nil
-}
-
-// FD implements memmap.File.FD.
-func (mf *tpuFDMemmapFile) FD() int {
-	return int(mf.fd.hostFD)
 }

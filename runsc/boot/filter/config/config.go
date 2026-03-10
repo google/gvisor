@@ -61,18 +61,18 @@ func isInstrumentationEnabled() bool {
 // at runtime (e.g. `ControllerFD`).
 func (opt Options) ConfigKey() string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("GOARCH=%q ", runtime.GOARCH))
-	sb.WriteString(fmt.Sprintf("Platform=%q ", opt.Platform.ConfigKey()))
-	sb.WriteString(fmt.Sprintf("HostNetwork=%t ", opt.HostNetwork))
-	sb.WriteString(fmt.Sprintf("HostNetworkRawSockets=%t ", opt.HostNetworkRawSockets))
-	sb.WriteString(fmt.Sprintf("HostFilesystem=%t ", opt.HostFilesystem))
-	sb.WriteString(fmt.Sprintf("ProfileEnable=%t ", opt.ProfileEnable))
-	sb.WriteString(fmt.Sprintf("Instrumentation=%t ", isInstrumentationEnabled()))
-	sb.WriteString(fmt.Sprintf("NVProxy=%t ", opt.NVProxy))
-	sb.WriteString(fmt.Sprintf("NVProxyCaps=%v ", opt.NVProxyCaps))
-	sb.WriteString(fmt.Sprintf("TPUProxy=%t ", opt.TPUProxy))
-	sb.WriteString(fmt.Sprintf("CgoEnabled=%t ", opt.CgoEnabled))
-	sb.WriteString(fmt.Sprintf("PluginNetwork=%t ", opt.PluginNetwork))
+	fmt.Fprintf(&sb, "GOARCH=%q ", runtime.GOARCH)
+	fmt.Fprintf(&sb, "Platform=%q ", opt.Platform.ConfigKey())
+	fmt.Fprintf(&sb, "HostNetwork=%t ", opt.HostNetwork)
+	fmt.Fprintf(&sb, "HostNetworkRawSockets=%t ", opt.HostNetworkRawSockets)
+	fmt.Fprintf(&sb, "HostFilesystem=%t ", opt.HostFilesystem)
+	fmt.Fprintf(&sb, "ProfileEnable=%t ", opt.ProfileEnable)
+	fmt.Fprintf(&sb, "Instrumentation=%t ", isInstrumentationEnabled())
+	fmt.Fprintf(&sb, "NVProxy=%t ", opt.NVProxy)
+	fmt.Fprintf(&sb, "NVProxyCaps=%v ", opt.NVProxyCaps)
+	fmt.Fprintf(&sb, "TPUProxy=%t ", opt.TPUProxy)
+	fmt.Fprintf(&sb, "CgoEnabled=%t ", opt.CgoEnabled)
+	fmt.Fprintf(&sb, "PluginNetwork=%t ", opt.PluginNetwork)
 	return strings.TrimSpace(sb.String())
 }
 

@@ -47,9 +47,7 @@ func allPrecompiledPlatforms() ([]platform.SeccompInfo, error) {
 		if err != nil {
 			return nil, fmt.Errorf("cannot lookup platform %q: %w", platformName, err)
 		}
-		for _, si := range constructor.PrecompiledSeccompInfo() {
-			seccompInfos = append(seccompInfos, si)
-		}
+		seccompInfos = append(seccompInfos, constructor.PrecompiledSeccompInfo()...)
 	}
 	return seccompInfos, nil
 }
@@ -120,9 +118,7 @@ func optionsToPrecompile() ([]Options, error) {
 			if err != nil {
 				return nil, err
 			}
-			for _, newOpt := range expanded {
-				newOpts = append(newOpts, newOpt)
-			}
+			newOpts = append(newOpts, expanded...)
 		}
 		opts = newOpts
 	}

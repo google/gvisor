@@ -26,20 +26,6 @@ func (fd *accelFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) err
 	return vfs.GenericProxyDeviceConfigureMMap(&fd.vfsfd, fd, opts)
 }
 
-// AddMapping implements memmap.Mappable.AddMapping.
-func (fd *accelFD) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
-	return nil
-}
-
-// RemoveMapping implements memmap.Mappable.RemoveMapping.
-func (fd *accelFD) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
-}
-
-// CopyMapping implements memmap.Mappable.CopyMapping.
-func (fd *accelFD) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, writable bool) error {
-	return nil
-}
-
 // Translate implements memmap.Mappable.Translate.
 func (fd *accelFD) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
 	return []memmap.Translation{
@@ -50,33 +36,4 @@ func (fd *accelFD) Translate(ctx context.Context, required, optional memmap.Mapp
 			Perms:  hostarch.AnyAccess,
 		},
 	}, nil
-}
-
-// InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
-func (fd *accelFD) InvalidateUnsavable(ctx context.Context) error {
-	return nil
-}
-
-type accelFDMemmapFile struct {
-	memmap.NoMapInternal
-
-	fd *accelFD
-}
-
-// IncRef implements memmap.File.IncRef.
-func (mf *accelFDMemmapFile) IncRef(memmap.FileRange, uint32) {
-}
-
-// DecRef implements memmap.File.DecRef.
-func (mf *accelFDMemmapFile) DecRef(fr memmap.FileRange) {
-}
-
-// DataFD implements memmap.File.DataFD.
-func (mf *accelFDMemmapFile) DataFD(fr memmap.FileRange) (int, error) {
-	return mf.FD(), nil
-}
-
-// FD implements memmap.File.FD.
-func (mf *accelFDMemmapFile) FD() int {
-	return int(mf.fd.hostFD)
 }

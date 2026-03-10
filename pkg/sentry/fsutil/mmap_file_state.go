@@ -17,6 +17,16 @@ package fsutil
 import "context"
 
 // afterLoad is invoked by stateify.
-func (f *HostFileMapper) afterLoad(context.Context) {
-	f.mappings = make(map[uint64]mapping)
+func (f *MmapCachedFile) afterLoad(context.Context) {
+	f.fd.RacyStore(-1)
+}
+
+// afterLoad is invoked by stateify.
+func (f *MmapNoInternalFile) afterLoad(context.Context) {
+	f.fd = -1
+}
+
+// afterLoad is invoked by stateify.
+func (f *MmapPreciseFile) afterLoad(context.Context) {
+	f.fd = -1
 }

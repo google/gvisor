@@ -1307,6 +1307,7 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 			if h.fd != -1 {
 				child.inode.readFD = atomicbitops.FromInt32(h.fd)
 				child.inode.mmapFD = atomicbitops.FromInt32(h.fd)
+				child.inode.mmapFile.SetFD(int(h.fd))
 			}
 		}
 		if vfs.MayWriteFileWithOpenFlags(opts.Flags) {
