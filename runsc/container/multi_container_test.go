@@ -3309,3 +3309,73 @@ func TestFSCheckpointCommand(t *testing.T) {
 		t.Errorf("Error waiting for FS restore: %v", err)
 	}
 }
+
+func TestMultiContainerExecSeccomp(t *testing.T) {
+	rootDir, cleanup, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer cleanup()
+
+	conf := testutil.TestConfig(t)
+	conf.RootDir = rootDir
+	conf.OCISeccomp = true
+
+	testSpecs, ids := createSpecs(sleepCmd, sleepCmd)
+
+	// Container 0 (sandbox root): Block "uname" syscall.
+	testSpecs[0].Linux = &specs.Linux{
+		Seccomp: &specs.LinuxSeccomp{
+			DefaultAction: specs.ActAllow,
+			Syscalls: []specs.LinuxSyscall{
+				{
+					Names:  []string{"uname"},
+					Action: specs.ActErrno,
+				},
+			},
+		},
+	}
+
+	// Container 1 (sub-container): Block "getdents64" syscall.
+	testSpecs[1].Linux = &specs.Linux{
+		Seccomp: &specs.LinuxSeccomp{
+			DefaultAction: specs.ActAllow,
+			Syscalls: []specs.LinuxSyscall{
+				{
+					Names:  []string{"getdents64"},
+					Action: specs.ActErrno,
+				},
+			},
+		},
+	}
+
+	containers, cleanup, err := startContainers(conf, testSpecs, ids)
+	if err != nil {
+		t.Fatalf("error starting containers: %v", err)
+	}
+	defer cleanup()
+
+	// Container 0: "uname" should be blocked.
+	_, err = executeCombinedOutput(conf, containers[0], nil, "/bin/uname")
+	if err == nil {
+		t.Errorf("uname in container 0 should have failed, but succeeded")
+	}
+
+	// Container 0: "getdents64" should not be blocked.
+	_, err = executeCombinedOutput(conf, containers[0], nil, "/bin/ls", "/")
+	if err != nil {
+		t.Errorf("ls in container 0 should have succeeded: %v", err)
+	}
+
+	// Container 1: "getdents64" should be blocked.
+	_, err = executeCombinedOutput(conf, containers[1], nil, "/bin/ls", "/")
+	if err == nil {
+		t.Errorf("ls in container 1 should have failed, but succeeded")
+	}
+
+	// Container 1: "uname" should not be blocked.
+	_, err = executeCombinedOutput(conf, containers[1], nil, "/bin/uname")
+	if err != nil {
+		t.Errorf("uname in container 1 should have succeeded: %v", err)
+	}
+}
