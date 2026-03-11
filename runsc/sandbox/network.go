@@ -496,11 +496,10 @@ func loopbackLink(conf *config.Config, iface net.Interface, addrs []net.Addr, di
 // routesForIface iterates over all routes for the given interface and converts
 // them to boot.Routes. It also returns the a default v4/v6 route if found.
 func routesForIface(iface net.Interface, disableIPv6 bool) ([]boot.Route, *boot.Route, *boot.Route, error) {
-	link, err := netlink.LinkByIndex(iface.Index)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	rs, err := netlink.RouteList(link, netlink.FAMILY_ALL)
+	// Get all routes in the namespace, not just routes for this specific link.
+	// This is needed to capture custom routes (e.g. created by podman-network-create --route
+	// option) that may not be directly associated with the interface.
+	rs, err := netlink.RouteListFiltered(netlink.FAMILY_ALL, &netlink.Route{}, 0)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("getting routes from %q: %v", iface.Name, err)
 	}
