@@ -1,5 +1,5 @@
 load("//pkg/sync/locking:locking.bzl", "declare_mutex")
-load("//tools:defs.bzl", "go_library", "proto_library")
+load("//tools:defs.bzl", "go_library", "go_test", "proto_library")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -78,6 +78,12 @@ go_library(
         "@org_golang_google_protobuf//proto:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
+)
+
+go_test(
+    name = "netstack_test",
+    srcs = ["stack_test.go"],
+    deps = [":netstack"],
 )
 
 proto_library(
