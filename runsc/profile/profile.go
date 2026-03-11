@@ -257,6 +257,9 @@ func DonateProfileFDs(conf *config.Config, donations *donation.Agency, isGofer b
 }
 
 func updatePath(path string, suffix string, isGofer bool) string {
+	if path == "" {
+		return path
+	}
 	if strings.HasSuffix(path, "/") {
 		path += "runsc-profile." + suffix
 	}
