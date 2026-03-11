@@ -206,14 +206,15 @@ func (fs *filesystem) Write(ctx context.Context, fd *regularFileFD, offset int64
 		if err := res.UnmarshalPayload(&out); err != nil {
 			return n, offset, err
 		}
-		n += int64(out.Size)
-		offset += int64(out.Size)
-		src = src.DropFirst64(int64(out.Size))
-
 		// Write more than requested? EIO.
 		if out.Size > writeSize {
 			return n, offset, linuxerr.EIO
 		}
+
+		n += int64(out.Size)
+		offset += int64(out.Size)
+		src = src.DropFirst64(int64(out.Size))
+
 		// Break if short write. Not necessarily an error.
 		if out.Size != writeSize {
 			break
