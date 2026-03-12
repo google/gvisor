@@ -98,7 +98,9 @@ func (s *Stack) sendDeleteEvent(ctx context.Context, id tcpip.NICID, nicInfo *st
 
 // EnableSaveRestore enables netstack s/r.
 func (s *Stack) EnableSaveRestore() error {
-	s.Stack.EnableSaveRestore()
+	if s.Stack != nil {
+		s.Stack.EnableSaveRestore()
+	}
 	return nil
 }
 
@@ -112,12 +114,14 @@ func (s *Stack) IsSaveRestoreEnabled() bool {
 
 // Destroy implements inet.Stack.Destroy.
 func (s *Stack) Destroy() {
-	s.Stack.Close()
-	refs.CleanupSync.Add(1)
-	go func() {
-		s.Stack.Wait()
-		refs.CleanupSync.Done()
-	}()
+	if s.Stack != nil {
+		s.Stack.Close()
+		refs.CleanupSync.Add(1)
+		go func() {
+			s.Stack.Wait()
+			refs.CleanupSync.Done()
+		}()
+	}
 }
 
 // SupportsIPv6 implements Stack.SupportsIPv6.
