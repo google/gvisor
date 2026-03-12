@@ -33,6 +33,7 @@ const (
 	NATID TableID = iota
 	MangleID
 	FilterID
+	RawID
 	NumTables
 )
 
@@ -111,6 +112,27 @@ func DefaultTables(clock tcpip.Clock, rand *rand.Rand) *IPTables {
 					Postrouting: HookUnset,
 				},
 			},
+			RawID: {
+				Rules: []Rule{
+					{Filter: EmptyFilter4(), Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+					{Filter: EmptyFilter4(), Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+					{Filter: EmptyFilter4(), Target: &ErrorTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+				},
+				BuiltinChains: [NumHooks]int{
+					Prerouting:  0,
+					Input:       HookUnset,
+					Forward:     HookUnset,
+					Output:      1,
+					Postrouting: HookUnset,
+				},
+				Underflows: [NumHooks]int{
+					Prerouting:  0,
+					Input:       HookUnset,
+					Forward:     HookUnset,
+					Output:      1,
+					Postrouting: HookUnset,
+				},
+			},
 		},
 		v6Tables: [NumTables]Table{
 			NATID: {
@@ -176,6 +198,27 @@ func DefaultTables(clock tcpip.Clock, rand *rand.Rand) *IPTables {
 					Postrouting: HookUnset,
 				},
 			},
+			RawID: {
+				Rules: []Rule{
+					{Filter: EmptyFilter6(), Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+					{Filter: EmptyFilter6(), Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+					{Filter: EmptyFilter6(), Target: &ErrorTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+				},
+				BuiltinChains: [NumHooks]int{
+					Prerouting:  0,
+					Input:       HookUnset,
+					Forward:     HookUnset,
+					Output:      1,
+					Postrouting: HookUnset,
+				},
+				Underflows: [NumHooks]int{
+					Prerouting:  0,
+					Input:       HookUnset,
+					Forward:     HookUnset,
+					Output:      1,
+					Postrouting: HookUnset,
+				},
+			},
 		},
 		connections: ConnTrack{
 			seed:  rand.Uint32(),
@@ -211,6 +254,28 @@ func EmptyNATTable() Table {
 		},
 		Underflows: [NumHooks]int{
 			Forward: HookUnset,
+		},
+	}
+}
+
+// EmptyRawTable returns a Table with no rules and only the Prerouting and
+// Output hooks set, matching the Linux raw table's valid hooks.
+func EmptyRawTable() Table {
+	return Table{
+		Rules: []Rule{},
+		BuiltinChains: [NumHooks]int{
+			Prerouting:  HookUnset,
+			Input:       HookUnset,
+			Forward:     HookUnset,
+			Output:      HookUnset,
+			Postrouting: HookUnset,
+		},
+		Underflows: [NumHooks]int{
+			Prerouting:  HookUnset,
+			Input:       HookUnset,
+			Forward:     HookUnset,
+			Output:      HookUnset,
+			Postrouting: HookUnset,
 		},
 	}
 }
@@ -340,6 +405,10 @@ func (it *IPTables) CheckPrerouting(pkt *PacketBuffer, addressEP AddressableEndp
 	tables := [...]checkTable{ // escapes: on arm this causes an allocation.
 		{
 			fn:      check,
+			tableID: RawID,
+		},
+		{
+			fn:      check,
 			tableID: MangleID,
 		},
 		{
@@ -448,6 +517,10 @@ func (it *IPTables) CheckForward(pkt *PacketBuffer, inNicName, outNicName string
 // +checkescape
 func (it *IPTables) CheckOutput(pkt *PacketBuffer, r *Route, outNicName string) bool {
 	tables := [...]checkTable{ // escapes: on arm this causes an allocation.
+		{
+			fn:      check,
+			tableID: RawID,
+		},
 		{
 			fn:      check,
 			tableID: MangleID,
