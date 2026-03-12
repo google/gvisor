@@ -35,3 +35,11 @@ func (t *thread) getTLS(tls *uint64) error {
 func (t *thread) setTLS(tls *uint64) error {
 	return nil
 }
+
+// configureSystrapAddressSpace is a no-op on amd64.
+//
+// On ARM64, this function overrides the default 48-bit address space
+// parameters to support 39-bit and 52-bit VA widths. On amd64, the
+// address space layout is fixed and does not require dynamic
+// configuration, so this is intentionally empty.
+func configureSystrapAddressSpace() {}
