@@ -121,6 +121,31 @@ func isRootNetNS() (bool, error) {
 	}
 }
 
+// removeLinkAddresses removes IP addresses from the host NIC for a link.
+func removeLinkAddresses(linkName string, addresses []boot.IPWithPrefix) error {
+	ifaceLink, err := netlink.LinkByName(linkName)
+	if err != nil {
+		return fmt.Errorf("getting link for interface %q: %w", linkName, err)
+	}
+	for _, addr := range addresses {
+		ipNet := &net.IPNet{
+			IP:   addr.Address,
+			Mask: net.CIDRMask(addr.PrefixLen, len(addr.Address)*8),
+		}
+		if err := removeAddress(ifaceLink, ipNet.String()); err != nil {
+			// If we encounter an error while deleting the ip,
+			// verify the ip is still present on the interface.
+			if present, err := isAddressOnInterface(linkName, ipNet); err != nil {
+				return fmt.Errorf("checking if address %v is on interface %q: %w", ipNet, linkName, err)
+			} else if !present {
+				continue
+			}
+			return fmt.Errorf("removing address %v from device %q: %w", ipNet, linkName, err)
+		}
+	}
+	return nil
+}
+
 // createInterfacesAndRoutesFromNS scrapes the interface and routes from the
 // net namespace with the given path, creates them in the sandbox, and removes
 // them from the host.
@@ -252,32 +277,14 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 		}
 		linkAddress := ifaceLink.Attrs().HardwareAddr
 
-		// Collect the addresses for the interface, enable forwarding,
-		// and remove them from the host.
+		// Collect the addresses for the interface.
 		var addresses []boot.IPWithPrefix
 		for _, addr := range ipAddrs {
 			prefix, _ := addr.Mask.Size()
 			addresses = append(addresses, boot.IPWithPrefix{Address: addr.IP, PrefixLen: prefix})
-
-			// Steal IP address from NIC.
-			if err := removeAddress(ifaceLink, addr.String()); err != nil {
-				// If we encounter an error while deleting the ip,
-				// verify the ip is still present on the interface.
-				if present, err := isAddressOnInterface(iface.Name, addr); err != nil {
-					return fmt.Errorf("checking if address %v is on interface %q: %w", addr, iface.Name, err)
-				} else if !present {
-					continue
-				}
-				return fmt.Errorf("removing address %v from device %q: %w", addr, iface.Name, err)
-			}
 		}
 
 		if conf.XDP.Mode == config.XDPModeNS {
-			xdpSockFDs, err := createSocketXDP(iface)
-			if err != nil {
-				return fmt.Errorf("failed to create XDP socket: %v", err)
-			}
-			args.FilePayload.Files = append(args.FilePayload.Files, xdpSockFDs...)
 			args.XDPLinks = append(args.XDPLinks, boot.XDPLink{
 				Name:              iface.Name,
 				InterfaceIndex:    iface.Index,
@@ -304,35 +311,70 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 				Neighbors:            neighbors,
 				LinkAddress:          linkAddress,
 				Addresses:            addresses,
+				GVisorGRO:            conf.GVisorGRO,
 			}
-
-			log.Debugf("Setting up network channels")
-			// Create the socket for the device.
-			for i := 0; i < link.NumChannels; i++ {
-				log.Debugf("Creating Channel %d", i)
-				socketEntry, err := createSocket(iface, ifaceLink, conf.HostGSO)
-				if err != nil {
-					return fmt.Errorf("failed to createSocket for %s : %w", iface.Name, err)
-				}
-				if i == 0 {
-					link.GSOMaxSize = socketEntry.gsoMaxSize
-				} else {
-					if link.GSOMaxSize != socketEntry.gsoMaxSize {
-						return fmt.Errorf("inconsistent gsoMaxSize %d and %d when creating multiple channels for same interface: %s",
-							link.GSOMaxSize, socketEntry.gsoMaxSize, iface.Name)
-					}
-				}
-				args.FilePayload.Files = append(args.FilePayload.Files, socketEntry.deviceFile)
-			}
-
-			if link.GSOMaxSize == 0 && conf.GVisorGSO {
-				// Host GSO is disabled. Let's enable gVisor GSO.
-				link.GSOMaxSize = stack.GVisorGSOMaxSize
-				link.GVisorGSOEnabled = true
-			}
-			link.GVisorGRO = conf.GVisorGRO
-
 			args.FDBasedLinks = append(args.FDBasedLinks, link)
+		}
+	}
+
+	for i := range args.XDPLinks {
+		if err := removeLinkAddresses(args.XDPLinks[i].Name, args.XDPLinks[i].Addresses); err != nil {
+			return err
+		}
+	}
+	for i := range args.FDBasedLinks {
+		if err := removeLinkAddresses(args.FDBasedLinks[i].Name, args.FDBasedLinks[i].Addresses); err != nil {
+			return err
+		}
+	}
+
+	for i := range args.XDPLinks {
+		link := &args.XDPLinks[i]
+		iface, err := net.InterfaceByName(link.Name)
+		if err != nil {
+			return fmt.Errorf("getting interface by name %q: %w", link.Name, err)
+		}
+		xdpSockFDs, err := createSocketXDP(*iface)
+		if err != nil {
+			return fmt.Errorf("failed to create XDP socket: %v", err)
+		}
+		args.FilePayload.Files = append(args.FilePayload.Files, xdpSockFDs...)
+	}
+
+	for i := range args.FDBasedLinks {
+		link := &args.FDBasedLinks[i]
+		iface, err := net.InterfaceByName(link.Name)
+		if err != nil {
+			return fmt.Errorf("getting interface by name %q: %w", link.Name, err)
+		}
+		ifaceLink, err := netlink.LinkByName(link.Name)
+		if err != nil {
+			return fmt.Errorf("getting link for interface %q: %w", link.Name, err)
+		}
+
+		log.Debugf("Setting up network channels")
+		// Create the socket for the device.
+		for j := 0; j < link.NumChannels; j++ {
+			log.Debugf("Creating Channel %d", j)
+			socketEntry, err := createSocket(*iface, ifaceLink, conf.HostGSO)
+			if err != nil {
+				return fmt.Errorf("failed to createSocket for %s : %w", link.Name, err)
+			}
+			if j == 0 {
+				link.GSOMaxSize = socketEntry.gsoMaxSize
+			} else {
+				if link.GSOMaxSize != socketEntry.gsoMaxSize {
+					return fmt.Errorf("inconsistent gsoMaxSize %d and %d when creating multiple channels for same interface: %s",
+						link.GSOMaxSize, socketEntry.gsoMaxSize, link.Name)
+				}
+			}
+			args.FilePayload.Files = append(args.FilePayload.Files, socketEntry.deviceFile)
+		}
+
+		if link.GSOMaxSize == 0 && conf.GVisorGSO {
+			// Host GSO is disabled. Let's enable gVisor GSO.
+			link.GSOMaxSize = stack.GVisorGSOMaxSize
+			link.GVisorGSOEnabled = true
 		}
 	}
 
