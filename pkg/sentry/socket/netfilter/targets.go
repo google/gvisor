@@ -79,6 +79,14 @@ func init() {
 		NetworkProtocol: header.IPv6ProtocolNumber,
 	})
 
+	// CT targets (used in the raw table for conntrack zone assignment).
+	registerTargetMaker(&ctTargetMaker{
+		NetworkProtocol: header.IPv4ProtocolNumber,
+	})
+	registerTargetMaker(&ctTargetMaker{
+		NetworkProtocol: header.IPv6ProtocolNumber,
+	})
+
 	// DNAT targets.
 	registerTargetMaker(&dnatTargetMakerV4{
 		NetworkProtocol: header.IPv4ProtocolNumber,

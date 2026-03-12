@@ -413,6 +413,26 @@ func (mt *MasqueradeTarget) Action(pkt *PacketBuffer, hook Hook, r *Route, addre
 	return snatAction(pkt, hook, r, 0 /* port */, address, true /* changePort */, true /* changeAddress */)
 }
 
+// CTTarget is a no-op implementation of the CT (conntrack) target used in the
+// raw table. In Linux, CT --zone sets conntrack zones for connection tracking
+// isolation. gVisor's conntrack does not support zones, so this target simply
+// accepts the packet, allowing iptables-restore to load rulesets that reference
+// CT targets (e.g. Istio with DNS capture enabled).
+//
+// +stateify savable
+type CTTarget struct {
+	// NetworkProtocol is the network protocol the target is used with.
+	NetworkProtocol tcpip.NetworkProtocolNumber
+
+	// Zone is the conntrack zone ID. Stored but not acted upon.
+	Zone uint16
+}
+
+// Action implements Target.Action. It is a no-op that accepts the packet.
+func (*CTTarget) Action(*PacketBuffer, Hook, *Route, AddressableEndpoint) (RuleVerdict, int) {
+	return RuleAccept, 0
+}
+
 func rewritePacket(n header.Network, t header.Transport, updateSRCFields, fullChecksum, updatePseudoHeader bool, newPortOrIdent uint16, newAddr tcpip.Address) {
 	switch t := t.(type) {
 	case header.ChecksummableTransport:
