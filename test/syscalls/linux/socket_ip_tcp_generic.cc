@@ -40,6 +40,12 @@ namespace testing {
 using ::testing::AnyOf;
 using ::testing::Eq;
 
+// The amount of time to wait for something expected to occur.
+constexpr int kPositiveTimeoutMs = 60 * 1000;
+
+// The amount of time to wait for something unexpected to not occur.
+constexpr int kNegativeTimeoutMs = 3 * 1000;
+
 TEST_P(TCPSocketPairTest, TcpInfoSucceeds) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
@@ -79,8 +85,7 @@ TEST_P(TCPSocketPairTest, CheckTcpInfoFields) {
 
   // Wait until second_fd sees the data and then recv it.
   struct pollfd poll_fd = {sockets->second_fd(), POLLIN, 0};
-  constexpr int kPollTimeoutMs = 2000;  // Wait up to 2 seconds for the data.
-  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPollTimeoutMs),
+  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPositiveTimeoutMs),
               SyscallSucceedsWithValue(1));
 
   ASSERT_THAT(RetryEINTR(recv)(sockets->second_fd(), buf, sizeof(buf), 0),
@@ -109,8 +114,7 @@ TEST_P(TCPSocketPairTest, RSTSentOnCloseWithUnreadData) {
 
   // Wait until t_ sees the data on its side but don't read it.
   struct pollfd poll_fd = {sockets->second_fd(), POLLIN | POLLHUP, 0};
-  constexpr int kPollTimeoutMs = 20000;  // Wait up to 20 seconds for the data.
-  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPollTimeoutMs),
+  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPositiveTimeoutMs),
               SyscallSucceedsWithValue(1));
 
   // Now close the connected without reading the data.
@@ -118,7 +122,7 @@ TEST_P(TCPSocketPairTest, RSTSentOnCloseWithUnreadData) {
 
   // Wait for the other end to receive the RST (up to 20 seconds).
   struct pollfd poll_fd2 = {sockets->first_fd(), POLLIN | POLLHUP, 0};
-  ASSERT_THAT(RetryEINTR(poll)(&poll_fd2, 1, kPollTimeoutMs),
+  ASSERT_THAT(RetryEINTR(poll)(&poll_fd2, 1, kPositiveTimeoutMs),
               SyscallSucceedsWithValue(1));
 
   // A shutdown with unread data will cause a RST to be sent instead
@@ -137,8 +141,7 @@ TEST_P(TCPSocketPairTest, RSTCausesPollHUP) {
 
   // Wait until second sees the data on its side but don't read it.
   struct pollfd poll_fd = {sockets->second_fd(), POLLIN, 0};
-  constexpr int kPollTimeoutMs = 20000;  // Wait up to 20 seconds for the data.
-  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPollTimeoutMs),
+  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPositiveTimeoutMs),
               SyscallSucceedsWithValue(1));
   EXPECT_EQ(poll_fd.revents & POLLIN, POLLIN);
 
@@ -154,9 +157,9 @@ TEST_P(TCPSocketPairTest, RSTCausesPollHUP) {
   // this will cause a RST and we should see that with POLLHUP.
   ASSERT_THAT(close(sockets->release_second_fd()), SyscallSucceeds());
 
-  // Wait for the other end to receive the RST (up to 20 seconds).
+  // Wait for the other end to receive the RST.
   struct pollfd poll_fd3 = {sockets->first_fd(), POLLHUP, 0};
-  ASSERT_THAT(RetryEINTR(poll)(&poll_fd3, 1, kPollTimeoutMs),
+  ASSERT_THAT(RetryEINTR(poll)(&poll_fd3, 1, kPositiveTimeoutMs),
               SyscallSucceedsWithValue(1));
   ASSERT_NE(poll_fd3.revents & POLLHUP, 0);
 }
@@ -174,21 +177,20 @@ TEST_P(TCPSocketPairTest, RSTSentOnCloseWithUnreadDataAllowsReadBuffered) {
 
   // Wait until second sees the data on its side but don't read it.
   struct pollfd poll_fd = {sockets->second_fd(), POLLIN, 0};
-  constexpr int kPollTimeoutMs = 30000;  // Wait up to 30 seconds for the data.
-  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPollTimeoutMs),
+  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPositiveTimeoutMs),
               SyscallSucceedsWithValue(1));
 
   // Wait until first sees the data on its side but don't read it.
   struct pollfd poll_fd2 = {sockets->first_fd(), POLLIN, 0};
-  ASSERT_THAT(RetryEINTR(poll)(&poll_fd2, 1, kPollTimeoutMs),
+  ASSERT_THAT(RetryEINTR(poll)(&poll_fd2, 1, kPositiveTimeoutMs),
               SyscallSucceedsWithValue(1));
 
   // Now close the connected socket without reading the data from the second.
   ASSERT_THAT(close(sockets->release_second_fd()), SyscallSucceeds());
 
-  // Wait for the other end to receive the RST (up to 30 seconds).
+  // Wait for the other end to receive the RST.
   struct pollfd poll_fd3 = {sockets->first_fd(), POLLHUP, 0};
-  ASSERT_THAT(RetryEINTR(poll)(&poll_fd3, 1, kPollTimeoutMs),
+  ASSERT_THAT(RetryEINTR(poll)(&poll_fd3, 1, kPositiveTimeoutMs),
               SyscallSucceedsWithValue(1));
 
   // Since we also have data buffered we should be able to read it before
@@ -213,8 +215,7 @@ TEST_P(TCPSocketPairTest, FINSentOnShutdownWrWithUnreadData) {
 
   // Wait until t_ sees the data on its side but don't read it.
   struct pollfd poll_fd = {sockets->second_fd(), POLLIN | POLLHUP, 0};
-  constexpr int kPollTimeoutMs = 20000;  // Wait up to 20 seconds for the data.
-  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPollTimeoutMs),
+  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPositiveTimeoutMs),
               SyscallSucceedsWithValue(1));
 
   // Now shutdown the write end leaving the read end open.
@@ -222,7 +223,7 @@ TEST_P(TCPSocketPairTest, FINSentOnShutdownWrWithUnreadData) {
 
   // Wait for the other end to receive the FIN (up to 20 seconds).
   struct pollfd poll_fd2 = {sockets->first_fd(), POLLIN | POLLHUP, 0};
-  ASSERT_THAT(RetryEINTR(poll)(&poll_fd2, 1, kPollTimeoutMs),
+  ASSERT_THAT(RetryEINTR(poll)(&poll_fd2, 1, kPositiveTimeoutMs),
               SyscallSucceedsWithValue(1));
 
   // Since we didn't shutdown the read end this will be a clean close.
@@ -241,8 +242,7 @@ TEST_P(TCPSocketPairTest, ShutdownRdShouldCauseNoPacketsWithUnreadData) {
 
   // Wait until t_ sees the data on its side but don't read it.
   struct pollfd poll_fd = {sockets->second_fd(), POLLIN | POLLHUP, 0};
-  constexpr int kPollTimeoutMs = 20000;  // Wait up to 20 seconds for the data.
-  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPollTimeoutMs),
+  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPositiveTimeoutMs),
               SyscallSucceedsWithValue(1));
 
   // Now shutdown the read end, this will generate no packets to the other end.
@@ -250,8 +250,7 @@ TEST_P(TCPSocketPairTest, ShutdownRdShouldCauseNoPacketsWithUnreadData) {
 
   // We should not receive any events on the other side of the socket.
   struct pollfd poll_fd2 = {sockets->first_fd(), POLLIN | POLLHUP, 0};
-  constexpr int kPollNoResponseTimeoutMs = 3000;
-  ASSERT_THAT(RetryEINTR(poll)(&poll_fd2, 1, kPollNoResponseTimeoutMs),
+  ASSERT_THAT(RetryEINTR(poll)(&poll_fd2, 1, kNegativeTimeoutMs),
               SyscallSucceedsWithValue(0));  // Timeout.
 }
 
@@ -267,8 +266,7 @@ TEST_P(TCPSocketPairTest, ShutdownRdAllowsReadOfReceivedDataBeforeEOF) {
 
   // Wait until t_ sees the data on its side but don't read it.
   struct pollfd poll_fd = {sockets->second_fd(), POLLIN | POLLHUP, 0};
-  constexpr int kPollTimeoutMs = 20000;  // Wait up to 20 seconds for the data.
-  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPollTimeoutMs),
+  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPositiveTimeoutMs),
               SyscallSucceedsWithValue(1));
 
   // Now shutdown the read end.
@@ -279,7 +277,7 @@ TEST_P(TCPSocketPairTest, ShutdownRdAllowsReadOfReceivedDataBeforeEOF) {
               SyscallSucceedsWithValue(sizeof(buf)));
 
   // After reading all of the data, reading the closed read end returns EOF.
-  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPollTimeoutMs),
+  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPositiveTimeoutMs),
               SyscallSucceedsWithValue(1));
   ASSERT_THAT(RetryEINTR(read)(sockets->second_fd(), buf, sizeof(buf)),
               SyscallSucceedsWithValue(0));
@@ -326,8 +324,7 @@ TEST_P(TCPSocketPairTest, ClosedReadNonBlockingSocket) {
 
   // Wait until second_fd sees the data and then recv it.
   struct pollfd poll_fd = {sockets->second_fd(), POLLIN, 0};
-  constexpr int kPollTimeoutMs = 2000;  // Wait up to 2 seconds for the data.
-  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPollTimeoutMs),
+  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPositiveTimeoutMs),
               SyscallSucceedsWithValue(1));
 
   ASSERT_THAT(RetryEINTR(recv)(sockets->second_fd(), buf, sizeof(buf), 0),
@@ -338,7 +335,7 @@ TEST_P(TCPSocketPairTest, ClosedReadNonBlockingSocket) {
 
   // Wait for close notification and recv again.
   struct pollfd poll_fd2 = {sockets->second_fd(), POLLIN, 0};
-  ASSERT_THAT(RetryEINTR(poll)(&poll_fd2, 1, kPollTimeoutMs),
+  ASSERT_THAT(RetryEINTR(poll)(&poll_fd2, 1, kPositiveTimeoutMs),
               SyscallSucceedsWithValue(1));
 
   ASSERT_THAT(RetryEINTR(recv)(sockets->second_fd(), buf, sizeof(buf), 0),
@@ -355,8 +352,7 @@ TEST_P(TCPSocketPairTest,
 
   // Wait until t_ sees the data on its side but don't read it.
   struct pollfd poll_fd = {sockets->second_fd(), POLLIN | POLLHUP, 0};
-  constexpr int kPollTimeoutMs = 20000;  // Wait up to 20 seconds for the data.
-  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPollTimeoutMs),
+  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPositiveTimeoutMs),
               SyscallSucceedsWithValue(1));
 
   // Now shutdown the read end, this will generate no packets to the other end.
@@ -364,13 +360,12 @@ TEST_P(TCPSocketPairTest,
 
   // We should not receive any events on the other side of the socket.
   struct pollfd poll_fd2 = {sockets->first_fd(), POLLIN | POLLHUP, 0};
-  constexpr int kPollNoResponseTimeoutMs = 3000;
-  ASSERT_THAT(RetryEINTR(poll)(&poll_fd2, 1, kPollNoResponseTimeoutMs),
+  ASSERT_THAT(RetryEINTR(poll)(&poll_fd2, 1, kNegativeTimeoutMs),
               SyscallSucceedsWithValue(0));  // Timeout.
 
   // Now since we've fully closed the connection it will generate a RST.
   ASSERT_THAT(close(sockets->release_second_fd()), SyscallSucceeds());
-  ASSERT_THAT(RetryEINTR(poll)(&poll_fd2, 1, kPollTimeoutMs),
+  ASSERT_THAT(RetryEINTR(poll)(&poll_fd2, 1, kPositiveTimeoutMs),
               SyscallSucceedsWithValue(1));  // The other end has closed.
 
   // A shutdown with unread data will cause a RST to be sent instead
@@ -533,14 +528,13 @@ TEST_P(TCPSocketPairTest, SetSoKeepaliveClosed) {
               SyscallSucceeds());
   ASSERT_THAT(close(sockets->release_second_fd()), SyscallSucceeds());
 
-  // Wait for the other end to receive the RST (up to 20 seconds).
-  constexpr int kPollTimeoutMs = 20000;
+  // Wait for the other end to receive the RST.
   auto pfd = pollfd{
       .fd = sockets->first_fd(),
       .events = POLLIN | POLLHUP,
       .revents = 0,
   };
-  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, kPollTimeoutMs),
+  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, kPositiveTimeoutMs),
               SyscallSucceedsWithValue(1));
   ASSERT_EQ(pfd.revents & POLLHUP, POLLHUP);
 
@@ -1276,9 +1270,7 @@ TEST_P(TCPSocketPairTest, TCPResetDuringClose) {
       ScopedThread t([&]() {
         // Close one end to trigger sending of a FIN.
         struct pollfd poll_fd = {sockets->second_fd(), POLLIN | POLLHUP, 0};
-        // Wait up to 20 seconds for the data.
-        constexpr int kPollTimeoutMs = 20000;
-        ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPollTimeoutMs),
+        ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPositiveTimeoutMs),
                     SyscallSucceedsWithValue(1));
         ASSERT_THAT(close(sockets->release_second_fd()), SyscallSucceeds());
       });
@@ -1451,15 +1443,14 @@ TEST_P(TCPSocketPairTest, ResetWithSoLingerZeroTimeoutOption) {
 
   // Wait until the socket sees the data on its side but don't read it.
   struct pollfd poll_fd = {sockets->second_fd(), POLLIN | POLLHUP, 0};
-  constexpr int kPollTimeoutMs = 20000;  // Wait up to 20 seconds for the data.
-  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPollTimeoutMs),
+  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPositiveTimeoutMs),
               SyscallSucceedsWithValue(1));
 
   ASSERT_THAT(close(sockets->release_first_fd()), SyscallSucceeds());
 
   // Attempt to write, but not possible because of connection reset.
   poll_fd = {sockets->second_fd(), POLLHUP, 0};
-  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPollTimeoutMs),
+  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPositiveTimeoutMs),
               SyscallSucceedsWithValue(1));
 
   char buffer[10] = {};
