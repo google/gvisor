@@ -218,9 +218,10 @@ func (*Bundle) Synopsis() string {
 func (*Bundle) Usage() string {
 	return `bundle <srcs...>
 
-	Generates facts and findings for a collection of source files. Each
-	package name is inferred from the path, assuming a standard package
-	structure. The stripped prefix is determined by regular expression.
+	Generates facts and findings for a collection of source files,
+	typically the standard library. Each package name is inferred from the
+	path, assuming a standard package structure. The stripped prefix is
+	determined by regular expression.
 
 `
 }
@@ -253,60 +254,6 @@ func (b *Bundle) Execute(ctx context.Context, fs *flag.FlagSet, args ...any) sub
 			}
 		}
 		return check.Bundle(sources)
-	}); err != nil {
-		return failure("%v", err)
-	}
-
-	return subcommands.ExitSuccess
-}
-
-// Stdlib implements subcommands.Command for the "stdlib" command.
-type Stdlib struct {
-	checkCommon
-}
-
-// Name implements subcommands.Command.Name.
-func (*Stdlib) Name() string {
-	return "stdlib"
-}
-
-// Synopsis implements subcommands.Command.Synopsis.
-func (*Stdlib) Synopsis() string {
-	return "Generate facts and findings for the standard library."
-}
-
-// Usage implements subcommands.Command.Usage.
-func (*Stdlib) Usage() string {
-	return `stdlib
-
-	Generates facts and findings for the standard library. This wraps
-	bundle with a mechanism that discovers the standard library source.
-
-`
-}
-
-// SetFlags implements subcommands.Command.SetFlags.
-func (s *Stdlib) SetFlags(fs *flag.FlagSet) {
-	s.setFlags(fs, "stdlib")
-}
-
-// Execute implements subcommands.Command.Execute.
-func (s *Stdlib) Execute(ctx context.Context, fs *flag.FlagSet, args ...any) subcommands.ExitStatus {
-	if fs.NArg() != 0 {
-		return subcommands.ExitUsageError // Need no arguments.
-	}
-
-	if err := s.execute(func() (check.FindingSet, facts.Serializer, error) {
-		root, err := flags.Env("GOROOT")
-		if err != nil {
-			return nil, nil, err
-		}
-		root = path.Join(root, "src")
-		srcs, err := collectAllFiles(root)
-		if err != nil {
-			return nil, nil, err
-		}
-		return check.Bundle(check.SplitPackages(srcs, root))
 	}); err != nil {
 		return failure("%v", err)
 	}
@@ -559,7 +506,6 @@ func (r *Render) Execute(ctx context.Context, fs *flag.FlagSet, args ...any) sub
 func Main() {
 	subcommands.Register(&Check{}, "")
 	subcommands.Register(&Bundle{}, "")
-	subcommands.Register(&Stdlib{}, "")
 	subcommands.Register(&Filter{}, "")
 	subcommands.Register(&Render{}, "")
 	subcommands.Register(subcommands.HelpCommand(), "")
