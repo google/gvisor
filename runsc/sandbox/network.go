@@ -517,7 +517,9 @@ func createSocket(iface net.Interface, ifaceLink netlink.Link, enableGSO bool) (
 }
 
 // loopbackLink returns the link with addresses and routes for a loopback
-// interface.
+// interface. It synthesizes subnet routes from the interface addresses and
+// also collects any additional routes configured on the loopback interface
+// (e.g. routes added by podman-network-create --route).
 func loopbackLink(conf *config.Config, iface net.Interface, addrs []net.Addr, disableIPv6 bool) (boot.LoopbackLink, error) {
 	link := boot.LoopbackLink{
 		Name:      iface.Name,
@@ -538,12 +540,27 @@ func loopbackLink(conf *config.Config, iface net.Interface, addrs []net.Addr, di
 			PrefixLen: prefix,
 		})
 
+		// Synthesize a subnet route from the address. These routes
+		// (e.g. 127.0.0.0/8) are in the kernel's "local" routing table
+		// and won't be returned by routesForIface which queries the
+		// main routing table.
 		dst := *ipNet
 		dst.IP = dst.IP.Mask(dst.Mask)
 		link.Routes = append(link.Routes, boot.Route{
 			Destination: dst,
 		})
 	}
+
+	// Also collect any additional routes on the loopback interface from
+	// the main routing table (e.g. custom routes added by
+	// podman-network-create --route). These are distinct from the
+	// address-derived routes above which live in the local table.
+	routes, _, _, err := routesForIface(iface, disableIPv6)
+	if err != nil {
+		return boot.LoopbackLink{}, fmt.Errorf("getting routes for loopback %q: %w", iface.Name, err)
+	}
+	link.Routes = append(link.Routes, routes...)
+
 	return link, nil
 }
 
