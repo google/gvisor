@@ -8,5 +8,5 @@ package(
 go_library(
     name = "checkpointfiles",
     srcs = ["checkpointfiles.go"],
-    visibility = ["//pkg/sentry:internal"],
+    visibility = ["//:sandbox"],
 )
