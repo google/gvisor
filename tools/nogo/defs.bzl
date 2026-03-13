@@ -1,7 +1,7 @@
 """Nogo rules."""
 
 load("//tools:arch.bzl", "arch_transition")
-load("//tools/bazeldefs:go.bzl", "go_context", "go_embed_libraries", "go_importpath", "go_rule")
+load("//tools/bazeldefs:go.bzl", "go_context", "go_embed_libraries", "go_importpath", "go_rule", "nogo_extra_proto_deps")
 
 NogoConfigInfo = provider(
     "information about a nogo configuration",
@@ -181,6 +181,13 @@ def _nogo_config(ctx, deps):
     inputs = []
     raw_findings = []
     for dep in deps:
+        extras = nogo_extra_proto_deps(dep)
+        for importpath, a_file, x_file in extras:
+            args.append("-archive=%s=%s" % (importpath, a_file.path))
+            args.append("-import=%s=%s" % (importpath, x_file.path))
+            inputs.append(a_file)
+            inputs.append(x_file)
+
         # There will be no file attribute set for all transitive dependencies
         # that are not go_library or go_binary rules, such as a proto rules.
         # This is handled by the ctx.rule.kind check above.
@@ -260,6 +267,11 @@ def _nogo_aspect_impl(target, ctx):
         srcs = ctx.rule.files.srcs
         deps = ctx.rule.attr.deps
     elif ctx.rule.kind in ("go_proto_library", "go_wrap_cc"):
+        # N.B. go_proto_library is strange because transitive dependencies are
+        # not also go_proto_library targets. We don't care about analysis of
+        # transitive dependencies, but we do need them for type checking. See
+        # _nogo_config for the workaround that directly adds all proto
+        # transitive dependencies.
         srcs = []
         deps = ctx.rule.attr.deps
     else:
