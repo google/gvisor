@@ -751,8 +751,8 @@ func FindRoots(srcs []string, srcRootRegex string) ([]string, error) {
 	return srcRootPrefixes, nil
 }
 
-// SplitPackages splits a typical package structure into packages.
-func SplitPackages(srcs []string, srcRootPrefix string) map[string][]string {
+// SplitStdPackages splits a std GOROOT package structure into packages.
+func SplitStdPackages(srcs []string, srcRootPrefix string) (map[string][]string, error) {
 	sources := make(map[string][]string)
 	for _, filename := range srcs {
 		if !strings.HasPrefix(filename, srcRootPrefix) {
@@ -802,7 +802,13 @@ func SplitPackages(srcs []string, srcRootPrefix string) map[string][]string {
 		sources[pkg] = append(sources[pkg], filename)
 	}
 
-	return sources
+	// Remove packages we can't analyze.
+	sources, err := filterStdPackages(sources)
+	if err != nil {
+		return nil, err
+	}
+
+	return sources, nil
 }
 
 // Bundle checks a bundle of files (typically the standard library).
