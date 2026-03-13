@@ -22,10 +22,25 @@ import (
 	"fmt"
 	"go/build"
 	"io"
+	"io/fs"
 	"os"
+	"strings"
 
 	"gvisor.dev/gvisor/tools/nogo/flags"
 )
+
+func installsuffix() string {
+	// This matches the rules_go choices:
+	// https://github.com/bazel-contrib/rules_go/blob/ca94a5b1d0fe87678ce01fcb75cb7839343b5f8e/go/private/mode.bzl#L72.
+	s := flags.GOOS + "_" + flags.GOARCH
+	if flags.Race {
+		s += "_race"
+	}
+	if flags.MSAN {
+		s += "_msan"
+	}
+	return s
+}
 
 // findStdPkg needs to find the bundled standard library packages.
 func findStdPkg(path string) (io.ReadCloser, error) {
@@ -41,11 +56,65 @@ func findStdPkg(path string) (io.ReadCloser, error) {
 	}
 
 	// Attempt to resolve the library, and propagate this error.
-	f, err := os.Open(fmt.Sprintf("%s/pkg/%s_%s/%s.a", root, flags.GOOS, flags.GOARCH, path))
+	f, err := os.Open(fmt.Sprintf("%s/pkg/%s/%s.a", root, installsuffix(), path))
 	if err != nil && errors.Is(err, os.ErrNotExist) {
 		return nil, ErrSkip
 	}
 	return f, err
+}
+
+// filterStdPackages returns a package source map including only packages that
+// are also present in GOROOT.
+//
+// The bazel GOROOT contains only exported packages and their dependencies.
+//
+// On the other hand, srcPkgs comes from rudimentary processing of the full std
+// sources and thus includes things like test only and experimental packages.
+// These packages will fail to analyze without an archive in GOROOT, but we
+// won't need those anyway, so filter them out.
+func filterStdPackages(srcPkgs map[string][]string) (map[string][]string, error) {
+	goroot, envErr := flags.Env("GOROOT")
+	if envErr != nil {
+		return nil, fmt.Errorf("unable to resolve GOROOT: %w", envErr)
+	}
+
+	root, err := os.OpenRoot(fmt.Sprintf("%s/pkg/%s/", goroot, installsuffix()))
+	if err != nil {
+		return nil, fmt.Errorf("error opening GOROOT: %v", err)
+	}
+
+	// Gather all stdlib packages in the zip.
+	pkgNames := make(map[string]struct{})
+	err = fs.WalkDir(root.FS(), ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+
+		// path is "<path>.a".
+		path, ok := strings.CutSuffix(path, ".a")
+		if !ok {
+			return fmt.Errorf("unexpected file %s in GOROOT", path)
+		}
+		pkgNames[path] = struct{}{}
+
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("error walking GOROOT: %v", err)
+	}
+
+	pkgs := make(map[string][]string)
+	for path := range pkgNames {
+		pkg, ok := srcPkgs[path]
+		if !ok {
+			return nil, fmt.Errorf("package %q present in stdlib GOROOT but not in source", path)
+		}
+		pkgs[path] = pkg
+	}
+	return pkgs, nil
 }
 
 // releaseTags returns the default release tags.
