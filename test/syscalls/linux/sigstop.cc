@@ -96,6 +96,40 @@ TEST(SigstopTest, Correctness) {
   ASSERT_EQ(WEXITSTATUS(status), kChildMainThreadExitCode);
 }
 
+TEST(SigstopTest, WaitidCorrectness) {
+  pid_t child_pid = -1;
+  int execve_errno = 0;
+
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(
+      ForkAndExec("/proc/self/exe", {"/proc/self/exe", "--sigstop_test_child"},
+                  {}, nullptr, &child_pid, &execve_errno));
+
+  ASSERT_GT(child_pid, 0);
+  ASSERT_EQ(execve_errno, 0);
+  absl::SleepFor(kChildStartupDelay);
+
+  ASSERT_THAT(kill(child_pid, SIGSTOP), SyscallSucceeds());
+
+  siginfo_t info = {};
+  EXPECT_THAT(RetryEINTR(waitid)(P_PID, child_pid, &info, WSTOPPED),
+              SyscallSucceedsWithValue(0));
+
+  EXPECT_EQ(info.si_signo, SIGCHLD);
+  EXPECT_EQ(info.si_code, CLD_STOPPED);
+  EXPECT_EQ(info.si_status, SIGSTOP);
+  EXPECT_EQ(info.si_pid, child_pid);
+
+  ASSERT_THAT(kill(child_pid, SIGCONT), SyscallSucceeds());
+  EXPECT_THAT(RetryEINTR(waitid)(P_PID, child_pid, &info, WCONTINUED),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(info.si_code, CLD_CONTINUED);
+
+  ASSERT_THAT(kill(child_pid, SIGKILL), SyscallSucceeds());
+  EXPECT_THAT(RetryEINTR(waitid)(P_PID, child_pid, &info, WEXITED),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(info.si_code, CLD_KILLED);
+}
+
 // Like base:SleepFor, but tries to avoid counting time spent stopped due to a
 // stop signal toward the sleep.
 //
