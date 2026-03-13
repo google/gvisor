@@ -848,7 +848,7 @@ func (vfs *VirtualFilesystem) RemoveXattrAt(ctx context.Context, creds *auth.Cre
 // SyncAllFilesystems has the semantics of Linux's sync(2).
 func (vfs *VirtualFilesystem) SyncAllFilesystems(ctx context.Context) error {
 	var retErr error
-	for fs := range vfs.getFilesystems() {
+	for _, fs := range vfs.GetFilesystems() {
 		if err := fs.impl.Sync(ctx); err != nil && retErr == nil {
 			retErr = err
 		}
@@ -857,15 +857,17 @@ func (vfs *VirtualFilesystem) SyncAllFilesystems(ctx context.Context) error {
 	return retErr
 }
 
-func (vfs *VirtualFilesystem) getFilesystems() map[*Filesystem]struct{} {
-	fss := make(map[*Filesystem]struct{})
+// GetFilesystems returns a slice containing all Filesystems. It takes a
+// reference on each Filesystem.
+func (vfs *VirtualFilesystem) GetFilesystems() []*Filesystem {
+	var fss []*Filesystem
 	vfs.filesystemsMu.Lock()
 	defer vfs.filesystemsMu.Unlock()
 	for fs := range vfs.filesystems {
 		if !fs.TryIncRef() {
 			continue
 		}
-		fss[fs] = struct{}{}
+		fss = append(fss, fs)
 	}
 	return fss
 }

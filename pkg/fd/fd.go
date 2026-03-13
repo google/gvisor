@@ -269,3 +269,13 @@ func (f *FD) File() (*os.File, error) {
 func (f *FD) ReleaseToFile(name string) *os.File {
 	return os.NewFile(uintptr(f.Release()), name)
 }
+
+// ReleaseToFiles returns the result of calling ReleaseToFile on each FD in
+// the given slice.
+func ReleaseToFiles(fds []*FD, name string) []*os.File {
+	files := make([]*os.File, len(fds))
+	for i, fd := range fds {
+		files[i] = fd.ReleaseToFile(name)
+	}
+	return files
+}

@@ -48,6 +48,7 @@ go_library(
         "events.go",
         "exec.go",
         "fd_mapping.go",
+        "fscheckpoint.go",
         "gofer.go",
         "install.go",
         "kill.go",

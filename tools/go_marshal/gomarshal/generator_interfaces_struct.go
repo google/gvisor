@@ -654,4 +654,106 @@ func (g *interfaceGenerator) emitMarshallableSliceForStruct(st *ast.StructType, 
 		}
 	})
 	g.emit("}\n\n")
+
+	g.emit("// Read%s reads a []%s. It returns the number of bytes read\n", slice.ident, g.typeName())
+	g.recordUsedImport("io")
+	g.emit("func Read%s(src io.Reader, dst []%s) (int, error) {\n", slice.ident, g.typeName())
+	g.inIndent(func() {
+		g.emit("count := len(dst)\n")
+		g.emit("if count == 0 {\n")
+		g.inIndent(func() {
+			g.emit("return 0, nil\n")
+		})
+		g.emit("}\n")
+		g.emit("size := (*%s)(nil).SizeBytes()\n\n", g.typeName())
+
+		fallback := func() {
+			g.emit("// Type %s doesn't have a packed layout in memory, fall back to UnmarshalBytes.\n", g.typeName())
+			g.emit("buf := make([]byte, size)\n")
+			g.emit("length := 0\n")
+			g.emit("for idx := 0; idx < count; idx++ {\n")
+			g.inIndent(func() {
+				g.emit("n, err := io.ReadFull(src, buf)\n")
+				g.emit("length += n\n")
+				g.emit("if err != nil {\n")
+				g.inIndent(func() {
+					g.emit("return length, err\n")
+				})
+				g.emit("}\n")
+				g.emit("dst[idx].UnmarshalBytes(buf)\n")
+			})
+			g.emit("}\n")
+			g.emit("return length, nil\n")
+		}
+		if thisPacked {
+			g.recordUsedImport("reflect")
+			g.recordUsedImport("runtime")
+			g.recordUsedImport("unsafe")
+			if _, ok := g.areFieldsPackedExpression(); ok {
+				g.emit("if !dst[0].Packed() {\n")
+				g.inIndent(fallback)
+				g.emit("}\n\n")
+			}
+			// Fast serialization.
+			g.emitCastSliceToByteSlice("&dst", "buf", "size * count")
+
+			g.emit("length, err := io.ReadFull(src, buf)\n")
+			g.emitKeepAlive("dst")
+			g.emit("return length, err\n")
+		} else {
+			fallback()
+		}
+	})
+	g.emit("}\n\n")
+
+	g.emit("// Write%s is like %s.WriteTo, but for a []%s.\n", slice.ident, g.typeName(), g.typeName())
+	g.recordUsedImport("io")
+	g.emit("func Write%s(dst io.Writer, src []%s) (int, error) {\n", slice.ident, g.typeName())
+	g.inIndent(func() {
+		g.emit("count := len(src)\n")
+		g.emit("if count == 0 {\n")
+		g.inIndent(func() {
+			g.emit("return 0, nil\n")
+		})
+		g.emit("}\n")
+		g.emit("size := (*%s)(nil).SizeBytes()\n\n", g.typeName())
+
+		fallback := func() {
+			g.emit("// Type %s doesn't have a packed layout in memory, fall back to MarshalBytes.\n", g.typeName())
+			g.emit("buf := make([]byte, size)\n")
+			g.emit("length := 0\n")
+			g.emit("for idx := 0; idx < count; idx++ {\n")
+			g.inIndent(func() {
+				g.emit("src[idx].MarshalBytes(buf)\n")
+				g.emit("n, err := dst.Write(buf)\n")
+				g.emit("length += n\n")
+				g.emit("if err != nil {\n")
+				g.inIndent(func() {
+					g.emit("return length, err\n")
+				})
+				g.emit("}\n")
+			})
+			g.emit("}\n")
+			g.emit("return length, nil\n")
+		}
+		if thisPacked {
+			g.recordUsedImport("reflect")
+			g.recordUsedImport("runtime")
+			g.recordUsedImport("unsafe")
+			if _, ok := g.areFieldsPackedExpression(); ok {
+				g.emit("if !src[0].Packed() {\n")
+				g.inIndent(fallback)
+				g.emit("}\n\n")
+			}
+			// Fast serialization.
+			g.emitCastSliceToByteSlice("&src", "buf", "size * count")
+
+			g.emit("length, err := dst.Write(buf)\n")
+			g.emitKeepAlive("src")
+			g.emit("return length, err\n")
+		} else {
+			fallback()
+		}
+	})
+	g.emit("}\n\n")
 }
