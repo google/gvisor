@@ -18,6 +18,7 @@ import (
 	goContext "context"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 )
 
 // contextID is this package's type for context.Context.Value keys.
@@ -30,9 +31,9 @@ const (
 	// CtxRoot is a Context.Value key for a VFS root.
 	CtxRoot
 
-	// CtxRestoreFilesystemFDMap is a Context.Value key for a map[string]int
-	// mapping filesystem unique IDs (cf. gofer.InternalFilesystemOptions.UniqueID)
-	// to host FDs.
+	// CtxRestoreFilesystemFDMap is a Context.Value key for a
+	// map[checkpoint.ResourceID]int mapping filesystem unique IDs (cf.
+	// gofer.InternalFilesystemOptions.UniqueID) to host FDs.
 	CtxRestoreFilesystemFDMap
 )
 
@@ -49,8 +50,8 @@ func MountNamespaceFromContext(ctx goContext.Context) *MountNamespace {
 
 // RestoreFilesystemFDMapFromContext returns the RestoreFilesystemFDMap used
 // by ctx. If ctx is not associated with a RestoreFilesystemFDMap, returns nil.
-func RestoreFilesystemFDMapFromContext(ctx goContext.Context) map[RestoreID]int {
-	fdmap, ok := ctx.Value(CtxRestoreFilesystemFDMap).(map[RestoreID]int)
+func RestoreFilesystemFDMapFromContext(ctx goContext.Context) map[checkpoint.ResourceID]int {
+	fdmap, ok := ctx.Value(CtxRestoreFilesystemFDMap).(map[checkpoint.ResourceID]int)
 	if !ok {
 		return nil
 	}

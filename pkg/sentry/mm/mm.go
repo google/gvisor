@@ -330,7 +330,7 @@ type pma struct {
 	// file is the file mapped by this pma. Only pmas for which file is of type
 	// pgalloc.MemoryFile may be saved. pmas hold a reference to the
 	// corresponding file range while they exist.
-	file memmap.File `state:".(string)"`
+	file memmap.File `state:".(checkpoint.ResourceID)"`
 
 	// off is the offset into file at which this pma begins.
 	off uint64

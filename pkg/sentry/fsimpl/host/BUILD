@@ -42,6 +42,7 @@ go_library(
         "//pkg/refs",
         "//pkg/safemem",
         "//pkg/sentry/arch",
+        "//pkg/sentry/checkpoint",
         "//pkg/sentry/fsimpl/eventfd",
         "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/fsimpl/lock",

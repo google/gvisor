@@ -77,7 +77,7 @@ func Import(ctx context.Context, fdTable *kernel.FDTable, fds map[int]*fd.FD, op
 		}
 		var appFile *vfs.FileDescription
 
-		fdOpts.RestoreKey = host.MakeRestoreID(opts.ContainerName, appFD)
+		fdOpts.RestoreKey = host.MakeResourceID(opts.ContainerName, appFD)
 		if opts.Console && appFD < 3 {
 			// Import the file as a host TTY file.
 			if ttyFile == nil {

@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/devutil"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
@@ -241,8 +242,8 @@ func (r *restorer) restore(l *Loader) error {
 	})
 	defer cu.Clean()
 
-	fdmap := make(map[vfs.RestoreID]int)
-	mfmap := make(map[string]*pgalloc.MemoryFile)
+	fdmap := make(map[checkpoint.ResourceID]int)
+	mfmap := make(map[checkpoint.ResourceID]*pgalloc.MemoryFile)
 	for _, cont := range r.containers {
 		// TODO(b/298078576): Need to process hints here probably
 		mntr := newContainerMounter(cont, l.k, l.mountHints, l.sharedMounts, l.productName, cont.cid)
@@ -251,11 +252,11 @@ func (r *restorer) restore(l *Loader) error {
 		}
 
 		for i, fd := range cont.stdioFDs {
-			key := host.MakeRestoreID(cont.containerName, i)
+			key := host.MakeResourceID(cont.containerName, i)
 			fdmap[key] = fd.Release()
 		}
 		for _, customFD := range cont.passFDs {
-			key := host.MakeRestoreID(cont.containerName, customFD.guest)
+			key := host.MakeResourceID(cont.containerName, customFD.guest)
 			fdmap[key] = customFD.host.FD()
 		}
 	}

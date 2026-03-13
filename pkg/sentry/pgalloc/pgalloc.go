@@ -38,6 +38,7 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/safemem"
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/hostmm"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
@@ -361,9 +362,9 @@ type MemoryFileOpts struct {
 	// DiskBackedFile indicates that the MemoryFile is backed by a file on disk.
 	DiskBackedFile bool
 
-	// RestoreID is an opaque string used to reassociate the MemoryFile with its
-	// replacement during restore.
-	RestoreID string
+	// ResourceID is used to reassociate the MemoryFile with its replacement
+	// during restore.
+	ResourceID checkpoint.ResourceID
 
 	// If ExpectHugepages is true, MemoryFile will expect that the host will
 	// attempt to back AllocOpts.Huge == true allocations with huge pages. If

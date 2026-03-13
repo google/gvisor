@@ -58,6 +58,7 @@ import (
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	fslock "gvisor.dev/gvisor/pkg/sentry/fsimpl/lock"
 	"gvisor.dev/gvisor/pkg/sentry/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -410,9 +411,9 @@ const (
 //
 // +stateify savable
 type InternalFilesystemOptions struct {
-	// If UniqueID is non-empty, it is an opaque string used to reassociate the
-	// filesystem with a new server FD during restoration from checkpoint.
-	UniqueID vfs.RestoreID
+	// If UniqueID is non-empty, it is used to reassociate the filesystem with
+	// a new server FD during restoration from checkpoint.
+	UniqueID checkpoint.ResourceID
 
 	// If LeakConnection is true, do not close the connection to the server
 	// when the Filesystem is released. This is necessary for deployments in

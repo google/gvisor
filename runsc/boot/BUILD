@@ -57,6 +57,7 @@ go_library(
         "//pkg/refs",
         "//pkg/sentry/arch",
         "//pkg/sentry/arch:registers_go_proto",
+        "//pkg/sentry/checkpoint",
         "//pkg/sentry/control",
         "//pkg/sentry/devices/memdev",
         "//pkg/sentry/devices/nvproxy",

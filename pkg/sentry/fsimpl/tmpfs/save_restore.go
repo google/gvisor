@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
@@ -26,16 +27,16 @@ import (
 var _ vfs.FilesystemImplSaveRestoreExtension = (*filesystem)(nil)
 
 // saveMf is called by stateify.
-func (fs *filesystem) saveMf() string {
+func (fs *filesystem) saveMf() checkpoint.ResourceID {
 	if !fs.mf.IsSavable() {
 		panic(fmt.Sprintf("Can't save tmpfs filesystem because its MemoryFile is not savable: %v", fs.mf))
 	}
-	return fs.mf.RestoreID()
+	return fs.mf.ResourceID()
 }
 
 // loadMf is called by stateify.
-func (fs *filesystem) loadMf(ctx goContext.Context, restoreID string) {
-	if restoreID == "" {
+func (fs *filesystem) loadMf(ctx goContext.Context, resourceID checkpoint.ResourceID) {
+	if !resourceID.Ok() {
 		fs.mf = pgalloc.MemoryFileFromContext(ctx)
 		return
 	}
@@ -43,9 +44,9 @@ func (fs *filesystem) loadMf(ctx goContext.Context, restoreID string) {
 	if mfmap == nil {
 		panic("CtxMemoryFileMap was not provided")
 	}
-	mf, ok := mfmap[restoreID]
+	mf, ok := mfmap[resourceID]
 	if !ok {
-		panic(fmt.Sprintf("Memory file for %q not found in CtxMemoryFileMap", restoreID))
+		panic(fmt.Sprintf("Memory file for %q not found in CtxMemoryFileMap", resourceID))
 	}
 	fs.mf = mf
 }
@@ -62,18 +63,18 @@ func (d *dentry) loadParent(_ goContext.Context, parent *dentry) {
 
 // PrepareSave implements vfs.FilesystemImplSaveRestoreExtension.PrepareSave.
 func (fs *filesystem) PrepareSave(ctx context.Context) error {
-	restoreID := fs.mf.RestoreID()
-	if restoreID == "" {
+	resourceID := fs.mf.ResourceID()
+	if !resourceID.Ok() {
 		return nil
 	}
 	mfmap := pgalloc.MemoryFileMapFromContext(ctx)
 	if mfmap == nil {
 		return fmt.Errorf("CtxMemoryFileMap was not provided")
 	}
-	if _, ok := mfmap[restoreID]; ok {
-		return fmt.Errorf("memory file for %q already exists in CtxMemoryFileMap", restoreID)
+	if _, ok := mfmap[resourceID]; ok {
+		return fmt.Errorf("memory file for %q already exists in CtxMemoryFileMap", resourceID)
 	}
-	mfmap[restoreID] = fs.mf
+	mfmap[resourceID] = fs.mf
 	return nil
 }
 

@@ -147,6 +147,9 @@ go_library(
         "vma.go",
         "vma_set.go",
     ],
+    imports = [
+        "gvisor.dev/gvisor/pkg/sentry/checkpoint",
+    ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
@@ -159,6 +162,7 @@ go_library(
         "//pkg/safecopy",
         "//pkg/safemem",
         "//pkg/sentry/arch",
+        "//pkg/sentry/checkpoint",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/futex",
         "//pkg/sentry/kernel/shm",

@@ -189,6 +189,7 @@ go_library(
         "//pkg/refs",
         "//pkg/safemem",
         "//pkg/sentry/arch",
+        "//pkg/sentry/checkpoint",
         "//pkg/sentry/fsimpl/lock",
         "//pkg/sentry/fsmetric",
         "//pkg/sentry/kernel/auth",

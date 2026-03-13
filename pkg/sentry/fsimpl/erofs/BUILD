@@ -65,6 +65,7 @@ go_library(
         "//pkg/log",
         "//pkg/refs",
         "//pkg/safemem",
+        "//pkg/sentry/checkpoint",
         "//pkg/sentry/fsimpl/lock",
         "//pkg/sentry/fsutil",
         "//pkg/sentry/kernel/auth",

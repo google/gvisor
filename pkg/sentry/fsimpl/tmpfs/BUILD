@@ -98,6 +98,9 @@ go_library(
         "tar.go",
         "tmpfs.go",
     ],
+    imports = [
+        "gvisor.dev/gvisor/pkg/sentry/checkpoint",
+    ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
@@ -112,6 +115,7 @@ go_library(
         "//pkg/refs",
         "//pkg/safemem",
         "//pkg/sentry/arch",
+        "//pkg/sentry/checkpoint",
         "//pkg/sentry/fsimpl/lock",
         "//pkg/sentry/fsmetric",
         "//pkg/sentry/fsutil",

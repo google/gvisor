@@ -185,6 +185,7 @@ go_library(
         "//pkg/ringdeque",
         "//pkg/safemem",
         "//pkg/sentry/arch",
+        "//pkg/sentry/checkpoint",
         "//pkg/sentry/hostmm",
         "//pkg/sentry/memmap",
         "//pkg/sentry/state/stateio",

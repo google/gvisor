@@ -33,6 +33,7 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/ringdeque"
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/state/stateio"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
@@ -57,9 +58,9 @@ func (f *MemoryFile) IsSavable() bool {
 	return f.savable
 }
 
-// RestoreID returns the restore ID for f.
-func (f *MemoryFile) RestoreID() string {
-	return f.opts.RestoreID
+// ResourceID returns the resource ID for f.
+func (f *MemoryFile) ResourceID() checkpoint.ResourceID {
+	return f.opts.ResourceID
 }
 
 // memoryFileSaved is the subset of MemoryFile that is stored in checkpoints.
