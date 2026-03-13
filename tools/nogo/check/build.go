@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build !false
+// +build !false
+
 package check
 
 import (
@@ -25,7 +28,7 @@ import (
 )
 
 // findStdPkg needs to find the bundled standard library packages.
-var findStdPkg = func(path string) (io.ReadCloser, error) {
+func findStdPkg(path string) (io.ReadCloser, error) {
 	if path == "C" {
 		// Cgo builds cannot be analyzed. Skip.
 		return nil, ErrSkip
@@ -46,6 +49,6 @@ var findStdPkg = func(path string) (io.ReadCloser, error) {
 }
 
 // releaseTags returns the default release tags.
-var releaseTags = func() ([]string, error) {
+func releaseTags() ([]string, error) {
 	return build.Default.ReleaseTags, nil
 }
