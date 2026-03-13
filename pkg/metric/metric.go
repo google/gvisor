@@ -105,6 +105,16 @@ var (
 				),
 			},
 		})
+
+	SentryEntryPointMetric = MustCreateNewUint64Metric(
+		"/sentry_entry_point",
+		Uint64Metadata{
+			Cumulative:  true,
+			Sync:        true,
+			Description: "The method that was used to create the sentry process.",
+			Fields:      NewFieldsEntryPointType(),
+		},
+	)
 )
 
 // InitStage is the name of a Sentry initialization stage.

@@ -763,6 +763,8 @@ func New(args Args) (*Loader, error) {
 
 	l.kernelInitExtra(l.k.SupervisorContext())
 
+	metric.SentryEntryPointMetric.Increment(&metric.EntryPointTypeRunsc)
+
 	// Create the control server using the provided FD.
 	//
 	// This must be done *after* we have initialized the kernel since the
