@@ -218,10 +218,10 @@ func (*Bundle) Synopsis() string {
 func (*Bundle) Usage() string {
 	return `bundle <srcs...>
 
-	Generates facts and findings for a collection of source files,
-	typically the standard library. Each package name is inferred from the
-	path, assuming a standard package structure. The stripped prefix is
-	determined by regular expression.
+	Generates facts and findings for a collection of standard library
+	source files. Each package name is inferred from the path, assuming a
+	standard package structure. The stripped prefix is determined by
+	regular expression.
 
 `
 }
@@ -245,7 +245,12 @@ func (b *Bundle) Execute(ctx context.Context, fs *flag.FlagSet, args ...any) sub
 		// Split into packages.
 		sources := make(map[string][]string)
 		for _, srcRootPrefix := range srcRootPrefixes {
-			for pkg, srcs := range check.SplitPackages(fs.Args(), srcRootPrefix) {
+			pkgs, err := check.SplitStdPackages(fs.Args(), srcRootPrefix)
+			if err != nil {
+				return nil, nil, fmt.Errorf("error splitting packages for prefix %q: %v", srcRootPrefix, err)
+			}
+
+			for pkg, srcs := range pkgs {
 				path := pkg
 				if b.Prefix != "" {
 					path = b.Prefix + "/" + path // Subpackage.
@@ -253,7 +258,7 @@ func (b *Bundle) Execute(ctx context.Context, fs *flag.FlagSet, args ...any) sub
 				sources[path] = append(sources[path], srcs...)
 			}
 		}
-		return check.Bundle(sources)
+		return check.Bundle(sources, srcRootPrefixes)
 	}); err != nil {
 		return failure("%v", err)
 	}
