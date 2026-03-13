@@ -23,8 +23,8 @@ package port
 import (
 	"fmt"
 	"math"
-	"math/rand"
 
+	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
