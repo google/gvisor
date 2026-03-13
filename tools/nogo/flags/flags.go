@@ -46,6 +46,12 @@ var (
 	// comma-separated list in order to build the standard flag.
 	BuildTags string
 
+	// Race indicates that this is a -race build
+	Race bool
+
+	// MSAN indicates that this is an -msan build
+	MSAN bool
+
 	// ImportMap defines all binary input files.
 	ImportMap = StringMap{}
 
@@ -66,6 +72,8 @@ func init() {
 	flag.StringVar(&GOARCH, "GOARCH", runtime.GOARCH, "GOARCH for analysis")
 	flag.StringVar(&GOVERSION, "GOVERSION", "", "GOVERSION for analysis")
 	flag.StringVar(&BuildTags, "tags", "", "comma-separated build tags")
+	flag.BoolVar(&Race, "race", false, "-race build")
+	flag.BoolVar(&MSAN, "msan", false, "-msan build")
 	flag.Var(&ImportMap, "import", "map of import paths to binaries")
 	flag.Var(&ArchiveMap, "archive", "map of import paths to archives")
 	flag.Var(&FactMap, "facts", "map of import paths to facts")
