@@ -16,7 +16,6 @@
 
 #include "gmock/gmock.h"
 #include "test/syscalls/linux/socket_generic.h"
-#include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
