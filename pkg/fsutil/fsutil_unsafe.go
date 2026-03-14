@@ -55,9 +55,8 @@ func Utimensat(dirFd int, name string, times [2]unix.Timespec, flags int) error 
 	return nil
 }
 
-// RenameAt is a convenience wrapper to make the renameat(2) syscall. It
-// additionally handles empty names.
-func RenameAt(oldDirFD int, oldName string, newDirFD int, newName string) error {
+// RenameAt2 is a convenience wrapper to make the renameat syscall.
+func RenameAt2(oldDirFD int, oldName string, newDirFD int, newName string, flags uint32) error {
 	var oldNamePtr unsafe.Pointer
 	if oldName != "" {
 		nameBytes, err := unix.BytePtrFromString(oldName)
@@ -76,12 +75,12 @@ func RenameAt(oldDirFD int, oldName string, newDirFD int, newName string) error 
 	}
 
 	if _, _, errno := unix.Syscall6(
-		unix.SYS_RENAMEAT,
+		unix.SYS_RENAMEAT2,
 		uintptr(oldDirFD),
 		uintptr(oldNamePtr),
 		uintptr(newDirFD),
 		uintptr(newNamePtr),
-		0,
+		uintptr(flags),
 		0); errno != 0 {
 
 		return syserr.FromHost(errno).ToError()
