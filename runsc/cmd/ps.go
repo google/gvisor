@@ -84,7 +84,7 @@ func (ps *PS) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcomm
 	case "table":
 		fmt.Println(control.ProcessListToTable(pList))
 	case "json":
-		o, err := control.PrintPIDsJSON(pList)
+		o, err := control.ProcessListToJSON(pList)
 		if err != nil {
 			util.Fatalf("generating JSON: %v", err)
 		}
