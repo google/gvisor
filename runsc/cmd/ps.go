@@ -50,7 +50,7 @@ func (*PS) Usage() string {
 
 // SetFlags implements subcommands.Command.SetFlags.
 func (ps *PS) SetFlags(f *flag.FlagSet) {
-	f.StringVar(&ps.format, "format", "table", "output format. Select one of: table or json (default: table)")
+	f.StringVar(&ps.format, "format", "table", "output format. Select one of: table, json (PIDs only), or json-full (full process data) (default: table)")
 }
 
 // FetchSpec implements util.SubCommand.FetchSpec.
@@ -85,6 +85,12 @@ func (ps *PS) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcomm
 		fmt.Println(control.ProcessListToTable(pList))
 	case "json":
 		o, err := control.PrintPIDsJSON(pList)
+		if err != nil {
+			util.Fatalf("generating JSON: %v", err)
+		}
+		fmt.Println(o)
+	case "json-full":
+		o, err := control.ProcessListToJSON(pList)
 		if err != nil {
 			util.Fatalf("generating JSON: %v", err)
 		}
