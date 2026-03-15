@@ -71,6 +71,7 @@ def _syscall_test(
         add_host_uds = False,
         add_host_connector = False,
         add_host_fifo = False,
+        add_host_tty = False,
         iouring = False,
         container = None,
         one_sandbox = True,
@@ -167,6 +168,7 @@ def _syscall_test(
         "--add-host-uds=" + str(add_host_uds),
         "--add-host-connector=" + str(add_host_connector),
         "--add-host-fifo=" + str(add_host_fifo),
+        "--add-host-tty=" + str(add_host_tty),
         "--strace=" + str(debug),
         "--debug=" + str(debug),
         "--container=" + str(container),
@@ -208,6 +210,7 @@ def syscall_test_variants(
         add_host_uds = False,
         add_host_connector = False,
         add_host_fifo = False,
+        add_host_tty = False,
         add_hostinet = False,
         add_directfs = True,
         one_sandbox = True,
@@ -236,6 +239,7 @@ def syscall_test_variants(
       add_host_uds: setup bound UDS on the host.
       add_host_connector: setup host threads to connect to bound UDS created by sandbox.
       add_host_fifo: setup FIFO files on the host.
+      add_host_tty: setup host TTY at /dev/tty.
       add_hostinet: add a hostinet test.
       add_directfs: add a directfs test.
       one_sandbox: runs each unit test in a new sandbox instance.
@@ -265,6 +269,7 @@ def syscall_test_variants(
             add_host_uds = add_host_uds,
             add_host_connector = add_host_connector,
             add_host_fifo = add_host_fifo,
+            add_host_tty = add_host_tty,
             tags = platform_tags + tags,
             iouring = iouring,
             directfs = directfs,
@@ -291,6 +296,7 @@ def syscall_test_variants(
             add_host_uds = add_host_uds,
             add_host_connector = add_host_connector,
             add_host_fifo = add_host_fifo,
+            add_host_tty = add_host_tty,
             tags = platforms.get(default_platform, []) + tags,
             debug = debug,
             iouring = iouring,
@@ -318,6 +324,7 @@ def syscall_test_variants(
             add_host_uds = add_host_uds,
             add_host_connector = add_host_connector,
             add_host_fifo = add_host_fifo,
+            add_host_tty = add_host_tty,
             tags = platforms.get(default_platform, []) + tags,
             debug = debug,
             iouring = iouring,
@@ -342,6 +349,7 @@ def syscall_test_variants(
             add_host_uds = add_host_uds,
             add_host_connector = add_host_connector,
             add_host_fifo = add_host_fifo,
+            add_host_tty = add_host_tty,
             tags = platforms.get(default_platform, []) + tags,
             iouring = iouring,
             debug = debug,
@@ -367,6 +375,7 @@ def syscall_test_variants(
             add_host_uds = add_host_uds,
             add_host_connector = add_host_connector,
             add_host_fifo = add_host_fifo,
+            add_host_tty = add_host_tty,
             tags = platforms.get(default_platform, []) + tags,
             debug = debug,
             container = container,
@@ -390,6 +399,7 @@ def syscall_test(
         add_host_uds = False,
         add_host_connector = False,
         add_host_fifo = False,
+        add_host_tty = False,
         add_hostinet = False,
         add_directfs = True,
         one_sandbox = True,
@@ -417,6 +427,7 @@ def syscall_test(
       add_host_uds: setup bound UDS on the host.
       add_host_connector: setup host threads to connect to bound UDS created by sandbox.
       add_host_fifo: setup FIFO files on the host.
+      add_host_tty: setup host TTY at /dev/tty.
       add_hostinet: add a hostinet test.
       add_directfs: add a directfs test.
       one_sandbox: runs each unit test in a new sandbox instance.
@@ -443,7 +454,8 @@ def syscall_test(
     if debug == None:
         debug = not perf
     if save == None:
-        save = not perf
+        # add_host_tty is not compatible with save/resume
+        save = not perf and not add_host_tty
     if perf:
         tags.append("perf")
 
@@ -455,6 +467,7 @@ def syscall_test(
             add_host_uds = add_host_uds,
             add_host_connector = add_host_connector,
             add_host_fifo = add_host_fifo,
+            add_host_tty = add_host_tty,
             tags = tags,
             iouring = iouring,
             debug = debug,
@@ -472,6 +485,7 @@ def syscall_test(
         add_host_uds,
         add_host_connector,
         add_host_fifo,
+        add_host_tty,
         add_hostinet,
         add_directfs,
         one_sandbox,
@@ -503,6 +517,7 @@ def syscall_test(
             add_host_uds,
             add_host_connector,
             add_host_fifo,
+            add_host_tty,
             add_hostinet,
             add_directfs,
             one_sandbox,
@@ -531,6 +546,7 @@ def syscall_test(
                 add_host_uds,
                 add_host_connector,
                 add_host_fifo,
+                add_host_tty,
                 add_hostinet,
                 add_directfs,
                 one_sandbox,
@@ -559,6 +575,7 @@ def syscall_test(
             add_host_uds,
             add_host_connector,
             add_host_fifo,
+            add_host_tty,
             add_hostinet,
             add_directfs,
             one_sandbox,
