@@ -372,18 +372,17 @@ type Process struct {
 }
 
 // ProcessListToTable prints a table with the following format:
-// UID       PID       PPID      PGID      C         TTY		STIME     TIME       CMD
-// 0         1         0         1         0         pty/4	14:04     505262ns   tail
+// UID       PID       PPID      C         TTY		STIME     TIME       CMD
+// 0         1         0         0         pty/4	14:04     505262ns   tail
 func ProcessListToTable(pl []*Process) string {
 	var buf bytes.Buffer
 	tw := tabwriter.NewWriter(&buf, 10, 1, 3, ' ', 0)
-	fmt.Fprint(tw, "UID\tPID\tPPID\tPGID\tC\tTTY\tSTIME\tTIME\tCMD")
+	fmt.Fprint(tw, "UID\tPID\tPPID\tC\tTTY\tSTIME\tTIME\tCMD")
 	for _, d := range pl {
-		fmt.Fprintf(tw, "\n%d\t%d\t%d\t%d\t%d\t%s\t%s\t%s\t%s",
+		fmt.Fprintf(tw, "\n%d\t%d\t%d\t%d\t%s\t%s\t%s\t%s",
 			d.UID,
 			d.PID,
 			d.PPID,
-			d.PGID,
 			d.C,
 			d.TTY,
 			d.STime,
