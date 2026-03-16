@@ -89,6 +89,15 @@ func shouldInclude(path string) (bool, error) {
 	ctx.GOARCH = flags.GOARCH
 	ctx.BuildTags = buildTags
 	ctx.ReleaseTags = releaseTagsVal
+	// Force disable cgo, as we don't have the Bazel infrastructure to
+	// analyze cgo dependencies.
+	ctx.CgoEnabled = false
+	// Remove the boringcrypto build tag, as it uses cgo. CgoEnabled =
+	// false should be sufficient to exclude the cgo files, but it doesn't
+	// seem to be.
+	toolTags := slices.Clone(ctx.ToolTags)
+	toolTags = slices.DeleteFunc(toolTags, func(t string) bool { return t == "goexperiment.boringcrypto" })
+	ctx.ToolTags = toolTags
 	return ctx.MatchFile(filepath.Dir(path), filepath.Base(path))
 }
 
@@ -902,6 +911,14 @@ func SplitStdPackages(srcs []string, srcRootPrefix string) (map[string][]string,
 	if err != nil {
 		return nil, err
 	}
+
+	// Drop runtime/cgo, which is only necessary for cgo even though
+	// shouldInclude matches it without cgo.
+	delete(sources, "runtime/cgo")
+
+	// Drop runtime/race (even in -race mode). It requires cgo but has no
+	// API, so it won't actually be imported anywhere.
+	delete(sources, "runtime/race")
 
 	return sources, nil
 }
