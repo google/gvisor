@@ -892,6 +892,7 @@ func Init() {
 			abi.allocationClass[nvgpu.BLACKWELL_B] = allocHandler(rmAllocSimple[nvgpu.NV_GR_ALLOCATION_PARAMETERS], nvconf.CapGraphics)
 			abi.allocationClass[nvgpu.BLACKWELL_COMPUTE_B] = allocHandler(rmAllocSimple[nvgpu.NV_GR_ALLOCATION_PARAMETERS], compUtil)
 			abi.allocationClass[nvgpu.BLACKWELL_USERMODE_A] = allocHandler(rmAllocSimple[nvgpu.NV_HOPPER_USERMODE_A_PARAMS], compUtil)
+			abi.allocationClass[nvgpu.NVCFB7_VIDEO_ENCODER] = allocHandler(rmAllocSimple[nvgpu.NV_MSENC_ALLOCATION_PARAMETERS], nvconf.CapVideo)
 			prevGetInfo := abi.getInfo
 			abi.getInfo = func() *DriverABIInfo {
 				info := prevGetInfo()
@@ -906,6 +907,7 @@ func Init() {
 				info.AllocationInfos[nvgpu.BLACKWELL_B] = ioctlInfo("BLACKWELL_B", nvgpu.NV_GR_ALLOCATION_PARAMETERS{})
 				info.AllocationInfos[nvgpu.BLACKWELL_COMPUTE_B] = ioctlInfo("BLACKWELL_COMPUTE_B", nvgpu.NV_GR_ALLOCATION_PARAMETERS{})
 				info.AllocationInfos[nvgpu.BLACKWELL_USERMODE_A] = ioctlInfo("BLACKWELL_USERMODE_A", nvgpu.NV_HOPPER_USERMODE_A_PARAMS{})
+				info.AllocationInfos[nvgpu.NVCFB7_VIDEO_ENCODER] = ioctlInfo("NVCFB7_VIDEO_ENCODER", nvgpu.NV_MSENC_ALLOCATION_PARAMETERS{})
 				return info
 			}
 			return abi
@@ -946,12 +948,16 @@ func Init() {
 			abi := v575_57_08()
 			abi.frontendIoctl[nvgpu.NV_ESC_RM_MAP_MEMORY_DMA] = feHandler(frontendIoctlSimple[nvgpu.NVOS46_PARAMETERS_V580], nvconf.CapGraphics|nvconf.CapVideo)
 			abi.allocationClass[nvgpu.FERMI_VASPACE_A] = allocHandler(rmAllocSimple[nvgpu.NV_VASPACE_ALLOCATION_PARAMETERS_V580], compUtil)
+			abi.allocationClass[nvgpu.NVCEB7_VIDEO_ENCODER] = allocHandler(rmAllocSimple[nvgpu.NV_MSENC_ALLOCATION_PARAMETERS], nvconf.CapVideo)
+			abi.allocationClass[nvgpu.NVD1B7_VIDEO_ENCODER] = allocHandler(rmAllocSimple[nvgpu.NV_MSENC_ALLOCATION_PARAMETERS], nvconf.CapVideo)
 
 			prevGetInfo := abi.getInfo
 			abi.getInfo = func() *DriverABIInfo {
 				info := prevGetInfo()
 				info.FrontendInfos[nvgpu.NV_ESC_RM_MAP_MEMORY_DMA] = ioctlInfoWithStructName("NV_ESC_RM_MAP_MEMORY_DMA", nvgpu.NVOS46_PARAMETERS_V580{}, "NVOS46_PARAMETERS")
 				info.AllocationInfos[nvgpu.FERMI_VASPACE_A] = ioctlInfoWithStructName("FERMI_VASPACE_A", nvgpu.NV_VASPACE_ALLOCATION_PARAMETERS_V580{}, "NV_VASPACE_ALLOCATION_PARAMETERS")
+				info.AllocationInfos[nvgpu.NVCEB7_VIDEO_ENCODER] = ioctlInfo("NVCEB7_VIDEO_ENCODER", nvgpu.NV_MSENC_ALLOCATION_PARAMETERS{})
+				info.AllocationInfos[nvgpu.NVD1B7_VIDEO_ENCODER] = ioctlInfo("NVD1B7_VIDEO_ENCODER", nvgpu.NV_MSENC_ALLOCATION_PARAMETERS{})
 				return info
 			}
 			return abi
