@@ -120,20 +120,31 @@ type importerEntry struct {
 // files, and the facts. Note that this importer implementation will always
 // pass when a given package is not available.
 type importer struct {
-	fset      *token.FileSet
-	sources   map[string][]string
+	fset *token.FileSet
+
+	// sources is a map from package path to the source file paths in that
+	// package.
+	//
+	// N.B. key is the package path (including GOROOT vendor/ prefix if any),
+	// not the import path (what appears in the import declaration).
+	sources map[string][]string
+
+	// roots is the set of potential GOROOT prefixes on the file paths in sources.
+	// GOROOT is effectively a merged version of these roots.
+	roots []string
+
 	analyzers map[*analysis.Analyzer]analyzer
 
 	// mu protects cache & bundles (see below).
 	mu    sync.Mutex
-	cache map[string]*importerEntry
+	cache map[string]*importerEntry // key is package path (see sources above).
 
 	// bundles is protected by mu, but once set is immutable.
 	bundles []*facts.Bundle
 
 	// importsMu protects imports.
 	importsMu sync.Mutex
-	imports   map[string]*types.Package
+	imports   map[string]*types.Package // key is package path (see sources above).
 }
 
 // loadBundles loads all bundle files.
@@ -260,20 +271,94 @@ func (i *importer) findBinary(path string) (rc io.ReadCloser, err error) {
 	return rc, err
 }
 
-// importPackage almost-implements types.Importer.Import.
+// importPackage almost-implements types.ImporterFrom.ImportFrom.
 //
 // This must be called by other methods directly.
-func (i *importer) importPackage(path string) (*types.Package, error) {
-	if path == "unsafe" {
+func (i *importer) importPackage(importPath, dir string) (*types.Package, error) {
+	if importPath == "unsafe" {
 		// Special case: go/types has pre-defined type information for
 		// unsafe. We ensure that this package is correct, in case any
 		// analyzers are specifically looking for this.
 		return types.Unsafe, nil
 	}
 
+	pkgPath := importPath
+	if dir != "" && len(i.roots) > 0 {
+		// Vendor directories get first chance to satisfy import.
+		//
+		// N.B. The goal here is to support vendored packages in the standard
+		// library (i.roots non-empty), which has a single top-level
+		// vendor directory. We may not handle more complex vendor
+		// situations correctly.
+		// Check if a package path is available without actually loading it.
+		pkgExists := func(pkgPath string) bool {
+			// 1. In cache?
+			i.mu.Lock()
+			_, ok := i.cache[pkgPath]
+			i.mu.Unlock()
+			if ok {
+				return true
+			}
+
+			// 2. Source available?
+			if _, ok := i.sources[pkgPath]; ok {
+				return true
+			}
+
+			// 3. Binary available?
+			rc, err := i.findBinary(pkgPath)
+			if err != nil {
+				return false
+			}
+			// TODO(mpratt): Add a more efficient option that doesn't
+			// actually open the binary if this gets too expensive.
+			rc.Close()
+			return true
+		}
+
+		// Determine which root we are in.
+		var root string
+		var dirPath string
+		for _, cand := range i.roots {
+			var ok bool
+			dirPath, ok = strings.CutPrefix(dir, cand)
+			if ok {
+				root = cand
+				break
+			}
+		}
+		if root == "" {
+			return nil, fmt.Errorf("importPackage dir %q outside of known roots %s", dir, i.roots)
+		}
+
+		for {
+			candPkgPath := path.Join(dirPath, "vendor", importPath)
+			if pkgExists(candPkgPath) {
+				// Package is vendored. Continue import below
+				// using the full vendor path.
+				pkgPath = candPkgPath
+				break
+			}
+
+			if dirPath == "" {
+				// Already at root. Nothing else to search.
+				// Package is not vendored.
+				break
+			}
+
+			// Walk up one directory.
+			i := strings.LastIndex(dirPath, "/")
+			if i >= 0 {
+				dirPath = dirPath[:i]
+			} else {
+				dirPath = ""
+			}
+		}
+	}
+
 	// Pull the internal entry.
 	i.mu.Lock()
-	entry, ok := i.cache[path]
+	entry, ok := i.cache[pkgPath]
 	if ok && entry.pkg != nil {
 		i.mu.Unlock()
 		entry.ready.Wait()
@@ -284,26 +369,26 @@ func (i *importer) importPackage(path string) (*types.Package, error) {
 	entry = new(importerEntry)
 	entry.ready.Add(1)
 	defer entry.ready.Done()
-	i.cache[path] = entry
+	i.cache[pkgPath] = entry
 	i.mu.Unlock()
 
 	// If we have the srcs for this package, then we can actually do an
 	// analysis from first principles to validate the package and derive
 	// the types. We strictly prefer this to the gcexportdata.
-	if srcs, ok := i.sources[path]; ok && len(srcs) > 0 {
-		entry.pkg, entry.findings, entry.facts, entry.err = i.checkPackage(path, srcs)
+	if srcs, ok := i.sources[pkgPath]; ok && len(srcs) > 0 {
+		entry.pkg, entry.findings, entry.facts, entry.err = i.checkPackage(pkgPath, srcs)
 		if entry.err != nil {
 			return nil, entry.err
 		}
 		i.importsMu.Lock()
 		defer i.importsMu.Unlock()
-		i.imports[path] = entry.pkg
+		i.imports[pkgPath] = entry.pkg
 		return entry.pkg, entry.err
 	}
 
 	// Load all exported data. Unfortunately, we will have to hold the lock
 	// during this time. The imported may access imports directly.
-	rc, err := i.findBinary(path)
+	rc, err := i.findBinary(pkgPath)
 	if err != nil {
 		return nil, err
 	}
@@ -314,13 +399,18 @@ func (i *importer) importPackage(path string) (*types.Package, error) {
 	}
 	i.importsMu.Lock()
 	defer i.importsMu.Unlock()
-	entry.pkg, entry.err = gcexportdata.Read(r, i.fset, i.imports, path)
+	entry.pkg, entry.err = gcexportdata.Read(r, i.fset, i.imports, pkgPath)
 	return entry.pkg, entry.err
 }
 
 // Import implements types.Importer.Import.
 func (i *importer) Import(path string) (*types.Package, error) {
-	return i.importPackage(path)
+	return i.ImportFrom(path, "", 0)
+}
+
+// ImportFrom implements types.ImporterFrom.ImportFrom.
+func (i *importer) ImportFrom(path, dir string, mode types.ImportMode) (*types.Package, error) {
+	return i.importPackage(path, dir)
 }
 
 // errorImporter tracks the last error.
@@ -331,7 +421,12 @@ type errorImporter struct {
 
 // Import implements types.Importer.Import.
 func (i *errorImporter) Import(path string) (*types.Package, error) {
-	pkg, err := i.importer.importPackage(path)
+	return i.ImportFrom(path, "", 0)
+}
+
+// ImportFrom implements types.ImporterFrom.ImportFrom.
+func (i *errorImporter) ImportFrom(path, dir string, mode types.ImportMode) (*types.Package, error) {
+	pkg, err := i.importer.importPackage(path, dir)
 	if err != nil {
 		i.lastErr = err
 	}
@@ -812,18 +907,22 @@ func SplitStdPackages(srcs []string, srcRootPrefix string) (map[string][]string,
 }
 
 // Bundle checks a bundle of files (typically the standard library).
-func Bundle(sources map[string][]string) (FindingSet, facts.Serializer, error) {
+//
+// roots is the set of potential GOROOT prefixes on the file paths in sources.
+// GOROOT is effectively a merged version of these roots.
+func Bundle(sources map[string][]string, roots []string) (FindingSet, facts.Serializer, error) {
 	// Process all packages.
 	i := &importer{
 		fset:      token.NewFileSet(),
 		sources:   sources,
+		roots:     roots,
 		cache:     make(map[string]*importerEntry),
 		imports:   make(map[string]*types.Package),
 		analyzers: allAnalyzers,
 	}
 	for pkg := range sources {
 		// Was there an error processing this package?
-		if _, err := i.importPackage(pkg); err != nil && err != ErrSkip {
+		if _, err := i.importPackage(pkg, ""); err != nil && err != ErrSkip {
 			return nil, nil, err
 		}
 	}

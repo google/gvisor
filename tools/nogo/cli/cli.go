@@ -258,7 +258,7 @@ func (b *Bundle) Execute(ctx context.Context, fs *flag.FlagSet, args ...any) sub
 				sources[path] = append(sources[path], srcs...)
 			}
 		}
-		return check.Bundle(sources)
+		return check.Bundle(sources, srcRootPrefixes)
 	}); err != nil {
 		return failure("%v", err)
 	}
