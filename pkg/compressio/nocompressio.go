@@ -85,7 +85,7 @@ func NewSimpleReader(in io.ReadCloser, key []byte) *SimpleReader {
 		source: in,
 		bin:    bin,
 	}
-	if key != nil {
+	if len(key) > 0 {
 		r.h = hmac.New(sha256.New, key)
 	}
 	return r
@@ -124,10 +124,7 @@ func (r *SimpleReader) Read(p []byte) (int, error) {
 	n, err := r.bin.Read(p[:toRead])
 	if err != nil {
 		if err == io.EOF {
-			// this only can happen if storage or data size is corrupted,
-			// but we have no other means to detect it earlier as we store
-			// hash after the data block.
-			return n, ErrHashMismatch
+			return n, io.ErrUnexpectedEOF
 		}
 		return n, err
 	}
@@ -207,7 +204,7 @@ var _ io.Closer = (*SimpleWriter)(nil)
 // comments for details. chunkSize is the buffer size used for buffering. Large
 // writes are not buffered and written out directly as a single chunk.
 func NewSimpleWriter(out io.Writer, key []byte, chunkSize uint32) *SimpleWriter {
-	if key == nil {
+	if len(key) == 0 {
 		// Since there is no key, this image doesn't use the data integrity stream
 		// format mentioned in package comments. We can just use a bufio writer.
 		return &SimpleWriter{
