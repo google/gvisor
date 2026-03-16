@@ -84,6 +84,12 @@ func shouldInclude(path string) (bool, error) {
 	if releaseTagsErr != nil {
 		return false, releaseTagsErr
 	}
+	// Users should set GOEXPERIMENT, GOARM64, GOAMD64, etc in the
+	// environment as necessary to ensure build.Default picks the correct
+	// values.
+	//
+	// TODO(mpratt): remove the GOOS and GOARCH flags? Those can also come
+	// from the environment.
 	ctx := build.Default
 	ctx.GOOS = flags.GOOS
 	ctx.GOARCH = flags.GOARCH
