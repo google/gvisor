@@ -1043,6 +1043,8 @@ func (t *Task) waitOnce(opts *WaitOptions) (*WaitResult, error) {
 
 	t.tg.pidns.owner.mu.Lock()
 	defer t.tg.pidns.owner.mu.Unlock()
+	t.tg.signalHandlers.mu.Lock()
+	defer t.tg.signalHandlers.mu.Unlock()
 
 	if opts.SiblingChildren {
 		// We can wait on the children and tracees of any task in the
