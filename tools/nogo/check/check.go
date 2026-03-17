@@ -496,13 +496,14 @@ func (i *importer) checkPackage(path string, srcs []string) (*types.Package, Fin
 		GoVersion: flags.GOVERSION,
 	}
 	typesInfo := &types.Info{
-		Types:      make(map[ast.Expr]types.TypeAndValue),
-		Instances:  make(map[*ast.Ident]types.Instance),
-		Uses:       make(map[*ast.Ident]types.Object),
-		Defs:       make(map[*ast.Ident]types.Object),
-		Implicits:  make(map[ast.Node]types.Object),
-		Scopes:     make(map[ast.Node]*types.Scope),
-		Selections: make(map[*ast.SelectorExpr]*types.Selection),
+		Types:        make(map[ast.Expr]types.TypeAndValue),
+		Instances:    make(map[*ast.Ident]types.Instance),
+		Uses:         make(map[*ast.Ident]types.Object),
+		Defs:         make(map[*ast.Ident]types.Object),
+		Implicits:    make(map[ast.Node]types.Object),
+		Scopes:       make(map[ast.Node]*types.Scope),
+		Selections:   make(map[*ast.SelectorExpr]*types.Selection),
+		FileVersions: make(map[*ast.File]string),
 	}
 	astPackage, err := typeConfig.Check(path, i.fset, syntax, typesInfo)
 	if err != nil {
