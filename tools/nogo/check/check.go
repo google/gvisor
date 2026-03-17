@@ -19,7 +19,6 @@
 package check
 
 import (
-	"errors"
 	"fmt"
 	"go/ast"
 	"go/build"
@@ -27,7 +26,6 @@ import (
 	"go/token"
 	"go/types"
 	"io"
-	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -46,9 +44,6 @@ import (
 )
 
 var (
-	// ErrSkip indicates the package should be skipped.
-	ErrSkip = errors.New("skipped")
-
 	// showTimes indicates we should show analyzer times.
 	showTimes = flag.Bool("show_times", false, "show all analyzer times")
 )
@@ -510,7 +505,7 @@ func (i *importer) checkPackage(path string, srcs []string) (*types.Package, Fin
 		Selections: make(map[*ast.SelectorExpr]*types.Selection),
 	}
 	astPackage, err := typeConfig.Check(path, i.fset, syntax, typesInfo)
-	if err != nil && ei.lastErr != ErrSkip {
+	if err != nil {
 		return nil, nil, nil, fmt.Errorf("error checking types: %w", err)
 	}
 
@@ -706,11 +701,7 @@ func (i *importer) checkPackage(path string, srcs []string) (*types.Package, Fin
 				// Load the binary and analyze.
 				rc, loadErr := i.findArchive(path)
 				if loadErr != nil {
-					if loadErr != ErrSkip {
-						err = loadErr
-					} else {
-						err = nil // Ignore.
-					}
+					err = loadErr
 				} else {
 					result, err = ba.Run(p, rc)
 					rc.Close()
@@ -758,10 +749,8 @@ func (i *importer) checkPackage(path string, srcs []string) (*types.Package, Fin
 func (i *importer) hardImportPackages(pkgs []string) error {
 	for _, pkg := range internalPackages {
 		_, err := i.Import(pkg)
-		if err != nil && err != ErrSkip {
+		if err != nil {
 			return fmt.Errorf("error importing %s: %w", pkg, err)
-		} else if err == ErrSkip {
-			log.Printf("NOTE: Importing '%s' has been skipped; this is likely due to this being a cgo build", pkg)
 		}
 	}
 	return nil
@@ -945,7 +934,7 @@ func Bundle(sources map[string][]string, roots []string) (FindingSet, facts.Seri
 	}
 	for pkg := range sources {
 		// Was there an error processing this package?
-		if _, err := i.importPackage(pkg, ""); err != nil && err != ErrSkip {
+		if _, err := i.importPackage(pkg, ""); err != nil {
 			return nil, nil, err
 		}
 	}
