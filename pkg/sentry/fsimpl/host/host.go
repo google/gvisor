@@ -30,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/eventfd"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsutil"
@@ -117,7 +118,7 @@ type inode struct {
 	hostFD int `state:"nosave"`
 
 	// restoreKey is used to identify the `hostFD` after a restore is performed.
-	restoreKey vfs.RestoreID
+	restoreKey checkpoint.ResourceID
 
 	// ino is an inode number unique within this filesystem.
 	//
@@ -194,7 +195,7 @@ type inode struct {
 	termios   linux.KernelTermios
 }
 
-func newInode(ctx context.Context, fs *filesystem, hostFD int, savable bool, restoreKey vfs.RestoreID, fileType linux.FileMode, isTTY bool, readonly bool) (*inode, error) {
+func newInode(ctx context.Context, fs *filesystem, hostFD int, savable bool, restoreKey checkpoint.ResourceID, fileType linux.FileMode, isTTY bool, readonly bool) (*inode, error) {
 	// Determine if hostFD is seekable.
 	_, err := unix.Seek(hostFD, 0, linux.SEEK_CUR)
 	seekable := !linuxerr.Equals(linuxerr.ESPIPE, err)
@@ -249,7 +250,7 @@ type NewFDOptions struct {
 	// RestoreKey is only used when Savable==true. It uniquely identifies the
 	// host FD so that a mapping to the corresponding FD can be provided during
 	// restore.
-	RestoreKey vfs.RestoreID
+	RestoreKey checkpoint.ResourceID
 
 	// Restorable is true if hostFD may be restored. This can be set to false
 	// for host FDs that are not going to be present after restore.

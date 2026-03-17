@@ -5,6 +5,7 @@ package mm
 import (
 	"context"
 
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -368,7 +369,7 @@ func (p *pma) beforeSave() {}
 func (p *pma) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
 	fileValue := p.saveFile()
-	_ = (string)(fileValue)
+	_ = (checkpoint.ResourceID)(fileValue)
 	stateSinkObject.SaveValue(0, fileValue)
 	stateSinkObject.Save(1, &p.off)
 	stateSinkObject.Save(2, &p.translatePerms)
@@ -390,7 +391,7 @@ func (p *pma) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(5, &p.needCOW)
 	stateSourceObject.Load(6, &p.private)
 	stateSourceObject.Load(7, &p.huge)
-	stateSourceObject.LoadValue(0, new(string), func(y any) { p.loadFile(ctx, y.(string)) })
+	stateSourceObject.LoadValue(0, new(checkpoint.ResourceID), func(y any) { p.loadFile(ctx, y.(checkpoint.ResourceID)) })
 }
 
 func (s *pmaSet) StateTypeName() string {

@@ -36,6 +36,7 @@ import (
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/fsutil"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/devices/memdev"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
@@ -511,7 +512,7 @@ func (c *containerMounter) createMountNamespace(ctx context.Context, conf *confi
 				InternalMount: true,
 				Data:          strings.Join(data, ","),
 				InternalData: gofer.InternalFilesystemOptions{
-					UniqueID: vfs.RestoreID{
+					UniqueID: checkpoint.ResourceID{
 						ContainerName: c.containerName,
 						Path:          "/",
 					},
@@ -527,7 +528,7 @@ func (c *containerMounter) createMountNamespace(ctx context.Context, conf *confi
 				InternalMount: true,
 				Data:          fmt.Sprintf("ifd=%d", ioFD),
 				InternalData: erofs.InternalFilesystemOptions{
-					UniqueID: vfs.RestoreID{
+					UniqueID: checkpoint.ResourceID{
 						ContainerName: c.containerName,
 						Path:          "/",
 					},
@@ -647,7 +648,7 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 	}
 	if filestoreFD != nil {
 		// Create memory file for disk-backed overlays.
-		mf, err := createPrivateMemoryFile(filestoreFD.ReleaseToFile("overlay-filestore"), vfs.RestoreID{ContainerName: c.containerName, Path: dst})
+		mf, err := createPrivateMemoryFile(filestoreFD.ReleaseToFile("overlay-filestore"), checkpoint.ResourceID{ContainerName: c.containerName, Path: dst})
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create memory file for overlay: %v", err)
 		}
@@ -950,7 +951,7 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 			return "", nil, err
 		}
 		if m.filestoreFD != nil {
-			mf, err := createPrivateMemoryFile(m.filestoreFD.ReleaseToFile("tmpfs-filestore"), vfs.RestoreID{ContainerName: containerName, Path: m.mount.Destination})
+			mf, err := createPrivateMemoryFile(m.filestoreFD.ReleaseToFile("tmpfs-filestore"), checkpoint.ResourceID{ContainerName: containerName, Path: m.mount.Destination})
 			if err != nil {
 				return "", nil, fmt.Errorf("failed to create memory file for tmpfs: %v", err)
 			}
@@ -975,7 +976,7 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 		}
 		data = append(data, goferMountData(m.goferFD.Release(), getMountAccessType(conf, m.hint), conf)...)
 		internalData = gofer.InternalFilesystemOptions{
-			UniqueID: vfs.RestoreID{
+			UniqueID: checkpoint.ResourceID{
 				ContainerName: containerName,
 				Path:          m.mount.Destination,
 			},
@@ -994,7 +995,7 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 		}
 		data = []string{fmt.Sprintf("ifd=%d", m.goferFD.Release())}
 		internalData = erofs.InternalFilesystemOptions{
-			UniqueID: vfs.RestoreID{
+			UniqueID: checkpoint.ResourceID{
 				ContainerName: containerName,
 				Path:          m.mount.Destination,
 			},
@@ -1052,7 +1053,7 @@ func parseKeyValue(s string) (string, string, bool) {
 	return strings.TrimSpace(tokens[0]), strings.TrimSpace(tokens[1]), true
 }
 
-func createPrivateMemoryFile(file *os.File, restoreID vfs.RestoreID) (*pgalloc.MemoryFile, error) {
+func createPrivateMemoryFile(file *os.File, resourceID checkpoint.ResourceID) (*pgalloc.MemoryFile, error) {
 	mfOpts := pgalloc.MemoryFileOpts{
 		// Private memory files are usually backed by files on disk. Ideally we
 		// would confirm with fstatfs(2) but that is prohibited by seccomp.
@@ -1064,7 +1065,7 @@ func createPrivateMemoryFile(file *os.File, restoreID vfs.RestoreID) (*pgalloc.M
 		// are expected to have performed the work around outside the sandbox.
 		DisableIMAWorkAround: true,
 		// Private memory files need to be restored correctly using this ID.
-		RestoreID: restoreID.String(),
+		ResourceID: resourceID,
 	}
 	return pgalloc.NewMemoryFile(file, mfOpts)
 }
@@ -1392,10 +1393,10 @@ func (c *containerMounter) makeMountPoint(
 
 // configureRestore returns an updated context.Context including filesystem
 // state used by restore defined by conf.
-func (c *containerMounter) configureRestore(fdmap map[vfs.RestoreID]int, mfmap map[string]*pgalloc.MemoryFile) error {
+func (c *containerMounter) configureRestore(fdmap map[checkpoint.ResourceID]int, mfmap map[checkpoint.ResourceID]*pgalloc.MemoryFile) error {
 	// Compare createMountNamespace(); rootfs always consumes a gofer FD and a
 	// filestore FD is consumed if the rootfs GoferMountConf indicates so.
-	rootKey := vfs.RestoreID{ContainerName: c.containerName, Path: "/"}
+	rootKey := checkpoint.ResourceID{ContainerName: c.containerName, Path: "/"}
 	fdmap[rootKey] = c.goferFDs.remove()
 
 	if rootfsConf := c.goferMountConfs[0]; rootfsConf.IsFilestorePresent() {
@@ -1403,7 +1404,7 @@ func (c *containerMounter) configureRestore(fdmap map[vfs.RestoreID]int, mfmap m
 		if err != nil {
 			return fmt.Errorf("failed to create private memory file for mount rootfs: %w", err)
 		}
-		mfmap[rootKey.String()] = mf
+		mfmap[rootKey] = mf
 	}
 	// prepareMounts() consumes the remaining FDs for submounts.
 	mounts, err := c.prepareMounts()
@@ -1413,16 +1414,16 @@ func (c *containerMounter) configureRestore(fdmap map[vfs.RestoreID]int, mfmap m
 	for i := range mounts {
 		submount := &mounts[i]
 		if submount.goferFD != nil {
-			key := vfs.RestoreID{ContainerName: c.containerName, Path: submount.mount.Destination}
+			key := checkpoint.ResourceID{ContainerName: c.containerName, Path: submount.mount.Destination}
 			fdmap[key] = submount.goferFD.Release()
 		}
 		if submount.filestoreFD != nil {
-			key := vfs.RestoreID{ContainerName: c.containerName, Path: submount.mount.Destination}
+			key := checkpoint.ResourceID{ContainerName: c.containerName, Path: submount.mount.Destination}
 			mf, err := createPrivateMemoryFile(submount.filestoreFD.ReleaseToFile("overlay-filestore"), key)
 			if err != nil {
 				return fmt.Errorf("failed to create private memory file for mount %q: %w", submount.mount.Destination, err)
 			}
-			mfmap[key.String()] = mf
+			mfmap[key] = mf
 		}
 	}
 	return nil

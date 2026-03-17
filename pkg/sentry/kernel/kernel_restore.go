@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/state/stateio"
 	"gvisor.dev/gvisor/pkg/state"
@@ -210,7 +211,7 @@ func (w *CheckpointWaitable) signal(gen CheckpointGeneration, err error) {
 // loadPrivateMemoryFiles loads the private MemoryFiles from mfmap and it reads
 // private MemoryFile metadata from `r`. This consumes bytes from `r`, so this
 // must be called only once.
-func loadPrivateMemoryFiles(ctx context.Context, r io.Reader, mfmap map[string]*pgalloc.MemoryFile, opts *pgalloc.LoadOpts) error {
+func loadPrivateMemoryFiles(ctx context.Context, r io.Reader, mfmap map[checkpoint.ResourceID]*pgalloc.MemoryFile, opts *pgalloc.LoadOpts) error {
 	// Load the metadata.
 	var meta privateMemoryFileMetadata
 	if _, err := state.Load(ctx, r, &meta); err != nil {
@@ -258,7 +259,7 @@ func (k *Kernel) loadMemoryFiles(ctx context.Context, r io.Reader) error {
 type AsyncMFLoader struct {
 	// privateMFsChan is used to tell the background goroutine about private
 	// MemoryFiles, once they are known. This channel is written to exactly once.
-	privateMFsChan chan map[string]*pgalloc.MemoryFile
+	privateMFsChan chan map[checkpoint.ResourceID]*pgalloc.MemoryFile
 
 	mainMFStartWg   sync.WaitGroup
 	mainMetadataErr error
@@ -279,7 +280,7 @@ type AsyncMFLoader struct {
 // pages.
 func NewAsyncMFLoader(pagesMetadata io.ReadCloser, pagesFile stateio.AsyncReader, mainMF *pgalloc.MemoryFile, timeline *timing.Timeline) *AsyncMFLoader {
 	mfl := &AsyncMFLoader{
-		privateMFsChan: make(chan map[string]*pgalloc.MemoryFile, 1),
+		privateMFsChan: make(chan map[checkpoint.ResourceID]*pgalloc.MemoryFile, 1),
 	}
 	mfl.mainMFStartWg.Add(1)
 	mfl.metadataWg.Add(1)
@@ -351,7 +352,7 @@ func (mfl *AsyncMFLoader) backgroundGoroutine(pagesMetadata io.ReadCloser, pages
 }
 
 // KickoffPrivate notifies the background goroutine of the private MemoryFiles.
-func (mfl *AsyncMFLoader) KickoffPrivate(mfmap map[string]*pgalloc.MemoryFile) {
+func (mfl *AsyncMFLoader) KickoffPrivate(mfmap map[checkpoint.ResourceID]*pgalloc.MemoryFile) {
 	mfl.privateMFsChan <- mfmap
 }
 

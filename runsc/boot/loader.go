@@ -763,6 +763,8 @@ func New(args Args) (*Loader, error) {
 
 	l.kernelInitExtra(l.k.SupervisorContext())
 
+	metric.SentryEntryPointMetric.Increment(&metric.EntryPointTypeRunsc)
+
 	// Create the control server using the provided FD.
 	//
 	// This must be done *after* we have initialized the kernel since the
@@ -1955,6 +1957,7 @@ func createFDTable(ctx context.Context, console bool, stdioFDs []*fd.FD, passFDs
 		UID:           auth.KUID(user.UID),
 		GID:           auth.KGID(user.GID),
 		ContainerName: containerName,
+		SupportTTYs:   true,
 	}
 	ttyFile, err := fdimport.Import(ctx, fdTable, fdMap, opts)
 	if err != nil {

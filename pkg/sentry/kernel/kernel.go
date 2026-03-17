@@ -55,6 +55,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/nsfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/pipefs"
@@ -597,10 +598,10 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 
 // +stateify savable
 type privateMemoryFileMetadata struct {
-	owners []string
+	owners []checkpoint.ResourceID
 }
 
-func savePrivateMFs(ctx context.Context, w io.Writer, mfsToSave map[string]*pgalloc.MemoryFile, mfOpts *pgalloc.SaveOpts) error {
+func savePrivateMFs(ctx context.Context, w io.Writer, mfsToSave map[checkpoint.ResourceID]*pgalloc.MemoryFile, mfOpts *pgalloc.SaveOpts) error {
 	var meta privateMemoryFileMetadata
 	// Generate the order in which private memory files are saved.
 	for fsID := range mfsToSave {
@@ -664,7 +665,7 @@ func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCl
 	}
 
 	// Capture all private memory files.
-	mfsToSave := make(map[string]*pgalloc.MemoryFile)
+	mfsToSave := make(map[checkpoint.ResourceID]*pgalloc.MemoryFile)
 	vfsCtx := context.WithValue(ctx, pgalloc.CtxMemoryFileMap, mfsToSave)
 	// Prepare filesystems for saving. This must be done after
 	// invalidateUnsavableMappings(), since dropping memory mappings may
@@ -769,7 +770,7 @@ func (k *Kernel) BeforeResume(ctx context.Context) {
 // pagesFile must be non-nil, saveMemoryFiles takes ownership of both
 // pagesMetadata and pagesFile (even if it returns a non-nil error), and
 // MemoryFile state will be saved to pagesMetadata and pagesFile.
-func (k *Kernel) saveMemoryFiles(ctx context.Context, w io.Writer, pagesMetadata io.WriteCloser, pagesFile stateio.AsyncWriter, mfsToSave map[string]*pgalloc.MemoryFile, appMFExcludeCommittedZeroPages bool) error {
+func (k *Kernel) saveMemoryFiles(ctx context.Context, w io.Writer, pagesMetadata io.WriteCloser, pagesFile stateio.AsyncWriter, mfsToSave map[checkpoint.ResourceID]*pgalloc.MemoryFile, appMFExcludeCommittedZeroPages bool) error {
 	memoryStart := time.Now()
 
 	pmw := w

@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 )
 
@@ -150,7 +151,7 @@ func (v *vma) loadRealPerms(_ goContext.Context, b int) {
 	}
 }
 
-func (p *pma) saveFile() string {
+func (p *pma) saveFile() checkpoint.ResourceID {
 	mf, ok := p.file.(*pgalloc.MemoryFile)
 	if !ok {
 		// InvalidateUnsavable should have caused all such pmas to be
@@ -160,18 +161,18 @@ func (p *pma) saveFile() string {
 	if !mf.IsSavable() {
 		panic(fmt.Sprintf("Can't save pma because its MemoryFile is not savable: %v", mf))
 	}
-	return mf.RestoreID()
+	return mf.ResourceID()
 }
 
-func (p *pma) loadFile(ctx goContext.Context, restoreID string) {
-	if restoreID == "" {
+func (p *pma) loadFile(ctx goContext.Context, resourceID checkpoint.ResourceID) {
+	if !resourceID.Ok() {
 		p.file = pgalloc.MemoryFileFromContext(ctx)
 		return
 	}
 	mfmap := pgalloc.MemoryFileMapFromContext(ctx)
-	mf, ok := mfmap[restoreID]
+	mf, ok := mfmap[resourceID]
 	if !ok {
-		panic(fmt.Sprintf("can't restore pma because its MemoryFile's restore ID %q was not found in CtxMemoryFileMap", restoreID))
+		panic(fmt.Sprintf("can't restore pma because its MemoryFile's resource ID %q was not found in CtxMemoryFileMap", resourceID))
 	}
 	p.file = mf
 }

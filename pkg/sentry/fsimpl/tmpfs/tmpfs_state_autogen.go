@@ -5,6 +5,7 @@ package tmpfs
 import (
 	"context"
 
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -403,7 +404,7 @@ func (fs *filesystem) beforeSave() {}
 func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	fs.beforeSave()
 	mfValue := fs.saveMf()
-	_ = (string)(mfValue)
+	_ = (checkpoint.ResourceID)(mfValue)
 	stateSinkObject.SaveValue(1, mfValue)
 	stateSinkObject.Save(0, &fs.vfsfs)
 	stateSinkObject.Save(2, &fs.clock)
@@ -435,7 +436,7 @@ func (fs *filesystem) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(10, &fs.pagesUsed)
 	stateSourceObject.Load(11, &fs.allowXattrPrefix)
 	stateSourceObject.Load(12, &fs.ovlWhiteout)
-	stateSourceObject.LoadValue(1, new(string), func(y any) { fs.loadMf(ctx, y.(string)) })
+	stateSourceObject.LoadValue(1, new(checkpoint.ResourceID), func(y any) { fs.loadMf(ctx, y.(checkpoint.ResourceID)) })
 }
 
 func (f *FilesystemOpts) StateTypeName() string {

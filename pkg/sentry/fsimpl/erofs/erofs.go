@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/erofs"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -82,9 +83,9 @@ type filesystem struct {
 //
 // +stateify savable
 type InternalFilesystemOptions struct {
-	// If UniqueID is non-empty, it is an opaque string used to reassociate the
-	// filesystem with a new image FD during restoration from checkpoint.
-	UniqueID vfs.RestoreID
+	// If UniqueID is non-empty, it is used to reassociate the filesystem with
+	// a new image FD during restoration from checkpoint.
+	UniqueID checkpoint.ResourceID
 }
 
 // Name implements vfs.FilesystemType.Name.

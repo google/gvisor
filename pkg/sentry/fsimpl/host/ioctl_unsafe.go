@@ -30,7 +30,30 @@ func ioctlGetTermios(fd int) (*linux.Termios, error) {
 	return &t, nil
 }
 
+// IsTTY returns whether the given file descriptor is a terminal.
+func IsTTY(fd int) bool {
+	_, err := ioctlGetTermios(fd)
+	return err == nil
+}
+
 func ioctlSetTermios(fd int, req uint64, t *linux.Termios) error {
+	_, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), uintptr(req), uintptr(unsafe.Pointer(t)))
+	if errno != 0 {
+		return errno
+	}
+	return nil
+}
+
+func ioctlGetTermios2(fd int) (*linux.KernelTermios, error) {
+	var t linux.KernelTermios
+	_, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), linux.TCGETS2, uintptr(unsafe.Pointer(&t)))
+	if errno != 0 {
+		return nil, errno
+	}
+	return &t, nil
+}
+
+func ioctlSetTermios2(fd int, req uint64, t *linux.KernelTermios) error {
 	_, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), uintptr(req), uintptr(unsafe.Pointer(t)))
 	if errno != 0 {
 		return errno

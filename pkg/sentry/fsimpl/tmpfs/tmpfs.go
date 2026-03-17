@@ -67,7 +67,7 @@ type filesystem struct {
 
 	// mf is used to allocate memory that stores regular file contents. mf is
 	// immutable, except it is changed during restore.
-	mf *pgalloc.MemoryFile `state:".(string)"`
+	mf *pgalloc.MemoryFile `state:".(checkpoint.ResourceID)"`
 
 	// clock is a realtime clock used to set timestamps in file operations.
 	clock ktime.Clock
@@ -350,9 +350,9 @@ func (fs *filesystem) Release(ctx context.Context) {
 		fs.ovlWhiteout.inode.decLinksLocked(ctx)
 	}
 	fs.mu.Unlock()
-	if fs.mf.RestoreID() != "" {
-		// If RestoreID is set, then this is a private MemoryFile which needs to be
-		// destroyed since this tmpfs is the only user.
+	if fs.mf.ResourceID().Ok() {
+		// If ResourceID is set, then this is a private MemoryFile which needs
+		// to be destroyed since this tmpfs is the only user.
 		fs.mf.Destroy()
 	}
 }
