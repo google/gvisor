@@ -286,3 +286,6 @@ def go_imports(name, src, out):
         src = src,
         out = out,
     )
+
+def nogo_extra_proto_deps(target):
+    return []
