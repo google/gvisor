@@ -1,4 +1,5 @@
 set -euo pipefail
+set -o xtrace
 
 source .buildkite/hooks/libhook
 
