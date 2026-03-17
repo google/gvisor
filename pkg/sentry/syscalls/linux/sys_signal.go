@@ -26,44 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 )
 
-// "For a process to have permission to send a signal it must
-//   - either be privileged (CAP_KILL), or
-//   - the real or effective user ID of the sending process must be equal to the
-//
-// real or saved set-user-ID of the target process.
-//
-// In the case of SIGCONT it suffices when the sending and receiving processes
-// belong to the same session." - kill(2)
-//
-// Equivalent to kernel/signal.c:check_kill_permission.
-func mayKill(t *kernel.Task, target *kernel.Task, sig linux.Signal) bool {
-	// kernel/signal.c:check_kill_permission also allows a signal if the
-	// sending and receiving tasks share a thread group, which is not
-	// mentioned in kill(2) since kill does not allow task-level
-	// granularity in signal sending.
-	if t.ThreadGroup() == target.ThreadGroup() {
-		return true
-	}
-
-	if t.HasCapabilityIn(linux.CAP_KILL, target.UserNamespace()) {
-		return true
-	}
-
-	creds := t.Credentials()
-	tcreds := target.Credentials()
-	if creds.EffectiveKUID == tcreds.SavedKUID ||
-		creds.EffectiveKUID == tcreds.RealKUID ||
-		creds.RealKUID == tcreds.SavedKUID ||
-		creds.RealKUID == tcreds.RealKUID {
-		return true
-	}
-
-	if sig == linux.SIGCONT && target.ThreadGroup().Session() == t.ThreadGroup().Session() {
-		return true
-	}
-	return false
-}
-
 // Kill implements linux syscall kill(2).
 func Kill(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	pid := kernel.ThreadID(args[0].Int())
@@ -81,7 +43,7 @@ func Kill(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *
 			if target == nil {
 				return 0, nil, linuxerr.ESRCH
 			}
-			if !mayKill(t, target, sig) {
+			if !t.MayKill(target, sig) {
 				return 0, nil, linuxerr.EPERM
 			}
 			info := &linux.SignalInfo{
@@ -117,7 +79,7 @@ func Kill(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *
 
 			// If pid == -1, the returned error is the last non-EPERM error
 			// from any call to group_send_sig_info.
-			if !mayKill(t, tg.Leader(), sig) {
+			if !t.MayKill(tg.Leader(), sig) {
 				continue
 			}
 			// Here and below, whether or not kill returns an error may
@@ -163,7 +125,7 @@ func Kill(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *
 		lastErr := error(linuxerr.ESRCH)
 		for _, tg := range t.PIDNamespace().ThreadGroups() {
 			if t.PIDNamespace().IDOfProcessGroup(tg.ProcessGroup()) == pgid {
-				if !mayKill(t, tg.Leader(), sig) {
+				if !t.MayKill(tg.Leader(), sig) {
 					lastErr = linuxerr.EPERM
 					continue
 				}
@@ -211,7 +173,7 @@ func Tkill(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 		return 0, nil, linuxerr.ESRCH
 	}
 
-	if !mayKill(t, target, sig) {
+	if !t.MayKill(target, sig) {
 		return 0, nil, linuxerr.EPERM
 	}
 	return 0, nil, target.SendSignal(tkillSigInfo(t, target, sig))
@@ -235,7 +197,7 @@ func Tgkill(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr,
 		return 0, nil, linuxerr.ESRCH
 	}
 
-	if !mayKill(t, target, sig) {
+	if !t.MayKill(target, sig) {
 		return 0, nil, linuxerr.EPERM
 	}
 	return 0, nil, target.SendSignal(tkillSigInfo(t, target, sig))
@@ -412,7 +374,7 @@ func RtSigqueueinfo(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (
 			return 0, nil, linuxerr.EPERM
 		}
 
-		if !mayKill(t, target, sig) {
+		if !t.MayKill(target, sig) {
 			return 0, nil, linuxerr.EPERM
 		}
 
@@ -455,7 +417,7 @@ func RtTgsigqueueinfo(t *kernel.Task, sysno uintptr, args arch.SyscallArguments)
 		return 0, nil, linuxerr.EPERM
 	}
 
-	if !mayKill(t, target, sig) {
+	if !t.MayKill(target, sig) {
 		return 0, nil, linuxerr.EPERM
 	}
 	return 0, nil, target.SendSignal(&info)
@@ -570,4 +532,38 @@ func Signalfd4(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintp
 	sigsetsize := args[2].SizeT()
 	flags := args[3].Int()
 	return sharedSignalfd(t, fd, sigset, sigsetsize, flags)
+}
+
+// PIDFDSendSignal implements linux system call pidfd_send_signal(2).
+func PIDFDSendSignal(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	fd := args[0].Int()
+	sig := linux.Signal(args[1].Int())
+	infoAddr := args[2].Pointer()
+	flags := args[3].Uint()
+
+	switch flags {
+	case 0, linux.PIDFD_SIGNAL_THREAD, linux.PIDFD_SIGNAL_THREAD_GROUP, linux.PIDFD_SIGNAL_PROCESS_GROUP:
+	default:
+		return 0, nil, linuxerr.EINVAL
+	}
+	if !sig.IsValid() && sig != 0 {
+		return 0, nil, linuxerr.EINVAL
+	}
+
+	file := t.GetFile(fd)
+	if file == nil {
+		return 0, nil, linuxerr.EBADF
+	}
+	defer file.DecRef(t)
+
+	var info *linux.SignalInfo
+	if infoAddr != 0 {
+		info = &linux.SignalInfo{}
+		if _, err := info.CopyIn(t, infoAddr); err != nil {
+			return 0, nil, err
+		}
+		info.Signo = int32(sig)
+	}
+
+	return 0, nil, t.PIDFDSendSignal(file, sig, info, flags)
 }

@@ -354,6 +354,15 @@ func (d *fdInfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	// See https://www.kernel.org/doc/Documentation/filesystems/proc.txt
 	flags := uint(file.StatusFlags()) | descriptorFlags.ToLinuxFileFlags()
 	fmt.Fprintf(buf, "flags:\t0%o\n", flags)
+
+	if nspids, err := kernel.ObservedTIDsForPIDFD(file, d.task); err == nil {
+		fmt.Fprintf(buf, "Pid:\t%d\n", nspids[len(nspids)-1])
+		buf.WriteString("NSpid:")
+		for i := len(nspids) - 1; i >= 0; i-- {
+			fmt.Fprintf(buf, "\t%d", nspids[i])
+		}
+		buf.WriteString("\n")
+	}
 	return nil
 }
 

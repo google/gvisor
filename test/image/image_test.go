@@ -797,6 +797,23 @@ func testDockerComposeRun(ctx context.Context, t *testing.T, d *dockerutil.Conta
 	}
 }
 
+func TestPIDFDSelftests(t *testing.T) {
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	runOpts := dockerutil.RunOpts{
+		Image:      "basic/pidfd-tests",
+		Privileged: true,
+	}
+	out, err := d.Run(ctx, runOpts)
+	if err != nil {
+		t.Fatalf("docker run failed; output: %v, err: %v", out, err)
+	} else {
+		t.Logf("docker run succeeded; output: %v", out)
+	}
+}
+
 func TestMain(m *testing.M) {
 	dockerutil.EnsureSupportedDockerVersion()
 	flag.Parse()
