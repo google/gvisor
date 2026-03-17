@@ -258,6 +258,11 @@ func (b *Bundle) Execute(ctx context.Context, fs *flag.FlagSet, args ...any) sub
 				sources[path] = append(sources[path], srcs...)
 			}
 		}
+		// Remove packages we can't analyze.
+		sources, err = check.FilterStdPackages(sources)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error filtering packages: %v", err)
+		}
 		return check.Bundle(sources, srcRootPrefixes)
 	}); err != nil {
 		return failure("%v", err)

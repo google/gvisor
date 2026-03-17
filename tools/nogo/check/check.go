@@ -902,20 +902,6 @@ func SplitStdPackages(srcs []string, srcRootPrefix string) (map[string][]string,
 		sources[pkg] = append(sources[pkg], filename)
 	}
 
-	// Remove packages we can't analyze.
-	sources, err := filterStdPackages(sources)
-	if err != nil {
-		return nil, err
-	}
-
-	// Drop runtime/cgo, which is only necessary for cgo even though
-	// shouldInclude matches it without cgo.
-	delete(sources, "runtime/cgo")
-
-	// Drop runtime/race (even in -race mode). It requires cgo but has no
-	// API, so it won't actually be imported anywhere.
-	delete(sources, "runtime/race")
-
 	return sources, nil
 }
 
