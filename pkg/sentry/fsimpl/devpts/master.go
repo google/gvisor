@@ -246,17 +246,7 @@ func (mfd *masterFileDescription) Stat(ctx context.Context, opts vfs.StatOptions
 // maybeEmitUnimplementedEvent emits unimplemented event if cmd is valid.
 func maybeEmitUnimplementedEvent(ctx context.Context, sysno uintptr, cmd uint32) {
 	switch cmd {
-	case linux.TCGETS,
-		linux.TCGETS2,
-		linux.TCSETS,
-		linux.TCSETS2,
-		linux.TCSETSW,
-		linux.TCSETSW2,
-		linux.TCSETSF,
-		linux.TCSETSF2,
-		linux.TIOCGWINSZ,
-		linux.TIOCSWINSZ,
-		linux.TIOCSETD,
+	case linux.TIOCSETD,
 		linux.TIOCSBRK,
 		linux.TIOCCBRK,
 		linux.TCSBRK,

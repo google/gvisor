@@ -545,7 +545,7 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 	}
 	log.Infof("Executing: %v", append([]string{specutils.ExePath}, cmdArgs...))
 	cmd := exec.Command(specutils.ExePath, cmdArgs...)
-	if hostTTYFile != nil {
+	if hostTTYFile != nil && *waitForPid == 0 {
 		cmd.ExtraFiles = append(cmd.ExtraFiles, hostTTYFile)
 	}
 	cmd.SysProcAttr = sysProcAttr
