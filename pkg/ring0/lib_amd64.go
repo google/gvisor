@@ -100,7 +100,11 @@ var (
 // another time with a  different FeatureSet.
 func Init(fs cpuid.FeatureSet) {
 	// Initialize all sizes.
-	VirtualAddressBits = uintptr(fs.VirtualAddressBits())
+	if fs.VirtualAddressBits() > 48 && !cpuid.IsFiveLevelPagingEnabled {
+		VirtualAddressBits = 48
+	} else {
+		VirtualAddressBits = uintptr(fs.VirtualAddressBits())
+	}
 	if PhysicalAddressBits == 0 {
 		PhysicalAddressBits = uintptr(fs.PhysicalAddressBits())
 	}
