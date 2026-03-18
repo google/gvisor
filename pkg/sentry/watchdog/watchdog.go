@@ -355,7 +355,7 @@ func (w *Watchdog) doAction(action Action, forceStack bool, stuckTasks map[int64
 		// stack dump was generated.
 		if !forceStack && time.Since(w.lastStackDump) < stackDumpSameTaskPeriod {
 			msg.WriteString("\n...[stack dump skipped]...")
-			log.Warningf(msg.String())
+			log.Warningf("%s", msg.String())
 			return
 		}
 		log.TracebackAll(msg.String())

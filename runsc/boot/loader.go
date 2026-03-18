@@ -1112,7 +1112,7 @@ func (l *Loader) run() error {
 		}
 		log.Infof("Received external signal %d, mode: %s", sig, deliveryMode)
 		if err := l.signal(l.sandboxID, 0, int32(sig), deliveryMode); err != nil {
-			log.Warningf("error sending signal %s to container %q: %s", sig, l.sandboxID, err)
+			log.Warningf("error sending signal %d to container %q: %s", sig, l.sandboxID, err)
 		}
 	})
 

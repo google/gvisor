@@ -162,7 +162,7 @@ func doLeakCheck() {
 				skip = o.LeakCheckDisabled()
 			}
 			if skip {
-				log.Debugf(obj.LeakMessage())
+				log.Debugf("%s", obj.LeakMessage())
 				continue
 			}
 			msg += obj.LeakMessage() + "\n"
@@ -174,6 +174,6 @@ func doLeakCheck() {
 		if leakCheckPanicEnabled() {
 			panic(msg)
 		}
-		log.Warningf(msg)
+		log.Warningf("%s", msg)
 	}
 }

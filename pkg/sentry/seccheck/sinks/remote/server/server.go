@@ -143,7 +143,7 @@ func (s *CommonServer) run() {
 		s.cond.L.Unlock()
 
 		if err := s.handshake(client); err != nil {
-			log.Warningf(err.Error())
+			log.Warningf("%v", err)
 			s.closeClient(client)
 			continue
 		}

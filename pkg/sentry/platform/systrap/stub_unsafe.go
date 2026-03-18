@@ -338,5 +338,5 @@ func stubInit() {
 	// Set the end.
 	stubEnd = stubStart + mapLen + uintptr(gap)
 	log.Debugf("stubStart %x stubSysmsgStart %x stubSysmsgStack %x, stubContextQueue %x, stubThreadContextRegion %x, mapLen %x", stubStart, stubSysmsgStart, stubSysmsgStack, stubContextQueueRegion, stubContextRegion, mapLen)
-	log.Debugf(archState.String())
+	log.Debugf("%s", archState.String())
 }

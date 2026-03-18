@@ -893,7 +893,7 @@ func (s *Server) Run(ctx context.Context) error {
 	m.rootDir = conf.RootDir
 	if strings.Contains(conf.MetricServer, "%RUNTIME_ROOT%") {
 		newAddr := strings.ReplaceAll(conf.MetricServer, "%RUNTIME_ROOT%", m.rootDir)
-		log.Infof("Metric server address replaced %RUNTIME_ROOT%: %q -> %q", conf.MetricServer, newAddr)
+		log.Infof("Metric server address replaced %%RUNTIME_ROOT%%: %q -> %q", conf.MetricServer, newAddr)
 		conf.MetricServer = newAddr
 	}
 	m.address = conf.MetricServer

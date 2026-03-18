@@ -523,7 +523,7 @@ func (fd *controlFDLisa) Open(flags uint32) (*lisafs.OpenFD, int, error) {
 	case unix.S_IFSOCK:
 		if !server.config.HostUDS.AllowOpen() {
 			logRejectedUdsOpenOnce.Do(func() {
-				log.Warningf("Rejecting attempt to open unix domain socket from host filesystem. If you want to allow this, set flag --host-uds=open", fd.ControlFD.Node().FilePath())
+				log.Warningf("Rejecting attempt to open unix domain socket from host filesystem: %q. If you want to allow this, set flag --host-uds=open", fd.ControlFD.Node().FilePath())
 			})
 			return nil, -1, unix.EPERM
 		}
