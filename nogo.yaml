@@ -156,6 +156,12 @@ analyzers:
       suppress:
         - "fmt.Fprintln arg list ends with redundant newline"
         - "non-constant format string in call to .*"
+      exclude:
+        # Starting in 1.26, printf reports misuse of %q with more types. Many
+        # of these are unfixed in upstream projects.
+        - codes/codes.go # go.opentelemetry.io/otel
+        - yaml.go # github.com/go-openapi/swag/yamlutils
+        - staticcheck/sa1030/sa1030.go # staticcheck
   shift:
     generated: # Disabled for generated code; these shifts are well-defined.
       exclude: [".*"]

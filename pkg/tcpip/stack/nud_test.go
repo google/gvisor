@@ -568,7 +568,7 @@ func TestNUDConfigurationsMaxMulticastProbes(t *testing.T) {
 				t.Fatalf("got stack.NUDConfigurations(%d, %d) = %s", nicID, ipv6.ProtocolNumber, err)
 			}
 			if got := sc.MaxMulticastProbes; got != test.want {
-				t.Errorf("got MaxMulticastProbes = %q, want = %q", got, test.want)
+				t.Errorf("got MaxMulticastProbes = %d, want = %d", got, test.want)
 			}
 		})
 	}
@@ -619,7 +619,7 @@ func TestNUDConfigurationsMaxUnicastProbes(t *testing.T) {
 				t.Fatalf("got stack.NUDConfigurations(%d, %d) = %s", nicID, ipv6.ProtocolNumber, err)
 			}
 			if got := sc.MaxUnicastProbes; got != test.want {
-				t.Errorf("got MaxUnicastProbes = %q, want = %q", got, test.want)
+				t.Errorf("got MaxUnicastProbes = %d, want = %d", got, test.want)
 			}
 		})
 	}

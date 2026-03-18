@@ -25,12 +25,13 @@ nogo_config = rule(
     },
 )
 
+# TODO(mpratt): It should be possible to migrate uses of these to
+# extracting the target platform directly from the context.
 NogoTargetInfo = provider(
     "information about the Go target",
     fields = {
         "goarch": "the build architecture (GOARCH)",
         "goos": "the build OS target (GOOS)",
-        "goversion": "the Go language version (GOVERSION)",
     },
 )
 
@@ -38,7 +39,6 @@ def _nogo_target_impl(ctx):
     return [NogoTargetInfo(
         goarch = ctx.attr.goarch,
         goos = ctx.attr.goos,
-        goversion = ctx.attr.goversion,
     )]
 
 nogo_target = go_rule(
@@ -51,10 +51,6 @@ nogo_target = go_rule(
         ),
         "goos": attr.string(
             doc = "the Go OS target (propagated to other rules).",
-            mandatory = True,
-        ),
-        "goversion": attr.string(
-            doc = "the Go version (propagated to other rules).",
             mandatory = True,
         ),
     },
@@ -174,10 +170,9 @@ def _nogo_config(ctx, deps):
         "-go=%s" % go_ctx.go.path,
         "-GOOS=%s" % go_ctx.goos,
         "-GOARCH=%s" % go_ctx.goarch,
+        "-GOVERSION=%s" % go_ctx.lang_version,
         "-tags=%s" % (",".join(go_ctx.gotags)),
     ]
-    if nogo_target_info.goversion:
-        args = args + ["-GOVERSION=%s" % nogo_target_info.goversion]
     inputs = []
     raw_findings = []
     for dep in deps:

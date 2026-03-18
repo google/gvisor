@@ -1448,7 +1448,7 @@ func (s *Sandbox) destroy() error {
 	if pid != 0 {
 		log.Debugf("Killing sandbox %q", s.ID)
 		if err := unix.Kill(pid, unix.SIGKILL); err != nil && err != unix.ESRCH {
-			return fmt.Errorf("killing sandbox %q PID %q: %w", s.ID, pid, err)
+			return fmt.Errorf("killing sandbox %q PID %d: %w", s.ID, pid, err)
 		}
 		if err := s.waitForStopped(); err != nil {
 			return fmt.Errorf("waiting sandbox %q stop: %w", s.ID, err)

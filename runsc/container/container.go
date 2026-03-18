@@ -1753,7 +1753,7 @@ func setOOMScoreAdj(pid int, scoreAdj int) error {
 			log.Warningf("Process (%d) exited while setting oom_score_adj", pid)
 			return nil
 		}
-		return fmt.Errorf("setting oom_score_adj to %q: %v", scoreAdj, err)
+		return fmt.Errorf("setting oom_score_adj to %d: %v", scoreAdj, err)
 	}
 	return nil
 }
