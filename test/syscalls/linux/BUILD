@@ -2628,6 +2628,7 @@ cc_binary(
     deps = select_gtest() + [
         "//test/util:multiprocess_util",
         "//test/util:posix_error",
+        "//test/util:save_util",
         "//test/util:test_util",
         "//test/util:thread_util",
         "@com_google_absl//absl/flags:flag",
