@@ -1405,7 +1405,8 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 		Start: parent.upperVD,
 		Path:  fspath.Parse(name),
 	}
-	if child.upperVD.Ok() {
+	switch {
+	case child.upperVD.Ok():
 		cleanupRecreateWhiteouts := func() {
 			if !child.upperVD.Ok() {
 				return
@@ -1444,16 +1445,25 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 			cleanupRecreateWhiteouts()
 			return err
 		}
-	}
-	if err := CreateWhiteout(ctx, vfsObj, fs.creds, &pop); err != nil {
-		vfsObj.AbortDeleteDentry(&child.vfsd)
-		if child.upperVD.Ok() {
-			// Don't attempt to recover from this: the original directory is
-			// already gone, so any dentries representing it are invalid, and
-			// creating a new directory won't undo that.
-			panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to create whiteout after removing upper layer directory during RmdirAt: %v", err))
+		// Determine if the directory exists on any lower layers; if not, we
+		// can skip creating the whiteout.
+		newChildLayer, err := fs.lookupLayerLocked(ctx, parent, name)
+		if err == nil && newChildLayer == lookupLayerNone {
+			break
 		}
-		return err
+		fallthrough
+
+	default:
+		if err := CreateWhiteout(ctx, vfsObj, fs.creds, &pop); err != nil {
+			vfsObj.AbortDeleteDentry(&child.vfsd)
+			if child.upperVD.Ok() {
+				// Don't attempt to recover from this: the original directory is
+				// already gone, so any dentries representing it are invalid, and
+				// creating a new directory won't undo that.
+				panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to create whiteout after removing upper layer directory during RmdirAt: %v", err))
+			}
+			return err
+		}
 	}
 
 	toDecRef = vfsObj.CommitDeleteDentry(ctx, &child.vfsd)
@@ -1655,19 +1665,29 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 		Start: parent.upperVD,
 		Path:  fspath.Parse(name),
 	}
-	if childLayer == lookupLayerUpper {
+	switch {
+	case childLayer == lookupLayerUpper:
 		// Remove the existing file on the upper layer.
 		if err := vfsObj.UnlinkAt(ctx, fs.creds, &pop); err != nil {
 			vfsObj.AbortDeleteDentry(&child.vfsd)
 			return err
 		}
-	}
-	if err := CreateWhiteout(ctx, vfsObj, fs.creds, &pop); err != nil {
-		vfsObj.AbortDeleteDentry(&child.vfsd)
-		if childLayer == lookupLayerUpper {
-			panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to create whiteout after unlinking upper layer file during UnlinkAt: %v", err))
+		// Determine if the file exists on any lower layers; if not, we can
+		// skip creating the whiteout.
+		newChildLayer, err := fs.lookupLayerLocked(ctx, parent, name)
+		if err == nil && newChildLayer == lookupLayerNone {
+			break
 		}
-		return err
+		fallthrough
+
+	default:
+		if err := CreateWhiteout(ctx, vfsObj, fs.creds, &pop); err != nil {
+			vfsObj.AbortDeleteDentry(&child.vfsd)
+			if childLayer == lookupLayerUpper {
+				panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to create whiteout after unlinking upper layer file during UnlinkAt: %v", err))
+			}
+			return err
+		}
 	}
 
 	toDecRef = vfsObj.CommitDeleteDentry(ctx, &child.vfsd)
