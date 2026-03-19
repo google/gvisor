@@ -11,6 +11,7 @@ go_binary(
     srcs = [
         "fds.go",
         "main.go",
+        "main_impl.go",
         "zombies.go",
     ],
     features = ["fully_static_link"],
@@ -20,7 +21,6 @@ go_binary(
     ],
     deps = [
         "//pkg/gvisordetect",
-        "//pkg/rand",
         "//pkg/test/testutil",
         "//pkg/unet",
         "//runsc/flag",

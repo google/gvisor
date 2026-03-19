@@ -309,6 +309,8 @@ type Loader struct {
 	// +checklocks:mu
 	savings Savings
 
+	fsRestore *fsRestore
+
 	LoaderExtra
 }
 
@@ -413,7 +415,8 @@ type Args struct {
 	// HostTHP contains host transparent hugepage settings.
 	HostTHP HostTHP
 
-	SaveFDs []*fd.FD
+	SaveFDs      []*fd.FD
+	FSRestoreFDs []*fd.FD
 
 	ArgsExtra
 
@@ -519,6 +522,20 @@ func New(args Args) (*Loader, error) {
 	log.Infof("CPUs: %d", args.NumCPU)
 	gomaxprocs.SetBase(args.NumCPU)
 
+	// Start filesystem checkpoint restore as soon as possible to maximize
+	// parallel loading.
+	if len(args.FSRestoreFDs) != 0 {
+		fsrOpts, err := makeFSRestoreOptsImpl(&args)
+		if err != nil {
+			return nil, fmt.Errorf("failed to set up filesystem checkpoint restore: %w", err)
+		}
+		fsr, err := startFSRestore(&fsrOpts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to start filesystem checkpoint restore: %w", err)
+		}
+		l.fsRestore = fsr
+	}
+
 	containerName := l.registerContainer(args.Spec, args.ID)
 	l.root = containerInfo{
 		cid:                args.ID,
@@ -573,6 +590,9 @@ func New(args Args) (*Loader, error) {
 	}
 
 	if args.RootfsUpperTarFD >= 0 {
+		if l.fsRestore != nil {
+			return nil, fmt.Errorf("rootfs upper tar file is mutually exclusive with filesystem checkpoint restore")
+		}
 		l.root.rootfsUpperTarFD = fd.New(args.RootfsUpperTarFD)
 	}
 
@@ -1315,7 +1335,7 @@ func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGrou
 	}
 	// We can share l.sharedMounts with containerMounter since l.mu is locked.
 	// Hence, mntr must only be used within this function (while l.mu is locked).
-	mntr := newContainerMounter(info, l.k, l.mountHints, l.sharedMounts, l.productName, l.sandboxID)
+	mntr := l.newContainerMounter(info)
 	if err := setupContainerVFS(ctx, info, mntr, &info.procArgs); err != nil {
 		return nil, nil, err
 	}

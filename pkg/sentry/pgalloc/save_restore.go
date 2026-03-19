@@ -585,6 +585,12 @@ func (apfs *AsyncPagesFileSave) MemoryFilesDone() {
 	apfs.stStatus.Notify(apsSTDone)
 }
 
+// PagesFileOffset returns the offset into the pages file of the next page to
+// be written.
+func (apfs *AsyncPagesFileSave) PagesFileOffset() uint64 {
+	return apfs.saveOff
+}
+
 func (apfs *AsyncPagesFileSave) canEnqueue() bool {
 	return apfs.qavail > 0
 }
@@ -894,9 +900,14 @@ func (apfs *AsyncPagesFileSave) main() {
 
 // LoadOpts provides options to MemoryFile.LoadFrom().
 type LoadOpts struct {
-	// If PagesFile is not nil, then page contents will be read from PagesFile
-	// rather than from r.
-	PagesFile *AsyncPagesFileLoad
+	// If PagesFile is not nil, then page contents will be read from PagesFile,
+	// starting at offset PagesFileOffset, rather than from r. After LoadFrom
+	// returns, PagesFileOffset will be updated to the offset of the first byte
+	// in PagesFile after this MemoryFile's contents.
+	//
+	// Invariant: PagesFileOffset must be page-aligned.
+	PagesFile       *AsyncPagesFileLoad
+	PagesFileOffset uint64
 
 	// Optional timeline for the restore process.
 	// If async page loading is enabled, a forked timeline will be created, so
@@ -1040,10 +1051,10 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 			}
 			amfl.pf.mu.Lock()
 			amfl.unloaded.InsertRange(maFR, aplUnloadedInfo{
-				off: amfl.pf.loadOff,
+				off: opts.PagesFileOffset,
 			})
 			amfl.pf.mu.Unlock()
-			amfl.pf.loadOff += amount
+			opts.PagesFileOffset += amount
 			amfl.pf.lfStatus.Notify(aplLFPending)
 		} else {
 			// Verify header.
@@ -1092,12 +1103,6 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 
 // AsyncPagesFileLoad holds async page loading state for a single pages file.
 type AsyncPagesFileLoad struct {
-	// loadOff is the offset in the pages file from which the next page should
-	// be loaded. loadOff is not synchronized since it is only accessed by
-	// MemoryFile.LoadFrom(), which cannot be called concurrently using the
-	// same AsyncPagesFileLoad.
-	loadOff uint64
-
 	mu apflMutex
 
 	// If errVal is not nil, it is an error that has terminated asynchronous

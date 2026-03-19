@@ -1,10 +1,18 @@
-# Rootfs Snapshot
+# Rootfs Tar Snapshots
 
 [TOC]
 
 gVisor allows users to snapshot changes made to the root filesystem and save
 them to a tar file. These changes in the tar file can then be applied to a new
 sandbox upon creation.
+
+Compared to [filesystem snapshots](fs_snapshot.md):
+
+*   Rootfs tar snapshots include root filesystem changes from a single
+    container, rather than a whole sandbox.
+
+*   Rootfs tar snapshots are in a standard format (tar files) that can be
+    manipulated by other software.
 
 ## Prerequisite
 

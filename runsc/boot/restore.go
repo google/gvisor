@@ -246,7 +246,7 @@ func (r *restorer) restore(l *Loader) error {
 	mfmap := make(map[checkpoint.ResourceID]*pgalloc.MemoryFile)
 	for _, cont := range r.containers {
 		// TODO(b/298078576): Need to process hints here probably
-		mntr := newContainerMounter(cont, l.k, l.mountHints, l.sharedMounts, l.productName, cont.cid)
+		mntr := l.newContainerMounter(cont)
 		if err = mntr.configureRestore(fdmap, mfmap); err != nil {
 			return fmt.Errorf("configuring filesystem restore: %v", err)
 		}

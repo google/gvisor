@@ -34,6 +34,7 @@ import (
 type Saver interface {
 	SaveAsync() error
 	SpecEnviron(containerName string) []string
+	FSSave() error
 }
 
 // CheckpointGeneration stores information about the last checkpoint taken.
@@ -314,6 +315,8 @@ func (mfl *AsyncMFLoader) backgroundGoroutine(pagesMetadata io.ReadCloser, pages
 		PagesFile: apfl,
 		Timeline:  timeline,
 	}
+	// Note that we depend on opts.PagesFileOffset being carried between
+	// LoadFrom calls, so the same opts must be used for all calls.
 
 	timeline.Reached("loading mainMF")
 	log.Infof("Loading metadata for main MemoryFile: %p", mainMF)
