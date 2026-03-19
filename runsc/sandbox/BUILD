@@ -70,6 +70,15 @@ go_library(
 go_test(
     name = "sandbox_test",
     size = "small",
-    srcs = ["memory_test.go"],
+    srcs = [
+        "memory_test.go",
+        "network_test.go",
+    ],
     library = ":sandbox",
+    deps = [
+        "//runsc/boot",
+        "//runsc/config",
+        "@com_github_vishvananda_netlink//:go_default_library",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
 )
