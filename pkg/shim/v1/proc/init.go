@@ -127,7 +127,9 @@ func (p *Init) Create(ctx context.Context, r *CreateConfig) (err error) {
 	// pidFile is the file that will contain the sandbox pid.
 	pidFile := filepath.Join(p.Bundle, "init.pid")
 	opts := &runsccmd.CreateOpts{
-		PidFile: pidFile,
+		PidFile:            pidFile,
+		FSRestoreImagePath: r.FSRestoreImagePath,
+		FSRestoreDirect:    r.FSRestoreDirect,
 	}
 	if socket != nil {
 		opts.ConsoleSocket = socket
