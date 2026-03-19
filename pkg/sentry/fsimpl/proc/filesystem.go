@@ -160,8 +160,8 @@ func (fs *filesystem) newStaticDir(ctx context.Context, creds *auth.Credentials,
 type InternalData struct {
 	ExtraInternalData
 
-	// GVisorMarkerFile indicates whether a file named gvisor/kernel_is_gvisor
-	// should exist in the procfs.
+	// GVisorMarkerFile indicates whether a directory named 'gvisor' should be
+	// created in the procfs.
 	GVisorMarkerFile bool
 
 	// Cgroups-internal data.
