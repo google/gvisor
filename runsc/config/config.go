@@ -397,7 +397,7 @@ type Config struct {
 	// performed during restore.
 	RestoreSpecValidation RestoreSpecValidationPolicy `flag:"restore-spec-validation"`
 
-	// GVisorMarkerFile enables the /proc/gvisor/kernel_is_gvisor marker file.
+	// GVisorMarkerFile enables the presence of the /proc/gvisor/ directory.
 	GVisorMarkerFile bool `flag:"gvisor-marker-file"`
 
 	// SystrapDisableSyscallPatching disables syscall patching in Systrap.

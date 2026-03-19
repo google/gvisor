@@ -31,8 +31,6 @@ type ExtraInternalData struct{}
 
 func (fs *filesystem) newTasksInodeExtra(ctx context.Context, root *auth.Credentials, internalData *InternalData, _ *kernel.Kernel, nodes map[string]kernfs.Inode) {
 	if internalData.GVisorMarkerFile {
-		nodes["gvisor"] = fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
-			"kernel_is_gvisor": newStaticFile("gvisor\n"),
-		})
+		nodes["gvisor"] = fs.newStaticDir(ctx, root, map[string]kernfs.Inode{})
 	}
 }

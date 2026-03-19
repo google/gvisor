@@ -27,7 +27,7 @@ import (
 // This is only accurate if the gVisor kernel is configured to expose
 // its marker file.
 func RunningInGVisor() (bool, error) {
-	const markerFilePath = "/proc/gvisor/kernel_is_gvisor"
+	const markerFilePath = "/proc/gvisor"
 
 	_, err := os.Stat(markerFilePath)
 	if err == nil {
