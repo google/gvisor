@@ -94,6 +94,17 @@ message ContextData {
   string process_name = 9;
 }
 
+// BatchedMessage contains multiple messages sent together to reduce write syscalls.
+message BatchedMessage {
+  repeated BatchEntry entries = 1;
+}
+
+// BatchEntry represents a single message within a batch.
+message BatchEntry {
+  MessageType message_type = 1;
+  bytes payload = 2;
+}
+
 // MessageType describes the payload of a message sent to the remote process.
 // LINT.IfChange
 enum MessageType {
@@ -132,5 +143,6 @@ enum MessageType {
   MESSAGE_SYSCALL_INOTIFY_RM_WATCH = 32;
   MESSAGE_SYSCALL_SOCKETPAIR = 33;
   MESSAGE_SYSCALL_WRITE = 34;
+  MESSAGE_BATCH = 35;
 }
 // LINT.ThenChange(../../../../examples/seccheck/server.cc)
