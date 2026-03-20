@@ -1022,7 +1022,7 @@ func (i *ioData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	io := usage.IO{}
 	io.Accumulate(i.IOUsage())
 
-	fmt.Fprintf(buf, "char: %d\n", io.CharsRead.RacyLoad())
+	fmt.Fprintf(buf, "rchar: %d\n", io.CharsRead.RacyLoad())
 	fmt.Fprintf(buf, "wchar: %d\n", io.CharsWritten.RacyLoad())
 	fmt.Fprintf(buf, "syscr: %d\n", io.ReadSyscalls.RacyLoad())
 	fmt.Fprintf(buf, "syscw: %d\n", io.WriteSyscalls.RacyLoad())
