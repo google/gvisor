@@ -60,6 +60,16 @@ We distinguish the following type of issues, listed from most to least severe:
     -   `Escape`: **Container escapes**. Issues that allow arbitrary code to run
         on the host machine.
         -   gVisor's purpose is to prevent these.
+        -   Note that gVisor is a **two-layer sandbox**, due to its dual-layer
+            architecture: gVisor Sentry, then Linux security measures including
+            seccomp/`pivot_root`/namespaces/etc. See
+            [gVisor Security Model](g3doc/architecture_guide/intro_to_gvisor.md)
+            for more information. As such, escaping the sandbox usually requires
+            chaining multiple exploits in order to simultaneously breach through
+            these layers. A gVisor Sentry exploit is a notable bug, but by
+            itself insufficient to escape out to the host by design. Escapes
+            must demonstrate impact on host beyond the sandbox boundary as a
+            whole, i.e. beyond both layers of the gVisor sandbox.
     -   `HostLeak`: **Host data access**. Issues that allow reading arbitrary
         files or file metadata from the host other than those *intended* to be
         visible to the sandbox.
@@ -68,6 +78,10 @@ We distinguish the following type of issues, listed from most to least severe:
         protect against.
         -   This includes writes to arbitrary unexposed host directories, or
             outbound network connections when sandbox networking is disabled.
+        -   This does **not** include writes to sandbox-specific host files,
+            such as temporary files on the host that are used by the sandbox
+            alone, or any host directory explicitly mounted into the sandbox per
+            the sandbox configuration.
     -   `Lateral`: **Sandbox-to-sandbox lateral movement**. Issues that allow an
         attacker to execute arbitrary code execution in a sandbox on the same
         host other than the one they started with.
@@ -152,7 +166,7 @@ non-gVisor sandbox):
 `Integrity`    | ✔️       | ❌             | ❌             | ❌              | ❌             | ❌              | ❌
 `SelfDoS`      | *N/A*    | ❌             | ❌             | ❌              | ❌             | ❌              | ❌
 `InternalRead` | *N/A*    | ❌             | *N/A*         | ❌              | ❌             | ❌              | ❌
-`InternalEsc`  | *N/A*    | ✔️            | *N/A*         | ❌              | ❌             | ❌              | ❌
+`InternalEsc`  | *N/A*    | ❌             | *N/A*         | ❌              | ❌             | ❌              | ❌
 `PeerDoS`      | ✔️       | ✔️            | ✔️            | ✔️             | ❌             | ❌              | ❌
 `HostDoS`      | ✔️       | ✔️            | ✔️            | ✔️             | ❌             | ❌              | ❌
 `Lateral`      | *N/A*    | ✔️            | ✔️            | ❌              | ❌             | ❌              | ❌
@@ -207,10 +221,10 @@ non-gVisor sandbox):
     different sandbox on the same host to reliably crash.
     -   **Classification**: `SandboxRoot / PeerDoS`.
     -   **CVE**: ✔️ Yes.
--   An attacker running as an unprivileged user in a sandbox is able to read or
-    write to a file that only root-in-sandbox should have been able to access.
+-   An attacker running as an unprivileged user in a sandbox is able to write to
+    a file that only root-in-sandbox should have been able to access.
     -   **Classification**: `SandboxUser / InternalEsc`.
-    -   **CVE**: ✔️ Yes.
+    -   **CVE**: ❌ No. The attack is still confined to the sandbox.
 -   An attacker controlling the contents of the root filesystem image is able to
     call a SUID binary within the root filesystem image and escalate from
     unprivileged user to root-in-sandbox.
