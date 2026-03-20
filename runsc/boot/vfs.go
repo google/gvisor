@@ -860,7 +860,7 @@ func (c *containerMounter) getPathMode(ctx context.Context, creds *auth.Credenti
 }
 
 func (c *containerMounter) mountSubmount(ctx context.Context, spec *specs.Spec, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials, submount *mountInfo) (*vfs.Mount, error) {
-	fsName, opts, err := getMountNameAndOptions(spec, conf, submount, c.productName, c.containerName)
+	fsName, opts, err := getMountNameAndOptions(spec, conf, submount, c.productName, c.containerName, c.rdmaDevices)
 	if err != nil {
 		return nil, fmt.Errorf("mountOptions failed: %w", err)
 	}
@@ -923,7 +923,7 @@ func (c *containerMounter) mountSubmount(ctx context.Context, spec *specs.Spec, 
 
 // getMountNameAndOptions retrieves the fsName, opts, and useOverlay values
 // used for mounts.
-func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo, productName, containerName string) (string, *vfs.MountOptions, error) {
+func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo, productName, containerName string, rdmaDevices []sys.RDMADeviceData) (string, *vfs.MountOptions, error) {
 	fsName := m.mount.Type
 	var (
 		mopts        = m.mount.Options
@@ -946,7 +946,7 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 		sysData := &sys.InternalData{
 			EnableTPUProxyPaths:  specutils.TPUProxyIsEnabled(spec, conf),
 			EnableRDMAProxyPaths: specutils.RDMAProxyIsEnabled(conf),
-			RDMADevices:          c.rdmaDevices,
+			RDMADevices:          rdmaDevices,
 		}
 		if len(productName) > 0 {
 			sysData.ProductName = productName
@@ -1280,7 +1280,7 @@ func (c *containerMounter) mountSharedMaster(ctx context.Context, spec *specs.Sp
 	// Mount the master using the options from the hint (mount annotations).
 	origOpts := mntInfo.mount.Options
 	mntInfo.mount.Options = mntInfo.hint.Mount.Options
-	fsName, opts, err := getMountNameAndOptions(spec, conf, mntInfo, c.productName, c.containerName)
+	fsName, opts, err := getMountNameAndOptions(spec, conf, mntInfo, c.productName, c.containerName, c.rdmaDevices)
 	mntInfo.mount.Options = origOpts
 	if err != nil {
 		return nil, err
