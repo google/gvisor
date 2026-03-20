@@ -377,9 +377,34 @@ There are three main platforms for intercepting syscalls:
     ioctl(8, _IOC(_IOC_READ|_IOC_WRITE, 0x46, 0x2b, 0x30), 0x7ffcd81fb060) = 0
     mmap(NULL, 155648, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x7f15ec067000
     
-NEXT TODO: Safety-check the uAPI, ioctl-based system calls for rdma-core.
-2. Add link endpoints that speak InfiniBand verbs.
-3. Update [NVProxy](https://github.com/google/gvisor/tree/90faaeb34f23eded12ec65c68af395ac4273c331/pkg/sentry/devices/nvproxy) to isolate RDMA NICs in `NVIDIA_VISIBLE_DEVICES` ****given OCI config. We may not need this?
+NEXT TODO: Expose sysfs for InfiniBand device discovery, then implement uverbs device proxy.
+
+### Host Device Layout (9x mlx5 HCAs on 2x8 H100 node)
+
+**Character devices** (`/dev/infiniband/`):
+- `uverbs0`–`uverbs8` — major 231, minors 192–200 (mode 0666)
+- `umad0`–`umad8` — major 231, minors 0–8
+- `issm1`–`issm8` — major 231, minors 65–72
+- `rdma_cm` — major 10, minor 121 (misc device)
+
+**Sysfs for device discovery** (required for libibverbs):
+- `/sys/class/infiniband_verbs/uverbsN/` — `ibdev` (e.g. "mlx5_0"), `abi_version` ("1"), `dev` ("231:192"), `device` symlink
+- `/sys/class/infiniband/mlx5_N/` — `node_type` ("1: CA"), `node_guid`, `sys_image_guid`, `fw_ver`, `hca_type`, `hw_rev`, `board_id`, `node_desc`
+- `/sys/class/infiniband/mlx5_N/ports/1/` — `state`, `phys_state`, `link_layer`, `rate`, `lid`, `sm_lid`, `sm_sl`, `cap_mask`, `gids/`, `pkeys/`, `gid_attrs/`, `counters/`, `hw_counters/`
+
+**Discovery flow** (from strace of `ibv_devinfo`):
+1. `socket(AF_NETLINK, SOCK_RAW, NETLINK_RDMA)` → fails with `EPROTONOSUPPORT` (expected, gVisor doesn't support this)
+2. Falls back to `openat("/sys/class/infiniband_verbs")` → currently `ENOENT` ← **this is what we need to fix first**
+3. Reads `ibdev`, `abi_version` for each uverbsN
+4. Opens `/dev/infiniband/uverbsN` and issues ioctls
+
+### Implementation Steps
+
+1. **Virtual sysfs provider for infiniband** — expose `/sys/class/infiniband_verbs/` and `/sys/class/infiniband/` trees in the sentry (similar to nvproxy's sysfs for `/sys/bus/pci/devices/`)
+2. **uverbs device proxy** — virtual `/dev/infiniband/uverbs0` chardev that intercepts and safety-checks ioctls, using the same pin-translate-forward pattern as TPU proxy for memory registration
+3. **Seccomp allowlist** — permit uverbs ioctl commands through the BPF filter
+4. Add link endpoints that speak InfiniBand verbs
+5. Update [NVProxy](https://github.com/google/gvisor/tree/90faaeb34f23eded12ec65c68af395ac4273c331/pkg/sentry/devices/nvproxy) to isolate RDMA NICs in `NVIDIA_VISIBLE_DEVICES` given OCI config. We may not need this?
 
 ### Big Questions
 - How do we quickly test RDMA support? What will this look like in the upstream repo? How can we make local development align closely with upstream testing so we don’t have to rewrite the testing suite from scratch?
@@ -490,3 +515,24 @@ Syscall Interception
     │  func (fd *uverbsFD) Translate(...) — map to host fd backing                                                 
     ↓                                                                                                              
   task.MemoryManager().MMap(opts)  — actually installs the mapping         
+
+## Sysfs entries that need to be exposed
+modal@wo-56zx66rzbveo1nv7y5cn9fx55-prod-b694d5dc5440:~/gvisor$ ls /sys/class/infiniband_verbs/
+  ls -la /sys/class/infiniband_verbs/uverbs0/
+  cat /sys/class/infiniband_verbs/uverbs0/ibdev
+  cat /sys/class/infiniband_verbs/uverbs0/abi_version
+  ls /sys/class/infiniband/
+abi_version  uverbs0  uverbs1  uverbs2  uverbs3  uverbs4  uverbs5  uverbs6  uverbs7  uverbs8
+total 0
+drwxr-xr-x 3 root root    0 Mar 17 21:04 .
+drwxr-xr-x 3 root root    0 Mar 17 21:04 ..
+-r--r--r-- 1 root root 4096 Mar 20 17:27 abi_version
+-r--r--r-- 1 root root 4096 Mar 20 17:27 dev
+lrwxrwxrwx 1 root root    0 Mar 20 17:27 device -> ../../../0000:00:07.0
+-r--r--r-- 1 root root 4096 Mar 20 17:27 ibdev
+drwxr-xr-x 2 root root    0 Mar 20 17:27 power
+lrwxrwxrwx 1 root root    0 Mar 20 17:27 subsystem -> ../../../../../class/infiniband_verbs
+-rw-r--r-- 1 root root 4096 Mar 17 21:04 uevent
+mlx5_0
+1
+mlx5_0  mlx5_1  mlx5_2  mlx5_3  mlx5_4  mlx5_5  mlx5_6  mlx5_7  mlx5_8

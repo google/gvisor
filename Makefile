@@ -185,6 +185,8 @@ dev: $(RUNTIME_BIN) ## Installs a set of local runtimes. Requires sudo.
 	@$(call configure_noreload,$(RUNTIME)-cgroup-d,--net-raw --debug --strace --log-packets --cgroupfs)
 	@$(call configure_noreload,$(RUNTIME)-systemd-d,--net-raw --debug --strace --log-packets --systemd-cgroup)
 	@$(call configure_noreload,$(RUNTIME)-gpu,--nvproxy)
+	@$(call configure_noreload,$(RUNTIME)-rdma,--rdmaproxy --net-raw)
+	@$(call configure_noreload,$(RUNTIME)-rdma-d,--rdmaproxy --net-raw --debug --strace --log-packets)
 	@$(call reload_docker)
 .PHONY: dev
 

@@ -663,6 +663,11 @@ func TPUProxyIsEnabled(spec *specs.Spec, conf *config.Config) bool {
 	return AnnotationToBool(spec, AnnotationTPU)
 }
 
+// RDMAProxyIsEnabled checks if rdmaproxy is enabled in the config.
+func RDMAProxyIsEnabled(conf *config.Config) bool {
+	return conf.RDMAProxy
+}
+
 // VFIOFunctionalityRequested returns true if the container should have access
 // to VFIO functionality.
 func VFIOFunctionalityRequested(dev *specs.LinuxDevice) bool {
