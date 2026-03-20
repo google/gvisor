@@ -45,6 +45,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/fdimport"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sys"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/user"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
@@ -248,6 +249,9 @@ type Loader struct {
 	// /sys/devices/virtual/dmi/id/product_name.
 	productName string
 
+	// rdmaDevices contains pre-collected sysfs data for RDMA devices.
+	rdmaDevices []sys.RDMADeviceData
+
 	hostTHP HostTHP
 
 	// mu guards the fields below.
@@ -420,6 +424,9 @@ type Args struct {
 	// RootfsUpperTarFD is the file descriptor to the tar file containing the rootfs
 	// upper layer changes.
 	RootfsUpperTarFD int
+
+	// RDMADevices contains pre-collected sysfs data for RDMA devices.
+	RDMADevices []sys.RDMADeviceData
 }
 
 // HostTHP holds host transparent hugepage settings.
@@ -505,6 +512,7 @@ func New(args Args) (*Loader, error) {
 		sharedMounts:   make(map[string]*vfs.Mount),
 		stopProfiling:  stopProfiling,
 		productName:    args.ProductName,
+		rdmaDevices:    args.RDMADevices,
 		hostTHP:        args.HostTHP,
 		containerIDs:   make(map[string]string),
 		containerSpecs: make(map[string]*specs.Spec),
@@ -1315,7 +1323,7 @@ func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGrou
 	}
 	// We can share l.sharedMounts with containerMounter since l.mu is locked.
 	// Hence, mntr must only be used within this function (while l.mu is locked).
-	mntr := newContainerMounter(info, l.k, l.mountHints, l.sharedMounts, l.productName, l.sandboxID)
+	mntr := newContainerMounter(info, l.k, l.mountHints, l.sharedMounts, l.productName, l.rdmaDevices, l.sandboxID)
 	if err := setupContainerVFS(ctx, info, mntr, &info.procArgs); err != nil {
 		return nil, nil, err
 	}

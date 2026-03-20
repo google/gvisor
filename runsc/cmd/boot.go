@@ -44,6 +44,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/nftables"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/cmd/util"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sys"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/profile"
@@ -553,6 +554,13 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 
 	linux.SetAFSSyscallPanic(conf.TestOnlyAFSSyscallPanic)
 
+	// Collect RDMA device data before the sentry starts. The bind mounts
+	// from rdmaProxyUpdateChroot make these paths accessible.
+	var rdmaDevices []sys.RDMADeviceData
+	if conf.RDMAProxy {
+		rdmaDevices = sys.CollectRDMADeviceData()
+	}
+
 	// Create the loader.
 	bootArgs := boot.Args{
 		ID:                  f.Arg(0),
@@ -584,6 +592,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		HostTHP:          b.hostTHP,
 		SaveFDs:          b.saveFDs.GetFDs(),
 		RootfsUpperTarFD: b.rootfsUpperTarFD,
+		RDMADevices:      rdmaDevices,
 	}
 	b.setBootArgsExtra(&bootArgs)
 	l, err := boot.New(bootArgs)

@@ -396,6 +396,9 @@ type containerMounter struct {
 	// /sys/devices/virtual/dmi/id/product_name.
 	productName string
 
+	// rdmaDevices contains pre-collected sysfs data for RDMA devices.
+	rdmaDevices []sys.RDMADeviceData
+
 	// containerID is the ID for the container.
 	containerID string
 
@@ -413,7 +416,7 @@ type containerMounter struct {
 	rootfsUpperTarFD *fd.FD
 }
 
-func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *PodMountHints, sharedMounts map[string]*vfs.Mount, productName string, sandboxID string) *containerMounter {
+func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *PodMountHints, sharedMounts map[string]*vfs.Mount, productName string, rdmaDevices []sys.RDMADeviceData, sandboxID string) *containerMounter {
 	return &containerMounter{
 		root:              info.spec.Root,
 		mounts:            compileMounts(info.spec, info.conf, info.procArgs.ContainerID),
@@ -425,6 +428,7 @@ func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *PodMountH
 		hints:             hints,
 		sharedMounts:      sharedMounts,
 		productName:       productName,
+		rdmaDevices:       rdmaDevices,
 		containerID:       info.cid,
 		sandboxID:         sandboxID,
 		containerName:     info.containerName,
@@ -942,6 +946,7 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 		sysData := &sys.InternalData{
 			EnableTPUProxyPaths:  specutils.TPUProxyIsEnabled(spec, conf),
 			EnableRDMAProxyPaths: specutils.RDMAProxyIsEnabled(conf),
+			RDMADevices:          c.rdmaDevices,
 		}
 		if len(productName) > 0 {
 			sysData.ProductName = productName

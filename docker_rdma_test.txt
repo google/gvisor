@@ -1,0 +1,2 @@
+sudo docker run --runtime=development-rdma-d --rm -it --device=/dev/infiniband/uverbs0 --network=host -v /usr/bin:/host/bin -v /usr/lib:/host/lib -v /etc/libibverbs.d:/etc/libibverbs.d -e LD_LIBRARY_PATH=/host/lib/x86_64-linux-gnu -e PATH=/host/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ubuntu:22.04 bash
+tail -20 /tmp/development/logs/$(ls -t /tmp/development/logs/ | grep boot | head -1)
