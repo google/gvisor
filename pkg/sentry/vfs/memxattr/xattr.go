@@ -135,3 +135,26 @@ func (x *SimpleExtendedAttributes) RemoveXattr(creds *auth.Credentials, mode lin
 	delete(x.xattrs, name)
 	return nil
 }
+
+// RawXattrs returns a copy of the underlying xattr map for serialization.
+// No permission checks are performed.
+func (x *SimpleExtendedAttributes) RawXattrs() map[string]string {
+	x.mu.RLock()
+	defer x.mu.RUnlock()
+	if x.xattrs == nil {
+		return nil
+	}
+	result := make(map[string]string, len(x.xattrs))
+	for k, v := range x.xattrs {
+		result[k] = v
+	}
+	return result
+}
+
+// SetRawXattrs sets the underlying xattr map from deserialized data.
+// No permission checks are performed.
+func (x *SimpleExtendedAttributes) SetRawXattrs(xattrs map[string]string) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	x.xattrs = xattrs
+}
