@@ -78,11 +78,8 @@ func (fs *filesystem) newInfinibandVerbsDir(ctx context.Context, creds *auth.Cre
 	hostPath := path.Join(sysfsPrefix, hostInfinibandVerbsPath)
 	dents, err := hostDirEntries(hostPath)
 	if err != nil {
-		if err == unix.ENOENT {
-			log.Debugf("rdma sysfs: %s not found, skipping", hostPath)
-			return nil, nil
-		}
-		return nil, fmt.Errorf("rdma sysfs: reading %s: %w", hostPath, err)
+		log.Debugf("rdma sysfs: %s not accessible: %v, skipping", hostPath, err)
+		return nil, nil
 	}
 
 	result := map[string]kernfs.Inode{}
@@ -122,11 +119,8 @@ func (fs *filesystem) newInfinibandDir(ctx context.Context, creds *auth.Credenti
 	hostPath := path.Join(sysfsPrefix, hostInfinibandPath)
 	dents, err := hostDirEntries(hostPath)
 	if err != nil {
-		if err == unix.ENOENT {
-			log.Debugf("rdma sysfs: %s not found, skipping", hostPath)
-			return nil, nil
-		}
-		return nil, fmt.Errorf("rdma sysfs: reading %s: %w", hostPath, err)
+		log.Debugf("rdma sysfs: %s not accessible: %v, skipping", hostPath, err)
+		return nil, nil
 	}
 
 	result := map[string]kernfs.Inode{}
