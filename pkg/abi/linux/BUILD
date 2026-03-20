@@ -60,6 +60,7 @@ go_library(
         "netlink_netfilter.go",
         "netlink_route.go",
         "nf_tables.go",
+        "pidfd.go",
         "poll.go",
         "prctl.go",
         "ptrace.go",
