@@ -16,6 +16,7 @@ package nvproxy
 
 import (
 	"fmt"
+	"sync"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
@@ -28,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -81,6 +83,23 @@ type uvmFD struct {
 	memmapFile    uvmFDMemmapFile
 
 	queue waiter.Queue
+
+	// mu protects fields below.
+	mu sync.Mutex
+	// multiProcessSharing is true if the FD was initialized with
+	// UVM_INIT_FLAGS_MULTI_PROCESS_SHARING_MODE.
+	multiProcessSharing bool
+	ownerMM             *mm.MemoryManager
+}
+
+// checkOwnerMM returns an error if the calling task's memory manager does not
+// match the FD's ownerMM and multiProcessSharing is not enabled.
+// fd.mu must be held.
+func (fd *uvmFD) checkOwnerMM(t *kernel.Task) error {
+	if getMM(t) != fd.ownerMM && !fd.multiProcessSharing {
+		return linuxerr.EOPNOTSUPP
+	}
+	return nil
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
@@ -162,6 +181,11 @@ type uvmIoctlState struct {
 }
 
 func uvmIoctlNoParams(ui *uvmIoctlState) (uintptr, error) {
+	ui.fd.mu.Lock()
+	defer ui.fd.mu.Unlock()
+	if err := ui.fd.checkOwnerMM(ui.t); err != nil {
+		return 0, err
+	}
 	n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(ui.fd.hostFD), uintptr(ui.cmd), 0 /* params */)
 	if errno != 0 {
 		return n, errno
@@ -173,6 +197,11 @@ func uvmIoctlSimple[Params any, PtrParams hasStatusPtr[Params]](ui *uvmIoctlStat
 	var ioctlParamsValue Params
 	ioctlParams := PtrParams(&ioctlParamsValue)
 	if _, err := ioctlParams.CopyIn(ui.t, ui.ioctlParamsAddr); err != nil {
+		return 0, err
+	}
+	ui.fd.mu.Lock()
+	defer ui.fd.mu.Unlock()
+	if err := ui.fd.checkOwnerMM(ui.t); err != nil {
 		return 0, err
 	}
 	n, err := uvmIoctlInvoke(ui, ioctlParams)
@@ -194,12 +223,23 @@ func uvmInitialize(ui *uvmIoctlState) (uintptr, error) {
 	// This is necessary to share the host UVM FD between sentry and
 	// application processes.
 	ioctlParams.Flags = ioctlParams.Flags | nvgpu.UVM_INIT_FLAGS_MULTI_PROCESS_SHARING_MODE
+	// Lock the fd before calling UVM_INITIALIZE to prevent another process
+	// using the initialized fd.
+	ui.fd.mu.Lock()
+	defer ui.fd.mu.Unlock()
+
 	n, err := uvmIoctlInvoke(ui, &ioctlParams)
 	// Only expose the MULTI_PROCESS_SHARING_MODE flag if it was already present.
 	ioctlParams.Flags &^= ^origFlags & nvgpu.UVM_INIT_FLAGS_MULTI_PROCESS_SHARING_MODE
 	if err != nil {
 		return n, err
 	}
+
+	if ioctlParams.GetStatus() == nvgpu.NV_OK {
+		ui.fd.ownerMM = getMM(ui.t)
+		ui.fd.multiProcessSharing = (origFlags & nvgpu.UVM_INIT_FLAGS_MULTI_PROCESS_SHARING_MODE) != 0
+	}
+
 	if _, err := ioctlParams.CopyOut(ui.t, ui.ioctlParamsAddr); err != nil {
 		return n, err
 	}
@@ -221,6 +261,11 @@ func uvmMMInitialize(ui *uvmIoctlState) (uintptr, error) {
 	if !ok {
 		return 0, uvmFailWithStatus(ui, &ioctlParams, nvgpu.NV_ERR_INVALID_ARGUMENT)
 	}
+	ui.fd.mu.Lock()
+	defer ui.fd.mu.Unlock()
+	if err := ui.fd.checkOwnerMM(ui.t); err != nil {
+		return 0, uvmFailWithStatus(ui, &ioctlParams, nvgpu.NV_ERR_INVALID_STATE)
+	}
 
 	origFD := ioctlParams.UvmFD
 	ioctlParams.UvmFD = uvmFile.hostFD
@@ -239,6 +284,12 @@ func uvmIoctlHasFrontendFD[Params any, PtrParams hasFrontendFDAndStatusPtr[Param
 	var ioctlParamsValue Params
 	ioctlParams := PtrParams(&ioctlParamsValue)
 	if _, err := ioctlParams.CopyIn(ui.t, ui.ioctlParamsAddr); err != nil {
+		return 0, err
+	}
+
+	ui.fd.mu.Lock()
+	defer ui.fd.mu.Unlock()
+	if err := ui.fd.checkOwnerMM(ui.t); err != nil {
 		return 0, err
 	}
 
@@ -278,4 +329,17 @@ func uvmIoctlHasFrontendFD[Params any, PtrParams hasFrontendFDAndStatusPtr[Param
 
 func uvmFailWithStatus[Params any, PtrParams hasStatusPtr[Params]](ui *uvmIoctlState, ioctlParams PtrParams, status uint32) error {
 	return failWithStatus(ui.ctx, ui.t, ui.ioctlParamsAddr, ioctlParams, status)
+}
+
+// getMM gets the kernel task's MemoryManager. No additional reference is taken on
+// mm here. This is safe because MemoryManager.destroy is required to leave the
+// MemoryManager in a state where it's still usable as a DynamicBytesSource.
+func getMM(task *kernel.Task) *mm.MemoryManager {
+	var tmm *mm.MemoryManager
+	task.WithMuLocked(func(t *kernel.Task) {
+		if mm := t.MemoryManager(); mm != nil {
+			tmm = mm
+		}
+	})
+	return tmm
 }
