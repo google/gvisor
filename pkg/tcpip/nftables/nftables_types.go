@@ -239,13 +239,15 @@ func StackHook(family stack.AddressFamily, hook uint32) (stack.NFHook, *syserr.A
 // NFTables represents the nftables state for all address families.
 // Note: unlike iptables, nftables doesn't start with any initialized tables.
 type NFTables struct {
-	filters            [stack.NumAFs]*addressFamilyFilter // Filters for each address family.
-	clock              tcpip.Clock                        // Clock for timing evaluations.
-	startTime          time.Time                          // Time NFTables object was created.
-	rng                rand.RNG                           // Random number generator.
-	tableHandleCounter atomicbitops.Uint64                // Table handle counter.
-	Mu                 nfTablesRWMutex                    // Mutex for tableHandles.
-	genid              uint32                             // Generation ID for nftables.
+	filters            [stack.NumAFs]*addressFamilyFilter  // Filters for each address family.
+	ipv4InetHfCache    [stack.NFNumHooks]hookFunctionStack // List of base chains for each hook in the IPv4-inet family.
+	ipv6InetHfCache    [stack.NFNumHooks]hookFunctionStack // List of base chains for each hook in the IPv6-inet family.
+	clock              tcpip.Clock                         // Clock for timing evaluations.
+	startTime          time.Time                           // Time NFTables object was created.
+	rng                rand.RNG                            // Random number generator.
+	tableHandleCounter atomicbitops.Uint64                 // Table handle counter.
+	Mu                 nfTablesRWMutex                     // Mutex for tableHandles.
+	genid              uint32                              // Generation ID for nftables.
 }
 
 // Ensures NFTables implements the NFTablesInterface.
@@ -1250,7 +1252,9 @@ func (nf *NFTables) DeepCopy() *NFTables {
 				hook: hfStack.hook,
 			}
 			for _, chain := range hfStack.baseChains {
-				hfStackCopy.baseChains = append(hfStackCopy.baseChains, nftCopy.filters[i].tables[chain.table.name].chains[chain.name])
+				chainCopy := nftCopy.filters[i].tables[chain.table.name].chains[chain.name]
+				hfStackCopy.baseChains = append(hfStackCopy.baseChains, chainCopy)
+				nftCopy.addChainToIPInetHFCache(hook, chainCopy)
 			}
 			nftCopy.filters[i].hfStacks[hook] = hfStackCopy
 		}
@@ -1262,5 +1266,7 @@ func (nf *NFTables) DeepCopy() *NFTables {
 // with the tables of the passed in NFTables struct.
 func (nf *NFTables) ReplaceNFTables(nftCopy *NFTables) {
 	nf.filters = nftCopy.filters
+	nf.ipv4InetHfCache = nftCopy.ipv4InetHfCache
+	nf.ipv6InetHfCache = nftCopy.ipv6InetHfCache
 	nf.genid++
 }

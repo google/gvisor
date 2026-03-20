@@ -401,7 +401,7 @@ func (p *Protocol) newChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 		return syserr.NewAnnotatedError(syserr.ErrNotSupported, "Nftables: Chain flags attribute is not supported for existing chains")
 	}
 
-	return p.addChain(attrs, tab, family, policy, chainFlags)
+	return p.addChain(nft, attrs, tab, family, policy, chainFlags)
 }
 
 // getChain returns a chain if it exists.
@@ -432,7 +432,7 @@ func getChain(tab *nftables.Table, attrs map[uint16]nlmsg.BytesView) (*nftables.
 var chainCounter atomicbitops.Uint64
 
 // addChain adds a chain to a table.
-func (p *Protocol) addChain(attrs map[uint16]nlmsg.BytesView, tab *nftables.Table, family stack.AddressFamily, policy uint8, chainFlags uint32) *syserr.AnnotatedError {
+func (p *Protocol) addChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesView, tab *nftables.Table, family stack.AddressFamily, policy uint8, chainFlags uint32) *syserr.AnnotatedError {
 	var bcInfo *nftables.BaseChainInfo
 	var err *syserr.AnnotatedError
 	if hookDataBytes, ok := attrs[linux.NFTA_CHAIN_HOOK]; ok {
@@ -468,26 +468,13 @@ func (p *Protocol) addChain(attrs map[uint16]nlmsg.BytesView, tab *nftables.Tabl
 		name = fmt.Sprintf("__chain%d", chainCounter.Add(1))
 	}
 
-	// Add the chain to the table, appending, by priority, to the stack of base
-	// chains for the hook.
-	chain, err := tab.AddChain(name, bcInfo, "", true)
-	if err != nil {
-		return err
+	var udata []byte
+	if udataAttr, ok := attrs[linux.NFTA_CHAIN_USERDATA]; ok {
+		udata = udataAttr
 	}
 
-	chain.SetFlags(uint8(chainFlags))
-
-	if udata, ok := attrs[linux.NFTA_CHAIN_USERDATA]; ok {
-		if err := chain.SetUserData(udata); err != nil {
-			return err
-		}
-	}
-
-	if chain.IsBaseChain() {
-		chain.GetBaseChainInfo().PolicyDrop = policy == linux.NF_DROP
-	}
-
-	return nil
+	_, err = nft.AddChainToTable(tab, name, bcInfo, "" /* comment */, true /* errorOnDuplicate */, chainFlags, udata, policy)
+	return err
 }
 
 // chainParseHook parses the hook attributes and returns a complete
@@ -750,9 +737,9 @@ func (p *Protocol) deleteChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.By
 
 	// We don't worry about whether a delete operation succeeded or not, rather
 	// only that the chain is gone.
-	deleted := tab.DeleteChain(chain.GetName())
+	deleted, err := nft.DeleteChainFromTable(tab, chain.GetName())
 	if !deleted {
-		log.Debugf("Failed to delete chain %s", chain.GetName())
+		log.Debugf("Failed to delete chain %s, err: %v", chain.GetName(), err)
 	}
 	return nil
 }
