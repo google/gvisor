@@ -2854,7 +2854,7 @@ func TestEvaluateMetaLoad(t *testing.T) {
 			pkt:   pkt,
 			op1:   mustCreateMetaLoad(t, linux.NFT_META_NFPROTO, linux.NFT_REG_4),
 			op2: mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ,
-				[]byte{AfProtocol(stack.Inet), 0, 0, 0}),
+				[]byte{linux.NFPROTO_IPV6, 0, 0, 0}),
 		},
 		{ // cmd: add rule ip6 tab ch meta l4proto 0x6
 			tname: "meta load l4proto test",
@@ -4229,8 +4229,23 @@ func TestDumpOperations(t *testing.T) {
 			op:   mustCreateMetaLoad(t, linux.NFT_META_LEN, linux.NFT_REG_1),
 			validate: func(dump []byte) error {
 				// TODO: b/452648112 - Implement validation for meta load operation when dump is implemented.
-				if dump != nil {
-					return fmt.Errorf("unexpected dump: %v, want nil", dump)
+				attrs, ok := NfParse(dump)
+				if !ok {
+					return fmt.Errorf("failed to parse dumped attributes")
+				}
+				key, ok := AttrNetToHost[uint32](linux.NFTA_META_KEY, attrs)
+				if !ok {
+					return fmt.Errorf("failed to get key value")
+				}
+				if key != linux.NFT_META_LEN {
+					return fmt.Errorf("unexpected key value: %d, want %d", key, linux.NFT_META_LEN)
+				}
+				reg, ok := AttrNetToHost[uint32](linux.NFTA_META_DREG, attrs)
+				if !ok {
+					return fmt.Errorf("failed to get dreg value")
+				}
+				if reg != linux.NFT_REG_1 {
+					return fmt.Errorf("unexpected dreg value: %d, want %d", reg, linux.NFT_REG_1)
 				}
 				return nil
 			},
@@ -4239,9 +4254,23 @@ func TestDumpOperations(t *testing.T) {
 			name: "metaSet",
 			op:   mustCreateMetaSet(t, linux.NFT_META_PKTTYPE, linux.NFT_REG_1),
 			validate: func(dump []byte) error {
-				// TODO: b/452648112 - Implement validation for meta set operation when dump is implemented.
-				if dump != nil {
-					return fmt.Errorf("unexpected dump: %v, want nil", dump)
+				attrs, ok := NfParse(dump)
+				if !ok {
+					return fmt.Errorf("failed to parse dumped attributes")
+				}
+				key, ok := AttrNetToHost[uint32](linux.NFTA_META_KEY, attrs)
+				if !ok {
+					return fmt.Errorf("failed to get key value")
+				}
+				if key != linux.NFT_META_PKTTYPE {
+					return fmt.Errorf("unexpected key value: %d, want %d", key, linux.NFT_META_PKTTYPE)
+				}
+				reg, ok := AttrNetToHost[uint32](linux.NFTA_META_SREG, attrs)
+				if !ok {
+					return fmt.Errorf("failed to get sreg value")
+				}
+				if reg != linux.NFT_REG_1 {
+					return fmt.Errorf("unexpected sreg value: %d, want %d", reg, linux.NFT_REG_1)
 				}
 				return nil
 			},
