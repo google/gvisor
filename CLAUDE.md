@@ -384,3 +384,109 @@ NEXT TODO: Safety-check the uAPI, ioctl-based system calls for rdma-core.
 ### Big Questions
 - How do we quickly test RDMA support? What will this look like in the upstream repo? How can we make local development align closely with upstream testing so we don’t have to rewrite the testing suite from scratch?
     - We will need to have an automated test suite for RDMA that can involve both mock tests e.g. using a sample input of syscalls (see above) and performance/functionality tests that must be run on a GPU worker with RDMA support e.g. 2x8:H100 nodes that must communicate over a ib_write_bw test
+
+## Commentary from Github issue #10906 on https://github.com/google/gvisor.git
+Having looked (maybe too) quickly at verbs, it should be possible to support if my understanding is correct. Thoughts:
+
+Infiniband verbs are probably a bunch of ioctls for their special character device. We can support this: we'd make our own virtual per-container/pod /dev/infinibad/uverbs0 that understands and safety-checks ioctls. We'd also have syscall filters specific to Infiniband (e.g. GPUs).
+Based on my super quick look at your links, I think libibverbs works by mapping in some shared memory for notification queues and packet data. This reminds me of XDP support, and so I think should work as well. We would need a link endpoint that speaks Infiniband verbs.
+While the path to implementation seems reasonably clear, this is a significant chunk of work. The implementer would need to understand Infiniband verbs. I think we'd accept a PR for it, but for now it's not on the roadmap.
+
+Syscall Interception     
+
+  User app executes syscall instruction                                                                            
+    ↓
+  platform.Switch()          — pkg/sentry/platform/ptrace/ptrace.go:110                                            
+    returns isSyscall=true                                                                                       
+    ↓
+  Task.doSyscall()           — pkg/sentry/kernel/task_syscall.go:213
+    extracts sysno + args from registers                                                                           
+    ↓
+  Task.executeSyscall()      — pkg/sentry/kernel/task_syscall.go:84                                                
+    ↓                                                       
+  SyscallTable.Lookup(sysno) — pkg/sentry/kernel/syscalls.go
+    table defined in pkg/sentry/syscalls/linux/linux64.go                                                          
+   
+  No changes needed here — this infrastructure handles all syscalls already.                                       
+                                                            
+  open path                                                                                                        
+                                                            
+  Openat()                                  — pkg/sentry/syscalls/linux/sys_file.go:84
+    ↓                                                                                                              
+  VirtualFilesystem.OpenAt()                — pkg/sentry/vfs/vfs.go:419                                            
+    resolves path through filesystem layers                                                                        
+    ↓                                                                                                              
+  filesystem.OpenAt() on the /dev mount (devtmpfs/tmpfs)    
+    sees it's a device special file                                                                                
+    ↓
+  VFS.OpenDeviceSpecialFile(kind, major, minor) — pkg/sentry/vfs/device.go:140                                     
+    looks up (CharDevice, major, minor) in registered device map
+    ↓                                                                                                              
+  Device.Open(ctx, mnt, dentry, opts)       — your registered device's Open()
+    ↓                                                                                                              
+    ← NEW FILE: pkg/sentry/devices/rdmaproxy/rdmaproxy.go                                                          
+    │  Define uverbsDevice struct implementing vfs.Device                                                          
+    │  Register() calls vfsObj.GetDynamicCharDevMajor() then                                                       
+    │  vfsObj.RegisterDevice(CharDevice, major, 0, &uverbsDevice{},                                                
+    │    &RegisterDeviceOptions{Pathname: "infiniband/uverbs0"})                                                   
+    │                                                                                                              
+    ← NEW FILE: pkg/sentry/devices/rdmaproxy/frontend.go                                                           
+    │  func (dev *uverbsDevice) Open(...) (*vfs.FileDescription, error)                                            
+    │    - open host /dev/infiniband/uverbs0 fd                                                                    
+    │    - create uverbsFD struct                                                                                  
+    │    - call fd.vfsfd.Init(fd, flags, creds, mnt, vfsd, &opts)                                                  
+    │    - return &fd.vfsfd                                                                                        
+    │                                                                                                              
+    ← EDIT: runsc/boot/vfs.go (around line 140, alongside other Register calls)                                    
+    │  Add: rdmaproxy.Register(vfsObj)                                                                             
+    ↓                                                       
+  task.NewFDFrom(file)                      — assigns fd number in task's table                                    
+                                                            
+  ioctl path                                                                                                       
+                                                            
+  Ioctl()                          — pkg/sentry/syscalls/linux/sys_file.go:200
+    task.GetFile(fd)               — resolves fd number → *vfs.FileDescription                                     
+    handles generic ioctls (FIOCLEX, FIONBIO, etc.) inline                                                         
+    ↓                                                                                                              
+  file.Ioctl(t, uio, sysno, args) — pkg/sentry/vfs/file_description.go:720                                         
+    ↓                                                                                                              
+  fd.impl.Ioctl(...)              — dispatches to your uverbsFD.Ioctl()
+    ↓                                                                                                              
+    ← IN: pkg/sentry/devices/rdmaproxy/frontend.go          
+    │  func (fd *uverbsFD) Ioctl(ctx, uio, sysno, args) (uintptr, error)                                           
+    │    - extract cmd := args[1].Uint()                                                                           
+    │    - extract nr := linux.IOC_NR(cmd), size := linux.IOC_SIZE(cmd)                                            
+    │    - dispatch through handler table by nr                                                                    
+    │                                                                                                              
+    ← NEW FILE: pkg/sentry/devices/rdmaproxy/handlers.go                                                           
+    │  Handler table: map command numbers → handler functions                                                      
+    │  Each handler:                                                                                               
+    │    1. CopyIn params from userspace                    
+    │    2. Validate fields (handle refs, flags, bounds)                                                           
+    │    3. Proxy validated ioctl to host fd                                                                       
+    │    4. CopyOut results to userspace                                                                           
+    │                                                                                                              
+    ← NEW FILE: pkg/abi/linux/infiniband.go (or pkg/abi/rdma/)                                                     
+    │  Ioctl command constants (IB_USER_VERBS_CMD_*, RDMA_VERBS_IOCTL)                                             
+    │  Parameter structs with structs.HostLayout embedding                                                         
+    │  e.g. IBUverbsQueryDevice, IBUverbsAllocPD, IBUverbsCreateCQ, etc.                                           
+                                                                                                                   
+  mmap path                                                                                                        
+                                                                                                                   
+  Mmap()                           — pkg/sentry/syscalls/linux/sys_mmap.go:40
+    parses args into memmap.MMapOpts                                                                               
+    task.GetFile(fd)
+    ↓                                                                                                              
+  file.ConfigureMMap(t, &opts)     — pkg/sentry/vfs/file_description.go:715
+    ↓                                                                                                              
+  fd.impl.ConfigureMMap(...)       — dispatches to your uverbsFD.ConfigureMMap()
+    ↓                                                                                                              
+    ← NEW FILE: pkg/sentry/devices/rdmaproxy/frontend_mmap.go
+    │  func (fd *uverbsFD) ConfigureMMap(ctx, opts *memmap.MMapOpts) error                                         
+    │    - validate opts.Offset is a known region
+    │      (doorbell page, CQ buffer, etc.)                                                                        
+    │    - validate page alignment                                                                                 
+    │    - call vfs.GenericProxyDeviceConfigureMMap(&fd.vfsfd, fd, opts)                                           
+    │  func (fd *uverbsFD) Translate(...) — map to host fd backing                                                 
+    ↓                                                                                                              
+  task.MemoryManager().MMap(opts)  — actually installs the mapping         

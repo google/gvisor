@@ -164,6 +164,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.String("nvproxy-driver-version", "", "NVIDIA driver ABI version to use. If empty, autodetect installed driver version. The special value 'latest' may also be used to use the latest ABI.")
 	flagSet.String("nvproxy-allowed-driver-capabilities", "utility,compute", "Comma separated list of NVIDIA driver capabilities that are allowed to be requested by the container. If 'all' is specified here, it is resolved to all driver capabilities supported in nvproxy. If 'all' is requested by the container, it is resolved to this list.")
 	flagSet.Bool("tpuproxy", false, "EXPERIMENTAL: enable support for TPU device passthrough.")
+	flagSet.Bool("rdmaproxy", false, "EXPERIMENTAL: enable passthrough for /dev/infiniband/uverbs* devices.")
 
 	// Test flags, not to be used outside tests, ever.
 	flagSet.Bool("TESTONLY-unsafe-nonroot", false, "TEST ONLY; do not ever use! This skips many security measures that isolate the host from the sandbox.")

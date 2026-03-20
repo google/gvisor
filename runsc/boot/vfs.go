@@ -39,6 +39,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/devices/memdev"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
+	"gvisor.dev/gvisor/pkg/sentry/devices/rdmaproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/devices/tpuproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/tpuproxy/vfio"
@@ -1522,6 +1523,13 @@ func createDeviceFile(ctx context.Context, creds *auth.Credentials, info *contai
 			}
 			log.Infof("Switching %v device major number from %d to %d", devSpec.Path, devSpec.Major, major)
 		}
+	} else if strings.HasPrefix(devSpec.Path, "/dev/infiniband/uverbs") {
+		dynMajor, err := rdmaproxy.Register(vfsObj, minor)
+		if err != nil {
+			return fmt.Errorf("registering rdma device %s: %w", devSpec.Path, err)
+		}
+		log.Infof("Switching %s device major number from %d to %d", devSpec.Path, major, dynMajor)
+		major = dynMajor
 	} else if devSpec.Path == "/dev/nvidia-uvm" {
 		if info.nvproxyDevInfo.UVMDevMajor != 0 && major != info.nvproxyDevInfo.UVMDevMajor {
 			major = info.nvproxyDevInfo.UVMDevMajor
