@@ -19,7 +19,6 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -77,8 +76,15 @@ func (op metaLoad) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Ru
 
 	// Netfilter (Family) Protocol (8-bit, single byte).
 	case linux.NFT_META_NFPROTO:
-		family := rule.chain.GetAddressFamily()
-		target = []byte{AfProtocol(family)}
+		switch pkt.NetworkProtocolNumber {
+		// Cannot rely on chain's address family incase of inet, as inet can mean either IPv4 or IPv6.
+		case header.IPv4ProtocolNumber:
+			target = []byte{linux.NFPROTO_IPV4}
+		case header.IPv6ProtocolNumber:
+			target = []byte{linux.NFPROTO_IPV6}
+		default:
+			target = []byte{AfProtocol(rule.chain.GetAddressFamily())}
+		}
 
 	// L4 Transport Layer Protocol (8-bit, single byte).
 	case linux.NFT_META_L4PROTO:
@@ -165,8 +171,10 @@ func (op metaLoad) GetExprName() string {
 }
 
 func (op metaLoad) Dump() ([]byte, *syserr.AnnotatedError) {
-	log.Warningf("Nftables: Dumping meta load operation is not implemented")
-	return nil, nil
+	m := &nlmsg.Message{}
+	m.PutAttr(linux.NFTA_META_KEY, nlmsg.PutU32(uint32(op.key)))
+	m.PutAttr(linux.NFTA_META_DREG, nlmsg.PutU32(uint32(op.dreg)))
+	return m.Buffer(), nil
 }
 
 func initMetaLoad(attrs map[uint16]nlmsg.BytesView) (*metaLoad, *syserr.AnnotatedError) {
@@ -178,9 +186,5 @@ func initMetaLoad(attrs map[uint16]nlmsg.BytesView) (*metaLoad, *syserr.Annotate
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse NFTA_META_DREG attribute")
 	}
-	dreg, err := nftMatchReg(reg)
-	if err != nil {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Invalid source register: %d", reg))
-	}
-	return newMetaLoad(metaKey(key), uint8(dreg))
+	return newMetaLoad(metaKey(key), uint8(reg))
 }

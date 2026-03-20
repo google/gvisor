@@ -593,8 +593,8 @@ func (e *endpoint) writePacketPostRouting(r *stack.Route, pkt *stack.PacketBuffe
 	}
 
 	if nft := stk.NFTables(); nft != nil && stk.IsNFTablesConfigured() {
-		ipCheck := nft.CheckOutput(pkt, stack.IP)
-		inetCheck := nft.CheckOutput(pkt, stack.Inet)
+		ipCheck := nft.CheckPostrouting(pkt, stack.IP)
+		inetCheck := nft.CheckPostrouting(pkt, stack.Inet)
 		if !ipCheck || !inetCheck {
 			// nftables is telling us to drop the packet.
 			return nil
