@@ -187,6 +187,10 @@ func setUpChroot(spec *specs.Spec, conf *config.Config) error {
 		return fmt.Errorf("error configuring chroot for TPU devices: %w", err)
 	}
 
+	if err := rdmaProxyUpdateChroot("/", chroot, conf); err != nil {
+		return fmt.Errorf("error configuring chroot for RDMA devices: %w", err)
+	}
+
 	if err := specutils.SafeMount("", chroot, "", unix.MS_REMOUNT|unix.MS_RDONLY|unix.MS_BIND, "", "/proc"); err != nil {
 		return fmt.Errorf("error remounting chroot in read-only: %v", err)
 	}
@@ -251,4 +255,26 @@ func tpuProxyUpdateChroot(hostRoot, chroot string, spec *specs.Spec, conf *confi
 		}
 	}
 	return err
+}
+
+func rdmaProxyUpdateChroot(hostRoot, chroot string, conf *config.Config) error {
+	if !specutils.RDMAProxyIsEnabled(conf) {
+		return nil
+	}
+	// Bind-mount host sysfs paths needed for libibverbs device discovery.
+	sysfsBinds := []string{
+		"/sys/class/infiniband_verbs",
+		"/sys/class/infiniband",
+	}
+	for _, sysfsPath := range sysfsBinds {
+		hostPath := path.Join(hostRoot, sysfsPath)
+		if _, err := os.Stat(hostPath); err != nil {
+			log.Infof("rdmaProxyUpdateChroot: %s not found on host, skipping", sysfsPath)
+			continue
+		}
+		if err := mountInChroot(chroot, hostPath, sysfsPath, "bind", unix.MS_BIND|unix.MS_RDONLY); err != nil {
+			return fmt.Errorf("error mounting %q in chroot: %w", sysfsPath, err)
+		}
+	}
+	return nil
 }
