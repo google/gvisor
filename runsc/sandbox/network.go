@@ -121,6 +121,172 @@ func isRootNetNS() (bool, error) {
 	}
 }
 
+// removeLinkAddresses removes IP addresses from the host NIC for a link.
+func removeLinkAddresses(linkName string, addresses []boot.IPWithPrefix) error {
+	ifaceLink, err := netlink.LinkByName(linkName)
+	if err != nil {
+		return fmt.Errorf("getting link for interface %q: %w", linkName, err)
+	}
+	for _, addr := range addresses {
+		ipNet := &net.IPNet{
+			IP:   addr.Address,
+			Mask: net.CIDRMask(addr.PrefixLen, len(addr.Address)*8),
+		}
+		if err := removeAddress(ifaceLink, ipNet.String()); err != nil {
+			// If we encounter an error while deleting the ip,
+			// verify the ip is still present on the interface.
+			if present, err := isAddressOnInterface(linkName, ipNet); err != nil {
+				return fmt.Errorf("checking if address %v is on interface %q: %w", ipNet, linkName, err)
+			} else if !present {
+				continue
+			}
+			return fmt.Errorf("removing address %v from device %q: %w", ipNet, linkName, err)
+		}
+	}
+	return nil
+}
+
+// collectLinksAndRoutes queries the network interfaces in the current network
+// namespace and scrapes their configuration (addresses, routes, neighbors).
+// It returns the args to create them in the sandbox. This function has no
+// side effects on the interfaces themselves.
+func collectLinksAndRoutes(conf *config.Config, disableIPv6 bool) (boot.CreateLinksAndRoutesArgs, error) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return boot.CreateLinksAndRoutesArgs{}, fmt.Errorf("querying interfaces: %w", err)
+	}
+
+	args := boot.CreateLinksAndRoutesArgs{
+		PauseExternalNetworking: conf.PauseExternalNetworking,
+	}
+
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 {
+			log.Infof("Skipping down interface: %+v", iface)
+			continue
+		}
+
+		allAddrs, err := iface.Addrs()
+		if err != nil {
+			return boot.CreateLinksAndRoutesArgs{}, fmt.Errorf("fetching interface addresses for %q: %w", iface.Name, err)
+		}
+
+		// We build our own loopback device.
+		if iface.Flags&net.FlagLoopback != 0 {
+			link, err := loopbackLink(conf, iface, allAddrs, disableIPv6)
+			if err != nil {
+				return boot.CreateLinksAndRoutesArgs{}, fmt.Errorf("getting loopback link for iface %q: %w", iface.Name, err)
+			}
+			args.LoopbackLinks = append(args.LoopbackLinks, link)
+			continue
+		}
+
+		var ipAddrs []*net.IPNet
+		for _, ifaddr := range allAddrs {
+			ipNet, ok := ifaddr.(*net.IPNet)
+			if !ok {
+				return boot.CreateLinksAndRoutesArgs{}, fmt.Errorf("address is not IPNet: %+v", ifaddr)
+			}
+			// Do not add IPv6 addresses when IPv6 is disabled.
+			if disableIPv6 && ipNet.IP.To4() == nil {
+				continue
+			}
+			ipAddrs = append(ipAddrs, ipNet)
+		}
+		if len(ipAddrs) == 0 {
+			log.Warningf("No usable IP addresses found for interface %q, skipping", iface.Name)
+			continue
+		}
+
+		// Collect data from the ARP table.
+		dump, err := netlink.NeighList(iface.Index, 0)
+		if err != nil {
+			return boot.CreateLinksAndRoutesArgs{}, fmt.Errorf("fetching ARP table for %q: %w", iface.Name, err)
+		}
+
+		var neighbors []boot.Neighbor
+		for _, n := range dump {
+			// There are only two "good" states NUD_PERMANENT and NUD_REACHABLE,
+			// but NUD_REACHABLE is fully dynamic and will be re-probed anyway.
+			if n.State == netlink.NUD_PERMANENT {
+				log.Debugf("Copying a static ARP entry: %+v %+v", n.IP, n.HardwareAddr)
+				// No flags are copied because Stack.AddStaticNeighbor does not support flags right now.
+				neighbors = append(neighbors, boot.Neighbor{IP: n.IP, HardwareAddr: n.HardwareAddr})
+			}
+		}
+
+		// Scrape the routes before removing the address, since that
+		// will remove the routes as well.
+		routes, defv4, defv6, err := routesForIface(iface, disableIPv6)
+		if err != nil {
+			return boot.CreateLinksAndRoutesArgs{}, fmt.Errorf("getting routes for interface %q: %v", iface.Name, err)
+		}
+		if defv4 != nil {
+			if !args.Defaultv4Gateway.Route.Empty() {
+				return boot.CreateLinksAndRoutesArgs{}, fmt.Errorf("more than one default route found, interface: %v, route: %v, default route: %+v", iface.Name, defv4, args.Defaultv4Gateway)
+			}
+			args.Defaultv4Gateway.Route = *defv4
+			args.Defaultv4Gateway.Name = iface.Name
+		}
+
+		if defv6 != nil {
+			if !args.Defaultv6Gateway.Route.Empty() {
+				return boot.CreateLinksAndRoutesArgs{}, fmt.Errorf("more than one default route found, interface: %v, route: %v, default route: %+v", iface.Name, defv6, args.Defaultv6Gateway)
+			}
+			args.Defaultv6Gateway.Route = *defv6
+			args.Defaultv6Gateway.Name = iface.Name
+		}
+
+		// Get the link for the interface.
+		ifaceLink, err := netlink.LinkByName(iface.Name)
+		if err != nil {
+			return boot.CreateLinksAndRoutesArgs{}, fmt.Errorf("getting link for interface %q: %w", iface.Name, err)
+		}
+		linkAddress := ifaceLink.Attrs().HardwareAddr
+
+		// Collect the addresses for the interface.
+		var addresses []boot.IPWithPrefix
+		for _, addr := range ipAddrs {
+			prefix, _ := addr.Mask.Size()
+			addresses = append(addresses, boot.IPWithPrefix{Address: addr.IP, PrefixLen: prefix})
+		}
+
+		if conf.XDP.Mode == config.XDPModeNS {
+			args.XDPLinks = append(args.XDPLinks, boot.XDPLink{
+				Name:              iface.Name,
+				InterfaceIndex:    iface.Index,
+				Routes:            routes,
+				TXChecksumOffload: conf.TXChecksumOffload,
+				RXChecksumOffload: conf.RXChecksumOffload,
+				NumChannels:       conf.NumNetworkChannels,
+				QDisc:             conf.QDisc,
+				Neighbors:         neighbors,
+				LinkAddress:       linkAddress,
+				Addresses:         addresses,
+				GVisorGRO:         conf.GVisorGRO,
+			})
+		} else {
+			link := boot.FDBasedLink{
+				Name:                 iface.Name,
+				MTU:                  iface.MTU,
+				Routes:               routes,
+				TXChecksumOffload:    conf.TXChecksumOffload,
+				RXChecksumOffload:    conf.RXChecksumOffload,
+				NumChannels:          conf.NumNetworkChannels,
+				ProcessorsPerChannel: conf.NetworkProcessorsPerChannel,
+				QDisc:                conf.QDisc,
+				Neighbors:            neighbors,
+				LinkAddress:          linkAddress,
+				Addresses:            addresses,
+				GVisorGRO:            conf.GVisorGRO,
+			}
+			args.FDBasedLinks = append(args.FDBasedLinks, link)
+		}
+	}
+
+	return args, nil
+}
+
 // createInterfacesAndRoutesFromNS scrapes the interface and routes from the
 // net namespace with the given path, creates them in the sandbox, and removes
 // them from the host.
@@ -149,12 +315,6 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 	}
 	defer restore()
 
-	// Get all interfaces in the namespace.
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		return fmt.Errorf("querying interfaces: %w", err)
-	}
-
 	isRoot, err := isRootNetNS()
 	if err != nil {
 		return err
@@ -164,175 +324,69 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 	}
 
 	// Collect addresses and routes from the interfaces.
-	args := boot.CreateLinksAndRoutesArgs{
-		PauseExternalNetworking: conf.PauseExternalNetworking,
+	args, err := collectLinksAndRoutes(conf, disableIPv6)
+	if err != nil {
+		return err
 	}
 
-	for _, iface := range ifaces {
-		if iface.Flags&net.FlagUp == 0 {
-			log.Infof("Skipping down interface: %+v", iface)
-			continue
+	for i := range args.XDPLinks {
+		if err := removeLinkAddresses(args.XDPLinks[i].Name, args.XDPLinks[i].Addresses); err != nil {
+			return err
 		}
+	}
+	for i := range args.FDBasedLinks {
+		if err := removeLinkAddresses(args.FDBasedLinks[i].Name, args.FDBasedLinks[i].Addresses); err != nil {
+			return err
+		}
+	}
 
-		allAddrs, err := iface.Addrs()
+	for i := range args.XDPLinks {
+		link := &args.XDPLinks[i]
+		iface, err := net.InterfaceByName(link.Name)
 		if err != nil {
-			return fmt.Errorf("fetching interface addresses for %q: %w", iface.Name, err)
+			return fmt.Errorf("getting interface by name %q: %w", link.Name, err)
+		}
+		xdpSockFDs, err := createSocketXDP(*iface)
+		if err != nil {
+			return fmt.Errorf("failed to create XDP socket: %v", err)
+		}
+		args.FilePayload.Files = append(args.FilePayload.Files, xdpSockFDs...)
+	}
+
+	for i := range args.FDBasedLinks {
+		link := &args.FDBasedLinks[i]
+		iface, err := net.InterfaceByName(link.Name)
+		if err != nil {
+			return fmt.Errorf("getting interface by name %q: %w", link.Name, err)
+		}
+		ifaceLink, err := netlink.LinkByName(link.Name)
+		if err != nil {
+			return fmt.Errorf("getting link for interface %q: %w", link.Name, err)
 		}
 
-		// We build our own loopback device.
-		if iface.Flags&net.FlagLoopback != 0 {
-			link, err := loopbackLink(conf, iface, allAddrs, disableIPv6)
+		log.Debugf("Setting up network channels")
+		// Create the socket for the device.
+		for j := 0; j < link.NumChannels; j++ {
+			log.Debugf("Creating Channel %d", j)
+			socketEntry, err := createSocket(*iface, ifaceLink, conf.HostGSO)
 			if err != nil {
-				return fmt.Errorf("getting loopback link for iface %q: %w", iface.Name, err)
+				return fmt.Errorf("failed to createSocket for %s : %w", link.Name, err)
 			}
-			args.LoopbackLinks = append(args.LoopbackLinks, link)
-			continue
-		}
-
-		var ipAddrs []*net.IPNet
-		for _, ifaddr := range allAddrs {
-			ipNet, ok := ifaddr.(*net.IPNet)
-			if !ok {
-				return fmt.Errorf("address is not IPNet: %+v", ifaddr)
-			}
-			// Do not add IPv6 addresses when IPv6 is disabled.
-			if disableIPv6 && ipNet.IP.To4() == nil {
-				continue
-			}
-			ipAddrs = append(ipAddrs, ipNet)
-		}
-		if len(ipAddrs) == 0 {
-			log.Warningf("No usable IP addresses found for interface %q, skipping", iface.Name)
-			continue
-		}
-
-		// Collect data from the ARP table.
-		dump, err := netlink.NeighList(iface.Index, 0)
-		if err != nil {
-			return fmt.Errorf("fetching ARP table for %q: %w", iface.Name, err)
-		}
-
-		var neighbors []boot.Neighbor
-		for _, n := range dump {
-			// There are only two "good" states NUD_PERMANENT and NUD_REACHABLE,
-			// but NUD_REACHABLE is fully dynamic and will be re-probed anyway.
-			if n.State == netlink.NUD_PERMANENT {
-				log.Debugf("Copying a static ARP entry: %+v %+v", n.IP, n.HardwareAddr)
-				// No flags are copied because Stack.AddStaticNeighbor does not support flags right now.
-				neighbors = append(neighbors, boot.Neighbor{IP: n.IP, HardwareAddr: n.HardwareAddr})
-			}
-		}
-
-		// Scrape the routes before removing the address, since that
-		// will remove the routes as well.
-		routes, defv4, defv6, err := routesForIface(iface, disableIPv6)
-		if err != nil {
-			return fmt.Errorf("getting routes for interface %q: %v", iface.Name, err)
-		}
-		if defv4 != nil {
-			if !args.Defaultv4Gateway.Route.Empty() {
-				return fmt.Errorf("more than one default route found, interface: %v, route: %v, default route: %+v", iface.Name, defv4, args.Defaultv4Gateway)
-			}
-			args.Defaultv4Gateway.Route = *defv4
-			args.Defaultv4Gateway.Name = iface.Name
-		}
-
-		if defv6 != nil {
-			if !args.Defaultv6Gateway.Route.Empty() {
-				return fmt.Errorf("more than one default route found, interface: %v, route: %v, default route: %+v", iface.Name, defv6, args.Defaultv6Gateway)
-			}
-			args.Defaultv6Gateway.Route = *defv6
-			args.Defaultv6Gateway.Name = iface.Name
-		}
-
-		// Get the link for the interface.
-		ifaceLink, err := netlink.LinkByName(iface.Name)
-		if err != nil {
-			return fmt.Errorf("getting link for interface %q: %w", iface.Name, err)
-		}
-		linkAddress := ifaceLink.Attrs().HardwareAddr
-
-		// Collect the addresses for the interface, enable forwarding,
-		// and remove them from the host.
-		var addresses []boot.IPWithPrefix
-		for _, addr := range ipAddrs {
-			prefix, _ := addr.Mask.Size()
-			addresses = append(addresses, boot.IPWithPrefix{Address: addr.IP, PrefixLen: prefix})
-
-			// Steal IP address from NIC.
-			if err := removeAddress(ifaceLink, addr.String()); err != nil {
-				// If we encounter an error while deleting the ip,
-				// verify the ip is still present on the interface.
-				if present, err := isAddressOnInterface(iface.Name, addr); err != nil {
-					return fmt.Errorf("checking if address %v is on interface %q: %w", addr, iface.Name, err)
-				} else if !present {
-					continue
+			if j == 0 {
+				link.GSOMaxSize = socketEntry.gsoMaxSize
+			} else {
+				if link.GSOMaxSize != socketEntry.gsoMaxSize {
+					return fmt.Errorf("inconsistent gsoMaxSize %d and %d when creating multiple channels for same interface: %s",
+						link.GSOMaxSize, socketEntry.gsoMaxSize, link.Name)
 				}
-				return fmt.Errorf("removing address %v from device %q: %w", addr, iface.Name, err)
 			}
+			args.FilePayload.Files = append(args.FilePayload.Files, socketEntry.deviceFile)
 		}
 
-		if conf.XDP.Mode == config.XDPModeNS {
-			xdpSockFDs, err := createSocketXDP(iface)
-			if err != nil {
-				return fmt.Errorf("failed to create XDP socket: %v", err)
-			}
-			args.FilePayload.Files = append(args.FilePayload.Files, xdpSockFDs...)
-			args.XDPLinks = append(args.XDPLinks, boot.XDPLink{
-				Name:              iface.Name,
-				InterfaceIndex:    iface.Index,
-				Routes:            routes,
-				TXChecksumOffload: conf.TXChecksumOffload,
-				RXChecksumOffload: conf.RXChecksumOffload,
-				NumChannels:       conf.NumNetworkChannels,
-				QDisc:             conf.QDisc,
-				Neighbors:         neighbors,
-				LinkAddress:       linkAddress,
-				Addresses:         addresses,
-				GVisorGRO:         conf.GVisorGRO,
-			})
-		} else {
-			link := boot.FDBasedLink{
-				Name:                 iface.Name,
-				MTU:                  iface.MTU,
-				Routes:               routes,
-				TXChecksumOffload:    conf.TXChecksumOffload,
-				RXChecksumOffload:    conf.RXChecksumOffload,
-				NumChannels:          conf.NumNetworkChannels,
-				ProcessorsPerChannel: conf.NetworkProcessorsPerChannel,
-				QDisc:                conf.QDisc,
-				Neighbors:            neighbors,
-				LinkAddress:          linkAddress,
-				Addresses:            addresses,
-			}
-
-			log.Debugf("Setting up network channels")
-			// Create the socket for the device.
-			for i := 0; i < link.NumChannels; i++ {
-				log.Debugf("Creating Channel %d", i)
-				socketEntry, err := createSocket(iface, ifaceLink, conf.HostGSO)
-				if err != nil {
-					return fmt.Errorf("failed to createSocket for %s : %w", iface.Name, err)
-				}
-				if i == 0 {
-					link.GSOMaxSize = socketEntry.gsoMaxSize
-				} else {
-					if link.GSOMaxSize != socketEntry.gsoMaxSize {
-						return fmt.Errorf("inconsistent gsoMaxSize %d and %d when creating multiple channels for same interface: %s",
-							link.GSOMaxSize, socketEntry.gsoMaxSize, iface.Name)
-					}
-				}
-				args.FilePayload.Files = append(args.FilePayload.Files, socketEntry.deviceFile)
-			}
-
-			if link.GSOMaxSize == 0 && conf.GVisorGSO {
-				// Host GSO is disabled. Let's enable gVisor GSO.
-				link.GSOMaxSize = stack.GVisorGSOMaxSize
-				link.GVisorGSOEnabled = true
-			}
-			link.GVisorGRO = conf.GVisorGRO
-
-			args.FDBasedLinks = append(args.FDBasedLinks, link)
+		if link.GSOMaxSize == 0 && conf.GVisorGSO {
+			// Host GSO is disabled. Let's enable gVisor GSO.
+			link.GSOMaxSize = stack.GVisorGSOMaxSize
+			link.GVisorGSOEnabled = true
 		}
 	}
 
@@ -463,7 +517,9 @@ func createSocket(iface net.Interface, ifaceLink netlink.Link, enableGSO bool) (
 }
 
 // loopbackLink returns the link with addresses and routes for a loopback
-// interface.
+// interface. It synthesizes subnet routes from the interface addresses and
+// also collects any additional routes configured on the loopback interface
+// (e.g. routes added by podman-network-create --route).
 func loopbackLink(conf *config.Config, iface net.Interface, addrs []net.Addr, disableIPv6 bool) (boot.LoopbackLink, error) {
 	link := boot.LoopbackLink{
 		Name:      iface.Name,
@@ -484,12 +540,27 @@ func loopbackLink(conf *config.Config, iface net.Interface, addrs []net.Addr, di
 			PrefixLen: prefix,
 		})
 
+		// Synthesize a subnet route from the address. These routes
+		// (e.g. 127.0.0.0/8) are in the kernel's "local" routing table
+		// and won't be returned by routesForIface which queries the
+		// main routing table.
 		dst := *ipNet
 		dst.IP = dst.IP.Mask(dst.Mask)
 		link.Routes = append(link.Routes, boot.Route{
 			Destination: dst,
 		})
 	}
+
+	// Also collect any additional routes on the loopback interface from
+	// the main routing table (e.g. custom routes added by
+	// podman-network-create --route). These are distinct from the
+	// address-derived routes above which live in the local table.
+	routes, _, _, err := routesForIface(iface, disableIPv6)
+	if err != nil {
+		return boot.LoopbackLink{}, fmt.Errorf("getting routes for loopback %q: %w", iface.Name, err)
+	}
+	link.Routes = append(link.Routes, routes...)
+
 	return link, nil
 }
 
