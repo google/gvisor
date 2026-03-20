@@ -905,9 +905,15 @@ type LoadOpts struct {
 	// returns, PagesFileOffset will be updated to the offset of the first byte
 	// in PagesFile after this MemoryFile's contents.
 	//
+	// Reading from PagesFile may continue after LoadFrom returns. If
+	// DoneCallback is not nil, it will be called when reading for this
+	// MemoryFile completes. DoneCallback will be called whether or not
+	// LoadFrom returns a non-nil error.
+	//
 	// Invariant: PagesFileOffset must be page-aligned.
 	PagesFile       *AsyncPagesFileLoad
 	PagesFileOffset uint64
+	DoneCallback    func(error)
 
 	// Optional timeline for the restore process.
 	// If async page loading is enabled, a forked timeline will be created, so
@@ -917,9 +923,15 @@ type LoadOpts struct {
 }
 
 // LoadFrom loads MemoryFile state from the given stream.
-func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) error {
+func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) (err error) {
 	mfTimeline := opts.Timeline.Fork(fmt.Sprintf("mf:%p", f)).Lease()
 	defer mfTimeline.End()
+
+	defer func() {
+		if opts.DoneCallback != nil {
+			opts.DoneCallback(err)
+		}
+	}()
 
 	// Load metadata.
 	timeMetadataStart := gohacks.Nanotime()
@@ -995,10 +1007,11 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 			}
 		}
 		amfl = &asyncMemoryFileLoad{
-			f:        f,
-			pf:       opts.PagesFile,
-			df:       df,
-			timeline: mfTimeline.Transfer(),
+			f:            f,
+			pf:           opts.PagesFile,
+			df:           df,
+			doneCallback: opts.DoneCallback,
+			timeline:     mfTimeline.Transfer(),
 		}
 		amfl.pf.amflsMu.Lock()
 		if err := amfl.pf.err(); err != nil {
@@ -1008,6 +1021,7 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 		amfl.pf.amfls.PushBack(amfl)
 		amfl.pf.amflsMu.Unlock()
 		f.asyncPageLoad.Store(amfl)
+		opts.DoneCallback = nil
 		defer func() {
 			amfl.pf.amflsMu.Lock()
 			defer amfl.pf.amflsMu.Unlock()
@@ -1025,6 +1039,10 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 				amfl.pf.amfls.Remove(amfl)
 				amfl.f.asyncPageLoad.Store(nil)
 				amfl.timeline.End()
+				if amfl.doneCallback != nil {
+					amfl.doneCallback(nil)
+					amfl.doneCallback = nil
+				}
 			}
 		}()
 	}
@@ -1205,10 +1223,11 @@ func (apfl *AsyncPagesFileLoad) err() error {
 // asyncMemoryFileLoad holds async page loading state for a single MemoryFile.
 type asyncMemoryFileLoad struct {
 	// Immutable fields:
-	f        *MemoryFile
-	pf       *AsyncPagesFileLoad
-	df       stateio.DestinationFile
-	timeline *timing.Timeline
+	f            *MemoryFile
+	pf           *AsyncPagesFileLoad
+	df           stateio.DestinationFile
+	doneCallback func(error)
+	timeline     *timing.Timeline
 
 	// minUnloaded is the MemoryFile offset of the first unloaded byte.
 	minUnloaded atomicbitops.Uint64
@@ -1597,6 +1616,10 @@ func (apfl *AsyncPagesFileLoad) main() {
 				ul.started = false
 				ul.waiters = nil
 			}
+			if amfl.doneCallback != nil {
+				amfl.doneCallback(apfl.err())
+				amfl.doneCallback = nil
+			}
 		}
 		apfl.mu.Unlock()
 		apfl.amflsMu.Unlock()
@@ -1876,6 +1899,10 @@ func (apfl *AsyncPagesFileLoad) main() {
 					apfl.amfls.Remove(amfl)
 					amfl.f.asyncPageLoad.Store(nil)
 					amfl.timeline.End()
+					if amfl.doneCallback != nil {
+						amfl.doneCallback(nil)
+						amfl.doneCallback = nil
+					}
 				} else {
 					amfl.minUnloaded.Store(amfl.unloaded.FirstSegment().Start())
 				}

@@ -110,6 +110,14 @@ const (
 	// ContMgrWaitRestore waits for the Kernel restore to complete.
 	ContMgrWaitRestore = "containerManager.WaitRestore"
 
+	// ContMgrWaitFSCheckpoint waits for the next filesystem checkpoint save to
+	// complete.
+	ContMgrWaitFSCheckpoint = "containerManager.WaitFSCheckpoint"
+
+	// ContMgrWaitFSRestore waits for filesystem checkpoint restore to complete
+	// for all current containers.
+	ContMgrWaitFSRestore = "containerManager.WaitFSRestore"
+
 	// ContMgrRootContainerStart starts a new sandbox with a root container.
 	ContMgrRootContainerStart = "containerManager.StartRoot"
 
@@ -867,6 +875,26 @@ func (cm *containerManager) WaitRestore(*struct{}, *struct{}) error {
 	log.Debugf("containerManager.WaitRestore")
 	err := cm.l.waitRestore()
 	log.Debugf("containerManager.WaitRestore done, err = %v", err)
+	return err
+}
+
+func (cm *containerManager) WaitFSCheckpoint(*struct{}, *struct{}) error {
+	log.Debugf("containerManager.WaitFSCheckpoint")
+	err := cm.l.k.WaitForFSSave()
+	log.Debugf("containerManager.WaitFSCheckpoint done, err = %v", err)
+	return err
+}
+
+// WaitFSRestoreArgs holds arguments to containerManager.WaitFSRestore.
+type WaitFSRestoreArgs struct {
+	// CID is the container ID.
+	CID string
+}
+
+func (cm *containerManager) WaitFSRestore(args *WaitFSRestoreArgs, _ *struct{}) error {
+	log.Debugf("containerManager.WaitFSRestore")
+	err := cm.l.fsRestore.wait(args.CID)
+	log.Debugf("containerManager.WaitFSRestore done, err = %v", err)
 	return err
 }
 

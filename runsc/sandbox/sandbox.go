@@ -1441,6 +1441,23 @@ func (s *Sandbox) WaitRestore() error {
 	return s.call(boot.ContMgrWaitRestore, nil, nil)
 }
 
+// WaitFSCheckpoint waits for a filesystem checkpoint to have successfully been
+// saved.
+func (s *Sandbox) WaitFSCheckpoint() error {
+	log.Debugf("Waiting for filesystem checkpoint to complete in sandbox %q", s.ID)
+	return s.call(boot.ContMgrWaitFSCheckpoint, nil, nil)
+}
+
+// WaitFSRestore waits for filesystems to have been successfully restored from
+// checkpoint.
+func (s *Sandbox) WaitFSRestore(cid string) error {
+	log.Debugf("Waiting for filesystem restore to complete in container %q in sandbox %d", cid, s.ID)
+	args := boot.WaitFSRestoreArgs{
+		CID: cid,
+	}
+	return s.call(boot.ContMgrWaitFSRestore, &args, nil)
+}
+
 // IsRootContainer returns true if the specified container ID belongs to the
 // root container.
 func (s *Sandbox) IsRootContainer(cid string) bool {

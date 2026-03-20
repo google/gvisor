@@ -717,6 +717,26 @@ func (c *Container) WaitRestore() error {
 	return c.Sandbox.WaitRestore()
 }
 
+// WaitFSCheckpoint waits for a filesystem checkpoint to have successfully been
+// saved.
+func (c *Container) WaitFSCheckpoint() error {
+	log.Debugf("Waiting for filesystem checkpoint to complete in container, cid: %s", c.ID)
+	if !c.IsSandboxRunning() {
+		return fmt.Errorf("sandbox is not running")
+	}
+	return c.Sandbox.WaitFSCheckpoint()
+}
+
+// WaitFSRestore waits for filesystems to have been successfully restored from
+// checkpoint.
+func (c *Container) WaitFSRestore() error {
+	log.Debugf("Waiting for filesystem restore to complete in container, cid: %s", c.ID)
+	if !c.IsSandboxRunning() {
+		return fmt.Errorf("sandbox is not running")
+	}
+	return c.Sandbox.WaitFSRestore(c.ID)
+}
+
 // TarRootfsUpperLayer serializes the rootfs upper layer of the container to a tar file. When
 // the rootfs is not an overlayfs, it returns an error. It writes the tar file
 // to outFD.

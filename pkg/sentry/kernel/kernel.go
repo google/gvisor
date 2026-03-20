@@ -401,6 +401,11 @@ type Kernel struct {
 
 	// MaxKeySetSize is the maximum number of keys in a key set.
 	MaxKeySetSize atomicbitops.Int32
+
+	// fsSaveWaiters holds waiters for Kernel.WaitForFSSave. fsSaveWaiters is
+	// protected by fsSaveMu.
+	fsSaveMu      fsSaveMutex  `state:"nosave"`
+	fsSaveWaiters []chan error `state:"nosave"`
 }
 
 // InitKernelArgs holds arguments to Init.

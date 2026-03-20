@@ -77,7 +77,7 @@ func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) error {
 	if opts.ExitAfterSaving {
 		defer k.Kill(linux.WaitStatusExit(0)) // consistent with sentry/state.SaveOpts.Save
 	}
-	return k.quiescePausedAnd(ctx, func() error {
+	err := k.quiescePausedAnd(ctx, func() error {
 		var (
 			asyncPageSaveWg  sync.WaitGroup
 			asyncPageSaveErr error
@@ -226,6 +226,13 @@ func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) error {
 		}
 		return nil
 	})
+	k.fsSaveMu.Lock()
+	defer k.fsSaveMu.Unlock()
+	for _, c := range k.fsSaveWaiters {
+		c <- err
+	}
+	k.fsSaveWaiters = nil
+	return err
 }
 
 type countingWriter struct {
@@ -238,4 +245,17 @@ func (cw *countingWriter) Write(src []byte) (int, error) {
 	n, err := cw.w.Write(src)
 	cw.count += uint64(n)
 	return n, err
+}
+
+// WaitForFSSave waits for a call to k.FSSave() to complete, then returns the
+// error returned by that call.
+//
+// This API is difficult to use without races, but is consistent with
+// k.WaitForCheckpoint().
+func (k *Kernel) WaitForFSSave() error {
+	c := make(chan error, 1)
+	k.fsSaveMu.Lock()
+	k.fsSaveWaiters = append(k.fsSaveWaiters, c)
+	k.fsSaveMu.Unlock()
+	return <-c
 }

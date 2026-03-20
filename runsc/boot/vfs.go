@@ -640,12 +640,12 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 	if filestoreFD != nil {
 		// Create memory file for disk-backed overlays.
 		resourceID := checkpoint.ResourceID{ContainerName: c.containerName, Path: dst}
-		mf, err := createPrivateMemoryFile(filestoreFD.ReleaseToFile("overlay-filestore"), resourceID, c.l.fsRestore)
+		mf, err := createPrivateMemoryFile(filestoreFD.ReleaseToFile("overlay-filestore"), resourceID, c.containerID, c.l.fsRestore)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create memory file for overlay: %v", err)
 		}
 		tmpfsOpts.MemoryFile = mf
-		sourceTar, err := c.l.fsRestore.tmpfsSourceTar(resourceID)
+		sourceTar, err := c.l.fsRestore.tmpfsSourceTar(resourceID, c.containerID)
 		if err != nil {
 			mf.Destroy()
 			return nil, nil, fmt.Errorf("failed to get tar archive from filesystem checkpoint: %w", err)
@@ -857,7 +857,7 @@ func (c *containerMounter) getPathMode(ctx context.Context, creds *auth.Credenti
 }
 
 func (c *containerMounter) mountSubmount(ctx context.Context, spec *specs.Spec, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials, submount *mountInfo) (*vfs.Mount, error) {
-	fsName, opts, err := getMountNameAndOptions(spec, conf, submount, c.l.productName, c.containerName, c.l.fsRestore)
+	fsName, opts, err := getMountNameAndOptions(spec, conf, submount, c.l.productName, c.containerName, c.containerID, c.l.fsRestore)
 	if err != nil {
 		return nil, fmt.Errorf("mountOptions failed: %w", err)
 	}
@@ -920,7 +920,7 @@ func (c *containerMounter) mountSubmount(ctx context.Context, spec *specs.Spec, 
 
 // getMountNameAndOptions retrieves the fsName, opts, and useOverlay values
 // used for mounts.
-func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo, productName, containerName string, fsr *fsRestore) (string, *vfs.MountOptions, error) {
+func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo, productName, containerName, containerID string, fsr *fsRestore) (string, *vfs.MountOptions, error) {
 	fsName := m.mount.Type
 	var (
 		mopts        = m.mount.Options
@@ -954,7 +954,7 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 		}
 		if m.filestoreFD != nil {
 			resourceID := checkpoint.ResourceID{ContainerName: containerName, Path: m.mount.Destination}
-			mf, err := createPrivateMemoryFile(m.filestoreFD.ReleaseToFile("tmpfs-filestore"), resourceID, fsr)
+			mf, err := createPrivateMemoryFile(m.filestoreFD.ReleaseToFile("tmpfs-filestore"), resourceID, containerID, fsr)
 			if err != nil {
 				return "", nil, fmt.Errorf("failed to create memory file for tmpfs: %w", err)
 			}
@@ -964,7 +964,7 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 				// the default tmpfs size limit.
 				DisableDefaultSizeLimit: true,
 			}
-			sourceTar, err := fsr.tmpfsSourceTar(resourceID)
+			sourceTar, err := fsr.tmpfsSourceTar(resourceID, containerID)
 			if err != nil {
 				return "", nil, fmt.Errorf("failed to get tar archive from filesystem checkpoint: %w", err)
 			}
@@ -1066,8 +1066,8 @@ func parseKeyValue(s string) (string, string, bool) {
 	return strings.TrimSpace(tokens[0]), strings.TrimSpace(tokens[1]), true
 }
 
-func createPrivateMemoryFile(file *os.File, resourceID checkpoint.ResourceID, fsr *fsRestore) (*pgalloc.MemoryFile, error) {
-	pagesMetadataReader, pagesFileOffset, err := fsr.memoryFileLoadArgs(resourceID)
+func createPrivateMemoryFile(file *os.File, resourceID checkpoint.ResourceID, cid string, fsr *fsRestore) (*pgalloc.MemoryFile, error) {
+	pagesMetadataReader, pagesFileOffset, onLoadEnd, err := fsr.memoryFileLoadArgs(resourceID, cid)
 	if err != nil {
 		return nil, err
 	}
@@ -1086,6 +1086,7 @@ func createPrivateMemoryFile(file *os.File, resourceID checkpoint.ResourceID, fs
 	}
 	mf, err := pgalloc.NewMemoryFile(file, mfOpts)
 	if err != nil {
+		onLoadEnd(err)
 		return mf, err
 	}
 	if pagesMetadataReader != nil {
@@ -1093,6 +1094,7 @@ func createPrivateMemoryFile(file *os.File, resourceID checkpoint.ResourceID, fs
 		if err := mf.LoadFrom(context.Background(), pagesMetadataReader, &pgalloc.LoadOpts{
 			PagesFile:       fsr.apfl,
 			PagesFileOffset: pagesFileOffset,
+			DoneCallback:    onLoadEnd,
 		}); err != nil {
 			mf.Destroy()
 			return nil, err
@@ -1302,7 +1304,7 @@ func (c *containerMounter) mountSharedMaster(ctx context.Context, spec *specs.Sp
 	// Mount the master using the options from the hint (mount annotations).
 	origOpts := mntInfo.mount.Options
 	mntInfo.mount.Options = mntInfo.hint.Mount.Options
-	fsName, opts, err := getMountNameAndOptions(spec, conf, mntInfo, c.l.productName, c.containerName, c.l.fsRestore)
+	fsName, opts, err := getMountNameAndOptions(spec, conf, mntInfo, c.l.productName, c.containerName, c.containerID, c.l.fsRestore)
 	mntInfo.mount.Options = origOpts
 	if err != nil {
 		return nil, err
@@ -1431,7 +1433,7 @@ func (c *containerMounter) configureRestore(fdmap map[checkpoint.ResourceID]int,
 	fdmap[rootKey] = c.goferFDs.remove()
 
 	if rootfsConf := c.goferMountConfs[0]; rootfsConf.IsFilestorePresent() {
-		mf, err := createPrivateMemoryFile(c.goferFilestoreFDs.removeAsFD().ReleaseToFile("overlay-filestore"), rootKey, nil)
+		mf, err := createPrivateMemoryFile(c.goferFilestoreFDs.removeAsFD().ReleaseToFile("overlay-filestore"), rootKey, c.containerID, c.l.fsRestore)
 		if err != nil {
 			return fmt.Errorf("failed to create private memory file for mount rootfs: %w", err)
 		}
@@ -1450,7 +1452,7 @@ func (c *containerMounter) configureRestore(fdmap map[checkpoint.ResourceID]int,
 		}
 		if submount.filestoreFD != nil {
 			key := checkpoint.ResourceID{ContainerName: c.containerName, Path: submount.mount.Destination}
-			mf, err := createPrivateMemoryFile(submount.filestoreFD.ReleaseToFile("overlay-filestore"), key, nil)
+			mf, err := createPrivateMemoryFile(submount.filestoreFD.ReleaseToFile("overlay-filestore"), key, c.containerID, c.l.fsRestore)
 			if err != nil {
 				return fmt.Errorf("failed to create private memory file for mount %q: %w", submount.mount.Destination, err)
 			}

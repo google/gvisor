@@ -3229,6 +3229,10 @@ func TestFSCheckpointCommand(t *testing.T) {
 	}
 
 	// Save a filesystem checkpoint and kill the sandbox.
+	waitFSCheckpointErrC := make(chan error, 1)
+	go func() {
+		waitFSCheckpointErrC <- conts[0].WaitFSCheckpoint()
+	}()
 	imagePath, err := os.MkdirTemp(testutil.TmpDir(), "fscheckpoint-image")
 	if err != nil {
 		t.Fatalf("Error creating temp dir: %v", err)
@@ -3238,6 +3242,22 @@ func TestFSCheckpointCommand(t *testing.T) {
 		ExitAfterSaving: true,
 	}); err != nil {
 		t.Fatalf("Error saving filesystem checkpoint: %v", err)
+	}
+	select {
+	case err := <-waitFSCheckpointErrC:
+		if err != nil {
+			// Container.WaitFSCheckpoint, like Container.WaitCheckpoint, is
+			// inherently racy. Both wait for the "next" checkpoint to be
+			// saved. If FSSave completes before WaitFSCheckpoint starts
+			// waiting, then WaitFSCheckpoint will miss the FSSave and return
+			// an error when the sandbox exits. There is no way to know when
+			// WaitFSCheckpoint has started waiting, so there is no way to be
+			// completely safe from this race. To avoid causing test flakes,
+			// log the error but don't fail the test.
+			t.Logf("Error waiting for FS checkpoint: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("Timed out waiting for WaitFSCheckpoint")
 	}
 
 	// Start three containers which sleep, two of which restore from the
@@ -3267,6 +3287,11 @@ func TestFSCheckpointCommand(t *testing.T) {
 			t.Fatalf("Error verifying filesystem for container %d, ws: %v, err: %v", i, ws, err)
 		}
 	}
+	for i, cont := range conts[:2] {
+		if err := cont.WaitFSRestore(); err != nil {
+			t.Errorf("Error waiting for FS restore for container %d: %v", i, err)
+		}
+	}
 
 	// Restart the second container and verify that its filesystem is restored
 	// again.
@@ -3279,5 +3304,8 @@ func TestFSCheckpointCommand(t *testing.T) {
 	defer cleanupContsRestart()
 	if ws, err := execute(conf, contsRestart[0], "/app", append([]string{"fsTreeVerify"}, fsTreeArgs[1]...)...); err != nil || ws != 0 {
 		t.Fatalf("Error verifying filesystem for restarted container, ws: %v, err: %v", ws, err)
+	}
+	if err := contsRestart[0].WaitFSRestore(); err != nil {
+		t.Errorf("Error waiting for FS restore: %v", err)
 	}
 }

@@ -84,6 +84,16 @@ type fsRestore struct {
 	apfl        *pgalloc.AsyncPagesFileLoad
 	mfs         map[checkpoint.ResourceID]*fscheckpoint.MemoryFile
 	tmpfs       map[checkpoint.ResourceID]*fscheckpoint.Tmpfs
+
+	waitMu  sync.Mutex
+	waitMap map[string]*fsRestoreContainer // key is container ID
+}
+
+type fsRestoreContainer struct {
+	// These fields are protected by fsRestore.waitMu.
+	err        error
+	asyncLoads int // number of MemoryFiles currently in async page loading
+	cond       sync.Cond
 }
 
 // fsRestoreOpts holds options to startFSRestore.
@@ -111,8 +121,9 @@ func makeFSRestoreOptsForLocalCheckpoint(args *Args) (fsRestoreOpts, error) {
 // startFSRestore takes ownership of resources in opts.
 func startFSRestore(opts *fsRestoreOpts) (*fsRestore, error) {
 	fsr := &fsRestore{
-		mfs:   make(map[checkpoint.ResourceID]*fscheckpoint.MemoryFile),
-		tmpfs: make(map[checkpoint.ResourceID]*fscheckpoint.Tmpfs),
+		mfs:     make(map[checkpoint.ResourceID]*fscheckpoint.MemoryFile),
+		tmpfs:   make(map[checkpoint.ResourceID]*fscheckpoint.Tmpfs),
+		waitMap: make(map[string]*fsRestoreContainer),
 	}
 
 	// TODO: NOLINT - Currently we read the whole pages metadata file into a
@@ -225,32 +236,71 @@ func startFSRestore(opts *fsRestoreOpts) (*fsRestore, error) {
 	return fsr, nil
 }
 
-func (fsr *fsRestore) memoryFileLoadArgs(id checkpoint.ResourceID) (io.Reader, uint64, error) {
-	if fsr == nil {
-		return nil, 0, nil
+// +checklocks:fsr.waitMu
+func (fsr *fsRestore) ensureContainer(cid string) *fsRestoreContainer {
+	c := fsr.waitMap[cid]
+	if c == nil {
+		c = &fsRestoreContainer{}
+		c.cond.L = &fsr.waitMu
+		fsr.waitMap[cid] = c
 	}
+	return c
+}
+
+func (c *fsRestoreContainer) setError(err error) error {
+	if c.err == nil && err != nil {
+		c.err = err
+		c.cond.Broadcast()
+	}
+	return err
+}
+
+func (fsr *fsRestore) memoryFileLoadArgs(id checkpoint.ResourceID, cid string) (io.Reader, uint64, func(error), error) {
+	if fsr == nil {
+		return nil, 0, func(error) {}, nil
+	}
+
 	fsr.wg.Wait()
 	if fsr.manifestErr != nil {
-		return nil, 0, fsr.manifestErr
+		return nil, 0, nil, fsr.manifestErr
 	}
 	mmf := fsr.mfs[id]
 	if mmf == nil {
-		return nil, 0, nil
+		return nil, 0, func(error) {}, nil
 	}
 	pagesMetadata, err := fsr.getPagesMetadata()
-	if mmf.PagesMetadataEnd <= uint64(len(pagesMetadata)) {
-		return bytes.NewReader(pagesMetadata[mmf.PagesMetadataStart:mmf.PagesMetadataEnd]), mmf.PagesStart, nil
+
+	fsr.waitMu.Lock()
+	defer fsr.waitMu.Unlock()
+	c := fsr.ensureContainer(cid)
+	if mmf.PagesMetadataEnd > uint64(len(pagesMetadata)) {
+		if err != nil {
+			return nil, 0, nil, c.setError(fmt.Errorf("failed to read pages metadata: %w", err))
+		}
+		return nil, 0, nil, c.setError(fmt.Errorf("MemoryFile %q has pages metadata range [%d, %d) beyond pages metadata file size %d", mmf.ResourceID, mmf.PagesMetadataStart, mmf.PagesMetadataEnd, len(pagesMetadata)))
 	}
-	if err != nil {
-		return nil, 0, fmt.Errorf("failed to read pages metadata: %w", err)
-	}
-	return nil, 0, fmt.Errorf("MemoryFile %q has pages metadata range [%d, %d) beyond pages metadata file size %d", mmf.ResourceID, mmf.PagesMetadataStart, mmf.PagesMetadataEnd, len(pagesMetadata))
+	c.asyncLoads++
+	return bytes.NewReader(pagesMetadata[mmf.PagesMetadataStart:mmf.PagesMetadataEnd]), mmf.PagesStart, func(err error) {
+		fsr.waitMu.Lock()
+		defer fsr.waitMu.Unlock()
+		c.asyncLoads--
+		switch {
+		case err != nil:
+			if c.err == nil {
+				c.err = err
+			}
+			fallthrough
+		case c.asyncLoads == 0:
+			c.cond.Broadcast()
+		}
+	}, nil
 }
 
-func (fsr *fsRestore) tmpfsSourceTar(id checkpoint.ResourceID) (io.ReadCloser, error) {
+func (fsr *fsRestore) tmpfsSourceTar(id checkpoint.ResourceID, cid string) (io.ReadCloser, error) {
 	if fsr == nil {
 		return nil, nil
 	}
+
 	fsr.wg.Wait()
 	if fsr.manifestErr != nil {
 		return nil, fsr.manifestErr
@@ -260,11 +310,43 @@ func (fsr *fsRestore) tmpfsSourceTar(id checkpoint.ResourceID) (io.ReadCloser, e
 		return nil, nil
 	}
 	multiTar, err := fsr.getMultiTar()
+
+	fsr.waitMu.Lock()
+	defer fsr.waitMu.Unlock()
 	if mt.TarEnd <= uint64(len(multiTar)) {
 		return io.NopCloser(bytes.NewReader(multiTar[mt.TarStart:mt.TarEnd])), nil
 	}
+	c := fsr.ensureContainer(cid)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read tar archive: %w", err)
+		return nil, c.setError(fmt.Errorf("failed to read tar archive: %w", err))
 	}
-	return nil, fmt.Errorf("tmpfs %q has tar range [%d, %d) beyond multi-tar file size %d", mt.ResourceID, mt.TarStart, mt.TarEnd, len(multiTar))
+	return nil, c.setError(fmt.Errorf("tmpfs %q has tar range [%d, %d) beyond multi-tar file size %d", mt.ResourceID, mt.TarStart, mt.TarEnd, len(multiTar)))
+}
+
+// wait blocks until either all filesystems have been restored for the
+// container with the given ID, or an error occurs while restoring filesystems
+// for that container.
+func (fsr *fsRestore) wait(cid string) error {
+	if fsr == nil {
+		return fmt.Errorf("filesystem restore is not enabled")
+	}
+	fsr.wg.Wait()
+	if fsr.manifestErr != nil {
+		return fsr.manifestErr
+	}
+	fsr.waitMu.Lock()
+	defer fsr.waitMu.Unlock()
+	c := fsr.waitMap[cid]
+	if c == nil {
+		return fmt.Errorf("no filesystems restored for container %s", cid)
+	}
+	for {
+		if c.err != nil {
+			return c.err
+		}
+		if c.asyncLoads == 0 {
+			return nil
+		}
+		c.cond.Wait()
+	}
 }
