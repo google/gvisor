@@ -19,7 +19,6 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -165,8 +164,10 @@ func (op metaLoad) GetExprName() string {
 }
 
 func (op metaLoad) Dump() ([]byte, *syserr.AnnotatedError) {
-	log.Warningf("Nftables: Dumping meta load operation is not implemented")
-	return nil, nil
+	m := &nlmsg.Message{}
+	m.PutAttr(linux.NFTA_META_KEY, nlmsg.PutU32(uint32(op.key)))
+	m.PutAttr(linux.NFTA_META_DREG, nlmsg.PutU32(uint32(op.dreg)))
+	return m.Buffer(), nil
 }
 
 func initMetaLoad(attrs map[uint16]nlmsg.BytesView) (*metaLoad, *syserr.AnnotatedError) {
