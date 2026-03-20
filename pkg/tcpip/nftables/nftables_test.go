@@ -17,8 +17,10 @@ package nftables
 import (
 	"encoding/binary"
 	"fmt"
+	"math"
 	"reflect"
 	"slices"
+	"strconv"
 	"testing"
 	"time"
 
@@ -28,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -254,6 +257,11 @@ func makeIPv4Packet(reserved int, ipv4Fields *header.IPv4Fields) *stack.PacketBu
 	return pkt
 }
 
+func makeArbitraryIPv4Packet() *stack.PacketBuffer {
+	pkt := makeIPv4Packet(header.IPv4MinimumSize, arbitraryIPv4Fields())
+	return pkt
+}
+
 // makeIPv6Packet creates a packet with an IPv6 header.
 func makeIPv6Packet(reserved int, ipv6Fields *header.IPv6Fields) *stack.PacketBuffer {
 	// Creates a new PacketBuffer with enough space for the IPv4 header.
@@ -275,6 +283,11 @@ func makeIPv6Packet(reserved int, ipv6Fields *header.IPv6Fields) *stack.PacketBu
 	// Sets the network protocol number.
 	pkt.NetworkProtocolNumber = header.IPv6ProtocolNumber
 
+	return pkt
+}
+
+func makeArbitraryIPv6Packet() *stack.PacketBuffer {
+	pkt := makeIPv6Packet(header.IPv6MinimumSize, arbitraryIPv6Fields())
 	return pkt
 }
 
@@ -334,6 +347,28 @@ func makeIPv6TCPPacket(reserved int, ipv6Fields *header.IPv6Fields, tcpFields *h
 	return pkt
 }
 
+func getAddrFamilyOrDefault(pkt *stack.PacketBuffer, family stack.AddressFamily) stack.AddressFamily {
+	if len(pkt.NetworkHeader().Slice()) > 0 {
+		switch pkt.NetworkProtocolNumber {
+		case header.IPv4ProtocolNumber:
+			return stack.IP
+		case header.IPv6ProtocolNumber:
+			return stack.IP6
+		}
+		return family
+	}
+	if len(pkt.LinkHeader().Slice()) >= header.EthernetMinimumSize {
+		ethHdr := header.Ethernet(pkt.LinkHeader().Slice())
+		switch ethHdr.Type() {
+		case header.IPv4ProtocolNumber:
+			return stack.IP
+		case header.IPv6ProtocolNumber:
+			return stack.IP6
+		}
+	}
+	return family
+}
+
 // TestUnsupportedAddressFamily tests that an empty NFTables object returns an
 // error when evaluating a packet for an unsupported address family.
 func TestUnsupportedAddressFamily(t *testing.T) {
@@ -357,13 +392,22 @@ func TestUnsupportedAddressFamily(t *testing.T) {
 // when evaluating packets at the hook-level.
 func TestAcceptAllForSupportedHooks(t *testing.T) {
 	// Makes arbitrary packet for comparison (to check for no changes).
-	cmpPkt := makeArbitraryPacket(arbitraryReservedHeaderBytes)
 	for _, family := range []stack.AddressFamily{stack.IP, stack.IP6, stack.Inet, stack.Arp, stack.Bridge, stack.Netdev} {
 		t.Run(family.String()+" address family", func(t *testing.T) {
 			nf := newNFTablesStd()
 			for _, hook := range []stack.NFHook{stack.NFPrerouting, stack.NFInput, stack.NFForward, stack.NFOutput, stack.NFPostrouting, stack.NFIngress, stack.NFEgress} {
-				pkt := makeArbitraryPacket(arbitraryReservedHeaderBytes)
-				v, err := nf.EvaluateHook(family, hook, pkt)
+				var pkt *stack.PacketBuffer
+				pktFamily := family
+				if family == stack.IP || family == stack.Inet {
+					pkt = makeArbitraryIPv4Packet()
+					pktFamily = stack.IP
+				} else if family == stack.IP6 {
+					pkt = makeArbitraryIPv6Packet()
+				} else {
+					pkt = makeArbitraryPacket(arbitraryReservedHeaderBytes)
+				}
+				cmpPkt := pkt.Clone()
+				v, err := nf.EvaluateHook(pktFamily, hook, pkt)
 
 				supported := false
 				for _, h := range supportedHooks[family] {
@@ -534,14 +578,13 @@ func TestEvaluateImmediateVerdict(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error for AddTable: %v", err)
 			}
-			bc, err := tab.AddChain("base_chain", nil, "test chain", false)
+			bc, err := nf.AddChainToTable(tab, "base_chain", arbitraryInfoPolicyAccept /* bcInfo */, "test chain", false /* errorOnDuplicate */, 0 /* chainFlags */, nil /* udata */, linux.NF_ACCEPT /* policy */)
 			if err != nil {
-				t.Fatalf("unexpected error for AddChain: %v", err)
+				t.Fatalf("unexpected error for AddChainToTable: %v", err)
 			}
-			bc.SetBaseChainInfo(arbitraryInfoPolicyAccept)
-			tc, err := tab.AddChain(arbitraryTargetChain, nil, "test chain", false)
+			tc, err := nf.AddChainToTable(tab, arbitraryTargetChain, nil /* bcInfo */, "test chain", false /* errorOnDuplicate */, 0 /* chainFlags */, nil /* udata */, 0 /* policy */)
 			if err != nil {
-				t.Fatalf("unexpected error for AddChain: %v", err)
+				t.Fatalf("unexpected error for AddChainToTable: %v", err)
 			}
 
 			// Adds testing rules and operations.
@@ -568,8 +611,8 @@ func TestEvaluateImmediateVerdict(t *testing.T) {
 			}
 
 			// Runs evaluation and checks verdict.
-			pkt := makeArbitraryPacket(arbitraryReservedHeaderBytes)
-			v, err := nf.EvaluateHook(arbitraryFamily, arbitraryHook, pkt)
+			pkt := makeArbitraryIPv4Packet()
+			v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt)
 
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook: %v", err)
@@ -598,11 +641,10 @@ func TestEvaluateImmediateBytesData(t *testing.T) {
 				if err != nil {
 					t.Fatalf("unexpected error for AddTable: %v", err)
 				}
-				bc, err := tab.AddChain("base_chain", nil, "test chain", false)
+				bc, err := nf.AddChainToTable(tab, "base_chain", arbitraryInfoPolicyAccept /* bcInfo */, "test chain", false /* errorOnDuplicate */, 0 /* chainFlags */, nil /* udata */, linux.NF_ACCEPT /* policy */)
 				if err != nil {
 					t.Fatalf("unexpected error for AddChain: %v", err)
 				}
-				bc.SetBaseChainInfo(arbitraryInfoPolicyAccept)
 
 				// Adds a rule and immediate operation per register of registerSize.
 				switch registerSize {
@@ -624,8 +666,8 @@ func TestEvaluateImmediateBytesData(t *testing.T) {
 					}
 				}
 				// Runs evaluation and checks for default policy verdict accept
-				pkt := makeArbitraryPacket(arbitraryReservedHeaderBytes)
-				v, err := nf.EvaluateHook(arbitraryFamily, arbitraryHook, pkt)
+				pkt := makeArbitraryIPv4Packet()
+				v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt)
 				if err != nil {
 					t.Fatalf("unexpected error for EvaluateHook: %v", err)
 				}
@@ -1084,11 +1126,10 @@ func TestEvaluateComparison(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error for AddTable: %v", err)
 			}
-			bc, err := tab.AddChain("base_chain", nil, "test chain", false)
+			bc, err := nf.AddChainToTable(tab, "base_chain", arbitraryInfoPolicyAccept, "test chain", false, 0, nil, linux.NF_ACCEPT)
 			if err != nil {
 				t.Fatalf("unexpected error for AddChain: %v", err)
 			}
-			bc.SetBaseChainInfo(arbitraryInfoPolicyAccept)
 			rule := &Rule{}
 
 			// Adds testing operations.
@@ -1109,8 +1150,8 @@ func TestEvaluateComparison(t *testing.T) {
 			}
 
 			// Runs evaluation and checks verdict.
-			pkt := makeArbitraryPacket(arbitraryReservedHeaderBytes)
-			v, err := nf.EvaluateHook(arbitraryFamily, arbitraryHook, pkt)
+			pkt := makeArbitraryIPv4Packet()
+			v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt)
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook: %v", err)
 			}
@@ -1321,11 +1362,10 @@ func TestEvaluateRanged(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error for AddTable: %v", err)
 			}
-			bc, err := tab.AddChain("base_chain", nil, "test chain", false)
+			bc, err := nf.AddChainToTable(tab, "test", arbitraryInfoPolicyAccept, "" /* comment */, true /* errorOnDuplicate */, 0 /* chainFlags */, nil /* udata */, linux.NF_ACCEPT)
 			if err != nil {
 				t.Fatalf("unexpected error for AddChain: %v", err)
 			}
-			bc.SetBaseChainInfo(arbitraryInfoPolicyAccept)
 			rule := &Rule{}
 
 			// Adds testing operations.
@@ -1345,8 +1385,8 @@ func TestEvaluateRanged(t *testing.T) {
 			}
 
 			// Runs evaluation and checks verdict.
-			pkt := makeArbitraryPacket(arbitraryReservedHeaderBytes)
-			v, err := nf.EvaluateHook(arbitraryFamily, arbitraryHook, pkt)
+			pkt := makeArbitraryIPv4Packet()
+			v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt)
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook: %v", err)
 			}
@@ -1555,11 +1595,10 @@ func TestEvaluatePayloadLoad(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error for AddTable: %v", err)
 			}
-			bc, err := tab.AddChain("base_chain", nil, "test chain", false)
+			bc, err := nf.AddChainToTable(tab, "base_chain", arbitraryInfoPolicyAccept, "" /* comment */, false /* errorOnDuplicate */, 0 /* chainFlags */, nil /* udata */, linux.NF_ACCEPT)
 			if err != nil {
 				t.Fatalf("unexpected error for AddChain: %v", err)
 			}
-			bc.SetBaseChainInfo(arbitraryInfoPolicyAccept)
 			rule := &Rule{}
 
 			// Adds testing operations.
@@ -1579,7 +1618,7 @@ func TestEvaluatePayloadLoad(t *testing.T) {
 			}
 
 			// Runs evaluation.
-			v, err := nf.EvaluateHook(arbitraryFamily, arbitraryHook, test.pkt)
+			v, err := nf.EvaluateHook(getAddrFamilyOrDefault(test.pkt, arbitraryFamily), arbitraryHook, test.pkt)
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook: %v", err)
 			}
@@ -1622,6 +1661,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 			outPkt: func() *stack.PacketBuffer {
 				fields := arbitraryEthernetFields()
 				fields.SrcAddr = arbitraryLinkAddr2
+				fields.Type = header.IPv4ProtocolNumber
 				return makeEthernetPacket(0, fields)
 			}(),
 			op1: mustCreateImmediate(t, linux.NFT_REG_1, newBytesData(arbitraryLinkAddrB2[:])),
@@ -2059,11 +2099,10 @@ func TestEvaluatePayloadSet(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error for AddTable: %v", err)
 			}
-			bc, err := tab.AddChain("base_chain", nil, "test chain", false)
+			bc, err := nf.AddChainToTable(tab, "base_chain", arbitraryInfoPolicyAccept /* bcInfo */, "test chain", false, 0 /* chainFlags */, nil /* udata */, linux.NF_ACCEPT)
 			if err != nil {
 				t.Fatalf("unexpected error for AddChain: %v", err)
 			}
-			bc.SetBaseChainInfo(arbitraryInfoPolicyAccept)
 			rule := &Rule{}
 
 			// Adds testing operations.
@@ -2084,7 +2123,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 			}
 
 			// Runs evaluation.
-			v, err := nf.EvaluateHook(arbitraryFamily, arbitraryHook, test.pkt)
+			v, err := nf.EvaluateHook(getAddrFamilyOrDefault(test.pkt, arbitraryFamily), arbitraryHook, test.pkt)
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook: %v", err)
 			}
@@ -2244,11 +2283,10 @@ func TestEvaluateBitwise(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error for AddTable: %v", err)
 			}
-			bc, err := tab.AddChain("base_chain", nil, "test chain", false)
+			bc, err := nf.AddChainToTable(tab, "base_chain", arbitraryInfoPolicyAccept /* bcInfo */, "test chain", false, 0, nil, linux.NF_ACCEPT)
 			if err != nil {
 				t.Fatalf("unexpected error for AddChain: %v", err)
 			}
-			bc.SetBaseChainInfo(arbitraryInfoPolicyAccept)
 			rule := &Rule{}
 
 			// Adds testing operations.
@@ -2271,8 +2309,8 @@ func TestEvaluateBitwise(t *testing.T) {
 			}
 
 			// Runs evaluation and checks verdict.
-			pkt := makeArbitraryPacket(arbitraryReservedHeaderBytes)
-			v, err := nf.EvaluateHook(arbitraryFamily, arbitraryHook, pkt)
+			pkt := makeArbitraryIPv4Packet()
+			v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt)
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook: %v", err)
 			}
@@ -2310,11 +2348,10 @@ func TestEvaluateCounter(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error for AddTable: %v", err)
 		}
-		bc, err := tab.AddChain("base_chain", nil, "test chain", false)
+		bc, err := nf.AddChainToTable(tab, "base_chain", arbitraryInfoPolicyAccept /* bcInfo */, "test chain", false, 0, nil, linux.NF_ACCEPT)
 		if err != nil {
 			t.Fatalf("unexpected error for AddChain: %v", err)
 		}
-		bc.SetBaseChainInfo(arbitraryInfoPolicyAccept)
 
 		// Creates a rule that filters for the desired IPv4 address and adds the
 		// counter to the end of the rule. So, the counter should only increment for
@@ -2332,7 +2369,7 @@ func TestEvaluateCounter(t *testing.T) {
 		prevBytes := counter.bytes.Load()
 		prevPackets := counter.packets.Load()
 		for i, pkt := range pkts {
-			_, err := nf.EvaluateHook(arbitraryFamily, arbitraryHook, pkt)
+			_, err := nf.EvaluateHook(getAddrFamilyOrDefault(pkt, arbitraryFamily), arbitraryHook, pkt)
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook for packet %d: %v", i, err)
 			}
@@ -2368,7 +2405,8 @@ func TestEvaluateLast(t *testing.T) {
 
 	t.Run("last timing tests", func(t *testing.T) {
 		// Makes an arbitrary packet to be used in the test.
-		pkt := makeArbitraryPacket(arbitraryReservedHeaderBytes)
+		pkt := makeArbitraryIPv4Packet()
+		pktFamily := stack.IP
 
 		// Sets up an NFTables object with a base chain and fake manual clock.
 		fakeClock := faketime.NewManualClock()
@@ -2378,11 +2416,10 @@ func TestEvaluateLast(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error for AddTable: %v", err)
 		}
-		bc, err := tab.AddChain("base_chain", nil, "test chain", false)
+		bc, err := nf.AddChainToTable(tab, "base_chain", arbitraryInfoPolicyAccept /* bcInfo */, "test chain", false, 0, nil, linux.NF_ACCEPT)
 		if err != nil {
 			t.Fatalf("unexpected error for AddChain: %v", err)
 		}
-		bc.SetBaseChainInfo(arbitraryInfoPolicyAccept)
 
 		// Registers a single rule with the last operation.
 		rule := &Rule{}
@@ -2410,7 +2447,7 @@ func TestEvaluateLast(t *testing.T) {
 				defer wg.Done()
 
 				// Evaluates the packet (which should update last's timestamp).
-				_, err := nf.EvaluateHook(arbitraryFamily, arbitraryHook, pkt)
+				_, err := nf.EvaluateHook(pktFamily, arbitraryHook, pkt)
 				if err != nil {
 					t.Fatalf("unexpected error for EvaluateHook for packet %d: %v", i, err)
 				}
@@ -2505,11 +2542,10 @@ func TestEvaluateRoute(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error for AddTable: %v", err)
 			}
-			bc, err := tab.AddChain("base_chain", nil, "test chain", false)
+			bc, err := nf.AddChainToTable(tab, "base_chain", arbitraryInfoPolicyAccept, "test chain", false, 0, nil, linux.NF_ACCEPT)
 			if err != nil {
 				t.Fatalf("unexpected error for AddChain: %v", err)
 			}
-			bc.SetBaseChainInfo(arbitraryInfoPolicyAccept)
 			rule := &Rule{}
 
 			// Adds testing operations.
@@ -2529,7 +2565,7 @@ func TestEvaluateRoute(t *testing.T) {
 			}
 
 			// Runs evaluation.
-			v, err := nf.EvaluateHook(arbitraryFamily, arbitraryHook, test.pkt)
+			v, err := nf.EvaluateHook(getAddrFamilyOrDefault(test.pkt, arbitraryFamily), arbitraryHook, test.pkt)
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook: %v", err)
 			}
@@ -2746,11 +2782,10 @@ func TestEvaluateByteorder(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error for AddTable: %v", err)
 			}
-			bc, err := tab.AddChain("base_chain", nil, "test chain", false)
+			bc, err := nf.AddChainToTable(tab, "base_chain", arbitraryInfoPolicyAccept /* bcInfo */, "test chain", false, 0, nil, linux.NF_ACCEPT)
 			if err != nil {
 				t.Fatalf("unexpected error for AddChain: %v", err)
 			}
-			bc.SetBaseChainInfo(arbitraryInfoPolicyAccept)
 			rule := &Rule{}
 
 			// Adds testing operations.
@@ -2773,8 +2808,8 @@ func TestEvaluateByteorder(t *testing.T) {
 			}
 
 			// Runs evaluation and checks verdict.
-			pkt := makeArbitraryPacket(arbitraryReservedHeaderBytes)
-			v, err := nf.EvaluateHook(arbitraryFamily, arbitraryHook, pkt)
+			pkt := makeArbitraryIPv4Packet()
+			v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt)
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook: %v", err)
 			}
@@ -2854,7 +2889,7 @@ func TestEvaluateMetaLoad(t *testing.T) {
 			pkt:   pkt,
 			op1:   mustCreateMetaLoad(t, linux.NFT_META_NFPROTO, linux.NFT_REG_4),
 			op2: mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ,
-				[]byte{AfProtocol(stack.Inet), 0, 0, 0}),
+				[]byte{linux.NFPROTO_IPV6, 0, 0, 0}),
 		},
 		{ // cmd: add rule ip6 tab ch meta l4proto 0x6
 			tname: "meta load l4proto test",
@@ -2929,11 +2964,10 @@ func TestEvaluateMetaLoad(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error for AddTable: %v", err)
 			}
-			bc, err := tab.AddChain("base_chain", nil, "test chain", false)
+			bc, err := nf.AddChainToTable(tab, "base_chain", arbitraryInfoPolicyAccept /* bcInfo */, "test chain", false, 0, nil, linux.NF_ACCEPT)
 			if err != nil {
 				t.Fatalf("unexpected error for AddChain: %v", err)
 			}
-			bc.SetBaseChainInfo(arbitraryInfoPolicyAccept)
 			rule := &Rule{}
 
 			// Adds testing operations.
@@ -2953,7 +2987,7 @@ func TestEvaluateMetaLoad(t *testing.T) {
 			}
 
 			// Runs evaluation.
-			v, err := nf.EvaluateHook(arbitraryFamily, arbitraryHook, test.pkt)
+			v, err := nf.EvaluateHook(getAddrFamilyOrDefault(test.pkt, arbitraryFamily), arbitraryHook, test.pkt)
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook: %v", err)
 			}
@@ -3019,11 +3053,10 @@ func TestEvaluateMetaSet(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error for AddTable: %v", err)
 			}
-			bc, err := tab.AddChain("base_chain", nil, "test chain", false)
+			bc, err := nf.AddChainToTable(tab, "base_chain", arbitraryInfoPolicyAccept /* bcInfo */, "test chain", false, 0, nil, linux.NF_ACCEPT)
 			if err != nil {
 				t.Fatalf("unexpected error for AddChain: %v", err)
 			}
-			bc.SetBaseChainInfo(arbitraryInfoPolicyAccept)
 			rule := &Rule{}
 
 			// Adds testing operations.
@@ -3043,7 +3076,7 @@ func TestEvaluateMetaSet(t *testing.T) {
 			}
 
 			// Runs evaluation.
-			v, err := nf.EvaluateHook(arbitraryFamily, arbitraryHook, test.pkt)
+			v, err := nf.EvaluateHook(getAddrFamilyOrDefault(test.pkt, arbitraryFamily), arbitraryHook, test.pkt)
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook: %v", err)
 			}
@@ -3480,7 +3513,12 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 			// Creates all chains in the test struct first. This is necessary so the
 			// loop checking sees the target chains exist (otherwise it would error).
 			for chainName, chainInit := range test.chains {
-				tab.AddChain(chainName, chainInit.GetBaseChainInfo(), chainInit.GetComment(), false)
+				policy := linux.NF_ACCEPT
+				if chainInit.baseChainInfo != nil && chainInit.baseChainInfo.PolicyDrop {
+					policy = linux.NF_DROP
+				}
+
+				nf.AddChainToTable(tab, chainName, chainInit.GetBaseChainInfo(), chainInit.GetComment(), false, 0, nil, uint8(policy))
 			}
 			if len(test.chains) != tab.ChainCount() {
 				t.Fatalf("not all chains added to table")
@@ -3510,8 +3548,8 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 			}
 
 			// Runs evaluation and checks verdict.
-			pkt := makeArbitraryPacket(arbitraryReservedHeaderBytes)
-			v, err := nf.EvaluateHook(arbitraryFamily, arbitraryHook, pkt)
+			pkt := makeArbitraryIPv4Packet()
+			v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt)
 			if err != nil {
 				if test.verdict.ChainName != "error" {
 					t.Fatalf("unexpected error for EvaluateHook: %v", err)
@@ -3590,9 +3628,13 @@ func TestMaxNestedJumps(t *testing.T) {
 			}
 			for i := test.numberOfJumps - 1; i >= 0; i-- {
 				name := fmt.Sprintf("chain %d", i)
-				c, err := tab.AddChain(name, nil, "test chain", false)
+				var c *Chain
+				var err *syserr.AnnotatedError
+
 				if i == 0 {
-					c.SetBaseChainInfo(arbitraryInfoPolicyAccept)
+					c, err = nf.AddChainToTable(tab, name, arbitraryInfoPolicyAccept, "test chain", false, 0, nil, linux.NF_ACCEPT)
+				} else {
+					c, err = nf.AddChainToTable(tab, name, nil /* bcInfo */, "test chain", false, 0, nil, linux.NF_ACCEPT)
 				}
 				if err != nil {
 					t.Fatalf("unexpected error for AddChain: %v", err)
@@ -3617,8 +3659,8 @@ func TestMaxNestedJumps(t *testing.T) {
 			}
 
 			// Runs evaluation and checks verdict.
-			pkt := makeArbitraryPacket(arbitraryReservedHeaderBytes)
-			v, err := nf.EvaluateHook(arbitraryFamily, arbitraryHook, pkt)
+			pkt := makeArbitraryIPv4Packet()
+			v, err := nf.EvaluateHook(getAddrFamilyOrDefault(pkt, arbitraryFamily), arbitraryHook, pkt)
 			if err != nil {
 				if test.verdict.ChainName != "error" {
 					t.Fatalf("unexpected error for EvaluateHook: %v", err)
@@ -4229,8 +4271,23 @@ func TestDumpOperations(t *testing.T) {
 			op:   mustCreateMetaLoad(t, linux.NFT_META_LEN, linux.NFT_REG_1),
 			validate: func(dump []byte) error {
 				// TODO: b/452648112 - Implement validation for meta load operation when dump is implemented.
-				if dump != nil {
-					return fmt.Errorf("unexpected dump: %v, want nil", dump)
+				attrs, ok := NfParse(dump)
+				if !ok {
+					return fmt.Errorf("failed to parse dumped attributes")
+				}
+				key, ok := AttrNetToHost[uint32](linux.NFTA_META_KEY, attrs)
+				if !ok {
+					return fmt.Errorf("failed to get key value")
+				}
+				if key != linux.NFT_META_LEN {
+					return fmt.Errorf("unexpected key value: %d, want %d", key, linux.NFT_META_LEN)
+				}
+				reg, ok := AttrNetToHost[uint32](linux.NFTA_META_DREG, attrs)
+				if !ok {
+					return fmt.Errorf("failed to get dreg value")
+				}
+				if reg != linux.NFT_REG_1 {
+					return fmt.Errorf("unexpected dreg value: %d, want %d", reg, linux.NFT_REG_1)
 				}
 				return nil
 			},
@@ -4239,9 +4296,23 @@ func TestDumpOperations(t *testing.T) {
 			name: "metaSet",
 			op:   mustCreateMetaSet(t, linux.NFT_META_PKTTYPE, linux.NFT_REG_1),
 			validate: func(dump []byte) error {
-				// TODO: b/452648112 - Implement validation for meta set operation when dump is implemented.
-				if dump != nil {
-					return fmt.Errorf("unexpected dump: %v, want nil", dump)
+				attrs, ok := NfParse(dump)
+				if !ok {
+					return fmt.Errorf("failed to parse dumped attributes")
+				}
+				key, ok := AttrNetToHost[uint32](linux.NFTA_META_KEY, attrs)
+				if !ok {
+					return fmt.Errorf("failed to get key value")
+				}
+				if key != linux.NFT_META_PKTTYPE {
+					return fmt.Errorf("unexpected key value: %d, want %d", key, linux.NFT_META_PKTTYPE)
+				}
+				reg, ok := AttrNetToHost[uint32](linux.NFTA_META_SREG, attrs)
+				if !ok {
+					return fmt.Errorf("failed to get sreg value")
+				}
+				if reg != linux.NFT_REG_1 {
+					return fmt.Errorf("unexpected sreg value: %d, want %d", reg, linux.NFT_REG_1)
 				}
 				return nil
 			},
@@ -4306,4 +4377,51 @@ func TestDumpOperations(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestBaseChainEvalOrder tests that base chains are evaluated in priority order.
+func TestBaseChainEvalOrder(t *testing.T) {
+	nf := newNFTablesStd()
+	hook := stack.NFOutput
+	createNFTablesWithBaseChains := func(t *testing.T, ip stack.AddressFamily, priority int) *NFTables {
+		tab, err := nf.AddTable(ip, "test_table_"+stack.AddressFamilyStrings[ip], false)
+		if err != nil {
+			t.Fatalf("AddTable failed: %v", err)
+		}
+		bcInfo := &BaseChainInfo{
+			BcType:   BaseChainTypeFilter,
+			Hook:     hook,
+			Priority: NewIntPriority(priority),
+		}
+		_, err = nf.AddChainToTable(tab, "chain"+strconv.Itoa(priority), bcInfo, "test", false, 0, nil, linux.NF_ACCEPT)
+		if err != nil {
+			t.Fatalf("AddChain failed: %v", err)
+		}
+		return nf
+	}
+	// Create NFTables with base chains for IP, Inet, and IP6.
+	nf = createNFTablesWithBaseChains(t, stack.IP, 1)
+	nf = createNFTablesWithBaseChains(t, stack.Inet, -100)
+	nf = createNFTablesWithBaseChains(t, stack.IP6, 1)
+
+	validateOrder := func(t *testing.T, family stack.AddressFamily, wantLen int) {
+		baseChains, err := nf.getBaseChainsForEvaluation(family, hook)
+		if err != nil {
+			t.Fatalf("getBaseChainsForEvaluation failed: %v", err)
+		}
+		if len(baseChains) != wantLen {
+			t.Errorf("unexpected number of base chains: %d, want %d", len(baseChains), wantLen)
+		}
+		prevPriority := math.MinInt32
+		for _, bc := range baseChains {
+			p := bc.baseChainInfo.Priority.GetValue()
+			if p < prevPriority {
+				t.Fatalf("base chain priority %d is less than previous priority %d", p, prevPriority)
+			}
+			prevPriority = p
+		}
+	}
+
+	validateOrder(t, stack.IP, 2 /*wantLen*/)
+	validateOrder(t, stack.IP6, 2 /*wantLen*/)
 }

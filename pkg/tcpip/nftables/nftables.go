@@ -88,6 +88,26 @@ func (nf *NFTables) checkHook(pkt *stack.PacketBuffer, af stack.AddressFamily, h
 // Core Evaluation Functions
 //
 
+func (nf *NFTables) getBaseChainsForEvaluation(family stack.AddressFamily, hook stack.NFHook) ([]*Chain, *syserr.AnnotatedError) {
+	switch family {
+	case stack.IP:
+		return nf.ipv4InetHfCache[hook].baseChains, nil
+	case stack.IP6:
+		return nf.ipv6InetHfCache[hook].baseChains, nil
+	case stack.Inet:
+		// A packet can be of only IP or IP6 address family.
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "inet address family is not supported for hook evaluation")
+	}
+	if nf.filters[family] == nil {
+		return nil, nil
+	}
+	filter := nf.filters[family]
+	if filter.hfStacks[hook] == nil || len(filter.hfStacks[hook].baseChains) == 0 {
+		return nil, nil
+	}
+	return filter.hfStacks[hook].baseChains, nil
+}
+
 // EvaluateHook evaluates a packet using the rules of the given hook for the
 // given address family, returning a netfilter verdict and modifying the packet
 // in place.
@@ -109,9 +129,12 @@ func (nf *NFTables) EvaluateHook(family stack.AddressFamily, hook stack.NFHook, 
 		return stack.NFVerdict{}, err
 	}
 
+	baseChains, err := nf.getBaseChainsForEvaluation(family, hook)
+	if err != nil {
+		return stack.NFVerdict{}, err
+	}
 	// Immediately accept if there are no base chains for the specified hook.
-	if nf.filters[family] == nil || nf.filters[family].hfStacks[hook] == nil ||
-		len(nf.filters[family].hfStacks[hook].baseChains) == 0 {
+	if len(baseChains) == 0 {
 		return stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}, nil
 	}
 
@@ -119,7 +142,7 @@ func (nf *NFTables) EvaluateHook(family stack.AddressFamily, hook stack.NFHook, 
 
 	// Evaluates packet through all base chains for given hook in priority order.
 	var bc *Chain
-	for _, bc = range nf.filters[family].hfStacks[hook].baseChains {
+	for _, bc = range baseChains {
 		// Doesn't evaluate chain if it's table is flagged as dormant.
 		if _, dormant := bc.table.flagSet[TableFlagDormant]; dormant {
 			continue
@@ -278,8 +301,8 @@ func (nf *NFTables) Flush(attrs map[uint16]nlmsg.BytesView, owner uint32) {
 
 			// TODO: b/434242152 - Support correctly deleting chains once
 			// rules are deletable.
-			for chainName := range table.chains {
-				ok := table.DeleteChain(chainName)
+			for chainName, chain := range table.chains {
+				ok := table.deleteChain(chain)
 				if !ok {
 					log.Warningf("Failed to delete chain %s", chainName)
 				}
@@ -464,8 +487,11 @@ func (nf *NFTables) DeleteTable(family stack.AddressFamily, tableName string) (b
 	}
 
 	// Deletes all chains in the table.
-	for chainName := range t.chains {
-		t.DeleteChain(chainName)
+	for _, c := range t.chains {
+		if err := nf.evictChainFromIPInetHFCache(c.GetBaseChainInfo().Hook, c); err != nil {
+			return false, err
+		}
+		t.deleteChain(c)
 	}
 
 	// Deletes the table from the table map and from the table handle map.
@@ -485,7 +511,7 @@ func (nf *NFTables) GetChain(family stack.AddressFamily, tableName string, chain
 	return t.GetChain(chainName)
 }
 
-// AddChain makes a new chain for the corresponding table and adds it to the
+// AddChainToTable makes a new chain for the corresponding table and adds it to the
 // chain map and hook function list, returning an error if the address family is
 // invalid or the table doesn't exist. Can return an error if a chain by the
 // same name already exists if errorOnDuplicate is true. Can be used to get an
@@ -493,14 +519,30 @@ func (nf *NFTables) GetChain(family stack.AddressFamily, tableName string, chain
 // Note: if the chain already exists, the existing chain is returned without any
 // modifications.
 // Note: if the chain is not a base chain, info should be nil.
-func (nf *NFTables) AddChain(family stack.AddressFamily, tableName string, chainName string, info *BaseChainInfo, comment string, errorOnDuplicate bool) (*Chain, *syserr.AnnotatedError) {
-	// Gets and checks the table.
-	t, err := nf.GetTable(family, tableName, 0)
+func (nf *NFTables) AddChainToTable(tab *Table, chainName string, bcInfo *BaseChainInfo, comment string, errorOnDuplicate bool, chainFlags uint32, udata []byte, policy uint8) (*Chain, *syserr.AnnotatedError) {
+	// Add the chain to the table, appending, by priority, to the stack of base
+	// chains for the hook.
+	chain, err := tab.addChain(chainName, bcInfo, comment, errorOnDuplicate)
 	if err != nil {
 		return nil, err
 	}
-
-	return t.AddChain(chainName, info, comment, errorOnDuplicate)
+	chain.SetFlags(uint8(chainFlags))
+	if udata != nil {
+		if err := chain.SetUserData(udata); err != nil {
+			return nil, err
+		}
+	}
+	if chain.IsBaseChain() {
+		info := chain.GetBaseChainInfo()
+		if info == nil {
+			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("base chain info is nil for chain %s", chainName))
+		}
+		info.PolicyDrop = policy == linux.NF_DROP
+		if err := nf.addChainToIPInetHFCache(info.Hook, chain); err != nil {
+			return nil, err
+		}
+	}
+	return chain, nil
 }
 
 // getNewHandle returns a new handle for a chain or rule.
@@ -508,31 +550,66 @@ func (t *Table) getNewHandle() uint64 {
 	return t.handleCounter.Add(1)
 }
 
-// CreateChain makes a new chain for the corresponding table and adds it to the
-// chain map and hook function list like AddChain but also returns an error if a
-// chain by the same name already exists.
-// Note: this interface mirrors the difference between the create and add
-// commands within the nft binary.
-func (nf *NFTables) CreateChain(family stack.AddressFamily, tableName string, chainName string, info *BaseChainInfo, comment string) (*Chain, *syserr.AnnotatedError) {
-	return nf.AddChain(family, tableName, chainName, info, comment, true)
-}
-
-// DeleteChain deletes the specified chain from the NFTables object returning
+// DeleteChainFromTable deletes the specified chain from the NFTables object returning
 // true if the chain was deleted and false if the chain doesn't exist. Returns
 // an error if the address family is invalid or the table doesn't exist.
-func (nf *NFTables) DeleteChain(family stack.AddressFamily, tableName string, chainName string) (bool, *syserr.AnnotatedError) {
-	// Gets and checks the table.
-	t, err := nf.GetTable(family, tableName, 0)
-	if err != nil {
+func (nf *NFTables) DeleteChainFromTable(tab *Table, chainName string) (bool, *syserr.AnnotatedError) {
+	// Checks if the chain exists.
+	c, exists := tab.chains[chainName]
+	if !exists {
+		return false, nil
+	}
+	if err := nf.evictChainFromIPInetHFCache(c.GetBaseChainInfo().Hook, c); err != nil {
 		return false, err
 	}
-
-	return t.DeleteChain(chainName), nil
+	return tab.deleteChain(c), nil
 }
 
 // TableCount returns the number of tables in the NFTables object.
 func (nf *NFTables) TableCount() int {
 	return len(nf.filters)
+}
+
+func (nf *NFTables) evictChainFromIPInetHFCache(hook stack.NFHook, c *Chain) *syserr.AnnotatedError {
+	if !c.IsBaseChain() {
+		return nil
+	}
+	af := c.GetAddressFamily()
+	switch af {
+	case stack.IP:
+		if err := nf.ipv4InetHfCache[hook].detachBaseChain(c.name); err != nil {
+			return err
+		}
+	case stack.IP6:
+		if err := nf.ipv6InetHfCache[hook].detachBaseChain(c.name); err != nil {
+			return err
+		}
+	case stack.Inet:
+		if err := nf.ipv4InetHfCache[hook].detachBaseChain(c.name); err != nil {
+			return err
+		}
+		if err := nf.ipv6InetHfCache[hook].detachBaseChain(c.name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (nf *NFTables) addChainToIPInetHFCache(hook stack.NFHook, c *Chain) *syserr.AnnotatedError {
+	if !c.IsBaseChain() {
+		return nil
+	}
+	af := c.GetAddressFamily()
+	switch af {
+	case stack.IP:
+		nf.ipv4InetHfCache[hook].attachBaseChain(c)
+	case stack.IP6:
+		nf.ipv6InetHfCache[hook].attachBaseChain(c)
+	case stack.Inet:
+		nf.ipv4InetHfCache[hook].attachBaseChain(c)
+		nf.ipv6InetHfCache[hook].attachBaseChain(c)
+	}
+	return nil
 }
 
 //
@@ -670,9 +747,9 @@ func (t *Table) GetChains() map[string]*Chain {
 	return t.chains
 }
 
-// AddChain makes a new chain for the table. Can return an error if a chain by
+// addChain makes a new chain for the table. Can return an error if a chain by
 // the same name already exists if errorOnDuplicate is true.
-func (t *Table) AddChain(name string, info *BaseChainInfo, comment string, errorOnDuplicate bool) (*Chain, *syserr.AnnotatedError) {
+func (t *Table) addChain(name string, info *BaseChainInfo, comment string, errorOnDuplicate bool) (*Chain, *syserr.AnnotatedError) {
 	// Checks if a chain with the same name already exists. If so, returns the
 	// existing chain (unless errorOnDuplicate is true).
 	if existingChain, exists := t.chains[name]; exists {
@@ -693,7 +770,7 @@ func (t *Table) AddChain(name string, info *BaseChainInfo, comment string, error
 
 	// Sets the base chain info if it's a base chain (and validates it).
 	if info != nil {
-		if err := c.SetBaseChainInfo(info); err != nil {
+		if err := c.setBaseChainInfo(info); err != nil {
 			return nil, err
 		}
 	}
@@ -708,15 +785,9 @@ func (t *Table) AddChain(name string, info *BaseChainInfo, comment string, error
 	return c, nil
 }
 
-// DeleteChain deletes the specified chain from the table returning true if the
+// deleteChain deletes the specified chain from the table returning true if the
 // chain was deleted and false if the chain doesn't exist.
-func (t *Table) DeleteChain(name string) bool {
-	// Checks if the chain exists.
-	c, exists := t.chains[name]
-	if !exists {
-		return false
-	}
-
+func (t *Table) deleteChain(c *Chain) bool {
 	// Detaches the chain from the pipeline if it's a base chain.
 	if c.baseChainInfo != nil {
 		hfStack := t.afFilter.hfStacks[c.baseChainInfo.Hook]
@@ -729,7 +800,7 @@ func (t *Table) DeleteChain(name string) bool {
 	}
 
 	// Deletes chain.
-	delete(t.chains, name)
+	delete(t.chains, c.name)
 	delete(t.chainHandles, c.handle)
 	return true
 }
@@ -835,7 +906,7 @@ func (c *Chain) GetBaseChainInfo() *BaseChainInfo {
 // detaches the chain from the pipeline if it was previously attached to a
 // different hook) by setting the base chain info for the chain, returning an
 // error if the base chain info is invalid.
-func (c *Chain) SetBaseChainInfo(info *BaseChainInfo) *syserr.AnnotatedError {
+func (c *Chain) setBaseChainInfo(info *BaseChainInfo) *syserr.AnnotatedError {
 	// Ensures base chain info is valid if it's a base chain.
 	if err := validateBaseChainInfo(info, c.GetAddressFamily()); err != nil {
 		return err

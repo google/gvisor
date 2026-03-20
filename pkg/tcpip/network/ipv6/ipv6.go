@@ -832,9 +832,7 @@ func (e *endpoint) WritePacket(r *stack.Route, params stack.NetworkHeaderParams,
 	}
 
 	if nft := stk.NFTables(); nft != nil && stk.IsNFTablesConfigured() {
-		ip6Check := nft.CheckOutput(pkt, stack.IP6)
-		inetCheck := nft.CheckOutput(pkt, stack.Inet)
-		if !ip6Check || !inetCheck {
+		if !nft.CheckOutput(pkt, stack.IP6) {
 			// nftables is telling us to drop the packet.
 			return nil
 		}
@@ -881,9 +879,7 @@ func (e *endpoint) writePacket(r *stack.Route, pkt *stack.PacketBuffer, protocol
 	}
 
 	if nft := stk.NFTables(); nft != nil && stk.IsNFTablesConfigured() {
-		ip6Check := nft.CheckPostrouting(pkt, stack.IP6)
-		inetCheck := nft.CheckPostrouting(pkt, stack.Inet)
-		if !ip6Check || !inetCheck {
+		if !nft.CheckPostrouting(pkt, stack.IP6) {
 			// nftables is telling us to drop the packet.
 			return nil
 		}
@@ -1030,9 +1026,7 @@ func (e *endpoint) forwardUnicastPacket(pkt *stack.PacketBuffer) ip.ForwardingEr
 		}
 
 		if nft := stk.NFTables(); nft != nil && stk.IsNFTablesConfigured() {
-			ip6Check := nft.CheckForward(pkt, stack.IP6)
-			inetCheck := nft.CheckForward(pkt, stack.Inet)
-			if !ip6Check || !inetCheck {
+			if !nft.CheckForward(pkt, stack.IP6) {
 				// nftables is telling us to drop the packet.
 				return nil
 			}
@@ -1080,9 +1074,7 @@ func (e *endpoint) forwardPacketWithRoute(route *stack.Route, pkt *stack.PacketB
 	}
 
 	if nft := stk.NFTables(); nft != nil && stk.IsNFTablesConfigured() {
-		ip6Check := nft.CheckForward(pkt, stack.IP6)
-		inetCheck := nft.CheckForward(pkt, stack.Inet)
-		if !ip6Check || !inetCheck {
+		if !nft.CheckForward(pkt, stack.IP6) {
 			// nftables is telling us to drop the packet.
 			return nil
 		}
@@ -1184,11 +1176,7 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 		}
 
 		if nft := stk.NFTables(); nft != nil && stk.IsNFTablesConfigured() {
-			ipv6Check := nft.CheckPrerouting(pkt, stack.IP6)
-			// nftables allows us to use the inet family to apply rules to both IPv4
-			// and IPv6 packets.
-			inetCheck := nft.CheckPrerouting(pkt, stack.Inet)
-			if !ipv6Check || !inetCheck {
+			if !nft.CheckPrerouting(pkt, stack.IP6) {
 				// nftables is telling us to drop the packet.
 				return
 			}
@@ -1446,9 +1434,7 @@ func (e *endpoint) deliverPacketLocally(h header.IPv6, pkt *stack.PacketBuffer, 
 	}
 
 	if nft := stk.NFTables(); nft != nil && stk.IsNFTablesConfigured() {
-		ip6Check := nft.CheckInput(pkt, stack.IP6)
-		inetCheck := nft.CheckInput(pkt, stack.Inet)
-		if !ip6Check || !inetCheck {
+		if !nft.CheckInput(pkt, stack.IP6) {
 			// nftables is telling us to drop the packet.
 			return
 		}
