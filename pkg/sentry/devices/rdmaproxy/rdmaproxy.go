@@ -53,7 +53,7 @@ func (dev *uverbsDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Den
 		unix.Close(hostFD)
 		return nil, err
 	}
-	fd.memmapFile.SetFD(fd.hostFD)
+	fd.memmapFile.SetFD(int(fd.hostFD))
 	if err := fd.vfsfd.Init(fd, opts.Flags, auth.CredentialsFromContext(ctx), mnt, vfsd, &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,
 	}); err != nil {
