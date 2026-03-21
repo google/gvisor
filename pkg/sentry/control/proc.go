@@ -354,7 +354,9 @@ type Process struct {
 	UID auth.KUID       `json:"uid"`
 	PID kernel.ThreadID `json:"pid"`
 	// Parent PID
-	PPID    kernel.ThreadID   `json:"ppid"`
+	PPID kernel.ThreadID `json:"ppid"`
+	// Process Group ID
+	PGID    kernel.ThreadID   `json:"pgid"`
 	Threads []kernel.ThreadID `json:"threads"`
 	// Processor utilization
 	C int32 `json:"c"`
@@ -435,11 +437,16 @@ func Processes(k *kernel.Kernel, containerID string, out *[]*Process) error {
 		if p := tg.Leader().Parent(); p != nil {
 			ppid = pidns.IDOfThreadGroup(p.ThreadGroup())
 		}
+		pgid := kernel.ThreadID(0)
+		if pg := tg.ProcessGroup(); pg != nil {
+			pgid = kernel.ThreadID(pidns.IDOfProcessGroup(pg))
+		}
 		threads := tg.MemberIDs(pidns)
 		*out = append(*out, &Process{
 			UID:     tg.Leader().Credentials().EffectiveKUID,
 			PID:     pid,
 			PPID:    ppid,
+			PGID:    pgid,
 			Threads: threads,
 			STime:   formatStartTime(now, tg.Leader().StartTime()),
 			C:       percentCPU(tg.CPUStats(), tg.Leader().StartTime(), now),

@@ -250,6 +250,9 @@ func procEqual(got, want *control.Process) bool {
 	if want.PPID != -1 && want.PPID != got.PPID {
 		return false
 	}
+	if want.PGID != -1 && want.PGID != got.PGID {
+		return false
+	}
 	if len(want.TTY) != 0 && want.TTY != got.TTY {
 		return false
 	}
@@ -269,6 +272,7 @@ func newProcessBuilder() *processBuilder {
 			UID:  math.MaxUint32,
 			PID:  -1,
 			PPID: -1,
+			PGID: -1,
 		},
 	}
 }
@@ -285,6 +289,11 @@ func (p *processBuilder) PID(pid kernel.ThreadID) *processBuilder {
 
 func (p *processBuilder) PPID(ppid kernel.ThreadID) *processBuilder {
 	p.process.PPID = ppid
+	return p
+}
+
+func (p *processBuilder) PGID(pgid kernel.ThreadID) *processBuilder {
+	p.process.PGID = pgid
 	return p
 }
 
@@ -2590,6 +2599,41 @@ func TestTTYField(t *testing.T) {
 				t.Errorf("tty field got %q, want %q", gotTTYField, test.wantTTYField)
 			}
 		})
+	}
+}
+
+// TestPGIDField checks PGID returned by container.Processes().
+func TestPGIDField(t *testing.T) {
+	stop := testutil.StartReaper()
+	defer stop()
+
+	conf := testutil.TestConfig(t)
+	spec := testutil.NewSpecWithArgs("/bin/sleep", "10000")
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	c, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer c.Destroy()
+	if err := c.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	expectedPL := []*control.Process{
+		newProcessBuilder().PID(1).PPID(0).PGID(1).Cmd("sleep").Process(),
+	}
+	if err := waitForProcessList(c, expectedPL); err != nil {
+		t.Fatalf("error waiting for process list with pgid: %v", err)
 	}
 }
 
