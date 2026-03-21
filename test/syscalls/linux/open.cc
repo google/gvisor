@@ -26,6 +26,8 @@
 #include "gtest/gtest.h"
 #include "absl/memory/memory.h"
 #include "absl/strings/string_view.h"
+#include "absl/time/clock.h"
+#include "absl/time/time.h"
 #include "test/syscalls/linux/file_base.h"
 #include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
@@ -540,6 +542,32 @@ TEST_F(OpenTest, OPathWithODirectory) {
   auto newFile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   EXPECT_THAT(open(newFile.path().c_str(), O_RDONLY | O_DIRECTORY | O_PATH),
               SyscallFailsWithErrno(ENOTDIR));
+}
+
+// Opening a zero-length file with O_TRUNC should still update mtime and ctime.
+// This matches Linux kernel behavior in handle_truncate() -> do_truncate()
+// which passes ATTR_MTIME|ATTR_CTIME|ATTR_OPEN unconditionally.
+TEST_F(OpenTest, OTruncUpdatesTimestampsOnZeroLengthFile) {
+  auto path = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+
+  // Get initial timestamps.
+  struct stat before = {};
+  ASSERT_THAT(stat(path.path().c_str(), &before), SyscallSucceeds());
+  EXPECT_EQ(before.st_size, 0);
+
+  // Sleep briefly to ensure timestamp granularity.
+  absl::SleepFor(absl::Seconds(1));
+
+  // Open with O_TRUNC on the already-empty file.
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(path.path(), O_WRONLY | O_TRUNC));
+
+  // Verify mtime and ctime were updated even though size didn't change.
+  struct stat after = {};
+  ASSERT_THAT(fstat(fd.get(), &after), SyscallSucceeds());
+  EXPECT_EQ(after.st_size, 0);
+  EXPECT_GT(after.st_mtime, before.st_mtime);
+  EXPECT_GT(after.st_ctime, before.st_ctime);
 }
 
 }  // namespace

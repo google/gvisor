@@ -469,11 +469,17 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 				return nil, err
 			}
 			_, err := impl.truncate(0)
-			mnt.EndWrite()
 			if err != nil {
+				mnt.EndWrite()
 				fd.vfsfd.DecRef(ctx)
 				return nil, err
 			}
+			// open(O_TRUNC) unconditionally updates mtime and ctime,
+			// even if the file size is already 0. This matches Linux
+			// kernel behavior in handle_truncate() -> do_truncate()
+			// which passes ATTR_MTIME|ATTR_CTIME|ATTR_OPEN.
+			d.inode.touchCMtime()
+			mnt.EndWrite()
 		}
 		if fd.vfsfd.IsWritable() {
 			fsmetric.TmpfsOpensW.Increment()
