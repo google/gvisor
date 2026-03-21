@@ -93,6 +93,9 @@ const (
 	NVC4B7_VIDEO_ENCODER             = 0x0000c4b7
 	NVC7B7_VIDEO_ENCODER             = 0x0000c7b7
 	NVC9B7_VIDEO_ENCODER             = 0x0000c9b7
+	NVCEB7_VIDEO_ENCODER             = 0x0000ceb7
+	NVCFB7_VIDEO_ENCODER             = 0x0000cfb7
+	NVD1B7_VIDEO_ENCODER             = 0x0000d1b7
 	AMPERE_CHANNEL_GPFIFO_A          = 0x0000c56f
 	TURING_A                         = 0x0000c597
 	TURING_DMA_COPY_A                = 0x0000c5b5
