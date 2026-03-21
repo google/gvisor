@@ -388,7 +388,7 @@ func (b *bufferedEmitter) drain(emitter log.Emitter) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	for _, l := range b.buffer {
-		emitter.Emit(l.depth, l.level, l.timestamp, l.message)
+		emitter.Emit(l.depth, l.level, l.timestamp, "%s", l.message)
 	}
 	b.buffer = nil
 }

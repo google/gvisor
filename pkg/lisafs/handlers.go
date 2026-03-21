@@ -81,6 +81,7 @@ var handlers = [...]RPCHandler{
 	Listen:           ListenHandler,
 	Accept:           AcceptHandler,
 	ConnectWithCreds: ConnectWithCredsHandler,
+	RenameAt2:        RenameAt2Handler,
 }
 
 // ErrorHandler handles Error message.
@@ -1266,6 +1267,18 @@ func UnlinkAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint3
 	})
 }
 
+// RenameAt2Handler handles the RenameAt2 RPC.
+func RenameAt2Handler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
+	if c.readonly {
+		return 0, unix.EROFS
+	}
+	var req RenameAt2Req
+	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+		return 0, unix.EIO
+	}
+	return renameAtCommon(c, comm, payloadLen, req.OldDir, req.NewDir, string(req.OldName), string(req.NewName), uint32(req.Flags))
+}
+
 // RenameAtHandler handles the RenameAt RPC.
 func RenameAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
 	if c.readonly {
@@ -1275,22 +1288,24 @@ func RenameAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint3
 	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
 		return 0, unix.EIO
 	}
+	return renameAtCommon(c, comm, payloadLen, req.OldDir, req.NewDir, string(req.OldName), string(req.NewName), 0)
+}
 
-	oldName := string(req.OldName)
+// renameAtCommon is the common implementation for RenameAt and RenameAt2.
+func renameAtCommon(c *Connection, comm Communicator, payloadLen uint32, oldDirFD, newDirFD FDID, oldName, newName string, flags uint32) (uint32, error) {
 	if err := checkSafeName(oldName); err != nil {
 		return 0, err
 	}
-	newName := string(req.NewName)
 	if err := checkSafeName(newName); err != nil {
 		return 0, err
 	}
 
-	oldDir, err := c.lookupControlFD(req.OldDir)
+	oldDir, err := c.lookupControlFD(oldDirFD)
 	if err != nil {
 		return 0, err
 	}
 	defer oldDir.DecRef(nil)
-	newDir, err := c.lookupControlFD(req.NewDir)
+	newDir, err := c.lookupControlFD(newDirFD)
 	if err != nil {
 		return 0, err
 	}
@@ -1312,8 +1327,15 @@ func RenameAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint3
 		}
 
 		// Attempt the actual rename.
-		if err := oldDir.impl.RenameAt(oldName, newDir.impl, newName); err != nil {
-			return err
+		// RenameAt2 can be replaced by RenameAt with flags = 0.
+		if flags == 0 {
+			if err := oldDir.impl.RenameAt(oldName, newDir.impl, newName); err != nil {
+				return err
+			}
+		} else {
+			if err := oldDir.impl.RenameAt2(oldName, newDir.impl, newName, flags); err != nil {
+				return err
+			}
 		}
 
 		// Successful, so update the node tree. Note that since we have global
@@ -1325,16 +1347,29 @@ func RenameAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint3
 		newDir.node.childrenMu.Lock()
 		replaced := newDir.node.removeChildLocked(newName)
 		newDir.node.childrenMu.Unlock()
-		if replaced != nil {
-			replaced.opMu.Lock()
-			replaced.markDeletedRecursive()
-			replaced.opMu.Unlock()
-		}
-
-		// Now move the renamed node to the right position.
 		oldDir.node.childrenMu.Lock()
 		renamed := oldDir.node.removeChildLocked(oldName)
 		oldDir.node.childrenMu.Unlock()
+
+		if replaced != nil {
+			if flags&linux.RENAME_EXCHANGE == 0 {
+				replaced.opMu.Lock()
+				replaced.markDeletedRecursive()
+				replaced.opMu.Unlock()
+			} else {
+				// Move the replaced node to the right position.
+				replaced.parent.DecRef(nil)
+				replaced.parent = oldDir.node
+				replaced.parent.IncRef()
+				replaced.name = oldName
+				oldDir.node.childrenMu.Lock()
+				oldDir.node.insertChildLocked(oldName, replaced)
+				oldDir.node.childrenMu.Unlock()
+				// Now update all FDs under the subtree rooted at replaced.
+				notifyRenameRecursive(replaced)
+			}
+		}
+		// Move the renamed node to the right position.
 		if renamed != nil {
 			renamed.parent.DecRef(nil)
 			renamed.parent = newDir.node
@@ -1343,7 +1378,6 @@ func RenameAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint3
 			newDir.node.childrenMu.Lock()
 			newDir.node.insertChildLocked(newName, renamed)
 			newDir.node.childrenMu.Unlock()
-
 			// Now update all FDs under the subtree rooted at renamed.
 			notifyRenameRecursive(renamed)
 		}

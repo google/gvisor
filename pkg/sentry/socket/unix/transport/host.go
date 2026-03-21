@@ -431,7 +431,7 @@ func (e *SCMConnectedEndpoint) beforeSave() {
 	e.closeRecvLocked()
 	e.closeSendLocked()
 	if err := unix.Close(e.fd); err != nil {
-		log.Warningf("Failed to close host fd %d: %v", err)
+		log.Warningf("Failed to close host fd %d: %v", e.fd, err)
 	}
 	e.destroyLocked()
 }
@@ -453,7 +453,7 @@ func (e *SCMConnectedEndpoint) Release(ctx context.Context) {
 
 		fdnotifier.RemoveFD(int32(e.fd))
 		if err := unix.Close(e.fd); err != nil {
-			log.Warningf("Failed to close host fd %d: %v", err)
+			log.Warningf("Failed to close host fd %d: %v", e.fd, err)
 		}
 		e.destroyLocked()
 	})

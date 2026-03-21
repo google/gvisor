@@ -65,14 +65,18 @@ type FilesystemImplSaveRestoreExtension interface {
 
 // PrepareSave prepares all filesystems for serialization.
 func (vfs *VirtualFilesystem) PrepareSave(ctx context.Context) error {
-	for fs := range vfs.getFilesystems() {
+	fss := vfs.GetFilesystems()
+	defer func() {
+		for _, fs := range fss {
+			fs.DecRef(ctx)
+		}
+	}()
+	for _, fs := range fss {
 		if ext, ok := fs.impl.(FilesystemImplSaveRestoreExtension); ok {
 			if err := ext.PrepareSave(ctx); err != nil {
-				fs.DecRef(ctx)
 				return err
 			}
 		}
-		fs.DecRef(ctx)
 	}
 	return nil
 }
@@ -80,7 +84,7 @@ func (vfs *VirtualFilesystem) PrepareSave(ctx context.Context) error {
 // BeforeResume is called before the kernel is resumed after save and allows
 // filesystems to clean up S/R state.
 func (vfs *VirtualFilesystem) BeforeResume(ctx context.Context) {
-	for fs := range vfs.getFilesystems() {
+	for _, fs := range vfs.GetFilesystems() {
 		if ext, ok := fs.impl.(FilesystemImplSaveRestoreExtension); ok {
 			ext.BeforeResume(ctx)
 		}
@@ -91,14 +95,18 @@ func (vfs *VirtualFilesystem) BeforeResume(ctx context.Context) {
 // CompleteRestore completes restoration from checkpoint for all filesystems
 // after deserialization.
 func (vfs *VirtualFilesystem) CompleteRestore(ctx context.Context, opts *CompleteRestoreOptions) error {
-	for fs := range vfs.getFilesystems() {
+	fss := vfs.GetFilesystems()
+	defer func() {
+		for _, fs := range fss {
+			fs.DecRef(ctx)
+		}
+	}()
+	for _, fs := range fss {
 		if ext, ok := fs.impl.(FilesystemImplSaveRestoreExtension); ok {
 			if err := ext.CompleteRestore(ctx, *opts); err != nil {
-				fs.DecRef(ctx)
 				return PrependErrMsg(fmt.Sprintf("failed to complete restore for filesystem type %q", fs.fsType.Name()), err)
 			}
 		}
-		fs.DecRef(ctx)
 	}
 	return nil
 }

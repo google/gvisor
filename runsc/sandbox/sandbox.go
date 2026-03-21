@@ -303,6 +303,12 @@ type Args struct {
 
 	// ExecFile is the file from the host used for program execution.
 	ExecFile *os.File
+
+	// If FSRestoreImagePath is non-empty, it is a path to a filesystem
+	// checkpoint that should be restored. If FSRestoreDirect is true,
+	// open filesystem checkpoint files using O_DIRECT.
+	FSRestoreImagePath string
+	FSRestoreDirect    bool
 }
 
 // New creates the sandbox process. The caller must call Destroy() on the
@@ -982,6 +988,14 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		donations.DonateAndClose("save-fds", files...)
 	}
 
+	if args.FSRestoreImagePath != "" {
+		files, err := s.openFSRestoreFilesImpl(conf, args.FSRestoreImagePath, args.FSRestoreDirect, cmd)
+		if err != nil {
+			return fmt.Errorf("failed to open filesystem checkpoint files: %w", err)
+		}
+		donations.DonateAndClose("fs-restore-fds", files...)
+	}
+
 	if err := s.createSandboxProcessExtra(conf, args, cmd, &donations); err != nil {
 		return err
 	}
@@ -1427,6 +1441,23 @@ func (s *Sandbox) WaitRestore() error {
 	return s.call(boot.ContMgrWaitRestore, nil, nil)
 }
 
+// WaitFSCheckpoint waits for a filesystem checkpoint to have successfully been
+// saved.
+func (s *Sandbox) WaitFSCheckpoint() error {
+	log.Debugf("Waiting for filesystem checkpoint to complete in sandbox %q", s.ID)
+	return s.call(boot.ContMgrWaitFSCheckpoint, nil, nil)
+}
+
+// WaitFSRestore waits for filesystems to have been successfully restored from
+// checkpoint.
+func (s *Sandbox) WaitFSRestore(cid string) error {
+	log.Debugf("Waiting for filesystem restore to complete in container %q in sandbox %d", cid, s.ID)
+	args := boot.WaitFSRestoreArgs{
+		CID: cid,
+	}
+	return s.call(boot.ContMgrWaitFSRestore, &args, nil)
+}
+
 // IsRootContainer returns true if the specified container ID belongs to the
 // root container.
 func (s *Sandbox) IsRootContainer(cid string) bool {
@@ -1448,7 +1479,7 @@ func (s *Sandbox) destroy() error {
 	if pid != 0 {
 		log.Debugf("Killing sandbox %q", s.ID)
 		if err := unix.Kill(pid, unix.SIGKILL); err != nil && err != unix.ESRCH {
-			return fmt.Errorf("killing sandbox %q PID %q: %w", s.ID, pid, err)
+			return fmt.Errorf("killing sandbox %q PID %d: %w", s.ID, pid, err)
 		}
 		if err := s.waitForStopped(); err != nil {
 			return fmt.Errorf("waiting sandbox %q stop: %w", s.ID, err)
@@ -1597,6 +1628,121 @@ func createSaveFiles(path string, direct bool, compression statefile.Compression
 	}
 
 	return files, nil
+}
+
+func openFSRestoreFilesForLocalCheckpoint(imagePath string, direct bool) ([]*os.File, error) {
+	return openFSCheckpointLocalFiles(imagePath, os.O_RDONLY, direct)
+}
+
+// FSSaveOpts holds options to FSSave.
+type FSSaveOpts struct {
+	// If Direct is true, open checkpoint files with O_DIRECT where possible.
+	Direct bool
+
+	// If ExitAfterSaving is true, all sandboxed processes immediately exit
+	// with status 0 after filesystem checkpoint saving, whether or not saving
+	// is successful. This is equivalent to !CheckpointOpts.Resume, and is
+	// provided for parity with that feature.
+	ExitAfterSaving bool
+}
+
+// FSSave sends the filesystem checkpointing call to the sandbox.
+func (s *Sandbox) FSSave(conf *config.Config, cid string, imagePath string, opts FSSaveOpts) error {
+	log.Debugf("Checkpoint filesystem for sandbox %q, imagePath %q, opts %+v", s.ID, imagePath, opts)
+
+	args := boot.FSSaveArgs{
+		ExitAfterSaving: opts.ExitAfterSaving,
+	}
+	defer func() {
+		for _, f := range args.FilePayload.Files {
+			_ = f.Close()
+		}
+	}()
+	if err := s.setFSSaveArgsImpl(conf, imagePath, opts.Direct, &args); err != nil {
+		return err
+	}
+
+	if err := s.call(boot.ContMgrFSSave, &args, nil); err != nil {
+		return fmt.Errorf("checkpointing filesystem for container %q: %w", cid, err)
+	}
+	return nil
+}
+
+func setFSSaveArgsForLocalCheckpointFiles(conf *config.Config, imagePath string, direct bool, args *boot.FSSaveArgs) error {
+	files, err := openFSCheckpointLocalFiles(imagePath, os.O_CREATE|os.O_EXCL|os.O_RDWR, direct)
+	if err != nil {
+		return err
+	}
+	args.FilePayload.Files = files
+	return nil
+}
+
+func openFSCheckpointLocalFiles(imagePath string, openFlags int, direct bool) ([]*os.File, error) {
+	var files [4]*os.File
+	closeCleanup := cleanup.Make(func() {
+		for _, f := range files {
+			if f != nil {
+				f.Close()
+			}
+		}
+	})
+	defer closeCleanup.Clean()
+
+	// Use of O_DIRECT ~requires that I/O operations are aligned to some
+	// unspecified [1] granularity that (as of this writing) is, in practice,
+	// less than or equal to page size. Performance and memory pressure
+	// benefits of O_DIRECT where applicable (avoiding page cache when it won't
+	// be used) scale linearly with file size.
+	// - Manifest file: no alignment guarantee, very small size
+	// - Multi-tar files: no alignment guarantee, relatively small size
+	// - Pages metadata file: no alignment guarantee, relatively small size
+	// - Pages file: page-aligned I/O, relatively large size
+	// Thus currently O_DIRECT is only used for pages file.
+	//
+	// [1] Obtainable via STATX_DIOALIGN / STATX_DIO_READ_ALIGN; "support
+	// varies by filesystem". But we don't need to deal with this unless we
+	// start having checkpoints stored on devices where the direct I/O size is
+	// greater than page size.
+	//
+	// TODO: NOLINT - If multi-tar or pages metadata files get big, we can
+	// guarantee alignment and enable async I/O by using
+	// stateio.BufReader/Writer(stateio.FDReader/Writer) rather than
+	// bufio.Reader/Writer(os.File) in the sentry.
+	maybeODirect := 0
+	if direct {
+		maybeODirect = unix.O_DIRECT
+	}
+
+	manifestFilePath := filepath.Join(imagePath, checkpointfiles.FSCheckpointManifestFileName)
+	manifestFile, err := os.OpenFile(manifestFilePath, openFlags, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("opening manifest file %q: %w", manifestFilePath, err)
+	}
+	files[0] = manifestFile
+
+	multiTarFilePath := filepath.Join(imagePath, checkpointfiles.FSCheckpointMultiTarFileName)
+	multiTarFile, err := os.OpenFile(multiTarFilePath, openFlags, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("opening multi-tar file %q: %w", multiTarFilePath, err)
+	}
+	files[1] = multiTarFile
+
+	pagesMetadataFilePath := filepath.Join(imagePath, checkpointfiles.PagesMetadataFileName)
+	pagesMetadataFile, err := os.OpenFile(pagesMetadataFilePath, openFlags, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("opening pages metadata file %q: %w", pagesMetadataFilePath, err)
+	}
+	files[2] = pagesMetadataFile
+
+	pagesFilePath := filepath.Join(imagePath, checkpointfiles.PagesFileName)
+	pagesFileFD, err := unix.Open(pagesFilePath, openFlags|maybeODirect, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("opening pages metadata file %q: %w", pagesFilePath, err)
+	}
+	files[3] = os.NewFile(uintptr(pagesFileFD), pagesFilePath)
+
+	closeCleanup.Release()
+	return files[:], nil
 }
 
 // Pause sends the pause call for a container in the sandbox.

@@ -203,7 +203,7 @@ func targetRevision(name string, netProto tcpip.NetworkProtocolNumber, rev uint8
 // with the netfilter package.
 func registerTargetMaker(tm targetMaker) {
 	if _, ok := targetMakers[tm.id()]; ok {
-		panic(fmt.Sprintf("multiple targets registered with name %q.", tm.id()))
+		panic(fmt.Sprintf("multiple targets registered with id %+v.", tm.id()))
 	}
 	targetMakers[tm.id()] = tm
 }

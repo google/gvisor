@@ -1383,7 +1383,15 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		return err
 	}
 
-	if opts.Flags&^linux.RENAME_NOREPLACE != 0 {
+	// Support flags:
+	// - RENAME_NOREPLACE
+	// - RENAME_EXCHANGE
+	if opts.Flags&^(linux.RENAME_NOREPLACE|linux.RENAME_EXCHANGE) != 0 {
+		return linuxerr.EINVAL
+	}
+
+	// RENAME_NOREPLACE can't be employed together with RENAME_EXCHANGE.
+	if opts.Flags&(linux.RENAME_EXCHANGE|linux.RENAME_NOREPLACE) == linux.RENAME_EXCHANGE|linux.RENAME_NOREPLACE {
 		return linuxerr.EINVAL
 	}
 	if fs.opts.interop == InteropModeShared && opts.Flags&linux.RENAME_NOREPLACE != 0 {
@@ -1488,6 +1496,11 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 				return linuxerr.ENOTDIR
 			}
 		}
+	} else { // replaced == nil
+		if opts.Flags&linux.RENAME_EXCHANGE != 0 {
+			// RENAME_EXCHANGE requires that the target file exist.
+			return linuxerr.ENOENT
+		}
 	}
 
 	if oldParent == newParent && oldName == newName {
@@ -1501,11 +1514,11 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 
 	// Update the remote filesystem.
 	if !renamed.inode.isSynthetic() {
-		if err := oldParent.inode.rename(ctx, oldName, newParent, newName); err != nil {
+		if err := oldParent.inode.rename(ctx, oldName, newParent, newName, opts.Flags); err != nil {
 			vfsObj.AbortRenameDentry(&renamed.vfsd, replacedVFSD)
 			return err
 		}
-	} else if replaced != nil && !replaced.inode.isSynthetic() {
+	} else if replaced != nil && !replaced.inode.isSynthetic() && opts.Flags&linux.RENAME_EXCHANGE == 0 {
 		// We are replacing an existing real file with a synthetic one, so we
 		// need to unlink the former.
 		flags := uint32(0)
@@ -1526,57 +1539,99 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		defer oldParent.childrenMu.Unlock()
 	}
 
-	toDecRef = vfsObj.CommitRenameReplaceDentry(ctx, &renamed.vfsd, replacedVFSD)
-	if replaced != nil {
-		replaced.setDeleted()
-		// If an extra reference is held on replaced as described by the
-		// comment for dentry.refs, drop that reference now. We can't race with
-		// fs.unlinkAt() or invalidation since fs.renameMu has been locked for
-		// writing since before we obtained replaced.
-		if replaced.inode.isSynthetic() {
-			newParent.syntheticChildren--
-			replaced.decRefNoCaching()
-		} else if replaced.inode.endpoint != nil {
-			replaced.decRefNoCaching()
+	if opts.Flags&linux.RENAME_EXCHANGE != 0 {
+		if renamed != nil {
+			vfsObj.CommitRenameExchangeDentry(&renamed.vfsd, replacedVFSD)
 		}
-		ds = appendDentry(ds, replaced)
-		// Remove the replaced entry from its parent's cache.
-		delete(newParent.children, newName)
-	}
-	oldParent.cacheNegativeLookupLocked(oldName) // +checklocksforce: oldParent.childrenMu is held if oldParent != newParent.
-	if renamed.inode.isSynthetic() {
-		oldParent.syntheticChildren--
-		newParent.syntheticChildren++
-	}
-	// We have d.opMu for writing, so no need to check for existence of a
-	// child with the given name. We could not have raced.
-	newParent.cacheNewChildLocked(renamed, newName)
-	oldParent.decRefNoCaching()
-	if oldParent != newParent {
-		ds = appendDentry(ds, newParent)
-		ds = appendDentry(ds, oldParent)
-	}
 
-	// Update metadata.
-	if renamed.inode.cachedMetadataAuthoritative() {
-		renamed.touchCtime()
-	}
-	if oldParent.inode.cachedMetadataAuthoritative() {
-		oldParent.clearDirentsLocked()
-		oldParent.touchCMtime()
-		if renamed.isDir() {
-			oldParent.decLinks()
+		if oldParent != newParent {
+			switch {
+			case replaced.inode.isSynthetic() && !renamed.inode.isSynthetic():
+				newParent.syntheticChildren--
+				oldParent.syntheticChildren++ // +checklocksforce: oldParent.childrenMu is held if oldParent != newParent.
+			case !replaced.inode.isSynthetic() && renamed.inode.isSynthetic():
+				newParent.syntheticChildren++
+				oldParent.syntheticChildren-- // +checklocksforce: oldParent.childrenMu is held if oldParent != newParent.
+			}
+			renamed.parent.Store(newParent)
+			replaced.parent.Store(oldParent)
 		}
-	}
-	if newParent.inode.cachedMetadataAuthoritative() {
-		newParent.clearDirentsLocked()
-		newParent.touchCMtime()
-		if renamed.isDir() && (replaced == nil || !replaced.isDir()) {
-			// Increase the link count if we did not replace another directory.
-			newParent.incLinks()
+		renamed.name = newName
+		replaced.name = oldName
+		newParent.children[newName] = renamed
+		oldParent.children[oldName] = replaced // +checklocksforce: oldParent.childrenMu is held if oldParent != newParent.
+
+		// Update metadata.
+		if renamed.inode.cachedMetadataAuthoritative() {
+			renamed.touchCtime()
 		}
+		if replaced.inode.cachedMetadataAuthoritative() {
+			replaced.touchCtime()
+		}
+		if oldParent.inode.cachedMetadataAuthoritative() {
+			oldParent.clearDirentsLocked()
+			oldParent.touchCMtime()
+		}
+		if oldParent != newParent && newParent.inode.cachedMetadataAuthoritative() {
+			newParent.clearDirentsLocked()
+			newParent.touchCMtime()
+		}
+		// Sends notifications for both the renamed and replaced dentries.
+		vfs.InotifyRename(ctx, &renamed.inode.watches, &oldParent.inode.watches, &newParent.inode.watches, oldName, newName, renamed.isDir())
+		vfs.InotifyRename(ctx, &replaced.inode.watches, &newParent.inode.watches, &oldParent.inode.watches, newName, oldName, replaced.isDir())
+	} else {
+		toDecRef = vfsObj.CommitRenameReplaceDentry(ctx, &renamed.vfsd, replacedVFSD)
+		if replaced != nil {
+			replaced.setDeleted()
+			// If an extra reference is held on replaced as described by the
+			// comment for dentry.refs, drop that reference now. We can't race with
+			// fs.unlinkAt() or invalidation since fs.renameMu has been locked for
+			// writing since before we obtained replaced.
+			if replaced.inode.isSynthetic() {
+				newParent.syntheticChildren--
+				replaced.decRefNoCaching()
+			} else if replaced.inode.endpoint != nil {
+				replaced.decRefNoCaching()
+			}
+			ds = appendDentry(ds, replaced)
+			// Remove the replaced entry from its parent's cache.
+			delete(newParent.children, newName)
+		}
+		oldParent.cacheNegativeLookupLocked(oldName) // +checklocksforce: oldParent.childrenMu is held if oldParent != newParent.
+		if renamed.inode.isSynthetic() {
+			oldParent.syntheticChildren--
+			newParent.syntheticChildren++
+		}
+		// We have d.opMu for writing, so no need to check for existence of a
+		// child with the given name. We could not have raced.
+		newParent.cacheNewChildLocked(renamed, newName)
+		oldParent.decRefNoCaching()
+		if oldParent != newParent {
+			ds = appendDentry(ds, newParent)
+			ds = appendDentry(ds, oldParent)
+		}
+
+		// Update metadata.
+		if renamed.inode.cachedMetadataAuthoritative() {
+			renamed.touchCtime()
+		}
+		if oldParent.inode.cachedMetadataAuthoritative() {
+			oldParent.clearDirentsLocked()
+			oldParent.touchCMtime()
+			if renamed.isDir() {
+				oldParent.decLinks()
+			}
+		}
+		if newParent.inode.cachedMetadataAuthoritative() {
+			newParent.clearDirentsLocked()
+			newParent.touchCMtime()
+			if renamed.isDir() && (replaced == nil || !replaced.isDir()) {
+				// Increase the link count if we did not replace another directory.
+				newParent.incLinks()
+			}
+		}
+		vfs.InotifyRename(ctx, &renamed.inode.watches, &oldParent.inode.watches, &newParent.inode.watches, oldName, newName, renamed.isDir())
 	}
-	vfs.InotifyRename(ctx, &renamed.inode.watches, &oldParent.inode.watches, &newParent.inode.watches, oldName, newName, renamed.isDir())
 	return nil
 }
 

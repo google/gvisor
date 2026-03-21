@@ -2296,6 +2296,86 @@ func UnmarshalUnsafeInodeSlice(dst []Inode, src []byte) []byte {
     return src[size*count:]
 }
 
+// ReadInodeSlice reads a []Inode. It returns the number of bytes read
+func ReadInodeSlice(src io.Reader, dst []Inode) (int, error) {
+    count := len(dst)
+    if count == 0 {
+        return 0, nil
+    }
+    size := (*Inode)(nil).SizeBytes()
+
+    if !dst[0].Packed() {
+        // Type Inode doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+        buf := make([]byte, size)
+        length := 0
+        for idx := 0; idx < count; idx++ {
+            n, err := io.ReadFull(src, buf)
+            length += n
+            if err != nil {
+                return length, err
+            }
+            dst[idx].UnmarshalBytes(buf)
+        }
+        return length, nil
+    }
+
+    ptr := unsafe.Pointer(&dst)
+    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(val)
+    hdr.Len = size * count
+    hdr.Cap = size * count
+
+    length, err := io.ReadFull(src, buf)
+    // Since we bypassed the compiler's escape analysis, indicate that dst
+    // must live until the use above.
+    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// WriteInodeSlice is like Inode.WriteTo, but for a []Inode.
+func WriteInodeSlice(dst io.Writer, src []Inode) (int, error) {
+    count := len(src)
+    if count == 0 {
+        return 0, nil
+    }
+    size := (*Inode)(nil).SizeBytes()
+
+    if !src[0].Packed() {
+        // Type Inode doesn't have a packed layout in memory, fall back to MarshalBytes.
+        buf := make([]byte, size)
+        length := 0
+        for idx := 0; idx < count; idx++ {
+            src[idx].MarshalBytes(buf)
+            n, err := dst.Write(buf)
+            length += n
+            if err != nil {
+                return length, err
+            }
+        }
+        return length, nil
+    }
+
+    ptr := unsafe.Pointer(&src)
+    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(val)
+    hdr.Len = size * count
+    hdr.Cap = size * count
+
+    length, err := dst.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that src
+    // must live until the use above.
+    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
+    return length, err
+}
+
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (l *LinkAtResp) SizeBytes() int {
     return 0 +
@@ -5120,6 +5200,56 @@ func UnmarshalUnsafeMsg1Slice(dst []MsgSimple, src []byte) []byte {
     buf := src[:size*count]
     gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&buf[0]), uintptr(len(buf)))
     return src[size*count:]
+}
+
+// ReadMsg1Slice reads a []MsgSimple. It returns the number of bytes read
+func ReadMsg1Slice(src io.Reader, dst []MsgSimple) (int, error) {
+    count := len(dst)
+    if count == 0 {
+        return 0, nil
+    }
+    size := (*MsgSimple)(nil).SizeBytes()
+
+    ptr := unsafe.Pointer(&dst)
+    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(val)
+    hdr.Len = size * count
+    hdr.Cap = size * count
+
+    length, err := io.ReadFull(src, buf)
+    // Since we bypassed the compiler's escape analysis, indicate that dst
+    // must live until the use above.
+    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// WriteMsg1Slice is like MsgSimple.WriteTo, but for a []MsgSimple.
+func WriteMsg1Slice(dst io.Writer, src []MsgSimple) (int, error) {
+    count := len(src)
+    if count == 0 {
+        return 0, nil
+    }
+    size := (*MsgSimple)(nil).SizeBytes()
+
+    ptr := unsafe.Pointer(&src)
+    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(val)
+    hdr.Len = size * count
+    hdr.Cap = size * count
+
+    length, err := dst.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that src
+    // must live until the use above.
+    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
+    return length, err
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.

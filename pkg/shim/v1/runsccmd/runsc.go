@@ -117,6 +117,12 @@ type CreateOpts struct {
 
 	// UserLog is a path to where runsc user log should be generated.
 	UserLog string
+
+	// FSRestoreImagePath is a path to where the filesystem snapshot is stored.
+	FSRestoreImagePath string
+
+	// FSRestoreDirect configures direct IO for filesystem restore.
+	FSRestoreDirect bool
 }
 
 func (o *CreateOpts) args() (out []string, err error) {
@@ -132,6 +138,12 @@ func (o *CreateOpts) args() (out []string, err error) {
 	}
 	if o.UserLog != "" {
 		out = append(out, "--user-log", o.UserLog)
+	}
+	if o.FSRestoreImagePath != "" {
+		out = append(out, "--fs-restore-image-path", o.FSRestoreImagePath)
+	}
+	if o.FSRestoreDirect {
+		out = append(out, "--fs-restore-direct")
 	}
 	return out, nil
 }

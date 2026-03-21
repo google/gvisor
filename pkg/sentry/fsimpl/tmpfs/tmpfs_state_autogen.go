@@ -453,7 +453,8 @@ func (f *FilesystemOpts) StateFields() []string {
 		"MemoryFile",
 		"DisableDefaultSizeLimit",
 		"AllowXattrPrefix",
-		"SourceTarFile",
+		"SourceTar",
+		"SourceTarFSCheckpoint",
 	}
 }
 
@@ -470,7 +471,8 @@ func (f *FilesystemOpts) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &f.MemoryFile)
 	stateSinkObject.Save(6, &f.DisableDefaultSizeLimit)
 	stateSinkObject.Save(7, &f.AllowXattrPrefix)
-	stateSinkObject.Save(8, &f.SourceTarFile)
+	stateSinkObject.Save(8, &f.SourceTar)
+	stateSinkObject.Save(9, &f.SourceTarFSCheckpoint)
 }
 
 func (f *FilesystemOpts) afterLoad(context.Context) {}
@@ -485,7 +487,8 @@ func (f *FilesystemOpts) StateLoad(ctx context.Context, stateSourceObject state.
 	stateSourceObject.Load(5, &f.MemoryFile)
 	stateSourceObject.Load(6, &f.DisableDefaultSizeLimit)
 	stateSourceObject.Load(7, &f.AllowXattrPrefix)
-	stateSourceObject.Load(8, &f.SourceTarFile)
+	stateSourceObject.Load(8, &f.SourceTar)
+	stateSourceObject.Load(9, &f.SourceTarFSCheckpoint)
 }
 
 func (d *dentry) StateTypeName() string {

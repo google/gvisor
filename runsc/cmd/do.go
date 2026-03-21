@@ -444,7 +444,7 @@ func makeFile(dest, content string, spec *specs.Spec) (string, error) {
 	}
 	if _, err := tmpFile.WriteString(content); err != nil {
 		if err := os.Remove(tmpFile.Name()); err != nil {
-			log.Warningf("Failed to remove %q: %v", tmpFile, err)
+			log.Warningf("Failed to remove %q: %v", tmpFile.Name(), err)
 		}
 		return "", err
 	}

@@ -16,11 +16,8 @@
 // checkpointed to multiple files in a directory rather than to an opaque FD.
 package checkpointfiles
 
+// Files common to both full and filesystem checkpoints:
 const (
-	// StateFileName is the file in an image-path directory which contains the
-	// sentry object graph.
-	StateFileName = "checkpoint.img"
-
 	// PagesMetadataFileName is the file in an image-path directory containing
 	// MemoryFile metadata.
 	PagesMetadataFileName = "pages_meta.img"
@@ -28,4 +25,18 @@ const (
 	// PagesFileName is the file in an image-path directory containing
 	// MemoryFile page contents.
 	PagesFileName = "pages.img"
+)
+
+// Files specific to full checkpoints:
+const (
+	// StateFileName is the file in an image-path directory which contains the
+	// sentry object graph.
+	StateFileName = "checkpoint.img"
+)
+
+// Files specific to filesystem checkpoints (see fscheckpoint package for
+// details):
+const (
+	FSCheckpointManifestFileName = "fscheckpoint.json"
+	FSCheckpointMultiTarFileName = "multitar.img"
 )
