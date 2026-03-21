@@ -264,17 +264,13 @@ func EmptyRawTable() Table {
 	return Table{
 		Rules: []Rule{},
 		BuiltinChains: [NumHooks]int{
-			Prerouting:  HookUnset,
 			Input:       HookUnset,
 			Forward:     HookUnset,
-			Output:      HookUnset,
 			Postrouting: HookUnset,
 		},
 		Underflows: [NumHooks]int{
-			Prerouting:  HookUnset,
 			Input:       HookUnset,
 			Forward:     HookUnset,
-			Output:      HookUnset,
 			Postrouting: HookUnset,
 		},
 	}
