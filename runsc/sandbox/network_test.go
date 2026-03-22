@@ -639,3 +639,94 @@ func TestCollectLinksAndRoutes_NoUsableAddresses(t *testing.T) {
 		t.Errorf("LoopbackLinks mismatch:\ngot  %+v\nwant nil", args.LoopbackLinks)
 	}
 }
+
+func TestCollectLinksAndRoutes_LoopbackExtraRoutes(t *testing.T) {
+	requireRoot(t)
+	setupTestNamespace(t)
+	setupLoopback(t)
+
+	vethLink, _ := createVethPair(t, "testveth0")
+	netlink.LinkSetUp(vethLink)
+	netlink.AddrAdd(vethLink, &netlink.Addr{
+		IPNet: &net.IPNet{IP: net.ParseIP("10.0.0.1"), Mask: net.CIDRMask(24, 32)},
+	})
+
+	// Add a custom route pointing to the loopback interface.
+	// This simulates routes added by e.g. podman-network-create --route.
+	loLink, err := netlink.LinkByName("lo")
+	if err != nil {
+		t.Fatalf("Failed to get lo link: %v", err)
+	}
+	if err := netlink.RouteAdd(&netlink.Route{
+		Dst:       parseCIDR(t, "10.88.0.0/16"),
+		LinkIndex: loLink.Attrs().Index,
+	}); err != nil {
+		t.Fatalf("Failed to add route to lo: %v", err)
+	}
+
+	conf := &config.Config{
+		XDP: config.XDP{Mode: config.XDPModeOff},
+	}
+
+	args, err := collectLinksAndRoutes(conf, false)
+	if err != nil {
+		t.Fatalf("collectLinksAndRoutes failed: %v", err)
+	}
+
+	wantLoopbackLinks := []boot.LoopbackLink{
+		{
+			Name: "lo",
+			Addresses: []boot.IPWithPrefix{
+				{Address: net.ParseIP("127.0.0.1"), PrefixLen: 8},
+				{Address: net.IPv6loopback, PrefixLen: 128},
+			},
+			Routes: []boot.Route{
+				{
+					Destination: net.IPNet{
+						IP:   net.IP{127, 0, 0, 0},
+						Mask: net.IPMask{255, 0, 0, 0},
+					},
+				},
+				{
+					Destination: net.IPNet{
+						IP:   net.IPv6loopback,
+						Mask: net.CIDRMask(128, 128),
+					},
+				},
+				{
+					Destination: net.IPNet{
+						IP:   net.IP{10, 88, 0, 0},
+						Mask: net.IPMask{255, 255, 0, 0},
+					},
+				},
+			},
+		},
+	}
+
+	if !loopbackLinksEqual(args.LoopbackLinks, wantLoopbackLinks) {
+		t.Errorf("LoopbackLinks mismatch:\ngot  %+v\nwant %+v", args.LoopbackLinks, wantLoopbackLinks)
+	}
+
+	wantFDLinks := []boot.FDBasedLink{
+		{
+			Name:        "testveth0",
+			MTU:         1500,
+			LinkAddress: vethLink.Attrs().HardwareAddr,
+			QDisc:       config.QDiscNone,
+			Addresses: []boot.IPWithPrefix{
+				{Address: net.ParseIP("10.0.0.1"), PrefixLen: 24},
+			},
+			Routes: []boot.Route{
+				{
+					Destination: net.IPNet{
+						IP:   net.IP{10, 0, 0, 0},
+						Mask: net.IPMask{255, 255, 255, 0},
+					},
+				},
+			},
+		},
+	}
+	if !fdbasedLinksEqual(args.FDBasedLinks, wantFDLinks) {
+		t.Errorf("FDBasedLinks mismatch:\ngot  %+v\nwant %+v", args.FDBasedLinks, wantFDLinks)
+	}
+}
