@@ -121,6 +121,38 @@ func isRootNetNS() (bool, error) {
 	}
 }
 
+func addrBitLength(ip net.IP) int {
+	if ip.To4() != nil {
+		return 8 * net.IPv4len
+	}
+	return 8 * net.IPv6len
+}
+
+// removeLinkAddresses removes IP addresses from the host NIC for a link.
+func removeLinkAddresses(linkName string, addresses []boot.IPWithPrefix) error {
+	ifaceLink, err := netlink.LinkByName(linkName)
+	if err != nil {
+		return fmt.Errorf("getting link for interface %q: %w", linkName, err)
+	}
+	for _, addr := range addresses {
+		ipNet := &net.IPNet{
+			IP:   addr.Address,
+			Mask: net.CIDRMask(addr.PrefixLen, addrBitLength(addr.Address)),
+		}
+		if err := removeAddress(ifaceLink, ipNet.String()); err != nil {
+			// If we encounter an error while deleting the ip,
+			// verify the ip is still present on the interface.
+			if present, err := isAddressOnInterface(linkName, ipNet); err != nil {
+				return fmt.Errorf("checking if address %v is on interface %q: %w", ipNet, linkName, err)
+			} else if !present {
+				continue
+			}
+			return fmt.Errorf("removing address %v from device %q: %w", ipNet, linkName, err)
+		}
+	}
+	return nil
+}
+
 // createInterfacesAndRoutesFromNS scrapes the interface and routes from the
 // net namespace with the given path, creates them in the sandbox, and removes
 // them from the host.
@@ -258,18 +290,9 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 		for _, addr := range ipAddrs {
 			prefix, _ := addr.Mask.Size()
 			addresses = append(addresses, boot.IPWithPrefix{Address: addr.IP, PrefixLen: prefix})
-
-			// Steal IP address from NIC.
-			if err := removeAddress(ifaceLink, addr.String()); err != nil {
-				// If we encounter an error while deleting the ip,
-				// verify the ip is still present on the interface.
-				if present, err := isAddressOnInterface(iface.Name, addr); err != nil {
-					return fmt.Errorf("checking if address %v is on interface %q: %w", addr, iface.Name, err)
-				} else if !present {
-					continue
-				}
-				return fmt.Errorf("removing address %v from device %q: %w", addr, iface.Name, err)
-			}
+		}
+		if err := removeLinkAddresses(iface.Name, addresses); err != nil {
+			return fmt.Errorf("removing link addresses for interface %q: %w", iface.Name, err)
 		}
 
 		if conf.XDP.Mode == config.XDPModeNS {
