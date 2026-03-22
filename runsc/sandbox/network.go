@@ -153,49 +153,16 @@ func removeLinkAddresses(linkName string, addresses []boot.IPWithPrefix) error {
 	return nil
 }
 
-// createInterfacesAndRoutesFromNS scrapes the interface and routes from the
-// net namespace with the given path, creates them in the sandbox, and removes
-// them from the host.
-func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *config.Config, disableIPv6 bool) error {
-	switch conf.XDP.Mode {
-	case config.XDPModeOff:
-	case config.XDPModeNS:
-	case config.XDPModeRedirect:
-		if err := createRedirectInterfacesAndRoutes(conn, conf); err != nil {
-			return fmt.Errorf("failed to create XDP redirect interface: %w", err)
-		}
-		return nil
-	case config.XDPModeTunnel:
-		if err := createXDPTunnel(conn, nsPath, conf); err != nil {
-			return fmt.Errorf("failed to create XDP tunnel: %w", err)
-		}
-		return nil
-	default:
-		return fmt.Errorf("unknown XDP mode: %v", conf.XDP.Mode)
-	}
-
-	// Join the network namespace that we will be copying.
-	restore, err := joinNetNS(nsPath)
-	if err != nil {
-		return err
-	}
-	defer restore()
-
-	// Get all interfaces in the namespace.
+// collectLinksAndRoutes queries the network interfaces in the current network
+// namespace and scrapes their configuration (addresses, routes, neighbors).
+// It returns the args to create them in the sandbox. This function has no
+// side effects on the interfaces themselves.
+func collectLinksAndRoutes(conf *config.Config, disableIPv6 bool) (boot.CreateLinksAndRoutesArgs, error) {
 	ifaces, err := net.Interfaces()
 	if err != nil {
-		return fmt.Errorf("querying interfaces: %w", err)
+		return boot.CreateLinksAndRoutesArgs{}, fmt.Errorf("querying interfaces: %w", err)
 	}
 
-	isRoot, err := isRootNetNS()
-	if err != nil {
-		return err
-	}
-	if isRoot {
-		return fmt.Errorf("cannot run with network enabled in root network namespace")
-	}
-
-	// Collect addresses and routes from the interfaces.
 	args := boot.CreateLinksAndRoutesArgs{
 		PauseExternalNetworking: conf.PauseExternalNetworking,
 	}
@@ -208,14 +175,14 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 
 		allAddrs, err := iface.Addrs()
 		if err != nil {
-			return fmt.Errorf("fetching interface addresses for %q: %w", iface.Name, err)
+			return boot.CreateLinksAndRoutesArgs{}, fmt.Errorf("fetching interface addresses for %q: %w", iface.Name, err)
 		}
 
 		// We build our own loopback device.
 		if iface.Flags&net.FlagLoopback != 0 {
 			link, err := loopbackLink(conf, iface, allAddrs, disableIPv6)
 			if err != nil {
-				return fmt.Errorf("getting loopback link for iface %q: %w", iface.Name, err)
+				return boot.CreateLinksAndRoutesArgs{}, fmt.Errorf("getting loopback link for iface %q: %w", iface.Name, err)
 			}
 			args.LoopbackLinks = append(args.LoopbackLinks, link)
 			continue
@@ -225,7 +192,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 		for _, ifaddr := range allAddrs {
 			ipNet, ok := ifaddr.(*net.IPNet)
 			if !ok {
-				return fmt.Errorf("address is not IPNet: %+v", ifaddr)
+				return boot.CreateLinksAndRoutesArgs{}, fmt.Errorf("address is not IPNet: %+v", ifaddr)
 			}
 			// Do not add IPv6 addresses when IPv6 is disabled.
 			if disableIPv6 && ipNet.IP.To4() == nil {
@@ -241,7 +208,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 		// Collect data from the ARP table.
 		dump, err := netlink.NeighList(iface.Index, 0)
 		if err != nil {
-			return fmt.Errorf("fetching ARP table for %q: %w", iface.Name, err)
+			return boot.CreateLinksAndRoutesArgs{}, fmt.Errorf("fetching ARP table for %q: %w", iface.Name, err)
 		}
 
 		var neighbors []boot.Neighbor
@@ -259,11 +226,11 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 		// will remove the routes as well.
 		routes, defv4, defv6, err := routesForIface(iface, disableIPv6)
 		if err != nil {
-			return fmt.Errorf("getting routes for interface %q: %v", iface.Name, err)
+			return boot.CreateLinksAndRoutesArgs{}, fmt.Errorf("getting routes for interface %q: %v", iface.Name, err)
 		}
 		if defv4 != nil {
 			if !args.Defaultv4Gateway.Route.Empty() {
-				return fmt.Errorf("more than one default route found, interface: %v, route: %v, default route: %+v", iface.Name, defv4, args.Defaultv4Gateway)
+				return boot.CreateLinksAndRoutesArgs{}, fmt.Errorf("more than one default route found, interface: %v, route: %v, default route: %+v", iface.Name, defv4, args.Defaultv4Gateway)
 			}
 			args.Defaultv4Gateway.Route = *defv4
 			args.Defaultv4Gateway.Name = iface.Name
@@ -271,7 +238,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 
 		if defv6 != nil {
 			if !args.Defaultv6Gateway.Route.Empty() {
-				return fmt.Errorf("more than one default route found, interface: %v, route: %v, default route: %+v", iface.Name, defv6, args.Defaultv6Gateway)
+				return boot.CreateLinksAndRoutesArgs{}, fmt.Errorf("more than one default route found, interface: %v, route: %v, default route: %+v", iface.Name, defv6, args.Defaultv6Gateway)
 			}
 			args.Defaultv6Gateway.Route = *defv6
 			args.Defaultv6Gateway.Name = iface.Name
@@ -280,7 +247,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 		// Get the link for the interface.
 		ifaceLink, err := netlink.LinkByName(iface.Name)
 		if err != nil {
-			return fmt.Errorf("getting link for interface %q: %w", iface.Name, err)
+			return boot.CreateLinksAndRoutesArgs{}, fmt.Errorf("getting link for interface %q: %w", iface.Name, err)
 		}
 		linkAddress := ifaceLink.Attrs().HardwareAddr
 
@@ -322,6 +289,51 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 			}
 			args.FDBasedLinks = append(args.FDBasedLinks, link)
 		}
+	}
+
+	return args, nil
+}
+
+// createInterfacesAndRoutesFromNS scrapes the interface and routes from the
+// net namespace with the given path, creates them in the sandbox, and removes
+// them from the host.
+func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *config.Config, disableIPv6 bool) error {
+	switch conf.XDP.Mode {
+	case config.XDPModeOff:
+	case config.XDPModeNS:
+	case config.XDPModeRedirect:
+		if err := createRedirectInterfacesAndRoutes(conn, conf); err != nil {
+			return fmt.Errorf("failed to create XDP redirect interface: %w", err)
+		}
+		return nil
+	case config.XDPModeTunnel:
+		if err := createXDPTunnel(conn, nsPath, conf); err != nil {
+			return fmt.Errorf("failed to create XDP tunnel: %w", err)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unknown XDP mode: %v", conf.XDP.Mode)
+	}
+
+	// Join the network namespace that we will be copying.
+	restore, err := joinNetNS(nsPath)
+	if err != nil {
+		return err
+	}
+	defer restore()
+
+	isRoot, err := isRootNetNS()
+	if err != nil {
+		return err
+	}
+	if isRoot {
+		return fmt.Errorf("cannot run with network enabled in root network namespace")
+	}
+
+	// Collect addresses and routes from the interfaces.
+	args, err := collectLinksAndRoutes(conf, disableIPv6)
+	if err != nil {
+		return err
 	}
 
 	for i := range args.XDPLinks {
