@@ -136,7 +136,7 @@ $(RUNTIME_BIN): # See below.
 ifeq (,$(STAGED_BINARIES))
 	@$(call copy,$(RUNSC_TARGET),$(RUNTIME_BIN))
 else
-	gsutil cat "${STAGED_BINARIES}" | \
+	gcloud storage cat "${STAGED_BINARIES}" | \
 	  tar -C "$(RUNTIME_DIR)" -zxvf - runsc && \
 	  chmod a+rx "$(RUNTIME_BIN)"
 endif
@@ -479,7 +479,7 @@ ifeq (,$(STAGED_BINARIES))
 	sudo mv $$T/containerd-shim-runsc-v1 "$$(dirname $$(which containerd))"; \
 	rm -rf $$T)
 else
-	gsutil cat "$(STAGED_BINARIES)" | \
+	gcloud storage cat "$(STAGED_BINARIES)" | \
 		sudo tar -C "$$(dirname $$(which containerd))" -zxvf - containerd-shim-runsc-v1
 endif
 	@$(call sudo,test/root:root_test,--runtime=$(RUNTIME) -test.v)
