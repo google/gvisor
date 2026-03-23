@@ -1451,7 +1451,7 @@ func (s *Sandbox) WaitFSCheckpoint() error {
 // WaitFSRestore waits for filesystems to have been successfully restored from
 // checkpoint.
 func (s *Sandbox) WaitFSRestore(cid string) error {
-	log.Debugf("Waiting for filesystem restore to complete in container %q in sandbox %d", cid, s.ID)
+	log.Debugf("Waiting for filesystem restore to complete in container %q in sandbox %q", cid, s.ID)
 	args := boot.WaitFSRestoreArgs{
 		CID: cid,
 	}
