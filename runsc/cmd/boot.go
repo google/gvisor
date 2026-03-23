@@ -33,6 +33,7 @@ import (
 	"gvisor.dev/gvisor/pkg/coretag"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/fd"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/prometheus"
@@ -285,6 +286,10 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	}
 
 	conf := args[0].(*config.Config)
+
+	if hostPageSize := unix.Getpagesize(); hostPageSize != hostarch.PageSize {
+		util.Fatalf("host page size (%d) does not match compiled page size (%d)", hostPageSize, hostarch.PageSize)
+	}
 
 	// Set traceback level
 	debug.SetTraceback(conf.Traceback)

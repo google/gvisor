@@ -91,6 +91,7 @@ go_library(
         "//pkg/coverage",
         "//pkg/cpuid",
         "//pkg/fd",
+        "//pkg/hostarch",
         "//pkg/log",
         "//pkg/metric",
         "//pkg/prometheus",
