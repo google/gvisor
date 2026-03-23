@@ -73,6 +73,7 @@ go_test(
     srcs = [
         "memory_test.go",
         "network_test.go",
+        "sandbox_env_test.go",
     ],
     library = ":sandbox",
     deps = [
