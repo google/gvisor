@@ -192,6 +192,12 @@ type Args struct {
 
 	// ExecFile is the host file used for program execution.
 	ExecFile *os.File
+
+	// If FSRestoreImagePath is non-empty, it is a path to a filesystem
+	// checkpoint that should be restored. FSRestoreImagePath may only be set
+	// for containers in a new Sandbox process.
+	FSRestoreImagePath string
+	FSRestoreDirect    bool
 }
 
 // New creates the container in a new Sandbox process, unless the metadata
@@ -217,6 +223,9 @@ func New(conf *config.Config, args Args) (*Container, error) {
 		sandboxID, ok = specutils.SandboxID(args.Spec)
 		if !ok {
 			return nil, fmt.Errorf("no sandbox ID found when creating container")
+		}
+		if args.FSRestoreImagePath != "" {
+			return nil, fmt.Errorf("cannot set FSRestoreImagePath when creating container in existing sandbox")
 		}
 	}
 
@@ -322,6 +331,8 @@ func New(conf *config.Config, args Args) (*Container, error) {
 				MountHints:          mountHints,
 				PassFiles:           args.PassFiles,
 				ExecFile:            args.ExecFile,
+				FSRestoreImagePath:  args.FSRestoreImagePath,
+				FSRestoreDirect:     args.FSRestoreDirect,
 			}
 			sand, err := sandbox.New(conf, sandArgs)
 			if err != nil {
@@ -706,6 +717,26 @@ func (c *Container) WaitRestore() error {
 	return c.Sandbox.WaitRestore()
 }
 
+// WaitFSCheckpoint waits for a filesystem checkpoint to have successfully been
+// saved.
+func (c *Container) WaitFSCheckpoint() error {
+	log.Debugf("Waiting for filesystem checkpoint to complete in container, cid: %s", c.ID)
+	if !c.IsSandboxRunning() {
+		return fmt.Errorf("sandbox is not running")
+	}
+	return c.Sandbox.WaitFSCheckpoint()
+}
+
+// WaitFSRestore waits for filesystems to have been successfully restored from
+// checkpoint.
+func (c *Container) WaitFSRestore() error {
+	log.Debugf("Waiting for filesystem restore to complete in container, cid: %s", c.ID)
+	if !c.IsSandboxRunning() {
+		return fmt.Errorf("sandbox is not running")
+	}
+	return c.Sandbox.WaitFSRestore(c.ID)
+}
+
 // TarRootfsUpperLayer serializes the rootfs upper layer of the container to a tar file. When
 // the rootfs is not an overlayfs, it returns an error. It writes the tar file
 // to outFD.
@@ -774,6 +805,15 @@ func (c *Container) Checkpoint(conf *config.Config, imagePath string, opts sandb
 		return err
 	}
 	return c.Sandbox.Checkpoint(conf, c.ID, imagePath, opts)
+}
+
+// FSSave sends the filesystem checkpointing call to the container.
+func (c *Container) FSSave(conf *config.Config, imagePath string, opts sandbox.FSSaveOpts) error {
+	log.Debugf("Checkpoint container filesystem, cid: %s", c.ID)
+	if err := c.requireStatus("filesystem checkpoint", Created, Running, Paused); err != nil {
+		return err
+	}
+	return c.Sandbox.FSSave(conf, c.ID, imagePath, opts)
 }
 
 // Pause suspends the container and its kernel.
@@ -1753,7 +1793,7 @@ func setOOMScoreAdj(pid int, scoreAdj int) error {
 			log.Warningf("Process (%d) exited while setting oom_score_adj", pid)
 			return nil
 		}
-		return fmt.Errorf("setting oom_score_adj to %q: %v", scoreAdj, err)
+		return fmt.Errorf("setting oom_score_adj to %d: %v", scoreAdj, err)
 	}
 	return nil
 }

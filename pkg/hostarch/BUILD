@@ -23,6 +23,7 @@ go_test(
     srcs = [
         "addr_range_seq_test.go",
         "addr_test.go",
+        "hostarch_test.go",
     ],
     library = ":hostarch",
 )

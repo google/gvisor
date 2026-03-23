@@ -188,6 +188,7 @@ def go_context(ctx, goos = None, goarch = None):
         goarch = goarch or go_ctx.sdk.goarch,
         goos = goos or go_ctx.sdk.goos,
         gotags = go_ctx.tags,
+        lang_version = "go" + go_ctx.sdk.version,  # go_ctx.sdk.version excludes the go prefix.
         nogo_args = nogo_args,
         runfiles = depset([go_ctx.go] + go_ctx.sdk.srcs.to_list() + go_ctx.sdk.tools.to_list() + go_ctx.stdlib.libs.to_list()),
         stdlib_srcs = go_ctx.sdk.srcs,
@@ -286,3 +287,6 @@ def go_imports(name, src, out):
         src = src,
         out = out,
     )
+
+def nogo_extra_proto_deps(target):
+    return []

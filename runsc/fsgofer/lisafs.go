@@ -193,6 +193,7 @@ func (s *LisafsServer) SupportedMessages() []lisafs.MID {
 		lisafs.Listen,
 		lisafs.Accept,
 		lisafs.ConnectWithCreds,
+		lisafs.RenameAt2,
 	}
 }
 
@@ -522,7 +523,7 @@ func (fd *controlFDLisa) Open(flags uint32) (*lisafs.OpenFD, int, error) {
 	case unix.S_IFSOCK:
 		if !server.config.HostUDS.AllowOpen() {
 			logRejectedUdsOpenOnce.Do(func() {
-				log.Warningf("Rejecting attempt to open unix domain socket from host filesystem. If you want to allow this, set flag --host-uds=open", fd.ControlFD.Node().FilePath())
+				log.Warningf("Rejecting attempt to open unix domain socket from host filesystem: %q. If you want to allow this, set flag --host-uds=open", fd.ControlFD.Node().FilePath())
 			})
 			return nil, -1, unix.EPERM
 		}
@@ -994,6 +995,11 @@ func (fd *controlFDLisa) Unlink(name string, flags uint32) error {
 // RenameAt implements lisafs.ControlFDImpl.RenameAt.
 func (fd *controlFDLisa) RenameAt(oldName string, newDir lisafs.ControlFDImpl, newName string) error {
 	return fsutil.RenameAt(fd.hostFD, oldName, newDir.(*controlFDLisa).hostFD, newName)
+}
+
+// RenameAt2 implements lisafs.ControlFDImpl.RenameAt2.
+func (fd *controlFDLisa) RenameAt2(oldName string, newDir lisafs.ControlFDImpl, newName string, flags uint32) error {
+	return fsutil.RenameAt2(fd.hostFD, oldName, newDir.(*controlFDLisa).hostFD, newName, flags)
 }
 
 // Renamed implements lisafs.ControlFDImpl.Renamed.

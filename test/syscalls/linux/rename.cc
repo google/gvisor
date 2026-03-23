@@ -12,22 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
 
 #include <string>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/strings/string_view.h"
 #include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/save_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 
 using ::testing::AnyOf;
+using ::testing::Matches;
 
 namespace gvisor {
 namespace testing {
@@ -497,6 +501,95 @@ TEST(Renameat2Test, NoReplaceDot) {
       renameat2(AT_FDCWD, d1.path().c_str(), AT_FDCWD,
                 absl::StrCat(d2.path(), "/.").c_str(), RENAME_NOREPLACE),
       SyscallFailsWithErrno(AnyOf(ENOSYS, EINVAL, EEXIST)));
+}
+
+TEST(Renameat2Test, ExchangeDirectories) {
+  absl::string_view c1 = "xyz";
+  absl::string_view c2 = "abc";
+  const auto d1 =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(GetAbsoluteTestTmpdir()));
+  const auto d2 =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(GetAbsoluteTestTmpdir()));
+  auto f1 = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(d1.path(), c1, TempPath::kDefaultFileMode));
+  auto f2 = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(d2.path(), c2, TempPath::kDefaultFileMode));
+  // renameat2 returns EINVAL if the flag is unsupported.
+  auto rename_result = renameat2(AT_FDCWD, d1.path().c_str(), AT_FDCWD,
+                                 d2.path().c_str(), RENAME_EXCHANGE);
+  EXPECT_THAT(rename_result,
+              AnyOf(SyscallFailsWithErrno(EINVAL), SyscallSucceeds()));
+
+  if (Matches(SyscallSucceeds())(rename_result)) {
+    EXPECT_THAT(Exists(JoinPath(d1.path(), Basename(f2.path()))),
+                IsPosixErrorOkAndHolds(true));
+    EXPECT_THAT(Exists(JoinPath(d1.path(), Basename(f1.path()))),
+                IsPosixErrorOkAndHolds(false));
+    EXPECT_THAT(Exists(JoinPath(d2.path(), Basename(f1.path()))),
+                IsPosixErrorOkAndHolds(true));
+    EXPECT_THAT(Exists(JoinPath(d2.path(), Basename(f2.path()))),
+                IsPosixErrorOkAndHolds(false));
+  } else {
+    EXPECT_THAT(Exists(JoinPath(d1.path(), Basename(f2.path()))),
+                IsPosixErrorOkAndHolds(false));
+    EXPECT_THAT(Exists(JoinPath(d1.path(), Basename(f1.path()))),
+                IsPosixErrorOkAndHolds(true));
+    EXPECT_THAT(Exists(JoinPath(d2.path(), Basename(f1.path()))),
+                IsPosixErrorOkAndHolds(false));
+    EXPECT_THAT(Exists(JoinPath(d2.path(), Basename(f2.path()))),
+                IsPosixErrorOkAndHolds(true));
+  }
+}
+
+TEST(Renameat2Test, PathDoesNotExist) {
+  const auto d1 =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(GetAbsoluteTestTmpdir()));
+  // d2 doesn't exist.
+  const auto d2 = NewTempAbsPathInDir(GetAbsoluteTestTmpdir());
+  EXPECT_THAT(renameat2(AT_FDCWD, d1.path().c_str(), AT_FDCWD, d2.c_str(),
+                        RENAME_EXCHANGE),
+              SyscallFailsWithErrno(AnyOf(ENOSYS, EINVAL, ENOENT)));
+  // renameat2 returns EINVAL if the flag is unsupported.
+  EXPECT_THAT(renameat2(AT_FDCWD, d2.c_str(), AT_FDCWD, d1.path().c_str(),
+                        RENAME_EXCHANGE),
+              SyscallFailsWithErrno(AnyOf(EINVAL, ENOENT)));
+}
+
+TEST(Renameat2Test, InvalidFlags) {
+  const auto d1 =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(GetAbsoluteTestTmpdir()));
+  const auto d2 =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(GetAbsoluteTestTmpdir()));
+  // RENAME_NOREPLACE can't be used with RENAME_EXCHANGE.
+  EXPECT_THAT(renameat2(AT_FDCWD, d1.path().c_str(), AT_FDCWD,
+                        d2.path().c_str(), RENAME_EXCHANGE | RENAME_NOREPLACE),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(Renameat2Test, ExchangeFiles) {
+  absl::string_view c1 = "xyz";
+  absl::string_view c2 = "abc";
+  const auto p1 =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(GetAbsoluteTestTmpdir()));
+  const auto p2 =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(GetAbsoluteTestTmpdir()));
+  const auto f1 = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(p1.path(), c1, TempPath::kDefaultFileMode));
+  const auto f2 = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(p2.path(), c2, TempPath::kDefaultFileMode));
+  auto rename_result = renameat2(AT_FDCWD, f1.path().c_str(), AT_FDCWD,
+                                 f2.path().c_str(), RENAME_EXCHANGE);
+  // renameat2 returns EINVAL if the flag is unsupported.
+  EXPECT_THAT(rename_result,
+              AnyOf(SyscallFailsWithErrno(EINVAL), SyscallSucceeds()));
+
+  if (Matches(SyscallSucceeds())(rename_result)) {
+    EXPECT_THAT(GetContents(f2.path()), IsPosixErrorOkAndHolds(c1));
+    EXPECT_THAT(GetContents(f1.path()), IsPosixErrorOkAndHolds(c2));
+  } else {
+    EXPECT_THAT(GetContents(f1.path()), IsPosixErrorOkAndHolds(c1));
+    EXPECT_THAT(GetContents(f2.path()), IsPosixErrorOkAndHolds(c2));
+  }
 }
 
 }  // namespace

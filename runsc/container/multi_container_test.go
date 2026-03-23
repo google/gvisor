@@ -17,6 +17,7 @@ package container
 import (
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"os"
 	"os/exec"
 	"path"
@@ -68,6 +69,10 @@ func createSpecs(cmds ...[]string) ([]*specs.Spec, []string) {
 }
 
 func startContainers(conf *config.Config, specs []*specs.Spec, ids []string) ([]*Container, func(), error) {
+	return startContainersWithArgs(conf, specs, ids, nil)
+}
+
+func startContainersWithArgs(conf *config.Config, specs []*specs.Spec, ids []string, mutateArgs func(int, *Args)) ([]*Container, func(), error) {
 	if len(conf.RootDir) == 0 {
 		panic("conf.RootDir not set. Call testutil.SetupRootDir() to set.")
 	}
@@ -87,6 +92,9 @@ func startContainers(conf *config.Config, specs []*specs.Spec, ids []string) ([]
 			ID:        ids[i],
 			Spec:      spec,
 			BundleDir: bundleDir,
+		}
+		if mutateArgs != nil {
+			mutateArgs(i, &args)
 		}
 		cont, err := New(conf, args)
 		if err != nil {
@@ -3140,5 +3148,164 @@ func TestMultiContainerCgroupsMemoryUsage(t *testing.T) {
 				t.Fatalf("error new total usage %v is not less than old total usage %v", newUsageTotal, usageTotal)
 			}
 		})
+	}
+}
+
+func TestFSCheckpointCommand(t *testing.T) {
+	conf := testutil.TestConfig(t)
+
+	rootDir, cleanupRoot, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("Error creating root dir: %v", err)
+	}
+	defer cleanupRoot()
+	conf.RootDir = rootDir
+
+	// Enable disk-backed overlay as required for filesystem checkpointing.
+	conf.Overlay2.Set("root:self")
+
+	// Containers are matched between save and restore by their names. If no
+	// name is specified, runsc auto-assigns container names based on ordering,
+	// but if a container dies and is externally restarted, runsc doesn't know
+	// that the old and new containers are related and will assign the new
+	// container a new name. So for restoring to work after container restart,
+	// we need to assign a name explicitly.
+	const (
+		rootName = "root-container"
+		subName  = "sub-container"
+		initName = "init-container"
+	)
+
+	// Each container must use a distinct writable temporary directory as its
+	// filesystem root, to hold the filestore file used by disk-backed overlay.
+	appSrc, err := testutil.FindFile("test/cmd/test_app/test_app")
+	if err != nil {
+		t.Fatal("Error finding test_app:", err)
+	}
+	setupSpecRoots := func(specs []*specs.Spec, ids []string) (func(), error) {
+		var cleanupSpecRoots cleanup.Cleanup
+		defer cleanupSpecRoots.Clean()
+		for i, spec := range specs {
+			contRootPath, err := os.MkdirTemp(testutil.TmpDir(), fmt.Sprintf("%s-root", ids[i]))
+			if err != nil {
+				return nil, fmt.Errorf("error creating root directory for container %d: %v", i, err)
+			}
+			cleanupSpecRoots.Add(func() { os.RemoveAll(contRootPath) })
+			spec.Root.Path = contRootPath
+			spec.Root.Readonly = false
+			// Copy test_app to "/app" inside the container.
+			appDst := filepath.Join(contRootPath, "app")
+			if err := copyFile(appSrc, appDst); err != nil {
+				return nil, fmt.Errorf("error copying app binary from %q to %q: %v", appSrc, appDst, err)
+			}
+		}
+		return cleanupSpecRoots.Release(), nil
+	}
+
+	// Start two containers which sleep.
+	var testAppSleepArgv = []string{"/app", "reaper"}
+	specs, ids := createSpecs(testAppSleepArgv, testAppSleepArgv)
+	specs[0].Annotations[specutils.ContainerdContainerNameAnnotation] = rootName
+	specs[1].Annotations[specutils.ContainerdContainerNameAnnotation] = subName
+	cleanupRootsOld, err := setupSpecRoots(specs, ids)
+	if err != nil {
+		t.Fatalf("Error setting up container roots: %v", err)
+	}
+	defer cleanupRootsOld()
+	conts, cleanupContsOld, err := startContainers(conf, specs, ids)
+	if err != nil {
+		t.Fatalf("Error starting containers: %v", err)
+	}
+	defer cleanupContsOld()
+
+	// Populate container filesystems.
+	fsTreeCommonArgs := []string{"--depth=10", "--file-per-level=10", "--file-size=65537", "--create-symlink", "--add-empty-files"}
+	fsTreeArgs := make([][]string, len(conts))
+	for i := range conts {
+		fsTreeArgs[i] = append(fsTreeCommonArgs, fmt.Sprintf("seed=%d", rand.Uint64()))
+		if ws, err := execute(conf, conts[i], "/app", append([]string{"fsTreeCreate"}, fsTreeArgs[i]...)...); err != nil || ws != 0 {
+			t.Fatalf("Error populating filesystem for container %d, ws: %v, err: %v", i, ws, err)
+		}
+	}
+
+	// Save a filesystem checkpoint and kill the sandbox.
+	waitFSCheckpointErrC := make(chan error, 1)
+	go func() {
+		waitFSCheckpointErrC <- conts[0].WaitFSCheckpoint()
+	}()
+	imagePath, err := os.MkdirTemp(testutil.TmpDir(), "fscheckpoint-image")
+	if err != nil {
+		t.Fatalf("Error creating temp dir: %v", err)
+	}
+	defer os.RemoveAll(imagePath)
+	if err := conts[0].FSSave(conf, imagePath, sandbox.FSSaveOpts{
+		ExitAfterSaving: true,
+	}); err != nil {
+		t.Fatalf("Error saving filesystem checkpoint: %v", err)
+	}
+	select {
+	case err := <-waitFSCheckpointErrC:
+		if err != nil {
+			// Container.WaitFSCheckpoint, like Container.WaitCheckpoint, is
+			// inherently racy. Both wait for the "next" checkpoint to be
+			// saved. If FSSave completes before WaitFSCheckpoint starts
+			// waiting, then WaitFSCheckpoint will miss the FSSave and return
+			// an error when the sandbox exits. There is no way to know when
+			// WaitFSCheckpoint has started waiting, so there is no way to be
+			// completely safe from this race. To avoid causing test flakes,
+			// log the error but don't fail the test.
+			t.Logf("Error waiting for FS checkpoint: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("Timed out waiting for WaitFSCheckpoint")
+	}
+
+	// Start three containers which sleep, two of which restore from the
+	// filesystem checkpoint.
+	specs, ids = createSpecs(testAppSleepArgv, testAppSleepArgv, testAppSleepArgv)
+	specs[0].Annotations[specutils.ContainerdContainerNameAnnotation] = rootName
+	specs[1].Annotations[specutils.ContainerdContainerNameAnnotation] = subName
+	specs[2].Annotations[specutils.ContainerdContainerNameAnnotation] = initName
+	cleanupRootsNew, err := setupSpecRoots(specs, ids)
+	if err != nil {
+		t.Fatalf("Error setting up container roots: %v", err)
+	}
+	defer cleanupRootsNew()
+	conts, cleanupContsNew, err := startContainersWithArgs(conf, specs, ids, func(i int, contArgs *Args) {
+		if i == 0 {
+			contArgs.FSRestoreImagePath = imagePath
+		}
+	})
+	if err != nil {
+		t.Fatalf("Error starting containers: %v", err)
+	}
+	defer cleanupContsNew()
+
+	// Verify container filesystems restored from checkpoint.
+	for i := range conts[:2] {
+		if ws, err := execute(conf, conts[i], "/app", append([]string{"fsTreeVerify"}, fsTreeArgs[i]...)...); err != nil || ws != 0 {
+			t.Fatalf("Error verifying filesystem for container %d, ws: %v, err: %v", i, ws, err)
+		}
+	}
+	for i, cont := range conts[:2] {
+		if err := cont.WaitFSRestore(); err != nil {
+			t.Errorf("Error waiting for FS restore for container %d: %v", i, err)
+		}
+	}
+
+	// Restart the second container and verify that its filesystem is restored
+	// again.
+	conts[1].Destroy()
+	restartID := testutil.RandomContainerID()
+	contsRestart, cleanupContsRestart, err := startContainers(conf, specs[1:2], []string{restartID})
+	if err != nil {
+		t.Fatalf("Error starting container: %v", err)
+	}
+	defer cleanupContsRestart()
+	if ws, err := execute(conf, contsRestart[0], "/app", append([]string{"fsTreeVerify"}, fsTreeArgs[1]...)...); err != nil || ws != 0 {
+		t.Fatalf("Error verifying filesystem for restarted container, ws: %v, err: %v", ws, err)
+	}
+	if err := contsRestart[0].WaitFSRestore(); err != nil {
+		t.Errorf("Error waiting for FS restore: %v", err)
 	}
 }

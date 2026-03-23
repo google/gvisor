@@ -2315,6 +2315,7 @@ cc_binary(
         "//test/util:cleanup",
         "//test/util:file_descriptor",
         "//test/util:fs_util",
+        "//test/util:posix_error",
         "//test/util:save_util",
         "//test/util:temp_path",
         "//test/util:test_main",
@@ -2627,6 +2628,7 @@ cc_binary(
     deps = select_gtest() + [
         "//test/util:multiprocess_util",
         "//test/util:posix_error",
+        "//test/util:save_util",
         "//test/util:test_util",
         "//test/util:thread_util",
         "@com_google_absl//absl/flags:flag",
@@ -4926,6 +4928,20 @@ cc_binary(
         "//test/util:test_util",
         "//test/util:thread_util",
         "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_binary(
+    name = "host_pty_test",
+    testonly = 1,
+    srcs = ["host_pty.cc"],
+    linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
+    deps = select_gtest() + [
+        "//test/util:pty_util",
+        "//test/util:test_main",
+        "//test/util:test_util",
         "@com_google_absl//absl/strings",
     ],
 )

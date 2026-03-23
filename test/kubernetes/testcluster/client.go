@@ -172,7 +172,7 @@ func (rc *retryableClient) Do(ctx context.Context, fn KubernetesReq) error {
 		logger.Infof("Retryable operation [%s] @ %s failed on attempt %d (retryable error: %v); will retry again...", operationID, time.Now().Format(time.TimeOnly), numAttempt, err)
 		lastErr = err
 	}
-	log.Infof("Retryable operation [%s] @ %s failed after %d attempts with retryable error (%v) but context was cancelled (%v); bailing out.", operationID, time.Now().Format(time.TimeOnly), numAttempt, lastErr)
+	log.Infof("Retryable operation [%s] @ %s failed after %d attempts with retryable error (%v) but context was cancelled (%v); bailing out.", operationID, time.Now().Format(time.TimeOnly), numAttempt, lastErr, ctx.Err())
 	return lastErr
 }
 

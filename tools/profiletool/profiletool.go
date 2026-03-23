@@ -62,8 +62,8 @@ Available commands:`, os.Args[0])
 }
 
 // fail prints a warning message and exits.
-func fail(msg string, values ...any) {
-	log.Warningf(msg, values...)
+func fail(msg string) {
+	log.Warningf("%s", msg)
 	os.Exit(1)
 }
 
@@ -320,7 +320,7 @@ func computeSimilarityScore(a, b *profile.Profile) (float64, error) {
 			sum += math.Abs(freqA - freqB)
 			totalFreq += max(freqA, freqB)
 		} else {
-			log.Debugf("%v is in A only: %.2f%%: %v", key, freqA*100.0)
+			log.Debugf("%v is in A only: %.2f%%", key, freqA*100.0)
 			sum += freqA
 			totalFreq += freqA
 		}
@@ -330,7 +330,7 @@ func computeSimilarityScore(a, b *profile.Profile) (float64, error) {
 			continue
 		}
 		if _, inA := aggA.keys[key]; !inA {
-			log.Debugf("%v is in B only: %.2f%%: %v", key, freqB*100.0)
+			log.Debugf("%v is in B only: %.2f%%", key, freqB*100.0)
 			sum += freqB
 			totalFreq += freqB
 		}

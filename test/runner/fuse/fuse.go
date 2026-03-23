@@ -93,7 +93,7 @@ func main() {
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
 	if err := c.Run(); err != nil {
-		log.Warningf(err.Error())
+		log.Warningf("%v", err)
 		os.Exit(1)
 	}
 	os.Exit(0)

@@ -201,6 +201,14 @@ func (s *runscService) getContainer(id string) (*Container, error) {
 // Create creates a new initial process and container with the underlying OCI
 // runtime.
 func (s *runscService) Create(ctx context.Context, r *taskAPI.CreateTaskRequest) (*taskAPI.CreateTaskResponse, error) {
+	return s.CreateWithFSRestore(ctx, &extension.CreateWithFSRestoreRequest{
+		Create: r,
+	})
+}
+
+// CreateWithFSRestore is the same as Create, but it additionally restores the
+// container's filesystem from a snapshot.
+func (s *runscService) CreateWithFSRestore(ctx context.Context, rfs *extension.CreateWithFSRestoreRequest) (*taskAPI.CreateTaskResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -210,6 +218,7 @@ func (s *runscService) Create(ctx context.Context, r *taskAPI.CreateTaskRequest)
 	}
 
 	// Read from root for now.
+	r := rfs.Create
 	if r.Options != nil {
 		v, err := typeurl.UnmarshalAny(r.Options)
 		if err != nil {
@@ -316,16 +325,18 @@ func (s *runscService) Create(ctx context.Context, r *taskAPI.CreateTaskRequest)
 	}
 
 	config := &proc.CreateConfig{
-		ID:       r.ID,
-		Bundle:   r.Bundle,
-		Runtime:  s.opts.BinaryName,
-		Rootfs:   mounts,
-		Terminal: r.Terminal,
-		Stdin:    r.Stdin,
-		Stdout:   r.Stdout,
-		Stderr:   r.Stderr,
+		ID:                 r.ID,
+		Bundle:             r.Bundle,
+		Runtime:            s.opts.BinaryName,
+		Rootfs:             mounts,
+		Terminal:           r.Terminal,
+		Stdin:              r.Stdin,
+		Stdout:             r.Stdout,
+		Stderr:             r.Stderr,
+		FSRestoreImagePath: rfs.Conf.ImagePath,
+		FSRestoreDirect:    rfs.Conf.Direct,
 	}
-	process, err := newInit(r.Bundle, filepath.Join(r.Bundle, "work"), ns, s.platform, config, &s.opts, st.Rootfs)
+	process, err := newInit(filepath.Join(r.Bundle, "work"), ns, s.platform, config, &s.opts, st.Rootfs)
 	if err != nil {
 		return nil, err
 	}
@@ -868,7 +879,7 @@ func getTopic(e any) string {
 	return runtime.TaskUnknownTopic
 }
 
-func newInit(path, workDir, namespace string, platform stdio.Platform, r *proc.CreateConfig, options *Options, rootfs string) (*proc.Init, error) {
+func newInit(workDir, namespace string, platform stdio.Platform, r *proc.CreateConfig, options *Options, rootfs string) (*proc.Init, error) {
 	spec, err := utils.ReadSpec(r.Bundle)
 	if err != nil {
 		return nil, fmt.Errorf("read oci spec: %w", err)
@@ -886,7 +897,7 @@ func newInit(path, workDir, namespace string, platform stdio.Platform, r *proc.C
 		}
 	}
 
-	runtime := proc.NewRunsc(options.Root, path, namespace, options.BinaryName, options.RunscConfig, spec)
+	runtime := proc.NewRunsc(options.Root, r.Bundle, namespace, options.BinaryName, options.RunscConfig, spec)
 	p := proc.New(r.ID, runtime, stdio.Stdio{
 		Stdin:    r.Stdin,
 		Stdout:   r.Stdout,

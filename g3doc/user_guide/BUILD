@@ -128,3 +128,11 @@ doc(
     permalink = "/docs/user_guide/rootfs_snapshot/",
     weight = "92",
 )
+
+doc(
+    name = "fs_snapshot",
+    src = "fs_snapshot.md",
+    category = "User Guide",
+    permalink = "/docs/user_guide/fs_snapshot/",
+    weight = "93",
+)

@@ -76,7 +76,7 @@ func TestSharedVolume(t *testing.T) {
 	if ws, err := c.executeSync(conf, argsTestFile); err != nil {
 		t.Fatalf("unexpected error testing file %q: %v", filename, err)
 	} else if ws.ExitStatus() == 0 {
-		t.Errorf("test %q exited with code %v, wanted not zero", ws.ExitStatus(), err)
+		t.Errorf("test %q exited with code %v, wanted not zero", filename, ws.ExitStatus())
 	}
 
 	// Create the file from outside of the sandbox.

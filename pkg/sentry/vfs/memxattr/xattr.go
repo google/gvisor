@@ -17,6 +17,7 @@
 package memxattr
 
 import (
+	"maps"
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -134,4 +135,20 @@ func (x *SimpleExtendedAttributes) RemoveXattr(creds *auth.Credentials, mode lin
 	}
 	delete(x.xattrs, name)
 	return nil
+}
+
+// RawXattrs returns a copy of the underlying xattr map for serialization.
+// No permission checks are performed.
+func (x *SimpleExtendedAttributes) RawXattrs() map[string]string {
+	x.mu.RLock()
+	defer x.mu.RUnlock()
+	return maps.Clone(x.xattrs)
+}
+
+// SetRawXattrs sets the underlying xattr map from deserialized data.
+// No permission checks are performed.
+func (x *SimpleExtendedAttributes) SetRawXattrs(xattrs map[string]string) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	x.xattrs = xattrs
 }

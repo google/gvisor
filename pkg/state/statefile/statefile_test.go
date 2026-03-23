@@ -166,8 +166,10 @@ func TestStatefile(t *testing.T) {
 							if err == nil {
 								_, err = io.Copy(&bufDecoded, r)
 							}
-							if err != compressio.ErrHashMismatch {
-								t.Errorf("got error: %v, expected ErrHashMismatch on key mismatch", err)
+							// Note that io.ErrUnexpectedEOF can be returned if the data is
+							// too short to contain the hash.
+							if err != compressio.ErrHashMismatch && err != io.ErrUnexpectedEOF {
+								t.Errorf("got error: %v, expected ErrHashMismatch or io.ErrUnexpectedEOF", err)
 							}
 						})
 					}

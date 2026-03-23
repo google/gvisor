@@ -44,11 +44,6 @@ func installsuffix() string {
 
 // findStdPkg needs to find the bundled standard library packages.
 func findStdPkg(path string) (io.ReadCloser, error) {
-	if path == "C" {
-		// Cgo builds cannot be analyzed. Skip.
-		return nil, ErrSkip
-	}
-
 	// Attempt to use the root, if available.
 	root, envErr := flags.Env("GOROOT")
 	if envErr != nil {
@@ -58,12 +53,12 @@ func findStdPkg(path string) (io.ReadCloser, error) {
 	// Attempt to resolve the library, and propagate this error.
 	f, err := os.Open(fmt.Sprintf("%s/pkg/%s/%s.a", root, installsuffix(), path))
 	if err != nil && errors.Is(err, os.ErrNotExist) {
-		return nil, ErrSkip
+		return nil, fmt.Errorf("unable to find %q archive", path)
 	}
 	return f, err
 }
 
-// filterStdPackages returns a package source map including only packages that
+// FilterStdPackages returns a package source map including only packages that
 // are also present in GOROOT.
 //
 // The bazel GOROOT contains only exported packages and their dependencies.
@@ -72,7 +67,7 @@ func findStdPkg(path string) (io.ReadCloser, error) {
 // sources and thus includes things like test only and experimental packages.
 // These packages will fail to analyze without an archive in GOROOT, but we
 // won't need those anyway, so filter them out.
-func filterStdPackages(srcPkgs map[string][]string) (map[string][]string, error) {
+func FilterStdPackages(srcPkgs map[string][]string) (map[string][]string, error) {
 	goroot, envErr := flags.Env("GOROOT")
 	if envErr != nil {
 		return nil, fmt.Errorf("unable to resolve GOROOT: %w", envErr)
@@ -114,6 +109,15 @@ func filterStdPackages(srcPkgs map[string][]string) (map[string][]string, error)
 		}
 		pkgs[path] = pkg
 	}
+
+	// Drop runtime/cgo, which is only necessary for cgo even though
+	// shouldInclude matches it without cgo.
+	delete(pkgs, "runtime/cgo")
+
+	// Drop runtime/race (even in -race mode). It requires cgo but has no
+	// API, so it won't actually be imported anywhere.
+	delete(pkgs, "runtime/race")
+
 	return pkgs, nil
 }
 

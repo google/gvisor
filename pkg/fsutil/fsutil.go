@@ -52,3 +52,10 @@ func DirentNames(dirfd int) ([]string, error) {
 	})
 	return names, err
 }
+
+// RenameAt is a convenience wrapper to make the renameat syscall.
+//
+// RenameAt is equivalent to RenameAt2 with a zero flags argument.
+func RenameAt(oldDirFD int, oldName string, newDirFD int, newName string) error {
+	return RenameAt2(oldDirFD, oldName, newDirFD, newName, 0)
+}

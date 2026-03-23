@@ -65,7 +65,7 @@ type State struct {
 
 // SaveOpts contains options for the Save RPC call.
 type SaveOpts struct {
-	// Key is used for state integrity check.
+	// Key is used to enable state integrity check.
 	Key []byte `json:"key"`
 
 	// Metadata is the set of metadata to prepend to the state file.

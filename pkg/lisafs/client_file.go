@@ -513,9 +513,30 @@ func (f *ClientFD) UnlinkAt(ctx context.Context, name string, flags uint32) erro
 	return err
 }
 
-// RenameAt makes the RenameAt RPC which renames oldName inside directory f to
+// RenameAt makes the RenameAt or RenameAt2 RPC which renames oldName inside directory f to
 // newDirFD directory with name newName.
-func (f *ClientFD) RenameAt(ctx context.Context, oldName string, newDirFD FDID, newName string) error {
+func (f *ClientFD) RenameAt(ctx context.Context, oldName string, newDirFD FDID, newName string, flags uint32) error {
+	if flags != 0 {
+		if !f.client.IsSupported(RenameAt2) {
+			// Returns EINVAL for backward compatibility.
+			return unix.EINVAL
+		}
+
+		req := RenameAt2Req{
+			RenameAtReq: RenameAtReq{
+				OldDir:  f.fd,
+				OldName: SizedString(oldName),
+				NewDir:  newDirFD,
+				NewName: SizedString(newName),
+			},
+			Flags: primitive.Uint32(flags),
+		}
+		var resp RenameAtResp
+		ctx.UninterruptibleSleepStart()
+		err := f.client.SndRcvMessage(RenameAt2, uint32(req.SizeBytes()), req.MarshalBytes, resp.CheckedUnmarshal, nil, req.String, resp.String)
+		ctx.UninterruptibleSleepFinish()
+		return err
+	}
 	req := RenameAtReq{
 		OldDir:  f.fd,
 		OldName: SizedString(oldName),

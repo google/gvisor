@@ -76,7 +76,7 @@ func main() {
 		unix.SYS_READLINKAT:      seccomp.MatchAll{},
 		unix.SYS_READV:           seccomp.MatchAll{},
 		unix.SYS_RECVMSG:         seccomp.MatchAll{},
-		unix.SYS_RENAMEAT:        seccomp.MatchAll{},
+		unix.SYS_RENAMEAT2:       seccomp.MatchAll{},
 		unix.SYS_RESTART_SYSCALL: seccomp.MatchAll{},
 		unix.SYS_RT_SIGACTION:    seccomp.MatchAll{},
 		unix.SYS_RT_SIGPROCMASK:  seccomp.MatchAll{},

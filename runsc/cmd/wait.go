@@ -37,10 +37,12 @@ const (
 // Wait implements subcommands.Command for the "wait" command.
 type Wait struct {
 	containerLoader
-	rootPID    int
-	pid        int
-	checkpoint bool
-	restore    bool
+	rootPID      int
+	pid          int
+	checkpoint   bool
+	restore      bool
+	fsCheckpoint bool
+	fsRestore    bool
 }
 
 // Name implements subcommands.Command.Name.
@@ -64,6 +66,8 @@ func (wt *Wait) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&wt.pid, "pid", unsetPID, "select a PID in the container's PID namespace to wait on instead of the container's root process")
 	f.BoolVar(&wt.checkpoint, "checkpoint", false, "wait for the next checkpoint to complete")
 	f.BoolVar(&wt.restore, "restore", false, "wait for the restore to complete")
+	f.BoolVar(&wt.fsCheckpoint, "fscheckpoint", false, "wait for the next filesystem checkpoint to complete")
+	f.BoolVar(&wt.fsRestore, "fsrestore", false, "wait for the filesystem restore to complete")
 }
 
 // FetchSpec implements util.SubCommand.FetchSpec.
@@ -85,6 +89,9 @@ func (wt *Wait) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 	// You can't specify both -pid and -rootpid.
 	if wt.rootPID != unsetPID && wt.pid != unsetPID {
 		util.Fatalf("only one of -pid and -rootPid can be set")
+	}
+	if b2i(wt.checkpoint)+b2i(wt.restore)+b2i(wt.fsCheckpoint)+b2i(wt.fsRestore) > 1 {
+		util.Fatalf("at most one of -checkpoint, -restore, -fscheckpoint, -fsrestore may be set")
 	}
 
 	conf := args[0].(*config.Config)
@@ -110,6 +117,26 @@ func (wt *Wait) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		}
 		if err := c.WaitRestore(); err != nil {
 			util.Fatalf("waiting for restore to complete: %v", err)
+		}
+		return subcommands.ExitSuccess
+	}
+
+	if wt.fsCheckpoint {
+		if wt.rootPID != unsetPID || wt.pid != unsetPID {
+			log.Warningf("waiting for filesystem checkpoint to complete, ignoring -pid and -rootpid")
+		}
+		if err := c.WaitFSCheckpoint(); err != nil {
+			util.Fatalf("waiting for filesystem checkpoint to complete: %v", err)
+		}
+		return subcommands.ExitSuccess
+	}
+
+	if wt.fsRestore {
+		if wt.rootPID != unsetPID || wt.pid != unsetPID {
+			log.Warningf("waiting for filesystem restore to complete, ignoring -pid and -rootpid")
+		}
+		if err := c.WaitFSRestore(); err != nil {
+			util.Fatalf("waiting for filesystem restore to complete: %v", err)
 		}
 		return subcommands.ExitSuccess
 	}
@@ -161,4 +188,11 @@ func exitStatus(status unix.WaitStatus) int {
 		return 128 + int(status.Signal())
 	}
 	return status.ExitStatus()
+}
+
+func b2i(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }

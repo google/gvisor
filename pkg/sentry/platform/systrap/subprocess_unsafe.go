@@ -127,7 +127,7 @@ func (s *subprocess) alive() bool {
 	// The process is dead, let's collect its zombie.
 	wstatus := unix.WaitStatus(0)
 	pid, err := unix.Wait4(int(s.syscallThread.thread.tid), &wstatus, unix.WNOHANG, nil)
-	log.Warningf("the subprocess %d exited (status: %s, err %s)", pid, wstatus, err)
+	log.Warningf("the subprocess %d exited (status: %d, err %s)", pid, wstatus, err)
 	s.dead.Store(true)
 	return false
 }

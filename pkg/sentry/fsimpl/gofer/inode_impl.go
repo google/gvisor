@@ -499,12 +499,12 @@ func (i *inode) unlink(ctx context.Context, name string, flags uint32) error {
 }
 
 // Precondition: !d.isSynthetic().
-func (i *inode) rename(ctx context.Context, oldName string, newParent *dentry, newName string) error {
+func (i *inode) rename(ctx context.Context, oldName string, newParent *dentry, newName string, flags uint32) error {
 	switch it := i.impl.(type) {
 	case *lisafsInode:
-		return it.controlFD.RenameAt(ctx, oldName, newParent.inode.impl.(*lisafsInode).controlFD.ID(), newName)
+		return it.controlFD.RenameAt(ctx, oldName, newParent.inode.impl.(*lisafsInode).controlFD.ID(), newName, flags)
 	case *directfsInode:
-		return fsutil.RenameAt(it.controlFD, oldName, newParent.inode.impl.(*directfsInode).controlFD, newName)
+		return fsutil.RenameAt2(it.controlFD, oldName, newParent.inode.impl.(*directfsInode).controlFD, newName, flags)
 	default:
 		panic("unknown inode implementation")
 	}

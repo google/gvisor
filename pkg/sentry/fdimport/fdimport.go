@@ -36,6 +36,9 @@ type ImportOptions struct {
 	UID           auth.KUID
 	GID           auth.KGID
 	ContainerName string
+
+	// SupportTTYs indicates whether TTYs other than the console TTY should be imported as TTYs.
+	SupportTTYs bool
 }
 
 // Import imports a map of FDs into the given FDTable. If console is true,
@@ -101,6 +104,7 @@ func Import(ctx context.Context, fdTable *kernel.FDTable, fds map[int]*fd.FD, op
 			}
 		} else {
 			var err error
+			fdOpts.IsTTY = opts.SupportTTYs && host.IsTTY(hostFD.FD())
 			appFile, err = host.NewFD(ctx, mnt, hostFD.FD(), &fdOpts)
 			if err != nil {
 				return nil, err

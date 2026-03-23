@@ -1,7 +1,7 @@
 """Nogo rules."""
 
 load("//tools:arch.bzl", "arch_transition")
-load("//tools/bazeldefs:go.bzl", "go_context", "go_embed_libraries", "go_importpath", "go_rule")
+load("//tools/bazeldefs:go.bzl", "go_context", "go_embed_libraries", "go_importpath", "go_rule", "nogo_extra_proto_deps")
 
 NogoConfigInfo = provider(
     "information about a nogo configuration",
@@ -25,12 +25,13 @@ nogo_config = rule(
     },
 )
 
+# TODO(mpratt): It should be possible to migrate uses of these to
+# extracting the target platform directly from the context.
 NogoTargetInfo = provider(
     "information about the Go target",
     fields = {
         "goarch": "the build architecture (GOARCH)",
         "goos": "the build OS target (GOOS)",
-        "goversion": "the Go language version (GOVERSION)",
     },
 )
 
@@ -38,7 +39,6 @@ def _nogo_target_impl(ctx):
     return [NogoTargetInfo(
         goarch = ctx.attr.goarch,
         goos = ctx.attr.goos,
-        goversion = ctx.attr.goversion,
     )]
 
 nogo_target = go_rule(
@@ -51,10 +51,6 @@ nogo_target = go_rule(
         ),
         "goos": attr.string(
             doc = "the Go OS target (propagated to other rules).",
-            mandatory = True,
-        ),
-        "goversion": attr.string(
-            doc = "the Go version (propagated to other rules).",
             mandatory = True,
         ),
     },
@@ -174,13 +170,19 @@ def _nogo_config(ctx, deps):
         "-go=%s" % go_ctx.go.path,
         "-GOOS=%s" % go_ctx.goos,
         "-GOARCH=%s" % go_ctx.goarch,
+        "-GOVERSION=%s" % go_ctx.lang_version,
         "-tags=%s" % (",".join(go_ctx.gotags)),
     ]
-    if nogo_target_info.goversion:
-        args = args + ["-GOVERSION=%s" % nogo_target_info.goversion]
     inputs = []
     raw_findings = []
     for dep in deps:
+        extras = nogo_extra_proto_deps(dep)
+        for importpath, a_file, x_file in extras:
+            args.append("-archive=%s=%s" % (importpath, a_file.path))
+            args.append("-import=%s=%s" % (importpath, x_file.path))
+            inputs.append(a_file)
+            inputs.append(x_file)
+
         # There will be no file attribute set for all transitive dependencies
         # that are not go_library or go_binary rules, such as a proto rules.
         # This is handled by the ctx.rule.kind check above.
@@ -260,6 +262,11 @@ def _nogo_aspect_impl(target, ctx):
         srcs = ctx.rule.files.srcs
         deps = ctx.rule.attr.deps
     elif ctx.rule.kind in ("go_proto_library", "go_wrap_cc"):
+        # N.B. go_proto_library is strange because transitive dependencies are
+        # not also go_proto_library targets. We don't care about analysis of
+        # transitive dependencies, but we do need them for type checking. See
+        # _nogo_config for the workaround that directly adds all proto
+        # transitive dependencies.
         srcs = []
         deps = ctx.rule.attr.deps
     else:

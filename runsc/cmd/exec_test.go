@@ -86,6 +86,7 @@ func TestCLIArgs(t *testing.T) {
 					BoundingCaps:    auth.CapabilitySetOf(linux.CAP_DAC_OVERRIDE),
 					InheritableCaps: auth.CapabilitySetOf(linux.CAP_DAC_OVERRIDE),
 				},
+				SupportTTYs: true,
 			},
 		},
 		{
@@ -120,6 +121,7 @@ func TestCLIArgs(t *testing.T) {
 					// supported, AmbientCaps should be CAP_DAC_READ_SEARCH.
 					AmbientCaps: 0,
 				},
+				SupportTTYs: true,
 			},
 		},
 	}
@@ -181,6 +183,7 @@ func TestJSONArgs(t *testing.T) {
 					InheritableCaps: auth.CapabilitySetOf(linux.CAP_DAC_OVERRIDE),
 					PermittedCaps:   auth.CapabilitySetOf(linux.CAP_DAC_OVERRIDE),
 				},
+				SupportTTYs: true,
 			},
 		},
 		{
@@ -205,6 +208,7 @@ func TestJSONArgs(t *testing.T) {
 				Capabilities: &auth.TaskCapabilities{
 					BoundingCaps: auth.CapabilitySetOf(linux.CAP_DAC_READ_SEARCH),
 				},
+				SupportTTYs: true,
 			},
 		},
 	}

@@ -140,7 +140,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	defer fuseFDGeneric.DecRef(ctx)
 	fuseFD, ok := fuseFDGeneric.Impl().(*DeviceFD)
 	if !ok {
-		log.Warningf("%s.GetFilesystem: device FD is %T, not a FUSE device", fsType.Name, fuseFDGeneric)
+		log.Warningf("%s.GetFilesystem: device FD is %T, not a FUSE device", fsType.Name(), fuseFDGeneric)
 		return nil, nil, linuxerr.EINVAL
 	}
 
