@@ -39,8 +39,9 @@ const (
 	// in the IANA list here:
 	//
 	// https://www.iana.org/assignments/arp-parameters/arp-parameters.xhtml#arp-parameters-2
-	ARPHardwareEther    ARPHardwareType = 1
-	ARPHardwareLoopback ARPHardwareType = 2
+	ARPHardwareEther      ARPHardwareType = 1
+	ARPHardwareLoopback   ARPHardwareType = 2
+	ARPHardwareInfiniBand ARPHardwareType = 32
 )
 
 // ARPOp is an ARP opcode.

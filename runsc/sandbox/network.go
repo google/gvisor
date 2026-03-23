@@ -22,6 +22,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
+	"time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/vishvananda/netlink"
@@ -68,6 +70,11 @@ func setupNetwork(conn *urpc.Client, pid int, conf *config.Config, disableIPv6 b
 		if err := createInterfacesAndRoutesFromNS(conn, nsPath, conf, disableIPv6); err != nil {
 			return fmt.Errorf("creating interfaces from net namespace %q: %v", nsPath, err)
 		}
+		if conf.RDMAExpectedIPoIB > 0 {
+			if err := waitAndSetupIPoIB(conn, nsPath, conf, disableIPv6); err != nil {
+				return fmt.Errorf("waiting for IPoIB interfaces: %w", err)
+			}
+		}
 	case config.NetworkHost:
 		// Nothing to do here.
 	case config.NetworkPlugin:
@@ -78,6 +85,181 @@ func setupNetwork(conn *urpc.Client, pid int, conf *config.Config, disableIPv6 b
 		return fmt.Errorf("invalid network type: %v", conf.Network)
 	}
 	return nil
+}
+
+// isIPoIBInterface checks whether the named interface is an IP-over-InfiniBand
+// interface by reading its ARPHRD type from sysfs.
+func isIPoIBInterface(name string) bool {
+	data, err := os.ReadFile(filepath.Join("/sys/class/net", name, "type"))
+	if err != nil {
+		return false
+	}
+	ifType, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		return false
+	}
+	const arphrdInfiniBand = 32
+	return ifType == arphrdInfiniBand
+}
+
+// discoverIPoIBInterfaces returns all IPoIB interfaces that are currently up
+// in the caller's network namespace.
+func discoverIPoIBInterfaces() []net.Interface {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil
+	}
+	var ipoib []net.Interface
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+		if isIPoIBInterface(iface.Name) {
+			ipoib = append(ipoib, iface)
+		}
+	}
+	return ipoib
+}
+
+// waitAndSetupIPoIB polls for IPoIB interfaces until conf.RDMAExpectedIPoIB
+// are found (or conf.RDMAIPoIBTimeout expires), then creates link endpoints
+// for them in the sentry.
+func waitAndSetupIPoIB(conn *urpc.Client, nsPath string, conf *config.Config, disableIPv6 bool) error {
+	restore, err := joinNetNS(nsPath)
+	if err != nil {
+		return err
+	}
+	defer restore()
+
+	expectedCount := conf.RDMAExpectedIPoIB
+	log.Infof("Waiting for %d IPoIB interface(s) to appear", expectedCount)
+
+	timeout := conf.RDMAIPoIBTimeout
+	if timeout == 0 {
+		timeout = 5 * time.Minute
+	}
+	deadline := time.Now().Add(timeout)
+	pollInterval := 1 * time.Second
+
+	var ipoibIfaces []net.Interface
+	for {
+		ipoibIfaces = discoverIPoIBInterfaces()
+		if len(ipoibIfaces) >= expectedCount {
+			break
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timed out after %v waiting for %d IPoIB interfaces, found %d", timeout, expectedCount, len(ipoibIfaces))
+		}
+		log.Infof("Found %d/%d IPoIB interfaces, polling again in %v", len(ipoibIfaces), expectedCount, pollInterval)
+		time.Sleep(pollInterval)
+		if pollInterval < 10*time.Second {
+			pollInterval *= 2
+		}
+	}
+
+	log.Infof("Found %d IPoIB interface(s): %v", len(ipoibIfaces), ipoibIfaceNames(ipoibIfaces))
+
+	args := boot.AddIPoIBLinksArgs{
+		LogPackets: conf.LogPackets,
+	}
+
+	for _, iface := range ipoibIfaces {
+		allAddrs, err := iface.Addrs()
+		if err != nil {
+			return fmt.Errorf("fetching addresses for IPoIB interface %q: %w", iface.Name, err)
+		}
+
+		var ipAddrs []*net.IPNet
+		for _, ifaddr := range allAddrs {
+			ipNet, ok := ifaddr.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			if disableIPv6 && ipNet.IP.To4() == nil {
+				continue
+			}
+			ipAddrs = append(ipAddrs, ipNet)
+		}
+		if len(ipAddrs) == 0 {
+			log.Warningf("IPoIB interface %q has no usable IP addresses, skipping", iface.Name)
+			continue
+		}
+
+		ifaceLink, err := netlink.LinkByName(iface.Name)
+		if err != nil {
+			return fmt.Errorf("getting link for IPoIB interface %q: %w", iface.Name, err)
+		}
+
+		routes, _, _, err := routesForIface(iface, disableIPv6)
+		if err != nil {
+			return fmt.Errorf("getting routes for IPoIB interface %q: %w", iface.Name, err)
+		}
+
+		dump, err := netlink.NeighList(iface.Index, 0)
+		if err != nil {
+			return fmt.Errorf("fetching ARP table for IPoIB interface %q: %w", iface.Name, err)
+		}
+		var neighbors []boot.Neighbor
+		for _, n := range dump {
+			if n.State == netlink.NUD_PERMANENT {
+				neighbors = append(neighbors, boot.Neighbor{IP: n.IP, HardwareAddr: n.HardwareAddr})
+			}
+		}
+
+		var addresses []boot.IPWithPrefix
+		for _, addr := range ipAddrs {
+			prefix, _ := addr.Mask.Size()
+			addresses = append(addresses, boot.IPWithPrefix{Address: addr.IP, PrefixLen: prefix})
+			if err := removeAddress(ifaceLink, addr.String()); err != nil {
+				if present, err := isAddressOnInterface(iface.Name, addr); err != nil {
+					return fmt.Errorf("checking address %v on %q: %w", addr, iface.Name, err)
+				} else if !present {
+					continue
+				}
+				return fmt.Errorf("removing address %v from %q: %w", addr, iface.Name, err)
+			}
+		}
+
+		link := boot.IPoIBLink{
+			Name:        iface.Name,
+			MTU:         iface.MTU,
+			Addresses:   addresses,
+			Routes:      routes,
+			LinkAddress: ifaceLink.Attrs().HardwareAddr,
+			Neighbors:   neighbors,
+			NumChannels: conf.NumNetworkChannels,
+			QDisc:       conf.QDisc,
+			GVisorGRO:   conf.GVisorGRO,
+		}
+
+		for i := 0; i < link.NumChannels; i++ {
+			socketEntry, err := createSocket(iface, ifaceLink, false)
+			if err != nil {
+				return fmt.Errorf("creating socket for IPoIB %q: %w", iface.Name, err)
+			}
+			args.FilePayload.Files = append(args.FilePayload.Files, socketEntry.deviceFile)
+		}
+
+		args.IPoIBLinks = append(args.IPoIBLinks, link)
+	}
+
+	if len(args.IPoIBLinks) == 0 {
+		return nil
+	}
+
+	log.Infof("Adding %d IPoIB link(s) to network stack", len(args.IPoIBLinks))
+	if err := conn.Call(boot.NetworkAddIPoIBLinks, &args, nil); err != nil {
+		return fmt.Errorf("adding IPoIB links: %w", err)
+	}
+	return nil
+}
+
+func ipoibIfaceNames(ifaces []net.Interface) []string {
+	names := make([]string, len(ifaces))
+	for i, iface := range ifaces {
+		names[i] = iface.Name
+	}
+	return names
 }
 
 func createDefaultLoopbackInterface(conf *config.Config, conn *urpc.Client) error {
@@ -186,6 +368,12 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 				return fmt.Errorf("getting loopback link for iface %q: %w", iface.Name, err)
 			}
 			args.LoopbackLinks = append(args.LoopbackLinks, link)
+			continue
+		}
+
+		// IPoIB interfaces are handled separately via waitAndSetupIPoIB.
+		if isIPoIBInterface(iface.Name) {
+			log.Infof("Skipping IPoIB interface %q in initial setup (handled by IPoIB watcher)", iface.Name)
 			continue
 		}
 

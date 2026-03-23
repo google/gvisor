@@ -536,3 +536,46 @@ lrwxrwxrwx 1 root root    0 Mar 20 17:27 subsystem -> ../../../../../class/infin
 mlx5_0
 1
 mlx5_0  mlx5_1  mlx5_2  mlx5_3  mlx5_4  mlx5_5  mlx5_6  mlx5_7  mlx5_8
+
+
+NOTE that on some proivders IPoIB interfaces won't be present but rather ethernet interfaces will exist. See what it looks like on OCI:
+modal@modal-worker-oci-h100-dj276id:~$ ls /sys/class/net
+docker0        enp134s0f1np1  enp189s0f1np1  enp65s0f1np1  ens1240np0  modalsvc0     vethb244962d
+enp12s0f0np0   enp165s0f0np0  enp42s0f0np0   enp88s0f0np0  lo          tailscale0    vethba4d4658
+enp12s0f1np1   enp165s0f1np1  enp42s0f1np1   enp88s0f1np1  modal0      veth32882c05  vethbca493a1
+enp134s0f0np0  enp189s0f0np0  enp65s0f0np0   ens1200np0    modal1      vetha9894ee5  vethd9f75e11
+modal@modal-worker-oci-h100-dj276id:~$ lspci -vv | grep -i "Mellanox"
+0c:00.0 Ethernet controller: Mellanox Technologies MT2910 Family [ConnectX-7]
+	Subsystem: Mellanox Technologies MT2910 Family [ConnectX-7]
+0c:00.1 Ethernet controller: Mellanox Technologies MT2910 Family [ConnectX-7]
+	Subsystem: Mellanox Technologies MT2910 Family [ConnectX-7]
+1f:00.0 Ethernet controller: Mellanox Technologies MT2892 Family [ConnectX-6 Dx]
+	Subsystem: Mellanox Technologies MT2892 Family [ConnectX-6 Dx]
+2a:00.0 Ethernet controller: Mellanox Technologies MT2910 Family [ConnectX-7]
+	Subsystem: Mellanox Technologies MT2910 Family [ConnectX-7]
+2a:00.1 Ethernet controller: Mellanox Technologies MT2910 Family [ConnectX-7]
+	Subsystem: Mellanox Technologies MT2910 Family [ConnectX-7]
+41:00.0 Ethernet controller: Mellanox Technologies MT2910 Family [ConnectX-7]
+	Subsystem: Mellanox Technologies MT2910 Family [ConnectX-7]
+41:00.1 Ethernet controller: Mellanox Technologies MT2910 Family [ConnectX-7]
+	Subsystem: Mellanox Technologies MT2910 Family [ConnectX-7]
+58:00.0 Ethernet controller: Mellanox Technologies MT2910 Family [ConnectX-7]
+	Subsystem: Mellanox Technologies MT2910 Family [ConnectX-7]
+58:00.1 Ethernet controller: Mellanox Technologies MT2910 Family [ConnectX-7]
+	Subsystem: Mellanox Technologies MT2910 Family [ConnectX-7]
+86:00.0 Ethernet controller: Mellanox Technologies MT2910 Family [ConnectX-7]
+	Subsystem: Mellanox Technologies MT2910 Family [ConnectX-7]
+86:00.1 Ethernet controller: Mellanox Technologies MT2910 Family [ConnectX-7]
+	Subsystem: Mellanox Technologies MT2910 Family [ConnectX-7]
+9a:00.0 Ethernet controller: Mellanox Technologies MT2892 Family [ConnectX-6 Dx]
+	Subsystem: Mellanox Technologies MT2892 Family [ConnectX-6 Dx]
+a5:00.0 Ethernet controller: Mellanox Technologies MT2910 Family [ConnectX-7]
+	Subsystem: Mellanox Technologies MT2910 Family [ConnectX-7]
+a5:00.1 Ethernet controller: Mellanox Technologies MT2910 Family [ConnectX-7]
+	Subsystem: Mellanox Technologies MT2910 Family [ConnectX-7]
+bd:00.0 Ethernet controller: Mellanox Technologies MT2910 Family [ConnectX-7]
+	Subsystem: Mellanox Technologies MT2910 Family [ConnectX-7]
+bd:00.1 Ethernet controller: Mellanox Technologies MT2910 Family [ConnectX-7]
+	Subsystem: Mellanox Technologies MT2910 Family [ConnectX-7]
+d5:00.0 Memory controller: Mellanox Technologies MT2910 Family [ConnectX-7 Flash Recovery]
+	Subsystem: Mellanox Technologies MT2910 Family [ConnectX-7 Flash Recovery] 

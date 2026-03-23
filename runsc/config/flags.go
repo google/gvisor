@@ -165,6 +165,8 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.String("nvproxy-allowed-driver-capabilities", "utility,compute", "Comma separated list of NVIDIA driver capabilities that are allowed to be requested by the container. If 'all' is specified here, it is resolved to all driver capabilities supported in nvproxy. If 'all' is requested by the container, it is resolved to this list.")
 	flagSet.Bool("tpuproxy", false, "EXPERIMENTAL: enable support for TPU device passthrough.")
 	flagSet.Bool("rdmaproxy", false, "EXPERIMENTAL: enable passthrough for /dev/infiniband/uverbs* devices.")
+	flagSet.Int("rdma-expected-ipoib", 0, "EXPERIMENTAL: number of IPoIB interfaces to wait for before starting the container. 0 disables waiting. Requires rdmaproxy.")
+	flagSet.Duration("rdma-ipoib-timeout", 300000000000, "Timeout for waiting for IPoIB interfaces. Only used when rdma-expected-ipoib > 0.")
 
 	// Test flags, not to be used outside tests, ever.
 	flagSet.Bool("TESTONLY-unsafe-nonroot", false, "TEST ONLY; do not ever use! This skips many security measures that isolate the host from the sandbox.")

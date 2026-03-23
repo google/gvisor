@@ -416,6 +416,28 @@ func (s *Sandbox) CreateSubcontainer(conf *config.Config, cid string, tty *os.Fi
 	return nil
 }
 
+// resolveExpectedIPoIB resolves the effective IPoIB wait count from the config
+// and OCI spec. When rdma-expected-ipoib is 0 (default), auto-detects from the
+// number of uverbs devices in the spec. Returns 0 (no wait) when disabled.
+func resolveExpectedIPoIB(conf *config.Config, spec *specs.Spec) int {
+	if !conf.RDMAProxy || conf.RDMAExpectedIPoIB < 0 {
+		return 0
+	}
+	if conf.RDMAExpectedIPoIB > 0 {
+		return conf.RDMAExpectedIPoIB
+	}
+	if spec.Linux == nil {
+		return 0
+	}
+	count := 0
+	for _, dev := range spec.Linux.Devices {
+		if strings.HasPrefix(dev.Path, "/dev/infiniband/uverbs") {
+			count++
+		}
+	}
+	return count
+}
+
 func getDisableIPv6(spec *specs.Spec) (bool, error) {
 	if spec.Linux == nil || spec.Linux.Sysctl == nil {
 		return false, nil
@@ -449,6 +471,8 @@ func (s *Sandbox) StartRoot(conf *config.Config, spec *specs.Spec) error {
 	if err != nil {
 		return err
 	}
+	// Resolve auto-detected IPoIB count before network setup.
+	conf.RDMAExpectedIPoIB = resolveExpectedIPoIB(conf, spec)
 	// Configure the network.
 	if err := setupNetwork(conn, pid, conf, disableIPv6); err != nil {
 		return fmt.Errorf("setting up network: %w", err)
@@ -557,6 +581,7 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 	if err != nil {
 		return err
 	}
+	conf.RDMAExpectedIPoIB = resolveExpectedIPoIB(conf, spec)
 	// Configure the network.
 	if err := setupNetwork(conn, s.Pid.Load(), conf, disableIPv6); err != nil {
 		return fmt.Errorf("setting up network: %v", err)

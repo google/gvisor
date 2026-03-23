@@ -159,6 +159,28 @@ type LoopbackLink struct {
 	GVisorGRO bool
 }
 
+// IPoIBLink configures an IP-over-InfiniBand link.
+type IPoIBLink struct {
+	Name         string
+	MTU          int
+	Addresses    []IPWithPrefix
+	Routes       []Route
+	LinkAddress  net.HardwareAddr
+	Neighbors    []Neighbor
+	NumChannels  int
+	QDisc        config.QueueingDiscipline
+	GVisorGRO    bool
+}
+
+// AddIPoIBLinksArgs are arguments to AddIPoIBLinks.
+type AddIPoIBLinksArgs struct {
+	urpc.FilePayload
+
+	IPoIBLinks []IPoIBLink
+
+	LogPackets bool
+}
+
 // CreateLinksAndRoutesArgs are arguments to CreateLinkAndRoutes.
 type CreateLinksAndRoutesArgs struct {
 	// FilePayload contains the fds associated with the FDBasedLinks. The
@@ -546,6 +568,93 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 
 	if args.PauseExternalNetworking {
 		n.Stack.DisableAllNonLoopbackNICs()
+	}
+
+	return nil
+}
+
+// AddIPoIBLinks adds IPoIB link endpoints to an already-running network stack.
+// This is called after CreateLinksAndRoutes when late-arriving InfiniBand
+// interfaces become available.
+func (n *Network) AddIPoIBLinks(args *AddIPoIBLinksArgs, _ *struct{}) error {
+	wantFDs := 0
+	for _, l := range args.IPoIBLinks {
+		wantFDs += l.NumChannels
+	}
+	if got := len(args.FilePayload.Files); got != wantFDs {
+		return fmt.Errorf("args.FilePayload.Files has %d FDs but need %d for IPoIBLinks", got, wantFDs)
+	}
+
+	fdOffset := 0
+	dispatchMode := fdbased.RecvMMsg
+
+	var routes []tcpip.Route
+	for _, link := range args.IPoIBLinks {
+		nicID := n.Stack.NextNICID()
+
+		FDs := make([]int, 0, link.NumChannels)
+		for j := 0; j < link.NumChannels; j++ {
+			oldFD := args.FilePayload.Files[fdOffset].Fd()
+			newFD, err := unix.Dup(int(oldFD))
+			if err != nil {
+				return fmt.Errorf("dup FD %v: %w", oldFD, err)
+			}
+			FDs = append(FDs, newFD)
+			fdOffset++
+		}
+
+		mac := tcpip.LinkAddress(link.LinkAddress)
+
+		linkEP, err := fdbased.New(&fdbased.Options{
+			FDs:                FDs,
+			MTU:                uint32(link.MTU),
+			EthernetHeader:     false,
+			Address:            mac,
+			PacketDispatchMode: dispatchMode,
+			GRO:                link.GVisorGRO,
+		})
+		if err != nil {
+			return fmt.Errorf("fdbased.New for IPoIB %q: %w", link.Name, err)
+		}
+
+		if args.LogPackets {
+			linkEP = sniffer.New(linkEP)
+		}
+
+		var qDisc stack.QueueingDiscipline
+		switch link.QDisc {
+		case config.QDiscNone:
+		case config.QDiscFIFO:
+			qDisc = fifo.New(linkEP, runtime.GOMAXPROCS(0), 1000)
+		}
+
+		log.Infof("Enabling IPoIB interface %q with id %d on addresses %+v", link.Name, nicID, link.Addresses)
+		opts := stack.NICOptions{
+			Name:               link.Name,
+			QDisc:              qDisc,
+			DeliverLinkPackets: true,
+		}
+		if err := n.createNICWithAddrs(nicID, linkEP, opts, link.Addresses); err != nil {
+			return err
+		}
+
+		for _, r := range link.Routes {
+			route, err := r.toTcpipRoute(nicID)
+			if err != nil {
+				return err
+			}
+			routes = append(routes, route)
+		}
+
+		for _, neigh := range link.Neighbors {
+			proto, tcpipAddr := ipToAddressAndProto(neigh.IP)
+			n.Stack.AddStaticNeighbor(nicID, proto, tcpipAddr, tcpip.LinkAddress(neigh.HardwareAddr))
+		}
+	}
+
+	if len(routes) > 0 {
+		existing := n.Stack.GetRouteTable()
+		n.Stack.SetRouteTable(append(existing, routes...))
 	}
 
 	return nil

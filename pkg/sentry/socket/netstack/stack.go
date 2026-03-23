@@ -138,6 +138,8 @@ func toLinuxARPHardwareType(t header.ARPHardwareType) uint16 {
 		return linux.ARPHRD_LOOPBACK
 	case header.ARPHardwareEther:
 		return linux.ARPHRD_ETHER
+	case header.ARPHardwareInfiniBand:
+		return linux.ARPHRD_INFINIBAND
 	default:
 		panic(fmt.Sprintf("unknown ARPHRD type: %d", t))
 	}

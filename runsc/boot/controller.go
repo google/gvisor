@@ -133,6 +133,10 @@ const (
 	// NetworkCreateLinksAndRoutes creates links and routes in a network stack.
 	NetworkCreateLinksAndRoutes = "Network.CreateLinksAndRoutes"
 
+	// NetworkAddIPoIBLinks adds IPoIB link endpoints to an already-running
+	// network stack. Used for late-arriving InfiniBand interfaces.
+	NetworkAddIPoIBLinks = "Network.AddIPoIBLinks"
+
 	// NetworkInitPluginStack initializes third-party network stack.
 	NetworkInitPluginStack = "Network.InitPluginStack"
 

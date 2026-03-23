@@ -354,6 +354,19 @@ type Config struct {
 	// RDMAProxy enables passthrough for /dev/infiniband/uverbs* devices.
 	RDMAProxy bool `flag:"rdmaproxy"`
 
+	// RDMAExpectedIPoIB controls whether to wait for IPoIB network interfaces
+	// before starting the container. Requires rdmaproxy.
+	//   0  = auto-detect from the number of uverbs devices in the OCI spec
+	//        (waits only when rdmaproxy is enabled and uverbs devices exist)
+	//   >0 = wait for exactly this many IPoIB interfaces
+	//   -1 = never wait, even when rdmaproxy is enabled
+	RDMAExpectedIPoIB int `flag:"rdma-expected-ipoib"`
+
+	// RDMAIPoIBTimeout is how long to wait for the expected IPoIB interfaces
+	// before failing. Defaults to 5 minutes. Only used when the resolved
+	// rdma-expected-ipoib count is > 0.
+	RDMAIPoIBTimeout time.Duration `flag:"rdma-ipoib-timeout"`
+
 	// TestOnlyAllowRunAsCurrentUserWithoutChroot should only be used in
 	// tests. It allows runsc to start the sandbox process as the current
 	// user, and without chrooting the sandbox process. This can be
