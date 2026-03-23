@@ -436,3 +436,158 @@ func TestGetExecUIDGIDFromUser(t *testing.T) {
 		})
 	}
 }
+
+// newResolveTestVFS creates a tmpfs-backed VFS for resolve() tests.
+func newResolveTestVFS(t *testing.T) (context.Context, *auth.Credentials, *vfs.VirtualFilesystem, *vfs.MountNamespace, vfs.VirtualDentry) {
+	t.Helper()
+	ctx := contexttest.Context(t)
+	creds := auth.CredentialsFromContext(ctx)
+
+	vfsObj := &vfs.VirtualFilesystem{}
+	if err := vfsObj.Init(ctx); err != nil {
+		t.Fatalf("VFS init: %v", err)
+	}
+	vfsObj.MustRegisterFilesystemType("tmpfs", tmpfs.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
+		AllowUserMount: true,
+	})
+	mns, err := vfsObj.NewMountNamespace(ctx, creds, "", "tmpfs", &vfs.MountOptions{}, nil)
+	if err != nil {
+		t.Fatalf("failed to create tmpfs root mount: %v", err)
+	}
+	root := mns.Root(ctx)
+	return ctx, creds, vfsObj, mns, root
+}
+
+// createFile creates a regular file at the given path in the test VFS.
+func createFile(t *testing.T, ctx context.Context, creds *auth.Credentials, vfsObj *vfs.VirtualFilesystem, root vfs.VirtualDentry, filePath string, mode uint16) {
+	t.Helper()
+	pop := vfs.PathOperation{
+		Root:  root,
+		Start: root,
+		Path:  fspath.Parse(filePath),
+	}
+	fd, err := vfsObj.OpenAt(ctx, creds, &pop, &vfs.OpenOptions{
+		Flags: linux.O_CREAT | linux.O_WRONLY,
+		Mode:  linux.S_IFREG | linux.FileMode(mode),
+	})
+	if err != nil {
+		t.Fatalf("failed to create %s: %v", filePath, err)
+	}
+	fd.DecRef(ctx)
+}
+
+// createDir creates a directory at the given path in the test VFS.
+func createDir(t *testing.T, ctx context.Context, creds *auth.Credentials, vfsObj *vfs.VirtualFilesystem, root vfs.VirtualDentry, dirPath string) {
+	t.Helper()
+	pop := vfs.PathOperation{
+		Root:  root,
+		Start: root,
+		Path:  fspath.Parse(dirPath),
+	}
+	if err := vfsObj.MkdirAt(ctx, creds, &pop, &vfs.MkdirOptions{Mode: 0755}); err != nil {
+		t.Fatalf("failed to create directory %s: %v", dirPath, err)
+	}
+}
+
+// TestResolveExecutablePath tests that resolve() follows glibc execvpe()
+// semantics for handling errors during PATH search:
+//   - ENOENT, ENOTDIR, ESTALE, ENODEV, ETIMEDOUT: skip to next PATH entry.
+//   - EACCES: record and continue; if no executable is found, return EACCES
+//     instead of ENOENT.
+//   - Any other error: stop and return immediately.
+//
+// Reference: glibc posix/execvpe.c __execvpe_common().
+func TestResolveExecutablePath(t *testing.T) {
+	ctx, creds, vfsObj, mns, root := newResolveTestVFS(t)
+	defer mns.DecRef(ctx)
+	defer root.DecRef(ctx)
+
+	// Layout:
+	//   /not_a_dir       — regular file (triggers ENOTDIR)
+	//   /bin/myexec      — executable
+	createFile(t, ctx, creds, vfsObj, root, "not_a_dir", 0755)
+	createDir(t, ctx, creds, vfsObj, root, "bin")
+	createFile(t, ctx, creds, vfsObj, root, "bin/myexec", 0755)
+
+	t.Run("SkipENOTDIR", func(t *testing.T) {
+		// /not_a_dir/myexec → ENOTDIR, should skip and find /bin/myexec.
+		got, err := resolve(ctx, creds, mns, []string{"/not_a_dir", "/bin"}, "myexec")
+		if err != nil {
+			t.Fatalf("resolve failed: %v", err)
+		}
+		if got != "/bin/myexec" {
+			t.Fatalf("expected /bin/myexec, got %v", got)
+		}
+	})
+
+	t.Run("SkipENOENT", func(t *testing.T) {
+		// /nonexistent doesn't exist → ENOENT, should skip and find /bin/myexec.
+		got, err := resolve(ctx, creds, mns, []string{"/nonexistent", "/bin"}, "myexec")
+		if err != nil {
+			t.Fatalf("resolve failed: %v", err)
+		}
+		if got != "/bin/myexec" {
+			t.Fatalf("expected /bin/myexec, got %v", got)
+		}
+	})
+
+	t.Run("AllMissReturnENOENT", func(t *testing.T) {
+		// PATH has ENOTDIR then ENOENT. glibc preserves the last errno
+		// from execve(), which is ENOENT from /nonexistent.
+		_, err := resolve(ctx, creds, mns, []string{"/not_a_dir", "/nonexistent"}, "myexec")
+		if !linuxerr.Equals(linuxerr.ENOENT, err) {
+			t.Fatalf("expected ENOENT, got: %v", err)
+		}
+	})
+
+	t.Run("OnlyENOTDIR", func(t *testing.T) {
+		// All PATH entries are files (not directories) → ENOTDIR.
+		// glibc preserves the last errno, which is ENOTDIR.
+		_, err := resolve(ctx, creds, mns, []string{"/not_a_dir"}, "myexec")
+		if !linuxerr.Equals(linuxerr.ENOTDIR, err) {
+			t.Fatalf("expected ENOTDIR, got: %v", err)
+		}
+	})
+
+	t.Run("EACCESReturnedOverENOENT", func(t *testing.T) {
+		// Create a file that exists but is not executable (mode 0644).
+		// The first PATH entry will fail with EACCES, and the second
+		// with ENOENT. Per glibc, EACCES should be returned.
+		createDir(t, ctx, creds, vfsObj, root, "noperm")
+		createFile(t, ctx, creds, vfsObj, root, "noperm/myexec", 0644)
+
+		_, err := resolve(ctx, creds, mns, []string{"/noperm", "/nonexistent"}, "myexec")
+		if !linuxerr.Equals(linuxerr.EACCES, err) {
+			t.Fatalf("expected EACCES, got: %v", err)
+		}
+	})
+
+	t.Run("EACCESThenFound", func(t *testing.T) {
+		// EACCES in first entry, but found in second → success.
+		got, err := resolve(ctx, creds, mns, []string{"/noperm", "/bin"}, "myexec")
+		if err != nil {
+			t.Fatalf("resolve failed: %v", err)
+		}
+		if got != "/bin/myexec" {
+			t.Fatalf("expected /bin/myexec, got %v", got)
+		}
+	})
+
+	t.Run("EmptyPATH", func(t *testing.T) {
+		_, err := resolve(ctx, creds, mns, nil, "myexec")
+		if !linuxerr.Equals(linuxerr.ENOENT, err) {
+			t.Fatalf("expected ENOENT, got: %v", err)
+		}
+	})
+
+	t.Run("SkipRelativePath", func(t *testing.T) {
+		// Relative paths should be skipped.
+		got, err := resolve(ctx, creds, mns, []string{"relative", "/bin"}, "myexec")
+		if err != nil {
+			t.Fatalf("resolve failed: %v", err)
+		}
+		if got != "/bin/myexec" {
+			t.Fatalf("expected /bin/myexec, got %v", got)
+		}
+	})
+}
