@@ -29,12 +29,10 @@ func Filters() seccomp.SyscallRules {
 			seccomp.MaskedEqual(unix.O_CREAT|unix.O_NOFOLLOW, unix.O_NOFOLLOW),
 			seccomp.AnyValue{},
 		},
-		// uverbs ioctls: RDMA_VERBS_IOCTL (_IOWR('F', 0x1b, ...)) and
-		// legacy write-interface commands (_IOW/_IOWR with type 'F').
-		// Allow any ioctl with type byte 0x46 ('F') on valid FDs.
+		// RDMA_VERBS_IOCTL uses magic 0x1b (RDMA_IOCTL_MAGIC), not 'F'.
 		unix.SYS_IOCTL: seccomp.PerArg{
 			seccomp.NonNegativeFD{},
-			seccomp.MaskedEqual(0xFF00, 0x4600),
+			seccomp.MaskedEqual(0xFF00, 0x1B00),
 		},
 		unix.SYS_MMAP: seccomp.PerArg{
 			seccomp.AnyValue{},

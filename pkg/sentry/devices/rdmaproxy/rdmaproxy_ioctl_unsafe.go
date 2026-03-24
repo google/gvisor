@@ -15,10 +15,13 @@
 package rdmaproxy
 
 import (
+	"encoding/binary"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -28,14 +31,24 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
+const (
+	rdmaIoctlMagic = 0x1b
+
+	ibUverbsIoctlHdrSize = 24
+	ibUverbsAttrSize     = 16
+
+	// Attrs with data larger than 8 bytes store a userspace pointer in
+	// the data field; smaller values are stored inline.
+	ibUverbsAttrInlineMax = 8
+)
+
+// RDMA_VERBS_IOCTL = _IOWR(0x1b, 1, struct ib_uverbs_ioctl_hdr)
+var rdmaVerbsIoctl = linux.IOWR(rdmaIoctlMagic, 1, ibUverbsIoctlHdrSize)
+
 // Ioctl implements vfs.FileDescriptionImpl.Ioctl.
-//
-// This is a pure passthrough: copy the ioctl arg buffer from the sandboxed
-// process, forward the ioctl to the host device, and copy results back.
 func (fd *uverbsFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
 	cmd := args[1].Uint()
 	argPtr := args[2].Pointer()
-	argSize := ioctl_SIZE(cmd)
 
 	t := kernel.TaskFromContext(ctx)
 	if t == nil {
@@ -43,30 +56,84 @@ func (fd *uverbsFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, ar
 		return 0, unix.EINVAL
 	}
 
-	if argSize == 0 || argPtr == 0 {
-		// No-arg ioctl, forward directly.
-		n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(fd.hostFD), uintptr(cmd), 0)
-		if errno != 0 {
-			return n, errno
-		}
-		return n, nil
+	if cmd == rdmaVerbsIoctl {
+		return fd.handleRDMAVerbsIoctl(t, argPtr)
+	}
+	return 0, linuxerr.ENOSYS
+}
+
+// handleRDMAVerbsIoctl handles the modern RDMA_VERBS_IOCTL which uses a
+// self-describing header + variable-length attribute array. Each attribute's
+// data field is either inline (len <= 8) or a pointer to sandbox userspace
+// memory (len > 8). We must copy those pointed-to buffers into the sentry's
+// address space before forwarding to the host kernel.
+func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (uintptr, error) {
+	// Read the base header to learn the total length.
+	var hdrBuf [ibUverbsIoctlHdrSize]byte
+	if _, err := t.CopyInBytes(argPtr, hdrBuf[:]); err != nil {
+		return 0, err
 	}
 
-	// Copy ioctl argument buffer from sandbox userspace.
-	buf := make([]byte, argSize)
+	length := binary.LittleEndian.Uint16(hdrBuf[0:2])
+	numAttrs := binary.LittleEndian.Uint16(hdrBuf[6:8])
+
+	expectedLen := uint16(ibUverbsIoctlHdrSize) + numAttrs*uint16(ibUverbsAttrSize)
+	if length != expectedLen || length > hostarch.PageSize {
+		return 0, linuxerr.EINVAL
+	}
+
+	// Read the full header + attrs buffer.
+	buf := make([]byte, length)
 	if _, err := t.CopyInBytes(argPtr, buf); err != nil {
 		return 0, err
 	}
 
-	// Forward ioctl to the host device.
-	n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(fd.hostFD), uintptr(cmd), uintptr(unsafe.Pointer(&buf[0])))
-	if errno != 0 {
-		return n, errno
+	// Walk attrs and rewrite any data pointers that point into sandbox
+	// userspace. Attrs with len <= 8 store inline data in the data field
+	// and need no translation.
+	type rewrite struct {
+		attrOff  int
+		origData uint64
+		sentry   []byte
+	}
+	var rewrites []rewrite
+
+	for i := 0; i < int(numAttrs); i++ {
+		off := ibUverbsIoctlHdrSize + i*ibUverbsAttrSize
+		attrLen := binary.LittleEndian.Uint16(buf[off+2 : off+4])
+
+		if attrLen > ibUverbsAttrInlineMax {
+			dataPtr := binary.LittleEndian.Uint64(buf[off+8 : off+16])
+			sb := make([]byte, attrLen)
+			if _, err := t.CopyInBytes(hostarch.Addr(dataPtr), sb); err != nil {
+				return 0, err
+			}
+			binary.LittleEndian.PutUint64(buf[off+8:off+16],
+				uint64(uintptr(unsafe.Pointer(&sb[0]))))
+			rewrites = append(rewrites, rewrite{
+				attrOff:  off,
+				origData: dataPtr,
+				sentry:   sb,
+			})
+		}
 	}
 
-	// Copy results back to sandbox userspace.
-	if _, err := t.CopyOutBytes(argPtr, buf); err != nil {
-		return 0, err
+	// Forward to host.
+	n, _, errno := unix.RawSyscall(unix.SYS_IOCTL,
+		uintptr(fd.hostFD), uintptr(rdmaVerbsIoctl),
+		uintptr(unsafe.Pointer(&buf[0])))
+
+	// Copy output data back and restore original pointers.
+	for _, rw := range rewrites {
+		// Always copy back — the host may have written output data.
+		t.CopyOutBytes(hostarch.Addr(rw.origData), rw.sentry)
+		binary.LittleEndian.PutUint64(buf[rw.attrOff+8:rw.attrOff+16], rw.origData)
+	}
+	// Copy the header+attrs back so the app sees updated len/flags.
+	t.CopyOutBytes(argPtr, buf)
+
+	if errno != 0 {
+		return n, errno
 	}
 	return n, nil
 }
@@ -86,9 +153,4 @@ func (fd *uverbsFD) Translate(ctx context.Context, required, optional memmap.Map
 			Perms:  hostarch.AnyAccess,
 		},
 	}, nil
-}
-
-// ioctl_SIZE extracts the size field from a Linux ioctl command number.
-func ioctl_SIZE(cmd uint32) uint32 {
-	return (cmd >> 16) & 0x3FFF
 }
