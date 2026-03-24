@@ -35,12 +35,14 @@ import (
 
 // uverbsDevice implements vfs.Device for /dev/infiniband/uverbs*.
 type uverbsDevice struct {
-	minor uint32
+	// devName is the device filename, e.g. "uverbs0". This is distinct
+	// from the kernel minor number (e.g. 192) used for VFS registration.
+	devName string
 }
 
 // Open implements vfs.Device.Open.
 func (dev *uverbsDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	devRelPath := fmt.Sprintf("infiniband/uverbs%d", dev.minor)
+	devRelPath := filepath.Join("infiniband", dev.devName)
 	log.Infof("rdmaproxy: opening %s (flags=0x%x)", devRelPath, opts.Flags)
 	hostFD, err := openHostDevice(ctx, devRelPath, opts.Flags)
 	if err != nil {
@@ -124,17 +126,18 @@ func (fd *uverbsFD) Readiness(mask waiter.EventMask) waiter.EventMask {
 	return fdnotifier.NonBlockingPoll(fd.hostFD, mask)
 }
 
-// Register registers /dev/infiniband/uverbs[minor] with the VFS and returns
-// the dynamic major number assigned to it.
-func Register(vfsObj *vfs.VirtualFilesystem, minor uint32) (uint32, error) {
+// Register registers a uverbs device with the VFS and returns the dynamic
+// major number. devName is the device filename (e.g. "uverbs0"), minor is
+// the kernel device minor number (e.g. 192).
+func Register(vfsObj *vfs.VirtualFilesystem, devName string, minor uint32) (uint32, error) {
 	major, err := vfsObj.GetDynamicCharDevMajor()
 	if err != nil {
 		return 0, fmt.Errorf("rdmaproxy: obtaining dynamic major number: %w", err)
 	}
-	log.Infof("rdmaproxy: registering uverbs%d with major=%d minor=%d", minor, major, minor)
-	if err := vfsObj.RegisterDevice(vfs.CharDevice, major, minor, &uverbsDevice{minor: minor}, &vfs.RegisterDeviceOptions{
+	log.Infof("rdmaproxy: registering %s with major=%d minor=%d", devName, major, minor)
+	if err := vfsObj.RegisterDevice(vfs.CharDevice, major, minor, &uverbsDevice{devName: devName}, &vfs.RegisterDeviceOptions{
 		GroupName: "infiniband",
-		Pathname:  fmt.Sprintf("infiniband/uverbs%d", minor),
+		Pathname:  filepath.Join("infiniband", devName),
 		FilePerms: 0666,
 	}); err != nil {
 		return 0, err

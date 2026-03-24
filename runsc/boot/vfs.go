@@ -1511,34 +1511,38 @@ func (c *containerMounter) preRegisterRDMADevices(spec *specs.Spec) {
 			continue
 		}
 		minor := uint32(devSpec.Minor)
-		dynMajor, err := rdmaproxy.Register(vfsObj, minor)
+		devName := filepath.Base(devSpec.Path)
+		dynMajor, err := rdmaproxy.Register(vfsObj, devName, minor)
 		if err != nil {
 			log.Warningf("rdma: pre-register %s: %v", devSpec.Path, err)
 			continue
 		}
 		c.rdmaDynMajors[minor] = dynMajor
-		log.Infof("rdma: pre-registered %s with dynamic major %d", devSpec.Path, dynMajor)
+		log.Infof("rdma: pre-registered %s (minor=%d) with dynamic major %d", devSpec.Path, minor, dynMajor)
 	}
 	// Patch RDMAData so sysfs "dev" files reflect container-side majors.
+	// The sysfs dev file contains "major:minor" where minor is the kernel
+	// minor (e.g. 192), which matches the key in rdmaDynMajors.
 	for i := range c.rdmaDevices.Devices {
 		dev := &c.rdmaDevices.Devices[i]
-		hostMinorStr := extractUverbsMinor(dev.Name)
-		if hostMinorStr == "" {
-			continue
-		}
-		hostMinor, err := strconv.ParseUint(hostMinorStr, 10, 32)
-		if err != nil {
-			continue
-		}
-		if dynMajor, ok := c.rdmaDynMajors[uint32(hostMinor)]; ok {
+		kernMinor := extractMinorFromDev(dev.Dev)
+		if dynMajor, ok := c.rdmaDynMajors[kernMinor]; ok {
 			dev.DynMajor = dynMajor
+			log.Infof("rdma: patched sysfs %s dev=%s → dynMajor=%d", dev.Name, dev.Dev, dynMajor)
 		}
 	}
 }
 
-// extractUverbsMinor returns the minor number string from a name like "uverbs0".
-func extractUverbsMinor(name string) string {
-	return strings.TrimPrefix(name, "uverbs")
+// extractMinorFromDev parses the kernel minor from a sysfs "dev" string
+// like "231:192" and returns 192.
+func extractMinorFromDev(dev string) uint32 {
+	if idx := strings.IndexByte(dev, ':'); idx >= 0 {
+		v, err := strconv.ParseUint(dev[idx+1:], 10, 32)
+		if err == nil {
+			return uint32(v)
+		}
+	}
+	return 0
 }
 
 func createDeviceFile(ctx context.Context, creds *auth.Credentials, info *containerInfo, vfsObj *vfs.VirtualFilesystem, root vfs.VirtualDentry, devSpec specs.LinuxDevice, rdmaDynMajors map[uint32]uint32) error {
@@ -1588,7 +1592,8 @@ func createDeviceFile(ctx context.Context, creds *auth.Credentials, info *contai
 		if dynMajor, ok := rdmaDynMajors[minor]; ok {
 			major = dynMajor
 		} else {
-			dynMajor, err := rdmaproxy.Register(vfsObj, minor)
+			devName := filepath.Base(devSpec.Path)
+			dynMajor, err := rdmaproxy.Register(vfsObj, devName, minor)
 			if err != nil {
 				return fmt.Errorf("registering rdma device %s: %w", devSpec.Path, err)
 			}
