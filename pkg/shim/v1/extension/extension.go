@@ -26,6 +26,11 @@ import (
 // extension should not handle this task request. Returning an error will fail the task request.
 var NewExtension func(ctx context.Context, next TaskServiceExt, req *task.CreateTaskRequest) (TaskServiceExt, error)
 
+// NewPodExtension registers an extension constructor which is used when grouping is enabled.
+// It may return nil, nil to indicate that the extension should not handle this task request.
+// Returning an error will fail the task request.
+var NewPodExtension func(ctx context.Context, next TaskServiceExt) (TaskServiceExt, error)
+
 // FSRestoreConfig is the configuration for a FS restore request.
 type FSRestoreConfig struct {
 	ImagePath string
