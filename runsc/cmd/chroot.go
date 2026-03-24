@@ -261,19 +261,34 @@ func rdmaProxyUpdateChroot(hostRoot, chroot string, conf *config.Config) error {
 	if !specutils.RDMAProxyIsEnabled(conf) {
 		return nil
 	}
-	// Bind-mount host sysfs paths needed for libibverbs device discovery.
-	sysfsBinds := []string{
+	// /sys/class/infiniband_verbs/ and /sys/class/infiniband/ contain
+	// symlinks to device paths under /sys/devices/. A plain bind-mount of
+	// the class directory preserves those symlinks, but their targets won't
+	// exist in the chroot. Instead, enumerate the entries, resolve each
+	// symlink, and bind-mount the real device directory at the symlink's
+	// path within the chroot.
+	classDirs := []string{
 		"/sys/class/infiniband_verbs",
 		"/sys/class/infiniband",
 	}
-	for _, sysfsPath := range sysfsBinds {
-		hostPath := path.Join(hostRoot, sysfsPath)
-		if _, err := os.Stat(hostPath); err != nil {
-			log.Infof("rdmaProxyUpdateChroot: %s not found on host, skipping", sysfsPath)
+	for _, classDir := range classDirs {
+		hostClassDir := path.Join(hostRoot, classDir)
+		entries, err := os.ReadDir(hostClassDir)
+		if err != nil {
+			log.Infof("rdmaProxyUpdateChroot: %s not found on host, skipping", classDir)
 			continue
 		}
-		if err := mountInChroot(chroot, hostPath, sysfsPath, "bind", unix.MS_BIND|unix.MS_RDONLY); err != nil {
-			return fmt.Errorf("error mounting %q in chroot: %w", sysfsPath, err)
+		for _, entry := range entries {
+			entryPath := path.Join(classDir, entry.Name())
+			hostEntryPath := path.Join(hostRoot, entryPath)
+			realPath, err := filepath.EvalSymlinks(hostEntryPath)
+			if err != nil {
+				log.Infof("rdmaProxyUpdateChroot: resolving %s: %v, skipping", entryPath, err)
+				continue
+			}
+			if err := mountInChroot(chroot, realPath, entryPath, "bind", unix.MS_BIND|unix.MS_RDONLY); err != nil {
+				return fmt.Errorf("error mounting %q in chroot: %w", entryPath, err)
+			}
 		}
 	}
 	return nil
