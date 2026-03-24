@@ -305,10 +305,18 @@ func rdmaProxyUpdateChroot(hostRoot, chroot string, conf *config.Config) error {
 	return nil
 }
 
+const copySysfsDirMaxDepth = 8
+
 // copySysfsDir recursively copies all regular files from src into dst,
-// resolving symlinks to files but skipping symlinks to directories to
-// avoid pulling in unrelated subtrees.
+// following symlinks (both files and directories) up to a depth limit.
 func copySysfsDir(src, dst string) {
+	copySysfsDirDepth(src, dst, 0)
+}
+
+func copySysfsDirDepth(src, dst string, depth int) {
+	if depth >= copySysfsDirMaxDepth {
+		return
+	}
 	entries, err := os.ReadDir(src)
 	if err != nil {
 		return
@@ -317,7 +325,7 @@ func copySysfsDir(src, dst string) {
 		srcPath := path.Join(src, entry.Name())
 		dstPath := path.Join(dst, entry.Name())
 		if entry.IsDir() {
-			copySysfsDir(srcPath, dstPath)
+			copySysfsDirDepth(srcPath, dstPath, depth+1)
 			continue
 		}
 		if entry.Type()&os.ModeSymlink != 0 {
@@ -326,7 +334,11 @@ func copySysfsDir(src, dst string) {
 				continue
 			}
 			fi, err := os.Stat(real)
-			if err != nil || fi.IsDir() {
+			if err != nil {
+				continue
+			}
+			if fi.IsDir() {
+				copySysfsDirDepth(real, dstPath, depth+1)
 				continue
 			}
 			srcPath = real
