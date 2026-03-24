@@ -404,29 +404,48 @@ There are three main platforms for intercepting syscalls:
 
 6. **Runtime flags** — `--rdmaproxy` enables the proxy; `--rdma-expected-ipoib=N` controls IPoIB interface waiting (set to `-1` to disable on RoCE-only machines).
 
+### Current blocker: ioctl pointer translation (March 24)
+
+Hardware testing on 2x8 H100 node (18x mlx5 HCAs) confirmed:
+- **sysfs discovery**: working — all 18 `uverbs*` + `mlx5_*` devices visible
+- **device open**: working — dev gofer opens host FD successfully (`hostFD=12`)
+- **CAPABILITY_PROBE ioctl**: working — returns `errno=28 (ENOSPC)` as expected
+- **EFAULT on subsequent ioctls**: the host kernel returns `errno=14 (bad address)` during QUERY_GID / QUERY_CONTEXT calls
+
+Root cause: the `ib_uverbs_attr` data field is a pointer (not inline) in two cases we weren't handling:
+1. `len > 8` — we were rewriting these (correct)
+2. `UVERBS_ATTR_F_VALID_OUTPUT` (bit 1 of flags) set, any `len > 0` — output attrs always store a pointer so the kernel can write results back. We were treating these as inline when `len <= 8`, so the kernel tried to `copy_to_user` to a sandbox address and got EFAULT.
+
+Fix applied: check `flags & 0x2` in addition to `len > 8` to decide pointer rewriting. Also fixed in this session:
+- **devName vs kernel minor**: `uverbsDevice` was using kernel minor (192) to build the host path (`uverbs192` instead of `uverbs0`). Now stores the device name separately.
+- **DynMajor map key mismatch**: `preRegisterRDMADevices` keyed by kernel minor (192) but the patching loop looked up by name index (0). Now both use the kernel minor from the sysfs `dev` field.
+
 ### What's next
 
-- **Test ibv_devinfo end-to-end**: The sysfs major:minor mismatch and dev gofer access have been fixed but not yet tested on hardware. Need to verify the full discovery → open → ioctl → mmap flow works.
-- **Verify ioctl correctness**: The generic ioctl handler should work for all RDMA_VERBS_IOCTL commands but needs validation with real `ibv_devinfo` / NCCL traces. May need to handle edge cases (e.g. `CAPABILITY_PROBE` returning `ENOSPC` is expected).
-- **NCCL / ib_write_bw testing**: After ibv_devinfo works, test actual RDMA data path workloads. The ib_write_bw sniffer trace below shows the full sequence of ioctls needed: ALLOC_CONTEXT → QUERY_PORT → ALLOC_UAR → CQ CREATE → QP CREATE → MR REG → data path → teardown.
-- **Multi-device support**: Currently only devices explicitly passed via `--device` are available. May need to support passing multiple uverbs devices.
+- **Re-test ibv_devinfo** with the VALID_OUTPUT + devName + DynMajor fixes — expecting the EFAULT to be resolved. If more edge cases surface, the detailed logging now in place will show exactly which attr causes the failure.
+- **NCCL / ib_write_bw testing**: After ibv_devinfo works, test actual RDMA data path. The sniffer trace below shows the full ioctl sequence: ALLOC_CONTEXT → QUERY_PORT → ALLOC_UAR → CQ CREATE → QP CREATE → MR REG → data path → teardown.
+- **Multi-device support**: Currently only devices explicitly passed via `--device` are available.
 - **IPoIB interface support**: Dynamic detection and setup of IP-over-InfiniBand interfaces (for native IB fabrics, not RoCE).
 
-### ibv_devinfo strace inside gVisor (discovery working, device open WIP)
+### ibv_devinfo sentry logs (from hardware test, March 24)
 
-This trace shows successful sysfs discovery followed by device open failure (before dev gofer fix):
 ```
-socket(AF_NETLINK, SOCK_RAW|SOCK_CLOEXEC, NETLINK_RDMA) = -1 EPROTONOSUPPORT
-openat(AT_FDCWD, "/sys/class/infiniband_verbs", O_RDONLY|O_NONBLOCK|O_CLOEXEC|O_DIRECTORY) = 3
-getdents64(3, ...) = 368                           # found uverbs0..uverbs8 + abi_version
-openat(3, "uverbs0", O_RDONLY|O_CLOEXEC|O_DIRECTORY) = 4
-openat(4, "ibdev", ...) → read → "mlx5_0\n"       # device name
-openat(4, "dev", ...) → read → "231:192\n"         # major:minor (now patched to dynamic major)
-openat(4, "abi_version", ...) → read → "1\n"
-openat(.., "/sys/class/infiniband/mlx5_0/node_type", ...) → "1: CA\n"
-newfstatat(.., "/dev/infiniband/uverbs0", {st_rdev=makedev(0xfe, 0xc0)}) = 0
-# ^^^ major mismatch: sysfs said 231, stat shows 254 → fixed by DynMajor patching
-# After fix, libibverbs proceeds to open() + RDMA_VERBS_IOCTL
+# Device open succeeds via dev gofer
+rdmaproxy: using dev gofer to open infiniband/uverbs0
+rdmaproxy: opened infiniband/uverbs0 → hostFD=12
+
+# CAPABILITY_PROBE — expected failure
+IOCTL hostFD=12 obj=0x0000 method=0 attrs=1 len=40 driver=1
+  attr[0] id=0x0002 len=8 flags=0x0001 data=inline:0x0000000000000001
+host ioctl returned errno=28 (no space left on device)   ← expected
+
+# QUERY_GID — fails with EFAULT (before VALID_OUTPUT fix)
+IOCTL hostFD=12 obj=0x0000 method=3 attrs=4 len=88 driver=1
+  attr[0] id=0x0000 len=4 flags=0x0001 data=inline:0x00007f8b63ae8618
+  attr[1] id=0x0001 len=8 flags=0x0001 data=inline:0x00007f8b63ae8620
+  attr[2] id=0x1000 len=32 flags=0x0001 data=ptr (rewrite)
+  attr[3] id=0x1001 len=72 flags=0x0001 data=ptr (rewrite)
+host ioctl returned errno=14 (bad address)               ← EFAULT, fix pending test
 ```
 
 ### Host Device Layout (9x mlx5 HCAs on 2x8 H100 node)
