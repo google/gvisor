@@ -16,6 +16,7 @@ package nftables
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -59,32 +60,32 @@ func TestInterpretImmediateOps(t *testing.T) {
 		{
 			tname:    "verdict register with accept verdict",
 			opStr:    "[ immediate reg 0 accept ]",
-			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_ACCEPT)})),
+			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}),
 		},
 		{
 			tname:    "verdict register with drop verdict",
 			opStr:    "[ immediate reg 0 drop ]",
-			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NF_DROP)})),
+			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_DROP)}),
 		},
 		{
 			tname:    "verdict register with continue verdict",
 			opStr:    "[ immediate reg 0 continue ]",
-			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_CONTINUE)})),
+			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_CONTINUE)}),
 		},
 		{
 			tname:    "verdict register with return verdict",
 			opStr:    "[ immediate reg 0 return ]",
-			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_RETURN)})),
+			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_RETURN)}),
 		},
 		{
 			tname:    "verdict register with jump verdict",
 			opStr:    "[ immediate reg 0 jump -> next_chain ]",
-			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "next_chain"})),
+			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "next_chain"}),
 		},
 		{
 			tname:    "verdict register with goto verdict",
 			opStr:    "[ immediate reg 0 goto -> next_chain ]",
-			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, newVerdictData(stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "next_chain"})),
+			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "next_chain"}),
 		},
 		{
 			tname:    "verdict register with 4-byte data",
@@ -109,22 +110,22 @@ func TestInterpretImmediateOps(t *testing.T) {
 		{
 			tname:    "16-byte register with 4-byte data",
 			opStr:    "[ immediate reg 1 0x0201a8c0 ]",
-			expected: mustCreateImmediate(t, linux.NFT_REG_1, newBytesData([]byte{0xc0, 0xa8, 0x01, 0x02})),
+			expected: mustCreateImmediate(t, linux.NFT_REG_1, []byte{0xc0, 0xa8, 0x01, 0x02}, stack.NFVerdict{}),
 		},
 		{
 			tname:    "16-byte register with 8-byte data",
 			opStr:    "[ immediate reg 2 0xb80d0120 0x00000050 ]",
-			expected: mustCreateImmediate(t, linux.NFT_REG_2, newBytesData([]byte{0x20, 0x01, 0x0d, 0xb8, 0x50, 0x00, 0x00, 0x00})),
+			expected: mustCreateImmediate(t, linux.NFT_REG_2, []byte{0x20, 0x01, 0x0d, 0xb8, 0x50, 0x00, 0x00, 0x00}, stack.NFVerdict{}),
 		},
 		{
 			tname:    "16-byte register with 12-byte data",
 			opStr:    "[ immediate reg 3 0xb80d0120 0x00000050 0xb80d0120 ]",
-			expected: mustCreateImmediate(t, linux.NFT_REG_3, newBytesData([]byte{0x20, 0x01, 0x0d, 0xb8, 0x50, 0x00, 0x00, 0x00, 0x20, 0x01, 0x0d, 0xb8})),
+			expected: mustCreateImmediate(t, linux.NFT_REG_3, []byte{0x20, 0x01, 0x0d, 0xb8, 0x50, 0x00, 0x00, 0x00, 0x20, 0x01, 0x0d, 0xb8}, stack.NFVerdict{}),
 		},
 		{
 			tname:    "16-byte register with 16-byte data",
 			opStr:    "[ immediate reg 4 0xb80d0120 0x00000000 0x00000000 0x02000000 ]",
-			expected: mustCreateImmediate(t, linux.NFT_REG_4, newBytesData([]byte{0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02})),
+			expected: mustCreateImmediate(t, linux.NFT_REG_4, []byte{0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02}, stack.NFVerdict{}),
 		},
 		{
 			tname:    "4-byte register with verdict data",
@@ -134,11 +135,6 @@ func TestInterpretImmediateOps(t *testing.T) {
 		{
 			tname:    "4-byte register with verdict data with target",
 			opStr:    "[ immediate reg 9 goto -> next_chain ]",
-			expected: nil,
-		},
-		{
-			tname:    "4-byte register with 16-byte data",
-			opStr:    "[ immediate reg 9 0xb80d0120 0x00000000 0x00000000 0x02000000 ]",
 			expected: nil,
 		},
 	} {
@@ -154,10 +150,10 @@ func checkImmediateOp(tname string, expected operation, actual operation) error 
 	if !ok {
 		return fmt.Errorf("expected operation type to be Immediate for %s, got %T", tname, actual)
 	}
-	if imm.dreg != expectedImm.dreg {
-		return fmt.Errorf("expected register to be %d for %s, got %d", expectedImm.dreg, tname, imm.dreg)
+	if imm.dregIdx != expectedImm.dregIdx {
+		return fmt.Errorf("expected register to be %d for %s, got %d", expectedImm.dregIdx, tname, imm.dregIdx)
 	}
-	if !imm.data.equal(expectedImm.data) {
+	if !slices.Equal(imm.data, expectedImm.data) {
 		return fmt.Errorf("expected data to be %v for %s, got %v", expectedImm.data, tname, imm.data)
 	}
 	return nil
@@ -218,17 +214,17 @@ func TestInterpretComparisonOps(t *testing.T) {
 		},
 		{
 			tname:    "4-byte register with 8-byte data comparison",
-			opStr:    "[ cmp eq reg 14 0xb80d0120 0x02000000 ]",
+			opStr:    "[ cmp eq reg 23 0xb80d0120 0x02000000 ]",
 			expected: nil,
 		},
 		{
 			tname:    "4-byte register with 12-byte data comparison",
-			opStr:    "[ cmp lte reg 15 0xb80d0120 0x18305290 0x02000000 ]",
+			opStr:    "[ cmp lte reg 23 0xb80d0120 0x18305290 0x02000000 ]",
 			expected: nil,
 		},
 		{
 			tname:    "4-byte register with 16-byte data comparison",
-			opStr:    "[ cmp gt reg 16 0x0302010a 0x00000000 0x00000000 0x02000001 ]",
+			opStr:    "[ cmp gt reg 23 0x0302010a 0x00000000 0x00000000 0x02000001 ]",
 			expected: nil,
 		},
 		{
@@ -364,13 +360,13 @@ func checkComparisonOp(tname string, expected operation, actual operation) error
 	if !ok {
 		return fmt.Errorf("expected operation type to be Comparison for %s, got %T", tname, actual)
 	}
-	if cmp.sreg != expectedCmp.sreg {
-		return fmt.Errorf("expected register to be %d for %s, got %d", expectedCmp.sreg, tname, cmp.sreg)
+	if cmp.sregIdx != expectedCmp.sregIdx {
+		return fmt.Errorf("expected register to be %d for %s, got %d", expectedCmp.sregIdx, tname, cmp.sregIdx)
 	}
 	if cmp.cop != expectedCmp.cop {
 		return fmt.Errorf("expected comparison operator to be %v for %s, got %v", expectedCmp.cop, tname, cmp.cop)
 	}
-	if !cmp.data.equal(expectedCmp.data) {
+	if !slices.Equal(cmp.data, expectedCmp.data) {
 		return fmt.Errorf("expected data to be %v for %s, got %v", expectedCmp.data, tname, cmp.data)
 	}
 	return nil
@@ -490,8 +486,8 @@ func checkPayloadLoadOp(tname string, expected operation, actual operation) erro
 	if pdload.blen != expectedPdLoad.blen {
 		return fmt.Errorf("expected length to be %d for %s, got %d", expectedPdLoad.blen, tname, pdload.blen)
 	}
-	if pdload.dreg != expectedPdLoad.dreg {
-		return fmt.Errorf("expected destination register to be %d for %s, got %d", expectedPdLoad.dreg, tname, pdload.dreg)
+	if pdload.dregIdx != expectedPdLoad.dregIdx {
+		return fmt.Errorf("expected destination register to be %d for %s, got %d", expectedPdLoad.dregIdx, tname, pdload.dregIdx)
 	}
 	return nil
 }
@@ -650,8 +646,8 @@ func checkPayloadSetOp(tname string, expected operation, actual operation) error
 	if pdset.blen != expectedPdSet.blen {
 		return fmt.Errorf("expected length to be %d for %s, got %d", expectedPdSet.blen, tname, pdset.blen)
 	}
-	if pdset.sreg != expectedPdSet.sreg {
-		return fmt.Errorf("expected destination register to be %d for %s, got %d", expectedPdSet.sreg, tname, pdset.sreg)
+	if pdset.sregIdx != expectedPdSet.sregIdx {
+		return fmt.Errorf("expected destination register to be %d for %s, got %d", expectedPdSet.sregIdx, tname, pdset.sregIdx)
 	}
 	if pdset.csumType != expectedPdSet.csumType {
 		return fmt.Errorf("expected checksum type to be %d for %s, got %d", expectedPdSet.csumType, tname, pdset.csumType)
@@ -748,11 +744,11 @@ func checkBitwiseOp(tname string, expected operation, actual operation) error {
 	if !ok {
 		return fmt.Errorf("expected operation type to be BitwiseBool for %s, got %T", tname, actual)
 	}
-	if bit.sreg != expectedBit.sreg {
-		return fmt.Errorf("expected source register to be %d for %s, got %d", expectedBit.sreg, tname, bit.sreg)
+	if bit.sregIdx != expectedBit.sregIdx {
+		return fmt.Errorf("expected source register to be %d for %s, got %d", expectedBit.sregIdx, tname, bit.sregIdx)
 	}
-	if bit.dreg != expectedBit.dreg {
-		return fmt.Errorf("expected destination register to be %d for %s, got %d", expectedBit.dreg, tname, bit.dreg)
+	if bit.dregIdx != expectedBit.dregIdx {
+		return fmt.Errorf("expected destination register to be %d for %s, got %d", expectedBit.dregIdx, tname, bit.dregIdx)
 	}
 	if bit.bop != expectedBit.bop {
 		return fmt.Errorf("expected bitwise operation to be %d for %s, got %d", expectedBit.bop, tname, bit.bop)
@@ -760,10 +756,10 @@ func checkBitwiseOp(tname string, expected operation, actual operation) error {
 	if bit.blen != expectedBit.blen {
 		return fmt.Errorf("expected bitwise length to be %d for %s, got %d", expectedBit.blen, tname, bit.blen)
 	}
-	if !bit.mask.equal(expectedBit.mask) {
+	if !slices.Equal(bit.mask, expectedBit.mask) {
 		return fmt.Errorf("expected bitwise mask to be %v for %s, got %v", expectedBit.mask, tname, bit.mask)
 	}
-	if !bit.xor.equal(expectedBit.xor) {
+	if !slices.Equal(bit.xor, expectedBit.xor) {
 		return fmt.Errorf("expected bitwise xor to be %v for %s, got %v", expectedBit.xor, tname, bit.xor)
 	}
 	if bit.shift != expectedBit.shift {
@@ -879,8 +875,8 @@ func checkRouteOp(tname string, expected operation, actual operation) error {
 	if rt.key != expectedRt.key {
 		return fmt.Errorf("expected route key to be %v for %s, got %v", expectedRt.key, tname, rt.key)
 	}
-	if rt.dreg != expectedRt.dreg {
-		return fmt.Errorf("expected destination register to be %d for %s, got %d", expectedRt.dreg, tname, rt.dreg)
+	if rt.dregIdx != expectedRt.dregIdx {
+		return fmt.Errorf("expected destination register to be %d for %s, got %d", expectedRt.dregIdx, tname, rt.dregIdx)
 	}
 	return nil
 }
@@ -940,11 +936,11 @@ func checkByteorderOp(tname string, expected operation, actual operation) error 
 	if !ok {
 		return fmt.Errorf("expected operation type to be Byteorder for %s, got %T", tname, actual)
 	}
-	if order.sreg != expectedOrder.sreg {
-		return fmt.Errorf("expected source register to be %d for %s, got %d", expectedOrder.sreg, tname, order.sreg)
+	if order.sregIdx != expectedOrder.sregIdx {
+		return fmt.Errorf("expected source register to be %d for %s, got %d", expectedOrder.sregIdx, tname, order.sregIdx)
 	}
-	if order.dreg != expectedOrder.dreg {
-		return fmt.Errorf("expected destination register to be %d for %s, got %d", expectedOrder.dreg, tname, order.dreg)
+	if order.dregIdx != expectedOrder.dregIdx {
+		return fmt.Errorf("expected destination register to be %d for %s, got %d", expectedOrder.dregIdx, tname, order.dregIdx)
 	}
 	if order.bop != expectedOrder.bop {
 		return fmt.Errorf("expected byteorder operator to be %v for %s, got %v", expectedOrder.bop, tname, order.bop)
@@ -1047,8 +1043,8 @@ func checkMetaLoadOp(tname string, expected operation, actual operation) error {
 	if mtLoad.key != expectedMtLoad.key {
 		return fmt.Errorf("expected meta key to be %v for %s, got %v", expectedMtLoad.key, tname, mtLoad.key)
 	}
-	if mtLoad.dreg != expectedMtLoad.dreg {
-		return fmt.Errorf("expected destination register to be %d for %s, got %d", expectedMtLoad.dreg, tname, mtLoad.dreg)
+	if mtLoad.dregIdx != expectedMtLoad.dregIdx {
+		return fmt.Errorf("expected destination register to be %d for %s, got %d", expectedMtLoad.dregIdx, tname, mtLoad.dregIdx)
 	}
 	return nil
 }
@@ -1083,8 +1079,8 @@ func checkMetaSetOp(tname string, expected operation, actual operation) error {
 	if mtSet.key != expectedMtSet.key {
 		return fmt.Errorf("expected meta key to be %v for %s, got %v", expectedMtSet.key, tname, mtSet.key)
 	}
-	if mtSet.sreg != expectedMtSet.sreg {
-		return fmt.Errorf("expected destination register to be %d for %s, got %d", expectedMtSet.sreg, tname, mtSet.sreg)
+	if mtSet.sregIdx != expectedMtSet.sregIdx {
+		return fmt.Errorf("expected destination register to be %d for %s, got %d", expectedMtSet.sregIdx, tname, mtSet.sregIdx)
 	}
 	return nil
 }

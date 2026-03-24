@@ -30,9 +30,9 @@ import (
 // if the comparison is false.
 // Note: comparison operations are not supported for the verdict register.
 type comparison struct {
-	data bytesData // Data to compare the source register to.
-	sreg uint8     // Number of the source register.
-	cop  cmpOp     // Comparison operator.
+	data    []byte // Data to compare the source register to.
+	sregIdx int    // Index of the source register in registerSet.data.
+	cop     cmpOp  // Comparison operator.
 }
 
 // cmpOp is the comparison operator for a Comparison operation.
@@ -73,25 +73,25 @@ func newComparison(sreg uint8, op int, data []byte) (*comparison, *syserr.Annota
 	if isVerdictRegister(sreg) {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "comparison operation does not support verdict register as source register")
 	}
-	bytesData := newBytesData(data)
-	if err := bytesData.validateRegister(sreg); err != nil {
+	sregIdx, err := regNumToIdx(sreg, len(data))
+	if err != nil {
 		return nil, err
 	}
 	cop := cmpOp(op)
 	if err := validateComparisonOp(cop); err != nil {
 		return nil, err
 	}
-	return &comparison{sreg: sreg, cop: cop, data: bytesData}, nil
+	return &comparison{sregIdx: sregIdx, cop: cop, data: data}, nil
 }
 
 // evaluate for Comparison compares the data in the source register to the given
 // data and breaks from the rule if the comparison is false.
 func (op comparison) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
 	// Gets the data to compare to.
-	data := op.data.data
+	data := op.data
 
 	// Gets the data from the source register.
-	regBuf := getRegisterBuffer(regs, op.sreg)[:len(data)]
+	regBuf := regs.data[op.sregIdx : op.sregIdx+len(data)]
 
 	// Compares bytes from left to right for all bytes in the comparison data.
 	dif := bytes.Compare(regBuf, data)
@@ -123,9 +123,9 @@ func (op comparison) GetExprName() string {
 
 func (op comparison) Dump() ([]byte, *syserr.AnnotatedError) {
 	m := &nlmsg.Message{}
-	m.PutAttr(linux.NFTA_CMP_SREG, nlmsg.PutU32(uint32(op.sreg)))
+	m.PutAttr(linux.NFTA_CMP_SREG, nlmsg.PutU32(uint32(formatRegIdxForDump(op.sregIdx))))
 	m.PutAttr(linux.NFTA_CMP_OP, nlmsg.PutU32(uint32(op.cop)))
-	regDump, err := op.data.Dump()
+	regDump, err := dumpDataAttr(op.data)
 	if err != nil {
 		return nil, err
 	}

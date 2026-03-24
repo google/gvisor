@@ -28,8 +28,8 @@ import (
 // route is an operation that loads specific route data into a register.
 // Note: route operations are not supported for the verdict register.
 type route struct {
-	key  routeKey // Route key specifying what data to retrieve.
-	dreg uint8    // Number of the destination register.
+	key     routeKey // Route key specifying what data to retrieve.
+	dregIdx int      // Index of the destination register in registerSet.data.
 
 	// Route information is stored AS IS. If the data is a field stored by the
 	// kernel, it is stored in host endian. If the data is from the packet, it
@@ -52,6 +52,15 @@ var routeKeyStrings = map[routeKey]string{
 	linux.NFT_RT_NEXTHOP6: "Next Hop IPv6",
 	linux.NFT_RT_TCPMSS:   "TCP Maximum Segment Size (TCPMSS)",
 	linux.NFT_RT_XFRM:     "IPsec Transformation",
+}
+
+// routeKeyLengths is a maps route key to its size in bytes.
+var routeKeyLengths = []int{
+	linux.NFT_RT_CLASSID:  4,
+	linux.NFT_RT_NEXTHOP4: 4,
+	linux.NFT_RT_NEXTHOP6: 16,
+	linux.NFT_RT_TCPMSS:   2,
+	linux.NFT_RT_XFRM:     1,
 }
 
 // String for routeKey returns the string representation of the route key.
@@ -92,8 +101,11 @@ func newRoute(key routeKey, dreg uint8) (*route, *syserr.AnnotatedError) {
 	if err := validateRouteKey(key); err != nil {
 		return nil, err
 	}
-
-	return &route{key: key, dreg: dreg}, nil
+	dregIdx, err := regNumToIdx(dreg, routeKeyLengths[key])
+	if err != nil {
+		return nil, err
+	}
+	return &route{key: key, dregIdx: dregIdx}, nil
 }
 
 // evaluate for Route loads specific routing data into the destination register.
@@ -132,8 +144,9 @@ func (op route) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule)
 	}
 
 	// Stores the target data in the destination register.
-	data := newBytesData(target)
-	data.storeData(regs, op.dreg)
+	start := op.dregIdx
+	end := start + routeKeyLengths[op.key]
+	copy(regs.data[start:end], target)
 }
 
 func (op route) GetExprName() string {
