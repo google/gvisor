@@ -53,7 +53,11 @@ type RDMAData struct {
 	Devices []RDMADeviceData
 }
 
-const collectMaxDepth = 8
+// Keep shallow to avoid traversing massive PCI device trees that are
+// reachable via symlinks (e.g. device/ → PCI dir with net/, firmware/,
+// infiniband/ looping back). Depth 3 covers device/modalias (depth 1),
+// ports/N/link_layer (depth 2), and ports/N/gids/0 (depth 3).
+const collectMaxDepth = 3
 
 func collectSysfsDir(dirPath string) *SysfsDir {
 	return collectSysfsDirDepth(dirPath, 0)
