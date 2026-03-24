@@ -24,6 +24,12 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 )
 
+// SysfsDir is a generic recursive representation of a sysfs directory tree.
+type SysfsDir struct {
+	Files map[string]string
+	Dirs  map[string]*SysfsDir
+}
+
 // RDMADeviceData contains sysfs data for a single RDMA uverbs device,
 // collected from the host before the sandbox chroot is entered.
 type RDMADeviceData struct {
@@ -31,109 +37,84 @@ type RDMADeviceData struct {
 	Name string
 	// IBDev is the InfiniBand device name (e.g. "mlx5_0").
 	IBDev string
-	// ABIVersion is the uverbs ABI version (e.g. "1").
-	ABIVersion string
-	// Dev is the device major:minor (e.g. "231:192").
-	Dev string
-	// NodeType is the IB node type (e.g. "1: CA").
-	NodeType string
-	// NodeGUID is the node GUID.
-	NodeGUID string
-	// SysImageGUID is the system image GUID.
-	SysImageGUID string
-	// FWVer is the firmware version.
-	FWVer string
-	// Ports contains per-port data.
-	Ports []RDMAPortData
+	// Verbs is the full tree under /sys/class/infiniband_verbs/<name>/.
+	Verbs *SysfsDir
+	// IB is the full tree under /sys/class/infiniband/<ibdev>/.
+	IB *SysfsDir
 }
 
-// RDMAPortData contains sysfs data for a single port of an IB device.
-type RDMAPortData struct {
-	// Number is the port number (e.g. "1").
-	Number string
-	// State is the port state.
-	State string
-	// PhysState is the physical state.
-	PhysState string
-	// LinkLayer is the link layer type (e.g. "InfiniBand").
-	LinkLayer string
-	// Rate is the port rate.
-	Rate string
-	// LID is the local identifier.
-	LID string
-	// SMLID is the subnet manager LID.
-	SMLID string
-	// SMSL is the subnet manager SL.
-	SMSL string
-	// CapMask is the port capability mask.
-	CapMask string
+func collectSysfsDir(dirPath string) *SysfsDir {
+	entries, err := os.ReadDir(dirPath)
+	if err != nil {
+		return nil
+	}
+	d := &SysfsDir{
+		Files: map[string]string{},
+		Dirs:  map[string]*SysfsDir{},
+	}
+	for _, entry := range entries {
+		child := path.Join(dirPath, entry.Name())
+		if entry.IsDir() {
+			if sub := collectSysfsDir(child); sub != nil {
+				d.Dirs[entry.Name()] = sub
+			}
+			continue
+		}
+		data, err := os.ReadFile(child)
+		if err != nil {
+			continue
+		}
+		d.Files[entry.Name()] = strings.TrimSpace(string(data))
+	}
+	return d
 }
 
 // CollectRDMADeviceData reads RDMA sysfs data from the host filesystem.
-// This must be called before the sandbox chroot is entered.
+// It must be called after rdmaProxyUpdateChroot has copied the host sysfs
+// files into the chroot (or before the chroot when host sysfs is accessible).
 func CollectRDMADeviceData() []RDMADeviceData {
 	verbsPath := "/sys/class/infiniband_verbs"
 	dents, err := os.ReadDir(verbsPath)
 	if err != nil {
 		return nil
 	}
-
 	var devices []RDMADeviceData
 	for _, dent := range dents {
 		if !strings.HasPrefix(dent.Name(), "uverbs") {
 			continue
 		}
 		devDir := path.Join(verbsPath, dent.Name())
-		ibdev := readSysfsFile(path.Join(devDir, "ibdev"))
+		verbs := collectSysfsDir(devDir)
+		if verbs == nil {
+			continue
+		}
+		ibdev := verbs.Files["ibdev"]
 		if ibdev == "" {
 			continue
 		}
-
 		dev := RDMADeviceData{
-			Name:       dent.Name(),
-			IBDev:      ibdev,
-			ABIVersion: readSysfsFile(path.Join(devDir, "abi_version")),
-			Dev:        readSysfsFile(path.Join(devDir, "dev")),
+			Name:  dent.Name(),
+			IBDev: ibdev,
+			Verbs: verbs,
+			IB:    collectSysfsDir(path.Join("/sys/class/infiniband", ibdev)),
 		}
-
-		// Read IB device attributes.
-		ibDevDir := path.Join("/sys/class/infiniband", ibdev)
-		dev.NodeType = readSysfsFile(path.Join(ibDevDir, "node_type"))
-		dev.NodeGUID = readSysfsFile(path.Join(ibDevDir, "node_guid"))
-		dev.SysImageGUID = readSysfsFile(path.Join(ibDevDir, "sys_image_guid"))
-		dev.FWVer = readSysfsFile(path.Join(ibDevDir, "fw_ver"))
-
-		// Read port data.
-		portsPath := path.Join(ibDevDir, "ports")
-		portDents, err := os.ReadDir(portsPath)
-		if err == nil {
-			for _, portDent := range portDents {
-				portDir := path.Join(portsPath, portDent.Name())
-				dev.Ports = append(dev.Ports, RDMAPortData{
-					Number:    portDent.Name(),
-					State:     readSysfsFile(path.Join(portDir, "state")),
-					PhysState: readSysfsFile(path.Join(portDir, "phys_state")),
-					LinkLayer: readSysfsFile(path.Join(portDir, "link_layer")),
-					Rate:      readSysfsFile(path.Join(portDir, "rate")),
-					LID:       readSysfsFile(path.Join(portDir, "lid")),
-					SMLID:     readSysfsFile(path.Join(portDir, "sm_lid")),
-					SMSL:      readSysfsFile(path.Join(portDir, "sm_sl")),
-					CapMask:   readSysfsFile(path.Join(portDir, "cap_mask")),
-				})
-			}
-		}
-
 		devices = append(devices, dev)
 	}
 	return devices
 }
 
-func readSysfsFile(path string) string {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ""
+func (fs *filesystem) sysfsDirToInodes(ctx context.Context, creds *auth.Credentials, d *SysfsDir) map[string]kernfs.Inode {
+	if d == nil {
+		return nil
 	}
-	return strings.TrimSpace(string(data))
+	entries := map[string]kernfs.Inode{}
+	for name, content := range d.Files {
+		entries[name] = fs.newStaticFile(ctx, creds, defaultSysMode, content+"\n")
+	}
+	for name, sub := range d.Dirs {
+		entries[name] = fs.newDir(ctx, creds, defaultSysDirMode, fs.sysfsDirToInodes(ctx, creds, sub))
+	}
+	return entries
 }
 
 // newRDMASysfsEntries creates /sys/class/infiniband_verbs/ and
@@ -142,60 +123,12 @@ func (fs *filesystem) newRDMASysfsEntries(ctx context.Context, creds *auth.Crede
 	if len(devices) == 0 {
 		return nil, nil
 	}
-
 	ibVerbsDir = map[string]kernfs.Inode{}
 	ibDir = map[string]kernfs.Inode{}
-
 	for _, dev := range devices {
-		// /sys/class/infiniband_verbs/uverbsN/
-		verbsEntries := map[string]kernfs.Inode{}
-		if dev.IBDev != "" {
-			verbsEntries["ibdev"] = fs.newStaticFile(ctx, creds, defaultSysMode, dev.IBDev+"\n")
-		}
-		if dev.ABIVersion != "" {
-			verbsEntries["abi_version"] = fs.newStaticFile(ctx, creds, defaultSysMode, dev.ABIVersion+"\n")
-		}
-		if dev.Dev != "" {
-			verbsEntries["dev"] = fs.newStaticFile(ctx, creds, defaultSysMode, dev.Dev+"\n")
-		}
-		ibVerbsDir[dev.Name] = fs.newDir(ctx, creds, defaultSysDirMode, verbsEntries)
-
-		// /sys/class/infiniband/<ibdev>/
-		if dev.IBDev != "" {
-			ibDevEntries := map[string]kernfs.Inode{}
-			addStaticIfSet := func(name, value string) {
-				if value != "" {
-					ibDevEntries[name] = fs.newStaticFile(ctx, creds, defaultSysMode, value+"\n")
-				}
-			}
-			addStaticIfSet("node_type", dev.NodeType)
-			addStaticIfSet("node_guid", dev.NodeGUID)
-			addStaticIfSet("sys_image_guid", dev.SysImageGUID)
-			addStaticIfSet("fw_ver", dev.FWVer)
-
-			if len(dev.Ports) > 0 {
-				portsDir := map[string]kernfs.Inode{}
-				for _, port := range dev.Ports {
-					portEntries := map[string]kernfs.Inode{}
-					addPort := func(name, value string) {
-						if value != "" {
-							portEntries[name] = fs.newStaticFile(ctx, creds, defaultSysMode, value+"\n")
-						}
-					}
-					addPort("state", port.State)
-					addPort("phys_state", port.PhysState)
-					addPort("link_layer", port.LinkLayer)
-					addPort("rate", port.Rate)
-					addPort("lid", port.LID)
-					addPort("sm_lid", port.SMLID)
-					addPort("sm_sl", port.SMSL)
-					addPort("cap_mask", port.CapMask)
-					portsDir[port.Number] = fs.newDir(ctx, creds, defaultSysDirMode, portEntries)
-				}
-				ibDevEntries["ports"] = fs.newDir(ctx, creds, defaultSysDirMode, portsDir)
-			}
-
-			ibDir[dev.IBDev] = fs.newDir(ctx, creds, defaultSysDirMode, ibDevEntries)
+		ibVerbsDir[dev.Name] = fs.newDir(ctx, creds, defaultSysDirMode, fs.sysfsDirToInodes(ctx, creds, dev.Verbs))
+		if dev.IBDev != "" && dev.IB != nil {
+			ibDir[dev.IBDev] = fs.newDir(ctx, creds, defaultSysDirMode, fs.sysfsDirToInodes(ctx, creds, dev.IB))
 		}
 	}
 	return ibVerbsDir, ibDir
