@@ -261,14 +261,16 @@ func rdmaProxyUpdateChroot(hostRoot, chroot string, conf *config.Config) error {
 	if !specutils.RDMAProxyIsEnabled(conf) {
 		return nil
 	}
-	// Sysfs class directories contain symlinks that reference paths under
-	// /sys/devices/. Rather than resolving each symlink individually, mount
-	// the host sysfs read-only so all paths resolve naturally. This mount
-	// is only visible to the boot process (which collects device metadata);
+	// Sysfs class directories contain symlinks to paths under /sys/devices/.
+	// Mount a fresh read-only sysfs instance so all symlinks resolve naturally.
+	// This is only visible to the boot process for device metadata collection;
 	// the sandboxed application sees the sentry's virtual sysfs instead.
-	hostSys := path.Join(hostRoot, "/sys")
-	if err := mountInChroot(chroot, hostSys, "/sys", "bind", unix.MS_BIND|unix.MS_RDONLY); err != nil {
-		return fmt.Errorf("error mounting sysfs in chroot: %w", err)
+	chrootSys := filepath.Join(chroot, "sys")
+	if err := os.MkdirAll(chrootSys, 0755); err != nil {
+		return fmt.Errorf("creating /sys in chroot: %w", err)
+	}
+	if err := specutils.SafeMount("sysfs", chrootSys, "sysfs", unix.MS_RDONLY, "", "/proc"); err != nil {
+		return fmt.Errorf("mounting sysfs in chroot: %w", err)
 	}
 	return nil
 }
