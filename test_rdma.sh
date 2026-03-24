@@ -8,7 +8,7 @@ DEV="/dev/infiniband/uverbs0"
 
 # Build
 cd "$(dirname "$0")"
-make copy TARGETS=runsc DESTINATION=/tmp 2>&1 | tail -3
+sudo make copy TARGETS=runsc DESTINATION=/tmp 2>&1 | tail -3
 
 # Deploy
 sudo pkill -f "$RUNTIME" 2>/dev/null || true

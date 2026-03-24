@@ -430,69 +430,55 @@ Bugs fixed during hardware testing:
 
 ### ib_write_bw testing (March 24)
 
-**Status**: `ib_write_bw` reaches the RDMA data path but fails at **MR (Memory Region) registration** — `Couldn't allocate MR`.
+**Previous blocker (resolved): MR registration address space mismatch**
 
+`ibv_reg_mr()` calls the MR REG ioctl, telling the kernel to pin physical pages at a virtual address range for NIC DMA. The kernel calls `pin_user_pages(addr, ...)` which walks the **calling process's page tables**. Our proxy forwards from the **sentry process**, but the virtual address refers to the **sandbox's address space** — `pin_user_pages` found nothing, and MR creation failed with `Couldn't allocate MR`.
+
+**Fix implemented: Page mirroring (modeled on nvproxy's `rmAllocOSDescriptor`)**
+
+`mirrorSandboxPages()` in `rdmaproxy_ioctl_unsafe.go` now:
+1. Detects MR REG ioctls (both legacy INVOKE_WRITE path with cmd=9 and modern UVERBS_METHOD_REG_MR)
+2. Extracts `(sandbox_va, length)` from the CORE_IN buffer (legacy) or ADDR/LENGTH attrs (modern)
+3. Calls `mm.Pin()` to resolve sandbox VA → `(MemoryFile, offset)` pairs
+4. Uses `MapInternal()` + `mremap` to create a contiguous sentry-side mapping of the same physical pages
+5. Rewrites `start` in the ioctl to the sentry address; keeps `hca_va` as the original sandbox VA (so RDMA addressing works — the NIC uses `hca_va` as a lookup key, not a real dereference)
+6. Forwards ioctl — host kernel's `pin_user_pages` now finds valid page table entries
+7. Tracks pinned pages by MR handle; releases on MR DEALLOC or fd close
+
+Key insight: `start` (used for page pinning) and `hca_va` (used for RDMA addressing) can differ. We rewrite only `start` so the kernel pins the right physical pages, while remote peers still use the sandbox VA in work requests.
+
+**Current blocker: TCP control channel (March 24 evening)**
+
+With page mirroring implemented, the error changed from `Couldn't allocate MR` to a TCP connection failure:
 ```
-$ sudo docker run --runtime=runsc-rdma --rm --device=/dev/infiniband/uverbs0 perftest-img \
+$ DEVS=$(ls /dev/infiniband/uverbs* | sed 's/^/--device=/' | tr '\n' ' ')
+$ sudo docker run --runtime=runsc-rdma --rm --network=host $DEVS perftest-img \
     bash -c 'ib_write_bw -d mlx5_0 & sleep 3; ib_write_bw -d mlx5_0 127.0.0.1 --report_gbits'
-Couldn't allocate MR
-failed to create mr
-Failed to create MR
- Couldn't create IB resources
+Couldn't connect to 127.0.0.1:18515
+Unable to open file descriptor for socket connection Unable to init the socket connection
+EXIT=1
 ```
 
-**Root cause — address space mismatch during page pinning:**
+This means we got **past MR REG** (no more `Couldn't allocate MR`). The new failure is TCP — `ib_write_bw` uses a TCP control channel on port 18515 to exchange QP info between server and client before RDMA data transfer begins. Even with `--network=host`, gVisor's netstack may not be forwarding loopback TCP correctly.
 
-`ibv_reg_mr()` calls the MR REG ioctl, telling the kernel to pin the physical pages at a virtual address range so the NIC can DMA directly. The kernel calls `pin_user_pages(addr, ...)` which walks the **calling process's page tables**.
-
-Our proxy forwards this ioctl from the **sentry process**, but the virtual address refers to the **sandbox's address space** (a separate stub process under systrap). The sentry has different page tables — `pin_user_pages` finds nothing at that address, and MR creation fails.
-
-This is fundamentally different from discovery/query ioctls (`ibv_devinfo`) which just pass data. MR REG pins physical memory for hardware DMA and is tied to the calling process's page tables.
-
-**This cannot be fixed with ioctl rewriting alone.** The kernel needs real page table entries at the given virtual address in the process making the syscall.
-
-### Current blocker: MR registration needs page mirroring
-
-**Approach 1 — Mirror sandbox pages into the sentry (recommended):**
-Before forwarding MR REG, map the same physical pages into the sentry's address space. In gVisor, sandbox memory is backed by `MemoryFile` (a memfd). The sentry can `mmap` the same memfd region into its own address space at a temporary address, rewrite the ioctl to use that address, and the kernel's `pin_user_pages` finds the correct physical pages.
-
-Steps:
-1. Parse MR REG attrs to extract `(sandbox_va, length, access_flags)`
-2. Use `Task.MemoryManager()` to translate `sandbox_va` → `(MemoryFile, offset, len)`
-3. `mmap(memoryFileFD, offset, len)` into the sentry's address space
-4. Rewrite the addr attr in the ioctl buffer to use the sentry mapping
-5. Forward ioctl to host kernel — kernel pins the memfd-backed pages
-6. Track the sentry mapping; keep it alive until MR DEALLOC
-7. On MR DEALLOC, `munmap` the sentry-side mapping
-
-Key integration point: `pkg/sentry/mm/` — the memory manager's `Translate()` or `LookupInternal()` methods can resolve sandbox VAs to `(platform.File, offset)` pairs.
-
-**Approach 2 — Execute MR REG from sandbox context:**
-Inject the host uverbs FD into the sandbox stub process and have it make the ioctl directly. The kernel sees the sandbox's page tables. Breaks gVisor's security model.
-
-**Approach 3 — VFIO-based RDMA:**
-Use VFIO with IOMMU for DMA mapping management. Requires VFIO RDMA subsystem support (hardware-dependent).
+**Needs investigation:**
+- Check sentry logs for MR REG success/failure messages (`grep -iE 'MR REG|mirror|pin'`)
+- Determine if the TCP failure is a netstack issue or a port binding race
+- May need `sleep` adjustment or explicit `--net-raw` flag
+- If MR REG is silently failing, the TCP error could be a red herring (server crashed before binding)
 
 ### What's next
 
-**Immediate (MR registration):**
-- Implement approach 1 (page mirroring) in `rdmaproxy_ioctl_unsafe.go`
-- Identify which ioctl attrs carry the memory address (MR REG method attrs)
-- Integrate with `pkg/sentry/mm` to resolve sandbox VAs to memfd regions
-- Track sentry-side mappings for cleanup on MR DEALLOC
+**Immediate (debug ib_write_bw TCP channel):**
+- Check sentry logs for MR REG outcome — did page mirroring succeed or crash the server?
+- If server crashed: debug the crash from logs, fix page mirroring
+- If server is running but TCP fails: investigate gVisor netstack loopback with `--network=host`
+- Try two separate containers (server + client) to isolate
 
-**After MR REG works (ib_write_bw end-to-end):**
-- **CQ/QP buffers**: CQ CREATE and QP CREATE attrs contain embedded pointers to sandbox-allocated buffers that the NIC DMA-writes completion entries into. These likely need the same page-mirroring treatment.
-- **Doorbell mmap**: Already handled by `ConfigureMMap`/`Translate` proxy.
-- **TCP control channel**: `ib_write_bw` uses TCP to exchange QP info. With `--network=host` or loopback inside a single container, this should work once we get past MR REG.
-
-**After ib_write_bw (NCCL):**
-- **GPU ioctls (magic `0x46`)**: NCCL uses NVIDIA GPU ioctls for GPUDirect RDMA. Requires nvproxy alongside rdmaproxy.
-- **rdma_cm device**: NCCL uses `/dev/infiniband/rdma_cm` (major 10, minor 121) for connection management. Needs to be added to rdmaproxy or passed through.
-- **Multi-device**: Pass all devices via `--device=/dev/infiniband/uverbsN`. Already works.
-- **MAP_FIXED mmap**: NCCL trace shows `MAP_SHARED|MAP_FIXED` on uverbs FDs. Needs testing.
-
-**IPoIB interface support**: Dynamic detection and setup of IP-over-InfiniBand interfaces (for native IB fabrics, not RoCE).
+**After ib_write_bw works end-to-end:**
+- **CQ/QP buffers**: CQ CREATE and QP CREATE may need page mirroring for DMA buffers (same pattern)
+- **Multi-node**: Test between two gVisor containers on different hosts
+- **NCCL**: Requires nvproxy alongside rdmaproxy, `/dev/infiniband/rdma_cm` passthrough, GPUDirect RDMA
 
 ### RDMA data path — full ioctl sequence (from ib_write_bw sniffer trace)
 
@@ -504,13 +490,13 @@ Working ioctls (ibv_devinfo exercises these):
 5. **QUERY_PORT** — ✅
 6. **ALLOC_UAR + mmap** — ✅ (doorbell page via ConfigureMMap)
 
-Untested / blocked ioctls (ib_write_bw exercises these):
+Page mirroring implemented (untested on hardware):
 7. **CQ CREATE** — 8 attrs; sandbox pointers to CQ buffers (DMA target)
 8. **QP CREATE** — 12 attrs; sandbox pointers to send/recv ring buffers
-9. **MR REG** — ❌ BLOCKED: pins sandbox virtual memory for NIC DMA. Needs page mirroring.
+9. **MR REG** — 🟡 page mirroring implemented, TCP failure prevents reaching this in ib_write_bw
 10. **QP state transitions** (MODIFY via ioctl) — untested
 11. **Data path** — doorbell writes + NIC DMA. No ioctls; depends on MR REG + mmap working.
-12. **Teardown** — DEALLOC_UAR, PD DEALLOC, MR DEALLOC, munmap, close.
+12. **Teardown** — DEALLOC_UAR, PD DEALLOC, MR DEALLOC (with pinned page cleanup), munmap, close.
 
 ### Test commands
 
