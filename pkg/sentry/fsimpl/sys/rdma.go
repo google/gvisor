@@ -43,6 +43,14 @@ type RDMADeviceData struct {
 	IB *SysfsDir
 }
 
+// RDMAData holds all collected RDMA sysfs data.
+type RDMAData struct {
+	// VerbsABIVersion is the global /sys/class/infiniband_verbs/abi_version.
+	VerbsABIVersion string
+	// Devices contains per-uverbs-device data.
+	Devices []RDMADeviceData
+}
+
 func collectSysfsDir(dirPath string) *SysfsDir {
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {
@@ -72,13 +80,15 @@ func collectSysfsDir(dirPath string) *SysfsDir {
 // CollectRDMADeviceData reads RDMA sysfs data from the host filesystem.
 // It must be called after rdmaProxyUpdateChroot has copied the host sysfs
 // files into the chroot (or before the chroot when host sysfs is accessible).
-func CollectRDMADeviceData() []RDMADeviceData {
+func CollectRDMADeviceData() *RDMAData {
 	verbsPath := "/sys/class/infiniband_verbs"
 	dents, err := os.ReadDir(verbsPath)
 	if err != nil {
 		return nil
 	}
-	var devices []RDMADeviceData
+	data := &RDMAData{
+		VerbsABIVersion: readSysfsFile(path.Join(verbsPath, "abi_version")),
+	}
 	for _, dent := range dents {
 		if !strings.HasPrefix(dent.Name(), "uverbs") {
 			continue
@@ -92,15 +102,22 @@ func CollectRDMADeviceData() []RDMADeviceData {
 		if ibdev == "" {
 			continue
 		}
-		dev := RDMADeviceData{
+		data.Devices = append(data.Devices, RDMADeviceData{
 			Name:  dent.Name(),
 			IBDev: ibdev,
 			Verbs: verbs,
 			IB:    collectSysfsDir(path.Join("/sys/class/infiniband", ibdev)),
-		}
-		devices = append(devices, dev)
+		})
 	}
-	return devices
+	return data
+}
+
+func readSysfsFile(filePath string) string {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
 }
 
 func (fs *filesystem) sysfsDirToInodes(ctx context.Context, creds *auth.Credentials, d *SysfsDir) map[string]kernfs.Inode {
@@ -119,13 +136,16 @@ func (fs *filesystem) sysfsDirToInodes(ctx context.Context, creds *auth.Credenti
 
 // newRDMASysfsEntries creates /sys/class/infiniband_verbs/ and
 // /sys/class/infiniband/ directories from pre-collected device data.
-func (fs *filesystem) newRDMASysfsEntries(ctx context.Context, creds *auth.Credentials, devices []RDMADeviceData) (ibVerbsDir, ibDir map[string]kernfs.Inode) {
-	if len(devices) == 0 {
+func (fs *filesystem) newRDMASysfsEntries(ctx context.Context, creds *auth.Credentials, data *RDMAData) (ibVerbsDir, ibDir map[string]kernfs.Inode) {
+	if data == nil || len(data.Devices) == 0 {
 		return nil, nil
 	}
 	ibVerbsDir = map[string]kernfs.Inode{}
 	ibDir = map[string]kernfs.Inode{}
-	for _, dev := range devices {
+	if data.VerbsABIVersion != "" {
+		ibVerbsDir["abi_version"] = fs.newStaticFile(ctx, creds, defaultSysMode, data.VerbsABIVersion+"\n")
+	}
+	for _, dev := range data.Devices {
 		ibVerbsDir[dev.Name] = fs.newDir(ctx, creds, defaultSysDirMode, fs.sysfsDirToInodes(ctx, creds, dev.Verbs))
 		if dev.IBDev != "" && dev.IB != nil {
 			ibDir[dev.IBDev] = fs.newDir(ctx, creds, defaultSysDirMode, fs.sysfsDirToInodes(ctx, creds, dev.IB))

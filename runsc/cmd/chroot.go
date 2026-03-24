@@ -271,16 +271,26 @@ func rdmaProxyUpdateChroot(hostRoot, chroot string, conf *config.Config) error {
 		log.Infof("rdmaProxyUpdateChroot: %s not found, skipping", verbsPath)
 		return nil
 	}
+	chrootVerbsPath := path.Join(chroot, "sys/class/infiniband_verbs")
 	for _, entry := range entries {
+		srcPath := path.Join(verbsPath, entry.Name())
+		if !entry.IsDir() && entry.Type()&os.ModeSymlink == 0 {
+			// Top-level regular files (e.g. abi_version).
+			data, err := os.ReadFile(srcPath)
+			if err == nil {
+				os.MkdirAll(chrootVerbsPath, 0755)
+				os.WriteFile(path.Join(chrootVerbsPath, entry.Name()), data, 0444)
+			}
+			continue
+		}
 		if !strings.HasPrefix(entry.Name(), "uverbs") {
 			continue
 		}
-		srcDir, err := filepath.EvalSymlinks(path.Join(verbsPath, entry.Name()))
+		srcDir, err := filepath.EvalSymlinks(srcPath)
 		if err != nil {
 			continue
 		}
-		dstDir := path.Join(chroot, "sys/class/infiniband_verbs", entry.Name())
-		copySysfsDir(srcDir, dstDir)
+		copySysfsDir(srcDir, path.Join(chrootVerbsPath, entry.Name()))
 
 		ibdev := readFileContent(path.Join(srcDir, "ibdev"))
 		if ibdev == "" {
@@ -290,8 +300,7 @@ func rdmaProxyUpdateChroot(hostRoot, chroot string, conf *config.Config) error {
 		if err != nil {
 			continue
 		}
-		ibDst := path.Join(chroot, "sys/class/infiniband", ibdev)
-		copySysfsDir(ibSrc, ibDst)
+		copySysfsDir(ibSrc, path.Join(chroot, "sys/class/infiniband", ibdev))
 	}
 	return nil
 }

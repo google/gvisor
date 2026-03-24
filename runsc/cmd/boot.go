@@ -556,7 +556,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 
 	// Collect RDMA device data before the sentry starts. The plain files
 	// written by rdmaProxyUpdateChroot make these paths readable in the chroot.
-	var rdmaDevices []sys.RDMADeviceData
+	var rdmaDevices *sys.RDMAData
 	if conf.RDMAProxy {
 		rdmaDevices = sys.CollectRDMADeviceData()
 	}

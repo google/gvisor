@@ -397,7 +397,7 @@ type containerMounter struct {
 	productName string
 
 	// rdmaDevices contains pre-collected sysfs data for RDMA devices.
-	rdmaDevices []sys.RDMADeviceData
+	rdmaDevices *sys.RDMAData
 
 	// containerID is the ID for the container.
 	containerID string
@@ -416,7 +416,7 @@ type containerMounter struct {
 	rootfsUpperTarFD *fd.FD
 }
 
-func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *PodMountHints, sharedMounts map[string]*vfs.Mount, productName string, rdmaDevices []sys.RDMADeviceData, sandboxID string) *containerMounter {
+func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *PodMountHints, sharedMounts map[string]*vfs.Mount, productName string, rdmaDevices *sys.RDMAData, sandboxID string) *containerMounter {
 	return &containerMounter{
 		root:              info.spec.Root,
 		mounts:            compileMounts(info.spec, info.conf, info.procArgs.ContainerID),
@@ -923,7 +923,7 @@ func (c *containerMounter) mountSubmount(ctx context.Context, spec *specs.Spec, 
 
 // getMountNameAndOptions retrieves the fsName, opts, and useOverlay values
 // used for mounts.
-func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo, productName, containerName string, rdmaDevices []sys.RDMADeviceData) (string, *vfs.MountOptions, error) {
+func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo, productName, containerName string, rdmaDevices *sys.RDMAData) (string, *vfs.MountOptions, error) {
 	fsName := m.mount.Type
 	var (
 		mopts        = m.mount.Options

@@ -250,7 +250,7 @@ type Loader struct {
 	productName string
 
 	// rdmaDevices contains pre-collected sysfs data for RDMA devices.
-	rdmaDevices []sys.RDMADeviceData
+	rdmaDevices *sys.RDMAData
 
 	hostTHP HostTHP
 
@@ -426,7 +426,7 @@ type Args struct {
 	RootfsUpperTarFD int
 
 	// RDMADevices contains pre-collected sysfs data for RDMA devices.
-	RDMADevices []sys.RDMADeviceData
+	RDMADevices *sys.RDMAData
 }
 
 // HostTHP holds host transparent hugepage settings.

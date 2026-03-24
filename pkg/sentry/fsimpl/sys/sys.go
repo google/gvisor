@@ -64,7 +64,7 @@ type InternalData struct {
 	EnableRDMAProxyPaths bool
 	// RDMADevices contains pre-read sysfs data for RDMA devices, collected
 	// before the sandbox chroot is entered.
-	RDMADevices []RDMADeviceData
+	RDMADevices *RDMAData
 	// TestSysfsPathPrefix is a prefix for the sysfs paths. It is useful for
 	// unit testing.
 	TestSysfsPathPrefix string
