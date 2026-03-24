@@ -19,6 +19,7 @@ package rdmaproxy
 import (
 	"fmt"
 	"path/filepath"
+	"sync"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
@@ -29,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -81,6 +83,24 @@ func openHostDevice(ctx context.Context, devRelPath string, flags uint32) (int, 
 	return unix.Openat(-1, devPath, openFlags, 0)
 }
 
+// mirroredPages tracks sandbox pages pinned and mapped into the sentry's
+// address space so the host kernel can pin_user_pages on them for DMA.
+type mirroredPages struct {
+	prs []mm.PinnedRange
+	// If m != 0, it's a sentry-side mmap we own and must munmap on release.
+	m   uintptr
+	len uintptr
+}
+
+func (mp *mirroredPages) release(ctx context.Context) {
+	if mp.m != 0 {
+		if _, _, errno := unix.RawSyscall(unix.SYS_MUNMAP, mp.m, mp.len, 0); errno != 0 {
+			log.Warningf("rdmaproxy: munmap %#x-%#x: %v", mp.m, mp.m+mp.len, errno)
+		}
+	}
+	mm.Unpin(mp.prs)
+}
+
 // uverbsFD implements vfs.FileDescriptionImpl for an opened uverbs device.
 //
 // uverbsFD is not savable; we do not implement save/restore of RDMA state.
@@ -94,10 +114,22 @@ type uverbsFD struct {
 	hostFD     int32
 	queue      waiter.Queue
 	memmapFile fsutil.MmapNoInternalFile
+
+	// mu protects pinnedMRs.
+	mu        sync.Mutex
+	pinnedMRs map[uint32]*mirroredPages
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *uverbsFD) Release(context.Context) {
+func (fd *uverbsFD) Release(ctx context.Context) {
+	fd.mu.Lock()
+	for handle, mp := range fd.pinnedMRs {
+		log.Infof("rdmaproxy: releasing pinned MR handle=%d on fd close", handle)
+		mp.release(ctx)
+	}
+	fd.pinnedMRs = nil
+	fd.mu.Unlock()
+
 	log.Infof("rdmaproxy: closing hostFD=%d", fd.hostFD)
 	fdnotifier.RemoveFD(fd.hostFD)
 	unix.Close(int(fd.hostFD))

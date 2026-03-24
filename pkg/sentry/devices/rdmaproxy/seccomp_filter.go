@@ -16,7 +16,6 @@ package rdmaproxy
 
 import (
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/seccomp"
 )
 
@@ -29,7 +28,6 @@ func Filters() seccomp.SyscallRules {
 			seccomp.MaskedEqual(unix.O_CREAT|unix.O_NOFOLLOW, unix.O_NOFOLLOW),
 			seccomp.AnyValue{},
 		},
-		// RDMA_VERBS_IOCTL uses magic 0x1b (RDMA_IOCTL_MAGIC), not 'F'.
 		unix.SYS_IOCTL: seccomp.PerArg{
 			seccomp.NonNegativeFD{},
 			seccomp.MaskedEqual(0xFF00, 0x1B00),
@@ -38,9 +36,15 @@ func Filters() seccomp.SyscallRules {
 			seccomp.AnyValue{},
 			seccomp.AnyValue{},
 			seccomp.AnyValue{},
-			seccomp.MaskedEqual(linux.MAP_SHARED, linux.MAP_SHARED),
-			seccomp.NonNegativeFD{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
 		},
 		unix.SYS_MUNMAP: seccomp.MatchAll{},
+		// mremap is used by mirrorSandboxPages to build contiguous
+		// sentry-side mappings of sandbox memory for DMA pinning.
+		unix.SYS_MREMAP: seccomp.MatchAll{},
+		// madvise(MADV_POPULATE_WRITE) pre-faults pages to avoid
+		// mmap_lock contention during pin_user_pages.
+		unix.SYS_MADVISE: seccomp.MatchAll{},
 	})
 }

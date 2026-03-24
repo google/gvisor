@@ -404,48 +404,135 @@ There are three main platforms for intercepting syscalls:
 
 6. **Runtime flags** — `--rdmaproxy` enables the proxy; `--rdma-expected-ipoib=N` controls IPoIB interface waiting (set to `-1` to disable on RoCE-only machines).
 
-### Current blocker: ioctl pointer translation (March 24)
+### ibv_devinfo working (March 24)
 
-Hardware testing on 2x8 H100 node (18x mlx5 HCAs) confirmed:
-- **sysfs discovery**: working — all 18 `uverbs*` + `mlx5_*` devices visible
-- **device open**: working — dev gofer opens host FD successfully (`hostFD=12`)
-- **CAPABILITY_PROBE ioctl**: working — returns `errno=28 (ENOSPC)` as expected
-- **EFAULT on subsequent ioctls**: the host kernel returns `errno=14 (bad address)` during QUERY_GID / QUERY_CONTEXT calls
+`ibv_devinfo` runs successfully inside gVisor on a 2x8 H100 node (18x mlx5 HCAs):
+```
+hca_id: mlx5_0
+  transport:      InfiniBand (0)
+  fw_ver:         28.47.1026
+  node_guid:      a088:c203:00f9:ed68
+  vendor_id:      0x02c9
+  vendor_part_id: 4129
+  phys_port_cnt:  1
+    port: 1
+      state:       PORT_ACTIVE (4)
+      link_layer:  Ethernet
+EXIT=0
+```
 
-Root cause: the `ib_uverbs_attr` data field is a pointer (not inline) in two cases we weren't handling:
-1. `len > 8` — we were rewriting these (correct)
-2. `UVERBS_ATTR_F_VALID_OUTPUT` (bit 1 of flags) set, any `len > 0` — output attrs always store a pointer so the kernel can write results back. We were treating these as inline when `len <= 8`, so the kernel tried to `copy_to_user` to a sandbox address and got EFAULT.
+Bugs fixed during hardware testing:
+- **devName vs kernel minor**: `uverbsDevice` used kernel minor (192) to build host path (`uverbs192` instead of `uverbs0`). Now stores device name from the OCI spec path separately from the VFS minor.
+- **DynMajor map key mismatch**: `preRegisterRDMADevices` keyed by kernel minor (192) but the patching loop extracted the name index (0). Now both use the kernel minor parsed from the sysfs `dev` field.
+- **ioctl pointer detection**: Instead of using `len`/`flags` heuristics (which vary across libibverbs and kernel versions), the ioctl handler now probes each attr's data field via `CopyInBytes`. If the address resolves to valid sandbox memory, it's a pointer and gets rewritten. If not, it's inline data and is left untouched.
 
-Fix applied: check `flags & 0x2` in addition to `len > 8` to decide pointer rewriting. Also fixed in this session:
-- **devName vs kernel minor**: `uverbsDevice` was using kernel minor (192) to build the host path (`uverbs192` instead of `uverbs0`). Now stores the device name separately.
-- **DynMajor map key mismatch**: `preRegisterRDMADevices` keyed by kernel minor (192) but the patching loop looked up by name index (0). Now both use the kernel minor from the sysfs `dev` field.
+**Lesson learned**: When proxying opaque hardware interfaces, probe don't parse. We spent ~2 hours iterating on heuristics (len > 8, VALID_OUTPUT flag, etc.) before landing on the approach of just trying `CopyInBytes` and letting the result tell us. Start with the most flexible/highest-abstraction approach first.
+
+### ib_write_bw testing (March 24)
+
+**Status**: `ib_write_bw` reaches the RDMA data path but fails at **MR (Memory Region) registration** — `Couldn't allocate MR`.
+
+```
+$ sudo docker run --runtime=runsc-rdma --rm --device=/dev/infiniband/uverbs0 perftest-img \
+    bash -c 'ib_write_bw -d mlx5_0 & sleep 3; ib_write_bw -d mlx5_0 127.0.0.1 --report_gbits'
+Couldn't allocate MR
+failed to create mr
+Failed to create MR
+ Couldn't create IB resources
+```
+
+**Root cause — address space mismatch during page pinning:**
+
+`ibv_reg_mr()` calls the MR REG ioctl, telling the kernel to pin the physical pages at a virtual address range so the NIC can DMA directly. The kernel calls `pin_user_pages(addr, ...)` which walks the **calling process's page tables**.
+
+Our proxy forwards this ioctl from the **sentry process**, but the virtual address refers to the **sandbox's address space** (a separate stub process under systrap). The sentry has different page tables — `pin_user_pages` finds nothing at that address, and MR creation fails.
+
+This is fundamentally different from discovery/query ioctls (`ibv_devinfo`) which just pass data. MR REG pins physical memory for hardware DMA and is tied to the calling process's page tables.
+
+**This cannot be fixed with ioctl rewriting alone.** The kernel needs real page table entries at the given virtual address in the process making the syscall.
+
+### Current blocker: MR registration needs page mirroring
+
+**Approach 1 — Mirror sandbox pages into the sentry (recommended):**
+Before forwarding MR REG, map the same physical pages into the sentry's address space. In gVisor, sandbox memory is backed by `MemoryFile` (a memfd). The sentry can `mmap` the same memfd region into its own address space at a temporary address, rewrite the ioctl to use that address, and the kernel's `pin_user_pages` finds the correct physical pages.
+
+Steps:
+1. Parse MR REG attrs to extract `(sandbox_va, length, access_flags)`
+2. Use `Task.MemoryManager()` to translate `sandbox_va` → `(MemoryFile, offset, len)`
+3. `mmap(memoryFileFD, offset, len)` into the sentry's address space
+4. Rewrite the addr attr in the ioctl buffer to use the sentry mapping
+5. Forward ioctl to host kernel — kernel pins the memfd-backed pages
+6. Track the sentry mapping; keep it alive until MR DEALLOC
+7. On MR DEALLOC, `munmap` the sentry-side mapping
+
+Key integration point: `pkg/sentry/mm/` — the memory manager's `Translate()` or `LookupInternal()` methods can resolve sandbox VAs to `(platform.File, offset)` pairs.
+
+**Approach 2 — Execute MR REG from sandbox context:**
+Inject the host uverbs FD into the sandbox stub process and have it make the ioctl directly. The kernel sees the sandbox's page tables. Breaks gVisor's security model.
+
+**Approach 3 — VFIO-based RDMA:**
+Use VFIO with IOMMU for DMA mapping management. Requires VFIO RDMA subsystem support (hardware-dependent).
 
 ### What's next
 
-- **Re-test ibv_devinfo** with the VALID_OUTPUT + devName + DynMajor fixes — expecting the EFAULT to be resolved. If more edge cases surface, the detailed logging now in place will show exactly which attr causes the failure.
-- **NCCL / ib_write_bw testing**: After ibv_devinfo works, test actual RDMA data path. The sniffer trace below shows the full ioctl sequence: ALLOC_CONTEXT → QUERY_PORT → ALLOC_UAR → CQ CREATE → QP CREATE → MR REG → data path → teardown.
-- **Multi-device support**: Currently only devices explicitly passed via `--device` are available.
-- **IPoIB interface support**: Dynamic detection and setup of IP-over-InfiniBand interfaces (for native IB fabrics, not RoCE).
+**Immediate (MR registration):**
+- Implement approach 1 (page mirroring) in `rdmaproxy_ioctl_unsafe.go`
+- Identify which ioctl attrs carry the memory address (MR REG method attrs)
+- Integrate with `pkg/sentry/mm` to resolve sandbox VAs to memfd regions
+- Track sentry-side mappings for cleanup on MR DEALLOC
 
-### ibv_devinfo sentry logs (from hardware test, March 24)
+**After MR REG works (ib_write_bw end-to-end):**
+- **CQ/QP buffers**: CQ CREATE and QP CREATE attrs contain embedded pointers to sandbox-allocated buffers that the NIC DMA-writes completion entries into. These likely need the same page-mirroring treatment.
+- **Doorbell mmap**: Already handled by `ConfigureMMap`/`Translate` proxy.
+- **TCP control channel**: `ib_write_bw` uses TCP to exchange QP info. With `--network=host` or loopback inside a single container, this should work once we get past MR REG.
 
+**After ib_write_bw (NCCL):**
+- **GPU ioctls (magic `0x46`)**: NCCL uses NVIDIA GPU ioctls for GPUDirect RDMA. Requires nvproxy alongside rdmaproxy.
+- **rdma_cm device**: NCCL uses `/dev/infiniband/rdma_cm` (major 10, minor 121) for connection management. Needs to be added to rdmaproxy or passed through.
+- **Multi-device**: Pass all devices via `--device=/dev/infiniband/uverbsN`. Already works.
+- **MAP_FIXED mmap**: NCCL trace shows `MAP_SHARED|MAP_FIXED` on uverbs FDs. Needs testing.
+
+**IPoIB interface support**: Dynamic detection and setup of IP-over-InfiniBand interfaces (for native IB fabrics, not RoCE).
+
+### RDMA data path — full ioctl sequence (from ib_write_bw sniffer trace)
+
+Working ioctls (ibv_devinfo exercises these):
+1. **CAPABILITY_PROBE** — ✅
+2. **QUERY_GID** — ✅
+3. **QUERY_HCA_CAP** — ✅
+4. **ALLOC_CONTEXT / ALLOC_CONTEXT_EX** — ✅
+5. **QUERY_PORT** — ✅
+6. **ALLOC_UAR + mmap** — ✅ (doorbell page via ConfigureMMap)
+
+Untested / blocked ioctls (ib_write_bw exercises these):
+7. **CQ CREATE** — 8 attrs; sandbox pointers to CQ buffers (DMA target)
+8. **QP CREATE** — 12 attrs; sandbox pointers to send/recv ring buffers
+9. **MR REG** — ❌ BLOCKED: pins sandbox virtual memory for NIC DMA. Needs page mirroring.
+10. **QP state transitions** (MODIFY via ioctl) — untested
+11. **Data path** — doorbell writes + NIC DMA. No ioctls; depends on MR REG + mmap working.
+12. **Teardown** — DEALLOC_UAR, PD DEALLOC, MR DEALLOC, munmap, close.
+
+### Test commands
+
+**Pre-build image** (DNS doesn't work in gVisor netstack, so packages must be baked in):
+```bash
+sudo docker build -t perftest-img -f- . <<'EOF'
+FROM ubuntu:22.04
+RUN apt-get update && apt-get install -y perftest && rm -rf /var/lib/apt/lists/*
+EOF
 ```
-# Device open succeeds via dev gofer
-rdmaproxy: using dev gofer to open infiniband/uverbs0
-rdmaproxy: opened infiniband/uverbs0 → hostFD=12
 
-# CAPABILITY_PROBE — expected failure
-IOCTL hostFD=12 obj=0x0000 method=0 attrs=1 len=40 driver=1
-  attr[0] id=0x0002 len=8 flags=0x0001 data=inline:0x0000000000000001
-host ioctl returned errno=28 (no space left on device)   ← expected
+**ib_write_bw** (single container, loopback):
+```bash
+DEVS=$(ls /dev/infiniband/uverbs* | sed 's/^/--device=/' | tr '\n' ' ')
+sudo docker run --runtime=runsc-rdma --rm $DEVS perftest-img \
+  bash -c 'ib_write_bw -d mlx5_0 & sleep 3; ib_write_bw -d mlx5_0 127.0.0.1 --report_gbits 2>&1; echo "EXIT=$?"'
+```
 
-# QUERY_GID — fails with EFAULT (before VALID_OUTPUT fix)
-IOCTL hostFD=12 obj=0x0000 method=3 attrs=4 len=88 driver=1
-  attr[0] id=0x0000 len=4 flags=0x0001 data=inline:0x00007f8b63ae8618
-  attr[1] id=0x0001 len=8 flags=0x0001 data=inline:0x00007f8b63ae8620
-  attr[2] id=0x1000 len=32 flags=0x0001 data=ptr (rewrite)
-  attr[3] id=0x1001 len=72 flags=0x0001 data=ptr (rewrite)
-host ioctl returned errno=14 (bad address)               ← EFAULT, fix pending test
+**Log monitoring** (run in a separate terminal):
+```bash
+while true; do BOOTLOG=$(ls -t /tmp/runsc-rdma/logs/ 2>/dev/null | grep boot | head -1); \
+  [ -n "$BOOTLOG" ] && tail -f /tmp/runsc-rdma/logs/$BOOTLOG | grep -iE 'rdma|uverbs'; sleep 1; done
 ```
 
 ### Host Device Layout (9x mlx5 HCAs on 2x8 H100 node)
@@ -461,21 +548,22 @@ host ioctl returned errno=14 (bad address)               ← EFAULT, fix pending
 - `/sys/class/infiniband/mlx5_N/` — `node_type` ("1: CA"), `node_guid`, `sys_image_guid`, `fw_ver`, `hca_type`, `hw_rev`, `board_id`, `node_desc`
 - `/sys/class/infiniband/mlx5_N/ports/1/` — `state`, `phys_state`, `link_layer`, `rate`, `lid`, `sm_lid`, `sm_sl`, `cap_mask`, `gids/`, `pkeys/`, `gid_attrs/`, `counters/`, `hw_counters/`
 
-**Discovery flow** (from strace of `ibv_devinfo`):
-1. `socket(AF_NETLINK, SOCK_RAW, NETLINK_RDMA)` → fails with `EPROTONOSUPPORT` (expected, gVisor doesn't support this)
-2. Falls back to `openat("/sys/class/infiniband_verbs")` → ✅ works (virtual sysfs populated)
-3. Reads `ibdev`, `abi_version`, `dev` for each uverbsN → ✅ works (dev patched to dynamic major)
-4. Stats `/dev/infiniband/uverbsN` and matches `st_rdev` against sysfs `dev` → ✅ fixed (DynMajor)
-5. Opens `/dev/infiniband/uverbsN` → ✅ fixed (dev gofer)
-6. Issues `RDMA_VERBS_IOCTL` to alloccate ontext, query device, etc. → implemented (generic handler), needs hardware validation
+**Discovery flow** (from strace of `ibv_devinfo`) — all steps working as of March 24:
+1. `socket(AF_NETLINK, SOCK_RAW, NETLINK_RDMA)` → `EPROTONOSUPPORT` (expected)
+2. `openat("/sys/class/infiniband_verbs")` → ✅ virtual sysfs
+3. Reads `ibdev`, `abi_version`, `dev` for each uverbsN → ✅ dev patched to dynamic major
+4. `stat("/dev/infiniband/uverbsN")` matches `st_rdev` against sysfs `dev` → ✅ DynMajor
+5. `open("/dev/infiniband/uverbsN")` → ✅ dev gofer
+6. `RDMA_VERBS_IOCTL` (CAPABILITY_PROBE, QUERY_GID, ALLOC_CONTEXT, QUERY_PORT, ...) → ✅ probe-based ioctl proxy
 
 ### Implementation Steps
 
 1. ~~**Virtual sysfs provider for infiniband**~~ ✅ — `/sys/class/infiniband_verbs/` and `/sys/class/infiniband/` trees exposed in the sentry via JSON serialization from host. Dynamic major numbers patched into sysfs `dev` files.
 2. ~~**uverbs device proxy**~~ ✅ — `/dev/infiniband/uverbs*` chardev registered with dynamic VFS major. Opens host device via dev gofer. Generic ioctl handler parses `ib_uverbs_ioctl_hdr` + attrs, rewrites sandbox pointers, forwards to host.
 3. ~~**Seccomp allowlist**~~ ✅ — `ioctl` (magic `0x1b`), `mmap` (MAP_SHARED), `munmap`, `openat` permitted through BPF filter when `--rdmaproxy` is enabled.
-4. **Link endpoints for InfiniBand verbs** — not yet started (may not be needed for initial RDMA support since uverbs bypasses the kernel network stack)
-5. **NVProxy integration for RDMA NIC isolation** — not yet started (unclear if needed)
+4. **MR registration page mirroring** — 🔴 CURRENT BLOCKER. `ibv_reg_mr()` fails because the sentry process doesn't have the sandbox's page tables. Need to mirror sandbox memfd pages into sentry address space before forwarding the MR REG ioctl. See "Current blocker" section above.
+5. **Link endpoints for InfiniBand verbs** — not started (may not be needed; uverbs bypasses the kernel network stack)
+6. **NVProxy integration for RDMA NIC isolation** — not started (needed for NCCL/GPUDirect RDMA)
 
 ### Big Questions
 - How do we quickly test RDMA support? What will this look like in the upstream repo? How can we make local development align closely with upstream testing so we don’t have to rewrite the testing suite from scratch?
