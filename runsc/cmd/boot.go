@@ -554,11 +554,10 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 
 	linux.SetAFSSyscallPanic(conf.TestOnlyAFSSyscallPanic)
 
-	// Collect RDMA device data before the sentry starts. The plain files
-	// written by rdmaProxyUpdateChroot make these paths readable in the chroot.
+	// Read RDMA device data serialized by stage 1 (rdmaProxyUpdateChroot).
 	var rdmaDevices *sys.RDMAData
 	if conf.RDMAProxy {
-		rdmaDevices = sys.CollectRDMADeviceData()
+		rdmaDevices = sys.DeserializeRDMAData(sys.RDMADataPath)
 	}
 
 	// Create the loader.

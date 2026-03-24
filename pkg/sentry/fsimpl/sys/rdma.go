@@ -15,8 +15,10 @@
 package sys
 
 import (
+	"encoding/json"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/context"
@@ -51,7 +53,16 @@ type RDMAData struct {
 	Devices []RDMADeviceData
 }
 
+const collectMaxDepth = 8
+
 func collectSysfsDir(dirPath string) *SysfsDir {
+	return collectSysfsDirDepth(dirPath, 0)
+}
+
+func collectSysfsDirDepth(dirPath string, depth int) *SysfsDir {
+	if depth >= collectMaxDepth {
+		return nil
+	}
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {
 		return nil
@@ -63,10 +74,27 @@ func collectSysfsDir(dirPath string) *SysfsDir {
 	for _, entry := range entries {
 		child := path.Join(dirPath, entry.Name())
 		if entry.IsDir() {
-			if sub := collectSysfsDir(child); sub != nil {
+			if sub := collectSysfsDirDepth(child, depth+1); sub != nil {
 				d.Dirs[entry.Name()] = sub
 			}
 			continue
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			real, err := filepath.EvalSymlinks(child)
+			if err != nil {
+				continue
+			}
+			fi, err := os.Stat(real)
+			if err != nil {
+				continue
+			}
+			if fi.IsDir() {
+				if sub := collectSysfsDirDepth(real, depth+1); sub != nil {
+					d.Dirs[entry.Name()] = sub
+				}
+				continue
+			}
+			child = real
 		}
 		data, err := os.ReadFile(child)
 		if err != nil {
@@ -77,9 +105,9 @@ func collectSysfsDir(dirPath string) *SysfsDir {
 	return d
 }
 
-// CollectRDMADeviceData reads RDMA sysfs data from the host filesystem.
-// It must be called after rdmaProxyUpdateChroot has copied the host sysfs
-// files into the chroot (or before the chroot when host sysfs is accessible).
+// CollectRDMADeviceData reads RDMA sysfs data directly from the host
+// filesystem. It must be called before the sandbox chroot is entered
+// (stage 1), when /sys is the real host sysfs.
 func CollectRDMADeviceData() *RDMAData {
 	verbsPath := "/sys/class/infiniband_verbs"
 	dents, err := os.ReadDir(verbsPath)
@@ -110,6 +138,38 @@ func CollectRDMADeviceData() *RDMAData {
 		})
 	}
 	return data
+}
+
+// RDMADataPath is the path within the chroot where serialized RDMA data
+// is stored between boot stages.
+const RDMADataPath = "/var/lib/gvisor/rdma_data.json"
+
+// SerializeRDMAData writes the collected data as JSON to the given path.
+func SerializeRDMAData(data *RDMAData, filePath string) error {
+	if data == nil {
+		return nil
+	}
+	if err := os.MkdirAll(path.Dir(filePath), 0755); err != nil {
+		return err
+	}
+	b, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filePath, b, 0644)
+}
+
+// DeserializeRDMAData reads serialized RDMA data from the given path.
+func DeserializeRDMAData(filePath string) *RDMAData {
+	b, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil
+	}
+	var data RDMAData
+	if err := json.Unmarshal(b, &data); err != nil {
+		return nil
+	}
+	return &data
 }
 
 func readSysfsFile(filePath string) string {
