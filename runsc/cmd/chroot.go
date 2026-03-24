@@ -261,16 +261,82 @@ func rdmaProxyUpdateChroot(hostRoot, chroot string, conf *config.Config) error {
 	if !specutils.RDMAProxyIsEnabled(conf) {
 		return nil
 	}
-	// Sysfs class directories contain symlinks to paths under /sys/devices/.
-	// Mount a fresh read-only sysfs instance so all symlinks resolve naturally.
-	// This is only visible to the boot process for device metadata collection;
-	// the sandboxed application sees the sentry's virtual sysfs instead.
-	chrootSys := filepath.Join(chroot, "sys")
-	if err := os.MkdirAll(chrootSys, 0755); err != nil {
-		return fmt.Errorf("creating /sys in chroot: %w", err)
+	// Sysfs class directories contain symlinks whose targets don't exist in
+	// the chroot, and mounting a fresh sysfs may be namespace-filtered.
+	// Instead, read the host sysfs now (before pivot_root) and copy all
+	// regular files into the chroot so CollectRDMADeviceData() can read them.
+	verbsPath := path.Join(hostRoot, "sys/class/infiniband_verbs")
+	entries, err := os.ReadDir(verbsPath)
+	if err != nil {
+		log.Infof("rdmaProxyUpdateChroot: %s not found, skipping", verbsPath)
+		return nil
 	}
-	if err := specutils.SafeMount("sysfs", chrootSys, "sysfs", unix.MS_RDONLY, "", "/proc"); err != nil {
-		return fmt.Errorf("mounting sysfs in chroot: %w", err)
+	for _, entry := range entries {
+		if !strings.HasPrefix(entry.Name(), "uverbs") {
+			continue
+		}
+		srcDir, err := filepath.EvalSymlinks(path.Join(verbsPath, entry.Name()))
+		if err != nil {
+			continue
+		}
+		dstDir := path.Join(chroot, "sys/class/infiniband_verbs", entry.Name())
+		copySysfsDir(srcDir, dstDir)
+
+		ibdev := readFileContent(path.Join(srcDir, "ibdev"))
+		if ibdev == "" {
+			continue
+		}
+		ibSrc, err := filepath.EvalSymlinks(path.Join(hostRoot, "sys/class/infiniband", ibdev))
+		if err != nil {
+			continue
+		}
+		ibDst := path.Join(chroot, "sys/class/infiniband", ibdev)
+		copySysfsDir(ibSrc, ibDst)
 	}
 	return nil
+}
+
+// copySysfsDir recursively copies all regular files from src into dst,
+// resolving symlinks to files but skipping symlinks to directories to
+// avoid pulling in unrelated subtrees.
+func copySysfsDir(src, dst string) {
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		srcPath := path.Join(src, entry.Name())
+		dstPath := path.Join(dst, entry.Name())
+		if entry.IsDir() {
+			copySysfsDir(srcPath, dstPath)
+			continue
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			real, err := filepath.EvalSymlinks(srcPath)
+			if err != nil {
+				continue
+			}
+			fi, err := os.Stat(real)
+			if err != nil || fi.IsDir() {
+				continue
+			}
+			srcPath = real
+		}
+		data, err := os.ReadFile(srcPath)
+		if err != nil {
+			continue
+		}
+		if err := os.MkdirAll(dst, 0755); err != nil {
+			continue
+		}
+		os.WriteFile(dstPath, data, 0444)
+	}
+}
+
+func readFileContent(filePath string) string {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
 }
