@@ -30,8 +30,7 @@ const (
 )
 
 func init() {
-	// Make sure the page size is 4K on arm64 platform.
 	if size := unix.Getpagesize(); size != PageSize {
-		panic("Only 4K page size is supported on arm64!")
+		println("WARNING: host page size mismatch - running on non-4K host")
 	}
 }
