@@ -2,7 +2,10 @@
 # Fetches model/tokenizer assets from GCS
 FROM google/cloud-sdk:541.0.0-slim AS downloader
 RUN gcloud config set auth/disable_credentials true
-RUN gcloud storage cp --recursive gs://gvisor/tests/models/llama-2-7b-chat-hf /
+# Workaround: gcloud storage crashes when copying directly to root ('/').
+# We pre-create the directory and use /* to copy contents without nesting.
+RUN mkdir -p /llama-2-7b-chat-hf
+RUN gcloud storage cp --recursive gs://gvisor/tests/models/llama-2-7b-chat-hf/* /llama-2-7b-chat-hf/
 RUN mkdir -p /engines
 RUN gcloud storage cp --recursive gs://gvisor/tests/l4/engines/llama-2-7b-chat-hf /engines/
 
