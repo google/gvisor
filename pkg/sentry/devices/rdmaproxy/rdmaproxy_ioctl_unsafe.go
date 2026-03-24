@@ -38,8 +38,14 @@ const (
 	ibUverbsAttrSize     = 16
 
 	// Attrs with data larger than 8 bytes store a userspace pointer in
-	// the data field; smaller values are stored inline.
+	// the data field; smaller values are stored inline — UNLESS the
+	// VALID_OUTPUT flag is set, in which case data is always a pointer.
 	ibUverbsAttrInlineMax = 8
+
+	// uverbsAttrFValidOutput is UVERBS_ATTR_F_VALID_OUTPUT. When set,
+	// the kernel writes output via the pointer in the data field,
+	// so the data field is a pointer even when len <= 8.
+	uverbsAttrFValidOutput = 0x2
 )
 
 // RDMA_VERBS_IOCTL = _IOWR(0x1b, 1, struct ib_uverbs_ioctl_hdr)
@@ -102,9 +108,12 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 		return 0, err
 	}
 
-	// Walk attrs and rewrite any data pointers that point into sandbox
-	// userspace. Attrs with len <= 8 store inline data in the data field
-	// and need no translation.
+	// Walk attrs and rewrite sandbox pointers. The data field is a pointer
+	// when EITHER:
+	//   - len > 8 (data too large to fit inline), OR
+	//   - UVERBS_ATTR_F_VALID_OUTPUT is set (kernel writes back via the
+	//     pointer regardless of len).
+	// Otherwise (input-only, len <= 8) data is stored inline in the field.
 	type rewrite struct {
 		attrOff  int
 		origData uint64
@@ -119,9 +128,12 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 		attrFlags := binary.LittleEndian.Uint16(buf[off+4 : off+6])
 		attrData := binary.LittleEndian.Uint64(buf[off+8 : off+16])
 
-		if attrLen > ibUverbsAttrInlineMax {
-			log.Infof("rdmaproxy:   attr[%d] id=0x%04x len=%d flags=0x%04x data=ptr:%#016x (rewrite)",
-				i, attrID, attrLen, attrFlags, attrData)
+		isOutput := attrFlags&uverbsAttrFValidOutput != 0
+		needsRewrite := attrLen > ibUverbsAttrInlineMax || (isOutput && attrLen > 0)
+
+		if needsRewrite {
+			log.Infof("rdmaproxy:   attr[%d] id=0x%04x len=%d flags=0x%04x data=ptr:%#016x (rewrite, output=%v)",
+				i, attrID, attrLen, attrFlags, attrData, isOutput)
 			sb := make([]byte, attrLen)
 			if _, err := t.CopyInBytes(hostarch.Addr(attrData), sb); err != nil {
 				log.Warningf("rdmaproxy:   attr[%d] CopyIn %d bytes from %#x: %v",
