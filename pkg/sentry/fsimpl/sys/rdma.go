@@ -16,11 +16,13 @@ package sys
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path"
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 )
@@ -50,6 +52,10 @@ type RDMADeviceData struct {
 	FWVer      string         `json:"fw_ver"`
 	Modalias   string         `json:"modalias"`
 	Ports      []RDMAPortData `json:"ports"`
+
+	// DynMajor is the sentry-assigned dynamic major for this device.
+	// Set at runtime during device registration, not serialized.
+	DynMajor uint32 `json:"-"`
 }
 
 // RDMAData holds all collected RDMA sysfs data.
@@ -65,11 +71,14 @@ func CollectRDMADeviceData() *RDMAData {
 	verbsPath := "/sys/class/infiniband_verbs"
 	dents, err := os.ReadDir(verbsPath)
 	if err != nil {
+		log.Infof("rdma collect: %s not accessible: %v", verbsPath, err)
 		return nil
 	}
 	data := &RDMAData{
 		VerbsABIVersion: readSysfsFile(path.Join(verbsPath, "abi_version")),
 	}
+	log.Infof("rdma collect: scanning %s (%d entries), verbs_abi=%q",
+		verbsPath, len(dents), data.VerbsABIVersion)
 	for _, dent := range dents {
 		if !strings.HasPrefix(dent.Name(), "uverbs") {
 			continue
@@ -77,6 +86,7 @@ func CollectRDMADeviceData() *RDMAData {
 		devDir := path.Join(verbsPath, dent.Name())
 		ibdev := readSysfsFile(path.Join(devDir, "ibdev"))
 		if ibdev == "" {
+			log.Warningf("rdma collect: %s has no ibdev, skipping", dent.Name())
 			continue
 		}
 		ibDir := path.Join("/sys/class/infiniband", ibdev)
@@ -91,12 +101,14 @@ func CollectRDMADeviceData() *RDMAData {
 			FWVer:      readSysfsFile(path.Join(ibDir, "fw_ver")),
 			Modalias:   readSysfsFile(path.Join(ibDir, "device", "modalias")),
 		}
+		log.Infof("rdma collect: %s → ibdev=%s dev=%s node_type=%q fw_ver=%q",
+			dent.Name(), ibdev, dev.Dev, dev.NodeType, dev.FWVer)
 		portsPath := path.Join(ibDir, "ports")
 		portDents, err := os.ReadDir(portsPath)
 		if err == nil {
 			for _, portDent := range portDents {
 				portDir := path.Join(portsPath, portDent.Name())
-				dev.Ports = append(dev.Ports, RDMAPortData{
+				pd := RDMAPortData{
 					Number:    portDent.Name(),
 					State:     readSysfsFile(path.Join(portDir, "state")),
 					PhysState: readSysfsFile(path.Join(portDir, "phys_state")),
@@ -106,11 +118,15 @@ func CollectRDMADeviceData() *RDMAData {
 					SMLID:     readSysfsFile(path.Join(portDir, "sm_lid")),
 					SMSL:      readSysfsFile(path.Join(portDir, "sm_sl")),
 					CapMask:   readSysfsFile(path.Join(portDir, "cap_mask")),
-				})
+				}
+				log.Infof("rdma collect:   port %s: state=%q link_layer=%q rate=%q",
+					pd.Number, pd.State, pd.LinkLayer, pd.Rate)
+				dev.Ports = append(dev.Ports, pd)
 			}
 		}
 		data.Devices = append(data.Devices, dev)
 	}
+	log.Infof("rdma collect: collected %d device(s)", len(data.Devices))
 	return data
 }
 
@@ -137,13 +153,29 @@ func SerializeRDMAData(data *RDMAData, filePath string) error {
 func DeserializeRDMAData(filePath string) *RDMAData {
 	b, err := os.ReadFile(filePath)
 	if err != nil {
+		log.Infof("rdma deserialize: %s: %v", filePath, err)
 		return nil
 	}
 	var data RDMAData
 	if err := json.Unmarshal(b, &data); err != nil {
+		log.Warningf("rdma deserialize: unmarshal %s: %v", filePath, err)
 		return nil
 	}
+	log.Infof("rdma deserialize: loaded %d device(s) from %s (verbs_abi=%q)",
+		len(data.Devices), filePath, data.VerbsABIVersion)
+	for _, d := range data.Devices {
+		log.Infof("rdma deserialize:   %s ibdev=%s dev=%s ports=%d",
+			d.Name, d.IBDev, d.Dev, len(d.Ports))
+	}
 	return &data
+}
+
+// extractMinor returns the minor portion from a "major:minor" dev string.
+func extractMinor(dev string) string {
+	if idx := strings.IndexByte(dev, ':'); idx >= 0 {
+		return dev[idx+1:]
+	}
+	return "0"
 }
 
 func readSysfsFile(filePath string) string {
@@ -158,8 +190,11 @@ func readSysfsFile(filePath string) string {
 // /sys/class/infiniband/ directories from pre-collected device data.
 func (fs *filesystem) newRDMASysfsEntries(ctx context.Context, creds *auth.Credentials, data *RDMAData) (ibVerbsDir, ibDir map[string]kernfs.Inode) {
 	if data == nil || len(data.Devices) == 0 {
+		log.Infof("rdma sysfs: no RDMA data, skipping sysfs construction")
 		return nil, nil
 	}
+	log.Infof("rdma sysfs: building virtual sysfs for %d device(s), verbs_abi=%q",
+		len(data.Devices), data.VerbsABIVersion)
 	ibVerbsDir = map[string]kernfs.Inode{}
 	ibDir = map[string]kernfs.Inode{}
 	addFile := func(m map[string]kernfs.Inode, name, val string) {
@@ -173,12 +208,23 @@ func (fs *filesystem) newRDMASysfsEntries(ctx context.Context, creds *auth.Crede
 		verbsEntries := map[string]kernfs.Inode{}
 		addFile(verbsEntries, "ibdev", dev.IBDev)
 		addFile(verbsEntries, "abi_version", dev.ABIVersion)
-		addFile(verbsEntries, "dev", dev.Dev)
+		devVal := dev.Dev
+		if dev.DynMajor != 0 {
+			minor := extractMinor(dev.Dev)
+			devVal = fmt.Sprintf("%d:%s", dev.DynMajor, minor)
+			log.Infof("rdma sysfs: %s dev=%s (patched from host %s, dynMajor=%d)",
+				dev.Name, devVal, dev.Dev, dev.DynMajor)
+		} else {
+			log.Infof("rdma sysfs: %s dev=%s (no dynMajor, using host value)", dev.Name, devVal)
+		}
+		addFile(verbsEntries, "dev", devVal)
 		ibVerbsDir[dev.Name] = fs.newDir(ctx, creds, defaultSysDirMode, verbsEntries)
 
 		if dev.IBDev == "" {
 			continue
 		}
+		log.Infof("rdma sysfs: %s → ibdev=%s node_type=%q fw_ver=%q guid=%s ports=%d",
+			dev.Name, dev.IBDev, dev.NodeType, dev.FWVer, dev.NodeGUID, len(dev.Ports))
 		ibDevEntries := map[string]kernfs.Inode{}
 		addFile(ibDevEntries, "node_type", dev.NodeType)
 		addFile(ibDevEntries, "node_guid", dev.NodeGUID)
@@ -192,6 +238,8 @@ func (fs *filesystem) newRDMASysfsEntries(ctx context.Context, creds *auth.Crede
 		if len(dev.Ports) > 0 {
 			portsDir := map[string]kernfs.Inode{}
 			for _, port := range dev.Ports {
+				log.Infof("rdma sysfs:   port %s: state=%q link_layer=%q rate=%q",
+					port.Number, port.State, port.LinkLayer, port.Rate)
 				portEntries := map[string]kernfs.Inode{}
 				addFile(portEntries, "state", port.State)
 				addFile(portEntries, "phys_state", port.PhysState)

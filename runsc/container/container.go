@@ -1269,7 +1269,7 @@ func (c *Container) waitForStopped() error {
 // shouldCreateDeviceGofer indicates whether a device gofer connection should
 // be created.
 func shouldCreateDeviceGofer(spec *specs.Spec, conf *config.Config) bool {
-	return specutils.GPUFunctionalityRequested(spec, conf) || specutils.TPUFunctionalityRequested(spec, conf)
+	return specutils.GPUFunctionalityRequested(spec, conf) || specutils.TPUFunctionalityRequested(spec, conf) || specutils.RDMAProxyIsEnabled(conf)
 }
 
 // shouldSpawnGofer indicates whether the gofer process should be spawned.

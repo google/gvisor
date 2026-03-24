@@ -22,6 +22,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/devutil"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/log"
@@ -39,13 +40,14 @@ type uverbsDevice struct {
 
 // Open implements vfs.Device.Open.
 func (dev *uverbsDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	hostPath := filepath.Join("/dev/infiniband", fmt.Sprintf("uverbs%d", dev.minor))
-	openFlags := int(opts.Flags&unix.O_ACCMODE | unix.O_NOFOLLOW)
-	hostFD, err := unix.Openat(-1, hostPath, openFlags, 0)
+	devRelPath := fmt.Sprintf("infiniband/uverbs%d", dev.minor)
+	log.Infof("rdmaproxy: opening %s (flags=0x%x)", devRelPath, opts.Flags)
+	hostFD, err := openHostDevice(ctx, devRelPath, opts.Flags)
 	if err != nil {
-		log.Warningf("rdmaproxy: failed to open host device %s: %v", hostPath, err)
+		log.Warningf("rdmaproxy: open host device %s: %v", devRelPath, err)
 		return nil, err
 	}
+	log.Infof("rdmaproxy: opened %s → hostFD=%d", devRelPath, hostFD)
 	fd := &uverbsFD{
 		hostFD: int32(hostFD),
 	}
@@ -62,6 +64,19 @@ func (dev *uverbsDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Den
 		return nil, err
 	}
 	return &fd.vfsfd, nil
+}
+
+// openHostDevice opens a host device using the dev gofer if available,
+// falling back to a direct open. devRelPath is relative to /dev/.
+func openHostDevice(ctx context.Context, devRelPath string, flags uint32) (int, error) {
+	if client := devutil.GoferClientFromContext(ctx); client != nil {
+		log.Infof("rdmaproxy: using dev gofer to open %s", devRelPath)
+		return client.OpenAt(ctx, devRelPath, flags)
+	}
+	log.Infof("rdmaproxy: no dev gofer, falling back to direct open for %s", devRelPath)
+	devPath := filepath.Join("/dev", devRelPath)
+	openFlags := int(flags&unix.O_ACCMODE | unix.O_NOFOLLOW)
+	return unix.Openat(-1, devPath, openFlags, 0)
 }
 
 // uverbsFD implements vfs.FileDescriptionImpl for an opened uverbs device.
@@ -81,6 +96,7 @@ type uverbsFD struct {
 
 // Release implements vfs.FileDescriptionImpl.Release.
 func (fd *uverbsFD) Release(context.Context) {
+	log.Infof("rdmaproxy: closing hostFD=%d", fd.hostFD)
 	fdnotifier.RemoveFD(fd.hostFD)
 	unix.Close(int(fd.hostFD))
 }
@@ -115,6 +131,7 @@ func Register(vfsObj *vfs.VirtualFilesystem, minor uint32) (uint32, error) {
 	if err != nil {
 		return 0, fmt.Errorf("rdmaproxy: obtaining dynamic major number: %w", err)
 	}
+	log.Infof("rdmaproxy: registering uverbs%d with major=%d minor=%d", minor, major, minor)
 	if err := vfsObj.RegisterDevice(vfs.CharDevice, major, minor, &uverbsDevice{minor: minor}, &vfs.RegisterDeviceOptions{
 		GroupName: "infiniband",
 		Pathname:  fmt.Sprintf("infiniband/uverbs%d", minor),

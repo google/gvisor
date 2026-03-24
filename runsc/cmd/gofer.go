@@ -666,9 +666,11 @@ func (g *Gofer) setupDev(spec *specs.Spec, conf *config.Config, root, procPath s
 	}
 	nvproxyEnabled := specutils.NVProxyEnabled(spec, conf)
 	tpuproxyEnabled := specutils.TPUProxyIsEnabled(spec, conf)
+	rdmaproxyEnabled := specutils.RDMAProxyIsEnabled(conf)
 	for _, dev := range spec.Linux.Devices {
 		shouldMount := (nvproxyEnabled && shouldExposeNvidiaDevice(dev.Path)) ||
-			(tpuproxyEnabled && shouldExposeTpuDevice(dev.Path))
+			(tpuproxyEnabled && shouldExposeTpuDevice(dev.Path)) ||
+			(rdmaproxyEnabled && strings.HasPrefix(dev.Path, "/dev/infiniband/"))
 		if !shouldMount {
 			continue
 		}

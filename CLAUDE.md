@@ -377,7 +377,57 @@ There are three main platforms for intercepting syscalls:
     ioctl(8, _IOC(_IOC_READ|_IOC_WRITE, 0x46, 0x2b, 0x30), 0x7ffcd81fb060) = 0
     mmap(NULL, 155648, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x7f15ec067000
     
-NEXT TODO: Expose sysfs for InfiniBand device discovery, then implement uverbs device proxy.
+## Current Status (March 2026)
+
+### What's done
+
+1. **Virtual sysfs for RDMA device discovery** — `/sys/class/infiniband_verbs/` and `/sys/class/infiniband/` are populated from host data collected at container startup. Data is serialized to JSON in the chroot and deserialized by the sentry to build virtual sysfs entries. The sysfs `dev` files report the container's dynamic major:minor (not the host's) so libibverbs can match them against `/dev` nodes.
+   - `pkg/sentry/fsimpl/sys/rdma.go` — data structures, collection, serialization, sysfs construction
+   - `runsc/cmd/chroot.go` — collects host sysfs data before pivot_root
+   - `runsc/cmd/boot.go` — deserializes data in the sentry boot path
+
+2. **uverbs device proxy** — `/dev/infiniband/uverbs*` chardevs are registered with dynamic VFS majors. Opening the device uses the **dev gofer** (a helper process outside the chroot) to obtain a host FD, matching the pattern used by nvproxy and tpuproxy.
+   - `pkg/sentry/devices/rdmaproxy/rdmaproxy.go` — device registration, Open via dev gofer, event polling
+   - `runsc/boot/vfs.go` — pre-registers devices before sysfs mount; creates device files with correct majors
+   - `runsc/container/container.go` — creates dev gofer when RDMA proxy is enabled
+   - `runsc/cmd/gofer.go` — bind-mounts `/dev/infiniband/*` into gofer filesystem
+
+3. **ioctl proxy for RDMA_VERBS_IOCTL** — The modern `_IOWR(0x1b, 1, ...)` ioctl uses a self-describing `ib_uverbs_ioctl_hdr` + variable-length `ib_uverbs_attr[]` array. Our handler parses the header, walks attributes, copies sandbox-pointer-backed data into sentry buffers, rewrites pointers, forwards to the host kernel, and copies results back. This is the same pin-translate-forward pattern used by tpuproxy.
+   - `pkg/sentry/devices/rdmaproxy/rdmaproxy_ioctl_unsafe.go` — generic ioctl handler
+
+4. **mmap proxy** — `ConfigureMMap` and `Translate` forward device mmaps (doorbell pages, CQ buffers, etc.) to the host FD via `GenericProxyDeviceConfigureMMap`.
+   - `pkg/sentry/devices/rdmaproxy/rdmaproxy_ioctl_unsafe.go` (bottom of file)
+
+5. **Seccomp filters** — Allows `ioctl` (magic `0x1b` = RDMA_IOCTL_MAGIC), `mmap` (MAP_SHARED on device FDs), `munmap`, and `openat` through the sentry's BPF filter when `--rdmaproxy` is enabled.
+   - `pkg/sentry/devices/rdmaproxy/seccomp_filter.go`
+   - `runsc/boot/filter/config/config.go` — merges RDMA filters when `RDMAProxy` option is set
+
+6. **Runtime flags** — `--rdmaproxy` enables the proxy; `--rdma-expected-ipoib=N` controls IPoIB interface waiting (set to `-1` to disable on RoCE-only machines).
+
+### What's next
+
+- **Test ibv_devinfo end-to-end**: The sysfs major:minor mismatch and dev gofer access have been fixed but not yet tested on hardware. Need to verify the full discovery → open → ioctl → mmap flow works.
+- **Verify ioctl correctness**: The generic ioctl handler should work for all RDMA_VERBS_IOCTL commands but needs validation with real `ibv_devinfo` / NCCL traces. May need to handle edge cases (e.g. `CAPABILITY_PROBE` returning `ENOSPC` is expected).
+- **NCCL / ib_write_bw testing**: After ibv_devinfo works, test actual RDMA data path workloads. The ib_write_bw sniffer trace below shows the full sequence of ioctls needed: ALLOC_CONTEXT → QUERY_PORT → ALLOC_UAR → CQ CREATE → QP CREATE → MR REG → data path → teardown.
+- **Multi-device support**: Currently only devices explicitly passed via `--device` are available. May need to support passing multiple uverbs devices.
+- **IPoIB interface support**: Dynamic detection and setup of IP-over-InfiniBand interfaces (for native IB fabrics, not RoCE).
+
+### ibv_devinfo strace inside gVisor (discovery working, device open WIP)
+
+This trace shows successful sysfs discovery followed by device open failure (before dev gofer fix):
+```
+socket(AF_NETLINK, SOCK_RAW|SOCK_CLOEXEC, NETLINK_RDMA) = -1 EPROTONOSUPPORT
+openat(AT_FDCWD, "/sys/class/infiniband_verbs", O_RDONLY|O_NONBLOCK|O_CLOEXEC|O_DIRECTORY) = 3
+getdents64(3, ...) = 368                           # found uverbs0..uverbs8 + abi_version
+openat(3, "uverbs0", O_RDONLY|O_CLOEXEC|O_DIRECTORY) = 4
+openat(4, "ibdev", ...) → read → "mlx5_0\n"       # device name
+openat(4, "dev", ...) → read → "231:192\n"         # major:minor (now patched to dynamic major)
+openat(4, "abi_version", ...) → read → "1\n"
+openat(.., "/sys/class/infiniband/mlx5_0/node_type", ...) → "1: CA\n"
+newfstatat(.., "/dev/infiniband/uverbs0", {st_rdev=makedev(0xfe, 0xc0)}) = 0
+# ^^^ major mismatch: sysfs said 231, stat shows 254 → fixed by DynMajor patching
+# After fix, libibverbs proceeds to open() + RDMA_VERBS_IOCTL
+```
 
 ### Host Device Layout (9x mlx5 HCAs on 2x8 H100 node)
 
@@ -394,17 +444,19 @@ NEXT TODO: Expose sysfs for InfiniBand device discovery, then implement uverbs d
 
 **Discovery flow** (from strace of `ibv_devinfo`):
 1. `socket(AF_NETLINK, SOCK_RAW, NETLINK_RDMA)` → fails with `EPROTONOSUPPORT` (expected, gVisor doesn't support this)
-2. Falls back to `openat("/sys/class/infiniband_verbs")` → currently `ENOENT` ← **this is what we need to fix first**
-3. Reads `ibdev`, `abi_version` for each uverbsN
-4. Opens `/dev/infiniband/uverbsN` and issues ioctls
+2. Falls back to `openat("/sys/class/infiniband_verbs")` → ✅ works (virtual sysfs populated)
+3. Reads `ibdev`, `abi_version`, `dev` for each uverbsN → ✅ works (dev patched to dynamic major)
+4. Stats `/dev/infiniband/uverbsN` and matches `st_rdev` against sysfs `dev` → ✅ fixed (DynMajor)
+5. Opens `/dev/infiniband/uverbsN` → ✅ fixed (dev gofer)
+6. Issues `RDMA_VERBS_IOCTL` to alloccate ontext, query device, etc. → implemented (generic handler), needs hardware validation
 
 ### Implementation Steps
 
-1. **Virtual sysfs provider for infiniband** — expose `/sys/class/infiniband_verbs/` and `/sys/class/infiniband/` trees in the sentry (similar to nvproxy's sysfs for `/sys/bus/pci/devices/`)
-2. **uverbs device proxy** — virtual `/dev/infiniband/uverbs0` chardev that intercepts and safety-checks ioctls, using the same pin-translate-forward pattern as TPU proxy for memory registration
-3. **Seccomp allowlist** — permit uverbs ioctl commands through the BPF filter
-4. Add link endpoints that speak InfiniBand verbs
-5. Update [NVProxy](https://github.com/google/gvisor/tree/90faaeb34f23eded12ec65c68af395ac4273c331/pkg/sentry/devices/nvproxy) to isolate RDMA NICs in `NVIDIA_VISIBLE_DEVICES` given OCI config. We may not need this?
+1. ~~**Virtual sysfs provider for infiniband**~~ ✅ — `/sys/class/infiniband_verbs/` and `/sys/class/infiniband/` trees exposed in the sentry via JSON serialization from host. Dynamic major numbers patched into sysfs `dev` files.
+2. ~~**uverbs device proxy**~~ ✅ — `/dev/infiniband/uverbs*` chardev registered with dynamic VFS major. Opens host device via dev gofer. Generic ioctl handler parses `ib_uverbs_ioctl_hdr` + attrs, rewrites sandbox pointers, forwards to host.
+3. ~~**Seccomp allowlist**~~ ✅ — `ioctl` (magic `0x1b`), `mmap` (MAP_SHARED), `munmap`, `openat` permitted through BPF filter when `--rdmaproxy` is enabled.
+4. **Link endpoints for InfiniBand verbs** — not yet started (may not be needed for initial RDMA support since uverbs bypasses the kernel network stack)
+5. **NVProxy integration for RDMA NIC isolation** — not yet started (unclear if needed)
 
 ### Big Questions
 - How do we quickly test RDMA support? What will this look like in the upstream repo? How can we make local development align closely with upstream testing so we don’t have to rewrite the testing suite from scratch?

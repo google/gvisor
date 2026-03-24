@@ -173,6 +173,11 @@ func setupContainerVFS(ctx context.Context, info *containerInfo, mntr *container
 	rootProcArgs.MaxSymlinkTraversals = linux.MaxSymlinkTraversals
 	rootCtx := rootProcArgs.NewContext(mntr.k)
 
+	// Pre-register RDMA devices to obtain dynamic majors before sysfs is
+	// mounted, so the virtual sysfs "dev" files reflect container-side
+	// major:minor values that libibverbs can match against /dev nodes.
+	mntr.preRegisterRDMADevices(info.spec)
+
 	mns, err := mntr.mountAll(rootCtx, rootCreds, info.spec, info.conf, &rootProcArgs)
 	if err != nil {
 		return fmt.Errorf("failed to setupFS: %w", err)
@@ -198,7 +203,7 @@ func setupContainerVFS(ctx context.Context, info *containerInfo, mntr *container
 	mnsRoot := mns.Root(rootCtx)
 	defer mnsRoot.DecRef(rootCtx)
 
-	if err := createDeviceFiles(rootCtx, rootCreds, info, mntr.k.VFS(), mnsRoot); err != nil {
+	if err := createDeviceFiles(rootCtx, rootCreds, info, mntr.k.VFS(), mnsRoot, mntr.rdmaDynMajors); err != nil {
 		return fmt.Errorf("failed to create device files: %w", err)
 	}
 
@@ -398,6 +403,10 @@ type containerMounter struct {
 
 	// rdmaDevices contains pre-collected sysfs data for RDMA devices.
 	rdmaDevices *sys.RDMAData
+
+	// rdmaDynMajors caches dynamic VFS majors for pre-registered RDMA
+	// devices, keyed by host minor number.
+	rdmaDynMajors map[uint32]uint32
 
 	// containerID is the ID for the container.
 	containerID string
@@ -1438,11 +1447,11 @@ func (c *containerMounter) configureRestore(fdmap map[checkpoint.ResourceID]int,
 	return nil
 }
 
-func createDeviceFiles(ctx context.Context, creds *auth.Credentials, info *containerInfo, vfsObj *vfs.VirtualFilesystem, root vfs.VirtualDentry) error {
+func createDeviceFiles(ctx context.Context, creds *auth.Credentials, info *containerInfo, vfsObj *vfs.VirtualFilesystem, root vfs.VirtualDentry, rdmaDynMajors map[uint32]uint32) error {
 	if info.spec.Linux != nil {
 		// Create any device files specified in the spec.
 		for _, dev := range info.spec.Linux.Devices {
-			if err := createDeviceFile(ctx, creds, info, vfsObj, root, dev); err != nil {
+			if err := createDeviceFile(ctx, creds, info, vfsObj, root, dev, rdmaDynMajors); err != nil {
 				return err
 			}
 		}
@@ -1480,7 +1489,7 @@ func createDeviceFiles(ctx context.Context, creds *auth.Credentials, info *conta
 			nvidiaDevs = append(nvidiaDevs, specs.LinuxDevice{Path: fmt.Sprintf("/dev/nvidia%d", minor), Type: "c", Major: nvgpu.NV_MAJOR_DEVICE_NUMBER, Minor: int64(minor)})
 		}
 		for _, nvidiaDev := range nvidiaDevs {
-			if err := createDeviceFile(ctx, creds, info, vfsObj, root, nvidiaDev); err != nil {
+			if err := createDeviceFile(ctx, creds, info, vfsObj, root, nvidiaDev, rdmaDynMajors); err != nil {
 				return err
 			}
 		}
@@ -1488,7 +1497,51 @@ func createDeviceFiles(ctx context.Context, creds *auth.Credentials, info *conta
 	return nil
 }
 
-func createDeviceFile(ctx context.Context, creds *auth.Credentials, info *containerInfo, vfsObj *vfs.VirtualFilesystem, root vfs.VirtualDentry, devSpec specs.LinuxDevice) error {
+// preRegisterRDMADevices registers RDMA devices with the VFS before sysfs is
+// mounted. This ensures the virtual sysfs "dev" files contain the correct
+// sentry-assigned dynamic major numbers rather than the host major numbers.
+func (c *containerMounter) preRegisterRDMADevices(spec *specs.Spec) {
+	if c.rdmaDevices == nil || spec.Linux == nil {
+		return
+	}
+	c.rdmaDynMajors = make(map[uint32]uint32)
+	vfsObj := c.k.VFS()
+	for _, devSpec := range spec.Linux.Devices {
+		if !strings.HasPrefix(devSpec.Path, "/dev/infiniband/uverbs") {
+			continue
+		}
+		minor := uint32(devSpec.Minor)
+		dynMajor, err := rdmaproxy.Register(vfsObj, minor)
+		if err != nil {
+			log.Warningf("rdma: pre-register %s: %v", devSpec.Path, err)
+			continue
+		}
+		c.rdmaDynMajors[minor] = dynMajor
+		log.Infof("rdma: pre-registered %s with dynamic major %d", devSpec.Path, dynMajor)
+	}
+	// Patch RDMAData so sysfs "dev" files reflect container-side majors.
+	for i := range c.rdmaDevices.Devices {
+		dev := &c.rdmaDevices.Devices[i]
+		hostMinorStr := extractUverbsMinor(dev.Name)
+		if hostMinorStr == "" {
+			continue
+		}
+		hostMinor, err := strconv.ParseUint(hostMinorStr, 10, 32)
+		if err != nil {
+			continue
+		}
+		if dynMajor, ok := c.rdmaDynMajors[uint32(hostMinor)]; ok {
+			dev.DynMajor = dynMajor
+		}
+	}
+}
+
+// extractUverbsMinor returns the minor number string from a name like "uverbs0".
+func extractUverbsMinor(name string) string {
+	return strings.TrimPrefix(name, "uverbs")
+}
+
+func createDeviceFile(ctx context.Context, creds *auth.Credentials, info *containerInfo, vfsObj *vfs.VirtualFilesystem, root vfs.VirtualDentry, devSpec specs.LinuxDevice, rdmaDynMajors map[uint32]uint32) error {
 	mode := linux.FileMode(0666)
 	if devSpec.FileMode != nil {
 		mode = linux.FileMode(devSpec.FileMode.Perm())
@@ -1532,12 +1585,16 @@ func createDeviceFile(ctx context.Context, creds *auth.Credentials, info *contai
 			log.Infof("Switching %v device major number from %d to %d", devSpec.Path, devSpec.Major, major)
 		}
 	} else if strings.HasPrefix(devSpec.Path, "/dev/infiniband/uverbs") {
-		dynMajor, err := rdmaproxy.Register(vfsObj, minor)
-		if err != nil {
-			return fmt.Errorf("registering rdma device %s: %w", devSpec.Path, err)
+		if dynMajor, ok := rdmaDynMajors[minor]; ok {
+			major = dynMajor
+		} else {
+			dynMajor, err := rdmaproxy.Register(vfsObj, minor)
+			if err != nil {
+				return fmt.Errorf("registering rdma device %s: %w", devSpec.Path, err)
+			}
+			major = dynMajor
 		}
-		log.Infof("Switching %s device major number from %d to %d", devSpec.Path, major, dynMajor)
-		major = dynMajor
+		log.Infof("Switching %s device major number from %d to %d", devSpec.Path, devSpec.Major, major)
 	} else if devSpec.Path == "/dev/nvidia-uvm" {
 		if info.nvproxyDevInfo.UVMDevMajor != 0 && major != info.nvproxyDevInfo.UVMDevMajor {
 			major = info.nvproxyDevInfo.UVMDevMajor

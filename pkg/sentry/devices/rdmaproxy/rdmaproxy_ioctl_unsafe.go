@@ -59,6 +59,8 @@ func (fd *uverbsFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, ar
 	if cmd == rdmaVerbsIoctl {
 		return fd.handleRDMAVerbsIoctl(t, argPtr)
 	}
+	log.Warningf("rdmaproxy: unhandled ioctl cmd=0x%x (magic=0x%x nr=%d size=%d) on hostFD=%d",
+		cmd, (cmd>>8)&0xff, cmd&0xff, (cmd>>16)&0x3fff, fd.hostFD)
 	return 0, linuxerr.ENOSYS
 }
 
@@ -71,20 +73,32 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 	// Read the base header to learn the total length.
 	var hdrBuf [ibUverbsIoctlHdrSize]byte
 	if _, err := t.CopyInBytes(argPtr, hdrBuf[:]); err != nil {
+		log.Warningf("rdmaproxy: ioctl CopyIn header from %#x: %v", argPtr, err)
 		return 0, err
 	}
 
 	length := binary.LittleEndian.Uint16(hdrBuf[0:2])
+	objectID := binary.LittleEndian.Uint16(hdrBuf[2:4])
+	methodID := binary.LittleEndian.Uint16(hdrBuf[4:6])
 	numAttrs := binary.LittleEndian.Uint16(hdrBuf[6:8])
+	reserved1 := binary.LittleEndian.Uint64(hdrBuf[8:16])
+	driverID := binary.LittleEndian.Uint32(hdrBuf[16:20])
+
+	log.Infof("rdmaproxy: IOCTL hostFD=%d obj=0x%04x method=%d attrs=%d len=%d reserved=%#x driver=%d",
+		fd.hostFD, objectID, methodID, numAttrs, length, reserved1, driverID)
 
 	expectedLen := uint16(ibUverbsIoctlHdrSize) + numAttrs*uint16(ibUverbsAttrSize)
 	if length != expectedLen || length > hostarch.PageSize {
+		log.Warningf("rdmaproxy: ioctl bad header: length=%d expected=%d (numAttrs=%d)",
+			length, expectedLen, numAttrs)
 		return 0, linuxerr.EINVAL
 	}
 
 	// Read the full header + attrs buffer.
 	buf := make([]byte, length)
 	if _, err := t.CopyInBytes(argPtr, buf); err != nil {
+		log.Warningf("rdmaproxy: ioctl CopyIn full buffer (%d bytes) from %#x: %v",
+			length, argPtr, err)
 		return 0, err
 	}
 
@@ -100,32 +114,53 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 
 	for i := 0; i < int(numAttrs); i++ {
 		off := ibUverbsIoctlHdrSize + i*ibUverbsAttrSize
+		attrID := binary.LittleEndian.Uint16(buf[off : off+2])
 		attrLen := binary.LittleEndian.Uint16(buf[off+2 : off+4])
+		attrFlags := binary.LittleEndian.Uint16(buf[off+4 : off+6])
+		attrData := binary.LittleEndian.Uint64(buf[off+8 : off+16])
 
 		if attrLen > ibUverbsAttrInlineMax {
-			dataPtr := binary.LittleEndian.Uint64(buf[off+8 : off+16])
+			log.Infof("rdmaproxy:   attr[%d] id=0x%04x len=%d flags=0x%04x data=ptr:%#016x (rewrite)",
+				i, attrID, attrLen, attrFlags, attrData)
 			sb := make([]byte, attrLen)
-			if _, err := t.CopyInBytes(hostarch.Addr(dataPtr), sb); err != nil {
+			if _, err := t.CopyInBytes(hostarch.Addr(attrData), sb); err != nil {
+				log.Warningf("rdmaproxy:   attr[%d] CopyIn %d bytes from %#x: %v",
+					i, attrLen, attrData, err)
 				return 0, err
+			}
+			if attrLen <= 64 {
+				log.Infof("rdmaproxy:   attr[%d] data: %x", i, sb)
+			} else {
+				log.Infof("rdmaproxy:   attr[%d] data (first 64): %x ...", i, sb[:64])
 			}
 			binary.LittleEndian.PutUint64(buf[off+8:off+16],
 				uint64(uintptr(unsafe.Pointer(&sb[0]))))
 			rewrites = append(rewrites, rewrite{
 				attrOff:  off,
-				origData: dataPtr,
+				origData: attrData,
 				sentry:   sb,
 			})
+		} else {
+			log.Infof("rdmaproxy:   attr[%d] id=0x%04x len=%d flags=0x%04x data=inline:%#016x",
+				i, attrID, attrLen, attrFlags, attrData)
 		}
 	}
+
+	log.Infof("rdmaproxy: forwarding ioctl to host (hostFD=%d, %d rewrites)", fd.hostFD, len(rewrites))
 
 	// Forward to host.
 	n, _, errno := unix.RawSyscall(unix.SYS_IOCTL,
 		uintptr(fd.hostFD), uintptr(rdmaVerbsIoctl),
 		uintptr(unsafe.Pointer(&buf[0])))
 
+	if errno != 0 {
+		log.Infof("rdmaproxy: host ioctl returned n=%d errno=%d (%v)", n, errno, errno)
+	} else {
+		log.Infof("rdmaproxy: host ioctl returned n=%d OK", n)
+	}
+
 	// Copy output data back and restore original pointers.
 	for _, rw := range rewrites {
-		// Always copy back — the host may have written output data.
 		t.CopyOutBytes(hostarch.Addr(rw.origData), rw.sentry)
 		binary.LittleEndian.PutUint64(buf[rw.attrOff+8:rw.attrOff+16], rw.origData)
 	}
@@ -140,7 +175,13 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 
 // ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.
 func (fd *uverbsFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
-	return vfs.GenericProxyDeviceConfigureMMap(&fd.vfsfd, fd, opts)
+	log.Infof("rdmaproxy: mmap hostFD=%d len=%d offset=0x%x perms=%v private=%v",
+		fd.hostFD, opts.Length, opts.Offset, opts.Perms, opts.Private)
+	err := vfs.GenericProxyDeviceConfigureMMap(&fd.vfsfd, fd, opts)
+	if err != nil {
+		log.Warningf("rdmaproxy: mmap hostFD=%d: %v", fd.hostFD, err)
+	}
+	return err
 }
 
 // Translate implements memmap.Mappable.Translate.
