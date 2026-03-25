@@ -463,6 +463,15 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 				})
 			}
 		}
+		if conf.RDMAProxy {
+			// RoCE GID-to-netdev resolution requires setns(CLONE_NEWNET) to
+			// switch into the host network namespace. setns requires
+			// CAP_SYS_ADMIN in both the caller's and target's user namespace.
+			const c = "CAP_SYS_ADMIN"
+			caps.Bounding = append(caps.Bounding, c)
+			caps.Effective = append(caps.Effective, c)
+			caps.Permitted = append(caps.Permitted, c)
+		}
 		argOverride["apply-caps"] = "false"
 
 		// Remove the args that have already been done before calling self.
