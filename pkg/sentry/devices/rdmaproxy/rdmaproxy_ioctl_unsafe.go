@@ -244,7 +244,7 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 		mrMirror, err = fd.prepareMRReg(t, buf, int(numAttrs), objectID, rewrites, writeCmdVal)
 		if err != nil {
 			log.Warningf("rdmaproxy: MR REG page mirroring: %v", err)
-			return 0, err
+			return 0, linuxerr.ENOMEM
 		}
 		if mrMirror != nil {
 			dmaCleanup = cleanup.Make(func() { mrMirror.release(t) })
@@ -255,7 +255,7 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 		cqqpMirror, err = fd.prepareCQQPCreate(t, buf, int(numAttrs), rewrites, action)
 		if err != nil {
 			log.Warningf("rdmaproxy: CQ/QP CREATE page mirroring: %v", err)
-			return 0, err
+			return 0, linuxerr.ENOMEM
 		}
 		if cqqpMirror != nil {
 			dmaCleanup = cleanup.Make(func() { cqqpMirror.release(t) })
@@ -566,12 +566,17 @@ func mirrorSandboxPages(t *kernel.Task, addr, length uint64) (*mirroredPages, ui
 	}
 
 	at := hostarch.ReadWrite
-	prs, err := t.MemoryManager().Pin(t, appAR, at, false /* ignorePermissions */)
+	prs, pinErr := t.MemoryManager().Pin(t, appAR, at, false /* ignorePermissions */)
+	if pinErr != nil {
+		// Pin fails for proxy-device-backed pages (e.g. GPU/UVM memory).
+		// Fall back to the MM's internal mapping mechanism which handles
+		// proxy device pages via Translate + MapInternal.
+		log.Infof("rdmaproxy: mm.Pin failed (%v), trying proxy device fallback", pinErr)
+		return mirrorProxyDevicePages(t, appAR, addr, alignedStart, alignedLen, at)
+	}
+
 	cu := cleanup.Make(func() { mm.Unpin(prs) })
 	defer cu.Clean()
-	if err != nil {
-		return nil, 0, fmt.Errorf("mm.Pin(%#x, %d): %w", alignedStart, alignedLen, err)
-	}
 
 	// Try to get a single contiguous internal mapping.
 	var m uintptr
@@ -622,9 +627,50 @@ func mirrorSandboxPages(t *kernel.Task, addr, length uint64) (*mirroredPages, ui
 	}
 	cu.Release()
 
-	// Adjust for page alignment offset.
 	sentryVA := m + uintptr(addr-uint64(alignedStart))
 	return mp, sentryVA, nil
+}
+
+// mirrorProxyDevicePages handles pages backed by proxy devices (e.g. GPU/UVM
+// memory) where mm.Pin fails. Uses the MM's internal mapping mechanism which
+// resolves proxy device pages via Translate + MapInternal on the host FD.
+func mirrorProxyDevicePages(t *kernel.Task, appAR hostarch.AddrRange, addr uint64, alignedStart hostarch.Addr, alignedLen uint64, at hostarch.AccessType) (*mirroredPages, uintptr, error) {
+	blocks, err := t.MemoryManager().InternalMappingsForRange(t, appAR, at)
+	if err != nil {
+		return nil, 0, fmt.Errorf("InternalMappingsForRange: %w", err)
+	}
+	if len(blocks) == 0 {
+		return nil, 0, fmt.Errorf("InternalMappingsForRange returned no blocks")
+	}
+
+	// Fast path: single contiguous block.
+	if len(blocks) == 1 && blocks[0].Len == alignedLen {
+		log.Infof("rdmaproxy: proxy device mirror: single block at sentry %#x len %d", blocks[0].Addr, blocks[0].Len)
+		m := blocks[0].Addr
+		sentryVA := m + uintptr(addr-uint64(alignedStart))
+		// No prs (not pinned via Pin), no owned mapping (using MM's internal cache).
+		return &mirroredPages{}, sentryVA, nil
+	}
+
+	// Slow path: multiple blocks — mremap into a contiguous region.
+	log.Infof("rdmaproxy: proxy device mirror: %d blocks, building contiguous mapping", len(blocks))
+	m, _, errno := unix.RawSyscall6(unix.SYS_MMAP, 0, uintptr(alignedLen), unix.PROT_NONE, unix.MAP_PRIVATE|unix.MAP_ANONYMOUS, ^uintptr(0), 0)
+	if errno != 0 {
+		return nil, 0, fmt.Errorf("mmap anon %d bytes: %w", alignedLen, errno)
+	}
+	sentryAddr := m
+	for _, blk := range blocks {
+		if _, _, errno := unix.RawSyscall6(unix.SYS_MREMAP, blk.Addr, 0, uintptr(blk.Len), linux.MREMAP_MAYMOVE|linux.MREMAP_FIXED, sentryAddr, 0); errno != 0 {
+			unix.RawSyscall(unix.SYS_MUNMAP, m, uintptr(alignedLen), 0)
+			return nil, 0, fmt.Errorf("mremap %#x→%#x len %d: %w", blk.Addr, sentryAddr, blk.Len, errno)
+		}
+		sentryAddr += uintptr(blk.Len)
+	}
+
+	unix.Syscall(unix.SYS_MADVISE, m, uintptr(alignedLen), unix.MADV_POPULATE_WRITE)
+
+	sentryVA := m + uintptr(addr-uint64(alignedStart))
+	return &mirroredPages{m: m, len: uintptr(alignedLen)}, sentryVA, nil
 }
 
 // extractMRHandle reads the MR handle from the ioctl response after
@@ -843,7 +889,7 @@ func (fd *uverbsFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.
 					mp, sentryVA, err := mirrorSandboxPages(t, sva, length)
 					if err != nil {
 						log.Warningf("rdmaproxy: Write REG_MR mirrorSandboxPages: %v", err)
-						return 0, err
+						return 0, linuxerr.ENOMEM
 					}
 					mrMirror = mp
 					cu = cleanup.Make(func() { mp.release(t) })

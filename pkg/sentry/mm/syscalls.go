@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/futex"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
@@ -1530,6 +1531,37 @@ func (mm *MemoryManager) FindVMARange(addr hostarch.Addr) (hostarch.AddrRange, e
 		return hostarch.AddrRange{}, linuxerr.EFAULT
 	}
 	return vseg.Range(), nil
+}
+
+// InternalMapping represents a sentry-side virtual address range that maps
+// the same physical pages as a sandbox address range.
+type InternalMapping struct {
+	Addr uintptr
+	Len  uint64
+}
+
+// InternalMappingsForRange resolves a sandbox address range to sentry-side
+// virtual addresses. Unlike Pin, this works for proxy-device-backed pages
+// (e.g. GPU/UVM memory) in addition to MemoryFile-backed pages. The returned
+// mappings reference the MM's internal cache and should be mremap'd into
+// a persistent mapping by the caller immediately.
+func (mm *MemoryManager) InternalMappingsForRange(ctx context.Context, ar hostarch.AddrRange, at hostarch.AccessType) ([]InternalMapping, error) {
+	var mappings []InternalMapping
+	_, err := mm.withInternalMappings(ctx, ar, at, false /* ignorePermissions */, func(bs safemem.BlockSeq) (uint64, error) {
+		for !bs.IsEmpty() {
+			b := bs.Head()
+			mappings = append(mappings, InternalMapping{
+				Addr: b.Addr(),
+				Len:  uint64(b.Len()),
+			})
+			bs = bs.Tail()
+		}
+		return uint64(ar.Length()), nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return mappings, nil
 }
 
 // FindVMAByName finds a vma with the specified name and returns its start address and offset.
