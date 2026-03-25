@@ -69,6 +69,7 @@ func New(ctx context.Context, id string, publisher shim.Publisher, cancel func()
 		s.shimAddress = address
 	}
 
+	s.grouping = getEnableGrouping()
 	return s, nil
 }
 
@@ -109,6 +110,9 @@ type service struct {
 	//
 	// Protected by mu.
 	ext extension.TaskServiceExt
+
+	// grouping indicates if shim grouping is enabled.
+	grouping bool
 }
 
 var _ shim.Shim = (*service)(nil)
@@ -290,22 +294,37 @@ func (s *service) Cleanup(ctx context.Context) (*taskapi.DeleteResponse, error) 
 func (s *service) Create(ctx context.Context, r *taskapi.CreateTaskRequest) (*taskapi.CreateTaskResponse, error) {
 	log.L.Debugf("Create, id: %s, bundle: %q", r.ID, r.Bundle)
 
-	// Check if we need to create an extension to intercept calls to the container's shim.
-	if extension.NewExtension != nil {
-		s.mu.Lock()
-		var err error
-		s.ext, err = extension.NewExtension(ctx, s.main, r)
-		if err != nil {
-			s.mu.Unlock()
-			return nil, err
+	s.mu.Lock()
+	if s.grouping {
+		// Create shim extension if required.
+		if s.ext == nil && extension.NewPodExtension != nil {
+			log.L.Infof("Create shim extension per pod")
+			var err error
+			s.ext, err = extension.NewPodExtension(ctx, s.main)
+			if err != nil {
+				log.L.Debugf("Creating shim extension per pod failed with error: %v", err)
+				s.mu.Unlock()
+				return nil, err
+			}
 		}
-		if s.ext == nil {
-			log.L.Debugf("No extension created for container")
-		} else {
-			log.L.Infof("Extension created for container")
+	} else {
+		// Check if we need to create an extension to intercept calls to the container's shim.
+		if extension.NewExtension != nil {
+			log.L.Infof("Create shim extension per container")
+			var err error
+			s.ext, err = extension.NewExtension(ctx, s.main, r)
+			if err != nil {
+				s.mu.Unlock()
+				return nil, err
+			}
 		}
-		s.mu.Unlock()
 	}
+	if s.ext == nil {
+		log.L.Debugf("No extension created")
+	} else {
+		log.L.Infof("Extension created")
+	}
+	s.mu.Unlock()
 
 	resp, err := s.get().Create(ctx, r)
 	return resp, errdefs.ToGRPC(err)
