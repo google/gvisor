@@ -569,10 +569,21 @@ func mirrorSandboxPages(t *kernel.Task, addr, length uint64) (*mirroredPages, ui
 	prs, pinErr := t.MemoryManager().Pin(t, appAR, at, false /* ignorePermissions */)
 	if pinErr != nil {
 		// Pin fails for proxy-device-backed pages (e.g. GPU/UVM memory).
-		// Fall back to the MM's internal mapping mechanism which handles
-		// proxy device pages via Translate + MapInternal.
+		// Try the MM's internal mapping mechanism first.
 		log.Infof("rdmaproxy: mm.Pin failed (%v), trying proxy device fallback", pinErr)
-		return mirrorProxyDevicePages(t, appAR, addr, alignedStart, alignedLen, at)
+		mp, sentryVA, err := mirrorProxyDevicePages(t, appAR, addr, alignedStart, alignedLen, at)
+		if err != nil {
+			// Neither Pin nor InternalMappings resolved the VA. This
+			// happens for GPU device memory (cuMemAlloc) which has no
+			// CPU VMA -- the NVIDIA driver tracks it internally.
+			// Pass the VA through unmirrored: the host kernel's
+			// nvidia-peermem module resolves GPU VAs via the driver's
+			// internal tables, not process page tables. This works
+			// because the sentry holds the NVIDIA driver context.
+			log.Infof("rdmaproxy: proxy device fallback failed (%v), GPU VA passthrough (nvidia-peermem)", err)
+			return nil, uintptr(addr), nil
+		}
+		return mp, sentryVA, nil
 	}
 
 	cu := cleanup.Make(func() { mm.Unpin(prs) })
