@@ -2159,6 +2159,60 @@ TEST_F(JobControlTest, ReuseControllingTTYAfterExit) {
   ASSERT_NO_ERRNO(res2);
 }
 
+// When ISIG is disabled, signal characters (Ctrl-C, Ctrl-Z, Ctrl-\) should
+// be passed through to the reader as ordinary characters, not generate signals.
+// This matches Linux n_tty.c behavior: signal chars are only special when
+// L_ISIG(tty) is true.
+TEST_F(PtyTest, SignalCharPassedThroughWhenISIGDisabled) {
+  // Disable ISIG.
+  struct kernel_termios t = {};
+  EXPECT_THAT(ioctl(replica_.get(), TCGETS, &t), SyscallSucceeds());
+  t.c_lflag &= ~ISIG;
+  // Also disable ICANON so we can read character by character.
+  t.c_lflag &= ~ICANON;
+  t.c_cc[VMIN] = 1;
+  t.c_cc[VTIME] = 0;
+  EXPECT_THAT(ioctl(replica_.get(), TCSETS, &t), SyscallSucceeds());
+
+  // Write Ctrl-C to master.
+  constexpr char kCtrlC = ControlCharacter('C');
+  ASSERT_THAT(WriteFd(master_.get(), &kCtrlC, 1), SyscallSucceedsWithValue(1));
+
+  // The signal character should appear on the replica as a normal byte.
+  char buf = 0;
+  ASSERT_NO_ERRNO(WaitUntilReceived(replica_.get(), 1));
+  ASSERT_THAT(ReadFd(replica_.get(), &buf, 1), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(buf, kCtrlC);
+}
+
+// When ISIG is enabled (default), signal characters should be consumed and
+// NOT passed to the reading process. In Linux, n_tty_receive_signal_char()
+// calls n_tty_flush_buffer_and_wake() which prevents the character from
+// appearing in the read buffer.
+TEST_F(PtyTest, SignalCharConsumedWhenISIGEnabled) {
+  // Ensure ISIG is enabled (it should be by default).
+  struct kernel_termios t = {};
+  EXPECT_THAT(ioctl(replica_.get(), TCGETS, &t), SyscallSucceeds());
+  t.c_lflag |= ISIG;
+  // Disable ICANON for raw reading.
+  t.c_lflag &= ~ICANON;
+  t.c_cc[VMIN] = 1;
+  t.c_cc[VTIME] = 0;
+  EXPECT_THAT(ioctl(replica_.get(), TCSETS, &t), SyscallSucceeds());
+
+  // Write Ctrl-C followed by a normal character.
+  constexpr char kInput[] = {ControlCharacter('C'), 'a'};
+  ASSERT_THAT(WriteFd(master_.get(), kInput, sizeof(kInput)),
+              SyscallSucceedsWithValue(sizeof(kInput)));
+
+  // Only the normal character 'a' should be readable; Ctrl-C should have been
+  // consumed by the signal delivery path.
+  char buf = 0;
+  ASSERT_NO_ERRNO(WaitUntilReceived(replica_.get(), 1));
+  ASSERT_THAT(ReadFd(replica_.get(), &buf, 1), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(buf, 'a');
+}
+
 }  // namespace
 }  // namespace testing
 }  // namespace gvisor
