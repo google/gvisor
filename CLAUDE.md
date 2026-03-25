@@ -524,13 +524,34 @@ host ioctl returned n=0 OK
 
 **Bug fixed**: `kernel.ExtractErrno` panicked on the raw Go error from `mm.Pin`. Error handling now returns `linuxerr.ENOMEM` instead of the raw error.
 
+### NCCL initialization working on H200 (March 25)
+
+NCCL all-reduce benchmark (`all_reduce_perf -g 2`) running inside gVisor with 2x H200 GPUs, 10 mlx5 HCAs, forced IB transport:
+
+- **NCCL 2.29.7** initialized, detected all 10 mlx5 RoCE NICs
+- **GPUDirect RDMA Enabled** for all HCAs on both ranks
+- **ncclCommInitRankConfig - Init COMPLETE** for both rank 0 and rank 1
+- 8 channels configured, proxy services started
+- NCCL treated the 2 GPUs as 2 separate "nodes" (`nNodes 2`) due to `NCCL_P2P_DISABLE=1`, using IB transport for all communication
+
+**Current blocker**: `/dev/shm` too small (Docker default is 64MB, NCCL needs ~34MB for proxy shared memory buffers). Fix: `--shm-size=1g`.
+
+**Non-fatal warnings**: `ibv_get_async_event failed` on each device open — NCCL's event polling threads hit a minor rdmaproxy gap but continued past them.
+
+Runtime flags for NCCL testing:
+```bash
+sudo docker run --runtime=runsc-rdma --rm --gpus all $DEVS \
+  --ulimit memlock=-1:-1 --shm-size=1g \
+  -e NCCL_DEBUG=INFO -e NCCL_P2P_DISABLE=1 -e NCCL_SHM_DISABLE=1 \
+  -e NCCL_NET_GDR_LEVEL=3 \
+  nccl-test all_reduce_perf -b 8 -e 128M -f 2 -g 2
+```
+
 ### What's next
 
-**Immediate — NCCL all-reduce**: nvproxy + rdmaproxy coexistence is confirmed working. Remaining:
-- Build Docker image with nccl-tests (CUDA + NCCL + rdma-core)
-- Test single-node NCCL with IB transport forced (`NCCL_P2P_DISABLE=1 NCCL_SHM_DISABLE=1 NCCL_NET_GDR_LEVEL=0`)
-- Test multi-node NCCL between two H200 nodes
-- Potentially need `/dev/infiniband/rdma_cm` passthrough for NCCL connection setup
+- **Re-run NCCL with `--shm-size=1g`** — the only remaining blocker for single-node all-reduce
+- **Multi-node NCCL** between two H200 nodes (real inter-node RDMA data path)
+- **`ibv_get_async_event`** — fix or suppress the async event polling warning (non-blocking)
 
 ### RDMA data path — full ioctl sequence (from ib_write_bw sniffer trace)
 
@@ -556,9 +577,12 @@ Confirmed working on H200 (March 25) — page mirroring for DMA buffers:
 Confirmed working on H200 (March 25) — GPUDirect RDMA:
 14. **GPU MR REG** — ✅ GPU VA passthrough via nvidia-peermem (no mirroring needed for device memory)
 
-Not yet tested:
-15. **Data path** — doorbell writes + NIC DMA. No ioctls; depends on MR REG + mmap + CQ/QP working.
-16. **Teardown** — DEALLOC_UAR, munmap, close (basic teardown confirmed via `cq_qp_test` cleanup path).
+NCCL init exercised (March 25) — full verbs lifecycle through NCCL:
+15. **NCCL CommInitRank** — ✅ NCCL opened all 10 devices, allocated PDs, registered GPU MRs (GPUDirect), created CQ/QPs, built 8 channels
+
+Blocked by /dev/shm size (not rdmaproxy):
+16. **NCCL data path** — all-reduce with IB transport. NCCL init passed, proxy setup failed on shm allocation (fix: `--shm-size=1g`)
+17. **Teardown** — DEALLOC_UAR, munmap, close (basic teardown confirmed via `cq_qp_test` cleanup path).
 
 ### Test commands
 
@@ -576,6 +600,17 @@ sudo docker run --runtime=runsc-rdma --rm $DEVS cqqp-test cq_qp_test
 sudo docker build -f Dockerfile.gdrtest -t gdr-test .
 DEVS=$(ls /dev/infiniband/uverbs* | sed 's/^/--device=/' | tr '\n' ' ')
 sudo docker run --runtime=runsc-rdma --rm --gpus all $DEVS --ulimit memlock=-1:-1 gdr-test gdr_test
+```
+
+**nccl all-reduce** (validates full NCCL data path with GPUDirect RDMA):
+```bash
+sudo docker build -f Dockerfile.nccl -t nccl-test .
+DEVS=$(ls /dev/infiniband/uverbs* | sed 's/^/--device=/' | tr '\n' ' ')
+sudo docker run --runtime=runsc-rdma --rm --gpus all $DEVS \
+  --ulimit memlock=-1:-1 --shm-size=1g \
+  -e NCCL_DEBUG=INFO -e NCCL_P2P_DISABLE=1 -e NCCL_SHM_DISABLE=1 \
+  -e NCCL_NET_GDR_LEVEL=3 \
+  nccl-test all_reduce_perf -b 8 -e 128M -f 2 -g 2
 ```
 
 **mr_test** (validates MR registration pipeline):
