@@ -391,19 +391,17 @@ func (fd *uverbsFD) classifyIoctl(buf []byte, numAttrs int, objectID, methodID u
 			return actionMRDereg, 0
 		}
 	case uverbsObjectCQ:
-		if methodID == uverbsMethodCoreCreate {
+		// Method IDs vary across kernel versions, so detect CREATE vs
+		// DESTROY by the presence of the mlx5 driver input attr.
+		if hasAttrID(buf, numAttrs, mlx5DriverAttrIn) {
 			return actionCQCreate, 0
 		}
-		if methodID == 0 {
-			return actionCQDestroy, 0
-		}
+		return actionCQDestroy, 0
 	case uverbsObjectQP:
-		if methodID == uverbsMethodCoreCreate {
+		if hasAttrID(buf, numAttrs, mlx5DriverAttrIn) {
 			return actionQPCreate, 0
 		}
-		if methodID == 0 {
-			return actionQPDestroy, 0
-		}
+		return actionQPDestroy, 0
 	}
 
 	// Legacy path: INVOKE_WRITE on DEVICE object.
@@ -425,6 +423,18 @@ func (fd *uverbsFD) classifyIoctl(buf []byte, numAttrs int, objectID, methodID u
 		}
 	}
 	return actionNone, 0
+}
+
+// hasAttrID returns true if any attr in the ioctl buffer has the given ID.
+func hasAttrID(buf []byte, numAttrs int, targetID uint16) bool {
+	for i := 0; i < numAttrs; i++ {
+		off := ibUverbsIoctlHdrSize + i*ibUverbsAttrSize
+		attrID := binary.LittleEndian.Uint16(buf[off : off+2])
+		if attrID == targetID {
+			return true
+		}
+	}
+	return false
 }
 
 // findInlineAttr finds an attr by ID where CopyIn failed (inline data) and
