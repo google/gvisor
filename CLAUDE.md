@@ -657,7 +657,7 @@ grep 'rdmaproxy' /tmp/runsc-rdma/logs/$BOOTLOG
 8. **Link endpoints for InfiniBand verbs** — not needed. uverbs bypasses the kernel network stack; NIC DMA is direct.
 9. **NVProxy integration for RDMA NIC isolation** — not started (lower priority; multi-tenant NIC isolation)
 
-### Current Status: What Works, What Doesn't (March 25, 2026)
+### Current Status (March 25, 2026)
 
 **Working end-to-end:**
 - `ib_write_bw` / `ib_read_bw` with `--network=host` ✅
@@ -665,57 +665,61 @@ grep 'rdmaproxy' /tmp/runsc-rdma/logs/$BOOTLOG
 - All uverbs operations: ALLOC_PD, ALLOC_CONTEXT, CREATE_CQ, CREATE_QP, REG_MR, DEREG_MR, DESTROY_*, QUERY_PORT, QUERY_GID
 - mmap of doorbell pages, CQ/QP buffers, UAR pages
 - GPUDirect RDMA via nvidia-peermem (MR REG of GPU memory)
+- **NCCL all_reduce_perf with `NCCL_NET_GDR_LEVEL=0` (TCP/Socket transport) — ✅ EXIT=0**
+  - Bootstrap, channel setup, data transfer (8B–1MB), destroy all complete
+  - Uses `NET/Socket` transport (TCP via hostinet), not RDMA verbs
+  - Avg bus bandwidth ~0.045 GB/s (expected for TCP fallback)
 
-**Not working: NCCL all_reduce_perf with `--network=host`**
+**Not working: NCCL all_reduce_perf with `NCCL_NET_GDR_LEVEL=3` (GPUDirect RDMA)**
 
-The gap is **NCCL bootstrap TCP socket creation**, not RDMA. NCCL calls `getifaddrs()` (glibc → `AF_NETLINK` → `RTM_GETADDR`) to find a network interface for its bootstrap TCP connection. This fails with "no socket interface found."
+NCCL hangs after channel setup when using `NET/IB/*/GDRDMA` transport. Last log line before hang:
+```
+Channel 07/0 : 1[1] -> 0[0] [send] via NET/IB/4/GDRDMA
+```
+Bootstrap succeeds, QPs are created, but actual RDMA data transfer never completes. The hang indicates RDMA send is posted but CQ completion never arrives. Likely cause: GPU memory registered via nvidia-peermem passthrough (where `mm.Pin()` fails and VA is passed unmirrored) may not resolve correctly when NCCL's IB plugin does the MR REG — the sentry address space doesn't contain a mapping for the GPU VA, so the kernel can't pin the pages for DMA.
 
-### Root Cause Analysis: Namespace Constraints
+### Required Runtime Configuration
 
-The sandbox ALWAYS runs in a **user namespace** (`sandbox.go:1162`). This constrains networking.
+Docker's `--network=host` and gVisor's `--network=host` are **separate flags**. Docker's flag skips the network namespace, but gVisor still defaults to netstack (`--network=sandbox`). The runsc runtime MUST have `--network=host` in its args:
 
-**Why `--network=host` is required for RoCE:**
-- `ibv_modify_qp` (INIT→RTR) calls `rdma_read_gid_attr_ndev_rcu()` in the kernel
-- Checks `net_eq(dev_net(gid_ndev), gid_attr->net)` — GID's physical NIC must be in caller's netns
-- Bridge networking: sentry is in container netns, physical NIC absent → ENODEV (errno 19)
-- `--network=host`: sentry inherits host netns → check passes
-
-**Why `setns()` cannot fix bridge networking:**
-- Sandbox is in a child user namespace
-- `setns(CLONE_NEWNET)` requires `CAP_SYS_ADMIN` in the **init user namespace**
-- Child userns caps don't grant init userns privileges — fundamental Linux boundary
-- `--privileged` grants caps to app inside gVisor, not the sentry itself
-
-**Why link endpoints (XDP/IPoIB-style) cannot fix it:**
-- Kernel checks exact physical `struct net_device *` pointer in GID table
-- Virtual interface with same IP doesn't satisfy `net_eq()` — identity check, not IP lookup
-
-### The Remaining Gap: `getifaddrs()` in hostinet
-
-With `--network=host`, gVisor uses **hostinet**. RDMA works. But NCCL bootstrap fails because `getifaddrs()` returns no interfaces.
-
-**Data pipeline for `getifaddrs()`:**
-1. glibc: `socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE)` → gVisor virtual Netlink (`pkg/sentry/socket/netlink/`)
-2. `RTM_GETLINK` → `route.dumpLinks()` → `hostinet.Stack.Interfaces()` → sentry `syscall.NetlinkRIB` to host
-3. `RTM_GETADDR` → `route.dumpAddrs()` → `hostinet.Stack.InterfaceAddrs()` → sentry `syscall.NetlinkRIB` to host
-4. glibc assembles `struct ifaddrs` from responses
-
-**All pieces exist** — virtual Netlink provider, NETLINK_ROUTE protocol, hostinet Stack methods, seccomp allowlist. Something is broken in the data flow.
-
-**Diagnostic steps:**
-```bash
-# Does /proc/net/dev show interfaces? (uses same Stack.Interfaces())
-docker run --runtime=runsc-rdma --network=host --rm --entrypoint cat nccl-test /proc/net/dev
-
-# Sentry logs for interface errors
-cat /tmp/runsc-rdma/logs/*.log* | grep -iE "(interface|netlink|InterfaceAddr|could not)" | tail -20
+```json
+{
+  "runtimes": {
+    "runsc-rdma": {
+      "path": "/usr/local/bin/runsc",
+      "runtimeArgs": [
+        "--network=host",
+        "--rdmaproxy",
+        "--nvproxy",
+        "--rdma-expected-ipoib=-1",
+        "--debug",
+        "--debug-log=/tmp/runsc-rdma/logs/"
+      ]
+    }
+  }
+}
 ```
 
-### Path to Working NCCL All-Reduce
+Without `--network=host` in runsc args, gVisor uses netstack which has zero interfaces → `getifaddrs()` returns empty → NCCL bootstrap fails with "no socket interface found."
 
-1. **Diagnose** why `getifaddrs()` returns empty inside gVisor+hostinet
-2. **Fix** the broken link in the Netlink→hostinet pipeline
-3. **Re-test** `all_reduce_perf -b 8 -e 128M -f 2 -g 2` with `--network=host`
+### Namespace Constraints (Why `--network=host` is Required for RoCE)
+
+The sandbox ALWAYS runs in a **user namespace** (`sandbox.go:1162`).
+
+- `ibv_modify_qp` (INIT→RTR) checks `net_eq(dev_net(gid_ndev), gid_attr->net)` — GID's physical NIC must be in caller's netns
+- Bridge networking: sentry is in container netns, physical NIC absent → ENODEV (errno 19)
+- `--network=host`: sentry inherits host netns → check passes
+- `setns()` cannot fix bridge networking: sandbox is in a child user namespace; `setns(CLONE_NEWNET)` requires `CAP_SYS_ADMIN` in the **init user namespace**, which child userns caps cannot grant
+- Link endpoints (XDP/IPoIB-style) cannot fix it: kernel checks exact `struct net_device *` pointer identity, not IP
+
+### Path to Working NCCL All-Reduce over RDMA
+
+1. ~~Diagnose bootstrap~~ ✅ — fixed by adding `--network=host` to runsc runtime args
+2. ~~NCCL all_reduce with TCP fallback~~ ✅ — `NCCL_NET_GDR_LEVEL=0` completes successfully
+3. **Fix GPUDirect RDMA hang** — investigate why MR REG of GPU memory hangs NCCL's IB transport. The nvidia-peermem VA passthrough in `mirrorSandboxPages()` works for `ib_write_bw` (which uses host memory) but NCCL registers GPU-allocated buffers (`cuMemAlloc`) where the sentry has no VMA. Need to check:
+   - Whether NCCL's MR REG ioctls for GPU memory are reaching the host correctly
+   - Whether the sentry logs show errors during the GDRDMA path
+   - Whether a simpler GPUDirect test (like `ib_write_bw` with GPU memory) also hangs
 4. **Multi-node**: test `ib_write_bw` across two sandboxed containers
 
 ### Big Questions
