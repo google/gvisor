@@ -1,5 +1,5 @@
 FROM nvidia/cuda:12.4.1-devel-ubuntu22.04
-RUN apt-get update -qq && apt-get install -yqq --no-install-recommends \
+RUN apt-get update -qq && apt-get install -yqq --allow-change-held-packages --no-install-recommends \
     libibverbs-dev librdmacm-dev ibverbs-utils \
     libnccl2 libnccl-dev \
     git make gcc g++ && \
