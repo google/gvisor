@@ -1,0 +1,5 @@
+FROM ubuntu:22.04
+RUN apt-get update -qq && apt-get install -yqq --no-install-recommends \
+    libibverbs-dev gcc libc6-dev && rm -rf /var/lib/apt/lists/*
+COPY cq_qp_test.c /tmp/cq_qp_test.c
+RUN gcc -o /usr/local/bin/cq_qp_test /tmp/cq_qp_test.c -libverbs && rm /tmp/cq_qp_test.c
