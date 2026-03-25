@@ -32,6 +32,14 @@ func Filters() seccomp.SyscallRules {
 			seccomp.NonNegativeFD{},
 			seccomp.MaskedEqual(0xFF00, 0x1B00),
 		},
+		// write/read forward the legacy uverbs command interface and
+		// async event reads to the host fd.
+		unix.SYS_WRITE: seccomp.PerArg{
+			seccomp.NonNegativeFD{},
+		},
+		unix.SYS_READ: seccomp.PerArg{
+			seccomp.NonNegativeFD{},
+		},
 		unix.SYS_MMAP: seccomp.PerArg{
 			seccomp.AnyValue{},
 			seccomp.AnyValue{},

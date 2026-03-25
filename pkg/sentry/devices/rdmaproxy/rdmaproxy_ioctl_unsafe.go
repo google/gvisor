@@ -534,6 +534,154 @@ func (fd *uverbsFD) extractDeregMRHandle(buf []byte, numAttrs int, objectID uint
 	return 0
 }
 
+// Write implements vfs.FileDescriptionImpl.Write.
+// This handles the legacy uverbs write() command interface where rdma-core
+// sends commands like ALLOC_PD, REG_MR, DEREG_MR via write() on the fd.
+func (fd *uverbsFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
+	t := kernel.TaskFromContext(ctx)
+	if t == nil {
+		return 0, linuxerr.EINVAL
+	}
+
+	size := src.NumBytes()
+	if size < 8 {
+		return 0, linuxerr.EINVAL
+	}
+
+	data := make([]byte, size)
+	if _, err := src.CopyIn(ctx, data); err != nil {
+		return 0, err
+	}
+
+	rawCmd := binary.LittleEndian.Uint32(data[0:4])
+	cmdBase := rawCmd & 0x7FFFFFFF
+	isExtended := rawCmd&0x80000000 != 0
+	inWords := binary.LittleEndian.Uint16(data[4:6])
+	outWords := binary.LittleEndian.Uint16(data[6:8])
+
+	log.Infof("rdmaproxy: Write cmd=%d extended=%v in_words=%d out_words=%d len=%d",
+		cmdBase, isExtended, inWords, outWords, size)
+
+	// Response pointer is always at byte offset 8 (first field of the
+	// command-specific struct for non-extended, or the ex_hdr for extended).
+	// Rewrite it to a sentry-side buffer so the host kernel's copy_to_user
+	// writes into our address space rather than the sandbox.
+	var origResp uint64
+	var respBuf []byte
+	if outWords > 0 && size >= 16 {
+		origResp = binary.LittleEndian.Uint64(data[8:16])
+		respLen := int(outWords) * 4
+		respBuf = make([]byte, respLen)
+		binary.LittleEndian.PutUint64(data[8:16],
+			uint64(uintptr(unsafe.Pointer(&respBuf[0]))))
+		log.Infof("rdmaproxy: Write cmd=%d resp rewrite %#x → sentry (%d bytes)",
+			cmdBase, origResp, respLen)
+	}
+
+	// REG_MR: mirror sandbox pages into the sentry so pin_user_pages works.
+	var mrMirror *mirroredPages
+	var cu cleanup.Cleanup
+	defer cu.Clean()
+
+	if cmdBase == ibUserVerbsCmdRegMR && !isExtended {
+		// Non-extended ib_uverbs_reg_mr layout after 8-byte cmd_hdr:
+		//   +0: response (8)  +8: start (8)  +16: length (8)  +24: hca_va (8)
+		const startOff, lengthOff, hcaVAOff = 16, 24, 32
+		if size >= hcaVAOff+8 {
+			sva := binary.LittleEndian.Uint64(data[startOff : startOff+8])
+			length := binary.LittleEndian.Uint64(data[lengthOff : lengthOff+8])
+			log.Infof("rdmaproxy: Write REG_MR va=%#x len=%d", sva, length)
+
+			if length > 0 {
+				mp, sentryVA, err := mirrorSandboxPages(t, sva, length)
+				if err != nil {
+					log.Warningf("rdmaproxy: Write REG_MR mirrorSandboxPages: %v", err)
+					return 0, err
+				}
+				mrMirror = mp
+				cu = cleanup.Make(func() { mp.release(t) })
+				binary.LittleEndian.PutUint64(data[startOff:startOff+8], uint64(sentryVA))
+				log.Infof("rdmaproxy: Write REG_MR rewrite start %#x → sentry %#x (hca_va=%#x)",
+					sva, sentryVA,
+					binary.LittleEndian.Uint64(data[hcaVAOff:hcaVAOff+8]))
+			}
+		}
+	}
+
+	// Forward write to host fd.
+	n, _, errno := unix.RawSyscall(unix.SYS_WRITE,
+		uintptr(fd.hostFD),
+		uintptr(unsafe.Pointer(&data[0])),
+		uintptr(size))
+	if errno != 0 {
+		log.Warningf("rdmaproxy: Write to host: n=%d errno=%d (%v)", n, errno, errno)
+		return 0, errno
+	}
+	log.Infof("rdmaproxy: Write to host returned %d OK (cmd=%d)", n, cmdBase)
+
+	// Copy response back to sandbox.
+	if respBuf != nil && origResp != 0 {
+		if _, err := t.CopyOutBytes(hostarch.Addr(origResp), respBuf); err != nil {
+			log.Warningf("rdmaproxy: Write response CopyOut to %#x: %v", origResp, err)
+		}
+		// Restore original response pointer in case the buffer is inspected.
+		binary.LittleEndian.PutUint64(data[8:16], origResp)
+	}
+
+	// On REG_MR success, track the mirror keyed by MR handle.
+	if errno == 0 && mrMirror != nil && respBuf != nil && len(respBuf) >= 4 {
+		mrHandle := binary.LittleEndian.Uint32(respBuf[0:4])
+		fd.mu.Lock()
+		if fd.pinnedMRs == nil {
+			fd.pinnedMRs = make(map[uint32]*mirroredPages)
+		}
+		fd.pinnedMRs[mrHandle] = mrMirror
+		fd.mu.Unlock()
+		cu.Release()
+		log.Infof("rdmaproxy: Write REG_MR pinned handle=%d (%d ranges)", mrHandle, len(mrMirror.prs))
+	}
+
+	// On DEREG_MR success, release the pinned pages.
+	if errno == 0 && cmdBase == ibUserVerbsCmdDeregMR && !isExtended {
+		// ib_uverbs_dereg_mr: __u32 mr_handle at byte offset 8
+		if size >= 12 {
+			mrHandle := binary.LittleEndian.Uint32(data[8:12])
+			fd.mu.Lock()
+			if mp, ok := fd.pinnedMRs[mrHandle]; ok {
+				delete(fd.pinnedMRs, mrHandle)
+				fd.mu.Unlock()
+				mp.release(t)
+				log.Infof("rdmaproxy: Write DEREG_MR unpinned handle=%d", mrHandle)
+			} else {
+				fd.mu.Unlock()
+			}
+		}
+	}
+
+	return int64(n), nil
+}
+
+// Read implements vfs.FileDescriptionImpl.Read.
+// Forwards reads to the host fd (used for async event notifications).
+func (fd *uverbsFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
+	buf := make([]byte, dst.NumBytes())
+	n, _, errno := unix.RawSyscall(unix.SYS_READ,
+		uintptr(fd.hostFD),
+		uintptr(unsafe.Pointer(&buf[0])),
+		uintptr(len(buf)))
+	if errno != 0 {
+		if errno == unix.EAGAIN || errno == unix.EWOULDBLOCK {
+			return 0, linuxerr.ErrWouldBlock
+		}
+		return 0, errno
+	}
+	if n == 0 {
+		return 0, nil
+	}
+	written, err := dst.CopyOut(ctx, buf[:n])
+	return int64(written), err
+}
+
 // ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.
 func (fd *uverbsFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
 	log.Infof("rdmaproxy: mmap hostFD=%d len=%d offset=0x%x perms=%v private=%v",
