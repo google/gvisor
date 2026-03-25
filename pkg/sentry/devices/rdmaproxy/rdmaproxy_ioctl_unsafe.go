@@ -51,9 +51,10 @@ const (
 
 // UVERBS method IDs.
 const (
-	uverbsMethodInvokeWrite = 0 // DEVICE object
-	uverbsMethodMRDestroy   = 1 // MR object
-	uverbsMethodRegMR       = 5 // MR object (modern path)
+	uverbsMethodInvokeWrite = 0  // DEVICE object
+	uverbsMethodMRDestroy   = 1  // MR object
+	uverbsMethodRegMR       = 5  // MR object (modern path)
+	uverbsMethodCoreCreate  = 64 // UVERBS_API_METHOD_KEY_NUM_CORE — CREATE for CQ, QP, etc.
 )
 
 // INVOKE_WRITE attr IDs.
@@ -390,10 +391,16 @@ func (fd *uverbsFD) classifyIoctl(buf []byte, numAttrs int, objectID, methodID u
 			return actionMRDereg, 0
 		}
 	case uverbsObjectCQ:
+		if methodID == uverbsMethodCoreCreate {
+			return actionCQCreate, 0
+		}
 		if methodID == 0 {
 			return actionCQDestroy, 0
 		}
 	case uverbsObjectQP:
+		if methodID == uverbsMethodCoreCreate {
+			return actionQPCreate, 0
+		}
 		if methodID == 0 {
 			return actionQPDestroy, 0
 		}
@@ -718,14 +725,23 @@ func (fd *uverbsFD) prepareCQQPCreate(t *kernel.Task, buf []byte, numAttrs int, 
 }
 
 // extractCQQPHandle reads the CQ or QP handle from the ioctl response after
-// a successful CREATE (INVOKE_WRITE path: handle is first __u32 of CORE_OUT).
+// a successful CREATE.
 func (fd *uverbsFD) extractCQQPHandle(buf []byte, numAttrs int, objectID uint16, rewrites []attrRewrite) uint32 {
 	if objectID == uverbsObjectDevice {
+		// INVOKE_WRITE: handle is first __u32 of CORE_OUT.
 		rw := findRewrite(buf, numAttrs, rewrites, uverbsAttrCoreOut)
 		if rw == nil || len(rw.sentry) < 4 {
 			return 0
 		}
 		return binary.LittleEndian.Uint32(rw.sentry[0:4])
+	}
+	// Modern path: handle in attr id=0 data field (IDR output, written by kernel).
+	for i := 0; i < numAttrs; i++ {
+		off := ibUverbsIoctlHdrSize + i*ibUverbsAttrSize
+		attrID := binary.LittleEndian.Uint16(buf[off : off+2])
+		if attrID == 0 {
+			return uint32(binary.LittleEndian.Uint64(buf[off+8 : off+16]))
+		}
 	}
 	return 0
 }
