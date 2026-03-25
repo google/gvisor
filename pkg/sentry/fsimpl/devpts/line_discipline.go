@@ -494,15 +494,28 @@ func (*inputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte)
 				cBytes[0] = '\r'
 			}
 		case l.termios.ControlCharacters[linux.VINTR]: // ctrl-c
-			// The input queue is reading from the master TTY and
-			// writing to the replica TTY which is connected to the
-			// interactive program (like bash). We want to send the
-			// signal the process connected to the replica TTY.
-			l.terminal.replicaKTTY.SignalForegroundProcessGroup(kernel.SignalInfoPriv(linux.SIGINT))
+			if l.termios.LEnabled(linux.ISIG) {
+				l.terminal.replicaKTTY.SignalForegroundProcessGroup(kernel.SignalInfoPriv(linux.SIGINT))
+				// In Linux, signal characters are consumed and not passed to
+				// the reading process. See n_tty.c:n_tty_receive_signal_char().
+				buf = buf[size:]
+				ret += size
+				continue
+			}
 		case l.termios.ControlCharacters[linux.VSUSP]: // ctrl-z
-			l.terminal.replicaKTTY.SignalForegroundProcessGroup(kernel.SignalInfoPriv(linux.SIGTSTP))
+			if l.termios.LEnabled(linux.ISIG) {
+				l.terminal.replicaKTTY.SignalForegroundProcessGroup(kernel.SignalInfoPriv(linux.SIGTSTP))
+				buf = buf[size:]
+				ret += size
+				continue
+			}
 		case l.termios.ControlCharacters[linux.VQUIT]: // ctrl-\
-			l.terminal.replicaKTTY.SignalForegroundProcessGroup(kernel.SignalInfoPriv(linux.SIGQUIT))
+			if l.termios.LEnabled(linux.ISIG) {
+				l.terminal.replicaKTTY.SignalForegroundProcessGroup(kernel.SignalInfoPriv(linux.SIGQUIT))
+				buf = buf[size:]
+				ret += size
+				continue
+			}
 
 		// In canonical mode, some characters need to be handled specially; for example, backspace.
 		// This roughly aligns with n_tty.c:n_tty_receive_char_canon and n_tty.c:eraser
