@@ -127,34 +127,26 @@ func CollectRDMADeviceData() *RDMAData {
 					SMSL:      readSysfsFile(path.Join(portDir, "sm_sl")),
 					CapMask:   readSysfsFile(path.Join(portDir, "cap_mask")),
 				}
-			gidsPath := path.Join(portDir, "gids")
-			typesPath := path.Join(portDir, "gid_attrs", "types")
-			gidDents, gerr := os.ReadDir(gidsPath)
-			if gerr != nil {
-				log.Infof("rdma collect:     gids dir %s: %v", gidsPath, gerr)
-			} else {
-				typeDents, terr := os.ReadDir(typesPath)
-				log.Infof("rdma collect:     gids dir: %d entries, types dir: %d entries (err=%v)",
-					len(gidDents), len(typeDents), terr)
-				for _, gidDent := range gidDents {
-					gidVal := readSysfsFile(path.Join(gidsPath, gidDent.Name()))
-					typePath := path.Join(typesPath, gidDent.Name())
-					typeVal := readSysfsFile(typePath)
-					if gidVal == "" {
-						continue
+				gidsPath := path.Join(portDir, "gids")
+				typesPath := path.Join(portDir, "gid_attrs", "types")
+				gidDents, gerr := os.ReadDir(gidsPath)
+				if gerr == nil {
+					for _, gidDent := range gidDents {
+						gidVal := readSysfsFile(path.Join(gidsPath, gidDent.Name()))
+						typeVal := readSysfsFile(path.Join(typesPath, gidDent.Name()))
+						if gidVal == "" {
+							continue
+						}
+						if typeVal == "" && pd.LinkLayer == "Ethernet" {
+							typeVal = inferRoCEType(gidVal)
+						}
+						pd.GIDs = append(pd.GIDs, RDMAGIDEntry{
+							Index: gidDent.Name(),
+							GID:   gidVal,
+							Type:  typeVal,
+						})
 					}
-					if typeVal == "" {
-						typeRaw, readErr := os.ReadFile(typePath)
-						log.Infof("rdma collect:     gid[%s] type EMPTY: path=%s readErr=%v rawLen=%d",
-							gidDent.Name(), typePath, readErr, len(typeRaw))
-					}
-					pd.GIDs = append(pd.GIDs, RDMAGIDEntry{
-						Index: gidDent.Name(),
-						GID:   gidVal,
-						Type:  typeVal,
-					})
 				}
-			}
 				log.Infof("rdma collect:   port %s: state=%q link_layer=%q rate=%q gids=%d",
 					pd.Number, pd.State, pd.LinkLayer, pd.Rate, len(pd.GIDs))
 				dev.Ports = append(dev.Ports, pd)
@@ -197,11 +189,6 @@ func DeserializeRDMAData(filePath string) *RDMAData {
 		log.Warningf("rdma deserialize: unmarshal %s: %v", filePath, err)
 		return nil
 	}
-	snippet := string(b)
-	if len(snippet) > 500 {
-		snippet = snippet[:500] + "..."
-	}
-	log.Infof("rdma deserialize: raw JSON (%d bytes): %s", len(b), snippet)
 	log.Infof("rdma deserialize: loaded %d device(s) from %s (verbs_abi=%q)",
 		len(data.Devices), filePath, data.VerbsABIVersion)
 	for _, d := range data.Devices {
@@ -216,10 +203,6 @@ func DeserializeRDMAData(filePath string) *RDMAData {
 			}
 			log.Infof("rdma deserialize:   %s port %s: %d gids, %d with types",
 				d.IBDev, p.Number, len(p.GIDs), typesWithValues)
-			if len(p.GIDs) > 0 {
-				log.Infof("rdma deserialize:     first: idx=%q gid=%q type=%q",
-					p.GIDs[0].Index, p.GIDs[0].GID, p.GIDs[0].Type)
-			}
 		}
 	}
 	return &data
@@ -231,6 +214,23 @@ func extractMinor(dev string) string {
 		return dev[idx+1:]
 	}
 	return "0"
+}
+
+const allZeroGID = "0000:0000:0000:0000:0000:0000:0000:0000"
+
+// inferRoCEType guesses the RoCE GID type when the host sysfs
+// gid_attrs/types/ files are not readable (e.g. restricted sysfs mount).
+// For mlx5 Ethernet (RoCE) devices the kernel assigns:
+//   - link-local GIDs (fe80::) → RoCE v1
+//   - all other non-zero GIDs  → RoCE v2
+func inferRoCEType(gid string) string {
+	if gid == allZeroGID || gid == "" {
+		return ""
+	}
+	if strings.HasPrefix(gid, "fe80:") {
+		return "IB/RoCE v1"
+	}
+	return "RoCE v2"
 }
 
 func readSysfsFile(filePath string) string {
@@ -304,20 +304,20 @@ func (fs *filesystem) newRDMASysfsEntries(ctx context.Context, creds *auth.Crede
 				addFile(portEntries, "sm_lid", port.SMLID)
 				addFile(portEntries, "sm_sl", port.SMSL)
 				addFile(portEntries, "cap_mask", port.CapMask)
-			if len(port.GIDs) > 0 {
-				gidsEntries := map[string]kernfs.Inode{}
-				typesEntries := map[string]kernfs.Inode{}
-				for _, gid := range port.GIDs {
-					addFile(gidsEntries, gid.Index, gid.GID)
-					addFile(typesEntries, gid.Index, gid.Type)
+					if len(port.GIDs) > 0 {
+					gidsEntries := map[string]kernfs.Inode{}
+					typesEntries := map[string]kernfs.Inode{}
+					for _, gid := range port.GIDs {
+						addFile(gidsEntries, gid.Index, gid.GID)
+						addFile(typesEntries, gid.Index, gid.Type)
+					}
+					log.Infof("rdma sysfs:   port %s: %d gids, gidsEntries=%d typesEntries=%d",
+						port.Number, len(port.GIDs), len(gidsEntries), len(typesEntries))
+					portEntries["gids"] = fs.newDir(ctx, creds, defaultSysDirMode, gidsEntries)
+					portEntries["gid_attrs"] = fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+						"types": fs.newDir(ctx, creds, defaultSysDirMode, typesEntries),
+					})
 				}
-				log.Infof("rdma sysfs:   port %s: %d gids, gidsEntries=%d typesEntries=%d",
-					port.Number, len(port.GIDs), len(gidsEntries), len(typesEntries))
-				portEntries["gids"] = fs.newDir(ctx, creds, defaultSysDirMode, gidsEntries)
-				portEntries["gid_attrs"] = fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
-					"types": fs.newDir(ctx, creds, defaultSysDirMode, typesEntries),
-				})
-			}
 				portsDir[port.Number] = fs.newDir(ctx, creds, defaultSysDirMode, portEntries)
 			}
 			ibDevEntries["ports"] = fs.newDir(ctx, creds, defaultSysDirMode, portsDir)
