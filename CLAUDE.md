@@ -469,18 +469,36 @@ Key findings from the trace:
 
 **Previous blocker (TCP control channel)** — `ib_write_bw` requires a TCP control channel that fails under gVisor's netstack. This is a general gVisor networking limitation, not RDMA-specific. RoCE loopback on the same host also doesn't work (hardware limitation of Ethernet-based RDMA NICs).
 
+### CQ/QP buffer page mirroring confirmed working on H200 (March 25)
+
+CQ CREATE and QP CREATE pass DMA buffer addresses (`buf_addr`, `db_addr`) to the host kernel via mlx5 driver-specific attrs (id=0x1000). The kernel calls `ib_umem_get()` → `pin_user_pages()`, which fails for the same reason MR REG failed: sandbox VAs not in the sentry's page tables.
+
+**Fix**: Same `mirrorSandboxPages` pattern as MR REG. On CQ/QP CREATE:
+1. Detect CQ/QP CREATE by checking for driver attr `0x1000` in the attr list
+2. Parse `buf_addr` (offset 0) and `db_addr` (offset 8) from driver attr data
+3. Use `FindVMARange()` to determine buffer sizes from VMA boundaries (rdma-core allocates these with `mmap(size)`)
+4. Mirror pages into sentry, rewrite addresses in the driver attr
+5. Track pinned `pinnedDMABufs` (buf + db) per CQ/QP handle; release on destroy or fd close
+
+**Bug found**: `classifyIoctl` assumed CQ CREATE uses `method_id=64` (`UVERBS_API_METHOD_KEY_NUM_CORE`). On this kernel, CQ CREATE arrives with `method_id=0` — the enum values differ across kernel versions. The fix: detect CREATE vs DESTROY by checking for the presence of the mlx5 driver input attr (`0x1000`) rather than relying on method IDs. CREATE always has it, DESTROY never does.
+
+Test output (`cq_qp_test` inside gVisor on H200):
+```
+Device: mlx5_3
+PD OK
+MR OK: lkey=1583848 rkey=1583848
+CQ OK: cqe=511
+QP OK: qp_num=295
+QP->INIT OK
+QP destroyed
+CQ destroyed
+MR deregistered
+ALL PASSED
+```
+
 ### What's next
 
-**Immediate — CQ/QP buffer page mirroring:**
-CQ CREATE and QP CREATE pass DMA buffer addresses to the kernel via mlx5 driver-specific attrs. The kernel calls `ib_umem_get(buf_addr, size)` → `pin_user_pages()`, which will fail for the same reason MR REG failed: sandbox VAs not in sentry page tables. Need to:
-1. Detect CQ CREATE / QP CREATE ioctls (INVOKE_WRITE cmd=6/8 or modern obj=CQ/QP)
-2. Parse mlx5 driver attr (id=0x1000) to extract `buf_addr` (offset 0) and `db_addr` (offset 8)
-3. Mirror those pages into the sentry with `mirrorSandboxPages`
-4. Rewrite the addresses in the driver attr data
-5. Track pinned pages per CQ/QP handle; release on destroy
-
-**After CQ/QP:**
-- **NCCL all-reduce**: Requires nvproxy alongside rdmaproxy, `/dev/infiniband/rdma_cm` passthrough, GPUDirect RDMA
+**Immediate — NCCL all-reduce**: Requires nvproxy alongside rdmaproxy, `/dev/infiniband/rdma_cm` passthrough, GPUDirect RDMA
 
 ### RDMA data path — full ioctl sequence (from ib_write_bw sniffer trace)
 
@@ -498,16 +516,25 @@ Confirmed working on H200 (March 25):
 9. **MR DEREG** — via modern path (obj=0x0007, method=1), pinned pages released ✅
 10. **PD DEALLOC** — via modern path (obj=0x0001, method=0) ✅
 
-Needs page mirroring (same sandbox VA problem as MR REG):
-11. **CQ CREATE** — 🔴 CURRENT. mlx5 driver attr contains `buf_addr` + `db_addr` that kernel pins via `ib_umem_get` → `pin_user_pages`
-12. **QP CREATE** — 🔴 CURRENT. Same pattern: WQ buffer + doorbell address in driver attr
+Confirmed working on H200 (March 25) — page mirroring for DMA buffers:
+11. **CQ CREATE** — ✅ `buf_addr` + `db_addr` mirrored via `mirrorSandboxPages`, handle tracked in `pinnedCQs`
+12. **QP CREATE** — ✅ same pattern, handle tracked in `pinnedQPs`
+13. **QP state transitions** — ✅ `ibv_modify_qp(INIT)` works (plain ioctl, no page mirroring needed)
 
 Not yet tested:
-13. **QP state transitions** (MODIFY via ioctl)
 14. **Data path** — doorbell writes + NIC DMA. No ioctls; depends on MR REG + mmap + CQ/QP working.
-15. **Teardown** — DEALLOC_UAR, munmap, close.
+15. **Teardown** — DEALLOC_UAR, munmap, close (basic teardown confirmed via `cq_qp_test` cleanup path).
 
 ### Test commands
+
+**cq_qp_test** (validates full PD → MR → CQ → QP → QP INIT → teardown pipeline):
+```bash
+# Build image (once per host):
+sudo docker build -f Dockerfile.cqqptest -t cqqp-test .
+# Run with all uverbs devices:
+DEVS=$(ls /dev/infiniband/uverbs* | sed 's/^/--device=/' | tr '\n' ' ')
+sudo docker run --runtime=runsc-rdma --rm $DEVS cqqp-test cq_qp_test
+```
 
 **mr_test** (validates MR registration pipeline):
 ```bash

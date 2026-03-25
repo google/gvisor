@@ -1,0 +1,10 @@
+FROM nvidia/cuda:12.4.1-devel-ubuntu22.04
+RUN apt-get update -qq && apt-get install -yqq --no-install-recommends \
+    libibverbs-dev librdmacm-dev ibverbs-utils gcc libc6-dev && \
+    rm -rf /var/lib/apt/lists/*
+COPY gdr_test.c /tmp/gdr_test.c
+COPY cq_qp_test.c /tmp/cq_qp_test.c
+RUN gcc -o /usr/local/bin/gdr_test /tmp/gdr_test.c \
+    -libverbs -lcuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/stubs && \
+    gcc -o /usr/local/bin/cq_qp_test /tmp/cq_qp_test.c -libverbs && \
+    rm /tmp/gdr_test.c /tmp/cq_qp_test.c
