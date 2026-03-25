@@ -54,5 +54,12 @@ func Filters() seccomp.SyscallRules {
 		// madvise(MADV_POPULATE_WRITE) pre-faults pages to avoid
 		// mmap_lock contention during pin_user_pages.
 		unix.SYS_MADVISE: seccomp.MatchAll{},
+		// setns switches to the host network namespace for RoCE ioctls
+		// that require GID-to-netdev resolution.
+		unix.SYS_SETNS: seccomp.PerArg{
+			seccomp.NonNegativeFD{},
+			seccomp.EqualTo(unix.CLONE_NEWNET),
+		},
+		unix.SYS_CLOSE: seccomp.MatchAll{},
 	})
 }

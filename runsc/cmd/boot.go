@@ -190,6 +190,10 @@ type Boot struct {
 	// used to synchronize rootless user namespace initialization.
 	syncUsernsFD int
 
+	// hostNetnsFD is a file descriptor to the host's network namespace,
+	// used by rdmaproxy for RoCE GID-to-netdev resolution.
+	hostNetnsFD int
+
 	// nvidiaDriverVersion is the Nvidia driver version on the host.
 	nvidiaDriverVersion string
 
@@ -265,6 +269,9 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&b.finalMetricsFD, "final-metrics-log-fd", -1, "file descriptor to write metrics to upon sandbox termination.")
 	f.IntVar(&b.profilingMetricsFD, "profiling-metrics-fd", -1, "file descriptor to write sentry profiling metrics.")
 	f.BoolVar(&b.profilingMetricsLossy, "profiling-metrics-fd-lossy", false, "if true, treat the sentry profiling metrics FD as lossy and write a checksum to it.")
+
+	// RDMA properties.
+	f.IntVar(&b.hostNetnsFD, "host-netns-fd", -1, "FD to the host network namespace for RDMA GID resolution")
 
 	// Nvidia driver properties.
 	f.StringVar(&b.nvidiaDriverVersion, "nvidia-driver-version", "", "Nvidia driver version on the host")
@@ -592,6 +599,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		SaveFDs:          b.saveFDs.GetFDs(),
 		RootfsUpperTarFD: b.rootfsUpperTarFD,
 		RDMADevices:      rdmaDevices,
+		HostNetnsFD:      b.hostNetnsFD,
 	}
 	b.setBootArgsExtra(&bootArgs)
 	l, err := boot.New(bootArgs)

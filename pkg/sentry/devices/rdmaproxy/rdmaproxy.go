@@ -35,6 +35,19 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
+// hostNetnsFD holds a file descriptor to the host's network namespace.
+// RoCE ioctls (ibv_modify_qp) require the calling thread to be in the
+// host network namespace so the kernel can resolve GIDs to physical NICs.
+// Set once at startup via SetHostNetnsFD; -1 means not available.
+var hostNetnsFD int32 = -1
+
+// SetHostNetnsFD stores the host network namespace FD for later use by
+// RDMA ioctls. The FD is kept open for the lifetime of the process.
+func SetHostNetnsFD(fd int) {
+	hostNetnsFD = int32(fd)
+	log.Infof("rdmaproxy: host netns FD set to %d", fd)
+}
+
 // uverbsDevice implements vfs.Device for /dev/infiniband/uverbs*.
 type uverbsDevice struct {
 	// devName is the device filename, e.g. "uverbs0". This is distinct

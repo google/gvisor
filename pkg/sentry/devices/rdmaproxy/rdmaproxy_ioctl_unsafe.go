@@ -17,6 +17,7 @@ package rdmaproxy
 import (
 	"encoding/binary"
 	"fmt"
+	"runtime"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -33,6 +34,44 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
+
+// ioctlInHostNetns executes an ioctl in the host's network namespace.
+// RoCE's ibv_modify_qp requires the calling thread's network namespace
+// to contain the physical NICs referenced by GIDs. When the sentry runs
+// in Docker's bridge network namespace, this switches to the host netns
+// for the duration of the ioctl.
+func ioctlInHostNetns(fd int32, cmd uint32, arg unsafe.Pointer) (uintptr, unix.Errno) {
+	if hostNetnsFD < 0 {
+		n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(fd), uintptr(cmd), uintptr(arg))
+		return n, errno
+	}
+
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	curNetns, err := unix.Open("/proc/thread-self/ns/net", unix.O_RDONLY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		log.Warningf("rdmaproxy: open current netns: %v, falling back", err)
+		n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(fd), uintptr(cmd), uintptr(arg))
+		return n, errno
+	}
+
+	if err := unix.Setns(int(hostNetnsFD), unix.CLONE_NEWNET); err != nil {
+		unix.Close(curNetns)
+		log.Warningf("rdmaproxy: setns to host netns: %v, falling back", err)
+		n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(fd), uintptr(cmd), uintptr(arg))
+		return n, errno
+	}
+
+	n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(fd), uintptr(cmd), uintptr(arg))
+
+	if restoreErr := unix.Setns(curNetns, unix.CLONE_NEWNET); restoreErr != nil {
+		log.Warningf("rdmaproxy: restore netns: %v", restoreErr)
+	}
+	unix.Close(curNetns)
+
+	return n, errno
+}
 
 // ib_uverbs_ioctl_hdr layout constants.
 const (
@@ -264,9 +303,7 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 
 	log.Infof("rdmaproxy: forwarding ioctl to host (hostFD=%d, %d rewrites, action=%d)", fd.hostFD, len(rewrites), action)
 
-	n, _, errno := unix.RawSyscall(unix.SYS_IOCTL,
-		uintptr(fd.hostFD), uintptr(rdmaVerbsIoctl),
-		uintptr(unsafe.Pointer(&buf[0])))
+	n, errno := ioctlInHostNetns(fd.hostFD, rdmaVerbsIoctl, unsafe.Pointer(&buf[0]))
 
 	if errno != 0 {
 		log.Infof("rdmaproxy: host ioctl returned n=%d errno=%d (%v)", n, errno, errno)

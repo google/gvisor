@@ -1043,6 +1043,15 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		donations.DonateAndClose("device-fd", deviceFile.ReleaseToFile("device file"))
 	}
 
+	if conf.RDMAProxy {
+		netnsFD, err := unix.Open("/proc/self/ns/net", unix.O_RDONLY|unix.O_CLOEXEC, 0)
+		if err != nil {
+			log.Warningf("Failed to open host netns for RDMA: %v", err)
+		} else {
+			donations.DonateAndClose("host-netns-fd", os.NewFile(uintptr(netnsFD), "host netns"))
+		}
+	}
+
 	// TODO(b/151157106): syscall tests fail by timeout if asyncpreemptoff
 	// isn't set.
 	if conf.Platform == "kvm" {
