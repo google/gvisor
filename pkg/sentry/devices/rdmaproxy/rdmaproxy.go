@@ -101,6 +101,21 @@ func (mp *mirroredPages) release(ctx context.Context) {
 	mm.Unpin(mp.prs)
 }
 
+// pinnedDMABufs tracks the buf + doorbell mirrors for a single CQ or QP.
+type pinnedDMABufs struct {
+	buf *mirroredPages
+	db  *mirroredPages
+}
+
+func (p *pinnedDMABufs) release(ctx context.Context) {
+	if p.buf != nil {
+		p.buf.release(ctx)
+	}
+	if p.db != nil {
+		p.db.release(ctx)
+	}
+}
+
 // uverbsFD implements vfs.FileDescriptionImpl for an opened uverbs device.
 //
 // uverbsFD is not savable; we do not implement save/restore of RDMA state.
@@ -115,9 +130,11 @@ type uverbsFD struct {
 	queue      waiter.Queue
 	memmapFile fsutil.MmapNoInternalFile
 
-	// mu protects pinnedMRs.
+	// mu protects pinnedMRs, pinnedCQs, and pinnedQPs.
 	mu        sync.Mutex
 	pinnedMRs map[uint32]*mirroredPages
+	pinnedCQs map[uint32]*pinnedDMABufs
+	pinnedQPs map[uint32]*pinnedDMABufs
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
@@ -128,6 +145,16 @@ func (fd *uverbsFD) Release(ctx context.Context) {
 		mp.release(ctx)
 	}
 	fd.pinnedMRs = nil
+	for handle, p := range fd.pinnedCQs {
+		log.Infof("rdmaproxy: releasing pinned CQ handle=%d on fd close", handle)
+		p.release(ctx)
+	}
+	fd.pinnedCQs = nil
+	for handle, p := range fd.pinnedQPs {
+		log.Infof("rdmaproxy: releasing pinned QP handle=%d on fd close", handle)
+		p.release(ctx)
+	}
+	fd.pinnedQPs = nil
 	fd.mu.Unlock()
 
 	log.Infof("rdmaproxy: closing hostFD=%d", fd.hostFD)

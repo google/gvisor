@@ -447,38 +447,40 @@ Bugs fixed during hardware testing:
 
 Key insight: `start` (used for page pinning) and `hca_va` (used for RDMA addressing) can differ. We rewrite only `start` so the kernel pins the right physical pages, while remote peers still use the sandbox VA in work requests.
 
-**Current blocker: TCP control channel (March 24 evening)**
+### MR registration confirmed working on H200 (March 25)
 
-With page mirroring implemented, the error changed from `Couldn't allocate MR` to a TCP connection failure:
+Page mirroring is fully functional. The mr_test program (ibv_open_device → ibv_alloc_pd → ibv_reg_mr → ibv_dereg_mr → cleanup) succeeds with confirmed log output:
+
 ```
-$ DEVS=$(ls /dev/infiniband/uverbs* | sed 's/^/--device=/' | tr '\n' ' ')
-$ sudo docker run --runtime=runsc-rdma --rm --network=host $DEVS perftest-img \
-    bash -c 'ib_write_bw -d mlx5_0 & sleep 3; ib_write_bw -d mlx5_0 127.0.0.1 --report_gbits'
-Couldn't connect to 127.0.0.1:18515
-Unable to open file descriptor for socket connection Unable to init the socket connection
-EXIT=1
+MR REG (INVOKE_WRITE) sandbox_va=0x563f9a836da0 length=65536
+MR REG rewrote start 0x563f9a836da0 → sentry 0x7f456f27fda0 (hca_va stays 0x563f9a836da0)
+forwarding ioctl to host (hostFD=143, 2 rewrites, mrReg=true)
+host ioctl returned n=0 OK
+pinned MR handle=2 (1 ranges)
+...
+obj=0x0007 method=1 ... data=0x0000000000000002 (handle/fd)  ← DEREG_MR
+unpinned MR handle=2
 ```
 
-This means we got **past MR REG** (no more `Couldn't allocate MR`). The new failure is TCP — `ib_write_bw` uses a TCP control channel on port 18515 to exchange QP info between server and client before RDMA data transfer begins. Even with `--network=host`, gVisor's netstack may not be forwarding loopback TCP correctly.
+Key findings from the trace:
+- rdma-core v39 uses **RDMA_VERBS_IOCTL with INVOKE_WRITE** (obj=0, method=0, WRITE_CMD=9) for REG_MR, not the write() syscall
+- PD alloc uses INVOKE_WRITE with WRITE_CMD=3; MR dereg uses the modern path (obj=0x0007, method=1); PD dealloc uses modern path (obj=0x0001, method=0)
+- Added `Write()` and `Read()` handlers as fallback for older rdma-core that uses the write() syscall path. Seccomp updated to allow SYS_WRITE/SYS_READ.
 
-**Needs investigation:**
-- Check sentry logs for MR REG success/failure messages (`grep -iE 'MR REG|mirror|pin'`)
-- Determine if the TCP failure is a netstack issue or a port binding race
-- May need `sleep` adjustment or explicit `--net-raw` flag
-- If MR REG is silently failing, the TCP error could be a red herring (server crashed before binding)
+**Previous blocker (TCP control channel)** — `ib_write_bw` requires a TCP control channel that fails under gVisor's netstack. This is a general gVisor networking limitation, not RDMA-specific. RoCE loopback on the same host also doesn't work (hardware limitation of Ethernet-based RDMA NICs).
 
 ### What's next
 
-**Immediate (debug ib_write_bw TCP channel):**
-- Check sentry logs for MR REG outcome — did page mirroring succeed or crash the server?
-- If server crashed: debug the crash from logs, fix page mirroring
-- If server is running but TCP fails: investigate gVisor netstack loopback with `--network=host`
-- Try two separate containers (server + client) to isolate
+**Immediate — CQ/QP buffer page mirroring:**
+CQ CREATE and QP CREATE pass DMA buffer addresses to the kernel via mlx5 driver-specific attrs. The kernel calls `ib_umem_get(buf_addr, size)` → `pin_user_pages()`, which will fail for the same reason MR REG failed: sandbox VAs not in sentry page tables. Need to:
+1. Detect CQ CREATE / QP CREATE ioctls (INVOKE_WRITE cmd=6/8 or modern obj=CQ/QP)
+2. Parse mlx5 driver attr (id=0x1000) to extract `buf_addr` (offset 0) and `db_addr` (offset 8)
+3. Mirror those pages into the sentry with `mirrorSandboxPages`
+4. Rewrite the addresses in the driver attr data
+5. Track pinned pages per CQ/QP handle; release on destroy
 
-**After ib_write_bw works end-to-end:**
-- **CQ/QP buffers**: CQ CREATE and QP CREATE may need page mirroring for DMA buffers (same pattern)
-- **Multi-node**: Test between two gVisor containers on different hosts
-- **NCCL**: Requires nvproxy alongside rdmaproxy, `/dev/infiniband/rdma_cm` passthrough, GPUDirect RDMA
+**After CQ/QP:**
+- **NCCL all-reduce**: Requires nvproxy alongside rdmaproxy, `/dev/infiniband/rdma_cm` passthrough, GPUDirect RDMA
 
 ### RDMA data path — full ioctl sequence (from ib_write_bw sniffer trace)
 
@@ -490,35 +492,32 @@ Working ioctls (ibv_devinfo exercises these):
 5. **QUERY_PORT** — ✅
 6. **ALLOC_UAR + mmap** — ✅ (doorbell page via ConfigureMMap)
 
-Page mirroring implemented (untested on hardware):
-7. **CQ CREATE** — 8 attrs; sandbox pointers to CQ buffers (DMA target)
-8. **QP CREATE** — 12 attrs; sandbox pointers to send/recv ring buffers
-9. **MR REG** — 🟡 page mirroring implemented, TCP failure prevents reaching this in ib_write_bw
-10. **QP state transitions** (MODIFY via ioctl) — untested
-11. **Data path** — doorbell writes + NIC DMA. No ioctls; depends on MR REG + mmap working.
-12. **Teardown** — DEALLOC_UAR, PD DEALLOC, MR DEALLOC (with pinned page cleanup), munmap, close.
+Confirmed working on H200 (March 25):
+7. **ALLOC_PD** — via INVOKE_WRITE (cmd=3), response pointer rewritten to sentry buffer ✅
+8. **MR REG** — via INVOKE_WRITE (cmd=9), page mirroring (sandbox→sentry VA rewrite), handle tracking ✅
+9. **MR DEREG** — via modern path (obj=0x0007, method=1), pinned pages released ✅
+10. **PD DEALLOC** — via modern path (obj=0x0001, method=0) ✅
+
+Needs page mirroring (same sandbox VA problem as MR REG):
+11. **CQ CREATE** — 🔴 CURRENT. mlx5 driver attr contains `buf_addr` + `db_addr` that kernel pins via `ib_umem_get` → `pin_user_pages`
+12. **QP CREATE** — 🔴 CURRENT. Same pattern: WQ buffer + doorbell address in driver attr
+
+Not yet tested:
+13. **QP state transitions** (MODIFY via ioctl)
+14. **Data path** — doorbell writes + NIC DMA. No ioctls; depends on MR REG + mmap + CQ/QP working.
+15. **Teardown** — DEALLOC_UAR, munmap, close.
 
 ### Test commands
 
-**Pre-build image** (DNS doesn't work in gVisor netstack, so packages must be baked in):
+**mr_test** (validates MR registration pipeline):
 ```bash
-sudo docker build -t perftest-img -f- . <<'EOF'
-FROM ubuntu:22.04
-RUN apt-get update && apt-get install -y perftest && rm -rf /var/lib/apt/lists/*
-EOF
+sudo docker run --runtime=runsc-rdma --rm --network=host --device=/dev/infiniband/uverbs0 mr-test
 ```
 
-**ib_write_bw** (single container, loopback):
+**Log inspection** (after running a test):
 ```bash
-DEVS=$(ls /dev/infiniband/uverbs* | sed 's/^/--device=/' | tr '\n' ' ')
-sudo docker run --runtime=runsc-rdma --rm $DEVS perftest-img \
-  bash -c 'ib_write_bw -d mlx5_0 & sleep 3; ib_write_bw -d mlx5_0 127.0.0.1 --report_gbits 2>&1; echo "EXIT=$?"'
-```
-
-**Log monitoring** (run in a separate terminal):
-```bash
-while true; do BOOTLOG=$(ls -t /tmp/runsc-rdma/logs/ 2>/dev/null | grep boot | head -1); \
-  [ -n "$BOOTLOG" ] && tail -f /tmp/runsc-rdma/logs/$BOOTLOG | grep -iE 'rdma|uverbs'; sleep 1; done
+BOOTLOG=$(ls -t /tmp/runsc-rdma/logs/ | grep boot | head -1)
+grep 'rdmaproxy' /tmp/runsc-rdma/logs/$BOOTLOG
 ```
 
 ### Host Device Layout (9x mlx5 HCAs on 2x8 H100 node)
@@ -547,9 +546,10 @@ while true; do BOOTLOG=$(ls -t /tmp/runsc-rdma/logs/ 2>/dev/null | grep boot | h
 1. ~~**Virtual sysfs provider for infiniband**~~ ✅ — `/sys/class/infiniband_verbs/` and `/sys/class/infiniband/` trees exposed in the sentry via JSON serialization from host. Dynamic major numbers patched into sysfs `dev` files.
 2. ~~**uverbs device proxy**~~ ✅ — `/dev/infiniband/uverbs*` chardev registered with dynamic VFS major. Opens host device via dev gofer. Generic ioctl handler parses `ib_uverbs_ioctl_hdr` + attrs, rewrites sandbox pointers, forwards to host.
 3. ~~**Seccomp allowlist**~~ ✅ — `ioctl` (magic `0x1b`), `mmap` (MAP_SHARED), `munmap`, `openat` permitted through BPF filter when `--rdmaproxy` is enabled.
-4. **MR registration page mirroring** — 🔴 CURRENT BLOCKER. `ibv_reg_mr()` fails because the sentry process doesn't have the sandbox's page tables. Need to mirror sandbox memfd pages into sentry address space before forwarding the MR REG ioctl. See "Current blocker" section above.
-5. **Link endpoints for InfiniBand verbs** — not started (may not be needed; uverbs bypasses the kernel network stack)
-6. **NVProxy integration for RDMA NIC isolation** — not started (needed for NCCL/GPUDirect RDMA)
+4. ~~**MR registration page mirroring**~~ ✅ — `mirrorSandboxPages()` pins sandbox pages via `mm.Pin()`, maps them into sentry VA space via `MapInternal()` + `mremap`, rewrites the `start` address while preserving `hca_va`. MR handle tracked for cleanup on DEREG or fd close. Confirmed on H200 with mlx5.
+5. **Legacy write() command path** — ✅ `Write()` and `Read()` handlers added as fallback for older rdma-core versions that use `write(fd, cmd_buf)` instead of `RDMA_VERBS_IOCTL`. Same page mirroring applied.
+6. **Link endpoints for InfiniBand verbs** — not started (may not be needed; uverbs bypasses the kernel network stack)
+7. **NVProxy integration for RDMA NIC isolation** — not started (needed for NCCL/GPUDirect RDMA)
 
 ### Big Questions
 - How do we quickly test RDMA support? What will this look like in the upstream repo? How can we make local development align closely with upstream testing so we don’t have to rewrite the testing suite from scratch?

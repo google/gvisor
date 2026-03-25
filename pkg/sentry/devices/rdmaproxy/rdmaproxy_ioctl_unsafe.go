@@ -44,6 +44,8 @@ const (
 // UVERBS object types (from include/uapi/rdma/ib_user_ioctl_cmds.h).
 const (
 	uverbsObjectDevice = 0
+	uverbsObjectCQ     = 3
+	uverbsObjectQP     = 4
 	uverbsObjectMR     = 7
 )
 
@@ -63,8 +65,38 @@ const (
 
 // Legacy write command numbers (from include/uapi/rdma/ib_user_verbs.h).
 const (
-	ibUserVerbsCmdRegMR   = 9
-	ibUserVerbsCmdDeregMR = 13
+	ibUserVerbsCmdCreateCQ  = 6
+	ibUserVerbsCmdCreateQP  = 8
+	ibUserVerbsCmdRegMR     = 9
+	ibUserVerbsCmdDestroyCQ = 11
+	ibUserVerbsCmdDeregMR   = 13
+	ibUserVerbsCmdDestroyQP = 14
+)
+
+// mlx5 driver attr offsets for CQ/QP CREATE (struct mlx5_ib_create_cq / mlx5_ib_create_qp).
+const (
+	driverAttrBufAddr = 0  // __aligned_u64 buf_addr
+	driverAttrDBAddr  = 8  // __aligned_u64 db_addr
+	driverAttrMinLen  = 16 // minimum driver attr size we need
+)
+
+// mlx5 driver attr IDs.
+const (
+	mlx5DriverAttrIn  = 0x1000 // input driver data
+	mlx5DriverAttrOut = 0x1001 // output driver data
+)
+
+// ioctlAction classifies what an ioctl does for page-mirroring purposes.
+type ioctlAction int
+
+const (
+	actionNone ioctlAction = iota
+	actionMRReg
+	actionMRDereg
+	actionCQCreate
+	actionCQDestroy
+	actionQPCreate
+	actionQPDestroy
 )
 
 // ib_uverbs_reg_mr struct field offsets.
@@ -197,13 +229,16 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 		}
 	}
 
-	// Detect MR REG and pin sandbox pages before forwarding.
-	var mrMirror *mirroredPages
-	var mrCleanup cleanup.Cleanup
-	defer mrCleanup.Clean()
-	isMRReg, isMRDereg, writeCmdVal := fd.classifyIoctl(buf, int(numAttrs), objectID, methodID)
+	// Classify and prepare DMA page mirroring before forwarding.
+	action, writeCmdVal := fd.classifyIoctl(buf, int(numAttrs), objectID, methodID)
 
-	if isMRReg {
+	var mrMirror *mirroredPages
+	var cqqpMirror *pinnedDMABufs
+	var dmaCleanup cleanup.Cleanup
+	defer dmaCleanup.Clean()
+
+	switch action {
+	case actionMRReg:
 		var err error
 		mrMirror, err = fd.prepareMRReg(t, buf, int(numAttrs), objectID, rewrites, writeCmdVal)
 		if err != nil {
@@ -211,13 +246,22 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 			return 0, err
 		}
 		if mrMirror != nil {
-			mrCleanup = cleanup.Make(func() {
-				mrMirror.release(t)
-			})
+			dmaCleanup = cleanup.Make(func() { mrMirror.release(t) })
+		}
+
+	case actionCQCreate, actionQPCreate:
+		var err error
+		cqqpMirror, err = fd.prepareCQQPCreate(t, buf, int(numAttrs), rewrites, action)
+		if err != nil {
+			log.Warningf("rdmaproxy: CQ/QP CREATE page mirroring: %v", err)
+			return 0, err
+		}
+		if cqqpMirror != nil {
+			dmaCleanup = cleanup.Make(func() { cqqpMirror.release(t) })
 		}
 	}
 
-	log.Infof("rdmaproxy: forwarding ioctl to host (hostFD=%d, %d rewrites, mrReg=%v)", fd.hostFD, len(rewrites), isMRReg)
+	log.Infof("rdmaproxy: forwarding ioctl to host (hostFD=%d, %d rewrites, action=%d)", fd.hostFD, len(rewrites), action)
 
 	n, _, errno := unix.RawSyscall(unix.SYS_IOCTL,
 		uintptr(fd.hostFD), uintptr(rdmaVerbsIoctl),
@@ -229,33 +273,94 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 		log.Infof("rdmaproxy: host ioctl returned n=%d OK", n)
 	}
 
-	// On MR REG success, track the mirror keyed by MR handle.
-	if errno == 0 && isMRReg && mrMirror != nil {
-		mrHandle := fd.extractMRHandle(buf, int(numAttrs), objectID, rewrites, writeCmdVal)
-		if mrHandle != 0 {
-			fd.mu.Lock()
-			if fd.pinnedMRs == nil {
-				fd.pinnedMRs = make(map[uint32]*mirroredPages)
+	// Post-ioctl tracking for successful operations.
+	if errno == 0 {
+		switch action {
+		case actionMRReg:
+			if mrMirror != nil {
+				mrHandle := fd.extractMRHandle(buf, int(numAttrs), objectID, rewrites, writeCmdVal)
+				if mrHandle != 0 {
+					fd.mu.Lock()
+					if fd.pinnedMRs == nil {
+						fd.pinnedMRs = make(map[uint32]*mirroredPages)
+					}
+					fd.pinnedMRs[mrHandle] = mrMirror
+					fd.mu.Unlock()
+					dmaCleanup.Release()
+					log.Infof("rdmaproxy: pinned MR handle=%d (%d ranges)", mrHandle, len(mrMirror.prs))
+				}
 			}
-			fd.pinnedMRs[mrHandle] = mrMirror
-			fd.mu.Unlock()
-			mrCleanup.Release()
-			log.Infof("rdmaproxy: pinned MR handle=%d (%d ranges)", mrHandle, len(mrMirror.prs))
-		}
-	}
 
-	// On MR DEREG success, release the pinned pages.
-	if errno == 0 && isMRDereg {
-		mrHandle := fd.extractDeregMRHandle(buf, int(numAttrs), objectID, rewrites, writeCmdVal)
-		if mrHandle != 0 {
-			fd.mu.Lock()
-			if mp, ok := fd.pinnedMRs[mrHandle]; ok {
-				delete(fd.pinnedMRs, mrHandle)
-				fd.mu.Unlock()
-				mp.release(t)
-				log.Infof("rdmaproxy: unpinned MR handle=%d", mrHandle)
-			} else {
-				fd.mu.Unlock()
+		case actionMRDereg:
+			mrHandle := fd.extractDeregMRHandle(buf, int(numAttrs), objectID, rewrites, writeCmdVal)
+			if mrHandle != 0 {
+				fd.mu.Lock()
+				if mp, ok := fd.pinnedMRs[mrHandle]; ok {
+					delete(fd.pinnedMRs, mrHandle)
+					fd.mu.Unlock()
+					mp.release(t)
+					log.Infof("rdmaproxy: unpinned MR handle=%d", mrHandle)
+				} else {
+					fd.mu.Unlock()
+				}
+			}
+
+		case actionCQCreate:
+			if cqqpMirror != nil {
+				handle := fd.extractCQQPHandle(buf, int(numAttrs), objectID, rewrites)
+				if handle != 0 {
+					fd.mu.Lock()
+					if fd.pinnedCQs == nil {
+						fd.pinnedCQs = make(map[uint32]*pinnedDMABufs)
+					}
+					fd.pinnedCQs[handle] = cqqpMirror
+					fd.mu.Unlock()
+					dmaCleanup.Release()
+					log.Infof("rdmaproxy: pinned CQ handle=%d", handle)
+				}
+			}
+
+		case actionQPCreate:
+			if cqqpMirror != nil {
+				handle := fd.extractCQQPHandle(buf, int(numAttrs), objectID, rewrites)
+				if handle != 0 {
+					fd.mu.Lock()
+					if fd.pinnedQPs == nil {
+						fd.pinnedQPs = make(map[uint32]*pinnedDMABufs)
+					}
+					fd.pinnedQPs[handle] = cqqpMirror
+					fd.mu.Unlock()
+					dmaCleanup.Release()
+					log.Infof("rdmaproxy: pinned QP handle=%d", handle)
+				}
+			}
+
+		case actionCQDestroy:
+			handle := fd.extractCQQPDestroyHandle(buf, int(numAttrs), objectID, rewrites)
+			if handle != 0 {
+				fd.mu.Lock()
+				if p, ok := fd.pinnedCQs[handle]; ok {
+					delete(fd.pinnedCQs, handle)
+					fd.mu.Unlock()
+					p.release(t)
+					log.Infof("rdmaproxy: unpinned CQ handle=%d", handle)
+				} else {
+					fd.mu.Unlock()
+				}
+			}
+
+		case actionQPDestroy:
+			handle := fd.extractCQQPDestroyHandle(buf, int(numAttrs), objectID, rewrites)
+			if handle != 0 {
+				fd.mu.Lock()
+				if p, ok := fd.pinnedQPs[handle]; ok {
+					delete(fd.pinnedQPs, handle)
+					fd.mu.Unlock()
+					p.release(t)
+					log.Infof("rdmaproxy: unpinned QP handle=%d", handle)
+				} else {
+					fd.mu.Unlock()
+				}
 			}
 		}
 	}
@@ -273,30 +378,46 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 	return n, nil
 }
 
-// classifyIoctl determines if this ioctl is a MR REG or MR DEREG.
-func (fd *uverbsFD) classifyIoctl(buf []byte, numAttrs int, objectID, methodID uint16) (isMRReg, isMRDereg bool, writeCmdVal uint64) {
-	// Modern path: direct MR object methods.
-	if objectID == uverbsObjectMR {
+// classifyIoctl determines what DMA-relevant action this ioctl represents.
+func (fd *uverbsFD) classifyIoctl(buf []byte, numAttrs int, objectID, methodID uint16) (action ioctlAction, writeCmdVal uint64) {
+	// Modern path: direct object methods.
+	switch objectID {
+	case uverbsObjectMR:
 		if methodID == uverbsMethodRegMR {
-			return true, false, 0
+			return actionMRReg, 0
 		}
 		if methodID == uverbsMethodMRDestroy {
-			return false, true, 0
+			return actionMRDereg, 0
 		}
-		return false, false, 0
+	case uverbsObjectCQ:
+		if methodID == 0 {
+			return actionCQDestroy, 0
+		}
+	case uverbsObjectQP:
+		if methodID == 0 {
+			return actionQPDestroy, 0
+		}
 	}
 
 	// Legacy path: INVOKE_WRITE on DEVICE object.
 	if objectID == uverbsObjectDevice && methodID == uverbsMethodInvokeWrite {
 		writeCmdVal = findInlineAttr(buf, numAttrs, uverbsAttrWriteCmd)
-		if writeCmdVal == ibUserVerbsCmdRegMR {
-			return true, false, writeCmdVal
-		}
-		if writeCmdVal == ibUserVerbsCmdDeregMR {
-			return false, true, writeCmdVal
+		switch writeCmdVal {
+		case ibUserVerbsCmdRegMR:
+			return actionMRReg, writeCmdVal
+		case ibUserVerbsCmdDeregMR:
+			return actionMRDereg, writeCmdVal
+		case ibUserVerbsCmdCreateCQ:
+			return actionCQCreate, writeCmdVal
+		case ibUserVerbsCmdCreateQP:
+			return actionQPCreate, writeCmdVal
+		case ibUserVerbsCmdDestroyCQ:
+			return actionCQDestroy, writeCmdVal
+		case ibUserVerbsCmdDestroyQP:
+			return actionQPDestroy, writeCmdVal
 		}
 	}
-	return false, false, 0
+	return actionNone, 0
 }
 
 // findInlineAttr finds an attr by ID where CopyIn failed (inline data) and
@@ -534,6 +655,103 @@ func (fd *uverbsFD) extractDeregMRHandle(buf []byte, numAttrs int, objectID uint
 	return 0
 }
 
+// prepareCQQPCreate mirrors the DMA buffers (buf_addr + db_addr) embedded in
+// the mlx5 driver attribute of a CQ or QP CREATE ioctl. Uses FindVMARange to
+// determine buffer sizes from the mmap region boundaries.
+func (fd *uverbsFD) prepareCQQPCreate(t *kernel.Task, buf []byte, numAttrs int, rewrites []attrRewrite, action ioctlAction) (*pinnedDMABufs, error) {
+	drv := findRewrite(buf, numAttrs, rewrites, mlx5DriverAttrIn)
+	if drv == nil {
+		log.Infof("rdmaproxy: CQ/QP CREATE but no driver attr 0x%x found", mlx5DriverAttrIn)
+		return nil, nil
+	}
+	if len(drv.sentry) < driverAttrMinLen {
+		log.Infof("rdmaproxy: CQ/QP CREATE driver attr too short: %d bytes", len(drv.sentry))
+		return nil, nil
+	}
+
+	bufAddr := binary.LittleEndian.Uint64(drv.sentry[driverAttrBufAddr : driverAttrBufAddr+8])
+	dbAddr := binary.LittleEndian.Uint64(drv.sentry[driverAttrDBAddr : driverAttrDBAddr+8])
+	kind := "CQ"
+	if action == actionQPCreate {
+		kind = "QP"
+	}
+	log.Infof("rdmaproxy: %s CREATE buf_addr=%#x db_addr=%#x", kind, bufAddr, dbAddr)
+
+	var bufs pinnedDMABufs
+	var cu cleanup.Cleanup
+	defer cu.Clean()
+
+	if bufAddr != 0 {
+		vmaRange, err := t.MemoryManager().FindVMARange(hostarch.Addr(bufAddr))
+		if err != nil {
+			return nil, fmt.Errorf("FindVMARange(buf %#x): %w", bufAddr, err)
+		}
+		length := uint64(vmaRange.End) - bufAddr
+		mp, sentryVA, err := mirrorSandboxPages(t, bufAddr, length)
+		if err != nil {
+			return nil, fmt.Errorf("mirrorSandboxPages buf: %w", err)
+		}
+		bufs.buf = mp
+		cu.Add(func() { mp.release(t) })
+		binary.LittleEndian.PutUint64(drv.sentry[driverAttrBufAddr:driverAttrBufAddr+8], uint64(sentryVA))
+		log.Infof("rdmaproxy: %s CREATE buf %#x → sentry %#x (len=%d)", kind, bufAddr, sentryVA, length)
+	}
+
+	if dbAddr != 0 {
+		vmaRange, err := t.MemoryManager().FindVMARange(hostarch.Addr(dbAddr))
+		if err != nil {
+			return nil, fmt.Errorf("FindVMARange(db %#x): %w", dbAddr, err)
+		}
+		length := uint64(vmaRange.End) - dbAddr
+		mp, sentryVA, err := mirrorSandboxPages(t, dbAddr, length)
+		if err != nil {
+			return nil, fmt.Errorf("mirrorSandboxPages db: %w", err)
+		}
+		bufs.db = mp
+		cu.Add(func() { mp.release(t) })
+		binary.LittleEndian.PutUint64(drv.sentry[driverAttrDBAddr:driverAttrDBAddr+8], uint64(sentryVA))
+		log.Infof("rdmaproxy: %s CREATE db %#x → sentry %#x (len=%d)", kind, dbAddr, sentryVA, length)
+	}
+
+	cu.Release()
+	return &bufs, nil
+}
+
+// extractCQQPHandle reads the CQ or QP handle from the ioctl response after
+// a successful CREATE (INVOKE_WRITE path: handle is first __u32 of CORE_OUT).
+func (fd *uverbsFD) extractCQQPHandle(buf []byte, numAttrs int, objectID uint16, rewrites []attrRewrite) uint32 {
+	if objectID == uverbsObjectDevice {
+		rw := findRewrite(buf, numAttrs, rewrites, uverbsAttrCoreOut)
+		if rw == nil || len(rw.sentry) < 4 {
+			return 0
+		}
+		return binary.LittleEndian.Uint32(rw.sentry[0:4])
+	}
+	return 0
+}
+
+// extractCQQPDestroyHandle reads the CQ or QP handle from a DESTROY ioctl.
+// INVOKE_WRITE path: handle is first __u32 of CORE_IN.
+// Modern path: handle is in attr id=0 data field.
+func (fd *uverbsFD) extractCQQPDestroyHandle(buf []byte, numAttrs int, objectID uint16, rewrites []attrRewrite) uint32 {
+	if objectID == uverbsObjectDevice {
+		rw := findRewrite(buf, numAttrs, rewrites, uverbsAttrCoreIn)
+		if rw == nil || len(rw.sentry) < 4 {
+			return 0
+		}
+		return binary.LittleEndian.Uint32(rw.sentry[0:4])
+	}
+	// Modern path: attr id=0 contains the handle.
+	for i := 0; i < numAttrs; i++ {
+		off := ibUverbsIoctlHdrSize + i*ibUverbsAttrSize
+		attrID := binary.LittleEndian.Uint16(buf[off : off+2])
+		if attrID == 0 {
+			return uint32(binary.LittleEndian.Uint64(buf[off+8 : off+16]))
+		}
+	}
+	return 0
+}
+
 // Write implements vfs.FileDescriptionImpl.Write.
 // This handles the legacy uverbs write() command interface where rdma-core
 // sends commands like ALLOC_PD, REG_MR, DEREG_MR via write() on the fd.
@@ -578,32 +796,42 @@ func (fd *uverbsFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.
 			cmdBase, origResp, respLen)
 	}
 
-	// REG_MR: mirror sandbox pages into the sentry so pin_user_pages works.
+	// Mirror DMA pages for commands that need sentry-side pinning.
 	var mrMirror *mirroredPages
+	var cqqpMirror *pinnedDMABufs
 	var cu cleanup.Cleanup
 	defer cu.Clean()
 
-	if cmdBase == ibUserVerbsCmdRegMR && !isExtended {
-		// Non-extended ib_uverbs_reg_mr layout after 8-byte cmd_hdr:
-		//   +0: response (8)  +8: start (8)  +16: length (8)  +24: hca_va (8)
-		const startOff, lengthOff, hcaVAOff = 16, 24, 32
-		if size >= hcaVAOff+8 {
-			sva := binary.LittleEndian.Uint64(data[startOff : startOff+8])
-			length := binary.LittleEndian.Uint64(data[lengthOff : lengthOff+8])
-			log.Infof("rdmaproxy: Write REG_MR va=%#x len=%d", sva, length)
+	if !isExtended {
+		switch cmdBase {
+		case ibUserVerbsCmdRegMR:
+			// Non-extended ib_uverbs_reg_mr layout after 8-byte cmd_hdr:
+			//   +0: response (8)  +8: start (8)  +16: length (8)  +24: hca_va (8)
+			const startOff, lengthOff, hcaVAOff = 16, 24, 32
+			if size >= hcaVAOff+8 {
+				sva := binary.LittleEndian.Uint64(data[startOff : startOff+8])
+				length := binary.LittleEndian.Uint64(data[lengthOff : lengthOff+8])
+				log.Infof("rdmaproxy: Write REG_MR va=%#x len=%d", sva, length)
 
-			if length > 0 {
-				mp, sentryVA, err := mirrorSandboxPages(t, sva, length)
-				if err != nil {
-					log.Warningf("rdmaproxy: Write REG_MR mirrorSandboxPages: %v", err)
-					return 0, err
+				if length > 0 {
+					mp, sentryVA, err := mirrorSandboxPages(t, sva, length)
+					if err != nil {
+						log.Warningf("rdmaproxy: Write REG_MR mirrorSandboxPages: %v", err)
+						return 0, err
+					}
+					mrMirror = mp
+					cu = cleanup.Make(func() { mp.release(t) })
+					binary.LittleEndian.PutUint64(data[startOff:startOff+8], uint64(sentryVA))
+					log.Infof("rdmaproxy: Write REG_MR rewrite start %#x → sentry %#x (hca_va=%#x)",
+						sva, sentryVA,
+						binary.LittleEndian.Uint64(data[hcaVAOff:hcaVAOff+8]))
 				}
-				mrMirror = mp
-				cu = cleanup.Make(func() { mp.release(t) })
-				binary.LittleEndian.PutUint64(data[startOff:startOff+8], uint64(sentryVA))
-				log.Infof("rdmaproxy: Write REG_MR rewrite start %#x → sentry %#x (hca_va=%#x)",
-					sva, sentryVA,
-					binary.LittleEndian.Uint64(data[hcaVAOff:hcaVAOff+8]))
+			}
+
+		case ibUserVerbsCmdCreateCQ, ibUserVerbsCmdCreateQP:
+			cqqpMirror = fd.prepareLegacyCQQPCreate(t, data, cmdBase)
+			if cqqpMirror != nil {
+				cu = cleanup.Make(func() { cqqpMirror.release(t) })
 			}
 		}
 	}
@@ -624,41 +852,172 @@ func (fd *uverbsFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.
 		if _, err := t.CopyOutBytes(hostarch.Addr(origResp), respBuf); err != nil {
 			log.Warningf("rdmaproxy: Write response CopyOut to %#x: %v", origResp, err)
 		}
-		// Restore original response pointer in case the buffer is inspected.
 		binary.LittleEndian.PutUint64(data[8:16], origResp)
 	}
 
-	// On REG_MR success, track the mirror keyed by MR handle.
-	if errno == 0 && mrMirror != nil && respBuf != nil && len(respBuf) >= 4 {
-		mrHandle := binary.LittleEndian.Uint32(respBuf[0:4])
-		fd.mu.Lock()
-		if fd.pinnedMRs == nil {
-			fd.pinnedMRs = make(map[uint32]*mirroredPages)
-		}
-		fd.pinnedMRs[mrHandle] = mrMirror
-		fd.mu.Unlock()
-		cu.Release()
-		log.Infof("rdmaproxy: Write REG_MR pinned handle=%d (%d ranges)", mrHandle, len(mrMirror.prs))
-	}
+	// Post-write tracking for successful operations.
+	if errno == 0 && !isExtended {
+		switch cmdBase {
+		case ibUserVerbsCmdRegMR:
+			if mrMirror != nil && respBuf != nil && len(respBuf) >= 4 {
+				mrHandle := binary.LittleEndian.Uint32(respBuf[0:4])
+				fd.mu.Lock()
+				if fd.pinnedMRs == nil {
+					fd.pinnedMRs = make(map[uint32]*mirroredPages)
+				}
+				fd.pinnedMRs[mrHandle] = mrMirror
+				fd.mu.Unlock()
+				cu.Release()
+				log.Infof("rdmaproxy: Write REG_MR pinned handle=%d (%d ranges)", mrHandle, len(mrMirror.prs))
+			}
 
-	// On DEREG_MR success, release the pinned pages.
-	if errno == 0 && cmdBase == ibUserVerbsCmdDeregMR && !isExtended {
-		// ib_uverbs_dereg_mr: __u32 mr_handle at byte offset 8
-		if size >= 12 {
-			mrHandle := binary.LittleEndian.Uint32(data[8:12])
-			fd.mu.Lock()
-			if mp, ok := fd.pinnedMRs[mrHandle]; ok {
-				delete(fd.pinnedMRs, mrHandle)
+		case ibUserVerbsCmdDeregMR:
+			if size >= 12 {
+				mrHandle := binary.LittleEndian.Uint32(data[8:12])
+				fd.mu.Lock()
+				if mp, ok := fd.pinnedMRs[mrHandle]; ok {
+					delete(fd.pinnedMRs, mrHandle)
+					fd.mu.Unlock()
+					mp.release(t)
+					log.Infof("rdmaproxy: Write DEREG_MR unpinned handle=%d", mrHandle)
+				} else {
+					fd.mu.Unlock()
+				}
+			}
+
+		case ibUserVerbsCmdCreateCQ:
+			if cqqpMirror != nil && respBuf != nil && len(respBuf) >= 4 {
+				handle := binary.LittleEndian.Uint32(respBuf[0:4])
+				fd.mu.Lock()
+				if fd.pinnedCQs == nil {
+					fd.pinnedCQs = make(map[uint32]*pinnedDMABufs)
+				}
+				fd.pinnedCQs[handle] = cqqpMirror
 				fd.mu.Unlock()
-				mp.release(t)
-				log.Infof("rdmaproxy: Write DEREG_MR unpinned handle=%d", mrHandle)
-			} else {
+				cu.Release()
+				log.Infof("rdmaproxy: Write CREATE_CQ pinned handle=%d", handle)
+			}
+
+		case ibUserVerbsCmdCreateQP:
+			if cqqpMirror != nil && respBuf != nil && len(respBuf) >= 4 {
+				handle := binary.LittleEndian.Uint32(respBuf[0:4])
+				fd.mu.Lock()
+				if fd.pinnedQPs == nil {
+					fd.pinnedQPs = make(map[uint32]*pinnedDMABufs)
+				}
+				fd.pinnedQPs[handle] = cqqpMirror
 				fd.mu.Unlock()
+				cu.Release()
+				log.Infof("rdmaproxy: Write CREATE_QP pinned handle=%d", handle)
+			}
+
+		case ibUserVerbsCmdDestroyCQ:
+			if size >= 12 {
+				handle := binary.LittleEndian.Uint32(data[8:12])
+				fd.mu.Lock()
+				if p, ok := fd.pinnedCQs[handle]; ok {
+					delete(fd.pinnedCQs, handle)
+					fd.mu.Unlock()
+					p.release(t)
+					log.Infof("rdmaproxy: Write DESTROY_CQ unpinned handle=%d", handle)
+				} else {
+					fd.mu.Unlock()
+				}
+			}
+
+		case ibUserVerbsCmdDestroyQP:
+			if size >= 12 {
+				handle := binary.LittleEndian.Uint32(data[8:12])
+				fd.mu.Lock()
+				if p, ok := fd.pinnedQPs[handle]; ok {
+					delete(fd.pinnedQPs, handle)
+					fd.mu.Unlock()
+					p.release(t)
+					log.Infof("rdmaproxy: Write DESTROY_QP unpinned handle=%d", handle)
+				} else {
+					fd.mu.Unlock()
+				}
 			}
 		}
 	}
 
 	return int64(n), nil
+}
+
+// prepareLegacyCQQPCreate handles CQ/QP CREATE via the legacy write() path.
+// The driver data (buf_addr + db_addr) is appended after the core struct in
+// the write buffer. Layout: [cmd_hdr (8)] [core_struct] [driver_data...].
+func (fd *uverbsFD) prepareLegacyCQQPCreate(t *kernel.Task, data []byte, cmdBase uint32) *pinnedDMABufs {
+	// Core struct sizes (after 8-byte cmd_hdr and 8-byte response field):
+	//   CREATE_CQ: response(8) + user_handle(8) + cqe(4) + comp_vector(4) + comp_channel(4) + reserved(4) = 32
+	//   CREATE_QP: response(8) + user_handle(8) + pd(4) + scq(4) + rcq(4) + srq(4) +
+	//              max_send_wr(4) + max_recv_wr(4) + max_send_sge(4) + max_recv_sge(4) +
+	//              max_inline(4) + sq_sig_all(1) + qp_type(1) + is_srq(1) + reserved(1) = 56
+	var coreSize int
+	var kind string
+	switch cmdBase {
+	case ibUserVerbsCmdCreateCQ:
+		coreSize = 32
+		kind = "CQ"
+	case ibUserVerbsCmdCreateQP:
+		coreSize = 56
+		kind = "QP"
+	default:
+		return nil
+	}
+
+	drvOff := 8 + coreSize // cmd_hdr + core struct
+	if int64(len(data)) < int64(drvOff)+int64(driverAttrMinLen) {
+		log.Infof("rdmaproxy: Write CREATE_%s no driver data (data len=%d, need=%d)", kind, len(data), drvOff+driverAttrMinLen)
+		return nil
+	}
+
+	bufAddr := binary.LittleEndian.Uint64(data[drvOff : drvOff+8])
+	dbAddr := binary.LittleEndian.Uint64(data[drvOff+8 : drvOff+16])
+	log.Infof("rdmaproxy: Write CREATE_%s buf_addr=%#x db_addr=%#x", kind, bufAddr, dbAddr)
+
+	var bufs pinnedDMABufs
+	var cu cleanup.Cleanup
+	defer cu.Clean()
+
+	if bufAddr != 0 {
+		vmaRange, err := t.MemoryManager().FindVMARange(hostarch.Addr(bufAddr))
+		if err != nil {
+			log.Warningf("rdmaproxy: Write CREATE_%s FindVMARange(buf %#x): %v", kind, bufAddr, err)
+			return nil
+		}
+		length := uint64(vmaRange.End) - bufAddr
+		mp, sentryVA, err := mirrorSandboxPages(t, bufAddr, length)
+		if err != nil {
+			log.Warningf("rdmaproxy: Write CREATE_%s mirrorSandboxPages buf: %v", kind, err)
+			return nil
+		}
+		bufs.buf = mp
+		cu.Add(func() { mp.release(t) })
+		binary.LittleEndian.PutUint64(data[drvOff:drvOff+8], uint64(sentryVA))
+		log.Infof("rdmaproxy: Write CREATE_%s buf %#x → sentry %#x (len=%d)", kind, bufAddr, sentryVA, length)
+	}
+
+	if dbAddr != 0 {
+		vmaRange, err := t.MemoryManager().FindVMARange(hostarch.Addr(dbAddr))
+		if err != nil {
+			log.Warningf("rdmaproxy: Write CREATE_%s FindVMARange(db %#x): %v", kind, dbAddr, err)
+			return nil
+		}
+		length := uint64(vmaRange.End) - dbAddr
+		mp, sentryVA, err := mirrorSandboxPages(t, dbAddr, length)
+		if err != nil {
+			log.Warningf("rdmaproxy: Write CREATE_%s mirrorSandboxPages db: %v", kind, err)
+			return nil
+		}
+		bufs.db = mp
+		cu.Add(func() { mp.release(t) })
+		binary.LittleEndian.PutUint64(data[drvOff+8:drvOff+16], uint64(sentryVA))
+		log.Infof("rdmaproxy: Write CREATE_%s db %#x → sentry %#x (len=%d)", kind, dbAddr, sentryVA, length)
+	}
+
+	cu.Release()
+	return &bufs
 }
 
 // Read implements vfs.FileDescriptionImpl.Read.

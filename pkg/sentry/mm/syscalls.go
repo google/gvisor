@@ -1521,6 +1521,17 @@ func (mm *MemoryManager) IsMembarrierRSeqEnabled() bool {
 	return mm.membarrierRSeqEnabled.Load() != 0
 }
 
+// FindVMARange returns the address range of the VMA containing addr.
+func (mm *MemoryManager) FindVMARange(addr hostarch.Addr) (hostarch.AddrRange, error) {
+	mm.mappingMu.RLock()
+	defer mm.mappingMu.RUnlock()
+	vseg := mm.vmas.FindSegment(addr)
+	if !vseg.Ok() {
+		return hostarch.AddrRange{}, linuxerr.EFAULT
+	}
+	return vseg.Range(), nil
+}
+
 // FindVMAByName finds a vma with the specified name and returns its start address and offset.
 func (mm *MemoryManager) FindVMAByName(ar hostarch.AddrRange, name string) (hostarch.Addr, uint64, error) {
 	mm.mappingMu.RLock()
