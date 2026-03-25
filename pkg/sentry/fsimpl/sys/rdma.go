@@ -27,17 +27,25 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 )
 
+// RDMAGIDEntry contains a single GID table entry and its RoCE type.
+type RDMAGIDEntry struct {
+	Index string `json:"index"`
+	GID   string `json:"gid"`
+	Type  string `json:"type"`
+}
+
 // RDMAPortData contains sysfs attributes for one port.
 type RDMAPortData struct {
-	Number    string `json:"number"`
-	State     string `json:"state"`
-	PhysState string `json:"phys_state"`
-	LinkLayer string `json:"link_layer"`
-	Rate      string `json:"rate"`
-	LID       string `json:"lid"`
-	SMLID     string `json:"sm_lid"`
-	SMSL      string `json:"sm_sl"`
-	CapMask   string `json:"cap_mask"`
+	Number    string         `json:"number"`
+	State     string         `json:"state"`
+	PhysState string         `json:"phys_state"`
+	LinkLayer string         `json:"link_layer"`
+	Rate      string         `json:"rate"`
+	LID       string         `json:"lid"`
+	SMLID     string         `json:"sm_lid"`
+	SMSL      string         `json:"sm_sl"`
+	CapMask   string         `json:"cap_mask"`
+	GIDs      []RDMAGIDEntry `json:"gids,omitempty"`
 }
 
 // RDMADeviceData contains sysfs data for a single RDMA uverbs device.
@@ -119,8 +127,25 @@ func CollectRDMADeviceData() *RDMAData {
 					SMSL:      readSysfsFile(path.Join(portDir, "sm_sl")),
 					CapMask:   readSysfsFile(path.Join(portDir, "cap_mask")),
 				}
-				log.Infof("rdma collect:   port %s: state=%q link_layer=%q rate=%q",
-					pd.Number, pd.State, pd.LinkLayer, pd.Rate)
+				gidsPath := path.Join(portDir, "gids")
+				typesPath := path.Join(portDir, "gid_attrs", "types")
+				gidDents, gerr := os.ReadDir(gidsPath)
+				if gerr == nil {
+					for _, gidDent := range gidDents {
+						gidVal := readSysfsFile(path.Join(gidsPath, gidDent.Name()))
+						typeVal := readSysfsFile(path.Join(typesPath, gidDent.Name()))
+						if gidVal == "" {
+							continue
+						}
+						pd.GIDs = append(pd.GIDs, RDMAGIDEntry{
+							Index: gidDent.Name(),
+							GID:   gidVal,
+							Type:  typeVal,
+						})
+					}
+				}
+				log.Infof("rdma collect:   port %s: state=%q link_layer=%q rate=%q gids=%d",
+					pd.Number, pd.State, pd.LinkLayer, pd.Rate, len(pd.GIDs))
 				dev.Ports = append(dev.Ports, pd)
 			}
 		}
@@ -249,6 +274,18 @@ func (fs *filesystem) newRDMASysfsEntries(ctx context.Context, creds *auth.Crede
 				addFile(portEntries, "sm_lid", port.SMLID)
 				addFile(portEntries, "sm_sl", port.SMSL)
 				addFile(portEntries, "cap_mask", port.CapMask)
+				if len(port.GIDs) > 0 {
+					gidsEntries := map[string]kernfs.Inode{}
+					typesEntries := map[string]kernfs.Inode{}
+					for _, gid := range port.GIDs {
+						addFile(gidsEntries, gid.Index, gid.GID)
+						addFile(typesEntries, gid.Index, gid.Type)
+					}
+					portEntries["gids"] = fs.newDir(ctx, creds, defaultSysDirMode, gidsEntries)
+					portEntries["gid_attrs"] = fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+						"types": fs.newDir(ctx, creds, defaultSysDirMode, typesEntries),
+					})
+				}
 				portsDir[port.Number] = fs.newDir(ctx, creds, defaultSysDirMode, portEntries)
 			}
 			ibDevEntries["ports"] = fs.newDir(ctx, creds, defaultSysDirMode, portsDir)
