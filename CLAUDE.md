@@ -496,9 +496,41 @@ MR deregistered
 ALL PASSED
 ```
 
+### GPUDirect RDMA confirmed working on H200 (March 25)
+
+GPU memory registered with the NIC for direct GPU↔NIC DMA, bypassing the CPU. This is the foundation for high-performance NCCL multi-node communication.
+
+**The problem**: `ibv_reg_mr(gpu_va)` tells the kernel to pin physical GPU pages for NIC DMA. Our CPU mirroring (`mm.Pin` → `MapInternal` → `mremap`) doesn't work because `cuMemAlloc` returns device-only memory with no CPU VMA — the address only exists in the NVIDIA driver's internal GPU page tables.
+
+**Three-tier memory resolution**:
+1. **CPU memory** (malloc): `mm.Pin` succeeds → mirror pages into sentry → rewrite `start` to sentry VA → host `pin_user_pages` finds them
+2. **GPU memory with VMA** (cuMemAllocManaged): `mm.Pin` fails → `InternalMappingsForRange` resolves proxy device pages → mirror → rewrite
+3. **GPU device memory** (cuMemAlloc): both fail → **pass GPU VA through unmirrored** → host `pin_user_pages` fails → **nvidia-peermem** intercepts → resolves GPU VA via NVIDIA driver's internal tables → returns physical GPU pages to IB subsystem
+
+The passthrough works because the sentry holds the NVIDIA driver context (nvproxy forwards all GPU ioctls from the sentry process), so nvidia-peermem finds the GPU allocation when it queries the driver.
+
+Test output (`gdr_test` inside gVisor on H200 with 8 GPUs + 12 mlx5 HCAs):
+```
+gdr_test: GPU MR OK: lkey=2096828 rkey=2096828 -- GPUDirect RDMA WORKS!
+```
+
+Sentry log showing the fallback chain:
+```
+mm.Pin failed (operation not permitted), trying proxy device fallback
+proxy device fallback failed (...), GPU VA passthrough (nvidia-peermem)
+MR REG rewrote start 0x7f2c6de00000 → sentry 0x7f2c6de00000
+host ioctl returned n=0 OK
+```
+
+**Bug fixed**: `kernel.ExtractErrno` panicked on the raw Go error from `mm.Pin`. Error handling now returns `linuxerr.ENOMEM` instead of the raw error.
+
 ### What's next
 
-**Immediate — NCCL all-reduce**: Requires nvproxy alongside rdmaproxy, `/dev/infiniband/rdma_cm` passthrough, GPUDirect RDMA
+**Immediate — NCCL all-reduce**: nvproxy + rdmaproxy coexistence is confirmed working. Remaining:
+- Build Docker image with nccl-tests (CUDA + NCCL + rdma-core)
+- Test single-node NCCL with IB transport forced (`NCCL_P2P_DISABLE=1 NCCL_SHM_DISABLE=1 NCCL_NET_GDR_LEVEL=0`)
+- Test multi-node NCCL between two H200 nodes
+- Potentially need `/dev/infiniband/rdma_cm` passthrough for NCCL connection setup
 
 ### RDMA data path — full ioctl sequence (from ib_write_bw sniffer trace)
 
@@ -521,9 +553,12 @@ Confirmed working on H200 (March 25) — page mirroring for DMA buffers:
 12. **QP CREATE** — ✅ same pattern, handle tracked in `pinnedQPs`
 13. **QP state transitions** — ✅ `ibv_modify_qp(INIT)` works (plain ioctl, no page mirroring needed)
 
+Confirmed working on H200 (March 25) — GPUDirect RDMA:
+14. **GPU MR REG** — ✅ GPU VA passthrough via nvidia-peermem (no mirroring needed for device memory)
+
 Not yet tested:
-14. **Data path** — doorbell writes + NIC DMA. No ioctls; depends on MR REG + mmap + CQ/QP working.
-15. **Teardown** — DEALLOC_UAR, munmap, close (basic teardown confirmed via `cq_qp_test` cleanup path).
+15. **Data path** — doorbell writes + NIC DMA. No ioctls; depends on MR REG + mmap + CQ/QP working.
+16. **Teardown** — DEALLOC_UAR, munmap, close (basic teardown confirmed via `cq_qp_test` cleanup path).
 
 ### Test commands
 
@@ -534,6 +569,13 @@ sudo docker build -f Dockerfile.cqqptest -t cqqp-test .
 # Run with all uverbs devices:
 DEVS=$(ls /dev/infiniband/uverbs* | sed 's/^/--device=/' | tr '\n' ' ')
 sudo docker run --runtime=runsc-rdma --rm $DEVS cqqp-test cq_qp_test
+```
+
+**gdr_test** (validates GPUDirect RDMA — GPU MR + CPU MR + full CUDA init):
+```bash
+sudo docker build -f Dockerfile.gdrtest -t gdr-test .
+DEVS=$(ls /dev/infiniband/uverbs* | sed 's/^/--device=/' | tr '\n' ' ')
+sudo docker run --runtime=runsc-rdma --rm --gpus all $DEVS --ulimit memlock=-1:-1 gdr-test gdr_test
 ```
 
 **mr_test** (validates MR registration pipeline):
