@@ -60,6 +60,5 @@ func Filters() seccomp.SyscallRules {
 			seccomp.NonNegativeFD{},
 			seccomp.EqualTo(unix.CLONE_NEWNET),
 		},
-		unix.SYS_CLOSE: seccomp.MatchAll{},
 	})
 }

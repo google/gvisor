@@ -36,16 +36,28 @@ import (
 )
 
 // hostNetnsFD holds a file descriptor to the host's network namespace.
-// RoCE ioctls (ibv_modify_qp) require the calling thread to be in the
-// host network namespace so the kernel can resolve GIDs to physical NICs.
-// Set once at startup via SetHostNetnsFD; -1 means not available.
-var hostNetnsFD int32 = -1
+// containerNetnsFD holds the sentry's (container) network namespace.
+// RoCE ioctls require the calling thread to be in the host netns so
+// the kernel can resolve GIDs to physical NICs. Both FDs are saved
+// before seccomp filters are installed so no open() is needed later.
+var (
+	hostNetnsFD      int32 = -1
+	containerNetnsFD int32 = -1
+)
 
-// SetHostNetnsFD stores the host network namespace FD for later use by
-// RDMA ioctls. The FD is kept open for the lifetime of the process.
+// SetHostNetnsFD stores the host network namespace FD and captures the
+// current (container) netns for later restoration. Must be called
+// before seccomp filters are installed.
 func SetHostNetnsFD(fd int) {
 	hostNetnsFD = int32(fd)
-	log.Infof("rdmaproxy: host netns FD set to %d", fd)
+	curFD, err := unix.Open("/proc/thread-self/ns/net", unix.O_RDONLY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		curFD, err = unix.Open("/proc/self/ns/net", unix.O_RDONLY|unix.O_CLOEXEC, 0)
+	}
+	if err == nil {
+		containerNetnsFD = int32(curFD)
+	}
+	log.Infof("rdmaproxy: host netns FD=%d, container netns FD=%d", hostNetnsFD, containerNetnsFD)
 }
 
 // uverbsDevice implements vfs.Device for /dev/infiniband/uverbs*.

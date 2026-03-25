@@ -37,11 +37,10 @@ import (
 
 // ioctlInHostNetns executes an ioctl in the host's network namespace.
 // RoCE's ibv_modify_qp requires the calling thread's network namespace
-// to contain the physical NICs referenced by GIDs. When the sentry runs
-// in Docker's bridge network namespace, this switches to the host netns
-// for the duration of the ioctl.
+// to contain the physical NICs referenced by GIDs. Both FDs are saved
+// at startup (before seccomp) so no open() is needed here.
 func ioctlInHostNetns(fd int32, cmd uint32, arg unsafe.Pointer) (uintptr, unix.Errno) {
-	if hostNetnsFD < 0 {
+	if hostNetnsFD < 0 || containerNetnsFD < 0 {
 		n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(fd), uintptr(cmd), uintptr(arg))
 		return n, errno
 	}
@@ -49,15 +48,7 @@ func ioctlInHostNetns(fd int32, cmd uint32, arg unsafe.Pointer) (uintptr, unix.E
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	curNetns, err := unix.Open("/proc/thread-self/ns/net", unix.O_RDONLY|unix.O_CLOEXEC, 0)
-	if err != nil {
-		log.Warningf("rdmaproxy: open current netns: %v, falling back", err)
-		n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(fd), uintptr(cmd), uintptr(arg))
-		return n, errno
-	}
-
 	if err := unix.Setns(int(hostNetnsFD), unix.CLONE_NEWNET); err != nil {
-		unix.Close(curNetns)
 		log.Warningf("rdmaproxy: setns to host netns: %v, falling back", err)
 		n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(fd), uintptr(cmd), uintptr(arg))
 		return n, errno
@@ -65,10 +56,9 @@ func ioctlInHostNetns(fd int32, cmd uint32, arg unsafe.Pointer) (uintptr, unix.E
 
 	n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(fd), uintptr(cmd), uintptr(arg))
 
-	if restoreErr := unix.Setns(curNetns, unix.CLONE_NEWNET); restoreErr != nil {
-		log.Warningf("rdmaproxy: restore netns: %v", restoreErr)
+	if restoreErr := unix.Setns(int(containerNetnsFD), unix.CLONE_NEWNET); restoreErr != nil {
+		log.Warningf("rdmaproxy: restore container netns: %v", restoreErr)
 	}
-	unix.Close(curNetns)
 
 	return n, errno
 }
