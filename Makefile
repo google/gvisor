@@ -236,7 +236,7 @@ unit-tests: ## Local package unit tests in pkg/..., tools/.., etc.
 .PHONY: unit-tests
 
 # See unit-tests: this includes runsc/container.
-container-tests: ## Run all tests in runsc/container/...
+container-tests: $(RUNTIME_BIN) ## Run all tests in runsc/container/...
 	@$(call test,--test_tag_filters=-nogo --test_env=CGROUPV2=$(CGROUPV2) runsc/container/...)
 .PHONY: container-tests
 
