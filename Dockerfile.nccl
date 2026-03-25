@@ -1,0 +1,16 @@
+FROM nvidia/cuda:12.4.1-devel-ubuntu22.04
+RUN apt-get update -qq && apt-get install -yqq --no-install-recommends \
+    libibverbs-dev librdmacm-dev ibverbs-utils \
+    libnccl2 libnccl-dev \
+    git make gcc g++ && \
+    rm -rf /var/lib/apt/lists/*
+RUN git clone --depth 1 https://github.com/NVIDIA/nccl-tests.git /nccl-tests && \
+    cd /nccl-tests && \
+    make MPI=0 CUDA_HOME=/usr/local/cuda NCCL_HOME=/usr
+COPY gdr_test.c /tmp/gdr_test.c
+COPY cq_qp_test.c /tmp/cq_qp_test.c
+RUN gcc -o /usr/local/bin/gdr_test /tmp/gdr_test.c \
+    -libverbs -lcuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/stubs && \
+    gcc -o /usr/local/bin/cq_qp_test /tmp/cq_qp_test.c -libverbs && \
+    rm /tmp/gdr_test.c /tmp/cq_qp_test.c
+ENV PATH="/nccl-tests/build:${PATH}"
