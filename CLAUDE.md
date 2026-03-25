@@ -651,9 +651,72 @@ grep 'rdmaproxy' /tmp/runsc-rdma/logs/$BOOTLOG
 2. ~~**uverbs device proxy**~~ ✅ — `/dev/infiniband/uverbs*` chardev registered with dynamic VFS major. Opens host device via dev gofer. Generic ioctl handler parses `ib_uverbs_ioctl_hdr` + attrs, rewrites sandbox pointers, forwards to host.
 3. ~~**Seccomp allowlist**~~ ✅ — `ioctl` (magic `0x1b`), `mmap` (MAP_SHARED), `munmap`, `openat` permitted through BPF filter when `--rdmaproxy` is enabled.
 4. ~~**MR registration page mirroring**~~ ✅ — `mirrorSandboxPages()` pins sandbox pages via `mm.Pin()`, maps them into sentry VA space via `MapInternal()` + `mremap`, rewrites the `start` address while preserving `hca_va`. MR handle tracked for cleanup on DEREG or fd close. Confirmed on H200 with mlx5.
-5. **Legacy write() command path** — ✅ `Write()` and `Read()` handlers added as fallback for older rdma-core versions that use `write(fd, cmd_buf)` instead of `RDMA_VERBS_IOCTL`. Same page mirroring applied.
-6. **Link endpoints for InfiniBand verbs** — not started (may not be needed; uverbs bypasses the kernel network stack)
-7. **NVProxy integration for RDMA NIC isolation** — not started (needed for NCCL/GPUDirect RDMA)
+5. ~~**Legacy write() command path**~~ ✅ — `Write()` and `Read()` handlers added as fallback for older rdma-core versions that use `write(fd, cmd_buf)` instead of `RDMA_VERBS_IOCTL`. Same page mirroring applied.
+6. ~~**CQ/QP DMA buffer mirroring**~~ ✅ — `prepareCQQPCreate()` mirrors `buf_addr` + `db_addr` from mlx5 driver attrs. VMA range lookup sizes buffers. Handle-tracked for destroy cleanup.
+7. ~~**GPU VA passthrough (nvidia-peermem)**~~ ✅ — When `mm.Pin()` fails for GPU device memory, passes VA through unmirrored; host nvidia-peermem resolves GPU VAs via driver internals.
+8. **Link endpoints for InfiniBand verbs** — not needed. uverbs bypasses the kernel network stack; NIC DMA is direct.
+9. **NVProxy integration for RDMA NIC isolation** — not started (lower priority; multi-tenant NIC isolation)
+
+### Current Status: What Works, What Doesn't (March 25, 2026)
+
+**Working end-to-end:**
+- `ib_write_bw` / `ib_read_bw` with `--network=host` ✅
+- Device discovery (`ibv_devinfo`, `ibv_devices`) ✅
+- All uverbs operations: ALLOC_PD, ALLOC_CONTEXT, CREATE_CQ, CREATE_QP, REG_MR, DEREG_MR, DESTROY_*, QUERY_PORT, QUERY_GID
+- mmap of doorbell pages, CQ/QP buffers, UAR pages
+- GPUDirect RDMA via nvidia-peermem (MR REG of GPU memory)
+
+**Not working: NCCL all_reduce_perf with `--network=host`**
+
+The gap is **NCCL bootstrap TCP socket creation**, not RDMA. NCCL calls `getifaddrs()` (glibc → `AF_NETLINK` → `RTM_GETADDR`) to find a network interface for its bootstrap TCP connection. This fails with "no socket interface found."
+
+### Root Cause Analysis: Namespace Constraints
+
+The sandbox ALWAYS runs in a **user namespace** (`sandbox.go:1162`). This constrains networking.
+
+**Why `--network=host` is required for RoCE:**
+- `ibv_modify_qp` (INIT→RTR) calls `rdma_read_gid_attr_ndev_rcu()` in the kernel
+- Checks `net_eq(dev_net(gid_ndev), gid_attr->net)` — GID's physical NIC must be in caller's netns
+- Bridge networking: sentry is in container netns, physical NIC absent → ENODEV (errno 19)
+- `--network=host`: sentry inherits host netns → check passes
+
+**Why `setns()` cannot fix bridge networking:**
+- Sandbox is in a child user namespace
+- `setns(CLONE_NEWNET)` requires `CAP_SYS_ADMIN` in the **init user namespace**
+- Child userns caps don't grant init userns privileges — fundamental Linux boundary
+- `--privileged` grants caps to app inside gVisor, not the sentry itself
+
+**Why link endpoints (XDP/IPoIB-style) cannot fix it:**
+- Kernel checks exact physical `struct net_device *` pointer in GID table
+- Virtual interface with same IP doesn't satisfy `net_eq()` — identity check, not IP lookup
+
+### The Remaining Gap: `getifaddrs()` in hostinet
+
+With `--network=host`, gVisor uses **hostinet**. RDMA works. But NCCL bootstrap fails because `getifaddrs()` returns no interfaces.
+
+**Data pipeline for `getifaddrs()`:**
+1. glibc: `socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE)` → gVisor virtual Netlink (`pkg/sentry/socket/netlink/`)
+2. `RTM_GETLINK` → `route.dumpLinks()` → `hostinet.Stack.Interfaces()` → sentry `syscall.NetlinkRIB` to host
+3. `RTM_GETADDR` → `route.dumpAddrs()` → `hostinet.Stack.InterfaceAddrs()` → sentry `syscall.NetlinkRIB` to host
+4. glibc assembles `struct ifaddrs` from responses
+
+**All pieces exist** — virtual Netlink provider, NETLINK_ROUTE protocol, hostinet Stack methods, seccomp allowlist. Something is broken in the data flow.
+
+**Diagnostic steps:**
+```bash
+# Does /proc/net/dev show interfaces? (uses same Stack.Interfaces())
+docker run --runtime=runsc-rdma --network=host --rm --entrypoint cat nccl-test /proc/net/dev
+
+# Sentry logs for interface errors
+cat /tmp/runsc-rdma/logs/*.log* | grep -iE "(interface|netlink|InterfaceAddr|could not)" | tail -20
+```
+
+### Path to Working NCCL All-Reduce
+
+1. **Diagnose** why `getifaddrs()` returns empty inside gVisor+hostinet
+2. **Fix** the broken link in the Netlink→hostinet pipeline
+3. **Re-test** `all_reduce_perf -b 8 -e 128M -f 2 -g 2` with `--network=host`
+4. **Multi-node**: test `ib_write_bw` across two sandboxed containers
 
 ### Big Questions
 - How do we quickly test RDMA support? What will this look like in the upstream repo? How can we make local development align closely with upstream testing so we don’t have to rewrite the testing suite from scratch?
