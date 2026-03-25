@@ -138,7 +138,7 @@ func CollectRDMADeviceData() *RDMAData {
 							continue
 						}
 						if typeVal == "" && pd.LinkLayer == "Ethernet" {
-							typeVal = inferRoCEType(gidVal)
+							typeVal = inferRoCEType(gidDent.Name())
 						}
 						pd.GIDs = append(pd.GIDs, RDMAGIDEntry{
 							Index: gidDent.Name(),
@@ -216,18 +216,14 @@ func extractMinor(dev string) string {
 	return "0"
 }
 
-const allZeroGID = "0000:0000:0000:0000:0000:0000:0000:0000"
-
-// inferRoCEType guesses the RoCE GID type when the host sysfs
-// gid_attrs/types/ files are not readable (e.g. restricted sysfs mount).
-// For mlx5 Ethernet (RoCE) devices the kernel assigns:
-//   - link-local GIDs (fe80::) → RoCE v1
-//   - all other non-zero GIDs  → RoCE v2
-func inferRoCEType(gid string) string {
-	if gid == allZeroGID || gid == "" {
-		return ""
-	}
-	if strings.HasPrefix(gid, "fe80:") {
+// inferRoCEType returns the RoCE GID type based on GID table index.
+// The sandbox's restricted sysfs mount masks gid_attrs/types/ content,
+// so we infer from the well-known mlx5 kernel assignment:
+//   - index 0: RoCE v1 (link-local MAC-derived)
+//   - index 1+: RoCE v2
+// NCCL reads types from sysfs but gets actual GID addresses via ioctl.
+func inferRoCEType(gidIndex string) string {
+	if gidIndex == "0" {
 		return "IB/RoCE v1"
 	}
 	return "RoCE v2"
