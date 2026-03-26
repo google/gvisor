@@ -86,18 +86,7 @@ func initImmediate(tab *Table, exprInfo ExprInfo) (*immediate, *syserr.Annotated
 		return nil, err
 	}
 
-	// Now find the register to store it in.
-	dreg, err := nftParseReg(reg, dregType, regData)
-	if err != nil {
-		return nil, err
-	}
-
-	switch int32(dreg) {
-	case linux.NFT_GOTO:
-		// TODO - b/434244017: Add support for goto verdicts.
-		return nil, syserr.NewAnnotatedError(syserr.ErrNotSupported, "Nftables: Verdicts with goto codes are not yet supported")
-	}
-	return newImmediate(dreg, regData)
+	return newImmediate(uint8(reg), regData)
 }
 
 // immRegToType returns the corresponding data type for a given register number.
