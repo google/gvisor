@@ -235,25 +235,180 @@ sudo docker run --runtime=runsc-rdma --rm --gpus all $DEVS \
 
 ### Host baseline (runc, no gVisor)
 
-Run the same test on the host Docker runtime to establish a baseline. Remove
-`--runtime=runsc-rdma` to use the default runc runtime:
+Same image, same flags, but with the default Docker runtime (runc) instead of
+gVisor. This is the proper apples-to-apples baseline — the container
+environment ensures NCCL's topology detection matches the gVisor test.
+
+> **Why not bare-metal?** With `NCCL_P2P_DISABLE=1` and `NCCL_SHM_DISABLE=1`
+> on bare metal, NCCL sees 8 GPUs with no local interconnect and classifies
+> them as 8 separate nodes (`nNodes 8 localRanks 1`). This breaks ring GDR
+> heuristics and tanks performance (~1.5 GB/s). Those flags only exist to
+> match gVisor's constraints — on real bare metal you'd use NVLink/P2P.
 
 ```bash
 DEVS=$(ls /dev/infiniband/uverbs* | sed 's/^/--device=/' | tr '\n' ' ')
-sudo docker run --rm --gpus all $DEVS \
+sudo docker run --runtime=runc --rm --gpus all $DEVS \
   --ulimit memlock=-1:-1 --shm-size=1g --network=host \
-  -e NCCL_DEBUG=WARN \
+  -e NCCL_DEBUG=INFO \
   -e NCCL_P2P_DISABLE=1 \
   -e NCCL_SHM_DISABLE=1 \
   -e NCCL_DMABUF_ENABLE=0 \
   -e NCCL_NET_GDR_LEVEL=3 \
-  -e NCCL_IB_HCA=mlx5_1 \
-  nccl-test all_reduce_perf -b 8 -e 128M -f 2 -g 2
+  -e 'NCCL_IB_HCA=^mlx5_0' \
+  nccl-test all_reduce_perf -b 8 -e 128M -f 2 -g 8
 ```
 
 ---
 
-## 7. Environment variables reference
+## 7. Multi-node NCCL all-reduce (2+ nodes over IB)
+
+Validates InfiniBand performance between nodes using the official nccl-tests
+with MPI. Requires 2+ machines on the same IB fabric with GPUs and IB NICs.
+
+### Prerequisites
+
+- Docker installed on all nodes
+- Same `Dockerfile.nccl` and source files available on all nodes
+- OpenMPI installed on all nodes (check: `ls /usr/mpi/gcc/openmpi-*/bin/mpirun`)
+- `nvidia-peermem` kernel module loaded on all nodes
+
+### One-time setup (all nodes)
+
+**1. Build the Docker image and extract binaries:**
+
+```bash
+sudo docker build -t nccl-test -f Dockerfile.nccl .
+
+sudo docker create --name lib-tmp nccl-test
+sudo rm -rf /tmp/nccl-tests-build /tmp/nccl-cuda-libs /tmp/nccl-mpi-libs
+sudo docker cp lib-tmp:/nccl-tests/build/ /tmp/nccl-tests-build/
+sudo docker cp lib-tmp:/usr/local/cuda/lib64/ /tmp/nccl-cuda-libs/
+sudo mkdir -p /tmp/nccl-mpi-libs
+for lib in libmpi.so.40 libmpi.so.40.30.2 \
+           libopen-pal.so.40 libopen-pal.so.40.30.2 \
+           libopen-rte.so.40 libopen-rte.so.40.30.2 \
+           libhwloc.so.15 libhwloc.so.15.5.2 \
+           libevent_pthreads-2.1.so.7 libevent_pthreads-2.1.so.7.0.1 \
+           libevent_core-2.1.so.7 libevent_core-2.1.so.7.0.1; do
+  sudo docker cp "lib-tmp:/usr/lib/x86_64-linux-gnu/$lib" /tmp/nccl-mpi-libs/ 2>/dev/null
+done
+sudo docker rm lib-tmp
+```
+
+**2. Load nvidia-peermem for GPUDirect RDMA:**
+
+```bash
+sudo modprobe nvidia-peermem
+```
+
+**3. Set up SSH keys (from the launch node to all other nodes):**
+
+On the node you'll run mpirun from:
+
+```bash
+ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519
+cat ~/.ssh/id_ed25519.pub
+```
+
+Copy the public key into `~/.ssh/authorized_keys` on every other node:
+
+```bash
+# On each remote node:
+mkdir -p ~/.ssh && chmod 700 ~/.ssh
+echo '<paste public key here>' >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+```
+
+Verify: `ssh -o StrictHostKeyChecking=no <remote_ip> echo OK`
+
+### Identify node IPs
+
+Find the private IP on each node (use the interface on the same subnet, not
+loopback or docker bridges):
+
+```bash
+ip -4 addr show | grep -E 'inet 172\.|inet 10\.' | grep -v docker | grep -v 127
+```
+
+### Create hostfile
+
+On the launch node, create `/tmp/hostfile` with one line per node. `slots=N`
+is the number of GPUs per node:
+
+```bash
+cat > /tmp/hostfile <<'EOF'
+<NODE_A_IP> slots=8
+<NODE_B_IP> slots=8
+EOF
+```
+
+### Run the test
+
+```bash
+MPI=$(ls -d /usr/mpi/gcc/openmpi-*/bin | head -1)
+NGPUS_PER_NODE=8
+NNODES=$(wc -l < /tmp/hostfile)
+NP=$((NGPUS_PER_NODE * NNODES))
+NIC_IF=ens7  # private network interface name
+
+sudo $MPI/mpirun --allow-run-as-root \
+  -np $NP -N $NGPUS_PER_NODE -hostfile /tmp/hostfile \
+  --bind-to none \
+  -mca btl tcp,self \
+  -mca btl_tcp_if_include $NIC_IF \
+  -mca plm_rsh_args "-o StrictHostKeyChecking=no" \
+  -x LD_LIBRARY_PATH=/tmp/nccl-cuda-libs:/tmp/nccl-mpi-libs \
+  -x NCCL_DEBUG=INFO \
+  -x 'NCCL_IB_HCA=^mlx5_0' \
+  -x NCCL_NET_GDR_LEVEL=3 \
+  /tmp/nccl-tests-build/all_reduce_perf -b 8M -e 2048M -f 2 -t 1 -g 1 -c 1 -n 10
+```
+
+**What to look for:**
+- `nNodes 2` (or however many nodes) in the NCCL init logs
+- `GDR 1` on all ranks
+- `NET/IB` channels using `GDRDMA`
+- busbw >200 GB/s at large message sizes for 2x H100 nodes (8 IB NICs each)
+
+### Without SSH: custom TCP-bootstrap benchmark
+
+If SSH between nodes is not possible, use `nccl_multinode_bench` which
+bootstraps via a TCP socket instead of MPI. Same NCCL all-reduce, same IB
+path — you just run a command on each node manually.
+
+On the launch node (start first):
+
+```bash
+sudo bash -c 'ulimit -l unlimited && \
+RANK=0 NRANKS=<NUM_NODES> NGPUS=8 \
+MASTER_ADDR=<NODE_A_IP> MASTER_PORT=29500 \
+NCCL_DEBUG=INFO \
+NCCL_IB_HCA="^mlx5_0" \
+NCCL_NET_GDR_LEVEL=3 \
+LD_LIBRARY_PATH=/tmp/nccl-cuda-libs \
+/tmp/nccl_multinode_bench'
+```
+
+On each additional node (start after the launch node):
+
+```bash
+sudo bash -c 'ulimit -l unlimited && \
+RANK=<1,2,...> NRANKS=<NUM_NODES> NGPUS=8 \
+MASTER_ADDR=<NODE_A_IP> MASTER_PORT=29500 \
+NCCL_DEBUG=INFO \
+NCCL_IB_HCA="^mlx5_0" \
+NCCL_NET_GDR_LEVEL=3 \
+LD_LIBRARY_PATH=/tmp/nccl-cuda-libs \
+/tmp/nccl_multinode_bench'
+```
+
+The `nccl_multinode_bench` binary is built from `nccl_multinode_bench.c` and
+included in the `nccl-test` Docker image at `/usr/local/bin/nccl_multinode_bench`.
+Extract it the same way as the nccl-tests binary.
+
+---
+
+## 8. Environment variables reference
 
 | Variable | Value | Purpose |
 |---|---|---|
@@ -278,7 +433,7 @@ sudo docker run --rm --gpus all $DEVS \
 
 ---
 
-## 8. Log inspection
+## 9. Log inspection
 
 ### Sentry boot logs
 
@@ -314,7 +469,7 @@ is passed through to the host where nvidia-peermem resolves it.
 
 ---
 
-## 9. Troubleshooting
+## 10. Troubleshooting
 
 ### GDR shows 0 (GDRDMA not active)
 
@@ -372,7 +527,7 @@ cat /tmp/runsc-rdma/logs/$(ls -t /tmp/runsc-rdma/logs/ | grep create | head -1)
 
 ---
 
-## 10. Quick copy-paste: full rebuild + test cycle
+## 11. Quick copy-paste: full rebuild + test cycle
 
 ```bash
 # Build

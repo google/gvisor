@@ -2,15 +2,20 @@ FROM nvidia/cuda:12.4.1-devel-ubuntu22.04
 RUN apt-get update -qq && apt-get install -yqq --allow-change-held-packages --no-install-recommends \
     libibverbs-dev librdmacm-dev ibverbs-utils \
     libnccl2 libnccl-dev \
+    libopenmpi-dev \
     git make gcc g++ && \
     rm -rf /var/lib/apt/lists/*
 RUN git clone --depth 1 https://github.com/NVIDIA/nccl-tests.git /nccl-tests && \
     cd /nccl-tests && \
-    make MPI=0 CUDA_HOME=/usr/local/cuda NCCL_HOME=/usr
+    make MPI=1 MPI_HOME=/usr/lib/x86_64-linux-gnu/openmpi \
+    CUDA_HOME=/usr/local/cuda NCCL_HOME=/usr
 COPY gdr_test.c /tmp/gdr_test.c
 COPY cq_qp_test.c /tmp/cq_qp_test.c
+COPY nccl_multinode_bench.c /tmp/nccl_multinode_bench.c
 RUN gcc -o /usr/local/bin/gdr_test /tmp/gdr_test.c \
     -libverbs -lcuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/stubs && \
     gcc -o /usr/local/bin/cq_qp_test /tmp/cq_qp_test.c -libverbs && \
-    rm /tmp/gdr_test.c /tmp/cq_qp_test.c
+    gcc -o /usr/local/bin/nccl_multinode_bench /tmp/nccl_multinode_bench.c \
+    -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lcudart -lnccl -lrt && \
+    rm /tmp/gdr_test.c /tmp/cq_qp_test.c /tmp/nccl_multinode_bench.c
 ENV PATH="/nccl-tests/build:${PATH}"
