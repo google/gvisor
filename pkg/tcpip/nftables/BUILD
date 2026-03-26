@@ -69,6 +69,7 @@ go_test(
         "//pkg/rand",
         "//pkg/sentry/socket/netlink/nlmsg",
         "//pkg/sync",
+        "//pkg/syserr",
         "//pkg/tcpip",
         "//pkg/tcpip/faketime",
         "//pkg/tcpip/header",
