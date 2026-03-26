@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -253,7 +254,10 @@ func (s *Stack) SetInterface(ctx context.Context, msg *nlmsg.Message) *syserr.Er
 //
 // If instead the linkAttrs map does not contain IFLA_NET_NS_FD, or if it
 // points to the same netns as the source stack, only locks the source stack
-// and returns nil. And if the netns fd is invalid, returns an error.
+// and returns nil.
+//
+// If the netns fd is invalid, or the calling context lacks CAP_NET_ADMIN,
+// returns an error.
 func (s *Stack) lockSrcAndDst(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesView) (*inet.Namespace, *syserr.Error) {
 	if linkAttrs == nil {
 		s.linkMu.Lock()
@@ -273,9 +277,13 @@ func (s *Stack) lockSrcAndDst(ctx context.Context, linkAttrs map[uint16]nlmsg.By
 	if f == nil {
 		return nil, syserr.ErrInvalidArgument
 	}
-	ns, err := f(int32(fd)) // ns.DecRef() is called in unlockSrcAndDst().
+	ns, err := f(int32(fd))
 	if err != nil {
 		return nil, syserr.FromError(err)
+	}
+	if !auth.CredentialsFromContext(ctx).HasCapabilityIn(linux.CAP_NET_ADMIN, ns.UserNamespace()) {
+		ns.DecRef(ctx)
+		return nil, syserr.ErrNotPermittedNet
 	}
 
 	dst := ns.Stack().(*Stack)
@@ -284,6 +292,7 @@ func (s *Stack) lockSrcAndDst(ctx context.Context, linkAttrs map[uint16]nlmsg.By
 		s.linkMu.Lock()
 		return nil, nil
 	}
+	// No failures from this point on, ns.DecRef() is called in unlockSrcAndDst().
 
 	if s.id < dst.id {
 		s.linkMu.Lock()

@@ -52,3 +52,20 @@ if ! wait_for ! ip netns exec test ip link show test_veth02; then
   fail "test_veth02 hasn't been destroyed"
 fi
 ip netns del test
+
+# Test for the fact that we need CAP_NET_ADMIN in the target namespace to move a veth.
+ip netns add priv_target_ns
+unshare_status=0
+unshare -U -r -n bash -c '
+  ip link add veth_src type veth peer name veth_dst || exit 2
+  if ip link set veth_dst netns /var/run/netns/priv_target_ns 2>/dev/null; then
+    exit 1
+  fi
+  exit 0
+' || unshare_status=$?
+ip netns del priv_target_ns
+if [[ "${unshare_status}" -eq 1 ]]; then
+  fail "Move succeeded without CAP_NET_ADMIN in target"
+elif [[ "${unshare_status}" -eq 2 ]]; then
+  fail "Unexpected failure to create veth pair"
+fi
