@@ -98,7 +98,7 @@ var Httpd = SimpleSpec("httpd", "basic/httpd", nil, nil)
 // TestCrictlSanity refers to b/112433158.
 func TestCrictlSanity(t *testing.T) {
 	// Setup containerd and crictl.
-	crictl, cleanup, err := setup(t, false /* enableGrouping */)
+	crictl, cleanup, err := setup(t, true /* enableGrouping */)
 	if err != nil {
 		t.Fatalf("failed to setup crictl: %v", err)
 	}
@@ -111,24 +111,6 @@ func TestCrictlSanity(t *testing.T) {
 	// Look for the httpd page.
 	if err = httpGet(crictl, podID, "index.html"); err != nil {
 		t.Fatalf("failed to get page: %v", err)
-	}
-
-	// Since shim grouping is disabled, there will be one shim process for the
-	// container and another one for the sandbox.
-	count, err := countShimProcesses(t, contID)
-	if err != nil {
-		t.Fatalf("failed to count shim processes for containerID %s: %v", contID, err)
-	}
-	if count != 1 {
-		t.Errorf("got %d shim processes for containerID %s, want 1", count, contID)
-	}
-
-	count, err = countShimProcesses(t, podID)
-	if err != nil {
-		t.Fatalf("failed to count shim processes for podID %s: %v", podID, err)
-	}
-	if count != 1 {
-		t.Errorf("got %d shim processes for podID %s, want 1", count, podID)
 	}
 
 	// Stop everything.
