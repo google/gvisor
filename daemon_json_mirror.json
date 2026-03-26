@@ -1,0 +1,15 @@
+{
+  "runtimes": {
+    "runsc-rdma": {
+      "path": "/usr/local/bin/runsc-rdma",
+      "runtimeArgs": [
+        "--debug",
+        "--debug-log=/tmp/runsc-rdma/logs/",
+        "--rdmaproxy",
+        "--nvproxy",
+        "--network=host",
+        "--rdma-expected-ipoib=-1"
+      ]
+    }
+  }
+}
