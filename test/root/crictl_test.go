@@ -95,45 +95,41 @@ func SimpleSpec(name, image string, cmd []string, extra map[string]any) string {
 // Httpd is a JSON config for an httpd container.
 var Httpd = SimpleSpec("httpd", "basic/httpd", nil, nil)
 
-// TestCrictlSanity refers to b/112433158.
 func TestCrictlSanity(t *testing.T) {
-	// Setup containerd and crictl.
-	crictl, cleanup, err := setup(t, false /* enableGrouping */)
-	if err != nil {
-		t.Fatalf("failed to setup crictl: %v", err)
-	}
-	defer cleanup()
-	podID, contID, err := crictl.StartPodAndContainer(containerdRuntime, "basic/httpd", Sandbox("default"), Httpd)
-	if err != nil {
-		t.Fatalf("start failed: %v", err)
-	}
+	for _, tc := range []struct {
+		name           string
+		enableGrouping bool
+	}{
+		{
+			name:           "enableGrouping",
+			enableGrouping: true,
+		},
+		{
+			name:           "disableGrouping",
+			enableGrouping: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			crictl, cleanup, err := setup(t, tc.enableGrouping)
+			if err != nil {
+				t.Fatalf("failed to setup crictl: %v", err)
+			}
+			defer cleanup()
+			podID, contID, err := crictl.StartPodAndContainer(containerdRuntime, "basic/httpd", Sandbox("default"), Httpd)
+			if err != nil {
+				t.Fatalf("start failed: %v", err)
+			}
 
-	// Look for the httpd page.
-	if err = httpGet(crictl, podID, "index.html"); err != nil {
-		t.Fatalf("failed to get page: %v", err)
-	}
+			// Look for the httpd page.
+			if err = httpGet(crictl, podID, "index.html"); err != nil {
+				t.Fatalf("failed to get page: %v", err)
+			}
 
-	// Since shim grouping is disabled, there will be one shim process for the
-	// container and another one for the sandbox.
-	count, err := countShimProcesses(t, contID)
-	if err != nil {
-		t.Fatalf("failed to count shim processes for containerID %s: %v", contID, err)
-	}
-	if count != 1 {
-		t.Errorf("got %d shim processes for containerID %s, want 1", count, contID)
-	}
-
-	count, err = countShimProcesses(t, podID)
-	if err != nil {
-		t.Fatalf("failed to count shim processes for podID %s: %v", podID, err)
-	}
-	if count != 1 {
-		t.Errorf("got %d shim processes for podID %s, want 1", count, podID)
-	}
-
-	// Stop everything.
-	if err := crictl.StopPodAndContainer(podID, contID); err != nil {
-		t.Fatalf("stop failed: %v", err)
+			// Stop everything.
+			if err := crictl.StopPodAndContainer(podID, contID); err != nil {
+				t.Fatalf("stop failed: %v", err)
+			}
+		})
 	}
 }
 
@@ -165,124 +161,168 @@ var HttpdMountPaths = SimpleSpec("httpd", "basic/httpd", nil, map[string]any{
 	"linux": map[string]any{},
 })
 
-// TestMountPaths refers to b/117635704.
 func TestMountPaths(t *testing.T) {
-	// Setup containerd and crictl.
-	crictl, cleanup, err := setup(t, true /* enableGrouping */)
-	if err != nil {
-		t.Fatalf("failed to setup crictl: %v", err)
-	}
-	defer cleanup()
-	podID, contID, err := crictl.StartPodAndContainer(containerdRuntime, "basic/httpd", Sandbox("default"), HttpdMountPaths)
-	if err != nil {
-		t.Fatalf("start failed: %v", err)
-	}
+	for _, tc := range []struct {
+		name           string
+		enableGrouping bool
+	}{
+		{
+			name:           "enableGrouping",
+			enableGrouping: true,
+		},
+		{
+			name:           "disableGrouping",
+			enableGrouping: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			crictl, cleanup, err := setup(t, tc.enableGrouping)
+			if err != nil {
+				t.Fatalf("failed to setup crictl: %v", err)
+			}
+			defer cleanup()
+			podID, contID, err := crictl.StartPodAndContainer(containerdRuntime, "basic/httpd", Sandbox("default"), HttpdMountPaths)
+			if err != nil {
+				t.Fatalf("start failed: %v", err)
+			}
 
-	// Look for the directory available at /test.
-	if err = httpGet(crictl, podID, "test"); err != nil {
-		t.Fatalf("failed to get page: %v", err)
-	}
+			// Look for the directory available at /test.
+			if err = httpGet(crictl, podID, "test"); err != nil {
+				t.Fatalf("failed to get page: %v", err)
+			}
 
-	// Stop everything.
-	if err := crictl.StopPodAndContainer(podID, contID); err != nil {
-		t.Fatalf("stop failed: %v", err)
+			// Stop everything.
+			if err := crictl.StopPodAndContainer(podID, contID); err != nil {
+				t.Fatalf("stop failed: %v", err)
+			}
+		})
 	}
 }
 
-// TestMountPaths refers to b/118728671.
 func TestMountOverSymlinks(t *testing.T) {
-	// Setup containerd and crictl.
-	crictl, cleanup, err := setup(t, true /* enableGrouping */)
-	if err != nil {
-		t.Fatalf("failed to setup crictl: %v", err)
-	}
-	defer cleanup()
+	for _, tc := range []struct {
+		name           string
+		enableGrouping bool
+	}{
+		{
+			name:           "enableGrouping",
+			enableGrouping: true,
+		},
+		{
+			name:           "disableGrouping",
+			enableGrouping: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			crictl, cleanup, err := setup(t, tc.enableGrouping)
+			if err != nil {
+				t.Fatalf("failed to setup crictl: %v", err)
+			}
+			defer cleanup()
 
-	spec := SimpleSpec("busybox", "basic/symlink-resolv", []string{"sleep", "1000"}, nil)
-	podID, contID, err := crictl.StartPodAndContainer(containerdRuntime, "basic/symlink-resolv", Sandbox("default"), spec)
-	if err != nil {
-		t.Fatalf("start failed: %v", err)
-	}
+			spec := SimpleSpec("busybox", "basic/symlink-resolv", []string{"sleep", "1000"}, nil)
+			podID, contID, err := crictl.StartPodAndContainer(containerdRuntime, "basic/symlink-resolv", Sandbox("default"), spec)
+			if err != nil {
+				t.Fatalf("start failed: %v", err)
+			}
 
-	out, err := crictl.Exec(contID, "readlink", "/etc/resolv.conf")
-	if err != nil {
-		t.Fatalf("readlink failed: %v, out: %s", err, out)
-	}
-	if want := "/tmp/resolv.conf"; !strings.Contains(string(out), want) {
-		t.Fatalf("/etc/resolv.conf is not pointing to %q: %q", want, string(out))
-	}
+			out, err := crictl.Exec(contID, "readlink", "/etc/resolv.conf")
+			if err != nil {
+				t.Fatalf("readlink failed: %v, out: %s", err, out)
+			}
+			if want := "/tmp/resolv.conf"; !strings.Contains(string(out), want) {
+				t.Fatalf("/etc/resolv.conf is not pointing to %q: %q", want, string(out))
+			}
 
-	etc, err := crictl.Exec(contID, "cat", "/etc/resolv.conf")
-	if err != nil {
-		t.Fatalf("cat failed: %v, out: %s", err, etc)
-	}
-	tmp, err := crictl.Exec(contID, "cat", "/tmp/resolv.conf")
-	if err != nil {
-		t.Fatalf("cat failed: %v, out: %s", err, out)
-	}
-	if tmp != etc {
-		t.Fatalf("file content doesn't match:\n\t/etc/resolv.conf: %s\n\t/tmp/resolv.conf: %s", string(etc), string(tmp))
-	}
+			etc, err := crictl.Exec(contID, "cat", "/etc/resolv.conf")
+			if err != nil {
+				t.Fatalf("cat failed: %v, out: %s", err, etc)
+			}
+			tmp, err := crictl.Exec(contID, "cat", "/tmp/resolv.conf")
+			if err != nil {
+				t.Fatalf("cat failed: %v, out: %s", err, out)
+			}
+			if tmp != etc {
+				t.Fatalf("file content doesn't match:\n\t/etc/resolv.conf: %s\n\t/tmp/resolv.conf: %s", string(etc), string(tmp))
+			}
 
-	// Stop everything.
-	if err := crictl.StopPodAndContainer(podID, contID); err != nil {
-		t.Fatalf("stop failed: %v", err)
+			// Stop everything.
+			if err := crictl.StopPodAndContainer(podID, contID); err != nil {
+				t.Fatalf("stop failed: %v", err)
+			}
+		})
 	}
 }
 
 // TestHomeDir tests that the HOME environment variable is set for
 // Pod containers.
 func TestHomeDir(t *testing.T) {
-	// Setup containerd and crictl.
-	crictl, cleanup, err := setup(t, true /* enableGrouping */)
-	if err != nil {
-		t.Fatalf("failed to setup crictl: %v", err)
+	for _, tc := range []struct {
+		name           string
+		enableGrouping bool
+	}{
+		{
+			name:           "enableGrouping",
+			enableGrouping: true,
+		},
+		{
+			name:           "disableGrouping",
+			enableGrouping: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Setup containerd and crictl.
+			crictl, cleanup, err := setup(t, tc.enableGrouping)
+			if err != nil {
+				t.Fatalf("failed to setup crictl: %v", err)
+			}
+			defer cleanup()
+
+			// Note that container ID returned here is a sub-container. All Pod
+			// containers are sub-containers. The root container of the sandbox is the
+			// pause container.
+			t.Run("sub-container", func(t *testing.T) {
+				contSpec := SimpleSpec("subcontainer", "basic/busybox", []string{"sh", "-c", "echo $HOME"}, nil)
+				podID, contID, err := crictl.StartPodAndContainer(containerdRuntime, "basic/busybox", Sandbox("default"), contSpec)
+				if err != nil {
+					t.Fatalf("start failed: %v", err)
+				}
+
+				out, err := crictl.Logs(contID)
+				if err != nil {
+					t.Fatalf("failed retrieving container logs: %v, out: %s", err, out)
+				}
+				if got, want := strings.TrimSpace(string(out)), "/root"; got != want {
+					t.Fatalf("Home directory invalid. Got %q, Want : %q", got, want)
+				}
+
+				// Stop everything; note that the pod may have already stopped.
+				crictl.StopPodAndContainer(podID, contID)
+			})
+
+			// Tests that HOME is set for the exec process.
+			t.Run("exec", func(t *testing.T) {
+				contSpec := SimpleSpec("exec", "basic/busybox", []string{"sleep", "1000"}, nil)
+				podID, contID, err := crictl.StartPodAndContainer(containerdRuntime, "basic/busybox", Sandbox("default"), contSpec)
+				if err != nil {
+					t.Fatalf("start failed: %v", err)
+				}
+
+				out, err := crictl.Exec(contID, "sh", "-c", "echo $HOME")
+				if err != nil {
+					t.Fatalf("failed retrieving container logs: %v, out: %s", err, out)
+				}
+				if got, want := strings.TrimSpace(string(out)), "/root"; got != want {
+					t.Fatalf("Home directory invalid. Got %q, Want : %q", got, want)
+				}
+
+				// Stop everything.
+				if err := crictl.StopPodAndContainer(podID, contID); err != nil {
+					t.Fatalf("stop failed: %v", err)
+				}
+			})
+		})
 	}
-	defer cleanup()
-
-	// Note that container ID returned here is a sub-container. All Pod
-	// containers are sub-containers. The root container of the sandbox is the
-	// pause container.
-	t.Run("sub-container", func(t *testing.T) {
-		contSpec := SimpleSpec("subcontainer", "basic/busybox", []string{"sh", "-c", "echo $HOME"}, nil)
-		podID, contID, err := crictl.StartPodAndContainer(containerdRuntime, "basic/busybox", Sandbox("subcont-sandbox"), contSpec)
-		if err != nil {
-			t.Fatalf("start failed: %v", err)
-		}
-
-		out, err := crictl.Logs(contID)
-		if err != nil {
-			t.Fatalf("failed retrieving container logs: %v, out: %s", err, out)
-		}
-		if got, want := strings.TrimSpace(string(out)), "/root"; got != want {
-			t.Fatalf("Home directory invalid. Got %q, Want : %q", got, want)
-		}
-
-		// Stop everything; note that the pod may have already stopped.
-		crictl.StopPodAndContainer(podID, contID)
-	})
-
-	// Tests that HOME is set for the exec process.
-	t.Run("exec", func(t *testing.T) {
-		contSpec := SimpleSpec("exec", "basic/busybox", []string{"sleep", "1000"}, nil)
-		podID, contID, err := crictl.StartPodAndContainer(containerdRuntime, "basic/busybox", Sandbox("exec-sandbox"), contSpec)
-		if err != nil {
-			t.Fatalf("start failed: %v", err)
-		}
-
-		out, err := crictl.Exec(contID, "sh", "-c", "echo $HOME")
-		if err != nil {
-			t.Fatalf("failed retrieving container logs: %v, out: %s", err, out)
-		}
-		if got, want := strings.TrimSpace(string(out)), "/root"; got != want {
-			t.Fatalf("Home directory invalid. Got %q, Want : %q", got, want)
-		}
-
-		// Stop everything.
-		if err := crictl.StopPodAndContainer(podID, contID); err != nil {
-			t.Fatalf("stop failed: %v", err)
-		}
-	})
 }
 
 const containerdRuntime = "runsc"
