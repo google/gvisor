@@ -66,6 +66,20 @@ static void tcp_share_id(ncclUniqueId *id, int rank, int nranks,
     }
 }
 
+static void run_allreduce(ncclComm_t *comms, cudaStream_t *streams,
+                          float **sbuf, float **rbuf,
+                          size_t count, int ngpus) {
+    CHECK_NCCL(ncclGroupStart());
+    for (int g = 0; g < ngpus; g++)
+        CHECK_NCCL(ncclAllReduce(sbuf[g], rbuf[g], count,
+                                 ncclFloat, ncclSum, comms[g], streams[g]));
+    CHECK_NCCL(ncclGroupEnd());
+    for (int g = 0; g < ngpus; g++) {
+        CHECK_CUDA(cudaSetDevice(g));
+        CHECK_CUDA(cudaStreamSynchronize(streams[g]));
+    }
+}
+
 int main(int argc, char **argv) {
     int rank        = atoi(getenv("RANK")        ? : "0");
     int nranks      = atoi(getenv("NRANKS")      ? : "2");
@@ -93,6 +107,25 @@ int main(int argc, char **argv) {
     CHECK_NCCL(ncclGroupEnd());
     printf("[rank %d] %d communicators ready\n", rank, ngpus);
 
+    size_t max_bytes = 1UL << 27; /* 128 MB */
+    float **sbuf = calloc(ngpus, sizeof(float *));
+    float **rbuf = calloc(ngpus, sizeof(float *));
+    for (int g = 0; g < ngpus; g++) {
+        CHECK_CUDA(cudaSetDevice(g));
+        CHECK_CUDA(cudaMalloc((void **)&sbuf[g], max_bytes));
+        CHECK_CUDA(cudaMalloc((void **)&rbuf[g], max_bytes));
+        CHECK_CUDA(cudaMemset(sbuf[g], 1, max_bytes));
+    }
+
+    if (rank == 0)
+        printf("[rank 0] pre-warming at %zu bytes to establish all channels...\n",
+               max_bytes);
+    for (int i = 0; i < 50; i++)
+        run_allreduce(comms, streams, sbuf, rbuf,
+                      max_bytes / sizeof(float), ngpus);
+    if (rank == 0)
+        printf("[rank 0] pre-warm done\n\n");
+
     size_t sizes[] = {
         8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384,
         32768, 65536, 131072, 262144, 524288, 1<<20, 1<<21, 1<<22,
@@ -102,7 +135,7 @@ int main(int argc, char **argv) {
     int warmup = 5, iters = 20;
 
     if (rank == 0)
-        printf("\n%12s  %10s  %11s  %11s\n",
+        printf("%12s  %10s  %11s  %11s\n",
                "size(B)", "time(us)", "algbw(GB/s)", "busbw(GB/s)");
 
     for (int s = 0; s < nsizes; s++) {
@@ -110,42 +143,13 @@ int main(int argc, char **argv) {
         size_t count = bytes / sizeof(float);
         if (count < 1) count = 1;
 
-        float **sbuf = calloc(ngpus, sizeof(float *));
-        float **rbuf = calloc(ngpus, sizeof(float *));
-        for (int g = 0; g < ngpus; g++) {
-            CHECK_CUDA(cudaSetDevice(g));
-            CHECK_CUDA(cudaMalloc((void **)&sbuf[g], bytes));
-            CHECK_CUDA(cudaMalloc((void **)&rbuf[g], bytes));
-            CHECK_CUDA(cudaMemset(sbuf[g], 1, bytes));
-        }
-
-        for (int i = 0; i < warmup; i++) {
-            CHECK_NCCL(ncclGroupStart());
-            for (int g = 0; g < ngpus; g++)
-                CHECK_NCCL(ncclAllReduce(sbuf[g], rbuf[g], count,
-                                         ncclFloat, ncclSum, comms[g],
-                                         streams[g]));
-            CHECK_NCCL(ncclGroupEnd());
-            for (int g = 0; g < ngpus; g++) {
-                CHECK_CUDA(cudaSetDevice(g));
-                CHECK_CUDA(cudaStreamSynchronize(streams[g]));
-            }
-        }
+        for (int i = 0; i < warmup; i++)
+            run_allreduce(comms, streams, sbuf, rbuf, count, ngpus);
 
         struct timespec t0, t1;
         clock_gettime(CLOCK_MONOTONIC, &t0);
-        for (int i = 0; i < iters; i++) {
-            CHECK_NCCL(ncclGroupStart());
-            for (int g = 0; g < ngpus; g++)
-                CHECK_NCCL(ncclAllReduce(sbuf[g], rbuf[g], count,
-                                         ncclFloat, ncclSum, comms[g],
-                                         streams[g]));
-            CHECK_NCCL(ncclGroupEnd());
-            for (int g = 0; g < ngpus; g++) {
-                CHECK_CUDA(cudaSetDevice(g));
-                CHECK_CUDA(cudaStreamSynchronize(streams[g]));
-            }
-        }
+        for (int i = 0; i < iters; i++)
+            run_allreduce(comms, streams, sbuf, rbuf, count, ngpus);
         clock_gettime(CLOCK_MONOTONIC, &t1);
 
         double us = ((t1.tv_sec - t0.tv_sec) * 1e6 +
@@ -156,16 +160,15 @@ int main(int argc, char **argv) {
         if (rank == 0)
             printf("%12zu  %10.1f  %11.2f  %11.2f\n",
                    bytes, us, algbw, busbw);
-
-        for (int g = 0; g < ngpus; g++) {
-            CHECK_CUDA(cudaSetDevice(g));
-            CHECK_CUDA(cudaFree(sbuf[g]));
-            CHECK_CUDA(cudaFree(rbuf[g]));
-        }
-        free(sbuf);
-        free(rbuf);
     }
 
+    for (int g = 0; g < ngpus; g++) {
+        CHECK_CUDA(cudaSetDevice(g));
+        CHECK_CUDA(cudaFree(sbuf[g]));
+        CHECK_CUDA(cudaFree(rbuf[g]));
+    }
+    free(sbuf);
+    free(rbuf);
     for (int g = 0; g < ngpus; g++) {
         ncclCommDestroy(comms[g]);
         cudaStreamDestroy(streams[g]);
