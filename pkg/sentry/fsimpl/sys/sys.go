@@ -137,6 +137,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 	productName := ""
 	busSub := make(map[string]kernfs.Inode)
+	moduleSub := make(map[string]kernfs.Inode)
 	kernelSub := kernelDir(ctx, fs, creds)
 	if opts.InternalData != nil {
 		idata := opts.InternalData.(*InternalData)
@@ -190,6 +191,21 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			if ibDir != nil {
 				classSub["infiniband"] = fs.newDir(ctx, creds, defaultSysDirMode, ibDir)
 			}
+			if idata.RDMADevices != nil && idata.RDMADevices.PeerMemVersion != "" {
+				peerMemVer := idata.RDMADevices.PeerMemVersion + "\n"
+				moduleSub["nvidia_peermem"] = fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+					"version": fs.newStaticFile(ctx, creds, defaultSysMode, peerMemVer),
+				})
+				if kernelSub["mm"] == nil {
+					kernelSub["mm"] = fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+						"memory_peers": fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+							"nv_mem": fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+								"version": fs.newStaticFile(ctx, creds, defaultSysMode, peerMemVer),
+							}),
+						}),
+					})
+				}
+			}
 		}
 	}
 
@@ -215,7 +231,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		"firmware": fs.newDir(ctx, creds, defaultSysDirMode, nil),
 		"fs":       fs.newDir(ctx, creds, defaultSysDirMode, fsDirChildren),
 		"kernel":   fs.newDir(ctx, creds, defaultSysDirMode, kernelSub),
-		"module":   fs.newDir(ctx, creds, defaultSysDirMode, nil),
+		"module":   fs.newDir(ctx, creds, defaultSysDirMode, moduleSub),
 		"power":    fs.newDir(ctx, creds, defaultSysDirMode, nil),
 	})
 	fs.root = root.(*dir)

@@ -36,60 +36,63 @@ workloads in both bare metal and nested virtualization environments.
   EXIT=0
 - **NCCL `all_reduce_perf` over IB transport (GDR_LEVEL=0, CPU-staged RDMA)** —
   EXIT=0, ~8 GB/s peak bus bandwidth, 384 MR registrations, all data sizes 8B
-  to 128MB completed successfully. Uses `NET/IB/0` (no GDRDMA). This is the
-  full RDMA data path exercised through gVisor's rdmaproxy — rdma-core opens
-  uverbs devices, creates PD/CQ/QP, registers MRs (with page mirroring), posts
-  send/recv work requests, and polls completions.
+  to 128MB completed successfully. Uses `NET/IB/0` (no GDRDMA).
+- **NCCL `all_reduce_perf` over IB with GDRDMA (GDR_LEVEL=3, peermem path)** —
+  EXIT=0, **~25 GB/s peak bus bandwidth** (2 GPUs on mlx5_1), all data sizes 8B
+  to 128MB completed. Uses `NET/IB/0/GDRDMA`. Requires `NCCL_DMABUF_ENABLE=0`
+  to bypass DMA-BUF (which nvproxy doesn't fully support) and use the
+  nvidia-peermem path. Virtual sysfs exposes
+  `/sys/module/nvidia_peermem/version` and
+  `/sys/kernel/mm/memory_peers/nv_mem/version` so NCCL's `ncclIbGdrSupport()`
+  detects peermem. 8-GPU test also works with GDRDMA across all 8 IB NICs
+  (mlx5_1-8), but throughput is CPU-limited (~2.5 GB/s bus BW) due to this
+  instance having only 5 vCPUs.
 
-### Not working
+### Not yet working
 
-**NCCL `all_reduce_perf` with `NCCL_NET_GDR_LEVEL=3` (GPUDirect RDMA over IB
-transport)**
+- **DMA-BUF path for GDRDMA** — `cuMemGetHandleForAddressRange` fails in
+  nvproxy (CUDA rejects in user-space before reaching the kernel). Workaround:
+  `NCCL_DMABUF_ENABLE=0` forces the nvidia-peermem path which has equivalent
+  performance.
 
-NCCL fails (no longer hangs) with `Cuda failure 1 'invalid argument'` at
-`transport/net.cc:961` during GDRDMA channel setup. The failure occurs in
-NCCL's proxy service thread when making CUDA API calls to set up GPU-direct
-buffers. The rdmaproxy itself works fine — all ioctls succeed, no rdmaproxy
-errors in sentry logs.
-
-**Root cause:** nvproxy does not fully support the CUDA calls NCCL's GDRDMA
-path makes from its proxy thread. The same test works perfectly on the host
-(~26 GB/s peak bandwidth), confirming this is a gVisor/nvproxy issue, not a
-hardware or NCCL configuration problem.
-
-**Additional finding:** This host has mixed link types (mlx5_0 is RoCE,
+**Mixed link types:** This host has mixed link types (mlx5_0 is RoCE,
 mlx5_1-8 are IB). NCCL fails if both are used. Workaround: set
-`NCCL_IB_HCA=mlx5_1` to restrict to IB-only NICs.
+`NCCL_IB_HCA=^mlx5_0` to exclude the RoCE device.
 
 ### Next steps
 
-1. **Diagnose the GDRDMA CUDA failure** — identify which CUDA API call fails in
-   NCCL's proxy thread under nvproxy. Run with `NCCL_DEBUG=TRACE` or `NCCL_DEBUG_SUBSYS=NET`
-   to get the specific call. Likely candidates: `cuMemGetAddressRange`,
-   `cuPointerGetAttribute`, `cuCtxSetCurrent` in proxy thread, or DMA-BUF related.
-   Note: `NCCL_IB_USE_DMABUF=0` did NOT fix the issue, so it's not DMA-BUF specific.
-2. **Multi-node NCCL** between two nodes (CPU-staged IB already works; can test
-   multi-node without GDRDMA)
-3. **`ibv_get_async_event`** — fix or suppress the async event polling warning
-   (non-blocking, NCCL continues past it)
-4. **NVProxy integration for RDMA NIC isolation** — lower priority, multi-tenant
-   NIC isolation
+1. **Multi-node NCCL** between two H200 nodes (single-node GDRDMA is working)
+2. **Fix DMA-BUF support in nvproxy** — make `cuMemGetHandleForAddressRange`
+   work so `NCCL_DMABUF_ENABLE=0` isn't needed (lower priority since peermem
+   path has equivalent performance)
+3. **`ibv_get_async_event`** — fix or suppress the warning
+4. **NVProxy integration for RDMA NIC isolation** — multi-tenant
 
 ### Test results summary (March 26, 2026)
 
-| Test | Transport | GDR | Result | Bandwidth |
-|------|-----------|-----|--------|-----------|
-| NCCL all_reduce (gVisor) | IB (mlx5_1) | Off (GDR_LEVEL=0) | **PASS** | ~8 GB/s |
-| NCCL all_reduce (gVisor) | IB (mlx5_1) | On (GDR_LEVEL=3) | **FAIL** — CUDA error | — |
-| NCCL all_reduce (gVisor) | IB (all HCAs) | On (GDR_LEVEL=3) | **FAIL** — mixed link type | — |
-| NCCL all_reduce (host) | IB (mlx5_1) | On (GDR_LEVEL=3) | **PASS** | ~26 GB/s |
+| Test | Transport | GDR | Result | Peak Bus BW |
+|------|-----------|-----|--------|-------------|
+| NCCL all_reduce (gVisor, 2 GPU) | IB (mlx5_1) | On (GDR_LEVEL=3, peermem) | **PASS** | **~25 GB/s** |
+| NCCL all_reduce (host/runc, 2 GPU) | IB (mlx5_1) | On (GDR_LEVEL=3) | **PASS** | ~26 GB/s |
+| NCCL all_reduce (gVisor, 8 GPU) | IB (all IB HCAs) | On (GDR_LEVEL=3, peermem) | **PASS** | ~5 GB/s * |
+| NCCL all_reduce (host/runc, 8 GPU) | IB (all IB HCAs) | On (GDR_LEVEL=3) | **PASS** | ~6 GB/s * |
+| NCCL all_reduce (gVisor, 2 GPU) | IB (mlx5_1) | Off (GDR_LEVEL=0) | **PASS** | ~8 GB/s |
 | NCCL all_reduce (gVisor) | TCP/Socket | Off (GDR_LEVEL=0) | **PASS** | ~0.045 GB/s |
+
+\* 8-GPU results limited by Docker daemon cpuset (5 vCPUs). Both gVisor and
+host/runc show the same bottleneck — not a gVisor issue. With sufficient CPUs
+(>=16 for 8 GPUs), expect near-linear scaling from the 2-GPU result.
+
+Per-link IB bandwidth: **400 Gb/s NDR (50 GB/s)** per NIC (mlx5_1-8).
 
 ### Open questions
 
 - How do we quickly test RDMA support upstream? Need both mock tests (sample
   ioctl input) and hardware tests (2x8 H100 nodes running `ib_write_bw`).
-- Which specific nvproxy CUDA ioctl is failing during NCCL's GDRDMA setup?
+- Will DMA-BUF eventually be needed for multi-node GDRDMA, or is peermem
+  sufficient long-term?
+
+For full build/test/run instructions, see `TEST.md`.
 
 ---
 
@@ -222,61 +225,7 @@ fails.
 
 ## Testing
 
-### Test commands
-
-**mr_test** (MR registration pipeline):
-```bash
-sudo docker run --runtime=runsc-rdma --rm --network=host \
-  --device=/dev/infiniband/uverbs0 mr-test
-```
-
-**cq_qp_test** (PD → MR → CQ → QP → QP INIT → teardown):
-```bash
-sudo docker build -f Dockerfile.cqqptest -t cqqp-test .
-DEVS=$(ls /dev/infiniband/uverbs* | sed 's/^/--device=/' | tr '\n' ' ')
-sudo docker run --runtime=runsc-rdma --rm $DEVS cqqp-test cq_qp_test
-```
-
-**gdr_test** (GPUDirect RDMA — GPU MR + CPU MR + CUDA):
-```bash
-sudo docker build -f Dockerfile.gdrtest -t gdr-test .
-DEVS=$(ls /dev/infiniband/uverbs* | sed 's/^/--device=/' | tr '\n' ' ')
-sudo docker run --runtime=runsc-rdma --rm --gpus all $DEVS \
-  --ulimit memlock=-1:-1 gdr-test gdr_test
-```
-
-**nccl all-reduce over IB (CPU-staged, working):**
-```bash
-sudo docker build -f Dockerfile.nccl -t nccl-test .
-DEVS=$(ls /dev/infiniband/uverbs* | sed 's/^/--device=/' | tr '\n' ' ')
-sudo docker run --runtime=runsc-rdma --rm --gpus all $DEVS \
-  --ulimit memlock=-1:-1 --shm-size=1g \
-  -e NCCL_DEBUG=INFO -e NCCL_P2P_DISABLE=1 -e NCCL_SHM_DISABLE=1 \
-  -e NCCL_NET_GDR_LEVEL=0 -e NCCL_IB_HCA=mlx5_1 \
-  nccl-test all_reduce_perf -b 8 -e 128M -f 2 -g 2
-```
-
-**nccl all-reduce over IB with GDRDMA (not yet working):**
-```bash
-DEVS=$(ls /dev/infiniband/uverbs* | sed 's/^/--device=/' | tr '\n' ' ')
-sudo docker run --runtime=runsc-rdma --rm --gpus all $DEVS \
-  --ulimit memlock=-1:-1 --shm-size=1g \
-  -e NCCL_DEBUG=INFO -e NCCL_P2P_DISABLE=1 -e NCCL_SHM_DISABLE=1 \
-  -e NCCL_NET_GDR_LEVEL=3 -e NCCL_IB_HCA=mlx5_1 \
-  nccl-test all_reduce_perf -b 8 -e 128M -f 2 -g 2
-```
-
-**Note:** On hosts with mixed RoCE/IB link types, use `NCCL_IB_HCA=mlx5_1` (or
-another IB device) to avoid `Remote RoCE device is incompatible with the local IB`
-errors. `--shm-size=1g` is required (Docker default 64MB is too small for NCCL
-proxy shared memory buffers).
-
-### Log inspection
-
-```bash
-BOOTLOG=$(ls -t /tmp/runsc-rdma/logs/ | grep boot | head -1)
-grep 'rdmaproxy' /tmp/runsc-rdma/logs/$BOOTLOG
-```
+See `TEST.md` for complete build, deploy, and test instructions.
 
 ---
 

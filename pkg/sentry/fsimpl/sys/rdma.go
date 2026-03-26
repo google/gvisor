@@ -69,6 +69,7 @@ type RDMADeviceData struct {
 // RDMAData holds all collected RDMA sysfs data.
 type RDMAData struct {
 	VerbsABIVersion string           `json:"verbs_abi_version"`
+	PeerMemVersion  string           `json:"peer_mem_version,omitempty"`
 	Devices         []RDMADeviceData `json:"devices"`
 }
 
@@ -85,6 +86,20 @@ func CollectRDMADeviceData() *RDMAData {
 	data := &RDMAData{
 		VerbsABIVersion: readSysfsFile(path.Join(verbsPath, "abi_version")),
 	}
+
+	peerMemPaths := []string{
+		"/sys/module/nvidia_peermem/version",
+		"/sys/kernel/mm/memory_peers/nv_mem/version",
+		"/sys/kernel/mm/memory_peers/nv_mem_nc/version",
+	}
+	for _, p := range peerMemPaths {
+		if v := readSysfsFile(p); v != "" {
+			data.PeerMemVersion = v
+			log.Infof("rdma collect: nvidia_peermem version=%q (from %s)", v, p)
+			break
+		}
+	}
+
 	log.Infof("rdma collect: scanning %s (%d entries), verbs_abi=%q",
 		verbsPath, len(dents), data.VerbsABIVersion)
 	for _, dent := range dents {
