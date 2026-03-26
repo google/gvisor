@@ -245,7 +245,7 @@ look at the [documentation][gke-sandbox-docs].
 Before taking this deployment to production, review the [Production guide].
 
 [gke-sandbox-docs]: https://cloud.google.com/kubernetes-engine/docs/how-to/sandbox-pods
-[gke-sandbox]: https://cloud.google.com/kubernetes-engine/sandbox/
+[gke-sandbox]: https://docs.cloud.google.com/kubernetes-engine/docs/concepts/sandbox-pods
 [project-selector]: https://console.cloud.google.com/projectselector/kubernetes
 [wordpress]: https://wordpress.com/
 [Production guide]: /docs/user_guide/production/
