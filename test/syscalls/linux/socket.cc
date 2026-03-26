@@ -205,5 +205,51 @@ TEST_P(SocketOpenTest, Unix) {
 INSTANTIATE_TEST_SUITE_P(OpenModes, SocketOpenTest,
                          ::testing::Values(O_RDONLY, O_RDWR));
 
+TEST(SocketTest, RecvFromNoSignal) {
+  int fds[2];
+  ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM, 0, fds), SyscallSucceeds());
+
+  char buf[10];
+  // MSG_NOSIGNAL is typically for send, but some programs use it for recv.
+  // Linux ignores it for recv.
+  EXPECT_THAT(recvfrom(fds[0], buf, sizeof(buf), MSG_NOSIGNAL | MSG_DONTWAIT, nullptr, nullptr),
+              SyscallFailsWithErrno(EAGAIN));
+
+  close(fds[0]);
+  close(fds[1]);
+}
+
+TEST(SocketTest, RecvMsgNoSignal) {
+  int fds[2];
+  ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM, 0, fds), SyscallSucceeds());
+
+  char buf[10];
+  struct iovec iov = {
+    .iov_base = buf,
+    .iov_len = sizeof(buf),
+  };
+  struct msghdr msg = {
+    .msg_iov = &iov,
+    .msg_iovlen = 1,
+  };
+
+  EXPECT_THAT(recvmsg(fds[0], &msg, MSG_NOSIGNAL | MSG_DONTWAIT),
+              SyscallFailsWithErrno(EAGAIN));
+
+  close(fds[0]);
+  close(fds[1]);
+}
+
+TEST(SocketTest, RecvFromInetNoSignal) {
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+
+  char buf[10];
+  // Linux ignores MSG_NOSIGNAL for recv.
+  EXPECT_THAT(recvfrom(fd.get(), buf, sizeof(buf), MSG_NOSIGNAL | MSG_DONTWAIT,
+                       nullptr, nullptr),
+              SyscallFailsWithErrno(EAGAIN));
+}
+
 }  // namespace testing
 }  // namespace gvisor
