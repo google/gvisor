@@ -14,6 +14,8 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <linux/capability.h>
+#include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/statfs.h>
 #include <sys/types.h>
@@ -31,6 +33,8 @@
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/linux_capability_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/save_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -680,6 +684,10 @@ TEST(SimpleStatTest, AnonDeviceAllocatesUniqueInodesAcrossSaveRestore) {
 #define STATX_ALL 0x00000fffU
 #endif  // STATX_ALL
 
+#ifndef STATX_MNT_ID
+#define STATX_MNT_ID 0x00001000U
+#endif  // STATX_MNT_ID
+
 // struct kernel_statx_timestamp is a Linux statx_timestamp struct.
 struct kernel_statx_timestamp {
   int64_t tv_sec;
@@ -710,6 +718,7 @@ struct kernel_statx {
   uint32_t stx_rdev_minor;
   uint32_t stx_dev_major;
   uint32_t stx_dev_minor;
+  uint64_t stx_mnt_id;
   uint64_t __spare2[14];
 };
 
@@ -833,6 +842,53 @@ TEST_F(StatTest, StatIgnoreNoAutomount) {
   struct stat st;
   EXPECT_THAT(fstatat(AT_FDCWD, test_file_name_.c_str(), &st, AT_NO_AUTOMOUNT),
               SyscallSucceeds());
+}
+
+TEST_F(StatTest, StatxMntId) {
+  SKIP_IF(!IsRunningOnGvisor() && statx(-1, nullptr, 0, 0, nullptr) < 0 &&
+          errno == ENOSYS);
+
+  struct kernel_statx stx;
+  EXPECT_THAT(statx(AT_FDCWD, test_file_name_.c_str(), 0, STATX_MNT_ID, &stx),
+              SyscallSucceeds());
+  EXPECT_TRUE(stx.stx_mask & STATX_MNT_ID);
+  EXPECT_NE(stx.stx_mnt_id, 0);
+
+  // Check that two files in the same mount have the same mount ID.
+  TempPath file2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  struct kernel_statx stx2;
+  EXPECT_THAT(statx(AT_FDCWD, file2.path().c_str(), 0, STATX_MNT_ID, &stx2),
+              SyscallSucceeds());
+  EXPECT_TRUE(stx2.stx_mask & STATX_MNT_ID);
+  EXPECT_EQ(stx.stx_mnt_id, stx2.stx_mnt_id);
+}
+
+TEST_F(StatTest, StatxMntIdBindMount) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(!IsRunningOnGvisor() && statx(-1, nullptr, 0, 0, nullptr) < 0 &&
+          errno == ENOSYS);
+
+  TempPath dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  TempPath dir2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  struct kernel_statx stx1;
+  EXPECT_THAT(statx(AT_FDCWD, dir1.path().c_str(), 0, STATX_MNT_ID, &stx1),
+              SyscallSucceeds());
+
+  ASSERT_THAT(mount(dir1.path().c_str(), dir2.path().c_str(), nullptr, MS_BIND,
+                    nullptr),
+              SyscallSucceeds());
+  auto cleanup = Cleanup([&dir2]() {
+    ASSERT_THAT(umount(dir2.path().c_str()), SyscallSucceeds());
+  });
+
+  struct kernel_statx stx2;
+  EXPECT_THAT(statx(AT_FDCWD, dir2.path().c_str(), 0, STATX_MNT_ID, &stx2),
+              SyscallSucceeds());
+
+  EXPECT_TRUE(stx1.stx_mask & STATX_MNT_ID);
+  EXPECT_TRUE(stx2.stx_mask & STATX_MNT_ID);
+  EXPECT_NE(stx1.stx_mnt_id, stx2.stx_mnt_id);
 }
 
 }  // namespace
