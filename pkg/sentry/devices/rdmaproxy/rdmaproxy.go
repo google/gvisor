@@ -99,10 +99,10 @@ func (dev *uverbsDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Den
 // falling back to a direct open. devRelPath is relative to /dev/.
 func openHostDevice(ctx context.Context, devRelPath string, flags uint32) (int, error) {
 	if client := devutil.GoferClientFromContext(ctx); client != nil {
-		log.Infof("rdmaproxy: using dev gofer to open %s", devRelPath)
+		log.Debugf("rdmaproxy: using dev gofer to open %s", devRelPath)
 		return client.OpenAt(ctx, devRelPath, flags)
 	}
-	log.Infof("rdmaproxy: no dev gofer, falling back to direct open for %s", devRelPath)
+	log.Debugf("rdmaproxy: no dev gofer, falling back to direct open for %s", devRelPath)
 	devPath := filepath.Join("/dev", devRelPath)
 	openFlags := int(flags&unix.O_ACCMODE | unix.O_NOFOLLOW)
 	return unix.Openat(-1, devPath, openFlags, 0)

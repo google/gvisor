@@ -3,6 +3,10 @@
 Step-by-step instructions for building `runsc-rdma`, configuring Docker, and
 running NCCL all-reduce tests with GDRDMA inside gVisor.
 
+**Primary validation target:** multi-node runs with **8 GPUs per node**. Single-
+node `2-GPU` runs remain useful for narrow bring-up and debug, but they are not
+the main success criterion for this project.
+
 ---
 
 ## 1. Prerequisites
@@ -46,9 +50,10 @@ service and progress threads. Check how many CPUs Docker can use:
 sudo docker info 2>&1 | grep CPUs
 ```
 
-For 8-GPU tests, you want at least 16 CPUs. If Docker reports fewer (e.g. 5),
-the 8-GPU test will be CPU-bottlenecked — both for gVisor and host/runc. The
-2-GPU test needs only ~4 CPUs and will hit line rate on any instance.
+For 8-GPU-per-node tests, you want at least 16 CPUs. If Docker reports fewer
+(e.g. 5), the test will be CPU-bottlenecked — both for gVisor and host/runc.
+The old 2-GPU checks need only ~4 CPUs, but those are now debug-only smoke
+tests rather than the main validation target.
 
 ---
 
@@ -160,7 +165,11 @@ on first build, cached afterwards.
 
 ---
 
-## 6. Run NCCL all-reduce tests
+## 6. Single-node debug-only checks
+
+These commands are useful only for bring-up and narrow debugging. They are not
+the primary proof point. The primary validation target is the 8-GPU-per-node
+multi-node workflow in section 7.
 
 All commands below use this helper to pass all uverbs devices:
 
@@ -168,11 +177,11 @@ All commands below use this helper to pass all uverbs devices:
 DEVS=$(ls /dev/infiniband/uverbs* | sed 's/^/--device=/' | tr '\n' ' ')
 ```
 
-### GDRDMA — 2 GPUs, single IB NIC (~25 GB/s peak)
+### GDRDMA — 2 GPUs, single IB NIC (~25 GB/s peak, debug only)
 
-This is the primary bandwidth test. Uses one IB NIC (mlx5_1) with GPUDirect
-RDMA via nvidia-peermem. Expect ~25 GB/s peak bus bandwidth, matching host
-baseline.
+Use this only as a local smoke test while debugging. Uses one IB NIC with
+GPUDirect RDMA via nvidia-peermem. Expect ~25 GB/s peak bus bandwidth on a
+healthy single-node setup.
 
 ```bash
 DEVS=$(ls /dev/infiniband/uverbs* | sed 's/^/--device=/' | tr '\n' ' ')
@@ -193,10 +202,11 @@ sudo docker run --runtime=runsc-rdma --rm --gpus all $DEVS \
 - Peak bus bandwidth >=20 GB/s at 32MB+ sizes
 - `Out of bounds values : 0 OK` — data correctness verified
 
-### GDRDMA — 8 GPUs, all IB NICs
+### GDRDMA — 8 GPUs, all IB NICs (single-node, debug only)
 
-Uses all 8 IB NICs (mlx5_1-8), excludes the RoCE device (mlx5_0). Bandwidth
-scales with available CPUs — needs ~16+ CPUs for full throughput.
+Single-node 8-GPU run. Useful for local debugging, but the real target is still
+8 GPUs per node across multiple nodes. Bandwidth scales with available CPUs and
+needs ~16+ CPUs for full throughput.
 
 ```bash
 DEVS=$(ls /dev/infiniband/uverbs* | sed 's/^/--device=/' | tr '\n' ' ')
@@ -216,7 +226,7 @@ sudo docker run --runtime=runsc-rdma --rm --gpus all $DEVS \
 - `GDR 1` on all ranks
 - If bandwidth is low, check `sudo docker info | grep CPUs`
 
-### CPU-staged IB (no GDRDMA, ~8 GB/s peak)
+### CPU-staged IB (no GDRDMA, ~8 GB/s peak, debug only)
 
 Useful as a comparison baseline. Data goes GPU → CPU → NIC instead of
 GPU → NIC directly.
@@ -233,7 +243,7 @@ sudo docker run --runtime=runsc-rdma --rm --gpus all $DEVS \
   nccl-test all_reduce_perf -b 8 -e 128M -f 2 -g 2
 ```
 
-### Host baseline (runc, no gVisor)
+### Host baseline (runc, no gVisor, single-node debug only)
 
 Same image, same flags, but with the default Docker runtime (runc) instead of
 gVisor. This is the proper apples-to-apples baseline — the container
@@ -264,6 +274,10 @@ sudo docker run --runtime=runc --rm --gpus all $DEVS \
 
 Validates InfiniBand performance between nodes using the official nccl-tests
 with MPI. Requires 2+ machines on the same IB fabric with GPUs and IB NICs.
+
+This is the **primary validation path** for this project. Treat `8 GPUs per
+node` multi-node runs as the real success criterion for correctness and
+performance.
 
 ### HCA selection on Crusoe H200 nodes
 
@@ -400,10 +414,11 @@ sudo $MPI/mpirun --allow-run-as-root \
 - `NET/IB` channels using `GDRDMA`
 - busbw >200 GB/s at large message sizes for 2x H100 nodes (8 IB NICs each)
 
-### TCP-bootstrap benchmark (what we ran)
+### TCP-bootstrap benchmark (what we ran for primary validation)
 
 For the March 27, 2026 validation run, we used `nccl_multinode_bench` instead
-of MPI so we could compare the exact same workload across:
+of MPI so we could compare the exact same **8 GPUs per node, 2-node** workload
+across:
 
 - extracted host binary
 - `docker --runtime=runc`
@@ -630,7 +645,8 @@ sudo docker info 2>&1 | grep CPUs
 
 NCCL needs ~2 CPU cores per GPU for proxy threads. If Docker reports fewer
 CPUs than `2 * num_gpus`, bandwidth will be CPU-bottlenecked. This affects
-both gVisor and host/runc equally. Run the host baseline to confirm.
+both gVisor and host/runc equally. For this project, check this against the
+8-GPU-per-node multi-node baseline first.
 
 ### Multi-node works but is far slower under gVisor
 
@@ -810,7 +826,7 @@ cat /tmp/runsc-rdma/logs/$(ls -t /tmp/runsc-rdma/logs/ | grep create | head -1)
 
 ---
 
-## 11. Quick copy-paste: full rebuild + test cycle
+## 11. Quick copy-paste: full rebuild + multi-node test cycle
 
 ```bash
 # Build
@@ -829,15 +845,13 @@ sudo rm -rf /tmp/runsc-rdma/logs && sudo mkdir -p /tmp/runsc-rdma/logs
 # Build test image (only needed once or after Dockerfile changes)
 sudo docker build -f Dockerfile.nccl -t nccl-test .
 
-# Run GDRDMA test (2 GPU, ~25 GB/s)
-DEVS=$(ls /dev/infiniband/uverbs* | sed 's/^/--device=/' | tr '\n' ' ')
-sudo docker run --runtime=runsc-rdma --rm --gpus all $DEVS \
-  --ulimit memlock=-1:-1 --shm-size=1g --network=host \
-  -e NCCL_DEBUG=INFO \
-  -e NCCL_P2P_DISABLE=1 \
-  -e NCCL_SHM_DISABLE=1 \
-  -e NCCL_DMABUF_ENABLE=0 \
-  -e NCCL_NET_GDR_LEVEL=3 \
-  -e NCCL_IB_HCA=mlx5_1 \
-  nccl-test all_reduce_perf -b 8 -e 128M -f 2 -g 2
+# Primary validation target: follow section 7 and run the 2-node, 8-GPU-per-node
+# benchmark after deploy. Use the exact validated settings:
+export NCCL_SOCKET_IFNAME=eth0
+export NCCL_IB_HCA=mlx5_0,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_9,mlx5_10,mlx5_11
+
+# Then run the node A / node B commands from section 7:
+# - host extracted binary baseline
+# - runc container baseline
+# - runsc-rdma container run
 ```

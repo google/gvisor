@@ -18,6 +18,9 @@ import (
 	"encoding/binary"
 	"fmt"
 	"runtime"
+	"sync"
+	"sync/atomic"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -61,6 +64,74 @@ func ioctlInHostNetns(fd int32, cmd uint32, arg unsafe.Pointer) (uintptr, unix.E
 	}
 
 	return n, errno
+}
+
+// ioctlDirect executes an ioctl without network namespace switching.
+// Used for operations that don't need the host netns (MR, CQ, QP ops).
+func ioctlDirect(fd int32, cmd uint32, arg unsafe.Pointer) (uintptr, unix.Errno) {
+	n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(fd), uintptr(cmd), uintptr(arg))
+	return n, errno
+}
+
+// Legacy write command for MODIFY_QP — the only INVOKE_WRITE that
+// needs host netns (GID resolution during QP state transitions).
+const ibUserVerbsCmdModifyQP = 10
+
+// ioctlNeedsHostNetns returns true if the ioctl requires the host
+// network namespace. Only QP MODIFY operations need it (for GID
+// resolution on RoCE). Everything else — QUERY_GID_ENTRY, MR ops,
+// CQ ops, QP CREATE/DESTROY — does not.
+func ioctlNeedsHostNetns(action ioctlAction, objectID uint16, writeCmdVal uint64) bool {
+	// Known safe actions never need netns.
+	switch action {
+	case actionMRReg, actionMRDereg,
+		actionCQCreate, actionCQDestroy,
+		actionQPCreate, actionQPDestroy:
+		return false
+	}
+	// INVOKE_WRITE with MODIFY_QP needs netns.
+	if objectID == uverbsObjectDevice && writeCmdVal == ibUserVerbsCmdModifyQP {
+		return true
+	}
+	// QP object operations other than create/destroy (i.e. MODIFY) need netns.
+	if objectID == uverbsObjectQP {
+		return true
+	}
+	// Everything else (QUERY_GID_ENTRY, QUERY_PORT, ALLOC_PD, etc.) doesn't.
+	return false
+}
+
+// Performance counters for diagnosing throughput regressions.
+var (
+	globalIoctlCount atomic.Uint64
+	globalWriteCount atomic.Uint64
+	globalReadCount  atomic.Uint64
+	reporterOnce     sync.Once
+)
+
+func startPerfReporter() {
+	reporterOnce.Do(func() {
+		go func() {
+			var prevIoctl, prevWrite, prevRead uint64
+			for {
+				time.Sleep(5 * time.Second)
+				curIoctl := globalIoctlCount.Load()
+				curWrite := globalWriteCount.Load()
+				curRead := globalReadCount.Load()
+				log.Warningf("rdmaproxy: PERF ioctl_rate=%d/5s write_rate=%d/5s read_rate=%d/5s total_ioctls=%d",
+					curIoctl-prevIoctl, curWrite-prevWrite, curRead-prevRead, curIoctl)
+				prevIoctl, prevWrite, prevRead = curIoctl, curWrite, curRead
+			}
+		}()
+	})
+}
+
+// ioctlBufPool reuses ioctl buffers to avoid per-call heap allocations.
+var ioctlBufPool = sync.Pool{
+	New: func() any {
+		b := make([]byte, hostarch.PageSize)
+		return &b
+	},
 }
 
 // ib_uverbs_ioctl_hdr layout constants.
@@ -190,21 +261,17 @@ func (fd *uverbsFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, ar
 // handleRDMAVerbsIoctl handles the modern RDMA_VERBS_IOCTL which uses a
 // self-describing header + variable-length attribute array.
 func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (uintptr, error) {
-	var hdrBuf [ibUverbsIoctlHdrSize]byte
-	if _, err := t.CopyInBytes(argPtr, hdrBuf[:]); err != nil {
-		log.Warningf("rdmaproxy: ioctl CopyIn header from %#x: %v", argPtr, err)
+	globalIoctlCount.Add(1)
+	startPerfReporter()
+
+	// Single CopyIn: read first 8 bytes to get length, then full buffer.
+	var lenBuf [8]byte
+	if _, err := t.CopyInBytes(argPtr, lenBuf[:]); err != nil {
+		log.Warningf("rdmaproxy: ioctl CopyIn length from %#x: %v", argPtr, err)
 		return 0, err
 	}
-
-	length := binary.LittleEndian.Uint16(hdrBuf[0:2])
-	objectID := binary.LittleEndian.Uint16(hdrBuf[2:4])
-	methodID := binary.LittleEndian.Uint16(hdrBuf[4:6])
-	numAttrs := binary.LittleEndian.Uint16(hdrBuf[6:8])
-	reserved1 := binary.LittleEndian.Uint64(hdrBuf[8:16])
-	driverID := binary.LittleEndian.Uint32(hdrBuf[16:20])
-
-	log.Infof("rdmaproxy: IOCTL hostFD=%d obj=0x%04x method=%d attrs=%d len=%d reserved=%#x driver=%d",
-		fd.hostFD, objectID, methodID, numAttrs, length, reserved1, driverID)
+	length := binary.LittleEndian.Uint16(lenBuf[0:2])
+	numAttrs := binary.LittleEndian.Uint16(lenBuf[6:8])
 
 	expectedLen := uint16(ibUverbsIoctlHdrSize) + numAttrs*uint16(ibUverbsAttrSize)
 	if length != expectedLen || length > hostarch.PageSize {
@@ -213,16 +280,34 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 		return 0, linuxerr.EINVAL
 	}
 
-	buf := make([]byte, length)
+	// Get buffer from pool to avoid per-ioctl allocation.
+	bufPtr := ioctlBufPool.Get().(*[]byte)
+	buf := (*bufPtr)[:length]
+	defer func() { ioctlBufPool.Put(bufPtr) }()
+
 	if _, err := t.CopyInBytes(argPtr, buf); err != nil {
 		log.Warningf("rdmaproxy: ioctl CopyIn full buffer (%d bytes) from %#x: %v",
 			length, argPtr, err)
 		return 0, err
 	}
 
+	objectID := binary.LittleEndian.Uint16(buf[2:4])
+	methodID := binary.LittleEndian.Uint16(buf[4:6])
+	reserved1 := binary.LittleEndian.Uint64(buf[8:16])
+	driverID := binary.LittleEndian.Uint32(buf[16:20])
+
+	log.Debugf("rdmaproxy: IOCTL hostFD=%d obj=0x%04x method=%d attrs=%d len=%d reserved=%#x driver=%d",
+		fd.hostFD, objectID, methodID, numAttrs, length, reserved1, driverID)
+
 	// Walk attrs: probe each data field to determine if it's a sandbox
 	// pointer (CopyIn succeeds) or inline data (CopyIn fails).
-	var rewrites []attrRewrite
+	// Pre-allocate rewrites on stack for the common case.
+	var rewritesBuf [16]attrRewrite
+	rewrites := rewritesBuf[:0]
+	// Stack arena for attribute data to avoid per-attr heap allocation.
+	var attrArena [4096]byte
+	arenaOff := 0
+
 	for i := 0; i < int(numAttrs); i++ {
 		off := ibUverbsIoctlHdrSize + i*ibUverbsAttrSize
 		attrID := binary.LittleEndian.Uint16(buf[off : off+2])
@@ -231,20 +316,27 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 		attrData := binary.LittleEndian.Uint64(buf[off+8 : off+16])
 
 		if attrLen == 0 {
-			log.Infof("rdmaproxy:   attr[%d] id=0x%04x len=0 flags=0x%04x data=%#016x (handle/fd)",
+			log.Debugf("rdmaproxy:   attr[%d] id=0x%04x len=0 flags=0x%04x data=%#016x (handle/fd)",
 				i, attrID, attrFlags, attrData)
 			continue
 		}
 
-		sb := make([]byte, attrLen)
+		// Use stack arena when possible, fall back to heap for large attrs.
+		var sb []byte
+		if arenaOff+int(attrLen) <= len(attrArena) {
+			sb = attrArena[arenaOff : arenaOff+int(attrLen)]
+			arenaOff += int(attrLen)
+		} else {
+			sb = make([]byte, attrLen)
+		}
 		_, copyErr := t.CopyInBytes(hostarch.Addr(attrData), sb)
 		if copyErr == nil {
-			log.Infof("rdmaproxy:   attr[%d] id=0x%04x len=%d flags=0x%04x data=ptr:%#016x (rewrite)",
+			log.Debugf("rdmaproxy:   attr[%d] id=0x%04x len=%d flags=0x%04x data=ptr:%#016x (rewrite)",
 				i, attrID, attrLen, attrFlags, attrData)
 			if attrLen <= 64 {
-				log.Infof("rdmaproxy:   attr[%d] data: %x", i, sb)
+				log.Debugf("rdmaproxy:   attr[%d] data: %x", i, sb)
 			} else {
-				log.Infof("rdmaproxy:   attr[%d] data (first 64): %x ...", i, sb[:64])
+				log.Debugf("rdmaproxy:   attr[%d] data (first 64): %x ...", i, sb[:64])
 			}
 			binary.LittleEndian.PutUint64(buf[off+8:off+16],
 				uint64(uintptr(unsafe.Pointer(&sb[0]))))
@@ -254,7 +346,7 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 				sentry:   sb,
 			})
 		} else {
-			log.Infof("rdmaproxy:   attr[%d] id=0x%04x len=%d flags=0x%04x data=inline:%#016x",
+			log.Debugf("rdmaproxy:   attr[%d] id=0x%04x len=%d flags=0x%04x data=inline:%#016x",
 				i, attrID, attrLen, attrFlags, attrData)
 		}
 	}
@@ -291,14 +383,20 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 		}
 	}
 
-	log.Infof("rdmaproxy: forwarding ioctl to host (hostFD=%d, %d rewrites, action=%d)", fd.hostFD, len(rewrites), action)
+	log.Debugf("rdmaproxy: forwarding ioctl to host (hostFD=%d, %d rewrites, action=%d)", fd.hostFD, len(rewrites), action)
 
-	n, errno := ioctlInHostNetns(fd.hostFD, rdmaVerbsIoctl, unsafe.Pointer(&buf[0]))
+	var n uintptr
+	var errno unix.Errno
+	if ioctlNeedsHostNetns(action, objectID, writeCmdVal) {
+		n, errno = ioctlInHostNetns(fd.hostFD, rdmaVerbsIoctl, unsafe.Pointer(&buf[0]))
+	} else {
+		n, errno = ioctlDirect(fd.hostFD, rdmaVerbsIoctl, unsafe.Pointer(&buf[0]))
+	}
 
 	if errno != 0 {
-		log.Infof("rdmaproxy: host ioctl returned n=%d errno=%d (%v)", n, errno, errno)
+		log.Debugf("rdmaproxy: host ioctl returned n=%d errno=%d (%v)", n, errno, errno)
 	} else {
-		log.Infof("rdmaproxy: host ioctl returned n=%d OK", n)
+		log.Debugf("rdmaproxy: host ioctl returned n=%d OK", n)
 	}
 
 	// Post-ioctl tracking for successful operations.
@@ -315,7 +413,7 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 					fd.pinnedMRs[mrHandle] = mrMirror
 					fd.mu.Unlock()
 					dmaCleanup.Release()
-					log.Infof("rdmaproxy: pinned MR handle=%d (%d ranges)", mrHandle, len(mrMirror.prs))
+					log.Debugf("rdmaproxy: pinned MR handle=%d (%d ranges)", mrHandle, len(mrMirror.prs))
 				}
 			}
 
@@ -327,7 +425,7 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 					delete(fd.pinnedMRs, mrHandle)
 					fd.mu.Unlock()
 					mp.release(t)
-					log.Infof("rdmaproxy: unpinned MR handle=%d", mrHandle)
+					log.Debugf("rdmaproxy: unpinned MR handle=%d", mrHandle)
 				} else {
 					fd.mu.Unlock()
 				}
@@ -344,7 +442,7 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 					fd.pinnedCQs[handle] = cqqpMirror
 					fd.mu.Unlock()
 					dmaCleanup.Release()
-					log.Infof("rdmaproxy: pinned CQ handle=%d", handle)
+					log.Debugf("rdmaproxy: pinned CQ handle=%d", handle)
 				}
 			}
 
@@ -359,7 +457,7 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 					fd.pinnedQPs[handle] = cqqpMirror
 					fd.mu.Unlock()
 					dmaCleanup.Release()
-					log.Infof("rdmaproxy: pinned QP handle=%d", handle)
+					log.Debugf("rdmaproxy: pinned QP handle=%d", handle)
 				}
 			}
 
@@ -371,7 +469,7 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 					delete(fd.pinnedCQs, handle)
 					fd.mu.Unlock()
 					p.release(t)
-					log.Infof("rdmaproxy: unpinned CQ handle=%d", handle)
+					log.Debugf("rdmaproxy: unpinned CQ handle=%d", handle)
 				} else {
 					fd.mu.Unlock()
 				}
@@ -385,7 +483,7 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 					delete(fd.pinnedQPs, handle)
 					fd.mu.Unlock()
 					p.release(t)
-					log.Infof("rdmaproxy: unpinned QP handle=%d", handle)
+					log.Debugf("rdmaproxy: unpinned QP handle=%d", handle)
 				} else {
 					fd.mu.Unlock()
 				}
@@ -519,7 +617,7 @@ func (fd *uverbsFD) prepareMRRegInvokeWrite(t *kernel.Task, buf []byte, numAttrs
 	sandboxVA := binary.LittleEndian.Uint64(rw.sentry[regMROffStart : regMROffStart+8])
 	length := binary.LittleEndian.Uint64(rw.sentry[regMROffLength : regMROffLength+8])
 
-	log.Infof("rdmaproxy: MR REG (INVOKE_WRITE) sandbox_va=%#x length=%d", sandboxVA, length)
+	log.Debugf("rdmaproxy: MR REG (INVOKE_WRITE) sandbox_va=%#x length=%d", sandboxVA, length)
 
 	if length == 0 {
 		return nil, nil
@@ -533,7 +631,7 @@ func (fd *uverbsFD) prepareMRRegInvokeWrite(t *kernel.Task, buf []byte, numAttrs
 	// Rewrite start to sentry address; keep hca_va as original sandbox VA
 	// so RDMA work requests use the app's addresses.
 	binary.LittleEndian.PutUint64(rw.sentry[regMROffStart:regMROffStart+8], uint64(sentryVA))
-	log.Infof("rdmaproxy: MR REG rewrote start %#x → sentry %#x (hca_va stays %#x)",
+	log.Debugf("rdmaproxy: MR REG rewrote start %#x → sentry %#x (hca_va stays %#x)",
 		sandboxVA, sentryVA, binary.LittleEndian.Uint64(rw.sentry[regMROffHcaVA:regMROffHcaVA+8]))
 
 	return mp, nil
@@ -556,7 +654,7 @@ func (fd *uverbsFD) prepareMRRegModern(t *kernel.Task, buf []byte, numAttrs int,
 	sandboxVA := binary.LittleEndian.Uint64(addrRW.sentry[0:8])
 	length := binary.LittleEndian.Uint64(lengthRW.sentry[0:8])
 
-	log.Infof("rdmaproxy: MR REG (modern) sandbox_va=%#x length=%d", sandboxVA, length)
+	log.Debugf("rdmaproxy: MR REG (modern) sandbox_va=%#x length=%d", sandboxVA, length)
 
 	if length == 0 {
 		return nil, nil
@@ -569,7 +667,7 @@ func (fd *uverbsFD) prepareMRRegModern(t *kernel.Task, buf []byte, numAttrs int,
 
 	// Rewrite ADDR to sentry address. IOVA attr (if present) stays as sandbox VA.
 	binary.LittleEndian.PutUint64(addrRW.sentry[0:8], uint64(sentryVA))
-	log.Infof("rdmaproxy: MR REG (modern) rewrote addr %#x → sentry %#x", sandboxVA, sentryVA)
+	log.Debugf("rdmaproxy: MR REG (modern) rewrote addr %#x → sentry %#x", sandboxVA, sentryVA)
 
 	return mp, nil
 }
@@ -597,7 +695,7 @@ func mirrorSandboxPages(t *kernel.Task, addr, length uint64) (*mirroredPages, ui
 	if pinErr != nil {
 		// Pin fails for proxy-device-backed pages (e.g. GPU/UVM memory).
 		// Try the MM's internal mapping mechanism first.
-		log.Infof("rdmaproxy: mm.Pin failed (%v), trying proxy device fallback", pinErr)
+		log.Debugf("rdmaproxy: mm.Pin failed (%v), trying proxy device fallback", pinErr)
 		mp, sentryVA, err := mirrorProxyDevicePages(t, appAR, addr, alignedStart, alignedLen, at)
 		if err != nil {
 			// Neither Pin nor InternalMappings resolved the VA. This
@@ -607,7 +705,7 @@ func mirrorSandboxPages(t *kernel.Task, addr, length uint64) (*mirroredPages, ui
 			// nvidia-peermem module resolves GPU VAs via the driver's
 			// internal tables, not process page tables. This works
 			// because the sentry holds the NVIDIA driver context.
-			log.Infof("rdmaproxy: proxy device fallback failed (%v), GPU VA passthrough (nvidia-peermem)", err)
+			log.Debugf("rdmaproxy: proxy device fallback failed (%v), GPU VA passthrough (nvidia-peermem)", err)
 			return nil, uintptr(addr), nil
 		}
 		return mp, sentryVA, nil
@@ -683,7 +781,7 @@ func mirrorProxyDevicePages(t *kernel.Task, appAR hostarch.AddrRange, addr uint6
 
 	// Fast path: single contiguous block.
 	if len(blocks) == 1 && blocks[0].Len == alignedLen {
-		log.Infof("rdmaproxy: proxy device mirror: single block at sentry %#x len %d", blocks[0].Addr, blocks[0].Len)
+		log.Debugf("rdmaproxy: proxy device mirror: single block at sentry %#x len %d", blocks[0].Addr, blocks[0].Len)
 		m := blocks[0].Addr
 		sentryVA := m + uintptr(addr-uint64(alignedStart))
 		// No prs (not pinned via Pin), no owned mapping (using MM's internal cache).
@@ -691,7 +789,7 @@ func mirrorProxyDevicePages(t *kernel.Task, appAR hostarch.AddrRange, addr uint6
 	}
 
 	// Slow path: multiple blocks — mremap into a contiguous region.
-	log.Infof("rdmaproxy: proxy device mirror: %d blocks, building contiguous mapping", len(blocks))
+	log.Debugf("rdmaproxy: proxy device mirror: %d blocks, building contiguous mapping", len(blocks))
 	m, _, errno := unix.RawSyscall6(unix.SYS_MMAP, 0, uintptr(alignedLen), unix.PROT_NONE, unix.MAP_PRIVATE|unix.MAP_ANONYMOUS, ^uintptr(0), 0)
 	if errno != 0 {
 		return nil, 0, fmt.Errorf("mmap anon %d bytes: %w", alignedLen, errno)
@@ -762,11 +860,11 @@ func (fd *uverbsFD) extractDeregMRHandle(buf []byte, numAttrs int, objectID uint
 func (fd *uverbsFD) prepareCQQPCreate(t *kernel.Task, buf []byte, numAttrs int, rewrites []attrRewrite, action ioctlAction) (*pinnedDMABufs, error) {
 	drv := findRewrite(buf, numAttrs, rewrites, mlx5DriverAttrIn)
 	if drv == nil {
-		log.Infof("rdmaproxy: CQ/QP CREATE but no driver attr 0x%x found", mlx5DriverAttrIn)
+		log.Debugf("rdmaproxy: CQ/QP CREATE but no driver attr 0x%x found", mlx5DriverAttrIn)
 		return nil, nil
 	}
 	if len(drv.sentry) < driverAttrMinLen {
-		log.Infof("rdmaproxy: CQ/QP CREATE driver attr too short: %d bytes", len(drv.sentry))
+		log.Debugf("rdmaproxy: CQ/QP CREATE driver attr too short: %d bytes", len(drv.sentry))
 		return nil, nil
 	}
 
@@ -776,7 +874,7 @@ func (fd *uverbsFD) prepareCQQPCreate(t *kernel.Task, buf []byte, numAttrs int, 
 	if action == actionQPCreate {
 		kind = "QP"
 	}
-	log.Infof("rdmaproxy: %s CREATE buf_addr=%#x db_addr=%#x", kind, bufAddr, dbAddr)
+	log.Debugf("rdmaproxy: %s CREATE buf_addr=%#x db_addr=%#x", kind, bufAddr, dbAddr)
 
 	var bufs pinnedDMABufs
 	var cu cleanup.Cleanup
@@ -795,7 +893,7 @@ func (fd *uverbsFD) prepareCQQPCreate(t *kernel.Task, buf []byte, numAttrs int, 
 		bufs.buf = mp
 		cu.Add(func() { mp.release(t) })
 		binary.LittleEndian.PutUint64(drv.sentry[driverAttrBufAddr:driverAttrBufAddr+8], uint64(sentryVA))
-		log.Infof("rdmaproxy: %s CREATE buf %#x → sentry %#x (len=%d)", kind, bufAddr, sentryVA, length)
+		log.Debugf("rdmaproxy: %s CREATE buf %#x → sentry %#x (len=%d)", kind, bufAddr, sentryVA, length)
 	}
 
 	if dbAddr != 0 {
@@ -811,7 +909,7 @@ func (fd *uverbsFD) prepareCQQPCreate(t *kernel.Task, buf []byte, numAttrs int, 
 		bufs.db = mp
 		cu.Add(func() { mp.release(t) })
 		binary.LittleEndian.PutUint64(drv.sentry[driverAttrDBAddr:driverAttrDBAddr+8], uint64(sentryVA))
-		log.Infof("rdmaproxy: %s CREATE db %#x → sentry %#x (len=%d)", kind, dbAddr, sentryVA, length)
+		log.Debugf("rdmaproxy: %s CREATE db %#x → sentry %#x (len=%d)", kind, dbAddr, sentryVA, length)
 	}
 
 	cu.Release()
@@ -866,6 +964,8 @@ func (fd *uverbsFD) extractCQQPDestroyHandle(buf []byte, numAttrs int, objectID 
 // This handles the legacy uverbs write() command interface where rdma-core
 // sends commands like ALLOC_PD, REG_MR, DEREG_MR via write() on the fd.
 func (fd *uverbsFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
+	globalWriteCount.Add(1)
+
 	t := kernel.TaskFromContext(ctx)
 	if t == nil {
 		return 0, linuxerr.EINVAL
@@ -887,7 +987,7 @@ func (fd *uverbsFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.
 	inWords := binary.LittleEndian.Uint16(data[4:6])
 	outWords := binary.LittleEndian.Uint16(data[6:8])
 
-	log.Infof("rdmaproxy: Write cmd=%d extended=%v in_words=%d out_words=%d len=%d",
+	log.Debugf("rdmaproxy: Write cmd=%d extended=%v in_words=%d out_words=%d len=%d",
 		cmdBase, isExtended, inWords, outWords, size)
 
 	// Response pointer is always at byte offset 8 (first field of the
@@ -902,7 +1002,7 @@ func (fd *uverbsFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.
 		respBuf = make([]byte, respLen)
 		binary.LittleEndian.PutUint64(data[8:16],
 			uint64(uintptr(unsafe.Pointer(&respBuf[0]))))
-		log.Infof("rdmaproxy: Write cmd=%d resp rewrite %#x → sentry (%d bytes)",
+		log.Debugf("rdmaproxy: Write cmd=%d resp rewrite %#x → sentry (%d bytes)",
 			cmdBase, origResp, respLen)
 	}
 
@@ -921,7 +1021,7 @@ func (fd *uverbsFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.
 			if size >= hcaVAOff+8 {
 				sva := binary.LittleEndian.Uint64(data[startOff : startOff+8])
 				length := binary.LittleEndian.Uint64(data[lengthOff : lengthOff+8])
-				log.Infof("rdmaproxy: Write REG_MR va=%#x len=%d", sva, length)
+				log.Debugf("rdmaproxy: Write REG_MR va=%#x len=%d", sva, length)
 
 				if length > 0 {
 					mp, sentryVA, err := mirrorSandboxPages(t, sva, length)
@@ -932,7 +1032,7 @@ func (fd *uverbsFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.
 					mrMirror = mp
 					cu = cleanup.Make(func() { mp.release(t) })
 					binary.LittleEndian.PutUint64(data[startOff:startOff+8], uint64(sentryVA))
-					log.Infof("rdmaproxy: Write REG_MR rewrite start %#x → sentry %#x (hca_va=%#x)",
+					log.Debugf("rdmaproxy: Write REG_MR rewrite start %#x → sentry %#x (hca_va=%#x)",
 						sva, sentryVA,
 						binary.LittleEndian.Uint64(data[hcaVAOff:hcaVAOff+8]))
 				}
@@ -955,7 +1055,7 @@ func (fd *uverbsFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.
 		log.Warningf("rdmaproxy: Write to host: n=%d errno=%d (%v)", n, errno, errno)
 		return 0, errno
 	}
-	log.Infof("rdmaproxy: Write to host returned %d OK (cmd=%d)", n, cmdBase)
+	log.Debugf("rdmaproxy: Write to host returned %d OK (cmd=%d)", n, cmdBase)
 
 	// Copy response back to sandbox.
 	if respBuf != nil && origResp != 0 {
@@ -978,7 +1078,7 @@ func (fd *uverbsFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.
 				fd.pinnedMRs[mrHandle] = mrMirror
 				fd.mu.Unlock()
 				cu.Release()
-				log.Infof("rdmaproxy: Write REG_MR pinned handle=%d (%d ranges)", mrHandle, len(mrMirror.prs))
+				log.Debugf("rdmaproxy: Write REG_MR pinned handle=%d (%d ranges)", mrHandle, len(mrMirror.prs))
 			}
 
 		case ibUserVerbsCmdDeregMR:
@@ -989,7 +1089,7 @@ func (fd *uverbsFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.
 					delete(fd.pinnedMRs, mrHandle)
 					fd.mu.Unlock()
 					mp.release(t)
-					log.Infof("rdmaproxy: Write DEREG_MR unpinned handle=%d", mrHandle)
+					log.Debugf("rdmaproxy: Write DEREG_MR unpinned handle=%d", mrHandle)
 				} else {
 					fd.mu.Unlock()
 				}
@@ -1005,7 +1105,7 @@ func (fd *uverbsFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.
 				fd.pinnedCQs[handle] = cqqpMirror
 				fd.mu.Unlock()
 				cu.Release()
-				log.Infof("rdmaproxy: Write CREATE_CQ pinned handle=%d", handle)
+				log.Debugf("rdmaproxy: Write CREATE_CQ pinned handle=%d", handle)
 			}
 
 		case ibUserVerbsCmdCreateQP:
@@ -1018,7 +1118,7 @@ func (fd *uverbsFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.
 				fd.pinnedQPs[handle] = cqqpMirror
 				fd.mu.Unlock()
 				cu.Release()
-				log.Infof("rdmaproxy: Write CREATE_QP pinned handle=%d", handle)
+				log.Debugf("rdmaproxy: Write CREATE_QP pinned handle=%d", handle)
 			}
 
 		case ibUserVerbsCmdDestroyCQ:
@@ -1029,7 +1129,7 @@ func (fd *uverbsFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.
 					delete(fd.pinnedCQs, handle)
 					fd.mu.Unlock()
 					p.release(t)
-					log.Infof("rdmaproxy: Write DESTROY_CQ unpinned handle=%d", handle)
+					log.Debugf("rdmaproxy: Write DESTROY_CQ unpinned handle=%d", handle)
 				} else {
 					fd.mu.Unlock()
 				}
@@ -1043,7 +1143,7 @@ func (fd *uverbsFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.
 					delete(fd.pinnedQPs, handle)
 					fd.mu.Unlock()
 					p.release(t)
-					log.Infof("rdmaproxy: Write DESTROY_QP unpinned handle=%d", handle)
+					log.Debugf("rdmaproxy: Write DESTROY_QP unpinned handle=%d", handle)
 				} else {
 					fd.mu.Unlock()
 				}
@@ -1078,13 +1178,13 @@ func (fd *uverbsFD) prepareLegacyCQQPCreate(t *kernel.Task, data []byte, cmdBase
 
 	drvOff := 8 + coreSize // cmd_hdr + core struct
 	if int64(len(data)) < int64(drvOff)+int64(driverAttrMinLen) {
-		log.Infof("rdmaproxy: Write CREATE_%s no driver data (data len=%d, need=%d)", kind, len(data), drvOff+driverAttrMinLen)
+		log.Debugf("rdmaproxy: Write CREATE_%s no driver data (data len=%d, need=%d)", kind, len(data), drvOff+driverAttrMinLen)
 		return nil
 	}
 
 	bufAddr := binary.LittleEndian.Uint64(data[drvOff : drvOff+8])
 	dbAddr := binary.LittleEndian.Uint64(data[drvOff+8 : drvOff+16])
-	log.Infof("rdmaproxy: Write CREATE_%s buf_addr=%#x db_addr=%#x", kind, bufAddr, dbAddr)
+	log.Debugf("rdmaproxy: Write CREATE_%s buf_addr=%#x db_addr=%#x", kind, bufAddr, dbAddr)
 
 	var bufs pinnedDMABufs
 	var cu cleanup.Cleanup
@@ -1105,7 +1205,7 @@ func (fd *uverbsFD) prepareLegacyCQQPCreate(t *kernel.Task, data []byte, cmdBase
 		bufs.buf = mp
 		cu.Add(func() { mp.release(t) })
 		binary.LittleEndian.PutUint64(data[drvOff:drvOff+8], uint64(sentryVA))
-		log.Infof("rdmaproxy: Write CREATE_%s buf %#x → sentry %#x (len=%d)", kind, bufAddr, sentryVA, length)
+		log.Debugf("rdmaproxy: Write CREATE_%s buf %#x → sentry %#x (len=%d)", kind, bufAddr, sentryVA, length)
 	}
 
 	if dbAddr != 0 {
@@ -1123,7 +1223,7 @@ func (fd *uverbsFD) prepareLegacyCQQPCreate(t *kernel.Task, data []byte, cmdBase
 		bufs.db = mp
 		cu.Add(func() { mp.release(t) })
 		binary.LittleEndian.PutUint64(data[drvOff+8:drvOff+16], uint64(sentryVA))
-		log.Infof("rdmaproxy: Write CREATE_%s db %#x → sentry %#x (len=%d)", kind, dbAddr, sentryVA, length)
+		log.Debugf("rdmaproxy: Write CREATE_%s db %#x → sentry %#x (len=%d)", kind, dbAddr, sentryVA, length)
 	}
 
 	cu.Release()
@@ -1133,6 +1233,8 @@ func (fd *uverbsFD) prepareLegacyCQQPCreate(t *kernel.Task, data []byte, cmdBase
 // Read implements vfs.FileDescriptionImpl.Read.
 // Forwards reads to the host fd (used for async event notifications).
 func (fd *uverbsFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
+	globalReadCount.Add(1)
+
 	buf := make([]byte, dst.NumBytes())
 	n, _, errno := unix.RawSyscall(unix.SYS_READ,
 		uintptr(fd.hostFD),
@@ -1153,7 +1255,7 @@ func (fd *uverbsFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.R
 
 // ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.
 func (fd *uverbsFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
-	log.Infof("rdmaproxy: mmap hostFD=%d len=%d offset=0x%x perms=%v private=%v",
+	log.Debugf("rdmaproxy: mmap hostFD=%d len=%d offset=0x%x perms=%v private=%v",
 		fd.hostFD, opts.Length, opts.Offset, opts.Perms, opts.Private)
 	err := vfs.GenericProxyDeviceConfigureMMap(&fd.vfsfd, fd, opts)
 	if err != nil {
