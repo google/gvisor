@@ -20,7 +20,7 @@ jobs:
         sudo -E apt update && sudo -E apt install -y make
 
     - name: Checkout
-      uses: actions/checkout@v5
+      uses: actions/checkout@v6
 
     - name: build
       run: |
