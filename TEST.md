@@ -622,6 +622,147 @@ NCCL needs ~2 CPU cores per GPU for proxy threads. If Docker reports fewer
 CPUs than `2 * num_gpus`, bandwidth will be CPU-bottlenecked. This affects
 both gVisor and host/runc equally. Run the host baseline to confirm.
 
+### Multi-node works but is far slower under gVisor
+
+If the 2-node test completes and still shows `NET/IB/.../GDRDMA`, but
+`runsc-rdma` is much slower than host or `runc`, use this checklist.
+
+**1. First prove the test setup is sane**
+
+Run the same 2-node workload three ways:
+
+- extracted host binary
+- `docker --runtime=runc`
+- `docker --runtime=runsc-rdma`
+
+Expected on the validated 2x8 H200 setup:
+
+- extracted host binary: ~308 GB/s bus bandwidth at `134217728` bytes
+- `runc`: ~307 GB/s
+- `runsc-rdma`: currently ~10.8 GB/s
+
+If host or `runc` is also slow (for example single-digit GB/s), stop there.
+The issue is with node selection, HCA selection, bootstrap interface, or the
+test environment, not gVisor.
+
+**2. Verify both nodes use the same working HCA allowlist**
+
+On the validated Crusoe H200 nodes, these were management devices and should
+not be used for the data path:
+
+- `mlx5_1`
+- `mlx5_2`
+- `mlx5_7`
+- `mlx5_8`
+
+Use:
+
+```bash
+export NCCL_SOCKET_IFNAME=eth0
+export NCCL_IB_HCA=mlx5_0,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_9,mlx5_10,mlx5_11
+```
+
+Confirm device state on both nodes:
+
+```bash
+ibv_devinfo | sed -n '1,260p'
+```
+
+**3. Verify this is really GDRDMA, not a fallback**
+
+In the NCCL logs, confirm all of the following:
+
+- `nNodes 2`
+- `Bootstrap: Using eth0:...`
+- `NCCL_IB_HCA set to ...` with the expected allowlist
+- `NET/IB : Using ...`
+- inter-node channels show `via NET/IB/.../GDRDMA`
+
+If `NET/Socket` appears, or `GDRDMA` disappears, you are debugging the wrong
+problem.
+
+**4. Verify peermem and RDMA sysfs were collected inside gVisor**
+
+On both nodes:
+
+```bash
+BOOTLOG=$(ls -t /tmp/runsc-rdma/logs | grep boot | head -1)
+grep 'peermem' /tmp/runsc-rdma/logs/$BOOTLOG
+grep 'rdma collect' /tmp/runsc-rdma/logs/$BOOTLOG
+```
+
+You want to see:
+
+- `nvidia_peermem version=...`
+- all expected uverbs devices collected
+- active 400 Gb/sec HCAs present in the boot log
+
+**5. Force the known-good peermem path**
+
+For gVisor multi-node runs, keep:
+
+```bash
+-e NCCL_DMABUF_ENABLE=0
+-e NCCL_NET_GDR_LEVEL=3
+```
+
+Without `NCCL_DMABUF_ENABLE=0`, NCCL may try the DMA-BUF path, which nvproxy
+does not currently support well enough.
+
+**6. Compare only like-for-like runs**
+
+Do not compare:
+
+- bare metal vs gVisor
+- different NCCL versions
+- different HCA lists
+- different bootstrap interfaces
+
+Use the same `nccl-test` image and same env vars for `runc` and
+`runsc-rdma`. That isolates the regression to gVisor itself.
+
+**7. Check whether the slowdown is in initialization or steady state**
+
+In both `runc` and `runsc-rdma` NCCL logs, compare:
+
+- `Init timings - ncclCommInitRank`
+- channel count lines
+- final bandwidth table at large message sizes
+
+If init is slower but steady-state bandwidth is fine, focus on setup overhead.
+If init is acceptable but large-message bandwidth collapses, focus on the
+steady-state RDMA path.
+
+**8. If GDRDMA is present but bandwidth is still bad, inspect these first**
+
+1. RDMA ioctl overhead in the hot path
+2. CQ/QP/doorbell mmap behavior that preserves correctness but adds latency
+3. Interaction between nvproxy and rdmaproxy in multi-node GDRDMA mode
+4. Proxy-service thread scheduling or CPU placement unique to `runsc-rdma`
+
+This case is what we currently observe: functional `NET/IB/.../GDRDMA`, but
+~30x lower throughput than the matching `runc` baseline.
+
+**9. Useful side-by-side log commands**
+
+```bash
+# Local gVisor boot log
+BOOTLOG=$(ls -t /tmp/runsc-rdma/logs | grep boot | head -1)
+sed -n '1,240p' /tmp/runsc-rdma/logs/$BOOTLOG
+
+# NCCL result table from a saved run
+rg '^( *size\\(B\\)| *8388608| *16777216| *33554432| *67108864| *134217728)' /tmp/nccl-*.log
+
+# Remote node boot log
+ssh <node-b> 'BOOTLOG=$(ls -t /tmp/runsc-rdma/logs | grep boot | head -1); sed -n "1,240p" /tmp/runsc-rdma/logs/$BOOTLOG'
+```
+
+**10. Current working hypothesis**
+
+Because the gVisor run still reports `NET/IB/.../GDRDMA`, the bug is probably
+not a simple transport fallback. Treat it as a **performance bug in the gVisor
+RDMA path**, not as a missing-feature bug.
+
 ### "Remote RoCE device is incompatible with the local IB" error
 
 Mixed RoCE/IB link types. Exclude the RoCE device:

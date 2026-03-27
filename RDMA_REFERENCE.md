@@ -263,13 +263,24 @@ NCCL_SOCKET_IFNAME=eth0
 For gVisor multi-node runs, `NCCL_DMABUF_ENABLE=0` is still required so NCCL
 uses the nvidia-peermem path instead of the unsupported DMA-BUF path.
 
-### Most likely debugging area
+### Concrete debugging checklist
 
 Because the gVisor run still shows `NET/IB/.../GDRDMA`, this does **not** look
 like a simple "fell back to sockets" or "fell back to CPU-staged RDMA" bug.
-The first places to inspect are:
+Use this order:
 
-1. Extra overhead in the RDMA ioctl path during steady-state communication
-2. mmap/doorbell/CQ/QP behavior that preserves correctness but harms latency
-3. Interaction between nvproxy and rdmaproxy in multi-node GDRDMA mode
-4. Any thread scheduling or proxy-service behavior unique to `runsc-rdma`
+1. Prove the environment is sane with matching extracted-host and `runc`
+   baselines before blaming gVisor
+2. Verify both nodes use the same HCA allowlist and bootstrap interface
+3. Verify NCCL still shows `nNodes 2`, `NET/IB`, and `GDRDMA`
+4. Verify gVisor boot logs still show `nvidia_peermem` detection and RDMA sysfs
+   collection
+5. Keep `NCCL_DMABUF_ENABLE=0` so the run uses the peermem path
+6. Compare `runc` vs `runsc-rdma` init times separately from steady-state
+   bandwidth
+7. If GDRDMA is still present but bandwidth collapses, inspect:
+   `rdmaproxy` ioctl overhead, CQ/QP/doorbell mmap behavior, nvproxy/rdmaproxy
+   interaction, and proxy thread scheduling
+
+For copy-paste commands and the exact validated two-node workflow, see
+`TEST.md`.
