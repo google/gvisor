@@ -214,9 +214,8 @@ func (t *syscallThread) syscall(sysno uintptr, args ...arch.SyscallArgument) (ui
 	}
 
 	if t.seccompNotify != nil {
-		if errno := t.kickSeccompNotify(); errno != 0 {
-			t.thread.kill()
-			t.thread.Warningf("failed sending request to syscall thread: %s", errno)
+		if err := t.notifySeccompThread(); err != nil {
+			t.thread.Warningf("%s", err)
 			return 0, errDeadSubprocess
 		}
 		if err := t.waitForSeccompNotify(); err != nil {
@@ -241,4 +240,24 @@ func (t *syscallThread) syscall(sysno uintptr, args ...arch.SyscallArgument) (ui
 	}
 
 	return uintptr(stubMsg.ret), nil
+}
+
+func (t *syscallThread) notifySeccompThread() error {
+	for {
+		errno := t.kickSeccompNotify()
+		switch errno {
+		case 0:
+			return nil
+		case unix.ENOENT:
+			// The notification we are responding to was interrupted before this
+			// response was delivered. The kernel will reissue a notification for the
+			// same blocked syscall, so wait for it and retry with the refreshed ID.
+			if err := t.waitForSeccompNotify(); err != nil {
+				return fmt.Errorf("failed resynchronizing seccomp notify: %w", err)
+			}
+		default:
+			t.thread.kill()
+			return fmt.Errorf("failed sending request to syscall thread: %w", errno)
+		}
+	}
 }
