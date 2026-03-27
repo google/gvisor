@@ -22,7 +22,7 @@ workloads in both bare metal and nested virtualization environments.
 
 ---
 
-## Current Status (March 26, 2026)
+## Current Status (March 27, 2026)
 
 ### Working end-to-end
 
@@ -47,6 +47,12 @@ workloads in both bare metal and nested virtualization environments.
   detects peermem. 8-GPU test also works with GDRDMA across all 8 IB NICs
   (mlx5_1-8), but throughput is CPU-limited (~2.5 GB/s bus BW) due to this
   instance having only 5 vCPUs.
+- **Multi-node NCCL all-reduce over RDMA now works end-to-end in gVisor** —
+  two 8xH200 nodes successfully completed `nccl_multinode_bench` with
+  `NRANKS=2`, `NGPUS=8`, `NCCL_NET_GDR_LEVEL=3`, and
+  `NCCL_DMABUF_ENABLE=0`. NCCL reports `nNodes 2` and `NET/IB/.../GDRDMA` on
+  inter-node channels, and gVisor boot logs show `nvidia_peermem` detection and
+  RDMA sysfs collection on both nodes.
 
 ### Not yet working
 
@@ -54,21 +60,33 @@ workloads in both bare metal and nested virtualization environments.
   nvproxy (CUDA rejects in user-space before reaching the kernel). Workaround:
   `NCCL_DMABUF_ENABLE=0` forces the nvidia-peermem path which has equivalent
   performance.
+- **Multi-node GDRDMA performance in gVisor is severely underperforming** —
+  on two 8xH200 nodes, the matching extracted-host and `runc` baselines reach
+  ~308 GB/s bus bandwidth at 128 MiB, but `runsc-rdma` reaches only
+  ~10.8 GB/s at the same size despite still using `NET/IB/.../GDRDMA`. This is
+  now a correctness-complete but performance-blocking issue.
 
 **Mixed link types:** This host has mixed link types (mlx5_0 is RoCE,
 mlx5_1-8 are IB). NCCL fails if both are used. Workaround: set
 `NCCL_IB_HCA=^mlx5_0` to exclude the RoCE device.
 
+**Crusoe H200 HCA layout:** On the two H200 nodes used for validation,
+`mlx5_1`, `mlx5_2`, `mlx5_7`, and `mlx5_8` are management devices and should be
+excluded from the data path. The working allowlist was
+`mlx5_0,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_9,mlx5_10,mlx5_11`.
+
 ### Next steps
 
-1. **Multi-node NCCL** between two H200 nodes (single-node GDRDMA is working)
+1. **Investigate multi-node gVisor performance collapse** — correctness is now
+   there, but throughput drops from ~308 GB/s (`runc`) to ~10.8 GB/s
+   (`runsc-rdma`) on the same 2-node, 8-GPU-per-node workload
 2. **Fix DMA-BUF support in nvproxy** — make `cuMemGetHandleForAddressRange`
    work so `NCCL_DMABUF_ENABLE=0` isn't needed (lower priority since peermem
    path has equivalent performance)
 3. **`ibv_get_async_event`** — fix or suppress the warning
 4. **NVProxy integration for RDMA NIC isolation** — multi-tenant
 
-### Test results summary (March 26, 2026)
+### Test results summary (March 27, 2026)
 
 | Test | Transport | GDR | Result | Peak Bus BW |
 |------|-----------|-----|--------|-------------|
@@ -78,6 +96,9 @@ mlx5_1-8 are IB). NCCL fails if both are used. Workaround: set
 | NCCL all_reduce (host/runc, 8 GPU) | IB (all IB HCAs) | On (GDR_LEVEL=3) | **PASS** | ~6 GB/s * |
 | NCCL all_reduce (gVisor, 2 GPU) | IB (mlx5_1) | Off (GDR_LEVEL=0) | **PASS** | ~8 GB/s |
 | NCCL all_reduce (gVisor) | TCP/Socket | Off (GDR_LEVEL=0) | **PASS** | ~0.045 GB/s |
+| NCCL multinode bench (host extracted binary, 2x8 GPU) | IB (explicit HCA allowlist) | On (GDR_LEVEL=3) | **PASS** | **~307.99 GB/s** |
+| NCCL multinode bench (`runc`, 2x8 GPU) | IB (explicit HCA allowlist) | On (GDR_LEVEL=3, peermem forced) | **PASS** | **~306.69 GB/s** |
+| NCCL multinode bench (`runsc-rdma`, 2x8 GPU) | IB (explicit HCA allowlist) | On (GDR_LEVEL=3, peermem forced) | **PASS** | **~10.78 GB/s** |
 
 \* 8-GPU results limited by Docker daemon cpuset (5 vCPUs). Both gVisor and
 host/runc show the same bottleneck — not a gVisor issue. With sufficient CPUs
@@ -91,6 +112,9 @@ Per-link IB bandwidth: **400 Gb/s NDR (50 GB/s)** per NIC (mlx5_1-8).
   ioctl input) and hardware tests (2x8 H100 nodes running `ib_write_bw`).
 - Will DMA-BUF eventually be needed for multi-node GDRDMA, or is peermem
   sufficient long-term?
+- Why does multi-node GDRDMA preserve functional `NET/IB/.../GDRDMA` operation
+  in gVisor while losing ~30x throughput relative to the matching `runc`
+  container baseline?
 
 For full build/test/run instructions, see `TEST.md`.
 

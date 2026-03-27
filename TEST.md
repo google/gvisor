@@ -265,6 +265,24 @@ sudo docker run --runtime=runc --rm --gpus all $DEVS \
 Validates InfiniBand performance between nodes using the official nccl-tests
 with MPI. Requires 2+ machines on the same IB fabric with GPUs and IB NICs.
 
+### HCA selection on Crusoe H200 nodes
+
+On the two Crusoe H200 nodes used for validation on March 27, 2026, these HCAs
+were **management devices** and should not be used for the data path:
+
+- `mlx5_1`
+- `mlx5_2`
+- `mlx5_7`
+- `mlx5_8`
+
+The working data-path HCA list was:
+
+```bash
+export NCCL_IB_HCA_LIST=mlx5_0,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_9,mlx5_10,mlx5_11
+```
+
+For OOB/bootstrap traffic, `eth0` was the correct interface on both nodes.
+
 ### Prerequisites
 
 - Docker installed on all nodes
@@ -349,7 +367,8 @@ MPI=$(ls -d /usr/mpi/gcc/openmpi-*/bin | head -1)
 NGPUS_PER_NODE=8
 NNODES=$(wc -l < /tmp/hostfile)
 NP=$((NGPUS_PER_NODE * NNODES))
-NIC_IF=ens7  # private network interface name
+NIC_IF=eth0
+NCCL_IB_HCA_LIST=mlx5_0,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_9,mlx5_10,mlx5_11
 
 sudo $MPI/mpirun --allow-run-as-root \
   -np $NP -N $NGPUS_PER_NODE -hostfile /tmp/hostfile \
@@ -359,7 +378,8 @@ sudo $MPI/mpirun --allow-run-as-root \
   -mca plm_rsh_args "-o StrictHostKeyChecking=no" \
   -x LD_LIBRARY_PATH=/tmp/nccl-cuda-libs:/tmp/nccl-mpi-libs \
   -x NCCL_DEBUG=INFO \
-  -x 'NCCL_IB_HCA=^mlx5_0' \
+  -x NCCL_SOCKET_IFNAME=$NIC_IF \
+  -x NCCL_IB_HCA=$NCCL_IB_HCA_LIST \
   -x NCCL_NET_GDR_LEVEL=3 \
   /tmp/nccl-tests-build/all_reduce_perf -b 8M -e 2048M -f 2 -t 1 -g 1 -c 1 -n 10
 ```
@@ -370,41 +390,152 @@ sudo $MPI/mpirun --allow-run-as-root \
 - `NET/IB` channels using `GDRDMA`
 - busbw >200 GB/s at large message sizes for 2x H100 nodes (8 IB NICs each)
 
-### Without SSH: custom TCP-bootstrap benchmark
+### TCP-bootstrap benchmark (what we ran)
 
-If SSH between nodes is not possible, use `nccl_multinode_bench` which
-bootstraps via a TCP socket instead of MPI. Same NCCL all-reduce, same IB
-path — you just run a command on each node manually.
+For the March 27, 2026 validation run, we used `nccl_multinode_bench` instead
+of MPI so we could compare the exact same workload across:
 
-On the launch node (start first):
+- extracted host binary
+- `docker --runtime=runc`
+- `docker --runtime=runsc-rdma`
+
+This exercises the same NCCL IB/GDRDMA data path and was easier to launch
+reliably across two nodes.
+
+Assume:
+
+- node A IP: `172.29.14.130`
+- node B IP: `172.29.13.202`
+- OOB/bootstrap interface: `eth0`
+- data HCAs: `mlx5_0,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_9,mlx5_10,mlx5_11`
+
+**1. Extract the helper binary from the image (all nodes):**
+
+```bash
+sudo docker create --name lib-tmp nccl-test
+sudo docker cp lib-tmp:/usr/local/bin/nccl_multinode_bench /tmp/nccl_multinode_bench
+sudo docker rm lib-tmp
+```
+
+**2. Host-style baseline using the extracted binary**
+
+Start rank 1 on node B first:
 
 ```bash
 sudo bash -c 'ulimit -l unlimited && \
-RANK=0 NRANKS=<NUM_NODES> NGPUS=8 \
-MASTER_ADDR=<NODE_A_IP> MASTER_PORT=29500 \
+RANK=1 NRANKS=2 NGPUS=8 \
+MASTER_ADDR=172.29.14.130 MASTER_PORT=29500 \
 NCCL_DEBUG=INFO \
-NCCL_IB_HCA="^mlx5_0" \
+NCCL_SOCKET_IFNAME=eth0 \
+NCCL_IB_HCA="mlx5_0,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_9,mlx5_10,mlx5_11" \
 NCCL_NET_GDR_LEVEL=3 \
 LD_LIBRARY_PATH=/tmp/nccl-cuda-libs \
 /tmp/nccl_multinode_bench'
 ```
 
-On each additional node (start after the launch node):
+Then start rank 0 on node A:
 
 ```bash
 sudo bash -c 'ulimit -l unlimited && \
-RANK=<1,2,...> NRANKS=<NUM_NODES> NGPUS=8 \
-MASTER_ADDR=<NODE_A_IP> MASTER_PORT=29500 \
+RANK=0 NRANKS=2 NGPUS=8 \
+MASTER_ADDR=172.29.14.130 MASTER_PORT=29500 \
 NCCL_DEBUG=INFO \
-NCCL_IB_HCA="^mlx5_0" \
+NCCL_SOCKET_IFNAME=eth0 \
+NCCL_IB_HCA="mlx5_0,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_9,mlx5_10,mlx5_11" \
 NCCL_NET_GDR_LEVEL=3 \
 LD_LIBRARY_PATH=/tmp/nccl-cuda-libs \
 /tmp/nccl_multinode_bench'
 ```
 
-The `nccl_multinode_bench` binary is built from `nccl_multinode_bench.c` and
-included in the `nccl-test` Docker image at `/usr/local/bin/nccl_multinode_bench`.
-Extract it the same way as the nccl-tests binary.
+Observed result on 2x8 H200 nodes:
+
+- `nNodes 2`
+- `NET/IB/.../GDRDMA` on the inter-node channels
+- ~`307.99 GB/s` bus bandwidth at `134217728` bytes
+
+**3. Container baseline with `runc`**
+
+Start rank 1 on node B first:
+
+```bash
+DEVS=$(ls /dev/infiniband/uverbs* | sed 's/^/--device=/' | tr '\n' ' ')
+sudo docker run --runtime=runc --rm --gpus all $DEVS \
+  --ulimit memlock=-1:-1 --shm-size=1g --network=host \
+  -e RANK=1 -e NRANKS=2 -e NGPUS=8 \
+  -e MASTER_ADDR=172.29.14.130 -e MASTER_PORT=29502 \
+  -e NCCL_DEBUG=INFO \
+  -e NCCL_SOCKET_IFNAME=eth0 \
+  -e NCCL_IB_HCA=mlx5_0,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_9,mlx5_10,mlx5_11 \
+  -e NCCL_NET_GDR_LEVEL=3 \
+  -e NCCL_DMABUF_ENABLE=0 \
+  nccl-test /usr/local/bin/nccl_multinode_bench
+```
+
+Then start rank 0 on node A:
+
+```bash
+DEVS=$(ls /dev/infiniband/uverbs* | sed 's/^/--device=/' | tr '\n' ' ')
+sudo docker run --runtime=runc --rm --gpus all $DEVS \
+  --ulimit memlock=-1:-1 --shm-size=1g --network=host \
+  -e RANK=0 -e NRANKS=2 -e NGPUS=8 \
+  -e MASTER_ADDR=172.29.14.130 -e MASTER_PORT=29502 \
+  -e NCCL_DEBUG=INFO \
+  -e NCCL_SOCKET_IFNAME=eth0 \
+  -e NCCL_IB_HCA=mlx5_0,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_9,mlx5_10,mlx5_11 \
+  -e NCCL_NET_GDR_LEVEL=3 \
+  -e NCCL_DMABUF_ENABLE=0 \
+  nccl-test /usr/local/bin/nccl_multinode_bench
+```
+
+Observed result on 2x8 H200 nodes:
+
+- ~`306.69 GB/s` bus bandwidth at `134217728` bytes
+- This matches the extracted host baseline, so the containerized setup is sane
+
+**4. gVisor run with `runsc-rdma`**
+
+Start rank 1 on node B first:
+
+```bash
+DEVS=$(ls /dev/infiniband/uverbs* | sed 's/^/--device=/' | tr '\n' ' ')
+sudo docker run --runtime=runsc-rdma --rm --gpus all $DEVS \
+  --ulimit memlock=-1:-1 --shm-size=1g --network=host \
+  -e RANK=1 -e NRANKS=2 -e NGPUS=8 \
+  -e MASTER_ADDR=172.29.14.130 -e MASTER_PORT=29501 \
+  -e NCCL_DEBUG=INFO \
+  -e NCCL_SOCKET_IFNAME=eth0 \
+  -e NCCL_IB_HCA=mlx5_0,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_9,mlx5_10,mlx5_11 \
+  -e NCCL_NET_GDR_LEVEL=3 \
+  -e NCCL_DMABUF_ENABLE=0 \
+  nccl-test /usr/local/bin/nccl_multinode_bench
+```
+
+Then start rank 0 on node A:
+
+```bash
+DEVS=$(ls /dev/infiniband/uverbs* | sed 's/^/--device=/' | tr '\n' ' ')
+sudo docker run --runtime=runsc-rdma --rm --gpus all $DEVS \
+  --ulimit memlock=-1:-1 --shm-size=1g --network=host \
+  -e RANK=0 -e NRANKS=2 -e NGPUS=8 \
+  -e MASTER_ADDR=172.29.14.130 -e MASTER_PORT=29501 \
+  -e NCCL_DEBUG=INFO \
+  -e NCCL_SOCKET_IFNAME=eth0 \
+  -e NCCL_IB_HCA=mlx5_0,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_9,mlx5_10,mlx5_11 \
+  -e NCCL_NET_GDR_LEVEL=3 \
+  -e NCCL_DMABUF_ENABLE=0 \
+  nccl-test /usr/local/bin/nccl_multinode_bench
+```
+
+Observed result on 2x8 H200 nodes:
+
+- `nNodes 2`
+- `NET/IB/.../GDRDMA` still appears in NCCL logs
+- gVisor boot logs show `nvidia_peermem` detection and RDMA sysfs collection
+- only ~`10.78 GB/s` bus bandwidth at `134217728` bytes
+
+This is far below the matching host and `runc` baselines, so the regression is
+specific to `runsc-rdma`, not the node pairing, SSH/bootstrap setup, or HCA
+selection.
 
 ---
 
@@ -418,7 +549,8 @@ Extract it the same way as the nccl-tests binary.
 | `NCCL_NET_GDR_LEVEL=3` | 3 (PHB) | Enable GDRDMA for GPU memory |
 | `NCCL_NET_GDR_LEVEL=0` | 0 | Disable GDRDMA (CPU-staged) |
 | `NCCL_IB_HCA=mlx5_1` | device name | Restrict to a specific IB device |
-| `NCCL_IB_HCA=^mlx5_0` | ^device | Exclude a device (use for mixed RoCE/IB) |
+| `NCCL_IB_HCA=mlx5_0,mlx5_3,...` | device list | Use an explicit HCA allowlist when some HCAs are management-only |
+| `NCCL_IB_HCA=^mlx5_0` | ^device | Exclude a device (useful for mixed-link hosts, but explicit allowlists are safer) |
 | `NCCL_DEBUG=INFO` | INFO/WARN/TRACE | NCCL log verbosity |
 
 ### Docker flags

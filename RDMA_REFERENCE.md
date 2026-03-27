@@ -213,3 +213,63 @@ object impls). rdmaproxy uses simpler per-FD maps (`pinnedMRs`, `pinnedCQs`,
 | `pkg/sentry/fsimpl/sys/rdma.go` | Virtual sysfs for infiniband device discovery |
 | `runsc/cmd/chroot.go` | Collects host sysfs data before pivot_root |
 | `runsc/cmd/boot.go` | Deserializes sysfs data in sentry boot path |
+
+---
+
+## Multi-node NCCL Notes
+
+### Current observed behavior (March 27, 2026)
+
+Multi-node NCCL over RDMA is now **functionally working** in gVisor across two
+8xH200 nodes:
+
+- NCCL initializes with `nNodes 2`
+- Inter-node channels use `NET/IB/.../GDRDMA`
+- `runsc-rdma` boot logs show `nvidia_peermem` detection and RDMA sysfs
+  collection on both nodes
+- The workload exits successfully
+
+However, throughput is still dramatically below the matching host and `runc`
+baselines:
+
+- extracted host binary: ~308 GB/s bus bandwidth at 128 MiB
+- `docker --runtime=runc`: ~307 GB/s
+- `docker --runtime=runsc-rdma`: ~10.8 GB/s
+
+So the current state is: **correctness yes, performance no**.
+
+### Practical launch notes
+
+On the validated Crusoe H200 pair, these HCAs were management devices and
+should not be used for the NCCL data path:
+
+- `mlx5_1`
+- `mlx5_2`
+- `mlx5_7`
+- `mlx5_8`
+
+The working HCA allowlist was:
+
+```bash
+NCCL_IB_HCA=mlx5_0,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_9,mlx5_10,mlx5_11
+```
+
+Bootstrap/OOB traffic used:
+
+```bash
+NCCL_SOCKET_IFNAME=eth0
+```
+
+For gVisor multi-node runs, `NCCL_DMABUF_ENABLE=0` is still required so NCCL
+uses the nvidia-peermem path instead of the unsupported DMA-BUF path.
+
+### Most likely debugging area
+
+Because the gVisor run still shows `NET/IB/.../GDRDMA`, this does **not** look
+like a simple "fell back to sockets" or "fell back to CPU-staged RDMA" bug.
+The first places to inspect are:
+
+1. Extra overhead in the RDMA ioctl path during steady-state communication
+2. mmap/doorbell/CQ/QP behavior that preserves correctness but harms latency
+3. Interaction between nvproxy and rdmaproxy in multi-node GDRDMA mode
+4. Any thread scheduling or proxy-service behavior unique to `runsc-rdma`
