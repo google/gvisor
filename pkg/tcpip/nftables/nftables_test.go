@@ -4225,7 +4225,7 @@ func TestDumpOperations(t *testing.T) {
 			},
 		},
 		{
-			name: "metaLoad",
+			name: "metaLoad2",
 			op:   mustCreateMetaLoad(t, linux.NFT_META_LEN, linux.NFT_REG_1),
 			validate: func(dump []byte) error {
 				attrs, ok := NfParse(dump)
