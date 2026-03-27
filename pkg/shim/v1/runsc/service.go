@@ -766,7 +766,14 @@ func (s *runscService) getV2Stats(stats *runc.Stats, r *taskAPI.StatsRequest) (*
 
 // Update updates a running container.
 func (s *runscService) Update(ctx context.Context, r *taskAPI.UpdateTaskRequest) (*types.Empty, error) {
-	return empty, errdefs.ErrNotImplemented
+	c, err := s.getContainer(r.ID)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.Update(ctx, r); err != nil {
+		return nil, errdefs.ToGRPC(err)
+	}
+	return empty, nil
 }
 
 // Wait waits for the container to exit.
