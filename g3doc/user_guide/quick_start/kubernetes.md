@@ -27,7 +27,7 @@ instructions in the [Containerd Quick Start][gvisor-containerd].
 [containerd]: https://containerd.io/
 [minikube]: https://github.com/kubernetes/minikube/blob/master/deploy/addons/gvisor/README.md
 [gke]: https://cloud.google.com/kubernetes-engine/
-[gke-sandbox]: https://cloud.google.com/kubernetes-engine/sandbox/
+[gke-sandbox]: https://docs.cloud.google.com/kubernetes-engine/docs/concepts/sandbox-pods
 [gke-sandbox-docs]: https://cloud.google.com/kubernetes-engine/docs/how-to/sandbox-pods
 [gvisor-containerd]: /docs/user_guide/containerd/quick_start/
 [runtimeclass]: https://kubernetes.io/docs/concepts/containers/runtime-class/
