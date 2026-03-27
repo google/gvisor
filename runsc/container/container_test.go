@@ -3598,6 +3598,49 @@ func TestRootfsEROFS(t *testing.T) {
 	spec.Annotations[boot.RootfsPrefix+"overlay"] = config.NoOverlay.String()
 
 	conf := testutil.TestConfig(t)
+	// XXX
+	defer func() {
+		debugLogDir := conf.DebugLog
+		if len(debugLogDir) == 0 {
+			t.Logf("Can't print debug logs: conf.DebugLog not set")
+			return
+		}
+		if stat, err := os.Stat(debugLogDir); err != nil || !stat.IsDir() {
+			debugLogDir = filepath.Dir(debugLogDir)
+		}
+		dirents, err := os.ReadDir(debugLogDir)
+		if err != nil {
+			t.Logf("Failed to read debug log directory %q: %v", debugLogDir, err)
+			return
+		}
+		// where are my logs going
+		if flags, err := unix.FcntlInt(2, unix.F_GETFL, 0); err != nil {
+			t.Logf("Failed to get stderr flags: %v", err)
+		} else if _, err := unix.FcntlInt(2, unix.F_SETFL, flags&^unix.O_NONBLOCK); err != nil {
+			t.Logf("Failed to make stderr blocking: %v", err)
+		}
+		for _, dirent := range dirents {
+			if dirent.IsDir() {
+				continue
+			}
+			name := dirent.Name()
+			if !strings.HasSuffix(name, ".boot.txt") {
+				continue
+			}
+			logPath := filepath.Join(debugLogDir, name)
+			logData, err := os.ReadFile(logPath)
+			if err != nil {
+				t.Logf("Failed to read debug log %q: %v", logPath, err)
+				continue
+			}
+			t.Logf("XXX debug log %q START", logPath)
+			scanner := bufio.NewScanner(bytes.NewReader(logData))
+			for scanner.Scan() {
+				t.Logf("%s", scanner.Text())
+			}
+			t.Logf("XXX debug log %q END", logPath)
+		}
+	}()
 
 	for _, mounts := range [][]specs.Mount{
 		// Case 1: EROFS rootfs without any other gofer mount.
