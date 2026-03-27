@@ -188,15 +188,22 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			kernelSub["iommu_groups"] = fs.newDir(ctx, creds, defaultSysDirMode, iommuGroups)
 		}
 		if idata.PCIDevicesData != nil {
-			pciDevEntries := fs.newPCIDevicesSysfsEntries(ctx, creds, idata.PCIDevicesData)
-			if len(pciDevEntries) > 0 {
+			pciDeviceTreeSub, pciBusSub, busPCIDevSub := fs.newPCIDevicesSysfsEntries(ctx, creds, idata.PCIDevicesData)
+			// Add /sys/devices/pci*/ entries to the devices map.
+			for name, inode := range pciDeviceTreeSub {
+				devicesSub[name] = inode
+			}
+			// Add /sys/class/pci_bus/ entries.
+			if len(pciBusSub) > 0 {
+				classSub["pci_bus"] = fs.newDir(ctx, creds, defaultSysDirMode, pciBusSub)
+			}
+			// Add /sys/bus/pci/devices/ entries.
+			if len(busPCIDevSub) > 0 {
 				if _, ok := busSub["pci"]; !ok {
 					busSub["pci"] = fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
-						"devices": fs.newDir(ctx, creds, defaultSysDirMode, pciDevEntries),
+						"devices": fs.newDir(ctx, creds, defaultSysDirMode, busPCIDevSub),
 					})
 				}
-				// If TPU proxy already created busSub["pci"], skip —
-				// TPU and GPU/RDMA workloads don't overlap.
 			}
 		}
 		if idata.EnableRDMAProxyPaths {
