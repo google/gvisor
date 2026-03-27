@@ -708,7 +708,7 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 			}
 		}
 		if len(warningsFound) > 0 {
-			return fmt.Errorf("%s", warningsFound)
+			return fmt.Errorf("warnings found: %s", warningsFound)
 		}
 		// If the test passed, then we erase the log directory. This speeds up
 		// uploading logs in continuous integration & saves on disk space.
@@ -772,6 +772,8 @@ func isWarning(line string) bool {
 
 	// FIXME(b/147228315): GVISOR_PREEMPTION_INTERRUPT not yet supported on AMD.
 	case strings.Contains(line, "Optional feature PreemptionInterrupt not supported"):
+	// FIXME(b/478302010): CPUID faulting is not yet supported.
+	case strings.Contains(line, "Failed to enable CPUID fault for thread id"):
 
 	// Ignore denied dirty timestamp writebacks. It occurs because,
 	// in tests, gofer doesn't have permission to change atime.
