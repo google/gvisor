@@ -620,6 +620,24 @@ func rmAllocOSDescriptor(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02P
 			}
 		}
 	}
+
+	// If the host has transparent huge pages enabled for shmem
+	// (shmem_enabled=always), the Sentry's memfd-backed memory will be
+	// backed by 2 MB compound pages. When the nvidia driver calls
+	// pin_user_pages() on these pages for DMA, the kernel must split the
+	// compound page into 4 KB pages, which is expensive: it takes the
+	// anon_vma lock, updates page tables, and triggers TLB shootdowns.
+	// For d2h (GPU-to-CPU) pageable transfers, this splitting happens on
+	// every ~4 MB chunk (768 times for a 1 GB transfer), causing a ~2x
+	// bandwidth regression.
+	//
+	// Prevent this by marking the DMA region with MADV_NOHUGEPAGE before
+	// the nvidia driver pins it. This tells the kernel to use 4 KB pages
+	// for this region, avoiding the compound page split overhead during
+	// pin_user_pages(). The rest of the Sentry's memory (application
+	// heap, stacks, etc.) continues to benefit from THP.
+	unix.Syscall(unix.SYS_MADVISE, m, uintptr(arLen), unix.MADV_NOHUGEPAGE)
+
 	if !madvPopulateWriteDisabled.Load() {
 		// In the kernel driver,
 		// src/nvidia/arch/nvalloc/unix/src/escape.c:RmAllocOsDescriptor() =>
