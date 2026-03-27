@@ -192,6 +192,10 @@ func setUpChroot(spec *specs.Spec, conf *config.Config) error {
 		return fmt.Errorf("error configuring chroot for RDMA devices: %w", err)
 	}
 
+	if err := pciDevicesUpdateChroot(chroot, conf); err != nil {
+		return fmt.Errorf("error configuring chroot for PCI device topology: %w", err)
+	}
+
 	if err := specutils.SafeMount("", chroot, "", unix.MS_REMOUNT|unix.MS_RDONLY|unix.MS_BIND, "", "/proc"); err != nil {
 		return fmt.Errorf("error remounting chroot in read-only: %v", err)
 	}
@@ -273,6 +277,24 @@ func rdmaProxyUpdateChroot(chroot string, conf *config.Config) error {
 	jsonPath := filepath.Join(chroot, sys.RDMADataPath)
 	if err := sys.SerializeRDMAData(data, jsonPath); err != nil {
 		return fmt.Errorf("serializing RDMA data: %w", err)
+	}
+	return nil
+}
+
+func pciDevicesUpdateChroot(chroot string, conf *config.Config) error {
+	// Collect PCI device topology when GPU or RDMA workloads are enabled.
+	// NCCL uses /sys/bus/pci/devices/ to discover NUMA/PCIe topology for
+	// optimal algorithm selection (NVLS Tree vs Ring).
+	if !conf.NVProxy && !specutils.RDMAProxyIsEnabled(conf) {
+		return nil
+	}
+	data := sys.CollectPCIDeviceData()
+	if data == nil || len(data.Devices) == 0 {
+		return nil
+	}
+	jsonPath := filepath.Join(chroot, sys.PCIDevicesDataPath)
+	if err := sys.SerializePCIDevicesData(data, jsonPath); err != nil {
+		return fmt.Errorf("serializing PCI devices data: %w", err)
 	}
 	return nil
 }

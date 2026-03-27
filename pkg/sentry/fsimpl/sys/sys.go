@@ -65,6 +65,10 @@ type InternalData struct {
 	// RDMADevices contains pre-read sysfs data for RDMA devices, collected
 	// before the sandbox chroot is entered.
 	RDMADevices *RDMAData
+	// PCIDevicesData contains pre-read sysfs data for PCI devices (GPUs,
+	// NICs, bridges), collected before the sandbox chroot is entered.
+	// Used by NCCL for topology discovery.
+	PCIDevicesData *PCIDevicesData
 	// TestSysfsPathPrefix is a prefix for the sysfs paths. It is useful for
 	// unit testing.
 	TestSysfsPathPrefix string
@@ -182,6 +186,18 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 				return nil, nil, err
 			}
 			kernelSub["iommu_groups"] = fs.newDir(ctx, creds, defaultSysDirMode, iommuGroups)
+		}
+		if idata.PCIDevicesData != nil {
+			pciDevEntries := fs.newPCIDevicesSysfsEntries(ctx, creds, idata.PCIDevicesData)
+			if len(pciDevEntries) > 0 {
+				if _, ok := busSub["pci"]; !ok {
+					busSub["pci"] = fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+						"devices": fs.newDir(ctx, creds, defaultSysDirMode, pciDevEntries),
+					})
+				}
+				// If TPU proxy already created busSub["pci"], skip —
+				// TPU and GPU/RDMA workloads don't overlap.
+			}
 		}
 		if idata.EnableRDMAProxyPaths {
 			ibVerbsDir, ibDir := fs.newRDMASysfsEntries(ctx, creds, idata.RDMADevices)

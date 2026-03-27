@@ -404,6 +404,9 @@ type containerMounter struct {
 	// rdmaDevices contains pre-collected sysfs data for RDMA devices.
 	rdmaDevices *sys.RDMAData
 
+	// pciDevicesData contains pre-collected PCI device topology data.
+	pciDevicesData *sys.PCIDevicesData
+
 	// rdmaDynMajors caches dynamic VFS majors for pre-registered RDMA
 	// devices, keyed by host minor number.
 	rdmaDynMajors map[uint32]uint32
@@ -425,7 +428,7 @@ type containerMounter struct {
 	rootfsUpperTarFD *fd.FD
 }
 
-func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *PodMountHints, sharedMounts map[string]*vfs.Mount, productName string, rdmaDevices *sys.RDMAData, sandboxID string) *containerMounter {
+func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *PodMountHints, sharedMounts map[string]*vfs.Mount, productName string, rdmaDevices *sys.RDMAData, pciDevicesData *sys.PCIDevicesData, sandboxID string) *containerMounter {
 	return &containerMounter{
 		root:              info.spec.Root,
 		mounts:            compileMounts(info.spec, info.conf, info.procArgs.ContainerID),
@@ -438,6 +441,7 @@ func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *PodMountH
 		sharedMounts:      sharedMounts,
 		productName:       productName,
 		rdmaDevices:       rdmaDevices,
+		pciDevicesData:    pciDevicesData,
 		containerID:       info.cid,
 		sandboxID:         sandboxID,
 		containerName:     info.containerName,
@@ -869,7 +873,7 @@ func (c *containerMounter) getPathMode(ctx context.Context, creds *auth.Credenti
 }
 
 func (c *containerMounter) mountSubmount(ctx context.Context, spec *specs.Spec, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials, submount *mountInfo) (*vfs.Mount, error) {
-	fsName, opts, err := getMountNameAndOptions(spec, conf, submount, c.productName, c.containerName, c.rdmaDevices)
+	fsName, opts, err := getMountNameAndOptions(spec, conf, submount, c.productName, c.containerName, c.rdmaDevices, c.pciDevicesData)
 	if err != nil {
 		return nil, fmt.Errorf("mountOptions failed: %w", err)
 	}
@@ -932,7 +936,7 @@ func (c *containerMounter) mountSubmount(ctx context.Context, spec *specs.Spec, 
 
 // getMountNameAndOptions retrieves the fsName, opts, and useOverlay values
 // used for mounts.
-func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo, productName, containerName string, rdmaDevices *sys.RDMAData) (string, *vfs.MountOptions, error) {
+func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo, productName, containerName string, rdmaDevices *sys.RDMAData, pciDevicesData *sys.PCIDevicesData) (string, *vfs.MountOptions, error) {
 	fsName := m.mount.Type
 	var (
 		mopts        = m.mount.Options
@@ -956,6 +960,7 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 			EnableTPUProxyPaths:  specutils.TPUProxyIsEnabled(spec, conf),
 			EnableRDMAProxyPaths: specutils.RDMAProxyIsEnabled(conf),
 			RDMADevices:          rdmaDevices,
+			PCIDevicesData:       pciDevicesData,
 		}
 		if len(productName) > 0 {
 			sysData.ProductName = productName
@@ -1289,7 +1294,7 @@ func (c *containerMounter) mountSharedMaster(ctx context.Context, spec *specs.Sp
 	// Mount the master using the options from the hint (mount annotations).
 	origOpts := mntInfo.mount.Options
 	mntInfo.mount.Options = mntInfo.hint.Mount.Options
-	fsName, opts, err := getMountNameAndOptions(spec, conf, mntInfo, c.productName, c.containerName, c.rdmaDevices)
+	fsName, opts, err := getMountNameAndOptions(spec, conf, mntInfo, c.productName, c.containerName, c.rdmaDevices, c.pciDevicesData)
 	mntInfo.mount.Options = origOpts
 	if err != nil {
 		return nil, err

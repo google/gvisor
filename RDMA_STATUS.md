@@ -54,24 +54,54 @@ workloads in both bare metal and nested virtualization environments.
   inter-node channels, and gVisor boot logs show `nvidia_peermem` detection and
   RDMA sysfs collection on both nodes.
 
-### Performance status (March 27, 2026 — after rdmaproxy optimizations)
+### Performance status (March 27, 2026 — latest benchmarks on 112-CPU nodes)
 
-Multi-node GDRDMA performance improved significantly after rdmaproxy
-optimizations (log demotion, conditional setns, buffer pooling, GID query
-elimination):
+Multi-node GDRDMA performance on the new 112-CPU Crusoe H200 nodes:
 
-- **Before optimizations**: ~10.8 GB/s bus BW at 128 MiB (30x off baseline)
-- **After optimizations + `NCCL_IB_GID_INDEX=0`**: ~53 GB/s at 128 MiB,
-  ~80 GB/s at 67 MiB (3-5x off baseline)
-- **runc baseline**: ~241 GB/s at 128 MiB
+- **runc baseline**: ~124.94 GB/s bus BW at 128 MiB (16 channels, NVLS Tree)
+- **runsc-rdma (no topo)**: ~14.57 GB/s at 128 MiB (64 channels, Ring) — 8.6x gap
+- **runsc-rdma + NCCL_TOPO_FILE**: ~79.26 GB/s at 128 MiB (16 channels, NVLS Tree) — **1.6x gap**
 
-The remaining 3-5x gap is **not RDMA-proxy-specific**. Sentry CPU profiling
-shows 75.8% of sentry time on futex (Go scheduler contention), 12.2% on
-nanosleep, 11.1% on epoll. Only 0.06% on RDMA ioctls. The bottleneck is
-general systrap platform overhead on all application syscalls (nvproxy ioctls,
-futex, clock_gettime), not the RDMA data path which is direct-mapped via mmap.
+**Root cause identified and workaround found.** gVisor doesn't expose
+`/sys/bus/pci/devices/` (PCI topology sysfs), which causes two problems:
 
-**Required env var**: `NCCL_IB_GID_INDEX=0` — without this, NCCL makes ~20K
+1. **GPU CPU affinity is empty** — NCCL reads `local_cpulist` and `numa_node`
+   from PCI sysfs to build the NUMA topology graph. Without it, NCCL falls
+   back to a flat topology with 64 channels instead of the optimal 16.
+
+2. **GIN probe fails** — NCCL's built-in GIN_IB_GDAKI plugin uses PCI
+   topology to determine NIC-GPU affinity for GPU-initiated networking.
+   Without PCI sysfs, the GIN type resolves to NONE →
+   `globalGinSupport=0` → symmetric memory disabled → NCCL can't use
+   NVLS Tree for multi-node all-reduce, falls back to Ring.
+
+**Workaround**: Export the host PCI topology XML from a runc container using
+`NCCL_TOPO_DUMP_FILE`, then mount it into the gVisor container and set
+`NCCL_TOPO_FILE`. This restores the full NUMA/PCIe hierarchy, enables GIN
+and symmetric memory, and allows NVLS Tree selection.
+
+```bash
+# One-time: generate topology from runc (8 GPUs)
+sudo docker run --runtime=runc --rm --gpus all ... \
+  -e NCCL_TOPO_DUMP_FILE=/shared/topo.xml \
+  -v /tmp/nccl_shared:/shared \
+  nccl-test /usr/local/bin/nccl_multinode_bench
+
+# Then mount into gVisor runs:
+-v /tmp/nccl_shared/topo.xml:/topo.xml:ro -e NCCL_TOPO_FILE=/topo.xml
+```
+
+**Proper fix**: Expose PCI device sysfs in gVisor's virtual sysfs
+(`/sys/bus/pci/devices/<BUS_ID>/local_cpulist`, `numa_node`, and the PCI
+class/vendor/device/link_speed attributes) so NCCL can discover the topology
+natively without needing an external file. This would also benefit other GPU
+workloads that read PCI topology.
+
+**Remaining ~1.6x gap** (79 vs 125 GB/s) is general systrap/sentry overhead
+(Go scheduler contention on futex, nvproxy ioctl overhead), consistent with
+earlier profiling that showed 75% sentry CPU on futex.
+
+**Required env vars**: `NCCL_IB_GID_INDEX=0` — without this, NCCL makes ~20K
 QUERY_GID_ENTRY ioctls/sec during steady state, each traversing the sentry.
 
 ### Not yet working
@@ -92,16 +122,23 @@ excluded from the data path. The working allowlist was
 
 ### Next steps
 
-1. **Close the remaining 3-5x performance gap** — root cause is general
-   systrap/sentry overhead (75% futex from Go scheduler), not RDMA proxy.
-   Options: optimize systrap context switch path, reduce sentry goroutine
-   contention, or batch syscall handling.
-2. **Fix `ibv_get_async_event`** — currently fails, may force NCCL into
+1. **Expose PCI device sysfs in gVisor** — this is the #1 performance fix.
+   NCCL needs `/sys/bus/pci/devices/<BUS_ID>/local_cpulist`, `numa_node`,
+   and PCI class/vendor/device/link_speed/link_width attributes to build the
+   correct NUMA topology graph. Without these, GIN fails and NCCL uses Ring
+   instead of NVLS Tree (8.6x slower). The workaround is `NCCL_TOPO_FILE`,
+   but exposing PCI sysfs natively is the right fix. Needs coordination with
+   nvproxy which already manages GPU sysfs.
+2. **Close the remaining ~1.6x gap** — with topology fixed, the gap is
+   general systrap/sentry overhead (75% futex from Go scheduler). Options:
+   optimize systrap context switch path, reduce sentry goroutine contention,
+   or batch syscall handling.
+3. **Fix `ibv_get_async_event`** — currently fails, may force NCCL into
    slower completion notification paths
-3. **Fix DMA-BUF support in nvproxy** — make `cuMemGetHandleForAddressRange`
+4. **Fix DMA-BUF support in nvproxy** — make `cuMemGetHandleForAddressRange`
    work so `NCCL_DMABUF_ENABLE=0` isn't needed (lower priority since peermem
    path has equivalent performance)
-4. **NVProxy integration for RDMA NIC isolation** — multi-tenant
+5. **NVProxy integration for RDMA NIC isolation** — multi-tenant
 
 ### Test results summary (March 27, 2026)
 
@@ -117,6 +154,9 @@ excluded from the data path. The working allowlist was
 | NCCL multinode bench (`runc`, 2x8 GPU) | IB (explicit HCA allowlist) | On (GDR_LEVEL=3, peermem forced) | **PASS** | **~306.69 GB/s** |
 | NCCL multinode bench (`runsc-rdma`, 2x8 GPU, before opt) | IB (explicit HCA allowlist) | On (GDR_LEVEL=3, peermem forced) | **PASS** | **~10.78 GB/s** |
 | NCCL multinode bench (`runsc-rdma`, 2x8 GPU, after opt) | IB (explicit HCA allowlist) | On (GDR_LEVEL=3, peermem, GID_INDEX=0) | **PASS** | **~53 GB/s** (128M), **~80 GB/s** (67M) |
+| NCCL multinode bench (`runc`, 2x8 GPU, 112-CPU nodes) | IB (explicit HCA allowlist) | On (GDR_LEVEL=3, peermem forced) | **PASS** | **~124.94 GB/s** (128M, NVLS Tree, 16ch) |
+| NCCL multinode bench (`runsc-rdma`, 2x8 GPU, 112-CPU nodes) | IB (explicit HCA allowlist) | On (GDR_LEVEL=3, peermem, GID_INDEX=0) | **PASS** | **~14.57 GB/s** (128M, Ring, 64ch) |
+| NCCL multinode bench (`runsc-rdma` + TOPO_FILE, 2x8 GPU, 112-CPU) | IB (explicit HCA allowlist) | On (GDR_LEVEL=3, peermem, GID_INDEX=0, TOPO_FILE) | **PASS** | **~79.26 GB/s** (128M, NVLS Tree, 16ch) |
 
 \* 8-GPU results limited by Docker daemon cpuset (5 vCPUs). Both gVisor and
 host/runc show the same bottleneck — not a gVisor issue. With sufficient CPUs
@@ -126,6 +166,11 @@ Per-link IB bandwidth: **400 Gb/s NDR (50 GB/s)** per NIC (mlx5_1-8).
 
 ### Open questions
 
+- **How to expose PCI sysfs natively in gVisor?** The workaround
+  (`NCCL_TOPO_FILE`) closes the gap from 8.6x to 1.6x. The proper fix is
+  exposing `/sys/bus/pci/devices/` in the virtual sysfs with `local_cpulist`,
+  `numa_node`, and PCI config attributes. This needs coordination with nvproxy
+  which already manages GPU device nodes.
 - How do we quickly test RDMA support upstream? Need both mock tests (sample
   ioctl input) and hardware tests (2x8 H100 nodes running `ib_write_bw`).
 - Will DMA-BUF eventually be needed for multi-node GDRDMA, or is peermem

@@ -567,6 +567,12 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		rdmaDevices = sys.DeserializeRDMAData(sys.RDMADataPath)
 	}
 
+	// Read PCI device topology data serialized by stage 1 (pciDevicesUpdateChroot).
+	var pciDevicesData *sys.PCIDevicesData
+	if conf.NVProxy || conf.RDMAProxy {
+		pciDevicesData = sys.DeserializePCIDevicesData(sys.PCIDevicesDataPath)
+	}
+
 	// Create the loader.
 	bootArgs := boot.Args{
 		ID:                  f.Arg(0),
@@ -599,6 +605,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		SaveFDs:          b.saveFDs.GetFDs(),
 		RootfsUpperTarFD: b.rootfsUpperTarFD,
 		RDMADevices:      rdmaDevices,
+		PCIDevicesData:   pciDevicesData,
 		HostNetnsFD:      b.hostNetnsFD,
 	}
 	b.setBootArgsExtra(&bootArgs)

@@ -551,16 +551,100 @@ sudo docker run --runtime=runsc-rdma --rm --gpus all $DEVS \
   nccl-test /usr/local/bin/nccl_multinode_bench
 ```
 
-Observed result on 2x8 H200 nodes:
+Observed result on 2x8 H200 nodes (without topology workaround):
 
 - `nNodes 2`
 - `NET/IB/.../GDRDMA` still appears in NCCL logs
 - gVisor boot logs show `nvidia_peermem` detection and RDMA sysfs collection
-- only ~`10.78 GB/s` bus bandwidth at `134217728` bytes
+- only ~`14.57 GB/s` bus bandwidth at `134217728` bytes (Ring, 64 channels)
 
-This is far below the matching host and `runc` baselines, so the regression is
-specific to `runsc-rdma`, not the node pairing, SSH/bootstrap setup, or HCA
-selection.
+This is far below the matching host and `runc` baselines because gVisor
+doesn't expose PCI device sysfs (`/sys/bus/pci/devices/`). Without the PCIe
+topology, NCCL can't detect NUMA affinity or enable GIN (GPU-Initiated
+Network), so it falls back from NVLS Tree (16 channels) to Ring (64 channels).
+
+**5. gVisor run with `runsc-rdma` + topology workaround (recommended)**
+
+gVisor doesn't expose `/sys/bus/pci/devices/`, so NCCL can't discover the
+PCIe/NUMA topology. This causes NCCL to select Ring (64 channels) instead of
+NVLS Tree (16 channels), resulting in ~8.6x lower bandwidth. The workaround is
+to export the host topology XML from runc and mount it into gVisor containers.
+
+**One-time: generate the topology file (run from any node with runc):**
+
+```bash
+sudo mkdir -p /tmp/nccl_shared
+DEVS=$(ls /dev/infiniband/uverbs* | sed 's/^/--device=/' | tr '\n' ' ')
+sudo docker run --runtime=runc --rm --gpus all $DEVS \
+  --cpus="$DOCKER_CPUS" --ulimit memlock=-1:-1 --shm-size=1g --network=host \
+  -e NCCL_DEBUG=INFO \
+  -e NCCL_TOPO_DUMP_FILE=/shared/topo.xml \
+  -e RANK=0 -e NRANKS=1 -e NGPUS=8 \
+  -e MASTER_ADDR=127.0.0.1 -e MASTER_PORT=29517 \
+  -v /tmp/nccl_shared:/shared \
+  nccl-test /usr/local/bin/nccl_multinode_bench
+```
+
+Copy the topology file to all nodes:
+
+```bash
+scp /tmp/nccl_shared/topo.xml <node-b-ip>:/tmp/nccl_topo.xml
+cp /tmp/nccl_shared/topo.xml /tmp/nccl_topo.xml
+```
+
+**Run gVisor with the topology file.** Start rank 1 on node B first:
+
+```bash
+DEVS=$(ls /dev/infiniband/uverbs* | sed 's/^/--device=/' | tr '\n' ' ')
+sudo docker run --runtime=runsc-rdma --rm --gpus all $DEVS \
+  --cpus="$DOCKER_CPUS" --ulimit memlock=-1:-1 --shm-size=1g --network=host \
+  -v /tmp/nccl_topo.xml:/topo.xml:ro \
+  -e RANK=1 -e NRANKS=2 -e NGPUS=8 \
+  -e MASTER_ADDR=<node-a-ip> -e MASTER_PORT=29501 \
+  -e NCCL_DEBUG=INFO \
+  -e NCCL_SOCKET_IFNAME=eth0 \
+  -e NCCL_IB_HCA=mlx5_0,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_9,mlx5_10,mlx5_11 \
+  -e NCCL_NET_GDR_LEVEL=3 \
+  -e NCCL_DMABUF_ENABLE=0 \
+  -e NCCL_IB_GID_INDEX=0 \
+  -e NCCL_TOPO_FILE=/topo.xml \
+  nccl-test /usr/local/bin/nccl_multinode_bench
+```
+
+Then start rank 0 on node A:
+
+```bash
+DEVS=$(ls /dev/infiniband/uverbs* | sed 's/^/--device=/' | tr '\n' ' ')
+sudo docker run --runtime=runsc-rdma --rm --gpus all $DEVS \
+  --cpus="$DOCKER_CPUS" --ulimit memlock=-1:-1 --shm-size=1g --network=host \
+  -v /tmp/nccl_topo.xml:/topo.xml:ro \
+  -e RANK=0 -e NRANKS=2 -e NGPUS=8 \
+  -e MASTER_ADDR=<node-a-ip> -e MASTER_PORT=29501 \
+  -e NCCL_DEBUG=INFO \
+  -e NCCL_SOCKET_IFNAME=eth0 \
+  -e NCCL_IB_HCA=mlx5_0,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_9,mlx5_10,mlx5_11 \
+  -e NCCL_NET_GDR_LEVEL=3 \
+  -e NCCL_DMABUF_ENABLE=0 \
+  -e NCCL_IB_GID_INDEX=0 \
+  -e NCCL_TOPO_FILE=/topo.xml \
+  nccl-test /usr/local/bin/nccl_multinode_bench
+```
+
+Observed result on 2x8 H200 nodes with topology workaround:
+
+- ~`79.26 GB/s` bus bandwidth at `134217728` bytes (NVLS Tree, 16 channels)
+- Symmetric memory enabled (no "Symmetric memory is not supported" message)
+- 16 coll channels, 16 NVLS channels, 4 p2p channels per peer
+- Remaining ~1.6x gap vs runc is general systrap/sentry overhead
+
+**What to verify in the logs when using NCCL_TOPO_FILE:**
+
+- `16 coll channels` (not 64 — if you see 64, the topo file wasn't loaded)
+- `Symmetric VA size=140GB` without a following "Symmetric memory is not
+  supported" line
+- `Connected NVLS tree` messages (8 per node)
+- NO `Connected all rings` messages (rings = fallback = slow)
+- `Affinity for GPU N` shows actual CPU ranges, not "empty, ignoring"
 
 ---
 
@@ -576,7 +660,10 @@ selection.
 | `NCCL_IB_HCA=mlx5_1` | device name | Restrict to a specific IB device |
 | `NCCL_IB_HCA=mlx5_0,mlx5_3,...` | device list | Use an explicit HCA allowlist when some HCAs are management-only |
 | `NCCL_IB_HCA=^mlx5_0` | ^device | Exclude a device (useful for mixed-link hosts, but explicit allowlists are safer) |
+| `NCCL_IB_GID_INDEX=0` | 0 | Pin GID index to avoid ~20K QUERY_GID ioctls/sec in gVisor |
+| `NCCL_TOPO_FILE=/topo.xml` | path | Provide PCI topology XML (required for gVisor to get NVLS Tree) |
 | `NCCL_DEBUG=INFO` | INFO/WARN/TRACE | NCCL log verbosity |
+
 
 ### Docker flags
 
@@ -650,22 +737,46 @@ both gVisor and host/runc equally. For this project, check this against the
 
 ### Multi-node works but is far slower under gVisor
 
-If the 2-node test completes and still shows `NET/IB/.../GDRDMA`, but
-`runsc-rdma` is much slower than host or `runc`, use this checklist.
+**Most likely cause: missing NCCL_TOPO_FILE.** gVisor doesn't expose PCI
+device sysfs (`/sys/bus/pci/devices/`), so NCCL can't discover the NUMA/PCIe
+topology. This causes two problems:
 
-**1. First prove the test setup is sane**
+1. NCCL selects 64 Ring channels instead of 16 NVLS Tree channels
+2. GIN (GPU-Initiated Network) fails → symmetric memory disabled
+
+**Fix:** Generate the topology XML from runc and mount it into gVisor
+containers with `-e NCCL_TOPO_FILE=/topo.xml`. See section 7 step 5 for
+full instructions. Expected improvement: ~14 GB/s → ~79 GB/s at 128 MiB.
+
+If the 2-node test completes and still shows `NET/IB/.../GDRDMA`, but
+`runsc-rdma` is much slower than host or `runc` **even with NCCL_TOPO_FILE**,
+use this checklist.
+
+**1. Check NCCL_TOPO_FILE is loaded correctly**
+
+In the NCCL logs, verify:
+
+- `16 coll channels` (not 64)
+- `Symmetric VA size=140GB` with NO "Symmetric memory is not supported"
+- `Connected NVLS tree` messages (8 per node)
+- `Affinity for GPU N` shows CPU ranges, not "empty, ignoring"
+
+If you see 64 channels or "Symmetric memory is not supported", the topology
+file is not loaded or doesn't match the hardware.
+
+**2. First prove the test setup is sane**
 
 Run the same 2-node workload three ways:
 
 - extracted host binary
 - `docker --runtime=runc`
-- `docker --runtime=runsc-rdma`
+- `docker --runtime=runsc-rdma` (with `NCCL_TOPO_FILE`)
 
-Expected on the validated 2x8 H200 setup:
+Expected on the validated 2x8 H200 setup (112-CPU nodes):
 
-- extracted host binary: ~308 GB/s bus bandwidth at `134217728` bytes
-- `runc`: ~307 GB/s
-- `runsc-rdma`: currently ~10.8 GB/s
+- `runc`: ~125 GB/s bus bandwidth at `134217728` bytes (NVLS Tree, 16ch)
+- `runsc-rdma` + TOPO_FILE: ~79 GB/s (NVLS Tree, 16ch, ~1.6x gap)
+- `runsc-rdma` without TOPO_FILE: ~15 GB/s (Ring, 64ch, ~8.6x gap)
 
 If host or `runc` is also slow (for example single-digit GB/s), stop there.
 The issue is with node selection, HCA selection, bootstrap interface, or the
@@ -766,8 +877,9 @@ steady-state RDMA path.
 3. Interaction between nvproxy and rdmaproxy in multi-node GDRDMA mode
 4. Proxy-service thread scheduling or CPU placement unique to `runsc-rdma`
 
-This case is what we currently observe: functional `NET/IB/.../GDRDMA`, but
-~30x lower throughput than the matching `runc` baseline.
+With `NCCL_TOPO_FILE`, the remaining ~1.6x gap is general systrap/sentry
+overhead (Go scheduler contention). Without it, the gap is ~8.6x due to
+algorithm selection (Ring vs NVLS Tree).
 
 **9. Useful side-by-side log commands**
 
@@ -783,11 +895,12 @@ rg '^( *size\\(B\\)| *8388608| *16777216| *33554432| *67108864| *134217728)' /tm
 ssh <node-b> 'BOOTLOG=$(ls -t /tmp/runsc-rdma/logs | grep boot | head -1); sed -n "1,240p" /tmp/runsc-rdma/logs/$BOOTLOG'
 ```
 
-**10. Current working hypothesis**
+**10. Current status (March 27, 2026)**
 
-Because the gVisor run still reports `NET/IB/.../GDRDMA`, the bug is probably
-not a simple transport fallback. Treat it as a **performance bug in the gVisor
-RDMA path**, not as a missing-feature bug.
+The performance gap is now understood. Without `NCCL_TOPO_FILE`, gVisor gets
+~8.6x lower throughput because NCCL selects Ring (64ch) instead of NVLS Tree
+(16ch). With `NCCL_TOPO_FILE`, the gap narrows to ~1.6x — the remaining
+overhead is general systrap/sentry cost, not RDMA-specific.
 
 ### "Remote RoCE device is incompatible with the local IB" error
 
@@ -845,13 +958,25 @@ sudo rm -rf /tmp/runsc-rdma/logs && sudo mkdir -p /tmp/runsc-rdma/logs
 # Build test image (only needed once or after Dockerfile changes)
 sudo docker build -f Dockerfile.nccl -t nccl-test .
 
+# Generate NCCL topology file (one-time, from runc — critical for performance)
+sudo mkdir -p /tmp/nccl_shared
+DEVS=$(ls /dev/infiniband/uverbs* | sed 's/^/--device=/' | tr '\n' ' ')
+sudo docker run --runtime=runc --rm --gpus all $DEVS \
+  --cpus="$DOCKER_CPUS" --ulimit memlock=-1:-1 --shm-size=1g --network=host \
+  -e NCCL_TOPO_DUMP_FILE=/shared/topo.xml \
+  -e RANK=0 -e NRANKS=1 -e NGPUS=8 \
+  -e MASTER_ADDR=127.0.0.1 -e MASTER_PORT=29517 \
+  -v /tmp/nccl_shared:/shared \
+  nccl-test /usr/local/bin/nccl_multinode_bench
+# Copy topo.xml to all nodes:
+# scp /tmp/nccl_shared/topo.xml <node-b-ip>:/tmp/nccl_topo.xml
+
 # Primary validation target: follow section 7 and run the 2-node, 8-GPU-per-node
 # benchmark after deploy. Use the exact validated settings:
 export NCCL_SOCKET_IFNAME=eth0
 export NCCL_IB_HCA=mlx5_0,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_9,mlx5_10,mlx5_11
 
 # Then run the node A / node B commands from section 7:
-# - host extracted binary baseline
 # - runc container baseline
-# - runsc-rdma container run
+# - runsc-rdma container run (with -v topo.xml:/topo.xml:ro -e NCCL_TOPO_FILE=/topo.xml)
 ```

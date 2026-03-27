@@ -253,6 +253,9 @@ type Loader struct {
 	// rdmaDevices contains pre-collected sysfs data for RDMA devices.
 	rdmaDevices *sys.RDMAData
 
+	// pciDevicesData contains pre-collected PCI device topology data.
+	pciDevicesData *sys.PCIDevicesData
+
 	// hostNetnsFD is a FD to the host network namespace for RDMA.
 	hostNetnsFD int
 
@@ -432,6 +435,11 @@ type Args struct {
 	// RDMADevices contains pre-collected sysfs data for RDMA devices.
 	RDMADevices *sys.RDMAData
 
+	// PCIDevicesData contains pre-collected sysfs data for PCI device
+	// topology (GPUs, NICs, bridges) used by NCCL for optimal algorithm
+	// selection.
+	PCIDevicesData *sys.PCIDevicesData
+
 	// HostNetnsFD is a file descriptor to the host's network namespace.
 	// Used by rdmaproxy to switch netns before ioctls that need GID
 	// resolution against host physical NICs.
@@ -526,6 +534,7 @@ func New(args Args) (*Loader, error) {
 		stopProfiling:  stopProfiling,
 		productName:    args.ProductName,
 		rdmaDevices:    args.RDMADevices,
+		pciDevicesData: args.PCIDevicesData,
 		hostNetnsFD:    args.HostNetnsFD,
 		hostTHP:        args.HostTHP,
 		containerIDs:   make(map[string]string),
@@ -1338,7 +1347,7 @@ func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGrou
 	}
 	// We can share l.sharedMounts with containerMounter since l.mu is locked.
 	// Hence, mntr must only be used within this function (while l.mu is locked).
-	mntr := newContainerMounter(info, l.k, l.mountHints, l.sharedMounts, l.productName, l.rdmaDevices, l.sandboxID)
+	mntr := newContainerMounter(info, l.k, l.mountHints, l.sharedMounts, l.productName, l.rdmaDevices, l.pciDevicesData, l.sandboxID)
 	if err := setupContainerVFS(ctx, info, mntr, &info.procArgs); err != nil {
 		return nil, nil, err
 	}
