@@ -27,11 +27,11 @@ import (
 // byteorder is an operation that performs byte order operations on a register.
 // Note: byteorder operations are not supported for the verdict register.
 type byteorder struct {
-	sreg uint8       // Number of the source register.
-	dreg uint8       // Number of the destination register.
-	bop  byteorderOp // Byte order operation to perform.
-	blen uint8       // Number of total bytes to operate on.
-	size uint8       // Granular size in bytes to operate on.
+	sregIdx int         // Index of the source register in registerSet.data.
+	dregIdx int         // Index of the destination register in registerSet.data.
+	bop     byteorderOp // Byte order operation to perform.
+	blen    int         // Number of total bytes to operate on.
+	size    uint8       // Granular size in bytes to operate on.
 }
 
 // byteorderOp is the byte order operator for a byteorder operation.
@@ -86,15 +86,23 @@ func newByteorder(sreg, dreg uint8, bop byteorderOp, blen, size uint8) (*byteord
 	if size != 2 && size != 4 && size != 8 {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("byteorder operation size %d is not supported", size))
 	}
-	return &byteorder{sreg: sreg, dreg: dreg, bop: bop, blen: blen, size: size}, nil
+	var err *syserr.AnnotatedError
+	var sregIdx, dregIdx int
+	if sregIdx, err = regNumToIdx(sreg, int(blen)); err != nil {
+		return nil, err
+	}
+	if dregIdx, err = regNumToIdx(dreg, int(blen)); err != nil {
+		return nil, err
+	}
+	return &byteorder{sregIdx: sregIdx, dregIdx: dregIdx, bop: bop, blen: int(blen), size: size}, nil
 }
 
 // evaluate for byteorder performs the byte order operation on the source
 // register and stores the result in the destination register.
 func (op byteorder) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
 	// Gets the source and destination registers.
-	src := getRegisterBuffer(regs, op.sreg)
-	dst := getRegisterBuffer(regs, op.dreg)
+	src := regs.data[op.sregIdx:]
+	dst := regs.data[op.dregIdx:]
 
 	// Performs the byte order operations on the source register and stores the
 	// result in as many bytes as are available in the destination register.
@@ -102,12 +110,12 @@ func (op byteorder) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *R
 	case 8:
 		switch op.bop {
 		case linux.NFT_BYTEORDER_NTOH:
-			for i := uint8(0); i < op.blen; i += 8 {
+			for i := 0; i < op.blen; i += 8 {
 				networkNum := binary.BigEndian.Uint64(src[i : i+8])
 				binary.NativeEndian.PutUint64(dst[i:], networkNum)
 			}
 		case linux.NFT_BYTEORDER_HTON:
-			for i := uint8(0); i < op.blen; i += 8 {
+			for i := 0; i < op.blen; i += 8 {
 				hostNum := binary.NativeEndian.Uint64(src[i : i+8])
 				binary.BigEndian.PutUint64(dst[i:], hostNum)
 			}
@@ -116,12 +124,12 @@ func (op byteorder) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *R
 	case 4:
 		switch op.bop {
 		case linux.NFT_BYTEORDER_NTOH:
-			for i := uint8(0); i < op.blen; i += 4 {
+			for i := 0; i < op.blen; i += 4 {
 				networkNum := binary.BigEndian.Uint32(src[i : i+4])
 				binary.NativeEndian.PutUint32(dst[i:], networkNum)
 			}
 		case linux.NFT_BYTEORDER_HTON:
-			for i := uint8(0); i < op.blen; i += 4 {
+			for i := 0; i < op.blen; i += 4 {
 				hostNum := binary.NativeEndian.Uint32(src[i : i+4])
 				binary.BigEndian.PutUint32(dst[i:], hostNum)
 			}
@@ -130,12 +138,12 @@ func (op byteorder) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *R
 	case 2:
 		switch op.bop {
 		case linux.NFT_BYTEORDER_NTOH:
-			for i := uint8(0); i < op.blen; i += 2 {
+			for i := 0; i < op.blen; i += 2 {
 				networkNum := binary.BigEndian.Uint16(src[i : i+2])
 				binary.NativeEndian.PutUint16(dst[i:], networkNum)
 			}
 		case linux.NFT_BYTEORDER_HTON:
-			for i := uint8(0); i < op.blen; i += 2 {
+			for i := 0; i < op.blen; i += 2 {
 				hostNum := binary.NativeEndian.Uint16(src[i : i+2])
 				binary.BigEndian.PutUint16(dst[i:], hostNum)
 			}

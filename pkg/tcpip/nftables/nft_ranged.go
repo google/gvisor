@@ -29,10 +29,10 @@ import (
 // Note: ranged operations are not supported for the verdict register.
 // Note: named "ranged" because "range" is a reserved keyword in Go.
 type ranged struct {
-	low  bytesData // Data to compare the source register to.
-	high bytesData // Data to compare the source register to.
-	sreg uint8     // Number of the source register.
-	rop  rngOp     // Range operator.
+	low     []byte // Data to compare the source register to.
+	high    []byte // Data to compare the source register to.
+	sregIdx int    // Index of the source register in registerSet.data.
+	rop     rngOp  // Range operator.
 
 	// Note: The linux kernel defines the range operation, but we have not been
 	// able to observe it used by the nft binary. For any commands that may use
@@ -78,36 +78,28 @@ func newRanged(sreg uint8, op int, low, high []byte) (*ranged, *syserr.Annotated
 	if len(low) != len(high) {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "upper and lower bounds for ranged operation must be the same length")
 	}
-	lowData := newBytesData(low)
-	if err := lowData.validateRegister(sreg); err != nil {
+	sregIdx, err := regNumToIdx(sreg, len(low))
+	if err != nil {
 		return nil, err
 	}
-	highData := newBytesData(high)
-	if err := highData.validateRegister(sreg); err != nil {
+	if err := validateDataRegister(sregIdx, max(len(low), linux.NFT_REG_SIZE)); err != nil {
 		return nil, err
 	}
 	rop := rngOp(op)
 	if err := validateRangeOp(rop); err != nil {
 		return nil, err
 	}
-	return &ranged{sreg: sreg, rop: rop, low: lowData, high: highData}, nil
+	return &ranged{sregIdx: sregIdx, rop: rop, low: low, high: high}, nil
 }
 
 // evaluate for Ranged checks whether the source register data is within the
 // specified inclusive range and breaks from the rule if comparison is false.
 func (op ranged) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
-	// Gets the upper and lower bounds as bytesData.
-	low, high := op.low.data, op.high.data
-
 	// Gets the data from the source register.
-	regBuf := getRegisterBuffer(regs, op.sreg)[:len(low)]
-
+	regBuf := regs.data[op.sregIdx : op.sregIdx+len(op.low)]
 	// Compares register data to both lower and upper bounds.
-	d1 := bytes.Compare(regBuf, low)
-	d2 := bytes.Compare(regBuf, high)
 
-	// Determines the comparison result depending on the operator.
-	if (d1 >= 0 && d2 <= 0) != (op.rop == linux.NFT_RANGE_EQ) {
+	if (bytes.Compare(regBuf, op.low) >= 0 && bytes.Compare(regBuf, op.high) <= 0) != (op.rop == linux.NFT_RANGE_EQ) {
 		// Comparison is false, so break from the rule.
 		regs.verdict = stack.NFVerdict{Code: VC(linux.NFT_BREAK)}
 	}

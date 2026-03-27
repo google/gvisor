@@ -29,8 +29,8 @@ import (
 // Note: meta operations are not supported for the verdict register.
 // TODO(b/345684870): Support setting more meta fields for Meta Set.
 type metaSet struct {
-	key  metaKey // Meta key specifying what data to set.
-	sreg uint8   // Number of the source register.
+	key     metaKey // Meta key specifying what data to set.
+	sregIdx int     // Index of the source register in registerSet.data.
 }
 
 // checkMetaKeySetCompatible checks that the meta key is valid for meta set.
@@ -54,7 +54,7 @@ func checkMetaKeySetCompatible(key metaKey) *syserr.AnnotatedError {
 // register.
 func (op metaSet) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
 	// Gets the data from the source register.
-	src := getRegisterBuffer(regs, op.sreg)[:metaDataLengths[op.key]]
+	src := regs.data[op.sregIdx : op.sregIdx+metaDataLengths[op.key]]
 
 	// Sets the meta data of the appropriate field.
 	switch op.key {
@@ -72,7 +72,7 @@ func (op metaSet) GetExprName() string {
 func (op metaSet) Dump() ([]byte, *syserr.AnnotatedError) {
 	m := &nlmsg.Message{}
 	m.PutAttr(linux.NFTA_META_KEY, nlmsg.PutU32(uint32(op.key)))
-	m.PutAttr(linux.NFTA_META_SREG, nlmsg.PutU32(uint32(op.sreg)))
+	m.PutAttr(linux.NFTA_META_SREG, nlmsg.PutU32(formatRegIdxForDump(op.sregIdx)))
 	return m.Buffer(), nil
 }
 
@@ -87,10 +87,15 @@ func newMetaSet(key metaKey, sreg uint8) (*metaSet, *syserr.AnnotatedError) {
 	if err := checkMetaKeySetCompatible(key); err != nil {
 		return nil, err
 	}
-	if metaDataLengths[key] > 4 && !is16ByteRegister(sreg) {
+	blen := metaDataLengths[key]
+	if blen > 4 && !is16ByteRegister(sreg) {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("meta load operation cannot use 4-byte register as destination for key %s", key))
 	}
-	return &metaSet{key: key, sreg: sreg}, nil
+	sregIdx, err := regNumToIdx(sreg, blen)
+	if err != nil {
+		return nil, err
+	}
+	return &metaSet{key: key, sregIdx: sregIdx}, nil
 }
 
 func initMetaSet(attrs map[uint16]nlmsg.BytesView) (*metaSet, *syserr.AnnotatedError) {
@@ -102,9 +107,5 @@ func initMetaSet(attrs map[uint16]nlmsg.BytesView) (*metaSet, *syserr.AnnotatedE
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse NFTA_META_SREG attribute")
 	}
-	sreg, err := nftMatchReg(reg)
-	if err != nil {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Invalid source register: %d", reg))
-	}
-	return newMetaSet(metaKey(key), uint8(sreg))
+	return newMetaSet(metaKey(key), uint8(reg))
 }

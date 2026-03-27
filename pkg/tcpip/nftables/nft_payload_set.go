@@ -33,8 +33,8 @@ import (
 type payloadSet struct {
 	base       payloadBase // Payload base to access data from.
 	offset     uint8       // Number of bytes to skip after the base for data.
-	blen       uint8       // Number of bytes to load.
-	sreg       uint8       // Number of the source register.
+	blen       int         // Number of bytes to load.
+	sregIdx    int         // Index of the source register in registerSet.data.
 	csumType   uint8       // Type of checksum to use.
 	csumOffset uint8       // Number of bytes to skip after the base for checksum.
 	csumFlags  uint8       // Flags for checksum.
@@ -86,7 +86,11 @@ func newPayloadSet(base payloadBase, offset, blen, sreg, csumType, csumOffset, c
 	if csumFlags&^linux.NFT_PAYLOAD_L4CSUM_PSEUDOHDR != 0 {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("invalid checksum flags: %d", csumFlags))
 	}
-	return &payloadSet{base: base, offset: offset, blen: blen, sreg: sreg,
+	sregIdx, err := regNumToIdx(sreg, int(blen))
+	if err != nil {
+		return nil, err
+	}
+	return &payloadSet{base: base, offset: offset, blen: int(blen), sregIdx: sregIdx,
 		csumType: csumType, csumOffset: csumOffset, csumFlags: csumFlags}, nil
 }
 
@@ -95,23 +99,24 @@ func newPayloadSet(base payloadBase, offset, blen, sreg, csumType, csumOffset, c
 func (op payloadSet) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
 	// Gets the packet payload.
 	payload := getPayloadBuffer(pkt, op.base)
+	offset := int(op.offset)
 
 	// Breaks if could not retrieve packet data.
-	if payload == nil || len(payload) < int(op.offset+op.blen) {
+	if payload == nil || len(payload) < offset+op.blen {
 		regs.verdict = stack.NFVerdict{Code: VC(linux.NFT_BREAK)}
 		return
 	}
 
 	// Gets the register data assumed to be in Big Endian.
-	regData := getRegisterBuffer(regs, op.sreg)[:op.blen]
+	regData := regs.data[op.sregIdx : op.sregIdx+op.blen]
 
 	// Returns early if the source data is the same as the existing payload data.
-	if slices.Equal(regData, payload[op.offset:op.offset+op.blen]) {
+	if slices.Equal(regData, payload[offset:offset+op.blen]) {
 		return
 	}
 
 	// Sets payload data to source register data after checksum updates.
-	defer copy(payload[op.offset:op.offset+op.blen], regData)
+	defer copy(payload[offset:offset+op.blen], regData)
 
 	// Specifies no checksum updates.
 	if op.csumType != linux.NFT_PAYLOAD_CSUM_INET && op.csumFlags == 0 {
@@ -122,22 +127,22 @@ func (op payloadSet) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *
 	// Note: Checksums are done on 2-byte boundaries, so we must append the
 	// surrounding bytes in our checksum calculations if the beginning or end
 	// of the checksum is not aligned to a 2-byte boundary.
-	begin := op.offset
-	end := op.offset + op.blen
+	begin := offset
+	end := offset + op.blen
 	if begin%2 != 0 {
 		begin--
 	}
-	if end%2 != 0 && end != uint8(len(payload)) {
+	if end%2 != 0 && end != len(payload) {
 		end++
 	}
 	tempOld := make([]byte, end-begin)
 	copy(tempOld, payload[begin:end])
 	tempNew := make([]byte, end-begin)
-	if begin != op.offset {
+	if begin != offset {
 		tempNew[0] = payload[begin]
 	}
-	copy(tempNew[op.offset-begin:], regData)
-	if end != op.offset+op.blen {
+	copy(tempNew[offset-begin:], regData)
+	if end != offset+op.blen {
 		tempNew[len(tempNew)-1] = payload[end-1]
 	}
 	oldDataCsum := checksum.Checksum(tempOld, 0)
@@ -190,7 +195,7 @@ func (op payloadSet) GetExprName() string {
 
 func (op payloadSet) Dump() ([]byte, *syserr.AnnotatedError) {
 	m := &nlmsg.Message{}
-	m.PutAttr(linux.NFTA_PAYLOAD_SREG, nlmsg.PutU32(uint32(op.sreg)))
+	m.PutAttr(linux.NFTA_PAYLOAD_SREG, nlmsg.PutU32(formatRegIdxForDump(op.sregIdx)))
 	m.PutAttr(linux.NFTA_PAYLOAD_BASE, nlmsg.PutU32(uint32(op.base)))
 	m.PutAttr(linux.NFTA_PAYLOAD_OFFSET, nlmsg.PutU32(uint32(op.offset)))
 	m.PutAttr(linux.NFTA_PAYLOAD_LEN, nlmsg.PutU32(uint32(op.blen)))
