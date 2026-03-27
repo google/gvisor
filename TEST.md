@@ -337,7 +337,11 @@ echo '<paste public key here>' >> ~/.ssh/authorized_keys
 chmod 600 ~/.ssh/authorized_keys
 ```
 
-Verify: `ssh -o StrictHostKeyChecking=no <remote_ip> echo OK`
+Validated example from node A:
+
+```bash
+ssh -o StrictHostKeyChecking=no 172.29.13.202 echo OK
+```
 
 ### Identify node IPs
 
@@ -348,6 +352,12 @@ loopback or docker bridges):
 ip -4 addr show | grep -E 'inet 172\.|inet 10\.' | grep -v docker | grep -v 127
 ```
 
+Validated values from the March 27, 2026 run:
+
+- node A: `172.29.14.130`
+- node B: `172.29.13.202`
+- bootstrap interface: `eth0`
+
 ### Create hostfile
 
 On the launch node, create `/tmp/hostfile` with one line per node. `slots=N`
@@ -355,8 +365,8 @@ is the number of GPUs per node:
 
 ```bash
 cat > /tmp/hostfile <<'EOF'
-<NODE_A_IP> slots=8
-<NODE_B_IP> slots=8
+172.29.14.130 slots=8
+172.29.13.202 slots=8
 EOF
 ```
 
