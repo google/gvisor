@@ -2583,6 +2583,47 @@ TEST(MountTest, OverlayfsSgidBitIsCopiedUp) {
     EXPECT_TRUE(merged_st_after_touch.st_mode & S_ISGID);
   }
 }
+
+// Renaming a lower-layer directory on an overlay inside a user namespace
+// requires user.overlay.* xattrs to mark the directory opaque.
+TEST(MountTest, OverlayfsDirectoryRenameInUserNamespace) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
+
+  const std::function<void()> parent = [] {};
+  const std::function<void()> child = [] {
+    TEST_CHECK_SUCCESS(
+        mount("tmpfs", "/tmp", "tmpfs", 0, "mode=1777,size=10m"));
+    TEST_CHECK_SUCCESS(mkdir("/tmp/lower", 0755));
+    TEST_CHECK_SUCCESS(mkdir("/tmp/upper", 0755));
+    TEST_CHECK_SUCCESS(mkdir("/tmp/work", 0755));
+    TEST_CHECK_SUCCESS(mkdir("/tmp/merged", 0755));
+
+    TEST_CHECK_SUCCESS(mkdir("/tmp/lower/mydir", 0755));
+    int fd = open("/tmp/lower/mydir/file.txt", O_WRONLY | O_CREAT, 0644);
+    TEST_CHECK(fd >= 0);
+    TEST_CHECK_SUCCESS(close(fd));
+
+    TEST_CHECK_SUCCESS(mount(
+        "overlay", "/tmp/merged", "overlay", 0,
+        "lowerdir=/tmp/lower,upperdir=/tmp/upper,"
+        "workdir=/tmp/work,userxattr"));
+
+    // Rename a lower-layer directory, triggering copy-up and opaque xattr.
+    TEST_CHECK_SUCCESS(
+        rename("/tmp/merged/mydir", "/tmp/merged/renamed"));
+
+    struct stat st;
+    TEST_CHECK_SUCCESS(stat("/tmp/merged/renamed", &st));
+    TEST_CHECK(S_ISDIR(st.st_mode));
+    TEST_CHECK(stat("/tmp/merged/mydir", &st) == -1 && errno == ENOENT);
+    TEST_CHECK_SUCCESS(stat("/tmp/merged/renamed/file.txt", &st));
+    TEST_CHECK(S_ISREG(st.st_mode));
+  };
+  EXPECT_THAT(InForkedUserMountNamespace(parent, child),
+              IsPosixErrorOkAndHolds(0));
+}
+
 }  // namespace
 
 }  // namespace testing

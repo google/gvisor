@@ -100,6 +100,13 @@ type filesystem struct {
 	// used for accesses to the filesystem's layers. creds is immutable.
 	creds *auth.Credentials
 
+	// xattrPrefix is the xattr key prefix for overlay metadata
+	// ("trusted.overlay." or "user.overlay."). xattrPrefix is immutable.
+	xattrPrefix string
+
+	// xattrOpaque is xattrPrefix + "opaque". xattrOpaque is immutable.
+	xattrOpaque string
+
 	// createCreds is a cache of credentials that is used for create operations.
 	createCredsMu createCredsMutex `state:"nosave"`
 	createCreds   map[createCredsKey]*auth.Credentials
@@ -173,6 +180,9 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		defer vfsroot.DecRef(ctx)
 	}
 
+	_, userXattr := mopts["userxattr"]
+	delete(mopts, "userxattr")
+
 	if upperPathname, ok := mopts["upperdir"]; ok {
 		if fsopts.UpperRoot.Ok() {
 			ctx.Infof("overlay.FilesystemType.GetFilesystem: both upperdir and FilesystemOptions.UpperRoot are specified")
@@ -221,10 +231,10 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			ctx.Infof("overlay.FilesystemType.GetFilesystem: failed to resolve upperdir %q: %v", upperPathname, err)
 			return nil, nil, err
 		}
-		// TODO(b/286942303): Only tmpfs supports whiteouts and
-		// trusted.overlay attributes. Don't allow to use non-tmpfs
-		// mounts on upper levels for mounts created through the mount
-		// syscall. In gVisor configs, users can specify any
+		// TODO(b/286942303): Only tmpfs supports whiteouts and overlay
+		// xattrs (trusted.overlay.* or user.overlay.*). Don't allow
+		// non-tmpfs mounts on upper levels for mounts created through
+		// the mount syscall. In gVisor configs, users can specify any
 		// configurations on their own risk.
 		if !opts.InternalMount && upperRoot.Mount().Filesystem().FilesystemType().Name() != "tmpfs" {
 			return nil, nil, linuxerr.EINVAL
@@ -308,9 +318,19 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		lowerRoot.IncRef()
 	}
 
+	// Use "user.overlay.*" xattrs instead of "trusted.overlay.*" when
+	// userxattr is explicitly set, matching Linux behavior.
+	// See fs/overlayfs/params.c:ovl_parse_param().
+	xattrPrefix := linux.XATTR_TRUSTED_PREFIX + "overlay."
+	if userXattr {
+		xattrPrefix = linux.XATTR_USER_PREFIX + "overlay."
+	}
+
 	fs := &filesystem{
 		opts:           fsopts,
 		creds:          creds.Fork(),
+		xattrPrefix:    xattrPrefix,
+		xattrOpaque:    xattrPrefix + "opaque",
 		dirDevMinor:    dirDevMinor,
 		lowerDevMinors: make(map[layerDevNumber]uint32),
 		dirInoCache:    make(map[layerDevNoAndIno]uint64),
