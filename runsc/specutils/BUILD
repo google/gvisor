@@ -35,7 +35,10 @@ go_library(
 go_test(
     name = "specutils_test",
     size = "small",
-    srcs = ["specutils_test.go"],
+    srcs = [
+        "nvidia_test.go",
+        "specutils_test.go",
+    ],
     library = ":specutils",
     deps = [
         "//pkg/sentry/devices/nvproxy/nvconf",

@@ -59,14 +59,40 @@ func GPUFunctionalityRequested(spec *specs.Spec, conf *config.Config) bool {
 	}
 	// In GKE, the nvidia_gpu device plugin injects NVIDIA devices into
 	// spec.Linux.Devices when GPUs are allocated to a container.
-	if spec.Linux != nil {
-		for _, dev := range spec.Linux.Devices {
-			if dev.Path == "/dev/nvidiactl" {
-				return true
-			}
-		}
+	// nvidia-container-runtime CSV mode (and CDI) inject the same via OCI edits.
+	if LinuxSpecHasNvidiaControlDevice(spec) {
+		return true
 	}
 	return gpuFunctionalityRequestedViaHook(spec, conf)
+}
+
+// LinuxSpecHasNvidiaControlDevice reports whether the OCI spec lists the
+// NVIDIA control device in Linux.Devices (e.g. GKE device plugin, CSV/CDI).
+func LinuxSpecHasNvidiaControlDevice(spec *specs.Spec) bool {
+	if spec == nil || spec.Linux == nil {
+		return false
+	}
+	for _, dev := range spec.Linux.Devices {
+		if dev.Path == "/dev/nvidiactl" {
+			return true
+		}
+	}
+	return false
+}
+
+// GPUFunctionalityNeedsNvidiaContainerCLIConfigure is true when runsc should
+// run nvidia-container-cli configure against the gofer (legacy Docker / hook
+// path). When the spec already includes /dev/nvidiactl from CSV/CDI or GKE,
+// the toolkit has applied equivalent edits and configure must be skipped.
+func GPUFunctionalityNeedsNvidiaContainerCLIConfigure(spec *specs.Spec, conf *config.Config) bool {
+	return GPUFunctionalityRequestedViaHook(spec, conf)
+}
+
+// GPUFunctionalityNeedsSyntheticNvidiaDevices is true when the sentry should
+// create /dev/nvidia* nodes by scanning the dev gofer (legacy hook path). When
+// Linux.Devices already lists /dev/nvidiactl, device nodes come from the spec.
+func GPUFunctionalityNeedsSyntheticNvidiaDevices(spec *specs.Spec, conf *config.Config) bool {
+	return GPUFunctionalityRequested(spec, conf) && !LinuxSpecHasNvidiaControlDevice(spec)
 }
 
 // GPUFunctionalityRequestedViaHook returns true if the container should have
@@ -117,7 +143,7 @@ func isNvidiaHookPresent(spec *specs.Spec, conf *config.Config) bool {
 // ParseNvidiaVisibleDevices parses NVIDIA_VISIBLE_DEVICES env var and returns
 // the devices specified in it. This can be passed to nvidia-container-cli.
 //
-// Precondition: conf.NVProxyDocker && GPUFunctionalityRequested(spec, conf).
+// Precondition: GPUFunctionalityNeedsNvidiaContainerCLIConfigure(spec, conf).
 func ParseNvidiaVisibleDevices(spec *specs.Spec) (string, error) {
 	nvd, _ := EnvVar(spec.Process.Env, nvidiaVisibleDevsEnv)
 	if nvd == "none" {
