@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/control/client"
 	"gvisor.dev/gvisor/pkg/control/server"
 	"gvisor.dev/gvisor/pkg/cpuid"
+	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
 	sentrycontrol "gvisor.dev/gvisor/pkg/sentry/control"
@@ -358,6 +359,61 @@ func TestWarmResetRPCsRequireRestore(t *testing.T) {
 	}
 
 	l.Destroy()
+}
+
+func TestResetRejectsDoubleReset(t *testing.T) {
+	conf := testConfig()
+	conf.WarmSentry = true
+	l, cleanup, err := createLoader(conf, testSpec())
+	if err != nil {
+		t.Fatalf("error creating loader: %v", err)
+	}
+	defer cleanup()
+
+	runLoader(t, l)
+	if status := l.WaitExit(); !status.Exited() || status.ExitStatus() != 0 {
+		t.Fatalf("application exited with %s, want exit status 0", status)
+	}
+
+	l.mu.Lock()
+	l.state = restored
+	l.mu.Unlock()
+
+	if err := l.Reset(); err != nil {
+		t.Fatalf("first Reset() failed: %v", err)
+	}
+	if err := l.Reset(); err == nil {
+		t.Fatal("second Reset() unexpectedly succeeded (state should be warm, not restored)")
+	}
+	l.Destroy()
+}
+
+func TestDupFDsCleanupOnError(t *testing.T) {
+	r1, w1, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe failed: %v", err)
+	}
+	defer r1.Close()
+	defer w1.Close()
+
+	validFD := fd.New(int(r1.Fd()))
+
+	// dupFDs with a single valid FD should succeed.
+	dups, err := dupFDs([]*fd.FD{validFD})
+	if err != nil {
+		t.Fatalf("dupFDs failed: %v", err)
+	}
+	for _, d := range dups {
+		d.Close()
+	}
+
+	// Use an unmistakably invalid FD (-1) so the second dup always
+	// fails, regardless of FD recycling by the OS.
+	badFD := fd.New(-1)
+	_, err = dupFDs([]*fd.FD{validFD, badFD})
+	if err == nil {
+		t.Fatal("dupFDs unexpectedly succeeded with an invalid FD")
+	}
 }
 
 // Test that network=host with raw sockets enabled requires CAP_NET_RAW on the

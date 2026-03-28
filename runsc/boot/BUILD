@@ -171,6 +171,7 @@ go_test(
         "//pkg/control/client",
         "//pkg/control/server",
         "//pkg/cpuid",
+        "//pkg/fd",
         "//pkg/fspath",
         "//pkg/log",
         "//pkg/sentry/control",

@@ -4608,3 +4608,587 @@ func TestIPv6DisableAllSysctl(t *testing.T) {
 		}
 	}
 }
+
+// TestWarmSentryCycle exercises the full warm sentry lifecycle:
+//
+//	create → start → checkpoint → destroy
+//	create(warm) → restore → run → wait → reset → restore → run → wait → destroy
+//
+// It verifies that the sentry process is reused across cycles and that the
+// restored container produces output each time.
+func TestWarmSentryCycle(t *testing.T) {
+	// Skip overlay because the test requires writing to a host file.
+	for name, conf := range configs(t, true /* noOverlay */) {
+		t.Run(name, func(t *testing.T) {
+			testWarmSentryCycle(t, conf)
+		})
+	}
+}
+
+func TestWarmSentryCycleSandboxNetwork(t *testing.T) {
+	// Explicitly cover the sandbox-network configuration because warm reset
+	// reuses the saved network stack across restore cycles.
+	for name, conf := range configs(t, true /* noOverlay */) {
+		t.Run(name, func(t *testing.T) {
+			conf.Network = config.NetworkSandbox
+			testWarmSentryCycle(t, conf)
+		})
+	}
+}
+
+func testWarmSentryCycle(t *testing.T, conf *config.Config) {
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "warm-sentry-test")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp failed: %v", err)
+	}
+	defer os.RemoveAll(dir)
+	if err := os.Chmod(dir, 0777); err != nil {
+		t.Fatalf("error chmoding dir: %v", err)
+	}
+
+	outputPath := filepath.Join(dir, "output")
+	outputFile, err := createWriteableOutputFile(outputPath)
+	if err != nil {
+		t.Fatalf("error creating output file: %v", err)
+	}
+	defer outputFile.Close()
+
+	// Script that writes incrementing integers and sleeps between each.
+	script := fmt.Sprintf("i=0; while true; do echo $i >> %q; sleep 1; i=$((i+1)); done", outputPath)
+	spec := testutil.NewSpecWithArgs("bash", "-c", script)
+
+	// Phase 1: Cold container — create, start, checkpoint.
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	coldArgs := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cold, err := New(conf, coldArgs)
+	if err != nil {
+		t.Fatalf("error creating cold container: %v", err)
+	}
+	defer cold.Destroy()
+
+	if err := cold.Start(conf); err != nil {
+		t.Fatalf("error starting cold container: %v", err)
+	}
+	if err := waitForFileNotEmpty(outputFile); err != nil {
+		t.Fatalf("failed to wait for output file: %v", err)
+	}
+
+	imagePath := filepath.Join(dir, "checkpoint")
+	if err := os.Mkdir(imagePath, 0755); err != nil {
+		t.Fatalf("error creating checkpoint dir: %v", err)
+	}
+	if err := cold.Checkpoint(conf, imagePath, sandbox.CheckpointOpts{
+		Compression: statefile.CompressionLevelFlateBestSpeed,
+	}); err != nil {
+		t.Fatalf("error checkpointing container: %v", err)
+	}
+	cold.Destroy()
+	cold = nil
+
+	// Phase 2: Warm sentry — two restore cycles reusing the same sentry.
+	warmConf := *conf
+	warmConf.WarmSentry = true
+
+	// Delete and recreate output file for first warm cycle.
+	os.Remove(outputPath)
+	outFile1, err := createWriteableOutputFile(outputPath)
+	if err != nil {
+		t.Fatalf("error creating output file for cycle 1: %v", err)
+	}
+	defer outFile1.Close()
+
+	warmArgs := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	warm, err := New(&warmConf, warmArgs)
+	if err != nil {
+		t.Fatalf("error creating warm container: %v", err)
+	}
+	defer warm.Destroy()
+
+	// First restore cycle.
+	if err := warm.Restore(&warmConf, imagePath, false /* direct */, false /* background */); err != nil {
+		t.Fatalf("error restoring warm container (cycle 1): %v", err)
+	}
+	if err := waitForFileNotEmpty(outFile1); err != nil {
+		t.Fatalf("warm cycle 1: failed to wait for output: %v", err)
+	}
+
+	sentryPid := warm.SandboxPid()
+	if sentryPid <= 0 {
+		t.Fatalf("warm cycle 1: invalid sentry PID %d", sentryPid)
+	}
+	t.Logf("Warm cycle 1: sentry PID = %d", sentryPid)
+
+	if err := warm.SignalContainer(unix.SIGKILL, true /* all */); err != nil {
+		t.Fatalf("warm cycle 1: error signaling container: %v", err)
+	}
+	if _, err := warm.Wait(); err != nil {
+		t.Fatalf("warm cycle 1: error waiting for container: %v", err)
+	}
+
+	// Reset for next cycle.
+	if err := warm.Reset(); err != nil {
+		t.Fatalf("error resetting warm container: %v", err)
+	}
+
+	// Delete and recreate output file for second warm cycle.
+	os.Remove(outputPath)
+	outFile2, err := createWriteableOutputFile(outputPath)
+	if err != nil {
+		t.Fatalf("error creating output file for cycle 2: %v", err)
+	}
+	defer outFile2.Close()
+
+	// Second restore cycle — same sentry process, same sandbox.
+	if err := warm.Restore(&warmConf, imagePath, false /* direct */, false /* background */); err != nil {
+		t.Fatalf("error restoring warm container (cycle 2): %v", err)
+	}
+	if err := waitForFileNotEmpty(outFile2); err != nil {
+		t.Fatalf("warm cycle 2: failed to wait for output: %v", err)
+	}
+
+	sentryPid2 := warm.SandboxPid()
+	if sentryPid2 != sentryPid {
+		t.Errorf("sentry PID changed across warm cycles: %d → %d", sentryPid, sentryPid2)
+	}
+	t.Logf("Warm cycle 2: sentry PID = %d (same=%v)", sentryPid2, sentryPid2 == sentryPid)
+
+	if err := warm.SignalContainer(unix.SIGKILL, true /* all */); err != nil {
+		t.Fatalf("warm cycle 2: error signaling container: %v", err)
+	}
+	if _, err := warm.Wait(); err != nil {
+		t.Fatalf("warm cycle 2: error waiting for container: %v", err)
+	}
+}
+
+// TestWarmSentryFastCycles hammers the restore→kill→wait→reset→restore path
+// with minimal delays, specifically targeting the race where the boot loop
+// goroutine could deadlock if it calls WaitExit() while the next Restore
+// fires onStart() on the unbuffered startChan.
+func TestWarmSentryFastCycles(t *testing.T) {
+	for name, conf := range configs(t, true /* noOverlay */) {
+		t.Run(name, func(t *testing.T) {
+			testWarmSentryFastCycles(t, conf)
+		})
+	}
+}
+
+func testWarmSentryFastCycles(t *testing.T, conf *config.Config) {
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "warm-fast-test")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp failed: %v", err)
+	}
+	defer os.RemoveAll(dir)
+	if err := os.Chmod(dir, 0777); err != nil {
+		t.Fatalf("error chmoding dir: %v", err)
+	}
+
+	outputPath := filepath.Join(dir, "output")
+	outputFile, err := createWriteableOutputFile(outputPath)
+	if err != nil {
+		t.Fatalf("error creating output file: %v", err)
+	}
+	defer outputFile.Close()
+
+	script := fmt.Sprintf("i=0; while true; do echo $i >> %q; sleep 1; i=$((i+1)); done", outputPath)
+	spec := testutil.NewSpecWithArgs("bash", "-c", script)
+
+	_, bundleDir, cl, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cl()
+
+	cold, err := New(conf, Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	})
+	if err != nil {
+		t.Fatalf("error creating cold container: %v", err)
+	}
+	defer cold.Destroy()
+
+	if err := cold.Start(conf); err != nil {
+		t.Fatalf("error starting cold container: %v", err)
+	}
+	if err := waitForFileNotEmpty(outputFile); err != nil {
+		t.Fatalf("failed to wait for output: %v", err)
+	}
+
+	imagePath := filepath.Join(dir, "checkpoint")
+	if err := os.Mkdir(imagePath, 0755); err != nil {
+		t.Fatalf("error creating checkpoint dir: %v", err)
+	}
+	if err := cold.Checkpoint(conf, imagePath, sandbox.CheckpointOpts{
+		Compression: statefile.CompressionLevelFlateBestSpeed,
+	}); err != nil {
+		t.Fatalf("error checkpointing: %v", err)
+	}
+	cold.Destroy()
+
+	warmConf := *conf
+	warmConf.WarmSentry = true
+
+	warm, err := New(&warmConf, Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	})
+	if err != nil {
+		t.Fatalf("error creating warm container: %v", err)
+	}
+	defer warm.Destroy()
+
+	const cycles = 4
+	for i := 1; i <= cycles; i++ {
+		os.Remove(outputPath)
+		outF, err := createWriteableOutputFile(outputPath)
+		if err != nil {
+			t.Fatalf("cycle %d: error creating output file: %v", i, err)
+		}
+
+		if err := warm.Restore(&warmConf, imagePath, false, false); err != nil {
+			outF.Close()
+			t.Fatalf("cycle %d: restore failed: %v", i, err)
+		}
+		if err := waitForFileNotEmpty(outF); err != nil {
+			outF.Close()
+			t.Fatalf("cycle %d: no output: %v", i, err)
+		}
+		outF.Close()
+
+		// Kill → Wait → Reset with no delay.
+		if err := warm.SignalContainer(unix.SIGKILL, true); err != nil {
+			t.Fatalf("cycle %d: error signaling: %v", i, err)
+		}
+		if _, err := warm.Wait(); err != nil {
+			t.Fatalf("cycle %d: error waiting: %v", i, err)
+		}
+		if i < cycles {
+			if err := warm.Reset(); err != nil {
+				t.Fatalf("cycle %d: error resetting: %v", i, err)
+			}
+		}
+		t.Logf("cycle %d: OK", i)
+	}
+}
+
+// TestWarmSentryConfigDrift verifies that a warm restore rejects config changes
+// between cycles end-to-end (not just the sandbox unit test).
+func TestWarmSentryConfigDrift(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	conf.WarmSentry = true
+
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "warm-drift-test")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp failed: %v", err)
+	}
+	defer os.RemoveAll(dir)
+	if err := os.Chmod(dir, 0777); err != nil {
+		t.Fatalf("error chmoding dir: %v", err)
+	}
+
+	outputPath := filepath.Join(dir, "output")
+	outputFile, err := createWriteableOutputFile(outputPath)
+	if err != nil {
+		t.Fatalf("error creating output file: %v", err)
+	}
+	defer outputFile.Close()
+
+	script := fmt.Sprintf("i=0; while true; do echo $i >> %q; sleep 1; i=$((i+1)); done", outputPath)
+	spec := testutil.NewSpecWithArgs("bash", "-c", script)
+
+	// Cold container — create, start, checkpoint.
+	_, bundleDir, cl, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cl()
+
+	cold, err := New(conf, Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	})
+	if err != nil {
+		t.Fatalf("error creating cold container: %v", err)
+	}
+	defer cold.Destroy()
+
+	if err := cold.Start(conf); err != nil {
+		t.Fatalf("error starting cold container: %v", err)
+	}
+	if err := waitForFileNotEmpty(outputFile); err != nil {
+		t.Fatalf("failed to wait for output: %v", err)
+	}
+
+	imagePath := filepath.Join(dir, "checkpoint")
+	if err := os.Mkdir(imagePath, 0755); err != nil {
+		t.Fatalf("error creating checkpoint dir: %v", err)
+	}
+	if err := cold.Checkpoint(conf, imagePath, sandbox.CheckpointOpts{
+		Compression: statefile.CompressionLevelFlateBestSpeed,
+	}); err != nil {
+		t.Fatalf("error checkpointing: %v", err)
+	}
+	cold.Destroy()
+
+	// Warm sentry — first cycle succeeds.
+	warmConf := *conf
+	os.Remove(outputPath)
+	out1, err := createWriteableOutputFile(outputPath)
+	if err != nil {
+		t.Fatalf("error creating output file: %v", err)
+	}
+	defer out1.Close()
+
+	warm, err := New(&warmConf, Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	})
+	if err != nil {
+		t.Fatalf("error creating warm container: %v", err)
+	}
+	defer warm.Destroy()
+
+	if err := warm.Restore(&warmConf, imagePath, false, false); err != nil {
+		t.Fatalf("first warm restore failed: %v", err)
+	}
+	if err := waitForFileNotEmpty(out1); err != nil {
+		t.Fatalf("first cycle: no output: %v", err)
+	}
+	if err := warm.SignalContainer(unix.SIGKILL, true); err != nil {
+		t.Fatalf("error signaling: %v", err)
+	}
+	if _, err := warm.Wait(); err != nil {
+		t.Fatalf("error waiting: %v", err)
+	}
+	if err := warm.Reset(); err != nil {
+		t.Fatalf("error resetting: %v", err)
+	}
+
+	// Second cycle with changed config — should fail.
+	driftConf := warmConf
+	driftConf.NumNetworkChannels = warmConf.NumNetworkChannels + 1
+	if err := warm.Restore(&driftConf, imagePath, false, false); err == nil {
+		t.Fatal("warm restore with changed config unexpectedly succeeded")
+	} else {
+		t.Logf("Config drift correctly rejected: %v", err)
+	}
+}
+
+// TestWarmSentryFDLeak runs several warm restore cycles and verifies
+// the sentry's open FD count does not grow unboundedly.
+func TestWarmSentryFDLeak(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	conf.WarmSentry = true
+
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "warm-fd-test")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp failed: %v", err)
+	}
+	defer os.RemoveAll(dir)
+	if err := os.Chmod(dir, 0777); err != nil {
+		t.Fatalf("error chmoding dir: %v", err)
+	}
+
+	outputPath := filepath.Join(dir, "output")
+	outputFile, err := createWriteableOutputFile(outputPath)
+	if err != nil {
+		t.Fatalf("error creating output file: %v", err)
+	}
+	defer outputFile.Close()
+
+	script := fmt.Sprintf("i=0; while true; do echo $i >> %q; sleep 1; i=$((i+1)); done", outputPath)
+	spec := testutil.NewSpecWithArgs("bash", "-c", script)
+
+	// Cold container — create, start, checkpoint.
+	_, bundleDir, cl, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cl()
+
+	cold, err := New(conf, Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	})
+	if err != nil {
+		t.Fatalf("error creating cold container: %v", err)
+	}
+	defer cold.Destroy()
+
+	if err := cold.Start(conf); err != nil {
+		t.Fatalf("error starting cold container: %v", err)
+	}
+	if err := waitForFileNotEmpty(outputFile); err != nil {
+		t.Fatalf("failed to wait for output: %v", err)
+	}
+
+	imagePath := filepath.Join(dir, "checkpoint")
+	if err := os.Mkdir(imagePath, 0755); err != nil {
+		t.Fatalf("error creating checkpoint dir: %v", err)
+	}
+	if err := cold.Checkpoint(conf, imagePath, sandbox.CheckpointOpts{
+		Compression: statefile.CompressionLevelFlateBestSpeed,
+	}); err != nil {
+		t.Fatalf("error checkpointing: %v", err)
+	}
+	cold.Destroy()
+
+	warmConf := *conf
+
+	warmArgs := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	warm, err := New(&warmConf, warmArgs)
+	if err != nil {
+		t.Fatalf("error creating warm container: %v", err)
+	}
+	defer warm.Destroy()
+
+	countSentryFDs := func() int {
+		pid := warm.SandboxPid()
+		if pid <= 0 {
+			return -1
+		}
+		entries, err := os.ReadDir(fmt.Sprintf("/proc/%d/fd", pid))
+		if err != nil {
+			t.Logf("warning: cannot read /proc/%d/fd: %v", pid, err)
+			return -1
+		}
+		return len(entries)
+	}
+
+	const cycles = 4
+	fdCounts := make([]int, 0, cycles)
+
+	for i := 1; i <= cycles; i++ {
+		os.Remove(outputPath)
+		outF, err := createWriteableOutputFile(outputPath)
+		if err != nil {
+			t.Fatalf("cycle %d: error creating output file: %v", i, err)
+		}
+
+		if err := warm.Restore(&warmConf, imagePath, false, false); err != nil {
+			outF.Close()
+			t.Fatalf("cycle %d: restore failed: %v", i, err)
+		}
+		if err := waitForFileNotEmpty(outF); err != nil {
+			outF.Close()
+			t.Fatalf("cycle %d: no output: %v", i, err)
+		}
+
+		fds := countSentryFDs()
+		fdCounts = append(fdCounts, fds)
+		t.Logf("cycle %d: sentry FD count = %d", i, fds)
+
+		if err := warm.SignalContainer(unix.SIGKILL, true); err != nil {
+			outF.Close()
+			t.Fatalf("cycle %d: error signaling: %v", i, err)
+		}
+		if _, err := warm.Wait(); err != nil {
+			outF.Close()
+			t.Fatalf("cycle %d: error waiting: %v", i, err)
+		}
+		outF.Close()
+
+		if i < cycles {
+			if err := warm.Reset(); err != nil {
+				t.Fatalf("cycle %d: error resetting: %v", i, err)
+			}
+		}
+	}
+
+	// Verify FD count is stable: allow up to 10 FD growth between first
+	// and last cycle. A real leak would grow by ~10+ FDs per cycle.
+	if len(fdCounts) >= 2 && fdCounts[0] > 0 && fdCounts[len(fdCounts)-1] > 0 {
+		growth := fdCounts[len(fdCounts)-1] - fdCounts[0]
+		t.Logf("FD growth over %d cycles: %d (first=%d, last=%d)", cycles, growth, fdCounts[0], fdCounts[len(fdCounts)-1])
+		if growth > 10 {
+			t.Errorf("possible FD leak: FD count grew by %d over %d cycles (counts: %v)", growth, cycles, fdCounts)
+		}
+	}
+}
+
+// TestWarmSentryRejectsSubcontainerOnCreate verifies that warm sentry rejects
+// specs annotated as CRI subcontainers (joining an existing sandbox).
+func TestWarmSentryRejectsSubcontainerOnCreate(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	conf.WarmSentry = true
+
+	spec := testutil.NewSpecWithArgs("/bin/true")
+	spec.Annotations = map[string]string{
+		specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeContainer,
+		specutils.ContainerdSandboxIDAnnotation:     "some-other-sandbox",
+	}
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	_, err = New(conf, Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	})
+	if err == nil || !strings.Contains(err.Error(), "root containers") {
+		t.Fatalf("New() error = %v, want rejection for subcontainer spec with warm sentry", err)
+	}
+}
+
+// TestWarmSentryAllowsSingleContainerOnCreate verifies that warm sentry
+// accepts specs without CRI annotations (single-container mode) and specs
+// with container-type=sandbox (K8s pod root).
+func TestWarmSentryAllowsSingleContainerOnCreate(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		annotations map[string]string
+	}{
+		{name: "no-annotations", annotations: nil},
+		{name: "sandbox-type", annotations: map[string]string{
+			specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeSandbox,
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conf := testutil.TestConfig(t)
+			conf.WarmSentry = true
+
+			spec := testutil.NewSpecWithArgs("/bin/true")
+			spec.Annotations = tc.annotations
+			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer cleanup()
+
+			c, err := New(conf, Args{
+				ID:        testutil.RandomContainerID(),
+				Spec:      spec,
+				BundleDir: bundleDir,
+			})
+			if err != nil {
+				t.Fatalf("New() failed for %s spec: %v", tc.name, err)
+			}
+			defer c.Destroy()
+		})
+	}
+}
