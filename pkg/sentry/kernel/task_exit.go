@@ -619,7 +619,11 @@ func (*runExitNotify) execute(t *Task) taskRunState {
 	t.tg.pidns.owner.mu.Lock()
 	defer t.tg.pidns.owner.mu.Unlock()
 	t.advanceExitStateLocked(TaskExitInitiated, TaskExitZombie)
+	t.handlePIDFDsOnZombie()
 	t.tg.liveTasks--
+	if t.tg.liveTasks == 0 {
+		t.tg.handlePIDFDsOnZombie()
+	}
 	// Check if this completes a sibling's execve.
 	if t.tg.execing != nil && t.tg.liveTasks == 1 {
 		// execing blocks the addition of new tasks to the thread group, so
@@ -755,6 +759,7 @@ func (t *Task) exitNotifyLocked(fromPtraceDetach bool) {
 		for ns := t.tg.pidns; ns != nil; ns = ns.parent {
 			ns.deleteTask(t)
 		}
+		t.handlePIDFDsOnExitLocked()
 		t.userCounters.decRLimitNProc()
 		t.tg.signalHandlers.mu.Lock()
 		t.tg.tasks.Remove(t)
@@ -769,6 +774,7 @@ func (t *Task) exitNotifyLocked(fromPtraceDetach bool) {
 		} else if tc == 0 {
 			t.tg.pidWithinNS.Store(0)
 			t.tg.processGroup.decRefWithParent(t.tg.parentPG())
+			t.tg.handlePIDFDsOnExitLocked()
 		}
 		if t.parent != nil {
 			delete(t.parent.children, t)
@@ -967,6 +973,9 @@ type WaitOptions struct {
 	// if that blocking is interrupted, Wait returns BlockInterruptErr. If
 	// BlockInterruptErr is nil, Wait will not block.
 	BlockInterruptErr error
+
+	// If NonBlock is true, Wait will not block.
+	NonBlock bool
 }
 
 // Preconditions: The TaskSet mutex must be locked (for reading or writing).
@@ -1020,7 +1029,7 @@ type WaitResult struct {
 // group, or a task in such a thread group, or a task that is ptraced by t,
 // subject to the options specified in opts.
 func (t *Task) Wait(opts *WaitOptions) (*WaitResult, error) {
-	if opts.BlockInterruptErr == nil {
+	if opts.NonBlock || opts.BlockInterruptErr == nil {
 		return t.waitOnce(opts)
 	}
 	w, ch := waiter.NewChannelEntry(opts.Events)

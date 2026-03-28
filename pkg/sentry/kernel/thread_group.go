@@ -291,6 +291,14 @@ type ThreadGroup struct {
 	// without a matching call to SigsegvUnlock(). Decrementing
 	// sigsegvLockCount to 0 requires that the signal mutex is locked.
 	sigsegvLockCount atomicbitops.Int32
+
+	// pid is a lightweight struct that all open pidfds referring to this thread group point to,
+	// allowing the GC to reclaim the ThreadGroup memory upon death, even if there are open pidfds.
+	//
+	// pid lives on beyond the ThreadGroup itself as long as there are open pidfds.
+	// It is is lazily allocated when the first pidfd is opened and is immutable thereafter.
+	// Access is synchronized by the TaskSet mutex (tg.pidns.owner.mu).
+	pid *pid
 }
 
 // NewThreadGroup returns a new, empty thread group in PID namespace pidns. The
