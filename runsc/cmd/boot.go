@@ -640,7 +640,32 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	// Closes startSyncFile because 'l.Run()' only returns when the sandbox exits.
 	startSyncFile.Close()
 
-	// Wait for the start signal from runsc.
+	if conf.WarmSentry {
+		// Warm sentry keeps the sandbox process alive across restore cycles.
+		// The runtime terminates the process when the sandbox is no longer
+		// needed.
+		//
+		// Container exit is observed by the host-side `runsc wait` RPC,
+		// not here. The boot loop synchronizes only on Reset: each cycle
+		// is WaitForStartSignal → Run → WaitForReset.
+		log.Infof("Warm sentry mode enabled — looping on Restore/Reset cycles")
+		l.InitWarmSentry()
+		cycle := 0
+		for {
+			cycle++
+			log.Infof("Warm sentry: waiting for restore cycle %d", cycle)
+			l.WaitForStartSignal()
+			if err := l.Run(); err != nil {
+				l.Destroy()
+				util.Fatalf("running sandbox (warm cycle %d): %v", cycle, err)
+			}
+			log.Infof("Warm sentry: cycle %d running, waiting for Reset", cycle)
+			l.WaitForReset()
+			log.Infof("Warm sentry: cycle %d reset complete", cycle)
+		}
+	}
+
+	// Standard (non-warm) path.
 	l.WaitForStartSignal()
 
 	// Run the application and wait for it to finish.

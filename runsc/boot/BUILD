@@ -168,10 +168,13 @@ go_test(
     library = ":boot",
     deps = [
         "//pkg/abi/linux",
+        "//pkg/control/client",
         "//pkg/control/server",
         "//pkg/cpuid",
+        "//pkg/fd",
         "//pkg/fspath",
         "//pkg/log",
+        "//pkg/sentry/control",
         "//pkg/sentry/fsimpl/erofs",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/seccheck",

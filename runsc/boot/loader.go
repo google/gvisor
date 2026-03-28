@@ -168,6 +168,13 @@ type containerInfo struct {
 
 type loaderState int
 
+// Loader state transitions:
+//
+//	Standard:  created → restoringUnstarted → restoringStarted → restored
+//	Warm:      created → restoringUnstarted → restoringStarted → restored
+//	                  → warm (Reset begins, RPCs rejected)
+//	                  → restoringUnstarted → ... (repeats)
+//	Failure:   restoringUnstarted → restoreFailed
 const (
 	// created indicates that the Loader has been created, but not started yet.
 	created loaderState = iota
@@ -184,6 +191,9 @@ const (
 	restoreFailed
 	// restored indicates that the Loader has been fully restored.
 	restored
+	// warm indicates that the Loader has been reset after a completed
+	// execution and is ready to accept another Restore RPC.
+	warm
 )
 
 // String returns a string representation of the loader state.
@@ -201,6 +211,8 @@ func (s loaderState) String() string {
 		return "restoreFailed"
 	case restored:
 		return "restored"
+	case warm:
+		return "warm"
 	default:
 		return fmt.Sprintf("unknown(%d)", s)
 	}
@@ -308,6 +320,35 @@ type Loader struct {
 	savings Savings
 
 	fsRestore *fsRestore
+
+	// seccompInstalled tracks whether seccomp filters have been installed.
+	seccompInstalled bool
+
+	// The following fields are only used in warm sentry mode. They are
+	// synchronized by the boot loop's sequential ordering:
+	//   WaitForStartSignal → Run → WaitForReset → (repeat).
+	// Reset() writes them; restore() reads and clears them. The two
+	// never overlap because the boot loop blocks between cycles.
+
+	// savedPlatform is the platform from the first restore, preserved
+	// across warm sentry Reset cycles. Creating a new platform requires
+	// mmap calls that seccomp filters reject after the first install.
+	savedPlatform platform.Platform
+
+	// savedNetStack and savedInetStack preserve the live network stack
+	// across warm sentry Reset cycles. The stack's NIC dispatch goroutines
+	// keep running and the raw socket FDs stay open (fdbased.Close is a
+	// no-op). ResetStack() detaches the stack from the namespace before
+	// Release so it is not cleaned up.
+	savedNetStack  *stack.Stack
+	savedInetStack inet.Stack
+
+	// warmResetCount tracks how many Reset() cycles have completed.
+	warmResetCount uint64
+
+	// resetChan signals the boot loop that Reset() has completed and the
+	// loader is ready for the next Restore RPC.
+	resetChan chan struct{}
 
 	LoaderExtra
 }
@@ -854,25 +895,35 @@ func (l *Loader) Destroy() {
 	}
 	l.watchdog.Stop()
 
-	ctx := l.k.SupervisorContext()
-	l.mu.Lock()
-	for _, m := range l.sharedMounts {
-		m.DecRef(ctx)
-	}
-	l.mu.Unlock()
+	if l.k != nil {
+		ctx := l.k.SupervisorContext()
+		l.mu.Lock()
+		for _, m := range l.sharedMounts {
+			m.DecRef(ctx)
+		}
+		l.mu.Unlock()
 
-	// Wake up all checkpoint waiters. This must be done before the controller
-	// is stopped, since its stop sequence requires all pending RPCs to complete.
-	l.k.SignalAllCheckpointWaiters(fmt.Errorf("Loader destroyed"))
+		// Wake up all checkpoint waiters. This must be done before the controller
+		// is stopped, since its stop sequence requires all pending RPCs to complete.
+		l.k.SignalAllCheckpointWaiters(fmt.Errorf("Loader destroyed"))
+	}
 
 	// Stop the control server. This will indirectly stop any
 	// long-running control operations that are in flight, e.g.
 	// profiling operations.
 	l.ctrl.stop()
 
-	// Release all kernel resources. This is only safe after we can no longer
-	// save/restore.
-	l.k.Release()
+	if l.k != nil {
+		// Release all kernel resources. This is only safe after we can no longer
+		// save/restore.
+		l.k.Release()
+	}
+	if l.savedInetStack != nil {
+		l.savedInetStack.Destroy()
+		l.savedInetStack = nil
+		l.savedNetStack = nil
+	}
+	l.savedPlatform = nil
 
 	// Release any dangling tcp connections.
 	tcpip.ReleaseDanglingEndpoints()
@@ -901,6 +952,124 @@ func (l *Loader) Destroy() {
 	refs.OnExit()
 }
 
+// Reset tears down the current kernel and returns the Loader to a state
+// that can accept a new Restore RPC. This enables warm sentry reuse:
+// a single sentry process can serve multiple restore cycles without
+// re-forking, re-installing seccomp, or re-creating the platform.
+func (l *Loader) Reset() error {
+	log.Infof("Warm sentry: resetting loader for next restore cycle")
+
+	// Transition to warm immediately so that requireKernel() rejects
+	// any RPCs that arrive while teardown is in progress. This closes
+	// the window between checking state and actually nilling l.k.
+	l.mu.Lock()
+	if l.state != restored {
+		l.mu.Unlock()
+		return fmt.Errorf("cannot reset loader in state %s (must be %s)", l.state, restored)
+	}
+	l.state = warm
+	l.mu.Unlock()
+
+	if l.stopSignalForwarding != nil {
+		l.stopSignalForwarding()
+		l.stopSignalForwarding = nil
+	}
+
+	l.watchdog.Stop()
+
+	var oldK *kernel.Kernel
+	if l.k != nil {
+		oldK = l.k
+
+		ctx := oldK.SupervisorContext()
+		l.mu.Lock()
+		for _, m := range l.sharedMounts {
+			m.DecRef(ctx)
+		}
+		l.sharedMounts = nil
+		l.mu.Unlock()
+
+		// Save the live network stack before releasing the kernel.
+		// ResetStack detaches it from the namespace so Release does
+		// not trigger stack cleanup (Close/Wait). The NIC dispatch
+		// goroutines keep running with open FDs, and ReplaceConfig
+		// will move them to the next restored kernel.
+		//
+		// For --network=none the stack is not a netstack.Stack, so
+		// savedNetStack stays nil and the next restore creates a
+		// fresh stack instead of reusing.
+		curNetwork := oldK.RootNetworkNamespace().Stack()
+		if eps, ok := curNetwork.(*netstack.Stack); ok {
+			l.savedNetStack = eps.Stack
+			l.savedInetStack = curNetwork
+		}
+		oldK.RootNetworkNamespace().ResetStack()
+
+		oldK.SignalAllCheckpointWaiters(fmt.Errorf("warm sentry reset"))
+
+		oldK.Kill(linux.WaitStatusExit(0))
+		oldK.Pause()
+
+		l.savedPlatform = oldK.Platform
+	}
+
+	// Nil out the kernel and reset bookkeeping. The state is already
+	// warm (set above), so requireKernel() and the Restore handler
+	// both do the right thing.
+	l.mu.Lock()
+	l.k = nil
+	l.processes = make(map[execID]*execProcess)
+	l.containerIDs = make(map[string]string)
+	l.containerSpecs = make(map[string]*specs.Spec)
+	l.failedToStart = make(map[string]struct{})
+	l.portForwardProxies = nil
+	l.restoreErr = nil
+	l.restoreDone = nil
+
+	for _, p := range l.root.passFDs {
+		_ = p.host.Close()
+	}
+	l.root.passFDs = nil
+	if l.root.execFD != nil {
+		_ = l.root.execFD.Close()
+		l.root.execFD = nil
+	}
+
+	l.registerContainerLocked(l.root.spec, l.root.cid)
+	l.processes[execID{cid: l.root.cid}] = &execProcess{}
+
+	l.warmResetCount++
+	l.mu.Unlock()
+
+	l.ctrl.refreshHandlers()
+
+	// Now safe to release — no handler references the old kernel.
+	if oldK != nil {
+		oldK.Release()
+	}
+	tcpip.ReleaseDanglingEndpoints()
+
+	if l.resetChan != nil {
+		l.resetChan <- struct{}{}
+	}
+
+	log.Infof("Warm sentry: reset #%d complete, ready for next restore", l.warmResetCount)
+	return nil
+}
+
+// WaitForReset blocks until a Reset RPC is received and processed.
+// Used by the warm sentry boot loop between container cycles.
+// Precondition: InitWarmSentry() must have been called.
+func (l *Loader) WaitForReset() {
+	<-l.resetChan
+}
+
+// InitWarmSentry initializes the channels needed for warm sentry mode.
+// Must be called before the warm sentry boot loop starts.
+func (l *Loader) InitWarmSentry() {
+	l.resetChan = make(chan struct{}, 1)
+}
+
 func createPlatform(conf *config.Config, numCPU int, deviceFile *fd.FD) (platform.Platform, error) {
 	platformName := conf.Platform
 	p, err := platform.Lookup(conf.Platform)
@@ -918,6 +1087,10 @@ func createPlatform(conf *config.Config, numCPU int, deviceFile *fd.FD) (platfor
 }
 
 func createMemoryFile(appHugePages bool, hostTHP HostTHP) (*pgalloc.MemoryFile, error) {
+	return createMemoryFileOpts(appHugePages, hostTHP, false)
+}
+
+func createMemoryFileOpts(appHugePages bool, hostTHP HostTHP, disableIMA bool) (*pgalloc.MemoryFile, error) {
 	const memfileName = "runsc-memory"
 	memfd, err := memutil.CreateMemFD(memfileName, 0)
 	if err != nil {
@@ -926,6 +1099,7 @@ func createMemoryFile(appHugePages bool, hostTHP HostTHP) (*pgalloc.MemoryFile, 
 	memfile := os.NewFile(uintptr(memfd), memfileName)
 
 	mfopts := pgalloc.MemoryFileOpts{
+		DisableIMAWorkAround: disableIMA,
 		// We can't enable pgalloc.MemoryFileOpts.UseHostMemcgPressure even if
 		// there are memory cgroups specified, because at this point we're already
 		// in a mount namespace in which the relevant cgroupfs is not visible.
@@ -982,12 +1156,20 @@ func createMemoryFile(appHugePages bool, hostTHP HostTHP) (*pgalloc.MemoryFile, 
 }
 
 // installSeccompFilters installs sandbox seccomp filters with the host.
+// Seccomp filters stack on Linux (each install adds another BPF program
+// evaluated on every syscall), so this is guarded to run at most once
+// per sentry process lifetime.
 func (l *Loader) installSeccompFilters() error {
+	if l.seccompInstalled {
+		log.Infof("Seccomp filters already installed, skipping")
+		return nil
+	}
 	if l.PreSeccompCallback != nil {
 		l.PreSeccompCallback()
 	}
 	if l.root.conf.DisableSeccomp {
 		log.Warningf("*** SECCOMP WARNING: syscall filter is DISABLED. Running in less secure mode.")
+		l.seccompInstalled = true
 	} else {
 		hostnet := l.root.conf.Network == config.NetworkHost
 		var nvproxyCaps nvconf.DriverCaps
@@ -1020,6 +1202,7 @@ func (l *Loader) installSeccompFilters() error {
 		if err := filter.Install(opts); err != nil {
 			return fmt.Errorf("installing seccomp filters: %w", err)
 		}
+		l.seccompInstalled = true
 	}
 	return nil
 }
@@ -1572,6 +1755,8 @@ func (l *Loader) waitContainer(cid string, waitStatus *uint32) error {
 			return nil
 		case restoringUnstarted:
 			panic("impossible")
+		case warm:
+			return fmt.Errorf("container %q is between warm reset and restore", cid)
 		default:
 			panic(fmt.Sprintf("Invalid state: %s", state))
 		}
@@ -1650,7 +1835,8 @@ func (l *Loader) wait(tg *kernel.ThreadGroup) uint32 {
 	return uint32(tg.ExitStatus())
 }
 
-// WaitForStartSignal waits for a start signal from the control server.
+// WaitForStartSignal blocks until a Restore or StartRoot RPC is ready
+// for the boot loop to begin the next container cycle.
 func (l *Loader) WaitForStartSignal() {
 	<-l.ctrl.manager.startChan
 }
