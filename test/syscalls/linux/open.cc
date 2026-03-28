@@ -26,6 +26,8 @@
 #include "gtest/gtest.h"
 #include "absl/memory/memory.h"
 #include "absl/strings/string_view.h"
+#include "absl/time/clock.h"
+#include "absl/time/time.h"
 #include "test/syscalls/linux/file_base.h"
 #include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
@@ -540,6 +542,62 @@ TEST_F(OpenTest, OPathWithODirectory) {
   auto newFile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   EXPECT_THAT(open(newFile.path().c_str(), O_RDONLY | O_DIRECTORY | O_PATH),
               SyscallFailsWithErrno(ENOTDIR));
+}
+
+// Truncate operations on zero-length files should still update mtime and ctime.
+// This matches Linux kernel behavior where truncate unconditionally bumps
+// mtime/ctime regardless of whether the file size actually changes.
+// Tests open(O_TRUNC), ftruncate(2), and truncate(2) in one case to avoid
+// redundant sleeps.
+// Note: Linux tmpfs does NOT update mtime/ctime for truncate(2) same-size,
+// but ext4 does. gVisor unconditionally updates for simplicity.
+TEST_F(OpenTest, TruncateNoSizeChangeUpdatesTimestamps) {
+  // Create three zero-length files and record their initial timestamps.
+  auto path1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  auto path2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  auto path3 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+
+  struct stat before1 = {}, before2 = {}, before3 = {};
+  ASSERT_THAT(stat(path1.path().c_str(), &before1), SyscallSucceeds());
+  ASSERT_THAT(stat(path2.path().c_str(), &before2), SyscallSucceeds());
+  ASSERT_THAT(stat(path3.path().c_str(), &before3), SyscallSucceeds());
+  EXPECT_EQ(before1.st_size, 0);
+  EXPECT_EQ(before2.st_size, 0);
+  EXPECT_EQ(before3.st_size, 0);
+
+  const auto ts_gt = [](const struct timespec& a, const struct timespec& b) {
+    return a.tv_sec > b.tv_sec ||
+           (a.tv_sec == b.tv_sec && a.tv_nsec > b.tv_nsec);
+  };
+
+  absl::SleepFor(absl::Milliseconds(10));
+
+  // Test 1: open(O_TRUNC) on zero-length file.
+  const FileDescriptor fd1 =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(path1.path(), O_WRONLY | O_TRUNC));
+  struct stat after1 = {};
+  ASSERT_THAT(fstat(fd1.get(), &after1), SyscallSucceeds());
+  EXPECT_EQ(after1.st_size, 0);
+  EXPECT_TRUE(ts_gt(after1.st_mtim, before1.st_mtim));
+  EXPECT_TRUE(ts_gt(after1.st_ctim, before1.st_ctim));
+
+  // Test 2: ftruncate(2) to same size (0).
+  const FileDescriptor fd2 =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(path2.path(), O_WRONLY));
+  ASSERT_THAT(ftruncate(fd2.get(), 0), SyscallSucceeds());
+  struct stat after2 = {};
+  ASSERT_THAT(fstat(fd2.get(), &after2), SyscallSucceeds());
+  EXPECT_EQ(after2.st_size, 0);
+  EXPECT_TRUE(ts_gt(after2.st_mtim, before2.st_mtim));
+  EXPECT_TRUE(ts_gt(after2.st_ctim, before2.st_ctim));
+
+  // Test 3: truncate(2) to same size (0).
+  ASSERT_THAT(truncate(path3.path().c_str(), 0), SyscallSucceeds());
+  struct stat after3 = {};
+  ASSERT_THAT(stat(path3.path().c_str(), &after3), SyscallSucceeds());
+  EXPECT_EQ(after3.st_size, 0);
+  EXPECT_TRUE(ts_gt(after3.st_mtim, before3.st_mtim));
+  EXPECT_TRUE(ts_gt(after3.st_ctim, before3.st_ctim));
 }
 
 }  // namespace
