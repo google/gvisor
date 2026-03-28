@@ -15,11 +15,22 @@
 package runsc
 
 import (
+	"errors"
 	"testing"
 
+	"github.com/containerd/containerd/runtime/v2/task"
+	"github.com/containerd/errdefs"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/shim/v1/utils"
 )
+
+func TestContainerUpdateNilResources(t *testing.T) {
+	c := &Container{}
+	err := c.Update(t.Context(), &task.UpdateTaskRequest{ID: "x", Resources: nil})
+	if !errors.Is(err, errdefs.ErrInvalidArgument) {
+		t.Fatalf("Update(nil Resources): %v, want ErrInvalidArgument", err)
+	}
+}
 
 func TestCgroupPath(t *testing.T) {
 	for _, tc := range []struct {

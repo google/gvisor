@@ -215,6 +215,18 @@ func (c *Container) CloseIO(ctx context.Context, r *task.CloseIORequest) error {
 	return nil
 }
 
+// Update applies cgroup resource limits for the init task.
+func (c *Container) Update(ctx context.Context, r *task.UpdateTaskRequest) error {
+	if r.Resources == nil {
+		return fmt.Errorf("resources are required: %w", errdefs.ErrInvalidArgument)
+	}
+	p, err := c.Process("")
+	if err != nil {
+		return err
+	}
+	return p.(*proc.Init).Update(ctx, r.Resources)
+}
+
 // Restore a process in the container.
 func (c *Container) Restore(ctx context.Context, r *extension.RestoreRequest) (extension.Process, error) {
 	p, err := c.Process(r.Start.ExecID)
