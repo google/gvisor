@@ -20,7 +20,7 @@ package usertrap
 import (
 	"encoding/binary"
 	"fmt"
-	"math/rand"
+	"gvisor.dev/gvisor/pkg/rand"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"

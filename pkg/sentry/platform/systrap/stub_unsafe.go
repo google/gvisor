@@ -17,7 +17,6 @@ package systrap
 import (
 	"fmt"
 	"io/ioutil"
-	"math/rand"
 	"strconv"
 	"strings"
 	"unsafe"
@@ -28,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/safecopy"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
 )
@@ -239,7 +239,7 @@ func stubInit() {
 			if n == 0 {
 				panic("failed to map stub code")
 			}
-			r := regions[rand.Int()%n]
+			r := regions[rand.Uint64()%uint64(n)]
 			stubStart = r.start + uintptr(rand.Uint64())*hostarch.PageSize%(r.end-r.start-stubROMapEnd)
 		}
 		// Map the target address for the stub.
