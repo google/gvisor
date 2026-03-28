@@ -538,21 +538,9 @@ func (fd *FileDescription) updateCq(cqes *safemem.BlockSeq, cqe *linux.IOUringCq
 //
 // +stateify savable
 type sqEntriesFile struct {
+	memmap.MappableNoTrackMappings
+
 	fr memmap.FileRange
-}
-
-// AddMapping implements memmap.Mappable.AddMapping.
-func (sqemf *sqEntriesFile) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
-	return nil
-}
-
-// RemoveMapping implements memmap.Mappable.RemoveMapping.
-func (sqemf *sqEntriesFile) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
-}
-
-// CopyMapping implements memmap.Mappable.CopyMapping.
-func (sqemf *sqEntriesFile) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, writable bool) error {
-	return nil
 }
 
 // Translate implements memmap.Mappable.Translate.
@@ -575,30 +563,13 @@ func (sqemf *sqEntriesFile) Translate(ctx context.Context, required, optional me
 	return nil, linuxerr.EFAULT
 }
 
-// InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
-func (sqemf *sqEntriesFile) InvalidateUnsavable(ctx context.Context) error {
-	return nil
-}
-
 // ringBuffersFile implements memmap.Mappable for SQ and CQ ring buffers.
 //
 // +stateify savable
 type ringsBufferFile struct {
+	memmap.MappableNoTrackMappings
+
 	fr memmap.FileRange
-}
-
-// AddMapping implements memmap.Mappable.AddMapping.
-func (rbmf *ringsBufferFile) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
-	return nil
-}
-
-// RemoveMapping implements memmap.Mappable.RemoveMapping.
-func (rbmf *ringsBufferFile) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
-}
-
-// CopyMapping implements memmap.Mappable.CopyMapping.
-func (rbmf *ringsBufferFile) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, writable bool) error {
-	return nil
 }
 
 // Translate implements memmap.Mappable.Translate.
@@ -619,9 +590,4 @@ func (rbmf *ringsBufferFile) Translate(ctx context.Context, required, optional m
 	}
 
 	return nil, linuxerr.EFAULT
-}
-
-// InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
-func (rbmf *ringsBufferFile) InvalidateUnsavable(ctx context.Context) error {
-	return nil
 }

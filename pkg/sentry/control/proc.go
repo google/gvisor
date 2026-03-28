@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
@@ -133,6 +134,10 @@ type ExecArgs struct {
 	// StdioIsPty indicates that FDs 0, 1, and 2 are connected to a host pty FD.
 	StdioIsPty bool
 
+	// SupportTTYs indicates whether TTYs other than the console TTY should be
+	// imported as TTYs.
+	SupportTTYs bool
+
 	// FilePayload determines the files to give to the new process.
 	FilePayload
 
@@ -148,6 +153,10 @@ type ExecArgs struct {
 
 	// Limits is the limit set for the process being executed.
 	Limits *limits.LimitSet
+
+	// SeccompProgram is an optional seccomp BPF program to install on the
+	// new process.
+	SeccompProgram *bpf.Program
 }
 
 // String prints the arguments as a string.
@@ -280,9 +289,10 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 		Console: args.StdioIsPty,
 		// Exec sessions are not restorable because the caller will not be present after the restore.
 		// Exec'd processes are killed after the restore.
-		Restorable: false,
-		UID:        args.KUID,
-		GID:        args.KGID,
+		Restorable:  false,
+		UID:         args.KUID,
+		GID:         args.KGID,
+		SupportTTYs: args.SupportTTYs,
 	}
 	ttyFile, err := fdimport.Import(ctx, fdTable, fdMap, opts)
 	if err != nil {
@@ -312,6 +322,13 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 	tg, tid, err := proc.Kernel.CreateProcess(initArgs)
 	if err != nil {
 		return nil, 0, nil, err
+	}
+
+	if args.SeccompProgram != nil {
+		task := tg.Leader()
+		if err := task.AppendSyscallFilter(*args.SeccompProgram, true); err != nil {
+			return nil, 0, nil, fmt.Errorf("appending seccomp filters: %w", err)
+		}
 	}
 
 	// Start the newly created process.

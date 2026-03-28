@@ -15,9 +15,20 @@
 package systrap
 
 import (
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 
 func stackPointer(r *arch.Registers) uintptr {
 	return uintptr(r.Sp)
+}
+
+// configureSystrapAddressSpace overrides the default 48-bit address space
+// parameters when the host uses a different VA width. On 48-bit VA hosts,
+// ConfigureAddressSpace(1<<48) re-affirms the defaults.
+//
+// This function MUST be called during systrap initialization, before any
+// Context64 is created.
+func configureSystrapAddressSpace() {
+	arch.ConfigureAddressSpace(uintptr(linux.TaskSize))
 }

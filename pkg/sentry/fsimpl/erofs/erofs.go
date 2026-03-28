@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/erofs"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -82,9 +83,9 @@ type filesystem struct {
 //
 // +stateify savable
 type InternalFilesystemOptions struct {
-	// If UniqueID is non-empty, it is an opaque string used to reassociate the
-	// filesystem with a new image FD during restoration from checkpoint.
-	UniqueID vfs.RestoreID
+	// If UniqueID is non-empty, it is used to reassociate the filesystem with
+	// a new image FD during restoration from checkpoint.
+	UniqueID checkpoint.ResourceID
 }
 
 // Name implements vfs.FilesystemType.Name.
@@ -266,6 +267,12 @@ type inode struct {
 	dirMu sync.RWMutex `state:"nosave"`
 	// +checklocks:dirMu
 	dirents []vfs.Dirent `state:"nosave"`
+
+	// TODO: Since EROFS is read-only, files can't be truncated or
+	// hole-punched, so mapsMu and mappings are only used by
+	// inode.InvalidateUnsavable. However, AFAIU inode.Translate will return
+	// the same File and offset after save/restore, so this is unnecessary, and
+	// we can use memmap.MappableNoTrackMappings instead.
 
 	// mapsMu protects mappings.
 	mapsMu sync.Mutex `state:"nosave"`

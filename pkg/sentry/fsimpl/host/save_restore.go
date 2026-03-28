@@ -24,16 +24,18 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/safemem"
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/hostfd"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
-// MakeRestoreID creates a RestoreID for a given application FD. The application
-// FD remains the same between restores, e.g. stdout=2 before and after restore,
-// but the host FD that is maps to can change between restores. This ID is used
-// to map application FDs to their respective FD after a restore happens.
-func MakeRestoreID(containerName string, fd int) vfs.RestoreID {
-	return vfs.RestoreID{
+// MakeResourceID creates a ResourceID for a given application FD. The
+// application FD remains the same between restores, e.g. stdout=2 before and
+// after restore, but the host FD that is maps to can change between restores.
+// This ID is used to map application FDs to their respective FD after a
+// restore happens.
+func MakeResourceID(containerName string, fd int) checkpoint.ResourceID {
+	return checkpoint.ResourceID{
 		ContainerName: containerName,
 		Path:          fmt.Sprintf("host:%d", fd),
 	}
@@ -85,6 +87,7 @@ func (i *inode) afterLoad(ctx context.Context) {
 	}
 	log.Debugf("Remapping host FD from %d to %d", i.hostFD, fd)
 	i.hostFD = fd
+	i.mmapFile.SetFD(fd)
 
 	if i.epollable {
 		if err := unix.SetNonblock(i.hostFD, true); err != nil {

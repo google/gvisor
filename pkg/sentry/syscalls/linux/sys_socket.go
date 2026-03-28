@@ -42,7 +42,12 @@ import (
 const maxAddrLen = 200
 
 // maxOptLen is the maximum sockopt parameter length we're willing to accept.
-const maxOptLen = 1024 * 8
+// Linux limits this to INT_MAX (net/socket.c: do_sock_setsockopt), but we use
+// a conservative 32KB here to balance compatibility with resource protection.
+// The previous limit of 8KB broke real-world workloads such as iptables-restore
+// with large rulesets (e.g. Istio service mesh) where IPT_SO_SET_REPLACE
+// payloads commonly exceed 8KB.
+const maxOptLen = 32 * 1024
 
 // maxControlLen is the maximum length of the msghdr.msg_control buffer we're
 // willing to accept. Note that this limit is smaller than Linux, which allows

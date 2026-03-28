@@ -54,7 +54,7 @@ type SaveOpts struct {
 	// PagesFile is non-nil. Otherwise this content is stored in Destination.
 	PagesFile stateio.AsyncWriter
 
-	// Key is used for state integrity check.
+	// Key is used to enable state integrity check.
 	Key []byte
 
 	// Metadata is save metadata.

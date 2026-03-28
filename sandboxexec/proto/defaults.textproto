@@ -1,0 +1,235 @@
+# proto-file: sandbox_options.proto
+# proto-message: SandboxOptions
+
+networking_options {
+  enable_external_networking: false
+}
+
+start_timeout_ms: 5000
+
+env_vars {
+  name: "PATH"
+  policy: ENV_VAR_POLICY_FORWARD
+}
+env_vars {
+  name: "EDITOR"
+  policy: ENV_VAR_POLICY_FORWARD
+}
+env_vars {
+  name: "SHELL"
+  policy: ENV_VAR_POLICY_FORWARD
+}
+env_vars {
+  name: "HOME"
+  policy: ENV_VAR_POLICY_FORWARD
+}
+env_vars {
+  name: "LANG"
+  policy: ENV_VAR_POLICY_FORWARD
+}
+env_vars {
+  name: "LANGUAGE"
+  policy: ENV_VAR_POLICY_FORWARD
+}
+env_vars {
+  name: "LC_ALL"
+  policy: ENV_VAR_POLICY_FORWARD
+}
+env_vars {
+  name: "LC_CTYPE"
+  policy: ENV_VAR_POLICY_FORWARD
+}
+env_vars {
+  name: "LC_MESSAGES"
+  policy: ENV_VAR_POLICY_FORWARD
+}
+env_vars {
+  name: "LC_NUMERIC"
+  policy: ENV_VAR_POLICY_FORWARD
+}
+env_vars {
+  name: "LC_TIME"
+  policy: ENV_VAR_POLICY_FORWARD
+}
+env_vars {
+  name: "PAGER"
+  policy: ENV_VAR_POLICY_FORWARD
+}
+env_vars {
+  name: "PYTHONPATH"
+  policy: ENV_VAR_POLICY_FORWARD
+}
+env_vars {
+  name: "USER"
+  policy: ENV_VAR_POLICY_FORWARD
+}
+env_vars {
+  name: "USERNAME"
+  policy: ENV_VAR_POLICY_FORWARD
+}
+env_vars {
+  name: "TERM"
+  policy: ENV_VAR_POLICY_UNSET
+}
+
+mounts {
+  sandbox_path: "/bin"
+  host_mount {
+    host_path: "/bin"
+  }
+}
+mounts {
+  sandbox_path: "/lib"
+  host_mount {
+    host_path: "/lib"
+  }
+}
+mounts {
+  sandbox_path: "/lib64"
+  host_mount {
+    host_path: "/lib64"
+  }
+}
+mounts {
+  sandbox_path: "/sbin"
+  host_mount {
+    host_path: "/sbin"
+  }
+}
+mounts {
+  sandbox_path: "/usr"
+  host_mount {
+    host_path: "/usr"
+  }
+}
+mounts {
+  sandbox_path: "/etc/shells"
+  host_mount {
+    host_path: "/etc/shells"
+  }
+}
+mounts {
+  sandbox_path: "/etc/profile"
+  host_mount {
+    host_path: "/etc/profile"
+  }
+}
+mounts {
+  sandbox_path: "/etc/profile.d"
+  host_mount {
+    host_path: "/etc/profile.d"
+  }
+}
+mounts {
+  sandbox_path: "/etc/mime.types"
+  host_mount {
+    host_path: "/etc/mime.types"
+  }
+}
+mounts {
+  sandbox_path: "/etc/nsswitch.conf"
+  host_mount {
+    host_path: "/etc/nsswitch.conf"
+  }
+}
+mounts {
+  sandbox_path: "/etc/services"
+  host_mount {
+    host_path: "/etc/services"
+  }
+}
+mounts {
+  sandbox_path: "/etc/bashrc"
+  host_mount {
+    host_path: "/etc/bashrc"
+  }
+}
+mounts {
+  sandbox_path: "/etc/localtime"
+  host_mount {
+    host_path: "/etc/localtime"
+  }
+}
+mounts {
+  sandbox_path: "$HOME"
+  host_mount {
+    host_path: "$HOME"
+  }
+}
+mounts {
+  sandbox_path: "/home"
+  sandbox_tmpfs_mount {}
+}
+mounts {
+  sandbox_path: "$HOME/.cache"
+  sandbox_tmpfs_mount {}
+}
+mounts {
+  sandbox_path: "/dev/shm"
+  sandbox_tmpfs_mount {}
+}
+mounts {
+  sandbox_path: "/boot"
+  sandbox_tmpfs_mount {}
+}
+mounts {
+  sandbox_path: "/lost+found"
+  sandbox_tmpfs_mount {}
+}
+mounts {
+  sandbox_path: "/media"
+  sandbox_tmpfs_mount {}
+}
+mounts {
+  sandbox_path: "/run"
+  sandbox_tmpfs_mount {}
+}
+mounts {
+  sandbox_path: "/root"
+  sandbox_tmpfs_mount {}
+}
+mounts {
+  sandbox_path: "/run/user"
+  sandbox_tmpfs_mount {}
+}
+mounts {
+  sandbox_path: "/run/user/$USER"
+  sandbox_tmpfs_mount {}
+}
+mounts {
+  sandbox_path: "/usr/etc"
+  sandbox_tmpfs_mount {}
+}
+mounts {
+  sandbox_path: "/usr/var"
+  sandbox_tmpfs_mount {}
+}
+mounts {
+  sandbox_path: "/tmp"
+  sandbox_tmpfs_mount {}
+}
+mounts {
+  sandbox_path: "/var/cache"
+  sandbox_tmpfs_mount {}
+}
+mounts {
+  sandbox_path: "/var/lib/dbus"
+  sandbox_tmpfs_mount {}
+}
+mounts {
+  sandbox_path: "/var/log"
+  sandbox_tmpfs_mount {}
+}
+mounts {
+  sandbox_path: "/var/run"
+  sandbox_tmpfs_mount {}
+}
+mounts {
+  sandbox_path: "/var/spool"
+  sandbox_tmpfs_mount {}
+}
+mounts {
+  sandbox_path: "/var/tmp"
+  sandbox_tmpfs_mount {}
+}
+

@@ -12,34 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build arm64
+
 package pagetables
 
-// Address constraints.
-//
-// The lowerTop and upperBottom currently apply to four-level pagetables;
-// additional refactoring would be necessary to support five-level pagetables.
+// Address space layout constants shared by all ARM64 page sizes.
 const (
 	lowerTop    = 0x0000ffffffffffff
 	upperBottom = 0xffff000000000000
-	pteShift    = 12
-	pmdShift    = 21
-	pudShift    = 30
-	pgdShift    = 39
-
-	pteMask = 0x1ff << pteShift
-	pmdMask = 0x1ff << pmdShift
-	pudMask = 0x1ff << pudShift
-	pgdMask = 0x1ff << pgdShift
-
-	pteSize = 1 << pteShift
-	pmdSize = 1 << pmdShift
-	pudSize = 1 << pudShift
-	pgdSize = 1 << pgdShift
 
 	ttbrASIDOffset = 48
 	ttbrASIDMask   = 0xff
-
-	entriesPerPage = 512
 )
 
 // InitArch does some additional initialization related to the architecture.
@@ -67,6 +50,3 @@ func (p *PageTables) cloneUpperShared() {
 	p.archPageTables.root = p.upperSharedPageTables.archPageTables.root
 	p.archPageTables.rootPhysical = p.upperSharedPageTables.archPageTables.rootPhysical
 }
-
-// PTEs is a collection of entries.
-type PTEs [entriesPerPage]PTE

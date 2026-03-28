@@ -4104,21 +4104,15 @@ func TestSpecValidation(t *testing.T) {
 	}
 }
 
-func TestTarRootfsUpperLayer(t *testing.T) {
-	conf := testutil.TestConfig(t)
-	conf.Overlay2.Set("root:memory")
-
+func snapshotRootfsUpperLayer(conf *config.Config, spec *specs.Spec) (string, error) {
 	app, err := testutil.FindFile("test/cmd/test_app/test_app")
 	if err != nil {
-		t.Fatal("error finding test_app:", err)
+		return "", fmt.Errorf("error finding test_app: %v", err)
 	}
-
-	spec, _ := sleepSpecConf(t)
-	spec.Root.Readonly = false
 
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
-		t.Fatalf("error setting up container: %v", err)
+		return "", fmt.Errorf("error setting up container: %v", err)
 	}
 	defer cleanup()
 
@@ -4130,11 +4124,11 @@ func TestTarRootfsUpperLayer(t *testing.T) {
 	}
 	cont, err := New(conf, args)
 	if err != nil {
-		t.Fatalf("error creating container: %v", err)
+		return "", fmt.Errorf("error creating container: %v", err)
 	}
 	defer cont.Destroy()
 	if err := cont.Start(conf); err != nil {
-		t.Fatalf("error starting container: %v", err)
+		return "", fmt.Errorf("error starting container: %v", err)
 	}
 	// Exec the command in the container.
 	execArgs := &control.ExecArgs{
@@ -4142,25 +4136,38 @@ func TestTarRootfsUpperLayer(t *testing.T) {
 		Argv:     []string{app, "fsTreeCreate", "--depth=3", "--file-per-level=2", "--file-size=1470", "--create-symlink", "--add-empty-files"},
 	}
 	if ws, err := cont.executeSync(conf, execArgs); err != nil {
-		t.Fatalf("error exec'ing: %v", err)
+		return "", fmt.Errorf("error exec'ing: %v", err)
 	} else if ws.ExitStatus() != 0 {
-		t.Fatalf("exec failed with exit status %d", ws.ExitStatus())
+		return "", fmt.Errorf("exec failed with exit status %d", ws.ExitStatus())
 	}
 
 	// Create a temporary file to write the tar bytes to.
-	tarFile1, err := os.CreateTemp(testutil.TmpDir(), "tarfile-*.tar")
+	tarFile, err := os.CreateTemp(testutil.TmpDir(), "tarfile-*.tar")
 	if err != nil {
-		t.Fatalf("error creating temp file: %v", err)
+		return "", fmt.Errorf("error creating temp file: %v", err)
 	}
-	defer os.Remove(tarFile1.Name())
+	defer tarFile.Close()
 
-	if err := cont.TarRootfsUpperLayer(tarFile1); err != nil {
-		t.Fatalf("error serializing rootfs upper layer to tar: %v", err)
+	if err := cont.TarRootfsUpperLayer(tarFile); err != nil {
+		return "", fmt.Errorf("error serializing rootfs upper layer to tar: %v", err)
 	}
-	tarFile1.Close()
+	return tarFile.Name(), nil
+}
+
+func TestTarRootfsUpperLayer(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	conf.Overlay2.Set("root:memory")
+	spec, _ := sleepSpecConf(t)
+	spec.Root.Readonly = false
+
+	tarFile1, err := snapshotRootfsUpperLayer(conf, spec)
+	if err != nil {
+		t.Fatalf("error snapshotting rootfs upper layer: %v", err)
+	}
+	defer os.Remove(tarFile1)
 
 	// List the contents of the tar file using the tar command.
-	snap1, err := exec.Command("tar", "-tvf", tarFile1.Name()).CombinedOutput()
+	snap1, err := exec.Command("tar", "-tvf", tarFile1).CombinedOutput()
 	if err != nil {
 		t.Fatalf("error listing contents of tar file: %v, output: %s", err, snap1)
 	} else {
@@ -4175,14 +4182,15 @@ func TestTarRootfsUpperLayer(t *testing.T) {
 	}
 
 	// Add the tar file to the spec annotations and create a new container.
-	spec.Annotations["dev.gvisor.tar.rootfs.upper"] = tarFile1.Name()
-	_, bundleDir, cleanup, err = testutil.SetupContainer(spec, conf)
+	spec.Annotations[specutils.AnnotationRootfsUpperTar] = tarFile1
+	conf.AllowRootfsTarAnnotation = true
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
 	}
 	defer cleanup()
 
-	args = Args{
+	args := Args{
 		ID:        testutil.RandomContainerID(),
 		Spec:      spec,
 		BundleDir: bundleDir,
@@ -4203,11 +4211,11 @@ func TestTarRootfsUpperLayer(t *testing.T) {
 		t.Fatalf("error creating temp file: %v", err)
 	}
 	defer os.Remove(tarFile2.Name())
+	defer tarFile2.Close()
 
 	if err := newCont.TarRootfsUpperLayer(tarFile2); err != nil {
 		t.Fatalf("error serializing rootfs upper layer to tar: %v", err)
 	}
-	tarFile2.Close()
 
 	// List the contents of the tar file using the tar command.
 	snap2, err := exec.Command("tar", "-tvf", tarFile2.Name()).CombinedOutput()
@@ -4238,6 +4246,118 @@ func processSnapBytes(data []byte, lineCounts map[string]int, increment int) err
 		return err
 	}
 	return nil
+}
+
+// TestTarRootfsUpperLayerOpaqueDir verifies that opaque directory xattrs
+// (trusted.overlay.opaque) are preserved across tar serialization and
+// restoration. When a directory from the lower layer is deleted and recreated,
+// the overlay marks it as opaque so lower layer contents don't show through.
+// Without preserving this xattr in the tar, stale files from the lower layer
+// would be resurrected after restore.
+func TestTarRootfsUpperLayerOpaqueDir(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	conf.Overlay2.Set("root:memory")
+
+	spec, _ := sleepSpecConf(t)
+	spec.Root.Readonly = false
+
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	// Create and start the container.
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	// List the contents of /usr/share before deleting it to confirm it has
+	// files from the lower layer.
+	beforeOut, err := executeCombinedOutput(conf, cont, nil, "/bin/ls", "/usr/share")
+	if err != nil {
+		t.Fatalf("error listing /usr/share: %v", err)
+	}
+	beforeFiles := strings.Fields(strings.TrimSpace(string(beforeOut)))
+	if len(beforeFiles) == 0 {
+		t.Fatalf("/usr/share has no files in lower layer, cannot test opaque behavior")
+	}
+	t.Logf("/usr/share before delete has %d entries: %v", len(beforeFiles), beforeFiles)
+
+	// Delete /usr/share (which exists in the lower layer), recreate it, and
+	// add a single marker file. The overlay should mark the recreated
+	// directory as opaque (trusted.overlay.opaque=y).
+	if _, err := executeCombinedOutput(conf, cont, nil, "/bin/sh", "-c",
+		"rm -rf /usr/share && mkdir /usr/share && echo opaque_test > /usr/share/marker"); err != nil {
+		t.Fatalf("error recreating /usr/share: %v", err)
+	}
+
+	// Verify that after the delete+recreate, only the marker file is visible.
+	afterOut, err := executeCombinedOutput(conf, cont, nil, "/bin/ls", "/usr/share")
+	if err != nil {
+		t.Fatalf("error listing /usr/share after recreate: %v", err)
+	}
+	afterFiles := strings.Fields(strings.TrimSpace(string(afterOut)))
+	if len(afterFiles) != 1 || afterFiles[0] != "marker" {
+		t.Fatalf("expected only 'marker' in /usr/share after recreate, got: %v", afterFiles)
+	}
+
+	// Tar the upper layer.
+	tarFile, err := os.CreateTemp(testutil.TmpDir(), "tarfile-opaque-*.tar")
+	if err != nil {
+		t.Fatalf("error creating temp file: %v", err)
+	}
+	defer os.Remove(tarFile.Name())
+	defer tarFile.Close()
+
+	if err := cont.TarRootfsUpperLayer(tarFile); err != nil {
+		t.Fatalf("error serializing rootfs upper layer to tar: %v", err)
+	}
+
+	// Restore the tar into a new container.
+	spec.Annotations[specutils.AnnotationRootfsUpperTar] = tarFile.Name()
+	conf.AllowRootfsTarAnnotation = true
+	_, bundleDir2, cleanup2, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up restored container: %v", err)
+	}
+	defer cleanup2()
+
+	args2 := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir2,
+	}
+	newCont, err := New(conf, args2)
+	if err != nil {
+		t.Fatalf("error creating restored container: %v", err)
+	}
+	defer newCont.Destroy()
+	if err := newCont.Start(conf); err != nil {
+		t.Fatalf("error starting restored container: %v", err)
+	}
+
+	// Verify that in the restored container, /usr/share only contains
+	// "marker" and no stale files from the lower layer.
+	restoredOut, err := executeCombinedOutput(conf, newCont, nil, "/bin/ls", "/usr/share")
+	if err != nil {
+		t.Fatalf("error listing /usr/share in restored container: %v", err)
+	}
+	restoredFiles := strings.Fields(strings.TrimSpace(string(restoredOut)))
+	if len(restoredFiles) != 1 || restoredFiles[0] != "marker" {
+		t.Fatalf("opaque xattr not preserved: expected only 'marker' in /usr/share, got: %v (stale lower layer files leaked through)", restoredFiles)
+	}
+	t.Logf("/usr/share in restored container correctly contains only: %v", restoredFiles)
 }
 
 func TestSpecValidationIgnore(t *testing.T) {

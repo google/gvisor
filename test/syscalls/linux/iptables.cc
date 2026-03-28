@@ -283,6 +283,113 @@ TEST_F(IPTablesTest, InitialState) {
   free(entries);
 }
 
+// Regression test for a bug where gVisor's hard-coded maxOptLen of 8KB
+// silently rejected setsockopt(IPT_SO_SET_REPLACE) payloads larger than 8192
+// bytes with EINVAL. Real-world workloads such as Istio service mesh generate
+// nat table rulesets that commonly exceed 8KB (Istio 1.28+ produces ~13KB).
+// The limit has been raised to 32KB; Linux itself uses INT_MAX.
+TEST_F(IPTablesTest, LargeReplacePayload) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+
+  // Get current nat table metadata.
+  struct ipt_getinfo info = {};
+  snprintf(info.name, XT_TABLE_MAXNAMELEN, "%s", kNatTablename);
+  socklen_t info_size = sizeof(info);
+  ASSERT_THAT(getsockopt(s_, SOL_IP, IPT_SO_GET_INFO, &info, &info_size),
+              SyscallSucceeds());
+
+  // Read current entries.
+  socklen_t orig_sz = sizeof(struct ipt_get_entries) + info.size;
+  std::unique_ptr<char[]> orig_buf(new char[orig_sz]());
+  struct ipt_get_entries* orig =
+      reinterpret_cast<struct ipt_get_entries*>(orig_buf.get());
+  snprintf(orig->name, XT_TABLE_MAXNAMELEN, "%s", kNatTablename);
+  orig->size = info.size;
+  ASSERT_THAT(getsockopt(s_, SOL_IP, IPT_SO_GET_ENTRIES, orig, &orig_sz),
+              SyscallSucceeds());
+
+  // Compute extra entries needed to push the total setsockopt payload past 8KB.
+  const size_t kMinPayload = 9 * 1024;
+  size_t extra = 0;
+  if (sizeof(struct ipt_replace) + info.size < kMinPayload) {
+    extra = (kMinPayload - sizeof(struct ipt_replace) - info.size +
+             kEmptyStandardEntrySize - 1) /
+            kEmptyStandardEntrySize;
+  }
+  const size_t shift = extra * kEmptyStandardEntrySize;
+  const size_t new_entries_size = info.size + shift;
+  const unsigned int new_num_entries = info.num_entries + extra;
+  const size_t buf_sz = sizeof(struct ipt_replace) + new_entries_size;
+
+  ASSERT_GT(buf_sz, 8192u);
+
+  // Build ipt_replace buffer.
+  std::unique_ptr<char[]> buf(new char[buf_sz]());
+  struct ipt_replace* repl = reinterpret_cast<struct ipt_replace*>(buf.get());
+
+  snprintf(repl->name, sizeof(repl->name), "%s", kNatTablename);
+  repl->valid_hooks = info.valid_hooks;
+  repl->num_entries = new_num_entries;
+  repl->size = new_entries_size;
+  repl->num_counters = new_num_entries;
+
+  std::unique_ptr<struct xt_counters[]> ctrs(
+      new struct xt_counters[new_num_entries]());
+  repl->counters = ctrs.get();
+
+  // Insert extra entries at the start of the PREROUTING chain. All valid
+  // hook/underflow offsets shift forward by `shift` bytes to account for the
+  // new entries. The PREROUTING hook_entry stays at 0 because the new entries
+  // ARE the beginning of the chain.
+  for (int h = 0; h < NF_IP_NUMHOOKS; h++) {
+    if (info.valid_hooks & (1 << h)) {
+      repl->hook_entry[h] = info.hook_entry[h] + shift;
+      repl->underflow[h] = info.underflow[h] + shift;
+    }
+  }
+  repl->hook_entry[NF_IP_PRE_ROUTING] = 0;
+
+  // Fill extra entries: unconditional ACCEPT rules.
+  char* dst = reinterpret_cast<char*>(repl->entries);
+  for (size_t i = 0; i < extra; i++) {
+    struct ipt_entry* e =
+        reinterpret_cast<struct ipt_entry*>(dst + i * kEmptyStandardEntrySize);
+    memset(e, 0, kEmptyStandardEntrySize);
+    e->target_offset = sizeof(struct ipt_entry);
+    e->next_offset = kEmptyStandardEntrySize;
+    struct ipt_standard_target* t =
+        reinterpret_cast<struct ipt_standard_target*>(e->elems);
+    t->target.u.user.target_size = sizeof(*t);
+    t->verdict = -NF_ACCEPT - 1;
+  }
+
+  // Copy original entries after the extra ones.
+  memcpy(dst + shift, reinterpret_cast<char*>(orig->entrytable), info.size);
+
+  ASSERT_THAT(setsockopt(s_, SOL_IP, IPT_SO_SET_REPLACE, repl, buf_sz),
+              SyscallSucceeds());
+
+  // Restore original table to avoid side effects on other tests.
+  size_t restore_sz = sizeof(struct ipt_replace) + info.size;
+  std::unique_ptr<char[]> restore_buf(new char[restore_sz]());
+  struct ipt_replace* restore =
+      reinterpret_cast<struct ipt_replace*>(restore_buf.get());
+  snprintf(restore->name, sizeof(restore->name), "%s", kNatTablename);
+  restore->valid_hooks = info.valid_hooks;
+  restore->num_entries = info.num_entries;
+  restore->size = info.size;
+  restore->num_counters = info.num_entries;
+  std::unique_ptr<struct xt_counters[]> rctrs(
+      new struct xt_counters[info.num_entries]());
+  restore->counters = rctrs.get();
+  memcpy(restore->hook_entry, info.hook_entry, sizeof(info.hook_entry));
+  memcpy(restore->underflow, info.underflow, sizeof(info.underflow));
+  memcpy(restore->entries, orig->entrytable, info.size);
+  EXPECT_THAT(setsockopt(s_, SOL_IP, IPT_SO_SET_REPLACE, restore, restore_sz),
+              SyscallSucceeds());
+}
+
 struct SockOptArgs {
   int sock;
   int optname;

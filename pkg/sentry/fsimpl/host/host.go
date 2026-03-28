@@ -30,8 +30,10 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/eventfd"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
+	"gvisor.dev/gvisor/pkg/sentry/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/hostfd"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -95,7 +97,6 @@ func isEpollable(fd int) bool {
 //
 // +stateify savable
 type inode struct {
-	kernfs.CachedMappable
 	kernfs.InodeNoStatFS
 	kernfs.InodeAnonymous // inode is effectively anonymous because it represents a donated FD.
 	kernfs.InodeNotDirectory
@@ -106,18 +107,18 @@ type inode struct {
 
 	locks vfs.FileLocks
 
-	// When the reference count reaches zero, the host fd is closed.
+	// When the reference count reaches zero, the inode is released.
 	inodeRefs
 
-	// hostFD contains the host fd that this file was originally created from.
-	// Upon restore, it must be remapped using restoreKey and vfs.CtxRestoreFilesystemFDMap
-	// from the restore context.
+	// hostFD is the host fd that this file was originally created from. Upon
+	// restore, it must be remapped using restoreKey and
+	// vfs.CtxRestoreFilesystemFDMap from the restore context.
 	//
 	// This field is initialized at creation time and is immutable.
 	hostFD int `state:"nosave"`
 
 	// restoreKey is used to identify the `hostFD` after a restore is performed.
-	restoreKey vfs.RestoreID
+	restoreKey checkpoint.ResourceID
 
 	// ino is an inode number unique within this filesystem.
 	//
@@ -169,6 +170,14 @@ type inode struct {
 	// application to change these fields without affecting the host.
 	virtualOwner virtualOwner
 
+	// maps holds application memory mappings of the inode. maps is protected
+	// by mapsMu.
+	mapsMu   sync.Mutex `state:"nosave"`
+	mappings memmap.MappingSet
+
+	// mmapFile implements memmap.File for hostFD.
+	mmapFile fsutil.MmapCachedFile
+
 	// If haveBuf is non-zero, hostFD represents a pipe, and buf contains data
 	// read from the pipe from previous calls to inode.beforeSave(). haveBuf
 	// and buf are protected by bufMu.
@@ -186,7 +195,7 @@ type inode struct {
 	termios   linux.KernelTermios
 }
 
-func newInode(ctx context.Context, fs *filesystem, hostFD int, savable bool, restoreKey vfs.RestoreID, fileType linux.FileMode, isTTY bool, readonly bool) (*inode, error) {
+func newInode(ctx context.Context, fs *filesystem, hostFD int, savable bool, restoreKey checkpoint.ResourceID, fileType linux.FileMode, isTTY bool, readonly bool) (*inode, error) {
 	// Determine if hostFD is seekable.
 	_, err := unix.Seek(hostFD, 0, linux.SEEK_CUR)
 	seekable := !linuxerr.Equals(linuxerr.ESPIPE, err)
@@ -217,7 +226,7 @@ func newInode(ctx context.Context, fs *filesystem, hostFD int, savable bool, res
 	}
 
 	i.InitRefs()
-	i.CachedMappable.Init(hostFD)
+	i.mmapFile.SetFD(hostFD)
 
 	// If the hostFD can return EWOULDBLOCK when set to non-blocking, do so and
 	// handle blocking behavior in the sentry.
@@ -241,7 +250,7 @@ type NewFDOptions struct {
 	// RestoreKey is only used when Savable==true. It uniquely identifies the
 	// host FD so that a mapping to the corresponding FD can be provided during
 	// restore.
-	RestoreKey vfs.RestoreID
+	RestoreKey checkpoint.ResourceID
 
 	// Restorable is true if hostFD may be restored. This can be set to false
 	// for host FDs that are not going to be present after restore.
@@ -623,7 +632,14 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 			oldpgend, _ := hostarch.PageRoundUp(oldSize)
 			newpgend, _ := hostarch.PageRoundUp(s.Size)
 			if oldpgend != newpgend {
-				i.CachedMappable.InvalidateRange(memmap.MappableRange{newpgend, oldpgend})
+				i.mapsMu.Lock()
+				i.mappings.Invalidate(memmap.MappableRange{newpgend, oldpgend}, memmap.InvalidateOpts{
+					// Compare Linux's mm/truncate.c:truncate_setsize() =>
+					// truncate_pagecache() =>
+					// mm/memory.c:unmap_mapping_range(evencows=1).
+					InvalidatePrivate: true,
+				})
+				i.mapsMu.Unlock()
 			}
 		}
 	}
@@ -656,13 +672,12 @@ func (i *inode) DecRef(ctx context.Context) {
 			if i.epollable {
 				fdnotifier.RemoveFD(int32(i.hostFD))
 			}
-			if err := unix.Close(i.hostFD); err != nil {
-				log.Warningf("failed to close host fd %d: %v", i.hostFD, err)
-			}
+			// i.hostFD will be closed by i.mmapFile.
 		}
 		// We can't rely on fdnotifier when closing the fd, because the event may race
 		// with fdnotifier.RemoveFD. Instead, notify the queue explicitly.
 		i.queue.Notify(waiter.EventHUp | waiter.ReadableEvents | waiter.WritableEvents)
+		i.mmapFile.MappableRelease()
 	})
 }
 
@@ -1019,9 +1034,49 @@ func (f *fileDescription) ConfigureMMap(_ context.Context, opts *memmap.MMapOpts
 	if f.inode.ftype != unix.S_IFREG {
 		return linuxerr.ENODEV
 	}
-	i := f.inode
-	i.CachedMappable.InitFileMapperOnce()
-	return vfs.GenericConfigureMMap(&f.vfsfd, i, opts)
+	return vfs.GenericConfigureMMap(&f.vfsfd, f.inode, opts)
+}
+
+// AddMapping implements memmap.Mappable.AddMapping.
+func (i *inode) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
+	i.mmapFile.AddMapping(ar, offset)
+	i.mapsMu.Lock()
+	defer i.mapsMu.Unlock()
+	i.mappings.AddMapping(ms, ar, offset, writable)
+	return nil
+}
+
+// RemoveMapping implements memmap.Mappable.RemoveMapping.
+func (i *inode) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
+	i.mmapFile.RemoveMapping(ar, offset)
+	i.mapsMu.Lock()
+	defer i.mapsMu.Unlock()
+	i.mappings.RemoveMapping(ms, ar, offset, writable)
+}
+
+// CopyMapping implements memmap.Mappable.CopyMapping.
+func (i *inode) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, writable bool) error {
+	return i.AddMapping(ctx, ms, dstAR, offset, writable)
+}
+
+// Translate implements memmap.Mappable.Translate.
+func (i *inode) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
+	return []memmap.Translation{
+		{
+			Source: optional,
+			File:   &i.mmapFile,
+			Offset: optional.Start,
+			Perms:  hostarch.AnyAccess,
+		},
+	}, nil
+}
+
+// InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
+func (i *inode) InvalidateUnsavable(ctx context.Context) error {
+	// If i.hostFD becomes -1 after restore, mappings of i.mmapFile will fail
+	// all accesses but otherwise be valid, so we don't need to invalidate them
+	// before saving.
+	return nil
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.

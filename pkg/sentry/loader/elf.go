@@ -513,13 +513,13 @@ func loadParsedELF(ctx context.Context, m *mm.MemoryManager, fd *vfs.FileDescrip
 
 		start, ok = start.AddLength(uint64(offset))
 		if !ok {
-			ctx.Infof(fmt.Sprintf("Start %#x + offset %#x overflows?", start, offset))
+			ctx.Infof("Start %#x + offset %#x overflows?", start, offset)
 			return loadedELF{}, linuxerr.EINVAL
 		}
 
 		end, ok = end.AddLength(uint64(offset))
 		if !ok {
-			ctx.Infof(fmt.Sprintf("End %#x + offset %#x overflows?", end, offset))
+			ctx.Infof("End %#x + offset %#x overflows?", end, offset)
 			return loadedELF{}, linuxerr.EINVAL
 		}
 

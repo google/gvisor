@@ -105,11 +105,8 @@ class RawPacketTest : public ::testing::TestWithParam<int> {
 };
 
 void RawPacketTest::SetUp() {
-  if (!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability())) {
-    ASSERT_THAT(socket(AF_PACKET, SOCK_RAW, htons(GetParam())),
-                SyscallFailsWithErrno(EPERM));
-    GTEST_SKIP();
-  }
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HavePacketSocketCapability(SOCK_RAW, GetParam())));
 
   ASSERT_THAT(s_ = socket(AF_PACKET, SOCK_RAW, htons(GetParam())),
               SyscallSucceeds());
@@ -129,7 +126,8 @@ void RawPacketTest::TearDown() {
   }
 
   // TearDown will be run even if we skip the test.
-  if (ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability())) {
+  if (ASSERT_NO_ERRNO_AND_VALUE(
+          HavePacketSocketCapability(SOCK_RAW, GetParam()))) {
     EXPECT_THAT(close(s_), SyscallSucceeds());
   }
 }
@@ -325,8 +323,6 @@ TEST_P(RawPacketTest, SendFromUnspec) {
 // Check that setting SO_RCVBUF below min is clamped to the minimum
 // receive buffer size.
 TEST_P(RawPacketTest, SetSocketRecvBufBelowMin) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability()));
-
   // Discover minimum receive buf size by trying to set it to zero.
   // See:
   // https://github.com/torvalds/linux/blob/a5dc8300df75e8b8384b4c82225f1e4a0b4d9b55/net/core/sock.c#L820
@@ -358,8 +354,6 @@ TEST_P(RawPacketTest, SetSocketRecvBufBelowMin) {
 // Check that setting SO_RCVBUF above max is clamped to the maximum
 // receive buffer size.
 TEST_P(RawPacketTest, SetSocketRecvBufAboveMax) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability()));
-
   // Discover max buf size by trying to set the largest possible buffer size.
   constexpr int kRcvBufSz = 0xffffffff;
   ASSERT_THAT(
@@ -385,8 +379,6 @@ TEST_P(RawPacketTest, SetSocketRecvBufAboveMax) {
 
 // Check that setting SO_RCVBUF min <= kRcvBufSz <= max is honored.
 TEST_P(RawPacketTest, SetSocketRecvBuf) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability()));
-
   int max = 0;
   int min = 0;
   {
@@ -437,8 +429,6 @@ TEST_P(RawPacketTest, SetSocketRecvBuf) {
 // Check that setting SO_SNDBUF below min is clamped to the minimum
 // receive buffer size.
 TEST_P(RawPacketTest, SetSocketSendBufBelowMin) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability()));
-
   // Discover minimum buffer size by trying to set it to zero.
   constexpr int kSndBufSz = 0;
   ASSERT_THAT(
@@ -468,8 +458,6 @@ TEST_P(RawPacketTest, SetSocketSendBufBelowMin) {
 // Check that setting SO_SNDBUF above max is clamped to the maximum
 // send buffer size.
 TEST_P(RawPacketTest, SetSocketSendBufAboveMax) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability()));
-
   // Discover maximum buffer size by trying to set it to a large value.
   constexpr int kSndBufSz = 0xffffffff;
   ASSERT_THAT(
@@ -495,8 +483,6 @@ TEST_P(RawPacketTest, SetSocketSendBufAboveMax) {
 
 // Check that setting SO_SNDBUF min <= kSndBufSz <= max is honored.
 TEST_P(RawPacketTest, SetSocketSendBuf) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability()));
-
   int max = 0;
   int min = 0;
   {
@@ -542,8 +528,6 @@ TEST_P(RawPacketTest, SetSocketSendBuf) {
 }
 
 TEST_P(RawPacketTest, GetSocketError) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability()));
-
   int val = 0;
   socklen_t val_len = sizeof(val);
   ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_ERROR, &val, &val_len),
@@ -552,8 +536,6 @@ TEST_P(RawPacketTest, GetSocketError) {
 }
 
 TEST_P(RawPacketTest, GetSocketErrorBind) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability()));
-
   {
     // Bind to the loopback device.
     struct sockaddr_ll bind_addr = {};
@@ -618,8 +600,6 @@ TEST_P(RawPacketTest, SetSocketDetachFilterNoInstalledFilter) {
 }
 
 TEST_P(RawPacketTest, GetSocketDetachFilter) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability()));
-
   int val = 0;
   socklen_t val_len = sizeof(val);
   ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_DETACH_FILTER, &val, &val_len),
@@ -627,8 +607,6 @@ TEST_P(RawPacketTest, GetSocketDetachFilter) {
 }
 
 TEST_P(RawPacketTest, SetAndGetSocketLinger) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability()));
-
   int level = SOL_SOCKET;
   int type = SO_LINGER;
 
@@ -648,8 +626,6 @@ TEST_P(RawPacketTest, SetAndGetSocketLinger) {
 }
 
 TEST_P(RawPacketTest, GetSocketAcceptConn) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability()));
-
   int got = -1;
   socklen_t length = sizeof(got);
   ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_ACCEPTCONN, &got, &length),
@@ -664,9 +640,9 @@ INSTANTIATE_TEST_SUITE_P(AllInetTests, RawPacketTest,
 class RawPacketMsgSizeTest : public ::testing::TestWithParam<TestAddress> {};
 
 TEST_P(RawPacketMsgSizeTest, SendTooLong) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability()));
-
   TestAddress addr = GetParam().WithPort(kPort);
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HaveRawIPSocketCapability(addr.family(), IPPROTO_UDP)));
 
   FileDescriptor udp_sock =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(addr.family(), SOCK_RAW, IPPROTO_UDP));
@@ -685,15 +661,15 @@ TEST_P(RawPacketMsgSizeTest, SendTooLong) {
 // available.
 #ifndef __Fuchsia__
 TEST_P(RawPacketMsgSizeTest, SpliceTooLong) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability()));
+  TestAddress addr = GetParam().WithPort(kPort);
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HaveRawIPSocketCapability(addr.family(), IPPROTO_UDP)));
 
   const char buf[65536] = {};
   int fds[2];
   ASSERT_THAT(pipe(fds), SyscallSucceeds());
   ASSERT_THAT(write(fds[1], buf, sizeof(buf)),
               SyscallSucceedsWithValue(sizeof(buf)));
-
-  TestAddress addr = GetParam().WithPort(kPort);
 
   FileDescriptor udp_sock =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(addr.family(), SOCK_RAW, IPPROTO_UDP));

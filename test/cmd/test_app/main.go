@@ -17,10 +17,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"log"
+	"math/rand/v2"
 	"net"
 	"os"
 	"os/exec"
@@ -31,10 +34,9 @@ import (
 	sys "syscall"
 	"time"
 
+	"github.com/creack/pty"
 	"github.com/google/subcommands"
-	"github.com/kr/pty"
 	"gvisor.dev/gvisor/pkg/gvisordetect"
-	gvisorrand "gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/flag"
 )
@@ -47,6 +49,7 @@ func main() {
 	subcommands.Register(new(fdSender), "")
 	subcommands.Register(new(forkBomb), "")
 	subcommands.Register(new(fsTreeCreator), "")
+	subcommands.Register(new(fsTreeVerify), "")
 	subcommands.Register(new(gvisorDetect), "")
 	subcommands.Register(new(ptyRunner), "")
 	subcommands.Register(new(reaper), "")
@@ -54,6 +57,7 @@ func main() {
 	subcommands.Register(new(taskTree), "")
 	subcommands.Register(new(uds), "")
 	subcommands.Register(new(zombieTest), "")
+	registerSubcommandsExtra()
 
 	flag.Parse()
 
@@ -62,12 +66,17 @@ func main() {
 }
 
 type fsTreeCreator struct {
+	fsTreeCommon
+}
+
+type fsTreeCommon struct {
 	depth            uint
 	numFilesPerLevel uint
 	fileSize         uint
 	targetDir        string
 	createSymlink    bool
 	addEmptyFiles    bool
+	seed             uint64
 }
 
 // Name implements subcommands.Command.Name.
@@ -86,13 +95,14 @@ func (*fsTreeCreator) Usage() string {
 }
 
 // SetFlags implements subcommands.Command.SetFlags.
-func (c *fsTreeCreator) SetFlags(f *flag.FlagSet) {
+func (c *fsTreeCommon) SetFlags(f *flag.FlagSet) {
 	f.UintVar(&c.depth, "depth", 10, "number of levels to create")
 	f.UintVar(&c.numFilesPerLevel, "file-per-level", 10, "number of files to create per level")
 	f.UintVar(&c.fileSize, "file-size", 4096, "size of each file")
 	f.StringVar(&c.targetDir, "target-dir", "/", "directory under which to create the filesystem tree")
 	f.BoolVar(&c.createSymlink, "create-symlink", false, "create symlinks other than the first file per level")
 	f.BoolVar(&c.addEmptyFiles, "add-empty-files", false, "add empty file to each level")
+	f.Uint64Var(&c.seed, "seed", 0, "seed used for randomization")
 }
 
 // Execute implements subcommands.Command.Execute.
@@ -105,7 +115,7 @@ func (c *fsTreeCreator) Execute(ctx context.Context, f *flag.FlagSet, args ...an
 	}
 
 	data := make([]byte, c.fileSize)
-	gvisorrand.Read(data)
+	randRead(c.seed, data)
 	for i := uint(0); i < c.depth; i++ {
 		for j := uint(0); j < c.numFilesPerLevel; j++ {
 			filePath := filepath.Join(curDir, fmt.Sprintf("file%d", j))
@@ -128,6 +138,87 @@ func (c *fsTreeCreator) Execute(ctx context.Context, f *flag.FlagSet, args ...an
 		nextDir := filepath.Join(curDir, "dir")
 		if err := os.Mkdir(nextDir, 0777); err != nil {
 			log.Fatalf("error creating directory %q: %v", nextDir, err)
+		}
+		curDir = nextDir
+	}
+	return subcommands.ExitSuccess
+}
+
+func randRead(seed uint64, dst []byte) {
+	src := rand.NewPCG(seed, 0)
+	var buf [8]byte
+	for len(dst) != 0 {
+		u64 := src.Uint64()
+		binary.NativeEndian.PutUint64(buf[:], u64)
+		n := copy(dst, buf[:])
+		dst = dst[n:]
+	}
+}
+
+type fsTreeVerify struct {
+	fsTreeCommon
+}
+
+// Name implements subcommands.Command.Name.
+func (*fsTreeVerify) Name() string {
+	return "fsTreeVerify"
+}
+
+// Synopsis implements subcommands.Command.Synopsys.
+func (*fsTreeVerify) Synopsis() string {
+	return "verifies a filesystem tree created by fsTreeCreate with the same arguments"
+}
+
+// Usage implements subcommands.Command.Usage.
+func (*fsTreeVerify) Usage() string {
+	return "fsTreeVerify <flags>"
+}
+
+// Execute implements subcommands.Command.Execute.
+func (c *fsTreeVerify) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
+	curDir := c.targetDir
+	if stat, err := os.Lstat(curDir); err != nil {
+		log.Fatalf("Failed to stat directory %q: %v", curDir, err)
+	} else if !stat.IsDir() {
+		log.Fatalf("Directory %q has type %s", curDir, stat.Mode().Type())
+	}
+
+	dataWant := make([]byte, c.fileSize)
+	randRead(c.seed, dataWant)
+	for i := uint(0); i < c.depth; i++ {
+		for j := uint(0); j < c.numFilesPerLevel; j++ {
+			filePath := filepath.Join(curDir, fmt.Sprintf("file%d", j))
+			if c.createSymlink && j > 0 {
+				if stat, err := os.Lstat(filePath); err != nil {
+					log.Fatalf("Failed to stat file %q: %v", filePath, err)
+				} else if stat.Mode().Type() != os.ModeSymlink {
+					log.Fatalf("File %q has type %s, want symlink", filePath, stat.Mode().Type())
+				} else if target, err := os.Readlink(filePath); err != nil || target != "file0" {
+					log.Fatalf("Symlink %q: got target=%q, err=%v; want target=\"file0\"", filePath, target, err)
+				}
+			} else {
+				if data, err := os.ReadFile(filePath); err != nil {
+					log.Fatalf("Error reading file %q: %v", filePath, err)
+				} else if !bytes.Equal(data, dataWant) {
+					log.Fatalf("file %q has content %q, want %q", filePath, data, dataWant)
+				}
+			}
+		}
+		if c.addEmptyFiles {
+			emptyPath := filepath.Join(curDir, fmt.Sprintf("empty%d", i))
+			if stat, err := os.Lstat(emptyPath); err != nil {
+				log.Fatalf("Failed to stat file %q: %v", emptyPath, err)
+			} else if !stat.Mode().IsRegular() {
+				log.Fatalf("File %q has type %s, want regular file", emptyPath, stat.Mode().Type())
+			} else if stat.Size() != 0 {
+				log.Fatalf("File %q has size %d, want 0", emptyPath, stat.Size())
+			}
+		}
+		nextDir := filepath.Join(curDir, "dir")
+		if stat, err := os.Lstat(nextDir); err != nil {
+			log.Fatalf("Failed to stat directory %q: %v", nextDir, err)
+		} else if !stat.IsDir() {
+			log.Fatalf("Directory %q has type %s", nextDir, stat.Mode().Type())
 		}
 		curDir = nextDir
 	}

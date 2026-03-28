@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/runsc/cmd"
 	"gvisor.dev/gvisor/runsc/cmd/nvproxy"
 	"gvisor.dev/gvisor/runsc/cmd/trace"
+	"gvisor.dev/gvisor/runsc/cmd/util"
 )
 
 // Main is the main entrypoint.
@@ -29,34 +30,37 @@ func Main() {
 	cli.Run(cmds, helpCmds)
 }
 
-func commands() (map[subcommands.Command]string, []subcommands.Command) {
+func commands() (map[util.SubCommand]string, []subcommands.Command) {
 	const helperGroup = "helpers"
 	const debugGroup = "debug"
 	const metricGroup = "metrics"
 	const internalGroup = "internal use only"
 
-	return map[subcommands.Command]string{
+	return map[util.SubCommand]string{
 			// Register OCI user-facing runsc commands.
-			new(cmd.Checkpoint):  "",
-			new(cmd.Create):      "",
-			new(cmd.Delete):      "",
-			new(cmd.Do):          "",
-			new(cmd.Events):      "",
-			new(cmd.Exec):        "",
-			new(cmd.Kill):        "",
-			new(cmd.List):        "",
-			new(cmd.PS):          "",
-			new(cmd.Pause):       "",
-			new(cmd.PortForward): "",
-			new(cmd.Restore):     "",
-			new(cmd.Resume):      "",
-			new(cmd.Run):         "",
-			new(cmd.Spec):        "",
-			new(cmd.Start):       "",
-			new(cmd.State):       "",
-			new(cmd.Tar):         "",
-			new(cmd.Update):      "",
-			new(cmd.Wait):        "",
+			new(cmd.Checkpoint): "",
+			new(cmd.Create):     "",
+			new(cmd.Delete):     "",
+			new(cmd.Events):     "",
+			new(cmd.Exec):       "",
+			new(cmd.Kill):       "",
+			new(cmd.List):       "",
+			new(cmd.PS):         "",
+			new(cmd.Pause):      "",
+			new(cmd.Restore):    "",
+			new(cmd.Resume):     "",
+			new(cmd.Run):        "",
+			new(cmd.Spec):       "",
+			new(cmd.Start):      "",
+			new(cmd.State):      "",
+			new(cmd.Update):     "",
+			new(cmd.Wait):       "",
+
+			// Non-OCI user-facing runsc commands.
+			new(cmd.Do):           "",
+			new(cmd.FSCheckpoint): "",
+			new(cmd.PortForward):  "",
+			new(cmd.Tar):          "",
 
 			// Helpers.
 			new(cmd.Install):     helperGroup,

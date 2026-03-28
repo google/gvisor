@@ -61,11 +61,8 @@ class RawHDRINCL : public ::testing::Test {
 };
 
 void RawHDRINCL::SetUp() {
-  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability())) {
-    ASSERT_THAT(socket(AF_INET, SOCK_RAW, IPPROTO_RAW),
-                SyscallFailsWithErrno(EPERM));
-    GTEST_SKIP();
-  }
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HaveRawIPSocketCapability(AF_INET, IPPROTO_RAW)));
 
   ASSERT_THAT(socket_ = socket(AF_INET, SOCK_RAW, IPPROTO_RAW),
               SyscallSucceeds());
@@ -79,7 +76,8 @@ void RawHDRINCL::SetUp() {
 
 void RawHDRINCL::TearDown() {
   // TearDown will be run even if we skip the test.
-  if (ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability())) {
+  if (ASSERT_NO_ERRNO_AND_VALUE(
+          HaveRawIPSocketCapability(AF_INET, IPPROTO_RAW))) {
     EXPECT_THAT(close(socket_), SyscallSucceeds());
   }
 }
@@ -235,6 +233,8 @@ TEST_F(RawHDRINCL, BindToInvalid) {
 
 // Send and receive a packet.
 TEST_F(RawHDRINCL, SendAndReceive) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HaveRawIPSocketCapability(AF_INET, IPPROTO_UDP)));
   int port = 40000;
   if (!IsRunningOnGvisor()) {
     port = static_cast<short>(ASSERT_NO_ERRNO_AND_VALUE(
@@ -276,6 +276,8 @@ TEST_F(RawHDRINCL, SendAndReceive) {
 // Send and receive a packet where the sendto address is not the same as the
 // provided destination.
 TEST_F(RawHDRINCL, SendAndReceiveDifferentAddress) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HaveRawIPSocketCapability(AF_INET, IPPROTO_UDP)));
   int port = 40000;
   if (!IsRunningOnGvisor()) {
     port = static_cast<short>(ASSERT_NO_ERRNO_AND_VALUE(
@@ -328,6 +330,8 @@ TEST_F(RawHDRINCL, SendAndReceiveDifferentAddress) {
 
 // Send and receive a packet w/ the IP_HDRINCL option set.
 TEST_F(RawHDRINCL, SendAndReceiveIPHdrIncl) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HaveRawIPSocketCapability(AF_INET, IPPROTO_UDP)));
   int port = 40000;
   if (!IsRunningOnGvisor()) {
     port = static_cast<short>(ASSERT_NO_ERRNO_AND_VALUE(

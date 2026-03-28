@@ -20,6 +20,7 @@
 
 #include "gtest/gtest.h"
 #include "test/util/capability_util.h"
+#include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"

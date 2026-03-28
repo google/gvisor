@@ -143,13 +143,52 @@ func (l *lineDiscipline) getTermios(task *kernel.Task, args arch.SyscallArgument
 	return 0, err
 }
 
-// setTermios sets a linux.Termios for the tty.
-func (l *lineDiscipline) setTermios(task *kernel.Task, args arch.SyscallArguments) (uintptr, error) {
+// getTermios2 gets the linux.KernelTermios for the tty.
+func (l *lineDiscipline) getTermios2(task *kernel.Task, args arch.SyscallArguments) (uintptr, error) {
+	l.termiosMu.RLock()
+	defer l.termiosMu.RUnlock()
+	_, err := l.termios.CopyOut(task, args[2].Pointer())
+	return 0, err
+}
+
+// setTermios2 sets a linux.KernelTermios for the tty.
+func (l *lineDiscipline) setTermios2(task *kernel.Task, args arch.SyscallArguments) (uintptr, error) {
+	var t linux.KernelTermios
+	if _, err := t.CopyIn(task, args[2].Pointer()); err != nil {
+		return 0, err
+	}
+
 	l.termiosMu.Lock()
 	oldCanonEnabled := l.termios.LEnabled(linux.ICANON)
+	l.termios = t
+
+	// If canonical mode is turned off, move bytes from inQueue's wait
+	// buffer to its read buffer. Anything already in the read buffer is
+	// now readable.
+	if oldCanonEnabled && !l.termios.LEnabled(linux.ICANON) {
+		l.inQueue.mu.Lock()
+		l.inQueue.pushWaitBufLocked(l)
+		l.inQueue.readable = len(l.inQueue.readBuf) > 0
+		l.inQueue.mu.Unlock()
+		l.termiosMu.Unlock()
+		l.replicaWaiter.Notify(waiter.ReadableEvents)
+	} else {
+		l.termiosMu.Unlock()
+	}
+
+	return 0, nil
+}
+
+// setTermios sets a linux.Termios for the tty.
+func (l *lineDiscipline) setTermios(task *kernel.Task, args arch.SyscallArguments) (uintptr, error) {
 	// We must copy a Termios struct, not KernelTermios.
 	var t linux.Termios
-	_, err := t.CopyIn(task, args[2].Pointer())
+	if _, err := t.CopyIn(task, args[2].Pointer()); err != nil {
+		return 0, err
+	}
+
+	l.termiosMu.Lock()
+	oldCanonEnabled := l.termios.LEnabled(linux.ICANON)
 	l.termios.FromTermios(t)
 
 	// If canonical mode is turned off, move bytes from inQueue's wait
@@ -166,7 +205,7 @@ func (l *lineDiscipline) setTermios(task *kernel.Task, args arch.SyscallArgument
 		l.termiosMu.Unlock()
 	}
 
-	return 0, err
+	return 0, nil
 }
 
 func (l *lineDiscipline) windowSize(t *kernel.Task, args arch.SyscallArguments) error {
@@ -455,15 +494,28 @@ func (*inputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte)
 				cBytes[0] = '\r'
 			}
 		case l.termios.ControlCharacters[linux.VINTR]: // ctrl-c
-			// The input queue is reading from the master TTY and
-			// writing to the replica TTY which is connected to the
-			// interactive program (like bash). We want to send the
-			// signal the process connected to the replica TTY.
-			l.terminal.replicaKTTY.SignalForegroundProcessGroup(kernel.SignalInfoPriv(linux.SIGINT))
+			if l.termios.LEnabled(linux.ISIG) {
+				l.terminal.replicaKTTY.SignalForegroundProcessGroup(kernel.SignalInfoPriv(linux.SIGINT))
+				// In Linux, signal characters are consumed and not passed to
+				// the reading process. See n_tty.c:n_tty_receive_signal_char().
+				buf = buf[size:]
+				ret += size
+				continue
+			}
 		case l.termios.ControlCharacters[linux.VSUSP]: // ctrl-z
-			l.terminal.replicaKTTY.SignalForegroundProcessGroup(kernel.SignalInfoPriv(linux.SIGTSTP))
+			if l.termios.LEnabled(linux.ISIG) {
+				l.terminal.replicaKTTY.SignalForegroundProcessGroup(kernel.SignalInfoPriv(linux.SIGTSTP))
+				buf = buf[size:]
+				ret += size
+				continue
+			}
 		case l.termios.ControlCharacters[linux.VQUIT]: // ctrl-\
-			l.terminal.replicaKTTY.SignalForegroundProcessGroup(kernel.SignalInfoPriv(linux.SIGQUIT))
+			if l.termios.LEnabled(linux.ISIG) {
+				l.terminal.replicaKTTY.SignalForegroundProcessGroup(kernel.SignalInfoPriv(linux.SIGQUIT))
+				buf = buf[size:]
+				ret += size
+				continue
+			}
 
 		// In canonical mode, some characters need to be handled specially; for example, backspace.
 		// This roughly aligns with n_tty.c:n_tty_receive_char_canon and n_tty.c:eraser

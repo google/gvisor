@@ -478,7 +478,7 @@ func TestCreateMountNamespace(t *testing.T) {
 
 			l.mu.Lock()
 			defer l.mu.Unlock()
-			mntr := newContainerMounter(&l.root, l.k, l.mountHints, l.sharedMounts, "", l.sandboxID)
+			mntr := l.newContainerMounter(&l.root)
 			ctx := l.k.SupervisorContext()
 			creds := auth.NewRootCredentials(l.root.procArgs.Credentials.UserNamespace)
 			mns, err := mntr.mountAll(ctx, creds, l.root.spec, l.root.conf, &l.root.procArgs)
@@ -577,7 +577,7 @@ func TestCreateMountPoint(t *testing.T) {
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	mntr := newContainerMounter(&l.root, l.k, l.mountHints, l.sharedMounts, "", l.sandboxID)
+	mntr := l.newContainerMounter(&l.root)
 	ctx := l.k.SupervisorContext()
 	creds := auth.NewRootCredentials(l.root.procArgs.Credentials.UserNamespace)
 	mns, err := mntr.mountAll(ctx, creds, l.root.spec, l.root.conf, &l.root.procArgs)

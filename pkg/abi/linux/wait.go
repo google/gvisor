@@ -84,7 +84,8 @@ func (ws WaitStatus) Exited() bool {
 // with WIFSIGNALED.
 func (ws WaitStatus) Signaled() bool {
 	// ws&0x7f != 0 (exited) and ws&0x7f != 0x7f (stopped or continued)
-	return ((ws&0x7f)+1)>>1 != 0
+	bits := ws & 0x7f
+	return bits != 0 && bits != 0x7f
 }
 
 // CoreDumped returns true if ws indicates that a core dump was produced,

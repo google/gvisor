@@ -26,20 +26,6 @@ func (fd *vfioFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) erro
 	return vfs.GenericProxyDeviceConfigureMMap(&fd.vfsfd, fd, opts)
 }
 
-// AddMapping implements memmap.Mappable.AddMapping.
-func (fd *vfioFD) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
-	return nil
-}
-
-// RemoveMapping implements memmap.Mappable.RemoveMapping.
-func (fd *vfioFD) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
-}
-
-// CopyMapping implements memmap.Mappable.CopyMapping.
-func (fd *vfioFD) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, writable bool) error {
-	return nil
-}
-
 // Translate implements memmap.Mappable.Translate.
 func (fd *vfioFD) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
 	return []memmap.Translation{
@@ -50,34 +36,4 @@ func (fd *vfioFD) Translate(ctx context.Context, required, optional memmap.Mappa
 			Perms:  hostarch.AnyAccess,
 		},
 	}, nil
-}
-
-// InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
-func (fd *vfioFD) InvalidateUnsavable(ctx context.Context) error {
-	return nil
-}
-
-// +stateify savable
-type vfioFDMemmapFile struct {
-	memmap.NoMapInternal
-
-	fd *vfioFD
-}
-
-// IncRef implements memmap.File.IncRef.
-func (mf *vfioFDMemmapFile) IncRef(memmap.FileRange, uint32) {
-}
-
-// DecRef implements memmap.File.DecRef.
-func (mf *vfioFDMemmapFile) DecRef(fr memmap.FileRange) {
-}
-
-// DataFD implements memmap.File.DataFD.
-func (mf *vfioFDMemmapFile) DataFD(fr memmap.FileRange) (int, error) {
-	return mf.FD(), nil
-}
-
-// FD implements memmap.File.FD.
-func (mf *vfioFDMemmapFile) FD() int {
-	return int(mf.fd.hostFD)
 }

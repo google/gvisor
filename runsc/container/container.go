@@ -192,6 +192,12 @@ type Args struct {
 
 	// ExecFile is the host file used for program execution.
 	ExecFile *os.File
+
+	// If FSRestoreImagePath is non-empty, it is a path to a filesystem
+	// checkpoint that should be restored. FSRestoreImagePath may only be set
+	// for containers in a new Sandbox process.
+	FSRestoreImagePath string
+	FSRestoreDirect    bool
 }
 
 // New creates the container in a new Sandbox process, unless the metadata
@@ -212,11 +218,14 @@ func New(conf *config.Config, args Args) (*Container, error) {
 	}
 
 	sandboxID := args.ID
-	if !isRoot(args.Spec) {
+	if !specutils.IsRootContainer(args.Spec) {
 		var ok bool
 		sandboxID, ok = specutils.SandboxID(args.Spec)
 		if !ok {
 			return nil, fmt.Errorf("no sandbox ID found when creating container")
+		}
+		if args.FSRestoreImagePath != "" {
+			return nil, fmt.Errorf("cannot set FSRestoreImagePath when creating container in existing sandbox")
 		}
 	}
 
@@ -245,7 +254,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 	// containers with the same id.
 	if err := c.Saver.LockForNew(); err != nil {
 		// As we have not allocated any resources yet, we revoke the clean-up operation.
-		// Otherwise, we may accidently destroy an existing container.
+		// Otherwise, we may accidentally destroy an existing container.
 		cu.Release()
 		return nil, fmt.Errorf("cannot lock container metadata file: %w", err)
 	}
@@ -262,7 +271,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 	//   3. Container type == container: it means this is a subcontainer of an
 	//      already started sandbox. In this case, container ID is different than
 	//      the sandbox ID.
-	if isRoot(args.Spec) {
+	if specutils.IsRootContainer(args.Spec) {
 		log.Debugf("Creating new sandbox for container, cid: %s", args.ID)
 
 		if args.Spec.Linux == nil {
@@ -322,6 +331,8 @@ func New(conf *config.Config, args Args) (*Container, error) {
 				MountHints:          mountHints,
 				PassFiles:           args.PassFiles,
 				ExecFile:            args.ExecFile,
+				FSRestoreImagePath:  args.FSRestoreImagePath,
+				FSRestoreDirect:     args.FSRestoreDirect,
 			}
 			sand, err := sandbox.New(conf, sandArgs)
 			if err != nil {
@@ -445,7 +456,7 @@ func (c *Container) startImpl(conf *config.Config, action string, startRoot func
 		log.Warningf("StartContainer hook skipped because running inside container namespace is not supported")
 	}
 
-	if isRoot(c.Spec) {
+	if specutils.IsRootContainer(c.Spec) {
 		if err := startRoot(conf, c.Spec); err != nil {
 			return err
 		}
@@ -706,6 +717,26 @@ func (c *Container) WaitRestore() error {
 	return c.Sandbox.WaitRestore()
 }
 
+// WaitFSCheckpoint waits for a filesystem checkpoint to have successfully been
+// saved.
+func (c *Container) WaitFSCheckpoint() error {
+	log.Debugf("Waiting for filesystem checkpoint to complete in container, cid: %s", c.ID)
+	if !c.IsSandboxRunning() {
+		return fmt.Errorf("sandbox is not running")
+	}
+	return c.Sandbox.WaitFSCheckpoint()
+}
+
+// WaitFSRestore waits for filesystems to have been successfully restored from
+// checkpoint.
+func (c *Container) WaitFSRestore() error {
+	log.Debugf("Waiting for filesystem restore to complete in container, cid: %s", c.ID)
+	if !c.IsSandboxRunning() {
+		return fmt.Errorf("sandbox is not running")
+	}
+	return c.Sandbox.WaitFSRestore(c.ID)
+}
+
 // TarRootfsUpperLayer serializes the rootfs upper layer of the container to a tar file. When
 // the rootfs is not an overlayfs, it returns an error. It writes the tar file
 // to outFD.
@@ -774,6 +805,15 @@ func (c *Container) Checkpoint(conf *config.Config, imagePath string, opts sandb
 		return err
 	}
 	return c.Sandbox.Checkpoint(conf, c.ID, imagePath, opts)
+}
+
+// FSSave sends the filesystem checkpointing call to the container.
+func (c *Container) FSSave(conf *config.Config, imagePath string, opts sandbox.FSSaveOpts) error {
+	log.Debugf("Checkpoint container filesystem, cid: %s", c.ID)
+	if err := c.requireStatus("filesystem checkpoint", Created, Running, Paused); err != nil {
+		return err
+	}
+	return c.Sandbox.FSSave(conf, c.ID, imagePath, opts)
 }
 
 // Pause suspends the container and its kernel.
@@ -1015,10 +1055,6 @@ func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *boot.Pod
 		overlaySize = rootfsHint.Size
 	}
 	if c.Spec.Root.Readonly {
-		if specutils.RootfsTarUpperPath(c.Spec) != "" {
-			return fmt.Errorf("rootfs tar upper path is set but rootfs is readonly")
-		}
-		log.Debugf("Setting rootfs overlay to NoOverlay because rootfs is readonly")
 		overlayMedium = config.NoOverlay
 	}
 	goferConf, err := createGoferConf(overlayMedium, overlaySize, mountType, c.Spec.Root.Path)
@@ -1340,32 +1376,31 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 	donations := donation.Agency{}
 	defer donations.Close()
 
-	if err := donations.OpenAndDonate("log-fd", conf.LogFilename, os.O_CREATE|os.O_WRONLY|os.O_APPEND); err != nil {
+	if err := donations.DonateLogFile("log-fd", conf.LogFilename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, &log.DefaultFileOpts{}); err != nil {
 		return nil, nil, nil, nil, err
 	}
-	if conf.DebugLog != "" {
-		test := ""
-		if len(conf.TestOnlyTestNameEnv) != 0 {
-			// Fetch test name if one is provided and the test only flag was set.
-			if t, ok := specutils.EnvVar(c.Spec.Process.Env, conf.TestOnlyTestNameEnv); ok {
-				test = t
-			}
-		}
-		if specutils.IsDebugCommand(conf, "gofer") {
-			// The startTime here can mean one of two things:
-			// - If this is the first gofer started at the same time as the sandbox,
-			//   then this starttime will exactly match the one used by the sandbox
-			//   itself (i.e. `Sandbox.StartTime`). This is desirable, such that the
-			//   first gofer's log filename will have the exact same timestamp as
-			//   the sandbox's log filename timestamp.
-			// - If this is not the first gofer, then this starttime will be later
-			//   than the sandbox start time; this is desirable such that we can
-			//   distinguish the gofer log filenames between each other.
-			// In either case, `starttime.Get` gets us the timestamp we want.
-			startTime := starttime.Get()
-			if err := donations.DonateDebugLogFile("debug-log-fd", conf.DebugLog, "gofer", test, startTime); err != nil {
-				return nil, nil, nil, nil, err
-			}
+
+	// The startTime here can mean one of two things:
+	// - If this is the first gofer started at the same time as the sandbox,
+	//   then this starttime will exactly match the one used by the sandbox
+	//   itself (i.e. `Sandbox.StartTime`). This is desirable, such that the
+	//   first gofer's log filename will have the exact same timestamp as
+	//   the sandbox's log filename timestamp.
+	// - If this is not the first gofer, then this starttime will be later
+	//   than the sandbox start time; this is desirable such that we can
+	//   distinguish the gofer log filenames between each other.
+	// In either case, `starttime.Get` gets us the timestamp we want.
+	lfOpts := &specutils.LogFileOpts{
+		SandboxID: c.sandboxID(),
+		CID:       c.ID,
+		Command:   "gofer",
+		Timestamp: starttime.Get(),
+		Test:      specutils.TestName(conf, c.Spec),
+	}
+
+	if specutils.IsDebugCommand(conf, "gofer") {
+		if err := donations.DonateDebugLogFile("debug-log-fd", conf.DebugLog, lfOpts); err != nil {
+			return nil, nil, nil, nil, err
 		}
 	}
 
@@ -1400,7 +1435,7 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 	donations.DonateAndClose("spec-fd", specFile)
 
 	// Donate any profile FDs to the gofer.
-	if err := c.donateGoferProfileFDs(conf, &donations); err != nil {
+	if err := profile.DonateProfileFDs(conf, &donations, true /* isGofer */, lfOpts); err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("donating gofer profile fds: %w", err)
 	}
 
@@ -1663,11 +1698,7 @@ func (c *Container) requireStatus(action string, statuses ...Status) error {
 
 // IsSandboxRoot returns true if this container is its sandbox's root container.
 func (c *Container) IsSandboxRoot() bool {
-	return isRoot(c.Spec)
-}
-
-func isRoot(spec *specs.Spec) bool {
-	return specutils.SpecContainerType(spec) != specutils.ContainerTypeContainer
+	return specutils.IsRootContainer(c.Spec)
 }
 
 // adjustGoferOOMScoreAdj sets the oom_store_adj for the container's gofer.
@@ -1689,7 +1720,7 @@ func (c *Container) adjustGoferOOMScoreAdj() error {
 func adjustSandboxOOMScoreAdj(s *sandbox.Sandbox, spec *specs.Spec, rootDir string, destroy bool) error {
 	// Adjustment can be skipped if the root container is exiting, because it
 	// brings down the entire sandbox.
-	if isRoot(spec) && destroy {
+	if specutils.IsRootContainer(spec) && destroy {
 		return nil
 	}
 
@@ -1762,7 +1793,7 @@ func setOOMScoreAdj(pid int, scoreAdj int) error {
 			log.Warningf("Process (%d) exited while setting oom_score_adj", pid)
 			return nil
 		}
-		return fmt.Errorf("setting oom_score_adj to %q: %v", scoreAdj, err)
+		return fmt.Errorf("setting oom_score_adj to %d: %v", scoreAdj, err)
 	}
 	return nil
 }
@@ -1821,7 +1852,7 @@ func (c *Container) populateStats(event *boot.EventOut) {
 	total := float64(containerUsage) * (float64(cgroupsUsage) / float64(allContainersUsage))
 	log.Debugf("Usage, container: %d, cgroups: %d, all: %d, total: %.0f", containerUsage, cgroupsUsage, allContainersUsage, total)
 	event.Event.Data.CPU.Usage.Total = uint64(total)
-	return
+
 }
 
 func (c *Container) createParentCgroup(parentPath string, conf *config.Config) (cgroup.Cgroup, error) {
@@ -1882,7 +1913,7 @@ func (c *Container) setupCgroupForRoot(conf *config.Config, spec *specs.Spec) (c
 // host have no effect on them. However, some tools (e.g. cAdvisor) uses cgroups
 // paths to discover new containers and report stats for them.
 func (c *Container) setupCgroupForSubcontainer(conf *config.Config, spec *specs.Spec) (cgroup.Cgroup, error) {
-	if isRoot(spec) {
+	if specutils.IsRootContainer(spec) {
 		if _, ok := spec.Annotations[cgroupParentAnnotation]; !ok {
 			return nil, nil
 		}
@@ -1897,46 +1928,6 @@ func (c *Container) setupCgroupForSubcontainer(conf *config.Config, spec *specs.
 	}
 	// Use empty resources, just want the directory structure created.
 	return cgroupInstall(conf, cg, &specs.LinuxResources{})
-}
-
-// donateGoferProfileFDs will open profile files and donate their FDs to the
-// gofer.
-func (c *Container) donateGoferProfileFDs(conf *config.Config, donations *donation.Agency) error {
-	// The gofer profile files are named based on the provided flag, but
-	// suffixed with "gofer" and the container ID to avoid collisions with
-	// sentry profile files or profile files from other gofers.
-	//
-	// TODO(b/243183772): Merge gofer profile data with sentry profile data
-	// into a single file.
-	profSuffix := ".gofer." + c.ID
-	const profFlags = os.O_CREATE | os.O_WRONLY | os.O_TRUNC
-	profile.UpdatePaths(conf, starttime.Get())
-	if conf.ProfileBlock != "" {
-		if err := donations.OpenAndDonate("profile-block-fd", conf.ProfileBlock+profSuffix, profFlags); err != nil {
-			return err
-		}
-	}
-	if conf.ProfileCPU != "" {
-		if err := donations.OpenAndDonate("profile-cpu-fd", conf.ProfileCPU+profSuffix, profFlags); err != nil {
-			return err
-		}
-	}
-	if conf.ProfileHeap != "" {
-		if err := donations.OpenAndDonate("profile-heap-fd", conf.ProfileHeap+profSuffix, profFlags); err != nil {
-			return err
-		}
-	}
-	if conf.ProfileMutex != "" {
-		if err := donations.OpenAndDonate("profile-mutex-fd", conf.ProfileMutex+profSuffix, profFlags); err != nil {
-			return err
-		}
-	}
-	if conf.TraceFile != "" {
-		if err := donations.OpenAndDonate("trace-fd", conf.TraceFile+profSuffix, profFlags); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // cgroupInstall creates cgroups dir structure and sets their respective

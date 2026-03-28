@@ -59,6 +59,10 @@ def go_binary(name, static = False, pure = False, x_defs = None, **kwargs):
         x_defs: additional definitions.
         **kwargs: rest of the arguments are passed to _go_binary.
     """
+    if "noasan" in kwargs:
+        # no-op option, will need to do transitions when sanitizer configs are defined.
+        kwargs.pop("noasan")
+
     if static:
         kwargs["static"] = "on"
     if pure:
@@ -67,9 +71,11 @@ def go_binary(name, static = False, pure = False, x_defs = None, **kwargs):
         "//conditions:default": kwargs.pop("gc_goopts", []),
         "//tools:debug": kwargs.pop("gc_goopts", []) + ["-N", "-l"],
     })
+    base_gotags = kwargs.pop("gotags", [])
     kwargs["gotags"] = select({
-        "//conditions:default": kwargs.pop("gotags", []),
-        "//tools:debug": kwargs.pop("gotags", []) + ["debug"],
+        "//tools/bazeldefs:pagesize_64k": base_gotags + ["pagesize_64k"],
+        "//tools:debug": base_gotags + ["debug"],
+        "//conditions:default": base_gotags,
     })
     _go_binary(
         name = name,
@@ -119,6 +125,12 @@ def go_test(name, static = False, pure = False, library = None, **kwargs):
         kwargs["static"] = "on"
     if library:
         kwargs["embed"] = [library]
+    base_gotags = kwargs.pop("gotags", [])
+    kwargs["gotags"] = select({
+        "//tools/bazeldefs:pagesize_64k": base_gotags + ["pagesize_64k"],
+        "//tools:debug": base_gotags + ["debug"],
+        "//conditions:default": base_gotags,
+    })
     _go_test(
         name = name,
         **kwargs
@@ -163,13 +175,21 @@ def go_context(ctx, goos = None, goarch = None):
     # are available in all instances. Note that this includes the standard
     # library sources, which are analyzed by nogo.
     go_ctx = _go_context(ctx)
+
+    nogo_args = []
+    if go_ctx.mode.race:
+        nogo_args = nogo_args + ["-race"]
+    if go_ctx.mode.msan:
+        nogo_args = nogo_args + ["-msan"]
+
     return struct(
         env = dict(go_ctx.env, CGO_ENABLED = "0"),
         go = go_ctx.go,
         goarch = goarch or go_ctx.sdk.goarch,
         goos = goos or go_ctx.sdk.goos,
         gotags = go_ctx.tags,
-        nogo_args = [],
+        lang_version = "go" + go_ctx.sdk.version,  # go_ctx.sdk.version excludes the go prefix.
+        nogo_args = nogo_args,
         runfiles = depset([go_ctx.go] + go_ctx.sdk.srcs.to_list() + go_ctx.sdk.tools.to_list() + go_ctx.stdlib.libs.to_list()),
         stdlib_srcs = go_ctx.sdk.srcs,
     )
@@ -267,3 +287,6 @@ def go_imports(name, src, out):
         src = src,
         out = out,
     )
+
+def nogo_extra_proto_deps(target):
+    return []

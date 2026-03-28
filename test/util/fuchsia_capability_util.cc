@@ -45,23 +45,23 @@ PosixErrorOr<bool> HaveSocketCapability(int domain, int type, int protocol) {
 
 }  // namespace
 
-PosixErrorOr<bool> HaveRawIPSocketCapability() {
+PosixErrorOr<bool> HaveRawIPSocketCapability(int family, int protocol) {
   static PosixErrorOr<bool> result(false);
   static std::once_flag once;
 
   std::call_once(once, [&]() {
-    result = HaveSocketCapability(AF_INET, SOCK_RAW, IPPROTO_UDP);
+    result = HaveSocketCapability(family, SOCK_RAW, protocol);
   });
 
   return result;
 }
 
-PosixErrorOr<bool> HavePacketSocketCapability() {
+PosixErrorOr<bool> HavePacketSocketCapability(int type, int protocol) {
   static PosixErrorOr<bool> result(false);
   static std::once_flag once;
 
   std::call_once(once, [&]() {
-    result = HaveSocketCapability(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+    result = HaveSocketCapability(AF_PACKET, type, htons(protocol));
   });
 
   return result;

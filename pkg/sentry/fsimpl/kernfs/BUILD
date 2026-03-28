@@ -120,7 +120,6 @@ go_library(
         "fstree.go",
         "inode_impl_util.go",
         "kernfs.go",
-        "mmap_util.go",
         "save_restore.go",
         "slot_list.go",
         "static_directory_refs.go",

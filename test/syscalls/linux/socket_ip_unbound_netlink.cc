@@ -28,6 +28,7 @@
 #include "test/syscalls/linux/socket_netlink_route_util.h"
 #include "test/syscalls/linux/socket_netlink_util.h"
 #include "test/util/capability_util.h"
+#include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
 #include "test/util/socket_util.h"

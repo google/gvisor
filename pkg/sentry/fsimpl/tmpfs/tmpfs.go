@@ -30,12 +30,15 @@
 package tmpfs
 
 import (
+	"archive/tar"
+	"bytes"
 	"fmt"
+	"io"
 	"math"
-	"os"
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -67,7 +70,7 @@ type filesystem struct {
 
 	// mf is used to allocate memory that stores regular file contents. mf is
 	// immutable, except it is changed during restore.
-	mf *pgalloc.MemoryFile `state:".(string)"`
+	mf *pgalloc.MemoryFile `state:".(checkpoint.ResourceID)"`
 
 	// clock is a realtime clock used to set timestamps in file operations.
 	clock ktime.Clock
@@ -155,9 +158,14 @@ type FilesystemOpts struct {
 	// tmpfs mount will allow.
 	AllowXattrPrefix []string
 
-	// SourceTarFD is the file descriptor of the source tar file to be untarred
-	// into the tmpfs.
-	SourceTarFile *os.File
+	// SourceTar is the source tar file to be untarred into the tmpfs.
+	// Ownership is transferred to GetFilesystem, whether or not it returns an
+	// error. If SourceTarFSCheckpoint is true, SourceTar was produced by a
+	// call to FSCheckpoint, and the caller is responsible for restoring
+	// MemoryFile's contents; otherwise, SourceTar was produced by a call to
+	// TarWrite.
+	SourceTar             io.ReadCloser
+	SourceTarFSCheckpoint bool
 }
 
 // Default size limit mount option. It is immutable after initialization.
@@ -216,6 +224,9 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		}
 		for _, xattr := range tmpfsOpts.AllowXattrPrefix {
 			allowXattrPrefix[xattr] = struct{}{}
+		}
+		if tmpfsOpts.SourceTar != nil {
+			defer tmpfsOpts.SourceTar.Close()
 		}
 	}
 
@@ -279,7 +290,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		// as Linux allocates memory in terms of Page size.
 		maxSizeInPages, ok = hostarch.ToPagesRoundUp(maxSizeInBytes)
 		if !ok {
-			ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: Pages RoundUp Overflow error: %q", ok)
+			ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: Pages RoundUp Overflow error: %v", ok)
 			return nil, nil, linuxerr.EINVAL
 		}
 	}
@@ -327,13 +338,24 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	}
 	fs.root = root
 
-	if tmpfsOptsOk && tmpfsOpts.SourceTarFile != nil {
-		defer tmpfsOpts.SourceTarFile.Close()
-
-		if err := fs.UntarUpperLayer(ctx, tmpfsOpts.SourceTarFile); err != nil {
+	if tmpfsOptsOk && tmpfsOpts.SourceTar != nil {
+		var cb tarReaderCallbacks
+		if tmpfsOpts.SourceTarFSCheckpoint {
+			cb = &fsckptTarReaderCallbacks{
+				fs:           &fs,
+				regularFiles: make(map[*tar.Header]*fsckptRegularFile),
+			}
+		} else {
+			cb = &tarDefaultReaderCallbacks{
+				headerToContent: make(map[*tar.Header]*bytes.Buffer),
+			}
+		}
+		timeUntarStart := time.Now()
+		if err := fs.tarRead(ctx, tmpfsOpts.SourceTar, cb); err != nil {
 			fs.vfsfs.DecRef(ctx)
 			return nil, nil, err
 		}
+		ctx.Infof("tmpfs.filesystem: loaded SourceTar in %s", time.Since(timeUntarStart))
 	}
 
 	return &fs.vfsfs, &root.vfsd, nil
@@ -350,9 +372,9 @@ func (fs *filesystem) Release(ctx context.Context) {
 		fs.ovlWhiteout.inode.decLinksLocked(ctx)
 	}
 	fs.mu.Unlock()
-	if fs.mf.RestoreID() != "" {
-		// If RestoreID is set, then this is a private MemoryFile which needs to be
-		// destroyed since this tmpfs is the only user.
+	if fs.mf.ResourceID().Ok() {
+		// If ResourceID is set, then this is a private MemoryFile which needs
+		// to be destroyed since this tmpfs is the only user.
 		fs.mf.Destroy()
 	}
 }
@@ -530,7 +552,7 @@ func (i *inode) init(impl any, fs *filesystem, kuid auth.KUID, kgid auth.KGID, m
 	// Inherit the group and setgid bit as in fs/inode.c:inode_init_owner().
 	if parentDir != nil && parentDir.inode.mode.Load()&linux.S_ISGID == linux.S_ISGID {
 		kgid = auth.KGID(parentDir.inode.gid.Load())
-		if mode&linux.S_IFDIR == linux.S_IFDIR {
+		if mode&linux.S_IFMT == linux.S_IFDIR {
 			mode |= linux.S_ISGID
 		}
 	}

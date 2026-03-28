@@ -58,6 +58,7 @@ import (
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	fslock "gvisor.dev/gvisor/pkg/sentry/fsimpl/lock"
 	"gvisor.dev/gvisor/pkg/sentry/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -410,9 +411,9 @@ const (
 //
 // +stateify savable
 type InternalFilesystemOptions struct {
-	// If UniqueID is non-empty, it is an opaque string used to reassociate the
-	// filesystem with a new server FD during restoration from checkpoint.
-	UniqueID vfs.RestoreID
+	// If UniqueID is non-empty, it is used to reassociate the filesystem with
+	// a new server FD during restoration from checkpoint.
+	UniqueID checkpoint.ResourceID
 
 	// If LeakConnection is true, do not close the connection to the server
 	// when the Filesystem is released. This is necessary for deployments in
@@ -929,8 +930,16 @@ type inode struct {
 	// to store file data for save/restore.
 	savedDeletedData []byte
 
-	// pf implements memmap.File for mappings of hostFD.
-	pf inodePlatformFile
+	// mmapFile implements memmap.File for mmapFD.
+	//
+	// Note that mmapFile.FD() does not necessarily match mmapFD. The latter
+	// can transition from a non-negative FD to -1 when a write-only FD is
+	// obtained for an inode previously opened read-only, but the former
+	// cannot. Thus, mmapFD == -1 indicates that *new* mappings of the inode
+	// must use the sentry page cache rather than mapping a host FD, while
+	// mmapFile.FD() == (read-only FD) is needed to ensure that *old*
+	// translations to mmapFile continue to work correctly until invalidated.
+	mmapFile fsutil.MmapCachedFile
 
 	// If this inode represents a symbolic link, InteropModeShared is not in
 	// effect, and haveTarget is true, target is the symlink target. haveTarget
@@ -978,7 +987,7 @@ type inode struct {
 
 func (i *inode) init(impl any) {
 	i.refs.InitRefs()
-	i.pf.inode = i
+	i.mmapFile.SetFD(-1)
 	// Nested impl-inheritance pattern. In memory it looks like:
 	// [[ inode ] inodeImpl ]
 	i.impl = impl
@@ -1023,16 +1032,21 @@ func (i *inode) destroy(ctx context.Context, d *dentry) {
 	// Close any resources held by the implementation.
 	i.destroyImpl(ctx, d)
 
+	// Close FDs, other than what is owned by i.mmapFile.
 	// Can use RacyLoad() because handleMu is locked.
-	if i.readFD.RacyLoad() >= 0 {
-		_ = unix.Close(int(i.readFD.RacyLoad()))
+	realMmapFD := i.mmapFile.FD()
+	readFD := int(i.readFD.RacyLoad())
+	if readFD >= 0 && readFD != realMmapFD {
+		_ = unix.Close(int(readFD))
 	}
-	if i.writeFD.RacyLoad() >= 0 && i.readFD.RacyLoad() != i.writeFD.RacyLoad() {
-		_ = unix.Close(int(i.writeFD.RacyLoad()))
+	if writeFD := int(i.writeFD.RacyLoad()); writeFD >= 0 && readFD != writeFD && writeFD != realMmapFD {
+		_ = unix.Close(writeFD)
 	}
 	i.readFD.Store(-1)
 	i.writeFD.Store(-1)
 	i.mmapFD.Store(-1)
+
+	i.mmapFile.MappableRelease() // eventually closes realMmapFD
 }
 
 // dentry implements vfs.DentryImpl.
@@ -2007,48 +2021,56 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 			// Replace existing FDs with this one.
 			if d.inode.readFD.RacyLoad() >= 0 {
 				// We already have a readable FD that may be in use by
-				// concurrent callers of d.inode.pf.FD().
+				// concurrent callers of d.inode.mmapFile.FD(). Use dup3 to
+				// make the old file descriptor refer to the new file
+				// description, then close the new file descriptor (which is no
+				// longer needed).
+				if err := unix.Dup3(int(h.fd), int(d.inode.readFD.RacyLoad()), unix.O_CLOEXEC); err != nil {
+					oldFD := d.inode.readFD.RacyLoad()
+					d.inode.handleMu.Unlock()
+					ctx.Warningf("gofer.dentry.ensureSharedHandle: failed to dup fd %d to fd %d: %v", h.fd, oldFD, err)
+					h.close(ctx)
+					return err
+				}
+				// If overlayfsStaleRead is in effect, then the new FD may not
+				// be coherent with the existing one, so we have no choice but
+				// to switch to mappings of the new FD in both the application
+				// and sentry. Otherwise, racing callers of
+				// d.inode.mmapFile.FD() may use the old or new file
+				// description, but this doesn't matter since they refer to the
+				// same file, and any racing mappings must be read-only. Thus
+				// we can avoid invalidating existing translations, which is
+				// expensive.
 				if d.inode.fs.opts.overlayfsStaleRead {
-					// If overlayfsStaleRead is in effect, then the new FD
-					// may not be coherent with the existing one, so we
-					// have no choice but to switch to mappings of the new
-					// FD in both the application and sentry.
-					if err := d.inode.pf.hostFileMapper.RegenerateMappings(int(h.fd)); err != nil {
+					if err := d.inode.mmapFile.RegenerateMappings(); err != nil {
 						d.inode.handleMu.Unlock()
 						ctx.Warningf("gofer.dentry.ensureSharedHandle: failed to replace sentry mappings of old FD with mappings of new FD: %v", err)
 						h.close(ctx)
 						return err
 					}
-					fdsToClose = append(fdsToClose, d.inode.readFD.RacyLoad())
 					invalidateTranslations = true
-					d.inode.readFD.Store(h.fd)
-				} else {
-					// Otherwise, we want to avoid invalidating existing
-					// memmap.Translations (which is expensive); instead, use
-					// dup3 to make the old file descriptor refer to the new
-					// file description, then close the new file descriptor
-					// (which is no longer needed). Racing callers of d.inode.pf.FD()
-					// may use the old or new file description, but this
-					// doesn't matter since they refer to the same file, and
-					// any racing mappings must be read-only.
-					if err := unix.Dup3(int(h.fd), int(d.inode.readFD.RacyLoad()), unix.O_CLOEXEC); err != nil {
-						oldFD := d.inode.readFD.RacyLoad()
-						d.inode.handleMu.Unlock()
-						ctx.Warningf("gofer.dentry.ensureSharedHandle: failed to dup fd %d to fd %d: %v", h.fd, oldFD, err)
-						h.close(ctx)
-						return err
-					}
-					fdsToClose = append(fdsToClose, h.fd)
-					h.fd = d.inode.readFD.RacyLoad()
 				}
+				fdsToClose = append(fdsToClose, h.fd)
+				h.fd = d.inode.readFD.RacyLoad()
 			} else {
 				d.inode.readFD.Store(h.fd)
 			}
-			if d.inode.writeFD.RacyLoad() != h.fd && d.inode.writeFD.RacyLoad() >= 0 {
-				fdsToClose = append(fdsToClose, d.inode.writeFD.RacyLoad())
+			if oldWriteFD := d.inode.writeFD.RacyLoad(); oldWriteFD != h.fd {
+				if oldWriteFD >= 0 {
+					fdsToClose = append(fdsToClose, oldWriteFD)
+				}
+				d.inode.writeFD.Store(h.fd)
 			}
-			d.inode.writeFD.Store(h.fd)
-			d.inode.mmapFD.Store(h.fd)
+			// d.inode.mmapFD may be negative, or equal to the old value of
+			// d.inode.readFD. (It cannot be equal to the old value of
+			// d.inode.writeFD unless that old value is negative, since
+			// d.inode.mmapFD can't be set to a write-only FD.) In the latter
+			// case, we already dup3'd h.fd over d.inode.readFD. So we only
+			// need to handle the former case here.
+			if d.inode.mmapFD.RacyLoad() < 0 {
+				d.inode.mmapFD.Store(h.fd)
+				d.inode.mmapFile.SetFD(int(h.fd))
+			}
 		} else if openReadable && d.inode.readFD.RacyLoad() < 0 {
 			readHandleWasOk := d.inode.isReadHandleOk()
 			d.inode.readFD.Store(h.fd)
@@ -2060,6 +2082,7 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 			if !d.inode.isWriteHandleOk() {
 				invalidateTranslations = readHandleWasOk
 				d.inode.mmapFD.Store(h.fd)
+				d.inode.mmapFile.SetFD(int(h.fd))
 			}
 		} else if openWritable && d.inode.writeFD.RacyLoad() < 0 {
 			d.inode.writeFD.Store(h.fd)

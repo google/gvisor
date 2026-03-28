@@ -110,7 +110,7 @@ func (cc *Crictl) Create(podID, contSpecFile, sbSpecFile string) (string, error)
 	if err != nil {
 		return "", err
 	}
-	r := regexp.MustCompile("crictl version ([0-9]+)\\.([0-9]+)\\.([0-9+])")
+	r := regexp.MustCompile(`crictl version ([0-9]+)\.([0-9]+)\.([0-9+])`)
 	vs := r.FindStringSubmatch(out)
 	if len(vs) != 4 {
 		return "", fmt.Errorf("crictl -v had unexpected output: %s", out)

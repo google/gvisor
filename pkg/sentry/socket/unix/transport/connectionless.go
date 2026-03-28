@@ -36,6 +36,7 @@ type connectionlessEndpoint struct {
 	baseEndpoint
 	closerStack    [32]uintptr
 	closerStackLen int
+	closerStackStr string
 }
 
 var (
@@ -73,6 +74,9 @@ func (e *connectionlessEndpoint) Close(ctx context.Context) {
 
 	e.receiver.CloseRecv()
 	r := e.receiver
+	if e.closerStackStr != "" {
+		panic(fmt.Sprintf("connectionlessEndpoint closed again after being closed before save:\n%s", e.closerStackStr))
+	}
 	e.closerStackLen = runtime.Callers(0, e.closerStack[:])
 	e.receiver = nil
 	e.Unlock()
@@ -206,6 +210,9 @@ func (e *connectionlessEndpoint) Readiness(mask waiter.EventMask) waiter.EventMa
 		if e.closerStackLen == 0 {
 			panic("connectionlessEndpoint.Readiness called with receiver=nil; no closer stack available")
 		}
+		if len(e.closerStackStr) != 0 {
+			panic(fmt.Sprintf("connectionlessEndpoint.Readiness called with receiver=nil; closerStackStr:\n%s", e.closerStackStr))
+		}
 		frames := runtime.CallersFrames(e.closerStack[:e.closerStackLen])
 		var b strings.Builder
 		for {
@@ -215,7 +222,7 @@ func (e *connectionlessEndpoint) Readiness(mask waiter.EventMask) waiter.EventMa
 				break
 			}
 		}
-		panic(fmt.Sprintf("connectionlessEndpoint.Readiness called with receiver=nil; closer:\n%s", b.String()))
+		panic(fmt.Sprintf("connectionlessEndpoint.Readiness called with receiver=nil; closerStack:\n%s", b.String()))
 	}
 	ready := waiter.EventMask(0)
 	if mask&waiter.ReadableEvents != 0 && e.receiver.Readable() {

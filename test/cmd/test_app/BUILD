@@ -11,6 +11,7 @@ go_binary(
     srcs = [
         "fds.go",
         "main.go",
+        "main_impl.go",
         "zombies.go",
     ],
     features = ["fully_static_link"],
@@ -20,12 +21,11 @@ go_binary(
     ],
     deps = [
         "//pkg/gvisordetect",
-        "//pkg/rand",
         "//pkg/test/testutil",
         "//pkg/unet",
         "//runsc/flag",
+        "@com_github_creack_pty//:go_default_library",
         "@com_github_google_subcommands//:go_default_library",
-        "@com_github_kr_pty//:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

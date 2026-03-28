@@ -281,9 +281,13 @@ func (mm *MemoryManager) DecUsers(ctx context.Context) {
 		exe.DecRef(ctx)
 	}
 
-	// User count 0 => no concurrent access to mm.as.
-	mm.as.Release()
-	mm.as = nil
+	mm.activeMu.Lock()
+	// Make sure the AddressSpace is returned.
+	if mm.as != nil {
+		mm.as.Release()
+		mm.as = nil
+	}
+	mm.activeMu.Unlock()
 
 	var droppedIDs []memmap.MappingIdentity
 	mm.mappingMu.Lock()

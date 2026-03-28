@@ -351,7 +351,7 @@ func (c *Client) SndRcvMessage(m MID, payloadLen uint32, reqMarshal marshalFunc,
 		// Copy it into the caller's buffer.
 		numFDCopied := copy(respFDs, rcvFDs)
 		if numFDCopied < numRcvFDs {
-			log.Warningf("%d unexpected FDs were donated by the server, wanted", numRcvFDs-numFDCopied, wantFDs)
+			log.Warningf("%d unexpected FDs were donated by the server, wanted %d", numRcvFDs-numFDCopied, wantFDs)
 			closeFDs(rcvFDs[numFDCopied:])
 		}
 		if numFDCopied < wantFDs {

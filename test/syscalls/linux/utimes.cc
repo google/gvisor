@@ -22,11 +22,17 @@
 #include <utime.h>
 
 #include <cerrno>
+#include <cstdint>
+#include <functional>
+#include <iostream>
 #include <string>
 
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "absl/time/time.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 
@@ -344,6 +350,33 @@ TEST(Utimensat, NullPath) {
   EXPECT_EQ(20, statbuf.st_mtime);
 }
 
+TEST(UtimensatTest, AtEmptyPath) {
+  auto parent = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string filename = "file";
+  const std::string path = JoinPath(parent.path(), filename);
+  std::string contents = "junk";
+  ASSERT_NO_ERRNO(CreateWithContents(path, contents, 0666));
+
+  const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(path, O_RDWR));
+  const FileDescriptor parent_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(parent.path(), O_RDONLY | O_DIRECTORY));
+
+  // Empty path + AT_EMPTY_PATH.
+  EXPECT_THAT(utimensat(fd.get(), "", nullptr, AT_EMPTY_PATH),
+              SyscallSucceeds());
+  const struct timespec times[2] = {{10, 0}, {20, 0}};
+  EXPECT_THAT(utimensat(fd.get(), "", times, AT_EMPTY_PATH), SyscallSucceeds());
+  struct stat statbuf;
+  EXPECT_THAT(fstatat(fd.get(), "", &statbuf, AT_EMPTY_PATH),
+              SyscallSucceeds());
+  EXPECT_EQ(10, statbuf.st_atime);
+  EXPECT_EQ(20, statbuf.st_mtime);
+
+  // Non-empty path + AT_EMPTY_PATH.
+  EXPECT_THAT(
+      utimensat(parent_fd.get(), filename.c_str(), nullptr, AT_EMPTY_PATH),
+      SyscallSucceeds());
+}
 }  // namespace
 
 }  // namespace testing

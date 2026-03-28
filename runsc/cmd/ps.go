@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"github.com/google/subcommands"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
@@ -28,6 +29,7 @@ import (
 
 // PS implements subcommands.Command for the "ps" command.
 type PS struct {
+	containerLoader
 	format string
 }
 
@@ -51,6 +53,15 @@ func (ps *PS) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&ps.format, "format", "table", "output format. Select one of: table or json (default: table)")
 }
 
+// FetchSpec implements util.SubCommand.FetchSpec.
+func (ps *PS) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error) {
+	c, err := ps.loadContainer(conf, f, container.LoadOpts{SkipCheck: true})
+	if err != nil {
+		return "", nil, fmt.Errorf("loading container: %w", err)
+	}
+	return c.ID, c.Spec, nil
+}
+
 // Execute implements subcommands.Command.Execute.
 func (ps *PS) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if f.NArg() != 1 {
@@ -58,12 +69,11 @@ func (ps *PS) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcomm
 		return subcommands.ExitUsageError
 	}
 
-	id := f.Arg(0)
 	conf := args[0].(*config.Config)
 
-	c, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{SkipCheck: true})
+	c, err := ps.loadContainer(conf, f, container.LoadOpts{SkipCheck: true})
 	if err != nil {
-		util.Fatalf("loading sandbox: %v", err)
+		util.Fatalf("loading container: %v", err)
 	}
 	pList, err := c.Processes()
 	if err != nil {

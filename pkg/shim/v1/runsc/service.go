@@ -109,7 +109,7 @@ type runscService struct {
 	platform stdio.Platform
 
 	// opts are configuration options specific for this shim.
-	opts options
+	opts Options
 
 	// ex gets notified whenever the container init process or an exec'd process
 	// exits from inside the sandbox.
@@ -176,7 +176,7 @@ func (s *runscService) Cleanup(ctx context.Context) (*taskAPI.DeleteResponse, er
 	if err := r.Delete(ctx, s.id, &runsccmd.DeleteOpts{
 		Force: true,
 	}); err != nil {
-		log.L.Infof("failed to remove runc container: %v", err)
+		log.L.Infof("failed to remove runsc container: %v", err)
 	}
 	if err := mount.UnmountAll(st.Rootfs, 0); err != nil {
 		log.L.Infof("failed to cleanup rootfs mount: %v", err)
@@ -201,11 +201,16 @@ func (s *runscService) getContainer(id string) (*Container, error) {
 // Create creates a new initial process and container with the underlying OCI
 // runtime.
 func (s *runscService) Create(ctx context.Context, r *taskAPI.CreateTaskRequest) (*taskAPI.CreateTaskResponse, error) {
+	return s.CreateWithFSRestore(ctx, &extension.CreateWithFSRestoreRequest{
+		Create: r,
+	})
+}
+
+// CreateWithFSRestore is the same as Create, but it additionally restores the
+// container's filesystem from a snapshot.
+func (s *runscService) CreateWithFSRestore(ctx context.Context, rfs *extension.CreateWithFSRestoreRequest) (*taskAPI.CreateTaskResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	// Save the main task id and bundle to the shim for additional requests.
-	s.id = r.ID
 
 	ns, err := namespaces.NamespaceRequired(ctx)
 	if err != nil {
@@ -213,6 +218,7 @@ func (s *runscService) Create(ctx context.Context, r *taskAPI.CreateTaskRequest)
 	}
 
 	// Read from root for now.
+	r := rfs.Create
 	if r.Options != nil {
 		v, err := typeurl.UnmarshalAny(r.Options)
 		if err != nil {
@@ -244,11 +250,6 @@ func (s *runscService) Create(ctx context.Context, r *taskAPI.CreateTaskRequest)
 			return nil, err
 		}
 		logrus.SetLevel(lvl)
-	}
-	for _, emittedPath := range runsccmd.EmittedPaths(r.ID, s.opts.RunscConfig) {
-		if err := os.MkdirAll(filepath.Dir(emittedPath), 0777); err != nil {
-			return nil, fmt.Errorf("failed to create parent directories for file %v: %w", emittedPath, err)
-		}
 	}
 	if len(s.opts.LogPath) != 0 {
 		logPath := runsccmd.FormatShimLogPath(s.opts.LogPath, r.ID)
@@ -324,16 +325,18 @@ func (s *runscService) Create(ctx context.Context, r *taskAPI.CreateTaskRequest)
 	}
 
 	config := &proc.CreateConfig{
-		ID:       r.ID,
-		Bundle:   r.Bundle,
-		Runtime:  s.opts.BinaryName,
-		Rootfs:   mounts,
-		Terminal: r.Terminal,
-		Stdin:    r.Stdin,
-		Stdout:   r.Stdout,
-		Stderr:   r.Stderr,
+		ID:                 r.ID,
+		Bundle:             r.Bundle,
+		Runtime:            s.opts.BinaryName,
+		Rootfs:             mounts,
+		Terminal:           r.Terminal,
+		Stdin:              r.Stdin,
+		Stdout:             r.Stdout,
+		Stderr:             r.Stderr,
+		FSRestoreImagePath: rfs.Conf.ImagePath,
+		FSRestoreDirect:    rfs.Conf.Direct,
 	}
-	process, err := newInit(r.Bundle, filepath.Join(r.Bundle, "work"), ns, s.platform, config, &s.opts, st.Rootfs)
+	process, err := newInit(filepath.Join(r.Bundle, "work"), ns, s.platform, config, &s.opts, st.Rootfs)
 	if err != nil {
 		return nil, err
 	}
@@ -406,8 +409,17 @@ func (s *runscService) Delete(ctx context.Context, r *taskAPI.DeleteRequest) (*t
 	if err != nil {
 		return nil, errdefs.ToGRPC(err)
 	}
-	if r.ExecID == "" && s.platform != nil {
-		s.platform.Close()
+
+	// ExecID will be empty for init container process.
+	if len(r.ExecID) == 0 {
+		s.mu.Lock()
+		delete(s.containers, r.ID)
+		hasCont := len(s.containers) > 0
+		s.mu.Unlock()
+
+		if !hasCont && s.platform != nil {
+			s.platform.Close()
+		}
 	}
 	return &taskAPI.DeleteResponse{
 		ExitStatus: uint32(p.ExitStatus()),
@@ -614,7 +626,12 @@ func (s *runscService) Connect(ctx context.Context, r *taskAPI.ConnectRequest) (
 }
 
 func (s *runscService) Shutdown(ctx context.Context, r *taskAPI.ShutdownRequest) (*types.Empty, error) {
-	return nil, nil
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.containers) > 0 {
+		return empty, fmt.Errorf("containers are still running, shim cannot be shutdown")
+	}
+	return empty, nil
 }
 
 func (s *runscService) Stats(ctx context.Context, r *taskAPI.StatsRequest) (*taskAPI.StatsResponse, error) {
@@ -862,7 +879,7 @@ func getTopic(e any) string {
 	return runtime.TaskUnknownTopic
 }
 
-func newInit(path, workDir, namespace string, platform stdio.Platform, r *proc.CreateConfig, options *options, rootfs string) (*proc.Init, error) {
+func newInit(workDir, namespace string, platform stdio.Platform, r *proc.CreateConfig, options *Options, rootfs string) (*proc.Init, error) {
 	spec, err := utils.ReadSpec(r.Bundle)
 	if err != nil {
 		return nil, fmt.Errorf("read oci spec: %w", err)
@@ -880,8 +897,7 @@ func newInit(path, workDir, namespace string, platform stdio.Platform, r *proc.C
 		}
 	}
 
-	runsccmd.FormatRunscPaths(r.ID, options.RunscConfig)
-	runtime := proc.NewRunsc(options.Root, path, namespace, options.BinaryName, options.RunscConfig, spec)
+	runtime := proc.NewRunsc(options.Root, r.Bundle, namespace, options.BinaryName, options.RunscConfig, spec)
 	p := proc.New(r.ID, runtime, stdio.Stdio{
 		Stdin:    r.Stdin,
 		Stdout:   r.Stdout,

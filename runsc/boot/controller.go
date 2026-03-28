@@ -66,6 +66,9 @@ const (
 	// ContMgrExecuteAsync executes a command in a container.
 	ContMgrExecuteAsync = "containerManager.ExecuteAsync"
 
+	// ContMgrFSSave saves a filesystem checkpoint.
+	ContMgrFSSave = "containerManager.FSSave"
+
 	// ContMgrGetSavings gets the savings for restored sandboxes.
 	ContMgrGetSavings = "containerManager.GetSavings"
 
@@ -106,6 +109,14 @@ const (
 
 	// ContMgrWaitRestore waits for the Kernel restore to complete.
 	ContMgrWaitRestore = "containerManager.WaitRestore"
+
+	// ContMgrWaitFSCheckpoint waits for the next filesystem checkpoint save to
+	// complete.
+	ContMgrWaitFSCheckpoint = "containerManager.WaitFSCheckpoint"
+
+	// ContMgrWaitFSRestore waits for filesystem checkpoint restore to complete
+	// for all current containers.
+	ContMgrWaitFSRestore = "containerManager.WaitFSRestore"
 
 	// ContMgrRootContainerStart starts a new sandbox with a root container.
 	ContMgrRootContainerStart = "containerManager.StartRoot"
@@ -379,6 +390,12 @@ func (cm *containerManager) StartSubcontainer(args *StartArgs, _ *struct{}) erro
 	state := cm.l.state
 	cm.l.mu.Unlock()
 	if state != started {
+		if state == restoringUnstarted {
+			// Translate the `runsc start` to `runsc restore`.
+			// TODO(b/441106898): Move this to the shim once single-shim-per-pod is implemented.
+			log.Warningf("StartSubcontainer called on a restoring sandbox, restoring subcontainer instead: id=%s", args.CID)
+			return cm.RestoreSubcontainer(args, nil)
+		}
 		return fmt.Errorf("sandbox is not in started state, cannot start subcontainer: state=%s", state)
 	}
 	expectedFDs := 1 // At least one FD for the root filesystem.
@@ -390,6 +407,9 @@ func (cm *containerManager) StartSubcontainer(args *StartArgs, _ *struct{}) erro
 		expectedFDs += 3
 	}
 	if args.IsRootfsUpperTarFilePresent {
+		if cm.l.fsRestore != nil {
+			return fmt.Errorf("rootfs upper tar file is mutually exclusive with filesystem checkpoint restore")
+		}
 		expectedFDs++
 	}
 	if len(args.Files) < expectedFDs {
@@ -559,6 +579,9 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 			cm.onRestoreFailed(fmt.Errorf("Restore failed: %w", retErr))
 		}
 	}()
+	if cm.l.fsRestore != nil {
+		return fmt.Errorf("cannot restore sandbox when filesystem restore is enabled")
+	}
 	if len(o.Files) == 0 {
 		return fmt.Errorf("at least one file must be passed to Restore")
 	}
@@ -740,8 +763,14 @@ func (cm *containerManager) RestoreSubcontainer(args *StartArgs, _ *struct{}) (r
 	}
 	expectedFDs := 1 // At least one FD for the root filesystem.
 	expectedFDs += args.NumGoferFilestoreFDs
+	if args.IsDevIoFilePresent {
+		expectedFDs++
+	}
 	if !args.Spec.Process.Terminal {
 		expectedFDs += 3
+	}
+	if args.IsRootfsUpperTarFilePresent {
+		return errors.New("rootfs upper tar file is not supported during restore")
 	}
 	if len(args.Files) < expectedFDs {
 		return fmt.Errorf("restore arguments must contain at least %d FDs, but only got %d", expectedFDs, len(args.Files))
@@ -846,6 +875,26 @@ func (cm *containerManager) WaitRestore(*struct{}, *struct{}) error {
 	log.Debugf("containerManager.WaitRestore")
 	err := cm.l.waitRestore()
 	log.Debugf("containerManager.WaitRestore done, err = %v", err)
+	return err
+}
+
+func (cm *containerManager) WaitFSCheckpoint(*struct{}, *struct{}) error {
+	log.Debugf("containerManager.WaitFSCheckpoint")
+	err := cm.l.k.WaitForFSSave()
+	log.Debugf("containerManager.WaitFSCheckpoint done, err = %v", err)
+	return err
+}
+
+// WaitFSRestoreArgs holds arguments to containerManager.WaitFSRestore.
+type WaitFSRestoreArgs struct {
+	// CID is the container ID.
+	CID string
+}
+
+func (cm *containerManager) WaitFSRestore(args *WaitFSRestoreArgs, _ *struct{}) error {
+	log.Debugf("containerManager.WaitFSRestore")
+	err := cm.l.fsRestore.wait(args.CID)
+	log.Debugf("containerManager.WaitFSRestore done, err = %v", err)
 	return err
 }
 
@@ -1061,6 +1110,31 @@ func (cm *containerManager) ContainerRuntimeState(cid *string, state *ContainerR
 	log.Debugf("containerManager.ContainerRuntimeState: cid: %s", *cid)
 	*state = cm.l.containerRuntimeState(*cid)
 	return nil
+}
+
+// FSSaveArgs holds arguments to FSSave.
+type FSSaveArgs struct {
+	// FilePayload contains the following fscheckpoint files in order:
+	// 1. manifest file
+	// 2. multi-tar file
+	// 3. pages metadata file
+	// 4. pages file
+	urpc.FilePayload
+
+	// Equivalent to kernel.FSSaveOpts fields.
+	ExitAfterSaving bool
+
+	FSSaveArgsExtra
+}
+
+// FSSave collects a filesystem checkpoint.
+func (cm *containerManager) FSSave(args *FSSaveArgs, _ *struct{}) error {
+	log.Debugf("containerManager.FSSave")
+	kopts, err := convertToKernelFSSaveOpts(args)
+	if err != nil {
+		return err
+	}
+	return cm.l.k.FSSave(cm.l.k.SupervisorContext(), &kopts)
 }
 
 // Savings holds the savings with restore.

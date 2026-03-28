@@ -102,6 +102,13 @@ declare_mutex(
 )
 
 declare_mutex(
+    name = "fs_save_mutex",
+    out = "fs_save_mutex.go",
+    package = "kernel",
+    prefix = "fsSave",
+)
+
+declare_mutex(
     name = "running_tasks_mutex",
     out = "running_tasks_mutex.go",
     package = "kernel",
@@ -254,6 +261,8 @@ go_library(
         "fs_context.go",
         "fs_context_mutex.go",
         "fs_context_refs.go",
+        "fs_save_mutex.go",
+        "fscheckpoint.go",
         "ipc_namespace.go",
         "kcov.go",
         "kcov_unsafe.go",
@@ -360,8 +369,10 @@ go_library(
         "//pkg/safemem",
         "//pkg/secio",
         "//pkg/sentry/arch",
+        "//pkg/sentry/checkpoint",
         "//pkg/sentry/devices/nvproxy/nvconf",
         "//pkg/sentry/fdcollector",
+        "//pkg/sentry/fscheckpoint",
         "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/fsimpl/lock",
         "//pkg/sentry/fsimpl/mqfs",

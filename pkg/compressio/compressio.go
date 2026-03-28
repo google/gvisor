@@ -280,7 +280,7 @@ type pool struct {
 //
 // This should only be called once.
 func (p *pool) init(key []byte, workers int, compress bool, level int) {
-	if key != nil {
+	if len(key) > 0 {
 		p.hashPool = &hashPool{key: key}
 	}
 	p.workers = make([]worker, workers)
@@ -402,6 +402,9 @@ func NewReader(in io.ReadCloser, key []byte) (*Reader, error) {
 		r.hashPool.putHash(h)
 		sum := make([]byte, len(r.lastSum))
 		if _, err := io.ReadFull(r.in, sum); err != nil {
+			if err == io.EOF {
+				return nil, io.ErrUnexpectedEOF
+			}
 			return nil, err
 		}
 		if !hmac.Equal(r.lastSum, sum) {

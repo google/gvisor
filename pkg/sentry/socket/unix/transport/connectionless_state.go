@@ -14,7 +14,30 @@
 
 package transport
 
-import "context"
+import (
+	"context"
+	"fmt"
+	"runtime"
+	"strings"
+)
+
+// beforeSave is invoked by stateify.
+func (e *connectionlessEndpoint) beforeSave() {
+	if e.closerStackLen == 0 {
+		return
+	}
+
+	frames := runtime.CallersFrames(e.closerStack[:e.closerStackLen])
+	var b strings.Builder
+	for {
+		frame, more := frames.Next()
+		fmt.Fprintf(&b, "%s\n\t%s:%d pc=%#x\n", frame.Function, frame.File, frame.Line, frame.PC)
+		if !more {
+			break
+		}
+	}
+	e.closerStackStr = b.String()
+}
 
 // afterLoad is invoked by stateify.
 func (e *connectionlessEndpoint) afterLoad(context.Context) {

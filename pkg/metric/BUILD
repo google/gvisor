@@ -10,6 +10,7 @@ go_library(
     srcs = [
         "condmetric.go",
         "metric.go",
+        "metric_custom.go",
         "metric_unsafe.go",
         "profiling_metric.go",
         "sentry_profiling.go",

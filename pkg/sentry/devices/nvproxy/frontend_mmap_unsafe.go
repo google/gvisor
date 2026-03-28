@@ -31,10 +31,10 @@ func (mf *frontendFDMemmapFile) MapInternal(fr memmap.FileRange, at hostarch.Acc
 		return safemem.BlockSeq{}, linuxerr.EACCES
 	}
 
-	mf.fd.mmapMu.Lock()
-	defer mf.fd.mmapMu.Unlock()
-	if mf.fd.mmapInternal == 0 {
-		if mf.fd.mmapLength == 0 {
+	mf.mmapMu.Lock()
+	defer mf.mmapMu.Unlock()
+	if mf.mmapInternal == 0 {
+		if mf.mmapLength == 0 {
 			// This shouldn't be possible.
 			log.Traceback("nvproxy: frontendFDMemmapFile.MapInternal() called before NV_ESC_RM_MAP_MEMORY or NV_ESC_RM_ALLOC_MEMORY+NV01_MEMORY_SYSTEM")
 			return safemem.BlockSeq{}, linuxerr.EINVAL
@@ -44,13 +44,13 @@ func (mf *frontendFDMemmapFile) MapInternal(fr memmap.FileRange, at hostarch.Acc
 		// == 0 (so we must pass offset 0 here), and conditionally requires
 		// NV_VMA_SIZE(vma) == mmap_context->mmap_size (so we pass length
 		// mmapLength here).
-		m, _, errno := unix.Syscall6(unix.SYS_MMAP, 0 /* addr */, uintptr(mf.fd.mmapLength), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED, uintptr(mf.fd.hostFD), 0 /* offset */)
+		m, _, errno := unix.Syscall6(unix.SYS_MMAP, 0 /* addr */, uintptr(mf.mmapLength), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED, uintptr(mf.hostFD), 0 /* offset */)
 		if errno != 0 {
 			return safemem.BlockSeq{}, errno
 		}
-		mf.fd.mmapInternal = m
+		mf.mmapInternal = m
 	}
-	mappedFR := memmap.FileRange{0, hostarch.MustPageRoundUp(mf.fd.mmapLength)}
+	mappedFR := memmap.FileRange{0, hostarch.MustPageRoundUp(mf.mmapLength)}
 	if !mappedFR.IsSupersetOf(fr) {
 		return safemem.BlockSeq{}, linuxerr.EINVAL
 	}
@@ -61,5 +61,5 @@ func (mf *frontendFDMemmapFile) MapInternal(fr memmap.FileRange, at hostarch.Acc
 	// PROT_WRITE on a read-only mapping will succeed at mmap time but fault at
 	// write time. Thus, these mappings should use safecopy (i.e.
 	// BlockFromUnsafePointer rather than BlockFromSafePointer).
-	return safemem.BlockSeqOf(safemem.BlockFromUnsafePointer(unsafe.Pointer(mf.fd.mmapInternal+uintptr(fr.Start)), int(fr.Length()))), nil
+	return safemem.BlockSeqOf(safemem.BlockFromUnsafePointer(unsafe.Pointer(mf.mmapInternal+uintptr(fr.Start)), int(fr.Length()))), nil
 }

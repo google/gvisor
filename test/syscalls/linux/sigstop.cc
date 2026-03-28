@@ -17,12 +17,18 @@
 #include <sys/select.h>
 #include <time.h>
 
+#include <array>
+#include <atomic>
+#include <memory>
+
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/flags/flag.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
@@ -94,6 +100,94 @@ TEST(SigstopTest, Correctness) {
   ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0), SyscallSucceeds());
   ASSERT_TRUE(WIFEXITED(status));
   ASSERT_EQ(WEXITSTATUS(status), kChildMainThreadExitCode);
+}
+
+TEST(SigstopTest, WaitidCorrectness) {
+  pid_t child_pid = -1;
+  int execve_errno = 0;
+
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(
+      ForkAndExec("/proc/self/exe", {"/proc/self/exe", "--sigstop_test_child"},
+                  {}, nullptr, &child_pid, &execve_errno));
+
+  ASSERT_GT(child_pid, 0);
+  ASSERT_EQ(execve_errno, 0);
+  absl::SleepFor(kChildStartupDelay);
+
+  ASSERT_THAT(kill(child_pid, SIGSTOP), SyscallSucceeds());
+
+  siginfo_t info = {};
+  EXPECT_THAT(RetryEINTR(waitid)(P_PID, child_pid, &info, WSTOPPED),
+              SyscallSucceedsWithValue(0));
+
+  EXPECT_EQ(info.si_signo, SIGCHLD);
+  EXPECT_EQ(info.si_code, CLD_STOPPED);
+  EXPECT_EQ(info.si_status, SIGSTOP);
+  EXPECT_EQ(info.si_pid, child_pid);
+
+  ASSERT_THAT(kill(child_pid, SIGCONT), SyscallSucceeds());
+  EXPECT_THAT(RetryEINTR(waitid)(P_PID, child_pid, &info, WCONTINUED),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(info.si_code, CLD_CONTINUED);
+
+  ASSERT_THAT(kill(child_pid, SIGKILL), SyscallSucceeds());
+  EXPECT_THAT(RetryEINTR(waitid)(P_PID, child_pid, &info, WEXITED),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(info.si_code, CLD_KILLED);
+}
+
+TEST(SigstopTest, SIGCONTAbortsSIGSTOP) {
+  DisableSave ds;  // Forks a lot across many threads.
+  constexpr size_t kIterCount = 10;
+  std::array<std::unique_ptr<ScopedThread>, 100> threads;
+  std::atomic<bool> failed{false};
+
+  // The race takes a while to manifest, hence we use many threads.
+  for (size_t i = 0; i < threads.size(); ++i) {
+    threads[i] = std::make_unique<ScopedThread>([&failed] {
+      for (size_t j = 0; j < kIterCount; ++j) {
+        if (failed.load(std::memory_order_relaxed)) {
+          return;
+        }
+
+        int pid = fork();
+        ASSERT_GE(pid, 0);
+        if (pid == 0) {
+          // Child just sits and waits for signals.
+          // pause() is async-signal-safe and blocks until any signal arrives.
+          while (true) pause();
+        }
+
+        ASSERT_THAT(kill(pid, SIGSTOP), SyscallSucceeds());
+        ASSERT_THAT(kill(pid, SIGCONT), SyscallSucceeds());
+
+        // Fire a SIGTERM:
+        // - If the child is STOPPED, SIGTERM is queued.
+        // - If the child is RUNNING, it dies.
+        // Either way the waitpid below should not hang.
+        ASSERT_THAT(kill(pid, SIGTERM), SyscallSucceeds());
+
+        int status;
+        EXPECT_THAT(RetryEINTR(waitpid)(pid, &status, WSTOPPED),
+                    SyscallSucceeds());
+        if (WIFSTOPPED(status)) {
+          failed.store(true, std::memory_order_relaxed);
+          // Clean up: kill and reap the stuck child.
+          kill(pid, SIGKILL);
+          RetryEINTR(waitpid)(pid, &status, 0);
+          break;  // Test failed, don't continue this thread.
+        } else {
+          EXPECT_TRUE(WIFSIGNALED(status));
+          EXPECT_EQ(WTERMSIG(status), SIGTERM);
+        }
+      }
+    });
+  }
+
+  for (const auto& t : threads) {
+    t->Join();
+  }
+  EXPECT_FALSE(failed.load(std::memory_order_relaxed));
 }
 
 // Like base:SleepFor, but tries to avoid counting time spent stopped due to a

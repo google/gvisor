@@ -87,7 +87,7 @@ func (dev *tpuDevice) Open(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, o
 		unix.Close(hostFD)
 		return nil, err
 	}
-	fd.memmapFile.fd = fd
+	fd.memmapFile.SetFD(hostFD)
 	return &fd.vfsfd, nil
 }
 
@@ -120,7 +120,7 @@ func (dev *vfioDevice) Open(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, 
 		unix.Close(hostFD)
 		return nil, err
 	}
-	fd.memmapFile.fd = fd
+	fd.memmapFile.SetFD(hostFD)
 	return &fd.vfsfd, nil
 }
 

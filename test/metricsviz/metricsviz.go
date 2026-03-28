@@ -827,9 +827,10 @@ func FromFile(ctx context.Context, logFile string, logFn func(string, ...any)) e
 	foundRawHTMLSuffix := -1
 	for i, line := range lines {
 		line = strings.TrimSpace(line)
-		if line == htmlRawLogsPrefix {
+		switch line {
+		case htmlRawLogsPrefix:
 			foundRawHTMLPrefix = i
-		} else if line == htmlRawLogsSuffix {
+		case htmlRawLogsSuffix:
 			foundRawHTMLSuffix = i
 		}
 	}

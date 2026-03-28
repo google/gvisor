@@ -892,6 +892,7 @@ func Init() {
 			abi.allocationClass[nvgpu.BLACKWELL_B] = allocHandler(rmAllocSimple[nvgpu.NV_GR_ALLOCATION_PARAMETERS], nvconf.CapGraphics)
 			abi.allocationClass[nvgpu.BLACKWELL_COMPUTE_B] = allocHandler(rmAllocSimple[nvgpu.NV_GR_ALLOCATION_PARAMETERS], compUtil)
 			abi.allocationClass[nvgpu.BLACKWELL_USERMODE_A] = allocHandler(rmAllocSimple[nvgpu.NV_HOPPER_USERMODE_A_PARAMS], compUtil)
+			abi.allocationClass[nvgpu.NVCFB7_VIDEO_ENCODER] = allocHandler(rmAllocSimple[nvgpu.NV_MSENC_ALLOCATION_PARAMETERS], nvconf.CapVideo)
 			prevGetInfo := abi.getInfo
 			abi.getInfo = func() *DriverABIInfo {
 				info := prevGetInfo()
@@ -906,6 +907,7 @@ func Init() {
 				info.AllocationInfos[nvgpu.BLACKWELL_B] = ioctlInfo("BLACKWELL_B", nvgpu.NV_GR_ALLOCATION_PARAMETERS{})
 				info.AllocationInfos[nvgpu.BLACKWELL_COMPUTE_B] = ioctlInfo("BLACKWELL_COMPUTE_B", nvgpu.NV_GR_ALLOCATION_PARAMETERS{})
 				info.AllocationInfos[nvgpu.BLACKWELL_USERMODE_A] = ioctlInfo("BLACKWELL_USERMODE_A", nvgpu.NV_HOPPER_USERMODE_A_PARAMS{})
+				info.AllocationInfos[nvgpu.NVCFB7_VIDEO_ENCODER] = ioctlInfo("NVCFB7_VIDEO_ENCODER", nvgpu.NV_MSENC_ALLOCATION_PARAMETERS{})
 				return info
 			}
 			return abi
@@ -946,12 +948,16 @@ func Init() {
 			abi := v575_57_08()
 			abi.frontendIoctl[nvgpu.NV_ESC_RM_MAP_MEMORY_DMA] = feHandler(frontendIoctlSimple[nvgpu.NVOS46_PARAMETERS_V580], nvconf.CapGraphics|nvconf.CapVideo)
 			abi.allocationClass[nvgpu.FERMI_VASPACE_A] = allocHandler(rmAllocSimple[nvgpu.NV_VASPACE_ALLOCATION_PARAMETERS_V580], compUtil)
+			abi.allocationClass[nvgpu.NVCEB7_VIDEO_ENCODER] = allocHandler(rmAllocSimple[nvgpu.NV_MSENC_ALLOCATION_PARAMETERS], nvconf.CapVideo)
+			abi.allocationClass[nvgpu.NVD1B7_VIDEO_ENCODER] = allocHandler(rmAllocSimple[nvgpu.NV_MSENC_ALLOCATION_PARAMETERS], nvconf.CapVideo)
 
 			prevGetInfo := abi.getInfo
 			abi.getInfo = func() *DriverABIInfo {
 				info := prevGetInfo()
 				info.FrontendInfos[nvgpu.NV_ESC_RM_MAP_MEMORY_DMA] = ioctlInfoWithStructName("NV_ESC_RM_MAP_MEMORY_DMA", nvgpu.NVOS46_PARAMETERS_V580{}, "NVOS46_PARAMETERS")
 				info.AllocationInfos[nvgpu.FERMI_VASPACE_A] = ioctlInfoWithStructName("FERMI_VASPACE_A", nvgpu.NV_VASPACE_ALLOCATION_PARAMETERS_V580{}, "NV_VASPACE_ALLOCATION_PARAMETERS")
+				info.AllocationInfos[nvgpu.NVCEB7_VIDEO_ENCODER] = ioctlInfo("NVCEB7_VIDEO_ENCODER", nvgpu.NV_MSENC_ALLOCATION_PARAMETERS{})
+				info.AllocationInfos[nvgpu.NVD1B7_VIDEO_ENCODER] = ioctlInfo("NVD1B7_VIDEO_ENCODER", nvgpu.NV_MSENC_ALLOCATION_PARAMETERS{})
 				return info
 			}
 			return abi
@@ -964,6 +970,26 @@ func Init() {
 		// The following versions exist on the "580" branch, which was branched
 		// from the main branch at 580.105.08.
 		_ = addDriverABI(580, 126, 9, "4cac53e48f8adff661d47c8788ed24059a248c9fd8098ceafd088a498986ec26", "7393c42b112fd6f0a498e1d2a33127b821be58b7570dc9f8d5589a51688da4ad", v580_105_08)
+
+		v590_44_01 := func() *driverABI {
+			abi := v580_105_08()
+			abi.uvmIoctl[nvgpu.UVM_UNREGISTER_CHANNEL] = uvmHandler(uvmIoctlSimple[nvgpu.UVM_UNREGISTER_CHANNEL_PARAMS_V590], compUtil)
+			abi.uvmIoctl[nvgpu.UVM_FREE] = uvmHandler(uvmIoctlSimple[nvgpu.UVM_FREE_PARAMS_V590], compUtil)
+			abi.allocationClass[nvgpu.NV50_P2P] = allocHandler(rmAllocSimple[nvgpu.NV503B_ALLOC_PARAMETERS_V590], compUtil)
+			abi.allocationClass[nvgpu.NV_MEMORY_MULTICAST_FABRIC] = allocHandler(rmAllocSimple[nvgpu.NV00FD_ALLOCATION_PARAMETERS_V590], compUtil)
+
+			prevGetInfo := abi.getInfo
+			abi.getInfo = func() *DriverABIInfo {
+				info := prevGetInfo()
+				info.UvmInfos[nvgpu.UVM_UNREGISTER_CHANNEL] = ioctlInfoWithStructName("UVM_UNREGISTER_CHANNEL", nvgpu.UVM_UNREGISTER_CHANNEL_PARAMS_V590{}, "UVM_UNREGISTER_CHANNEL_PARAMS")
+				info.UvmInfos[nvgpu.UVM_FREE] = ioctlInfoWithStructName("UVM_FREE", nvgpu.UVM_FREE_PARAMS_V590{}, "UVM_FREE_PARAMS")
+				info.AllocationInfos[nvgpu.NV50_P2P] = ioctlInfoWithStructName("NV50_P2P", nvgpu.NV503B_ALLOC_PARAMETERS_V590{}, "NV503B_ALLOC_PARAMETERS")
+				info.AllocationInfos[nvgpu.NV_MEMORY_MULTICAST_FABRIC] = ioctlInfoWithStructName("NV_MEMORY_MULTICAST_FABRIC", nvgpu.NV00FD_ALLOCATION_PARAMETERS_V590{}, "NV00FD_ALLOCATION_PARAMETERS")
+				return info
+			}
+			return abi
+		}
+		_ = addDriverABI(590, 48, 01, "b9e2f80693781431cc87f4cd29109e133dcecb50a50d6b68d4b3bf2d696bd689", "14ecfb7faa56d4d18cd9fef891b3fa2db3628f12a3e59b59d3c6e6d1a0befd80", v590_44_01)
 	})
 }
 

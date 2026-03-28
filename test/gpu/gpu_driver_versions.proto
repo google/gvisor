@@ -20,23 +20,29 @@ syntax = "proto3";
 
 package cos_gpu;
 
+// Represents a supported host driver version for vGPU.
+message HostDriverVersion {
+  string version = 1;
+}
 // Represents all the information about a GPU driver version.
 // It contains the GPU driver version label (e.g., "default", "latest"), and the
 // GPU driver version that is associated with that label.
 message DriverVersion {
   // GPU driver version label.
   string label = 1;
-
   // The driver version that is associated with this label.
   string version = 2;
-  // more metadata about the driver version.
+  // List of supported host driver versions for vGPU.
+  repeated HostDriverVersion supported_host_versions = 3;
 }
 // Represents the information about a GPU device.
 message GPUDevice {
   // GPU type.
   string gpu_type = 1;
+  // Indicates if GPU device supports virtualization
+  optional bool supports_vgpu = 2;
   // reserved for other GPU Device info needed to be included in the proto
-  // e.g. string pci_value = 2; // PCI identifier for the GPU
+  // e.g. string pci_value = 3; // PCI identifier for the GPU
 }
 // Represents GPU driver version information for a specific GPU type, mapping
 // from GPU type to GPU driver version information.

@@ -24,7 +24,6 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
-#include "test/util/cleanup.h"
 #include "test/util/posix_error.h"
 #include "test/util/save_util.h"
 #include "test/util/test_util.h"

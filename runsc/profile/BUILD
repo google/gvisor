@@ -15,6 +15,7 @@ go_library(
         "//pkg/log",
         "//pkg/sentry/control",
         "//runsc/config",
+        "//runsc/donation",
         "//runsc/flag",
     ],
 )

@@ -23,8 +23,51 @@ import (
 	"time"
 
 	"github.com/google/subcommands"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/runsc/flag"
 )
+
+// SubCommand is an extension of subcommands.Command that allows runsc CLI to
+// fetch the OCI spec for the container that is targeted by the command.
+type SubCommand interface {
+	subcommands.Command
+
+	// FetchSpec returns the container ID, OCI spec associated with the command.
+	// If the command does not target a container, it should return "", nil, nil.
+	FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error)
+}
+
+// InternalCommand is an interface for internal commands.
+//
+// Internal commands are invoked by runsc itself. All of them use the
+// --debug-log-fd and --log-fd mechanism. They all return "", nil, nil from
+// SubCommand.FetchSpec because they don't need to have the spec as debug log
+// file and log files are already created for them. This avoids having to
+// re-load the Container struct from local filesystem, read all annotations and
+// fix the config via specutils.FixConfig(). They already get the fixed config
+// values as conf.ToFlags() is used to create their flags. They don't operate
+// on a container so don't even take a container ID as an argument. Some of
+// them (like boot and gofer) don't even have access to the host filesystem so
+// they can't really open any host files.
+type InternalCommand interface {
+	InternalFetchSpec() (string, *specs.Spec, error)
+}
+
+// InternalSubCommand is a struct that implements FetchSpec for internal
+// commands. It should be embedded in internal commands.
+type InternalSubCommand struct{}
+
+// FetchSpec implements SubCommand.FetchSpec.
+func (i *InternalSubCommand) FetchSpec(*config.Config, *flag.FlagSet) (string, *specs.Spec, error) {
+	return i.InternalFetchSpec()
+}
+
+// InternalFetchSpec implements InternalCommand.InternalFetchSpec.
+func (*InternalSubCommand) InternalFetchSpec() (string, *specs.Spec, error) {
+	return "", nil, nil
+}
 
 // ErrorLogger is where error messages should be written to. These messages are
 // consumed by containerd and show up to users of command line tools,
@@ -64,16 +107,16 @@ func Errorf(format string, args ...any) subcommands.ExitStatus {
 	log.Warningf("FATAL ERROR: "+format, args...)
 	fmt.Fprintf(os.Stderr, format+"\n", args...)
 
-	j := jsonError{
-		Msg:   fmt.Sprintf(format, args...),
-		Level: "error",
-		Time:  time.Now(),
-	}
-	b, err := json.Marshal(j)
-	if err != nil {
-		panic(err)
-	}
 	if ErrorLogger != nil {
+		j := jsonError{
+			Msg:   fmt.Sprintf(format, args...),
+			Level: "error",
+			Time:  time.Now(),
+		}
+		b, err := json.Marshal(j)
+		if err != nil {
+			panic(err)
+		}
 		_, _ = ErrorLogger.Write(b)
 	}
 

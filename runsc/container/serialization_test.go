@@ -45,10 +45,7 @@ func implementsSerializableInterface(typ reflect.Type) bool {
 		return true
 	}
 	protoMessage := reflect.TypeOf((*proto.Message)(nil)).Elem()
-	if typ.Implements(protoMessage) {
-		return true
-	}
-	return false
+	return typ.Implements(protoMessage)
 }
 
 // checkSerializable verifies that the given type is serializable.

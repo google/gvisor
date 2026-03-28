@@ -30,7 +30,7 @@ func DecodeProgram(p Program) (string, error) {
 func DecodeInstructions(instns []Instruction) (string, error) {
 	var ret bytes.Buffer
 	for line, s := range instns {
-		ret.WriteString(fmt.Sprintf("%v: ", line))
+		fmt.Fprintf(&ret, "%v: ", line)
 		if err := decode(s, line, &ret); err != nil {
 			return "", err
 		}

@@ -185,6 +185,7 @@ go_library(
         "//pkg/ringdeque",
         "//pkg/safemem",
         "//pkg/sentry/arch",
+        "//pkg/sentry/checkpoint",
         "//pkg/sentry/hostmm",
         "//pkg/sentry/memmap",
         "//pkg/sentry/state/stateio",
@@ -203,7 +204,10 @@ go_library(
 go_test(
     name = "pgalloc_test",
     size = "small",
-    srcs = ["pgalloc_test.go"],
+    srcs = [
+        "pgalloc_64k_test.go",
+        "pgalloc_test.go",
+    ],
     library = ":pgalloc",
     deps = [
         "//pkg/hostarch",

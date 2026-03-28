@@ -16,12 +16,12 @@ require (
 	github.com/containerd/log v0.1.0
 	github.com/containerd/typeurl v1.0.2
 	github.com/coreos/go-systemd/v22 v22.6.0
+	github.com/creack/pty v1.1.24
 	github.com/godbus/dbus/v5 v5.1.0
 	github.com/gofrs/flock v0.8.0
 	github.com/gogo/protobuf v1.3.2
 	github.com/google/btree v1.1.2
 	github.com/google/subcommands v1.0.2-0.20190508160503-636abe8753b8
-	github.com/kr/pty v1.1.8
 	github.com/mattbaird/jsonpatch v0.0.0-20171005235357-81af80346b1a
 	github.com/moby/sys/capability v0.4.0
 	github.com/mohae/deepcopy v0.0.0-20170308212314-bb9b5e7adda9

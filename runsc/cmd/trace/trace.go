@@ -20,7 +20,9 @@ import (
 	"context"
 
 	"github.com/google/subcommands"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
@@ -52,6 +54,14 @@ func (*Trace) Usage() string {
 
 // SetFlags implements subcommands.Command.
 func (*Trace) SetFlags(f *flag.FlagSet) {}
+
+// FetchSpec implements util.SubCommand.FetchSpec.
+func (*Trace) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error) {
+	// This command has subcommands that may operate on individual containers.
+	// But that requires parsing the subcommand flags. To avoid complexity for
+	// now, return nothing as though no container is involved.
+	return "", nil, nil
+}
 
 // Execute implements subcommands.Command.
 func (*Trace) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {

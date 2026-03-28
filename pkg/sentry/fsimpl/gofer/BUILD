@@ -108,6 +108,7 @@ go_library(
         "//pkg/rand",
         "//pkg/refs",
         "//pkg/safemem",
+        "//pkg/sentry/checkpoint",
         "//pkg/sentry/fsimpl/host",
         "//pkg/sentry/fsimpl/lock",
         "//pkg/sentry/fsmetric",

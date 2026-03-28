@@ -812,6 +812,9 @@ func (t *Task) initiateGroupStop(info *linux.SignalInfo) {
 func (tg *ThreadGroup) endGroupStopLocked(broadcast bool) {
 	// Discard all previously-queued stop signals.
 	linux.ForEachSignal(StopSignals, tg.discardSpecificLocked)
+	// Unsetting groupStopDequeued will cause racing calls to initiateGroupStop
+	// to recognize that the group stop has been cancelled.
+	tg.groupStopDequeued = false
 
 	if tg.groupStopPendingCount == 0 && !tg.groupStopComplete {
 		return
@@ -850,9 +853,6 @@ func (tg *ThreadGroup) endGroupStopLocked(broadcast bool) {
 		tg.groupContInterrupted = !tg.groupStopComplete
 		tg.groupContWaitable = true
 	}
-	// Unsetting groupStopDequeued will cause racing calls to initiateGroupStop
-	// to recognize that the group stop has been cancelled.
-	tg.groupStopDequeued = false
 	tg.groupStopSignal = 0
 	tg.groupStopPendingCount = 0
 	tg.groupStopComplete = false
@@ -986,14 +986,14 @@ func (*runInterrupt) execute(t *Task) taskRunState {
 		}
 		t.trapStopPending = false
 		t.trapNotifyPending = false
-		// Drop the signal mutex so we can take the TaskSet mutex.
-		t.tg.signalHandlers.mu.Unlock()
 
-		t.tg.pidns.owner.mu.RLock()
-		if t.tg.leader.parent == nil {
-			notifyParent = false
-		}
 		if tracer := t.Tracer(); tracer != nil {
+			// Drop the signal mutex so we can take the TaskSet mutex.
+			t.tg.signalHandlers.mu.Unlock()
+			t.tg.pidns.owner.mu.RLock()
+			if t.tg.leader.parent == nil {
+				notifyParent = false
+			}
 			if t.ptraceSeized {
 				if sig == 0 {
 					sig = linux.SIGTRAP
@@ -1026,11 +1026,15 @@ func (*runInterrupt) execute(t *Task) taskRunState {
 				}
 			}
 		} else {
-			t.tg.signalHandlers.mu.Lock()
 			if !t.killedLocked() {
 				t.beginInternalStopLocked((*groupStop)(nil))
 			}
+			// Drop the signal mutex so we can take the TaskSet mutex.
 			t.tg.signalHandlers.mu.Unlock()
+			t.tg.pidns.owner.mu.RLock()
+			if t.tg.leader.parent == nil {
+				notifyParent = false
+			}
 		}
 		if notifyParent {
 			t.tg.leader.parent.signalStop(t.tg.leader, linux.CLD_STOPPED, int32(sig))

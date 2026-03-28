@@ -218,9 +218,10 @@ func (*Bundle) Synopsis() string {
 func (*Bundle) Usage() string {
 	return `bundle <srcs...>
 
-	Generates facts and findings for a collection of source files. Each
-	package name is inferred from the path, assuming a standard package
-	structure. The stripped prefix is determined by regular expression.
+	Generates facts and findings for a collection of standard library
+	source files. Each package name is inferred from the path, assuming a
+	standard package structure. The stripped prefix is determined by
+	regular expression.
 
 `
 }
@@ -244,7 +245,12 @@ func (b *Bundle) Execute(ctx context.Context, fs *flag.FlagSet, args ...any) sub
 		// Split into packages.
 		sources := make(map[string][]string)
 		for _, srcRootPrefix := range srcRootPrefixes {
-			for pkg, srcs := range check.SplitPackages(fs.Args(), srcRootPrefix) {
+			pkgs, err := check.SplitStdPackages(fs.Args(), srcRootPrefix)
+			if err != nil {
+				return nil, nil, fmt.Errorf("error splitting packages for prefix %q: %v", srcRootPrefix, err)
+			}
+
+			for pkg, srcs := range pkgs {
 				path := pkg
 				if b.Prefix != "" {
 					path = b.Prefix + "/" + path // Subpackage.
@@ -252,61 +258,12 @@ func (b *Bundle) Execute(ctx context.Context, fs *flag.FlagSet, args ...any) sub
 				sources[path] = append(sources[path], srcs...)
 			}
 		}
-		return check.Bundle(sources)
-	}); err != nil {
-		return failure("%v", err)
-	}
-
-	return subcommands.ExitSuccess
-}
-
-// Stdlib implements subcommands.Command for the "stdlib" command.
-type Stdlib struct {
-	checkCommon
-}
-
-// Name implements subcommands.Command.Name.
-func (*Stdlib) Name() string {
-	return "stdlib"
-}
-
-// Synopsis implements subcommands.Command.Synopsis.
-func (*Stdlib) Synopsis() string {
-	return "Generate facts and findings for the standard library."
-}
-
-// Usage implements subcommands.Command.Usage.
-func (*Stdlib) Usage() string {
-	return `stdlib
-
-	Generates facts and findings for the standard library. This wraps
-	bundle with a mechanism that discovers the standard library source.
-
-`
-}
-
-// SetFlags implements subcommands.Command.SetFlags.
-func (s *Stdlib) SetFlags(fs *flag.FlagSet) {
-	s.setFlags(fs, "stdlib")
-}
-
-// Execute implements subcommands.Command.Execute.
-func (s *Stdlib) Execute(ctx context.Context, fs *flag.FlagSet, args ...any) subcommands.ExitStatus {
-	if fs.NArg() != 0 {
-		return subcommands.ExitUsageError // Need no arguments.
-	}
-
-	if err := s.execute(func() (check.FindingSet, facts.Serializer, error) {
-		root, err := flags.Env("GOROOT")
+		// Remove packages we can't analyze.
+		sources, err = check.FilterStdPackages(sources)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, fmt.Errorf("error filtering packages: %v", err)
 		}
-		root = path.Join(root, "src")
-		srcs, err := collectAllFiles(root)
-		if err != nil {
-			return nil, nil, err
-		}
-		return check.Bundle(check.SplitPackages(srcs, root))
+		return check.Bundle(sources, srcRootPrefixes)
 	}); err != nil {
 		return failure("%v", err)
 	}
@@ -559,7 +516,6 @@ func (r *Render) Execute(ctx context.Context, fs *flag.FlagSet, args ...any) sub
 func Main() {
 	subcommands.Register(&Check{}, "")
 	subcommands.Register(&Bundle{}, "")
-	subcommands.Register(&Stdlib{}, "")
 	subcommands.Register(&Filter{}, "")
 	subcommands.Register(&Render{}, "")
 	subcommands.Register(subcommands.HelpCommand(), "")

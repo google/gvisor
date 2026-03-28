@@ -16,6 +16,8 @@ package pgalloc
 
 import (
 	"context"
+
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 )
 
 // contextID is this package's type for context.Context.Value keys.
@@ -53,9 +55,9 @@ func MemoryCgroupIDFromContext(ctx context.Context) uint32 {
 
 // MemoryFileMapFromContext returns the memory file map used by ctx, or nil if
 // no such map exists.
-func MemoryFileMapFromContext(ctx context.Context) map[string]*MemoryFile {
+func MemoryFileMapFromContext(ctx context.Context) map[checkpoint.ResourceID]*MemoryFile {
 	if v := ctx.Value(CtxMemoryFileMap); v != nil {
-		return v.(map[string]*MemoryFile)
+		return v.(map[checkpoint.ResourceID]*MemoryFile)
 	}
 	return nil
 }

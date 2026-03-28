@@ -79,6 +79,8 @@ var (
 // Boot implements subcommands.Command for the "boot" command which starts a
 // new sandbox. It should not be called directly.
 type Boot struct {
+	util.InternalSubCommand
+
 	// bundleDir is the directory containing the OCI spec.
 	bundleDir string
 
@@ -153,6 +155,8 @@ type Boot struct {
 
 	saveFDs intFlags
 
+	fsRestoreFDs intFlags
+
 	// attached is set to true to kill the sandbox process when the parent process
 	// terminates. This flag is set when the command execve's itself because
 	// parent death signal doesn't propagate through execve when uid/gid changes.
@@ -200,10 +204,10 @@ type Boot struct {
 	uid int
 	gid int
 
-	bootExtra
-
 	// rootfsUpperTarFD is the file descriptor to a tar file that has rootfs change at startup.
 	rootfsUpperTarFD int
+
+	bootExtra
 }
 
 // Name implements subcommands.Command.Name.
@@ -255,6 +259,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&b.podInitConfigFD, "pod-init-config-fd", -1, "file descriptor to the pod init configuration file.")
 	f.Var(&b.sinkFDs, "sink-fds", "ordered list of file descriptors to be used by the sinks defined in --pod-init-config.")
 	f.Var(&b.saveFDs, "save-fds", "ordered list of file descriptors to be used save checkpoints. Order: kernel state, page metadata, page file")
+	f.Var(&b.fsRestoreFDs, "fs-restore-fds", "ordered list of file descriptors for filesystem checkpoint restore")
 	f.IntVar(&b.rootfsUpperTarFD, "rootfs-upper-tar-fd", -1, "file descriptor to the tar file containing the rootfs upper layer changes.")
 
 	// Profiling flags.
@@ -581,6 +586,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		},
 		HostTHP:          b.hostTHP,
 		SaveFDs:          b.saveFDs.GetFDs(),
+		FSRestoreFDs:     b.fsRestoreFDs.GetFDs(),
 		RootfsUpperTarFD: b.rootfsUpperTarFD,
 	}
 	b.setBootArgsExtra(&bootArgs)

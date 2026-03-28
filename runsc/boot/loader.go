@@ -28,7 +28,6 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/coverage"
@@ -84,7 +83,6 @@ import (
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/profile"
 	"gvisor.dev/gvisor/runsc/specutils"
-	"gvisor.dev/gvisor/runsc/specutils/seccomp"
 
 	// Top-level inet providers.
 	"gvisor.dev/gvisor/pkg/sentry/socket/hostinet"
@@ -309,6 +307,8 @@ type Loader struct {
 	// +checklocks:mu
 	savings Savings
 
+	fsRestore *fsRestore
+
 	LoaderExtra
 }
 
@@ -413,7 +413,8 @@ type Args struct {
 	// HostTHP contains host transparent hugepage settings.
 	HostTHP HostTHP
 
-	SaveFDs []*fd.FD
+	SaveFDs      []*fd.FD
+	FSRestoreFDs []*fd.FD
 
 	ArgsExtra
 
@@ -519,6 +520,20 @@ func New(args Args) (*Loader, error) {
 	log.Infof("CPUs: %d", args.NumCPU)
 	gomaxprocs.SetBase(args.NumCPU)
 
+	// Start filesystem checkpoint restore as soon as possible to maximize
+	// parallel loading.
+	if len(args.FSRestoreFDs) != 0 {
+		fsrOpts, err := makeFSRestoreOptsImpl(&args)
+		if err != nil {
+			return nil, fmt.Errorf("failed to set up filesystem checkpoint restore: %w", err)
+		}
+		fsr, err := startFSRestore(&fsrOpts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to start filesystem checkpoint restore: %w", err)
+		}
+		l.fsRestore = fsr
+	}
+
 	containerName := l.registerContainer(args.Spec, args.ID)
 	l.root = containerInfo{
 		cid:                args.ID,
@@ -573,6 +588,9 @@ func New(args Args) (*Loader, error) {
 	}
 
 	if args.RootfsUpperTarFD >= 0 {
+		if l.fsRestore != nil {
+			return nil, fmt.Errorf("rootfs upper tar file is mutually exclusive with filesystem checkpoint restore")
+		}
 		l.root.rootfsUpperTarFD = fd.New(args.RootfsUpperTarFD)
 	}
 
@@ -762,6 +780,8 @@ func New(args Args) (*Loader, error) {
 	}
 
 	l.kernelInitExtra(l.k.SupervisorContext())
+
+	metric.SentryEntryPointMetric.Increment(&metric.EntryPointTypeRunsc)
 
 	// Create the control server using the provided FD.
 	//
@@ -1110,7 +1130,7 @@ func (l *Loader) run() error {
 		}
 		log.Infof("Received external signal %d, mode: %s", sig, deliveryMode)
 		if err := l.signal(l.sandboxID, 0, int32(sig), deliveryMode); err != nil {
-			log.Warningf("error sending signal %s to container %q: %s", sig, l.sandboxID, err)
+			log.Warningf("error sending signal %d to container %q: %s", sig, l.sandboxID, err)
 		}
 	})
 
@@ -1313,7 +1333,7 @@ func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGrou
 	}
 	// We can share l.sharedMounts with containerMounter since l.mu is locked.
 	// Hence, mntr must only be used within this function (while l.mu is locked).
-	mntr := newContainerMounter(info, l.k, l.mountHints, l.sharedMounts, l.productName, l.sandboxID)
+	mntr := l.newContainerMounter(info)
 	if err := setupContainerVFS(ctx, info, mntr, &info.procArgs); err != nil {
 		return nil, nil, err
 	}
@@ -1339,27 +1359,15 @@ func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGrou
 	info.procArgs.FDTable.DecRef(ctx)
 
 	// Install seccomp filters with the new task if there are any.
-	if info.conf.OCISeccomp {
-		if info.spec.Linux != nil && info.spec.Linux.Seccomp != nil {
-			program, err := seccomp.BuildProgram(info.spec.Linux.Seccomp)
-			if err != nil {
-				return nil, nil, fmt.Errorf("building seccomp program: %w", err)
-			}
-
-			if log.IsLogging(log.Debug) {
-				out, _ := bpf.DecodeProgram(program)
-				log.Debugf("Installing OCI seccomp filters\nProgram:\n%s", out)
-			}
-
-			task := tg.Leader()
-			// NOTE: It seems Flags are ignored by runc so we ignore them too.
-			if err := task.AppendSyscallFilter(program, true); err != nil {
-				return nil, nil, fmt.Errorf("appending seccomp filters: %w", err)
-			}
-		}
-	} else {
-		if info.spec.Linux != nil && info.spec.Linux.Seccomp != nil {
-			log.Warningf("Seccomp spec is being ignored")
+	program, err := buildOCISeccompProgram(info.conf, info.spec)
+	if err != nil {
+		return nil, nil, err
+	}
+	if program != nil {
+		task := tg.Leader()
+		// NOTE: It seems Flags are ignored by runc so we ignore them too.
+		if err := task.AppendSyscallFilter(*program, true); err != nil {
+			return nil, nil, fmt.Errorf("appending seccomp filters: %w", err)
 		}
 	}
 
@@ -1500,6 +1508,16 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 	args.Limits, err = createLimitSet(l.root.spec, specutils.TPUProxyIsEnabled(l.root.spec, l.root.conf))
 	if err != nil {
 		return 0, fmt.Errorf("creating limits: %w", err)
+	}
+
+	containerName := l.k.ContainerName(args.ContainerID)
+	spec := l.containerSpecs[containerName]
+	if spec != nil {
+		seccompProgram, err := buildOCISeccompProgram(l.root.conf, spec)
+		if err != nil {
+			return 0, err
+		}
+		args.SeccompProgram = seccompProgram
 	}
 
 	// Start the process.
@@ -1955,6 +1973,7 @@ func createFDTable(ctx context.Context, console bool, stdioFDs []*fd.FD, passFDs
 		UID:           auth.KUID(user.UID),
 		GID:           auth.KGID(user.GID),
 		ContainerName: containerName,
+		SupportTTYs:   true,
 	}
 	ttyFile, err := fdimport.Import(ctx, fdTable, fdMap, opts)
 	if err != nil {

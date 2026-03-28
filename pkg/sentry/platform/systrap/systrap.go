@@ -271,6 +271,10 @@ func (*Systrap) MinUserAddress() hostarch.Addr {
 
 // New returns a new seccomp-based implementation of the platform interface.
 func New(opts platform.Options) (*Systrap, error) {
+	if hostarch.PageSize != 4096 {
+		return nil, fmt.Errorf("systrap platform does not support %dK page size", hostarch.PageSize/1024)
+	}
+
 	if !disableSyscallPatching {
 		disableSyscallPatching = opts.DisableSyscallPatching
 	}
@@ -291,6 +295,9 @@ func New(opts platform.Options) (*Systrap, error) {
 
 	var stubErr error
 	stubInitialized.Do(func() {
+		// Configure address space parameters for the current host's
+		// VA width. Must be called before any Context64 is created.
+		configureSystrapAddressSpace()
 		// Don't use sentry and stub fast paths if here is just one cpu.
 		neverEnableFastPath = min(runtime.NumCPU(), runtime.GOMAXPROCS(0)) == 1
 

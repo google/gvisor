@@ -31,7 +31,6 @@
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
-#include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
@@ -139,11 +138,8 @@ class RawSocketTest : public ::testing::TestWithParam<std::tuple<int, int>> {
 };
 
 void RawSocketTest::SetUp() {
-  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability())) {
-    ASSERT_THAT(socket(Family(), SOCK_RAW, Protocol()),
-                SyscallFailsWithErrno(EPERM));
-    GTEST_SKIP();
-  }
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HaveRawIPSocketCapability(Family(), Protocol())));
 
   ASSERT_THAT(s_ = socket(Family(), SOCK_RAW, Protocol()), SyscallSucceeds());
 
@@ -163,7 +159,8 @@ void RawSocketTest::SetUp() {
 
 void RawSocketTest::TearDown() {
   // TearDown will be run even if we skip the test.
-  if (ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability())) {
+  if (ASSERT_NO_ERRNO_AND_VALUE(
+          HaveRawIPSocketCapability(Family(), Protocol()))) {
     EXPECT_THAT(close(s_), SyscallSucceeds());
   }
 }
@@ -172,8 +169,6 @@ void RawSocketTest::TearDown() {
 // BasicRawSocket::Setup creates the first one, so we only have to create one
 // more here.
 TEST_P(RawSocketTest, MultipleCreation) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
-
   int s2;
   ASSERT_THAT(s2 = socket(Family(), SOCK_RAW, Protocol()), SyscallSucceeds());
 
@@ -182,16 +177,12 @@ TEST_P(RawSocketTest, MultipleCreation) {
 
 // Test that shutting down an unconnected socket fails.
 TEST_P(RawSocketTest, FailShutdownWithoutConnect) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
-
   ASSERT_THAT(shutdown(s_, SHUT_WR), SyscallFailsWithErrno(ENOTCONN));
   ASSERT_THAT(shutdown(s_, SHUT_RD), SyscallFailsWithErrno(ENOTCONN));
 }
 
 // Shutdown is a no-op for raw sockets (and datagram sockets in general).
 TEST_P(RawSocketTest, ShutdownWriteNoop) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
-
   ASSERT_THAT(
       connect(s_, reinterpret_cast<struct sockaddr*>(&addr_), AddrLen()),
       SyscallSucceeds());
@@ -205,8 +196,6 @@ TEST_P(RawSocketTest, ShutdownWriteNoop) {
 
 // Shutdown is a no-op for raw sockets (and datagram sockets in general).
 TEST_P(RawSocketTest, ShutdownReadNoop) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
-
   ASSERT_THAT(
       connect(s_, reinterpret_cast<struct sockaddr*>(&addr_), AddrLen()),
       SyscallSucceeds());
@@ -222,23 +211,17 @@ TEST_P(RawSocketTest, ShutdownReadNoop) {
 
 // Test that listen() fails.
 TEST_P(RawSocketTest, FailListen) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
-
   ASSERT_THAT(listen(s_, 1), SyscallFailsWithErrno(ENOTSUP));
 }
 
 // Test that accept() fails.
 TEST_P(RawSocketTest, FailAccept) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
-
   struct sockaddr saddr;
   socklen_t addrlen;
   ASSERT_THAT(accept(s_, &saddr, &addrlen), SyscallFailsWithErrno(ENOTSUP));
 }
 
 TEST_P(RawSocketTest, BindThenGetSockName) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
-
   struct sockaddr* addr = reinterpret_cast<struct sockaddr*>(&addr_);
   ASSERT_THAT(bind(s_, addr, AddrLen()), SyscallSucceeds());
   struct sockaddr_storage saddr_storage;
@@ -261,8 +244,6 @@ TEST_P(RawSocketTest, BindThenGetSockName) {
 }
 
 TEST_P(RawSocketTest, ConnectThenGetSockName) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
-
   struct sockaddr* addr = reinterpret_cast<struct sockaddr*>(&addr_);
   ASSERT_THAT(connect(s_, addr, AddrLen()), SyscallSucceeds());
   struct sockaddr_storage saddr_storage;
@@ -286,8 +267,6 @@ TEST_P(RawSocketTest, ConnectThenGetSockName) {
 
 // Test that getpeername() returns nothing before connect().
 TEST_P(RawSocketTest, FailGetPeerNameBeforeConnect) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
-
   struct sockaddr saddr;
   socklen_t addrlen = sizeof(saddr);
   ASSERT_THAT(getpeername(s_, &saddr, &addrlen),
@@ -296,8 +275,6 @@ TEST_P(RawSocketTest, FailGetPeerNameBeforeConnect) {
 
 // Test that getpeername() returns something after connect().
 TEST_P(RawSocketTest, GetPeerName) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
-
   ASSERT_THAT(
       connect(s_, reinterpret_cast<struct sockaddr*>(&addr_), AddrLen()),
       SyscallSucceeds());
@@ -310,8 +287,6 @@ TEST_P(RawSocketTest, GetPeerName) {
 
 // Test that the socket is writable immediately.
 TEST_P(RawSocketTest, PollWritableImmediately) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
-
   struct pollfd pfd = {};
   pfd.fd = s_;
   pfd.events = POLLOUT;
@@ -320,8 +295,6 @@ TEST_P(RawSocketTest, PollWritableImmediately) {
 
 // Test that the socket isn't readable before receiving anything.
 TEST_P(RawSocketTest, PollNotReadableInitially) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
-
   // Try to receive data with MSG_DONTWAIT, which returns immediately if there's
   // nothing to be read.
   char buf[117];
@@ -331,8 +304,6 @@ TEST_P(RawSocketTest, PollNotReadableInitially) {
 
 // Test that the socket becomes readable once something is written to it.
 TEST_P(RawSocketTest, PollTriggeredOnWrite) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
-
   // Write something so that there's data to be read.
   // Arbitrary.
   constexpr char kBuf[] = "JP5";
@@ -346,8 +317,6 @@ TEST_P(RawSocketTest, PollTriggeredOnWrite) {
 
 // Test that we can connect() to a valid IP (loopback).
 TEST_P(RawSocketTest, ConnectToLoopback) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
-
   ASSERT_THAT(
       connect(s_, reinterpret_cast<struct sockaddr*>(&addr_), AddrLen()),
       SyscallSucceeds());
@@ -355,8 +324,6 @@ TEST_P(RawSocketTest, ConnectToLoopback) {
 
 // Test that calling send() without connect() fails.
 TEST_P(RawSocketTest, SendWithoutConnectFails) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
-
   // Arbitrary.
   constexpr char kBuf[] = "Endgame was good";
   ASSERT_THAT(send(s_, kBuf, sizeof(kBuf), 0),
@@ -365,7 +332,6 @@ TEST_P(RawSocketTest, SendWithoutConnectFails) {
 
 // Wildcard Bind.
 TEST_P(RawSocketTest, BindToWildcard) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
   struct sockaddr_storage addr;
   addr = {};
 
@@ -386,16 +352,12 @@ TEST_P(RawSocketTest, BindToWildcard) {
 
 // Bind to localhost.
 TEST_P(RawSocketTest, BindToLocalhost) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
-
   ASSERT_THAT(bind(s_, reinterpret_cast<struct sockaddr*>(&addr_), AddrLen()),
               SyscallSucceeds());
 }
 
 // Bind to a different address.
 TEST_P(RawSocketTest, BindToInvalid) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
-
   struct sockaddr_storage bind_addr = addr_;
   if (Family() == AF_INET) {
     struct sockaddr_in* sin = reinterpret_cast<struct sockaddr_in*>(&bind_addr);
@@ -413,8 +375,6 @@ TEST_P(RawSocketTest, BindToInvalid) {
 
 // Send and receive an packet.
 TEST_P(RawSocketTest, SendAndReceive) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
-
   // Arbitrary.
   constexpr char kBuf[] = "TB12";
   ASSERT_NO_FATAL_FAILURE(SendBuf(kBuf, sizeof(kBuf)));
@@ -428,8 +388,6 @@ TEST_P(RawSocketTest, SendAndReceive) {
 // We should be able to create multiple raw sockets for the same protocol and
 // receive the same packet on both.
 TEST_P(RawSocketTest, MultipleSocketReceive) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
-
   int s2;
   ASSERT_THAT(s2 = socket(Family(), SOCK_RAW, Protocol()), SyscallSucceeds());
 
@@ -455,8 +413,6 @@ TEST_P(RawSocketTest, MultipleSocketReceive) {
 
 // Test that connect sends packets to the right place.
 TEST_P(RawSocketTest, SendAndReceiveViaConnect) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
-
   ASSERT_THAT(
       connect(s_, reinterpret_cast<struct sockaddr*>(&addr_), AddrLen()),
       SyscallSucceeds());
@@ -474,8 +430,6 @@ TEST_P(RawSocketTest, SendAndReceiveViaConnect) {
 
 // Bind to localhost, then send and receive packets.
 TEST_P(RawSocketTest, BindSendAndReceive) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
-
   ASSERT_THAT(bind(s_, reinterpret_cast<struct sockaddr*>(&addr_), AddrLen()),
               SyscallSucceeds());
 
@@ -491,8 +445,6 @@ TEST_P(RawSocketTest, BindSendAndReceive) {
 
 // Bind and connect to localhost and send/receive packets.
 TEST_P(RawSocketTest, BindConnectSendAndReceive) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
-
   ASSERT_THAT(bind(s_, reinterpret_cast<struct sockaddr*>(&addr_), AddrLen()),
               SyscallSucceeds());
   ASSERT_THAT(
@@ -512,8 +464,6 @@ TEST_P(RawSocketTest, BindConnectSendAndReceive) {
 // Check that setting SO_RCVBUF below min is clamped to the minimum
 // receive buffer size.
 TEST_P(RawSocketTest, SetSocketRecvBufBelowMin) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
-
   // Discover minimum receive buf size by trying to set it to zero.
   // See:
   // https://github.com/torvalds/linux/blob/a5dc8300df75e8b8384b4c82225f1e4a0b4d9b55/net/core/sock.c#L820
@@ -545,8 +495,6 @@ TEST_P(RawSocketTest, SetSocketRecvBufBelowMin) {
 // Check that setting SO_RCVBUF above max is clamped to the maximum
 // receive buffer size.
 TEST_P(RawSocketTest, SetSocketRecvBufAboveMax) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
-
   // Discover max buf size by trying to set the largest possible buffer size.
   constexpr int kRcvBufSz = 0xffffffff;
   ASSERT_THAT(
@@ -572,8 +520,6 @@ TEST_P(RawSocketTest, SetSocketRecvBufAboveMax) {
 
 // Check that setting SO_RCVBUF min <= kRcvBufSz <= max is honored.
 TEST_P(RawSocketTest, SetSocketRecvBuf) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
-
   int max = 0;
   int min = 0;
   {
@@ -622,8 +568,6 @@ TEST_P(RawSocketTest, SetSocketRecvBuf) {
 // Check that setting SO_SNDBUF below min is clamped to the minimum
 // receive buffer size.
 TEST_P(RawSocketTest, SetSocketSendBufBelowMin) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
-
   // Discover minimum buffer size by trying to set it to zero.
   constexpr int kSndBufSz = 0;
   ASSERT_THAT(
@@ -653,8 +597,6 @@ TEST_P(RawSocketTest, SetSocketSendBufBelowMin) {
 // Check that setting SO_SNDBUF above max is clamped to the maximum
 // send buffer size.
 TEST_P(RawSocketTest, SetSocketSendBufAboveMax) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
-
   // Discover maximum buffer size by trying to set it to a large value.
   constexpr int kSndBufSz = 0xffffffff;
   ASSERT_THAT(
@@ -680,8 +622,6 @@ TEST_P(RawSocketTest, SetSocketSendBufAboveMax) {
 
 // Check that setting SO_SNDBUF min <= kSndBufSz <= max is honored.
 TEST_P(RawSocketTest, SetSocketSendBuf) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
-
   int max = 0;
   int min = 0;
   {
@@ -734,8 +674,6 @@ void randomizePacket(char* buf, size_t len, int proto) {
 // Test that receive buffer limits are not enforced when the recv buffer is
 // empty.
 TEST_P(RawSocketTest, RecvBufLimitsEmptyRecvBuffer) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
-
   ASSERT_THAT(bind(s_, reinterpret_cast<struct sockaddr*>(&addr_), AddrLen()),
               SyscallSucceeds());
   ASSERT_THAT(
@@ -782,8 +720,6 @@ TEST_P(RawSocketTest, RecvBufLimitsEmptyRecvBuffer) {
 }
 
 TEST_P(RawSocketTest, RecvBufLimits) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
-
   ASSERT_THAT(bind(s_, reinterpret_cast<struct sockaddr*>(&addr_), AddrLen()),
               SyscallSucceeds());
   ASSERT_THAT(
@@ -928,7 +864,8 @@ TEST_P(RawSocketTest, BindToDevice) {
 
 // AF_INET6+SOCK_RAW+IPPROTO_RAW sockets can be created, but not written to.
 TEST(RawSocketTest, IPv6ProtoRaw) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HaveRawIPSocketCapability(AF_INET6, IPPROTO_RAW)));
 
   int sock;
   ASSERT_THAT(sock = socket(AF_INET6, SOCK_RAW, IPPROTO_RAW),
@@ -945,7 +882,8 @@ TEST(RawSocketTest, IPv6ProtoRaw) {
 }
 
 TEST(RawSocketTest, IPv6SendMsg) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HaveRawIPSocketCapability(AF_INET6, IPPROTO_TCP)));
 
   int sock;
   ASSERT_THAT(sock = socket(AF_INET6, SOCK_RAW, IPPROTO_TCP),
@@ -973,8 +911,6 @@ TEST(RawSocketTest, IPv6SendMsg) {
 }
 
 TEST_P(RawSocketTest, ConnectOnIPv6Socket) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
-
   int sock;
   ASSERT_THAT(sock = socket(AF_INET6, SOCK_RAW, IPPROTO_TCP),
               SyscallSucceeds());
@@ -995,7 +931,8 @@ INSTANTIATE_TEST_SUITE_P(
                        ::testing::Values(AF_INET, AF_INET6)));
 
 void TestRawSocketMaybeBindReceive(bool do_bind) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HaveRawIPSocketCapability(AF_INET, IPPROTO_UDP)));
 
   constexpr char payload[] = "abcdefgh";
 
@@ -1113,7 +1050,8 @@ TEST(RawSocketTest, BindReceive) {
 }
 
 TEST(RawSocketTest, ReceiveIPPacketInfo) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HaveRawIPSocketCapability(AF_INET, IPPROTO_UDP)));
 
   FileDescriptor raw =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_RAW, IPPROTO_UDP));
@@ -1167,7 +1105,8 @@ TEST(RawSocketTest, ReceiveIPPacketInfo) {
 }
 
 TEST(RawSocketTest, ReceiveIPv6PacketInfo) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HaveRawIPSocketCapability(AF_INET6, IPPROTO_UDP)));
 
   FileDescriptor raw =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_RAW, IPPROTO_UDP));
@@ -1206,7 +1145,8 @@ TEST(RawSocketTest, ReceiveIPv6PacketInfo) {
 }
 
 TEST(RawSocketTest, ReceiveTOS) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HaveRawIPSocketCapability(AF_INET, IPPROTO_UDP)));
 
   FileDescriptor raw =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_RAW, IPPROTO_UDP));
@@ -1271,7 +1211,8 @@ TEST(RawSocketTest, ReceiveTOS) {
 }
 
 TEST(RawSocketTest, ReceiveTClass) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HaveRawIPSocketCapability(AF_INET6, IPPROTO_UDP)));
 
   FileDescriptor raw =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_RAW, IPPROTO_UDP));
@@ -1320,7 +1261,8 @@ TEST(RawSocketTest, ReceiveTClass) {
 }
 
 TEST(RawSocketTest, ReceiveTTL) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HaveRawIPSocketCapability(AF_INET, IPPROTO_UDP)));
 
   FileDescriptor raw =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_RAW, IPPROTO_UDP));
@@ -1392,7 +1334,8 @@ TEST(RawSocketTest, ReceiveTTL) {
 }
 
 TEST(RawSocketTest, ReceiveHopLimit) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HaveRawIPSocketCapability(AF_INET6, IPPROTO_UDP)));
 
   FileDescriptor raw =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_RAW, IPPROTO_UDP));
@@ -1450,7 +1393,8 @@ TEST(RawSocketTest, ReceiveHopLimit) {
 }
 
 TEST(RawSocketTest, SetIPv6ChecksumError_MultipleOf2) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HaveRawIPSocketCapability(AF_INET6, IPPROTO_UDP)));
 
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_RAW, IPPROTO_UDP));
@@ -1477,7 +1421,8 @@ TEST(RawSocketTest, SetIPv6ChecksumError_MultipleOf2) {
 }
 
 TEST(RawSocketTest, SetIPv6ChecksumError_ReadShort) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HaveRawIPSocketCapability(AF_INET6, IPPROTO_UDP)));
 
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_RAW, IPPROTO_UDP));
@@ -1538,7 +1483,8 @@ TEST(RawSocketTest, SetIPv6ChecksumError_ReadShort) {
 }
 
 TEST(RawSocketTest, IPv6Checksum_ValidateAndCalculate) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HaveRawIPSocketCapability(AF_INET6, IPPROTO_UDP)));
 
   FileDescriptor checksum_set =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_RAW, IPPROTO_UDP));
@@ -1624,7 +1570,8 @@ TEST(RawSocketTest, IPv6Checksum_ValidateAndCalculate) {
 
 // SOL_IP options on a raw AF_INET6 socket are denied.
 TEST(RawSocketTest, SolIPSetSockOptOnRawV6SocketFails) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HaveRawIPSocketCapability(AF_INET6, IPPROTO_UDP)));
   FileDescriptor raw =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_RAW, IPPROTO_UDP));
 

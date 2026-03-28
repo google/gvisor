@@ -75,7 +75,7 @@ func (dev *accelDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dent
 		unix.Close(hostFD)
 		return nil, err
 	}
-	fd.memmapFile.fd = fd
+	fd.memmapFile.SetFD(hostFD)
 	if vfs.MayWriteFileWithOpenFlags(opts.Flags) {
 		dev.openWriteFDs++
 	}

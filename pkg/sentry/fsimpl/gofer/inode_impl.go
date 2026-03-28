@@ -155,16 +155,21 @@ func (i *inode) updateHandles(ctx context.Context, h handle, readable, writable 
 //   - i.handleMu must be locked.
 //   - !d.isSynthetic().
 func (i *inode) closeHostFDs() {
+	// Close FDs, other than what is owned by i.mmapFile.
 	// We can use RacyLoad() because i.handleMu is locked.
-	if i.readFD.RacyLoad() >= 0 {
-		_ = unix.Close(int(i.readFD.RacyLoad()))
+	realMmapFD := i.mmapFile.FD()
+	readFD := int(i.readFD.RacyLoad())
+	if readFD >= 0 && readFD != realMmapFD {
+		_ = unix.Close(readFD)
 	}
-	if i.writeFD.RacyLoad() >= 0 && i.readFD.RacyLoad() != i.writeFD.RacyLoad() {
+	if writeFD := int(i.writeFD.RacyLoad()); writeFD >= 0 && readFD != writeFD && writeFD != realMmapFD {
 		_ = unix.Close(int(i.writeFD.RacyLoad()))
 	}
 	i.readFD = atomicbitops.FromInt32(-1)
 	i.writeFD = atomicbitops.FromInt32(-1)
 	i.mmapFD = atomicbitops.FromInt32(-1)
+
+	i.mmapFile.MappableRelease() // eventually closes realMmapFD
 
 	switch it := i.impl.(type) {
 	case *directfsInode:
@@ -494,12 +499,12 @@ func (i *inode) unlink(ctx context.Context, name string, flags uint32) error {
 }
 
 // Precondition: !d.isSynthetic().
-func (i *inode) rename(ctx context.Context, oldName string, newParent *dentry, newName string) error {
+func (i *inode) rename(ctx context.Context, oldName string, newParent *dentry, newName string, flags uint32) error {
 	switch it := i.impl.(type) {
 	case *lisafsInode:
-		return it.controlFD.RenameAt(ctx, oldName, newParent.inode.impl.(*lisafsInode).controlFD.ID(), newName)
+		return it.controlFD.RenameAt(ctx, oldName, newParent.inode.impl.(*lisafsInode).controlFD.ID(), newName, flags)
 	case *directfsInode:
-		return fsutil.RenameAt(it.controlFD, oldName, newParent.inode.impl.(*directfsInode).controlFD, newName)
+		return fsutil.RenameAt2(it.controlFD, oldName, newParent.inode.impl.(*directfsInode).controlFD, newName, flags)
 	default:
 		panic("unknown inode implementation")
 	}

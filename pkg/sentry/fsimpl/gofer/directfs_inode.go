@@ -123,6 +123,11 @@ func (fs *filesystem) newDirectfsDentry(controlFD int) (*dentry, error) {
 		_ = unix.Close(controlFD)
 		return nil, err
 	}
+	if err := checkSupportedFileType(stat.Mode); err != nil {
+		log.Warningf("checkSupportedFileType() failed for controlFD %d with mode %#o: %v", controlFD, stat.Mode, err)
+		_ = unix.Close(controlFD)
+		return nil, err
+	}
 	isDir := stat.Mode&linux.FileTypeMask == linux.ModeDirectory
 	inoKey := inoKeyFromStat(&stat)
 
@@ -819,6 +824,16 @@ func doRevalidationDirectfs(ctx context.Context, vfsObj *vfs.VirtualFilesystem, 
 		parent = d.inode.impl.(*directfsInode)
 	}
 	return nil
+}
+
+func checkSupportedFileType(mode uint32) error {
+	switch mode & unix.S_IFMT {
+	case unix.S_IFREG, unix.S_IFDIR, unix.S_IFLNK, unix.S_IFCHR, unix.S_IFSOCK, unix.S_IFIFO:
+		return nil
+
+	default:
+		return unix.EPERM
+	}
 }
 
 // LINT.ThenChange(../../../../runsc/fsgofer/lisafs.go)

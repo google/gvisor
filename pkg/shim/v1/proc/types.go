@@ -40,6 +40,10 @@ type CreateConfig struct {
 	Stdin    string
 	Stdout   string
 	Stderr   string
+
+	// FS checkpoint configuration.
+	FSRestoreImagePath string
+	FSRestoreDirect    bool
 }
 
 // ExecConfig holds exec creation configuration.

@@ -72,9 +72,13 @@ func ResolveExecutablePath(ctx context.Context, args *kernel.CreateProcessArgs) 
 	return f, nil
 }
 
+// resolve searches for an executable in the given PATH directories.
+// Error handling follows glibc execvpe() (posix/execvpe.c).
 func resolve(ctx context.Context, creds *auth.Credentials, mns *vfs.MountNamespace, paths []string, name string) (string, error) {
 	root := mns.Root(ctx)
 	defer root.DecRef(ctx)
+	gotEACCES := false
+	lastErr := error(linuxerr.ENOENT)
 	for _, p := range paths {
 		if !path.IsAbs(p) {
 			// Relative paths aren't safe, no one should be using them.
@@ -94,20 +98,31 @@ func resolve(ctx context.Context, creds *auth.Credentials, mns *vfs.MountNamespa
 			Flags:    linux.O_RDONLY,
 		}
 		dentry, err := root.Mount().Filesystem().VirtualFilesystem().OpenAt(ctx, creds, pop, opts)
-		if linuxerr.Equals(linuxerr.ENOENT, err) || linuxerr.Equals(linuxerr.EACCES, err) {
-			// Didn't find it here.
-			continue
+		if err == nil {
+			dentry.DecRef(ctx)
+			return binPath, nil
 		}
-		if err != nil {
+
+		// Preserve the last error, matching glibc's errno semantics.
+		lastErr = err
+		switch {
+		case linuxerr.Equals(linuxerr.EACCES, err):
+			gotEACCES = true
+		case linuxerr.Equals(linuxerr.ENOENT, err),
+			linuxerr.Equals(linuxerr.ESTALE, err),
+			linuxerr.Equals(linuxerr.ENOTDIR, err),
+			linuxerr.Equals(linuxerr.ENODEV, err),
+			linuxerr.Equals(linuxerr.ETIMEDOUT, err):
+			// Skip to next PATH entry.
+		default:
 			return "", err
 		}
-		dentry.DecRef(ctx)
-
-		return binPath, nil
 	}
 
-	// Couldn't find it.
-	return "", linuxerr.ENOENT
+	if gotEACCES {
+		return "", linuxerr.EACCES
+	}
+	return "", lastErr
 }
 
 // getPath returns the PATH as a slice of strings given the environment

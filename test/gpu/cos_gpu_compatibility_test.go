@@ -59,7 +59,7 @@ func TestGPUDriversCompatibility(t *testing.T) {
 		name := image["name"].(string)
 		family := image["family"].(string)
 
-		t.Run(fmt.Sprintf("%s", name), func(t *testing.T) {
+		t.Run(name, func(t *testing.T) {
 			cosBranch, version, err := imageNameToCosPatchVersion(name, family)
 			if err != nil {
 				t.Fatalf("Failed to convert image name to COS version: %v", err)

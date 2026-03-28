@@ -21,6 +21,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cerrno>
 #include <string>
 
 #include "gmock/gmock.h"
@@ -90,7 +91,9 @@ class FileDescriptor {
   // closing its existing file descriptor.
   void reset(int fd) {
     if (fd_ >= 0) {
-      TEST_PCHECK(close(fd_) == 0);
+      // No need to retry on EINTR, man 2 close(): "... the file descriptor is
+      // guaranteed to be closed."
+      TEST_PCHECK(close(fd_) == 0 || errno == EINTR);
       MaybeSave();
     }
     set_fd(fd);

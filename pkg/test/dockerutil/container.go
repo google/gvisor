@@ -127,6 +127,9 @@ type RunOpts struct {
 	// sniffGPUOpts, if set, sets the rules for GPU sniffing during this test.
 	// Must be set via `RunOpts.SniffGPU`.
 	sniffGPUOpts *SniffGPUOpts
+
+	// Annotations are annotations to set on the container.
+	Annotations map[string]string
 }
 
 func makeContainer(ctx context.Context, logger testutil.Logger, runtime string) *Container {
@@ -368,6 +371,7 @@ func (c *Container) hostConfig(r RunOpts) *container.HostConfig {
 			DeviceRequests: r.DeviceRequests,
 			Devices:        r.Devices,
 		},
+		Annotations: r.Annotations,
 	}
 }
 
@@ -528,7 +532,7 @@ func (c *Container) FindPort(ctx context.Context, sandboxPort int) (int, error) 
 
 	port, err := strconv.Atoi(ports[0].HostPort)
 	if err != nil {
-		return -1, fmt.Errorf("error parsing port %q: %v", port, err)
+		return -1, fmt.Errorf("error parsing port %d: %v", port, err)
 	}
 	return port, nil
 }
@@ -1017,7 +1021,7 @@ func (cp *ContainerPool) String() string {
 	}
 	utilizationPct := 100.0 * cp.getUtilizationLocked(now)
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("ContainerPool[%d/%d containers in use, utilization=%.1f%%]: ", containersInUse, len(containers), utilizationPct))
+	fmt.Fprintf(&sb, "ContainerPool[%d/%d containers in use, utilization=%.1f%%]: ", containersInUse, len(containers), utilizationPct)
 	for i, container := range containers {
 		if i > 0 {
 			sb.WriteString(", ")

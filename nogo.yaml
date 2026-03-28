@@ -156,6 +156,12 @@ analyzers:
       suppress:
         - "fmt.Fprintln arg list ends with redundant newline"
         - "non-constant format string in call to .*"
+      exclude:
+        # Starting in 1.26, printf reports misuse of %q with more types. Many
+        # of these are unfixed in upstream projects.
+        - codes/codes.go # go.opentelemetry.io/otel
+        - yaml.go # github.com/go-openapi/swag/yamlutils
+        - staticcheck/sa1030/sa1030.go # staticcheck
   shift:
     generated: # Disabled for generated code; these shifts are well-defined.
       exclude: [".*"]
@@ -195,7 +201,7 @@ analyzers:
         - pkg/gohacks/noescape_unsafe.go                           # Special case.
         - pkg/ring0/pagetables/allocator_unsafe.go                 # Special case.
         - pkg/sentry/devices/nvproxy/frontend_mmap_unsafe.go       # Special case.
-        - pkg/sentry/fsutil/host_file_mapper_unsafe.go             # Special case.
+        - pkg/sentry/fsutil/mmap_unsafe.go                         # Special case.
         - pkg/sentry/pgalloc/pgalloc_unsafe.go                     # Special case.
         - pkg/sentry/platform/kvm/bluepill_unsafe.go               # Special case.
         - pkg/sentry/platform/kvm/machine_unsafe.go                # Special case.
@@ -274,71 +280,5 @@ analyzers:
       exclude: [".*"]
   QF1008: # Omit embedded fields from selector expression
     # Controversial.
-    internal:
-      exclude: [".*"]
-  QF1002: # Convert untagged switch to tagged switch
-    # disabled for now due to existing violations.
-    internal:
-      exclude: [".*"]
-  QF1003: # Convert if/else-if chain to tagged switch
-    # disabled for now due to existing violations.
-    internal:
-      exclude: [".*"]
-  QF1004: # Use strings.ReplaceAll instead of Replace(..., -1)
-    # disabled for now due to existing violations.
-    internal:
-      exclude: [".*"]
-  QF1005: # Expand call to math.Pow
-    # disabled for now due to existing violations.
-    internal:
-      exclude: [".*"]
-  QF1011: # Omit redundant type from variable declaration
-    # disabled for now due to existing violations.
-    internal:
-      exclude: [".*"]
-  QF1012: # Use `fmt.Fprintf(x, ...)` instead of `x.Write(fmt.Sprintf(...))`
-    # disabled for now due to existing violations.
-    generated:
-      exclude: [".*"]
-    internal:
-      exclude: [".*"]
-  S1000: # Use plain channel ops instead of single-case select
-    # disabled for now due to existing violations.
-    internal:
-      exclude: [".*"]
-  S1001: # should use copy(to[:], from) instead of a loop
-    # disabled for now due to existing violations.
-    internal:
-      exclude: [".*"]
-  S1003: # Replace index+len check with strings.Contains
-    # disabled for now due to existing violations.
-    internal:
-      exclude: [".*"]
-  S1007: # Simplify regular expression by using raw string literal
-    # disabled for now due to existing violations.
-    internal:
-      exclude: [".*"]
-  S1008: # Simplify returning boolean expression
-    # disabled for now due to existing violations.
-    internal:
-      exclude: [".*"]
-  S1011: # Use append directly instead of looped appends
-    # disabled for now due to existing violations.
-    internal:
-      exclude: [".*"]
-  S1023: # Omit redundant control flow
-    # disabled for now due to existing violations.
-    internal:
-      exclude: [".*"]
-  S1025: # Drop redundant fmt.Sprintf for strings
-    # disabled for now due to existing violations.
-    internal:
-      exclude: [".*"]
-  S1038: # should use log.Printf(...) instead of log.Println(fmt.Sprintf(...))
-    # disabled for now due to existing violations.
-    internal:
-      exclude: [".*"]
-  S1039: # Unnecessary use of `fmt.Sprint`
-    # disabled for now due to existing violations.
     internal:
       exclude: [".*"]

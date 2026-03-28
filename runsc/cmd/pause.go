@@ -16,8 +16,10 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/google/subcommands"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
@@ -25,7 +27,9 @@ import (
 )
 
 // Pause implements subcommands.Command for the "pause" command.
-type Pause struct{}
+type Pause struct {
+	containerLoader
+}
 
 // Name implements subcommands.Command.Name.
 func (*Pause) Name() string {
@@ -46,17 +50,25 @@ func (*Pause) Usage() string {
 func (*Pause) SetFlags(*flag.FlagSet) {
 }
 
+// FetchSpec implements util.SubCommand.FetchSpec.
+func (p *Pause) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error) {
+	c, err := p.loadContainer(conf, f, container.LoadOpts{})
+	if err != nil {
+		return "", nil, fmt.Errorf("loading container: %w", err)
+	}
+	return c.ID, c.Spec, nil
+}
+
 // Execute implements subcommands.Command.Execute.
-func (*Pause) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
+func (p *Pause) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if f.NArg() != 1 {
 		f.Usage()
 		return subcommands.ExitUsageError
 	}
 
-	id := f.Arg(0)
 	conf := args[0].(*config.Config)
 
-	cont, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
+	cont, err := p.loadContainer(conf, f, container.LoadOpts{})
 	if err != nil {
 		util.Fatalf("loading container: %v", err)
 	}
