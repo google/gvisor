@@ -128,6 +128,9 @@ func (cm *containerManager) getUsageFromCgroups(file control.CgroupControlFile) 
 
 // Event gets the events from the container.
 func (cm *containerManager) Event(cid *string, out *EventOut) error {
+	if err := cm.requireKernel("collect events"); err != nil {
+		return err
+	}
 	*out = EventOut{
 		Event: Event{
 			ID:   *cid,

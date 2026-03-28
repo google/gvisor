@@ -138,6 +138,10 @@ const (
 
 	// ContMgrContainerRuntimeState returns the runtime state of a container.
 	ContMgrContainerRuntimeState = "containerManager.ContainerRuntimeState"
+
+	// ContMgrReset tears down the current kernel and returns the sentry to
+	// a state ready for another Restore RPC. Used for warm sentry reuse.
+	ContMgrReset = "containerManager.Reset"
 )
 
 const (
@@ -221,10 +225,13 @@ func newController(fd int, l *Loader) (*controller, error) {
 func (c *controller) registerHandlers() {
 	l := c.manager.l
 	c.srv.Register(c.manager)
+	c.srv.Register(&control.Logging{})
+	if l.k == nil {
+		return
+	}
 	c.srv.Register(&control.Cgroups{Kernel: l.k})
 	c.srv.Register(&control.Fs{Kernel: l.k})
 	c.srv.Register(&control.Lifecycle{Kernel: l.k})
-	c.srv.Register(&control.Logging{})
 	c.srv.Register(&control.Proc{Kernel: l.k})
 	c.srv.Register(&control.State{Kernel: l.k})
 	c.srv.Register(&control.Usage{Kernel: l.k})
@@ -294,7 +301,8 @@ func (cm *containerManager) StartRoot(cid *string, _ *struct{}) error {
 	return cm.onStart()
 }
 
-// onStart notifies that sandbox is ready to start and wait for the result.
+// onStart notifies the boot loop that a container cycle is ready to start,
+// then blocks until Run() reports the result.
 func (cm *containerManager) onStart() error {
 	cm.startChan <- struct{}{}
 	if err := <-cm.startResultChan; err != nil {
@@ -303,9 +311,24 @@ func (cm *containerManager) onStart() error {
 	return nil
 }
 
+// requireKernel rejects RPCs that need a live kernel. Between Reset and
+// the next Restore, l.k is nil and only lifecycle RPCs (Reset, Restore)
+// should succeed.
+func (cm *containerManager) requireKernel(op string) error {
+	cm.l.mu.Lock()
+	defer cm.l.mu.Unlock()
+	if cm.l.k != nil {
+		return nil
+	}
+	return fmt.Errorf("sandbox kernel is unavailable during warm reset, cannot %s until restore", op)
+}
+
 // Processes retrieves information about processes running in the sandbox.
 func (cm *containerManager) Processes(cid *string, out *[]*control.Process) error {
 	log.Debugf("containerManager.Processes, cid: %s", *cid)
+	if err := cm.requireKernel("list processes"); err != nil {
+		return err
+	}
 	return control.Processes(cm.l.k, *cid, out)
 }
 
@@ -515,6 +538,9 @@ func (cm *containerManager) ExecuteAsync(args *control.ExecArgs, pid *int32) err
 // Checkpoint pauses a sandbox and saves its state.
 func (cm *containerManager) Checkpoint(o *control.SaveOpts, _ *struct{}) error {
 	log.Debugf("containerManager.Checkpoint")
+	if err := cm.requireKernel("checkpoint"); err != nil {
+		return err
+	}
 	return cm.l.save(o)
 }
 
@@ -544,14 +570,25 @@ func (cm *containerManager) PortForward(opts *PortForwardOpts, _ *struct{}) erro
 // RestoreOpts contains options related to restoring a container's file system.
 type RestoreOpts struct {
 	// FilePayload contains, in order:
-	// 1. checkpoint state file.
-	// 2. optional checkpoint pages metadata file.
-	// 3. optional checkpoint pages file.
-	// 4. optional platform device file.
+	//   1. checkpoint state file
+	//   2. optional pages metadata file
+	//   3. optional pages file
+	//   4. optional platform device file
+	//   5. (warm) gofer FDs (WarmGoferFDCount)
+	//   6. (warm) optional dev gofer FD
+	//   7. (warm) gofer filestore FDs (WarmGoferFilestoreFDCount)
 	urpc.FilePayload
 	HavePagesFile  bool
 	HaveDeviceFile bool
 	Background     bool
+
+	// WarmGoferFDCount is the number of fresh gofer FDs in the payload
+	// for a warm sentry restore cycle. Zero means no warm gofer FDs.
+	WarmGoferFDCount int
+	// WarmHaveDevGoferFD indicates a fresh dev gofer FD is present.
+	WarmHaveDevGoferFD bool
+	// WarmGoferFilestoreFDCount is the number of fresh filestore FDs.
+	WarmGoferFilestoreFDCount int
 
 	RestoreOptsExtra
 }
@@ -570,7 +607,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 	cu := cleanup.Make(cm.l.mu.Unlock)
 	defer cu.Clean()
 
-	if cm.l.state != created {
+	if cm.l.state != created && cm.l.state != warm {
 		return fmt.Errorf("cannot restore a container in state=%s", cm.l.state)
 	}
 	defer func() {
@@ -608,8 +645,10 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 		timer:      timer,
 	}
 
-	// Create the main MemoryFile.
-	cm.restorer.mainMF, err = createMemoryFile(cm.l.root.conf.AppHugePages, cm.l.hostTHP)
+	// Create the main MemoryFile. After seccomp is installed, the IMA
+	// workaround's PROT_EXEC mmap is blocked, so disable it on subsequent
+	// restore cycles (it only needs to run once per process lifetime).
+	cm.restorer.mainMF, err = createMemoryFileOpts(cm.l.root.conf.AppHugePages, cm.l.hostTHP, cm.l.seccompInstalled)
 	if err != nil {
 		return fmt.Errorf("creating memory file: %v", err)
 	}
@@ -633,16 +672,73 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 	// Release `cm.l.mu`.
 	cu.Clean()
 
+	// Compute explicit index for device file instead of len-1 so that
+	// warm gofer FDs can follow it in the payload.
+	nextPayloadIdx := 1
+	if o.HavePagesFile {
+		nextPayloadIdx += 2
+	}
 	if o.HaveDeviceFile {
-		cm.restorer.deviceFile, err = o.ReleaseFD(len(o.Files) - 1)
+		cm.restorer.deviceFile, err = o.ReleaseFD(nextPayloadIdx)
 		if err != nil {
 			return err
+		}
+		nextPayloadIdx++
+	}
+
+	// Extract fresh gofer FDs for warm sentry restore cycles.
+	if o.WarmGoferFDCount > 0 {
+		log.Infof("Warm restore: extracting %d gofer FDs, %d filestore FDs, devGofer=%v",
+			o.WarmGoferFDCount, o.WarmGoferFilestoreFDCount, o.WarmHaveDevGoferFD)
+
+		// Close old gofer FDs — they point to dead socket endpoints.
+		for _, f := range cm.l.root.goferFDs {
+			f.Close()
+		}
+		if cm.l.root.devGoferFD != nil {
+			cm.l.root.devGoferFD.Close()
+			cm.l.root.devGoferFD = nil
+		}
+		for _, f := range cm.l.root.goferFilestoreFDs {
+			f.Close()
+		}
+
+		// Extract fresh gofer FDs.
+		cm.l.root.goferFDs = nil
+		for i := 0; i < o.WarmGoferFDCount; i++ {
+			goferFD, err := o.ReleaseFD(nextPayloadIdx)
+			if err != nil {
+				return fmt.Errorf("extracting warm gofer FD %d: %w", i, err)
+			}
+			cm.l.root.goferFDs = append(cm.l.root.goferFDs, goferFD)
+			nextPayloadIdx++
+		}
+
+		if o.WarmHaveDevGoferFD {
+			cm.l.root.devGoferFD, err = o.ReleaseFD(nextPayloadIdx)
+			if err != nil {
+				return fmt.Errorf("extracting warm dev gofer FD: %w", err)
+			}
+			nextPayloadIdx++
+		}
+
+		cm.l.root.goferFilestoreFDs = nil
+		for i := 0; i < o.WarmGoferFilestoreFDCount; i++ {
+			filestoreFD, err := o.ReleaseFD(nextPayloadIdx)
+			if err != nil {
+				return fmt.Errorf("extracting warm filestore FD %d: %w", i, err)
+			}
+			cm.l.root.goferFilestoreFDs = append(cm.l.root.goferFilestoreFDs, filestoreFD)
+			nextPayloadIdx++
 		}
 	}
 	timer.Reached("restorer ok")
 
 	// Pause the kernel while we build a new one.
-	cm.l.k.Pause()
+	// After a warm Reset, l.k is nil — no kernel to pause.
+	if cm.l.k != nil {
+		cm.l.k.Pause()
+	}
 	timer.Reached("kernel paused")
 
 	countStr, ok := cm.restorer.metadata[ContainerCountKey]
@@ -732,6 +828,18 @@ func (cm *containerManager) onRestoreDone(s Savings) {
 	cm.l.mu.Unlock()
 	cm.l.restoreDone.Broadcast()
 	cm.restorer = nil
+}
+
+// Reset tears down the current kernel and prepares the sentry for a new
+// Restore RPC. This enables warm sentry reuse without re-forking the
+// sentry process, re-installing seccomp filters, or re-creating the
+// platform. Only permitted when the sentry was started with --warm-sentry.
+func (cm *containerManager) Reset(_ *struct{}, _ *struct{}) error {
+	if !cm.l.root.conf.WarmSentry {
+		return fmt.Errorf("Reset RPC rejected: sentry was not started with --warm-sentry")
+	}
+	log.Infof("containerManager.Reset: tearing down kernel for warm reuse")
+	return cm.l.Reset()
 }
 
 func (cm *containerManager) RestoreSubcontainer(args *StartArgs, _ *struct{}) (retErr error) {
@@ -828,12 +936,18 @@ func (cm *containerManager) RestoreSubcontainer(args *StartArgs, _ *struct{}) (r
 
 // Pause pauses all tasks, blocking until they are stopped.
 func (cm *containerManager) Pause(_, _ *struct{}) error {
+	if err := cm.requireKernel("pause"); err != nil {
+		return err
+	}
 	cm.l.k.Pause()
 	return nil
 }
 
 // Resume resumes all tasks.
 func (cm *containerManager) Resume(_, _ *struct{}) error {
+	if err := cm.requireKernel("resume"); err != nil {
+		return err
+	}
 	cm.l.k.Unpause()
 	return control.PostResume(cm.l.k, nil)
 }
@@ -866,6 +980,9 @@ func (cm *containerManager) WaitPID(args *WaitPIDArgs, waitStatus *uint32) error
 // WaitCheckpoint waits for the Kernel to have been successfully checkpointed.
 func (cm *containerManager) WaitCheckpoint(*struct{}, *struct{}) error {
 	log.Debugf("containerManager.WaitCheckpoint")
+	if err := cm.requireKernel("wait for checkpoint"); err != nil {
+		return err
+	}
 	err := cm.l.k.WaitForCheckpoint()
 	log.Debugf("containerManager.WaitCheckpoint done, err = %v", err)
 	return err
@@ -880,6 +997,9 @@ func (cm *containerManager) WaitRestore(*struct{}, *struct{}) error {
 
 func (cm *containerManager) WaitFSCheckpoint(*struct{}, *struct{}) error {
 	log.Debugf("containerManager.WaitFSCheckpoint")
+	if err := cm.requireKernel("wait for filesystem checkpoint"); err != nil {
+		return err
+	}
 	err := cm.l.k.WaitForFSSave()
 	log.Debugf("containerManager.WaitFSCheckpoint done, err = %v", err)
 	return err
@@ -954,6 +1074,9 @@ type SignalArgs struct {
 // process group.
 func (cm *containerManager) Signal(args *SignalArgs, _ *struct{}) error {
 	log.Debugf("containerManager.Signal: cid: %s, PID: %d, signal: %d, mode: %v", args.CID, args.PID, args.Signo, args.Mode)
+	if err := cm.requireKernel("signal processes"); err != nil {
+		return err
+	}
 	return cm.l.signal(args.CID, args.PID, args.Signo, args.Mode)
 }
 
@@ -995,6 +1118,9 @@ func (cm *containerManager) ListTraceSessions(_ *struct{}, out *[]seccheck.Sessi
 // ProcfsDump dumps procfs state of the sandbox.
 func (cm *containerManager) ProcfsDump(_ *struct{}, out *[]procfs.ProcessProcfsDump) error {
 	log.Debugf("containerManager.ProcfsDump")
+	if err := cm.requireKernel("dump procfs state"); err != nil {
+		return err
+	}
 	ts := cm.l.k.TaskSet()
 	pidns := ts.Root
 	tgs := pidns.ThreadGroups()
@@ -1130,6 +1256,9 @@ type FSSaveArgs struct {
 // FSSave collects a filesystem checkpoint.
 func (cm *containerManager) FSSave(args *FSSaveArgs, _ *struct{}) error {
 	log.Debugf("containerManager.FSSave")
+	if err := cm.requireKernel("save filesystem state"); err != nil {
+		return err
+	}
 	kopts, err := convertToKernelFSSaveOpts(args)
 	if err != nil {
 		return err

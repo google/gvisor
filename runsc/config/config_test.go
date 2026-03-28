@@ -180,6 +180,39 @@ func TestToFlagsFromManual(t *testing.T) {
 }
 
 // TestInvalidFlags checks that enum flags fail when value is not in enum set.
+func TestWarmSentryValidateNetwork(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		network string
+		wantErr string
+	}{
+		{name: "none", network: "none"},
+		{name: "sandbox", network: "sandbox"},
+		{name: "host", network: "host", wantErr: "warm-sentry is incompatible with --network=host"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
+			RegisterFlags(testFlags)
+			if err := testFlags.Lookup("warm-sentry").Value.Set("true"); err != nil {
+				t.Fatalf("failed to set warm-sentry: %v", err)
+			}
+			if err := testFlags.Lookup("network").Value.Set(tc.network); err != nil {
+				t.Fatalf("failed to set network: %v", err)
+			}
+			_, err := NewFromFlags(testFlags)
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("NewFromFlags() failed: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("NewFromFlags() error = %v, want substring %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
 func TestInvalidFlags(t *testing.T) {
 	for _, tc := range []struct {
 		name  string

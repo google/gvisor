@@ -65,6 +65,7 @@ go_library(
         "portforward.go",
         "ps.go",
         "read_control.go",
+        "reset.go",
         "restore.go",
         "resume.go",
         "run.go",

@@ -209,6 +209,10 @@ func New(conf *config.Config, args Args) (*Container, error) {
 		return nil, err
 	}
 
+	if conf.WarmSentry && !specutils.IsRootContainer(args.Spec) {
+		return nil, fmt.Errorf("warm-sentry is only supported for root containers in single-container sandboxes")
+	}
+
 	if err := os.MkdirAll(conf.RootDir, 0711); err != nil {
 		return nil, fmt.Errorf("creating container root directory %q: %v", conf.RootDir, err)
 	}
@@ -428,13 +432,118 @@ func (c *Container) Start(conf *config.Config) error {
 	return c.startImpl(conf, "start", c.Sandbox.StartRoot, c.Sandbox.StartSubcontainer)
 }
 
-// Restore takes a container and replaces its kernel and file system
-// to restore a container from its state file.
+// Reset tears down the kernel inside the sentry and returns the container
+// to Created state, ready for another Restore cycle. The sentry process
+// stays alive — seccomp, platform, and URPC server are preserved. The gofer
+// process is killed; a fresh one is created on the next Restore.
+//
+// Reset is currently scoped to root containers in single-container sandboxes.
+// Multi-container warm sentry support requires resetting all subcontainers
+// and their gofers, which is left for a follow-up.
+func (c *Container) Reset() error {
+	log.Debugf("Reset container for warm reuse, cid: %s", c.ID)
+
+	if err := c.Saver.lock(BlockAcquire); err != nil {
+		return err
+	}
+	defer c.Saver.UnlockOrDie()
+
+	if c.Sandbox == nil {
+		return fmt.Errorf("sandbox is nil, cannot reset")
+	}
+	if !c.IsSandboxRoot() {
+		return fmt.Errorf("warm sentry reset is only supported on the root container")
+	}
+	if err := c.requireStatus("reset", Stopped); err != nil {
+		return err
+	}
+
+	if err := c.Sandbox.Reset(); err != nil {
+		return fmt.Errorf("resetting sandbox: %w", err)
+	}
+
+	if goferPid := c.GoferPid.Load(); goferPid != 0 {
+		log.Infof("Reset: killing gofer pid %d", goferPid)
+		if err := unix.Kill(goferPid, unix.SIGKILL); err != nil && !errors.Is(err, unix.ESRCH) {
+			return fmt.Errorf("killing gofer pid %d: %w", goferPid, err)
+		}
+		if c.goferIsChild {
+			if _, err := unix.Wait4(goferPid, nil, 0, nil); err != nil && !errors.Is(err, unix.ECHILD) {
+				return fmt.Errorf("waiting for gofer pid %d: %w", goferPid, err)
+			}
+		}
+		c.GoferPid.Store(0)
+	}
+
+	c.changeStatus(Created)
+	return c.saveLocked()
+}
+
 func (c *Container) Restore(conf *config.Config, imagePath string, direct, background bool) error {
 	log.Debugf("Restore container, cid: %s", c.ID)
 
+	if conf.WarmSentry && !specutils.IsRootContainer(c.Spec) {
+		return fmt.Errorf("warm-sentry restore is only supported for root containers in single-container sandboxes")
+	}
+
+	var warm *sandbox.WarmRestoreOpts
+	warmCleanup := cleanup.Cleanup{}
+	defer warmCleanup.Clean()
+
+	if conf.WarmSentry && specutils.IsRootContainer(c.Spec) && c.GoferPid.Load() == 0 {
+		// Warm restore cycle 2+: create a fresh gofer process with new
+		// socket connections. The old gofer was killed by Reset().
+		// On the first restore, the gofer from create is still alive.
+		//
+		// The gofer must be created inside the container's cgroup so
+		// it inherits CPU/memory/pids accounting, matching the cold
+		// path in New() which uses cgroup.RunInCgroup.
+		var (
+			ioFiles         []*os.File
+			goferFilestores []*os.File
+			devIOFile       *os.File
+			mountsFile      *os.File
+		)
+		if err := cgroup.RunInCgroup(c.Sandbox.CgroupJSON.Cgroup, func() error {
+			var err error
+			ioFiles, goferFilestores, devIOFile, mountsFile, err = c.createGoferProcess(conf, c.Sandbox.MountHints, false)
+			return err
+		}); err != nil {
+			return fmt.Errorf("creating gofer for warm restore: %w", err)
+		}
+		warmCleanup.Add(func() {
+			if mountsFile != nil {
+				_ = mountsFile.Close()
+			}
+			if devIOFile != nil {
+				_ = devIOFile.Close()
+			}
+			for _, f := range ioFiles {
+				_ = f.Close()
+			}
+			for _, f := range goferFilestores {
+				_ = f.Close()
+			}
+		})
+		if mountsFile != nil {
+			cleanMounts, err := specutils.ReadMounts(mountsFile)
+			_ = mountsFile.Close()
+			mountsFile = nil
+			if err != nil {
+				return fmt.Errorf("reading mounts file: %w", err)
+			}
+			c.Spec.Mounts = cleanMounts
+		}
+		warm = &sandbox.WarmRestoreOpts{
+			GoferFiles:      ioFiles,
+			GoferFilestores: goferFilestores,
+			DevIOFile:       devIOFile,
+		}
+	}
+
 	restore := func(conf *config.Config, spec *specs.Spec) error {
-		return c.Sandbox.Restore(conf, spec, c.ID, imagePath, direct, background)
+		warmCleanup.Release()
+		return c.Sandbox.Restore(conf, spec, c.ID, imagePath, direct, background, warm)
 	}
 	return c.startImpl(conf, "restore", restore, c.Sandbox.RestoreSubcontainer)
 }
@@ -1043,6 +1152,10 @@ func createGoferConf(overlayMedium config.OverlayMedium, overlaySize string, mou
 // initGoferConfs initializes c.GoferMountConfs with all the gofer configs that
 // dictate how each gofer mount should be configured.
 func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *boot.PodMountHints, rootfsHint *boot.RootfsHint) error {
+	if len(c.GoferMountConfs) > 0 && c.Sandbox != nil && c.Sandbox.WarmSentry {
+		log.Debugf("Gofer mount confs already initialized (%d confs) for warm sentry, skipping", len(c.GoferMountConfs))
+		return nil
+	}
 	// Handle root mount first.
 	overlayMedium := ovlConf.RootOverlayMedium()
 	overlaySize := ovlConf.RootOverlaySize()
@@ -1625,7 +1738,11 @@ func (c *Container) changeStatus(s Status) {
 		panic(fmt.Sprintf("invalid state transition: %v => %v", c.Status, s))
 
 	case Created:
-		if c.Status != Creating {
+		if c.Status == Stopped {
+			if c.Sandbox == nil || !c.Sandbox.WarmSentry {
+				panic(fmt.Sprintf("invalid state transition: %v => %v (only allowed for warm sentry)", c.Status, s))
+			}
+		} else if c.Status != Creating {
 			panic(fmt.Sprintf("invalid state transition: %v => %v", c.Status, s))
 		}
 		if c.Sandbox == nil {

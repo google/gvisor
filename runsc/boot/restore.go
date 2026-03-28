@@ -22,6 +22,7 @@ import (
 	time2 "time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
@@ -35,6 +36,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
+	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/socket/hostinet"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	"gvisor.dev/gvisor/pkg/sentry/state"
@@ -191,21 +193,45 @@ func (r *restorer) restore(l *Loader) error {
 
 	// Create a new root network namespace with the network stack of the
 	// old kernel to preserve the existing network configuration.
-	oldStack, oldInetStack := createNetworkStackForRestore(l)
+	var oldStack *stack.Stack
+	var oldInetStack inet.Stack
+	if l.k != nil {
+		oldStack, oldInetStack = createNetworkStackForRestore(l)
+		l.k.RootNetworkNamespace().ResetStack()
+	} else if l.savedNetStack != nil {
+		// Warm restore: reuse the network stack saved during Reset.
+		// The NIC dispatch goroutines are still running with live FDs.
+		oldStack = l.savedNetStack
+		oldInetStack = l.savedInetStack
+		l.savedNetStack = nil
+		l.savedInetStack = nil
+		log.Infof("Warm sentry: reusing saved network stack")
+	}
 	r.timer.Reached("netstack created")
 
-	// Reset the network stack in the network namespace to nil before
-	// replacing the kernel. This will not free the network stack when this
-	// old kernel is released.
-	l.k.RootNetworkNamespace().ResetStack()
-
-	p, err := createPlatform(l.root.conf, l.root.applicationCores, r.deviceFile)
-	if err != nil {
-		return fmt.Errorf("creating platform: %v", err)
+	// Reuse the saved platform from a previous restore if available.
+	// Creating a new platform requires mmap calls that seccomp blocks.
+	var (
+		p   platform.Platform
+		err error
+	)
+	if l.savedPlatform != nil {
+		p = l.savedPlatform
+		l.savedPlatform = nil
+		log.Infof("Warm sentry: reusing saved platform")
+	} else {
+		p, err = createPlatform(l.root.conf, l.root.applicationCores, r.deviceFile)
+		if err != nil {
+			return fmt.Errorf("creating platform: %v", err)
+		}
 	}
 
 	// Start the old watchdog before replacing it with a new one below.
-	l.watchdog.Start()
+	// After a warm Reset, l.k is nil and the old watchdog references the
+	// released kernel — starting it would crash on the destroyed timekeeper.
+	if l.k != nil {
+		l.watchdog.Start()
+	}
 
 	// Release the kernel and replace it with a new one that will be restored into.
 	var oldNvidiaDriverVersion nvconf.DriverVersion
@@ -242,6 +268,31 @@ func (r *restorer) restore(l *Loader) error {
 	})
 	defer cu.Clean()
 
+	// For warm sentry, dup stdio FDs before the restore loop consumes them.
+	// Stdio FDs were dup'd to stable FD numbers during boot.New() and are
+	// consumed by fd.Release() during restore. The originals are preserved
+	// so they survive for the next cycle.
+	//
+	// Gofer FDs are NOT duped — they are re-created fresh by the CLI for
+	// each warm restore cycle and arrive via the Restore RPC payload.
+	type warmFDState struct {
+		cont         *containerInfo
+		origStdioFDs []*fd.FD
+	}
+	var warmSaved []warmFDState
+	if l.root.conf.WarmSentry {
+		for _, cont := range r.containers {
+			state := warmFDState{cont: cont}
+			state.origStdioFDs = cont.stdioFDs
+			cont.stdioFDs, err = dupFDs(state.origStdioFDs)
+			if err != nil {
+				cont.stdioFDs = state.origStdioFDs
+				return fmt.Errorf("dupping stdio FDs for warm reuse: %w", err)
+			}
+			warmSaved = append(warmSaved, state)
+		}
+	}
+
 	fdmap := make(map[checkpoint.ResourceID]int)
 	mfmap := make(map[checkpoint.ResourceID]*pgalloc.MemoryFile)
 	for _, cont := range r.containers {
@@ -259,6 +310,11 @@ func (r *restorer) restore(l *Loader) error {
 			key := host.MakeResourceID(cont.containerName, customFD.guest)
 			fdmap[key] = customFD.host.FD()
 		}
+	}
+
+	// Restore original stdio FDs for the next warm restore cycle.
+	for _, s := range warmSaved {
+		s.cont.stdioFDs = s.origStdioFDs
 	}
 
 	log.Debugf("Restore using fdmap: %v", fdmap)
@@ -502,4 +558,29 @@ func (l *Loader) saveWithOpts(saveOpts *state.SaveOpts, execOpts *control.SaveRe
 		Watchdog: l.watchdog,
 	}
 	return state.SaveWithOpts(saveOpts, execOpts)
+}
+
+// dupFD creates a dup of the given fd.FD, returning a new wrapper.
+func dupFD(f *fd.FD) (*fd.FD, error) {
+	newFD, err := unix.Dup(f.FD())
+	if err != nil {
+		return nil, err
+	}
+	return fd.New(newFD), nil
+}
+
+// dupFDs creates dups of all fd.FDs in the slice, returning new wrappers.
+func dupFDs(fds []*fd.FD) ([]*fd.FD, error) {
+	result := make([]*fd.FD, len(fds))
+	for i, f := range fds {
+		var err error
+		result[i], err = dupFD(f)
+		if err != nil {
+			for j := 0; j < i; j++ {
+				result[j].Close()
+			}
+			return nil, err
+		}
+	}
+	return result, nil
 }

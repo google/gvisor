@@ -406,6 +406,10 @@ type Config struct {
 	// SaveRestoreNetstack indicates whether netstack should be saved and restored.
 	SaveRestoreNetstack bool `flag:"save-restore-netstack"`
 
+	// WarmSentry enables warm sentry mode where the sentry process loops
+	// after container exit, accepting Reset+Restore RPCs without re-forking.
+	WarmSentry bool `flag:"warm-sentry"`
+
 	// Nftables enables support for nftables to be used instead of iptables.
 	Nftables bool `flag:"TESTONLY-nftables"`
 
@@ -469,6 +473,11 @@ func (c *Config) validate() error {
 	}
 	if unsupported := allowedCaps & ^nvconf.SupportedDriverCaps; unsupported != 0 {
 		return fmt.Errorf("--nvproxy-allowed-driver-capabilities=%q: unsupported capabilities: %v", c.NVProxyAllowedDriverCapabilities, unsupported)
+	}
+	if c.WarmSentry {
+		if c.Network == NetworkHost {
+			return fmt.Errorf("warm-sentry is incompatible with --network=host (host network namespace is shared across cycles)")
+		}
 	}
 	return nil
 }

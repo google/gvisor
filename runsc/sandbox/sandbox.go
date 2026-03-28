@@ -26,6 +26,8 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -230,6 +232,14 @@ type Sandbox struct {
 	// Restored will be true when the sandbox has been restored.
 	Restored bool `json:"restored"`
 
+	// WarmSentry indicates the sandbox is running in warm sentry mode where
+	// the sentry process stays alive across container restore/reset cycles.
+	WarmSentry bool `json:"warmSentry"`
+
+	// WarmConfigFlags is the normalized sandbox configuration that warm restore
+	// requires to remain unchanged across cycles.
+	WarmConfigFlags []string `json:"warmConfigFlags,omitempty"`
+
 	// CPUTimeSaved contains the CPU time saved when the sandbox has been restored.
 	CPUTimeSaved time.Duration `json:"cpuTimeSaved"`
 
@@ -325,6 +335,7 @@ func New(conf *config.Config, args *Args) (*Sandbox, error) {
 		MetricServerAddress: conf.MetricServer,
 		MountHints:          args.MountHints,
 		StartTime:           starttime.Get(),
+		WarmSentry:          conf.WarmSentry,
 	}
 	if args.Spec != nil && args.Spec.Annotations != nil {
 		s.PodName = args.Spec.Annotations[podNameAnnotation]
@@ -396,8 +407,128 @@ func New(conf *config.Config, args *Args) (*Sandbox, error) {
 		s.RegisteredMetrics = registeredMetrics.RegisteredMetrics
 	}
 
+	if conf.WarmSentry {
+		s.WarmConfigFlags = warmConfigFlags(conf, s.warmDerivedBootFlags(conf))
+	}
 	c.Release()
 	return s, nil
+}
+
+var warmConfigIgnoredFlagPrefixes = []string{
+	"--root=",
+	"--log=",
+	"--log-format=",
+	"--debug=",
+	"--debug-log=",
+	"--debug-log-format=",
+	"--debug-to-user-log=",
+	"--debug-command=",
+	"--panic-log=",
+	"--coverage-report=",
+	"--metric-server=",
+	"--final-metrics-log=",
+	"--profiling-metrics-log=",
+}
+
+// warmConfigFlags returns a sorted, deterministic snapshot of the sandbox
+// configuration flags, including cgroup-derived boot parameters. Logging
+// and debug flags are excluded since they may change between cycles
+// without affecting sandbox behavior.
+//
+// The derivedFlags parameter carries boot-time values that are not part
+// of conf.ToFlags() but affect sentry behavior (e.g. --cpu-num and
+// --total-memory computed from cgroup limits at sandbox creation). These
+// are captured once at creation and included in the fingerprint so that
+// cgroup changes between warm cycles are detected.
+func warmConfigFlags(conf *config.Config, derivedFlags []string) []string {
+	allFlags := conf.ToFlags()
+	flags := make([]string, 0, len(allFlags)+len(derivedFlags))
+	for _, flag := range allFlags {
+		ignored := false
+		for _, prefix := range warmConfigIgnoredFlagPrefixes {
+			if strings.HasPrefix(flag, prefix) {
+				ignored = true
+				break
+			}
+		}
+		if !ignored {
+			flags = append(flags, flag)
+		}
+	}
+	flags = append(flags, derivedFlags...)
+	sort.Strings(flags)
+	return flags
+}
+
+// derivedResourceFlags computes the effective --cpu-num and --total-memory
+// values from cgroup limits and system memory. This is the single source
+// of truth used by both createSandboxProcess (to set boot args) and
+// warm config fingerprinting (to detect resource drift across cycles).
+func (s *Sandbox) derivedResourceFlags(conf *config.Config) (cpuNum int, totalMem uint64, err error) {
+	totalSysMem, err := totalSystemMemory()
+	if err != nil {
+		return 0, 0, err
+	}
+	mem := totalSysMem
+	cpu := 0
+	if s.CgroupJSON.Cgroup != nil {
+		cpu, err = s.CgroupJSON.Cgroup.NumCPU()
+		if err != nil {
+			return 0, 0, fmt.Errorf("getting cpu count from cgroups: %v", err)
+		}
+		if conf.CPUNumFromQuota {
+			const minCPUs = 2
+			quota, err := s.CgroupJSON.Cgroup.CPUQuota()
+			if err != nil {
+				return 0, 0, fmt.Errorf("getting cpu quota from cgroups: %v", err)
+			}
+			if n := int(math.Ceil(quota)); n > 0 {
+				if n < minCPUs {
+					n = minCPUs
+				}
+				if n < cpu {
+					cpu = n
+				}
+			}
+		}
+		memLimit, err := s.CgroupJSON.Cgroup.MemoryLimit()
+		if err != nil {
+			return 0, 0, fmt.Errorf("getting memory limit from cgroups: %v", err)
+		}
+		if memLimit < mem {
+			mem = memLimit
+		}
+	}
+	return cpu, mem, nil
+}
+
+// warmDerivedBootFlags formats the cgroup-derived resource values as
+// flag strings for inclusion in the warm config fingerprint.
+func (s *Sandbox) warmDerivedBootFlags(conf *config.Config) []string {
+	cpuNum, totalMem, err := s.derivedResourceFlags(conf)
+	if err != nil {
+		return nil
+	}
+	var flags []string
+	if cpuNum > 0 {
+		flags = append(flags, "--cpu-num="+strconv.Itoa(cpuNum))
+	}
+	flags = append(flags, "--total-memory="+strconv.FormatUint(totalMem, 10))
+	return flags
+}
+
+func (s *Sandbox) validateWarmConfig(conf *config.Config) error {
+	if !s.WarmSentry {
+		return nil
+	}
+	if !conf.WarmSentry {
+		return fmt.Errorf("sandbox %q was created with --warm-sentry and must be restored with the same flag", s.ID)
+	}
+	currentFlags := warmConfigFlags(conf, s.warmDerivedBootFlags(conf))
+	if !slices.Equal(s.WarmConfigFlags, currentFlags) {
+		return fmt.Errorf("warm-sentry restore requires the sandbox configuration to remain unchanged across cycles")
+	}
+	return nil
 }
 
 // CreateSubcontainer creates a container inside the sandbox.
@@ -523,8 +654,18 @@ func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid s
 	return nil
 }
 
+// WarmRestoreOpts holds fresh gofer resources for warm sentry restore cycles.
+type WarmRestoreOpts struct {
+	GoferFiles      []*os.File
+	GoferFilestores []*os.File
+	DevIOFile       *os.File
+}
+
 // Restore sends the restore call for a container in the sandbox.
-func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, imagePath string, direct, background bool) error {
+func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, imagePath string, direct, background bool, warm *WarmRestoreOpts) error {
+	if err := s.validateWarmConfig(conf); err != nil {
+		return err
+	}
 	if err := hostsettings.Handle(conf); err != nil {
 		return fmt.Errorf("host settings: %w (use --host-settings=ignore to bypass)", err)
 	}
@@ -558,14 +699,30 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 	}
 	defer conn.Close()
 
-	var disableIPv6 bool
-	disableIPv6, err = getDisableIPv6(spec)
-	if err != nil {
-		return err
+	// On warm restore cycle 2+, skip network setup: the saved network stack
+	// already has the correct NICs and addresses. On the first restore
+	// (warm == nil) the network must be configured from scratch.
+	if warm == nil {
+		var disableIPv6 bool
+		disableIPv6, err = getDisableIPv6(spec)
+		if err != nil {
+			return err
+		}
+		if err := setupNetwork(conn, s.Pid.Load(), conf, disableIPv6); err != nil {
+			return fmt.Errorf("setting up network: %v", err)
+		}
 	}
-	// Configure the network.
-	if err := setupNetwork(conn, s.Pid.Load(), conf, disableIPv6); err != nil {
-		return fmt.Errorf("setting up network: %v", err)
+
+	// Append warm gofer FDs to the payload if provided.
+	if warm != nil && len(warm.GoferFiles) > 0 {
+		opt.WarmGoferFDCount = len(warm.GoferFiles)
+		opt.FilePayload.Files = append(opt.FilePayload.Files, warm.GoferFiles...)
+		if warm.DevIOFile != nil {
+			opt.WarmHaveDevGoferFD = true
+			opt.FilePayload.Files = append(opt.FilePayload.Files, warm.DevIOFile)
+		}
+		opt.WarmGoferFilestoreFDCount = len(warm.GoferFilestores)
+		opt.FilePayload.Files = append(opt.FilePayload.Files, warm.GoferFilestores...)
 	}
 
 	// Restore the container and start the root container.
@@ -573,6 +730,22 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 		return fmt.Errorf("restoring container %q: %v", cid, err)
 	}
 	s.Restored = true
+	return nil
+}
+
+// Reset tears down the current kernel in the sandbox, returning the sentry
+// to a state that can accept another Restore RPC. Used for warm sentry reuse.
+func (s *Sandbox) Reset() error {
+	log.Debugf("Reset sandbox %q for warm reuse", s.ID)
+	conn, err := s.sandboxConnect()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	if err := conn.Call(boot.ContMgrReset, nil, nil); err != nil {
+		return fmt.Errorf("resetting sandbox %q: %v", s.ID, err)
+	}
+	s.Restored = false
 	return nil
 }
 
@@ -1246,41 +1419,12 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	}
 	cmd.Args = append(cmd.Args, "--total-host-memory", strconv.FormatUint(totalSysMem, 10))
 
-	mem := totalSysMem
-	if s.CgroupJSON.Cgroup != nil {
-		cpuNum, err := s.CgroupJSON.Cgroup.NumCPU()
-		if err != nil {
-			return fmt.Errorf("getting cpu count from cgroups: %v", err)
-		}
-		if conf.CPUNumFromQuota {
-			// Dropping below 2 CPUs can trigger application to disable
-			// locks that can lead do hard to debug errors, so just
-			// leaving two cores as reasonable default.
-			const minCPUs = 2
-
-			quota, err := s.CgroupJSON.Cgroup.CPUQuota()
-			if err != nil {
-				return fmt.Errorf("getting cpu quota from cgroups: %v", err)
-			}
-			if n := int(math.Ceil(quota)); n > 0 {
-				if n < minCPUs {
-					n = minCPUs
-				}
-				if n < cpuNum {
-					// Only lower the cpu number.
-					cpuNum = n
-				}
-			}
-		}
+	cpuNum, mem, err := s.derivedResourceFlags(conf)
+	if err != nil {
+		return err
+	}
+	if cpuNum > 0 {
 		cmd.Args = append(cmd.Args, "--cpu-num", strconv.Itoa(cpuNum))
-
-		memLimit, err := s.CgroupJSON.Cgroup.MemoryLimit()
-		if err != nil {
-			return fmt.Errorf("getting memory limit from cgroups: %v", err)
-		}
-		if memLimit < mem {
-			mem = memLimit
-		}
 	}
 	cmd.Args = append(cmd.Args, "--total-memory", strconv.FormatUint(mem, 10))
 
@@ -1381,7 +1525,10 @@ func (s *Sandbox) Wait(cid string) (unix.WaitStatus, error) {
 		err = conn.Call(boot.ContMgrWait, &cid, &ws)
 		conn.Close()
 		if err == nil {
-			if s.IsRootContainer(cid) {
+			if s.IsRootContainer(cid) && !s.WarmSentry {
+				// In warm sentry mode the sandbox process stays alive
+				// across container cycles, so we must not wait for it
+				// to exit here.
 				if err := s.waitForStopped(); err != nil {
 					return unix.WaitStatus(0), err
 				}
@@ -1391,6 +1538,14 @@ func (s *Sandbox) Wait(cid string) (unix.WaitStatus, error) {
 		}
 		// See comment above.
 		if !s.IsRootContainer(cid) {
+			return unix.WaitStatus(0), err
+		}
+		// In warm sentry mode, a Wait RPC failure for the root container
+		// during the gap between reset and the next restore is expected.
+		// Return the error directly instead of falling through to
+		// waitForStopped, which would hang because the sentry process
+		// is still alive.
+		if s.WarmSentry {
 			return unix.WaitStatus(0), err
 		}
 

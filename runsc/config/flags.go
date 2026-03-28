@@ -156,6 +156,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool(flagReproduceNFTables, false, "Attempt to scrape and reproduce nftable rules inside the sandbox. Overrides reproduce-nat when true.")
 	flagSet.Bool(flagNetDisconnectOK, true, "Indicates whether open network connections and open unix domain sockets should be disconnected upon save.")
 	flagSet.Bool("save-restore-netstack", true, "Indicates whether netstack save/restore is enabled.")
+	flagSet.Bool("warm-sentry", false, "Enable warm sentry mode: sentry loops after container exit, accepting Reset+Restore RPCs.")
 	flagSet.Bool(flagPauseExternalNetworking, false, "Start the sandbox with external networking disabled. Only supported when using the sandbox network type. The network can be unpaused manually after the sandbox is running.")
 
 	// Flags that control sandbox runtime behavior: accelerator related.

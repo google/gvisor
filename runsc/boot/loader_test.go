@@ -26,10 +26,12 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/control/client"
 	"gvisor.dev/gvisor/pkg/control/server"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
+	sentrycontrol "gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -112,15 +114,15 @@ func startGofer(root string, conf *config.Config) (int, func(), error) {
 	return sandboxEnd, cleanup, nil
 }
 
-func createLoader(conf *config.Config, spec *specs.Spec) (*Loader, func(), error) {
+func createLoaderWithSocket(conf *config.Config, spec *specs.Spec) (*Loader, string, func(), error) {
 	sock := fmt.Sprintf("\x00loader-test.%010d", rand.Int())
 	fd, err := server.CreateSocket(sock)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create socket: %w", err)
+		return nil, "", nil, fmt.Errorf("failed to create socket: %w", err)
 	}
 	sandEnd, cleanup, err := startGofer(spec.Root.Path, conf)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to start gofer: %w", err)
+		return nil, "", nil, fmt.Errorf("failed to start gofer: %w", err)
 	}
 
 	// Loader takes ownership of stdio.
@@ -129,7 +131,7 @@ func createLoader(conf *config.Config, spec *specs.Spec) (*Loader, func(), error
 		fd := int(f.Fd())
 		newFd, err := unix.Dup(fd)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to dup FD %d: %w", fd, err)
+			return nil, "", nil, fmt.Errorf("failed to dup FD %d: %w", fd, err)
 		}
 		stdio = append(stdio, newFd)
 	}
@@ -150,9 +152,14 @@ func createLoader(conf *config.Config, spec *specs.Spec) (*Loader, func(), error
 	l, err := New(args)
 	if err != nil {
 		cleanup()
-		return nil, nil, fmt.Errorf("boot.New: %w", err)
+		return nil, "", nil, fmt.Errorf("boot.New: %w", err)
 	}
-	return l, cleanup, nil
+	return l, sock, cleanup, nil
+}
+
+func createLoader(conf *config.Config, spec *specs.Spec) (*Loader, func(), error) {
+	l, _, cleanup, err := createLoaderWithSocket(conf, spec)
+	return l, cleanup, err
 }
 
 // TestRun runs a simple application in a sandbox and checks that it succeeds.
@@ -240,6 +247,117 @@ func TestStartSignal(t *testing.T) {
 	case <-time.After(50 * time.Millisecond):
 		t.Errorf("WaitForStartSignal did not complete but it should have")
 	}
+}
+
+func runLoader(t *testing.T, l *Loader) {
+	t.Helper()
+	var resultChanErr error
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		resultChanErr = <-l.ctrl.manager.startResultChan
+		wg.Done()
+	}()
+	if err := l.Run(); err != nil {
+		t.Fatalf("error running container: %v", err)
+	}
+	wg.Wait()
+	if resultChanErr != nil {
+		t.Fatalf("error on startResultChan: %v", resultChanErr)
+	}
+}
+
+func TestDestroyAfterReset(t *testing.T) {
+	conf := testConfig()
+	conf.WarmSentry = true
+	l, cleanup, err := createLoader(conf, testSpec())
+	if err != nil {
+		t.Fatalf("error creating loader: %v", err)
+	}
+	defer cleanup()
+
+	runLoader(t, l)
+	if status := l.WaitExit(); !status.Exited() || status.ExitStatus() != 0 {
+		t.Fatalf("application exited with %s, want exit status 0", status)
+	}
+
+	// Simulate post-restore state. In production the Restore RPC
+	// transitions to restored; here we ran via Run() which stays created.
+	l.mu.Lock()
+	l.state = restored
+	l.mu.Unlock()
+
+	if err := l.Reset(); err != nil {
+		t.Fatalf("Reset() failed: %v", err)
+	}
+	l.Destroy()
+}
+
+func TestResetRejectsWrongState(t *testing.T) {
+	conf := testConfig()
+	conf.WarmSentry = true
+	l, cleanup, err := createLoader(conf, testSpec())
+	if err != nil {
+		t.Fatalf("error creating loader: %v", err)
+	}
+	defer cleanup()
+	defer l.Destroy()
+
+	// Reset from created state should fail.
+	if err := l.Reset(); err == nil {
+		t.Fatal("Reset() unexpectedly succeeded from created state")
+	}
+}
+
+func TestWarmResetRPCsRequireRestore(t *testing.T) {
+	conf := testConfig()
+	conf.WarmSentry = true
+	l, sock, cleanup, err := createLoaderWithSocket(conf, testSpec())
+	if err != nil {
+		t.Fatalf("error creating loader: %v", err)
+	}
+	defer cleanup()
+
+	runLoader(t, l)
+	if status := l.WaitExit(); !status.Exited() || status.ExitStatus() != 0 {
+		t.Fatalf("application exited with %s, want exit status 0", status)
+	}
+
+	l.mu.Lock()
+	l.state = restored
+	l.mu.Unlock()
+
+	if err := l.Reset(); err != nil {
+		t.Fatalf("Reset() failed: %v", err)
+	}
+
+	conn, err := client.ConnectTo(sock)
+	if err != nil {
+		t.Fatalf("ConnectTo(%q) failed: %v", sock, err)
+	}
+	defer conn.Close()
+
+	cid := "foo"
+	var procs []*sentrycontrol.Process
+	if err := conn.Call(ContMgrProcesses, &cid, &procs); err == nil || !strings.Contains(err.Error(), "warm reset") {
+		t.Fatalf("Processes RPC error = %v, want warm reset error", err)
+	}
+
+	var usage sentrycontrol.MemoryUsage
+	if err := conn.Call(UsageCollect, &sentrycontrol.MemoryUsageOpts{}, &usage); err == nil {
+		t.Fatal("Usage.Collect RPC unexpectedly succeeded after warm reset")
+	}
+
+	sigArgs := SignalArgs{
+		CID:   cid,
+		Signo: int32(linux.SIGTERM),
+		Mode:  DeliverToAllProcesses,
+	}
+	if err := conn.Call(ContMgrSignal, &sigArgs, nil); err == nil || !strings.Contains(err.Error(), "warm reset") {
+		t.Fatalf("Signal RPC error = %v, want warm reset error", err)
+	}
+
+	l.Destroy()
 }
 
 // Test that network=host with raw sockets enabled requires CAP_NET_RAW on the
