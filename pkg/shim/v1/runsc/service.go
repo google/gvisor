@@ -656,19 +656,20 @@ func (s *runscService) Stats(ctx context.Context, r *taskAPI.StatsRequest) (*tas
 	// gvisor currently (as of 2020-03-03) only returns the total memory
 	// usage and current PID value[0]. However, we copy the common fields here
 	// so that future updates will propagate correct information.  We're
-	// using the cgroups.Metrics structure so we're returning the same type
-	// as runc.
+	// using the same cgroup Metrics protobuf types as runc (v1 or v2 layout).
 	//
 	// [0]: https://github.com/google/gvisor/blob/277a0d5a1fbe8272d4729c01ee4c6e374d047ebc/runsc/boot/events.go#L61-L81
 	return s.getStats(stats, r)
 }
 
 func (s *runscService) getStats(stats *runc.Stats, r *taskAPI.StatsRequest) (*taskAPI.StatsResponse, error) {
-	if s.opts.RunscConfig["systemd-cgroup"] == "true" {
+	// Use host cgroup mode, not runsc's systemd-cgroup flag: containerd unmarshals task
+	// Stats using the node's cgroup version (e.g. v2 on unified hierarchy). Returning v1
+	// metrics there causes: can't unmarshal v1.Metrics to v2.Metrics.
+	if cgroups.Mode() == cgroups.Unified {
 		return s.getV2Stats(stats, r)
-	} else {
-		return s.getV1Stats(stats, r)
 	}
+	return s.getV1Stats(stats, r)
 }
 
 func (s *runscService) getV1Stats(stats *runc.Stats, r *taskAPI.StatsRequest) (*taskAPI.StatsResponse, error) {
