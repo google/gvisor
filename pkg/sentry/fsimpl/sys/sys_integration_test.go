@@ -103,6 +103,16 @@ func TestSysRootContainsExpectedEntries(t *testing.T) {
 	})
 }
 
+func TestSysDevContainsBlockAndChar(t *testing.T) {
+	s := newTestSystem(t, "" /*pciTestDir*/)
+	defer s.Destroy()
+	pop := s.PathOpAtRoot("/dev")
+	s.AssertAllDirentTypes(s.ListDirents(pop), map[string]testutil.DirentType{
+		"block": linux.DT_DIR,
+		"char":  linux.DT_DIR,
+	})
+}
+
 func TestCgroupMountpointExists(t *testing.T) {
 	// Note: The mountpoint is only created if cgroups are available.
 	s := newTestSystem(t, "" /*pciTestDir*/)
