@@ -1410,7 +1410,7 @@ func Utime(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 		opts.Stat.Mtime.Sec = times.Modtime
 	}
 
-	return 0, nil, utimes(t, linux.AT_FDCWD, pathAddr, followFinalSymlink, &opts)
+	return 0, nil, utimes(t, linux.AT_FDCWD, pathAddr, disallowEmptyPath, followFinalSymlink, &opts)
 }
 
 // Utimes implements Linux syscall utimes(2).
@@ -1423,7 +1423,7 @@ func Utimes(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr,
 		return 0, nil, err
 	}
 
-	return 0, nil, utimes(t, linux.AT_FDCWD, pathAddr, followFinalSymlink, &opts)
+	return 0, nil, utimes(t, linux.AT_FDCWD, pathAddr, disallowEmptyPath, followFinalSymlink, &opts)
 }
 
 // Futimesat implements Linux syscall futimesat(2).
@@ -1437,7 +1437,7 @@ func Futimesat(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintp
 		return 0, nil, err
 	}
 
-	return 0, nil, utimes(t, dirfd, pathAddr, followFinalSymlink, &opts)
+	return 0, nil, utimes(t, dirfd, pathAddr, disallowEmptyPath, followFinalSymlink, &opts)
 }
 
 func populateSetStatOptionsForUtimes(t *kernel.Task, timesAddr hostarch.Addr, opts *vfs.SetStatOptions) error {
@@ -1482,11 +1482,11 @@ func Utimensat(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintp
 		return 0, nil, nil
 	}
 
-	if flags&^linux.AT_SYMLINK_NOFOLLOW != 0 {
+	if flags&^(linux.AT_SYMLINK_NOFOLLOW|linux.AT_EMPTY_PATH) != 0 {
 		return 0, nil, linuxerr.EINVAL
 	}
 
-	return 0, nil, utimes(t, dirfd, pathAddr, shouldFollowFinalSymlink(flags&linux.AT_SYMLINK_NOFOLLOW == 0), &opts)
+	return 0, nil, utimes(t, dirfd, pathAddr, shouldAllowEmptyPath(flags&linux.AT_EMPTY_PATH != 0), shouldFollowFinalSymlink(flags&linux.AT_SYMLINK_NOFOLLOW == 0), &opts)
 }
 
 func populateSetStatOptionsForUtimens(t *kernel.Task, timesAddr hostarch.Addr, opts *vfs.SetStatOptions) error {
@@ -1524,7 +1524,7 @@ func populateSetStatOptionsForUtimens(t *kernel.Task, timesAddr hostarch.Addr, o
 }
 
 // Analogous to fs/utimes.c:do_utimes().
-func utimes(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr, shouldFollowFinalSymlink shouldFollowFinalSymlink, opts *vfs.SetStatOptions) error {
+func utimes(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr, emptyPathCheck shouldAllowEmptyPathType, shouldFollowFinalSymlink shouldFollowFinalSymlink, opts *vfs.SetStatOptions) error {
 	// "If filename is NULL and dfd refers to an open file, then operate on the
 	// file. Otherwise look up filename, possibly using dfd as a starting
 	// point." - fs/utimes.c:do_utimes()
@@ -1541,7 +1541,7 @@ func utimes(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr, shouldFollowFin
 	if err != nil {
 		return err
 	}
-	return setstatat(t, dirfd, path, disallowEmptyPath, shouldFollowFinalSymlink, opts)
+	return setstatat(t, dirfd, path, emptyPathCheck, shouldFollowFinalSymlink, opts)
 }
 
 // Rename implements Linux syscall rename(2).
