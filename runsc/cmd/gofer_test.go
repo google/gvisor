@@ -20,6 +20,8 @@ import (
 	"path"
 	"path/filepath"
 	"testing"
+
+	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 func tmpDir() string {
@@ -122,13 +124,13 @@ func TestResolveSymlinks(t *testing.T) {
 	}
 	for _, tst := range tests {
 		t.Run(tst.name, func(t *testing.T) {
-			got, err := resolveSymlinks(root, tst.rel)
+			got, err := specutils.ResolveSymlinks(root, tst.rel)
 			if err != nil {
-				t.Errorf("resolveSymlinks(root, %q) failed: %v", tst.rel, err)
+				t.Errorf("ResolveSymlinks(root, %q) failed: %v", tst.rel, err)
 			}
 			want := path.Join(root, tst.want)
 			if got != want {
-				t.Errorf("resolveSymlinks(root, %q) got: %q, want: %q", tst.rel, got, want)
+				t.Errorf("ResolveSymlinks(root, %q) got: %q, want: %q", tst.rel, got, want)
 			}
 			if tst.compareHost {
 				// Check that host got to the same end result.
@@ -137,7 +139,7 @@ func TestResolveSymlinks(t *testing.T) {
 					t.Errorf("path.EvalSymlinks(root, %q) failed: %v", tst.rel, err)
 				}
 				if host != got {
-					t.Errorf("resolveSymlinks(root, %q) got: %q, want: %q", tst.rel, host, got)
+					t.Errorf("ResolveSymlinks(root, %q) got: %q, want: %q", tst.rel, host, got)
 				}
 			}
 		})
@@ -156,7 +158,7 @@ func TestResolveSymlinksLoop(t *testing.T) {
 	if err := construct(root, dirs); err != nil {
 		t.Fatal("construct failed:", err)
 	}
-	if _, err := resolveSymlinks(root, "loop1"); err == nil {
-		t.Errorf("resolveSymlinks() should have failed")
+	if _, err := specutils.ResolveSymlinks(root, "loop1"); err == nil {
+		t.Errorf("ResolveSymlinks() should have failed")
 	}
 }

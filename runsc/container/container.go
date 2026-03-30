@@ -24,6 +24,7 @@ import (
 	"os/exec"
 	"path"
 	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -37,6 +38,7 @@ import (
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
@@ -2192,7 +2194,91 @@ func nvproxySetup(spec *specs.Spec, conf *config.Config, goferPid int) error {
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("nvidia-container-cli configure failed, err: %v\nstdout: %s\nstderr: %s", err, stdout.String(), stderr.String())
 	}
+
+	// Inject Vulkan ICD and other graphics config files that
+	// nvidia-container-cli does not handle. These are normally injected by the
+	// nvidia-container-toolkit runtime's graphics modifier.
+	// See nvidia-container-toolkit/internal/discover/graphics.go.
+	nvproxyGraphicsDriverConfigsSetup(spec, driverCaps)
+
 	return nil
+}
+
+// nvproxyGraphicsDriverConfigsSetup injects Vulkan ICD and other graphics
+// driver configuration files into the container rootfs. This replicates what
+// the nvidia-container-toolkit runtime does via its graphics modifier
+// (nvidia-container-toolkit/internal/modifier/graphics.go), which is not
+// performed by nvidia-container-cli.
+func nvproxyGraphicsDriverConfigsSetup(spec *specs.Spec, driverCaps nvconf.DriverCaps) {
+	if driverCaps&(nvconf.CapGraphics|nvconf.CapDisplay) == 0 {
+		return
+	}
+
+	rootfs := spec.Root.Path
+
+	// Search paths for driver config files, matching the nvidia-container-toolkit
+	// behavior. See nvidia-container-toolkit/internal/lookup/root/root.go.
+	searchPaths := []string{
+		"/etc",
+		"/usr/share",
+	}
+
+	// Vulkan ICD config files to inject.
+	// See nvidia-container-toolkit/internal/discover/graphics.go:newVulkanConfigsDiscover().
+	vulkanICDFiles := []string{
+		"vulkan/icd.d/nvidia_icd.json",
+	}
+	// For some RPM-based driver packages, the vulkan ICD files are installed with
+	// architecture-specific names.
+	switch runtime.GOARCH {
+	case "amd64":
+		vulkanICDFiles = append(vulkanICDFiles, "vulkan/icd.d/nvidia_icd.x86_64.json")
+	case "arm64":
+		vulkanICDFiles = append(vulkanICDFiles, "vulkan/icd.d/nvidia_icd.aarch64.json")
+	}
+
+	// Additional graphics config files.
+	// See nvidia-container-toolkit/internal/discover/graphics.go:NewGraphicsMountsDiscoverer().
+	graphicsConfigs := []string{
+		"vulkan/icd.d/nvidia_layers.json",
+		"vulkan/implicit_layer.d/nvidia_layers.json",
+		"glvnd/egl_vendor.d/10_nvidia.json",
+		"egl/egl_external_platform.d/15_nvidia_gbm.json",
+		"egl/egl_external_platform.d/10_nvidia_wayland.json",
+		"nvidia/nvoptix.bin",
+		"X11/xorg.conf.d/10-nvidia.conf",
+		"X11/xorg.conf.d/nvidia-drm-outputclass.conf",
+	}
+
+	allConfigs := append(vulkanICDFiles, graphicsConfigs...)
+
+	for _, relPath := range allConfigs {
+		for _, searchPath := range searchPaths {
+			hostPath := path.Join(searchPath, relPath)
+			content, err := os.ReadFile(hostPath)
+			if err != nil {
+				continue
+			}
+			// Found the file on the host. Inject it into the container rootfs
+			// at /etc/<relPath>, similar to what the nvidia-container-toolkit does.
+			containerPath, err := specutils.ResolveSymlinks(rootfs, path.Join("etc", relPath))
+			if err != nil {
+				log.Warningf("Failed to resolve symlinks for graphics config %q in container rootfs: %v", relPath, err)
+				break
+			}
+			containerDir := path.Dir(containerPath)
+			if err := os.MkdirAll(containerDir, 0755); err != nil {
+				log.Warningf("Failed to create directory %q for graphics config: %v", containerDir, err)
+				break
+			}
+			if err := os.WriteFile(containerPath, content, 0644); err != nil {
+				log.Warningf("Failed to write graphics config %q: %v", containerPath, err)
+				break
+			}
+			log.Debugf("Injected graphics config %q from host path %q", relPath, hostPath)
+			break // Found and injected this config, move to next one.
+		}
+	}
 }
 
 func nvidiaContainerCliConfigureNeedsCudaCompatModeFlag(cliPath string) bool {

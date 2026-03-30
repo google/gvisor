@@ -538,7 +538,7 @@ func (g *Gofer) setupMounts(conf *config.Config, mounts []specs.Mount, root, pro
 			continue
 		}
 
-		dst, err := resolveSymlinks(root, m.Destination)
+		dst, err := specutils.ResolveSymlinks(root, m.Destination)
 		if err != nil {
 			return fmt.Errorf("resolving symlinks to %q: %v", m.Destination, err)
 		}
@@ -701,7 +701,7 @@ func (g *Gofer) resolveMounts(conf *config.Config, mounts []specs.Mount, root st
 			cleanMounts = append(cleanMounts, m)
 			continue
 		}
-		dst, err := resolveSymlinks(root, m.Destination)
+		dst, err := specutils.ResolveSymlinks(root, m.Destination)
 		if err != nil {
 			return nil, fmt.Errorf("resolving symlinks to %q: %v", m.Destination, err)
 		}
@@ -721,58 +721,6 @@ func (g *Gofer) resolveMounts(conf *config.Config, mounts []specs.Mount, root st
 		cleanMounts = append(cleanMounts, cpy)
 	}
 	return cleanMounts, nil
-}
-
-// ResolveSymlinks walks 'rel' having 'root' as the root directory. If there are
-// symlinks, they are evaluated relative to 'root' to ensure the end result is
-// the same as if the process was running inside the container.
-func resolveSymlinks(root, rel string) (string, error) {
-	return resolveSymlinksImpl(root, root, rel, 255)
-}
-
-func resolveSymlinksImpl(root, base, rel string, followCount uint) (string, error) {
-	if followCount == 0 {
-		return "", fmt.Errorf("too many symlinks to follow, path: %q", filepath.Join(base, rel))
-	}
-
-	rel = filepath.Clean(rel)
-	for _, name := range strings.Split(rel, string(filepath.Separator)) {
-		if name == "" {
-			continue
-		}
-		// Note that Join() resolves things like ".." and returns a clean path.
-		path := filepath.Join(base, name)
-		if !strings.HasPrefix(path, root) {
-			// One cannot '..' their way out of root.
-			base = root
-			continue
-		}
-		fi, err := os.Lstat(path)
-		if err != nil {
-			if !os.IsNotExist(err) {
-				return "", err
-			}
-			// Not found means there is no symlink to check. Just keep walking dirs.
-			base = path
-			continue
-		}
-		if fi.Mode()&os.ModeSymlink != 0 {
-			link, err := os.Readlink(path)
-			if err != nil {
-				return "", err
-			}
-			if filepath.IsAbs(link) {
-				base = root
-			}
-			base, err = resolveSymlinksImpl(root, base, link, followCount-1)
-			if err != nil {
-				return "", err
-			}
-			continue
-		}
-		base = path
-	}
-	return base, nil
 }
 
 // adjustMountOptions adds filesystem-specific gofer mount options.
