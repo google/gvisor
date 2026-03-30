@@ -80,8 +80,15 @@ func (op metaLoad) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Ru
 
 	// Netfilter (Family) Protocol (8-bit, single byte).
 	case linux.NFT_META_NFPROTO:
-		family := rule.chain.GetAddressFamily()
-		target = []byte{AfProtocol(family)}
+		switch pkt.NetworkProtocolNumber {
+		// Cannot rely on chain's address family as it can be inet, and inet can mean either IPv4 or IPv6.
+		case header.IPv4ProtocolNumber:
+			target = []byte{linux.NFPROTO_IPV4}
+		case header.IPv6ProtocolNumber:
+			target = []byte{linux.NFPROTO_IPV6}
+		default:
+			target = []byte{AfProtocol(rule.chain.GetAddressFamily())}
+		}
 
 	// L4 Transport Layer Protocol (8-bit, single byte).
 	case linux.NFT_META_L4PROTO:

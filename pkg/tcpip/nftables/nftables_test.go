@@ -2854,7 +2854,7 @@ func TestEvaluateMetaLoad(t *testing.T) {
 			pkt:   pkt,
 			op1:   mustCreateMetaLoad(t, linux.NFT_META_NFPROTO, linux.NFT_REG_4),
 			op2: mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ,
-				[]byte{AfProtocol(stack.Inet), 0, 0, 0}),
+				[]byte{linux.NFPROTO_IPV6, 0, 0, 0}),
 		},
 		{ // cmd: add rule ip6 tab ch meta l4proto 0x6
 			tname: "meta load l4proto test",

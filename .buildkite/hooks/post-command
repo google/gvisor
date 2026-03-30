@@ -40,6 +40,15 @@ make -s testlogs 2>/dev/null | grep // | sort | uniq | (
   done
 )
 
+if test "${BUILDKITE_COMMAND_EXIT_STATUS}" -ne "0"; then
+  if test -d bazel-testlogs; then
+    # Use -L to follow the bazel-testlogs symlink
+    find -L bazel-testlogs -type f \( -name "*.log" -o -name "*.txt" \) | while read file; do
+      buildkite-agent artifact upload "${file}"
+    done
+  fi
+fi
+
 # Upload all profiles, and include in an annotation.
 declare profile_output=$(mktemp --tmpdir)
 for file in $(find /tmp/profile -name \*.pprof -print 2>/dev/null | sort); do
