@@ -704,14 +704,11 @@ func (i *inode) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs.
 	if mask&linux.STATX_SIZE != 0 {
 		switch impl := i.impl.(type) {
 		case *regularFile:
-			updated, err := impl.truncateLocked(stat.Size)
-			if err != nil {
+			if err := impl.truncateNoTimeUpdateLocked(stat.Size); err != nil {
 				return err
 			}
-			if updated {
-				needsMtimeBump = true
-				needsCtimeBump = true
-			}
+			needsMtimeBump = true
+			needsCtimeBump = true
 		case *directory:
 			return linuxerr.EISDIR
 		default:

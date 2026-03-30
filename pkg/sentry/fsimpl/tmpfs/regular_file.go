@@ -173,12 +173,16 @@ func NewMemfd(ctx context.Context, creds *auth.Credentials, mount *vfs.Mount, al
 	return &fd.vfsfd, nil
 }
 
-// truncate grows or shrinks the file to the given size. It returns true if the
-// file size was updated.
-func (rf *regularFile) truncate(newSize uint64) (bool, error) {
+// truncate grows or shrinks the file to the given size. It unconditionally
+// updates mtime and ctime.
+func (rf *regularFile) truncate(newSize uint64) error {
 	rf.inode.mu.Lock()
 	defer rf.inode.mu.Unlock()
-	return rf.truncateLocked(newSize)
+	if err := rf.truncateNoTimeUpdateLocked(newSize); err != nil {
+		return err
+	}
+	rf.inode.touchCMtimeLocked()
+	return nil
 }
 
 // Preconditions:
@@ -194,12 +198,15 @@ func (rf *regularFile) growLocked(newSize uint64) error {
 	return nil
 }
 
+// truncateNoTimeUpdateLocked grows or shrinks the file to the given size.
+// Callers are responsible for updating timestamps.
+//
 // Preconditions: rf.inode.mu must be held.
-func (rf *regularFile) truncateLocked(newSize uint64) (bool, error) {
+func (rf *regularFile) truncateNoTimeUpdateLocked(newSize uint64) error {
 	oldSize := rf.size.RacyLoad()
 	if newSize == oldSize {
 		// Nothing to do.
-		return false, nil
+		return nil
 	}
 
 	// Need to hold inode.mu and dataMu while modifying size.
@@ -207,13 +214,13 @@ func (rf *regularFile) truncateLocked(newSize uint64) (bool, error) {
 	if newSize > oldSize {
 		err := rf.growLocked(newSize)
 		rf.dataMu.Unlock()
-		return err == nil, err
+		return err
 	}
 
 	// We are shrinking the file. First check if this is allowed.
 	if rf.seals&linux.F_SEAL_SHRINK != 0 {
 		rf.dataMu.Unlock()
-		return false, linuxerr.EPERM
+		return linuxerr.EPERM
 	}
 
 	rf.size.Store(newSize)
@@ -238,7 +245,7 @@ func (rf *regularFile) truncateLocked(newSize uint64) (bool, error) {
 	decPages := rf.data.Truncate(newSize, rf.inode.fs.mf)
 	rf.dataMu.Unlock()
 	rf.inode.fs.unaccountPages(decPages)
-	return true, nil
+	return nil
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.
