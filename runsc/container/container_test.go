@@ -3598,6 +3598,11 @@ func TestRootfsEROFS(t *testing.T) {
 	spec.Annotations[boot.RootfsPrefix+"overlay"] = config.NoOverlay.String()
 
 	conf := testutil.TestConfig(t)
+	mountDir, err := os.MkdirTemp(testutil.TmpDir(), "mount_dir")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp() failed: %v", err)
+	}
+	defer os.RemoveAll(mountDir)
 
 	for _, mounts := range [][]specs.Mount{
 		// Case 1: EROFS rootfs without any other gofer mount.
@@ -3608,7 +3613,7 @@ func TestRootfsEROFS(t *testing.T) {
 			{
 				Type:        "bind",
 				Destination: "/tmp",
-				Source:      "/tmp",
+				Source:      mountDir,
 			},
 		},
 	} {

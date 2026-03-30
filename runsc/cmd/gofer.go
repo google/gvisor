@@ -578,7 +578,7 @@ func (g *Gofer) setupMounts(conf *config.Config, mounts []specs.Mount, root, pro
 		// Otherwise they can be remounted into read-only.
 		defer func(dstFD int, flags uint32, dst string) {
 			path := fmt.Sprintf("/proc/self/fd/%d", dstFD)
-			// The gofer process doesn't execute anything nativly.
+			// The gofer process doesn't execute anything natively.
 			flags |= unix.MS_NOSUID
 
 			statfs := unix.Statfs_t{}
