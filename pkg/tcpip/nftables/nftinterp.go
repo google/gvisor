@@ -214,7 +214,7 @@ func InterpretImmediate(line string, lnIdx int) (operation, *syserr.AnnotatedErr
 	tkIdx++
 
 	// Fourth token should be the value.
-	nextIdx, data, err := parseRegisterData(reg, tokens, lnIdx, tkIdx)
+	nextIdx, data, verdict, err := parseRegisterData(reg, tokens, lnIdx, tkIdx)
 	if err != nil {
 		return nil, err
 	}
@@ -226,7 +226,7 @@ func InterpretImmediate(line string, lnIdx int) (operation, *syserr.AnnotatedErr
 	}
 
 	// Create the operation with the specified arguments.
-	imm, err := newImmediate(reg, data)
+	imm, err := newImmediate(reg, immRegToType(uint32(reg)), data, verdict)
 	if err != nil {
 		return nil, err
 	}
@@ -385,7 +385,7 @@ func InterpretPayloadLoad(line string, lnIdx int) (operation, *syserr.AnnotatedE
 	tkIdx++
 
 	// Create the operation with the specified arguments.
-	pdload, err := newPayloadLoad(base, offset, blen, reg)
+	pdload, err := newPayloadLoad(base, offset, int(blen), reg)
 	if err != nil {
 		return nil, err
 	}
@@ -1007,29 +1007,33 @@ func parseRegister(regString string, lnIdx int, tkIdx int) (uint8, *syserr.Annot
 // parseRegisterData parses the register data from the given token and returns
 // the index of the next token to process (can consume multiple tokens).
 // Note: assumes the register index is valid (was checked in parseRegister).
-func parseRegisterData(reg uint8, tokens []string, lnIdx int, tkIdx int) (int, registerData, *syserr.AnnotatedError) {
+func parseRegisterData(reg uint8, tokens []string, lnIdx int, tkIdx int) (int, []byte, stack.NFVerdict, *syserr.AnnotatedError) {
 	// Handles verdict data.
 	if isVerdictRegister(reg) {
 		nextIdx, verdict, err := parseVerdict(tokens, lnIdx, tkIdx)
 		if err != nil {
-			return 0, nil, err
+			return 0, nil, stack.NFVerdict{}, err
 		}
-		return nextIdx, newVerdictData(verdict), nil
+		return nextIdx, nil, verdict, nil
 	}
 	// Handles hex data.
 	if len(tokens[tkIdx]) > 1 && tokens[tkIdx][:2] == "0x" {
 		nextIdx, data, err := parseHexData(tokens, lnIdx, tkIdx)
 		if err != nil {
-			return 0, nil, err
+			return 0, nil, stack.NFVerdict{}, err
 		}
-		bytesData := newBytesData(data)
-		if err := bytesData.validateRegister(reg); err != nil {
-			return 0, nil, err
+		bytesData := data
+		regIdx, err := regNumToIdx(reg, len(data))
+		if err != nil {
+			return 0, nil, stack.NFVerdict{}, err
 		}
-		return nextIdx, bytesData, nil
+		if err := validateDataRegister(regIdx, len(data)); err != nil {
+			return 0, nil, stack.NFVerdict{}, err
+		}
+		return nextIdx, bytesData, stack.NFVerdict{}, nil
 	}
 	// TODO(b/345684870): cases will be added here as more types are supported.
-	return 0, nil, syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("unsupported register data type for register %d", reg))
+	return 0, nil, stack.NFVerdict{}, syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("unsupported register data type for register %d", reg))
 }
 
 // verdictCodeFromKeyword is a map of verdict keyword to its corresponding enum value.

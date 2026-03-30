@@ -1019,11 +1019,10 @@ func isJumpOrGotoOperation(op operation) (bool, string) {
 	if !ok {
 		return false, ""
 	}
-	verdictData, ok := imm.data.(verdictData)
-	if !ok {
+	if imm.dataType != linux.NFT_DATA_VERDICT {
 		return false, ""
 	}
-	verdict := verdictData.data
+	verdict := imm.verdict
 	if verdict.Code != VC(linux.NFT_JUMP) && verdict.Code != VC(linux.NFT_GOTO) {
 		return false, ""
 	}
