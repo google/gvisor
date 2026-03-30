@@ -349,11 +349,16 @@ func (d *fdInfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		return linuxerr.ENOENT
 	}
 	defer d.fs.SafeDecRefFD(ctx, file)
-	// TODO(b/121266871): Include pos, locks, and other data. For now we only
-	// have flags.
+	// Currently we output the typical base fields: pos, flags, mnt_id.
+	// TODO(b/121266871): Add ino, lock, and type-specific fields.
 	// See https://www.kernel.org/doc/Documentation/filesystems/proc.txt
+	var pos int64
+	if p, err := file.Seek(ctx, 0, linux.SEEK_CUR); err == nil {
+		pos = p
+	}
 	flags := uint(file.StatusFlags()) | descriptorFlags.ToLinuxFileFlags()
-	fmt.Fprintf(buf, "flags:\t0%o\n", flags)
+	mntID := file.Mount().ID
+	fmt.Fprintf(buf, "pos:\t%d\nflags:\t0%o\nmnt_id:\t%d\n", pos, flags, mntID)
 	return nil
 }
 
