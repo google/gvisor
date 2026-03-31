@@ -15,11 +15,39 @@
 package runsc
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/containerd/containerd/runtime/v2/task"
+	runc "github.com/containerd/go-runc"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/shim/v1/utils"
 )
+
+// TestTaskStatsProtobufTypeURLs checks that v1 and v2 stats marshal to distinct type
+// URLs, matching what containerd expects for cgroup v1 vs unified v2 hosts.
+func TestTaskStatsProtobufTypeURLs(t *testing.T) {
+	s := &runscService{}
+	var st runc.Stats
+	req := &task.StatsRequest{ID: "test"}
+	v1resp, err := s.getV1Stats(&st, req)
+	if err != nil {
+		t.Fatalf("getV1Stats: %v", err)
+	}
+	v2resp, err := s.getV2Stats(&st, req)
+	if err != nil {
+		t.Fatalf("getV2Stats: %v", err)
+	}
+	if v1resp.Stats.TypeUrl == v2resp.Stats.TypeUrl {
+		t.Fatalf("v1 and v2 TypeUrl must differ, both %q", v1resp.Stats.TypeUrl)
+	}
+	if !strings.Contains(v1resp.Stats.TypeUrl, "cgroups.v1") {
+		t.Errorf("v1 TypeUrl = %q, want substring cgroups.v1", v1resp.Stats.TypeUrl)
+	}
+	if !strings.Contains(v2resp.Stats.TypeUrl, "cgroups.v2") {
+		t.Errorf("v2 TypeUrl = %q, want substring cgroups.v2", v2resp.Stats.TypeUrl)
+	}
+}
 
 func TestCgroupPath(t *testing.T) {
 	for _, tc := range []struct {
