@@ -128,7 +128,7 @@ func BuildGRPC(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesContex
 			if err != nil {
 				t.Fatalf("Failed to initialize benchmark recorder: %v", err)
 			}
-			waitDeadlineCtx, cancel := context.WithTimeout(ctx, 30*time.Minute)
+			waitDeadlineCtx, cancel := context.WithTimeout(ctx, 120*time.Minute)
 			containerDuration, err := benchmetric.GetTimedContainerDuration(waitDeadlineCtx, cluster, pod, name)
 			cancel()
 			if err != nil {
