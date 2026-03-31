@@ -201,7 +201,8 @@ type Boot struct {
 	procDriverNvidiaParams             string
 	nvidiaFabricIMEXManagementDevMinor int64
 
-	// uid and gid are the user and group IDs to switch to after setting up the user namespace.
+	// uid and gid are the user and group IDs to switch to after setting up the
+	// user namespace.
 	uid int
 	gid int
 

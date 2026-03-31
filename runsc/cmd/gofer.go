@@ -93,11 +93,6 @@ type goferSyncFDs struct {
 	// If this is set, this FD is the last that the Gofer interacts with and
 	// closes.
 	procMountFD int
-
-	// uid and gud are the user and group IDs to switch to after setting up
-	// the user namespace.
-	uid int
-	gid int
 }
 
 // Gofer implements subcommands.Command for the "gofer" command, which starts a
@@ -110,6 +105,11 @@ type Gofer struct {
 	applyCaps  bool
 	setUpRoot  bool
 	mountConfs boot.GoferMountConfFlags
+
+	// uid and gid are the user and group IDs to switch to after setting up the
+	// user namespace.
+	uid int
+	gid int
 
 	specFD           int
 	mountsFD         int
@@ -148,6 +148,10 @@ func (g *Gofer) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&g.mountsFD, "mounts-fd", -1, "mountsFD is the file descriptor to write list of mounts after they have been resolved (direct paths, no symlinks).")
 	f.IntVar(&g.goferToHostRPCFD, "rpc-fd", -1, "gofer-to-host RPC file descriptor.")
 
+	// IDs to run gofer as.
+	f.IntVar(&g.uid, "uid", 0, "User ID")
+	f.IntVar(&g.gid, "gid", 0, "Group ID")
+
 	// Add synchronization FD flags.
 	g.syncFDs.setFlags(f)
 
@@ -175,7 +179,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 	}
 
 	g.syncFDs.syncChroot()
-	g.syncFDs.syncUsernsForRootless()
+	g.syncFDs.syncUsernsForRootless(uint32(g.uid), uint32(g.gid))
 
 	goferToHostRPCSock, err := unet.NewSocket(g.goferToHostRPCFD)
 	if err != nil {
@@ -803,8 +807,6 @@ func (g *goferSyncFDs) setFlags(f *flag.FlagSet) {
 	f.IntVar(&g.chrootFD, "sync-chroot-fd", -1, "file descriptor that the gofer waits on until container filesystem setup is done")
 	f.IntVar(&g.usernsFD, "sync-userns-fd", -1, "file descriptor the gofer waits on until userns mappings are set up")
 	f.IntVar(&g.procMountFD, "proc-mount-sync-fd", -1, "file descriptor that the gofer writes to when /proc isn't needed anymore and can be unmounted")
-	f.IntVar(&g.uid, "uid", 0, "User ID")
-	f.IntVar(&g.gid, "gid", 0, "Group ID")
 }
 
 // flags returns the flags necessary to pass along the current sync FD values
@@ -868,21 +870,21 @@ func (g *goferSyncFDs) unmountProcfs() {
 }
 
 // syncUsernsForRootless waits on usernsFD to be closed and then sets
-// UID/GID to 0. Note that this function calls runtime.LockOSThread().
+// UID/GID to uid/gid. Note that this function calls runtime.LockOSThread().
 // This function is a no-op if usernsFD is -1.
 //
 // Postcondition: All callers must re-exec themselves after this returns,
 // unless usernsFD was -1.
-func (g *goferSyncFDs) syncUsernsForRootless() {
+func (g *goferSyncFDs) syncUsernsForRootless(uid, gid uint32) {
 	if g.usernsFD < 0 {
 		return
 	}
-	syncUsernsForRootless(g.usernsFD, uint32(g.uid), uint32(g.gid))
+	syncUsernsForRootless(g.usernsFD, uid, gid)
 	g.usernsFD = -1
 }
 
 // syncUsernsForRootless waits on usernsFD to be closed and then sets
-// UID/GID to 0. Note that this function calls runtime.LockOSThread().
+// UID/GID to uid/gid. Note that this function calls runtime.LockOSThread().
 //
 // Postcondition: All callers must re-exec themselves after this returns.
 func syncUsernsForRootless(fd int, uid uint32, gid uint32) {
