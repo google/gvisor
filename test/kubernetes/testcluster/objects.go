@@ -360,12 +360,13 @@ const (
 	RuntimeTypeUnsandboxed    = RuntimeType("runc")
 	RuntimeTypeGVisorTPU      = RuntimeType("gvisor-tpu")
 	RuntimeTypeUnsandboxedTPU = RuntimeType("runc-tpu")
+	RuntimeTypeNestedKataQEMU = RuntimeType("nested-kata-qemu")
 )
 
 // IsValid returns true if the runtime type is valid.
 func (t RuntimeType) IsValid() bool {
 	switch t {
-	case RuntimeTypeGVisor, RuntimeTypeUnsandboxed, RuntimeTypeGVisorTPU, RuntimeTypeUnsandboxedTPU:
+	case RuntimeTypeGVisor, RuntimeTypeUnsandboxed, RuntimeTypeGVisorTPU, RuntimeTypeUnsandboxedTPU, RuntimeTypeNestedKataQEMU:
 		return true
 	default:
 		return false
@@ -375,6 +376,11 @@ func (t RuntimeType) IsValid() bool {
 // IsGVisor returns true if the runtime is a gVisor-based runtime.
 func (t RuntimeType) IsGVisor() bool {
 	return t == RuntimeTypeGVisor || t == RuntimeTypeGVisorTPU
+}
+
+// IsKata returns true if the runtime is a Kata-based runtime.
+func (t RuntimeType) IsKata() bool {
+	return t == RuntimeTypeNestedKataQEMU
 }
 
 // ApplyNodepool modifies the nodepool to configure it to use the runtime.
@@ -402,6 +408,8 @@ func (t RuntimeType) ApplyNodepool(nodepool *cspb.NodePool) {
 		})
 	case RuntimeTypeUnsandboxedTPU:
 		nodepool.Config.Labels[NodepoolRuntimeKey] = string(RuntimeTypeUnsandboxedTPU)
+	case RuntimeTypeNestedKataQEMU:
+		nodepool.Config.Labels[NodepoolRuntimeKey] = string(RuntimeTypeNestedKataQEMU)
 	default:
 		panic(fmt.Sprintf("unsupported runtime %q", t))
 	}
@@ -445,6 +453,9 @@ func addToleration(podSpec *v13.PodSpec, toleration v13.Toleration) {
 
 // ApplyPodSpec modifies a PodSpec to use this runtime.
 func (t RuntimeType) ApplyPodSpec(podSpec *v13.PodSpec) {
+	if podSpec.NodeSelector == nil {
+		podSpec.NodeSelector = map[string]string{}
+	}
 	switch t {
 	case RuntimeTypeGVisor:
 		podSpec.RuntimeClassName = proto.String(gvisorRuntimeClass)
@@ -486,6 +497,10 @@ func (t RuntimeType) ApplyPodSpec(podSpec *v13.PodSpec) {
 			Operator: v13.TolerationOpEqual,
 			Value:    gvisorRuntimeClass,
 		})
+	case RuntimeTypeNestedKataQEMU:
+		podSpec.RuntimeClassName = proto.String("kata-qemu")
+		podSpec.NodeSelector["katacontainers.io/kata-runtime"] = "true"
+		podSpec.NodeSelector[NodepoolRuntimeKey] = string(RuntimeTypeNestedKataQEMU)
 	default:
 		panic(fmt.Sprintf("unsupported runtime %q", t))
 	}
