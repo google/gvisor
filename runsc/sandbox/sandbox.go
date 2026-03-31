@@ -1070,12 +1070,17 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 			log.Infof("Sandbox will be started in container's user namespace: %+v", userns)
 			nss = append(nss, userns)
 			if rootlessEUID {
+				if CanUseUnprivilegedMapping(args.Spec) {
+					specutils.SetUIDGIDMappings(cmd, args.Spec)
+					cmd.SysProcAttr.GidMappingsEnableSetgroups = false
+				} else {
+					setUserMappings = true
+				}
 				syncFile, err := ConfigureCmdForRootless(cmd, &donations)
 				if err != nil {
 					return err
 				}
 				defer syncFile.Close()
-				setUserMappings = true
 				uid, gid := SandboxUserGroupIDs(args.Spec)
 				if uid != 0 {
 					cmd.Args = append(cmd.Args, fmt.Sprintf("--uid=%d", uid))
@@ -2149,6 +2154,33 @@ func ConfigureCmdForRootless(cmd *exec.Cmd, donations *donation.Agency) (*os.Fil
 		unix.CAP_SETPCAP,
 	}
 	return os.NewFile(uintptr(fds[0]), "userns sync FD"), nil
+}
+
+// CanUseUnprivilegedMapping checks if the requested user namespace mappings
+// can be applied manually without requiring setuid privileges (like newuidmap).
+//
+// The Linux kernel strictly requires that an unprivileged process writing to
+// /proc/[pid]/uid_map or gid_map must map exactly one contiguous ID, and the
+// mapped host ID must exactly match the process's effective UID/GID.
+func CanUseUnprivilegedMapping(spec *specs.Spec) bool {
+	if spec.Linux == nil {
+		return true
+	}
+	if len(spec.Linux.UIDMappings) > 0 {
+		if len(spec.Linux.UIDMappings) != 1 ||
+			spec.Linux.UIDMappings[0].Size != 1 ||
+			int(spec.Linux.UIDMappings[0].HostID) != unix.Geteuid() {
+			return false
+		}
+	}
+	if len(spec.Linux.GIDMappings) > 0 {
+		if len(spec.Linux.GIDMappings) != 1 ||
+			spec.Linux.GIDMappings[0].Size != 1 ||
+			int(spec.Linux.GIDMappings[0].HostID) != unix.Getegid() {
+			return false
+		}
+	}
+	return true
 }
 
 // SetUserMappings uses newuidmap/newgidmap programs to set up user ID mappings

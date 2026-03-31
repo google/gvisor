@@ -1540,6 +1540,7 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 	}
 
 	rootlessEUID := unix.Geteuid() != 0
+	setUserMappings := false
 	// Setup any uid/gid mappings, and create or join the configured user
 	// namespace so the gofer's view of the filesystem aligns with the
 	// users in the sandbox.
@@ -1556,6 +1557,12 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 			return nil, nil, nil, nil, fmt.Errorf("unable to run a rootless container without userns")
 		}
 		nss = append(nss, userNS)
+		if sandbox.CanUseUnprivilegedMapping(c.Spec) {
+			specutils.SetUIDGIDMappings(cmd, c.Spec)
+			cmd.SysProcAttr.GidMappingsEnableSetgroups = false
+		} else {
+			setUserMappings = true
+		}
 		syncFile, err := sandbox.ConfigureCmdForRootless(cmd, &donations)
 		if err != nil {
 			return nil, nil, nil, nil, err
@@ -1594,7 +1601,7 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 	rpcPidCh <- cmd.Process.Pid
 
 	// Set up and synchronize rootless mode userns mappings.
-	if rootlessEUID {
+	if setUserMappings {
 		if err := sandbox.SetUserMappings(c.Spec, cmd.Process.Pid); err != nil {
 			return nil, nil, nil, nil, err
 		}

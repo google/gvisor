@@ -8,6 +8,56 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (ct *ctTarget) StateTypeName() string {
+	return "pkg/sentry/socket/netfilter.ctTarget"
+}
+
+func (ct *ctTarget) StateFields() []string {
+	return []string{
+		"CTTarget",
+	}
+}
+
+func (ct *ctTarget) beforeSave() {}
+
+// +checklocksignore
+func (ct *ctTarget) StateSave(stateSinkObject state.Sink) {
+	ct.beforeSave()
+	stateSinkObject.Save(0, &ct.CTTarget)
+}
+
+func (ct *ctTarget) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (ct *ctTarget) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &ct.CTTarget)
+}
+
+func (cm *ctTargetMaker) StateTypeName() string {
+	return "pkg/sentry/socket/netfilter.ctTargetMaker"
+}
+
+func (cm *ctTargetMaker) StateFields() []string {
+	return []string{
+		"NetworkProtocol",
+	}
+}
+
+func (cm *ctTargetMaker) beforeSave() {}
+
+// +checklocksignore
+func (cm *ctTargetMaker) StateSave(stateSinkObject state.Sink) {
+	cm.beforeSave()
+	stateSinkObject.Save(0, &cm.NetworkProtocol)
+}
+
+func (cm *ctTargetMaker) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (cm *ctTargetMaker) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &cm.NetworkProtocol)
+}
+
 func (at *acceptTarget) StateTypeName() string {
 	return "pkg/sentry/socket/netfilter.acceptTarget"
 }
@@ -293,6 +343,8 @@ func (jt *JumpTarget) StateLoad(ctx context.Context, stateSourceObject state.Sou
 }
 
 func init() {
+	state.Register((*ctTarget)(nil))
+	state.Register((*ctTargetMaker)(nil))
 	state.Register((*acceptTarget)(nil))
 	state.Register((*dropTarget)(nil))
 	state.Register((*errorTarget)(nil))

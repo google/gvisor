@@ -668,6 +668,34 @@ func (mt *MasqueradeTarget) StateLoad(ctx context.Context, stateSourceObject sta
 	stateSourceObject.Load(0, &mt.NetworkProtocol)
 }
 
+func (c *CTTarget) StateTypeName() string {
+	return "pkg/tcpip/stack.CTTarget"
+}
+
+func (c *CTTarget) StateFields() []string {
+	return []string{
+		"NetworkProtocol",
+		"Zone",
+	}
+}
+
+func (c *CTTarget) beforeSave() {}
+
+// +checklocksignore
+func (c *CTTarget) StateSave(stateSinkObject state.Sink) {
+	c.beforeSave()
+	stateSinkObject.Save(0, &c.NetworkProtocol)
+	stateSinkObject.Save(1, &c.Zone)
+}
+
+func (c *CTTarget) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (c *CTTarget) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &c.NetworkProtocol)
+	stateSourceObject.Load(1, &c.Zone)
+}
+
 func (it *IPTables) StateTypeName() string {
 	return "pkg/tcpip/stack.IPTables"
 }
@@ -2440,6 +2468,7 @@ func init() {
 	state.Register((*RedirectTarget)(nil))
 	state.Register((*SNATTarget)(nil))
 	state.Register((*MasqueradeTarget)(nil))
+	state.Register((*CTTarget)(nil))
 	state.Register((*IPTables)(nil))
 	state.Register((*Table)(nil))
 	state.Register((*Rule)(nil))
