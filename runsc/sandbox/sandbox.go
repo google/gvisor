@@ -2155,37 +2155,41 @@ func ConfigureCmdForRootless(cmd *exec.Cmd, donations *donation.Agency) (*os.Fil
 // for process pid.
 func SetUserMappings(spec *specs.Spec, pid int) error {
 	log.Debugf("Setting user mappings")
-	args := []string{strconv.Itoa(pid)}
-	for _, idMap := range spec.Linux.UIDMappings {
-		log.Infof("Mapping host uid %d to container uid %d (size=%d)",
-			idMap.HostID, idMap.ContainerID, idMap.Size)
-		args = append(args,
-			strconv.Itoa(int(idMap.ContainerID)),
-			strconv.Itoa(int(idMap.HostID)),
-			strconv.Itoa(int(idMap.Size)),
-		)
+	if len(spec.Linux.UIDMappings) > 0 {
+		args := []string{strconv.Itoa(pid)}
+		for _, idMap := range spec.Linux.UIDMappings {
+			log.Infof("Mapping host uid %d to container uid %d (size=%d)",
+				idMap.HostID, idMap.ContainerID, idMap.Size)
+			args = append(args,
+				strconv.Itoa(int(idMap.ContainerID)),
+				strconv.Itoa(int(idMap.HostID)),
+				strconv.Itoa(int(idMap.Size)),
+			)
+		}
+
+		out, err := exec.Command("newuidmap", args...).CombinedOutput()
+		log.Debugf("newuidmap: %#v\n%s", args, out)
+		if err != nil {
+			return fmt.Errorf("newuidmap failed: %w", err)
+		}
 	}
 
-	out, err := exec.Command("newuidmap", args...).CombinedOutput()
-	log.Debugf("newuidmap: %#v\n%s", args, out)
-	if err != nil {
-		return fmt.Errorf("newuidmap failed: %w", err)
-	}
-
-	args = []string{strconv.Itoa(pid)}
-	for _, idMap := range spec.Linux.GIDMappings {
-		log.Infof("Mapping host uid %d to container uid %d (size=%d)",
-			idMap.HostID, idMap.ContainerID, idMap.Size)
-		args = append(args,
-			strconv.Itoa(int(idMap.ContainerID)),
-			strconv.Itoa(int(idMap.HostID)),
-			strconv.Itoa(int(idMap.Size)),
-		)
-	}
-	out, err = exec.Command("newgidmap", args...).CombinedOutput()
-	log.Debugf("newgidmap: %#v\n%s", args, out)
-	if err != nil {
-		return fmt.Errorf("newgidmap failed: %w", err)
+	if len(spec.Linux.GIDMappings) > 0 {
+		args := []string{strconv.Itoa(pid)}
+		for _, idMap := range spec.Linux.GIDMappings {
+			log.Infof("Mapping host uid %d to container uid %d (size=%d)",
+				idMap.HostID, idMap.ContainerID, idMap.Size)
+			args = append(args,
+				strconv.Itoa(int(idMap.ContainerID)),
+				strconv.Itoa(int(idMap.HostID)),
+				strconv.Itoa(int(idMap.Size)),
+			)
+		}
+		out, err := exec.Command("newgidmap", args...).CombinedOutput()
+		log.Debugf("newgidmap: %#v\n%s", args, out)
+		if err != nil {
+			return fmt.Errorf("newgidmap failed: %w", err)
+		}
 	}
 	return nil
 }
