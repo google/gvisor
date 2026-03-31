@@ -462,6 +462,27 @@ type XTNATTargetV2 struct {
 // SizeOfXTNATTargetV2 is the size of an XTNATTargetV2.
 const SizeOfXTNATTargetV2 = SizeOfXTEntryTarget + SizeOfNFNATRange2
 
+// XTCTTargetInfoV0 corresponds to struct xt_ct_target_info (revision 0) in
+// include/uapi/linux/netfilter/xt_CT.h. The CT target is used in the raw
+// table for conntrack zone assignment. The trailing padding accounts for the
+// kernel-internal nf_conn pointer that is 8-byte aligned.
+//
+// +marshal
+type XTCTTargetInfoV0 struct {
+	_         structs.HostLayout
+	Target    XTEntryTarget
+	Flags     uint16
+	Zone      uint16
+	CTEvents  uint32
+	ExpEvents uint32
+	Helper    [16]byte
+	_         [4]byte // padding for 8-byte alignment of ct pointer
+	_         [8]byte // space for kernel nf_conn pointer (unused in userspace)
+}
+
+// SizeOfXTCTTargetInfoV0 is the size of an XTCTTargetInfoV0.
+const SizeOfXTCTTargetInfoV0 = 72
+
 // IPTGetinfo is the argument for the IPT_SO_GET_INFO sockopt. It corresponds
 // to struct ipt_getinfo in include/uapi/linux/netfilter_ipv4/ip_tables.h.
 //

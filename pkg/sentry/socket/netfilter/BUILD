@@ -8,6 +8,7 @@ package(
 go_library(
     name = "netfilter",
     srcs = [
+        "ct_target.go",
         "dnat.go",
         "extensions.go",
         "ipv4.go",
