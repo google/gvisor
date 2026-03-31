@@ -74,7 +74,7 @@ func IsNFTablesEnabled() bool {
 // Defines general constants for the nftables interpreter.
 const (
 
-	// Number of bytes for 4 16-byte registers or 16 4-byte registers.
+	// Total bytes for the registers in the nftables interpreter.
 	registersByteSize = 64
 
 	// Maximum number of nested jumps allowed, corresponding to
@@ -240,6 +240,8 @@ func StackHook(family stack.AddressFamily, hook uint32) (stack.NFHook, *syserr.A
 // Note: unlike iptables, nftables doesn't start with any initialized tables.
 type NFTables struct {
 	filters            [stack.NumAFs]*addressFamilyFilter // Filters for each address family.
+	ip4InetBaseChains  [stack.NFNumHooks][]*Chain         // List of base chains for each hook in the IPv4-inet family.
+	ip6InetBaseChains  [stack.NFNumHooks][]*Chain         // List of base chains for each hook in the IPv6-inet family.
 	clock              tcpip.Clock                        // Clock for timing evaluations.
 	startTime          time.Time                          // Time NFTables object was created.
 	rng                rand.RNG                           // Random number generator.
@@ -738,157 +740,6 @@ func isRegister(reg uint8) bool {
 	return isVerdictRegister(reg) || is16ByteRegister(reg) || is4ByteRegister(reg)
 }
 
-// registerData represents the data to be set in a register.
-type registerData interface {
-	// String returns a string representation of the register data.
-	String() string
-
-	// equal compares the register data to another.
-	equal(other registerData) bool
-
-	// validateRegister ensures the register is compatible with the data type,
-	// returning an error otherwise.
-	validateRegister(reg uint8) *syserr.AnnotatedError
-
-	// storeData sets the data in the destination register, panicking if the
-	// register is not valid for the data type.
-	// Note: assumes data is valid for register. This is used primarily during
-	// operation evaluation and the data type/register compatibility should have
-	// been checked during the operation init.
-	storeData(regs *registerSet, reg uint8)
-
-	Dump() ([]byte, *syserr.AnnotatedError)
-}
-
-// verdictData represents a verdict as data to be stored in a register.
-type verdictData struct {
-	data stack.NFVerdict
-}
-
-// newVerdictData creates a registerData for a verdict.
-func newVerdictData(verdict stack.NFVerdict) verdictData { return verdictData{data: verdict} }
-
-// String returns a string representation of the verdict data.
-func (rd verdictData) String() string {
-	return VerdictString(rd.data)
-}
-
-// equal compares the verdict data to another registerData object.
-func (rd verdictData) equal(other registerData) bool {
-	if other == nil {
-		return false
-	}
-	otherVD, ok := other.(verdictData)
-	if !ok {
-		return false
-	}
-	return rd.data == otherVD.data
-}
-
-// validateRegister ensures the register is compatible with verdictData.
-func (rd verdictData) validateRegister(reg uint8) *syserr.AnnotatedError {
-	if !isVerdictRegister(reg) {
-		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "verdict can only be stored in verdict register")
-	}
-	return nil
-}
-
-// storeData sets the data in the destination register to the verdict.
-func (rd verdictData) storeData(regs *registerSet, reg uint8) {
-	if err := rd.validateRegister(reg); err != nil {
-		panic(err)
-	}
-	regs.verdict = rd.data
-}
-
-func (rd verdictData) Dump() ([]byte, *syserr.AnnotatedError) {
-	nestedAttr := nlmsg.NestedAttr{}
-	nestedAttr.PutAttr(linux.NFTA_VERDICT_CODE, nlmsg.PutU32(uint32(rd.data.Code)))
-	if int32(rd.data.Code) == linux.NFT_JUMP || int32(rd.data.Code) == linux.NFT_GOTO {
-		nestedAttr.PutAttrString(linux.NFTA_VERDICT_CHAIN, rd.data.ChainName)
-	}
-	m := &nlmsg.Message{}
-	m.PutNestedAttr(linux.NFTA_DATA_VERDICT, nestedAttr)
-	return m.Buffer(), nil
-}
-
-// bytesData represents <= 16 bytes of data to be stored in a register.
-type bytesData struct {
-	data []byte
-}
-
-// newBytesData creates a registerData for <= 16 bytes of data.
-func newBytesData(bytes []byte) bytesData {
-	// TODO - b/421437663: Return errors instead of panicking.
-	// See net/netfilter/nf_tables_api.c:nft_value_init
-	if len(bytes) == 0 {
-		panic("bytes data cannot be empty")
-	}
-	if len(bytes) > linux.NFT_REG_SIZE {
-		panic(fmt.Errorf("bytes data cannot be more than %d bytes: %d", linux.NFT_REG_SIZE, len(bytes)))
-	}
-	return bytesData{data: bytes}
-}
-
-// String returns a string representation of the big endian bytes data.
-func (rd bytesData) String() string {
-	return fmt.Sprintf("%x", rd.data)
-}
-
-// equal compares the bytes data to another registerData object.
-func (rd bytesData) equal(other registerData) bool {
-	if other == nil {
-		return false
-	}
-	otherBD, ok := other.(bytesData)
-	if !ok {
-		return false
-	}
-	return slices.Equal(rd.data, otherBD.data)
-}
-
-// validateRegister ensures the register is compatible with this bytes data.
-func (rd bytesData) validateRegister(reg uint8) *syserr.AnnotatedError {
-	if isVerdictRegister(reg) {
-		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "data cannot be stored in verdict register")
-	}
-	if is4ByteRegister(reg) && len(rd.data) > linux.NFT_REG32_SIZE {
-		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("%d-byte data cannot be stored in %d-byte register", len(rd.data), linux.NFT_REG32_SIZE))
-	}
-	// 16-byte register can be used for any data (guaranteed to be <= 16 bytes)
-	return nil
-}
-
-// getRegisterBuffer is a helper function that gets the appropriate slice of the
-// register from the register set. The number of bytes returned is rounded up to
-// the nearest 4-byte multiple.
-// Note: does not support verdict data and assumes the register is valid for the
-// given data type.
-func getRegisterBuffer(regs *registerSet, reg uint8) []byte {
-	// Returns the entire 4-byte register
-	if is4ByteRegister(reg) {
-		start := (reg - linux.NFT_REG32_00) * linux.NFT_REG32_SIZE
-		return regs.data[start : start+linux.NFT_REG32_SIZE]
-	}
-	// Returns the entire 16-byte register
-	start := (reg - linux.NFT_REG_1) * linux.NFT_REG_SIZE
-	return regs.data[start : start+linux.NFT_REG_SIZE]
-}
-
-// storeData sets the data in the destination register to the bytes data.
-func (rd bytesData) storeData(regs *registerSet, reg uint8) {
-	if err := rd.validateRegister(reg); err != nil {
-		panic(err)
-	}
-	copy(getRegisterBuffer(regs, reg), rd.data)
-}
-
-func (rd bytesData) Dump() ([]byte, *syserr.AnnotatedError) {
-	m := &nlmsg.Message{}
-	m.PutAttr(linux.NFTA_DATA_VALUE, primitive.AsByteSlice(rd.data))
-	return m.Buffer(), nil
-}
-
 // registerSet represents the set of registers supported by the kernel.
 // Use registerData.storeData to set data in the registers.
 // Note: Corresponds to nft_regs from include/net/netfilter/nf_tables.h.
@@ -981,96 +832,95 @@ func AFtoNetlinkAF(af uint8) (stack.AddressFamily, *syserr.Error) {
 	return naf, nil
 }
 
-// nftDataInit creates a new registerData struct from the passed in data bytes.
-func nftDataInit(tab *Table, regType uint32, dataBytes nlmsg.AttrsView) (registerData, *syserr.AnnotatedError) {
-	dataAttrs, ok := NfParse(dataBytes)
+// parseVerdictAttrs parses and validates the verdict data from the data attributes.
+func parseVerdictAttrs(tab *Table, dataAttrs map[uint16]nlmsg.BytesView) (stack.NFVerdict, *syserr.AnnotatedError) {
+	v := stack.NFVerdict{}
+	vBytes, ok := dataAttrs[linux.NFTA_DATA_VERDICT]
 	if !ok {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse data bytes for nested expression data")
+		return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: NFTA_DATA_VERDICT attribute is not found")
 	}
-
-	if valueBytes, ok := dataAttrs[linux.NFTA_DATA_VALUE]; ok {
-		// Represents a value like an ip address or a string.
-		if regType != linux.NFT_DATA_VALUE {
-			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Attribute NFTA_DATA_VALUE is not supported for register type %d", regType))
-		}
-
-		// TODO - b/434244017: Add stricter validation for value bytes.
-		return newBytesData(valueBytes), nil
-	} else if vBytes, ok := dataAttrs[linux.NFTA_DATA_VERDICT]; ok {
-		// Represents a verdict like NF_DROP or NF_ACCEPT.
-		if regType != linux.NFT_DATA_VERDICT {
-			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Attribute NFTA_DATA_VERDICT is not supported for register type %d", regType))
-		}
-
-		verdict, err := validateVerdictData(tab, nlmsg.AttrsView(vBytes))
-		if err != nil {
-			return nil, err
-		}
-		return newVerdictData(verdict), nil
-	}
-
-	return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Attributes NFTA_DATA_VALUE or NFTA_DATA_VERDICT not found")
+	return validateVerdictData(tab, nlmsg.AttrsView(vBytes))
 }
 
-// nftParseReg parses the register type and returns the register number.
-// Assumes that the register is in host byte order.
-func nftParseReg(reg uint32, regType uint32, regData registerData) (uint8, *syserr.AnnotatedError) {
-	dreg, err := nftMatchReg(reg)
-	if err != nil {
-		return 0, err
+func parseDataAttrs(dataAttrs map[uint16]nlmsg.BytesView) ([]byte, *syserr.AnnotatedError) {
+	vBytes, ok := dataAttrs[linux.NFTA_DATA_VALUE]
+	if !ok {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: NFTA_DATA_VALUE attribute is not found")
 	}
-
-	return nftValidateRegister(dreg, regType, regData)
+	return nlmsg.AttrsView(vBytes), nil
 }
 
-// nftMatchReg matches the register type to the corresponding register number.
-// Assumes that the register is in host byte order.
-func nftMatchReg(reg uint32) (uint32, *syserr.AnnotatedError) {
-	switch reg {
-	case linux.NFT_REG_VERDICT, linux.NFT_REG_1, linux.NFT_REG_2, linux.NFT_REG_3, linux.NFT_REG_4:
-		return (reg * linux.NFT_REG_SIZE) / linux.NFT_REG32_SIZE, nil
-	case linux.NFT_REG32_00, linux.NFT_REG32_01, linux.NFT_REG32_02, linux.NFT_REG32_03,
-		linux.NFT_REG32_04, linux.NFT_REG32_05, linux.NFT_REG32_06, linux.NFT_REG32_07,
-		linux.NFT_REG32_08, linux.NFT_REG32_09, linux.NFT_REG32_10, linux.NFT_REG32_11,
-		linux.NFT_REG32_12, linux.NFT_REG32_13, linux.NFT_REG32_14, linux.NFT_REG32_15:
-
-		return reg + (linux.NFT_REG_SIZE / linux.NFT_REG32_SIZE) - linux.NFT_REG32_00, nil
-	default:
-		return 0, syserr.NewAnnotatedError(syserr.ErrRange, fmt.Sprintf("Nftables: Unsupported register type %d", reg))
+// validateDataRegister ensures that the data register and it's access is valid.
+func validateDataRegister(regStartIdx int, dataSizeBytes int) *syserr.AnnotatedError {
+	if dataSizeBytes == 0 {
+		return syserr.NewAnnotatedError(syserr.ErrRange, "data size cannot be zero")
 	}
+	// Although this check is not needed as the next check will catch this,
+	// added it just for readable error messages.
+	if regStartIdx >= registersByteSize {
+		return syserr.NewAnnotatedError(syserr.ErrRange, "register start index is invalid")
+	}
+	// Kernel code: net/netfilter/nf_tables_api.c:nft_validate_register_store
+	endIdx := regStartIdx + dataSizeBytes - 1
+	if endIdx >= registersByteSize {
+		return syserr.NewAnnotatedError(syserr.ErrRange, "data is too large for register set")
+	}
+	return nil
 }
 
-// nftValidateRegister validates the register type and returns the register number.
-func nftValidateRegister(reg uint32, regType uint32, data registerData) (uint8, *syserr.AnnotatedError) {
-	switch reg {
-	case linux.NFT_REG_VERDICT:
-		if regType != linux.NFT_DATA_VERDICT {
-			return 0, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Register type %d is not NFTA_DATA_VERDICT for a register NFT_REG_VERDICT", regType))
-		}
+// dumpDataAttr dumps the data attribute for the dump operation.
+func dumpDataAttr(data []byte) ([]byte, *syserr.AnnotatedError) {
+	m := &nlmsg.Message{}
+	m.PutAttr(linux.NFTA_DATA_VALUE, primitive.AsByteSlice(data))
+	return m.Buffer(), nil
+}
 
-		verdictData, ok := data.(verdictData)
-		if !ok {
-			return 0, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Register data is not a verdict data")
-		}
-
-		// TODO - b/434244017: Add insertion-time validation of chains for jump and goto verdicts.
-		if int32(verdictData.data.Code) == linux.NFT_GOTO {
-			return 0, syserr.NewAnnotatedError(syserr.ErrNotSupported, "Nftables: Verdicts with goto codes are not yet supported")
-		}
-	default:
-		if regType != linux.NFT_DATA_VALUE {
-			return 0, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Register type %d is not supported for register %d", regType, reg))
-		}
-
-		if reg < (linux.NFT_REG_1 * linux.NFT_REG_SIZE / linux.NFT_REG32_SIZE) {
-			return 0, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Register %d with type %d is less than %d bytes", reg, regType, linux.NFT_REG_1*linux.NFT_REG_SIZE/linux.NFT_REG32_SIZE))
-		}
-
-		// TODO - b/434244017: Add error checking for the length of the expression data, ensuring it
-		// can fit within the specified register.
+// dumpVerdictDataAttr dumps the verdict data attribute for the dump operation.
+func dumpVerdictDataAttr(verdict stack.NFVerdict) ([]byte, *syserr.AnnotatedError) {
+	nestedAttr := nlmsg.NestedAttr{}
+	nestedAttr.PutAttr(linux.NFTA_VERDICT_CODE, nlmsg.PutU32(uint32(verdict.Code)))
+	if int32(verdict.Code) == linux.NFT_JUMP || int32(verdict.Code) == linux.NFT_GOTO {
+		nestedAttr.PutAttrString(linux.NFTA_VERDICT_CHAIN, verdict.ChainName)
 	}
+	m := &nlmsg.Message{}
+	m.PutNestedAttr(linux.NFTA_DATA_VERDICT, nestedAttr)
+	return m.Buffer(), nil
+}
 
-	return uint8(reg), nil
+// regNumToIdx converts a register number to an index for the registerSet.data.
+// Also validates that the data register and it's access is valid.
+func regNumToIdx(reg uint8, dataLenBytes int) (int, *syserr.AnnotatedError) {
+	regIdx, ok := func() (int, bool) {
+		if is4ByteRegister(reg) {
+			return int((reg - linux.NFT_REG32_00) * linux.NFT_REG32_SIZE), true
+		}
+		if is16ByteRegister(reg) {
+			return int((reg - linux.NFT_REG_1) * linux.NFT_REG_SIZE), true
+		}
+		return -1, false
+	}()
+	if !ok {
+		return -1, syserr.NewAnnotatedError(syserr.ErrRange, fmt.Sprintf("Nftables: Unsupported register number: %d", reg))
+	}
+	if err := validateDataRegister(regIdx, dataLenBytes); err != nil {
+		return -1, err
+	}
+	return regIdx, nil
+}
+
+// formatRegIdxForDump formats the register index for the dump operation.
+// net/netfilter/nf_tables_api.c:nft_dump_register
+func formatRegIdxForDump(regIdx int) uint32 {
+	if regIdx >= registersByteSize {
+		return 0
+	}
+	if regIdx%linux.NFT_REG_SIZE == 0 {
+		return uint32(regIdx/linux.NFT_REG_SIZE) + linux.NFT_REG_1
+	}
+	if regIdx%linux.NFT_REG32_SIZE != 0 {
+		return 0
+	}
+	return uint32(regIdx/linux.NFT_REG32_SIZE) + linux.NFT_REG32_00
 }
 
 // validateVerdictData validates the verdict data bytes and returns the data as a verdict.
@@ -1250,7 +1100,9 @@ func (nf *NFTables) DeepCopy() *NFTables {
 				hook: hfStack.hook,
 			}
 			for _, chain := range hfStack.baseChains {
-				hfStackCopy.baseChains = append(hfStackCopy.baseChains, nftCopy.filters[i].tables[chain.table.name].chains[chain.name])
+				chainCopy := nftCopy.filters[i].tables[chain.table.name].chains[chain.name]
+				hfStackCopy.baseChains = append(hfStackCopy.baseChains, chainCopy)
+				nftCopy.addChainToCache(chainCopy)
 			}
 			nftCopy.filters[i].hfStacks[hook] = hfStackCopy
 		}
@@ -1262,5 +1114,7 @@ func (nf *NFTables) DeepCopy() *NFTables {
 // with the tables of the passed in NFTables struct.
 func (nf *NFTables) ReplaceNFTables(nftCopy *NFTables) {
 	nf.filters = nftCopy.filters
+	nf.ip4InetBaseChains = nftCopy.ip4InetBaseChains
+	nf.ip6InetBaseChains = nftCopy.ip6InetBaseChains
 	nf.genid++
 }

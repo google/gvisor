@@ -19,7 +19,6 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -30,8 +29,8 @@ import (
 // Note: meta operations are not supported for the verdict register.
 // TODO(b/345684870): Support retrieving more meta fields for Meta Load.
 type metaLoad struct {
-	key  metaKey // Meta key specifying what data to retrieve.
-	dreg uint8   // Number of the destination register.
+	key     metaKey // Meta key specifying what data to retrieve.
+	dregIdx int     // Index of the destination register in registerSet.data.
 
 	// Note: Similar to route, meta fields are stored AS IS. If the meta data is
 	// a field stored by the kernel (i.e. length), it is stored in host endian. On
@@ -51,11 +50,15 @@ func newMetaLoad(key metaKey, dreg uint8) (*metaLoad, *syserr.AnnotatedError) {
 	if err := validateMetaKey(key); err != nil {
 		return nil, err
 	}
-	if metaDataLengths[key] > 4 && !is16ByteRegister(dreg) {
+	blen := metaDataLengths[key]
+	if blen > 4 && !is16ByteRegister(dreg) {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("meta load operation cannot use 4-byte register as destination for key %v", key))
 	}
-
-	return &metaLoad{key: key, dreg: dreg}, nil
+	dregIdx, err := regNumToIdx(dreg, blen)
+	if err != nil {
+		return nil, err
+	}
+	return &metaLoad{key: key, dregIdx: dregIdx}, nil
 }
 
 // evaluate for MetaLoad loads specific meta data into the destination register.
@@ -77,8 +80,15 @@ func (op metaLoad) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Ru
 
 	// Netfilter (Family) Protocol (8-bit, single byte).
 	case linux.NFT_META_NFPROTO:
-		family := rule.chain.GetAddressFamily()
-		target = []byte{AfProtocol(family)}
+		switch pkt.NetworkProtocolNumber {
+		// Cannot rely on chain's address family as it can be inet, and inet can mean either IPv4 or IPv6.
+		case header.IPv4ProtocolNumber:
+			target = []byte{linux.NFPROTO_IPV4}
+		case header.IPv6ProtocolNumber:
+			target = []byte{linux.NFPROTO_IPV6}
+		default:
+			target = []byte{AfProtocol(rule.chain.GetAddressFamily())}
+		}
 
 	// L4 Transport Layer Protocol (8-bit, single byte).
 	case linux.NFT_META_L4PROTO:
@@ -149,7 +159,7 @@ func (op metaLoad) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Ru
 	}
 
 	// Gets the destination register.
-	dst := getRegisterBuffer(regs, op.dreg)
+	dst := regs.data[op.dregIdx:]
 	// Zeroes out excess bytes of the destination register.
 	// This is done since comparison can be done in multiples of 4 bytes.
 	blen := metaDataLengths[op.key]
@@ -165,8 +175,10 @@ func (op metaLoad) GetExprName() string {
 }
 
 func (op metaLoad) Dump() ([]byte, *syserr.AnnotatedError) {
-	log.Warningf("Nftables: Dumping meta load operation is not implemented")
-	return nil, nil
+	m := &nlmsg.Message{}
+	m.PutAttr(linux.NFTA_META_KEY, nlmsg.PutU32(uint32(op.key)))
+	m.PutAttr(linux.NFTA_META_DREG, nlmsg.PutU32(formatRegIdxForDump(op.dregIdx)))
+	return m.Buffer(), nil
 }
 
 func initMetaLoad(attrs map[uint16]nlmsg.BytesView) (*metaLoad, *syserr.AnnotatedError) {
@@ -178,9 +190,5 @@ func initMetaLoad(attrs map[uint16]nlmsg.BytesView) (*metaLoad, *syserr.Annotate
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse NFTA_META_DREG attribute")
 	}
-	dreg, err := nftMatchReg(reg)
-	if err != nil {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Invalid source register: %d", reg))
-	}
-	return newMetaLoad(metaKey(key), uint8(dreg))
+	return newMetaLoad(metaKey(key), uint8(reg))
 }

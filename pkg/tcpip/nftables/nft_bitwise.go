@@ -49,13 +49,13 @@ func (bop bitwiseOp) String() string {
 // a given register, storing the result in a destination register.
 // Note: bitwise operations are not supported for the verdict register.
 type bitwise struct {
-	sreg  uint8     // Number of the source register.
-	dreg  uint8     // Number of the destination register.
-	bop   bitwiseOp // Bitwise operator to use.
-	blen  uint8     // Number of bytes to apply bitwise operation to.
-	mask  bytesData // Mask to apply bitwise & for boolean operations (before ^).
-	xor   bytesData // Xor to apply bitwise ^ for boolean operations (after &).
-	shift uint32    // Shift to apply bitwise <</>> for non-boolean operations.
+	sregIdx int       // Index of the source register in registerSet.data.
+	dregIdx int       // Index of the destination register in registerSet.data.
+	bop     bitwiseOp // Bitwise operator to use.
+	blen    int       // Number of bytes to apply bitwise operation to.
+	mask    []byte    // Mask to apply bitwise & for boolean operations (before ^).
+	xor     []byte    // Xor to apply bitwise ^ for boolean operations (after &).
+	shift   uint32    // Shift to apply bitwise <</>> for non-boolean operations.
 
 	// Note: Technically, the linux kernel has defined bool, lshift, and rshift
 	// as the 3 types of bitwise operations. However, we have not been able to
@@ -78,11 +78,19 @@ func newBitwiseBool(sreg, dreg uint8, mask, xor []byte) (*bitwise, *syserr.Annot
 	if blen > linux.NFT_REG_SIZE || (blen > linux.NFT_REG32_SIZE && (is4ByteRegister(sreg) || is4ByteRegister(dreg))) {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("bitwise boolean operation cannot use more than %d bytes", linux.NFT_REG_SIZE))
 	}
-	return &bitwise{sreg: sreg, dreg: dreg, bop: linux.NFT_BITWISE_BOOL, blen: uint8(blen), mask: newBytesData(mask), xor: newBytesData(xor)}, nil
+	var err *syserr.AnnotatedError
+	var sregIdx, dregIdx int
+	if sregIdx, err = regNumToIdx(sreg, blen); err != nil {
+		return nil, err
+	}
+	if dregIdx, err = regNumToIdx(dreg, blen); err != nil {
+		return nil, err
+	}
+	return &bitwise{sregIdx: sregIdx, dregIdx: dregIdx, bop: linux.NFT_BITWISE_BOOL, blen: blen, mask: mask, xor: xor}, nil
 }
 
 // newBitwiseShift creates a new bitwise shift operation.
-func newBitwiseShift(sreg, dreg, blen uint8, shift uint32, right bool) (*bitwise, *syserr.AnnotatedError) {
+func newBitwiseShift(sreg, dreg uint8, blen int, shift uint32, right bool) (*bitwise, *syserr.AnnotatedError) {
 	if isVerdictRegister(sreg) || isVerdictRegister(dreg) {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "bitwise shift operation does not support verdict register as source or destination register")
 	}
@@ -96,7 +104,15 @@ func newBitwiseShift(sreg, dreg, blen uint8, shift uint32, right bool) (*bitwise
 	if right {
 		bop = linux.NFT_BITWISE_RSHIFT
 	}
-	return &bitwise{sreg: sreg, dreg: dreg, blen: blen, bop: bop, shift: shift}, nil
+	var err *syserr.AnnotatedError
+	var sregIdx, dregIdx int
+	if sregIdx, err = regNumToIdx(sreg, int(blen)); err != nil {
+		return nil, err
+	}
+	if dregIdx, err = regNumToIdx(dreg, int(blen)); err != nil {
+		return nil, err
+	}
+	return &bitwise{sregIdx: sregIdx, dregIdx: dregIdx, blen: blen, bop: bop, shift: shift}, nil
 }
 
 // evaluateBitwiseBool performs the bitwise boolean operation on the source register
@@ -176,11 +192,11 @@ func evaluateBitwiseRshift(sregBuf, dregBuf []byte, shift uint32) {
 // data and stores the result in the destination register.
 func (op bitwise) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
 	// Gets the specified buffers of the source and destination registers.
-	sregBuf := getRegisterBuffer(regs, op.sreg)[:op.blen]
-	dregBuf := getRegisterBuffer(regs, op.dreg)[:op.blen]
+	sregBuf := regs.data[op.sregIdx : op.sregIdx+op.blen]
+	dregBuf := regs.data[op.dregIdx : op.dregIdx+op.blen]
 
 	if op.bop == linux.NFT_BITWISE_BOOL {
-		evaluateBitwiseBool(sregBuf, dregBuf, op.mask.data, op.xor.data)
+		evaluateBitwiseBool(sregBuf, dregBuf, op.mask, op.xor)
 		return
 	}
 
@@ -189,7 +205,6 @@ func (op bitwise) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rul
 	} else {
 		evaluateBitwiseRshift(sregBuf, dregBuf, op.shift)
 	}
-
 }
 
 func (op bitwise) GetExprName() string {

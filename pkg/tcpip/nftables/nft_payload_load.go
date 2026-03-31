@@ -28,10 +28,10 @@ import (
 // register.
 // Note: payload operations are not supported for the verdict register.
 type payloadLoad struct {
-	base   payloadBase // Payload base to access data from.
-	offset uint8       // Number of bytes to skip after the base.
-	blen   uint8       // Number of bytes to load.
-	dreg   uint8       // Number of the destination register.
+	base    payloadBase // Payload base to access data from.
+	offset  uint8       // Number of bytes to skip after the base.
+	blen    int         // Number of bytes to load.
+	dregIdx int         // Index of the destination register in registerSet.data.
 }
 
 // payloadBase is the header that determines the location of the packet data.
@@ -65,7 +65,7 @@ func getPayloadBuffer(pkt *stack.PacketBuffer, base payloadBase) []byte {
 }
 
 // newPayloadLoad creates a new payloadLoad operation.
-func newPayloadLoad(base payloadBase, offset, blen, dreg uint8) (*payloadLoad, *syserr.AnnotatedError) {
+func newPayloadLoad(base payloadBase, offset uint8, blen int, dreg uint8) (*payloadLoad, *syserr.AnnotatedError) {
 	if isVerdictRegister(dreg) {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "payload load operation does not support verdict register as destination register")
 	}
@@ -75,7 +75,11 @@ func newPayloadLoad(base payloadBase, offset, blen, dreg uint8) (*payloadLoad, *
 	if err := validatePayloadBase(base); err != nil {
 		return nil, err
 	}
-	return &payloadLoad{base: base, offset: offset, blen: blen, dreg: dreg}, nil
+	dregIdx, err := regNumToIdx(dreg, int(blen))
+	if err != nil {
+		return nil, err
+	}
+	return &payloadLoad{base: base, offset: offset, blen: blen, dregIdx: dregIdx}, nil
 }
 
 // evaluate for PayloadLoad loads data from the packet payload into the
@@ -85,14 +89,14 @@ func (op payloadLoad) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule 
 	payload := getPayloadBuffer(pkt, op.base)
 
 	// Breaks if could not retrieve packet data.
-	if payload == nil || len(payload) < int(op.offset+op.blen) {
+	if payload == nil || len(payload) < int(op.offset)+op.blen {
 		regs.verdict = stack.NFVerdict{Code: VC(linux.NFT_BREAK)}
 		return
 	}
 
 	// Copies payload data into the specified register.
-	data := newBytesData(payload[op.offset : op.offset+op.blen])
-	data.storeData(regs, op.dreg)
+	data := payload[op.offset : int(op.offset)+op.blen]
+	copy(regs.data[op.dregIdx:], data)
 }
 
 // Initialize based on net/netfilter/nft_payload.c nft_payload_init.
@@ -113,7 +117,7 @@ func initPayloadLoad(tab *Table, attrs map[uint16]nlmsg.BytesView) (*payloadLoad
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse NFTA_PAYLOAD_DREG attribute value")
 	}
-	return newPayloadLoad(payloadBase(base), uint8(offset), uint8(blen), uint8(dreg))
+	return newPayloadLoad(payloadBase(base), uint8(offset), int(blen), uint8(dreg))
 }
 
 func (op payloadLoad) GetExprName() string {
@@ -122,7 +126,7 @@ func (op payloadLoad) GetExprName() string {
 
 func (op payloadLoad) Dump() ([]byte, *syserr.AnnotatedError) {
 	m := &nlmsg.Message{}
-	m.PutAttr(linux.NFTA_PAYLOAD_DREG, nlmsg.PutU32(uint32(op.dreg)))
+	m.PutAttr(linux.NFTA_PAYLOAD_DREG, nlmsg.PutU32(formatRegIdxForDump(op.dregIdx)))
 	m.PutAttr(linux.NFTA_PAYLOAD_BASE, nlmsg.PutU32(uint32(op.base)))
 	m.PutAttr(linux.NFTA_PAYLOAD_OFFSET, nlmsg.PutU32(uint32(op.offset)))
 	m.PutAttr(linux.NFTA_PAYLOAD_LEN, nlmsg.PutU32(uint32(op.blen)))
