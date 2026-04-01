@@ -540,17 +540,26 @@ func (fd *FileDescription) OnClose(ctx context.Context) error {
 
 // Stat returns metadata for the file represented by fd.
 func (fd *FileDescription) Stat(ctx context.Context, opts StatOptions) (linux.Statx, error) {
+	var (
+		stat linux.Statx
+		err  error
+	)
 	if fd.opts.UseDentryMetadata {
 		vfsObj := fd.vd.mount.vfs
 		rp := vfsObj.getResolvingPath(auth.CredentialsFromContext(ctx), &PathOperation{
 			Root:  fd.vd,
 			Start: fd.vd,
 		})
-		stat, err := fd.vd.mount.fs.impl.StatAt(ctx, rp, opts)
+		stat, err = fd.vd.mount.fs.impl.StatAt(ctx, rp, opts)
 		rp.Release(ctx)
-		return stat, err
+	} else {
+		stat, err = fd.impl.Stat(ctx, opts)
 	}
-	return fd.impl.Stat(ctx, opts)
+	if err == nil && opts.Mask&linux.STATX_MNT_ID != 0 {
+		stat.MntID = fd.vd.mount.ID
+		stat.Mask |= linux.STATX_MNT_ID
+	}
+	return stat, err
 }
 
 // SetStat updates metadata for the file represented by fd.

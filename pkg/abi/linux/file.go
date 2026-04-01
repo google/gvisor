@@ -266,6 +266,7 @@ const (
 	STATX_BLOCKS      = 0x00000400
 	STATX_BASIC_STATS = 0x000007ff
 	STATX_BTIME       = 0x00000800
+	STATX_MNT_ID      = 0x00001000
 	STATX_ALL         = 0x00000fff
 	STATX__RESERVED   = 0x80000000
 )
@@ -306,12 +307,13 @@ type Statx struct {
 	RdevMinor      uint32
 	DevMajor       uint32
 	DevMinor       uint32
+	MntID          uint64
 }
 
 // String implements fmt.Stringer.String.
 func (s *Statx) String() string {
-	return fmt.Sprintf("Statx{Mask: %#x, Mode: %s, UID: %d, GID: %d, Ino: %d, DevMajor: %d, DevMinor: %d, Size: %d, Blocks: %d, Blksize: %d, Nlink: %d, Atime: %s, Btime: %s, Ctime: %s, Mtime: %s, Attributes: %d, AttributesMask: %d, RdevMajor: %d, RdevMinor: %d}",
-		s.Mask, FileMode(s.Mode), s.UID, s.GID, s.Ino, s.DevMajor, s.DevMinor, s.Size, s.Blocks, s.Blksize, s.Nlink, s.Atime.ToTime(), s.Btime.ToTime(), s.Ctime.ToTime(), s.Mtime.ToTime(), s.Attributes, s.AttributesMask, s.RdevMajor, s.RdevMinor)
+	return fmt.Sprintf("Statx{Mask: %#x, Mode: %s, UID: %d, GID: %d, Ino: %d, DevMajor: %d, DevMinor: %d, Size: %d, Blocks: %d, Blksize: %d, Nlink: %d, Atime: %s, Btime: %s, Ctime: %s, Mtime: %s, Attributes: %d, AttributesMask: %d, RdevMajor: %d, RdevMinor: %d, MntId: %d}",
+		s.Mask, FileMode(s.Mode), s.UID, s.GID, s.Ino, s.DevMajor, s.DevMinor, s.Size, s.Blocks, s.Blksize, s.Nlink, s.Atime.ToTime(), s.Btime.ToTime(), s.Ctime.ToTime(), s.Mtime.ToTime(), s.Attributes, s.AttributesMask, s.RdevMajor, s.RdevMinor, s.MntID)
 }
 
 // SizeOfStatx is the size of a Statx struct.
