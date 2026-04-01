@@ -1,4 +1,4 @@
-# Guide to Running Rootless Containers with `runsc`
+# Rootless
 
 ## What are Rootless Containers?
 
@@ -45,7 +45,8 @@ standard "rootful" code paths.
 
 **Limitations:**
 
-*   The `create` command is not supported.
+*   The `create` command is not supported. Using `runsc create` is the common
+    case. The `--rootless` flag is mainly only suitable for `runsc do`.
 *   Save/restore functionality is not supported.
 *   gVisor's Netstack is not supported, meaning you have to use the host network
     for external connectivity.
