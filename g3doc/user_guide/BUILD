@@ -136,3 +136,11 @@ doc(
     permalink = "/docs/user_guide/fs_snapshot/",
     weight = "93",
 )
+
+doc(
+    name = "rootless",
+    src = "rootless.md",
+    category = "User Guide",
+    permalink = "/docs/user_guide/rootless/",
+    weight = "94",
+)
