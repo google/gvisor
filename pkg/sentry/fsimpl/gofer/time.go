@@ -16,16 +16,16 @@ package gofer
 
 import (
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
-func dentryTimestamp(t linux.StatxTimestamp) int64 {
+func dentryTimestamp(t lisafs.StatxTimestamp) int64 {
 	return t.ToNsec()
 }
 
 func dentryTimestampFromUnix(t unix.Timespec) int64 {
-	return dentryTimestamp(linux.StatxTimestamp{Sec: t.Sec, Nsec: uint32(t.Nsec)})
+	return dentryTimestamp(lisafs.StatxTimestamp{Sec: t.Sec, Nsec: uint32(t.Nsec)})
 }
 
 // Preconditions: d.cachedMetadataAuthoritative() == true.

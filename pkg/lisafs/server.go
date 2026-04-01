@@ -15,7 +15,6 @@
 package lisafs
 
 import (
-	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -119,7 +118,7 @@ type ServerImpl interface {
 	// mountNode. Mount may optionally donate a host FD to the mount point.
 	//
 	// Mount has a read concurrency guarantee on mountNode.
-	Mount(c *Connection, mountNode *Node) (*ControlFD, linux.Statx, int, error)
+	Mount(c *Connection, mountNode *Node) (*ControlFD, Statx, int, error)
 
 	// SupportedMessages returns a list of messages that the server
 	// implementation supports.

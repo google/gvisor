@@ -640,6 +640,10 @@ func (vfs *VirtualFilesystem) StatAt(ctx context.Context, creds *auth.Credential
 		}
 		stat, err := rp.mount.fs.impl.StatAt(ctx, rp, *opts)
 		if err == nil {
+			if opts.Mask&linux.STATX_MNT_ID != 0 {
+				stat.MntID = rp.mount.ID
+				stat.Mask |= linux.STATX_MNT_ID
+			}
 			return stat, nil
 		}
 		if !rp.handleError(ctx, err) {

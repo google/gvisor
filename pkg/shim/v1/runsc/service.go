@@ -25,11 +25,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/BurntSushi/toml"
 	"github.com/containerd/cgroups"
-	cgroupsstats "github.com/containerd/cgroups/stats/v1"
 	cgroupsv2 "github.com/containerd/cgroups/v2"
-	cgroupsv2stats "github.com/containerd/cgroups/v2/stats"
 	"github.com/containerd/containerd/api/events"
 	"github.com/containerd/containerd/api/types/task"
 	"github.com/containerd/containerd/mount"
@@ -42,19 +39,15 @@ import (
 	taskAPI "github.com/containerd/containerd/runtime/v2/task"
 	"github.com/containerd/containerd/sys/reaper"
 	"github.com/containerd/errdefs"
-	runc "github.com/containerd/go-runc"
 	"github.com/containerd/log"
 	"github.com/containerd/typeurl"
 	"github.com/gogo/protobuf/types"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/cleanup"
 
 	"gvisor.dev/gvisor/pkg/shim/v1/extension"
 	"gvisor.dev/gvisor/pkg/shim/v1/proc"
 	"gvisor.dev/gvisor/pkg/shim/v1/runsccmd"
-	"gvisor.dev/gvisor/pkg/shim/v1/runtimeoptions"
 	"gvisor.dev/gvisor/pkg/shim/v1/utils"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
@@ -212,141 +205,21 @@ func (s *runscService) CreateWithFSRestore(ctx context.Context, rfs *extension.C
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	ns, err := namespaces.NamespaceRequired(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("create namespace: %w", err)
-	}
-
-	// Read from root for now.
-	r := rfs.Create
-	if r.Options != nil {
-		v, err := typeurl.UnmarshalAny(r.Options)
-		if err != nil {
-			return nil, err
-		}
-		var path string
-		switch o := v.(type) {
-		case *runtimeoptions.Options: // containerd 1.5+
-			if o.ConfigPath == "" {
-				break
-			}
-			if o.TypeUrl != optionsType {
-				return nil, fmt.Errorf("unsupported option type %q", o.TypeUrl)
-			}
-			path = o.ConfigPath
-		default:
-			return nil, fmt.Errorf("unsupported option type %q", r.Options.TypeUrl)
-		}
-		if path != "" {
-			if _, err = toml.DecodeFile(path, &s.opts); err != nil {
-				return nil, fmt.Errorf("decode config file %q: %w", path, err)
-			}
-		}
-	}
-
-	if len(s.opts.LogLevel) != 0 {
-		lvl, err := logrus.ParseLevel(s.opts.LogLevel)
-		if err != nil {
-			return nil, err
-		}
-		logrus.SetLevel(lvl)
-	}
-	if len(s.opts.LogPath) != 0 {
-		logPath := runsccmd.FormatShimLogPath(s.opts.LogPath, r.ID)
-		if err := os.MkdirAll(filepath.Dir(logPath), 0777); err != nil {
-			return nil, fmt.Errorf("failed to create log dir: %w", err)
-		}
-		logFile, err := os.Create(logPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create log file: %w", err)
-		}
-		log.L.Debugf("Starting mirror log at %q", logPath)
-		std := logrus.StandardLogger()
-		std.SetOutput(io.MultiWriter(std.Out, logFile))
-
-		log.L.Debugf("Create shim")
-		log.L.Debugf("***************************")
-		log.L.Debugf("Args: %s", os.Args)
-		log.L.Debugf("PID: %d", os.Getpid())
-		log.L.Debugf("ID: %s", r.ID)
-		log.L.Debugf("Options: %+v", s.opts)
-		log.L.Debugf("Bundle: %s", r.Bundle)
-		log.L.Debugf("Terminal: %t", r.Terminal)
-		log.L.Debugf("stdin: %s", r.Stdin)
-		log.L.Debugf("stdout: %s", r.Stdout)
-		log.L.Debugf("stderr: %s", r.Stderr)
-		log.L.Debugf("***************************")
-		if log.L.Logger.IsLevelEnabled(logrus.DebugLevel) {
-			setDebugSigHandler()
-		}
-	}
-
-	// Save state before any action is taken to ensure Cleanup() will have all
-	// the information it needs to undo the operations.
-	st := state{
-		Rootfs:  filepath.Join(r.Bundle, "rootfs"),
-		Options: s.opts,
-	}
-	if err := st.save(r.Bundle); err != nil {
-		return nil, err
-	}
-
-	if err := os.Mkdir(st.Rootfs, 0711); err != nil && !os.IsExist(err) {
-		return nil, err
-	}
-
-	// Convert from types.Mount to proc.Mount.
-	var mounts []proc.Mount
-	for _, m := range r.Rootfs {
-		mounts = append(mounts, proc.Mount{
-			Type:    m.Type,
-			Source:  m.Source,
-			Target:  m.Target,
-			Options: m.Options,
-		})
-	}
-
-	// Cleans up all mounts in case of failure.
-	cu := cleanup.Make(func() {
-		if err := mount.UnmountAll(st.Rootfs, 0); err != nil {
-			log.L.Infof("failed to cleanup rootfs mount: %v", err)
-		}
-	})
-	defer cu.Clean()
-	for _, rm := range mounts {
-		m := &mount.Mount{
-			Type:    rm.Type,
-			Source:  rm.Source,
-			Options: rm.Options,
-		}
-		if err := m.Mount(st.Rootfs); err != nil {
-			return nil, fmt.Errorf("failed to mount rootfs component %v: %w", m, err)
-		}
-	}
-
-	config := &proc.CreateConfig{
-		ID:                 r.ID,
-		Bundle:             r.Bundle,
-		Runtime:            s.opts.BinaryName,
-		Rootfs:             mounts,
-		Terminal:           r.Terminal,
-		Stdin:              r.Stdin,
-		Stdout:             r.Stdout,
-		Stderr:             r.Stderr,
-		FSRestoreImagePath: rfs.Conf.ImagePath,
-		FSRestoreDirect:    rfs.Conf.Direct,
-	}
-	process, err := newInit(filepath.Join(r.Bundle, "work"), ns, s.platform, config, &s.opts, st.Rootfs)
+	c, err := NewContainer(ctx, s.platform, &s.opts, rfs.Create, rfs.Conf.ImagePath, rfs.Conf.Direct)
 	if err != nil {
 		return nil, err
 	}
-	if err := process.Create(ctx, config); err != nil {
+
+	s.containers[rfs.Create.ID] = c
+
+	p, err := c.Process("")
+	if err != nil {
 		return nil, err
 	}
 
 	// Set up OOM notification on the sandbox's cgroup. This is done on
 	// sandbox create since the sandbox process will be created here.
-	pid := process.Pid()
+	pid := p.Pid()
 	if pid > 0 {
 		var (
 			cg  any
@@ -368,18 +241,8 @@ func (s *runscService) CreateWithFSRestore(ctx context.Context, rfs *extension.C
 			return nil, fmt.Errorf("add cg to OOM monitor: %w", err)
 		}
 	}
-
-	// Success
-	cu.Release()
-	c := Container{
-		ID:        r.ID,
-		Bundle:    r.Bundle,
-		task:      process,
-		processes: make(map[string]extension.Process),
-	}
-	s.containers[r.ID] = &c
 	return &taskAPI.CreateTaskResponse{
-		Pid: uint32(process.Pid()),
+		Pid: uint32(pid),
 	}, nil
 }
 
@@ -639,19 +502,6 @@ func (s *runscService) Stats(ctx context.Context, r *taskAPI.StatsRequest) (*tas
 	if err != nil {
 		return nil, err
 	}
-	p, err := c.Process("")
-	if p == nil {
-		log.L.Debugf("Stats error, id: %s: container not created", r.ID)
-		return nil, errdefs.ToGRPCf(errdefs.ErrFailedPrecondition, "container must be created")
-	}
-	if err != nil {
-		return nil, errdefs.ToGRPC(err)
-	}
-	stats, err := p.(*proc.Init).Stats(ctx, c.ID)
-	if err != nil {
-		log.L.Debugf("Stats error, id: %s: %v", c.ID, err)
-		return nil, err
-	}
 
 	// gvisor currently (as of 2020-03-03) only returns the total memory
 	// usage and current PID value[0]. However, we copy the common fields here
@@ -660,108 +510,7 @@ func (s *runscService) Stats(ctx context.Context, r *taskAPI.StatsRequest) (*tas
 	// as runc.
 	//
 	// [0]: https://github.com/google/gvisor/blob/277a0d5a1fbe8272d4729c01ee4c6e374d047ebc/runsc/boot/events.go#L61-L81
-	return s.getStats(stats, r)
-}
-
-func (s *runscService) getStats(stats *runc.Stats, r *taskAPI.StatsRequest) (*taskAPI.StatsResponse, error) {
-	if s.opts.RunscConfig["systemd-cgroup"] == "true" {
-		return s.getV2Stats(stats, r)
-	} else {
-		return s.getV1Stats(stats, r)
-	}
-}
-
-func (s *runscService) getV1Stats(stats *runc.Stats, r *taskAPI.StatsRequest) (*taskAPI.StatsResponse, error) {
-	metrics := &cgroupsstats.Metrics{
-		CPU: &cgroupsstats.CPUStat{
-			Usage: &cgroupsstats.CPUUsage{
-				Total:  stats.Cpu.Usage.Total,
-				Kernel: stats.Cpu.Usage.Kernel,
-				User:   stats.Cpu.Usage.User,
-				PerCPU: stats.Cpu.Usage.Percpu,
-			},
-			Throttling: &cgroupsstats.Throttle{
-				Periods:          stats.Cpu.Throttling.Periods,
-				ThrottledPeriods: stats.Cpu.Throttling.ThrottledPeriods,
-				ThrottledTime:    stats.Cpu.Throttling.ThrottledTime,
-			},
-		},
-		Memory: &cgroupsstats.MemoryStat{
-			Cache: stats.Memory.Cache,
-			Usage: &cgroupsstats.MemoryEntry{
-				Limit:   stats.Memory.Usage.Limit,
-				Usage:   stats.Memory.Usage.Usage,
-				Max:     stats.Memory.Usage.Max,
-				Failcnt: stats.Memory.Usage.Failcnt,
-			},
-			Swap: &cgroupsstats.MemoryEntry{
-				Limit:   stats.Memory.Swap.Limit,
-				Usage:   stats.Memory.Swap.Usage,
-				Max:     stats.Memory.Swap.Max,
-				Failcnt: stats.Memory.Swap.Failcnt,
-			},
-			Kernel: &cgroupsstats.MemoryEntry{
-				Limit:   stats.Memory.Kernel.Limit,
-				Usage:   stats.Memory.Kernel.Usage,
-				Max:     stats.Memory.Kernel.Max,
-				Failcnt: stats.Memory.Kernel.Failcnt,
-			},
-			KernelTCP: &cgroupsstats.MemoryEntry{
-				Limit:   stats.Memory.KernelTCP.Limit,
-				Usage:   stats.Memory.KernelTCP.Usage,
-				Max:     stats.Memory.KernelTCP.Max,
-				Failcnt: stats.Memory.KernelTCP.Failcnt,
-			},
-		},
-		Pids: &cgroupsstats.PidsStat{
-			Current: stats.Pids.Current,
-			Limit:   stats.Pids.Limit,
-		},
-	}
-	data, err := typeurl.MarshalAny(metrics)
-	if err != nil {
-		log.L.Debugf("Stats error v1, id: %s: %v", r.ID, err)
-		return nil, err
-	}
-	log.L.Debugf("Stats success v1, id: %s: %+v", r.ID, data)
-	return &taskAPI.StatsResponse{
-		Stats: data,
-	}, nil
-}
-
-func (s *runscService) getV2Stats(stats *runc.Stats, r *taskAPI.StatsRequest) (*taskAPI.StatsResponse, error) {
-	metrics := &cgroupsv2stats.Metrics{
-		// The CGroup V2 stats are in microseconds instead of nanoseconds so divide by 1000
-		CPU: &cgroupsv2stats.CPUStat{
-			UsageUsec:     stats.Cpu.Usage.Total / 1000,
-			UserUsec:      stats.Cpu.Usage.User / 1000,
-			SystemUsec:    stats.Cpu.Usage.Kernel / 1000,
-			NrPeriods:     stats.Cpu.Throttling.Periods,
-			NrThrottled:   stats.Cpu.Throttling.ThrottledPeriods,
-			ThrottledUsec: stats.Cpu.Throttling.ThrottledTime / 1000,
-		},
-		Memory: &cgroupsv2stats.MemoryStat{
-			Usage:      stats.Memory.Usage.Usage,
-			UsageLimit: stats.Memory.Usage.Limit,
-			SwapUsage:  stats.Memory.Swap.Usage,
-			SwapLimit:  stats.Memory.Swap.Limit,
-			Slab:       stats.Memory.Kernel.Usage,
-			File:       stats.Memory.Cache,
-		},
-		Pids: &cgroupsv2stats.PidsStat{
-			Current: stats.Pids.Current,
-			Limit:   stats.Pids.Limit,
-		},
-	}
-	data, err := typeurl.MarshalAny(metrics)
-	if err != nil {
-		log.L.Debugf("Stats error v2, id: %s: %v", r.ID, err)
-		return nil, err
-	}
-	log.L.Debugf("Stats success v2, id: %s: %+v", r.ID, data)
-	return &taskAPI.StatsResponse{
-		Stats: data,
-	}, nil
+	return c.Stats(ctx)
 }
 
 // Update updates a running container.

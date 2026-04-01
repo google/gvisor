@@ -2519,7 +2519,7 @@ func (m *FileMode) WriteTo(writer io.Writer) (int64, error) {
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (s *Statx) SizeBytes() int {
-    return 80 +
+    return 88 +
         (*StatxTimestamp)(nil).SizeBytes() +
         (*StatxTimestamp)(nil).SizeBytes() +
         (*StatxTimestamp)(nil).SizeBytes() +
@@ -2564,6 +2564,8 @@ func (s *Statx) MarshalBytes(dst []byte) []byte {
     dst = dst[4:]
     hostarch.ByteOrder.PutUint32(dst[:4], uint32(s.DevMinor))
     dst = dst[4:]
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(s.MntID))
+    dst = dst[8:]
     return dst
 }
 
@@ -2605,6 +2607,8 @@ func (s *Statx) UnmarshalBytes(src []byte) []byte {
     src = src[4:]
     s.DevMinor = uint32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
+    s.MntID = uint64(hostarch.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
     return src
 }
 

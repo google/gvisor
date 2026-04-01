@@ -97,7 +97,7 @@ func (f *ClientFD) OpenCreateAt(ctx context.Context, name string, flags uint32, 
 }
 
 // StatTo makes the Fstat RPC and populates stat with the result.
-func (f *ClientFD) StatTo(ctx context.Context, stat *linux.Statx) error {
+func (f *ClientFD) StatTo(ctx context.Context, stat *Statx) error {
 	req := StatReq{FD: f.fd}
 	ctx.UninterruptibleSleepStart()
 	err := f.client.SndRcvMessage(FStat, uint32(req.SizeBytes()), req.MarshalUnsafe, stat.CheckedUnmarshal, nil, req.String, stat.String)
@@ -365,7 +365,7 @@ func (f *ClientFD) Walk(ctx context.Context, name string) (Inode, error) {
 }
 
 // WalkStat makes the WalkStat RPC with multiple path components to walk.
-func (f *ClientFD) WalkStat(ctx context.Context, names []string) ([]linux.Statx, error) {
+func (f *ClientFD) WalkStat(ctx context.Context, names []string) ([]Statx, error) {
 	req := WalkReq{
 		DirFD: f.fd,
 		Path:  StringArray(names),
