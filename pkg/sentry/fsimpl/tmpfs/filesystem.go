@@ -468,7 +468,8 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 				fd.vfsfd.DecRef(ctx)
 				return nil, err
 			}
-			_, err := impl.truncate(0)
+			// truncate updates mtime/ctime internally.
+			err := impl.truncate(0)
 			mnt.EndWrite()
 			if err != nil {
 				fd.vfsfd.DecRef(ctx)

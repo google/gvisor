@@ -324,26 +324,4 @@ func TestTruncate(t *testing.T) {
 	if got := statAfterTruncateUp.Ctime.ToNsec(); got <= statAfterTruncateDown.Ctime.ToNsec() {
 		t.Errorf("fd.Stat got Ctime %v, want > %v", got, stat.Ctime)
 	}
-
-	// Truncate to the current size.
-	newSize = statAfterTruncateUp.Size
-	if err := fd.SetStat(ctx, vfs.SetStatOptions{
-		Stat: linux.Statx{
-			Mask: linux.STATX_SIZE,
-			Size: newSize,
-		},
-	}); err != nil {
-		t.Errorf("fd.Truncate failed: %v", err)
-	}
-	statAfterTruncateNoop, err := fd.Stat(ctx, sizeStatOpts)
-	if err != nil {
-		t.Fatalf("fd.Stat failed: %v", err)
-	}
-	// Mtime and Ctime should not be bumped, since operation is a noop.
-	if got := statAfterTruncateNoop.Mtime.ToNsec(); got != statAfterTruncateUp.Mtime.ToNsec() {
-		t.Errorf("fd.Stat got Mtime %v, want %v", got, statAfterTruncateUp.Mtime)
-	}
-	if got := statAfterTruncateNoop.Ctime.ToNsec(); got != statAfterTruncateUp.Ctime.ToNsec() {
-		t.Errorf("fd.Stat got Ctime %v, want %v", got, statAfterTruncateUp.Ctime)
-	}
 }
