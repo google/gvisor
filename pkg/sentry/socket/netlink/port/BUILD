@@ -9,7 +9,10 @@ go_library(
     name = "port",
     srcs = ["port.go"],
     visibility = ["//pkg/sentry:internal"],
-    deps = ["//pkg/sync"],
+    deps = [
+        "//pkg/rand",
+        "//pkg/sync",
+    ],
 )
 
 go_test(

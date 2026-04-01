@@ -87,6 +87,7 @@ go_library(
         "//pkg/memutil",
         "//pkg/metric",
         "//pkg/pool",
+        "//pkg/rand",
         "//pkg/refs",
         "//pkg/safecopy",
         "//pkg/seccomp",

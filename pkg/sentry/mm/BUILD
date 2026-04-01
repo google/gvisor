@@ -158,6 +158,7 @@ go_library(
         "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/log",
+        "//pkg/rand",
         "//pkg/refs",
         "//pkg/safecopy",
         "//pkg/safemem",

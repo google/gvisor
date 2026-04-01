@@ -19,6 +19,7 @@ go_library(
         "//pkg/context",
         "//pkg/hostarch",
         "//pkg/marshal/primitive",
+        "//pkg/rand",
         "//pkg/sentry/arch",
         "//pkg/sentry/kernel",
         "//pkg/sentry/memmap",
