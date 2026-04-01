@@ -57,11 +57,11 @@ func (fd *testControlFD) FD() *lisafs.ControlFD {
 func (fd *testControlFD) Close() {}
 
 // Mount implements lisafs.Mount.
-func (s *testServer) Mount(c *lisafs.Connection, mountNode *lisafs.Node) (*lisafs.ControlFD, linux.Statx, int, error) {
+func (s *testServer) Mount(c *lisafs.Connection, mountNode *lisafs.Node) (*lisafs.ControlFD, lisafs.Statx, int, error) {
 	dummyRoot := &testControlFD{}
 	mountNode.IncRef() // Ref is transferred to ControlFD.
 	dummyRoot.Init(c, mountNode, linux.ModeDirectory, dummyRoot)
-	return dummyRoot.FD(), linux.Statx{Mode: linux.S_IFDIR}, -1, nil
+	return dummyRoot.FD(), lisafs.Statx{Mode: uint16(linux.S_IFDIR)}, -1, nil
 }
 
 // MaxMessageSize implements lisafs.MaxMessageSize.

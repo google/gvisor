@@ -38,7 +38,7 @@ func TestDestroyIdempotent(t *testing.T) {
 
 	parentInode := lisafs.Inode{
 		ControlFD: 1,
-		Stat: linux.Statx{
+		Stat: lisafs.Statx{
 			Mask: linux.STATX_TYPE | linux.STATX_MODE,
 			Mode: linux.S_IFDIR | 0666,
 		},
@@ -50,7 +50,7 @@ func TestDestroyIdempotent(t *testing.T) {
 
 	childInode := lisafs.Inode{
 		ControlFD: 2,
-		Stat: linux.Statx{
+		Stat: lisafs.Statx{
 			Mask: linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_SIZE,
 			Mode: linux.S_IFREG | 0666,
 			Size: 0,

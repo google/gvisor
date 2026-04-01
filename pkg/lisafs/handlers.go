@@ -98,7 +98,7 @@ func MountHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, 
 	var (
 		mountPointFD     *ControlFD
 		mountPointHostFD = -1
-		mountPointStat   linux.Statx
+		mountPointStat   Statx
 		mountNode        = c.server.root
 	)
 	if err := c.server.withRenameReadLock(func() (err error) {
@@ -217,7 +217,7 @@ func FStatHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, 
 	}
 	defer fd.DecRef(nil)
 
-	var resp linux.Statx
+	var resp Statx
 	switch t := fd.(type) {
 	case *ControlFD:
 		t.safelyRead(func() error {
@@ -405,7 +405,7 @@ func WalkStatHandler(c *Connection, comm Communicator, payloadLen uint32) (uint3
 	// are generated to avoid the slice allocation. The memory format should be
 	// the same as WalkStatResp's.
 	var numStats primitive.Uint16
-	maxPayloadSize := numStats.SizeBytes() + (len(req.Path) * linux.SizeOfStatx)
+	maxPayloadSize := numStats.SizeBytes() + (len(req.Path) * SizeOfStatx)
 	if maxPayloadSize > math.MaxUint32 {
 		// Too much to walk, can't do.
 		return 0, unix.EIO
@@ -415,7 +415,7 @@ func WalkStatHandler(c *Connection, comm Communicator, payloadLen uint32) (uint3
 
 	if c.server.opts.WalkStatSupported {
 		if err = startDir.safelyRead(func() error {
-			return startDir.impl.WalkStat(req.Path, func(s linux.Statx) {
+			return startDir.impl.WalkStat(req.Path, func(s Statx) {
 				s.MarshalUnsafe(payloadBuf[payloadPos:])
 				payloadPos += s.SizeBytes()
 				numStats++
@@ -581,7 +581,7 @@ func OpenCreateAtHandler(c *Connection, comm Communicator, payloadLen uint32) (u
 
 	var (
 		childFD    *ControlFD
-		childStat  linux.Statx
+		childStat  Statx
 		openFD     *OpenFD
 		hostOpenFD int
 	)
@@ -754,7 +754,7 @@ func MkdirAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32
 	}
 	var (
 		childDir     *ControlFD
-		childDirStat linux.Statx
+		childDirStat Statx
 	)
 	if err := fd.safelyWrite(func() error {
 		if fd.node.isDeleted() {
@@ -802,7 +802,7 @@ func MknodAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32
 	}
 	var (
 		child     *ControlFD
-		childStat linux.Statx
+		childStat Statx
 	)
 	if err := fd.safelyWrite(func() error {
 		if fd.node.isDeleted() {
@@ -849,7 +849,7 @@ func SymlinkAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint
 	}
 	var (
 		symlink     *ControlFD
-		symlinkStat linux.Statx
+		symlinkStat Statx
 	)
 	if err := fd.safelyWrite(func() error {
 		if fd.node.isDeleted() {
@@ -906,7 +906,7 @@ func LinkAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32,
 	}
 	var (
 		link     *ControlFD
-		linkStat linux.Statx
+		linkStat Statx
 	)
 	if err := fd.safelyWrite(func() error {
 		if fd.node.isDeleted() {
@@ -1130,7 +1130,7 @@ func BindAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32,
 
 	var (
 		childFD       *ControlFD
-		childStat     linux.Statx
+		childStat     Statx
 		boundSocketFD *BoundSocketFD
 		hostSocketFD  int
 	)

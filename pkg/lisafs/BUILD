@@ -97,6 +97,7 @@ go_library(
         "sample_message.go",
         "server.go",
         "sock.go",
+        "statx.go",
     ],
     marshal = True,
     deps = [

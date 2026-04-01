@@ -333,7 +333,7 @@ func (s *StringArray) CheckedUnmarshal(src []byte) ([]byte, bool) {
 // +marshal slice:InodeSlice
 type Inode struct {
 	ControlFD FDID
-	Stat      linux.Statx
+	Stat      Statx
 }
 
 func (i *Inode) String() string {
@@ -615,7 +615,7 @@ func (w *WalkResp) CheckedUnmarshal(src []byte) ([]byte, bool) {
 // WalkStatResp is used to communicate stat results for WalkStat. In memory,
 // the array data is preceded by a uint16 denoting the array length.
 type WalkStatResp struct {
-	Stats []linux.Statx
+	Stats []Statx
 }
 
 // String implements fmt.Stringer.String.
@@ -634,7 +634,7 @@ func (w *WalkStatResp) String() string {
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (w *WalkStatResp) SizeBytes() int {
-	return (*primitive.Uint16)(nil).SizeBytes() + (len(w.Stats) * linux.SizeOfStatx)
+	return (*primitive.Uint16)(nil).SizeBytes() + (len(w.Stats) * SizeOfStatx)
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
@@ -642,7 +642,7 @@ func (w *WalkStatResp) MarshalBytes(dst []byte) []byte {
 	numStats := primitive.Uint16(len(w.Stats))
 	dst = numStats.MarshalUnsafe(dst)
 
-	return linux.MarshalUnsafeStatxSlice(w.Stats, dst)
+	return MarshalUnsafeStatxSlice(w.Stats, dst)
 }
 
 // CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
@@ -654,15 +654,15 @@ func (w *WalkStatResp) CheckedUnmarshal(src []byte) ([]byte, bool) {
 	var numStats primitive.Uint16
 	srcRemain := numStats.UnmarshalUnsafe(src)
 
-	if int(numStats)*linux.SizeOfStatx > len(srcRemain) {
+	if int(numStats)*SizeOfStatx > len(srcRemain) {
 		return src, false
 	}
 	if cap(w.Stats) < int(numStats) {
-		w.Stats = make([]linux.Statx, numStats)
+		w.Stats = make([]Statx, numStats)
 	} else {
 		w.Stats = w.Stats[:numStats]
 	}
-	return linux.UnmarshalUnsafeStatxSlice(w.Stats, srcRemain), true
+	return UnmarshalUnsafeStatxSlice(w.Stats, srcRemain), true
 }
 
 // OpenAtReq is used to open existing FDs with the specified flags.

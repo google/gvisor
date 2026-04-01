@@ -371,7 +371,7 @@ type ControlFDImpl interface {
 	// Stat returns the stat(2) results for this FD.
 	//
 	// On the server, Stat has a read concurrency guarantee.
-	Stat() (linux.Statx, error)
+	Stat() (Statx, error)
 
 	// SetStat sets file attributes on the backing file. This does not correspond
 	// to any one Linux syscall. On Linux, this operation is performed using
@@ -390,7 +390,7 @@ type ControlFDImpl interface {
 	// Walk must open a ControlFD on the walked file.
 	//
 	// On the server, Walk has a read concurrency guarantee.
-	Walk(name string) (*ControlFD, linux.Statx, error)
+	Walk(name string) (*ControlFD, Statx, error)
 
 	// WalkStat is capable of walking multiple path components and returning the
 	// stat results for each path component walked via recordStat. Stat results
@@ -403,7 +403,7 @@ type ControlFDImpl interface {
 	// stat result returned must be of this starting directory.
 	//
 	// On the server, WalkStat has a read concurrency guarantee.
-	WalkStat(path StringArray, recordStat func(linux.Statx)) error
+	WalkStat(path StringArray, recordStat func(Statx)) error
 
 	// Open opens the control FD with the flags passed. The flags should be
 	// interpreted as open(2) flags.
@@ -431,14 +431,14 @@ type ControlFDImpl interface {
 	// deletion check, so resolving in the data path is not viable.
 	//
 	// On the server, OpenCreate has a write concurrency guarantee.
-	OpenCreate(mode linux.FileMode, uid UID, gid GID, name string, flags uint32) (*ControlFD, linux.Statx, *OpenFD, int, error)
+	OpenCreate(mode linux.FileMode, uid UID, gid GID, name string, flags uint32) (*ControlFD, Statx, *OpenFD, int, error)
 
 	// Mkdir creates a directory inside the directory represented by this FD. The
 	// created directory has perms as specified by mode and owners as specified
 	// by uid and gid.
 	//
 	// On the server, Mkdir has a write concurrency guarantee.
-	Mkdir(mode linux.FileMode, uid UID, gid GID, name string) (*ControlFD, linux.Statx, error)
+	Mkdir(mode linux.FileMode, uid UID, gid GID, name string) (*ControlFD, Statx, error)
 
 	// Mknod creates a file inside the directory represented by this FD. The file
 	// type and perms are specified by mode and owners are specified by uid and
@@ -446,20 +446,20 @@ type ControlFDImpl interface {
 	// major specify its device number.
 	//
 	// On the server, Mkdir has a write concurrency guarantee.
-	Mknod(mode linux.FileMode, uid UID, gid GID, name string, minor uint32, major uint32) (*ControlFD, linux.Statx, error)
+	Mknod(mode linux.FileMode, uid UID, gid GID, name string, minor uint32, major uint32) (*ControlFD, Statx, error)
 
 	// Symlink creates a symlink inside the directory represented by this FD. The
 	// symlink has owners as specified by uid and gid and points to target.
 	//
 	// On the server, Symlink has a write concurrency guarantee.
-	Symlink(name string, target string, uid UID, gid GID) (*ControlFD, linux.Statx, error)
+	Symlink(name string, target string, uid UID, gid GID) (*ControlFD, Statx, error)
 
 	// Link creates a hard link to the file represented by this FD. The hard link
 	// is created inside dir with the specified name.
 	//
 	// On the server, Link has a write concurrency guarantee for dir and read
 	// concurrency guarantee for this file.
-	Link(dir ControlFDImpl, name string) (*ControlFD, linux.Statx, error)
+	Link(dir ControlFDImpl, name string) (*ControlFD, Statx, error)
 
 	// StatFS returns information about the file system associated with
 	// this file.
@@ -499,7 +499,7 @@ type ControlFDImpl interface {
 	// connections).
 	//
 	// On the server, BindAt has a write concurrency guarantee.
-	BindAt(name string, sockType uint32, mode linux.FileMode, uid UID, gid GID) (*ControlFD, linux.Statx, *BoundSocketFD, int, error)
+	BindAt(name string, sockType uint32, mode linux.FileMode, uid UID, gid GID) (*ControlFD, Statx, *BoundSocketFD, int, error)
 
 	// UnlinkAt the file identified by name in this directory.
 	//
@@ -587,7 +587,7 @@ type OpenFDImpl interface {
 	// Stat returns the stat(2) results for this FD.
 	//
 	// On the server, Stat has a read concurrency guarantee.
-	Stat() (linux.Statx, error)
+	Stat() (Statx, error)
 
 	// Sync is similar to fsync(2).
 	//

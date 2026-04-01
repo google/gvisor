@@ -257,7 +257,7 @@ func (i *lisafsInode) updateMetadataLocked(ctx context.Context, h handle) error 
 		}
 	}
 
-	var stat linux.Statx
+	var stat lisafs.Statx
 	err := h.fdLisa.StatTo(ctx, &stat)
 	if handleMuRLocked {
 		// handleMu must be released before updateMetadataFromStatLocked().
@@ -273,7 +273,7 @@ func (i *lisafsInode) updateMetadataLocked(ctx context.Context, h handle) error 
 // updateMetadataFromStatxLocked is called to update d's metadata after an update
 // from the remote filesystem.
 // +checklocks:i.inode.metadataMu
-func (i *lisafsInode) updateMetadataFromStatxLocked(stat *linux.Statx) {
+func (i *lisafsInode) updateMetadataFromStatxLocked(stat *lisafs.Statx) {
 	if stat.Mask&linux.STATX_TYPE != 0 {
 		if got, want := stat.Mode&linux.FileTypeMask, i.inode.fileType(); uint32(got) != want {
 			panic(fmt.Sprintf("lisafsInode file type changed from %#o to %#o", want, got))

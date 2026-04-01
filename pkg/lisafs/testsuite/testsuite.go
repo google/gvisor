@@ -134,13 +134,13 @@ func closeFD(ctx context.Context, t testing.TB, fdLisa lisafs.ClientFD) {
 	fdLisa.Close(ctx, true /* flush */)
 }
 
-func statTo(ctx context.Context, t *testing.T, fdLisa lisafs.ClientFD, stat *linux.Statx) {
+func statTo(ctx context.Context, t *testing.T, fdLisa lisafs.ClientFD, stat *lisafs.Statx) {
 	if err := fdLisa.StatTo(ctx, stat); err != nil {
 		t.Fatalf("stat failed: %v", err)
 	}
 }
 
-func openCreateFile(ctx context.Context, t *testing.T, fdLisa lisafs.ClientFD, name string) (lisafs.ClientFD, linux.Statx, lisafs.ClientFD, int) {
+func openCreateFile(ctx context.Context, t *testing.T, fdLisa lisafs.ClientFD, name string) (lisafs.ClientFD, lisafs.Statx, lisafs.ClientFD, int) {
 	child, childFD, childHostFD, err := fdLisa.OpenCreateAt(ctx, name, unix.O_RDWR, 0777, lisafs.UID(unix.Getuid()), lisafs.GID(unix.Getgid()))
 	if err != nil {
 		t.Fatalf("OpenCreateAt failed: %v", err)
@@ -173,7 +173,7 @@ func unlinkFile(ctx context.Context, t *testing.T, dir lisafs.ClientFD, name str
 	}
 }
 
-func symlink(ctx context.Context, t *testing.T, dir lisafs.ClientFD, name, target string) (lisafs.ClientFD, linux.Statx) {
+func symlink(ctx context.Context, t *testing.T, dir lisafs.ClientFD, name, target string) (lisafs.ClientFD, lisafs.Statx) {
 	linkIno, err := dir.SymlinkAt(ctx, name, target, lisafs.UID(unix.Getuid()), lisafs.GID(unix.Getgid()))
 	if err != nil {
 		t.Fatalf("symlink failed: %v", err)
@@ -181,7 +181,7 @@ func symlink(ctx context.Context, t *testing.T, dir lisafs.ClientFD, name, targe
 	return dir.Client().NewFD(linkIno.ControlFD), linkIno.Stat
 }
 
-func link(ctx context.Context, t *testing.T, dir lisafs.ClientFD, name string, target lisafs.ClientFD) (lisafs.ClientFD, linux.Statx) {
+func link(ctx context.Context, t *testing.T, dir lisafs.ClientFD, name string, target lisafs.ClientFD) (lisafs.ClientFD, lisafs.Statx) {
 	linkIno, err := dir.LinkAt(ctx, target.ID(), name)
 	if err != nil {
 		t.Fatalf("link failed: %v", err)
@@ -189,7 +189,7 @@ func link(ctx context.Context, t *testing.T, dir lisafs.ClientFD, name string, t
 	return dir.Client().NewFD(linkIno.ControlFD), linkIno.Stat
 }
 
-func mkdir(ctx context.Context, t *testing.T, dir lisafs.ClientFD, name string) (lisafs.ClientFD, linux.Statx) {
+func mkdir(ctx context.Context, t *testing.T, dir lisafs.ClientFD, name string) (lisafs.ClientFD, lisafs.Statx) {
 	childIno, err := dir.MkdirAt(ctx, name, 0777, lisafs.UID(unix.Getuid()), lisafs.GID(unix.Getgid()))
 	if err != nil {
 		t.Fatalf("mkdir failed: %v", err)
@@ -197,7 +197,7 @@ func mkdir(ctx context.Context, t *testing.T, dir lisafs.ClientFD, name string) 
 	return dir.Client().NewFD(childIno.ControlFD), childIno.Stat
 }
 
-func mknod(ctx context.Context, t *testing.T, dir lisafs.ClientFD, name string) (lisafs.ClientFD, linux.Statx) {
+func mknod(ctx context.Context, t *testing.T, dir lisafs.ClientFD, name string) (lisafs.ClientFD, lisafs.Statx) {
 	nodeIno, err := dir.MknodAt(ctx, name, unix.S_IFREG|0777, lisafs.UID(unix.Getuid()), lisafs.GID(unix.Getgid()), 0, 0)
 	if err != nil {
 		t.Fatalf("mknod failed: %v", err)
@@ -205,7 +205,7 @@ func mknod(ctx context.Context, t *testing.T, dir lisafs.ClientFD, name string) 
 	return dir.Client().NewFD(nodeIno.ControlFD), nodeIno.Stat
 }
 
-func bind(ctx context.Context, t *testing.T, dir lisafs.ClientFD, name string, sockType linux.SockType) (lisafs.ClientFD, *lisafs.ClientBoundSocketFD, linux.Statx) {
+func bind(ctx context.Context, t *testing.T, dir lisafs.ClientFD, name string, sockType linux.SockType) (lisafs.ClientFD, *lisafs.ClientBoundSocketFD, lisafs.Statx) {
 	nodeIno, socket, err := dir.BindAt(ctx, sockType, name, 0777, lisafs.UID(unix.Getuid()), lisafs.GID(unix.Getgid()))
 	if err != nil {
 		t.Fatalf("bind failed: %v", err)
@@ -221,7 +221,7 @@ func walk(ctx context.Context, t *testing.T, dir lisafs.ClientFD, names []string
 	return inodes
 }
 
-func walkStat(ctx context.Context, t *testing.T, dir lisafs.ClientFD, names []string) []linux.Statx {
+func walkStat(ctx context.Context, t *testing.T, dir lisafs.ClientFD, names []string) []lisafs.Statx {
 	stats, err := dir.WalkStat(ctx, names)
 	if err != nil {
 		t.Fatalf("walk failed while trying to walk components %+v: %v", names, err)
@@ -261,14 +261,14 @@ func allocateAndVerify(ctx context.Context, t *testing.T, fdLisa lisafs.ClientFD
 		t.Fatalf("fallocate failed: %v", err)
 	}
 
-	var stat linux.Statx
+	var stat lisafs.Statx
 	statTo(ctx, t, fdLisa, &stat)
 	if want := off + length; stat.Size != want {
 		t.Errorf("incorrect file size after allocate: expected %d, got %d", off+length, stat.Size)
 	}
 }
 
-func cmpStatx(t *testing.T, want, got linux.Statx) {
+func cmpStatx(t *testing.T, want, got lisafs.Statx) {
 	if got.Mask&unix.STATX_MODE != 0 && want.Mask&unix.STATX_MODE != 0 {
 		if got.Mode != want.Mode {
 			t.Errorf("mode differs: want %d, got %d", want.Mode, got.Mode)
@@ -305,18 +305,18 @@ func cmpStatx(t *testing.T, want, got linux.Statx) {
 		}
 	}
 	if got.Mask&unix.STATX_ATIME != 0 && want.Mask&unix.STATX_ATIME != 0 {
-		if got.Atime != want.Atime {
-			t.Errorf("atime differs: want %d, got %d", want.Atime, got.Atime)
+		if got.Atime.ToNsec() != want.Atime.ToNsec() {
+			t.Errorf("atime differs: want %v, got %v", want.Atime, got.Atime)
 		}
 	}
 	if got.Mask&unix.STATX_MTIME != 0 && want.Mask&unix.STATX_MTIME != 0 {
-		if got.Mtime != want.Mtime {
-			t.Errorf("mtime differs: want %d, got %d", want.Mtime, got.Mtime)
+		if got.Mtime.ToNsec() != want.Mtime.ToNsec() {
+			t.Errorf("mtime differs: want %v, got %v", want.Mtime, got.Mtime)
 		}
 	}
 	if got.Mask&unix.STATX_CTIME != 0 && want.Mask&unix.STATX_CTIME != 0 {
-		if got.Ctime != want.Ctime {
-			t.Errorf("ctime differs: want %d, got %d", want.Ctime, got.Ctime)
+		if got.Ctime.ToNsec() != want.Ctime.ToNsec() {
+			t.Errorf("ctime differs: want %v, got %v", want.Ctime, got.Ctime)
 		}
 	}
 }
@@ -333,10 +333,8 @@ func hasCapability(c capability.Cap) bool {
 }
 
 func testStat(ctx context.Context, t *testing.T, tester Tester, root lisafs.ClientFD) {
-	var rootStat linux.Statx
-	if err := root.StatTo(ctx, &rootStat); err != nil {
-		t.Errorf("stat on the root dir failed: %v", err)
-	}
+	var rootStat lisafs.Statx
+	statTo(ctx, t, root, &rootStat)
 
 	if ftype := rootStat.Mode & unix.S_IFMT; ftype != unix.S_IFDIR {
 		t.Errorf("root inode is not a directory, file type = %d", ftype)
@@ -404,19 +402,20 @@ func testSetStat(ctx context.Context, t *testing.T, tester Tester, root lisafs.C
 	// presumably due to something else accessing the file.
 
 	now := time.Now()
-	wantStat := linux.Statx{
+	wantStat := lisafs.Statx{
 		Mask:  unix.STATX_MODE | unix.STATX_ATIME | unix.STATX_MTIME | unix.STATX_SIZE,
 		Mode:  0760,
 		UID:   uint32(unix.Getuid()),
 		GID:   uint32(unix.Getgid()),
 		Size:  50,
-		Atime: linux.NsecToStatxTimestamp(now.Add(time.Second).UnixNano()),
-		Mtime: linux.NsecToStatxTimestamp(now.UnixNano()),
+		Atime: lisafs.NsecToStatxTimestamp(now.Add(time.Second).UnixNano()),
+		Mtime: lisafs.NsecToStatxTimestamp(now.UnixNano()),
 	}
 	if tester.SetUserGroupIDSupported() {
 		wantStat.Mask |= unix.STATX_UID | unix.STATX_GID
 	}
-	failureMask, failureErr, err := controlFile.SetStat(ctx, &wantStat)
+	lwantStat := wantStat.ToLinuxStatx()
+	failureMask, failureErr, err := controlFile.SetStat(ctx, &lwantStat)
 	if err != nil {
 		t.Fatalf("setstat failed: %v", err)
 	}
@@ -425,7 +424,7 @@ func testSetStat(ctx context.Context, t *testing.T, tester Tester, root lisafs.C
 	}
 
 	// Verify that attributes were updated.
-	var gotStat linux.Statx
+	var gotStat lisafs.Statx
 	statTo(ctx, t, controlFile, &gotStat)
 	if gotStat.Mode&07777 != wantStat.Mode ||
 		gotStat.Size != wantStat.Size ||
@@ -538,8 +537,8 @@ func testWalk(ctx context.Context, t *testing.T, tester Tester, root lisafs.Clie
 
 	// Close all control FDs and collect stat results for all dirs including
 	// the root directory.
-	dirStats := make([]linux.Statx, 0, n+1)
-	var stat linux.Statx
+	dirStats := make([]lisafs.Statx, 0, n+1)
+	var stat lisafs.Statx
 	statTo(ctx, t, root, &stat)
 	dirStats = append(dirStats, stat)
 	for _, inode := range inodes {
@@ -598,7 +597,7 @@ func testMknod(ctx context.Context, t *testing.T, tester Tester, root lisafs.Cli
 		}
 	}
 
-	var stat linux.Statx
+	var stat lisafs.Statx
 	statTo(ctx, t, pipeFile, &stat)
 
 	if stat.Mode != pipeStat.Mode {
@@ -633,7 +632,7 @@ func testUDS(ctx context.Context, t *testing.T, tester Tester, root lisafs.Clien
 		}
 	}
 
-	var got linux.Statx
+	var got lisafs.Statx
 	statTo(ctx, t, file, &got)
 	if stat.Mode != got.Mode {
 		t.Errorf("UDS mode is incorrect: want %d, got %d", stat.Mode, got.Mode)
@@ -656,7 +655,7 @@ func testGetdents(ctx context.Context, t *testing.T, tester Tester, root lisafs.
 
 	// Create 10 files in tempDir.
 	n := 10
-	fileStats := make(map[string]linux.Statx)
+	fileStats := make(map[string]lisafs.Statx)
 	for i := 0; i < n; i++ {
 		name := fmt.Sprintf("file-%d", i)
 		newFile, fileStat := mknod(ctx, t, tempDir, name)

@@ -816,7 +816,7 @@ type inoKey struct {
 	devMajor uint32
 }
 
-func inoKeyFromStatx(stat *linux.Statx) inoKey {
+func inoKeyFromStatx(stat *lisafs.Statx) inoKey {
 	return inoKey{
 		ino:      stat.Ino,
 		devMinor: stat.DevMinor,
