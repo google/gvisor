@@ -84,6 +84,13 @@ type oomPoller interface {
 	add(id string, cg any) error
 	// run monitors oom event and notifies the shim about them
 	run(ctx context.Context)
+	// isOOM synchronously checks if the container was OOM-killed by reading
+	// the cgroup's memory events. This is used at container exit time to
+	// ensure the TaskOOM event is published before TaskExit, even if the
+	// async notification has not yet arrived. This is a one-shot operation:
+	// the cgroup reference is consumed on the first call, and subsequent
+	// calls for the same id return false.
+	isOOM(id string) bool
 }
 
 // runscService is the shim implementation of a remote shim over gRPC. It converts
@@ -798,12 +805,25 @@ func (s *runscService) processExits(ctx context.Context) {
 func (s *runscService) checkProcesses(ctx context.Context, e proc.Exit) {
 	for _, p := range s.allProcessesForAllContainers() {
 		if p.ID() == e.ID {
-			if ip, ok := p.(*proc.Init); ok {
+			ip, isInit := p.(*proc.Init)
+			if isInit {
 				// Ensure all children are killed.
 				log.L.Debugf("Container init process exited, killing all container processes")
 				ip.KillAll(ctx)
 			}
 			p.SetExited(e.Status)
+			// On init process exit, synchronously check the cgroup for OOM
+			// kills before publishing the exit event. The async OOM
+			// notification via EventChan (cgroups v2) can lose the race
+			// against the container exit on some architectures (notably
+			// aarch64), causing kubelet to report reason=Error instead of
+			// reason=OOMKilled. Only check on init exit — exec processes
+			// share the sandbox cgroup and would produce spurious events.
+			if isInit && s.oomPoller.isOOM(s.id) {
+				s.send(&events.TaskOOM{
+					ContainerID: s.id,
+				})
+			}
 			s.send(&events.TaskExit{
 				ContainerID: s.id,
 				ID:          p.ID(),

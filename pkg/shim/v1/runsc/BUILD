@@ -59,10 +59,16 @@ go_library(
 
 go_test(
     name = "runsc_test",
-    srcs = ["service_test.go"],
+    srcs = [
+        "oom_v2_test.go",
+        "service_test.go",
+    ],
     library = ":runsc",
     deps = [
         "//pkg/shim/v1/utils",
+        "@com_github_containerd_cgroups//v2:go_default_library",
+        "@com_github_containerd_containerd//events:go_default_library",
+        "@com_github_containerd_containerd//runtime:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
     ],
 )
