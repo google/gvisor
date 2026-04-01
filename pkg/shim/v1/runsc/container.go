@@ -17,15 +17,36 @@ package runsc
 import (
 	"context"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"sync"
 
+	"github.com/BurntSushi/toml"
+	"github.com/containerd/cgroups"
+	cgroupsstats "github.com/containerd/cgroups/stats/v1"
+	cgroupsv2stats "github.com/containerd/cgroups/v2/stats"
 	"github.com/containerd/console"
+	"github.com/containerd/containerd/mount"
+	"github.com/containerd/containerd/namespaces"
+	"github.com/containerd/containerd/pkg/stdio"
 	"github.com/containerd/containerd/runtime/v2/task"
 	"github.com/containerd/errdefs"
+	runc "github.com/containerd/go-runc"
 	"github.com/containerd/log"
+	"github.com/containerd/typeurl"
+	"github.com/sirupsen/logrus"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/shim/v1/extension"
 	"gvisor.dev/gvisor/pkg/shim/v1/proc"
+	"gvisor.dev/gvisor/pkg/shim/v1/runsccmd"
+	"gvisor.dev/gvisor/pkg/shim/v1/runtimeoptions"
 )
+
+// CgroupMode is the cgroups mode that is being used by the container.
+// Accepts values from the containerd cgroups package.
+// Legacy for cgroups v1 and Unified for cgroups v2.
+type CgroupMode int
 
 // Container for operating on a runsc container and its processes
 type Container struct {
@@ -44,6 +65,159 @@ type Container struct {
 	//
 	// +checklocks:mu
 	processes map[string]extension.Process
+
+	// cgroup is the cgroups mode that is being used by the container.
+	cgroup CgroupMode
+}
+
+// NewContainer returns a new runsc container
+func NewContainer(ctx context.Context, platform stdio.Platform, opts *Options, r *task.CreateTaskRequest, FSRestoreImagePath string, FSRestoreDirect bool) (*Container, error) {
+	ns, err := namespaces.NamespaceRequired(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("create namespace: %w", err)
+	}
+	if r.Options != nil {
+		v, err := typeurl.UnmarshalAny(r.Options)
+		if err != nil {
+			return nil, err
+		}
+		var path string
+		switch o := v.(type) {
+		case *runtimeoptions.Options: // containerd 1.5+
+			if o.ConfigPath == "" {
+				break
+			}
+			if o.TypeUrl != optionsType {
+				return nil, fmt.Errorf("unsupported option type %q", o.TypeUrl)
+			}
+			path = o.ConfigPath
+		default:
+			return nil, fmt.Errorf("unsupported option type %q", r.Options.TypeUrl)
+		}
+		if path != "" {
+			// Read runsc options from the config file.
+			if _, err = toml.DecodeFile(path, opts); err != nil {
+				return nil, fmt.Errorf("decode config file %q: %w", path, err)
+			}
+		}
+	}
+
+	if len(opts.LogLevel) != 0 {
+		lvl, err := logrus.ParseLevel(opts.LogLevel)
+		if err != nil {
+			return nil, err
+		}
+		logrus.SetLevel(lvl)
+	}
+	if len(opts.LogPath) != 0 {
+		logPath := runsccmd.FormatShimLogPath(opts.LogPath, r.ID)
+		if err := os.MkdirAll(filepath.Dir(logPath), 0777); err != nil {
+			return nil, fmt.Errorf("failed to create log dir: %w", err)
+		}
+		logFile, err := os.Create(logPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create log file: %w", err)
+		}
+		std := logrus.StandardLogger()
+		std.SetOutput(io.MultiWriter(std.Out, logFile))
+
+		log.L.Debugf("Create runsc container")
+		log.L.Debugf("***************************")
+		log.L.Debugf("Args: %s", os.Args)
+		log.L.Debugf("PID: %d", os.Getpid())
+		log.L.Debugf("ID: %s", r.ID)
+		log.L.Debugf("Options: %+v", *opts)
+		log.L.Debugf("Bundle: %s", r.Bundle)
+		log.L.Debugf("Terminal: %t", r.Terminal)
+		log.L.Debugf("stdin: %s", r.Stdin)
+		log.L.Debugf("stdout: %s", r.Stdout)
+		log.L.Debugf("stderr: %s", r.Stderr)
+		log.L.Debugf("***************************")
+		if log.L.Logger.IsLevelEnabled(logrus.DebugLevel) {
+			setDebugSigHandler()
+		}
+	}
+
+	// Save state before any action is taken to ensure Cleanup() will have all
+	// the information it needs to undo the operations.
+	st := state{
+		Rootfs:  filepath.Join(r.Bundle, "rootfs"),
+		Options: *opts,
+	}
+	if err := st.save(r.Bundle); err != nil {
+		return nil, err
+	}
+
+	if err := os.Mkdir(st.Rootfs, 0711); err != nil && !os.IsExist(err) {
+		return nil, err
+	}
+
+	// Convert from types.Mount to proc.Mount.
+	var mounts []proc.Mount
+	for _, m := range r.Rootfs {
+		mounts = append(mounts, proc.Mount{
+			Type:    m.Type,
+			Source:  m.Source,
+			Target:  m.Target,
+			Options: m.Options,
+		})
+	}
+
+	// Cleans up all mounts in case of failure.
+	cu := cleanup.Make(func() {
+		if err := mount.UnmountAll(st.Rootfs, 0); err != nil {
+			log.L.Warningf("failed to cleanup rootfs mount: %v", err)
+		}
+	})
+
+	defer cu.Clean()
+	for _, rm := range mounts {
+		m := &mount.Mount{
+			Type:    rm.Type,
+			Source:  rm.Source,
+			Options: rm.Options,
+		}
+		if err := m.Mount(st.Rootfs); err != nil {
+			return nil, fmt.Errorf("failed to mount rootfs component %v: %w", m, err)
+		}
+	}
+
+	config := &proc.CreateConfig{
+		ID:                 r.ID,
+		Bundle:             r.Bundle,
+		Runtime:            opts.BinaryName,
+		Rootfs:             mounts,
+		Terminal:           r.Terminal,
+		Stdin:              r.Stdin,
+		Stdout:             r.Stdout,
+		Stderr:             r.Stderr,
+		FSRestoreImagePath: FSRestoreImagePath,
+		FSRestoreDirect:    FSRestoreDirect,
+	}
+
+	process, err := newInit(filepath.Join(r.Bundle, "work"), ns, platform, config, opts, st.Rootfs)
+	if err != nil {
+		return nil, err
+	}
+	if err := process.Create(ctx, config); err != nil {
+		return nil, err
+	}
+	// Set up cgroup mode.
+	cgroupMode := CgroupMode(cgroups.Legacy)
+	if opts.RunscConfig["systemd-cgroup"] == "true" {
+		cgroupMode = CgroupMode(cgroups.Unified)
+	}
+
+	// Success
+	cu.Release()
+	c := Container{
+		ID:        r.ID,
+		Bundle:    r.Bundle,
+		task:      process,
+		cgroup:    cgroupMode,
+		processes: make(map[string]extension.Process),
+	}
+	return &c, nil
 }
 
 // Pid of the main process of a container
@@ -227,4 +401,116 @@ func (c *Container) Restore(ctx context.Context, r *extension.RestoreRequest) (e
 	// TODO: Set the cgroup and oom notifications on restore.
 	// https://github.com/google/gvisor-containerd-shim/issues/58
 	return p, nil
+}
+
+// Stats returns the stats for the container.
+func (c *Container) Stats(ctx context.Context) (*task.StatsResponse, error) {
+	p, err := c.Process("")
+	if err != nil {
+		return nil, errdefs.ToGRPC(err)
+	}
+	stats, err := p.(*proc.Init).Stats(ctx, c.ID)
+	if err != nil {
+		log.L.Debugf("Stats error, id: %s: %v", c.ID, err)
+		return nil, err
+	}
+	switch c.cgroup {
+	case CgroupMode(cgroups.Legacy):
+		return c.getV1Stats(stats)
+	case CgroupMode(cgroups.Unified):
+		return c.getV2Stats(stats)
+	default:
+		return nil, errdefs.ErrInvalidArgument
+	}
+}
+
+func (c *Container) getV1Stats(stats *runc.Stats) (*task.StatsResponse, error) {
+	metrics := &cgroupsstats.Metrics{
+		CPU: &cgroupsstats.CPUStat{
+			Usage: &cgroupsstats.CPUUsage{
+				Total:  stats.Cpu.Usage.Total,
+				Kernel: stats.Cpu.Usage.Kernel,
+				User:   stats.Cpu.Usage.User,
+				PerCPU: stats.Cpu.Usage.Percpu,
+			},
+			Throttling: &cgroupsstats.Throttle{
+				Periods:          stats.Cpu.Throttling.Periods,
+				ThrottledPeriods: stats.Cpu.Throttling.ThrottledPeriods,
+				ThrottledTime:    stats.Cpu.Throttling.ThrottledTime,
+			},
+		},
+		Memory: &cgroupsstats.MemoryStat{
+			Cache: stats.Memory.Cache,
+			Usage: &cgroupsstats.MemoryEntry{
+				Limit:   stats.Memory.Usage.Limit,
+				Usage:   stats.Memory.Usage.Usage,
+				Max:     stats.Memory.Usage.Max,
+				Failcnt: stats.Memory.Usage.Failcnt,
+			},
+			Swap: &cgroupsstats.MemoryEntry{
+				Limit:   stats.Memory.Swap.Limit,
+				Usage:   stats.Memory.Swap.Usage,
+				Max:     stats.Memory.Swap.Max,
+				Failcnt: stats.Memory.Swap.Failcnt,
+			},
+			Kernel: &cgroupsstats.MemoryEntry{
+				Limit:   stats.Memory.Kernel.Limit,
+				Usage:   stats.Memory.Kernel.Usage,
+				Max:     stats.Memory.Kernel.Max,
+				Failcnt: stats.Memory.Kernel.Failcnt,
+			},
+			KernelTCP: &cgroupsstats.MemoryEntry{
+				Limit:   stats.Memory.KernelTCP.Limit,
+				Usage:   stats.Memory.KernelTCP.Usage,
+				Max:     stats.Memory.KernelTCP.Max,
+				Failcnt: stats.Memory.KernelTCP.Failcnt,
+			},
+		},
+		Pids: &cgroupsstats.PidsStat{
+			Current: stats.Pids.Current,
+			Limit:   stats.Pids.Limit,
+		},
+	}
+	data, err := typeurl.MarshalAny(metrics)
+	if err != nil {
+		log.L.Debugf("Stats error v1, id: %s: %v", c.ID, err)
+		return nil, err
+	}
+	return &task.StatsResponse{
+		Stats: data,
+	}, nil
+}
+
+func (c *Container) getV2Stats(stats *runc.Stats) (*task.StatsResponse, error) {
+	metrics := &cgroupsv2stats.Metrics{
+		// The CGroup V2 stats are in microseconds instead of nanoseconds so divide by 1000
+		CPU: &cgroupsv2stats.CPUStat{
+			UsageUsec:     stats.Cpu.Usage.Total / 1000,
+			UserUsec:      stats.Cpu.Usage.User / 1000,
+			SystemUsec:    stats.Cpu.Usage.Kernel / 1000,
+			NrPeriods:     stats.Cpu.Throttling.Periods,
+			NrThrottled:   stats.Cpu.Throttling.ThrottledPeriods,
+			ThrottledUsec: stats.Cpu.Throttling.ThrottledTime / 1000,
+		},
+		Memory: &cgroupsv2stats.MemoryStat{
+			Usage:      stats.Memory.Usage.Usage,
+			UsageLimit: stats.Memory.Usage.Limit,
+			SwapUsage:  stats.Memory.Swap.Usage,
+			SwapLimit:  stats.Memory.Swap.Limit,
+			Slab:       stats.Memory.Kernel.Usage,
+			File:       stats.Memory.Cache,
+		},
+		Pids: &cgroupsv2stats.PidsStat{
+			Current: stats.Pids.Current,
+			Limit:   stats.Pids.Limit,
+		},
+	}
+	data, err := typeurl.MarshalAny(metrics)
+	if err != nil {
+		log.L.Debugf("Stats error v2, id: %s: %v", c.ID, err)
+		return nil, err
+	}
+	return &task.StatsResponse{
+		Stats: data,
+	}, nil
 }
