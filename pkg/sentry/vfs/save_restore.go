@@ -185,5 +185,7 @@ func (mnt *Mount) afterLoad(goContext.Context) {
 func (epi *epollInterest) afterLoad(goContext.Context) {
 	// Mark all epollInterests as ready after restore so that the next call to
 	// EpollInstance.ReadEvents() rechecks their readiness.
-	epi.waiter.NotifyEvent(waiter.EventMaskFromLinux(epi.mask))
+	if epi.mask != 0 {
+		epi.waiter.NotifyEvent(waiter.EventMaskFromLinux(epi.mask))
+	}
 }

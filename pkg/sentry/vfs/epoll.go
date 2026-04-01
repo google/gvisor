@@ -97,7 +97,8 @@ type epollInterest struct {
 	waiter waiter.Entry
 
 	// mask is the event mask associated with this registration, including
-	// flags EPOLLET and EPOLLONESHOT. mask is protected by epoll.interestMu.
+	// flags EPOLLET and EPOLLONESHOT. If mask is 0, the epollInterest has been
+	// deleted. mask is protected by epoll.interestMu.
 	mask uint32
 
 	// ready is true if epollInterestEntry is linked into epoll.ready. readySeq
@@ -137,10 +138,11 @@ func (ep *EpollInstance) Release(ctx context.Context) {
 	defer ep.interestMu.Unlock()
 	for key, epi := range ep.interest {
 		file := key.file
+		file.EventUnregister(&epi.waiter)
+		epi.mask = 0
 		file.epollMu.Lock()
 		delete(file.epolls, epi)
 		file.epollMu.Unlock()
-		file.EventUnregister(&epi.waiter)
 	}
 	ep.interest = nil
 }
@@ -177,9 +179,9 @@ func (ep *EpollInstance) Readiness(mask waiter.EventMask) waiter.EventMask {
 		var next *epollInterest
 		for epi := notReady.Front(); epi != nil; epi = next {
 			next = epi.Next()
+			notReady.Remove(epi)
 			if epi.readySeq == ep.readySeq {
 				// epi.NotifyEvent() was called while we were running.
-				notReady.Remove(epi)
 				ep.ready.PushBack(epi)
 				notify = true
 			} else {
@@ -402,6 +404,7 @@ func (epi *epollInterest) NotifyEvent(waiter.EventMask) {
 // Preconditions: ep.interestMu must be locked.
 func (ep *EpollInstance) removeLocked(epi *epollInterest) {
 	delete(ep.interest, epi.key)
+	epi.mask = 0
 	ep.readyMu.Lock()
 	if epi.ready {
 		epi.ready = false
@@ -443,9 +446,9 @@ func (ep *EpollInstance) ReadEvents(events []linux.EpollEvent, maxEvents int) []
 		var next *epollInterest
 		for epi := notReady.Front(); epi != nil; epi = next {
 			next = epi.Next()
+			notReady.Remove(epi)
 			if epi.readySeq == ep.readySeq {
 				// epi.NotifyEvent() was called while we were running.
-				notReady.Remove(epi)
 				ep.ready.PushBack(epi)
 				notify = true
 			} else {
