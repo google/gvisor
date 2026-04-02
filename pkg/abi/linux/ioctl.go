@@ -189,6 +189,13 @@ const (
 	KCOV_MODE_TRACE_CMP = 3
 )
 
+// File clone/dedup ioctls from include/uapi/linux/fs.h.
+var (
+	FICLONE        = IOW(0x94, 9, 4)
+	FICLONERANGE   = IOW(0x94, 13, 32)
+	FIDEDUPERANGE  = IOWR(0x94, 54, 24)
+)
+
 // FUSE_DEV_IOC_CLONE from include/uapi/linux/fuse.h.
 var (
 	FUSE_DEV_IOC_CLONE = IOR(229, 0, 4)
