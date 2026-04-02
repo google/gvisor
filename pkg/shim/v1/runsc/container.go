@@ -141,11 +141,11 @@ func NewContainer(ctx context.Context, platform stdio.Platform, r *task.CreateTa
 
 	// Save state before any action is taken to ensure Cleanup() will have all
 	// the information it needs to undo the operations.
-	st := state{
+	st := State{
 		Rootfs:  filepath.Join(r.Bundle, "rootfs"),
 		Options: opts,
 	}
-	if err := st.save(r.Bundle); err != nil {
+	if err := st.Save(r.Bundle); err != nil {
 		return nil, err
 	}
 
