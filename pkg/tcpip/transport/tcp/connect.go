@@ -1039,7 +1039,8 @@ func (e *Endpoint) sendRaw(pkt *stack.PacketBuffer, flags header.TCPFlags, seq, 
 		ack:       ack,
 		rcvWnd:    rcvWnd,
 		opts:      options,
-		df:        e.pmtud == tcpip.PMTUDiscoveryWant || e.pmtud == tcpip.PMTUDiscoveryDo,
+		// PROBE sets DF like DO; see network/endpoint.go for details.
+		df:        e.pmtud == tcpip.PMTUDiscoveryWant || e.pmtud == tcpip.PMTUDiscoveryDo || e.pmtud == tcpip.PMTUDiscoveryProbe,
 		expOptVal: expOptVal,
 	}, pkt, e.gso)
 }

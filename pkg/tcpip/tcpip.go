@@ -955,9 +955,8 @@ const (
 
 	// MTUDiscoverOption is used to set/get the path MTU discovery setting.
 	//
-	// NOTE: Setting this option to any other value than PMTUDiscoveryDont
-	// is not supported and will fail as such, and getting this option will
-	// always return PMTUDiscoveryDont.
+	// The value controls whether the Don't Fragment (DF) bit is set on
+	// outgoing IPv4 packets.
 	MTUDiscoverOption
 
 	// MulticastTTLOption is used by SetSockOptInt/GetSockOptInt to control

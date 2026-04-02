@@ -2048,6 +2048,35 @@ TEST_P(UdpSocketTest, ConnectToZeroPortConnected) {
               SyscallFailsWithErrno(ENOTCONN));
 }
 
+TEST_P(UdpSocketTest, SetPMTUD) {
+  // IP_PMTUDISC_WANT should be default.
+  int got = -1;
+  socklen_t length = sizeof(got);
+  ASSERT_THAT(
+      getsockopt(bind_.get(), SOL_IP, IP_MTU_DISCOVER, &got, &length),
+      SyscallSucceeds());
+  EXPECT_EQ(got, IP_PMTUDISC_WANT);
+
+  // Set and verify each valid PMTUD strategy.
+  int strategies[] = {IP_PMTUDISC_DONT, IP_PMTUDISC_WANT, IP_PMTUDISC_DO,
+                      IP_PMTUDISC_PROBE};
+  for (int strategy : strategies) {
+    ASSERT_THAT(
+        setsockopt(bind_.get(), SOL_IP, IP_MTU_DISCOVER, &strategy, length),
+        SyscallSucceeds());
+    ASSERT_THAT(
+        getsockopt(bind_.get(), SOL_IP, IP_MTU_DISCOVER, &got, &length),
+        SyscallSucceeds());
+    EXPECT_EQ(got, strategy);
+  }
+
+  // Invalid value should fail.
+  int invalid = 99;
+  EXPECT_THAT(
+      setsockopt(bind_.get(), SOL_IP, IP_MTU_DISCOVER, &invalid, length),
+      SyscallFails());
+}
+
 INSTANTIATE_TEST_SUITE_P(AllInetTests, UdpSocketTest,
                          ::testing::Values(AF_INET, AF_INET6));
 

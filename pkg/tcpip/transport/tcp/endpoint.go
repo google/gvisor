@@ -1901,15 +1901,15 @@ func (e *Endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 		e.UnlockUser()
 
 	case tcpip.MTUDiscoverOption:
+		// PROBE is accepted alongside DO/WANT/DONT. In Linux,
+		// PROBE sets DF but ignores ICMP-based PMTU updates;
+		// since gVisor lacks ICMP PMTU feedback, it behaves
+		// identically to DO.
 		switch v := tcpip.PMTUDStrategy(v); v {
-		case tcpip.PMTUDiscoveryWant, tcpip.PMTUDiscoveryDont, tcpip.PMTUDiscoveryDo:
+		case tcpip.PMTUDiscoveryWant, tcpip.PMTUDiscoveryDont, tcpip.PMTUDiscoveryDo, tcpip.PMTUDiscoveryProbe:
 			e.LockUser()
 			e.pmtud = v
 			e.UnlockUser()
-		case tcpip.PMTUDiscoveryProbe:
-			// We don't support a way to ignore MTU updates; it's
-			// either on or it's off.
-			return &tcpip.ErrNotSupported{}
 		default:
 			return &tcpip.ErrNotSupported{}
 		}
