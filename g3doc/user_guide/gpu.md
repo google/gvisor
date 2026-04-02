@@ -42,17 +42,25 @@ executable can be used:
 exec /path/to/runsc --nvproxy <other runsc flags> "$@"
 ```
 
-NOTE: gVisor currently only supports
-[legacy mode](https://github.com/NVIDIA/nvidia-container-toolkit/tree/main/cmd/nvidia-container-runtime#legacy-mode).
-The alternative,
-[csv mode](https://github.com/NVIDIA/nvidia-container-toolkit/tree/main/cmd/nvidia-container-runtime#csv-mode),
-is not yet supported.
+gVisor supports both
+[legacy mode](https://github.com/NVIDIA/nvidia-container-toolkit/tree/main/cmd/nvidia-container-runtime#legacy-mode)
+and
+[csv mode](https://github.com/NVIDIA/nvidia-container-toolkit/tree/main/cmd/nvidia-container-runtime#csv-mode)
+when `runsc` is configured as the low-level runtime with `--nvproxy`. In csv
+mode, `nvidia-container-runtime` injects GPU devices and mounts into the OCI
+spec (CDI-style) instead of using the legacy prestart hook; gVisor handles that
+path by running host preparation when a GPU workload is detected and skipping
+`nvidia-container-cli configure` when `/dev/nvidiactl` is already listed in
+`spec.Linux.Devices`.
 
 ### Docker
 
 The "legacy" mode of `nvidia-container-runtime` is directly compatible with the
-`--gpus` flag implemented by the docker CLI. So with Docker, `runsc` can be used
-directly (without having to go through `nvidia-container-runtime`).
+`--gpus` flag implemented by the docker CLI when `runsc` is the runtime. For csv
+mode or other non-legacy NVIDIA runtime modes, NVIDIA documents using
+`--runtime=nvidia` (or setting `nvidia-container-runtime` as default) so the
+high-level NVIDIA runtime can apply the correct OCI edits before invoking the
+low-level runtime.
 
 ```
 $ docker run --runtime=runsc --gpus=all --rm -it nvcr.io/nvidia/k8s/cuda-sample:vectoradd-cuda11.7.1-ubi8

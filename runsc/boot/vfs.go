@@ -1471,9 +1471,9 @@ func createDeviceFiles(ctx context.Context, creds *auth.Credentials, info *conta
 			}
 		}
 	}
-	if specutils.GPUFunctionalityRequestedViaHook(info.spec, info.conf) {
-		// When using nvidia-container-runtime-hook, devices are not injected into
-		// spec.Linux.Devices. So manually create appropriate device files.
+	if specutils.GPUFunctionalityNeedsSyntheticNvidiaDevices(info.spec, info.conf) {
+		// Legacy nvidia-container-runtime-hook does not inject spec.Linux.Devices.
+		// CSV/CDI and GKE list /dev/nvidiactl there instead; skip synthesis then.
 		nvidiaDevs := []specs.LinuxDevice{
 			{Path: "/dev/nvidiactl", Type: "c", Major: nvgpu.NV_MAJOR_DEVICE_NUMBER, Minor: nvgpu.NV_MINOR_DEVICE_NUMBER_CONTROL_DEVICE},
 			{Path: "/dev/nvidia-uvm", Type: "c", Major: int64(info.nvproxyDevInfo.UVMDevMajor), Minor: nvgpu.NVIDIA_UVM_PRIMARY_MINOR_NUMBER},

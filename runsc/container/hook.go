@@ -69,12 +69,14 @@ func executeHook(h specs.Hook, s specs.State) error {
 		return fmt.Errorf("path for hook is not absolute: %q", h.Path)
 	}
 
-	// Don't invoke nvidia-container-runtime-hook at prestart, which may be
-	// configured by e.g. Docker's --gpus flag, since
-	// nvidia-container-runtime-hook doesn't understand gVisor's bifurcation
-	// between sentry and application filesystems.
-	if strings.HasSuffix(h.Path, "/nvidia-container-runtime-hook") {
-		log.Infof("Skipping nvidia-container-runtime-hook")
+	// Don't invoke NVIDIA toolkit prestart hooks: they assume a runc-style
+	// container filesystem, not gVisor's sentry/gofer split. Legacy mode uses
+	// nvidia-container-runtime-hook; CSV/CDI may inject nvidia-cdi-hook or
+	// nvidia-ctk (see nvidia-container-toolkit internal/modifier/hook_remover.go).
+	switch filepath.Base(h.Path) {
+	case "nvidia-container-runtime-hook", "nvidia-container-toolkit",
+		"nvidia-cdi-hook", "nvidia-ctk":
+		log.Infof("Skipping NVIDIA hook %q", filepath.Base(h.Path))
 		return nil
 	}
 

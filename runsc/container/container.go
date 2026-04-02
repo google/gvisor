@@ -1351,7 +1351,7 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 	if err := c.initGoferConfs(conf.GetOverlay2(), mountHints, rootfsHint); err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("error initializing gofer confs: %w", err)
 	}
-	if !c.GoferMountConfs[0].ShouldUseLisafs() && specutils.GPUFunctionalityRequestedViaHook(c.Spec, conf) {
+	if !c.GoferMountConfs[0].ShouldUseLisafs() && specutils.GPUFunctionalityNeedsNvidiaContainerCLIConfigure(c.Spec, conf) {
 		// nvidia-container-runtime-hook attempts to populate the container
 		// rootfs with NVIDIA libraries and devices. With EROFS, spec.Root.Path
 		// points to an empty directory and populating that has no effect.
@@ -2038,14 +2038,15 @@ func logIDMappings(mappings []specs.LinuxIDMapping, idType string) {
 	}
 }
 
-// nvProxyPreGoferHostSetup does host setup work so that `nvidia-container-cli
-// configure` can be run in the future. It runs before any Gofers start.
+// nvProxyPreGoferHostSetup does host setup work for GPU containers (modules,
+// host device nodes) before any Gofers start. It runs whenever
+// GPUFunctionalityRequested, including CSV/CDI specs that skip configure.
 // It verifies that all the required dependencies are in place, loads kernel
 // modules, and ensures the correct device files exist and are accessible.
 // This should only be necessary once on the host. It should be run during the
 // root container setup sequence to make sure it has run at least once.
 func nvProxyPreGoferHostSetup(spec *specs.Spec, conf *config.Config) error {
-	if !specutils.GPUFunctionalityRequestedViaHook(spec, conf) {
+	if !specutils.GPUFunctionalityRequested(spec, conf) {
 		return nil
 	}
 
@@ -2121,20 +2122,18 @@ func nvproxyLoadKernelModules() {
 //
 // This should be called after the Gofer has started but before it has
 // pivot-root'd, as the bind mounts are created in the Gofer's mount namespace.
-// This function has no effect if nvproxy functionality is not requested.
+// This function has no effect unless GPUFunctionalityNeedsNvidiaContainerCLIConfigure
+// (legacy Docker / nvidia-container-runtime-hook path). CSV/CDI and GKE inject
+// devices and mounts into the OCI spec instead; configure is skipped for those.
 //
 // This function essentially replicates
 // nvidia-container-toolkit:cmd/nvidia-container-runtime-hook, i.e. the
-// binary that executeHook() is hard-coded to skip, with differences noted
-// inline. We do this rather than move the prestart hook because the
-// "runtime environment" in which prestart hooks execute is vaguely
-// defined, such that nvidia-container-runtime-hook and existing runsc
-// hooks differ in their expected environment.
+// binary that executeHook() skips, with differences noted inline.
 //
 // Note that nvidia-container-cli will set up files in /proc which are useless,
 // since they will be hidden by sentry procfs.
 func nvproxySetup(spec *specs.Spec, conf *config.Config, goferPid int) error {
-	if !specutils.GPUFunctionalityRequestedViaHook(spec, conf) {
+	if !specutils.GPUFunctionalityNeedsNvidiaContainerCLIConfigure(spec, conf) {
 		return nil
 	}
 
