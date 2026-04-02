@@ -427,6 +427,7 @@ afterTrailingSymlink:
 		if err != nil {
 			return nil, err
 		}
+		fd.SetCreated()
 		parentDir.inode.watches.Notify(ctx, name, linux.IN_CREATE, 0, vfs.PathEvent, false /* unlinked */)
 		parentDir.inode.touchCMtime()
 		return fd, nil

@@ -487,6 +487,17 @@ func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credential
 				}
 			}
 
+			// In Linux, open(O_TRUNC) generates IN_MODIFY before
+			// IN_OPEN because handle_truncate() (called inside
+			// do_filp_open) emits the modify event via
+			// notify_change(), and fsnotify_open() runs after
+			// do_filp_open() returns. However, if the file was
+			// newly created (FMODE_CREATED), handle_truncate() is
+			// not called because do_open() skips truncation for
+			// new files.
+			if opts.Flags&linux.O_TRUNC != 0 && !fd.IsCreated() {
+				fd.Dentry().InotifyWithParent(ctx, linux.IN_MODIFY, 0, PathEvent)
+			}
 			fd.Dentry().InotifyWithParent(ctx, linux.IN_OPEN, 0, PathEvent)
 			return fd, nil
 		}

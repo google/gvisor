@@ -89,9 +89,32 @@ type FileDescription struct {
 
 	usedLockBSD atomicbitops.Uint32
 
+	// created is set to true by FilesystemImpl.OpenAt() when the file was
+	// newly created by this open operation (i.e. O_CREAT was specified and
+	// the file did not already exist). This is analogous to Linux's
+	// FMODE_CREATED and is used by VirtualFilesystem.OpenAt() to avoid
+	// generating a spurious IN_MODIFY inotify event for O_TRUNC on newly
+	// created (empty) files.
+	created bool
+
 	// impl is the FileDescriptionImpl associated with this Filesystem. impl is
 	// immutable. This should be the last field in FileDescription.
 	impl FileDescriptionImpl
+}
+
+// SetCreated marks this FileDescription as having been created by the
+// current open operation. This should be called by FilesystemImpl.OpenAt()
+// when a new file is created via O_CREAT.
+//
+// This is analogous to Linux's FMODE_CREATED flag.
+func (fd *FileDescription) SetCreated() {
+	fd.created = true
+}
+
+// IsCreated returns true if the file was newly created by the current open
+// operation.
+func (fd *FileDescription) IsCreated() bool {
+	return fd.created
 }
 
 // FileDescriptionOptions contains options to FileDescription.Init().
