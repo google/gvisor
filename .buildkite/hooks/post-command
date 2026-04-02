@@ -81,6 +81,26 @@ if test "${BUILDKITE_COMMAND_EXIT_STATUS}" -ne "0"; then
   sudo rm -rf "${HOME}/go"
 fi
 
+# Track consecutive failures.
+CONSECUTIVE_FAILURES_FILE="/tmp/agent_consecutive_failures"
+if test "${BUILDKITE_COMMAND_EXIT_STATUS}" -ne "0"; then
+  count=$(cat "${CONSECUTIVE_FAILURES_FILE}" 2>/dev/null || echo 0)
+  count=$((count + 1))
+  echo "${count}" > "${CONSECUTIVE_FAILURES_FILE}"
+  # If this agent has failed 30 times in a row, shut it down. It is rogue.
+  # 30 is chosen semi-arbitrarily. Each job has 3 attempts, so this is akin to
+  # the 10th job failing, which should be pretty rare.
+  if [ "${count}" -ge 30 ]; then
+    echo "Consecutive failures reached 30. Shutting down agent." >&2
+    # Reset the counter so that if the agent is restarted manually, it starts fresh.
+    rm -f "${CONSECUTIVE_FAILURES_FILE}"
+    killall buildkite-agent
+    exit 1
+  fi
+else
+  rm -f "${CONSECUTIVE_FAILURES_FILE}"
+fi
+
 clear_docker_containers
 
 set -euo pipefail
