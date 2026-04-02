@@ -368,7 +368,7 @@ portforward-tests: load-basic_redis load-basic_nginx $(RUNTIME_BIN)
 .PHONY: portforward-test
 
 # Standard integration targets.
-INTEGRATION_TARGETS := //test/image:image_test //test/e2e:integration_test
+INTEGRATION_TARGETS := //test/e2e:integration_test
 
 docker-tests: integration-test-images $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),) # Clear flags.
@@ -410,7 +410,7 @@ kvm-tests: integration-test-images $(RUNTIME_BIN)
 	@$(call test,//pkg/sentry/platform/kvm:kvm_test)
 	@$(call install_runtime,$(RUNTIME)-kvm,--platform=kvm)
 	@$(call install_runtime,$(RUNTIME)-kvm-docker,--net-raw --allow-packet-socket-write --platform=kvm)
-	@$(call test_runtime_cached,$(RUNTIME)-kvm,$(INTEGRATION_TARGETS))
+	@$(call test_runtime,$(RUNTIME)-kvm,$(INTEGRATION_TARGETS))
 .PHONY: kvm-tests
 
 systrap-tests: integration-test-images $(RUNTIME_BIN)

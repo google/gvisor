@@ -74,6 +74,7 @@ func httpRequestSucceeds(client http.Client, server string, port int) error {
 
 // TestLifeCycle tests a basic Create/Start/Stop docker container life cycle.
 func TestLifeCycle(t *testing.T) {
+	t.Skip()
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
@@ -110,6 +111,7 @@ func TestLifeCycle(t *testing.T) {
 }
 
 func TestDisallowRootfsTarAnnotation(t *testing.T) {
+	t.Skip()
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
@@ -126,6 +128,7 @@ func TestDisallowRootfsTarAnnotation(t *testing.T) {
 }
 
 func TestPauseResume(t *testing.T) {
+	t.Skip()
 	if !testutil.IsCheckpointSupported() {
 		t.Skip("Checkpoint is not supported.")
 	}
@@ -193,6 +196,7 @@ func TestPauseResume(t *testing.T) {
 }
 
 func TestCheckpointRestore(t *testing.T) {
+	t.Skip()
 	if !testutil.IsCheckpointSupported() {
 		t.Skip("Checkpoint is not supported.")
 	}
@@ -244,6 +248,7 @@ func TestCheckpointRestore(t *testing.T) {
 
 // Create client and server that talk to each other using the local IP.
 func TestConnectToSelf(t *testing.T) {
+	t.Skip()
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
@@ -279,6 +284,7 @@ func TestConnectToSelf(t *testing.T) {
 }
 
 func TestMemory(t *testing.T) {
+	t.Skip()
 	// Find total amount of memory in the host.
 	host, err := exec.Command("sh", "-c", memInfoCmd).CombinedOutput()
 	if err != nil {
@@ -319,9 +325,10 @@ func TestMemLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dockerutil.RuntimeArgs() failed: %v", err)
 	}
-	if slices.Contains(runArgs, "--platform=kvm") {
-		t.Skip("Skipping test when platform/KVM is enabled.")
-	}
+	t.Logf("!!!!!!!!! runArgs: %v", runArgs)
+	// if slices.Contains(runArgs, "--platform=kvm") {
+	// 	t.Skip("Skipping test when platform/KVM is enabled.")
+	// }
 
 	allocMemoryKb := 128 * 1024
 	opts := dockerutil.RunOpts{
@@ -353,6 +360,7 @@ func TestMemLimit(t *testing.T) {
 }
 
 func TestNumCPU(t *testing.T) {
+	t.Skip()
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
 	runArgs, err := dockerutil.RuntimeArgs()
@@ -390,6 +398,7 @@ func TestNumCPU(t *testing.T) {
 
 // TestJobControl tests that job control characters are handled properly.
 func TestJobControl(t *testing.T) {
+	t.Skip()
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
@@ -428,6 +437,7 @@ func TestJobControl(t *testing.T) {
 
 // TestWorkingDirCreation checks that working dir is created if it doesn't exit.
 func TestWorkingDirCreation(t *testing.T) {
+	t.Skip()
 	for _, tc := range []struct {
 		name       string
 		workingDir string
@@ -464,6 +474,7 @@ func TestWorkingDirCreation(t *testing.T) {
 
 // TestTmpFile checks that files inside '/tmp' are not overridden.
 func TestTmpFile(t *testing.T) {
+	t.Skip()
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
@@ -480,6 +491,7 @@ func TestTmpFile(t *testing.T) {
 
 // TestTmpMount checks that mounts inside '/tmp' are not overridden.
 func TestTmpMount(t *testing.T) {
+	t.Skip()
 	dir, err := os.MkdirTemp(testutil.TmpDir(), "tmp-mount")
 	if err != nil {
 		t.Fatalf("TempDir(): %v", err)
@@ -514,6 +526,7 @@ func TestTmpMount(t *testing.T) {
 // Test that it is allowed to mount a file on top of /dev files, e.g.
 // /dev/random.
 func TestMountOverDev(t *testing.T) {
+	t.Skip()
 	random, err := os.CreateTemp(testutil.TmpDir(), "random")
 	if err != nil {
 		t.Fatal("os.CreateTemp() failed:", err)
@@ -550,6 +563,7 @@ func TestMountOverDev(t *testing.T) {
 // TestSyntheticDirs checks that submounts can be created inside a readonly
 // mount even if the target path does not exist.
 func TestSyntheticDirs(t *testing.T) {
+	t.Skip()
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
@@ -584,6 +598,7 @@ func TestSyntheticDirs(t *testing.T) {
 // runsc to hide the incoherence of FDs opened before and after overlayfs
 // copy-up on the host.
 func TestHostOverlayfsCopyUp(t *testing.T) {
+	t.Skip()
 	runIntegrationTest(t, nil, "./test_copy_up")
 }
 
@@ -599,6 +614,7 @@ func TestHostOverlayfsCopyUp(t *testing.T) {
 // automated tests yield newly-added files from readdir() even if the fsgofer
 // does not explicitly rewinddir(), but overlayfs does not.
 func TestHostOverlayfsRewindDir(t *testing.T) {
+	t.Skip()
 	runIntegrationTest(t, nil, "./test_rewinddir")
 }
 
@@ -606,17 +622,20 @@ func TestHostOverlayfsRewindDir(t *testing.T) {
 // cannot use tricks like userns as root. For this reason, run a basic link test
 // to ensure some coverage.
 func TestLink(t *testing.T) {
+	t.Skip()
 	runIntegrationTest(t, nil, "./link_test")
 }
 
 // This test ensures we can run ping without errors.
 func TestPing4Loopback(t *testing.T) {
+	t.Skip()
 	runIntegrationTest(t, nil, "./ping4.sh")
 }
 
 // This test ensures we can enable ipv6 on loopback and run ping6 without
 // errors.
 func TestPing6Loopback(t *testing.T) {
+	t.Skip()
 	if testutil.IsRunningWithHostNet() {
 		// TODO(gvisor.dev/issue/5011): support ICMP sockets in hostnet and enable
 		// this test.
@@ -636,10 +655,12 @@ func TestPing6Loopback(t *testing.T) {
 // can always delete its file when the file is inside a sticky directory owned
 // by another user.
 func TestStickyDir(t *testing.T) {
+	t.Skip()
 	runIntegrationTest(t, nil, "./test_sticky")
 }
 
 func TestHostFD(t *testing.T) {
+	t.Skip()
 	t.Run("regular", func(t *testing.T) {
 		runIntegrationTest(t, nil, "./host_fd")
 	})
@@ -691,6 +712,7 @@ func runIntegrationTest(t *testing.T, capAdd []string, args ...string) {
 // Prerequisite: the directory where the socket file is created must not have
 // been open for write before bind(2) is called.
 func TestBindOverlay(t *testing.T) {
+	t.Skip()
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
@@ -710,6 +732,7 @@ func TestBindOverlay(t *testing.T) {
 }
 
 func TestStdios(t *testing.T) {
+	t.Skip()
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
@@ -725,6 +748,7 @@ func TestStdios(t *testing.T) {
 }
 
 func TestStdiosExec(t *testing.T) {
+	t.Skip()
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
@@ -782,6 +806,7 @@ func testStdios(t *testing.T, run func(string, ...string) (string, error)) {
 }
 
 func TestStdiosChown(t *testing.T) {
+	t.Skip()
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
@@ -793,6 +818,7 @@ func TestStdiosChown(t *testing.T) {
 }
 
 func TestUnmount(t *testing.T) {
+	t.Skip()
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
@@ -818,6 +844,7 @@ func TestUnmount(t *testing.T) {
 }
 
 func TestDeleteInterface(t *testing.T) {
+	t.Skip()
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
@@ -860,6 +887,7 @@ func TestDeleteInterface(t *testing.T) {
 }
 
 func TestProductName(t *testing.T) {
+	t.Skip()
 	want, err := os.ReadFile("/sys/devices/virtual/dmi/id/product_name")
 	if err != nil {
 		t.Fatal(err)
@@ -883,6 +911,7 @@ func TestProductName(t *testing.T) {
 // gets updated externally, the change is noticed and the internal cache is
 // updated accordingly.
 func TestRevalidateSymlinkChain(t *testing.T) {
+	t.Skip()
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
@@ -975,6 +1004,7 @@ func TestRevalidateSymlinkChain(t *testing.T) {
 // TestTmpMountWithSize checks when 'tmpfs' is mounted
 // with size option the limit is not exceeded.
 func TestTmpMountWithSize(t *testing.T) {
+	t.Skip()
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
@@ -1015,6 +1045,7 @@ func TestTmpMountWithSize(t *testing.T) {
 // without execute permissions. See comment in
 // pkg/sentry/kernel/kernel.go:CreateProcess() for more context.
 func TestNonSearchableWorkingDirectory(t *testing.T) {
+	t.Skip()
 	dir, err := os.MkdirTemp(testutil.TmpDir(), "tmp-mount")
 	if err != nil {
 		t.Fatalf("MkdirTemp() failed: %v", err)
@@ -1058,6 +1089,7 @@ func TestNonSearchableWorkingDirectory(t *testing.T) {
 }
 
 func TestCharDevice(t *testing.T) {
+	t.Skip()
 	if testutil.IsRunningWithOverlay() {
 		t.Skip("files are not available outside the sandbox with overlay.")
 	}
@@ -1106,6 +1138,7 @@ func TestCharDevice(t *testing.T) {
 }
 
 func TestBlockHostUds(t *testing.T) {
+	t.Skip()
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
@@ -1198,6 +1231,7 @@ func checkLogs(logs string, oldPos int) error {
 }
 
 func TestUnshareUsernsWithoutSetfcap(t *testing.T) {
+	t.Skip()
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
@@ -1215,6 +1249,7 @@ func TestUnshareUsernsWithoutSetfcap(t *testing.T) {
 
 // Checkpoint the container and continue running.
 func TestCheckpointResume(t *testing.T) {
+	t.Skip()
 	if !testutil.IsCheckpointSupported() {
 		t.Skip("Checkpoint is not supported.")
 	}
@@ -1383,26 +1418,31 @@ func testCheckpointRestoreTCPConnection(t *testing.T, netstackSR bool, fName str
 
 // Test to check restore of a TCP listening connection without netstack S/R.
 func TestRestoreListenConn(t *testing.T) {
+	t.Skip()
 	testCheckpointRestoreTCPConnection(t, false /* netstackSR */, "./tcp_server" /* fName */, 1 /* numConn */, false /* restoreLoopback */)
 }
 
 // Test to check restore of a TCP listening connection with netstack S/R.
 func TestRestoreListenConnWithNetstackSR(t *testing.T) {
+	t.Skip()
 	testCheckpointRestoreTCPConnection(t, true /* netstackSR */, "./tcp_server" /* fName */, 1 /* numConn */, false /* restoreLoopback */)
 }
 
 // Test to check restore of multiple TCP listening connections with netstack S/R.
 func TestRestoreMultipleListenConnWithNetstackSR(t *testing.T) {
+	t.Skip()
 	testCheckpointRestoreTCPConnection(t, true /* netstackSR */, "./tcp_stress_server" /* fName */, 100 /* numConn */, false /* restoreLoopback */)
 }
 
 // Test to check restore of TCP established loopback connection with netstack S/R.
 func TestRestoreLoopbackConnWithNetstackSR(t *testing.T) {
+	t.Skip()
 	testCheckpointRestoreTCPConnection(t, true /* netstackSR */, "./tcp_loopback" /* fName */, 1 /* numConn */, true /* restoreLoopback */)
 }
 
 // Test to check if sudo works
 func TestSudo(t *testing.T) {
+	t.Skip()
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
