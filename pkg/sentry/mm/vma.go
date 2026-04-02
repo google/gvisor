@@ -195,10 +195,10 @@ func (mm *MemoryManager) findAvailableLocked(length uint64, opts findAvailableOp
 		return 0, linuxerr.ENOMEM
 	}
 
-	// Prefer hugepage alignment if a hugepage or more is requested and the vma
-	// will actually be eligible for hugepages.
+	// Prefer hugepage alignment if length is hugepage-aligned and the vma will
+	// actually be eligible for hugepages.
 	alignment := uint64(hostarch.PageSize)
-	if length >= hostarch.HugePageSize && opts.Private && !opts.GrowsDown && !opts.Stack {
+	if hostarch.IsHugePageAligned(length) && opts.Private && !opts.GrowsDown && !opts.Stack {
 		alignment = hostarch.HugePageSize
 	}
 
