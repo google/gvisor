@@ -17,22 +17,13 @@ package v1
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"os"
-	"os/exec"
-	"path/filepath"
 
-	"github.com/BurntSushi/toml"
-	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/runtime/v2/shim"
-	taskapi "github.com/containerd/containerd/runtime/v2/task"
-	"github.com/containerd/containerd/sys"
+	shimapi "github.com/containerd/containerd/runtime/v2/task"
 	"github.com/containerd/errdefs"
 	"github.com/containerd/log"
 	"github.com/gogo/protobuf/types"
-	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/cleanup"
 
 	"gvisor.dev/gvisor/pkg/shim/v1/extension"
 	"gvisor.dev/gvisor/pkg/shim/v1/runsc"
@@ -43,26 +34,61 @@ const (
 	// shimAddressPath is the relative path to a file that contains the address
 	// to the shim UDS. See service.shimAddress.
 	shimAddressPath = "address"
-	// oomScoreMaxKillable is the maximum score keeping the process killable by the oom killer
-	oomScoreMaxKillable = -999
 )
 
-// New returns a new shim service that can be used via gRPC.
-func New(ctx context.Context, id string, publisher shim.Publisher, cancel func()) (shim.Shim, error) {
-	var opts shim.Opts
-	if ctxOpts := ctx.Value(shim.OptsKey{}); ctxOpts != nil {
-		opts = ctxOpts.(shim.Opts)
-	}
+type shimTaskManager struct {
+	extension.TaskServiceExt
+	id      string
+	manager shim.Manager
+}
 
+// Cleanup implements shim.Shim.Cleanup.
+func (stm *shimTaskManager) Cleanup(ctx context.Context) (*shimapi.DeleteResponse, error) {
+	ss, err := stm.manager.Stop(ctx, stm.id)
+	if err != nil {
+		return nil, err
+	}
+	return &shimapi.DeleteResponse{
+		Pid:        uint32(ss.Pid),
+		ExitStatus: uint32(ss.ExitStatus),
+		ExitedAt:   ss.ExitedAt,
+	}, nil
+}
+
+// StartShim implements shim.Shim.StartShim.
+func (stm *shimTaskManager) StartShim(ctx context.Context, opts shim.StartOpts) (string, error) {
+	return stm.manager.Start(ctx, opts.ID, opts)
+}
+
+// New returns a new shim service that can be used for
+// - serving the task service over grpc/ttrpc
+// - shim management
+func New(ctx context.Context, id string, publisher shim.Publisher, fn func()) (shim.Shim, error) {
+	var shimOpts shim.Opts
+	if ctxOpts := ctx.Value(shim.OptsKey{}); ctxOpts != nil {
+		shimOpts = ctxOpts.(shim.Opts)
+	}
+	ts, err := newShimRedirector(ctx, id, publisher, fn)
+	if err != nil {
+		return nil, err
+	}
+	return &shimTaskManager{
+		TaskServiceExt: ts,
+		id:             id,
+		manager:        NewShimManager("runsc", shimOpts.BundlePath),
+	}, nil
+}
+
+// newShimRedirector creates a new runsc service that delegates to respective runsc task service.
+func newShimRedirector(ctx context.Context, id string, publisher shim.Publisher, cancel func()) (extension.TaskServiceExt, error) {
 	runsc, err := runsc.NewTaskService(ctx, id, publisher)
 	if err != nil {
 		cancel()
 		return nil, err
 	}
-	s := &service{
-		genericOptions: opts,
-		cancel:         cancel,
-		main:           runsc,
+	s := &shimRedirector{
+		cancel: cancel,
+		main:   runsc,
 	}
 
 	if address, err := shim.ReadAddress(shimAddressPath); err == nil {
@@ -73,27 +99,13 @@ func New(ctx context.Context, id string, publisher shim.Publisher, cancel func()
 	return s, nil
 }
 
-// service is the shim implementation of a remote shim over gRPC. It runs in 2
-// different modes:
-//  1. Service: process runs for the life time of the container and receives
-//     calls described in shimapi.TaskService interface.
-//  2. Tool: process is short lived and runs only to perform the requested
-//     operations and then exits. It implements the direct functions in
-//     shim.Shim interface.
+// shimRedirector is the implementation of task service extension over gRPC/ttrpc. It
+// is a intermediate layer between the containerd API and the runsc task service.
 //
-// It forwards all calls to extension.TaskServiceExt which actually implements the
-// service interface. This struct receives the RPC calls, forwards them to the
-// appropriate service implementation, and convert errors to gRPC errors.
-type service struct {
+// It intercepts some calls to the task service and forwards all calls
+// to extension.TaskServiceExt which actually implements the service interface.
+type shimRedirector struct {
 	mu sync.Mutex
-
-	// genericOptions are options that come from the shim interface and are common
-	// to all shims.
-	genericOptions shim.Opts
-
-	// cancel is a function that needs to be called before the shim stops. The
-	// function is provided by the caller to New().
-	cancel func()
 
 	// shimAddress is the location of the UDS used to communicate to containerd.
 	shimAddress string
@@ -103,6 +115,10 @@ type service struct {
 	//
 	// Protected by mu.
 	main extension.TaskServiceExt
+
+	// cancel is a function that needs to be called before the shim stops. The
+	// function is provided by the caller to New().
+	cancel func()
 
 	// ext may intercept calls to the container's shim. During the call to create
 	// container, the extension may be created and the shim will start using it
@@ -115,11 +131,11 @@ type service struct {
 	grouping bool
 }
 
-var _ shim.Shim = (*service)(nil)
+var _ extension.TaskServiceExt = (*shimRedirector)(nil)
 
 // get return the extension.TaskServiceExt that should be used for the next
 // call to the container's shim.
-func (s *service) get() extension.TaskServiceExt {
+func (s *shimRedirector) get() extension.TaskServiceExt {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -136,165 +152,11 @@ type spec struct {
 	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
-func (s *service) newCommand(ctx context.Context, containerdBinary, containerdAddress string) (*exec.Cmd, error) {
-	ns, err := namespaces.NamespaceRequired(ctx)
-	if err != nil {
-		return nil, err
-	}
-	self, err := os.Executable()
-	if err != nil {
-		return nil, err
-	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, err
-	}
-	args := []string{
-		"-namespace", ns,
-		"-address", containerdAddress,
-		"-publish-binary", containerdBinary,
-	}
-	if s.genericOptions.Debug {
-		args = append(args, "-debug")
-	}
-	cmd := exec.Command(self, args...)
-	cmd.Dir = cwd
-	cmd.Env = append(os.Environ(), "GOMAXPROCS=2")
-	cmd.SysProcAttr = &unix.SysProcAttr{
-		Setpgid: true,
-	}
-	return cmd, nil
-}
-
-func getEnableGrouping() bool {
-	shimConfigPaths := []string{"/run/containerd/runsc/config.toml", "/etc/containerd/runsc/config.toml"}
-
-	tomlPath := ""
-	for _, path := range shimConfigPaths {
-		if _, err := os.Stat(path); err == nil {
-			tomlPath = path
-			break
-		}
-	}
-	if len(tomlPath) == 0 {
-		return false
-	}
-
-	var opts runsc.Options
-	if _, err := toml.DecodeFile(tomlPath, &opts); err != nil {
-		log.L.Debugf("Failed to decode shim config file %q: %v", tomlPath, err)
-		return false
-	}
-
-	return opts.Grouping
-}
-
-func (s *service) StartShim(ctx context.Context, opts shim.StartOpts) (string, error) {
-	log.L.Debugf("StartShim, id: %s, binary: %q, address: %q", opts.ID, opts.ContainerdBinary, opts.Address)
-
-	grouping := opts.ID
-
-	enableGrouping := getEnableGrouping()
-	if enableGrouping {
-		// The OCI container spec is written by containerd in config.json file, check
-		// for group annotations in this file to enable grouping.
-		configFile, err := os.Open(filepath.Join(s.genericOptions.BundlePath, "config.json"))
-		if err != nil {
-			log.L.Debugf("StartShim, error to read config.json: %v, continue without shim grouping", err)
-		} else {
-			var readSpec spec
-			if err := json.NewDecoder(configFile).Decode(&readSpec); err != nil {
-				configFile.Close()
-				return "", err
-			}
-			configFile.Close()
-			log.L.Debugf("annotations: %+v", readSpec.Annotations)
-			if groupID, ok := readSpec.Annotations[kubernetesGroupAnnotation]; ok {
-				log.L.Debugf("group label found %v: %v", kubernetesGroupAnnotation, groupID)
-				grouping = groupID
-			}
-		}
-	}
-
-	cmd, err := s.newCommand(ctx, opts.ContainerdBinary, opts.Address)
-	if err != nil {
-		return "", err
-	}
-	address, err := shim.SocketAddress(ctx, opts.Address, grouping)
-	if err != nil {
-		return "", err
-	}
-	socket, err := shim.NewSocket(address)
-	if err != nil {
-		// The only time where this would happen is if there is a bug and the socket
-		// was not cleaned up in the cleanup method of the shim or we are using the
-		// grouping functionality where the new process should be run with the same
-		// shim as an existing container.
-		if !shim.SocketEaddrinuse(err) {
-			return "", fmt.Errorf("create new shim socket: %w", err)
-		}
-		if shim.CanConnect(address) {
-			if err := shim.WriteAddress(shimAddressPath, address); err != nil {
-				return "", fmt.Errorf("write existing socket for shim: %w", err)
-			}
-			return address, nil
-		}
-		if err := shim.RemoveSocket(address); err != nil {
-			return "", fmt.Errorf("remove pre-existing socket: %w", err)
-		}
-		if socket, err = shim.NewSocket(address); err != nil {
-			return "", fmt.Errorf("try create new shim socket 2x: %w", err)
-		}
-	}
-	cu := cleanup.Make(func() {
-		socket.Close()
-		_ = shim.RemoveSocket(address)
-	})
-	defer cu.Clean()
-
-	f, err := socket.File()
-	if err != nil {
-		return "", err
-	}
-
-	cmd.ExtraFiles = append(cmd.ExtraFiles, f)
-
-	log.L.Debugf("Executing: %q %s", cmd.Path, cmd.Args)
-	if err := cmd.Start(); err != nil {
-		f.Close()
-		return "", err
-	}
-	cu.Add(func() { cmd.Process.Kill() })
-
-	// make sure to wait after start
-	go cmd.Wait()
-	if err := shim.WritePidFile("shim.pid", cmd.Process.Pid); err != nil {
-		return "", err
-	}
-	if err := shim.WriteAddress(shimAddressPath, address); err != nil {
-		return "", err
-	}
-	if err := sys.SetOOMScore(cmd.Process.Pid, oomScoreMaxKillable); err != nil {
-		return "", fmt.Errorf("failed to set OOM Score on shim: %w", err)
-	}
-	cu.Release()
-	return address, nil
-}
-
-// Cleanup is called from another process to stop the container and undo all
-// operations done in Create().
-func (s *service) Cleanup(ctx context.Context) (*taskapi.DeleteResponse, error) {
-	log.L.Debugf("Cleanup")
-	resp, err := s.get().Cleanup(ctx)
-	return resp, errdefs.ToGRPC(err)
-}
-
-// Create creates a new initial process and container with the underlying OCI
-// runtime.
-func (s *service) Create(ctx context.Context, r *taskapi.CreateTaskRequest) (*taskapi.CreateTaskResponse, error) {
-	log.L.Debugf("Create, id: %s, bundle: %q", r.ID, r.Bundle)
-
+// initExt initializes the extension that may intercept calls to the container's shim.
+func (s *shimRedirector) initExt(ctx context.Context, r *shimapi.CreateTaskRequest) error {
 	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if s.grouping {
 		// Create shim extension if required.
 		if s.ext == nil && extension.NewPodExtension != nil {
@@ -304,7 +166,7 @@ func (s *service) Create(ctx context.Context, r *taskapi.CreateTaskRequest) (*ta
 			if err != nil {
 				log.L.Debugf("Creating shim extension per pod failed with error: %v", err)
 				s.mu.Unlock()
-				return nil, err
+				return err
 			}
 		}
 	} else {
@@ -315,106 +177,119 @@ func (s *service) Create(ctx context.Context, r *taskapi.CreateTaskRequest) (*ta
 			s.ext, err = extension.NewExtension(ctx, s.main, r)
 			if err != nil {
 				s.mu.Unlock()
-				return nil, err
+				return err
 			}
 		}
 	}
-	if s.ext == nil {
-		log.L.Debugf("No extension created")
-	} else {
-		log.L.Infof("Extension created")
-	}
-	s.mu.Unlock()
+	return nil
+}
 
+// Create creates a new initial process and container with the underlying OCI
+// runtime.
+func (s *shimRedirector) Create(ctx context.Context, r *shimapi.CreateTaskRequest) (*shimapi.CreateTaskResponse, error) {
+	log.L.Debugf("Create, id: %s, bundle: %q", r.ID, r.Bundle)
+	if err := s.initExt(ctx, r); err != nil {
+		return nil, errdefs.ToGRPC(err)
+	}
 	resp, err := s.get().Create(ctx, r)
 	return resp, errdefs.ToGRPC(err)
 }
 
+// CreateWithFSRestore creates a container which restores its filesystem from a snapshot.
+func (s *shimRedirector) CreateWithFSRestore(ctx context.Context, r *extension.CreateWithFSRestoreRequest) (*shimapi.CreateTaskResponse, error) {
+	log.L.Debugf("CreateWithFSRestore, id: %s, bundle: %q", r.Create.ID, r.Create.Bundle)
+	if err := s.initExt(ctx, r.Create); err != nil {
+		return nil, errdefs.ToGRPC(err)
+	}
+	resp, err := s.get().CreateWithFSRestore(ctx, r)
+	return resp, errdefs.ToGRPC(err)
+}
+
 // Start starts the container.
-func (s *service) Start(ctx context.Context, r *taskapi.StartRequest) (*taskapi.StartResponse, error) {
+func (s *shimRedirector) Start(ctx context.Context, r *shimapi.StartRequest) (*shimapi.StartResponse, error) {
 	log.L.Debugf("Start, id: %s, execID: %s", r.ID, r.ExecID)
 	resp, err := s.get().Start(ctx, r)
 	return resp, errdefs.ToGRPC(err)
 }
 
 // Delete deletes container.
-func (s *service) Delete(ctx context.Context, r *taskapi.DeleteRequest) (*taskapi.DeleteResponse, error) {
+func (s *shimRedirector) Delete(ctx context.Context, r *shimapi.DeleteRequest) (*shimapi.DeleteResponse, error) {
 	log.L.Debugf("Delete, id: %s, execID: %s", r.ID, r.ExecID)
 	resp, err := s.get().Delete(ctx, r)
 	return resp, errdefs.ToGRPC(err)
 }
 
 // Exec spawns a process inside the container.
-func (s *service) Exec(ctx context.Context, r *taskapi.ExecProcessRequest) (*types.Empty, error) {
+func (s *shimRedirector) Exec(ctx context.Context, r *shimapi.ExecProcessRequest) (*types.Empty, error) {
 	log.L.Debugf("Exec, id: %s, execID: %s", r.ID, r.ExecID)
 	resp, err := s.get().Exec(ctx, r)
 	return resp, errdefs.ToGRPC(err)
 }
 
 // ResizePty resizes the terminal of a process.
-func (s *service) ResizePty(ctx context.Context, r *taskapi.ResizePtyRequest) (*types.Empty, error) {
+func (s *shimRedirector) ResizePty(ctx context.Context, r *shimapi.ResizePtyRequest) (*types.Empty, error) {
 	log.L.Debugf("ResizePty, id: %s, execID: %s, dimension: %dx%d", r.ID, r.ExecID, r.Height, r.Width)
 	resp, err := s.get().ResizePty(ctx, r)
 	return resp, errdefs.ToGRPC(err)
 }
 
 // State returns runtime state information for the container.
-func (s *service) State(ctx context.Context, r *taskapi.StateRequest) (*taskapi.StateResponse, error) {
+func (s *shimRedirector) State(ctx context.Context, r *shimapi.StateRequest) (*shimapi.StateResponse, error) {
 	log.L.Debugf("State, id: %s, execID: %s", r.ID, r.ExecID)
 	resp, err := s.get().State(ctx, r)
 	return resp, errdefs.ToGRPC(err)
 }
 
 // Pause the container.
-func (s *service) Pause(ctx context.Context, r *taskapi.PauseRequest) (*types.Empty, error) {
+func (s *shimRedirector) Pause(ctx context.Context, r *shimapi.PauseRequest) (*types.Empty, error) {
 	log.L.Debugf("Pause, id: %s", r.ID)
 	resp, err := s.get().Pause(ctx, r)
 	return resp, errdefs.ToGRPC(err)
 }
 
 // Resume the container.
-func (s *service) Resume(ctx context.Context, r *taskapi.ResumeRequest) (*types.Empty, error) {
+func (s *shimRedirector) Resume(ctx context.Context, r *shimapi.ResumeRequest) (*types.Empty, error) {
 	log.L.Debugf("Resume, id: %s", r.ID)
 	resp, err := s.get().Resume(ctx, r)
 	return resp, errdefs.ToGRPC(err)
 }
 
 // Kill the container with the provided signal.
-func (s *service) Kill(ctx context.Context, r *taskapi.KillRequest) (*types.Empty, error) {
+func (s *shimRedirector) Kill(ctx context.Context, r *shimapi.KillRequest) (*types.Empty, error) {
 	log.L.Debugf("Kill, id: %s, execID: %s, signal: %d, all: %t", r.ID, r.ExecID, r.Signal, r.All)
 	resp, err := s.get().Kill(ctx, r)
 	return resp, errdefs.ToGRPC(err)
 }
 
 // Pids returns all pids inside the container.
-func (s *service) Pids(ctx context.Context, r *taskapi.PidsRequest) (*taskapi.PidsResponse, error) {
+func (s *shimRedirector) Pids(ctx context.Context, r *shimapi.PidsRequest) (*shimapi.PidsResponse, error) {
 	log.L.Debugf("Pids, id: %s", r.ID)
 	resp, err := s.get().Pids(ctx, r)
 	return resp, errdefs.ToGRPC(err)
 }
 
 // CloseIO closes the I/O context of the container.
-func (s *service) CloseIO(ctx context.Context, r *taskapi.CloseIORequest) (*types.Empty, error) {
+func (s *shimRedirector) CloseIO(ctx context.Context, r *shimapi.CloseIORequest) (*types.Empty, error) {
 	log.L.Debugf("CloseIO, id: %s, execID: %s, stdin: %t", r.ID, r.ExecID, r.Stdin)
 	resp, err := s.get().CloseIO(ctx, r)
 	return resp, errdefs.ToGRPC(err)
 }
 
 // Checkpoint checkpoints the container.
-func (s *service) Checkpoint(ctx context.Context, r *taskapi.CheckpointTaskRequest) (*types.Empty, error) {
+func (s *shimRedirector) Checkpoint(ctx context.Context, r *shimapi.CheckpointTaskRequest) (*types.Empty, error) {
 	log.L.Debugf("Checkpoint, id: %s", r.ID)
 	resp, err := s.get().Checkpoint(ctx, r)
 	return resp, errdefs.ToGRPC(err)
 }
 
 // Connect returns shim information such as the shim's pid.
-func (s *service) Connect(ctx context.Context, r *taskapi.ConnectRequest) (*taskapi.ConnectResponse, error) {
+func (s *shimRedirector) Connect(ctx context.Context, r *shimapi.ConnectRequest) (*shimapi.ConnectResponse, error) {
 	log.L.Debugf("Connect, id: %s", r.ID)
 	resp, err := s.get().Connect(ctx, r)
 	return resp, errdefs.ToGRPC(err)
 }
 
-func (s *service) Shutdown(ctx context.Context, r *taskapi.ShutdownRequest) (*types.Empty, error) {
+func (s *shimRedirector) Shutdown(ctx context.Context, r *shimapi.ShutdownRequest) (*types.Empty, error) {
 	log.L.Debugf("Shutdown, id: %s", r.ID)
 	resp, err := s.get().Shutdown(ctx, r)
 	if err != nil {
@@ -436,22 +311,29 @@ func (s *service) Shutdown(ctx context.Context, r *taskapi.ShutdownRequest) (*ty
 	panic("Should not get here")
 }
 
-func (s *service) Stats(ctx context.Context, r *taskapi.StatsRequest) (*taskapi.StatsResponse, error) {
+func (s *shimRedirector) Stats(ctx context.Context, r *shimapi.StatsRequest) (*shimapi.StatsResponse, error) {
 	log.L.Debugf("Stats, id: %s", r.ID)
 	resp, err := s.get().Stats(ctx, r)
 	return resp, errdefs.ToGRPC(err)
 }
 
 // Update updates a running container.
-func (s *service) Update(ctx context.Context, r *taskapi.UpdateTaskRequest) (*types.Empty, error) {
+func (s *shimRedirector) Update(ctx context.Context, r *shimapi.UpdateTaskRequest) (*types.Empty, error) {
 	log.L.Debugf("Update, id: %s", r.ID)
 	resp, err := s.get().Update(ctx, r)
 	return resp, errdefs.ToGRPC(err)
 }
 
 // Wait waits for the container to exit.
-func (s *service) Wait(ctx context.Context, r *taskapi.WaitRequest) (*taskapi.WaitResponse, error) {
+func (s *shimRedirector) Wait(ctx context.Context, r *shimapi.WaitRequest) (*shimapi.WaitResponse, error) {
 	log.L.Debugf("Wait, id: %s, execID: %s", r.ID, r.ExecID)
 	resp, err := s.get().Wait(ctx, r)
+	return resp, errdefs.ToGRPC(err)
+}
+
+// Checkpoint checkpoints the container.
+func (s *shimRedirector) Restore(ctx context.Context, r *extension.RestoreRequest) (*shimapi.StartResponse, error) {
+	log.L.Debugf("Restore, id: %s", r.Start.ID)
+	resp, err := s.get().Restore(ctx, r)
 	return resp, errdefs.ToGRPC(err)
 }
