@@ -169,6 +169,15 @@ func ExitGroup(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintp
 
 // clone is used by Clone, Fork, and VFork.
 func clone(t *kernel.Task, flags int, stack hostarch.Addr, parentTID hostarch.Addr, childTID hostarch.Addr, tls hostarch.Addr) (uintptr, *kernel.SyscallControl, error) {
+	if flags&linux.CLONE_PIDFD != 0 {
+		if flags&linux.CLONE_PARENT_SETTID != 0 {
+			return 0, nil, linuxerr.EINVAL
+		}
+		if flags&linux.CLONE_DETACHED != 0 {
+			return 0, nil, linuxerr.EINVAL
+		}
+	}
+
 	args := linux.CloneArgs{
 		Flags:      uint64(uint32(flags) &^ linux.CSIGNAL),
 		ChildTID:   uint64(childTID),
@@ -177,6 +186,10 @@ func clone(t *kernel.Task, flags int, stack hostarch.Addr, parentTID hostarch.Ad
 		Stack:      uint64(stack),
 		TLS:        uint64(tls),
 	}
+	if flags&linux.CLONE_PIDFD != 0 {
+		args.Pidfd = uint64(parentTID)
+	}
+
 	ntid, ctrl, err := t.Clone(&args)
 	return uintptr(ntid), ctrl, err
 }
@@ -212,6 +225,10 @@ func Clone3(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr,
 		if _, err := cloneArgs.CopyInN(t, cloneArgsPointer, int(size)); err != nil {
 			return 0, nil, err
 		}
+	}
+
+	if cloneArgs.Flags&linux.CLONE_DETACHED != 0 {
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	ntid, ctrl, err := t.Clone(&cloneArgs)
@@ -346,6 +363,18 @@ func Waitid(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr,
 		wopts.SpecificTID = kernel.ThreadID(id)
 	case linux.P_PGID:
 		wopts.SpecificPGID = kernel.ProcessGroupID(id)
+	case linux.P_PIDFD:
+		if id < 0 {
+			return 0, nil, linuxerr.EINVAL
+		}
+		tg, nonblock, err := t.ThreadGroupFromPIDFD(id)
+		if err != nil {
+			return 0, nil, err
+		}
+		wopts.SpecificThreadGroup = tg
+		if nonblock {
+			wopts.NonBlock = true
+		}
 	default:
 		return 0, nil, linuxerr.EINVAL
 	}
@@ -363,16 +392,23 @@ func Waitid(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr,
 	wr, err := t.Wait(&wopts)
 	if err != nil {
 		if err == kernel.ErrNoWaitableEvent {
-			err = nil
-			// "If WNOHANG was specified in options and there were no children
-			// in a waitable state, then waitid() returns 0 immediately and the
-			// state of the siginfo_t structure pointed to by infop is
-			// unspecified." - waitid(2). But Linux's waitid actually zeroes
-			// out the fields it would set for a successful waitid in this case
-			// as well.
-			if infop != 0 {
-				var si linux.SignalInfo
-				_, err = si.CopyOut(t, infop)
+			if wopts.NonBlock && options&linux.WNOHANG == 0 {
+				err = linuxerr.EAGAIN
+			} else {
+				err = nil
+				// "If WNOHANG was specified in options and there were no children
+				// in a waitable state, then waitid() returns 0 immediately and the
+				// state of the siginfo_t structure pointed to by infop is
+				// unspecified." - waitid(2). But Linux's waitid actually zeroes
+				// out the fields it would set for a successful waitid in this case
+				// as well.
+				if infop != 0 {
+					var si linux.SignalInfo
+					_, err2 := si.CopyOut(t, infop)
+					if err2 != nil {
+						return 0, nil, err2
+					}
+				}
 			}
 		}
 		return 0, nil, err
@@ -754,4 +790,49 @@ func Ptrace(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr,
 		return 0, ctrl, err
 	}
 	return 0, nil, t.Ptrace(req, pid, addr, data)
+}
+
+// PIDFDOpen implements linux system call pidfd_open(2).
+func PIDFDOpen(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	pid := kernel.ThreadID(args[0].Int())
+	flags := args[1].Uint()
+
+	if flags&^(linux.PIDFD_NONBLOCK|linux.PIDFD_THREAD) != 0 {
+		return 0, nil, linuxerr.EINVAL
+	}
+	if pid <= 0 {
+		return 0, nil, linuxerr.EINVAL
+	}
+
+	isThread := flags&linux.PIDFD_THREAD != 0
+	nonblock := flags&linux.PIDFD_NONBLOCK != 0
+	vfsfd, err := t.PIDFDOpen(pid, isThread, nonblock)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer vfsfd.DecRef(t)
+
+	fd, err := t.NewFDFrom(0, vfsfd, kernel.FDFlags{
+		CloseOnExec: true, // Pidfd is always O_CLOEXEC.
+	})
+	if err != nil {
+		return 0, nil, err
+	}
+	return uintptr(fd), nil, nil
+}
+
+// PIDFDGetFD implements linux system call pidfd_getfd(2).
+func PIDFDGetFD(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	pidfd := args[0].Int()
+	targetfd := args[1].Int()
+	flags := args[2].Uint()
+
+	if flags != 0 {
+		return 0, nil, linuxerr.EINVAL
+	}
+	fd, err := t.PIDFDGetFD(pidfd, targetfd, flags)
+	if err != nil {
+		return 0, nil, err
+	}
+	return fd, nil, nil
 }

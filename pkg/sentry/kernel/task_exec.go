@@ -446,6 +446,11 @@ func (t *Task) promoteLocked() {
 		tracer.tg.eventQueue.Notify(EventExit | EventTraceeStop | EventGroupContinue)
 	}
 	oldLeader.exitNotifyLocked(false)
+
+	// PIDFD_THREAD pidfds pointing to t should now be notified. In becoming the new tg leader,
+	// t's old identity is in a sense destroyed.
+	t.handlePIDFDsOnZombieLocked()
+	t.handlePIDFDsOnDeadLocked()
 }
 
 func getExecveSeccheckInfo(t *Task, argv, env []string, executable *vfs.FileDescription, pathname string) (seccheck.FieldSet, *pb.ExecveInfo) {

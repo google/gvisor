@@ -63,6 +63,7 @@ type MountNamespace struct {
 type Namespace interface {
 	Type() string
 	Destroy(ctx context.Context)
+	UserNamespace() *auth.UserNamespace
 }
 
 // NewMountNamespace returns a new mount namespace with a root filesystem
@@ -207,6 +208,11 @@ func (mntns *MountNamespace) Destroy(ctx context.Context) {
 // Type implements nsfs.Namespace.Type.
 func (mntns *MountNamespace) Type() string {
 	return "mnt"
+}
+
+// UserNamespace implements nsfs.Namespace.UserNamespace.
+func (mntns *MountNamespace) UserNamespace() *auth.UserNamespace {
+	return mntns.Owner
 }
 
 // IncRef increments mntns' refcount.
