@@ -1031,15 +1031,16 @@ func (e *Endpoint) sendRaw(pkt *stack.PacketBuffer, flags header.TCPFlags, seq, 
 	}
 	pkt.ReserveHeaderBytes(hdrSize)
 	return e.sendTCP(e.route, tcpFields{
-		id:        e.TransportEndpointInfo.ID,
-		ttl:       calculateTTL(e.route, e.ipv4TTL, e.ipv6HopLimit),
-		tos:       e.sendTOS,
-		flags:     flags,
-		seq:       seq,
-		ack:       ack,
-		rcvWnd:    rcvWnd,
-		opts:      options,
-		df:        e.pmtud == tcpip.PMTUDiscoveryWant || e.pmtud == tcpip.PMTUDiscoveryDo,
+		id:     e.TransportEndpointInfo.ID,
+		ttl:    calculateTTL(e.route, e.ipv4TTL, e.ipv6HopLimit),
+		tos:    e.sendTOS,
+		flags:  flags,
+		seq:    seq,
+		ack:    ack,
+		rcvWnd: rcvWnd,
+		opts:   options,
+		// PROBE sets DF like DO; see network/endpoint.go for details.
+		df:        e.pmtud == tcpip.PMTUDiscoveryWant || e.pmtud == tcpip.PMTUDiscoveryDo || e.pmtud == tcpip.PMTUDiscoveryProbe,
 		expOptVal: expOptVal,
 	}, pkt, e.gso)
 }

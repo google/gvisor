@@ -2342,38 +2342,24 @@ TEST_P(TcpSocketTest, SetPMTUD) {
       SyscallSucceeds());
   EXPECT_EQ(got, IP_PMTUDISC_WANT);
 
-  int set = IP_PMTUDISC_DO;
-  ASSERT_THAT(
-      setsockopt(accepted_.get(), SOL_IP, IP_MTU_DISCOVER, &set, length),
-      SyscallSucceeds());
-  ASSERT_THAT(
-      getsockopt(accepted_.get(), SOL_IP, IP_MTU_DISCOVER, &got, &length),
-      SyscallSucceeds());
-  EXPECT_EQ(got, IP_PMTUDISC_DO);
-  set = IP_PMTUDISC_DONT;
-  ASSERT_THAT(
-      setsockopt(accepted_.get(), SOL_IP, IP_MTU_DISCOVER, &set, length),
-      SyscallSucceeds());
-  ASSERT_THAT(
-      getsockopt(accepted_.get(), SOL_IP, IP_MTU_DISCOVER, &got, &length),
-      SyscallSucceeds());
-  EXPECT_EQ(got, IP_PMTUDISC_DONT);
-
-  // IP_PMTUDISC_PROBE is not supported by gVisor.
-  set = IP_PMTUDISC_PROBE;
-  if (IsRunningOnGvisor() && !IsRunningWithHostinet()) {
+  // Set and verify each valid PMTUD strategy.
+  int strategies[] = {IP_PMTUDISC_DONT, IP_PMTUDISC_WANT, IP_PMTUDISC_DO,
+                      IP_PMTUDISC_PROBE};
+  for (int strategy : strategies) {
     ASSERT_THAT(
-        setsockopt(accepted_.get(), SOL_IP, IP_MTU_DISCOVER, &set, length),
-        SyscallFailsWithErrno(ENOTSUP));
-  } else {
-    ASSERT_THAT(
-        setsockopt(accepted_.get(), SOL_IP, IP_MTU_DISCOVER, &set, length),
+        setsockopt(accepted_.get(), SOL_IP, IP_MTU_DISCOVER, &strategy, length),
         SyscallSucceeds());
     ASSERT_THAT(
         getsockopt(accepted_.get(), SOL_IP, IP_MTU_DISCOVER, &got, &length),
         SyscallSucceeds());
-    EXPECT_EQ(got, IP_PMTUDISC_PROBE);
+    EXPECT_EQ(got, strategy);
   }
+
+  // Invalid value should fail.
+  int invalid = 99;
+  EXPECT_THAT(
+      setsockopt(accepted_.get(), SOL_IP, IP_MTU_DISCOVER, &invalid, length),
+      SyscallFails());
 }
 
 TEST_P(SimpleTcpSocketTest, GetSocketAcceptConnWithShutdown) {

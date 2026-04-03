@@ -74,6 +74,8 @@ type Endpoint struct {
 	ipv4TOS uint8
 	// +checklocks:mu
 	ipv6TClass uint8
+	// +checklocks:mu
+	pmtud tcpip.PMTUDStrategy
 
 	// Lock ordering: mu > infoMu.
 	infoMu sync.RWMutex `state:"nosave"`
@@ -234,6 +236,7 @@ type WriteContext struct {
 	route *stack.Route
 	ttl   uint8
 	tos   uint8
+	df    bool
 }
 
 func (c *WriteContext) MTU() uint32 {
@@ -362,6 +365,7 @@ func (c *WriteContext) WritePacket(pkt *stack.PacketBuffer, headerIncluded bool)
 		Protocol:              c.e.transProto,
 		TTL:                   c.ttl,
 		TOS:                   c.tos,
+		DF:                    c.df,
 		ExperimentOptionValue: expOptVal,
 	}, pkt)
 
@@ -568,11 +572,28 @@ func (e *Endpoint) AcquireContextForWrite(opts tcpip.WriteOptions) (WriteContext
 		panic(fmt.Sprintf("invalid protocol number = %d", netProto))
 	}
 
+	// Set the DF (Don't Fragment) bit based on the PMTUD strategy,
+	// matching TCP behavior in connect.go.
+	// Note: In gVisor, WANT and DO are treated identically (both set DF).
+	// Linux kernel differentiates them (WANT allows local fragmentation,
+	// DO returns EMSGSIZE), but gVisor's IPv4 layer always allows local
+	// fragmentation for locally-generated packets regardless of DF
+	// (see gvisor.dev/issue/5919).
+	//
+	// PROBE also sets DF, matching Linux ip_dont_fragment(). In Linux,
+	// PROBE differs from DO only in that it ignores incoming ICMP
+	// "Fragmentation Needed" messages (i.e. does not update the cached
+	// route PMTU). Since gVisor does not implement ICMP-based PMTU
+	// feedback for transport sockets, PROBE and DO are functionally
+	// equivalent here.
+	df := e.pmtud == tcpip.PMTUDiscoveryWant || e.pmtud == tcpip.PMTUDiscoveryDo || e.pmtud == tcpip.PMTUDiscoveryProbe
+
 	return WriteContext{
 		e:     e,
 		route: route,
 		ttl:   ttl,
 		tos:   tos,
+		df:    df,
 	}, nil
 }
 
@@ -840,9 +861,18 @@ func (e *Endpoint) GetRemoteAddress() (tcpip.FullAddress, bool) {
 func (e *Endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 	switch opt {
 	case tcpip.MTUDiscoverOption:
-		// Return not supported if the value is not disabling path
-		// MTU discovery.
-		if tcpip.PMTUDStrategy(v) != tcpip.PMTUDiscoveryDont {
+		// Store PMTU discovery settings. The DF bit on outgoing
+		// packets is set accordingly in AcquireContextForWrite.
+		// PROBE is accepted alongside DO/WANT/DONT. In Linux,
+		// PROBE sets DF but ignores ICMP-based PMTU updates;
+		// since gVisor lacks ICMP PMTU feedback, it behaves
+		// identically to DO.
+		switch tcpip.PMTUDStrategy(v) {
+		case tcpip.PMTUDiscoveryWant, tcpip.PMTUDiscoveryDont, tcpip.PMTUDiscoveryDo, tcpip.PMTUDiscoveryProbe:
+			e.mu.Lock()
+			e.pmtud = tcpip.PMTUDStrategy(v)
+			e.mu.Unlock()
+		default:
 			return &tcpip.ErrNotSupported{}
 		}
 
@@ -891,8 +921,10 @@ func (e *Endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 func (e *Endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 	switch opt {
 	case tcpip.MTUDiscoverOption:
-		// The only supported setting is path MTU discovery disabled.
-		return int(tcpip.PMTUDiscoveryDont), nil
+		e.mu.Lock()
+		v := int(e.pmtud)
+		e.mu.Unlock()
+		return v, nil
 
 	case tcpip.MulticastTTLOption:
 		e.mu.Lock()
