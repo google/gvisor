@@ -15,6 +15,7 @@ go_library(
         "restore.go",
         "restore_impl.go",
         "specutils.go",
+        "symlink.go",
     ],
     visibility = ["//:sandbox"],
     deps = [
