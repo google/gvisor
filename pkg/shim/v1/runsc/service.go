@@ -101,9 +101,6 @@ type runscService struct {
 	// platform handles operations related to the console.
 	platform stdio.Platform
 
-	// opts are configuration options specific for this shim.
-	opts Options
-
 	// ex gets notified whenever the container init process or an exec'd process
 	// exits from inside the sandbox.
 	ec chan proc.Exit
@@ -164,7 +161,7 @@ func (s *runscService) Cleanup(ctx context.Context) (*taskAPI.DeleteResponse, er
 	if err := st.load(path); err != nil {
 		return nil, err
 	}
-	r := proc.NewRunsc(s.opts.Root, path, ns, st.Options.BinaryName, nil, nil)
+	r := proc.NewRunsc(st.Options.Root, path, ns, st.Options.BinaryName, nil, nil)
 
 	if err := r.Delete(ctx, s.id, &runsccmd.DeleteOpts{
 		Force: true,
@@ -205,7 +202,7 @@ func (s *runscService) CreateWithFSRestore(ctx context.Context, rfs *extension.C
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	c, err := NewContainer(ctx, s.platform, &s.opts, rfs.Create, rfs.Conf.ImagePath, rfs.Conf.Direct)
+	c, err := NewContainer(ctx, s.platform, rfs.Create, rfs.Conf.ImagePath, rfs.Conf.Direct)
 	if err != nil {
 		return nil, err
 	}

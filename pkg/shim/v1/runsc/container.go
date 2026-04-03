@@ -71,11 +71,12 @@ type Container struct {
 }
 
 // NewContainer returns a new runsc container
-func NewContainer(ctx context.Context, platform stdio.Platform, opts *Options, r *task.CreateTaskRequest, FSRestoreImagePath string, FSRestoreDirect bool) (*Container, error) {
+func NewContainer(ctx context.Context, platform stdio.Platform, r *task.CreateTaskRequest, FSRestoreImagePath string, FSRestoreDirect bool) (*Container, error) {
 	ns, err := namespaces.NamespaceRequired(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("create namespace: %w", err)
 	}
+	var opts Options
 	if r.Options != nil {
 		v, err := typeurl.UnmarshalAny(r.Options)
 		if err != nil {
@@ -96,7 +97,7 @@ func NewContainer(ctx context.Context, platform stdio.Platform, opts *Options, r
 		}
 		if path != "" {
 			// Read runsc options from the config file.
-			if _, err = toml.DecodeFile(path, opts); err != nil {
+			if _, err = toml.DecodeFile(path, &opts); err != nil {
 				return nil, fmt.Errorf("decode config file %q: %w", path, err)
 			}
 		}
@@ -126,7 +127,7 @@ func NewContainer(ctx context.Context, platform stdio.Platform, opts *Options, r
 		log.L.Debugf("Args: %s", os.Args)
 		log.L.Debugf("PID: %d", os.Getpid())
 		log.L.Debugf("ID: %s", r.ID)
-		log.L.Debugf("Options: %+v", *opts)
+		log.L.Debugf("Options: %+v", opts)
 		log.L.Debugf("Bundle: %s", r.Bundle)
 		log.L.Debugf("Terminal: %t", r.Terminal)
 		log.L.Debugf("stdin: %s", r.Stdin)
@@ -142,7 +143,7 @@ func NewContainer(ctx context.Context, platform stdio.Platform, opts *Options, r
 	// the information it needs to undo the operations.
 	st := state{
 		Rootfs:  filepath.Join(r.Bundle, "rootfs"),
-		Options: *opts,
+		Options: opts,
 	}
 	if err := st.save(r.Bundle); err != nil {
 		return nil, err
@@ -195,7 +196,7 @@ func NewContainer(ctx context.Context, platform stdio.Platform, opts *Options, r
 		FSRestoreDirect:    FSRestoreDirect,
 	}
 
-	process, err := newInit(filepath.Join(r.Bundle, "work"), ns, platform, config, opts, st.Rootfs)
+	process, err := newInit(filepath.Join(r.Bundle, "work"), ns, platform, config, &opts, st.Rootfs)
 	if err != nil {
 		return nil, err
 	}

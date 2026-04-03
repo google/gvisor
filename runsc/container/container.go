@@ -2160,7 +2160,7 @@ func nvproxySetup(spec *specs.Spec, conf *config.Config, goferPid int) error {
 		ldconfigPath = "/sbin/ldconfig"
 	}
 
-	devices, err := specutils.ParseNvidiaVisibleDevices(spec)
+	devices, err := specutils.ParseNvidiaVisibleDevices(spec, conf)
 	if err != nil {
 		return fmt.Errorf("failed to get nvidia device numbers: %w", err)
 	}
