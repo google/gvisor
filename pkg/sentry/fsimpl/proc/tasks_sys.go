@@ -49,11 +49,12 @@ const (
 func (fs *filesystem) newSysDir(ctx context.Context, root *auth.Credentials, k *kernel.Kernel) kernfs.Inode {
 	return fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
 		"kernel": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
-			"cap_last_cap": fs.newInode(ctx, root, 0444, newStaticFile(fmt.Sprintf("%d\n", linux.CAP_LAST_CAP))),
-			"hostname":     fs.newInode(ctx, root, 0444, &hostnameData{}),
-			"overflowgid":  fs.newInode(ctx, root, 0444, newStaticFile(fmt.Sprintf("%d\n", auth.OverflowGID))),
-			"overflowuid":  fs.newInode(ctx, root, 0444, newStaticFile(fmt.Sprintf("%d\n", auth.OverflowUID))),
-			"pid_max":      fs.newInode(ctx, root, 0644, newStaticFile(fmt.Sprintf("%d\n", kernel.TasksLimit))),
+			"cap_last_cap":       fs.newInode(ctx, root, 0444, newStaticFile(fmt.Sprintf("%d\n", linux.CAP_LAST_CAP))),
+			"hostname":           fs.newInode(ctx, root, 0444, &hostnameData{}),
+			"overflowgid":        fs.newInode(ctx, root, 0444, newStaticFile(fmt.Sprintf("%d\n", auth.OverflowGID))),
+			"overflowuid":        fs.newInode(ctx, root, 0444, newStaticFile(fmt.Sprintf("%d\n", auth.OverflowUID))),
+			"pid_max":            fs.newInode(ctx, root, 0644, newStaticFile(fmt.Sprintf("%d\n", kernel.TasksLimit))),
+			"randomize_va_space": fs.newInode(ctx, root, 0644, newStaticFile("2\n")),
 			"random": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
 				"boot_id": fs.newInode(ctx, root, 0444, newStaticFile(randUUID())),
 			}),
