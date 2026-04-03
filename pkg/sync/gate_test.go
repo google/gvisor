@@ -103,6 +103,27 @@ func testGateConcurrentOnce(t *testing.T, d time.Duration) {
 	time.Sleep(d / 2)
 }
 
+func TestGateRaceReproduction(t *testing.T) {
+	var g Gate
+	var v int32
+	if !g.Enter() {
+		t.Fatalf("Enter failed")
+	}
+	done := make(chan bool)
+	go func() {
+		g.Close()
+		v = 2 // Used to trigger a write/write race.
+		done <- true
+	}()
+	time.Sleep(50 * time.Millisecond)
+	v = 1
+	g.Leave()
+	<-done
+	if v != 2 {
+		t.Errorf("Unexpected value of v: %d", v)
+	}
+}
+
 func BenchmarkGateEnterLeave(b *testing.B) {
 	var g Gate
 	for i := 0; i < b.N; i++ {
