@@ -96,6 +96,15 @@ const (
 	NVCEB7_VIDEO_ENCODER             = 0x0000ceb7
 	NVCFB7_VIDEO_ENCODER             = 0x0000cfb7
 	NVD1B7_VIDEO_ENCODER             = 0x0000d1b7
+	NVB8D1_VIDEO_NVJPG               = 0x0000b8d1 // Hopper
+	NVC4D1_VIDEO_NVJPG               = 0x0000c4d1 // Turing
+	NVC9D1_VIDEO_NVJPG               = 0x0000c9d1 // Ada
+	NVCDD1_VIDEO_NVJPG               = 0x0000cdd1 // Blackwell
+	NVB8FA_VIDEO_OFA                 = 0x0000b8fa // Hopper
+	NVC6FA_VIDEO_OFA                 = 0x0000c6fa // Ampere
+	NVC7FA_VIDEO_OFA                 = 0x0000c7fa // Ampere
+	NVC9FA_VIDEO_OFA                 = 0x0000c9fa // Ada
+	NVCDFA_VIDEO_OFA                 = 0x0000cdfa // Blackwell
 	AMPERE_CHANNEL_GPFIFO_A          = 0x0000c56f
 	TURING_A                         = 0x0000c597
 	TURING_DMA_COPY_A                = 0x0000c5b5
@@ -719,4 +728,26 @@ type NVA0BC_ALLOC_PARAMETERS struct {
 	VResolution uint32
 	Version     uint32
 	HMem        Handle
+}
+
+// NV_NVJPG_ALLOCATION_PARAMETERS is the alloc params type for
+// NVxxD1_VIDEO_NVJPG classes, from src/common/sdk/nvidia/inc/nvos.h.
+//
+// +marshal
+type NV_NVJPG_ALLOCATION_PARAMETERS struct {
+	_                         structs.HostLayout
+	Size                      uint32
+	ProhibitMultipleInstances uint32
+	EngineInstance            uint32
+}
+
+// NV_OFA_ALLOCATION_PARAMETERS is the alloc params type for
+// NVxxFA_VIDEO_OFA classes, from src/common/sdk/nvidia/inc/nvos.h.
+//
+// +marshal
+type NV_OFA_ALLOCATION_PARAMETERS struct {
+	_                         structs.HostLayout
+	Size                      uint32
+	ProhibitMultipleInstances uint32
+	EngineInstance            uint32
 }
