@@ -3188,6 +3188,20 @@ TEST(ProcSysKernelKeysMax, SetMaxKeys) {
   EXPECT_EQ(mk, 100);
 }
 
+TEST(ProcSysKernel, RandomizeVaSpace) {
+  std::string val = ASSERT_NO_ERRNO_AND_VALUE(
+      GetContents("/proc/sys/kernel/randomize_va_space"));
+  int32_t randomize_va;
+  ASSERT_TRUE(absl::SimpleAtoi(val, &randomize_va));
+  // 0 = no randomization, 1 = conservative, 2 = full.
+  EXPECT_GE(randomize_va, 0);
+  EXPECT_LE(randomize_va, 2);
+  if (IsRunningOnGvisor()) {
+    // gVisor always uses full ASLR, so expect 2.
+    EXPECT_EQ(randomize_va, 2);
+  }
+}
+
 }  // namespace
 }  // namespace testing
 }  // namespace gvisor
