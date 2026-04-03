@@ -224,6 +224,7 @@ go_library(
         "iptables_targets.go",
         "iptables_types.go",
         "multi_port_endpoint_mutex.go",
+        "nat.go",
         "neighbor_cache.go",
         "neighbor_cache_mutex.go",
         "neighbor_entry.go",

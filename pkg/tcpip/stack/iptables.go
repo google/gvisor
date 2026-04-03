@@ -601,7 +601,7 @@ func checkNAT(it *IPTables, table Table, hook Hook, pkt *PacketBuffer, r *Route,
 // See check.
 func (it *IPTables) checkNAT(table Table, hook Hook, pkt *PacketBuffer, r *Route, addressEP AddressableEndpoint, inNicName, outNicName string) bool {
 	t := pkt.tuple
-	if t != nil && t.conn.handlePacket(pkt, hook, r) {
+	if t != nil && handlePacket(pkt, hook, r) {
 		return true
 	}
 
@@ -630,7 +630,7 @@ func (it *IPTables) checkNAT(table Table, hook Hook, pkt *PacketBuffer, r *Route
 	//
 	// If the packet was already NATed, the connection must be NATed.
 	if !natDone {
-		t.conn.maybePerformNoopNAT(pkt, hook, r, dnat)
+		iptMaybePerformNoopNAT(pkt, hook, r, dnat)
 	}
 
 	return true
