@@ -205,6 +205,21 @@ func (r *Runsc) Resume(context context.Context, id string) error {
 	return nil
 }
 
+// Update the current container with the provided resource spec
+// The "-" path reads resources JSON from stdin.
+func (r *Runsc) Update(ctx context.Context, id string, resources *specs.LinuxResources) error {
+	buf := getBuf()
+	defer putBuf(buf)
+
+	if err := json.NewEncoder(buf).Encode(resources); err != nil {
+		return err
+	}
+	args := []string{"update", "--resources=-", id}
+	cmd := r.command(ctx, args...)
+	cmd.Stdin = buf
+	return r.runOrError(cmd)
+}
+
 // Start will start an already created container.
 func (r *Runsc) Start(context context.Context, id string, cio runc.IO) error {
 	return r.start(context, cio, r.command(context, "start", id))
