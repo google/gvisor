@@ -930,6 +930,13 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	if !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
 		// Setting cmd.Env = nil causes cmd to inherit the current process's env.
 		cmd.Env = []string{}
+		// Forward TMPDIR so that os.TempDir() in the sandbox subprocess
+		// resolves to the same directory as in the parent process.
+		// Without this, the sandbox always uses /tmp which may be a
+		// symlink on some systems, causing SafeMount to fail.
+		if tmpDir := os.TempDir(); tmpDir != "/tmp" {
+			cmd.Env = append(cmd.Env, "TMPDIR="+tmpDir)
+		}
 	}
 	if config.CgoEnabled {
 		// Platforms that use stub processes are not compatible with
