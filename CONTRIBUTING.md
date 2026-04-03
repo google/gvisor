@@ -14,6 +14,43 @@ You generally only need to submit a CLA once, so if you've already submitted one
 (even if it was for a different project), you probably don't need to do it
 again.
 
+### AI tool Use
+
+We expect our contributors to embrace AI tools.
+
+This policy ensures that AI-generated contributions are always guided,
+validated, and owned by a skilled human, promoting better software and a
+stronger community than policing how code gets written.
+
+#### Policy
+
+While contributors can use any AI tools to create their contributions, **human
+oversight is mandatory**. All AI-generated content must be thoroughly reviewed
+by the contributor before being submitted for review. The contributor remains
+the sole author and is fully responsible for the contribution's accuracy,
+quality, and maintainability. **AI should augment your abilities, not replace
+your critical judgment.** Contributors should ensure their work meets a high
+standard before seeking review, respecting maintainers' time, and must be
+**prepared to discuss and justify their contributions** during the review
+process.
+
+#### Label AI-assisted Work
+
+**Transparently label all contributions containing substantial AI-generated
+content.** This should be done in the pull request description, commit message,
+or any standard authorship area, for example, by adding
+
+`Assisted-by: Gemini CLI`
+
+to your commit message.
+
+Such transparency is crucial for the community to understand and build best
+practices around AI tool usage. This policy includes, but is not limited to:
+
+-   Code changes in a pull request
+-   Issues or security vulnerabilities
+-   Comments and feedback on pull requests or issues
+
 ### Using GOPATH
 
 Some editors may require the code to be structured in a `GOPATH` directory tree.
