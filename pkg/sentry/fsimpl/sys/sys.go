@@ -192,10 +192,13 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		})
 	}
 	root := fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
-		"block":    fs.newDir(ctx, creds, defaultSysDirMode, nil),
-		"bus":      fs.newDir(ctx, creds, defaultSysDirMode, busSub),
-		"class":    fs.newDir(ctx, creds, defaultSysDirMode, classSub),
-		"dev":      fs.newDir(ctx, creds, defaultSysDirMode, nil),
+		"block": fs.newDir(ctx, creds, defaultSysDirMode, nil),
+		"bus":   fs.newDir(ctx, creds, defaultSysDirMode, busSub),
+		"class": fs.newDir(ctx, creds, defaultSysDirMode, classSub),
+		"dev": fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+			"block": fs.newDir(ctx, creds, defaultSysDirMode, nil),
+			"char":  fs.newDir(ctx, creds, defaultSysDirMode, nil),
+		}),
 		"devices":  fs.newDir(ctx, creds, defaultSysDirMode, devicesSub),
 		"firmware": fs.newDir(ctx, creds, defaultSysDirMode, nil),
 		"fs":       fs.newDir(ctx, creds, defaultSysDirMode, fsDirChildren),
