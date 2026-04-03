@@ -84,7 +84,8 @@ func GPUFunctionalityRequestedViaHook(spec *specs.Spec, conf *config.Config) boo
 
 // Precondition: NVProxyEnabled(spec, conf).
 func gpuFunctionalityRequestedViaHook(spec *specs.Spec, conf *config.Config) bool {
-	if !isNvidiaHookPresent(spec, conf) {
+	kind := findNvidiaHook(spec, conf)
+	if kind == nvidiaHookNone {
 		return false
 	}
 	// In Docker mode, GPU access is only requested if NVIDIA_VISIBLE_DEVICES is
@@ -92,34 +93,72 @@ func gpuFunctionalityRequestedViaHook(spec *specs.Spec, conf *config.Config) boo
 	if spec.Process == nil {
 		return false
 	}
-	nvd, _ := EnvVar(spec.Process.Env, nvidiaVisibleDevsEnv)
+	nvd := nvidiaVisibleDevsEnvVar(spec.Process.Env, kind)
 	// A value of "none" means "no GPU device, but still access to driver
 	// functionality", so it is not a value we check for here.
 	return nvd != "" && nvd != "void"
 }
 
-func isNvidiaHookPresent(spec *specs.Spec, conf *config.Config) bool {
-	if conf.NVProxyDocker {
-		// This has the effect of injecting the nvidia-container-runtime-hook.
-		return true
-	}
+type nvidiaHookKind uint8
 
+const (
+	nvidiaHookNone nvidiaHookKind = iota
+	nvidiaHookLegacy
+	nvidiaHookCDI
+)
+
+func findNvidiaHook(spec *specs.Spec, conf *config.Config) nvidiaHookKind {
 	if spec.Hooks != nil {
+		for _, h := range spec.Hooks.CreateContainer {
+			if strings.HasSuffix(h.Path, "/nvidia-cdi-hook") {
+				return nvidiaHookCDI
+			}
+		}
 		for _, h := range spec.Hooks.Prestart {
 			if strings.HasSuffix(h.Path, "/nvidia-container-runtime-hook") {
-				return true
+				return nvidiaHookLegacy
 			}
 		}
 	}
-	return false
+	if conf.NVProxyDocker {
+		// This has the effect of injecting the nvidia-container-runtime-hook.
+		return nvidiaHookLegacy
+	}
+	return nvidiaHookNone
+}
+
+func nvidiaVisibleDevsEnvVar(envs []string, kind nvidiaHookKind) string {
+	if kind != nvidiaHookCDI {
+		nvd, _ := EnvVar(envs, nvidiaVisibleDevsEnv)
+		return nvd
+	}
+	// After
+	// https://github.com/NVIDIA/nvidia-container-toolkit/commit/88ad42ccd16a3ba6fd7867511d4070aa8111b8fa,
+	// when Docker communicates with nvidia-container-toolkit via CDI, the
+	// latter always appends a "NVIDIA_VISIBLE_DEVICES=void" environment
+	// variable to the container spec, which we want to ignore.
+	const prefix = nvidiaVisibleDevsEnv + "="
+	nvds := make([]string, 0, 2)
+	for _, env := range envs {
+		if strings.HasPrefix(env, prefix) {
+			nvds = append(nvds, env[len(prefix):])
+		}
+	}
+	if len(nvds) == 0 {
+		return ""
+	}
+	if len(nvds) > 1 && nvds[len(nvds)-1] == "void" {
+		return nvds[len(nvds)-2]
+	}
+	return nvds[len(nvds)-1]
 }
 
 // ParseNvidiaVisibleDevices parses NVIDIA_VISIBLE_DEVICES env var and returns
 // the devices specified in it. This can be passed to nvidia-container-cli.
 //
-// Precondition: conf.NVProxyDocker && GPUFunctionalityRequested(spec, conf).
-func ParseNvidiaVisibleDevices(spec *specs.Spec) (string, error) {
-	nvd, _ := EnvVar(spec.Process.Env, nvidiaVisibleDevsEnv)
+// Precondition: GPUFunctionalityRequestedViaHook(spec, conf).
+func ParseNvidiaVisibleDevices(spec *specs.Spec, conf *config.Config) (string, error) {
+	nvd := nvidiaVisibleDevsEnvVar(spec.Process.Env, findNvidiaHook(spec, conf))
 	if nvd == "none" {
 		return "", nil
 	}
