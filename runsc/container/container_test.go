@@ -454,6 +454,7 @@ func sleepSpecConf(t *testing.T) (*specs.Spec, *config.Config) {
 // It verifies after each step that the container can be loaded from disk, and
 // has the correct status.
 func TestLifecycle(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	// Start the child reaper.
 	childReaper := &testutil.Reaper{}
 	childReaper.Start()
@@ -590,6 +591,8 @@ func TestLifecycle(t *testing.T) {
 
 // Test the we can execute the application with different path formats.
 func TestExePath(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
+	log.Warningf("TestExePath")
 	// Create two directories that will be prepended to PATH.
 	firstPath, err := os.MkdirTemp(testutil.TmpDir(), "first")
 	if err != nil {
@@ -689,6 +692,7 @@ func TestExePath(t *testing.T) {
 
 // Test the we can retrieve the application exit status from the container.
 func TestAppExitStatus(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	// First container will succeed.
 	succSpec := testutil.NewSpecWithArgs("true")
 	conf := testutil.TestConfig(t)
@@ -739,6 +743,7 @@ func TestAppExitStatus(t *testing.T) {
 
 // TestExec verifies that a container can exec a new program.
 func TestExec(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			dir, err := os.MkdirTemp(testutil.TmpDir(), "exec-test")
@@ -890,6 +895,7 @@ func TestExec(t *testing.T) {
 // TestExecProcList verifies that a container can exec a new program and it
 // shows correctly in the process list.
 func TestExecProcList(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			const uid = 343
@@ -944,6 +950,7 @@ func TestExecProcList(t *testing.T) {
 
 // TestKillPid verifies that we can signal individual exec'd processes.
 func TestKillPid(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			app, err := testutil.FindFile("test/cmd/test_app/test_app")
@@ -1173,6 +1180,7 @@ func testCheckpointRestore(t *testing.T, conf *config.Config, compression statef
 
 // TestCheckpointRestore does the checkpoint/restore test on each platform.
 func TestCheckpointRestore(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	// Skip overlay because test requires writing to host file.
 	for name, conf := range configs(t, true /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
@@ -1194,6 +1202,7 @@ func TestCheckpointRestore(t *testing.T) {
 // TestCheckpointRestoreExecKilled checks that exec'd processes are killed
 // after the container is restored.
 func TestCheckpointRestoreExecKilled(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	spec, conf := sleepSpecConf(t)
 	_, bundleDir, cu, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
@@ -1300,6 +1309,7 @@ func TestCheckpointRestoreExecKilled(t *testing.T) {
 // TestCheckpointRestoreCreateMountPoint tests that mountpoints created during
 // container creation are re-created after checkpoint/restore.
 func TestCheckpointRestoreCreateMountPoint(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	dir, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-test")
 	if err != nil {
 		t.Fatalf("os.MkdirTemp() failed: %v", err)
@@ -1383,6 +1393,7 @@ func TestCheckpointRestoreCreateMountPoint(t *testing.T) {
 // TestUnixDomainSockets checks that Checkpoint/Restore works in cases
 // with filesystem Unix Domain Socket use.
 func TestUnixDomainSockets(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	// Skip overlay because test requires writing to host file.
 	for name, conf := range configs(t, true /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
@@ -1510,6 +1521,7 @@ func TestUnixDomainSockets(t *testing.T) {
 // recreated. Then it resumes the container, verify that the file gets created
 // again.
 func TestPauseResume(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	for name, conf := range configs(t, true /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			tmpDir, err := os.MkdirTemp(testutil.TmpDir(), "lock")
@@ -1587,6 +1599,7 @@ func TestPauseResume(t *testing.T) {
 // with calls to pause and resume and that pausing and resuming only
 // occurs given the correct state.
 func TestPauseResumeStatus(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	spec, conf := sleepSpecConf(t)
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
@@ -1648,6 +1661,7 @@ func TestPauseResumeStatus(t *testing.T) {
 //   - Running exec as non-root with CAP_DAC_OVERRIDE succeeds because it skips
 //     this check.
 func TestCapabilities(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	// Pick uid/gid different than ours.
 	uid := auth.KUID(os.Getuid() + 1)
 	gid := auth.KGID(os.Getgid() + 1)
@@ -1727,6 +1741,7 @@ func TestCapabilities(t *testing.T) {
 // TestRunNonRoot checks that sandbox can be configured when running as
 // non-privileged user.
 func TestRunNonRoot(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	for name, conf := range configs(t, true /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			spec := testutil.NewSpecWithArgs("/bin/true")
@@ -1771,6 +1786,7 @@ func TestRunNonRoot(t *testing.T) {
 // TestMountNewDir checks that runsc will create destination directory if it
 // doesn't exit.
 func TestMountNewDir(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			root, err := os.MkdirTemp(testutil.TmpDir(), "root")
@@ -1802,6 +1818,7 @@ func TestMountNewDir(t *testing.T) {
 }
 
 func TestReadonlyRoot(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			spec, _ := sleepSpecConf(t)
@@ -1850,6 +1867,7 @@ func TestReadonlyRoot(t *testing.T) {
 }
 
 func TestReadonlyMount(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			dir, err := os.MkdirTemp(testutil.TmpDir(), "ro-mount")
@@ -1909,6 +1927,7 @@ func TestReadonlyMount(t *testing.T) {
 }
 
 func TestUIDMap(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	for name, conf := range configs(t, true /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			testDir, err := os.MkdirTemp(testutil.TmpDir(), "test-mount")
@@ -1992,6 +2011,7 @@ func TestUIDMap(t *testing.T) {
 // TestAbbreviatedIDs checks that runsc supports using abbreviated container
 // IDs in place of full IDs.
 func TestAbbreviatedIDs(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	rootDir, cleanup, err := testutil.SetupRootDir()
 	if err != nil {
 		t.Fatalf("error creating root dir: %v", err)
@@ -2055,6 +2075,7 @@ func TestAbbreviatedIDs(t *testing.T) {
 }
 
 func TestGoferExits(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	spec, conf := sleepSpecConf(t)
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 
@@ -2094,6 +2115,7 @@ func TestGoferExits(t *testing.T) {
 }
 
 func TestRootNotMount(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	appSym, err := testutil.FindFile("test/cmd/test_app/test_app")
 	if err != nil {
 		t.Fatal("error finding test_app:", err)
@@ -2131,6 +2153,7 @@ func TestRootNotMount(t *testing.T) {
 }
 
 func TestUserLog(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	app, err := testutil.FindFile("test/cmd/test_app/test_app")
 	if err != nil {
 		t.Fatal("error finding test_app:", err)
@@ -2178,6 +2201,7 @@ func TestUserLog(t *testing.T) {
 }
 
 func TestWaitOnExitedSandbox(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			// Run a shell that sleeps for 1 second and then exits with a
@@ -2231,6 +2255,7 @@ func TestWaitOnExitedSandbox(t *testing.T) {
 }
 
 func TestDestroyNotStarted(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	spec, conf := sleepSpecConf(t)
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
@@ -2255,6 +2280,7 @@ func TestDestroyNotStarted(t *testing.T) {
 
 // TestDestroyStarting attempts to force a race between start and destroy.
 func TestDestroyStarting(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	for i := 0; i < 10; i++ {
 		spec, conf := sleepSpecConf(t)
 		rootDir, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
@@ -2300,6 +2326,7 @@ func TestDestroyStarting(t *testing.T) {
 }
 
 func TestCreateWorkingDir(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			tmpDir, err := os.MkdirTemp(testutil.TmpDir(), "cwd-create")
@@ -2323,6 +2350,7 @@ func TestCreateWorkingDir(t *testing.T) {
 // TestMountPropagation verifies that mount propagates to slave but not to
 // private mounts.
 func TestMountPropagation(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	// Setup dir structure:
 	//   - src: is mounted as shared and is used as source for both private and
 	//     slave mounts
@@ -2414,6 +2442,7 @@ func TestMountPropagation(t *testing.T) {
 }
 
 func TestMountSymlink(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			dir, err := os.MkdirTemp(testutil.TmpDir(), "mount-symlink")
@@ -2483,6 +2512,7 @@ func TestMountSymlink(t *testing.T) {
 
 // Check that --net-raw disables the CAP_NET_RAW capability.
 func TestNetRaw(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	capNetRaw := strconv.FormatUint(uint64(auth.CapabilitySetOf(linux.CAP_NET_RAW)), 10)
 	app, err := testutil.FindFile("test/cmd/test_app/test_app")
 	if err != nil {
@@ -2507,6 +2537,7 @@ func TestNetRaw(t *testing.T) {
 
 // TestTTYField checks TTY field returned by container.Processes().
 func TestTTYField(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	stop := testutil.StartReaper()
 	defer stop()
 
@@ -2596,6 +2627,7 @@ func TestTTYField(t *testing.T) {
 // Test that container can run even when there are corrupt state files in the
 // root directiry.
 func TestCreateWithCorruptedStateFile(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	conf := testutil.TestConfig(t)
 	spec := testutil.NewSpecWithArgs("/bin/true")
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
@@ -2630,6 +2662,7 @@ func TestCreateWithCorruptedStateFile(t *testing.T) {
 }
 
 func TestBindMountByOption(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			dir, err := os.MkdirTemp(testutil.TmpDir(), "bind-mount")
@@ -2653,6 +2686,7 @@ func TestBindMountByOption(t *testing.T) {
 // TestRlimits sets limit to number of open files and checks that the limit
 // is propagated to the container.
 func TestRlimits(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	file, err := os.CreateTemp(testutil.TmpDir(), "ulimit")
 	if err != nil {
 		t.Fatal(err)
@@ -2680,6 +2714,7 @@ func TestRlimits(t *testing.T) {
 // TestRlimitsExec sets limit to number of open files and checks that the limit
 // is propagated to exec'd processes.
 func TestRlimitsExec(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	spec, conf := sleepSpecConf(t)
 	spec.Process.Rlimits = []specs.POSIXRlimit{
 		{Type: "RLIMIT_NOFILE", Hard: 1000, Soft: 100},
@@ -2716,6 +2751,7 @@ func TestRlimitsExec(t *testing.T) {
 
 // TestUsage checks that usage generates the expected memory usage.
 func TestUsage(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	spec, conf := sleepSpecConf(t)
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
@@ -2770,6 +2806,7 @@ func TestUsage(t *testing.T) {
 
 // TestUsageFD checks that usagefd generates the expected memory usage.
 func TestUsageFD(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	spec, conf := sleepSpecConf(t)
 
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
@@ -2857,6 +2894,7 @@ func TestUsageFD(t *testing.T) {
 
 // TestProfile checks that profiling options generate profiles.
 func TestProfile(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	// Perform a non-trivial amount of work so we actually capture
 	// something in the profiles.
 	spec := testutil.NewSpecWithArgs("/bin/bash", "-c", "true")
@@ -2901,6 +2939,7 @@ func TestProfile(t *testing.T) {
 // TestSaveSystemdCgroup emulates a sandbox saving while configured with the
 // systemd cgroup driver.
 func TestSaveSystemdCgroup(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	spec, conf := sleepSpecConf(t)
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
@@ -2940,6 +2979,7 @@ func TestSaveSystemdCgroup(t *testing.T) {
 // Kubernetes daemonsets/containers to communicate with sandboxes without the
 // need to join the host network namespaces.
 func TestSandboxCommunicationUnshare(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	spec, conf := sleepSpecConf(t)
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
@@ -3024,6 +3064,7 @@ func createPipes() (*os.File, *os.File, *os.File, *os.File, func(), error) {
 // TestFDPassingRun checks that file descriptors passed into a new container
 // work as expected.
 func TestFDPassingRun(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	guestRead, hostWrite, hostRead, guestWrite, cleanup, err := createPipes()
 	if err != nil {
 		t.Fatalf("error creating pipes: %v", err)
@@ -3078,6 +3119,7 @@ func TestFDPassingRun(t *testing.T) {
 // TestFDPassingExec checks that file descriptors passed into an already
 // running container work as expected.
 func TestFDPassingExec(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	guestRead, hostWrite, hostRead, guestWrite, cleanup, err := createPipes()
 	if err != nil {
 		t.Fatalf("error creating pipes: %v", err)
@@ -3151,6 +3193,7 @@ func findInPath(filename string) string {
 // TestExecFDRun checks that an executable from the host can be started inside
 // a container.
 func TestExecFDRun(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	// In the guest, read from the host and write the result back to the host.
 	conf := testutil.TestConfig(t)
 	// Note that we do not supply the name or path of the echo binary here.
@@ -3217,6 +3260,7 @@ func TestExecFDRun(t *testing.T) {
 // TestExecFDExec checks that an executable from the host can be started from a
 // file descriptor inside an already running container.
 func TestExecFDExec(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	// We just sleep here because we want to test execution in an already
 	// running container.
 	spec, conf := sleepSpecConf(t)
@@ -3413,6 +3457,7 @@ find $dir -type l -o -type f | sort | xargs cat | md5sum`), 0755); err != nil {
 // TestMountEROFS checks that the checksums from the target directory in the container
 // are identical with the ones from the source directory on the host.
 func TestMountEROFS(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	// Skip this test if mkfs.erofs is not available.
 	skipIfNotAvailable(t, "mkfs.erofs")
 
@@ -3479,6 +3524,7 @@ func TestMountEROFS(t *testing.T) {
 // are identical with the ones from the source directory on the host.
 // This test verifies EROFS mounts specified in config.json.
 func TestMountEROFSConfig(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	// Skip this test if mkfs.erofs is not available.
 	skipIfNotAvailable(t, "mkfs.erofs")
 
@@ -3571,6 +3617,7 @@ func createRootfsEROFS(dir string) (string, string, error) {
 // TestRootfsEROFS starts a container using an EROFS image as the rootfs and checks that
 // the rootfs in the container is an EROFS.
 func TestRootfsEROFS(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	// Skip this test if mkfs.erofs or busybox are not available.
 	skipIfNotAvailable(t, "mkfs.erofs", "busybox")
 
@@ -3645,6 +3692,7 @@ func TestRootfsEROFS(t *testing.T) {
 // TestCheckpointRestoreEROFS does the checkpoint/restore test on each platform using
 // an EROFS image as the rootfs.
 func TestCheckpointRestoreEROFS(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	// Skip this test if mkfs.erofs or busybox are not available.
 	skipIfNotAvailable(t, "mkfs.erofs", "busybox")
 
@@ -3687,6 +3735,7 @@ func TestCheckpointRestoreEROFS(t *testing.T) {
 // TestLookupEROFS reads the files in EROFS images, which contain some random files,
 // and checks if the data is as expected.
 func TestLookupEROFS(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	// Skip this test if mkfs.erofs is not available.
 	skipIfNotAvailable(t, "mkfs.erofs")
 
@@ -3806,6 +3855,7 @@ func int64Ptr(v int64) *int64 {
 }
 
 func TestSpecValidation(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	tests := []struct {
 		name    string
 		mutate  func(spec, restoreSpec *specs.Spec, mountPath, restoreMntPath string)
@@ -4160,6 +4210,7 @@ func snapshotRootfsUpperLayer(conf *config.Config, spec *specs.Spec) (string, er
 }
 
 func TestTarRootfsUpperLayer(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	conf := testutil.TestConfig(t)
 	conf.Overlay2.Set("root:memory")
 	spec, _ := sleepSpecConf(t)
@@ -4260,6 +4311,7 @@ func processSnapBytes(data []byte, lineCounts map[string]int, increment int) err
 // Without preserving this xattr in the tar, stale files from the lower layer
 // would be resurrected after restore.
 func TestTarRootfsUpperLayerOpaqueDir(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	conf := testutil.TestConfig(t)
 	conf.Overlay2.Set("root:memory")
 
@@ -4366,6 +4418,7 @@ func TestTarRootfsUpperLayerOpaqueDir(t *testing.T) {
 }
 
 func TestSpecValidationIgnore(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	conf := testutil.TestConfig(t)
 	if err := conf.RestoreSpecValidation.Set("ignore"); err != nil {
 		t.Fatalf("error in setting restore-spec-validation flag: %v", err)
@@ -4385,6 +4438,7 @@ func TestSpecValidationIgnore(t *testing.T) {
 }
 
 func TestSpecValidationForArgs(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	tests := []struct {
 		name        string
 		args        []string
@@ -4450,6 +4504,7 @@ func TestSpecValidationForArgs(t *testing.T) {
 }
 
 func TestSpecValidationForCapabilities(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	conf := testutil.TestConfig(t)
 	oldSpecs := make(map[string]*specs.Spec)
 	spec, _ := sleepSpecConf(t)
@@ -4467,6 +4522,7 @@ func TestSpecValidationForCapabilities(t *testing.T) {
 }
 
 func TestCheckpointResume(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	for name, conf := range configs(t, true /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			dir, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-test")
@@ -4530,6 +4586,7 @@ func TestCheckpointResume(t *testing.T) {
 }
 
 func TestMarkerFile(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	app, err := testutil.FindFile("test/cmd/test_app/test_app")
 	if err != nil {
 		t.Fatal("error finding test_app:", err)
@@ -4550,6 +4607,7 @@ func TestMarkerFile(t *testing.T) {
 }
 
 func TestIPv6DisableAllSysctl(t *testing.T) {
+	log.Warningf("!!!!!!!!! running --- %v", t.Name())
 	tests := []struct {
 		name         string
 		ipv6Disabled bool
