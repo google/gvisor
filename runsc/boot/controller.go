@@ -389,7 +389,7 @@ func (cm *containerManager) StartSubcontainer(args *StartArgs, _ *struct{}) erro
 	cm.l.mu.Lock()
 	state := cm.l.state
 	cm.l.mu.Unlock()
-	if state != started {
+	if state != started && state != restored {
 		if state == restoringUnstarted {
 			// Translate the `runsc start` to `runsc restore`.
 			// TODO(b/441106898): Move this to the shim once single-shim-per-pod is implemented.
