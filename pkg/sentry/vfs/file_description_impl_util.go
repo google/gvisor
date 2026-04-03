@@ -145,6 +145,12 @@ func (FileDescriptionDefaultImpl) ConfigureMMap(ctx context.Context, opts *memma
 // Ioctl implements FileDescriptionImpl.Ioctl analogously to
 // file_operations::unlocked_ioctl == NULL in Linux.
 func (FileDescriptionDefaultImpl) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
+	// Return EOPNOTSUPP for reflink ioctls when the filesystem
+	// does not support remap_file_range, matching Linux behavior.
+	switch args[1].Uint() {
+	case linux.FICLONE, linux.FICLONERANGE, linux.FIDEDUPERANGE:
+		return 0, linuxerr.EOPNOTSUPP
+	}
 	return 0, linuxerr.ENOTTY
 }
 

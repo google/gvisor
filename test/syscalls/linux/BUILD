@@ -1138,6 +1138,7 @@ cc_binary(
         "//test/util:file_descriptor",
         "//test/util:signal_util",
         "//test/util:socket_util",
+        "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",
     ],

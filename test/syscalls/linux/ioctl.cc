@@ -15,6 +15,7 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <linux/fs.h>
 #include <net/if.h>
 #include <netdb.h>
 #include <signal.h>
@@ -30,6 +31,7 @@
 #include "test/util/file_descriptor.h"
 #include "test/util/signal_util.h"
 #include "test/util/socket_util.h"
+#include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
@@ -421,6 +423,53 @@ std::vector<SocketKind> IoctlSocketTypes() {
 
 INSTANTIATE_TEST_SUITE_P(IoctlTest, IoctlTestSIOCGIFCONF,
                          ::testing::ValuesIn(IoctlSocketTypes()));
+
+// FICLONE/FICLONERANGE/FIDEDUPERANGE should return EOPNOTSUPP on
+// filesystems that do not support reflink (e.g. tmpfs).
+TEST_F(IoctlTest, FicloneReturnsEopnotsupp) {
+  auto src = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  auto dst = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const FileDescriptor src_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(src.path(), O_RDONLY));
+  const FileDescriptor dst_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(dst.path(), O_WRONLY));
+
+  EXPECT_THAT(ioctl(dst_fd.get(), FICLONE, src_fd.get()),
+              SyscallFailsWithErrno(EOPNOTSUPP));
+}
+
+TEST_F(IoctlTest, FiclonerangeReturnsEopnotsupp) {
+  auto src = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  auto dst = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const FileDescriptor src_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(src.path(), O_RDONLY));
+  const FileDescriptor dst_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(dst.path(), O_WRONLY));
+
+  struct file_clone_range range = {};
+  range.src_fd = src_fd.get();
+  EXPECT_THAT(ioctl(dst_fd.get(), FICLONERANGE, &range),
+              SyscallFailsWithErrno(EOPNOTSUPP));
+}
+
+TEST_F(IoctlTest, FideduperangeReturnsEopnotsupp) {
+  auto src = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  auto dst = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const FileDescriptor src_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(src.path(), O_RDONLY));
+  const FileDescriptor dst_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(dst.path(), O_RDWR));
+
+  struct file_dedupe_range* range = static_cast<struct file_dedupe_range*>(
+      calloc(1, sizeof(*range) + sizeof(struct file_dedupe_range_info)));
+  ASSERT_NE(range, nullptr);
+  range->src_length = 0;
+  range->dest_count = 1;
+  range->info[0].dest_fd = dst_fd.get();
+  EXPECT_THAT(ioctl(src_fd.get(), FIDEDUPERANGE, range),
+              SyscallFailsWithErrno(EOPNOTSUPP));
+  free(range);
+}
 
 }  // namespace
 
