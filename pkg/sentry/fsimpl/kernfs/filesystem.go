@@ -646,6 +646,9 @@ afterTrailingSymlink:
 		parent.inode.Watches().Notify(ctx, pc, linux.IN_CREATE, 0, vfs.PathEvent, false /* unlinked */)
 		fd, err := child.inode.Open(ctx, rp, &child, opts)
 		child.DecRef(ctx)
+		if fd != nil {
+			fd.SetCreated()
+		}
 		return fd, err
 	}
 	if err != nil {

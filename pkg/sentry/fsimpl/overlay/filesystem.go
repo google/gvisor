@@ -1039,6 +1039,7 @@ func (fs *filesystem) createAndOpenLocked(ctx context.Context, rp *vfs.Resolving
 		return nil, err
 	}
 	parent.watches.Notify(ctx, childName, linux.IN_CREATE, 0 /* cookie */, vfs.PathEvent, false /* unlinked */)
+	fd.vfsfd.SetCreated()
 	return &fd.vfsfd, nil
 }
 

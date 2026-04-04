@@ -2530,6 +2530,66 @@ TEST(InotifyTest, NotifyNoDeadlock) {
   }
 }
 
+// Regression test: open(O_TRUNC) on an existing file should generate
+// IN_MODIFY before IN_OPEN, matching Linux's handle_truncate() behavior.
+TEST(Inotify, OpenWithTruncGeneratesModifyBeforeOpen) {
+  const TempPath root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const TempPath file =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(root.path()));
+
+  // Write some data so the file is non-empty.
+  {
+    const FileDescriptor tmp_fd =
+        ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_WRONLY));
+    const std::string data = "some content";
+    EXPECT_THAT(write(tmp_fd.get(), data.c_str(), data.length()),
+                SyscallSucceeds());
+  }  // tmp_fd closed here, before setting up watches.
+
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+  const int dir_wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(fd.get(), root.path(), IN_ALL_EVENTS));
+  const int file_wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(fd.get(), file.path(), IN_ALL_EVENTS));
+
+  // Open with O_TRUNC on the existing file.
+  const FileDescriptor trunc_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_WRONLY | O_TRUNC));
+
+  const std::vector<Event> events =
+      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(fd.get()));
+  // IN_MODIFY must come before IN_OPEN, on both the directory and file watches.
+  ASSERT_THAT(events,
+              Are({Event(IN_MODIFY, dir_wd, Basename(file.path())),
+                   Event(IN_MODIFY, file_wd),
+                   Event(IN_OPEN, dir_wd, Basename(file.path())),
+                   Event(IN_OPEN, file_wd)}));
+}
+
+// open(O_CREAT|O_TRUNC) on a new file should NOT generate IN_MODIFY,
+// because Linux skips handle_truncate() for newly created files
+// (FMODE_CREATED).
+TEST(Inotify, OpenCreateTruncNewFileNoModify) {
+  const TempPath root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+  const int dir_wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(fd.get(), root.path(), IN_ALL_EVENTS));
+
+  // Create a new file with O_CREAT|O_TRUNC.
+  const std::string newpath = JoinPath(root.path(), "newfile");
+  const FileDescriptor new_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(newpath, O_WRONLY | O_CREAT | O_TRUNC, 0644));
+
+  const std::vector<Event> events =
+      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(fd.get()));
+  // Should see IN_CREATE and IN_OPEN, but no IN_MODIFY.
+  ASSERT_THAT(events, Are({Event(IN_CREATE, dir_wd, "newfile"),
+                           Event(IN_OPEN, dir_wd, "newfile")}));
+}
+
 // NOTE(b/239215242): Regression test.
 TEST(Inotify, KernfsBasic) {
   const FileDescriptor fd =
