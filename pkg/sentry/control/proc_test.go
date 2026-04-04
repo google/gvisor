@@ -42,6 +42,7 @@ func TestProcessListTable(t *testing.T) {
 					UID:   0,
 					PID:   0,
 					PPID:  0,
+					PGID:  0,
 					C:     0,
 					TTY:   "?",
 					STime: "0",
@@ -52,6 +53,7 @@ func TestProcessListTable(t *testing.T) {
 					UID:   1,
 					PID:   1,
 					PPID:  1,
+					PGID:  1,
 					C:     1,
 					TTY:   "pts/4",
 					STime: "1",
@@ -70,6 +72,58 @@ func TestProcessListTable(t *testing.T) {
 
 		if tc.expected != output {
 			t.Errorf("PrintTable(%v): got:\n%s\nwant:\n%s", tc.pl, output, tc.expected)
+		}
+	}
+}
+
+func TestProcessListToJSONFull(t *testing.T) {
+	testCases := []struct {
+		pl       []*Process
+		expected string
+	}{
+		{
+			pl:       []*Process{},
+			expected: "[]",
+		},
+		{
+			pl: []*Process{
+				{
+					UID:   1,
+					PID:   2,
+					PPID:  3,
+					PGID:  4,
+					C:     5,
+					TTY:   "pts/4",
+					STime: "1",
+					Time:  "2",
+					Cmd:   "one",
+				},
+			},
+			expected: `[
+  {
+    "uid": 1,
+    "pid": 2,
+    "ppid": 3,
+    "pgid": 4,
+    "threads": null,
+    "c": 5,
+    "tty": "pts/4",
+    "stime": "1",
+    "time": "2",
+    "cmd": "one"
+  }
+]`,
+		},
+	}
+
+	for _, tc := range testCases {
+		output, err := ProcessListToJSON(tc.pl)
+		if err != nil {
+			t.Errorf("failed to generate JSON: %v", err)
+		}
+
+		if tc.expected != output {
+			t.Errorf("ProcessListToJSON(%v): got:\n%s\nwant:\n%s", tc.pl, output, tc.expected)
 		}
 	}
 }
