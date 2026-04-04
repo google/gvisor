@@ -202,7 +202,7 @@ func synSentStateReply(t *TCB, tcp header.TCP, dataLen int) Result {
 			t.original.shiftCnt = maxWindowShift
 		}
 		if t.reply.shiftCnt > maxWindowShift {
-			t.original.shiftCnt = maxWindowShift
+			t.reply.shiftCnt = maxWindowShift
 		}
 	} else {
 		t.original.shiftCnt = 0
@@ -212,10 +212,9 @@ func synSentStateReply(t *TCB, tcp header.TCP, dataLen int) Result {
 	irs := seqnum.Value(tcp.SequenceNumber())
 	t.reply.una = irs
 	t.reply.nxt = irs.Add(logicalLen(tcp, dataLen, seqnum.Size(t.reply.end) /* end currently holds the receive window size */))
-	t.reply.end <<= t.reply.shiftCnt
 	t.reply.end.UpdateForward(seqnum.Size(irs))
 
-	windowSize := t.original.windowSize(tcp)
+	windowSize := seqnum.Size(tcp.WindowSize())
 	t.original.end = t.original.una.Add(windowSize)
 
 	// If the ACK was set (it is acceptable), update our unacknowledgement
