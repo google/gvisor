@@ -76,7 +76,7 @@ func (fs *filesystem) newSysDir(ctx context.Context, root *auth.Credentials, k *
 			"version":   fs.newInode(ctx, root, 0444, newStaticFile(version.LinuxVersion)),
 		}),
 		"fs": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
-			"nr_open": fs.newInode(ctx, root, 0644, &atomicInt32File{val: &k.MaxFDLimit, min: 8, max: kernel.MaxFdLimit}),
+			"nr_open": fs.newInode(ctx, root, 0644, &atomicInt32File{val: &k.MaxFDLimit, min: 8, max: kernel.MaxFdLimit, requiredCap: linux.CAP_SYS_ADMIN}),
 		}),
 		"vm": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
 			"max_map_count":     fs.newInode(ctx, root, 0444, newStaticFile("2147483647\n")),
@@ -236,6 +236,12 @@ func (d *tcpSackData) Write(ctx context.Context, _ *vfs.FileDescription, src use
 		// No need to handle partial writes thus far.
 		return 0, linuxerr.EINVAL
 	}
+	// Linux requires CAP_NET_ADMIN for writes to /proc/sys/net sysctls.
+	// See net/sysctl_net.c:net_ctl_permissions().
+	creds := auth.CredentialsFromContext(ctx)
+	if !creds.HasRootCapability(linux.CAP_NET_ADMIN) {
+		return 0, linuxerr.EPERM
+	}
 	buf := make([]int32, 1)
 	n, err := ParseInt32Vec(ctx, src, buf)
 	if err != nil || n == 0 {
@@ -276,6 +282,10 @@ func (d *tcpRecoveryData) Write(ctx context.Context, _ *vfs.FileDescription, src
 	if offset != 0 {
 		// No need to handle partial writes thus far.
 		return 0, linuxerr.EINVAL
+	}
+	creds := auth.CredentialsFromContext(ctx)
+	if !creds.HasRootCapability(linux.CAP_NET_ADMIN) {
+		return 0, linuxerr.EPERM
 	}
 	buf := make([]int32, 1)
 	n, err := ParseInt32Vec(ctx, src, buf)
@@ -323,6 +333,10 @@ func (d *tcpMemData) Write(ctx context.Context, _ *vfs.FileDescription, src user
 	if offset != 0 {
 		// No need to handle partial writes thus far.
 		return 0, linuxerr.EINVAL
+	}
+	creds := auth.CredentialsFromContext(ctx)
+	if !creds.HasRootCapability(linux.CAP_NET_ADMIN) {
+		return 0, linuxerr.EPERM
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -449,6 +463,10 @@ func (pr *portRange) Write(ctx context.Context, _ *vfs.FileDescription, src user
 		// No need to handle partial writes thus far.
 		return 0, linuxerr.EINVAL
 	}
+	creds := auth.CredentialsFromContext(ctx)
+	if !creds.HasRootCapability(linux.CAP_NET_ADMIN) {
+		return 0, linuxerr.EPERM
+	}
 
 	ports := make([]int32, 2)
 	n, err := ParseInt32Vec(ctx, src, ports)
@@ -480,8 +498,9 @@ func (pr *portRange) Write(ctx context.Context, _ *vfs.FileDescription, src user
 type atomicInt32File struct {
 	kernfs.DynamicBytesFile
 
-	val      *atomicbitops.Int32
-	min, max int32
+	val         *atomicbitops.Int32
+	min, max    int32
+	requiredCap linux.Capability
 }
 
 var _ vfs.WritableDynamicBytesSource = (*atomicInt32File)(nil)
@@ -497,6 +516,12 @@ func (f *atomicInt32File) Write(ctx context.Context, _ *vfs.FileDescription, src
 	if offset != 0 {
 		// Ignore partial writes.
 		return 0, linuxerr.EINVAL
+	}
+	if f.requiredCap != 0 {
+		creds := auth.CredentialsFromContext(ctx)
+		if !creds.HasRootCapability(f.requiredCap) {
+			return 0, linuxerr.EPERM
+		}
 	}
 	buf := make([]int32, 1)
 	n, err := ParseInt32Vec(ctx, src, buf)
