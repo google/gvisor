@@ -252,11 +252,7 @@ func (p *Init) start(ctx context.Context, restoreConf *extension.RestoreConfig) 
 	}
 	go func() {
 		status, err := p.runtime.Wait(context.Background(), p.id)
-		if err != nil {
-			log.G(ctx).WithError(err).Errorf("Failed to wait for container %q", p.id)
-			p.killAllLocked(ctx)
-			status = internalErrorCode
-		}
+		status = adjustWaitStatus(ctx, p, status, err)
 		ExitCh <- Exit{
 			Timestamp: time.Now(),
 			ID:        p.id,
@@ -483,6 +479,23 @@ func (p *Init) convertStatus(status string) string {
 		return statusStopped
 	}
 	return status
+}
+
+// adjustWaitStatus handles the exit status from runtime.Wait. When status is
+// 0 but an error is returned (e.g., "sandbox no longer running" for short-lived
+// containers), the error is benign and the status is preserved. For non-zero
+// status with an error, the container is killed and internalErrorCode is used.
+func adjustWaitStatus(ctx context.Context, p *Init, status int, err error) int {
+	if err == nil {
+		return status
+	}
+	if status == 0 {
+		log.G(ctx).WithError(err).Warnf("Container %q wait error with exit status 0 (ignoring)", p.id)
+		return 0
+	}
+	log.G(ctx).WithError(err).Errorf("Failed to wait for container %q", p.id)
+	p.killAllLocked(ctx)
+	return internalErrorCode
 }
 
 func withConditionalIO(c stdio.Stdio) runc.IOOpt {

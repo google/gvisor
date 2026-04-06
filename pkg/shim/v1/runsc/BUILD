@@ -63,6 +63,7 @@ go_test(
     library = ":runsc",
     deps = [
         "//pkg/shim/v1/utils",
+        "//runsc/specutils",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
     ],
 )
