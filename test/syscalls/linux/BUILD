@@ -467,6 +467,23 @@ cc_binary(
 )
 
 cc_binary(
+    name = "capability_checks_test",
+    testonly = 1,
+    srcs = ["capability_checks.cc"],
+    linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
+    deps = select_gtest() + [
+        "//test/util:capability_util",
+        "//test/util:file_descriptor",
+        "//test/util:fs_util",
+        "//test/util:temp_path",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "//test/util:thread_util",
+    ],
+)
+
+cc_binary(
     name = "chown_test",
     testonly = 1,
     srcs = ["chown.cc"],
