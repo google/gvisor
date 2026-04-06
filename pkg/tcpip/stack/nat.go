@@ -27,7 +27,7 @@ import (
 //
 // Returns true if the packet can skip the NAT table.
 func handlePacket(pkt *PacketBuffer, hook Hook, rt *Route) bool {
-	netHdr, transHdr, isICMPError, ok := getHeaders(pkt)
+	netHdr, transHdr, isICMPError, ok := pkt.GetHeaders()
 	if !ok {
 		return false
 	}
@@ -111,7 +111,7 @@ func handlePacket(pkt *PacketBuffer, hook Hook, rt *Route) bool {
 		newAddr = tid.srcAddr
 	}
 
-	rewritePacket(
+	UpdateHeaders(
 		netHdr,
 		transHdr,
 		!dnat != isICMPError,
