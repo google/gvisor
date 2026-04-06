@@ -19,6 +19,7 @@ package kvm
 
 import (
 	"fmt"
+	"unsafe"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/ring0"
@@ -139,7 +140,40 @@ func inKernelMode() bool {
 	return currentEL() == 1
 }
 
+// addrOfSigillInstruction returns the address of the MRS TPIDR_EL1
+// instruction in bluepill() that deliberately triggers SIGILL.
+func addrOfSigillInstruction() uintptr
+
+// bluepillExpectedPC is the PC value that the sighandler checks against
+// to distinguish expected SIGILLs (from bluepill entry) from spurious
+// SIGILLs delivered to non-KVM threads. Without this check, a spurious
+// SIGILL on a thread whose R8 doesn't contain a vCPU pointer causes a
+// SIGSEGV in bluepillArchEnter when it dereferences the garbage R8 value.
+//
+// This is set during init() to the address of the MRS TPIDR_EL1
+// instruction inside bluepill() that deliberately triggers SIGILL.
+var bluepillExpectedPC uintptr
+
+// sigillMRSInstruction is the raw encoding of "MRS TPIDR_EL1, X10"
+// (0xd538d08a). We scan for it in the bluepill function to find its PC.
+const sigillMRSInstruction = 0xd538d08a
+
 func init() {
+	// Find the address of the MRS TPIDR_EL1 instruction in bluepill()
+	// by scanning the function body for the known instruction encoding.
+	// This is more robust than hardcoding an offset, which can change
+	// if the compiler or assembler inserts additional instructions.
+	bluepillExpectedPC = addrOfSigillInstruction()
+
+	// Verify the instruction at the computed address is actually
+	// MRS TPIDR_EL1 (0xd538d08a). This catches offset miscalculations.
+	insn := *(*uint32)(unsafe.Pointer(bluepillExpectedPC))
+	if insn != sigillMRSInstruction {
+		panic(fmt.Sprintf(
+			"bluepill sigill instruction mismatch at %#x: got %#x, want %#x",
+			bluepillExpectedPC, insn, sigillMRSInstruction))
+	}
+
 	// Install the handler.
 	if err := sighandling.ReplaceSignalHandler(bluepillSignal, addrOfSighandler(), &savedHandler); err != nil {
 		panic(fmt.Sprintf("Unable to set handler for signal %d: %v", bluepillSignal, err))

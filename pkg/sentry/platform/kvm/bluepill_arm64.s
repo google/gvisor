@@ -53,10 +53,13 @@ begin:
 	MOVD	c+0(FP), R8
 	MOVD	$VCPU_CPU(R8), R9
 	ORR	$0xffff000000000000, R9, R9
-	// Trigger sigill.
+	// Trigger SIGILL by reading TPIDR_EL1 (privileged at EL0).
 	// In ring0.Start(), the value of R8 will be stored into tpidr_el1.
 	// When the context was loaded into vcpu successfully,
 	// we will check if the value of R10 and R9 are the same.
+	//
+	// The sighandler verifies that SIGILL came from this exact PC
+	// to avoid crashing on spurious SIGILLs to non-KVM threads.
 	WORD	$0xd538d08a // MRS TPIDR_EL1, R10
 check_vcpu:
 	CMP	R10, R9
@@ -85,6 +88,13 @@ TEXT ·sighandler(SB),NOSPLIT,$0
 	CMPW	$0, R7
 	BEQ	fallback
 
+	// Verify the faulting PC is the expected MRS TPIDR_EL1 instruction
+	// inside bluepill(). This guards against spurious SIGILLs delivered
+	// to non-KVM threads whose R8 does not contain a valid vCPU pointer.
+	MOVD	·bluepillExpectedPC(SB), R6
+	CMP	R6, R7
+	BNE	fallback
+
 	MOVD	R2, 8(RSP)
 	BL	·bluepillHandler(SB)   // Call the handler.
 
@@ -98,6 +108,20 @@ fallback:
 // func addrOfSighandler() uintptr
 TEXT ·addrOfSighandler(SB), $0-8
 	MOVD	$·sighandler(SB), R0
+	MOVD	R0, ret+0(FP)
+	RET
+
+// func addrOfSigillInstruction() uintptr
+//
+// Returns the address of the MRS TPIDR_EL1 instruction in bluepill()
+// which deliberately triggers SIGILL. The sighandler compares SIGILL's
+// faulting PC against this address to reject spurious SIGILLs.
+TEXT ·addrOfSigillInstruction(SB), NOSPLIT, $0-8
+	MOVD	$·bluepill(SB), R0
+	// The MRS TPIDR_EL1 instruction is at bluepill+12.
+	// Layout: MOVD c+0(FP),R8 [4B] + MOVD $0(R8),R9 [4B] + ORR [4B] + MRS [4B]
+	// bluepill is NOSPLIT so no stack prologue.
+	ADD	$12, R0, R0
 	MOVD	R0, ret+0(FP)
 	RET
 
