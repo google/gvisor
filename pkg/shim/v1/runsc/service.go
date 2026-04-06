@@ -489,7 +489,7 @@ func (s *runscService) Shutdown(ctx context.Context, r *taskAPI.ShutdownRequest)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if len(s.containers) > 0 {
-		return empty, fmt.Errorf("containers are still running, shim cannot be shutdown")
+		return empty, nil
 	}
 	return empty, nil
 }
