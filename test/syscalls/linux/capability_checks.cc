@@ -21,6 +21,7 @@
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <cerrno>
@@ -31,7 +32,6 @@
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/temp_path.h"
-#include "test/util/test_main.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
@@ -115,19 +115,18 @@ TEST(ProcSysCapTest, TcpSackRequiresCapNetAdmin) {
   // Read current value first.
   auto const fd = ASSERT_NO_ERRNO_AND_VALUE(
       Open("/proc/sys/net/ipv4/tcp_sack", O_RDWR));
-  char buf;
-  ASSERT_THAT(PreadFd(fd.get(), &buf, sizeof(buf), 0),
-              SyscallSucceedsWithValue(sizeof(buf)));
+  char buf[8] = {};
+  int n = read(fd.get(), buf, sizeof(buf) - 1);
+  ASSERT_GT(n, 0);
 
   // With CAP_NET_ADMIN: write should succeed.
-  char val = buf;
-  EXPECT_THAT(PwriteFd(fd.get(), &val, sizeof(val), 0),
-              SyscallSucceedsWithValue(sizeof(val)));
+  ASSERT_THAT(lseek(fd.get(), 0, SEEK_SET), SyscallSucceeds());
+  EXPECT_THAT(write(fd.get(), buf, n), SyscallSucceedsWithValue(n));
 
   // Drop CAP_NET_ADMIN: write should fail with EPERM.
   AutoCapability cap(CAP_NET_ADMIN, false);
-  EXPECT_THAT(PwriteFd(fd.get(), &val, sizeof(val), 0),
-              SyscallFailsWithErrno(EPERM));
+  ASSERT_THAT(lseek(fd.get(), 0, SEEK_SET), SyscallSucceeds());
+  EXPECT_THAT(write(fd.get(), buf, n), SyscallFailsWithErrno(EPERM));
 }
 
 // Test that writing to /proc/sys/net/ipv4/ip_local_port_range requires
@@ -176,39 +175,127 @@ TEST(ProcSysCapTest, NrOpenRequiresCapSysAdmin) {
   EXPECT_THAT(write(fd.get(), buf, n), SyscallFailsWithErrno(EPERM));
 }
 
-// Test that sched_setaffinity on another task requires UID match or
-// CAP_SYS_NICE. Linux enforces this in
+// Test that sched_setaffinity on another task owned by a different UID
+// requires CAP_SYS_NICE. Linux enforces this in
 // kernel/sched/core.c:check_same_owner().
-TEST(SchedSetaffinityCapTest, OtherTaskRequiresCapSysNice) {
-  // We need another thread to target. Use the init process (pid 1).
-  // This test only makes sense if pid 1 exists and we are not pid 1.
-  SKIP_IF(getpid() == 1);
+//
+// We cannot target PID 1 because in gvisor the test process and PID 1
+// typically share UID 0. The UID match would bypass the capability check,
+// making the test always pass. Instead, we fork a child that changes its
+// UID to nobody (65534), then the parent (still root but without
+// CAP_SYS_NICE) attempts sched_setaffinity on the child.
+TEST(SchedSetaffinityCapTest, OtherUidRequiresCapSysNice) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_NICE)));
+  // Need CAP_SETUID to change the child's UID.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+
+  // Two pipes for synchronization:
+  // - child_ready: child signals parent after changing UID
+  // - parent_done: parent signals child to exit after testing
+  int child_ready[2];
+  int parent_done[2];
+  ASSERT_THAT(pipe(child_ready), SyscallSucceeds());
+  ASSERT_THAT(pipe(parent_done), SyscallSucceeds());
+
+  pid_t child = fork();
+  ASSERT_THAT(child, SyscallSucceeds());
+
+  if (child == 0) {
+    close(child_ready[0]);
+    close(parent_done[1]);
+    // Change to nobody UID.
+    if (setresuid(65534, 65534, 65534) != 0) {
+      _exit(1);
+    }
+    // Signal parent that we're ready.
+    char ready = 'r';
+    write(child_ready[1], &ready, 1);
+    close(child_ready[1]);
+    // Wait until parent is done.
+    char buf;
+    read(parent_done[0], &buf, 1);
+    close(parent_done[0]);
+    _exit(0);
+  }
+
+  close(child_ready[1]);
+  close(parent_done[0]);
+
+  // Wait for the child to change UID.
+  char ready;
+  ASSERT_THAT(read(child_ready[0], &ready, 1),
+              SyscallSucceedsWithValue(1));
+  close(child_ready[0]);
 
   cpu_set_t mask;
   CPU_ZERO(&mask);
   CPU_SET(0, &mask);
 
-  // With CAP_SYS_NICE: should succeed (or ESRCH if pid 1 is not visible).
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_NICE)));
+  // With CAP_SYS_NICE: should succeed on a different-UID process.
+  EXPECT_THAT(sched_setaffinity(child, sizeof(mask), &mask),
+              SyscallSucceeds());
 
-  // Drop CAP_SYS_NICE: should fail with EPERM.
+  // Drop CAP_SYS_NICE: should fail with EPERM (different UID, no cap).
   AutoCapability cap(CAP_SYS_NICE, false);
-  // Target pid 1 which is owned by root. If we are not root, the UID check
-  // also fails, so EPERM is expected.
-  EXPECT_THAT(sched_setaffinity(1, sizeof(mask), &mask),
+  EXPECT_THAT(sched_setaffinity(child, sizeof(mask), &mask),
               SyscallFailsWithErrno(EPERM));
+
+  // Clean up child.
+  close(parent_done[1]);
+  int status;
+  ASSERT_THAT(waitpid(child, &status, 0), SyscallSucceeds());
 }
 
-// Test that setpriority on another task requires UID match or CAP_SYS_NICE.
-// Linux enforces this in kernel/sys.c:set_one_prio().
-TEST(SetpriorityCapTest, OtherTaskRequiresCapSysNice) {
-  SKIP_IF(getpid() == 1);
+// Test that setpriority on another task owned by a different UID requires
+// CAP_SYS_NICE. Linux enforces this in kernel/sys.c:set_one_prio().
+//
+// Same approach as above: fork a child with a different UID.
+TEST(SetpriorityCapTest, OtherUidRequiresCapSysNice) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_NICE)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+
+  int child_ready[2];
+  int parent_done[2];
+  ASSERT_THAT(pipe(child_ready), SyscallSucceeds());
+  ASSERT_THAT(pipe(parent_done), SyscallSucceeds());
+
+  pid_t child = fork();
+  ASSERT_THAT(child, SyscallSucceeds());
+
+  if (child == 0) {
+    close(child_ready[0]);
+    close(parent_done[1]);
+    if (setresuid(65534, 65534, 65534) != 0) {
+      _exit(1);
+    }
+    char ready = 'r';
+    write(child_ready[1], &ready, 1);
+    close(child_ready[1]);
+    char buf;
+    read(parent_done[0], &buf, 1);
+    close(parent_done[0]);
+    _exit(0);
+  }
+
+  close(child_ready[1]);
+  close(parent_done[0]);
+
+  char ready;
+  ASSERT_THAT(read(child_ready[0], &ready, 1),
+              SyscallSucceedsWithValue(1));
+  close(child_ready[0]);
+
+  // With CAP_SYS_NICE: should succeed.
+  EXPECT_THAT(setpriority(PRIO_PROCESS, child, 0), SyscallSucceeds());
 
   // Drop CAP_SYS_NICE: should fail with EPERM.
   AutoCapability cap(CAP_SYS_NICE, false);
-  EXPECT_THAT(setpriority(PRIO_PROCESS, 1, 0),
+  EXPECT_THAT(setpriority(PRIO_PROCESS, child, 0),
               SyscallFailsWithErrno(EPERM));
+
+  close(parent_done[1]);
+  int status;
+  ASSERT_THAT(waitpid(child, &status, 0), SyscallSucceeds());
 }
 
 }  // namespace
