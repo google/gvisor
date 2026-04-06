@@ -19,6 +19,7 @@ import (
 	"math"
 	"path"
 	"strconv"
+	"strings"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -509,4 +510,89 @@ func TestTree(t *testing.T) {
 	}
 	iterateDir(ctx, t, s, fd)
 	fd.DecRef(ctx)
+}
+
+func TestFdInfoContent(t *testing.T) {
+	s := setup(t)
+	defer s.Destroy()
+
+	k := kernel.KernelFromContext(s.Ctx)
+	tc := k.NewThreadGroup(k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
+	task, err := testutil.CreateTask(s.Ctx, "name", tc, s.MntNs, s.Root, s.Root)
+	if err != nil {
+		t.Fatalf("CreateTask(): %v", err)
+	}
+
+	// Create a test file and add it to the task's FD table.
+	pop := &vfs.PathOperation{
+		Root:  s.Root,
+		Start: s.Root,
+		Path:  fspath.Parse("test-file"),
+	}
+	opts := &vfs.OpenOptions{
+		Flags: linux.O_RDWR | linux.O_CREAT,
+		Mode:  0644,
+	}
+	file, err := s.VFS.OpenAt(s.Ctx, s.Creds, pop, opts)
+	if err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+	defer file.DecRef(s.Ctx)
+
+	fdno, err := task.FDTable().NewFD(task.AsyncContext(), 0, file, kernel.FDFlags{})
+	if err != nil {
+		t.Fatalf("NewFD(): %v", err)
+	}
+
+	// Read /proc/1/fdinfo/<fd>.
+	ctx := task.AsyncContext()
+	fdInfoPath := fmt.Sprintf("/proc/1/fdinfo/%d", fdno)
+	fdInfoFD, err := s.VFS.OpenAt(
+		ctx,
+		auth.CredentialsFromContext(s.Ctx),
+		&vfs.PathOperation{Root: s.Root, Start: s.Root, Path: fspath.Parse(fdInfoPath)},
+		&vfs.OpenOptions{},
+	)
+	if err != nil {
+		t.Fatalf("OpenAt(%q) failed: %v", fdInfoPath, err)
+	}
+	defer fdInfoFD.DecRef(ctx)
+
+	buf := make([]byte, 256)
+	n, err := fdInfoFD.Read(ctx, usermem.BytesIOSequence(buf), vfs.ReadOptions{})
+	if err != nil {
+		t.Fatalf("Read(%q) failed: %v", fdInfoPath, err)
+	}
+	content := string(buf[:n])
+
+	// Verify that pos, flags, and mnt_id fields are present.
+	if !strings.HasPrefix(content, "pos:\t") {
+		t.Errorf("fdinfo content should start with 'pos:', got: %q", content)
+	}
+	if !strings.Contains(content, "flags:\t") {
+		t.Errorf("fdinfo content should contain 'flags:', got: %q", content)
+	}
+	if !strings.Contains(content, "mnt_id:\t") {
+		t.Errorf("fdinfo content should contain 'mnt_id:', got: %q", content)
+	}
+
+	// Verify the order: pos, flags, mnt_id (matching Linux's seq_show).
+	lines := strings.Split(strings.TrimSpace(content), "\n")
+	if len(lines) < 3 {
+		t.Fatalf("expected at least 3 lines in fdinfo, got %d: %q", len(lines), content)
+	}
+	if !strings.HasPrefix(lines[0], "pos:\t") {
+		t.Errorf("first line should be 'pos:', got: %q", lines[0])
+	}
+	if !strings.HasPrefix(lines[1], "flags:\t") {
+		t.Errorf("second line should be 'flags:', got: %q", lines[1])
+	}
+	if !strings.HasPrefix(lines[2], "mnt_id:\t") {
+		t.Errorf("third line should be 'mnt_id:', got: %q", lines[2])
+	}
+
+	// Verify pos is 0 for a freshly opened file.
+	if !strings.HasPrefix(lines[0], "pos:\t0") {
+		t.Errorf("pos should be 0 for freshly opened file, got: %q", lines[0])
+	}
 }
