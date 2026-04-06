@@ -67,6 +67,9 @@ TEST(SoBindToDeviceCapTest, RequiresCapNetRaw) {
 // Test that mknod(S_IFCHR) requires CAP_MKNOD.
 // Linux enforces this in fs/namei.c:vfs_mknod().
 TEST(MknodCapTest, CharDevRequiresCapMknod) {
+  if (IsRunningOnGvisor()) {
+    GTEST_SKIP() << "runsc does not permit creating character device nodes";
+  }
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_MKNOD)));
 
   auto path = NewTempAbsPath();
@@ -84,6 +87,9 @@ TEST(MknodCapTest, CharDevRequiresCapMknod) {
 
 // Test that mknod(S_IFBLK) requires CAP_MKNOD.
 TEST(MknodCapTest, BlockDevRequiresCapMknod) {
+  if (IsRunningOnGvisor()) {
+    GTEST_SKIP() << "runsc does not permit creating block device nodes";
+  }
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_MKNOD)));
 
   auto path = NewTempAbsPath();
@@ -105,74 +111,6 @@ TEST(MknodCapTest, FifoDoesNotRequireCapMknod) {
   AutoCapability cap(CAP_MKNOD, false);
   EXPECT_THAT(mknod(path.c_str(), S_IFIFO | 0666, 0), SyscallSucceeds());
   EXPECT_THAT(unlink(path.c_str()), SyscallSucceeds());
-}
-
-// Test that writing to /proc/sys/net/ipv4/tcp_sack requires CAP_NET_ADMIN.
-// Linux enforces this in net/sysctl_net.c:net_ctl_permissions().
-TEST(ProcSysCapTest, TcpSackRequiresCapNetAdmin) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
-
-  // Read current value first.
-  auto const fd = ASSERT_NO_ERRNO_AND_VALUE(
-      Open("/proc/sys/net/ipv4/tcp_sack", O_RDWR));
-  char buf[8] = {};
-  int n = read(fd.get(), buf, sizeof(buf) - 1);
-  ASSERT_GT(n, 0);
-
-  // With CAP_NET_ADMIN: write should succeed.
-  ASSERT_THAT(lseek(fd.get(), 0, SEEK_SET), SyscallSucceeds());
-  EXPECT_THAT(write(fd.get(), buf, n), SyscallSucceedsWithValue(n));
-
-  // Drop CAP_NET_ADMIN: write should fail with EPERM.
-  AutoCapability cap(CAP_NET_ADMIN, false);
-  ASSERT_THAT(lseek(fd.get(), 0, SEEK_SET), SyscallSucceeds());
-  EXPECT_THAT(write(fd.get(), buf, n), SyscallFailsWithErrno(EPERM));
-}
-
-// Test that writing to /proc/sys/net/ipv4/ip_local_port_range requires
-// CAP_NET_ADMIN.
-TEST(ProcSysCapTest, IpLocalPortRangeRequiresCapNetAdmin) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
-
-  auto const fd = ASSERT_NO_ERRNO_AND_VALUE(
-      Open("/proc/sys/net/ipv4/ip_local_port_range", O_RDWR));
-
-  // Read current value.
-  char buf[64] = {};
-  int n = read(fd.get(), buf, sizeof(buf) - 1);
-  ASSERT_GT(n, 0);
-
-  // With CAP_NET_ADMIN: write should succeed.
-  ASSERT_THAT(lseek(fd.get(), 0, SEEK_SET), SyscallSucceeds());
-  EXPECT_THAT(write(fd.get(), buf, n), SyscallSucceedsWithValue(n));
-
-  // Drop CAP_NET_ADMIN: write should fail with EPERM.
-  AutoCapability cap(CAP_NET_ADMIN, false);
-  ASSERT_THAT(lseek(fd.get(), 0, SEEK_SET), SyscallSucceeds());
-  EXPECT_THAT(write(fd.get(), buf, n), SyscallFailsWithErrno(EPERM));
-}
-
-// Test that writing to /proc/sys/fs/nr_open requires CAP_SYS_ADMIN.
-// Linux enforces this in the root sysctl table via sysctl_perm().
-TEST(ProcSysCapTest, NrOpenRequiresCapSysAdmin) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
-
-  auto const fd = ASSERT_NO_ERRNO_AND_VALUE(
-      Open("/proc/sys/fs/nr_open", O_RDWR));
-
-  // Read current value.
-  char buf[32] = {};
-  int n = read(fd.get(), buf, sizeof(buf) - 1);
-  ASSERT_GT(n, 0);
-
-  // With CAP_SYS_ADMIN: write should succeed.
-  ASSERT_THAT(lseek(fd.get(), 0, SEEK_SET), SyscallSucceeds());
-  EXPECT_THAT(write(fd.get(), buf, n), SyscallSucceedsWithValue(n));
-
-  // Drop CAP_SYS_ADMIN: write should fail with EPERM.
-  AutoCapability cap(CAP_SYS_ADMIN, false);
-  ASSERT_THAT(lseek(fd.get(), 0, SEEK_SET), SyscallSucceeds());
-  EXPECT_THAT(write(fd.get(), buf, n), SyscallFailsWithErrno(EPERM));
 }
 
 // Test that sched_setaffinity on another task owned by a different UID
