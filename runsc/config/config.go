@@ -425,6 +425,15 @@ type Config struct {
 	// AllowRootfsTarAnnotation indicates whether the rootfs tar annotation
 	// should be allowed.
 	AllowRootfsTarAnnotation bool `flag:"allow-rootfs-tar-annotation"`
+
+	// ControlRPCStopTimeout is the grace period given to in-flight RPCs on
+	// the sandbox control (urpc) socket when the sandbox is shutting down.
+	// New RPCs are rejected immediately, but ongoing RPCs are allowed to run
+	// to completion. After the timeout elapses, idle client connections are
+	// closed and connections still processing an RPC are marked to be closed
+	// once their current RPC finishes. Setting this to 0 closes idle clients
+	// immediately.
+	ControlRPCStopTimeout time.Duration `flag:"control-rpc-stop-timeout"`
 }
 
 func (c *Config) validate() error {

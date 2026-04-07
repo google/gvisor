@@ -196,6 +196,11 @@ type controller struct {
 
 	// manager holds the containerManager methods.
 	manager *containerManager
+
+	// stopRPCTimeout is the grace period given to in-flight RPCs when the
+	// control server is shut down. See the documentation of urpc.Server.Stop
+	// for the precise semantics. Configured via --control-rpc-stop-timeout.
+	stopRPCTimeout gtime.Duration
 }
 
 // newController creates a new controller. The caller must call
@@ -212,7 +217,8 @@ func newController(fd int, l *Loader) (*controller, error) {
 			startResultChan: make(chan error),
 			l:               l,
 		},
-		srv: srv,
+		srv:            srv,
+		stopRPCTimeout: l.root.conf.ControlRPCStopTimeout,
 	}
 	ctrl.registerHandlers()
 	return ctrl, nil
@@ -254,12 +260,8 @@ func (c *controller) refreshHandlers() {
 	c.registerHandlers()
 }
 
-// stopRPCTimeout is the time for clients to finish making any RPCs. Note that
-// ongoing RPCs after this timeout still run to completion.
-const stopRPCTimeout = 15 * gtime.Second
-
 func (c *controller) stop() {
-	c.srv.Stop(stopRPCTimeout)
+	c.srv.Stop(c.stopRPCTimeout)
 }
 
 // containerManager manages sandbox containers.
