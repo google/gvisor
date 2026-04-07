@@ -51,11 +51,10 @@ install_helper() {
 
   # Clone the repository.
   mkdir -p "${GOPATH}"/src/"$(dirname "${PACKAGE}")" && \
-     git clone https://"${PACKAGE}" "${GOPATH}"/src/"${PACKAGE}"
+     git clone --depth=1 --branch "${TAG}" https://"${PACKAGE}" "${GOPATH}"/src/"${PACKAGE}"
 
   # Checkout and build the repository.
   (cd "${GOPATH}"/src/"${PACKAGE}" && \
-      git checkout "${TAG}" && \
       make && \
       make install)
 }

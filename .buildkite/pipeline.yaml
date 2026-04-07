@@ -438,8 +438,8 @@ steps:
   - <<: *common
     <<: *docker
     <<: *source_test
-    label: ":docker: Containerd 1.6.2 tests"
-    command: make containerd-test-1.6.2
+    label: ":docker: Containerd 1.6.35 tests"
+    command: make containerd-test-1.6.35
     agents:
       <<: *ubuntu_agents
       <<: *containerd_agents
