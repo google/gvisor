@@ -31,9 +31,13 @@ type Options struct {
 	CgoEnabled       bool
 }
 
-// Install installs seccomp filters.
-func Install(opt Options) error {
-	s := allowedSyscalls
+// Rules returns the seccomp rules for a gofer process without installing
+// them. Callers can merge additional rules before building and installing
+// the seccomp program. This is useful for custom gofer implementations
+// that need the stock gofer's baseline syscall allowlist but also require
+// additional syscalls (e.g. for networking or namespace switching).
+func Rules(opt Options) seccomp.SyscallRules {
+	s := allowedSyscalls.Copy()
 
 	if opt.ProfileEnabled {
 		report("profile enabled: syscall filters less restrictive!")
@@ -64,6 +68,13 @@ func Install(opt Options) error {
 	if !opt.DirectFS {
 		s.Merge(lisafsFilters)
 	}
+
+	return s
+}
+
+// Install installs seccomp filters.
+func Install(opt Options) error {
+	s := Rules(opt)
 
 	program := &seccomp.Program{
 		RuleSets: []seccomp.RuleSet{
