@@ -16,6 +16,7 @@ package nvproxy
 
 import (
 	"fmt"
+	"sync"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
@@ -28,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -81,6 +83,13 @@ type uvmFD struct {
 	memmapFile    uvmFDMemmapFile
 
 	queue waiter.Queue
+
+	// mu protects fields below.
+	mu sync.RWMutex
+	// multiProcessSharing is true if the FD was initialized with
+	// UVM_INIT_FLAGS_MULTI_PROCESS_SHARING_MODE.
+	multiProcessSharing bool
+	ownerMM             *mm.MemoryManager
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
@@ -139,6 +148,17 @@ func (fd *uvmFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args 
 		cmd:             cmd,
 		ioctlParamsAddr: argPtr,
 	}
+
+	if cmd != nvgpu.UVM_INITIALIZE {
+		ui.fd.mu.RLock()
+		if !ui.fd.multiProcessSharing && ui.fd.ownerMM != taskMM(ui.t) {
+			ui.fd.mu.RUnlock()
+			ctx.Warningf("nvproxy: uvm ioctl %d = %#x called from wrong process", cmd, cmd)
+			return 0, linuxerr.EINVAL
+		}
+		ui.fd.mu.RUnlock()
+	}
+
 	result, err := fd.dev.nvp.abi.uvmIoctl[cmd].handle(&ui)
 	if err != nil {
 		if handleErr, ok := err.(*errHandler); ok {
@@ -200,6 +220,14 @@ func uvmInitialize(ui *uvmIoctlState) (uintptr, error) {
 	if err != nil {
 		return n, err
 	}
+
+	if ioctlParams.GetStatus() == nvgpu.NV_OK {
+		ui.fd.mu.Lock()
+		ui.fd.ownerMM = taskMM(ui.t)
+		ui.fd.multiProcessSharing = (origFlags & nvgpu.UVM_INIT_FLAGS_MULTI_PROCESS_SHARING_MODE) != 0
+		ui.fd.mu.Unlock()
+	}
+
 	if _, err := ioctlParams.CopyOut(ui.t, ui.ioctlParamsAddr); err != nil {
 		return n, err
 	}
@@ -278,4 +306,17 @@ func uvmIoctlHasFrontendFD[Params any, PtrParams hasFrontendFDAndStatusPtr[Param
 
 func uvmFailWithStatus[Params any, PtrParams hasStatusPtr[Params]](ui *uvmIoctlState, ioctlParams PtrParams, status uint32) error {
 	return failWithStatus(ui.ctx, ui.t, ui.ioctlParamsAddr, ioctlParams, status)
+}
+
+// taskMM gets the kernel task's MemoryManager. No additional reference is taken on
+// mm here. This is safe because MemoryManager.destroy is required to leave the
+// MemoryManager in a state where it's still usable as a DynamicBytesSource.
+func taskMM(task *kernel.Task) *mm.MemoryManager {
+	var tmm *mm.MemoryManager
+	task.WithMuLocked(func(t *kernel.Task) {
+		if mm := t.MemoryManager(); mm != nil {
+			tmm = mm
+		}
+	})
+	return tmm
 }
