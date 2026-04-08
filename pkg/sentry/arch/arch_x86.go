@@ -18,6 +18,7 @@
 package arch
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 
@@ -333,10 +334,24 @@ const (
 func (s *State) PtraceGetRegSet(regset uintptr, dst io.Writer, maxlen int, fs cpuid.FeatureSet) (int, error) {
 	switch regset {
 	case _NT_PRSTATUS:
-		if maxlen < ptraceRegistersSize {
+		if maxlen <= 0 {
 			return 0, linuxerr.EFAULT
 		}
-		return s.PtraceGetRegs(dst)
+		// Match Linux kernel behavior (kernel/ptrace.c:ptrace_regset()): write
+		// min(maxlen, sizeof(user_regs_struct)) bytes rather than returning
+		// EFAULT for buffers smaller than the full register set.
+		n := maxlen
+		if n > ptraceRegistersSize {
+			n = ptraceRegistersSize
+		}
+		if n == ptraceRegistersSize {
+			return s.PtraceGetRegs(dst)
+		}
+		var buf bytes.Buffer
+		if _, err := s.PtraceGetRegs(&buf); err != nil {
+			return 0, err
+		}
+		return dst.Write(buf.Bytes()[:n])
 	case _NT_PRFPREG:
 		return s.fpState.PtraceGetFPRegs(dst, maxlen)
 	case _NT_X86_XSTATE:

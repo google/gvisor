@@ -1403,6 +1403,57 @@ TEST(PtraceTest, GetRegSet) {
   EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
       << " status " << status;
 }
+
+// PTRACE_GETREGSET with NT_PRSTATUS must accept a buffer smaller than
+// sizeof(user_regs_struct) and write only the requested number of bytes,
+// matching Linux kernel behavior (kernel/ptrace.c:ptrace_regset()).
+TEST(PtraceTest, GetRegSetPartialRead) {
+  pid_t const child_pid = fork();
+  if (child_pid == 0) {
+    TEST_PCHECK(ptrace(PTRACE_TRACEME, 0, 0, 0) == 0);
+    MaybeSave();
+    kill(getpid(), SIGSTOP);
+    _exit(0);
+  }
+
+  // In parent process.
+  ASSERT_THAT(child_pid, SyscallSucceeds());
+
+  int status;
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP)
+      << " status " << status;
+
+  // Read the full register set for reference.
+  struct user_regs_struct full_regs;
+  struct iovec full_iov;
+  full_iov.iov_base = &full_regs;
+  full_iov.iov_len = sizeof(full_regs);
+  ASSERT_THAT(ptrace(PTRACE_GETREGSET, child_pid, NT_PRSTATUS, &full_iov),
+              SyscallSucceeds());
+  EXPECT_EQ(full_iov.iov_len, sizeof(full_regs));
+
+  // Read only the first sizeof(long) bytes (e.g. just the first register).
+  // This must succeed and return exactly the requested number of bytes,
+  // which must match the beginning of the full register set.
+  unsigned long first_reg = 0;
+  struct iovec partial_iov;
+  partial_iov.iov_base = &first_reg;
+  partial_iov.iov_len = sizeof(first_reg);
+  EXPECT_THAT(ptrace(PTRACE_GETREGSET, child_pid, NT_PRSTATUS, &partial_iov),
+              SyscallSucceeds());
+  EXPECT_EQ(partial_iov.iov_len, sizeof(first_reg));
+  EXPECT_EQ(first_reg,
+            *reinterpret_cast<unsigned long*>(&full_regs));
+
+  ASSERT_THAT(ptrace(PTRACE_CONT, child_pid, 0, 0), SyscallSucceeds());
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << " status " << status;
+}
+
 #if defined(__x86_64__)
 #define SYSNO_STR1(x) #x
 #define SYSNO_STR(x) SYSNO_STR1(x)
