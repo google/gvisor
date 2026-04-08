@@ -16,16 +16,22 @@
 #include <poll.h>
 #include <signal.h>
 #include <stdio.h>
-#include <string.h>
 #include <sys/signalfd.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 
+#include <ctime>
 #include <functional>
-#include <vector>
+#include <string>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/strings/str_cat.h"
 #include "absl/synchronization/mutex.h"
+#include "absl/time/clock.h"
+#include "absl/time/time.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/logging.h"
 #include "test/util/posix_error.h"
 #include "test/util/signal_util.h"
 #include "test/util/test_util.h"
@@ -339,6 +345,34 @@ TEST(Signalfd, KillStillKills) {
   const auto scoped_sigmask =
       ASSERT_NO_ERRNO_AND_VALUE(ScopedSignalMask(SIG_BLOCK, SIGKILL));
   EXPECT_EXIT(tgkill(getpid(), gettid(), SIGKILL), KilledBySignal(SIGKILL), "");
+}
+
+TEST(Signalfd, RtQueueDeliversPayload) {
+  const int signo = kSignoMax;
+  sigset_t mask;
+  sigemptyset(&mask);
+  sigaddset(&mask, signo);
+
+  const auto scoped_sigmask =
+      ASSERT_NO_ERRNO_AND_VALUE(ScopedSignalMask(SIG_BLOCK, signo));
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NewSignalFD(&mask, SFD_NONBLOCK));
+
+  sigval_t first, second;
+  first.sival_int = 101;
+  second.sival_int = 102;
+  ASSERT_THAT(sigqueue(getpid(), signo, first), SyscallSucceeds());
+  ASSERT_THAT(sigqueue(getpid(), signo, second), SyscallSucceeds());
+
+  struct signalfd_siginfo ssi;
+  ASSERT_THAT(read(fd.get(), &ssi, sizeof(ssi)),
+              SyscallSucceedsWithValue(sizeof(ssi)));
+  EXPECT_EQ(ssi.ssi_signo, signo);
+  EXPECT_EQ(ssi.ssi_int, first.sival_int);
+  ASSERT_THAT(read(fd.get(), &ssi, sizeof(ssi)),
+              SyscallSucceedsWithValue(sizeof(ssi)));
+  EXPECT_EQ(ssi.ssi_signo, signo);
+  EXPECT_EQ(ssi.ssi_int, second.sival_int);
 }
 
 }  // namespace

@@ -112,6 +112,8 @@ func (sfd *SignalFileDescription) Read(ctx context.Context, dst usermem.IOSequen
 		Status:  info.Status(),
 		Overrun: uint32(info.Overrun()),
 		Addr:    info.Addr(),
+		Int:     int32(info.Sigval()),
+		Ptr:     info.Sigval(),
 	}
 	n, err := infoNative.WriteTo(dst.Writer(ctx))
 	if err == usermem.ErrEndOfIOSequence {
