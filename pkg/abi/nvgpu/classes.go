@@ -82,49 +82,58 @@ const (
 	KEPLER_CHANNEL_GROUP_A           = 0x0000a06c
 	NVENC_SW_SESSION                 = 0x0000a0bc
 	KEPLER_INLINE_TO_MEMORY_B        = 0x0000a140
+	NVB8B0_VIDEO_DECODER             = 0x0000b8b0
+	NVB8D1_VIDEO_NVJPG               = 0x0000b8d1
+	NVB8FA_VIDEO_OFA                 = 0x0000b8fa
 	VOLTA_USERMODE_A                 = 0x0000c361
 	TURING_USERMODE_A                = 0x0000c461
 	TURING_CHANNEL_GPFIFO_A          = 0x0000c46f
-	NVB8B0_VIDEO_DECODER             = 0x0000b8b0 // Hopper
-	NVC4B0_VIDEO_DECODER             = 0x0000c4b0 // Turing
-	NVC6B0_VIDEO_DECODER             = 0x0000c6b0 // Ampere
-	NVC7B0_VIDEO_DECODER             = 0x0000c7b0 // Ampere
-	NVC9B0_VIDEO_DECODER             = 0x0000c9b0 // Ada
-	NVCDB0_VIDEO_DECODER             = 0x0000cdb0 // Blackwell
+	NVC4B0_VIDEO_DECODER             = 0x0000c4b0
 	NVC4B7_VIDEO_ENCODER             = 0x0000c4b7
-	NVC7B7_VIDEO_ENCODER             = 0x0000c7b7
-	NVC9B7_VIDEO_ENCODER             = 0x0000c9b7
-	NVCEB7_VIDEO_ENCODER             = 0x0000ceb7
-	NVCFB7_VIDEO_ENCODER             = 0x0000cfb7
-	NVD1B7_VIDEO_ENCODER             = 0x0000d1b7
+	NVC4D1_VIDEO_NVJPG               = 0x0000c4d1
 	AMPERE_CHANNEL_GPFIFO_A          = 0x0000c56f
 	TURING_A                         = 0x0000c597
 	TURING_DMA_COPY_A                = 0x0000c5b5
 	TURING_COMPUTE_A                 = 0x0000c5c0
 	HOPPER_USERMODE_A                = 0x0000c661
-	BLACKWELL_USERMODE_A             = 0x0000c761
 	AMPERE_A                         = 0x0000c697
+	NVC6B0_VIDEO_DECODER             = 0x0000c6b0
 	AMPERE_DMA_COPY_A                = 0x0000c6b5
 	AMPERE_COMPUTE_A                 = 0x0000c6c0
+	NVC6FA_VIDEO_OFA                 = 0x0000c6fa
+	BLACKWELL_USERMODE_A             = 0x0000c761
+	NVC7B0_VIDEO_DECODER             = 0x0000c7b0
 	AMPERE_DMA_COPY_B                = 0x0000c7b5
+	NVC7B7_VIDEO_ENCODER             = 0x0000c7b7
 	AMPERE_COMPUTE_B                 = 0x0000c7c0
+	NVC7FA_VIDEO_OFA                 = 0x0000c7fa
 	HOPPER_CHANNEL_GPFIFO_A          = 0x0000c86f
 	HOPPER_DMA_COPY_A                = 0x0000c8b5
 	BLACKWELL_CHANNEL_GPFIFO_A       = 0x0000c96f
+	ADA_A                            = 0x0000c997
+	NVC9B0_VIDEO_DECODER             = 0x0000c9b0
 	BLACKWELL_DMA_COPY_A             = 0x0000c9b5
+	NVC9B7_VIDEO_ENCODER             = 0x0000c9b7
+	ADA_COMPUTE_A                    = 0x0000c9c0
+	NVC9D1_VIDEO_NVJPG               = 0x0000c9d1
+	NVC9FA_VIDEO_OFA                 = 0x0000c9fa
 	BLACKWELL_CHANNEL_GPFIFO_B       = 0x0000ca6f
 	BLACKWELL_DMA_COPY_B             = 0x0000cab5
-	ADA_A                            = 0x0000c997
-	ADA_COMPUTE_A                    = 0x0000c9c0
 	NV_CONFIDENTIAL_COMPUTE          = 0x0000cb33
 	HOPPER_A                         = 0x0000cb97
 	HOPPER_SEC2_WORK_LAUNCH_A        = 0x0000cba2
 	HOPPER_COMPUTE_A                 = 0x0000cbc0
 	BLACKWELL_INLINE_TO_MEMORY_A     = 0x0000cd40
 	BLACKWELL_A                      = 0x0000cd97
+	NVCDB0_VIDEO_DECODER             = 0x0000cdb0
 	BLACKWELL_COMPUTE_A              = 0x0000cdc0
+	NVCDD1_VIDEO_NVJPG               = 0x0000cdd1
+	NVCDFA_VIDEO_OFA                 = 0x0000cdfa
 	BLACKWELL_B                      = 0x0000ce97
+	NVCEB7_VIDEO_ENCODER             = 0x0000ceb7
 	BLACKWELL_COMPUTE_B              = 0x0000cec0
+	NVCFB7_VIDEO_ENCODER             = 0x0000cfb7
+	NVD1B7_VIDEO_ENCODER             = 0x0000d1b7
 )
 
 // From src/common/sdk/nvidia/inc/class/cl0000.h:
@@ -720,4 +729,35 @@ type NVA0BC_ALLOC_PARAMETERS struct {
 	VResolution uint32
 	Version     uint32
 	HMem        Handle
+}
+
+// NV_NVJPG_ALLOCATION_PARAMETERS is the alloc params type for
+// NVxxD1_VIDEO_NVJPG classes, from src/common/sdk/nvidia/inc/nvos.h.
+//
+// +marshal
+type NV_NVJPG_ALLOCATION_PARAMETERS struct {
+	_                         structs.HostLayout
+	Size                      uint32
+	ProhibitMultipleInstances uint32
+	EngineInstance            uint32
+}
+
+// NV_OFA_ALLOCATION_PARAMETERS is the alloc params type for
+// NVxxFA_VIDEO_OFA classes, from src/common/sdk/nvidia/inc/nvos.h.
+//
+// +marshal
+type NV_OFA_ALLOCATION_PARAMETERS struct {
+	_                         structs.HostLayout
+	Size                      uint32
+	ProhibitMultipleInstances uint32
+}
+
+// NV_OFA_ALLOCATION_PARAMETERS_V545 is the updated version of
+// NV_OFA_ALLOCATION_PARAMETERS since 545.23.06.
+//
+// +marshal
+type NV_OFA_ALLOCATION_PARAMETERS_V545 struct {
+	_ structs.HostLayout
+	NV_OFA_ALLOCATION_PARAMETERS
+	EngineInstance uint32
 }
