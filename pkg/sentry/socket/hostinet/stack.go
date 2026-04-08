@@ -320,12 +320,12 @@ func (s *Stack) Statistics(stat any, arg string) error {
 	switch stat.(type) {
 	case *inet.StatDev:
 		if s.netDevFile == nil {
-			return fmt.Errorf("/proc/net/dev is not opened for hostinet")
+			return nil
 		}
 		rawLine = getLine(s.netDevFile, arg, false /* with no header */)
 	case *inet.StatSNMPIP, *inet.StatSNMPICMP, *inet.StatSNMPICMPMSG, *inet.StatSNMPTCP, *inet.StatSNMPUDP, *inet.StatSNMPUDPLite:
 		if s.netSNMPFile == nil {
-			return fmt.Errorf("/proc/net/snmp is not opened for hostinet")
+			return nil
 		}
 		rawLine = getLine(s.netSNMPFile, arg, true)
 	default:
