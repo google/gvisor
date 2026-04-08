@@ -364,6 +364,55 @@ TEST_F(PollTest, UnpollableFile) {
   EXPECT_EQ(poll_fd.revents, POLLIN | POLLOUT);
 }
 
+// Test that poll(2) does not write back the events field to userspace.
+// Linux's do_sys_poll() only writes back revents via unsafe_put_user(),
+// never the events field. This verifies that POLLHUP/POLLERR are not
+// injected into the events field.
+TEST_F(PollTest, EventsFieldNotModified) {
+  // Create a pipe.
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+
+  FileDescriptor fd0(fds[0]);
+  FileDescriptor fd1(fds[1]);
+
+  // Close the writer fd so the reader gets POLLHUP.
+  fd1.reset();
+
+  // Poll with only POLLIN in events.
+  struct pollfd poll_fd = {fd0.get(), POLLIN, 0};
+  EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, 0), SyscallSucceedsWithValue(1));
+
+  // revents should contain POLLHUP (since writer is closed).
+  EXPECT_NE(poll_fd.revents & POLLHUP, 0);
+
+  // The events field must remain unchanged (only POLLIN, no POLLHUP/POLLERR).
+  EXPECT_EQ(poll_fd.events, POLLIN);
+}
+
+// Test that poll(2) does not write back the events field when POLLERR occurs.
+TEST_F(PollTest, EventsFieldNotModifiedOnError) {
+  // Create a pipe.
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+
+  FileDescriptor fd0(fds[0]);
+  FileDescriptor fd1(fds[1]);
+
+  // Close the reader fd so the writer gets POLLERR.
+  fd0.reset();
+
+  // Poll with only POLLOUT in events.
+  struct pollfd poll_fd = {fd1.get(), POLLOUT, 0};
+  EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, 0), SyscallSucceedsWithValue(1));
+
+  // revents should contain POLLERR (since reader is closed).
+  EXPECT_NE(poll_fd.revents & POLLERR, 0);
+
+  // The events field must remain unchanged (only POLLOUT, no POLLERR/POLLHUP).
+  EXPECT_EQ(poll_fd.events, POLLOUT);
+}
+
 }  // namespace
 }  // namespace testing
 }  // namespace gvisor
