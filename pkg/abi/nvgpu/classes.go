@@ -75,6 +75,7 @@ const (
 	FERMI_CONTEXT_SHARE_A            = 0x00009067
 	GF100_DISP_SW                    = 0x00009072
 	GF100_ZBC_CLEAR                  = 0x00009096
+	GF100_SUBDEVICE_INFOROM          = 0x000090e7
 	GF100_PROFILER                   = 0x000090cc
 	GF100_SUBDEVICE_MASTER           = 0x000090e6
 	FERMI_VASPACE_A                  = 0x000090f1

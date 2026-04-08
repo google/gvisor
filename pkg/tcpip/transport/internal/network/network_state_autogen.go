@@ -32,6 +32,7 @@ func (e *Endpoint) StateFields() []string {
 		"ipv6MulticastNICID",
 		"ipv4TOS",
 		"ipv6TClass",
+		"pmtud",
 		"info",
 		"state",
 	}
@@ -60,8 +61,9 @@ func (e *Endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(15, &e.ipv6MulticastNICID)
 	stateSinkObject.Save(16, &e.ipv4TOS)
 	stateSinkObject.Save(17, &e.ipv6TClass)
-	stateSinkObject.Save(18, &e.info)
-	stateSinkObject.Save(19, &e.state)
+	stateSinkObject.Save(18, &e.pmtud)
+	stateSinkObject.Save(19, &e.info)
+	stateSinkObject.Save(20, &e.state)
 }
 
 func (e *Endpoint) afterLoad(context.Context) {}
@@ -86,8 +88,9 @@ func (e *Endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source
 	stateSourceObject.Load(15, &e.ipv6MulticastNICID)
 	stateSourceObject.Load(16, &e.ipv4TOS)
 	stateSourceObject.Load(17, &e.ipv6TClass)
-	stateSourceObject.Load(18, &e.info)
-	stateSourceObject.Load(19, &e.state)
+	stateSourceObject.Load(18, &e.pmtud)
+	stateSourceObject.Load(19, &e.info)
+	stateSourceObject.Load(20, &e.state)
 }
 
 func (m *multicastMembership) StateTypeName() string {
