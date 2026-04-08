@@ -11,7 +11,6 @@ package seqatomic
 import (
 	"context"
 	"sync/atomic"
-	"unsafe"
 )
 
 // Value is a required type parameter.
@@ -20,13 +19,9 @@ type Value struct{}
 // An AtomicPtr is a pointer to a value of type Value that can be atomically
 // loaded and stored. The zero value of an AtomicPtr represents nil.
 //
-// Note that copying AtomicPtr by value performs a non-atomic read of the
-// stored pointer, which is unsafe if Store() can be called concurrently; in
-// this case, do `dst.Store(src.Load())` instead.
-//
 // +stateify savable
 type AtomicPtr struct {
-	ptr unsafe.Pointer `state:".(*Value)"`
+	ptr atomic.Pointer[Value] `state:".(*Value)"`
 }
 
 func (p *AtomicPtr) savePtr() *Value {
@@ -42,15 +37,15 @@ func (p *AtomicPtr) loadPtr(_ context.Context, v *Value) {
 //
 //go:nosplit
 func (p *AtomicPtr) Load() *Value {
-	return (*Value)(atomic.LoadPointer(&p.ptr))
+	return p.ptr.Load()
 }
 
 // Store sets the value returned by Load to x.
 func (p *AtomicPtr) Store(x *Value) {
-	atomic.StorePointer(&p.ptr, (unsafe.Pointer)(x))
+	p.ptr.Store(x)
 }
 
 // Swap atomically stores `x` into *p and returns the previous *p value.
 func (p *AtomicPtr) Swap(x *Value) *Value {
-	return (*Value)(atomic.SwapPointer(&p.ptr, (unsafe.Pointer)(x)))
+	return p.ptr.Swap(x)
 }
