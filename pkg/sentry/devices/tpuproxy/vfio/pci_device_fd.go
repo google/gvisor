@@ -240,7 +240,7 @@ func (fd *pciDeviceFD) vfioSetIrqs(ctx context.Context, t *kernel.Task, arg host
 	// VFIO_IRQ_SET_DATA_BOOL indicates that the data field is an array of uint8.
 	// The action will be performed if the corresponding boolean is true.
 	case linux.VFIO_IRQ_SET_DATA_BOOL:
-		payloadSize := uint32(irqSet.Size()) + irqSet.Count
+		payloadSize := uint32(irqSet.SizeBytes()) + irqSet.Count
 		payload := make([]uint8, payloadSize)
 		if _, err := primitive.CopyUint8SliceIn(t, arg, payload); err != nil {
 			return 0, err
@@ -250,7 +250,7 @@ func (fd *pciDeviceFD) vfioSetIrqs(ctx context.Context, t *kernel.Task, arg host
 	// of int32 (or event file descriptors). These descriptors will be
 	// signalled when an action in the flags happens.
 	case linux.VFIO_IRQ_SET_DATA_EVENTFD:
-		payloadSize := uint32(irqSet.Size())/4 + irqSet.Count
+		payloadSize := uint32(irqSet.SizeBytes())/4 + irqSet.Count
 		payload := make([]int32, payloadSize)
 		if _, err := primitive.CopyInt32SliceIn(t, arg, payload); err != nil {
 			return 0, err
