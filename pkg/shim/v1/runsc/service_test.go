@@ -19,6 +19,7 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/shim/v1/utils"
+	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 func TestCgroupPath(t *testing.T) {
@@ -85,6 +86,85 @@ func TestCgroupPath(t *testing.T) {
 			}
 			if shouldUpdate := len(tc.want) > 0; shouldUpdate != updated {
 				t.Errorf("setPodCgroup(%q)=%v, want: %v", tc.path, updated, shouldUpdate)
+			}
+		})
+	}
+}
+
+func TestSandboxDetection(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		annotations map[string]string
+		wantSandbox bool
+	}{
+		{
+			name:        "no-annotation (non-CRI caller like BuildKit or ctr)",
+			annotations: nil,
+			wantSandbox: true,
+		},
+		{
+			name:        "empty-annotations",
+			annotations: map[string]string{},
+			wantSandbox: true,
+		},
+		{
+			name: "containerd-sandbox",
+			annotations: map[string]string{
+				specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeSandbox,
+			},
+			wantSandbox: true,
+		},
+		{
+			name: "containerd-container",
+			annotations: map[string]string{
+				specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeContainer,
+			},
+			wantSandbox: false,
+		},
+		{
+			name: "crio-sandbox",
+			annotations: map[string]string{
+				specutils.CRIOContainerTypeAnnotation: specutils.CRIOContainerTypeSandbox,
+			},
+			wantSandbox: true,
+		},
+		{
+			name: "crio-container",
+			annotations: map[string]string{
+				specutils.CRIOContainerTypeAnnotation: specutils.CRIOContainerTypeContainer,
+			},
+			wantSandbox: false,
+		},
+		{
+			name: "unknown-annotation-value",
+			annotations: map[string]string{
+				specutils.ContainerdContainerTypeAnnotation: "unknown-value",
+			},
+			wantSandbox: false,
+		},
+		{
+			name: "both-annotations-container-wins",
+			annotations: map[string]string{
+				specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeContainer,
+				specutils.CRIOContainerTypeAnnotation:       specutils.CRIOContainerTypeSandbox,
+			},
+			// containerd annotation is checked first
+			wantSandbox: false,
+		},
+		{
+			name: "unrelated-annotations-treated-as-unspecified",
+			annotations: map[string]string{
+				"some.other.annotation": "value",
+			},
+			wantSandbox: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			spec := &specs.Spec{Annotations: tc.annotations}
+			ct := specutils.SpecContainerType(spec)
+			got := ct == specutils.ContainerTypeSandbox || ct == specutils.ContainerTypeUnspecified
+			if got != tc.wantSandbox {
+				t.Errorf("sandbox detection for %v: got %v, want %v (containerType=%v)", tc.annotations, got, tc.wantSandbox, ct)
 			}
 		})
 	}
