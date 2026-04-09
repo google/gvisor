@@ -1539,6 +1539,23 @@ func (s *Sandbox) SignalProcess(cid string, pid int32, sig unix.Signal, fgProces
 	return nil
 }
 
+// SignalProcessGroup sends the signal to all processes in the process group
+// identified by pgid. pgid is relative to the root PID namespace.
+func (s *Sandbox) SignalProcessGroup(cid string, pgid int32, sig unix.Signal) error {
+	log.Debugf("Signal sandbox %q process group %d", s.ID, pgid)
+
+	args := boot.SignalArgs{
+		CID:   cid,
+		Signo: int32(sig),
+		PID:   pgid,
+		Mode:  boot.DeliverToProcessGroup,
+	}
+	if err := s.call(boot.ContMgrSignal, &args, nil); err != nil {
+		return fmt.Errorf("signaling container %q PGID %d: %v", cid, pgid, err)
+	}
+	return nil
+}
+
 // CheckpointOpts contains the options for checkpointing a sandbox.
 type CheckpointOpts struct {
 	Compression               statefile.CompressionLevel
