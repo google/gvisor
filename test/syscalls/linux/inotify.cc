@@ -2530,6 +2530,85 @@ TEST(InotifyTest, NotifyNoDeadlock) {
   }
 }
 
+// open(O_TRUNC) on an existing file should generate both IN_OPEN and
+// IN_MODIFY.
+// The ordering (IN_OPEN before IN_MODIFY) changed in Linux 6.5; see
+// https://github.com/torvalds/linux/commit/7b8c9d7bb4570ee4800642009c8f2d9756004552.
+TEST(Inotify, OpenWithTruncGeneratesModify) {
+  const TempPath root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const TempPath file =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(root.path()));
+
+  // Write some data so the file is non-empty.
+  {
+    const FileDescriptor tmp_fd =
+        ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_WRONLY));
+    const std::string data = "some content";
+    EXPECT_THAT(write(tmp_fd.get(), data.c_str(), data.length()),
+                SyscallSucceeds());
+  }  // tmp_fd closed here, before setting up watches.
+
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+  const int dir_wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(fd.get(), root.path(), IN_ALL_EVENTS));
+  const int file_wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(fd.get(), file.path(), IN_ALL_EVENTS));
+
+  // Open with O_TRUNC on the existing file.
+  const FileDescriptor trunc_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_WRONLY | O_TRUNC));
+
+  const std::vector<Event> events =
+      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(fd.get()));
+
+  // Core assertion: both IN_OPEN and IN_MODIFY must be present on both watches.
+  // This is the essential behavior.
+  ASSERT_THAT(events,
+              AreUnordered({Event(IN_OPEN, dir_wd, Basename(file.path())),
+                            Event(IN_OPEN, file_wd),
+                            Event(IN_MODIFY, dir_wd, Basename(file.path())),
+                            Event(IN_MODIFY, file_wd)}));
+
+  // Event ordering: IN_OPEN before IN_MODIFY since Linux 6.5 (commit
+  // 7b8c9d7bb457). gVisor implements the >= 6.5 ordering. On older kernels
+  // the order is reversed, so only check the exact sequence on >= 6.5 or
+  // gVisor.
+  bool check_order = IsRunningOnGvisor();
+  if (!check_order) {
+    auto version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
+    check_order =
+        version.major > 6 || (version.major == 6 && version.minor >= 5);
+  }
+  if (check_order) {
+    EXPECT_THAT(events, Are({Event(IN_OPEN, dir_wd, Basename(file.path())),
+                             Event(IN_OPEN, file_wd),
+                             Event(IN_MODIFY, dir_wd, Basename(file.path())),
+                             Event(IN_MODIFY, file_wd)}));
+  }
+}
+
+// open(O_CREAT|O_TRUNC) on a new file should NOT generate IN_MODIFY.
+TEST(Inotify, OpenCreateTruncNewFileNoModify) {
+  const TempPath root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+  const int dir_wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(fd.get(), root.path(), IN_ALL_EVENTS));
+
+  // Create a new file with O_CREAT|O_TRUNC.
+  const std::string newpath = JoinPath(root.path(), "newfile");
+  const FileDescriptor new_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(newpath, O_WRONLY | O_CREAT | O_TRUNC, 0644));
+
+  const std::vector<Event> events =
+      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(fd.get()));
+  // Should see IN_CREATE and IN_OPEN, but no IN_MODIFY.
+  ASSERT_THAT(events, Are({Event(IN_CREATE, dir_wd, "newfile"),
+                           Event(IN_OPEN, dir_wd, "newfile")}));
+}
+
 // NOTE(b/239215242): Regression test.
 TEST(Inotify, KernfsBasic) {
   const FileDescriptor fd =

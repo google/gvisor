@@ -643,10 +643,14 @@ afterTrailingSymlink:
 		// its destruction while fs.mu is unlocked.
 		child.IncRef()
 		unlock()
-		parent.inode.Watches().Notify(ctx, pc, linux.IN_CREATE, 0, vfs.PathEvent, false /* unlinked */)
 		fd, err := child.inode.Open(ctx, rp, &child, opts)
 		child.DecRef(ctx)
-		return fd, err
+		if err != nil {
+			return nil, err
+		}
+		parent.inode.Watches().Notify(ctx, pc, linux.IN_CREATE, 0, vfs.PathEvent, false /* unlinked */)
+		fd.SetCreated()
+		return fd, nil
 	}
 	if err != nil {
 		return nil, err
