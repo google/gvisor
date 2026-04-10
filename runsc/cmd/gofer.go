@@ -18,7 +18,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -727,79 +726,12 @@ func (g *Gofer) resolveMounts(conf *config.Config, mounts []specs.Mount, root st
 	return cleanMounts, nil
 }
 
-// ResolveSymlinks walks 'rel' having 'root' as the root directory. If there are
-// symlinks, they are evaluated relative to 'root' to ensure the end result is
-// the same as if the process was running inside the container.
 func resolveSymlinks(root, rel string) (string, error) {
-	return resolveSymlinksImpl(root, root, rel, 255)
+	return util.ResolveSymlinks(root, rel)
 }
 
-func resolveSymlinksImpl(root, base, rel string, followCount uint) (string, error) {
-	if followCount == 0 {
-		return "", fmt.Errorf("too many symlinks to follow, path: %q", filepath.Join(base, rel))
-	}
-
-	rel = filepath.Clean(rel)
-	for _, name := range strings.Split(rel, string(filepath.Separator)) {
-		if name == "" {
-			continue
-		}
-		// Note that Join() resolves things like ".." and returns a clean path.
-		path := filepath.Join(base, name)
-		if !strings.HasPrefix(path, root) {
-			// One cannot '..' their way out of root.
-			base = root
-			continue
-		}
-		fi, err := os.Lstat(path)
-		if err != nil {
-			if !os.IsNotExist(err) {
-				return "", err
-			}
-			// Not found means there is no symlink to check. Just keep walking dirs.
-			base = path
-			continue
-		}
-		if fi.Mode()&os.ModeSymlink != 0 {
-			link, err := os.Readlink(path)
-			if err != nil {
-				return "", err
-			}
-			if filepath.IsAbs(link) {
-				base = root
-			}
-			base, err = resolveSymlinksImpl(root, base, link, followCount-1)
-			if err != nil {
-				return "", err
-			}
-			continue
-		}
-		base = path
-	}
-	return base, nil
-}
-
-// adjustMountOptions adds filesystem-specific gofer mount options.
 func adjustMountOptions(conf *config.Config, path string, opts []string) ([]string, error) {
-	rv := make([]string, len(opts))
-	copy(rv, opts)
-
-	statfs := unix.Statfs_t{}
-	if err := unix.Statfs(path, &statfs); err != nil {
-		return nil, err
-	}
-	switch statfs.Type {
-	case unix.OVERLAYFS_SUPER_MAGIC:
-		rv = append(rv, "overlayfs_stale_read")
-	case unix.NFS_SUPER_MAGIC, unix.FUSE_SUPER_MAGIC:
-		// The gofer client implements remote file handle sharing for performance.
-		// However, remote filesystems like NFS and FUSE rely on close(2) syscall
-		// for flushing file data to the server. Such handle sharing prevents the
-		// application's close(2) syscall from being propagated to the host. Hence
-		// disable file handle sharing, so remote files are flushed correctly.
-		rv = append(rv, "disable_file_handle_sharing")
-	}
-	return rv, nil
+	return util.AdjustMountOptions(conf, path, opts)
 }
 
 // setFlags sets sync FD flags on the given FlagSet.
@@ -819,19 +751,8 @@ func (g *goferSyncFDs) flags() map[string]string {
 	}
 }
 
-// waitForFD waits for the other end of a given FD to be closed.
-// `fd` is closed unconditionally after that.
-// This should only be called for actual FDs (i.e. `fd` >= 0).
 func waitForFD(fd int, fdName string) error {
-	log.Debugf("Waiting on %s %d...", fdName, fd)
-	f := os.NewFile(uintptr(fd), fdName)
-	defer f.Close()
-	var b [1]byte
-	if n, err := f.Read(b[:]); n != 0 || err != io.EOF {
-		return fmt.Errorf("failed to sync on %s: %v: %v", fdName, n, err)
-	}
-	log.Debugf("Synced on %s %d.", fdName, fd)
-	return nil
+	return util.WaitForFD(fd, fdName)
 }
 
 // spawnProcMounter executes the /proc unmounter process.

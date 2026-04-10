@@ -43,43 +43,11 @@ func mountInChroot(chroot, src, dst, typ string, flags uint32) error {
 }
 
 func pivotRoot(root string) error {
-	if err := os.Chdir(root); err != nil {
-		return fmt.Errorf("error changing working directory: %v", err)
-	}
-	// pivot_root(new_root, put_old) moves the root filesystem (old_root)
-	// of the calling process to the directory put_old and makes new_root
-	// the new root filesystem of the calling process.
-	//
-	// pivot_root(".", ".") makes a mount of the working directory the new
-	// root filesystem, so it will be moved in "/" and then the old_root
-	// will be moved to "/" too. The parent mount of the old_root will be
-	// new_root, so after umounting the old_root, we will see only
-	// the new_root in "/".
-	if err := unix.PivotRoot(".", "."); err != nil {
-		return fmt.Errorf("pivot_root failed, make sure that the root mount has a parent: %v", err)
-	}
-
-	if err := unix.Unmount(".", unix.MNT_DETACH); err != nil {
-		return fmt.Errorf("error umounting the old root file system: %v", err)
-	}
-	return nil
+	return util.PivotRoot(root)
 }
 
 func copyFile(dst, src string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	_, err = out.ReadFrom(in)
-	return err
+	return util.CopyFile(dst, src)
 }
 
 // setupMinimalProcfs creates a minimal procfs-like tree at `${chroot}/proc`.
