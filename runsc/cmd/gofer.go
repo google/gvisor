@@ -18,7 +18,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -34,6 +33,7 @@ import (
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/cmd/sandboxsetup"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
@@ -100,7 +100,7 @@ type goferSyncFDs struct {
 type Gofer struct {
 	util.InternalSubCommand
 	bundleDir  string
-	ioFDs      intFlags
+	ioFDs      sandboxsetup.IntFlags
 	devIoFD    int
 	applyCaps  bool
 	setUpRoot  bool
@@ -202,12 +202,12 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		overrides := g.syncFDs.flags()
 		overrides["apply-caps"] = "false"
 		overrides["setup-root"] = "false"
-		args := prepareArgs(g.Name(), f, overrides)
+		args := sandboxsetup.PrepareArgs(g.Name(), f, overrides)
 		capsToApply := goferCaps
 		if conf.GetHostUDS().AllowOpen() {
 			capsToApply = specutils.MergeCapabilities(capsToApply, goferUdsOpenCaps)
 		}
-		util.Fatalf("setCapsAndCallSelf(%v, %v): %v", args, capsToApply, setCapsAndCallSelf(args, capsToApply))
+		util.Fatalf("setCapsAndCallSelf(%v, %v): %v", args, capsToApply, sandboxsetup.SetCapsAndCallSelf(args, capsToApply))
 		panic("unreachable")
 	}
 
@@ -468,7 +468,7 @@ func (g *Gofer) setupRootFS(spec *specs.Spec, conf *config.Config, goferToHostRP
 			"", unix.MS_RDONLY|unix.MS_BIND|flags, ""); err != nil {
 			util.Fatalf("error mounting proc/self/fd: %v", err)
 		}
-		if err := copyFile("/proc/fs/etc/localtime", "/etc/localtime"); err != nil {
+		if err := sandboxsetup.CopyFile("/proc/fs/etc/localtime", "/etc/localtime"); err != nil {
 			log.Warningf("Failed to copy /etc/localtime: %v. UTC timezone will be used.", err)
 		}
 		root = "/proc/fs/root"
@@ -517,7 +517,7 @@ func (g *Gofer) setupRootFS(spec *specs.Spec, conf *config.Config, goferToHostRP
 	}
 
 	if !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
-		if err := pivotRoot("/proc/fs"); err != nil {
+		if err := sandboxsetup.PivotRoot("/proc/fs"); err != nil {
 			util.Fatalf("failed to change the root file system: %v", err)
 		}
 		if err := os.Chdir("/"); err != nil {
@@ -542,7 +542,7 @@ func (g *Gofer) setupMounts(conf *config.Config, mounts []specs.Mount, root, pro
 			continue
 		}
 
-		dst, err := resolveSymlinks(root, m.Destination)
+		dst, err := sandboxsetup.ResolveSymlinks(root, m.Destination)
 		if err != nil {
 			return fmt.Errorf("resolving symlinks to %q: %v", m.Destination, err)
 		}
@@ -705,7 +705,7 @@ func (g *Gofer) resolveMounts(conf *config.Config, mounts []specs.Mount, root st
 			cleanMounts = append(cleanMounts, m)
 			continue
 		}
-		dst, err := resolveSymlinks(root, m.Destination)
+		dst, err := sandboxsetup.ResolveSymlinks(root, m.Destination)
 		if err != nil {
 			return nil, fmt.Errorf("resolving symlinks to %q: %v", m.Destination, err)
 		}
@@ -714,7 +714,7 @@ func (g *Gofer) resolveMounts(conf *config.Config, mounts []specs.Mount, root st
 			panic(fmt.Sprintf("%q could not be made relative to %q: %v", dst, root, err))
 		}
 
-		opts, err := adjustMountOptions(conf, filepath.Join(root, relDst), m.Options)
+		opts, err := sandboxsetup.AdjustMountOptions(conf, filepath.Join(root, relDst), m.Options)
 		if err != nil {
 			return nil, err
 		}
@@ -725,81 +725,6 @@ func (g *Gofer) resolveMounts(conf *config.Config, mounts []specs.Mount, root st
 		cleanMounts = append(cleanMounts, cpy)
 	}
 	return cleanMounts, nil
-}
-
-// ResolveSymlinks walks 'rel' having 'root' as the root directory. If there are
-// symlinks, they are evaluated relative to 'root' to ensure the end result is
-// the same as if the process was running inside the container.
-func resolveSymlinks(root, rel string) (string, error) {
-	return resolveSymlinksImpl(root, root, rel, 255)
-}
-
-func resolveSymlinksImpl(root, base, rel string, followCount uint) (string, error) {
-	if followCount == 0 {
-		return "", fmt.Errorf("too many symlinks to follow, path: %q", filepath.Join(base, rel))
-	}
-
-	rel = filepath.Clean(rel)
-	for _, name := range strings.Split(rel, string(filepath.Separator)) {
-		if name == "" {
-			continue
-		}
-		// Note that Join() resolves things like ".." and returns a clean path.
-		path := filepath.Join(base, name)
-		if !strings.HasPrefix(path, root) {
-			// One cannot '..' their way out of root.
-			base = root
-			continue
-		}
-		fi, err := os.Lstat(path)
-		if err != nil {
-			if !os.IsNotExist(err) {
-				return "", err
-			}
-			// Not found means there is no symlink to check. Just keep walking dirs.
-			base = path
-			continue
-		}
-		if fi.Mode()&os.ModeSymlink != 0 {
-			link, err := os.Readlink(path)
-			if err != nil {
-				return "", err
-			}
-			if filepath.IsAbs(link) {
-				base = root
-			}
-			base, err = resolveSymlinksImpl(root, base, link, followCount-1)
-			if err != nil {
-				return "", err
-			}
-			continue
-		}
-		base = path
-	}
-	return base, nil
-}
-
-// adjustMountOptions adds filesystem-specific gofer mount options.
-func adjustMountOptions(conf *config.Config, path string, opts []string) ([]string, error) {
-	rv := make([]string, len(opts))
-	copy(rv, opts)
-
-	statfs := unix.Statfs_t{}
-	if err := unix.Statfs(path, &statfs); err != nil {
-		return nil, err
-	}
-	switch statfs.Type {
-	case unix.OVERLAYFS_SUPER_MAGIC:
-		rv = append(rv, "overlayfs_stale_read")
-	case unix.NFS_SUPER_MAGIC, unix.FUSE_SUPER_MAGIC:
-		// The gofer client implements remote file handle sharing for performance.
-		// However, remote filesystems like NFS and FUSE rely on close(2) syscall
-		// for flushing file data to the server. Such handle sharing prevents the
-		// application's close(2) syscall from being propagated to the host. Hence
-		// disable file handle sharing, so remote files are flushed correctly.
-		rv = append(rv, "disable_file_handle_sharing")
-	}
-	return rv, nil
 }
 
 // setFlags sets sync FD flags on the given FlagSet.
@@ -819,21 +744,6 @@ func (g *goferSyncFDs) flags() map[string]string {
 	}
 }
 
-// waitForFD waits for the other end of a given FD to be closed.
-// `fd` is closed unconditionally after that.
-// This should only be called for actual FDs (i.e. `fd` >= 0).
-func waitForFD(fd int, fdName string) error {
-	log.Debugf("Waiting on %s %d...", fdName, fd)
-	f := os.NewFile(uintptr(fd), fdName)
-	defer f.Close()
-	var b [1]byte
-	if n, err := f.Read(b[:]); n != 0 || err != io.EOF {
-		return fmt.Errorf("failed to sync on %s: %v: %v", fdName, n, err)
-	}
-	log.Debugf("Synced on %s %d.", fdName, fd)
-	return nil
-}
-
 // spawnProcMounter executes the /proc unmounter process.
 // It returns a function to wait on the proc unmounter process, which
 // should be called (via defer) in case of errors in order to clean up the
@@ -845,7 +755,7 @@ func (g *goferSyncFDs) spawnProcUnmounter() func() {
 	}
 	// /proc is umounted from a forked process, because the
 	// current one may re-execute itself without capabilities.
-	cmd, w := execProcUmounter()
+	cmd, w := sandboxsetup.ExecProcUmounter()
 	// Clear FD_CLOEXEC. This process may be re-executed. procMountFD
 	// should remain open.
 	if _, _, errno := unix.RawSyscall(unix.SYS_FCNTL, w.Fd(), unix.F_SETFD, 0); errno != 0 {
@@ -865,7 +775,7 @@ func (g *goferSyncFDs) unmountProcfs() {
 	if g.procMountFD < 0 {
 		return
 	}
-	umountProc(g.procMountFD)
+	sandboxsetup.UmountProc(g.procMountFD)
 	g.procMountFD = -1
 }
 
@@ -888,7 +798,7 @@ func (g *goferSyncFDs) syncUsernsForRootless(uid, gid uint32) {
 //
 // Postcondition: All callers must re-exec themselves after this returns.
 func syncUsernsForRootless(fd int, uid uint32, gid uint32) {
-	if err := waitForFD(fd, "userns sync FD"); err != nil {
+	if err := sandboxsetup.WaitForFD(fd, "userns sync FD"); err != nil {
 		util.Fatalf("failed to sync on userns FD: %v", err)
 	}
 
@@ -911,7 +821,7 @@ func (g *goferSyncFDs) syncChroot() {
 	if g.chrootFD < 0 {
 		return
 	}
-	if err := waitForFD(g.chrootFD, "chroot sync FD"); err != nil {
+	if err := sandboxsetup.WaitForFD(g.chrootFD, "chroot sync FD"); err != nil {
 		util.Fatalf("failed to sync on chroot FD: %v", err)
 	}
 	g.chrootFD = -1

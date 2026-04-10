@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package cmd
+package sandboxsetup
 
 import (
 	"fmt"
@@ -22,7 +22,8 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 )
 
-var allCapTypes = []capability.CapType{
+// AllCapTypes is the set of all Linux capability types.
+var AllCapTypes = []capability.CapType{
 	capability.BOUNDS,
 	capability.EFFECTIVE,
 	capability.PERMITTED,
@@ -30,10 +31,11 @@ var allCapTypes = []capability.CapType{
 	capability.AMBIENT,
 }
 
-// applyCaps applies the capabilities in the spec to the current thread.
+// ApplyCaps applies the capabilities in the spec to the current thread.
 //
-// Note that it must be called with current thread locked.
-func applyCaps(caps *specs.LinuxCapabilities) error {
+// Precondition: Must be called with the current OS thread locked
+// (runtime.LockOSThread).
+func ApplyCaps(caps *specs.LinuxCapabilities) error {
 	// Load current capabilities to trim the ones not permitted.
 	curCaps, err := capability.NewPid2(0)
 	if err != nil {
@@ -49,11 +51,11 @@ func applyCaps(caps *specs.LinuxCapabilities) error {
 		return err
 	}
 
-	for _, c := range allCapTypes {
+	for _, c := range AllCapTypes {
 		if !newCaps.Empty(c) {
 			panic("unloaded capabilities must be empty")
 		}
-		set, err := trimCaps(getCaps(c, caps), curCaps)
+		set, err := TrimCaps(GetCaps(c, caps), curCaps)
 		if err != nil {
 			return err
 		}
@@ -67,7 +69,9 @@ func applyCaps(caps *specs.LinuxCapabilities) error {
 	return nil
 }
 
-func getCaps(which capability.CapType, caps *specs.LinuxCapabilities) []string {
+// GetCaps returns the capability names for the given capability type from
+// the provided LinuxCapabilities spec.
+func GetCaps(which capability.CapType, caps *specs.LinuxCapabilities) []string {
 	switch which {
 	case capability.BOUNDS:
 		return caps.Bounding
@@ -83,8 +87,10 @@ func getCaps(which capability.CapType, caps *specs.LinuxCapabilities) []string {
 	panic(fmt.Sprint("invalid capability type:", which))
 }
 
-func trimCaps(names []string, setter capability.Capabilities) ([]capability.Cap, error) {
-	wantedCaps, err := capsFromNames(names)
+// TrimCaps filters the named capabilities to only those that are currently
+// permitted by the given Capabilities set.
+func TrimCaps(names []string, setter capability.Capabilities) ([]capability.Cap, error) {
+	wantedCaps, err := CapsFromNames(names)
 	if err != nil {
 		return nil, err
 	}
@@ -92,8 +98,9 @@ func trimCaps(names []string, setter capability.Capabilities) ([]capability.Cap,
 	// Trim down capabilities that aren't possible to acquire.
 	var caps []capability.Cap
 	for _, c := range wantedCaps {
-		// Capability rules are more complicated than this, but this catches most
-		// problems with tests running with non-privileged user.
+		// Capability rules are more complicated than this, but this
+		// catches most problems with tests running with non-privileged
+		// user.
 		if setter.Get(capability.PERMITTED, c) {
 			caps = append(caps, c)
 		} else {
@@ -103,10 +110,11 @@ func trimCaps(names []string, setter capability.Capabilities) ([]capability.Cap,
 	return caps, nil
 }
 
-func capsFromNames(names []string) ([]capability.Cap, error) {
+// CapsFromNames converts capability string names to capability.Cap values.
+func CapsFromNames(names []string) ([]capability.Cap, error) {
 	var caps []capability.Cap
 	for _, name := range names {
-		cap, ok := capFromName[name]
+		cap, ok := CapFromName[name]
 		if !ok {
 			return nil, fmt.Errorf("invalid capability %q", name)
 		}
@@ -115,7 +123,9 @@ func capsFromNames(names []string) ([]capability.Cap, error) {
 	return caps, nil
 }
 
-var capFromName = map[string]capability.Cap{
+// CapFromName maps Linux capability string names to their capability.Cap
+// values.
+var CapFromName = map[string]capability.Cap{
 	"CAP_CHOWN":              capability.CAP_CHOWN,
 	"CAP_DAC_OVERRIDE":       capability.CAP_DAC_OVERRIDE,
 	"CAP_DAC_READ_SEARCH":    capability.CAP_DAC_READ_SEARCH,

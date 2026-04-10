@@ -18,7 +18,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
@@ -44,6 +43,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
 	"gvisor.dev/gvisor/pkg/tcpip/nftables"
 	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/cmd/sandboxsetup"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -96,14 +96,14 @@ type Boot struct {
 	deviceFD int
 
 	// ioFDs is the list of FDs used to connect to FS gofers.
-	ioFDs intFlags
+	ioFDs sandboxsetup.IntFlags
 
 	// devIoFD is the FD to connect to dev gofer.
 	devIoFD int
 
 	// goferFilestoreFDs are FDs to the regular files that will back the tmpfs or
 	// overlayfs mount for certain gofer mounts.
-	goferFilestoreFDs intFlags
+	goferFilestoreFDs sandboxsetup.IntFlags
 
 	// goferMountConfs contains information about how the gofer mounts have been
 	// configured. The first entry is for rootfs and the following entries are
@@ -112,7 +112,7 @@ type Boot struct {
 
 	// stdioFDs are the fds for stdin, stdout, and stderr. They must be
 	// provided in that order.
-	stdioFDs intFlags
+	stdioFDs sandboxsetup.IntFlags
 
 	// passFDs are mappings of user-supplied host to guest file descriptors.
 	passFDs fdMappings
@@ -152,11 +152,11 @@ type Boot struct {
 
 	podInitConfigFD int
 
-	sinkFDs intFlags
+	sinkFDs sandboxsetup.IntFlags
 
-	saveFDs intFlags
+	saveFDs sandboxsetup.IntFlags
 
-	fsRestoreFDs intFlags
+	fsRestoreFDs sandboxsetup.IntFlags
 
 	// attached is set to true to kill the sandbox process when the parent process
 	// terminates. This flag is set when the command execve's itself because
@@ -385,7 +385,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 			// /proc is umounted from a forked process, because the
 			// current one is going to re-execute itself without
 			// capabilities.
-			cmd, w := execProcUmounter()
+			cmd, w := sandboxsetup.ExecProcUmounter()
 			defer cmd.Wait()
 			defer w.Close()
 			if b.procMountSyncFD != -1 {
@@ -402,13 +402,13 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 
 			if !b.applyCaps {
 				// Remove the args that have already been done before calling self.
-				args := prepareArgs(b.Name(), f, argOverride)
+				args := sandboxsetup.PrepareArgs(b.Name(), f, argOverride)
 
 				// Note that we've already read the spec from the spec FD, and
 				// we will read it again after the exec call. This works
 				// because the ReadSpecFromFile function seeks to the beginning
 				// of the file before reading.
-				util.Fatalf("callSelfAsNobody(%v): %v", args, callSelfAsNobody(args))
+				util.Fatalf("callSelfAsNobody(%v): %v", args, sandboxsetup.CallSelfAsNobody(args))
 
 				// This prevents the specFile finalizer from running and closed
 				// the specFD, which we have passed to ourselves when
@@ -467,13 +467,13 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		argOverride["apply-caps"] = "false"
 
 		// Remove the args that have already been done before calling self.
-		args := prepareArgs(b.Name(), f, argOverride)
+		args := sandboxsetup.PrepareArgs(b.Name(), f, argOverride)
 
 		// Note that we've already read the spec from the spec FD, and
 		// we will read it again after the exec call. This works
 		// because the ReadSpecFromFile function seeks to the beginning
 		// of the file before reading.
-		util.Fatalf("setCapsAndCallSelf(%v, %v): %v", args, caps, setCapsAndCallSelf(args, caps))
+		util.Fatalf("setCapsAndCallSelf(%v, %v): %v", args, caps, sandboxsetup.SetCapsAndCallSelf(args, caps))
 
 		// This prevents the specFile finalizer from running and closed
 		// the specFD, which we have passed to ourselves when
@@ -609,7 +609,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 			// Call validateOpenFDs() before umounting /proc.
 			validateOpenFDs(bootArgs.PassFDs)
 			// Umount /proc right before installing seccomp filters.
-			umountProc(b.procMountSyncFD)
+			sandboxsetup.UmountProc(b.procMountSyncFD)
 		}
 	}
 
@@ -669,84 +669,6 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 
 	l.Destroy()
 	return subcommands.ExitSuccess
-}
-
-// prepareArgs returns the args that can be used to re-execute the current
-// program. It manipulates the flags of the subcommands.Command identified by
-// subCmdName and fSet is the flag.FlagSet of this subcommand. It applies the
-// flags specified by override map. In case of conflict, flag is overridden.
-//
-// Postcondition: prepareArgs() takes ownership of override map.
-func prepareArgs(subCmdName string, fSet *flag.FlagSet, override map[string]string) []string {
-	var args []string
-	// Add all args up until (and including) the sub command.
-	for _, arg := range os.Args {
-		args = append(args, arg)
-		if arg == subCmdName {
-			break
-		}
-	}
-	// Set sub command flags. Iterate through all the explicitly set flags.
-	fSet.Visit(func(gf *flag.Flag) {
-		// If a conflict is found with override, then prefer override flag.
-		if ov, ok := override[gf.Name]; ok {
-			args = append(args, fmt.Sprintf("--%s=%s", gf.Name, ov))
-			delete(override, gf.Name)
-			return
-		}
-		// Otherwise pass through the original flag.
-		args = append(args, fmt.Sprintf("--%s=%s", gf.Name, gf.Value))
-	})
-	// Apply remaining override flags (that didn't conflict above).
-	for of, ov := range override {
-		args = append(args, fmt.Sprintf("--%s=%s", of, ov))
-	}
-	// Add the non-flag arguments at the end.
-	args = append(args, fSet.Args()...)
-	return args
-}
-
-// execProcUmounter execute a child process that umounts /proc when the
-// returned pipe is closed.
-func execProcUmounter() (*exec.Cmd, *os.File) {
-	r, w, err := os.Pipe()
-	if err != nil {
-		util.Fatalf("error creating a pipe: %v", err)
-	}
-	defer r.Close()
-
-	cmd := exec.Command(specutils.ExePath)
-	cmd.Args = append(cmd.Args, "umount", "--sync-fd=3", "/proc")
-	cmd.ExtraFiles = append(cmd.ExtraFiles, r)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Start(); err != nil {
-		util.Fatalf("error executing umounter: %v", err)
-	}
-	return cmd, w
-}
-
-// umountProc writes to syncFD signalling the process started by
-// execProcUmounter() to umount /proc.
-func umountProc(syncFD int) {
-	syncFile := os.NewFile(uintptr(syncFD), "procfs umount sync FD")
-	buf := make([]byte, 1)
-	if w, err := syncFile.Write(buf); err != nil || w != 1 {
-		util.Fatalf("unable to write into the proc umounter descriptor: %v", err)
-	}
-	syncFile.Close()
-
-	var waitStatus unix.WaitStatus
-	if _, err := unix.Wait4(0, &waitStatus, 0, nil); err != nil {
-		util.Fatalf("error waiting for the proc umounter process: %v", err)
-	}
-	if !waitStatus.Exited() || waitStatus.ExitStatus() != 0 {
-		util.Fatalf("the proc umounter process failed: %v", waitStatus)
-	}
-	if err := unix.Access("/proc/self", unix.F_OK); err != unix.ENOENT {
-		util.Fatalf("/proc is still accessible")
-	}
 }
 
 // validateOpenFDs checks that the sandbox process does not have any open

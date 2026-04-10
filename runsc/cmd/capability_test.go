@@ -25,6 +25,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/test/testutil"
+	"gvisor.dev/gvisor/runsc/cmd/sandboxsetup"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -47,7 +48,7 @@ func checkProcessCaps(pid int, wantCaps *specs.LinuxCapabilities) error {
 	}
 	fmt.Printf("Capabilities (PID: %d): %v\n", pid, curCaps)
 
-	for _, c := range allCapTypes {
+	for _, c := range sandboxsetup.AllCapTypes {
 		if err := checkCaps(c, curCaps, wantCaps); err != nil {
 			return err
 		}
@@ -56,8 +57,8 @@ func checkProcessCaps(pid int, wantCaps *specs.LinuxCapabilities) error {
 }
 
 func checkCaps(which capability.CapType, curCaps capability.Capabilities, wantCaps *specs.LinuxCapabilities) error {
-	wantNames := getCaps(which, wantCaps)
-	for name, c := range capFromName {
+	wantNames := sandboxsetup.GetCaps(which, wantCaps)
+	for name, c := range sandboxsetup.CapFromName {
 		want := slices.Contains(wantNames, name)
 		got := curCaps.Get(which, c)
 		if want != got {

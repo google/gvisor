@@ -35,7 +35,6 @@ go_library(
     srcs = [
         "boot.go",
         "boot_impl.go",
-        "capability.go",
         "checkpoint.go",
         "checkpoint_impl.go",
         "chroot.go",
@@ -113,6 +112,7 @@ go_library(
         "//pkg/urpc",
         "//runsc/boot",
         "//runsc/cmd/metricserver/metricservercmd",
+        "//runsc/cmd/sandboxsetup",
         "//runsc/cmd/util",
         "//runsc/config",
         "//runsc/console",
@@ -165,6 +165,7 @@ go_test(
         "//pkg/sentry/control",
         "//pkg/sentry/kernel/auth",
         "//pkg/test/testutil",
+        "//runsc/cmd/sandboxsetup",
         "//runsc/cmd/util",
         "//runsc/config",
         "//runsc/container",
