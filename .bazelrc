@@ -45,3 +45,8 @@ build:x86_64 --platforms=@io_bazel_rules_go//go/toolchain:linux_amd64
 build:aarch64 --crosstool_top=@crosstool//:toolchains
 build:aarch64 --cpu=aarch64
 build:aarch64 --platforms=@io_bazel_rules_go//go/toolchain:linux_arm64
+
+# Set flags for riscv64
+build:riscv64 --crosstool_top=@crosstool//:toolchains
+build:riscv64 --cpu=riscv64
+build:riscv64 --platforms=@io_bazel_rules_go//go/toolchain:linux_riscv64

@@ -75,6 +75,15 @@ def amd64_config(settings, attr):
         "//command_line_option:platforms": "@io_bazel_rules_go//go/toolchain:linux_amd64",
     }
 
+def riscv64_config(settings, attr):
+    return {
+        # Race builds are always disabled for cross-architecture generation.
+        "@io_bazel_rules_go//go/config:race": False,
+        "//command_line_option:cpu": "riscv64",
+        "//command_line_option:crosstool_top": "@crosstool//:toolchains",
+        "//command_line_option:platforms": "@io_bazel_rules_go//go/toolchain:linux_riscv64",
+    }
+
 transition_allowlist = "@bazel_tools//tools/allowlists/function_transition_allowlist"
 
 def default_installer():
