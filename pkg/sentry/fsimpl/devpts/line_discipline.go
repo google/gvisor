@@ -121,6 +121,13 @@ type lineDiscipline struct {
 
 	// packet indicates the master is in packet mode.
 	packet bool
+
+	// packetStatus contains pending TIOCPKT_* status bits for the next master
+	// read while packet mode is enabled.
+	//
+	// Currently only TIOCPKT_FLUSHREAD and TIOCPKT_FLUSHWRITE are emitted
+	// through packetStatus.
+	packetStatus uint8
 }
 
 func newLineDiscipline(termios linux.KernelTermios, terminal *Terminal) *lineDiscipline {
@@ -132,6 +139,13 @@ func newLineDiscipline(termios linux.KernelTermios, terminal *Terminal) *lineDis
 	ld.outQueue.transformer = &outputQueueTransformer{}
 	return &ld
 }
+
+type ptyEndpoint int
+
+const (
+	masterEndpoint ptyEndpoint = iota
+	replicaEndpoint
+)
 
 // getTermios gets the linux.Termios for the tty.
 func (l *lineDiscipline) getTermios(task *kernel.Task, args arch.SyscallArguments) (uintptr, error) {
@@ -226,6 +240,9 @@ func (l *lineDiscipline) masterReadiness() waiter.EventMask {
 	// The master termios is immutable so termiosMu is not needed.
 	res := l.inQueue.writeReadiness(&linux.MasterTermios) | l.outQueue.readReadiness(&linux.MasterTermios)
 	l.termiosMu.RLock()
+	if l.packet && l.packetStatus != 0 {
+		res |= waiter.EventPri | waiter.ReadableEvents
+	}
 	if l.numReplicas == 0 {
 		res |= waiter.EventHUp
 	}
@@ -295,6 +312,13 @@ func (l *lineDiscipline) outputQueueReadSize(t *kernel.Task, io usermem.IO, args
 }
 
 func (l *lineDiscipline) outputQueueRead(ctx context.Context, dst usermem.IOSequence) (int64, error) {
+	if dst.NumBytes() == 0 {
+		return 0, nil
+	}
+	if status, ok := l.consumePacketStatus(); ok {
+		n, err := dst.CopyOut(ctx, []byte{status})
+		return int64(n), err
+	}
 	l.termiosMu.RLock()
 	// Ignore notifyEcho, as it cannot happen when reading from the output queue.
 	n, pushed, _, err := l.outQueue.read(ctx, dst, l, l.packet)
@@ -677,9 +701,12 @@ func (l *lineDiscipline) setPacketMode(mode int) {
 	defer l.termiosMu.Unlock()
 	if mode == 0 {
 		l.packet = false
-	} else {
-		l.packet = true
+		return
 	}
+	if !l.packet {
+		l.packetStatus = 0
+	}
+	l.packet = true
 }
 
 func (l *lineDiscipline) getPacketMode() int {
@@ -689,4 +716,94 @@ func (l *lineDiscipline) getPacketMode() int {
 		return 1
 	}
 	return 0
+}
+
+func (l *lineDiscipline) consumePacketStatus() (byte, bool) {
+	l.termiosMu.Lock()
+	defer l.termiosMu.Unlock()
+	if !l.packet || l.packetStatus == 0 {
+		return 0, false
+	}
+	status := l.packetStatus
+	l.packetStatus = 0
+	return status, true
+}
+
+func (l *lineDiscipline) packetStatusForFlush(endpoint ptyEndpoint, arg uint32) uint8 {
+	if endpoint != replicaEndpoint {
+		return 0
+	}
+	switch arg {
+	case linux.TCIFLUSH:
+		return linux.TIOCPKT_FLUSHREAD
+	case linux.TCOFLUSH:
+		return linux.TIOCPKT_FLUSHWRITE
+	case linux.TCIOFLUSH:
+		return linux.TIOCPKT_FLUSHREAD | linux.TIOCPKT_FLUSHWRITE
+	default:
+		return 0
+	}
+}
+
+func (l *lineDiscipline) notifyPacketStatus(status uint8) {
+	if status == 0 {
+		return
+	}
+	l.termiosMu.Lock()
+	if !l.packet {
+		l.termiosMu.Unlock()
+		return
+	}
+	l.packetStatus |= status
+	l.termiosMu.Unlock()
+	l.masterWaiter.Notify(waiter.EventPri | waiter.ReadableEvents)
+}
+
+func (l *lineDiscipline) inputQueueForEndpoint(endpoint ptyEndpoint) *queue {
+	if endpoint == masterEndpoint {
+		return &l.outQueue
+	}
+	return &l.inQueue
+}
+
+func (l *lineDiscipline) outputQueueForEndpoint(endpoint ptyEndpoint) *queue {
+	if endpoint == masterEndpoint {
+		return &l.inQueue
+	}
+	return &l.outQueue
+}
+
+func (l *lineDiscipline) notifyWritableForFlushedQueue(q *queue) {
+	switch q {
+	case &l.inQueue:
+		l.masterWaiter.Notify(waiter.WritableEvents)
+	case &l.outQueue:
+		l.replicaWaiter.Notify(waiter.WritableEvents)
+	}
+}
+
+// tcFlush handles the TCFLSH ioctl from the perspective of the calling PTY
+// endpoint. Linux interprets TCIFLUSH/TCOFLUSH relative to the fd that issued
+// the ioctl, not relative to the internal queue names.
+func (l *lineDiscipline) tcFlush(endpoint ptyEndpoint, arg uint32) error {
+	inputQueue := l.inputQueueForEndpoint(endpoint)
+	outputQueue := l.outputQueueForEndpoint(endpoint)
+	flushAndNotify := func(q *queue) {
+		q.flush()
+		l.notifyWritableForFlushedQueue(q)
+	}
+
+	switch arg {
+	case linux.TCIFLUSH:
+		flushAndNotify(inputQueue)
+	case linux.TCOFLUSH:
+		flushAndNotify(outputQueue)
+	case linux.TCIOFLUSH:
+		flushAndNotify(inputQueue)
+		flushAndNotify(outputQueue)
+	default:
+		return linuxerr.EINVAL
+	}
+	l.notifyPacketStatus(l.packetStatusForFlush(endpoint, arg))
+	return nil
 }

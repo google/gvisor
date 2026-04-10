@@ -254,3 +254,15 @@ func (q *queue) waitBufAppend(b []byte) {
 	q.waitBuf = append(q.waitBuf, b)
 	q.waitBufLen += uint64(len(b))
 }
+
+// flush discards all pending data in both the read buffer and the wait
+// buffer. This implements the TCFLSH ioctl behavior for clearing a
+// queue's data, analogous to __tty_perform_flush in Linux.
+func (q *queue) flush() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.readBuf = nil
+	q.readable = false
+	q.waitBuf = nil
+	q.waitBufLen = 0
+}
