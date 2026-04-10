@@ -36,7 +36,7 @@ if [[ "${USE_OVERLAY_DRIVER}" == "true" ]]; then
   current_fs=$(stat -f -c %T /var/lib/docker 2>/dev/null || echo "none")
   if [[ "${current_fs}" != "tmpfs" ]]; then
     mkdir -p /var/lib/docker
-    mount -t tmpfs -o size=2G tmpfs /var/lib/docker
+    mount -t tmpfs -o size="${DOCKER_TMPFS_SIZE:-2G}" tmpfs /var/lib/docker
   else
     echo "/var/lib/docker is already tmpfs, skipping mount."
   fi
