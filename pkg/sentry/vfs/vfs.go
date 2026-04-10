@@ -487,7 +487,15 @@ func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credential
 				}
 			}
 
+			// Linux generates IN_OPEN from do_dentry_open() inside vfs_open(),
+			// and IN_MODIFY from handle_truncate() after vfs_open() returns.
+			// So the order is: IN_OPEN first, then IN_MODIFY.
+			// See https://github.com/torvalds/linux/commit/7b8c9d7bb4570ee4800642009c8f2d9756004552,
+			// merged in Linux 6.5.
 			fd.Dentry().InotifyWithParent(ctx, linux.IN_OPEN, 0, PathEvent)
+			if opts.Flags&linux.O_TRUNC != 0 && !fd.IsCreated() {
+				fd.Dentry().InotifyWithParent(ctx, linux.IN_MODIFY, 0, PathEvent)
+			}
 			return fd, nil
 		}
 		if !rp.handleError(ctx, err) {

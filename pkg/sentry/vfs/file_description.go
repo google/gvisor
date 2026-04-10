@@ -56,6 +56,12 @@ type FileDescription struct {
 	// access to asyncHandler.
 	statusFlags atomicbitops.Uint32
 
+	// fmodeFlags contains FMODE_* flags that describe the file's open mode
+	// properties, analogous to Linux's struct file::f_mode. fmodeFlags is
+	// immutable after initialization and is used on hot paths, so it is
+	// accessed without locking.
+	fmodeFlags uint32
+
 	// asyncHandler handles O_ASYNC signal generation. It is set with the
 	// F_SETOWN or F_SETOWN_EX fcntls. For asyncHandler to be used, O_ASYNC must
 	// also be set by fcntl(2).
@@ -74,24 +80,26 @@ type FileDescription struct {
 	// immutable.
 	opts FileDescriptionOptions
 
-	// readable is MayReadFileWithOpenFlags(statusFlags). readable is
-	// immutable.
-	//
-	// readable is analogous to Linux's FMODE_READ.
-	readable bool
-
-	// writable is MayWriteFileWithOpenFlags(statusFlags). If writable is true,
-	// the FileDescription holds a write count on vd.mount. writable is
-	// immutable.
-	//
-	// writable is analogous to Linux's FMODE_WRITE.
-	writable bool
-
 	usedLockBSD atomicbitops.Uint32
 
 	// impl is the FileDescriptionImpl associated with this Filesystem. impl is
 	// immutable. This should be the last field in FileDescription.
 	impl FileDescriptionImpl
+}
+
+// SetCreated marks this FileDescription as having been created by the
+// current open operation.
+//
+// Preconditions: Must only be called during FD creation and initialization
+// phase, before the FD is visible to other goroutines.
+func (fd *FileDescription) SetCreated() {
+	fd.fmodeFlags |= linux.FMODE_CREATED
+}
+
+// IsCreated returns true if the file was newly created by the current open
+// operation.
+func (fd *FileDescription) IsCreated() bool {
+	return fd.fmodeFlags&linux.FMODE_CREATED != 0
 }
 
 // FileDescriptionOptions contains options to FileDescription.Init().
@@ -134,11 +142,14 @@ const FileCreationFlags = linux.O_CREAT | linux.O_EXCL | linux.O_NOCTTY | linux.
 // references on mnt and d. flags is the initial file description flags, which
 // is usually the full set of flags passed to open(2).
 func (fd *FileDescription) Init(impl FileDescriptionImpl, flags uint32, creds *auth.Credentials, mnt *Mount, d *Dentry, opts *FileDescriptionOptions) error {
-	writable := MayWriteFileWithOpenFlags(flags)
-	if writable {
+	if MayWriteFileWithOpenFlags(flags) {
 		if err := mnt.CheckBeginWrite(); err != nil {
 			return err
 		}
+		fd.fmodeFlags |= linux.FMODE_WRITE
+	}
+	if MayReadFileWithOpenFlags(flags) {
+		fd.fmodeFlags |= linux.FMODE_READ
 	}
 
 	fd.InitRefs()
@@ -154,8 +165,6 @@ func (fd *FileDescription) Init(impl FileDescriptionImpl, flags uint32, creds *a
 	mnt.IncRef()
 	d.IncRef()
 	fd.opts = *opts
-	fd.readable = MayReadFileWithOpenFlags(flags)
-	fd.writable = writable
 	fd.impl = impl
 	return nil
 }
@@ -207,7 +216,7 @@ func (fd *FileDescription) DecRef(ctx context.Context) {
 
 		// Release implementation resources.
 		fd.impl.Release(ctx)
-		if fd.writable {
+		if fd.IsWritable() {
 			fd.vd.mount.EndWrite()
 		}
 		fd.vd.DecRef(ctx)
@@ -305,12 +314,12 @@ func (fd *FileDescription) SetStatusFlags(ctx context.Context, creds *auth.Crede
 
 // IsReadable returns true if fd was opened for reading.
 func (fd *FileDescription) IsReadable() bool {
-	return fd.readable
+	return fd.fmodeFlags&linux.FMODE_READ != 0
 }
 
 // IsWritable returns true if fd was opened for writing.
 func (fd *FileDescription) IsWritable() bool {
-	return fd.writable
+	return fd.fmodeFlags&linux.FMODE_WRITE != 0
 }
 
 // Impl returns the FileDescriptionImpl associated with fd.
@@ -644,7 +653,7 @@ func (fd *FileDescription) PRead(ctx context.Context, dst usermem.IOSequence, of
 	if fd.opts.DenyPRead {
 		return 0, linuxerr.ESPIPE
 	}
-	if !fd.readable {
+	if !fd.IsReadable() {
 		return 0, linuxerr.EBADF
 	}
 	start := fsmetric.StartReadWait()
@@ -659,7 +668,7 @@ func (fd *FileDescription) PRead(ctx context.Context, dst usermem.IOSequence, of
 
 // Read is similar to PRead, but does not specify an offset.
 func (fd *FileDescription) Read(ctx context.Context, dst usermem.IOSequence, opts ReadOptions) (int64, error) {
-	if !fd.readable {
+	if !fd.IsReadable() {
 		return 0, linuxerr.EBADF
 	}
 	start := fsmetric.StartReadWait()
@@ -679,7 +688,7 @@ func (fd *FileDescription) PWrite(ctx context.Context, src usermem.IOSequence, o
 	if fd.opts.DenyPWrite {
 		return 0, linuxerr.ESPIPE
 	}
-	if !fd.writable {
+	if !fd.IsWritable() {
 		return 0, linuxerr.EBADF
 	}
 	n, err := fd.impl.PWrite(ctx, src, offset, opts)
@@ -691,7 +700,7 @@ func (fd *FileDescription) PWrite(ctx context.Context, src usermem.IOSequence, o
 
 // Write is similar to PWrite, but does not specify an offset.
 func (fd *FileDescription) Write(ctx context.Context, src usermem.IOSequence, opts WriteOptions) (int64, error) {
-	if !fd.writable {
+	if !fd.IsWritable() {
 		return 0, linuxerr.EBADF
 	}
 	n, err := fd.impl.Write(ctx, src, opts)

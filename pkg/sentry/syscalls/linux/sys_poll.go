@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/ktime"
@@ -33,6 +34,11 @@ import (
 // equivalent in Linux; it exists in gVisor since allocation failure in Go is
 // unrecoverable.
 const fileCap = 1024 * 1024
+
+var (
+	// sizeofPollFD is the size of linux.PollFD struct in bytes.
+	sizeofPollFD = (*linux.PollFD)(nil).SizeBytes()
+)
 
 // Masks for "readable", "writable", and "exceptional" events as defined by
 // select(2).
@@ -184,21 +190,28 @@ func doPoll(t *kernel.Task, addr hostarch.Addr, nfds uint, timeout time.Duration
 		return timeout, 0, err
 	}
 
-	// Compatibility warning: Linux adds POLLHUP and POLLERR just before
-	// polling, in fs/select.c:do_pollfd(). Since pfd is copied out after
-	// polling, changing event masks here is an application-visible difference.
-	// (Linux also doesn't copy out event masks at all, only revents.)
+	// Linux adds POLLHUP and POLLERR just before polling, in
+	// fs/select.c:do_pollfd(). We can modify pfd[i].Events because
+	// it is not copied out after polling (consistent with Linux).
 	for i := range pfd {
 		pfd[i].Events |= linux.POLLHUP | linux.POLLERR
 	}
 	remainingTimeout, n, err := pollBlock(t, pfd, timeout)
 	err = linuxerr.ConvertIntr(err, linuxerr.EINTR)
 
-	// The poll entries are copied out regardless of whether
-	// any are set or not. This aligns with the Linux behavior.
+	// Copy out only the revents field, matching Linux behavior.
+	// Linux's do_sys_poll() only writes back revents via
+	// unsafe_put_user(fds->revents, &ufds->revents), never the
+	// events field. Writing back the full struct would corrupt
+	// the caller's events mask (e.g. libevent's poll backend),
+	// causing busy-loops when event_del() fails to fully remove
+	// an fd from the pollfd array due to stale POLLHUP/POLLERR bits.
 	if nfds > 0 && err == nil {
-		if _, err := linux.CopyPollFDSliceOut(t, addr, pfd); err != nil {
-			return remainingTimeout, 0, err
+		for i := range pfd {
+			off := hostarch.Addr(i*sizeofPollFD + linux.ReventsOffsetInPollFD)
+			if _, copyErr := primitive.CopyInt16Out(t, addr+off, pfd[i].REvents); copyErr != nil {
+				return remainingTimeout, 0, copyErr
+			}
 		}
 	}
 

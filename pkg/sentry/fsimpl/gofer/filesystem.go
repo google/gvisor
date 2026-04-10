@@ -1346,6 +1346,7 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 		childVFSFD = &fd.vfsfd
 	}
 	d.inode.watches.Notify(ctx, name, linux.IN_CREATE, 0, vfs.PathEvent, false /* unlinked */)
+	childVFSFD.SetCreated()
 	return childVFSFD, nil
 }
 

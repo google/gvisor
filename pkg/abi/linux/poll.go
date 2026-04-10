@@ -47,3 +47,9 @@ const (
 	POLLFREE       = 0x4000
 	POLL_BUSY_LOOP = 0x8000
 )
+
+const (
+	// ReventsOffsetInPollFD is the byte offset of the REvents field within
+	// linux.PollFD.
+	ReventsOffsetInPollFD = 6 // +checkoffset . PollFD.REvents
+)

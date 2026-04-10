@@ -43,6 +43,20 @@ const (
 	O_TMPFILE  = 020000000 // __O_TMPFILE in Linux
 )
 
+// Constants for file mode (struct file::f_mode in Linux).
+const (
+	// FMODE_READ indicates the file is open for reading.
+	// It is set when MayReadFileWithOpenFlags(flags) is true.
+	FMODE_READ = 0x1
+	// FMODE_WRITE indicates the file is open for writing.
+	// It is set when MayWriteFileWithOpenFlags(flags) is true. When set,
+	// the FileDescription holds a write count on vd.mount.
+	FMODE_WRITE = 0x2
+	// FMODE_CREATED is set when a file is newly created by an open
+	// operation (O_CREAT and the file did not already exist).
+	FMODE_CREATED = 0x100000
+)
+
 // Constants for fstatat(2).
 const (
 	AT_SYMLINK_NOFOLLOW = 0x100

@@ -460,12 +460,11 @@ func (fd *FileDescription) StateFields() []string {
 		"FileDescriptionRefs",
 		"creds",
 		"statusFlags",
+		"fmodeFlags",
 		"asyncHandler",
 		"epolls",
 		"vd",
 		"opts",
-		"readable",
-		"writable",
 		"usedLockBSD",
 		"impl",
 	}
@@ -479,14 +478,13 @@ func (fd *FileDescription) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &fd.FileDescriptionRefs)
 	stateSinkObject.Save(1, &fd.creds)
 	stateSinkObject.Save(2, &fd.statusFlags)
-	stateSinkObject.Save(3, &fd.asyncHandler)
-	stateSinkObject.Save(4, &fd.epolls)
-	stateSinkObject.Save(5, &fd.vd)
-	stateSinkObject.Save(6, &fd.opts)
-	stateSinkObject.Save(7, &fd.readable)
-	stateSinkObject.Save(8, &fd.writable)
-	stateSinkObject.Save(9, &fd.usedLockBSD)
-	stateSinkObject.Save(10, &fd.impl)
+	stateSinkObject.Save(3, &fd.fmodeFlags)
+	stateSinkObject.Save(4, &fd.asyncHandler)
+	stateSinkObject.Save(5, &fd.epolls)
+	stateSinkObject.Save(6, &fd.vd)
+	stateSinkObject.Save(7, &fd.opts)
+	stateSinkObject.Save(8, &fd.usedLockBSD)
+	stateSinkObject.Save(9, &fd.impl)
 }
 
 func (fd *FileDescription) afterLoad(context.Context) {}
@@ -496,14 +494,13 @@ func (fd *FileDescription) StateLoad(ctx context.Context, stateSourceObject stat
 	stateSourceObject.Load(0, &fd.FileDescriptionRefs)
 	stateSourceObject.Load(1, &fd.creds)
 	stateSourceObject.Load(2, &fd.statusFlags)
-	stateSourceObject.Load(3, &fd.asyncHandler)
-	stateSourceObject.Load(4, &fd.epolls)
-	stateSourceObject.Load(5, &fd.vd)
-	stateSourceObject.Load(6, &fd.opts)
-	stateSourceObject.Load(7, &fd.readable)
-	stateSourceObject.Load(8, &fd.writable)
-	stateSourceObject.Load(9, &fd.usedLockBSD)
-	stateSourceObject.Load(10, &fd.impl)
+	stateSourceObject.Load(3, &fd.fmodeFlags)
+	stateSourceObject.Load(4, &fd.asyncHandler)
+	stateSourceObject.Load(5, &fd.epolls)
+	stateSourceObject.Load(6, &fd.vd)
+	stateSourceObject.Load(7, &fd.opts)
+	stateSourceObject.Load(8, &fd.usedLockBSD)
+	stateSourceObject.Load(9, &fd.impl)
 }
 
 func (f *FileDescriptionOptions) StateTypeName() string {

@@ -174,6 +174,13 @@ func (mfd *masterFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysn
 		// first (and flush input for F), but we don't implement that
 		// yet.
 		return mfd.t.ld.setTermios2(t, args)
+	case linux.TCSBRK:
+		// TCSBRK with arg != 0 is tcdrain, which waits for output to
+		// drain. For a pty with no real hardware, this is a no-op.
+		// TCSBRK with arg == 0 sends a break, also a no-op for ptys.
+		return 0, nil
+	case linux.TCFLSH:
+		return 0, mfd.t.ld.tcFlush(masterEndpoint, args[2].Uint())
 	case linux.TIOCGPTN:
 		nP := primitive.Uint32(mfd.t.n)
 		_, err := nP.CopyOut(t, args[2].Pointer())
@@ -249,7 +256,6 @@ func maybeEmitUnimplementedEvent(ctx context.Context, sysno uintptr, cmd uint32)
 	case linux.TIOCSETD,
 		linux.TIOCSBRK,
 		linux.TIOCCBRK,
-		linux.TCSBRK,
 		linux.TCSBRKP,
 		linux.TIOCSTI,
 		linux.TIOCCONS,
@@ -266,7 +272,6 @@ func maybeEmitUnimplementedEvent(ctx context.Context, sysno uintptr, cmd uint32)
 		linux.TIOCMBIC,
 		linux.TIOCMBIS,
 		linux.TIOCGICOUNT,
-		linux.TCFLSH,
 		linux.TIOCSSERIAL,
 		linux.TIOCGPTPEER:
 

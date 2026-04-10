@@ -171,6 +171,7 @@ func (l *lineDiscipline) StateFields() []string {
 		"replicaWaiter",
 		"terminal",
 		"packet",
+		"packetStatus",
 	}
 }
 
@@ -189,6 +190,7 @@ func (l *lineDiscipline) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(7, &l.replicaWaiter)
 	stateSinkObject.Save(8, &l.terminal)
 	stateSinkObject.Save(9, &l.packet)
+	stateSinkObject.Save(10, &l.packetStatus)
 }
 
 func (l *lineDiscipline) afterLoad(context.Context) {}
@@ -205,6 +207,7 @@ func (l *lineDiscipline) StateLoad(ctx context.Context, stateSourceObject state.
 	stateSourceObject.Load(7, &l.replicaWaiter)
 	stateSourceObject.Load(8, &l.terminal)
 	stateSourceObject.Load(9, &l.packet)
+	stateSourceObject.Load(10, &l.packetStatus)
 }
 
 func (o *outputQueueTransformer) StateTypeName() string {

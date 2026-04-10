@@ -640,6 +640,13 @@ func (d *dir) RmDir(ctx context.Context, name string, child kernfs.Inode) error 
 	err := d.OrderedChildren.RmDir(ctx, name, child)
 	if err == nil {
 		d.InodeAttrs.DecLinks()
+		// Drop the registry entry created by newCgroupInode so the inode is
+		// not pinned for the lifetime of the sentry. Lock order mirrors the
+		// mkdir path (kernfs.filesystem.mu -> CgroupRegistry.mu, see
+		// newCgroupInode); CgroupRegistry.mu is a leaf here so no cycle is
+		// possible.
+		kernel.KernelFromContext(ctx).CgroupRegistry().RemoveCgroup(cgi.id)
+		d.fs.numCgroups.Add(^uint64(0))
 	}
 	return err
 }
