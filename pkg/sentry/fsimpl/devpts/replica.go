@@ -169,6 +169,13 @@ func (rfd *replicaFileDescription) Ioctl(ctx context.Context, io usermem.IO, sys
 		// This should drain the output queue and clear the input queue
 		// first, but we don't implement that yet.
 		return rfd.inode.t.ld.setTermios2(t, args)
+	case linux.TCSBRK:
+		// TCSBRK with arg != 0 is tcdrain, which waits for output to
+		// drain. For a pty with no real hardware, this is a no-op.
+		// TCSBRK with arg == 0 sends a break, also a no-op for ptys.
+		return 0, nil
+	case linux.TCFLSH:
+		return 0, rfd.inode.t.ld.tcFlush(replicaEndpoint, args[2].Uint())
 	case linux.TIOCGPTN:
 		nP := primitive.Uint32(rfd.inode.t.n)
 		_, err := nP.CopyOut(t, args[2].Pointer())

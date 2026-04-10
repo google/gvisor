@@ -156,6 +156,13 @@ func IOC_SIZE(nr uint32) uint32 {
 	return (nr >> IOC_SIZESHIFT) & ((1 << IOC_SIZEBITS) - 1)
 }
 
+// TCFLSH queue selector arguments.
+const (
+	TCIFLUSH  = 0
+	TCOFLUSH  = 1
+	TCIOFLUSH = 2
+)
+
 /* Used for packet mode */
 const (
 	TIOCPKT_DATA       = 0

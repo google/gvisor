@@ -483,6 +483,71 @@ class PtyTest : public ::testing::Test {
     EXPECT_THAT(ioctl(replica_.get(), TCSETS, &t), SyscallSucceeds());
   }
 
+  void DisableCanonicalAndEcho() {
+    struct kernel_termios t = {};
+    EXPECT_THAT(ioctl(replica_.get(), TCGETS, &t), SyscallSucceeds());
+    t.c_lflag &= ~(ICANON | ECHO);
+    t.c_cc[VMIN] = 1;
+    t.c_cc[VTIME] = 0;
+    EXPECT_THAT(ioctl(replica_.get(), TCSETS, &t), SyscallSucceeds());
+  }
+
+  void FillUntilWriteReturnsEAGAIN(const FileDescriptor &fd) {
+    std::string buf(8192, 'x');
+    for (;;) {
+      ssize_t n = RetryEINTR(write)(fd.get(), buf.data(), buf.size());
+      if (n < 0) {
+        ASSERT_EQ(errno, EAGAIN);
+        break;
+      }
+      ASSERT_GT(n, 0);
+    }
+
+    // A short write returning EAGAIN is a stronger signal that the queue is
+    // close to full. For PTYs, a large write can fail once the remaining room
+    // drops below 8192 bytes even if there is still space for a few more
+    // bytes.
+    char byte = 'x';
+    for (;;) {
+      ssize_t n = RetryEINTR(write)(fd.get(), &byte, 1);
+      if (n < 0) {
+        ASSERT_EQ(errno, EAGAIN);
+        break;
+      }
+      ASSERT_EQ(n, 1);
+    }
+  }
+
+  void FillUntilBlocked(const FileDescriptor &fd) {
+    FillUntilWriteReturnsEAGAIN(fd);
+
+    struct pollfd pfd = {fd.get(), POLLOUT, 0};
+    ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, 0), SyscallSucceedsWithValue(0));
+  }
+
+  void EnablePacketMode() {
+    int mode = 1;
+    ASSERT_THAT(ioctl(master_.get(), TIOCPKT, &mode), SyscallSucceeds());
+  }
+
+  void ExpectMasterPacketStatus(char expected) {
+    struct pollfd pfd = {master_.get(), POLLIN | POLLPRI, 0};
+    ASSERT_THAT(
+        RetryEINTR(poll)(&pfd, 1, absl::ToInt64Milliseconds(kTimeout)),
+        SyscallSucceedsWithValue(1));
+    EXPECT_EQ(pfd.revents & (POLLIN | POLLPRI), POLLIN | POLLPRI);
+
+    char status = 0;
+    EXPECT_THAT(ReadFd(master_.get(), &status, 1),
+                SyscallSucceedsWithValue(1));
+    EXPECT_EQ(status, expected);
+  }
+
+  void ExpectMasterHasNoPacketStatus() {
+    struct pollfd pfd = {master_.get(), POLLIN | POLLPRI, 0};
+    EXPECT_THAT(poll(&pfd, 1, 0), SyscallSucceedsWithValue(0));
+  }
+
   // Writes master_input to the master file descriptor and verifies that
   // the replica and the echo output match what is expected.
   void TestCanonicalIO(const char *master_input,
@@ -2157,6 +2222,182 @@ TEST_F(JobControlTest, ReuseControllingTTYAfterExit) {
     TEST_PCHECK(ioctl(replica_.get(), TIOCSCTTY, 0) >= 0);
   });
   ASSERT_NO_ERRNO(res2);
+}
+
+// TCSBRK ioctl should succeed on both master and replica PTY ends.
+// For PTYs, TCSBRK is a no-op (no real hardware break to send).
+TEST_F(PtyTest, TCSBRKSucceeds) {
+  // TCSBRK with arg=0 (send break) should be a no-op for PTYs.
+  EXPECT_THAT(ioctl(master_.get(), TCSBRK, 0), SyscallSucceeds());
+  EXPECT_THAT(ioctl(replica_.get(), TCSBRK, 0), SyscallSucceeds());
+
+  // TCSBRK with arg=1 (tcdrain) should also succeed.
+  EXPECT_THAT(ioctl(master_.get(), TCSBRK, 1), SyscallSucceeds());
+  EXPECT_THAT(ioctl(replica_.get(), TCSBRK, 1), SyscallSucceeds());
+}
+
+// TCFLSH ioctl should flush the appropriate queues.
+TEST_F(PtyTest, TCFLSHFlushesInput) {
+  DisableCanonicalAndEcho();
+
+  // Write data from master to replica input.
+  constexpr char kInput[] = "hello";
+  ASSERT_THAT(WriteFd(master_.get(), kInput, sizeof(kInput) - 1),
+              SyscallSucceedsWithValue(sizeof(kInput) - 1));
+  ASSERT_NO_ERRNO(WaitUntilReceived(replica_.get(), sizeof(kInput) - 1));
+
+  // Flush the replica input queue.
+  EXPECT_THAT(ioctl(replica_.get(), TCFLSH, TCIFLUSH), SyscallSucceeds());
+
+  // Replica should have no data to read now.
+  char buf[16];
+  EXPECT_THAT(ReadFd(replica_.get(), buf, sizeof(buf)),
+              SyscallFailsWithErrno(EAGAIN));
+}
+
+// Test for caller-aware TCFLSH semantics on the master side.
+TEST_F(PtyTest, TCFLSHFlushesMasterInput) {
+  DisableCanonicalAndEcho();
+
+  constexpr char kInput[] = "bye";
+  ASSERT_THAT(WriteFd(replica_.get(), kInput, sizeof(kInput) - 1),
+              SyscallSucceedsWithValue(sizeof(kInput) - 1));
+  ASSERT_NO_ERRNO(WaitUntilReceived(master_.get(), sizeof(kInput) - 1));
+
+  EXPECT_THAT(ioctl(master_.get(), TCFLSH, TCIFLUSH), SyscallSucceeds());
+
+  char buf[16];
+  EXPECT_THAT(ReadFd(master_.get(), buf, sizeof(buf)),
+              SyscallFailsWithErrno(EAGAIN));
+}
+
+// TCOFLUSH on the replica drops data queued for the master.
+TEST_F(PtyTest, TCFLSHFlushesReplicaOutput) {
+  DisableCanonicalAndEcho();
+
+  constexpr char kOutput[] = "world";
+  ASSERT_THAT(WriteFd(replica_.get(), kOutput, sizeof(kOutput) - 1),
+              SyscallSucceedsWithValue(sizeof(kOutput) - 1));
+  ASSERT_NO_ERRNO(WaitUntilReceived(master_.get(), sizeof(kOutput) - 1));
+
+  EXPECT_THAT(ioctl(replica_.get(), TCFLSH, TCOFLUSH), SyscallSucceeds());
+
+  char buf[16];
+  EXPECT_THAT(ReadFd(master_.get(), buf, sizeof(buf)),
+              SyscallFailsWithErrno(EAGAIN));
+}
+
+// TCIOFLUSH clears both directions from the caller's point of view.
+TEST_F(PtyTest, TCFLSHFlushesBothDirections) {
+  DisableCanonicalAndEcho();
+
+  constexpr char kInput[] = "input";
+  constexpr char kOutput[] = "output";
+  ASSERT_THAT(WriteFd(master_.get(), kInput, sizeof(kInput) - 1),
+              SyscallSucceedsWithValue(sizeof(kInput) - 1));
+  ASSERT_THAT(WriteFd(replica_.get(), kOutput, sizeof(kOutput) - 1),
+              SyscallSucceedsWithValue(sizeof(kOutput) - 1));
+  ASSERT_NO_ERRNO(WaitUntilReceived(replica_.get(), sizeof(kInput) - 1));
+  ASSERT_NO_ERRNO(WaitUntilReceived(master_.get(), sizeof(kOutput) - 1));
+
+  EXPECT_THAT(ioctl(replica_.get(), TCFLSH, TCIOFLUSH), SyscallSucceeds());
+
+  char buf[16];
+  EXPECT_THAT(ReadFd(replica_.get(), buf, sizeof(buf)),
+              SyscallFailsWithErrno(EAGAIN));
+  EXPECT_THAT(ReadFd(master_.get(), buf, sizeof(buf)),
+              SyscallFailsWithErrno(EAGAIN));
+}
+
+// Replica-side flushes should surface TIOCPKT flush status to the master.
+TEST_F(PtyTest, TCFLSHReplicaReportsPacketModeStatus) {
+  EnablePacketMode();
+
+  EXPECT_THAT(ioctl(replica_.get(), TCFLSH, TCIFLUSH), SyscallSucceeds());
+  ExpectMasterPacketStatus(TIOCPKT_FLUSHREAD);
+
+  EXPECT_THAT(ioctl(replica_.get(), TCFLSH, TCOFLUSH), SyscallSucceeds());
+  ExpectMasterPacketStatus(TIOCPKT_FLUSHWRITE);
+
+  EXPECT_THAT(ioctl(replica_.get(), TCFLSH, TCIOFLUSH), SyscallSucceeds());
+  ExpectMasterPacketStatus(TIOCPKT_FLUSHREAD | TIOCPKT_FLUSHWRITE);
+}
+
+// Master-side flushes should not generate packet mode status bytes.
+TEST_F(PtyTest, TCFLSHMasterDoesNotReportPacketModeStatus) {
+  EnablePacketMode();
+
+  EXPECT_THAT(ioctl(master_.get(), TCFLSH, TCIFLUSH), SyscallSucceeds());
+  ExpectMasterHasNoPacketStatus();
+
+  EXPECT_THAT(ioctl(master_.get(), TCFLSH, TCOFLUSH), SyscallSucceeds());
+  ExpectMasterHasNoPacketStatus();
+
+  EXPECT_THAT(ioctl(master_.get(), TCFLSH, TCIOFLUSH), SyscallSucceeds());
+  ExpectMasterHasNoPacketStatus();
+}
+
+// Flushing the master's input queue should wake a blocked replica writer.
+TEST_F(PtyTest, TCFLSHWakesReplicaPolloutAfterMasterInputFlush) {
+  DisableCanonicalAndEcho();
+  FillUntilBlocked(replica_);
+
+  struct pollfd initial = {replica_.get(), POLLOUT, 0};
+  EXPECT_THAT(poll(&initial, 1, 0), SyscallSucceedsWithValue(0));
+
+  absl::Notification notify;
+  int sfd = replica_.get();
+  ScopedThread th([sfd, &notify]() {
+    notify.Notify();
+
+    struct pollfd poll_fd = {sfd, POLLOUT, 0};
+    EXPECT_THAT(
+        RetryEINTR(poll)(&poll_fd, 1, absl::ToInt64Milliseconds(kTimeout)),
+        SyscallSucceedsWithValue(1));
+    EXPECT_EQ(poll_fd.revents & POLLOUT, POLLOUT);
+
+    constexpr char kByte = 'r';
+    EXPECT_THAT(RetryEINTR(write)(sfd, &kByte, 1),
+                SyscallSucceedsWithValue(1));
+  });
+
+  notify.WaitForNotification();
+  absl::SleepFor(absl::Seconds(1));
+  EXPECT_THAT(ioctl(master_.get(), TCFLSH, TCIFLUSH), SyscallSucceeds());
+}
+
+// Flushing the replica's input queue should wake a blocked master writer.
+// We use a blocking write() instead of poll(POLLOUT) because the master's
+// POLLOUT is unreliable on native Linux (flip-buffer is consumed async).
+TEST_F(PtyTest, TCFLSHWakesMasterWriteAfterReplicaInputFlush) {
+  DisableCanonicalAndEcho();
+  FillUntilWriteReturnsEAGAIN(master_);
+
+  absl::Notification notify;
+  int mfd = master_.get();
+  ScopedThread th([mfd, &notify]() {
+    // Clear O_NONBLOCK so write() blocks when the queue is full, rather than
+    // returning EAGAIN. This gives us a reliable "blocked writer" to wake.
+    int flags = fcntl(mfd, F_GETFL);
+    ASSERT_GE(flags, 0);
+    ASSERT_EQ(fcntl(mfd, F_SETFL, flags & ~O_NONBLOCK), 0);
+
+    notify.Notify();
+
+    constexpr char kByte = 'w';
+    EXPECT_THAT(RetryEINTR(write)(mfd, &kByte, 1),
+                SyscallSucceedsWithValue(1));
+  });
+
+  notify.WaitForNotification();
+  absl::SleepFor(absl::Seconds(1));
+  EXPECT_THAT(ioctl(replica_.get(), TCFLSH, TCIFLUSH), SyscallSucceeds());
+}
+
+// TCFLSH with invalid argument should return EINVAL.
+TEST_F(PtyTest, TCFLSHInvalidArg) {
+  EXPECT_THAT(ioctl(replica_.get(), TCFLSH, 42),
+              SyscallFailsWithErrno(EINVAL));
 }
 
 // When ISIG is disabled, signal characters (Ctrl-C, Ctrl-Z, Ctrl-\) should
