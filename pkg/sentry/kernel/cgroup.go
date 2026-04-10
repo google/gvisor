@@ -553,6 +553,15 @@ func (r *CgroupRegistry) AddCgroup(cg CgroupImpl) {
 	r.mu.Unlock()
 }
 
+// RemoveCgroup drops the cgroup with the given ID from the registry. No-op if
+// the ID is not present. Called from cgroupfs when a cgroup directory is
+// removed so that destroyed cgroups are not retained across save/restore.
+func (r *CgroupRegistry) RemoveCgroup(cid uint32) {
+	r.mu.Lock()
+	delete(r.cgroups, cid)
+	r.mu.Unlock()
+}
+
 // GetCgroup returns the cgroup associated with the cgroup ID.
 func (r *CgroupRegistry) GetCgroup(cid uint32) (CgroupImpl, error) {
 	r.mu.Lock()
