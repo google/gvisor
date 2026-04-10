@@ -425,6 +425,12 @@ TEST(BasicPtyTest, OpenDevTTY) {
     // which will be opened by /dev/tty.
     setsid();
 
+    // Ignore SIGHUP: when the master fd is closed during cleanup, the
+    // kernel sends SIGHUP to the foreground process group of the
+    // controlling terminal session. Since this child *is* the session leader,
+    // it would be killed by the default SIGHUP disposition before _exit(0).
+    TEST_PCHECK(signal(SIGHUP, SIG_IGN) != SIG_ERR);
+
     FileDescriptor master =
         TEST_CHECK_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR));
 
@@ -2211,6 +2217,47 @@ TEST_F(PtyTest, SignalCharConsumedWhenISIGEnabled) {
   ASSERT_NO_ERRNO(WaitUntilReceived(replica_.get(), 1));
   ASSERT_THAT(ReadFd(replica_.get(), &buf, 1), SyscallSucceedsWithValue(1));
   EXPECT_EQ(buf, 'a');
+}
+
+// When the PTY master is closed, SIGHUP should be sent to the foreground
+// process group of the session that has this PTY as its controlling terminal.
+// This matches Linux pty_close() -> tty_vhangup() behavior.
+TEST_F(JobControlTest, SIGHUPOnMasterClose) {
+  pid_t child = fork();
+  if (child == 0) {
+    // Close the inherited master fd so that the parent holds the only
+    // reference. pty_close/tty_vhangup fires only when the last master
+    // fd is closed.
+    close(master_.release());
+
+    // Create new session and set the replica as controlling terminal.
+    TEST_PCHECK(setsid() >= 0);
+    TEST_PCHECK(ioctl(replica_.get(), TIOCSCTTY, 0) >= 0);
+
+    // Install a SIGHUP handler that exits with a known status.
+    struct sigaction sa = {};
+    sa.sa_handler = [](int) { _exit(42); };
+    sigemptyset(&sa.sa_mask);
+    TEST_PCHECK(sigaction(SIGHUP, &sa, nullptr) >= 0);
+
+    // Sleep waiting for the signal. Use a timeout to avoid hanging the test.
+    sleep(10);
+    // If we get here, SIGHUP was not received.
+    _exit(1);
+  }
+  ASSERT_GT(child, 0);
+
+  // Give the child time to set up its session and controlling terminal.
+  absl::SleepFor(absl::Milliseconds(500));
+
+  // Close the master end. This should trigger SIGHUP to the child.
+  master_.reset();
+
+  // Wait for the child and verify it received SIGHUP (exited with 42).
+  int wstatus;
+  ASSERT_THAT(waitpid(child, &wstatus, 0), SyscallSucceedsWithValue(child));
+  ASSERT_TRUE(WIFEXITED(wstatus));
+  EXPECT_EQ(WEXITSTATUS(wstatus), 42);
 }
 
 }  // namespace
