@@ -23,15 +23,13 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/containerd/cgroups"
 	cgroupsv2 "github.com/containerd/cgroups/v2"
 	"github.com/containerd/containerd/api/events"
 	"github.com/containerd/containerd/api/types/task"
-	"github.com/containerd/containerd/mount"
-	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/pkg/process"
+	"github.com/containerd/containerd/pkg/shutdown"
 	"github.com/containerd/containerd/pkg/stdio"
 	"github.com/containerd/containerd/runtime"
 	"github.com/containerd/containerd/runtime/linux/runctypes"
@@ -43,7 +41,6 @@ import (
 	"github.com/containerd/typeurl"
 	"github.com/gogo/protobuf/types"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"golang.org/x/sys/unix"
 
 	"gvisor.dev/gvisor/pkg/shim/v1/extension"
 	"gvisor.dev/gvisor/pkg/shim/v1/proc"
@@ -117,12 +114,14 @@ type runscService struct {
 
 	// containers maps container id to a container.
 	containers map[string]*Container
+
+	shutdown shutdown.Service
 }
 
 var _ extension.TaskServiceExt = (*runscService)(nil)
 
 // NewTaskService returns a runsc task service.
-func NewTaskService(ctx context.Context, id string, publisher shim.Publisher) (extension.TaskServiceExt, error) {
+func NewTaskService(ctx context.Context, id string, publisher shim.Publisher, sd shutdown.Service) (extension.TaskServiceExt, error) {
 	var (
 		ep  oomPoller
 		err error
@@ -142,6 +141,7 @@ func NewTaskService(ctx context.Context, id string, publisher shim.Publisher) (e
 		containers: make(map[string]*Container),
 		ec:         proc.ExitCh,
 		oomPoller:  ep,
+		shutdown:   sd,
 	}
 	go s.processExits(ctx)
 	runsccmd.Monitor = &runsccmd.LogMonitor{Next: reaper.Default}
@@ -149,39 +149,11 @@ func NewTaskService(ctx context.Context, id string, publisher shim.Publisher) (e
 		return nil, fmt.Errorf("failed to initialized platform behavior: %w", err)
 	}
 	go s.forward(ctx, publisher)
-
+	sd.RegisterCallback(func(context.Context) error {
+		close(s.events)
+		return nil
+	})
 	return s, nil
-}
-
-// Cleanup is called from another process (need to reload state) to stop the
-// container and undo all operations done in Create().
-func (s *runscService) Cleanup(ctx context.Context) (*taskAPI.DeleteResponse, error) {
-	path, err := os.Getwd()
-	if err != nil {
-		return nil, err
-	}
-	ns, err := namespaces.NamespaceRequired(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var st state
-	if err := st.load(path); err != nil {
-		return nil, err
-	}
-	r := proc.NewRunsc(st.Options.Root, path, ns, st.Options.BinaryName, nil, nil)
-
-	if err := r.Delete(ctx, s.id, &runsccmd.DeleteOpts{
-		Force: true,
-	}); err != nil {
-		log.L.Infof("failed to remove runsc container: %v", err)
-	}
-	if err := mount.UnmountAll(st.Rootfs, 0); err != nil {
-		log.L.Infof("failed to cleanup rootfs mount: %v", err)
-	}
-	return &taskAPI.DeleteResponse{
-		ExitedAt:   time.Now(),
-		ExitStatus: 128 + uint32(unix.SIGKILL),
-	}, nil
 }
 
 // getContainer returns the container by id.
@@ -495,9 +467,11 @@ func (s *runscService) Connect(ctx context.Context, r *taskAPI.ConnectRequest) (
 func (s *runscService) Shutdown(ctx context.Context, r *taskAPI.ShutdownRequest) (*types.Empty, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	if len(s.containers) > 0 {
-		return empty, fmt.Errorf("containers are still running, shim cannot be shutdown")
+		return nil, fmt.Errorf("shim still servicing %d containers", len(s.containers))
 	}
+
 	return empty, nil
 }
 
