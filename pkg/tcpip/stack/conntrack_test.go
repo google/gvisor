@@ -45,7 +45,7 @@ func TestReap(t *testing.T) {
 	// reaping is unestablishedTimeout.
 	pkt1 := genTCPPacket(genTCPOpts{})
 	pkt1.tuple = ct.getConnAndUpdate(pkt1, true /* skipChecksumValidation */)
-	if pkt1.tuple.conn.handlePacket(pkt1, Output, &rt) {
+	if handlePacket(pkt1, Output, &rt) {
 		t.Fatal("handlePacket() shouldn't perform any NAT")
 	}
 	ct.checkNumTuples(t, 1)
@@ -55,7 +55,7 @@ func TestReap(t *testing.T) {
 	clock.Advance(unestablishedTimeout / 2)
 	pkt2 := genTCPPacket(genTCPOpts{})
 	pkt2.tuple = ct.getConnAndUpdate(pkt2, true /* skipChecksumValidation */)
-	if pkt2.tuple.conn.handlePacket(pkt2, Output, &rt) {
+	if handlePacket(pkt2, Output, &rt) {
 		t.Fatal("handlePacket() shouldn't perform any NAT")
 	}
 	ct.checkNumTuples(t, 1)
@@ -174,7 +174,7 @@ func testWindowScaling(t *testing.T, windowSize uint16, synScale, synAckScale ui
 		dstPort:     &responderPort,
 	})
 	synPkt.tuple = ct.getConnAndUpdate(synPkt, true /* skipChecksumValidation */)
-	if synPkt.tuple.conn.handlePacket(synPkt, Output, &rt) {
+	if handlePacket(synPkt, Output, &rt) {
 		t.Fatal("handlePacket() shouldn't perform any NAT")
 	}
 	ct.checkNumTuples(t, 1)
@@ -206,7 +206,7 @@ func testWindowScaling(t *testing.T, windowSize uint16, synScale, synAckScale ui
 		dstPort:     &originatorPort,
 	})
 	synAckPkt.tuple = ct.getConnAndUpdate(synAckPkt, true /* skipChecksumValidation */)
-	if synAckPkt.tuple.conn.handlePacket(synAckPkt, Prerouting, &rt) {
+	if handlePacket(synAckPkt, Prerouting, &rt) {
 		t.Fatal("handlePacket() shouldn't perform any NAT")
 	}
 	ct.checkNumTuples(t, 2)
@@ -237,7 +237,7 @@ func testWindowScaling(t *testing.T, windowSize uint16, synScale, synAckScale ui
 		dstPort:    &responderPort,
 	})
 	ackPkt.tuple = ct.getConnAndUpdate(ackPkt, true /* skipChecksumValidation */)
-	if ackPkt.tuple.conn.handlePacket(ackPkt, Output, &rt) {
+	if handlePacket(ackPkt, Output, &rt) {
 		t.Fatal("handlePacket() shouldn't perform any NAT")
 	}
 	ct.checkNumTuples(t, 2)
