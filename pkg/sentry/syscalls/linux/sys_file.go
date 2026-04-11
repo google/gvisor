@@ -64,6 +64,12 @@ func mknodat(t *kernel.Task, dirfd int32, addr hostarch.Addr, mode linux.FileMod
 	if mode.FileType() == 0 {
 		mode |= linux.ModeRegular
 	}
+	// Linux requires CAP_MKNOD to create block or character device nodes.
+	// See fs/namei.c:vfs_mknod().
+	if (mode.FileType() == linux.ModeCharacterDevice || mode.FileType() == linux.ModeBlockDevice) &&
+		!t.HasCapabilityIn(linux.CAP_MKNOD, t.Credentials().UserNamespace) {
+		return linuxerr.EPERM
+	}
 	major, minor := linux.DecodeDeviceID(dev)
 	return t.Kernel().VFS().MknodAt(t, t.Credentials(), &tpop.pop, &vfs.MknodOptions{
 		Mode:     mode &^ linux.FileMode(t.FSContext().Umask()),

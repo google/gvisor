@@ -83,6 +83,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:capability_checks_test",
+)
+
+syscall_test(
     size = "medium",
     add_fusefs = True,
     add_overlay = True,

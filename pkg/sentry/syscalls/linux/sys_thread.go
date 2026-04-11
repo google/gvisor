@@ -479,6 +479,16 @@ func SchedSetaffinity(t *kernel.Task, sysno uintptr, args arch.SyscallArguments)
 		if task == nil {
 			return 0, nil, linuxerr.ESRCH
 		}
+		// Linux requires the caller's EUID to match the target's
+		// real or effective UID, or CAP_SYS_NICE. See
+		// kernel/sched/core.c:check_same_owner().
+		creds := t.Credentials()
+		tcreds := task.Credentials()
+		if creds.EffectiveKUID != tcreds.EffectiveKUID &&
+			creds.EffectiveKUID != tcreds.RealKUID &&
+			!creds.HasCapabilityIn(linux.CAP_SYS_NICE, tcreds.UserNamespace) {
+			return 0, nil, linuxerr.EPERM
+		}
 	}
 
 	mask := sched.NewCPUSet(t.Kernel().ApplicationCores())
@@ -727,6 +737,18 @@ func Setpriority(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uin
 
 		if task == nil {
 			return 0, nil, linuxerr.ESRCH
+		}
+
+		// Linux requires UID match or CAP_SYS_NICE to set
+		// another process's priority. See kernel/sys.c:set_one_prio().
+		if task != t {
+			creds := t.Credentials()
+			tcreds := task.Credentials()
+			if creds.EffectiveKUID != tcreds.RealKUID &&
+				creds.EffectiveKUID != tcreds.EffectiveKUID &&
+				!creds.HasCapabilityIn(linux.CAP_SYS_NICE, tcreds.UserNamespace) {
+				return 0, nil, linuxerr.EPERM
+			}
 		}
 
 		task.SetNiceness(niceval)
