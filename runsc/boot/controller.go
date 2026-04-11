@@ -918,6 +918,10 @@ const (
 	// process. If PID is 0, then the signal is delivered to the foreground
 	// process group for the TTY for the init process.
 	DeliverToForegroundProcessGroup
+
+	// DeliverToProcessGroup delivers the signal to all processes in the
+	// process group identified by a PGID.
+	DeliverToProcessGroup
 )
 
 func (s SignalDeliveryMode) String() string {
@@ -928,6 +932,8 @@ func (s SignalDeliveryMode) String() string {
 		return "All"
 	case DeliverToForegroundProcessGroup:
 		return "Foreground Process Group"
+	case DeliverToProcessGroup:
+		return "Process Group"
 	}
 	return fmt.Sprintf("unknown signal delivery mode: %d", s)
 }
