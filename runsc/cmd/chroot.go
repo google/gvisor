@@ -25,6 +25,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/tpu"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/runsc/cmd/sandboxsetup"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -40,46 +41,6 @@ func mountInChroot(chroot, src, dst, typ string, flags uint32) error {
 		return fmt.Errorf("error mounting %q at %q: %v", src, chrootDst, err)
 	}
 	return nil
-}
-
-func pivotRoot(root string) error {
-	if err := os.Chdir(root); err != nil {
-		return fmt.Errorf("error changing working directory: %v", err)
-	}
-	// pivot_root(new_root, put_old) moves the root filesystem (old_root)
-	// of the calling process to the directory put_old and makes new_root
-	// the new root filesystem of the calling process.
-	//
-	// pivot_root(".", ".") makes a mount of the working directory the new
-	// root filesystem, so it will be moved in "/" and then the old_root
-	// will be moved to "/" too. The parent mount of the old_root will be
-	// new_root, so after umounting the old_root, we will see only
-	// the new_root in "/".
-	if err := unix.PivotRoot(".", "."); err != nil {
-		return fmt.Errorf("pivot_root failed, make sure that the root mount has a parent: %v", err)
-	}
-
-	if err := unix.Unmount(".", unix.MNT_DETACH); err != nil {
-		return fmt.Errorf("error umounting the old root file system: %v", err)
-	}
-	return nil
-}
-
-func copyFile(dst, src string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	_, err = out.ReadFrom(in)
-	return err
 }
 
 // setupMinimalProcfs creates a minimal procfs-like tree at `${chroot}/proc`.
@@ -135,7 +96,7 @@ func setupMinimalProcfs(chroot string) error {
 		"/proc/sys/vm/mmap_min_addr",
 		"/proc/sys/kernel/cap_last_cap",
 	} {
-		if err := copyFile(filepath.Join(chroot, f), f); err != nil {
+		if err := sandboxsetup.CopyFile(filepath.Join(chroot, f), f); err != nil {
 			return fmt.Errorf("failed to copy %q -> %q: %w", f, filepath.Join(chroot, f), err)
 		}
 	}
@@ -175,7 +136,7 @@ func setUpChroot(spec *specs.Spec, conf *config.Config) error {
 		return fmt.Errorf("error creating /etc in chroot: %v", err)
 	}
 
-	if err := copyFile(filepath.Join(chroot, "etc/localtime"), "/etc/localtime"); err != nil {
+	if err := sandboxsetup.CopyFile(filepath.Join(chroot, "etc/localtime"), "/etc/localtime"); err != nil {
 		log.Warningf("Failed to copy /etc/localtime: %v. UTC timezone will be used.", err)
 	}
 
@@ -191,7 +152,7 @@ func setUpChroot(spec *specs.Spec, conf *config.Config) error {
 		return fmt.Errorf("error remounting chroot in read-only: %v", err)
 	}
 
-	return pivotRoot(chroot)
+	return sandboxsetup.PivotRoot(chroot)
 }
 
 func tpuProxyUpdateChroot(hostRoot, chroot string, spec *specs.Spec, conf *config.Config) error {
