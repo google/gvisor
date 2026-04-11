@@ -110,7 +110,8 @@ func (cc *Crictl) Create(podID, contSpecFile, sbSpecFile string) (string, error)
 	if err != nil {
 		return "", err
 	}
-	r := regexp.MustCompile(`crictl version ([0-9]+)\.([0-9]+)\.([0-9+])`)
+	// Newer crictl prints "version v1.2.3"; older prints "version 1.2.3".
+	r := regexp.MustCompile(`crictl version v?([0-9]+)\.([0-9]+)\.([0-9]+)`)
 	vs := r.FindStringSubmatch(out)
 	if len(vs) != 4 {
 		return "", fmt.Errorf("crictl -v had unexpected output: %s", out)
@@ -149,6 +150,26 @@ func (cc *Crictl) Start(contID string) (string, error) {
 		return "", fmt.Errorf("start failed: %v", err)
 	}
 	return output, nil
+}
+
+// UpdateContainerResources runs `crictl update` to set the Linux memory limit
+// (CRI UpdateContainerResources). memoryLimitBytes must be positive.
+func (cc *Crictl) UpdateContainerResources(contID string, memoryLimitBytes int64) error {
+	if memoryLimitBytes <= 0 {
+		return fmt.Errorf("memory limit must be positive")
+	}
+	_, err := cc.run("update", "--memory", strconv.FormatInt(memoryLimitBytes, 10), contID)
+	return err
+}
+
+// InspectGoTemplate runs `crictl inspect` with a Go template and returns the
+// trimmed output.
+func (cc *Crictl) InspectGoTemplate(contID, tmpl string) (string, error) {
+	out, err := cc.run("inspect", "-o", "go-template", "--template", tmpl, contID)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
 }
 
 // Stop stops a container. It corresponds to `crictl stop`.
