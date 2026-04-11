@@ -7,7 +7,17 @@ package(
 
 go_library(
     name = "root",
-    srcs = ["root.go"],
+    testonly = True,
+    srcs = [
+        "crictl_util.go",
+        "root.go",
+    ],
+    deps = [
+        "//pkg/cleanup",
+        "//pkg/test/criutil",
+        "//pkg/test/dockerutil",
+        "//pkg/test/testutil",
+    ],
 )
 
 go_test(
@@ -33,7 +43,6 @@ go_test(
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/cleanup",
-        "//pkg/test/criutil",
         "//pkg/test/dockerutil",
         "//pkg/test/testutil",
         "//runsc/cgroup",
