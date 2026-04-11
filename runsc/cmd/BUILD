@@ -98,7 +98,6 @@ go_library(
         "//pkg/sentry/control",
         "//pkg/sentry/devices/nvproxy/nvconf",
         "//pkg/sentry/devices/tpuproxy",
-        "//pkg/sentry/devices/tpuproxy/vfio",
         "//pkg/sentry/hostmm",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
