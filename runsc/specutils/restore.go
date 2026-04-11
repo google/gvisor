@@ -138,22 +138,49 @@ func validateDevices(field, cName string, o, n []specs.LinuxDevice) error {
 	}
 	return nil
 }
-
-func extractAnnotationsToValidate(o map[string]string) map[string]string {
+func shouldValidateAnnotation(key string) bool {
 	const (
 		gvisorPrefix             = "dev.gvisor."
+		gvisorFlagPrefix         = "dev.gvisor.flag."
 		internalPrefix           = "dev.gvisor.internal."
 		mntPrefix                = "dev.gvisor.spec.mount."
 		containerNameRemapPrefix = "dev.gvisor.container-name-remap."
 	)
+	// Only validate gVisor annotations.
+	if !strings.HasPrefix(key, gvisorPrefix) {
+		return false
+	}
+	// Do not validate internal annotations. They might container
+	// checkpoint/restore specific information which ought to change.
+	if strings.HasPrefix(key, internalPrefix) {
+		return false
+	}
+	// Do not validate container name remap annotations. These are only set
+	// during restore.
+	if strings.HasPrefix(key, containerNameRemapPrefix) {
+		return false
+	}
+	// The source of a mount can change during restore.
+	if strings.HasPrefix(key, mntPrefix) && strings.HasSuffix(key, ".source") {
+		return false
+	}
+	// Flag annotations controlling debug logging can change. They don't impact
+	// the restorability of the snapshot.
+	if strings.HasPrefix(key, gvisorFlagPrefix) {
+		if strings.HasSuffix(key, ".debug-log") ||
+			strings.HasSuffix(key, ".debug") ||
+			strings.HasSuffix(key, ".debug-command") ||
+			strings.HasSuffix(key, ".strace") {
+			return false
+		}
+	}
+	return true
+}
 
+func extractAnnotationsToValidate(o map[string]string) map[string]string {
 	n := make(map[string]string)
 	for key, val := range o {
-		if strings.HasPrefix(key, internalPrefix) || strings.HasPrefix(key, containerNameRemapPrefix) || (strings.HasPrefix(key, mntPrefix) && strings.HasSuffix(key, ".source")) {
-			continue
-		}
-
-		if strings.HasPrefix(key, gvisorPrefix) {
+		if shouldValidateAnnotation(key) {
 			n[key] = val
 		}
 	}
