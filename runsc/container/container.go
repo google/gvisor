@@ -780,6 +780,19 @@ func (c *Container) SignalProcess(sig unix.Signal, pid int32) error {
 	return c.Sandbox.SignalProcess(c.ID, int32(pid), sig, false)
 }
 
+// SignalProcessGroup sends sig to all processes in the given process group
+// inside the container.
+func (c *Container) SignalProcessGroup(sig unix.Signal, pgid int32) error {
+	log.Debugf("Signal process group %d in container, cid: %s, signal: %v (%d)", pgid, c.ID, sig, sig)
+	if err := c.requireStatus("signal a process group inside", Running); err != nil {
+		return err
+	}
+	if !c.IsSandboxRunning() {
+		return fmt.Errorf("sandbox is not running")
+	}
+	return c.Sandbox.SignalProcessGroup(c.ID, pgid, sig)
+}
+
 // ForwardSignals forwards all signals received by the current process to the
 // container process inside the sandbox. It returns a function that will stop
 // forwarding signals.
