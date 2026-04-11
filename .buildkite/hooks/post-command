@@ -40,6 +40,16 @@ make -s testlogs 2>/dev/null | grep // | sort | uniq | (
   done
 )
 
+# Always upload container test logs if this is a Container Test job!
+if [[ "${BUILDKITE_LABEL}" =~ "Container tests" ]]; then
+  if test -d bazel-testlogs/runsc/container; then
+    # Use -L to follow the bazel-testlogs symlink
+    find -L bazel-testlogs/runsc/container -type f \( -name "*.log" -o -name "*.txt" \) | while read file; do
+      buildkite-agent artifact upload "${file}"
+    done
+  fi
+fi
+
 # Upload all profiles, and include in an annotation.
 declare profile_output=$(mktemp --tmpdir)
 for file in $(find /tmp/profile -name \*.pprof -print 2>/dev/null | sort); do
