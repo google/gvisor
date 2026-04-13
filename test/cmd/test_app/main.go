@@ -55,6 +55,7 @@ func main() {
 	subcommands.Register(new(reaper), "")
 	subcommands.Register(new(syscall), "")
 	subcommands.Register(new(taskTree), "")
+	subcommands.Register(new(taskTreePGID), "")
 	subcommands.Register(new(uds), "")
 	subcommands.Register(new(zombieTest), "")
 	registerSubcommandsExtra()
@@ -369,6 +370,64 @@ func (c *taskTree) Execute(ctx context.Context, f *flag.FlagSet, args ...any) su
 		}
 	}
 
+	return subcommands.ExitSuccess
+}
+
+type taskTreePGID struct {
+	level int
+}
+
+// Name implements subcommands.Command.Name.
+func (*taskTreePGID) Name() string {
+	return "task-tree-pgid"
+}
+
+// Synopsis implements subcommands.Command.Synopsys.
+func (*taskTreePGID) Synopsis() string {
+	return "creates a child+grandchild in a new process group"
+}
+
+// Usage implements subcommands.Command.Usage.
+func (*taskTreePGID) Usage() string {
+	return "task-tree-pgid --level=N\n"
+}
+
+// SetFlags implements subcommands.Command.SetFlags.
+func (c *taskTreePGID) SetFlags(f *flag.FlagSet) {
+	f.IntVar(&c.level, "level", 0, "0=init, 1=child (new pgid), 2=grandchild")
+}
+
+// Execute implements subcommands.Command.Execute.
+func (c *taskTreePGID) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
+	switch c.level {
+	case 0:
+		stop := testutil.StartReaper()
+		defer stop()
+		cmd := exec.Command("/proc/self/exe", "task-tree-pgid", "--level=1")
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.SysProcAttr = &sys.SysProcAttr{Setpgid: true}
+		if err := cmd.Start(); err != nil {
+			log.Fatalf("level 0: failed to start child: %v", err)
+		}
+		for {
+			time.Sleep(time.Hour)
+		}
+
+	case 1:
+		cmd := exec.Command("/proc/self/exe", "task-tree-pgid", "--level=2")
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Start(); err != nil {
+			log.Fatalf("level 1: failed to start grandchild: %v", err)
+		}
+		cmd.Wait()
+
+	case 2:
+		for {
+			time.Sleep(time.Hour)
+		}
+	}
 	return subcommands.ExitSuccess
 }
 

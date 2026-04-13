@@ -1826,6 +1826,15 @@ func (l *Loader) signal(cid string, pid, signo int32, mode SignalDeliveryMode) e
 		}
 		return nil
 
+	case DeliverToProcessGroup:
+		if pid == 0 {
+			return fmt.Errorf("PGID must be set when signaling a process group")
+		}
+		if err := l.signalProcessGroup(cid, kernel.ProcessGroupID(pid), signo); err != nil {
+			return fmt.Errorf("signaling process group %d: %w", pid, err)
+		}
+		return nil
+
 	default:
 		panic(fmt.Sprintf("unknown signal delivery mode %v", mode))
 	}
@@ -1903,6 +1912,28 @@ func (l *Loader) signalAllProcesses(cid string, signo int32) error {
 	l.k.Pause()
 	defer l.k.Unpause()
 	return l.k.SendContainerSignal(cid, &linux.SignalInfo{Signo: signo})
+}
+
+// signalProcessGroup sends the signal to all processes in the process group
+// identified by pgid. pgid is relative to the root PID namespace. It verifies
+// that the process group exists in the container with the given ID.
+func (l *Loader) signalProcessGroup(cid string, pgid kernel.ProcessGroupID, signo int32) error {
+	pg := l.k.RootPIDNamespace().ProcessGroupWithID(pgid)
+	if pg == nil {
+		return fmt.Errorf("no such process group with PGID %d", pgid)
+	}
+	// Verify that the process group exists in correct container.
+	found := false
+	for _, tg := range l.k.TaskSet().Root.ThreadGroups() {
+		if tg.ProcessGroup() == pg && tg.Leader().ContainerID() == cid {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("process group %d does not belong to container %q", pgid, cid)
+	}
+	return l.k.SendExternalSignalProcessGroup(pg, &linux.SignalInfo{Signo: signo})
 }
 
 // threadGroupFromID is similar to tryThreadGroupFromIDLocked except that it

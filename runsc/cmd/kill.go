@@ -32,8 +32,9 @@ import (
 // Kill implements subcommands.Command for the "kill" command.
 type Kill struct {
 	containerLoader
-	all bool
-	pid int
+	all  bool
+	pid  int
+	pgid int
 }
 
 // Name implements subcommands.Command.Name.
@@ -55,6 +56,7 @@ func (*Kill) Usage() string {
 func (k *Kill) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&k.all, "all", false, "send the specified signal to all processes inside the container")
 	f.IntVar(&k.pid, "pid", 0, "send the specified signal to a specific process. pid is relative to the root PID namespace")
+	f.IntVar(&k.pgid, "pgid", 0, "send the specified signal to all processes in the given process group. pgid is relative to the root PID namespace")
 }
 
 // FetchSpec implements util.SubCommand.FetchSpec.
@@ -75,8 +77,19 @@ func (k *Kill) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 
 	conf := args[0].(*config.Config)
 
-	if k.pid != 0 && k.all {
-		util.Fatalf("it is invalid to specify both --all and --pid")
+	// Validate that at most one targeting mode is used.
+	modes := 0
+	if k.all {
+		modes++
+	}
+	if k.pid != 0 {
+		modes++
+	}
+	if k.pgid != 0 {
+		modes++
+	}
+	if modes > 1 {
+		util.Fatalf("it is invalid to specify more than one of --all, --pid, and --pgid")
 	}
 
 	c, err := k.loadContainer(conf, f, container.LoadOpts{})
@@ -100,6 +113,10 @@ func (k *Kill) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	if k.pid != 0 {
 		if err := c.SignalProcess(sig, int32(k.pid)); err != nil {
 			util.Fatalf("failed to signal pid %d: %v", k.pid, err)
+		}
+	} else if k.pgid != 0 {
+		if err := c.SignalProcessGroup(sig, int32(k.pgid)); err != nil {
+			util.Fatalf("failed to signal process group %d: %v", k.pgid, err)
 		}
 	} else {
 		if err := c.SignalContainer(sig, k.all); err != nil {

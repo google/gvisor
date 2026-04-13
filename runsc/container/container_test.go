@@ -1023,6 +1023,93 @@ func TestKillPid(t *testing.T) {
 	}
 }
 
+// TestSignalProcessGroup verifies that SignalProcessGroup kills all
+// processes in the targeted process group while leaving other groups
+// running.
+func TestSignalProcessGroup(t *testing.T) {
+	for name, conf := range configs(t, false /* noOverlay */) {
+		t.Run(name, func(t *testing.T) {
+			app, err := testutil.FindFile("test/cmd/test_app/test_app")
+			if err != nil {
+				t.Fatal("error finding test_app:", err)
+			}
+
+			spec := testutil.NewSpecWithArgs(app, "task-tree-pgid")
+			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer cleanup()
+
+			args := Args{
+				ID:        testutil.RandomContainerID(),
+				Spec:      spec,
+				BundleDir: bundleDir,
+			}
+			cont, err := New(conf, args)
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			defer cont.Destroy()
+			if err := cont.Start(conf); err != nil {
+				t.Fatalf("error starting container: %v", err)
+			}
+
+			// Wait for all 3 processes: init, child, grandchild.
+			if err := waitForProcessCount(cont, 3); err != nil {
+				t.Fatalf("timed out waiting for processes: %v", err)
+			}
+
+			// Collect PGIDs.
+			procs, err := cont.Processes()
+			if err != nil {
+				t.Fatalf("failed to get process list: %v", err)
+			}
+			t.Logf("before signal: %s", procListToString(procs))
+
+			// Init (PID 1) is in PGID 1.
+			// Child + grandchild should share a PGID != 1.
+			pgidA := int32(1)
+			pgidBCount := make(map[int32]int)
+			for _, p := range procs {
+				if int32(p.PGID) != pgidA {
+					pgidBCount[int32(p.PGID)]++
+				}
+			}
+
+			// Find the PGID shared by child+grandchild.
+			var pgidB int32
+			for pgid, n := range pgidBCount {
+				if n == 2 {
+					pgidB = pgid
+				}
+			}
+			if pgidB == 0 {
+				t.Fatalf("expected child and grandchild to share a PGID distinct from init (%d); got: %v", pgidA, pgidBCount)
+			}
+			t.Logf("PGID_init=%d, PGID_target=%d (%d processes)", pgidA, pgidB, pgidBCount[pgidB])
+
+			// Signal the target PGID (both child and grandchild should die, init survives).
+			if err := cont.SignalProcessGroup(unix.SIGKILL, pgidB); err != nil {
+				t.Fatalf("SignalProcessGroup(%d): %v", pgidB, err)
+			}
+
+			if err := waitForProcessCount(cont, 1); err != nil {
+				procs, procsErr := cont.Processes()
+				t.Fatalf("expected only init to survive: %v; processes: %s / %v", err, procListToString(procs), procsErr)
+			}
+
+			procs, err = cont.Processes()
+			if err != nil {
+				t.Fatalf("failed to get process list: %v", err)
+			}
+			if len(procs) != 1 || procs[0].PID != 1 {
+				t.Fatalf("expected only PID 1 to survive, got: %s", procListToString(procs))
+			}
+		})
+	}
+}
+
 // testCheckpointRestore creates a container that continuously writes successive
 // integers to a file. To test checkpoint and restore functionality, the
 // container is checkpointed and the last number printed to the file is
