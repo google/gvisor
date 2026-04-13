@@ -500,6 +500,10 @@ func (c *CgroupJSON) MarshalJSON() ([]byte, error) {
 func (c *cgroupV1) Install(res *specs.LinuxResources) error {
 	log.Debugf("Installing cgroup path %q", c.Name)
 
+	if res != nil && len(res.Unified) > 0 {
+		return fmt.Errorf("unified resources are only supported with cgroupv2")
+	}
+
 	// Clean up partially created cgroups on error. Errors during cleanup itself
 	// are ignored.
 	clean := cleanup.Make(func() { _ = c.Uninstall() })
@@ -546,6 +550,11 @@ func (c *cgroupV1) Install(res *specs.LinuxResources) error {
 // Update updates the cgroup resources.
 func (c *cgroupV1) Update(res *specs.LinuxResources) error {
 	log.Debugf("Updating cgroup resources for %q", c.Name)
+
+	if res != nil && len(res.Unified) > 0 {
+		return fmt.Errorf("unified resources are only supported with cgroupv2")
+	}
+
 	for key, ctrlr := range controllers {
 		if !c.Own[key] {
 			// cgroup is managed by caller, don't touch it.

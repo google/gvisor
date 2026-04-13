@@ -564,6 +564,24 @@ func TestUpdateUnified(t *testing.T) {
 			},
 			wantErrSub: "must be a file name",
 		},
+		{
+			name: "rejects keys without dot separator",
+			resources: &specs.LinuxResources{
+				Unified: map[string]string{
+					"nodot": "1",
+				},
+			},
+			wantErrSub: "must be in the form CONTROLLER.PARAMETER",
+		},
+		{
+			name: "reports unavailable controller",
+			resources: &specs.LinuxResources{
+				Unified: map[string]string{
+					"fake.knob": "1",
+				},
+			},
+			wantErrSub: `controller "fake" not available`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir, err := os.MkdirTemp(testutil.TmpDir(), "cgroup")
