@@ -867,7 +867,13 @@ func (s *subprocess) switchToApp(c *platformContext, ac *arch.Context64) (isSysc
 		shouldPatchSyscall = true
 	}
 	if ctxState == sysmsg.ContextStateSyscall || ctxState == sysmsg.ContextStateSyscallTrap {
-		if maybePatchSignalInfo(regs, &c.signalInfo) {
+		// Only apply vsyscall patching when SignalInfo indicates a
+		// kernel-generated SIGSYS (si_code == SYS_SECCOMP). SignalInfo
+		// resides in guest-writable shared memory, so a forged Addr in
+		// the vsyscall range could trick maybePatchSignalInfo into
+		// modifying Rip/Rsp. Checking si_code ensures the signal
+		// originated from the kernel seccomp filter, not the guest.
+		if c.signalInfo.Code == int32(linux.SYS_SECCOMP) && maybePatchSignalInfo(regs, &c.signalInfo) {
 			return false, false, hostarch.Execute, nil
 		}
 		updateSyscallRegs(regs)
