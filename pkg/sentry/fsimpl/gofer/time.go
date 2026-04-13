@@ -21,7 +21,7 @@ import (
 )
 
 func dentryTimestamp(t lisafs.StatxTimestamp) int64 {
-	return t.ToNsec()
+	return t.ToNsecCapped()
 }
 
 func dentryTimestampFromUnix(t unix.Timespec) int64 {

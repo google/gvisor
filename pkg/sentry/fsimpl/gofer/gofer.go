@@ -1401,11 +1401,11 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs
 	// !d.inode.cachedMetadataAuthoritative() then we returned after calling
 	// d.file.setAttr(). For the same reason, now must have been initialized.
 	if stat.Mask&linux.STATX_ATIME != 0 && failureMask&linux.STATX_ATIME == 0 {
-		d.inode.atime.Store(stat.Atime.ToNsec())
+		d.inode.atime.Store(stat.Atime.ToNsecCapped())
 		d.inode.atimeDirty.Store(0)
 	}
 	if stat.Mask&linux.STATX_MTIME != 0 && failureMask&linux.STATX_MTIME == 0 {
-		d.inode.mtime.Store(stat.Mtime.ToNsec())
+		d.inode.mtime.Store(stat.Mtime.ToNsecCapped())
 		d.inode.mtimeDirty.Store(0)
 	}
 	d.inode.ctime.Store(now)
