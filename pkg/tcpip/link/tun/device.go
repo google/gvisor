@@ -257,6 +257,10 @@ func (d *Device) Write(data *buffer.View) (int64, error) {
 	case d.flags.TUN:
 		// TUN interface with IFF_NO_PI enabled, thus
 		// we need to determine protocol from version field
+		if data.Size() == 0 {
+			// Ignore bad packet.
+			return dataLen, nil
+		}
 		version := data.AsSlice()[0] >> 4
 		switch version {
 		case 4:
