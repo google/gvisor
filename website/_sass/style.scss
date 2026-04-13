@@ -184,28 +184,27 @@ table th {
 }
 
 .blog-content .attribution, .blog-content figcaption {
-  /* Stay close to the image. */
+  // Stay close to the image.
   display: block;
   margin-top: 6px;
   padding-top: 0px;
 
-  /* Italics, centered, lighter text. */
+  // Italics, centered, lighter text.
   text-align: center;
   font-style: italic;
   color: $text-color-secondary;
 }
 
 .blog-content * img:has(+ .attribution), .blog-content * img:has(+ figcaption) {
-  /* Remove bottom margins from images where there is an attribution line
-   * immediately following the image.
-   */
+  // Remove bottom margins from images where there is an attribution line
+  // immediately following the image.
   margin-bottom: 0px;
 }
 
 .blog-content .attribution, .blog-content figcaption {
-  /* Remove margin above image caption. */
+  // Remove margin above image caption.
   margin-top: 0px;
-  /* Add margin under image caption. */
+  // Add margin under image caption.
   margin-bottom: 1em;
 }
 
@@ -218,19 +217,19 @@ table th {
   margin-bottom: 1em;
 }
 
-/* Override the top/bottom margins of whatever is inside. */
-/* We rely on the padding of the details element instead. */
+// Override the top/bottom margins of whatever is inside.
+// We rely on the padding of the details element instead.
 .blog-content details > summary:first-child,
 .blog-content details > summary:first-child > :first-child {
   margin-top: 0px;
 }
 
-/* Remove bottom margin from last element of <details> */
+// Remove bottom margin from last element of <details>
 .blog-content details > :not(summary):last-child {
   margin-bottom: 0px;
 }
 
-/* Remove bottom margin from last child of <summary> if <details> isn't open. */
+// Remove bottom margin from last child of <summary> if <details> isn't open.
 .blog-content details:not([open]) > summary > *:last-child {
   margin-bottom: 0px;
 }
@@ -238,7 +237,7 @@ table th {
 .blog-content details > summary:first-child {
   cursor: pointer;
 
-  /* No border when closed, added when opened: */
+  // No border when closed, added when opened:
   border-bottom: 0px;
   margin-bottom: 0em;
 }
@@ -248,7 +247,7 @@ table th {
   margin-bottom: 1em;
 }
 
-/* Create CSS triangle and animate openining/closing: */
+// Create CSS triangle and animate openining/closing:
 
 .blog-content details > summary:first-child {
   padding-left: 1em;
@@ -275,7 +274,7 @@ table th {
   transform: rotate(90deg);
 }
 
-/* Add line above footnotes section if it is not empty. */
+// Add line above footnotes section if it is not empty.
 .blog-content .footnotes:has(li) {
   margin-top: 2em;
   border-top: 1px dotted #ccc;
@@ -283,13 +282,13 @@ table th {
 }
 
 .users-content {
-  /* Shrink the container holding the users list on each side */
+  // Shrink the container holding the users list on each side
   padding-left:15%;
   padding-right:15%;
 }
 
 .row.display-flex {
-  /* Make responsive columns equal height using flex. */
+  // Make responsive columns equal height using flex.
   display: flex;
   flex-wrap: wrap;
 }
@@ -299,13 +298,13 @@ table th {
 }
 
 .no-space {
-  /* Remove component spacing by remove padding and margins. */
+  // Remove component spacing by remove padding and margins.
   margin:0px auto;
   padding:0px;
 }
 
 .img-vert-center {
-  /* Default img-vert-center to use block, larger screens will use position. */
+  // Default img-vert-center to use block, larger screens will use position.
   margin: 0px;
   display: block;
   margin-left: auto;
@@ -313,45 +312,45 @@ table th {
 }
 
 .panel-solution h2 {
-  /* Reduce h2 margins in the big "solution" panels on the homepage. */
+  // Reduce h2 margins in the big "solution" panels on the homepage.
   margin-top: 1em;
   margin-bottom: 1em;
 }
 
 .panel-default h2 {
-  /* Same, but also remove the top-margin for the "features" panels. */
+  // Same, but also remove the top-margin for the "features" panels.
   margin-top: 0em;
   margin-bottom: 1em;
 }
 
 @media (min-width: 480px) {
-  /* Set panel height smart phones landscape. */
+  // Set panel height smart phones landscape.
   .panel-solution {
     height: 300px;
   }
 }
 
 @media (min-width: 600px) {
-  /* Set panel height tablets portrait. */
+  // Set panel height tablets portrait.
   .panel-solution {
     height: 260px;
   }
 }
 
 @media (min-width: 768px) {
-  /* Set panel height tablets. */
+  // Set panel height tablets.
   .panel-solution {
     height: 240px;
   }
 }
 
 @media (min-width: 992px) {
-  /* Set panel height tablets landscape. */
+  // Set panel height tablets landscape.
   .panel-solution {
     height: 330px;
   }
 
-  /* Vertical center image in column on larger screens */
+  // Vertical center image in column on larger screens
   .img-vert-center {
     margin: 0;
     position: absolute;
@@ -363,7 +362,7 @@ table th {
 }
 
 @media (min-width: 1200px) {
-  /* Set panel height laptops and desktops. */
+  // Set panel height laptops and desktops.
   .panel-solution {
     height: 300px;
   }
