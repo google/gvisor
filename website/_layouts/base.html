@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en" itemscope itemtype="https://schema.org/WebPage">
   {% include header.html %}
-  <body>
+  <body class="{{ page.body_classes | join: ' ' }}">
     {% include header-links.html %}
     {{ content }}
     {% include footer.html %}
