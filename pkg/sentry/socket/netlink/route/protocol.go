@@ -17,6 +17,8 @@ package route
 
 import (
 	"bytes"
+	"maps"
+	"slices"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -99,8 +101,10 @@ func (p *Protocol) dumpLinks(ctx context.Context, s *netlink.Socket, msg *nlmsg.
 		return nil
 	}
 
-	for idx, i := range stack.Interfaces() {
-		p.AddNewLinkMessage(ms, idx, i)
+	ifaces := stack.Interfaces()
+	indexes := slices.Sorted(maps.Keys(ifaces))
+	for _, idx := range indexes {
+		p.AddNewLinkMessage(ms, idx, ifaces[idx])
 	}
 
 	return nil
