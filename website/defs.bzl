@@ -158,7 +158,7 @@ include_in_menu: {include_in_menu}"""
             # that the pipeline here is almost important, as the grep will
             # return non-zero if the file is empty, but we ignore that within
             # the pipeline.
-            builder_content.append("grep -v -E '^# ' %s | sed -e 's|^\\[TOC\\]$|- TOC\\n{:toc}|' >>$T/%s" %
+            builder_content.append("awk '!found && /^# / {found=1; next} 1' %s | sed -e 's|^\\[TOC\\]$|- TOC\\n{:toc}|' >>$T/%s" %
                                    (f.path, dest))
 
     builder_content.append("declare -r filename=$(readlink -m %s)" % tarball.path)
