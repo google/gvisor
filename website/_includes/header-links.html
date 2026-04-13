@@ -17,4 +17,16 @@
       </ul>
     </div>
   </div>
+  <script>
+    const navBar = document.querySelector('.navbar');
+    const observer = new ResizeObserver(entries => {
+      for (let entry of entries) {
+        const newHeight = entry.contentRect.height;
+        document.documentElement.style.setProperty('--nav-height', `${newHeight}px`);
+      }
+    });
+    if (navBar) {
+      observer.observe(navBar);
+    }
+  </script>
 </nav>
