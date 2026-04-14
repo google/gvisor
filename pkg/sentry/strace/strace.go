@@ -588,7 +588,7 @@ func (i *SyscallInfo) printExit(t *kernel.Task, elapsed time.Duration, output []
 		i.post(t, args, retval, output, LogMaximumSize)
 		rval = fmt.Sprintf("%d (%#x) (%v)", retval, retval, elapsed)
 	} else {
-		rval = fmt.Sprintf("%d (%#x) errno=%d (%s) (%v)", retval, retval, errno, err, elapsed)
+		rval = fmt.Sprintf("%d errno=%d (%s) (%v)", -1, errno, err, elapsed)
 	}
 
 	switch len(output) {
