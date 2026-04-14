@@ -81,6 +81,16 @@ if test "${BUILDKITE_COMMAND_EXIT_STATUS}" -ne "0"; then
   sudo rm -rf "${HOME}/go"
 fi
 
+# Track consecutive failures.
+CONSECUTIVE_FAILURES_FILE="/tmp/consecutive_failures"
+if test "${BUILDKITE_COMMAND_EXIT_STATUS}" -ne "0"; then
+  count="$(cat "${CONSECUTIVE_FAILURES_FILE}" 2>/dev/null || echo 0)"
+  echo "$((count + 1))" > "${CONSECUTIVE_FAILURES_FILE}.tmp"
+  mv "${CONSECUTIVE_FAILURES_FILE}.tmp" "${CONSECUTIVE_FAILURES_FILE}"
+else
+  rm -f "${CONSECUTIVE_FAILURES_FILE}"
+fi
+
 clear_docker_containers
 
 set -euo pipefail
