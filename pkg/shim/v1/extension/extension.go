@@ -68,7 +68,6 @@ type RestoreRequest struct {
 // TaskServiceExt extends TaskRequest with extra functionality required by the shim.
 type TaskServiceExt interface {
 	task.TaskService
-	Cleanup(ctx context.Context) (*task.DeleteResponse, error)
 	CreateWithFSRestore(ctx context.Context, req *CreateWithFSRestoreRequest) (*task.CreateTaskResponse, error)
 	Restore(ctx context.Context, req *RestoreRequest) (*task.StartResponse, error)
 }
