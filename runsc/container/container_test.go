@@ -4097,7 +4097,7 @@ func TestSpecValidation(t *testing.T) {
 			name: "AnnotationsFail",
 			mutate: func(spec, restoreSpec *specs.Spec, _, _ string) {
 				spec.Annotations = make(map[string]string)
-				spec.Annotations["dev.gvisor.net-disconnect-ok"] = strconv.FormatBool(true)
+				spec.Annotations["dev.gvisor.flag.net-disconnect-ok"] = strconv.FormatBool(true)
 			},
 			wantErr: "Annotations does not match across checkpoint restore",
 		},
@@ -4109,6 +4109,17 @@ func TestSpecValidation(t *testing.T) {
 
 				restoreSpec.Annotations = make(map[string]string)
 				restoreSpec.Annotations["dev.gvisor.internal.foo"] = "bar"
+			},
+			wantErr: "",
+		},
+		{
+			name: "DebugLogAnnotationsSuccess",
+			mutate: func(spec, restoreSpec *specs.Spec, _, _ string) {
+				restoreSpec.Annotations = make(map[string]string)
+				restoreSpec.Annotations["dev.gvisor.flag.debug-log"] = "/tmp/sandbox-%ID%/"
+				restoreSpec.Annotations["dev.gvisor.flag.debug"] = "true"
+				restoreSpec.Annotations["dev.gvisor.flag.debug-command"] = "boot,gofer,start,create"
+				restoreSpec.Annotations["dev.gvisor.flag.strace"] = "true"
 			},
 			wantErr: "",
 		},

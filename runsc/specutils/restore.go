@@ -139,21 +139,58 @@ func validateDevices(field, cName string, o, n []specs.LinuxDevice) error {
 	return nil
 }
 
-func extractAnnotationsToValidate(o map[string]string) map[string]string {
-	const (
-		gvisorPrefix             = "dev.gvisor."
-		internalPrefix           = "dev.gvisor.internal."
-		mntPrefix                = "dev.gvisor.spec.mount."
-		containerNameRemapPrefix = "dev.gvisor.container-name-remap."
-	)
+// These annotations are allowed to be changed during restore.
+var allowedRestoreFlagAnnotations = []string{
+	annotationFlagPrefix + "debug",
+	annotationFlagPrefix + "debug-log",
+	annotationFlagPrefix + "debug-command",
+	annotationFlagPrefix + "debug-log-format",
+	annotationFlagPrefix + "strace",
+	annotationFlagPrefix + "strace-syscalls",
+	annotationFlagPrefix + "strace-log-size",
+	annotationFlagPrefix + "log-packets",
+}
 
+func shouldValidateAnnotation(key string) bool {
+	const (
+		gvisorPrefix   = "dev.gvisor."
+		internalPrefix = "dev.gvisor.internal."
+		mntPrefix      = "dev.gvisor.spec.mount."
+	)
+	// Only validate gVisor annotations.
+	if !strings.HasPrefix(key, gvisorPrefix) {
+		return false
+	}
+	// Do not validate internal annotations. They might container
+	// checkpoint/restore specific information which ought to change.
+	if strings.HasPrefix(key, internalPrefix) {
+		return false
+	}
+	// Do not validate container name remap annotations. These are only set
+	// during restore.
+	if strings.HasPrefix(key, annotationContainerNameRemap) {
+		return false
+	}
+	// The source of a mount can change during restore.
+	if strings.HasPrefix(key, mntPrefix) && strings.HasSuffix(key, ".source") {
+		return false
+	}
+	// Flag annotations controlling debug logging can change. They don't impact
+	// the restorability of the snapshot.
+	if strings.HasPrefix(key, annotationFlagPrefix) {
+		for _, allowed := range allowedRestoreFlagAnnotations {
+			if key == allowed {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func extractAnnotationsToValidate(o map[string]string) map[string]string {
 	n := make(map[string]string)
 	for key, val := range o {
-		if strings.HasPrefix(key, internalPrefix) || strings.HasPrefix(key, containerNameRemapPrefix) || (strings.HasPrefix(key, mntPrefix) && strings.HasSuffix(key, ".source")) {
-			continue
-		}
-
-		if strings.HasPrefix(key, gvisorPrefix) {
+		if shouldValidateAnnotation(key) {
 			n[key] = val
 		}
 	}
