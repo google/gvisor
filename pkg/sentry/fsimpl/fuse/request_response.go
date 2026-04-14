@@ -200,9 +200,9 @@ func (r *Response) Error() error {
 	sysErrNo := unix.Errno(-errno)
 	if !syserr.IsValid(sysErrNo) {
 		log.Warningf("fusefs: invalid response error %d does not correspond to a Linux error", sysErrNo)
-		sysErrNo = unix.Errno(unix.EINVAL)
+		sysErrNo = unix.EINVAL
 	}
-	return error(sysErrNo)
+	return linuxerr.ErrorFromUnix(sysErrNo)
 }
 
 // DataLen returns the size of the response without the header.

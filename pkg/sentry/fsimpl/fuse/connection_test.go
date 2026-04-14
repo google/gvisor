@@ -43,7 +43,7 @@ func TestConnectionInitBlock(t *testing.T) {
 	default:
 	}
 
-	conn.SetInitialized()
+	conn.setInitialized()
 
 	select {
 	case <-conn.initializedChan:

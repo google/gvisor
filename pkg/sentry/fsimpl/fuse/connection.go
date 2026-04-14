@@ -73,7 +73,7 @@ type connection struct {
 
 	// initialized after receiving FUSE_INIT reply.
 	// Until it's set, suspend sending FUSE requests.
-	// Use SetInitialized() and IsInitialized() for atomic access.
+	// Use setInitialized() and isInitialized() for atomic access.
 	initialized atomicbitops.Int32
 
 	// initializedChan is used to block requests before initialization.
@@ -231,18 +231,58 @@ type connection struct {
 	noOpen bool
 }
 
-func connError(err error) error {
+func linuxError(err error) error {
+	if err == nil {
+		return nil
+	}
 	// The error may contain arbitrary errno values that can't be converted.
 	switch e := err.(type) {
 	case unix.Errno:
 		if syserr.IsValid(e) {
-			return err
+			return linuxerr.ErrorFromUnix(e)
 		}
 	default:
 		return err
 	}
 	log.Warningf("fusefs: failed with invalid error: %v", err)
-	return unix.EINVAL
+	return linuxerr.EINVAL
+}
+
+// setInitializedLocked atomically sets the connection as initialized.
+//
+// +checklocks:conn.mu
+func (conn *connection) setInitializedLocked() {
+	if conn.initialized.Load() != 0 {
+		return
+	}
+
+	// Unblock the requests sent before INIT.
+	close(conn.initializedChan)
+
+	// Close the channel first to avoid the non-atomic situation
+	// where conn.initialized is true but there are
+	// tasks being blocked on the channel.
+	// And it prevents the newer tasks from gaining
+	// unnecessary higher chance to be issued before the blocked one.
+
+	conn.initialized.Store(1)
+}
+
+// setInitialized atomically sets the connection as initialized.
+func (conn *connection) setInitialized() {
+	if conn.isInitialized() {
+		return
+	}
+
+	conn.mu.Lock()
+	defer conn.mu.Unlock()
+
+	conn.setInitializedLocked()
+}
+
+// isInitialized atomically check if the connection is initialized.
+func (conn *connection) isInitialized() bool {
+	return conn.initialized.Load() != 0
 }
 
 func (conn *connection) saveInitializedChan() bool {
@@ -320,9 +360,9 @@ func (conn *connection) CallAsync(ctx context.Context, r *Request) error {
 // as documented in include/uapi/linux/fuse.h:FUSE_FORGET.
 func (conn *connection) Call(ctx context.Context, r *Request) (*Response, error) {
 	// Block requests sent before connection is initialized.
-	if !conn.Initialized() && r.hdr.Opcode != linux.FUSE_INIT {
+	if !conn.isInitialized() && r.hdr.Opcode != linux.FUSE_INIT {
 		if err := ctx.Block(conn.initializedChan); err != nil {
-			return nil, connError(err)
+			return nil, linuxError(err)
 		}
 	}
 
@@ -341,12 +381,12 @@ func (conn *connection) Call(ctx context.Context, r *Request) (*Response, error)
 
 	fut, err := conn.callFuture(ctx, r)
 	if err != nil {
-		return nil, connError(err)
+		return nil, linuxError(err)
 	}
 
 	res, err := fut.resolve(ctx)
 	if err != nil {
-		return res, connError(err)
+		return res, linuxError(err)
 	}
 	return res, nil
 }

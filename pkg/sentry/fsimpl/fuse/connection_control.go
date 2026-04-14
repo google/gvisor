@@ -56,26 +56,6 @@ var (
 	MaxUserCongestionThreshold uint16 = fuseDefaultCongestionThreshold
 )
 
-// SetInitialized atomically sets the connection as initialized.
-func (conn *connection) SetInitialized() {
-	// Unblock the requests sent before INIT.
-	close(conn.initializedChan)
-
-	// Close the channel first to avoid the non-atomic situation
-	// where conn.initialized is true but there are
-	// tasks being blocked on the channel.
-	// And it prevents the newer tasks from gaining
-	// unnecessary higher chance to be issued before the blocked one.
-
-	conn.initialized.Store(1)
-}
-
-// Initialized atomically check if the connection is initialized. pairs with
-// SetInitialized().
-func (conn *connection) Initialized() bool {
-	return conn.initialized.Load() != 0
-}
-
 // InitSend sends a FUSE_INIT request.
 func (conn *connection) InitSend(creds *auth.Credentials, pid uint32) error {
 	in := linux.FUSEInitIn{
@@ -121,7 +101,7 @@ func (conn *connection) initProcessReply(out *linux.FUSEInitOut, hasSysAdminCap 
 
 	// No matter error or not, always set initialized.
 	// to unblock the blocked requests.
-	defer conn.SetInitialized()
+	defer conn.setInitializedLocked()
 
 	// No support for old major fuse versions.
 	if out.Major != linux.FUSE_KERNEL_VERSION {
@@ -230,8 +210,8 @@ func (conn *connection) Abort(ctx context.Context) {
 
 	// 1. The request blocked before initialization.
 	// Will reach call() `connected` check and return.
-	if !conn.Initialized() {
-		conn.SetInitialized()
+	if !conn.isInitialized() {
+		conn.setInitialized()
 	}
 
 	// 2. Terminate the requests collected above.

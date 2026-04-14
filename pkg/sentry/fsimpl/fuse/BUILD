@@ -64,6 +64,7 @@ go_library(
         "file.go",
         "fusefs.go",
         "inode.go",
+        "inode_connection.go",
         "inode_refs.go",
         "read_write.go",
         "register.go",
