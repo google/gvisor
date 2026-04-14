@@ -19,6 +19,7 @@ import (
 	"context"
 	"os"
 
+	"github.com/containerd/containerd/pkg/shutdown"
 	"github.com/containerd/containerd/runtime/v2/shim"
 	shimapi "github.com/containerd/containerd/runtime/v2/task"
 	"github.com/containerd/errdefs"
@@ -68,7 +69,15 @@ func New(ctx context.Context, id string, publisher shim.Publisher, fn func()) (s
 	if ctxOpts := ctx.Value(shim.OptsKey{}); ctxOpts != nil {
 		shimOpts = ctxOpts.(shim.Opts)
 	}
-	ts, err := newShimRedirector(ctx, id, publisher, fn)
+	sd, ok := ctx.(shutdown.Service)
+	if !ok {
+		ctx, sd = shutdown.WithShutdown(ctx)
+		sd.RegisterCallback(func(context.Context) error {
+			fn()
+			return nil
+		})
+	}
+	ts, err := newShimRedirector(ctx, id, publisher, sd)
 	if err != nil {
 		return nil, err
 	}
@@ -80,19 +89,21 @@ func New(ctx context.Context, id string, publisher shim.Publisher, fn func()) (s
 }
 
 // newShimRedirector creates a new runsc service that delegates to respective runsc task service.
-func newShimRedirector(ctx context.Context, id string, publisher shim.Publisher, cancel func()) (extension.TaskServiceExt, error) {
-	runsc, err := runsc.NewTaskService(ctx, id, publisher)
+func newShimRedirector(ctx context.Context, id string, publisher shim.Publisher, sd shutdown.Service) (extension.TaskServiceExt, error) {
+	runsc, err := runsc.NewTaskService(ctx, id, publisher, sd)
 	if err != nil {
-		cancel()
+		sd.Shutdown()
 		return nil, err
 	}
 	s := &shimRedirector{
-		cancel: cancel,
-		main:   runsc,
+		shutdown: sd,
+		main:     runsc,
 	}
-
-	if address, err := shim.ReadAddress(shimAddressPath); err == nil {
-		s.shimAddress = address
+	if address, _ := shim.ReadAddress(shimAddressPath); len(address) > 0 {
+		sd.RegisterCallback(func(context.Context) error {
+			shim.RemoveSocket(address)
+			return nil
+		})
 	}
 
 	s.grouping = getEnableGrouping()
@@ -116,10 +127,6 @@ type shimRedirector struct {
 	// Protected by mu.
 	main extension.TaskServiceExt
 
-	// cancel is a function that needs to be called before the shim stops. The
-	// function is provided by the caller to New().
-	cancel func()
-
 	// ext may intercept calls to the container's shim. During the call to create
 	// container, the extension may be created and the shim will start using it
 	// for all calls to the container's shim.
@@ -129,6 +136,8 @@ type shimRedirector struct {
 
 	// grouping indicates if shim grouping is enabled.
 	grouping bool
+
+	shutdown shutdown.Service
 }
 
 var _ extension.TaskServiceExt = (*shimRedirector)(nil)
@@ -303,10 +312,7 @@ func (s *shimRedirector) Shutdown(ctx context.Context, r *shimapi.ShutdownReques
 		log.L.Debugf("Shutdown, shim did not shutdown due to: %v", err)
 		return resp, errdefs.ToGRPC(nil)
 	}
-	s.cancel()
-	if len(s.shimAddress) != 0 {
-		_ = shim.RemoveSocket(s.shimAddress)
-	}
+	s.shutdown.Shutdown()
 	os.Exit(0)
 	panic("Should not get here")
 }

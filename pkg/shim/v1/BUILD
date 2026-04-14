@@ -22,6 +22,7 @@ go_library(
         "@com_github_burntsushi_toml//:go_default_library",
         "@com_github_containerd_containerd//mount:go_default_library",
         "@com_github_containerd_containerd//namespaces:go_default_library",
+        "@com_github_containerd_containerd//pkg/shutdown:go_default_library",
         "@com_github_containerd_containerd//runtime/v2/shim:go_default_library",
         "@com_github_containerd_containerd//runtime/v2/task:go_default_library",
         "@com_github_containerd_containerd//sys:go_default_library",

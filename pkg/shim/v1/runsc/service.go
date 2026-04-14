@@ -29,6 +29,7 @@ import (
 	"github.com/containerd/containerd/api/events"
 	"github.com/containerd/containerd/api/types/task"
 	"github.com/containerd/containerd/pkg/process"
+	"github.com/containerd/containerd/pkg/shutdown"
 	"github.com/containerd/containerd/pkg/stdio"
 	"github.com/containerd/containerd/runtime"
 	"github.com/containerd/containerd/runtime/linux/runctypes"
@@ -113,12 +114,14 @@ type runscService struct {
 
 	// containers maps container id to a container.
 	containers map[string]*Container
+
+	shutdown shutdown.Service
 }
 
 var _ extension.TaskServiceExt = (*runscService)(nil)
 
 // NewTaskService returns a runsc task service.
-func NewTaskService(ctx context.Context, id string, publisher shim.Publisher) (extension.TaskServiceExt, error) {
+func NewTaskService(ctx context.Context, id string, publisher shim.Publisher, sd shutdown.Service) (extension.TaskServiceExt, error) {
 	var (
 		ep  oomPoller
 		err error
@@ -138,6 +141,7 @@ func NewTaskService(ctx context.Context, id string, publisher shim.Publisher) (e
 		containers: make(map[string]*Container),
 		ec:         proc.ExitCh,
 		oomPoller:  ep,
+		shutdown:   sd,
 	}
 	go s.processExits(ctx)
 	runsccmd.Monitor = &runsccmd.LogMonitor{Next: reaper.Default}
@@ -145,6 +149,10 @@ func NewTaskService(ctx context.Context, id string, publisher shim.Publisher) (e
 		return nil, fmt.Errorf("failed to initialized platform behavior: %w", err)
 	}
 	go s.forward(ctx, publisher)
+	sd.RegisterCallback(func(context.Context) error {
+		close(s.events)
+		return nil
+	})
 	return s, nil
 }
 

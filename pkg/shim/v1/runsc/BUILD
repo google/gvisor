@@ -39,6 +39,7 @@ go_library(
         "@com_github_containerd_containerd//mount:go_default_library",
         "@com_github_containerd_containerd//namespaces:go_default_library",
         "@com_github_containerd_containerd//pkg/process:go_default_library",
+        "@com_github_containerd_containerd//pkg/shutdown:go_default_library",
         "@com_github_containerd_containerd//pkg/stdio:go_default_library",
         "@com_github_containerd_containerd//runtime:go_default_library",
         "@com_github_containerd_containerd//runtime/linux/runctypes:go_default_library",
