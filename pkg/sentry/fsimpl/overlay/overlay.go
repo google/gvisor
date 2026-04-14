@@ -221,12 +221,19 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			ctx.Infof("overlay.FilesystemType.GetFilesystem: failed to resolve upperdir %q: %v", upperPathname, err)
 			return nil, nil, err
 		}
-		// TODO(b/286942303): Only tmpfs supports whiteouts and
-		// trusted.overlay attributes. Don't allow to use non-tmpfs
-		// mounts on upper levels for mounts created through the mount
-		// syscall. In gVisor configs, users can specify any
-		// configurations on their own risk.
+		// If the upper directory is on an overlay mount, resolve through
+		// to the real underlying filesystem (typically tmpfs). This is
+		// required for overlay-on-overlay (e.g., Docker overlay2 running
+		// inside a gVisor container). Without this, the nested overlay
+		// cannot create whiteouts or set trusted.overlay.* xattrs because
+		// the parent overlay filters these operations.
+		realUpper := overlayResolveReal(upperRoot)
+		upperRoot.DecRef(ctx)
+		upperRoot = realUpper
+		// Only tmpfs supports whiteouts and trusted.overlay attributes.
+		// After overlay resolution, the upper root should be on tmpfs.
 		if !opts.InternalMount && upperRoot.Mount().Filesystem().FilesystemType().Name() != "tmpfs" {
+			upperRoot.DecRef(ctx)
 			return nil, nil, linuxerr.EINVAL
 		}
 		privateUpperRoot, err := clonePrivateMount(vfsObj, upperRoot, false /* forceReadOnly */)
@@ -264,6 +271,10 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 				ctx.Infof("overlay.FilesystemType.GetFilesystem: failed to resolve lowerdir %q: %v", lowerPathname, err)
 				return nil, nil, err
 			}
+			// Resolve through overlay, same as for upperdir.
+			realLower := overlayResolveReal(lowerRoot)
+			lowerRoot.DecRef(ctx)
+			lowerRoot = realLower
 			privateLowerRoot, err := clonePrivateMount(vfsObj, lowerRoot, true /* forceReadOnly */)
 			lowerRoot.DecRef(ctx)
 			if err != nil {
@@ -400,6 +411,40 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	}
 
 	return &fs.vfsfs, &root.vfsd, nil
+}
+
+// overlayResolveReal resolves a VirtualDentry through an overlay filesystem
+// to the underlying real filesystem's VirtualDentry. This enables
+// overlay-on-overlay: when creating a nested overlay mount, the upper and
+// lower directories may reside on a parent overlay. The nested overlay needs
+// direct access to the real filesystem (typically tmpfs) because overlay
+// filters whiteout creation (MknodAt of char 0,0) and trusted.overlay.*
+// extended attributes.
+//
+// If vd is not on an overlay filesystem, it is returned as-is with an
+// additional reference. The caller must DecRef the returned VirtualDentry.
+func overlayResolveReal(vd vfs.VirtualDentry) vfs.VirtualDentry {
+	od, ok := vd.Dentry().Impl().(*dentry)
+	if !ok {
+		// Not an overlay dentry; return as-is.
+		vd.IncRef()
+		return vd
+	}
+	// If the overlay dentry has been copied up, upperVD is immutable and
+	// points to the real upper-layer dentry (typically tmpfs).
+	if od.isCopiedUp() {
+		od.upperVD.IncRef()
+		return od.upperVD
+	}
+	// Not copied up; use the top lower-layer VD. lowerVDs is always
+	// immutable.
+	if len(od.lowerVDs) > 0 {
+		od.lowerVDs[0].IncRef()
+		return od.lowerVDs[0]
+	}
+	// No layers; return the original.
+	vd.IncRef()
+	return vd
 }
 
 // clonePrivateMount creates a non-recursive bind mount rooted at vd, not

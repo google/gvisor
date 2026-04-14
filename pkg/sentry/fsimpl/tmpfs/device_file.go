@@ -54,11 +54,6 @@ func isOvlWhiteoutDev(mode linux.FileMode, major, minor uint32) bool {
 // Precondition: fs.mu must be locked for writing.
 func (fs *filesystem) newDeviceFileLocked(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, major, minor uint32, parentDir *directory) *inode {
 	ovlWhiteout := isOvlWhiteoutDev(mode, major, minor)
-	if ovlWhiteout && fs.ovlWhiteout != nil {
-		// If reusing the same inode, acts like a hard link.
-		fs.ovlWhiteout.inode.incLinksLocked()
-		return &fs.ovlWhiteout.inode
-	}
 	file := &deviceFile{
 		major: major,
 		minor: minor,
