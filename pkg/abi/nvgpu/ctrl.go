@@ -580,6 +580,7 @@ const (
 	NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_STATUS_V575           = NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_STATUS - 1
 	NV2080_CTRL_CMD_FB_GET_OFFLINED_PAGES                          = 0x20801322
 	NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_PENDING_CONFIGURATION = 0x20801355
+	NV2080_CTRL_CMD_FB_GET_FS_INFO                                 = 0x20801346
 )
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080fifo.h:
@@ -639,6 +640,7 @@ const (
 	NV2080_CTRL_CMD_GPU_GET_SKYLINE_INFO                 = 0x2080019f
 	NV2080_CTRL_CMD_GPU_GET_CHIP_DETAILS                 = 0x208001a4
 	NV2080_CTRL_CMD_GPU_GET_RECOVERY_ACTION              = 0x208001b2
+	NV2080_CTRL_CMD_GPU_EXEC_REG_OPS                     = 0x20800122
 )
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080gr.h:
@@ -685,6 +687,41 @@ func (p *NV2080_CTRL_GR_GET_INFO_PARAMS) SetCtrlInfoList(ptr P64) {
 // CtrlInfoList implements HasCtrlInfoList.CtrlInfoList.
 func (p *NV2080_CTRL_GR_GET_INFO_PARAMS) CtrlInfoList() P64 {
 	return p.InfoList
+}
+
+// NV2080_CTRL_GPU_REG_OP is the type of an individual register operation,
+// from src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080gpu.h.
+//
+// +marshal
+type NV2080_CTRL_GPU_REG_OP struct {
+	_               structs.HostLayout
+	RegOp           uint8
+	RegType         uint8
+	RegStatus       uint8
+	RegQuad         uint8
+	RegGroupMask    uint32
+	RegSubGroupMask uint32
+	RegOffset       uint32
+	RegValueHi      uint32
+	RegValueLo      uint32
+	RegAndNMaskHi   uint32
+	RegAndNMaskLo   uint32
+}
+
+// NV2080_CTRL_GPU_EXEC_REG_OPS_PARAMS is the params type for
+// NV2080_CTRL_CMD_GPU_EXEC_REG_OPS, from
+// src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080gpu.h.
+//
+// +marshal
+type NV2080_CTRL_GPU_EXEC_REG_OPS_PARAMS struct {
+	_                 structs.HostLayout
+	HClientTarget     Handle
+	HChannelTarget    Handle
+	BNonTransactional uint32
+	Reserved00        [2]uint32
+	RegOpCount        uint32
+	RegOps            P64
+	GRRouteInfo       NV0080_CTRL_GR_ROUTE_INFO
 }
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080mc.h:
@@ -793,6 +830,11 @@ const (
 const (
 	NVA06F_CTRL_CMD_GPFIFO_SCHEDULE = 0xa06f0103
 	NVA06F_CTRL_CMD_BIND            = 0xa06f0104
+)
+
+// From src/common/sdk/nvidia/inc/ctrl/ctrl90cc.h:
+const (
+	NV90CC_CTRL_CMD_POWER_REQUEST_FEATURES = 0x90cc0301
 )
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrlcb33.h:
