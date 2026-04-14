@@ -278,6 +278,7 @@ cc_binary(
     linkstatic = 1,
     malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
+        "//test/util:capability_util",
         "//test/util:cleanup",
         "//test/util:fs_util",
         "//test/util:posix_error",
@@ -1419,7 +1420,9 @@ cc_binary(
     linkstatic = 1,
     malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
+        "//test/util:capability_util",
         "//test/util:file_descriptor",
+        "//test/util:mount_util",
         "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",

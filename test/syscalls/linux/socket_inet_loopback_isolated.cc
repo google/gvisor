@@ -386,7 +386,7 @@ using SocketMultiProtocolInetLoopbackIsolatedTest =
     ::testing::TestWithParam<ProtocolTestParam>;
 
 TEST_P(SocketMultiProtocolInetLoopbackIsolatedTest, BindToDeviceReusePort) {
-  // setsockopt(SO_BINDTODEVICE) requires CAP_NET_RAW.
+  // Keep CAP_NET_RAW for compatibility with kernels that predate Linux 5.7.
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
       HaveRawIPSocketCapability(AF_INET, IPPROTO_RAW)));
 
@@ -426,6 +426,30 @@ TEST_P(SocketMultiProtocolInetLoopbackIsolatedTest, BindToDeviceReusePort) {
               SyscallSucceeds());
   ASSERT_THAT(bind(socket2.get(), AsSockAddr(&addr.addr), addr.addr_len),
               SyscallSucceeds());
+}
+
+// Test that overwriting SO_BINDTODEVICE requires CAP_NET_RAW.
+// Linux enforces this in net/core/sock.c:sock_bindtoindex_locked().
+TEST_P(SocketMultiProtocolInetLoopbackIsolatedTest,
+       BindToDeviceOverwriteRequiresCapNetRaw) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HaveRawIPSocketCapability(AF_INET, IPPROTO_RAW)));
+
+  ProtocolTestParam const& param = GetParam();
+  TestAddress const& test_addr = V4Loopback();
+
+  const FileDescriptor sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(test_addr.family(), param.type, 0));
+
+  const char kLoopbackDeviceName[] = "lo";
+  AutoCapability cap(CAP_NET_RAW, false);
+  ASSERT_THAT(setsockopt(sock.get(), SOL_SOCKET, SO_BINDTODEVICE,
+                         kLoopbackDeviceName, strlen(kLoopbackDeviceName)),
+              SyscallSucceeds());
+
+  EXPECT_THAT(setsockopt(sock.get(), SOL_SOCKET, SO_BINDTODEVICE,
+                         kLoopbackDeviceName, strlen(kLoopbackDeviceName)),
+              SyscallFailsWithErrno(EPERM));
 }
 
 TEST_P(SocketMultiProtocolInetLoopbackIsolatedTest,

@@ -15,10 +15,12 @@
 #include <sched.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "gtest/gtest.h"
 #include "absl/strings/str_split.h"
+#include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/fs_util.h"
 #include "test/util/posix_error.h"
@@ -213,6 +215,58 @@ TEST_F(AffinityTest, SmallCpuMask) {
 
   CPU_ZERO_S(mask_size, mask);
   ASSERT_THAT(sched_getaffinity(0, mask_size, mask), SyscallSucceeds());
+}
+
+// Test that sched_setaffinity on another task owned by a different UID
+// requires CAP_SYS_NICE. Linux enforces this in
+// kernel/sched/core.c:check_same_owner().
+TEST_F(AffinityTest, SetAffinityOtherUidRequiresCapSysNice) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_NICE)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+
+  // Two pipes for synchronization:
+  // - child_ready: child signals parent after changing UID
+  // - parent_done: parent signals child to exit after testing
+  int child_ready[2];
+  int parent_done[2];
+  ASSERT_THAT(pipe(child_ready), SyscallSucceeds());
+  ASSERT_THAT(pipe(parent_done), SyscallSucceeds());
+
+  pid_t child = fork();
+  ASSERT_THAT(child, SyscallSucceeds());
+
+  if (child == 0) {
+    close(child_ready[0]);
+    close(parent_done[1]);
+    if (setresuid(65534, 65534, 65534) != 0) {
+      _exit(1);
+    }
+    char ready = 'r';
+    write(child_ready[1], &ready, 1);
+    close(child_ready[1]);
+    char buf;
+    read(parent_done[0], &buf, 1);
+    close(parent_done[0]);
+    _exit(0);
+  }
+
+  close(child_ready[1]);
+  close(parent_done[0]);
+
+  char ready;
+  ASSERT_THAT(read(child_ready[0], &ready, 1), SyscallSucceedsWithValue(1));
+  close(child_ready[0]);
+
+  EXPECT_THAT(sched_setaffinity(child, sizeof(mask_), &mask_),
+              SyscallSucceeds());
+
+  AutoCapability cap(CAP_SYS_NICE, false);
+  EXPECT_THAT(sched_setaffinity(child, sizeof(mask_), &mask_),
+              SyscallFailsWithErrno(EPERM));
+
+  close(parent_done[1]);
+  int status;
+  ASSERT_THAT(waitpid(child, &status, 0), SyscallSucceeds());
 }
 
 TEST_F(AffinityTest, LargeCpuMask) {
