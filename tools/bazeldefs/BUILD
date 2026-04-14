@@ -72,3 +72,12 @@ config_setting(
     ],
     define_values = {"pagesize": "64k"},
 )
+
+# Combined config: RISC-V64 with 64K page size
+config_setting(
+    name = "riscv64_pagesize_64k",
+    constraint_values = [
+        "@platforms//cpu:riscv64",
+    ],
+    define_values = {"pagesize": "64k"},
+)

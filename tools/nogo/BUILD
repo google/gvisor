@@ -10,11 +10,13 @@ nogo_target(
     name = "target",
     goarch = select_goarch(),
     goos = select_goos(),
+    tags = ["nogo"],
     visibility = ["//visibility:public"],
 )
 
 nogo_stdlib(
     name = "stdlib",
+    tags = ["nogo"],
     visibility = ["//visibility:public"],
 )
 

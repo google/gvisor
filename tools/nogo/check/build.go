@@ -103,6 +103,9 @@ func FilterStdPackages(srcPkgs map[string][]string) (map[string][]string, error)
 
 	pkgs := make(map[string][]string)
 	for path := range pkgNames {
+		if strings.HasPrefix(path, "cmd/") {
+			continue
+		}
 		pkg, ok := srcPkgs[path]
 		if !ok {
 			return nil, fmt.Errorf("package %q present in stdlib GOROOT but not in source", path)

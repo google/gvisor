@@ -6,7 +6,7 @@ module(
 bazel_dep(name = "rules_go", version = "0.59.0", repo_name = "io_bazel_rules_go")
 bazel_dep(name = "gazelle", version = "0.47.0", repo_name = "bazel_gazelle")
 bazel_dep(name = "rules_license", version = "1.0.0")
-bazel_dep(name = "bazel_skylib", version = "1.7.1")
+bazel_dep(name = "bazel_skylib", version = "1.8.2")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "rules_cc", version = "0.2.16")
 bazel_dep(name = "grpc", version = "1.76.0", repo_name = "com_github_grpc_grpc")
@@ -18,19 +18,6 @@ bazel_dep(name = "google_benchmark", version = "1.8.4", repo_name = "com_google_
 bazel_dep(name = "nlohmann_json", version = "3.11.3")
 bazel_dep(name = "rules_python", version = "1.7.0")
 bazel_dep(name = "zstd", version = "1.5.5", repo_name = "llvm_zstd")
-
-archive_override(
-    module_name = "rules_go",
-    integrity = "sha256-pynI7SRHyQ/hQAd2iQecoKz7dYDsQWN/MS1lDOnZPZY=",
-    patch_args = ["-p1"],
-    patches = [
-        "//tools:rules_go_symbols.patch",
-        "//tools:rules_go_sdk.patch",
-        "//tools:rules_cgo.patch",
-        "//tools:rules_go_export.patch",
-    ],
-    url = "https://github.com/bazel-contrib/rules_go/releases/download/v0.57.0/rules_go-v0.57.0.zip",
-)
 
 archive_override(
     module_name = "grpc",
@@ -123,12 +110,13 @@ register_toolchains("//:cc_toolchain_k8")
 
 register_toolchains("//:cc_toolchain_aarch64")
 
+register_toolchains("//:cc_toolchain_riscv64")
+
 ### Go
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
-go_sdk.from_file(
-    go_mod = "//:go.mod",
+go_sdk.download(
+    version = "1.24.0",
     patch_strip = 1,
-    patches = ["//tools:go_types_memoize.patch"],
 )
 
 go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")

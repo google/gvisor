@@ -1,6 +1,6 @@
 """Wrappers for architecture-specific rules."""
 
-load("//tools/bazeldefs:defs.bzl", _amd64_config = "amd64_config", _arch_config = "arch_config", _arm64_config = "arm64_config", _select_arch = "select_arch", _transition_allowlist = "transition_allowlist")
+load("//tools/bazeldefs:defs.bzl", _amd64_config = "amd64_config", _arch_config = "arch_config", _arm64_config = "arm64_config",  _riscv64_config = "riscv64_config", _select_arch = "select_arch", _transition_allowlist = "transition_allowlist")
 
 # Export arch rules.
 select_arch = _select_arch
@@ -10,6 +10,7 @@ def arch_transition_impl(settings, attr):
     return {
         "arm64": _arm64_config(settings, attr),
         "amd64": _amd64_config(settings, attr),
+        "riscv64": _riscv64_config(settings, attr),
     }
 
 arch_transition = transition(

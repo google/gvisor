@@ -180,6 +180,15 @@ toolchain(
     toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
 )
 
+toolchain(
+    name = "cc_toolchain_riscv64",
+    target_compatible_with = [
+        "@platforms//os:linux",
+        "@platforms//cpu:riscv64",
+    ],
+    toolchain = "@crosstool//:cc-compiler-riscv64",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+)
 # gazelle is a set of build tools.
 #
 # To update the WORKSPACE from go.mod, use:

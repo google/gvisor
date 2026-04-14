@@ -25,6 +25,7 @@ genrule(
         "vdso.cc",
         "vdso_amd64.lds",
         "vdso_arm64.lds",
+        "vdso_riscv64.lds",
         "vdso_time.h",
         "vdso_time.cc",
     ],
@@ -51,6 +52,7 @@ genrule(
           select_arch(
               amd64 = "-Wl,-T$(location vdso_amd64.lds) ",
               arm64 = "-Wl,-T$(location vdso_arm64.lds) ",
+              riscv64 = "-Wl,-T$(location vdso_riscv64.lds) -D__riscv__=1 ",
               no_match_error = "unsupported architecture",
           ) +
           "-o $(location vdso.so) " +
