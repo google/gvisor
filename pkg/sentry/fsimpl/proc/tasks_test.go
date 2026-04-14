@@ -595,4 +595,83 @@ func TestFdInfoContent(t *testing.T) {
 	if !strings.HasPrefix(lines[0], "pos:\t0") {
 		t.Errorf("pos should be 0 for freshly opened file, got: %q", lines[0])
 	}
+
+	// Seek to a different offset.
+	offset := int64(10)
+	if _, err := file.Seek(s.Ctx, offset, linux.SEEK_SET); err != nil {
+		t.Fatalf("Seek failed: %v", err)
+	}
+
+	// Re-open fdinfo.
+	fdInfoFD2, err := s.VFS.OpenAt(
+		s.Ctx,
+		s.Creds,
+		&vfs.PathOperation{Root: s.Root, Start: s.Root, Path: fspath.Parse(fdInfoPath)},
+		&vfs.OpenOptions{},
+	)
+	if err != nil {
+		t.Fatalf("OpenAt(%q) failed: %v", fdInfoPath, err)
+	}
+	defer fdInfoFD2.DecRef(s.Ctx)
+
+	n, err = fdInfoFD2.Read(s.Ctx, usermem.BytesIOSequence(buf), vfs.ReadOptions{})
+	if err != nil {
+		t.Fatalf("Read(%q) failed: %v", fdInfoPath, err)
+	}
+	content = string(buf[:n])
+	if !strings.Contains(content, fmt.Sprintf("pos:\t%d", offset)) {
+		t.Errorf("pos should be %d, got: %q", offset, content)
+	}
+}
+
+// TestFdInfoRecursion verifies that accessing fdinfo for a dynamic proc file
+// (e.g., /proc/self/comm) does not lead to a deadlock.
+func TestFdInfoRecursion(t *testing.T) {
+	s := setup(t)
+	defer s.Destroy()
+
+	k := kernel.KernelFromContext(s.Ctx)
+	tc := k.NewThreadGroup(k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
+	task, err := testutil.CreateTask(s.Ctx, "name", tc, s.MntNs, s.Root, s.Root)
+	if err != nil {
+		t.Fatalf("CreateTask(): %v", err)
+	}
+
+	ctx := task.AsyncContext()
+
+	// Open /proc/self/comm (dynamic byte source).
+	pop := &vfs.PathOperation{
+		Root:  s.Root,
+		Start: s.Root,
+		Path:  fspath.Parse("/proc/self/comm"),
+	}
+	opts := &vfs.OpenOptions{Flags: linux.O_RDONLY}
+	commFD, err := s.VFS.OpenAt(ctx, s.Creds, pop, opts)
+	if err != nil {
+		t.Fatalf("failed to open /proc/self/comm: %v", err)
+	}
+	defer commFD.DecRef(ctx)
+
+	fdno, err := task.FDTable().NewFD(ctx, 0, commFD, kernel.FDFlags{})
+	if err != nil {
+		t.Fatalf("NewFD(): %v", err)
+	}
+
+	// Read its fdinfo.
+	fdInfoPath := fmt.Sprintf("/proc/1/fdinfo/%d", fdno)
+	fdInfoFD, err := s.VFS.OpenAt(ctx, s.Creds, &vfs.PathOperation{Root: s.Root, Start: s.Root, Path: fspath.Parse(fdInfoPath)}, &vfs.OpenOptions{})
+	if err != nil {
+		t.Fatalf("OpenAt(%q) failed: %v", fdInfoPath, err)
+	}
+	defer fdInfoFD.DecRef(ctx)
+
+	buf := make([]byte, 256)
+	n, err := fdInfoFD.Read(ctx, usermem.BytesIOSequence(buf), vfs.ReadOptions{})
+	if err != nil {
+		t.Fatalf("Read(%q) failed: %v", fdInfoPath, err)
+	}
+	content := string(buf[:n])
+	if !strings.Contains(content, "pos:\t0") {
+		t.Errorf("pos should be 0, got: %q", content)
+	}
 }
