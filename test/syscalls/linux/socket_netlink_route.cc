@@ -1836,6 +1836,52 @@ TEST(NetlinkRouteTest, LookupAllAddrOrder) {
   }
 }
 
+TEST(NetlinkRouteTest, LinIndexOrder) {
+  // This test verifies that links are sorted by index in ascending order.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  // Add some interfaces
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  VethRequest req3 = GetVethRequest(kSeq, "veth3a", "veth3b");
+  ASSERT_NO_ERRNO(
+      NetlinkRequestAckOrError(fd, kSeq, &req3, req3.hdr.nlmsg_len));
+  VethRequest req1 = GetVethRequest(kSeq, "veth1a", "veth1b");
+  ASSERT_NO_ERRNO(
+      NetlinkRequestAckOrError(fd, kSeq, &req1, req1.hdr.nlmsg_len));
+  VethRequest req2 = GetVethRequest(kSeq, "veth2a", "veth2b");
+  ASSERT_NO_ERRNO(
+      NetlinkRequestAckOrError(fd, kSeq, &req2, req2.hdr.nlmsg_len));
+
+  // Dump links and verify they come back in ascending order by index.
+  std::vector<int> found_indexes;
+  ASSERT_NO_ERRNO(DumpLinks(fd, kSeq, [&](const struct nlmsghdr* hdr) {
+    if (hdr->nlmsg_type != RTM_NEWLINK) {
+      return;
+    }
+    if (hdr->nlmsg_len < NLMSG_SPACE(sizeof(struct ifinfomsg))) {
+      return;
+    }
+    const struct ifinfomsg* msg =
+        reinterpret_cast<const struct ifinfomsg*>(NLMSG_DATA(hdr));
+    found_indexes.push_back(msg->ifi_index);
+  }));
+
+  ASSERT_GE(found_indexes.size(), 6)
+      << "Expected at least 3 veth pairs to be found";
+  ASSERT_TRUE(std::is_sorted(found_indexes.begin(), found_indexes.end()))
+      << "Link indexes are not in ascending order";
+}
+
 struct NetNSRequest {
   struct nlmsghdr hdr;
   struct ifinfomsg ifm;
