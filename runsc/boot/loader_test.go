@@ -38,6 +38,7 @@ import (
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/fsgofer"
+	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 func init() {
@@ -142,7 +143,7 @@ func createLoader(conf *config.Config, spec *specs.Spec) (*Loader, func(), error
 		GoferFDs:         []int{sandEnd},
 		DevGoferFD:       -1,
 		StdioFDs:         stdio,
-		GoferMountConfs:  []GoferMountConf{{Lower: Lisafs, Upper: NoOverlay}},
+		GoferMountConfs:  []specutils.GoferMountConf{{Lower: specutils.Lisafs, Upper: specutils.NoOverlay}},
 		PodInitConfigFD:  -1,
 		ExecFD:           -1,
 		RootfsUpperTarFD: -1,
