@@ -2059,6 +2059,15 @@ func SetSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 		return nil
 
 	case linux.SO_BINDTODEVICE:
+		// Since Linux 5.7, CAP_NET_RAW is only required to overwrite an
+		// existing SO_BINDTODEVICE binding. See
+		// net/core/sock.c:sock_bindtoindex_locked() and upstream commit
+		// c427bfec18f2 ("net: core: enable SO_BINDTODEVICE for
+		// non-root users").
+		if ep.SocketOptions().GetBindToDevice() != 0 &&
+			!t.HasCapabilityIn(linux.CAP_NET_RAW, t.NetworkNamespace().UserNamespace()) {
+			return syserr.ErrNotPermitted
+		}
 		n := bytes.IndexByte(optVal, 0)
 		if n == -1 {
 			n = len(optVal)

@@ -479,6 +479,16 @@ func SchedSetaffinity(t *kernel.Task, sysno uintptr, args arch.SyscallArguments)
 		if task == nil {
 			return 0, nil, linuxerr.ESRCH
 		}
+		// Linux requires the caller's EUID to match the target's
+		// real or effective UID, or CAP_SYS_NICE in the target's user
+		// namespace. See kernel/sched/syscalls.c:sched_setaffinity().
+		creds := t.Credentials()
+		tcreds := task.Credentials()
+		if creds.EffectiveKUID != tcreds.EffectiveKUID &&
+			creds.EffectiveKUID != tcreds.RealKUID &&
+			!creds.HasCapabilityIn(linux.CAP_SYS_NICE, tcreds.UserNamespace) {
+			return 0, nil, linuxerr.EPERM
+		}
 	}
 
 	mask := sched.NewCPUSet(t.Kernel().ApplicationCores())
@@ -723,10 +733,19 @@ func Setpriority(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uin
 			task = t
 		} else {
 			task = t.PIDNamespace().TaskWithID(who)
-		}
-
-		if task == nil {
-			return 0, nil, linuxerr.ESRCH
+			if task == nil {
+				return 0, nil, linuxerr.ESRCH
+			}
+			// Linux requires the caller's EUID to match the target's
+			// real or effective UID, or CAP_SYS_NICE in the target's
+			// user namespace. See kernel/sys.c:set_one_prio_perm().
+			creds := t.Credentials()
+			tcreds := task.Credentials()
+			if creds.EffectiveKUID != tcreds.RealKUID &&
+				creds.EffectiveKUID != tcreds.EffectiveKUID &&
+				!creds.HasCapabilityIn(linux.CAP_SYS_NICE, tcreds.UserNamespace) {
+				return 0, nil, linuxerr.EPERM
+			}
 		}
 
 		task.SetNiceness(niceval)
