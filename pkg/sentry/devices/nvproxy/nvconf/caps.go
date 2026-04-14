@@ -22,7 +22,7 @@ import (
 )
 
 // DriverCaps is a set of NVIDIA driver capabilities as a bitmask.
-type DriverCaps uint8
+type DriverCaps uint16
 
 // Individual NVIDIA driver capabilities.
 const (
@@ -38,6 +38,7 @@ const (
 	// These correspond loosely to capabilities defined in
 	// src/nvidia/inc/kernel/os/capability.h.
 	CapFabricIMEXManagement // NV_RM_CAP_SYS_FABRIC_IMEX_MGMT
+	CapProfiling            // GPU hardware performance counter access (Nsight Compute/Systems)
 
 	numValidCaps int = iota
 )
@@ -52,7 +53,7 @@ const (
 
 	// SupportedDriverCaps is the set of driver capabilities that are supported by
 	// nvproxy.
-	SupportedDriverCaps = AllContainerDriverCaps | CapFabricIMEXManagement
+	SupportedDriverCaps = AllContainerDriverCaps | CapFabricIMEXManagement | CapProfiling
 
 	// AllContainerDriverCaps is the subset of SupportedDriverCaps that are
 	// enabled when enabling "all" capabilities is requested, which excludes
@@ -86,8 +87,10 @@ func (c DriverCaps) individualString() string {
 		return "compat32"
 	case CapFabricIMEXManagement:
 		return "fabric-imex-mgmt"
+	case CapProfiling:
+		return "profiling"
 	default:
-		panic(fmt.Sprintf("capability has no string mapping: %x", uint8(c)))
+		panic(fmt.Sprintf("capability has no string mapping: %x", uint16(c)))
 	}
 }
 
@@ -99,7 +102,7 @@ func (c DriverCaps) individualNVIDIAFlag() string {
 	case CapCompute, CapDisplay, CapGraphics, CapNGX, CapUtility, CapVideo, CapCompat32:
 		return fmt.Sprintf("--%s", c.individualString())
 	default:
-		panic(fmt.Sprintf("capability has no NVIDIA flag mapping: %x", uint8(c)))
+		panic(fmt.Sprintf("capability has no NVIDIA flag mapping: %x", uint16(c)))
 	}
 }
 
