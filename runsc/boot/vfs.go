@@ -382,7 +382,7 @@ type containerMounter struct {
 	// goferMountConfs contains information about how the gofer mounts have been
 	// configured. The first entry is for rootfs and the following entries are
 	// for bind mounts in Spec.Mounts (in the same order).
-	goferMountConfs []GoferMountConf
+	goferMountConfs []specutils.GoferMountConf
 
 	// sharedMounts is a map of shared mounts that can be reused across
 	// containers.
@@ -588,7 +588,7 @@ func (c *containerMounter) createMountNamespace(ctx context.Context, conf *confi
 // layer using tmpfs, and return overlay mount options. "cleanup" must be called
 // after the options have been used to mount the overlay, to release refs on
 // lower and upper mounts.
-func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Config, creds *auth.Credentials, lowerOpts *vfs.MountOptions, lowerFSName string, filestoreFD *fd.FD, mountConf GoferMountConf, dst string, rootfsUpperTarFD *fd.FD) (*vfs.MountOptions, func(), error) {
+func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Config, creds *auth.Credentials, lowerOpts *vfs.MountOptions, lowerFSName string, filestoreFD *fd.FD, mountConf specutils.GoferMountConf, dst string, rootfsUpperTarFD *fd.FD) (*vfs.MountOptions, func(), error) {
 	// First copy options from lower layer to upper layer and overlay. Clear
 	// filesystem specific options.
 	upperOpts := *lowerOpts
@@ -793,7 +793,7 @@ type mountInfo struct {
 	mount          *specs.Mount
 	goferFD        *fd.FD
 	hint           *MountHint
-	goferMountConf GoferMountConf
+	goferMountConf specutils.GoferMountConf
 	filestoreFD    *fd.FD
 }
 
