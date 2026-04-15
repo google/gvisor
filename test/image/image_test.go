@@ -797,6 +797,30 @@ func testDockerComposeRun(ctx context.Context, t *testing.T, d *dockerutil.Conta
 	}
 }
 
+// `./run --ov -v` from  https://github.com/amir73il/unionmount-testsuite/blob/master/README.
+func TestUnionmountOverlay(t *testing.T) {
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	runOpts := dockerutil.RunOpts{
+		Image:      "basic/unionmount",
+		Privileged: true, // required for mount.
+	}
+	if err := d.Spawn(ctx, runOpts, "sleep", "infinity"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	output, err := d.Exec(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", "mkdir -p /lower /upper /mnt")
+	if err != nil {
+		t.Fatalf("docker exec \"mkdir -p /lower /upper /mnt\" failed: %s, output: %s", err, output)
+	}
+	output, err = d.Exec(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", "./run --ov -v")
+	if err != nil {
+		log.Printf("docker exec \"./run --ov -v\" output: %s", output)
+		t.Errorf("docker exec \"./run --ov -v\" failed: %s", err)
+	}
+}
+
 func TestMain(m *testing.M) {
 	dockerutil.EnsureSupportedDockerVersion()
 	flag.Parse()
