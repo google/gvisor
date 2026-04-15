@@ -166,6 +166,7 @@ go_test(
         "//pkg/context",
         "//pkg/errors/linuxerr",
         "//pkg/fspath",
+        "//pkg/hostarch",
         "//pkg/log",
         "//pkg/refs",
         "//pkg/sentry/contexttest",

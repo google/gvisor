@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/testutil"
@@ -202,6 +203,29 @@ func (d *dir) NewFile(ctx context.Context, name string, opts vfs.OpenOptions) (k
 	return f, nil
 }
 
+type keptDir struct {
+	dir
+}
+
+func (fs *filesystem) newKeptDir(ctx context.Context, creds *auth.Credentials, mode linux.FileMode, contents map[string]kernfs.Inode) kernfs.Inode {
+	kdir := &keptDir{}
+	kdir.dir.fs = fs
+	kdir.dir.attrs.Init(ctx, creds, 0 /* devMajor */, 0 /* devMinor */, fs.NextIno(), linux.ModeDirectory|mode)
+	kdir.dir.OrderedChildren.Init(kernfs.OrderedChildrenOptions{Writable: true})
+	kdir.dir.InitRefs()
+	for name, child := range contents {
+		if err := kdir.dir.OrderedChildren.Insert(name, child); err != nil {
+			panic(fmt.Sprintf("newKeptDir Insert(%q): %v", name, err))
+		}
+		kdir.dir.IncLinks(1)
+	}
+	return kdir
+}
+
+func (*keptDir) Keep() bool {
+	return true
+}
+
 func (*dir) NewLink(context.Context, string, kernfs.Inode) (kernfs.Inode, error) {
 	return nil, linuxerr.EPERM
 }
@@ -227,6 +251,42 @@ func (fst fsType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesyst
 	var d kernfs.Dentry
 	d.Init(&fs.Filesystem, root)
 	return fs.VFSFilesystem(), d.VFSDentry(), nil
+}
+
+type inotifyEvent struct {
+	WD   int32
+	Mask uint32
+	Name string
+}
+
+func readInotifyEvents(t *testing.T, ctx context.Context, fd *vfs.FileDescription) []inotifyEvent {
+	t.Helper()
+
+	buf := make([]byte, 4096)
+	n, err := fd.Read(ctx, usermem.BytesIOSequence(buf), vfs.ReadOptions{})
+	if err != nil {
+		t.Fatalf("inotify read failed: %v", err)
+	}
+	buf = buf[:n]
+
+	var events []inotifyEvent
+	for len(buf) != 0 {
+		if len(buf) < 16 {
+			t.Fatalf("short inotify event buffer: got %d bytes", len(buf))
+		}
+		nameLen := int(hostarch.ByteOrder.Uint32(buf[12:16]))
+		eventLen := 16 + nameLen
+		if len(buf) < eventLen {
+			t.Fatalf("truncated inotify event buffer: got %d bytes, need %d", len(buf), eventLen)
+		}
+		events = append(events, inotifyEvent{
+			WD:   int32(hostarch.ByteOrder.Uint32(buf[0:4])),
+			Mask: hostarch.ByteOrder.Uint32(buf[4:8]),
+			Name: string(bytes.TrimRight(buf[16:eventLen], "\x00")),
+		})
+		buf = buf[eventLen:]
+	}
+	return events
 }
 
 // -------------------- Remainder of the file are test cases --------------------
@@ -412,4 +472,101 @@ func TestDirWalkDentryTree(t *testing.T) {
 	testWalk(dir2D, "dir2/dir3", "/../../../dir3", nil)
 	testWalk(dir2D, "dir2/file1", "/file1", nil)
 	testWalk(dir2D, "dir2/file1", "file1", nil)
+}
+
+func TestRmdirInotifyDeleteSelfBeforeParentDelete(t *testing.T) {
+	sys := newTestSystem(t, func(ctx context.Context, creds *auth.Credentials, fs *filesystem) kernfs.Inode {
+		return fs.newKeptDir(ctx, creds, 0755, map[string]kernfs.Inode{
+			"parent": fs.newKeptDir(ctx, creds, 0755, map[string]kernfs.Inode{
+				"child": fs.newKeptDir(ctx, creds, 0755, nil),
+			}),
+		})
+	})
+	defer sys.Destroy()
+	ctx := vfs.WithMountNamespace(sys.Ctx, sys.MntNs)
+
+	inotifyFD, err := vfs.NewInotifyFD(ctx, sys.VFS, linux.O_NONBLOCK)
+	if err != nil {
+		t.Fatalf("NewInotifyFD failed: %v", err)
+	}
+	defer inotifyFD.DecRef(ctx)
+	ino := inotifyFD.Impl().(*vfs.Inotify)
+
+	parentVD := sys.GetDentryOrDie(sys.PathOpAtRoot("parent"))
+	defer parentVD.DecRef(sys.Ctx)
+	childVD := sys.GetDentryOrDie(sys.PathOpAtRoot("parent/child"))
+	parentWD := ino.AddWatch(parentVD.Dentry(), linux.IN_ALL_EVENTS)
+	childWD := ino.AddWatch(childVD.Dentry(), linux.IN_ALL_EVENTS)
+	childVD.DecRef(sys.Ctx)
+
+	if err := sys.VFS.RmdirAt(ctx, sys.Creds, sys.PathOpAtRoot("parent/child")); err != nil {
+		t.Fatalf("RmdirAt failed: %v", err)
+	}
+
+	got := readInotifyEvents(t, ctx, inotifyFD)
+	want := []inotifyEvent{
+		{WD: childWD, Mask: linux.IN_DELETE_SELF},
+		{WD: childWD, Mask: linux.IN_IGNORED},
+		{WD: parentWD, Mask: linux.IN_DELETE | linux.IN_ISDIR, Name: "child"},
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("unexpected inotify events after rmdir (-want +got):\n%s", diff)
+	}
+}
+
+func TestRmdirInotifyWithOpenFDDefersDeleteSelf(t *testing.T) {
+	sys := newTestSystem(t, func(ctx context.Context, creds *auth.Credentials, fs *filesystem) kernfs.Inode {
+		return fs.newKeptDir(ctx, creds, 0755, map[string]kernfs.Inode{
+			"parent": fs.newKeptDir(ctx, creds, 0755, map[string]kernfs.Inode{
+				"child": fs.newKeptDir(ctx, creds, 0755, nil),
+			}),
+		})
+	})
+	defer sys.Destroy()
+	ctx := vfs.WithMountNamespace(sys.Ctx, sys.MntNs)
+
+	inotifyFD, err := vfs.NewInotifyFD(ctx, sys.VFS, linux.O_NONBLOCK)
+	if err != nil {
+		t.Fatalf("NewInotifyFD failed: %v", err)
+	}
+	defer inotifyFD.DecRef(ctx)
+	ino := inotifyFD.Impl().(*vfs.Inotify)
+
+	parentVD := sys.GetDentryOrDie(sys.PathOpAtRoot("parent"))
+	defer parentVD.DecRef(sys.Ctx)
+	childVD := sys.GetDentryOrDie(sys.PathOpAtRoot("parent/child"))
+	parentWD := ino.AddWatch(parentVD.Dentry(), linux.IN_ALL_EVENTS)
+	childWD := ino.AddWatch(childVD.Dentry(), linux.IN_ALL_EVENTS)
+	childVD.DecRef(sys.Ctx)
+
+	childFD, err := sys.VFS.OpenAt(ctx, sys.Creds, sys.PathOpAtRoot("parent/child"), &vfs.OpenOptions{Flags: linux.O_RDONLY})
+	if err != nil {
+		t.Fatalf("OpenAt failed: %v", err)
+	}
+	// Opening the watched directory generates IN_OPEN events; they are not part
+	// of the rmdir ordering being validated below.
+	_ = readInotifyEvents(t, ctx, inotifyFD)
+
+	if err := sys.VFS.RmdirAt(ctx, sys.Creds, sys.PathOpAtRoot("parent/child")); err != nil {
+		t.Fatalf("RmdirAt failed: %v", err)
+	}
+
+	got := readInotifyEvents(t, ctx, inotifyFD)
+	want := []inotifyEvent{{WD: parentWD, Mask: linux.IN_DELETE | linux.IN_ISDIR, Name: "child"}}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("unexpected inotify events after rmdir with open fd (-want +got):\n%s", diff)
+	}
+
+	childFD.DecRef(ctx)
+	got = readInotifyEvents(t, ctx, inotifyFD)
+	if len(got) < 2 {
+		t.Fatalf("expected at least delete-self and ignored events after close, got: %+v", got)
+	}
+	wantTail := []inotifyEvent{
+		{WD: childWD, Mask: linux.IN_DELETE_SELF},
+		{WD: childWD, Mask: linux.IN_IGNORED},
+	}
+	if diff := cmp.Diff(wantTail, got[len(got)-2:]); diff != "" {
+		t.Fatalf("unexpected trailing inotify events after close (-want +got):\n%s\nall events: %+v", diff, got)
+	}
 }

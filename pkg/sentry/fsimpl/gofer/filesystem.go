@@ -707,10 +707,7 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 		}
 	}
 
-	// Generate inotify events for rmdir or unlink.
-	if dir {
-		parent.inode.watches.Notify(ctx, name, linux.IN_DELETE|linux.IN_ISDIR, 0, vfs.InodeEvent, true /* unlinked */)
-	} else {
+	if !dir {
 		var cw *vfs.Watches
 		if child != nil {
 			cw = &child.inode.watches
@@ -737,7 +734,19 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 		} else if child.inode.endpoint != nil {
 			child.decRefNoCaching()
 		}
+		if dir && child.refs.Load() == 0 {
+			// Match Linux's inotify event ordering for rmdir. Once the child is
+			// removed from the tree and any existence ref has been dropped,
+			// refs==0 means no extra refs remain, so IN_DELETE_SELF/IN_IGNORED
+			// should precede the parent's IN_DELETE|IN_ISDIR. Otherwise defer to
+			// destroyLocked(), where HandleDeletion() remains safe because it is
+			// idempotent.
+			child.inode.watches.HandleDeletion(ctx)
+		}
 		ds = appendDentry(ds, child)
+	}
+	if dir {
+		parent.inode.watches.Notify(ctx, name, linux.IN_DELETE|linux.IN_ISDIR, 0, vfs.InodeEvent, true /* unlinked */)
 	}
 	parent.cacheNegativeLookupLocked(name)
 	if parent.inode.cachedMetadataAuthoritative() {
