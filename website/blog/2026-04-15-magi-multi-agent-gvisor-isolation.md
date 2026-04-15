@@ -1009,16 +1009,14 @@ $ docker exec -it synapse register_new_matrix_user \
     -c /data/homeserver.yaml \
     --user casper --password naoko --no-admin
 
+# Hermes requires a non-root user for its home directory.
+$ groupadd --gid=10337 hermes && \
+    useradd --home-dir=/dev/null --no-create-home --shell="$(which nologin)" \
+      --uid=10337 --gid=10337 hermes
+
 # Build Docker image with extra packages.
 $ cat <<EOF > "$CASPER/Dockerfile"
 FROM nousresearch/hermes-agent:v2026.4.13
-
-# Hermes Agent image re-execs as non-root by default; this is unnecessary
-# in the gVisor case as gVisor itself already provides stronger isolation.
-USER root
-ENV HERMES_UID=0
-ENV HERMES_GID=0
-RUN sed -ri 's/if \[ "\\\$\(id -u\)" = "0" \]; then/if false; then/' /opt/hermes/docker/entrypoint.sh
 
 # Install basic packages.
 RUN export DEBIAN_FRONTEND=noninteractive; apt update -y && \
@@ -1048,7 +1046,8 @@ As Hermes Agent does not easily support non-interactive configuration, we need
 to configure it manually. Let's run it for interactive configuration purposes:
 
 ```shell
-$ export CASPER="$HOME/agents/casper-3"; mkdir "$CASPER/home"
+$ export CASPER="$HOME/agents/casper-3"; \
+    mkdir "$CASPER/home" && chown hermes:hermes "$CASPER/home"
 $ docker run -it \
     --name=casper \
     --runtime=runsc \
@@ -1059,6 +1058,8 @@ $ docker run -it \
     --link=camofox:camofox \
     --mount="type=bind,src=$CASPER/home,dst=/opt/data" \
     --mount="type=bind,src=$CASPER/docker-run,dst=/docker-run" \
+    -e HERMES_UID="$(id -u hermes)" \
+    -e HERMES_GID="$(id -g hermes)" \
     -e DOCKER_HOST="unix:///docker-run/docker.sock" \
     hermes-agent:casper-3 setup
 ```
