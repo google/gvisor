@@ -1,0 +1,138 @@
+// MAGI blog post specific styles.
+body.magi {
+  // Take more width.
+  > .container {
+    width: 95%;
+    left: auto;
+    right: auto;
+  }
+
+  > .container > .row > .col-lg-2 {
+    width: 0%;
+  }
+
+  > .container > .row > .col-lg-8 {
+    width: 100%;
+  }
+
+  // Override and header link colors for MAGI blog post.
+  > .container a,
+  > .container h1,
+  > .container h2,
+  > .container h3,
+  > .container h4,
+  > .container h5,
+  > .container h6 {
+    filter: invert(100%) hue-rotate(180deg);
+    color: #e69138;
+  }
+
+  // Override hover link colors for MAGI blog post.
+  > .container a:hover {
+    color: #f9ba77;
+  }
+
+  img {
+    max-width: 75vw;
+    max-height: 75vh;
+  }
+
+  .img-100pct {
+    width: 100%;
+
+    img {
+      width: auto;
+      height: auto;
+      display: block;
+    }
+  }
+
+  figure {
+    .double-border-glow {
+      width: fit-content;
+      padding: 2px;
+      margin: 2px auto;
+      border: 6px double rgba(146, 88, 27, 0.25);
+      box-shadow: 0 0 2px rgba(230, 145, 56, 0.25);
+      img {
+        margin: 0px;
+      }
+    }
+  }
+
+  // Style for the sticky sections in the blog post.
+  .sticky-section {
+    display: flex;
+    gap: 1.5rem;
+    flex-direction: column;
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6 {
+      position: sticky;
+      align-self: start;
+      top: calc(var(--nav-height) + 1rem);
+      background: #000;
+      z-index: 2;
+    }
+    .sticky-section-body {
+      display: flex;
+      flex-direction: row-reverse;
+      gap: 1rem;
+      z-index: 0;
+      > :not(.follow-along) {
+        width: 67%;
+      }
+      > .follow-along {
+        position: sticky;
+        align-self: start;
+        top: calc(var(--nav-height) + 2.5rem);
+        width: 33%;
+        z-index: 1;
+        * {
+          margin-top: 0px;
+          width: 100%;
+        }
+      }
+    }
+  }
+}
+
+@media (max-aspect-ratio: 1/1) {
+  body.magi {
+    // Override sticky section styles for portrait aspect ratios to stack elements vertically.
+    .sticky-section {
+      .sticky-section-body {
+        flex-direction: column;
+        > .follow-along,
+        > :not(.follow-along) {
+          width: 100%;
+        }
+        > .follow-along {
+          top: calc(var(--nav-height) + 6.5rem);
+          background: #fff; // Will get inverted to black.
+          padding-bottom: 0.15rem;
+          * {
+            width: auto;
+            max-height: 20vh;
+          }
+          figcaption {
+            display: none; // Save some height.
+          }
+        }
+        > .follow-along::before {
+          content: '';
+          position: absolute;
+          bottom: 100%;
+          left: 0;
+          width: 100%;
+          height: calc(var(--nav-height) + 4rem);
+          background: #fff; // Will get inverted to black.
+          pointer-events: none;
+        }
+      }
+    }
+  }
+}

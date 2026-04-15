@@ -183,7 +183,8 @@ table th {
   margin: 20px auto;
 }
 
-.blog-content .attribution, .blog-content figcaption {
+.blog-content .attribution,
+.blog-content figcaption {
   // Stay close to the image.
   display: block;
   margin-top: 6px;
@@ -195,13 +196,15 @@ table th {
   color: $text-color-secondary;
 }
 
-.blog-content * img:has(+ .attribution), .blog-content * img:has(+ figcaption) {
+.blog-content * img:has(+ .attribution),
+.blog-content * img:has(+ figcaption) {
   // Remove bottom margins from images where there is an attribution line
   // immediately following the image.
   margin-bottom: 0px;
 }
 
-.blog-content .attribution, .blog-content figcaption {
+.blog-content .attribution,
+.blog-content figcaption {
   // Remove margin above image caption.
   margin-top: 0px;
   // Add margin under image caption.
@@ -256,14 +259,14 @@ table th {
 
 .blog-content details > summary:first-child:before {
   content: '';
-  border-width: .4rem;
+  border-width: 0.4rem;
   border-style: solid;
   border-color: transparent transparent transparent #333;
   position: absolute;
   top: 0.5em;
   left: 0px;
-  transform-origin: .2rem 50%;
-  transition: .25s transform ease;
+  transform-origin: 0.2rem 50%;
+  transition: 0.25s transform ease;
 }
 
 .blog-content details:not([open]) > summary:before {
@@ -283,8 +286,8 @@ table th {
 
 .users-content {
   // Shrink the container holding the users list on each side
-  padding-left:15%;
-  padding-right:15%;
+  padding-left: 15%;
+  padding-right: 15%;
 }
 
 .row.display-flex {
@@ -299,8 +302,8 @@ table th {
 
 .no-space {
   // Remove component spacing by remove padding and margins.
-  margin:0px auto;
-  padding:0px;
+  margin: 0px auto;
+  padding: 0px;
 }
 
 .img-vert-center {
@@ -308,7 +311,21 @@ table th {
   margin: 0px;
   display: block;
   margin-left: auto;
-  margin-right:auto;
+  margin-right: auto;
+}
+
+// Set image width to 100% of its container, but still fit within viewport.
+.img-100pct {
+  width: 100%;
+  img,
+  video {
+    width: 100%;
+    max-width: 75vw;
+    max-height: 75vh;
+    object-fit: contain;
+    margin-left: auto;
+    margin-right: auto;
+  }
 }
 
 .panel-solution h2 {
@@ -365,5 +382,21 @@ table th {
   // Set panel height laptops and desktops.
   .panel-solution {
     height: 300px;
+  }
+}
+
+// Dark mode styles.
+body.darkbg {
+  background-color: #000;
+
+  // Invert main content container and footer colors on dark background.
+  > .container {
+    filter: invert(100%) hue-rotate(180deg);
+
+    // Invert images and videos on dark background to restore original colors.
+    img,
+    video {
+      filter: invert(100%) hue-rotate(180deg);
+    }
   }
 }
