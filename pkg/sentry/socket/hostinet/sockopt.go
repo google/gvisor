@@ -199,9 +199,10 @@ func (s *Socket) GetSockOpt(t *kernel.Task, level, name int, optValAddr hostarch
 	} else {
 		// Variable-length option (e.g. SO_BINDTODEVICE, TCP_CONGESTION).
 		// Cap to prevent guest-controlled OOM via large optLen.
+		// Clamp rather than reject to match Linux semantics (min_t).
 		const maxVarOptLen = 4096
 		if optLen > maxVarOptLen {
-			return nil, syserr.ErrInvalidArgument
+			optLen = maxVarOptLen
 		}
 		opt = make([]byte, optLen)
 	}
