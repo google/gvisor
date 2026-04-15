@@ -657,11 +657,8 @@ func New(args Args) (*Loader, error) {
 
 	// S/R is not supported for hostinet and plugin network stack.
 	netMode := l.root.conf.Network
-	if netMode != config.NetworkHost && netMode != config.NetworkPlugin && args.Conf.SaveRestoreNetstack {
+	if netMode == config.NetworkSandbox || netMode == config.NetworkNone {
 		l.saveRestoreNet = true
-		if err := netns.Stack().EnableSaveRestore(); err != nil {
-			return nil, fmt.Errorf("enable s/r: %w", err)
-		}
 	}
 
 	if args.TotalHostMem > 0 {

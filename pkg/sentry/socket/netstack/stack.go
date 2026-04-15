@@ -97,22 +97,6 @@ func (s *Stack) sendDeleteEvent(ctx context.Context, id tcpip.NICID, nicInfo *st
 	s.eventSubscriber.OnInterfaceDeleteEvent(ctx, int32(id), makeInterfaceInfo(nicInfo))
 }
 
-// EnableSaveRestore enables netstack s/r.
-func (s *Stack) EnableSaveRestore() error {
-	if s.Stack != nil {
-		s.Stack.EnableSaveRestore()
-	}
-	return nil
-}
-
-// IsSaveRestoreEnabled implements inet.Stack.IsSaveRestoreEnabled.
-func (s *Stack) IsSaveRestoreEnabled() bool {
-	if s.Stack == nil {
-		return false
-	}
-	return s.Stack.IsSaveRestoreEnabled()
-}
-
 // Destroy implements inet.Stack.Destroy.
 func (s *Stack) Destroy() {
 	if s.Stack != nil {

@@ -43,11 +43,6 @@ func (ep *endpoint) beforeSave() {
 
 // afterLoad is invoked by stateify.
 func (ep *endpoint) afterLoad(ctx context.Context) {
-	if !ep.stack.IsSaveRestoreEnabled() {
-		ep.mu.Lock()
-		ep.stack = stack.RestoreStackFromContext(ctx)
-		ep.mu.Unlock()
-	}
 	ep.stack.RegisterRestoredEndpoint(ep)
 }
 
