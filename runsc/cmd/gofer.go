@@ -25,7 +25,9 @@ import (
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/cmd/sandboxsetup"
@@ -35,6 +37,7 @@ import (
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/fsgofer"
 	"gvisor.dev/gvisor/runsc/fsgofer/filter"
+	"gvisor.dev/gvisor/runsc/gofer/provider"
 	"gvisor.dev/gvisor/runsc/profile"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
@@ -285,7 +288,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 	egid := unix.Getegid()
 	log.Debugf("Process running as uid=%d euid=%d gid=%d egid=%d", ruid, euid, rgid, egid)
 
-	// Initialize filters.
+	// Initialize filters, merging any extra rules from registered providers.
 	opts := filter.Options{
 		UDSOpenEnabled:   conf.GetHostUDS().AllowOpen(),
 		UDSCreateEnabled: conf.GetHostUDS().AllowCreate(),
@@ -293,8 +296,25 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		DirectFS:         conf.DirectFS,
 		CgoEnabled:       config.CgoEnabled,
 	}
-	if err := filter.Install(opts); err != nil {
-		util.Fatalf("installing seccomp filters: %v", err)
+	var extraRules *seccomp.SyscallRules
+	for _, p := range provider.Registered() {
+		if r := p.SeccompRules(); r.Size() > 0 {
+			if extraRules == nil {
+				copied := r.Copy()
+				extraRules = &copied
+			} else {
+				extraRules.Merge(r)
+			}
+		}
+	}
+	if extraRules != nil {
+		if err := filter.InstallWithExtra(opts, *extraRules); err != nil {
+			util.Fatalf("installing seccomp filters: %v", err)
+		}
+	} else {
+		if err := filter.Install(opts); err != nil {
+			util.Fatalf("installing seccomp filters: %v", err)
+		}
 	}
 
 	return g.serve(spec, conf, root, ruid, euid, rgid, egid)
@@ -305,6 +325,7 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
 		sock      *unet.Socket
 		mountPath string
 		readonly  bool
+		mountConf specutils.GoferMountConf
 	}
 	cfgs := make([]connectionConfig, 0, len(spec.Mounts)+1)
 	server := fsgofer.NewLisafsServer(fsgofer.Config{
@@ -327,6 +348,7 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
 			sock:      sandboxsetup.NewSocket(ioFDs[0]),
 			mountPath: "/", // fsgofer process is always chroot()ed. So serve root.
 			readonly:  spec.Root.Readonly || rootfsConf.ShouldUseOverlayfs(),
+			mountConf: rootfsConf,
 		})
 		log.Infof("Serving %q mapped to %q on FD %d (ro: %t)", "/", root, ioFDs[0], cfgs[0].readonly)
 		ioFDs = ioFDs[1:]
@@ -356,6 +378,7 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
 			sock:      sandboxsetup.NewSocket(ioFD),
 			mountPath: m.Destination,
 			readonly:  readonly,
+			mountConf: mountConf,
 		})
 		log.Infof("Serving %q mapped on FD %d (ro: %t)", m.Destination, ioFD, readonly)
 	}
@@ -372,15 +395,38 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
 		log.Infof("Serving /dev mapped on FD %d (ro: false)", g.devIoFD)
 	}
 
+	var providerServers []*lisafs.Server
 	for _, cfg := range cfgs {
-		conn, err := server.CreateConnection(cfg.sock, cfg.mountPath, cfg.readonly)
+		var srv *lisafs.Server
+		for _, p := range provider.Registered() {
+			var err error
+			srv, err = p.NewServer(spec, cfg.mountPath, cfg.mountConf, cfg.readonly)
+			if err != nil {
+				util.Fatalf("provider %s for %q: %v", p.Name(), cfg.mountPath, err)
+			}
+			if srv != nil {
+				providerServers = append(providerServers, srv)
+				log.Infof("Serving %q via provider %s on FD %d", cfg.mountPath, p.Name(), cfg.sock.FD())
+				break
+			}
+		}
+		if srv == nil {
+			srv = &server.Server
+		}
+		conn, err := srv.CreateConnection(cfg.sock, cfg.mountPath, cfg.readonly)
 		if err != nil {
 			util.Fatalf("starting connection on FD %d for gofer mount failed: %v", cfg.sock.FD(), err)
 		}
-		server.StartConnection(conn)
+		srv.StartConnection(conn)
 	}
 	server.Wait()
+	for _, ps := range providerServers {
+		ps.Wait()
+	}
 	server.Destroy()
+	for _, ps := range providerServers {
+		ps.Destroy()
+	}
 	log.Infof("All lisafs servers exited.")
 	if g.stopProfiling != nil {
 		g.stopProfiling()
