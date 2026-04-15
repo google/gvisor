@@ -38,6 +38,7 @@ go_test(
     srcs = ["filter_test.go"],
     library = ":filter",
     deps = [
+        "//pkg/seccomp",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

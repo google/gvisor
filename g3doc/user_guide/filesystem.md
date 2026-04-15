@@ -273,3 +273,31 @@ runsc --root=/path/to/rootdir debug --mount erofs:{source}:{destination}
 ```
 
 [Production guide]: production.md
+
+## Custom Gofer Extensions
+
+The stock gofer serves host filesystem mounts via LISAFS. For workloads that
+need a different filesystem backend (a network-backed store, an encrypted
+filesystem, a tiered cache), a custom runsc build can import
+`runsc/fsgofer/extension` and register an extension that supplies a
+`lisafs.ConnectionImpl` for selected mounts.
+
+An extension registers itself at startup and claims mounts by path. For example,
+a binary might register one extension that handles mounts under `/storage` via
+an HTTP blob service, and another that handles `/encrypted` via a local
+encryption layer. Unclaimed mounts fall through to the stock fsgofer as usual.
+
+To build a custom gofer:
+
+1.  Implement the `extension.Extension` interface: `Name`, `TryHandleMount`, and
+    `SeccompRules`.
+2.  Register your extension in `init()` or early `main()`.
+3.  Build a runsc binary that imports `runsc/cli` and your extension package.
+
+The extension's `TryHandleMount` returns a `lisafs.ConnectionImpl` and
+`lisafs.ConnectionOpts` for mounts it handles, or a nil implementation to
+decline. All mounts share the same `lisafs.Server`, preserving server-side
+filesystem tree synchronization across stock and extension-backed mounts.
+Configuration may be read from OCI annotations and mount fields such as source,
+type, and options. `SeccompRules` declares any additional syscalls the extension
+needs beyond the stock gofer allowlist.
