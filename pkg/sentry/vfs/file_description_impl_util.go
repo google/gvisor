@@ -21,6 +21,7 @@ import (
 	"math"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -286,7 +287,7 @@ type DynamicBytesFileDescriptionImpl struct {
 	data     DynamicBytesSource // immutable
 	mu       sync.Mutex         `state:"nosave"` // protects the following fields
 	buf      bytes.Buffer       `state:".([]byte)"`
-	off      int64
+	off      atomicbitops.Int64
 	lastRead int64 // offset at which the last Read, PRead, or Seek ended
 }
 
@@ -340,8 +341,8 @@ func (fd *DynamicBytesFileDescriptionImpl) PRead(ctx context.Context, dst userme
 // Read implements FileDescriptionImpl.Read.
 func (fd *DynamicBytesFileDescriptionImpl) Read(ctx context.Context, dst usermem.IOSequence, opts ReadOptions) (int64, error) {
 	fd.mu.Lock()
-	n, err := fd.preadLocked(ctx, dst, fd.off, &opts)
-	fd.off += n
+	n, err := fd.preadLocked(ctx, dst, fd.off.Load(), &opts)
+	fd.off.Add(n)
 	fd.mu.Unlock()
 	return n, err
 }
@@ -354,7 +355,7 @@ func (fd *DynamicBytesFileDescriptionImpl) Seek(ctx context.Context, offset int6
 	case linux.SEEK_SET:
 		// Use offset as given.
 	case linux.SEEK_CUR:
-		offset += fd.off
+		offset += fd.off.Load()
 	default:
 		// fs/seq_file:seq_lseek() rejects SEEK_END etc.
 		return 0, linuxerr.EINVAL
@@ -368,13 +369,13 @@ func (fd *DynamicBytesFileDescriptionImpl) Seek(ctx context.Context, offset int6
 		fd.buf.Reset()
 		if err := fd.data.Generate(ctx, &fd.buf); err != nil {
 			fd.buf.Reset()
-			fd.off = 0
+			fd.off.Store(0)
 			fd.lastRead = 0
 			return 0, err
 		}
 		fd.lastRead = offset
 	}
-	fd.off = offset
+	fd.off.Store(offset)
 	return offset, nil
 }
 
@@ -414,8 +415,8 @@ func (fd *DynamicBytesFileDescriptionImpl) PWrite(ctx context.Context, src userm
 // Write implements FileDescriptionImpl.Write.
 func (fd *DynamicBytesFileDescriptionImpl) Write(ctx context.Context, src usermem.IOSequence, opts WriteOptions) (int64, error) {
 	fd.mu.Lock()
-	n, err := fd.pwriteLocked(ctx, src, fd.off, opts)
-	fd.off += n
+	n, err := fd.pwriteLocked(ctx, src, fd.off.Load(), opts)
+	fd.off.Add(n)
 	fd.mu.Unlock()
 	return n, err
 }
@@ -443,6 +444,11 @@ func GenericProxyDeviceConfigureMMap(fd *FileDescription, m memmap.Mappable, opt
 	}
 	opts.RequirePlatformEffect = true
 	return GenericConfigureMMap(fd, m, opts)
+}
+
+// Offset returns the current offset of the file description.
+func (fd *DynamicBytesFileDescriptionImpl) Offset() int64 {
+	return fd.off.Load()
 }
 
 // LockFD may be used by most implementations of FileDescriptionImpl.Lock*

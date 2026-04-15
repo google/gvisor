@@ -353,8 +353,12 @@ func (d *fdInfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	// TODO(b/121266871): Add ino, lock, and type-specific fields.
 	// See https://www.kernel.org/doc/Documentation/filesystems/proc.txt
 	var pos int64
-	if p, err := file.Seek(ctx, 0, linux.SEEK_CUR); err == nil {
-		pos = p
+	if fd, ok := file.Impl().(*kernfs.DynamicBytesFD); ok {
+		pos = fd.Offset()
+	} else {
+		if p, err := file.Seek(ctx, 0, linux.SEEK_CUR); err == nil {
+			pos = p
+		}
 	}
 	flags := uint(file.StatusFlags()) | descriptorFlags.ToLinuxFileFlags()
 	mntID := file.Mount().ID

@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -72,12 +71,8 @@ func (fs *filesystem) ReadInPages(ctx context.Context, fd *regularFileFD, off ui
 		in.Size = pagesCanRead << hostarch.PageShift
 
 		// TODO(gvisor.dev/issue/3247): support async read.
-		req := fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), fd.inode().nodeID, linux.FUSE_READ, &in)
-		res, err := fs.conn.Call(ctx, req)
+		res, err := fd.inode().callRaw(ctx, linux.FUSE_READ, &in)
 		if err != nil {
-			return nil, 0, err
-		}
-		if err := res.Error(); err != nil {
 			return nil, 0, err
 		}
 
@@ -192,18 +187,9 @@ func (fs *filesystem) Write(ctx context.Context, fd *regularFileFD, offset int64
 		in.Header.Size = uint32(cp)
 		in.Payload = data
 
-		req := fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), fd.inode().nodeID, linux.FUSE_WRITE, &in)
 		// TODO(gvisor.dev/issue/3247): support async write.
-		res, err := fs.conn.Call(ctx, req)
-		if err != nil {
-			return n, offset, err
-		}
-		if err := res.Error(); err != nil {
-			return n, offset, err
-		}
-
 		out := linux.FUSEWriteOut{}
-		if err := res.UnmarshalPayload(&out); err != nil {
+		if err := fd.inode().call(ctx, linux.FUSE_WRITE, &in, &out); err != nil {
 			return n, offset, err
 		}
 		// Write more than requested? EIO.

@@ -113,19 +113,9 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		return nil, nil, err
 	}
 
-	fsopts := filesystemOptions{mopts: opts.Data}
-	mopts := vfs.GenericParseMountOptions(opts.Data)
-	deviceDescriptorStr, ok := mopts["fd"]
-	if !ok {
-		ctx.Warningf("fusefs.FilesystemType.GetFilesystem: mandatory mount option fd missing")
-		return nil, nil, linuxerr.EINVAL
-	}
-	delete(mopts, "fd")
-
-	deviceDescriptor, err := strconv.ParseInt(deviceDescriptorStr, 10 /* base */, 32 /* bitSize */)
+	fsopts, fd, err := parseOptions(ctx, creds, opts.Data)
 	if err != nil {
-		ctx.Debugf("fusefs.FilesystemType.GetFilesystem: invalid fd: %q (%v)", deviceDescriptorStr, err)
-		return nil, nil, linuxerr.EINVAL
+		return nil, nil, err
 	}
 
 	kernelTask := kernel.TaskFromContext(ctx)
@@ -133,7 +123,8 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		log.Warningf("%s.GetFilesystem: couldn't get kernel task from context", fsType.Name())
 		return nil, nil, linuxerr.EINVAL
 	}
-	fuseFDGeneric := kernelTask.GetFile(int32(deviceDescriptor))
+
+	fuseFDGeneric := kernelTask.GetFile(fd)
 	if fuseFDGeneric == nil {
 		return nil, nil, linuxerr.EINVAL
 	}
@@ -144,95 +135,10 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		return nil, nil, linuxerr.EINVAL
 	}
 
-	// Parse and set all the other supported FUSE mount options.
-	// TODO(gVisor.dev/issue/3229): Expand the supported mount options.
-	if uidStr, ok := mopts["user_id"]; ok {
-		delete(mopts, "user_id")
-		uid, err := strconv.ParseUint(uidStr, 10, 32)
-		if err != nil {
-			log.Warningf("%s.GetFilesystem: invalid user_id: user_id=%s", fsType.Name(), uidStr)
-			return nil, nil, linuxerr.EINVAL
-		}
-		kuid := creds.UserNamespace.MapToKUID(auth.UID(uid))
-		if !kuid.Ok() {
-			ctx.Warningf("fusefs.FilesystemType.GetFilesystem: unmapped uid: %d", uid)
-			return nil, nil, linuxerr.EINVAL
-		}
-		fsopts.uid = kuid
-	} else {
-		ctx.Warningf("fusefs.FilesystemType.GetFilesystem: mandatory mount option user_id missing")
-		return nil, nil, linuxerr.EINVAL
-	}
-
-	if gidStr, ok := mopts["group_id"]; ok {
-		delete(mopts, "group_id")
-		gid, err := strconv.ParseUint(gidStr, 10, 32)
-		if err != nil {
-			log.Warningf("%s.GetFilesystem: invalid group_id: group_id=%s", fsType.Name(), gidStr)
-			return nil, nil, linuxerr.EINVAL
-		}
-		kgid := creds.UserNamespace.MapToKGID(auth.GID(gid))
-		if !kgid.Ok() {
-			ctx.Warningf("fusefs.FilesystemType.GetFilesystem: unmapped gid: %d", gid)
-			return nil, nil, linuxerr.EINVAL
-		}
-		fsopts.gid = kgid
-	} else {
-		ctx.Warningf("fusefs.FilesystemType.GetFilesystem: mandatory mount option group_id missing")
-		return nil, nil, linuxerr.EINVAL
-	}
-
-	if modeStr, ok := mopts["rootmode"]; ok {
-		delete(mopts, "rootmode")
-		mode, err := strconv.ParseUint(modeStr, 8, 32)
-		if err != nil {
-			log.Warningf("%s.GetFilesystem: invalid mode: %q", fsType.Name(), modeStr)
-			return nil, nil, linuxerr.EINVAL
-		}
-		fsopts.rootMode = linux.FileMode(mode)
-	} else {
-		ctx.Warningf("fusefs.FilesystemType.GetFilesystem: mandatory mount option rootmode missing")
-		return nil, nil, linuxerr.EINVAL
-	}
-
-	// Set the maxInFlightRequests option.
-	fsopts.maxActiveRequests = maxActiveRequestsDefault
-
-	if maxReadStr, ok := mopts["max_read"]; ok {
-		delete(mopts, "max_read")
-		maxRead, err := strconv.ParseUint(maxReadStr, 10, 32)
-		if err != nil {
-			log.Warningf("%s.GetFilesystem: invalid max_read: max_read=%s", fsType.Name(), maxReadStr)
-			return nil, nil, linuxerr.EINVAL
-		}
-		if maxRead < fuseMinMaxRead {
-			maxRead = fuseMinMaxRead
-		}
-		fsopts.maxRead = uint32(maxRead)
-	} else {
-		fsopts.maxRead = math.MaxUint32
-	}
-
-	if _, ok := mopts["default_permissions"]; ok {
-		delete(mopts, "default_permissions")
-		fsopts.defaultPermissions = true
-	}
-
-	if _, ok := mopts["allow_other"]; ok {
-		delete(mopts, "allow_other")
-		fsopts.allowOther = true
-	}
-
-	// Check for unparsed options.
-	if len(mopts) != 0 {
-		log.Warningf("%s.GetFilesystem: unsupported or unknown options: %v", fsType.Name(), mopts)
-		return nil, nil, linuxerr.EINVAL
-	}
-
 	fuseFD.mu.Lock()
 	connected := fuseFD.connected()
 	// Create a new FUSE filesystem.
-	fs, err := newFUSEFilesystem(ctx, vfsObj, &fsType, fuseFD, devMinor, &fsopts)
+	fs, err := newFUSEFilesystem(ctx, vfsObj, &fsType, fuseFD, devMinor, fsopts)
 	if err != nil {
 		log.Warningf("%s.NewFUSEFilesystem: failed with error: %v", fsType.Name(), err)
 		fuseFD.mu.Unlock()
@@ -253,6 +159,116 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	root := fs.newRoot(ctx, creds, fsopts.rootMode)
 
 	return fs.VFSFilesystem(), root.VFSDentry(), nil
+}
+
+func parseOptions(ctx context.Context, creds *auth.Credentials, data string) (*filesystemOptions, int32, error) {
+	fsopts := &filesystemOptions{
+		mopts:             data,
+		maxActiveRequests: maxActiveRequestsDefault,
+		maxRead:           math.MaxUint32,
+	}
+
+	mopts := vfs.GenericParseMountOptions(data)
+
+	// Parse 'fd'.
+	deviceDescriptorStr, ok := mopts["fd"]
+	if !ok {
+		ctx.Warningf("fusefs.FilesystemType.GetFilesystem: mandatory mount option fd missing")
+		return nil, 0, linuxerr.EINVAL
+	}
+	delete(mopts, "fd")
+
+	deviceDescriptor, err := strconv.ParseInt(deviceDescriptorStr, 10, 32)
+	if err != nil {
+		ctx.Debugf("fusefs.FilesystemType.GetFilesystem: invalid fd: %q (%v)", deviceDescriptorStr, err)
+		return nil, 0, linuxerr.EINVAL
+	}
+
+	// Parse 'user_id'.
+	if uidStr, ok := mopts["user_id"]; ok {
+		delete(mopts, "user_id")
+		uid, err := strconv.ParseUint(uidStr, 10, 32)
+		if err != nil {
+			log.Warningf("fusefs.parseOptions: invalid user_id: %s", uidStr)
+			return nil, 0, linuxerr.EINVAL
+		}
+		kuid := creds.UserNamespace.MapToKUID(auth.UID(uid))
+		if !kuid.Ok() {
+			ctx.Warningf("fusefs.parseOptions: unmapped uid: %d", uid)
+			return nil, 0, linuxerr.EINVAL
+		}
+		fsopts.uid = kuid
+	} else {
+		ctx.Warningf("fusefs.parseOptions: mandatory mount option user_id missing")
+		return nil, 0, linuxerr.EINVAL
+	}
+
+	// Parse 'group_id'.
+	if gidStr, ok := mopts["group_id"]; ok {
+		delete(mopts, "group_id")
+		gid, err := strconv.ParseUint(gidStr, 10, 32)
+		if err != nil {
+			log.Warningf("fusefs.parseOptions: invalid group_id: %s", gidStr)
+			return nil, 0, linuxerr.EINVAL
+		}
+		kgid := creds.UserNamespace.MapToKGID(auth.GID(gid))
+		if !kgid.Ok() {
+			ctx.Warningf("fusefs.parseOptions: unmapped gid: %d", gid)
+			return nil, 0, linuxerr.EINVAL
+		}
+		fsopts.gid = kgid
+	} else {
+		ctx.Warningf("fusefs.parseOptions: mandatory mount option group_id missing")
+		return nil, 0, linuxerr.EINVAL
+	}
+
+	// Parse 'rootmode'.
+	if modeStr, ok := mopts["rootmode"]; ok {
+		delete(mopts, "rootmode")
+		mode, err := strconv.ParseUint(modeStr, 8, 32)
+		if err != nil {
+			log.Warningf("fusefs.parseOptions: invalid mode: %q", modeStr)
+			return nil, 0, linuxerr.EINVAL
+		}
+		fsopts.rootMode = linux.FileMode(mode)
+	} else {
+		ctx.Warningf("fusefs.parseOptions: mandatory mount option rootmode missing")
+		return nil, 0, linuxerr.EINVAL
+	}
+
+	// Parse 'max_read'.
+	if maxReadStr, ok := mopts["max_read"]; ok {
+		delete(mopts, "max_read")
+		maxRead, err := strconv.ParseUint(maxReadStr, 10, 32)
+		if err != nil {
+			log.Warningf("fusefs.parseOptions: invalid max_read: %s", maxReadStr)
+			return nil, 0, linuxerr.EINVAL
+		}
+		if maxRead < fuseMinMaxRead {
+			maxRead = fuseMinMaxRead
+		}
+		fsopts.maxRead = uint32(maxRead)
+	}
+
+	// Parse 'default_permissions'.
+	if _, ok := mopts["default_permissions"]; ok {
+		delete(mopts, "default_permissions")
+		fsopts.defaultPermissions = true
+	}
+
+	// Parse 'allow_other'.
+	if _, ok := mopts["allow_other"]; ok {
+		delete(mopts, "allow_other")
+		fsopts.allowOther = true
+	}
+
+	// Check for unparsed options.
+	if len(mopts) != 0 {
+		log.Warningf("fusefs.parseOptions: unsupported or unknown options: %v", mopts)
+		return nil, 0, linuxerr.EINVAL
+	}
+
+	return fsopts, int32(deviceDescriptor), nil
 }
 
 // newFUSEFilesystem creates a new FUSE filesystem.

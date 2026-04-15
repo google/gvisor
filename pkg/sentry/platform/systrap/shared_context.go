@@ -126,14 +126,15 @@ func (sc *sharedContext) NotifyInterrupt() {
 	// If this context is not being worked on right now we need to mark it as
 	// interrupted so the next executor does not start working on it.
 	atomic.StoreUint32(&sc.shared.Interrupt, 1)
-	if sc.threadID() == invalidThreadID {
+	// Read ThreadID exactly once to avoid TOCTOU — the guest can modify
+	// shared memory between reads.
+	threadID := atomic.LoadUint32(&sc.shared.ThreadID)
+	if threadID == invalidThreadID {
 		return
 	}
 	s := sc.subprocess
 	s.sysmsgThreadsMu.Lock()
 	defer s.sysmsgThreadsMu.Unlock()
-
-	threadID := atomic.LoadUint32(&sc.shared.ThreadID)
 	sysmsgThread, ok := s.sysmsgThreads[threadID]
 	if !ok {
 		// This is either an invalidThreadID or another garbage value; either way we

@@ -18,7 +18,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -60,8 +59,6 @@ func (*directoryFD) OnClose(ctx context.Context) error {
 
 // IterDirents implements vfs.FileDescriptionImpl.IterDirents.
 func (dir *directoryFD) IterDirents(ctx context.Context, callback vfs.IterDirentsCallback) error {
-	fusefs := dir.inode().fs
-
 	in := linux.FUSEReadIn{
 		Fh:     dir.Fh,
 		Offset: uint64(dir.off.Load()),
@@ -70,17 +67,8 @@ func (dir *directoryFD) IterDirents(ctx context.Context, callback vfs.IterDirent
 	}
 
 	// TODO(gVisor.dev/issue/3404): Support FUSE_READDIRPLUS.
-	req := fusefs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), dir.inode().nodeID, linux.FUSE_READDIR, &in)
-	res, err := fusefs.conn.Call(ctx, req)
-	if err != nil {
-		return err
-	}
-	if err := res.Error(); err != nil {
-		return err
-	}
-
 	var out linux.FUSEDirents
-	if err := res.UnmarshalPayload(&out); err != nil {
+	if err := dir.inode().call(ctx, linux.FUSE_READDIR, &in, &out); err != nil {
 		return err
 	}
 

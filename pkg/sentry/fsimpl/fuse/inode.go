@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
-	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
@@ -114,23 +113,6 @@ type inode struct {
 	blockSize atomicbitops.Uint32 // 0 if unknown.
 }
 
-func pidFromContext(ctx context.Context) uint32 {
-	kernelTask := kernel.TaskFromContext(ctx)
-	if kernelTask == nil {
-		return 0
-	}
-	return uint32(kernelTask.ThreadID())
-}
-
-func umaskFromContext(ctx context.Context) uint32 {
-	kernelTask := kernel.TaskFromContext(ctx)
-	umask := uint32(0)
-	if kernelTask != nil {
-		umask = uint32(kernelTask.FSContext().Umask())
-	}
-	return umask
-}
-
 func (i *inode) Mode() linux.FileMode {
 	i.attrMu.Lock()
 	defer i.attrMu.Unlock()
@@ -179,7 +161,7 @@ func (i *inode) init(creds *auth.Credentials, devMajor, devMinor uint32, nodeid 
 	i.uid.Store(uint32(creds.EffectiveKUID))
 	i.gid.Store(uint32(creds.EffectiveKGID))
 	i.nlink.Store(nlink)
-	i.blockSize.Store(hostarch.PageSize)
+	i.blockSize.Store(4096) // Default block size.
 
 	now := i.fs.clock.Now().Nanoseconds()
 	i.atime.Store(now)
@@ -187,10 +169,288 @@ func (i *inode) init(creds *auth.Credentials, devMajor, devMinor uint32, nodeid 
 	i.ctime.Store(now)
 }
 
+// DecRef implements kernfs.Inode.DecRef.
+func (i *inode) DecRef(ctx context.Context) {
+	i.inodeRefs.DecRef(func() { i.Destroy(ctx) })
+}
+
+func pidFromContext(ctx context.Context) uint32 {
+	kernelTask := kernel.TaskFromContext(ctx)
+	if kernelTask == nil {
+		return 0
+	}
+	return uint32(kernelTask.ThreadID())
+}
+
+func umaskFromContext(ctx context.Context) uint32 {
+	kernelTask := kernel.TaskFromContext(ctx)
+	umask := uint32(0)
+	if kernelTask != nil {
+		umask = uint32(kernelTask.FSContext().Umask())
+	}
+	return umask
+}
+
 // +checklocks:i.attrMu
 func (i *inode) updateEntryTime(entrySec, entryNSec int64) {
 	entryTime := ktime.FromTimespec(linux.Timespec{Sec: entrySec, Nsec: entryNSec})
 	SeqAtomicStoreTime(&i.entryTimeSeq, &i.entryTime, i.fs.clock.Now().AddTime(entryTime))
+}
+
+func (i *inode) allowCredentials(creds *auth.Credentials) bool {
+	// Since FUSE operations are ultimately backed by a userspace process (the
+	// fuse daemon), allowing a process to call into fusefs grants the daemon
+	// ptrace-like capabilities over the calling process. Because of this, by
+	// default FUSE only allows the mount owner to interact with the
+	// filesystem. This explicitly excludes setuid/setgid processes.
+	//
+	// This behaviour can be overridden with the 'allow_other' mount option.
+	//
+	// See fs/fuse/dir.c:fuse_allow_current_process() in Linux.
+	if i.fs.opts.allowOther {
+		// FIXME: Linux requires current_in_userns(fc->user_ns) in this case,
+		// but we currently don't associate connections with a user namespace.
+		return true
+	}
+	return creds.RealKUID == i.fs.opts.uid &&
+		creds.EffectiveKUID == i.fs.opts.uid &&
+		creds.SavedKUID == i.fs.opts.uid &&
+		creds.RealKGID == i.fs.opts.gid &&
+		creds.EffectiveKGID == i.fs.opts.gid &&
+		creds.SavedKGID == i.fs.opts.gid
+}
+
+// newEntry calls FUSE server for entry creation and allocates corresponding
+// entry according to response. Shared by FUSE_MKNOD, FUSE_MKDIR, FUSE_SYMLINK,
+// FUSE_LINK and FUSE_LOOKUP.
+func (i *inode) newEntry(ctx context.Context, name string, fileType linux.FileMode, opcode linux.FUSEOpcode, payload marshal.Marshallable) (kernfs.Inode, error) {
+	out := linux.FUSECreateOut{}
+	var err error
+	if opcode == linux.FUSE_CREATE {
+		err = i.call(ctx, opcode, payload, &out)
+	} else {
+		err = i.call(ctx, opcode, payload, &out.FUSEEntryOut)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if opcode != linux.FUSE_LOOKUP && ((out.Attr.Mode&linux.S_IFMT)^uint32(fileType) != 0 || out.NodeID == 0 || out.NodeID == linux.FUSE_ROOT_ID) {
+		return nil, linuxerr.EIO
+	}
+	child, err := i.fs.newInode(ctx, out.FUSEEntryOut)
+	if err != nil {
+		return nil, err
+	}
+	if opcode == linux.FUSE_CREATE {
+		// File handler is returned by fuse server at a time of file create.
+		// Save it temporary in a created child, so Open could return it when invoked
+		// to be sure after fh is consumed reset 'isNewFh' flag of inode
+		childI, ok := child.(*inode)
+		if ok {
+			childI.fh.new = true
+			childI.fh.handle = out.FUSEOpenOut.Fh
+			childI.fh.flags = out.FUSEOpenOut.OpenFlag
+		}
+	}
+	return child, nil
+}
+
+// getFUSEAttr returns a linux.FUSEAttr of this inode stored in local cache.
+//
+// +checklocks:i.attrMu
+func (i *inode) getFUSEAttr() linux.FUSEAttr {
+	ns := time.Second.Nanoseconds()
+	return linux.FUSEAttr{
+		Ino:       i.nodeID,
+		UID:       i.uid.Load(),
+		GID:       i.gid.Load(),
+		Size:      i.size.Load(),
+		Mode:      uint32(i.filemode()),
+		BlkSize:   i.blockSize.Load(),
+		Atime:     uint64(i.atime.Load() / ns),
+		Mtime:     uint64(i.mtime.Load() / ns),
+		Ctime:     uint64(i.ctime.Load() / ns),
+		AtimeNsec: uint32(i.atime.Load() % ns),
+		MtimeNsec: uint32(i.mtime.Load() % ns),
+		CtimeNsec: uint32(i.ctime.Load() % ns),
+		Nlink:     i.nlink.Load(),
+	}
+}
+
+// statFromFUSEAttr makes attributes from linux.FUSEAttr to linux.Statx.
+func statFromFUSEAttr(attr linux.FUSEAttr, mask, devMinor uint32) linux.Statx {
+	var stat linux.Statx
+	stat.Blksize = attr.BlkSize
+	stat.DevMajor, stat.DevMinor = linux.UNNAMED_MAJOR, devMinor
+
+	rdevMajor, rdevMinor := linux.DecodeDeviceID(attr.Rdev)
+	stat.RdevMajor, stat.RdevMinor = uint32(rdevMajor), rdevMinor
+
+	if mask&linux.STATX_MODE != 0 {
+		stat.Mode = uint16(attr.Mode)
+	}
+	if mask&linux.STATX_NLINK != 0 {
+		stat.Nlink = attr.Nlink
+	}
+	if mask&linux.STATX_UID != 0 {
+		stat.UID = attr.UID
+	}
+	if mask&linux.STATX_GID != 0 {
+		stat.GID = attr.GID
+	}
+	if mask&linux.STATX_ATIME != 0 {
+		stat.Atime = linux.StatxTimestamp{
+			Sec:  int64(attr.Atime),
+			Nsec: attr.AtimeNsec,
+		}
+	}
+	if mask&linux.STATX_MTIME != 0 {
+		stat.Mtime = linux.StatxTimestamp{
+			Sec:  int64(attr.Mtime),
+			Nsec: attr.MtimeNsec,
+		}
+	}
+	if mask&linux.STATX_CTIME != 0 {
+		stat.Ctime = linux.StatxTimestamp{
+			Sec:  int64(attr.Ctime),
+			Nsec: attr.CtimeNsec,
+		}
+	}
+	if mask&linux.STATX_INO != 0 {
+		stat.Ino = attr.Ino
+	}
+	if mask&linux.STATX_SIZE != 0 {
+		stat.Size = attr.Size
+	}
+	if mask&linux.STATX_BLOCKS != 0 {
+		stat.Blocks = attr.Blocks
+	}
+	return stat
+}
+
+// getAttr gets the attribute of this inode by issuing a FUSE_GETATTR request.
+// It updates the corresponding attributes if necessary.
+//
+// +checklocks:i.attrMu
+func (i *inode) getAttr(ctx context.Context, creds *auth.Credentials, fs *vfs.Filesystem, opts vfs.StatOptions, flags uint32, fh uint64) (linux.FUSEAttr, error) {
+	in := linux.FUSEGetAttrIn{
+		GetAttrFlags: flags,
+		Fh:           fh,
+	}
+	var out linux.FUSEAttrOut
+	if err := i.call(ctx, linux.FUSE_GETATTR, &in, &out); err != nil {
+		return linux.FUSEAttr{}, err
+	}
+
+	// Local version is newer, return the local one.
+	i.fs.conn.mu.Lock()
+	attributeVersion := i.fs.conn.attributeVersion.Load()
+	if attributeVersion != 0 && i.attrVersion.Load() > attributeVersion {
+		i.fs.conn.mu.Unlock()
+		return i.getFUSEAttr(), nil
+	}
+	i.fs.conn.mu.Unlock()
+	i.updateAttrs(out.Attr, int64(out.AttrValid), int64(out.AttrValidNsec))
+	return out.Attr, nil
+}
+
+// reviseAttr attempts to update the attributes for internal purposes
+// by calling getAttr with a pre-specified mask.
+// Used by read, write, lseek.
+//
+// +checklocks:i.attrMu
+func (i *inode) reviseAttr(ctx context.Context, flags uint32, fh uint64) error {
+	// Never need atime for internal purposes.
+	_, err := i.getAttr(ctx, auth.CredentialsFromContext(ctx), i.fs.VFSFilesystem(), vfs.StatOptions{
+		Mask: linux.STATX_BASIC_STATS &^ linux.STATX_ATIME,
+	}, flags, fh)
+	return err
+}
+
+// fattrMaskFromStats converts vfs.SetStatOptions.Stat.Mask to linux stats mask
+// aligned with the attribute mask defined in include/linux/fs.h.
+func fattrMaskFromStats(mask uint32) uint32 {
+	var fuseAttrMask uint32
+	maskMap := map[uint32]uint32{
+		linux.STATX_MODE:  linux.FATTR_MODE,
+		linux.STATX_UID:   linux.FATTR_UID,
+		linux.STATX_GID:   linux.FATTR_GID,
+		linux.STATX_SIZE:  linux.FATTR_SIZE,
+		linux.STATX_ATIME: linux.FATTR_ATIME,
+		linux.STATX_MTIME: linux.FATTR_MTIME,
+		linux.STATX_CTIME: linux.FATTR_CTIME,
+	}
+	for statxMask, fattrMask := range maskMap {
+		if mask&statxMask != 0 {
+			fuseAttrMask |= fattrMask
+		}
+	}
+	return fuseAttrMask
+}
+
+type fhOptions struct {
+	useFh bool
+	fh    uint64
+}
+
+// +checklocks:i.attrMu
+func (i *inode) setAttr(ctx context.Context, fs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions, fhOpts fhOptions) error {
+	// We should retain the original file type when assigning a new mode.
+	fattrMask := fattrMaskFromStats(opts.Stat.Mask)
+	if fhOpts.useFh {
+		fattrMask |= linux.FATTR_FH
+	}
+	if opts.Stat.Mask&linux.STATX_ATIME != 0 && opts.Stat.Atime.Nsec == linux.UTIME_NOW {
+		fattrMask |= linux.FATTR_ATIME_NOW
+	}
+	if opts.Stat.Mask&linux.STATX_MTIME != 0 && opts.Stat.Mtime.Nsec == linux.UTIME_NOW {
+		fattrMask |= linux.FATTR_ATIME_NOW
+	}
+	in := linux.FUSESetAttrIn{
+		Valid:     fattrMask,
+		Fh:        fhOpts.fh,
+		Size:      opts.Stat.Size,
+		Atime:     uint64(opts.Stat.Atime.Sec),
+		Mtime:     uint64(opts.Stat.Mtime.Sec),
+		Ctime:     uint64(opts.Stat.Ctime.Sec),
+		AtimeNsec: opts.Stat.Atime.Nsec,
+		MtimeNsec: opts.Stat.Mtime.Nsec,
+		CtimeNsec: opts.Stat.Ctime.Nsec,
+		Mode:      uint32(uint16(i.filemode().FileType()) | opts.Stat.Mode),
+		UID:       opts.Stat.UID,
+		GID:       opts.Stat.GID,
+	}
+	var out linux.FUSEAttrOut
+	if err := i.call(ctx, linux.FUSE_SETATTR, &in, &out); err != nil {
+		return err
+	}
+	i.updateAttrs(out.Attr, int64(out.AttrValid), int64(out.AttrValidNsec))
+	return nil
+}
+
+// +checklocks:i.attrMu
+func (i *inode) updateAttrs(attr linux.FUSEAttr, validSec, validNSec int64) {
+	i.fs.conn.mu.Lock()
+	i.attrVersion.Store(i.fs.conn.attributeVersion.Add(1))
+	i.fs.conn.mu.Unlock()
+	i.attrTime = i.fs.clock.Now().AddTime(ktime.FromTimespec(linux.Timespec{Sec: validSec, Nsec: validNSec}))
+
+	i.ino.Store(attr.Ino)
+
+	i.mode.Store((attr.Mode & 07777) | (i.mode.Load() & linux.S_IFMT))
+	i.uid.Store(attr.UID)
+	i.gid.Store(attr.GID)
+
+	i.atime.Store(attr.ATimeNsec())
+	i.mtime.Store(attr.MTimeNsec())
+	i.ctime.Store(attr.CTimeNsec())
+
+	i.size.Store(attr.Size)
+	i.nlink.Store(attr.Nlink)
+
+	if !i.fs.opts.defaultPermissions {
+		i.mode.Store(i.mode.Load() & ^uint32(linux.S_ISVTX))
+	}
 }
 
 // CheckPermissions implements kernfs.Inode.CheckPermissions.
@@ -224,39 +484,13 @@ func (i *inode) CheckPermissions(ctx context.Context, creds *auth.Credentials, a
 			return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(i.mode.Load()), auth.KUID(i.uid.Load()), auth.KGID(i.gid.Load()))
 		}
 		return err
-	} else if ats.MayRead() || ats.MayWrite() || ats.MayExec() {
+	}
+
+	if ats.MayRead() || ats.MayWrite() || ats.MayExec() {
 		in := linux.FUSEAccessIn{Mask: uint32(ats)}
-		req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), i.nodeID, linux.FUSE_ACCESS, &in)
-		res, err := i.fs.conn.Call(ctx, req)
-		if err != nil {
-			return err
-		}
-		return res.Error()
+		return i.callNoReply(ctx, linux.FUSE_ACCESS, &in)
 	}
 	return nil
-}
-
-func (i *inode) allowCredentials(creds *auth.Credentials) bool {
-	// Since FUSE operations are ultimately backed by a userspace process (the
-	// fuse daemon), allowing a process to call into fusefs grants the daemon
-	// ptrace-like capabilities over the calling process. Because of this, by
-	// default FUSE only allows the mount owner to interact with the
-	// filesystem. This explicitly excludes setuid/setgid processes.
-	//
-	// This behaviour can be overridden with the 'allow_other' mount option.
-	//
-	// See fs/fuse/dir.c:fuse_allow_current_process() in Linux.
-	if i.fs.opts.allowOther {
-		// FIXME: Linux requires current_in_userns(fc->user_ns) in this case,
-		// but we currently don't associate connections with a user namespace.
-		return true
-	}
-	return creds.RealKUID == i.fs.opts.uid &&
-		creds.EffectiveKUID == i.fs.opts.uid &&
-		creds.SavedKUID == i.fs.opts.uid &&
-		creds.RealKGID == i.fs.opts.gid &&
-		creds.EffectiveKGID == i.fs.opts.gid &&
-		creds.SavedKGID == i.fs.opts.gid
 }
 
 // Open implements kernfs.Inode.Open.
@@ -332,22 +566,14 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentr
 			in.Flags &= ^uint32(linux.O_TRUNC)
 		}
 
-		req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), i.nodeID, opcode, &in)
-		res, err := i.fs.conn.Call(ctx, req)
-		if err != nil {
-			return nil, err
-		}
-		if err := res.Error(); err != nil {
+		out := linux.FUSEOpenOut{}
+		if err := i.call(ctx, opcode, &in, &out); err != nil {
 			if linuxerr.Equals(linuxerr.ENOSYS, err) && !i.filemode().IsDir() {
 				i.fs.conn.noOpen = true
 			} else {
 				return nil, err
 			}
 		} else {
-			out := linux.FUSEOpenOut{}
-			if err := res.UnmarshalPayload(&out); err != nil {
-				return nil, err
-			}
 			fd.OpenFlag = out.OpenFlag
 			fd.Fh = out.Fh
 			// Open was successful. Update inode's size if atomicOTrunc && O_TRUNC.
@@ -490,13 +716,7 @@ func (i *inode) NewLink(ctx context.Context, name string, target kernfs.Inode) (
 // Unlink implements kernfs.Inode.Unlink.
 func (i *inode) Unlink(ctx context.Context, name string, child kernfs.Inode) error {
 	in := linux.FUSEUnlinkIn{Name: linux.CString(name)}
-	req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), i.nodeID, linux.FUSE_UNLINK, &in)
-	res, err := i.fs.conn.Call(ctx, req)
-	if err != nil {
-		return err
-	}
-	// only return error, discard res.
-	return res.Error()
+	return i.callNoReply(ctx, linux.FUSE_UNLINK, &in)
 }
 
 // NewDir implements kernfs.Inode.NewDir.
@@ -514,12 +734,7 @@ func (i *inode) NewDir(ctx context.Context, name string, opts vfs.MkdirOptions) 
 // RmDir implements kernfs.Inode.RmDir.
 func (i *inode) RmDir(ctx context.Context, name string, child kernfs.Inode) error {
 	in := linux.FUSERmDirIn{Name: linux.CString(name)}
-	req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), i.nodeID, linux.FUSE_RMDIR, &in)
-	res, err := i.fs.conn.Call(ctx, req)
-	if err != nil {
-		return err
-	}
-	return res.Error()
+	return i.callNoReply(ctx, linux.FUSE_RMDIR, &in)
 }
 
 // Rename implements kernfs.Inode.Rename.
@@ -530,55 +745,7 @@ func (i *inode) Rename(ctx context.Context, oldname, newname string, child, dstD
 		Oldname: linux.CString(oldname),
 		Newname: linux.CString(newname),
 	}
-	req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), i.nodeID, linux.FUSE_RENAME, &in)
-	res, err := i.fs.conn.Call(ctx, req)
-	if err != nil {
-		return err
-	}
-	return res.Error()
-}
-
-// newEntry calls FUSE server for entry creation and allocates corresponding
-// entry according to response. Shared by FUSE_MKNOD, FUSE_MKDIR, FUSE_SYMLINK,
-// FUSE_LINK and FUSE_LOOKUP.
-func (i *inode) newEntry(ctx context.Context, name string, fileType linux.FileMode, opcode linux.FUSEOpcode, payload marshal.Marshallable) (kernfs.Inode, error) {
-	req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), i.nodeID, opcode, payload)
-	res, err := i.fs.conn.Call(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	if err := res.Error(); err != nil {
-		return nil, err
-	}
-	out := linux.FUSECreateOut{}
-	if opcode == linux.FUSE_CREATE {
-		if err := res.UnmarshalPayload(&out); err != nil {
-			return nil, err
-		}
-	} else {
-		if err := res.UnmarshalPayload(&out.FUSEEntryOut); err != nil {
-			return nil, err
-		}
-	}
-	if opcode != linux.FUSE_LOOKUP && ((out.Attr.Mode&linux.S_IFMT)^uint32(fileType) != 0 || out.NodeID == 0 || out.NodeID == linux.FUSE_ROOT_ID) {
-		return nil, linuxerr.EIO
-	}
-	child, err := i.fs.newInode(ctx, out.FUSEEntryOut)
-	if err != nil {
-		return nil, err
-	}
-	if opcode == linux.FUSE_CREATE {
-		// File handler is returned by fuse server at a time of file create.
-		// Save it temporary in a created child, so Open could return it when invoked
-		// to be sure after fh is consumed reset 'isNewFh' flag of inode
-		childI, ok := child.(*inode)
-		if ok {
-			childI.fh.new = true
-			childI.fh.handle = out.FUSEOpenOut.Fh
-			childI.fh.flags = out.FUSEOpenOut.OpenFlag
-		}
-	}
-	return child, nil
+	return i.callNoReply(ctx, linux.FUSE_RENAME, &in)
 }
 
 // Getlink implements kernfs.Inode.Getlink.
@@ -609,126 +776,6 @@ func (i *inode) Readlink(ctx context.Context, mnt *vfs.Mount) (string, error) {
 		}
 	}
 	return i.link, nil
-}
-
-// getFUSEAttr returns a linux.FUSEAttr of this inode stored in local cache.
-//
-// +checklocks:i.attrMu
-func (i *inode) getFUSEAttr() linux.FUSEAttr {
-	ns := time.Second.Nanoseconds()
-	return linux.FUSEAttr{
-		Ino:       i.nodeID,
-		UID:       i.uid.Load(),
-		GID:       i.gid.Load(),
-		Size:      i.size.Load(),
-		Mode:      uint32(i.filemode()),
-		BlkSize:   i.blockSize.Load(),
-		Atime:     uint64(i.atime.Load() / ns),
-		Mtime:     uint64(i.mtime.Load() / ns),
-		Ctime:     uint64(i.ctime.Load() / ns),
-		AtimeNsec: uint32(i.atime.Load() % ns),
-		MtimeNsec: uint32(i.mtime.Load() % ns),
-		CtimeNsec: uint32(i.ctime.Load() % ns),
-		Nlink:     i.nlink.Load(),
-	}
-}
-
-// statFromFUSEAttr makes attributes from linux.FUSEAttr to linux.Statx.
-func statFromFUSEAttr(attr linux.FUSEAttr, mask, devMinor uint32) linux.Statx {
-	var stat linux.Statx
-	stat.Blksize = attr.BlkSize
-	stat.DevMajor, stat.DevMinor = linux.UNNAMED_MAJOR, devMinor
-
-	rdevMajor, rdevMinor := linux.DecodeDeviceID(attr.Rdev)
-	stat.RdevMajor, stat.RdevMinor = uint32(rdevMajor), rdevMinor
-
-	if mask&linux.STATX_MODE != 0 {
-		stat.Mode = uint16(attr.Mode)
-	}
-	if mask&linux.STATX_NLINK != 0 {
-		stat.Nlink = attr.Nlink
-	}
-	if mask&linux.STATX_UID != 0 {
-		stat.UID = attr.UID
-	}
-	if mask&linux.STATX_GID != 0 {
-		stat.GID = attr.GID
-	}
-	if mask&linux.STATX_ATIME != 0 {
-		stat.Atime = linux.StatxTimestamp{
-			Sec:  int64(attr.Atime),
-			Nsec: attr.AtimeNsec,
-		}
-	}
-	if mask&linux.STATX_MTIME != 0 {
-		stat.Mtime = linux.StatxTimestamp{
-			Sec:  int64(attr.Mtime),
-			Nsec: attr.MtimeNsec,
-		}
-	}
-	if mask&linux.STATX_CTIME != 0 {
-		stat.Ctime = linux.StatxTimestamp{
-			Sec:  int64(attr.Ctime),
-			Nsec: attr.CtimeNsec,
-		}
-	}
-	if mask&linux.STATX_INO != 0 {
-		stat.Ino = attr.Ino
-	}
-	if mask&linux.STATX_SIZE != 0 {
-		stat.Size = attr.Size
-	}
-	if mask&linux.STATX_BLOCKS != 0 {
-		stat.Blocks = attr.Blocks
-	}
-	return stat
-}
-
-// getAttr gets the attribute of this inode by issuing a FUSE_GETATTR request.
-// It updates the corresponding attributes if necessary.
-//
-// +checklocks:i.attrMu
-func (i *inode) getAttr(ctx context.Context, creds *auth.Credentials, fs *vfs.Filesystem, opts vfs.StatOptions, flags uint32, fh uint64) (linux.FUSEAttr, error) {
-	in := linux.FUSEGetAttrIn{
-		GetAttrFlags: flags,
-		Fh:           fh,
-	}
-	req := i.fs.conn.NewRequest(creds, pidFromContext(ctx), i.nodeID, linux.FUSE_GETATTR, &in)
-	res, err := i.fs.conn.Call(ctx, req)
-	if err != nil {
-		return linux.FUSEAttr{}, err
-	}
-	if err := res.Error(); err != nil {
-		return linux.FUSEAttr{}, err
-	}
-	var out linux.FUSEAttrOut
-	if err := res.UnmarshalPayload(&out); err != nil {
-		return linux.FUSEAttr{}, err
-	}
-
-	// Local version is newer, return the local one.
-	i.fs.conn.mu.Lock()
-	attributeVersion := i.fs.conn.attributeVersion.Load()
-	if attributeVersion != 0 && i.attrVersion.Load() > attributeVersion {
-		i.fs.conn.mu.Unlock()
-		return i.getFUSEAttr(), nil
-	}
-	i.fs.conn.mu.Unlock()
-	i.updateAttrs(out.Attr, int64(out.AttrValid), int64(out.AttrValidNsec))
-	return out.Attr, nil
-}
-
-// reviseAttr attempts to update the attributes for internal purposes
-// by calling getAttr with a pre-specified mask.
-// Used by read, write, lseek.
-//
-// +checklocks:i.attrMu
-func (i *inode) reviseAttr(ctx context.Context, flags uint32, fh uint64) error {
-	// Never need atime for internal purposes.
-	_, err := i.getAttr(ctx, auth.CredentialsFromContext(ctx), i.fs.VFSFilesystem(), vfs.StatOptions{
-		Mask: linux.STATX_BASIC_STATS &^ linux.STATX_ATIME,
-	}, flags, fh)
-	return err
 }
 
 // Stat implements kernfs.Inode.Stat.
@@ -773,11 +820,6 @@ func (i *inode) Stat(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOptio
 	return statFromFUSEAttr(i.getFUSEAttr(), opts.Mask, i.fs.devMinor), nil
 }
 
-// DecRef implements kernfs.Inode.DecRef.
-func (i *inode) DecRef(ctx context.Context) {
-	i.inodeRefs.DecRef(func() { i.Destroy(ctx) })
-}
-
 // StatFS implements kernfs.Inode.StatFS.
 func (i *inode) StatFS(ctx context.Context, fs *vfs.Filesystem) (linux.Statfs, error) {
 	if !i.allowCredentials(auth.CredentialsFromContext(ctx)) {
@@ -786,19 +828,8 @@ func (i *inode) StatFS(ctx context.Context, fs *vfs.Filesystem) (linux.Statfs, e
 		}, nil
 	}
 
-	req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), i.nodeID,
-		linux.FUSE_STATFS, &linux.FUSEEmptyIn{},
-	)
-	res, err := i.fs.conn.Call(ctx, req)
-	if err != nil {
-		return linux.Statfs{}, err
-	}
-	if err := res.Error(); err != nil {
-		return linux.Statfs{}, err
-	}
-
 	var out linux.FUSEStatfsOut
-	if err := res.UnmarshalPayload(&out); err != nil {
+	if err := i.call(ctx, linux.FUSE_STATFS, &linux.FUSEEmptyIn{}, &out); err != nil {
 		return linux.Statfs{}, err
 	}
 
@@ -813,27 +844,6 @@ func (i *inode) StatFS(ctx context.Context, fs *vfs.Filesystem) (linux.Statfs, e
 		NameLength:      uint64(out.NameLength),
 		FragmentSize:    int64(out.FragmentSize),
 	}, nil
-}
-
-// fattrMaskFromStats converts vfs.SetStatOptions.Stat.Mask to linux stats mask
-// aligned with the attribute mask defined in include/linux/fs.h.
-func fattrMaskFromStats(mask uint32) uint32 {
-	var fuseAttrMask uint32
-	maskMap := map[uint32]uint32{
-		linux.STATX_MODE:  linux.FATTR_MODE,
-		linux.STATX_UID:   linux.FATTR_UID,
-		linux.STATX_GID:   linux.FATTR_GID,
-		linux.STATX_SIZE:  linux.FATTR_SIZE,
-		linux.STATX_ATIME: linux.FATTR_ATIME,
-		linux.STATX_MTIME: linux.FATTR_MTIME,
-		linux.STATX_CTIME: linux.FATTR_CTIME,
-	}
-	for statxMask, fattrMask := range maskMap {
-		if mask&statxMask != 0 {
-			fuseAttrMask |= fattrMask
-		}
-	}
-	return fuseAttrMask
 }
 
 // SetStat implements kernfs.Inode.SetStat.
@@ -851,77 +861,4 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 		return nil
 	}
 	return i.setAttr(ctx, fs, creds, opts, fhOptions{useFh: false})
-}
-
-type fhOptions struct {
-	useFh bool
-	fh    uint64
-}
-
-// +checklocks:i.attrMu
-func (i *inode) setAttr(ctx context.Context, fs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions, fhOpts fhOptions) error {
-	// We should retain the original file type when assigning a new mode.
-	fattrMask := fattrMaskFromStats(opts.Stat.Mask)
-	if fhOpts.useFh {
-		fattrMask |= linux.FATTR_FH
-	}
-	if opts.Stat.Mask&linux.STATX_ATIME != 0 && opts.Stat.Atime.Nsec == linux.UTIME_NOW {
-		fattrMask |= linux.FATTR_ATIME_NOW
-	}
-	if opts.Stat.Mask&linux.STATX_MTIME != 0 && opts.Stat.Mtime.Nsec == linux.UTIME_NOW {
-		fattrMask |= linux.FATTR_ATIME_NOW
-	}
-	in := linux.FUSESetAttrIn{
-		Valid:     fattrMask,
-		Fh:        fhOpts.fh,
-		Size:      opts.Stat.Size,
-		Atime:     uint64(opts.Stat.Atime.Sec),
-		Mtime:     uint64(opts.Stat.Mtime.Sec),
-		Ctime:     uint64(opts.Stat.Ctime.Sec),
-		AtimeNsec: opts.Stat.Atime.Nsec,
-		MtimeNsec: opts.Stat.Mtime.Nsec,
-		CtimeNsec: opts.Stat.Ctime.Nsec,
-		Mode:      uint32(uint16(i.filemode().FileType()) | opts.Stat.Mode),
-		UID:       opts.Stat.UID,
-		GID:       opts.Stat.GID,
-	}
-	req := i.fs.conn.NewRequest(creds, pidFromContext(ctx), i.nodeID, linux.FUSE_SETATTR, &in)
-	res, err := i.fs.conn.Call(ctx, req)
-	if err != nil {
-		return err
-	}
-	if err := res.Error(); err != nil {
-		return err
-	}
-	out := linux.FUSEAttrOut{}
-	if err := res.UnmarshalPayload(&out); err != nil {
-		return err
-	}
-	i.updateAttrs(out.Attr, int64(out.AttrValid), int64(out.AttrValidNsec))
-	return nil
-}
-
-// +checklocks:i.attrMu
-func (i *inode) updateAttrs(attr linux.FUSEAttr, validSec, validNSec int64) {
-	i.fs.conn.mu.Lock()
-	i.attrVersion.Store(i.fs.conn.attributeVersion.Add(1))
-	i.fs.conn.mu.Unlock()
-	i.attrTime = i.fs.clock.Now().AddTime(ktime.FromTimespec(linux.Timespec{Sec: validSec, Nsec: validNSec}))
-
-	i.ino.Store(attr.Ino)
-
-	i.mode.Store((attr.Mode & 07777) | (i.mode.Load() & linux.S_IFMT))
-	i.uid.Store(attr.UID)
-	i.gid.Store(attr.GID)
-
-	i.atime.Store(attr.ATimeNsec())
-	i.mtime.Store(attr.MTimeNsec())
-	i.ctime.Store(attr.CTimeNsec())
-
-	i.size.Store(attr.Size)
-	i.nlink.Store(attr.Nlink)
-
-	if !i.fs.opts.defaultPermissions {
-		i.mode.Store(i.mode.Load() & ^uint32(linux.S_ISVTX))
-	}
 }

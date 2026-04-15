@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/fsutil"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -70,12 +69,7 @@ func (fd *regularFileFD) Allocate(ctx context.Context, mode, offset, length uint
 		Mode:   uint32(mode),
 	}
 	i := fd.inode()
-	req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), i.nodeID, linux.FUSE_FALLOCATE, &in)
-	res, err := i.fs.conn.Call(ctx, req)
-	if err != nil {
-		return err
-	}
-	if err := res.Error(); err != nil {
+	if err := i.call(ctx, linux.FUSE_FALLOCATE, &in, nil); err != nil {
 		return err
 	}
 	i.attrMu.Lock()
@@ -133,7 +127,8 @@ func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 	if size == 0 {
 		// Early return if count is 0.
 		return 0, nil
-	} else if size > math.MaxUint32 {
+	}
+	if size > math.MaxUint32 {
 		// FUSE only supports uint32 for size.
 		// Overflow.
 		return 0, linuxerr.EINVAL
