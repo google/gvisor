@@ -719,6 +719,84 @@ var (
 	_ operation = (*metaSet)(nil)
 )
 
+// OpType represents the type of operation.
+type OpType int
+
+const (
+	// OpTypeImmediate is the immediate operation type.
+	OpTypeImmediate OpType = iota
+	// OpTypeComparison is the comparison operation type.
+	OpTypeComparison
+	// OpTypeRanged is the ranged operation type.
+	OpTypeRanged
+	// OpTypePayload is the payload operation type.
+	OpTypePayload
+	// OpTypeBitwise is the bitwise operation type.
+	OpTypeBitwise
+	// OpTypeCounter is the counter operation type.
+	OpTypeCounter
+	// OpTypeLast is the last operation type.
+	OpTypeLast
+	// OpTypeRoute is the route operation type.
+	OpTypeRoute
+	// OpTypeByteorder is the byteorder operation type.
+	OpTypeByteorder
+	// OpTypeMeta is the meta operation type.
+	OpTypeMeta
+	// OpTypeUnknown is the unknown operation type.
+	OpTypeUnknown
+)
+
+var opTypeStrings = []string{
+	OpTypeImmediate:  "immediate",
+	OpTypeComparison: "comparison",
+	OpTypeRanged:     "ranged",
+	OpTypePayload:    "payload",
+	OpTypeBitwise:    "bitwise",
+	OpTypeCounter:    "counter",
+	OpTypeLast:       "last",
+	OpTypeRoute:      "route",
+	OpTypeByteorder:  "byteorder",
+	OpTypeMeta:       "meta",
+	OpTypeUnknown:    "unknown",
+}
+
+// String returns a string representation of the operation type.
+func (o OpType) String() string {
+	if o >= 0 && o < OpTypeUnknown {
+		return opTypeStrings[o]
+	}
+	return "unknown"
+}
+
+// ToOpType converts a string to an operation type.
+func ToOpType(s string) OpType {
+	switch s {
+	case "immediate":
+		return OpTypeImmediate
+	case "cmp":
+		return OpTypeComparison
+	case "ranged":
+		return OpTypeRanged
+	case "payload":
+		return OpTypePayload
+	case "bitwise":
+		return OpTypeBitwise
+	case "counter":
+		return OpTypeCounter
+	case "last":
+		return OpTypeLast
+	case "route":
+		return OpTypeRoute
+	case "byteorder":
+		return OpTypeByteorder
+	case "meta":
+		return OpTypeMeta
+	default:
+		return OpTypeUnknown
+	}
+}
+
 //
 // Register and Register-Related Implementations.
 // Note: Registers are represented by type uint8 for the register number.
