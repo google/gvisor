@@ -438,35 +438,43 @@ steps:
   - <<: *common
     <<: *docker
     <<: *source_test
-    label: ":docker: Containerd 1.6.35 tests"
-    command: make containerd-test-1.6.35
+    label: ":docker: Containerd 1.6.39 tests"
+    command: make containerd-test-1.6.39
     agents:
       <<: *ubuntu_agents
       <<: *containerd_agents
   - <<: *common
     <<: *docker
     <<: *source_test
-    label: ":docker: Containerd 1.7.25 tests"
-    command: make containerd-test-1.7.25
+    label: ":docker: Containerd 1.7.31 tests"
+    command: make containerd-test-1.7.31
     agents:
       <<: *ubuntu_agents
       <<: *containerd_agents
   - <<: *common
     <<: *docker
     <<: *source_test
-    label: ":docker: Containerd 2.0.6 tests"
-    command: make containerd-test-2.0.6
+    label: ":docker: Containerd 2.0.8 tests"
+    command: make containerd-test-2.0.8
     agents:
       <<: *ubuntu_agents
       <<: *containerd_agents
   - <<: *common
     <<: *docker
     <<: *source_test
-    label: ":docker: Containerd 2.1.0 tests"
-    command: make containerd-test-2.1.0
+    label: ":docker: Containerd 2.1.7 tests"
+    command: make containerd-test-2.1.7
     agents:
       <<: *ubuntu_agents
       <<: *containerd_agents
+  - <<: *common
+    <<: *docker
+    <<: *source_test
+    label: ":docker: Containerd 2.2.3 tests"
+    command: make containerd-test-2.2.3
+    agents:
+      <<: *ubuntu_agents
+      <<: *containerd_agents      
   - <<: *common
     <<: *source_test
     label: ":podman: Podman"
