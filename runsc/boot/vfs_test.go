@@ -96,3 +96,45 @@ func TestGetMountAccessType(t *testing.T) {
 		})
 	}
 }
+
+func TestCgroupfsCPUDefaults(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		rawQuota   int64
+		rawPeriod  int64
+		wantQuota  int64
+		wantPeriod int64
+	}{
+		{
+			name:       "finite quota",
+			rawQuota:   150000,
+			rawPeriod:  100000,
+			wantQuota:  150000,
+			wantPeriod: 100000,
+		},
+		{
+			name:       "unlimited quota keeps linux default",
+			rawQuota:   -1,
+			rawPeriod:  100000,
+			wantQuota:  -1,
+			wantPeriod: 100000,
+		},
+		{
+			name:       "unset period falls back to linux default period",
+			rawQuota:   -1,
+			rawPeriod:  0,
+			wantQuota:  -1,
+			wantPeriod: 100000,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			defaults := cgroupfsCPUDefaults(tc.rawQuota, tc.rawPeriod)
+			if got := defaults["cpu.cfs_quota_us"]; got != tc.wantQuota {
+				t.Errorf("quota = %d, want %d", got, tc.wantQuota)
+			}
+			if got := defaults["cpu.cfs_period_us"]; got != tc.wantPeriod {
+				t.Errorf("period = %d, want %d", got, tc.wantPeriod)
+			}
+		})
+	}
+}

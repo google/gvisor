@@ -130,6 +130,11 @@ type Boot struct {
 	// cpuNum number of CPUs to create inside the sandbox.
 	cpuNum int
 
+	// cpuQuota and cpuPeriod carry the raw host CFS CPU settings that should be
+	// exposed through sandbox cgroupfs.
+	cpuQuota  int64
+	cpuPeriod int64
+
 	// totalMem sets the initial amount of total memory to report back to the
 	// container.
 	totalMem uint64
@@ -233,6 +238,14 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&b.applyCaps, "apply-caps", false, "if true, apply capabilities defined in the spec to the process")
 	f.BoolVar(&b.setUpRoot, "setup-root", false, "if true, set up an empty root for the process")
 	f.IntVar(&b.cpuNum, "cpu-num", 0, "number of CPUs to create inside the sandbox")
+	// cpu-quota defaults to -1 (unlimited), matching the Linux CFS default
+	// for cpu.cfs_quota_us. A positive value is passed through as-is to sandbox
+	// cgroupfs.
+	f.Int64Var(&b.cpuQuota, "cpu-quota", -1, "raw CFS cpu quota in usecs to expose via sandbox cgroupfs (-1 means unlimited)")
+	// cpu-period defaults to 0 (unset). When unset, mountCgroupMounts
+	// uses the Linux default of 100000us (100ms). A positive value is
+	// passed through as-is.
+	f.Int64Var(&b.cpuPeriod, "cpu-period", 0, "raw CFS cpu period in usecs to expose via sandbox cgroupfs (0 means use default 100ms)")
 	f.IntVar(&b.procMountSyncFD, "proc-mount-sync-fd", -1, "file descriptor that has to be written to when /proc isn't needed anymore and can be unmounted")
 	f.IntVar(&b.syncUsernsFD, "sync-userns-fd", -1, "file descriptor used to synchronize rootless user namespace initialization.")
 	f.Uint64Var(&b.totalMem, "total-memory", 0, "sets the initial amount of total memory to report back to the container")
@@ -577,6 +590,8 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		GoferFilestoreFDs:   b.goferFilestoreFDs.GetArray(),
 		GoferMountConfs:     b.goferMountConfs.GetArray(),
 		NumCPU:              b.cpuNum,
+		CPUQuota:            b.cpuQuota,
+		CPUPeriod:           b.cpuPeriod,
 		TotalMem:            b.totalMem,
 		TotalHostMem:        b.totalHostMem,
 		UserLogFD:           b.userLogFD,

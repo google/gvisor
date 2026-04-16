@@ -270,57 +270,83 @@ func (c *cgroupV2) Join() (func(), error) {
 	return cu.Release(), nil
 }
 
-func getCPUQuota(path string) (float64, error) {
+// readCPUQuotaAndPeriod reads and parses cpu.max from the given path.
+func readCPUQuotaAndPeriod(path string) (int64, int64, error) {
 	cpuMax, err := getValue(path, cpuLimitCgroup)
 	if err != nil {
-		return -1, err
+		return -1, -1, err
 	}
-	return parseCPUQuota(cpuMax)
+	return parseCPUQuotaAndPeriod(cpuMax)
 }
 
-// CPUQuota returns the CFS CPU quota.
-func (c *cgroupV2) CPUQuota() (float64, error) {
-	cpuQuota, err := getCPUQuota(c.MakePath(""))
+// CPUQuota returns the raw CFS CPU quota in microseconds.
+// A value of -1 means unlimited.
+func (c *cgroupV2) CPUQuota() (int64, error) {
+	quota, _, err := readCPUQuotaAndPeriod(c.MakePath(""))
 	if err != nil {
 		return -1, err
 	}
 	// In cgroupv2+systemd, limits are set in the parent slice rather
 	// than the leaf node. Check the parent to see if this is the case.
-	if cpuQuota == -1 {
-		cpuQuota, err = getCPUQuota(filepath.Dir(c.MakePath("")))
-		if err != nil && errors.Is(err, os.ErrNotExist) {
-			err = nil
+	if quota == -1 {
+		parentQuota, _, parentErr := readCPUQuotaAndPeriod(filepath.Dir(c.MakePath("")))
+		if parentErr != nil && !errors.Is(parentErr, os.ErrNotExist) {
+			return -1, parentErr
+		}
+		if parentErr == nil {
+			quota = parentQuota
 		}
 	}
-	return cpuQuota, nil
+	return quota, nil
 }
 
-func parseCPUQuota(cpuMax string) (float64, error) {
-	data := strings.SplitN(strings.TrimSpace(cpuMax), " ", 2)
-	if len(data) != 2 {
-		return -1, fmt.Errorf("invalid cpu.max data %q", cpuMax)
-	}
-
-	// no cpu limit if quota is max
-	if data[0] == maxLimitStr {
-		return -1, nil
-	}
-
-	quota, err := strconv.ParseInt(data[0], 10, 64)
+// CPUPeriod returns the raw CFS CPU period in microseconds.
+func (c *cgroupV2) CPUPeriod() (int64, error) {
+	quota, period, err := readCPUQuotaAndPeriod(c.MakePath(""))
 	if err != nil {
 		return -1, err
+	}
+	// In cgroupv2+systemd, limits are set in the parent slice rather
+	// than the leaf node. Check the parent to see if this is the case.
+	if quota == -1 {
+		_, parentPeriod, parentErr := readCPUQuotaAndPeriod(filepath.Dir(c.MakePath("")))
+		if parentErr != nil && !errors.Is(parentErr, os.ErrNotExist) {
+			return -1, parentErr
+		}
+		if parentErr == nil {
+			period = parentPeriod
+		}
+	}
+	return period, nil
+}
+
+func parseCPUQuotaAndPeriod(cpuMax string) (int64, int64, error) {
+	data := strings.SplitN(strings.TrimSpace(cpuMax), " ", 2)
+	if len(data) != 2 {
+		return -1, -1, fmt.Errorf("invalid cpu.max data %q", cpuMax)
 	}
 
 	period, err := strconv.ParseInt(data[1], 10, 64)
 	if err != nil {
-		return -1, err
+		return -1, -1, err
+	}
+	if period <= 0 {
+		return -1, -1, fmt.Errorf("invalid cpu.max data %q", cpuMax)
 	}
 
-	if quota <= 0 || period <= 0 {
-		return -1, err
+	// no cpu limit if quota is max
+	if data[0] == maxLimitStr {
+		return -1, period, nil
 	}
-	return float64(quota) / float64(period), nil
 
+	quota, err := strconv.ParseInt(data[0], 10, 64)
+	if err != nil {
+		return -1, -1, err
+	}
+	if quota <= 0 {
+		return -1, -1, fmt.Errorf("invalid cpu.max data %q", cpuMax)
+	}
+	return quota, period, nil
 }
 
 // CPUUsage returns the total CPU usage of the cgroup in nanoseconds.

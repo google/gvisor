@@ -1257,16 +1257,21 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		if err != nil {
 			return fmt.Errorf("getting cpu count from cgroups: %v", err)
 		}
-		if conf.CPUNumFromQuota {
+		cpuQuota, err := s.CgroupJSON.Cgroup.CPUQuota()
+		if err != nil {
+			return fmt.Errorf("getting raw cpu quota from cgroups: %v", err)
+		}
+		cpuPeriod, err := s.CgroupJSON.Cgroup.CPUPeriod()
+		if err != nil {
+			return fmt.Errorf("getting raw cpu period from cgroups: %v", err)
+		}
+		if conf.CPUNumFromQuota && cpuQuota > 0 && cpuPeriod > 0 {
 			// Dropping below 2 CPUs can trigger application to disable
 			// locks that can lead do hard to debug errors, so just
 			// leaving two cores as reasonable default.
 			const minCPUs = 2
 
-			quota, err := s.CgroupJSON.Cgroup.CPUQuota()
-			if err != nil {
-				return fmt.Errorf("getting cpu quota from cgroups: %v", err)
-			}
+			quota := float64(cpuQuota) / float64(cpuPeriod)
 			if n := int(math.Ceil(quota)); n > 0 {
 				if n < minCPUs {
 					n = minCPUs
@@ -1278,6 +1283,12 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 			}
 		}
 		cmd.Args = append(cmd.Args, "--cpu-num", strconv.Itoa(cpuNum))
+		if cpuQuota > 0 {
+			cmd.Args = append(cmd.Args, "--cpu-quota", strconv.FormatInt(cpuQuota, 10))
+		}
+		if cpuPeriod > 0 {
+			cmd.Args = append(cmd.Args, "--cpu-period", strconv.FormatInt(cpuPeriod, 10))
+		}
 
 		memLimit, err := s.CgroupJSON.Cgroup.MemoryLimit()
 		if err != nil {
