@@ -12,6 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// This file contains the switch functionality of the systrap "syshandler" optimization.
+// It lets us avoid the signal frame setup overhead of the regular SIGSYS handler. These
+// switch routines save user state, and rely on having %gs point to this thread's sysmsg
+// state in order to have a region to actually save the state to.
+//
+// There are limitations to this optimization, and it can be disabled via the
+// systrap-disable-syscall-patching flag:
+// - If a user workload actually uses %gs and switches it (swapgs), this optimization will
+//   not work. Note that this is not an issue for other subprocesses, because
+//   gs overwrite will only affect the process doing it.
+// - If TF is set within RFLAGS (e.g. by debuggers), when the process enters
+//   __export_syshandler TF will still remain set, and user regs RIP will be discarded.
+//
+// Despite these limitations the speed up is significant, so it's ON by default.
+
 #include "sysmsg_offsets.h"
 #include "sysmsg_offsets_amd64.h"
 
