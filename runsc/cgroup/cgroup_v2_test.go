@@ -192,31 +192,48 @@ func TestLoadPathsCgroupv2(t *testing.T) {
 
 func TestGetLimits(t *testing.T) {
 	for _, tc := range []struct {
-		name      string
-		mem       string
-		cpu       string
-		expMem    uint64
-		expCPU    int
-		limitPath string
-		path      string
+		name           string
+		mem            string
+		cpu            string
+		expMem         uint64
+		expCPUQuota    int64
+		expCPUPeriod   int64
+		limitPath      string
+		path           string
+		writeParentCPU bool
 	}{
 		{
-			name:      "get limit from parent cgroup",
-			mem:       "150",
-			cpu:       "100 50",
-			limitPath: "user.slice",
-			path:      "user.slice/container.scope",
-			expMem:    150,
-			expCPU:    2,
+			name:           "get limit from parent cgroup",
+			mem:            "150",
+			cpu:            "100 50",
+			limitPath:      "user.slice",
+			path:           "user.slice/container.scope",
+			expMem:         150,
+			expCPUQuota:    100,
+			expCPUPeriod:   50,
+			writeParentCPU: true,
 		},
 		{
-			name:      "get limit from leaf cgroup",
-			mem:       "150",
-			cpu:       "100 50",
-			limitPath: "user.slice/container.scope",
-			path:      "user.slice/container.scope",
-			expMem:    150,
-			expCPU:    2,
+			name:           "get limit from leaf cgroup",
+			mem:            "150",
+			cpu:            "100 50",
+			limitPath:      "user.slice/container.scope",
+			path:           "user.slice/container.scope",
+			expMem:         150,
+			expCPUQuota:    100,
+			expCPUPeriod:   50,
+			writeParentCPU: true,
+		},
+		{
+			name:           "keep leaf period when parent cpu max is missing",
+			mem:            "150",
+			cpu:            "100 50",
+			limitPath:      "user.slice",
+			path:           "user.slice/container.scope",
+			expMem:         150,
+			expCPUQuota:    -1,
+			expCPUPeriod:   100000,
+			writeParentCPU: false,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -239,22 +256,31 @@ func TestGetLimits(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(dir, tc.path, "memory.max"), []byte("max"), 0o777); err != nil {
 				t.Fatalf("os.WriteFile(): %v", err)
 			}
-			if err := os.WriteFile(filepath.Join(dir, tc.path, "cpu.max"), []byte("max max"), 0o777); err != nil {
+			if err := os.WriteFile(filepath.Join(dir, tc.path, "cpu.max"), []byte("max 100000"), 0o777); err != nil {
 				t.Fatalf("os.WriteFile(): %v", err)
 			}
 			if err := os.WriteFile(filepath.Join(dir, tc.limitPath, "memory.max"), []byte(tc.mem), 0o655); err != nil {
 				t.Fatalf("os.WriteFile(): %v", err)
 			}
-			if err := os.WriteFile(filepath.Join(dir, tc.limitPath, "cpu.max"), []byte(tc.cpu), 0o655); err != nil {
-				t.Fatalf("os.WriteFile(): %v", err)
+			if tc.writeParentCPU {
+				if err := os.WriteFile(filepath.Join(dir, tc.limitPath, "cpu.max"), []byte(tc.cpu), 0o655); err != nil {
+					t.Fatalf("os.WriteFile(): %v", err)
+				}
 			}
 
-			quota, err := cg.CPUQuota()
+			rawQuota, err := cg.CPUQuota()
 			if err != nil {
 				t.Fatalf("cg.CPUQuota(): %v", err)
 			}
-			if int(quota) != tc.expCPU {
-				t.Errorf("cg.CPUQuota() = %v, want %v", quota, tc.expCPU)
+			if rawQuota != tc.expCPUQuota {
+				t.Errorf("cg.CPUQuota() = %d, want %d", rawQuota, tc.expCPUQuota)
+			}
+			rawPeriod, err := cg.CPUPeriod()
+			if err != nil {
+				t.Fatalf("cg.CPUPeriod(): %v", err)
+			}
+			if rawPeriod != tc.expCPUPeriod {
+				t.Errorf("cg.CPUPeriod() = %d, want %d", rawPeriod, tc.expCPUPeriod)
 			}
 			mem, err := cg.MemoryLimit()
 			if err != nil {
@@ -390,45 +416,42 @@ func TestConvertMemorySwapToCgroupV2Value(t *testing.T) {
 	}
 }
 
-func TestParseCPUQuota(t *testing.T) {
+func TestParseCPUQuotaAndPeriod(t *testing.T) {
 	cases := []struct {
-		quota    string
-		expected float64
-		expErr   bool
+		quota     string
+		expQuota  int64
+		expPeriod int64
+		expErr    bool
 	}{
 		{
-			quota:    "max 100000\n",
-			expected: -1,
+			quota:     "max 100000\n",
+			expQuota:  -1,
+			expPeriod: 100000,
 		},
 		{
-			quota:    "10000 100000",
-			expected: 0.1,
+			quota:     "150000 100000",
+			expQuota:  150000,
+			expPeriod: 100000,
 		},
 		{
-			quota:    "20000 100000\n",
-			expected: 0.2,
-		},
-
-		{
-			quota:    "-1",
-			expected: -1,
-			expErr:   true,
+			quota:  "-1",
+			expErr: true,
 		},
 	}
 
 	for _, c := range cases {
-		res, err := parseCPUQuota(c.quota)
+		quota, period, err := parseCPUQuotaAndPeriod(c.quota)
 		if c.expErr {
 			if err == nil {
-				t.Errorf("quota: %q, expected error, got %.2f, nil", c.quota, res)
+				t.Errorf("quota: %q, expected error, got (%d, %d), nil", c.quota, quota, period)
 			}
 			continue
 		}
 		if err != nil {
 			t.Errorf("quota: %q, expected success, got error %s", c.quota, err)
 		}
-		if res != c.expected {
-			t.Errorf("quota: %q, expected %.2f, got error %.2f", c.quota, c.expected, res)
+		if quota != c.expQuota || period != c.expPeriod {
+			t.Errorf("quota: %q, expected (%d, %d), got (%d, %d)", c.quota, c.expQuota, c.expPeriod, quota, period)
 		}
 	}
 }
@@ -439,7 +462,8 @@ func TestUpdate(t *testing.T) {
 		initialCPUMax    string
 		initialMemMax    string
 		updatedResources *specs.LinuxResources
-		wantCPUQuota     float64
+		wantCPUQuota     int64
+		wantCPUPeriod    int64
 		wantMemory       uint64
 	}{
 		{
@@ -455,8 +479,9 @@ func TestUpdate(t *testing.T) {
 					Limit: int64Ptr(2048),
 				},
 			},
-			wantCPUQuota: 2.0,
-			wantMemory:   2048,
+			wantCPUQuota:  100,
+			wantCPUPeriod: 50,
+			wantMemory:    2048,
 		},
 		{
 			name:          "update cpu only",
@@ -468,8 +493,9 @@ func TestUpdate(t *testing.T) {
 					Period: uint64Ptr(50),
 				},
 			},
-			wantCPUQuota: 3.0,
-			wantMemory:   1024,
+			wantCPUQuota:  150,
+			wantCPUPeriod: 50,
+			wantMemory:    1024,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -504,7 +530,14 @@ func TestUpdate(t *testing.T) {
 				t.Fatalf("CPUQuota(): %v", err)
 			}
 			if cpuQuota != tc.wantCPUQuota {
-				t.Fatalf("After Update(), CPUQuota() = %f, want %f", cpuQuota, tc.wantCPUQuota)
+				t.Fatalf("After Update(), CPUQuota() = %d, want %d", cpuQuota, tc.wantCPUQuota)
+			}
+			cpuPeriod, err := cg.CPUPeriod()
+			if err != nil {
+				t.Fatalf("CPUPeriod(): %v", err)
+			}
+			if cpuPeriod != tc.wantCPUPeriod {
+				t.Fatalf("After Update(), CPUPeriod() = %d, want %d", cpuPeriod, tc.wantCPUPeriod)
 			}
 
 			mem, err := cg.MemoryLimit()

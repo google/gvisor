@@ -246,6 +246,11 @@ type Loader struct {
 	// /sys/devices/virtual/dmi/id/product_name.
 	productName string
 
+	// cpuQuota and cpuPeriod are the raw host CFS settings that should be
+	// exposed through sandbox cgroupfs.
+	cpuQuota  int64
+	cpuPeriod int64
+
 	hostTHP HostTHP
 
 	// mu guards the fields below.
@@ -387,6 +392,10 @@ type Args struct {
 	GoferMountConfs []GoferMountConf
 	// NumCPU is the number of CPUs to create inside the sandbox.
 	NumCPU int
+	// CPUQuota and CPUPeriod are the raw host CFS settings that should be
+	// reflected by sandbox cgroupfs.
+	CPUQuota  int64
+	CPUPeriod int64
 	// TotalMem is the initial amount of total memory to report back to the
 	// container.
 	TotalMem uint64
@@ -506,6 +515,8 @@ func New(args Args) (*Loader, error) {
 		sharedMounts:   make(map[string]*vfs.Mount),
 		stopProfiling:  stopProfiling,
 		productName:    args.ProductName,
+		cpuQuota:       args.CPUQuota,
+		cpuPeriod:      args.CPUPeriod,
 		hostTHP:        args.HostTHP,
 		containerIDs:   make(map[string]string),
 		containerSpecs: make(map[string]*specs.Spec),

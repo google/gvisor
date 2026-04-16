@@ -61,6 +61,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
+	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -88,6 +89,32 @@ func selfFilestoreName(sandboxID string) string {
 
 // tmpfs has some extra supported options that we must pass through.
 var tmpfsAllowedData = []string{"mode", "size", "uid", "gid"}
+
+func cgroupfsCPUDefaults(rawQuota, rawPeriod int64) map[string]int64 {
+	const defaultPeriod int64 = 100000
+	const defaultQuota int64 = -1
+	period := rawPeriod
+	if period <= 0 {
+		period = defaultPeriod
+	}
+	quota := rawQuota
+	if quota <= 0 {
+		quota = defaultQuota
+	}
+	return map[string]int64{
+		"cpu.cfs_quota_us":  quota,
+		"cpu.cfs_period_us": period,
+	}
+}
+
+func cgroupfsMemoryDefaults(memoryLimit uint64) map[string]int64 {
+	if memoryLimit == 0 {
+		return nil
+	}
+	return map[string]int64{
+		"memory.limit_in_bytes": int64(memoryLimit),
+	}
+}
 
 func registerFilesystems(k *kernel.Kernel, info *containerInfo) error {
 	ctx := k.SupervisorContext()
@@ -1202,10 +1229,27 @@ func (c *containerMounter) getSharedMount(ctx context.Context, spec *specs.Spec,
 func (l *Loader) mountCgroupMounts(conf *config.Config, creds *auth.Credentials) error {
 	ctx := l.k.SupervisorContext()
 	for _, sopts := range kernel.CgroupCtrls {
+		var internalData any
+		switch string(sopts) {
+		case "cpu":
+			if defaults := cgroupfsCPUDefaults(l.cpuQuota, l.cpuPeriod); defaults != nil {
+				internalData = &cgroupfs.InternalData{DefaultControlValues: defaults}
+				log.Infof("Setting cgroupfs cpu defaults: quota=%d, period=%d (raw quota=%d, raw period=%d)", defaults["cpu.cfs_quota_us"], defaults["cpu.cfs_period_us"], l.cpuQuota, l.cpuPeriod)
+			}
+		case "memory":
+			// Set memory limit from --total-memory if specified.
+			// This allows applications to see the correct memory limit in cgroup.
+			if defaults := cgroupfsMemoryDefaults(usage.MaximumTotalMemoryBytes); defaults != nil {
+				internalData = &cgroupfs.InternalData{DefaultControlValues: defaults}
+				log.Infof("Setting cgroupfs memory defaults: limit=%d bytes (%.2f GB)", usage.MaximumTotalMemoryBytes, float64(usage.MaximumTotalMemoryBytes)/(1<<30))
+			}
+		}
+
 		mopts := &vfs.MountOptions{
 			GetFilesystemOptions: vfs.GetFilesystemOptions{
 				Data:          string(sopts),
 				InternalMount: true,
+				InternalData:  internalData,
 			},
 		}
 		fs, root, err := l.k.VFS().NewFilesystem(ctx, creds, "cgroup", cgroupfs.Name, mopts)
