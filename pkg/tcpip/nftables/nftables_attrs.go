@@ -128,6 +128,14 @@ func AttrMaxValidator[T integer](maxValue T) NlaPolicyValidator {
 	}
 }
 
+// AttrMaskValidator checks if the data is a subset of the mask.
+func AttrMaskValidator[T integer](mask T) NlaPolicyValidator {
+	return func(data any) bool {
+		v, ok := data.(T)
+		return ok && ((v & ^mask) == 0)
+	}
+}
+
 // NfParseWithPolicy parses the data bytes, clearing the nested attribute bit if present.
 // For nested attributes, Linux supports these attributes having the bit
 // set or unset. It is cleared here for consistency. The policy map is used to validate the

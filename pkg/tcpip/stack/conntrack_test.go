@@ -35,7 +35,7 @@ func TestReap(t *testing.T) {
 	ct.init()
 	ct.checkNumTuples(t, 0)
 
-	// We set rt.routeInfo.Loop to avoid a panic when handlePacket calls
+	// We set rt.routeInfo.Loop to avoid a panic when IPTHandlePacket calls
 	// rt.RequiresTXTransportChecksum.
 	var rt Route
 	rt.routeInfo.Loop = PacketLoop
@@ -45,8 +45,8 @@ func TestReap(t *testing.T) {
 	// reaping is unestablishedTimeout.
 	pkt1 := genTCPPacket(genTCPOpts{})
 	pkt1.tuple = ct.getConnAndUpdate(pkt1, true /* skipChecksumValidation */)
-	if handlePacket(pkt1, Output, &rt) {
-		t.Fatal("handlePacket() shouldn't perform any NAT")
+	if IPTHandlePacket(pkt1, Output, &rt) {
+		t.Fatal("IPTHandlePacket() shouldn't perform any NAT")
 	}
 	ct.checkNumTuples(t, 1)
 
@@ -55,7 +55,7 @@ func TestReap(t *testing.T) {
 	clock.Advance(unestablishedTimeout / 2)
 	pkt2 := genTCPPacket(genTCPOpts{})
 	pkt2.tuple = ct.getConnAndUpdate(pkt2, true /* skipChecksumValidation */)
-	if handlePacket(pkt2, Output, &rt) {
+	if IPTHandlePacket(pkt2, Output, &rt) {
 		t.Fatal("handlePacket() shouldn't perform any NAT")
 	}
 	ct.checkNumTuples(t, 1)
@@ -146,7 +146,7 @@ func testWindowScaling(t *testing.T, windowSize uint16, synScale, synAckScale ui
 	ct.init()
 	ct.checkNumTuples(t, 0)
 
-	// We set rt.routeInfo.Loop to avoid a panic when handlePacket calls
+	// We set rt.routeInfo.Loop to avoid a panic when IPTHandlePacket calls
 	// rt.RequiresTXTransportChecksum.
 	var rt Route
 	rt.routeInfo.Loop = PacketLoop
@@ -174,8 +174,8 @@ func testWindowScaling(t *testing.T, windowSize uint16, synScale, synAckScale ui
 		dstPort:     &responderPort,
 	})
 	synPkt.tuple = ct.getConnAndUpdate(synPkt, true /* skipChecksumValidation */)
-	if handlePacket(synPkt, Output, &rt) {
-		t.Fatal("handlePacket() shouldn't perform any NAT")
+	if IPTHandlePacket(synPkt, Output, &rt) {
+		t.Fatal("IPTHandlePacket() shouldn't perform any NAT")
 	}
 	ct.checkNumTuples(t, 1)
 
@@ -206,8 +206,8 @@ func testWindowScaling(t *testing.T, windowSize uint16, synScale, synAckScale ui
 		dstPort:     &originatorPort,
 	})
 	synAckPkt.tuple = ct.getConnAndUpdate(synAckPkt, true /* skipChecksumValidation */)
-	if handlePacket(synAckPkt, Prerouting, &rt) {
-		t.Fatal("handlePacket() shouldn't perform any NAT")
+	if IPTHandlePacket(synAckPkt, Prerouting, &rt) {
+		t.Fatal("IPTHandlePacket() shouldn't perform any NAT")
 	}
 	ct.checkNumTuples(t, 2)
 
@@ -237,8 +237,8 @@ func testWindowScaling(t *testing.T, windowSize uint16, synScale, synAckScale ui
 		dstPort:    &responderPort,
 	})
 	ackPkt.tuple = ct.getConnAndUpdate(ackPkt, true /* skipChecksumValidation */)
-	if handlePacket(ackPkt, Output, &rt) {
-		t.Fatal("handlePacket() shouldn't perform any NAT")
+	if IPTHandlePacket(ackPkt, Output, &rt) {
+		t.Fatal("IPTHandlePacket() shouldn't perform any NAT")
 	}
 	ct.checkNumTuples(t, 2)
 

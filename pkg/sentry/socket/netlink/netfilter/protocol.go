@@ -853,6 +853,11 @@ func (p *Protocol) newRule(nft *nftables.NFTables, st *stack.Stack, attrs map[ui
 		if err != nil {
 			return err
 		}
+		// Initialize ConnTrack and NAT when the first nat expression is added to the rule.
+		if nftables.ToOpType(exprInfo.ExprName) == nftables.OpTypeNAT {
+			nft.InitConnTrackOnce()
+			nft.InitNAT()
+		}
 	}
 
 	if chain.GetFlags()&linux.NFT_CHAIN_HW_OFFLOAD != 0 {
