@@ -158,7 +158,7 @@ func (op byteorder) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *R
 }
 
 func (op byteorder) GetExprName() string {
-	return "byteorder"
+	return OpTypeByteorder.String()
 }
 
 // TODO: b/452648112 - Implement dump for last operation.

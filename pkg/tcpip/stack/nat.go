@@ -27,7 +27,7 @@ import (
 //
 // Returns true if the packet can skip the NAT table.
 func handlePacket(pkt *PacketBuffer, hook Hook, rt *Route) bool {
-	netHdr, transHdr, isICMPError, ok := getHeaders(pkt)
+	netHdr, transHdr, isICMPError, ok := pkt.GetHeaders()
 	if !ok {
 		return false
 	}
@@ -111,7 +111,7 @@ func handlePacket(pkt *PacketBuffer, hook Hook, rt *Route) bool {
 		newAddr = tid.srcAddr
 	}
 
-	rewritePacket(
+	UpdateHeaders(
 		netHdr,
 		transHdr,
 		!dnat != isICMPError,
@@ -267,7 +267,7 @@ func IPTPerformNAT(pkt *PacketBuffer, hook Hook, r *Route, portsOrIdents portOrI
 
 	for maxAttempts := allowedInitialAttempts; ; maxAttempts /= 2 {
 		// Start reach round with a random initial port/ident offset.
-		randOffset := cn.ct.rand.Uint32()
+		randOffset := cn.ct.rng.Uint32()
 
 		for i := uint32(0); i < maxAttempts; i++ {
 			newPortOrIdentU32 := uint32(portsOrIdents.start) + (randOffset+i)%portsOrIdents.size
