@@ -32,17 +32,17 @@ type State struct {
 }
 
 // Load loads the state from the given path.
-func (s State) Load(path string) error {
+func (s *State) Load(path string) error {
 	data, err := os.ReadFile(filepath.Join(path, filename))
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal(data, &s)
+	return json.Unmarshal(data, s)
 }
 
 // Save saves the state to the given path.
-func (s State) Save(path string) error {
-	data, err := json.Marshal(&s)
+func (s *State) Save(path string) error {
+	data, err := json.Marshal(s)
 	if err != nil {
 		return err
 	}
