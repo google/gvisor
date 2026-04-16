@@ -16,6 +16,7 @@
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/sysmacros.h>
 #include <sys/types.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -23,6 +24,7 @@
 #include <vector>
 
 #include "gtest/gtest.h"
+#include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -43,8 +45,8 @@ TEST(MknodTest, RegularFile) {
 
 TEST(MknodTest, RegularFilePermissions) {
   const std::string node = NewTempAbsPath();
-  mode_t newUmask = 0077;
-  umask(newUmask);
+  mode_t new_umask = 0077;
+  umask(new_umask);
 
   // Attempt to open file with mode 0777. Not specifying file type should create
   // a regular file.
@@ -53,10 +55,10 @@ TEST(MknodTest, RegularFilePermissions) {
 
   // In the absence of a default ACL, the permissions of the created node are
   // (mode & ~umask).  -- mknod(2)
-  mode_t wantPerms = perms & ~newUmask;
+  mode_t want_perms = perms & ~new_umask;
   struct stat st;
   ASSERT_THAT(stat(node.c_str(), &st), SyscallSucceeds());
-  ASSERT_EQ(st.st_mode & 0777, wantPerms);
+  ASSERT_EQ(st.st_mode & 0777, want_perms);
 
   // "Zero file type is equivalent to type S_IFREG." - mknod(2)
   ASSERT_EQ(st.st_mode & S_IFMT, S_IFREG);
@@ -117,6 +119,106 @@ TEST(MknodTest, MknodAtEmptyPath) {
       ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_RDONLY | O_DIRECTORY, 0666));
   EXPECT_THAT(mknodat(fd.get(), "", S_IFREG | 0777, 0),
               SyscallFailsWithErrno(ENOENT));
+}
+
+// Matches Linux fs/namei.c:sys_mknodat() capability check for character devices.
+TEST(MknodTest, CharDeviceFailWithoutCapMknod) {
+  const std::string node = NewTempAbsPath();
+  
+  // Drop CAP_MKNOD.
+  AutoCapability cap(CAP_MKNOD, false);
+
+  EXPECT_THAT(mknod(node.c_str(), S_IFCHR | S_IRUSR | S_IWUSR,
+                    makedev(1, 3)),
+              SyscallFailsWithErrno(EPERM));
+}
+
+// Matches Linux fs/namei.c:sys_mknodat() capability check for block devices.
+TEST(MknodTest, BlockDeviceFailWithoutCapMknod) {
+  const std::string node = NewTempAbsPath();
+  
+  // Drop CAP_MKNOD.
+  AutoCapability cap(CAP_MKNOD, false);
+
+  EXPECT_THAT(mknod(node.c_str(), S_IFBLK | S_IRUSR | S_IWUSR,
+                    makedev(1, 0)),
+              SyscallFailsWithErrno(EPERM));
+}
+
+// Matches Linux fs/namei.c:sys_mknodat() where S_IFCHR succeeds (or fails with non-cap error) with CAP_MKNOD.
+TEST(MknodTest, CharDeviceWithCapMknod) {
+  const std::string node = NewTempAbsPath();
+  
+  auto has_cap = ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_MKNOD));
+  if (!has_cap) {
+    GTEST_SKIP() << "Skipping test because CAP_MKNOD is not available";
+  }
+  
+  int res = mknod(node.c_str(), S_IFCHR | S_IRUSR | S_IWUSR, makedev(1, 3));
+  if (res != 0) {
+    // Creating device nodes requires CAP_MKNOD in the initial user namespace on Linux.
+    // If we are running on native without sufficient privileges, this will fail with EPERM.
+    if (errno == EPERM && !IsRunningOnGvisor()) {
+      GTEST_SKIP() << "Skipping test because mknod failed with EPERM on "
+                      "native (likely lack of privileges in initial user "
+                      "namespace)";
+    } else {
+      // On gVisor, it may fail with EPERM if the underlying filesystem (like gofer)
+      // does not support creating device nodes.
+      EXPECT_EQ(errno, EPERM) << "Failed with unexpected error; expected EPERM if not supported";
+    }
+  } else {
+    unlink(node.c_str());
+  }
+}
+
+// Whiteout device (S_IFCHR with dev 0,0) does not require CAP_MKNOD.
+TEST(MknodTest, WhiteoutSuccessWithoutCapMknod) {
+  const std::string node = NewTempAbsPath();
+  
+  // Drop CAP_MKNOD.
+  AutoCapability cap(CAP_MKNOD, false);
+
+  // Whiteout is S_IFCHR with makedev(0, 0).
+  EXPECT_THAT(mknod(node.c_str(), S_IFCHR, makedev(0, 0)), SyscallSucceeds());
+  unlink(node.c_str());
+}
+
+// Matches Linux fs/namei.c:sys_mknodat() where S_IFIFO does not require CAP_MKNOD.
+TEST(MknodTest, FIFOSuccessWithoutCapMknod) {
+  const std::string node = NewTempAbsPath();
+  
+  // Drop CAP_MKNOD.
+  AutoCapability cap(CAP_MKNOD, false);
+
+  EXPECT_THAT(mknod(node.c_str(), S_IFIFO | S_IRUSR | S_IWUSR, 0),
+              SyscallSucceeds());
+}
+
+// Matches Linux fs/namei.c:sys_mknodat() where S_IFREG does not require CAP_MKNOD.
+TEST(MknodTest, RegularFileSuccessWithoutCapMknod) {
+  const std::string node = NewTempAbsPath();
+  
+  // Drop CAP_MKNOD.
+  AutoCapability cap(CAP_MKNOD, false);
+
+  EXPECT_THAT(mknod(node.c_str(), S_IFREG | S_IRUSR | S_IWUSR, 0),
+              SyscallSucceeds());
+}
+
+// Matches Linux fs/namei.c:sys_mknodat() where S_IFSOCK does not require CAP_MKNOD.
+TEST(MknodTest, SocketSuccessWithoutCapMknod) {
+  ASSERT_THAT(chdir(GetAbsoluteTestTmpdir().c_str()), SyscallSucceeds());
+
+  auto filename = NewTempRelPath();
+
+  // Drop CAP_MKNOD.
+  AutoCapability cap(CAP_MKNOD, false);
+
+  EXPECT_THAT(mknod(filename.c_str(), S_IFSOCK | S_IRUSR | S_IWUSR, 0),
+              SyscallSucceeds());
+
+  EXPECT_THAT(unlink(filename.c_str()), SyscallSucceeds());
 }
 
 }  // namespace

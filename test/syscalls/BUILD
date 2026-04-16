@@ -756,6 +756,11 @@ syscall_test(
 )
 
 syscall_test(
+    add_hostinet = True,
+    test = "//test/syscalls/linux:socket_bind_to_device_test",
+)
+
+syscall_test(
     test = "//test/syscalls/linux:socket_capability_test",
 )
 

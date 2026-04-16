@@ -147,6 +147,8 @@ func (fs *filesystem) newSyntheticDentry(opts *createSyntheticOpts) *dentry {
 	switch opts.mode.FileType() {
 	case linux.S_IFDIR:
 		// Nothing else needs to be done.
+	case linux.S_IFCHR:
+		// Nothing else needs to be done.
 	case linux.S_IFSOCK:
 		child.inode.endpoint = opts.endpoint
 	case linux.S_IFIFO:
