@@ -325,6 +325,73 @@ func TestHomeDir(t *testing.T) {
 	}
 }
 
+// criInspectMemoryLimitBytes reads the Linux memory limit from `crictl inspect`
+// via go-template (same data as RuntimeService.ContainerStatus over gRPC).
+func criInspectMemoryLimitBytes(cc *criutil.Crictl, contID string) (int64, error) {
+	const tmpl = `{{.status.resources.linux.memoryLimitInBytes}}`
+	out, err := cc.InspectGoTemplate(contID, tmpl)
+	if err != nil {
+		return 0, fmt.Errorf("inspect: %w", err)
+	}
+	n, err := strconv.ParseInt(out, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("parse memory limit %q: %w", out, err)
+	}
+	return n, nil
+}
+
+// TestCrictlUpdateContainerResources covers the kubelet in-place pod resize path:
+// CRI UpdateContainerResources targets the pod workload container (not the pause
+// sandbox). runsc updates host compat cgroups and the sentry cgroupfs for that
+// container id. CRI-reported memory limit must match via inspect JSON.
+func TestCrictlUpdateContainerResources(t *testing.T) {
+	crictl, cleanup, err := setup(t, true /* enableGrouping */)
+	if err != nil {
+		t.Fatalf("failed to setup crictl: %v", err)
+	}
+	defer cleanup()
+
+	const initMem = int64(64 * 1024 * 1024)
+	const updatedMem = int64(96 * 1024 * 1024)
+
+	spec := SimpleSpec("resize", "basic/busybox", []string{"sleep", "1000"}, map[string]any{
+		"linux": map[string]any{
+			"resources": map[string]any{
+				"memory_limit_in_bytes": initMem,
+			},
+		},
+	})
+	podID, contID, err := crictl.StartPodAndContainer(containerdRuntime, "basic/busybox", Sandbox(testutil.RandomID("update-res")), spec)
+	if err != nil {
+		t.Fatalf("start failed: %v", err)
+	}
+	defer func() {
+		if err := crictl.StopPodAndContainer(podID, contID); err != nil {
+			t.Logf("cleanup stop: %v", err)
+		}
+	}()
+
+	before, err := criInspectMemoryLimitBytes(crictl, contID)
+	if err != nil {
+		t.Fatalf("inspect before update: %v", err)
+	}
+	if before != initMem {
+		t.Fatalf("memory limit before update: got %d want %d", before, initMem)
+	}
+
+	if err := crictl.UpdateContainerResources(contID, updatedMem); err != nil {
+		t.Fatalf("UpdateContainerResources: %v", err)
+	}
+
+	after, err := criInspectMemoryLimitBytes(crictl, contID)
+	if err != nil {
+		t.Fatalf("inspect after update: %v", err)
+	}
+	if after != updatedMem {
+		t.Fatalf("memory limit after update: got %d want %d", after, updatedMem)
+	}
+}
+
 const containerdRuntime = "runsc"
 
 // containerdConfig is the containerd (1.5+) configuration file that
