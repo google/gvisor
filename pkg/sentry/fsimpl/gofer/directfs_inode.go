@@ -559,11 +559,18 @@ func (i *directfsInode) mknod(ctx context.Context, name string, creds *auth.Cred
 	// From mknod(2) man page:
 	// "EPERM: [...] if the filesystem containing pathname does not support
 	// the type of node requested."
-	if opts.Mode.FileType() != linux.ModeRegular {
+	//
+	// Allow regular files and whiteout char devices (char 0,0). Whiteout
+	// devices are used by overlayfs to mark deleted files in the upper
+	// layer. This enables Docker overlay2 to use gofer as an upper layer.
+	isWhiteout := opts.Mode.FileType() == linux.ModeCharacterDevice &&
+		linux.MakeDeviceID(uint16(opts.DevMajor), opts.DevMinor) == linux.WHITEOUT_DEV
+	if opts.Mode.FileType() != linux.ModeRegular && !isWhiteout {
 		return nil, unix.EPERM
 	}
 
-	if err := unix.Mknodat(i.controlFD, name, uint32(opts.Mode), 0); err != nil {
+	dev := int(linux.MakeDeviceID(uint16(opts.DevMajor), opts.DevMinor))
+	if err := unix.Mknodat(i.controlFD, name, uint32(opts.Mode), dev); err != nil {
 		return nil, err
 	}
 	return i.getCreatedChild(name, creds.EffectiveKUID, creds.EffectiveKGID, false /* isDir */, true /* createDentry */, d)

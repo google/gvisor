@@ -235,13 +235,21 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			ctx.Infof("overlay.FilesystemType.GetFilesystem: failed to resolve upperdir %q: %v", upperPathname, err)
 			return nil, nil, err
 		}
-		// TODO(b/286942303): Only tmpfs supports whiteouts and overlay
-		// xattrs (trusted.overlay.* or user.overlay.*). Don't allow
-		// non-tmpfs mounts on upper levels for mounts created through
-		// the mount syscall. In gVisor configs, users can specify any
-		// configurations on their own risk.
-		if !opts.InternalMount && upperRoot.Mount().Filesystem().FilesystemType().Name() != "tmpfs" {
-			return nil, nil, linuxerr.EINVAL
+		// Only filesystems that support whiteouts (char 0,0 devices)
+		// and overlay xattrs (trusted.overlay.* or user.overlay.*) can
+		// be used as overlay upper layers. For mounts created through
+		// the mount syscall (not internal), restrict to tmpfs and gofer
+		// ("9p"). Gofer support enables Docker overlay2 inside gVisor
+		// containers when the rootfs overlay is disabled
+		// (--overlay2=none); the sentry emulates the overlay xattrs
+		// for gofer upper layers. See
+		// pkg/sentry/fsimpl/gofer/gofer.go:overlayXattrPrefix.
+		if !opts.InternalMount {
+			fsName := upperRoot.Mount().Filesystem().FilesystemType().Name()
+			if fsName != "tmpfs" && fsName != "9p" {
+				upperRoot.DecRef(ctx)
+				return nil, nil, linuxerr.EINVAL
+			}
 		}
 		privateUpperRoot, err := clonePrivateMount(vfsObj, upperRoot, false /* forceReadOnly */)
 		upperRoot.DecRef(ctx)

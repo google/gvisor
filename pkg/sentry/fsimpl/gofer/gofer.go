@@ -1493,9 +1493,14 @@ func (d *dentry) checkXattrPermissions(creds *auth.Credentials, name string, ats
 	// to the remote filesystem. This is inconsistent with Linux's 9p client,
 	// but consistent with other filesystems (e.g. FUSE).
 	//
-	// NOTE(b/202533394): Also disallow "trusted" namespace for now. This is
-	// consistent with the VFS1 gofer client.
-	if strings.HasPrefix(name, linux.XATTR_SYSTEM_PREFIX) || strings.HasPrefix(name, linux.XATTR_TRUSTED_PREFIX) {
+	// NOTE(b/202533394): Disallow most of the "trusted" namespace.
+	// Allow "trusted.overlay." xattrs, which are used by overlayfs to
+	// mark opaque directories. This enables Docker overlay2 to use
+	// gofer as an upper layer.
+	if strings.HasPrefix(name, linux.XATTR_SYSTEM_PREFIX) {
+		return linuxerr.EOPNOTSUPP
+	}
+	if strings.HasPrefix(name, linux.XATTR_TRUSTED_PREFIX) && !strings.HasPrefix(name, linux.XATTR_TRUSTED_PREFIX+"overlay.") {
 		return linuxerr.EOPNOTSUPP
 	}
 	// Do not allow writes to the "security" namespace on the host filesystem.
