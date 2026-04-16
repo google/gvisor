@@ -32,6 +32,7 @@
 #include <cstdint>
 #include <functional>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -43,6 +44,7 @@
 #include "test/syscalls/linux/socket_netlink_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/fs_util.h"
 #include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
@@ -1795,6 +1797,61 @@ struct VethRequest GetVethRequest(uint32_t seq, const char* ifname_first,
   return req;
 }
 
+void DumpInetAddressSequence(std::vector<std::string>* sequence) {
+  struct ifaddrs* if_addr_list = nullptr;
+  ASSERT_THAT(getifaddrs(&if_addr_list), SyscallSucceeds());
+  auto cleanup = Cleanup([&if_addr_list]() { freeifaddrs(if_addr_list); });
+
+  sequence->clear();
+  for (struct ifaddrs* i = if_addr_list; i; i = i->ifa_next) {
+    if (!i->ifa_addr || (i->ifa_addr->sa_family != AF_INET &&
+                         i->ifa_addr->sa_family != AF_INET6)) {
+      continue;
+    }
+    char buf[INET6_ADDRSTRLEN] = {};
+    switch (i->ifa_addr->sa_family) {
+      case AF_INET:
+        inet_ntop(AF_INET,
+                  &(reinterpret_cast<const struct sockaddr_in*>(i->ifa_addr)
+                        ->sin_addr),
+                  buf, sizeof(buf));
+        break;
+      case AF_INET6:
+        inet_ntop(AF_INET6,
+                  &(reinterpret_cast<const struct sockaddr_in6*>(i->ifa_addr)
+                        ->sin6_addr),
+                  buf, sizeof(buf));
+        break;
+    }
+    sequence->push_back(
+        absl::StrFormat("%s/%d/%s", i->ifa_name, i->ifa_addr->sa_family, buf));
+  }
+}
+
+void ReadProcNetDevInterfaceNames(std::vector<std::string>* names) {
+  names->clear();
+  const std::string contents =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/net/dev"));
+  std::istringstream input(contents);
+  std::string line;
+  for (int line_no = 0; std::getline(input, line); ++line_no) {
+    if (line_no < 2) {
+      continue;
+    }
+    const size_t colon = line.find(':');
+    if (colon == std::string::npos) {
+      continue;
+    }
+    std::string name = line.substr(0, colon);
+    const size_t first = name.find_first_not_of(" \t");
+    if (first == std::string::npos) {
+      continue;
+    }
+    const size_t last = name.find_last_not_of(" \t");
+    names->push_back(name.substr(first, last - first + 1));
+  }
+}
+
 TEST(NetlinkRouteTest, VethAdd) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
   SKIP_IF(IsRunningWithHostinet());
@@ -1833,6 +1890,18 @@ TEST(NetlinkRouteTest, LookupAllAddrOrder) {
     }
     ASSERT_TRUE(std::is_sorted(addrs_family.begin(), addrs_family.end()));
     freeifaddrs(if_addr_list);
+  }
+}
+
+TEST(NetlinkRouteTest, LookupAllAddrStableAcrossCalls) {
+  std::vector<std::string> baseline;
+  DumpInetAddressSequence(&baseline);
+  ASSERT_FALSE(baseline.empty());
+
+  for (int i = 0; i < 10; ++i) {
+    std::vector<std::string> current;
+    DumpInetAddressSequence(&current);
+    EXPECT_EQ(current, baseline);
   }
 }
 
@@ -1880,6 +1949,35 @@ TEST(NetlinkRouteTest, LinIndexOrder) {
       << "Expected at least 3 veth pairs to be found";
   ASSERT_TRUE(std::is_sorted(found_indexes.begin(), found_indexes.end()))
       << "Link indexes are not in ascending order";
+}
+
+TEST(NetlinkRouteTest, ProcNetDevStableAcrossCalls) {
+  SKIP_IF(IsRunningWithHostinet());
+
+  // Avoid a temporary netns here: in gVisor `/proc/net/*` is not yet
+  // guaranteed to follow `unshare(CLONE_NEWNET)` (gvisor.dev/issue/1833).
+  // Native Linux may also see concurrent device churn, so only check that
+  // baseline interfaces keep the same relative order.
+  std::vector<std::string> baseline;
+  ReadProcNetDevInterfaceNames(&baseline);
+  ASSERT_FALSE(baseline.empty());
+
+  for (int i = 0; i < 10; ++i) {
+    std::vector<std::string> current;
+    ReadProcNetDevInterfaceNames(&current);
+
+    std::vector<size_t> baseline_positions;
+    baseline_positions.reserve(current.size());
+    for (const std::string& name : current) {
+      auto it = std::find(baseline.begin(), baseline.end(), name);
+      if (it == baseline.end()) {
+        continue;
+      }
+      baseline_positions.push_back(std::distance(baseline.begin(), it));
+    }
+    EXPECT_TRUE(
+        std::is_sorted(baseline_positions.begin(), baseline_positions.end()));
+  }
 }
 
 struct NetNSRequest {
