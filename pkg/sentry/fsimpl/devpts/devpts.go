@@ -286,6 +286,10 @@ func (i *rootInode) allocateTerminal(ctx context.Context, creds *auth.Credential
 
 // masterClose is called when the master end of t is closed.
 func (i *rootInode) masterClose(ctx context.Context, t *Terminal) {
+	// When the master is closed, hang up the slave (replica) side.
+	// This corresponds to Linux's pty_close() calling tty_vhangup(tty->link).
+	t.replicaKTTY.Hangup(ctx)
+
 	i.mu.Lock()
 	defer i.mu.Unlock()
 

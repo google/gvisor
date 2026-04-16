@@ -228,6 +228,14 @@ const (
 // ThreadContext contains the current context of the sysmsg thread. The struct
 // facilitates switching contexts by allowing the sentry to switch pointers to
 // this struct as it needs to.
+//
+// N.B ThreadContexts are shared between all sysmsg threads within a subprocess,
+// and are necessarily writeable by any thread within the subprocess. If a
+// subprocess really wants to (i.e. sandbox break-out attempts) it can find
+// where the TC region is mapped and use other threads to manipulate this data
+// for a thread doing a context switch into the sentry.
+// This is OK because as a rule we do not trust this data; if any funny business
+// is going on the sentry simply kills the subprocess.
 type ThreadContext struct {
 	// FPState is a region of memory where:
 	//   - syshandler saves FPU state to using xsave/fxsave

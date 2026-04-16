@@ -319,7 +319,8 @@ type Cgroup interface {
 	Update(res *specs.LinuxResources) error
 	Uninstall() error
 	Join() (func(), error)
-	CPUQuota() (float64, error)
+	CPUQuota() (int64, error)
+	CPUPeriod() (int64, error)
 	CPUUsage() (uint64, error)
 	NumCPU() (int, error)
 	MemoryLimit() (uint64, error)
@@ -681,21 +682,25 @@ func (c *cgroupV1) Join() (func(), error) {
 	return cu.Release(), nil
 }
 
-// CPUQuota returns the CFS CPU quota.
-func (c *cgroupV1) CPUQuota() (float64, error) {
+// CPUQuota returns the raw CFS CPU quota in microseconds.
+// A value of -1 means unlimited.
+func (c *cgroupV1) CPUQuota() (int64, error) {
 	path := c.MakePath("cpu")
 	quota, err := getInt(path, "cpu.cfs_quota_us")
 	if err != nil {
 		return -1, err
 	}
+	return int64(quota), nil
+}
+
+// CPUPeriod returns the raw CFS CPU period in microseconds.
+func (c *cgroupV1) CPUPeriod() (int64, error) {
+	path := c.MakePath("cpu")
 	period, err := getInt(path, "cpu.cfs_period_us")
 	if err != nil {
 		return -1, err
 	}
-	if quota <= 0 || period <= 0 {
-		return -1, err
-	}
-	return float64(quota) / float64(period), nil
+	return int64(period), nil
 }
 
 // CPUUsage returns the total CPU usage of the cgroup in nanoseconds.
