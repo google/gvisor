@@ -116,13 +116,13 @@ func validateAddressFamily(family stack.AddressFamily) *syserr.AnnotatedError {
 }
 
 // supportedHooks maps each address family to its supported hooks.
-var supportedHooks [stack.NumAFs][]stack.NFHook = [stack.NumAFs][]stack.NFHook{
-	stack.IP:     {stack.NFPrerouting, stack.NFInput, stack.NFForward, stack.NFOutput, stack.NFPostrouting, stack.NFIngress},
-	stack.IP6:    {stack.NFPrerouting, stack.NFInput, stack.NFForward, stack.NFOutput, stack.NFPostrouting, stack.NFIngress},
-	stack.Inet:   {stack.NFPrerouting, stack.NFInput, stack.NFForward, stack.NFOutput, stack.NFPostrouting, stack.NFIngress},
-	stack.Arp:    {stack.NFInput, stack.NFOutput},
-	stack.Bridge: {stack.NFPrerouting, stack.NFInput, stack.NFForward, stack.NFOutput, stack.NFPostrouting, stack.NFIngress},
-	stack.Netdev: {stack.NFIngress, stack.NFEgress},
+var supportedHooks [stack.NumAFs][stack.NFNumHooks]bool = [stack.NumAFs][stack.NFNumHooks]bool{
+	stack.IP:     {true /*NFPrerouting*/, true /*NFInput*/, true /*NFForward*/, true /*NFOutput*/, true /*NFPostrouting*/, true /*NFIngress*/, false /*NFEgress*/},
+	stack.IP6:    {true /*NFPrerouting*/, true /*NFInput*/, true /*NFForward*/, true /*NFOutput*/, true /*NFPostrouting*/, true /*NFIngress*/, false /*NFEgress*/},
+	stack.Inet:   {true /*NFPrerouting*/, true /*NFInput*/, true /*NFForward*/, true /*NFOutput*/, true /*NFPostrouting*/, true /*NFIngress*/, false /*NFEgress*/},
+	stack.Arp:    {false /*NFPrerouting*/, true /*NFInput*/, false /*NFForward*/, true /*NFOutput*/, false /*NFPostrouting*/, false /*NFIngress*/, false /*NFEgress*/},
+	stack.Bridge: {true /*NFPrerouting*/, true /*NFInput*/, true /*NFForward*/, true /*NFOutput*/, true /*NFPostrouting*/, true /*NFIngress*/, false /*NFEgress*/},
+	stack.Netdev: {false /*NFPrerouting*/, false /*NFInput*/, false /*NFForward*/, false /*NFOutput*/, false /*NFPostrouting*/, true /*NFIngress*/, true /*NFEgress*/},
 }
 
 // supportedLinuxHooks maps each address family to its supported hooks for each base chain type.
@@ -160,7 +160,7 @@ func validateHook(hook stack.NFHook, family stack.AddressFamily) *syserr.Annotat
 	if hook >= stack.NFNumHooks {
 		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("invalid hook: %d", int(hook)))
 	}
-	if slices.Contains(supportedHooks[family], hook) {
+	if supportedHooks[family][hook] {
 		return nil
 	}
 
@@ -239,15 +239,15 @@ func StackHook(family stack.AddressFamily, hook uint32) (stack.NFHook, *syserr.A
 // NFTables represents the nftables state for all address families.
 // Note: unlike iptables, nftables doesn't start with any initialized tables.
 type NFTables struct {
-	filters            [stack.NumAFs]*addressFamilyFilter // Filters for each address family.
-	ip4InetBaseChains  [stack.NFNumHooks][]*Chain         // List of base chains for each hook in the IPv4-inet family.
-	ip6InetBaseChains  [stack.NFNumHooks][]*Chain         // List of base chains for each hook in the IPv6-inet family.
-	clock              tcpip.Clock                        // Clock for timing evaluations.
-	startTime          time.Time                          // Time NFTables object was created.
-	rng                rand.RNG                           // Random number generator.
-	tableHandleCounter atomicbitops.Uint64                // Table handle counter.
-	Mu                 nfTablesRWMutex                    // Mutex for tableHandles.
-	genid              uint32                             // Generation ID for nftables.
+	filters            [stack.NumAFs]*addressFamilyFilter  // Filters for each address family.
+	ip4InetBaseChains  [stack.NFNumHooks]hookFunctionStack // List of base chains for each hook in the IPv4-inet family.
+	ip6InetBaseChains  [stack.NFNumHooks]hookFunctionStack // List of base chains for each hook in the IPv6-inet family.
+	clock              tcpip.Clock                         // Clock for timing evaluations.
+	startTime          time.Time                           // Time NFTables object was created.
+	rng                rand.RNG                            // Random number generator.
+	tableHandleCounter atomicbitops.Uint64                 // Table handle counter.
+	Mu                 nfTablesRWMutex                     // Mutex for tableHandles.
+	genid              uint32                              // Generation ID for nftables.
 }
 
 // Ensures NFTables implements the NFTablesInterface.
@@ -324,8 +324,8 @@ type HookInfo struct {
 // hookFunctionStack represents the list of base chains for a specific hook.
 // The stack is ordered by priority and built as chains are added to tables.
 type hookFunctionStack struct {
-	hook       stack.NFHook
-	baseChains []*Chain
+	baseChains    []*Chain
+	natBaseChains []*Chain
 }
 
 // TableFlag is a flag for a table as supported by the nftables binary.
@@ -602,44 +602,57 @@ type standardPriority struct {
 	hooks []stack.NFHook
 }
 
+// supportedHooksAsList converts the supported hooks array to a list of hooks.
+func supportedHooksAsList(family stack.AddressFamily) []stack.NFHook {
+	var ret []stack.NFHook
+	for idx, ok := range supportedHooks[family] {
+		if ok {
+			ret = append(ret, stack.NFHook(idx))
+		}
+	}
+	return ret
+}
+
 // standardPriorityMatrix is used to look up information for the predefined
 // standard priority names.
+// TODO: b/493710955 - Not used, clean up.
 var standardPriorityMatrix = map[stack.AddressFamily](map[string]standardPriority){
 	stack.IP: spmIP,
 	// Note: IPv6 standard priorities constants currently have the same values as
 	// IPv4's, but the definitions (in the linux kernel) may change in the future.
 	stack.IP6: map[string]standardPriority{ // from uapi/linux/netfilter_ipv6.h
-		"raw":      {name: "raw", value: linux.NF_IP6_PRI_RAW, hooks: supportedHooks[stack.IP6]},
-		"mangle":   {name: "mangle", value: linux.NF_IP6_PRI_MANGLE, hooks: supportedHooks[stack.IP6]},
-		"dstnat":   {name: "dstnat", value: linux.NF_IP6_PRI_NAT_DST, hooks: []stack.NFHook{stack.NFPrerouting}},
-		"filter":   {name: "filter", value: linux.NF_IP6_PRI_FILTER, hooks: supportedHooks[stack.IP6]},
-		"security": {name: "security", value: linux.NF_IP6_PRI_SECURITY, hooks: supportedHooks[stack.IP6]},
-		"srcnat":   {name: "srcnat", value: linux.NF_IP6_PRI_NAT_SRC, hooks: []stack.NFHook{stack.NFPostrouting}},
+		"raw":      {name: "raw", value: linux.NF_IP6_PRI_RAW, hooks: supportedHooksAsList(stack.IP6)},
+		"mangle":   {name: "mangle", value: linux.NF_IP6_PRI_MANGLE, hooks: supportedHooksAsList(stack.IP6)},
+		"dstnat":   {name: "dstnat", value: linux.NF_IP6_PRI_NAT_DST, hooks: supportedHooksAsList(stack.IP6)},
+		"filter":   {name: "filter", value: linux.NF_IP6_PRI_FILTER, hooks: supportedHooksAsList(stack.IP6)},
+		"security": {name: "security", value: linux.NF_IP6_PRI_SECURITY, hooks: supportedHooksAsList(stack.IP6)},
+		"srcnat":   {name: "srcnat", value: linux.NF_IP6_PRI_NAT_SRC, hooks: supportedHooksAsList(stack.IP6)},
 	},
 	stack.Inet: spmIP,
 	stack.Arp: map[string]standardPriority{ // defined as same as IP filter priority
-		"filter": {name: "filter", value: spmIP["filter"].value, hooks: supportedHooks[stack.Arp]},
+		"filter": {name: "filter", value: spmIP["filter"].value, hooks: supportedHooksAsList(stack.Arp)},
 	},
 	stack.Bridge: map[string]standardPriority{ // from uapi/linux/netfilter_bridge.h
 		"dstnat": {name: "dstnat", value: linux.NF_BR_PRI_NAT_DST_BRIDGED, hooks: []stack.NFHook{stack.NFPrerouting}},
-		"filter": {name: "filter", value: linux.NF_BR_PRI_FILTER_BRIDGED, hooks: supportedHooks[stack.Bridge]},
+		"filter": {name: "filter", value: linux.NF_BR_PRI_FILTER_BRIDGED, hooks: supportedHooksAsList(stack.Bridge)},
 		"out":    {name: "out", value: linux.NF_BR_PRI_NAT_DST_OTHER, hooks: []stack.NFHook{stack.NFOutput}},
 		"srcnat": {name: "srcnat", value: linux.NF_BR_PRI_NAT_SRC, hooks: []stack.NFHook{stack.NFPostrouting}},
 	},
 	stack.Netdev: map[string]standardPriority{ // defined as same as IP filter priority
-		"filter": {name: "filter", value: spmIP["filter"].value, hooks: supportedHooks[stack.Netdev]},
+		"filter": {name: "filter", value: spmIP["filter"].value, hooks: supportedHooksAsList(stack.Netdev)},
 	},
 }
 
 // Used in the standardPriorityMatrix above.
 // Note: IPv4 and Inet address families use the same standard priority names.
+// TODO: b/493710955 - Not used, clean up.
 var spmIP = map[string]standardPriority{ // from uapi/linux/netfilter_ipv4.h
-	"raw":      {name: "raw", value: linux.NF_IP_PRI_RAW, hooks: supportedHooks[stack.IP]},
-	"mangle":   {name: "mangle", value: linux.NF_IP_PRI_MANGLE, hooks: supportedHooks[stack.IP]},
+	"raw":      {name: "raw", value: linux.NF_IP_PRI_RAW, hooks: supportedHooksAsList(stack.IP)},
+	"mangle":   {name: "mangle", value: linux.NF_IP_PRI_MANGLE, hooks: supportedHooksAsList(stack.IP)},
 	"dstnat":   {name: "dstnat", value: linux.NF_IP_PRI_NAT_DST, hooks: []stack.NFHook{stack.NFPrerouting}},
-	"filter":   {name: "filter", value: linux.NF_IP_PRI_FILTER, hooks: supportedHooks[stack.IP]},
-	"security": {name: "security", value: linux.NF_IP_PRI_SECURITY, hooks: supportedHooks[stack.IP]},
-	"srcnat":   {name: "srcnat", value: linux.NF_IP_PRI_NAT_SRC, hooks: []stack.NFHook{stack.NFPostrouting}},
+	"filter":   {name: "filter", value: linux.NF_IP_PRI_FILTER, hooks: supportedHooksAsList(stack.IP)},
+	"security": {name: "security", value: linux.NF_IP_PRI_SECURITY, hooks: supportedHooksAsList(stack.IP)},
+	"srcnat":   {name: "srcnat", value: linux.NF_IP_PRI_NAT_SRC, hooks: supportedHooksAsList(stack.IP)},
 }
 
 // validateBaseChainInfo ensures the base chain info is valid by checking the
@@ -718,6 +731,84 @@ var (
 	_ operation = (*metaLoad)(nil)
 	_ operation = (*metaSet)(nil)
 )
+
+// OpType represents the type of operation.
+type OpType int
+
+const (
+	// OpTypeImmediate is the immediate operation type.
+	OpTypeImmediate OpType = iota
+	// OpTypeComparison is the comparison operation type.
+	OpTypeComparison
+	// OpTypeRanged is the ranged operation type.
+	OpTypeRanged
+	// OpTypePayload is the payload operation type.
+	OpTypePayload
+	// OpTypeBitwise is the bitwise operation type.
+	OpTypeBitwise
+	// OpTypeCounter is the counter operation type.
+	OpTypeCounter
+	// OpTypeLast is the last operation type.
+	OpTypeLast
+	// OpTypeRoute is the route operation type.
+	OpTypeRoute
+	// OpTypeByteorder is the byteorder operation type.
+	OpTypeByteorder
+	// OpTypeMeta is the meta operation type.
+	OpTypeMeta
+	// OpTypeUnknown is the unknown operation type.
+	OpTypeUnknown
+)
+
+var opTypeStrings = []string{
+	OpTypeImmediate:  "immediate",
+	OpTypeComparison: "comparison",
+	OpTypeRanged:     "ranged",
+	OpTypePayload:    "payload",
+	OpTypeBitwise:    "bitwise",
+	OpTypeCounter:    "counter",
+	OpTypeLast:       "last",
+	OpTypeRoute:      "route",
+	OpTypeByteorder:  "byteorder",
+	OpTypeMeta:       "meta",
+	OpTypeUnknown:    "unknown",
+}
+
+// String returns a string representation of the operation type.
+func (o OpType) String() string {
+	if o >= 0 && o < OpTypeUnknown {
+		return opTypeStrings[o]
+	}
+	return "unknown"
+}
+
+// ToOpType converts a string to an operation type.
+func ToOpType(s string) OpType {
+	switch s {
+	case "immediate":
+		return OpTypeImmediate
+	case "cmp":
+		return OpTypeComparison
+	case "ranged":
+		return OpTypeRanged
+	case "payload":
+		return OpTypePayload
+	case "bitwise":
+		return OpTypeBitwise
+	case "counter":
+		return OpTypeCounter
+	case "last":
+		return OpTypeLast
+	case "route":
+		return OpTypeRoute
+	case "byteorder":
+		return OpTypeByteorder
+	case "meta":
+		return OpTypeMeta
+	default:
+		return OpTypeUnknown
+	}
+}
 
 //
 // Register and Register-Related Implementations.
@@ -1096,12 +1187,15 @@ func (nf *NFTables) DeepCopy() *NFTables {
 		}
 
 		for hook, hfStack := range filter.hfStacks {
-			hfStackCopy := &hookFunctionStack{
-				hook: hfStack.hook,
-			}
+			hfStackCopy := &hookFunctionStack{}
 			for _, chain := range hfStack.baseChains {
 				chainCopy := nftCopy.filters[i].tables[chain.table.name].chains[chain.name]
 				hfStackCopy.baseChains = append(hfStackCopy.baseChains, chainCopy)
+				nftCopy.addChainToCache(chainCopy)
+			}
+			for _, chain := range hfStack.natBaseChains {
+				chainCopy := nftCopy.filters[i].tables[chain.table.name].chains[chain.name]
+				hfStackCopy.natBaseChains = append(hfStackCopy.natBaseChains, chainCopy)
 				nftCopy.addChainToCache(chainCopy)
 			}
 			nftCopy.filters[i].hfStacks[hook] = hfStackCopy
