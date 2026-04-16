@@ -17,8 +17,10 @@ package hostinet
 import (
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -149,6 +151,13 @@ func (s *Stack) Interfaces() map[int32]inet.Interface {
 		return nil
 	}
 	return ifs
+}
+
+// InterfaceIDs implements inet.Stack.InterfaceIDs.
+// hostinet reads interfaces from the host each time, so we sort by ID to
+// ensure a deterministic order consistent with interface registration order.
+func (s *Stack) InterfaceIDs() []int32 {
+	return slices.Sorted(maps.Keys(s.Interfaces()))
 }
 
 // RemoveInterface implements inet.Stack.RemoveInterface.

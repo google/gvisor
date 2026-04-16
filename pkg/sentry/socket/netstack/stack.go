@@ -16,6 +16,8 @@ package netstack
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -151,6 +153,13 @@ func (s *Stack) Interfaces() map[int32]inet.Interface {
 		is[int32(id)] = makeInterfaceInfo(&ni)
 	}
 	return is
+}
+
+// InterfaceIDs implements inet.Stack.InterfaceIDs.
+func (s *Stack) InterfaceIDs() []int32 {
+	// Since gVisor allocates NIC IDs monotonically (like Linux ifindex),
+	// sorting by ID is equivalent to registration order.
+	return slices.Sorted(maps.Keys(s.Interfaces()))
 }
 
 // RemoveInterface implements inet.Stack.RemoveInterface.

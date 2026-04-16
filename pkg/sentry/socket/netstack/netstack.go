@@ -3738,9 +3738,10 @@ func ifconfIoctl(ctx context.Context, t *kernel.Task, _ usermem.IO, ifc *linux.I
 
 	max := ifc.Len
 	ifc.Len = 0
-	for key, ifaceAddrs := range stk.InterfaceAddrs() {
+	ifAddrs := stk.InterfaceAddrs()
+	for _, key := range stk.InterfaceIDs() {
 		iface := stk.Interfaces()[key]
-		for _, ifaceAddr := range ifaceAddrs {
+		for _, ifaceAddr := range ifAddrs[key] {
 			// Don't write past the end of the buffer.
 			if ifc.Len+int32(linux.SizeOfIFReq) > max {
 				break
