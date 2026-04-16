@@ -2583,6 +2583,79 @@ TEST(MountTest, OverlayfsSgidBitIsCopiedUp) {
     EXPECT_TRUE(merged_st_after_touch.st_mode & S_ISGID);
   }
 }
+
+// Renaming a directory on an overlay inside a user namespace requires
+// user.overlay.* xattrs to mark the directory opaque.
+TEST(MountTest, OverlayfsDirectoryRenameInUserNamespace) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
+  auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(base_dir.path())));
+
+  const std::function<void()> parent = [] {};
+  const std::function<void()> child = [&base_dir] {
+    TEST_CHECK_SUCCESS(mount("tmpfs", base_dir.path().c_str(), "tmpfs", 0,
+                             "mode=1777,size=10m"));
+    auto tmpfs_cleanup = Cleanup([&base_dir] {
+      TEST_CHECK_SUCCESS(umount2(base_dir.path().c_str(), 0));
+    });
+
+    auto lower = JoinPath(base_dir.path(), "lower");
+    auto upper = JoinPath(base_dir.path(), "upper");
+    auto work = JoinPath(base_dir.path(), "work");
+    auto merged = JoinPath(base_dir.path(), "merged");
+    TEST_CHECK_SUCCESS(mkdir(lower.c_str(), 0755));
+    TEST_CHECK_SUCCESS(mkdir(upper.c_str(), 0755));
+    TEST_CHECK_SUCCESS(mkdir(work.c_str(), 0755));
+    TEST_CHECK_SUCCESS(mkdir(merged.c_str(), 0755));
+
+    // 1. Create the DESTINATION directory in lower.
+    // (It must be empty so standard POSIX rename allows overwriting it).
+    {
+      auto lower_renamed = JoinPath(lower, "renamed");
+      TEST_CHECK_SUCCESS(mkdir(lower_renamed.c_str(), 0755));
+    }
+
+    std::string opts = "lowerdir=" + lower + ",upperdir=" + upper +
+                       ",workdir=" + work + ",userxattr";
+    TEST_CHECK_SUCCESS(
+        mount("overlay", merged.c_str(), "overlay", 0, opts.c_str()));
+    auto overlayfs_cleanup =
+        Cleanup([&merged] { TEST_CHECK_SUCCESS(umount2(merged.c_str(), 0)); });
+
+    // 2. Create the SOURCE directory directly in merged.
+    // Because it doesn't exist in lower, it is a "pure upper" directory.
+    auto mydir = JoinPath(merged, "mydir");
+    TEST_CHECK_SUCCESS(mkdir(mydir.c_str(), 0755));
+
+    int fd =
+        open(JoinPath(mydir, "file.txt").c_str(), O_WRONLY | O_CREAT, 0644);
+    TEST_CHECK(fd >= 0);
+    TEST_CHECK_SUCCESS(close(fd));
+
+    // 3. Rename the pure upper directory over the existing lower directory.
+    // - This avoids EXDEV on Linux because 'mydir' is pure upper.
+    // - This forces the kernel to apply user.overlay.opaque="y" to 'renamed'
+    //   so that 'lower/renamed' is hidden.
+    auto renamed = JoinPath(merged, "renamed");
+    TEST_CHECK_SUCCESS(rename(mydir.c_str(), renamed.c_str()));
+
+    // 4. Verify the rename succeeded and contents are correct
+    struct stat st;
+    TEST_CHECK_SUCCESS(stat(renamed.c_str(), &st));
+    TEST_CHECK(S_ISDIR(st.st_mode));
+
+    // Original directory should be gone
+    TEST_CHECK(stat(mydir.c_str(), &st) == -1 && errno == ENOENT);
+
+    // File inside should have moved with the directory
+    TEST_CHECK_SUCCESS(stat(JoinPath(renamed, "file.txt").c_str(), &st));
+    TEST_CHECK(S_ISREG(st.st_mode));
+  };
+
+  EXPECT_THAT(InForkedUserMountNamespace(parent, child),
+              IsPosixErrorOkAndHolds(0));
+}
+
 }  // namespace
 
 }  // namespace testing

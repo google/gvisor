@@ -31,16 +31,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
-// _OVL_XATTR_PREFIX is an extended attribute key prefix to identify overlayfs
-// attributes.
-// Linux: fs/overlayfs/overlayfs.h:OVL_XATTR_PREFIX
-const _OVL_XATTR_PREFIX = linux.XATTR_TRUSTED_PREFIX + "overlay."
-
-// _OVL_XATTR_OPAQUE is an extended attribute key whose value is set to "y" for
-// opaque directories.
-// Linux: fs/overlayfs/overlayfs.h:OVL_XATTR_OPAQUE
-const _OVL_XATTR_OPAQUE = _OVL_XATTR_PREFIX + "opaque"
-
 func isWhiteout(stat *linux.Statx) bool {
 	return stat.Mode&linux.S_IFMT == linux.S_IFCHR && stat.RdevMajor == 0 && stat.RdevMinor == 0
 }
@@ -310,7 +300,7 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 			Root:  childVD,
 			Start: childVD,
 		}, &vfs.GetXattrOptions{
-			Name: _OVL_XATTR_OPAQUE,
+			Name: fs.xattrOpaque,
 			Size: 1,
 		})
 		return !(err == nil && opaqueVal == "y")
@@ -745,7 +735,7 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 			// the new directory should not be merged with, so mark as opaque.
 			// See fs/overlayfs/dir.c:ovl_create_over_whiteout() -> ovl_set_opaque().
 			if err := vfsObj.SetXattrAt(ctx, fs.creds, &pop, &vfs.SetXattrOptions{
-				Name:  _OVL_XATTR_OPAQUE,
+				Name:  fs.xattrOpaque,
 				Value: "y",
 			}); err != nil {
 				if cleanupErr := vfsObj.RmdirAt(ctx, fs.creds, &pop); cleanupErr != nil {
@@ -763,7 +753,7 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 			// fs.lookupLocked(). Allow it to fail since this is an optimization.
 			// See fs/overlayfs/dir.c:ovl_create_upper() -> ovl_set_opaque().
 			_ = vfsObj.SetXattrAt(ctx, fs.creds, &pop, &vfs.SetXattrOptions{
-				Name:  _OVL_XATTR_OPAQUE,
+				Name:  fs.xattrOpaque,
 				Value: "y",
 			})
 		}
@@ -1322,7 +1312,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	}
 	if renamed.isDir() {
 		if err := vfsObj.SetXattrAt(ctx, fs.creds, &newpop, &vfs.SetXattrOptions{
-			Name:  _OVL_XATTR_OPAQUE,
+			Name:  fs.xattrOpaque,
 			Value: "y",
 		}); err != nil {
 			panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to make renamed directory opaque: %v", err))
@@ -1689,8 +1679,8 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 
 // isOverlayXattr returns whether the given extended attribute configures the
 // overlay.
-func isOverlayXattr(name string) bool {
-	return strings.HasPrefix(name, _OVL_XATTR_PREFIX)
+func (fs *filesystem) isOverlayXattr(name string) bool {
+	return strings.HasPrefix(name, fs.xattrPrefix)
 }
 
 // ListXattrAt implements vfs.FilesystemImpl.ListXattrAt.
@@ -1717,7 +1707,7 @@ func (fs *filesystem) listXattr(ctx context.Context, d *dentry, size uint64) ([]
 	// Filter out all overlay attributes.
 	n := 0
 	for _, name := range names {
-		if !isOverlayXattr(name) {
+		if !fs.isOverlayXattr(name) {
 			names[n] = name
 			n++
 		}
@@ -1745,7 +1735,7 @@ func (fs *filesystem) getXattr(ctx context.Context, d *dentry, creds *auth.Crede
 
 	// Return EOPNOTSUPP when fetching an overlay attribute.
 	// See fs/overlayfs/super.c:ovl_own_xattr_get().
-	if isOverlayXattr(opts.Name) {
+	if fs.isOverlayXattr(opts.Name) {
 		return "", linuxerr.EOPNOTSUPP
 	}
 
@@ -1783,7 +1773,7 @@ func (fs *filesystem) setXattrLocked(ctx context.Context, d *dentry, mnt *vfs.Mo
 
 	// Return EOPNOTSUPP when setting an overlay attribute.
 	// See fs/overlayfs/super.c:ovl_own_xattr_set().
-	if isOverlayXattr(opts.Name) {
+	if fs.isOverlayXattr(opts.Name) {
 		return linuxerr.EOPNOTSUPP
 	}
 
@@ -1828,7 +1818,7 @@ func (fs *filesystem) removeXattrLocked(ctx context.Context, d *dentry, mnt *vfs
 	// Like SetXattrAt, return EOPNOTSUPP when removing an overlay attribute.
 	// Linux passes the remove request to xattr_handler->set.
 	// See fs/xattr.c:vfs_removexattr().
-	if isOverlayXattr(name) {
+	if fs.isOverlayXattr(name) {
 		return linuxerr.EOPNOTSUPP
 	}
 
