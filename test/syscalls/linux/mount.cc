@@ -27,6 +27,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/statfs.h>
+#include <sys/sysmacros.h>
 #include <sys/un.h>
 #include <sys/vfs.h>
 #include <unistd.h>
@@ -2583,6 +2584,156 @@ TEST(MountTest, OverlayfsSgidBitIsCopiedUp) {
     EXPECT_TRUE(merged_st_after_touch.st_mode & S_ISGID);
   }
 }
+// Test that overlay-on-overlay works: a nested overlay mount can be created
+// on top of an existing overlay, with working whiteouts and xattrs.
+TEST(MountTest, OverlayOnOverlay) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  // Create a base tmpfs for the parent overlay.
+  auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  ASSERT_THAT(mount("tmpfs", base_dir.path().c_str(), "tmpfs", 0, "mode=1777"),
+              SyscallSucceeds());
+  auto tmpfs_cleanup = Cleanup([&base_dir] {
+    ASSERT_THAT(umount2(base_dir.path().c_str(), MNT_DETACH),
+                SyscallSucceeds());
+  });
+
+  // Create the parent overlay (simulates gVisor's rootfs overlay).
+  auto parent_lower =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto parent_upper =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto parent_work =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto parent_merged =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+
+  // Add a file to the parent lower layer.
+  std::string lower_file = parent_lower.path() + "/lower_file";
+  ASSERT_NO_ERRNO(CreateWithContents(lower_file, "from_lower", 0644));
+
+  std::string parent_opts = "lowerdir=" + parent_lower.path() +
+                            ",upperdir=" + parent_upper.path() +
+                            ",workdir=" + parent_work.path();
+  ASSERT_THAT(mount("overlay", parent_merged.path().c_str(), "overlay", 0,
+                    parent_opts.c_str()),
+              SyscallSucceeds());
+  auto parent_cleanup = Cleanup([&parent_merged] {
+    umount2(parent_merged.path().c_str(), MNT_DETACH);
+  });
+
+  // Verify the parent overlay works.
+  std::string merged_lower_file = parent_merged.path() + "/lower_file";
+  struct stat st;
+  ASSERT_THAT(stat(merged_lower_file.c_str(), &st), SyscallSucceeds());
+
+  // Create directories for the nested overlay ON the parent overlay.
+  std::string nested_lower_dir = parent_merged.path() + "/nested_lower";
+  std::string nested_upper_dir = parent_merged.path() + "/nested_upper";
+  std::string nested_work_dir = parent_merged.path() + "/nested_work";
+  std::string nested_merged_dir = parent_merged.path() + "/nested_merged";
+  ASSERT_THAT(mkdir(nested_lower_dir.c_str(), 0755), SyscallSucceeds());
+  ASSERT_THAT(mkdir(nested_upper_dir.c_str(), 0755), SyscallSucceeds());
+  ASSERT_THAT(mkdir(nested_work_dir.c_str(), 0755), SyscallSucceeds());
+  ASSERT_THAT(mkdir(nested_merged_dir.c_str(), 0755), SyscallSucceeds());
+
+  // Add a file to the nested lower layer.
+  std::string nested_lower_file = nested_lower_dir + "/testfile";
+  ASSERT_NO_ERRNO(CreateWithContents(nested_lower_file, "nested_lower", 0644));
+
+  // Mount the nested overlay on top of the parent overlay.
+  std::string nested_opts = "lowerdir=" + nested_lower_dir +
+                            ",upperdir=" + nested_upper_dir +
+                            ",workdir=" + nested_work_dir;
+  ASSERT_THAT(mount("overlay", nested_merged_dir.c_str(), "overlay", 0,
+                    nested_opts.c_str()),
+              SyscallSucceeds());
+  auto nested_cleanup = Cleanup([&nested_merged_dir] {
+    umount2(nested_merged_dir.c_str(), MNT_DETACH);
+  });
+
+  // Read from the nested overlay's lower layer.
+  std::string nested_merged_file = nested_merged_dir + "/testfile";
+  ASSERT_THAT(stat(nested_merged_file.c_str(), &st), SyscallSucceeds());
+
+  // Write a new file through the nested overlay.
+  std::string new_file = nested_merged_dir + "/newfile";
+  ASSERT_NO_ERRNO(CreateWithContents(new_file, "new_content", 0644));
+  ASSERT_THAT(stat(new_file.c_str(), &st), SyscallSucceeds());
+
+  // Verify the new file landed in the nested upper layer.
+  std::string upper_new_file = nested_upper_dir + "/newfile";
+  ASSERT_THAT(stat(upper_new_file.c_str(), &st), SyscallSucceeds());
+
+  // Delete through the nested overlay (creates a whiteout).
+  ASSERT_THAT(unlink(nested_merged_file.c_str()), SyscallSucceeds());
+  ASSERT_THAT(stat(nested_merged_file.c_str(), &st),
+              SyscallFailsWithErrno(ENOENT));
+
+  // The new file should still be accessible.
+  ASSERT_THAT(stat(new_file.c_str(), &st), SyscallSucceeds());
+}
+
+// Test that user-created char(0,0) devices are visible through overlay
+// and not mistaken for overlay whiteouts.
+TEST(MountTest, OverlayCharZeroDeviceVisible) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  ASSERT_THAT(mount("tmpfs", base_dir.path().c_str(), "tmpfs", 0, "mode=1777"),
+              SyscallSucceeds());
+  auto tmpfs_cleanup = Cleanup([&base_dir] {
+    ASSERT_THAT(umount2(base_dir.path().c_str(), MNT_DETACH),
+                SyscallSucceeds());
+  });
+
+  auto lower =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto upper =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto work =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto merged =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+
+  std::string opts = "lowerdir=" + lower.path() + ",upperdir=" + upper.path() +
+                     ",workdir=" + work.path();
+  ASSERT_THAT(
+      mount("overlay", merged.path().c_str(), "overlay", 0, opts.c_str()),
+      SyscallSucceeds());
+  auto overlay_cleanup =
+      Cleanup([&merged] { umount2(merged.path().c_str(), MNT_DETACH); });
+
+  // Create a char(0,0) device with mode 0 (same as Docker overlay2 whiteouts)
+  // through the overlay. This should NOT be hidden by the overlay.
+  std::string dev_path = merged.path() + "/chardev";
+  ASSERT_THAT(mknod(dev_path.c_str(), S_IFCHR, makedev(0, 0)),
+              SyscallSucceeds());
+
+  // The device must be visible via stat.
+  struct stat st;
+  ASSERT_THAT(stat(dev_path.c_str(), &st), SyscallSucceeds());
+  EXPECT_TRUE(S_ISCHR(st.st_mode));
+  EXPECT_EQ(major(st.st_rdev), 0);
+  EXPECT_EQ(minor(st.st_rdev), 0);
+
+  // The device must be visible via readdir.
+  auto dir = opendir(merged.path().c_str());
+  ASSERT_NE(dir, nullptr);
+  bool found = false;
+  while (auto* entry = readdir(dir)) {
+    if (std::string(entry->d_name) == "chardev") {
+      found = true;
+      break;
+    }
+  }
+  closedir(dir);
+  EXPECT_TRUE(found) << "char(0,0) device not visible in readdir";
+
+  // Chown must succeed (Docker does this after creating whiteouts).
+  ASSERT_THAT(chown(dev_path.c_str(), 0, 0), SyscallSucceeds());
+}
+
 }  // namespace
 
 }  // namespace testing

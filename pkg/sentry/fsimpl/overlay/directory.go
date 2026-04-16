@@ -92,6 +92,20 @@ func (d *dentry) collectWhiteoutsForRmdirLocked(ctx context.Context) (map[string
 				readdirErr = linuxerr.ENOTEMPTY
 				return false
 			}
+			// Verify it's an overlay-created whiteout via xattr tag.
+			_, xattrErr := vfsObj.GetXattrAt(ctx, d.fs.creds, &vfs.PathOperation{
+				Root:  layerVD,
+				Start: layerVD,
+				Path:  fspath.Parse(maybeWhiteoutName),
+			}, &vfs.GetXattrOptions{
+				Name: whiteoutXattr,
+				Size: 1,
+			})
+			if xattrErr != nil {
+				// No xattr tag — user-created char(0,0), not a whiteout.
+				readdirErr = linuxerr.ENOTEMPTY
+				return false
+			}
 			whiteouts[maybeWhiteoutName] = isUpper
 		}
 		// Continue iteration since we haven't found any non-whiteout files in
@@ -230,8 +244,21 @@ func (d *dentry) getDirentsLocked(ctx context.Context) ([]vfs.Dirent, error) {
 				return false
 			}
 			if stat.RdevMajor == 0 && stat.RdevMinor == 0 {
-				// This file is a whiteout; don't emit a dirent for it.
-				continue
+				// Check if this is an overlay-created whiteout (has xattr tag)
+				// vs a user-created char(0,0) device.
+				_, xattrErr := vfsObj.GetXattrAt(ctx, d.fs.creds, &vfs.PathOperation{
+					Root:  layerVD,
+					Start: layerVD,
+					Path:  fspath.Parse(dirent.Name),
+				}, &vfs.GetXattrOptions{
+					Name: whiteoutXattr,
+					Size: 1,
+				})
+				if xattrErr == nil {
+					// Confirmed overlay whiteout; don't emit a dirent for it.
+					continue
+				}
+				// User-created char(0,0); emit normally.
 			}
 			dirent.NextOff = int64(len(dirents) + 1)
 			dirents = append(dirents, dirent)

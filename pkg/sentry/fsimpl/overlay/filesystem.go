@@ -45,6 +45,26 @@ func isWhiteout(stat *linux.Statx) bool {
 	return stat.Mode&linux.S_IFMT == linux.S_IFCHR && stat.RdevMajor == 0 && stat.RdevMinor == 0
 }
 
+// whiteoutXattr is set on overlay-created whiteout devices to distinguish
+// them from user-created char(0,0) devices. Without this, the parent
+// overlay hides char(0,0) files created by nested overlay drivers (e.g.,
+// Docker overlay2), breaking container image layer extraction.
+const whiteoutXattr = "trusted.gvisor.whiteout"
+
+// isConfirmedWhiteout checks whether a char(0,0) device at childVD is an
+// overlay-created whiteout (tagged with whiteoutXattr) rather than a
+// user-created device node.
+func isConfirmedWhiteout(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, childVD vfs.VirtualDentry) bool {
+	_, err := vfsObj.GetXattrAt(ctx, creds, &vfs.PathOperation{
+		Root:  childVD,
+		Start: childVD,
+	}, &vfs.GetXattrOptions{
+		Name: whiteoutXattr,
+		Size: 1,
+	})
+	return err == nil
+}
+
 // Sync implements vfs.FilesystemImpl.Sync.
 func (fs *filesystem) Sync(ctx context.Context) error {
 	if fs.opts.UpperRoot.Ok() {
@@ -252,12 +272,14 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 		}
 
 		if isWhiteout(&stat) {
-			// This is a whiteout, so it "doesn't exist" on this layer, and
-			// layers below this one are ignored.
-			if isUpper {
-				topLookupLayer = lookupLayerUpperWhiteout
+			if isConfirmedWhiteout(ctx, vfsObj, fs.creds, childVD) {
+				// This is a whiteout, so it "doesn't exist" on this layer, and
+				// layers below this one are ignored.
+				if isUpper {
+					topLookupLayer = lookupLayerUpperWhiteout
+				}
+				return false
 			}
-			return false
 		}
 		isDir := stat.Mode&linux.S_IFMT == linux.S_IFDIR
 		if topLookupLayer != lookupLayerNone && !isDir {
@@ -391,12 +413,24 @@ func (fs *filesystem) lookupLayerLocked(ctx context.Context, parent *dentry, nam
 			return false
 		}
 		if isWhiteout(&stat) {
-			// This is a whiteout, so it "doesn't exist" on this layer, and
-			// layers below this one are ignored.
-			if isUpper {
-				lookupLayer = lookupLayerUpperWhiteout
+			// Verify this is an overlay-created whiteout, not a user-
+			// created char(0,0) device (e.g., from Docker overlay2).
+			_, xattrErr := fs.vfsfs.VirtualFilesystem().GetXattrAt(ctx, fs.creds, &vfs.PathOperation{
+				Root:  parentVD,
+				Start: parentVD,
+				Path:  childPath,
+			}, &vfs.GetXattrOptions{
+				Name: whiteoutXattr,
+				Size: 1,
+			})
+			if xattrErr == nil {
+				// Confirmed overlay whiteout.
+				if isUpper {
+					lookupLayer = lookupLayerUpperWhiteout
+				}
+				return false
 			}
-			return false
+			// No whiteout xattr — treat as a regular char device.
 		}
 		// The file exists; we can stop searching.
 		if isUpper {
@@ -570,16 +604,30 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, ct 
 }
 
 // CreateWhiteout creates a whiteout at pop. Whiteouts are created with
-// character devices with device ID = 0.
+// character devices with device ID = 0, tagged with whiteoutXattr to
+// distinguish them from user-created char(0,0) devices.
 //
 // Preconditions: pop's parent directory has been copied up.
 func CreateWhiteout(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, pop *vfs.PathOperation) error {
 	major, minor := linux.DecodeDeviceID(linux.WHITEOUT_DEV)
-	return vfsObj.MknodAt(ctx, creds, pop, &vfs.MknodOptions{
+	if err := vfsObj.MknodAt(ctx, creds, pop, &vfs.MknodOptions{
 		Mode:     linux.S_IFCHR | linux.WHITEOUT_MODE,
 		DevMajor: uint32(major),
 		DevMinor: minor,
-	})
+	}); err != nil {
+		return err
+	}
+	// Tag the whiteout so isConfirmedWhiteout can distinguish it from
+	// user-created char(0,0) devices (e.g., Docker overlay2 whiteouts).
+	if err := vfsObj.SetXattrAt(ctx, creds, pop, &vfs.SetXattrOptions{
+		Name:  whiteoutXattr,
+		Value: "y",
+	}); err != nil {
+		// Best-effort: if we can't set the xattr, the whiteout still
+		// works but may not be recognized by isConfirmedWhiteout.
+		log.Warningf("overlay: failed to tag whiteout with xattr: %v", err)
+	}
+	return nil
 }
 
 func (fs *filesystem) cleanupRecreateWhiteout(ctx context.Context, vfsObj *vfs.VirtualFilesystem, pop *vfs.PathOperation) {
@@ -774,9 +822,15 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 // MknodAt implements vfs.FilesystemImpl.MknodAt.
 func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.MknodOptions) error {
 	return fs.doCreateAt(ctx, rp, createNonDirectory, func(parent *dentry, childName string, haveUpperWhiteout bool) error {
-		// Disallow attempts to create whiteouts.
+		// Disallow attempts to create whiteouts unless the caller has
+		// CAP_SYS_ADMIN. This is needed for overlay-on-overlay support:
+		// container tools like buildkit convert OCI whiteout files (.wh.*)
+		// into overlay-native whiteouts (char 0,0 devices) on the upper
+		// layer directories, which go through the parent overlay.
 		if opts.Mode&linux.S_IFMT == linux.S_IFCHR && opts.DevMajor == 0 && opts.DevMinor == 0 {
-			return linuxerr.EPERM
+			if !rp.Credentials().HasCapabilityIn(linux.CAP_SYS_ADMIN, rp.Credentials().UserNamespace) {
+				return linuxerr.EPERM
+			}
 		}
 		vfsObj := fs.vfsfs.VirtualFilesystem()
 		pop := vfs.PathOperation{
@@ -1743,10 +1797,18 @@ func (fs *filesystem) getXattr(ctx context.Context, d *dentry, creds *auth.Crede
 		return "", err
 	}
 
-	// Return EOPNOTSUPP when fetching an overlay attribute.
+	// Return EOPNOTSUPP when fetching an overlay attribute, unless the
+	// caller has CAP_SYS_ADMIN (needed for overlay-on-overlay: nested
+	// overlay reads trusted.overlay.opaque from its layer directories).
 	// See fs/overlayfs/super.c:ovl_own_xattr_get().
 	if isOverlayXattr(opts.Name) {
-		return "", linuxerr.EOPNOTSUPP
+		if !creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, creds.UserNamespace) {
+			return "", linuxerr.EOPNOTSUPP
+		}
+		// Pass through to the upper layer.
+		vfsObj := d.fs.vfsfs.VirtualFilesystem()
+		top := d.topLayer()
+		return vfsObj.GetXattrAt(ctx, d.fs.creds, &vfs.PathOperation{Root: top, Start: top}, opts)
 	}
 
 	// Analogous to fs/overlayfs/super.c:ovl_other_xattr_get().
@@ -1781,10 +1843,13 @@ func (fs *filesystem) setXattrLocked(ctx context.Context, d *dentry, mnt *vfs.Mo
 		return err
 	}
 
-	// Return EOPNOTSUPP when setting an overlay attribute.
+	// Return EOPNOTSUPP when setting an overlay attribute, unless the
+	// caller has CAP_SYS_ADMIN (needed for overlay-on-overlay).
 	// See fs/overlayfs/super.c:ovl_own_xattr_set().
 	if isOverlayXattr(opts.Name) {
-		return linuxerr.EOPNOTSUPP
+		if !creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, creds.UserNamespace) {
+			return linuxerr.EOPNOTSUPP
+		}
 	}
 
 	// Analogous to fs/overlayfs/super.c:ovl_other_xattr_set().
