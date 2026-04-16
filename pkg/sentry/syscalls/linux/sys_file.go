@@ -60,9 +60,16 @@ func mknodat(t *kernel.Task, dirfd int32, addr hostarch.Addr, mode linux.FileMod
 	}
 	defer tpop.Release(t)
 
-	// "Zero file type is equivalent to type S_IFREG." - mknod(2)
-	if mode.FileType() == 0 {
+	switch mode.FileType() {
+	case 0:
+		// "Zero file type is equivalent to type S_IFREG." - mknod(2)
 		mode |= linux.ModeRegular
+	case linux.ModeCharacterDevice, linux.ModeBlockDevice:
+		// Linux requires CAP_MKNOD to create block or character device nodes.
+		// See fs/namei.c:vfs_mknod().
+		if !t.HasCapabilityIn(linux.CAP_MKNOD, t.Credentials().UserNamespace) {
+			return linuxerr.EPERM
+		}
 	}
 	major, minor := linux.DecodeDeviceID(dev)
 	return t.Kernel().VFS().MknodAt(t, t.Credentials(), &tpop.pop, &vfs.MknodOptions{
