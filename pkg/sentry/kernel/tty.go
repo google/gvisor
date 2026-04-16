@@ -158,3 +158,22 @@ func (tty *TTY) CheckChange(ctx context.Context, sig linux.Signal) error {
 	_ = pg.SendSignal(SignalInfoPriv(sig))
 	return linuxerr.ERESTARTSYS
 }
+
+// Hangup releases the controlling terminal and sends SIGHUP/SIGCONT to
+// the foreground process group. This is called on the replica (slave) TTY
+// when the PTY master is closed, corresponding to Linux's pty_close()
+// calling tty_vhangup(tty->link).
+func (tty *TTY) Hangup(ctx context.Context) {
+	tty.mu.Lock()
+	tg := tty.tg
+	tty.mu.Unlock()
+
+	if tg == nil {
+		// This TTY is not a controlling terminal.
+		return
+	}
+
+	// Reuse the existing ReleaseControllingTTY logic which handles
+	// sending SIGHUP/SIGCONT and clearing the controlling terminal.
+	_ = tg.ReleaseControllingTTY(tty)
+}
