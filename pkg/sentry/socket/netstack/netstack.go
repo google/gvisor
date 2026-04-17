@@ -2059,6 +2059,11 @@ func SetSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 		return nil
 
 	case linux.SO_BINDTODEVICE:
+		// Linux requires CAP_NET_RAW to use SO_BINDTODEVICE.
+		// See net/core/sock.c:sock_setsockopt().
+		if !t.HasCapabilityIn(linux.CAP_NET_RAW, t.NetworkNamespace().UserNamespace()) {
+			return syserr.ErrNotPermitted
+		}
 		n := bytes.IndexByte(optVal, 0)
 		if n == -1 {
 			n = len(optVal)

@@ -24,6 +24,7 @@
 #include "absl/time/time.h"
 #include "test/syscalls/linux/socket_inet_loopback_test_params.h"
 #include "test/util/capability_util.h"
+#include "test/util/linux_capability_util.h"
 #include "test/util/save_util.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
@@ -427,6 +428,32 @@ TEST_P(SocketMultiProtocolInetLoopbackIsolatedTest, BindToDeviceReusePort) {
   ASSERT_THAT(bind(socket2.get(), AsSockAddr(&addr.addr), addr.addr_len),
               SyscallSucceeds());
 }
+
+#ifndef __Fuchsia__  // Fuchsia doesn't support caps.
+// Test that SO_BINDTODEVICE requires CAP_NET_RAW.
+// Linux enforces this in net/core/sock.c:sock_setsockopt().
+TEST_P(SocketMultiProtocolInetLoopbackIsolatedTest,
+       BindToDeviceRequiresCapNetRaw) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HaveRawIPSocketCapability(AF_INET, IPPROTO_RAW)));
+
+  ProtocolTestParam const& param = GetParam();
+  TestAddress const& test_addr = V4Loopback();
+
+  const FileDescriptor sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(test_addr.family(), param.type, 0));
+
+  const char kLoopbackDeviceName[] = "lo";
+  ASSERT_THAT(setsockopt(sock.get(), SOL_SOCKET, SO_BINDTODEVICE,
+                         kLoopbackDeviceName, strlen(kLoopbackDeviceName)),
+              SyscallSucceeds());
+
+  AutoCapability cap(CAP_NET_RAW, false);
+  EXPECT_THAT(setsockopt(sock.get(), SOL_SOCKET, SO_BINDTODEVICE,
+                         kLoopbackDeviceName, strlen(kLoopbackDeviceName)),
+              SyscallFailsWithErrno(EPERM));
+}
+#endif  // __Fuchsia__
 
 TEST_P(SocketMultiProtocolInetLoopbackIsolatedTest,
        V4EphemeralPortReservedReuseAddr) {

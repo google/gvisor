@@ -17,6 +17,7 @@
 #include <net/if.h>
 
 #include "absl/cleanup/cleanup.h"
+#include "test/util/capability_util.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
@@ -988,6 +989,9 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
 // another interface.
 TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
        IpMulticastLoopbackBindToOneIfSetMcastIfToAnother) {
+  // setsockopt(SO_BINDTODEVICE) requires CAP_NET_RAW.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+      HaveRawIPSocketCapability(GetParam().domain, GetParam().protocol)));
   // Run through all possible combinations of index and address for
   // IP_MULTICAST_IF that selects the loopback interface.
   ip_mreqn ifaces[] = {
