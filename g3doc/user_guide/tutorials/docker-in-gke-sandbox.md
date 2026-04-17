@@ -4,25 +4,34 @@ Docker is a platform designed to help developers build, share, and run container
 applications.
 
 In gVisor, all basic docker commands should function as expected. The host
-network driver and the bridge network driver are tested and supported.
-
-> gVisor supports Docker Engine up to version 27 in GKE.
+network driver and the bridge network driver are supported.
 
 ## How to run Docker in a GKE Sandbox
 
+### Supported Docker version mapping in GKE cluster
+
+           | GKE standard cluster | GKE autopilot cluster
+---------- | -------------------- | ---------------------
+Docker v27 | 1.29.0 and later     | 1.33.2 and later
+Docker v28 | 1.35.3 and later     | 1.35.3 and later
+Docker v29 | not supported        | not supported
+
 ### GKE standard cluster
 
-First, install a GKE standard cluster (1.29.0 or higher) and deploy a node pool
-with gVisor enabled. You can view the full documentation
+Install a GKE standard cluster and deploy a node pool with gVisor enabled. You
+can view the full documentation
 [here](https://cloud.google.com/kubernetes-engine/docs/how-to/sandbox-pods#enabling).
 
 ### GKE Autopilot cluster
 
 Alternatively to GKE standard cluster, you could run docker in gVisor at GKE
-autopilot cluster, the version needs to be 1.33.2-gke.4655000 or higher. When
-creating the autopilot cluster, please add the option
+autopilot cluster. GKE autopilot is a fully managed mode of operation in GKE
+that automates cluster infrastructure management, including node provisioning,
+scaling, and security.
+
+When creating the autopilot cluster, please add the option
 `--workload-policies=allow-net-admin` to allow NET_ADMIN capability that will be
-granted by the gVisor sandbox.
+granted by the gVisor sandbox which is needed by docker daemon.
 
 An example command to start an GKE autopilot cluster will be:
 
@@ -68,7 +77,7 @@ spec:
 > daemon that is running inside sandbox.
 
 This YAML file defines a Kubernetes Pod named docker-in-gvisor that will run a
-single container from the avagin/docker-in-gvisor:0.1 image.
+single container from the {registry_url}/docker-in-gvisor:latest image.
 
 Apply the pod YAML to your GKE cluster using the kubectl apply command:
 
