@@ -25,6 +25,7 @@ go_library(
         "nft_meta.go",
         "nft_metaload.go",
         "nft_metaset.go",
+        "nft_nat.go",
         "nft_payload.go",
         "nft_payload_load.go",
         "nft_payload_set.go",

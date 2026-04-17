@@ -66,7 +66,7 @@ func (op metaSet) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rul
 }
 
 func (op metaSet) GetExprName() string {
-	return "meta"
+	return OpTypeMeta.String()
 }
 
 func (op metaSet) Dump() ([]byte, *syserr.AnnotatedError) {
