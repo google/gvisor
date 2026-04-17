@@ -68,12 +68,19 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sentry/vfs/memxattr"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/unet"
 )
 
 // Name is the default filesystem name.
 const Name = "9p"
+
+// Overlay xattr namespaces emulated in the sentry; see isOverlayXattr.
+const (
+	overlayTrustedPrefix = linux.XATTR_TRUSTED_PREFIX + "overlay."
+	overlayUserPrefix    = linux.XATTR_USER_PREFIX + "overlay."
+)
 
 // Mount option names for goferfs.
 const (
@@ -962,6 +969,14 @@ type inode struct {
 
 	locks vfs.FileLocks
 
+	// overlayXattrs stores trusted.overlay.* and user.overlay.* xattrs
+	// in the sentry rather than sending them to the gofer/host, because
+	// (a) the gofer process lacks CAP_SYS_ADMIN, which Linux requires for
+	// trusted.* xattrs, and (b) the overlay consumer is the sentry itself
+	// so host persistence is not required. The pointer is nil until the
+	// first setxattr allocates the map.
+	overlayXattrs atomic.Pointer[memxattr.SimpleExtendedAttributes] `state:"nosave"`
+
 	// Inotify watches for this inode.
 	//
 	// Note that inotify may behave unexpectedly in the presence of hard links,
@@ -1495,12 +1510,13 @@ func (d *dentry) checkXattrPermissions(creds *auth.Credentials, name string, ats
 	//
 	// NOTE(b/202533394): Disallow most of the "trusted" namespace.
 	// Allow "trusted.overlay." xattrs, which are used by overlayfs to
-	// mark opaque directories. This enables Docker overlay2 to use
-	// gofer as an upper layer.
+	// mark opaque directories; these are emulated in-sentry by
+	// overlayXattrs below. This enables Docker overlay2 to use gofer as
+	// an upper layer.
 	if strings.HasPrefix(name, linux.XATTR_SYSTEM_PREFIX) {
 		return linuxerr.EOPNOTSUPP
 	}
-	if strings.HasPrefix(name, linux.XATTR_TRUSTED_PREFIX) && !strings.HasPrefix(name, linux.XATTR_TRUSTED_PREFIX+"overlay.") {
+	if strings.HasPrefix(name, linux.XATTR_TRUSTED_PREFIX) && !strings.HasPrefix(name, overlayTrustedPrefix) {
 		return linuxerr.EOPNOTSUPP
 	}
 	// Do not allow writes to the "security" namespace on the host filesystem.
@@ -1946,12 +1962,39 @@ func (d *dentry) listXattr(ctx context.Context, size uint64) ([]string, error) {
 	return d.listXattrImpl(ctx, size)
 }
 
+// isOverlayXattr reports whether name is an overlay metadata xattr that
+// this filesystem emulates in-memory rather than forwarding to the gofer.
+func isOverlayXattr(name string) bool {
+	return strings.HasPrefix(name, overlayTrustedPrefix) ||
+		strings.HasPrefix(name, overlayUserPrefix)
+}
+
+// overlayXattrsOrLazy returns the per-inode overlay xattr store, allocating
+// it on first use.
+func (i *inode) overlayXattrsOrLazy() *memxattr.SimpleExtendedAttributes {
+	if x := i.overlayXattrs.Load(); x != nil {
+		return x
+	}
+	nx := &memxattr.SimpleExtendedAttributes{}
+	if i.overlayXattrs.CompareAndSwap(nil, nx) {
+		return nx
+	}
+	return i.overlayXattrs.Load()
+}
+
 func (d *dentry) getXattr(ctx context.Context, creds *auth.Credentials, opts *vfs.GetXattrOptions) (string, error) {
 	if d.inode.isSynthetic() {
 		return "", linuxerr.ENODATA
 	}
 	if err := d.checkXattrPermissions(creds, opts.Name, vfs.MayRead); err != nil {
 		return "", err
+	}
+	if isOverlayXattr(opts.Name) {
+		x := d.inode.overlayXattrs.Load()
+		if x == nil {
+			return "", linuxerr.ENODATA
+		}
+		return x.GetXattr(creds, linux.FileMode(d.inode.mode.Load()), auth.KUID(d.inode.uid.Load()), opts)
 	}
 	return d.getXattrImpl(ctx, opts)
 }
@@ -1963,6 +2006,10 @@ func (d *dentry) setXattr(ctx context.Context, creds *auth.Credentials, opts *vf
 	if err := d.checkXattrPermissions(creds, opts.Name, vfs.MayWrite); err != nil {
 		return err
 	}
+	if isOverlayXattr(opts.Name) {
+		return d.inode.overlayXattrsOrLazy().SetXattr(
+			creds, linux.FileMode(d.inode.mode.Load()), auth.KUID(d.inode.uid.Load()), auth.KGID(d.inode.gid.Load()), opts)
+	}
 	return d.setXattrImpl(ctx, opts)
 }
 
@@ -1972,6 +2019,13 @@ func (d *dentry) removeXattr(ctx context.Context, creds *auth.Credentials, name 
 	}
 	if err := d.checkXattrPermissions(creds, name, vfs.MayWrite); err != nil {
 		return err
+	}
+	if isOverlayXattr(name) {
+		x := d.inode.overlayXattrs.Load()
+		if x == nil {
+			return linuxerr.ENODATA
+		}
+		return x.RemoveXattr(creds, linux.FileMode(d.inode.mode.Load()), auth.KUID(d.inode.uid.Load()), name)
 	}
 	return d.inode.removeXattrImpl(ctx, name)
 }
