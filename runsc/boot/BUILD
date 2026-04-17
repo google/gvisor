@@ -17,7 +17,6 @@ go_library(
         "events.go",
         "fscheckpoint.go",
         "fscheckpoint_impl.go",
-        "gofer_conf.go",
         "limits.go",
         "loader.go",
         "loader_impl.go",
@@ -160,7 +159,6 @@ go_test(
     size = "small",
     srcs = [
         "compat_test.go",
-        "gofer_conf_test.go",
         "loader_test.go",
         "mount_hints_test.go",
         "vfs_test.go",
