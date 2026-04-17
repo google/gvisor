@@ -3620,6 +3620,84 @@ INSTANTIATE_TEST_SUITE_P(
       return info.param.test_name;
     });
 
+std::vector<RuleWithExprTestParams> GetNATRuleTestParams() {
+  return {
+      RuleWithExprTestParams{
+          .test_name = "SNATAddrPortIPv4",
+          .expr_name = "nat",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_NAT_TYPE, NFT_NAT_SNAT)
+                            .U32Attr(NFTA_NAT_FAMILY, AF_INET)
+                            .U32Attr(NFTA_NAT_REG_ADDR_MIN, NFT_REG_1)
+                            .U32Attr(NFTA_NAT_REG_PROTO_MIN, NFT_REG_2)},
+      RuleWithExprTestParams{
+          .test_name = "DNATAddrPortIPv4",
+          .expr_name = "nat",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_NAT_TYPE, NFT_NAT_DNAT)
+                            .U32Attr(NFTA_NAT_FAMILY, AF_INET)
+                            .U32Attr(NFTA_NAT_REG_ADDR_MIN, NFT_REG_1)
+                            .U32Attr(NFTA_NAT_REG_PROTO_MIN, NFT_REG_2)},
+      RuleWithExprTestParams{
+          .test_name = "SNATAddrProtoMinMaxIPv4",
+          .expr_name = "nat",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_NAT_TYPE, NFT_NAT_SNAT)
+                            .U32Attr(NFTA_NAT_FAMILY, AF_INET)
+                            .U32Attr(NFTA_NAT_REG_ADDR_MIN, NFT_REG_1)
+                            .U32Attr(NFTA_NAT_REG_ADDR_MAX, NFT_REG_4)
+                            .U32Attr(NFTA_NAT_REG_PROTO_MIN, NFT_REG32_00)
+                            .U32Attr(NFTA_NAT_REG_PROTO_MAX, NFT_REG32_15)},
+      RuleWithExprTestParams{
+          .test_name = "DNATAddrProtoMinMaxIPv6",
+          .expr_name = "nat",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_NAT_TYPE, NFT_NAT_DNAT)
+                            .U32Attr(NFTA_NAT_FAMILY, AF_INET6)
+                            .U32Attr(NFTA_NAT_REG_ADDR_MIN, NFT_REG32_00)
+                            .U32Attr(NFTA_NAT_REG_ADDR_MAX, NFT_REG32_15)
+                            .U32Attr(NFTA_NAT_REG_PROTO_MIN, NFT_REG_1)
+                            .U32Attr(NFTA_NAT_REG_PROTO_MAX, NFT_REG_4)},
+      RuleWithExprTestParams{
+          .test_name = "NoNATType",
+          .expr_name = "nat",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_NAT_FAMILY, AF_INET)
+                            .U32Attr(NFTA_NAT_REG_ADDR_MIN, NFT_REG_1),
+          .expected_error_no = EINVAL},
+      RuleWithExprTestParams{
+          .test_name = "NoNATFamily",
+          .expr_name = "nat",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_NAT_TYPE, NFT_NAT_SNAT)
+                            .U32Attr(NFTA_NAT_REG_ADDR_MIN, NFT_REG_1),
+          .expected_error_no = EINVAL},
+      RuleWithExprTestParams{
+          .test_name = "NoAddrOrProto",
+          .expr_name = "nat",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_NAT_TYPE, NFT_NAT_SNAT)
+                            .U32Attr(NFTA_NAT_FAMILY, AF_INET),
+          .expected_error_no = EINVAL},
+      RuleWithExprTestParams{
+          .test_name = "InvalidNATType",
+          .expr_name = "nat",
+          .expr_attrs = NlNestedAttr()
+                            // NAT type should be either 0 or 1.
+                            .U32Attr(NFTA_NAT_TYPE, 2)
+                            .U32Attr(NFTA_NAT_FAMILY, AF_INET)
+                            .U32Attr(NFTA_NAT_REG_ADDR_MIN, NFT_REG_1),
+          .expected_error_no = EINVAL},
+  };
+}
+
+INSTANTIATE_TEST_SUITE_P(NATRuleTest, AddRuleWithExprTest,
+                         /*param_generator=*/ValuesIn(GetNATRuleTestParams()),
+                         /*param_name_generator=*/
+                         [](const TestParamInfo<RuleWithExprTestParams>& info) {
+                           return info.param.test_name;
+                         });
+
 }  // namespace
 
 }  // namespace testing

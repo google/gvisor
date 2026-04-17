@@ -49,6 +49,7 @@ go_library(
     deps = [
         "//pkg/atomicbitops",
         "//pkg/buffer",
+        "//pkg/log",
         "//pkg/rand",
         "//pkg/sync",
         "//pkg/waiter",

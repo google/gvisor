@@ -17,7 +17,7 @@ package stack
 import (
 	"encoding/binary"
 	"fmt"
-	"math/rand"
+	"math"
 	"sync"
 	"time"
 
@@ -205,6 +205,10 @@ func (cn *conn) update(pkt *PacketBuffer, reply bool) {
 	}
 }
 
+type connTrackRNG interface {
+	Uint32() uint32
+}
+
 // ConnTrack tracks all connections created for NAT rules. Most users are
 // expected to only call handlePacket, insertRedirectConn, and maybeInsertNoop.
 //
@@ -229,7 +233,7 @@ type ConnTrack struct {
 	// clock provides timing used to determine conntrack reapings.
 	clock tcpip.Clock
 	// TODO(b/341946753): Restore when netstack is savable.
-	rand *rand.Rand `state:"nosave"`
+	rng connTrackRNG `state:"nosave"`
 
 	mu connTrackRWMutex `state:"nosave"`
 	// mu protects the buckets slice, but not buckets' contents. Only take
@@ -270,99 +274,6 @@ func v6NetAndTransHdr(icmpPayload []byte, minTransHdrLen int) (header.Network, [
 	return netHdr, transHdr[:minTransHdrLen]
 }
 
-func getEmbeddedNetAndTransHeaders(pkt *PacketBuffer, netHdrLength int, getNetAndTransHdr netAndTransHeadersFunc, transProto tcpip.TransportProtocolNumber) (header.Network, header.ChecksummableTransport, bool) {
-	switch transProto {
-	case header.TCPProtocolNumber:
-		if netAndTransHeader, ok := pkt.Data().PullUp(netHdrLength + header.TCPMinimumSize); ok {
-			netHeader, transHeaderBytes := getNetAndTransHdr(netAndTransHeader, header.TCPMinimumSize)
-			return netHeader, header.TCP(transHeaderBytes), true
-		}
-	case header.UDPProtocolNumber:
-		if netAndTransHeader, ok := pkt.Data().PullUp(netHdrLength + header.UDPMinimumSize); ok {
-			netHeader, transHeaderBytes := getNetAndTransHdr(netAndTransHeader, header.UDPMinimumSize)
-			return netHeader, header.UDP(transHeaderBytes), true
-		}
-	}
-	return nil, nil, false
-}
-
-func getHeaders(pkt *PacketBuffer) (netHdr header.Network, transHdr header.Transport, isICMPError bool, ok bool) {
-	switch pkt.TransportProtocolNumber {
-	case header.TCPProtocolNumber:
-		if tcpHeader := header.TCP(pkt.TransportHeader().Slice()); len(tcpHeader) >= header.TCPMinimumSize {
-			return pkt.Network(), tcpHeader, false, true
-		}
-		return nil, nil, false, false
-	case header.UDPProtocolNumber:
-		if udpHeader := header.UDP(pkt.TransportHeader().Slice()); len(udpHeader) >= header.UDPMinimumSize {
-			return pkt.Network(), udpHeader, false, true
-		}
-		return nil, nil, false, false
-	case header.ICMPv4ProtocolNumber:
-		icmpHeader := header.ICMPv4(pkt.TransportHeader().Slice())
-		if len(icmpHeader) < header.ICMPv4MinimumSize {
-			return nil, nil, false, false
-		}
-
-		switch icmpType := icmpHeader.Type(); icmpType {
-		case header.ICMPv4Echo, header.ICMPv4EchoReply:
-			return pkt.Network(), icmpHeader, false, true
-		case header.ICMPv4DstUnreachable, header.ICMPv4TimeExceeded, header.ICMPv4ParamProblem:
-		default:
-			panic(fmt.Sprintf("unexpected ICMPv4 type = %d", icmpType))
-		}
-
-		h, ok := pkt.Data().PullUp(header.IPv4MinimumSize)
-		if !ok {
-			panic(fmt.Sprintf("should have a valid IPv4 packet; only have %d bytes, want at least %d bytes", pkt.Data().Size(), header.IPv4MinimumSize))
-		}
-
-		if header.IPv4(h).HeaderLength() > header.IPv4MinimumSize {
-			// TODO(https://gvisor.dev/issue/6765): Handle IPv4 options.
-			panic("should have dropped packets with IPv4 options")
-		}
-
-		if netHdr, transHdr, ok := getEmbeddedNetAndTransHeaders(pkt, header.IPv4MinimumSize, v4NetAndTransHdr, pkt.tuple.tupleID.transProto); ok {
-			return netHdr, transHdr, true, true
-		}
-		return nil, nil, false, false
-	case header.ICMPv6ProtocolNumber:
-		icmpHeader := header.ICMPv6(pkt.TransportHeader().Slice())
-		if len(icmpHeader) < header.ICMPv6MinimumSize {
-			return nil, nil, false, false
-		}
-
-		switch icmpType := icmpHeader.Type(); icmpType {
-		case header.ICMPv6EchoRequest, header.ICMPv6EchoReply:
-			return pkt.Network(), icmpHeader, false, true
-		case header.ICMPv6DstUnreachable, header.ICMPv6PacketTooBig, header.ICMPv6TimeExceeded, header.ICMPv6ParamProblem:
-		default:
-			panic(fmt.Sprintf("unexpected ICMPv6 type = %d", icmpType))
-		}
-
-		h, ok := pkt.Data().PullUp(header.IPv6MinimumSize)
-		if !ok {
-			panic(fmt.Sprintf("should have a valid IPv6 packet; only have %d bytes, want at least %d bytes", pkt.Data().Size(), header.IPv6MinimumSize))
-		}
-
-		// We do not support extension headers in ICMP errors so the next header
-		// in the IPv6 packet should be a tracked protocol if we reach this point.
-		//
-		// TODO(https://gvisor.dev/issue/6789): Support extension headers.
-		transProto := pkt.tuple.tupleID.transProto
-		if got := header.IPv6(h).TransportProtocol(); got != transProto {
-			panic(fmt.Sprintf("got TransportProtocol() = %d, want = %d", got, transProto))
-		}
-
-		if netHdr, transHdr, ok := getEmbeddedNetAndTransHeaders(pkt, header.IPv6MinimumSize, v6NetAndTransHdr, transProto); ok {
-			return netHdr, transHdr, true, true
-		}
-		return nil, nil, false, false
-	default:
-		panic(fmt.Sprintf("unexpected transport protocol = %d", pkt.TransportProtocolNumber))
-	}
-}
-
 func getTupleIDForRegularPacket(netHdr header.Network, netProto tcpip.NetworkProtocolNumber, transHdr header.Transport, transProto tcpip.TransportProtocolNumber) tupleID {
 	return tupleID{
 		srcAddr:                   netHdr.SourceAddress(),
@@ -375,7 +286,7 @@ func getTupleIDForRegularPacket(netHdr header.Network, netProto tcpip.NetworkPro
 }
 
 func getTupleIDForPacketInICMPError(pkt *PacketBuffer, getNetAndTransHdr netAndTransHeadersFunc, netProto tcpip.NetworkProtocolNumber, netLen int, transProto tcpip.TransportProtocolNumber) (tupleID, bool) {
-	if netHdr, transHdr, ok := getEmbeddedNetAndTransHeaders(pkt, netLen, getNetAndTransHdr, transProto); ok {
+	if netHdr, transHdr, ok := pkt.GetEmbeddedNetAndTransHeaders(netLen, getNetAndTransHdr, transProto); ok {
 		return tupleID{
 			srcAddr:                   netHdr.DestinationAddress(),
 			srcPortOrEchoRequestIdent: transHdr.DestinationPort(),
@@ -599,6 +510,11 @@ func (ct *ConnTrack) getConnAndUpdate(pkt *PacketBuffer, skipChecksumValidation 
 		t.conn.update(pkt, t.reply)
 	}
 	return t
+}
+
+// GetConnAndUpdatePkt gets the connection for the packet and also sets the packet's tuple.
+func (ct *ConnTrack) GetConnAndUpdatePkt(pkt *PacketBuffer, skipChecksumValidation bool) {
+	pkt.tuple = ct.getConnAndUpdate(pkt, skipChecksumValidation)
 }
 
 func (ct *ConnTrack) connForTID(tid tupleID) *tuple {
@@ -854,4 +770,53 @@ func (ct *ConnTrack) originalDst(epID TransportEndpointID, netProto tcpip.Networ
 
 	id := t.conn.original.tupleID
 	return id.dstAddr, id.dstPortOrEchoReplyIdent, nil
+}
+
+// NewConnTrack creates and initializes a  new ConnTrack object.
+func NewConnTrack(clock tcpip.Clock, rng connTrackRNG, seed *uint32) *ConnTrack {
+	if seed == nil {
+		r := rng.Uint32()
+		seed = &r
+	}
+	ct := &ConnTrack{
+		clock: clock,
+		rng:   rng,
+		seed:  *seed,
+	}
+	ct.init()
+	return ct
+}
+
+// NewConnTrackWithReaper creates and initializes a new ConnTrack and reaper.
+// Reaper garbage collects unused connections.
+func NewConnTrackWithReaper(clock tcpip.Clock, rng connTrackRNG, seed *uint32) (*ConnTrack, tcpip.Timer) {
+	ct := NewConnTrack(clock, rng, seed)
+	var reaper tcpip.Timer
+	bucket := 0
+	interval := 1 * time.Second
+	reaper = ct.clock.AfterFunc(interval, func() {
+		bucket, interval = ct.reapUnused(bucket, interval)
+		reaper.Reset(interval)
+	})
+	return ct, reaper
+}
+
+// NfConnTrackPriority returns the priority of the conntrack hook.
+// Check `ipv4/ipv6_conntrack_ops` in nf_conntrack_proto.c.
+func NfConnTrackPriority(hook NFHook) (int, bool) {
+	switch hook {
+	case NFPrerouting:
+		// NF_IP_PRI_CONNTRACK
+		return -200, true
+	case NFInput:
+		// NF_IP_PRI_CONNTRACK_CONFIRM
+		return math.MaxInt32, true
+	case NFPostrouting:
+		// NF_IP_PRI_CONNTRACK_CONFIRM
+		return math.MaxInt32, true
+	case NFOutput:
+		// NF_IP_PRI_CONNTRACK
+		return -200, true
+	}
+	return 0, false
 }

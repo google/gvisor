@@ -522,3 +522,18 @@ const (
 	__NFTA_GEN_MAX
 	NFTA_GEN_MAX = __NFTA_GEN_MAX - 1
 )
+
+// Nf table nat expression netlink attributes.
+// These correspond to enum values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFTA_NAT_UNSPEC uint16 = iota
+	NFTA_NAT_TYPE
+	NFTA_NAT_FAMILY
+	NFTA_NAT_REG_ADDR_MIN
+	NFTA_NAT_REG_ADDR_MAX
+	NFTA_NAT_REG_PROTO_MIN
+	NFTA_NAT_REG_PROTO_MAX
+	NFTA_NAT_FLAGS
+	__NFTA_NAT_MAX
+	NFTA_NAT_MAX = __NFTA_NAT_MAX - 1
+)

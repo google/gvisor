@@ -29,9 +29,6 @@ const IPExchangePort = 2349
 // TerminalStatement is the last statement in the test runner.
 const TerminalStatement = "Finished!"
 
-// TestTimeout is the timeout used for all tests.
-const TestTimeout = 10 * time.Second
-
 // NegativeTimeout is the time tests should wait to establish the negative
 // case, i.e. that connections are not made.
 const NegativeTimeout = 2 * time.Second
@@ -57,6 +54,9 @@ type TestCase interface {
 	// LocalSufficient indicates whether LocalAction's return value alone
 	// indicates whether the test succeeded.
 	LocalSufficient() bool
+
+	// Timeout indicates the time to wait for the test to finish.
+	Timeout() time.Duration
 }
 
 // baseCase provides defaults for ContainerSufficient and LocalSufficient when
@@ -73,6 +73,11 @@ func (*baseCase) LocalSufficient() bool {
 	return false
 }
 
+// Timeout implements TestCase.Timeout.
+func (*baseCase) Timeout() time.Duration {
+	return 30 * time.Second
+}
+
 // localCase provides defaults for ContainerSufficient and LocalSufficient when
 // only the local action is required to finish.
 type localCase struct{}
@@ -87,6 +92,11 @@ func (*localCase) LocalSufficient() bool {
 	return true
 }
 
+// Timeout returns the timeout for the test case.
+func (*localCase) Timeout() time.Duration {
+	return 30 * time.Second
+}
+
 // containerCase provides defaults for ContainerSufficient and LocalSufficient
 // when only the container action is required to finish.
 type containerCase struct{}
@@ -99,6 +109,11 @@ func (*containerCase) ContainerSufficient() bool {
 // LocalSufficient implements TestCase.LocalSufficient.
 func (*containerCase) LocalSufficient() bool {
 	return false
+}
+
+// Timeout returns the timeout for the test case.
+func (*containerCase) Timeout() time.Duration {
+	return 30 * time.Second
 }
 
 // Tests maps test names to TestCase.

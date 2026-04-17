@@ -260,6 +260,7 @@ go_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/abi/linux",
         "//pkg/atomicbitops",
         "//pkg/buffer",
         "//pkg/ilist",

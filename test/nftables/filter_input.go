@@ -69,3 +69,8 @@ func (*FilterInputDropAll) ContainerAction(ctx context.Context, ip net.IP, ipv6 
 func (*FilterInputDropAll) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	return netutils.SendUDPLoop(ctx, ip, dropPort, ipv6)
 }
+
+// Timeout returns the timeout for the test case.
+func (*FilterInputDropAll) Timeout() time.Duration {
+	return 30 * time.Second
+}
