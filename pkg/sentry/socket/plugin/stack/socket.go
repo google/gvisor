@@ -422,7 +422,9 @@ func ifconfIoctlFromStack(ctx context.Context, io usermem.IO, ifc *linux.IFConf)
 
 	max := ifc.Len
 	ifc.Len = 0
-	for idx, iface := range s.Interfaces() {
+	ifaces := s.Interfaces()
+	for _, idx := range s.InterfaceIDs() {
+		iface := ifaces[idx]
 		ifaceAddrs := s.InterfaceAddrs()[idx]
 		for _, ifaceAddr := range ifaceAddrs {
 			if ifaceAddr.Family != syscall.AF_INET {

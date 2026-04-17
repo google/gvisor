@@ -64,6 +64,12 @@ func (s *Stack) InterfaceAddrs() map[int32][]inet.InterfaceAddr {
 	return make(map[int32][]inet.InterfaceAddr)
 }
 
+// InterfaceIDs implements inet.Stack.InterfaceIDs.
+func (s *Stack) InterfaceIDs() []int32 {
+	// TODO: support InterfaceIDs
+	return nil
+}
+
 // AddInterfaceAddr implements inet.Stack.AddInterfaceAddr.
 func (s *Stack) AddInterfaceAddr(idx int32, addr inet.InterfaceAddr) error {
 	return linuxerr.EACCES
