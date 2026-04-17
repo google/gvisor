@@ -41,7 +41,7 @@ func (op immediate) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *R
 }
 
 func (op immediate) GetExprName() string {
-	return "immediate"
+	return OpTypeImmediate.String()
 }
 
 func (op immediate) Dump() ([]byte, *syserr.AnnotatedError) {

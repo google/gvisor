@@ -121,7 +121,7 @@ func initPayloadLoad(tab *Table, attrs map[uint16]nlmsg.BytesView) (*payloadLoad
 }
 
 func (op payloadLoad) GetExprName() string {
-	return "payload"
+	return OpTypePayload.String()
 }
 
 func (op payloadLoad) Dump() ([]byte, *syserr.AnnotatedError) {

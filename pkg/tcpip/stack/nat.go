@@ -22,12 +22,33 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
+// NfNATPriority returns the priority of the NAT hook.
+// Check `ipv4/ipv6_nat_ops` in nf_nat_proto.c.
+func NfNATPriority(hook NFHook) (int, bool) {
+	switch hook {
+	case NFPrerouting:
+		// NF_IP_PRI_NAT_DST
+		return -100, true
+	case NFPostrouting:
+		// NF_IP_PRI_NAT_SRC
+		return 100, true
+	case NFOutput:
+		// NF_IP_PRI_NAT_DST
+		return -100, true
+	case NFInput:
+		// NF_IP_PRI_NAT_SRC
+		return 100, true
+	}
+	// NAT is not supported for other hooks.
+	return 0, false
+}
+
 // handlePacket attempts to handle a packet and perform NAT if the connection
 // has had NAT performed on it.
 //
 // Returns true if the packet can skip the NAT table.
 func handlePacket(pkt *PacketBuffer, hook Hook, rt *Route) bool {
-	netHdr, transHdr, isICMPError, ok := getHeaders(pkt)
+	netHdr, transHdr, isICMPError, ok := pkt.GetHeaders()
 	if !ok {
 		return false
 	}
@@ -111,7 +132,7 @@ func handlePacket(pkt *PacketBuffer, hook Hook, rt *Route) bool {
 		newAddr = tid.srcAddr
 	}
 
-	rewritePacket(
+	UpdateHeaders(
 		netHdr,
 		transHdr,
 		!dnat != isICMPError,
@@ -267,7 +288,7 @@ func IPTPerformNAT(pkt *PacketBuffer, hook Hook, r *Route, portsOrIdents portOrI
 
 	for maxAttempts := allowedInitialAttempts; ; maxAttempts /= 2 {
 		// Start reach round with a random initial port/ident offset.
-		randOffset := cn.ct.rand.Uint32()
+		randOffset := cn.ct.rng.Uint32()
 
 		for i := uint32(0); i < maxAttempts; i++ {
 			newPortOrIdentU32 := uint32(portsOrIdents.start) + (randOffset+i)%portsOrIdents.size
