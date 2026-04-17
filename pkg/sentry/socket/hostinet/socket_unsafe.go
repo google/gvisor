@@ -96,7 +96,14 @@ func ioctl(ctx context.Context, fd int, io usermem.IO, sysno uintptr, args arch.
 			return 0, err
 		}
 
+		// Cap IFConf buffer size to prevent guest-controlled OOM.
+		// 64KB is sufficient for ~1000 network interfaces.
+		const maxIFConfLen = 64 * 1024
+		if ifc.Len > maxIFConfLen {
+			ifc.Len = maxIFConfLen
+		}
 		// The user's ifconf can have a nullable pointer to a buffer. Use a Sentry array if non-null.
+		// Use capped ifc.Len so host ioctl cannot write past ifcBuf.
 		ifcNested := linux.IFConf{Len: ifc.Len}
 		var ifcBuf []byte
 		if ifc.Ptr != 0 && ifc.Len > 0 {
