@@ -29,7 +29,6 @@ import (
 	"github.com/containerd/containerd/runtime"
 )
 
-// mockPublisher records published events for test assertions.
 type mockPublisher struct {
 	mu     sync.Mutex
 	events []mockEvent
@@ -47,9 +46,7 @@ func (p *mockPublisher) Publish(_ context.Context, topic string, event events.Ev
 	return nil
 }
 
-func (p *mockPublisher) Close() error {
-	return nil
-}
+func (p *mockPublisher) Close() error { return nil }
 
 func (p *mockPublisher) eventCount() int {
 	p.mu.Lock()
@@ -57,169 +54,142 @@ func (p *mockPublisher) eventCount() int {
 	return len(p.events)
 }
 
-// newTestWatcherV2 creates a watcherV2 with a mock publisher for testing.
-// The itemCh is unbuffered so sends block until run() reads, providing
-// synchronization without sleeps.
-func newTestWatcherV2(pub *mockPublisher) *watcherV2 {
+func newTestWatcher(pub *mockPublisher) *watcherV2 {
 	return &watcherV2{
 		itemCh:    make(chan itemV2),
 		publisher: pub,
-		cgroups:   make(map[string]*cgroupsv2.Manager),
-		lastOOM:   make(map[string]uint64),
+		hasOOM:    make(map[string]bool),
 	}
 }
 
-// waitForProcessing sends a sentinel event and blocks until run() accepts it.
-// Since the channel is unbuffered and run() processes items sequentially, when
-// this returns all prior items have been fully processed.
-func waitForProcessing(t *testing.T, w *watcherV2) {
+// drain sends a sentinel and blocks until run() processes it.
+func drain(t *testing.T, w *watcherV2) {
 	t.Helper()
 	select {
-	case w.itemCh <- itemV2{id: "__sentinel__", ev: cgroupsv2.Event{}}:
+	case w.itemCh <- itemV2{id: "_sentinel_"}:
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for run() to accept sentinel")
+		t.Fatal("timed out waiting for run()")
 	}
 }
 
-func TestWatcherV2AsyncPublishesNewOOM(t *testing.T) {
+// --- Async path tests (run goroutine) ---
+
+func TestAsyncPublishesOOM(t *testing.T) {
 	pub := &mockPublisher{}
-	w := newTestWatcherV2(pub)
+	w := newTestWatcher(pub)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go w.run(ctx)
 
 	w.itemCh <- itemV2{id: "c1", ev: cgroupsv2.Event{OOMKill: 1}}
-	waitForProcessing(t, w)
+	drain(t, w)
 
 	if got := pub.eventCount(); got != 1 {
-		t.Fatalf("expected 1 published event, got %d", got)
+		t.Fatalf("want 1 event, got %d", got)
 	}
-	pub.mu.Lock()
-	defer pub.mu.Unlock()
 	if pub.events[0].topic != runtime.TaskOOMEventTopic {
-		t.Errorf("expected topic %q, got %q", runtime.TaskOOMEventTopic, pub.events[0].topic)
+		t.Errorf("want topic %q, got %q", runtime.TaskOOMEventTopic, pub.events[0].topic)
 	}
 }
 
-func TestWatcherV2AsyncDedupsSameOOMCount(t *testing.T) {
+func TestAsyncDedupsSameCount(t *testing.T) {
 	pub := &mockPublisher{}
-	w := newTestWatcherV2(pub)
+	w := newTestWatcher(pub)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go w.run(ctx)
 
-	// First event should publish.
 	w.itemCh <- itemV2{id: "c1", ev: cgroupsv2.Event{OOMKill: 1}}
-	waitForProcessing(t, w)
-
-	// Same OOM count should NOT publish again.
+	drain(t, w)
 	w.itemCh <- itemV2{id: "c1", ev: cgroupsv2.Event{OOMKill: 1}}
-	waitForProcessing(t, w)
+	drain(t, w)
 
 	if got := pub.eventCount(); got != 1 {
-		t.Errorf("expected 1 event (dedup), got %d", got)
+		t.Errorf("want 1 event (dedup), got %d", got)
 	}
 }
 
-func TestWatcherV2AsyncPublishesIncrementedOOMCount(t *testing.T) {
+func TestAsyncPublishesIncrement(t *testing.T) {
 	pub := &mockPublisher{}
-	w := newTestWatcherV2(pub)
+	w := newTestWatcher(pub)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go w.run(ctx)
 
 	w.itemCh <- itemV2{id: "c1", ev: cgroupsv2.Event{OOMKill: 1}}
-	waitForProcessing(t, w)
-
-	// New OOM (incremented count) should publish.
+	drain(t, w)
 	w.itemCh <- itemV2{id: "c1", ev: cgroupsv2.Event{OOMKill: 2}}
-	waitForProcessing(t, w)
+	drain(t, w)
 
 	if got := pub.eventCount(); got != 2 {
-		t.Errorf("expected 2 events, got %d", got)
+		t.Errorf("want 2 events, got %d", got)
 	}
 }
 
-// TestWatcherV2SyncPreemptsAsync verifies that when the sync path (isOOM)
-// claims the publish right first by setting lastOOM, the async path
-// (EventChan -> run) is suppressed. This is the core fix for the aarch64
-// race: isOOM fires at container exit before the async notification arrives.
-//
-// Before the fix, lastOOMMap was local to run() and could not be shared
-// with any sync path — this test would have been impossible to write.
-func TestWatcherV2SyncPreemptsAsync(t *testing.T) {
+func TestAsyncIgnoresErrors(t *testing.T) {
 	pub := &mockPublisher{}
-	w := newTestWatcherV2(pub)
+	w := newTestWatcher(pub)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go w.run(ctx)
 
-	// Simulate sync path (isOOM) claiming the publish right.
-	w.mu.Lock()
-	w.lastOOM["c1"] = 1
-	w.mu.Unlock()
-
-	// Async event arrives after — should be suppressed.
-	w.itemCh <- itemV2{id: "c1", ev: cgroupsv2.Event{OOMKill: 1}}
-	waitForProcessing(t, w)
+	w.itemCh <- itemV2{id: "c1", err: fmt.Errorf("cgroup deleted")}
+	drain(t, w)
 
 	if got := pub.eventCount(); got != 0 {
-		t.Errorf("expected 0 events (sync preempted async), got %d", got)
+		t.Errorf("want 0 events after error, got %d", got)
 	}
 }
 
-// TestWatcherV2AsyncPreemptsSync verifies that when the async path publishes
-// first, the sync path sees lastOOM already set and returns false. This
-// prevents duplicate events on architectures where the async notification
-// arrives before container exit (e.g., x86_64).
-func TestWatcherV2AsyncPreemptsSync(t *testing.T) {
+// --- Sync path tests (isOOM at container exit) ---
+
+func TestIsOOMNoEvent(t *testing.T) {
+	w := newTestWatcher(&mockPublisher{})
+	if w.isOOM("c1") {
+		t.Error("isOOM should be false with no events")
+	}
+}
+
+func TestIsOOMAfterEagerSet(t *testing.T) {
+	w := newTestWatcher(&mockPublisher{})
+	// Simulate EventChan goroutine setting hasOOM eagerly.
+	w.mu.Lock()
+	w.hasOOM["c1"] = true
+	w.mu.Unlock()
+
+	if !w.isOOM("c1") {
+		t.Error("isOOM should be true after OOM was observed")
+	}
+	// Consumed — second call returns false.
+	if w.isOOM("c1") {
+		t.Error("isOOM should be false after consumption")
+	}
+}
+
+// TestIsOOMRace is the core aarch64 regression test.
+//
+// Scenario: EventChan goroutine set hasOOM (it read memory.events while
+// the cgroup was alive), but run() hasn't processed the event yet.
+// Then an error arrives (systemd deleted the cgroup). isOOM() must still
+// return true because hasOOM was set before the error.
+func TestIsOOMRace(t *testing.T) {
 	pub := &mockPublisher{}
-	w := newTestWatcherV2(pub)
+	w := newTestWatcher(pub)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go w.run(ctx)
 
-	// Async publishes first.
-	w.itemCh <- itemV2{id: "c1", ev: cgroupsv2.Event{OOMKill: 1}}
-	waitForProcessing(t, w)
-
-	if got := pub.eventCount(); got != 1 {
-		t.Fatalf("expected async to publish 1 event, got %d", got)
-	}
-
-	// Verify lastOOM was updated so sync path would see it.
+	// Step 1: EventChan goroutine saw OOM.
 	w.mu.Lock()
-	lastOOM := w.lastOOM["c1"]
-	w.mu.Unlock()
-	if lastOOM != 1 {
-		t.Errorf("expected lastOOM=1 after async publish, got %d", lastOOM)
-	}
-	// At this point, isOOM would check: stats.MemoryEvents.OomKill(=1) > lastOOM(=1)
-	// which is false, so it would return false — no duplicate.
-}
-
-// TestWatcherV2ErrorClearsLastOOM verifies that an error from EventChan
-// clears the lastOOM entry, so future OOM events are not suppressed.
-func TestWatcherV2ErrorClearsLastOOM(t *testing.T) {
-	pub := &mockPublisher{}
-	w := newTestWatcherV2(pub)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go w.run(ctx)
-
-	// Pre-set lastOOM.
-	w.mu.Lock()
-	w.lastOOM["c1"] = 1
+	w.hasOOM["c1"] = true
 	w.mu.Unlock()
 
-	// Error event should clear lastOOM.
+	// Step 2: Error arrives (cgroup deleted by systemd).
 	w.itemCh <- itemV2{id: "c1", err: fmt.Errorf("cgroup deleted")}
-	waitForProcessing(t, w)
+	drain(t, w)
 
-	w.mu.Lock()
-	_, exists := w.lastOOM["c1"]
-	w.mu.Unlock()
-	if exists {
-		t.Error("expected lastOOM entry to be cleared after error")
+	// Step 3: checkProcesses calls isOOM. Must return true.
+	if !w.isOOM("c1") {
+		t.Error("isOOM should be true — OOM was seen before cgroup deletion")
 	}
 }
