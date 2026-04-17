@@ -733,11 +733,14 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 		return err
 	}
 	parentDir.removeChildLocked(child)
-	parentDir.inode.watches.Notify(ctx, name, linux.IN_DELETE|linux.IN_ISDIR, 0, vfs.InodeEvent, true /* unlinked */)
-	// Remove links for child, child/., and child/..
+	// Match Linux's inotify event ordering for rmdir. Dropping the child's
+	// links may synchronously trigger HandleDeletion() when no extra refs
+	// exist, so notify the parent only after decLinksLocked(). If refs
+	// remain, deletion stays deferred until the last one is dropped.
 	child.inode.decLinksLocked(ctx)
 	child.inode.decLinksLocked(ctx)
 	parentDir.inode.decLinksLocked(ctx)
+	parentDir.inode.watches.Notify(ctx, name, linux.IN_DELETE|linux.IN_ISDIR, 0, vfs.InodeEvent, true /* unlinked */)
 	toDecRef = vfsObj.CommitDeleteDentry(ctx, &child.vfsd)
 	parentDir.inode.touchCMtime()
 	return nil

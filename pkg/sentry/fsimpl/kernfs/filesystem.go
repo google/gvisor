@@ -911,6 +911,14 @@ func (fs *Filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 		return err
 	}
 	delete(parent.children, child.name)
+	// Match Linux's inotify event ordering for rmdir. A removed kernfs dentry
+	// keeps exactly one tree reference until we drop it below, so refs==1 means
+	// no external refs remain and IN_DELETE_SELF/IN_IGNORED should precede the
+	// parent's IN_DELETE|IN_ISDIR. If refs remain, defer to cacheLocked(),
+	// where HandleDeletion() is still safe because it is idempotent.
+	if child.refs.Load() == 1 {
+		child.inode.Watches().HandleDeletion(ctx)
+	}
 	parent.inode.Watches().Notify(ctx, child.name, linux.IN_DELETE|linux.IN_ISDIR, 0, vfs.InodeEvent, true /* unlinked */)
 	// Defer decref so that fs.mu and parentDentry.dirMu are unlocked by then.
 	fs.deferDecRef(child)

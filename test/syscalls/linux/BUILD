@@ -1110,9 +1110,11 @@ cc_binary(
     linkstatic = 1,
     malloc = "//test/util:errno_safe_allocator",
     deps = [
+        "//test/util:capability_util",
         "//test/util:epoll_util",
         "//test/util:file_descriptor",
         "//test/util:fs_util",
+        "//test/util:mount_util",
         "//test/util:multiprocess_util",
         "//test/util:posix_error",
         "//test/util:temp_path",
