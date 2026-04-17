@@ -116,6 +116,14 @@ func Register(vfsObj *vfs.VirtualFilesystem, opts *Options) (*DeviceInfo, error)
 	}); err != nil {
 		return nil, err
 	}
+	if err := vfsObj.RegisterDevice(vfs.CharDevice, uvmDevMajor, nvgpu.NVIDIA_UVM_TOOLS_MINOR_NUMBER, &openOnlyDevice{
+		nvp:     nvp,
+		relpath: "nvidia-uvm-tools",
+	}, &vfs.RegisterDeviceOptions{
+		GroupName: "nvidia-uvm",
+	}); err != nil {
+		return nil, err
+	}
 
 	if opts.DriverCaps&nvconf.CapFabricIMEXManagement != 0 {
 		if !opts.HostSettings.HaveFabricIMEXManagement {

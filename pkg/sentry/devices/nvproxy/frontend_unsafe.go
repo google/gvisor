@@ -143,6 +143,42 @@ func ctrlGetNvU32ListInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PA
 	return n, nil
 }
 
+func ctrlGpuExecRegOps(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
+	var ctrlParams nvgpu.NV2080_CTRL_GPU_EXEC_REG_OPS_PARAMS
+	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
+		return 0, linuxerr.EINVAL
+	}
+	if _, err := ctrlParams.CopyIn(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return 0, err
+	}
+	if ctrlParams.RegOps == 0 {
+		return rmControlSimple(fi, ioctlParams)
+	}
+	regOpSize := uint32((&nvgpu.NV2080_CTRL_GPU_REG_OP{}).SizeBytes())
+	if !rmapiParamsSizeCheck(ctrlParams.RegOpCount, regOpSize) {
+		return 0, frontendFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_ARGUMENT)
+	}
+	regOps := make([]byte, uint64(ctrlParams.RegOpCount)*uint64(regOpSize))
+	if _, err := fi.t.CopyInBytes(addrFromP64(ctrlParams.RegOps), regOps); err != nil {
+		return 0, err
+	}
+
+	origRegOps := ctrlParams.RegOps
+	ctrlParams.RegOps = p64FromPtr(unsafe.Pointer(&regOps[0]))
+	n, err := rmControlInvoke(fi, ioctlParams, &ctrlParams)
+	ctrlParams.RegOps = origRegOps
+	if err != nil {
+		return n, err
+	}
+	if _, err := fi.t.CopyOutBytes(addrFromP64(ctrlParams.RegOps), regOps); err != nil {
+		return n, err
+	}
+	if _, err := ctrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
 func ctrlDevGRGetCapsInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS, ctrlParams *nvgpu.NV0080_CTRL_GET_CAPS_PARAMS, capsTbl []byte) (uintptr, error) {
 	origCapsTbl := ctrlParams.CapsTbl
 	ctrlParams.CapsTbl = p64FromPtr(unsafe.Pointer(&capsTbl[0]))

@@ -579,7 +579,9 @@ const (
 	NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_INFOROM_SUPPORT_V575  = NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_INFOROM_SUPPORT - 1
 	NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_STATUS_V575           = NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_STATUS - 1
 	NV2080_CTRL_CMD_FB_GET_OFFLINED_PAGES                          = 0x20801322
+	NV2080_CTRL_CMD_FB_FLUSH_GPU_CACHE                             = 0x2080130e
 	NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_PENDING_CONFIGURATION = 0x20801355
+	NV2080_CTRL_CMD_FB_GET_FS_INFO                                 = 0x20801346
 )
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080fifo.h:
@@ -639,6 +641,7 @@ const (
 	NV2080_CTRL_CMD_GPU_GET_SKYLINE_INFO                 = 0x2080019f
 	NV2080_CTRL_CMD_GPU_GET_CHIP_DETAILS                 = 0x208001a4
 	NV2080_CTRL_CMD_GPU_GET_RECOVERY_ACTION              = 0x208001b2
+	NV2080_CTRL_CMD_GPU_EXEC_REG_OPS                     = 0x20800122
 )
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080gr.h:
@@ -646,6 +649,7 @@ const (
 	NV2080_CTRL_CMD_GR_GET_INFO                   = 0x20801201
 	NV2080_CTRL_CMD_GR_GET_ZCULL_INFO             = 0x20801206
 	NV2080_CTRL_CMD_GR_CTXSW_ZCULL_BIND           = 0x20801208
+	NV2080_CTRL_CMD_GR_GET_SM_TO_GPC_TPC_MAPPINGS = 0x2080120f
 	NV2080_CTRL_CMD_GR_SET_CTXSW_PREEMPTION_MODE  = 0x20801210
 	NV2080_CTRL_CMD_GR_GET_CTX_BUFFER_SIZE        = 0x20801218
 	NV2080_CTRL_CMD_GR_GET_GLOBAL_SM_ORDER        = 0x2080121b
@@ -685,6 +689,41 @@ func (p *NV2080_CTRL_GR_GET_INFO_PARAMS) SetCtrlInfoList(ptr P64) {
 // CtrlInfoList implements HasCtrlInfoList.CtrlInfoList.
 func (p *NV2080_CTRL_GR_GET_INFO_PARAMS) CtrlInfoList() P64 {
 	return p.InfoList
+}
+
+// NV2080_CTRL_GPU_REG_OP is the type of an individual register operation,
+// from src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080gpu.h.
+//
+// +marshal
+type NV2080_CTRL_GPU_REG_OP struct {
+	_               structs.HostLayout
+	RegOp           uint8
+	RegType         uint8
+	RegStatus       uint8
+	RegQuad         uint8
+	RegGroupMask    uint32
+	RegSubGroupMask uint32
+	RegOffset       uint32
+	RegValueHi      uint32
+	RegValueLo      uint32
+	RegAndNMaskHi   uint32
+	RegAndNMaskLo   uint32
+}
+
+// NV2080_CTRL_GPU_EXEC_REG_OPS_PARAMS is the params type for
+// NV2080_CTRL_CMD_GPU_EXEC_REG_OPS, from
+// src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080gpu.h.
+//
+// +marshal
+type NV2080_CTRL_GPU_EXEC_REG_OPS_PARAMS struct {
+	_                 structs.HostLayout
+	HClientTarget     Handle
+	HChannelTarget    Handle
+	BNonTransactional uint32
+	Reserved00        [2]uint32
+	RegOpCount        uint32
+	RegOps            P64
+	GRRouteInfo       NV0080_CTRL_GR_ROUTE_INFO
 }
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080mc.h:
@@ -786,6 +825,7 @@ const (
 const (
 	NVA06C_CTRL_CMD_GPFIFO_SCHEDULE = 0xa06c0101
 	NVA06C_CTRL_CMD_SET_TIMESLICE   = 0xa06c0103
+	NVA06C_CTRL_CMD_GET_TIMESLICE   = 0xa06c0104
 	NVA06C_CTRL_CMD_PREEMPT         = 0xa06c0105
 )
 
@@ -793,6 +833,33 @@ const (
 const (
 	NVA06F_CTRL_CMD_GPFIFO_SCHEDULE = 0xa06f0103
 	NVA06F_CTRL_CMD_BIND            = 0xa06f0104
+)
+
+// From src/common/sdk/nvidia/inc/ctrl/ctrl90cc.h:
+const (
+	NV90CC_CTRL_CMD_POWER_REQUEST_FEATURES = 0x90cc0301
+	NV90CC_CTRL_CMD_POWER_RELEASE_FEATURES = 0x90cc0302
+)
+
+// From src/common/sdk/nvidia/inc/ctrl/ctrlb0cc.h:
+const (
+	NVB0CC_CTRL_CMD_RESERVE_HWPM_LEGACY        = 0xb0cc0101
+	NVB0CC_CTRL_CMD_RELEASE_HWPM_LEGACY        = 0xb0cc0102
+	NVB0CC_CTRL_CMD_RESERVE_PM_AREA_SMPC       = 0xb0cc0103
+	NVB0CC_CTRL_CMD_RELEASE_PM_AREA_SMPC       = 0xb0cc0104
+	NVB0CC_CTRL_CMD_ALLOC_PMA_STREAM           = 0xb0cc0105
+	NVB0CC_CTRL_CMD_FREE_PMA_STREAM            = 0xb0cc0106
+	NVB0CC_CTRL_CMD_BIND_PM_RESOURCES          = 0xb0cc0107
+	NVB0CC_CTRL_CMD_UNBIND_PM_RESOURCES        = 0xb0cc0108
+	NVB0CC_CTRL_CMD_PMA_STREAM_UPDATE_GET_PUT  = 0xb0cc0109
+	NVB0CC_CTRL_CMD_EXEC_REG_OPS               = 0xb0cc010a
+	NVB0CC_CTRL_CMD_RESERVE_PM_AREA_PC_SAMPLER = 0xb0cc010b
+	NVB0CC_CTRL_CMD_RELEASE_PM_AREA_PC_SAMPLER = 0xb0cc010c
+	NVB0CC_CTRL_CMD_GET_TOTAL_HS_CREDITS       = 0xb0cc010d
+	NVB0CC_CTRL_CMD_SET_HS_CREDITS             = 0xb0cc010e
+	NVB0CC_CTRL_CMD_RESERVE_CCU_PROF           = 0xb0cc0119
+	NVB0CC_CTRL_CMD_POWER_REQUEST_FEATURES     = 0xb0cc0301
+	NVB0CC_CTRL_CMD_POWER_RELEASE_FEATURES     = 0xb0cc0302
 )
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrlcb33.h:
