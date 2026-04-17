@@ -77,7 +77,12 @@ func (w *watcherV2) run(ctx context.Context) {
 				logrus.WithError(i.err).Debugf("Error listening for OOM, id: %q", i.id)
 				w.mu.Lock()
 				delete(w.lastOOM, i.id)
-				delete(w.cgroups, i.id)
+				// NOTE: Do not delete w.cgroups[i.id] here. The isOOM()
+				// sync path needs the cgroup manager to check memory.events
+				// at container exit. On containerd 2.x + aarch64, this
+				// error arrives before checkProcesses() calls isOOM(),
+				// and deleting the entry causes isOOM() to silently return
+				// false, preventing the TaskOOM event from being published.
 				w.mu.Unlock()
 				continue
 			}

@@ -198,6 +198,48 @@ func TestWatcherV2AsyncPreemptsSync(t *testing.T) {
 	// which is false, so it would return false — no duplicate.
 }
 
+// TestWatcherV2ErrorBeforeIsOOM reproduces the race observed on containerd
+// 2.x + aarch64: when the EventChan fires an error (cgroup going away) before
+// checkProcesses() calls isOOM(), the error handler in run() deletes the
+// cgroup manager from w.cgroups. This causes isOOM() to find nothing and
+// return false, so the TaskOOM event is never published.
+//
+// This is the containerd 2.x race — on containerd 1.7.x the exit notification
+// reaches checkProcesses() before the EventChan error, so isOOM() finds the
+// cgroup and works correctly.
+func TestWatcherV2ErrorBeforeIsOOM(t *testing.T) {
+	pub := &mockPublisher{}
+	w := newTestWatcherV2(pub)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go w.run(ctx)
+
+	// Simulate add() storing the cgroup manager. We use nil here since
+	// isOOM() will fail before calling Stat() — the cgroup lookup itself
+	// is the issue under test.
+	w.mu.Lock()
+	w.cgroups["c1"] = nil
+	w.mu.Unlock()
+
+	// Simulate containerd 2.x timing: EventChan error arrives BEFORE
+	// checkProcesses() calls isOOM(). This is the race.
+	w.itemCh <- itemV2{id: "c1", err: fmt.Errorf("cgroup deleted")}
+	waitForProcessing(t, w)
+
+	// Now isOOM() is called — simulating checkProcesses() at container exit.
+	// Regression: prior to this fix, run()'s error handler deleted
+	// w.cgroups["c1"], causing isOOM() to return false even though the
+	// container was OOM-killed.
+	w.mu.Lock()
+	_, cgroupExists := w.cgroups["c1"]
+	w.mu.Unlock()
+
+	if !cgroupExists {
+		t.Error("cgroup entry was deleted by run() error handler before isOOM() could use it — " +
+			"this is the containerd 2.x race: isOOM() will return false and TaskOOM is never published")
+	}
+}
+
 // TestWatcherV2ErrorClearsLastOOM verifies that an error from EventChan
 // clears the lastOOM entry, so future OOM events are not suppressed.
 func TestWatcherV2ErrorClearsLastOOM(t *testing.T) {
