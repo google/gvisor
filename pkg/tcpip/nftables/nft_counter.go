@@ -48,7 +48,7 @@ func (op *counter) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Ru
 }
 
 func (op *counter) GetExprName() string {
-	return "counter"
+	return OpTypeCounter.String()
 }
 
 func (op *counter) Dump() ([]byte, *syserr.AnnotatedError) {

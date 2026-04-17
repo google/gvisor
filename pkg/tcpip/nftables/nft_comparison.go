@@ -118,7 +118,7 @@ func (op comparison) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *
 	}
 }
 func (op comparison) GetExprName() string {
-	return "cmp"
+	return OpTypeComparison.String()
 }
 
 func (op comparison) Dump() ([]byte, *syserr.AnnotatedError) {

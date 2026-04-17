@@ -171,7 +171,7 @@ func (op metaLoad) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Ru
 }
 
 func (op metaLoad) GetExprName() string {
-	return "meta"
+	return OpTypeMeta.String()
 }
 
 func (op metaLoad) Dump() ([]byte, *syserr.AnnotatedError) {
