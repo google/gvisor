@@ -1278,6 +1278,40 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		return err
 	}
 
+	// Before committing the rename into the overlay's dentry tree, perform
+	// the upper-layer bookkeeping that overlayfs semantics require:
+	//   1. A whiteout at the origin, so the lower layer's preexisting entry
+	//      (if any) does not reappear at oldpop.
+	//   2. The overlay opaque marker on the new directory, so lookups at
+	//      newpop do not merge the contents of a preexisting lower
+	//      directory of the same name into the renamed directory.
+	//
+	// If either step fails we undo the upper-layer rename and return the
+	// error. Only if the undo itself fails do we fall back to a panic --
+	// that represents a genuinely inconsistent upper filesystem that we
+	// cannot drive further.
+	renameUndo := func(reason error) error {
+		undoOpts := vfs.RenameOptions{}
+		if uerr := vfsObj.RenameAt(ctx, creds, &newpop, &oldpop, &undoOpts); uerr != nil {
+			panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: %v; undo rename also failed: %v", reason, uerr))
+		}
+		vfsObj.AbortRenameDentry(&renamed.vfsd, replacedVFSD)
+		return reason
+	}
+	if err := CreateWhiteout(ctx, vfsObj, fs.creds, &oldpop); err != nil {
+		return renameUndo(err)
+	}
+	if renamed.isDir() {
+		if err := vfsObj.SetXattrAt(ctx, fs.creds, &newpop, &vfs.SetXattrOptions{
+			Name:  fs.xattrOpaque,
+			Value: "y",
+		}); err != nil {
+			// Best-effort: remove the whiteout before undoing the rename.
+			_ = vfsObj.UnlinkAt(ctx, fs.creds, &oldpop)
+			return renameUndo(err)
+		}
+	}
+
 	// Below this point, the renamed dentry is now at newpop, and anything we
 	// replaced is gone forever. Commit the rename, update the overlay
 	// filesystem tree, and abandon attempts to recover from errors.
@@ -1306,18 +1340,6 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	}
 	newParent.children[newName] = renamed
 	oldParent.dirents = nil
-
-	if err := CreateWhiteout(ctx, vfsObj, fs.creds, &oldpop); err != nil {
-		panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to create whiteout at origin after RenameAt: %v", err))
-	}
-	if renamed.isDir() {
-		if err := vfsObj.SetXattrAt(ctx, fs.creds, &newpop, &vfs.SetXattrOptions{
-			Name:  fs.xattrOpaque,
-			Value: "y",
-		}); err != nil {
-			panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to make renamed directory opaque: %v", err))
-		}
-	}
 
 	vfs.InotifyRename(ctx, &renamed.watches, &oldParent.watches, &newParent.watches, oldName, newName, renamed.isDir())
 	return nil

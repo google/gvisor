@@ -559,10 +559,16 @@ func (i *directfsInode) mknod(ctx context.Context, name string, creds *auth.Cred
 	// From mknod(2) man page:
 	// "EPERM: [...] if the filesystem containing pathname does not support
 	// the type of node requested."
-	if opts.Mode.FileType() != linux.ModeRegular {
+	//
+	// Allow regular files and overlayfs whiteouts (char 0,0). Linux's
+	// vfs_mknod() exempts whiteouts from the CAP_MKNOD check, so we do
+	// not need CAP_MKNOD on the gofer process. This enables Docker
+	// overlay2 to use gofer as an upper layer.
+	isWhiteout := opts.Mode.FileType() == linux.ModeCharacterDevice &&
+		opts.DevMajor == 0 && opts.DevMinor == 0
+	if opts.Mode.FileType() != linux.ModeRegular && !isWhiteout {
 		return nil, unix.EPERM
 	}
-
 	if err := unix.Mknodat(i.controlFD, name, uint32(opts.Mode), 0); err != nil {
 		return nil, err
 	}

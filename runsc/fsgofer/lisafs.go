@@ -648,10 +648,13 @@ func (fd *controlFDLisa) Mkdir(mode linux.FileMode, uid lisafs.UID, gid lisafs.G
 
 // Mknod implements lisafs.ControlFDImpl.Mknod.
 func (fd *controlFDLisa) Mknod(mode linux.FileMode, uid lisafs.UID, gid lisafs.GID, name string, minor uint32, major uint32) (*lisafs.ControlFD, lisafs.Statx, error) {
-	// From mknod(2) man page:
-	// "EPERM: [...] if the filesystem containing pathname does not support
-	// the type of node requested."
-	if mode.FileType() != linux.ModeRegular {
+	// Allow regular files and overlayfs whiteouts (char 0,0). Linux's
+	// vfs_mknod() exempts whiteouts from the CAP_MKNOD check, so we do
+	// not need CAP_MKNOD on the gofer process. See the matching change
+	// in pkg/sentry/fsimpl/gofer/directfs_inode.go:mknod.
+	isWhiteout := mode.FileType() == linux.ModeCharacterDevice &&
+		major == 0 && minor == 0
+	if mode.FileType() != linux.ModeRegular && !isWhiteout {
 		return nil, lisafs.Statx{}, unix.EPERM
 	}
 

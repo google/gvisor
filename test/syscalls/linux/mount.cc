@@ -27,7 +27,9 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/statfs.h>
+#include <sys/sysmacros.h>
 #include <sys/un.h>
+#include <sys/xattr.h>
 #include <sys/vfs.h>
 #include <unistd.h>
 
@@ -2654,6 +2656,286 @@ TEST(MountTest, OverlayfsDirectoryRenameInUserNamespace) {
 
   EXPECT_THAT(InForkedUserMountNamespace(parent, child),
               IsPosixErrorOkAndHolds(0));
+}
+
+// Test that overlay can be mounted with a gofer upper layer when the gVisor
+// rootfs overlay is disabled (--overlay2=none). This is needed for Docker
+// overlay2 inside gVisor containers.
+//
+// The test creates overlay directories on the rootfs (which must be gofer,
+// not overlay or tmpfs) and verifies read, write, and delete (whiteout)
+// through the overlay.
+TEST(MountTest, OverlayWithGoferUpper) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  // This test requires the rootfs to be gofer (9p), not overlay or tmpfs.
+  // Skip if / is not a gofer mount. V9FS_MAGIC = 0x01021997.
+  struct statfs rootfs_stat;
+  ASSERT_THAT(statfs("/", &rootfs_stat), SyscallSucceeds());
+  SKIP_IF(rootfs_stat.f_type != 0x01021997);  // V9FS_MAGIC
+
+  // Create directories on the gofer rootfs, not /tmp (which is tmpfs).
+  auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn("/"));
+  auto lower = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto upper = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto work = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto merged = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+
+  std::string lower_file = lower.path() + "/testfile";
+  ASSERT_NO_ERRNO(CreateWithContents(lower_file, "lower_content", 0644));
+
+  std::string opts = "lowerdir=" + lower.path() + ",upperdir=" + upper.path() +
+                     ",workdir=" + work.path();
+  ASSERT_THAT(
+      mount("overlay", merged.path().c_str(), "overlay", 0, opts.c_str()),
+      SyscallSucceeds());
+  auto cleanup = Cleanup([&merged] {
+    umount2(merged.path().c_str(), MNT_DETACH);
+  });
+
+  // Read from lower.
+  std::string merged_file = merged.path() + "/testfile";
+  struct stat st;
+  ASSERT_THAT(stat(merged_file.c_str(), &st), SyscallSucceeds());
+
+  // Write a new file through the overlay.
+  std::string new_file = merged.path() + "/newfile";
+  ASSERT_NO_ERRNO(CreateWithContents(new_file, "new", 0644));
+  ASSERT_THAT(stat(new_file.c_str(), &st), SyscallSucceeds());
+
+  // Delete from merged (creates whiteout in upper).
+  ASSERT_THAT(unlink(merged_file.c_str()), SyscallSucceeds());
+  ASSERT_THAT(stat(merged_file.c_str(), &st), SyscallFailsWithErrno(ENOENT));
+
+  // New file still accessible.
+  ASSERT_THAT(stat(new_file.c_str(), &st), SyscallSucceeds());
+}
+
+// Test that whiteout char(0,0) devices can be created on a gofer filesystem.
+// Docker overlay2 creates these during image layer extraction.
+TEST(MountTest, WhiteoutDeviceOnGofer) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  // Requires gofer rootfs.
+  struct statfs rootfs_stat;
+  ASSERT_THAT(statfs("/", &rootfs_stat), SyscallSucceeds());
+  SKIP_IF(rootfs_stat.f_type != 0x01021997);  // V9FS_MAGIC
+
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn("/"));
+  std::string dev_path = dir.path() + "/whiteout";
+
+  // Create with mode S_IFCHR and dev 0 — exactly what Docker does.
+  ASSERT_THAT(mknod(dev_path.c_str(), S_IFCHR, makedev(0, 0)),
+              SyscallSucceeds());
+
+  struct stat st;
+  ASSERT_THAT(stat(dev_path.c_str(), &st), SyscallSucceeds());
+  EXPECT_TRUE(S_ISCHR(st.st_mode));
+  EXPECT_EQ(major(st.st_rdev), 0);
+  EXPECT_EQ(minor(st.st_rdev), 0);
+
+  // Must be visible in readdir.
+  auto dirp = opendir(dir.path().c_str());
+  ASSERT_NE(dirp, nullptr);
+  bool found = false;
+  while (auto* entry = readdir(dirp)) {
+    if (std::string(entry->d_name) == "whiteout") {
+      found = true;
+      break;
+    }
+  }
+  closedir(dirp);
+  EXPECT_TRUE(found) << "whiteout device not visible in readdir";
+
+  // Chown must succeed (Docker does this after mknod).
+  ASSERT_THAT(chown(dev_path.c_str(), 0, 0), SyscallSucceeds());
+  ASSERT_THAT(unlink(dev_path.c_str()), SyscallSucceeds());
+}
+
+// Test that trusted.overlay.* xattrs work on a gofer filesystem, while
+// other trusted.* xattrs remain blocked.
+TEST(MountTest, TrustedOverlayXattrOnGofer) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  // Requires gofer rootfs.
+  struct statfs rootfs_stat;
+  ASSERT_THAT(statfs("/", &rootfs_stat), SyscallSucceeds());
+  SKIP_IF(rootfs_stat.f_type != 0x01021997);  // V9FS_MAGIC
+
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn("/"));
+
+  // trusted.overlay.opaque must work.
+  ASSERT_THAT(
+      setxattr(dir.path().c_str(), "trusted.overlay.opaque", "y", 1, 0),
+      SyscallSucceeds());
+  char buf[16] = {};
+  ASSERT_THAT(
+      getxattr(dir.path().c_str(), "trusted.overlay.opaque", buf, sizeof(buf)),
+      SyscallSucceedsWithValue(1));
+  EXPECT_EQ(buf[0], 'y');
+
+  // Other trusted.* xattrs must still be blocked.
+  EXPECT_THAT(
+      setxattr(dir.path().c_str(), "trusted.other", "x", 1, 0),
+      SyscallFailsWithErrno(EOPNOTSUPP));
+}
+
+// -- Regression tests for overlay-on-gofer --
+//
+// These tests document bugs that arise when 9p/gofer is allowed as an
+// overlay upper layer and exercise the fixes in:
+//   pkg/sentry/fsimpl/overlay/filesystem.go (rename panic -> EOPNOTSUPP)
+//   pkg/sentry/fsimpl/gofer/gofer.go       (trusted.overlay.* / user.overlay.*
+//                                           emulation)
+
+namespace gofer_overlay_regression {
+
+constexpr uint32_t kV9fsMagic = 0x01021997;
+
+inline bool IsGoferMount(const std::string& path) {
+  struct statfs s;
+  if (statfs(path.c_str(), &s) != 0) return false;
+  return static_cast<uint32_t>(s.f_type) == kV9fsMagic;
+}
+
+struct OverlayDirs {
+  TempPath base;
+  TempPath lower;
+  TempPath upper;
+  TempPath work;
+  TempPath merged;
+  std::string mount_opts;
+};
+
+inline PosixErrorOr<OverlayDirs> MakeOverlayDirsOnGofer() {
+  ASSIGN_OR_RETURN_ERRNO(auto base, TempPath::CreateDirIn("/"));
+  ASSIGN_OR_RETURN_ERRNO(auto lower, TempPath::CreateDirIn(base.path()));
+  ASSIGN_OR_RETURN_ERRNO(auto upper, TempPath::CreateDirIn(base.path()));
+  ASSIGN_OR_RETURN_ERRNO(auto work, TempPath::CreateDirIn(base.path()));
+  ASSIGN_OR_RETURN_ERRNO(auto merged, TempPath::CreateDirIn(base.path()));
+  std::string opts = "lowerdir=" + lower.path() + ",upperdir=" + upper.path() +
+                     ",workdir=" + work.path();
+  return OverlayDirs{std::move(base),   std::move(lower),  std::move(upper),
+                     std::move(work),   std::move(merged), std::move(opts)};
+}
+
+}  // namespace gofer_overlay_regression
+
+using gofer_overlay_regression::IsGoferMount;
+using gofer_overlay_regression::MakeOverlayDirsOnGofer;
+
+// trusted.overlay.opaque setxattr/getxattr/removexattr must roundtrip on a
+// gofer mount (emulated in the sentry since the gofer lacks CAP_SYS_ADMIN).
+TEST(MountTest, GoferOverlayOpaqueXattrRoundtrip) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(!IsGoferMount("/"));
+
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn("/"));
+
+  ASSERT_THAT(setxattr(dir.path().c_str(), "trusted.overlay.opaque", "y", 1,
+                       0),
+              SyscallSucceeds())
+      << "setxattr trusted.overlay.opaque must be supported on gofer for"
+         " the overlay filesystem to function correctly";
+
+  char buf[16] = {};
+  EXPECT_THAT(
+      getxattr(dir.path().c_str(), "trusted.overlay.opaque", buf, sizeof(buf)),
+      SyscallSucceedsWithValue(1));
+  EXPECT_EQ(buf[0], 'y');
+
+  EXPECT_THAT(removexattr(dir.path().c_str(), "trusted.overlay.opaque"),
+              SyscallSucceeds());
+  EXPECT_THAT(
+      getxattr(dir.path().c_str(), "trusted.overlay.opaque", buf, sizeof(buf)),
+      SyscallFailsWithErrno(ENODATA));
+}
+
+// mkdir over a whiteout on overlay-on-gofer must succeed. Requires the
+// overlay to be able to set trusted.overlay.opaque on the new upper dir.
+TEST(MountTest, OverlayOnGoferMkdirOverWhiteoutSucceeds) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(!IsGoferMount("/"));
+
+  auto dirs = ASSERT_NO_ERRNO_AND_VALUE(MakeOverlayDirsOnGofer());
+  std::string dname = dirs.lower.path() + "/foo";
+  ASSERT_THAT(mkdir(dname.c_str(), 0755), SyscallSucceeds());
+
+  ASSERT_THAT(mount("overlay", dirs.merged.path().c_str(), "overlay", 0,
+                    dirs.mount_opts.c_str()),
+              SyscallSucceeds());
+  auto cleanup = Cleanup(
+      [&dirs] { umount2(dirs.merged.path().c_str(), MNT_DETACH); });
+
+  // Remove foo through the overlay -> whiteout appears in upper.
+  std::string mfoo = dirs.merged.path() + "/foo";
+  ASSERT_THAT(rmdir(mfoo.c_str()), SyscallSucceeds());
+
+  // Re-create foo through the overlay (ovl_create_over_whiteout path).
+  EXPECT_THAT(mkdir(mfoo.c_str(), 0755), SyscallSucceeds())
+      << "mkdir over a whiteout on overlay-on-gofer must succeed; this"
+         " pattern appears in Docker image layer extraction.";
+}
+
+// rename(2) of a directory through overlay-on-gofer must not panic the
+// sandbox. Prior to the fix this produced:
+//   panic("unrecoverable overlayfs inconsistency: failed to make renamed
+//          directory opaque: operation not supported on transport endpoint")
+// in pkg/sentry/fsimpl/overlay/filesystem.go.
+TEST(MountTest, OverlayOnGoferRenameDirDoesNotPanicSandbox) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(!IsGoferMount("/"));
+
+  auto dirs = ASSERT_NO_ERRNO_AND_VALUE(MakeOverlayDirsOnGofer());
+  std::string src_lower = dirs.lower.path() + "/srcdir";
+  ASSERT_THAT(mkdir(src_lower.c_str(), 0755), SyscallSucceeds());
+  std::string src_lower_file = src_lower + "/f";
+  ASSERT_NO_ERRNO(CreateWithContents(src_lower_file, "x", 0644));
+
+  ASSERT_THAT(mount("overlay", dirs.merged.path().c_str(), "overlay", 0,
+                    dirs.mount_opts.c_str()),
+              SyscallSucceeds());
+  auto cleanup = Cleanup(
+      [&dirs] { umount2(dirs.merged.path().c_str(), MNT_DETACH); });
+
+  std::string m_src = dirs.merged.path() + "/srcdir";
+  std::string m_dst = dirs.merged.path() + "/dstdir";
+  EXPECT_THAT(rename(m_src.c_str(), m_dst.c_str()), SyscallSucceeds())
+      << "rename of a directory through overlay-on-gofer must not panic;"
+         " an EOPNOTSUPP here would still be better than a sandbox crash.";
+
+  struct stat st;
+  EXPECT_THAT(stat(m_dst.c_str(), &st), SyscallSucceeds());
+  EXPECT_THAT(stat(m_src.c_str(), &st), SyscallFailsWithErrno(ENOENT));
+}
+
+// When the overlay creates a fresh upper directory, it must set the
+// overlay opaque xattr for lookup optimisation. Before the fix, gofer
+// silently dropped the setxattr, so every lookup kept descending into
+// the lower layer.
+TEST(MountTest, OverlayOnGoferMkdirSetsOpaqueOnUpper) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(!IsGoferMount("/"));
+
+  auto dirs = ASSERT_NO_ERRNO_AND_VALUE(MakeOverlayDirsOnGofer());
+
+  ASSERT_THAT(mount("overlay", dirs.merged.path().c_str(), "overlay", 0,
+                    dirs.mount_opts.c_str()),
+              SyscallSucceeds());
+  auto cleanup = Cleanup(
+      [&dirs] { umount2(dirs.merged.path().c_str(), MNT_DETACH); });
+
+  std::string m_sub = dirs.merged.path() + "/newdir";
+  ASSERT_THAT(mkdir(m_sub.c_str(), 0755), SyscallSucceeds());
+
+  std::string u_sub = dirs.upper.path() + "/newdir";
+  char buf[16] = {};
+  EXPECT_THAT(
+      getxattr(u_sub.c_str(), "trusted.overlay.opaque", buf, sizeof(buf)),
+      SyscallSucceedsWithValue(1))
+      << "freshly created overlay upper dir must carry trusted.overlay.opaque"
+         " so future lookups skip the lower layer";
+  EXPECT_EQ(buf[0], 'y');
 }
 
 }  // namespace

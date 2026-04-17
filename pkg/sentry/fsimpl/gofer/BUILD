@@ -126,6 +126,7 @@ go_library(
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/usage",
         "//pkg/sentry/vfs",
+        "//pkg/sentry/vfs/memxattr",
         "//pkg/sync",
         "//pkg/syserr",
         "//pkg/unet",
