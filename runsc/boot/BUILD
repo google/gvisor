@@ -17,7 +17,6 @@ go_library(
         "events.go",
         "fscheckpoint.go",
         "fscheckpoint_impl.go",
-        "gofer_conf.go",
         "limits.go",
         "loader.go",
         "loader_impl.go",
@@ -160,7 +159,6 @@ go_test(
     size = "small",
     srcs = [
         "compat_test.go",
-        "gofer_conf_test.go",
         "loader_test.go",
         "mount_hints_test.go",
         "vfs_test.go",
@@ -181,6 +179,7 @@ go_test(
         "//runsc/config",
         "//runsc/flag",
         "//runsc/fsgofer",
+        "//runsc/specutils",
         "@com_github_moby_sys_capability//:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
