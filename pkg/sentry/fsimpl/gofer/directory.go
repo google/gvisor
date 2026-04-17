@@ -312,7 +312,10 @@ func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 		}
 	}
 	// Cache dirents for future directoryFDs if permitted.
-	if d.inode.cachedMetadataAuthoritative() {
+	// Cap cached entries to prevent guest-controlled memory exhaustion
+	// via directories with millions of entries.
+	const maxCachedDirents = 100000
+	if d.inode.cachedMetadataAuthoritative() && len(dirents) <= maxCachedDirents {
 		d.dirents = dirents
 		d.childrenSet = make(map[string]struct{}, len(dirents))
 		for _, dirent := range d.dirents {
