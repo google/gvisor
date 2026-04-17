@@ -109,7 +109,9 @@ var _ dynamicInode = (*ifinet6)(nil)
 func (n *ifinet6) contents() []string {
 	var lines []string
 	nics := n.stack.Interfaces()
-	for id, naddrs := range n.stack.InterfaceAddrs() {
+	ifAddrs := n.stack.InterfaceAddrs()
+	for _, id := range n.stack.InterfaceIDs() {
+		naddrs := ifAddrs[id]
 		nic, ok := nics[id]
 		if !ok {
 			// NIC was added after NICNames was called. We'll just ignore it.
@@ -160,7 +162,8 @@ func (n *netDevData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	buf.WriteString("Inter-|   Receive                                                |  Transmit\n")
 	buf.WriteString(" face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed\n")
 
-	for _, i := range interfaces {
+	for _, idx := range n.stack.InterfaceIDs() {
+		i := interfaces[idx]
 		// Implements the same format as
 		// net/core/net-procfs.c:dev_seq_printf_stats.
 		var stats inet.StatDev
