@@ -19,6 +19,8 @@
 
 #include "gtest/gtest.h"
 #include "absl/strings/str_split.h"
+#include "absl/synchronization/notification.h"
+#include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/fs_util.h"
 #include "test/util/posix_error.h"
@@ -108,11 +110,11 @@ TEST_F(AffinityTest, SchedSetAffinityNonexistentCPUDropped) {
       SyscallSucceeds())
       << "failed with cpumask : " << CPUSetToString(mask)
       << ", cpuset_size_ : " << cpuset_size_;
-  cpu_set_t newmask;
-  EXPECT_THAT(sched_getaffinity(/*pid=*/0, sizeof(cpu_set_t), &newmask),
+  cpu_set_t new_mask;
+  EXPECT_THAT(sched_getaffinity(/*pid=*/0, sizeof(cpu_set_t), &new_mask),
               SyscallSucceeds());
-  EXPECT_TRUE(CPU_EQUAL(&mask_, &newmask))
-      << "got: " << CPUSetToString(newmask)
+  EXPECT_TRUE(CPU_EQUAL(&mask_, &new_mask))
+      << "got: " << CPUSetToString(new_mask)
       << " != expected: " << CPUSetToString(mask_);
 }
 
@@ -247,6 +249,205 @@ TEST_F(AffinityTest, LargeCpuMask) {
   EXPECT_TRUE(CPU_EQUAL_S(mask_size, large_mask, new_mask))
       << "got: " << CPUSetToString(*new_mask, cpus)
       << " != expected: " << CPUSetToString(*large_mask, cpus);
+}
+
+// Matches Linux kernel/sched/core.c:sched_setaffinity() where setting
+// affinity of another user's process requires CAP_SYS_NICE.
+TEST_F(AffinityTest, DiffUserFailWithoutCapSysNice) {
+  SKIP_IF(GvisorPlatform() == Platform::kKVM);
+
+  const uid_t kOtherUID = 65534; // nobody
+
+  int target_tid = 0;
+  absl::Notification notification;
+  absl::Notification done;
+  bool setuid_ok = false;
+
+  ScopedThread t([&]() {
+    target_tid = syscall(SYS_gettid);
+    if (syscall(SYS_setuid, kOtherUID) != 0) {
+      notification.Notify();
+      return;
+    }
+    setuid_ok = true;
+    notification.Notify();
+    done.WaitForNotification();
+  });
+
+  notification.WaitForNotification();
+  if (!setuid_ok) {
+    GTEST_SKIP() << "setuid failed, skipping test";
+  }
+
+  // Drop CAP_SYS_NICE.
+  AutoCapability cap(CAP_SYS_NICE, false);
+
+  // Attempt to set affinity of target.
+  EXPECT_THAT(sched_setaffinity(target_tid, sizeof(cpu_set_t), &mask_),
+              SyscallFailsWithErrno(EPERM));
+
+  done.Notify();
+}
+
+// Matches Linux kernel/sched/core.c:sched_setaffinity() where setting
+// affinity of another user's process succeeds with CAP_SYS_NICE.
+TEST_F(AffinityTest, DiffUserSuccessWithCapSysNice) {
+  SKIP_IF(GvisorPlatform() == Platform::kKVM);
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_NICE)));
+
+  const uid_t kOtherUID = 65534; // nobody
+
+  int target_tid = 0;
+  absl::Notification notification;
+  absl::Notification done;
+  bool setuid_ok = false;
+
+  ScopedThread t([&]() {
+    target_tid = syscall(SYS_gettid);
+    if (syscall(SYS_setuid, kOtherUID) != 0) {
+      notification.Notify();
+      return;
+    }
+    setuid_ok = true;
+    notification.Notify();
+    done.WaitForNotification();
+  });
+
+  notification.WaitForNotification();
+  if (!setuid_ok) {
+    GTEST_SKIP() << "setuid failed, skipping test";
+  }
+
+  // We have CAP_SYS_NICE by default (or we checked for it).
+  
+  EXPECT_THAT(sched_setaffinity(target_tid, sizeof(cpu_set_t), &mask_),
+              SyscallSucceeds());
+
+  done.Notify();
+}
+
+TEST_F(AffinityTest, SameUserSuccessWithoutCapSysNice) {
+  SKIP_IF(GvisorPlatform() == Platform::kKVM);
+
+  int target_tid = 0;
+  absl::Notification notification;
+  absl::Notification done;
+
+  ScopedThread t([&]() {
+    target_tid = syscall(SYS_gettid);
+    notification.Notify();
+    done.WaitForNotification();
+  });
+
+  notification.WaitForNotification();
+
+  // Drop CAP_SYS_NICE.
+  AutoCapability cap(CAP_SYS_NICE, false);
+
+  // Attempt to set affinity of target.
+  EXPECT_THAT(sched_setaffinity(target_tid, sizeof(cpu_set_t), &mask_),
+              SyscallSucceeds());
+
+  done.Notify();
+}
+
+TEST_F(AffinityTest, RealUserMatchEffectiveDiffFailWithoutCapSysNice) {
+  SKIP_IF(GvisorPlatform() == Platform::kKVM);
+
+  const uid_t kUID1 = 1000;
+  const uid_t kUID2 = 2000;
+
+  int target_tid = 0;
+  absl::Notification notification;
+  absl::Notification done;
+  bool target_ok = false;
+
+  ScopedThread target_thread([&]() {
+    target_tid = syscall(SYS_gettid);
+    if (syscall(SYS_setresuid, kUID1, kUID1, kUID1) != 0) {
+      notification.Notify();
+      return;
+    }
+    target_ok = true;
+    notification.Notify();
+    done.WaitForNotification();
+  });
+
+  notification.WaitForNotification();
+  if (!target_ok) {
+    GTEST_SKIP() << "Failed to set target UIDs";
+  }
+
+  absl::Notification caller_done;
+  bool caller_ok = false;
+  
+  ScopedThread caller_thread([&]() {
+    if (syscall(SYS_setresuid, kUID1, kUID2, kUID2) != 0) {
+      caller_done.Notify();
+      return;
+    }
+    
+    caller_ok = true;
+    
+    EXPECT_THAT(sched_setaffinity(target_tid, sizeof(cpu_set_t), &mask_),
+                SyscallFailsWithErrno(EPERM));
+                
+    caller_done.Notify();
+  });
+
+  caller_done.WaitForNotification();
+  EXPECT_TRUE(caller_ok);
+
+  done.Notify();
+}
+
+TEST_F(AffinityTest, RealUserMatchEffectiveDiffSuccessWithCapSysNice) {
+  SKIP_IF(GvisorPlatform() == Platform::kKVM);
+
+  const uid_t kUID1 = 1000;
+
+  int target_tid = 0;
+  absl::Notification notification;
+  absl::Notification done;
+  bool target_ok = false;
+
+  ScopedThread target_thread([&]() {
+    target_tid = syscall(SYS_gettid);
+    if (syscall(SYS_setresuid, kUID1, kUID1, kUID1) != 0) {
+      notification.Notify();
+      return;
+    }
+    target_ok = true;
+    notification.Notify();
+    done.WaitForNotification();
+  });
+
+  notification.WaitForNotification();
+  if (!target_ok) {
+    GTEST_SKIP() << "Failed to set target UIDs";
+  }
+
+  absl::Notification caller_done;
+  bool caller_ok = false;
+  
+  ScopedThread caller_thread([&]() {
+    if (syscall(SYS_setresuid, kUID1, 0, 0) != 0) {
+      caller_done.Notify();
+      return;
+    }
+    
+    caller_ok = true;
+    
+    EXPECT_THAT(sched_setaffinity(target_tid, sizeof(cpu_set_t), &mask_),
+                SyscallSucceeds());
+                
+    caller_done.Notify();
+  });
+
+  caller_done.WaitForNotification();
+  EXPECT_TRUE(caller_ok);
+
+  done.Notify();
 }
 
 }  // namespace

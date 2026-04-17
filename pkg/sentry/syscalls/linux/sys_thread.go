@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/sched"
+	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -481,6 +482,16 @@ func SchedSetaffinity(t *kernel.Task, sysno uintptr, args arch.SyscallArguments)
 		}
 	}
 
+	// Matches Linux kernel/sched/syscalls.c:sched_setaffinity: setting affinity requires CAP_SYS_NICE or matching UIDs.
+	creds := t.Credentials()
+	targetCreds := task.Credentials()
+	// Matches Linux kernel check_same_owner().
+	if creds.EffectiveKUID != targetCreds.RealKUID && creds.EffectiveKUID != targetCreds.EffectiveKUID {
+		if !t.HasCapabilityIn(linux.CAP_SYS_NICE, targetCreds.UserNamespace) {
+			return 0, nil, linuxerr.EPERM
+		}
+	}
+
 	mask := sched.NewCPUSet(t.Kernel().ApplicationCores())
 	if size > mask.Size() {
 		size = mask.Size()
@@ -715,6 +726,8 @@ func Setpriority(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uin
 		niceval = 19
 	}
 
+	creds := t.Credentials()
+
 	switch which {
 	case linux.PRIO_PROCESS:
 		// Look for who, return ESRCH if not found.
@@ -729,11 +742,82 @@ func Setpriority(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uin
 			return 0, nil, linuxerr.ESRCH
 		}
 
+		// Matches Linux kernel/sys.c:sys_setpriority: setting priority requires CAP_SYS_NICE or matching UIDs.
+		targetCreds := task.Credentials()
+		if creds.EffectiveKUID != targetCreds.RealKUID && creds.EffectiveKUID != targetCreds.EffectiveKUID {
+			// Matches Linux kernel/sys.c:sys_setpriority (specifically set_one_prio_perm).
+			if !t.HasCapabilityIn(linux.CAP_SYS_NICE, targetCreds.UserNamespace) {
+				return 0, nil, linuxerr.EPERM
+			}
+		}
+
+		// Matches Linux kernel/sys.c:sys_setpriority: increasing priority requires CAP_SYS_NICE or RLIMIT_NICE.
+		if niceval < task.Niceness() {
+			niceRlim := 20 - niceval
+			if uint64(niceRlim) > task.Limits().Get(limits.Nice).Cur {
+				// gVisor requires CAP_SYS_NICE in the root user namespace to exceed RLIMIT_NICE.
+				if t.UserNamespace() != t.Kernel().RootUserNamespace() || !t.HasSelfCapability(linux.CAP_SYS_NICE) {
+					return 0, nil, linuxerr.EACCES
+				}
+			}
+		}
+
 		task.SetNiceness(niceval)
 	case linux.PRIO_USER:
-		fallthrough
+		targetUID := uint32(who)
+		if who == 0 {
+			targetUID = uint32(creds.RealKUID)
+		}
+
+		// Matches Linux kernel/sys.c:sys_setpriority (specifically set_one_prio_perm):
+		// Modifying priority of another user's process requires CAP_SYS_NICE.
+		if targetUID != uint32(creds.EffectiveKUID) {
+			if !t.HasCapabilityIn(linux.CAP_SYS_NICE, creds.UserNamespace) {
+				return 0, nil, linuxerr.EPERM
+			}
+		}
+
+		// Matches Linux kernel/sys.c:sys_setpriority: increasing priority requires CAP_SYS_NICE or RLIMIT_NICE.
+		if niceval < t.Niceness() {
+			niceRlim := 20 - niceval
+			if uint64(niceRlim) > t.Limits().Get(limits.Nice).Cur {
+				// gVisor requires CAP_SYS_NICE in the root user namespace to exceed RLIMIT_NICE.
+				if t.UserNamespace() != t.Kernel().RootUserNamespace() || !t.HasSelfCapability(linux.CAP_SYS_NICE) {
+					return 0, nil, linuxerr.EACCES
+				}
+			}
+		}
+
+		// PRIO_USER has no further implementation yet.
+		return 0, nil, nil
 	case linux.PRIO_PGRP:
-		// PRIO_USER and PRIO_PGRP have no further implementation yet.
+		pgid := kernel.ProcessGroupID(who)
+		if who == 0 {
+			pgid = t.PIDNamespace().IDOfProcessGroup(t.ThreadGroup().ProcessGroup())
+		}
+
+		// Matches Linux kernel/sys.c:sys_setpriority:
+		// Modifying priority of processes in another process group requires CAP_SYS_NICE
+		// or matching UIDs. Since we are a stub and don't look up processes,
+		// we require CAP_SYS_NICE if targeting another process group.
+		if pgid != t.PIDNamespace().IDOfProcessGroup(t.ThreadGroup().ProcessGroup()) {
+			if !t.HasCapabilityIn(linux.CAP_SYS_NICE, creds.UserNamespace) {
+				return 0, nil, linuxerr.EPERM
+			}
+		}
+
+		// Matches Linux kernel/sys.c:sys_setpriority: increasing priority requires CAP_SYS_NICE or RLIMIT_NICE.
+		if niceval < t.Niceness() {
+			niceRlim := 20 - niceval
+			if uint64(niceRlim) > t.Limits().Get(limits.Nice).Cur {
+				// gVisor requires CAP_SYS_NICE in the root user namespace to exceed RLIMIT_NICE.
+				if t.UserNamespace() != t.Kernel().RootUserNamespace() || !t.HasSelfCapability(linux.CAP_SYS_NICE) {
+					return 0, nil, linuxerr.EACCES
+				}
+			}
+		}
+
+		// PRIO_PGRP has no further implementation yet.
 		return 0, nil, nil
 	default:
 		return 0, nil, linuxerr.EINVAL
