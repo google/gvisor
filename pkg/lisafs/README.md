@@ -42,6 +42,13 @@ accessed/mutated via RPCs by LISAFS clients. The server is a trusted process.
 For security reasons, the server must assume that the client can be potentially
 compromised and act maliciously.
 
+The server-side interface is `ServerImpl` (defined in `server.go`). The stock
+implementation is `runsc/fsgofer`, which serves host filesystem mounts. The
+`runsc/gofer/provider` package allows registering alternative `ServerImpl`
+implementations for specific mounts, so that a custom gofer binary can serve
+some mounts from a different backend (e.g. a network filesystem) while the
+stock fsgofer handles the rest.
+
 #### Concurrency
 
 The server must execute file system operations under appropriate concurrency

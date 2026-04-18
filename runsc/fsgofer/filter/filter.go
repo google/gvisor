@@ -72,10 +72,21 @@ func Rules(opt Options) seccomp.SyscallRules {
 	return s
 }
 
-// Install installs seccomp filters.
+// Install installs seccomp filters for the stock gofer.
 func Install(opt Options) error {
-	s := Rules(opt)
+	return install(Rules(opt))
+}
 
+// InstallWithExtra installs seccomp filters with additional rules merged
+// in. This is used to accommodate gofer providers that need syscalls
+// beyond the stock allowlist (e.g. for networking or namespace switching).
+func InstallWithExtra(opt Options, extra seccomp.SyscallRules) error {
+	s := Rules(opt)
+	s.Merge(extra)
+	return install(s)
+}
+
+func install(s seccomp.SyscallRules) error {
 	program := &seccomp.Program{
 		RuleSets: []seccomp.RuleSet{
 			{

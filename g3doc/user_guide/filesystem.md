@@ -273,3 +273,30 @@ runsc --root=/path/to/rootdir debug --mount erofs:{source}:{destination}
 ```
 
 [Production guide]: production.md
+
+## Custom Gofer Providers
+
+The stock gofer serves host filesystem mounts via LISAFS. For workloads that
+need a different filesystem backend (a network-backed store, an encrypted
+filesystem, a tiered cache), the `runsc/gofer/provider` package lets you plug in
+a custom `lisafs.ServerImpl` without forking the runsc binary.
+
+A provider registers itself at startup and claims mounts by path. For example, a
+binary might register one provider that handles mounts under `/storage` via an
+HTTP blob service, and another that handles `/encrypted` via a local encryption
+layer. Unclaimed mounts fall through to the stock fsgofer as usual.
+
+To build a custom gofer:
+
+1.  Implement the `provider.Provider` interface: `Name`, `NewServer`, and
+    `SeccompRules`.
+2.  Register your provider in `init()` or early `main()`.
+3.  Build a binary that imports `runsc/cli` and your provider package.
+
+The provider's `NewServer` returns a `*lisafs.Server` for mounts it handles, or
+`(nil, nil)` to decline. Per-mount configuration (endpoints, volume keys) is
+passed via OCI annotations on the spec. The `SeccompRules` method declares any
+additional syscalls the provider needs beyond the stock gofer allowlist (e.g.
+for networking). See the `runsc/gofer/provider` package documentation and
+`pkg/lisafs/testsuite` for testing custom `ServerImpl` implementations.
+
