@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	"gvisor.dev/gvisor/pkg/tcpip/ports"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -136,11 +135,7 @@ func (e *Endpoint) afterLoad(ctx context.Context) {
 	// Restore the endpoint to InitialState as it will be moved to
 	// its origEndpointState during Restore.
 	e.state = atomicbitops.FromUint32(uint32(StateInitial))
-	if e.stack.IsSaveRestoreEnabled() {
-		e.stack.RegisterRestoredEndpoint(e)
-	} else {
-		stack.RestoreStackFromContext(ctx).RegisterRestoredEndpoint(e)
-	}
+	e.stack.RegisterRestoredEndpoint(e)
 }
 
 // Close the endpoint during restore if terminateAtRestore was set for the endpoint.
@@ -189,11 +184,6 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 		snd.probeTimer.init(s.Clock(), timerHandler(e, e.snd.probeTimerExpired))
 		snd.corkTimer.init(s.Clock(), timerHandler(e, e.snd.corkTimerExpired))
 	}
-	saveRestoreEnabled := e.stack.IsSaveRestoreEnabled()
-	if !saveRestoreEnabled {
-		e.stack = s
-		e.protocol = protocolFromStack(s)
-	}
 	e.ops.InitHandler(e, e.stack, GetTCPSendBufferLimits, GetTCPReceiveBufferLimits)
 	e.segmentQueue.thaw()
 
@@ -205,24 +195,6 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 	bind := func() {
 		e.mu.Lock()
 		defer e.mu.Unlock()
-		if !saveRestoreEnabled {
-			addr, _, err := e.checkV4MappedLocked(tcpip.FullAddress{Addr: e.BindAddr, Port: e.TransportEndpointInfo.ID.LocalPort}, true /* bind */)
-			if err != nil {
-				panic("unable to parse BindAddr: " + err.String())
-			}
-			portRes := ports.Reservation{
-				Networks:     e.effectiveNetProtos,
-				Transport:    ProtocolNumber,
-				Addr:         addr.Addr,
-				Port:         addr.Port,
-				Flags:        e.boundPortFlags,
-				BindToDevice: e.boundBindToDevice,
-				Dest:         e.boundDest,
-			}
-			if ok := e.stack.ReserveTuple(portRes); !ok {
-				panic(fmt.Sprintf("unable to re-reserve tuple (%v, %q, %d, %+v, %d, %v)", e.effectiveNetProtos, addr.Addr, addr.Port, e.boundPortFlags, e.boundBindToDevice, e.boundDest))
-			}
-		}
 		e.isPortReserved = true
 
 		// Mark endpoint as bound.
@@ -254,10 +226,8 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 		// Reset the scoreboard to reinitialize the sack information as
 		// we do not restore SACK information.
 		e.scoreboard.Reset()
-		if saveRestoreEnabled {
-			// Unregister the endpoint before registering again during Connect.
-			e.stack.UnregisterTransportEndpoint(e.effectiveNetProtos, header.TCPProtocolNumber, e.TransportEndpointInfo.ID, e, e.boundPortFlags, e.boundBindToDevice)
-		}
+		// Unregister the endpoint before registering again during Connect.
+		e.stack.UnregisterTransportEndpoint(e.effectiveNetProtos, header.TCPProtocolNumber, e.TransportEndpointInfo.ID, e, e.boundPortFlags, e.boundBindToDevice)
 		e.mu.Lock()
 		err := e.connect(tcpip.FullAddress{NIC: e.boundNICID, Addr: e.connectingAddress, Port: e.TransportEndpointInfo.ID.RemotePort}, false /* handshake */)
 		if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
@@ -286,39 +256,19 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 		connectedLoading.Done()
 	case epState == StateListen:
 		tcpip.AsyncLoading.Add(1)
-		if !saveRestoreEnabled {
-			go func() {
-				connectedLoading.Wait()
-				bind()
-				e.acceptMu.Lock()
-				backlog := e.acceptQueue.capacity
-				e.acceptMu.Unlock()
-				if err := e.Listen(backlog); err != nil {
-					panic("endpoint listening failed: " + err.String())
-				}
-				e.LockUser()
-				if e.shutdownFlags != 0 {
-					e.shutdownLocked(e.shutdownFlags)
-				}
-				e.UnlockUser()
-				listenLoading.Done()
-				tcpip.AsyncLoading.Done()
-			}()
-		} else {
-			go func() {
-				connectedLoading.Wait()
-				e.LockUser()
-				// All endpoints will be moved to initial state after
-				// restore. Set endpoint to its originial listen state.
-				e.setEndpointState(StateListen)
-				// Initialize the listening context.
-				rcvWnd := seqnum.Size(e.receiveBufferAvailable())
-				e.listenCtx = newListenContext(e.stack, e.protocol, e, rcvWnd, e.ops.GetV6Only(), e.NetProto)
-				e.UnlockUser()
-				listenLoading.Done()
-				tcpip.AsyncLoading.Done()
-			}()
-		}
+		go func() {
+			connectedLoading.Wait()
+			e.LockUser()
+			// All endpoints will be moved to initial state after
+			// restore. Set endpoint to its originial listen state.
+			e.setEndpointState(StateListen)
+			// Initialize the listening context.
+			rcvWnd := seqnum.Size(e.receiveBufferAvailable())
+			e.listenCtx = newListenContext(e.stack, e.protocol, e, rcvWnd, e.ops.GetV6Only(), e.NetProto)
+			e.UnlockUser()
+			listenLoading.Done()
+			tcpip.AsyncLoading.Done()
+		}()
 	case epState == StateConnecting:
 		// Initial SYN hasn't been sent yet so initiate a connect.
 		tcpip.AsyncLoading.Add(1)

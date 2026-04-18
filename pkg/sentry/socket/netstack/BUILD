@@ -21,7 +21,6 @@ go_library(
         "netstack_link_mutex.go",
         "netstack_state.go",
         "provider.go",
-        "save_restore.go",
         "socketopt_custom.go",
         "stack.go",
         "tun.go",
