@@ -16,6 +16,7 @@ package nvproxy
 
 import (
 	"fmt"
+	"sync"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
@@ -81,6 +82,13 @@ type uvmFD struct {
 	memmapFile    uvmFDMemmapFile
 
 	queue waiter.Queue
+
+	// mu protects fields below.
+	mu sync.Mutex
+	// multiProcessSharing is true if the FD was initialized with
+	// UVM_INIT_FLAGS_MULTI_PROCESS_SHARING_MODE.
+	multiProcessSharing bool
+	ownerTG             *kernel.ThreadGroup
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
@@ -131,6 +139,16 @@ func (fd *uvmFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args 
 	if ctx.IsLogging(log.Debug) {
 		ctx.Debugf("nvproxy: uvm ioctl %d = %#x", cmd, cmd)
 	}
+
+	// Enforce process isolation: If the FD was initialized without multi-process
+	// sharing, only the original ThreadGroup can use it.
+	fd.mu.Lock()
+	if fd.ownerTG != nil && !fd.multiProcessSharing && t.ThreadGroup() != fd.ownerTG {
+		fd.mu.Unlock()
+		ctx.Warningf("nvproxy: blocked cross-process uvm ioctl %d (sharing mode disabled)", cmd)
+		return 0, linuxerr.EACCES
+	}
+	fd.mu.Unlock()
 
 	ui := uvmIoctlState{
 		fd:              fd,
@@ -191,6 +209,11 @@ func uvmInitialize(ui *uvmIoctlState) (uintptr, error) {
 		return 0, err
 	}
 	origFlags := ioctlParams.Flags
+	// Record the original intent and owner
+	ui.fd.mu.Lock()
+	ui.fd.multiProcessSharing = (origFlags & nvgpu.UVM_INIT_FLAGS_MULTI_PROCESS_SHARING_MODE) != 0
+	ui.fd.ownerTG = ui.t.ThreadGroup()
+	ui.fd.mu.Unlock()
 	// This is necessary to share the host UVM FD between sentry and
 	// application processes.
 	ioctlParams.Flags = ioctlParams.Flags | nvgpu.UVM_INIT_FLAGS_MULTI_PROCESS_SHARING_MODE
