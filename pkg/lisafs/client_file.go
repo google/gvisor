@@ -413,12 +413,12 @@ func (f *ClientFD) ReadLinkAt(ctx context.Context) (string, error) {
 }
 
 // Flush makes the Flush RPC.
-func (f *ClientFD) Flush(ctx context.Context) error {
+func (f *ClientFD) Flush(ctx context.Context, size uint64) error {
 	if !f.client.IsSupported(Flush) {
 		// If Flush is not supported, it probably means that it would be a noop.
 		return nil
 	}
-	req := FlushReq{FD: f.fd}
+	req := FlushReq{FD: f.fd, Size: size}
 	var resp FlushResp
 	ctx.UninterruptibleSleepStart()
 	err := f.client.SndRcvMessage(Flush, uint32(req.SizeBytes()), req.MarshalUnsafe, resp.CheckedUnmarshal, nil, req.String, resp.String)

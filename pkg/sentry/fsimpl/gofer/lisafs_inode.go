@@ -580,9 +580,9 @@ func (i *lisafsInode) getDirentsLocked(ctx context.Context, recordDirent func(na
 	}
 }
 
-func flush(ctx context.Context, fd lisafs.ClientFD) error {
+func flush(ctx context.Context, fd lisafs.ClientFD, size uint64) error {
 	if fd.Ok() {
-		return fd.Flush(ctx)
+		return fd.Flush(ctx, size)
 	}
 	return nil
 }

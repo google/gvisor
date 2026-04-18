@@ -1042,7 +1042,7 @@ func FlushHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, 
 	defer fd.DecRef(nil)
 
 	return 0, fd.controlFD.safelyRead(func() error {
-		return fd.impl.Flush()
+		return fd.impl.Flush(req.Size)
 	})
 }
 
