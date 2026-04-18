@@ -1102,7 +1102,7 @@ func (fd *openFDLisa) Allocate(mode, off, length uint64) error {
 }
 
 // Flush implements lisafs.OpenFDImpl.Flush.
-func (fd *openFDLisa) Flush() error {
+func (fd *openFDLisa) Flush(size uint64) error {
 	return nil
 }
 

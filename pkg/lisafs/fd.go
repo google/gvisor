@@ -615,10 +615,11 @@ type OpenFDImpl interface {
 	Allocate(mode, off, length uint64) error
 
 	// Flush can be used to clean up the file state. Behavior is
-	// implementation-specific.
+	// implementation-specific. size is the current file size as tracked by
+	// the sentry.
 	//
 	// On the server, Flush has a read concurrency guarantee.
-	Flush() error
+	Flush(size uint64) error
 
 	// Getdent64 fetches directory entries for this directory and calls
 	// recordDirent for each dirent read. If seek0 is true, then the directory FD

@@ -430,7 +430,7 @@ func (i *inode) flush(ctx context.Context) error {
 	defer i.handleMu.RUnlock()
 	switch it := i.impl.(type) {
 	case *lisafsInode:
-		return flush(ctx, it.writeFDLisa)
+		return flush(ctx, it.writeFDLisa, i.size.Load())
 	case *directfsInode:
 		// Nothing to do here.
 		return nil

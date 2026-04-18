@@ -1284,12 +1284,13 @@ func (r *ReadLinkAtResp) CheckedUnmarshal(src []byte) ([]byte, bool) {
 //
 // +marshal boundCheck
 type FlushReq struct {
-	FD FDID
+	FD   FDID
+	Size uint64 // Current file size as tracked by the sentry.
 }
 
 // String implements fmt.Stringer.String.
 func (f *FlushReq) String() string {
-	return fmt.Sprintf("FlushReq{FD: %d}", f.FD)
+	return fmt.Sprintf("FlushReq{FD: %d, Size: %d}", f.FD, f.Size)
 }
 
 // FlushResp is an empty response to FlushReq.
