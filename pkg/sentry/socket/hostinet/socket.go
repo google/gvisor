@@ -548,6 +548,7 @@ func (s *Socket) recvMsgFromHost(iovs []unix.Iovec, flags int, senderRequested b
 const allowedRecvMsgFlags = unix.MSG_CTRUNC |
 	unix.MSG_DONTWAIT |
 	unix.MSG_ERRQUEUE |
+	unix.MSG_NOSIGNAL |
 	unix.MSG_OOB |
 	unix.MSG_PEEK |
 	unix.MSG_TRUNC |
