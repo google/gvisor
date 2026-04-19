@@ -342,10 +342,12 @@ func (cc *Crictl) StartPodAndContainer(runtime, image, sbSpec, contSpec string) 
 	return podID, contID, err
 }
 
-// StopPodAndContainer stops a container and pod.
-func (cc *Crictl) StopPodAndContainer(podID, contID string) error {
-	if err := cc.StopContainer(contID); err != nil {
-		return fmt.Errorf("failed to stop container %q in pod %q: %v", contID, podID, err)
+// StopPodAndContainers stops containers and pod.
+func (cc *Crictl) StopPodAndContainers(podID string, contIDs []string) error {
+	for _, contID := range contIDs {
+		if err := cc.StopContainer(contID); err != nil {
+			return fmt.Errorf("failed to stop container %q in pod %q: %v", contID, podID, err)
+		}
 	}
 
 	if err := cc.StopPod(podID); err != nil {

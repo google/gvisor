@@ -126,7 +126,7 @@ func TestCrictlSanity(t *testing.T) {
 			}
 
 			// Stop everything.
-			if err := crictl.StopPodAndContainer(podID, contID); err != nil {
+			if err := crictl.StopPodAndContainers(podID, []string{contID}); err != nil {
 				t.Fatalf("stop failed: %v", err)
 			}
 		})
@@ -192,7 +192,7 @@ func TestMountPaths(t *testing.T) {
 			}
 
 			// Stop everything.
-			if err := crictl.StopPodAndContainer(podID, contID); err != nil {
+			if err := crictl.StopPodAndContainers(podID, []string{contID}); err != nil {
 				t.Fatalf("stop failed: %v", err)
 			}
 		})
@@ -247,7 +247,7 @@ func TestMountOverSymlinks(t *testing.T) {
 			}
 
 			// Stop everything.
-			if err := crictl.StopPodAndContainer(podID, contID); err != nil {
+			if err := crictl.StopPodAndContainers(podID, []string{contID}); err != nil {
 				t.Fatalf("stop failed: %v", err)
 			}
 		})
@@ -297,7 +297,7 @@ func TestHomeDir(t *testing.T) {
 				}
 
 				// Stop everything; note that the pod may have already stopped.
-				crictl.StopPodAndContainer(podID, contID)
+				crictl.StopPodAndContainers(podID, []string{contID})
 			})
 
 			// Tests that HOME is set for the exec process.
@@ -317,7 +317,7 @@ func TestHomeDir(t *testing.T) {
 				}
 
 				// Stop everything.
-				if err := crictl.StopPodAndContainer(podID, contID); err != nil {
+				if err := crictl.StopPodAndContainers(podID, []string{contID}); err != nil {
 					t.Fatalf("stop failed: %v", err)
 				}
 			})
@@ -697,17 +697,8 @@ func TestCrictlOneShim(t *testing.T) {
 	}
 
 	// Stop everything.
-	if err := crictl.StopContainer(contID1); err != nil {
-		t.Errorf("failed to stop container 1: %v", err)
-	}
-	if err := crictl.StopContainer(contID2); err != nil {
-		t.Errorf("failed to stop container 2: %v", err)
-	}
-	if err := crictl.StopPod(podID); err != nil {
-		t.Errorf("failed to stop pod: %v", err)
-	}
-	if err := crictl.RmPod(podID); err != nil {
-		t.Errorf("failed to remove pod: %v", err)
+	if err := crictl.StopPodAndContainers(podID, []string{contID1, contID2}); err != nil {
+		t.Errorf("failed to stop pod and containers: %v", err)
 	}
 }
 
@@ -800,17 +791,8 @@ func TestExecWithGrouping(t *testing.T) {
 	}
 
 	// Stop everything.
-	if err := crictl.StopContainer(contID1); err != nil {
-		t.Errorf("failed to stop container 1: %v", err)
-	}
-	if err := crictl.StopContainer(contID2); err != nil {
-		t.Errorf("failed to stop container 2: %v", err)
-	}
-	if err := crictl.StopPod(podID); err != nil {
-		t.Errorf("failed to stop pod: %v", err)
-	}
-	if err := crictl.RmPod(podID); err != nil {
-		t.Errorf("failed to remove pod: %v", err)
+	if err := crictl.StopPodAndContainers(podID, []string{contID1, contID2}); err != nil {
+		t.Errorf("failed to stop pod and containers: %v", err)
 	}
 }
 
@@ -867,6 +849,7 @@ func runPodStartup(t *testing.T, enableGrouping bool, numPods, numContsPerPod in
 			t.Fatalf("failed to run pod: %v", err)
 		}
 
+		containerIDs := make([]string, 0, numContsPerPod)
 		for j := 0; j < numContsPerPod; j++ {
 			contID, err := crictl.Create(podID, contSpecFiles[j], sbSpecFiles[i])
 			if err != nil {
@@ -875,6 +858,10 @@ func runPodStartup(t *testing.T, enableGrouping bool, numPods, numContsPerPod in
 			if _, err := crictl.Start(contID); err != nil {
 				t.Fatalf("failed to start container: %v", err)
 			}
+			containerIDs = append(containerIDs, contID)
+		}
+		if err := crictl.StopPodAndContainers(podID, containerIDs); err != nil {
+			t.Errorf("failed to stop pod and containers: %v", err)
 		}
 	}
 	duration := time.Since(start)

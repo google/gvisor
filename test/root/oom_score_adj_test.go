@@ -352,6 +352,7 @@ func startContainers(t *testing.T, specs []*specs.Spec, ids []string) ([]*contai
 		if err := cont.Start(conf); err != nil {
 			return nil, nil, fmt.Errorf("error starting container: %v", err)
 		}
+		cu.Add(func() { cont.Destroy() })
 	}
 
 	return containers, cu.Release(), nil
