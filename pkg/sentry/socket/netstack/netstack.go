@@ -420,6 +420,9 @@ type sock struct {
 	// readMu protects access to the below fields.
 	readMu sync.Mutex `state:"nosave"`
 
+	// bindMu serializes SO_BINDTODEVICE operations to prevent race conditions.
+	bindMu sync.Mutex `state:"nosave"`
+
 	// sockOptTimestamp corresponds to SO_TIMESTAMP. When true, timestamps
 	// of returned messages can be returned via control messages. When
 	// false, the same timestamp is instead stored and can be read via the
@@ -2063,20 +2066,45 @@ func SetSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 		if n == -1 {
 			n = len(optVal)
 		}
-		name := string(optVal[:n])
-		if name == "" {
-			return syserr.TranslateNetstackError(ep.SocketOptions().SetBindToDevice(0))
+		ifaceName := string(optVal[:n])
+		
+		// Serializes SO_BINDTODEVICE operations to prevent race conditions, matching hostinet.
+		if ns, ok := s.(*sock); ok {
+			ns.bindMu.Lock()
+			defer ns.bindMu.Unlock()
 		}
-		s := t.NetworkContext()
-		if s == nil {
-			return syserr.ErrNoDevice
-		}
-		for nicID, nic := range s.Interfaces() {
-			if nic.Name == name {
-				return syserr.TranslateNetstackError(ep.SocketOptions().SetBindToDevice(nicID))
+
+		currentDevID := ep.SocketOptions().GetBindToDevice()
+		
+		var newDevID int32
+		if ifaceName != "" {
+			s := t.NetworkContext()
+			if s == nil {
+				return syserr.ErrNoDevice
+			}
+
+			found := false
+			for nicID, nic := range s.Interfaces() {
+				if nic.Name == ifaceName {
+					newDevID = nicID
+					found = true
+					break
+				}
+			}
+			if !found {
+				return syserr.ErrUnknownDevice
 			}
 		}
-		return syserr.ErrUnknownDevice
+
+		// Matches Linux net/core/sock.c:sock_bindtoindex_locked.
+		// Any further SO_BINDTODEVICE operation requires CAP_NET_RAW if already bound.
+		if currentDevID != 0 {
+			if !t.HasCapabilityIn(linux.CAP_NET_RAW, t.NetworkNamespace().UserNamespace()) {
+				return syserr.ErrNotPermitted
+			}
+		}
+		
+		return syserr.TranslateNetstackError(ep.SocketOptions().SetBindToDevice(newDevID))
 
 	case linux.SO_BROADCAST:
 		if len(optVal) < sizeOfInt32 {

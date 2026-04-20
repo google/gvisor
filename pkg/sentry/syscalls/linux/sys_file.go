@@ -50,6 +50,17 @@ func Mknodat(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr
 }
 
 func mknodat(t *kernel.Task, dirfd int32, addr hostarch.Addr, mode linux.FileMode, dev uint32) error {
+	// Matches Linux fs/namei.c:vfs_mknod(): creating device nodes requires CAP_MKNOD.
+	fileType := mode.FileType()
+	if fileType == linux.ModeCharacterDevice || fileType == linux.ModeBlockDevice {
+		// Whiteouts are character devices with 0,0 device ID.
+		// They do not require CAP_MKNOD (matches Linux vfs_mknod !is_whiteout check).
+		isWhiteout := fileType == linux.ModeCharacterDevice && dev == linux.WHITEOUT_DEV
+		if !isWhiteout && !t.HasRootCapability(linux.CAP_MKNOD) {
+			return linuxerr.EPERM
+		}
+	}
+
 	path, err := copyInPath(t, addr)
 	if err != nil {
 		return err

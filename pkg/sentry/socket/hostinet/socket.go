@@ -133,6 +133,10 @@ type Socket struct {
 	persistentEventMask atomicbitops.Uint64
 	persistentEntry     waiter.Entry
 
+	// bindMu serializes SO_BINDTODEVICE operations to prevent race conditions
+	// between capability check and setsockopt.
+	bindMu sync.Mutex
+
 	// fd is the host socket fd. It must have O_NONBLOCK, so that operations
 	// will return EWOULDBLOCK instead of blocking on the host. This allows us to
 	// handle blocking behavior independently in the sentry.

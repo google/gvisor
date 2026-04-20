@@ -90,6 +90,7 @@ var setableLimits = map[limits.LimitType]struct{}{
 	limits.FileSize:      {},
 	limits.MemoryLocked:  {},
 	limits.Stack:         {},
+	limits.Nice:          {},
 	// RSS can be set, but it's not enforced because Linux doesn't enforce it
 	// either: "This limit has effect only in Linux 2.4.x, x < 30"
 	limits.Rss: {},
@@ -122,6 +123,9 @@ func prlimit64(t *kernel.Task, resource limits.LimitType, newLim *limits.Limit) 
 
 	oldLim, err := t.ThreadGroup().Limits().Set(resource, *newLim, privileged)
 	if err != nil {
+		if err == linuxerr.EINVAL {
+			t.Debugf("Limits().Set returned EINVAL for resource %v, newLim: %+v, privileged: %v", resource, *newLim, privileged)
+		}
 		return limits.Limit{}, err
 	}
 

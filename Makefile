@@ -267,6 +267,14 @@ syscall-tests: $(RUNTIME_BIN)
 	@$(call test,$(OPTIONS) --test_env=RUNTIME=$(RUNTIME_BIN) --cxxopt=-Werror $(PARTITIONS) $(if $(TARGETS),-- $(TARGETS),test/syscalls/... test/rtnetlink/...))
 .PHONY: syscall-tests
 
+target-syscall-test: $(RUNTIME_BIN) ## Run a specific system call test specified by TARGET.
+	@$(call test,--test_env=RUNTIME=$(RUNTIME_BIN) --cxxopt=-Werror $(PARTITIONS) $(TARGET))
+.PHONY: target-syscall-test
+
+target-syscall-linux-test:## Run a specific system call test specified by TARGET.
+	@$(call test,--cxxopt=-Werror $(PARTITIONS) $(TARGET))
+.PHONY: target-syscall-linux-test
+
 packetimpact-tests:
 	@$(call test,--jobs=HOST_CPUS*3 --local_test_jobs=HOST_CPUS*3 //test/packetimpact/tests:all_tests)
 .PHONY: packetimpact-tests

@@ -15,6 +15,7 @@
 package hostinet
 
 import (
+	"bytes"
 	"fmt"
 	"sync"
 	"time"
@@ -259,6 +260,40 @@ func (s *Socket) SetSockOpt(t *kernel.Task, level, name int, opt []byte) *syserr
 			return syserr.ErrInvalidArgument
 		}
 		opt = opt[:sockOpt.Size]
+	}
+	if level == linux.SOL_SOCKET && name == linux.SO_BINDTODEVICE {
+		s.bindMu.Lock()
+		defer s.bindMu.Unlock()
+
+		// Matches Linux net/core/sock.c:sock_bindtoindex_locked.
+		// Any further SO_BINDTODEVICE operation requires CAP_NET_RAW if already bound.
+		var buf [linux.IFNAMSIZ]byte
+		currentOpt, err := getsockopt(s.fd, linux.SOL_SOCKET, linux.SO_BINDTODEVICE, buf[:])
+		if err != nil {
+			return syserr.FromError(err)
+		}
+
+		// Helper to get string up to null terminator or end of slice.
+		getString := func(b []byte) string {
+			if i := bytes.IndexByte(b, 0); i >= 0 {
+				return string(b[:i])
+			}
+			return string(b)
+		}
+
+		currentDev := getString(currentOpt)
+
+		if currentDev != "" {
+			// Matches Linux net/core/sock.c:sock_bindtoindex_locked.
+			if !t.HasCapabilityIn(linux.CAP_NET_RAW, t.NetworkNamespace().UserNamespace()) {
+				return syserr.ErrNotPermitted
+			}
+		}
+
+		if _, _, errno := unix.Syscall6(unix.SYS_SETSOCKOPT, uintptr(s.fd), uintptr(level), uintptr(name), uintptr(firstBytePtr(opt)), uintptr(len(opt)), 0); errno != 0 {
+			return syserr.FromError(errno)
+		}
+		return nil
 	}
 	if _, _, errno := unix.Syscall6(unix.SYS_SETSOCKOPT, uintptr(s.fd), uintptr(level), uintptr(name), uintptr(firstBytePtr(opt)), uintptr(len(opt)), 0); errno != 0 {
 		return syserr.FromError(errno)

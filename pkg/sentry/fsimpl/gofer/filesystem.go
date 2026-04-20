@@ -905,7 +905,7 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 			return nil, err
 		}
 
-		// EPERM means that gofer does not allow creating a socket or pipe. Fallback
+		// EPERM means that gofer does not allow creating a socket, pipe, or whiteout. Fallback
 		// to creating a synthetic one, i.e. one that is kept entirely in memory.
 
 		// Check that we're not overriding an existing file with a synthetic one.
@@ -936,6 +936,17 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 				kgid: creds.EffectiveKGID,
 				pipe: pipe.NewVFSPipe(true /* isNamed */, pipe.DefaultPipeSize),
 			}), nil
+		case linux.S_IFCHR:
+			// Fallback to synthetic file for whiteouts if gofer doesn't support it.
+			// Consistent with S_IFSOCK and S_IFIFO handling above.
+			if opts.DevMajor == 0 && opts.DevMinor == 0 {
+				return fs.newSyntheticDentry(&createSyntheticOpts{
+					name: name,
+					mode: opts.Mode,
+					kuid: creds.EffectiveKUID,
+					kgid: creds.EffectiveKGID,
+				}), nil
+			}
 		}
 		// Retain error from gofer if synthetic file cannot be created internally.
 		return nil, linuxerr.EPERM
@@ -1154,6 +1165,11 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 		}
 		if d.inode.fs.iopts.OpenSocketsByConnecting {
 			return d.openSocketByConnecting(ctx, opts)
+		}
+	case linux.S_IFCHR:
+		// Handle synthetic whiteouts.
+		if d.inode.isSynthetic() {
+			return rp.VirtualFilesystem().OpenDeviceSpecialFile(ctx, mnt, &d.vfsd, vfs.CharDevice, 0, 0, opts)
 		}
 	case linux.S_IFIFO:
 		if d.inode.isSynthetic() {

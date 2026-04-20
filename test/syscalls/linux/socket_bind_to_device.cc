@@ -49,16 +49,27 @@ class BindToDeviceTest : public ::testing::TestWithParam<SocketKind> {
  protected:
   void SetUp() override {
     printf("Testing case: %s\n", GetParam().description.c_str());
-    ASSERT_TRUE(ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)))
-        << "CAP_NET_RAW is required to use SO_BINDTODEVICE";
 
     interface_name_ = "eth1";
     auto interface_names = GetInterfaceNames();
     if (interface_names.find(interface_name_) == interface_names.end()) {
       // Need a tunnel.
-      tunnel_ = ASSERT_NO_ERRNO_AND_VALUE(Tunnel::New());
-      interface_name_ = tunnel_->GetName();
-      ASSERT_FALSE(interface_name_.empty());
+      bool tunnel_created = false;
+      if (ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN))) {
+        tunnel_ = ASSERT_NO_ERRNO_AND_VALUE(Tunnel::New());
+        interface_name_ = tunnel_->GetName();
+        if (!interface_name_.empty()) {
+          tunnel_created = true;
+        }
+      }
+      
+      if (!tunnel_created) {
+        if (interface_names.find("lo") != interface_names.end()) {
+          interface_name_ = "lo";
+        } else {
+          GTEST_SKIP() << "No suitable interface found";
+        }
+      }
     }
     socket_ = ASSERT_NO_ERRNO_AND_VALUE(GetParam().Create());
   }
@@ -114,7 +125,7 @@ TEST_P(BindToDeviceTest, SetsockoptValidDeviceNameWithoutNullTermination) {
   char name_buffer[IFNAMSIZ * 2];
   socklen_t name_buffer_size;
 
-  strncpy(name_buffer, interface_name().c_str(), interface_name().size() + 1);
+  snprintf(name_buffer, sizeof(name_buffer), "%s", interface_name().c_str());
   // Intentionally overwrite the null at the end.
   memset(name_buffer + interface_name().size(), kIllegalIfnameChar,
          sizeof(name_buffer) - interface_name().size());
@@ -140,20 +151,21 @@ TEST_P(BindToDeviceTest, SetsockoptValidDeviceNameWithNullTermination) {
   char name_buffer[IFNAMSIZ * 2];
   socklen_t name_buffer_size;
 
-  strncpy(name_buffer, interface_name().c_str(), interface_name().size() + 1);
+  snprintf(name_buffer, sizeof(name_buffer), "%s", interface_name().c_str());
   // Don't overwrite the null at the end.
   memset(name_buffer + interface_name().size() + 1, kIllegalIfnameChar,
          sizeof(name_buffer) - interface_name().size() - 1);
   for (size_t i = 1; i <= sizeof(name_buffer); i++) {
+    auto socket = ASSERT_NO_ERRNO_AND_VALUE(GetParam().Create());
     name_buffer_size = i;
     SCOPED_TRACE(absl::StrCat("Buffer size: ", i));
     // It should only work if the size provided is at least the right size.
     if (name_buffer_size >= interface_name().size()) {
-      EXPECT_THAT(setsockopt(socket_fd(), SOL_SOCKET, SO_BINDTODEVICE,
+      EXPECT_THAT(setsockopt(socket->get(), SOL_SOCKET, SO_BINDTODEVICE,
                              name_buffer, name_buffer_size),
                   SyscallSucceeds());
     } else {
-      EXPECT_THAT(setsockopt(socket_fd(), SOL_SOCKET, SO_BINDTODEVICE,
+      EXPECT_THAT(setsockopt(socket->get(), SOL_SOCKET, SO_BINDTODEVICE,
                              name_buffer, name_buffer_size),
                   SyscallFailsWithErrno(ENODEV));
     }
@@ -163,11 +175,15 @@ TEST_P(BindToDeviceTest, SetsockoptValidDeviceNameWithNullTermination) {
 // Tests that setsockopt of an invalid device name doesn't unset the previous
 // valid setsockopt.
 TEST_P(BindToDeviceTest, SetsockoptValidThenInvalid) {
+  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
+    GTEST_SKIP() << "CAP_NET_RAW not available";
+  }
+
   char name_buffer[IFNAMSIZ * 2];
   socklen_t name_buffer_size;
 
   // Write successfully.
-  strncpy(name_buffer, interface_name().c_str(), sizeof(name_buffer));
+  snprintf(name_buffer, sizeof(name_buffer), "%s", interface_name().c_str());
   ASSERT_THAT(setsockopt(socket_fd(), SOL_SOCKET, SO_BINDTODEVICE, name_buffer,
                          sizeof(name_buffer)),
               SyscallSucceeds());
@@ -201,11 +217,15 @@ TEST_P(BindToDeviceTest, SetsockoptValidThenInvalid) {
 // Tests that setsockopt of zero-length string correctly unsets the previous
 // value.
 TEST_P(BindToDeviceTest, SetsockoptValidThenClear) {
+  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
+    GTEST_SKIP() << "CAP_NET_RAW not available";
+  }
+
   char name_buffer[IFNAMSIZ * 2];
   socklen_t name_buffer_size;
 
   // Write successfully.
-  strncpy(name_buffer, interface_name().c_str(), sizeof(name_buffer));
+  snprintf(name_buffer, sizeof(name_buffer), "%s", interface_name().c_str());
   EXPECT_THAT(setsockopt(socket_fd(), SOL_SOCKET, SO_BINDTODEVICE, name_buffer,
                          sizeof(name_buffer)),
               SyscallSucceeds());
@@ -237,11 +257,15 @@ TEST_P(BindToDeviceTest, SetsockoptValidThenClear) {
 // Tests that setsockopt of empty string correctly unsets the previous
 // value.
 TEST_P(BindToDeviceTest, SetsockoptValidThenClearWithNull) {
+  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
+    GTEST_SKIP() << "CAP_NET_RAW not available";
+  }
+
   char name_buffer[IFNAMSIZ * 2];
   socklen_t name_buffer_size;
 
   // Write successfully.
-  strncpy(name_buffer, interface_name().c_str(), sizeof(name_buffer));
+  snprintf(name_buffer, sizeof(name_buffer), "%s", interface_name().c_str());
   EXPECT_THAT(setsockopt(socket_fd(), SOL_SOCKET, SO_BINDTODEVICE, name_buffer,
                          sizeof(name_buffer)),
               SyscallSucceeds());
@@ -278,7 +302,7 @@ TEST_P(BindToDeviceTest, GetsockoptDevice) {
   socklen_t name_buffer_size;
 
   // Write successfully.
-  strncpy(name_buffer, interface_name().c_str(), sizeof(name_buffer));
+  snprintf(name_buffer, sizeof(name_buffer), "%s", interface_name().c_str());
   ASSERT_THAT(setsockopt(socket_fd(), SOL_SOCKET, SO_BINDTODEVICE, name_buffer,
                          sizeof(name_buffer)),
               SyscallSucceeds());
@@ -303,6 +327,131 @@ TEST_P(BindToDeviceTest, GetsockoptDevice) {
       EXPECT_EQ(name_buffer_size, i);
     }
   }
+}
+
+// Tests that rebinding to another device fails without CAP_NET_RAW.
+// Matches Linux net/core/sock.c:sock_setsockopt() where changing binding
+// requires CAP_NET_RAW.
+TEST_P(BindToDeviceTest, RebindFailWithoutCapNetRaw) {
+  char name_buffer[IFNAMSIZ * 2];
+  
+  // Bind to initial device.
+  snprintf(name_buffer, sizeof(name_buffer), "%s", interface_name().c_str());
+  ASSERT_THAT(setsockopt(socket_fd(), SOL_SOCKET, SO_BINDTODEVICE, name_buffer,
+                         sizeof(name_buffer)),
+              SyscallSucceeds());
+
+  // Drop CAP_NET_RAW.
+  AutoCapability cap(CAP_NET_RAW, false);
+
+  char name_buffer2[IFNAMSIZ * 2];
+  snprintf(name_buffer2, sizeof(name_buffer2), "%s", "lo");
+  
+  EXPECT_THAT(setsockopt(socket_fd(), SOL_SOCKET, SO_BINDTODEVICE,
+                         name_buffer2, sizeof(name_buffer2)),
+              SyscallFailsWithErrno(EPERM));
+}
+
+// Matches Linux net/core/sock.c:sock_bindtoindex where rebinding to the
+// same device requires CAP_NET_RAW.
+TEST_P(BindToDeviceTest, RebindSameDeviceFailsWithoutCapNetRaw) {
+  char name_buffer[IFNAMSIZ * 2];
+  
+  // Bind to initial device.
+  snprintf(name_buffer, sizeof(name_buffer), "%s", interface_name().c_str());
+  ASSERT_THAT(setsockopt(socket_fd(), SOL_SOCKET, SO_BINDTODEVICE, name_buffer,
+                         sizeof(name_buffer)),
+              SyscallSucceeds());
+
+  // Drop CAP_NET_RAW.
+  AutoCapability cap(CAP_NET_RAW, false);
+
+  // Attempt to bind to the SAME device again.
+  EXPECT_THAT(setsockopt(socket_fd(), SOL_SOCKET, SO_BINDTODEVICE, name_buffer,
+                         sizeof(name_buffer)),
+              SyscallFailsWithErrno(EPERM));
+}
+
+// Matches Linux net/core/sock.c:sock_setsockopt() where changing binding
+// succeeds with CAP_NET_RAW.
+TEST_P(BindToDeviceTest, RebindSuccessWithCapNetRaw) {
+  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
+    GTEST_SKIP() << "CAP_NET_RAW not available";
+  }
+
+  char name_buffer[IFNAMSIZ * 2];
+  
+  // Bind to initial device.
+  snprintf(name_buffer, sizeof(name_buffer), "%s", interface_name().c_str());
+  ASSERT_THAT(setsockopt(socket_fd(), SOL_SOCKET, SO_BINDTODEVICE, name_buffer,
+                         sizeof(name_buffer)),
+              SyscallSucceeds());
+
+  // We already have CAP_NET_RAW by default in this fixture.
+  
+  char name_buffer2[IFNAMSIZ * 2];
+  snprintf(name_buffer2, sizeof(name_buffer2), "%s", "lo");
+  
+  EXPECT_THAT(setsockopt(socket_fd(), SOL_SOCKET, SO_BINDTODEVICE, name_buffer2,
+                         sizeof(name_buffer2)),
+              SyscallSucceeds());
+}
+
+// Matches Linux net/core/sock.c:sock_bindtoindex where unbinding requires
+// CAP_NET_RAW when already bound.
+TEST_P(BindToDeviceTest, UnbindFailsWithoutCapNetRaw) {
+  char name_buffer[IFNAMSIZ * 2];
+  
+  // Bind to initial device.
+  snprintf(name_buffer, sizeof(name_buffer), "%s", interface_name().c_str());
+  ASSERT_THAT(setsockopt(socket_fd(), SOL_SOCKET, SO_BINDTODEVICE, name_buffer,
+                         sizeof(name_buffer)),
+              SyscallSucceeds());
+
+  // Drop CAP_NET_RAW.
+  AutoCapability cap(CAP_NET_RAW, false);
+
+  // Attempt to unbind.
+  EXPECT_THAT(setsockopt(socket_fd(), SOL_SOCKET, SO_BINDTODEVICE, name_buffer,
+                         0),
+              SyscallFailsWithErrno(EPERM));
+}
+
+TEST_P(BindToDeviceTest, UnbindSucceedsWithCapNetRaw) {
+  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
+    GTEST_SKIP() << "CAP_NET_RAW not available";
+  }
+
+  char name_buffer[IFNAMSIZ * 2];
+  
+  // Bind to initial device.
+  snprintf(name_buffer, sizeof(name_buffer), "%s", interface_name().c_str());
+  ASSERT_THAT(setsockopt(socket_fd(), SOL_SOCKET, SO_BINDTODEVICE, name_buffer,
+                         sizeof(name_buffer)),
+              SyscallSucceeds());
+
+  // We have CAP_NET_RAW by default.
+
+  // Attempt to unbind.
+  EXPECT_THAT(setsockopt(socket_fd(), SOL_SOCKET, SO_BINDTODEVICE, name_buffer,
+                         0),
+              SyscallSucceeds());
+}
+
+// Matches Linux net/core/sock.c:sock_setsockopt() where binding new socket
+// does not require CAP_NET_RAW.
+TEST_P(BindToDeviceTest, BindNewSuccessWithoutCapNetRaw) {
+  auto socket = ASSERT_NO_ERRNO_AND_VALUE(GetParam().Create());
+  
+  // Drop CAP_NET_RAW.
+  AutoCapability cap(CAP_NET_RAW, false);
+
+  char name_buffer[IFNAMSIZ * 2];
+  snprintf(name_buffer, sizeof(name_buffer), "%s", interface_name().c_str());
+  
+  EXPECT_THAT(setsockopt(socket->get(), SOL_SOCKET, SO_BINDTODEVICE,
+                         name_buffer, sizeof(name_buffer)),
+              SyscallSucceeds());
 }
 
 INSTANTIATE_TEST_SUITE_P(BindToDeviceTest, BindToDeviceTest,
