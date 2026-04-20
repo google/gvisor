@@ -24,6 +24,7 @@ go_library(
         "socket.go",
         "strace.go",
         "syscalls.go",
+        "linux64_riscv64.go",
     ],
     visibility = ["//:sandbox"],
     deps = [

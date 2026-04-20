@@ -20,6 +20,7 @@ cc_pie_obj(
             "sysmsg_offsets_amd64.h",
         ],
         arm64 = ["sighandler_arm64.c"],
+        riscv64 = ["sighandler_riscv64.c"],
     ) + [
         "atomic.h",
         "sysmsg.h",
@@ -44,6 +45,7 @@ cc_pie_obj(
     srcs = select_arch(
         amd64 = ["sigrestorer_amd64.S"],
         arm64 = ["sigrestorer_arm64.S"],
+        riscv64 = ["sigrestorer_riscv64.S"],
     ),
     outs = ["sysrestorer.o"],
 )
@@ -56,6 +58,7 @@ cc_pie_obj(
             "sysmsg_offsets_amd64.h",
         ],
         arm64 = ["syshandler_arm64.S"],
+        riscv64 = ["syshandler_riscv64.S"],
     ) + [
         "sysmsg_offsets.h",
     ],
@@ -120,6 +123,7 @@ go_library(
         "sysmsg.go",
         "sysmsg_amd64.go",
         "sysmsg_arm64.go",
+        "sysmsg_riscv64.go",
         "sysmsg_unsafe.go",
         ":sighandler_go_arch",
     ],
@@ -136,3 +140,4 @@ go_library(
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
+

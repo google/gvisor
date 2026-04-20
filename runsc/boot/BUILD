@@ -12,6 +12,7 @@ go_library(
         "compat.go",
         "compat_amd64.go",
         "compat_arm64.go",
+        "compat_riscv64.go",
         "controller.go",
         "debug.go",
         "events.go",

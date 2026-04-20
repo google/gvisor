@@ -20,6 +20,7 @@ def cc_pie_obj(name, srcs, outs):
               select_arch(
                   amd64 = "-O2",
                   arm64 = "-O1 -mno-outline-atomics ",
+                  riscv64 = "-O2 -march=rv64gc"
               ) +
               " -fno-builtin " +
               "-ffreestanding " +

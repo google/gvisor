@@ -15,10 +15,12 @@ genrule(
         "critical.h",
         "critical_amd64.S",
         "critical_arm64.S",
+        "critical_riscv64.S",
         "rseq.cc",
         "syscalls.h",
         "start_amd64.S",
         "start_arm64.S",
+        "start_riscv64.S",
         "test.h",
         "types.h",
         "uapi.h",
@@ -40,6 +42,7 @@ genrule(
           select_arch(
               amd64 = "$(location critical_amd64.S) $(location start_amd64.S) ",
               arm64 = "$(location critical_arm64.S) $(location start_arm64.S) ",
+              riscv64 = "$(location critical_riscv64.S) $(location start_riscv64.S) ",
               no_match_error = "unsupported architecture",
           ) +
           "$(location rseq.cc)",

@@ -21,7 +21,7 @@ package(
         ],
         visibility = [":__pkg__"],
     )
-    for arch in ("amd64", "arm64", "arm64_64k")
+    for arch in ("amd64", "arm64", "riscv64", "arm64_64k")
 ]
 
 [
@@ -37,7 +37,7 @@ package(
         },
     )
     for op in ("map", "unmap", "lookup", "empty", "check")
-    for arch in ("amd64", "arm64", "arm64_64k")
+    for arch in ("amd64", "arm64", "riscv64", "arm64_64k")
 ]
 
 go_library(
@@ -72,6 +72,14 @@ go_library(
         ":walker_unmap_amd64",
         ":walker_unmap_arm64",
         ":walker_unmap_arm64_64k",
+        ":walker_empty_riscv64",
+        ":walker_lookup_riscv64",
+        ":walker_map_riscv64",
+        ":walker_unmap_riscv64",
+        "pagetables_riscv64.go",
+        "pcids_riscv64.go",
+        "pcids_riscv64.s",
+        "walker_riscv64.go",
     ],
     visibility = [
         "//pkg/ring0:__subpackages__",
@@ -96,6 +104,8 @@ go_test(
         ":walker_check_amd64",
         ":walker_check_arm64",
         ":walker_check_arm64_64k",
+        "pagetables_riscv64_test.go",
+        ":walker_check_riscv64",
     ],
     library = ":pagetables",
     deps = [

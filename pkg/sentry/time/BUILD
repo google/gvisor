@@ -36,6 +36,11 @@ go_library(
         "vdso.go",
         "vdso_amd64.s",
         "vdso_arm64.s",
+        "arith_riscv64.go",
+        "muldiv_riscv64.s",
+        "sampler_riscv64.go",
+        "tsc_riscv64.s",
+        "vdso_riscv64.s",
     ],
     visibility = ["//:sandbox"],
     deps = [

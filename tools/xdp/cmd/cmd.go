@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build amd64 || arm64
-// +build amd64 arm64
+//go:build amd64 || arm64 || riscv64
+// +build amd64 arm64 riscv64
 
 // Package cmd implements the subcommands of xdp_loader.
 package cmd

@@ -21,6 +21,11 @@ go_library(
         "sighandler_amd64.s",
         "sighandler_arm64.s",
         "xrstor_amd64.s",
+        "atomic_riscv64.s",
+        "memclr_riscv64.s",
+        "memcpy_riscv64.s",
+        "safecopy_riscv64.go",
+        "sighandler_riscv64.s",
     ],
     visibility = ["//:sandbox"],
     deps = [

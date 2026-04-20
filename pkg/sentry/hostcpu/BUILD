@@ -11,6 +11,7 @@ go_library(
         "getcpu_amd64.s",
         "getcpu_arm64.s",
         "hostcpu.go",
+        "getcpu_riscv64.s",
     ],
     visibility = ["//:sandbox"],
 )

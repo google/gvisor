@@ -19,6 +19,10 @@
 #include <sys/types.h>
 #include <sys/user.h>
 
+#if defined(__riscv)
+#include <asm/ptrace.h>
+#endif
+
 #include "sysmsg_offsets.h"  // NOLINT
 
 #if defined(__x86_64__)
@@ -29,6 +33,18 @@ struct arch_state {
   uint32_t fsgsbase;
 };
 // LINT.ThenChange(sysmsg_amd64.go)
+#elif defined(__aarch64__)
+// LINT.IfChange
+struct arch_state {
+  uint32_t fp_len;
+};
+// LINT.ThenChange(sysmsg_arm64.go)
+#elif defined(__riscv)
+// LINT.IfChange
+struct arch_state {
+  uint32_t fp_len;
+};
+// LINT.ThenChange(sysmsg_riscv64.go)
 #else
 // LINT.IfChange
 struct arch_state {

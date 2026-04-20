@@ -11,6 +11,7 @@ go_test(
         "trace_amd64_test.go",
         "trace_arm64_test.go",
         "trace_test.go",
+        "trace_riscv64_test.go",
     ],
     data = [
         "//runsc",

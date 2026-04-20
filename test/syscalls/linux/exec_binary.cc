@@ -21,6 +21,9 @@
 #include <sys/user.h>
 #include <unistd.h>
 
+#ifdef __riscv
+#include <asm/ptrace.h>
+#endif
 #include <algorithm>
 #include <functional>
 #include <iterator>
@@ -48,10 +51,11 @@ namespace {
 using ::testing::AnyOf;
 using ::testing::Eq;
 
-#if !defined(__x86_64__) && !defined(__aarch64__)
+#ME: maybe __riscv needs to be adapted to __riscv
+#if !defined(__x86_64__) && !defined(__aarch64__) && !defined(__riscv)
 // The assembly stub and ELF internal details must be ported to other arches.
-#error "Test only supported on x86-64/arm64"
-#endif  // __x86_64__ || __aarch64__
+#error "Test only supported on x86-64/arm64/riscv64"
+#endif  // __x86_64__ || __aarch64__ || __riscv
 
 #if defined(__x86_64__)
 #define EM_TYPE EM_X86_64
@@ -209,6 +213,62 @@ const char kPtraceCode[] = {
     '\x00',
     '\x00',
     '\xd4',
+};
+// Size of a syscall instruction.
+constexpr int kSyscallSize = 4;
+#elif defined(__riscv)
+#define EM_TYPE EM_RISCV
+#define IP_REG(p) ((p).pc)
+#define RAX_REG(p) ((p).a0)
+#define RDI_REG(p) ((p).a1)
+#define RETURN_REG(p) ((p).a0)
+
+const char kPtraceCode[] = {
+    // li a7, 117 /* ptrace */
+    '\x93',
+    '\x08',
+    '\x50',
+    '\x07',
+    // li a0, 0 /* PTRACE_TRACEME */
+    '\x01',
+    '\x45',
+    // li a1, 0 /* pid */
+    '\x81',
+    '\x45',
+    // li a2, 0 /* addr */
+    '\x01',
+    '\x46',
+    // li a3, 0 /* data */
+    '\x81',
+    '\x46',
+    // ecall
+    '\x73',
+    '\x00',
+    '\x00',
+    '\x00',
+    // li a7, 172 /* getpid */
+    '\x93',
+    '\x08',
+    '\xc0',
+    '\x0a',
+    // ecall
+    '\x73',
+    '\x00',
+    '\x00',
+    '\x00',
+    // li a7, 129 /* kill, R0=pid */
+    '\x93',
+    '\x08',
+    '\x10',
+    '\x08',
+    // li a1, 19  /* SIGSTOP */
+    '\xcd',
+    '\x45',
+    // ecall
+    '\x73',
+    '\x00',
+    '\x00',
+    '\x00',
 };
 // Size of a syscall instruction.
 constexpr int kSyscallSize = 4;
@@ -442,6 +502,9 @@ TEST(ElfTest, MissingText) {
   EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGSEGV) << status;
 #elif defined(__aarch64__)
   // 0 is an invalid instruction opcode on arm64.
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGILL) << status;
+#elif defined(__riscv)
+  // 0 is an invalid instruction opcode on riscv64.
   EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGILL) << status;
 #endif
 }

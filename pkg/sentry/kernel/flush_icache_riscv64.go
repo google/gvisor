@@ -15,6 +15,11 @@
 //go:build riscv64
 // +build riscv64
 
+//ME: This file implements the ptrace flush_icache command for RISC-V 64-bit architecture. 
+// The Linux kernel does not implement this command, so we set a flag in the task's 
+// architecture state to indicate that the instruction cache should be flushed before
+//  returning to user space.
+//ME: This file seems to be obsolete, or has changed in the new gvisor version
 package kernel
 
 import (

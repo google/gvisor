@@ -10,6 +10,7 @@ go_library(
     srcs = [
         "audit_amd64.go",
         "audit_arm64.go",
+        "audit_riscv64.go",
         "seccomp.go",
     ],
     visibility = ["//:sandbox"],

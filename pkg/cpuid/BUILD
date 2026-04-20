@@ -21,6 +21,7 @@ go_library(
         "native_amd64.s",
         "native_arm64.go",
         "static_amd64.go",
+        "native_riscv64.go",
     ],
     visibility = ["//:sandbox"],
     deps = [

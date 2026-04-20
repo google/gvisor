@@ -11,6 +11,7 @@ go_library(
         "config.go",
         "config_amd64.go",
         "config_arm64.go",
+        "config_riscv64.go",
         "config_cgo.go",
         "config_profile.go",
         "extra_filters.go",
@@ -18,6 +19,7 @@ go_library(
         "extra_filters_race.go",
         "extra_filters_race_amd64.go",
         "extra_filters_race_arm64.go",
+        "extra_filters_race_riscv64.go",
         "filter.go",
     ],
     visibility = [

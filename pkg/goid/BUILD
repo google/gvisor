@@ -12,6 +12,7 @@ go_library(
         "goid_amd64.tmpl.s",
         "goid_arm64.tmpl.s",
         "goid_riscv64.tmpl.s",
+        "goid_riscv64.s",
     ],
     stateify = False,
     visibility = ["//visibility:public"],

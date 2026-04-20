@@ -12,6 +12,7 @@ go_library(
         "usertrap_amd64.go",
         "usertrap_amd64_unsafe.go",
         "usertrap_arm64.go",
+        "usertrap_riscv64.go",
     ],
     marshal = True,
     visibility = ["//pkg/sentry/platform/systrap:__pkg__"],

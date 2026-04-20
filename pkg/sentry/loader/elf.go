@@ -150,13 +150,15 @@ func parseHeader(ctx context.Context, f fullReader) (elfInfo, error) {
 	}
 	hdr.UnmarshalUnsafe(hdrBuf)
 
-	// We support amd64 and arm64.
+	// We support amd64, arm64 and riscv64
 	var a arch.Arch
 	switch machine := elf.Machine(hdr.Machine); machine {
 	case elf.EM_X86_64:
 		a = arch.AMD64
 	case elf.EM_AARCH64:
 		a = arch.ARM64
+	case elf.EM_RISCV:
+        a = arch.RISCV64
 	default:
 		log.Infof("Unsupported ELF machine %d", machine)
 		return elfInfo{}, linuxerr.ENOEXEC

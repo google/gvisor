@@ -70,6 +70,17 @@ go_library(
         "physical_map_arm64.go",
         "seccomp_mmap_unsafe.go",
         "virtual_map.go",
+        "address_space_riscv64.go",
+        "bluepill_riscv64.go",
+        "bluepill_riscv64.s",
+        "bluepill_riscv64_unsafe.go",
+        "filters_riscv64.go",
+        "kvm_const_riscv64.go",
+        "kvm_riscv64.go",
+        "kvm_riscv64_unsafe.go",
+        "machine_riscv64.go",
+        "machine_riscv64_unsafe.go",
+        "physical_map_riscv64.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
@@ -111,6 +122,7 @@ go_test(
         "kvm_safecopy_test.go",
         "kvm_test.go",
         "virtual_map_test.go",
+        "kvm_riscv64_test.go",
     ],
     library = ":kvm",
     # FIXME(gvisor.dev/issue/3374): Not working with all build systems.
@@ -148,6 +160,7 @@ go_test(
         "kvm_safecopy_test.go",
         "kvm_test.go",
         "virtual_map_test.go",
+        "kvm_riscv64_test.go",
     ],
     library = ":kvm",
     # FIXME(gvisor.dev/issue/3374): Not working with all build systems.

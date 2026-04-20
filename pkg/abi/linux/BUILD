@@ -89,6 +89,8 @@ go_library(
         "vfio.go",
         "wait.go",
         "xattr.go",
+        "ptrace_riscv64.go",
+        "sem_riscv64.go",
     ],
     hostlayout = True,
     marshal = True,

@@ -15,6 +15,7 @@ go_library(
         "seccomp_optimizer.go",
         "seccomp_rules.go",
         "seccomp_unsafe.go",
+        "seccomp_riscv64.go",
     ],
     visibility = ["//:sandbox"],
     deps = [

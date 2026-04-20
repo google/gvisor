@@ -28,6 +28,13 @@ go_library(
         "lib_arm64.s",
         "ring0.go",
         "x86.go",
+        "defs_riscv64.go",
+        "entry_riscv64.go",
+        "entry_riscv64.s",
+        "kernel_riscv64.go",
+        "lib_riscv64.go",
+        "lib_riscv64.s",
+        "riscv64.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [

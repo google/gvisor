@@ -18,6 +18,7 @@ go_library(
         "vdsodata.go",
         "vdsodata_amd64.go",
         "vdsodata_arm64.go",
+        "vdsodata_riscv64.go",
     ],
     embedsrcs = [
         ":vdso_arch",  # keep

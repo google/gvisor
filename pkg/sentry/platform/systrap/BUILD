@@ -72,6 +72,13 @@ go_library(
         "systrap_profiling.go",
         "systrap_profiling_fake.go",
         "systrap_unsafe.go",
+        "filters_riscv64.go",
+        "lib_riscv64.s",
+        "stub_riscv64.s",
+        "subprocess_riscv64.go",
+        "syscall_thread_riscv64.go",
+        "sysmsg_thread_riscv64.go",
+        "systrap_riscv64.go",
     ],
     visibility = ["//:sandbox"],
     deps = [

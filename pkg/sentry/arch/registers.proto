@@ -85,9 +85,47 @@ message ARM64Registers {
   uint64 pstate = 34;
   uint64 tls = 35;
 }
+
+message RISCV64Registers {
+  uint64 pc = 1;
+  uint64 ra = 2;
+  uint64 sp = 3;
+  uint64 gp = 4;
+  uint64 tp = 5;
+  uint64 t0 = 6;
+  uint64 t1 = 7;
+  uint64 t2 = 8;
+  uint64 s0 = 9;
+  uint64 s1 = 10;
+  uint64 a0 = 11;
+  uint64 a1 = 12;
+  uint64 a2 = 13;
+  uint64 a3 = 14;
+  uint64 a4 = 15;
+  uint64 a5 = 16;
+  uint64 a6 = 17;
+  uint64 a7 = 18;
+  uint64 s2 = 19;
+  uint64 s3 = 20;
+  uint64 s4 = 21;
+  uint64 s5 = 22;
+  uint64 s6 = 23;
+  uint64 s7 = 24;
+  uint64 s8 = 25;
+  uint64 s9 = 26;
+  uint64 s10 = 27;
+  uint64 s11 = 28;
+  uint64 t3 = 29;
+  uint64 t4 = 30;
+  uint64 t5 = 31;
+  uint64 t6 = 32;
+  uint64 OrigA0 = 33;
+};
+
 message Registers {
   oneof arch {
     AMD64Registers amd64 = 1;
     ARM64Registers arm64 = 2;
+    RISCV64Registers riscv64 = 3;
   }
 }

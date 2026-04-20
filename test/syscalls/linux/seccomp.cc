@@ -56,6 +56,9 @@ constexpr uint32_t kFilteredSyscall = SYS_vserver;
 #elif __aarch64__
 // Use the last of arch_specific_syscalls which are not implemented on arm64.
 constexpr uint32_t kFilteredSyscall = __NR_arch_specific_syscall + 15;
+#elif __riscv
+// Use the last of arch_specific_syscalls which are not implemented on riscv64.
+constexpr uint32_t kFilteredSyscall = __NR_arch_specific_syscall + 13;
 #endif
 
 // Applies a seccomp-bpf filter that returns `filtered_result` for
@@ -80,6 +83,9 @@ void ApplySeccompFilter(uint32_t sysno, uint32_t filtered_result,
 #elif defined(__aarch64__)
       // if (A != AUDIT_ARCH_AARCH64) goto kill
       BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AUDIT_ARCH_AARCH64, 0, 4),
+#elif defined(__riscv) && __riscv_xlen == 64
+      // if (A != AUDIT_ARCH_AARCH64) goto kill
+      BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AUDIT_ARCH_RISCV64, 0, 4),
 #else
 #error "Unknown architecture"
 #endif
@@ -128,6 +134,9 @@ void ApplyUncacheableFilter(uint32_t sysno) {
 #elif defined(__aarch64__)
       // if (A != AUDIT_ARCH_AARCH64) goto kill
       BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AUDIT_ARCH_AARCH64, 0, 4),
+#elif defined(__riscv)
+      // if (A != AUDIT_ARCH_RISCV64) goto kill
+      BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AUDIT_ARCH_RISCV64, 0, 4),
 #else
 #error "Unknown architecture"
 #endif
@@ -235,6 +244,9 @@ TEST(SeccompTest, RetTrapCausesSIGSYS) {
 #elif defined(__aarch64__)
           TEST_CHECK(info->si_arch == AUDIT_ARCH_AARCH64);
           TEST_CHECK(uc->uc_mcontext.regs[8] == kFilteredSyscall);
+#elif defined(__riscv) && __riscv_xlen == 64
+          TEST_CHECK(info->si_arch == AUDIT_ARCH_RISCV64);
+          TEST_CHECK(uc->uc_mcontext.__gregs[10] == kFilteredSyscall);
 #endif  // defined(__x86_64__)
           _exit(0);
         });

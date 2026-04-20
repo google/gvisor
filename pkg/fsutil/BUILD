@@ -11,6 +11,7 @@ go_library(
         "fsutil_amd64_unsafe.go",
         "fsutil_arm64_unsafe.go",
         "fsutil_unsafe.go",
+        "fsutil_riscv64_unsafe.go",
     ],
     visibility = ["//visibility:public"],
     deps = [

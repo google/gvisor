@@ -2574,7 +2574,7 @@ cc_binary(
     srcs = select_arch(
         amd64 = ["sigreturn_amd64.cc"],
         arm64 = ["sigreturn_arm64.cc"],
-        riscv64 = [],
+        riscv64 = [sigreturn_riscv64.cc],
     ),
     linkstatic = 1,
     malloc = "//test/util:errno_safe_allocator",
@@ -2585,6 +2585,7 @@ cc_binary(
         "//test/util:timer_util",
     ] + select_arch(
         arm64 = ["//test/util:test_main"],
+        riscv64 = ["//test/util:test_main"],
         default = [],
     ),
 )

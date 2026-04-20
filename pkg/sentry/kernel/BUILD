@@ -331,6 +331,8 @@ go_library(
         "uts_namespace.go",
         "vdso.go",
         "version.go",
+        "flush_icache_riscv64.go",
+        "ptrace_riscv64.go",
     ],
     imports = [
         "gvisor.dev/gvisor/pkg/bpf",

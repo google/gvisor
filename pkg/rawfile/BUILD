@@ -13,6 +13,7 @@ go_library(
         "blockingpoll_noyield_unsafe.go",
         "blockingpoll_yield_unsafe.go",
         "rawfile_unsafe.go",
+        "blockingpoll_riscv64.s",
     ],
     visibility = ["//visibility:public"],
     deps = ["@org_golang_x_sys//unix:go_default_library"],

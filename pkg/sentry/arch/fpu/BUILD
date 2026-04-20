@@ -14,6 +14,7 @@ go_library(
         "fpu_amd64_unsafe.go",
         "fpu_arm64.go",
         "fpu_unsafe.go",
+        "fpu_riscv64.go",
     ],
     marshal = True,
     visibility = ["//:sandbox"],

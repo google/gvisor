@@ -23,6 +23,9 @@ go_library(
         "subprocess_linux.go",
         "subprocess_linux_unsafe.go",
         "subprocess_unsafe.go",
+        "ptrace_riscv64.go",
+        "stub_riscv64.s",
+        "subprocess_riscv64.go",
     ],
     visibility = ["//:sandbox"],
     deps = [

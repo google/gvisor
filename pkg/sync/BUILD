@@ -40,6 +40,8 @@ go_library(
         "rwmutex_unsafe.go",
         "seqcount.go",
         "sync.go",
+        "fence_riscv64.s",
+        "race_riscv64.s",
     ],
     marshal = False,
     stateify = False,

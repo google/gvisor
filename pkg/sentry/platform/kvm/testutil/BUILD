@@ -14,6 +14,8 @@ go_library(
         "testutil_amd64.s",
         "testutil_arm64.go",
         "testutil_arm64.s",
+        "testutil_riscv64.go",
+        "testutil_riscv64.s",
     ],
     visibility = ["//pkg/sentry/platform/kvm:__pkg__"],
     deps = ["//pkg/sentry/arch"],

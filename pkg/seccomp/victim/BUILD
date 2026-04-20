@@ -12,6 +12,7 @@ go_binary(
         "seccomp_test_victim.go",
         "seccomp_test_victim_amd64.go",
         "seccomp_test_victim_arm64.go",
+        "seccomp_test_victim_riscv64.go",
     ],
     nogo = False,
     visibility = ["//:sandbox"],
