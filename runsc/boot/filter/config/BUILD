@@ -23,7 +23,7 @@ go_library(
         "extra_filters_race.go",
         "extra_filters_race_amd64.go",
         "extra_filters_race_arm64.go",
-        "extra_filters_race_riscv64.go",s
+        "extra_filters_race_riscv64.go",
     ],
     visibility = [
         "//runsc/boot/filter:__subpackages__",

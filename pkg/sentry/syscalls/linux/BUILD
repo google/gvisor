@@ -67,6 +67,7 @@ go_library(
         "sys_clone_riscv64.go",
         "sys_stat_riscv64.go",
         "sys_tls_riscv64.go",
+        "sys_flush_icache_riscv64.go",
     ],
     marshal = True,
     visibility = ["//:sandbox"],

@@ -80,6 +80,8 @@ func lookupSyscallNo(arch uint32, name string) (uint32, error) {
 		table = slinux.AMD64
 	case linux.AUDIT_ARCH_AARCH64:
 		table = slinux.ARM64
+	case linux.AUDIT_ARCH_RISCV64:
+		table = slinux.RISCV64
 	}
 	if table == nil {
 		return 0, fmt.Errorf("unsupported architecture: %d", arch)

@@ -24,9 +24,10 @@ type (
 	// Pool is an alias of sync.Pool.
 	Pool = sync.Pool
 
-	// WaitGroup is an alias of sync.WaitGroup.
-	WaitGroup = sync.WaitGroup
-
+	// WaitGroup embeds sync.WaitGroup.
+WaitGroup struct {
+	sync.WaitGroup
+}
 	// Map is an alias of sync.Map.
 	Map = sync.Map
 )
@@ -49,4 +50,13 @@ func OnceValue[T any](f func() T) func() T {
 // OnceValues is a wrapper around sync.OnceValues.
 func OnceValues[T1, T2 any](f func() (T1, T2)) func() (T1, T2) {
 	return sync.OnceValues(f)
+}
+
+// Go starts a goroutine that calls f and waits for it in Wait.
+func (wg *WaitGroup) Go(f func()) {
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		f()
+	}()
 }

@@ -40,6 +40,24 @@ inline void write_barrier(void) {
   __asm__ __volatile__("dmb ishst" ::: "memory");
 }
 
+#elif __riscv__
+
+#define RISCV_FENCE(p, s) \
+        __asm__ __volatile__ ("fence " #p "," #s : : : "memory")
+
+inline void memory_barrier(void) {
+    RISCV_FENCE(rw, rw);
+}
+
+inline void read_barrier(void) {
+    RISCV_FENCE(r, r);
+}
+
+inline void write_barrier(void) {
+    RISCV_FENCE(w, w);
+}
+
+
 #else
 #error "unsupported architecture"
 #endif

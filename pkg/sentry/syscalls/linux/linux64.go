@@ -719,13 +719,15 @@ var ARM64 = &kernel.SyscallTable{
 		439: syscalls.Supported("faccessat2", Faccessat2),
 		441: syscalls.Supported("epoll_pwait2", EpollPwait2),
 	},
-	var RISCV64 = &kernel.SyscallTable{
+}
+
+var RISCV64 = &kernel.SyscallTable{
 	OS:   abi.Linux,
 	Arch: arch.RISCV64,
 	Version: kernel.Version{
-		Sysname: LinuxSysname,
-		Release: "4.15.0",
-		Version: "#1 SMP Sun Jan 10 15:06:54 PST 2018",
+		Sysname: version.LinuxSysname,
+		Release: version.LinuxRelease,
+		Version: version.LinuxVersion,
 	},
 	AuditNumber: linux.AUDIT_ARCH_RISCV64,
 	Table: map[uintptr]kernel.Syscall{
@@ -973,7 +975,7 @@ var ARM64 = &kernel.SyscallTable{
 		241: syscalls.ErrorWithEvent("perf_event_open", linuxerr.ENODEV, "No support for perf counters", nil),
 		242: syscalls.SupportedPoint("accept4", Accept4, PointAccept4),
 		243: syscalls.Supported("recvmmsg", RecvMMsg),
-		259: syscalls.Supported("riscv_flush_icache", FlushIcache),
+//		259: syscalls.Supported("riscv_flush_icache", FlushIcache),
 		260: syscalls.Supported("wait4", Wait4),
 		261: syscalls.SupportedPoint("prlimit64", Prlimit64, PointPrlimit64),
 		262: syscalls.ErrorWithEvent("fanotify_init", linuxerr.ENOSYS, "Needs CONFIG_FANOTIFY", nil),

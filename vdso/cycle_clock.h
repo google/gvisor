@@ -42,6 +42,14 @@ static inline uint64_t cycle_clock(void) {
   return val;
 }
 
+#elif __riscv__
+
+static inline uint64_t cycle_clock(void) {
+    uint64_t val;
+    asm volatile("rdtime %0" : "=r"(val));
+    return val;
+}
+
 #else
 #error "unsupported architecture"
 #endif

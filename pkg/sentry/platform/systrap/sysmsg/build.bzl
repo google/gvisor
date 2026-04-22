@@ -18,13 +18,12 @@ def cc_pie_obj(name, srcs, outs):
               # memcpy. Using -01 causes clang to not make use of memcpy avoiding
               # the need to supply our own memcpy version.
               select_arch(
-                  amd64 = "-O2",
-                  arm64 = "-O1 -mno-outline-atomics ",
+                  amd64 = "-O2 -mgeneral-regs-only ",
+                  arm64 = "-O1 -mno-outline-atomics -mgeneral-regs-only ",
                   riscv64 = "-O2 -march=rv64gc"
               ) +
               " -fno-builtin " +
               "-ffreestanding " +
-              "-mgeneral-regs-only " +
               # Set -g0 to omit debugging information because it contains
               # absolute paths, which are volatile build information and results
               # in Bazel being unable to properly cache the output. If debugging

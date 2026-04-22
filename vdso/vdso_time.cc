@@ -71,6 +71,14 @@ inline struct params* get_params() {
   return p;
 }
 
+#elif __riscv__
+
+inline struct params* get_params() {
+  struct params* p = nullptr;
+  asm("la %0, _params": "=r"(p));
+  return p;
+}
+
 #else
 #error "unsupported architecture"
 #endif

@@ -155,6 +155,44 @@ extern "C" int __kernel_clock_getres(clockid_t clock, struct timespec* res) {
   return ret;
 }
 
+
+#elif __riscv__
+
+// __kernel_clock_gettime() implements clock_gettime()
+extern "C" int __kernel_clock_gettime(clockid_t clock, struct timespec* ts) {
+  return __common_clock_gettime(clock, ts);
+}
+
+// __kernel_gettimeofday() implements gettimeofday()
+extern "C" int __kernel_gettimeofday(struct timeval* tv, struct timezone* tz) {
+  return __common_gettimeofday(tv, tz);
+}
+
+// __kernel_clock_getres() implements clock_getres()
+extern "C" int __kernel_clock_getres(clockid_t clock, struct timespec* res) {
+  int ret = 0;
+
+  switch (clock) {
+    case CLOCK_REALTIME:
+    case CLOCK_MONOTONIC:
+    case CLOCK_BOOTTIME: {
+      if (res == nullptr) {
+        return 0;
+      }
+
+      res->tv_sec = 0;
+      res->tv_nsec = 1;
+      break;
+    }
+
+    default:
+      ret = sys_clock_getres(clock, res);
+      break;
+  }
+
+  return ret;
+}
+
 #else
 #error "unsupported architecture"
 #endif

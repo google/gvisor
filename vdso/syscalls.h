@@ -92,6 +92,47 @@ static inline void sys_rt_sigreturn(void) {
                "svc #0 \n");
 }
 
+#elif __riscv__
+
+static inline int sys_rt_sigreturn(void) {
+    int num = __NR_rt_sigreturn;
+    asm volatile(
+            "mv a7, %0\n"
+            "ecall\n"
+            : "+r"(num)
+            :
+            :);
+    return num;
+}
+
+static inline int sys_clock_gettime(clockid_t _clkid, struct timespec *_ts) {
+  register struct timespec *ts asm("a1") = _ts;
+  register clockid_t clkid asm("a0") = _clkid;
+  register long ret asm("a0");
+  register long nr asm("a7") = __NR_clock_gettime;
+
+  asm volatile(
+          "ecall\n"
+          : "=r"(ret)
+          : "r"(clkid),"r"(ts),"r"(nr)
+          : "memory");
+  return ret;
+}
+
+static inline int sys_clock_getres(clockid_t _clkid, struct timespec *_ts) {
+  register struct timespec *ts asm("a1") = _ts;
+  register clockid_t clkid asm("a0") = _clkid;
+  register long ret asm("a0");
+  register long nr asm("a7") = __NR_clock_getres;
+
+  asm volatile(
+          "ecall\n"
+          : "=r"(ret)
+          : "r"(clkid), "r"(ts), "r"(nr)
+          : "memory");
+  return ret;
+}
+
 #else
 #error "unsupported architecture"
 #endif

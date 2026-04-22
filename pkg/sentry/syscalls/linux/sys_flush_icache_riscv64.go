@@ -12,14 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build riscv64
+
 package linux
 
-// Audit numbers identify different system call APIs, from <uapi/linux/audit.h>
-const (
-	// AUDIT_ARCH_X86_64 identifies AMD64.
-	AUDIT_ARCH_X86_64 = 0xc000003e
-	// AUDIT_ARCH_AARCH64 identifies ARM64.
-	AUDIT_ARCH_AARCH64 = 0xc00000b7
-	// AUDIT_ARCH_RISCV64 identifies RISC-V 64-bit.
-	AUDIT_ARCH_RISCV64 = 0xc00000f3
+import (
+	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 )
+
+const (
+	// arch/riscv/include/asm/cacheflush.h
+	ICACHE_LOCAL = 1
+	ICACHE_ALL = ICACHE_LOCAL
+)
+
+func FlushIcache(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	return t.FlushIcache(args)
+}
