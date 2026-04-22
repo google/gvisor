@@ -171,7 +171,7 @@ func (s *shimRedirector) initExt(ctx context.Context, r *shimapi.CreateTaskReque
 		if s.ext == nil && extension.NewPodExtension != nil {
 			log.L.Infof("Create shim extension per pod")
 			var err error
-			s.ext, err = extension.NewPodExtension(ctx, s.main)
+			s.ext, err = extension.NewPodExtension(ctx, s.main, r)
 			if err != nil {
 				log.L.Debugf("Creating shim extension per pod failed with error: %v", err)
 				s.mu.Unlock()

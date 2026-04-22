@@ -34,13 +34,7 @@ func (s *sock) loadTimestamp(_ context.Context, nsec int64) {
 }
 
 func (s *Stack) saveStack() *stack.Stack {
-	if s.IsSaveRestoreEnabled() {
-		return s.Stack
-	}
-
-	// Netstack s/r is not enabled. Do not save netstack, during
-	// restore a new stack will be configured.
-	return nil
+	return s.Stack
 }
 
 func (s *Stack) loadStack(_ context.Context, st *stack.Stack) {

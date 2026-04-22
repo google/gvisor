@@ -37,9 +37,6 @@ const (
 
 	tpuDeviceGroupName  = "vfio"
 	vfioDeviceGroupName = "vfio"
-
-	// VFIOPath is the valid path to a VFIO device.
-	VFIOPath = "/dev/vfio/vfio"
 )
 
 var (

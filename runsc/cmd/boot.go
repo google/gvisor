@@ -108,7 +108,7 @@ type Boot struct {
 	// goferMountConfs contains information about how the gofer mounts have been
 	// configured. The first entry is for rootfs and the following entries are
 	// for bind mounts in Spec.Mounts (in the same order).
-	goferMountConfs boot.GoferMountConfFlags
+	goferMountConfs specutils.GoferMountConfFlags
 
 	// stdioFDs are the fds for stdin, stdout, and stderr. They must be
 	// provided in that order.

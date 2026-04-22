@@ -132,12 +132,6 @@ type Stack interface {
 	// (inclusive).
 	SetPortRange(start uint16, end uint16) error
 
-	// EnableSaveRestore enables netstack s/r.
-	EnableSaveRestore() error
-
-	// IsSaveRestoreEnabled returns true when netstack s/r is enabled.
-	IsSaveRestoreEnabled() bool
-
 	// Stats returns the network stats.
 	Stats() tcpip.Stats
 

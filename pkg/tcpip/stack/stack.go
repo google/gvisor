@@ -183,9 +183,6 @@ type Stack struct {
 	// initialized at stack startup.
 	tsOffsetSecret uint32
 
-	// saveRestoreEnabled indicates whether the stack is saved and restored.
-	saveRestoreEnabled bool
-
 	// removeConf indicates whether to remove NICs and routes and terminate
 	// active connections before saving. This flag will be set to true only
 	// when resume is false.
@@ -2116,7 +2113,6 @@ func (s *Stack) Restore() {
 	s.mu.Lock()
 	eps := s.restoredEndpoints
 	s.restoredEndpoints = nil
-	saveRestoreEnabled := s.saveRestoreEnabled
 	s.mu.Unlock()
 	for _, e := range eps {
 		e.Restore(s)
@@ -2126,13 +2122,9 @@ func (s *Stack) Restore() {
 	// protocol level background workers.
 	tcpip.AsyncLoading.Wait()
 
-	// Now resume any protocol level background workers.
+	// Now restore any protocol level background workers.
 	for _, p := range s.transportProtocols {
-		if saveRestoreEnabled {
-			p.proto.Restore()
-		} else {
-			p.proto.Resume()
-		}
+		p.proto.Restore()
 	}
 }
 
@@ -2541,22 +2533,6 @@ func (s *Stack) SetNICStack(id tcpip.NICID, peer *Stack) (tcpip.NICID, tcpip.Err
 
 	id = tcpip.NICID(peer.NextNICID())
 	return id, peer.CreateNICWithOptions(id, linkEp, NICOptions{Name: name})
-}
-
-// EnableSaveRestore marks the saveRestoreEnabled to true.
-func (s *Stack) EnableSaveRestore() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.saveRestoreEnabled = true
-}
-
-// IsSaveRestoreEnabled returns true if save restore is enabled for the stack.
-func (s *Stack) IsSaveRestoreEnabled() bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	return s.saveRestoreEnabled
 }
 
 // contextID is this package's type for context.Context.Value keys.

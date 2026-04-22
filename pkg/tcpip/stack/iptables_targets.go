@@ -348,7 +348,7 @@ func natAction(pkt *PacketBuffer, hook Hook, r *Route, portsOrIdents portOrIdent
 	}
 
 	if t := pkt.tuple; t != nil {
-		t.conn.performNAT(pkt, hook, r, portsOrIdents, address, dnat, changePort, changeAddress)
+		IPTPerformNAT(pkt, hook, r, portsOrIdents, address, dnat, changePort, changeAddress)
 		return RuleAccept, 0
 	}
 

@@ -102,12 +102,13 @@ func (s *Stack) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &s.id)
 }
 
+func (s *Stack) afterLoad(context.Context) {}
+
 // +checklocksignore
 func (s *Stack) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &s.eventSubscriber)
 	stateSourceObject.Load(2, &s.id)
 	stateSourceObject.LoadValue(0, new(*stack.Stack), func(y any) { s.loadStack(ctx, y.(*stack.Stack)) })
-	stateSourceObject.AfterLoad(func() { s.afterLoad(ctx) })
 }
 
 func init() {

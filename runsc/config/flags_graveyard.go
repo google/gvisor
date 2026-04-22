@@ -51,4 +51,5 @@ func RegisterDeprecatedFlags(flagSet *flag.FlagSet) {
 	deprecatedBool(flagSet, "lisafs", true, "DEPRECATED: this flag has no effect.", time.Date(2027, time.January, 1, 0, 0, 0, 0, time.UTC))
 	deprecatedBool(flagSet, "cgroupfs", false, "DEPRECATED: this flag has no effect.", time.Date(2027, time.January, 1, 0, 0, 0, 0, time.UTC))
 	deprecatedBool(flagSet, "fsgofer-host-uds", false, "DEPRECATED: use host-uds=all", time.Date(2027, time.January, 1, 0, 0, 0, 0, time.UTC))
+	deprecatedBool(flagSet, "save-restore-netstack", true, "DEPRECATED: this flag has no effect.", time.Date(2027, time.January, 1, 0, 0, 0, 0, time.UTC))
 }

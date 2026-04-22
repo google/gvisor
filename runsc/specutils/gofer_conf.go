@@ -12,13 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package boot
+package specutils
 
 import (
 	"fmt"
 	"strings"
-
-	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
 )
 
 // GoferMountConfUpperType describes how upper layer is configured for the gofer mount.
@@ -102,7 +100,7 @@ func (l GoferMountConfLowerType) String() string {
 	case Lisafs:
 		return "lisafs"
 	case Erofs:
-		return erofs.Name
+		return "erofs"
 	}
 	panic(fmt.Sprintf("Invalid gofer mount config lower layer type: %d", l))
 }
@@ -114,7 +112,7 @@ func (l *GoferMountConfLowerType) Set(v string) error {
 		*l = NoneLower
 	case "lisafs":
 		*l = Lisafs
-	case erofs.Name:
+	case "erofs":
 		*l = Erofs
 	default:
 		return fmt.Errorf("invalid gofer mount config lower layer type: %s", v)

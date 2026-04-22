@@ -1167,6 +1167,11 @@ func (t *Task) waitCollectZombieLocked(target *Task, opts *WaitOptions, asPtrace
 	pid := t.tg.pidns.tids[target]
 	uid := target.Credentials().RealKUID.In(t.UserNamespace()).OrOverflow()
 	status := target.exitStatus
+	target.tg.signalHandlers.mu.Lock()
+	if target.tg.exiting {
+		status = target.tg.exitStatus
+	}
+	target.tg.signalHandlers.mu.Unlock()
 	if !opts.ConsumeEvent {
 		return &WaitResult{
 			Task:   target,
@@ -1175,12 +1180,6 @@ func (t *Task) waitCollectZombieLocked(target *Task, opts *WaitOptions, asPtrace
 			Event:  EventExit,
 			Status: status,
 		}
-	}
-	// Surprisingly, the exit status reported by a non-consuming wait can
-	// differ from that reported by a consuming wait; the latter will return
-	// the group exit code if one is available.
-	if target.tg.exiting {
-		status = target.tg.exitStatus
 	}
 	// t may be (in the thread group of) target's parent, tracer, or both. We
 	// don't need to check for !exitTracerAcked because tracees are detached

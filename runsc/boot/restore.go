@@ -114,7 +114,7 @@ type restorer struct {
 // restoreSubcontainer restores a subcontainer.
 // `subcontainerTimeline` must either be nil or an orphaned timeline.
 // It takes ownership of subcontainerTimeline and will end it.
-func (r *restorer) restoreSubcontainer(spec *specs.Spec, conf *config.Config, l *Loader, cid string, stdioFDs, goferFDs, goferFilestoreFDs []*fd.FD, devGoferFD *fd.FD, goferMountConfs []GoferMountConf, subcontainerTimeline *timing.Timeline) error {
+func (r *restorer) restoreSubcontainer(spec *specs.Spec, conf *config.Config, l *Loader, cid string, stdioFDs, goferFDs, goferFilestoreFDs []*fd.FD, devGoferFD *fd.FD, goferMountConfs []specutils.GoferMountConf, subcontainerTimeline *timing.Timeline) error {
 	containerName := l.registerContainer(spec, cid)
 	info := &containerInfo{
 		cid:               cid,

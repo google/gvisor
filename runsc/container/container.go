@@ -142,7 +142,7 @@ type Container struct {
 	// GoferMountConfs contains information about how the gofer mounts have been
 	// overlaid (with tmpfs or overlayfs). The first entry is for rootfs and the
 	// following entries are for bind mounts in Spec.Mounts (in the same order).
-	GoferMountConfs boot.GoferMountConfFlags `json:"goferMountConfs"`
+	GoferMountConfs specutils.GoferMountConfFlags `json:"goferMountConfs"`
 
 	//
 	// Fields below this line are not saved in the state file and will not
@@ -439,7 +439,7 @@ func (c *Container) Restore(conf *config.Config, imagePath string, direct, backg
 	return c.startImpl(conf, "restore", restore, c.Sandbox.RestoreSubcontainer)
 }
 
-func (c *Container) startImpl(conf *config.Config, action string, startRoot func(conf *config.Config, spec *specs.Spec) error, startSub func(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles, goferFilestores []*os.File, devIOFile *os.File, goferConfs []boot.GoferMountConf) error) error {
+func (c *Container) startImpl(conf *config.Config, action string, startRoot func(conf *config.Config, spec *specs.Spec) error, startSub func(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles, goferFilestores []*os.File, devIOFile *os.File, goferConfs []specutils.GoferMountConf) error) error {
 	if err := c.Saver.lock(BlockAcquire); err != nil {
 		return err
 	}
@@ -1018,38 +1018,38 @@ func (c *Container) forEachSelfMount(fn func(mountSrc string)) {
 	}
 }
 
-func createGoferConf(overlayMedium config.OverlayMedium, overlaySize string, mountType string, mountSrc string) (boot.GoferMountConf, error) {
-	var lower boot.GoferMountConfLowerType
+func createGoferConf(overlayMedium config.OverlayMedium, overlaySize string, mountType string, mountSrc string) (specutils.GoferMountConf, error) {
+	var lower specutils.GoferMountConfLowerType
 	switch mountType {
 	case boot.Bind:
-		lower = boot.Lisafs
+		lower = specutils.Lisafs
 	case tmpfs.Name:
-		lower = boot.NoneLower
+		lower = specutils.NoneLower
 	case erofs.Name:
-		lower = boot.Erofs
+		lower = specutils.Erofs
 	default:
-		return boot.GoferMountConf{}, fmt.Errorf("unsupported mount type %q in mount hint", mountType)
+		return specutils.GoferMountConf{}, fmt.Errorf("unsupported mount type %q in mount hint", mountType)
 	}
 	switch overlayMedium {
 	case config.NoOverlay:
-		return boot.GoferMountConf{Lower: lower, Upper: boot.NoOverlay}, nil
+		return specutils.GoferMountConf{Lower: lower, Upper: specutils.NoOverlay}, nil
 	case config.MemoryOverlay:
-		return boot.GoferMountConf{Lower: lower, Upper: boot.MemoryOverlay, Size: overlaySize}, nil
+		return specutils.GoferMountConf{Lower: lower, Upper: specutils.MemoryOverlay, Size: overlaySize}, nil
 	case config.SelfOverlay:
 		mountSrcInfo, err := os.Stat(mountSrc)
 		if err != nil {
-			return boot.GoferMountConf{}, fmt.Errorf("failed to stat mount %q to see if it were a directory: %v", mountSrc, err)
+			return specutils.GoferMountConf{}, fmt.Errorf("failed to stat mount %q to see if it were a directory: %v", mountSrc, err)
 		}
 		if !mountSrcInfo.IsDir() {
 			log.Warningf("self filestore is only supported for directory mounts, but mount %q is not a directory, falling back to memory", mountSrc)
-			return boot.GoferMountConf{Lower: lower, Upper: boot.MemoryOverlay, Size: overlaySize}, nil
+			return specutils.GoferMountConf{Lower: lower, Upper: specutils.MemoryOverlay, Size: overlaySize}, nil
 		}
-		return boot.GoferMountConf{Lower: lower, Upper: boot.SelfOverlay, Size: overlaySize}, nil
+		return specutils.GoferMountConf{Lower: lower, Upper: specutils.SelfOverlay, Size: overlaySize}, nil
 	default:
 		if overlayMedium.IsBackedByAnon() {
-			return boot.GoferMountConf{Lower: lower, Upper: boot.AnonOverlay, Size: overlaySize}, nil
+			return specutils.GoferMountConf{Lower: lower, Upper: specutils.AnonOverlay, Size: overlaySize}, nil
 		}
-		return boot.GoferMountConf{}, fmt.Errorf("unexpected overlay medium %q", overlayMedium)
+		return specutils.GoferMountConf{}, fmt.Errorf("unexpected overlay medium %q", overlayMedium)
 	}
 }
 
@@ -1156,14 +1156,14 @@ func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *b
 	return goferFilestores, nil
 }
 
-func (c *Container) createGoferFilestore(goferRootfs string, ovlConf config.Overlay2, goferConf boot.GoferMountConf, mountSrc string, mountHints *boot.PodMountHints) (*os.File, error) {
+func (c *Container) createGoferFilestore(goferRootfs string, ovlConf config.Overlay2, goferConf specutils.GoferMountConf, mountSrc string, mountHints *boot.PodMountHints) (*os.File, error) {
 	if !goferConf.IsFilestorePresent() {
 		return nil, nil
 	}
 	switch goferConf.Upper {
-	case boot.SelfOverlay:
+	case specutils.SelfOverlay:
 		return c.createGoferFilestoreInSelf(goferRootfs, mountSrc, mountHints)
-	case boot.AnonOverlay:
+	case specutils.AnonOverlay:
 		return c.createGoferFilestoreInDir(goferRootfs, ovlConf.Medium().HostFileDir())
 	default:
 		return nil, fmt.Errorf("unexpected upper layer with filestore %s", goferConf)
@@ -1326,7 +1326,7 @@ func shouldCreateDeviceGofer(spec *specs.Spec, conf *config.Config) bool {
 }
 
 // shouldSpawnGofer indicates whether the gofer process should be spawned.
-func shouldSpawnGofer(spec *specs.Spec, conf *config.Config, goferConfs []boot.GoferMountConf) bool {
+func shouldSpawnGofer(spec *specs.Spec, conf *config.Config, goferConfs []specutils.GoferMountConf) bool {
 	// Lisafs mounts need the gofer.
 	for _, cfg := range goferConfs {
 		if cfg.ShouldUseLisafs() {

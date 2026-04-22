@@ -358,7 +358,7 @@ type StartArgs struct {
 	// GoferMountConfs contains information about how the gofer mounts have been
 	// configured. The first entry is for rootfs and the following entries are
 	// for bind mounts in Spec.Mounts (in the same order).
-	GoferMountConfs []GoferMountConf
+	GoferMountConfs []specutils.GoferMountConf
 
 	// IsRootfsUpperTarFilePresent indicates whether the rootfs upper tar file is present.
 	IsRootfsUpperTarFilePresent bool
