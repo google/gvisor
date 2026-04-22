@@ -618,9 +618,12 @@ func (i *lisafsInode) restoreInode(ctx context.Context, inode *lisafs.Inode, opt
 	i.fs.inoMu.Lock()
 	i.fs.inoByKey[i.inoKey] = i.ino
 	i.fs.inoMu.Unlock()
-	i.fs.inodeMu.Lock()
-	i.fs.inodeByKey[i.inoKey] = &i.inode
-	i.fs.inodeMu.Unlock()
+	// inodeByKey contains non-directory inodes only.
+	if !d.isDir() {
+		i.fs.inodeMu.Lock()
+		i.fs.inodeByKey[i.inoKey] = &i.inode
+		i.fs.inodeMu.Unlock()
+	}
 
 	// Check metadata stability before updating metadata.
 	i.metadataMu.Lock()
