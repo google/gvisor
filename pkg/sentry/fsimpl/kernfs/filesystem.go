@@ -911,6 +911,14 @@ func (fs *Filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 		return err
 	}
 	delete(parent.children, child.name)
+	// Linux sends the parent's IN_DELETE|IN_ISDIR at rmdir() time, but
+	// defers the child's IN_DELETE_SELF/IN_IGNORED until the last ref is
+	// dropped. A removed kernfs dentry keeps one tree ref until we drop it
+	// below, so refs==1 means no external refs remain. Otherwise defer to
+	// cacheLocked(). HandleDeletion() is idempotent.
+	if child.refs.Load() == 1 {
+		child.inode.Watches().HandleDeletion(ctx)
+	}
 	parent.inode.Watches().Notify(ctx, child.name, linux.IN_DELETE|linux.IN_ISDIR, 0, vfs.InodeEvent, true /* unlinked */)
 	// Defer decref so that fs.mu and parentDentry.dirMu are unlocked by then.
 	fs.deferDecRef(child)

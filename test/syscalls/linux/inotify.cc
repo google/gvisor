@@ -27,6 +27,7 @@
 #include <string>
 #include <vector>
 
+#include "gtest/gtest.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_join.h"
@@ -698,6 +699,69 @@ TEST(Inotify, RmdirOnWatchedTargetGeneratesEvent) {
   const std::vector<Event> events =
       ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(fd.get()));
   ASSERT_THAT(events, Are({Event(IN_DELETE_SELF, wd), Event(IN_IGNORED, wd)}));
+}
+
+// No extra references: Linux emits the watched child's delete-self events
+// before the parent's IN_DELETE|IN_ISDIR.
+TEST(Inotify, RmdirGeneratesDeleteSelfBeforeParentDelete) {
+  const TempPath parent = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  TempPath child =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(parent.path()));
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+
+  const int parent_wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(fd.get(), parent.path(), IN_ALL_EVENTS));
+  const int child_wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(fd.get(), child.path(), IN_ALL_EVENTS));
+
+  const std::string child_path = child.release();
+  EXPECT_THAT(rmdir(child_path.c_str()), SyscallSucceeds());
+
+  const std::vector<Event> events =
+      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(fd.get()));
+  ASSERT_THAT(
+      events,
+      Are({Event(IN_DELETE_SELF, child_wd), Event(IN_IGNORED, child_wd),
+           Event(IN_DELETE | IN_ISDIR, parent_wd, Basename(child_path))}));
+}
+
+// An open directory FD keeps the child alive: Linux still emits the
+// parent's IN_DELETE|IN_ISDIR at rmdir() time and defers delete-self
+// until close.
+TEST(Inotify, RmdirWithOpenDirFdDefersDeleteSelfUntilClose) {
+  const TempPath parent = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  TempPath child =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(parent.path()));
+  FileDescriptor child_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(child.path(), O_RDONLY | O_DIRECTORY));
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+
+  const int parent_wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(fd.get(), parent.path(), IN_ALL_EVENTS));
+  const int child_wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(fd.get(), child.path(), IN_ALL_EVENTS));
+
+  const std::string child_path = child.release();
+  EXPECT_THAT(rmdir(child_path.c_str()), SyscallSucceeds());
+
+  std::vector<Event> events = ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(fd.get()));
+  ASSERT_THAT(
+      events,
+      Are({Event(IN_DELETE | IN_ISDIR, parent_wd, Basename(child_path))}));
+
+  child_fd.reset();
+  // Some filesystems may also report close events here. The Linux behavior
+  // we care about is that delete-self is deferred until the final close.
+  events = ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(fd.get()));
+  ASSERT_GE(events.size(), 2);
+  EXPECT_EQ(events[events.size() - 2].wd, child_wd);
+  EXPECT_EQ(events[events.size() - 2].mask, IN_DELETE_SELF);
+  EXPECT_TRUE(events[events.size() - 2].name.empty());
+  EXPECT_EQ(events[events.size() - 1].wd, child_wd);
+  EXPECT_EQ(events[events.size() - 1].mask, IN_IGNORED);
+  EXPECT_TRUE(events[events.size() - 1].name.empty());
 }
 
 TEST(Inotify, MoveGeneratesEvents) {
