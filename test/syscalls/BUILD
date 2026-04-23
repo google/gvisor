@@ -1303,3 +1303,7 @@ syscall_test(
     save = False,
     test = "//test/syscalls/linux:packet_mmap_test",
 )
+
+syscall_test(
+    test = "//test/syscalls/linux:personality_test",
+)

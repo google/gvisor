@@ -15,6 +15,7 @@
 package linux
 
 import (
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -177,4 +178,14 @@ func Setgroups(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintp
 		return 0, nil, err
 	}
 	return 0, nil, t.SetExtraGIDs(gids)
+}
+
+// Personality implements the Linux syscall personality.
+// This is currently a stub implementation, see b/507939512.
+func Personality(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	per := args[0].Uint64()
+	if per == linux.PER_LINUX || per == 0xffffffff {
+		return linux.PER_LINUX, nil, nil
+	}
+	return 0, nil, linuxerr.EINVAL
 }
