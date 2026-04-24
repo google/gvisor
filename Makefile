@@ -642,11 +642,6 @@ benchmark-refresh-pgo: load-benchmarks $(RUNTIME_BIN) ## Refresh profiles of all
 	fi
 .PHONY: benchmark-refresh-pgo
 
-## Seccomp targets.
-seccomp-sentry-filters:  # Dumps seccomp-bpf program for the Sentry binary.
-	@$(call run,//runsc/boot/filter/dumpfilter,$(ARGS))
-.PHONY: seccomp-sentry-filters
-
 ##
 ## Website & documentation helpers.
 ##
