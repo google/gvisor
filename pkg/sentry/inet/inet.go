@@ -38,6 +38,12 @@ type Stack interface {
 	// interface indexes to a slice of associated interface address properties.
 	InterfaceAddrs() map[int32][]InterfaceAddr
 
+	// InterfaceIDs returns all network interface indexes in a
+	// deterministic order matching the interface registration order.
+	// This matches Linux kernel behavior where interfaces are ordered
+	// by their ifindex in the dev_index_head hash table.
+	InterfaceIDs() []int32
+
 	// AddInterfaceAddr adds an address to the network interface identified by
 	// idx.
 	AddInterfaceAddr(idx int32, addr InterfaceAddr) error

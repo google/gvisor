@@ -17,6 +17,8 @@ package inet
 import (
 	"bytes"
 	"fmt"
+	"maps"
+	"slices"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/context"
@@ -74,6 +76,13 @@ func (s *TestStack) SetInterface(ctx context.Context, msg *nlmsg.Message) *syser
 // InterfaceAddrs implements Stack.
 func (s *TestStack) InterfaceAddrs() map[int32][]InterfaceAddr {
 	return s.InterfaceAddrsMap
+}
+
+// InterfaceIDs implements Stack.
+// TestStack stores interfaces in a map, so we sort by ID to ensure
+// a deterministic order.
+func (s *TestStack) InterfaceIDs() []int32 {
+	return slices.Sorted(maps.Keys(s.InterfacesMap))
 }
 
 // AddInterfaceAddr implements Stack.

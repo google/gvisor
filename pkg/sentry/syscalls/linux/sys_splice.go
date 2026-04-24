@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -266,6 +267,13 @@ func Tee(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *k
 	return uintptr(n), nil, HandleIOError(t, n != 0, err, linuxerr.ERESTARTSYS, "tee", inFile)
 }
 
+var sendfileBufPool = sync.Pool{
+	New: func() any {
+		b := make([]byte, pipe.MaximumPipeSize)
+		return &b
+	},
+}
+
 // Sendfile implements linux system call sendfile(2).
 func Sendfile(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	outFD := args[0].Int()
@@ -384,15 +392,11 @@ func Sendfile(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintpt
 		// allocations and long delays. In Linux, the buffer size is
 		// limited by a size of an internl pipe. Here, we repeat this
 		// behavior.
-		bufSize := count
-		if bufSize > pipe.MaximumPipeSize {
-			bufSize = pipe.MaximumPipeSize
-		}
-		buf := make([]byte, bufSize)
+		bufPtr := sendfileBufPool.Get().(*[]byte)
+		defer sendfileBufPool.Put(bufPtr)
 		for {
-			if int64(len(buf)) > count-total {
-				buf = buf[:count-total]
-			}
+			bufLen := min(count-total, pipe.MaximumPipeSize)
+			buf := (*bufPtr)[:bufLen]
 			var readN int64
 			if offset != -1 {
 				readN, err = inFile.PRead(t, usermem.BytesIOSequence(buf), offset, vfs.ReadOptions{})

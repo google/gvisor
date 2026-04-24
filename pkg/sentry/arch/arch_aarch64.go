@@ -226,10 +226,19 @@ const (
 func (s *State) PtraceGetRegSet(regset uintptr, dst io.Writer, maxlen int, _ cpuid.FeatureSet) (int, error) {
 	switch regset {
 	case _NT_PRSTATUS:
-		if maxlen < ptraceRegistersSize {
+		if maxlen <= 0 {
 			return 0, linuxerr.EFAULT
 		}
-		return s.PtraceGetRegs(dst)
+		// Match Linux kernel behavior (kernel/ptrace.c:ptrace_regset()): write
+		// min(maxlen, sizeof(user_regs_struct)) bytes rather than returning
+		// EFAULT for buffers smaller than the full register set.
+		if maxlen >= ptraceRegistersSize {
+			return s.PtraceGetRegs(dst)
+		}
+		regs := s.ptraceGetRegs()
+		buf := make([]byte, regs.SizeBytes())
+		regs.MarshalBytes(buf)
+		return dst.Write(buf[:maxlen])
 	default:
 		return 0, linuxerr.EINVAL
 	}

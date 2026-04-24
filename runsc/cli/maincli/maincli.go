@@ -24,6 +24,14 @@ import (
 	"gvisor.dev/gvisor/runsc/cmd/util"
 )
 
+const (
+	userGroup     = ""
+	helperGroup   = "helpers"
+	debugGroup    = "debug"
+	metricGroup   = "metrics"
+	internalGroup = "internal use only"
+)
+
 // Main is the main entrypoint.
 func Main() {
 	cmds, helpCmds := commands()
@@ -31,64 +39,64 @@ func Main() {
 }
 
 func commands() (map[util.SubCommand]string, []subcommands.Command) {
-	const helperGroup = "helpers"
-	const debugGroup = "debug"
-	const metricGroup = "metrics"
-	const internalGroup = "internal use only"
+	cmds := map[util.SubCommand]string{
+		// Register OCI user-facing runsc commands.
+		new(cmd.Checkpoint): userGroup,
+		new(cmd.Create):     userGroup,
+		new(cmd.Delete):     userGroup,
+		new(cmd.Events):     userGroup,
+		new(cmd.Exec):       userGroup,
+		new(cmd.Kill):       userGroup,
+		new(cmd.List):       userGroup,
+		new(cmd.PS):         userGroup,
+		new(cmd.Pause):      userGroup,
+		new(cmd.Restore):    userGroup,
+		new(cmd.Resume):     userGroup,
+		new(cmd.Run):        userGroup,
+		new(cmd.Spec):       userGroup,
+		new(cmd.Start):      userGroup,
+		new(cmd.State):      userGroup,
+		new(cmd.Update):     userGroup,
+		new(cmd.Wait):       userGroup,
 
-	return map[util.SubCommand]string{
-			// Register OCI user-facing runsc commands.
-			new(cmd.Checkpoint): "",
-			new(cmd.Create):     "",
-			new(cmd.Delete):     "",
-			new(cmd.Events):     "",
-			new(cmd.Exec):       "",
-			new(cmd.Kill):       "",
-			new(cmd.List):       "",
-			new(cmd.PS):         "",
-			new(cmd.Pause):      "",
-			new(cmd.Restore):    "",
-			new(cmd.Resume):     "",
-			new(cmd.Run):        "",
-			new(cmd.Spec):       "",
-			new(cmd.Start):      "",
-			new(cmd.State):      "",
-			new(cmd.Update):     "",
-			new(cmd.Wait):       "",
+		// Non-OCI user-facing runsc commands.
+		new(cmd.Do):           userGroup,
+		new(cmd.FSCheckpoint): userGroup,
+		new(cmd.PortForward):  userGroup,
+		new(cmd.Tar):          userGroup,
 
-			// Non-OCI user-facing runsc commands.
-			new(cmd.Do):           "",
-			new(cmd.FSCheckpoint): "",
-			new(cmd.PortForward):  "",
-			new(cmd.Tar):          "",
+		// Helpers.
+		new(cmd.Install):     helperGroup,
+		new(cmd.Mitigate):    helperGroup,
+		new(cmd.Uninstall):   helperGroup,
+		new(nvproxy.Nvproxy): helperGroup,
+		new(trace.Trace):     helperGroup,
+		new(cmd.CPUFeatures): helperGroup,
 
-			// Helpers.
-			new(cmd.Install):     helperGroup,
-			new(cmd.Mitigate):    helperGroup,
-			new(cmd.Uninstall):   helperGroup,
-			new(nvproxy.Nvproxy): helperGroup,
-			new(trace.Trace):     helperGroup,
-			new(cmd.CPUFeatures): helperGroup,
+		new(cmd.Debug):        debugGroup,
+		new(cmd.Statefile):    debugGroup,
+		new(cmd.Symbolize):    debugGroup,
+		new(cmd.Usage):        debugGroup,
+		new(cmd.ReadControl):  debugGroup,
+		new(cmd.WriteControl): debugGroup,
 
-			new(cmd.Debug):        debugGroup,
-			new(cmd.Statefile):    debugGroup,
-			new(cmd.Symbolize):    debugGroup,
-			new(cmd.Usage):        debugGroup,
-			new(cmd.ReadControl):  debugGroup,
-			new(cmd.WriteControl): debugGroup,
+		new(cmd.MetricMetadata): metricGroup,
+		new(cmd.MetricExport):   metricGroup,
+		new(cmd.MetricServer):   metricGroup,
 
-			new(cmd.MetricMetadata): metricGroup,
-			new(cmd.MetricExport):   metricGroup,
-			new(cmd.MetricServer):   metricGroup,
+		// Internal commands.
+		new(cmd.Boot):   internalGroup,
+		new(cmd.Gofer):  internalGroup,
+		new(cmd.Umount): internalGroup,
+	}
+	extraCmds(cmds)
 
-			// Internal commands.
-			new(cmd.Boot):   internalGroup,
-			new(cmd.Gofer):  internalGroup,
-			new(cmd.Umount): internalGroup,
-		}, []subcommands.Command{
-			// For historical reasons, these subcommands are invoked as `runsc help
-			// platforms` and `runsc help syscalls`.
-			new(cmd.Platforms),
-			new(cmd.Syscalls),
-		}
+	helpCmds := []subcommands.Command{
+		// For historical reasons, these subcommands are invoked as `runsc help
+		// platforms` and `runsc help syscalls`.
+		new(cmd.Platforms),
+		new(cmd.Syscalls),
+	}
+
+	return cmds, helpCmds
 }

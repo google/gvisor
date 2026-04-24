@@ -17,8 +17,6 @@ package route
 
 import (
 	"bytes"
-	"maps"
-	"slices"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -102,8 +100,7 @@ func (p *Protocol) dumpLinks(ctx context.Context, s *netlink.Socket, msg *nlmsg.
 	}
 
 	ifaces := stack.Interfaces()
-	indexes := slices.Sorted(maps.Keys(ifaces))
-	for _, idx := range indexes {
+	for _, idx := range stack.InterfaceIDs() {
 		p.AddNewLinkMessage(ms, idx, ifaces[idx])
 	}
 
@@ -305,8 +302,9 @@ func (p *Protocol) dumpAddrs(ctx context.Context, s *netlink.Socket, msg *nlmsg.
 		return nil
 	}
 
-	for id, as := range stack.InterfaceAddrs() {
-		for _, a := range as {
+	ifAddrs := stack.InterfaceAddrs()
+	for _, id := range stack.InterfaceIDs() {
+		for _, a := range ifAddrs[id] {
 			m := ms.AddMessage(linux.NetlinkMessageHeader{
 				Type: linux.RTM_NEWADDR,
 			})
