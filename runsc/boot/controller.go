@@ -168,6 +168,7 @@ const (
 // Usage related commands (see usage.go for more details).
 const (
 	UsageCollect = "Usage.Collect"
+	UsageReduce  = "Usage.Reduce"
 	UsageUsageFD = "Usage.UsageFD"
 )
 

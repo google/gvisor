@@ -1807,6 +1807,16 @@ func (s *Sandbox) Usage(Full bool) (control.MemoryUsage, error) {
 	return m, nil
 }
 
+// Reduce sends the reduce call for a container in the sandbox.
+func (s *Sandbox) Reduce(opts control.UsageReduceOpts) (control.UsageReduceOutput, error) {
+	log.Debugf("Reduce sandbox %q: %+v", s.ID, opts)
+	var out control.UsageReduceOutput
+	if err := s.call(boot.UsageReduce, &opts, &out); err != nil {
+		return control.UsageReduceOutput{}, fmt.Errorf("reducing usage: %w", err)
+	}
+	return out, nil
+}
+
 // UsageFD sends the usagefd call for a container in the sandbox.
 func (s *Sandbox) UsageFD() (*control.MemoryUsageRecord, error) {
 	log.Debugf("Usage sandbox %q", s.ID)

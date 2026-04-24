@@ -141,18 +141,37 @@ type UsageReduceOpts struct {
 	DoNotGC bool `json:"do_not_gc"`
 }
 
-// UsageReduceOutput contains output from Usage.Reduce().
-type UsageReduceOutput struct{}
+// UsageReduceOutput contains output from Usage.Reduce(). BytesBefore and
+// BytesAfter report MemoryFile.TotalUsage before and after the call;
+// they are populated only when UsageReduceOpts.Wait is true.
+type UsageReduceOutput struct {
+	BytesBefore uint64 `json:"bytes_before,omitempty"`
+	BytesAfter  uint64 `json:"bytes_after,omitempty"`
+}
 
 // Reduce requests that the sentry attempt to reduce its memory usage.
 func (u *Usage) Reduce(opts *UsageReduceOpts, out *UsageReduceOutput) error {
 	mf := u.Kernel.MemoryFile()
+	if opts.Wait {
+		before, err := mf.TotalUsage()
+		if err != nil {
+			return err
+		}
+		out.BytesBefore = before
+	}
 	mf.StartEvictions()
 	if opts.Wait {
 		mf.WaitForEvictions()
 	}
 	if !opts.DoNotGC {
 		runtime.GC()
+	}
+	if opts.Wait {
+		after, err := mf.TotalUsage()
+		if err != nil {
+			return err
+		}
+		out.BytesAfter = after
 	}
 	return nil
 }

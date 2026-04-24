@@ -74,6 +74,7 @@ func commands() (map[util.SubCommand]string, []subcommands.Command) {
 		new(cmd.CPUFeatures): helperGroup,
 
 		new(cmd.Debug):        debugGroup,
+		new(cmd.Reduce):       debugGroup,
 		new(cmd.Statefile):    debugGroup,
 		new(cmd.Symbolize):    debugGroup,
 		new(cmd.Usage):        debugGroup,

@@ -2986,6 +2986,59 @@ func TestUsageFD(t *testing.T) {
 	}
 }
 
+// TestReduce checks that reduce drains the sandbox's MemoryFile.
+func TestReduce(t *testing.T) {
+	spec, conf := sleepSpecConf(t)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("starting container: %v", err)
+	}
+
+	// Wait for the container to accumulate some MemoryFile usage before
+	// asking the sandbox to reduce it.
+	if err := backoff.Retry(func() error {
+		m, err := cont.Sandbox.Usage(true /* Full */)
+		if err != nil {
+			return &backoff.PermanentError{Err: fmt.Errorf("usage: %v", err)}
+		}
+		if m.Total == 0 {
+			return fmt.Errorf("TotalUsage still zero")
+		}
+		return nil
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(100*time.Millisecond), 10)); err != nil {
+		t.Fatalf("waiting for initial memory usage: %v", err)
+	}
+
+	out, err := cont.Sandbox.Reduce(control.UsageReduceOpts{Wait: true})
+	if err != nil {
+		t.Fatalf("Reduce: %v", err)
+	}
+	if out.BytesBefore == 0 {
+		t.Errorf("Reduce: BytesBefore=0, want nonzero")
+	}
+	if out.BytesAfter == 0 {
+		t.Errorf("Reduce: BytesAfter=0, want nonzero")
+	}
+	if out.BytesAfter > out.BytesBefore {
+		t.Errorf("Reduce: BytesAfter=%d > BytesBefore=%d; reduce must not grow usage", out.BytesAfter, out.BytesBefore)
+	}
+}
+
 // TestProfile checks that profiling options generate profiles.
 func TestProfile(t *testing.T) {
 	// Perform a non-trivial amount of work so we actually capture
