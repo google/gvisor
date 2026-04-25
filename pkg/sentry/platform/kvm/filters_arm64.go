@@ -31,6 +31,16 @@ func (*KVM) archSyscallFilters() seccomp.SyscallRules {
 			seccomp.NonNegativeFD{},
 			seccomp.EqualTo(KVM_SET_VCPU_EVENTS),
 		},
+		// PR_PAC_SET_ENABLED_KEYS is called from loadSegments to disable
+		// host pointer authentication on each vCPU host thread. See
+		// disableHostPAC in machine_arm64_unsafe.go for the rationale.
+		unix.SYS_PRCTL: seccomp.PerArg{
+			seccomp.EqualTo(unix.PR_PAC_SET_ENABLED_KEYS),
+			seccomp.EqualTo(addressPACKeys),
+			seccomp.EqualTo(0),
+			seccomp.EqualTo(0),
+			seccomp.EqualTo(0),
+		},
 	})
 }
 
