@@ -153,6 +153,36 @@ func nvidiaVisibleDevsEnvVar(envs []string, kind nvidiaHookKind) string {
 	return nvds[len(nvds)-1]
 }
 
+// NvidiaDevicesFromSpec returns a comma-separated list of NVIDIA GPU device
+// indices derived from spec.Linux.Devices. This is used in the GKE path where
+// the device plugin injects devices directly into the spec rather than via
+// NVIDIA_VISIBLE_DEVICES. Only /dev/nvidiaX entries (where X is a decimal
+// index) are included; control/UVM/modeset devices are skipped.
+//
+// Precondition: GPUFunctionalityRequested(spec, conf) and not via hook.
+func NvidiaDevicesFromSpec(spec *specs.Spec) (string, error) {
+	if spec.Linux == nil {
+		return "", fmt.Errorf("spec missing Linux section")
+	}
+	var indices []string
+	for _, dev := range spec.Linux.Devices {
+		// Match /dev/nvidiaX where X is a decimal number.
+		// This excludes /dev/nvidiactl, /dev/nvidia-uvm, /dev/nvidia-modeset, etc.
+		suffix := strings.TrimPrefix(dev.Path, "/dev/nvidia")
+		if suffix == dev.Path {
+			continue
+		}
+		if _, err := strconv.ParseUint(suffix, 10, 32); err != nil {
+			continue
+		}
+		indices = append(indices, suffix)
+	}
+	if len(indices) == 0 {
+		return "", fmt.Errorf("no NVIDIA GPU devices (/dev/nvidiaX) found in spec.Linux.Devices")
+	}
+	return strings.Join(indices, ","), nil
+}
+
 // ParseNvidiaVisibleDevices parses NVIDIA_VISIBLE_DEVICES env var and returns
 // the devices specified in it. This can be passed to nvidia-container-cli.
 //

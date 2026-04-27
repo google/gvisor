@@ -1379,11 +1379,11 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 	if err := c.initGoferConfs(conf.GetOverlay2(), mountHints, rootfsHint); err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("error initializing gofer confs: %w", err)
 	}
-	if !c.GoferMountConfs[0].ShouldUseLisafs() && specutils.GPUFunctionalityRequestedViaHook(c.Spec, conf) {
-		// nvidia-container-runtime-hook attempts to populate the container
-		// rootfs with NVIDIA libraries and devices. With EROFS, spec.Root.Path
-		// points to an empty directory and populating that has no effect.
-		return nil, nil, nil, nil, fmt.Errorf("nvidia-container-runtime-hook cannot be used together with non-lisafs backed root mount")
+	if !c.GoferMountConfs[0].ShouldUseLisafs() && specutils.GPUFunctionalityRequested(c.Spec, conf) {
+		// nvidia-container-cli configure bind-mounts NVIDIA libraries and
+		// devices into spec.Root.Path. With EROFS, spec.Root.Path points to an
+		// empty directory and those bind mounts have no effect.
+		return nil, nil, nil, nil, fmt.Errorf("NVIDIA GPU support cannot be used together with non-lisafs backed root mount")
 	}
 	if !shouldSpawnGofer(c.Spec, conf, c.GoferMountConfs) {
 		if !c.GoferMountConfs[0].ShouldUseErofs() {
@@ -2073,7 +2073,7 @@ func logIDMappings(mappings []specs.LinuxIDMapping, idType string) {
 // This should only be necessary once on the host. It should be run during the
 // root container setup sequence to make sure it has run at least once.
 func nvProxyPreGoferHostSetup(spec *specs.Spec, conf *config.Config) error {
-	if !specutils.GPUFunctionalityRequestedViaHook(spec, conf) {
+	if !specutils.GPUFunctionalityRequested(spec, conf) {
 		return nil
 	}
 
@@ -2162,7 +2162,7 @@ func nvproxyLoadKernelModules() {
 // Note that nvidia-container-cli will set up files in /proc which are useless,
 // since they will be hidden by sentry procfs.
 func nvproxySetup(spec *specs.Spec, conf *config.Config, goferPid int) error {
-	if !specutils.GPUFunctionalityRequestedViaHook(spec, conf) {
+	if !specutils.GPUFunctionalityRequested(spec, conf) {
 		return nil
 	}
 
@@ -2188,9 +2188,18 @@ func nvproxySetup(spec *specs.Spec, conf *config.Config, goferPid int) error {
 		ldconfigPath = "/sbin/ldconfig"
 	}
 
-	devices, err := specutils.ParseNvidiaVisibleDevices(spec, conf)
-	if err != nil {
-		return fmt.Errorf("failed to get nvidia device numbers: %w", err)
+	// Determine the set of GPU devices to configure. In the hook-based path
+	// (Docker/legacy), devices come from NVIDIA_VISIBLE_DEVICES. In the GKE
+	// path, the device plugin injects them directly into spec.Linux.Devices.
+	var devices string
+	if specutils.GPUFunctionalityRequestedViaHook(spec, conf) {
+		if devices, err = specutils.ParseNvidiaVisibleDevices(spec, conf); err != nil {
+			return fmt.Errorf("failed to get nvidia device numbers: %w", err)
+		}
+	} else {
+		if devices, err = specutils.NvidiaDevicesFromSpec(spec); err != nil {
+			return fmt.Errorf("failed to get nvidia device numbers from spec: %w", err)
+		}
 	}
 
 	argv := []string{
