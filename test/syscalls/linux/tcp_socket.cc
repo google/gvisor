@@ -715,6 +715,59 @@ TEST_P(TcpSocketTest, SetNoDelay) {
   EXPECT_EQ(get, kSockOptOff);
 }
 
+// Linux's do_tcp_getsockopt() clamps the user-supplied buflen with
+// len = min_t(unsigned int, len, sizeof(int)) and copies that many bytes of
+// the integer value to user space (see net/ipv4/tcp.c). Verify that gVisor
+// truncates to the requested buflen for all integer TCP options instead of
+// rejecting sub-int buffers with EINVAL.
+TEST_P(TcpSocketTest, IntegerOptGetsockoptSmallBuffer) {
+  struct {
+    int optname;
+    const char* name;
+  } kOpts[] = {
+      {TCP_NODELAY, "TCP_NODELAY"},   {TCP_CORK, "TCP_CORK"},
+      {TCP_QUICKACK, "TCP_QUICKACK"}, {TCP_MAXSEG, "TCP_MAXSEG"},
+      {TCP_KEEPIDLE, "TCP_KEEPIDLE"}, {TCP_KEEPINTVL, "TCP_KEEPINTVL"},
+      {TCP_KEEPCNT, "TCP_KEEPCNT"},   {TCP_USER_TIMEOUT, "TCP_USER_TIMEOUT"},
+      {TCP_LINGER2, "TCP_LINGER2"},   {TCP_DEFER_ACCEPT, "TCP_DEFER_ACCEPT"},
+      {TCP_SYNCNT, "TCP_SYNCNT"},     {TCP_WINDOW_CLAMP, "TCP_WINDOW_CLAMP"},
+  };
+  constexpr socklen_t kBuflens[] = {0, 1, 2, 3, 5};
+
+  for (const auto& opt : kOpts) {
+    SCOPED_TRACE(opt.name);
+
+    // Baseline: read the full 4-byte value.
+    uint8_t full[sizeof(int)] = {};
+    socklen_t full_len = sizeof(full);
+    ASSERT_THAT(
+        getsockopt(connected_.get(), IPPROTO_TCP, opt.optname, full, &full_len),
+        SyscallSucceeds());
+    ASSERT_EQ(full_len, sizeof(int));
+
+    for (const socklen_t buflen : kBuflens) {
+      SCOPED_TRACE(buflen);
+      uint8_t buf[8];
+      memset(buf, 0xcd, sizeof(buf));
+      socklen_t outlen = buflen;
+      EXPECT_THAT(
+          getsockopt(connected_.get(), IPPROTO_TCP, opt.optname, buf, &outlen),
+          SyscallSucceeds());
+      const socklen_t want_outlen =
+          buflen < sizeof(int) ? buflen : socklen_t{sizeof(int)};
+      EXPECT_EQ(outlen, want_outlen);
+      // The first want_outlen bytes must match the baseline.
+      for (socklen_t i = 0; i < want_outlen; i++) {
+        EXPECT_EQ(buf[i], full[i]) << "byte " << i;
+      }
+      // Bytes past want_outlen must not be written.
+      for (socklen_t i = want_outlen; i < sizeof(buf); i++) {
+        EXPECT_EQ(buf[i], 0xcd) << "byte " << i;
+      }
+    }
+  }
+}
+
 #ifndef TCP_INQ
 #define TCP_INQ 36
 #endif

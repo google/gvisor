@@ -355,6 +355,26 @@ const DefaultTTL = 64
 
 const sizeOfInt32 int = 4
 
+// truncateInt32Result truncates an int32 value to outLen bytes, mimicking
+// the Linux kernel's getsockopt behavior for small buffers. Linux's
+// do_tcp_getsockopt() clamps the user-supplied buflen via
+// len = min_t(unsigned int, len, sizeof(int)), then copies len bytes of
+// the little-endian integer value to user space. In particular, outLen=0
+// is a valid (though unusual) request that succeeds with a zero-length
+// write, so we must not reject it with EINVAL.
+func truncateInt32Result(v primitive.Int32, outLen int) (marshal.Marshallable, *syserr.Error) {
+	if outLen >= sizeOfInt32 {
+		return &v, nil
+	}
+	if outLen < 0 {
+		return nil, syserr.ErrInvalidArgument
+	}
+	buf := make([]byte, sizeOfInt32)
+	hostarch.ByteOrder.PutUint32(buf, uint32(v))
+	bufP := primitive.ByteSlice(buf[:outLen])
+	return &bufP, nil
+}
+
 var errStackType = syserr.New("expected but did not receive a netstack.Stack", errno.EINVAL)
 
 // commonEndpoint represents the intersection of a tcpip.Endpoint and a
@@ -1166,88 +1186,56 @@ func (s *sock) getSockOptTCP(t *kernel.Task, ep commonEndpoint, name, outLen int
 
 	switch name {
 	case linux.TCP_NODELAY:
-		if outLen < sizeOfInt32 {
-			return nil, syserr.ErrInvalidArgument
-		}
-
 		v := primitive.Int32(boolToInt32(!ep.SocketOptions().GetDelayOption()))
-		return &v, nil
+		return truncateInt32Result(v, outLen)
 
 	case linux.TCP_CORK:
-		if outLen < sizeOfInt32 {
-			return nil, syserr.ErrInvalidArgument
-		}
-
 		v := primitive.Int32(boolToInt32(ep.SocketOptions().GetCorkOption()))
-		return &v, nil
+		return truncateInt32Result(v, outLen)
 
 	case linux.TCP_QUICKACK:
-		if outLen < sizeOfInt32 {
-			return nil, syserr.ErrInvalidArgument
-		}
-
 		v := primitive.Int32(boolToInt32(ep.SocketOptions().GetQuickAck()))
-		return &v, nil
+		return truncateInt32Result(v, outLen)
 
 	case linux.TCP_MAXSEG:
-		if outLen < sizeOfInt32 {
-			return nil, syserr.ErrInvalidArgument
-		}
-
 		v, err := ep.GetSockOptInt(tcpip.MaxSegOption)
 		if err != nil {
 			return nil, syserr.TranslateNetstackError(err)
 		}
 		vP := primitive.Int32(v)
-		return &vP, nil
+		return truncateInt32Result(vP, outLen)
 
 	case linux.TCP_KEEPIDLE:
-		if outLen < sizeOfInt32 {
-			return nil, syserr.ErrInvalidArgument
-		}
-
 		var v tcpip.KeepaliveIdleOption
 		if err := ep.GetSockOpt(&v); err != nil {
 			return nil, syserr.TranslateNetstackError(err)
 		}
 		keepAliveIdle := primitive.Int32(time.Duration(v) / time.Second)
-		return &keepAliveIdle, nil
+		return truncateInt32Result(keepAliveIdle, outLen)
 
 	case linux.TCP_KEEPINTVL:
-		if outLen < sizeOfInt32 {
-			return nil, syserr.ErrInvalidArgument
-		}
-
 		var v tcpip.KeepaliveIntervalOption
 		if err := ep.GetSockOpt(&v); err != nil {
 			return nil, syserr.TranslateNetstackError(err)
 		}
 		keepAliveInterval := primitive.Int32(time.Duration(v) / time.Second)
-		return &keepAliveInterval, nil
+		return truncateInt32Result(keepAliveInterval, outLen)
 
 	case linux.TCP_KEEPCNT:
-		if outLen < sizeOfInt32 {
-			return nil, syserr.ErrInvalidArgument
-		}
-
 		v, err := ep.GetSockOptInt(tcpip.KeepaliveCountOption)
 		if err != nil {
 			return nil, syserr.TranslateNetstackError(err)
 		}
 		vP := primitive.Int32(v)
-		return &vP, nil
+		return truncateInt32Result(vP, outLen)
 
 	case linux.TCP_USER_TIMEOUT:
-		if outLen < sizeOfInt32 {
-			return nil, syserr.ErrInvalidArgument
-		}
-
 		var v tcpip.TCPUserTimeoutOption
 		if err := ep.GetSockOpt(&v); err != nil {
 			return nil, syserr.TranslateNetstackError(err)
 		}
 		tcpUserTimeout := primitive.Int32(time.Duration(v) / time.Millisecond)
-		return &tcpUserTimeout, nil
+		return truncateInt32Result(tcpUserTimeout, outLen)
 
 	case linux.TCP_INFO:
 		var v tcpip.TCPInfoOption
@@ -1324,10 +1312,6 @@ func (s *sock) getSockOptTCP(t *kernel.Task, ep commonEndpoint, name, outLen int
 		return &bP, nil
 
 	case linux.TCP_LINGER2:
-		if outLen < sizeOfInt32 {
-			return nil, syserr.ErrInvalidArgument
-		}
-
 		var v tcpip.TCPLingerTimeoutOption
 		if err := ep.GetSockOpt(&v); err != nil {
 			return nil, syserr.TranslateNetstackError(err)
@@ -1338,44 +1322,31 @@ func (s *sock) getSockOptTCP(t *kernel.Task, ep commonEndpoint, name, outLen int
 		} else {
 			lingerTimeout = -1
 		}
-		return &lingerTimeout, nil
+		return truncateInt32Result(lingerTimeout, outLen)
 
 	case linux.TCP_DEFER_ACCEPT:
-		if outLen < sizeOfInt32 {
-			return nil, syserr.ErrInvalidArgument
-		}
-
 		var v tcpip.TCPDeferAcceptOption
 		if err := ep.GetSockOpt(&v); err != nil {
 			return nil, syserr.TranslateNetstackError(err)
 		}
-
 		tcpDeferAccept := primitive.Int32(time.Duration(v) / time.Second)
-		return &tcpDeferAccept, nil
+		return truncateInt32Result(tcpDeferAccept, outLen)
 
 	case linux.TCP_SYNCNT:
-		if outLen < sizeOfInt32 {
-			return nil, syserr.ErrInvalidArgument
-		}
-
 		v, err := ep.GetSockOptInt(tcpip.TCPSynCountOption)
 		if err != nil {
 			return nil, syserr.TranslateNetstackError(err)
 		}
 		vP := primitive.Int32(v)
-		return &vP, nil
+		return truncateInt32Result(vP, outLen)
 
 	case linux.TCP_WINDOW_CLAMP:
-		if outLen < sizeOfInt32 {
-			return nil, syserr.ErrInvalidArgument
-		}
-
 		v, err := ep.GetSockOptInt(tcpip.TCPWindowClampOption)
 		if err != nil {
 			return nil, syserr.TranslateNetstackError(err)
 		}
 		vP := primitive.Int32(v)
-		return &vP, nil
+		return truncateInt32Result(vP, outLen)
 	}
 	return nil, syserr.ErrProtocolNotAvailable
 }
