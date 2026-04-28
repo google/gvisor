@@ -77,15 +77,42 @@ func WriteMounts(mountsFD int, mounts []specs.Mount) error {
 	return nil
 }
 
-// SetupRootFS prepares the root filesystem for the gofer process. It mounts
-// the container root, sets up submounts and /dev, and optionally remounts
-// root as read-only. If chroot mode is active, it also performs a
-// pivot_root.
+// SetupRootFS prepares the filesystem the gofer will serve to the sandbox.
+// There are some gVisor-specific quirks:
+//   - The gofer runs with minimal capabilities (see runsc/cmd/gofer.go).
+//     However, gofer startup requires more capabilities (for example,
+//     pivot_root(2) requires CAP_SYS_ADMIN).
+//   - As a result, the gofer sets up the container rootfs, does pivot_root(2),
+//     and then re-executes itself while dropping extra capabilities.
+//   - To re-execute itself, it requires access to `/proc/self/exe` after
+//     pivot_root(2).
+//
+// For this reason, we can't just pivot_root(2) into the container rootfs path
+// (i.e. spec.Root.Path), as it would mean bind-mounting host /proc inside
+// spec.Root.Path, which might be a read-only filesystem.
+//
+// Furthermore, createContainer hooks from the OCI spec need to run before the
+// pivot_root(2) and expect the container rootfs to be prepared at
+// spec.Root.Path with all the bind-mounts in place.
+//
+// To satisfy all of these requirements, this is the approach we take:
+//  1. We prepare all the bind-mounts in `spec.Root.Path` and execute the
+//     createContainer hooks.
+//  2. We create a new tmpfs mount at /proc/fs.
+//  3. We bind-mount host /proc and spec.Root.Path onto /proc/fs/proc and
+//     /proc/fs/root, respectively.
+//  4. We then pivot_root(2) into /proc/fs. Now host procfs is accessible via
+//     /proc/ and container rootfs is accessible via /root.
+//  5. We re-exec the gofer binary and drop extra capabilities.
+//  6. We unmount the /proc bind mount.
+//  7. We chroot(2) into /root (note that the gofer runs with CAP_SYS_CHROOT).
+//
+// This function does steps 1-4.
 //
 // mountConfs must be indexed such that mountConfs[0] is the root filesystem
 // configuration and subsequent entries correspond to spec mounts with
 // mount configs.
-func SetupRootFS(spec *specs.Spec, conf *config.Config, mountConfs []specutils.GoferMountConf, devIoFD int, mountOpener MountOpener) error {
+func SetupRootFS(spec *specs.Spec, conf *config.Config, mountConfs []specutils.GoferMountConf, devIoFD int, mountOpener MountOpener, containerID string, bundleDir string) error {
 	// Convert all shared mounts into slaves to be sure that nothing will be
 	// propagated outside of our namespace.
 	procPath := "/proc"
@@ -93,7 +120,9 @@ func SetupRootFS(spec *specs.Spec, conf *config.Config, mountConfs []specutils.G
 		util.Fatalf("error converting mounts: %v", err)
 	}
 
-	root := spec.Root.Path
+	goferRootFs := spec.Root.Path
+	containerRootFs := spec.Root.Path
+
 	if !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
 		// runsc can't be re-executed without /proc, so we create a tmpfs mount,
 		// mount ./proc and ./root there, then move this mount to the root and after
@@ -132,51 +161,87 @@ func SetupRootFS(spec *specs.Spec, conf *config.Config, mountConfs []specutils.G
 		if err := CopyFile("/proc/fs/etc/localtime", "/etc/localtime"); err != nil {
 			log.Warningf("Failed to copy /etc/localtime: %v. UTC timezone will be used.", err)
 		}
-		root = "/proc/fs/root"
+		goferRootFs = "/proc/fs/root"
 		procPath = "/proc/fs/proc"
 	}
 
 	rootfsConf := mountConfs[0]
-	if rootfsConf.ShouldUseLisafs() {
-		// Mount root path followed by submounts.
-		if err := specutils.SafeMount(spec.Root.Path, root, "bind", unix.MS_BIND|unix.MS_REC, "", procPath); err != nil {
-			return fmt.Errorf("mounting root on root (%q) err: %v", root, err)
-		}
+	if !rootfsConf.ShouldUseLisafs() {
+		// When not using gofer mount for rootfs, spec.Root.Path may not be set or may not be a
+		// writable directory. So set up the container rootfs directly in /proc/fs/root, which
+		// is a writable directory.
+		containerRootFs = goferRootFs
+	}
 
-		flags := uint32(unix.MS_SLAVE | unix.MS_REC)
-		if spec.Linux != nil && spec.Linux.RootfsPropagation != "" {
-			flags = specutils.PropOptionsToFlags([]string{spec.Linux.RootfsPropagation})
-		}
-		if err := specutils.SafeMount("", root, "", uintptr(flags), "", procPath); err != nil {
-			return fmt.Errorf("mounting root (%q) with flags: %#x, err: %v", root, flags, err)
-		}
+	// Many CDI createContainer hooks will pivot_root(2) into spec.Root.Path.
+	// pivot_root(2) requires the target to be a mount point, so we must self-bind-mount
+	// spec.Root.Path here. runc does this step unconditionally in
+	// libcontainer/rootfs_linux.go:prepareRoot()
+	if err := unix.Mount(containerRootFs, containerRootFs, "", unix.MS_BIND|unix.MS_REC, ""); err != nil {
+		return fmt.Errorf("self-bind-mounting rootfs %q for hooks: %w", containerRootFs, err)
+	}
+
+	// Ensure the containerRootFs is set to the RootfsPropagation that the user requested.
+	// Mounts added under SetupMounts inherit the propagation flags of the root.
+	flags := uint32(unix.MS_SLAVE | unix.MS_REC)
+	if spec.Linux != nil && spec.Linux.RootfsPropagation != "" {
+		flags = specutils.PropOptionsToFlags([]string{spec.Linux.RootfsPropagation})
+	}
+	if err := specutils.SafeMount("", containerRootFs, "", uintptr(flags), "", procPath); err != nil {
+		return fmt.Errorf("mounting root (%q) with flags: %#x, err: %v", containerRootFs, flags, err)
 	}
 
 	// Replace the current spec, with the clean spec with symlinks resolved.
-	if err := SetupMounts(conf, spec.Mounts, root, procPath, mountConfs, mountOpener); err != nil {
+	if err := SetupMounts(conf, spec.Mounts, containerRootFs, procPath, mountConfs, mountOpener); err != nil {
 		util.Fatalf("error setting up FS: %v", err)
 	}
 
 	// Set up /dev directory if needed.
 	if devIoFD >= 0 {
-		if err := SetupDev(spec, conf, root, procPath); err != nil {
+		if err := SetupDev(spec, conf, containerRootFs, procPath); err != nil {
 			util.Fatalf("error setting up /dev: %v", err)
 		}
 	}
 
-	// Check if root needs to be remounted as readonly.
-	if rootfsConf.ShouldUseLisafs() && (spec.Root.Readonly || rootfsConf.ShouldUseOverlayfs()) {
-		// If root is a mount point but not read-only, we can change mount options
-		// to make it read-only for extra safety.
-		// unix.MS_NOSUID and unix.MS_NODEV are included here not only
-		// for safety reasons but also because they can be locked and
-		// any attempts to unset them will fail.  See
-		// mount_namespaces(7) for more details.
-		log.Infof("Remounting root as readonly: %q", root)
-		flags := uintptr(unix.MS_BIND | unix.MS_REMOUNT | unix.MS_RDONLY | unix.MS_NOSUID | unix.MS_NODEV)
-		if err := specutils.SafeMount(root, root, "bind", flags, "", procPath); err != nil {
-			return fmt.Errorf("remounting root as read-only with source: %q, target: %q, flags: %#x, err: %v", root, root, flags, err)
+	if rootfsConf.ShouldUseLisafs() {
+		if spec.Hooks != nil && len(spec.Hooks.CreateContainer) > 0 {
+			state := specs.State{
+				Version: specs.Version,
+				ID:      containerID,
+				Status:  specs.StateCreating,
+				// The container pid is not easily available at this point. We'll set it to -1 to indicate that it's not available.
+				// A future improvement could plumb this value through to the gofer if it becomes necessary.
+				Pid:         -1,
+				Bundle:      bundleDir,
+				Annotations: spec.Annotations,
+			}
+			if err := specutils.ExecuteHooks(spec.Hooks.CreateContainer, state); err != nil {
+				util.Fatalf("error executing CreateContainer hooks: %v", err)
+			}
 		}
+
+		// Now that spec.Root.Path has been prepared, we can bind-mount it to the new root. This will
+		// make the container rootfs visible in the gofer root.
+		if err := unix.Mount(containerRootFs, goferRootFs, "", unix.MS_BIND|unix.MS_REC, ""); err != nil {
+			return fmt.Errorf("binding prepared rootfs to gofer root: %v", err)
+		}
+
+		// Check if root needs to be remounted as readonly.
+		if spec.Root.Readonly || rootfsConf.ShouldUseOverlayfs() {
+			// If root is a mount point but not read-only, we can change mount options
+			// to make it read-only for extra safety.
+			// unix.MS_NOSUID and unix.MS_NODEV are included here not only
+			// for safety reasons but also because they can be locked and
+			// any attempts to unset them will fail.  See
+			// mount_namespaces(7) for more details.
+			log.Infof("Remounting root as readonly: %q", goferRootFs)
+			flags := uintptr(unix.MS_BIND | unix.MS_REMOUNT | unix.MS_RDONLY | unix.MS_NOSUID | unix.MS_NODEV)
+			if err := specutils.SafeMount(goferRootFs, goferRootFs, "bind", flags, "", procPath); err != nil {
+				return fmt.Errorf("remounting root as read-only with source: %q, target: %q, flags: %#x, err: %v", goferRootFs, goferRootFs, flags, err)
+			}
+		}
+	} else if spec.Hooks != nil && len(spec.Hooks.CreateContainer) > 0 {
+		log.Warningf("CreateContainer hooks are not executed since container rootfs is not on lisafs")
 	}
 
 	if !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
