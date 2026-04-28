@@ -15,8 +15,8 @@
 package boot
 
 import (
-	"bytes"
 	"fmt"
+	"io"
 
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
@@ -31,14 +31,13 @@ import (
 
 func getTargetForSaveResume(l *Loader) func(k *kernel.Kernel) {
 	return func(k *kernel.Kernel) {
-		// Store the state file contents in a buffer for save-resume.
-		// There is no need to verify the state file, we just need the
-		// sandbox to continue running after save.
-		var buf bytes.Buffer
+		// Discard the state file contents for save-resume. There is no need to
+		// verify the state file, we just need the sandbox to continue running
+		// after save.
 		saveOpts := state.SaveOpts{
 			Autosave:    true,
 			Resume:      true,
-			Destination: &buf,
+			Destination: io.Discard,
 		}
 		defer saveOpts.Close()
 		l.saveWithOpts(&saveOpts, &control.SaveRestoreExecOpts{})

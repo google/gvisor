@@ -15,10 +15,6 @@
 package transport
 
 import (
-	"fmt"
-	"runtime"
-	"strings"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/syserr"
@@ -34,9 +30,6 @@ import (
 // +stateify savable
 type connectionlessEndpoint struct {
 	baseEndpoint
-	closerStack    [32]uintptr
-	closerStackLen int
-	closerStackStr string
 }
 
 var (
@@ -74,10 +67,6 @@ func (e *connectionlessEndpoint) Close(ctx context.Context) {
 
 	e.receiver.CloseRecv()
 	r := e.receiver
-	if e.closerStackStr != "" {
-		panic(fmt.Sprintf("connectionlessEndpoint closed again after being closed before save:\n%s", e.closerStackStr))
-	}
-	e.closerStackLen = runtime.Callers(0, e.closerStack[:])
 	e.receiver = nil
 	e.Unlock()
 
@@ -207,22 +196,7 @@ func (e *connectionlessEndpoint) Readiness(mask waiter.EventMask) waiter.EventMa
 	defer e.Unlock()
 
 	if e.receiver == nil {
-		if e.closerStackLen == 0 {
-			panic("connectionlessEndpoint.Readiness called with receiver=nil; no closer stack available")
-		}
-		if len(e.closerStackStr) != 0 {
-			panic(fmt.Sprintf("connectionlessEndpoint.Readiness called with receiver=nil; closerStackStr:\n%s", e.closerStackStr))
-		}
-		frames := runtime.CallersFrames(e.closerStack[:e.closerStackLen])
-		var b strings.Builder
-		for {
-			frame, more := frames.Next()
-			fmt.Fprintf(&b, "%s\n\t%s:%d pc=%#x\n", frame.Function, frame.File, frame.Line, frame.PC)
-			if !more {
-				break
-			}
-		}
-		panic(fmt.Sprintf("connectionlessEndpoint.Readiness called with receiver=nil; closerStack:\n%s", b.String()))
+		panic("connectionlessEndpoint.Readiness called with receiver=nil")
 	}
 	ready := waiter.EventMask(0)
 	if mask&waiter.ReadableEvents != 0 && e.receiver.Readable() {

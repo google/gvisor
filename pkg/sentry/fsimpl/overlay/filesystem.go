@@ -1462,6 +1462,13 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	fs.releaseDirIno(child.dirInoHash)
 	ds = appendDentry(ds, child)
 	parent.dirents = nil
+	// Linux sends the parent's IN_DELETE|IN_ISDIR at rmdir() time, but
+	// defers the child's IN_DELETE_SELF/IN_IGNORED until the last ref is
+	// dropped. Emit the child notifications now only when no extra refs
+	// remain; otherwise defer to destroyLocked().
+	if child.refs.Load() == 0 {
+		child.watches.HandleDeletion(ctx)
+	}
 	parent.watches.Notify(ctx, name, linux.IN_DELETE|linux.IN_ISDIR, 0 /* cookie */, vfs.InodeEvent, true /* unlinked */)
 	return nil
 }

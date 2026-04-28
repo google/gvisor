@@ -87,8 +87,8 @@ var ErrMetadataInvalid = fmt.Errorf("metadata invalid, can't start with _")
 var ErrInvalidFlags = fmt.Errorf("flags set is invalid")
 
 const (
-	// CompressionKey is the key for the compression level in the metadata.
-	CompressionKey = "compression"
+	// compressionKey is the key for the compression level in the metadata.
+	compressionKey = "compression"
 )
 
 // CompressionLevel is the image compression level.
@@ -100,7 +100,7 @@ const (
 	// CompressionLevelNone represents the absence of any compression on an image.
 	CompressionLevelNone = CompressionLevel("none")
 	// CompressionLevelDefault represents the default compression level.
-	CompressionLevelDefault = CompressionLevelFlateBestSpeed
+	CompressionLevelDefault = CompressionLevelNone
 )
 
 func (c CompressionLevel) String() string {
@@ -109,7 +109,7 @@ func (c CompressionLevel) String() string {
 
 // ToMetadata returns the compression level as a metadata map.
 func (c CompressionLevel) ToMetadata() map[string]string {
-	return map[string]string{CompressionKey: string(c)}
+	return map[string]string{compressionKey: string(c)}
 }
 
 // CompressionLevelFromString parses a string into the CompressionLevel.
@@ -127,21 +127,14 @@ func CompressionLevelFromString(val string) (CompressionLevel, error) {
 }
 
 // CompressionLevelFromMetadata returns image compression type stored in the metadata.
-// If the metadata doesn't contain compression information the default behavior
-// is the "flate-best-speed" state because the default behavior used to be to always
-// compress. If the parameter is missing it will be set to default.
+// If the metadata doesn't contain compression information, the default behavior
+// is "none" (no compression) and it is added to the metadata.
 func CompressionLevelFromMetadata(metadata map[string]string) (CompressionLevel, error) {
-	compression := CompressionLevelDefault
-
-	if val, ok := metadata[CompressionKey]; ok {
-		var err error
-		if compression, err = CompressionLevelFromString(val); err != nil {
-			return CompressionLevelNone, err
-		}
-	} else {
-		metadata[CompressionKey] = string(compression)
+	if val, ok := metadata[compressionKey]; ok {
+		return CompressionLevelFromString(val)
 	}
-
+	compression := CompressionLevelDefault
+	metadata[compressionKey] = string(compression)
 	return compression, nil
 }
 

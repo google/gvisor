@@ -20,7 +20,15 @@ const (
 	LinuxSysname = "Linux"
 
 	// LinuxRelease is the Linux release version number advertised by gVisor.
-	LinuxRelease = "4.4.0"
+	//
+	// Must be high enough to satisfy the NT_GNU_ABI_TAG minimum-kernel check
+	// performed by glibc's dynamic linker; otherwise dlopen() rejects modern
+	// shared libraries (e.g. libQt6Core.so.6 requires >= 4.11.0) with a
+	// misleading ENOENT. 4.19 is the final LTS of the Linux 4.x series,
+	// which keeps us on a 4.x base consistent with the syscall table ABI
+	// while providing headroom for typical modern userspace. The "-gvisor"
+	// suffix follows the distro-kernel convention (e.g. "-generic", "-azure").
+	LinuxRelease = "4.19.0-gvisor"
 
 	// LinuxVersion is the version info advertised by gVisor.
 	LinuxVersion = "#1 SMP Sun Jan 10 15:06:54 PST 2016"

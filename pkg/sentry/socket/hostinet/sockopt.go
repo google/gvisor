@@ -46,6 +46,8 @@ type SockOpt struct {
 	AllowGet bool
 	// Support setsockopt on this option.
 	AllowSet bool
+	// AllowTruncatedGet allows getsockopt with optlen < Size.
+	AllowTruncatedGet bool
 }
 
 // SockOpts are the socket options supported by hostinet by making syscalls to the host.
@@ -57,68 +59,68 @@ type SockOpt struct {
 //   - SO_SNDTIMEOU, SO_RCVTIMEO are handled internally by setting the embedded
 //     socket.SendReceiveTimeout.
 var SockOpts = []SockOpt{
-	{linux.SOL_IP, linux.IP_ADD_MEMBERSHIP, 0, false, true},
-	{linux.SOL_IP, linux.IP_DROP_MEMBERSHIP, 0, false, true},
-	{linux.SOL_IP, linux.IP_HDRINCL, sizeofInt32, true, true},
-	{linux.SOL_IP, linux.IP_MULTICAST_IF, 0 /* kernel allows multiple structures to be passed */, true, true},
-	{linux.SOL_IP, linux.IP_MULTICAST_LOOP, 0 /* can be 32-bit int or 8-bit uint */, true, true},
-	{linux.SOL_IP, linux.IP_MULTICAST_TTL, 0 /* can be 32-bit int or 8-bit uint */, true, true},
-	{linux.SOL_IP, linux.IP_MTU_DISCOVER, 0 /* can be 32-bit int or 8-bit uint */, true, true},
-	{linux.SOL_IP, linux.IP_PKTINFO, sizeofInt32, true, true},
-	{linux.SOL_IP, linux.IP_RECVERR, sizeofInt32, true, true},
-	{linux.SOL_IP, linux.IP_RECVORIGDSTADDR, sizeofInt32, true, true},
-	{linux.SOL_IP, linux.IP_RECVTOS, sizeofInt32, true, true},
-	{linux.SOL_IP, linux.IP_RECVTTL, sizeofInt32, true, true},
-	{linux.SOL_IP, linux.IP_TOS, 0 /* Can be 32, 16, or 8 bits */, true, true},
-	{linux.SOL_IP, linux.IP_TTL, sizeofInt32, true, true},
-	{linux.SOL_IP, linux.SO_ORIGINAL_DST, uint64(linux.SockAddrInetSize), true, false},
+	{linux.SOL_IP, linux.IP_ADD_MEMBERSHIP, 0, false, true, false},
+	{linux.SOL_IP, linux.IP_DROP_MEMBERSHIP, 0, false, true, false},
+	{linux.SOL_IP, linux.IP_HDRINCL, sizeofInt32, true, true, false},
+	{linux.SOL_IP, linux.IP_MULTICAST_IF, 0 /* kernel allows multiple structures to be passed */, true, true, false},
+	{linux.SOL_IP, linux.IP_MULTICAST_LOOP, 0 /* can be 32-bit int or 8-bit uint */, true, true, false},
+	{linux.SOL_IP, linux.IP_MULTICAST_TTL, 0 /* can be 32-bit int or 8-bit uint */, true, true, false},
+	{linux.SOL_IP, linux.IP_MTU_DISCOVER, 0 /* can be 32-bit int or 8-bit uint */, true, true, false},
+	{linux.SOL_IP, linux.IP_PKTINFO, sizeofInt32, true, true, false},
+	{linux.SOL_IP, linux.IP_RECVERR, sizeofInt32, true, true, false},
+	{linux.SOL_IP, linux.IP_RECVORIGDSTADDR, sizeofInt32, true, true, false},
+	{linux.SOL_IP, linux.IP_RECVTOS, sizeofInt32, true, true, false},
+	{linux.SOL_IP, linux.IP_RECVTTL, sizeofInt32, true, true, false},
+	{linux.SOL_IP, linux.IP_TOS, 0 /* Can be 32, 16, or 8 bits */, true, true, false},
+	{linux.SOL_IP, linux.IP_TTL, sizeofInt32, true, true, true},
+	{linux.SOL_IP, linux.SO_ORIGINAL_DST, uint64(linux.SockAddrInetSize), true, false, false},
 
-	{linux.SOL_IPV6, linux.IPV6_CHECKSUM, sizeofInt32, true, true},
-	{linux.SOL_IPV6, linux.IPV6_MULTICAST_HOPS, sizeofInt32, true, true},
-	{linux.SOL_IPV6, linux.IPV6_RECVERR, sizeofInt32, true, true},
-	{linux.SOL_IPV6, linux.IPV6_RECVHOPLIMIT, sizeofInt32, true, true},
-	{linux.SOL_IPV6, linux.IPV6_RECVORIGDSTADDR, sizeofInt32, true, true},
-	{linux.SOL_IPV6, linux.IPV6_RECVPKTINFO, sizeofInt32, true, true},
-	{linux.SOL_IPV6, linux.IPV6_RECVTCLASS, sizeofInt32, true, true},
-	{linux.SOL_IPV6, linux.IPV6_TCLASS, sizeofInt32, true, true},
-	{linux.SOL_IPV6, linux.IPV6_UNICAST_HOPS, sizeofInt32, true, true},
-	{linux.SOL_IPV6, linux.IPV6_V6ONLY, sizeofInt32, true, true},
-	{linux.SOL_IPV6, linux.IP6T_ORIGINAL_DST, uint64(linux.SockAddrInet6Size), true, false},
+	{linux.SOL_IPV6, linux.IPV6_CHECKSUM, sizeofInt32, true, true, false},
+	{linux.SOL_IPV6, linux.IPV6_MULTICAST_HOPS, sizeofInt32, true, true, false},
+	{linux.SOL_IPV6, linux.IPV6_RECVERR, sizeofInt32, true, true, false},
+	{linux.SOL_IPV6, linux.IPV6_RECVHOPLIMIT, sizeofInt32, true, true, false},
+	{linux.SOL_IPV6, linux.IPV6_RECVORIGDSTADDR, sizeofInt32, true, true, false},
+	{linux.SOL_IPV6, linux.IPV6_RECVPKTINFO, sizeofInt32, true, true, false},
+	{linux.SOL_IPV6, linux.IPV6_RECVTCLASS, sizeofInt32, true, true, false},
+	{linux.SOL_IPV6, linux.IPV6_TCLASS, sizeofInt32, true, true, true},
+	{linux.SOL_IPV6, linux.IPV6_UNICAST_HOPS, sizeofInt32, true, true, false},
+	{linux.SOL_IPV6, linux.IPV6_V6ONLY, sizeofInt32, true, true, false},
+	{linux.SOL_IPV6, linux.IP6T_ORIGINAL_DST, uint64(linux.SockAddrInet6Size), true, false, false},
 
-	{linux.SOL_SOCKET, linux.SO_ACCEPTCONN, sizeofInt32, true, true},
-	{linux.SOL_SOCKET, linux.SO_BINDTODEVICE, 0, true, true},
-	{linux.SOL_SOCKET, linux.SO_BROADCAST, sizeofInt32, true, true},
-	{linux.SOL_SOCKET, linux.SO_ERROR, sizeofInt32, true, false},
-	{linux.SOL_SOCKET, linux.SO_KEEPALIVE, sizeofInt32, true, true},
-	{linux.SOL_SOCKET, linux.SO_LINGER, linux.SizeOfLinger, true, true},
-	{linux.SOL_SOCKET, linux.SO_NO_CHECK, sizeofInt32, true, true},
-	{linux.SOL_SOCKET, linux.SO_OOBINLINE, sizeofInt32, true, true},
-	{linux.SOL_SOCKET, linux.SO_PASSCRED, sizeofInt32, true, true},
-	{linux.SOL_SOCKET, linux.SO_RCVBUF, sizeofInt32, true, true},
-	{linux.SOL_SOCKET, linux.SO_RCVBUFFORCE, sizeofInt32, false, true},
-	{linux.SOL_SOCKET, linux.SO_RCVLOWAT, sizeofInt32, true, true},
-	{linux.SOL_SOCKET, linux.SO_REUSEADDR, sizeofInt32, true, true},
-	{linux.SOL_SOCKET, linux.SO_REUSEPORT, sizeofInt32, true, true},
-	{linux.SOL_SOCKET, linux.SO_SNDBUF, sizeofInt32, true, true},
-	{linux.SOL_SOCKET, linux.SO_TIMESTAMP, sizeofInt32, true, true},
+	{linux.SOL_SOCKET, linux.SO_ACCEPTCONN, sizeofInt32, true, true, false},
+	{linux.SOL_SOCKET, linux.SO_BINDTODEVICE, 0, true, true, false},
+	{linux.SOL_SOCKET, linux.SO_BROADCAST, sizeofInt32, true, true, false},
+	{linux.SOL_SOCKET, linux.SO_ERROR, sizeofInt32, true, false, false},
+	{linux.SOL_SOCKET, linux.SO_KEEPALIVE, sizeofInt32, true, true, false},
+	{linux.SOL_SOCKET, linux.SO_LINGER, linux.SizeOfLinger, true, true, false},
+	{linux.SOL_SOCKET, linux.SO_NO_CHECK, sizeofInt32, true, true, false},
+	{linux.SOL_SOCKET, linux.SO_OOBINLINE, sizeofInt32, true, true, false},
+	{linux.SOL_SOCKET, linux.SO_PASSCRED, sizeofInt32, true, true, false},
+	{linux.SOL_SOCKET, linux.SO_RCVBUF, sizeofInt32, true, true, false},
+	{linux.SOL_SOCKET, linux.SO_RCVBUFFORCE, sizeofInt32, false, true, false},
+	{linux.SOL_SOCKET, linux.SO_RCVLOWAT, sizeofInt32, true, true, false},
+	{linux.SOL_SOCKET, linux.SO_REUSEADDR, sizeofInt32, true, true, false},
+	{linux.SOL_SOCKET, linux.SO_REUSEPORT, sizeofInt32, true, true, false},
+	{linux.SOL_SOCKET, linux.SO_SNDBUF, sizeofInt32, true, true, false},
+	{linux.SOL_SOCKET, linux.SO_TIMESTAMP, sizeofInt32, true, true, false},
 
-	{linux.SOL_TCP, linux.TCP_CONGESTION, 0 /* string */, true, true},
-	{linux.SOL_TCP, linux.TCP_CORK, sizeofInt32, true, true},
-	{linux.SOL_TCP, linux.TCP_DEFER_ACCEPT, sizeofInt32, true, true},
-	{linux.SOL_TCP, linux.TCP_INFO, uint64(linux.SizeOfTCPInfo), true, false},
-	{linux.SOL_TCP, linux.TCP_INQ, sizeofInt32, true, true},
-	{linux.SOL_TCP, linux.TCP_KEEPCNT, sizeofInt32, true, true},
-	{linux.SOL_TCP, linux.TCP_KEEPIDLE, sizeofInt32, true, true},
-	{linux.SOL_TCP, linux.TCP_KEEPINTVL, sizeofInt32, true, true},
-	{linux.SOL_TCP, linux.TCP_LINGER2, sizeofInt32, true, true},
-	{linux.SOL_TCP, linux.TCP_MAXSEG, sizeofInt32, true, true},
-	{linux.SOL_TCP, linux.TCP_NODELAY, sizeofInt32, true, true},
-	{linux.SOL_TCP, linux.TCP_QUICKACK, sizeofInt32, true, true},
-	{linux.SOL_TCP, linux.TCP_SYNCNT, sizeofInt32, true, true},
-	{linux.SOL_TCP, linux.TCP_USER_TIMEOUT, sizeofInt32, true, true},
-	{linux.SOL_TCP, linux.TCP_WINDOW_CLAMP, sizeofInt32, true, true},
+	{linux.SOL_TCP, linux.TCP_CONGESTION, 0 /* string */, true, true, false},
+	{linux.SOL_TCP, linux.TCP_CORK, sizeofInt32, true, true, true},
+	{linux.SOL_TCP, linux.TCP_DEFER_ACCEPT, sizeofInt32, true, true, true},
+	{linux.SOL_TCP, linux.TCP_INFO, uint64(linux.SizeOfTCPInfo), true, false, true},
+	{linux.SOL_TCP, linux.TCP_INQ, sizeofInt32, true, true, false},
+	{linux.SOL_TCP, linux.TCP_KEEPCNT, sizeofInt32, true, true, true},
+	{linux.SOL_TCP, linux.TCP_KEEPIDLE, sizeofInt32, true, true, true},
+	{linux.SOL_TCP, linux.TCP_KEEPINTVL, sizeofInt32, true, true, true},
+	{linux.SOL_TCP, linux.TCP_LINGER2, sizeofInt32, true, true, true},
+	{linux.SOL_TCP, linux.TCP_MAXSEG, sizeofInt32, true, true, true},
+	{linux.SOL_TCP, linux.TCP_NODELAY, sizeofInt32, true, true, true},
+	{linux.SOL_TCP, linux.TCP_QUICKACK, sizeofInt32, true, true, true},
+	{linux.SOL_TCP, linux.TCP_SYNCNT, sizeofInt32, true, true, true},
+	{linux.SOL_TCP, linux.TCP_USER_TIMEOUT, sizeofInt32, true, true, true},
+	{linux.SOL_TCP, linux.TCP_WINDOW_CLAMP, sizeofInt32, true, true, true},
 
-	{linux.SOL_ICMPV6, linux.ICMPV6_FILTER, uint64(linux.ICMP6FilterSize), true, true},
+	{linux.SOL_ICMPV6, linux.ICMPV6_FILTER, uint64(linux.ICMP6FilterSize), true, true, true},
 }
 
 // sockOptMap is a map of {level, name} -> SockOpts. It is an optimization for
@@ -176,24 +178,8 @@ func (s *Socket) GetSockOpt(t *kernel.Task, level, name int, optValAddr hostarch
 	var opt []byte
 	if sockOpt.Size > 0 {
 		// Validate size of input buffer.
-		if uint64(optLen) < sockOpt.Size {
-			// Special case for options that allow smaller buffers.
-			//
-			// To keep the syscall filters simple and restrictive,
-			// we use the full buffer size when calling the host,
-			// but truncate before returning to the application.
-			switch {
-			case level == linux.SOL_TCP && name == linux.TCP_INFO:
-				// Allow smaller buffer.
-			case level == linux.SOL_ICMPV6 && name == linux.ICMPV6_FILTER:
-				// Allow smaller buffer.
-			case level == linux.SOL_IP && name == linux.IP_TTL:
-				// Allow smaller buffer.
-			case level == linux.SOL_IPV6 && name == linux.IPV6_TCLASS:
-				// Allow smaller buffer.
-			default:
-				return nil, syserr.ErrInvalidArgument
-			}
+		if uint64(optLen) < sockOpt.Size && !sockOpt.AllowTruncatedGet {
+			return nil, syserr.ErrInvalidArgument
 		}
 		opt = make([]byte, sockOpt.Size)
 	} else {

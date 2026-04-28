@@ -999,6 +999,10 @@ func (s *statusFD) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	// pkg/sentry/syscalls/linux/sys_mempolicy.go.
 	fmt.Fprintf(buf, "Mems_allowed:\t1\n")
 	fmt.Fprintf(buf, "Mems_allowed_list:\t0\n")
+	fmt.Fprintf(buf, "voluntary_ctxt_switches:\t%d\n", s.task.CPUStats().VoluntarySwitches)
+	// Involuntary context switches are unsupported because Go runtime
+	// preemption events are not exposed to gVisor.
+	fmt.Fprintf(buf, "nonvoluntary_ctxt_switches:\t0\n")
 	return nil
 }
 
