@@ -23,6 +23,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
@@ -116,6 +117,26 @@ func initChildProcessPPID(initregs *arch.Registers, ppid int32) {
 	initregs.Regs[24] = _NEW_STUB
 }
 
+// sigErrorToAccessType determines the access type for a signal error.
+//
+// On RISC-V, the scause register values for page faults are:
+//
+//	12 = instruction page fault (Execute)
+//	13 = load page fault (Read)
+//	15 = store/AMO page fault (Write)
+func sigErrorToAccessType(sigError uint64) hostarch.AccessType {
+	switch sigError {
+	case 15: // Store/AMO page fault
+		return hostarch.Write
+	case 12: // Instruction page fault
+		return hostarch.Execute
+	case 13: // Load page fault
+		return hostarch.Read
+	default:
+		return hostarch.NoAccess
+	}
+}
+
 func maybePatchSignalInfo(regs *arch.Registers, signalInfo *linux.SignalInfo) (patched bool) {
 	// vsyscall emulation is not supported on ARM64. No need to patch anything.
 	return false
@@ -135,7 +156,7 @@ func appendArchSeccompRules(rules []seccomp.RuleSet) []seccomp.RuleSet {
 			Rules: seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 				RISCV_FLUSH_ICACHE: seccomp.MatchAll{},
 			}),
-			Action: linux.SECCOMP_RET_ALLOW,
+			Action: seccomp.Allow,
 		},
 	}...)
 }

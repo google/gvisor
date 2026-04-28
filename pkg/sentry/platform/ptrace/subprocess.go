@@ -552,14 +552,14 @@ func (s *subprocess) switchToApp(c *context, ac *arch.Context64) (bool, error) {
 		if isSingleStepping(regs) {
 			if _, _, errno := unix.RawSyscall6(
 				unix.SYS_PTRACE,
-				unix.PTRACE_SYSEMU_SINGLESTEP,
+				_PTRACE_SYSEMU_SINGLESTEP,
 				uintptr(t.tid), 0, 0, 0, 0); errno != 0 {
 				return false, fmt.Errorf("ptrace sysemu failed: %w", errno)
 			}
 		} else {
 			if _, _, errno := unix.RawSyscall6(
 				unix.SYS_PTRACE,
-				unix.PTRACE_SYSEMU,
+				_PTRACE_SYSEMU,
 				uintptr(t.tid), 0, 0, 0, 0); errno != 0 {
 				return false, fmt.Errorf("ptrace sysemu failed: %w", errno)
 			}

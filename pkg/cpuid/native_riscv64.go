@@ -18,6 +18,7 @@
 package cpuid
 
 import (
+	"fmt"
 	"io/ioutil"
 	"runtime"
 	"strconv"
@@ -141,4 +142,9 @@ func initCPUInfo() {
 func archInitialize() {
 	initCPUInfo()
 	initHWCap()
+}
+
+// Intersect returns the intersection of this FeatureSet with the allowed features.
+func (fs FeatureSet) Intersect(allowedFeatures map[Feature]struct{}) (FeatureSet, error) {
+return FeatureSet{}, fmt.Errorf("FeatureSet intersection is not supported on RISC-V")
 }

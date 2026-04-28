@@ -19,21 +19,26 @@ package hostarch
 import "encoding/binary"
 
 const (
-	// PageSize is the system page size.
-	// riscv64 supports 4K page size by default.
-	PageSize = 1 << PageShift
+// PageSize is the system page size.
+// riscv64 supports 4K page size by default.
+PageSize = 1 << PageShift
 
-	// HugePageSize is the system huge page size.
-	HugePageSize = 1 << HugePageShift
+// HugePageSize is the system huge page size.
+HugePageSize = 1 << HugePageShift
 
-	// CacheLineSize is the size of the cache line.
-	CacheLineSize = 1 << CacheLineShift
+// CacheLineSize is the size of the cache line.
+CacheLineSize = 1 << CacheLineShift
 
-	// CacheLineShift is the binary log of the cache line size.
-	CacheLineShift = 6
+// CacheLineShift is the binary log of the cache line size.
+CacheLineShift = 6
 )
 
 var (
-	// ByteOrder is the native byte order (little endian).
-	ByteOrder = binary.LittleEndian
+// ByteOrder is the native byte order (little endian).
+ByteOrder = binary.LittleEndian
 )
+
+// UntaggedUserAddr is a no-op on riscv64.
+func UntaggedUserAddr(addr Addr) Addr {
+return addr
+}

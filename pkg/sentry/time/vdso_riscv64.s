@@ -14,17 +14,13 @@
 
 #include "textflag.h"
 
-#define SYS_clock_gettime       113
+#define SYS_clock_gettime 113
 
+// func vdsoClockGettime(clockid ClockID, ts *unix.Timespec) int
 TEXT ·vdsoClockGettime(SB), NOSPLIT, $0-24
 	MOVW clockid+0(FP), A0
 	MOV ts+8(FP), A1
-	MOV runtime·vdsoClockgettimeSym(SB), A2
-	BEQ A2, ZERO, fallback
-	JALR RA, (A2)
-	MOV A0, ret+16(FP)
-	RET
-fallback:
 	MOV $SYS_clock_gettime, A7
 	ECALL
+	MOV A0, ret+16(FP)
 	RET

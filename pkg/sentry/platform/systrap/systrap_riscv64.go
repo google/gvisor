@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build riscv64
+// +build riscv64
+
 package systrap
 
 import (
@@ -21,3 +24,8 @@ import (
 func stackPointer(r *arch.Registers) uintptr {
 	return uintptr(r.Regs[2])
 }
+
+func configureSystrapAddressSpace() {
+	// riscv64 has a fixed address space layout, no configuration needed.
+}
+

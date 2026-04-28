@@ -28,6 +28,11 @@ var (
 	bluepillSignal = unix.SIGILL
 )
 
+// bluepill enters guest mode.
+//
+//go:nosplit
+func bluepill(c *vCPU)
+
 // bluepillArchEnter is called during bluepillEnter.
 //
 //go:nosplit
@@ -36,12 +41,11 @@ func bluepillArchEnter(context *arch.SignalContext64) (c *vCPU) {
 	regs := c.CPU.Registers()
 	regs.Regs = context.Regs
 
-	/*
-	regs.Regs[32] &^= uint64(ring0.PsrFlagsClear)
-	regs.Regs[32] |= ring0.KernelFlagSet
-	*/
+	// TODO(riscv64): sstatus CSR manipulation needs a separate field
+	// since PtraceRegs.Regs only has 32 entries (matching user_regs_struct).
+	// KVM on riscv64 is not yet functional.
 
-	return 
+	return
 }
 
 // bluepillArchExit is called during bluepillEnter.
@@ -87,4 +91,9 @@ func (c *vCPU) KernelException(vector ring0.Vector) {
 //
 //go:nosplit
 func (c *vCPU) hltSanityCheck() {
+}
+
+// inKernelMode returns true if we are in S-mode (supervisor).
+func inKernelMode() bool {
+	return false
 }

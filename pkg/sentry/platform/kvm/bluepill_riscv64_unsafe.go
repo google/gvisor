@@ -32,14 +32,14 @@ func fpRegsPtr(addr *byte) *arch.FpState {
 	return (*arch.FpState)(unsafe.Pointer(addr))
 }
 
-// dieArchSetup initialies the state for dieTrampoline.
+// dieArchSetup initializes the state for dieTrampoline.
 //
 // The riscv64 dieTrampoline requires the vCPU to be set in A1, and the last PC
 // to be in A0. The trampoline then simulates a call to dieHandler from the
 // provided PC.
 //
 //go:nosplit
-func dieArchSetup(c *vCPU, context *arch.SignalContext64, guestRegs *userRegs) {
+func (c *vCPU) dieArchSetup(context *arch.SignalContext64, guestRegs *userRegs, dumpExitReason bool) {
 	// If the vCPU is in user mode, we set the stack to the stored stack
 	// value in the vCPU itself. We don't want to unwind the user stack.
 	if guestRegs.Sstatus&ring0.SPPMask == 0 {

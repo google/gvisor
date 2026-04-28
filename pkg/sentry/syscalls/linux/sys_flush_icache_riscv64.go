@@ -28,5 +28,6 @@ const (
 )
 
 func FlushIcache(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	return t.FlushIcache(args)
+	// TODO: Implement proper icache flush.
+	return 0, nil, nil
 }

@@ -1,4 +1,4 @@
-// Copyright 2019 The gVisor Authors.
+// Copyright 2026 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,12 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !linux || (!amd64 && !arm64 && !riscv64)
-// +build !linux !amd64,!arm64,!riscv64
+//go:build riscv64
+// +build riscv64
 
-package fdbased
+package ptrace
 
-// Stubbed out version for non-linux/non-amd64/non-arm64/non-riscv64 platforms.
-func newPacketMMapDispatcher(fd int, e *endpoint, opts *Options) (linkDispatcher, error) {
-return nil, nil
-}
+// PTRACE_SYSEMU and PTRACE_SYSEMU_SINGLESTEP are not yet defined in
+// golang.org/x/sys/unix for riscv64. Use standard Linux values.
+const (
+	_PTRACE_SYSEMU            = 0x1f
+	_PTRACE_SYSEMU_SINGLESTEP = 0x20
+)

@@ -1,4 +1,4 @@
-// Copyright 2019 The gVisor Authors.
+// Copyright 2018 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,12 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !linux || (!amd64 && !arm64 && !riscv64)
-// +build !linux !amd64,!arm64,!riscv64
+//go:build arm64
+// +build arm64
 
-package fdbased
+package systrap
 
-// Stubbed out version for non-linux/non-amd64/non-arm64/non-riscv64 platforms.
-func newPacketMMapDispatcher(fd int, e *endpoint, opts *Options) (linkDispatcher, error) {
-return nil, nil
-}
+import "golang.org/x/sys/unix"
+
+const _PTRACE_SYSEMU = unix.PTRACE_SYSEMU

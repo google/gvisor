@@ -12,8 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build riscv64
+// +build riscv64
+
 package kvm
 
 const (
 	reservedMemory = 0
+	// 5-level page tables are not implemented on riscv64.
+	extendedAddressSpaceAllowed = false
 )
+
+func archSpecialRegions(vSize uintptr) (uintptr, []specialVirtualRegion) {
+	return vSize, nil
+}
+
+func archSpecialRegion(vr virtualRegion) {
+}

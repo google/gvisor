@@ -149,14 +149,14 @@ func enableCpuidFault() {
 
 // appendArchSeccompRules append architecture specific seccomp rules when creating BPF program.
 // Ref attachedThread() for more detail.
-func appendArchSeccompRules(rules []seccomp.RuleSet, defaultAction linux.BPFAction) []seccomp.RuleSet {
-	if defaultAction != linux.SECCOMP_RET_ALLOW {
+func appendArchSeccompRules(rules []seccomp.RuleSet, defaultAction seccomp.Action) []seccomp.RuleSet {
+	if defaultAction != seccomp.Allow {
 		rules = append(rules,
 			seccomp.RuleSet{
 				Rules: seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 					RISCV_FLUSH_ICACHE: seccomp.MatchAll{},
 				}),
-				Action: linux.SECCOMP_RET_ALLOW,
+				Action: seccomp.Allow,
 			})
 	}
 	return rules

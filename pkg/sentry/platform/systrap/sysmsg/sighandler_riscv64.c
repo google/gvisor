@@ -36,6 +36,7 @@
 // sysmsg_lib.c.
 struct arch_state __export_arch_state;
 uint64_t __export_stub_start;
+uint64_t __export_disable_syscall_patching;
 
 long __syscall(long n, long a1_, long a2_, long a3_, long a4_, long a5_, long a6_) {
   // RISCV syscall interface passes the syscall number in a7 and the 6 arguments

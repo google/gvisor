@@ -43,7 +43,7 @@ func (p *PageTables) SATP(noFlush bool, asid uint16) uint64 {
 	return ((uint64(p.rootPhysical)>>satpPPNOffset)&satpPPNMask) | (uint64(asid)<<satpASIDOffset) | uint64(satpMode)
 }
 
-// MapOpts are x86 options.
+// MapOpts are riscv64 options.
 type MapOpts struct {
 	// AccessType defines permissions.
 	AccessType hostarch.AccessType
@@ -53,6 +53,9 @@ type MapOpts struct {
 
 	// User indicates the page is a user page.
 	User bool
+
+	// MemoryType is unused on riscv64, but needed for interface compatibility.
+	MemoryType hostarch.MemoryType
 }
 
 // PTE is a page table entry.

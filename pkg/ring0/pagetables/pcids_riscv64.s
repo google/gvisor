@@ -18,16 +18,9 @@
 #include "funcdata.h"
 #include "textflag.h"
 
-#define SATP_ASID_MASK 0xFFFF
-#define SATP_ASID_SHIFT 44
-
 // func GetASIDBits() uint8
-TEXT ·GetASIDBits(SB)
-	csrr t0, CSR_SATP
-	li t1, (SATP_ASID_MASK << SATP_ASID_SHIFT)
-	or t2, t0, t1
-	csrw CSR_SATP, t2
-	csrr t2, CSR_SATP
-	srli t2, t2, SATP_ASID_SHIFT
-	andi ra, t2, SATP_ASID_MASK
+// TODO(b/): Detect ASID width from SATP when needed.
+TEXT ·GetASIDBits(SB),NOSPLIT|NOFRAME,$0-1
+	MOV $16, A0
+	MOVB A0, ret+0(FP)
 	RET
