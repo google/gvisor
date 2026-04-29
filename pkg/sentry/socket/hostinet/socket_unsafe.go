@@ -67,8 +67,11 @@ func ioctl(ctx context.Context, fd int, io usermem.IO, sysno uintptr, args arch.
 		_, err := io.CopyOut(ctx, args[2].Pointer(), buf[:], usermem.IOOpts{})
 		return 0, err
 	case linux.SIOCGIFFLAGS,
+		linux.SIOCGIFBRDADDR,
+		linux.SIOCGIFDSTADDR,
 		linux.SIOCGIFHWADDR,
 		linux.SIOCGIFINDEX,
+		linux.SIOCGIFMAP,
 		linux.SIOCGIFMTU,
 		linux.SIOCGIFNAME,
 		linux.SIOCGIFNETMASK,

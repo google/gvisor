@@ -3653,19 +3653,36 @@ func interfaceIoctl(ctx context.Context, _ usermem.IO, arg int, ifr *linux.IFReq
 
 	case linux.SIOCGIFMAP:
 		// Gets the hardware parameters of the device.
-		// TODO(gvisor.dev/issue/505): Implement.
+		clear(ifr.Data[:])
 
 	case linux.SIOCGIFTXQLEN:
 		// Gets the transmit queue length of the device.
-		// TODO(gvisor.dev/issue/505): Implement.
+		hostarch.ByteOrder.PutUint32(ifr.Data[:4], 0)
 
 	case linux.SIOCGIFDSTADDR:
 		// Gets the destination address of a point-to-point device.
-		// TODO(gvisor.dev/issue/505): Implement.
+		addr, ok := firstIPv4InterfaceAddr(stk, index)
+		if !ok {
+			return syserr.ErrAddressNotAvailable
+		}
+		copyIPv4SockAddrOut(ifr, addr.Addr)
 
 	case linux.SIOCGIFBRDADDR:
 		// Gets the broadcast address of a device.
-		// TODO(gvisor.dev/issue/505): Implement.
+		addr, ok := firstIPv4InterfaceAddr(stk, index)
+		if !ok {
+			return syserr.ErrAddressNotAvailable
+		}
+		if iface.Flags&linux.IFF_BROADCAST == 0 || addr.PrefixLen >= 31 {
+			copyIPv4SockAddrOut(ifr, []byte{0, 0, 0, 0})
+			break
+		}
+		subnet := tcpip.AddressWithPrefix{
+			Address:   tcpip.AddrFrom4Slice(addr.Addr),
+			PrefixLen: int(addr.PrefixLen),
+		}.Subnet()
+		broadcast := subnet.Broadcast().As4()
+		copyIPv4SockAddrOut(ifr, broadcast[:])
 
 	case linux.SIOCGIFNETMASK:
 		// Gets the network mask of a device.
@@ -3698,6 +3715,21 @@ func interfaceIoctl(ctx context.Context, _ usermem.IO, arg int, ifr *linux.IFReq
 	}
 
 	return nil
+}
+
+func firstIPv4InterfaceAddr(stk inet.Stack, index int32) (inet.InterfaceAddr, bool) {
+	for _, addr := range stk.InterfaceAddrs()[index] {
+		if addr.Family == linux.AF_INET && len(addr.Addr) == header.IPv4AddressSize {
+			return addr, true
+		}
+	}
+	return inet.InterfaceAddr{}, false
+}
+
+func copyIPv4SockAddrOut(ifr *linux.IFReq, addr []byte) {
+	clear(ifr.Data[:linux.SockAddrInetSize])
+	hostarch.ByteOrder.PutUint16(ifr.Data[0:], uint16(linux.AF_INET))
+	copy(ifr.Data[4:8], addr)
 }
 
 // ifconfIoctl populates a struct ifconf for the SIOCGIFCONF ioctl.
