@@ -48,6 +48,9 @@ type Options struct {
 	// Grouping indicates if shim grouping should be enabled.
 	Grouping bool `toml:"grouping" json:"grouping"`
 
+	// EnableHibernateServer indicates if the hibernate server should be started.
+	EnableHibernateServer bool `toml:"enable_hibernate_server" json:"enableHibernateServer"`
+
 	// RunscConfig is a key/value map of all runsc flags.
 	RunscConfig map[string]string `toml:"runsc_config" json:"runscConfig"`
 }

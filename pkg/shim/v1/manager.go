@@ -58,7 +58,7 @@ type manager struct {
 
 var _ shim.Manager = (*manager)(nil)
 
-func newCommand(ctx context.Context, containerdBinary, containerdAddress string, debug bool) (*exec.Cmd, error) {
+func newCommand(ctx context.Context, id, containerdBinary, containerdAddress string, debug bool) (*exec.Cmd, error) {
 	ns, err := namespaces.NamespaceRequired(ctx)
 	if err != nil {
 		return nil, err
@@ -74,6 +74,7 @@ func newCommand(ctx context.Context, containerdBinary, containerdAddress string,
 	args := []string{
 		"-namespace", ns,
 		"-address", containerdAddress,
+		"-id", id,
 		"-publish-binary", containerdBinary,
 	}
 	if debug {
@@ -117,7 +118,7 @@ func (m *manager) Start(ctx context.Context, id string, opts shim.StartOpts) (st
 		}
 	}
 
-	cmd, err := newCommand(ctx, opts.ContainerdBinary, opts.Address, opts.Debug)
+	cmd, err := newCommand(ctx, id, opts.ContainerdBinary, opts.Address, opts.Debug)
 	if err != nil {
 		return "", err
 	}
@@ -192,7 +193,7 @@ func (m *manager) Start(ctx context.Context, id string, opts shim.StartOpts) (st
 
 // Stop implements shim.Manager.Stop.
 func (manager) Stop(ctx context.Context, id string) (shim.StopStatus, error) {
-	log.L.Infof("StopShim, id: %v", id)
+	log.L.Debugf("StopShim, id: %v", id)
 	path, err := os.Getwd()
 	if err != nil {
 		return shim.StopStatus{}, err
@@ -221,7 +222,8 @@ func (manager) Stop(ctx context.Context, id string) (shim.StopStatus, error) {
 	}, nil
 }
 
-func getEnableGrouping() bool {
+func getRuntimeOptions() *runsc.Options {
+	opts := &runsc.Options{}
 	shimConfigPaths := []string{"/run/containerd/runsc/config.toml", "/etc/containerd/runsc/config.toml"}
 
 	tomlPath := ""
@@ -232,14 +234,21 @@ func getEnableGrouping() bool {
 		}
 	}
 	if len(tomlPath) == 0 {
-		return false
+		return opts
 	}
 
-	var opts runsc.Options
-	if _, err := toml.DecodeFile(tomlPath, &opts); err != nil {
+	if _, err := toml.DecodeFile(tomlPath, opts); err != nil {
 		log.L.Debugf("Failed to decode shim config file %q: %v", tomlPath, err)
-		return false
+		return opts
 	}
 
+	return opts
+}
+
+func getEnableGrouping() bool {
+	opts := getRuntimeOptions()
+	if opts == nil {
+		return false
+	}
 	return opts.Grouping
 }

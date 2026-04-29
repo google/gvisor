@@ -2282,3 +2282,12 @@ func (c *Container) CheckStopped() {
 		}
 	}
 }
+
+// GetNetworkConfig returns the network configuration.
+func (c *Container) GetNetworkConfig() (*boot.CreateLinksAndRoutesArgs, error) {
+	log.Debugf("Returns network config, cid: %s", c.ID)
+	if !c.IsSandboxRunning() {
+		return nil, fmt.Errorf("sandbox is not running")
+	}
+	return c.Sandbox.GetNetworkConfig()
+}

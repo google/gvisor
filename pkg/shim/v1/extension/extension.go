@@ -20,6 +20,7 @@ import (
 
 	"github.com/containerd/containerd/pkg/process"
 	"github.com/containerd/containerd/runtime/v2/task"
+	hibernatepb "gvisor.dev/gvisor/pkg/shim/v1/runsc/hibernate_go_proto"
 )
 
 // NewExtension registers an extension constructor. It may return nil, nil to indicate that the
@@ -70,4 +71,5 @@ type TaskServiceExt interface {
 	task.TaskService
 	CreateWithFSRestore(ctx context.Context, req *CreateWithFSRestoreRequest) (*task.CreateTaskResponse, error)
 	Restore(ctx context.Context, req *RestoreRequest) (*task.StartResponse, error)
+	Hide(ctx context.Context, req *hibernatepb.HideRequest, resp *hibernatepb.HideResponse) error
 }

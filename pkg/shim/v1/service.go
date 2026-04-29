@@ -17,6 +17,7 @@ package v1
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"github.com/containerd/containerd/pkg/shutdown"
@@ -25,9 +26,10 @@ import (
 	"github.com/containerd/errdefs"
 	"github.com/containerd/log"
 	"github.com/gogo/protobuf/types"
+	hibernatepb "gvisor.dev/gvisor/pkg/shim/v1/runsc/hibernate_go_proto"
 
 	"gvisor.dev/gvisor/pkg/shim/v1/extension"
-	"gvisor.dev/gvisor/pkg/shim/v1/runsc"
+	rsc "gvisor.dev/gvisor/pkg/shim/v1/runsc"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -88,16 +90,45 @@ func New(ctx context.Context, id string, publisher shim.Publisher, fn func()) (s
 	}, nil
 }
 
+// isDaemon ensures we only create sockets and run Serve() in the main background process,
+// ignoring short-lived containerd helpers like delete or state.
+func isDaemon() bool {
+	for _, arg := range os.Args {
+		if arg == "delete" || arg == "state" || arg == "info" || arg == "stats" {
+			return false
+		}
+	}
+	return true
+}
+
 // newShimRedirector creates a new runsc service that delegates to respective runsc task service.
 func newShimRedirector(ctx context.Context, id string, publisher shim.Publisher, sd shutdown.Service) (extension.TaskServiceExt, error) {
-	runsc, err := runsc.NewTaskService(ctx, id, publisher, sd)
+	runsc, err := rsc.NewTaskService(ctx, id, publisher, sd)
 	if err != nil {
 		sd.Shutdown()
 		return nil, err
 	}
+
+	runtimeOptions := getRuntimeOptions()
+
+	var hibernateServerEndpoint *rsc.HibernateServerEndpoint
+	if runtimeOptions.EnableHibernateServer && isDaemon() {
+		var err error
+		hibernateServerEndpoint, err = rsc.NewHibernateServerEndpoint(runtimeOptions.Root, "shim", id)
+		if err != nil {
+			sd.Shutdown()
+			return nil, err
+		}
+		if hibernateServerEndpoint != nil {
+			sd.RegisterCallback(func(context.Context) error {
+				return hibernateServerEndpoint.Shutdown(ctx)
+			})
+		}
+	}
 	s := &shimRedirector{
-		shutdown: sd,
-		main:     runsc,
+		shutdown:                sd,
+		main:                    runsc,
+		hibernateServerEndpoint: hibernateServerEndpoint,
 	}
 	if address, _ := shim.ReadAddress(shimAddressPath); len(address) > 0 {
 		sd.RegisterCallback(func(context.Context) error {
@@ -106,7 +137,14 @@ func newShimRedirector(ctx context.Context, id string, publisher shim.Publisher,
 		})
 	}
 
-	s.grouping = getEnableGrouping()
+	if address, _ := shim.ReadAddress("hibernate_server"); len(address) > 0 {
+		sd.RegisterCallback(func(context.Context) error {
+			shim.RemoveSocket(fmt.Sprintf("unix://%s", address))
+			return nil
+		})
+	}
+
+	s.grouping = runtimeOptions.Grouping
 	return s, nil
 }
 
@@ -137,10 +175,25 @@ type shimRedirector struct {
 	// grouping indicates if shim grouping is enabled.
 	grouping bool
 
+	// hibernateServerOnce ensures that the hibernate service is only started once.
+	hibernateServerOnce sync.Once
+
+	// hibernateServerEndpoint is the ttrpc server that listens for hibernate requests.
+	hibernateServerEndpoint *rsc.HibernateServerEndpoint
+
 	shutdown shutdown.Service
 }
 
 var _ extension.TaskServiceExt = (*shimRedirector)(nil)
+
+// Preconditions:
+//   - s.mu must be locked
+func (s *shimRedirector) getLocked() extension.TaskServiceExt {
+	if s.ext == nil {
+		return s.main
+	}
+	return s.ext
+}
 
 // get return the extension.TaskServiceExt that should be used for the next
 // call to the container's shim.
@@ -148,10 +201,7 @@ func (s *shimRedirector) get() extension.TaskServiceExt {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.ext == nil {
-		return s.main
-	}
-	return s.ext
+	return s.getLocked()
 }
 
 const kubernetesGroupAnnotation = "io.kubernetes.cri.sandbox-id"
@@ -189,6 +239,18 @@ func (s *shimRedirector) initExt(ctx context.Context, r *shimapi.CreateTaskReque
 				return err
 			}
 		}
+	}
+	if s.hibernateServerEndpoint != nil {
+		s.hibernateServerOnce.Do(func() {
+			s.hibernateServerEndpoint.RegisterService(s.getLocked())
+			go func() {
+				if err := s.hibernateServerEndpoint.Serve(context.Background()); err != nil {
+					log.L.Errorf("Failed to start hibernate server: %v", err)
+				}
+			}()
+		})
+	} else {
+		log.L.Infof("Hibernate server endpoint is nil")
 	}
 	return nil
 }
@@ -342,4 +404,10 @@ func (s *shimRedirector) Restore(ctx context.Context, r *extension.RestoreReques
 	log.L.Debugf("Restore, id: %s", r.Start.ID)
 	resp, err := s.get().Restore(ctx, r)
 	return resp, errdefs.ToGRPC(err)
+}
+
+func (s *shimRedirector) Hide(ctx context.Context, r *hibernatepb.HideRequest, resp *hibernatepb.HideResponse) error {
+	log.L.Debugf("Hide, id: %s", r.GetContainerId())
+	err := s.get().Hide(ctx, r, resp)
+	return errdefs.ToGRPC(err)
 }

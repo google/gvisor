@@ -314,6 +314,10 @@ type Loader struct {
 
 	fsRestore *fsRestore
 
+	// networkArgs contains the routes and links which were scraped from the
+	// host network namespace during sandbox creation.
+	networkArgs *CreateLinksAndRoutesArgs
+
 	LoaderExtra
 }
 

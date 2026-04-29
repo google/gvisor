@@ -565,7 +565,7 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 	}
 	// Configure the network.
 	if err := setupNetwork(conn, s.Pid.Load(), conf, disableIPv6); err != nil {
-		return fmt.Errorf("setting up network: %v", err)
+		return fmt.Errorf("setting up network: %w", err)
 	}
 
 	// Restore the container and start the root container.
@@ -2360,4 +2360,15 @@ func SetCloExeOnAllFDs() (retErr error) {
 	// Sufficient to do this only once per runsc invocation. Avoid double work.
 	setCloseExecOnce.Do(func() { retErr = setCloExeOnAllFDs() })
 	return
+}
+
+// GetNetworkConfig returns the network links and routes config applied during
+// root container creation.
+func (s *Sandbox) GetNetworkConfig() (*boot.CreateLinksAndRoutesArgs, error) {
+	log.Debugf("GetNetworkConfig, sandbox: %q", s.ID)
+	var networkArgs boot.CreateLinksAndRoutesArgs
+	if err := s.call(boot.ContMgrGetNetworkConfig, nil, &networkArgs); err != nil {
+		return nil, fmt.Errorf("error getting network config (CID: %q): %w", s.ID, err)
+	}
+	return &networkArgs, nil
 }

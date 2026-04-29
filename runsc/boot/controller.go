@@ -138,12 +138,16 @@ const (
 
 	// ContMgrContainerRuntimeState returns the runtime state of a container.
 	ContMgrContainerRuntimeState = "containerManager.ContainerRuntimeState"
+
+	// ContMgrCreateLinksAndRoutes creates links and routes, and sets network args in loader.
+	ContMgrCreateLinksAndRoutes = "containerManager.CreateLinksAndRoutes"
+
+	// ContMgrGetNetworkConfig returns the network interfaces and routes applied
+	// during the creation of root container.
+	ContMgrGetNetworkConfig = "containerManager.GetNetworkConfig"
 )
 
 const (
-	// NetworkCreateLinksAndRoutes creates links and routes in a network stack.
-	NetworkCreateLinksAndRoutes = "Network.CreateLinksAndRoutes"
-
 	// NetworkInitPluginStack initializes third-party network stack.
 	NetworkInitPluginStack = "Network.InitPluginStack"
 
@@ -1159,5 +1163,42 @@ func (cm *containerManager) GetSavings(_ *struct{}, s *Savings) error {
 	cm.l.mu.Lock()
 	*s = cm.l.savings
 	cm.l.mu.Unlock()
+	return nil
+}
+
+// CreateLinksAndRoutes creates links and routes, and sets the network arguments.
+func (cm *containerManager) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct{}) error {
+	log.Debugf("containerManager.CreateLinksAndRoutes")
+	if args == nil {
+		return fmt.Errorf("cannot set nil networkArgs")
+	}
+
+	if eps, ok := cm.l.k.RootNetworkNamespace().Stack().(*netstack.Stack); ok {
+		n := &Network{
+			Stack:  eps.Stack,
+			Kernel: cm.l.k,
+		}
+		if err := n.CreateLinksAndRoutes(args, nil); err != nil {
+			return err
+		}
+		cm.l.mu.Lock()
+		cm.l.networkArgs = args
+		cm.l.mu.Unlock()
+	}
+	return nil
+}
+
+// GetNetworkConfig returns the network interfaces and routes.
+func (cm *containerManager) GetNetworkConfig(_ *struct{}, networkArgs *CreateLinksAndRoutesArgs) error {
+	log.Debugf("containerManager.GetNetworkConfig")
+	cm.l.mu.Lock()
+	if cm.l.networkArgs != nil {
+		*networkArgs = *cm.l.networkArgs
+	}
+	cm.l.mu.Unlock()
+
+	if networkArgs == nil {
+		log.Debugf("networks args is nil")
+	}
 	return nil
 }
