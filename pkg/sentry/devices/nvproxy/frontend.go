@@ -768,23 +768,18 @@ func rmControl(fi *frontendIoctlState) (uintptr, error) {
 	}
 	if ioctlParams.Cmd&nvgpu.RM_GSS_LEGACY_MASK != 0 {
 		// This is a "legacy GSS control" that is implemented by the GPU System
-		// Processor (GSP). These controls are undocumented and their parameters
-		// would be forwarded as opaque bytes without content validation via
-		// rmControlSimple(). To maintain sandbox isolation, reject these
-		// controls rather than forwarding unvalidated data to the host NVIDIA
-		// driver.
+		// Processor (GSP). Consequently, its parameters cannot reasonably
+		// contain application pointers, and the control is in any case
+		// undocumented.
 		//
-		// Previously, these were forwarded based on the rationale that GSP
-		// parameters "cannot reasonably contain application pointers." However,
-		// forwarding arbitrary opaque bytes to the host kernel driver
-		// undermines the sandbox's defense-in-depth, as any vulnerability in
-		// the NVIDIA driver's GSP legacy handler would be exploitable from
-		// within the sandbox.
-		//
-		// Standard CUDA/ML workloads should not use GSP legacy controls, as
-		// these are deprecated interfaces (RmGssLegacyRpcCmd). If a legitimate
-		// use case is identified, specific GSP control commands should be
-		// allowlisted with typed parameter validation.
+		// These controls are forwarded as opaque bytes (up to 1 MB) to the
+		// host NVIDIA driver without content validation, expanding the host
+		// kernel attack surface that a sandboxed workload can reach. Because
+		// the user-mode NVIDIA driver may still emit GSP legacy controls on
+		// some driver versions (e.g. 525), this audit log preserves
+		// compatibility while giving operators visibility — a future change
+		// can switch to outright rejection or allowlisting of specific
+		// commands once the real-world set is observed.
 		//
 		// See
 		// src/nvidia/src/kernel/rmapi/entry_points.c:_nv04ControlWithSecInfo()
@@ -792,20 +787,20 @@ func rmControl(fi *frontendIoctlState) (uintptr, error) {
 		// src/nvidia/interface/deprecated/rmapi_deprecated_control.c:RmDeprecatedGetControlHandler()
 		// =>
 		// src/nvidia/interface/deprecated/rmapi_gss_legacy_control.c:RmGssLegacyRpcCmd().
-		fi.ctx.Warningf("nvproxy: rejecting GSP legacy control command %#x (paramsSize=%d)", ioctlParams.Cmd, ioctlParams.ParamsSize)
-		ioctlParams.Status = nvgpu.NV_ERR_NOT_SUPPORTED
-		_, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr)
-		return 0, err
+		fi.ctx.Warningf("nvproxy: forwarding opaque GSP legacy control command %#x (paramsSize=%d)", ioctlParams.Cmd, ioctlParams.ParamsSize)
+		return rmControlSimple(fi, &ioctlParams)
 	}
 	if (ioctlParams.Cmd>>16)&0xffff == nvgpu.NV2081_BINAPI {
 		// NV2081_BINAPI forwards all control commands to the GSP in
 		// src/nvidia/src/kernel/rmapi/binary_api.c:binapiControl_IMPL().
-		// Like GSP legacy controls, these would be forwarded as opaque bytes
-		// without content validation. Reject to maintain sandbox isolation.
-		fi.ctx.Warningf("nvproxy: rejecting NV2081_BINAPI control command %#x (paramsSize=%d)", ioctlParams.Cmd, ioctlParams.ParamsSize)
-		ioctlParams.Status = nvgpu.NV_ERR_NOT_SUPPORTED
-		_, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr)
-		return 0, err
+		// Consequently, its parameters cannot reasonably contain pointers.
+		//
+		// Like GSP legacy controls, these forward up to 1 MB of opaque bytes
+		// to the host NVIDIA driver. Audit-log the forwarding so operators
+		// can observe the real-world surface in their fleet before
+		// considering tighter handling (allowlist or rejection).
+		fi.ctx.Warningf("nvproxy: forwarding opaque NV2081_BINAPI control command %#x (paramsSize=%d)", ioctlParams.Cmd, ioctlParams.ParamsSize)
+		return rmControlSimple(fi, &ioctlParams)
 	}
 	// Implementors:
 	// - Top two bytes of Cmd specifies class; third byte specifies category;
