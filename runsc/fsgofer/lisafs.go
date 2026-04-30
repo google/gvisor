@@ -1009,6 +1009,12 @@ func (fd *controlFDLisa) Renamed() {
 
 // GetXattr implements lisafs.ControlFDImpl.GetXattr.
 func (fd *controlFDLisa) GetXattr(name string, size uint32, getValueBuf func(uint32) []byte) (uint16, error) {
+	// getxattr(2) called with size 0 should return the attribute size. As a
+	// result, we need to return the entire attribute here so that the sentry
+	// can return the correct value.
+	if size > linux.XATTR_SIZE_MAX || size == 0 {
+		size = linux.XATTR_SIZE_MAX
+	}
 	data := getValueBuf(size)
 	if fd.IsSocket() || fd.IsSymlink() {
 		// Sockets and symlinks use O_PATH host FDs. However, fgetxattr(2) fails

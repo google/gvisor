@@ -500,6 +500,13 @@ func (i *directfsInode) getXattr(ctx context.Context, name string, size uint64, 
 		}
 		return i.controlFDLisa.GetXattr(ctx, name, size)
 	}
+
+	// getxattr(2) called with size 0 should return the attribute size. As a
+	// result, we need to return the entire attribute here so that the sentry
+	// can return the correct value.
+	if size > linux.XATTR_SIZE_MAX || size == 0 {
+		size = linux.XATTR_SIZE_MAX
+	}
 	data := make([]byte, size)
 	n, err := unix.Fgetxattr(i.controlFD, name, data)
 	if err != nil {

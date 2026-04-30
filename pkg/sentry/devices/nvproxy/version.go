@@ -1081,7 +1081,8 @@ func Init() {
 
 		// The following versions exist on the "580" branch, which was branched
 		// from the main branch at 580.105.08.
-		_ = addDriverABI(580, 126, 9, "4cac53e48f8adff661d47c8788ed24059a248c9fd8098ceafd088a498986ec26", "7393c42b112fd6f0a498e1d2a33127b821be58b7570dc9f8d5589a51688da4ad", v580_105_08)
+		v580_126_09 := addDriverABI(580, 126, 9, "4cac53e48f8adff661d47c8788ed24059a248c9fd8098ceafd088a498986ec26", "7393c42b112fd6f0a498e1d2a33127b821be58b7570dc9f8d5589a51688da4ad", v580_105_08)
+		_ = addDriverABI(580, 126, 20, "a055dbeae72438f20335b41929a060148c82c69d2147c0d922660e8c5a265eb1", ChecksumNoDriver, v580_126_09)
 
 		v590_44_01 := func() *driverABI {
 			abi := v580_105_08()
