@@ -589,10 +589,6 @@ func (c *Container) Update(res *specs.LinuxResources) error {
 		return fmt.Errorf("sandbox cannot be nil")
 	}
 
-	if !c.Sandbox.IsRootContainer(c.ID) {
-		return fmt.Errorf("update can only be called on the root container")
-	}
-
 	cg := c.Sandbox.CgroupJSON.Cgroup
 	if cg == nil {
 		return fmt.Errorf("cgroup cannot be nil")
