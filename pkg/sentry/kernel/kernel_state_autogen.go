@@ -856,6 +856,79 @@ func (s *savedPendingSignal) StateLoad(ctx context.Context, stateSourceObject st
 	stateSourceObject.Load(1, &s.timer)
 }
 
+func (f *pidFD) StateTypeName() string {
+	return "pkg/sentry/kernel.pidFD"
+}
+
+func (f *pidFD) StateFields() []string {
+	return []string{
+		"vfsFD",
+		"FileDescriptionDefaultImpl",
+		"DentryMetadataFileDescriptionImpl",
+		"NoLockFD",
+		"isThread",
+		"pid",
+	}
+}
+
+func (f *pidFD) beforeSave() {}
+
+// +checklocksignore
+func (f *pidFD) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.vfsFD)
+	stateSinkObject.Save(1, &f.FileDescriptionDefaultImpl)
+	stateSinkObject.Save(2, &f.DentryMetadataFileDescriptionImpl)
+	stateSinkObject.Save(3, &f.NoLockFD)
+	stateSinkObject.Save(4, &f.isThread)
+	stateSinkObject.Save(5, &f.pid)
+}
+
+func (f *pidFD) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (f *pidFD) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.vfsFD)
+	stateSourceObject.Load(1, &f.FileDescriptionDefaultImpl)
+	stateSourceObject.Load(2, &f.DentryMetadataFileDescriptionImpl)
+	stateSourceObject.Load(3, &f.NoLockFD)
+	stateSourceObject.Load(4, &f.isThread)
+	stateSourceObject.Load(5, &f.pid)
+}
+
+func (p *pid) StateTypeName() string {
+	return "pkg/sentry/kernel.pid"
+}
+
+func (p *pid) StateFields() []string {
+	return []string{
+		"t",
+		"ready",
+		"notifier",
+	}
+}
+
+func (p *pid) beforeSave() {}
+
+// +checklocksignore
+func (p *pid) StateSave(stateSinkObject state.Sink) {
+	p.beforeSave()
+	tValue := p.saveT()
+	_ = (*Task)(tValue)
+	stateSinkObject.SaveValue(0, tValue)
+	stateSinkObject.Save(1, &p.ready)
+	stateSinkObject.Save(2, &p.notifier)
+}
+
+func (p *pid) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (p *pid) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(1, &p.ready)
+	stateSourceObject.Load(2, &p.notifier)
+	stateSourceObject.LoadValue(0, new(*Task), func(y any) { p.loadT(ctx, y.(*Task)) })
+}
+
 func (it *IntervalTimer) StateTypeName() string {
 	return "pkg/sentry/kernel.IntervalTimer"
 }
@@ -1498,6 +1571,7 @@ func (t *Task) StateFields() []string {
 		"Origin",
 		"onDestroyAction",
 		"execveCredsMutexOwner",
+		"pid",
 	}
 }
 
@@ -1588,6 +1662,7 @@ func (t *Task) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(71, &t.Origin)
 	stateSinkObject.Save(72, &t.onDestroyAction)
 	stateSinkObject.Save(73, &t.execveCredsMutexOwner)
+	stateSinkObject.Save(74, &t.pid)
 }
 
 // +checklocksignore
@@ -1662,6 +1737,7 @@ func (t *Task) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(71, &t.Origin)
 	stateSourceObject.Load(72, &t.onDestroyAction)
 	stateSourceObject.Load(73, &t.execveCredsMutexOwner)
+	stateSourceObject.Load(74, &t.pid)
 	stateSourceObject.LoadValue(27, new(*FSContext), func(y any) { t.loadFsContext(ctx, y.(*FSContext)) })
 	stateSourceObject.LoadValue(29, new(*Task), func(y any) { t.loadVforkParent(ctx, y.(*Task)) })
 	stateSourceObject.LoadValue(35, new(*Task), func(y any) { t.loadPtraceTracer(ctx, y.(*Task)) })
@@ -2862,6 +2938,8 @@ func init() {
 	state.Register((*pendingSignalList)(nil))
 	state.Register((*pendingSignalEntry)(nil))
 	state.Register((*savedPendingSignal)(nil))
+	state.Register((*pidFD)(nil))
+	state.Register((*pid)(nil))
 	state.Register((*IntervalTimer)(nil))
 	state.Register((*processGroupList)(nil))
 	state.Register((*processGroupEntry)(nil))

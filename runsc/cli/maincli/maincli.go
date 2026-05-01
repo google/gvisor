@@ -63,6 +63,7 @@ func commands() (map[util.SubCommand]string, []subcommands.Command) {
 		new(cmd.Do):           userGroup,
 		new(cmd.FSCheckpoint): userGroup,
 		new(cmd.PortForward):  userGroup,
+		new(cmd.SandboxExec):  userGroup,
 		new(cmd.Tar):          userGroup,
 
 		// Helpers.

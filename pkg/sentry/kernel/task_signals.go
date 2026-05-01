@@ -1140,3 +1140,43 @@ func (t *Task) SignalUnregister(e *waiter.Entry) {
 	t.signalQueue.EventUnregister(e)
 	t.tg.signalHandlers.mu.Unlock()
 }
+
+// MayKill checks if task t has permission to send signal sig to target.
+//
+// "For a process to have permission to send a signal it must
+//   - either be privileged (CAP_KILL), or
+//   - the real or effective user ID of the sending process must be equal to the
+//
+// real or saved set-user-ID of the target process.
+//
+// In the case of SIGCONT it suffices when the sending and receiving processes
+// belong to the same session." - kill(2)
+//
+// Equivalent to kernel/signal.c:check_kill_permission.
+func (t *Task) MayKill(target *Task, sig linux.Signal) bool {
+	// kernel/signal.c:check_kill_permission also allows a signal if the
+	// sending and receiving tasks share a thread group, which is not
+	// mentioned in kill(2) since kill does not allow task-level
+	// granularity in signal sending.
+	if t.ThreadGroup() == target.ThreadGroup() {
+		return true
+	}
+
+	if t.HasCapabilityIn(linux.CAP_KILL, target.UserNamespace()) {
+		return true
+	}
+
+	creds := t.Credentials()
+	tcreds := target.Credentials()
+	if creds.EffectiveKUID == tcreds.SavedKUID ||
+		creds.EffectiveKUID == tcreds.RealKUID ||
+		creds.RealKUID == tcreds.SavedKUID ||
+		creds.RealKUID == tcreds.RealKUID {
+		return true
+	}
+
+	if sig == linux.SIGCONT && target.ThreadGroup().Session() == t.ThreadGroup().Session() {
+		return true
+	}
+	return false
+}

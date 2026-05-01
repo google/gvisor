@@ -106,3 +106,13 @@ func (tg *ThreadGroup) saveOldRSeqCritical() *OldRSeqCriticalRegion {
 func (tg *ThreadGroup) loadOldRSeqCritical(_ context.Context, r *OldRSeqCriticalRegion) {
 	tg.oldRSeqCritical.Store(r)
 }
+
+// saveT is invoked by stateify.
+func (p *pid) saveT() *Task {
+	return p.t.Load()
+}
+
+// loadT is invoked by stateify.
+func (p *pid) loadT(_ context.Context, t *Task) {
+	p.t.Store(t)
+}

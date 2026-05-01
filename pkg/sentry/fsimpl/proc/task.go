@@ -208,6 +208,15 @@ type taskOwnedInode struct {
 	owner *kernel.Task
 }
 
+// TaskFromProcPIDInode implements kernel.TaskOwnedInode.
+func (i *taskOwnedInode) TaskFromProcPIDInode() *kernel.Task {
+	ino, ok := i.Inode.(*taskInode)
+	if !ok {
+		return nil
+	}
+	return ino.task
+}
+
 var _ kernfs.Inode = (*taskOwnedInode)(nil)
 
 func (fs *filesystem) newTaskOwnedInode(ctx context.Context, task *kernel.Task, ino uint64, perm linux.FileMode, inode dynamicInode) kernfs.Inode {

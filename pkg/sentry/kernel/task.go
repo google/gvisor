@@ -648,6 +648,15 @@ type Task struct {
 	// another task that wants to pass on the execveCredsMutex lock may write to this field with
 	// tg.signalHandlers.mu held.
 	execveCredsMutexOwner *ThreadGroup
+
+	// pid is a lightweight struct that all open pidfds referring to this task point to,
+	// allowing the GC to reclaim the Task memory upon death, even if there are open pidfds.
+	// It differs from Linux's struct pid in that it does not represent a pid integer, and is
+	// purely a lightweight reference to a Task.
+	//
+	// pid lives on beyond the Task itself as long as there are open pidfds.
+	// Access is synchronized by the TaskSet mutex.
+	pid *pid
 }
 
 // Task related metrics

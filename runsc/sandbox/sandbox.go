@@ -777,6 +777,11 @@ func (s *Sandbox) SetRootDir(rootDir string) {
 	s.rootDir = rootDir
 }
 
+// GetControlSocketPath returns the control socket path for the sandbox.
+func (s *Sandbox) GetControlSocketPath() string {
+	return s.getControlSocketPath()
+}
+
 // getControlSocketPath gets the control socket path for the sandbox.
 func (s *Sandbox) getControlSocketPath() string {
 	err := unix.Access(s.ControlSocketPath, unix.F_OK)
