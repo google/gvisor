@@ -40,6 +40,9 @@ const (
 	// archKey is given to nodepools to mark their architecture. Used here to mark ARM nodepools.
 	archKey = "kubernetes.io/arch"
 
+	// instanceTypeKey is given to nodepools to mark their machine type.
+	instanceTypeKey = "node.kubernetes.io/instance-type"
+
 	// k8sApp is used as a label to distinguish between applications.
 	k8sApp = "k8s-app"
 
@@ -148,6 +151,25 @@ const (
 	AcceleratorTypeV4PodTPU   = AcceleratorType("tpu-v4-pod")
 )
 
+// MachineInfo contains the hardware specs of a machine type.
+type MachineInfo struct {
+	// NumCores is the number of cores in the machine type.
+	NumCores int
+
+	// MemoryGiB is the amount of memory in GiB in the machine type.
+	MemoryGiB int
+}
+
+// knownMachineTypes is a map of known GCE machine types to their info.
+var knownMachineTypes = map[string]*MachineInfo{
+	"n1-standard-4":   {NumCores: 4, MemoryGiB: 15},
+	"n2-standard-4":   {NumCores: 4, MemoryGiB: 16},
+	"n2-standard-8":   {NumCores: 8, MemoryGiB: 32},
+	"n2d-standard-8":  {NumCores: 8, MemoryGiB: 32},
+	"g2-standard-8":   {NumCores: 8, MemoryGiB: 32},
+	"ct4p-hightpu-4t": {NumCores: 240, MemoryGiB: 407},
+}
+
 // TestCluster wraps clusters with their individual ClientSets so that helper methods can be called.
 type TestCluster struct {
 	clusterName string
@@ -187,6 +209,9 @@ type NodePool struct {
 
 	// cpuArchitecture is the CPU architecture of nodes in the nodepool.
 	cpuArchitecture CPUArchitecture
+
+	// spec is the machine spec of nodes in the nodepool.
+	spec *MachineInfo
 
 	// tpuAcceleratorType is the TPU accelerator type present on nodes in the nodepool.
 	// Empty string if the nodes have no accelerators.
@@ -347,6 +372,14 @@ func (t *TestCluster) getNodePool(ctx context.Context, nodepoolType NodePoolType
 			if npArchitecture == "" {
 				continue
 			}
+			machineType, hasMachineType := node.Labels[NodepoolInstanceTypeKey]
+			if !hasMachineType || machineType == "" {
+				return nil, fmt.Errorf("node %q has no nodepool instance type", node.Name)
+			}
+			knownSpec, hasKnownSpec := knownMachineTypes[machineType]
+			if !hasKnownSpec {
+				return nil, fmt.Errorf("node %q has unknown machine type %q; please add it to knownMachineTypes", node.Name, machineType)
+			}
 			npTPUAcceleratorType := AcceleratorType(node.Labels[NodepoolTPUAcceleratorSelectorKey])
 			if npTPUAcceleratorType == "" {
 				// Attempt to derive it from instance type if possible.
@@ -382,6 +415,7 @@ func (t *TestCluster) getNodePool(ctx context.Context, nodepoolType NodePoolType
 					nodePooltype:       npType,
 					runtime:            npRuntime,
 					cpuArchitecture:    npArchitecture,
+					spec:               knownSpec,
 					tpuAcceleratorType: npTPUAcceleratorType,
 					numAccelerators:    npNumAccelerators,
 					tpuTopology:        npTPUTopology,
@@ -598,6 +632,15 @@ func (t *TestCluster) RuntimeTestNodepoolArchitecture(ctx context.Context) (CPUA
 	return np.cpuArchitecture, nil
 }
 
+// RuntimeTestNodepoolMachineInfo returns the MachineInfo of the test nodepool.
+func (t *TestCluster) RuntimeTestNodepoolMachineInfo(ctx context.Context) (*MachineInfo, error) {
+	np, err := t.getNodePool(ctx, TestRuntimeNodepoolName)
+	if err != nil {
+		return nil, err
+	}
+	return np.spec, nil
+}
+
 // configureDaemonSetForNodepool configures the DaemonSet to run on a given nodepool.
 func (t *TestCluster) configureDaemonSetForNodepool(ctx context.Context, ds *appsv1.DaemonSet, nodepoolType NodePoolType) error {
 	np, err := t.getNodePool(ctx, nodepoolType)
@@ -669,6 +712,36 @@ func (t *TestCluster) applyCommonPodConfigurations(ctx context.Context, np *Node
 	}
 	// Apply the runtime we've chosen, whether by override or autodetection.
 	applyRuntime.ApplyPodSpec(podSpec)
+	if applyRuntime.RequiresExplicitResourceLimits() {
+		const (
+			overheadMargin = 0.2
+			leftoverRatio  = 1.0 - overheadMargin
+		)
+		cores := int(float64(np.spec.NumCores) * leftoverRatio)
+		if cores < 1 {
+			cores = 1
+		}
+		memMiB := int(float64(np.spec.MemoryGiB) * 1024 * leftoverRatio)
+		resCPU := resource.MustParse(fmt.Sprintf("%d", cores))
+		resMem := resource.MustParse(fmt.Sprintf("%dMi", memMiB))
+		for _, containers := range [][]v13.Container{
+			podSpec.InitContainers,
+			podSpec.Containers,
+		} {
+			for i := range containers {
+				if containers[i].Resources.Limits == nil {
+					containers[i].Resources.Limits = make(v13.ResourceList)
+				}
+				if containers[i].Resources.Requests == nil {
+					containers[i].Resources.Requests = make(v13.ResourceList)
+				}
+				containers[i].Resources.Limits[v13.ResourceCPU] = resCPU
+				containers[i].Resources.Limits[v13.ResourceMemory] = resMem
+				containers[i].Resources.Requests[v13.ResourceCPU] = resCPU
+				containers[i].Resources.Requests[v13.ResourceMemory] = resMem
+			}
+		}
+	}
 
 	// If the nodepool has accelerators, copy the number of them as a node
 	// selector option.
