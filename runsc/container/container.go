@@ -589,21 +589,20 @@ func (c *Container) Update(res *specs.LinuxResources) error {
 		return fmt.Errorf("sandbox cannot be nil")
 	}
 
-	if !c.Sandbox.IsRootContainer(c.ID) {
-		return fmt.Errorf("update can only be called on the root container")
+	if c.Sandbox.IsRootContainer(c.ID) {
+		cg := c.Sandbox.CgroupJSON.Cgroup
+		if cg == nil {
+			return fmt.Errorf("cgroup cannot be nil")
+		}
+		if err := cg.Update(res); err != nil {
+			// set back to original
+			if err2 := cg.Update(c.Spec.Linux.Resources); err2 != nil {
+				return fmt.Errorf("setting back cgroup configs failed due to error: %v, your state file and actual configs might be inconsistent", err2)
+			}
+			return err
+		}
 	}
 
-	cg := c.Sandbox.CgroupJSON.Cgroup
-	if cg == nil {
-		return fmt.Errorf("cgroup cannot be nil")
-	}
-	if err := cg.Update(res); err != nil {
-		// set back to original
-		if err2 := cg.Update(c.Spec.Linux.Resources); err2 != nil {
-			return fmt.Errorf("setting back cgroup configs failed due to error: %v, your state file and actual configs might be inconsistent", err2)
-		}
-		return err
-	}
 	c.Spec.Linux.Resources = res
 
 	c.Saver.lock(BlockAcquire)

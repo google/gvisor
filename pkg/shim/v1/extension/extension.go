@@ -72,4 +72,5 @@ type TaskServiceExt interface {
 	CreateWithFSRestore(ctx context.Context, req *CreateWithFSRestoreRequest) (*task.CreateTaskResponse, error)
 	Restore(ctx context.Context, req *RestoreRequest) (*task.StartResponse, error)
 	Hide(ctx context.Context, req *hibernatepb.HideRequest, resp *hibernatepb.HideResponse) error
+	Unhide(ctx context.Context, req *hibernatepb.UnhideRequest, resp *hibernatepb.UnhideResponse) error
 }

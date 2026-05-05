@@ -411,3 +411,9 @@ func (s *shimRedirector) Hide(ctx context.Context, r *hibernatepb.HideRequest, r
 	err := s.get().Hide(ctx, r, resp)
 	return errdefs.ToGRPC(err)
 }
+
+func (s *shimRedirector) Unhide(ctx context.Context, r *hibernatepb.UnhideRequest, resp *hibernatepb.UnhideResponse) error {
+	log.L.Debugf("Unhide, id: %s", r.GetContainerId())
+	err := s.get().Unhide(ctx, r, resp)
+	return errdefs.ToGRPC(err)
+}

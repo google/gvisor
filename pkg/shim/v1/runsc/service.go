@@ -492,11 +492,8 @@ func (s *runscService) Stats(ctx context.Context, r *taskAPI.StatsRequest) (*tas
 }
 
 // Update updates a running container.
-// CRI UpdateContainerResources sends the workload container ID, but runsc
-// update only accepts the root (sandbox) container. Route through s.id which
-// is the sandbox container ID assigned at shim startup.
 func (s *runscService) Update(ctx context.Context, r *taskAPI.UpdateTaskRequest) (*types.Empty, error) {
-	c, err := s.getContainer(s.id)
+	c, err := s.getContainer(r.ID)
 	if err != nil {
 		return nil, err
 	}

@@ -528,36 +528,59 @@ func (nss *namespaceSet) initFromTask(t *Task, target *Task, flags int32) error 
 	if !t.CanTrace(target, false) {
 		return linuxerr.EPERM
 	}
+
 	if flags&linux.CLONE_NEWPID != 0 {
-		nss.childPIDNS = target.GetPIDNamespace()
+		nss.childPIDNS = target.tg.pidns
 		if nss.childPIDNS == nil {
 			return linuxerr.ESRCH
 		}
+		// We need to lock the TaskSet mutex to avoid racing with a dying target tg: if we lose
+		// that race, we might end up resuscitating a dead pidns (we'd actually end up panicking
+		// the refcounting code). Namespaces other than the pidns kind are cleared for an exiting task.
+		// A more fundamental difference is that all but the pidns reside in the struct Task, whereas
+		// a pidns resides in the struct ThreadGroup and is immutable and never cleared.
+		target.tg.pidns.owner.mu.RLock()
+		if target.ExitState() >= TaskExitInitiated {
+			nss.childPIDNS = nil
+			target.tg.pidns.owner.mu.RUnlock()
+			return linuxerr.ESRCH
+		}
+		nss.childPIDNS.IncRef()
+		target.tg.pidns.owner.mu.RUnlock()
 	}
+
+	target.mu.Lock()
+	defer target.mu.Unlock()
+
 	if flags&linux.CLONE_NEWNET != 0 {
-		nss.netNS = target.GetNetworkNamespace()
+		nss.netNS = target.netns
 		if nss.netNS == nil {
 			return linuxerr.ESRCH
 		}
+		nss.netNS.IncRef()
 	}
 	if flags&linux.CLONE_NEWUTS != 0 {
-		nss.utsNS = target.GetUTSNamespace()
+		nss.utsNS = target.utsns
 		if nss.utsNS == nil {
 			return linuxerr.ESRCH
 		}
+		nss.utsNS.IncRef()
 	}
 	if flags&linux.CLONE_NEWIPC != 0 {
-		nss.ipcNS = target.GetIPCNamespace()
+		nss.ipcNS = target.ipcns
 		if nss.ipcNS == nil {
 			return linuxerr.ESRCH
 		}
+		nss.ipcNS.IncRef()
 	}
 	if flags&linux.CLONE_NEWNS != 0 {
-		nss.mountNS = target.GetMountNamespace()
+		nss.mountNS = target.mountNamespace
 		if nss.mountNS == nil {
 			return linuxerr.ESRCH
 		}
+		nss.mountNS.IncRef()
 	}
+
 	return nil
 }
 

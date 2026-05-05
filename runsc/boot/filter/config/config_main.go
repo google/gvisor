@@ -317,8 +317,8 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 	},
 	unix.SYS_TIMER_CREATE: seccomp.PerArg{
 		seccomp.EqualTo(unix.CLOCK_THREAD_CPUTIME_ID), /* which */
-		seccomp.AnyValue{},                            /* sevp */
-		seccomp.AnyValue{},                            /* timerid */
+		seccomp.AnyValue{}, /* sevp */
+		seccomp.AnyValue{}, /* timerid */
 	},
 	unix.SYS_TIMER_DELETE: seccomp.MatchAll{},
 	unix.SYS_TIMER_SETTIME: seccomp.PerArg{

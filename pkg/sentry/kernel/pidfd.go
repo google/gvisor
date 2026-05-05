@@ -86,6 +86,14 @@ func (f *pidFD) Epollable() bool {
 	return true
 }
 
+// RegisterFileAsyncHandler implements vfs.FileDescriptionImpl.RegisterFileAsyncHandler.
+func (f *pidFD) RegisterFileAsyncHandler(fd *vfs.FileDescription) error {
+	return linuxerr.ENOTTY
+}
+
+// UnregisterFileAsyncHandler implements vfs.FileDescriptionImpl.UnregisterFileAsyncHandler.
+func (f *pidFD) UnregisterFileAsyncHandler(fd *vfs.FileDescription) {}
+
 // PIDFDOpen helps implement the linux syscall pidfd_open(2).
 // It returns an fd with an extra reference.
 func (t *Task) PIDFDOpen(tid ThreadID, isThread bool, nonBlock bool) (*vfs.FileDescription, error) {

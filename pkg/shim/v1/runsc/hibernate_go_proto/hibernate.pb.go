@@ -73,6 +73,98 @@ func (x *HideRequest) GetImagePath() string {
 	return ""
 }
 
+type UnhideRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ContainerId   string                 `protobuf:"bytes,1,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
+	ImagePath     string                 `protobuf:"bytes,2,opt,name=image_path,json=imagePath,proto3" json:"image_path,omitempty"`
+	BundlePath    string                 `protobuf:"bytes,3,opt,name=bundle_path,json=bundlePath,proto3" json:"bundle_path,omitempty"`
+	ConsoleSocket string                 `protobuf:"bytes,4,opt,name=console_socket,json=consoleSocket,proto3" json:"console_socket,omitempty"`
+	UserLog       string                 `protobuf:"bytes,5,opt,name=user_log,json=userLog,proto3" json:"user_log,omitempty"`
+	Direct        bool                   `protobuf:"varint,6,opt,name=direct,proto3" json:"direct,omitempty"`
+	Background    bool                   `protobuf:"varint,7,opt,name=background,proto3" json:"background,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UnhideRequest) Reset() {
+	*x = UnhideRequest{}
+	mi := &file_pkg_shim_v1_runsc_hibernate_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UnhideRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UnhideRequest) ProtoMessage() {}
+
+func (x *UnhideRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_shim_v1_runsc_hibernate_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UnhideRequest.ProtoReflect.Descriptor instead.
+func (*UnhideRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_shim_v1_runsc_hibernate_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *UnhideRequest) GetContainerId() string {
+	if x != nil {
+		return x.ContainerId
+	}
+	return ""
+}
+
+func (x *UnhideRequest) GetImagePath() string {
+	if x != nil {
+		return x.ImagePath
+	}
+	return ""
+}
+
+func (x *UnhideRequest) GetBundlePath() string {
+	if x != nil {
+		return x.BundlePath
+	}
+	return ""
+}
+
+func (x *UnhideRequest) GetConsoleSocket() string {
+	if x != nil {
+		return x.ConsoleSocket
+	}
+	return ""
+}
+
+func (x *UnhideRequest) GetUserLog() string {
+	if x != nil {
+		return x.UserLog
+	}
+	return ""
+}
+
+func (x *UnhideRequest) GetDirect() bool {
+	if x != nil {
+		return x.Direct
+	}
+	return false
+}
+
+func (x *UnhideRequest) GetBackground() bool {
+	if x != nil {
+		return x.Background
+	}
+	return false
+}
+
 type HideResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -81,7 +173,7 @@ type HideResponse struct {
 
 func (x *HideResponse) Reset() {
 	*x = HideResponse{}
-	mi := &file_pkg_shim_v1_runsc_hibernate_proto_msgTypes[1]
+	mi := &file_pkg_shim_v1_runsc_hibernate_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -93,7 +185,7 @@ func (x *HideResponse) String() string {
 func (*HideResponse) ProtoMessage() {}
 
 func (x *HideResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_shim_v1_runsc_hibernate_proto_msgTypes[1]
+	mi := &file_pkg_shim_v1_runsc_hibernate_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -106,7 +198,43 @@ func (x *HideResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HideResponse.ProtoReflect.Descriptor instead.
 func (*HideResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_shim_v1_runsc_hibernate_proto_rawDescGZIP(), []int{1}
+	return file_pkg_shim_v1_runsc_hibernate_proto_rawDescGZIP(), []int{2}
+}
+
+type UnhideResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UnhideResponse) Reset() {
+	*x = UnhideResponse{}
+	mi := &file_pkg_shim_v1_runsc_hibernate_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UnhideResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UnhideResponse) ProtoMessage() {}
+
+func (x *UnhideResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_shim_v1_runsc_hibernate_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UnhideResponse.ProtoReflect.Descriptor instead.
+func (*UnhideResponse) Descriptor() ([]byte, []int) {
+	return file_pkg_shim_v1_runsc_hibernate_proto_rawDescGZIP(), []int{3}
 }
 
 var File_pkg_shim_v1_runsc_hibernate_proto protoreflect.FileDescriptor
@@ -117,11 +245,25 @@ const file_pkg_shim_v1_runsc_hibernate_proto_rawDesc = "" +
 	"\vHideRequest\x12!\n" +
 	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x1d\n" +
 	"\n" +
-	"image_path\x18\x02 \x01(\tR\timagePath\"\x0e\n" +
-	"\fHideResponse2C\n" +
+	"image_path\x18\x02 \x01(\tR\timagePath\"\xec\x01\n" +
+	"\rUnhideRequest\x12!\n" +
+	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x1d\n" +
+	"\n" +
+	"image_path\x18\x02 \x01(\tR\timagePath\x12\x1f\n" +
+	"\vbundle_path\x18\x03 \x01(\tR\n" +
+	"bundlePath\x12%\n" +
+	"\x0econsole_socket\x18\x04 \x01(\tR\rconsoleSocket\x12\x19\n" +
+	"\buser_log\x18\x05 \x01(\tR\auserLog\x12\x16\n" +
+	"\x06direct\x18\x06 \x01(\bR\x06direct\x12\x1e\n" +
+	"\n" +
+	"background\x18\a \x01(\bR\n" +
+	"background\"\x0e\n" +
+	"\fHideResponse\"\x10\n" +
+	"\x0eUnhideResponse2\x80\x01\n" +
 	"\n" +
 	"Hibernator\x125\n" +
-	"\x04Hide\x12\x15.runsc.v1.HideRequest\x1a\x16.runsc.v1.HideResponseB\x02P\x01b\x06proto3"
+	"\x04Hide\x12\x15.runsc.v1.HideRequest\x1a\x16.runsc.v1.HideResponse\x12;\n" +
+	"\x06Unhide\x12\x17.runsc.v1.UnhideRequest\x1a\x18.runsc.v1.UnhideResponseB\x02P\x01b\x06proto3"
 
 var (
 	file_pkg_shim_v1_runsc_hibernate_proto_rawDescOnce sync.Once
@@ -135,16 +277,20 @@ func file_pkg_shim_v1_runsc_hibernate_proto_rawDescGZIP() []byte {
 	return file_pkg_shim_v1_runsc_hibernate_proto_rawDescData
 }
 
-var file_pkg_shim_v1_runsc_hibernate_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_pkg_shim_v1_runsc_hibernate_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_pkg_shim_v1_runsc_hibernate_proto_goTypes = []any{
-	(*HideRequest)(nil),  // 0: runsc.v1.HideRequest
-	(*HideResponse)(nil), // 1: runsc.v1.HideResponse
+	(*HideRequest)(nil),    // 0: runsc.v1.HideRequest
+	(*UnhideRequest)(nil),  // 1: runsc.v1.UnhideRequest
+	(*HideResponse)(nil),   // 2: runsc.v1.HideResponse
+	(*UnhideResponse)(nil), // 3: runsc.v1.UnhideResponse
 }
 var file_pkg_shim_v1_runsc_hibernate_proto_depIdxs = []int32{
 	0, // 0: runsc.v1.Hibernator.Hide:input_type -> runsc.v1.HideRequest
-	1, // 1: runsc.v1.Hibernator.Hide:output_type -> runsc.v1.HideResponse
-	1, // [1:2] is the sub-list for method output_type
-	0, // [0:1] is the sub-list for method input_type
+	1, // 1: runsc.v1.Hibernator.Unhide:input_type -> runsc.v1.UnhideRequest
+	2, // 2: runsc.v1.Hibernator.Hide:output_type -> runsc.v1.HideResponse
+	3, // 3: runsc.v1.Hibernator.Unhide:output_type -> runsc.v1.UnhideResponse
+	2, // [2:4] is the sub-list for method output_type
+	0, // [0:2] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -161,7 +307,7 @@ func file_pkg_shim_v1_runsc_hibernate_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_shim_v1_runsc_hibernate_proto_rawDesc), len(file_pkg_shim_v1_runsc_hibernate_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

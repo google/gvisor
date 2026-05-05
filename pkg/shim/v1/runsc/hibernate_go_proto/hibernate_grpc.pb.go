@@ -19,7 +19,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Hibernator_Hide_FullMethodName = "/runsc.v1.Hibernator/Hide"
+	Hibernator_Hide_FullMethodName   = "/runsc.v1.Hibernator/Hide"
+	Hibernator_Unhide_FullMethodName = "/runsc.v1.Hibernator/Unhide"
 )
 
 // HibernatorClient is the client API for Hibernator service.
@@ -27,6 +28,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type HibernatorClient interface {
 	Hide(ctx context.Context, in *HideRequest, opts ...grpc.CallOption) (*HideResponse, error)
+	Unhide(ctx context.Context, in *UnhideRequest, opts ...grpc.CallOption) (*UnhideResponse, error)
 }
 
 type hibernatorClient struct {
@@ -47,11 +49,22 @@ func (c *hibernatorClient) Hide(ctx context.Context, in *HideRequest, opts ...gr
 	return out, nil
 }
 
+func (c *hibernatorClient) Unhide(ctx context.Context, in *UnhideRequest, opts ...grpc.CallOption) (*UnhideResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UnhideResponse)
+	err := c.cc.Invoke(ctx, Hibernator_Unhide_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // HibernatorServer is the server API for Hibernator service.
 // All implementations should embed UnimplementedHibernatorServer
 // for forward compatibility.
 type HibernatorServer interface {
 	Hide(context.Context, *HideRequest) (*HideResponse, error)
+	Unhide(context.Context, *UnhideRequest) (*UnhideResponse, error)
 }
 
 // UnimplementedHibernatorServer should be embedded to have
@@ -63,6 +76,9 @@ type UnimplementedHibernatorServer struct{}
 
 func (UnimplementedHibernatorServer) Hide(context.Context, *HideRequest) (*HideResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Hide not implemented")
+}
+func (UnimplementedHibernatorServer) Unhide(context.Context, *UnhideRequest) (*UnhideResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Unhide not implemented")
 }
 func (UnimplementedHibernatorServer) testEmbeddedByValue() {}
 
@@ -102,6 +118,24 @@ func _Hibernator_Hide_Handler(srv interface{}, ctx context.Context, dec func(int
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Hibernator_Unhide_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UnhideRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(HibernatorServer).Unhide(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Hibernator_Unhide_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(HibernatorServer).Unhide(ctx, req.(*UnhideRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Hibernator_ServiceDesc is the grpc.ServiceDesc for Hibernator service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -112,6 +146,10 @@ var Hibernator_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Hide",
 			Handler:    _Hibernator_Hide_Handler,
+		},
+		{
+			MethodName: "Unhide",
+			Handler:    _Hibernator_Unhide_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
