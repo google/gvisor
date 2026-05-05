@@ -264,10 +264,9 @@ func SaveRestoreExec(k *kernel.Kernel, mode SaveRestoreExecMode) error {
 	contID := leader.ContainerID()
 	mntns := leader.MountNamespace()
 	if mntns == nil || !mntns.TryIncRef() {
-		log.Warningf("PID %d in container %q has exited, skipping CUDA checkpoint for it", leader.ThreadGroup().ID(), contID)
+		log.Warningf("PID %d in container %q has exited, skipping save/restore exec for it", leader.ThreadGroup().ID(), contID)
 		return nil
 	}
-	mntns.IncRef()
 	root := mntns.Root(sctx)
 	cu := cleanup.Make(func() {
 		root.DecRef(sctx)
@@ -353,24 +352,26 @@ func ConfigureSaveRestoreExec(k *kernel.Kernel, argv []string, timeout time.Dura
 		Timeout: timeout,
 	}
 
-	var leader *kernel.Task
-	if containerID != "" {
-		for _, tg := range k.RootPIDNamespace().ThreadGroups() {
-			// Find all processes with no parent (root of execution).
-			if tg.Leader().Parent() == nil {
-				cid := tg.Leader().ContainerID()
-				if cid == containerID {
-					leader = tg.Leader()
-					break
-				}
-			}
-		}
-		if leader == nil {
-			return fmt.Errorf("failed to find process associated with container %s", containerID)
-		}
-	} else {
-		leader = k.GlobalInit().Leader()
+	leader, err := findContainerInitProcess(k, containerID)
+	if err != nil {
+		return err
 	}
 	k.SaveRestoreExecConfig.LeaderTask = leader
 	return nil
+}
+
+// findContainerInitProcess finds the init process (root of execution) associated with
+// the given containerID. If containerID is empty, the global init process is returned.
+func findContainerInitProcess(k *kernel.Kernel, containerID string) (*kernel.Task, error) {
+	if containerID == "" {
+		return k.GlobalInit().Leader(), nil
+	}
+	// To find the init process of a container, we look for the process with no
+	// parent (root of execution) that is not an exec process.
+	for _, tg := range k.RootPIDNamespace().ThreadGroups() {
+		if leader := tg.Leader(); leader.Parent() == nil && leader.Origin != kernel.OriginExec && leader.ContainerID() == containerID {
+			return leader, nil
+		}
+	}
+	return nil, fmt.Errorf("failed to find process associated with container %s", containerID)
 }

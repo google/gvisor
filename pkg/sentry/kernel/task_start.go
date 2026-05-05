@@ -107,6 +107,7 @@ type TaskConfig struct {
 	// It may be nil.
 	SessionKeyring *auth.Key
 
+	// Origin indicates the origins of the new task.
 	Origin TaskOrigin
 }
 

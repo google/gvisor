@@ -133,8 +133,8 @@ func (sc *sharedContext) NotifyInterrupt() {
 		return
 	}
 	s := sc.subprocess
-	s.sysmsgThreadsMu.Lock()
-	defer s.sysmsgThreadsMu.Unlock()
+	s.sysmsgThreadsMu.RLock()
+	defer s.sysmsgThreadsMu.RUnlock()
 	sysmsgThread, ok := s.sysmsgThreads[threadID]
 	if !ok {
 		// This is either an invalidThreadID or another garbage value; either way we

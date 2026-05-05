@@ -47,27 +47,13 @@ type TarRootfsUpperLayerOpts struct {
 // or the root container if no ID is provided. Caller must DecRef the
 // returned mntns when done.
 func (f *Fs) mountNamespaceForContainer(containerID string) (*vfs.MountNamespace, error) {
-	if containerID == "" {
-		mntns := f.Kernel.GlobalInit().Leader().MountNamespace()
-		if mntns == nil {
-			return nil, fmt.Errorf("global init mount namespace not found")
-		}
-		mntns.IncRef()
-		return mntns, nil
+	leader, err := findContainerInitProcess(f.Kernel, containerID)
+	if err != nil {
+		return nil, err
 	}
-
-	var mntns *vfs.MountNamespace
-	f.Kernel.TaskSet().ForEachThreadGroup(func(_ *kernel.ThreadGroup, leader *kernel.Task) {
-		if mntns != nil {
-			return
-		}
-		if leader.ContainerID() != containerID {
-			return
-		}
-		mntns = leader.GetMountNamespace()
-	})
-	if mntns == nil {
-		return nil, fmt.Errorf("could not find any tasks for %s", containerID)
+	mntns := leader.MountNamespace()
+	if mntns == nil || !mntns.TryIncRef() {
+		return nil, fmt.Errorf("mount namespace for container %s has been destroyed", containerID)
 	}
 	return mntns, nil
 }

@@ -162,15 +162,19 @@ type subprocess struct {
 	syscallThreadMu sync.Mutex
 	syscallThread   *syscallThread
 
-	// sysmsgThreadsMu protects sysmsgThreads and numSysmsgThreads
-	sysmsgThreadsMu sync.Mutex
+	// sysmsgThreadsMu protects the sysmsgThreads map only.
+	// Read-locked on the hot SwitchToApp lookup path; write-locked when
+	// the map is mutated (createSysmsgThread).
+	sysmsgThreadsMu sync.RWMutex
 	// sysmsgThreads is a collection of all active sysmsg threads in the
 	// subprocess.
 	sysmsgThreads map[uint32]*sysmsgThread
 	// numSysmsgThreads counts the number of active sysmsg threads; we use a
-	// counter instead of using len(sysmsgThreads) because we need to synchronize
-	// how many threads get created _before_ the creation happens.
-	numSysmsgThreads int
+	// counter instead of len(sysmsgThreads) because we need to reserve a slot
+	// before the actual map insertion (createSysmsgThread). It is updated with
+	// atomic CAS in kickSysmsgThread to enforce the maxSysmsgThreads cap under
+	// concurrent kicks without holding sysmsgThreadsMu.
+	numSysmsgThreads atomicbitops.Int32
 
 	// contextQueue is a queue of all contexts that are ready to switch back to
 	// user mode.
@@ -399,7 +403,7 @@ func newSubprocess(create func() (*thread, error), memoryFile *pgalloc.MemoryFil
 		if err := sp.createSysmsgThread(); err != nil {
 			return nil, err
 		}
-		sp.numSysmsgThreads++
+		sp.numSysmsgThreads.Add(1)
 	}
 
 	return sp, nil
@@ -845,7 +849,16 @@ func (s *subprocess) switchToApp(c *platformContext, ac *arch.Context64) (isSysc
 	// Check if there's been an error.
 	threadID := ctx.threadID()
 	if threadID != invalidThreadID {
-		if sysThread, ok := s.sysmsgThreads[threadID]; ok && sysThread.msg.Err != 0 {
+		// s.sysmsgThreads is mutated under sysmsgThreadsMu (see e.g.
+		// subprocess.NewSysmsgThread) — concurrent read here without the
+		// lock is a Go map race that triggers `fatal error: concurrent
+		// map read and map write` in the runtime. Same class as #12927
+		// (TOCTOU on shared ThreadID). RLock is used so that concurrent
+		// SwitchToApp lookups don't serialize against each other.
+		s.sysmsgThreadsMu.RLock()
+		sysThread, ok := s.sysmsgThreads[threadID]
+		s.sysmsgThreadsMu.RUnlock()
+		if ok && sysThread.msg.Err != 0 {
 			sysmsgErr := sysThread.msg.ConvertSysmsgErr()
 			log.BugTraceback(sysmsgErr)
 			return false, false, hostarch.NoAccess, sysmsgErr
@@ -966,26 +979,33 @@ func (s *subprocess) kickSysmsgThread() bool {
 	if !kick {
 		return false
 	}
-
-	s.sysmsgThreadsMu.Lock()
-	kick, nrThreads := s.canKickSysmsgThread()
-	if !kick {
-		s.sysmsgThreadsMu.Unlock()
-		return false
-	}
 	numTimesStubKicked.Increment()
 	atomic.AddUint32(&s.contextQueue.numThreadsToWakeup, 1)
-	if s.numSysmsgThreads < maxSysmsgThreads && s.numSysmsgThreads < int(nrThreads) {
-		s.numSysmsgThreads++
-		s.sysmsgThreadsMu.Unlock()
+
+	// Atomically claim a sysmsg-thread slot below the cap. CAS prevents
+	// concurrent kickers from incrementing past maxSysmsgThreads when both
+	// observe numSysmsgThreads under the cap simultaneously.
+	owned := false
+	for {
+		kick, nrThreads := s.canKickSysmsgThread()
+		if !kick {
+			break
+		}
+		n := s.numSysmsgThreads.Load()
+		if n >= int32(maxSysmsgThreads) || n >= int32(nrThreads) {
+			break
+		}
+		if s.numSysmsgThreads.CompareAndSwap(n, n+1) {
+			owned = true
+			break
+		}
+		// Lost the race to another kicker; reread and try again.
+	}
+	if owned {
 		if err := s.createSysmsgThread(); err != nil {
 			log.Warningf("Unable to create a new stub thread: %s", err)
-			s.sysmsgThreadsMu.Lock()
-			s.numSysmsgThreads--
-			s.sysmsgThreadsMu.Unlock()
+			s.numSysmsgThreads.Add(-1)
 		}
-	} else {
-		s.sysmsgThreadsMu.Unlock()
 	}
 	s.contextQueue.wakeupSysmsgThread()
 
