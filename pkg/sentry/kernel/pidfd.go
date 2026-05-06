@@ -88,7 +88,7 @@ func (f *pidFD) Epollable() bool {
 
 // RegisterFileAsyncHandler implements vfs.FileDescriptionImpl.RegisterFileAsyncHandler.
 func (f *pidFD) RegisterFileAsyncHandler(fd *vfs.FileDescription) error {
-	return linuxerr.ENOTTY
+	return linuxerr.EINVAL
 }
 
 // UnregisterFileAsyncHandler implements vfs.FileDescriptionImpl.UnregisterFileAsyncHandler.

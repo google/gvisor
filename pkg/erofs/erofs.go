@@ -726,30 +726,29 @@ func (i *Inode) getBlockDataInfo(blockIdx uint64) blockData {
 //
 // Refer: https://docs.kernel.org/filesystems/erofs.html#directories
 func (i *Inode) getDirentName(d *Dirent, block blockData, lastDirent bool) ([]byte, error) {
-	var nameLen uint32
-	if lastDirent {
-		nameLen = block.size - uint32(d.NameOff)
-	} else {
-		nameLen = uint32(direntAfter(d).NameOff - d.NameOff)
-	}
-	if uint32(d.NameOff)+nameLen > block.size || nameLen > MaxNameLen || nameLen == 0 {
+	corruptionErr := func() ([]byte, error) {
 		log.Warningf("Corrupted dirent at inode (nid=%v)", i.Nid())
 		return nil, linuxerr.EUCLEAN
 	}
-	name, err := i.image.BytesAt(block.base+uint64(d.NameOff), uint64(nameLen))
+	nameEnd := block.size
+	if !lastDirent {
+		nameEnd = uint32(direntAfter(d).NameOff)
+	}
+	if uint32(d.NameOff) >= nameEnd || nameEnd > block.size {
+		return corruptionErr()
+	}
+	nameLen := uint64(nameEnd - uint32(d.NameOff))
+	name, err := i.image.BytesAt(block.base+uint64(d.NameOff), nameLen)
 	if err != nil {
 		return nil, err
 	}
 	if lastDirent {
-		// Optional padding may exist at the end of a block.
-		n := bytes.IndexByte(name, 0)
-		if n == 0 {
-			log.Warningf("Corrupted dirent at inode (nid=%v)", i.Nid())
-			return nil, linuxerr.EUCLEAN
-		}
-		if n != -1 {
+		if n := bytes.IndexByte(name, 0); n != -1 {
 			name = name[:n]
 		}
+	}
+	if len(name) == 0 || len(name) > MaxNameLen {
+		return corruptionErr()
 	}
 	return name, nil
 }

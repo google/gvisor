@@ -213,7 +213,13 @@ func (s *runscService) CreateWithFSRestore(ctx context.Context, rfs *extension.C
 		if err != nil {
 			return nil, fmt.Errorf("loading cgroup for %d: %w", pid, err)
 		}
-		if err := s.oomPoller.add(s.id, cg); err != nil {
+		// Register the sandbox cgroup with the OOM poller using this
+		// container's id (typically the pause/sandbox id on first Create).
+		// Do not use s.id: it is empty because the shim binary is spawned
+		// without `-id` (see manager.go:newCommand), which would cause
+		// every TaskOOM event to be published with an empty ContainerID
+		// and silently dropped by containerd (ErrEmptyPrefix).
+		if err := s.oomPoller.add(rfs.Create.ID, cg); err != nil {
 			return nil, fmt.Errorf("add cg to OOM monitor: %w", err)
 		}
 	}
@@ -530,37 +536,61 @@ func (s *runscService) processExits(ctx context.Context) {
 }
 
 func (s *runscService) checkProcesses(ctx context.Context, e proc.Exit) {
-	for _, p := range s.allProcessesForAllContainers() {
-		if p.ID() == e.ID {
-			ip, isInit := p.(*proc.Init)
-			if isInit {
-				// Ensure all children are killed.
-				log.L.Debugf("Container init process exited, killing all container processes")
-				ip.KillAll(ctx)
+	// Find the container whose process exited.
+	s.mu.Lock()
+	var (
+		containerID string
+		exitingP    process.Process
+	)
+	for cid, c := range s.containers {
+		for _, p := range c.All() {
+			if p.ID() == e.ID {
+				containerID = cid
+				exitingP = p
+				break
 			}
-			p.SetExited(e.Status)
-			// On init process exit, synchronously check the cgroup for OOM
-			// kills before publishing the exit event. The async OOM
-			// notification via EventChan (cgroups v2) can lose the race
-			// against the container exit on some architectures (notably
-			// aarch64), causing kubelet to report reason=Error instead of
-			// reason=OOMKilled. Only check on init exit — exec processes
-			// share the sandbox cgroup and would produce spurious events.
-			if isInit && s.oomPoller.isOOM(s.id) {
-				s.send(&events.TaskOOM{
-					ContainerID: s.id,
-				})
-			}
-			s.send(&events.TaskExit{
-				ContainerID: s.id,
-				ID:          p.ID(),
-				Pid:         uint32(p.Pid()),
-				ExitStatus:  uint32(e.Status),
-				ExitedAt:    p.ExitedAt(),
-			})
-			return
+		}
+		if exitingP != nil {
+			break
 		}
 	}
+	s.mu.Unlock()
+	if exitingP == nil {
+		return
+	}
+	p := exitingP
+
+	ip, isInit := p.(*proc.Init)
+	if isInit {
+		// Ensure all children are killed.
+		log.L.Debugf("Container init process exited, killing all container processes")
+		ip.KillAll(ctx)
+	}
+	p.SetExited(e.Status)
+	// On init process exit, synchronously check the cgroup for OOM kills
+	// before publishing the exit event. The async OOM notification via
+	// EventChan (cgroups v2) can lose the race against the container exit
+	// on some architectures (notably aarch64), causing kubelet to report
+	// reason=Error instead of reason=OOMKilled. Only check on init exit —
+	// exec processes share the sandbox cgroup and would produce spurious
+	// events.
+	//
+	// Use the per-container id for TaskOOM routing — not s.id, which is
+	// empty in the normal (non-grouping) shim spawn path because
+	// pkg/shim/v1/manager.go:newCommand() does not pass `-id`. With
+	// ContainerID="", containerd's CRI would drop the TaskOOM at
+	// containerStore.Get("") → ErrEmptyPrefix, and kubelet would report
+	// reason:Error instead of reason:OOMKilled.
+	if isInit && s.oomPoller.isOOM(containerID) {
+		s.send(&events.TaskOOM{ContainerID: containerID})
+	}
+	s.send(&events.TaskExit{
+		ContainerID: containerID,
+		ID:          p.ID(),
+		Pid:         uint32(p.Pid()),
+		ExitStatus:  uint32(e.Status),
+		ExitedAt:    p.ExitedAt(),
+	})
 }
 
 func (s *runscService) send(event any) {
