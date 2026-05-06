@@ -307,6 +307,20 @@ TEST(PrctlTest, OrphansReparentedToSubreaper) {
   EXPECT_TRUE(got_sigchild);
 }
 
+TEST(PrctlTest, TaggedAddrCtrl) {
+#if defined(__aarch64__)
+  EXPECT_THAT(prctl(PR_SET_TAGGED_ADDR_CTRL, PR_TAGGED_ADDR_ENABLE, 0, 0, 0),
+              SyscallSucceeds());
+  EXPECT_THAT(prctl(PR_GET_TAGGED_ADDR_CTRL, 0, 0, 0, 0),
+              SyscallSucceedsWithValue(PR_TAGGED_ADDR_ENABLE));
+#else
+  EXPECT_THAT(prctl(PR_SET_TAGGED_ADDR_CTRL, PR_TAGGED_ADDR_ENABLE, 0, 0, 0),
+              SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(prctl(PR_GET_TAGGED_ADDR_CTRL, 0, 0, 0, 0),
+              SyscallFailsWithErrno(EINVAL));
+#endif
+}
+
 }  // namespace
 
 }  // namespace testing
