@@ -147,6 +147,12 @@ type Config struct {
 	// for non-loopback interfaces.
 	QDisc QueueingDiscipline `flag:"qdisc"`
 
+	// TBFRate is the egress rate limit in bytes/sec when QDisc=tbf.
+	TBFRate uint64 `flag:"qdisc-tbf-rate"`
+
+	// TBFBurst is the bucket depth in bytes when QDisc=tbf.
+	TBFBurst uint64 `flag:"qdisc-tbf-burst"`
+
 	// LogPackets indicates that all network packets should be logged.
 	LogPackets bool `flag:"log-packets"`
 
@@ -450,6 +456,17 @@ func (c *Config) validate() error {
 	if c.PauseExternalNetworking && c.Network != NetworkSandbox {
 		return fmt.Errorf("pause-external-networking flag is only supported with sandbox networking")
 	}
+	if c.TBFBurst > maxQDiscTBFBurst {
+		return fmt.Errorf("qdisc-tbf-burst must be <= %d, got: %d", maxQDiscTBFBurst, c.TBFBurst)
+	}
+	if c.QDisc == QDiscTBF {
+		if c.TBFRate == 0 {
+			return fmt.Errorf("qdisc=tbf requires setting qdisc-tbf-rate")
+		}
+		if c.TBFBurst == 0 {
+			return fmt.Errorf("qdisc=tbf requires setting qdisc-tbf-burst")
+		}
+	}
 	// Require profile flags to explicitly opt-in to profiling with
 	// -profile rather than implying it since these options have security
 	// implications.
@@ -728,6 +745,9 @@ const (
 
 	// QDiscFIFO applies a simple fifo based queue to the underlying FD.
 	QDiscFIFO
+
+	// QDiscTBF applies a Token Bucket Filter queue to the underlying FD.
+	QDiscTBF
 )
 
 func queueingDisciplinePtr(v QueueingDiscipline) *QueueingDiscipline {
@@ -741,6 +761,8 @@ func (q *QueueingDiscipline) Set(v string) error {
 		*q = QDiscNone
 	case "fifo":
 		*q = QDiscFIFO
+	case "tbf":
+		*q = QDiscTBF
 	default:
 		return fmt.Errorf("invalid qdisc %q", v)
 	}
@@ -759,6 +781,8 @@ func (q QueueingDiscipline) String() string {
 		return "none"
 	case QDiscFIFO:
 		return "fifo"
+	case QDiscTBF:
+		return "tbf"
 	}
 	panic(fmt.Sprintf("Invalid qdisc %d", q))
 }

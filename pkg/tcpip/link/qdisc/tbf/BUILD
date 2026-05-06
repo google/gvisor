@@ -7,17 +7,17 @@ package(
 )
 
 declare_mutex(
-    name = "dispatcher_mutex",
-    out = "dispatcher_mutex.go",
-    package = "fifo",
-    prefix = "queueDispatcher",
+    name = "queue_mutex",
+    out = "queue_mutex.go",
+    package = "tbf",
+    prefix = "queue",
 )
 
 go_library(
-    name = "fifo",
+    name = "tbf",
     srcs = [
-        "dispatcher_mutex.go",
-        "fifo.go",
+        "queue_mutex.go",
+        "tbf.go",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -32,15 +32,17 @@ go_library(
 )
 
 go_test(
-    name = "qdisc_test",
+    name = "tbf_test",
     size = "small",
-    srcs = ["qdisc_test.go"],
+    srcs = ["tbf_test.go"],
     deps = [
-        ":fifo",
+        ":tbf",
         "//pkg/buffer",
         "//pkg/refs",
         "//pkg/sync",
         "//pkg/tcpip",
+        "//pkg/tcpip/faketime",
+        "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
     ],
 )
