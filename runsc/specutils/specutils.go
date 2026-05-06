@@ -84,14 +84,8 @@ const (
 	AnnotationCPUFeatures = "dev.gvisor.internal.cpufeatures"
 )
 
-// ExePath must point to runsc binary, which is normally the same binary. It is
+// ExePath must point to runsc binary, which is normally the same binary. It's
 // changed in tests that aren't linked in the same binary.
-//
-// Upstream defaults this to /proc/self/exe. SigID's frontend services run runsc
-// below Nucleus's host-side execute allowlist, and Landlock cannot authorize
-// procfs magic-link execution narrowly enough for that path. Resolve the real
-// immutable executable path so runsc helper processes and user-namespace
-// re-execs stay inside the existing /nix/store execute allowlist.
 var ExePath = resolvedExePath()
 
 func resolvedExePath() string {
