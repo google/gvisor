@@ -19,15 +19,26 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/futex"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/sched"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+)
+
+// pidFDMode is an enum that clone3 uses to support CLONE_PIDFD.
+type pidFDMode int
+
+const (
+	dontMakePIDFD pidFDMode = iota
+	makePIDFD
+	makeThreadedPIDFD
 )
 
 // TaskConfig defines the configuration of a new Task (see below).
@@ -109,6 +120,10 @@ type TaskConfig struct {
 
 	// Origin indicates the origins of the new task.
 	Origin TaskOrigin
+
+	// Used by clone3 to support CLONE_PIDFD.
+	pidFDMode pidFDMode
+	pidFDAddr hostarch.Addr
 }
 
 // NewTask creates a new task defined by cfg.
@@ -187,6 +202,35 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 	t.endStopCond.L = &t.tg.signalHandlers.mu
 	// We don't construct t.blockingTimer until Task.run(); see that function
 	// for justification.
+
+	var cu cleanup.Cleanup
+	defer cu.Clean()
+
+	if cfg.pidFDMode != dontMakePIDFD {
+		isThread := cfg.pidFDMode == makeThreadedPIDFD
+		t.pid = &pid{}
+		t.pid.t.Store(t)
+
+		vfsfd, err := srcT.pidFDOpen(t.pid, isThread, false /*nonblock*/)
+		if err != nil {
+			return nil, err
+		}
+		defer vfsfd.DecRef(t)
+
+		fd, err := srcT.NewFDFrom(0, vfsfd, FDFlags{CloseOnExec: true})
+		if err != nil {
+			return nil, err
+		}
+		cu.Add(func() {
+			if oldFile := srcT.FDTable().Remove(ctx, fd); oldFile != nil {
+				oldFile.DecRef(t)
+			}
+		})
+
+		if _, err := primitive.CopyUint32Out(srcT, cfg.pidFDAddr, uint32(fd)); err != nil {
+			return nil, err
+		}
+	}
 
 	var (
 		cg                 Cgroup
@@ -313,6 +357,7 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 	// other pieces to be initialized as the task is used the context.
 	t.p = cfg.Kernel.Platform.NewContext(t.AsyncContext())
 
+	cu.Release()
 	return t, nil
 }
 

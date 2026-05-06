@@ -103,6 +103,10 @@ func (t *Task) PIDFDOpen(tid ThreadID, isThread bool, nonBlock bool) (*vfs.FileD
 	if err != nil {
 		return nil, err
 	}
+	return t.pidFDOpen(pid, isThread, nonBlock)
+}
+
+func (t *Task) pidFDOpen(pid *pid, isThread bool, nonBlock bool) (*vfs.FileDescription, error) {
 	f := &pidFD{
 		isThread: isThread,
 		pid:      pid,
@@ -114,7 +118,8 @@ func (t *Task) PIDFDOpen(tid ThreadID, isThread bool, nonBlock bool) (*vfs.FileD
 	if nonBlock {
 		flags |= linux.O_NONBLOCK
 	}
-	err = f.vfsFD.Init(f, flags, t.Credentials(), vd.Mount(), vd.Dentry(), &vfs.FileDescriptionOptions{
+
+	err := f.vfsFD.Init(f, flags, t.Credentials(), vd.Mount(), vd.Dentry(), &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,
 	})
 	if err != nil {

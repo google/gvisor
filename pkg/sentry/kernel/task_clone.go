@@ -20,7 +20,6 @@ import (
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
-	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/nsfs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
@@ -292,6 +291,14 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	} else {
 		cfg.InheritParent = t
 	}
+	if args.Flags&linux.CLONE_PIDFD != 0 {
+		if args.Flags&linux.CLONE_THREAD != 0 {
+			cfg.pidFDMode = makeThreadedPIDFD
+		} else {
+			cfg.pidFDMode = makePIDFD
+		}
+		cfg.pidFDAddr = hostarch.Addr(args.Pidfd)
+	}
 	nt, err := t.tg.pidns.owner.NewTask(t, cfg)
 	// If NewTask succeeds, we transfer references to nt. If NewTask fails, it does
 	// the cleanup for us.
@@ -355,25 +362,6 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	ntid := t.tg.pidns.IDOfTask(nt)
 	if args.Flags&linux.CLONE_PARENT_SETTID != 0 {
 		ntid.CopyOut(t, hostarch.Addr(args.ParentTID))
-	}
-
-	if args.Flags&linux.CLONE_PIDFD != 0 {
-		isThread := args.Flags&linux.CLONE_THREAD != 0
-		vfsfd, err := t.PIDFDOpen(ntid, isThread, false /*nonblock*/)
-		if err != nil {
-			failCloneAfterTaskCreation(nt)
-			return 0, nil, err
-		}
-		defer vfsfd.DecRef(t)
-		fd, err := t.NewFDFrom(0, vfsfd, FDFlags{CloseOnExec: true})
-		if err != nil {
-			failCloneAfterTaskCreation(nt)
-			return 0, nil, err
-		}
-		if _, err := primitive.CopyUint32Out(t, hostarch.Addr(args.Pidfd), uint32(fd)); err != nil {
-			failCloneAfterTaskCreation(nt)
-			return 0, nil, err
-		}
 	}
 
 	t.traceCloneEvent(tid)
