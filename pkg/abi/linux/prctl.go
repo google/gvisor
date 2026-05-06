@@ -159,6 +159,10 @@ const (
 	// specified) to ptrace the current task.
 	PR_SET_PTRACER     = 0x59616d61
 	PR_SET_PTRACER_ANY = -1
+
+	PR_SET_TAGGED_ADDR_CTRL = 55
+	PR_GET_TAGGED_ADDR_CTRL = 56
+	PR_TAGGED_ADDR_ENABLE   = (1 << 0)
 )
 
 // From <asm/prctl.h>
