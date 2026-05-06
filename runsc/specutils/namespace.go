@@ -246,7 +246,7 @@ func MaybeRunAsRoot() error {
 	// and run as root inside the namespace to acquire capabilities.
 	log.Infof("*** Re-running as root in new user namespace ***")
 
-	cmd := exec.Command("/proc/self/exe", os.Args[1:]...)
+	cmd := exec.Command(ExePath, os.Args[1:]...)
 
 	cmd.SysProcAttr = &unix.SysProcAttr{
 		Cloneflags: unix.CLONE_NEWUSER | unix.CLONE_NEWNS,

@@ -84,9 +84,30 @@ const (
 	AnnotationCPUFeatures = "dev.gvisor.internal.cpufeatures"
 )
 
-// ExePath must point to runsc binary, which is normally the same binary. It's
+// ExePath must point to runsc binary, which is normally the same binary. It is
 // changed in tests that aren't linked in the same binary.
-var ExePath = "/proc/self/exe"
+//
+// Upstream defaults this to /proc/self/exe. SigID's frontend services run runsc
+// below Nucleus's host-side execute allowlist, and Landlock cannot authorize
+// procfs magic-link execution narrowly enough for that path. Resolve the real
+// immutable executable path so runsc helper processes and user-namespace
+// re-execs stay inside the existing /nix/store execute allowlist.
+var ExePath = resolvedExePath()
+
+func resolvedExePath() string {
+	exe, err := os.Executable()
+	if err != nil || !filepath.IsAbs(exe) {
+		return "/proc/self/exe"
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil && filepath.IsAbs(resolved) {
+		exe = resolved
+	}
+	info, err := os.Stat(exe)
+	if err != nil || info.IsDir() || info.Mode()&0111 == 0 {
+		return "/proc/self/exe"
+	}
+	return exe
+}
 
 // Version is the supported spec version.
 var Version = specs.Version
