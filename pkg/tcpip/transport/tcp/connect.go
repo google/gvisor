@@ -596,6 +596,7 @@ func (h *handshake) start() {
 		seq:       h.iss,
 		ack:       h.ackNum,
 		rcvWnd:    h.rcvWnd,
+		df:        h.ep.pmtud == tcpip.PMTUDiscoveryWant || h.ep.pmtud == tcpip.PMTUDiscoveryDo || h.ep.pmtud == tcpip.PMTUDiscoveryProbe,
 		expOptVal: h.ep.getExperimentOptionValue(h.ep.route),
 	}, synOpts)
 }
