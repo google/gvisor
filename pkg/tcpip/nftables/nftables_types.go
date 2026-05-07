@@ -738,6 +738,9 @@ type operation interface {
 
 	// deepCopy returns a deep copy of the operation.
 	deepCopy() operation
+
+	// destroy performs cleanup for the operation.
+	destroy()
 }
 
 // Ensures all operations implement the Operation interface at compile time.

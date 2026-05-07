@@ -92,6 +92,9 @@ func (op *comparison) deepCopy() operation {
 	return &opCopy
 }
 
+// destroy implements operation.destroy.
+func (op *comparison) destroy() {}
+
 // evaluate for comparison compares the data in the source register to the given
 // data and breaks from the rule if the comparison is false.
 func (op comparison) evaluate(regs *registerSet, evalCtx opEvalCtx) {

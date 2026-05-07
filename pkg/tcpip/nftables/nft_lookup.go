@@ -16,6 +16,7 @@ package nftables
 
 import (
 	"fmt"
+	"slices"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
@@ -111,6 +112,17 @@ func (op *lookupOp) deepCopy() operation {
 	opCopy.dregIdx = op.dregIdx
 	opCopy.invert = op.invert
 	return opCopy
+}
+
+// destroy implements operation.destroy.
+func (op *lookupOp) destroy() {
+	if op.set == nil {
+		return
+	}
+	// Remove the lookup operation from the set bindings.
+	op.set.bindings = slices.DeleteFunc(op.set.bindings, func(b *lookupOp) bool {
+		return b == op
+	})
 }
 
 // checkCompatibility implements operation.checkCompatibility.
