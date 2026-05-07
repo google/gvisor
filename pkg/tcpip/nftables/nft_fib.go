@@ -337,6 +337,9 @@ func (op *fib) Dump() ([]byte, *syserr.AnnotatedError) {
 	return m.Buffer(), nil
 }
 
+// destroy implements operation.destroy.
+func (op *fib) destroy() {}
+
 // deepCopy implements operation's deepCopy interface.
 func (op *fib) deepCopy() operation {
 	opCopy := &fib{}

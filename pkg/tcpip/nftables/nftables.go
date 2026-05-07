@@ -105,7 +105,7 @@ func isTerminalCode(code uint32) bool {
 func (nf *NFTables) evaluateNATBaseChains(pkt *stack.PacketBuffer, route *stack.Route, hook stack.NFHook, family stack.AddressFamily, regs *registerSet) (*syserr.AnnotatedError, bool) {
 	natType := stack.NfHookToNATType(hook)
 	if natType == stack.NATUnknown {
-		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: invalid hook: %s for NATType: %s", hook, natType)), false
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("invalid hook: %s for NATType: %s", hook, natType)), false
 	}
 	// Check if NAT has already been configured for this packet.
 	// If so, skip the evaluation of the NAT base chains.
@@ -144,7 +144,7 @@ func (nf *NFTables) evaluateNATBaseChains(pkt *stack.PacketBuffer, route *stack.
 	// As NAT rules should be only evaluated once for a connection, a no-op NAT must be reserved
 	// to ensure the packet skips the NAT base chains again.
 	if !pkt.ConfigureNoopNAT(natType) {
-		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: failed to reserve no-op NAT for packet: %v", pkt)), false
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("failed to reserve no-op NAT for packet: %v", pkt)), false
 	}
 	return nil, true
 }
@@ -152,7 +152,7 @@ func (nf *NFTables) evaluateNATBaseChains(pkt *stack.PacketBuffer, route *stack.
 // evaluateNAT evaluates then applies NAT to the packet.
 func (nf *NFTables) evaluateNAT(pkt *stack.PacketBuffer, route *stack.Route, hook stack.NFHook, family stack.AddressFamily, regs *registerSet) *syserr.AnnotatedError {
 	if !pkt.IsConnTrackConfigured() {
-		log.Warningf("Nftables: ConnTrack should be configured before NAT")
+		log.Warningf("ConnTrack should be configured before NAT")
 		return nil
 	}
 
@@ -192,7 +192,7 @@ func (nf *NFTables) getExtraEvaluators(family stack.AddressFamily, hook stack.NF
 					nf.connTrack.GetConnAndUpdatePkt(pkt, hook == stack.NFOutput /* skipChecksumValidation */)
 				case stack.NFInput, stack.NFPostrouting:
 					if !pkt.FinalizeConnTrack() {
-						return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: failed to finalize connTrack for packet: %v", pkt))
+						return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("failed to finalize connTrack for packet: %v", pkt))
 					}
 				}
 				return nil
@@ -431,10 +431,15 @@ func (nf *NFTables) GetGenID() uint32 {
 	return nf.genid
 }
 
-// Flush clears entire ruleset and all data for all address families
-// except for the tables that are not owned by the given owner.
-func (nf *NFTables) Flush(attrs map[uint16]nlmsg.BytesView, owner uint32) {
+// Flush clears all data for all address families or
+// a specific family/table if filtered.
+// It skips tables that are not owned by the given owner.
+func (nf *NFTables) Flush(familyFilter stack.AddressFamily, attrs map[uint16]nlmsg.BytesView, owner uint32) *syserr.AnnotatedError {
 	for family := range stack.NumAFs {
+		if familyFilter != stack.Unspec &&
+			stack.AddressFamily(family) != familyFilter {
+			continue
+		}
 		afFilter := nf.filters[family]
 		if afFilter == nil {
 			continue
@@ -459,6 +464,9 @@ func (nf *NFTables) Flush(attrs map[uint16]nlmsg.BytesView, owner uint32) {
 			// TODO: b/434242152 - Support correctly deleting chains once
 			// rules are deletable.
 			for chainName, chain := range table.chains {
+				if err := nf.removeChainFromCache(chain); err != nil {
+					return err
+				}
 				ok := table.deleteChain(chain)
 				if !ok {
 					log.Warningf("Failed to delete chain %s", chainName)
@@ -473,6 +481,7 @@ func (nf *NFTables) Flush(attrs map[uint16]nlmsg.BytesView, owner uint32) {
 			delete(afFilter.tableHandles, tableData.Handle)
 		}
 	}
+	return nil
 }
 
 // FlushAddressFamily clears ruleset and all data for the given address family,
@@ -1418,7 +1427,7 @@ func (r *Rule) AddOpFromExprInfo(nf *NFTables, tab *Table, exprInfo ExprInfo) *s
 		}
 
 	default:
-		return syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("Nftables: Unknown expression type not found: %s", exprInfo.ExprName))
+		return syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("unknown expression type not found: %s", exprInfo.ExprName))
 	}
 
 	if exprOpType == OpTypeCT || exprOpType == OpTypeNAT || exprOpType == OpTypeMasq {
@@ -1535,15 +1544,15 @@ func (hfStack *hookFunctionStack) detachBaseChain(name string) *syserr.Annotated
 //
 
 // ParseExpr parses the expression attributes and returns the expression information.
-func (nf *NFTables) ParseExpr(attrs nlmsg.AttrsView) (*ExprInfo, *syserr.AnnotatedError) {
+func ParseExpr(attrs nlmsg.AttrsView) (*ExprInfo, *syserr.AnnotatedError) {
 	exprAttrs, ok := NfParse(attrs)
 	if !ok {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse attributes for expression")
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse attributes for expression")
 	}
 
 	exprNameBytes, ok := exprAttrs[linux.NFTA_EXPR_NAME]
 	if !ok {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: NFTA_EXPR_NAME attribute is malformed or not found")
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "NFTA_EXPR_NAME attribute is malformed or not found")
 	}
 
 	// exprData holds the expression data for a specific operation.
@@ -1563,7 +1572,7 @@ func (nf *NFTables) ParseExpr(attrs nlmsg.AttrsView) (*ExprInfo, *syserr.Annotat
 
 // ParseNestedExprs parses the rule expressions attributes and adds the
 // operations to the rule.
-func (nf *NFTables) ParseNestedExprs(nestedAttrBytes nlmsg.AttrsView, maxExprs int) ([]ExprInfo, *syserr.AnnotatedError) {
+func ParseNestedExprs(nestedAttrBytes nlmsg.AttrsView, maxExprs int) ([]ExprInfo, *syserr.AnnotatedError) {
 	// Netlink message structure for rule expressions (NFTA_RULE_EXPRESSIONS):
 	//
 	// [ NFTA_RULE_EXPRESSIONS (Outer Array Container) ]
@@ -1579,23 +1588,161 @@ func (nf *NFTables) ParseNestedExprs(nestedAttrBytes nlmsg.AttrsView, maxExprs i
 	for !nestedAttrBytes.Empty() {
 		hdr, value, rest, ok := nestedAttrBytes.ParseFirst()
 		if !ok {
-			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse list attribute for rules")
+			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse list attribute for rules")
 		}
 
 		nestedAttrBytes = rest
 		if hdr.Type&linux.NLA_TYPE_MASK != linux.NFTA_LIST_ELEM {
-			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: parsed attribute is not of type NFTA_LIST_ELEM")
+			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "parsed attribute is not of type NFTA_LIST_ELEM")
 		}
 
 		if numExprs == maxExprs {
-			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Too many expressions specified for rule")
+			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "too many expressions specified for rule")
 		}
 		numExprs++
-		exprInfo, err := nf.ParseExpr(value)
+		exprInfo, err := ParseExpr(value)
 		if err != nil {
 			return nil, err
 		}
 		exprInfos = append(exprInfos, *exprInfo)
 	}
 	return exprInfos, nil
+}
+
+// DecrementChainUse decrements the chain use value of the chain.
+func (c *Chain) DecrementChainUse() {
+	if c.chainUse > 0 {
+		c.chainUse--
+	} else {
+		log.Warningf("Chain use count underflow for chain %s", c.name)
+	}
+}
+
+// destroyOperations destroys all operations in the rule.
+func (r *Rule) destroyOperations() {
+	for _, op := range r.ops {
+		// unlink the target chain from the jump or goto operation.
+		func() {
+			ok, targetChainName := isJumpOrGotoOperation(op)
+			if !ok {
+				return
+			}
+			if r.chain == nil {
+				log.Warningf("chain is nil while destroying rule")
+				return
+			}
+			if r.chain.table == nil {
+				log.Warningf("table is nil while destroying rule")
+				return
+			}
+			targetChain, exists := r.chain.table.chains[targetChainName]
+			if !exists {
+				log.Warningf("target chain %s not found while destroying rule", targetChainName)
+				return
+			}
+			targetChain.DecrementChainUse()
+		}()
+		op.destroy()
+	}
+}
+
+// deleteRuleAtIndex deletes the rule at the index from the chain.
+func (c *Chain) deleteRuleAtIndex(index int) *syserr.AnnotatedError {
+	if index < 0 || index >= len(c.rules) {
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("invalid rule index %d for chain %s", index, c.name))
+	}
+	rule := c.rules[index]
+	rule.destroyOperations()
+	c.DecrementChainUse()
+	_, err := c.UnregisterRuleByIndex(index)
+	return err
+}
+
+// DeleteRule removes the rule from the chain.
+// Ref: net/netfilter/nf_tables_api.c:nft_delrule
+func (c *Chain) DeleteRule(rule *Rule) *syserr.AnnotatedError {
+	index, err := c.GetRuleIndex(rule)
+	if err != nil {
+		return err
+	}
+	return c.deleteRuleAtIndex(index)
+}
+
+// DeleteAllRules removes all rules from the chain.
+// Ref: net/netfilter/nf_tables_api.c:nft_delrule_by_chain
+func (c *Chain) DeleteAllRules() {
+	for _, rule := range c.rules {
+		// Destroy operations for each rule to handle object references.
+		rule.destroyOperations()
+		c.DecrementChainUse()
+	}
+	c.rules = nil
+	c.handleToRule = make(map[uint64]*Rule)
+}
+
+// DeleteRule handles netlink request: NFT_MSG_DELRULE / NFT_MSG_DESTROYRULE.
+// Ref: net/netfilter/nf_tables_api.c:nf_tables_delrule
+func (nf *NFTables) DeleteRule(attrs map[uint16]nlmsg.BytesView, family stack.AddressFamily, msgType linux.NfTableMsgType, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
+	// Get the table from the attributes.
+	tabNameBytes, ok := attrs[linux.NFTA_RULE_TABLE]
+	if !ok {
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "NFTA_RULE_TABLE attribute is malformed or not found")
+	}
+	tab, err := nf.GetTable(family, tabNameBytes.String(), uint32(ms.PortID))
+	if err != nil {
+		if err.GetError() == syserr.ErrNoFileOrDir && msgType == linux.NFT_MSG_DESTROYRULE {
+			return nil
+		}
+		return err
+	}
+
+	// Find if a chain is specified.
+	var chain *Chain
+	if chainNameBytes, ok := attrs[linux.NFTA_RULE_CHAIN]; ok {
+		chain, err = tab.GetChain(chainNameBytes.String())
+		if err != nil {
+			if err.GetError() == syserr.ErrNoFileOrDir && msgType == linux.NFT_MSG_DESTROYRULE {
+				return nil
+			}
+			return err
+		}
+	}
+
+	if chain == nil {
+		// Delete all rules in all chains of the table.
+		for _, c := range tab.GetChains() {
+			if c.GetFlags()&linux.NFT_CHAIN_BINDING != 0 {
+				continue
+			}
+			c.DeleteAllRules()
+		}
+		return nil
+	}
+
+	// Delete rule in the specified chain.
+	{
+		if chain.GetFlags()&linux.NFT_CHAIN_BINDING != 0 {
+			return syserr.NewAnnotatedError(syserr.ErrNotSupported, "operation not supported on binding chains")
+		}
+
+		// If a rule is specified, delete it.
+		if handleBytes, ok := attrs[linux.NFTA_RULE_HANDLE]; ok {
+			ruleHandle, ok := handleBytes.Uint64()
+			if !ok {
+				return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "rule handle attribute is malformed or not found")
+			}
+			rule, err := chain.GetRuleByHandle(nlmsg.NetToHostU64(ruleHandle))
+			if err != nil {
+				if err.GetError() == syserr.ErrNoFileOrDir && msgType == linux.NFT_MSG_DESTROYRULE {
+					return nil
+				}
+				return err
+			}
+			return chain.DeleteRule(rule)
+		}
+
+		// Delete all rules in chain to clean up operations and object references.
+		chain.DeleteAllRules()
+	}
+	return nil
 }

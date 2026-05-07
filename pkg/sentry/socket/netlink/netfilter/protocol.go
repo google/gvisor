@@ -286,7 +286,9 @@ func fillTableInfo(tab *nftables.Table, ms *nlmsg.MessageSet) *syserr.AnnotatedE
 // deleteTable deletes a table for the given family.
 func (p *Protocol) deleteTable(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesView, family stack.AddressFamily, hdr linux.NetlinkMessageHeader, msgType linux.NfTableMsgType, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
 	if family == stack.Unspec || (!nftables.HasAttr(linux.NFTA_TABLE_NAME, attrs) && !nftables.HasAttr(linux.NFTA_TABLE_HANDLE, attrs)) {
-		nft.Flush(attrs, uint32(ms.PortID))
+		if err := nft.Flush(family, attrs, uint32(ms.PortID)); err != nil {
+			return err
+		}
 		return nil
 	}
 
@@ -728,12 +730,14 @@ func (p *Protocol) deleteChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.By
 		return syserr.NewAnnotatedError(syserr.ErrBusy, fmt.Sprintf("Nftables: Non-recursive delete on a chain with use > 0 is not supported. Chain %s has chain use %d", chain.GetName(), chain.GetChainUse()))
 	}
 
-	// TODO: b/434243967 - Support iteratively deleting rules in a chain to then
-	// delete chains. After deleting all the possible rules, if the chain is
-	// still in use, it cannot be deleted.
-	if chain.GetChainUse() != 0 {
+	// Check if the chain is in use by jumps or goto.
+	// GetChainUse() == num_rules + num_jumps.
+	if chain.GetChainUse() > uint32(chain.RuleCount()) {
 		return syserr.NewAnnotatedError(syserr.ErrBusy, fmt.Sprintf("Nftables: Deleting a chain with chain use > 0 is not supported. Chain %s has chain use %d", chain.GetName(), chain.GetChainUse()))
 	}
+
+	// Delete all the rules first to clean up operations and references.
+	chain.DeleteAllRules()
 
 	// We don't worry about whether a delete operation succeeded or not, rather
 	// only that the chain is gone.
@@ -831,7 +835,7 @@ func (p *Protocol) newRule(nft *nftables.NFTables, st *stack.Stack, attrs map[ui
 
 	var exprInfos []nftables.ExprInfo
 	if exprBytes, ok := attrs[linux.NFTA_RULE_EXPRESSIONS]; ok {
-		exprInfos, err = nft.ParseNestedExprs(nlmsg.AttrsView(exprBytes), maxExprs)
+		exprInfos, err = nftables.ParseNestedExprs(nlmsg.AttrsView(exprBytes), maxExprs)
 		if err != nil {
 			return err
 		}
@@ -1330,13 +1334,19 @@ func (p *Protocol) processBatchMessage(ctx context.Context, buf []byte, ms *nlms
 			subErr = p.deleteChain(nftCopy, attrs, family, hdr.Flags, hdr.NetFilterMsgType(), ms)
 		case linux.NFT_MSG_NEWRULE:
 			subErr = p.newRule(nftCopy, st, attrs, family, hdr.Flags, ms)
+		case linux.NFT_MSG_DELRULE, linux.NFT_MSG_DESTROYRULE:
+			subErr = nftCopy.DeleteRule(attrs, family, hdr.NetFilterMsgType(), ms)
 		case linux.NFT_MSG_NEWSET:
 			subErr = nftCopy.NewSet(attrs, family, hdr.Flags, ms)
 		case linux.NFT_MSG_NEWSETELEM:
-			subErr = nftCopy.NewSetElements(attrs, family, hdr.Flags, ms)
-		case linux.NFT_MSG_DELRULE, linux.NFT_MSG_DESTROYRULE,
-			linux.NFT_MSG_DELSET, linux.NFT_MSG_DESTROYSET,
-			linux.NFT_MSG_DELSETELEM, linux.NFT_MSG_DESTROYSETELEM,
+			// Pass `atr` instead of `attrs` so that it's easier to apply
+			// Netlink validation policies.
+			subErr = nftCopy.NewSetElements(atr, family, hdr.Flags, ms)
+		case linux.NFT_MSG_DELSETELEM, linux.NFT_MSG_DESTROYSETELEM:
+			// Pass `atr` instead of `attrs` so that it's easier to apply
+			// Netlink validation policies.
+			subErr = nftCopy.DeleteSetElements(atr, family, hdr.Flags, hdr.NetFilterMsgType(), ms)
+		case linux.NFT_MSG_DELSET, linux.NFT_MSG_DESTROYSET,
 			linux.NFT_MSG_NEWOBJ, linux.NFT_MSG_DELOBJ, linux.NFT_MSG_DESTROYOBJ,
 			linux.NFT_MSG_NEWFLOWTABLE, linux.NFT_MSG_DELFLOWTABLE,
 			linux.NFT_MSG_DESTROYFLOWTABLE:

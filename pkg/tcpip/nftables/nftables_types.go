@@ -738,6 +738,9 @@ type operation interface {
 
 	// deepCopy returns a deep copy of the operation.
 	deepCopy() operation
+
+	// destroy performs cleanup for the operation.
+	destroy()
 }
 
 // Ensures all operations implement the Operation interface at compile time.
@@ -964,8 +967,14 @@ type NftSetBackend interface {
 
 	// Remove removes an element from the set and returns the index of the
 	// removed element.
-	// If the element does not exist, it returns -1.
+	// If the element does not exist, it returns -1 and an error.
 	Remove(e *nftSetElem) (int, *syserr.AnnotatedError)
+
+	// Update updates the index of an element in the set backend.
+	Update(e *nftSetElem, idx int) *syserr.AnnotatedError
+
+	// RemoveAll removes all elements from the set backend.
+	RemoveAll() *syserr.AnnotatedError
 
 	// Clone returns a copy of the set backend.
 	Clone() NftSetBackend
@@ -1082,18 +1091,36 @@ func AFtoNetlinkAF(af uint8) (stack.AddressFamily, *syserr.Error) {
 
 // parseVerdictAttrs parses and validates the verdict data from the data attributes.
 func parseVerdictAttrs(tab *Table, dataAttrs map[uint16]nlmsg.BytesView) (stack.NFVerdict, *syserr.AnnotatedError) {
-	v := stack.NFVerdict{}
 	vBytes, ok := dataAttrs[linux.NFTA_DATA_VERDICT]
 	if !ok {
-		return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: NFTA_DATA_VERDICT attribute is not found")
+		return stack.NFVerdict{}, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "NFTA_DATA_VERDICT attribute is not found")
 	}
-	return validateVerdictData(tab, nlmsg.AttrsView(vBytes))
+	verdictCode, chain, err := parseVerdictData(tab, nlmsg.AttrsView(vBytes))
+	if err != nil {
+		return stack.NFVerdict{}, err
+	}
+	return newVerdict(verdictCode, chain)
+}
+
+func newVerdict(verdictCode uint32, targetChain *Chain) (stack.NFVerdict, *syserr.AnnotatedError) {
+	v := stack.NFVerdict{Code: verdictCode}
+	if verdictCode != VC(linux.NFT_JUMP) && verdictCode != VC(linux.NFT_GOTO) {
+		return v, nil
+	}
+	if targetChain == nil {
+		return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "jump/goto verdict missing target chain")
+	}
+	v.ChainName = targetChain.name
+	if !targetChain.IncrementChainUse() {
+		return v, syserr.NewAnnotatedError(syserr.ErrTooManyOpenFiles, fmt.Sprintf("chain use exceeds the maximum number of chains that can jump to chain %s", targetChain.GetName()))
+	}
+	return v, nil
 }
 
 func parseDataAttrs(dataAttrs map[uint16]nlmsg.BytesView) ([]byte, *syserr.AnnotatedError) {
 	vBytes, ok := dataAttrs[linux.NFTA_DATA_VALUE]
 	if !ok {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: NFTA_DATA_VALUE attribute is not found")
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "NFTA_DATA_VALUE attribute is not found")
 	}
 	return nlmsg.AttrsView(vBytes), nil
 }
@@ -1148,7 +1175,7 @@ func regNumToIdx(reg uint8, dataLenBytes int) (int, *syserr.AnnotatedError) {
 		return -1, false
 	}()
 	if !ok {
-		return -1, syserr.NewAnnotatedError(syserr.ErrRange, fmt.Sprintf("Nftables: Unsupported register number: %d", reg))
+		return -1, syserr.NewAnnotatedError(syserr.ErrRange, fmt.Sprintf("unsupported register number: %d", reg))
 	}
 	if err := validateDataRegister(regIdx, dataLenBytes); err != nil {
 		return -1, err
@@ -1173,25 +1200,25 @@ func formatRegIdxForDump(regIdx int) marshal.Marshallable {
 	return nlmsg.PutU32(val)
 }
 
-// validateVerdictData validates the verdict data bytes and returns the data as a verdict.
-func validateVerdictData(tab *Table, bytes nlmsg.AttrsView) (stack.NFVerdict, *syserr.AnnotatedError) {
-	v := stack.NFVerdict{}
+// parseVerdictData parses and validates the verdict data bytes.
+func parseVerdictData(tab *Table, bytes nlmsg.AttrsView) (uint32, *Chain, *syserr.AnnotatedError) {
 	verdictAttrs, ok := NfParse(bytes)
 	if !ok {
-		return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse verdict data")
+		return 0, nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse verdict data")
 	}
 
 	verdictCodeBytes, ok := verdictAttrs[linux.NFTA_VERDICT_CODE]
 	if !ok {
-		return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: NFTA_VERDICT_CODE attribute is not found")
+		return 0, nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "NFTA_VERDICT_CODE attribute is not found")
 	}
 
 	verdictCode, ok := verdictCodeBytes.Uint32()
 	if !ok {
-		return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: NFTA_VERDICT_CODE attribute cannot be parsed to a uint32")
+		return 0, nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "NFTA_VERDICT_CODE attribute cannot be parsed to a uint32")
 	}
 
 	verdictCode = nlmsg.NetToHostU32(verdictCode)
+	var targetChain *Chain
 	switch int32(verdictCode) {
 	case linux.NF_ACCEPT, linux.NF_DROP, linux.NF_QUEUE,
 		linux.NFT_CONTINUE, linux.NFT_BREAK, linux.NFT_RETURN:
@@ -1201,40 +1228,33 @@ func validateVerdictData(tab *Table, bytes nlmsg.AttrsView) (stack.NFVerdict, *s
 		var err *syserr.AnnotatedError
 		if chainNameBytes, ok := verdictAttrs[linux.NFTA_VERDICT_CHAIN]; ok {
 			if chain, err = tab.GetChain(chainNameBytes.String()); err != nil {
-				return v, err
+				return 0, nil, err
 			}
 		} else if _, ok := verdictAttrs[linux.NFTA_VERDICT_CHAIN_ID]; ok {
 			// TODO - b/434243967: Add support for looking up chains via their transaction id.
-			return v, syserr.NewAnnotatedError(syserr.ErrNotSupported, "Nftables: Looking up chains via their id is not supported")
+			return 0, nil, syserr.NewAnnotatedError(syserr.ErrNotSupported, "looking up chains via their id is not supported")
 		} else {
-			return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Attributes for verdict data must contain a chain name or chain id")
+			return 0, nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "attributes for verdict data must contain a chain name or chain id")
 		}
 
 		if chain.IsBaseChain() {
-			return v, syserr.NewAnnotatedError(syserr.ErrNotSupported, "Nftables: Base chains are not supported as jump targets")
+			return 0, nil, syserr.NewAnnotatedError(syserr.ErrNotSupported, "base chains are not supported as jump targets")
 		}
 
 		if chain.IsBound() {
-			return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Already Bound chains cannot be jump targets")
+			return 0, nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "already Bound chains cannot be jump targets")
 		}
 
 		if chain.GetFlags()&linux.NFT_CHAIN_BINDING != 0 {
-			return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Chain binding must be set for chains to be used as jump targets")
+			return 0, nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "chain binding must be set for chains to be used as jump targets")
 		}
 
-		if !chain.IncrementChainUse() {
-			return v, syserr.NewAnnotatedError(syserr.ErrTooManyOpenFiles, fmt.Sprintf("Nftables: Chain use exceeds the maximum number of chains that can jump to chain %s", chain.GetName()))
-		}
-
-		v.ChainName = chain.name
+		targetChain = chain
 	default:
-		return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Unsupported verdict code: %d", verdictCode))
+		return 0, nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("unsupported verdict code: %d", verdictCode))
 	}
 
-	// TODO - b/345684870: Potentially modify this to take a pointer to the chain it is jumping to.
-	// Would need to ensure that the chain cannot be removed while it is being pointed to (using use field).
-	v.Code = verdictCode
-	return v, nil
+	return verdictCode, targetChain, nil
 }
 
 // deepCopyRule returns a deep copy of the Rule struct.

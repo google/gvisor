@@ -37,6 +37,7 @@ var validationTests = []TestCase{
 	&fibTest{},
 	&ctTest{},
 	&tcpMasq{},
+	&deletionTest{},
 }
 
 func init() {
@@ -1405,4 +1406,226 @@ func (*tcpMasq) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 // Timeout implements TestCase.Timeout.
 func (*tcpMasq) Timeout() time.Duration {
 	return 30 * time.Second
+}
+
+// deletionTest verifies flushing chains and tables.
+type deletionTest struct{ containerCase }
+
+func (*deletionTest) Name() string {
+	return "deletionTest"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+// Sets up drop rules in multiple chains and tables.
+// Verifies that Flush Chain, Flush Table, Flush Ruleset
+// and Delete Set Element clear the rules/set correctly and restore flow.
+func (*deletionTest) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	tableName := "FLUSH_TEST_TABLE"
+	chainName1 := "CHAIN1"
+	chainName2 := "CHAIN2"
+	port1 := 2402
+	port2 := 2403
+	port3 := 2404
+
+	family := "ip"
+	if ipv6 {
+		family = "ip6"
+	}
+
+	verifyDrop := func(p int) error {
+		timedCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		if err := netutils.ListenTCP(timedCtx, p, ipv6); err == nil {
+			return fmt.Errorf("packets should have been dropped on port %d, but got a packet", p)
+		} else if !errors.Is(err, context.DeadlineExceeded) {
+			return fmt.Errorf("error reading port %d: %v", p, err)
+		}
+		return nil
+	}
+
+	verifyAccept := func(p int) error {
+		timedCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		if err := netutils.ListenTCP(timedCtx, p, ipv6); err != nil {
+			return fmt.Errorf("packets should have been accepted on port %d: %v", p, err)
+		}
+		return nil
+	}
+
+	cmds := [][]string{
+		// Create a table in the inet family.
+		{"add", "table", "inet", tableName},
+		// Create chain 1 with accept policy.
+		{"add", "chain", "inet", tableName, chainName1, "{ type filter hook input priority 0; policy accept; }"},
+		// Create chain 2 with accept policy.
+		{"add", "chain", "inet", tableName, chainName2, "{ type filter hook input priority 1; policy accept; }"},
+		// Add rule to chain 1 to drop packets on port 1.
+		{"add", "rule", "inet", tableName, chainName1, "tcp", "dport", fmt.Sprintf("%d", port1), "drop"},
+		// Add rule to chain 2 to drop packets on port 2.
+		{"add", "rule", "inet", tableName, chainName2, "tcp", "dport", fmt.Sprintf("%d", port2), "drop"},
+	}
+
+	for _, cmd := range cmds {
+		if err := nftCmd(cmd); err != nil {
+			return fmt.Errorf("nft cmd: %v, failed with error: %v", cmd, err)
+		}
+	}
+
+	// Verify both drop.
+	if err := verifyDrop(port1); err != nil {
+		return fmt.Errorf("port1 before flush: %v", err)
+	}
+	if err := verifyDrop(port2); err != nil {
+		return fmt.Errorf("port2 before flush: %v", err)
+	}
+
+	// 1. Flush Chain
+	if err := nftCmd([]string{"flush", "chain", "inet", tableName, chainName1}); err != nil {
+		return fmt.Errorf("failed to flush chain: %v", err)
+	}
+
+	// Verify port1 accepts, port2 still drops.
+	if err := verifyAccept(port1); err != nil {
+		return fmt.Errorf("port1 after chain flush: %v", err)
+	}
+	if err := verifyDrop(port2); err != nil {
+		return fmt.Errorf("port2 after chain flush: %v", err)
+	}
+
+	// 2. Flush Table
+	// Add drop rule back to chain1 to make sure table flush cleans it too.
+	if err := nftCmd([]string{"add", "rule", "inet", tableName, chainName1, "tcp", "dport", fmt.Sprintf("%d", port1), "drop"}); err != nil {
+		return fmt.Errorf("failed to add rule back: %v", err)
+	}
+	if err := verifyDrop(port1); err != nil {
+		return fmt.Errorf("port1 after adding back: %v", err)
+	}
+
+	if err := nftCmd([]string{"flush", "table", "inet", tableName}); err != nil {
+		return fmt.Errorf("failed to flush table: %v", err)
+	}
+
+	// Verify both accept.
+	if err := verifyAccept(port1); err != nil {
+		return fmt.Errorf("port1 after table flush: %v", err)
+	}
+	if err := verifyAccept(port2); err != nil {
+		return fmt.Errorf("port2 after table flush: %v", err)
+	}
+
+	// 3. Flush Ruleset
+	// Clear everything to ensure a clean slate and avoid dependency on prior step behavior.
+	if err := nftCmd([]string{"flush", "ruleset"}); err != nil {
+		return fmt.Errorf("failed to flush ruleset before ruleset test setup: %v", err)
+	}
+
+	cmds = [][]string{
+		// Create a table in the inet family.
+		{"add", "table", "inet", tableName},
+		// Create chain 1 with accept policy in the inet table.
+		{"add", "chain", "inet", tableName, chainName1, "{ type filter hook input priority 0; policy accept; }"},
+		// Create a map for ports and later delete elements from it.
+		{"add", "map", "inet", tableName, "drop_ports", "{ type inet_service : verdict; }"},
+		{"add", "element", "inet", tableName, "drop_ports", fmt.Sprintf("{ %d : drop, %d : drop }", port1, port2)},
+		// Add rule to chain 1 to drop packets on ports in the map.
+		{"add", "rule", "inet", tableName, chainName1, "tcp", "dport", "vmap", "@drop_ports"},
+		// Create a table in the specified family (ip or ip6).
+		{"add", "table", family, "FLUSH_RULESET_IP"},
+		// Create an input chain in the new table.
+		{"add", "chain", family, "FLUSH_RULESET_IP", "input", "{ type filter hook input priority 0; policy accept; }"},
+		// Add rule to the input chain to drop packets on port 3.
+		{"add", "rule", family, "FLUSH_RULESET_IP", "input", "tcp", "dport", fmt.Sprintf("%d", port3), "drop"},
+	}
+
+	for _, cmd := range cmds {
+		if err := nftCmd(cmd); err != nil {
+			return fmt.Errorf("nft cmd: %v, failed with error: %v", cmd, err)
+		}
+	}
+
+	// Verify port1, port2, and port3 drop.
+	if err := verifyDrop(port1); err != nil {
+		return fmt.Errorf("port1 before ruleset flush: %v", err)
+	}
+	if err := verifyDrop(port2); err != nil {
+		return fmt.Errorf("port2 before ruleset flush: %v", err)
+	}
+	if err := verifyDrop(port3); err != nil {
+		return fmt.Errorf("port3 before ruleset flush: %v", err)
+	}
+
+	// Delete port1 from set to test DeleteSetElements.
+	if err := nftCmd([]string{"delete", "element", "inet", tableName, "drop_ports", fmt.Sprintf("{ %d }", port1)}); err != nil {
+		return fmt.Errorf("failed to delete set element: %v", err)
+	}
+
+	// Verify port1 accepts, port2 and port3 still drop.
+	if err := verifyAccept(port1); err != nil {
+		return fmt.Errorf("port1 after set element deletion: %v", err)
+	}
+	if err := verifyDrop(port2); err != nil {
+		return fmt.Errorf("port2 after set element deletion: %v", err)
+	}
+	if err := verifyDrop(port3); err != nil {
+		return fmt.Errorf("port3 after set element deletion: %v", err)
+	}
+
+	if err := nftCmd([]string{"flush", "ruleset"}); err != nil {
+		return fmt.Errorf("failed to flush ruleset: %v", err)
+	}
+
+	// Verify all accept.
+	if err := verifyAccept(port1); err != nil {
+		return fmt.Errorf("port1 after ruleset flush: %v", err)
+	}
+	if err := verifyAccept(port2); err != nil {
+		return fmt.Errorf("port2 after ruleset flush: %v", err)
+	}
+	if err := verifyAccept(port3); err != nil {
+		return fmt.Errorf("port3 after ruleset flush: %v", err)
+	}
+
+	return nil
+}
+
+// LocalAction implements TestCase.LocalAction.
+// Continuously sends TCP packets to all target ports (2402, 2403, 2404)
+// to generate traffic for the container to filter and verify.
+func (*deletionTest) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	ports := []int{2402, 2403, 2404}
+	errCh := make(chan error, len(ports))
+	for _, port := range ports {
+		go func(p int) {
+			contAddr := net.TCPAddr{
+				IP:   ip,
+				Port: p,
+			}
+			for {
+				select {
+				case <-ctx.Done():
+					errCh <- nil
+					return
+				default:
+					// Dial with short timeout to generate frequent SYNs.
+					d := net.Dialer{Timeout: 500 * time.Millisecond}
+					conn, err := d.DialContext(ctx, netutils.TCPNetwork(ipv6), contAddr.String())
+					if err == nil {
+						conn.Close()
+					}
+					time.Sleep(100 * time.Millisecond)
+				}
+			}
+		}(port)
+	}
+
+	for i := 0; i < len(ports); i++ {
+		if err := <-errCh; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (*deletionTest) Timeout() time.Duration {
+	return 60 * time.Second
 }
