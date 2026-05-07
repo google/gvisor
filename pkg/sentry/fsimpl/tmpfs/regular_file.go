@@ -587,6 +587,7 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 			break
 		}
 	}
+	f.inode.xattrs.KillPriv()
 	putRegularFileReadWriter(rw)
 	return n, n + offset, err
 }

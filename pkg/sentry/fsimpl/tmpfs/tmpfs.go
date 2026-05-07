@@ -781,6 +781,9 @@ func (i *inode) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs.
 		}
 		needsCtimeBump = true
 	}
+	if opts.ClearPrivs {
+		i.xattrs.KillPriv()
+	}
 
 	if needsMtimeBump {
 		i.mtime.Store(now)
