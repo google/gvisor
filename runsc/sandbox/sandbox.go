@@ -275,7 +275,7 @@ type Args struct {
 	// GoferMountConfs contains information about how the gofer mounts have been
 	// configured. The first entry is for rootfs and the following entries are
 	// for bind mounts in Spec.Mounts (in the same order).
-	GoferMountConfs specutils.GoferMountConfFlags
+	GoferMountConfs boot.GoferMountConfFlags
 
 	// MountHints provides extra information about containers mounts that apply
 	// to the entire pod.
@@ -303,12 +303,6 @@ type Args struct {
 
 	// ExecFile is the file from the host used for program execution.
 	ExecFile *os.File
-
-	// If FSRestoreImagePath is non-empty, it is a path to a filesystem
-	// checkpoint that should be restored. If FSRestoreDirect is true,
-	// open filesystem checkpoint files using O_DIRECT.
-	FSRestoreImagePath string
-	FSRestoreDirect    bool
 }
 
 // New creates the sandbox process. The caller must call Destroy() on the
@@ -469,7 +463,7 @@ func (s *Sandbox) StartRoot(conf *config.Config, spec *specs.Spec) error {
 }
 
 // StartSubcontainer starts running a sub-container inside the sandbox.
-func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles, goferFilestores []*os.File, devIOFile *os.File, goferConfs []specutils.GoferMountConf) error {
+func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles, goferFilestores []*os.File, devIOFile *os.File, goferConfs []boot.GoferMountConf) error {
 	log.Debugf("Start sub-container %q in sandbox %q, PID: %d", cid, s.ID, s.Pid.Load())
 
 	if err := s.configureStdios(conf, stdios); err != nil {
@@ -565,7 +559,7 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 	}
 	// Configure the network.
 	if err := setupNetwork(conn, s.Pid.Load(), conf, disableIPv6); err != nil {
-		return fmt.Errorf("setting up network: %w", err)
+		return fmt.Errorf("setting up network: %v", err)
 	}
 
 	// Restore the container and start the root container.
@@ -610,7 +604,7 @@ func (s *Sandbox) setRestoreOptsForLocalCheckpointFiles(conf *config.Config, ima
 }
 
 // RestoreSubcontainer sends the restore call for a sub-container in the sandbox.
-func (s *Sandbox) RestoreSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles, goferFilestoreFiles []*os.File, devIOFile *os.File, goferMountConf []specutils.GoferMountConf) error {
+func (s *Sandbox) RestoreSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles, goferFilestoreFiles []*os.File, devIOFile *os.File, goferMountConf []boot.GoferMountConf) error {
 	log.Debugf("Restore sub-container %q in sandbox %q, PID: %d", cid, s.ID, s.Pid.Load())
 
 	if err := s.configureStdios(conf, stdios); err != nil {
@@ -775,11 +769,6 @@ func (s *Sandbox) PortForward(opts *boot.PortForwardOpts) error {
 // SetRootDir sets the root directory from the current runsc invocation.
 func (s *Sandbox) SetRootDir(rootDir string) {
 	s.rootDir = rootDir
-}
-
-// GetControlSocketPath returns the control socket path for the sandbox.
-func (s *Sandbox) GetControlSocketPath() string {
-	return s.getControlSocketPath()
 }
 
 // getControlSocketPath gets the control socket path for the sandbox.
@@ -993,14 +982,6 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		donations.DonateAndClose("save-fds", files...)
 	}
 
-	if args.FSRestoreImagePath != "" {
-		files, err := s.openFSRestoreFilesImpl(conf, args.FSRestoreImagePath, args.FSRestoreDirect, cmd)
-		if err != nil {
-			return fmt.Errorf("failed to open filesystem checkpoint files: %w", err)
-		}
-		donations.DonateAndClose("fs-restore-fds", files...)
-	}
-
 	if err := s.createSandboxProcessExtra(conf, args, cmd, &donations); err != nil {
 		return err
 	}
@@ -1075,17 +1056,12 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 			log.Infof("Sandbox will be started in container's user namespace: %+v", userns)
 			nss = append(nss, userns)
 			if rootlessEUID {
-				if CanUseUnprivilegedMapping(args.Spec) {
-					specutils.SetUIDGIDMappings(cmd, args.Spec)
-					cmd.SysProcAttr.GidMappingsEnableSetgroups = false
-				} else {
-					setUserMappings = true
-				}
 				syncFile, err := ConfigureCmdForRootless(cmd, &donations)
 				if err != nil {
 					return err
 				}
 				defer syncFile.Close()
+				setUserMappings = true
 				uid, gid := SandboxUserGroupIDs(args.Spec)
 				if uid != 0 {
 					cmd.Args = append(cmd.Args, fmt.Sprintf("--uid=%d", uid))
@@ -1262,21 +1238,16 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		if err != nil {
 			return fmt.Errorf("getting cpu count from cgroups: %v", err)
 		}
-		cpuQuota, err := s.CgroupJSON.Cgroup.CPUQuota()
-		if err != nil {
-			return fmt.Errorf("getting raw cpu quota from cgroups: %v", err)
-		}
-		cpuPeriod, err := s.CgroupJSON.Cgroup.CPUPeriod()
-		if err != nil {
-			return fmt.Errorf("getting raw cpu period from cgroups: %v", err)
-		}
-		if conf.CPUNumFromQuota && cpuQuota > 0 && cpuPeriod > 0 {
+		if conf.CPUNumFromQuota {
 			// Dropping below 2 CPUs can trigger application to disable
 			// locks that can lead do hard to debug errors, so just
 			// leaving two cores as reasonable default.
 			const minCPUs = 2
 
-			quota := float64(cpuQuota) / float64(cpuPeriod)
+			quota, err := s.CgroupJSON.Cgroup.CPUQuota()
+			if err != nil {
+				return fmt.Errorf("getting cpu quota from cgroups: %v", err)
+			}
 			if n := int(math.Ceil(quota)); n > 0 {
 				if n < minCPUs {
 					n = minCPUs
@@ -1288,12 +1259,6 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 			}
 		}
 		cmd.Args = append(cmd.Args, "--cpu-num", strconv.Itoa(cpuNum))
-		if cpuQuota > 0 {
-			cmd.Args = append(cmd.Args, "--cpu-quota", strconv.FormatInt(cpuQuota, 10))
-		}
-		if cpuPeriod > 0 {
-			cmd.Args = append(cmd.Args, "--cpu-period", strconv.FormatInt(cpuPeriod, 10))
-		}
 
 		memLimit, err := s.CgroupJSON.Cgroup.MemoryLimit()
 		if err != nil {
@@ -1326,6 +1291,37 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	donation.LogDonations(cmd)
 	log.Debugf("Starting sandbox: %s %v", cmd.Path, cmd.Args)
 	log.Debugf("SysProcAttr: %+v", cmd.SysProcAttr)
+
+	// If rdmaproxy is enabled and netdev-moving is opted in, move the
+	// RDMA-fabric netdevs (RoCE Ethernet ports and IPoIB InfiniBand ports
+	// alike) that back the spec's uverbs devices into the sandbox netns
+	// before the sandbox process forks. This lets the sentry run normally
+	// — no setns, no extra capabilities — because the netdev/route required
+	// for ibv_modify_qp GID resolution lives directly in the calling task's
+	// netns. The privileged work runs in this parent process which has
+	// CAP_NET_ADMIN against init_user_ns.
+	//
+	// Gated behind --rdmaproxy-move-netdevs (default off): moving netdevs
+	// mutates host network state, so operators must opt in. RoCE collective
+	// workloads under --network=sandbox require it; native InfiniBand and
+	// shared-NIC scenarios may opt in for netdev isolation. Per-container
+	// override available via the generic
+	// "dev.gvisor.flag.rdmaproxy-move-netdevs" annotation.
+	if conf.RDMAProxy && conf.RDMAProxyMoveNetdevs && args.Spec.Linux != nil {
+		if ns, ok := specutils.GetNS(specs.NetworkNamespace, args.Spec); ok && ns.Path != "" && conf.Network != config.NetworkHost {
+			devicePaths := make([]string, 0, len(args.Spec.Linux.Devices))
+			for _, d := range args.Spec.Linux.Devices {
+				devicePaths = append(devicePaths, d.Path)
+			}
+			netdevs := RDMANetdevsForSpec(devicePaths)
+			if len(netdevs) > 0 {
+				if err := MoveRDMANetdevsIntoSandbox(netdevs, ns.Path); err != nil {
+					return fmt.Errorf("MoveRDMANetdevsIntoSandbox: %w", err)
+				}
+			}
+		}
+	}
+
 	if err := specutils.StartInNS(cmd, nss); err != nil {
 		err := fmt.Errorf("starting sandbox: %v", err)
 		// If the sandbox failed to start, it may be because the binary
@@ -1462,23 +1458,6 @@ func (s *Sandbox) WaitRestore() error {
 	return s.call(boot.ContMgrWaitRestore, nil, nil)
 }
 
-// WaitFSCheckpoint waits for a filesystem checkpoint to have successfully been
-// saved.
-func (s *Sandbox) WaitFSCheckpoint() error {
-	log.Debugf("Waiting for filesystem checkpoint to complete in sandbox %q", s.ID)
-	return s.call(boot.ContMgrWaitFSCheckpoint, nil, nil)
-}
-
-// WaitFSRestore waits for filesystems to have been successfully restored from
-// checkpoint.
-func (s *Sandbox) WaitFSRestore(cid string) error {
-	log.Debugf("Waiting for filesystem restore to complete in container %q in sandbox %q", cid, s.ID)
-	args := boot.WaitFSRestoreArgs{
-		CID: cid,
-	}
-	return s.call(boot.ContMgrWaitFSRestore, &args, nil)
-}
-
 // IsRootContainer returns true if the specified container ID belongs to the
 // root container.
 func (s *Sandbox) IsRootContainer(cid string) bool {
@@ -1551,23 +1530,6 @@ func (s *Sandbox) SignalProcess(cid string, pid int32, sig unix.Signal, fgProces
 	}
 	if err := s.call(boot.ContMgrSignal, &args, nil); err != nil {
 		return fmt.Errorf("signaling container %q PID %d: %v", cid, pid, err)
-	}
-	return nil
-}
-
-// SignalProcessGroup sends the signal to all processes in the process group
-// identified by pgid. pgid is relative to the root PID namespace.
-func (s *Sandbox) SignalProcessGroup(cid string, pgid int32, sig unix.Signal) error {
-	log.Debugf("Signal sandbox %q process group %d", s.ID, pgid)
-
-	args := boot.SignalArgs{
-		CID:   cid,
-		Signo: int32(sig),
-		PID:   pgid,
-		Mode:  boot.DeliverToProcessGroup,
-	}
-	if err := s.call(boot.ContMgrSignal, &args, nil); err != nil {
-		return fmt.Errorf("signaling container %q PGID %d: %v", cid, pgid, err)
 	}
 	return nil
 }
@@ -1666,121 +1628,6 @@ func createSaveFiles(path string, direct bool, compression statefile.Compression
 	}
 
 	return files, nil
-}
-
-func openFSRestoreFilesForLocalCheckpoint(imagePath string, direct bool) ([]*os.File, error) {
-	return openFSCheckpointLocalFiles(imagePath, os.O_RDONLY, direct)
-}
-
-// FSSaveOpts holds options to FSSave.
-type FSSaveOpts struct {
-	// If Direct is true, open checkpoint files with O_DIRECT where possible.
-	Direct bool
-
-	// If ExitAfterSaving is true, all sandboxed processes immediately exit
-	// with status 0 after filesystem checkpoint saving, whether or not saving
-	// is successful. This is equivalent to !CheckpointOpts.Resume, and is
-	// provided for parity with that feature.
-	ExitAfterSaving bool
-}
-
-// FSSave sends the filesystem checkpointing call to the sandbox.
-func (s *Sandbox) FSSave(conf *config.Config, cid string, imagePath string, opts FSSaveOpts) error {
-	log.Debugf("Checkpoint filesystem for sandbox %q, imagePath %q, opts %+v", s.ID, imagePath, opts)
-
-	args := boot.FSSaveArgs{
-		ExitAfterSaving: opts.ExitAfterSaving,
-	}
-	defer func() {
-		for _, f := range args.FilePayload.Files {
-			_ = f.Close()
-		}
-	}()
-	if err := s.setFSSaveArgsImpl(conf, imagePath, opts.Direct, &args); err != nil {
-		return err
-	}
-
-	if err := s.call(boot.ContMgrFSSave, &args, nil); err != nil {
-		return fmt.Errorf("checkpointing filesystem for container %q: %w", cid, err)
-	}
-	return nil
-}
-
-func setFSSaveArgsForLocalCheckpointFiles(conf *config.Config, imagePath string, direct bool, args *boot.FSSaveArgs) error {
-	files, err := openFSCheckpointLocalFiles(imagePath, os.O_CREATE|os.O_EXCL|os.O_RDWR, direct)
-	if err != nil {
-		return err
-	}
-	args.FilePayload.Files = files
-	return nil
-}
-
-func openFSCheckpointLocalFiles(imagePath string, openFlags int, direct bool) ([]*os.File, error) {
-	var files [4]*os.File
-	closeCleanup := cleanup.Make(func() {
-		for _, f := range files {
-			if f != nil {
-				f.Close()
-			}
-		}
-	})
-	defer closeCleanup.Clean()
-
-	// Use of O_DIRECT ~requires that I/O operations are aligned to some
-	// unspecified [1] granularity that (as of this writing) is, in practice,
-	// less than or equal to page size. Performance and memory pressure
-	// benefits of O_DIRECT where applicable (avoiding page cache when it won't
-	// be used) scale linearly with file size.
-	// - Manifest file: no alignment guarantee, very small size
-	// - Multi-tar files: no alignment guarantee, relatively small size
-	// - Pages metadata file: no alignment guarantee, relatively small size
-	// - Pages file: page-aligned I/O, relatively large size
-	// Thus currently O_DIRECT is only used for pages file.
-	//
-	// [1] Obtainable via STATX_DIOALIGN / STATX_DIO_READ_ALIGN; "support
-	// varies by filesystem". But we don't need to deal with this unless we
-	// start having checkpoints stored on devices where the direct I/O size is
-	// greater than page size.
-	//
-	// TODO: NOLINT - If multi-tar or pages metadata files get big, we can
-	// guarantee alignment and enable async I/O by using
-	// stateio.BufReader/Writer(stateio.FDReader/Writer) rather than
-	// bufio.Reader/Writer(os.File) in the sentry.
-	maybeODirect := 0
-	if direct {
-		maybeODirect = unix.O_DIRECT
-	}
-
-	manifestFilePath := filepath.Join(imagePath, checkpointfiles.FSCheckpointManifestFileName)
-	manifestFile, err := os.OpenFile(manifestFilePath, openFlags, 0644)
-	if err != nil {
-		return nil, fmt.Errorf("opening manifest file %q: %w", manifestFilePath, err)
-	}
-	files[0] = manifestFile
-
-	multiTarFilePath := filepath.Join(imagePath, checkpointfiles.FSCheckpointMultiTarFileName)
-	multiTarFile, err := os.OpenFile(multiTarFilePath, openFlags, 0644)
-	if err != nil {
-		return nil, fmt.Errorf("opening multi-tar file %q: %w", multiTarFilePath, err)
-	}
-	files[1] = multiTarFile
-
-	pagesMetadataFilePath := filepath.Join(imagePath, checkpointfiles.PagesMetadataFileName)
-	pagesMetadataFile, err := os.OpenFile(pagesMetadataFilePath, openFlags, 0644)
-	if err != nil {
-		return nil, fmt.Errorf("opening pages metadata file %q: %w", pagesMetadataFilePath, err)
-	}
-	files[2] = pagesMetadataFile
-
-	pagesFilePath := filepath.Join(imagePath, checkpointfiles.PagesFileName)
-	pagesFileFD, err := unix.Open(pagesFilePath, openFlags|maybeODirect, 0644)
-	if err != nil {
-		return nil, fmt.Errorf("opening pages metadata file %q: %w", pagesFilePath, err)
-	}
-	files[3] = os.NewFile(uintptr(pagesFileFD), pagesFilePath)
-
-	closeCleanup.Release()
-	return files[:], nil
 }
 
 // Pause sends the pause call for a container in the sandbox.
@@ -2189,72 +2036,41 @@ func ConfigureCmdForRootless(cmd *exec.Cmd, donations *donation.Agency) (*os.Fil
 	return os.NewFile(uintptr(fds[0]), "userns sync FD"), nil
 }
 
-// CanUseUnprivilegedMapping checks if the requested user namespace mappings
-// can be applied manually without requiring setuid privileges (like newuidmap).
-//
-// The Linux kernel strictly requires that an unprivileged process writing to
-// /proc/[pid]/uid_map or gid_map must map exactly one contiguous ID, and the
-// mapped host ID must exactly match the process's effective UID/GID.
-func CanUseUnprivilegedMapping(spec *specs.Spec) bool {
-	if spec.Linux == nil {
-		return true
-	}
-	if len(spec.Linux.UIDMappings) > 0 {
-		if len(spec.Linux.UIDMappings) != 1 ||
-			spec.Linux.UIDMappings[0].Size != 1 ||
-			int(spec.Linux.UIDMappings[0].HostID) != unix.Geteuid() {
-			return false
-		}
-	}
-	if len(spec.Linux.GIDMappings) > 0 {
-		if len(spec.Linux.GIDMappings) != 1 ||
-			spec.Linux.GIDMappings[0].Size != 1 ||
-			int(spec.Linux.GIDMappings[0].HostID) != unix.Getegid() {
-			return false
-		}
-	}
-	return true
-}
-
 // SetUserMappings uses newuidmap/newgidmap programs to set up user ID mappings
 // for process pid.
 func SetUserMappings(spec *specs.Spec, pid int) error {
 	log.Debugf("Setting user mappings")
-	if len(spec.Linux.UIDMappings) > 0 {
-		args := []string{strconv.Itoa(pid)}
-		for _, idMap := range spec.Linux.UIDMappings {
-			log.Infof("Mapping host uid %d to container uid %d (size=%d)",
-				idMap.HostID, idMap.ContainerID, idMap.Size)
-			args = append(args,
-				strconv.Itoa(int(idMap.ContainerID)),
-				strconv.Itoa(int(idMap.HostID)),
-				strconv.Itoa(int(idMap.Size)),
-			)
-		}
-
-		out, err := exec.Command("newuidmap", args...).CombinedOutput()
-		log.Debugf("newuidmap: %#v\n%s", args, out)
-		if err != nil {
-			return fmt.Errorf("newuidmap failed: %w", err)
-		}
+	args := []string{strconv.Itoa(pid)}
+	for _, idMap := range spec.Linux.UIDMappings {
+		log.Infof("Mapping host uid %d to container uid %d (size=%d)",
+			idMap.HostID, idMap.ContainerID, idMap.Size)
+		args = append(args,
+			strconv.Itoa(int(idMap.ContainerID)),
+			strconv.Itoa(int(idMap.HostID)),
+			strconv.Itoa(int(idMap.Size)),
+		)
 	}
 
-	if len(spec.Linux.GIDMappings) > 0 {
-		args := []string{strconv.Itoa(pid)}
-		for _, idMap := range spec.Linux.GIDMappings {
-			log.Infof("Mapping host uid %d to container uid %d (size=%d)",
-				idMap.HostID, idMap.ContainerID, idMap.Size)
-			args = append(args,
-				strconv.Itoa(int(idMap.ContainerID)),
-				strconv.Itoa(int(idMap.HostID)),
-				strconv.Itoa(int(idMap.Size)),
-			)
-		}
-		out, err := exec.Command("newgidmap", args...).CombinedOutput()
-		log.Debugf("newgidmap: %#v\n%s", args, out)
-		if err != nil {
-			return fmt.Errorf("newgidmap failed: %w", err)
-		}
+	out, err := exec.Command("newuidmap", args...).CombinedOutput()
+	log.Debugf("newuidmap: %#v\n%s", args, out)
+	if err != nil {
+		return fmt.Errorf("newuidmap failed: %w", err)
+	}
+
+	args = []string{strconv.Itoa(pid)}
+	for _, idMap := range spec.Linux.GIDMappings {
+		log.Infof("Mapping host uid %d to container uid %d (size=%d)",
+			idMap.HostID, idMap.ContainerID, idMap.Size)
+		args = append(args,
+			strconv.Itoa(int(idMap.ContainerID)),
+			strconv.Itoa(int(idMap.HostID)),
+			strconv.Itoa(int(idMap.Size)),
+		)
+	}
+	out, err = exec.Command("newgidmap", args...).CombinedOutput()
+	log.Debugf("newgidmap: %#v\n%s", args, out)
+	if err != nil {
+		return fmt.Errorf("newgidmap failed: %w", err)
 	}
 	return nil
 }
@@ -2365,15 +2181,4 @@ func SetCloExeOnAllFDs() (retErr error) {
 	// Sufficient to do this only once per runsc invocation. Avoid double work.
 	setCloseExecOnce.Do(func() { retErr = setCloExeOnAllFDs() })
 	return
-}
-
-// GetNetworkConfig returns the network links and routes config applied during
-// root container creation.
-func (s *Sandbox) GetNetworkConfig() (*boot.CreateLinksAndRoutesArgs, error) {
-	log.Debugf("GetNetworkConfig, sandbox: %q", s.ID)
-	var networkArgs boot.CreateLinksAndRoutesArgs
-	if err := s.call(boot.ContMgrGetNetworkConfig, nil, &networkArgs); err != nil {
-		return nil, fmt.Errorf("error getting network config (CID: %q): %w", s.ID, err)
-	}
-	return &networkArgs, nil
 }

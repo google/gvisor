@@ -16,8 +16,6 @@ package netstack
 
 import (
 	"fmt"
-	"maps"
-	"slices"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -25,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -99,6 +96,22 @@ func (s *Stack) sendDeleteEvent(ctx context.Context, id tcpip.NICID, nicInfo *st
 	s.eventSubscriber.OnInterfaceDeleteEvent(ctx, int32(id), makeInterfaceInfo(nicInfo))
 }
 
+// EnableSaveRestore enables netstack s/r.
+func (s *Stack) EnableSaveRestore() error {
+	if s.Stack != nil {
+		s.Stack.EnableSaveRestore()
+	}
+	return nil
+}
+
+// IsSaveRestoreEnabled implements inet.Stack.IsSaveRestoreEnabled.
+func (s *Stack) IsSaveRestoreEnabled() bool {
+	if s.Stack == nil {
+		return false
+	}
+	return s.Stack.IsSaveRestoreEnabled()
+}
+
 // Destroy implements inet.Stack.Destroy.
 func (s *Stack) Destroy() {
 	if s.Stack != nil {
@@ -125,6 +138,8 @@ func toLinuxARPHardwareType(t header.ARPHardwareType) uint16 {
 		return linux.ARPHRD_LOOPBACK
 	case header.ARPHardwareEther:
 		return linux.ARPHRD_ETHER
+	case header.ARPHardwareInfiniBand:
+		return linux.ARPHRD_INFINIBAND
 	default:
 		panic(fmt.Sprintf("unknown ARPHRD type: %d", t))
 	}
@@ -137,13 +152,6 @@ func (s *Stack) Interfaces() map[int32]inet.Interface {
 		is[int32(id)] = makeInterfaceInfo(&ni)
 	}
 	return is
-}
-
-// InterfaceIDs implements inet.Stack.InterfaceIDs.
-func (s *Stack) InterfaceIDs() []int32 {
-	// Since gVisor allocates NIC IDs monotonically (like Linux ifindex),
-	// sorting by ID is equivalent to registration order.
-	return slices.Sorted(maps.Keys(s.Interfaces()))
 }
 
 // RemoveInterface implements inet.Stack.RemoveInterface.
@@ -247,10 +255,7 @@ func (s *Stack) SetInterface(ctx context.Context, msg *nlmsg.Message) *syserr.Er
 //
 // If instead the linkAttrs map does not contain IFLA_NET_NS_FD, or if it
 // points to the same netns as the source stack, only locks the source stack
-// and returns nil.
-//
-// If the netns fd is invalid, or the calling context lacks CAP_NET_ADMIN,
-// returns an error.
+// and returns nil. And if the netns fd is invalid, returns an error.
 func (s *Stack) lockSrcAndDst(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesView) (*inet.Namespace, *syserr.Error) {
 	if linkAttrs == nil {
 		s.linkMu.Lock()
@@ -270,13 +275,9 @@ func (s *Stack) lockSrcAndDst(ctx context.Context, linkAttrs map[uint16]nlmsg.By
 	if f == nil {
 		return nil, syserr.ErrInvalidArgument
 	}
-	ns, err := f(int32(fd))
+	ns, err := f(int32(fd)) // ns.DecRef() is called in unlockSrcAndDst().
 	if err != nil {
 		return nil, syserr.FromError(err)
-	}
-	if !auth.CredentialsFromContext(ctx).HasCapabilityIn(linux.CAP_NET_ADMIN, ns.UserNamespace()) {
-		ns.DecRef(ctx)
-		return nil, syserr.ErrNotPermittedNet
 	}
 
 	dst := ns.Stack().(*Stack)
@@ -285,7 +286,6 @@ func (s *Stack) lockSrcAndDst(ctx context.Context, linkAttrs map[uint16]nlmsg.By
 		s.linkMu.Lock()
 		return nil, nil
 	}
-	// No failures from this point on, ns.DecRef() is called in unlockSrcAndDst().
 
 	if s.id < dst.id {
 		s.linkMu.Lock()
