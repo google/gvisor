@@ -89,8 +89,9 @@ const (
 
 // UVERBS_OBJECT_MR method IDs.
 const (
-	uverbsMethodMRDestroy = 1
-	uverbsMethodRegMR     = 5 // modern path
+	uverbsMethodMRDestroy   = 1
+	uverbsMethodRegDMABufMR = 4 // DMABUF path (GPU memory via DMA-BUF framework)
+	uverbsMethodRegMR       = 5 // modern path
 )
 
 // UVERBS_OBJECT_QP method IDs.
@@ -157,6 +158,7 @@ type IoctlAction int
 const (
 	ActionNone IoctlAction = iota
 	ActionMRReg
+	ActionMRRegDMABuf
 	ActionMRDereg
 	ActionCQCreate
 	ActionCQDestroy
@@ -192,6 +194,12 @@ const (
 // DESTROY_MR attr IDs.
 const (
 	uverbsAttrDestroyMRHandle = 0
+)
+
+// UVERBS_METHOD_REG_DMABUF_MR attr IDs (enum uverbs_attrs_reg_dmabuf_mr_cmd_attr_ids).
+const (
+	uverbsAttrRegDMABufMRHandle = 0 // Output: MR handle
+	uverbsAttrRegDMABufMRFD     = 5 // Input: DMA-BUF file descriptor (inline)
 )
 
 // RDMA_VERBS_IOCTL = _IOWR(0x1b, 1, struct ib_uverbs_ioctl_hdr)
@@ -361,6 +369,13 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 		file.DecRef(t)
 	}
 
+	// DMABUF MR_REG (method 4): translate the DMA-BUF fd from the
+	// sandbox's fd table to the host fd. The DMA-BUF fd is attr 5
+	// (UVERBS_ATTR_REG_DMABUF_MR_FD), stored inline.
+	if objectID == uverbsObjectMR && methodID == uverbsMethodRegDMABufMR {
+		fd.rewriteDMABufFD(t, buf, int(numAttrs))
+	}
+
 	// Classify and prepare DMA page mirroring before forwarding.
 	action, writeCmdVal := fd.classifyIoctl(buf, int(numAttrs), objectID, methodID)
 	// QP MODIFY needs the host netns for RoCE GID-to-netdev resolution.
@@ -393,6 +408,10 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 		if mrMirror != nil {
 			dmaCleanup = cleanup.Make(func() { mrMirror.Release(t) })
 		}
+
+	case ActionMRRegDMABuf:
+		// DMA-BUF MR: no page mirroring needed. The kernel resolves
+		// GPU pages through the DMA-BUF framework, not through VMAs.
 
 	case ActionCQCreate, ActionQPCreate:
 		if fd.driver == nil {
@@ -451,6 +470,18 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 					if log.IsLogging(log.Debug) {
 						log.Debugf("rdmaproxy: pinned MR handle=%d (%d ranges) %s", mrHandle, len(mrMirror.prs), mrMirror.mrSummary)
 					}
+				}
+			}
+
+		case ActionMRRegDMABuf:
+			// Track DMABUF MR handle for DEREG cleanup. No mirrored
+			// pages to release — store a nil sentinel so DEREG doesn't
+			// warn about missing handles.
+			mrHandle := fd.extractDMABufMRHandle(buf, int(numAttrs))
+			if mrHandle != 0 {
+				fd.pinned.addMR(mrHandle, &MirroredPages{})
+				if log.IsLogging(log.Debug) {
+					log.Debugf("rdmaproxy: DMABUF MR_REG handle=%d hostFD=%d (%s)", mrHandle, fd.hostFD, taskLogFields(t))
 				}
 			}
 
@@ -555,6 +586,9 @@ func (fd *uverbsFD) classifyIoctl(buf []byte, numAttrs int, objectID, methodID u
 	case uverbsObjectMR:
 		if methodID == uverbsMethodRegMR {
 			return ActionMRReg, 0
+		}
+		if methodID == uverbsMethodRegDMABufMR {
+			return ActionMRRegDMABuf, 0
 		}
 		if methodID == uverbsMethodMRDestroy {
 			return ActionMRDereg, 0
@@ -775,6 +809,51 @@ func (fd *uverbsFD) extractDeregMRHandle(buf []byte, numAttrs int, objectID uint
 		off := ibUverbsIoctlHdrSize + i*ibUverbsAttrSize
 		attrID := binary.LittleEndian.Uint16(buf[off : off+2])
 		if attrID == uverbsAttrDestroyMRHandle {
+			return uint32(binary.LittleEndian.Uint64(buf[off+8 : off+16]))
+		}
+	}
+	return 0
+}
+
+// rewriteDMABufFD translates the DMA-BUF fd in a DMABUF MR_REG ioctl
+// from the sandbox's fd number to the host fd. The fd is attr 5
+// (UVERBS_ATTR_REG_DMABUF_MR_FD), stored inline. Requires that the
+// sandbox FD implements vfs.HostFDProvider (e.g. nvproxy's
+// hostFDWrapper or frontendFD for DMA-BUF fds).
+func (fd *uverbsFD) rewriteDMABufFD(t *kernel.Task, buf []byte, numAttrs int) {
+	for i := 0; i < numAttrs; i++ {
+		off := ibUverbsIoctlHdrSize + i*ibUverbsAttrSize
+		attrID := binary.LittleEndian.Uint16(buf[off : off+2])
+		if attrID != uverbsAttrRegDMABufMRFD {
+			continue
+		}
+		sandboxFD := int32(binary.LittleEndian.Uint64(buf[off+8 : off+16]))
+		if sandboxFD < 0 {
+			return
+		}
+		file, _ := t.FDTable().Get(sandboxFD)
+		if file == nil {
+			log.Warningf("rdmaproxy: DMABUF MR_REG sandbox fd=%d not found in fd table", sandboxFD)
+			return
+		}
+		defer file.DecRef(t)
+		if hostFDer, ok := file.Impl().(vfs.HostFDProvider); ok {
+			hostFD := hostFDer.HostFD()
+			binary.LittleEndian.PutUint64(buf[off+8:off+16], uint64(hostFD))
+			return
+		}
+		log.Warningf("rdmaproxy: DMABUF MR_REG sandbox fd=%d is type %T — no vfs.HostFDProvider (is nvproxy DMA-BUF export linked?)", sandboxFD, file.Impl())
+		return
+	}
+}
+
+// extractDMABufMRHandle reads the MR handle from a DMABUF MR_REG response.
+// The handle is attr 0 (UVERBS_ATTR_REG_DMABUF_MR_HANDLE), inline.
+func (fd *uverbsFD) extractDMABufMRHandle(buf []byte, numAttrs int) uint32 {
+	for i := 0; i < numAttrs; i++ {
+		off := ibUverbsIoctlHdrSize + i*ibUverbsAttrSize
+		attrID := binary.LittleEndian.Uint16(buf[off : off+2])
+		if attrID == uverbsAttrRegDMABufMRHandle {
 			return uint32(binary.LittleEndian.Uint64(buf[off+8 : off+16]))
 		}
 	}
