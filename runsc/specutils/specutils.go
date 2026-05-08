@@ -39,6 +39,7 @@ import (
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
+// LINT.IfChange
 const (
 	// annotationFlagPrefix allows annotations to change the value of flags.
 	//
@@ -83,6 +84,8 @@ const (
 	// that exposed to user apps.
 	AnnotationCPUFeatures = "dev.gvisor.internal.cpufeatures"
 )
+
+// LINT.ThenChange(../cmd/features.go)
 
 // ExePath must point to runsc binary, which is normally the same binary. It's
 // changed in tests that aren't linked in the same binary.

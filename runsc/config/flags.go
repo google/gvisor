@@ -501,3 +501,11 @@ func getVal(field reflect.Value) string {
 		panic("unknown type " + field.Kind().String())
 	}
 }
+
+// IsFlagSafeToOverride returns true if the given flag name is in the override
+// allowlist.
+// Used by `runsc features`.
+func IsFlagSafeToOverride(name string) bool {
+	_, ok := overrideAllowlist[name]
+	return ok
+}

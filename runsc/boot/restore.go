@@ -42,7 +42,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/timing"
 	"gvisor.dev/gvisor/runsc/boot/pprof"
 	"gvisor.dev/gvisor/runsc/config"
@@ -170,13 +169,13 @@ func (r *restorer) restoreContainerInfo(l *Loader, info *containerInfo, containe
 	return nil
 }
 
-func createNetworkStackForRestore(l *Loader) (*stack.Stack, inet.Stack) {
+func createNetworkStackForRestore(l *Loader) inet.Stack {
 	// Save the current network stack to slap on top of the one that was restored.
 	curNetwork := l.k.RootNetworkNamespace().Stack()
-	if eps, ok := curNetwork.(*netstack.Stack); ok {
-		return eps.Stack, curNetwork
+	if _, ok := curNetwork.(*netstack.Stack); ok {
+		return curNetwork
 	}
-	return nil, hostinet.NewStack()
+	return hostinet.NewStack()
 }
 
 func (r *restorer) restore(l *Loader) error {
@@ -191,7 +190,7 @@ func (r *restorer) restore(l *Loader) error {
 
 	// Create a new root network namespace with the network stack of the
 	// old kernel to preserve the existing network configuration.
-	oldStack, oldInetStack := createNetworkStackForRestore(l)
+	oldInetStack := createNetworkStackForRestore(l)
 	r.timer.Reached("netstack created")
 
 	// Reset the network stack in the network namespace to nil before
@@ -230,12 +229,6 @@ func (r *restorer) restore(l *Loader) error {
 		return err
 	}
 
-	// Set up the restore environment.
-	ctx := l.k.SupervisorContext()
-	if oldStack != nil {
-		ctx = context.WithValue(ctx, stack.CtxRestoreStack, oldStack)
-	}
-
 	l.mu.Lock()
 	cu := cleanup.Make(func() {
 		l.mu.Unlock()
@@ -262,6 +255,7 @@ func (r *restorer) restore(l *Loader) error {
 	}
 
 	log.Debugf("Restore using fdmap: %v", fdmap)
+	ctx := l.k.SupervisorContext()
 	ctx = context.WithValue(ctx, vfs.CtxRestoreFilesystemFDMap, fdmap)
 	log.Debugf("Restore using mfmap: %v", mfmap)
 	ctx = context.WithValue(ctx, pgalloc.CtxMemoryFileMap, mfmap)

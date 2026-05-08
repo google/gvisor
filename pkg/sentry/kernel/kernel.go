@@ -86,10 +86,6 @@ import (
 	uspb "gvisor.dev/gvisor/pkg/sentry/unimpl/unimplemented_syscall_go_proto"
 )
 
-// IOUringEnabled is set to true when IO_URING is enabled. Added as a global to
-// allow easy access everywhere.
-var IOUringEnabled = false
-
 // UserCounters is a set of user counters.
 //
 // +stateify savable
@@ -398,6 +394,9 @@ type Kernel struct {
 
 	// AllowSUID determines if the SUID/SGID bits are honored during execve.
 	AllowSUID bool
+
+	// IOUringEnabled determines if io_uring is enabled.
+	IOUringEnabled bool
 
 	// MaxKeySetSize is the maximum number of keys in a key set.
 	MaxKeySetSize atomicbitops.Int32

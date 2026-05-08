@@ -510,8 +510,6 @@ func New(args Args) (*Loader, error) {
 		nvproxy.Init()
 	}
 
-	kernel.IOUringEnabled = args.Conf.IOUring
-
 	eid := execID{cid: args.ID}
 	l := &Loader{
 		sandboxID:      args.ID,
@@ -623,6 +621,7 @@ func New(args Args) (*Loader, error) {
 		Platform:            p,
 		NvidiaDriverVersion: args.NvidiaDriverVersion,
 		AllowSUID:           args.Conf.AllowSUID,
+		IOUringEnabled:      args.Conf.IOUring,
 	}
 
 	// Create memory file.

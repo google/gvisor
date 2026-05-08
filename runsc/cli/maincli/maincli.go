@@ -73,6 +73,7 @@ func commands() (map[util.SubCommand]string, []subcommands.Command) {
 		new(nvproxy.Nvproxy): helperGroup,
 		new(trace.Trace):     helperGroup,
 		new(cmd.CPUFeatures): helperGroup,
+		new(cmd.Features):    helperGroup,
 
 		new(cmd.Debug):        debugGroup,
 		new(cmd.Statefile):    debugGroup,

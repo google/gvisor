@@ -51,6 +51,7 @@ type contextQueue struct {
 	numSpinningThreads uint32
 	// numThreadsToWakeup is the number of threads requested by Sentry to wake up.
 	// The Sentry increments it and stub threads decrements.
+	// Protected by subprocess.kickSysmsgMu for sentry-side writes.
 	numThreadsToWakeup uint32
 	// numActiveContext is a number of running and waiting contexts
 	numActiveContexts uint32

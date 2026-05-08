@@ -20,7 +20,6 @@
 package stack
 
 import (
-	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -2533,22 +2532,6 @@ func (s *Stack) SetNICStack(id tcpip.NICID, peer *Stack) (tcpip.NICID, tcpip.Err
 
 	id = tcpip.NICID(peer.NextNICID())
 	return id, peer.CreateNICWithOptions(id, linkEp, NICOptions{Name: name})
-}
-
-// contextID is this package's type for context.Context.Value keys.
-type contextID int
-
-const (
-	// CtxRestoreStack is a Context.Value key for the stack to be used in restore.
-	CtxRestoreStack contextID = iota
-)
-
-// RestoreStackFromContext returns the stack to be used during restore.
-func RestoreStackFromContext(ctx context.Context) *Stack {
-	if st := ctx.Value(CtxRestoreStack); st != nil {
-		return st.(*Stack)
-	}
-	return nil
 }
 
 // SetRemoveConf sets the removeConf in stack to the given value.
