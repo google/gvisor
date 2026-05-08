@@ -11,6 +11,7 @@ go_library(
         "network.go",
         "network_unsafe.go",
         "no_xdp.go",
+        "rdma_netdev.go",
         "sandbox.go",
         "sandbox_impl.go",
         "xdp.go",
