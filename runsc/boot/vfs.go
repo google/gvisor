@@ -40,6 +40,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/devices/memdev"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
+	"gvisor.dev/gvisor/pkg/sentry/devices/rdmaproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/tpuproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/tpuproxy/vfio"
 	"gvisor.dev/gvisor/pkg/sentry/devices/ttydev"
@@ -205,6 +206,11 @@ func setupContainerVFS(ctx context.Context, info *containerInfo, mntr *container
 	rootProcArgs.Umask = 0022
 	rootProcArgs.MaxSymlinkTraversals = linux.MaxSymlinkTraversals
 	rootCtx := rootProcArgs.NewContext(mntr.l.k)
+
+	// Pre-register RDMA devices to obtain dynamic majors before sysfs is
+	// mounted, so the virtual sysfs "dev" files reflect container-side
+	// major:minor values that libibverbs can match against /dev nodes.
+	mntr.preRegisterRDMADevices(info.spec)
 
 	mns, err := mntr.mountAll(rootCtx, rootCreds, info.spec, info.conf, &rootProcArgs)
 	if err != nil {
@@ -434,6 +440,19 @@ type containerMounter struct {
 	// annotation.
 	sharedMounts map[string]*vfs.Mount
 
+	// rdmaDevices contains pre-collected sysfs data for RDMA devices.
+	rdmaDevices *sys.RDMAData
+
+	// pciDevicesData contains pre-collected PCI device topology data.
+	pciDevicesData *sys.PCIDevicesData
+
+	// numaData contains pre-collected host NUMA topology.
+	numaData *sys.NUMAData
+
+	// rdmaDynMajors caches dynamic VFS majors for pre-registered RDMA
+	// devices, keyed by host minor number.
+	rdmaDynMajors map[uint32]uint32
+
 	// containerID is the ID for the container.
 	containerID   string
 	containerName string
@@ -459,6 +478,9 @@ func (l *Loader) newContainerMounter(info *containerInfo) *containerMounter {
 		devGoferFD:        info.devGoferFD,
 		goferMountConfs:   info.goferMountConfs,
 		sharedMounts:      l.sharedMounts,
+		rdmaDevices:       l.rdmaDevices,
+		pciDevicesData:    l.pciDevicesData,
+		numaData:          l.numaData,
 		containerID:       info.cid,
 		containerName:     info.containerName,
 		rootfsUpperTarFD:  info.rootfsUpperTarFD,
@@ -921,7 +943,7 @@ func (c *containerMounter) getPathMode(ctx context.Context, creds *auth.Credenti
 }
 
 func (c *containerMounter) mountSubmount(ctx context.Context, spec *specs.Spec, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials, submount *mountInfo) (*vfs.Mount, error) {
-	fsName, opts, err := getMountNameAndOptions(spec, conf, submount, c.l.productName, c.containerName, c.containerID, c.l.fsRestore, c.l.rdmaDevices, c.l.pciDevicesData, c.l.numaData)
+	fsName, opts, err := getMountNameAndOptions(spec, conf, submount, c.l.productName, c.containerName, c.containerID, c.l.fsRestore, c.rdmaDevices, c.pciDevicesData, c.numaData)
 	if err != nil {
 		return nil, fmt.Errorf("mountOptions failed: %w", err)
 	}
@@ -1006,7 +1028,7 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 	case sys.Name:
 		sysData := &sys.InternalData{
 			EnableTPUProxyPaths:  specutils.TPUProxyEnabled(spec, conf),
-			EnableRDMAProxyPaths: conf.RDMAProxy && specutils.HasRDMADevicesInSpec(spec),
+			EnableRDMAProxyPaths: specutils.RDMAFunctionalityRequested(spec, conf),
 			RDMADevices:          rdmaDevices,
 			PCIDevicesData:       pciDevicesData,
 			NUMAData:             numaData,
@@ -1391,7 +1413,7 @@ func (c *containerMounter) mountSharedMaster(ctx context.Context, spec *specs.Sp
 	// Mount the master using the options from the hint (mount annotations).
 	origOpts := mntInfo.mount.Options
 	mntInfo.mount.Options = mntInfo.hint.Mount.Options
-	fsName, opts, err := getMountNameAndOptions(spec, conf, mntInfo, c.l.productName, c.containerName, c.containerID, c.l.fsRestore, c.l.rdmaDevices, c.l.pciDevicesData, c.l.numaData)
+	fsName, opts, err := getMountNameAndOptions(spec, conf, mntInfo, c.l.productName, c.containerName, c.containerID, c.l.fsRestore, c.rdmaDevices, c.pciDevicesData, c.numaData)
 	mntInfo.mount.Options = origOpts
 	if err != nil {
 		return nil, err
@@ -1547,6 +1569,47 @@ func (c *containerMounter) configureRestore(fdmap map[checkpoint.ResourceID]int,
 		}
 	}
 	return nil
+}
+
+func (c *containerMounter) preRegisterRDMADevices(spec *specs.Spec) {
+	if c.rdmaDevices == nil || spec.Linux == nil {
+		return
+	}
+	c.rdmaDynMajors = make(map[uint32]uint32)
+	vfsObj := c.l.k.VFS()
+	driverByMinor := make(map[uint32]string)
+	for i := range c.rdmaDevices.Devices {
+		dev := &c.rdmaDevices.Devices[i]
+		if kernMinor, ok := sys.ExtractMinorUint32(dev.Dev); ok && dev.PCIDriver != "" {
+			driverByMinor[kernMinor] = dev.PCIDriver
+		}
+	}
+	for _, devSpec := range spec.Linux.Devices {
+		if !strings.HasPrefix(devSpec.Path, "/dev/infiniband/uverbs") {
+			continue
+		}
+		minor := uint32(devSpec.Minor)
+		devName := filepath.Base(devSpec.Path)
+		driverName := driverByMinor[minor]
+		dynMajor, err := rdmaproxy.Register(vfsObj, devName, minor, driverName)
+		if err != nil {
+			log.Warningf("rdma: pre-register %s: %v", devSpec.Path, err)
+			continue
+		}
+		c.rdmaDynMajors[minor] = dynMajor
+		log.Infof("rdma: pre-registered %s (minor=%d) with dynamic major %d driver=%q", devSpec.Path, minor, dynMajor, driverName)
+	}
+	for i := range c.rdmaDevices.Devices {
+		dev := &c.rdmaDevices.Devices[i]
+		kernMinor, ok := sys.ExtractMinorUint32(dev.Dev)
+		if !ok {
+			continue
+		}
+		if dynMajor, ok := c.rdmaDynMajors[kernMinor]; ok {
+			dev.DynMajor = dynMajor
+			log.Infof("rdma: patched sysfs %s dev=%s → dynMajor=%d", dev.Name, dev.Dev, dynMajor)
+		}
+	}
 }
 
 func createDeviceFiles(ctx context.Context, creds *auth.Credentials, info *containerInfo, vfsObj *vfs.VirtualFilesystem, root vfs.VirtualDentry) error {

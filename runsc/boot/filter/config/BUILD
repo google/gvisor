@@ -33,6 +33,7 @@ go_library(
         "//pkg/seccomp/precompiledseccomp",
         "//pkg/sentry/devices/nvproxy",
         "//pkg/sentry/devices/nvproxy/nvconf",
+        "//pkg/sentry/devices/rdmaproxy",
         "//pkg/sentry/devices/tpuproxy",
         "//pkg/sentry/platform",
         "//pkg/sentry/platform/platforms",

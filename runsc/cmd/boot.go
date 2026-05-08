@@ -584,13 +584,21 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 
 	// Read RDMA device data serialized by stage 1 (rdmaProxyUpdateChroot).
 	var rdmaDevices *sys.RDMAData
-	if conf.RDMAProxy && specutils.HasRDMADevicesInSpec(spec) {
+	if conf.RDMAProxy {
 		rdmaDevices = sys.DeserializeRDMAData(sys.RDMADataPath)
 	}
 
-	// Read PCI/NUMA topology data serialized by stage 1.
-	pciDevicesData := sys.DeserializePCIDevicesData(sys.PCIDevicesDataPath)
-	numaData := sys.DeserializeNUMAData(sys.NUMADataPath)
+	// Read PCI device topology data serialized by stage 1 (pciDevicesUpdateChroot).
+	var pciDevicesData *sys.PCIDevicesData
+	if conf.NVProxy || conf.RDMAProxy {
+		pciDevicesData = sys.DeserializePCIDevicesData(sys.PCIDevicesDataPath)
+	}
+
+	// Read host NUMA topology serialized by stage 1 (numaUpdateChroot).
+	var numaData *sys.NUMAData
+	if conf.NVProxy || conf.RDMAProxy {
+		numaData = sys.DeserializeNUMAData(sys.NUMADataPath)
+	}
 
 	// Create the loader.
 	bootArgs := boot.Args{

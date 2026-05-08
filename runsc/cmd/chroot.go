@@ -228,7 +228,7 @@ func tpuProxyUpdateChroot(hostRoot, chroot string, spec *specs.Spec, conf *confi
 }
 
 func rdmaProxyUpdateChroot(chroot string, spec *specs.Spec, conf *config.Config) error {
-	if !conf.RDMAProxy || !specutils.HasRDMADevicesInSpec(spec) {
+	if !specutils.RDMAFunctionalityRequested(spec, conf) {
 		return nil
 	}
 	// Collect RDMA device data from the real host sysfs (accessible now,
@@ -296,7 +296,7 @@ func rdmaProxyUpdateChroot(chroot string, spec *specs.Spec, conf *config.Config)
 }
 
 func pciDevicesUpdateChroot(chroot string, spec *specs.Spec, conf *config.Config) error {
-	if !conf.NVProxy && !specutils.HasRDMADevicesInSpec(spec) {
+	if !conf.NVProxy && !specutils.RDMAFunctionalityRequested(spec, conf) {
 		return nil
 	}
 	data := sys.CollectPCIDeviceData()
@@ -311,7 +311,7 @@ func pciDevicesUpdateChroot(chroot string, spec *specs.Spec, conf *config.Config
 }
 
 func numaUpdateChroot(chroot string, spec *specs.Spec, conf *config.Config) error {
-	if !conf.NVProxy && !specutils.HasRDMADevicesInSpec(spec) {
+	if !conf.NVProxy && !specutils.RDMAFunctionalityRequested(spec, conf) {
 		return nil
 	}
 	data := sys.CollectNUMAData()

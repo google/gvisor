@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/runsc/config"
 )
 
 // HasRDMADevicesInSpec returns true if the OCI spec lists at least one
@@ -39,4 +40,30 @@ func HasRDMADevicesInSpec(spec *specs.Spec) bool {
 		}
 	}
 	return false
+}
+
+// AnnotationRDMAProxy enables rdmaproxy via OCI annotation as an alternative
+// to the --rdmaproxy runtime flag. Useful when only some containers should
+// use rdmaproxy on a runtime that otherwise has it disabled by default.
+const AnnotationRDMAProxy = "dev.gvisor.internal.rdmaproxy"
+
+// RDMAProxyEnabled returns true if rdmaproxy should be enabled for this
+// container, either via the --rdmaproxy runtime flag or via the
+// dev.gvisor.internal.rdmaproxy OCI annotation.
+func RDMAProxyEnabled(spec *specs.Spec, conf *config.Config) bool {
+	if conf.RDMAProxy {
+		return true
+	}
+	return AnnotationToBool(spec, AnnotationRDMAProxy)
+}
+
+// RDMAFunctionalityRequested returns true if the container should have
+// access to RDMA functionality. Requires both rdmaproxy to be enabled
+// (via flag or annotation) AND at least one /dev/infiniband/uverbs*
+// device to be present in the OCI spec.
+func RDMAFunctionalityRequested(spec *specs.Spec, conf *config.Config) bool {
+	if !RDMAProxyEnabled(spec, conf) {
+		return false
+	}
+	return HasRDMADevicesInSpec(spec)
 }
