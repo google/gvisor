@@ -218,9 +218,10 @@ const (
 
 // Device types, from uapi/linux/if_arp.h.
 const (
-	ARPHRD_NONE     = 65534
-	ARPHRD_ETHER    = 1
-	ARPHRD_LOOPBACK = 772
+	ARPHRD_NONE       = 65534
+	ARPHRD_ETHER      = 1
+	ARPHRD_LOOPBACK   = 772
+	ARPHRD_INFINIBAND = 32
 )
 
 // RouteMessage is struct rtmsg, from uapi/linux/rtnetlink.h.
