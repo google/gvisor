@@ -348,3 +348,92 @@ func TestFilterCapabilities(t *testing.T) {
 		})
 	}
 }
+
+// TestRmControlOpaqueDispatchClassification validates the bit-mask
+// classification used by rmControl() to identify GSP-legacy and
+// NV2081_BINAPI control commands. These are the two paths that forward
+// up to 1 MB of opaque bytes to the host NVIDIA driver and now emit an
+// audit warning before delegating to rmControlSimple
+// (https://github.com/google/gvisor/pull/12921).
+//
+// The test does not invoke rmControl() directly because that requires
+// a full kernel.Task and a real /dev/nvidiactl ioctl path; instead it
+// exercises the predicate math that decides which dispatch branch a
+// given ioctl Cmd takes. This protects the boundary between the typed
+// command dispatch (controlCmd map) and the opaque-passthrough path
+// against accidental regressions.
+func TestRmControlOpaqueDispatchClassification(t *testing.T) {
+	// Constants act as a self-documenting baseline: if upstream
+	// NVIDIA renumbers either, this test fails loudly.
+	if got, want := uint32(nvgpu.RM_GSS_LEGACY_MASK), uint32(0x00008000); got != want {
+		t.Errorf("nvgpu.RM_GSS_LEGACY_MASK = %#x, want %#x", got, want)
+	}
+	if got, want := uint32(nvgpu.NV2081_BINAPI), uint32(0x00002081); got != want {
+		t.Errorf("nvgpu.NV2081_BINAPI = %#x, want %#x", got, want)
+	}
+
+	cases := []struct {
+		name       string
+		cmd        uint32
+		wantGSP    bool
+		wantBINAPI bool
+	}{
+		{
+			name:    "RM_GSS_LEGACY_MASK bit set with high cmd bits",
+			cmd:     0x80000000 | uint32(nvgpu.RM_GSS_LEGACY_MASK),
+			wantGSP: true,
+		},
+		{
+			name:    "lone GSS_LEGACY bit",
+			cmd:     uint32(nvgpu.RM_GSS_LEGACY_MASK),
+			wantGSP: true,
+		},
+		{
+			name:       "NV2081_BINAPI class, subcommand 0x0001",
+			cmd:        (uint32(nvgpu.NV2081_BINAPI) << 16) | 0x0001,
+			wantBINAPI: true,
+		},
+		{
+			name:       "NV2081_BINAPI class, subcommand 0x00ff",
+			cmd:        (uint32(nvgpu.NV2081_BINAPI) << 16) | 0x00ff,
+			wantBINAPI: true,
+		},
+		{
+			name: "NV0080 typed-handler control NV0080_CTRL_GR -- must NOT classify as opaque",
+			cmd:  0x00800180,
+		},
+		{
+			name: "NV2080 typed-handler subdevice control -- must NOT classify as opaque",
+			cmd:  0x20800301,
+		},
+		{
+			name: "zero cmd is not opaque",
+			cmd:  0,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			gotGSP := tc.cmd&uint32(nvgpu.RM_GSS_LEGACY_MASK) != 0
+			gotBINAPI := (tc.cmd>>16)&0xffff == uint32(nvgpu.NV2081_BINAPI)
+
+			if gotGSP != tc.wantGSP {
+				t.Errorf("cmd=%#x: GSP_LEGACY classification = %v, want %v",
+					tc.cmd, gotGSP, tc.wantGSP)
+			}
+			if gotBINAPI != tc.wantBINAPI {
+				t.Errorf("cmd=%#x: NV2081_BINAPI classification = %v, want %v",
+					tc.cmd, gotBINAPI, tc.wantBINAPI)
+			}
+
+			// Production rmControl checks GSS_LEGACY first and returns,
+			// so any cmd that satisfies both predicates would be silently
+			// classified as GSS_LEGACY only. Flag such overlaps so
+			// future cmd values are reviewed explicitly.
+			if gotGSP && gotBINAPI {
+				t.Errorf("cmd=%#x: ambiguous classification, both GSP_LEGACY and NV2081_BINAPI bits set; rmControl resolves to GSP_LEGACY first",
+					tc.cmd)
+			}
+		})
+	}
+}
