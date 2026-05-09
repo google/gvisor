@@ -74,6 +74,9 @@ func TestFromFlags(t *testing.T) {
 	if want := NetworkNone; c.Network != want {
 		t.Errorf("Network=%v, want: %v", c.Network, want)
 	}
+	if want := DefaultSelfPath; c.SelfPath != want {
+		t.Errorf("SelfPath=%v, want: %v", c.SelfPath, want)
+	}
 }
 
 func TestToFlagsFromFlags(t *testing.T) {
@@ -84,14 +87,15 @@ func TestToFlagsFromFlags(t *testing.T) {
 	testFlags.Set("profile", "false") // Matches default value.
 	testFlags.Set("num-network-channels", "123")
 	testFlags.Set("network", "none")
+	testFlags.Set("self_path", "/runsc/stable")
 	c, err := NewFromFlags(testFlags)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	flags := c.ToFlags()
-	if len(flags) != 5 {
-		t.Errorf("wrong number of flags set, want: 5, got: %d: %s", len(flags), flags)
+	if len(flags) != 6 {
+		t.Errorf("wrong number of flags set, want: 6, got: %d: %s", len(flags), flags)
 	}
 	t.Logf("Flags: %s", flags)
 	fm := map[string]string{}
@@ -105,6 +109,7 @@ func TestToFlagsFromFlags(t *testing.T) {
 		"--profile":              "false",
 		"--num-network-channels": "123",
 		"--network":              "none",
+		"--self_path":            "/runsc/stable",
 	} {
 		if got, ok := fm[name]; ok {
 			if got != want {

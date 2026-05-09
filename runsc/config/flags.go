@@ -45,6 +45,7 @@ const (
 	flagPauseExternalNetworking = "pause-external-networking"
 
 	defaultRootDir      = "/var/run/runsc"
+	DefaultSelfPath     = "/proc/self/exe"
 	xdgRuntimeDirEnvVar = "XDG_RUNTIME_DIR"
 )
 
@@ -60,6 +61,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 
 	// These flags are unique to runsc, and are used to configure parts of the
 	// system that are not covered by the runtime spec.
+	flagSet.String("self_path", DefaultSelfPath, "path to the runsc binary used when re-executing runsc. The caller is responsible for ensuring this path is safe and stable.")
 
 	// Debugging flags.
 	flagSet.String("debug-log", "", "additional location for logs. If it ends with '/', log files are created inside the directory with default names. The following variables are available: %TIMESTAMP%, %COMMAND%.")

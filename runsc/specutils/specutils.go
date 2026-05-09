@@ -85,23 +85,8 @@ const (
 )
 
 // ExePath must point to runsc binary, which is normally the same binary. It's
-// changed in tests that aren't linked in the same binary.
-var ExePath = resolvedExePath()
-
-func resolvedExePath() string {
-	exe, err := os.Executable()
-	if err != nil || !filepath.IsAbs(exe) {
-		return "/proc/self/exe"
-	}
-	if resolved, err := filepath.EvalSymlinks(exe); err == nil && filepath.IsAbs(resolved) {
-		exe = resolved
-	}
-	info, err := os.Stat(exe)
-	if err != nil || info.IsDir() || info.Mode()&0111 == 0 {
-		return "/proc/self/exe"
-	}
-	return exe
-}
+// changed in tests that aren't linked in the same binary and by --self_path.
+var ExePath = config.DefaultSelfPath
 
 // Version is the supported spec version.
 var Version = specs.Version
