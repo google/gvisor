@@ -337,6 +337,13 @@ func (fd *FileDescription) Impl() FileDescriptionImpl {
 //
 // All methods may return errors not specified.
 //
+// HostFDProvider is an optional interface implemented by FileDescriptionImpls
+// that wrap a host-side file descriptor and want to expose it to other
+// passthrough device proxies (e.g. rdmaproxy translating nvproxy DMA-BUF FDs).
+type HostFDProvider interface {
+	HostFD() int32
+}
+
 // FileDescriptionImpl is analogous to Linux's struct file_operations.
 type FileDescriptionImpl interface {
 	// Release is called when the associated FileDescription reaches zero

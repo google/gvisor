@@ -49,6 +49,7 @@ func frontendIoctlFilters(enabledCaps nvconf.DriverCaps) []seccomp.SyscallRule {
 		{seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_FREE_OS_EVENT, nvgpu.SizeofIoctlFreeOSEvent)), compUtil},
 		{seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_SYS_PARAMS, nvgpu.SizeofIoctlSysParams)), compUtil},
 		{seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_WAIT_OPEN_COMPLETE, nvgpu.SizeofIoctlWaitOpenComplete)), compUtil},
+		{seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_EXPORT_TO_DMABUF_FD, nvgpu.SizeofIoctlExportToDMABufFD)), compUtil},
 		{seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_RM_ALLOC_MEMORY, nvgpu.SizeofIoctlNVOS02ParametersWithFD)), compUtil | nvconf.CapGraphics},
 		{seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_RM_FREE, nvgpu.SizeofNVOS00Parameters)), compUtil},
 		{seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_RM_CONTROL, nvgpu.SizeofNVOS54Parameters)), compUtil},
