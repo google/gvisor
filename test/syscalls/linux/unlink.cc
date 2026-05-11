@@ -21,7 +21,6 @@
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
-#include "test/util/save_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 
@@ -163,11 +162,6 @@ TEST(UnlinkTest, AtFile) {
 }
 
 TEST(UnlinkTest, OpenFile) {
-  // TODO(b/400287667): Enable save/restore for local gofer.
-  DisableSave ds;
-  if (IsRunningOnRunsc()) {
-    ds.reset();
-  }
   TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   int fd;
   EXPECT_THAT(fd = open(file.path().c_str(), O_RDWR, 0666), SyscallSucceeds());
@@ -176,11 +170,6 @@ TEST(UnlinkTest, OpenFile) {
 }
 
 TEST(RmdirTest, OpenDirectory) {
-  // TODO(b/400287667): Enable save/restore for local gofer.
-  DisableSave ds;
-  if (IsRunningOnRunsc()) {
-    ds.reset();
-  }
   TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   int fd;
   EXPECT_THAT(fd = open(dir.path().c_str(), O_RDONLY | O_DIRECTORY),
@@ -242,12 +231,6 @@ TEST(UnlinkTest, UnlinkAtEmptyPath) {
 // The primary purpose of this test is to verify that save/restore works for
 // open file descriptors to deleted files and directories.
 TEST(UnlinkTest, UnlinkWithOpenFDs) {
-  // TODO: b/400287667 - Enable save/restore for local gofer.
-  DisableSave ds;
-  if (IsRunningOnRunsc()) {
-    ds.reset();
-  }
-
   // Create some nested directories.
   TempPath foo = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   TempPath bar = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(foo.path()));
@@ -298,12 +281,6 @@ TEST(UnlinkTest, UnlinkWithOpenFDs) {
 // The primary goal of this test is to ensure that a write-only FD to a deleted
 // file is savable.
 TEST(UnlinkTest, UnlinkWithOpenFDsWriteOnly) {
-  // TODO(b/400287667): Enable save/restore for local gofer.
-  DisableSave ds;
-  if (IsRunningOnRunsc()) {
-    ds.reset();
-  }
-
   // Create a file.
   TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
 
