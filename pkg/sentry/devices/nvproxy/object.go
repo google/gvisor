@@ -374,10 +374,11 @@ type rootClient struct {
 
 	objsMu objsMutex `state:"nosave"`
 	// These fields are protected by objsMu.
-	objsFreeList objectFreeList       `state:"nosave"`
-	objsFreeSet  map[*object]struct{} `state:"nosave"`
-	resources    map[nvgpu.Handle]*object
-	released     bool
+	objsFreeList   objectFreeList       `state:"nosave"`
+	objsFreeSet    map[*object]struct{} `state:"nosave"`
+	resources      map[nvgpu.Handle]*object
+	released       bool
+	gpuUUIDToMinor map[string]uint32 `state:"nosave"`
 
 	params capturedRmAllocParams
 }
