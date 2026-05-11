@@ -31,6 +31,10 @@ message TestRangeSpec {
   // user configuration.
   NodePool tertiary = 8;
 
+  // The default nodepool, not used for benchmarking at all but may be
+  // needed to be custom configured for cluster-wide compatibility reasons.
+  NodePool default_nodepool = 10;
+
   // restore is an optional nodepool in the cluster, used as a restore target
   // for benchmarks involving pod snapshots.
   // If true, it will be configured in exactly the same way as the test_runtime

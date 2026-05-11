@@ -400,7 +400,7 @@ func (t RuntimeType) KataShimName() (string, error) {
 	case RuntimeTypeNestedKataQEMU:
 		return "kata-qemu", nil
 	case RuntimeTypeNestedKataCloudHypervisor:
-		return "kata-cloud-hypervisor", nil
+		return "kata-clh", nil
 	case RuntimeTypeNestedKataFirecracker:
 		return "kata-fc", nil
 	default:
