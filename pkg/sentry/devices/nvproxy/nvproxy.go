@@ -26,7 +26,9 @@ package nvproxy
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"golang.org/x/sys/unix"
@@ -76,6 +78,7 @@ func Register(vfsObj *vfs.VirtualFilesystem, opts *Options) (*DeviceInfo, error)
 		capsEnabled:            opts.DriverCaps,
 		useDevGofer:            opts.UseDevGofer,
 		procDriverNvidiaParams: opts.HostSettings.ProcDriverNvidiaParams,
+		gpuUUIDToMinor:         discoverGPUUUIDToMinor(),
 		frontendFDs:            make(map[*frontendFD]struct{}),
 		clients:                make(map[nvgpu.Handle]*rootClient),
 	}
@@ -159,6 +162,62 @@ func Register(vfsObj *vfs.VirtualFilesystem, opts *Options) (*DeviceInfo, error)
 	return &nvp.devInfo, nil
 }
 
+func discoverGPUUUIDToMinor() map[string]uint32 {
+	entries, err := os.ReadDir("/proc/driver/nvidia/gpus")
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		log.Warningf("nvproxy: failed to read /proc/driver/nvidia/gpus: %v", err)
+		return nil
+	}
+
+	gpuUUIDToMinor := make(map[string]uint32, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		infoPath := filepath.Join("/proc/driver/nvidia/gpus", entry.Name(), "information")
+		info, err := os.ReadFile(infoPath)
+		if err != nil {
+			log.Warningf("nvproxy: failed to read %s: %v", infoPath, err)
+			continue
+		}
+
+		var (
+			gpuUUID   string
+			haveMinor bool
+			minor     uint32
+		)
+		for _, line := range strings.Split(string(info), "\n") {
+			key, value, ok := strings.Cut(line, ":")
+			if !ok {
+				continue
+			}
+			value = strings.TrimSpace(value)
+			switch strings.TrimSpace(key) {
+			case "GPU UUID":
+				gpuUUID = value
+			case "Device Minor":
+				parsedMinor, err := strconv.ParseUint(value, 10, 32)
+				if err != nil {
+					log.Warningf("nvproxy: failed to parse Device Minor %q from %s: %v", value, infoPath, err)
+					continue
+				}
+				minor = uint32(parsedMinor)
+				haveMinor = true
+			}
+		}
+
+		if gpuUUID == "" || !haveMinor {
+			log.Warningf("nvproxy: missing GPU UUID or Device Minor in %s", infoPath)
+			continue
+		}
+		gpuUUIDToMinor[gpuUUID] = minor
+	}
+	return gpuUUIDToMinor
+}
+
 // DeviceInfo contains information on registered nvproxy devices.
 //
 // +stateify savable
@@ -203,6 +262,7 @@ type nvproxy struct {
 	procDriverNvidiaParams string
 	devInfo                DeviceInfo
 	regularDevs            [nvgpu.NV_MINOR_DEVICE_NUMBER_REGULAR_MAX + 1]*frontendDevice
+	gpuUUIDToMinor         map[string]uint32 `state:"nosave"`
 
 	fdsMu       fdsMutex `state:"nosave"`
 	frontendFDs map[*frontendFD]struct{}

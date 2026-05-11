@@ -28,15 +28,16 @@ const NV_IOCTL_MAGIC = uint32('F')
 // Note that these are only the IOC_NR part of the ioctl command.
 const (
 	// From kernel-open/common/inc/nv-ioctl-numbers.h:
-	NV_IOCTL_BASE             = 200
-	NV_ESC_CARD_INFO          = NV_IOCTL_BASE + 0
-	NV_ESC_REGISTER_FD        = NV_IOCTL_BASE + 1
-	NV_ESC_ALLOC_OS_EVENT     = NV_IOCTL_BASE + 6
-	NV_ESC_FREE_OS_EVENT      = NV_IOCTL_BASE + 7
-	NV_ESC_CHECK_VERSION_STR  = NV_IOCTL_BASE + 10
-	NV_ESC_ATTACH_GPUS_TO_FD  = NV_IOCTL_BASE + 12
-	NV_ESC_SYS_PARAMS         = NV_IOCTL_BASE + 14
-	NV_ESC_WAIT_OPEN_COMPLETE = NV_IOCTL_BASE + 18
+	NV_IOCTL_BASE              = 200
+	NV_ESC_CARD_INFO           = NV_IOCTL_BASE + 0
+	NV_ESC_REGISTER_FD         = NV_IOCTL_BASE + 1
+	NV_ESC_ALLOC_OS_EVENT      = NV_IOCTL_BASE + 6
+	NV_ESC_FREE_OS_EVENT       = NV_IOCTL_BASE + 7
+	NV_ESC_CHECK_VERSION_STR   = NV_IOCTL_BASE + 10
+	NV_ESC_ATTACH_GPUS_TO_FD   = NV_IOCTL_BASE + 12
+	NV_ESC_SYS_PARAMS          = NV_IOCTL_BASE + 14
+	NV_ESC_EXPORT_TO_DMABUF_FD = NV_IOCTL_BASE + 17
+	NV_ESC_WAIT_OPEN_COMPLETE  = NV_IOCTL_BASE + 18
 
 	// From kernel-open/common/inc/nv-ioctl-numa.h:
 	NV_ESC_NUMA_INFO = NV_IOCTL_BASE + 15
@@ -201,6 +202,31 @@ func (p *IoctlWaitOpenComplete) GetStatus() uint32 {
 // SetStatus implements HasStatus.SetStatus.
 func (p *IoctlWaitOpenComplete) SetStatus(status uint32) {
 	p.AdapterStatus = status
+}
+
+// IoctlExportToDMABufFD is nv_ioctl_export_to_dma_buf_fd_t, the parameter
+// type for NV_ESC_EXPORT_TO_DMABUF_FD. CUDA uses this to export GPU memory
+// as a DMA-BUF fd for ibv_reg_dmabuf_mr.
+//
+// +marshal
+type IoctlExportToDMABufFD struct {
+	_            structs.HostLayout
+	FD           int32
+	HClient      Handle
+	TotalObjects uint32
+	NumObjects   uint32
+	Index        uint32
+	Pad0         uint32 // padding for TotalSize alignment
+	TotalSize    uint64
+	MappingType  uint8
+	AllowMmap    uint8
+	Pad1         [2]byte
+	Handles      [128]Handle
+	Pad2         uint32 // padding for Offsets alignment
+	Offsets      [128]uint64
+	Sizes        [128]uint64
+	Status       uint32
+	Pad3         uint32 // struct size alignment
 }
 
 // IoctlNVOS02ParametersWithFD is the parameter type for NV_ESC_RM_ALLOC_MEMORY.
@@ -852,6 +878,7 @@ var (
 	SizeofRMAPIVersion                = uint32((*RMAPIVersion)(nil).SizeBytes())
 	SizeofIoctlSysParams              = uint32((*IoctlSysParams)(nil).SizeBytes())
 	SizeofIoctlWaitOpenComplete       = uint32((*IoctlWaitOpenComplete)(nil).SizeBytes())
+	SizeofIoctlExportToDMABufFD       = uint32((*IoctlExportToDMABufFD)(nil).SizeBytes())
 	SizeofIoctlNVOS02ParametersWithFD = uint32((*IoctlNVOS02ParametersWithFD)(nil).SizeBytes())
 	SizeofNVOS00Parameters            = uint32((*NVOS00_PARAMETERS)(nil).SizeBytes())
 	SizeofNVOS21Parameters            = uint32((*NVOS21_PARAMETERS)(nil).SizeBytes())

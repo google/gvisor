@@ -162,7 +162,7 @@ type uvmIoctlState struct {
 }
 
 func uvmIoctlNoParams(ui *uvmIoctlState) (uintptr, error) {
-	n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(ui.fd.hostFD), uintptr(ui.cmd), 0 /* params */)
+	n, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(ui.fd.hostFD), uintptr(ui.cmd), 0 /* params */)
 	if errno != 0 {
 		return n, errno
 	}
