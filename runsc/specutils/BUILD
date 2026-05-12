@@ -13,6 +13,7 @@ go_library(
         "gofer_conf.go",
         "namespace.go",
         "nvidia.go",
+        "rdma.go",
         "restore.go",
         "restore_impl.go",
         "specutils.go",

@@ -332,6 +332,19 @@ func ShouldExposeTpuDevice(path string) bool {
 	return valid || ShouldExposeVFIODevice(path)
 }
 
+// ShouldExposeRDMADevice returns true if path refers to an RDMA device which
+// should be exposed to the container.
+//
+// Only /dev/infiniband/uverbs* is exposed; rdmaproxy does not implement
+// ioctl/mmap translation for the other /dev/infiniband/* files (rdma_cm,
+// issm*, umad*). Leaving them out avoids surfacing host devices the sandbox
+// cannot safely use.
+//
+// Precondition: rdmaproxy is enabled.
+func ShouldExposeRDMADevice(path string) bool {
+	return strings.HasPrefix(path, "/dev/infiniband/uverbs")
+}
+
 // SetupDev mounts devices from the OCI spec into the gofer's /dev directory.
 func SetupDev(spec *specs.Spec, conf *config.Config, root, procPath string) error {
 	if err := os.MkdirAll(filepath.Join(root, "dev"), 0777); err != nil {
@@ -343,9 +356,11 @@ func SetupDev(spec *specs.Spec, conf *config.Config, root, procPath string) erro
 	}
 	nvproxyEnabled := specutils.NVProxyEnabled(spec, conf)
 	tpuproxyEnabled := specutils.TPUProxyIsEnabled(spec, conf)
+	rdmaproxyEnabled := specutils.HasRDMADevicesInSpec(spec)
 	for _, dev := range spec.Linux.Devices {
 		shouldMount := (nvproxyEnabled && ShouldExposeNvidiaDevice(dev.Path)) ||
-			(tpuproxyEnabled && ShouldExposeTpuDevice(dev.Path))
+			(tpuproxyEnabled && ShouldExposeTpuDevice(dev.Path)) ||
+			(rdmaproxyEnabled && ShouldExposeRDMADevice(dev.Path))
 		if !shouldMount {
 			continue
 		}
