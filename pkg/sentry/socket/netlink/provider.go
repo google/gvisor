@@ -121,6 +121,7 @@ func (*socketProvider) Socket(t *kernel.Task, stype linux.SockType, protocol int
 		DenyPRead:         true,
 		DenyPWrite:        true,
 		UseDentryMetadata: true,
+		IsSpecialFile:     true,
 	}); err != nil {
 		return nil, syserr.FromError(err)
 	}

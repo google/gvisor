@@ -106,6 +106,7 @@ func NewFileDescription(ep transport.Endpoint, stype linux.SockType, flags uint3
 		DenyPRead:         true,
 		DenyPWrite:        true,
 		UseDentryMetadata: true,
+		IsSpecialFile:     true,
 	}); err != nil {
 		return nil, err
 	}
