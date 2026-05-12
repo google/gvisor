@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -43,17 +42,14 @@ const (
 
 // NewShimManager returns an implementation of the shim manager
 // using runsc.
-func NewShimManager(name string, bundlePath string) shim.Manager {
+func NewShimManager(name string) shim.Manager {
 	return &manager{
-		name:       name,
-		bundlePath: bundlePath,
+		name: name,
 	}
 }
 
 type manager struct {
 	name string
-
-	bundlePath string
 }
 
 var _ shim.Manager = (*manager)(nil)
@@ -98,23 +94,20 @@ func (m *manager) Start(ctx context.Context, id string, opts shim.StartOpts) (st
 	grouping := id
 	enableGrouping := getEnableGrouping()
 	if enableGrouping {
-		// The OCI container spec is written by containerd in config.json file, check
-		// for group annotations in this file to enable grouping.
-		configFile, err := os.Open(filepath.Join(m.bundlePath, "config.json"))
+		// The config.json is always at the current directory by containerd.
+		configFile, err := os.Open("config.json")
 		if err != nil {
-			log.L.Debugf("StartShim, error to read config.json: %v, continue without shim grouping", err)
-		} else {
-			var readSpec spec
-			if err := json.NewDecoder(configFile).Decode(&readSpec); err != nil {
-				configFile.Close()
-				return "", err
-			}
+			return "", fmt.Errorf("failed to read config.json when starting shim: %w", err)
+		}
+		var readSpec spec
+		if err := json.NewDecoder(configFile).Decode(&readSpec); err != nil {
 			configFile.Close()
-			log.L.Debugf("annotations: %+v", readSpec.Annotations)
-			if groupID, ok := readSpec.Annotations[kubernetesGroupAnnotation]; ok {
-				log.L.Debugf("group label found %v: %v", kubernetesGroupAnnotation, groupID)
-				grouping = groupID
-			}
+			return "", err
+		}
+		configFile.Close()
+		if groupID, ok := readSpec.Annotations[kubernetesGroupAnnotation]; ok {
+			log.L.Debugf("group label found %v: %v", kubernetesGroupAnnotation, groupID)
+			grouping = groupID
 		}
 	}
 

@@ -371,6 +371,7 @@ func (h *handshake) synSentState(s *segment) tcpip.Error {
 		seq:       h.iss,
 		ack:       h.ackNum,
 		rcvWnd:    h.rcvWnd,
+		df:        h.ep.pmtud == tcpip.PMTUDiscoveryWant || h.ep.pmtud == tcpip.PMTUDiscoveryDo || h.ep.pmtud == tcpip.PMTUDiscoveryProbe,
 		expOptVal: h.ep.getExperimentOptionValue(h.ep.route),
 	}, synOpts)
 	return nil
@@ -458,6 +459,7 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 			seq:       h.iss,
 			ack:       h.ackNum,
 			rcvWnd:    h.rcvWnd,
+			df:        h.ep.pmtud == tcpip.PMTUDiscoveryWant || h.ep.pmtud == tcpip.PMTUDiscoveryDo || h.ep.pmtud == tcpip.PMTUDiscoveryProbe,
 			expOptVal: h.ep.getExperimentOptionValue(h.ep.route),
 		}, synOpts)
 		return nil
@@ -556,6 +558,7 @@ func (h *handshake) processSegments() tcpip.Error {
 
 // start sends the first SYN/SYN-ACK. It does not block, even if link address
 // resolution is required.
+// +checklocks:h.ep.mu
 func (h *handshake) start() {
 	h.startTime = h.ep.stack.Clock().NowMonotonic()
 	h.ep.amss = calculateAdvertisedMSS(h.ep.userMSS, h.ep.route)
@@ -596,6 +599,7 @@ func (h *handshake) start() {
 		seq:       h.iss,
 		ack:       h.ackNum,
 		rcvWnd:    h.rcvWnd,
+		df:        h.ep.pmtud == tcpip.PMTUDiscoveryWant || h.ep.pmtud == tcpip.PMTUDiscoveryDo || h.ep.pmtud == tcpip.PMTUDiscoveryProbe,
 		expOptVal: h.ep.getExperimentOptionValue(h.ep.route),
 	}, synOpts)
 }
@@ -633,6 +637,7 @@ func (h *handshake) retransmitHandlerLocked() tcpip.Error {
 			seq:       h.iss,
 			ack:       h.ackNum,
 			rcvWnd:    h.rcvWnd,
+			df:        h.ep.pmtud == tcpip.PMTUDiscoveryWant || h.ep.pmtud == tcpip.PMTUDiscoveryDo || h.ep.pmtud == tcpip.PMTUDiscoveryProbe,
 			expOptVal: e.getExperimentOptionValue(e.route),
 		}, h.sendSYNOpts)
 		// If we have ever retransmitted the SYN-ACK or

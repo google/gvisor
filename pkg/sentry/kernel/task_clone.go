@@ -299,8 +299,8 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 		}
 		cfg.pidFDAddr = hostarch.Addr(args.Pidfd)
 	}
-	nt, err := t.tg.pidns.owner.NewTask(t, cfg)
-	// If NewTask succeeds, we transfer references to nt. If NewTask fails, it does
+	nt, pidFD, err := t.tg.pidns.owner.cloneNewTask(t, cfg)
+	// If cloneNewTask succeeds, we transfer references to nt. If cloneNewTask fails, it does
 	// the cleanup for us.
 	cu.Release()
 	if err != nil {
@@ -334,6 +334,11 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 			return c.Clone(t, mask, info)
 		}); err != nil {
 			failCloneAfterTaskCreation(nt)
+			if pidFD != -1 {
+				if oldFile := t.FDTable().Remove(t, pidFD); oldFile != nil {
+					oldFile.DecRef(t)
+				}
+			}
 			return 0, nil, err
 		}
 	}

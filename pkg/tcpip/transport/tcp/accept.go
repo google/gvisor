@@ -532,6 +532,7 @@ func (e *Endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 			seq:       cookie,
 			ack:       s.sequenceNumber + 1,
 			rcvWnd:    ctx.rcvWnd,
+			df:        e.pmtud == tcpip.PMTUDiscoveryWant || e.pmtud == tcpip.PMTUDiscoveryDo || e.pmtud == tcpip.PMTUDiscoveryProbe,
 			expOptVal: e.getExperimentOptionValue(route),
 		}
 		if err := e.sendSynTCP(route, fields, synOpts); err != nil {

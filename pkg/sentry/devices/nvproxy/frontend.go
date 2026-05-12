@@ -974,18 +974,15 @@ func ctrlGetNvU32List(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETE
 	if _, err := ctrlParams.CopyIn(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
 		return 0, err
 	}
-	if ctrlParams.List == 0 {
-		// For NV0080_CTRL_CMD_GPU_GET_CLASSLIST, this command has two modes. If
-		// the classList pointer is NULL, only simple command handling is required;
-		// see src/common/sdk/nvidia/inc/ctrl/ctrl0080gpu.h.
-		return rmControlSimple(fi, ioctlParams)
-	}
-	if !rmapiParamsSizeCheck(ctrlParams.NumElems, 4 /* sizeof(NvU32) */) {
-		return 0, frontendFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_ARGUMENT)
-	}
-	list := make([]uint32, ctrlParams.NumElems)
-	if _, err := primitive.CopyUint32SliceIn(fi.t, addrFromP64(ctrlParams.List), list); err != nil {
-		return 0, err
+	var list []uint32
+	if ctrlParams.List != 0 {
+		if !rmapiParamsSizeCheck(ctrlParams.NumElems, 4 /* sizeof(NvU32) */) {
+			return 0, frontendFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_ARGUMENT)
+		}
+		list = make([]uint32, ctrlParams.NumElems)
+		if _, err := primitive.CopyUint32SliceIn(fi.t, addrFromP64(ctrlParams.List), list); err != nil {
+			return 0, err
+		}
 	}
 	return ctrlGetNvU32ListInvoke(fi, ioctlParams, &ctrlParams, list)
 }

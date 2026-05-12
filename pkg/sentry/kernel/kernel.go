@@ -870,7 +870,7 @@ func (k *Kernel) invalidateUnsavableMappings(ctx context.Context) error {
 }
 
 // LoadFrom returns a new Kernel loaded from args.
-func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *AsyncMFLoader, timeReady chan struct{}, net inet.Stack, clocks sentrytime.Clocks, vfsOpts *vfs.CompleteRestoreOptions, saveRestoreNet bool) error {
+func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *AsyncMFLoader, timeReady chan struct{}, net inet.Stack, clocks sentrytime.Clocks, vfsOpts *vfs.CompleteRestoreOptions) error {
 	if hostarch.PageSize != 4096 {
 		return fmt.Errorf("restore is not supported with %dK page size", hostarch.PageSize/1024)
 	}
@@ -913,14 +913,6 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 	log.Infof("Kernel load stats: %s", stats.String())
 	log.Infof("Kernel load took [%s].", time.Since(kernelStart))
 
-	if !saveRestoreNet {
-		// rootNetworkNamespace and stack should be populated after
-		// loading the state file. Reset the stack before restoring the
-		// root network stack.
-		k.rootNetworkNamespace.ResetStack()
-		k.rootNetworkNamespace.RestoreRootStack(net)
-	}
-
 	if asyncMFLoader == nil {
 		mfStart := time.Now()
 		if err := k.loadMemoryFiles(ctx, r); err != nil {
@@ -942,18 +934,13 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 		close(timeReady)
 	}
 
-	if saveRestoreNet {
-		log.Infof("netstack save restore is enabled")
-		s := k.rootNetworkNamespace.Stack()
-		if s == nil {
-			panic("inet.Stack cannot be nil when netstack s/r is enabled")
-		}
+	if s := k.rootNetworkNamespace.Stack(); s != nil {
 		if net != nil {
+			log.Infof("Reconfiguring network for restore")
 			s.ReplaceConfig(net)
 		}
+		log.Debugf("Restore network stack")
 		s.Restore()
-	} else if net != nil {
-		net.Restore()
 	}
 
 	if err := k.vfs.CompleteRestore(ctx, vfsOpts); err != nil {

@@ -186,6 +186,10 @@ func (r *restorer) restore(l *Loader) error {
 	if err := specutils.RestoreValidateSpec(r.checkpointedSpecs, l.GetContainerSpecs(), l.root.conf); err != nil {
 		return fmt.Errorf("failed to handle restore spec validation: %w", err)
 	}
+	if l.root.conf.Network != config.NetworkSandbox && l.root.conf.Network != config.NetworkNone {
+		// TODO(gvisor.dev/issues/6243): save/restore not supported w/ hostinet
+		return errors.New("checkpoint not supported when using hostinet")
+	}
 	r.timer.Reached("specs validated")
 
 	// Create a new root network namespace with the network stack of the
@@ -254,7 +258,7 @@ func (r *restorer) restore(l *Loader) error {
 		}
 	}
 
-	log.Debugf("Restore using fdmap: %v", fdmap)
+	log.Debugf("Restore using fdmap: %#v", fdmap)
 	ctx := l.k.SupervisorContext()
 	ctx = context.WithValue(ctx, vfs.CtxRestoreFilesystemFDMap, fdmap)
 	log.Debugf("Restore using mfmap: %v", mfmap)
@@ -274,7 +278,7 @@ func (r *restorer) restore(l *Loader) error {
 
 	// Load the state.
 	r.timer.Reached("loading kernel")
-	if err := l.k.LoadFrom(ctx, r.stateFile, r.asyncMFLoader, nil, oldInetStack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}, l.saveRestoreNet); err != nil {
+	if err := l.k.LoadFrom(ctx, r.stateFile, r.asyncMFLoader, nil, oldInetStack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}); err != nil {
 		return fmt.Errorf("failed to load kernel: %w", err)
 	}
 	r.timer.Reached("kernel loaded")

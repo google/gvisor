@@ -97,9 +97,6 @@ type oomPoller interface {
 type runscService struct {
 	mu sync.Mutex
 
-	// id is the container ID.
-	id string
-
 	events chan any
 
 	// platform handles operations related to the console.
@@ -121,7 +118,7 @@ type runscService struct {
 var _ extension.TaskServiceExt = (*runscService)(nil)
 
 // NewTaskService returns a runsc task service.
-func NewTaskService(ctx context.Context, id string, publisher shim.Publisher, sd shutdown.Service) (extension.TaskServiceExt, error) {
+func NewTaskService(ctx context.Context, publisher shim.Publisher, sd shutdown.Service) (extension.TaskServiceExt, error) {
 	var (
 		ep  oomPoller
 		err error
@@ -136,7 +133,6 @@ func NewTaskService(ctx context.Context, id string, publisher shim.Publisher, sd
 	}
 	go ep.run(ctx)
 	s := &runscService{
-		id:         id,
 		events:     make(chan any, 128),
 		containers: make(map[string]*Container),
 		ec:         proc.ExitCh,
@@ -214,11 +210,7 @@ func (s *runscService) CreateWithFSRestore(ctx context.Context, rfs *extension.C
 			return nil, fmt.Errorf("loading cgroup for %d: %w", pid, err)
 		}
 		// Register the sandbox cgroup with the OOM poller using this
-		// container's id (typically the pause/sandbox id on first Create).
-		// Do not use s.id: it is empty because the shim binary is spawned
-		// without `-id` (see manager.go:newCommand), which would cause
-		// every TaskOOM event to be published with an empty ContainerID
-		// and silently dropped by containerd (ErrEmptyPrefix).
+		// container's id
 		if err := s.oomPoller.add(rfs.Create.ID, cg); err != nil {
 			return nil, fmt.Errorf("add cg to OOM monitor: %w", err)
 		}
@@ -574,13 +566,7 @@ func (s *runscService) checkProcesses(ctx context.Context, e proc.Exit) {
 	// reason=Error instead of reason=OOMKilled. Only check on init exit —
 	// exec processes share the sandbox cgroup and would produce spurious
 	// events.
-	//
-	// Use the per-container id for TaskOOM routing — not s.id, which is
-	// empty in the normal (non-grouping) shim spawn path because
-	// pkg/shim/v1/manager.go:newCommand() does not pass `-id`. With
-	// ContainerID="", containerd's CRI would drop the TaskOOM at
-	// containerStore.Get("") → ErrEmptyPrefix, and kubelet would report
-	// reason:Error instead of reason:OOMKilled.
+	// Use the per-container id for TaskOOM routing.
 	if isInit && s.oomPoller.isOOM(containerID) {
 		s.send(&events.TaskOOM{ContainerID: containerID})
 	}

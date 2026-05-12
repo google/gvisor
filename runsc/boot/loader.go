@@ -298,10 +298,6 @@ type Loader struct {
 	// +checklocks:mu
 	saveFDs []*fd.FD
 
-	// saveRestoreNet indicates if the saved network stack should be used
-	// during restore.
-	saveRestoreNet bool
-
 	// restoreErr is the error that occurred during restore.
 	//
 	// +checklocks:mu
@@ -656,12 +652,6 @@ func New(args Args) (*Loader, error) {
 	netns, err := newRootNetworkNamespace(args.Conf, tk, creds.UserNamespace, l.k)
 	if err != nil {
 		return nil, fmt.Errorf("creating network: %w", err)
-	}
-
-	// S/R is not supported for hostinet and plugin network stack.
-	netMode := l.root.conf.Network
-	if netMode == config.NetworkSandbox || netMode == config.NetworkNone {
-		l.saveRestoreNet = true
 	}
 
 	if args.TotalHostMem > 0 {
