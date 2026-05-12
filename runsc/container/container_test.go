@@ -21,6 +21,7 @@ import (
 	"io"
 	"math"
 	"math/rand"
+	"net"
 	"os"
 	"os/exec"
 	"path"
@@ -1450,6 +1451,391 @@ func TestCheckpointRestoreHostname(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestCheckpointRestoreHostinet does the checkpoint/restore test with host
+// networking.
+func TestCheckpointRestoreHostinet(t *testing.T) {
+	app, err := testutil.FindFile("test/cmd/test_app/test_app")
+	if err != nil {
+		t.Fatal("error finding test_app:", err)
+	}
+
+	// Skip overlay because the test app writes its log to a bind-mounted
+	// host file.
+	for name, conf := range configs(t, true /* noOverlay */) {
+		conf.Network = config.NetworkHost
+		t.Run(name, func(t *testing.T) {
+			testCheckpointRestoreHostinet(t, conf, app)
+		})
+	}
+}
+
+// TestCheckpointResumeHostinet does the checkpoint --leave-running test with
+// host networking.
+func TestCheckpointResumeHostinet(t *testing.T) {
+	app, err := testutil.FindFile("test/cmd/test_app/test_app")
+	if err != nil {
+		t.Fatal("error finding test_app:", err)
+	}
+
+	// Skip overlay because the test app writes its log to a bind-mounted
+	// host file.
+	for name, conf := range configs(t, true /* noOverlay */) {
+		conf.Network = config.NetworkHost
+		t.Run(name, func(t *testing.T) {
+			testCheckpointResumeHostinet(t, conf, app)
+		})
+	}
+}
+
+// testCheckpointRestoreHostinet checkpoints a hostinet container and checks
+// that connected sockets return ECONNABORTED after restore while the restored
+// listener keeps accepting.
+func testCheckpointRestoreHostinet(t *testing.T, conf *config.Config, app string) {
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-test")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp failed: %v", err)
+	}
+	defer os.RemoveAll(dir)
+	if err := os.Chmod(dir, 0777); err != nil {
+		t.Fatalf("error chmoding file: %q, %v", dir, err)
+	}
+
+	target, connClosed, stopServer := startHostinetSRServer(t)
+	defer stopServer()
+
+	logPath := filepath.Join(dir, "hostinet-sr.log")
+	spec := testutil.NewSpecWithArgs(app, "hostinet-sr", "--file", logPath, "--target", target)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	if err := waitForHostinetSRLog(logPath, "SETUP_DONE", "TCP_WRITE OK", "UDP_WRITE OK", "EPOLL_WAIT TIMEOUT"); err != nil {
+		t.Fatalf("wait for setup: %v", err)
+	}
+	lastCount, err := lastHostinetSRCount(logPath)
+	if err != nil {
+		t.Fatalf("lastHostinetSRCount pre-restore: %v", err)
+	}
+	select {
+	case <-connClosed:
+		t.Fatalf("server connection closed before checkpoint")
+	default:
+	}
+
+	if err := cont.Checkpoint(conf, dir, sandbox.CheckpointOpts{Compression: statefile.CompressionLevelFlateBestSpeed}); err != nil {
+		t.Fatalf("error checkpointing container: %v", err)
+	}
+
+	// The remote peer must observe the connection closing when the
+	// checkpointed sandbox exits.
+	select {
+	case <-connClosed:
+	case <-time.After(30 * time.Second):
+		t.Fatalf("remote peer did not observe connection close after checkpoint")
+	}
+
+	args2 := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont2, err := New(conf, args2)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont2.Destroy()
+	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
+		t.Fatalf("error restoring container: %v", err)
+	}
+	if !cont2.Sandbox.Restored {
+		t.Fatalf("sandbox returned wrong value for Sandbox.Restored, got: false, want: true")
+	}
+
+	if err := waitForHostinetSRLog(logPath,
+		"TCP_WRITE ERRNO=103",
+		"TCP_READ ERRNO=103",
+		"UDP_WRITE ERRNO=103",
+		"UDP_READ ERRNO=103",
+		"EPOLL_EVENT_ERR",
+		"EPOLL_EVENT_HUP",
+		"SO_ERROR=103",
+		"NEW_TCP_WRITE OK"); err != nil {
+		t.Fatalf("wait for post-restore socket state: %v", err)
+	}
+	if err := waitForHostinetSRCountAfter(logPath, lastCount); err != nil {
+		t.Fatalf("wait for post-restore progress: %v", err)
+	}
+
+	// Dialing the re-created listener must wake the blocked accept.
+	listenerAddr, err := hostinetSRListenerAddr(logPath)
+	if err != nil {
+		t.Fatalf("hostinetSRListenerAddr: %v", err)
+	}
+	acceptConn, err := net.Dial("tcp", listenerAddr)
+	if err != nil {
+		t.Fatalf("dialing restored listener %q: %v", listenerAddr, err)
+	}
+	defer acceptConn.Close()
+	if err := waitForHostinetSRLog(logPath, "BLOCKING_ACCEPT OK"); err != nil {
+		t.Fatalf("wait for restored listener accept: %v", err)
+	}
+}
+
+// testCheckpointResumeHostinet checks that checkpoint with Resume leaves the
+// container's sockets working.
+func testCheckpointResumeHostinet(t *testing.T, conf *config.Config, app string) {
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-test")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp failed: %v", err)
+	}
+	defer os.RemoveAll(dir)
+	if err := os.Chmod(dir, 0777); err != nil {
+		t.Fatalf("error chmoding file: %q, %v", dir, err)
+	}
+
+	target, connClosed, stopServer := startHostinetSRServer(t)
+	defer stopServer()
+
+	logPath := filepath.Join(dir, "hostinet-sr.log")
+	spec := testutil.NewSpecWithArgs(app, "hostinet-sr", "--file", logPath, "--target", target)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	if err := waitForHostinetSRLog(logPath, "SETUP_DONE", "TCP_WRITE OK", "UDP_WRITE OK", "EPOLL_WAIT TIMEOUT"); err != nil {
+		t.Fatalf("wait for setup: %v", err)
+	}
+	lastCount, err := lastHostinetSRCount(logPath)
+	if err != nil {
+		t.Fatalf("lastHostinetSRCount pre-checkpoint: %v", err)
+	}
+
+	if err := cont.Checkpoint(conf, dir, sandbox.CheckpointOpts{
+		Compression: statefile.CompressionLevelFlateBestSpeed,
+		Resume:      true,
+	}); err != nil {
+		t.Fatalf("error checkpointing container: %v", err)
+	}
+
+	// Wait for a few more iterations and check that no socket died. Idle
+	// nonblocking reads log EAGAIN, so check specifically for EBADF and
+	// ECONNABORTED.
+	if err := waitForHostinetSRCountAfter(logPath, lastCount+2); err != nil {
+		t.Fatalf("wait for resumed progress: %v", err)
+	}
+	b, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("error reading log file: %v", err)
+	}
+	if strings.Contains(string(b), "ERRNO=9\n") {
+		t.Errorf("socket returned EBADF after checkpoint --leave-running:\n%s", b)
+	}
+	if strings.Contains(string(b), "ERRNO=103\n") {
+		t.Errorf("socket returned ECONNABORTED after checkpoint --leave-running:\n%s", b)
+	}
+	select {
+	case <-connClosed:
+		t.Errorf("server connection closed after checkpoint --leave-running")
+	default:
+	}
+}
+
+// TestCheckpointHostinetRestoreNetworkMismatch checks that a checkpoint taken
+// with host networking cannot be restored with sandbox networking.
+func TestCheckpointHostinetRestoreNetworkMismatch(t *testing.T) {
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-test")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp failed: %v", err)
+	}
+	defer os.RemoveAll(dir)
+	if err := os.Chmod(dir, 0777); err != nil {
+		t.Fatalf("error chmoding file: %q, %v", dir, err)
+	}
+
+	conf := testutil.TestConfig(t)
+	conf.Network = config.NetworkHost
+	spec := testutil.NewSpecWithArgs("sleep", "1000")
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+	if err := cont.Checkpoint(conf, dir, sandbox.CheckpointOpts{Compression: statefile.CompressionLevelFlateBestSpeed}); err != nil {
+		t.Fatalf("error checkpointing container: %v", err)
+	}
+
+	restoreConf := *conf
+	restoreConf.Network = config.NetworkSandbox
+	args2 := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont2, err := New(&restoreConf, args2)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont2.Destroy()
+	err = cont2.Restore(&restoreConf, dir, false /* direct */, false /* background */, nil /* networkArgs */)
+	if err == nil {
+		t.Fatalf("restore with mismatched network type succeeded, want error")
+	}
+	if !strings.Contains(err.Error(), "cannot be restored with") {
+		t.Errorf("restore failed with %v, want network mismatch error", err)
+	}
+}
+
+// startHostinetSRServer starts a TCP server and returns its address, a
+// channel signaled when it observes a connection closing, and a stop func.
+func startHostinetSRServer(t *testing.T) (string, chan struct{}, func()) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("error listening: %v", err)
+	}
+	done := make(chan struct{})
+	connClosed := make(chan struct{}, 1)
+	go func() {
+		defer close(done)
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer c.Close()
+				io.Copy(io.Discard, c)
+				// Only the first observed close matters.
+				select {
+				case connClosed <- struct{}{}:
+				default:
+				}
+			}()
+		}
+	}()
+	return ln.Addr().String(), connClosed, func() {
+		ln.Close()
+		<-done
+	}
+}
+
+// waitForHostinetSRLog waits for all wanted strings to show up in the
+// hostinet-sr test app's log.
+func waitForHostinetSRLog(path string, wants ...string) error {
+	return testutil.Poll(func() error {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		got := string(b)
+		for _, want := range wants {
+			if !strings.Contains(got, want) {
+				return fmt.Errorf("log missing %q in:\n%s", want, got)
+			}
+		}
+		return nil
+	}, 30*time.Second)
+}
+
+// waitForHostinetSRCountAfter waits for the hostinet-sr test app's iteration
+// counter to advance past prev.
+func waitForHostinetSRCountAfter(path string, prev int) error {
+	return testutil.Poll(func() error {
+		count, err := lastHostinetSRCount(path)
+		if err != nil {
+			return err
+		}
+		if count <= prev {
+			return fmt.Errorf("last COUNT=%d, want > %d", count, prev)
+		}
+		return nil
+	}, 30*time.Second)
+}
+
+// hostinetSRListenerAddr returns the hostinet-sr test app's logged listener
+// address.
+func hostinetSRListenerAddr(path string) (string, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		if addr, ok := strings.CutPrefix(line, "LISTENER_ADDR="); ok {
+			return addr, nil
+		}
+	}
+	return "", fmt.Errorf("no LISTENER_ADDR line in:\n%s", b)
+}
+
+// lastHostinetSRCount returns the hostinet-sr test app's last logged
+// iteration count.
+func lastHostinetSRCount(path string) (int, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return 0, err
+	}
+	last := -1
+	for _, line := range strings.Split(string(b), "\n") {
+		if !strings.HasPrefix(line, "COUNT=") {
+			continue
+		}
+		n, err := strconv.Atoi(strings.TrimPrefix(line, "COUNT="))
+		if err != nil {
+			return 0, err
+		}
+		last = n
+	}
+	if last < 0 {
+		return 0, fmt.Errorf("no COUNT line in:\n%s", b)
+	}
+	return last, nil
 }
 
 // TestCheckpointRestoreExecKilled checks that exec'd processes are killed

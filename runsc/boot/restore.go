@@ -15,7 +15,6 @@
 package boot
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -36,8 +35,10 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/proc"
+	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
+	"gvisor.dev/gvisor/pkg/sentry/socket/hostinet"
 	"gvisor.dev/gvisor/pkg/sentry/state"
 	"gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -105,6 +106,8 @@ const (
 	// annotationSaveRestoreExecTimeout is the timeout to use for the save/restore
 	// exec binary.
 	annotationSaveRestoreExecTimeout = annotationCheckpointPrefix + "save-restore-exec-timeout"
+
+	networkKey = "network"
 )
 
 // GetAnnotationCheckpointPath returns the checkpoint path specified in the
@@ -348,6 +351,35 @@ func (r *restorer) restoreContainerInfo(l *Loader, info *containerInfo) error {
 	return nil
 }
 
+type restoreNetworkArgs struct {
+	loader        *Loader
+	hostinetStack *hostinet.Stack
+}
+
+func createNetworkArgsForRestore(l *Loader) (inet.NetworkArgs, error) {
+	curNetwork := l.k.RootNetworkNamespace().Stack()
+	h, ok := curNetwork.(*hostinet.Stack)
+	if !ok {
+		return l, nil
+	}
+	if err := h.Configure(l.root.conf.EnableRaw); err != nil {
+		return nil, fmt.Errorf("configuring hostinet during restore: %w", err)
+	}
+	return &restoreNetworkArgs{
+		loader:        l,
+		hostinetStack: h,
+	}, nil
+}
+
+// ConfigureNetwork implements inet.NetworkArgs.ConfigureNetwork.
+func (r *restoreNetworkArgs) ConfigureNetwork(s inet.Stack) error {
+	if h, ok := s.(*hostinet.Stack); ok {
+		h.ReplaceConfig(r.hostinetStack)
+		return nil
+	}
+	return r.loader.ConfigureNetwork(s)
+}
+
 func (r *restorer) restore(l *Loader) error {
 	log.Infof("Starting to restore %d containers", len(r.containers))
 
@@ -356,11 +388,31 @@ func (r *restorer) restore(l *Loader) error {
 	if err := specutils.RestoreValidateSpec(r.checkpointedSpecs, l.GetContainerSpecs(), l.root.conf); err != nil {
 		return fmt.Errorf("failed to handle restore spec validation: %w", err)
 	}
-	if l.root.conf.Network != config.NetworkSandbox && l.root.conf.Network != config.NetworkNone {
-		// TODO(gvisor.dev/issues/6243): save/restore not supported w/ hostinet
-		return errors.New("checkpoint not supported when using hostinet")
+	if l.root.conf.Network != config.NetworkSandbox && l.root.conf.Network != config.NetworkNone && l.root.conf.Network != config.NetworkHost {
+		return fmt.Errorf("checkpoint not supported when using %s networking", l.root.conf.Network)
+	}
+	// Checkpoints without the network key predate hostinet support.
+	savedNetwork, ok := r.metadata[networkKey]
+	if !ok {
+		savedNetwork = config.NetworkSandbox.String()
+	}
+	savedHost := savedNetwork == config.NetworkHost.String()
+	if restoreHost := l.root.conf.Network == config.NetworkHost; savedHost != restoreHost {
+		return fmt.Errorf("checkpoint created with %s networking cannot be restored with %s networking", savedNetwork, l.root.conf.Network)
 	}
 	r.timer.Reached("specs validated")
+
+	// Capture the old kernel's network configuration before it is released.
+	networkArgs, err := createNetworkArgsForRestore(l)
+	if err != nil {
+		return err
+	}
+	r.timer.Reached("netstack created")
+
+	// Reset the network stack in the network namespace to nil before
+	// replacing the kernel. This will not free the network stack when this
+	// old kernel is released.
+	l.k.RootNetworkNamespace().ResetStack()
 
 	p, err := createPlatform(l.root.conf, l.root.applicationCores, r.deviceFile, l.sandboxID)
 	if err != nil {
@@ -451,7 +503,7 @@ func (r *restorer) restore(l *Loader) error {
 		r.timer.Reached("rootfs upper layer extracted")
 		return nil
 	}
-	if err := l.k.LoadFrom(ctx, r.stateFile, r.asyncMFLoader, nil, l, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}, r.timer.Fork("kernel load")); err != nil {
+	if err := l.k.LoadFrom(ctx, r.stateFile, r.asyncMFLoader, nil, networkArgs, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}, r.timer.Fork("kernel load")); err != nil {
 		return fmt.Errorf("failed to load kernel: %w", err)
 	}
 	r.timer.Reached("kernel loaded")
@@ -659,11 +711,6 @@ func (l *Loader) saveWithOpts(saveOpts *state.SaveOpts, execOpts *control.SaveRe
 		l.k.OnCheckpointAttempt(err)
 	}()
 
-	// TODO(gvisor.dev/issues/6243): save/restore not supported w/ hostinet
-	if l.root.conf.Network == config.NetworkHost {
-		return errors.New("checkpoint not supported when using hostinet")
-	}
-
 	if saveOpts.Metadata == nil {
 		saveOpts.Metadata = make(map[string]string)
 	}
@@ -671,6 +718,8 @@ func (l *Loader) saveWithOpts(saveOpts *state.SaveOpts, execOpts *control.SaveRe
 
 	// Save runsc version.
 	saveOpts.Metadata[VersionKey] = version.Version()
+
+	saveOpts.Metadata[networkKey] = l.root.conf.Network.String()
 
 	// Save container specs.
 	specsStr, err := specutils.ConvertSpecsToString(l.GetContainerSpecs())
