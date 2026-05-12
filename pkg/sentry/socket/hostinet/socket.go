@@ -165,6 +165,7 @@ func newSocket(t *kernel.Task, family int, stype linux.SockType, protocol int, f
 		DenyPRead:         true,
 		DenyPWrite:        true,
 		UseDentryMetadata: true,
+		SpecialFile:       true,
 	}); err != nil {
 		fdnotifier.RemoveFD(int32(s.fd))
 		return nil, syserr.FromError(err)
