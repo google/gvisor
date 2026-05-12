@@ -896,7 +896,7 @@ func (d *dentry) ensureOpenableLocked(ctx context.Context, rp *vfs.ResolvingPath
 		return nil
 	}
 
-	if !ats.MayWrite() {
+	if !ats.MayWrite() || linux.FileMode(d.mode.Load()).IsSpecialFile() {
 		return nil
 	}
 
@@ -908,8 +908,8 @@ func (d *dentry) ensureOpenableLocked(ctx context.Context, rp *vfs.ResolvingPath
 	return d.copyUpLocked(ctx)
 }
 
-// Preconditions: If vfs.AccessTypesForOpenFlags(opts).MayWrite(), then d has
-// been copied up.
+// Preconditions: If vfs.AccessTypesForOpenFlags(opts).MayWrite() and d is not a
+// special file, then d has been copied up.
 func (d *dentry) openCopiedUp(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
 	mnt := rp.Mount()
 
