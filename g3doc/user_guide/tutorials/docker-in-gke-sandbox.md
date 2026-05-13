@@ -19,8 +19,8 @@ Docker v29     | 1.36.3 and later     | 1.36.3 and later
 ### GKE standard cluster
 
 Install a GKE standard cluster and deploy a node pool with gVisor enabled. You
-can view the full documentation
-[here](https://cloud.google.com/kubernetes-engine/docs/how-to/sandbox-pods#enabling).
+can view the [full
+documentation](https://cloud.google.com/kubernetes-engine/docs/how-to/sandbox-pods#enabling).
 
 ### GKE Autopilot cluster
 
