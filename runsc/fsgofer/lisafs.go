@@ -51,12 +51,6 @@ const (
 
 // Config sets configuration options for each attach point.
 type Config struct {
-	// ROMount is set to true if this is a readonly mount.
-	ROMount bool
-
-	// PanicOnWrite panics on attempts to write to RO mounts.
-	PanicOnWrite bool
-
 	// HostUDS signals whether the gofer can connect to host unix domain sockets.
 	HostUDS config.HostUDS
 
@@ -93,28 +87,43 @@ func OpenProcSelfFD(path string) error {
 	return nil
 }
 
-// LisafsServer implements lisafs.ServerImpl for fsgofer.
+// LisafsServer serves fsgofer LisaFS connections.
 type LisafsServer struct {
 	lisafs.Server
 	config Config
 }
 
-var _ lisafs.ServerImpl = (*LisafsServer)(nil)
-
 // NewLisafsServer initializes a new lisafs server for fsgofer.
 func NewLisafsServer(config Config) *LisafsServer {
 	s := &LisafsServer{config: config}
-	s.Server.Init(s, lisafs.ServerOpts{
+	s.Server.Init(s)
+	return s
+}
+
+// ConnectionImpl returns the stock fsgofer implementation for a new connection.
+func (s *LisafsServer) ConnectionImpl() lisafs.ConnectionImpl {
+	return &stockConnectionImpl{server: s}
+}
+
+// stockConnectionImpl implements lisafs.ConnectionImpl for stock fsgofer.
+type stockConnectionImpl struct {
+	server *LisafsServer
+}
+
+var _ lisafs.ConnectionImpl = (*stockConnectionImpl)(nil)
+
+// ConnectionOpts implements lisafs.ConnectionImpl.ConnectionOpts.
+func (i *stockConnectionImpl) ConnectionOpts() lisafs.ConnectionOpts {
+	return lisafs.ConnectionOpts{
 		WalkStatSupported: true,
 		SetAttrOnDeleted:  true,
 		AllocateOnDeleted: true,
 		OpenOnDeleted:     true,
-	})
-	return s
+	}
 }
 
-// Mount implements lisafs.ServerImpl.Mount.
-func (s *LisafsServer) Mount(c *lisafs.Connection, mountNode *lisafs.Node) (*lisafs.ControlFD, lisafs.Statx, int, error) {
+// Mount implements lisafs.ConnectionImpl.Mount.
+func (i *stockConnectionImpl) Mount(c *lisafs.Connection, mountNode *lisafs.Node) (*lisafs.ControlFD, lisafs.Statx, int, error) {
 	mountPath := mountNode.FilePath()
 	rootHostFD, err := tryOpen(func(flags int) (int, error) {
 		return unix.Open(mountPath, flags, 0)
@@ -138,7 +147,7 @@ func (s *LisafsServer) Mount(c *lisafs.Connection, mountNode *lisafs.Node) (*lis
 	}
 
 	clientHostFD := -1
-	if s.config.DonateMountPointFD {
+	if i.server.config.DonateMountPointFD {
 		clientHostFD, err = unix.Dup(rootHostFD)
 		if err != nil {
 			return nil, lisafs.Statx{}, -1, err
@@ -156,13 +165,13 @@ func (s *LisafsServer) Mount(c *lisafs.Connection, mountNode *lisafs.Node) (*lis
 	return rootFD.FD(), stat, clientHostFD, nil
 }
 
-// MaxMessageSize implements lisafs.ServerImpl.MaxMessageSize.
-func (s *LisafsServer) MaxMessageSize() uint32 {
+// MaxMessageSize implements lisafs.ConnectionImpl.MaxMessageSize.
+func (i *stockConnectionImpl) MaxMessageSize() uint32 {
 	return lisafs.MaxMessageSize()
 }
 
-// SupportedMessages implements lisafs.ServerImpl.SupportedMessages.
-func (s *LisafsServer) SupportedMessages() []lisafs.MID {
+// SupportedMessages implements lisafs.ConnectionImpl.SupportedMessages.
+func (i *stockConnectionImpl) SupportedMessages() []lisafs.MID {
 	// Note that Flush is not supported.
 	return []lisafs.MID{
 		lisafs.Mount,

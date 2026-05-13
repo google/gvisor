@@ -190,7 +190,7 @@ const (
 )
 
 // MaxMessageSize is the recommended max message size that can be used by
-// connections. Server implementations may choose to use other values.
+// connections. Connections may choose to use other values.
 func MaxMessageSize() uint32 {
 	// Return HugePageSize - PageSize so that when flipcall packet window is
 	// created with MaxMessageSize() + flipcall header size + channel header

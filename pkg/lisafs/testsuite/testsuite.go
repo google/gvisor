@@ -37,7 +37,7 @@ import (
 // away all the caller specific details.
 type Tester interface {
 	// NewServer returns a new instance of the tester server.
-	NewServer(t *testing.T) *lisafs.Server
+	NewServer(t *testing.T) (*lisafs.Server, lisafs.ConnectionImpl)
 
 	// LinkSupported returns true if the backing server supports LinkAt.
 	LinkSupported() bool
@@ -94,8 +94,8 @@ func RunTest(t *testing.T, tester Tester, testName string, testFn TestFunc, moun
 		t.Fatalf("socketpair got err %v expected nil", err)
 	}
 
-	server := tester.NewServer(t)
-	conn, err := server.CreateConnection(serverSocket, mountPath, false /* readonly */)
+	server, impl := tester.NewServer(t)
+	conn, err := server.CreateConnection(serverSocket, mountPath, false /* readonly */, impl)
 	if err != nil {
 		t.Fatalf("starting connection failed: %v", err)
 		return

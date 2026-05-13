@@ -45,14 +45,21 @@ type Connection struct {
 	// associated with it for its entire lifetime.
 	server *Server
 
+	// impl is the implementation that owns this connection's mount behavior and
+	// advertised protocol configuration.
+	impl ConnectionImpl
+
 	// mountPath is the path to a file inside the server that is served to this
 	// connection as its root FD. IOW, this connection is mounted at this path.
 	// mountPath is trusted because it is configured by the server (trusted) as
 	// per the user's sandbox configuration. mountPath is immutable.
 	mountPath string
 
-	// maxMessageSize is the cached value of server.impl.MaxMessageSize().
+	// maxMessageSize is the cached value of impl.MaxMessageSize().
 	maxMessageSize uint32
+
+	// opts is the cached value of impl.ConnectionOpts().
+	opts ConnectionOpts
 
 	// readonly indicates if this connection is readonly. All write operations
 	// will fail with EROFS.
@@ -84,17 +91,28 @@ type Connection struct {
 
 // CreateConnection initializes a new connection which will be mounted at
 // mountPath. The connection must be started separately.
-func (s *Server) CreateConnection(sock *unet.Socket, mountPath string, readonly bool) (*Connection, error) {
+func (s *Server) CreateConnection(sock *unet.Socket, mountPath string, readonly bool, impl ConnectionImpl) (*Connection, error) {
 	mountPath = path.Clean(mountPath)
 	if !filepath.IsAbs(mountPath) {
 		log.Warningf("mountPath %q is not absolute", mountPath)
+		return nil, unix.EINVAL
+	}
+	if impl == nil {
+		log.Warningf("ConnectionImpl must not be nil")
+		return nil, unix.EINVAL
+	}
+	maxMessageSize := impl.MaxMessageSize()
+	if maxMessageSize == 0 {
+		log.Warningf("ConnectionImpl.MaxMessageSize() must not return 0")
 		return nil, unix.EINVAL
 	}
 
 	c := &Connection{
 		sockComm:       newSockComm(sock),
 		server:         s,
-		maxMessageSize: s.impl.MaxMessageSize(),
+		impl:           impl,
+		maxMessageSize: maxMessageSize,
+		opts:           impl.ConnectionOpts(),
 		mountPath:      mountPath,
 		readonly:       readonly,
 		channels:       make([]*channel, 0, maxChannels()),
@@ -111,7 +129,7 @@ func (s *Server) CreateConnection(sock *unet.Socket, mountPath string, readonly 
 }
 
 // ServerImpl returns the associated server implementation.
-func (c *Connection) ServerImpl() ServerImpl {
+func (c *Connection) ServerImpl() any {
 	return c.server.impl
 }
 
