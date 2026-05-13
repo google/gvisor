@@ -150,6 +150,13 @@ func (op payloadSet) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *
 
 	// Updates the checksum of the header specified by the payload base.
 	if op.csumType == linux.NFT_PAYLOAD_CSUM_INET {
+		// Equivalent to Linux skb_copy_bits returning -1 when the
+		// checksum field is outside the packet; matches the data
+		// bounds check at line 105.
+		if int(op.csumOffset)+2 > len(payload) {
+			regs.verdict = stack.NFVerdict{Code: VC(linux.NFT_BREAK)}
+			return
+		}
 		// Reads the old checksum from the packet payload.
 		oldTotalCsum := binary.BigEndian.Uint16(payload[op.csumOffset:])
 
