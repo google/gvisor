@@ -11,6 +11,7 @@ go_library(
         "cri.go",
         "fs.go",
         "gofer_conf.go",
+        "hooks.go",
         "namespace.go",
         "nvidia.go",
         "restore.go",

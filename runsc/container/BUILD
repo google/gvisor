@@ -10,7 +10,6 @@ go_library(
     srcs = [
         "container.go",
         "gofer_to_host_rpc.go",
-        "hook.go",
         "state_file.go",
         "status.go",
     ],
