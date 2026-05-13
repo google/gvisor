@@ -13,19 +13,40 @@
 // limitations under the License.
 
 // Package erofs implements erofs.
+//
+// Lock order:
+//
+//	dentry.dirMu
+//	  inode.dirMu
+//	  inodeBucket.mu
+//	dentry.cachingMu
+//	  parent.dirMu (eviction only; see dentry.evict)
+//	  filesystem.cacheMu
+//
+// Notes:
+//   - No goroutine holds two dentries' cachingMu at once; the destroy
+//     cascade releases the child's cachingMu before reaching
+//     parent.checkCaching.
+//   - cachingMu before parent.dirMu is taken only by dentry.evict.
+//   - parent.dirMu serializes lookup against eviction's destroy step,
+//     making IncRef on a cached dentry safe; see dentry.IncRef.
+//   - filesystem.cacheMu is a leaf.
 package erofs
 
 import (
+	"fmt"
 	"os"
 	"runtime"
 	"strconv"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/erofs"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -46,6 +67,8 @@ const (
 //
 // +stateify savable
 type FilesystemType struct{}
+
+const defaultMaxCachedDentries = 1000
 
 // filesystem implements vfs.FilesystemImpl.
 //
@@ -76,6 +99,17 @@ type filesystem struct {
 
 	// ancestryMu is required by genericfstree.
 	ancestryMu sync.RWMutex `state:"nosave"`
+
+	// cacheMu protects the LRU list and each dentry's cached flag.
+	cacheMu sync.Mutex `state:"nosave"`
+	// +checklocks:cacheMu
+	cachedDentries dentryList
+	// +checklocks:cacheMu
+	cachedDentriesLen uint64
+	maxCachedDentries uint64
+
+	// released is nonzero once filesystem.Release has been called.
+	released atomicbitops.Uint32
 }
 
 // InternalFilesystemOptions may be passed as
@@ -128,11 +162,12 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	}
 
 	fs := &filesystem{
-		mopts:    opts.Data,
-		iopts:    iopts,
-		image:    image,
-		devMinor: devMinor,
-		mf:       imageMemmapFile{image: image},
+		mopts:             opts.Data,
+		iopts:             iopts,
+		image:             image,
+		devMinor:          devMinor,
+		mf:                imageMemmapFile{image: image},
+		maxCachedDentries: defaultMaxCachedDentries,
 	}
 	fs.vfsfs.Init(vfsObj, &fstype, fs)
 	cu.Add(func() { fs.vfsfs.DecRef(ctx) })
@@ -175,6 +210,8 @@ func getFDFromMountOptionsMap(ctx context.Context, mopts map[string]string) (int
 
 // Release implements vfs.FilesystemImpl.Release.
 func (fs *filesystem) Release(ctx context.Context) {
+	fs.released.Store(1)
+	fs.evictAllCachedDentries(ctx)
 	// An extra reference was held by the filesystem on the root.
 	if fs.root != nil {
 		fs.root.DecRef(ctx)
@@ -359,28 +396,23 @@ func (i *inode) fileType() uint16 {
 
 // dentry implements vfs.DentryImpl.
 //
-// The filesystem is read-only and currently we never drop the cached dentries
-// until the filesystem is unmounted. The reference model works like this:
+// Reference model:
 //
-//   - The initial reference count of each dentry is one, which is the reference
-//     held by the parent (so when the reference count is one, it also means that
-//     this is a cached dentry, i.e. not in use).
-//
-//   - When a dentry is used (e.g. opened by someone), its reference count will
-//     be increased and the new reference is held by caller.
-//
-//   - The reference count of root dentry is two. One reference is returned to
-//     the caller of `GetFilesystem()`, and the other is held by `fs`.
-//
-// TODO: This can lead to unbounded memory growth in sentry due to the ever-growing
-// dentry tree. We should have a dentry LRU cache, similar to what fsimpl/gofer does.
+//   - Each dentry holds one reference on its parent. The ref is acquired when
+//     the child is inserted into the parent's childMap and dropped when the
+//     child is destroyed.
+//   - childMap does not hold refs on its values.
+//   - refs == 0 means cache-eligible (sits on fs.cachedDentries). A cached
+//     child still holds its parent's ref, so a parent can only become
+//     cache-eligible once all its children have been destroyed.
+//   - refs == -1 means destroyed.
 //
 // +stateify savable
 type dentry struct {
 	vfsd vfs.Dentry
 
-	// dentryRefs is the reference count.
-	dentryRefs
+	// refs is the reference count. -1 indicates destroyed.
+	refs atomicbitops.Int64
 
 	// parent is this dentry's parent directory. If this dentry is
 	// a file system root, parent is nil.
@@ -397,12 +429,23 @@ type dentry struct {
 	dirMu sync.RWMutex `state:"nosave"`
 
 	// childMap contains the mappings of child names to dentries if this
-	// dentry represents a directory.
+	// dentry represents a directory. childMap does not hold refs on its
+	// values; see the reference model above.
 	// +checklocks:dirMu
 	childMap map[string]*dentry
+
+	// cachingMu serializes this dentry's caching decisions (checkCaching, evict).
+	cachingMu sync.Mutex `state:"nosave"`
+
+	// cached indicates whether this dentry is on fs.cachedDentries. It is
+	// protected by fs.cacheMu.
+	cached bool
+
+	dentryEntry
 }
 
-// The caller is expected to handle dentry insertion into dentry tree.
+// newDentry returns a dentry with refs == 1 (held by the caller). The caller
+// is responsible for inserting it into the dentry tree.
 func (fs *filesystem) newDentry(nid uint64) (*dentry, error) {
 	i, err := fs.getInode(nid)
 	if err != nil {
@@ -411,22 +454,244 @@ func (fs *filesystem) newDentry(nid uint64) (*dentry, error) {
 	d := &dentry{
 		inode: i,
 	}
-	d.InitRefs()
+	d.refs.Store(1)
 	d.vfsd.Init(d)
+	refs.Register(d)
 	return d, nil
+}
+
+// IncRef implements vfs.DentryImpl.IncRef.
+//
+// Preconditions: the caller must hold either an existing reference on d, or
+// d.parent.dirMu. The latter case covers reviving a cached dentry (d.refs == 0):
+// dentry.evict acquires parent.dirMu before destroying d, so any dentry found
+// in parent.childMap under that lock is guaranteed not to be destroyed
+// (d.refs != -1).
+func (d *dentry) IncRef() {
+	r := d.refs.Add(1)
+	if d.LogRefs() {
+		refs.LogIncRef(d, r)
+	}
+	if r <= 0 {
+		panic("erofs.dentry.IncRef() on destroyed dentry")
+	}
+}
+
+// TryIncRef implements vfs.DentryImpl.TryIncRef.
+func (d *dentry) TryIncRef() bool {
+	for {
+		r := d.refs.Load()
+		if r <= 0 {
+			return false
+		}
+		if d.refs.CompareAndSwap(r, r+1) {
+			if d.LogRefs() {
+				refs.LogTryIncRef(d, r+1)
+			}
+			return true
+		}
+	}
 }
 
 // DecRef implements vfs.DentryImpl.DecRef.
 func (d *dentry) DecRef(ctx context.Context) {
-	d.dentryRefs.DecRef(func() {
-		d.dirMu.Lock()
-		for _, c := range d.childMap {
-			c.DecRef(ctx)
+	r := d.refs.Add(-1)
+	if d.LogRefs() {
+		refs.LogDecRef(d, r)
+	}
+	if r < 0 {
+		panic("erofs.dentry.DecRef() called without holding a reference")
+	}
+	if r == 0 {
+		d.checkCaching(ctx)
+	}
+}
+
+// RefType implements refs.CheckedObject.RefType.
+func (d *dentry) RefType() string { return "erofs.dentry" }
+
+// LeakMessage implements refs.CheckedObject.LeakMessage.
+func (d *dentry) LeakMessage() string {
+	return fmt.Sprintf("[erofs.dentry %p] reference count of %d instead of -1", d, d.refs.Load())
+}
+
+// LogRefs implements refs.CheckedObject.LogRefs.
+//
+// This should only be set to true for debugging purposes, as it can generate
+// an extremely large amount of output and drastically degrade performance.
+func (d *dentry) LogRefs() bool { return false }
+
+// checkCaching reconciles d's caching state with its current refcount: place
+// on or move to the MRU end of the LRU if refs == 0, or remove from the LRU
+// if refs > 0.
+//
+// Safe to call after either a DecRef or an IncRef; the latter is a hygiene
+// pass that yanks revived dentries off the LRU.
+//
+// Preconditions: the caller holds neither d.cachingMu nor fs.cacheMu.
+func (d *dentry) checkCaching(ctx context.Context) {
+	d.cachingMu.Lock()
+
+	r := d.refs.Load()
+	if r < 0 {
+		d.cachingMu.Unlock()
+		return
+	}
+	if r > 0 {
+		d.removeFromCache()
+		d.cachingMu.Unlock()
+		return
+	}
+
+	fs := d.inode.fs
+
+	// Filesystem teardown: destroy immediately instead of caching. Reached
+	// by (a) the cascade up the tree when leaf eviction drops parent refs
+	// to zero, and (b) the final root.DecRef in fs.Release.
+	if fs.released.Load() != 0 {
+		d.cachingMu.Unlock()
+		// Root is never cached and has no parent to unlink (evict would panic);
+		// others go via evict.
+		if d.parent.Load() == nil {
+			d.refs.Store(-1)
+			d.destroy(ctx)
+		} else {
+			d.evict(ctx)
 		}
-		d.childMap = nil
-		d.dirMu.Unlock()
-		d.inode.DecRef(ctx)
-	})
+		return
+	}
+
+	fs.cacheMu.Lock()
+
+	if d.cached {
+		fs.cachedDentries.Remove(d)
+		fs.cachedDentries.PushFront(d)
+		fs.cacheMu.Unlock()
+		d.cachingMu.Unlock()
+		return
+	}
+
+	fs.cachedDentries.PushFront(d)
+	fs.cachedDentriesLen++
+	d.cached = true
+	shouldEvict := fs.cachedDentriesLen > fs.maxCachedDentries
+
+	fs.cacheMu.Unlock()
+	d.cachingMu.Unlock()
+
+	if shouldEvict {
+		fs.evictCachedDentry(ctx)
+	}
+}
+
+// removeFromCacheLocked ensures d is not on fs.cachedDentries. It is idempotent.
+//
+// +checklocks:d.inode.fs.cacheMu
+func (d *dentry) removeFromCacheLocked() {
+	if !d.cached {
+		return
+	}
+	d.inode.fs.cachedDentries.Remove(d)
+	d.inode.fs.cachedDentriesLen--
+	d.cached = false
+}
+
+func (d *dentry) removeFromCache() {
+	d.inode.fs.cacheMu.Lock()
+	d.removeFromCacheLocked()
+	d.inode.fs.cacheMu.Unlock()
+}
+
+// evictCachedDentry removes the least-recently-used dentry from the LRU and
+// hands it to dentry.evict. Returns true if a victim was found.
+//
+// Preconditions: see dentry.evict.
+func (fs *filesystem) evictCachedDentry(ctx context.Context) bool {
+	fs.cacheMu.Lock()
+	victim := fs.cachedDentries.Back()
+	if victim != nil {
+		victim.removeFromCacheLocked() // +checklocksforce: victim.inode.fs == fs
+	}
+	fs.cacheMu.Unlock()
+	if victim == nil {
+		return false
+	}
+	victim.evict(ctx)
+	return true
+}
+
+// evictAllCachedDentries drains the LRU. Used during filesystem release;
+// the fs.released flag ensures the cascade doesn't re-populate the LRU.
+//
+// Preconditions: same as evictCachedDentry.
+func (fs *filesystem) evictAllCachedDentries(ctx context.Context) {
+	for fs.evictCachedDentry(ctx) {
+	}
+}
+
+// evict tears d off the LRU and destroys it, unless a racing lookup revived d
+// or a racing evictor already claimed it.
+//
+// Two evictors can race on the same d: evictCachedDentry pops distinct victims,
+// but a popped dentry remains in childMap, so a lookup can revive and re-cache
+// it, after which a later pop selects it again.
+//
+// Preconditions: the caller holds neither d.cachingMu nor d.parent.dirMu.
+func (d *dentry) evict(ctx context.Context) {
+	d.cachingMu.Lock()
+
+	// evictCachedDentry already pulled d off the LRU, but a racing lookup may
+	// have revived and re-cached it since, so drop it again before destroying.
+	d.removeFromCache()
+
+	parent := d.parent.Load()
+	if parent == nil {
+		// The root should never enter the LRU: checkCaching routes
+		// parent-nil dentries to destroy via the fs.released branch,
+		// which is set before fs.root.DecRef in fs.Release.
+		panic("erofs.dentry.evict() called on the root")
+	}
+
+	parent.dirMu.Lock()
+
+	// Recheck under parent.dirMu, which serializes against lookup: bail if a
+	// lookup revived d (refs != 0) or a racing evictor claimed it (refs == -1).
+	if d.refs.Load() != 0 {
+		parent.dirMu.Unlock()
+		d.cachingMu.Unlock()
+		return
+	}
+
+	delete(parent.childMap, d.name)
+
+	// Claim d so a racing evictor bails at the recheck above.
+	d.refs.Store(-1)
+
+	parent.dirMu.Unlock()
+	d.cachingMu.Unlock()
+
+	d.destroy(ctx)
+}
+
+// destroy tears down a dentry the caller has claimed by setting refs to -1.
+// Drops the inode ref and the parent ref, cascading checkCaching up the tree.
+//
+// Preconditions:
+//   - d.refs == -1 (enforced);
+//   - d is no longer reachable via parent.childMap;
+//   - the caller holds no locks (destroy may cascade into parent.checkCaching).
+func (d *dentry) destroy(ctx context.Context) {
+	if d.refs.Load() != -1 {
+		panic("erofs.dentry.destroy() on an unclaimed dentry")
+	}
+
+	refs.Unregister(d)
+
+	d.inode.DecRef(ctx)
+
+	if parent := d.parent.Load(); parent != nil {
+		parent.DecRef(ctx)
+	}
 }
 
 // InotifyWithParent implements vfs.DentryImpl.InotifyWithParent.

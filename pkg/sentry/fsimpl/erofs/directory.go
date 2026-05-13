@@ -86,21 +86,34 @@ func (i *inode) lookup(name string) (uint64, error) {
 	return dirents[idx].Ino, nil
 }
 
+// lookup returns a ref'd dentry for the child with the given name.
 func (d *dentry) lookup(ctx context.Context, name string) (*dentry, error) {
 	// Fast path, dentry already exists.
 	d.dirMu.RLock()
 	child, ok := d.childMap[name]
-	d.dirMu.RUnlock()
 	if ok {
+		// Revival is safe: parent.dirMu serializes against eviction, so any
+		// child found in childMap is not destroyed (refs != -1), even when
+		// cached at refs == 0. See dentry.IncRef.
+		child.IncRef()
+		d.dirMu.RUnlock()
+		child.checkCaching(ctx)
 		return child, nil
 	}
+	d.dirMu.RUnlock()
 
 	// Slow path, create a new dentry.
 	d.dirMu.Lock()
-	defer d.dirMu.Unlock()
 	if child, ok := d.childMap[name]; ok {
+		// Same revival rationale as the fast path. Release d.dirMu before
+		// taking child.cachingMu so we match the global lock order
+		// (cachingMu before parent.dirMu is eviction-only).
+		child.IncRef()
+		d.dirMu.Unlock()
+		child.checkCaching(ctx)
 		return child, nil
 	}
+	defer d.dirMu.Unlock()
 
 	nid, err := d.inode.lookup(name)
 	if err != nil {
@@ -115,8 +128,12 @@ func (d *dentry) lookup(ctx context.Context, name string) (*dentry, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Establish the child's ref on its parent.
+	d.IncRef()
 	child.parent.Store(d)
 	child.name = name
+
 	d.childMap[name] = child
 	return child, nil
 }
