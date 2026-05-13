@@ -81,7 +81,7 @@ type chunk struct {
 	// uncompressed is the uncompressed data.
 	//
 	// This is not returned to the bufPool automatically, since it may
-	// correspond to a inline slice (provided directly to Read or Write).
+	// correspond to an inline slice (provided directly to Read or Write).
 	uncompressed *bytes.Buffer
 
 	// The current hash object. Only used in compress mode.
@@ -133,7 +133,7 @@ type worker struct {
 	output   chan result
 
 	// scratch is a temporary buffer used for marshalling. This is declared
-	// unfront here to avoid reallocation.
+	// upfront here to avoid reallocation.
 	scratch [4]byte
 }
 
@@ -272,7 +272,7 @@ type pool struct {
 
 	// hashPool is the hash object pool. It cannot be embedded into pool
 	// itself as worker refers to it and that would stop pool from being
-	// GCed.
+	// GC'd.
 	hashPool *hashPool
 }
 
@@ -371,7 +371,7 @@ type Reader struct {
 	in io.ReadCloser
 
 	// scratch is a temporary buffer used for marshalling. This is declared
-	// unfront here to avoid reallocation.
+	// upfront here to avoid reallocation.
 	scratch [4]byte
 }
 
@@ -555,7 +555,7 @@ func (r *Reader) Read(p []byte) (int, error) {
 		}
 	}
 
-	// Make sure that everything has been decoded successfully, otherwise
+	// Make sure that everything has been decoded successfully; otherwise,
 	// parts of p may not actually have completed.
 	for pendingInline > 0 {
 		if err := r.schedule(nil, func(c *chunk) error {

@@ -58,7 +58,7 @@ const (
 	// are found.
 	LeaksLogWarning
 
-	// LeaksPanic indidcates that a panic should be issued when leaks are found.
+	// LeaksPanic indicates that a panic should be issued when leaks are found.
 	LeaksPanic
 )
 

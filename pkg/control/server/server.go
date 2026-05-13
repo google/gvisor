@@ -138,7 +138,7 @@ func CreateFromFD(fd int) (*Server, error) {
 }
 
 // Create creates a new control server with an abstract unix socket
-// with the given address, which must must be unique and a valid
+// with the given address, which must be unique and a valid
 // abstract socket name.
 func Create(addr string) (*Server, error) {
 	socket, err := CreateSocket(addr)

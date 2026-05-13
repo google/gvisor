@@ -51,7 +51,7 @@ std::string RunfilePath(std::string path) {
   // You are not gonna like this, but go_binary data dependencies have an extra
   // directory name with a "_" suffix, so we must check for that path too.
   //
-  // For example, a go_binary with name"//foo/bar:baz" will be placed in
+  // For example, a go_binary with name "//foo/bar:baz" will be placed in
   // "<runfiles_dir>/foo/bar/baz_/baz".
   //
   // See

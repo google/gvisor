@@ -19,6 +19,6 @@ package gvisor;
 // SentryTcpListenEvent is emitted when the application successfully
 // listens on a netstack TCP socket.
 message SentryTcpListenEvent {
-  // port is the port the socket is bound to.
+  // port is the port to which the socket is bound.
   optional int32 port = 1;
 }

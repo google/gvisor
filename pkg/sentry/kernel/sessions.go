@@ -379,7 +379,7 @@ func (tg *ThreadGroup) CreateProcessGroup() error {
 	// Get the ID for this thread in the current namespace.
 	id := tg.pidns.tgids[tg]
 
-	// Check whether a process still exists or not.
+	// Check whether or not a process still exists.
 	if id == 0 {
 		return linuxerr.ESRCH
 	}
@@ -445,7 +445,7 @@ func (tg *ThreadGroup) JoinProcessGroup(pidns *PIDNamespace, pgid ProcessGroupID
 	pidns.owner.mu.Lock()
 	defer pidns.owner.mu.Unlock()
 
-	// Check whether the process still exists or not.
+	// Check whether or not the process still exists.
 	if _, ok := pidns.tgids[tg]; !ok {
 		return linuxerr.ESRCH
 	}

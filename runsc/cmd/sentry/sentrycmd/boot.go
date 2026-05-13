@@ -358,7 +358,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 
 	argOverride := make(map[string]string)
 
-	// Do these before chroot takes effect, otherwise we can't read /proc and /sys.
+	// Do these before chroot takes effect; otherwise, we can't read /proc and /sys.
 	if len(b.productName) == 0 {
 		if product, err := os.ReadFile("/sys/devices/virtual/dmi/id/product_name"); err != nil {
 			log.Warningf("Not setting product_name: %v", err)
@@ -590,7 +590,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		switch err := unix.Setrlimit(unix.RLIMIT_NOFILE, &rlimit); err {
 		case nil:
 		case unix.EPERM:
-			log.Warningf("FD limit %d is higher than the current hard limit or system-wide maximum", conf.FDLimit)
+			log.Warningf("FD limit %d exceeds the current hard limit or system-wide maximum", conf.FDLimit)
 		default:
 			util.Fatalf("Failed to set RLIMIT_NOFILE: %v", err)
 		}

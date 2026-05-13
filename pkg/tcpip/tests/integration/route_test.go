@@ -250,7 +250,7 @@ func TestLocalPing(t *testing.T) {
 // TestLocalUDP tests sending UDP packets between two endpoints that are local
 // to the stack.
 //
-// This tests that that packets never leave the stack and the addresses
+// This tests that packets never leave the stack and the addresses
 // used when sending a packet.
 func TestLocalUDP(t *testing.T) {
 	const (

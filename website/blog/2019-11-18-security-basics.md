@@ -212,7 +212,7 @@ the host Linux syscalls. In other words, with gVisor, applications get the vast
 majority (and growing) functionality of Linux containers for only 68 possible
 syscalls to the Host OS. 350 syscalls to 68 is attack surface reduction.
 
-![Figure 3](/assets/images/2019-11-18-security-basics-figure3.png "Reduction of Attack Surface of the Syscall Table. Note that the Senty's Syscall Emulation Layer keeps the Containerized Process from ever calling the Host OS.")
+![Figure 3](/assets/images/2019-11-18-security-basics-figure3.png "Reduction of Attack Surface of the Syscall Table. Note that the Sentry's Syscall Emulation Layer keeps the Containerized Process from ever calling the Host OS.")
 
 ## Secure-by-default
 

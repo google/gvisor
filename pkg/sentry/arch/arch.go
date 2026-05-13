@@ -108,7 +108,7 @@ type contextInterface interface {
 	RestartSyscall()
 
 	// RestartSyscallWithRestartBlock reverses over the current syscall
-	// instraction and overwrites the current syscall number with that of
+	// instruction and overwrites the current syscall number with that of
 	// restart_syscall(2). This causes the application to restart the current
 	// syscall with a custom function when execution resumes.
 	RestartSyscallWithRestartBlock()

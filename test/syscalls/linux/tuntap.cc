@@ -633,7 +633,7 @@ TEST_F(TuntapTest, TUNNoPacketInfo) {
 }
 
 // TCPBlockingConnectFailsArpResolution tests for TCP connect to fail on link
-// address resolution failure to a routable, but non existent peer.
+// address resolution failure to a routable, but nonexistent peer.
 TEST_F(TuntapTest, TCPBlockingConnectFailsArpResolution) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
 
@@ -655,7 +655,7 @@ TEST_F(TuntapTest, TCPBlockingConnectFailsArpResolution) {
 
 // TCPNonBlockingConnectFailsArpResolution tests for TCP non-blocking connect to
 // to trigger an error event to be notified to poll on link address resolution
-// failure to a routable, but non existent peer.
+// failure to a routable, but nonexistent peer.
 TEST_F(TuntapTest, TCPNonBlockingConnectFailsArpResolution) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
 

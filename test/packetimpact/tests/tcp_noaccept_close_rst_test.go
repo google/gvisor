@@ -35,7 +35,7 @@ func TestTcpNoAcceptCloseReset(t *testing.T) {
 	conn.Connect(t)
 	defer conn.Close(t)
 	// We need to wait for POLLIN event on listenFd to know the connection is
-	// established. Otherwise there could be a race when we issue the Close
+	// established. Otherwise, there could be a race when we issue the Close
 	// command prior to the DUT receiving the last ack of the handshake and
 	// it will only respond RST instead of RST+ACK.
 	dut.PollOne(t, listenFd, unix.POLLIN, time.Second)

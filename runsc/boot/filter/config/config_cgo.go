@@ -45,7 +45,7 @@ func cgoFilters() seccomp.SyscallRules {
 		// clone3() will be invoked by _cgo_sys_thread_start if cgo is
 		// imported during compiling the binary.
 		// However, clone3() is a wide API which should not be opened; but
-		// since the secomp filter we use now does not have a way to return
+		// since the seccomp filter we use now does not have a way to return
 		// a custom error code (e.g. ENOSYS), currently we have to open up
 		// these three syscalls.
 		// TODO(eperot): remove this syscall seccomp rule

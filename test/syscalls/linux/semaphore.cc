@@ -224,7 +224,7 @@ TEST(SemaphoreTest, SemOpMultiNoBlock) {
   for (auto& b : bufs) {
     b.sem_op = -b.sem_op;
   }
-  // 0 and 3 order must be reversed, otherwise it will block.
+  // 0 and 3 order must be reversed; otherwise, it will block.
   std::swap(bufs[0].sem_op, bufs[3].sem_op);
   ASSERT_THAT(RetryEINTR(semop)(sem.get(), bufs, std::size(bufs)),
               SyscallSucceeds());
@@ -325,7 +325,7 @@ TEST(SemaphoreTest, SemOpRemoveWithWaiter) {
     ASSERT_THAT(semctl(sem_id, 0, IPC_RMID), SyscallSucceeds());
   });
 
-  // This must happen before IPC_RMID runs above. Otherwise it fails with EINVAL
+  // This must happen before IPC_RMID runs above. Otherwise, it fails with EINVAL
   // instead because the semaphore has already been removed.
   struct sembuf buf = {};
   buf.sem_op = -1;
@@ -970,7 +970,7 @@ TEST(SemaphoreTest, SemInfo) {
   EXPECT_EQ(info.semopm, kSemOpm);
   EXPECT_EQ(info.semume, kSemUme);
   // There could be semaphores existing in the system during the test, which
-  // prevents the test from getting a exact number, but the test could expect at
+  // prevents the test from getting an exact number, but the test could expect at
   // least the number of semaphores it creates in the beginning of the test.
   EXPECT_GE(info.semusz, sem_ids.size());
   EXPECT_EQ(info.semvmx, kSemVmx);
@@ -1049,11 +1049,11 @@ TEST(SemaphoreTest, RemoveWithoutPermission) {
   // AutoSem's destructor checks that removal by the owner still succeeds.
 }
 
-TEST(SempahoreTest, RemoveNonExistentSemaphore) {
+TEST(SemaphoreTest, RemoveNonExistentSemaphore) {
   EXPECT_THAT(semctl(-1, 0, IPC_RMID), SyscallFailsWithErrno(EINVAL));
 }
 
-TEST(SempahoreTest, RemoveDeletedSemaphore) {
+TEST(SemaphoreTest, RemoveDeletedSemaphore) {
   int id;
   EXPECT_THAT(id = semget(IPC_PRIVATE, 1, 0), SyscallSucceeds());
   EXPECT_THAT(semctl(id, 0, IPC_RMID), SyscallSucceeds());

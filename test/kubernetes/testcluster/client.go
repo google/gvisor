@@ -159,7 +159,7 @@ func (rc *retryableClient) Do(ctx context.Context, fn KubernetesReq) error {
 		if err = fn(ctx, client); err == nil || !rc.client.RetryError(ctx, err, numAttempt) {
 			// We don't use `logger` here because we want to make sure it is logged
 			// so that the logs reflect that the operation succeeded upon a retry.
-			// Otherwise the logs can be confusing because it may seem that we are
+			// Otherwise, the logs can be confusing because it may seem that we are
 			// still in the retry loop.
 			if err == nil {
 				log.Infof("Retryable operation [%s] @ %s succeeded on attempt %d.", operationID, time.Now().Format(time.TimeOnly), numAttempt)

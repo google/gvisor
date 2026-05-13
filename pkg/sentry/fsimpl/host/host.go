@@ -60,7 +60,7 @@ type virtualOwner struct {
 	mu  sync.Mutex `state:"nosave"`
 	uid atomicbitops.Uint32
 	gid atomicbitops.Uint32
-	// mode is also stored, otherwise setting the host file to `0000` could remove
+	// mode is also stored; otherwise, setting the host file to `0000` could remove
 	// access to the file.
 	mode atomicbitops.Uint32
 }
@@ -166,7 +166,7 @@ type inode struct {
 	queue waiter.Queue
 
 	// virtualOwner caches ownership and permission information to override the
-	// underlying file owner and permission. This is used to allow the unstrusted
+	// underlying file owner and permission. This is used to allow the untrusted
 	// application to change these fields without affecting the host.
 	virtualOwner virtualOwner
 

@@ -53,7 +53,7 @@ namespace {
 // ineffective, it is possible for both T1 and T2 to read 0 because the memory
 // write from the other CPU is not yet visible outside that CPU. T1fence() and
 // T2fence() are expected to perform the necessary synchronization to restore
-// sequential consistency: both threads agree on a order of memory accesses that
+// sequential consistency: both threads agree on an order of memory accesses that
 // is consistent with program order in each thread, such that at least one
 // thread reads 1.
 //

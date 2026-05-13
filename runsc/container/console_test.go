@@ -118,7 +118,7 @@ func receiveConsolePTY(srv *unet.ServerSocket) (*os.File, error) {
 	return os.NewFile(uintptr(fds[0]), "pty_master"), nil
 }
 
-// Test that an pty FD is sent over the console socket if one is provided.
+// Test that a pty FD is sent over the console socket if one is provided.
 func TestConsoleSocket(t *testing.T) {
 	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
@@ -160,7 +160,7 @@ func TestConsoleSocket(t *testing.T) {
 	}
 }
 
-// Test that an pty FD is sent over the console socket if one is provided.
+// Test that a pty FD is sent over the console socket if one is provided.
 func TestMultiContainerConsoleSocket(t *testing.T) {
 	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
@@ -171,7 +171,7 @@ func TestMultiContainerConsoleSocket(t *testing.T) {
 			defer cleanup()
 			conf.RootDir = rootDir
 
-			// Setup the containers.
+			// Set up the containers.
 			sleep := []string{"sleep", "100"}
 			tru := []string{"true"}
 			testSpecs, ids := createSpecs(sleep, tru)
@@ -277,7 +277,7 @@ func TestJobControlSignalExec(t *testing.T) {
 	// explicitly test interactive mode, use /bin/bash. See b/116981926.
 	execArgs := &control.ExecArgs{
 		Filename: "/bin/bash",
-		// Don't let bash execute from profile or rc files, otherwise
+		// Don't let bash execute from profile or rc files; otherwise,
 		// our PID counts get messed up.
 		Argv: []string{"/bin/bash", "--noprofile", "--norc"},
 		// Pass the pty replica as FD 0, 1, and 2.
@@ -364,7 +364,7 @@ func TestJobControlSignalExec(t *testing.T) {
 // Test that job control signals work on a console created with "run -ti".
 func TestJobControlSignalRootContainer(t *testing.T) {
 	conf := testutil.TestConfig(t)
-	// Don't let bash execute from profile or rc files, otherwise our PID
+	// Don't let bash execute from profile or rc files; otherwise, our PID
 	// counts get messed up.
 	spec := testutil.NewSpecWithArgs("/bin/bash", "--noprofile", "--norc")
 	spec.Process.Terminal = true
@@ -422,7 +422,7 @@ func TestJobControlSignalRootContainer(t *testing.T) {
 	}
 
 	// Start waiting for the container to exit in a goroutine. We do this
-	// very early, otherwise it might exit before we have a chance to call
+	// very early; otherwise, it might exit before we have a chance to call
 	// Wait.
 	var (
 		ws unix.WaitStatus
@@ -508,7 +508,7 @@ func TestMultiContainerTerminal(t *testing.T) {
 			defer cleanup()
 			conf.RootDir = rootDir
 
-			// Don't let bash execute from profile or rc files, otherwise our PID
+			// Don't let bash execute from profile or rc files; otherwise, our PID
 			// counts get messed up.
 			bash := []string{"/bin/bash", "--noprofile", "--norc"}
 			testSpecs, ids := createSpecs(bash, bash)

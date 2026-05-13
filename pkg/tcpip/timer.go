@@ -27,7 +27,7 @@ import (
 // and reset in quick succession resulting in a timer instance's earlyReturn
 // signal being affected or seen by another timer instance.
 //
-// Consider the following sceneario where timer instances share a common
+// Consider the following scenario where timer instances share a common
 // earlyReturn signal (T1 creates, stops and resets a Cancellable timer under a
 // lock L; T2, T3, T4 and T5 are goroutines that handle the first (A), second
 // (B), third (C), and fourth (D) instance of the timer firing, respectively):

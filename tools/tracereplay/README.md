@@ -64,7 +64,7 @@ Replaying message: 1
 Done
 ```
 
-If you want to see the messages that are stored in the file, you can setup the
+If you want to see the messages that are stored in the file, you can set up the
 example server provided in `examples/seccheck:server_cc` and replay the save
 file using the same command above. Here is the output you would get:
 

@@ -108,7 +108,7 @@ class TempPath {
   TempPath& operator=(TempPath&& orig);
 
   // Changes the path this TempPath represents. If the TempPath already
-  // represented a path, deletes and returns that path. Otherwise returns the
+  // represented a path, deletes and returns that path. Otherwise, returns the
   // empty string.
   std::string reset(std::string newpath);
   std::string reset() { return reset(""); }

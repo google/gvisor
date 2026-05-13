@@ -40,7 +40,7 @@ func (d *dentry) isDir() bool {
 // Preconditions:
 //   - filesystem.renameMu must be locked.
 //   - If the addition to the dentry tree is due to a read-only operation (like
-//     Walk), then d.opMu must be held for reading. Otherwise d.opMu must be
+//     Walk), then d.opMu must be held for reading. Otherwise, d.opMu must be
 //     held for writing.
 //   - d.childrenMu must be locked.
 //   - d.isDir().

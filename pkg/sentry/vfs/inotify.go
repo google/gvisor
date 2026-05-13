@@ -35,7 +35,7 @@ import (
 // must be a power 2 for rounding below.
 const inotifyEventBaseSize = 16
 
-// EventType defines different kinds of inotfiy events.
+// EventType defines different kinds of inotify events.
 //
 // The way events are labelled appears somewhat arbitrary, but they must match
 // Linux so that IN_EXCL_UNLINK behaves as it does in Linux.
@@ -704,7 +704,7 @@ func (e *Event) CopyTo(ctx context.Context, buf []byte, dst usermem.IOSequence) 
 		writeLen += n
 	}
 
-	// Santiy check.
+	// Sanity check.
 	if writeLen != e.sizeOf() {
 		panic(fmt.Sprintf("Serialized unexpected amount of data for an event, expected %d, wrote %d.", e.sizeOf(), writeLen))
 	}

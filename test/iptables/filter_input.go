@@ -353,7 +353,7 @@ func (*FilterInputRequireProtocolUDP) Name() string {
 // ContainerAction implements TestCase.ContainerAction.
 func (*FilterInputRequireProtocolUDP) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	if err := filterTable(ipv6, "-A", "INPUT", "-m", "udp", "--destination-port", fmt.Sprintf("%d", dropPort), "-j", "DROP"); err == nil {
-		return errors.New("expected iptables to fail with out \"-p udp\", but succeeded")
+		return errors.New("expected iptables to fail without \"-p udp\", but succeeded")
 	}
 	return nil
 }

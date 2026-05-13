@@ -504,7 +504,7 @@ func (c *Container) startImpl(conf *config.Config, action string, startRoot func
 				c.Spec.Mounts = cleanMounts
 			}
 
-			// Setup stdios if the container is not using terminal. Otherwise TTY was
+			// Setup stdios if the container is not using terminal. Otherwise, TTY was
 			// already setup in create.
 			var stdios []*os.File
 			if !c.Spec.Process.Terminal {
@@ -1534,7 +1534,7 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 		cmd.SysProcAttr.CgroupFD = int(cloneIntoCgroupFD.Fd())
 	}
 
-	// Set Args[0] to make easier to spot the gofer process. Otherwise it's
+	// Set Args[0] to make easier to spot the gofer process. Otherwise, it's
 	// shown as `exe`.
 	cmd.Args[0] = "runsc-gofer"
 

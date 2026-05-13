@@ -136,10 +136,10 @@ const (
 	apmShardLookupDataPadding           = apmEnablePadding * apmShardLookupDataRequiredPadding
 
 	// These define fractional thresholds for when apmShard.rehash() is called
-	// (i.e. the load factor) and when it rehases to a larger table
+	// (i.e. the load factor) and when it rehashes to a larger table
 	// respectively. They are chosen such that the rehash threshold = the
 	// expansion threshold + 1/2, so that when reuse of deleted slots is rare
-	// or non-existent, rehashing occurs after the insertion of at least 1/2
+	// or nonexistent, rehashing occurs after the insertion of at least 1/2
 	// the table's size in new entries, which is acceptably infrequent.
 	apmRehashThresholdNum    = 2
 	apmRehashThresholdDen    = 3

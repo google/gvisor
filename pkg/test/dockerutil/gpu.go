@@ -304,8 +304,8 @@ func NewCudaVersionFromOutput(out string) (*CudaVersion, error) {
 	return &CudaVersion{Major: major, Minor: minor}, err
 }
 
-// MaxSuportedCUDAVersion returns the maximum supported by the host machine.
-func MaxSuportedCUDAVersion(ctx context.Context, t *testing.T) (*CudaVersion, error) {
+// MaxSupportedCUDAVersion returns the maximum supported by the host machine.
+func MaxSupportedCUDAVersion(ctx context.Context, t *testing.T) (*CudaVersion, error) {
 	c := MakeContainer(ctx, t)
 	defer c.CleanUp(ctx)
 	opts, err := GPURunOpts(SniffGPUOpts{

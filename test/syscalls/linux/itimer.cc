@@ -41,7 +41,7 @@ namespace gvisor {
 namespace testing {
 namespace {
 
-constexpr char kSIGALRMToMainThread[] = "--itimer_sigarlm_to_main_thread";
+constexpr char kSIGALRMToMainThread[] = "--itimer_sigalrm_to_main_thread";
 constexpr char kSIGPROFFairnessActive[] = "--itimer_sigprof_fairness_active";
 constexpr char kSIGPROFFairnessIdle[] = "--itimer_sigprof_fairness_idle";
 

@@ -378,7 +378,7 @@ while ip link | grep client.0 > /dev/null; do
 done
 
 if ! ${client}; then
-  # Only add the address to NIC if netstack is not in use. Otherwise the host
+  # Only add the address to NIC if netstack is not in use. Otherwise, the host
   # will also process the inbound SYN and send a RST back.
   ${nsjoin_binary} /tmp/client.netns ip addr add ${client_proxy_addr}/${mask} dev client.0
 fi
@@ -391,7 +391,7 @@ while ip link | grep server.0 > /dev/null; do
   ip link set dev server.0 netns /tmp/server.netns
 done
 if ! ${server}; then
-  # Only add the address to NIC if netstack is not in use. Otherwise the host
+  # Only add the address to NIC if netstack is not in use. Otherwise, the host
   # will also process the inbound SYN and send a RST back.
   ${nsjoin_binary} /tmp/server.netns ip addr add ${server_proxy_addr}/${mask} dev server.0
 fi

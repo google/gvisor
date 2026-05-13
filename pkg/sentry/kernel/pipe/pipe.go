@@ -375,7 +375,7 @@ func (p *Pipe) rReadinessLocked() waiter.EventMask {
 	}
 	if !p.HasWriters() && p.hadWriter {
 		// POLLHUP must be suppressed until the pipe has had at least one writer
-		// at some point. Otherwise a reader thread may poll and immediately get
+		// at some point. Otherwise, a reader thread may poll and immediately get
 		// a POLLHUP before the writer ever opens the pipe, which the reader may
 		// interpret as the writer opening then closing the pipe.
 		ready |= waiter.EventHUp

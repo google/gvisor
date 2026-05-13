@@ -104,12 +104,12 @@ const (
 	// Default taken from MAX_ANYCAST_DELAY_TIME of RFC 4861 section 10.
 	defaultMaxAnycastDelayTime = time.Second
 
-	// defaultMaxReachbilityConfirmations is the default amount of unsolicited
+	// defaultMaxReachabilityConfirmations is the default amount of unsolicited
 	// reachability confirmation messages a node MAY send to all-node multicast
 	// address when it determines its link-layer address has changed.
 	//
 	// Default taken from MAX_NEIGHBOR_ADVERTISEMENT of RFC 4861 section 10.
-	defaultMaxReachbilityConfirmations = 3
+	defaultMaxReachabilityConfirmations = 3
 )
 
 // NUDDispatcher is the interface integrators of netstack must implement to
@@ -193,7 +193,7 @@ type NUDConfigurations struct {
 	// MinRandomFactor is the minimum value of the random factor used for
 	// computing reachable time.
 	//
-	// See BaseReachbleTime for more information on computing the reachable time.
+	// See BaseReachableTime for more information on computing the reachable time.
 	//
 	// Must be greater than 0.
 	MinRandomFactor float32
@@ -201,7 +201,7 @@ type NUDConfigurations struct {
 	// MaxRandomFactor is the maximum value of the random factor used for
 	// computing reachabile time.
 	//
-	// See BaseReachbleTime for more information on computing the reachable time.
+	// See BaseReachableTime for more information on computing the reachable time.
 	//
 	// Must be great than or equal to MinRandomFactor.
 	MaxRandomFactor float32
@@ -270,7 +270,7 @@ func DefaultNUDConfigurations() NUDConfigurations {
 		MaxMulticastProbes:           defaultMaxMulticastProbes,
 		MaxUnicastProbes:             defaultMaxUnicastProbes,
 		MaxAnycastDelayTime:          defaultMaxAnycastDelayTime,
-		MaxReachabilityConfirmations: defaultMaxReachbilityConfirmations,
+		MaxReachabilityConfirmations: defaultMaxReachabilityConfirmations,
 	}
 }
 

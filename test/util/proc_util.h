@@ -89,7 +89,7 @@ PosixErrorOr<std::vector<ProcMapsEntry>> ParseProcMaps(
 PosixErrorOr<ProcMapsEntry> FindUniqueMapsEntry(
     std::vector<ProcMapsEntry> const&, uintptr_t);
 
-// Returns true if vsyscall (emmulation or not) is enabled.
+// Returns true if vsyscall (emulation or not) is enabled.
 PosixErrorOr<bool> IsVsyscallEnabled();
 
 // Parses /proc/pid/smaps type entries

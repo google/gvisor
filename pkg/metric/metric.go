@@ -736,7 +736,7 @@ type Bucketer interface {
 // wider by a scaled exponentially-growing series, until `NumFiniteBuckets`
 // buckets exist.
 type ExponentialBucketer struct {
-	// numFinitebuckets is the total number of finite buckets in the scheme.
+	// numFiniteBuckets is the total number of finite buckets in the scheme.
 	numFiniteBuckets int
 
 	// width is the size of the first (0-th) finite bucket.

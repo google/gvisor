@@ -96,7 +96,7 @@ Local class instances should be preferred, wherever possible, over full test
 fixtures.
 
 A test utility should be created when there is more than one test that requires
-that same functionality, otherwise the class should be test local.
+that same functionality; otherwise, the class should be test local.
 
 ## Save/Restore support in tests
 

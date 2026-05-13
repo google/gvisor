@@ -58,7 +58,7 @@ func (k *Kernel) init(maxCPUs int) {
 		panic("Allocated globalIDT should be page aligned")
 	}
 
-	// Setup the IDT, which is uniform.
+	// Set up the IDT, which is uniform.
 	for v, handler := range handlers {
 		// Allow Breakpoint and Overflow to be called from all
 		// privilege levels.

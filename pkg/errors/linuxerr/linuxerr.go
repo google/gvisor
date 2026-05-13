@@ -28,7 +28,7 @@ import (
 const maxErrno uint32 = errno.EHWPOISON + 1
 
 // The following errors are semantically identical to Errno of type unix.Errno
-// or sycall.Errno. However, since the type are distinct ( these are
+// or syscall.Errno. However, since the type are distinct ( these are
 // *errors.Error), they are not directly comparable. However, the Errno method
 // returns an Errno number such that the error can be compared to unix/syscall.Errno
 // (e.g. unix.Errno(EPERM.Errno()) == unix.EPERM is true). Converting unix/syscall.Errno
@@ -112,7 +112,7 @@ var (
 	ENOTUNIQ        = errors.New(errno.ENOTUNIQ, "name not unique on network")
 	EBADFD          = errors.New(errno.EBADFD, "file descriptor in bad state")
 	EREMCHG         = errors.New(errno.EREMCHG, "remote address changed")
-	ELIBACC         = errors.New(errno.ELIBACC, "can not access a needed shared library")
+	ELIBACC         = errors.New(errno.ELIBACC, "cannot access a needed shared library")
 	ELIBBAD         = errors.New(errno.ELIBBAD, "accessing a corrupted shared library")
 	ELIBSCN         = errors.New(errno.ELIBSCN, ".lib section in a.out corrupted")
 	ELIBMAX         = errors.New(errno.ELIBMAX, "attempting to link in too many shared libraries")
@@ -183,7 +183,7 @@ var (
 var errNotValidError = errors.New(errno.Errno(maxErrno), "not a valid error")
 
 // The following errorSlice holds errors by errno for fast translation between
-// errnos (especially uint32(sycall.Errno)) and *errors.Error.
+// errnos (especially uint32(syscall.Errno)) and *errors.Error.
 var errorSlice = []*errors.Error{
 	// Errno values from include/uapi/asm-generic/errno-base.h.
 	errno.NOERRNO: noError,

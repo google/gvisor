@@ -165,7 +165,7 @@ func ConnectTCP(ctx context.Context, ip net.IP, port int, ipv6 bool) error {
 }
 
 // LocalAddrs returns a list of local network interface addresses. When ipv6 is
-// true, only IPv6 addresses are returned. Otherwise only IPv4 addresses are
+// true, only IPv6 addresses are returned. Otherwise, only IPv4 addresses are
 // returned.
 func LocalAddrs(ipv6 bool) ([]string, error) {
 	addrs, err := net.InterfaceAddrs()

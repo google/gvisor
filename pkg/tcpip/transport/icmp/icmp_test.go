@@ -208,7 +208,7 @@ func TestWriteUnboundWithBindToDevice(t *testing.T) {
 	}
 
 	// Send a packet with SO_BINDTODEVICE cleared. This verifies that clearing
-	// the device binding will fallback to using the default NIC to send
+	// the device binding will fall back to using the default NIC to send
 	// packets.
 	{
 		socket.SocketOptions().SetBindToDevice(0)

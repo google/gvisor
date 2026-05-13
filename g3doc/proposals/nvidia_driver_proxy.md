@@ -82,7 +82,7 @@ by methods on the `Object` class. API-accessed objects are most frequently
 created by invocations of `ioctl(NV_ESC_RM_ALLOC)`, which is parameterized by
 `hClass`. `src/nvidia/src/kernel/rmapi/resource_list.h` specifies the mapping
 from `hClass` to instantiated ("internal") class, as well as the type of the
-pointee of `NVOS21_PARAMETERS::pAllocParms` or `NVOS64_PARAMETERS::pAllocParms`
+pointee of `NVOS21_PARAMETERS::pAllocParams` or `NVOS64_PARAMETERS::pAllocParams`
 which the object's constructor takes as input ("alloc param info").
 
 ## Key Issues
@@ -132,7 +132,7 @@ The extent to which applications use `cudaMallocManaged()` is unclear; use of
 `cudaMalloc()` and explicit copying appears to predominate in
 performance-sensitive code. PyTorch contains one non-test use of
 `cudaMallocManaged()`[^cite-pytorch-uvm], but it is not immediately clear what
-circumstances cause the containing function to be invoked. Tensorflow does not
+circumstances cause the containing function to be invoked. TensorFlow does not
 appear to use `cudaMallocManaged()` outside of test code.
 
 ### Device Memory Caching

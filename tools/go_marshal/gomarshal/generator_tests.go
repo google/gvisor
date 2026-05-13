@@ -145,7 +145,7 @@ func (g *testGenerator) emitTestMarshalUnmarshalPreservesData() {
 func (g *testGenerator) emitTestMarshalUnmarshalSlicePreservesData(slice *sliceAPI) {
 	for _, name := range []string{"binary", "hostarch"} {
 		if !g.imports.markUsed(name) {
-			panic(fmt.Sprintf("Generated test for '%s' referenced a non-existent import with local name '%s'", g.typeName(), name))
+			panic(fmt.Sprintf("Generated test for '%s' referenced a nonexistent import with local name '%s'", g.typeName(), name))
 		}
 	}
 

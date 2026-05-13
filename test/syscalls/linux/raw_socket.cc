@@ -374,7 +374,7 @@ TEST_P(RawSocketTest, BindToInvalid) {
       SyscallFailsWithErrno(EADDRNOTAVAIL));
 }
 
-// Send and receive an packet.
+// Send and receive a packet.
 TEST_P(RawSocketTest, SendAndReceive) {
   // Arbitrary.
   constexpr char kBuf[] = "TB12";

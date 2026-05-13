@@ -164,7 +164,7 @@ func (*machineControlImpl) disable() error {
 
 // Writes data to SMT control. If file not found, logs file not exist error and returns nil
 // error, which is done because machines without the file pointed to by smtPath only have one
-// thread per core in the first place. Otherwise returns error from os.WriteFile.
+// thread per core in the first place. Otherwise, returns error from os.WriteFile.
 func checkFileExistsOnWrite(op, data string) error {
 	err := os.WriteFile(smtPath, []byte(data), 0644)
 	if err != nil && os.IsExist(err) {

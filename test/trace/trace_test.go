@@ -76,7 +76,7 @@ func TestAll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// No trace point should have a time lesser than this.
+	// No trace point should have a time less than this.
 	cutoffTime = time.Now()
 	cmd := exec.Command(
 		runsc,

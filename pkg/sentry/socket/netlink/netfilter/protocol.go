@@ -995,7 +995,7 @@ func (p *Protocol) newRule(nft *nftables.NFTables, st *stack.Stack, attrs map[ui
 		return err
 	}
 
-	// Once we have a at least one rule registered on a base chain, nftables can
+	// Once we have at least one rule registered on a base chain, nftables can
 	// be called to potentially filter the packet.
 	if !st.IsNFTablesConfigured() && chain.IsBaseChain() {
 		st.SetNFTablesConfigured(true)
@@ -1467,7 +1467,7 @@ func (p *Protocol) processBatchMessage(ctx context.Context, buf []byte, ms *nlms
 		switch hdr.NetFilterMsgType() {
 		case linux.NFT_MSG_NEWTABLE:
 			// We only check the error value in the case of NFT_MSG_NEWTABLE as linux
-			// returns an EOPNOTSUPP error only in that case. Otherwise the other
+			// returns an EOPNOTSUPP error only in that case. Otherwise, the other
 			// operations will return errors specific to their function.
 			if err != nil {
 				log.Debugf("Nftables: Unsupported address family: %d", int(nfGenMsg.Family))

@@ -50,7 +50,7 @@ func TestCuda12_8(t *testing.T) {
 	ctx := context.Background()
 	const image = "gpu/cuda-tests-12-8"
 
-	cudaVersion, err := dockerutil.MaxSuportedCUDAVersion(ctx, t)
+	cudaVersion, err := dockerutil.MaxSupportedCUDAVersion(ctx, t)
 	if err != nil {
 		t.Fatalf("failed to get CUDA version: %v", err)
 	}

@@ -628,7 +628,7 @@ func runSampleTest(ctx context.Context, t *testing.T, testName string, te *TestE
 				testLog(t, "Test failed as expected: %s (took %v)", willFailReason, testDuration)
 				return "", nil
 			}
-			return "", fmt.Errorf("test was expected to fail (%s), but it failed with %v which is a different reason reason than expected: %v", willFailReason, testErr, isExpectedErr)
+			return "", fmt.Errorf("test was expected to fail (%s), but it failed with %v which is a different reason than expected: %v", willFailReason, testErr, isExpectedErr)
 		}
 	}
 	return "", fmt.Errorf("test failed: %v", testErr)

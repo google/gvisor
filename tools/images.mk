@@ -24,7 +24,7 @@
 ##
 ##   (*) Note that you may provide an ARCH parameter in order to build
 ##   and load images from an alternate architecture (using qemu). When
-##   bazel is run as a server, this has the effect of running an full
+##   bazel is run as a server, this has the effect of running a full
 ##   cross-architecture chain, and can produce cross-compiled binaries.
 ##
 

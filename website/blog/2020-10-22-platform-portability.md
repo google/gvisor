@@ -124,4 +124,4 @@ providing the `--platform` flag to `runsc`. See the documentation on
 use different platforms with Docker. We would love to hear about your experience
 so come chat with us in our
 [Gitter channel](https://gitter.im/gvisor/community), or send us an
-[issue on Github](https://gvisor.dev/issue) if you run into any problems.
+[issue on GitHub](https://gvisor.dev/issue) if you run into any problems.

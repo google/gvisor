@@ -587,7 +587,7 @@ func (dut *DUT) SendToWithErrno(ctx context.Context, t *testing.T, sockfd int32,
 }
 
 // SetNonBlocking will set O_NONBLOCK flag for fd if nonblocking
-// is true, otherwise it will clear the flag.
+// is true; otherwise, it will clear the flag.
 func (dut *DUT) SetNonBlocking(t *testing.T, fd int32, nonblocking bool) {
 	t.Helper()
 

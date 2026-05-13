@@ -17,7 +17,7 @@ package checklocks
 import "go/types"
 
 // originObject returns obj's origin (for instantiated generic objects) when
-// available, otherwise it returns obj unchanged.
+// available; otherwise, it returns obj unchanged.
 func originObject(obj types.Object) types.Object {
 	switch obj := obj.(type) {
 	case *types.Var:

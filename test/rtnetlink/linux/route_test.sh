@@ -17,7 +17,7 @@
 set -xeo pipefail
 source "$(dirname "$0")/rtnetlink_test.sh"
 
-# Create a new default route and a new route with a address.
+# Create a new default route and a new route with an address.
 ip netns add test
 ip link add name veth1 type veth peer name eth0 netns test
 ip netns exec test ip link set up dev lo

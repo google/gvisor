@@ -46,7 +46,7 @@ const (
 )
 
 var (
-	// ByteOrder is the native byte order (little endian).
+	// ByteOrder is the native byte order (little-endian).
 	ByteOrder = binary.LittleEndian
 )
 

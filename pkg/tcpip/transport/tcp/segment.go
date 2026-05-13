@@ -26,8 +26,8 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
-// queueFlags are used to indicate which queue of an endpoint a particular segment
-// belongs to. This is used to track memory accounting correctly.
+// queueFlags are used to indicate to which endpoint queue a particular segment
+// belongs. This is used to track memory accounting correctly.
 type queueFlags uint8
 
 const (

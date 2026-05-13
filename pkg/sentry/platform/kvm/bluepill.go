@@ -90,7 +90,7 @@ func (c *vCPU) die(context *arch.SignalContext64, msg string) {
 	// Save the death message, which will be thrown.
 	c.dieState.message = msg
 
-	// Setup the trampoline.
+	// Set up the trampoline.
 	c.dieArchSetup(context, &c.dieState.guestRegs, false)
 }
 

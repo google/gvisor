@@ -102,7 +102,7 @@ type allocationClassHandler struct {
 	capSet nvconf.DriverCaps
 }
 
-// allocHandler returns a allocationClassHandler that wraps the given function.
+// allocHandler returns an allocationClassHandler that wraps the given function.
 // The handler will be called if any of the given capabilities are enabled.
 func allocHandler(handler func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error), caps nvconf.DriverCaps) allocationClassHandler {
 	return allocationClassHandler{

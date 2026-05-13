@@ -58,7 +58,7 @@ func NewForwarder(s *stack.Stack, rcvWnd, maxInFlight int, handler func(*Forward
 }
 
 // HandlePacket handles a packet if it is of interest to the forwarder (i.e., if
-// it's a SYN packet), returning true if it's the case. Otherwise the packet
+// it's a SYN packet), returning true if it's the case. Otherwise, the packet
 // is not handled and false is returned.
 //
 // This function is expected to be passed as an argument to the

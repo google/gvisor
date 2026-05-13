@@ -129,7 +129,7 @@ type multicastGroupState struct {
 	// Must not be nil.
 	delayedReportJob *tcpip.Job
 
-	// delyedReportJobFiresAt is the time when the delayed report job will fire.
+	// delayedReportJobFiresAt is the time when the delayed report job will fire.
 	//
 	// A zero value indicates that the job is not scheduled.
 	// TODO(b/341946753): Restore when netstack is savable.

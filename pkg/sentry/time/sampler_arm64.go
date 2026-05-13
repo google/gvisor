@@ -27,7 +27,7 @@ func getCNTFRQ() TSCValue
 func getDefaultArchOverheadCycles() TSCValue {
 	// estimated the clock frequency on x86 is 1Ghz.
 	// 1Ghz divided by counter-timer frequency of ARM to get
-	// frqRatio. defaultOverheadCycles of ARM equals to that on
+	// frqRatio. defaultOverheadCycles of ARM is equal to that on
 	// x86 divided by frqRatio
 	cntfrq := getCNTFRQ()
 	frqRatio := 1000000000 / float64(cntfrq)

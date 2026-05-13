@@ -276,7 +276,7 @@ func TestConfig(t *testing.T) {
 			config: map[string]any{
 				"backoff_max": 10,
 			},
-			err: "is not an string",
+			err: "is not a string",
 		},
 		{
 			name: "bad-invalid-backoffs",

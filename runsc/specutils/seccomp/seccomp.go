@@ -44,7 +44,7 @@ var (
 func BuildProgram(s *specs.LinuxSeccomp) (bpf.Program, error) {
 	defaultAction, err := convertAction(s.DefaultAction)
 	if err != nil {
-		return bpf.Program{}, fmt.Errorf("secomp default action: %w", err)
+		return bpf.Program{}, fmt.Errorf("seccomp default action: %w", err)
 	}
 	ruleset, err := convertRules(s)
 	if err != nil {

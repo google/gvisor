@@ -72,7 +72,7 @@ var (
 	ErrNetworkNameNotUnique      = newWithHost("name not unique on network", errno.ENOTUNIQ, unix.ENOTUNIQ)
 	ErrFDInBadState              = newWithHost("file descriptor in bad state", errno.EBADFD, unix.EBADFD)
 	ErrRemoteAddressChanged      = newWithHost("remote address changed", errno.EREMCHG, unix.EREMCHG)
-	ErrSharedLibraryInaccessible = newWithHost("can not access a needed shared library", errno.ELIBACC, unix.ELIBACC)
+	ErrSharedLibraryInaccessible = newWithHost("cannot access a needed shared library", errno.ELIBACC, unix.ELIBACC)
 	ErrCorruptedSharedLibrary    = newWithHost("accessing a corrupted shared library", errno.ELIBBAD, unix.ELIBBAD)
 	ErrLibSectionCorrupted       = newWithHost(".lib section in a.out corrupted", errno.ELIBSCN, unix.ELIBSCN)
 	ErrTooManySharedLibraries    = newWithHost("attempting to link in too many shared libraries", errno.ELIBMAX, unix.ELIBMAX)

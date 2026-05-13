@@ -30,7 +30,7 @@ import (
 
 // checkEqual checks if two objects are equal.
 //
-// N.B. This only handles one level of dereferences for NaN. Otherwise we
+// N.B. This only handles one level of dereferences for NaN. Otherwise, we
 // would need to fork the entire implementation of reflect.DeepEqual.
 func checkEqual(root, loadedValue any) bool {
 	if reflect.DeepEqual(root, loadedValue) {

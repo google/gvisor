@@ -19,7 +19,7 @@ import (
 	"unsafe"
 )
 
-func TestAtomiciInt64(t *testing.T) {
+func TestAtomicInt64(t *testing.T) {
 	v := struct {
 		v8  int8
 		v64 Int64

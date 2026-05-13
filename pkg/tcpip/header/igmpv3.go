@@ -34,7 +34,7 @@ var (
 )
 
 const (
-	// IGMPv3QueryMinimumSize is the mimum size of a valid IGMPv3 query,
+	// IGMPv3QueryMinimumSize is the minimum size of a valid IGMPv3 query,
 	// as per RFC 3376 section 4.1.
 	IGMPv3QueryMinimumSize = 12
 

@@ -27,7 +27,7 @@ package kernel
 //		vfork() syscall stopping the calling task until the child task releases its
 //		MM). In this case, calling Task.interrupt is both unnecessary (the task
 //		goroutine obviously cannot be blocked in Task.block or executing application
-//		code) and undesirable (as it may spuriously interrupt a in-progress
+//		code) and undesirable (as it may spuriously interrupt an in-progress
 //		syscall).
 //
 // Beginning internal stops in this case is implemented by
@@ -131,7 +131,7 @@ func (t *Task) beginInternalStopLocked(s TaskStop) {
 //   - The task must be in an internal stop (i.e. t.stop != nil).
 func (t *Task) endInternalStopLocked() {
 	if t.stop == nil {
-		panic("Attempting to leave non-existent internal stop")
+		panic("Attempting to leave nonexistent internal stop")
 	}
 	t.Debugf("Leaving internal stop %#v", t.stop)
 	t.stop = nil

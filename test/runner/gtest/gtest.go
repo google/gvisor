@@ -28,7 +28,7 @@ var (
 	// filterTestFlag is the flag that will filter tests in gtest binaries.
 	filterTestFlag = "--gtest_filter"
 
-	// listBechmarkFlag is the flag that will list benchmarks in gtest binaries.
+	// listBenchmarkFlag is the flag that will list benchmarks in gtest binaries.
 	listBenchmarkFlag = "--benchmark_list_tests"
 
 	// filterBenchmarkFlag is the flag that will run specified benchmarks.

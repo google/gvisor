@@ -83,7 +83,7 @@ func validateField(ref reflect.Value, refName string, m tcpip.MultiCounterStat, 
 		return fmt.Errorf("expected ref type's to be *StatCounter, but its type is %s", ref.Type().Elem().Name())
 	}
 
-	// The field names are expected to match (case insensitive).
+	// The field names are expected to match (case-insensitive).
 	if !strings.EqualFold(refName, multiName) {
 		return fmt.Errorf("wrong field name: got = %s, want = %s", multiName, refName)
 	}
@@ -98,7 +98,7 @@ func validateField(ref reflect.Value, refName string, m tcpip.MultiCounterStat, 
 }
 
 func validateIntegralMapField(ref reflect.Value, refName string, m tcpip.MultiIntegralStatCounterMap, multiName string) error {
-	// The field names are expected to match (case insensitive).
+	// The field names are expected to match (case-insensitive).
 	if !strings.EqualFold(refName, multiName) {
 		return fmt.Errorf("wrong field name: got = %s, want = %s", multiName, refName)
 	}

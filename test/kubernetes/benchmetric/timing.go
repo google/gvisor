@@ -115,7 +115,7 @@ func TimedCommand(argv ...string) []string {
 		"sh",
 		"-c",
 		fmt.Sprintf(
-			// Use bash if possible, otherwise use sh.
+			// Use bash if possible; otherwise, use sh.
 			"if hash bash > /dev/null 2>/dev/null; then bash -c %s; else sh -c %s; fi",
 			shellEscape(innerCommand),
 			shellEscape(innerCommand),

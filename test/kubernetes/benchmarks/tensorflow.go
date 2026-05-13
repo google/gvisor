@@ -45,8 +45,8 @@ var workloads = map[string]string{
 	"NeuralNetwork":        "3_NeuralNetworks/neural_network.py",
 }
 
-// RunTensorflowOnCPU runs the Tensorflow example workloads on CPU.
-func RunTensorflowOnCPU(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesContext, cluster *testcluster.TestCluster) {
+// RunTensorFlowOnCPU runs the TensorFlow example workloads on CPU.
+func RunTensorFlowOnCPU(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesContext, cluster *testcluster.TestCluster) {
 	benchmarkNS := cluster.Namespace(testcluster.NamespaceBenchmark)
 	if err := benchmarkNS.Reset(ctx); err != nil {
 		t.Fatalf("cannot reset namespace: %v", err)
@@ -93,7 +93,7 @@ func RunTensorflowOnCPU(ctx context.Context, t *testing.T, k8sCtx k8sctx.Kuberne
 	for _, workloadPath := range workloadPaths {
 		workloadName := workloadPathToName[workloadPath]
 		t.Run(workloadName, func(t *testing.T) {
-			pod := newTensorflowOnCPUPod(benchmarkNS, name, image, workloadPath)
+			pod := newTensorFlowOnCPUPod(benchmarkNS, name, image, workloadPath)
 			pod, err := cluster.ConfigurePodForRuntimeTestNodepool(ctx, pod)
 			if err != nil {
 				t.Fatalf("Failed to set pod for test runtime: %v", err)
@@ -114,7 +114,7 @@ func RunTensorflowOnCPU(ctx context.Context, t *testing.T, k8sCtx k8sctx.Kuberne
 			if err != nil {
 				t.Fatalf("Failed to get container duration: %v", err)
 			}
-			if err := recorder.Record(ctx, fmt.Sprintf("TensorflowOnCPU/%s", workloadName), benchmetric.BenchmarkDuration(containerDuration)); err != nil {
+			if err := recorder.Record(ctx, fmt.Sprintf("TensorFlowOnCPU/%s", workloadName), benchmetric.BenchmarkDuration(containerDuration)); err != nil {
 				t.Fatalf("Failed to record benchmark data: %v", err)
 			}
 			total += containerDuration
@@ -124,13 +124,13 @@ func RunTensorflowOnCPU(ctx context.Context, t *testing.T, k8sCtx k8sctx.Kuberne
 		}
 	}
 	if !t.Failed() {
-		if err := recorder.Record(ctx, "TensorflowOnCPU", benchmetric.BenchmarkDuration(total)); err != nil {
+		if err := recorder.Record(ctx, "TensorFlowOnCPU", benchmetric.BenchmarkDuration(total)); err != nil {
 			t.Fatalf("Failed to record benchmark data: %v", err)
 		}
 	}
 }
 
-func newTensorflowOnCPUPod(namespace *testcluster.Namespace, name, image, workloadPath string) *v13.Pod {
+func newTensorFlowOnCPUPod(namespace *testcluster.Namespace, name, image, workloadPath string) *v13.Pod {
 	return &v13.Pod{
 		TypeMeta: v1.TypeMeta{
 			Kind:       "Pod",

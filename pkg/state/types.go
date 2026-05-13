@@ -282,7 +282,7 @@ func (tbd *typeDecodeDatabase) Lookup(id typeID, typ reflect.Type) *reconciledTy
 				name, fields, pending.Fields)
 		}
 	}
-	// The type has been reeconciled.
+	// The type has been reconciled.
 	rte.FieldOrder = fieldOrder
 	tbd.byID[id-1] = rte
 	return rte

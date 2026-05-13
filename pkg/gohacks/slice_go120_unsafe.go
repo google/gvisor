@@ -20,7 +20,7 @@ import (
 	"unsafe"
 )
 
-// Slice returns a slice whose underlying array starts at ptr an which length
+// Slice returns a slice whose underlying array starts at ptr and whose length
 // and capacity are len.
 //
 // Slice is a wrapper around unsafe.Slice. Prefer to use unsafe.Slice directly

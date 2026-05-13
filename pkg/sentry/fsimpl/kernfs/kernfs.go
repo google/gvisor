@@ -31,7 +31,7 @@
 //
 // Kernfs dentries represents named pointers to inodes. Kernfs is solely
 // responsible for maintaining and modifying its dentry tree; inode
-// implementations can not access the tree. Dentries and inodes have
+// implementations cannot access the tree. Dentries and inodes have
 // independent lifetimes and reference counts. A child dentry unconditionally
 // holds a reference on its parent directory's dentry. A dentry also holds a
 // reference on the inode it points to (although that might not be the only

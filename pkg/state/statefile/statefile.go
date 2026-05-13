@@ -32,7 +32,7 @@
 // First, it includes a 8-byte magic header which is the following
 // sequence of bytes [0x67, 0x56, 0x69, 0x73, 0x6f, 0x72, 0x53, 0x46]
 //
-// This header is followed by an 8-byte length N (big endian), and an
+// This header is followed by an 8-byte length N (big-endian), and an
 // ASCII-encoded JSON map that is exactly N bytes long.
 //
 // This map includes only strings for keys and strings for values. Keys in the

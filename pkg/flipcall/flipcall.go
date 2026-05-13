@@ -59,7 +59,7 @@ type Endpoint struct {
 	ctrl endpointControlImpl
 }
 
-// EndpointSide indicates which side of a connection an Endpoint belongs to.
+// EndpointSide indicates the side of a connection to which an Endpoint belongs.
 type EndpointSide int
 
 const (

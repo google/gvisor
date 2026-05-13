@@ -303,7 +303,7 @@ PosixErrorOr<std::vector<Event>> DrainEvents(int fd) {
                    readlen);
         ev.name = std::string(cursor +
                               offsetof(struct inotify_event, name));  // NOLINT
-        // Name field should always be smaller than event.len, otherwise we have
+        // Name field should always be smaller than event.len; otherwise, we have
         // a buffer overflow. The two sizes aren't equal because the string
         // constructor will stop at the first null byte, while event.name may be
         // padded up to event.len using multiple null bytes.
@@ -1671,7 +1671,7 @@ TEST(Inotify, AddWatchOnInvalidPathFails) {
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
 
-  // Non-existent path.
+  // Nonexistent path.
   EXPECT_THAT(
       inotify_add_watch(fd.get(), nonexistent.path().c_str(), IN_CREATE),
       SyscallFailsWithErrno(ENOENT));

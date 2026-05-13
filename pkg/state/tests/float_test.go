@@ -96,7 +96,7 @@ func TestComplex(t *testing.T) {
 		safeComplex64s,
 		safeComplex128s,
 	)))
-	runTestCases(t, false, "interfacse", interfacesTo(flatten(
+	runTestCases(t, false, "interfaces", interfacesTo(flatten(
 		safeComplex64s,
 		safeComplex128s,
 	)))

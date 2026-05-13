@@ -91,7 +91,7 @@ func TestMXCSR(t *testing.T) {
 			FullRestore:        true,
 		}
 
-		const mxcsrControllMask = uint32(0x1f80)
+		const mxcsrControlMask = uint32(0x1f80)
 		mxcsrBefore := uint32(0)
 		mxcsrAfter := uint32(0)
 		stmxcsr(&mxcsrBefore)
@@ -108,7 +108,7 @@ func TestMXCSR(t *testing.T) {
 			t.Errorf("application syscall failed: %v", err)
 		}
 		stmxcsr(&mxcsrAfter)
-		if mxcsrAfter&mxcsrControllMask != mxcsrBefore&mxcsrControllMask {
+		if mxcsrAfter&mxcsrControlMask != mxcsrBefore&mxcsrControlMask {
 			t.Errorf("mxcsr = %x (expected %x)", mxcsrBefore, mxcsrAfter)
 		}
 		return false

@@ -27,23 +27,23 @@ const (
 	// Solicitation message (body of an ICMPv6 packet).
 	NDPNSMinimumSize = 20
 
-	// ndpNSTargetAddessOffset is the start of the Target Address
+	// ndpNSTargetAddressOffset is the start of the Target Address
 	// field within an NDPNeighborSolicit.
-	ndpNSTargetAddessOffset = 4
+	ndpNSTargetAddressOffset = 4
 
 	// ndpNSOptionsOffset is the start of the NDP options in an
 	// NDPNeighborSolicit.
-	ndpNSOptionsOffset = ndpNSTargetAddessOffset + IPv6AddressSize
+	ndpNSOptionsOffset = ndpNSTargetAddressOffset + IPv6AddressSize
 )
 
 // TargetAddress returns the value within the Target Address field.
 func (b NDPNeighborSolicit) TargetAddress() tcpip.Address {
-	return tcpip.AddrFrom16Slice(b[ndpNSTargetAddessOffset:][:IPv6AddressSize])
+	return tcpip.AddrFrom16Slice(b[ndpNSTargetAddressOffset:][:IPv6AddressSize])
 }
 
 // SetTargetAddress sets the value within the Target Address field.
 func (b NDPNeighborSolicit) SetTargetAddress(addr tcpip.Address) {
-	copy(b[ndpNSTargetAddessOffset:][:IPv6AddressSize], addr.AsSlice())
+	copy(b[ndpNSTargetAddressOffset:][:IPv6AddressSize], addr.AsSlice())
 }
 
 // Options returns an NDPOptions of the options body.

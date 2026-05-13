@@ -237,7 +237,7 @@ PosixErrorOr<std::vector<ProcSmapsEntry>> ParseProcSmaps(
       entry->maps_entry = std::move(maybe_maps_entry).ValueOrDie();
       continue;
     }
-    // Otherwise it's a field in an existing /proc/[pid]/smaps entry of the form
+    // Otherwise, it's a field in an existing /proc/[pid]/smaps entry of the form
     // "key:value" (where value in practice will be preceded by a variable
     // amount of whitespace).
     if (!entry) {

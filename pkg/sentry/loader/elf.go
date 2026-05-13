@@ -120,7 +120,7 @@ func parseHeader(ctx context.Context, f fullReader) (elfInfo, error) {
 		return elfInfo{}, linuxerr.ENOEXEC
 	}
 
-	// We only support 64-bit, little endian binaries
+	// We only support 64-bit, little-endian binaries
 	if class := elf.Class(ident[elf.EI_CLASS]); class != elf.ELFCLASS64 {
 		log.Infof("Unsupported ELF class: %v", class)
 		return elfInfo{}, linuxerr.ENOEXEC
@@ -301,7 +301,7 @@ func mapSegment(ctx context.Context, m *mm.MemoryManager, fd *vfs.FileDescriptio
 		if phdr.Memsz > phdr.Filesz && mapSize > fileSize {
 			zeroAddr, ok := addr.AddLength(fileSize)
 			if !ok {
-				panic(fmt.Sprintf("successfully mmaped address overflows? %#x + %#x", addr, fileSize))
+				panic(fmt.Sprintf("successfully mmapped address overflows? %#x + %#x", addr, fileSize))
 			}
 			zeroSize := int64(mapSize - fileSize)
 			if zeroSize < 0 {
@@ -375,7 +375,7 @@ type loadedELF struct {
 	// end is the end of the ELF.
 	end hostarch.Addr
 
-	// interpter is the path to the ELF interpreter.
+	// interpreter is the path to the ELF interpreter.
 	interpreter string
 
 	// phdrAddr is the address of the ELF program headers.

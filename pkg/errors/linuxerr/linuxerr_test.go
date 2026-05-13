@@ -207,7 +207,7 @@ func TestSyscallErrnoToErrors(t *testing.T) {
 	}
 }
 
-// TestEqualsMethod tests that the Equals method correctly compares syerror,
+// TestEqualsMethod tests that the Equals method correctly compares errors,
 // unix.Errno and linuxerr.
 // TODO (b/34162363): Remove this.
 func TestEqualsMethod(t *testing.T) {

@@ -23,7 +23,7 @@ import (
 	"gvisor.dev/gvisor/test/kubernetes/testcluster"
 )
 
-func TestWordpress(t *testing.T) {
+func TestWordPress(t *testing.T) {
 	ctx := context.Background()
 	k8sCtx, err := kubectlctx.New(ctx)
 	if err != nil {
@@ -32,7 +32,7 @@ func TestWordpress(t *testing.T) {
 	k8sctx.ForEachCluster(ctx, t, k8sCtx, func(cluster *testcluster.TestCluster) {
 		t.Run("wordpress", func(t *testing.T) {
 			t.Parallel()
-			BenchmarkWordpress(ctx, t, k8sCtx, cluster)
+			BenchmarkWordPress(ctx, t, k8sCtx, cluster)
 		})
 	})
 }

@@ -140,7 +140,7 @@ func parseDuration(config map[string]any, name string) (bool, time.Duration, err
 	}
 	duration, ok := opaque.(string)
 	if !ok {
-		return false, 0, fmt.Errorf("%s %v is not an string", name, opaque)
+		return false, 0, fmt.Errorf("%s %v is not a string", name, opaque)
 	}
 	rv, err := time.ParseDuration(duration)
 	if err != nil {

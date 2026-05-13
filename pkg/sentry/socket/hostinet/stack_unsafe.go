@@ -68,7 +68,7 @@ func queryInterfaceFeatures(interfaces map[int32]inet.Interface) error {
 			return errno
 		}
 
-		// Unmarshall the features back.
+		// Unmarshal the features back.
 		gfeatures.UnmarshalBytes(b)
 		next = b[unsafe.Sizeof(linux.EthtoolGFeatures{}):]
 		for i := 0; i < int(gfeatures.Size); i++ {

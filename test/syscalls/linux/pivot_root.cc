@@ -322,7 +322,7 @@ TEST(PivotRootTest, NewRootNotAMountpoint) {
   auto root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   EXPECT_THAT(mount("", root.path().c_str(), "tmpfs", 0, "mode=0700"),
               SyscallSucceeds());
-  // Make sure new_root is on a separate mount, otherwise this is the same
+  // Make sure new_root is on a separate mount; otherwise, this is the same
   // as the NewRootOnRootMount test.
   auto mountpoint =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(root.path().c_str()));

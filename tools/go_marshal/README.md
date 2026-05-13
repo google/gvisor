@@ -108,7 +108,7 @@ that may not be ABI structs. A user can define a dynamic struct and define
 can then add a comment above the struct like `// +marshal dynamic` while will
 make `go_marshal` autogenerate the remaining methods required to complete the
 `Marshallable` interface. This feature is currently only available for structs
-and can not be used alongside the Slice API.
+and cannot be used alongside the Slice API.
 
 ## Modifying the `go_marshal` Tool
 

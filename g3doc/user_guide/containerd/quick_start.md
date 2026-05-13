@@ -74,7 +74,7 @@ Now run your container using the runsc runtime:
 
 ```shell
 sudo ctr image pull docker.io/library/hello-world:latest
-sudo ctr run --runtime io.containerd.runsc.v1 -t --rm docker.io/library/hello-world:latest hello-wrold
+sudo ctr run --runtime io.containerd.runsc.v1 -t --rm docker.io/library/hello-world:latest hello-world
 ```
 
 #### Verify the runtime

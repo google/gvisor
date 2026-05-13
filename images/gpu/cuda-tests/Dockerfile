@@ -46,6 +46,6 @@ RUN chmod 555 /*.sh && \
 COPY --from=builder /run_sample /run_sample
 COPY --from=builder /ascii-image-converter /usr/bin/
 
-# Override entrypoint to nothing, otherwise all invocations will have
+# Override entrypoint to nothing; otherwise, all invocations will have
 # a copyright notice printed, which breaks parsing the stdout logs.
 ENTRYPOINT []

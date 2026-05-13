@@ -130,7 +130,7 @@ func TestAddrRangeSeqDropSingleByteIteration(t *testing.T) {
 					// advancing to the next AddrRange.
 					continue
 				}
-				// Otherwise we "do" 1 byte of I/O and then call DropFirst(1),
+				// Otherwise, we "do" 1 byte of I/O and then call DropFirst(1),
 				// advancing the AddrRange by 1 byte, or to the next AddrRange
 				// if this one is exhausted.
 				for ar.Start++; ar.Length() != 0; ar.Start++ {

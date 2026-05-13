@@ -81,7 +81,7 @@ var Haswell2core = MockCPU{
 	ThreadsPerCore: 1,
 }
 
-// AMD2 is an two core AMD machine.
+// AMD2 is a two core AMD machine.
 var AMD2 = MockCPU{
 	Name:           "AMD",
 	VendorID:       "AuthenticAMD",

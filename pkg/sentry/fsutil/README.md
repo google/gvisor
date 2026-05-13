@@ -70,7 +70,7 @@ applications beyond less than optimal performance when repeatedly reading and/or
 writing to same region of a file. See [Future Work](#future-work) for plans to
 implement these optimizations.
 
-Additionally, memory held by `CachingInodeOperationss` is currently unbounded in
+Additionally, memory held by `CachingInodeOperations` is currently unbounded in
 size. An `CachingInodeOperations` does not write out dirty memory and free it
 under system memory pressure. This can cause pathological memory usage.
 

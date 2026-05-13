@@ -260,7 +260,7 @@ func (s *Sleeper) fetch(block, wakepOrSleep bool) *Waker {
 		}
 
 		// Reassociate the waker with the sleeper. If the waker was
-		// still asserted we can return it, otherwise try the next one.
+		// still asserted we can return it; otherwise, try the next one.
 		old := (*Sleeper)(atomic.SwapPointer(&w.s, usleeper(s)))
 		if old == &assertedSleeper {
 			return w

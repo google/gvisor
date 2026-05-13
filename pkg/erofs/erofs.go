@@ -195,8 +195,8 @@ type Dirent struct {
 
 // Nid returns the inode number of the inode referenced by this dirent.
 func (d *Dirent) Nid() uint64 {
-	// EROFS on-disk structures are always in little endian.
-	// TODO: This implementation does not support big endian yet.
+	// EROFS on-disk structures are always in little-endian.
+	// TODO: This implementation does not support big-endian yet.
 	return (uint64(d.NidHigh) << 32) | uint64(d.NidLow)
 }
 
