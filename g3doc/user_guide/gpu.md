@@ -237,9 +237,8 @@ cd open-gpu-kernel-modules
 git checkout tags/$DRIVER_VERSION
 ```
 
-For `printk()` debugging, it is advised to use `portDbgPrintf()`. See more
-discussion
-[here](https://github.com/NVIDIA/open-gpu-kernel-modules/discussions/347). You
+For `printk()` debugging, it is advised to use `portDbgPrintf()`. See [more
+discussion](https://github.com/NVIDIA/open-gpu-kernel-modules/discussions/347). You
 should be able to see the prints via `dmesg(1)`.
 
 Then uninstall the existing Nvidia driver, build kernel module from local source

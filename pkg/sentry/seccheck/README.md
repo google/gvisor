@@ -79,9 +79,8 @@ syscall event. In addition, `fd_path` is an optional field that can take the
 `fd` and translate it into a full path for convenience. In some cases, the same
 schema can be shared by many syscalls. In this example, `message Open` is used
 for `open(2)`, `openat(2)` and `creat(2)` syscalls. The `sysno` field can be
-used to distinguish between them. The schema for all syscall trace points can be
-found
-[here](https://cs.opensource.google/gvisor/gvisor/+/master:pkg/sentry/seccheck/points/syscall.proto).
+used to distinguish between them. See the [schema for all syscall trace
+points](https://cs.opensource.google/gvisor/gvisor/+/master:pkg/sentry/seccheck/points/syscall.proto).
 
 Other components that exist today are:
 
@@ -209,8 +208,8 @@ command. The session definition has 3 main parts:
         remote process cannot be reached.
 
 The session configuration above can also be used with the `--pod-init-config`
-flag under the `"trace_session"` JSON object. There is a full example
-[here](https://cs.opensource.google/gvisor/gvisor/+/master:examples/seccheck/pod_init.json)
+flag under the `"trace_session"` JSON object. There is a [full
+example](https://cs.opensource.google/gvisor/gvisor/+/master:examples/seccheck/pod_init.json)
 
 > Note: For convenience, the `--pod-init-config` file can also be used with
 > `runsc trace create` command. The portions of the Pod init config file that
