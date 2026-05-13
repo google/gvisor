@@ -26,6 +26,7 @@ import (
 )
 
 // step resolves rp.Component() to an existing file, starting from the given directory.
+// Returns a ref'd dentry.
 //
 // step is loosely analogous to fs/namei.c:walk_component().
 //
@@ -41,6 +42,7 @@ func step(ctx context.Context, rp *vfs.ResolvingPath, d *dentry) (*dentry, bool,
 	name := rp.Component()
 	if name == "." {
 		rp.Advance()
+		d.IncRef()
 		return d, false, nil
 	}
 	if name == ".." {
@@ -49,12 +51,14 @@ func step(ctx context.Context, rp *vfs.ResolvingPath, d *dentry) (*dentry, bool,
 			return nil, false, err
 		} else if isRoot || parent == nil {
 			rp.Advance()
+			d.IncRef()
 			return d, false, nil
 		}
 		if err := rp.CheckMount(ctx, &parent.vfsd); err != nil {
 			return nil, false, err
 		}
 		rp.Advance()
+		parent.IncRef()
 		return parent, false, nil
 	}
 	if len(name) > erofs.MaxNameLen {
@@ -65,55 +69,69 @@ func step(ctx context.Context, rp *vfs.ResolvingPath, d *dentry) (*dentry, bool,
 		return nil, false, err
 	}
 	if err := rp.CheckMount(ctx, &child.vfsd); err != nil {
+		child.DecRef(ctx)
 		return nil, false, err
 	}
 	if child.inode.IsSymlink() && rp.ShouldFollowSymlink() {
 		target, err := child.inode.Readlink()
 		if err != nil {
+			child.DecRef(ctx)
 			return nil, false, err
 		}
+		child.DecRef(ctx)
 		followedSymlink, err := rp.HandleSymlink(target)
-		return d, followedSymlink, err
+		if err != nil {
+			return nil, followedSymlink, err
+		}
+		d.IncRef()
+		return d, followedSymlink, nil
 	}
 	rp.Advance()
 	return child, false, nil
 }
 
 // walkParentDir resolves all but the last path component of rp to an existing
-// directory, starting from the gvien directory. It does not check that the
-// returned directory is searchable by the provider of rp.
+// directory, starting from the given directory. It does not check that the
+// returned directory is searchable by the provider of rp. Returns a ref'd
+// dentry.
 //
 // walkParentDir is loosely analogous to Linux's fs/namei.c:path_parentat().
 //
 // Preconditions:
 //   - !rp.Done().
 func walkParentDir(ctx context.Context, rp *vfs.ResolvingPath, d *dentry) (*dentry, error) {
+	d.IncRef()
 	for !rp.Final() {
 		next, _, err := step(ctx, rp, d)
+		d.DecRef(ctx)
 		if err != nil {
 			return nil, err
 		}
 		d = next
 	}
 	if !d.inode.IsDir() {
+		d.DecRef(ctx)
 		return nil, linuxerr.ENOTDIR
 	}
 	return d, nil
 }
 
-// resolve resolves rp to an existing file.
+// resolve resolves rp to an existing file; returns a ref'd dentry.
 //
 // resolve is loosely analogous to Linux's fs/namei.c:path_lookupat().
 func resolve(ctx context.Context, rp *vfs.ResolvingPath) (*dentry, error) {
 	d := rp.Start().Impl().(*dentry)
+	d.IncRef()
 	for !rp.Done() {
 		next, _, err := step(ctx, rp, d)
+		d.DecRef(ctx)
 		if err != nil {
 			return nil, err
 		}
 		d = next
 	}
 	if rp.MustBeDir() && !d.inode.IsDir() {
+		d.DecRef(ctx)
 		return nil, linuxerr.ENOTDIR
 	}
 	return d, nil
@@ -132,6 +150,7 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 	if err != nil {
 		return err
 	}
+	defer parentDir.DecRef(ctx)
 	// Order of checks is important. First check if parent directory can be
 	// executed, then check for existence, and lastly check if mount is writable.
 	if err := parentDir.inode.checkPermissions(rp.Credentials(), vfs.MayExec); err != nil {
@@ -144,7 +163,9 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 	if len(name) > erofs.MaxNameLen {
 		return linuxerr.ENAMETOOLONG
 	}
-	if _, err := parentDir.lookup(ctx, name); err == nil {
+	child, err := parentDir.lookup(ctx, name)
+	if err == nil {
+		child.DecRef(ctx)
 		return linuxerr.EEXIST
 	} else if !linuxerr.Equals(linuxerr.ENOENT, err) {
 		return err
@@ -166,6 +187,7 @@ func (fs *filesystem) AccessAt(ctx context.Context, rp *vfs.ResolvingPath, creds
 	if err != nil {
 		return err
 	}
+	defer d.DecRef(ctx)
 	if ats.MayWrite() {
 		return linuxerr.EROFS
 	}
@@ -180,13 +202,14 @@ func (fs *filesystem) GetDentryAt(ctx context.Context, rp *vfs.ResolvingPath, op
 	}
 	if opts.CheckSearchable {
 		if !d.inode.IsDir() {
+			d.DecRef(ctx)
 			return nil, linuxerr.ENOTDIR
 		}
 		if err := d.inode.checkPermissions(rp.Credentials(), vfs.MayExec); err != nil {
+			d.DecRef(ctx)
 			return nil, err
 		}
 	}
-	d.IncRef()
 	return &d.vfsd, nil
 }
 
@@ -196,7 +219,6 @@ func (fs *filesystem) GetParentDentryAt(ctx context.Context, rp *vfs.ResolvingPa
 	if err != nil {
 		return nil, err
 	}
-	dir.IncRef()
 	return &dir.vfsd, nil
 }
 
@@ -226,7 +248,9 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		if err != nil {
 			return nil, err
 		}
-		return d.open(ctx, rp, &opts)
+		fd, err := d.open(ctx, rp, &opts)
+		d.DecRef(ctx)
+		return fd, err
 	}
 
 	mustCreate := opts.Flags&linux.O_EXCL != 0
@@ -246,6 +270,7 @@ afterTrailingSymlink:
 	if err != nil {
 		return nil, err
 	}
+	defer parentDir.DecRef(ctx)
 	// Check for search permission in the parent directory.
 	if err := parentDir.inode.checkPermissions(rp.Credentials(), vfs.MayExec); err != nil {
 		return nil, err
@@ -255,6 +280,9 @@ afterTrailingSymlink:
 		return nil, linuxerr.EISDIR
 	}
 	child, followedSymlink, err := step(ctx, rp, parentDir)
+	if child != nil {
+		defer child.DecRef(ctx)
+	}
 	if followedSymlink {
 		if mustCreate {
 			// EEXIST must be returned if an existing symlink is opened with O_EXCL.
@@ -280,7 +308,8 @@ afterTrailingSymlink:
 	if rp.MustBeDir() && !child.inode.IsDir() {
 		return nil, linuxerr.ENOTDIR
 	}
-	return child.open(ctx, rp, &opts)
+	fd, err := child.open(ctx, rp, &opts)
+	return fd, err
 }
 
 // ReadlinkAt implements vfs.FilesystemImpl.ReadlinkAt.
@@ -289,6 +318,7 @@ func (fs *filesystem) ReadlinkAt(ctx context.Context, rp *vfs.ResolvingPath) (st
 	if err != nil {
 		return "", err
 	}
+	defer d.DecRef(ctx)
 	return d.inode.Readlink()
 }
 
@@ -299,6 +329,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	if err != nil {
 		return err
 	}
+	defer newParentDir.DecRef(ctx)
 	newName := rp.Component()
 	if len(newName) > erofs.MaxNameLen {
 		return linuxerr.ENAMETOOLONG
@@ -323,6 +354,7 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	if err != nil {
 		return err
 	}
+	defer parentDir.DecRef(ctx)
 	if err := parentDir.inode.checkPermissions(rp.Credentials(), vfs.MayExec); err != nil {
 		return err
 	}
@@ -338,9 +370,11 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 
 // SetStatAt implements vfs.FilesystemImpl.SetStatAt.
 func (fs *filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetStatOptions) error {
-	if _, err := resolve(ctx, rp); err != nil {
+	d, err := resolve(ctx, rp)
+	if err != nil {
 		return err
 	}
+	d.DecRef(ctx)
 	return linuxerr.EROFS
 }
 
@@ -350,6 +384,7 @@ func (fs *filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 	if err != nil {
 		return linux.Statx{}, err
 	}
+	defer d.DecRef(ctx)
 	var stat linux.Statx
 	d.inode.statTo(&stat)
 	return stat, nil
@@ -357,9 +392,11 @@ func (fs *filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 
 // StatFSAt implements vfs.FilesystemImpl.StatFSAt.
 func (fs *filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linux.Statfs, error) {
-	if _, err := resolve(ctx, rp); err != nil {
+	d, err := resolve(ctx, rp)
+	if err != nil {
 		return linux.Statfs{}, err
 	}
+	d.DecRef(ctx)
 	return fs.statFS(), nil
 }
 
@@ -374,6 +411,7 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	if err != nil {
 		return err
 	}
+	defer parentDir.DecRef(ctx)
 	if err := parentDir.inode.checkPermissions(rp.Credentials(), vfs.MayExec); err != nil {
 		return err
 	}
@@ -390,6 +428,7 @@ func (fs *filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath
 	if err != nil {
 		return nil, err
 	}
+	defer d.DecRef(ctx)
 	if err := d.inode.checkPermissions(rp.Credentials(), vfs.MayWrite); err != nil {
 		return nil, err
 	}
@@ -398,33 +437,41 @@ func (fs *filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath
 
 // ListXattrAt implements vfs.FilesystemImpl.ListXattrAt.
 func (fs *filesystem) ListXattrAt(ctx context.Context, rp *vfs.ResolvingPath, size uint64) ([]string, error) {
-	if _, err := resolve(ctx, rp); err != nil {
+	d, err := resolve(ctx, rp)
+	if err != nil {
 		return nil, err
 	}
+	d.DecRef(ctx)
 	return nil, linuxerr.ENOTSUP
 }
 
 // GetXattrAt implements vfs.FilesystemImpl.GetXattrAt.
 func (fs *filesystem) GetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.GetXattrOptions) (string, error) {
-	if _, err := resolve(ctx, rp); err != nil {
+	d, err := resolve(ctx, rp)
+	if err != nil {
 		return "", err
 	}
+	d.DecRef(ctx)
 	return "", linuxerr.ENOTSUP
 }
 
 // SetXattrAt implements vfs.FilesystemImpl.SetXattrAt.
 func (fs *filesystem) SetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetXattrOptions) error {
-	if _, err := resolve(ctx, rp); err != nil {
+	d, err := resolve(ctx, rp)
+	if err != nil {
 		return err
 	}
+	d.DecRef(ctx)
 	return linuxerr.EROFS
 }
 
 // RemoveXattrAt implements vfs.FilesystemImpl.RemoveXattrAt.
 func (fs *filesystem) RemoveXattrAt(ctx context.Context, rp *vfs.ResolvingPath, name string) error {
-	if _, err := resolve(ctx, rp); err != nil {
+	d, err := resolve(ctx, rp)
+	if err != nil {
 		return err
 	}
+	d.DecRef(ctx)
 	return linuxerr.EROFS
 }
 
