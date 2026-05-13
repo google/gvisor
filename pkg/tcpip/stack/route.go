@@ -27,7 +27,7 @@ import (
 type Route struct {
 	routeInfo routeInfo
 
-	// localAddressNIC is the interface the address is associated with.
+	// localAddressNIC is the interface with which the address is associated.
 	// TODO(gvisor.dev/issue/4548): Remove this field once we can query the
 	// address's assigned status without the NIC.
 	localAddressNIC *nic
@@ -525,7 +525,7 @@ func (r *Route) DefaultTTL() uint8 {
 	return r.outgoingNIC.getNetworkEndpoint(r.NetProto()).DefaultTTL()
 }
 
-// MTU returns the MTU of the route if present, otherwise the MTU of the underlying network endpoint.
+// MTU returns the MTU of the route if present; otherwise, the MTU of the underlying network endpoint.
 func (r *Route) MTU() uint32 {
 	if r.mtu > 0 {
 		// r.mtu is already adjusted to account for IP headers. See makeRouteInner.

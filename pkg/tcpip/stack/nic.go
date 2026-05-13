@@ -699,7 +699,7 @@ func (n *nic) clearNeighbors(protocol tcpip.NetworkProtocolNumber) tcpip.Error {
 }
 
 // joinGroup adds a new endpoint for the given multicast address, if none
-// exists yet. Otherwise it just increments its count.
+// exists yet. Otherwise, it just increments its count.
 func (n *nic) joinGroup(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) tcpip.Error {
 	// TODO(b/143102137): When implementing MLD, make sure MLD packets are
 	// not sent unless a valid link-local address is available for use on n

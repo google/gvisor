@@ -35,7 +35,7 @@ var (
 func fixup(v any) (any, error) {
 	switch x := v.(type) {
 	case map[any]any:
-		// Coerse into a string-based map, required for yaml.
+		// Coerce into a string-based map, required for yaml.
 		strMap := make(map[string]any)
 		for k, v := range x {
 			strK, ok := k.(string)

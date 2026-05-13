@@ -37,7 +37,7 @@ func TestLevelMarshal(t *testing.T) {
 	}
 }
 
-// Test that integers can be properly unmarshaled.
+// Test that integers can be properly unmarshalled.
 func TestUnmarshalFromInt(t *testing.T) {
 	tcs := []struct {
 		i    int

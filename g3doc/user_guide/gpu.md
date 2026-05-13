@@ -369,7 +369,7 @@ $ make run TARGETS=runsc:runsc ARGS="nvproxy list-supported-drivers"
 While gVisor doesn't protect against *all* NVIDIA driver vulnerabilities, it
 *does* protect against a large set of general vulnerabilities in Linux.
 Applications don't just use GPUs, they use them as a part of a larger
-application that may include third party libraries. For example, Tensorflow
+application that may include third party libraries. For example, TensorFlow
 [suffers from the same kind of vulnerabilities](https://nvd.nist.gov/vuln/detail/CVE-2022-29216)
 that every application does. Designing and implementing an application with
 security in mind is hard and in the emerging AI space, security is often

@@ -249,8 +249,8 @@ func Run(commands map[util.SubCommand]string, helpTopics []subcommands.Command) 
 	} else if conf.AlsoLogToStderr {
 		emitters = append(emitters, newEmitter(conf.DebugLogFormat, os.Stderr))
 	}
-	if ulEmittter, add := userLogEmitter(conf, subCmdName); add {
-		emitters = append(emitters, ulEmittter)
+	if ulEmitter, add := userLogEmitter(conf, subCmdName); add {
+		emitters = append(emitters, ulEmitter)
 	}
 
 	switch len(emitters) {

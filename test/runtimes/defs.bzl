@@ -85,7 +85,7 @@ def runtime_test(name, **kwargs):
     )
 
 def exclude_test(name, exclude_file):
-    """Test that a exclude file parses correctly."""
+    """Test that an exclude file parses correctly."""
     go_test(
         name = name + "_exclude_test",
         library = ":runner",

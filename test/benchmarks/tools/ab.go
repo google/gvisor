@@ -42,7 +42,7 @@ func (a *ApacheBench) Report(b *testing.B, output string) {
 	// Parse and report custom metrics.
 	transferRate, err := a.parseTransferRate(output)
 	if err != nil {
-		b.Logf("failed to parse transferrate: %v", err)
+		b.Logf("failed to parse transfer rate: %v", err)
 	}
 	b.ReportMetric(transferRate*1024, "transfer_rate_b/s") // Convert from Kb/s to b/s.
 	ReportCustomMetric(b, transferRate*1024, "transfer_rate" /*metric name*/, "bytes_per_second" /*unit*/)

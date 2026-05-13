@@ -32,7 +32,7 @@ TEST(SyncTest, SyncEverything) {
   ASSERT_THAT(syscall(SYS_sync), SyscallSucceeds());
 }
 
-TEST(SyncTest, SyncFileSytem) {
+TEST(SyncTest, SyncFileSystem) {
   int fd;
   auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   ASSERT_THAT(fd = open(f.path().c_str(), O_RDONLY), SyscallSucceeds());

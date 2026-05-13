@@ -136,7 +136,7 @@ type Locks struct {
 }
 
 // LockRegion attempts to acquire a typed lock for the uid on a region of a
-// file. Returns nil if successful in locking the region, otherwise an
+// file. Returns nil if successful in locking the region; otherwise, an
 // appropriate error is returned.
 func (l *Locks) LockRegion(ctx context.Context, uid UniqueID, ownerPID int32, t LockType, r LockRange, ofd bool, block bool) error {
 	l.mu.Lock()
@@ -422,7 +422,7 @@ func (l *LockSet) unlock(uid UniqueID, r LockRange) {
 			if len(value.Readers) == 1 {
 				remove = true
 			} else {
-				// Otherwise we need to remove this reader without
+				// Otherwise, we need to remove this reader without
 				// affecting any other segment's readers.  To do
 				// this, we need to make a copy of the Readers map
 				// and not add this uid.

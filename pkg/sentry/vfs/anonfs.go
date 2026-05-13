@@ -58,7 +58,7 @@ type anonFilesystemType struct{}
 
 // GetFilesystem implements FilesystemType.GetFilesystem.
 func (anonFilesystemType) GetFilesystem(context.Context, *VirtualFilesystem, *auth.Credentials, string, GetFilesystemOptions) (*Filesystem, *Dentry, error) {
-	panic("cannot instaniate an anon filesystem")
+	panic("cannot instantiate an anon filesystem")
 }
 
 // Name implements FilesystemType.Name.
@@ -66,7 +66,7 @@ func (anonFilesystemType) Name() string {
 	return "none"
 }
 
-// Release implemenents FilesystemType.Release.
+// Release implements FilesystemType.Release.
 func (anonFilesystemType) Release(ctx context.Context) {}
 
 // anonFilesystem is the implementation of FilesystemImpl that backs

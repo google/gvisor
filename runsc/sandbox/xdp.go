@@ -321,7 +321,7 @@ func createXDPTunnel(conn *urpc.Client, nsPath string, conf *config.Config) erro
 		return fmt.Errorf("failed to generate tunnel interface args: %w", err)
 	}
 
-	// Setup the XDP socket on the gVisor nic.
+	// Set up the XDP socket on the gVisor nic.
 	files, err := func() ([]*os.File, error) {
 		// Join the network namespace that we will be copying.
 		restore, err := joinNetNS(nsPath)

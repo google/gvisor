@@ -379,7 +379,7 @@ func TestProcfsDump(t *testing.T) {
 			stat := unix.Stat_t{}
 			err := unix.Fstat(i, &stat)
 			if err != nil {
-				t.Fatalf("unix.Fatat(i) failed: %s", err)
+				t.Fatalf("unix.Fstat(i) failed: %s", err)
 			}
 			modes[i] = stat.Mode & unix.S_IFMT
 		}

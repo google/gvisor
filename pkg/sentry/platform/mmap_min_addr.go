@@ -40,7 +40,7 @@ func SystemMMapMinAddr() hostarch.Addr {
 type MMapMinAddr struct {
 }
 
-// MinUserAddress implements platform.MinUserAddresss.
+// MinUserAddress implements platform.MinUserAddress.
 func (*MMapMinAddr) MinUserAddress() hostarch.Addr {
 	return SystemMMapMinAddr()
 }

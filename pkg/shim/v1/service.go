@@ -67,7 +67,7 @@ func NewShimRedirector(ctx context.Context, publisher shim.Publisher, sd shutdow
 }
 
 // shimRedirector is the implementation of task service extension over gRPC/ttrpc. It
-// is a intermediate layer between the containerd API and the runsc task service.
+// is an intermediate layer between the containerd API and the runsc task service.
 //
 // It intercepts some calls to the task service and forwards all calls
 // to extension.TaskServiceExt which actually implements the service interface.

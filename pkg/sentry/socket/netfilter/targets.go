@@ -455,7 +455,7 @@ func (*nfNATTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (tar
 }
 
 // translateToStandardTarget translates from the value in a
-// linux.XTStandardTarget to an stack.Verdict.
+// linux.XTStandardTarget to a stack.Verdict.
 func translateToStandardTarget(val int32, netProto tcpip.NetworkProtocolNumber) (target, *syserr.Error) {
 	switch val {
 	case -linux.NF_ACCEPT - 1:

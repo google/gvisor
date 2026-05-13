@@ -107,7 +107,7 @@ func (op payloadSet) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *
 		return
 	}
 
-	// Gets the register data assumed to be in Big Endian.
+	// Gets the register data assumed to be in big-endian.
 	regData := regs.data[op.sregIdx : op.sregIdx+op.blen]
 
 	// Returns early if the source data is the same as the existing payload data.

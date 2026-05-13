@@ -35,7 +35,7 @@ type metaLoad struct {
 	// Note: Similar to route, meta fields are stored AS IS. If the meta data is
 	// a field stored by the kernel (i.e. length), it is stored in host endian. On
 	// the contrary, if the meta data is data from the packet (i.e. protocol), it
-	// is stored in big endian (network order).
+	// is stored in big-endian (network order).
 	// The nft binary handles the necessary endian conversions from user input.
 	// For example, if the user wants to check if meta len == 123 vs payload
 	// data == 123, the nft binary passes host endian for the former and big

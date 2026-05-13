@@ -145,7 +145,7 @@ func (c *Client) StartChannels() error {
 	}
 	channelsWg.Wait()
 
-	// Check that atleast 1 channel is created. This is not required by lisafs
+	// Check that at least 1 channel is created. This is not required by lisafs
 	// protocol. It exists to flag server side issues in channel creation.
 	c.channelsMu.Lock()
 	numChannels := len(c.channels)
@@ -347,7 +347,7 @@ func (c *Client) SndRcvMessage(m MID, payloadLen uint32, reqMarshal marshalFunc,
 	// Handle FD donation.
 	rcvFDs := comm.ReleaseFDs()
 	if numRcvFDs := len(rcvFDs); numRcvFDs+wantFDs > 0 {
-		// releasedFDs is memory owned by comm which can not be returned to caller.
+		// releasedFDs is memory owned by comm which cannot be returned to caller.
 		// Copy it into the caller's buffer.
 		numFDCopied := copy(respFDs, rcvFDs)
 		if numFDCopied < numRcvFDs {

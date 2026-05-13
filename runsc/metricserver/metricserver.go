@@ -106,7 +106,7 @@ type servedSandbox struct {
 
 // load loads the sandbox being monitored and initializes its metric verifier.
 // If it returns an error other than container.ErrStateFileLocked, the sandbox is either
-// non-existent, or has not requested instrumentation to be enabled, or does not have
+// nonexistent, or has not requested instrumentation to be enabled, or does not have
 // valid metric registration data. In any of these cases, the sandbox should be removed
 // from this metrics server.
 func (s *servedSandbox) load() (*sandbox.Sandbox, *prometheus.Verifier, error) {

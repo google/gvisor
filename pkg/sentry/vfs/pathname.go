@@ -134,7 +134,7 @@ loop:
 }
 
 // PathnameInFilesystem returns an absolute path to vd relative to vd's
-// Filesystem root. It also appends //deleted to for disowned entries. It is
+// Filesystem root. It also appends //deleted for disowned entries. It is
 // equivalent to Linux's dentry_path().
 func (vfs *VirtualFilesystem) PathnameInFilesystem(ctx context.Context, vd VirtualDentry) (string, error) {
 	b := getFSPathBuilder()

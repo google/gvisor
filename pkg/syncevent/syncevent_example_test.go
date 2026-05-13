@@ -21,7 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 )
 
-func Example_ioReadinessInterrputible() {
+func Example_ioReadinessInterruptible() {
 	const (
 		evReady = Set(1 << iota)
 		evInterrupt

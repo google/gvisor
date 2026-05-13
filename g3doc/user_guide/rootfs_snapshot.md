@@ -81,7 +81,7 @@ Enable the flag `allow-rootfs-tar-annotation` to runtimeArgs, e.g.
 
 Since the tar file path is provided via OCI spec's annotation, it is compatible
 with Docker client when the runtime is gVisor. You can pass the annotation via
-Docker commad and observe the file change as:
+Docker command and observe the file change as:
 
 ```
 $ docker run --rm --runtime=runsc --annotation "dev.gvisor.tar.rootfs.upper"="/tmp/rootfs.tar" alpine cat /dir/file

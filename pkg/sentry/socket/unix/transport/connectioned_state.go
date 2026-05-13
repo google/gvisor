@@ -19,7 +19,7 @@ import "context"
 // saveAcceptedChan is invoked by stateify.
 func (e *connectionedEndpoint) saveAcceptedChan() []*connectionedEndpoint {
 	// If acceptedChan is nil (i.e. we are not listening) then we will save nil.
-	// Otherwise we create a (possibly empty) slice of the values in acceptedChan and
+	// Otherwise, we create a (possibly empty) slice of the values in acceptedChan and
 	// save that.
 	var acceptedSlice []*connectionedEndpoint
 	if e.acceptedChan != nil {

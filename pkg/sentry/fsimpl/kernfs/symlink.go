@@ -23,7 +23,7 @@ import (
 )
 
 // StaticSymlink provides an Inode implementation for symlinks that point to
-// a immutable target.
+// an immutable target.
 //
 // +stateify savable
 type StaticSymlink struct {

@@ -431,7 +431,7 @@ var (
 // TotalMemory returns the "total usable memory" available.
 //
 // This number doesn't really have a true value so it's based on the following
-// inputs and further bounded to be above the MinumumTotalMemoryBytes and below
+// inputs and further bounded to be above the MinimumTotalMemoryBytes and below
 // MaximumTotalMemoryBytes.
 //
 // memSize should be the platform.Memory size reported by platform.Memory.TotalSize()

@@ -64,7 +64,7 @@ type fsckptRegularFile struct {
 }
 
 // fsckptRegularFileSegment is equivalent to fsutil.FileRangeFlatSegment, but
-// is marshalable.
+// is marshallable.
 //
 // +marshal slice:CheckpointRegularFileSegmentSlice
 type fsckptRegularFileSegment struct {

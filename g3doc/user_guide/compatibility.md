@@ -55,7 +55,7 @@ near-parity with Linux, it will never be perfect. Notably:
         such devices on a host Linux machine, and expose the mounted filesystem
         to the sandbox.
     -   `iptables` are only partially supported. The general goal is to support
-        the featureset necessary to be able to run
+        the feature set necessary to be able to run
         [Docker in gVisor](../../tutorials/docker-in-gvisor/), but not
         necessarily further.
     -   Device files for custom hardware is generally not supported, with the

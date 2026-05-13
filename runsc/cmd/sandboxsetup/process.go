@@ -100,7 +100,7 @@ func PrepareArgs(subCmdName string, fSet *flag.FlagSet, override map[string]stri
 			delete(override, gf.Name)
 			return
 		}
-		// Otherwise pass through the original flag.
+		// Otherwise, pass through the original flag.
 		args = append(args, fmt.Sprintf("--%s=%s", gf.Name, gf.Value))
 	})
 	// Apply remaining override flags (that didn't conflict above).

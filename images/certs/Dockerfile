@@ -1,4 +1,4 @@
-# Generates the a CA cert, a server key, and a server cert signed by the CA.
+# Generates a CA cert, a server key, and a server cert signed by the CA.
 # reference:
 # https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/testcerts/gencerts.sh
 FROM ubuntu:jammy

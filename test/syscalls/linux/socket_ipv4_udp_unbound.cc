@@ -1502,7 +1502,7 @@ TEST_P(IPv4UDPUnboundSocketTest, ReuseAddrDistribution) {
 
     // Send a new message to the SO_REUSEADDR group. We use a new socket each
     // time so that a new ephemeral port will be used each time. This ensures
-    // that we aren't doing REUSEPORT-like hash load blancing.
+    // that we aren't doing REUSEPORT-like hash load balancing.
     auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
     char send_buf[kMessageSize];
     RandomizeBuffer(send_buf, sizeof(send_buf));
@@ -1857,7 +1857,7 @@ TEST_P(IPv4UDPUnboundSocketTest, ReuseAddrReusePortDistribution) {
 
   for (int i = 0; i < 100; ++i) {
     // Send a new message to the REUSEADDR/REUSEPORT group. We use a new socket
-    // each time so that a new ephemerial port will be used each time. This
+    // each time so that a new ephemeral port will be used each time. This
     // ensures that we cycle through hashes.
     auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
     char send_buf[kMessageSize] = {};
@@ -2340,7 +2340,7 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastIPPacketInfo) {
 }
 
 // Guard against a regression of b/448895123.
-TEST_P(IPv4UDPUnboundSocketTest, SendWithProtNoneBufEfaults) {
+TEST_P(IPv4UDPUnboundSocketTest, SendWithProtNoneBufDefaults) {
   auto s = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
   void* data = mmap(nullptr, getpagesize(), PROT_READ | PROT_WRITE,

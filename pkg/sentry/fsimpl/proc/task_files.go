@@ -319,7 +319,7 @@ func (d *commData) Write(ctx context.Context, _ *vfs.FileDescription, src userme
 		return 0, err
 	}
 
-	// Only allow writes from the same thread group, otherwise return
+	// Only allow writes from the same thread group; otherwise, return
 	// EINVAL. See fs/proc/base.c:comm_write.
 	//
 	// Note that this check exists in addition to the same-thread-group
@@ -878,7 +878,7 @@ type statusFD struct {
 }
 
 // statusFDLowerBase is a dumb hack to ensure that statusFD prefers
-// vfs.DynamicBytesFileDescriptionImpl methods to vfs.FileDescriptinDefaultImpl
+// vfs.DynamicBytesFileDescriptionImpl methods to vfs.FileDescriptionDefaultImpl
 // methods.
 //
 // +stateify savable
@@ -1086,7 +1086,7 @@ func (o *oomScoreAdj) Write(ctx context.Context, _ *vfs.FileDescription, src use
 	return src.NumBytes(), nil
 }
 
-// exeSymlink is an symlink for the /proc/[pid]/exe file.
+// exeSymlink is a symlink for the /proc/[pid]/exe file.
 //
 // +stateify savable
 type exeSymlink struct {
@@ -1160,7 +1160,7 @@ func (s *exeSymlink) Getlink(ctx context.Context, _ *vfs.Mount) (vfs.VirtualDent
 	return vd, "", nil
 }
 
-// cwdSymlink is an symlink for the /proc/[pid]/cwd file.
+// cwdSymlink is a symlink for the /proc/[pid]/cwd file.
 //
 // +stateify savable
 type cwdSymlink struct {
@@ -1223,7 +1223,7 @@ func (s *cwdSymlink) Getlink(ctx context.Context, _ *vfs.Mount) (vfs.VirtualDent
 	return cwd, "", nil
 }
 
-// rootSymlink is an symlink for the /proc/[pid]/root file.
+// rootSymlink is a symlink for the /proc/[pid]/root file.
 //
 // +stateify savable
 type rootSymlink struct {

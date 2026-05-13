@@ -44,7 +44,7 @@ type lockState struct {
 	aliases map[string]string
 
 	// stored stores values that have been stored in memory, bound to
-	// FreeVars or passed as Parameterse.
+	// FreeVars or passed as Parameters.
 	stored map[ssa.Value]ssa.Value
 
 	// used is a temporary map, used only for valueAndObject. It prevents

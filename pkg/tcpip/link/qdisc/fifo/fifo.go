@@ -39,7 +39,7 @@ const (
 // discipline represents a QueueingDiscipline which implements a FIFO queue for
 // all outgoing packets. discipline can have 1 or more underlying
 // queueDispatchers. All outgoing packets are consistently hashed to a single
-// underlying queue using the PacketBuffer.Hash if set, otherwise all packets
+// underlying queue using the PacketBuffer.Hash if set; otherwise, all packets
 // are queued to the first queue to avoid reordering in case of missing hash.
 //
 // +stateify savable

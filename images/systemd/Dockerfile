@@ -26,7 +26,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /systemd
 RUN git clone --depth 1 https://github.com/systemd/systemd.git .
 
-# 3. Setup the build directory
+# 3. Set up the build directory
 # We disable some heavy optional features to speed up the test cycle
 RUN meson setup build/ \
     -Dman=false \

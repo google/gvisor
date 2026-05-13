@@ -116,7 +116,7 @@ type TimeoutHandler interface {
 // fragments after reaching highMemoryLimit.
 //
 // reassemblingTimeout specifies the maximum time allowed to reassemble a packet.
-// Fragments are lazily evicted only when a new a packet with an
+// Fragments are lazily evicted only when a new packet with an
 // already existing fragmentation-id arrives after the timeout.
 func NewFragmentation(blockSize uint16, highMemoryLimit, lowMemoryLimit int, reassemblingTimeout time.Duration, clock tcpip.Clock, timeoutHandler TimeoutHandler) *Fragmentation {
 	if lowMemoryLimit >= highMemoryLimit {

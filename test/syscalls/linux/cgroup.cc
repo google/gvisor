@@ -1062,7 +1062,7 @@ TEST(DevicesCgroup, AddDeviceRule) {
   EXPECT_THAT(c.ReadControlFile("devices.list"),
               IsPosixErrorOkAndHolds("c 7:* rw\n"));
 
-  // Diasllows all devices.
+  // Disallows all devices.
   ASSERT_NO_ERRNO(c.WriteControlFile("devices.deny", "a"));
   EXPECT_THAT(c.ReadControlFile("devices.list"), IsPosixErrorOkAndHolds(""));
 

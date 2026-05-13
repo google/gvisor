@@ -119,4 +119,4 @@ also get involved with the gVisor community via our
 [Gitter channel](https://gitter.im/gvisor/community),
 [email list](https://groups.google.com/forum/#!forum/gvisor-users),
 [issue tracker](https://gvisor.dev/issue/new), and
-[Github repository](https://github.com/google/gvisor).
+[GitHub repository](https://github.com/google/gvisor).

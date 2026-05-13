@@ -88,7 +88,7 @@ measures like enforcing the usage of `O_NOFOLLOW` via seccomp and ensuring that
 host filesystem FDs are not leaked on sandbox startup.
 
 When directfs is disabled, the sandbox runs with stricter seccomp filters and
-fewer capabilities such that the sandbox process can not perform filesystem
+fewer capabilities such that the sandbox process cannot perform filesystem
 operations. It communicates with the Gofer process (via RPCs) to perform
 filesystem operations on its behalf. This increases security but comes with a
 performance trade-off.

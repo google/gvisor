@@ -226,7 +226,7 @@ func TestConnectIncrementActiveConnection(t *testing.T) {
 
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
 	if got := stats.TCP.ActiveConnectionOpenings.Value(); got != want {
-		t.Errorf("got stats.TCP.ActtiveConnectionOpenings.Value() = %d, want = %d", got, want)
+		t.Errorf("got stats.TCP.ActiveConnectionOpenings.Value() = %d, want = %d", got, want)
 	}
 }
 
@@ -800,7 +800,7 @@ func TestCurrentConnectedIncrement(t *testing.T) {
 
 // TestClosingWithEnqueuedSegments tests handling of still enqueued segments
 // when the endpoint transitions to StateClose. The in-flight segments would be
-// re-enqueued to a any listening endpoint.
+// re-enqueued to any listening endpoint.
 func TestClosingWithEnqueuedSegments(t *testing.T) {
 	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
@@ -5218,9 +5218,9 @@ func TestTimeWaitAssassination(t *testing.T) {
 	defer wg.Wait()
 	// We need to run this test lots of times because it triggers a very rare race
 	// condition in segment processing.
-	initalTestPort := 1024
+	initialTestPort := 1024
 	testRuns := 25
-	for port := initalTestPort; port < initalTestPort+testRuns; port++ {
+	for port := initialTestPort; port < initialTestPort+testRuns; port++ {
 		wg.Add(1)
 		go func(port uint16) {
 			defer wg.Done()
@@ -5895,7 +5895,7 @@ func TestStackSetAvailableCongestionControl(t *testing.T) {
 	// Verify that we still get the expected list of congestion control options.
 	var cc tcpip.TCPAvailableCongestionControlOption
 	if err := s.TransportProtocolOption(tcp.ProtocolNumber, &cc); err != nil {
-		t.Fatalf("s.TransportProtocolOptio(%d, &%T(%s)): %s", tcp.ProtocolNumber, cc, cc, err)
+		t.Fatalf("s.TransportProtocolOption(%d, &%T(%s)): %s", tcp.ProtocolNumber, cc, cc, err)
 	}
 	if got, want := cc, tcpip.TCPAvailableCongestionControlOption("reno cubic"); got != want {
 		t.Fatalf("got tcpip.TCPAvailableCongestionControlOption = %s, want = %s", got, want)
@@ -6832,7 +6832,7 @@ func TestSynRcvdBadSeqNumber(t *testing.T) {
 	// complete the connection to test that the large SEQ num
 	// did not change the state from SYN-RCVD.
 
-	// Get setup to be notified about connection establishment.
+	// Get set up to be notified about connection establishment.
 	we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
 	c.WQ.EventRegister(&we)
 	defer c.WQ.EventUnregister(&we)
@@ -6941,7 +6941,7 @@ func TestPassiveFailedConnectionAttemptIncrement(t *testing.T) {
 
 	srcPort := uint16(context.TestPort)
 	// Now attempt a handshakes it will fill up the accept backlog.
-	executeHandshake(t, c, srcPort, true /* synCookesInUse */)
+	executeHandshake(t, c, srcPort, true /* synCookiesInUse */)
 
 	// Give time for the final ACK to be processed as otherwise the next handshake could
 	// get accepted before the previous one based on goroutine scheduling.
@@ -7168,7 +7168,7 @@ func TestReceiveBufferAutoTuningApplicationLimited(t *testing.T) {
 	// Introduce a 25ms latency by delaying the first byte.
 	latency := 25 * time.Millisecond
 	time.Sleep(latency)
-	// Send an initial payload with atleast segment overhead size. The receive
+	// Send an initial payload with at least segment overhead size. The receive
 	// window would not grow for smaller segments.
 	rawEP.SendPacketWithTS(make([]byte, tcp.SegOverheadSize), tsVal)
 
@@ -7380,7 +7380,7 @@ func TestReceiveBufferAutoTuning(t *testing.T) {
 
 		if i == 0 {
 			// In the first iteration the receiver based RTT is not
-			// yet known as a result the moderation code should not
+			// yet known; as a result, the moderation code should not
 			// increase the advertised window.
 			rawEP.VerifyACKRcvWnd(scaleRcvWnd(curRcvWnd))
 		} else {
@@ -8032,7 +8032,7 @@ func TestTCPTimeWaitDuplicateFINExtendsTimeWait(t *testing.T) {
 	time.Sleep(4 * time.Second)
 
 	// Send an ACK and it should not generate any packet as the socket
-	// should still be in TIME_WAIT for another another 5 seconds due
+	// should still be in TIME_WAIT for another 5 seconds due
 	// to the duplicate FIN we sent earlier.
 	*ackHeaders = *finHeaders
 	ackHeaders.SeqNum = ackHeaders.SeqNum + 1

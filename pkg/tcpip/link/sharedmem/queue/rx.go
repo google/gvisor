@@ -49,7 +49,7 @@ const (
 	sizeOfConsumedBuffer = 28
 
 	// The following are the allowed states of the shared data area.
-	// EventFDUinitialized is the value stored at the start of the shared data
+	// EventFDUninitialized is the value stored at the start of the shared data
 	// region when it hasn't been initialized.
 	EventFDUninitialized = 0
 	// EventFDDisabled is the value stored at the start of the shared data region

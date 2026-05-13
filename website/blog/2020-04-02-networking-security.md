@@ -180,6 +180,6 @@ whether that be verbal feedback or code contributions, via our
 [Gitter channel](https://gitter.im/gvisor/community),
 [email list](https://groups.google.com/forum/#!forum/gvisor-users),
 [issue tracker](https://gvisor.dev/issue/new), and
-[Github repository](https://github.com/google/gvisor). Feel free to express
+[GitHub repository](https://github.com/google/gvisor). Feel free to express
 interest in an [open issue](https://gvisor.dev/issue/), or reach out if you
 aren't sure where to start.

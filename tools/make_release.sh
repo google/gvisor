@@ -17,7 +17,7 @@
 if [[ "$#" -le 2 ]]; then
   echo "usage: $0 <private-key> <root> <binaries & packages...>"
   echo "The environment variable NIGHTLY may be set to control"
-  echo "whether the nightly packages are produced or not."
+  echo "whether or not the nightly packages are produced."
   exit 1
 fi
 

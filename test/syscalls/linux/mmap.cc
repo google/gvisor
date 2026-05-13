@@ -1165,7 +1165,7 @@ TEST_F(MMapFileTest, ReadSharedConsistentWithWriteAndFile) {
               SyscallSucceedsWithValue(bufFile.size()));
   // Cast to void* to avoid EXPECT_THAT assuming bufFile.data() is a
   // NUL-terminated C std::string. EXPECT_THAT will try to print a char* as a C
-  // std::string, possibly overruning the buffer.
+  // std::string, possibly overrunning the buffer.
   EXPECT_THAT(reinterpret_cast<void*>(bufFile.data()), EqualsMemory(bufB));
 }
 
@@ -1188,7 +1188,7 @@ TEST_F(MMapFileTest, WriteShared) {
               SyscallSucceedsWithValue(buf.size()));
   // Cast to void* to avoid EXPECT_THAT assuming buf.data() is a
   // NUL-terminated C string. EXPECT_THAT will try to print a char* as a C
-  // string, possibly overruning the buffer.
+  // string, possibly overrunning the buffer.
   EXPECT_THAT(reinterpret_cast<void*>(buf.data()),
               EqualsMemory(std::string(kFileContents)));
 }
@@ -1226,7 +1226,7 @@ TEST_F(MMapFileTest, WriteSharedBeyondEnd) {
   // Cast to void* to avoid EXPECT_THAT assuming buf.data() is a
   // NUL-terminated C string. EXPECT_THAT will try to print a char* as a C
   // NUL-terminated C std::string. EXPECT_THAT will try to print a char* as a C
-  // std::string, possibly overruning the buffer.
+  // std::string, possibly overrunning the buffer.
   EXPECT_THAT(reinterpret_cast<void*>(buf.data()), EqualsMemory(first));
 }
 
@@ -1262,7 +1262,7 @@ TEST_F(MMapFileTest, WriteSharedTruncateUp) {
               SyscallSucceedsWithValue(buf.size()));
   // Cast to void* to avoid EXPECT_THAT assuming buf.data() is a
   // NUL-terminated C string. EXPECT_THAT will try to print a char* as a C
-  // string, possibly overruning the buffer.
+  // string, possibly overrunning the buffer.
   EXPECT_THAT(reinterpret_cast<void*>(buf.data()), EqualsMemory(first));
   EXPECT_THAT(reinterpret_cast<void*>(buf.data() + kPageSize / 2),
               EqualsMemory(second));
@@ -1339,7 +1339,7 @@ TEST_F(MMapFileTest, WriteSharedTruncateDownThenUp) {
               SyscallSucceedsWithValue(buf.size()));
   // Cast to void* to avoid EXPECT_THAT assuming buf.data() is a
   // NUL-terminated C string. EXPECT_THAT will try to print a char* as a C
-  // string, possibly overruning the buffer.
+  // string, possibly overrunning the buffer.
   EXPECT_THAT(reinterpret_cast<void*>(buf.data()), EqualsMemory(zeroed));
 }
 
@@ -1473,7 +1473,7 @@ TEST_F(MMapFileTest, WritePrivate) {
               SyscallSucceedsWithValue(buf.size()));
   // Cast to void* to avoid EXPECT_THAT assuming buf.data() is a
   // NUL-terminated C string. EXPECT_THAT will try to print a char* as a C
-  // string, possibly overruning the buffer.
+  // string, possibly overrunning the buffer.
   EXPECT_THAT(reinterpret_cast<void*>(buf.data()),
               EqualsMemory(std::string(len, '\0')));
 }

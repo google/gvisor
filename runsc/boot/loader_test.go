@@ -168,7 +168,7 @@ func TestRun(t *testing.T) {
 	defer l.Destroy()
 	defer cleanup()
 
-	// Start a goroutine to read the start chan result, otherwise Run will
+	// Start a goroutine to read the start chan result; otherwise, Run will
 	// block forever.
 	var resultChanErr error
 	var wg sync.WaitGroup

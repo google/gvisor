@@ -36,7 +36,7 @@ var (
 	globalAddr             = testutil.MustParse6("a000::1")
 )
 
-func TestEthernetAdddressToModifiedEUI64(t *testing.T) {
+func TestEthernetAddressToModifiedEUI64(t *testing.T) {
 	expectedIID := [header.IIDSize]byte{0, 2, 3, 255, 254, 4, 5, 6}
 
 	if diff := cmp.Diff(expectedIID, header.EthernetAddressToModifiedEUI64(linkAddr)); diff != "" {
@@ -44,7 +44,7 @@ func TestEthernetAdddressToModifiedEUI64(t *testing.T) {
 	}
 
 	var buf [header.IIDSize]byte
-	header.EthernetAdddressToModifiedEUI64IntoBuf(linkAddr, buf[:])
+	header.EthernetAddressToModifiedEUI64IntoBuf(linkAddr, buf[:])
 	if diff := cmp.Diff(expectedIID, buf); diff != "" {
 		t.Errorf("EthernetAddressToModifiedEUI64IntoBuf(%s, _) mismatch (-want +got):\n%s", linkAddr, diff)
 	}

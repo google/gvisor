@@ -71,7 +71,7 @@ func (m *machine) ioeventfdDisable(ev *eventfd.Eventfd) {
 	}
 	physical, _, ok := translateToPhysical(addr)
 	if !ok {
-		log.Warningf("Can't deassign ioeventfd MMIO address %#x: no physical address?", addr)
+		log.Warningf("Can't unassign ioeventfd MMIO address %#x: no physical address?", addr)
 	} else {
 		ioeventfd := kvmIoeventfd{
 			Addr:  uint64(physical),
@@ -80,7 +80,7 @@ func (m *machine) ioeventfdDisable(ev *eventfd.Eventfd) {
 			Flags: _KVM_IOEVENTFD_FLAG_DEASSIGN,
 		}
 		if errno := kvmIoeventfdIoctl(m.fd, &ioeventfd); errno != 0 {
-			log.Warningf("Failed to deassign ioeventfd for FD %d, addr %#x, physical %#x: %v", ev.FD(), addr, physical, errno)
+			log.Warningf("Failed to unassign ioeventfd for FD %d, addr %#x, physical %#x: %v", ev.FD(), addr, physical, errno)
 		}
 	}
 	ev.DisableMMIO()

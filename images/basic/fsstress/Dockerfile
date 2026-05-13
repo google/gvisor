@@ -12,6 +12,6 @@ RUN cp ./testcases/kernel/fs/fsstress/fsstress /usr/bin
 RUN rm -rf /fsstress /tmp
 
 WORKDIR /
-# This is required, otherwise running with -p > 1 prematurelly exits.
+# This is required; otherwise, running with -p > 1 prematurely exits.
 COPY run.sh .
 ENTRYPOINT ["/run.sh"]

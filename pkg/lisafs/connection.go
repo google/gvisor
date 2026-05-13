@@ -32,7 +32,7 @@ import (
 //
 // Each connection is set up using a unix domain socket. One end is owned by
 // the server and the other end is owned by the client. The connection may
-// spawn additional comunicational channels for the same mount for increased
+// spawn additional communication channels for the same mount for increased
 // RPC concurrency.
 //
 // Reference model:
@@ -362,7 +362,7 @@ func (c *Connection) removeControlFDLocked(id FDID) {
 func (c *Connection) stopTrackingFD(id FDID) genericFD {
 	fd := c.fds[id]
 	if fd == nil {
-		log.Warningf("removeFDLocked called on non-existent FDID %d", id)
+		log.Warningf("removeFDLocked called on nonexistent FDID %d", id)
 		return nil
 	}
 	delete(c.fds, id)

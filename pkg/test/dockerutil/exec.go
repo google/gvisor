@@ -210,7 +210,7 @@ func (p *Process) WaitExitStatus(ctx context.Context) (int, error) {
 // runningExitCode collects if the process is running and the exit code.
 // The exit code is only valid if the process has exited.
 func (p *Process) runningExitCode(ctx context.Context) (bool, int, error) {
-	// If execid is not empty, this is a execed process.
+	// If execid is not empty, this is an execed process.
 	if p.execid != "" {
 		status, err := p.container.client.ContainerExecInspect(ctx, p.execid)
 		return status.Running, status.ExitCode, err

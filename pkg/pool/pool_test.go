@@ -38,7 +38,7 @@ func TestPoolUnique(t *testing.T) {
 	}
 }
 
-func TestExausted(t *testing.T) {
+func TestExhausted(t *testing.T) {
 	p := Pool{Start: 1, Limit: 500}
 	for i := 0; i < 499; i++ {
 		_, ok := p.Get()

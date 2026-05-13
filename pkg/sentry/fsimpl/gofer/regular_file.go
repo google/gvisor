@@ -371,7 +371,7 @@ func (rw *dentryReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) 
 		return n, err
 	}
 
-	// Otherwise read from/through the cache.
+	// Otherwise, read from/through the cache.
 	memCgID := pgalloc.MemoryCgroupIDFromContext(rw.ctx)
 	mf := rw.d.inode.fs.mf
 	fillCache := mf.ShouldCacheEvictable()
@@ -492,7 +492,7 @@ func (rw *dentryReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, erro
 		return n, err
 	}
 
-	// Otherwise write to/through the cache.
+	// Otherwise, write to/through the cache.
 	mf := rw.d.inode.fs.mf
 	rw.d.inode.dataMu.Lock()
 	defer rw.d.inode.dataMu.Unlock()

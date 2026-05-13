@@ -345,7 +345,7 @@ func (l *listenContext) performHandshake(s *segment, opts header.TCPSynOptions, 
 	ep.rcv.RcvWndScale = ep.h.effectiveRcvWndScale()
 
 	// Clean up handshake state stored in the endpoint so that it can be
-	// GCed.
+	// GC'd.
 	ep.h = nil
 	ep.mu.Unlock()
 	return ep, nil

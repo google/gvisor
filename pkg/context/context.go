@@ -174,10 +174,10 @@ func (nt *NoTask) BlockWithTimeoutOn(w waiter.Waitable, mask waiter.EventMask, t
 	return left, err == nil
 }
 
-// UninterruptibleSleepStart implmenents Blocker.UninterruptedSleepStart.
+// UninterruptibleSleepStart implements Blocker.UninterruptedSleepStart.
 func (*NoTask) UninterruptibleSleepStart() {}
 
-// UninterruptibleSleepFinish implmenents Blocker.UninterruptibleSleepFinish.
+// UninterruptibleSleepFinish implements Blocker.UninterruptibleSleepFinish.
 func (*NoTask) UninterruptibleSleepFinish() {}
 
 // Context represents a thread of execution (hereafter "goroutine" to reflect

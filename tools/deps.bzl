@@ -49,7 +49,7 @@ def _deps_test_impl(ctx):
     for target in ctx.attr.targets:
         for (node_target, node_deps) in target[DepsInfo].nodes.items():
             # Ignore any disallowed targets. This generates more useful error
-            # messages. Consider the case where A dependes on B and B depends
+            # messages. Consider the case where A depends on B and B depends
             # on C, and both B and C are disallowed. Avoid emitting an error
             # that B depends on C, when the real issue is that A depends on B.
             if not _is_allowed(node_target.label, ctx.attr.allowed, ctx.attr.allowed_prefixes) and node_target.label != target.label:

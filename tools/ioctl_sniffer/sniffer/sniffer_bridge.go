@@ -67,7 +67,7 @@ func (c *Connection) readFullWithContext(ctx context.Context, buf []byte) error 
 }
 
 // ReadIoctlProto reads a single ioctl proto from this connection. Our format is:
-//   - 8 byte little endian uint64 containing the size of the proto.
+//   - 8 byte little-endian uint64 containing the size of the proto.
 //   - The proto bytes.
 //
 // This should match the format in sniffer_bridge.h.

@@ -370,11 +370,11 @@ func IsSolicitedNodeAddr(addr tcpip.Address) bool {
 	return solicitedNodeMulticastPrefix == [13]byte(addrBytes[:len(addrBytes)-3])
 }
 
-// EthernetAdddressToModifiedEUI64IntoBuf populates buf with a modified EUI-64
+// EthernetAddressToModifiedEUI64IntoBuf populates buf with a modified EUI-64
 // from a 48-bit Ethernet/MAC address, as per RFC 4291 section 2.5.1.
 //
 // buf MUST be at least 8 bytes.
-func EthernetAdddressToModifiedEUI64IntoBuf(linkAddr tcpip.LinkAddress, buf []byte) {
+func EthernetAddressToModifiedEUI64IntoBuf(linkAddr tcpip.LinkAddress, buf []byte) {
 	buf[0] = linkAddr[0] ^ 2
 	buf[1] = linkAddr[1]
 	buf[2] = linkAddr[2]
@@ -389,7 +389,7 @@ func EthernetAdddressToModifiedEUI64IntoBuf(linkAddr tcpip.LinkAddress, buf []by
 // Ethernet/MAC address, as per RFC 4291 section 2.5.1.
 func EthernetAddressToModifiedEUI64(linkAddr tcpip.LinkAddress) [IIDSize]byte {
 	var buf [IIDSize]byte
-	EthernetAdddressToModifiedEUI64IntoBuf(linkAddr, buf[:])
+	EthernetAddressToModifiedEUI64IntoBuf(linkAddr, buf[:])
 	return buf
 }
 
@@ -406,7 +406,7 @@ func LinkLocalAddr(linkAddr tcpip.LinkAddress) tcpip.Address {
 		0: 0xFE,
 		1: 0x80,
 	}
-	EthernetAdddressToModifiedEUI64IntoBuf(linkAddr, lladdrb[IIDOffsetInIPv6Address:])
+	EthernetAddressToModifiedEUI64IntoBuf(linkAddr, lladdrb[IIDOffsetInIPv6Address:])
 	return tcpip.AddrFrom16(lladdrb)
 }
 

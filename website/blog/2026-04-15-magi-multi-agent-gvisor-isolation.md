@@ -222,7 +222,7 @@ $ docker exec -it ollama sh -c 'ollama pull glm-4.7-flash:q4_K_M && ollama run -
 $ docker exec -it ollama sh -c 'ollama pull gpt-oss:20b          && ollama run --keepalive=9001h gemma4:26b-a4b-it-q8_0 Say hello.'
 $ docker exec -it ollama sh -c 'ollama pull gpt-oss:20b          && ollama run --keepalive=9001h nomic-embed-text:137m-v1.5-fp16 ""'
 
-# Make sure they all fit together in VRAM, otherwise you'll get bad performance.
+# Make sure they all fit together in VRAM; otherwise, you'll get bad performance.
 $ docker exec -it ollama ollama ps
 NAME                      ID              SIZE     PROCESSOR    CONTEXT    UNTIL
 gemma4:26b-a4b-it-q8_0    6bfaf9a8cb37    89 GB    100% GPU     262144     12 months from now

@@ -259,7 +259,7 @@ TEST(GetpriorityTest, CloneMaintainsPriority) {
   });
   th.Join();
 
-  // Check that parent's priority reemained the same even though
+  // Check that parent's priority remained the same even though
   // the child's priority was altered
   EXPECT_EQ(kParentPriority, getpriority(PRIO_PROCESS, syscall(__NR_gettid)));
 }

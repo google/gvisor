@@ -28,7 +28,7 @@ type jsonLog struct {
 	Time  time.Time `json:"time"`
 }
 
-// MarshalJSON implements json.Marshaler.MarashalJSON.
+// MarshalJSON implements json.Marshaler.MarshalJSON.
 func (l Level) MarshalJSON() ([]byte, error) {
 	switch l {
 	case Warning:

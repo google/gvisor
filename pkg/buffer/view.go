@@ -37,7 +37,7 @@ var viewPool = sync.Pool{
 // A View must be created with NewView, NewViewWithData, or Clone. Owners are
 // responsible for maintaining ownership over their views. When Views need to be
 // shared or copied, the owner should create a new View with Clone. Clone must
-// only ever be called on a owned View, not a borrowed one.
+// only ever be called on an owned View, not a borrowed one.
 //
 // Users are responsible for calling Release when finished with their View so
 // that its resources can be returned to the pool.
@@ -272,7 +272,7 @@ func (v *View) ReadFrom(r io.Reader) (n int64, err error) {
 		v.chunk = v.chunk.Clone()
 	}
 	for {
-		// Check for EOF to avoid an unnnecesary allocation.
+		// Check for EOF to avoid an unnecessary allocation.
 		if _, e := r.Read(nil); e == io.EOF {
 			return n, nil
 		}

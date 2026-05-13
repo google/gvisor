@@ -14,13 +14,13 @@
 
 package test
 
-func testParameterPassingbyAddrValid(tc *oneGuardStruct) {
+func testParameterPassingByAddrValid(tc *oneGuardStruct) {
 	tc.mu.Lock()
 	nestedWithGuardByAddr(&tc.guardedField, &tc.unguardedField)
 	tc.mu.Unlock()
 }
 
-func testParameterPassingByAddrInalid(tc *oneGuardStruct) {
+func testParameterPassingByAddrInvalid(tc *oneGuardStruct) {
 	nestedWithGuardByAddr(&tc.guardedField, &tc.unguardedField) // +checklocksfail
 }
 
@@ -30,7 +30,7 @@ func testParameterPassingByValueValid(tc *oneGuardStruct) {
 	tc.mu.Unlock()
 }
 
-func testParameterPassingByValueInalid(tc *oneGuardStruct) {
+func testParameterPassingByValueInvalid(tc *oneGuardStruct) {
 	nestedWithGuardByValue(tc.guardedField, tc.unguardedField) // +checklocksfail
 }
 

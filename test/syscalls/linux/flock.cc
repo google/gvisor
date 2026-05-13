@@ -194,7 +194,7 @@ TEST_F(FlockTest, TestSharedLockFailExclusiveHolderNonblocking) {
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(test_file_name_, O_RDWR));
 
-  // Verify we're unable to get an shared lock via the second FD.
+  // Verify we're unable to get a shared lock via the second FD.
   // because someone is holding an exclusive lock.
   ASSERT_THAT(flock(fd.get(), LOCK_SH | LOCK_NB),
               SyscallFailsWithErrno(EWOULDBLOCK));
@@ -381,7 +381,7 @@ TEST_F(FlockTest, TestDupFdUpgrade) {
 }
 
 TEST_F(FlockTest, TestDupFdDowngrade) {
-  // This test will verify that a exclusive lock is downgradable via a dupped
+  // This test will verify that an exclusive lock is downgradable via a dupped
   // file descriptor, if the FD wasn't dupped this would fail.
   ASSERT_THAT(flock(test_file_fd_.get(), LOCK_EX | LOCK_NB),
               SyscallSucceedsWithValue(0));
@@ -439,7 +439,7 @@ TEST_F(FlockTest, TestDupFdUnlockRelease) {
    * operation on any of these duplicate descriptors, or when all such
    * descriptors have been closed.
    */
-  // This test will verify that an explict unlock on a dupped FD will release
+  // This test will verify that an explicit unlock on a dupped FD will release
   // the underlying lock unlike the previous case where close on a dup was
   // not enough to release the lock.
   ASSERT_THAT(flock(test_file_fd_.get(), LOCK_EX | LOCK_NB),
@@ -468,7 +468,7 @@ TEST_F(FlockTest, TestDupFdUnlockRelease) {
 TEST_F(FlockTest, TestDupFdFollowedByLock) {
   // This test will verify that taking a lock on a file descriptor that has
   // already been dupped means that the lock is shared between both. This is
-  // slightly different than than duping on an already locked FD.
+  // slightly different than duping on an already locked FD.
   FileDescriptor dup_fd = ASSERT_NO_ERRNO_AND_VALUE(test_file_fd_.Dup());
 
   // Take a lock.

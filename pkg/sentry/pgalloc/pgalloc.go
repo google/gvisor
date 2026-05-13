@@ -1051,7 +1051,7 @@ func tryPopulate(b safemem.Block) bool {
 	// There are two approaches for populating writable pages:
 	// 1. madvise(MADV_POPULATE_WRITE). It has the desired effect: "Populate
 	//    (prefault) page tables writable, faulting in all pages in the range
-	//    just as if manually writing to each each page".
+	//    just as if manually writing to each page".
 	// 2. Call mlock to populate pages, then munlock to cancel the mlock (but
 	//    keep the pages populated).
 	//

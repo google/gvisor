@@ -282,7 +282,7 @@ func (s *sender) detectTLPRecovery(ack seqnum.Value, rcvdSeg *segment) {
 //     initially with a conservative window of min_RTT/4. If no reordering has
 //     been observed RACK uses reo_wnd of zero during loss recovery, in order to
 //     retransmit quickly, or when the number of DUPACKs exceeds the classic
-//     DUPACKthreshold.
+//     DUPACK threshold.
 //
 // +checklocks:rc.snd.ep.mu
 func (rc *rackControl) updateRACKReorderWindow() {
@@ -319,7 +319,7 @@ func (rc *rackControl) updateRACKReorderWindow() {
 	}
 
 	// Reorder window is zero during loss recovery, or when the number of
-	// DUPACKs exceeds the classic DUPACKthreshold.
+	// DUPACKs exceeds the classic DUPACK threshold.
 	// If RACK.reord is FALSE:
 	//   If in loss recovery:  (If in fast or timeout recovery)
 	//      RACK.reo_wnd = 0

@@ -156,5 +156,5 @@ var TaskSize = func() uintptr {
 			panic(fmt.Sprintf("mmap returned unexpected error: %d", errno))
 		}
 	}
-	panic("None of the address space sizes could be successfully mmaped")
+	panic("None of the address space sizes could be successfully mmapped")
 }()

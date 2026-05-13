@@ -114,7 +114,7 @@ some real-world workloads:
     for example; this workload does not require a significant amount of system
     calls and there are very few userspace to kernel mode switches.
 *   The
-    [Tensorflow benchmark](https://github.com/google/gvisor/blob/master/blob/master/test/benchmarks/ml/tensorflow_test.go)
+    [TensorFlow benchmark](https://github.com/google/gvisor/blob/master/blob/master/test/benchmarks/ml/tensorflow_test.go)
     trains a variety of machine learning models on CPU; the system-call usage of
     this workload is in between compilation and ffmpeg, due to needing to
     retrieve training and validation data, but the majority of time is still

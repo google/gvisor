@@ -213,7 +213,7 @@ func newPortForwardProcess(ctx context.Context, c *dockerutil.Container, localPo
 		return nil, err
 	}
 	args := []string{"-root", rootDir, "port-forward", c.ID(), fmt.Sprintf("%d:%d", localPort, containerPort)}
-	return startPortForwardPorcess(ctx, args)
+	return startPortForwardProcess(ctx, args)
 }
 
 func newPortForwardStreamProcess(ctx context.Context, c *dockerutil.Container, uds string, containerPort int) (*portForwardProcess, error) {
@@ -222,10 +222,10 @@ func newPortForwardStreamProcess(ctx context.Context, c *dockerutil.Container, u
 		return nil, err
 	}
 	args := []string{"-root", rootDir, "-alsologtostderr", "port-forward", "-stream", uds, c.ID(), fmt.Sprintf("%d", containerPort)}
-	return startPortForwardPorcess(ctx, args)
+	return startPortForwardProcess(ctx, args)
 }
 
-func startPortForwardPorcess(ctx context.Context, args []string) (*portForwardProcess, error) {
+func startPortForwardProcess(ctx context.Context, args []string) (*portForwardProcess, error) {
 	cmd := exec.CommandContext(ctx, specutils.ExePath, args...)
 	ret := &portForwardProcess{cmd: cmd}
 	ret.cmd.Stdout = &ret.buf

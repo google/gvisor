@@ -177,7 +177,7 @@ func TestReassemblingTimeout(t *testing.T) {
 		fragment *fragment
 
 		// expectDone is true if the fragmentation instance should report the
-		// reassembly is done after the fragment is processd.
+		// reassembly is done after the fragment is processed.
 		expectDone bool
 
 		// memSizeAfterEvent is the expected memory size of the fragmentation

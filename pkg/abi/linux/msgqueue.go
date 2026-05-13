@@ -48,7 +48,7 @@ const (
 	MSGMAP  = MSGMNB
 	MSGSSZ  = 16
 
-	// MSGSEG is simplified due to the inexistance of a ternary operator.
+	// MSGSEG is simplified due to the nonexistence of a ternary operator.
 	MSGSEG = 0xffff
 )
 

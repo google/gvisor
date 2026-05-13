@@ -145,7 +145,7 @@ type StartContainerArgs struct {
 	//    that contains an executable file with name in binary_path.
 	ResolveBinaryPath bool `json:"resolve_binary_path"`
 
-	// DonatedFDs is the list of sentry-intrenal file descriptors that will
+	// DonatedFDs is the list of sentry-internal file descriptors that will
 	// donated. They correspond to the donated files in FilePayload.
 	DonatedFDs []int `json:"donated_fds"`
 

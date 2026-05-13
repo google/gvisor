@@ -47,11 +47,11 @@ type SaveOpts struct {
 	Destination io.Writer
 
 	// PagesMetadata is the file into which MemoryFile metadata is stored if
-	// PagesMetadata is non-nil. Otherwise this content is stored in Destination.
+	// PagesMetadata is non-nil. Otherwise, this content is stored in Destination.
 	PagesMetadata io.WriteCloser
 
 	// PagesFile is the file in which all MemoryFile pages are stored if
-	// PagesFile is non-nil. Otherwise this content is stored in Destination.
+	// PagesFile is non-nil. Otherwise, this content is stored in Destination.
 	PagesFile stateio.AsyncWriter
 
 	// Key is used to enable state integrity check.

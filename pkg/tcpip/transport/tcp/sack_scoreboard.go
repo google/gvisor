@@ -145,7 +145,7 @@ func (s *SACKScoreboard) Insert(r header.SACKBlock) {
 	}
 }
 
-// IsSACKED returns true if the a given range of sequence numbers denoted by r
+// IsSACKED returns true if the given range of sequence numbers denoted by r
 // are already covered by SACK information in the scoreboard.
 func (s *SACKScoreboard) IsSACKED(r header.SACKBlock) bool {
 	if s.Empty() {

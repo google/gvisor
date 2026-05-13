@@ -498,7 +498,7 @@ type AddressProperties struct {
 	// Lifetimes encodes the address' lifetimes.
 	//
 	// Lifetimes.PreferredUntil and Lifetimes.ValidUntil are informational, i.e.
-	// the stack will not deprecated nor invalidate the address upon reaching
+	// the stack will neither deprecate nor invalidate the address upon reaching
 	// these timestamps.
 	//
 	// If Lifetimes.Deprecated is true, the address will be added as deprecated.
@@ -691,7 +691,7 @@ const (
 	PermanentExpired
 
 	// Temporary is an endpoint, created on a one-off basis to temporarily
-	// consider the NIC bound an an address that it is not explicitly bound to
+	// consider the NIC bound to an address that it is not explicitly bound to
 	// (such as a permanent address). Its reference count must not be biased by 1
 	// so that the address is removed immediately when references to it are no
 	// longer held.

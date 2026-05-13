@@ -18,7 +18,7 @@ const optionsType = "io.containerd.runsc.v1.options"
 
 // Options is runtime options for io.containerd.runsc.v1.
 type Options struct {
-	// ShimCgroup is the cgroup the shim should be in.
+	// ShimCgroup is the cgroup that should contain the shim.
 	ShimCgroup string `toml:"shim_cgroup" json:"shimCgroup"`
 
 	// IoUID is the I/O's pipes uid.

@@ -41,7 +41,7 @@ NAME     HANDLER   AGE
 gvisor   gvisor    1h
 ```
 
-### Wordpress deployment
+### WordPress deployment
 
 Now, let's deploy a WordPress site using GKE Sandbox. WordPress site requires
 two pods: web server in the frontend, MySQL database in the backend. Both
@@ -224,7 +224,7 @@ $ kubectl apply -f wordpress-deployment.yaml
 ```
 
 Wait for the deployments to be ready and an external IP to be assigned to the
-Wordpress service:
+WordPress service:
 
 ```shell
 $ watch kubectl get service wordpress

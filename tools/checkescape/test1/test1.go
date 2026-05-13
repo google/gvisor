@@ -46,7 +46,7 @@ func InterfaceFunction(i Interface) {
 }
 
 // TypeFunction is passed a concrete pointer argument.
-// +checkesacape:all,hard
+// +checkescape:all,hard
 //
 //go:nosplit
 func TypeFunction(t *Type) {

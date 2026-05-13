@@ -843,7 +843,7 @@ func (conn *TCPIPv4) LocalAddr(t *testing.T) *unix.SockaddrInet4 {
 
 // GenerateOTWSeqSegment generates a segment with
 // seqnum = RCV.NXT + RCV.WND + seqNumOffset, the generated segment is only
-// acceptable when seqNumOffset is 0, otherwise an ACK is expected from the
+// acceptable when seqNumOffset is 0; otherwise, an ACK is expected from the
 // receiver.
 func GenerateOTWSeqSegment(t *testing.T, conn *TCPIPv4, seqNumOffset seqnum.Size, windowSize seqnum.Size) TCP {
 	t.Helper()
@@ -854,7 +854,7 @@ func GenerateOTWSeqSegment(t *testing.T, conn *TCPIPv4, seqNumOffset seqnum.Size
 
 // GenerateUnaccACKSegment generates a segment with
 // acknum = SND.NXT + seqNumOffset, the generated segment is only acceptable
-// when seqNumOffset is 0, otherwise an ACK is expected from the receiver.
+// when seqNumOffset is 0; otherwise, an ACK is expected from the receiver.
 func GenerateUnaccACKSegment(t *testing.T, conn *TCPIPv4, seqNumOffset seqnum.Size, windowSize seqnum.Size) TCP {
 	t.Helper()
 	lastAcceptable := conn.RemoteSeqNum(t)

@@ -326,7 +326,7 @@ func TestReceiveOnSolicitedNodeAddr(t *testing.T) {
 			}
 
 			// Should receive a packet destined to the solicited node address of
-			// addr2/addr3 now that we have added added addr2.
+			// addr2/addr3 now that we have added addr2.
 			test.rxf(t, s, e, addr1, snmc, 1)
 
 			protocolAddr3 := tcpip.ProtocolAddress{
@@ -3974,7 +3974,7 @@ func TestRejectMartianMappedPackets(t *testing.T) {
 				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 			}
 
-			// We don't have to setup the UDP header properly, as
+			// We don't have to set up the UDP header properly, as
 			// it should be rejected at the IP layer.
 			hdr := prependable.New(header.IPv6MinimumSize + header.UDPMinimumSize)
 			_ = header.UDP(hdr.Prepend(header.UDPMinimumSize))

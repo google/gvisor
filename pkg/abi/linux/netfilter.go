@@ -208,7 +208,7 @@ type IPTIP struct {
 	// InputInterfaceMask is the input interface mask.
 	InputInterfaceMask [IFNAMSIZ]byte
 
-	// OuputInterfaceMask is the output interface mask.
+	// OutputInterfaceMask is the output interface mask.
 	OutputInterfaceMask [IFNAMSIZ]byte
 
 	// Protocol is the transport protocol.

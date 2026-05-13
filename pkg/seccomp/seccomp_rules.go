@@ -915,7 +915,7 @@ func (sr SyscallRules) Has(sysno uintptr) bool {
 	return has
 }
 
-// Add adds the given rule. It will create a new entry for a new syscall, otherwise
+// Add adds the given rule. It will create a new entry for a new syscall; otherwise,
 // it will append to the existing rules.
 // Returns itself for chainability.
 func (sr SyscallRules) Add(sysno uintptr, r SyscallRule) SyscallRules {

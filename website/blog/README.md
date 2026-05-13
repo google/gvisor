@@ -23,7 +23,7 @@ To submit a blog post, follow the steps below.
     [existing blog posts](https://github.com/google/gvisor/tree/master/website/blog).
 1.  Write your blog post in a text editor of your choice.
 1.  (Optional) If you need help with markdown, check out
-    [StakEdit](https://stackedit.io/app#) or read
+    [StackEdit](https://stackedit.io/app#) or read
     [Jekyll's formatting reference](https://jekyllrb.com/docs/posts/#creating-posts)
     for more information.
 1.  Click **Add file** > **Create new file**.

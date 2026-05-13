@@ -1049,7 +1049,7 @@ func (s *Stack) localRoute(msg *nlmsg.Message) (tcpip.Route, *syserr.Error) {
 	return localRoute, nil
 }
 
-// RemoveRoute implements inte.Stack.RemoveRoute.
+// RemoveRoute implements inet.Stack.RemoveRoute.
 func (s *Stack) RemoveRoute(ctx context.Context, msg *nlmsg.Message) *syserr.Error {
 	localRoute, err := s.localRoute(msg)
 	if err != nil {

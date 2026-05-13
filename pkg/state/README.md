@@ -53,7 +53,7 @@ to indicate relationships between objects in the statefile; see `objectID` in
 
 ### 2. Type Serialization
 
-The enoder will subsequently serialize all information about discovered types,
+The encoder will subsequently serialize all information about discovered types,
 including field names. These are used during decoding to reconcile these types
 with other internally registered types.
 

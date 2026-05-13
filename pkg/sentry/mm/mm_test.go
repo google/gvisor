@@ -304,14 +304,14 @@ func TestGetAllocationDirection(t *testing.T) {
 			pgalloc.TopDown,
 		},
 		{
-			"Last fault in vma equals to addr range, with mmap direction BottomUp",
+			"Last fault in vma equals addr range, with mmap direction BottomUp",
 			arch.MmapBottomUp,
 			hostarch.AddrRange{123, 456},
 			&vma{lastFault: 123},
 			pgalloc.BottomUp,
 		},
 		{
-			"Last fault in vma equals to addr range, with mmap direction TopDown",
+			"Last fault in vma equals addr range, with mmap direction TopDown",
 			arch.MmapTopDown,
 			hostarch.AddrRange{123, 456},
 			&vma{lastFault: 123},

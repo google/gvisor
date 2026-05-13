@@ -221,7 +221,7 @@ TEST(Mlock2Test, NoFlags) {
   EXPECT_TRUE(IsPageMlocked(mapping.addr()));
 }
 
-TEST(Mlock2Test, MlockOnfault) {
+TEST(Mlock2Test, MlockOnFault) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanMlock()));
   auto const mapping = ASSERT_NO_ERRNO_AND_VALUE(
       MmapAnon(kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE));

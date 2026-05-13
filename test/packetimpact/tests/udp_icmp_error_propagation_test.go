@@ -129,7 +129,7 @@ func sendICMPError(t *testing.T, conn *testbench.UDPIPv4, icmpErr icmpError, udp
 
 // testRecv tests observing the ICMP error through the recv unix. A packet
 // is sent to the DUT, and if wantErrno is non-zero, then the first recv should
-// fail and the second should succeed. Otherwise if wantErrno is zero then the
+// fail and the second should succeed. Otherwise, if wantErrno is zero then the
 // first recv should succeed immediately.
 func testRecv(ctx context.Context, t *testing.T, d testData) {
 	t.Helper()

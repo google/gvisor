@@ -884,7 +884,7 @@ func (vfs *VirtualFilesystem) GetFilesystems() []*Filesystem {
 	return fss
 }
 
-// MkdirAllAt recursively creates non-existent directories on the given path
+// MkdirAllAt recursively creates nonexistent directories on the given path
 // (including the last component).
 func (vfs *VirtualFilesystem) MkdirAllAt(ctx context.Context, currentPath string, root VirtualDentry, creds *auth.Credentials, mkdirOpts *MkdirOptions, mustBeDir bool) error {
 	pop := &PathOperation{

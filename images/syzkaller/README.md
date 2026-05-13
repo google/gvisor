@@ -1,6 +1,6 @@
 syzkaller is an unsupervised coverage-guided kernel fuzzer.
 
-*   [Github](https://github.com/google/syzkaller)
+*   [GitHub](https://github.com/google/syzkaller)
 *   [gVisor dashboard](https://syzkaller.appspot.com/gvisor)
 
 # How to run syzkaller.

@@ -118,7 +118,7 @@ func (*ErrUnknownOutputEndpoint) isForwardingError() {}
 
 func (*ErrUnknownOutputEndpoint) String() string { return "unknown endpoint" }
 
-// ErrOther indicates the packet coould not be forwarded for a reason
+// ErrOther indicates the packet could not be forwarded for a reason
 // captured by the contained error.
 type ErrOther struct {
 	Err tcpip.Error

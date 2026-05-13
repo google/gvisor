@@ -633,7 +633,7 @@ func (c *Container) WaitTimeout(ctx context.Context, timeout time.Duration) erro
 	}
 }
 
-// WaitForOutput searches container logs for pattern and returns or timesout.
+// WaitForOutput searches container logs for pattern and returns or times out.
 func (c *Container) WaitForOutput(ctx context.Context, pattern string, timeout time.Duration) (string, error) {
 	matches, err := c.WaitForOutputSubmatch(ctx, pattern, timeout)
 	if err != nil {

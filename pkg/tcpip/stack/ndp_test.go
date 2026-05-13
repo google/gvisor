@@ -74,7 +74,7 @@ func addrForSubnet(subnet tcpip.Subnet, linkAddr tcpip.LinkAddress) tcpip.Addres
 
 	subnetID := subnet.ID()
 	addrBytes := subnetID.AsSlice()
-	header.EthernetAdddressToModifiedEUI64IntoBuf(linkAddr, addrBytes[header.IIDOffsetInIPv6Address:])
+	header.EthernetAddressToModifiedEUI64IntoBuf(linkAddr, addrBytes[header.IIDOffsetInIPv6Address:])
 	return tcpip.AddressWithPrefix{
 		Address:   tcpip.AddrFromSlice(addrBytes),
 		PrefixLen: 64,
@@ -1683,7 +1683,7 @@ func TestOffLinkRouteDiscovery(t *testing.T) {
 				e.InjectInbound(header.IPv6ProtocolNumber, test.ra(t, llAddr2, l2LifetimeSeconds, header.MediumRoutePreference))
 				select {
 				case <-ndpDisp.offLinkRouteC:
-					t.Fatal("should not receive a off-link route event when updating lifetimes for known routers")
+					t.Fatal("should not receive an off-link route event when updating lifetimes for known routers")
 				default:
 				}
 
@@ -3067,11 +3067,11 @@ func TestAutoGenTempAddrRegenJobUpdates(t *testing.T) {
 
 	// The time since the last regeneration before a new temporary address is
 	// generated.
-	tempAddrRegenenerationTime := effectiveMaxTempAddrPL - regenAdv
+	tempAddrRegenerationTime := effectiveMaxTempAddrPL - regenAdv
 
 	// Advance the clock by the regeneration time but don't expect a new temporary
 	// address as the prefix is deprecated.
-	clock.Advance(tempAddrRegenenerationTime)
+	clock.Advance(tempAddrRegenerationTime)
 	select {
 	case e := <-ndpDisp.autoGenAddrC:
 		t.Fatalf("unexpected auto gen addr event = %#v", e)
@@ -3845,7 +3845,7 @@ func TestAutoGenAddrFiniteToInfiniteToFiniteVL(t *testing.T) {
 		t.Error(err)
 	}
 
-	// Receive an new RA with prefix with infinite VL.
+	// Receive a new RA with prefix with infinite VL.
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix, true, true, infiniteVLSeconds, 0))
 	if err := addrDisp.expectLifetimesChanged(addressLifetimes(clock.NowMonotonic(), 0, infiniteVLSeconds)); err != nil {
 		t.Error(err)
@@ -3971,7 +3971,7 @@ func TestAutoGenAddrValidLifetimeUpdates(t *testing.T) {
 				t.Error(err)
 			}
 
-			// Receive an new RA with prefix with new VL,
+			// Receive a new RA with prefix with new VL,
 			// test.nvl.
 			e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix, true, true, test.nvl, 0))
 			if test.evl != test.ovl {
@@ -4667,7 +4667,7 @@ func TestAutoGenAddrWithEUI64IIDNoDADRetries(t *testing.T) {
 
 			subnetID := addrType.subnet.ID()
 			addrBytes := subnetID.AsSlice()
-			header.EthernetAdddressToModifiedEUI64IntoBuf(linkAddr1, addrBytes[header.IIDOffsetInIPv6Address:])
+			header.EthernetAddressToModifiedEUI64IntoBuf(linkAddr1, addrBytes[header.IIDOffsetInIPv6Address:])
 			addr := tcpip.AddressWithPrefix{
 				Address:   tcpip.AddrFromSlice(addrBytes),
 				PrefixLen: 64,
@@ -6043,7 +6043,7 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 			test.stopFn(t, s, false /* first */)
 			clock.Advance(delay)
 			if pb := e.Read(); pb != nil {
-				t.Fatal("unexpectedly got a packet after router solicitation has been stopepd")
+				t.Fatal("unexpectedly got a packet after router solicitation has been stopped")
 			}
 
 			// If test.startFn is nil, there is no way to restart router solicitations.

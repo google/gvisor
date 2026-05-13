@@ -511,7 +511,7 @@ func (c *Context) BuildSegmentWithAddrs(payload []byte, h *Headers, src, dst tcp
 }
 
 // SendSegment sends a TCP segment that has already been built and written to a
-// buffer.VectorisedView.
+// buffer.VectorizedView.
 func (c *Context) SendSegment(s buffer.Buffer) {
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Payload: s,
@@ -568,7 +568,7 @@ func (c *Context) SendAckWithSACK(seq seqnum.Value, bytesReceived int, sackBlock
 }
 
 // ReceiveAndCheckPacket reads a packet from the link layer endpoint and
-// verifies that the packet packet payload of packet matches the slice
+// verifies that the packet payload of packet matches the slice
 // of data indicated by offset & size.
 func (c *Context) ReceiveAndCheckPacket(data []byte, offset, size int) {
 	c.t.Helper()
@@ -577,7 +577,7 @@ func (c *Context) ReceiveAndCheckPacket(data []byte, offset, size int) {
 }
 
 // ReceiveAndCheckPacketWithOptions reads a packet from the link layer endpoint
-// and verifies that the packet packet payload of packet matches the slice of
+// and verifies that the packet payload of packet matches the slice of
 // data indicated by offset & size and skips optlen bytes in addition to the IP
 // TCP headers when comparing the data.
 func (c *Context) ReceiveAndCheckPacketWithOptions(data []byte, offset, size, optlen int) {
@@ -602,7 +602,7 @@ func (c *Context) ReceiveAndCheckPacketWithOptions(data []byte, offset, size, op
 }
 
 // ReceiveNonBlockingAndCheckPacket reads a packet from the link layer endpoint
-// and verifies that the packet packet payload of packet matches the slice of
+// and verifies that the packet payload of packet matches the slice of
 // data indicated by offset & size. It returns true if a packet was received and
 // processed.
 func (c *Context) ReceiveNonBlockingAndCheckPacket(data []byte, offset, size int) bool {
@@ -1028,7 +1028,7 @@ func (c *Context) CreateConnectedWithOptions(wantOptions header.TCPSynOptions, d
 
 	// Read ACK.
 	var ackPacket *buffer.View
-	// Ignore retransimitted SYN packets.
+	// Ignore retransmitted SYN packets.
 	for {
 		packet := c.GetPacket()
 		defer packet.Release()

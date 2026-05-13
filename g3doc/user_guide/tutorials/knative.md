@@ -6,7 +6,7 @@ gVisor.
 
 ## Prerequisites
 
-This guide assumes you have have a cluster that is capable of running gVisor
+This guide assumes you have a cluster that is capable of running gVisor
 workloads. This could be a
 [GKE Sandbox](https://docs.cloud.google.com/kubernetes-engine/docs/concepts/sandbox-pods)
 enabled cluster on Google Cloud Platform or one you have set up yourself using

@@ -273,7 +273,7 @@ func TestBindToDeviceDistribution(t *testing.T) {
 	}
 	tcs := []struct {
 		name string
-		// endpoints will received the inject packets.
+		// endpoints will receive the inject packets.
 		endpoints []endpointSockopts
 		// wantDistributions is the want ratio of packets received on each
 		// endpoint for each NIC on which packets are injected.

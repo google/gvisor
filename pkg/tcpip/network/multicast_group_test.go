@@ -804,7 +804,7 @@ func TestMGPLeaveGroup(t *testing.T) {
 						t.FailNow()
 					}
 
-					// Leaving the group should trigger an leave/done message to be sent.
+					// Leaving the group should trigger a leave/done message to be sent.
 					if err := s.LeaveGroup(test.protoNum, nicID, test.multicastAddr); err != nil {
 						t.Fatalf("LeaveGroup(%d, nic, %s): %s", test.protoNum, test.multicastAddr, err)
 					}

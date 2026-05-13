@@ -77,7 +77,7 @@ func (seg FileRangeIterator) FileRangeOf(mr memmap.MappableRange) memmap.FileRan
 	return memmap.FileRange{frstart, frstart + mr.Length()}
 }
 
-// PagesToFill returns the number of pages that that Fill() will allocate
+// PagesToFill returns the number of pages that Fill() will allocate
 // for the given required and optional parameters.
 func (s *FileRangeSet) PagesToFill(required, optional memmap.MappableRange) uint64 {
 	var numPages uint64

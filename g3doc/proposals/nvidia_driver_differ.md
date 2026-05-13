@@ -240,7 +240,7 @@ typedefDecl(
     hasName(struct_name),
     // Match and bind to the struct declaration.
     hasType(
-      // Need to specify elaboratedType, otherwise hasType
+      // Need to specify elaboratedType; otherwise, hasType
       // will complain that the type is ambiguous.
       elaboratedType(
         hasDeclaration(recordDecl().bind("struct_decl"))
@@ -263,7 +263,7 @@ typedefDecl(
     hasName(struct_name),
     // Match and bind to the struct declaration.
     hasType(
-      // Need to specify elaboratedType, otherwise hasType
+      // Need to specify elaboratedType; otherwise, hasType
       // will complain that the type is ambiguous.
       elaboratedType(
         hasDeclaration(typedefDecl())

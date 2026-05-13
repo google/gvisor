@@ -519,7 +519,7 @@ func (d *dispatcher) resume() {
 	}
 }
 
-// jenkinsHasher contains state needed to for a jenkins hash.
+// jenkinsHasher contains state needed for a jenkins hash.
 //
 // +stateify savable
 type jenkinsHasher struct {

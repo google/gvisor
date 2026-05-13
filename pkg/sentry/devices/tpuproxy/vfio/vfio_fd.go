@@ -139,7 +139,7 @@ func (fd *vfioFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args
 }
 
 // checkExtension returns a positive integer when the given VFIO extension
-// is supported, otherwise, it returns 0.
+// is supported; otherwise, it returns 0.
 func (fd *vfioFD) checkExtension(ext extension) (uintptr, error) {
 	switch ext {
 	case linux.VFIO_TYPE1_IOMMU, linux.VFIO_SPAPR_TCE_IOMMU, linux.VFIO_TYPE1v2_IOMMU:

@@ -81,7 +81,7 @@ func TestAdd(t *testing.T) {
 		{"Add without extending bitBlock", 64, 10},
 		{"Add without extending bitblock with margin number", 63, 64},
 		{"Add with extended one block", 1024, 1025},
-		{"Add with extended more then one block", 1024, 2048},
+		{"Add with extended more than one block", 1024, 2048},
 	}
 
 	for _, tt := range tests {
@@ -252,7 +252,7 @@ func TestBitmapNumOnes(t *testing.T) {
 	if bitmapOnes != uint32(190) {
 		t.Errorf("After Remove 10 number, GetNumOnes() returns: %v, wanted: %v", bitmapOnes, 190)
 	}
-	// Remove the 10 number again, the length supposed not change.
+	// Remove the 10 number again, the length is not supposed to change.
 	for i := 5; i < 15; i++ {
 		bitmap.Remove(randSlice[i])
 	}
@@ -270,7 +270,7 @@ func TestBitmapNumOnes(t *testing.T) {
 		t.Errorf("After Add 10 number, GetNumOnes() returns: %v, wanted: %v", bitmapOnes, 200)
 	}
 
-	// Add the 10 number again, the length supposed not change.
+	// Add the 10 number again, the length is not supposed to change.
 	for i := 1080; i < 1090; i++ {
 		bitmap.Add(uint32(i))
 	}
@@ -339,7 +339,7 @@ func TestForEach(t *testing.T) {
 	for _, tc := range testcases {
 		bitmap.ForEach(tc.start, tc.end, func(idx uint32) bool {
 			if _, ok := tc.expected[idx]; !ok {
-				t.Errorf("[%d, %d): unexpeced index: %d", tc.start, tc.end, idx)
+				t.Errorf("[%d, %d): unexpected index: %d", tc.start, tc.end, idx)
 				return false
 			}
 			delete(tc.expected, idx)

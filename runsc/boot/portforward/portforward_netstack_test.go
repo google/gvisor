@@ -230,9 +230,9 @@ func (e *tcpErrImpl) Shutdown(shutdown tcpip.ShutdownFlags) tcpip.Error {
 // Close implements mockTCPEndpointImpl.Shutdown.
 func (e *tcpErrImpl) Close() {}
 
-// TestNTestNestackReadsWrites checks that reads/writes check errors from the underlying endpoint
+// TestNTestNetstackReadsWrites checks that reads/writes check errors from the underlying endpoint
 // multiple times.
-func TestNestackReadsWrites(t *testing.T) {
+func TestNetstackReadsWrites(t *testing.T) {
 	ctx := contexttest.Context(t)
 	wq := &waiter.Queue{}
 	ep := newMockTCPEndpoint(&tcpErrImpl{}, wq)

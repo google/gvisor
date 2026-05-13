@@ -14,7 +14,7 @@
 
 // Package syscalls is the interface from the application to the kernel.
 // Traditionally, syscalls is the interface that is used by applications to
-// request services from the kernel of a operating system. We provide a
+// request services from the kernel of an operating system. We provide a
 // user-mode kernel that needs to handle those requests coming from unmodified
 // applications. Therefore, we still use the term "syscalls" to denote this
 // interface.
@@ -106,7 +106,7 @@ func ErrorWithEvent(name string, err error, note string, urls []string) kernel.S
 }
 
 // CapError gives a syscall function that checks for capability c.  If the task
-// has the capability, it returns ENOSYS, otherwise EPERM. To unprivileged
+// has the capability, it returns ENOSYS; otherwise, EPERM. To unprivileged
 // tasks, it will seem like there is an implementation.
 func CapError(name string, c linux.Capability, note string, urls []string) kernel.Syscall {
 	if note != "" {

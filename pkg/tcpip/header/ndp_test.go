@@ -54,7 +54,7 @@ func TestNDPNeighborSolicit(t *testing.T) {
 		t.Errorf("got ns.TargetAddress = %s, want %s", got, addr2)
 	}
 	// Make sure the address got updated in the backing buffer.
-	if got := tcpip.AddrFrom16Slice(b[ndpNSTargetAddessOffset:][:IPv6AddressSize]); got != addr2 {
+	if got := tcpip.AddrFrom16Slice(b[ndpNSTargetAddressOffset:][:IPv6AddressSize]); got != addr2 {
 		t.Errorf("got targetaddress buffer = %s, want %s", got, addr2)
 	}
 }

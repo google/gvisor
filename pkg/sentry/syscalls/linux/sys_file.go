@@ -1535,7 +1535,7 @@ func populateSetStatOptionsForUtimens(t *kernel.Task, timesAddr hostarch.Addr, o
 // Analogous to fs/utimes.c:do_utimes().
 func utimes(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr, emptyPathCheck shouldAllowEmptyPathType, shouldFollowFinalSymlink shouldFollowFinalSymlink, opts *vfs.SetStatOptions) error {
 	// "If filename is NULL and dfd refers to an open file, then operate on the
-	// file. Otherwise look up filename, possibly using dfd as a starting
+	// file. Otherwise, look up filename, possibly using dfd as a starting
 	// point." - fs/utimes.c:do_utimes()
 	if dirfd != linux.AT_FDCWD && pathAddr == 0 {
 		file := t.GetFile(dirfd)

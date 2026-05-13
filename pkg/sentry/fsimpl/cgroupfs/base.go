@@ -505,7 +505,7 @@ func (d *tasksData) Write(ctx context.Context, fd *vfs.FileDescription, src user
 	return n, targetTask.MigrateCgroup(d.CgroupFromControlFileFD(fd))
 }
 
-// parseInt64FromString interprets src as string encoding a int64 value, and
+// parseInt64FromString interprets src as string encoding an int64 value, and
 // returns the parsed value.
 func parseInt64FromString(ctx context.Context, src usermem.IOSequence) (val, len int64, err error) {
 	const maxInt64StrLen = 20 // i.e. len(fmt.Sprintf("%d", math.MinInt64)) == 20

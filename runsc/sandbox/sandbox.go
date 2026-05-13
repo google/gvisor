@@ -287,14 +287,14 @@ type Args struct {
 	// resolved to their final absolute location.
 	MountsFile *os.File
 
-	// Gcgroup is the cgroup that the sandbox is part of.
+	// Cgroup is the cgroup that the sandbox is part of.
 	Cgroup cgroup.Cgroup
 
 	// Attached indicates that the sandbox lifecycle is attached with the caller.
 	// If the caller exits, the sandbox should exit too.
 	Attached bool
 
-	// SinkFiles is the an ordered array of files to be used by seccheck sinks
+	// SinkFiles is an ordered array of files to be used by seccheck sinks
 	// configured from the --pod-init-config file.
 	SinkFiles []*os.File
 
@@ -914,12 +914,12 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	// Relay all the config flags to the sandbox process.
 	cmd := exec.Command(specutils.ExePath, conf.ToFlags()...)
 	cmd.SysProcAttr = &unix.SysProcAttr{
-		// Detach from this session, otherwise cmd will get SIGHUP and SIGCONT
+		// Detach from this session; otherwise, cmd will get SIGHUP and SIGCONT
 		// when re-parented.
 		Setsid: true,
 	}
 
-	// Set Args[0] to make easier to spot the sandbox process. Otherwise it's
+	// Set Args[0] to make easier to spot the sandbox process. Otherwise, it's
 	// shown as `exe`.
 	cmd.Args[0] = "runsc-sandbox"
 
@@ -1176,7 +1176,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 
 	// The current process' stdio must be passed to the application via the
 	// --stdio-fds flag. The stdio of the sandbox process itself must not
-	// be connected to the same FDs, otherwise we risk leaking sandbox
+	// be connected to the same FDs; otherwise, we risk leaking sandbox
 	// errors to the application, so we set the sandbox stdio to nil,
 	// causing them to read/write from the null device.
 	cmd.Stdin = nil

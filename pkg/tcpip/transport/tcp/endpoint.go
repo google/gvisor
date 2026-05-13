@@ -333,7 +333,7 @@ func (sq *sndQueueInfo) CloneState(other *TCPSndBufState) {
 // lock from say a syscall goroutine we can implement a bit of spinning if we
 // know that the lock is not held by another syscall goroutine. Background
 // processors should never hold the lock for long and we can avoid an expensive
-// sleep/wakeup by spinning for a shortwhile.
+// sleep/wakeup by spinning for a short while.
 //
 // For more details please see the detailed documentation on
 // e.LockUser/e.UnlockUser methods.
@@ -505,7 +505,7 @@ type Endpoint struct {
 
 	// userTimeout if non-zero specifies a user specified timeout for
 	// a connection w/ pending data to send. A connection that has pending
-	// unacked data will be forcibily aborted if the timeout is reached
+	// unacked data will be forcibly aborted if the timeout is reached
 	// without any data being acked.
 	userTimeout time.Duration
 
@@ -516,7 +516,7 @@ type Endpoint struct {
 	// listener.
 	deferAccept time.Duration
 
-	// acceptMu protects accepQueue
+	// acceptMu protects acceptQueue
 	acceptMu sync.Mutex `state:"nosave"`
 
 	// acceptQueue is used by a listening endpoint to send newly accepted
@@ -558,7 +558,7 @@ type Endpoint struct {
 
 	stats Stats
 
-	// tcpLingerTimeout is the maximum amount of a time a socket
+	// tcpLingerTimeout is the maximum amount of time a socket
 	// a socket stays in TIME_WAIT state before being marked
 	// closed.
 	tcpLingerTimeout time.Duration
@@ -578,7 +578,7 @@ type Endpoint struct {
 	// ops is used to get socket level options.
 	ops tcpip.SocketOptions
 
-	// lastOutOfWindowAckTime is the time at which the an ACK was sent in response
+	// lastOutOfWindowAckTime is the time at which an ACK was sent in response
 	// to an out of window segment being received by this endpoint.
 	lastOutOfWindowAckTime tcpip.MonotonicTime
 
@@ -658,7 +658,7 @@ func (e *Endpoint) LockUser() {
 	const iterations = 5
 	for i := 0; i < iterations; i++ {
 		// Try first if the sock is locked then check if it's owned
-		// by another user goroutine if not then we spin, otherwise
+		// by another user goroutine if not then we spin; otherwise,
 		// we just go to sleep on the Lock() and wait.
 		if !e.TryLock() {
 			// If socket is owned by the user then just go to sleep
@@ -678,7 +678,7 @@ func (e *Endpoint) LockUser() {
 
 	for i := 0; i < iterations; i++ {
 		// Try first if the sock is locked then check if it's owned
-		// by another user goroutine if not then we spin, otherwise
+		// by another user goroutine if not then we spin; otherwise,
 		// we just go to sleep on the Lock() and wait.
 		if !e.TryLock() {
 			// If socket is owned by the user then just go to sleep
@@ -1822,7 +1822,7 @@ func (e *Endpoint) OnSetReceiveBufferSize(rcvBufSz, oldSz int64) (newSz int64, p
 	e.RcvAutoParams.Disabled = true
 
 	// Immediately send an ACK to uncork the sender silly window
-	// syndrome prevetion, when our available space grows above aMSS
+	// syndrome prevention, when our available space grows above aMSS
 	// or half receive buffer, whichever smaller.
 	if crossed, above := e.windowCrossedACKThresholdLocked(availAfter-availBefore, int(rcvBufSz)); crossed && above {
 		sendNonZeroWindowUpdate = true
@@ -2095,7 +2095,7 @@ func (e *Endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 
 	case tcpip.MaxSegOption:
 		// Linux only returns user_mss value if user_mss is set and the socket is
-		// unconnected. Otherwise Linux returns the actual current MSS. Netstack
+		// unconnected. Otherwise, Linux returns the actual current MSS. Netstack
 		// mimics the user_mss behavior, but otherwise just returns the defaultMSS
 		// for now.
 		v := header.TCPDefaultMSS
@@ -2413,7 +2413,7 @@ func (e *Endpoint) connect(addr tcpip.FullAddress, handshake bool) tcpip.Error {
 			e.isConnectNotified = true
 			return nil
 		}
-		// Otherwise return that it's already connected.
+		// Otherwise, return that it's already connected.
 		return &tcpip.ErrAlreadyConnected{}
 	}
 
@@ -2875,7 +2875,7 @@ func (e *Endpoint) getRemoteAddress() tcpip.FullAddress {
 func (*Endpoint) HandlePacket(stack.TransportEndpointID, *stack.PacketBuffer) {
 	// TCP HandlePacket is not required anymore as inbound packets first
 	// land at the Dispatcher which then can either deliver using the
-	// worker go routine or directly do the invoke the tcp processing inline
+	// worker go routine or directly invoke the tcp processing inline
 	// based on the state of the endpoint.
 }
 

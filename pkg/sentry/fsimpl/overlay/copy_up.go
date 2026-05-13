@@ -57,7 +57,7 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 	}
 
 	// Attach our credentials to the context, as some VFS operations use
-	// credentials from context rather an take an explicit creds parameter.
+	// credentials from context rather than take an explicit creds parameter.
 	ctx = auth.ContextWithCredentials(ctx, d.fs.creds)
 
 	if !d.canBeCopiedUp() {

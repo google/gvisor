@@ -40,21 +40,21 @@ func Checksum(buf []byte, initial uint16) uint16 {
 	return s
 }
 
-// Checksumer calculates checksum defined in RFC 1071.
-type Checksumer struct {
+// Checksummer calculates checksum defined in RFC 1071.
+type Checksummer struct {
 	sum uint16
 	odd bool
 }
 
 // Add adds b to checksum.
-func (c *Checksumer) Add(b []byte) {
+func (c *Checksummer) Add(b []byte) {
 	if len(b) > 0 {
 		c.sum, c.odd = calculateChecksum(b, c.odd, c.sum)
 	}
 }
 
 // Checksum returns the latest checksum value.
-func (c *Checksumer) Checksum() uint16 {
+func (c *Checksummer) Checksum() uint16 {
 	return c.sum
 }
 

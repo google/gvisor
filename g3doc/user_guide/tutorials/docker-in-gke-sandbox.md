@@ -36,7 +36,7 @@ granted by the gVisor sandbox which is needed by docker daemon.
 An example command to start an GKE autopilot cluster will be:
 
 ```sh
-gcloud container clusters create-auto [CLUTER_NAME] --workload-policies=allow-net-admin --location=[LOCATION]
+gcloud container clusters create-auto [CLUSTER_NAME] --workload-policies=allow-net-admin --location=[LOCATION]
 ```
 
 ### Get started

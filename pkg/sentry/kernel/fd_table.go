@@ -116,7 +116,7 @@ func (f *FDTable) loadDescriptorTable(_ goContext.Context, m map[int32]descripto
 			panic("file set")
 		}
 		f.fdBitmap.Add(uint32(fd))
-		// Note that we do _not_ need to acquire a extra table reference here. The
+		// Note that we do _not_ need to acquire an extra table reference here. The
 		// table reference will already be accounted for in the file, so we drop the
 		// reference taken by set above.
 		if d.file != nil {

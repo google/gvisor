@@ -29,7 +29,7 @@
 //     be mapped below 2GB.
 //   - We can't touch a process stack, so we have to use the jmp instruction
 //     instead of callq and generate a new function call for each replaced
-//     instruction. Each trampoline contains a syscall number and an return
+//     instruction. Each trampoline contains a syscall number and a return
 //     address.
 //   - The address for the syscall table is set so that the syscall instruction
 //     is replaced on an invalid instruction. This allows us to handle races

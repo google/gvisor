@@ -329,11 +329,11 @@ func writeInetAddr(w io.Writer, family int, i linux.SockAddr) {
 		// least-significant byte of the address first. To emulate this, we first
 		// invert the byte order for the address using hostarch.ByteOrder.Uint32,
 		// which makes it have the equivalent encoding to a __be32 on a little
-		// endian machine. Note that this operation is a no-op on a big endian
+		// endian machine. Note that this operation is a no-op on a big-endian
 		// machine. Then similar to Linux, we format it with %X, which will print
 		// the most-significant byte of the __be32 address first, which is now
 		// actually the least-significant byte of the original address in
-		// linux.SockAddrInet.Addr on little endian machines, due to the conversion.
+		// linux.SockAddrInet.Addr on little-endian machines, due to the conversion.
 		addr := hostarch.ByteOrder.Uint32(a.Addr[:])
 
 		fmt.Fprintf(w, "%08X:%04X ", addr, port)
@@ -382,7 +382,7 @@ func commonGenerateTCP(ctx context.Context, buf *bytes.Buffer, k *kernel.Kernel,
 		// Field: sl; entry number.
 		fmt.Fprintf(buf, "%4d: ", se.ID)
 
-		// Field: local_adddress.
+		// Field: local_address.
 		var localAddr linux.SockAddr
 		if t != nil {
 			if local, _, err := sops.GetSockName(t); err == nil {
@@ -544,7 +544,7 @@ func (d *netUDPData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		// Field: sl; entry number.
 		fmt.Fprintf(buf, "%5d: ", se.ID)
 
-		// Field: local_adddress.
+		// Field: local_address.
 		var localAddr linux.SockAddrInet
 		if t != nil {
 			if local, _, err := sops.GetSockName(t); err == nil {

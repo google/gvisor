@@ -172,7 +172,7 @@ func (fd *ControlFD) Node() *Node {
 // RemoveFromConn removes this control FD from its owning connection.
 //
 // Preconditions:
-//   - fd should not have been returned to the client. Otherwise the client can
+//   - fd should not have been returned to the client. Otherwise, the client can
 //     still refer to it.
 //   - server's rename mutex must at least be read locked.
 func (fd *ControlFD) RemoveFromConn() {
@@ -492,7 +492,7 @@ type ControlFDImpl interface {
 	ConnectWithCreds(sockType uint32, uid UID, gid GID) (int, error)
 
 	// BindAt creates a host unix domain socket of type sockType, bound to
-	// the given namt of type sockType, bound to the given name. It returns
+	// the given name of type sockType, bound to the given name. It returns
 	// a ControlFD that can be used for path operations on the socket, a
 	// BoundSocketFD that can be used to Accept/Listen on the socket, and a
 	// host FD that can be used for event notifications (like new

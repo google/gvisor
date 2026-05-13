@@ -75,7 +75,7 @@ Packetdrill tests are **multi-platform** and can run against both Linux and
 gVisor. They are **concise** and use a special packetdrill scripting language.
 They are **more flexible** than a syscall test in that they can send packets
 that a syscall test would have difficulty sending, like a packet with a
-calcuated ACK number. But they are also somewhat limimted in flexibiilty in that
+calculated ACK number. But they are also somewhat limited in flexibility in that
 they can't do tests with multiple sockets. They have **no control-flow** ability
 like variables or conditionals. For example, it isn't possible to send a packet
 that depends on the window size of a previous packet because the packetdrill
@@ -181,7 +181,7 @@ framework. The test bench framework is based on three basic utilities:
 To keep the interface to the DUT consistent and easy-to-use, each POSIX command
 supported by the posix_server is wrapped in functions with signatures similar to
 the ones in the [Go unix package](https://godoc.org/golang.org/x/sys/unix). This
-way all the details of endianess and (un)marshalling of go structs such as
+way all the details of endianness and (un)marshalling of go structs such as
 [unix.Timeval](https://godoc.org/golang.org/x/sys/unix#Timeval) is handled in
 one place. This also makes it straight-forward to convert tests that use `unix.`
 or `syscall.` calls to `dut.` calls.
@@ -294,7 +294,7 @@ but with a pointer for each field that may be `nil`.
         etc.
     *   Using pointers allows us to combine `Layer`s with reflection. So the
         default `Layers` can be overridden by a `Layers` with just the TCP
-        conection's src/dst which can be overridden by one with just a test
+        connection's src/dst which can be overridden by one with just a test
         specific TCP window size.
     *   It's a proven way to separate the details of a packet from the byte
         format as shown by scapy's success.
@@ -359,7 +359,7 @@ The `next` and `prev` make up a link listed so that each layer can get at the
 information in the layer around it. This is necessary for some protocols, like
 TCP that needs the layer before and payload after to compute the checksum. Any
 sequence of `Layer` structs is valid so long as the parser and `toBytes`
-functions can map from type to protool number and vice-versa. When the mapping
+functions can map from type to protocol number and vice-versa. When the mapping
 fails, an error is emitted explaining what functionality is missing. The
 solution is either to fix the ordering or implement the missing protocol.
 
@@ -425,8 +425,8 @@ for {
         for computing the next protocol number or total length. So *some*
         mechanism is needed for a `Layer` to see neighboring layers.
     *   We could pass the entire array `Layers` to the `toBytes()` function.
-        Passing an array to a method that includes in the array the function
-        receiver itself seems wrong.
+        Passing an array to a method that includes the function receiver itself
+        in the array seems wrong.
 
 #### `layerState`
 

@@ -28,7 +28,7 @@ var (
 	// filterTestFlag is the flag that will filter tests in gtest binaries.
 	filterTestFlag = "--gtest_filter"
 
-	// listBechmarkFlag is the flag that will list benchmarks in gtest binaries.
+	// listBenchmarkFlag is the flag that will list benchmarks in gtest binaries.
 	listBenchmarkFlag = "--benchmark_list_tests"
 
 	// filterBenchmarkFlag is the flag that will run specified benchmarks.
@@ -47,7 +47,7 @@ type TestCase struct {
 	Name string
 
 	// all indicates that this will run without flags. This takes
-	// precendence over benchmark below.
+	// precedence over benchmark below.
 	all bool
 
 	// benchmark indicates that this is a benchmark. In this case, the

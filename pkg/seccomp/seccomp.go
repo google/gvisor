@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // Package seccomp provides generation of basic seccomp filters. Currently,
-// only little endian systems are supported.
+// only little-endian systems are supported.
 package seccomp
 
 import (
@@ -851,25 +851,25 @@ func (ors orderedRuleSets) render(program *syscallProgram) error {
 	// Now render the cold non-trivial rules as a binary search tree:
 	if len(ors.coldNonTrivial) > 0 {
 		frag := program.Record()
-		noSycallNumberMatch := ls.NewLabel()
-		possibleActions, err := ors.renderBST(program, ls, sysnosChecked, ors.coldNonTrivial, noSycallNumberMatch)
+		noSyscallNumberMatch := ls.NewLabel()
+		possibleActions, err := ors.renderBST(program, ls, sysnosChecked, ors.coldNonTrivial, noSyscallNumberMatch)
 		if err != nil {
 			return err
 		}
-		frag.MustHaveJumpedToOrReturned([]label{noSycallNumberMatch, defaultLabel}, possibleActions)
-		program.Label(noSycallNumberMatch)
+		frag.MustHaveJumpedToOrReturned([]label{noSyscallNumberMatch, defaultLabel}, possibleActions)
+		program.Label(noSyscallNumberMatch)
 	}
 
 	// Finally render the trivial rules as a binary search tree:
 	if len(ors.trivial) > 0 {
 		frag := program.Record()
-		noSycallNumberMatch := ls.NewLabel()
-		possibleActions, err := ors.renderBST(program, ls, sysnosChecked, ors.trivial, noSycallNumberMatch)
+		noSyscallNumberMatch := ls.NewLabel()
+		possibleActions, err := ors.renderBST(program, ls, sysnosChecked, ors.trivial, noSyscallNumberMatch)
 		if err != nil {
 			return err
 		}
-		frag.MustHaveJumpedToOrReturned([]label{noSycallNumberMatch, defaultLabel}, possibleActions)
-		program.Label(noSycallNumberMatch)
+		frag.MustHaveJumpedToOrReturned([]label{noSyscallNumberMatch, defaultLabel}, possibleActions)
+		program.Label(noSyscallNumberMatch)
 	}
 	program.JumpTo(defaultLabel)
 
@@ -896,7 +896,7 @@ func (ors orderedRuleSets) render(program *syscallProgram) error {
 // A. Rulesets for all syscall numbers in `order` must exist in `syscallMap`.
 // It returns the list of possible actions the generated code may return.
 // `alreadyChecked` will be updated with the syscalls that have been checked.
-func (ors orderedRuleSets) renderLinear(program *syscallProgram, ls *labelSet, alreadyChecked map[uintptr]struct{}, syscallMap map[uintptr]singleSyscallRuleSet, order []uintptr, noSycallNumberMatch label) map[linux.BPFAction]struct{} {
+func (ors orderedRuleSets) renderLinear(program *syscallProgram, ls *labelSet, alreadyChecked map[uintptr]struct{}, syscallMap map[uintptr]singleSyscallRuleSet, order []uintptr, noSyscallNumberMatch label) map[linux.BPFAction]struct{} {
 	allActions := make(map[linux.BPFAction]struct{})
 	for _, sysno := range order {
 		ssrs, found := syscallMap[sysno]
@@ -919,7 +919,7 @@ func (ors orderedRuleSets) renderLinear(program *syscallProgram, ls *labelSet, a
 		sysnoFrag.MustHaveJumpedToOrReturned([]label{nextSyscall, defaultLabel}, sysnoActions)
 		program.Label(nextSyscall)
 	}
-	program.JumpTo(noSycallNumberMatch)
+	program.JumpTo(noSyscallNumberMatch)
 	for _, sysno := range order {
 		alreadyChecked[sysno] = struct{}{}
 	}
@@ -931,7 +931,7 @@ func (ors orderedRuleSets) renderLinear(program *syscallProgram, ls *labelSet, a
 // It returns the list of possible actions the generated code may return.
 // `alreadyChecked` will be updated with the syscalls that the BST has
 // searched.
-func (ors orderedRuleSets) renderBST(program *syscallProgram, ls *labelSet, alreadyChecked map[uintptr]struct{}, syscallMap map[uintptr]singleSyscallRuleSet, noSycallNumberMatch label) (map[linux.BPFAction]struct{}, error) {
+func (ors orderedRuleSets) renderBST(program *syscallProgram, ls *labelSet, alreadyChecked map[uintptr]struct{}, syscallMap map[uintptr]singleSyscallRuleSet, noSyscallNumberMatch label) (map[linux.BPFAction]struct{}, error) {
 	possibleActions := make(map[linux.BPFAction]struct{})
 	orderedSysnos := make([]uintptr, 0, len(syscallMap))
 	for sysno, ruleActions := range syscallMap {
@@ -952,13 +952,13 @@ func (ors orderedRuleSets) renderBST(program *syscallProgram, ls *labelSet, alre
 		upperBoundExclusive: 1 << 32,
 		previouslyChecked:   alreadyChecked,
 	}
-	if err := root.traverse(renderBSTTraversal, knownRng, syscallMap, program, noSycallNumberMatch); err != nil {
+	if err := root.traverse(renderBSTTraversal, knownRng, syscallMap, program, noSyscallNumberMatch); err != nil {
 		return nil, err
 	}
-	if err := root.traverse(renderBSTRules, knownRng, syscallMap, program, noSycallNumberMatch); err != nil {
+	if err := root.traverse(renderBSTRules, knownRng, syscallMap, program, noSyscallNumberMatch); err != nil {
 		return nil, err
 	}
-	frag.MustHaveJumpedToOrReturned([]label{noSycallNumberMatch, defaultLabel}, possibleActions)
+	frag.MustHaveJumpedToOrReturned([]label{noSyscallNumberMatch, defaultLabel}, possibleActions)
 	for sysno := range syscallMap {
 		alreadyChecked[sysno] = struct{}{}
 	}
@@ -1167,7 +1167,7 @@ func (n *node) traverse(fn traverseFunc, kr knownRange, syscallMap map[uintptr]s
 
 // DataAsBPFInput converts a linux.SeccompData to a bpf.Input.
 // It uses `buf` as scratch buffer; this buffer must be wide enough
-// to accommodate a mashaled version of `d`.
+// to accommodate a marshalled version of `d`.
 func DataAsBPFInput(d *linux.SeccompData, buf []byte) bpf.Input {
 	if len(buf) < d.SizeBytes() {
 		panic(fmt.Sprintf("buffer must be at least %d bytes long", d.SizeBytes()))

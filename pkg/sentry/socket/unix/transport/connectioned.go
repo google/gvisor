@@ -646,7 +646,7 @@ func (e *connectionedEndpoint) OnSetSendBufferSize(v int64) (newSz int64) {
 // WakeupWriters implements tcpip.SocketOptionsHandler.WakeupWriters.
 func (e *connectionedEndpoint) WakeupWriters() {}
 
-// SetBoundSocketFD implement HostBountEndpoint.SetBoundSocketFD.
+// SetBoundSocketFD implements HostBoundEndpoint.SetBoundSocketFD.
 func (e *connectionedEndpoint) SetBoundSocketFD(ctx context.Context, bsFD BoundSocketFD) error {
 	e.Lock()
 	defer e.Unlock()
@@ -659,7 +659,7 @@ func (e *connectionedEndpoint) SetBoundSocketFD(ctx context.Context, bsFD BoundS
 	return nil
 }
 
-// SetBoundSocketFD implement HostBountEndpoint.ResetBoundSocketFD.
+// SetBoundSocketFD implements HostBoundEndpoint.ResetBoundSocketFD.
 func (e *connectionedEndpoint) ResetBoundSocketFD(ctx context.Context) {
 	e.Lock()
 	defer e.Unlock()

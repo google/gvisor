@@ -176,7 +176,7 @@ func (d *packetMMapDispatcher) readMMappedPackets() (stack.PacketBufferList, boo
 	return pkts, false, nil
 }
 
-// dispatch reads packets from an mmaped ring buffer and dispatches them to the
+// dispatch reads packets from an mmapped ring buffer and dispatches them to the
 // network stack.
 func (d *packetMMapDispatcher) dispatch() (bool, tcpip.Error) {
 	pkts, stopped, err := d.readMMappedPackets()

@@ -396,7 +396,7 @@ func (g *Generator) generateOne(t *marshallableType, fset *token.FileSet) *inter
 			abortAt(fset.Position(t.slice.comment.Slash), "Slice API is not supported for dynamic types because it assumes that each slice element is statically sized.")
 		}
 		if t.boundCheck {
-			abortAt(fset.Position(t.slice.comment.Slash), "Can not generate Checked methods for dynamic types. Has to be implemented manually.")
+			abortAt(fset.Position(t.slice.comment.Slash), "Cannot generate Checked methods for dynamic types. Has to be implemented manually.")
 		}
 		// No validation needed, assume the user knows what they are doing.
 		i.emitMarshallableForDynamicType()
@@ -432,7 +432,7 @@ func (g *Generator) generateOne(t *marshallableType, fset *token.FileSet) *inter
 			abortAt(fset.Position(t.slice.comment.Slash), "Array type marked as '+marshal slice:...', but this is not supported. Perhaps fold one of the dimensions?")
 		}
 	default:
-		// This should've been filtered out by collectMarshallabeTypes.
+		// This should've been filtered out by collectMarshallableTypes.
 		panic(fmt.Sprintf("Unexpected type %+v", ty))
 	}
 	return i
@@ -500,7 +500,7 @@ func (g *Generator) Run() error {
 			// the list of imports we need to copy to the generated code.
 			for name := range impl.is {
 				if !g.imports.markUsed(name) {
-					panic(fmt.Sprintf("Generated code for '%s' referenced a non-existent import with local name '%s'. Either go-marshal needs to add an import to the generated file, or a package in an input source file has a package name differ from the final component of its path, which go-marshal doesn't know how to detect; use an import alias to work around this limitation.", impl.typeName(), name))
+					panic(fmt.Sprintf("Generated code for '%s' referenced a nonexistent import with local name '%s'. Either go-marshal needs to add an import to the generated file, or a package in an input source file has a package name differ from the final component of its path, which go-marshal doesn't know how to detect; use an import alias to work around this limitation.", impl.typeName(), name))
 				}
 			}
 			// Do not generate tests for dynamic types because they inherently

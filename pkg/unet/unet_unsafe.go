@@ -86,7 +86,7 @@ func buildIovec(bufs [][]byte, iovecs []unix.Iovec) ([]unix.Iovec, int) {
 
 // ReadVec reads into the pre-allocated bufs. Returns bytes read.
 //
-// The pre-allocatted space used by ReadVec is based upon slice lengths.
+// The pre-allocated space used by ReadVec is based upon slice lengths.
 //
 // This function is not guaranteed to read all available data, it
 // returns as soon as a single recvmsg call succeeds.

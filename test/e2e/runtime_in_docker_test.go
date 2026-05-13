@@ -147,7 +147,7 @@ func TestGVisorInDocker(t *testing.T) {
 				// calls `mount(2)`.
 				"SYS_ADMIN",
 			},
-			// Mount cgroupfs as writable, otherwise the runtime won't be able to
+			// Mount cgroupfs as writable; otherwise, the runtime won't be able to
 			// set up cgroups.
 			MountCgroupfs: true,
 		},

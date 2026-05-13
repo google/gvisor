@@ -261,7 +261,7 @@ func isEmptyDirEmpty(path string) bool {
 //
 // Pods are configured to mount /dev/shm to a common path in the host, so it's
 // shared among containers in the same pod. In gVisor, /dev/shm must be
-// converted to a tmpfs mount inside the sandbox, otherwise shm_open(3) doesn't
+// converted to a tmpfs mount inside the sandbox; otherwise, shm_open(3) doesn't
 // use it (see where_is_shmfs() in glibc). Mount annotation hints are used to
 // instruct runsc to mount the same tmpfs volume in all containers inside the
 // pod.

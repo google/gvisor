@@ -568,7 +568,7 @@ func TestSACKRecovery(t *testing.T) {
 		// Acknowledge all the data received so far.
 		c.SendAck(seq, bytesRead)
 
-		// In cogestion avoidance, the packets trains increase by 1 in
+		// In congestion avoidance, the packets trains increase by 1 in
 		// each iteration.
 		if i == 0 {
 			// After the first iteration we expect to get the full

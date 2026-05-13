@@ -1000,7 +1000,7 @@ func httpGet(crictl *criutil.Crictl, podID, filePath string) error {
 }
 
 func getContainerd() string {
-	// Use the local path if it exists, otherwise, use the system one.
+	// Use the local path if it exists; otherwise, use the system one.
 	if _, err := os.Stat("/usr/local/bin/containerd"); err == nil {
 		return "/usr/local/bin/containerd"
 	}

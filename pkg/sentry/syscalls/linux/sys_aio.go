@@ -105,7 +105,7 @@ func IoGetevents(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uin
 		return 0, nil, linuxerr.EINVAL
 	}
 
-	// Setup the timeout.
+	// Set up the timeout.
 	var haveDeadline bool
 	var deadline ktime.Time
 	if timespecAddr != 0 {

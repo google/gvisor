@@ -93,7 +93,7 @@ void runSocket() {
     err(1, "fork");
   } else if (pid == 0) {
     // Child.
-    close(parent_sock);  // ensure it's not mistakely used in child.
+    close(parent_sock);  // ensure it's not mistakenly used in child.
 
     int server = socket(AF_UNIX, SOCK_STREAM, 0);
     if (server < 0) {

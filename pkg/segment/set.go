@@ -1873,7 +1873,7 @@ func (gap GapIterator) NextLargeEnoughGap(minSize Key) GapIterator {
 		panic("set is not tracking gaps")
 	}
 	if gap.node != nil && gap.node.hasChildren && gap.index == gap.node.nrSegments {
-		// If gap is the trailing gap of an non-leaf node,
+		// If gap is the trailing gap of a non-leaf node,
 		// translate it to the equivalent gap on leaf level.
 		gap.node = gap.NextSegment().node
 		gap.index = 0
@@ -1932,7 +1932,7 @@ func (gap GapIterator) PrevLargeEnoughGap(minSize Key) GapIterator {
 		panic("set is not tracking gaps")
 	}
 	if gap.node != nil && gap.node.hasChildren && gap.index == 0 {
-		// If gap is the first gap of an non-leaf node,
+		// If gap is the first gap of a non-leaf node,
 		// translate it to the equivalent gap on leaf level.
 		gap.node = gap.PrevSegment().node
 		gap.index = gap.node.nrSegments

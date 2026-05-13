@@ -115,7 +115,7 @@ func (f *FSContext) Fork() *FSContext {
 // WorkingDirectory returns the current working directory.
 //
 // This will return an empty vfs.VirtualDentry if called after f is
-// destroyed, otherwise it will return a Dirent with a reference taken.
+// destroyed; otherwise, it will return a Dirent with a reference taken.
 func (f *FSContext) WorkingDirectory() vfs.VirtualDentry {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -148,7 +148,7 @@ func (f *FSContext) SetWorkingDirectory(ctx context.Context, d vfs.VirtualDentry
 // RootDirectory returns the current filesystem root.
 //
 // This will return an empty vfs.VirtualDentry if called after f is
-// destroyed, otherwise it will return a Dirent with a reference taken.
+// destroyed; otherwise, it will return a Dirent with a reference taken.
 func (f *FSContext) RootDirectory() vfs.VirtualDentry {
 	f.mu.Lock()
 	defer f.mu.Unlock()

@@ -59,7 +59,7 @@ to the vDSO, and aim to push these improvements upstream when possible.
 ### Path 2: Sentry contained
 
 Most syscalls, e.g., <code>clone(2)</code>, are implemented in Sentry. They are
-some basic abstractions of a operating system, such as process/thread lifecycle,
+some basic abstractions of an operating system, such as process/thread lifecycle,
 scheduling, IPC, memory management, etc. These syscalls and all below suffer
 from a structural cost of syscall interception. The overhead is about 800ns
 while that of the native syscalls is about 70ns. We'll dig it further below.
@@ -84,7 +84,7 @@ For some sentry-contained syscalls in Path 2, although the syscall semantic is
 terminated in Sentry, it may further introduces one or many unexpected exits to
 host kernel. It could be a page fault when Sentry runs, and more likely, a
 schedule event in Go runtime, e.g., M idle/wakeup. An example in hand is that
-<code>futex(FUETX_WAIT)</code> and <code>epoll_wait(2)</code> could lead to M
+<code>futex(FUTEX_WAIT)</code> and <code>epoll_wait(2)</code> could lead to M
 idle and a further futex call into host kernel if it does not find any runnable
 Gs. (See the comments in https://go.dev/src/runtime/proc.go for further
 explanation about the Go scheduler).
@@ -141,7 +141,7 @@ platform. According to the analysis, the overhead mainly comes from:
 
 Can we save the structural cost of syscall interception? This cost is actually
 by-design. We can optimize it, for example, avoid allocation and map operations
-in switch process, but it can not be eliminated.
+in switch process, but it cannot be eliminated.
 
 Does the structural cost of syscall interception really matter? It depends on
 the syscall rate. Most applications in our case have a syscall rate < 200K/sec,
@@ -309,7 +309,7 @@ Now we can get clear information like:
     allocated objects. And we can consider adjust
     [GC percent](https://golang.org/pkg/runtime/debug/#SetGCPercent), 100% by
     default, to sacrifice memory for less CPU utilization. We once found that
-    allocating a object > 32 KB also triggers GC, referring to
+    allocating an object > 32 KB also triggers GC, referring to
     [this](https://github.com/google/gvisor/commit/f697d1a33e4e7cefb4164ec977c38ccc2a228099).
 
 3.  Percentage of time spent in GR3 app and Sentry: We can determine if it
@@ -354,7 +354,7 @@ syscalls walks a much longer path (redpill), makes it worse.
 We have two optimizations here: 1. decrease the number of timer buckets, from 64
 to 4; 2. decrease the timer precision from ns to ms. You may worry about the
 decrease of timer precision, but as we see, most of the applications are
-event-based, and not affected by a coarse grained timer.
+event-based, and not affected by a coarse-grained timer.
 
 However, Go changes the implementation of timer in v1.14; how to port this
 optimization remains an open question.

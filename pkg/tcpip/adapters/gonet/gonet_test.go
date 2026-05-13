@@ -903,8 +903,8 @@ func TestDialContextTCPTimeout(t *testing.T) {
 	}
 }
 
-// TestInterruptListender tests that (*TCPListener).Accept can be interrupted.
-func TestInterruptListender(t *testing.T) {
+// TestInterruptListEnder tests that (*TCPListener).Accept can be interrupted.
+func TestInterruptListEnder(t *testing.T) {
 	for _, test := range []struct {
 		name string
 		stop func(l *TCPListener) error

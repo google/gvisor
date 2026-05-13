@@ -155,7 +155,7 @@ var Metrics = tcpip.Stats{
 			Bytes:   mustCreateMetric("/netstack/nic/disabled_rx/bytes", "Number of bytes received on disabled NICs."),
 		},
 		Neighbor: tcpip.NICNeighborStats{
-			UnreachableEntryLookups:                    mustCreateMetric("/netstack/nic/neighbor/unreachable_entry_loopups", "Number of lookups performed on a neighbor entry in Unreachable state."),
+			UnreachableEntryLookups:                    mustCreateMetric("/netstack/nic/neighbor/unreachable_entry_lookups", "Number of lookups performed on a neighbor entry in Unreachable state."),
 			DroppedConfirmationForNoninitiatedNeighbor: mustCreateMetric("/netstack/nic/neighbor/dropped_confirmation_for_noninitiated_neighbor", "Number of advertisements received that don't match an entry in the neighbor cache."),
 			DroppedInvalidLinkAddressConfirmations:     mustCreateMetric("/netstack/nic/neighbor/dropped_invalid_link_address_confirmations", "Number of advertisements dropped because they have empty source link-layer addresses"),
 		},
@@ -1473,7 +1473,7 @@ func (s *sock) getSockOptIPv6(t *kernel.Task, ep commonEndpoint, name int, outPt
 		// Linux truncates the output binary to outLen.
 		ib := t.CopyScratchBuffer(uintv.SizeBytes())
 		uintv.MarshalUnsafe(ib)
-		// Handle cases where outLen is lesser than sizeOfInt32.
+		// Handle cases where outLen is less than sizeOfInt32.
 		if len(ib) > outLen {
 			ib = ib[:outLen]
 		}
@@ -3678,7 +3678,7 @@ func interfaceIoctl(ctx context.Context, _ usermem.IO, arg int, ifr *linux.IFReq
 			hostarch.ByteOrder.PutUint16(ifr.Data[0:], uint16(linux.AF_INET))
 			hostarch.ByteOrder.PutUint16(ifr.Data[2:], 0)
 			var mask uint32 = 0xffffffff << (32 - addr.PrefixLen)
-			// Netmask is expected to be returned as a big endian
+			// Netmask is expected to be returned as a big-endian
 			// value.
 			binary.BigEndian.PutUint32(ifr.Data[4:8], mask)
 			break

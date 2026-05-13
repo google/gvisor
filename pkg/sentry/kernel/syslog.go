@@ -67,7 +67,7 @@ func (s *syslog) Log() []byte {
 		"Searching for socket adapter...",
 		"Creating process schedule...",
 		"Generating random numbers by fair dice roll...",
-		"Rewriting operating system in Javascript...",
+		"Rewriting operating system in JavaScript...",
 		"Reticulating splines...",
 		"Consulting tar man page...",
 		"Forking spaghetti code...",

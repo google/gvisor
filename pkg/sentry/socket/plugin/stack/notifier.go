@@ -46,7 +46,7 @@ const (
 )
 
 // NewNotifier initialize the event notifier for plugin stack.
-// It will allocate a eventMap with fd as key and corresponding eventInfo
+// It will allocate an eventMap with fd as key and corresponding eventInfo
 // as value and start a goroutine waiting the arrival of events.
 func NewNotifier() *Notifier {
 	ioInit := make(chan int32)

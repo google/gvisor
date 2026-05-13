@@ -85,7 +85,7 @@ var defaultActions = map[linux.Signal]SignalAction{
 }
 
 // computeAction figures out what to do given a signal number
-// and an linux.SigAction. SIGSTOP always results in a SignalActionStop,
+// and a linux.SigAction. SIGSTOP always results in a SignalActionStop,
 // and SIGKILL always results in a SignalActionTerm.
 // Signal 0 is always ignored as many programs use it for various internal functions
 // and don't expect it to do anything.
@@ -191,7 +191,7 @@ func (t *Task) deliverSignal(info *linux.SignalInfo, act linux.SigAction) taskRu
 			SignalNumber: info.Signo,
 		}
 
-		// Attach an fault address if appropriate.
+		// Attach a fault address if appropriate.
 		switch sig {
 		case linux.SIGSEGV, linux.SIGFPE, linux.SIGILL, linux.SIGTRAP, linux.SIGBUS:
 			ucs.FaultAddr = info.Addr()

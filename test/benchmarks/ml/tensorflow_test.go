@@ -24,18 +24,18 @@ import (
 	"gvisor.dev/gvisor/test/metricsviz"
 )
 
-func BenchmarkTensorflowDashboard(b *testing.B) {
+func BenchmarkTensorFlowDashboard(b *testing.B) {
 	workloads := map[string]string{
 		"ConvolutionalNetwork": "3_NeuralNetworks/convolutional_network.py",
 		"LogisticRegression":   "2_BasicModels/logistic_regression.py",
 		"NeuralNetwork":        "3_NeuralNetworks/neural_network.py",
 	}
-	doTensorflowTest(b, workloads)
+	doTensorFlowTest(b, workloads)
 }
 
-// BenchmarkTensorflow runs workloads from a TensorFlow tutorial.
+// BenchmarkTensorFlow runs workloads from a TensorFlow tutorial.
 // See: https://github.com/aymericdamien/TensorFlow-Examples
-func BenchmarkTensorflow(b *testing.B) {
+func BenchmarkTensorFlow(b *testing.B) {
 	workloads := map[string]string{
 		"Kmeans":               "2_BasicModels/kmeans.py",
 		"LogisticRegression":   "2_BasicModels/logistic_regression.py",
@@ -45,10 +45,10 @@ func BenchmarkTensorflow(b *testing.B) {
 		"MultilayerPerceptron": "3_NeuralNetworks/multilayer_perceptron.py",
 		"NeuralNetwork":        "3_NeuralNetworks/neural_network.py",
 	}
-	doTensorflowTest(b, workloads)
+	doTensorFlowTest(b, workloads)
 }
 
-func doTensorflowTest(b *testing.B, workloads map[string]string) {
+func doTensorFlowTest(b *testing.B, workloads map[string]string) {
 	machine, err := harness.GetMachine()
 	if err != nil {
 		b.Fatalf("failed to get machine: %v", err)

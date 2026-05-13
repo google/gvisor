@@ -170,7 +170,7 @@ configure = $(call configure_noreload,$(1),$(2)) && $(reload_docker) && $(call w
 
 # Helpers for above. Requires $(RUNTIME_BIN) dependency.
 install_runtime = $(call configure,$(1),$(2) --TESTONLY-test-name-env=RUNSC_TEST_NAME)
-# Don't use cached results, otherwise multiple runs using different runtimes
+# Don't use cached results; otherwise, multiple runs using different runtimes
 # may be skipped, if all other inputs are the same.
 test_runtime = $(call test,--test_env=RUNTIME=$(1) --nocache_test_results $(PARTITIONS) $(2))
 test_runtime_cached = $(call test,--test_env=RUNTIME=$(1) $(PARTITIONS) $(2))

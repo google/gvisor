@@ -143,7 +143,7 @@ type Config struct {
 	// RXChecksumOffload indicates that RX Checksum Offload is enabled.
 	RXChecksumOffload bool `flag:"rx-checksum-offload"`
 
-	// QDisc indicates the type of queuening discipline to use by default
+	// QDisc indicates the type of queueing discipline to use by default
 	// for non-loopback interfaces.
 	QDisc QueueingDiscipline `flag:"qdisc"`
 
@@ -1099,7 +1099,7 @@ const (
 	// It never attempts to modify host settings.
 	HostSettingsCheckMandatory
 
-	// HostSettingsIgnore does not check nor adjust any host settings.
+	// HostSettingsIgnore neither checks nor adjusts any host settings.
 	// This is useful in case the host settings are already known to be
 	// optimal, or to avoid errors if `runsc` is running within a seccomp
 	// or AppArmor policy that prevents it from checking host settings.

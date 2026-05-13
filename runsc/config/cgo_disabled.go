@@ -17,5 +17,5 @@
 
 package config
 
-// CgoEnabled indicates whether cgo is enabled or not.
+// CgoEnabled indicates whether or not cgo is enabled.
 const CgoEnabled = false

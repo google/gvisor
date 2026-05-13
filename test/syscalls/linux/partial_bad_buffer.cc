@@ -361,7 +361,7 @@ TEST_F(PartialBadBufferTest, SendMsgTCP) {
   // gVisor does not double the value passed in SO_SNDBUF like linux does so we
   // just increase it by 1 byte here for gVisor so that we can test writing 1
   // byte past the valid page and check that it triggers an EFAULT
-  // correctly. Otherwise in gVisor the sendmsg call will just return with no
+  // correctly. Otherwise, in gVisor the sendmsg call will just return with no
   // error with kPageSize bytes written successfully.
   const uint32_t buf_size = kPageSize + 1;
   ASSERT_THAT(setsockopt(send_socket.get(), SOL_SOCKET, SO_SNDBUF, &buf_size,
@@ -387,7 +387,7 @@ TEST_F(PartialBadBufferTest, SendMsgTCP) {
   ASSERT_THAT(RetryEINTR(read)(recv_socket.get(), buffer.data(), kPageSize),
               SyscallSucceedsWithValue(kPageSize));
 
-  // Sleep for a shortwhile to ensure that we have time to process the
+  // Sleep for a short while to ensure that we have time to process the
   // ACKs. This is not strictly required unless running under gotsan which is a
   // lot slower and can result in the next write to write only 1 byte instead of
   // our intended kPageSize + 1.

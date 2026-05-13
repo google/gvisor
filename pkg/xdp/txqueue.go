@@ -91,7 +91,7 @@ func (tq *TXQueue) free(toReserve uint32) uint32 {
 	// cachedConsumer is always len(tq.ring) larger than the real consumer
 	// value. This lets us, in the common case, compute the number of free
 	// descriptors simply via tq.cachedConsumer - tq.cachedProducer without
-	// also addign len(tq.ring).
+	// also adding len(tq.ring).
 	if available := tq.cachedConsumer - tq.cachedProducer; available >= toReserve {
 		return available
 	}

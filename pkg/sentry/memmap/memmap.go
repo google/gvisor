@@ -435,7 +435,7 @@ const (
 	PlatformEffectCommit
 )
 
-// File represents a host file that may be mapped into an platform.AddressSpace.
+// File represents a host file that may be mapped into a platform.AddressSpace.
 type File interface {
 	// All pages in a File are reference-counted.
 

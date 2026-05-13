@@ -32,7 +32,7 @@ import (
 )
 
 // ProcFDBindMount is the path where /proc/self/fd is bind-mounted inside the
-// gofer's mount tree. Redhat distros don't allow bind-mounts in /proc/self
+// gofer's mount tree. Red Hat distros don't allow bind-mounts in /proc/self
 // directories due to SELinux rules.
 const ProcFDBindMount = "/proc/fs"
 
@@ -251,7 +251,7 @@ func SetupMounts(conf *config.Config, mounts []specs.Mount, root, procPath strin
 		}
 		defer unix.Close(dstFD)
 		// Apply mount options after creating all mount points.
-		// Otherwise they can be remounted into read-only.
+		// Otherwise, they can be remounted into read-only.
 		defer func(dstFD int, flags uint32, dst string) {
 			path := fmt.Sprintf("/proc/self/fd/%d", dstFD)
 			// The gofer process doesn't execute anything natively.
