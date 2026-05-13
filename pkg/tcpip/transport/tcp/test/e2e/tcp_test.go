@@ -9665,6 +9665,131 @@ func TestCloseInSynRecvWithLinger(t *testing.T) {
 	}
 }
 
+// TestRSTOutOfWindowIsDropped verifies that an RST whose sequence
+// number falls outside the advertised receive window is silently dropped.
+// Pre-RFC-5961 behavior (RFC 793 page 37) already silently dropped these,
+// so this asserts the unchanged path.
+func TestRSTOutOfWindowIsDropped(t *testing.T) {
+	c := context.New(t, e2e.DefaultMTU)
+	defer c.Cleanup()
+
+	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
+
+	// Send a RST far outside the receive window.
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: c.Port,
+		Flags:   header.TCPFlagRst,
+		SeqNum:  seqnum.Value(context.TestInitialSequenceNumber).Add(1 << 30),
+		RcvWnd:  30000,
+	})
+
+	// Allow the stack to process the packet, then assert no abort.
+	time.Sleep(50 * time.Millisecond)
+
+	// Read must NOT return ErrConnectionReset.
+	_, err := c.EP.Read(io.Discard, tcpip.ReadOptions{})
+	if _, ok := err.(*tcpip.ErrConnectionReset); ok {
+		t.Fatalf("connection aborted on out-of-window RST")
+	}
+
+	if got, want := tcp.EndpointState(c.EP.State()), tcp.StateEstablished; got != want {
+		t.Errorf("endpoint state = %v, want %v", got, want)
+	}
+}
+
+// TestRSTInWindowNotExactSendsChallengeAck verifies that an in-window RST
+// whose sequence number does not exactly match RCV.NXT does NOT abort the
+// connection and triggers a challenge ACK per RFC 5961 section 3.2. This
+// is the security-relevant behavior change introduced by the patch:
+// pre-patch, such a RST would have aborted the connection (RFC 793
+// window-test).
+func TestRSTInWindowNotExactSendsChallengeAck(t *testing.T) {
+	c := context.New(t, e2e.DefaultMTU)
+	defer c.Cleanup()
+
+	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
+
+	rcvNxt := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+	// Pick a sequence number inside the advertised window but not equal to
+	// RCV.NXT.
+	offSeq := rcvNxt.Add(1024)
+
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: c.Port,
+		Flags:   header.TCPFlagRst,
+		SeqNum:  offSeq,
+		RcvWnd:  30000,
+	})
+
+	// We expect a challenge ACK to be emitted in response.
+	v := c.GetPacket()
+	defer v.Release()
+	checker.IPv4(t, v,
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.TCPFlags(header.TCPFlagAck),
+			checker.TCPSeqNum(uint32(c.IRS)+1),
+			checker.TCPAckNum(uint32(rcvNxt)),
+		),
+	)
+
+	// Read must NOT return ErrConnectionReset.
+	_, err := c.EP.Read(io.Discard, tcpip.ReadOptions{})
+	if _, ok := err.(*tcpip.ErrConnectionReset); ok {
+		t.Fatalf("connection aborted on in-window non-exact RST (RFC 5961 strict-match rule violated)")
+	}
+
+	if got, want := tcp.EndpointState(c.EP.State()), tcp.StateEstablished; got != want {
+		t.Errorf("endpoint state = %v, want %v", got, want)
+	}
+}
+
+// TestRSTExactMatchAbortsConnection verifies that an RST whose sequence
+// number equals RCV.NXT does abort the connection per RFC 5961 section 3.2.
+// This preserves the existing behavior for legitimate RSTs.
+func TestRSTExactMatchAbortsConnection(t *testing.T) {
+	c := context.New(t, e2e.DefaultMTU)
+	defer c.Cleanup()
+
+	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
+
+	rcvNxt := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: c.Port,
+		Flags:   header.TCPFlagRst,
+		SeqNum:  rcvNxt,
+		RcvWnd:  30000,
+	})
+
+	// Wait for the readable event signaling the connection went into the
+	// error state.
+	we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+	c.WQ.EventRegister(&we)
+	defer c.WQ.EventUnregister(&we)
+
+	for {
+		_, err := c.EP.Read(io.Discard, tcpip.ReadOptions{})
+		switch err.(type) {
+		case *tcpip.ErrWouldBlock:
+			select {
+			case <-ch:
+				// Loop back and Read again to surface the hard error.
+				continue
+			case <-time.After(2 * time.Second):
+				t.Fatalf("connection did not abort on exact-match RST within 2s")
+			}
+		case *tcpip.ErrConnectionReset:
+			return
+		default:
+			t.Fatalf("c.EP.Read after exact-match RST: err = %v, want ErrConnectionReset", err)
+		}
+	}
+}
+
 func TestMain(m *testing.M) {
 	refs.SetLeakMode(refs.LeaksPanic)
 	code := m.Run()

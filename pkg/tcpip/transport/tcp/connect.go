@@ -1178,46 +1178,61 @@ func (e *Endpoint) drainClosingSegmentQueue() {
 	}
 }
 
+// handleReset processes an inbound segment carrying the RST flag.
+//
+// Acceptance follows RFC 5961 section 3.2:
+//   - If the segment sequence number is out of window, the segment is
+//     silently dropped.
+//   - If the segment sequence number is in window but not exactly equal
+//     to RCV.NXT, the implementation sends a challenge ACK and drops
+//     the segment.
+//   - Only an exact match against RCV.NXT causes the connection to be
+//     reset.
+//
+// This is stricter than RFC 793 page 37, which accepted any in-window RST.
+// The strict-match rule defends against off-path blind RST injection.
+// Linux has implemented it since version 3.6 (2012); see
+// net/ipv4/tcp_input.c tcp_validate_incoming().
+//
 // +checklocks:e.mu
 func (e *Endpoint) handleReset(s *segment) (ok bool, err tcpip.Error) {
-	if e.rcv.acceptable(s.sequenceNumber, 0) {
-		// RFC 793, page 37 states that "in all states
-		// except SYN-SENT, all reset (RST) segments are
-		// validated by checking their SEQ-fields." So
-		// we only process it if it's acceptable.
-		switch e.EndpointState() {
-		// In case of a RST in CLOSE-WAIT linux moves
-		// the socket to closed state with an error set
-		// to indicate EPIPE.
-		//
-		// Technically this seems to be at odds w/ RFC.
-		// As per https://tools.ietf.org/html/rfc793#section-2.7
-		// page 69 the behavior for a segment arriving
-		// w/ RST bit set in CLOSE-WAIT is inlined below.
-		//
-		//  ESTABLISHED
-		//  FIN-WAIT-1
-		//  FIN-WAIT-2
-		//  CLOSE-WAIT
-
-		//  If the RST bit is set then, any outstanding RECEIVEs and
-		//  SEND should receive "reset" responses. All segment queues
-		//  should be flushed.  Users should also receive an unsolicited
-		//  general "connection reset" signal. Enter the CLOSED state,
-		//  delete the TCB, and return.
-		case StateCloseWait:
-			e.transitionToStateCloseLocked()
-			e.hardError = &tcpip.ErrAborted{}
-			return false, nil
-		default:
-			// RFC 793, page 37 states that "in all states
-			// except SYN-SENT, all reset (RST) segments are
-			// validated by checking their SEQ-fields." So
-			// we only process it if it's acceptable.
-			return false, &tcpip.ErrConnectionReset{}
-		}
+	if !e.rcv.acceptable(s.sequenceNumber, 0) {
+		// Out of window. Silent drop.
+		return true, nil
 	}
-	return true, nil
+
+	if s.sequenceNumber != e.rcv.RcvNxt {
+		// In window but not an exact match. Send a challenge ACK and drop the
+		// segment per RFC 5961 section 3.2. The challenge ACK helper rate-limits
+		// challenge transmission per RFC 5961 section 7.
+		e.snd.maybeSendOutOfWindowAck(s)
+		return true, nil
+	}
+
+	switch e.EndpointState() {
+	// In case of a RST in CLOSE-WAIT linux moves the socket to closed state
+	// with an error set to indicate EPIPE.
+	//
+	// As per https://tools.ietf.org/html/rfc793#section-2.7 page 69 the
+	// behavior for a segment arriving w/ RST bit set in CLOSE-WAIT is
+	// inlined below.
+	//
+	//  ESTABLISHED
+	//  FIN-WAIT-1
+	//  FIN-WAIT-2
+	//  CLOSE-WAIT
+	//
+	//  If the RST bit is set then, any outstanding RECEIVEs and SEND should
+	//  receive "reset" responses. All segment queues should be flushed.
+	//  Users should also receive an unsolicited general "connection reset"
+	//  signal. Enter the CLOSED state, delete the TCB, and return.
+	case StateCloseWait:
+		e.transitionToStateCloseLocked()
+		e.hardError = &tcpip.ErrAborted{}
+		return false, nil
+	default:
+		return false, &tcpip.ErrConnectionReset{}
+	}
 }
 
 // handleSegments processes all inbound segments.
