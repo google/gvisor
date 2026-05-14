@@ -38,12 +38,12 @@ var handlers = [...]lisafs.RPCHandler{
 	versionMsgID:   versionHandler,
 }
 
-// testServer implements lisafs.ServerImpl.
+// testServer implements lisafs.ConnectionImpl.
 type testServer struct {
 	lisafs.Server
 }
 
-var _ lisafs.ServerImpl = (*testServer)(nil)
+var _ lisafs.ConnectionImpl = (*testServer)(nil)
 
 type testControlFD struct {
 	lisafs.ControlFD
@@ -64,12 +64,17 @@ func (s *testServer) Mount(c *lisafs.Connection, mountNode *lisafs.Node) (*lisaf
 	return dummyRoot.FD(), lisafs.Statx{Mode: uint16(linux.S_IFDIR)}, -1, nil
 }
 
-// MaxMessageSize implements lisafs.MaxMessageSize.
+// ConnectionOpts implements lisafs.ConnectionImpl.ConnectionOpts.
+func (s *testServer) ConnectionOpts() lisafs.ConnectionOpts {
+	return lisafs.ConnectionOpts{}
+}
+
+// MaxMessageSize implements lisafs.ConnectionImpl.MaxMessageSize.
 func (s *testServer) MaxMessageSize() uint32 {
 	return lisafs.MaxMessageSize()
 }
 
-// SupportedMessages implements lisafs.ServerImpl.SupportedMessages.
+// SupportedMessages implements lisafs.ConnectionImpl.SupportedMessages.
 func (s *testServer) SupportedMessages() []lisafs.MID {
 	return []lisafs.MID{
 		lisafs.Mount,
@@ -86,9 +91,9 @@ func runServerClient(t testing.TB, clientFn func(c *lisafs.Client)) {
 	}
 
 	ts := &testServer{}
-	ts.Init(ts, lisafs.ServerOpts{})
+	ts.Init(ts)
 	ts.SetHandlers(handlers[:])
-	conn, err := ts.CreateConnection(serverSocket, "/" /* mountPath */, false /* readonly */)
+	conn, err := ts.CreateConnection(serverSocket, "/" /* mountPath */, false /* readonly */, ts)
 	if err != nil {
 		t.Fatalf("starting connection failed: %v", err)
 		return

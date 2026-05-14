@@ -144,7 +144,7 @@ func MountHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, 
 		if mountNode.isDeleted() {
 			return unix.ENOENT
 		}
-		mountPointFD, mountPointStat, mountPointHostFD, err = c.ServerImpl().Mount(c, mountNode)
+		mountPointFD, mountPointStat, mountPointHostFD, err = c.impl.Mount(c, mountNode)
 		return err
 	}); err != nil {
 		return 0, err
@@ -158,8 +158,8 @@ func MountHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, 
 			ControlFD: mountPointFD.id,
 			Stat:      mountPointStat,
 		},
-		SupportedMs:    c.ServerImpl().SupportedMessages(),
-		MaxMessageSize: primitive.Uint32(c.ServerImpl().MaxMessageSize()),
+		SupportedMs:    c.impl.SupportedMessages(),
+		MaxMessageSize: primitive.Uint32(c.maxMessageSize),
 	}
 	respPayloadLen := uint32(resp.SizeBytes())
 	resp.MarshalBytes(comm.PayloadBuf(respPayloadLen))
@@ -168,7 +168,7 @@ func MountHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, 
 
 // ChannelHandler handles the Channel RPC.
 func ChannelHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
-	ch, desc, fdSock, err := c.createChannel(c.ServerImpl().MaxMessageSize())
+	ch, desc, fdSock, err := c.createChannel(c.maxMessageSize)
 	if err != nil {
 		return 0, err
 	}
@@ -263,7 +263,7 @@ func SetStatHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32
 
 	var resp SetStatResp
 	if err := fd.safelyWrite(func() error {
-		if fd.node.isDeleted() && !c.server.opts.SetAttrOnDeleted {
+		if fd.node.isDeleted() && !c.opts.SetAttrOnDeleted {
 			return unix.EINVAL
 		}
 		failureMask, failureErr := fd.impl.SetStat(req)
@@ -413,7 +413,7 @@ func WalkStatHandler(c *Connection, comm Communicator, payloadLen uint32) (uint3
 	payloadBuf := comm.PayloadBuf(uint32(maxPayloadSize))
 	payloadPos := numStats.SizeBytes()
 
-	if c.server.opts.WalkStatSupported {
+	if c.opts.WalkStatSupported {
 		if err = startDir.safelyRead(func() error {
 			return startDir.impl.WalkStat(req.Path, func(s Statx) {
 				s.MarshalUnsafe(payloadBuf[payloadPos:])
@@ -528,7 +528,7 @@ func OpenAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32,
 		hostOpenFD int
 	)
 	if err := fd.safelyRead(func() error {
-		if fd.node.isDeleted() && !c.server.opts.OpenOnDeleted {
+		if fd.node.isDeleted() && !c.opts.OpenOnDeleted {
 			return unix.EINVAL
 		}
 		if fd.IsSymlink() {
@@ -981,7 +981,7 @@ func FAllocateHandler(c *Connection, comm Communicator, payloadLen uint32) (uint
 	}
 
 	return 0, fd.controlFD.safelyWrite(func() error {
-		if fd.controlFD.node.isDeleted() && !c.server.opts.AllocateOnDeleted {
+		if fd.controlFD.node.isDeleted() && !c.opts.AllocateOnDeleted {
 			return unix.EINVAL
 		}
 		return fd.impl.Allocate(req.Mode, req.Offset, req.Length)

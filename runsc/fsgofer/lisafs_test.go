@@ -37,8 +37,9 @@ func init() {
 type tester struct{}
 
 // NewServer implements testsuite.Tester.NewServer.
-func (tester) NewServer(t *testing.T) *lisafs.Server {
-	return &fsgofer.NewLisafsServer(fsgofer.Config{}).Server
+func (tester) NewServer(t *testing.T) (*lisafs.Server, lisafs.ConnectionImpl) {
+	server := fsgofer.NewLisafsServer(fsgofer.Config{})
+	return &server.Server, server.ConnectionImpl()
 }
 
 // LinkSupported implements testsuite.Tester.LinkSupported.
