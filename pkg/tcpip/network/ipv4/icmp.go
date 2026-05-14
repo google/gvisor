@@ -360,14 +360,21 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 		localAddressTemporary := pkt.NetworkPacketInfo.LocalAddressTemporary
 		localAddressBroadcast := pkt.NetworkPacketInfo.LocalAddressBroadcast
 
-		// It's possible that a raw socket or custom defaultHandler expects to
-		// receive this packet.
-		e.dispatcher.DeliverTransportPacket(header.ICMPv4ProtocolNumber, pkt)
+		// It's possible that a raw socket or per-stack default handler expects
+		// to receive this packet.
+		defaultHandlerHandled := false
+		if dispatcher, ok := e.dispatcher.(stack.TransportDispatcherWithDefaultHandlerResult); ok {
+			_, defaultHandlerHandled = dispatcher.DeliverTransportPacketWithDefaultHandlerResult(header.ICMPv4ProtocolNumber, pkt)
+		} else {
+			e.dispatcher.DeliverTransportPacket(header.ICMPv4ProtocolNumber, pkt)
+		}
 		pkt = nil
 
-		// Skip direct ICMP echo reply if the packet was received with a temporary
-		// address, allowing custom handlers to take over.
-		if localAddressTemporary {
+		// Skip the built-in ICMP echo reply if the request was consumed by a
+		// per-stack default handler. Also preserve the IPv4 behavior for
+		// temporary local addresses: the packet is delivered above, but the
+		// stack does not synthesize an echo reply for it.
+		if defaultHandlerHandled || localAddressTemporary {
 			return
 		}
 
