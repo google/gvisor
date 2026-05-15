@@ -254,3 +254,28 @@ func (ctx *withValue) Value(key any) any {
 	}
 	return ctx.Context.Value(key)
 }
+
+// WithValues returns a copy of parent in which the values associated with keys
+// are the corresponding values in the map.
+func WithValues(parent Context, values map[any]any) Context {
+	if len(values) == 0 {
+		return parent
+	}
+	return &withValues{
+		Context: parent,
+		values:  values,
+	}
+}
+
+type withValues struct {
+	Context
+	values map[any]any
+}
+
+// Value implements Context.Value.
+func (ctx *withValues) Value(key any) any {
+	if val, ok := ctx.values[key]; ok {
+		return val
+	}
+	return ctx.Context.Value(key)
+}

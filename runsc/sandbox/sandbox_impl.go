@@ -18,11 +18,9 @@
 package sandbox
 
 import (
-	"os"
 	"os/exec"
 
 	"gvisor.dev/gvisor/pkg/sentry/control"
-	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/donation"
 )
@@ -33,18 +31,5 @@ func (s *Sandbox) createSandboxProcessExtra(conf *config.Config, args *Args, cmd
 
 type checkpointOptsExtra struct{}
 
-func (s *Sandbox) setCheckpointOptsImpl(conf *config.Config, imagePath string, opts CheckpointOpts, opt *control.SaveOpts) error {
-	return setCheckpointOptsForLocalCheckpointFiles(conf, imagePath, opts, opt)
-}
-
-func (s *Sandbox) setRestoreOptsImpl(conf *config.Config, imagePath string, direct bool, opt *boot.RestoreOpts) error {
-	return s.setRestoreOptsForLocalCheckpointFiles(conf, imagePath, direct, opt)
-}
-
-func (s *Sandbox) setFSSaveArgsImpl(conf *config.Config, imagePath string, direct bool, args *boot.FSSaveArgs) error {
-	return setFSSaveArgsForLocalCheckpointFiles(conf, imagePath, direct, args)
-}
-
-func (s *Sandbox) openFSRestoreFilesImpl(conf *config.Config, imagePath string, direct bool, cmd *exec.Cmd) ([]*os.File, error) {
-	return openFSRestoreFilesForLocalCheckpoint(imagePath, direct)
+func setCheckpointOptsExtra(opts CheckpointOpts, opt *control.SaveOpts) {
 }

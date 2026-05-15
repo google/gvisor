@@ -168,17 +168,22 @@ type FilesystemOpts struct {
 	SourceTarFSCheckpoint bool
 }
 
-// Default size limit mount option. It is immutable after initialization.
-var defaultSizeLimit uint64
+// Amount of total physical RAM, in bytes. It is immutable after initialization.
+var totalHostMem uint64
 
-// SetDefaultSizeLimit configures the size limit to be used for tmpfs mounts
-// that do not specify a size= mount option. This must be called only once,
-// before any tmpfs filesystems are created.
-func SetDefaultSizeLimit(sizeLimit uint64) {
-	defaultSizeLimit = sizeLimit
+// SetTotalHostMem tells the tmpfs implementation how much physical RAM is available,
+// which is used to calculate size limits for tmpfs mounts. For tmpfs mounts that do
+// not specify a size= mount option, the default is 50% of the available memory.
+// Userspace can also specify a percentage in terms of this value.
+func SetTotalHostMem(hostMem uint64) {
+	totalHostMem = hostMem
 }
 
 func getDefaultSizeLimit(disable bool) uint64 {
+	// As per tmpfs(5), the default size limit is 50% of total physical RAM.
+	// See mm/shmem.c:shmem_default_max_blocks().
+	defaultSizeLimit := totalHostMem / 2
+
 	if disable || defaultSizeLimit == 0 {
 		// The size limit is used to populate statfs(2) results. If Linux tmpfs is
 		// mounted with no size option, then statfs(2) returns f_blocks == f_bfree
@@ -230,10 +235,41 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		}
 	}
 
-	mopts := vfs.GenericParseMountOptions(opts.Data)
 	rootMode := linux.FileMode(0777)
 	if rootFileType == linux.S_IFDIR {
 		rootMode = 01777
+	}
+
+	mopts := vfs.GenericParseMountOptions(opts.Data)
+	var printedOpts []string
+
+	maxSizeInPages := getDefaultSizeLimit(disableDefaultSizeLimit) / hostarch.PageSize
+	maxSizeStr, ok := mopts["size"]
+	if ok {
+		delete(mopts, "size")
+		maxSizeInBytes, err := parseSize(maxSizeStr)
+		if err != nil {
+			ctx.Debugf("tmpfs.FilesystemType.GetFilesystem: parseSize() failed: %v", err)
+			return nil, nil, linuxerr.EINVAL
+		}
+
+		var printedSize uint64
+		if maxSizeInBytes > 0 {
+			// If size > 0, convert size in bytes to nearest Page Size
+			// bytes as Linux allocates memory in terms of Page size.
+			maxSizeInPages, ok = hostarch.ToPagesRoundUp(maxSizeInBytes)
+			if !ok {
+				ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: Pages RoundUp Overflow error: %v", ok)
+				return nil, nil, linuxerr.EINVAL
+			}
+			printedSize = (maxSizeInPages*hostarch.PageSize + 1023) / 1024
+		} else {
+			// size = 0 is a special case: no size limit
+			maxSizeInPages = math.MaxInt64
+			printedSize = 0
+		}
+
+		printedOpts = append(printedOpts, fmt.Sprintf("size=%vk", printedSize))
 	}
 	modeStr, ok := mopts["mode"]
 	if ok {
@@ -244,6 +280,8 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			return nil, nil, linuxerr.EINVAL
 		}
 		rootMode = linux.FileMode(mode & 07777)
+
+		printedOpts = append(printedOpts, fmt.Sprintf("mode=%s", modeStr))
 	}
 	rootKUID := creds.EffectiveKUID
 	uidStr, ok := mopts["uid"]
@@ -260,6 +298,8 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			return nil, nil, linuxerr.EINVAL
 		}
 		rootKUID = kuid
+
+		printedOpts = append(printedOpts, fmt.Sprintf("uid=%s", uidStr))
 	}
 	rootKGID := creds.EffectiveKGID
 	gidStr, ok := mopts["gid"]
@@ -276,23 +316,8 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			return nil, nil, linuxerr.EINVAL
 		}
 		rootKGID = kgid
-	}
-	maxSizeInPages := getDefaultSizeLimit(disableDefaultSizeLimit) / hostarch.PageSize
-	maxSizeStr, ok := mopts["size"]
-	if ok {
-		delete(mopts, "size")
-		maxSizeInBytes, err := parseSize(maxSizeStr)
-		if err != nil {
-			ctx.Debugf("tmpfs.FilesystemType.GetFilesystem: parseSize() failed: %v", err)
-			return nil, nil, linuxerr.EINVAL
-		}
-		// Convert size in bytes to nearest Page Size bytes
-		// as Linux allocates memory in terms of Page size.
-		maxSizeInPages, ok = hostarch.ToPagesRoundUp(maxSizeInBytes)
-		if !ok {
-			ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: Pages RoundUp Overflow error: %v", ok)
-			return nil, nil, linuxerr.EINVAL
-		}
+
+		printedOpts = append(printedOpts, fmt.Sprintf("gid=%s", gidStr))
 	}
 
 	if len(mopts) != 0 {
@@ -313,7 +338,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		mf:               mf,
 		clock:            clock,
 		devMinor:         devMinor,
-		mopts:            opts.Data,
+		mopts:            strings.Join(printedOpts, ","),
 		usage:            memUsage,
 		maxFilenameLen:   linux.NAME_MAX,
 		maxSizeInPages:   maxSizeInPages,
@@ -993,13 +1018,15 @@ func (*fileDescription) Sync(context.Context) error {
 }
 
 // parseSize converts size in string to an integer bytes.
-// Supported suffixes in string are:K, M, G, T, P, E.
+// Supported suffixes in string are: K, M, G, T, P, E, %.
+// Note that for percentages, the result depends on the
+// total available physical RAM.
 func parseSize(s string) (uint64, error) {
 	if len(s) == 0 {
 		return 0, fmt.Errorf("size parameter empty")
 	}
 	suffix := s[len(s)-1]
-	count := 1
+	var count uint64 = 1
 	switch suffix {
 	case 'e', 'E':
 		count = count << 10
@@ -1019,14 +1046,20 @@ func parseSize(s string) (uint64, error) {
 	case 'k', 'K':
 		count = count << 10
 		s = s[:len(s)-1]
+	case '%':
+		if totalHostMem == 0 {
+			return 0, fmt.Errorf("could not determine size limit as total system memory is unknown")
+		}
+		count *= totalHostMem / 100
+		s = s[:len(s)-1]
 	}
 	byteTmp, err := strconv.ParseUint(s, 10, 64)
 	if err != nil {
 		return 0, linuxerr.EINVAL
 	}
 	// Check for overflow.
-	bytes := byteTmp * uint64(count)
-	if byteTmp != 0 && bytes/byteTmp != uint64(count) {
+	bytes := byteTmp * count
+	if byteTmp != 0 && bytes/byteTmp != count {
 		return 0, fmt.Errorf("size overflow")
 	}
 	return bytes, err

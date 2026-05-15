@@ -112,6 +112,12 @@ type runscService struct {
 	// containers maps container id to a container.
 	containers map[string]*Container
 
+	// root is the runsc root directory.
+	root string
+
+	// runtime is runsc runtime configured for sandbox.
+	runtime *runsccmd.Runsc
+
 	shutdown shutdown.Service
 }
 
@@ -138,6 +144,8 @@ func NewTaskService(ctx context.Context, publisher shim.Publisher, sd shutdown.S
 		ec:         proc.ExitCh,
 		oomPoller:  ep,
 		shutdown:   sd,
+		root:       proc.RunscRoot,
+		runtime:    &runsccmd.Runsc{Root: proc.RunscRoot},
 	}
 	go s.processExits(ctx)
 	runsccmd.Monitor = &runsccmd.LogMonitor{Next: reaper.Default}
@@ -187,6 +195,10 @@ func (s *runscService) CreateWithFSRestore(ctx context.Context, rfs *extension.C
 	p, err := c.Process("")
 	if err != nil {
 		return nil, err
+	}
+	if initProcess, ok := p.(*proc.Init); ok && initProcess.Sandbox {
+		s.root = initProcess.Runtime().Root
+		s.runtime = initProcess.Runtime()
 	}
 
 	// Set up OOM notification on the sandbox's cgroup. This is done on

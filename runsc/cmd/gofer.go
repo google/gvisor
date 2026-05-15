@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/pkg/urpc"
+	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/cmd/sandboxsetup"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
@@ -172,6 +173,15 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 	if err != nil {
 		util.Fatalf("reading spec: %v", err)
 	}
+	mountHints, err := boot.NewPodMountHints(spec)
+	if err != nil {
+		util.Fatalf("parsing mount hints: %v", err)
+	}
+	rootfsHint, err := boot.NewRootfsHint(spec)
+	if err != nil {
+		util.Fatalf("parsing rootfs hint: %v", err)
+	}
+	lisafsNeeded := lisafsNeededForDirectFSSuppression(spec, mountHints, rootfsHint, g.mountConfs)
 
 	g.syncFDs.syncChroot()
 	g.syncFDs.syncUsernsForRootless(uint32(g.uid), uint32(g.gid))
@@ -291,6 +301,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		UDSCreateEnabled: conf.GetHostUDS().AllowCreate(),
 		ProfileEnabled:   profileOpts.Enabled(),
 		DirectFS:         conf.DirectFS,
+		LisafsNeeded:     lisafsNeeded,
 		CgoEnabled:       config.CgoEnabled,
 	}
 	if err := filter.Install(opts); err != nil {
@@ -386,6 +397,33 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
 		g.stopProfiling()
 	}
 	return subcommands.ExitSuccess
+}
+
+// lisafsNeededForDirectFSSuppression returns true if this gofer serves a mount
+// that suppresses directfs and therefore still needs LisaFS syscalls.
+func lisafsNeededForDirectFSSuppression(spec *specs.Spec, mountHints *boot.PodMountHints, rootfsHint *boot.RootfsHint, mountConfs []specutils.GoferMountConf) bool {
+	if len(mountConfs) > 0 && mountConfs[0].ShouldUseLisafs() &&
+		rootfsHint != nil && rootfsHint.SuppressDirectFS {
+		return true
+	}
+	if mountHints == nil {
+		return false
+	}
+	mountIdx := 1 // First mount config is the root.
+	for _, m := range spec.Mounts {
+		if !specutils.HasMountConfig(m) {
+			continue
+		}
+		mountConf := mountConfs[mountIdx]
+		mountIdx++
+		if !mountConf.ShouldUseLisafs() {
+			continue
+		}
+		if hint := mountHints.FindMount(m.Source); hint != nil && hint.SuppressDirectFS {
+			return true
+		}
+	}
+	return false
 }
 
 // makeRPCMountOpener returns a MountOpener that opens mount sources via the

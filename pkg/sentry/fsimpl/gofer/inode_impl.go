@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fsutil"
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
@@ -301,8 +300,7 @@ func (d *dentry) listXattrImpl(ctx context.Context, size uint64) ([]string, erro
 	case *lisafsInode:
 		return it.controlFD.ListXattr(ctx, size)
 	case *directfsInode:
-		// Consistent with runsc/fsgofer.
-		return nil, linuxerr.EOPNOTSUPP
+		return it.listXattr(ctx, size, d)
 	default:
 		panic("unknown inode implementation")
 	}
@@ -326,21 +324,19 @@ func (d *dentry) setXattrImpl(ctx context.Context, opts *vfs.SetXattrOptions) er
 	case *lisafsInode:
 		return it.controlFD.SetXattr(ctx, opts.Name, opts.Value, opts.Flags)
 	case *directfsInode:
-		// Consistent with runsc/fsgofer.
-		return linuxerr.EOPNOTSUPP
+		return it.setXattr(ctx, opts, d)
 	default:
 		panic("unknown inode implementation")
 	}
 }
 
 // Precondition: !d.isSynthetic().
-func (i *inode) removeXattrImpl(ctx context.Context, name string) error {
-	switch it := i.impl.(type) {
+func (d *dentry) removeXattrImpl(ctx context.Context, name string) error {
+	switch it := d.inode.impl.(type) {
 	case *lisafsInode:
 		return it.controlFD.RemoveXattr(ctx, name)
 	case *directfsInode:
-		// Consistent with runsc/fsgofer.
-		return linuxerr.EOPNOTSUPP
+		return it.removeXattr(ctx, name, d)
 	default:
 		panic("unknown inode implementation")
 	}

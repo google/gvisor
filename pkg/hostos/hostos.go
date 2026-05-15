@@ -16,8 +16,12 @@
 package hostos
 
 import (
+	"bufio"
 	"fmt"
+	"io"
+	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -84,4 +88,50 @@ func KernelVersion() (Version, error) {
 	})
 
 	return semVersion, unameErr
+}
+
+// TotalSystemMemory extracts "MemTotal" from "/proc/meminfo".
+func TotalSystemMemory() (uint64, error) {
+	f, err := os.Open("/proc/meminfo")
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+	return parseTotalSystemMemory(f)
+}
+
+func parseTotalSystemMemory(r io.Reader) (uint64, error) {
+	for scanner := bufio.NewScanner(r); scanner.Scan(); {
+		line := scanner.Text()
+		totalStr := strings.TrimPrefix(line, "MemTotal:")
+		if len(totalStr) < len(line) {
+			fields := strings.Fields(totalStr)
+			if len(fields) == 0 || len(fields) > 2 {
+				return 0, fmt.Errorf(`malformed "MemTotal": %q`, line)
+			}
+			totalStr = fields[0]
+			unit := ""
+			if len(fields) == 2 {
+				unit = fields[1]
+			}
+			mem, err := strconv.ParseUint(totalStr, 10, 64)
+			if err != nil {
+				return 0, err
+			}
+			switch unit {
+			case "":
+				// do nothing.
+			case "kB":
+				memKb := mem
+				mem = memKb * 1024
+				if mem < memKb {
+					return 0, fmt.Errorf(`"MemTotal" too large: %d`, memKb)
+				}
+			default:
+				return 0, fmt.Errorf("unknown unit %q: %q", unit, line)
+			}
+			return mem, nil
+		}
+	}
+	return 0, fmt.Errorf(`malformed "/proc/meminfo": "MemTotal" not found`)
 }

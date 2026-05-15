@@ -21,6 +21,8 @@ import (
 	"io"
 	"time"
 
+	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
@@ -29,7 +31,10 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/state/checkpointfiles"
 	"gvisor.dev/gvisor/pkg/sentry/state/stateio"
+	"gvisor.dev/gvisor/pkg/sentry/state/stateipc"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/unet"
+	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/version"
 )
 
@@ -38,10 +43,17 @@ func convertToKernelFSSaveOpts(args *FSSaveArgs) (kernel.FSSaveOpts, error) {
 		RunscVersion:    version.Version(),
 		ExitAfterSaving: args.ExitAfterSaving,
 	}
-	if err := setKernelFSSaveOptsFilesImpl(args, &opts); err != nil {
+	if err := setKernelFSSaveOptsFiles(args, &opts); err != nil {
 		return kernel.FSSaveOpts{}, err
 	}
 	return opts, nil
+}
+
+func setKernelFSSaveOptsFiles(args *FSSaveArgs, opts *kernel.FSSaveOpts) error {
+	if args.UseCheckpointGofer {
+		return setKernelFSSaveOptsFilesForCheckpointGofer(args, opts)
+	}
+	return setKernelFSSaveOptsFilesForLocalCheckpoint(args, opts)
 }
 
 func setKernelFSSaveOptsFilesForLocalCheckpoint(args *FSSaveArgs, opts *kernel.FSSaveOpts) error {
@@ -68,6 +80,66 @@ func setKernelFSSaveOptsFilesForLocalCheckpoint(args *FSSaveArgs, opts *kernel.F
 	opts.MultiTarFile = stateio.NewBufioWriteCloser(multiTarFile)
 	opts.PagesMetadataFile = stateio.NewBufioWriteCloser(pagesMetadataFile)
 	opts.PagesFile = stateio.NewPagesFileFDWriterDefault(int32(pagesFile.Release()))
+	return nil
+}
+
+func setKernelFSSaveOptsFilesForCheckpointGofer(args *FSSaveArgs, opts *kernel.FSSaveOpts) error {
+	clientFD, err := unix.Dup(int(args.Files[0].Fd()))
+	if err != nil {
+		return fmt.Errorf("failed to dup checkpoint gofer client FD: %w", err)
+	}
+	clientSock, err := unet.NewSocket(clientFD)
+	if err != nil {
+		unix.Close(clientFD)
+		return fmt.Errorf("failed to create unet.Socket for checkpoint gofer client FD: %w", err)
+	}
+	afc, err := stateipc.NewAsyncFileClient(urpc.NewClient(clientSock) /* transfers ownership */)
+	if err != nil {
+		return fmt.Errorf("failed to create stateipc client: %w", err)
+	}
+	defer afc.DecRef()
+
+	manifestFileAsync, err := afc.OpenWrite(checkpointfiles.FSCheckpointManifestFileName)
+	if err != nil {
+		return fmt.Errorf("failed to open manifest file: %w", err)
+	}
+	manifestFile, err := stateio.NewBufWriter(manifestFileAsync /* transfers ownership */, 2<<20 /* size = 2 MiB */)
+	if err != nil {
+		return fmt.Errorf("failed to buffer manifest file: %w", err)
+	}
+	closeCleanup := cleanup.Make(func() { manifestFile.Close() })
+	defer closeCleanup.Clean()
+
+	multiTarFileAsync, err := afc.OpenWrite(checkpointfiles.FSCheckpointMultiTarFileName)
+	if err != nil {
+		return fmt.Errorf("failed to open multi-tar file: %w", err)
+	}
+	multiTarFile, err := stateio.NewBufWriter(multiTarFileAsync /* transfers ownership */, 8<<20 /* size = 8 MiB */)
+	if err != nil {
+		return fmt.Errorf("failed to buffer multi-tar file: %w", err)
+	}
+	closeCleanup.Add(func() { multiTarFile.Close() })
+
+	pagesMetadataFileAsync, err := afc.OpenWrite(checkpointfiles.PagesMetadataFileName)
+	if err != nil {
+		return fmt.Errorf("failed to open pages metadata file: %w", err)
+	}
+	pagesMetadataFile, err := stateio.NewBufWriter(pagesMetadataFileAsync /* transfers ownership */, 8<<20 /* size = 8 MiB */)
+	if err != nil {
+		return fmt.Errorf("failed to buffer pages metadata file: %w", err)
+	}
+	closeCleanup.Add(func() { pagesMetadataFile.Close() })
+
+	pagesFile, err := afc.OpenWrite(checkpointfiles.PagesFileName)
+	if err != nil {
+		return fmt.Errorf("failed to open pages file: %w", err)
+	}
+
+	closeCleanup.Release()
+	opts.ManifestFile = manifestFile
+	opts.MultiTarFile = multiTarFile
+	opts.PagesMetadataFile = pagesMetadataFile
+	opts.PagesFile = pagesFile
 	return nil
 }
 
@@ -106,6 +178,13 @@ type fsRestoreOpts struct {
 	PagesFile         stateio.AsyncReader
 }
 
+func makeFSRestoreOpts(args *Args) (fsRestoreOpts, error) {
+	if args.FSRestoreCheckpointGofer {
+		return makeFSRestoreOptsForCheckpointGofer(args)
+	}
+	return makeFSRestoreOptsForLocalCheckpoint(args)
+}
+
 func makeFSRestoreOptsForLocalCheckpoint(args *Args) (fsRestoreOpts, error) {
 	if len(args.FSRestoreFDs) != 4 {
 		return fsRestoreOpts{}, fmt.Errorf("got %d files in -fs-restore-fds, want 4", len(args.FSRestoreFDs))
@@ -115,6 +194,67 @@ func makeFSRestoreOptsForLocalCheckpoint(args *Args) (fsRestoreOpts, error) {
 		MultiTarFile:      stateio.NewBufioReadCloser(args.FSRestoreFDs[1].ReleaseToFile(checkpointfiles.FSCheckpointMultiTarFileName)),
 		PagesMetadataFile: stateio.NewBufioReadCloser(args.FSRestoreFDs[2].ReleaseToFile(checkpointfiles.PagesMetadataFileName)),
 		PagesFile:         stateio.NewPagesFileFDReaderDefault(int32(args.FSRestoreFDs[3].Release())),
+	}, nil
+}
+
+func makeFSRestoreOptsForCheckpointGofer(args *Args) (fsRestoreOpts, error) {
+	if len(args.FSRestoreFDs) != 1 {
+		return fsRestoreOpts{}, fmt.Errorf("got %d files in -fs-restore-fds, want 1", len(args.FSRestoreFDs))
+	}
+	clientFD := args.FSRestoreFDs[0].Release()
+	clientSock, err := unet.NewSocket(clientFD)
+	if err != nil {
+		unix.Close(clientFD)
+		return fsRestoreOpts{}, fmt.Errorf("failed to create unet.Socket for checkpoint gofer client FD: %w", err)
+	}
+	afc, err := stateipc.NewAsyncFileClient(urpc.NewClient(clientSock) /* transfers ownership */)
+	if err != nil {
+		return fsRestoreOpts{}, fmt.Errorf("failed to create stateipc client: %w", err)
+	}
+	defer afc.DecRef()
+
+	manifestFileAsync, err := afc.OpenRead(checkpointfiles.FSCheckpointManifestFileName)
+	if err != nil {
+		return fsRestoreOpts{}, fmt.Errorf("failed to open manifest file: %w", err)
+	}
+	manifestFile, err := stateio.NewBufReader(manifestFileAsync /* transfers ownership */, 2<<20 /* size = 2 MiB */)
+	if err != nil {
+		return fsRestoreOpts{}, fmt.Errorf("failed to buffer manifest file: %w", err)
+	}
+	closeCleanup := cleanup.Make(func() { manifestFile.Close() })
+	defer closeCleanup.Clean()
+
+	multiTarFileAsync, err := afc.OpenRead(checkpointfiles.FSCheckpointMultiTarFileName)
+	if err != nil {
+		return fsRestoreOpts{}, fmt.Errorf("failed to open multi-tar file: %w", err)
+	}
+	multiTarFile, err := stateio.NewBufReader(multiTarFileAsync /* transfers ownership */, 8<<20 /* size = 8 MiB */)
+	if err != nil {
+		return fsRestoreOpts{}, fmt.Errorf("failed to buffer multi-tar file: %w", err)
+	}
+	closeCleanup.Add(func() { multiTarFile.Close() })
+
+	pagesMetadataFileAsync, err := afc.OpenRead(checkpointfiles.PagesMetadataFileName)
+	if err != nil {
+		return fsRestoreOpts{}, fmt.Errorf("failed to open pages metadata file: %w", err)
+	}
+	pagesMetadataFile, err := stateio.NewBufReader(pagesMetadataFileAsync /* transfers ownership */, 8<<20 /* size = 8 MiB */)
+	if err != nil {
+		return fsRestoreOpts{}, fmt.Errorf("failed to buffer pages metadata file: %w", err)
+	}
+	closeCleanup.Add(func() { pagesMetadataFile.Close() })
+
+	pagesFile, err := afc.OpenRead(checkpointfiles.PagesFileName)
+	if err != nil {
+		return fsRestoreOpts{}, fmt.Errorf("failed to open pages file: %w", err)
+	}
+
+	closeCleanup.Release()
+	return fsRestoreOpts{
+		ManifestFile:      manifestFile,
+		MultiTarFile:      multiTarFile,
+		PagesMetadataFile: pagesMetadataFile,
+		PagesFile:         pagesFile,
 	}, nil
 }
 

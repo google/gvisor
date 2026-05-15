@@ -107,6 +107,9 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 	unix.SYS_GETTID:       seccomp.MatchAll{},
 	unix.SYS_GETTIMEOFDAY: seccomp.MatchAll{},
 	unix.SYS_LGETXATTR:    seccomp.MatchAll{},
+	unix.SYS_LLISTXATTR:   seccomp.MatchAll{},
+	unix.SYS_LREMOVEXATTR: seccomp.MatchAll{},
+	unix.SYS_LSETXATTR:    seccomp.MatchAll{},
 	unix.SYS_LSEEK:        seccomp.MatchAll{},
 	unix.SYS_MADVISE:      seccomp.MatchAll{},
 	unix.SYS_MEMFD_CREATE: seccomp.MatchAll{}, // Used by flipcall.PacketWindowAllocator.Init().
@@ -241,7 +244,28 @@ var lisafsFilters = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		seccomp.AnyValue{},
 		seccomp.EqualTo(0),
 	},
-	unix.SYS_FGETXATTR:  seccomp.MatchAll{},
+	unix.SYS_FGETXATTR: seccomp.PerArg{
+		seccomp.NonNegativeFD{},
+		seccomp.AnyValue{},
+		seccomp.AnyValue{},
+		seccomp.AnyValue{},
+	},
+	unix.SYS_FLISTXATTR: seccomp.PerArg{
+		seccomp.NonNegativeFD{},
+		seccomp.AnyValue{},
+		seccomp.AnyValue{},
+	},
+	unix.SYS_FREMOVEXATTR: seccomp.PerArg{
+		seccomp.NonNegativeFD{},
+		seccomp.AnyValue{},
+	},
+	unix.SYS_FSETXATTR: seccomp.PerArg{
+		seccomp.NonNegativeFD{},
+		seccomp.AnyValue{},
+		seccomp.AnyValue{},
+		seccomp.AnyValue{},
+		seccomp.AnyValue{},
+	},
 	unix.SYS_FSTATFS:    seccomp.MatchAll{},
 	unix.SYS_GETDENTS64: seccomp.MatchAll{},
 	unix.SYS_LINKAT: seccomp.PerArg{

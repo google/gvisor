@@ -29,10 +29,13 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/state"
+	"gvisor.dev/gvisor/pkg/sentry/state/checkpointfiles"
 	"gvisor.dev/gvisor/pkg/sentry/state/stateio"
+	"gvisor.dev/gvisor/pkg/sentry/state/stateipc"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/pkg/timing"
+	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/pkg/urpc"
 )
 
@@ -93,7 +96,10 @@ type SaveOpts struct {
 	// ExecOpts contains options for executing a binary during save/restore.
 	ExecOpts SaveRestoreExecOpts
 
-	SaveOptsExtra
+	// If UseCheckpointGofer is true, the first and only file in FilePayload is
+	// a Unix domain socket connected to a URPC server implementing
+	// stateipc.AsyncFileServer and providing checkpoint files.
+	UseCheckpointGofer bool `json:"use_checkpoint_gofer"`
 }
 
 // SaveRestoreExecOpts contains options for executing a binary
@@ -120,11 +126,18 @@ func ConvertToStateSaveOpts(o *SaveOpts) (*state.SaveOpts, error) {
 		AppMFExcludeCommittedZeroPages: o.AppMFExcludeCommittedZeroPages,
 		Resume:                         o.Resume,
 	}
-	if err := setSaveOptsImpl(o, saveOpts); err != nil {
+	if err := setSaveOpts(o, saveOpts); err != nil {
 		saveOpts.Close()
 		return nil, err
 	}
 	return saveOpts, nil
+}
+
+func setSaveOpts(o *SaveOpts, saveOpts *state.SaveOpts) error {
+	if o.UseCheckpointGofer {
+		return setSaveOptsForCheckpointGofer(o, saveOpts)
+	}
+	return setSaveOptsForLocalCheckpointFiles(o, saveOpts)
 }
 
 func setSaveOptsForLocalCheckpointFiles(o *SaveOpts, saveOpts *state.SaveOpts) error {
@@ -160,6 +173,52 @@ func setSaveOptsForLocalCheckpointFiles(o *SaveOpts, saveOpts *state.SaveOpts) e
 			return err
 		}
 		saveOpts.PagesFile = stateio.NewPagesFileFDWriterDefault(int32(pagesFileFD))
+	}
+	return nil
+}
+
+func setSaveOptsForCheckpointGofer(o *SaveOpts, saveOpts *state.SaveOpts) error {
+	if gotFiles := len(o.Files); gotFiles != 1 {
+		return fmt.Errorf("got %d files, wanted 1", gotFiles)
+	}
+	clientFD, err := unix.Dup(int(o.Files[0].Fd()))
+	if err != nil {
+		return fmt.Errorf("failed to dup checkpoint gofer client FD: %w", err)
+	}
+	clientSock, err := unet.NewSocket(clientFD)
+	if err != nil {
+		unix.Close(clientFD)
+		return fmt.Errorf("failed to create unet.Socket for checkpoint gofer client FD: %w", err)
+	}
+	afc, err := stateipc.NewAsyncFileClient(urpc.NewClient(clientSock))
+	if err != nil {
+		return fmt.Errorf("failed to create stateipc client: %w", err)
+	}
+	defer afc.DecRef()
+
+	stateFileAsync, err := afc.OpenWrite(checkpointfiles.StateFileName)
+	if err != nil {
+		return fmt.Errorf("failed to open state file: %w", err)
+	}
+	// Setting saveOpts.Destination/PagesMetadata/PagesFile transfers ownership
+	// of the created object to saveOpts, even if we return a non-nil error.
+	saveOpts.Destination, err = stateio.NewBufWriter(stateFileAsync /* transfers ownership */, 8<<20 /* size = 8 MiB */)
+	if err != nil {
+		return fmt.Errorf("failed to buffer state file: %w", err)
+	}
+	if o.HavePagesFile {
+		pagesMetadataAsync, err := afc.OpenWrite(checkpointfiles.PagesMetadataFileName)
+		if err != nil {
+			return fmt.Errorf("failed to open pages metadata file: %w", err)
+		}
+		saveOpts.PagesMetadata, err = stateio.NewBufWriter(pagesMetadataAsync /* transfers ownership */, 8<<20 /* size = 8 MiB */)
+		if err != nil {
+			return fmt.Errorf("failed to buffer pages metadata file: %w", err)
+		}
+		saveOpts.PagesFile, err = afc.OpenWrite(checkpointfiles.PagesFileName)
+		if err != nil {
+			return fmt.Errorf("failed to open pages file: %w", err)
+		}
 	}
 	return nil
 }

@@ -146,14 +146,34 @@ func (fd *pciDeviceFD) vfioRegionInfo(ctx context.Context, t *kernel.Task, arg h
 	if _, err := regionInfo.CopyIn(t, arg); err != nil {
 		return 0, err
 	}
-	if regionInfo.Argsz == 0 {
+	// drivers/vfio/vfio_main.c:vfio_get_region_info() copies capabilities into
+	// the bytes following the vfio_region_info.
+	appArgsz := int(regionInfo.Argsz)
+	if appArgsz < regionInfo.SizeBytes() {
 		return 0, linuxerr.EINVAL
 	}
-	ret, err := util.IOCTLInvokePtrArg[uint32](fd.hostFD, linux.VFIO_DEVICE_GET_REGION_INFO, &regionInfo)
+	// Start with a small argsz to limit memory usage.
+	buf := make([]byte, min(appArgsz, 1024))
+retry:
+	regionInfo.Argsz = uint32(len(buf))
+	regionInfo.MarshalUnsafe(buf)
+	ret, err := util.IOCTLInvokePtrArg[uint32](fd.hostFD, linux.VFIO_DEVICE_GET_REGION_INFO, &buf[0])
 	if err != nil {
 		return 0, err
 	}
-	if _, err := regionInfo.CopyOut(t, arg); err != nil {
+	if len(buf) < appArgsz {
+		// Check if truncating buf prevented us from obtaining capabilities.
+		regionInfo.UnmarshalUnsafe(buf)
+		if regionInfo.Flags&linux.VFIO_REGION_INFO_FLAG_CAPS != 0 && regionInfo.CapOffset == 0 {
+			// vfio_get_region_info() set regionInfo.Argsz to the minimum value
+			// required to obtain capabilities.
+			if int(regionInfo.Argsz) <= appArgsz {
+				buf = make([]byte, regionInfo.Argsz)
+				goto retry
+			}
+		}
+	}
+	if _, err := t.CopyOutBytes(arg, buf); err != nil {
 		return 0, err
 	}
 	return ret, nil
@@ -162,24 +182,45 @@ func (fd *pciDeviceFD) vfioRegionInfo(ctx context.Context, t *kernel.Task, arg h
 // Retrieve the host TPU device's information.
 func (fd *pciDeviceFD) vfioDeviceInfo(ctx context.Context, t *kernel.Task, arg hostarch.Addr) (uintptr, error) {
 	var deviceInfo linux.VFIODeviceInfo
-	if _, err := deviceInfo.CopyIn(t, arg); err != nil {
+	if _, err := deviceInfo.VFIODeviceInfoMin.CopyIn(t, arg); err != nil {
 		return 0, err
 	}
-	// Callers must set VFIODeviceInfo.Argsz.
-	if deviceInfo.Argsz == 0 {
+	appArgsz := int(deviceInfo.Argsz)
+	if appArgsz < deviceInfo.VFIODeviceInfoMin.SizeBytes() {
 		return 0, linuxerr.EINVAL
 	}
 	if deviceInfo.Flags&^vfioDeviceInfoFlags != 0 {
 		return 0, linuxerr.EINVAL
 	}
-	ret, err := util.IOCTLInvokePtrArg[uint32](fd.hostFD, linux.VFIO_DEVICE_GET_INFO, &deviceInfo)
+	// drivers/vfio/pci/vfio_pci_core.c:vfio_pci_ioctl_get_info() copies
+	// capabilities into the bytes following the vfio_device_info. Start with a
+	// small argsz to limit memory usage, but ensure that it's large enough to
+	// accommodate the current vfio_device_info so that we can observe
+	// deviceInfo.CapOffset.
+	buf := make([]byte, max(min(appArgsz, 1024), deviceInfo.SizeBytes()))
+retry:
+	deviceInfo.Argsz = uint32(len(buf))
+	deviceInfo.MarshalUnsafe(buf)
+	ret, err := util.IOCTLInvokePtrArg[uint32](fd.hostFD, linux.VFIO_DEVICE_GET_INFO, &buf[0])
 	if err != nil {
 		return 0, err
+	}
+	if len(buf) < appArgsz {
+		// Check if truncating buf prevented us from obtaining capabilities.
+		deviceInfo.UnmarshalUnsafe(buf)
+		if deviceInfo.Flags&linux.VFIO_DEVICE_FLAGS_CAPS != 0 && deviceInfo.CapOffset == 0 {
+			// vfio_pci_ioctl_get_info() set deviceInfo.Argsz to the minimum
+			// value required to obtain capabilities.
+			if int(deviceInfo.Argsz) <= appArgsz {
+				buf = make([]byte, deviceInfo.Argsz)
+				goto retry
+			}
+		}
 	}
 	// gVisor is not supposed to change any device information that is
 	// returned from the host since gVisor doesn't own the device.
 	// Passing the device info back to the caller will be just fine.
-	if _, err := deviceInfo.CopyOut(t, arg); err != nil {
+	if _, err := t.CopyOutBytes(arg, buf); err != nil {
 		return 0, err
 	}
 	return ret, nil

@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 	time2 "time"
 
@@ -108,6 +109,13 @@ type restorer struct {
 	// checkpointedSpecs contains the map of container specs used during
 	// checkpoint.
 	checkpointedSpecs map[string]*specs.Spec
+
+	// extractRootFsMode is true if we only want to extract the upper layer of
+	// a rootfs overlay.
+	extractRootFsMode bool
+
+	// rootFsOutputTar is the file to write the rootfs upper layer tar archive to.
+	rootFsOutputTar *os.File
 }
 
 // restoreSubcontainer restores a subcontainer.
@@ -260,10 +268,12 @@ func (r *restorer) restore(l *Loader) error {
 
 	log.Debugf("Restore using fdmap: %#v", fdmap)
 	ctx := l.k.SupervisorContext()
-	ctx = context.WithValue(ctx, vfs.CtxRestoreFilesystemFDMap, fdmap)
 	log.Debugf("Restore using mfmap: %v", mfmap)
-	ctx = context.WithValue(ctx, pgalloc.CtxMemoryFileMap, mfmap)
-	ctx = context.WithValue(ctx, devutil.CtxDevGoferClientProvider, l.k)
+	ctx = context.WithValues(ctx, map[any]any{
+		vfs.CtxRestoreFilesystemFDMap:     fdmap,
+		pgalloc.CtxMemoryFileMap:          mfmap,
+		devutil.CtxDevGoferClientProvider: l.k,
+	})
 
 	if r.asyncMFLoader != nil {
 		// Now that private memory files are known, kick off their loading in the
@@ -278,6 +288,13 @@ func (r *restorer) restore(l *Loader) error {
 
 	// Load the state.
 	r.timer.Reached("loading kernel")
+	if r.extractRootFsMode {
+		if err := l.k.ExtractRootfsUpperLayer(ctx, r.stateFile, r.asyncMFLoader, nil, time.NewCalibratedClocks(), r.rootFsOutputTar); err != nil {
+			return fmt.Errorf("failed to extract rootfs upper layer: %w", err)
+		}
+		r.timer.Reached("rootfs upper layer extracted")
+		return nil
+	}
 	if err := l.k.LoadFrom(ctx, r.stateFile, r.asyncMFLoader, nil, oldInetStack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}); err != nil {
 		return fmt.Errorf("failed to load kernel: %w", err)
 	}

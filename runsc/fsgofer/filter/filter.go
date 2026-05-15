@@ -28,6 +28,7 @@ type Options struct {
 	UDSCreateEnabled bool
 	ProfileEnabled   bool
 	DirectFS         bool
+	LisafsNeeded     bool
 	CgoEnabled       bool
 }
 
@@ -64,8 +65,9 @@ func Rules(opt Options) seccomp.SyscallRules {
 	// when not enabled.
 	s.Merge(instrumentationFilters())
 
-	// When DirectFS is not enabled, filters for LisaFS are installed.
-	if !opt.DirectFS {
+	// When DirectFS is not enabled, filters for LisaFS are installed. They are
+	// also needed when this gofer serves a mount that suppresses DirectFS.
+	if !opt.DirectFS || opt.LisafsNeeded {
 		s.Merge(lisafsFilters)
 	}
 

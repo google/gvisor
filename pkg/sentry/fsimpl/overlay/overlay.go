@@ -235,13 +235,24 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			ctx.Infof("overlay.FilesystemType.GetFilesystem: failed to resolve upperdir %q: %v", upperPathname, err)
 			return nil, nil, err
 		}
-		// TODO(b/286942303): Only tmpfs supports whiteouts and overlay
-		// xattrs (trusted.overlay.* or user.overlay.*). Don't allow
-		// non-tmpfs mounts on upper levels for mounts created through
-		// the mount syscall. In gVisor configs, users can specify any
-		// configurations on their own risk.
-		if !opts.InternalMount && upperRoot.Mount().Filesystem().FilesystemType().Name() != "tmpfs" {
-			return nil, nil, linuxerr.EINVAL
+		// Only filesystems that support whiteouts (char 0,0 devices) and overlay
+		// xattrs (trusted.overlay.* or user.overlay.*) can be used as overlay
+		// upper layers. For mounts created through the mount syscall (not
+		// internal), restrict to tmpfs and gofer ("9p").
+		upperFSName := upperRoot.Mount().Filesystem().FilesystemType().Name()
+		if !opts.InternalMount {
+			if upperFSName != "tmpfs" && upperFSName != "9p" {
+				upperRoot.DecRef(ctx)
+				return nil, nil, linuxerr.EINVAL
+			}
+		}
+		if upperFSName == "9p" && !userXattr {
+			// Neither the gofer nor sentry processes have the capabilities to set
+			// trusted xattrs on the host filesystem. Setting `trusted.overlay.*`
+			// xattrs requires CAP_SYS_ADMIN in the root user namespace. So enable
+			// `userxattr` mount option as a workaround.
+			ctx.Infof("overlay.FilesystemType.GetFilesystem: gofer filesystem used as overlay upper layer; enabling userxattr")
+			userXattr = true
 		}
 		privateUpperRoot, err := clonePrivateMount(vfsObj, upperRoot, false /* forceReadOnly */)
 		upperRoot.DecRef(ctx)

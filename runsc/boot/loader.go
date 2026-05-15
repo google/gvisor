@@ -424,6 +424,9 @@ type Args struct {
 
 	SaveFDs      []*fd.FD
 	FSRestoreFDs []*fd.FD
+	// If FSRestoreCheckpointGofer is true, Args.FSRestoreFDs contains only one
+	// FD, which is a socket connected to a checkpoint gofer.
+	FSRestoreCheckpointGofer bool
 
 	ArgsExtra
 
@@ -532,7 +535,7 @@ func New(args Args) (*Loader, error) {
 	// Start filesystem checkpoint restore as soon as possible to maximize
 	// parallel loading.
 	if len(args.FSRestoreFDs) != 0 {
-		fsrOpts, err := makeFSRestoreOptsImpl(&args)
+		fsrOpts, err := makeFSRestoreOpts(&args)
 		if err != nil {
 			return nil, fmt.Errorf("failed to set up filesystem checkpoint restore: %w", err)
 		}
@@ -655,9 +658,8 @@ func New(args Args) (*Loader, error) {
 	}
 
 	if args.TotalHostMem > 0 {
-		// As per tmpfs(5), the default size limit is 50% of total physical RAM.
-		// See mm/shmem.c:shmem_default_max_blocks().
-		tmpfs.SetDefaultSizeLimit(args.TotalHostMem / 2)
+		// tmpfs needs to know the amount of total physical RAM to calculate size limits.
+		tmpfs.SetTotalHostMem(args.TotalHostMem)
 	}
 
 	if args.TotalMem > 0 {

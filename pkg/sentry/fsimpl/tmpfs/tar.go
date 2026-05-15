@@ -255,6 +255,16 @@ func (fs *filesystem) symlinkFromTar(hdr *tar.Header, pathToInode map[string]*in
 	if !ok {
 		return fmt.Errorf("%v is not a directory", dir)
 	}
+	// Linux allocates a page to store symlink targets that have length larger
+	// than shortSymlinkLen. Mirror SymlinkAt's accounting so creation and
+	// teardown stay balanced; otherwise (*inode).decRef's matching
+	// unaccountPages(1) underflows fs.pagesUsed and panics on teardown.
+	// See mm/shmem.c:shmem_symlink().
+	if len(hdr.Linkname) >= shortSymlinkLen {
+		if !fs.accountPages(1) {
+			return fmt.Errorf("tmpfs: insufficient space to account for symlink target %q", hdr.Name)
+		}
+	}
 	child := fs.newDentry(fs.newSymlink(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), 0777, hdr.Linkname, parentDir))
 	child.inode.mtime.Store(hdr.ModTime.UnixNano())
 	child.inode.setXattrsFromPAXRecords(hdr)

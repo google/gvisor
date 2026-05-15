@@ -38,6 +38,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -957,6 +958,70 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 	// not to exist.
 	if k.useHostCores && initAppCores > k.applicationCores {
 		return fmt.Errorf("UseHostCores enabled: can't increase ApplicationCores from %d to %d after restore", k.applicationCores, initAppCores)
+	}
+
+	return nil
+}
+
+// ExtractRootfsUpperLayer partially restores the kernel state and extracts the
+// rootfs upper layer to the provided file.
+func (k *Kernel) ExtractRootfsUpperLayer(ctx context.Context, r io.Reader, asyncMFLoader *AsyncMFLoader, timeReady chan struct{}, clocks sentrytime.Clocks, outFD *os.File) error {
+	if hostarch.PageSize != 4096 {
+		return fmt.Errorf("restore is not supported with %dK page size", hostarch.PageSize/1024)
+	}
+	loadStart := time.Now()
+
+	k.runningTasksCond.L = &k.runningTasksMu
+	k.cpuClockTickerWakeCh = make(chan struct{}, 1)
+	k.cpuClockTickerStopCond.L = &k.runningTasksMu
+
+	// Load the pre-saved CPUID FeatureSet.
+	cpuidStart := time.Now()
+	if _, err := state.Load(ctx, r, &k.featureSet); err != nil {
+		return err
+	}
+	log.Infof("CPUID load took [%s].", time.Since(cpuidStart))
+
+	fdnotifier.Pause()
+	defer fdnotifier.Resume()
+
+	kernelStart := time.Now()
+	stats, err := state.Load(ctx, r, k)
+	if err != nil {
+		return err
+	}
+	log.Infof("Kernel load stats: %s", stats.String())
+	log.Infof("Kernel load took [%s].", time.Since(kernelStart))
+
+	if asyncMFLoader == nil {
+		mfStart := time.Now()
+		if err := k.loadMemoryFiles(ctx, r); err != nil {
+			return fmt.Errorf("failed to load memory files: %w", err)
+		}
+		log.Infof("Memory files load took [%s].", time.Since(mfStart))
+	} else {
+		if err := asyncMFLoader.WaitMainMFStart(); err != nil {
+			return fmt.Errorf("main MF start failed: %w", err)
+		}
+	}
+
+	k.Timekeeper().SetClocks(clocks, k.vdsoParams)
+
+	if timeReady != nil {
+		close(timeReady)
+	}
+
+	log.Infof("Overall load took [%s] after async work", time.Since(loadStart))
+
+	// Now call TarRootfsUpperLayer on the root filesystem
+	root := k.GlobalInit().Leader().MountNamespace().Root(ctx)
+	defer root.DecRef(ctx)
+	ts, ok := root.Mount().Filesystem().Impl().(vfs.TarSerializer)
+	if !ok {
+		return fmt.Errorf("rootfs is not an overlayfs")
+	}
+	if err := ts.TarUpperLayer(ctx, outFD); err != nil {
+		return fmt.Errorf("failed to serialize rootfs upper layer to tar: %v", err)
 	}
 
 	return nil

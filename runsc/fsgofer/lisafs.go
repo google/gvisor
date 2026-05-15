@@ -17,6 +17,7 @@
 package fsgofer
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"math"
@@ -162,7 +163,7 @@ func (s *LisafsServer) MaxMessageSize() uint32 {
 
 // SupportedMessages implements lisafs.ServerImpl.SupportedMessages.
 func (s *LisafsServer) SupportedMessages() []lisafs.MID {
-	// Note that Flush, FListXattr and FRemoveXattr are not supported.
+	// Note that Flush is not supported.
 	return []lisafs.MID{
 		lisafs.Mount,
 		lisafs.Channel,
@@ -189,6 +190,8 @@ func (s *LisafsServer) SupportedMessages() []lisafs.MID {
 		lisafs.Getdents64,
 		lisafs.FGetXattr,
 		lisafs.FSetXattr,
+		lisafs.FListXattr,
+		lisafs.FRemoveXattr,
 		lisafs.BindAt,
 		lisafs.Listen,
 		lisafs.Accept,
@@ -1038,17 +1041,66 @@ func (fd *controlFDLisa) GetXattr(name string, size uint32, getValueBuf func(uin
 
 // SetXattr implements lisafs.ControlFDImpl.SetXattr.
 func (fd *controlFDLisa) SetXattr(name string, value string, flags uint32) error {
-	return unix.EOPNOTSUPP
+	if fd.IsSocket() || fd.IsSymlink() {
+		// Sockets and symlinks use O_PATH host FDs. However, fsetxattr(2) fails
+		// with EBADF for O_PATH FDs. Use lsetxattr(2) instead.
+		return unix.Lsetxattr(fd.Node().FilePath(), name, []byte(value), int(flags))
+	}
+	return unix.Fsetxattr(fd.hostFD, name, []byte(value), int(flags))
+}
+
+func (fd *controlFDLisa) listXattr(data []byte) (int, error) {
+	if fd.IsSocket() || fd.IsSymlink() {
+		// Sockets and symlinks use O_PATH host FDs. However, flistxattr(2) fails
+		// with EBADF for O_PATH FDs. Use llistxattr(2) instead.
+		return unix.Llistxattr(fd.Node().FilePath(), data)
+	}
+	return unix.Flistxattr(fd.hostFD, data)
+}
+
+var listXattrBufPool = sync.Pool{
+	New: func() any {
+		b := make([]byte, linux.XATTR_LIST_MAX)
+		return &b
+	},
 }
 
 // ListXattr implements lisafs.ControlFDImpl.ListXattr.
 func (fd *controlFDLisa) ListXattr(size uint64) (lisafs.StringArray, error) {
-	return nil, unix.EOPNOTSUPP
+	// listxattr(2) called with size 0 should return the list size. As a result,
+	// we need to return the entire list here so that the sentry can return the
+	// correct value.
+	if size > linux.XATTR_LIST_MAX || size == 0 {
+		size = linux.XATTR_LIST_MAX
+	}
+	bPtr := listXattrBufPool.Get().(*[]byte)
+	defer listXattrBufPool.Put(bPtr)
+	data := (*bPtr)[:size]
+	sz, err := fd.listXattr(data)
+	if err != nil {
+		return nil, err
+	}
+	data = data[:sz]
+	var names []string
+	for len(data) > 0 {
+		i := bytes.IndexByte(data, 0)
+		if i < 0 {
+			break
+		}
+		names = append(names, string(data[:i]))
+		data = data[i+1:]
+	}
+	return names, nil
 }
 
 // RemoveXattr implements lisafs.ControlFDImpl.RemoveXattr.
 func (fd *controlFDLisa) RemoveXattr(name string) error {
-	return unix.EOPNOTSUPP
+	if fd.IsSocket() || fd.IsSymlink() {
+		// Sockets and symlinks use O_PATH host FDs. However, fremovexattr(2) fails
+		// with EBADF for O_PATH FDs. Use lremovexattr(2) instead.
+		return unix.Lremovexattr(fd.Node().FilePath(), name)
+	}
+	return unix.Fremovexattr(fd.hostFD, name)
 }
 
 // openFDLisa implements lisafs.OpenFDImpl.

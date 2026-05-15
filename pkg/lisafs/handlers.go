@@ -1557,6 +1557,9 @@ func FRemoveXattrHandler(c *Connection, comm Communicator, payloadLen uint32) (u
 	defer fd.DecRef(nil)
 
 	return 0, fd.safelyWrite(func() error {
+		if fd.node.isDeleted() {
+			return unix.EINVAL
+		}
 		return fd.impl.RemoveXattr(string(req.Name))
 	})
 }

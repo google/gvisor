@@ -550,15 +550,6 @@ func (r *Runsc) Top(context context.Context, id string) (*runc.TopResults, error
 	return topResults, nil
 }
 
-// NetworkConfig returns the network config for the container provided by id.
-func (r *Runsc) NetworkConfig(context context.Context, id string) ([]byte, error) {
-	data, stderr, err := cmdOutput(r.command(context, "network-config", id), false)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %s", err, stderr)
-	}
-	return data, nil
-}
-
 func (r *Runsc) args() []string {
 	var args []string
 	if r.Root != "" {
