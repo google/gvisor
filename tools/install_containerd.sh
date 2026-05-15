@@ -26,54 +26,116 @@ if [[ "$EUID" -ne 0 ]]; then
   exit 1
 fi
 
-declare -r CONTAINERD_VERSION=${1:-1.3.0}
-CONTAINERD_MAJOR="$(echo "${CONTAINERD_VERSION}" | awk -F '.' '{ print $1; }')"
-declare -r CONTAINERD_MAJOR
-CONTAINERD_MINOR="$(echo "${CONTAINERD_VERSION}" | awk -F '.' '{ print $2; }')"
-declare -r CONTAINERD_MINOR
-
-if [[ "${CONTAINERD_MAJOR}" -eq 1 ]] && [[ "${CONTAINERD_MINOR}" -le 4 ]]; then
-  # We're running Go 1.18, but using pre-module containerd and cri-tools.
-  export GO111MODULE=off
-fi
-
-# containerd < 1.4 doesn't work with cgroupv2 setup, so we check for that here
-SYSFS_ROOT=/sys/fs/cgroup
-if [[ "$(stat -f -c %T "$SYSFS_ROOT" 2>/dev/null)" == "cgroup2fs" && "${CONTAINERD_MAJOR}" -eq 1 && "${CONTAINERD_MINOR}" -lt 4 ]]; then
-  echo "containerd < 1.4 does not work with cgroup2"
-  exit 1
-fi
+declare -r CONTAINERD_VERSION=${1:-1.7.31}
 
 # Helper for Go packages below.
-install_helper() {
-  declare -r PACKAGE="${1}"
-  declare -r TAG="${2}"
-
-  # Clone the repository.
-  mkdir -p "${GOPATH}"/src/"$(dirname "${PACKAGE}")" && \
-     git clone --depth=1 --branch "${TAG}" https://"${PACKAGE}" "${GOPATH}"/src/"${PACKAGE}"
-
-  # Checkout and build the repository.
-  (cd "${GOPATH}"/src/"${PACKAGE}" && \
-      make && \
-      make install)
-}
-
-# Helper to get cri-tools version for the given containerd version.
 get_critools_version() {
-  declare -r CONTAINERD_PACKAGE="${1}"
-  declare -r CONTAINERD_TAG="${2}"
-  declare -r CONTAINERD_PATH="${GOPATH}"/src/"${CONTAINERD_PACKAGE}"
-  declare -r CRITOOLS_VERSION_FILE="${CONTAINERD_PATH}"/script/setup/critools-version
-
+  declare -r CONTAINERD_VERSION="${1}"
   local CRITOOLS_VERSION="v1.18.0"
-  # If the containerd repository is already cloned, checkout the new tag.
-  if [[ -f "$CRITOOLS_VERSION_FILE" ]]; then
-    (cd "${CONTAINERD_PATH}" &&  git checkout "${CONTAINERD_TAG}")
-    CRITOOLS_VERSION=$(cat "${CRITOOLS_VERSION_FILE}" | tr -d '\r\n')
+  if version=$(curl -sSf "https://raw.githubusercontent.com/containerd/containerd/v${CONTAINERD_VERSION}/script/setup/critools-version" 2>/dev/null); then
+    CRITOOLS_VERSION=$(echo "${version}" | tr -d '\r\n')
   fi
   echo "$CRITOOLS_VERSION"
-  return 0
+}
+
+get_cni_version() {
+  declare -r CONTAINERD_VERSION="${1}"
+  local CNI_VERSION="v1.9.0" # Fallback default
+  
+  if version=$(curl -sSf "https://raw.githubusercontent.com/containerd/containerd/v${CONTAINERD_VERSION}/script/setup/cni-plugins-version" 2>/dev/null); then
+    CNI_VERSION=$(echo "${version}" | tr -d '\r\n')
+  elif go_mod=$(curl -sSf "https://raw.githubusercontent.com/containerd/containerd/v${CONTAINERD_VERSION}/go.mod" 2>/dev/null); then
+    if version=$(echo "${go_mod}" | grep "github.com/containernetworking/plugins" | awk '{print $2}'); then
+      if [[ ! -z "${version}" ]]; then
+        if [[ ! "${version}" =~ ^v ]]; then
+          CNI_VERSION="v${version}"
+        else
+          CNI_VERSION="${version}"
+        fi
+      fi
+    fi
+  fi
+  echo "$CNI_VERSION"
+}
+
+install_containerd() {
+  local version="${1}"
+  echo "Installing containerd v${version}..."
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+  if ! wget -qS "https://github.com/containerd/containerd/releases/download/v${version}/containerd-${version}-linux-amd64.tar.gz" -O "${tmp_dir}/containerd.tar.gz"; then
+    echo "Failed to download containerd v${version}"
+    rm -rf "${tmp_dir}"
+    return 1
+  fi
+  tar -C /usr/local -xzf "${tmp_dir}/containerd.tar.gz"
+  rm -rf "${tmp_dir}"
+}
+
+install_crictl() {
+  local version="${1}"
+  echo "Installing crictl ${version}..."
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+  if ! wget -qS "https://github.com/kubernetes-sigs/cri-tools/releases/download/${version}/crictl-${version}-linux-amd64.tar.gz" -O "${tmp_dir}/crictl.tar.gz"; then
+    echo "Failed to download crictl ${version}"
+    rm -rf "${tmp_dir}"
+    return 1
+  fi
+  tar -C /usr/local/bin -xzf "${tmp_dir}/crictl.tar.gz"
+  rm -rf "${tmp_dir}"
+}
+
+install_cni_binaries() {
+  local version="${1}"
+  echo "Installing CNI plugins ${version}..."
+  mkdir -p /opt/cni/bin
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+  if ! wget -qS "https://github.com/containernetworking/plugins/releases/download/${version}/cni-plugins-linux-amd64-${version}.tgz" -O "${tmp_dir}/cni.tgz"; then
+    echo "Failed to download CNI plugins ${version}"
+    rm -rf "${tmp_dir}"
+    return 1
+  fi
+  tar -C /opt/cni/bin -xzf "${tmp_dir}/cni.tgz"
+  rm -rf "${tmp_dir}"
+
+  # Write default config
+  mkdir -p /etc/cni/net.d
+  tee /etc/cni/net.d/10-containerd-net.conflist <<EOF
+{
+  "cniVersion": "1.0.0",
+  "name": "containerd-net",
+  "plugins": [
+    {
+      "type": "bridge",
+      "bridge": "cni0",
+      "isGateway": true,
+      "ipMasq": true,
+      "promiscMode": true,
+      "ipam": {
+        "type": "host-local",
+        "ranges": [
+          [{
+            "subnet": "10.88.0.0/16"
+          }],
+          [{
+            "subnet": "2001:4860:4860::/64"
+          }]
+        ],
+        "routes": [
+          { "dst": "0.0.0.0/0" },
+          { "dst": "::/0" }
+        ]
+      }
+    },
+    {
+      "type": "portmap",
+      "capabilities": {"portMappings": true}
+    }
+  ]
+}
+EOF
 }
 
 # Figure out were btrfs headers are.
@@ -105,18 +167,14 @@ while true; do
   fi
 done
 
-# Install containerd & cri-tools.
-GOPATH=$(mktemp -d --tmpdir gopathXXXXX)
-declare -rx GOPATH
-install_helper github.com/containerd/containerd "v${CONTAINERD_VERSION}"
-declare MINIMAL_CRITOOLS_VERSION
-MINIMAL_CRITOOLS_VERSION=$(get_critools_version github.com/containerd/containerd "v${CONTAINERD_VERSION}")
-install_helper github.com/kubernetes-sigs/cri-tools "${MINIMAL_CRITOOLS_VERSION}"
+# Install containerd, cri-tools, and CNI plugins.
+install_containerd "${CONTAINERD_VERSION}"
 
-# Configure CNI, the script install-cni depends on go.mod to determine the
-# version of github.com/containernetworking/plugins, it has to be installed
-# from containerd's root directory.
-(cd "${GOPATH}"/src/github.com/containerd/containerd/ && ./script/setup/install-cni)
+MINIMAL_CRITOOLS_VERSION=$(get_critools_version "${CONTAINERD_VERSION}")
+install_crictl "${MINIMAL_CRITOOLS_VERSION}"
+
+CNI_VERSION=$(get_cni_version "${CONTAINERD_VERSION}")
+install_cni_binaries "${CNI_VERSION}"
 
 # Configure crictl.
 tee /etc/crictl.yaml <<EOF
@@ -124,4 +182,4 @@ runtime-endpoint: unix:///run/containerd/containerd.sock
 EOF
 
 # Cleanup.
-rm -rf "${GOPATH}"
+# No GOPATH to cleanup anymore.
