@@ -43,9 +43,9 @@ require (
 	google.golang.org/api v0.274.0
 	google.golang.org/grpc v1.80.0
 	google.golang.org/protobuf v1.36.11
-	k8s.io/api v0.32.3
-	k8s.io/apimachinery v0.32.3
-	k8s.io/client-go v0.32.3
+	k8s.io/api v0.23.16
+	k8s.io/apimachinery v0.23.16
+	k8s.io/client-go v0.23.16
 )
 
 require (
@@ -98,7 +98,9 @@ require (
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
+  github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.6.0 // indirect
+  github.com/stretchr/testify v1.11.1 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.opencensus.io v0.24.0 // indirect
