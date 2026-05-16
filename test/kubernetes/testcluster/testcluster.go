@@ -166,17 +166,36 @@ type MachineInfo struct {
 
 	// IsVirtual is whether the machine type is a virtual machine.
 	IsVirtual bool
+
+	// MaxPodCores is the maximum number of cores to set in a pod.
+	// If set to 0, but the runtime requires explicit limits, the
+	// the default value is based on `defaultMaxResourceUtilization`.
+	MaxPodCores int
+
+	// MaxPodMemoryGiB is the maximum amount of memory in GiB to set in a pod.
+	// If set to 0, but the runtime requires explicit limits, the
+	// the default value is based on `defaultMaxResourceUtilization`.
+	MaxPodMemoryGiB int
 }
+
+// defaultMaxResourceUtilization is the default maximum resource utilization for a machine type.
+const defaultMaxResourceUtilization = 0.8
 
 // KnownMachineTypes is a map of known GCE machine types to their info.
 var KnownMachineTypes = map[string]*MachineInfo{
-	"n1-standard-4":         {NumCores: 4, MemoryGiB: 15, IsVirtual: true},
-	"n2-standard-4":         {NumCores: 4, MemoryGiB: 16, IsVirtual: true},
-	"n2-standard-8":         {NumCores: 8, MemoryGiB: 32, IsVirtual: true},
-	"n2d-standard-8":        {NumCores: 8, MemoryGiB: 32, IsVirtual: true},
-	"g2-standard-8":         {NumCores: 8, MemoryGiB: 32, IsVirtual: true},
-	"ct4p-hightpu-4t":       {NumCores: 240, MemoryGiB: 407, IsVirtual: true},
-	"c3-standard-192-metal": {NumCores: 192, MemoryGiB: 768, IsVirtual: false},
+	"n1-standard-4":   {NumCores: 4, MemoryGiB: 15, IsVirtual: true},
+	"n2-standard-4":   {NumCores: 4, MemoryGiB: 16, IsVirtual: true},
+	"n2-standard-8":   {NumCores: 8, MemoryGiB: 32, IsVirtual: true},
+	"n2d-standard-8":  {NumCores: 8, MemoryGiB: 32, IsVirtual: true},
+	"g2-standard-8":   {NumCores: 8, MemoryGiB: 32, IsVirtual: true},
+	"ct4p-hightpu-4t": {NumCores: 240, MemoryGiB: 407, IsVirtual: true},
+	"c3-standard-192-metal": {
+		NumCores:        192,
+		MemoryGiB:       768,
+		IsVirtual:       false,
+		MaxPodCores:     144,
+		MaxPodMemoryGiB: 64, // More than this causes "Large hotplug" when using ACPI hotplugging.
+	},
 }
 
 // TestCluster wraps clusters with their individual ClientSets so that helper methods can be called.
@@ -730,17 +749,22 @@ func (t *TestCluster) applyCommonPodConfigurations(ctx context.Context, np *Node
 	// Apply the runtime we've chosen, whether by override or autodetection.
 	applyRuntime.ApplyPodSpec(podSpec)
 	if applyRuntime.RequiresExplicitResourceLimits() {
-		const (
-			overheadMargin = 0.2
-			leftoverRatio  = 1.0 - overheadMargin
-		)
-		cores := int(float64(np.spec.NumCores) * leftoverRatio)
-		if cores < 1 {
-			cores = 1
+		targetCores := np.spec.MaxPodCores
+		if targetCores == 0 {
+			targetCores = int(float64(np.spec.NumCores) * defaultMaxResourceUtilization)
 		}
-		memMiB := int(float64(np.spec.MemoryGiB) * 1024 * leftoverRatio)
-		resCPU := resource.MustParse(fmt.Sprintf("%d", cores))
-		resMem := resource.MustParse(fmt.Sprintf("%dMi", memMiB))
+		if runtimeMaxCores := applyRuntime.MaxCores(); runtimeMaxCores != 0 && targetCores > runtimeMaxCores {
+			targetCores = runtimeMaxCores
+		}
+		if targetCores < 1 {
+			targetCores = 1
+		}
+		targetMemoryMiB := np.spec.MaxPodMemoryGiB * 1024
+		if targetMemoryMiB == 0 {
+			targetMemoryMiB = int(float64(np.spec.MemoryGiB*1024) * defaultMaxResourceUtilization)
+		}
+		resCPU := resource.MustParse(fmt.Sprintf("%d", targetCores))
+		resMem := resource.MustParse(fmt.Sprintf("%dMi", targetMemoryMiB))
 		for _, containers := range [][]v13.Container{
 			podSpec.InitContainers,
 			podSpec.Containers,
@@ -963,6 +987,16 @@ func (t *TestCluster) ExecRequestInClientPod(ctx context.Context, service *v13.S
 		return nil, fmt.Errorf("failed to read logs from pod %q: %v", clientPod.GetName(), err)
 	}
 	return []byte(logs), nil
+}
+
+// SupportsPersistentVolumes returns whether the cluster supports persistent volumes.
+func (t *TestCluster) SupportsPersistentVolumes(ctx context.Context) (bool, error) {
+	clientNodePool, err := t.getNodePool(ctx, ClientNodepoolName)
+	if err != nil {
+		return false, fmt.Errorf("failed to get client nodepool: %w", err)
+	}
+	// Only virtual machines support persistent volumes currently.
+	return clientNodePool.spec.IsVirtual, nil
 }
 
 // CreatePersistentVolume creates a persistent volume.

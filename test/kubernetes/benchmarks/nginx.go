@@ -78,21 +78,12 @@ func BenchmarkNginx(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesC
 	if nginxImage, err = k8sCtx.ResolveImage(ctx, nginxImage); err != nil {
 		t.Fatalf("Failed to resolve image: %v", err)
 	}
-
-	persistentVol, err := cluster.CreatePersistentVolume(ctx, benchmarkNS.GetPersistentVolume("nginx-data", "30Gi"))
-	if err != nil {
-		t.Fatalf("Failed to create persistent volume: %v", err)
-	}
-	defer cluster.DeletePersistentVolume(ctx, persistentVol)
-
-	for _, test := range []struct {
-		// Name of the test.
-		name string
-		// Suffix for pod names, must be short enough.
+	type nginxTest struct {
+		name   string
 		suffix string
-		// Volume to mount at /tmp/root.
 		volume *v13.Volume
-	}{
+	}
+	tests := []nginxTest{
 		{
 			name:   "RootFS",
 			suffix: "rootfs",
@@ -108,7 +99,18 @@ func BenchmarkNginx(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesC
 				},
 			},
 		},
-		{
+	}
+	supportsPV, err := cluster.SupportsPersistentVolumes(ctx)
+	if err != nil {
+		t.Fatalf("Failed to check if cluster supports persistent volumes: %v", err)
+	}
+	if supportsPV {
+		persistentVol, err := cluster.CreatePersistentVolume(ctx, benchmarkNS.GetPersistentVolume("nginx-data", "30Gi"))
+		if err != nil {
+			t.Fatalf("Failed to create persistent volume: %v", err)
+		}
+		defer cluster.DeletePersistentVolume(ctx, persistentVol)
+		tests = append(tests, nginxTest{
 			name:   "PersistentVolume",
 			suffix: "pvol",
 			volume: &v13.Volume{
@@ -119,8 +121,10 @@ func BenchmarkNginx(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesC
 					},
 				},
 			},
-		},
-	} {
+		})
+	}
+
+	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			endProfiling, err := profiling.MaybeSetup(ctx, t, k8sCtx, cluster, benchmarkNS)
 			if err != nil {
