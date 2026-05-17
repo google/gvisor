@@ -43,3 +43,5 @@ platform_capabilities = {
 
 default_platform = "systrap"
 save_restore_platforms = ["systrap"]
+
+# Clarifies that this file is shared by CI platform definitions.
