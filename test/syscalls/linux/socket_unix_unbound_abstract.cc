@@ -55,6 +55,26 @@ TEST_P(UnboundAbstractUnixSocketPairTest, AddressAfterNull) {
               SyscallSucceeds());
 }
 
+TEST_P(UnboundAbstractUnixSocketPairTest, TrailingSlash) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  struct sockaddr_un addr =
+      *reinterpret_cast<const struct sockaddr_un*>(sockets->first_addr());
+  ASSERT_EQ(addr.sun_path[0], 0);
+
+  // Safe because sun_path for abstract sockets is not null terminated.
+  // See unix(7).
+  addr.sun_path[sizeof(addr.sun_path) - 1] = '/';
+
+  ASSERT_THAT(bind(sockets->first_fd(), sockets->first_addr(),
+                   sockets->first_addr_size()),
+              SyscallSucceeds());
+
+  ASSERT_THAT(bind(sockets->second_fd(),
+                   reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)),
+              SyscallSucceeds());
+}
+
 TEST_P(UnboundAbstractUnixSocketPairTest, ShortAddressNotExtended) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
