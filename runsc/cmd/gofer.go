@@ -25,6 +25,7 @@ import (
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/pkg/urpc"
@@ -318,17 +319,6 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
 		readonly  bool
 	}
 	cfgs := make([]connectionConfig, 0, len(spec.Mounts)+1)
-	server := fsgofer.NewLisafsServer(fsgofer.Config{
-		// These are global options. Ignore readonly configuration, that is set on
-		// a per connection basis.
-		HostUDS:            conf.GetHostUDS(),
-		HostFifo:           conf.HostFifo,
-		DonateMountPointFD: conf.DirectFS,
-		RUID:               ruid,
-		EUID:               euid,
-		RGID:               rgid,
-		EGID:               egid,
-	})
 
 	ioFDs := g.ioFDs
 	rootfsConf := g.mountConfs[0]
@@ -383,8 +373,22 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
 		log.Infof("Serving /dev mapped on FD %d (ro: false)", g.devIoFD)
 	}
 
+	// These are global fsgofer configurations.
+	fsgoferConf := &fsgofer.Config{
+		HostUDS:            conf.GetHostUDS(),
+		HostFifo:           conf.HostFifo,
+		DonateMountPointFD: conf.DirectFS,
+		RUID:               ruid,
+		EUID:               euid,
+		RGID:               rgid,
+		EGID:               egid,
+	}
+
+	// Create the server and start connections.
+	server := lisafs.NewServer()
 	for _, cfg := range cfgs {
-		conn, err := server.CreateConnection(cfg.sock, cfg.mountPath, cfg.readonly)
+		connImpl := fsgofer.NewConnectionImpl(fsgoferConf)
+		conn, err := server.CreateConnection(cfg.sock, cfg.mountPath, fsgofer.ConnectionOpts(cfg.readonly), connImpl)
 		if err != nil {
 			util.Fatalf("starting connection on FD %d for gofer mount failed: %v", cfg.sock.FD(), err)
 		}

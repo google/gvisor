@@ -24,22 +24,25 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/containerd/cgroups"
-	cgroupsv2 "github.com/containerd/cgroups/v2"
+	cgroups "github.com/containerd/cgroups/v3"
+	cgroup1 "github.com/containerd/cgroups/v3/cgroup1"
+	cgroupsv2 "github.com/containerd/cgroups/v3/cgroup2"
 	"github.com/containerd/containerd/api/events"
-	"github.com/containerd/containerd/api/types/task"
-	"github.com/containerd/containerd/pkg/process"
-	"github.com/containerd/containerd/pkg/shutdown"
-	"github.com/containerd/containerd/pkg/stdio"
-	"github.com/containerd/containerd/runtime"
-	"github.com/containerd/containerd/runtime/linux/runctypes"
-	"github.com/containerd/containerd/runtime/v2/shim"
-	taskAPI "github.com/containerd/containerd/runtime/v2/task"
-	"github.com/containerd/containerd/sys/reaper"
+	task "github.com/containerd/containerd/api/runtime/task/v2"
+	runctypes "github.com/containerd/containerd/api/types/runc/options"
+	tasktypes "github.com/containerd/containerd/api/types/task"
+	"github.com/containerd/containerd/v2/cmd/containerd-shim-runc-v2/process"
+	"github.com/containerd/containerd/v2/core/runtime"
+	"github.com/containerd/containerd/v2/pkg/protobuf"
+	types "github.com/containerd/containerd/v2/pkg/protobuf/types"
+	"github.com/containerd/containerd/v2/pkg/shim"
+	"github.com/containerd/containerd/v2/pkg/shutdown"
+	"github.com/containerd/containerd/v2/pkg/stdio"
+	"github.com/containerd/containerd/v2/pkg/sys/reaper"
 	"github.com/containerd/errdefs"
+	errgrpc "github.com/containerd/errdefs/pkg/errgrpc"
 	"github.com/containerd/log"
-	"github.com/containerd/typeurl"
-	"github.com/gogo/protobuf/types"
+	typeurl "github.com/containerd/typeurl/v2"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 
 	"gvisor.dev/gvisor/pkg/shim/v1/extension"
@@ -166,14 +169,14 @@ func (s *runscService) getContainer(id string) (*Container, error) {
 	defer s.mu.Unlock()
 	c := s.containers[id]
 	if c == nil {
-		return nil, errdefs.ToGRPCf(errdefs.ErrNotFound, "container not created")
+		return nil, errgrpc.ToGRPCf(errdefs.ErrNotFound, "container not created")
 	}
 	return c, nil
 }
 
 // Create creates a new initial process and container with the underlying OCI
 // runtime.
-func (s *runscService) Create(ctx context.Context, r *taskAPI.CreateTaskRequest) (*taskAPI.CreateTaskResponse, error) {
+func (s *runscService) Create(ctx context.Context, r *task.CreateTaskRequest) (*task.CreateTaskResponse, error) {
 	return s.CreateWithFSRestore(ctx, &extension.CreateWithFSRestoreRequest{
 		Create: r,
 	})
@@ -181,7 +184,7 @@ func (s *runscService) Create(ctx context.Context, r *taskAPI.CreateTaskRequest)
 
 // CreateWithFSRestore is the same as Create, but it additionally restores the
 // container's filesystem from a snapshot.
-func (s *runscService) CreateWithFSRestore(ctx context.Context, rfs *extension.CreateWithFSRestoreRequest) (*taskAPI.CreateTaskResponse, error) {
+func (s *runscService) CreateWithFSRestore(ctx context.Context, rfs *extension.CreateWithFSRestoreRequest) (*task.CreateTaskResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -213,10 +216,10 @@ func (s *runscService) CreateWithFSRestore(ctx context.Context, rfs *extension.C
 			var cgPath string
 			cgPath, err = cgroupsv2.PidGroupPath(pid)
 			if err == nil {
-				cg, err = cgroupsv2.LoadManager("/sys/fs/cgroup", cgPath)
+				cg, err = cgroupsv2.Load(cgPath)
 			}
 		} else {
-			cg, err = cgroups.Load(cgroups.V1, cgroups.PidPath(pid))
+			cg, err = cgroup1.Load(cgroup1.PidPath(pid))
 		}
 		if err != nil {
 			return nil, fmt.Errorf("loading cgroup for %d: %w", pid, err)
@@ -227,36 +230,36 @@ func (s *runscService) CreateWithFSRestore(ctx context.Context, rfs *extension.C
 			return nil, fmt.Errorf("add cg to OOM monitor: %w", err)
 		}
 	}
-	return &taskAPI.CreateTaskResponse{
+	return &task.CreateTaskResponse{
 		Pid: uint32(pid),
 	}, nil
 }
 
 // Start starts the container.
-func (s *runscService) Start(ctx context.Context, r *taskAPI.StartRequest) (*taskAPI.StartResponse, error) {
+func (s *runscService) Start(ctx context.Context, r *task.StartRequest) (*task.StartResponse, error) {
 	c, err := s.getContainer(r.ID)
 	if err != nil {
 		return nil, err
 	}
 	p, err := c.Start(ctx, r)
 	if err != nil {
-		return nil, errdefs.ToGRPC(err)
+		return nil, errgrpc.ToGRPC(err)
 	}
 	// TODO: Set the cgroup and oom notifications on restore.
-	return &taskAPI.StartResponse{
+	return &task.StartResponse{
 		Pid: uint32(p.Pid()),
 	}, nil
 }
 
 // Delete deletes the initial process and container.
-func (s *runscService) Delete(ctx context.Context, r *taskAPI.DeleteRequest) (*taskAPI.DeleteResponse, error) {
+func (s *runscService) Delete(ctx context.Context, r *task.DeleteRequest) (*task.DeleteResponse, error) {
 	c, err := s.getContainer(r.ID)
 	if err != nil {
 		return nil, err
 	}
 	p, err := c.Delete(ctx, r)
 	if err != nil {
-		return nil, errdefs.ToGRPC(err)
+		return nil, errgrpc.ToGRPC(err)
 	}
 
 	// ExecID will be empty for init container process.
@@ -270,15 +273,15 @@ func (s *runscService) Delete(ctx context.Context, r *taskAPI.DeleteRequest) (*t
 			s.platform.Close()
 		}
 	}
-	return &taskAPI.DeleteResponse{
+	return &task.DeleteResponse{
 		ExitStatus: uint32(p.ExitStatus()),
-		ExitedAt:   p.ExitedAt(),
+		ExitedAt:   protobuf.ToTimestamp(p.ExitedAt()),
 		Pid:        uint32(p.Pid()),
 	}, nil
 }
 
 // Exec spawns an additional process inside the container.
-func (s *runscService) Exec(ctx context.Context, r *taskAPI.ExecProcessRequest) (*types.Empty, error) {
+func (s *runscService) Exec(ctx context.Context, r *task.ExecProcessRequest) (*types.Empty, error) {
 	c, err := s.getContainer(r.ID)
 	if err != nil {
 		return nil, err
@@ -286,7 +289,7 @@ func (s *runscService) Exec(ctx context.Context, r *taskAPI.ExecProcessRequest) 
 	// Check whether or not the process already exists in the container.
 	p, _ := c.Process(r.ExecID)
 	if p != nil {
-		return nil, errdefs.ToGRPCf(errdefs.ErrAlreadyExists, "id %s", r.ExecID)
+		return nil, errgrpc.ToGRPCf(errdefs.ErrAlreadyExists, "id %s", r.ExecID)
 	}
 	p, err = c.Exec(ctx, r)
 	if err != nil {
@@ -300,19 +303,19 @@ func (s *runscService) Exec(ctx context.Context, r *taskAPI.ExecProcessRequest) 
 }
 
 // ResizePty resizes the terminal of a process.
-func (s *runscService) ResizePty(ctx context.Context, r *taskAPI.ResizePtyRequest) (*types.Empty, error) {
+func (s *runscService) ResizePty(ctx context.Context, r *task.ResizePtyRequest) (*types.Empty, error) {
 	c, err := s.getContainer(r.ID)
 	if err != nil {
-		return nil, errdefs.ToGRPCf(errdefs.ErrFailedPrecondition, "container must be created")
+		return nil, errgrpc.ToGRPCf(errdefs.ErrFailedPrecondition, "container must be created")
 	}
 	if err := c.ResizePty(ctx, r); err != nil {
-		return nil, errdefs.ToGRPC(err)
+		return nil, errgrpc.ToGRPC(err)
 	}
 	return empty, nil
 }
 
 // State returns runtime state information for the container.
-func (s *runscService) State(ctx context.Context, r *taskAPI.StateRequest) (*taskAPI.StateResponse, error) {
+func (s *runscService) State(ctx context.Context, r *task.StateRequest) (*task.StateResponse, error) {
 	c, err := s.getContainer(r.ID)
 	if err != nil {
 		return nil, err
@@ -320,26 +323,26 @@ func (s *runscService) State(ctx context.Context, r *taskAPI.StateRequest) (*tas
 	p, err := c.Process(r.ExecID)
 	if err != nil {
 		log.L.Debugf("State failed to find process: %v", err)
-		return nil, errdefs.ToGRPC(err)
+		return nil, errgrpc.ToGRPC(err)
 	}
 	st, err := p.Status(ctx)
 	if err != nil {
 		log.L.Debugf("State failed: %v", err)
 		return nil, err
 	}
-	status := task.StatusUnknown
+	status := tasktypes.Status_UNKNOWN
 	switch st {
 	case "created":
-		status = task.StatusCreated
+		status = tasktypes.Status_CREATED
 	case "running":
-		status = task.StatusRunning
+		status = tasktypes.Status_RUNNING
 	case "stopped":
-		status = task.StatusStopped
+		status = tasktypes.Status_STOPPED
 	case "pausing":
-		status = task.StatusPausing
+		status = tasktypes.Status_PAUSING
 	}
 	sio := p.Stdio()
-	return &taskAPI.StateResponse{
+	return &task.StateResponse{
 		ID:         p.ID(),
 		Bundle:     c.Bundle,
 		Pid:        uint32(p.Pid()),
@@ -349,18 +352,18 @@ func (s *runscService) State(ctx context.Context, r *taskAPI.StateRequest) (*tas
 		Stderr:     sio.Stderr,
 		Terminal:   sio.Terminal,
 		ExitStatus: uint32(p.ExitStatus()),
-		ExitedAt:   p.ExitedAt(),
+		ExitedAt:   protobuf.ToTimestamp(p.ExitedAt()),
 	}, nil
 }
 
 // Pause the container.
-func (s *runscService) Pause(ctx context.Context, r *taskAPI.PauseRequest) (*types.Empty, error) {
+func (s *runscService) Pause(ctx context.Context, r *task.PauseRequest) (*types.Empty, error) {
 	c, err := s.getContainer(r.ID)
 	if err != nil {
 		return nil, err
 	}
 	if err := c.Pause(ctx, r); err != nil {
-		return nil, errdefs.ToGRPC(err)
+		return nil, errgrpc.ToGRPC(err)
 	}
 	s.send(&events.TaskPaused{
 		ContainerID: c.ID,
@@ -369,13 +372,13 @@ func (s *runscService) Pause(ctx context.Context, r *taskAPI.PauseRequest) (*typ
 }
 
 // Resume the container.
-func (s *runscService) Resume(ctx context.Context, r *taskAPI.ResumeRequest) (*types.Empty, error) {
+func (s *runscService) Resume(ctx context.Context, r *task.ResumeRequest) (*types.Empty, error) {
 	c, err := s.getContainer(r.ID)
 	if err != nil {
 		return nil, err
 	}
 	if err := c.Resume(ctx, r); err != nil {
-		return nil, errdefs.ToGRPC(err)
+		return nil, errgrpc.ToGRPC(err)
 	}
 	s.send(&events.TaskResumed{
 		ContainerID: c.ID,
@@ -384,30 +387,30 @@ func (s *runscService) Resume(ctx context.Context, r *taskAPI.ResumeRequest) (*t
 }
 
 // Kill the container with the provided signal.
-func (s *runscService) Kill(ctx context.Context, r *taskAPI.KillRequest) (*types.Empty, error) {
+func (s *runscService) Kill(ctx context.Context, r *task.KillRequest) (*types.Empty, error) {
 	c, err := s.getContainer(r.ID)
 	if err != nil {
 		return nil, err
 	}
 	if err := c.Kill(ctx, r); err != nil {
-		return nil, errdefs.ToGRPC(err)
+		return nil, errgrpc.ToGRPC(err)
 	}
 	return empty, nil
 }
 
 // Pids returns all pids inside the container.
-func (s *runscService) Pids(ctx context.Context, r *taskAPI.PidsRequest) (*taskAPI.PidsResponse, error) {
+func (s *runscService) Pids(ctx context.Context, r *task.PidsRequest) (*task.PidsResponse, error) {
 	c, err := s.getContainer(r.ID)
 	if err != nil {
 		return nil, err
 	}
 	pids, err := s.getContainerPids(ctx, c)
 	if err != nil {
-		return nil, errdefs.ToGRPC(err)
+		return nil, errgrpc.ToGRPC(err)
 	}
-	var processes []*task.ProcessInfo
+	var processes []*tasktypes.ProcessInfo
 	for _, pid := range pids {
-		pInfo := task.ProcessInfo{
+		pInfo := tasktypes.ProcessInfo{
 			Pid: pid,
 		}
 		for _, p := range c.ExecdProcesses() {
@@ -415,7 +418,7 @@ func (s *runscService) Pids(ctx context.Context, r *taskAPI.PidsRequest) (*taskA
 				d := &runctypes.ProcessDetails{
 					ExecID: p.ID(),
 				}
-				a, err := typeurl.MarshalAny(d)
+				a, err := typeurl.MarshalAnyToProto(d)
 				if err != nil {
 					return nil, fmt.Errorf("failed to marshal process %d info: %w", pid, err)
 				}
@@ -425,30 +428,30 @@ func (s *runscService) Pids(ctx context.Context, r *taskAPI.PidsRequest) (*taskA
 		}
 		processes = append(processes, &pInfo)
 	}
-	return &taskAPI.PidsResponse{
+	return &task.PidsResponse{
 		Processes: processes,
 	}, nil
 }
 
 // CloseIO closes the I/O context of the container.
-func (s *runscService) CloseIO(ctx context.Context, r *taskAPI.CloseIORequest) (*types.Empty, error) {
+func (s *runscService) CloseIO(ctx context.Context, r *task.CloseIORequest) (*types.Empty, error) {
 	c, err := s.getContainer(r.ID)
 	if err != nil {
 		return nil, err
 	}
 	if err := c.CloseIO(ctx, r); err != nil {
-		return nil, errdefs.ToGRPC(err)
+		return nil, errgrpc.ToGRPC(err)
 	}
 	return empty, nil
 }
 
 // Checkpoint checkpoints the container.
-func (s *runscService) Checkpoint(ctx context.Context, r *taskAPI.CheckpointTaskRequest) (*types.Empty, error) {
+func (s *runscService) Checkpoint(ctx context.Context, r *task.CheckpointTaskRequest) (*types.Empty, error) {
 	return empty, errdefs.ErrNotImplemented
 }
 
 // Restore restores the container.
-func (s *runscService) Restore(ctx context.Context, r *extension.RestoreRequest) (*taskAPI.StartResponse, error) {
+func (s *runscService) Restore(ctx context.Context, r *extension.RestoreRequest) (*task.StartResponse, error) {
 	c, err := s.getContainer(r.Start.ID)
 	if err != nil {
 		return nil, err
@@ -457,24 +460,24 @@ func (s *runscService) Restore(ctx context.Context, r *extension.RestoreRequest)
 	if err != nil {
 		return nil, err
 	}
-	return &taskAPI.StartResponse{
+	return &task.StartResponse{
 		Pid: uint32(p.Pid()),
 	}, nil
 }
 
 // Connect returns shim information such as the shim's pid.
-func (s *runscService) Connect(ctx context.Context, r *taskAPI.ConnectRequest) (*taskAPI.ConnectResponse, error) {
+func (s *runscService) Connect(ctx context.Context, r *task.ConnectRequest) (*task.ConnectResponse, error) {
 	var pid int
 	if c, err := s.getContainer(r.ID); err == nil {
 		pid = c.Pid()
 	}
-	return &taskAPI.ConnectResponse{
+	return &task.ConnectResponse{
 		ShimPid: uint32(os.Getpid()),
 		TaskPid: uint32(pid),
 	}, nil
 }
 
-func (s *runscService) Shutdown(ctx context.Context, r *taskAPI.ShutdownRequest) (*types.Empty, error) {
+func (s *runscService) Shutdown(ctx context.Context, r *task.ShutdownRequest) (*types.Empty, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -485,7 +488,7 @@ func (s *runscService) Shutdown(ctx context.Context, r *taskAPI.ShutdownRequest)
 	return empty, nil
 }
 
-func (s *runscService) Stats(ctx context.Context, r *taskAPI.StatsRequest) (*taskAPI.StatsResponse, error) {
+func (s *runscService) Stats(ctx context.Context, r *task.StatsRequest) (*task.StatsResponse, error) {
 	c, err := s.getContainer(r.ID)
 	if err != nil {
 		return nil, err
@@ -502,32 +505,32 @@ func (s *runscService) Stats(ctx context.Context, r *taskAPI.StatsRequest) (*tas
 }
 
 // Update updates a running container.
-func (s *runscService) Update(ctx context.Context, r *taskAPI.UpdateTaskRequest) (*types.Empty, error) {
+func (s *runscService) Update(ctx context.Context, r *task.UpdateTaskRequest) (*types.Empty, error) {
 	c, err := s.getContainer(r.ID)
 	if err != nil {
 		return nil, err
 	}
 	if err := c.Update(ctx, r); err != nil {
-		return nil, errdefs.ToGRPC(err)
+		return nil, errgrpc.ToGRPC(err)
 	}
 	return empty, nil
 }
 
 // Wait waits for the container to exit.
-func (s *runscService) Wait(ctx context.Context, r *taskAPI.WaitRequest) (*taskAPI.WaitResponse, error) {
+func (s *runscService) Wait(ctx context.Context, r *task.WaitRequest) (*task.WaitResponse, error) {
 	c, err := s.getContainer(r.ID)
 	if err != nil {
 		return nil, err
 	}
 	p, err := c.Process(r.ExecID)
 	if err != nil {
-		return nil, errdefs.ToGRPC(err)
+		return nil, errgrpc.ToGRPC(err)
 	}
 	p.Wait()
 
-	res := &taskAPI.WaitResponse{
+	res := &task.WaitResponse{
 		ExitStatus: uint32(p.ExitStatus()),
-		ExitedAt:   p.ExitedAt(),
+		ExitedAt:   protobuf.ToTimestamp(p.ExitedAt()),
 	}
 	log.L.Debugf("Wait succeeded, response: %+v", res)
 	return res, nil
@@ -587,7 +590,7 @@ func (s *runscService) checkProcesses(ctx context.Context, e proc.Exit) {
 		ID:          p.ID(),
 		Pid:         uint32(p.Pid()),
 		ExitStatus:  uint32(e.Status),
-		ExitedAt:    p.ExitedAt(),
+		ExitedAt:    protobuf.ToTimestamp(p.ExitedAt()),
 	})
 }
 

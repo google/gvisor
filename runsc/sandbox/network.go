@@ -165,6 +165,7 @@ func collectLinksAndRoutes(conf *config.Config, disableIPv6 bool) (boot.CreateLi
 
 	args := boot.CreateLinksAndRoutesArgs{
 		PauseExternalNetworking: conf.PauseExternalNetworking,
+		AllowConnectedOnSave:    conf.AllowConnectedOnSave,
 	}
 
 	for _, iface := range ifaces {

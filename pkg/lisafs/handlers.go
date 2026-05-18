@@ -144,7 +144,7 @@ func MountHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, 
 		if mountNode.isDeleted() {
 			return unix.ENOENT
 		}
-		mountPointFD, mountPointStat, mountPointHostFD, err = c.ServerImpl().Mount(c, mountNode)
+		mountPointFD, mountPointStat, mountPointHostFD, err = c.impl.Mount(c, mountNode)
 		return err
 	}); err != nil {
 		return 0, err
@@ -158,8 +158,8 @@ func MountHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, 
 			ControlFD: mountPointFD.id,
 			Stat:      mountPointStat,
 		},
-		SupportedMs:    c.ServerImpl().SupportedMessages(),
-		MaxMessageSize: primitive.Uint32(c.ServerImpl().MaxMessageSize()),
+		SupportedMs:    c.impl.SupportedMessages(),
+		MaxMessageSize: primitive.Uint32(c.maxMessageSize),
 	}
 	respPayloadLen := uint32(resp.SizeBytes())
 	resp.MarshalBytes(comm.PayloadBuf(respPayloadLen))
@@ -168,7 +168,7 @@ func MountHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, 
 
 // ChannelHandler handles the Channel RPC.
 func ChannelHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
-	ch, desc, fdSock, err := c.createChannel(c.ServerImpl().MaxMessageSize())
+	ch, desc, fdSock, err := c.createChannel(c.maxMessageSize)
 	if err != nil {
 		return 0, err
 	}
@@ -242,7 +242,7 @@ func FStatHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, 
 
 // SetStatHandler handles the SetStat RPC.
 func SetStatHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
-	if c.readonly {
+	if c.opts.Readonly {
 		return 0, unix.EROFS
 	}
 
@@ -263,7 +263,7 @@ func SetStatHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32
 
 	var resp SetStatResp
 	if err := fd.safelyWrite(func() error {
-		if fd.node.isDeleted() && !c.server.opts.SetAttrOnDeleted {
+		if fd.node.isDeleted() && !c.opts.SetAttrOnDeleted {
 			return unix.EINVAL
 		}
 		failureMask, failureErr := fd.impl.SetStat(req)
@@ -413,7 +413,7 @@ func WalkStatHandler(c *Connection, comm Communicator, payloadLen uint32) (uint3
 	payloadBuf := comm.PayloadBuf(uint32(maxPayloadSize))
 	payloadPos := numStats.SizeBytes()
 
-	if c.server.opts.WalkStatSupported {
+	if c.opts.WalkStatSupported {
 		if err = startDir.safelyRead(func() error {
 			return startDir.impl.WalkStat(req.Path, func(s Statx) {
 				s.MarshalUnsafe(payloadBuf[payloadPos:])
@@ -507,7 +507,7 @@ func OpenAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32,
 
 	accessMode := req.Flags & unix.O_ACCMODE
 	trunc := req.Flags&unix.O_TRUNC != 0
-	if c.readonly && (accessMode != unix.O_RDONLY || trunc) {
+	if c.opts.Readonly && (accessMode != unix.O_RDONLY || trunc) {
 		return 0, unix.EROFS
 	}
 
@@ -528,7 +528,7 @@ func OpenAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32,
 		hostOpenFD int
 	)
 	if err := fd.safelyRead(func() error {
-		if fd.node.isDeleted() && !c.server.opts.OpenOnDeleted {
+		if fd.node.isDeleted() && !c.opts.OpenOnDeleted {
 			return unix.EINVAL
 		}
 		if fd.IsSymlink() {
@@ -551,7 +551,7 @@ func OpenAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32,
 
 // OpenCreateAtHandler handles the OpenCreateAt RPC.
 func OpenCreateAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
-	if c.readonly {
+	if c.opts.Readonly {
 		return 0, unix.EROFS
 	}
 	var req OpenCreateAtReq
@@ -657,7 +657,7 @@ func (c *Connection) fsyncFD(id FDID) error {
 
 // PWriteHandler handles the PWrite RPC.
 func PWriteHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
-	if c.readonly {
+	if c.opts.Readonly {
 		return 0, unix.EROFS
 	}
 	var req PWriteReq
@@ -731,7 +731,7 @@ func PReadHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, 
 
 // MkdirAtHandler handles the MkdirAt RPC.
 func MkdirAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
-	if c.readonly {
+	if c.opts.Readonly {
 		return 0, unix.EROFS
 	}
 	var req MkdirAtReq
@@ -779,7 +779,7 @@ func MkdirAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32
 
 // MknodAtHandler handles the MknodAt RPC.
 func MknodAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
-	if c.readonly {
+	if c.opts.Readonly {
 		return 0, unix.EROFS
 	}
 	var req MknodAtReq
@@ -826,7 +826,7 @@ func MknodAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32
 
 // SymlinkAtHandler handles the SymlinkAt RPC.
 func SymlinkAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
-	if c.readonly {
+	if c.opts.Readonly {
 		return 0, unix.EROFS
 	}
 	var req SymlinkAtReq
@@ -873,7 +873,7 @@ func SymlinkAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint
 
 // LinkAtHandler handles the LinkAt RPC.
 func LinkAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
-	if c.readonly {
+	if c.opts.Readonly {
 		return 0, unix.EROFS
 	}
 	var req LinkAtReq
@@ -963,7 +963,7 @@ func FStatFSHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32
 
 // FAllocateHandler handles the FAllocate RPC.
 func FAllocateHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
-	if c.readonly {
+	if c.opts.Readonly {
 		return 0, unix.EROFS
 	}
 	var req FAllocateReq
@@ -981,7 +981,7 @@ func FAllocateHandler(c *Connection, comm Communicator, payloadLen uint32) (uint
 	}
 
 	return 0, fd.controlFD.safelyWrite(func() error {
-		if fd.controlFD.node.isDeleted() && !c.server.opts.AllocateOnDeleted {
+		if fd.controlFD.node.isDeleted() && !c.opts.AllocateOnDeleted {
 			return unix.EINVAL
 		}
 		return fd.impl.Allocate(req.Mode, req.Offset, req.Length)
@@ -1213,7 +1213,7 @@ func AcceptHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32,
 
 // UnlinkAtHandler handles the UnlinkAt RPC.
 func UnlinkAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
-	if c.readonly {
+	if c.opts.Readonly {
 		return 0, unix.EROFS
 	}
 	var req UnlinkAtReq
@@ -1269,7 +1269,7 @@ func UnlinkAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint3
 
 // RenameAt2Handler handles the RenameAt2 RPC.
 func RenameAt2Handler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
-	if c.readonly {
+	if c.opts.Readonly {
 		return 0, unix.EROFS
 	}
 	var req RenameAt2Req
@@ -1281,7 +1281,7 @@ func RenameAt2Handler(c *Connection, comm Communicator, payloadLen uint32) (uint
 
 // RenameAtHandler handles the RenameAt RPC.
 func RenameAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
-	if c.readonly {
+	if c.opts.Readonly {
 		return 0, unix.EROFS
 	}
 	var req RenameAtReq
@@ -1491,7 +1491,7 @@ func FGetXattrHandler(c *Connection, comm Communicator, payloadLen uint32) (uint
 
 // FSetXattrHandler handles the FSetXattr RPC.
 func FSetXattrHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
-	if c.readonly {
+	if c.opts.Readonly {
 		return 0, unix.EROFS
 	}
 	var req FSetXattrReq
@@ -1542,7 +1542,7 @@ func FListXattrHandler(c *Connection, comm Communicator, payloadLen uint32) (uin
 
 // FRemoveXattrHandler handles the FRemoveXattr RPC.
 func FRemoveXattrHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
-	if c.readonly {
+	if c.opts.Readonly {
 		return 0, unix.EROFS
 	}
 	var req FRemoveXattrReq

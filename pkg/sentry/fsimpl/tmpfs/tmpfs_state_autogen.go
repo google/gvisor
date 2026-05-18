@@ -392,7 +392,9 @@ func (fs *filesystem) StateFields() []string {
 		"root",
 		"maxFilenameLen",
 		"maxSizeInPages",
+		"maxInodes",
 		"pagesUsed",
+		"inodesUsed",
 		"allowXattrPrefix",
 		"ovlWhiteout",
 	}
@@ -415,9 +417,11 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(7, &fs.root)
 	stateSinkObject.Save(8, &fs.maxFilenameLen)
 	stateSinkObject.Save(9, &fs.maxSizeInPages)
-	stateSinkObject.Save(10, &fs.pagesUsed)
-	stateSinkObject.Save(11, &fs.allowXattrPrefix)
-	stateSinkObject.Save(12, &fs.ovlWhiteout)
+	stateSinkObject.Save(10, &fs.maxInodes)
+	stateSinkObject.Save(11, &fs.pagesUsed)
+	stateSinkObject.Save(12, &fs.inodesUsed)
+	stateSinkObject.Save(13, &fs.allowXattrPrefix)
+	stateSinkObject.Save(14, &fs.ovlWhiteout)
 }
 
 func (fs *filesystem) afterLoad(context.Context) {}
@@ -433,9 +437,11 @@ func (fs *filesystem) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(7, &fs.root)
 	stateSourceObject.Load(8, &fs.maxFilenameLen)
 	stateSourceObject.Load(9, &fs.maxSizeInPages)
-	stateSourceObject.Load(10, &fs.pagesUsed)
-	stateSourceObject.Load(11, &fs.allowXattrPrefix)
-	stateSourceObject.Load(12, &fs.ovlWhiteout)
+	stateSourceObject.Load(10, &fs.maxInodes)
+	stateSourceObject.Load(11, &fs.pagesUsed)
+	stateSourceObject.Load(12, &fs.inodesUsed)
+	stateSourceObject.Load(13, &fs.allowXattrPrefix)
+	stateSourceObject.Load(14, &fs.ovlWhiteout)
 	stateSourceObject.LoadValue(1, new(checkpoint.ResourceID), func(y any) { fs.loadMf(ctx, y.(checkpoint.ResourceID)) })
 }
 

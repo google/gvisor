@@ -101,14 +101,17 @@ type regularFile struct {
 	size atomicbitops.Uint64
 }
 
-func (fs *filesystem) newRegularFile(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, parentDir *directory) *inode {
+func (fs *filesystem) newRegularFile(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, parentDir *directory) (*inode, error) {
 	file := &regularFile{
 		memoryUsageKind: fs.usage,
 		seals:           linux.F_SEAL_SEAL,
 	}
-	file.inode.init(file, fs, kuid, kgid, linux.S_IFREG|mode, parentDir)
+	err := file.inode.init(file, fs, kuid, kgid, linux.S_IFREG|mode, parentDir)
+	if err != nil {
+		return nil, err
+	}
 	file.inode.nlink = atomicbitops.FromUint32(1) // from parent directory
-	return &file.inode
+	return &file.inode, nil
 }
 
 // newUnlinkedRegularFileDescription creates a regular file on the tmpfs
@@ -125,7 +128,10 @@ func newUnlinkedRegularFileDescription(ctx context.Context, creds *auth.Credenti
 		panic("tmpfs.newUnlinkedRegularFileDescription() called with non-tmpfs mount")
 	}
 
-	inode := fs.newRegularFile(creds.EffectiveKUID, creds.EffectiveKGID, 0777, nil /* parentDir */)
+	inode, err := fs.newRegularFile(creds.EffectiveKUID, creds.EffectiveKGID, 0777, nil /* parentDir */)
+	if err != nil {
+		return nil, err
+	}
 	inode.impl.(*regularFile).initiallyUnlinked = true
 	d := fs.newDentry(inode)
 	defer d.DecRef(ctx)

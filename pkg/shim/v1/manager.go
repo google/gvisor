@@ -22,11 +22,14 @@ import (
 	"os/exec"
 	"time"
 
+	"io"
+
 	"github.com/BurntSushi/toml"
-	"github.com/containerd/containerd/mount"
-	"github.com/containerd/containerd/namespaces"
-	"github.com/containerd/containerd/runtime/v2/shim"
-	"github.com/containerd/containerd/sys"
+	types "github.com/containerd/containerd/api/types"
+	"github.com/containerd/containerd/v2/core/mount"
+	"github.com/containerd/containerd/v2/pkg/namespaces"
+	"github.com/containerd/containerd/v2/pkg/shim"
+	"github.com/containerd/containerd/v2/pkg/sys"
 	"github.com/containerd/log"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
@@ -54,7 +57,7 @@ type manager struct {
 
 var _ shim.Manager = (*manager)(nil)
 
-func newCommand(ctx context.Context, id, containerdBinary, containerdAddress string, debug bool) (*exec.Cmd, error) {
+func newCommand(ctx context.Context, id, containerdAddress string, debug bool) (*exec.Cmd, error) {
 	ns, err := namespaces.NamespaceRequired(ctx)
 	if err != nil {
 		return nil, err
@@ -71,7 +74,6 @@ func newCommand(ctx context.Context, id, containerdBinary, containerdAddress str
 		"-namespace", ns,
 		"-address", containerdAddress,
 		"-id", id,
-		"-publish-binary", containerdBinary,
 	}
 	if debug {
 		args = append(args, "-debug")
@@ -90,19 +92,19 @@ func (m manager) Name() string {
 }
 
 // Start implements shim.Manager.Start.
-func (m *manager) Start(ctx context.Context, id string, opts shim.StartOpts) (string, error) {
+func (m *manager) Start(ctx context.Context, id string, opts shim.StartOpts) (shim.BootstrapParams, error) {
 	grouping := id
 	enableGrouping := getEnableGrouping()
 	if enableGrouping {
 		// The config.json is always at the current directory by containerd.
 		configFile, err := os.Open("config.json")
 		if err != nil {
-			return "", fmt.Errorf("failed to read config.json when starting shim: %w", err)
+			return shim.BootstrapParams{}, fmt.Errorf("failed to read config.json when starting shim: %w", err)
 		}
 		var readSpec spec
 		if err := json.NewDecoder(configFile).Decode(&readSpec); err != nil {
 			configFile.Close()
-			return "", err
+			return shim.BootstrapParams{}, err
 		}
 		configFile.Close()
 		if groupID, ok := readSpec.Annotations[kubernetesGroupAnnotation]; ok {
@@ -111,14 +113,14 @@ func (m *manager) Start(ctx context.Context, id string, opts shim.StartOpts) (st
 		}
 	}
 
-	cmd, err := newCommand(ctx, id, opts.ContainerdBinary, opts.Address, opts.Debug)
+	cmd, err := newCommand(ctx, id, opts.Address, opts.Debug)
 	if err != nil {
-		return "", err
+		return shim.BootstrapParams{}, err
 	}
 
-	address, err := shim.SocketAddress(ctx, opts.Address, grouping)
+	address, err := shim.SocketAddress(ctx, opts.Address, grouping, opts.Debug)
 	if err != nil {
-		return "", err
+		return shim.BootstrapParams{}, err
 	}
 	socket, err := shim.NewSocket(address)
 	if err != nil {
@@ -127,19 +129,19 @@ func (m *manager) Start(ctx context.Context, id string, opts shim.StartOpts) (st
 		// grouping functionality where the new process should be run with the same
 		// shim as an existing container.
 		if !shim.SocketEaddrinuse(err) {
-			return "", fmt.Errorf("create new shim socket: %w", err)
+			return shim.BootstrapParams{}, fmt.Errorf("create new shim socket: %w", err)
 		}
 		if shim.CanConnect(address) {
-			if err := shim.WriteAddress("address", address); err != nil {
-				return "", fmt.Errorf("write existing socket for shim: %w", err)
+			if err := writeAddress("address", address); err != nil {
+				return shim.BootstrapParams{}, fmt.Errorf("write existing socket for shim: %w", err)
 			}
-			return address, nil
+			return shim.BootstrapParams{Version: 2, Address: address, Protocol: "ttrpc"}, nil
 		}
 		if err := shim.RemoveSocket(address); err != nil {
-			return "", fmt.Errorf("remove pre-existing socket: %w", err)
+			return shim.BootstrapParams{}, fmt.Errorf("remove pre-existing socket: %w", err)
 		}
 		if socket, err = shim.NewSocket(address); err != nil {
-			return "", fmt.Errorf("try create new shim socket 2x: %w", err)
+			return shim.BootstrapParams{}, fmt.Errorf("try create new shim socket 2x: %w", err)
 		}
 	}
 	cu := cleanup.Make(func() {
@@ -149,20 +151,20 @@ func (m *manager) Start(ctx context.Context, id string, opts shim.StartOpts) (st
 	defer cu.Clean()
 
 	// make sure that reexec shim binary use the value if need.
-	if err := shim.WriteAddress("address", address); err != nil {
-		return "", err
+	if err := writeAddress("address", address); err != nil {
+		return shim.BootstrapParams{}, err
 	}
 
 	f, err := socket.File()
 	if err != nil {
-		return "", err
+		return shim.BootstrapParams{}, err
 	}
 
 	cmd.ExtraFiles = append(cmd.ExtraFiles, f)
 
 	if err := cmd.Start(); err != nil {
 		f.Close()
-		return "", err
+		return shim.BootstrapParams{}, err
 	}
 
 	cu.Add(func() {
@@ -172,16 +174,16 @@ func (m *manager) Start(ctx context.Context, id string, opts shim.StartOpts) (st
 	// make sure to wait after start
 	go cmd.Wait()
 	if err := shim.WritePidFile("shim.pid", cmd.Process.Pid); err != nil {
-		return "", err
+		return shim.BootstrapParams{}, err
 	}
-	if err := shim.WriteAddress(shimAddressPath, address); err != nil {
-		return "", err
+	if err := writeAddress(shimAddressPath, address); err != nil {
+		return shim.BootstrapParams{}, err
 	}
 	if err := sys.SetOOMScore(cmd.Process.Pid, oomScoreMax); err != nil {
-		return "", fmt.Errorf("failed to set OOM Score on shim: %w", err)
+		return shim.BootstrapParams{}, fmt.Errorf("failed to set OOM Score on shim: %w", err)
 	}
 	cu.Release()
-	return address, nil
+	return shim.BootstrapParams{Version: 2, Address: address, Protocol: "ttrpc"}, nil
 }
 
 // Stop implements shim.Manager.Stop.
@@ -244,4 +246,17 @@ func getEnableGrouping() bool {
 		return false
 	}
 	return opts.Grouping
+}
+
+func (m *manager) Info(ctx context.Context, optionsR io.Reader) (*types.RuntimeInfo, error) {
+	return &types.RuntimeInfo{
+		Name: "io.containerd.runsc.v1",
+		Version: &types.RuntimeVersion{
+			Version: "v1.0.0",
+		},
+	}, nil
+}
+
+func writeAddress(path, address string) error {
+	return os.WriteFile(path, []byte(address), 0o644)
 }

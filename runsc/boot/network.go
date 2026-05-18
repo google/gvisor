@@ -186,6 +186,10 @@ type CreateLinksAndRoutesArgs struct {
 	// PauseExternalNetworking indicates whether external networking should be
 	// disabled initially.
 	PauseExternalNetworking bool
+
+	// AllowConnectedOnSave indicates whether connections should be allowed to
+	// remain connected during save.
+	AllowConnectedOnSave bool
 }
 
 // InitPluginStackArgs are arguments to InitPluginStack.
@@ -547,6 +551,8 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 	if args.PauseExternalNetworking {
 		n.Stack.DisableAllNonLoopbackNICs()
 	}
+
+	n.Stack.SetAllowConnectedOnSave(args.AllowConnectedOnSave)
 
 	return nil
 }

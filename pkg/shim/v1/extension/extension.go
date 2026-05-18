@@ -17,9 +17,12 @@ package extension
 
 import (
 	"context"
+	"io"
+	"time"
 
-	"github.com/containerd/containerd/pkg/process"
-	"github.com/containerd/containerd/runtime/v2/task"
+	"github.com/containerd/console"
+	task "github.com/containerd/containerd/api/runtime/task/v2"
+	"github.com/containerd/containerd/v2/pkg/stdio"
 	hibernatepb "gvisor.dev/gvisor/pkg/shim/v1/runsc/hibernate_go_proto"
 )
 
@@ -45,9 +48,34 @@ type RestoreConfig struct {
 	Background bool
 }
 
-// Process extends process.Process with extra restore functionality.
+// Process is the interface representing a process inside the container.
 type Process interface {
-	process.Process
+	// ID returns the id for the process
+	ID() string
+	// Pid returns the pid for the process
+	Pid() int
+	// ExitStatus returns the exit status
+	ExitStatus() int
+	// ExitedAt is the time the process exited
+	ExitedAt() time.Time
+	// Stdin returns the process STDIN
+	Stdin() io.Closer
+	// Stdio returns io information for the container
+	Stdio() stdio.Stdio
+	// Status returns the process status
+	Status(context.Context) (string, error)
+	// Wait blocks until the process has exited
+	Wait()
+	// Resize resizes the process console
+	Resize(ws console.WinSize) error
+	// Start execution of the process
+	Start(context.Context) error
+	// Delete deletes the process and its resources
+	Delete(context.Context) error
+	// Kill kills the process
+	Kill(context.Context, uint32, bool) error
+	// SetExited sets the exit status for the process
+	SetExited(status int)
 	// Restore restores the container from a snapshot.
 	Restore(context.Context, *RestoreConfig) error
 }

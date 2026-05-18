@@ -220,7 +220,7 @@ retry:
 	// gVisor is not supposed to change any device information that is
 	// returned from the host since gVisor doesn't own the device.
 	// Passing the device info back to the caller will be just fine.
-	if _, err := t.CopyOutBytes(arg, buf); err != nil {
+	if _, err := t.CopyOutBytes(arg, buf[:min(len(buf), appArgsz)]); err != nil {
 		return 0, err
 	}
 	return ret, nil

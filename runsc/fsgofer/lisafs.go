@@ -49,14 +49,8 @@ const (
 	unixPathMax = 108
 )
 
-// Config sets configuration options for each attach point.
+// Config holds configuration options for the fsgofer server.
 type Config struct {
-	// ROMount is set to true if this is a readonly mount.
-	ROMount bool
-
-	// PanicOnWrite panics on attempts to write to RO mounts.
-	PanicOnWrite bool
-
 	// HostUDS signals whether the gofer can connect to host unix domain sockets.
 	HostUDS config.HostUDS
 
@@ -93,28 +87,32 @@ func OpenProcSelfFD(path string) error {
 	return nil
 }
 
-// LisafsServer implements lisafs.ServerImpl for fsgofer.
-type LisafsServer struct {
-	lisafs.Server
-	config Config
-}
-
-var _ lisafs.ServerImpl = (*LisafsServer)(nil)
-
-// NewLisafsServer initializes a new lisafs server for fsgofer.
-func NewLisafsServer(config Config) *LisafsServer {
-	s := &LisafsServer{config: config}
-	s.Server.Init(s, lisafs.ServerOpts{
+// ConnectionOpts returns the lisafs.ConnectionOpts for fsgofer.
+func ConnectionOpts(readonly bool) lisafs.ConnectionOpts {
+	return lisafs.ConnectionOpts{
+		Readonly:          readonly,
 		WalkStatSupported: true,
 		SetAttrOnDeleted:  true,
 		AllocateOnDeleted: true,
 		OpenOnDeleted:     true,
-	})
-	return s
+	}
 }
 
-// Mount implements lisafs.ServerImpl.Mount.
-func (s *LisafsServer) Mount(c *lisafs.Connection, mountNode *lisafs.Node) (*lisafs.ControlFD, lisafs.Statx, int, error) {
+// NewConnectionImpl returns a new lisafs.ConnectionImpl for fsgofer.
+func NewConnectionImpl(config *Config) lisafs.ConnectionImpl {
+	return &connectionImpl{config: config}
+}
+
+// connectionImpl implements lisafs.ConnectionImpl for fsgofer.
+type connectionImpl struct {
+	// config is the global configuration for the gofer.
+	config *Config
+}
+
+var _ lisafs.ConnectionImpl = (*connectionImpl)(nil)
+
+// Mount implements lisafs.ConnectionImpl.Mount.
+func (i *connectionImpl) Mount(c *lisafs.Connection, mountNode *lisafs.Node) (*lisafs.ControlFD, lisafs.Statx, int, error) {
 	mountPath := mountNode.FilePath()
 	rootHostFD, err := tryOpen(func(flags int) (int, error) {
 		return unix.Open(mountPath, flags, 0)
@@ -138,7 +136,7 @@ func (s *LisafsServer) Mount(c *lisafs.Connection, mountNode *lisafs.Node) (*lis
 	}
 
 	clientHostFD := -1
-	if s.config.DonateMountPointFD {
+	if i.config.DonateMountPointFD {
 		clientHostFD, err = unix.Dup(rootHostFD)
 		if err != nil {
 			return nil, lisafs.Statx{}, -1, err
@@ -156,13 +154,13 @@ func (s *LisafsServer) Mount(c *lisafs.Connection, mountNode *lisafs.Node) (*lis
 	return rootFD.FD(), stat, clientHostFD, nil
 }
 
-// MaxMessageSize implements lisafs.ServerImpl.MaxMessageSize.
-func (s *LisafsServer) MaxMessageSize() uint32 {
+// MaxMessageSize implements lisafs.ConnectionImpl.MaxMessageSize.
+func (i *connectionImpl) MaxMessageSize() uint32 {
 	return lisafs.MaxMessageSize()
 }
 
-// SupportedMessages implements lisafs.ServerImpl.SupportedMessages.
-func (s *LisafsServer) SupportedMessages() []lisafs.MID {
+// SupportedMessages implements lisafs.ConnectionImpl.SupportedMessages.
+func (i *connectionImpl) SupportedMessages() []lisafs.MID {
 	// Note that Flush is not supported.
 	return []lisafs.MID{
 		lisafs.Mount,
@@ -514,17 +512,17 @@ var (
 // Open implements lisafs.ControlFDImpl.Open.
 func (fd *controlFDLisa) Open(flags uint32) (*lisafs.OpenFD, int, error) {
 	ftype := fd.FileType()
-	server := fd.Conn().ServerImpl().(*LisafsServer)
+	impl := fd.Conn().Impl().(*connectionImpl)
 	switch ftype {
 	case unix.S_IFIFO:
-		if !server.config.HostFifo.AllowOpen() {
+		if !impl.config.HostFifo.AllowOpen() {
 			logRejectedFifoOpenOnce.Do(func() {
 				log.Warningf("Rejecting attempt to open fifo/pipe from host filesystem: %q. If you want to allow this, set flag --host-fifo=open", fd.ControlFD.Node().FilePath())
 			})
 			return nil, -1, unix.EPERM
 		}
 	case unix.S_IFSOCK:
-		if !server.config.HostUDS.AllowOpen() {
+		if !impl.config.HostUDS.AllowOpen() {
 			logRejectedUdsOpenOnce.Do(func() {
 				log.Warningf("Rejecting attempt to open unix domain socket from host filesystem: %q. If you want to allow this, set flag --host-uds=open", fd.ControlFD.Node().FilePath())
 			})
@@ -545,7 +543,8 @@ func (fd *controlFDLisa) Open(flags uint32) (*lisafs.OpenFD, int, error) {
 
 	case ftype == unix.S_IFIFO,
 		ftype == unix.S_IFCHR,
-		fd.isMountPoint && fd.Conn().ServerImpl().(*LisafsServer).config.DonateMountPointFD:
+		fd.isMountPoint && impl.config.DonateMountPointFD:
+
 		// Character devices and pipes can block indefinitely during reads/writes,
 		// which is not allowed for gofer operations. Ensure that it donates an FD
 		// back to the caller, so it can wait on the FD when reads/writes return
@@ -819,7 +818,7 @@ func isSockTypeSupported(sockType uint32) bool {
 
 // Connect implements lisafs.ControlFDImpl.Connect.
 func (fd *controlFDLisa) Connect(sockType uint32) (int, error) {
-	if !fd.Conn().ServerImpl().(*LisafsServer).config.HostUDS.AllowOpen() {
+	if !fd.Conn().Impl().(*connectionImpl).config.HostUDS.AllowOpen() {
 		logRejectedUdsConnectOnce.Do(func() {
 			log.Warningf("Rejecting attempt to connect to unix domain socket from host filesystem: %q. If you want to allow this, set flag --host-uds=open", fd.ControlFD.Node().FilePath())
 		})
@@ -854,8 +853,8 @@ func (fd *controlFDLisa) Connect(sockType uint32) (int, error) {
 
 // ConnectWithCreds implements lisafs.ControlFDImpl.ConnectWithCreds.
 func (fd *controlFDLisa) ConnectWithCreds(sockType uint32, uid lisafs.UID, gid lisafs.GID) (int, error) {
-	serverConfig := fd.Conn().ServerImpl().(*LisafsServer).config
-	if !serverConfig.HostUDS.AllowOpen() {
+	impl := fd.Conn().Impl().(*connectionImpl)
+	if !impl.config.HostUDS.AllowOpen() {
 		logRejectedUdsConnectOnce.Do(func() {
 			log.Warningf("Rejecting attempt to connect to unix domain socket from host filesystem: %q. If you want to allow this, set flag --host-uds=open", fd.ControlFD.Node().FilePath())
 		})
@@ -872,8 +871,8 @@ func (fd *controlFDLisa) ConnectWithCreds(sockType uint32, uid lisafs.UID, gid l
 	// permitted set stays the same. We change GID first, and then UID. Because
 	// once the UID is changed, capabilities needed to change GID are dropped.
 	uidChanged, gidChanged := false, false
-	if int(gid) != serverConfig.EGID {
-		_, _, err := unix.Syscall(unix.SYS_SETREGID, uintptr(serverConfig.RGID), uintptr(gid), 0)
+	if int(gid) != impl.config.EGID {
+		_, _, err := unix.Syscall(unix.SYS_SETREGID, uintptr(impl.config.RGID), uintptr(gid), 0)
 		if err != 0 {
 			log.Warningf("Failed to set egid; err: %v", err)
 		} else {
@@ -882,8 +881,8 @@ func (fd *controlFDLisa) ConnectWithCreds(sockType uint32, uid lisafs.UID, gid l
 		}
 	}
 
-	if int(uid) != serverConfig.EUID {
-		_, _, err := unix.Syscall(unix.SYS_SETREUID, uintptr(serverConfig.RUID), uintptr(uid), 0)
+	if int(uid) != impl.config.EUID {
+		_, _, err := unix.Syscall(unix.SYS_SETREUID, uintptr(impl.config.RUID), uintptr(uid), 0)
 		if err != 0 {
 			log.Warningf("Failed to set euid; err: %v", err)
 		} else {
@@ -894,19 +893,19 @@ func (fd *controlFDLisa) ConnectWithCreds(sockType uint32, uid lisafs.UID, gid l
 
 	defer func() {
 		if uidChanged {
-			_, _, err := unix.Syscall(unix.SYS_SETREUID, uintptr(serverConfig.RUID), uintptr(serverConfig.EUID), 0)
+			_, _, err := unix.Syscall(unix.SYS_SETREUID, uintptr(impl.config.RUID), uintptr(impl.config.EUID), 0)
 			if err != 0 {
 				panic(fmt.Sprintf("Failed to restore euid; err: %v", err))
 			}
-			log.Debugf("Successfully restored euid to %d", serverConfig.EUID)
+			log.Debugf("Successfully restored euid to %d", impl.config.EUID)
 		}
 
 		if gidChanged {
-			_, _, err := unix.Syscall(unix.SYS_SETREGID, uintptr(serverConfig.RGID), uintptr(serverConfig.EGID), 0)
+			_, _, err := unix.Syscall(unix.SYS_SETREGID, uintptr(impl.config.RGID), uintptr(impl.config.EGID), 0)
 			if err != 0 {
 				panic(fmt.Sprintf("Failed to restore egid; err: %v", err))
 			}
-			log.Debugf("Successfully restored egid to %d", serverConfig.EGID)
+			log.Debugf("Successfully restored egid to %d", impl.config.EGID)
 		}
 	}()
 
@@ -915,7 +914,7 @@ func (fd *controlFDLisa) ConnectWithCreds(sockType uint32, uid lisafs.UID, gid l
 
 // BindAt implements lisafs.ControlFDImpl.BindAt.
 func (fd *controlFDLisa) BindAt(name string, sockType uint32, mode linux.FileMode, uid lisafs.UID, gid lisafs.GID) (*lisafs.ControlFD, lisafs.Statx, *lisafs.BoundSocketFD, int, error) {
-	if !fd.Conn().ServerImpl().(*LisafsServer).config.HostUDS.AllowCreate() {
+	if !fd.Conn().Impl().(*connectionImpl).config.HostUDS.AllowCreate() {
 		logRejectedUdsCreateOnce.Do(func() {
 			log.Warningf("Rejecting attempt to create unix domain socket from host filesystem: %q. If you want to allow this, set flag --host-uds=create", name)
 		})

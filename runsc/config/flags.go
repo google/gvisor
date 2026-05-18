@@ -43,9 +43,9 @@ const (
 	flagOverlay2                = "overlay2"
 	flagAllowFlagOverride       = "allow-flag-override"
 	flagPauseExternalNetworking = "pause-external-networking"
-
-	defaultRootDir      = "/var/run/runsc"
-	xdgRuntimeDirEnvVar = "XDG_RUNTIME_DIR"
+	flagAllowConnectedOnSave    = "allow-connected-on-save"
+	defaultRootDir              = "/var/run/runsc"
+	xdgRuntimeDirEnvVar         = "XDG_RUNTIME_DIR"
 )
 
 // RegisterFlags registers flags used to populate Config.
@@ -158,6 +158,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool(flagReproduceNFTables, false, "Attempt to scrape and reproduce nftable rules inside the sandbox. Overrides reproduce-nat when true.")
 	flagSet.Bool(flagNetDisconnectOK, true, "Indicates whether open network connections and open unix domain sockets should be disconnected upon save.")
 	flagSet.Bool(flagPauseExternalNetworking, false, "Start the sandbox with external networking disabled. Only supported when using the sandbox network type. The network can be unpaused manually after the sandbox is running.")
+	flagSet.Bool(flagAllowConnectedOnSave, false, "Allow network connections to stay established on save.")
 
 	// Flags that control sandbox runtime behavior: accelerator related.
 	flagSet.Bool("nvproxy", false, "EXPERIMENTAL: enable support for Nvidia GPUs")
@@ -195,6 +196,7 @@ var overrideAllowlist = map[string]struct {
 	flagOverlay2:                {check: checkOverlay2},
 	flagOCISeccomp:              {check: checkOciSeccomp},
 	flagPauseExternalNetworking: {},
+	flagAllowConnectedOnSave:    {},
 }
 
 // checkOverlay2 ensures that overlay2 can only be enabled using "memory" or

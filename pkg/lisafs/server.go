@@ -38,17 +38,14 @@ type Server struct {
 	// root is the root of the filesystem tree being managed by this server.
 	// root is immutable. Server holds a ref on root for its entire lifetime.
 	root *Node
-
-	// impl is the server implementation which embeds this server.
-	impl ServerImpl
-
-	// opts is the server specific options. This dictates how some of the
-	// messages are handled.
-	opts ServerOpts
 }
 
-// ServerOpts defines some server implementation specific behavior.
-type ServerOpts struct {
+// ConnectionOpts defines connection-specific behavior.
+type ConnectionOpts struct {
+	// Readonly indicates if this connection is readonly. All write operations
+	// will fail with EROFS.
+	Readonly bool
+
 	// WalkStatSupported is set to true if it's safe to call
 	// ControlFDImpl.WalkStat and let the file implementation perform the walk
 	// without holding locks on any of the descendant's Nodes.
@@ -67,14 +64,14 @@ type ServerOpts struct {
 	OpenOnDeleted bool
 }
 
-// Init must be called before first use of the server.
-func (s *Server) Init(impl ServerImpl, opts ServerOpts) {
-	s.impl = impl
-	s.opts = opts
+// NewServer creates a new Server.
+func NewServer() *Server {
+	var s Server
 	s.handlers = handlers[:]
 	s.root = &Node{}
 	// s owns the ref on s.root.
 	s.root.InitLocked("", nil)
+	return &s
 }
 
 // SetHandlers overrides the server's RPC handlers. Mainly should only be used
@@ -110,21 +107,19 @@ func (s *Server) Destroy() {
 	s.root.DecRef(nil)
 }
 
-// ServerImpl contains the implementation details for a Server.
-// Implementations of ServerImpl should contain their associated Server by
-// value as their first field.
-type ServerImpl interface {
+// ConnectionImpl contains the implementation details for a Connection.
+type ConnectionImpl interface {
 	// Mount is called when a Mount RPC is made. It mounts the connection on
 	// mountNode. Mount may optionally donate a host FD to the mount point.
 	//
 	// Mount has a read concurrency guarantee on mountNode.
 	Mount(c *Connection, mountNode *Node) (*ControlFD, Statx, int, error)
 
-	// SupportedMessages returns a list of messages that the server
+	// SupportedMessages returns a list of messages that the connection
 	// implementation supports.
 	SupportedMessages() []MID
 
 	// MaxMessageSize is the maximum payload length (in bytes) that can be sent
-	// to this server implementation.
+	// to this connection implementation.
 	MaxMessageSize() uint32
 }

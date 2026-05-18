@@ -29,9 +29,12 @@ type socketFile struct {
 	ep    transport.BoundEndpoint
 }
 
-func (fs *filesystem) newSocketFile(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, ep transport.BoundEndpoint, parentDir *directory) *inode {
+func (fs *filesystem) newSocketFile(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, ep transport.BoundEndpoint, parentDir *directory) (*inode, error) {
 	file := &socketFile{ep: ep}
-	file.inode.init(file, fs, kuid, kgid, mode, parentDir)
+	err := file.inode.init(file, fs, kuid, kgid, mode, parentDir)
+	if err != nil {
+		return nil, err
+	}
 	file.inode.nlink = atomicbitops.FromUint32(1) // from parent directory
-	return &file.inode
+	return &file.inode, nil
 }

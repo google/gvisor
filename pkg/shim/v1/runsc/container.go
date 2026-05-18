@@ -23,18 +23,19 @@ import (
 	"sync"
 
 	"github.com/BurntSushi/toml"
-	"github.com/containerd/cgroups"
-	cgroupsstats "github.com/containerd/cgroups/stats/v1"
-	cgroupsv2stats "github.com/containerd/cgroups/v2/stats"
+	cgroups "github.com/containerd/cgroups/v3"
+	cgroupsstats "github.com/containerd/cgroups/v3/cgroup1/stats"
+	cgroupsv2stats "github.com/containerd/cgroups/v3/cgroup2/stats"
 	"github.com/containerd/console"
-	"github.com/containerd/containerd/mount"
-	"github.com/containerd/containerd/namespaces"
-	"github.com/containerd/containerd/pkg/stdio"
-	"github.com/containerd/containerd/runtime/v2/task"
+	task "github.com/containerd/containerd/api/runtime/task/v2"
+	"github.com/containerd/containerd/v2/core/mount"
+	"github.com/containerd/containerd/v2/pkg/namespaces"
+	"github.com/containerd/containerd/v2/pkg/stdio"
 	"github.com/containerd/errdefs"
+	errgrpc "github.com/containerd/errdefs/pkg/errgrpc"
 	runc "github.com/containerd/go-runc"
 	"github.com/containerd/log"
-	"github.com/containerd/typeurl"
+	typeurl "github.com/containerd/typeurl/v2"
 	"github.com/sirupsen/logrus"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/shim/v1/extension"
@@ -420,7 +421,7 @@ func (c *Container) Restore(ctx context.Context, r *extension.RestoreRequest) (e
 func (c *Container) Stats(ctx context.Context) (*task.StatsResponse, error) {
 	p, err := c.Process("")
 	if err != nil {
-		return nil, errdefs.ToGRPC(err)
+		return nil, errgrpc.ToGRPC(err)
 	}
 	stats, err := p.(*proc.Init).Stats(ctx, c.ID)
 	if err != nil {
@@ -484,7 +485,7 @@ func (c *Container) getV1Stats(stats *runc.Stats) (*task.StatsResponse, error) {
 			Limit:   stats.Pids.Limit,
 		},
 	}
-	data, err := typeurl.MarshalAny(metrics)
+	data, err := typeurl.MarshalAnyToProto(metrics)
 	if err != nil {
 		log.L.Debugf("Stats error v1, id: %s: %v", c.ID, err)
 		return nil, err
@@ -518,7 +519,7 @@ func (c *Container) getV2Stats(stats *runc.Stats) (*task.StatsResponse, error) {
 			Limit:   stats.Pids.Limit,
 		},
 	}
-	data, err := typeurl.MarshalAny(metrics)
+	data, err := typeurl.MarshalAnyToProto(metrics)
 	if err != nil {
 		log.L.Debugf("Stats error v2, id: %s: %v", c.ID, err)
 		return nil, err

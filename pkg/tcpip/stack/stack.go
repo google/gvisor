@@ -190,6 +190,10 @@ type Stack struct {
 	// externalNetworkingDisabled indicates whether external networking is
 	// disabled. This means all non-loopback NICs are disabled.
 	externalNetworkingDisabled bool
+
+	// allowConnectedOnSave indicates whether connections should be
+	// allowed to remain connected during save.
+	allowConnectedOnSave bool
 }
 
 // NetworkProtocolFactory instantiates a network protocol.
@@ -2546,6 +2550,20 @@ func (s *Stack) GetRemoveConf() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.removeConf
+}
+
+// SetAllowConnectedOnSave sets allowConnectedOnSave in stack with the given value.
+func (s *Stack) SetAllowConnectedOnSave(allowConnectedOnSave bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.allowConnectedOnSave = allowConnectedOnSave
+}
+
+// GetAllowConnectedOnSave gets the allowConnectedOnSave from stack.
+func (s *Stack) GetAllowConnectedOnSave() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.allowConnectedOnSave
 }
 
 // DisableAllNonLoopbackNICs disables all non-loopback NICs in the stack.

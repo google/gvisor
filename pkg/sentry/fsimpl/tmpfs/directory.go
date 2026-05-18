@@ -47,13 +47,16 @@ type directory struct {
 	childList dentryList
 }
 
-func (fs *filesystem) newDirectory(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, parentDir *directory) *directory {
+func (fs *filesystem) newDirectory(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, parentDir *directory) (*directory, error) {
 	dir := &directory{}
-	dir.inode.init(dir, fs, kuid, kgid, linux.S_IFDIR|mode, parentDir)
+	err := dir.inode.init(dir, fs, kuid, kgid, linux.S_IFDIR|mode, parentDir)
+	if err != nil {
+		return nil, err
+	}
 	dir.inode.nlink = atomicbitops.FromUint32(2) // from "." and parent directory or ".." for root
 	dir.dentry.inode = &dir.inode
 	dir.dentry.vfsd.Init(&dir.dentry)
-	return dir
+	return dir, nil
 }
 
 // Preconditions:

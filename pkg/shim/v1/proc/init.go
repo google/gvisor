@@ -27,14 +27,14 @@ import (
 
 	"github.com/containerd/console"
 
-	"github.com/containerd/containerd/mount"
-	"github.com/containerd/containerd/pkg/stdio"
+	"github.com/containerd/containerd/v2/core/mount"
+	"github.com/containerd/containerd/v2/pkg/stdio"
 	"github.com/containerd/errdefs"
 	"github.com/containerd/log"
 
+	google_protobuf "github.com/containerd/containerd/v2/pkg/protobuf/types"
 	"github.com/containerd/fifo"
 	runc "github.com/containerd/go-runc"
-	google_protobuf "github.com/gogo/protobuf/types"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/shim/v1/extension"

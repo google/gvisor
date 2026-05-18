@@ -103,8 +103,15 @@ type filesystem struct {
 	// This field is immutable.
 	maxSizeInPages uint64
 
+	// maxInodes is the maximum permissible number of inodes for the tmpfs.
+	// This field is immutable.
+	maxInodes uint64
+
 	// pagesUsed is the number of pages used by this filesystem.
 	pagesUsed atomicbitops.Uint64
+
+	// inodesUsed is the number of inodes used by this filesystem.
+	inodesUsed atomicbitops.Uint64
 
 	// allowXattrPrefix is a set of xattr namespace prefixes that this
 	// tmpfs mount will allow. It is immutable.
@@ -195,6 +202,14 @@ func getDefaultSizeLimit(disable bool) uint64 {
 	return defaultSizeLimit
 }
 
+func getDefaultInodeLimit(disable bool) uint64 {
+	if disable {
+		return math.MaxInt64
+	}
+
+	return totalHostMem / hostarch.PageSize / 2
+}
+
 // GetFilesystem implements vfs.FilesystemType.GetFilesystem.
 func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, _ string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
 	mf := pgalloc.MemoryFileFromContext(ctx)
@@ -247,7 +262,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	maxSizeStr, ok := mopts["size"]
 	if ok {
 		delete(mopts, "size")
-		maxSizeInBytes, err := parseSize(maxSizeStr)
+		maxSizeInBytes, _, err := parseSize(maxSizeStr)
 		if err != nil {
 			ctx.Debugf("tmpfs.FilesystemType.GetFilesystem: parseSize() failed: %v", err)
 			return nil, nil, linuxerr.EINVAL
@@ -270,6 +285,24 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		}
 
 		printedOpts = append(printedOpts, fmt.Sprintf("size=%vk", printedSize))
+	}
+	maxInodes := getDefaultInodeLimit(disableDefaultSizeLimit)
+	maxInodesStr, ok := mopts["nr_inodes"]
+	if ok {
+		delete(mopts, "nr_inodes")
+		var err error
+		var percentageSpecified bool
+		maxInodes, percentageSpecified, err = parseSize(maxInodesStr)
+		if percentageSpecified {
+			// Percentage not allowed for specifying inode limit
+			return nil, nil, linuxerr.EINVAL
+		}
+		if err != nil {
+			ctx.Debugf("tmpfs.FilesystemType.GetFilesystem: parseSize() failed: %v", err)
+			return nil, nil, linuxerr.EINVAL
+		}
+
+		printedOpts = append(printedOpts, fmt.Sprintf("nr_inodes=%v", maxInodes))
 	}
 	modeStr, ok := mopts["mode"]
 	if ok {
@@ -342,6 +375,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		usage:            memUsage,
 		maxFilenameLen:   linux.NAME_MAX,
 		maxSizeInPages:   maxSizeInPages,
+		maxInodes:        maxInodes,
 		allowXattrPrefix: allowXattrPrefix,
 	}
 	fs.vfsfs.Init(vfsObj, newFSType, &fs)
@@ -352,11 +386,26 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	var root *dentry
 	switch rootFileType {
 	case linux.S_IFREG:
-		root = fs.newDentry(fs.newRegularFile(rootKUID, rootKGID, rootMode, nil /* parentDir */))
+		inode, err := fs.newRegularFile(rootKUID, rootKGID, rootMode, nil /* parentDir */)
+		if err != nil {
+			ctx.Warningf("failed to create tmpfs root file: %v", err)
+			return nil, nil, err
+		}
+		root = fs.newDentry(inode)
 	case linux.S_IFLNK:
-		root = fs.newDentry(fs.newSymlink(rootKUID, rootKGID, rootMode, tmpfsOpts.RootSymlinkTarget, nil /* parentDir */))
+		inode, err := fs.newSymlink(rootKUID, rootKGID, rootMode, tmpfsOpts.RootSymlinkTarget, nil /* parentDir */)
+		if err != nil {
+			ctx.Warningf("failed to create tmpfs root symlink: %v", err)
+			return nil, nil, err
+		}
+		root = fs.newDentry(inode)
 	case linux.S_IFDIR:
-		root = &fs.newDirectory(rootKUID, rootKGID, rootMode, nil /* parentDir */).dentry
+		dirInode, err := fs.newDirectory(rootKUID, rootKGID, rootMode, nil /* parentDir */)
+		if err != nil {
+			ctx.Warningf("failed to create tmpfs root directory: %v", err)
+			return nil, nil, err
+		}
+		root = &dirInode.dentry
 	default:
 		fs.vfsfs.DecRef(ctx)
 		return nil, nil, fmt.Errorf("invalid tmpfs root file type: %#o", rootFileType)
@@ -443,6 +492,16 @@ func (fs *filesystem) statFS() linux.Statfs {
 	pagesUsed := fs.pagesUsed.Load()
 	st.BlocksFree = fs.maxSizeInPages - pagesUsed
 	st.BlocksAvailable = fs.maxSizeInPages - pagesUsed
+
+	// If nr_inodes is set for tmpfs return set values.
+	st.Files = fs.maxInodes
+	inodesUsed := fs.inodesUsed.Load()
+	if fs.maxInodes == 0 {
+		st.FilesFree = 0
+	} else {
+		st.FilesFree = fs.maxInodes - inodesUsed
+	}
+
 	return st
 }
 
@@ -569,9 +628,16 @@ type inode struct {
 
 const maxLinks = math.MaxUint32
 
-func (i *inode) init(impl any, fs *filesystem, kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, parentDir *directory) {
+// init creates an inode and increments the total inode count associated with the filesystem.
+// Returns ENOSPC if the maximum inode count has been exhausted and no more inodes can be allocated.
+func (i *inode) init(impl any, fs *filesystem, kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, parentDir *directory) error {
 	if mode.FileType() == 0 {
 		panic("file type is required in FileMode")
+	}
+
+	// Account for the new inode
+	if !fs.accountInode() {
+		return linuxerr.ENOSPC
 	}
 
 	// Inherit the group and setgid bit as in fs/inode.c:inode_init_owner().
@@ -595,6 +661,8 @@ func (i *inode) init(impl any, fs *filesystem, kuid auth.KUID, kgid auth.KGID, m
 	// i.nlink initialized by caller
 	i.impl = impl
 	i.refs.InitRefs()
+
+	return nil
 }
 
 // incLinksLocked increments i's link count.
@@ -653,6 +721,8 @@ func (i *inode) decRef(ctx context.Context) {
 			impl.inode.fs.unaccountPages(pagesDec)
 		}
 
+		// Account for deletion of the inode itself
+		i.fs.unaccountInode()
 	})
 }
 
@@ -1021,12 +1091,15 @@ func (*fileDescription) Sync(context.Context) error {
 // Supported suffixes in string are: K, M, G, T, P, E, %.
 // Note that for percentages, the result depends on the
 // total available physical RAM.
-func parseSize(s string) (uint64, error) {
+// Returns the parsed size, whether it was computed as a percentage
+// of total memory, and potentially an error.
+func parseSize(s string) (uint64, bool, error) {
 	if len(s) == 0 {
-		return 0, fmt.Errorf("size parameter empty")
+		return 0, false, fmt.Errorf("size parameter empty")
 	}
 	suffix := s[len(s)-1]
 	var count uint64 = 1
+	percentageUsed := false
 	switch suffix {
 	case 'e', 'E':
 		count = count << 10
@@ -1048,19 +1121,20 @@ func parseSize(s string) (uint64, error) {
 		s = s[:len(s)-1]
 	case '%':
 		if totalHostMem == 0 {
-			return 0, fmt.Errorf("could not determine size limit as total system memory is unknown")
+			return 0, false, fmt.Errorf("could not determine size limit as total system memory is unknown")
 		}
 		count *= totalHostMem / 100
 		s = s[:len(s)-1]
+		percentageUsed = true
 	}
 	byteTmp, err := strconv.ParseUint(s, 10, 64)
 	if err != nil {
-		return 0, linuxerr.EINVAL
+		return 0, percentageUsed, linuxerr.EINVAL
 	}
 	// Check for overflow.
 	bytes := byteTmp * count
 	if byteTmp != 0 && bytes/byteTmp != count {
-		return 0, fmt.Errorf("size overflow")
+		return 0, percentageUsed, fmt.Errorf("size overflow")
 	}
-	return bytes, err
+	return bytes, percentageUsed, err
 }

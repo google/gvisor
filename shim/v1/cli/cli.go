@@ -19,7 +19,7 @@ package cli
 import (
 	"context"
 
-	containerdshim "github.com/containerd/containerd/runtime/v2/shim"
+	containerdshim "github.com/containerd/containerd/v2/pkg/shim"
 	// This import registers the runsc plugin with containerd.
 	shim "gvisor.dev/gvisor/pkg/shim/v1"
 	_ "gvisor.dev/gvisor/pkg/shim/v1/plugin"
@@ -27,5 +27,5 @@ import (
 
 // Main is the main entrypoint.
 func Main() {
-	containerdshim.RunManager(context.Background(), shim.NewShimManager("io.containerd.runsc.v1"))
+	containerdshim.Run(context.Background(), shim.NewShimManager("io.containerd.runsc.v1"))
 }

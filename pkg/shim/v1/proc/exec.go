@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"github.com/containerd/console"
-	"github.com/containerd/containerd/pkg/stdio"
+	"github.com/containerd/containerd/v2/pkg/stdio"
 	"github.com/containerd/errdefs"
 	"github.com/containerd/fifo"
 	runc "github.com/containerd/go-runc"

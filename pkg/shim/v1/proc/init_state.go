@@ -20,6 +20,7 @@ import (
 	"fmt"
 
 	"github.com/containerd/errdefs"
+	errgrpc "github.com/containerd/errdefs/pkg/errgrpc"
 	runc "github.com/containerd/go-runc"
 	"golang.org/x/sys/unix"
 
@@ -238,6 +239,6 @@ func handleStoppedKill(signal uint32) error {
 		// already been killed.
 		return nil
 	default:
-		return errdefs.ToGRPCf(errdefs.ErrNotFound, "process not found")
+		return errgrpc.ToGRPCf(errdefs.ErrNotFound, "process not found")
 	}
 }

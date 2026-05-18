@@ -168,8 +168,11 @@ func (fs *filesystem) mkdirFromTar(hdr *tar.Header, pathToInode map[string]*inod
 	if !ok {
 		return nil, fmt.Errorf("parent inode at %v is not a directory", dir)
 	}
+	childDir, err := fs.newDirectory(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), linux.FileMode(hdr.Mode), parentDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create new directory inode: %v", err)
+	}
 	parentDir.inode.incLinksLocked()
-	childDir := fs.newDirectory(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), linux.FileMode(hdr.Mode), parentDir)
 	childDir.inode.mtime.Store(hdr.ModTime.UnixNano())
 	childDir.inode.setXattrsFromPAXRecords(hdr)
 	parentDir.insertChildLocked(&childDir.dentry, name)
@@ -191,17 +194,21 @@ func (fs *filesystem) mknodFromTar(ctx context.Context, hdr *tar.Header, pathToI
 		return fmt.Errorf("%v is not a directory", dir)
 	}
 	var childInode *inode
+	var err error
 	switch hdr.Typeflag {
 	case tar.TypeReg:
-		childInode = fs.newRegularFile(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), linux.FileMode(hdr.Mode), parentDir)
+		childInode, err = fs.newRegularFile(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), linux.FileMode(hdr.Mode), parentDir)
 	case tar.TypeFifo:
-		childInode = fs.newNamedPipe(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), linux.FileMode(hdr.Mode), parentDir)
+		childInode, err = fs.newNamedPipe(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), linux.FileMode(hdr.Mode), parentDir)
 	case tar.TypeBlock:
-		childInode = fs.newDeviceFileLocked(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), linux.FileMode(hdr.Mode|linux.S_IFBLK), uint32(hdr.Devmajor), uint32(hdr.Devminor), parentDir)
+		childInode, err = fs.newDeviceFileLocked(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), linux.FileMode(hdr.Mode|linux.S_IFBLK), uint32(hdr.Devmajor), uint32(hdr.Devminor), parentDir)
 	case tar.TypeChar:
-		childInode = fs.newDeviceFileLocked(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), linux.FileMode(hdr.Mode|linux.S_IFCHR), uint32(hdr.Devmajor), uint32(hdr.Devminor), parentDir)
+		childInode, err = fs.newDeviceFileLocked(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), linux.FileMode(hdr.Mode|linux.S_IFCHR), uint32(hdr.Devmajor), uint32(hdr.Devminor), parentDir)
 	default:
 		return fmt.Errorf("mknod unsupported file type %v for %v", hdr.Typeflag, hdr.Name)
+	}
+	if err != nil {
+		return err
 	}
 	childInode.mtime.Store(hdr.ModTime.UnixNano())
 	childInode.setXattrsFromPAXRecords(hdr)
@@ -265,7 +272,11 @@ func (fs *filesystem) symlinkFromTar(hdr *tar.Header, pathToInode map[string]*in
 			return fmt.Errorf("tmpfs: insufficient space to account for symlink target %q", hdr.Name)
 		}
 	}
-	child := fs.newDentry(fs.newSymlink(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), 0777, hdr.Linkname, parentDir))
+	childInode, err := fs.newSymlink(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), 0777, hdr.Linkname, parentDir)
+	if err != nil {
+		return fmt.Errorf("failed to create inode from tar: %v", err)
+	}
+	child := fs.newDentry(childInode)
 	child.inode.mtime.Store(hdr.ModTime.UnixNano())
 	child.inode.setXattrsFromPAXRecords(hdr)
 	parentDir.insertChildLocked(child, name)
