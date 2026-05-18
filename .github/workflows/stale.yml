@@ -10,6 +10,9 @@ name: Mark stale issues and pull requests
 jobs:
   stale:
     runs-on: ubuntu-latest
+    permissions:
+      issues: write        # label / comment / close stale issues
+      pull-requests: write # label / comment / close stale PRs
     steps:
     - uses: actions/stale@v10
       with:

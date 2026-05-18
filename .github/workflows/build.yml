@@ -12,7 +12,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: read
     steps:
     - name: bazel
       run: |
