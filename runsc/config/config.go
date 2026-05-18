@@ -419,6 +419,9 @@ type Config struct {
 	// and can be unpaused manually.
 	PauseExternalNetworking bool `flag:"pause-external-networking"`
 
+	// AllowConnectedOnSave allows network connections to stay established on save.
+	AllowConnectedOnSave bool `flag:"allow-connected-on-save"`
+
 	// AllowRootfsTarAnnotation indicates whether the rootfs tar annotation
 	// should be allowed.
 	AllowRootfsTarAnnotation bool `flag:"allow-rootfs-tar-annotation"`

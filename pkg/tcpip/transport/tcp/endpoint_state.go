@@ -49,7 +49,7 @@ func (e *Endpoint) beforeSave() {
 	case epState == StateInitial || epState == StateBound:
 	case epState.connected() || epState.handshake():
 		// Terminate valid connections only for restore.
-		if !e.route.HasSaveRestoreCapability() {
+		if !e.stack.GetAllowConnectedOnSave() && !e.route.HasSaveRestoreCapability() {
 			if e.stack.GetRemoveConf() {
 				// Terminate the endpoint when resume=false.
 				logDisconnect()
