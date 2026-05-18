@@ -263,6 +263,19 @@ func Prctl(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 		}
 		return 0, nil, t.MemoryManager().SetVMAAnonName(args[2].Pointer(), args[3].Uint64(), name, nameIsNil)
 
+		// gVisor always uses tagged address ABI, so these syscalls are no-ops.
+	case linux.PR_SET_TAGGED_ADDR_CTRL:
+		if t.Arch().Arch() != arch.ARM64 || args[1].Uint64() != linux.PR_TAGGED_ADDR_ENABLE || args[2].Uint64() != 0 || args[3].Uint64() != 0 || args[4].Uint64() != 0 {
+			return 0, nil, linuxerr.EINVAL
+		}
+		return 0, nil, nil
+
+	case linux.PR_GET_TAGGED_ADDR_CTRL:
+		if t.Arch().Arch() != arch.ARM64 || args[1].Uint64() != 0 || args[2].Uint64() != 0 || args[3].Uint64() != 0 || args[4].Uint64() != 0 {
+			return 0, nil, linuxerr.EINVAL
+		}
+		return linux.PR_TAGGED_ADDR_ENABLE, nil, nil
+
 	case linux.PR_GET_TIMING,
 		linux.PR_SET_TIMING,
 		linux.PR_GET_TSC,
