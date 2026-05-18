@@ -107,7 +107,7 @@ func translateIOError(ctx context.Context, err error) error {
 
 // CopyOut implements usermem.IO.CopyOut.
 func (mm *MemoryManager) CopyOut(ctx context.Context, addr hostarch.Addr, src []byte, opts usermem.IOOpts) (int, error) {
-	_, ok := mm.CheckIORange(addr, int64(len(src)))
+	ar, ok := mm.CheckIORange(addr, int64(len(src)))
 	if !ok {
 		return 0, linuxerr.EFAULT
 	}
@@ -118,7 +118,7 @@ func (mm *MemoryManager) CopyOut(ctx context.Context, addr hostarch.Addr, src []
 
 	// Do AddressSpace IO if applicable.
 	if mm.asioEnabled(opts) && len(src) < copyMapMinBytes {
-		return mm.asCopyOut(ctx, addr, src, opts)
+		return mm.asCopyOut(ctx, ar, src, opts)
 	}
 
 	// Go through internal mappings.
@@ -127,19 +127,18 @@ func (mm *MemoryManager) CopyOut(ctx context.Context, addr hostarch.Addr, src []
 	// traverse an unnecessary layer of buffering. This can be fixed by
 	// inlining mm.withInternalMappings() and passing src subslices directly to
 	// memmap.File.BufferWriteAt().
-	return mm.imCopyOut(ctx, addr, src, opts)
+	return mm.imCopyOut(ctx, ar, src, opts)
 }
 
-func (mm *MemoryManager) asCopyOut(ctx context.Context, addr hostarch.Addr, src []byte, opts usermem.IOOpts) (int, error) {
+func (mm *MemoryManager) asCopyOut(ctx context.Context, ar hostarch.AddrRange, src []byte, opts usermem.IOOpts) (int, error) {
 	var done int
 	for {
-		n, err := mm.as.CopyOut(addr+hostarch.Addr(done), src[done:])
+		n, err := mm.as.CopyOut(ar.Start+hostarch.Addr(done), src[done:])
 		done += n
 		if err == nil {
 			return done, nil
 		}
 		if f, ok := err.(platform.SegmentationFault); ok {
-			ar, _ := addr.ToRange(uint64(len(src)))
 			if err := mm.handleASIOFault(ctx, f.Addr, ar, hostarch.Write); err != nil {
 				return done, err
 			}
@@ -147,14 +146,14 @@ func (mm *MemoryManager) asCopyOut(ctx context.Context, addr hostarch.Addr, src 
 		}
 		if _, ok := err.(platform.AddressSpaceIOUnavailable); ok {
 			// Fall back to using internal mappings.
-			return mm.imCopyOut(ctx, addr+hostarch.Addr(done), src[done:], opts)
+			return mm.imCopyOut(ctx, hostarch.AddrRange{ar.Start + hostarch.Addr(done), ar.End}, src[done:], opts)
 		}
 		return done, translateIOError(ctx, err)
 	}
 }
 
-func (mm *MemoryManager) imCopyOut(ctx context.Context, addr hostarch.Addr, src []byte, opts usermem.IOOpts) (int, error) {
-	n64, err := mm.withInternalMappings(ctx, addr.MustToRange(uint64(len(src))), hostarch.Write, opts.IgnorePermissions, func(ims safemem.BlockSeq) (uint64, error) {
+func (mm *MemoryManager) imCopyOut(ctx context.Context, ar hostarch.AddrRange, src []byte, opts usermem.IOOpts) (int, error) {
+	n64, err := mm.withInternalMappings(ctx, ar, hostarch.Write, opts.IgnorePermissions, func(ims safemem.BlockSeq) (uint64, error) {
 		n, err := safemem.CopySeq(ims, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(src)))
 		return n, translateIOError(ctx, err)
 	})
@@ -163,7 +162,7 @@ func (mm *MemoryManager) imCopyOut(ctx context.Context, addr hostarch.Addr, src 
 
 // CopyIn implements usermem.IO.CopyIn.
 func (mm *MemoryManager) CopyIn(ctx context.Context, addr hostarch.Addr, dst []byte, opts usermem.IOOpts) (int, error) {
-	_, ok := mm.CheckIORange(addr, int64(len(dst)))
+	ar, ok := mm.CheckIORange(addr, int64(len(dst)))
 	if !ok {
 		return 0, linuxerr.EFAULT
 	}
@@ -174,7 +173,7 @@ func (mm *MemoryManager) CopyIn(ctx context.Context, addr hostarch.Addr, dst []b
 
 	// Do AddressSpace IO if applicable.
 	if mm.asioEnabled(opts) && len(dst) < copyMapMinBytes {
-		return mm.asCopyIn(ctx, addr, dst, opts)
+		return mm.asCopyIn(ctx, ar, dst, opts)
 	}
 
 	// Go through internal mappings.
@@ -183,19 +182,18 @@ func (mm *MemoryManager) CopyIn(ctx context.Context, addr hostarch.Addr, dst []b
 	// traverse an unnecessary layer of buffering. This can be fixed by
 	// inlining mm.withInternalMappings() and passing dst subslices directly to
 	// memmap.File.BufferReadAt().
-	return mm.imCopyIn(ctx, addr, dst, opts)
+	return mm.imCopyIn(ctx, ar, dst, opts)
 }
 
-func (mm *MemoryManager) asCopyIn(ctx context.Context, addr hostarch.Addr, dst []byte, opts usermem.IOOpts) (int, error) {
+func (mm *MemoryManager) asCopyIn(ctx context.Context, ar hostarch.AddrRange, dst []byte, opts usermem.IOOpts) (int, error) {
 	var done int
 	for {
-		n, err := mm.as.CopyIn(addr+hostarch.Addr(done), dst[done:])
+		n, err := mm.as.CopyIn(ar.Start+hostarch.Addr(done), dst[done:])
 		done += n
 		if err == nil {
 			return done, nil
 		}
 		if f, ok := err.(platform.SegmentationFault); ok {
-			ar, _ := addr.ToRange(uint64(len(dst)))
 			if err := mm.handleASIOFault(ctx, f.Addr, ar, hostarch.Read); err != nil {
 				return done, err
 			}
@@ -203,14 +201,14 @@ func (mm *MemoryManager) asCopyIn(ctx context.Context, addr hostarch.Addr, dst [
 		}
 		if _, ok := err.(platform.AddressSpaceIOUnavailable); ok {
 			// Fall back to using internal mappings.
-			return mm.imCopyIn(ctx, addr+hostarch.Addr(done), dst[done:], opts)
+			return mm.imCopyIn(ctx, hostarch.AddrRange{ar.Start + hostarch.Addr(done), ar.End}, dst[done:], opts)
 		}
 		return done, translateIOError(ctx, err)
 	}
 }
 
-func (mm *MemoryManager) imCopyIn(ctx context.Context, addr hostarch.Addr, dst []byte, opts usermem.IOOpts) (int, error) {
-	n64, err := mm.withInternalMappings(ctx, addr.MustToRange(uint64(len(dst))), hostarch.Read, opts.IgnorePermissions, func(ims safemem.BlockSeq) (uint64, error) {
+func (mm *MemoryManager) imCopyIn(ctx context.Context, ar hostarch.AddrRange, dst []byte, opts usermem.IOOpts) (int, error) {
+	n64, err := mm.withInternalMappings(ctx, ar, hostarch.Read, opts.IgnorePermissions, func(ims safemem.BlockSeq) (uint64, error) {
 		n, err := safemem.CopySeq(safemem.BlockSeqOf(safemem.BlockFromSafeSlice(dst)), ims)
 		return n, translateIOError(ctx, err)
 	})
@@ -219,7 +217,7 @@ func (mm *MemoryManager) imCopyIn(ctx context.Context, addr hostarch.Addr, dst [
 
 // ZeroOut implements usermem.IO.ZeroOut.
 func (mm *MemoryManager) ZeroOut(ctx context.Context, addr hostarch.Addr, toZero int64, opts usermem.IOOpts) (int64, error) {
-	_, ok := mm.CheckIORange(addr, toZero)
+	ar, ok := mm.CheckIORange(addr, toZero)
 	if !ok {
 		return 0, linuxerr.EFAULT
 	}
@@ -230,23 +228,22 @@ func (mm *MemoryManager) ZeroOut(ctx context.Context, addr hostarch.Addr, toZero
 
 	// Do AddressSpace IO if applicable.
 	if mm.asioEnabled(opts) && toZero < copyMapMinBytes {
-		return mm.asZeroOut(ctx, addr, toZero, opts)
+		return mm.asZeroOut(ctx, ar, opts)
 	}
 
 	// Go through internal mappings.
-	return mm.imZeroOut(ctx, addr, toZero, opts)
+	return mm.imZeroOut(ctx, ar, opts)
 }
 
-func (mm *MemoryManager) asZeroOut(ctx context.Context, addr hostarch.Addr, toZero int64, opts usermem.IOOpts) (int64, error) {
+func (mm *MemoryManager) asZeroOut(ctx context.Context, ar hostarch.AddrRange, opts usermem.IOOpts) (int64, error) {
 	var done int64
 	for {
-		n, err := mm.as.ZeroOut(addr+hostarch.Addr(done), uintptr(toZero-done))
+		n, err := mm.as.ZeroOut(ar.Start+hostarch.Addr(done), uintptr(int64(ar.Length())-done))
 		done += int64(n)
 		if err == nil {
 			return done, nil
 		}
 		if f, ok := err.(platform.SegmentationFault); ok {
-			ar, _ := addr.ToRange(uint64(toZero))
 			if err := mm.handleASIOFault(ctx, f.Addr, ar, hostarch.Write); err != nil {
 				return done, err
 			}
@@ -254,14 +251,14 @@ func (mm *MemoryManager) asZeroOut(ctx context.Context, addr hostarch.Addr, toZe
 		}
 		if _, ok := err.(platform.AddressSpaceIOUnavailable); ok {
 			// Fall back to using internal mappings.
-			return mm.imZeroOut(ctx, addr+hostarch.Addr(done), toZero-done, opts)
+			return mm.imZeroOut(ctx, hostarch.AddrRange{ar.Start + hostarch.Addr(done), ar.End}, opts)
 		}
 		return done, translateIOError(ctx, err)
 	}
 }
 
-func (mm *MemoryManager) imZeroOut(ctx context.Context, addr hostarch.Addr, toZero int64, opts usermem.IOOpts) (int64, error) {
-	return mm.withInternalMappings(ctx, addr.MustToRange(uint64(toZero)), hostarch.Write, opts.IgnorePermissions, func(dsts safemem.BlockSeq) (uint64, error) {
+func (mm *MemoryManager) imZeroOut(ctx context.Context, ar hostarch.AddrRange, opts usermem.IOOpts) (int64, error) {
+	return mm.withInternalMappings(ctx, ar, hostarch.Write, opts.IgnorePermissions, func(dsts safemem.BlockSeq) (uint64, error) {
 		n, err := safemem.ZeroSeq(dsts)
 		return n, translateIOError(ctx, err)
 	})
@@ -297,7 +294,7 @@ func (mm *MemoryManager) CopyOutFrom(ctx context.Context, ars hostarch.AddrRange
 			if cplen > int64(bufN)-done {
 				cplen = int64(bufN) - done
 			}
-			n, err := mm.asCopyOut(ctx, ar.Start, buf[int(done):int(done+cplen)], opts)
+			n, err := mm.asCopyOut(ctx, ar, buf[int(done):int(done+cplen)], opts)
 			done += int64(n)
 			if err != nil {
 				return done, err
@@ -330,7 +327,7 @@ func (mm *MemoryManager) CopyInTo(ctx context.Context, ars hostarch.AddrRangeSeq
 		for !ars.IsEmpty() {
 			ar := ars.Head()
 			var n int
-			n, bufErr = mm.asCopyIn(ctx, ar.Start, buf[done:done+int(ar.Length())], opts)
+			n, bufErr = mm.asCopyIn(ctx, ar, buf[done:done+int(ar.Length())], opts)
 			done += n
 			if bufErr != nil {
 				break
@@ -377,7 +374,7 @@ func (mm *MemoryManager) SwapUint32(ctx context.Context, addr hostarch.Addr, new
 	// Do AddressSpace IO if applicable.
 	if mm.asioEnabled(opts) {
 		for {
-			old, err := mm.as.SwapUint32(addr, new)
+			old, err := mm.as.SwapUint32(ar.Start, new)
 			if err == nil {
 				return old, nil
 			}
@@ -424,7 +421,7 @@ func (mm *MemoryManager) CompareAndSwapUint32(ctx context.Context, addr hostarch
 	// Do AddressSpace IO if applicable.
 	if mm.asioEnabled(opts) {
 		for {
-			prev, err := mm.as.CompareAndSwapUint32(addr, old, new)
+			prev, err := mm.as.CompareAndSwapUint32(ar.Start, old, new)
 			if err == nil {
 				return prev, nil
 			}
@@ -471,7 +468,7 @@ func (mm *MemoryManager) LoadUint32(ctx context.Context, addr hostarch.Addr, opt
 	// Do AddressSpace IO if applicable.
 	if mm.asioEnabled(opts) {
 		for {
-			val, err := mm.as.LoadUint32(addr)
+			val, err := mm.as.LoadUint32(ar.Start)
 			if err == nil {
 				return val, nil
 			}

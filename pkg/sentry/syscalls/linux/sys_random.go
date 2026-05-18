@@ -51,7 +51,7 @@ func GetRandom(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintp
 	if length > math.MaxInt32 {
 		length = math.MaxInt32
 	}
-	ar, ok := addr.ToRange(uint64(length))
+	ar, ok := t.MemoryManager().CheckIORange(addr, int64(length))
 	if !ok {
 		return 0, nil, linuxerr.EFAULT
 	}
