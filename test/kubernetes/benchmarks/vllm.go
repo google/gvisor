@@ -20,6 +20,8 @@ import (
 	_ "embed"
 	"fmt"
 	"hash/fnv"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -82,6 +84,88 @@ func (l *tbLogger) Logf(format string, args ...any) {
 
 func (l *tbLogger) Name() string {
 	return l.tb.Name()
+}
+
+func recordServerStats(ctx context.Context, t *testing.T, logs string) {
+	recorder, err := benchmetric.GetRecorder(ctx)
+	if err != nil {
+		t.Fatalf("Failed to initialize benchmark recorder: %v", err)
+	}
+	// Example log:
+	// INFO 05-08 00:15:10 [default_loader.py:308] Loading weights took 1.72 seconds
+	// Meaning that loading weights into host memory took 1.72 seconds.
+	weightRe := regexp.MustCompile(`INFO\s+(\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*Loading weights took ([0-9.]+) seconds`)
+	// INFO 05-08 00:15:20 [tpu_runner.py:536] Init model | hbm=[(2.88, 15.75)]GiB
+	// Meaning that initializing model on the TPU (HBM Allocations) took 10 seconds.
+	initRe := regexp.MustCompile(`INFO\s+(\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*Init model`)
+	// (EngineCore_DP0 pid=305) INFO 05-11 16:37:10 [core.py:259] init engine (profile, create kv cache, warmup model) took 150.42 seconds
+	initEngineRe := regexp.MustCompile(`init engine .* took ([0-9.]+) seconds`)
+	// (APIServer pid=1) INFO 05-11 16:34:08 [api_server.py:1351] vLLM API server version 0.13.0
+	apiServerStartRe := regexp.MustCompile(`INFO\s+(\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*vLLM API server version`)
+	// (APIServer pid=1) INFO 05-11 16:37:12 [api_server.py:1425] Starting vLLM API server 0 on http://0.0.0.0:8000
+	apiServerReadyRe := regexp.MustCompile(`INFO\s+(\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*Starting vLLM API server`)
+
+	if m1 := weightRe.FindStringSubmatch(logs); len(m1) > 0 {
+		if weightSeconds, err := strconv.ParseFloat(m1[2], 64); err == nil {
+			weightTime := time.Duration(weightSeconds * float64(time.Second))
+			if err := recorder.Record(ctx, "vLLM/ModelLoad", benchmetric.SpecificDuration(weightTime, "load-weights")); err != nil {
+				t.Fatalf("Failed to record benchmark data: %v", err)
+			}
+			t.Logf("Model Load Weights: %v", weightTime)
+		} else {
+			t.Logf("Could not parse weight time from logs.")
+		}
+
+		if weightTimeParsed, err := time.Parse("01-02 15:04:05", m1[1]); err == nil {
+			if m2 := initRe.FindStringSubmatch(logs); len(m2) > 0 {
+				if initTimeParsed, err := time.Parse("01-02 15:04:05", m2[1]); err == nil {
+					hbmTime := initTimeParsed.Sub(weightTimeParsed)
+					if err := recorder.Record(ctx, "vLLM/ModelLoad", benchmetric.SpecificDuration(hbmTime, "init-hbm")); err != nil {
+						t.Fatalf("Failed to record benchmark data: %v", err)
+					}
+					t.Logf("Model Init HBM: %v", hbmTime)
+				} else {
+					t.Logf("Could not parse init time from logs.")
+				}
+			}
+		}
+	} else {
+		t.Logf("Could not parse model load times from logs.")
+	}
+
+	if m := initEngineRe.FindStringSubmatch(logs); len(m) > 0 {
+		if initSeconds, err := strconv.ParseFloat(m[1], 64); err == nil {
+			initTime := time.Duration(initSeconds * float64(time.Second))
+			if err := recorder.Record(ctx, "vLLM/ModelLoad", benchmetric.SpecificDuration(initTime, "init-engine")); err != nil {
+				t.Fatalf("Failed to record benchmark data: %v", err)
+			}
+			t.Logf("Model Init Engine(profile, create kv cache, warmup model): %v", initTime)
+		} else {
+			t.Logf("Could not parse init engine time from logs.")
+		}
+	}
+
+	if m1 := apiServerStartRe.FindStringSubmatch(logs); len(m1) > 0 {
+		if startTime, err := time.Parse("01-02 15:04:05", m1[1]); err == nil {
+			if m2 := apiServerReadyRe.FindStringSubmatch(logs); len(m2) > 0 {
+				if readyTime, err := time.Parse("01-02 15:04:05", m2[1]); err == nil {
+					servingDuration := readyTime.Sub(startTime)
+					if err := recorder.Record(ctx, "vLLM/ModelLoad", benchmetric.SpecificDuration(servingDuration, "ready-to-serve")); err != nil {
+						t.Fatalf("Failed to record benchmark data: %v", err)
+					}
+					t.Logf("Model Ready To Serve: %v", servingDuration)
+				} else {
+					t.Logf("Could not parse api server ready time from logs.")
+				}
+			} else {
+				t.Logf("Could not find api server ready log.")
+			}
+		} else {
+			t.Logf("Could not parse api server start time from logs.")
+		}
+	} else {
+		t.Logf("Could not find api server start log.")
+	}
 }
 
 // BenchmarkVLLM runs vllm benchmarks for a single cluster.
@@ -161,6 +245,12 @@ func BenchmarkVLLM(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesCo
 		t.Fatalf("Failed to create vllm client against server pod: %v", err)
 	}
 	logWithTime(t, "vllm server ready.")
+	// Log the model load times.
+	logs, err := vllmServer.Logs(ctx)
+	if err != nil {
+		t.Fatalf("could not get logs: %v", err)
+	}
+	recordServerStats(ctx, t, logs)
 
 	type testCase struct {
 		name           string
