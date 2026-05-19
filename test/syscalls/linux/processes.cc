@@ -275,7 +275,10 @@ int ExecSwapPostExec() {
 // ExecSwapPreClone is the first part of the ExecSwapThreadGroupLeader test.
 // It is called after the test has fork()'d.
 // It calls clone() to run ExecSwapPreExec.
-[[noreturn]] void ExecSwapPreClone(ExecSwapArg* exec_swap_arg) {
+// We need to disable HWASan, for this, because we cannot tag the stack region
+// used by the clone() call.
+[[noreturn]] __attribute__((no_sanitize("hwaddress"))) void ExecSwapPreClone(
+    ExecSwapArg* exec_swap_arg) {
   pid_t pid = getpid();
   TEST_PCHECK(pid > 0);
   pid_t tid = gettid();
