@@ -4000,8 +4000,11 @@ cc_binary(
         ":socket_non_stream_blocking_test_cases",
         ":unix_domain_socket_test_util",
         "//test/util:socket_util",
+        "//test/util:signal_util",
         "//test/util:test_main",
         "//test/util:test_util",
+        "//test/util:thread_util",
+        "@com_google_absl//absl/time",
     ],
 )
 
