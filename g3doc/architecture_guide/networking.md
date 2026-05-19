@@ -45,6 +45,8 @@ userspace.
 Outgoing packets can be processed on different goroutines -- syscall, TCP, or
 the link endpoint's -- until typically reaching a [queueing discipline][qdisc].
 There another goroutine writes batches of queued packets out the link endpoint.
+The default qdisc is FIFO; `runsc` can also configure TBF for egress traffic
+shaping.
 
 **Netstack supports a variety of underlying link layers.** Currently supported
 link layers include `AF_PACKET` sockets, `AF_XDP` sockets, shared memory, and Go
