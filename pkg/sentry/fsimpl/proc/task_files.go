@@ -414,6 +414,57 @@ func (d *idMapData) Write(ctx context.Context, _ *vfs.FileDescription, src userm
 	return int64(srclen), nil
 }
 
+// setgroupsData implements vfs.WritableDynamicBytesSource for
+// /proc/[pid]/setgroups.
+//
+// +stateify savable
+type setgroupsData struct {
+	kernfs.DynamicBytesFile
+
+	task *kernel.Task
+}
+
+var _ dynamicInode = (*setgroupsData)(nil)
+var _ vfs.WritableDynamicBytesSource = (*setgroupsData)(nil)
+
+// Generate implements vfs.WritableDynamicBytesSource.Generate.
+func (d *setgroupsData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	if d.task.UserNamespace().SetgroupsAllowed() {
+		buf.WriteString("allow\n")
+	} else {
+		buf.WriteString("deny\n")
+	}
+	return nil
+}
+
+// Write implements vfs.WritableDynamicBytesSource.Write.
+func (d *setgroupsData) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
+	srclen := src.NumBytes()
+	if srclen >= hostarch.PageSize || offset != 0 {
+		return 0, linuxerr.EINVAL
+	}
+	b := make([]byte, srclen)
+	if _, err := src.CopyIn(ctx, b); err != nil {
+		return 0, err
+	}
+	if nul := bytes.IndexByte(b, 0); nul >= 0 {
+		b = b[:nul]
+	}
+	switch string(bytes.TrimRight(b, " \t\n\v\f\r")) {
+	case "allow":
+		if err := d.task.UserNamespace().SetSetgroupsAllowed(ctx, true); err != nil {
+			return 0, err
+		}
+	case "deny":
+		if err := d.task.UserNamespace().SetSetgroupsAllowed(ctx, false); err != nil {
+			return 0, err
+		}
+	default:
+		return 0, linuxerr.EINVAL
+	}
+	return int64(srclen), nil
+}
+
 var _ kernfs.Inode = (*memInode)(nil)
 
 // memInode implements kernfs.Inode for /proc/[pid]/mem.

@@ -18,6 +18,7 @@ import (
 	"math"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 )
 
@@ -57,7 +58,8 @@ type UserNamespace struct {
 	// user_namespace.parent_could_setfcap in Linux.
 	parentHadSetfcap bool
 
-	// TODO(b/27454212): Support disabling setgroups(2).
+	// setgroupsAllowed mirrors USERNS_SETGROUPS_ALLOWED in Linux. Protected by mu.
+	setgroupsAllowed bool
 }
 
 // NewRootUserNamespace returns a UserNamespace that is appropriate for a
@@ -67,6 +69,7 @@ type UserNamespace struct {
 // namespace.
 func NewRootUserNamespace() *UserNamespace {
 	var ns UserNamespace
+	ns.setgroupsAllowed = true
 	// """
 	// The initial user namespace has no parent namespace, but, for
 	// consistency, the kernel provides dummy user and group ID mapping files
@@ -129,12 +132,51 @@ func (c *Credentials) NewChildUserNamespace() (*UserNamespace, error) {
 	if !c.EffectiveKGID.In(c.UserNamespace).Ok() {
 		return nil, linuxerr.EPERM
 	}
+	c.UserNamespace.mu.Lock()
+	parentSetgroupsAllowed := c.UserNamespace.setgroupsAllowed
+	c.UserNamespace.mu.Unlock()
 	return &UserNamespace{
 		parent:           c.UserNamespace,
 		owner:            c.EffectiveKUID,
 		parentHadSetfcap: c.HasSelfCapability(linux.CAP_SETFCAP),
+		setgroupsAllowed: parentSetgroupsAllowed,
 		// "When a user namespace is created, it starts without a mapping of
 		// user IDs (group IDs) to the parent user namespace." -
 		// user_namespaces(7)
 	}, nil
+}
+
+// SetgroupsAllowed returns ns's USERNS_SETGROUPS_ALLOWED bit.
+func (ns *UserNamespace) SetgroupsAllowed() bool {
+	ns.mu.Lock()
+	defer ns.mu.Unlock()
+	return ns.setgroupsAllowed
+}
+
+// MaySetgroups mirrors userns_may_setgroups in Linux.
+func (ns *UserNamespace) MaySetgroups() bool {
+	ns.mu.Lock()
+	defer ns.mu.Unlock()
+	return !ns.gidMapFromParent.IsEmpty() && ns.setgroupsAllowed
+}
+
+// SetSetgroupsAllowed mirrors proc_setgroups_write in Linux.
+func (ns *UserNamespace) SetSetgroupsAllowed(ctx context.Context, allow bool) error {
+	c := CredentialsFromContext(ctx)
+	if !c.HasCapabilityIn(linux.CAP_SYS_ADMIN, ns) {
+		return linuxerr.EPERM
+	}
+	ns.mu.Lock()
+	defer ns.mu.Unlock()
+	if allow {
+		if !ns.setgroupsAllowed {
+			return linuxerr.EPERM
+		}
+		return nil
+	}
+	if !ns.gidMapFromParent.IsEmpty() {
+		return linuxerr.EPERM
+	}
+	ns.setgroupsAllowed = false
+	return nil
 }
