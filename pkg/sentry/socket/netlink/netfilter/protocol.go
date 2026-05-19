@@ -523,10 +523,9 @@ func (p *Protocol) addChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 			return nil, err
 		}
 		chainFlags |= linux.NFT_CHAIN_BASE
-		// TODO: b/434243967 - support NFTA_CHAIN_COUNTERS (nested attribute)
-		if _, ok := attrs[linux.NFTA_CHAIN_COUNTERS]; ok {
-			return nil, syserr.NewAnnotatedError(syserr.ErrNotSupported, "Nftables: Chain counters attribute is currently not supported")
-		}
+		// TODO: b/434243967 - support NFTA_CHAIN_COUNTERS (nested attribute).
+		// Currently ignored to allow base chain creation by iptables-nft.
+		_ = attrs[linux.NFTA_CHAIN_COUNTERS]
 	} else {
 		if chainFlags&linux.NFT_CHAIN_BASE != 0 {
 			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Chain base attribute is invalid for chains without a hook")
@@ -1216,6 +1215,14 @@ func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *n
 
 	// Nftables functions error check the address family value.
 	family, _ := nftables.AFtoNetlinkAF(nfGenMsg.Family)
+	subsysID := hdr.NetFilterSubsysID()
+	if subsysID == linux.NFNL_SUBSYS_NFT_COMPAT {
+		if err := nft.ProcessCompatMessage(hdr, ms, attrs, family); err != nil {
+			log.Debugf("Nftables-XT compat message error: %s", err)
+			return err.GetError()
+		}
+		return nil
+	}
 
 	switch msgType {
 	case linux.NFT_MSG_GETTABLE:
