@@ -114,9 +114,11 @@ type protocol struct {
 	// This is immutable after creation.
 	probe TCPProbeFunc `state:"nosave"`
 
-	// The following secrets are initialized once and stay unchanged after.
-	seqnumSecret   [16]byte
-	tsOffsetSecret [16]byte
+	// The following secrets are used for ISN and timestamp-offset
+	// generation. They are not serialized into checkpoint state and are
+	// freshly drawn from the secure RNG on restore (see afterLoad).
+	seqnumSecret   [16]byte `state:"nosave"`
+	tsOffsetSecret [16]byte `state:"nosave"`
 }
 
 // Number returns the tcp protocol number.

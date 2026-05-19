@@ -162,6 +162,7 @@ go_library(
         "pending_processing_mutex.go",
         "protocol.go",
         "protocol_mutex.go",
+        "protocol_state.go",
         "rack.go",
         "rcv.go",
         "rcv_queue_mutex.go",
@@ -217,6 +218,7 @@ go_test(
     srcs = [
         "cubic_test.go",
         "main_test.go",
+        "protocol_state_test.go",
         "sack_scoreboard_test.go",
         "segment_test.go",
         "timer_test.go",
