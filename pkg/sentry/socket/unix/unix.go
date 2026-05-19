@@ -69,6 +69,10 @@ type Socket struct {
 
 var _ = socket.Socket(&Socket{})
 
+func isAbstract(path string) bool {
+	return len(path) == 0 || path[0] == 0
+}
+
 // NewSockfsFile creates a new socket file in the global sockfs mount and
 // returns a corresponding file description.
 func NewSockfsFile(t *kernel.Task, ep transport.Endpoint, stype linux.SockType) (*vfs.FileDescription, *syserr.Error) {
@@ -224,7 +228,7 @@ func (s *Socket) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 	}
 
 	// If path is empty, the socket is autobound to an abstract address.
-	if len(p) == 0 || p[0] == 0 {
+	if isAbstract(p) {
 		// Abstract socket. See net/unix/af_unix.c:unix_bind_abstract().
 		asn := s.namespace.AbstractSockets()
 		p, err := asn.Bind(t, p, bep, s)
@@ -469,8 +473,8 @@ func extractPath(sockaddr []byte) (string, *syserr.Error) {
 
 	// The address is trimmed by GetAddress.
 	p := addr.Addr
-	if len(p) > 0 && p[len(p)-1] == '/' {
-		// Weird, they tried to bind '/a/b/c/'?
+	if !isAbstract(p) && p[len(p)-1] == '/' {
+		// Weird, they tried to bind '/a/b/c/' on a filesystem socket?
 		return "", syserr.ErrIsDir
 	}
 
@@ -578,7 +582,7 @@ func (s *Socket) extractEndpoint(t *kernel.Task, sockaddr []byte) (transport.Bou
 	}
 
 	// Is it abstract?
-	if path[0] == 0 {
+	if isAbstract(path) {
 		ep := s.namespace.AbstractSockets().BoundEndpoint(path[1:])
 		if ep == nil {
 			// No socket found.
@@ -630,7 +634,7 @@ func (s *Socket) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr
 		// Linux for abstract sockets returns ErrConnectionRefused
 		// instead of ErrWrongProtocolForSocket.
 		path, _ := extractPath(sockaddr)
-		if len(path) > 0 && path[0] == 0 {
+		if isAbstract(path) {
 			err = syserr.ErrConnectionRefused
 		}
 	}

@@ -311,14 +311,11 @@ func New(conf *config.Config, args Args) (*Container, error) {
 		// "For runtimes that implement the deprecated prestart hooks as
 		// createRuntime hooks, createRuntime hooks MUST be called after the
 		// prestart hooks."
-		if err := executeHooks(c.Spec.Hooks.Prestart, c.State()); err != nil {
+		if err := specutils.ExecuteHooks(c.Spec.Hooks.Prestart, c.State()); err != nil {
 			return nil, err
 		}
-		if err := executeHooks(c.Spec.Hooks.CreateRuntime, c.State()); err != nil {
+		if err := specutils.ExecuteHooks(c.Spec.Hooks.CreateRuntime, c.State()); err != nil {
 			return nil, err
-		}
-		if len(c.Spec.Hooks.CreateContainer) > 0 {
-			log.Warningf("CreateContainer hook skipped because running inside container namespace is not supported")
 		}
 	}
 
@@ -524,7 +521,7 @@ func (c *Container) startImpl(conf *config.Config, action string, startRoot func
 	// the remaining hooks and lifecycle continue as if the hook had
 	// succeeded" -OCI spec.
 	if c.Spec.Hooks != nil {
-		executeHooksBestEffort(c.Spec.Hooks.Poststart, c.State())
+		specutils.ExecuteHooksBestEffort(c.Spec.Hooks.Poststart, c.State())
 	}
 
 	c.changeStatus(Running)
@@ -999,7 +996,7 @@ func (c *Container) Destroy() error {
 	// 2) Make sure it only runs once, because the root has been deleted, the
 	// container can't be loaded again.
 	if c.Spec.Hooks != nil {
-		executeHooksBestEffort(c.Spec.Hooks.Poststop, c.State())
+		specutils.ExecuteHooksBestEffort(c.Spec.Hooks.Poststop, c.State())
 	}
 
 	if len(errs) == 0 {
@@ -1616,8 +1613,13 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 
 	donations.Transfer(cmd, nextFD)
 
+	// Add container ID as the last argument.
+	cmd.Args = append(cmd.Args, c.ID)
+	log.Infof("Starting gofer with command: %v", cmd.Args)
+
 	// Start the gofer in the given namespace.
 	donation.LogDonations(cmd)
+
 	log.Debugf("Starting gofer: %s %v", cmd.Path, cmd.Args)
 	if err := specutils.StartInNS(cmd, nss); err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("gofer: %v", err)

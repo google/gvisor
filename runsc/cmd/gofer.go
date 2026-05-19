@@ -128,7 +128,7 @@ func (g *Gofer) Synopsis() string {
 
 // Usage implements subcommands.Command.
 func (*Gofer) Usage() string {
-	return "gofer [flags]\n"
+	return "gofer [flags] <container ID>\n"
 }
 
 // SetFlags implements subcommands.Command.
@@ -162,6 +162,11 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		f.Usage()
 		return subcommands.ExitUsageError
 	}
+	if f.NArg() != 1 {
+		f.Usage()
+		return subcommands.ExitUsageError
+	}
+	containerID := f.Arg(0)
 
 	conf := args[0].(*config.Config)
 
@@ -196,7 +201,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 	defer goferToHostRPC.Close()
 
 	if g.setUpRoot {
-		if err := sandboxsetup.SetupRootFS(spec, conf, g.mountConfs, g.devIoFD, makeRPCMountOpener(goferToHostRPC)); err != nil {
+		if err := sandboxsetup.SetupRootFS(spec, conf, g.mountConfs, g.devIoFD, makeRPCMountOpener(goferToHostRPC), containerID, g.bundleDir); err != nil {
 			util.Fatalf("Error setting up root FS: %v", err)
 		}
 		if !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {

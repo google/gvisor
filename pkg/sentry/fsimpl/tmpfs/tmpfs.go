@@ -104,6 +104,7 @@ type filesystem struct {
 	maxSizeInPages uint64
 
 	// maxInodes is the maximum permissible number of inodes for the tmpfs.
+	// If maxInodes == 0, there is no limit on the number of inodes.
 	// This field is immutable.
 	maxInodes uint64
 
@@ -204,7 +205,7 @@ func getDefaultSizeLimit(disable bool) uint64 {
 
 func getDefaultInodeLimit(disable bool) uint64 {
 	if disable {
-		return math.MaxInt64
+		return 0
 	}
 
 	return totalHostMem / hostarch.PageSize / 2
@@ -388,21 +389,18 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	case linux.S_IFREG:
 		inode, err := fs.newRegularFile(rootKUID, rootKGID, rootMode, nil /* parentDir */)
 		if err != nil {
-			ctx.Warningf("failed to create tmpfs root file: %v", err)
 			return nil, nil, err
 		}
 		root = fs.newDentry(inode)
 	case linux.S_IFLNK:
 		inode, err := fs.newSymlink(rootKUID, rootKGID, rootMode, tmpfsOpts.RootSymlinkTarget, nil /* parentDir */)
 		if err != nil {
-			ctx.Warningf("failed to create tmpfs root symlink: %v", err)
 			return nil, nil, err
 		}
 		root = fs.newDentry(inode)
 	case linux.S_IFDIR:
 		dirInode, err := fs.newDirectory(rootKUID, rootKGID, rootMode, nil /* parentDir */)
 		if err != nil {
-			ctx.Warningf("failed to create tmpfs root directory: %v", err)
 			return nil, nil, err
 		}
 		root = &dirInode.dentry

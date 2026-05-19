@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package container
+package specutils
 
 import (
 	"bytes"
@@ -39,9 +39,9 @@ import (
 // 		}]
 // },
 
-// executeHooksBestEffort executes hooks and logs warning in case they fail.
+// ExecuteHooksBestEffort executes hooks and logs warning in case they fail.
 // Runs all hooks, always.
-func executeHooksBestEffort(hooks []specs.Hook, s specs.State) {
+func ExecuteHooksBestEffort(hooks []specs.Hook, s specs.State) {
 	for _, h := range hooks {
 		if err := executeHook(h, s); err != nil {
 			log.Warningf("Failure to execute hook %+v, err: %v", h, err)
@@ -49,8 +49,8 @@ func executeHooksBestEffort(hooks []specs.Hook, s specs.State) {
 	}
 }
 
-// executeHooks executes hooks until the first one fails or they all execute.
-func executeHooks(hooks []specs.Hook, s specs.State) error {
+// ExecuteHooks executes hooks until the first one fails or they all execute.
+func ExecuteHooks(hooks []specs.Hook, s specs.State) error {
 	for _, h := range hooks {
 		if err := executeHook(h, s); err != nil {
 			return err
