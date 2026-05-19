@@ -167,12 +167,13 @@ type MachineInfo struct {
 
 // knownMachineTypes is a map of known GCE machine types to their info.
 var knownMachineTypes = map[string]*MachineInfo{
-	"n1-standard-4":   {NumCores: 4, MemoryGiB: 15},
-	"n2-standard-4":   {NumCores: 4, MemoryGiB: 16},
-	"n2-standard-8":   {NumCores: 8, MemoryGiB: 32},
-	"n2d-standard-8":  {NumCores: 8, MemoryGiB: 32},
-	"g2-standard-8":   {NumCores: 8, MemoryGiB: 32},
-	"ct4p-hightpu-4t": {NumCores: 240, MemoryGiB: 407},
+	"n1-standard-4":         {NumCores: 4, MemoryGiB: 15},
+	"n2-standard-4":         {NumCores: 4, MemoryGiB: 16},
+	"n2-standard-8":         {NumCores: 8, MemoryGiB: 32},
+	"n2d-standard-8":        {NumCores: 8, MemoryGiB: 32},
+	"g2-standard-8":         {NumCores: 8, MemoryGiB: 32},
+	"ct4p-hightpu-4t":       {NumCores: 240, MemoryGiB: 407},
+	"c3-standard-192-metal": {NumCores: 192, MemoryGiB: 768},
 }
 
 // TestCluster wraps clusters with their individual ClientSets so that helper methods can be called.
