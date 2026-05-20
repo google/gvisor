@@ -3999,10 +3999,10 @@ func TestSpecValidation(t *testing.T) {
 				restoreSpec.Linux = &specs.Linux{}
 				mode := os.FileMode(0666)
 				dev := specs.LinuxDevice{
-					Path:     "/dev/nvidiactl",
+					Path:     "/dev/something",
 					Type:     "c",
-					Major:    195, // nvgpu.NV_MAJOR_DEVICE_NUMBER,
-					Minor:    255, // nvgpu.NV_CONTROL_DEVICE_MINOR,
+					Major:    100,
+					Minor:    100,
 					FileMode: &mode,
 				}
 				restoreSpec.Linux.Devices = append(restoreSpec.Linux.Devices, dev)
