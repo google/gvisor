@@ -85,7 +85,7 @@ const (
 )
 
 // ExePath must point to runsc binary, which is normally the same binary. It's
-// changed in tests that aren't linked in the same binary and by --self_path.
+// changed in tests that aren't linked in the same binary and by --self-path.
 var ExePath = config.DefaultSelfPath
 
 // Version is the supported spec version.

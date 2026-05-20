@@ -53,7 +53,7 @@ type Config struct {
 	RootDir string `flag:"root"`
 
 	// SelfPath is the path to the runsc binary used when re-executing runsc.
-	SelfPath string `flag:"self_path"`
+	SelfPath string `flag:"self-path"`
 
 	// Traceback changes the Go runtime's traceback level.
 	Traceback string `flag:"traceback"`
@@ -451,7 +451,7 @@ func (c *Config) validate() error {
 		return fmt.Errorf("pause-external-networking flag is only supported with sandbox networking")
 	}
 	if c.SelfPath == "" {
-		return fmt.Errorf("self_path flag cannot be empty")
+		return fmt.Errorf("self-path flag cannot be empty")
 	}
 	// Require profile flags to explicitly opt-in to profiling with
 	// -profile rather than implying it since these options have security

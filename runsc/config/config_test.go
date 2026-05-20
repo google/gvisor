@@ -87,7 +87,7 @@ func TestToFlagsFromFlags(t *testing.T) {
 	testFlags.Set("profile", "false") // Matches default value.
 	testFlags.Set("num-network-channels", "123")
 	testFlags.Set("network", "none")
-	testFlags.Set("self_path", "/runsc/stable")
+	testFlags.Set("self-path", "/runsc/stable")
 	c, err := NewFromFlags(testFlags)
 	if err != nil {
 		t.Fatal(err)
@@ -109,7 +109,7 @@ func TestToFlagsFromFlags(t *testing.T) {
 		"--profile":              "false",
 		"--num-network-channels": "123",
 		"--network":              "none",
-		"--self_path":            "/runsc/stable",
+		"--self-path":            "/runsc/stable",
 	} {
 		if got, ok := fm[name]; ok {
 			if got != want {
