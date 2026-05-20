@@ -57,6 +57,8 @@ type Create struct {
 	fsRestoreImagePath string
 	fsRestoreDirect    bool
 
+	forRestore bool
+
 	// spec is the cached OCI spec.
 	spec *specs.Spec
 }
@@ -84,6 +86,7 @@ func (c *Create) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.userLog, "user-log", "", "filename to send user-visible logs to. Empty means no logging.")
 	f.StringVar(&c.fsRestoreImagePath, "fs-restore-image-path", "", "path to filesystem checkpoint to restore")
 	f.BoolVar(&c.fsRestoreDirect, "fs-restore-direct", false, "open files in fs-restore-image-path with O_DIRECT")
+	f.BoolVar(&c.forRestore, "for-restore", false, "value to indicate if the sandbox is being restored from a previous state. This flag only applies for the root container")
 }
 
 // FetchSpec implements util.SubCommand.FetchSpec.
@@ -137,6 +140,7 @@ func (c *Create) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcom
 		UserLog:            c.userLog,
 		FSRestoreImagePath: c.fsRestoreImagePath,
 		FSRestoreDirect:    c.fsRestoreDirect,
+		ForRestore:         c.forRestore,
 	}
 	if _, err := container.New(conf, contArgs); err != nil {
 		return util.Errorf("creating container: %v", err)

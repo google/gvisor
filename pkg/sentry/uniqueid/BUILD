@@ -9,5 +9,8 @@ go_library(
     name = "uniqueid",
     srcs = ["context.go"],
     visibility = ["//pkg/sentry:internal"],
-    deps = ["//pkg/context"],
+    deps = [
+        "//pkg/atomicbitops",
+        "//pkg/context",
+    ],
 )

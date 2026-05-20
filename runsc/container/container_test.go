@@ -1152,7 +1152,7 @@ func TestSignalProcessGroup(t *testing.T) {
 // recorded. Then, it is restored in two new containers and the first number
 // printed from these containers is checked. Both should be the next consecutive
 // number after the last number from the checkpointed container.
-func testCheckpointRestore(t *testing.T, conf *config.Config, compression statefile.CompressionLevel, newSpecWithScript func(string) *specs.Spec) {
+func testCheckpointRestore(t *testing.T, conf *config.Config, compression statefile.CompressionLevel, forRestore bool, newSpecWithScript func(string) *specs.Spec) {
 	dir, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-test")
 	if err != nil {
 		t.Fatalf("os.MkdirTemp failed: %v", err)
@@ -1220,9 +1220,10 @@ func testCheckpointRestore(t *testing.T, conf *config.Config, compression statef
 	// Restore into a new container with different ID (e.g. clone). Keep the
 	// initial container running to ensure no conflict with it.
 	args2 := Args{
-		ID:        testutil.RandomContainerID(),
-		Spec:      spec,
-		BundleDir: bundleDir,
+		ID:         testutil.RandomContainerID(),
+		Spec:       spec,
+		BundleDir:  bundleDir,
+		ForRestore: forRestore,
 	}
 	cont2, err := New(conf, args2)
 	if err != nil {
@@ -1275,6 +1276,7 @@ func testCheckpointRestore(t *testing.T, conf *config.Config, compression statef
 	}
 	defer outputFile3.Close()
 
+	args.ForRestore = forRestore
 	cont3, err := New(conf, args)
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
@@ -1314,9 +1316,13 @@ func TestCheckpointRestore(t *testing.T) {
 			}
 			for _, compression := range compressionLevels {
 				t.Run(string(compression), func(t *testing.T) {
-					testCheckpointRestore(t, conf, compression, func(script string) *specs.Spec {
-						return testutil.NewSpecWithArgs("bash", "-c", script)
-					})
+					for _, forRestore := range []bool{true, false} {
+						t.Run(fmt.Sprintf("forRestore-%t", forRestore), func(t *testing.T) {
+							testCheckpointRestore(t, conf, compression, forRestore, func(script string) *specs.Spec {
+								return testutil.NewSpecWithArgs("bash", "-c", script)
+							})
+						})
+					}
 				})
 			}
 		})
@@ -1409,6 +1415,7 @@ func TestCheckpointRestoreExecKilled(t *testing.T) {
 	cont = nil
 	stdioCleanup.Clean()
 
+	args.ForRestore = true
 	cont2, err := New(conf, args)
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
@@ -1494,6 +1501,7 @@ func TestCheckpointRestoreCreateMountPoint(t *testing.T) {
 	cont.Destroy()
 	cont = nil
 
+	args.ForRestore = true
 	cont2, err := New(conf, args)
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
@@ -1602,9 +1610,10 @@ func TestUnixDomainSockets(t *testing.T) {
 
 			// Restore into a new container.
 			argsRestore := Args{
-				ID:        testutil.RandomContainerID(),
-				Spec:      spec,
-				BundleDir: bundleDir,
+				ID:         testutil.RandomContainerID(),
+				Spec:       spec,
+				BundleDir:  bundleDir,
+				ForRestore: true,
 			}
 			contRestore, err := New(conf, argsRestore)
 			if err != nil {
@@ -3005,6 +3014,7 @@ func TestUsageFD(t *testing.T) {
 	cont.Destroy()
 	cont = nil
 
+	args.ForRestore = true
 	cont2, err := New(conf, args)
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
@@ -3829,7 +3839,7 @@ func TestCheckpointRestoreEROFS(t *testing.T) {
 	// Skip overlay because test requires writing to host file.
 	for name, conf := range configs(t, true /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
-			testCheckpointRestore(t, conf, statefile.CompressionLevelDefault, func(script string) *specs.Spec {
+			testCheckpointRestore(t, conf, statefile.CompressionLevelDefault, false, func(script string) *specs.Spec {
 				spec := testutil.NewSpecWithArgs("/busybox", "sh", "-c", script)
 				spec.Root = &specs.Root{
 					Path:     rootfsDir,
@@ -4261,9 +4271,10 @@ func TestSpecValidation(t *testing.T) {
 			// Restore into a new container with different ID (e.g. clone). Keep the
 			// initial container running to ensure no conflict with it.
 			args2 := Args{
-				ID:        testutil.RandomContainerID(),
-				Spec:      restoreSpec,
-				BundleDir: bundleDir2,
+				ID:         testutil.RandomContainerID(),
+				Spec:       restoreSpec,
+				BundleDir:  bundleDir2,
+				ForRestore: true,
 			}
 			cont2, err := New(conf, args2)
 			if err != nil {

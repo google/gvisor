@@ -170,6 +170,7 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 		runArgs.Spec = r.spec
 		specutils.LogSpecDebug(runArgs.Spec, conf.OCISeccomp)
 
+		runArgs.ForRestore = true
 		if c, err = container.New(conf, runArgs); err != nil {
 			return util.Errorf("creating container: %v", err)
 		}

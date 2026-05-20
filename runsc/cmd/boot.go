@@ -211,6 +211,8 @@ type Boot struct {
 	uid int
 	gid int
 
+	forRestore bool
+
 	// rootfsUpperTarFD is the file descriptor to a tar file that has rootfs change at startup.
 	rootfsUpperTarFD int
 
@@ -256,6 +258,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&b.hostTHP.Defrag, "host-thp-defrag", "", "value of /sys/kernel/mm/transparent_hugepage/defrag on the host")
 	f.IntVar(&b.uid, "uid", 0, "user ID")
 	f.IntVar(&b.gid, "gid", 0, "user ID")
+	f.BoolVar(&b.forRestore, "for-restore", false, "value to indicate if the sandbox is being restored from a previous state")
 
 	// Open FDs that are donated to the sandbox.
 	f.IntVar(&b.specFD, "spec-fd", -1, "required fd with the container spec")
@@ -610,6 +613,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		SaveFDs:          b.saveFDs.GetFDs(),
 		FSRestoreFDs:     b.fsRestoreFDs.GetFDs(),
 		RootfsUpperTarFD: b.rootfsUpperTarFD,
+		ForRestore:       b.forRestore,
 	}
 	b.setBootArgsExtra(&bootArgs)
 	l, err := boot.New(bootArgs)
