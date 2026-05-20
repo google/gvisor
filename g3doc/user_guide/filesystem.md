@@ -291,8 +291,13 @@ To build a custom gofer:
 
 1.  Implement the `extension.Extension` interface: `Name`, `TryHandleMount`, and
     `SeccompRules`.
-2.  Register your extension in `init()` or early `main()`.
-3.  Build a runsc binary that imports `runsc/cli` and your extension package.
+2.  Optionally define a `SetFlags(*flag.FlagSet)` method on the extension type
+    if it needs gofer flags.
+3.  Optionally define a `PrepareGofer(extension.GoferPrepareContext)` method on
+    the extension type if it needs to run setup before the gofer drops
+    capabilities and enters its final root.
+4.  Register your extension in `init()` or early `main()`.
+5.  Build a runsc binary that imports `runsc/cli` and your extension package.
 
 The extension's `TryHandleMount` returns a `lisafs.ConnectionImpl` and
 `lisafs.ConnectionOpts` for mounts it handles, or a nil implementation to
@@ -300,4 +305,7 @@ decline. All mounts share the same `lisafs.Server`, preserving server-side
 filesystem tree synchronization across stock and extension-backed mounts.
 Configuration may be read from OCI annotations and mount fields such as source,
 type, and options. `SeccompRules` declares any additional syscalls the extension
-needs beyond the stock gofer allowlist.
+needs beyond the stock gofer allowlist. `PrepareGofer` can return
+`FlagOverrides` for state that must survive gofer re-exec, such as file
+descriptor numbers. Extensions that pass file descriptors this way must clear
+`FD_CLOEXEC` on those descriptors before returning.

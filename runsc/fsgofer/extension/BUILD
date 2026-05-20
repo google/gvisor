@@ -12,6 +12,7 @@ go_library(
     deps = [
         "//pkg/lisafs",
         "//pkg/seccomp",
+        "//runsc/flag",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
     ],
 )
@@ -24,6 +25,7 @@ go_test(
     deps = [
         "//pkg/lisafs",
         "//pkg/seccomp",
+        "//runsc/flag",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
     ],
 )
