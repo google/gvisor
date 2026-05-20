@@ -121,6 +121,7 @@ go_library(
         "//runsc/container",
         "//runsc/flag",
         "//runsc/fsgofer",
+        "//runsc/fsgofer/extension",
         "//runsc/fsgofer/filter",
         "//runsc/metricserver/containermetrics",
         "//runsc/mitigate",

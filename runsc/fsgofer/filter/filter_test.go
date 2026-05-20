@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/seccomp"
 )
 
 func TestRulesLisaFSFilters(t *testing.T) {
@@ -54,5 +55,17 @@ func TestRulesLisaFSFilters(t *testing.T) {
 				t.Errorf("Rules().Has(SYS_FGETXATTR) = %t, want %t", got, tc.wantAllowed)
 			}
 		})
+	}
+}
+
+func TestRulesExtraRules(t *testing.T) {
+	const extraSyscall = uintptr(123456)
+	rules := Rules(Options{
+		ExtraRules: []seccomp.SyscallRules{
+			seccomp.NewSyscallRules().Add(extraSyscall, seccomp.MatchAll{}),
+		},
+	})
+	if !rules.Has(extraSyscall) {
+		t.Fatalf("Rules().Has(%d) = false, want true", extraSyscall)
 	}
 }

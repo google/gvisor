@@ -42,6 +42,10 @@ accessed/mutated via RPCs by LISAFS clients. The server is a trusted process.
 For security reasons, the server must assume that the client can be potentially
 compromised and act maliciously.
 
+Mount behavior is selected per connection. A single server may serve multiple
+connections with different implementations while sharing the same server-side
+filesystem tree and synchronization.
+
 #### Concurrency
 
 The server must execute file system operations under appropriate concurrency

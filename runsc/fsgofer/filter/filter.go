@@ -30,13 +30,10 @@ type Options struct {
 	DirectFS         bool
 	LisafsNeeded     bool
 	CgoEnabled       bool
+	ExtraRules       []seccomp.SyscallRules
 }
 
-// Rules returns the seccomp rules for a gofer process without installing
-// them. Callers can merge additional rules before building and installing
-// the seccomp program. This is useful for custom gofer implementations
-// that need the stock gofer's baseline syscall allowlist but also require
-// additional syscalls (e.g. for networking or namespace switching).
+// Rules returns the seccomp rules for a gofer process without installing them.
 func Rules(opt Options) seccomp.SyscallRules {
 	s := allowedSyscalls.Copy()
 
@@ -71,13 +68,15 @@ func Rules(opt Options) seccomp.SyscallRules {
 		s.Merge(lisafsFilters)
 	}
 
+	for _, rules := range opt.ExtraRules {
+		s.Merge(rules)
+	}
 	return s
 }
 
 // Install installs seccomp filters.
 func Install(opt Options) error {
 	s := Rules(opt)
-
 	program := &seccomp.Program{
 		RuleSets: []seccomp.RuleSet{
 			{
