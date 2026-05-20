@@ -27,6 +27,7 @@
 #include <unistd.h>
 
 #include <atomic>
+#include <cstdint>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -543,6 +544,52 @@ TEST(SeccompTest, ProgramTooLargeIsRejected) {
   MaybeSave();
   ASSERT_THAT(prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog, 0, 0),
               SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(SeccompTest, SeccompValidatesAllFilterFlags) {
+  // LINT.IfChange
+  SKIP_IF(!IsRunningOnGvisor() || GvisorPlatform() == Platform::kStarnix);
+  TEST_PCHECK(prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) == 0);
+  struct sock_filter filter[] = {
+      BPF_STMT(BPF_LD | BPF_ABS | BPF_W, 0),
+      BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_getppid, 0, 1),
+      BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_USER_NOTIF),
+      BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+  };
+  struct sock_fprog prog;
+  prog.len = ABSL_ARRAYSIZE(filter);
+  prog.filter = filter;
+
+  // 1. TSYNC should SUCCEED (supported)
+  EXPECT_THAT(syscall(__NR_seccomp, SECCOMP_SET_MODE_FILTER,
+                      SECCOMP_FILTER_FLAG_TSYNC, &prog),
+              SyscallSucceeds());
+
+  // 2. Non-supported flags should FAIL with EINVAL
+  EXPECT_THAT(syscall(__NR_seccomp, SECCOMP_SET_MODE_FILTER,
+                      SECCOMP_FILTER_FLAG_LOG, &prog),
+              SyscallFailsWithErrno(EINVAL));
+
+  EXPECT_THAT(syscall(__NR_seccomp, SECCOMP_SET_MODE_FILTER,
+                      SECCOMP_FILTER_FLAG_SPEC_ALLOW, &prog),
+              SyscallFailsWithErrno(EINVAL));
+
+  int64_t ret = syscall(__NR_seccomp, SECCOMP_SET_MODE_FILTER,
+                        SECCOMP_FILTER_FLAG_NEW_LISTENER, &prog);
+  EXPECT_THAT(ret, SyscallFailsWithErrno(EINVAL));
+  if (ret > 0) {
+    close(ret);
+  }
+
+  ret = syscall(
+      __NR_seccomp, SECCOMP_SET_MODE_FILTER,
+      SECCOMP_FILTER_FLAG_TSYNC_ESRCH | SECCOMP_FILTER_FLAG_NEW_LISTENER,
+      &prog);
+  EXPECT_THAT(ret, SyscallFailsWithErrno(EINVAL));
+  if (ret > 0) {
+    close(ret);
+  }
+  // LINT.ThenChange(../../../runsc/specutils/seccomp/seccomp.go)
 }
 
 }  // namespace

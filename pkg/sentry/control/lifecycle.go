@@ -563,3 +563,15 @@ func (l *Lifecycle) ResumeExternalNetworking(*ContainerArgs, *struct{}) error {
 	st.Stack.EnableAllNonLoopbackNICs()
 	return nil
 }
+
+// Pause pauses the container.
+func (l *Lifecycle) Pause(*ContainerArgs, *struct{}) error {
+	l.Kernel.Pause()
+	return nil
+}
+
+// Resume resumes the container.
+func (l *Lifecycle) Resume(*ContainerArgs, *struct{}) error {
+	l.Kernel.Unpause()
+	return nil
+}

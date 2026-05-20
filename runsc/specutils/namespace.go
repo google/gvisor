@@ -55,6 +55,7 @@ func nsCloneFlag(nst specs.LinuxNamespaceType) uintptr {
 // nsPath returns the path of the namespace for the current process and the
 // given namespace.
 func nsPath(nst specs.LinuxNamespaceType) string {
+	// LINT.IfChange
 	base := "/proc/self/ns"
 	switch nst {
 	case specs.CgroupNamespace:
@@ -74,6 +75,7 @@ func nsPath(nst specs.LinuxNamespaceType) string {
 	default:
 		panic(fmt.Sprintf("unknown namespace %v", nst))
 	}
+	// LINT.ThenChange(:KnownNamespaces)
 }
 
 // GetNS returns true and the namespace with the given type from the slice of
@@ -300,4 +302,20 @@ func MaybeRunAsRoot() error {
 	// Child completed with success.
 	os.Exit(0)
 	panic("unreachable")
+}
+
+// KnownNamespaces returns a list of all supported namespace types.
+// Used by `runsc features`.
+func KnownNamespaces() []string {
+	// LINT.IfChange
+	return []string{
+		string(specs.CgroupNamespace),
+		string(specs.IPCNamespace),
+		string(specs.MountNamespace),
+		string(specs.NetworkNamespace),
+		string(specs.PIDNamespace),
+		string(specs.UserNamespace),
+		string(specs.UTSNamespace),
+	}
+	// LINT.ThenChange(:nsPath)
 }

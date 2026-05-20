@@ -320,7 +320,7 @@ const (
 	sglangPodName          = "sglang-server"
 	sglangServiceName      = "sglang-service"
 	sglangBenchImage       = k8s.ImageRepoPrefix + "gpu/sglang_x86_64:latest"
-	sglangBenchClientImage = k8s.ImageRepoPrefix + "gpu/sglang/client_x86_64:latest"
+	sglangBenchClientImage = k8s.ImageRepoPrefix + "gpu/ollama/client_x86_64:latest"
 )
 
 // newSGLangServerPod returns the pod spec for an sglang server.

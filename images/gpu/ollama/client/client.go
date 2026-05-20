@@ -19,6 +19,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
@@ -32,8 +33,6 @@ import (
 	"time"
 )
 
-// LINT.IfChange
-
 // Flags.
 var (
 	url            = flag.String("url", "", "HTTP request URL.")
@@ -41,6 +40,7 @@ var (
 	postDataBase64 = flag.String("post_base64", "", "HTTP request POST data in base64 format; ignored for GET requests.")
 	header         = flag.String("header", "", "HTTP request header in 'Key: Value' format (e.g., 'Content-Type: application/json').")
 	timeout        = flag.Duration("timeout", 0, "HTTP request timeout; 0 for no timeout.")
+	stripPrefix    = flag.String("strip_prefix", "", "Prefix to strip from each line of the response body (e.g., 'data: ').")
 )
 
 // bufSize is the size of buffers used for HTTP requests and responses.
@@ -108,7 +108,7 @@ func main() {
 	if err != nil {
 		fatalf("cannot create request: %v", err)
 	}
-	readBuf := make([]byte, bufSize)
+
 	orderedReqHeaders := make([]string, 0, len(request.Header))
 	for k := range request.Header {
 		orderedReqHeaders = append(orderedReqHeaders, k)
@@ -126,21 +126,26 @@ func main() {
 		fatalf("cannot make request: %v", err)
 	}
 	gotFirstByte := false
+	reader := bufio.NewReaderSize(resp.Body, bufSize)
 	for {
-		n, err := resp.Body.Read(readBuf)
-		if n > 0 {
+		line, err := reader.ReadBytes('\n')
+		if len(line) > 0 {
 			if !gotFirstByte {
 				metrics.FirstByteRead = time.Now()
 				gotFirstByte = true
 			}
-			fmt.Printf("BODY: %q\n", string(readBuf[:n]))
-		}
-		if err == io.EOF {
-			metrics.LastByteRead = time.Now()
-			break
+			text := string(line)
+			if *stripPrefix != "" {
+				text = strings.TrimPrefix(text, *stripPrefix)
+			}
+			fmt.Printf("BODY: %q\n", text)
 		}
 		if err != nil {
-			fatalf("cannot read response body: %v", err)
+			metrics.LastByteRead = time.Now()
+			if err != io.EOF {
+				fatalf("cannot read response body: %v", err)
+			}
+			break
 		}
 	}
 	if err := resp.Body.Close(); err != nil {
@@ -162,5 +167,3 @@ func main() {
 	}
 	fmt.Fprintf(os.Stderr, "STATS: %s\n", string(metricsBytes))
 }
-
-// LINT.ThenChange(../../sglang/client/client.go)

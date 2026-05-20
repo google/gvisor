@@ -24,9 +24,9 @@ import (
 	"testing"
 	"time"
 
-	cgroupsv2 "github.com/containerd/cgroups/v2"
-	"github.com/containerd/containerd/events"
-	"github.com/containerd/containerd/runtime"
+	cgroupsv2 "github.com/containerd/cgroups/v3/cgroup2"
+	"github.com/containerd/containerd/v2/core/events"
+	"github.com/containerd/containerd/v2/core/runtime"
 )
 
 // mockPublisher records published events for test assertions.

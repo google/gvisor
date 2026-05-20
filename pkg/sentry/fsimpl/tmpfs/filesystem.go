@@ -303,8 +303,11 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		if parentDir.inode.nlink.Load() == maxLinks {
 			return linuxerr.EMLINK
 		}
+		childDir, err := fs.newDirectory(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, parentDir)
+		if err != nil {
+			return err
+		}
 		parentDir.inode.incLinksLocked() // from child's ".."
-		childDir := fs.newDirectory(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, parentDir)
 		parentDir.insertChildLocked(&childDir.dentry, name)
 		return nil
 	})
@@ -315,17 +318,21 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 	return fs.doCreateAt(ctx, rp, false /* dir */, func(parentDir *directory, name string) error {
 		creds := rp.Credentials()
 		var childInode *inode
+		var err error
 		switch opts.Mode.FileType() {
 		case linux.S_IFREG:
-			childInode = fs.newRegularFile(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, parentDir)
+			childInode, err = fs.newRegularFile(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, parentDir)
 		case linux.S_IFIFO:
-			childInode = fs.newNamedPipe(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, parentDir)
+			childInode, err = fs.newNamedPipe(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, parentDir)
 		case linux.S_IFBLK, linux.S_IFCHR:
-			childInode = fs.newDeviceFileLocked(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, opts.DevMajor, opts.DevMinor, parentDir)
+			childInode, err = fs.newDeviceFileLocked(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, opts.DevMajor, opts.DevMinor, parentDir)
 		case linux.S_IFSOCK:
-			childInode = fs.newSocketFile(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, opts.Endpoint, parentDir)
+			childInode, err = fs.newSocketFile(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, opts.Endpoint, parentDir)
 		default:
 			return linuxerr.EINVAL
+		}
+		if err != nil {
+			return err
 		}
 		child := fs.newDentry(childInode)
 		parentDir.insertChildLocked(child, name)
@@ -418,7 +425,11 @@ afterTrailingSymlink:
 		defer rp.Mount().EndWrite()
 		// Create and open the child.
 		creds := rp.Credentials()
-		child := fs.newDentry(fs.newRegularFile(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, parentDir))
+		childInode, err := fs.newRegularFile(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, parentDir)
+		if err != nil {
+			return nil, err
+		}
+		child := fs.newDentry(childInode)
 		parentDir.insertChildLocked(child, name)
 		child.IncRef()
 		defer child.DecRef(ctx)
@@ -807,7 +818,11 @@ func (fs *filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, targ
 			}
 		}
 		creds := rp.Credentials()
-		child := fs.newDentry(fs.newSymlink(creds.EffectiveKUID, creds.EffectiveKGID, 0777, target, parentDir))
+		childInode, err := fs.newSymlink(creds.EffectiveKUID, creds.EffectiveKGID, 0777, target, parentDir)
+		if err != nil {
+			return err
+		}
+		child := fs.newDentry(childInode)
 		parentDir.insertChildLocked(child, name)
 		return nil
 	})
@@ -1064,6 +1079,35 @@ func (fs *filesystem) unaccountPages(pagesDec uint64) {
 			panic(fmt.Sprintf("Deallocating more pages than allocated: fs.pagesUsed = %d, pagesDec = %d", pagesUsed, pagesDec))
 		}
 		if fs.pagesUsed.CompareAndSwap(pagesUsed, pagesUsed-pagesDec) {
+			break
+		}
+	}
+}
+
+// accountInode increases the inodesUsed in the filesystem struct by 1. We return
+// a false when the maxInodes has been exhausted and no more inodes can be allocated.
+func (fs *filesystem) accountInode() bool {
+	for {
+		inodesUsed := fs.inodesUsed.Load()
+		if fs.maxInodes != 0 && fs.maxInodes <= inodesUsed {
+			return false
+		}
+
+		if fs.inodesUsed.CompareAndSwap(inodesUsed, inodesUsed+1) {
+			return true
+		}
+	}
+}
+
+// unaccountInode decreases the inodesUsed in the filesystem struct by 1.
+func (fs *filesystem) unaccountInode() {
+	for {
+		inodesUsed := fs.inodesUsed.Load()
+		if inodesUsed < 1 {
+			panic("Freeing inode, but no inodes are allocated")
+		}
+
+		if fs.inodesUsed.CompareAndSwap(inodesUsed, inodesUsed-1) {
 			break
 		}
 	}

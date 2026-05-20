@@ -1,0 +1,50 @@
+// Copyright 2026 The gVisor Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//go:build linux
+// +build linux
+
+// Package plugin registers the runsc task service as a containerd TTRPC plugin.
+package plugin
+
+import (
+	"github.com/containerd/containerd/v2/pkg/shim"
+	"github.com/containerd/containerd/v2/pkg/shutdown"
+	"github.com/containerd/containerd/v2/plugins"
+	"github.com/containerd/plugin"
+	"github.com/containerd/plugin/registry"
+	"gvisor.dev/gvisor/pkg/shim/v1"
+)
+
+func init() {
+	registry.Register(&plugin.Registration{
+		Type: plugins.TTRPCPlugin,
+		ID:   "task",
+		Requires: []plugin.Type{
+			plugins.EventPlugin,
+			plugins.InternalPlugin,
+		},
+		InitFn: func(ic *plugin.InitContext) (interface{}, error) {
+			pp, err := ic.GetByID(plugins.EventPlugin, "publisher")
+			if err != nil {
+				return nil, err
+			}
+			ss, err := ic.GetByID(plugins.InternalPlugin, "shutdown")
+			if err != nil {
+				return nil, err
+			}
+			return v1.NewShimRedirector(ic.Context, pp.(shim.Publisher), ss.(shutdown.Service))
+		},
+	})
+}

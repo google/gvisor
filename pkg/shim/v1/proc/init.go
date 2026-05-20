@@ -27,11 +27,12 @@ import (
 
 	"github.com/containerd/console"
 
-	"github.com/containerd/containerd/mount"
-	"github.com/containerd/containerd/pkg/stdio"
+	"github.com/containerd/containerd/v2/core/mount"
+	"github.com/containerd/containerd/v2/pkg/stdio"
 	"github.com/containerd/errdefs"
 	"github.com/containerd/log"
 
+	google_protobuf "github.com/containerd/containerd/v2/pkg/protobuf/types"
 	"github.com/containerd/fifo"
 	runc "github.com/containerd/go-runc"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -450,6 +451,21 @@ func (p *Init) Stats(ctx context.Context, id string) (*runc.Stats, error) {
 	defer p.mu.Unlock()
 
 	return p.initState.Stats(ctx, id)
+}
+
+// Update applies resource changes from JSON LinuxResources in the protobuf Any.
+func (p *Init) Update(ctx context.Context, r *google_protobuf.Any) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if r == nil {
+		return fmt.Errorf("resources are required: %w", errdefs.ErrInvalidArgument)
+	}
+	var resources specs.LinuxResources
+	if err := json.Unmarshal(r.Value, &resources); err != nil {
+		return fmt.Errorf("decoding resources: %w", err)
+	}
+	return p.runtime.Update(ctx, p.id, &resources)
 }
 
 func (p *Init) stats(ctx context.Context, id string) (*runc.Stats, error) {

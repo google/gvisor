@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -28,6 +28,16 @@ go_library(
         "//pkg/flipcall",
         "//pkg/log",
         "//pkg/seccomp",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+go_test(
+    name = "filter_test",
+    size = "small",
+    srcs = ["filter_test.go"],
+    library = ":filter",
+    deps = [
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

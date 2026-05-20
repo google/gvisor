@@ -27,9 +27,28 @@ import (
 	"path/filepath"
 )
 
-const (
-	runscRuntimeDir = "/tmp/sandboxexec/runtime/"
-)
+// Options holds the configuration for a Sandbox.
+type Options struct {
+	runtimeDir string
+	id         string
+}
+
+// Option configures the Options struct.
+type Option func(*Options)
+
+// WithRuntimeDir sets a custom runtime directory where bundle and state files are written.
+func WithRuntimeDir(runtimeDir string) Option {
+	return func(o *Options) {
+		o.runtimeDir = runtimeDir
+	}
+}
+
+// WithID sets a specific sandbox ID. If not set, a unique ID will be generated automatically.
+func WithID(id string) Option {
+	return func(o *Options) {
+		o.id = id
+	}
+}
 
 // Sandbox represents a running gVisor sandbox where applications
 // run inside.
@@ -38,17 +57,6 @@ type Sandbox struct {
 	bundleDir string
 	runscPath string
 	rootState string
-}
-
-func init() {
-	stateDir := runscStateDirectory()
-	if err := os.MkdirAll(stateDir, 0755); err != nil {
-		panic(fmt.Sprintf("failed to created state direcotry at %v", stateDir))
-	}
-}
-
-func runscStateDirectory() string {
-	return filepath.Join(runscRuntimeDir, "state")
 }
 
 // newID returns a unique ID for the sandbox.
@@ -76,17 +84,48 @@ func runscPath() string {
 
 // New spawns a new sandbox as a subprocess, the sandbox
 // will be started and running in detached mode.
-func New(ctx context.Context) (*Sandbox, error) {
-	id := newID()
-	bundleDir, err := NewBundle(id, runscRuntimeDir)
+func New(ctx context.Context, opts ...Option) (*Sandbox, error) {
+	options := Options{}
+	for _, o := range opts {
+		o(&options)
+	}
+
+	if options.runtimeDir == "" {
+		dir, err := os.MkdirTemp("", "gvisor-sandbox-*")
+		if err != nil {
+			return nil, fmt.Errorf("failed to create runtime directory: %v", err)
+		}
+		options.runtimeDir = dir
+	}
+
+	if options.id == "" {
+		options.id = newID()
+	}
+
+	runDir := options.runtimeDir
+	stateDir := filepath.Join(runDir, "state")
+	if err := os.MkdirAll(stateDir, 0700); err != nil {
+		return nil, fmt.Errorf("failed to create sandbox state directory: %v", err)
+	}
+	// Verify that the state directory actually has 0700 permissions.
+	fi, err := os.Stat(stateDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat sandbox state directory: %v", err)
+	}
+	if fi.Mode().Perm() != 0700 {
+		return nil, fmt.Errorf("sandbox state directory has incorrect permissions: got %v, want %v", fi.Mode().Perm(), os.FileMode(0700))
+	}
+
+	bundleDir, err := NewBundle(options.id, runDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OCI bundle: %v", err)
 	}
+
 	sb := &Sandbox{
-		id:        id,
+		id:        options.id,
 		bundleDir: bundleDir,
 		runscPath: runscPath(),
-		rootState: runscStateDirectory(),
+		rootState: stateDir,
 	}
 
 	// Launch the sandbox in detached mode via os/exec, we use `runsc run` here
@@ -135,4 +174,9 @@ func (s *Sandbox) Close(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// Bundle returns the path to the OCI bundle directory for this sandbox.
+func (s *Sandbox) Bundle() string {
+	return s.bundleDir
 }

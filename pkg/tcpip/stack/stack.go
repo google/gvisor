@@ -20,7 +20,6 @@
 package stack
 
 import (
-	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -191,6 +190,10 @@ type Stack struct {
 	// externalNetworkingDisabled indicates whether external networking is
 	// disabled. This means all non-loopback NICs are disabled.
 	externalNetworkingDisabled bool
+
+	// allowConnectedOnSave indicates whether connections should be
+	// allowed to remain connected during save.
+	allowConnectedOnSave bool
 }
 
 // NetworkProtocolFactory instantiates a network protocol.
@@ -2535,22 +2538,6 @@ func (s *Stack) SetNICStack(id tcpip.NICID, peer *Stack) (tcpip.NICID, tcpip.Err
 	return id, peer.CreateNICWithOptions(id, linkEp, NICOptions{Name: name})
 }
 
-// contextID is this package's type for context.Context.Value keys.
-type contextID int
-
-const (
-	// CtxRestoreStack is a Context.Value key for the stack to be used in restore.
-	CtxRestoreStack contextID = iota
-)
-
-// RestoreStackFromContext returns the stack to be used during restore.
-func RestoreStackFromContext(ctx context.Context) *Stack {
-	if st := ctx.Value(CtxRestoreStack); st != nil {
-		return st.(*Stack)
-	}
-	return nil
-}
-
 // SetRemoveConf sets the removeConf in stack to the given value.
 func (s *Stack) SetRemoveConf(removeConf bool) {
 	s.mu.Lock()
@@ -2563,6 +2550,20 @@ func (s *Stack) GetRemoveConf() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.removeConf
+}
+
+// SetAllowConnectedOnSave sets allowConnectedOnSave in stack with the given value.
+func (s *Stack) SetAllowConnectedOnSave(allowConnectedOnSave bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.allowConnectedOnSave = allowConnectedOnSave
+}
+
+// GetAllowConnectedOnSave gets the allowConnectedOnSave from stack.
+func (s *Stack) GetAllowConnectedOnSave() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.allowConnectedOnSave
 }
 
 // DisableAllNonLoopbackNICs disables all non-loopback NICs in the stack.

@@ -162,11 +162,15 @@ type subprocess struct {
 	syscallThreadMu sync.Mutex
 	syscallThread   *syscallThread
 
-	// sysmsgThreadsMu protects sysmsgThreads and numSysmsgThreads
-	sysmsgThreadsMu sync.Mutex
+	// sysmsgThreadsMu protects sysmsgThreads
+	sysmsgThreadsMu sync.RWMutex
 	// sysmsgThreads is a collection of all active sysmsg threads in the
 	// subprocess.
 	sysmsgThreads map[uint32]*sysmsgThread
+
+	// kickSysmsgMu protects numSysmsgThreads and sentry-side write access to
+	// s.contextQueue.numThreadsToWakeup
+	kickSysmsgMu sync.Mutex
 	// numSysmsgThreads counts the number of active sysmsg threads; we use a
 	// counter instead of using len(sysmsgThreads) because we need to synchronize
 	// how many threads get created _before_ the creation happens.
@@ -845,7 +849,10 @@ func (s *subprocess) switchToApp(c *platformContext, ac *arch.Context64) (isSysc
 	// Check if there's been an error.
 	threadID := ctx.threadID()
 	if threadID != invalidThreadID {
-		if sysThread, ok := s.sysmsgThreads[threadID]; ok && sysThread.msg.Err != 0 {
+		s.sysmsgThreadsMu.RLock()
+		sysThread, ok := s.sysmsgThreads[threadID]
+		s.sysmsgThreadsMu.RUnlock()
+		if ok && sysThread.msg.Err != 0 {
 			sysmsgErr := sysThread.msg.ConvertSysmsgErr()
 			log.BugTraceback(sysmsgErr)
 			return false, false, hostarch.NoAccess, sysmsgErr
@@ -967,25 +974,25 @@ func (s *subprocess) kickSysmsgThread() bool {
 		return false
 	}
 
-	s.sysmsgThreadsMu.Lock()
+	s.kickSysmsgMu.Lock()
 	kick, nrThreads := s.canKickSysmsgThread()
 	if !kick {
-		s.sysmsgThreadsMu.Unlock()
+		s.kickSysmsgMu.Unlock()
 		return false
 	}
 	numTimesStubKicked.Increment()
 	atomic.AddUint32(&s.contextQueue.numThreadsToWakeup, 1)
 	if s.numSysmsgThreads < maxSysmsgThreads && s.numSysmsgThreads < int(nrThreads) {
 		s.numSysmsgThreads++
-		s.sysmsgThreadsMu.Unlock()
+		s.kickSysmsgMu.Unlock()
 		if err := s.createSysmsgThread(); err != nil {
 			log.Warningf("Unable to create a new stub thread: %s", err)
-			s.sysmsgThreadsMu.Lock()
+			s.kickSysmsgMu.Lock()
 			s.numSysmsgThreads--
-			s.sysmsgThreadsMu.Unlock()
+			s.kickSysmsgMu.Unlock()
 		}
 	} else {
-		s.sysmsgThreadsMu.Unlock()
+		s.kickSysmsgMu.Unlock()
 	}
 	s.contextQueue.wakeupSysmsgThread()
 

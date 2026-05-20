@@ -87,7 +87,10 @@ const (
 	TFD_NONBLOCK = O_NONBLOCK
 
 	// TFD_TIMER_ABSTIME is a timerfd_settime flag.
-	TFD_TIMER_ABSTIME = 1
+	TFD_TIMER_ABSTIME = 1 << 0
+
+	// TFD_TIMER_CANCEL_ON_SET is a timerfd_settime flag.
+	TFD_TIMER_CANCEL_ON_SET = 1 << 1
 )
 
 // The safe number of seconds you can represent by int64.

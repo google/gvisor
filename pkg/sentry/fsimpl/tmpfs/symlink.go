@@ -26,13 +26,16 @@ type symlink struct {
 	target string // immutable
 }
 
-func (fs *filesystem) newSymlink(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, target string, parentDir *directory) *inode {
+func (fs *filesystem) newSymlink(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, target string, parentDir *directory) (*inode, error) {
 	link := &symlink{
 		target: target,
 	}
-	link.inode.init(link, fs, kuid, kgid, linux.S_IFLNK|mode, parentDir)
+	err := link.inode.init(link, fs, kuid, kgid, linux.S_IFLNK|mode, parentDir)
+	if err != nil {
+		return nil, err
+	}
 	link.inode.nlink = atomicbitops.FromUint32(1) // from parent directory
-	return &link.inode
+	return &link.inode, nil
 }
 
 // O_PATH is unimplemented, so there's no way to get a FileDescription

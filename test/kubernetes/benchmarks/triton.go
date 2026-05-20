@@ -249,7 +249,7 @@ const (
 	tritonPodName          = "triton-server"
 	tritonServiceName      = "triton-service"
 	tritonBenchImage       = k8s.ImageRepoPrefix + "gpu/triton_x86_64:latest"
-	tritonBenchClientImage = k8s.ImageRepoPrefix + "gpu/triton/client_x86_64:latest"
+	tritonBenchClientImage = k8s.ImageRepoPrefix + "gpu/ollama/client_x86_64:latest"
 )
 
 // newTritonServerPod returns the pod spec for a triton server.

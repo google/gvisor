@@ -122,6 +122,15 @@ func (x *SimpleExtendedAttributes) ListXattr(creds *auth.Credentials, size uint6
 	return names, nil
 }
 
+// KillPriv removes the "security.capability" xattr if present. No permission
+// check is needed because the caller is removing privileges on behalf of the
+// kernel, not userspace.
+func (x *SimpleExtendedAttributes) KillPriv() {
+	x.mu.Lock()
+	delete(x.xattrs, linux.XATTR_SECURITY_CAPABILITY)
+	x.mu.Unlock()
+}
+
 // RemoveXattr removes the xattr at 'name'.
 func (x *SimpleExtendedAttributes) RemoveXattr(creds *auth.Credentials, mode linux.FileMode, kuid auth.KUID, name string) error {
 	if err := vfs.CheckXattrPermissions(creds, vfs.MayWrite, mode, kuid, name); err != nil {

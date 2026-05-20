@@ -71,9 +71,13 @@ func TimerfdSettime(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (
 	newValAddr := args[2].Pointer()
 	oldValAddr := args[3].Pointer()
 
-	if flags&^(linux.TFD_TIMER_ABSTIME) != 0 {
+	if flags&^(linux.TFD_TIMER_ABSTIME|linux.TFD_TIMER_CANCEL_ON_SET) != 0 {
+		// Flag(s) nonexistent or unimplemented
 		return 0, nil, linuxerr.EINVAL
 	}
+
+	// TODO(b/513000565): Properly support TFD_TIMER_CANCEL_ON_SET, rather
+	// than simply ignoring it.
 
 	file := t.GetFile(fd)
 	if file == nil {

@@ -38,6 +38,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -85,10 +86,6 @@ import (
 
 	uspb "gvisor.dev/gvisor/pkg/sentry/unimpl/unimplemented_syscall_go_proto"
 )
-
-// IOUringEnabled is set to true when IO_URING is enabled. Added as a global to
-// allow easy access everywhere.
-var IOUringEnabled = false
 
 // UserCounters is a set of user counters.
 //
@@ -398,6 +395,9 @@ type Kernel struct {
 
 	// AllowSUID determines if the SUID/SGID bits are honored during execve.
 	AllowSUID bool
+
+	// IOUringEnabled determines if io_uring is enabled.
+	IOUringEnabled bool
 
 	// MaxKeySetSize is the maximum number of keys in a key set.
 	MaxKeySetSize atomicbitops.Int32
@@ -871,7 +871,7 @@ func (k *Kernel) invalidateUnsavableMappings(ctx context.Context) error {
 }
 
 // LoadFrom returns a new Kernel loaded from args.
-func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *AsyncMFLoader, timeReady chan struct{}, net inet.Stack, clocks sentrytime.Clocks, vfsOpts *vfs.CompleteRestoreOptions, saveRestoreNet bool) error {
+func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *AsyncMFLoader, timeReady chan struct{}, net inet.Stack, clocks sentrytime.Clocks, vfsOpts *vfs.CompleteRestoreOptions) error {
 	if hostarch.PageSize != 4096 {
 		return fmt.Errorf("restore is not supported with %dK page size", hostarch.PageSize/1024)
 	}
@@ -914,14 +914,6 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 	log.Infof("Kernel load stats: %s", stats.String())
 	log.Infof("Kernel load took [%s].", time.Since(kernelStart))
 
-	if !saveRestoreNet {
-		// rootNetworkNamespace and stack should be populated after
-		// loading the state file. Reset the stack before restoring the
-		// root network stack.
-		k.rootNetworkNamespace.ResetStack()
-		k.rootNetworkNamespace.RestoreRootStack(net)
-	}
-
 	if asyncMFLoader == nil {
 		mfStart := time.Now()
 		if err := k.loadMemoryFiles(ctx, r); err != nil {
@@ -943,18 +935,13 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 		close(timeReady)
 	}
 
-	if saveRestoreNet {
-		log.Infof("netstack save restore is enabled")
-		s := k.rootNetworkNamespace.Stack()
-		if s == nil {
-			panic("inet.Stack cannot be nil when netstack s/r is enabled")
-		}
+	if s := k.rootNetworkNamespace.Stack(); s != nil {
 		if net != nil {
+			log.Infof("Reconfiguring network for restore")
 			s.ReplaceConfig(net)
 		}
+		log.Debugf("Restore network stack")
 		s.Restore()
-	} else if net != nil {
-		net.Restore()
 	}
 
 	if err := k.vfs.CompleteRestore(ctx, vfsOpts); err != nil {
@@ -971,6 +958,70 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 	// not to exist.
 	if k.useHostCores && initAppCores > k.applicationCores {
 		return fmt.Errorf("UseHostCores enabled: can't increase ApplicationCores from %d to %d after restore", k.applicationCores, initAppCores)
+	}
+
+	return nil
+}
+
+// ExtractRootfsUpperLayer partially restores the kernel state and extracts the
+// rootfs upper layer to the provided file.
+func (k *Kernel) ExtractRootfsUpperLayer(ctx context.Context, r io.Reader, asyncMFLoader *AsyncMFLoader, timeReady chan struct{}, clocks sentrytime.Clocks, outFD *os.File) error {
+	if hostarch.PageSize != 4096 {
+		return fmt.Errorf("restore is not supported with %dK page size", hostarch.PageSize/1024)
+	}
+	loadStart := time.Now()
+
+	k.runningTasksCond.L = &k.runningTasksMu
+	k.cpuClockTickerWakeCh = make(chan struct{}, 1)
+	k.cpuClockTickerStopCond.L = &k.runningTasksMu
+
+	// Load the pre-saved CPUID FeatureSet.
+	cpuidStart := time.Now()
+	if _, err := state.Load(ctx, r, &k.featureSet); err != nil {
+		return err
+	}
+	log.Infof("CPUID load took [%s].", time.Since(cpuidStart))
+
+	fdnotifier.Pause()
+	defer fdnotifier.Resume()
+
+	kernelStart := time.Now()
+	stats, err := state.Load(ctx, r, k)
+	if err != nil {
+		return err
+	}
+	log.Infof("Kernel load stats: %s", stats.String())
+	log.Infof("Kernel load took [%s].", time.Since(kernelStart))
+
+	if asyncMFLoader == nil {
+		mfStart := time.Now()
+		if err := k.loadMemoryFiles(ctx, r); err != nil {
+			return fmt.Errorf("failed to load memory files: %w", err)
+		}
+		log.Infof("Memory files load took [%s].", time.Since(mfStart))
+	} else {
+		if err := asyncMFLoader.WaitMainMFStart(); err != nil {
+			return fmt.Errorf("main MF start failed: %w", err)
+		}
+	}
+
+	k.Timekeeper().SetClocks(clocks, k.vdsoParams)
+
+	if timeReady != nil {
+		close(timeReady)
+	}
+
+	log.Infof("Overall load took [%s] after async work", time.Since(loadStart))
+
+	// Now call TarRootfsUpperLayer on the root filesystem
+	root := k.GlobalInit().Leader().MountNamespace().Root(ctx)
+	defer root.DecRef(ctx)
+	ts, ok := root.Mount().Filesystem().Impl().(vfs.TarSerializer)
+	if !ok {
+		return fmt.Errorf("rootfs is not an overlayfs")
+	}
+	if err := ts.TarUpperLayer(ctx, outFD); err != nil {
+		return fmt.Errorf("failed to serialize rootfs upper layer to tar: %v", err)
 	}
 
 	return nil

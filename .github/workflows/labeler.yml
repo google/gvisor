@@ -6,6 +6,9 @@ name: "Labeler"
 jobs:
   label:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read       # read labeler config
+      pull-requests: write # apply labels to the PR
     steps:
     - uses: actions/labeler@v6
       if: github.base_ref == null

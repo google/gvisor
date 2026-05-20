@@ -21,11 +21,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"math"
 	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -42,6 +44,7 @@ import (
 	"gvisor.dev/gvisor/pkg/control/server"
 	"gvisor.dev/gvisor/pkg/coverage"
 	"gvisor.dev/gvisor/pkg/fd"
+	"gvisor.dev/gvisor/pkg/hostos"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/prometheus"
 	"gvisor.dev/gvisor/pkg/sentry/control"
@@ -57,6 +60,7 @@ import (
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/boot/procfs"
 	"gvisor.dev/gvisor/runsc/cgroup"
+	"gvisor.dev/gvisor/runsc/checkpointgofer"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/console"
 	"gvisor.dev/gvisor/runsc/donation"
@@ -76,6 +80,10 @@ const (
 	// namespaceAnnotation is a pod annotation populated by containerd.
 	// It contains the namespace of the pod that a sandbox is in when running in Kubernetes.
 	namespaceAnnotation = "io.kubernetes.cri.sandbox-namespace"
+
+	// checkpointGCSOptsFileName is a file that may exist in an image-path
+	// directory that specifies options for storing checkpoint files in GCS.
+	checkpointGCSOptsFileName = "gcs_opts.json"
 )
 
 func controlSocketName(id string) string {
@@ -524,7 +532,7 @@ func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid s
 }
 
 // Restore sends the restore call for a container in the sandbox.
-func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, imagePath string, direct, background bool) error {
+func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, imagePath string, direct, background bool, networkArgs *boot.CreateLinksAndRoutesArgs) error {
 	if err := hostsettings.Handle(conf); err != nil {
 		return fmt.Errorf("host settings: %w (use --host-settings=ignore to bypass)", err)
 	}
@@ -539,7 +547,7 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 			_ = f.Close()
 		}
 	}()
-	if err := s.setRestoreOptsImpl(conf, imagePath, direct, &opt); err != nil {
+	if err := s.setRestoreOpts(conf, imagePath, direct, &opt); err != nil {
 		return err
 	}
 
@@ -558,14 +566,21 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 	}
 	defer conn.Close()
 
-	var disableIPv6 bool
-	disableIPv6, err = getDisableIPv6(spec)
-	if err != nil {
-		return err
-	}
-	// Configure the network.
-	if err := setupNetwork(conn, s.Pid.Load(), conf, disableIPv6); err != nil {
-		return fmt.Errorf("setting up network: %w", err)
+	if networkArgs == nil {
+		var disableIPv6 bool
+		disableIPv6, err = getDisableIPv6(spec)
+		if err != nil {
+			return err
+		}
+		// Configure the network.
+		if err := setupNetwork(conn, s.Pid.Load(), conf, disableIPv6); err != nil {
+			return fmt.Errorf("setting up network: %w", err)
+		}
+	} else {
+		log.Debugf("Setting up network, config: %+v", networkArgs)
+		if err := conn.Call(boot.ContMgrCreateLinksAndRoutes, networkArgs, nil); err != nil {
+			return fmt.Errorf("creating links and routes: %w", err)
+		}
 	}
 
 	// Restore the container and start the root container.
@@ -573,6 +588,20 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 		return fmt.Errorf("restoring container %q: %v", cid, err)
 	}
 	s.Restored = true
+	return nil
+}
+
+func (s *Sandbox) setRestoreOpts(conf *config.Config, imagePath string, direct bool, opt *boot.RestoreOpts) error {
+	clientSockFile, err := s.maybeStartCheckpointGoferAndGetSocket(conf, s.CgroupJSON.Cgroup, imagePath, "-allow-checkpoint-reads")
+	if err != nil {
+		return err
+	}
+	if clientSockFile == nil {
+		return s.setRestoreOptsForLocalCheckpointFiles(conf, imagePath, direct, opt)
+	}
+	log.Infof("Restoring from GCS via checkpoint gofer")
+	opt.FilePayload.Files = append(opt.FilePayload.Files, clientSockFile)
+	opt.UseCheckpointGofer = true
 	return nil
 }
 
@@ -775,6 +804,11 @@ func (s *Sandbox) PortForward(opts *boot.PortForwardOpts) error {
 // SetRootDir sets the root directory from the current runsc invocation.
 func (s *Sandbox) SetRootDir(rootDir string) {
 	s.rootDir = rootDir
+}
+
+// GetControlSocketPath returns the control socket path for the sandbox.
+func (s *Sandbox) GetControlSocketPath() string {
+	return s.getControlSocketPath()
 }
 
 // getControlSocketPath gets the control socket path for the sandbox.
@@ -989,7 +1023,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	}
 
 	if args.FSRestoreImagePath != "" {
-		files, err := s.openFSRestoreFilesImpl(conf, args.FSRestoreImagePath, args.FSRestoreDirect, cmd)
+		files, err := s.openFSRestoreFiles(conf, args.FSRestoreImagePath, args.FSRestoreDirect, cmd)
 		if err != nil {
 			return fmt.Errorf("failed to open filesystem checkpoint files: %w", err)
 		}
@@ -1245,7 +1279,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		cmd.Args = append(cmd.Args, "--profiling-metrics-fd-lossy=false")
 	}
 
-	totalSysMem, err := totalSystemMemory()
+	totalSysMem, err := hostos.TotalSystemMemory()
 	if err != nil {
 		return err
 	}
@@ -1602,9 +1636,10 @@ func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, 
 			_ = f.Close()
 		}
 	}()
-	if err := s.setCheckpointOptsImpl(conf, imagePath, opts, &opt); err != nil {
+	if err := s.setCheckpointOptsFiles(conf, imagePath, opts, &opt); err != nil {
 		return err
 	}
+	setCheckpointOptsExtra(opts, &opt)
 
 	if err := s.call(boot.ContMgrCheckpoint, &opt, nil); err != nil {
 		return fmt.Errorf("checkpointing container %q: %w", cid, err)
@@ -1613,7 +1648,22 @@ func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, 
 	return nil
 }
 
-func setCheckpointOptsForLocalCheckpointFiles(conf *config.Config, imagePath string, opts CheckpointOpts, opt *control.SaveOpts) error {
+func (s *Sandbox) setCheckpointOptsFiles(conf *config.Config, imagePath string, opts CheckpointOpts, opt *control.SaveOpts) error {
+	clientSockFile, err := s.maybeStartCheckpointGoferAndGetSocket(conf, s.CgroupJSON.Cgroup, imagePath, "-allow-checkpoint-writes")
+	if err != nil {
+		return err
+	}
+	if clientSockFile == nil {
+		return setCheckpointOptsFilesForLocalCheckpoint(conf, imagePath, opts, opt)
+	}
+	log.Infof("Saving to GCS via checkpoint gofer")
+	opt.FilePayload.Files = append(opt.FilePayload.Files, clientSockFile)
+	opt.UseCheckpointGofer = true
+	opt.HavePagesFile = opts.Compression == statefile.CompressionLevelNone
+	return nil
+}
+
+func setCheckpointOptsFilesForLocalCheckpoint(conf *config.Config, imagePath string, opts CheckpointOpts, opt *control.SaveOpts) error {
 	files, err := createSaveFiles(imagePath, opts.Direct, opts.Compression)
 	if err != nil {
 		return err
@@ -1663,6 +1713,19 @@ func createSaveFiles(path string, direct bool, compression statefile.Compression
 	return files, nil
 }
 
+func (s *Sandbox) openFSRestoreFiles(conf *config.Config, imagePath string, direct bool, cmd *exec.Cmd) ([]*os.File, error) {
+	clientSockFile, err := s.maybeStartCheckpointGoferAndGetSocket(conf, s.CgroupJSON.Cgroup, imagePath, "-allow-fscheckpoint-reads")
+	if err != nil {
+		return nil, err
+	}
+	if clientSockFile == nil {
+		return openFSRestoreFilesForLocalCheckpoint(imagePath, direct)
+	}
+	cmd.Args = append(cmd.Args, "-fs-restore-checkpoint-gofer")
+	log.Infof("Restoring filesystem checkpoint from GCS via checkpoint gofer")
+	return []*os.File{clientSockFile}, nil
+}
+
 func openFSRestoreFilesForLocalCheckpoint(imagePath string, direct bool) ([]*os.File, error) {
 	return openFSCheckpointLocalFiles(imagePath, os.O_RDONLY, direct)
 }
@@ -1691,13 +1754,27 @@ func (s *Sandbox) FSSave(conf *config.Config, cid string, imagePath string, opts
 			_ = f.Close()
 		}
 	}()
-	if err := s.setFSSaveArgsImpl(conf, imagePath, opts.Direct, &args); err != nil {
+	if err := s.setFSSaveArgs(conf, imagePath, opts.Direct, &args); err != nil {
 		return err
 	}
 
 	if err := s.call(boot.ContMgrFSSave, &args, nil); err != nil {
 		return fmt.Errorf("checkpointing filesystem for container %q: %w", cid, err)
 	}
+	return nil
+}
+
+func (s *Sandbox) setFSSaveArgs(conf *config.Config, imagePath string, direct bool, args *boot.FSSaveArgs) error {
+	clientSockFile, err := s.maybeStartCheckpointGoferAndGetSocket(conf, s.CgroupJSON.Cgroup, imagePath, "-allow-fscheckpoint-writes")
+	if err != nil {
+		return err
+	}
+	if clientSockFile == nil {
+		return setFSSaveArgsForLocalCheckpointFiles(conf, imagePath, direct, args)
+	}
+	log.Infof("Saving filesystem checkpoint to GCS via checkpoint gofer")
+	args.FilePayload.Files = append(args.FilePayload.Files, clientSockFile)
+	args.UseCheckpointGofer = true
 	return nil
 }
 
@@ -1776,6 +1853,90 @@ func openFSCheckpointLocalFiles(imagePath string, openFlags int, direct bool) ([
 
 	closeCleanup.Release()
 	return files[:], nil
+}
+
+// maybeStartCheckpointGoferAndGetSocket checks if use of a checkpoint gofer is
+// specified by configuration files in imagePath. If so, it starts the
+// checkpoint gofer and returns an os.File representing a socket connected to
+// it. Otherwise, it returns nil.
+func (s *Sandbox) maybeStartCheckpointGoferAndGetSocket(conf *config.Config, cg cgroup.Cgroup, imagePath string, extraFlags ...string) (*os.File, error) {
+	gcsOptsPath := path.Join(imagePath, checkpointGCSOptsFileName)
+	gcsOptsFile, err := os.Open(gcsOptsPath)
+	if err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			log.Warningf("Failed to open %q: %v", gcsOptsPath, err)
+		}
+		return nil, nil
+	}
+	defer gcsOptsFile.Close()
+	// Pass /dev/null as the checkpoint gofer's standard streams to avoid
+	// polluting this process' logs. The checkpoint gofer accepts flags like
+	// -debug-log, which are plumbed through to it by passing conf.ToFlags()
+	// below.
+	devNullFile, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open %s: %w", os.DevNull, err)
+	}
+	defer devNullFile.Close()
+	socketFDs, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create checkpoint gofer socketpair: %w", err)
+	}
+	defer unix.Close(socketFDs[1])
+	clientSockFile := os.NewFile(uintptr(socketFDs[0]), "checkpointgofer-socket")
+	err = cgroup.RunInCgroup(cg, func() error {
+		argv := append([]string{"runsc-checkpointgofer"}, conf.ToFlags()...)
+		extraFiles := []uintptr{devNullFile.Fd(), devNullFile.Fd(), devNullFile.Fd(), uintptr(socketFDs[1]), gcsOptsFile.Fd()}
+
+		// Add log file FDs.
+		if conf.LogFilename != "" {
+			f, err := log.OpenFile(conf.LogFilename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, &log.DefaultFileOpts{})
+			if err != nil {
+				return fmt.Errorf("opening log file: %w", err)
+			}
+			defer f.Close()
+			extraFiles = append(extraFiles, f.Fd())
+			argv = append(argv, fmt.Sprintf("--log-fd=%d", len(extraFiles)-1))
+		}
+		lfOpts := &specutils.LogFileOpts{
+			SandboxID: s.ID,
+			CID:       s.ID,
+			Command:   "checkpointgofer",
+			Timestamp: s.StartTime,
+		}
+		if conf.DebugLog != "" && specutils.IsDebugCommand(conf, "checkpointgofer") {
+			f, err := specutils.OpenDebugLogFile(conf.DebugLog, lfOpts)
+			if err != nil {
+				return fmt.Errorf("opening debug log file: %w", err)
+			}
+			defer f.Close()
+			extraFiles = append(extraFiles, f.Fd())
+			argv = append(argv, fmt.Sprintf("--debug-log-fd=%d", len(extraFiles)-1))
+		}
+
+		argv = append(argv, "checkpointgofer", "-sock-fd=3", "-gcs-opts-fd=4")
+		argv = append(argv, extraFlags...)
+		// Don't forward GOMAXPROCS defaults that apply to this process (in
+		// particular, containerd-shim-runsc-v1 passes GOMAXPROCS=2 in
+		// v1.service.newCommand()).
+		env := slices.DeleteFunc(os.Environ(), func(env string) bool { return strings.HasPrefix(env, "GOMAXPROCS=") })
+		_, err := checkpointgofer.ForkExec(checkpointgofer.Options{
+			Argv:  argv,
+			Envv:  env,
+			Files: extraFiles,
+			SysProcAttr: &unix.SysProcAttr{
+				// Detach from this session, otherwise the subprocess will get
+				// SIGHUP and SIGCONT when re-parented.
+				Setsid: true,
+			},
+		})
+		return err
+	})
+	if err != nil {
+		clientSockFile.Close()
+		return nil, fmt.Errorf("failed to start checkpoint gofer: %w", err)
+	}
+	return clientSockFile, nil
 }
 
 // Pause sends the pause call for a container in the sandbox.

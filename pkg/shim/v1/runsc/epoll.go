@@ -23,9 +23,9 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/containerd/cgroups"
-	"github.com/containerd/containerd/events"
-	"github.com/containerd/containerd/runtime"
+	cgroups "github.com/containerd/cgroups/v3/cgroup1"
+	"github.com/containerd/containerd/v2/core/events"
+	"github.com/containerd/containerd/v2/core/runtime"
 	"golang.org/x/sys/unix"
 )
 

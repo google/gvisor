@@ -323,7 +323,7 @@ cos-gpu-smoke-tests: gpu-smoke-images $(RUNTIME_BIN)
 gpu-images: gpu-smoke-images load-gpu_pytorch load-gpu_ollama load-gpu_ollama_client load-basic_busybox load-basic_alpine load-basic_python load-gpu_stable-diffusion-xl load-gpu_vllm load-gpu_nccl-tests load-benchmarks_ffmpeg
 .PHONY: gpu-images
 
-l4-gpu-images: load-gpu_sglang load-gpu_sglang_client load-gpu_triton load-gpu_triton_client
+l4-gpu-images: load-gpu_sglang load-gpu_triton load-gpu_ollama_client
 .PHONY: l4-gpu-images
 
 l4-gpu-tests: l4-gpu-images $(RUNTIME_BIN)
@@ -358,7 +358,7 @@ cos-gpu-all-tests: gpu-images cos-gpu-smoke-tests $(RUNTIME_BIN)
 .PHONY: cos-gpu-all-tests
 
 # Images needed for TPU tests.
-tpu-images: load-tpu_vllm load-gpu_sglang_client
+tpu-images: load-tpu_vllm load-gpu_ollama_client
 .PHONY: tpu-images
 
 tpu-vllm-tests: tpu-images $(RUNTIME_BIN)
@@ -498,7 +498,11 @@ else
 		sudo tar -C "$$(dirname $$(which containerd))" -zxvf - containerd-shim-runsc-v1
 endif
 	@$(call sudo,test/root:root_test,--runtime=$(RUNTIME) -test.v)
-containerd-tests-min: containerd-test-1.6.2
+containerd-tests-min: containerd-test-1.7.31
+
+containerd-performance-test-%:
+	@export RUN_SHIM_GROUPING_PERFORMANCE_TEST=true; $(MAKE) containerd-test-$*
+.PHONY: containerd-performance-test-%
 
 # Test runsc go binding.
 go-binding-test: $(RUNTIME_BIN)

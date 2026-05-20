@@ -18,7 +18,6 @@ go_library(
     srcs = [
         "dispatcher_mutex.go",
         "fifo.go",
-        "packet_buffer_circular_list.go",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -27,6 +26,7 @@ go_library(
         "//pkg/sync",
         "//pkg/sync/locking",
         "//pkg/tcpip",
+        "//pkg/tcpip/link/qdisc",
         "//pkg/tcpip/stack",
     ],
 )

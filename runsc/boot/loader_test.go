@@ -31,6 +31,7 @@ import (
 	"gvisor.dev/gvisor/pkg/control/server"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
@@ -94,12 +95,13 @@ func startGofer(root string, conf *config.Config) (int, func(), error) {
 		unix.Close(goferEnd)
 		return 0, nil, fmt.Errorf("error creating server on FD %d: %v", goferEnd, err)
 	}
-	server := fsgofer.NewLisafsServer(fsgofer.Config{
+	server := lisafs.NewServer()
+	connImpl := fsgofer.NewConnectionImpl(&fsgofer.Config{
 		HostUDS:            conf.GetHostUDS(),
 		HostFifo:           conf.HostFifo,
 		DonateMountPointFD: conf.DirectFS,
 	})
-	c, err := server.CreateConnection(socket, root, true /* readonly */)
+	c, err := server.CreateConnection(socket, root, fsgofer.ConnectionOpts(true), connImpl)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -516,7 +518,7 @@ type createMountPointTestCase struct {
 }
 
 func TestCreateMountPoint(t *testing.T) {
-	var createMountPointTestCases = []createMountPointTestCase{
+	createMountPointTestCases := []createMountPointTestCase{
 		{
 			name: "File",
 			path: "/test/test-file",

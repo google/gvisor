@@ -15,7 +15,11 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <linux/capability.h>
+#include <stdint.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <sys/xattr.h>
 #include <unistd.h>
 
@@ -46,6 +50,7 @@ using ::gvisor::testing::IsTmpfs;
 using ::testing::AnyOf;
 
 constexpr char kUnshareAndSetTrustedXattrInNewUserns[] = "--set_trusted_xattr";
+constexpr int kNobodyUID = 65534;
 
 class XattrTest : public FileTest {};
 
@@ -125,6 +130,55 @@ TEST_F(XattrTest, SecurityCapacityXattr) {
   EXPECT_THAT(lremovexattr(path, name), SyscallFailsWithErrno(EOPNOTSUPP));
 }
 
+TEST_F(XattrTest, WriteRemovesSecurityCapability) {
+  // Gofer does not support security namespace.
+  SKIP_IF(IsRunningOnGvisor() &&
+          ASSERT_NO_ERRNO_AND_VALUE(IsGoferfs(test_file_name_)));
+  SKIP_IF(getuid() != 0);
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETFCAP)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+
+  const char* path = test_file_name_.c_str();
+  const char name[] = "security.capability";
+
+  struct {
+    uint32_t magic_etc;
+    uint32_t permitted_lo;
+    uint32_t inheritable_lo;
+    uint32_t permitted_hi;
+    uint32_t inheritable_hi;
+  } cap_data = {};
+  cap_data.magic_etc = VFS_CAP_REVISION_2 | VFS_CAP_FLAGS_EFFECTIVE;
+  cap_data.permitted_lo = 1 << CAP_SETUID;
+
+  ASSERT_THAT(chmod(path, 0666), SyscallSucceeds());
+  ASSERT_THAT(setxattr(path, name, &cap_data, sizeof(cap_data), 0),
+              SyscallSucceeds());
+
+  char buf[sizeof(cap_data)] = {};
+  ASSERT_THAT(getxattr(path, name, buf, sizeof(buf)),
+              SyscallSucceedsWithValue(sizeof(cap_data)));
+
+  pid_t pid = fork();
+  ASSERT_THAT(pid, SyscallSucceeds());
+  if (pid == 0) {
+    if (syscall(SYS_setuid, kNobodyUID) < 0) _exit(1);
+    char data[] = "overwritten";
+    int fd = open(path, O_WRONLY);
+    if (fd < 0) _exit(2);
+    if (write(fd, data, sizeof(data)) < 0) _exit(3);
+    close(fd);
+    _exit(0);
+  }
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << "child exited with status " << status;
+
+  EXPECT_THAT(getxattr(path, name, buf, sizeof(buf)),
+              SyscallFailsWithErrno(ENODATA));
+}
+
 // Do not allow save/restore cycles after making the test file read-only, as
 // the restore will fail to open it with r/w permissions.
 TEST_F(XattrTest, XattrReadOnly) {
@@ -185,8 +239,9 @@ TEST_F(XattrTest, XattrWriteOnly) {
 }
 
 TEST_F(XattrTest, XattrTrustedWithNonadmin) {
-  // TODO(b/148380782): Support setxattr and getxattr with "trusted" prefix.
-  SKIP_IF(IsRunningOnGvisor());
+  // Gofer does not support trusted namespace.
+  SKIP_IF(IsRunningOnGvisor() &&
+          ASSERT_NO_ERRNO_AND_VALUE(IsGoferfs(test_file_name_)));
   SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
   const char* path = test_file_name_.c_str();
@@ -240,8 +295,9 @@ TEST_F(XattrTest, XattrOnInvalidFileTypes) {
   const char name[] = "user.test";
 
   char char_device[] = "/dev/zero";
-  EXPECT_THAT(setxattr(char_device, name, nullptr, 0, /*flags=*/0),
-              SyscallFailsWithErrno(EPERM));
+  EXPECT_THAT(
+      setxattr(char_device, name, nullptr, 0, /*flags=*/0),
+      AnyOf(SyscallFailsWithErrno(EPERM), SyscallFailsWithErrno(EROFS)));
   EXPECT_THAT(getxattr(char_device, name, nullptr, 0),
               SyscallFailsWithErrno(ENODATA));
   EXPECT_THAT(listxattr(char_device, nullptr, 0), SyscallSucceedsWithValue(0));
@@ -672,9 +728,9 @@ TEST_F(XattrTest, XattrWithOPath) {
 }
 
 TEST_F(XattrTest, TrustedNamespaceWithCapSysAdmin) {
-  // TODO(b/166162845): Only gVisor tmpfs currently supports trusted namespace.
+  // Gofer does not support trusted namespace.
   SKIP_IF(IsRunningOnGvisor() &&
-          !ASSERT_NO_ERRNO_AND_VALUE(IsTmpfs(test_file_name_)));
+          ASSERT_NO_ERRNO_AND_VALUE(IsGoferfs(test_file_name_)));
 
   const char* path = test_file_name_.c_str();
   const char name[] = "trusted.test";
@@ -682,10 +738,12 @@ TEST_F(XattrTest, TrustedNamespaceWithCapSysAdmin) {
   // Writing to the trusted.* xattr namespace requires CAP_SYS_ADMIN in the root
   // user namespace. There's no easy way to check that, other than trying the
   // operation and seeing what happens. We'll call removexattr because it's
-  // simplest.
+  // simplest. If we have CAP_SYS_ADMIN, then we get ENODATA.
   if (removexattr(path, name) < 0) {
     SKIP_IF(errno == EPERM);
-    FAIL() << "unexpected errno from removexattr: " << errno;
+    if (errno != ENODATA) {
+      FAIL() << "unexpected errno from removexattr: " << errno;
+    }
   }
 
   // Set.
@@ -712,9 +770,9 @@ TEST_F(XattrTest, TrustedNamespaceWithCapSysAdmin) {
 }
 
 TEST_F(XattrTest, TrustedNamespaceWithoutCapSysAdmin) {
-  // TODO(b/66162845): Only gVisor tmpfs currently supports trusted namespace.
+  // Gofer does not support trusted namespace.
   SKIP_IF(IsRunningOnGvisor() &&
-          !ASSERT_NO_ERRNO_AND_VALUE(IsTmpfs(test_file_name_)));
+          ASSERT_NO_ERRNO_AND_VALUE(IsGoferfs(test_file_name_)));
 
   // Drop CAP_SYS_ADMIN if we have it.
   AutoCapability cap(CAP_SYS_ADMIN, false);
@@ -755,9 +813,9 @@ int UnshareAndSetxattrInNewUserns(const char* path) {
 }
 
 TEST_F(XattrTest, TrustedNamespaceWithCapSysAdminInNewUserns) {
-  // TODO(b/66162845): Only gVisor tmpfs currently supports trusted namespace.
+  // Gofer does not support trusted namespace.
   SKIP_IF(IsRunningOnGvisor() &&
-          !ASSERT_NO_ERRNO_AND_VALUE(IsTmpfs(test_file_name_)));
+          ASSERT_NO_ERRNO_AND_VALUE(IsGoferfs(test_file_name_)));
 
   // Drop CAP_SYS_ADMIN if we have it, this test tries to beat the lack of
   // the cap by gaining it in a new userns.

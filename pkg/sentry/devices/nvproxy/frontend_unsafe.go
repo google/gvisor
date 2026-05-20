@@ -128,14 +128,19 @@ func ctrlIoctlHasInfoList[Params any, PtrParams hasCtrlInfoListPtr[Params]](fi *
 
 func ctrlGetNvU32ListInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS, ctrlParams *nvgpu.RmapiParamNvU32List, list []uint32) (uintptr, error) {
 	origList := ctrlParams.List
-	ctrlParams.List = p64FromPtr(unsafe.Pointer(&list[0]))
+	ctrlParams.List = 0
+	if len(list) != 0 {
+		ctrlParams.List = p64FromPtr(unsafe.Pointer(&list[0]))
+	}
 	n, err := rmControlInvoke(fi, ioctlParams, ctrlParams)
 	ctrlParams.List = origList
 	if err != nil {
 		return n, err
 	}
-	if _, err := primitive.CopyUint32SliceOut(fi.t, addrFromP64(ctrlParams.List), list); err != nil {
-		return n, err
+	if len(list) != 0 {
+		if _, err := primitive.CopyUint32SliceOut(fi.t, addrFromP64(ctrlParams.List), list); err != nil {
+			return n, err
+		}
 	}
 	if _, err := ctrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
 		return n, err

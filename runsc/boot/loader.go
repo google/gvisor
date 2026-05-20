@@ -298,10 +298,6 @@ type Loader struct {
 	// +checklocks:mu
 	saveFDs []*fd.FD
 
-	// saveRestoreNet indicates if the saved network stack should be used
-	// during restore.
-	saveRestoreNet bool
-
 	// restoreErr is the error that occurred during restore.
 	//
 	// +checklocks:mu
@@ -428,6 +424,9 @@ type Args struct {
 
 	SaveFDs      []*fd.FD
 	FSRestoreFDs []*fd.FD
+	// If FSRestoreCheckpointGofer is true, Args.FSRestoreFDs contains only one
+	// FD, which is a socket connected to a checkpoint gofer.
+	FSRestoreCheckpointGofer bool
 
 	ArgsExtra
 
@@ -510,8 +509,6 @@ func New(args Args) (*Loader, error) {
 		nvproxy.Init()
 	}
 
-	kernel.IOUringEnabled = args.Conf.IOUring
-
 	eid := execID{cid: args.ID}
 	l := &Loader{
 		sandboxID:      args.ID,
@@ -538,7 +535,7 @@ func New(args Args) (*Loader, error) {
 	// Start filesystem checkpoint restore as soon as possible to maximize
 	// parallel loading.
 	if len(args.FSRestoreFDs) != 0 {
-		fsrOpts, err := makeFSRestoreOptsImpl(&args)
+		fsrOpts, err := makeFSRestoreOpts(&args)
 		if err != nil {
 			return nil, fmt.Errorf("failed to set up filesystem checkpoint restore: %w", err)
 		}
@@ -623,6 +620,7 @@ func New(args Args) (*Loader, error) {
 		Platform:            p,
 		NvidiaDriverVersion: args.NvidiaDriverVersion,
 		AllowSUID:           args.Conf.AllowSUID,
+		IOUringEnabled:      args.Conf.IOUring,
 	}
 
 	// Create memory file.
@@ -659,16 +657,9 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("creating network: %w", err)
 	}
 
-	// S/R is not supported for hostinet and plugin network stack.
-	netMode := l.root.conf.Network
-	if netMode == config.NetworkSandbox || netMode == config.NetworkNone {
-		l.saveRestoreNet = true
-	}
-
 	if args.TotalHostMem > 0 {
-		// As per tmpfs(5), the default size limit is 50% of total physical RAM.
-		// See mm/shmem.c:shmem_default_max_blocks().
-		tmpfs.SetDefaultSizeLimit(args.TotalHostMem / 2)
+		// tmpfs needs to know the amount of total physical RAM to calculate size limits.
+		tmpfs.SetTotalHostMem(args.TotalHostMem)
 	}
 
 	if args.TotalMem > 0 {

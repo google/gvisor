@@ -2,8 +2,17 @@ load("//website:defs.bzl", "doc")
 
 package(
     default_applicable_licenses = ["//:license"],
-    default_visibility = ["//website:__pkg__"],
+    default_visibility = [
+        "//website:__pkg__",
+    ],
     licenses = ["notice"],
+)
+
+exports_files(
+    srcs = glob(["*.md"]),
+    visibility = [
+        "//visibility:public",
+    ],
 )
 
 doc(

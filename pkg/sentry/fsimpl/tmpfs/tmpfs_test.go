@@ -157,26 +157,31 @@ func newPipeFD(ctx context.Context, mode linux.FileMode) (*vfs.FileDescription, 
 }
 
 func TestParseSize(t *testing.T) {
-	var tests = []struct {
-		s         string
-		want      uint64
-		wantError bool
+	// 4 GiB of host memory
+	SetTotalHostMem(4096 * 1024 * 1024)
+
+	tests := []struct {
+		s                  string
+		want               uint64
+		wantPercentageUsed bool
+		wantError          bool
 	}{
-		{"500", 500, false},
-		{"5k", (5 * 1024), false},
-		{"5m", (5 * 1024 * 1024), false},
-		{"5G", (5 * 1024 * 1024 * 1024), false},
-		{"5t", (5 * 1024 * 1024 * 1024 * 1024), false},
-		{"5P", (5 * 1024 * 1024 * 1024 * 1024 * 1024), false},
-		{"5e", (5 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024), false},
-		{"5e3", 0, true},
-		{"", 0, true},
-		{"9999999999999999P", 0, true},
+		{"500", 500, false, false},
+		{"5k", (5 * 1024), false, false},
+		{"5m", (5 * 1024 * 1024), false, false},
+		{"5G", (5 * 1024 * 1024 * 1024), false, false},
+		{"5t", (5 * 1024 * 1024 * 1024 * 1024), false, false},
+		{"5P", (5 * 1024 * 1024 * 1024 * 1024 * 1024), false, false},
+		{"5e", (5 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024), false, false},
+		{"5%", (5 * (totalHostMem / 100)), true, false},
+		{"5e3", 0, false, true},
+		{"", 0, false, true},
+		{"9999999999999999P", 0, false, true},
 	}
 	for _, tt := range tests {
 		testname := tt.s
 		t.Run(testname, func(t *testing.T) {
-			size, err := parseSize(tt.s)
+			size, percentageUsed, err := parseSize(tt.s)
 			if tt.wantError && err == nil {
 				t.Errorf("Invalid input: %v parsed", tt.s)
 			}
@@ -184,8 +189,8 @@ func TestParseSize(t *testing.T) {
 				if err != nil {
 					t.Errorf("Couldn't parse size, Error: %v", err)
 				}
-				if size != tt.want {
-					t.Errorf("got: %v, want %v", size, tt.want)
+				if size != tt.want || percentageUsed != tt.wantPercentageUsed {
+					t.Errorf("got: (%v, %v), want (%v, %v)", size, percentageUsed, tt.want, tt.wantPercentageUsed)
 				}
 			}
 		})

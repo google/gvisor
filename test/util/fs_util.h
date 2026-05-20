@@ -229,6 +229,9 @@ PosixErrorOr<bool> IsTmpfs(const std::string& path);
 // IsOverlayfs returns true if the file at path is backed by overlayfs.
 PosixErrorOr<bool> IsOverlayfs(const std::string& path);
 
+// IsGoferfs returns true if the file at path is backed by goferfs.
+PosixErrorOr<bool> IsGoferfs(const std::string& path);
+
 PosixError CheckSameFile(const FileDescriptor& fd1, const FileDescriptor& fd2);
 
 namespace internal {

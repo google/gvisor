@@ -8,4 +8,5 @@ package(
 proto_library(
     name = "sandbox_options",
     srcs = ["sandbox_options.proto"],
+    visibility = ["//:sandbox"],
 )

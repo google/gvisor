@@ -191,7 +191,7 @@ type SetStatOptions struct {
 
 	// ClearPrivs is a directive from the chown and truncate family of syscalls
 	// to the filesystem's SetStat implementation to clear the SUID and SGID
-	// bits on the file.
+	// bits on the file and other privilege-granting state.
 	ClearPrivs bool
 }
 

@@ -15,6 +15,7 @@
 package gofer
 
 import (
+	"slices"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -100,5 +101,96 @@ func TestStringFixedCache(t *testing.T) {
 		if victim != s {
 			t.Fatalf("cache.add(): %v, want: %v", victim, s)
 		}
+	}
+}
+
+func TestXattrCacheValues(t *testing.T) {
+	ino := &inode{}
+
+	// 1. Initial state
+	if _, _, found := ino.xattrCache.get("user.foo"); found {
+		t.Errorf("get(user.foo) got found=true, want false")
+	}
+
+	// 2. Cache present xattr
+	ino.xattrCache.add("user.foo", "bar")
+	val, negative, found := ino.xattrCache.get("user.foo")
+	if !found || negative || val != "bar" {
+		t.Errorf("get(user.foo) = (%q, %v, %v), want (%q, false, true)", val, negative, found, "bar")
+	}
+
+	// 3. Cache negative xattr
+	ino.xattrCache.addNegative("user.neg")
+	val, negative, found = ino.xattrCache.get("user.neg")
+	if !found || !negative || val != "" {
+		t.Errorf("get(user.neg) = (%q, %v, %v), want (%q, true, true)", val, negative, found, "")
+	}
+
+	// Overwrite negative xattr with present xattr
+	ino.xattrCache.add("user.neg", "baz")
+	val, negative, found = ino.xattrCache.get("user.neg")
+	if !found || negative || val != "baz" {
+		t.Errorf("get(user.neg) = (%q, %v, %v), want (%q, false, true)", val, negative, found, "baz")
+	}
+
+	// 4. Overlay opaque xattr
+	ino.xattrCache.addNegative(xattrOverlayOpaque)
+	val, negative, found = ino.xattrCache.get(xattrOverlayOpaque)
+	if !found || !negative || val != "" {
+		t.Errorf("get(xattrOverlayOpaque) = (%q, %v, %v), want (%q, true, true)", val, negative, found, "")
+	}
+
+	// Overwrite overlay opaque xattr with present xattr
+	ino.xattrCache.add(xattrOverlayOpaque, "y")
+	val, negative, found = ino.xattrCache.get(xattrOverlayOpaque)
+	if !found || negative || val != "y" {
+		t.Errorf("get(xattrOverlayOpaque) = (%q, %v, %v), want (%q, false, true)", val, negative, found, "y")
+	}
+}
+
+func TestXattrCacheList(t *testing.T) {
+	ino := &inode{}
+
+	// 1. Initial state
+	if _, found := ino.xattrCache.getList(); found {
+		t.Errorf("getList() got found=true, want false")
+	}
+
+	// 2. Cache empty list
+	ino.xattrCache.setList([]string{})
+	list, found := ino.xattrCache.getList()
+	if !found || len(list) != 0 {
+		t.Errorf("getList() = (%v, %v), want ([], true)", list, found)
+	}
+
+	// 3. Cache non-empty list
+	initialList := []string{"user.foo", "user.bar"}
+	ino.xattrCache.setList(initialList)
+	list, found = ino.xattrCache.getList()
+	if !found || !slices.Equal(list, initialList) {
+		t.Errorf("getList() = (%v, %v), want (%v, true)", list, found, initialList)
+	}
+
+	// 4. Cache new xattr updates list
+	ino.xattrCache.add("user.baz", "val")
+	wantList := []string{"user.foo", "user.bar", "user.baz"}
+	list, found = ino.xattrCache.getList()
+	if !found || !slices.Equal(list, wantList) {
+		t.Errorf("getList() = (%v, %v), want (%v, true)", list, found, wantList)
+	}
+
+	// 5. Cache existing xattr does not duplicate in list
+	ino.xattrCache.add("user.foo", "val2")
+	list, found = ino.xattrCache.getList()
+	if !found || !slices.Equal(list, wantList) {
+		t.Errorf("getList() = (%v, %v), want (%v, true)", list, found, wantList)
+	}
+
+	// 6. Cache negative xattr removes from list
+	ino.xattrCache.addNegative("user.bar")
+	wantList = []string{"user.foo", "user.baz"}
+	list, found = ino.xattrCache.getList()
+	if !found || !slices.Equal(list, wantList) {
+		t.Errorf("getList() = (%v, %v), want (%v, true)", list, found, wantList)
 	}
 }

@@ -15,6 +15,7 @@
 package gofer
 
 import (
+	"bytes"
 	"fmt"
 	"math"
 	"path"
@@ -30,6 +31,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // LINT.IfChange
@@ -491,6 +493,13 @@ func (i *directfsInode) getHostChild(name string) (*dentry, error) {
 	return i.fs.newDirectfsDentry(childFD)
 }
 
+var xattrBufPool = sync.Pool{
+	New: func() any {
+		b := make([]byte, max(linux.XATTR_SIZE_MAX, linux.XATTR_LIST_MAX))
+		return &b
+	},
+}
+
 func (i *directfsInode) getXattr(ctx context.Context, name string, size uint64, d *dentry) (string, error) {
 	if ftype := d.inode.fileType(); ftype == linux.S_IFSOCK || ftype == linux.S_IFLNK {
 		// Sockets and symlinks use O_PATH control FDs. However, fgetxattr(2) fails
@@ -507,12 +516,74 @@ func (i *directfsInode) getXattr(ctx context.Context, name string, size uint64, 
 	if size > linux.XATTR_SIZE_MAX || size == 0 {
 		size = linux.XATTR_SIZE_MAX
 	}
-	data := make([]byte, size)
-	n, err := unix.Fgetxattr(i.controlFD, name, data)
+	bPtr := xattrBufPool.Get().(*[]byte)
+	defer xattrBufPool.Put(bPtr)
+	data := (*bPtr)[:size]
+	sz, err := unix.Fgetxattr(i.controlFD, name, data)
 	if err != nil {
 		return "", err
 	}
-	return string(data[:n]), nil
+	return string(data[:sz]), nil
+}
+
+func (i *directfsInode) setXattr(ctx context.Context, opts *vfs.SetXattrOptions, d *dentry) error {
+	if ftype := d.inode.fileType(); ftype == linux.S_IFSOCK || ftype == linux.S_IFLNK {
+		// Sockets and symlinks use O_PATH control FDs. However, fsetxattr(2) fails
+		// with EBADF for O_PATH FDs. Fallback to lisafs.
+		if err := i.ensureLisafsControlFD(ctx, d); err != nil {
+			return err
+		}
+		return i.controlFDLisa.SetXattr(ctx, opts.Name, opts.Value, opts.Flags)
+	}
+	return unix.Fsetxattr(i.controlFD, opts.Name, []byte(opts.Value), int(opts.Flags))
+}
+
+func (i *directfsInode) listXattr(ctx context.Context, size uint64, d *dentry) ([]string, error) {
+	if ftype := d.inode.fileType(); ftype == linux.S_IFSOCK || ftype == linux.S_IFLNK {
+		// Sockets and symlinks use O_PATH control FDs. However, flistxattr(2) fails
+		// with EBADF for O_PATH FDs. Fallback to lisafs.
+		if err := i.ensureLisafsControlFD(ctx, d); err != nil {
+			return nil, err
+		}
+		return i.controlFDLisa.ListXattr(ctx, size)
+	}
+
+	// listxattr(2) called with size 0 should return the list size. As a result,
+	// we need to return the entire list here so that the sentry can return the
+	// correct value.
+	if size > linux.XATTR_LIST_MAX || size == 0 {
+		size = linux.XATTR_LIST_MAX
+	}
+	bPtr := xattrBufPool.Get().(*[]byte)
+	defer xattrBufPool.Put(bPtr)
+	data := (*bPtr)[:size]
+	sz, err := unix.Flistxattr(i.controlFD, data)
+	if err != nil {
+		return nil, err
+	}
+	data = data[:sz]
+	var names []string
+	for len(data) > 0 {
+		idx := bytes.IndexByte(data, 0)
+		if idx < 0 {
+			break
+		}
+		names = append(names, string(data[:idx]))
+		data = data[idx+1:]
+	}
+	return names, nil
+}
+
+func (i *directfsInode) removeXattr(ctx context.Context, name string, d *dentry) error {
+	if ftype := d.inode.fileType(); ftype == linux.S_IFSOCK || ftype == linux.S_IFLNK {
+		// Sockets and symlinks use O_PATH control FDs. However, fremovexattr(2) fails
+		// with EBADF for O_PATH FDs. Fallback to lisafs.
+		if err := i.ensureLisafsControlFD(ctx, d); err != nil {
+			return err
+		}
+		return i.controlFDLisa.RemoveXattr(ctx, name)
+	}
+	return unix.Fremovexattr(i.controlFD, name)
 }
 
 // getCreatedChild opens the newly created child, sets its uid/gid, constructs
@@ -563,10 +634,20 @@ func (i *directfsInode) mknod(ctx context.Context, name string, creds *auth.Cred
 		return i.bindAt(ctx, name, creds, opts, d)
 	}
 
-	// From mknod(2) man page:
+	// Only allow creating regular files or overlayfs whiteouts. Linux's
+	// vfs_mknod() exempts whiteouts from the CAP_MKNOD check, so we do not need
+	// CAP_MKNOD on the gofer process. This enables using gofer as an overlay
+	// upper layer. Return EPERM otherwise; from mknod(2) man page:
 	// "EPERM: [...] if the filesystem containing pathname does not support
 	// the type of node requested."
-	if opts.Mode.FileType() != linux.ModeRegular {
+	switch opts.Mode.FileType() {
+	case linux.S_IFREG:
+	case linux.S_IFCHR:
+		if opts.DevMajor == 0 && opts.DevMinor == 0 {
+			break
+		}
+		fallthrough
+	default:
 		return nil, unix.EPERM
 	}
 

@@ -188,6 +188,12 @@ to handle each volume:
     -   `bind`: Indicates a bind mount from the host.
 -   `dev.gvisor.spec.mount.<NAME>.options`: Comma-separated volume-mount options
     (e.g., `rw,rprivate`).
+-   `dev.gvisor.spec.mount.<NAME>.directfs`: `default` or `off`. `default` (or
+    unset) follows the global `--directfs` setting. `off` suppresses the
+    `directfs` mount option for this mount even when `--directfs` is enabled
+    globally. Use this for mounts served by a custom gofer that cannot donate a
+    host file descriptor for the mount root (for example, virtual or
+    network-backed filesystems). Other mounts continue to use directfs.
 
 Below is an example Pod spec for a shared `emptyDir` volume named
 `shared-folder`, with annotations that enable cross-container inotify:

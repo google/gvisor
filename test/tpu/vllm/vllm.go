@@ -20,12 +20,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
-	"strconv"
 	"strings"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
+	"gvisor.dev/gvisor/pkg/test/llmutil"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
@@ -40,25 +39,15 @@ const (
 // VLLM is a vllm client.
 type VLLM struct {
 	// server is used to perform requests against the server.
-	server Server
+	server llmutil.Server
 
 	// logger is used to log.
 	logger testutil.Logger
 }
 
-// Server performs requests against a vllm server.
-type Server interface {
-	// InstrumentedRequest performs an instrumented HTTP request against the
-	// vllm server, using the `tpu/vllm_client` image.
-	InstrumentedRequest(ctx context.Context, argvFn func(hostPort string) []string) ([]byte, error)
-
-	// Logs retrieves logs from the server.
-	Logs(ctx context.Context) (string, error)
-}
-
 // New starts a new VLLM server in the given container,
 // then waits for it to serve and returns the client.
-func New(ctx context.Context, server Server, logger testutil.Logger) (*VLLM, error) {
+func New(ctx context.Context, server llmutil.Server, logger testutil.Logger) (*VLLM, error) {
 	started := time.Now()
 	llm := &VLLM{
 		logger: logger,
@@ -102,13 +91,6 @@ func (llm *VLLM) WarmModel(ctx context.Context) (*ModelLoadStats, error) {
 	}, nil
 }
 
-// dockerServer implements `Server`. It interfaces with a vllm server
-// running in a local Docker container.
-type dockerServer struct {
-	container *dockerutil.Container
-	logger    testutil.Logger
-}
-
 // NewDocker returns a new VLLM client talking to a vLLM server that runs
 // in a local Docker container.
 func NewDocker(ctx context.Context, cont *dockerutil.Container, logger testutil.Logger) (*VLLM, error) {
@@ -122,119 +104,13 @@ func NewDocker(ctx context.Context, cont *dockerutil.Container, logger testutil.
 		return nil, fmt.Errorf("could not start vllm: %v", err)
 	}
 	logger.Logf("vLLM container started after %v", time.Since(started))
-	ds := &dockerServer{
-		container: cont,
-		logger:    logger,
+	ds := &llmutil.DockerServer{
+		Container:   cont,
+		Logger:      logger,
+		Port:        Port,
+		ClientImage: "gpu/ollama/client",
 	}
 	return New(ctx, ds, logger)
-}
-
-// InstrumentedRequest implements `Server.InstrumentedRequest`.
-func (ds *dockerServer) InstrumentedRequest(ctx context.Context, argvFn func(hostPort string) []string) ([]byte, error) {
-	const vllmHost = "llm"
-	cmd := argvFn(fmt.Sprintf("http://%s:%d", vllmHost, Port))
-	out, err := dockerutil.MakeContainer(ctx, ds.logger).Run(ctx, dockerutil.RunOpts{
-		Image: "gpu/sglang/client",
-		Links: []string{ds.container.MakeLink(vllmHost)},
-	}, cmd...)
-	if err != nil {
-		if out != "" {
-			return []byte(out), fmt.Errorf("command %q failed (%w): %v", strings.Join(cmd, " "), err, out)
-		}
-		return nil, fmt.Errorf("could not run command %q: %w", strings.Join(cmd, " "), err)
-	}
-	return []byte(out), nil
-}
-
-// Logs implements `Server.Logs`.
-func (ds *dockerServer) Logs(ctx context.Context) (string, error) {
-	return ds.container.Logs(ctx)
-}
-
-// ResponseMetrics are HTTP request metrics from a vllm API query.
-type ResponseMetrics struct {
-	// ProgramStarted is the time when the program started.
-	ProgramStarted time.Time `json:"program_started"`
-	// RequestSent is the time when the HTTP request was sent.
-	RequestSent time.Time `json:"request_sent"`
-	// ResponseReceived is the time when the HTTP response headers were received.
-	ResponseReceived time.Time `json:"response_received"`
-	// FirstByteRead is the time when the first HTTP response body byte was read.
-	FirstByteRead time.Time `json:"first_byte_read"`
-	// LastByteRead is the time when the last HTTP response body byte was read.
-	LastByteRead time.Time `json:"last_byte_read"`
-}
-
-// TimeToFirstByte returns the duration it took between the request being sent
-// and the first byte of the response being read.
-func (rm *ResponseMetrics) TimeToFirstByte() time.Duration {
-	return rm.FirstByteRead.Sub(rm.RequestSent)
-}
-
-// apiResponse represents a response from the vllm API.
-type apiResponse[T any] struct {
-	// Objects is the list of JSON objects in the response.
-	Objects []*T
-	// Metrics contains HTTP response metrics.
-	Metrics ResponseMetrics
-}
-
-// makeAPIResponse decodes a raw response from an instrumented HTTP request.
-func makeAPIResponse[T any](rawResponse []byte) (*apiResponse[T], error) {
-	var respBytes strings.Builder
-	var resp apiResponse[T]
-	for _, line := range strings.Split(string(rawResponse), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		colonIndex := strings.Index(line, ":")
-		if colonIndex == -1 {
-			return nil, fmt.Errorf("malformed line: %q", line)
-		}
-		data := strings.TrimSpace(line[colonIndex+1:])
-		switch line[:colonIndex] {
-		case "FATAL":
-			return nil, fmt.Errorf("request failed: %s", data)
-		case "RESPSTATUS":
-			if !strings.Contains(data, "200 OK") {
-				return nil, fmt.Errorf("HTTP error: %s", data)
-			}
-		case "REQHEADER", "RESPHEADER":
-			// Do nothing.
-		case "BODY":
-			unquoted, err := strconv.Unquote(data)
-			if err != nil {
-				return nil, fmt.Errorf("malformed body line: %q", data)
-			}
-			if strings.TrimSpace(unquoted) == "[DONE]" {
-				break
-			}
-			respBytes.WriteString(unquoted)
-		case "STATS":
-			if err := json.Unmarshal([]byte(data), &resp.Metrics); err != nil {
-				return nil, fmt.Errorf("malformed stats line: %q", data)
-			}
-		default:
-			return nil, fmt.Errorf("malformed line: %q", line)
-		}
-	}
-	decoder := json.NewDecoder(strings.NewReader(respBytes.String()))
-	for {
-		var obj T
-		err := decoder.Decode(&obj)
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, fmt.Errorf("malformed JSON response: %w", err)
-		}
-		resp.Objects = append(resp.Objects, &obj)
-	}
-	if len(resp.Objects) == 0 {
-		return nil, fmt.Errorf("response is empty")
-	}
-	return &resp, nil
 }
 
 func (llm *VLLM) instrumentedRequest(ctx context.Context, method, endpoint, header string, data []byte) ([]byte, error) {
@@ -243,6 +119,7 @@ func (llm *VLLM) instrumentedRequest(ctx context.Context, method, endpoint, head
 			"httpclient",
 			fmt.Sprintf("--method=%s", method),
 			fmt.Sprintf("--url=%s%s", hostPort, endpoint),
+			"--strip_prefix=data: ",
 		}
 		if header != "" {
 			argv = append(argv, fmt.Sprintf("--header=%s", header))
@@ -308,7 +185,7 @@ type Response struct {
 // FullResponse aggregates streamed responses.
 type FullResponse struct {
 	objects []*Response
-	metrics ResponseMetrics
+	metrics llmutil.ResponseMetrics
 }
 
 // Text returns the concatenated text from all responses.
@@ -331,6 +208,7 @@ func (r *FullResponse) Done() bool {
 // End of request looks like as follows:
 // data: {"id":"cmpl-a1fcb98a99df0198","object":"text_completion","created":1776445044,"model":"Qwen/Qwen2.5-1.5B-Instruct","choices":[{"index":0,"text":" performance","logprobs":null,"finish_reason":null,"stop_reason":null,"prompt_token_ids":null,"token_ids":null}],"usage":null}
 // data: {"id":"cmpl-a1fcb98a99df0198","object":"text_completion","created":1776445044,"model":"Qwen/Qwen2.5-1.5B-Instruct","choices":[{"index":0,"text":" and","logprobs":null,"finish_reason":"length","stop_reason":null,"prompt_token_ids":null,"token_ids":null}],"usage":null}
+// data: [DONE]
 func (r *FullResponse) FinishReason() string {
 	if len(r.objects) == 0 {
 		return ""
@@ -404,7 +282,7 @@ func (llm *VLLM) Prompt(ctx context.Context, prompt *Prompt) (*FullResponse, err
 	if err != nil {
 		return nil, err
 	}
-	resp, err := makeAPIResponse[Response](out)
+	resp, err := llmutil.MakeAPIResponse[Response](out)
 	if err != nil {
 		return nil, err
 	}

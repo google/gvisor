@@ -1430,6 +1430,10 @@ TEST_F(Cgroup2Test, PIDZeroMovesSelf) {
 
   auto procs = ASSERT_NO_ERRNO_AND_VALUE(child.Procs());
   EXPECT_TRUE(procs.contains(getpid()));
+
+  std::string content;
+  ASSERT_NO_ERRNO(GetContents("/proc/self/cgroup", &content));
+  EXPECT_THAT(content, HasSubstr("0::/test/child\n"));
 }
 
 TEST_F(Cgroup2Test, TaskMigration) {
@@ -1513,6 +1517,56 @@ TEST_F(Cgroup2Test, InotifyEventsOnExit) {
   EXPECT_TRUE(WIFEXITED(status));
 }
 
+TEST_F(Cgroup2Test, ZombieCgroupMembership) {
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("child"));
+  ExpectDefaultControlFiles(child);
+
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  FileDescriptor rfd(fds[0]);
+  FileDescriptor wfd(fds[1]);
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    wfd.reset();
+    char token;
+    if (read(rfd.get(), &token, 1) <= 0) {
+      _exit(1);
+    }
+    _exit(0);
+  }
+  rfd.reset();
+  ASSERT_GT(pid, 0);
+  ASSERT_NO_ERRNO(child.Enter(pid));
+
+  // Zombify the child.
+  ASSERT_THAT(write(wfd.get(), "x", 1), SyscallSucceeds());
+  wfd.reset();
+  siginfo_t info = {};
+  ASSERT_THAT(waitid(P_PID, pid, &info, WEXITED | WNOWAIT), SyscallSucceeds());
+
+  // A zombie process does not appear in cgroup.procs...
+  auto procs = ASSERT_NO_ERRNO_AND_VALUE(child.Procs());
+  EXPECT_FALSE(procs.contains(pid));
+  // ...and thus cannot be moved to another cgroup: the write succeeds,
+  // but the process is not moved, as shown by the subsequent read.
+  EXPECT_NO_ERRNO(c().WriteIntegerControlFile("cgroup.procs", pid));
+  auto root_procs = ASSERT_NO_ERRNO_AND_VALUE(c().Procs());
+  EXPECT_FALSE(root_procs.contains(pid));
+
+  // Delete the child cgroup.
+  ASSERT_NO_ERRNO(child.Delete());
+  // To see "deleted".
+  std::string content;
+  ASSERT_NO_ERRNO(
+      GetContents(absl::StrFormat("/proc/%d/cgroup", pid), &content));
+  EXPECT_THAT(content, HasSubstr(" (deleted)\n"));
+
+  int status;
+  ASSERT_EQ(waitpid(pid, &status, 0), pid);
+  EXPECT_TRUE(WIFEXITED(status));
+}
+
 TEST_F(Cgroup2Test, Threaded) {
   Cgroup parent = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("parent"));
   Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(parent.CreateChild("child"));
@@ -1524,8 +1578,29 @@ TEST_F(Cgroup2Test, Threaded) {
   EXPECT_NO_ERRNO(child.WriteControlFile("cgroup.type", "threaded"));
   EXPECT_THAT(child.ReadControlFile("cgroup.type"),
               IsPosixErrorOkAndHolds(HasSubstr("threaded")));
+
   // The parent automatically becomes "domain threaded".
   EXPECT_THAT(parent.ReadControlFile("cgroup.type"),
+              IsPosixErrorOkAndHolds(HasSubstr("domain threaded")));
+  // Removing the threaded child clears the condition, reverting parent to
+  // normal domain.
+  ASSERT_NO_ERRNO(child.Delete());
+  EXPECT_THAT(parent.ReadControlFile("cgroup.type"),
+              IsPosixErrorOkAndHolds(HasSubstr("domain")));
+}
+
+TEST_F(Cgroup2Test, ThreadedDomainViaSubtreeControl) {
+  std::string controllers =
+      ASSERT_NO_ERRNO_AND_VALUE(c().ReadControlFile("cgroup.controllers"));
+  SKIP_IF(!absl::StrContains(controllers, "pids"));
+
+  auto clean = Cleanup([&] { ASSERT_NO_ERRNO(root().Enter(getpid())); });
+  ASSERT_NO_ERRNO(c().Enter(getpid()));
+
+  // Enabling threaded controllers in subtree_control while a process exists
+  // makes it domain threaded.
+  ASSERT_NO_ERRNO(c().WriteControlFile("cgroup.subtree_control", "+pids"));
+  EXPECT_THAT(c().ReadControlFile("cgroup.type"),
               IsPosixErrorOkAndHolds(HasSubstr("domain threaded")));
 }
 
@@ -1538,6 +1613,9 @@ TEST_F(Cgroup2Test, ThreadedSubtreeBecomesInvalidDomain) {
   ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.type", "threaded"));
   EXPECT_THAT(grandchild.ReadControlFile("cgroup.type"),
               IsPosixErrorOkAndHolds(HasSubstr("domain invalid")));
+
+  // Cannot add processes to an invalid domain.
+  EXPECT_THAT(grandchild.Enter(getpid()), PosixErrorIs(EOPNOTSUPP));
 }
 
 TEST_F(Cgroup2Test, ThreadedNodeCanHaveInternalProcesses) {
@@ -1590,6 +1668,20 @@ TEST_F(Cgroup2Test, ThreadedSubtreeMasking) {
   EXPECT_THAT(child.WriteControlFile("cgroup.subtree_control", "+memory"),
               PosixErrorIs(ENOENT));
   ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.subtree_control", "+pids"));
+}
+
+TEST_F(Cgroup2Test, ThreadedCannotBeEnabledWithPopulatedDomainChildren) {
+  Cgroup parent = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("parent"));
+  Cgroup child1 = ASSERT_NO_ERRNO_AND_VALUE(parent.CreateChild("child1"));
+  Cgroup child2 = ASSERT_NO_ERRNO_AND_VALUE(parent.CreateChild("child2"));
+
+  auto clean = Cleanup([&] { ASSERT_NO_ERRNO(root().Enter(getpid())); });
+  ASSERT_NO_ERRNO(child1.Enter(getpid()));
+
+  // Attempting to make child2 threaded should fail because parent has a
+  // populated domain child in child1.
+  EXPECT_THAT(child2.WriteControlFile("cgroup.type", "threaded"),
+              PosixErrorIs(EOPNOTSUPP));
 }
 
 TEST_F(Cgroup2Test, ThreadgroupMigration) {
@@ -1775,6 +1867,189 @@ TEST_F(Cgroup2Test, KillTree) {
   ASSERT_EQ(waitpid(pid2, &status, 0), pid2);
   EXPECT_TRUE(WIFSIGNALED(status));
   EXPECT_EQ(WTERMSIG(status), SIGKILL);
+}
+
+TEST_F(Cgroup2Test, DescendantsStatAndLimit) {
+  // Verify defaults.
+  EXPECT_THAT(c().ReadControlFile("cgroup.stat"),
+              IsPosixErrorOkAndHolds(HasSubstr("nr_descendants 0")));
+  EXPECT_THAT(c().ReadControlFile("cgroup.max.descendants"),
+              IsPosixErrorOkAndHolds("max\n"));
+  EXPECT_THAT(c().ReadControlFile("cgroup.max.depth"),
+              IsPosixErrorOkAndHolds("max\n"));
+
+  // A single descendant.
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("child"));
+  EXPECT_THAT(c().ReadControlFile("cgroup.stat"),
+              IsPosixErrorOkAndHolds(HasSubstr("nr_descendants 1")));
+
+  // Set max descendants to 1 on the child...
+  ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.max.descendants", "1"));
+  // ...thereby allowing the birth of the first grandchild.
+  Cgroup grandchild =
+      ASSERT_NO_ERRNO_AND_VALUE(child.CreateChild("grandchild"));
+  EXPECT_THAT(c().ReadControlFile("cgroup.stat"),
+              IsPosixErrorOkAndHolds(HasSubstr("nr_descendants 2")));
+  // ...but not the second.
+  auto second_grandchild = child.CreateChild("second_grandchild");
+  EXPECT_FALSE(second_grandchild.ok());
+
+  // Allow unlimited descendants on the child, but deny depth.
+  ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.max.descendants", "max"));
+  ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.max.depth", "1"));
+  auto great_grandchild = grandchild.CreateChild("great_grandchild");
+  EXPECT_FALSE(great_grandchild.ok());
+}
+
+struct CloneArgs {
+  int cgroup_fd;
+  int ready_fd;
+};
+
+int CloneSubthreadFunc(void* arg) {
+  auto args = static_cast<CloneArgs*>(arg);
+  pid_t tid = gettid();
+  char buf[32];
+  int len = snprintf(buf, sizeof(buf), "%d", tid);
+  if (write(args->cgroup_fd, buf, len) < 0) {
+    _exit(1);
+  }
+  char ready = 'x';
+  if (write(args->ready_fd, &ready, 1) < 0) {
+    _exit(1);
+  }
+  pause();
+  return 0;
+}
+
+// A slightly complex topology:
+//
+// [ dom ] (Type: "domain threaded")
+//    ├── Parent leader (getpid())
+//    ├── [ child1 ] (Type: "threaded")
+//    │      ├── Parent subthread (via ScopedThread)
+//    │      └── Child subthread (via raw clone)
+//    └── [ child2 ] (Type: "threaded")
+//           └── Child leader
+TEST_F(Cgroup2Test, ThreadedDomainComplexTopology) {
+  Cgroup dom = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("dom"));
+  Cgroup child1 = ASSERT_NO_ERRNO_AND_VALUE(dom.CreateChild("child1"));
+  Cgroup child2 = ASSERT_NO_ERRNO_AND_VALUE(dom.CreateChild("child2"));
+
+  ASSERT_NO_ERRNO(child1.WriteControlFile("cgroup.type", "threaded"));
+  ASSERT_NO_ERRNO(child2.WriteControlFile("cgroup.type", "threaded"));
+
+  auto clean = Cleanup([&] { ASSERT_NO_ERRNO(root().Enter(getpid())); });
+  ASSERT_NO_ERRNO(dom.Enter(getpid()));
+
+  absl::Notification start;
+  absl::Notification exit;
+  pid_t parent_subthread_tid = -1;
+  ScopedThread parent_subthread([&]() {
+    parent_subthread_tid = gettid();
+    ASSERT_NO_ERRNO(child1.WriteIntegerControlFile("cgroup.threads", gettid()));
+    start.Notify();
+    exit.WaitForNotification();
+  });
+  start.WaitForNotification();
+
+  // So we can write to it from the child subthread.
+  FileDescriptor child1_threads_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(child1.Relpath("cgroup.threads"), O_WRONLY));
+
+  int exit_fds[2];
+  ASSERT_THAT(pipe(exit_fds), SyscallSucceeds());
+  FileDescriptor exit_rfd(exit_fds[0]);
+  FileDescriptor exit_wfd(exit_fds[1]);
+
+  int start_fds[2];
+  ASSERT_THAT(pipe(start_fds), SyscallSucceeds());
+  FileDescriptor start_rfd(start_fds[0]);
+  FileDescriptor start_wfd(start_fds[1]);
+
+  pid_t p2 = fork();
+  if (p2 == 0) {
+    exit_wfd.reset();
+    start_rfd.reset();
+    // Move the child leader into child2.
+    ASSERT_NO_ERRNO(child2.WriteIntegerControlFile("cgroup.threads", gettid()));
+
+    int ready_fds[2];
+    if (pipe(ready_fds) < 0) {
+      _exit(1);
+    }
+    CloneArgs args = {
+        .cgroup_fd = child1_threads_fd.get(),
+        .ready_fd = ready_fds[1],
+    };
+    char stack[65536];
+    pid_t tid = clone(CloneSubthreadFunc, stack + sizeof(stack),
+                      CLONE_THREAD | CLONE_SIGHAND | CLONE_VM, &args);
+    if (tid < 0) {
+      _exit(1);
+    }
+    close(ready_fds[1]);
+
+    // Wait till subthread has entered the child1 cgroup.
+    char ready_token;
+    if (read(ready_fds[0], &ready_token, 1) <= 0) {
+      _exit(1);
+    }
+    close(ready_fds[0]);
+
+    // Tell parent we're completely ready.
+    char sync = 'x';
+    if (write(start_wfd.get(), &sync, 1) < 0) {
+      _exit(1);
+    }
+    start_wfd.reset();
+
+    // Wait till parent signals to exit.
+    char token;
+    if (read(exit_rfd.get(), &token, 1) <= 0) {
+      _exit(1);
+    }
+    _exit(0);
+  }
+  exit_rfd.reset();
+  start_wfd.reset();
+  ASSERT_GT(p2, 0);
+
+  char sync_token;
+  ASSERT_THAT(read(start_rfd.get(), &sync_token, 1),
+              SyscallSucceedsWithValue(1));
+  start_rfd.reset();
+
+  // Sanity check for the topology.
+  EXPECT_THAT(child2.Threads(), IsPosixErrorOkAndHolds(Contains(p2)));
+  EXPECT_THAT(child1.Threads(),
+              IsPosixErrorOkAndHolds(Contains(parent_subthread_tid)));
+
+  // Reading cgroup.procs on dom returns both processes.
+  auto procs = ASSERT_NO_ERRNO_AND_VALUE(dom.Procs());
+  EXPECT_TRUE(procs.contains(getpid()));
+  EXPECT_TRUE(procs.contains(p2));
+
+  // Reading cgroup.procs from a threaded child inside the subtree must be
+  // disallowed.
+  EXPECT_THAT(child1.Procs(), PosixErrorIs(EOPNOTSUPP));
+
+  // Move the p2 process into child1.
+  EXPECT_NO_ERRNO(child1.WriteIntegerControlFile("cgroup.procs", p2));
+  EXPECT_THAT(child2.Threads(), IsPosixErrorOkAndHolds(::testing::IsEmpty()));
+  auto child1_threads = ASSERT_NO_ERRNO_AND_VALUE(child1.Threads());
+  // That should migrate both threads.
+  EXPECT_THAT(child1_threads, Contains(p2));
+  EXPECT_EQ(child1_threads.size(), 3);
+
+  // Signal child leader to exit and reap it.
+  ASSERT_THAT(write(exit_wfd.get(), "x", 1), SyscallSucceeds());
+  exit_wfd.reset();
+  int status;
+  ASSERT_EQ(waitpid(p2, &status, 0), p2);
+  EXPECT_TRUE(WIFEXITED(status));
+
+  exit.Notify();  // Join with subthread.
 }
 
 }  // namespace

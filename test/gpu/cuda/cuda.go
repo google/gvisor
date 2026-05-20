@@ -579,19 +579,31 @@ func runSampleTest(ctx context.Context, t *testing.T, testName string, te *TestE
 	if parallelAttempts > 0 {
 		testLog(t, "Will re-run the test in exclusive mode.")
 	}
-	c, release, err := cp.GetExclusive(ctx)
-	defer release()
+	releaseLockout, err := cp.Lockout(ctx)
+	defer releaseLockout()
 	if err != nil {
-		return "", fmt.Errorf("failed to get excusive container: %v", err)
+		return "", fmt.Errorf("failed to lock out container pool: %v", err)
 	}
+	// Dynamically launch a fresh container for exclusive execution to ensure it receives all host GPUs
+	// without contention from parallel tasks.
+	excContainer := dockerutil.MakeContainer(ctx, t)
+	runOpts, err := getContainerOpts(args.Image)
+	if err != nil {
+		return "", fmt.Errorf("failed to get container options for exclusive run: %w", err)
+	}
+	testLog(t, "Spawning fresh container %s for exclusive execution...", excContainer.Name)
+	if err := excContainer.Spawn(ctx, runOpts, "/bin/sleep", "6h"); err != nil {
+		return "", fmt.Errorf("failed to spawn exclusive container: %w", err)
+	}
+	defer excContainer.CleanUp(ctx)
+
 	var testErr error
 	for attempt := 0; attempt < testAttempts; attempt++ {
-		cp.SetContainerLabel(c, fmt.Sprintf("Running %s exclusively (attempt %d/%d)", testName, attempt+1, testAttempts))
-		testLog(t, "Running test in exclusive mode in container %s (attempt %d/%d)...", c.Name, attempt+1, testAttempts)
+		testLog(t, "Running test in exclusive mode in container %s (attempt %d/%d)...", excContainer.Name, attempt+1, testAttempts)
 		exclusiveCtx, exclusiveCancel := context.WithTimeoutCause(ctx, testTimeout, errors.New("exclusive execution took too long"))
 		testStartedAt := time.Now()
 		var output string
-		output, testErr = c.Exec(exclusiveCtx, dockerutil.ExecOpts{}, "/run_sample", fmt.Sprintf("--timeout=%v", execTestTimeout), testName)
+		output, testErr = excContainer.Exec(exclusiveCtx, dockerutil.ExecOpts{}, "/run_sample", fmt.Sprintf("--timeout=%v", execTestTimeout), testName)
 		testDuration := time.Since(testStartedAt)
 		exclusiveCancel()
 		if testErr == nil {

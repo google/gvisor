@@ -14,7 +14,12 @@ license(
     package_name = "gvisor",
 )
 
-exports_files(["LICENSE"])
+exports_files([
+    "LICENSE",
+    "README.md",
+    "SECURITY.md",
+    "GOVERNANCE.md",
+])
 
 nogo_config(
     name = "nogo_config",

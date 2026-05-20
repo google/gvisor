@@ -86,6 +86,7 @@ func (fs *filesystem) newTaskInode(ctx context.Context, task *kernel.Task, pidns
 		"oom_score":     fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, newStaticFile("0\n")),
 		"oom_score_adj": fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0644, &oomScoreAdj{task: task}),
 		"root":          fs.newRootSymlink(ctx, task, fs.NextIno()),
+		"setgroups":     fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0644, &setgroupsData{task: task}),
 		"smaps":         fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &mmFile{task: task, ftype: smapsMMFile}),
 		"stat":          fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &taskStatData{task: task, pidns: pidns, tgstats: isThreadGroup}),
 		"statm":         fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &statmData{task: task}),
@@ -206,6 +207,15 @@ type taskOwnedInode struct {
 
 	// owner is the task that owns this inode.
 	owner *kernel.Task
+}
+
+// TaskFromProcPIDInode implements kernel.TaskOwnedInode.
+func (i *taskOwnedInode) TaskFromProcPIDInode() *kernel.Task {
+	ino, ok := i.Inode.(*taskInode)
+	if !ok {
+		return nil
+	}
+	return ino.task
 }
 
 var _ kernfs.Inode = (*taskOwnedInode)(nil)

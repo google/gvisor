@@ -317,8 +317,8 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 	},
 	unix.SYS_TIMER_CREATE: seccomp.PerArg{
 		seccomp.EqualTo(unix.CLOCK_THREAD_CPUTIME_ID), /* which */
-		seccomp.AnyValue{},                            /* sevp */
-		seccomp.AnyValue{},                            /* timerid */
+		seccomp.AnyValue{}, /* sevp */
+		seccomp.AnyValue{}, /* timerid */
 	},
 	unix.SYS_TIMER_DELETE: seccomp.MatchAll{},
 	unix.SYS_TIMER_SETTIME: seccomp.PerArg{
@@ -457,6 +457,22 @@ func hostFilesystemFilters() seccomp.SyscallRules {
 		},
 		unix.SYS_FGETXATTR: seccomp.PerArg{
 			seccomp.NonNegativeFD{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
+		},
+		unix.SYS_FLISTXATTR: seccomp.PerArg{
+			seccomp.NonNegativeFD{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
+		},
+		unix.SYS_FREMOVEXATTR: seccomp.PerArg{
+			seccomp.NonNegativeFD{},
+			seccomp.AnyValue{},
+		},
+		unix.SYS_FSETXATTR: seccomp.PerArg{
+			seccomp.NonNegativeFD{},
+			seccomp.AnyValue{},
 			seccomp.AnyValue{},
 			seccomp.AnyValue{},
 			seccomp.AnyValue{},

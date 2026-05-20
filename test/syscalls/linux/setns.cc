@@ -148,6 +148,14 @@ TEST(SetnsTest, ChangePIDNamespace) {
   ASSERT_THAT(prctl(PR_SET_CHILD_SUBREAPER, 0), SyscallSucceeds());
 }
 
+TEST(SetnsTest, ChangeMountNamespaceZeroFlags) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  const FileDescriptor nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/mnt", O_RDONLY));
+  ASSERT_THAT(setns(nsfd.get(), 0), SyscallSucceedsWithValue(0));
+}
+
 }  // namespace
 }  // namespace testing
 }  // namespace gvisor

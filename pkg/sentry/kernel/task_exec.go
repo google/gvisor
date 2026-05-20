@@ -445,6 +445,19 @@ func (t *Task) promoteLocked() {
 		// from the tracee.
 		tracer.tg.eventQueue.Notify(EventExit | EventTraceeStop | EventGroupContinue)
 	}
+
+	t.notifyPIDFDsOnDeathLocked()
+	// In assuming the old leader's identity, t must reorient any pidfds
+	// associated with the old leader towards itself. Note that the old
+	// struct pid cannot have had "ready" set thus far: on account of the
+	// very existence of the (so far) non-leader subthread t. This implies
+	// that it is not possible for userspace to see a regression in the
+	// readiness of those pidfds.
+	if oldLeader.pid != nil {
+		oldLeader.pid.t.Store(t)
+		t.pid, oldLeader.pid = oldLeader.pid, nil
+	}
+
 	oldLeader.exitNotifyLocked(false)
 }
 

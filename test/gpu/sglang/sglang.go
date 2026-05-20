@@ -16,17 +16,15 @@
 package sglang
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
-	"strconv"
 	"strings"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
+	"gvisor.dev/gvisor/pkg/test/llmutil"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
@@ -41,29 +39,15 @@ const (
 // SGLang is an sglang client.
 type SGLang struct {
 	// server is used to perform requests against the server.
-	server Server
+	server llmutil.Server
 
 	// logger is used to log.
 	logger testutil.Logger
 }
 
-// Server performs requests against an sglang server.
-type Server interface {
-	// InstrumentedRequest performs an instrumented HTTP request against the
-	// sglang server, using the `gpu/sglang_client` sglang image.
-	// `argvFn` takes in a `protocol://host:port` string and returns a
-	// command-line to use for making an instrumented HTTP request against the
-	// sglang server.
-	// InstrumentedRequest should return the logs from the request container.
-	InstrumentedRequest(ctx context.Context, argvFn func(hostPort string) []string) ([]byte, error)
-
-	// Logs retrieves logs from the server.
-	Logs(ctx context.Context) (string, error)
-}
-
 // New starts a new SGLang server in the given container,
 // then waits for it to serve and returns the client.
-func New(ctx context.Context, server Server, logger testutil.Logger) (*SGLang, error) {
+func New(ctx context.Context, server llmutil.Server, logger testutil.Logger) (*SGLang, error) {
 	started := time.Now()
 	llm := &SGLang{
 		logger: logger,
@@ -109,13 +93,6 @@ func (llm *SGLang) WarmModel(ctx context.Context) (*ModelLoadStats, error) {
 	}, nil
 }
 
-// dockerServer implements `Server`. It interfaces with an sglang server
-// running in a local Docker container.
-type dockerServer struct {
-	container *dockerutil.Container
-	logger    testutil.Logger
-}
-
 // NewDocker returns a new SGLang client talking to an SGLang server that runs
 // in a local Docker container.
 func NewDocker(ctx context.Context, cont *dockerutil.Container, logger testutil.Logger) (*SGLang, error) {
@@ -129,144 +106,13 @@ func NewDocker(ctx context.Context, cont *dockerutil.Container, logger testutil.
 		return nil, fmt.Errorf("could not start sglang: %v", err)
 	}
 	logger.Logf("SGLang container started after %v", time.Since(started))
-	ds := &dockerServer{
-		container: cont,
-		logger:    logger,
+	ds := &llmutil.DockerServer{
+		Container:   cont,
+		Logger:      logger,
+		Port:        Port,
+		ClientImage: "gpu/ollama/client",
 	}
 	return New(ctx, ds, logger)
-}
-
-// InstrumentedRequest implements `Server.InstrumentedRequest`.
-func (ds *dockerServer) InstrumentedRequest(ctx context.Context, argvFn func(hostPort string) []string) ([]byte, error) {
-	const sglangHost = "llm"
-	cmd := argvFn(fmt.Sprintf("http://%s:%d", sglangHost, Port))
-	out, err := dockerutil.MakeContainer(ctx, ds.logger).Run(ctx, dockerutil.RunOpts{
-		Image: "gpu/sglang/client",
-		Links: []string{ds.container.MakeLink(sglangHost)},
-	}, cmd...)
-	if err != nil {
-		if out != "" {
-			return []byte(out), fmt.Errorf("command %q failed (%w): %v", strings.Join(cmd, " "), err, out)
-		}
-		return nil, fmt.Errorf("could not run command %q: %w", strings.Join(cmd, " "), err)
-	}
-	return []byte(out), nil
-}
-
-// Logs implements `Server.Logs`.
-func (ds *dockerServer) Logs(ctx context.Context) (string, error) {
-	return ds.container.Logs(ctx)
-}
-
-// ResponseMetrics are HTTP request metrics from an sglang API query.
-// These is the same JSON struct as defined in
-// `images/gpu/sglang/client/client.go`.
-type ResponseMetrics struct {
-	// ProgramStarted is the time when the program started.
-	ProgramStarted time.Time `json:"program_started"`
-	// RequestSent is the time when the HTTP request was sent.
-	RequestSent time.Time `json:"request_sent"`
-	// ResponseReceived is the time when the HTTP response headers were received.
-	ResponseReceived time.Time `json:"response_received"`
-	// FirstByteRead is the time when the first HTTP response body byte was read.
-	FirstByteRead time.Time `json:"first_byte_read"`
-	// LastByteRead is the time when the last HTTP response body byte was read.
-	LastByteRead time.Time `json:"last_byte_read"`
-}
-
-// TimeToFirstByte returns the duration it took between the request being sent
-// and the first byte of the response being read.
-func (rm *ResponseMetrics) TimeToFirstByte() time.Duration {
-	return rm.FirstByteRead.Sub(rm.RequestSent)
-}
-
-// TimeToLastByte returns the duration it took between the request being sent
-// and the last byte of the response being read.
-func (rm *ResponseMetrics) TimeToLastByte() time.Duration {
-	return rm.LastByteRead.Sub(rm.RequestSent)
-}
-
-// apiResponse represents a JSON response from the sglang API.
-type apiResponse[T any] struct {
-	// Objects is the list of JSON objects in the response.
-	Objects []*T
-	// Metrics contains HTTP response metrics.
-	Metrics ResponseMetrics
-}
-
-// Obj returns the first object in the response, if there is a singular
-// object in the response.
-func (ar *apiResponse[T]) Obj() (*T, error) {
-	if len(ar.Objects) == 0 {
-		return nil, fmt.Errorf("no objects in response")
-	}
-	if len(ar.Objects) > 1 {
-		return nil, fmt.Errorf("multiple objects in response")
-	}
-	return ar.Objects[0], nil
-}
-
-// makeAPIResponse decodes a raw response from an instrumented HTTP request
-// into an `apiResponse` with deserialized JSON objects.
-func makeAPIResponse[T any](rawResponse []byte) (*apiResponse[T], error) {
-	var respBytes bytes.Buffer
-	var resp apiResponse[T]
-	for _, line := range strings.Split(string(rawResponse), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		colonIndex := strings.Index(line, ":")
-		if colonIndex == -1 {
-			return nil, fmt.Errorf("malformed line: %q", line)
-		}
-		data := strings.TrimSpace(line[colonIndex+1:])
-		switch line[:colonIndex] {
-		case "FATAL":
-			return nil, fmt.Errorf("request failed: %s", data)
-		case "REQHEADER", "RESPHEADER":
-			// Do nothing with these.
-		case "BODY":
-			unquoted, err := strconv.Unquote(data)
-			if err != nil {
-				return nil, fmt.Errorf("malformed body line: %q", data)
-			}
-			// Last token in the response is "[DONE]" which is not JSON.
-			if strings.TrimSpace(unquoted) == "[DONE]" {
-				break
-			}
-			respBytes.WriteString(unquoted)
-		case "STATS":
-			if err := json.Unmarshal([]byte(data), &resp.Metrics); err != nil {
-				return nil, fmt.Errorf("malformed stats line: %q", data)
-			}
-		default:
-			return nil, fmt.Errorf("malformed line: %q", line)
-		}
-	}
-	decoder := json.NewDecoder(&respBytes)
-	for {
-		var obj T
-		err := decoder.Decode(&obj)
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, fmt.Errorf("malformed JSON response: %w", err)
-		}
-		resp.Objects = append(resp.Objects, &obj)
-	}
-	if len(resp.Objects) == 0 {
-		return nil, fmt.Errorf("response is empty")
-	}
-	leftoverBytes, err := io.ReadAll(decoder.Buffered())
-	if err != nil && err != io.EOF {
-		return nil, fmt.Errorf("could not read leftover bytes: %w", err)
-	}
-	if leftover := strings.TrimSpace(string(leftoverBytes)); leftover != "" {
-		return nil, fmt.Errorf("unprocessed bytes in response: %q", leftover)
-	}
-	return &resp, nil
 }
 
 // instrumentedRequest makes an HTTP request to the sglang API.
@@ -280,6 +126,7 @@ func (llm *SGLang) instrumentedRequest(ctx context.Context, method, endpoint str
 			"httpclient",
 			fmt.Sprintf("--method=%s", method),
 			fmt.Sprintf("--url=%s%s", hostPort, endpoint),
+			"--strip_prefix=data: ",
 		}
 		if data != nil {
 			argv = append(argv, fmt.Sprintf("--post_base64=%s", base64.StdEncoding.EncodeToString(data)))
@@ -297,16 +144,16 @@ func (llm *SGLang) instrumentedRequest(ctx context.Context, method, endpoint str
 }
 
 // jsonGet performs a JSON HTTP GET request.
-func jsonGet[Out any](ctx context.Context, llm *SGLang, endpoint string) (*apiResponse[Out], error) {
+func jsonGet[Out any](ctx context.Context, llm *SGLang, endpoint string) (*llmutil.APIResponse[Out], error) {
 	out, err := llm.instrumentedRequest(ctx, "GET", endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("GET %q failed: %w", endpoint, err)
 	}
-	return makeAPIResponse[Out](out)
+	return llmutil.MakeAPIResponse[Out](out)
 }
 
 // jsonPost performs a JSON HTTP POST request.
-func jsonPost[In, Out any](ctx context.Context, llm *SGLang, endpoint string, input In) (*apiResponse[Out], error) {
+func jsonPost[In, Out any](ctx context.Context, llm *SGLang, endpoint string, input In) (*llmutil.APIResponse[Out], error) {
 	query, err := json.Marshal(input)
 	if err != nil {
 		return nil, fmt.Errorf("could not marshal input %v: %w", input, err)
@@ -316,7 +163,7 @@ func jsonPost[In, Out any](ctx context.Context, llm *SGLang, endpoint string, in
 		return nil, fmt.Errorf("POST %q %v failed: %w", endpoint, string(query), err)
 	}
 
-	return makeAPIResponse[Out](out)
+	return llmutil.MakeAPIResponse[Out](out)
 }
 
 // WaitUntilServing waits until sglang is serving, or the context expires.
@@ -531,7 +378,7 @@ type responseJSON struct {
 // Response represents a response to a query from SGLang.
 type Response struct {
 	data    []*responseJSON
-	metrics ResponseMetrics
+	metrics llmutil.ResponseMetrics
 }
 
 // Done returns whether the response was completely generated.

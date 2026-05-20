@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -29,14 +29,28 @@ go_library(
         "//pkg/shim/v1/runsccmd",
         "//pkg/shim/v1/utils",
         "@com_github_containerd_console//:go_default_library",
-        "@com_github_containerd_containerd//mount:go_default_library",
-        "@com_github_containerd_containerd//pkg/stdio:go_default_library",
+        "@com_github_containerd_containerd_v2//core/mount:go_default_library",
+        "@com_github_containerd_containerd_v2//pkg/protobuf/types:go_default_library",
+        "@com_github_containerd_containerd_v2//pkg/stdio:go_default_library",
         "@com_github_containerd_errdefs//:go_default_library",
+        "@com_github_containerd_errdefs_pkg//errgrpc:go_default_library",
         "@com_github_containerd_fifo//:go_default_library",
         "@com_github_containerd_go_runc//:go_default_library",
         "@com_github_containerd_log//:go_default_library",
-        "@com_github_gogo_protobuf//types:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+go_test(
+    name = "proc_test",
+    size = "small",
+    srcs = ["update_test.go"],
+    library = ":proc",
+    deps = [
+        "//pkg/shim/v1/runsccmd",
+        "@com_github_containerd_containerd_v2//pkg/protobuf/types:go_default_library",
+        "@com_github_containerd_containerd_v2//pkg/stdio:go_default_library",
+        "@com_github_containerd_errdefs//:go_default_library",
     ],
 )

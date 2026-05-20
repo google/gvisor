@@ -38,13 +38,6 @@ var handlers = [...]lisafs.RPCHandler{
 	versionMsgID:   versionHandler,
 }
 
-// testServer implements lisafs.ServerImpl.
-type testServer struct {
-	lisafs.Server
-}
-
-var _ lisafs.ServerImpl = (*testServer)(nil)
-
 type testControlFD struct {
 	lisafs.ControlFD
 	lisafs.ControlFDImpl
@@ -56,21 +49,26 @@ func (fd *testControlFD) FD() *lisafs.ControlFD {
 
 func (fd *testControlFD) Close() {}
 
+// testConnImpl implements lisafs.ConnectionImpl.
+type testConnImpl struct{}
+
+var _ lisafs.ConnectionImpl = (*testConnImpl)(nil)
+
 // Mount implements lisafs.Mount.
-func (s *testServer) Mount(c *lisafs.Connection, mountNode *lisafs.Node) (*lisafs.ControlFD, lisafs.Statx, int, error) {
+func (s *testConnImpl) Mount(c *lisafs.Connection, mountNode *lisafs.Node) (*lisafs.ControlFD, lisafs.Statx, int, error) {
 	dummyRoot := &testControlFD{}
 	mountNode.IncRef() // Ref is transferred to ControlFD.
 	dummyRoot.Init(c, mountNode, linux.ModeDirectory, dummyRoot)
 	return dummyRoot.FD(), lisafs.Statx{Mode: uint16(linux.S_IFDIR)}, -1, nil
 }
 
-// MaxMessageSize implements lisafs.MaxMessageSize.
-func (s *testServer) MaxMessageSize() uint32 {
+// MaxMessageSize implements lisafs.ConnectionImpl.MaxMessageSize.
+func (s *testConnImpl) MaxMessageSize() uint32 {
 	return lisafs.MaxMessageSize()
 }
 
-// SupportedMessages implements lisafs.ServerImpl.SupportedMessages.
-func (s *testServer) SupportedMessages() []lisafs.MID {
+// SupportedMessages implements lisafs.ConnectionImpl.SupportedMessages.
+func (s *testConnImpl) SupportedMessages() []lisafs.MID {
 	return []lisafs.MID{
 		lisafs.Mount,
 		lisafs.Channel,
@@ -85,10 +83,9 @@ func runServerClient(t testing.TB, clientFn func(c *lisafs.Client)) {
 		t.Fatalf("socketpair got err %v expected nil", err)
 	}
 
-	ts := &testServer{}
-	ts.Init(ts, lisafs.ServerOpts{})
+	ts := lisafs.NewServer()
 	ts.SetHandlers(handlers[:])
-	conn, err := ts.CreateConnection(serverSocket, "/" /* mountPath */, false /* readonly */)
+	conn, err := ts.CreateConnection(serverSocket, "/" /* mountPath */, lisafs.ConnectionOpts{}, &testConnImpl{})
 	if err != nil {
 		t.Fatalf("starting connection failed: %v", err)
 		return
@@ -107,7 +104,7 @@ func runServerClient(t testing.TB, clientFn func(c *lisafs.Client)) {
 
 	c.Close() // This should trigger client and server shutdown.
 	ts.Wait()
-	ts.Server.Destroy()
+	ts.Destroy()
 }
 
 // TestStartUp tests that the server and client can be started up correctly.

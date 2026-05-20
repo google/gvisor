@@ -486,6 +486,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:pidfd_test",
+)
+
+syscall_test(
     size = "medium",
     add_hostinet = True,
     # Takes too long under gotsan to run.
@@ -1302,4 +1306,9 @@ syscall_test(
 syscall_test(
     save = False,
     test = "//test/syscalls/linux:packet_mmap_test",
+)
+
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:xattr_test",
 )

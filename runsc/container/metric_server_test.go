@@ -984,7 +984,7 @@ func TestContainerMetricsAfterRestore(t *testing.T) {
 	}
 	defer restoreCont.Destroy()
 
-	if err := restoreCont.Restore(te.sleepConf, imagePath, false, false); err != nil {
+	if err := restoreCont.Restore(te.sleepConf, imagePath, false, false, nil); err != nil {
 		t.Fatalf("Restore failed: %v", err)
 	}
 

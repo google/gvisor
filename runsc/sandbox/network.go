@@ -165,6 +165,7 @@ func collectLinksAndRoutes(conf *config.Config, disableIPv6 bool) (boot.CreateLi
 
 	args := boot.CreateLinksAndRoutesArgs{
 		PauseExternalNetworking: conf.PauseExternalNetworking,
+		AllowConnectedOnSave:    conf.AllowConnectedOnSave,
 	}
 
 	for _, iface := range ifaces {
@@ -267,6 +268,8 @@ func collectLinksAndRoutes(conf *config.Config, disableIPv6 bool) (boot.CreateLi
 				RXChecksumOffload: conf.RXChecksumOffload,
 				NumChannels:       conf.NumNetworkChannels,
 				QDisc:             conf.QDisc,
+				TBFRate:           conf.TBFRate,
+				TBFBurst:          uint32(conf.TBFBurst),
 				Neighbors:         neighbors,
 				LinkAddress:       linkAddress,
 				Addresses:         addresses,
@@ -282,6 +285,8 @@ func collectLinksAndRoutes(conf *config.Config, disableIPv6 bool) (boot.CreateLi
 				NumChannels:          conf.NumNetworkChannels,
 				ProcessorsPerChannel: conf.NetworkProcessorsPerChannel,
 				QDisc:                conf.QDisc,
+				TBFRate:              conf.TBFRate,
+				TBFBurst:             uint32(conf.TBFBurst),
 				Neighbors:            neighbors,
 				LinkAddress:          linkAddress,
 				Addresses:            addresses,

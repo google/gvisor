@@ -23,9 +23,9 @@ import (
 	"fmt"
 	"sync"
 
-	cgroupsv2 "github.com/containerd/cgroups/v2"
-	"github.com/containerd/containerd/runtime"
-	"github.com/containerd/containerd/runtime/v2/shim"
+	cgroupsv2 "github.com/containerd/cgroups/v3/cgroup2"
+	"github.com/containerd/containerd/v2/core/runtime"
+	"github.com/containerd/containerd/v2/pkg/shim"
 	"github.com/sirupsen/logrus"
 )
 

@@ -17,6 +17,7 @@ package lisafs
 import (
 	"fmt"
 	"math"
+	"slices"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
@@ -99,13 +100,7 @@ func NewClient(sock *unet.Socket) (*Client, Inode, int, error) {
 
 	// Initialize client.
 	c.maxMessageSize = uint32(mountResp.MaxMessageSize)
-	var maxSuppMID MID
-	for _, suppMID := range mountResp.SupportedMs {
-		if suppMID > maxSuppMID {
-			maxSuppMID = suppMID
-		}
-	}
-	c.supported = make([]bool, maxSuppMID+1)
+	c.supported = make([]bool, slices.Max(mountResp.SupportedMs)+1)
 	for _, suppMID := range mountResp.SupportedMs {
 		c.supported[suppMID] = true
 	}

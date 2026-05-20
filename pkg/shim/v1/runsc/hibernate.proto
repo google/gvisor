@@ -23,9 +23,24 @@ message HideRequest {
   string image_path = 2;
 }
 
+message UnhideRequest {
+  // The container id is required to unhide a sandbox.
+  string container_id = 1;
+  string image_path = 2;
+  string bundle_path = 3;
+  string console_socket = 4;
+  string user_log = 5;
+  bool direct = 6;
+  bool background = 7;
+}
+
 message HideResponse {}
+
+message UnhideResponse {}
 
 service Hibernator {
   // Hide processes the HideRequest for the given container.
   rpc Hide(HideRequest) returns (HideResponse);
+  // Unhide processes the UnhideRequest for the given container.
+  rpc Unhide(UnhideRequest) returns (UnhideResponse);
 }

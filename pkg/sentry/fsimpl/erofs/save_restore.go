@@ -28,7 +28,7 @@ func (fs *filesystem) afterLoad(ctx context.Context) {
 	fdmap := vfs.RestoreFilesystemFDMapFromContext(ctx)
 	fd, ok := fdmap[fs.iopts.UniqueID]
 	if !ok {
-		panic(fmt.Sprintf("no image FD available for filesystem with unique ID %q", fs.iopts.UniqueID))
+		panic(fmt.Sprintf("no image FD available for filesystem with unique ID %q, map: %#v", fs.iopts.UniqueID, fdmap))
 	}
 	newImage, err := erofs.OpenImage(os.NewFile(uintptr(fd), "EROFS image file"))
 	if err != nil {

@@ -311,14 +311,11 @@ func New(conf *config.Config, args Args) (*Container, error) {
 		// "For runtimes that implement the deprecated prestart hooks as
 		// createRuntime hooks, createRuntime hooks MUST be called after the
 		// prestart hooks."
-		if err := executeHooks(c.Spec.Hooks.Prestart, c.State()); err != nil {
+		if err := specutils.ExecuteHooks(c.Spec.Hooks.Prestart, c.State()); err != nil {
 			return nil, err
 		}
-		if err := executeHooks(c.Spec.Hooks.CreateRuntime, c.State()); err != nil {
+		if err := specutils.ExecuteHooks(c.Spec.Hooks.CreateRuntime, c.State()); err != nil {
 			return nil, err
-		}
-		if len(c.Spec.Hooks.CreateContainer) > 0 {
-			log.Warningf("CreateContainer hook skipped because running inside container namespace is not supported")
 		}
 	}
 
@@ -445,11 +442,11 @@ func (c *Container) Start(conf *config.Config) error {
 
 // Restore takes a container and replaces its kernel and file system
 // to restore a container from its state file.
-func (c *Container) Restore(conf *config.Config, imagePath string, direct, background bool) error {
+func (c *Container) Restore(conf *config.Config, imagePath string, direct, background bool, networkArgs *boot.CreateLinksAndRoutesArgs) error {
 	log.Debugf("Restore container, cid: %s", c.ID)
 
 	restore := func(conf *config.Config, spec *specs.Spec) error {
-		return c.Sandbox.Restore(conf, spec, c.ID, imagePath, direct, background)
+		return c.Sandbox.Restore(conf, spec, c.ID, imagePath, direct, background, networkArgs)
 	}
 	return c.startImpl(conf, "restore", restore, c.Sandbox.RestoreSubcontainer)
 }
@@ -524,7 +521,7 @@ func (c *Container) startImpl(conf *config.Config, action string, startRoot func
 	// the remaining hooks and lifecycle continue as if the hook had
 	// succeeded" -OCI spec.
 	if c.Spec.Hooks != nil {
-		executeHooksBestEffort(c.Spec.Hooks.Poststart, c.State())
+		specutils.ExecuteHooksBestEffort(c.Spec.Hooks.Poststart, c.State())
 	}
 
 	c.changeStatus(Running)
@@ -589,21 +586,20 @@ func (c *Container) Update(res *specs.LinuxResources) error {
 		return fmt.Errorf("sandbox cannot be nil")
 	}
 
-	if !c.Sandbox.IsRootContainer(c.ID) {
-		return fmt.Errorf("update can only be called on the root container")
+	if c.Sandbox.IsRootContainer(c.ID) {
+		cg := c.Sandbox.CgroupJSON.Cgroup
+		if cg == nil {
+			return fmt.Errorf("cgroup cannot be nil")
+		}
+		if err := cg.Update(res); err != nil {
+			// set back to original
+			if err2 := cg.Update(c.Spec.Linux.Resources); err2 != nil {
+				return fmt.Errorf("setting back cgroup configs failed due to error: %v, your state file and actual configs might be inconsistent", err2)
+			}
+			return err
+		}
 	}
 
-	cg := c.Sandbox.CgroupJSON.Cgroup
-	if cg == nil {
-		return fmt.Errorf("cgroup cannot be nil")
-	}
-	if err := cg.Update(res); err != nil {
-		// set back to original
-		if err2 := cg.Update(c.Spec.Linux.Resources); err2 != nil {
-			return fmt.Errorf("setting back cgroup configs failed due to error: %v, your state file and actual configs might be inconsistent", err2)
-		}
-		return err
-	}
 	c.Spec.Linux.Resources = res
 
 	c.Saver.lock(BlockAcquire)
@@ -1000,7 +996,7 @@ func (c *Container) Destroy() error {
 	// 2) Make sure it only runs once, because the root has been deleted, the
 	// container can't be loaded again.
 	if c.Spec.Hooks != nil {
-		executeHooksBestEffort(c.Spec.Hooks.Poststop, c.State())
+		specutils.ExecuteHooksBestEffort(c.Spec.Hooks.Poststop, c.State())
 	}
 
 	if len(errs) == 0 {
@@ -1617,8 +1613,13 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 
 	donations.Transfer(cmd, nextFD)
 
+	// Add container ID as the last argument.
+	cmd.Args = append(cmd.Args, c.ID)
+	log.Infof("Starting gofer with command: %v", cmd.Args)
+
 	// Start the gofer in the given namespace.
 	donation.LogDonations(cmd)
+
 	log.Debugf("Starting gofer: %s %v", cmd.Path, cmd.Args)
 	if err := specutils.StartInNS(cmd, nss); err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("gofer: %v", err)

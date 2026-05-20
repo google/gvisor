@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 	time2 "time"
 
@@ -42,7 +43,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/timing"
 	"gvisor.dev/gvisor/runsc/boot/pprof"
 	"gvisor.dev/gvisor/runsc/config"
@@ -109,6 +109,13 @@ type restorer struct {
 	// checkpointedSpecs contains the map of container specs used during
 	// checkpoint.
 	checkpointedSpecs map[string]*specs.Spec
+
+	// extractRootFsMode is true if we only want to extract the upper layer of
+	// a rootfs overlay.
+	extractRootFsMode bool
+
+	// rootFsOutputTar is the file to write the rootfs upper layer tar archive to.
+	rootFsOutputTar *os.File
 }
 
 // restoreSubcontainer restores a subcontainer.
@@ -170,13 +177,13 @@ func (r *restorer) restoreContainerInfo(l *Loader, info *containerInfo, containe
 	return nil
 }
 
-func createNetworkStackForRestore(l *Loader) (*stack.Stack, inet.Stack) {
+func createNetworkStackForRestore(l *Loader) inet.Stack {
 	// Save the current network stack to slap on top of the one that was restored.
 	curNetwork := l.k.RootNetworkNamespace().Stack()
-	if eps, ok := curNetwork.(*netstack.Stack); ok {
-		return eps.Stack, curNetwork
+	if _, ok := curNetwork.(*netstack.Stack); ok {
+		return curNetwork
 	}
-	return nil, hostinet.NewStack()
+	return hostinet.NewStack()
 }
 
 func (r *restorer) restore(l *Loader) error {
@@ -187,11 +194,15 @@ func (r *restorer) restore(l *Loader) error {
 	if err := specutils.RestoreValidateSpec(r.checkpointedSpecs, l.GetContainerSpecs(), l.root.conf); err != nil {
 		return fmt.Errorf("failed to handle restore spec validation: %w", err)
 	}
+	if l.root.conf.Network != config.NetworkSandbox && l.root.conf.Network != config.NetworkNone {
+		// TODO(gvisor.dev/issues/6243): save/restore not supported w/ hostinet
+		return errors.New("checkpoint not supported when using hostinet")
+	}
 	r.timer.Reached("specs validated")
 
 	// Create a new root network namespace with the network stack of the
 	// old kernel to preserve the existing network configuration.
-	oldStack, oldInetStack := createNetworkStackForRestore(l)
+	oldInetStack := createNetworkStackForRestore(l)
 	r.timer.Reached("netstack created")
 
 	// Reset the network stack in the network namespace to nil before
@@ -230,12 +241,6 @@ func (r *restorer) restore(l *Loader) error {
 		return err
 	}
 
-	// Set up the restore environment.
-	ctx := l.k.SupervisorContext()
-	if oldStack != nil {
-		ctx = context.WithValue(ctx, stack.CtxRestoreStack, oldStack)
-	}
-
 	l.mu.Lock()
 	cu := cleanup.Make(func() {
 		l.mu.Unlock()
@@ -261,11 +266,14 @@ func (r *restorer) restore(l *Loader) error {
 		}
 	}
 
-	log.Debugf("Restore using fdmap: %v", fdmap)
-	ctx = context.WithValue(ctx, vfs.CtxRestoreFilesystemFDMap, fdmap)
+	log.Debugf("Restore using fdmap: %#v", fdmap)
+	ctx := l.k.SupervisorContext()
 	log.Debugf("Restore using mfmap: %v", mfmap)
-	ctx = context.WithValue(ctx, pgalloc.CtxMemoryFileMap, mfmap)
-	ctx = context.WithValue(ctx, devutil.CtxDevGoferClientProvider, l.k)
+	ctx = context.WithValues(ctx, map[any]any{
+		vfs.CtxRestoreFilesystemFDMap:     fdmap,
+		pgalloc.CtxMemoryFileMap:          mfmap,
+		devutil.CtxDevGoferClientProvider: l.k,
+	})
 
 	if r.asyncMFLoader != nil {
 		// Now that private memory files are known, kick off their loading in the
@@ -280,7 +288,14 @@ func (r *restorer) restore(l *Loader) error {
 
 	// Load the state.
 	r.timer.Reached("loading kernel")
-	if err := l.k.LoadFrom(ctx, r.stateFile, r.asyncMFLoader, nil, oldInetStack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}, l.saveRestoreNet); err != nil {
+	if r.extractRootFsMode {
+		if err := l.k.ExtractRootfsUpperLayer(ctx, r.stateFile, r.asyncMFLoader, nil, time.NewCalibratedClocks(), r.rootFsOutputTar); err != nil {
+			return fmt.Errorf("failed to extract rootfs upper layer: %w", err)
+		}
+		r.timer.Reached("rootfs upper layer extracted")
+		return nil
+	}
+	if err := l.k.LoadFrom(ctx, r.stateFile, r.asyncMFLoader, nil, oldInetStack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}); err != nil {
 		return fmt.Errorf("failed to load kernel: %w", err)
 	}
 	r.timer.Reached("kernel loaded")
@@ -370,86 +385,92 @@ func (r *restorer) restore(l *Loader) error {
 
 	r.stateFile.Close()
 
-	postRestoreThread := r.timer.Fork("postRestore")
-	go func() {
-		defer postRestoreThread.End()
-		postRestoreThread.Reached("scheduled")
-		if err := control.PostRestore(l.k, postRestoreThread); err != nil {
-			log.Warningf("Killing the sandbox after post restore work failed: %v", err)
-			l.k.Kill(linux.WaitStatusTerminationSignal(linux.SIGKILL))
-			return
-		}
-		postRestoreThread.Reached("post restore done")
-
-		// Now that post restore work succeeded, increment the checkpoint gen
-		// manually. The count was saved while the previous kernel was being saved
-		// and checkpoint success was unknown at that time. Now we know the had
-		// checkpoint succeeded. Allow the application to proceed while pages may
-		// keep loading in the background.
-		l.k.IncCheckpointGenOnRestore()
-
-		// Wait for page loading to complete if happening in the background.
-		if r.asyncMFLoader != nil {
-			if err := r.asyncMFLoader.Wait(); err != nil {
-				log.Warningf("Killing the sandbox after MemoryFile page loading failed: %v", err)
-				l.k.Kill(linux.WaitStatusTerminationSignal(linux.SIGKILL))
-				return
-			}
-		}
-
-		// Calculate the CPU time saved for restore.
-		t, err := state.CPUTime()
-		var s Savings
-		if err != nil {
-			log.Warningf("Failed to get CPU time usage for restore, err: %v", err)
-		} else {
-			log.Infof("Restore CPU usage: %s", t.String())
-			savedTimeStr, ok := r.metadata[state.GvisorCPUUsageKey]
-			if !ok {
-				log.Warningf("Failed to retrieve CPU time usage from the metadata")
-			} else {
-				savedTime, err := time2.ParseDuration(savedTimeStr)
-				if err != nil {
-					log.Warningf("CPU time usage in metadata %v is invalid, err: %v", savedTimeStr, err)
-				} else {
-					s.CPUTimeSaved = savedTime - t
-					log.Infof("CPU time saved with restore: %v ms", s.CPUTimeSaved.Milliseconds())
-				}
-			}
-		}
-
-		// Calculate the walltime saved for restore.
-		startTime := starttime.Get()
-		curTime := time2.Now()
-		wt := curTime.Sub(startTime)
-		log.Infof("Restore wall time: %s", wt.String())
-		savedWtStr, ok := r.metadata[state.GvisorWallTimeKey]
-		if !ok {
-			log.Warningf("Failed to retrieve walltime from the metadata")
-		} else {
-			savedWt, err := time2.ParseDuration(savedWtStr)
-			if err != nil {
-				log.Warningf("Walltime in metadata %v is invalid, err: %v", savedWtStr, err)
-			} else {
-				s.WallTimeSaved = savedWt - wt
-				log.Infof("Walltime saved with restore: %v ms", s.WallTimeSaved.Milliseconds())
-			}
-		}
-
-		r.cm.onRestoreDone(s)
-		postRestoreThread.Reached("kernel notified")
-
-		log.Infof("Restore successful")
-	}()
-
 	// Transfer ownership of the `timer` to a new goroutine.
 	// This is because `timer.Log` blocks until all timed tasks are finished,
 	// but some restore tasks may still run in the background, and we don't
 	// want to block this function until they finish.
-	timer := r.timer
+	postRestoreThread := r.timer.Fork("postRestore")
+	go r.postRestore(l.k, postRestoreThread, r.timer)
 	r.timer = nil
-	go timer.Log()
 
+	return nil
+}
+
+func (r *restorer) postRestore(k *kernel.Kernel, postRestoreThread *timing.Timeline, timer *timing.Timer) {
+	defer timer.Log()
+	defer postRestoreThread.End()
+
+	postRestoreThread.Reached("scheduled")
+	if err := control.PostRestore(k, postRestoreThread); err != nil {
+		log.Warningf("Killing the sandbox after post restore work failed: %v", err)
+		k.Kill(linux.WaitStatusTerminationSignal(linux.SIGKILL))
+		return
+	}
+	postRestoreThread.Reached("post restore done")
+
+	// Now that post restore work succeeded, increment the checkpoint gen
+	// manually. The count was saved while the previous kernel was being saved
+	// and checkpoint success was unknown at that time. Now we know the had
+	// checkpoint succeeded. Allow the application to proceed while pages may
+	// keep loading in the background.
+	k.IncCheckpointGenOnRestore()
+
+	// Wait for page loading to complete if happening in the background.
+	if r.asyncMFLoader != nil {
+		if err := r.asyncMFLoader.Wait(); err != nil {
+			log.Warningf("Killing the sandbox after MemoryFile page loading failed: %v", err)
+			k.Kill(linux.WaitStatusTerminationSignal(linux.SIGKILL))
+			return
+		}
+	}
+
+	var s Savings
+	if err := r.calculateCPUSavings(&s); err != nil {
+		log.Warningf("Failed to calculate CPU savings: %v", err)
+	}
+	if err := r.calculateWallTimeSavings(&s); err != nil {
+		log.Warningf("Failed to calculate walltime savings: %v", err)
+	}
+
+	r.cm.onRestoreDone(s)
+	postRestoreThread.Reached("kernel notified")
+	log.Infof("Restore successful")
+}
+
+// Calculate the CPU time saved for restore.
+func (r *restorer) calculateCPUSavings(s *Savings) error {
+	t, err := state.CPUTime()
+	if err != nil {
+		return fmt.Errorf("failed to get CPU time usage for restore, err: %w", err)
+	}
+	savedTimeStr, ok := r.metadata[state.GvisorCPUUsageKey]
+	if !ok {
+		return fmt.Errorf("failed to retrieve CPU time usage from the metadata")
+	}
+	savedTime, err := time2.ParseDuration(savedTimeStr)
+	if err != nil {
+		return fmt.Errorf("cpu time usage in metadata %v is invalid, err: %w", savedTimeStr, err)
+	}
+
+	s.CPUTimeSaved = savedTime - t
+	log.Infof("CPU time saved with restore: %v ms, restore CPU time: %v ms", s.CPUTimeSaved.Milliseconds(), t.Milliseconds())
+	return nil
+}
+
+// Calculate the walltime saved for restore.
+func (r *restorer) calculateWallTimeSavings(s *Savings) error {
+	savedWtStr, ok := r.metadata[state.GvisorWallTimeKey]
+	if !ok {
+		return fmt.Errorf("failed to retrieve walltime from the metadata")
+	}
+	savedWt, err := time2.ParseDuration(savedWtStr)
+	if err != nil {
+		return fmt.Errorf("walltime in metadata %v is invalid, err: %w", savedWtStr, err)
+	}
+
+	wt := time2.Since(starttime.Get())
+	s.WallTimeSaved = savedWt - wt
+	log.Infof("Walltime saved with restore: %v ms, restore walltime: %v ms", s.WallTimeSaved.Milliseconds(), wt.Milliseconds())
 	return nil
 }
 

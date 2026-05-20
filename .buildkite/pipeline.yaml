@@ -188,8 +188,10 @@ steps:
     label: ":bun: COS Latest Driver Compatibility Test"
     commands:
       - tools/gpu/cos_drivers_test.sh
-  - <<: *common
-    <<: *gpu_test
+  - <<: *gpu_test
+    timeout_in_minutes: 60
+    retry:
+      <<: *retry_settings
     label: ":screwdriver: GPU Tests"
     commands:
       - make sudo TARGETS=//tools/gpu:main ARGS="install --latest" || cat /var/log/nvidia-installer.log
@@ -438,14 +440,6 @@ steps:
   - <<: *common
     <<: *docker
     <<: *source_test
-    label: ":docker: Containerd 1.6.39 tests"
-    command: make containerd-test-1.6.39
-    agents:
-      <<: *ubuntu_agents
-      <<: *containerd_agents
-  - <<: *common
-    <<: *docker
-    <<: *source_test
     label: ":docker: Containerd 1.7.31 tests"
     command: make containerd-test-1.7.31
     agents:
@@ -539,6 +533,13 @@ steps:
     agents:
       cgroup: "v2"
       arch: "amd64"
+  - <<: *common
+    <<: *source_test
+    label: ":golang: runsc go binding tests (arm64)"
+    command: make go-binding-test
+    agents:
+      cgroup: "v2"
+      arch: "arm64"
   # Runtime tests.
   - <<: *common
     <<: *docker

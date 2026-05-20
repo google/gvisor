@@ -650,6 +650,11 @@ func (t *Task) exitNotifyLocked(fromPtraceDetach bool) {
 	if t.exitStateLocked() != TaskExitZombie {
 		return
 	}
+	if t != t.tg.leader || t.tg.tasksCount == 1 {
+		// Subthread or empty group leader.
+		t.notifyPIDFDsLocked()
+	}
+
 	if !t.exitTracerNotified {
 		t.exitTracerNotified = true
 		tracer := t.Tracer()
@@ -658,7 +663,7 @@ func (t *Task) exitNotifyLocked(fromPtraceDetach bool) {
 		} else if t != t.tg.leader || t.parent == nil || tracer.tg != t.parent.tg {
 			// Don't set exitParentNotified if t is non-leader, even if the
 			// tracer is in the parent thread group, so that if the parent
-			// detaches the following call to exitNotifyLocked passes through
+			// detaches, the following call to exitNotifyLocked passes through
 			// the !exitParentNotified case below and causes t to be reaped
 			// immediately.
 			//
@@ -762,13 +767,17 @@ func (t *Task) exitNotifyLocked(fromPtraceDetach bool) {
 		tc := t.tg.tasksCount
 		t.tg.signalHandlers.mu.Unlock()
 		t.tg.ioUsage.Accumulate(t.ioUsage)
-		if tc == 1 && t != t.tg.leader {
-			// Our fromPtraceDetach doesn't matter here (in Linux terms, this
-			// is via a call to release_task()).
-			t.tg.leader.exitNotifyLocked(false)
+		if t != t.tg.leader {
+			t.notifyPIDFDsOnDeathLocked()
+			if tc == 1 {
+				// Our fromPtraceDetach doesn't matter here (in Linux terms, this
+				// is via a call to release_task()).
+				t.tg.leader.exitNotifyLocked(false)
+			}
 		} else if tc == 0 {
 			t.tg.pidWithinNS.Store(0)
 			t.tg.processGroup.decRefWithParent(t.tg.parentPG())
+			t.notifyPIDFDsOnDeathLocked()
 		}
 		if t.parent != nil {
 			delete(t.parent.children, t)
@@ -927,6 +936,10 @@ type WaitOptions struct {
 	// Wait will return ECHILD.
 	SpecificTID ThreadID
 
+	// If SpecificThreadGroup is non-nil, only events from the specific thread group
+	// are eligible to be waited for.
+	SpecificThreadGroup *ThreadGroup
+
 	// If SpecificPGID is non-zero, only events from ThreadGroups with a
 	// matching ProcessGroupID are eligible to be waited for. (Same
 	// constraints as SpecificTID apply.)
@@ -967,6 +980,9 @@ type WaitOptions struct {
 	// if that blocking is interrupted, Wait returns BlockInterruptErr. If
 	// BlockInterruptErr is nil, Wait will not block.
 	BlockInterruptErr error
+
+	// If NonBlock is true, Wait will not block.
+	NonBlock bool
 }
 
 // Preconditions: The TaskSet mutex must be locked (for reading or writing).
@@ -975,6 +991,9 @@ func (o *WaitOptions) matchesTask(t *Task, pidns *PIDNamespace, tracee bool) boo
 		return false
 	}
 	if o.SpecificPGID != 0 && o.SpecificPGID != pidns.pgids[t.tg.processGroup] {
+		return false
+	}
+	if o.SpecificThreadGroup != nil && o.SpecificThreadGroup != t.tg {
 		return false
 	}
 	// Tracees are always eligible.
@@ -1020,7 +1039,7 @@ type WaitResult struct {
 // group, or a task in such a thread group, or a task that is ptraced by t,
 // subject to the options specified in opts.
 func (t *Task) Wait(opts *WaitOptions) (*WaitResult, error) {
-	if opts.BlockInterruptErr == nil {
+	if opts.NonBlock || opts.BlockInterruptErr == nil {
 		return t.waitOnce(opts)
 	}
 	w, ch := waiter.NewChannelEntry(opts.Events)

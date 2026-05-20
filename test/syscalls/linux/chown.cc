@@ -12,11 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <errno.h>
 #include <fcntl.h>
 #include <grp.h>
+#include <linux/capability.h>
+#include <stdint.h>
 #include <sys/types.h>
+#include <sys/xattr.h>
 #include <unistd.h>
 
+#include <string>
 #include <vector>
 
 #include "gmock/gmock.h"
@@ -39,6 +44,33 @@ namespace gvisor {
 namespace testing {
 
 namespace {
+
+struct VfsCapData {
+  uint32_t magic_etc;
+  uint32_t permitted_lo;
+  uint32_t inheritable_lo;
+  uint32_t permitted_hi;
+  uint32_t inheritable_hi;
+};
+
+int SetSecurityCapability(const std::string& path) {
+  VfsCapData cap_data = {};
+  cap_data.magic_etc = VFS_CAP_REVISION_2 | VFS_CAP_FLAGS_EFFECTIVE;
+  cap_data.permitted_lo = 1u << CAP_SETUID;
+
+  if (setxattr(path.c_str(), "security.capability", &cap_data, sizeof(cap_data),
+               0) < 0) {
+    return errno;
+  }
+
+  char buf[sizeof(cap_data)] = {};
+  const ssize_t size =
+      getxattr(path.c_str(), "security.capability", buf, sizeof(buf));
+  if (size != sizeof(cap_data)) {
+    return size < 0 ? errno : EIO;
+  }
+  return 0;
+}
 
 TEST(ChownTest, FchownBadF) {
   ASSERT_THAT(fchown(-1, 0, 0), SyscallFailsWithErrno(EBADF));
@@ -125,6 +157,27 @@ TEST(ChownTest, FchownatEmptyPath) {
   const auto fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_DIRECTORY | O_RDONLY));
   ASSERT_THAT(fchownat(fd.get(), "", 0, 0, 0), SyscallFailsWithErrno(ENOENT));
+}
+
+TEST(ChownTest, ChownRemovesSecurityCapability) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_CHOWN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETFCAP)));
+
+  const auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const int set_cap_errno = SetSecurityCapability(file.path());
+  if (set_cap_errno == EOPNOTSUPP || set_cap_errno == EPERM) {
+    GTEST_SKIP() << "setting security.capability failed with errno "
+                 << set_cap_errno;
+  }
+  ASSERT_EQ(set_cap_errno, 0);
+
+  ASSERT_THAT(chown(file.path().c_str(), absl::GetFlag(FLAGS_scratch_uid1), -1),
+              SyscallSucceeds());
+
+  char buf[sizeof(VfsCapData)] = {};
+  EXPECT_THAT(
+      getxattr(file.path().c_str(), "security.capability", buf, sizeof(buf)),
+      SyscallFailsWithErrno(ENODATA));
 }
 
 TEST(ChownTest, SetGroupIdBitDeniedWithoutCapFsetIdOrRelevantGroup) {

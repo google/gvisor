@@ -20,6 +20,7 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "cuda_test_util.h"  // NOLINT(build/include)
 
@@ -53,6 +54,22 @@ int main(int argc, char *argv[]) {
   int gpuCount = -1;
   CHECK_CUDA(cudaGetDeviceCount(&gpuCount));
   printf("// Number of GPUs: %d\n", gpuCount);
+  if (gpuCount == 1) {
+    printf("// Warning: Only 1 GPU detected by cudaGetDeviceCount.\n");
+    printf("// Debugging info:\n");
+    const char* cuda_visible_devices = getenv("CUDA_VISIBLE_DEVICES");
+    printf("// CUDA_VISIBLE_DEVICES: %s\n",
+           cuda_visible_devices ? cuda_visible_devices : "unset");
+    const char* nvidia_visible_devices = getenv("NVIDIA_VISIBLE_DEVICES");
+    printf("// NVIDIA_VISIBLE_DEVICES: %s\n",
+           nvidia_visible_devices ? nvidia_visible_devices : "unset");
+    printf("// Device nodes:\n");
+    fflush(stdout);
+    system("ls -l /dev/nvidia* 2>&1 | sed 's/^/\\/\\/ /'");
+    printf("// nvidia-smi -L output:\n");
+    fflush(stdout);
+    system("nvidia-smi -L 2>&1 | sed 's/^/\\/\\/ /'");
+  }
   if (gpuCount >= 2) {
     int canAccessAToB = -1;
     CHECK_CUDA(cudaDeviceCanAccessPeer(&canAccessAToB, 0, 1));

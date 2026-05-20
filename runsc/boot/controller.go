@@ -38,9 +38,12 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	"gvisor.dev/gvisor/pkg/sentry/socket/plugin"
 	"gvisor.dev/gvisor/pkg/sentry/state"
+	"gvisor.dev/gvisor/pkg/sentry/state/checkpointfiles"
 	"gvisor.dev/gvisor/pkg/sentry/state/stateio"
+	"gvisor.dev/gvisor/pkg/sentry/state/stateipc"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/timing"
+	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot/procfs"
 	"gvisor.dev/gvisor/runsc/config"
@@ -559,7 +562,12 @@ type RestoreOpts struct {
 	HaveDeviceFile bool
 	Background     bool
 
-	RestoreOptsExtra
+	// If UseCheckpointGofer is true, the first file in FilePayload is a Unix
+	// domain socket connected to a URPC server implementing
+	// stateipc.AsyncFileServer and providing checkpoint files. In this case,
+	// RestoreOpts.HavePagesFile is unknown and must be determined by
+	// containerManager.Restore.
+	UseCheckpointGofer bool `json:"use_checkpoint_gofer"`
 }
 
 // Restore loads a container from a statefile.
@@ -592,7 +600,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 		return fmt.Errorf("at least one file must be passed to Restore")
 	}
 
-	stateFile, pagesMetadata, pagesFile, err := getRestoreReadersImpl(o)
+	stateFile, pagesMetadata, pagesFile, err := getRestoreReaders(o)
 	if err != nil {
 		return err
 	}
@@ -683,6 +691,13 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 	return cm.restorer.restoreContainerInfo(cm.l, &cm.l.root, timer.Fork("cont:root"))
 }
 
+func getRestoreReaders(o *RestoreOpts) (io.ReadCloser, io.ReadCloser, stateio.AsyncReader, error) {
+	if o.UseCheckpointGofer {
+		return getRestoreReadersForCheckpointGofer(o)
+	}
+	return getRestoreReadersForLocalCheckpointFiles(o)
+}
+
 func getRestoreReadersForLocalCheckpointFiles(o *RestoreOpts) (io.ReadCloser, io.ReadCloser, stateio.AsyncReader, error) {
 	stateFile, err := o.ReleaseFD(0)
 	if err != nil {
@@ -720,6 +735,55 @@ func getRestoreReadersForLocalCheckpointFiles(o *RestoreOpts) (io.ReadCloser, io
 		stateio.NewBufioReadCloser(pagesMetadataFile),
 		stateio.NewPagesFileFDReaderDefault(int32(pagesFile.Release())),
 		nil
+}
+
+func getRestoreReadersForCheckpointGofer(o *RestoreOpts) (io.ReadCloser, io.ReadCloser, stateio.AsyncReader, error) {
+	clientFD, err := unix.Dup(int(o.Files[0].Fd()))
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to dup checkpoint gofer client FD: %w", err)
+	}
+	clientSock, err := unet.NewSocket(clientFD)
+	if err != nil {
+		unix.Close(clientFD)
+		return nil, nil, nil, fmt.Errorf("failed to create unet.Socket for checkpoint gofer client FD: %w", err)
+	}
+	afc, err := stateipc.NewAsyncFileClient(urpc.NewClient(clientSock) /* transfers ownership */)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to create stateipc client: %w", err)
+	}
+	defer afc.DecRef()
+
+	stateFileAsync, err := afc.OpenRead(checkpointfiles.StateFileName)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to open state file: %w", err)
+	}
+	stateFile, err := stateio.NewBufReader(stateFileAsync /* transfers ownership */, 8<<20 /* size = 8 MiB */)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to buffer state file: %w", err)
+	}
+
+	pagesMetadataAsync, err := afc.OpenRead(checkpointfiles.PagesMetadataFileName)
+	if err != nil {
+		// This might be fs.ErrNotExist or unix.ENOENT, but this detail is lost
+		// by URPC (which only preserves the error string), so log and continue
+		// under the assumption that it is.
+		log.Infof("Failed to open pages metadata file: %v", err)
+		o.HavePagesFile = false
+		return stateFile, nil, nil, nil
+	}
+	pagesMetadata, err := stateio.NewBufReader(pagesMetadataAsync /* transfers ownership */, 8<<20 /* size = 8 MiB */)
+	if err != nil {
+		stateFile.Close()
+		return nil, nil, nil, fmt.Errorf("failed to buffer pages metadata file: %w", err)
+	}
+	pagesFile, err := afc.OpenRead(checkpointfiles.PagesFileName)
+	if err != nil {
+		pagesMetadata.Close()
+		stateFile.Close()
+		return nil, nil, nil, fmt.Errorf("failed to open pages file: %w", err)
+	}
+	o.HavePagesFile = true
+	return stateFile, pagesMetadata, pagesFile, nil
 }
 
 func (cm *containerManager) onRestoreFailed(err error) {
@@ -1134,9 +1198,12 @@ type FSSaveArgs struct {
 	urpc.FilePayload
 
 	// Equivalent to kernel.FSSaveOpts fields.
-	ExitAfterSaving bool
+	ExitAfterSaving bool `json:"exit_after_saving"`
 
-	FSSaveArgsExtra
+	// If UseCheckpointGofer is true, FSSaveArgs.FilePayload should contain
+	// exactly one FD, which is a Unix domain socket connected to a URPC server
+	// implementing stateipc.AsyncFileServer.
+	UseCheckpointGofer bool `json:"use_checkpoint_gofer"`
 }
 
 // FSSave collects a filesystem checkpoint.

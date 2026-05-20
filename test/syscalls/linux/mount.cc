@@ -27,8 +27,10 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/statfs.h>
+#include <sys/sysmacros.h>
 #include <sys/un.h>
 #include <sys/vfs.h>
+#include <sys/xattr.h>
 #include <unistd.h>
 
 #include <array>
@@ -2499,13 +2501,20 @@ TEST(MountTest, MountProc) {
 TEST(MountTest, OverlayfsSgidBitIsCopiedUp) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
-  // gVisor's overlayfs implementation only supports tmpfs's as upper layers.
   auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-  ASSERT_THAT(mount("tmpfs", base_dir.path().c_str(), "tmpfs", 0, "mode=1777"),
-              SyscallSucceeds());
-  auto tmpfs_cleanup = Cleanup([&base_dir] {
-    ASSERT_THAT(umount2(base_dir.path().c_str(), MNT_DETACH),
-                SyscallSucceeds());
+  // Overlayfs can not be used as upper layer for another overlayfs mount. If
+  // running in overlayfs, create a tmpfs mount to use as the upper layer.
+  bool in_overlayfs = ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(base_dir.path()));
+  if (in_overlayfs) {
+    ASSERT_THAT(
+        mount("tmpfs", base_dir.path().c_str(), "tmpfs", 0, "mode=1777"),
+        SyscallSucceeds());
+  }
+  auto tmpfs_cleanup = Cleanup([&base_dir, &in_overlayfs] {
+    if (in_overlayfs) {
+      ASSERT_THAT(umount2(base_dir.path().c_str(), MNT_DETACH),
+                  SyscallSucceeds());
+    }
   });
 
   // Create the files under test in `lower` and set the S_ISGID bit on them.
@@ -2586,13 +2595,20 @@ TEST(MountTest, OverlayfsSgidBitIsCopiedUp) {
 TEST(MountTest, OverlayfsDirectoryRenameInUserNamespace) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
   auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  bool in_overlayfs = ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(base_dir.path()));
 
   const std::function<void()> parent = [] {};
-  const std::function<void()> child = [&base_dir] {
-    TEST_CHECK_SUCCESS(mount("tmpfs", base_dir.path().c_str(), "tmpfs", 0,
-                             "mode=1777,size=10m"));
-    auto tmpfs_cleanup = Cleanup([&base_dir] {
-      TEST_CHECK_SUCCESS(umount2(base_dir.path().c_str(), 0));
+  const std::function<void()> child = [&base_dir, &in_overlayfs] {
+    // Overlayfs can not be used as upper layer for another overlayfs mount. If
+    // running in overlayfs, create a tmpfs mount to use as the upper layer.
+    if (in_overlayfs) {
+      TEST_CHECK_SUCCESS(mount("tmpfs", base_dir.path().c_str(), "tmpfs", 0,
+                               "mode=1777,size=10m"));
+    }
+    auto tmpfs_cleanup = Cleanup([&base_dir, &in_overlayfs] {
+      if (in_overlayfs) {
+        TEST_CHECK_SUCCESS(umount2(base_dir.path().c_str(), 0));
+      }
     });
 
     auto lower = JoinPath(base_dir.path(), "lower");
@@ -2650,6 +2666,104 @@ TEST(MountTest, OverlayfsDirectoryRenameInUserNamespace) {
 
   EXPECT_THAT(InForkedUserMountNamespace(parent, child),
               IsPosixErrorOkAndHolds(0));
+}
+
+// Test that overlay can be mounted with a gofer upper layer. Runs some basic
+// overlayfs tests to confirm basic functionality.
+TEST(MountTest, OverlayfsOnGoferBehavior) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  // We only want to test overlayfs on gofer.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(IsGoferfs(base_dir.path())));
+
+  // Create directories for overlayfs mount.
+  auto lower =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto upper =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto work = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto merged =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+
+  // Set up lower layer with some content.
+  const std::string kTestFile = "testfile";
+  const std::string kTestFileContent = "lower_content";
+  std::string lower_file = JoinPath(lower.path(), kTestFile);
+  ASSERT_NO_ERRNO(CreateWithContents(lower_file, kTestFileContent, 0644));
+  const std::string kTestDirName = "testdir";
+  std::string lower_dir = JoinPath(lower.path(), kTestDirName);
+  ASSERT_THAT(mkdir(lower_dir.c_str(), 0755), SyscallSucceeds());
+  const std::string kCopyUpFile = "copyupfile";
+  std::string lower_copyup_file = JoinPath(lower.path(), kCopyUpFile);
+  ASSERT_NO_ERRNO(CreateWithContents(lower_copyup_file, "initial", 0644));
+  bool xattr_supported = true;
+  if (setxattr(lower_copyup_file.c_str(), "user.test", "value", 5, 0) < 0) {
+    if (errno == EOPNOTSUPP) {
+      xattr_supported = false;
+    } else {
+      ASSERT_NO_ERRNO(PosixError(errno, "setxattr failed"));
+    }
+  }
+
+  // Mount the overlay.
+  std::string opts = "lowerdir=" + lower.path() + ",upperdir=" + upper.path() +
+                     ",workdir=" + work.path() + ",userxattr";
+  ASSERT_THAT(
+      mount("overlay", merged.path().c_str(), "overlay", 0, opts.c_str()),
+      SyscallSucceeds());
+  auto cleanup = Cleanup([&merged] { umount2(merged.path().c_str(), 0); });
+
+  // Read the lower layer file through the overlay.
+  std::string merged_file = JoinPath(merged.path(), kTestFile);
+  std::string merged_content;
+  ASSERT_NO_ERRNO(GetContents(merged_file, &merged_content));
+  EXPECT_EQ(merged_content, kTestFileContent);
+
+  // Write a new file through the overlay and confirm it appears in the upper.
+  const std::string kNewFile = "newfile";
+  const std::string kNewFileContent = "new";
+  std::string new_file = JoinPath(merged.path(), kNewFile);
+  ASSERT_NO_ERRNO(CreateWithContents(new_file, kNewFileContent, 0644));
+  std::string upper_new_file = JoinPath(upper.path(), kNewFile);
+  std::string upper_new_content;
+  ASSERT_NO_ERRNO(GetContents(upper_new_file, &upper_new_content));
+  EXPECT_EQ(upper_new_content, kNewFileContent);
+
+  // Delete the lower layer file through the overlay and confirm it creates a
+  // whiteout in the upper.
+  ASSERT_THAT(unlink(merged_file.c_str()), SyscallSucceeds());
+  std::string whiteout = JoinPath(upper.path(), kTestFile);
+  struct stat st;
+  ASSERT_THAT(stat(whiteout.c_str(), &st), SyscallSucceeds());
+  EXPECT_TRUE(S_ISCHR(st.st_mode));
+  EXPECT_EQ(major(st.st_rdev), 0);
+  EXPECT_EQ(minor(st.st_rdev), 0);
+
+  // Delete the lower layer directory through the overlay and recreate it. This
+  // should mark it opaque in the upper layer.
+  std::string merged_dir = JoinPath(merged.path(), kTestDirName);
+  ASSERT_THAT(rmdir(merged_dir.c_str()), SyscallSucceeds());
+  ASSERT_THAT(mkdir(merged_dir.c_str(), 0755), SyscallSucceeds());
+
+  std::string upper_dir = JoinPath(upper.path(), kTestDirName);
+  char opaque_buf[16] = {};
+  ASSERT_THAT(getxattr(upper_dir.c_str(), "user.overlay.opaque", opaque_buf,
+                       sizeof(opaque_buf)),
+              SyscallSucceeds());
+  EXPECT_EQ(opaque_buf[0], 'y');
+
+  // Test copy up on regular file.
+  std::string merged_copyup_file = JoinPath(merged.path(), kCopyUpFile);
+  ASSERT_NO_ERRNO(SetContents(merged_copyup_file, "modified"));
+  if (xattr_supported) {
+    // Confirm that the xattr is copied up with the file.
+    char xattr_buf[16] = {};
+    ASSERT_THAT(getxattr(merged_copyup_file.c_str(), "user.test", xattr_buf,
+                         sizeof(xattr_buf)),
+                SyscallSucceeds());
+    EXPECT_STREQ(xattr_buf, "value");
+  }
 }
 
 }  // namespace

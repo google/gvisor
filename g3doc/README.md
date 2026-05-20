@@ -157,7 +157,7 @@ resources, providing an additional level of isolation.
 ### Application {#application}
 
 The application is a normal Linux binary provided to gVisor in an OCI runtime
-bundle. gVisor aims to provide an environment equivalent to Linux v4.4, so
+bundle. gVisor aims to provide an environment equivalent to Linux, so
 applications should be able to run unmodified. However, gVisor does not
 presently implement every system call, `/proc` file, or `/sys` file so some
 incompatibilities may occur. See [Compatibility](./user_guide/compatibility.md)

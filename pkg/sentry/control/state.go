@@ -29,10 +29,13 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/state"
+	"gvisor.dev/gvisor/pkg/sentry/state/checkpointfiles"
 	"gvisor.dev/gvisor/pkg/sentry/state/stateio"
+	"gvisor.dev/gvisor/pkg/sentry/state/stateipc"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/pkg/timing"
+	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/pkg/urpc"
 )
 
@@ -93,7 +96,10 @@ type SaveOpts struct {
 	// ExecOpts contains options for executing a binary during save/restore.
 	ExecOpts SaveRestoreExecOpts
 
-	SaveOptsExtra
+	// If UseCheckpointGofer is true, the first and only file in FilePayload is
+	// a Unix domain socket connected to a URPC server implementing
+	// stateipc.AsyncFileServer and providing checkpoint files.
+	UseCheckpointGofer bool `json:"use_checkpoint_gofer"`
 }
 
 // SaveRestoreExecOpts contains options for executing a binary
@@ -120,11 +126,18 @@ func ConvertToStateSaveOpts(o *SaveOpts) (*state.SaveOpts, error) {
 		AppMFExcludeCommittedZeroPages: o.AppMFExcludeCommittedZeroPages,
 		Resume:                         o.Resume,
 	}
-	if err := setSaveOptsImpl(o, saveOpts); err != nil {
+	if err := setSaveOpts(o, saveOpts); err != nil {
 		saveOpts.Close()
 		return nil, err
 	}
 	return saveOpts, nil
+}
+
+func setSaveOpts(o *SaveOpts, saveOpts *state.SaveOpts) error {
+	if o.UseCheckpointGofer {
+		return setSaveOptsForCheckpointGofer(o, saveOpts)
+	}
+	return setSaveOptsForLocalCheckpointFiles(o, saveOpts)
 }
 
 func setSaveOptsForLocalCheckpointFiles(o *SaveOpts, saveOpts *state.SaveOpts) error {
@@ -160,6 +173,52 @@ func setSaveOptsForLocalCheckpointFiles(o *SaveOpts, saveOpts *state.SaveOpts) e
 			return err
 		}
 		saveOpts.PagesFile = stateio.NewPagesFileFDWriterDefault(int32(pagesFileFD))
+	}
+	return nil
+}
+
+func setSaveOptsForCheckpointGofer(o *SaveOpts, saveOpts *state.SaveOpts) error {
+	if gotFiles := len(o.Files); gotFiles != 1 {
+		return fmt.Errorf("got %d files, wanted 1", gotFiles)
+	}
+	clientFD, err := unix.Dup(int(o.Files[0].Fd()))
+	if err != nil {
+		return fmt.Errorf("failed to dup checkpoint gofer client FD: %w", err)
+	}
+	clientSock, err := unet.NewSocket(clientFD)
+	if err != nil {
+		unix.Close(clientFD)
+		return fmt.Errorf("failed to create unet.Socket for checkpoint gofer client FD: %w", err)
+	}
+	afc, err := stateipc.NewAsyncFileClient(urpc.NewClient(clientSock))
+	if err != nil {
+		return fmt.Errorf("failed to create stateipc client: %w", err)
+	}
+	defer afc.DecRef()
+
+	stateFileAsync, err := afc.OpenWrite(checkpointfiles.StateFileName)
+	if err != nil {
+		return fmt.Errorf("failed to open state file: %w", err)
+	}
+	// Setting saveOpts.Destination/PagesMetadata/PagesFile transfers ownership
+	// of the created object to saveOpts, even if we return a non-nil error.
+	saveOpts.Destination, err = stateio.NewBufWriter(stateFileAsync /* transfers ownership */, 8<<20 /* size = 8 MiB */)
+	if err != nil {
+		return fmt.Errorf("failed to buffer state file: %w", err)
+	}
+	if o.HavePagesFile {
+		pagesMetadataAsync, err := afc.OpenWrite(checkpointfiles.PagesMetadataFileName)
+		if err != nil {
+			return fmt.Errorf("failed to open pages metadata file: %w", err)
+		}
+		saveOpts.PagesMetadata, err = stateio.NewBufWriter(pagesMetadataAsync /* transfers ownership */, 8<<20 /* size = 8 MiB */)
+		if err != nil {
+			return fmt.Errorf("failed to buffer pages metadata file: %w", err)
+		}
+		saveOpts.PagesFile, err = afc.OpenWrite(checkpointfiles.PagesFileName)
+		if err != nil {
+			return fmt.Errorf("failed to open pages file: %w", err)
+		}
 	}
 	return nil
 }
@@ -264,10 +323,9 @@ func SaveRestoreExec(k *kernel.Kernel, mode SaveRestoreExecMode) error {
 	contID := leader.ContainerID()
 	mntns := leader.MountNamespace()
 	if mntns == nil || !mntns.TryIncRef() {
-		log.Warningf("PID %d in container %q has exited, skipping CUDA checkpoint for it", leader.ThreadGroup().ID(), contID)
+		log.Warningf("PID %d in container %q has exited, skipping save/restore exec for it", leader.ThreadGroup().ID(), contID)
 		return nil
 	}
-	mntns.IncRef()
 	root := mntns.Root(sctx)
 	cu := cleanup.Make(func() {
 		root.DecRef(sctx)
@@ -353,24 +411,26 @@ func ConfigureSaveRestoreExec(k *kernel.Kernel, argv []string, timeout time.Dura
 		Timeout: timeout,
 	}
 
-	var leader *kernel.Task
-	if containerID != "" {
-		for _, tg := range k.RootPIDNamespace().ThreadGroups() {
-			// Find all processes with no parent (root of execution).
-			if tg.Leader().Parent() == nil {
-				cid := tg.Leader().ContainerID()
-				if cid == containerID {
-					leader = tg.Leader()
-					break
-				}
-			}
-		}
-		if leader == nil {
-			return fmt.Errorf("failed to find process associated with container %s", containerID)
-		}
-	} else {
-		leader = k.GlobalInit().Leader()
+	leader, err := findContainerInitProcess(k, containerID)
+	if err != nil {
+		return err
 	}
 	k.SaveRestoreExecConfig.LeaderTask = leader
 	return nil
+}
+
+// findContainerInitProcess finds the init process (root of execution) associated with
+// the given containerID. If containerID is empty, the global init process is returned.
+func findContainerInitProcess(k *kernel.Kernel, containerID string) (*kernel.Task, error) {
+	if containerID == "" {
+		return k.GlobalInit().Leader(), nil
+	}
+	// To find the init process of a container, we look for the process with no
+	// parent (root of execution) that is not an exec process.
+	for _, tg := range k.RootPIDNamespace().ThreadGroups() {
+		if leader := tg.Leader(); leader.Parent() == nil && leader.Origin != kernel.OriginExec && leader.ContainerID() == containerID {
+			return leader, nil
+		}
+	}
+	return nil, fmt.Errorf("failed to find process associated with container %s", containerID)
 }

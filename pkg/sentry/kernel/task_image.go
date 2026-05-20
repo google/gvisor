@@ -18,6 +18,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux/errno"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/futex"
@@ -141,7 +142,8 @@ func (k *Kernel) LoadTaskImage(ctx context.Context, args loader.LoadArgs) (*Task
 	// Prepare a new user address space to load into.
 	m, merr := mm.NewMemoryManager(k, k.mf)
 	if merr != nil {
-		return nil, nil, false, syserr.FromError(merr)
+		log.Warningf("Failed to create new memory manager: %v", merr)
+		return nil, nil, false, syserr.ErrNoMemory
 	}
 	defer m.DecUsers(ctx)
 	args.MemoryManager = m

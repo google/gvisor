@@ -22,7 +22,7 @@ import (
 	"gvisor.dev/gvisor/sandboxexec/sandbox"
 )
 
-func TestRunscGoBinding(t *testing.T) {
+func TestExecDmesg(t *testing.T) {
 	ctx := context.Background()
 
 	// Create the background sandbox via subprocess
@@ -45,5 +45,26 @@ func TestRunscGoBinding(t *testing.T) {
 
 	if !strings.Contains(output, "Starting gVisor") {
 		t.Errorf("Exec(\"dmesg\") =  %v; wanted: %v", output, "Starting gVisor")
+	}
+}
+
+func TestSandboxOptions(t *testing.T) {
+	ctx := context.Background()
+	runtimeDir := t.TempDir()
+	id := "iwillbeasandbox"
+
+	sb, err := sandbox.New(ctx, sandbox.WithID(id), sandbox.WithRuntimeDir(runtimeDir))
+	if err != nil {
+		t.Fatalf("failed to create sandbox: %v", err)
+	}
+
+	defer func() {
+		if err := sb.Close(ctx); err != nil {
+			t.Fatalf("failed to clean up sandbox: %v", err)
+		}
+	}()
+
+	if got := sb.Bundle(); !strings.HasPrefix(got, runtimeDir) {
+		t.Errorf("sb.Bundle() = %v; want prefix %v", got, runtimeDir)
 	}
 }

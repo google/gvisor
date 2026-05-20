@@ -1455,3 +1455,35 @@ func TestSudo(t *testing.T) {
 		t.Errorf("\"docker exec\" sudo successful despite a no-new-privileges container; err: %v, who: %s", err, who)
 	}
 }
+
+// Adds some basic iptables rules to verify iptables installation is working.
+func TestIPTables(t *testing.T) {
+	if testutil.IsRunningWithHostNet() {
+		t.Skip("Skip iptables for hostinet.")
+	}
+	cmd := `apt-get update && apt-get -y install iptables
+iptables --version
+iptables -t nat -L -v -n
+iptables -t nat -A OUTPUT -p tcp --dport 80 -j REDIRECT --to-port 8080
+iptables -t nat -A OUTPUT -p tcp --dport 443 -m owner --uid-owner 1337 -j ACCEPT
+iptables -t nat -L -v -n`
+	ctx := context.Background()
+	d := dockerutil.MakeContainerWithRuntime(ctx, t, "-docker")
+	defer d.CleanUp(ctx)
+
+	opts := dockerutil.RunOpts{
+		Image:  "basic/ubuntu",
+		CapAdd: []string{"NET_ADMIN", "NET_RAW"},
+	}
+	got, err := d.Run(ctx, opts, "bash", "-c", cmd)
+	if err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	t.Logf("Output:\n%s", got)
+	if !strings.Contains(got, "REDIRECT") || !strings.Contains(got, "tcp dpt:80 redir ports 8080") {
+		t.Errorf("Output missing REDIRECT rule for port 80 to 8080: %s", got)
+	}
+	if !strings.Contains(got, "ACCEPT") || !strings.Contains(got, "tcp dpt:443 owner UID match 1337") {
+		t.Errorf("Output missing ACCEPT rule for port 443 and UID 1337: %s", got)
+	}
+}

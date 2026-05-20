@@ -269,6 +269,29 @@ func TestValidationFail(t *testing.T) {
 			error: "num_network_channels must be > 0",
 		},
 		{
+			name: "qdisc-tbf-burst-overflow",
+			flags: map[string]string{
+				"qdisc-tbf-burst": "4294967296",
+			},
+			error: "qdisc-tbf-burst must be <=",
+		},
+		{
+			name: "qdisc-tbf-without-rate",
+			flags: map[string]string{
+				"qdisc":           "tbf",
+				"qdisc-tbf-burst": "524288",
+			},
+			error: "qdisc=tbf requires setting qdisc-tbf-rate",
+		},
+		{
+			name: "qdisc-tbf-without-burst",
+			flags: map[string]string{
+				"qdisc":          "tbf",
+				"qdisc-tbf-rate": "12500000",
+			},
+			error: "qdisc=tbf requires setting qdisc-tbf-burst",
+		},
+		{
 			name: "fsgofer-host-uds+host-uds:open",
 			flags: map[string]string{
 				"fsgofer-host-uds": "true",
@@ -465,6 +488,80 @@ func TestOverrideAllowlist(t *testing.T) {
 			value: "123",
 			error: "flag override disabled",
 		},
+		{
+			flag:  "qdisc",
+			value: "fifo",
+			error: `requires flag "allow-flag-override"`,
+		},
+		{
+			flag:  "qdisc",
+			value: "none",
+			error: `requires flag "allow-flag-override"`,
+		},
+		{
+			flag:  "qdisc",
+			value: "invalid",
+			error: "invalid qdisc",
+		},
+		// Order matters: a successful override mutates the Config ceiling for
+		// later subtests, and qdisc=tbf requires both rate and burst to have
+		// been set first (validate() rejects qdisc=tbf with either at zero).
+		{
+			flag:  "qdisc-tbf-rate",
+			value: fmt.Sprint(defaultQDiscTBFRate),
+		},
+		{
+			flag:  "qdisc-tbf-rate",
+			value: "18446744073709551616", // > max uint64
+			error: "invalid",
+		},
+		{
+			flag:  "qdisc-tbf-rate",
+			value: "abc",
+			error: "invalid",
+		},
+		{
+			flag:  "qdisc-tbf-rate",
+			value: "1000000",
+		},
+		{
+			flag:  "qdisc-tbf-rate",
+			value: "2000000", // attempts to raise above the 1M ceiling without force
+			error: "raising the limit requires",
+		},
+		{
+			flag:  "qdisc-tbf-burst",
+			value: fmt.Sprint(defaultQDiscTBFBurst),
+		},
+		{
+			flag:  "qdisc-tbf-burst",
+			value: "4294967296", // > max uint32
+			error: "qdisc-tbf-burst must be <=",
+		},
+		{
+			flag:  "qdisc-tbf-burst",
+			value: "65536",
+		},
+		{
+			flag:  "qdisc-tbf-burst",
+			value: "131072", // attempts to raise above the 65536 ceiling without force
+			error: "raising the limit requires",
+		},
+		{
+			flag:  "qdisc",
+			value: "tbf",
+		},
+		{
+			flag:  "qdisc-tbf-rate",
+			value: "2147483648",
+			force: true, // admin escape hatch bypasses the check
+		},
+		{
+			flag:  "qdisc-tbf-burst",
+			value: "4294967296",
+			force: true, // validate still rejects values that would wrap
+			error: "qdisc-tbf-burst must be <=",
+		},
 	} {
 		t.Run(tc.flag, func(t *testing.T) {
 			err := c.Override(testFlags, tc.flag, tc.value, tc.force)
@@ -476,6 +573,39 @@ func TestOverrideAllowlist(t *testing.T) {
 				t.Errorf("Override(%q, %q) wrong error: %v", tc.flag, tc.value, err)
 			}
 		})
+	}
+}
+
+func TestOverrideAllowlistQDiscTBF(t *testing.T) {
+	testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
+	RegisterFlags(testFlags)
+	c, err := NewFromFlags(testFlags)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got, want := c.QDisc, QDiscFIFO; got != want {
+		t.Fatalf("default QDisc = %v, want %v", got, want)
+	}
+	// validate() requires rate and burst to be set before qdisc=tbf takes.
+	if err := c.Override(testFlags, "qdisc-tbf-rate", "12500000", false); err != nil {
+		t.Fatalf("Override(qdisc-tbf-rate, 12500000) failed: %v", err)
+	}
+	if err := c.Override(testFlags, "qdisc-tbf-burst", "524288", false); err != nil {
+		t.Fatalf("Override(qdisc-tbf-burst, 524288) failed: %v", err)
+	}
+	if err := c.Override(testFlags, "qdisc", "tbf", false); err != nil {
+		t.Fatalf("Override(qdisc, tbf) failed: %v", err)
+	}
+
+	if got, want := c.QDisc, QDiscTBF; got != want {
+		t.Errorf("QDisc = %v, want %v", got, want)
+	}
+	if got, want := c.TBFRate, uint64(12500000); got != want {
+		t.Errorf("TBFRate = %d, want %d", got, want)
+	}
+	if got, want := c.TBFBurst, uint64(524288); got != want {
+		t.Errorf("TBFBurst = %d, want %d", got, want)
 	}
 }
 

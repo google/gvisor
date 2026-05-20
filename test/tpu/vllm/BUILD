@@ -15,6 +15,7 @@ go_library(
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/test/dockerutil",
+        "//pkg/test/llmutil",
         "//pkg/test/testutil",
     ],
 )

@@ -19,6 +19,7 @@ import (
 	"math/bits"
 	"path"
 	"slices"
+	"sort"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
@@ -178,4 +179,18 @@ func validatePropagation(opt string) error {
 		return fmt.Errorf("mount propagation options are mutually exclusive: %q", opt)
 	}
 	return nil
+}
+
+// KnownMountOptions returns a sorted list of all supported mount options.
+// Used by `runsc features`.
+func KnownMountOptions() []string {
+	res := make([]string, 0, len(optionsMap)+len(propOptionsMap))
+	for k := range optionsMap {
+		res = append(res, k)
+	}
+	for k := range propOptionsMap {
+		res = append(res, k)
+	}
+	sort.Strings(res)
+	return res
 }

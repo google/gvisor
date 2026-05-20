@@ -18,8 +18,8 @@ package proc
 import (
 	"time"
 
+	types "github.com/containerd/containerd/v2/pkg/protobuf/types"
 	runc "github.com/containerd/go-runc"
-	"github.com/gogo/protobuf/types"
 )
 
 // Mount holds filesystem mount configuration.

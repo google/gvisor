@@ -102,7 +102,7 @@ func NewPodMountHints(spec *specs.Spec) (*PodMountHints, error) {
 
 	// Validate all the parsed hints.
 	for name, m := range mnts {
-		log.Infof("Mount annotation found, name: %s, source: %q, type: %s, share: %v", name, m.Mount.Source, m.Mount.Type, m.Share)
+		log.Infof("Mount annotation found, name: %s, source: %q, type: %s, share: %v, suppress_directfs: %t", name, m.Mount.Source, m.Mount.Type, m.Share, m.SuppressDirectFS)
 		if m.Share == invalid || len(m.Mount.Source) == 0 || len(m.Mount.Type) == 0 {
 			log.Warningf("ignoring mount annotations for %q because of missing required field(s)", name)
 			delete(mnts, name)
@@ -121,13 +121,21 @@ func NewPodMountHints(spec *specs.Spec) (*PodMountHints, error) {
 }
 
 // MountHint represents extra information about mounts that are provided via
-// annotations. They can override mount type, and provide sharing information
-// so that mounts can be correctly shared inside the pod.
+// annotations. They can override mount type, provide sharing information so
+// that mounts can be correctly shared inside the pod, and tune gofer-specific
+// behavior such as suppressing directfs.
 // It is part of the sandbox.Sandbox struct, so it must be serializable.
 type MountHint struct {
 	Name  string      `json:"name"`
 	Share ShareType   `json:"share"`
 	Mount specs.Mount `json:"mount"`
+
+	// SuppressDirectFS suppresses the "directfs" gofer mount option for this
+	// mount even if --directfs is enabled globally. It does not enable directfs
+	// when --directfs is disabled because directfs requires some sandbox-wide
+	// settings (like seccomp filters) that can not be selectively enabled on
+	// containers.
+	SuppressDirectFS bool `json:"suppressDirectFS"`
 }
 
 func (m *MountHint) setField(key, val string) error {
@@ -143,6 +151,8 @@ func (m *MountHint) setField(key, val string) error {
 		return m.setShare(val)
 	case "options":
 		m.Mount.Options = specutils.FilterMountOptions(strings.Split(val, ","))
+	case "directfs":
+		return m.setDirectFS(val)
 	default:
 		return fmt.Errorf("invalid mount annotation: %s=%s", key, val)
 	}
@@ -169,6 +179,18 @@ func (m *MountHint) setShare(val string) error {
 		m.Share = shared
 	default:
 		return fmt.Errorf("invalid share value %q", val)
+	}
+	return nil
+}
+
+func (m *MountHint) setDirectFS(val string) error {
+	switch val {
+	case "default":
+		m.SuppressDirectFS = false
+	case "off":
+		m.SuppressDirectFS = true
+	default:
+		return fmt.Errorf("invalid directfs value %q, want \"default\" or \"off\"", val)
 	}
 	return nil
 }
@@ -244,6 +266,8 @@ type RootfsHint struct {
 	// Size of overlay tmpfs. Passed as `size={Size}` to tmpfs mount.
 	// Use default if unspecified.
 	Size string
+
+	SuppressDirectFS bool
 }
 
 func (r *RootfsHint) setSource(val string) error {
@@ -288,6 +312,18 @@ func (r *RootfsHint) setOptions(val string) error {
 	return nil
 }
 
+func (r *RootfsHint) setDirectFS(val string) error {
+	switch val {
+	case "default":
+		r.SuppressDirectFS = false
+	case "off":
+		r.SuppressDirectFS = true
+	default:
+		return fmt.Errorf("invalid directfs value %q, want \"default\" or \"off\"", val)
+	}
+	return nil
+}
+
 func (r *RootfsHint) setField(key, val string) error {
 	switch key {
 	case "source":
@@ -298,6 +334,8 @@ func (r *RootfsHint) setField(key, val string) error {
 		return r.Overlay.Set(val)
 	case "options":
 		return r.setOptions(val)
+	case "directfs":
+		return r.setDirectFS(val)
 	default:
 		return fmt.Errorf("invalid rootfs annotation: %s=%s", key, val)
 	}
@@ -322,7 +360,7 @@ func NewRootfsHint(spec *specs.Spec) (*RootfsHint, error) {
 	}
 	// Validate the parsed hint.
 	if hint != nil {
-		log.Infof("Rootfs annotations found, source: %q, type: %q, overlay: %q", hint.Mount.Source, hint.Mount.Type, hint.Overlay)
+		log.Infof("Rootfs annotations found, source: %q, type: %q, overlay: %q, suppress_directfs: %t", hint.Mount.Source, hint.Mount.Type, hint.Overlay, hint.SuppressDirectFS)
 		if len(hint.Mount.Source) == 0 || len(hint.Mount.Type) == 0 {
 			return nil, fmt.Errorf("rootfs annotations missing required field(s): %+v", hint)
 		}

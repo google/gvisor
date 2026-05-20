@@ -1054,7 +1054,7 @@ func Init() {
 			return abi
 		}
 
-		v580_65_06 := func() *driverABI {
+		v580_65_06 := addDriverABI(580, 65, 06, "04b10867af585e765cfbfdcf39ed5f4bd112375bebab0172eaa187c6aa5024ff", "e02acdc0d20d4a541aa5026bfddb1b9b4fc6bc64ae3b04ff9cb9c892700cf9c4", func() *driverABI {
 			abi := v575_51_02()
 			abi.frontendIoctl[nvgpu.NV_ESC_RM_MAP_MEMORY_DMA] = feHandler(frontendIoctlSimple[nvgpu.NVOS46_PARAMETERS_V580], nvconf.CapGraphics|nvconf.CapVideo)
 			abi.allocationClass[nvgpu.FERMI_VASPACE_A] = allocHandler(rmAllocSimple[nvgpu.NV_VASPACE_ALLOCATION_PARAMETERS_V580], compUtil)
@@ -1075,7 +1075,7 @@ func Init() {
 				return info
 			}
 			return abi
-		}
+		})
 
 		v580_105_08 := addDriverABI(580, 105, 8, "d9c6e8188672f3eb74dd04cfa69dd58479fa1d0162c8c28c8d17625763293475", ChecksumNoDriver, v580_65_06)
 

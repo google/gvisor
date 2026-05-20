@@ -19,15 +19,26 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/futex"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/sched"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+)
+
+// pidFDMode is an enum that clone3 uses to support CLONE_PIDFD.
+type pidFDMode int
+
+const (
+	dontMakePIDFD pidFDMode = iota
+	makePIDFD
+	makeThreadedPIDFD
 )
 
 // TaskConfig defines the configuration of a new Task (see below).
@@ -107,7 +118,12 @@ type TaskConfig struct {
 	// It may be nil.
 	SessionKeyring *auth.Key
 
+	// Origin indicates the origins of the new task.
 	Origin TaskOrigin
+
+	// Used by clone3 to support CLONE_PIDFD.
+	pidFDMode pidFDMode
+	pidFDAddr hostarch.Addr
 }
 
 // NewTask creates a new task defined by cfg.
@@ -117,6 +133,13 @@ type TaskConfig struct {
 // If successful, NewTask transfers references held by cfg to the new task.
 // Otherwise, NewTask releases them.
 func (ts *TaskSet) NewTask(ctx context.Context, cfg *TaskConfig) (*Task, error) {
+	t, _, err := ts.cloneNewTask(ctx, cfg)
+	return t, err
+}
+
+// cloneNewTask is a version of NewTask that the clone() syscall uses.
+// Unlike NewTask, cloneNewTask will create and return a pidFD if requested.
+func (ts *TaskSet) cloneNewTask(ctx context.Context, cfg *TaskConfig) (*Task, int32, error) {
 	var err error
 	cleanup := func() {
 		cfg.TaskImage.release(ctx)
@@ -131,20 +154,20 @@ func (ts *TaskSet) NewTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 	}
 	if err := cfg.UserCounters.incRLimitNProc(ctx); err != nil {
 		cleanup()
-		return nil, err
+		return nil, -1, err
 	}
-	t, err := ts.newTask(ctx, cfg)
+	t, fd, err := ts.newTask(ctx, cfg)
 	if err != nil {
 		cfg.UserCounters.decRLimitNProc()
 		cleanup()
-		return nil, err
+		return nil, -1, err
 	}
-	return t, nil
+	return t, fd, nil
 }
 
 // newTask is a helper for TaskSet.NewTask that only takes ownership of parts
 // of cfg if it succeeds.
-func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) {
+func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, int32, error) {
 	srcT := TaskFromContext(ctx)
 	tg := cfg.ThreadGroup
 	image := cfg.TaskImage
@@ -187,6 +210,38 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 	// We don't construct t.blockingTimer until Task.run(); see that function
 	// for justification.
 
+	var cu cleanup.Cleanup
+	defer cu.Clean()
+
+	pidFD := int32(-1)
+
+	if cfg.pidFDMode != dontMakePIDFD {
+		isThread := cfg.pidFDMode == makeThreadedPIDFD
+		t.pid = &pid{}
+		t.pid.t.Store(t)
+
+		vfsfd, err := srcT.pidFDOpen(t.pid, isThread, false /*nonblock*/)
+		if err != nil {
+			return nil, -1, err
+		}
+		defer vfsfd.DecRef(t)
+
+		fd, err := srcT.NewFDFrom(0, vfsfd, FDFlags{CloseOnExec: true})
+		if err != nil {
+			return nil, -1, err
+		}
+		pidFD = fd
+		cu.Add(func() {
+			if oldFile := srcT.FDTable().Remove(ctx, fd); oldFile != nil {
+				oldFile.DecRef(t)
+			}
+		})
+
+		if _, err := primitive.CopyUint32Out(srcT, cfg.pidFDAddr, uint32(fd)); err != nil {
+			return nil, -1, err
+		}
+	}
+
 	var (
 		cg                 Cgroup
 		charged, committed bool
@@ -202,7 +257,7 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 	if srcT != nil {
 		var err error
 		if charged, cg, err = srcT.ChargeFor(t, CgroupControllerPIDs, CgroupResourcePID, 1); err != nil {
-			return nil, err
+			return nil, -1, err
 		}
 		if charged {
 			defer func() {
@@ -240,16 +295,16 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		// doesn't matter too much since the caller will exit before it returns
 		// to userspace. If the caller isn't in the same thread group, then
 		// we're in uncharted territory and can return whatever we want.
-		return nil, linuxerr.EINTR
+		return nil, -1, linuxerr.EINTR
 	}
 	if ts.liveTasks == 0 && ts.noNewTasksIfZeroLive {
 		// Since liveTasks == 0, our caller cannot be a task goroutine invoking
 		// a syscall, so it's safe to return a non-errno error that is more
 		// explanatory.
-		return nil, fmt.Errorf("task creation disabled after Kernel.WaitExited() may have returned")
+		return nil, -1, fmt.Errorf("task creation disabled after Kernel.WaitExited() may have returned")
 	}
 	if err := ts.assignTIDsLocked(t); err != nil {
-		return nil, err
+		return nil, -1, err
 	}
 	// Below this point, newTask is expected not to fail (there is no rollback
 	// of assignTIDsLocked or any of the following).
@@ -312,7 +367,8 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 	// other pieces to be initialized as the task is used the context.
 	t.p = cfg.Kernel.Platform.NewContext(t.AsyncContext())
 
-	return t, nil
+	cu.Release()
+	return t, pidFD, nil
 }
 
 // assignTIDsLocked ensures that new task t is visible in all PID namespaces in

@@ -12,21 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !false
-// +build !false
+package linux
 
-package boot
-
-import (
-	"gvisor.dev/gvisor/pkg/sentry/kernel"
+// Flags for pidfd_open() from include/uapi/linux/pidfd.h.
+const (
+	PIDFD_NONBLOCK = O_NONBLOCK
+	PIDFD_THREAD   = O_EXCL
 )
 
-type FSSaveArgsExtra struct{}
-
-func setKernelFSSaveOptsFilesImpl(args *FSSaveArgs, opts *kernel.FSSaveOpts) error {
-	return setKernelFSSaveOptsFilesForLocalCheckpoint(args, opts)
-}
-
-func makeFSRestoreOptsImpl(args *Args) (fsRestoreOpts, error) {
-	return makeFSRestoreOptsForLocalCheckpoint(args)
-}
+// Flags for pidfd_send_signal().
+const (
+	PIDFD_SIGNAL_THREAD        = 1 << 0
+	PIDFD_SIGNAL_THREAD_GROUP  = 1 << 1
+	PIDFD_SIGNAL_PROCESS_GROUP = 1 << 2
+)

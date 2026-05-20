@@ -21,7 +21,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/cmd/sandboxsetup"
+	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 func tmpDir() string {
@@ -160,5 +163,110 @@ func TestResolveSymlinksLoop(t *testing.T) {
 	}
 	if _, err := sandboxsetup.ResolveSymlinks(root, "loop1"); err == nil {
 		t.Errorf("ResolveSymlinks() should have failed")
+	}
+}
+
+func TestLisafsNeededForDirectFSSuppression(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		spec       *specs.Spec
+		mountConfs []specutils.GoferMountConf
+		want       bool
+	}{
+		{
+			name:       "no suppression",
+			spec:       suppressedMountSpec("foo", "default"),
+			mountConfs: lisafsMountConfs(),
+		},
+		{
+			name:       "suppressed lisafs mount",
+			spec:       suppressedMountSpec("foo", "off"),
+			mountConfs: lisafsMountConfs(),
+			want:       true,
+		},
+		{
+			name:       "suppressed mount not in spec",
+			spec:       suppressedMountSpec("bar", "off"),
+			mountConfs: lisafsMountConfs(),
+		},
+		{
+			name: "suppressed erofs mount",
+			spec: suppressedMountSpec("foo", "off"),
+			mountConfs: []specutils.GoferMountConf{
+				{Lower: specutils.Lisafs, Upper: specutils.NoOverlay},
+				{Lower: specutils.Erofs, Upper: specutils.NoOverlay},
+			},
+		},
+		{
+			name:       "suppressed bind rootfs",
+			spec:       suppressedRootfsSpec("bind", "off"),
+			mountConfs: rootfsOnlyMountConfs(specutils.Lisafs),
+			want:       true,
+		},
+		{
+			name:       "rootfs hint without suppression",
+			spec:       suppressedRootfsSpec("bind", "default"),
+			mountConfs: rootfsOnlyMountConfs(specutils.Lisafs),
+		},
+		{
+			name:       "suppressed erofs rootfs",
+			spec:       suppressedRootfsSpec("erofs", "off"),
+			mountConfs: rootfsOnlyMountConfs(specutils.Erofs),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mountHints, err := boot.NewPodMountHints(tc.spec)
+			if err != nil {
+				t.Fatalf("NewPodMountHints failed: %v", err)
+			}
+			rootfsHint, err := boot.NewRootfsHint(tc.spec)
+			if err != nil {
+				t.Fatalf("NewRootfsHint failed: %v", err)
+			}
+			if got := lisafsNeededForDirectFSSuppression(tc.spec, mountHints, rootfsHint, tc.mountConfs); got != tc.want {
+				t.Errorf("lisafsNeededForDirectFSSuppression = %t, want %t", got, tc.want)
+			}
+		})
+	}
+}
+
+func suppressedMountSpec(hintSource, directfs string) *specs.Spec {
+	return &specs.Spec{
+		Annotations: map[string]string{
+			boot.MountPrefix + "mount1.source":   hintSource,
+			boot.MountPrefix + "mount1.type":     "bind",
+			boot.MountPrefix + "mount1.share":    "container",
+			boot.MountPrefix + "mount1.directfs": directfs,
+		},
+		Mounts: []specs.Mount{
+			{
+				Source:      "foo",
+				Type:        "bind",
+				Destination: "/mnt",
+			},
+		},
+	}
+}
+
+func suppressedRootfsSpec(rootfsType, directfs string) *specs.Spec {
+	return &specs.Spec{
+		Annotations: map[string]string{
+			boot.RootfsPrefix + "source":   "/tmp/rootfs",
+			boot.RootfsPrefix + "type":     rootfsType,
+			boot.RootfsPrefix + "directfs": directfs,
+		},
+	}
+}
+
+func lisafsMountConfs() []specutils.GoferMountConf {
+	return []specutils.GoferMountConf{
+		{Lower: specutils.Lisafs, Upper: specutils.NoOverlay},
+		{Lower: specutils.Lisafs, Upper: specutils.NoOverlay},
+	}
+}
+
+func rootfsOnlyMountConfs(lower specutils.GoferMountConfLowerType) []specutils.GoferMountConf {
+	return []specutils.GoferMountConf{
+		{Lower: lower, Upper: specutils.NoOverlay},
 	}
 }

@@ -298,6 +298,31 @@ TEST(TimerfdClockRealtimeTest, ClockAbsoluteRealtime) {
   EXPECT_EQ(1, val);
 }
 
+// Same as the above ClockAbsoluteRealtime test but passes
+// TFD_TIMER_CANCEL_ON_SET to verify it behaves as it does without the flag.
+TEST(TimerfdClockRealtimeTest, ClockAbsoluteRealtimeCancelOnSet) {
+  // Skip on native Linux since we can't guarantee there
+  // will be no clock jumps causing ECANCELED
+  SKIP_IF(!IsRunningOnGvisor());
+
+  constexpr int kDelaySecs = 1;
+
+  struct itimerspec its = {};
+  ASSERT_EQ(0, clock_gettime(CLOCK_REALTIME, &its.it_value));
+  its.it_value.tv_sec += kDelaySecs;
+
+  auto const tfd = ASSERT_NO_ERRNO_AND_VALUE(TimerfdCreate(CLOCK_REALTIME, 0));
+  ASSERT_THAT(
+      timerfd_settime(tfd.get(), TFD_TIMER_ABSTIME | TFD_TIMER_CANCEL_ON_SET,
+                      &its, nullptr),
+      SyscallSucceeds());
+
+  uint64_t val = 0;
+  ASSERT_THAT(ReadFd(tfd.get(), &val, sizeof(uint64_t)),
+              SyscallSucceedsWithValue(sizeof(uint64_t)));
+  EXPECT_EQ(1, val);
+}
+
 }  // namespace
 
 }  // namespace testing

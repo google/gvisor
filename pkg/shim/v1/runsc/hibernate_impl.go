@@ -48,3 +48,8 @@ func (s *HibernateServerEndpoint) RegisterService(srvc extension.TaskServiceExt)
 func (s *runscService) Hide(ctx context.Context, req *hibernatepb.HideRequest, resp *hibernatepb.HideResponse) error {
 	return fmt.Errorf("Hide is not implemented")
 }
+
+// Unhide unhides the gVisor sandbox.
+func (s *runscService) Unhide(ctx context.Context, req *hibernatepb.UnhideRequest, resp *hibernatepb.UnhideResponse) error {
+	return fmt.Errorf("Unhide is not implemented")
+}

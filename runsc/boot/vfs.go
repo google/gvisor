@@ -322,7 +322,7 @@ func compileMounts(spec *specs.Spec, conf *config.Config, containerID string) []
 }
 
 // goferMountData creates a slice of gofer mount data.
-func goferMountData(fd int, fa config.FileAccessType, conf *config.Config) []string {
+func goferMountData(fd int, fa config.FileAccessType, conf *config.Config, suppressDirectFS bool) []string {
 	opts := []string{
 		"trans=fd",
 		"rfdno=" + strconv.Itoa(fd),
@@ -331,7 +331,7 @@ func goferMountData(fd int, fa config.FileAccessType, conf *config.Config) []str
 	if fa == config.FileAccessShared {
 		opts = append(opts, "cache=remote_revalidating")
 	}
-	if conf.DirectFS {
+	if conf.DirectFS && !suppressDirectFS {
 		opts = append(opts, "directfs")
 	}
 	if !conf.HostFifo.AllowOpen() {
@@ -472,7 +472,7 @@ func getMountAccessType(conf *config.Config, hint *MountHint) config.FileAccessT
 func (c *containerMounter) mountAll(rootCtx context.Context, rootCreds *auth.Credentials, spec *specs.Spec, conf *config.Config, rootProcArgs *kernel.CreateProcessArgs) (*vfs.MountNamespace, error) {
 	log.Infof("Configuring container's file system")
 
-	mns, err := c.createMountNamespace(rootCtx, conf, rootCreds)
+	mns, err := c.createMountNamespace(rootCtx, spec, conf, rootCreds)
 	if err != nil {
 		return nil, fmt.Errorf("creating mount namespace: %w", err)
 	}
@@ -502,9 +502,15 @@ func (c *containerMounter) mountAll(rootCtx context.Context, rootCreds *auth.Cre
 }
 
 // createMountNamespace creates the container's root mount and namespace.
-func (c *containerMounter) createMountNamespace(ctx context.Context, conf *config.Config, creds *auth.Credentials) (*vfs.MountNamespace, error) {
+func (c *containerMounter) createMountNamespace(ctx context.Context, spec *specs.Spec, conf *config.Config, creds *auth.Credentials) (*vfs.MountNamespace, error) {
 	ioFD := c.goferFDs.remove()
 	rootfsConf := c.goferMountConfs[0]
+
+	rootfsHint, err := NewRootfsHint(spec)
+	if err != nil {
+		return nil, fmt.Errorf("parsing rootfs hint: %w", err)
+	}
+	suppressDirectFS := rootfsHint != nil && rootfsHint.SuppressDirectFS
 
 	var (
 		fsName string
@@ -514,7 +520,7 @@ func (c *containerMounter) createMountNamespace(ctx context.Context, conf *confi
 	case rootfsConf.ShouldUseLisafs():
 		fsName = gofer.Name
 
-		data := goferMountData(ioFD, conf.FileAccess, conf)
+		data := goferMountData(ioFD, conf.FileAccess, conf, suppressDirectFS)
 
 		// We can't check for overlayfs here because sandbox is chroot'ed and gofer
 		// can only send mount options for specs.Mounts (specs.Root is missing
@@ -1014,7 +1020,7 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 		if err != nil {
 			return "", nil, err
 		}
-		data = append(data, goferMountData(m.goferFD.Release(), getMountAccessType(conf, m.hint), conf)...)
+		data = append(data, goferMountData(m.goferFD.Release(), getMountAccessType(conf, m.hint), conf, m.hint != nil && m.hint.SuppressDirectFS)...)
 		internalData = gofer.InternalFilesystemOptions{
 			UniqueID: checkpoint.ResourceID{
 				ContainerName: containerName,

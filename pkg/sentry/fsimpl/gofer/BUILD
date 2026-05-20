@@ -87,6 +87,7 @@ go_library(
         "string_list.go",
         "symlink.go",
         "time.go",
+        "xattr.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [

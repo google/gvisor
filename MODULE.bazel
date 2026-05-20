@@ -18,6 +18,9 @@ bazel_dep(name = "google_benchmark", version = "1.8.4", repo_name = "com_google_
 bazel_dep(name = "nlohmann_json", version = "3.11.3")
 bazel_dep(name = "rules_python", version = "1.7.0")
 bazel_dep(name = "zstd", version = "1.5.5", repo_name = "llvm_zstd")
+bazel_dep(name = "protoc-gen-validate", version = "1.3.0")
+bazel_dep(name = "xds", version = "0.0.0-20251210-ee656c7")
+bazel_dep(name = "cel-spec", version = "0.25.1")
 
 archive_override(
     module_name = "rules_go",
@@ -139,29 +142,40 @@ use_repo(
     "com_github_burntsushi_toml",
     "com_github_cenkalti_backoff",
     "com_github_cilium_ebpf",
-    "com_github_containerd_cgroups",
+    "com_github_containerd_cgroups_v3",
     "com_github_containerd_console",
-    "com_github_containerd_containerd",
+    "com_github_containerd_containerd_api",
+    "com_github_containerd_containerd_v2",
+    "com_github_containerd_continuity",
     "com_github_containerd_errdefs",
+    "com_github_containerd_errdefs_pkg",
     "com_github_containerd_fifo",
     "com_github_containerd_go_runc",
     "com_github_containerd_log",
+    "com_github_containerd_plugin",
     "com_github_containerd_ttrpc",
-    "com_github_containerd_typeurl",
+    "com_github_containerd_typeurl_v2",
     "com_github_coreos_go_systemd_v22",
     "com_github_creack_pty",
     "com_github_distribution_reference",
     "com_github_docker_docker",
     "com_github_docker_go_connections",
+    "com_github_docker_go_units",
+    "com_github_emicklei_go_restful_v3",
     "com_github_felixge_httpsnoop",
+    "com_github_fxamacker_cbor_v2",
     "com_github_go_echarts_go_echarts_v2",
     "com_github_go_logr_logr",
     "com_github_go_logr_stdr",
+    "com_github_go_openapi_jsonpointer",
+    "com_github_go_openapi_jsonreference",
+    "com_github_go_openapi_swag",
     "com_github_godbus_dbus_v5",
     "com_github_gofrs_flock",
     "com_github_gogo_protobuf",
     "com_github_golang_protobuf",
     "com_github_google_btree",
+    "com_github_google_gnostic_models",
     "com_github_google_go_cmp",
     "com_github_google_go_github_v56",
     "com_github_google_go_querystring",
@@ -176,11 +190,21 @@ use_repo(
     "com_github_hanwen_go_fuse_v2",
     "com_github_ianlancetaylor_demangle",
     "com_github_imdario_mergo",
+    "com_github_josharian_intern",
+    "com_github_mailru_easyjson",
     "com_github_mattbaird_jsonpatch",
     "com_github_matttproud_golang_protobuf_extensions",
+    "com_github_mdlayher_socket",
+    "com_github_mdlayher_vsock",
     "com_github_moby_docker_image_spec",
     "com_github_moby_sys_capability",
+    "com_github_moby_sys_sequential",
+    "com_github_moby_sys_signal",
+    "com_github_moby_sys_symlink",
+    "com_github_moby_sys_user",
+    "com_github_moby_sys_userns",
     "com_github_mohae_deepcopy",
+    "com_github_munnerz_goautoneg",
     "com_github_opencontainers_image_spec",
     "com_github_opencontainers_runtime_spec",
     "com_github_prometheus_client_model",
@@ -188,6 +212,7 @@ use_repo(
     "com_github_sirupsen_logrus",
     "com_github_spf13_pflag",
     "com_github_vishvananda_netlink",
+    "com_github_x448_float16",
     "com_github_xeipuuv_gojsonpointer",
     "com_github_xeipuuv_gojsonreference",
     "com_github_xeipuuv_gojsonschema",
@@ -198,6 +223,8 @@ use_repo(
     "com_google_cloud_go_compute_metadata",
     "com_google_cloud_go_container",
     "com_google_cloud_go_iam",
+    "com_google_cloud_go_storage",
+    "in_gopkg_evanphx_json_patch_v4",
     "in_gopkg_yaml_v2",
     "in_gopkg_yaml_v3",
     "io_k8s_api",
@@ -221,9 +248,11 @@ use_repo(
     "org_golang_x_oauth2",
     "org_golang_x_sync",
     "org_golang_x_sys",
+    "org_golang_x_telemetry",
     "org_golang_x_term",
     "org_golang_x_time",
     "org_golang_x_tools",
+    "org_golang_x_xerrors",
     "org_uber_go_atomic",
     "org_uber_go_multierr",
 )
@@ -400,8 +429,8 @@ go_deps.module(
 )
 go_deps.module(
     path = "github.com/google/uuid",
-    sum = "h1:t6JiXgmwXMjEs8VusXIJk2BXHsn+wx8BZdTaoZ5fu7I=",
-    version = "v1.3.0",
+    sum = "h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=",
+    version = "v1.6.0",
 )
 go_deps.module(
     path = "github.com/googleapis/enterprise-certificate-proxy",
@@ -524,21 +553,6 @@ go_deps.module(
     version = "v1.0.1",
 )
 go_deps.module(
-    path = "github.com/containerd/containerd",
-    sum = "h1:Bcj0ZXqgIs6GG+YbaKkMX3Dap0JsIVG4UYFOLRo7iX4=",
-    version = "v1.6.36",
-)
-go_deps.module(
-    path = "github.com/containerd/cgroups",
-    sum = "h1:iJnMvco9XGvKUvNQkv88bE4uJXxRQH18efbKo9w5vHQ=",
-    version = "v1.0.1",
-)
-go_deps.module(
-    path = "github.com/containerd/errdefs",
-    sum = "h1:m0wCRBiu1WJT/Fr+iOoQHMQS/eP5myQ8lCv4Dz5ZURM=",
-    version = "v0.1.0",
-)
-go_deps.module(
     path = "github.com/containerd/log",
     sum = "h1:TCJt7ioM2cr/tfR8GPbGf9/VRAX8D2B4PjzCpfX540I=",
     version = "v0.1.0",
@@ -549,14 +563,114 @@ go_deps.module(
     version = "v0.5.5",
 )
 go_deps.module(
-    path = "k8s.io/api",
-    sum = "h1:op+yeqZLQxDt2tEnrOP9Y+WA7l4Lxh+7R0IWEzyuk2I=",
-    version = "v0.23.16",
+    path = "github.com/fxamacker/cbor/v2",
+    sum = "h1:iM5WgngdRBanHcxugY4JySA0nk1wZorNOpTgCMedv5E=",
+    version = "v2.7.0",
 )
 go_deps.module(
-    path = "k8s.io/apimachinery",
-    sum = "h1:f6Q+3qYv3qWvbDZp2iUhwC2rzMRBkSb7JYBhmeVK5pc=",
-    version = "v0.23.16",
+    path = "github.com/x448/float16",
+    sum = "h1:qLwI1I70+NjRFUR3zs1JPUCgaCXSh3SW62uAKT1mSBM=",
+    version = "v0.8.4",
+)
+go_deps.module(
+    path = "github.com/moby/sys/userns",
+    sum = "h1:tVLXkFOxVu9A64/yh59slHVv9ahO9UIev4JZusOLG/g=",
+    version = "v0.1.0",
+)
+go_deps.module(
+    path = "github.com/docker/go-units",
+    sum = "h1:69rxXcBk27SvSaaxTtLh/8llcHD8vYHT7WSdRZ/jvr4=",
+    version = "v0.5.0",
+)
+go_deps.module(
+    path = "github.com/mdlayher/vsock",
+    sum = "h1:pC1mTJTvjo1r9n9fbm7S1j04rCgCzhCOS5DY0zqHlnQ=",
+    version = "v1.2.1",
+)
+go_deps.module(
+    path = "github.com/mdlayher/socket",
+    sum = "h1:VZaqt6RkGkt2OE9l3GcC6nZkqD3xKeQLyfleW/uBcos=",
+    version = "v0.5.1",
+)
+go_deps.module(
+    path = "github.com/containerd/continuity",
+    sum = "h1:ZRoN1sXq9u7V6QoHMcVWGhOwDFqZ4B9i5H6un1Wh0x4=",
+    version = "v0.4.5",
+)
+go_deps.module(
+    path = "github.com/moby/sys/user",
+    sum = "h1:jhcMKit7SA80hivmFJcbB1vqmw//wU61Zdui2eQXuMs=",
+    version = "v0.4.0",
+)
+go_deps.module(
+    path = "github.com/moby/sys/sequential",
+    sum = "h1:qrx7XFUd/5DxtqcoH1h438hF5TmOvzC/lspjy7zgvCU=",
+    version = "v0.6.0",
+)
+go_deps.module(
+    path = "github.com/moby/sys/signal",
+    sum = "h1:PrQxdvxcGijdo6UXXo/lU/TvHUWyPhj7UOpSo8tuvk0=",
+    version = "v0.7.1",
+)
+go_deps.module(
+    path = "github.com/moby/sys/symlink",
+    sum = "h1:GZX89mEZ9u53f97npBy4Rc3vJKj7JBDj/PN2I22GrNU=",
+    version = "v0.3.0",
+)
+go_deps.module(
+    path = "github.com/munnerz/goautoneg",
+    sum = "h1:C3w9PqII01/Oq1c1nUAm88MOHcQC9l5mIlSMApZMrHA=",
+    version = "v0.0.0-20191010083416-a7dc8b61c822",
+)
+go_deps.module(
+    path = "github.com/google/gnostic-models",
+    sum = "h1:yo/ABAfM5IMRsS1VnXjTBvUb61tFIHozhlYvRgGre9I=",
+    version = "v0.6.8",
+)
+go_deps.module(
+    path = "gopkg.in/evanphx/json-patch.v4",
+    sum = "h1:n6jtcsulIzXPJaxegRbvFNNrZDjbij7ny3gmSPG+6V4=",
+    version = "v4.12.0",
+)
+go_deps.module(
+    path = "github.com/go-openapi/jsonreference",
+    sum = "h1:3sVjiK66+uXK/6oQ8xgcRKcFgQ5KXa2KvnJRumpMGbE=",
+    version = "v0.20.2",
+)
+go_deps.module(
+    path = "github.com/go-openapi/jsonpointer",
+    sum = "h1:YgdVicSA9vH5RiHs9TZW5oyafXZFc6+2Vc1rr/O9oNQ=",
+    version = "v0.21.0",
+)
+go_deps.module(
+    path = "github.com/go-openapi/swag",
+    sum = "h1:vsEVJDUo2hPJ2tu0/Xc+4noaxyEffXNIs3cOULZ+GrE=",
+    version = "v0.23.0",
+)
+go_deps.module(
+    path = "github.com/emicklei/go-restful/v3",
+    sum = "h1:rAQeMHw1c7zTmncogyy8VvRZwtkmkZ4FxERmMY4rD+g=",
+    version = "v3.11.0",
+)
+go_deps.module(
+    path = "github.com/mailru/easyjson",
+    sum = "h1:UGYAvKxe3sBsEDzO8ZeWOSlIQfWFlxbzLZe7hwFURr0=",
+    version = "v0.7.7",
+)
+go_deps.module(
+    path = "github.com/josharian/intern",
+    sum = "h1:vlS4z54oSdjm0bgjRigI+G1HpF+tI+9rE5LLzOg8HmY=",
+    version = "v1.0.0",
+)
+go_deps.module(
+    path = "golang.org/x/telemetry",
+    sum = "h1:dHQOQddU4YHS5gY33/6klKjq7Gp3WwMyOXGNp5nzRj8=",
+    version = "v0.0.0-20250908211612-aef8a434d053",
+)
+go_deps.module(
+    path = "golang.org/x/xerrors",
+    sum = "h1:H2TDz8ibqkAF6YGhCdN3jS9O0/s90v0rJh3X/OLHEUk=",
+    version = "v0.0.0-20220907171357-04be3eba64a2",
 )
 go_deps.gazelle_override(
     directives = [
@@ -568,13 +682,13 @@ go_deps.gazelle_override(
     directives = [
         "gazelle:proto disable",
     ],
-    path = "github.com/containerd/containerd",
+    path = "github.com/containerd/containerd/v2",
 )
 go_deps.gazelle_override(
     directives = [
         "gazelle:proto disable",
     ],
-    path = "github.com/containerd/cgroups",
+    path = "github.com/containerd/cgroups/v3",
 )
 go_deps.gazelle_override(
     directives = [

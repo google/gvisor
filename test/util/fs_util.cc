@@ -716,6 +716,20 @@ PosixErrorOr<bool> IsOverlayfs(const std::string& path) {
   return stat.f_type == OVERLAYFS_SUPER_MAGIC;
 }
 
+PosixErrorOr<bool> IsGoferfs(const std::string& path) {
+  struct statfs stat;
+  if (statfs(path.c_str(), &stat)) {
+    if (errno == ENOENT) {
+      // Nothing at path, don't raise this as an error. Instead, just report no
+      // goferfs at path.
+      return false;
+    }
+    return PosixError(errno,
+                      absl::StrFormat("statfs(\"%s\", %#p)", path, &stat));
+  }
+  return stat.f_type == V9FS_MAGIC;
+}
+
 PosixError CheckSameFile(const FileDescriptor& fd1, const FileDescriptor& fd2) {
   struct stat stat_result1, stat_result2;
   int res = fstat(fd1.get(), &stat_result1);

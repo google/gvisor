@@ -59,6 +59,9 @@ func TestPodMountHintsHappy(t *testing.T) {
 	if want := []string(nil); !slices.Equal(want, mount1.Mount.Options) {
 		t.Errorf("mount1 type, want: %q, got: %q", want, mount1.Mount.Options)
 	}
+	if mount1.SuppressDirectFS {
+		t.Errorf("mount1 SuppressDirectFS, want: false, got: true")
+	}
 
 	mount2 := podHints.Mounts["mount2"]
 	if want := "mount2"; want != mount2.Name {
@@ -166,6 +169,77 @@ func TestPodMountHintsIgnore(t *testing.T) {
 				if hint, ok := podHints.Mounts["mount1"]; ok {
 					t.Errorf("hint was provided when it should have been omitted: %+v", hint)
 				}
+			}
+		})
+	}
+}
+
+func TestPodMountHintsDirectFSInvalid(t *testing.T) {
+	spec := &specs.Spec{
+		Annotations: map[string]string{
+			MountPrefix + "mount1.source":   "foo",
+			MountPrefix + "mount1.type":     "bind",
+			MountPrefix + "mount1.share":    "container",
+			MountPrefix + "mount1.directfs": "maybe",
+
+			MountPrefix + "mount2.source":   "bar",
+			MountPrefix + "mount2.type":     "bind",
+			MountPrefix + "mount2.share":    "container",
+			MountPrefix + "mount2.directfs": "off",
+		},
+	}
+	podHints, err := NewPodMountHints(spec)
+	if err != nil {
+		t.Fatalf("NewPodMountHints failed: %v", err)
+	}
+	mount1, ok := podHints.Mounts["mount1"]
+	if !ok {
+		t.Fatalf("mount1 hint should be retained when directfs value is invalid")
+	}
+	if mount1.SuppressDirectFS {
+		t.Errorf("mount1 SuppressDirectFS, want: false, got: true")
+	}
+	mount2, ok := podHints.Mounts["mount2"]
+	if !ok {
+		t.Fatalf("mount2 hint should be retained when sibling has invalid directfs")
+	}
+	if !mount2.SuppressDirectFS {
+		t.Errorf("mount2 SuppressDirectFS, want: true, got: false")
+	}
+}
+
+func TestPodMountHintsDirectFS(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		value    string
+		suppress bool
+	}{
+		{
+			name:     "default",
+			value:    "default",
+			suppress: false,
+		},
+		{
+			name:     "off",
+			value:    "off",
+			suppress: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			spec := &specs.Spec{
+				Annotations: map[string]string{
+					MountPrefix + "mount1.source":   "foo",
+					MountPrefix + "mount1.type":     "bind",
+					MountPrefix + "mount1.share":    "container",
+					MountPrefix + "mount1.directfs": tc.value,
+				},
+			}
+			podHints, err := NewPodMountHints(spec)
+			if err != nil {
+				t.Fatalf("NewPodMountHints failed: %v", err)
+			}
+			if got := podHints.Mounts["mount1"].SuppressDirectFS; got != tc.suppress {
+				t.Errorf("SuppressDirectFS = %t, want %t", got, tc.suppress)
 			}
 		})
 	}
@@ -281,6 +355,34 @@ func TestRootfsHintHappy(t *testing.T) {
 	}
 }
 
+func TestRootfsHintDirectFS(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		value    string
+		suppress bool
+	}{
+		{name: "default", value: "default", suppress: false},
+		{name: "off", value: "off", suppress: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			spec := &specs.Spec{
+				Annotations: map[string]string{
+					RootfsPrefix + "source":   "/tmp/rootfs.img",
+					RootfsPrefix + "type":     erofs.Name,
+					RootfsPrefix + "directfs": tc.value,
+				},
+			}
+			hint, err := NewRootfsHint(spec)
+			if err != nil {
+				t.Fatalf("NewRootfsHint failed: %v", err)
+			}
+			if hint.SuppressDirectFS != tc.suppress {
+				t.Errorf("SuppressDirectFS = %t, want %t", hint.SuppressDirectFS, tc.suppress)
+			}
+		})
+	}
+}
+
 // TestRootfsHintErrors tests that proper errors will be returned when parsing
 // invalid rootfs annotations.
 func TestRootfsHintErrors(t *testing.T) {
@@ -340,6 +442,15 @@ func TestRootfsHintErrors(t *testing.T) {
 				RootfsPrefix + "overlay": config.MemoryOverlay.String(),
 			},
 			error: "rootfs annotations missing required field",
+		},
+		{
+			name: "invalid directfs",
+			annotations: map[string]string{
+				RootfsPrefix + "source":   imagePath,
+				RootfsPrefix + "type":     erofs.Name,
+				RootfsPrefix + "directfs": "maybe",
+			},
+			error: "invalid directfs value",
 		},
 	} {
 		t.Run(tst.name, func(t *testing.T) {

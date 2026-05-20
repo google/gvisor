@@ -8,7 +8,6 @@ package(
 go_library(
     name = "sandbox",
     srcs = [
-        "memory.go",
         "network.go",
         "network_unsafe.go",
         "no_xdp.go",
@@ -28,6 +27,7 @@ go_library(
         "//pkg/control/server",
         "//pkg/coverage",
         "//pkg/fd",
+        "//pkg/hostos",
         "//pkg/log",
         "//pkg/metric:metric_go_proto",
         "//pkg/prometheus",
@@ -48,6 +48,7 @@ go_library(
         "//runsc/boot",
         "//runsc/boot/procfs",
         "//runsc/cgroup",
+        "//runsc/checkpointgofer",
         "//runsc/config",
         "//runsc/console",
         "//runsc/donation",
@@ -71,7 +72,6 @@ go_test(
     name = "sandbox_test",
     size = "small",
     srcs = [
-        "memory_test.go",
         "network_test.go",
     ],
     library = ":sandbox",

@@ -63,6 +63,7 @@ func commands() (map[util.SubCommand]string, []subcommands.Command) {
 		new(cmd.Do):           userGroup,
 		new(cmd.FSCheckpoint): userGroup,
 		new(cmd.PortForward):  userGroup,
+		new(cmd.SandboxExec):  userGroup,
 		new(cmd.Tar):          userGroup,
 
 		// Helpers.
@@ -72,6 +73,7 @@ func commands() (map[util.SubCommand]string, []subcommands.Command) {
 		new(nvproxy.Nvproxy): helperGroup,
 		new(trace.Trace):     helperGroup,
 		new(cmd.CPUFeatures): helperGroup,
+		new(cmd.Features):    helperGroup,
 
 		new(cmd.Debug):        debugGroup,
 		new(cmd.Statefile):    debugGroup,

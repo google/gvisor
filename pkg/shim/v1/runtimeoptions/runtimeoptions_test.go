@@ -15,12 +15,11 @@
 package runtimeoptions
 
 import (
-	"bytes"
 	"testing"
 
-	shim "github.com/containerd/containerd/runtime/v1/shim/v1"
-	"github.com/containerd/typeurl"
-	"github.com/gogo/protobuf/proto"
+	task "github.com/containerd/containerd/api/runtime/task/v2"
+	typeurl "github.com/containerd/typeurl/v2"
+	"google.golang.org/protobuf/encoding/prototext"
 )
 
 func TestCreateTaskRequest(t *testing.T) {
@@ -29,15 +28,15 @@ func TestCreateTaskRequest(t *testing.T) {
   type_url: "runtimeoptions.v1.Options"
   value: "\n\010type_url\022\013config_path"
 >`
-	got := &shim.CreateTaskRequest{} // Should have raw options.
-	if err := proto.UnmarshalText(encodedText, got); err != nil {
+	got := &task.CreateTaskRequest{} // Should have raw options.
+	if err := prototext.Unmarshal([]byte(encodedText), got); err != nil {
 		t.Fatalf("unable to unmarshal text: %v", err)
 	}
-	var textBuffer bytes.Buffer
-	if err := proto.MarshalText(&textBuffer, got); err != nil {
+	gotText, err := prototext.Marshal(got)
+	if err != nil {
 		t.Errorf("unable to marshal text: %v", err)
 	}
-	t.Logf("got: %s", textBuffer.String())
+	t.Logf("got: %s", string(gotText))
 
 	// Check the options.
 	wantOptions := &Options{}
@@ -49,9 +48,9 @@ func TestCreateTaskRequest(t *testing.T) {
 	}
 	gotOptions, ok := gotMessage.(*Options)
 	if !ok {
-		t.Fatalf("got %v, want %v", gotMessage, wantOptions)
+		t.Fatalf("got %T, want %T", gotMessage, wantOptions)
 	}
-	if !proto.Equal(gotOptions, wantOptions) {
-		t.Fatalf("got %v, want %v", gotOptions, wantOptions)
+	if gotOptions.TypeUrl != wantOptions.TypeUrl || gotOptions.ConfigPath != wantOptions.ConfigPath {
+		t.Fatalf("got %+v, want %+v", gotOptions, wantOptions)
 	}
 }

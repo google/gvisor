@@ -133,9 +133,10 @@ type RunOpts struct {
 }
 
 func makeContainer(ctx context.Context, logger testutil.Logger, runtime string) *Container {
-	// Slashes are not allowed in container names.
+	// Slashes and pluses are not allowed in container names.
 	name := testutil.RandomID(logger.Name())
 	name = strings.ReplaceAll(name, "/", "-")
+	name = strings.ReplaceAll(name, "+", "p")
 	client, err := client.NewClientWithOpts(client.FromEnv)
 	if err != nil {
 		return nil
@@ -886,19 +887,18 @@ func (cp *ContainerPool) Get(ctx context.Context) (*Container, func(), error) {
 	}
 }
 
-// GetExclusive ensures all pooled containers are in the pool, reserves all
-// of them, and returns one of them, along with a function to release them all
-// back to the pool.
-func (cp *ContainerPool) GetExclusive(ctx context.Context) (*Container, func(), error) {
+// Lockout ensures all pooled containers are in the pool, reserves all of them
+// to prevent any other task from using the pool, and returns a function to
+// release them all back to the pool.
+func (cp *ContainerPool) Lockout(ctx context.Context) (func(), error) {
 	select {
 	case <-cp.exclusiveLockCh:
 		// Proceed.
 	case <-cp.shutdownCh:
-		return nil, func() {}, errors.New("pool's closed")
+		return func() {}, errors.New("pool's closed")
 	case <-ctx.Done():
-		return nil, func() {}, ctx.Err()
+		return func() {}, ctx.Err()
 	}
-	var reserved *Container
 	releaseFuncs := make([]func(), 0, cp.numContainers)
 	releaseAll := func() {
 		for i := len(releaseFuncs) - 1; i >= 0; i-- {
@@ -915,19 +915,15 @@ func (cp *ContainerPool) GetExclusive(ctx context.Context) (*Container, func(), 
 			got = c
 		case <-cp.shutdownCh:
 			releaseAll()
-			return nil, func() {}, errors.New("pool's closed")
+			return func() {}, errors.New("pool's closed")
 		case <-ctx.Done():
 			releaseAll()
-			return nil, func() {}, ctx.Err()
+			return func() {}, ctx.Err()
 		}
 		cp.setContainerState(got, stateHeldForExclusive)
 		releaseFuncs = append(releaseFuncs, cp.releaseFn(got))
-		if reserved == nil {
-			reserved = got
-		}
 	}
-	cp.setContainerState(reserved, stateReservedExclusive)
-	return reserved, releaseAll, nil
+	return releaseAll, nil
 }
 
 // CleanUp waits for all containers to be back into the pool, and cleans up

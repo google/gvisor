@@ -23,12 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/timing"
 )
 
-type SaveOptsExtra struct{}
-
-func setSaveOptsImpl(o *SaveOpts, saveOpts *state.SaveOpts) error {
-	return setSaveOptsForLocalCheckpointFiles(o, saveOpts)
-}
-
 func preSaveImpl(k *kernel.Kernel, o *state.SaveOpts) error {
 	return nil
 }

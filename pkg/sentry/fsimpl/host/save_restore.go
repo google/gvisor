@@ -83,7 +83,7 @@ func (i *inode) afterLoad(ctx context.Context) {
 	fdmap := vfs.RestoreFilesystemFDMapFromContext(ctx)
 	fd, ok := fdmap[i.restoreKey]
 	if !ok {
-		panic(fmt.Sprintf("no host FD available for %+v, map: %v", i.restoreKey, fdmap))
+		panic(fmt.Sprintf("no host FD available for %q, map: %#v", i.restoreKey, fdmap))
 	}
 	log.Debugf("Remapping host FD from %d to %d", i.hostFD, fd)
 	i.hostFD = fd

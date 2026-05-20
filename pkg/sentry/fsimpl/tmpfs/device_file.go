@@ -52,12 +52,12 @@ func isOvlWhiteoutDev(mode linux.FileMode, major, minor uint32) bool {
 }
 
 // Precondition: fs.mu must be locked for writing.
-func (fs *filesystem) newDeviceFileLocked(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, major, minor uint32, parentDir *directory) *inode {
+func (fs *filesystem) newDeviceFileLocked(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, major, minor uint32, parentDir *directory) (*inode, error) {
 	ovlWhiteout := isOvlWhiteoutDev(mode, major, minor)
 	if ovlWhiteout && fs.ovlWhiteout != nil {
 		// If reusing the same inode, acts like a hard link.
 		fs.ovlWhiteout.inode.incLinksLocked()
-		return &fs.ovlWhiteout.inode
+		return &fs.ovlWhiteout.inode, nil
 	}
 	file := &deviceFile{
 		major: major,
@@ -71,12 +71,15 @@ func (fs *filesystem) newDeviceFileLocked(kuid auth.KUID, kgid auth.KGID, mode l
 	default:
 		panic(fmt.Sprintf("invalid file type for device file: %s", mode))
 	}
-	file.inode.init(file, fs, kuid, kgid, mode, parentDir)
+	err := file.inode.init(file, fs, kuid, kgid, mode, parentDir)
+	if err != nil {
+		return nil, err
+	}
 	file.inode.nlink = atomicbitops.FromUint32(1) // from parent directory
 	if ovlWhiteout {
 		fs.ovlWhiteout = file
 		// An extra link is held by fs, so nlink doesn't fall to 0.
 		file.inode.incLinksLocked()
 	}
-	return &file.inode
+	return &file.inode, nil
 }

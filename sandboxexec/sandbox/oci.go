@@ -54,39 +54,6 @@ func NewBundle(sandboxID string, runscRuntimeDir string) (string, error) {
 			// Mandatory Linux API Filesystems
 			{Destination: "/proc", Type: "proc", Source: "proc"},
 			{Destination: "/dev", Type: "tmpfs", Source: "tmpfs"},
-
-			// Map host binaries & libraries as readonly. The binaries will be
-			// executed in gVisor sandbox, not on the host.
-			{
-				Destination: "/bin",
-				Type:        "bind",
-				Source:      "/bin",
-				Options:     []string{"rbind", "ro", "nosuid", "nodev"},
-			},
-			{
-				Destination: "/usr",
-				Type:        "bind",
-				Source:      "/usr",
-				Options:     []string{"rbind", "ro", "nosuid", "nodev"},
-			},
-			{
-				Destination: "/lib",
-				Type:        "bind",
-				Source:      "/lib",
-				Options:     []string{"rbind", "ro", "nosuid", "nodev"},
-			},
-			{
-				Destination: "/lib64",
-				Type:        "bind",
-				Source:      "/lib64", // Required on 64-bit systems
-				Options:     []string{"rbind", "ro", "nosuid", "nodev"},
-			},
-			{
-				Destination: "/etc/alternatives", // Often required for symlinks like 'python3'
-				Type:        "bind",
-				Source:      "/etc/alternatives",
-				Options:     []string{"rbind", "ro"},
-			},
 		},
 		// enable basic namespaces for gVisor.
 		Linux: &specs.Linux{
@@ -98,6 +65,23 @@ func NewBundle(sandboxID string, runscRuntimeDir string) (string, error) {
 				{Type: specs.IPCNamespace},
 			},
 		},
+	}
+
+	// Map host binaries & libraries as readonly. The binaries will be
+	// executed in gVisor sandbox, not on the host.
+	for _, p := range []string{"/bin", "/usr", "/lib", "/lib64", "/etc/alternatives"} {
+		if _, err := os.Stat(p); err == nil {
+			opts := []string{"rbind", "ro", "nosuid", "nodev"}
+			if p == "/etc/alternatives" {
+				opts = []string{"rbind", "ro"}
+			}
+			spec.Mounts = append(spec.Mounts, specs.Mount{
+				Destination: p,
+				Type:        "bind",
+				Source:      p,
+				Options:     opts,
+			})
+		}
 	}
 
 	// Write the spec to config.json

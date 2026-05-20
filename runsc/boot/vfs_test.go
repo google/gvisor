@@ -15,6 +15,7 @@
 package boot
 
 import (
+	"slices"
 	"testing"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -92,6 +93,47 @@ func TestGetMountAccessType(t *testing.T) {
 			conf := &config.Config{FileAccessMounts: config.FileAccessShared}
 			if got := getMountAccessType(conf, podHints.FindMount(source)); got != tst.want {
 				t.Errorf("getMountAccessType(), got: %v, want: %v", got, tst.want)
+			}
+		})
+	}
+}
+
+func TestGoferMountDataDirectFS(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		directFS         bool
+		suppressDirectFS bool
+		wantEnabled      bool
+	}{
+		{
+			name:        "global on, not suppressed",
+			directFS:    true,
+			wantEnabled: true,
+		},
+		{
+			name:             "global on, suppressed",
+			directFS:         true,
+			suppressDirectFS: true,
+			wantEnabled:      false,
+		},
+		{
+			name:             "global off, suppressed",
+			directFS:         false,
+			suppressDirectFS: true,
+			wantEnabled:      false,
+		},
+		{
+			name:        "global off, not suppressed",
+			directFS:    false,
+			wantEnabled: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conf := &config.Config{DirectFS: tc.directFS, HostFifo: config.HostFifoOpen}
+			opts := goferMountData(7, config.FileAccessExclusive, conf, tc.suppressDirectFS)
+			gotEnabled := slices.Contains(opts, "directfs")
+			if gotEnabled != tc.wantEnabled {
+				t.Errorf("directfs option present = %t, want %t (opts=%v)", gotEnabled, tc.wantEnabled, opts)
 			}
 		})
 	}

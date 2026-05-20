@@ -25,9 +25,11 @@ import (
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/pkg/urpc"
+	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/cmd/sandboxsetup"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
@@ -126,7 +128,7 @@ func (g *Gofer) Synopsis() string {
 
 // Usage implements subcommands.Command.
 func (*Gofer) Usage() string {
-	return "gofer [flags]\n"
+	return "gofer [flags] <container ID>\n"
 }
 
 // SetFlags implements subcommands.Command.
@@ -160,6 +162,11 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		f.Usage()
 		return subcommands.ExitUsageError
 	}
+	if f.NArg() != 1 {
+		f.Usage()
+		return subcommands.ExitUsageError
+	}
+	containerID := f.Arg(0)
 
 	conf := args[0].(*config.Config)
 
@@ -172,6 +179,15 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 	if err != nil {
 		util.Fatalf("reading spec: %v", err)
 	}
+	mountHints, err := boot.NewPodMountHints(spec)
+	if err != nil {
+		util.Fatalf("parsing mount hints: %v", err)
+	}
+	rootfsHint, err := boot.NewRootfsHint(spec)
+	if err != nil {
+		util.Fatalf("parsing rootfs hint: %v", err)
+	}
+	lisafsNeeded := lisafsNeededForDirectFSSuppression(spec, mountHints, rootfsHint, g.mountConfs)
 
 	g.syncFDs.syncChroot()
 	g.syncFDs.syncUsernsForRootless(uint32(g.uid), uint32(g.gid))
@@ -185,7 +201,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 	defer goferToHostRPC.Close()
 
 	if g.setUpRoot {
-		if err := sandboxsetup.SetupRootFS(spec, conf, g.mountConfs, g.devIoFD, makeRPCMountOpener(goferToHostRPC)); err != nil {
+		if err := sandboxsetup.SetupRootFS(spec, conf, g.mountConfs, g.devIoFD, makeRPCMountOpener(goferToHostRPC), containerID, g.bundleDir); err != nil {
 			util.Fatalf("Error setting up root FS: %v", err)
 		}
 		if !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
@@ -291,6 +307,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		UDSCreateEnabled: conf.GetHostUDS().AllowCreate(),
 		ProfileEnabled:   profileOpts.Enabled(),
 		DirectFS:         conf.DirectFS,
+		LisafsNeeded:     lisafsNeeded,
 		CgoEnabled:       config.CgoEnabled,
 	}
 	if err := filter.Install(opts); err != nil {
@@ -307,17 +324,6 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
 		readonly  bool
 	}
 	cfgs := make([]connectionConfig, 0, len(spec.Mounts)+1)
-	server := fsgofer.NewLisafsServer(fsgofer.Config{
-		// These are global options. Ignore readonly configuration, that is set on
-		// a per connection basis.
-		HostUDS:            conf.GetHostUDS(),
-		HostFifo:           conf.HostFifo,
-		DonateMountPointFD: conf.DirectFS,
-		RUID:               ruid,
-		EUID:               euid,
-		RGID:               rgid,
-		EGID:               egid,
-	})
 
 	ioFDs := g.ioFDs
 	rootfsConf := g.mountConfs[0]
@@ -372,8 +378,22 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
 		log.Infof("Serving /dev mapped on FD %d (ro: false)", g.devIoFD)
 	}
 
+	// These are global fsgofer configurations.
+	fsgoferConf := &fsgofer.Config{
+		HostUDS:            conf.GetHostUDS(),
+		HostFifo:           conf.HostFifo,
+		DonateMountPointFD: conf.DirectFS,
+		RUID:               ruid,
+		EUID:               euid,
+		RGID:               rgid,
+		EGID:               egid,
+	}
+
+	// Create the server and start connections.
+	server := lisafs.NewServer()
 	for _, cfg := range cfgs {
-		conn, err := server.CreateConnection(cfg.sock, cfg.mountPath, cfg.readonly)
+		connImpl := fsgofer.NewConnectionImpl(fsgoferConf)
+		conn, err := server.CreateConnection(cfg.sock, cfg.mountPath, fsgofer.ConnectionOpts(cfg.readonly), connImpl)
 		if err != nil {
 			util.Fatalf("starting connection on FD %d for gofer mount failed: %v", cfg.sock.FD(), err)
 		}
@@ -386,6 +406,33 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
 		g.stopProfiling()
 	}
 	return subcommands.ExitSuccess
+}
+
+// lisafsNeededForDirectFSSuppression returns true if this gofer serves a mount
+// that suppresses directfs and therefore still needs LisaFS syscalls.
+func lisafsNeededForDirectFSSuppression(spec *specs.Spec, mountHints *boot.PodMountHints, rootfsHint *boot.RootfsHint, mountConfs []specutils.GoferMountConf) bool {
+	if len(mountConfs) > 0 && mountConfs[0].ShouldUseLisafs() &&
+		rootfsHint != nil && rootfsHint.SuppressDirectFS {
+		return true
+	}
+	if mountHints == nil {
+		return false
+	}
+	mountIdx := 1 // First mount config is the root.
+	for _, m := range spec.Mounts {
+		if !specutils.HasMountConfig(m) {
+			continue
+		}
+		mountConf := mountConfs[mountIdx]
+		mountIdx++
+		if !mountConf.ShouldUseLisafs() {
+			continue
+		}
+		if hint := mountHints.FindMount(m.Source); hint != nil && hint.SuppressDirectFS {
+			return true
+		}
+	}
+	return false
 }
 
 // makeRPCMountOpener returns a MountOpener that opens mount sources via the
