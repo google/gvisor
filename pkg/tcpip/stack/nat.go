@@ -267,7 +267,7 @@ func IPTPerformNAT(pkt *PacketBuffer, hook Hook, r *Route, portsOrIdents portOrI
 
 	for maxAttempts := allowedInitialAttempts; ; maxAttempts /= 2 {
 		// Start reach round with a random initial port/ident offset.
-		randOffset := cn.ct.rand.Uint32()
+		randOffset := cn.ct.rng.Uint32()
 
 		for i := uint32(0); i < maxAttempts; i++ {
 			newPortOrIdentU32 := uint32(portsOrIdents.start) + (randOffset+i)%portsOrIdents.size

@@ -223,7 +223,7 @@ func DefaultTables(clock tcpip.Clock, rand *rand.Rand) *IPTables {
 		connections: ConnTrack{
 			seed:  rand.Uint32(),
 			clock: clock,
-			rand:  rand,
+			rng:   rand,
 		},
 	}
 }

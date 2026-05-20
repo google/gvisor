@@ -17,7 +17,6 @@ package stack
 import (
 	"encoding/binary"
 	"fmt"
-	"math/rand"
 	"sync"
 	"time"
 
@@ -205,6 +204,10 @@ func (cn *conn) update(pkt *PacketBuffer, reply bool) {
 	}
 }
 
+type connTrackRNG interface {
+	Uint32() uint32
+}
+
 // ConnTrack tracks all connections created for NAT rules. Most users are
 // expected to only call handlePacket, insertRedirectConn, and maybeInsertNoop.
 //
@@ -238,7 +241,7 @@ type ConnTrack struct {
 	// clock provides timing used to determine conntrack reapings.
 	clock tcpip.Clock
 	// TODO(b/341946753): Restore when netstack is savable.
-	rand *rand.Rand `state:"nosave"`
+	rng connTrackRNG `state:"nosave"`
 
 	mu connTrackRWMutex `state:"nosave"`
 	// mu protects the buckets slice, but not buckets' contents. Only take
