@@ -24,7 +24,9 @@ import (
 )
 
 // InvalidateUnsavable invokes memmap.Mappable.InvalidateUnsavable on all
-// Mappables mapped by mm.
+// Mappables mapped by mm, and drops PMAs backed by non-MemoryFile types
+// (e.g. GPU device files) that cannot be serialized by stateify. These
+// PMAs are re-created through Translate faults after restore.
 func (mm *MemoryManager) InvalidateUnsavable(ctx context.Context) error {
 	mm.mappingMu.RLock()
 	defer mm.mappingMu.RUnlock()
@@ -33,6 +35,19 @@ func (mm *MemoryManager) InvalidateUnsavable(ctx context.Context) error {
 			if err := vma.mappable.InvalidateUnsavable(ctx); err != nil {
 				return err
 			}
+		}
+	}
+	mm.activeMu.Lock()
+	defer mm.activeMu.Unlock()
+	pseg := mm.pmas.FirstSegment()
+	for pseg.Ok() {
+		if _, ok := pseg.ValuePtr().file.(*pgalloc.MemoryFile); !ok {
+			mm.unmapASLocked(pseg.Range())
+			mm.removeRSSLocked(pseg.Range())
+			pseg.ValuePtr().file.DecRef(pseg.fileRange())
+			pseg = mm.pmas.Remove(pseg).NextSegment()
+		} else {
+			pseg = pseg.NextSegment()
 		}
 	}
 	return nil

@@ -356,6 +356,8 @@ func (o *rmAllocObject) Release(ctx context.Context) func() {
 // miscObject is an objectImpl tracking a driver object allocated by something
 // other than an invocation of NV_ESC_RM_ALLOC, whose class is not represented
 // by a more specific type.
+//
+// +stateify savable
 type miscObject struct {
 	object
 }
@@ -409,14 +411,16 @@ func (c *rootClient) getObject(ctx context.Context, h nvgpu.Handle) *object {
 }
 
 // osDescMem is an objectImpl tracking a NV01_MEMORY_SYSTEM_OS_DESCRIPTOR.
+//
+// +stateify savable
 type osDescMem struct {
 	object
-	pinnedRanges []mm.PinnedRange
+	pinnedRanges []mm.PinnedRange `state:"nosave"`
 
 	// If m is non-zero, it is the start address of a mapping of length len
 	// that should be unmapped when the osDescMem is released.
-	m   uintptr
-	len uintptr
+	m   uintptr `state:"nosave"`
+	len uintptr `state:"nosave"`
 }
 
 // Release implements objectImpl.Release.
