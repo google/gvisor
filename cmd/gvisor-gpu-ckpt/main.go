@@ -3,6 +3,12 @@
 // Binary gvisor-gpu-ckpt is a SaveRestoreExec binary for gVisor that
 // handles GPU checkpoint/restore via NVIDIA's cuCheckpointProcess* API.
 //
+// This binary runs INSIDE the gVisor sandbox. It targets the container's
+// init process (PID 1) because cuda-checkpoint ioctls must go through
+// nvproxy to reach the real NVIDIA driver. Calling from the host with
+// the sentry PID fails because the sentry creates GPU contexts via raw
+// ioctls without libcuda.so initialization.
+//
 // gVisor invokes this binary with the GVISOR_SAVE_RESTORE_AUTO_EXEC_MODE
 // env var set to "save", "restore", or "resume".
 //
@@ -25,9 +31,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	pid, err := getSentryPID()
+	pid, err := getTargetPID()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "gvisor-gpu-ckpt: failed to determine sentry PID: %v\n", err)
+		fmt.Fprintf(os.Stderr, "gvisor-gpu-ckpt: failed to determine target PID: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -97,16 +103,17 @@ func isNoContextError(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "rc=3")
 }
 
-// getSentryPID returns the PID of the gVisor sentry process that owns
-// the GPU contexts. It checks GVISOR_SENTRY_PID env var first, then
-// falls back to the parent PID.
-func getSentryPID() (int, error) {
-	if s := os.Getenv("GVISOR_SENTRY_PID"); s != "" {
+// getTargetPID returns the PID to pass to cuCheckpointProcess* calls.
+// Inside the gVisor sandbox, this should be the container's init process
+// (PID 1), since all GPU contexts route through nvproxy to the sentry.
+// Override with GVISOR_CHECKPOINT_PID env var if needed.
+func getTargetPID() (int, error) {
+	if s := os.Getenv("GVISOR_CHECKPOINT_PID"); s != "" {
 		pid, err := strconv.Atoi(s)
 		if err != nil {
-			return 0, fmt.Errorf("invalid GVISOR_SENTRY_PID %q: %w", s, err)
+			return 0, fmt.Errorf("invalid GVISOR_CHECKPOINT_PID %q: %w", s, err)
 		}
 		return pid, nil
 	}
-	return os.Getppid(), nil
+	return 1, nil
 }
