@@ -4791,3 +4791,65 @@ func TestIPv6DisableAllSysctl(t *testing.T) {
 		}
 	}
 }
+
+func TestReadFile(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	spec, _ := sleepSpecConf(t)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	// Test reading /proc/version without size limit.
+	tmpFile1, err := os.CreateTemp(testutil.TmpDir(), "readfile-1-*.txt")
+	if err != nil {
+		t.Fatalf("error creating temp file: %v", err)
+	}
+	defer os.Remove(tmpFile1.Name())
+	defer tmpFile1.Close()
+
+	if err := cont.Sandbox.ReadFile(cont.ID, "/proc/version", 0, tmpFile1); err != nil {
+		t.Fatalf("ReadFile failed: %v", err)
+	}
+	content1, err := os.ReadFile(tmpFile1.Name())
+	if err != nil {
+		t.Fatalf("error reading temp file: %v", err)
+	}
+	if !strings.Contains(string(content1), "Linux") {
+		t.Errorf("expected /proc/version to contain 'Linux', got %q", string(content1))
+	}
+
+	// Test reading /proc/version with a size limit of 5 bytes.
+	tmpFile2, err := os.CreateTemp(testutil.TmpDir(), "readfile-2-*.txt")
+	if err != nil {
+		t.Fatalf("error creating temp file: %v", err)
+	}
+	defer os.Remove(tmpFile2.Name())
+	defer tmpFile2.Close()
+
+	if err := cont.Sandbox.ReadFile(cont.ID, "/proc/version", 5, tmpFile2); err != nil {
+		t.Fatalf("ReadFile failed: %v", err)
+	}
+	content2, err := os.ReadFile(tmpFile2.Name())
+	if err != nil {
+		t.Fatalf("error reading temp file: %v", err)
+	}
+	if string(content2) != "Linux" {
+		t.Errorf("expected exactly 'Linux' (5 bytes), got %q (%d bytes)", string(content2), len(content2))
+	}
+}
