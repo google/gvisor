@@ -431,6 +431,8 @@ func configs(t *testing.T, noOverlay bool) map[string]*config.Config {
 	} else {
 		ps = strings.Split(*platforms, ",")
 	}
+	// ptrace is replaced by systrap and being deprecated. No need to run it.
+	ps = slices.DeleteFunc(ps, func(s string) bool { return s == "ptrace" })
 
 	// Non-overlay versions.
 	cs := make(map[string]*config.Config)
