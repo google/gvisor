@@ -719,6 +719,75 @@ var (
 	_ operation = (*metaSet)(nil)
 )
 
+// OpType represents the type of operation.
+type OpType int
+
+const (
+	// OpTypeImmediate is the immediate operation type.
+	OpTypeImmediate OpType = iota
+	// OpTypeComparison is the comparison operation type.
+	OpTypeComparison
+	// OpTypeRanged is the ranged operation type.
+	OpTypeRanged
+	// OpTypePayload is the payload operation type.
+	OpTypePayload
+	// OpTypeBitwise is the bitwise operation type.
+	OpTypeBitwise
+	// OpTypeCounter is the counter operation type.
+	OpTypeCounter
+	// OpTypeLast is the last operation type.
+	OpTypeLast
+	// OpTypeRoute is the route operation type.
+	OpTypeRoute
+	// OpTypeByteorder is the byteorder operation type.
+	OpTypeByteorder
+	// OpTypeMeta is the meta operation type.
+	OpTypeMeta
+	// OpTypeUnknown is the unknown operation type.
+	OpTypeUnknown
+)
+
+var opTypeStrings = []string{
+	OpTypeImmediate:  "immediate",
+	OpTypeComparison: "cmp",
+	OpTypeRanged:     "ranged",
+	OpTypePayload:    "payload",
+	OpTypeBitwise:    "bitwise",
+	OpTypeCounter:    "counter",
+	OpTypeLast:       "last",
+	OpTypeRoute:      "route",
+	OpTypeByteorder:  "byteorder",
+	OpTypeMeta:       "meta",
+	OpTypeUnknown:    "unknown",
+}
+
+var stringToOpType = func() map[string]OpType {
+	m := make(map[string]OpType)
+	for i, s := range opTypeStrings {
+		if _, ok := m[s]; ok {
+			panic(fmt.Sprintf("duplicate operation type string: %s", s))
+		}
+		m[s] = OpType(i)
+	}
+	return m
+}()
+
+// String returns a string representation of the operation type.
+func (o OpType) String() string {
+	if o >= 0 && o < OpTypeUnknown {
+		return opTypeStrings[o]
+	}
+	return "unknown"
+}
+
+// ToOpType converts a string to an operation type.
+func ToOpType(s string) OpType {
+	if o, ok := stringToOpType[s]; ok {
+		return o
+	}
+	return OpTypeUnknown
+}
+
 //
 // Register and Register-Related Implementations.
 // Note: Registers are represented by type uint8 for the register number.

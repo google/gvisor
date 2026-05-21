@@ -49,7 +49,7 @@ func (op *last) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule)
 }
 
 func (op *last) GetExprName() string {
-	return "last"
+	return OpTypeLast.String()
 }
 
 // TODO: b/452648112 - Implement dump for last operation.

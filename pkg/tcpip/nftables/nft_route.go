@@ -150,7 +150,7 @@ func (op route) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule)
 }
 
 func (op route) GetExprName() string {
-	return "route"
+	return OpTypeRoute.String()
 }
 
 // TODO: b/452648112 - Implement dump for last operation.

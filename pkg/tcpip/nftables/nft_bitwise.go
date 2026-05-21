@@ -208,7 +208,7 @@ func (op bitwise) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rul
 }
 
 func (op bitwise) GetExprName() string {
-	return "bitwise"
+	return OpTypeBitwise.String()
 }
 
 // TODO: b/452648112 - Implement dump for bitwise operation.
