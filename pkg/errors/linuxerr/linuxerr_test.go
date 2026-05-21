@@ -266,3 +266,44 @@ func TestEqualsMethod(t *testing.T) {
 		})
 	}
 }
+
+func TestConvertIntr(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		err      error
+		intr     error
+		expected error
+	}{
+		{
+			name:     "nil error",
+			err:      nil,
+			intr:     linuxerr.ERESTARTSYS,
+			expected: nil,
+		},
+		{
+			name:     "other error",
+			err:      linuxerr.EAGAIN,
+			intr:     linuxerr.ERESTARTSYS,
+			expected: linuxerr.EAGAIN,
+		},
+		{
+			name:     "ErrInterrupted",
+			err:      linuxerr.ErrInterrupted,
+			intr:     linuxerr.ERESTARTSYS,
+			expected: linuxerr.ERESTARTSYS,
+		},
+		{
+			name:     "EINTR",
+			err:      unix.EINTR,
+			intr:     linuxerr.ERESTARTSYS,
+			expected: linuxerr.ERESTARTSYS,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := linuxerr.ConvertIntr(tc.err, tc.intr)
+			if got != tc.expected {
+				t.Fatalf("ConvertIntr(%v, %v) = %v, want %v", tc.err, tc.intr, got, tc.expected)
+			}
+		})
+	}
+}
