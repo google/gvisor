@@ -116,7 +116,7 @@ func validateAddressFamily(family stack.AddressFamily) *syserr.AnnotatedError {
 }
 
 // supportedHooks maps each address family to its supported hooks.
-var supportedHooks [stack.NumAFs][]stack.NFHook = [stack.NumAFs][]stack.NFHook{
+var supportedHooksList [stack.NumAFs][]stack.NFHook = [stack.NumAFs][]stack.NFHook{
 	stack.IP:     {stack.NFPrerouting, stack.NFInput, stack.NFForward, stack.NFOutput, stack.NFPostrouting, stack.NFIngress},
 	stack.IP6:    {stack.NFPrerouting, stack.NFInput, stack.NFForward, stack.NFOutput, stack.NFPostrouting, stack.NFIngress},
 	stack.Inet:   {stack.NFPrerouting, stack.NFInput, stack.NFForward, stack.NFOutput, stack.NFPostrouting, stack.NFIngress},
@@ -124,6 +124,17 @@ var supportedHooks [stack.NumAFs][]stack.NFHook = [stack.NumAFs][]stack.NFHook{
 	stack.Bridge: {stack.NFPrerouting, stack.NFInput, stack.NFForward, stack.NFOutput, stack.NFPostrouting, stack.NFIngress},
 	stack.Netdev: {stack.NFIngress, stack.NFEgress},
 }
+
+// supportedHooks maps each address family to its supported hooks.
+var supportedHooks [stack.NumAFs][stack.NFNumHooks]bool = func() [stack.NumAFs][stack.NFNumHooks]bool {
+	var supportedHooks [stack.NumAFs][stack.NFNumHooks]bool
+	for family, hooks := range supportedHooksList {
+		for _, hook := range hooks {
+			supportedHooks[family][hook] = true
+		}
+	}
+	return supportedHooks
+}()
 
 // supportedLinuxHooks maps each address family to its supported hooks for each base chain type.
 // From net/netfilter/nft_chain_filter.c, net/netfilter/nft_chain_nat.c, net/netfilter/nft_chain_route.c,
@@ -160,7 +171,7 @@ func validateHook(hook stack.NFHook, family stack.AddressFamily) *syserr.Annotat
 	if hook >= stack.NFNumHooks {
 		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("invalid hook: %d", int(hook)))
 	}
-	if slices.Contains(supportedHooks[family], hook) {
+	if supportedHooks[family][hook] {
 		return nil
 	}
 
@@ -604,41 +615,42 @@ type standardPriority struct {
 
 // standardPriorityMatrix is used to look up information for the predefined
 // standard priority names.
+// TODO: b/493710955 - Not used, clean up.
 var standardPriorityMatrix = map[stack.AddressFamily](map[string]standardPriority){
 	stack.IP: spmIP,
 	// Note: IPv6 standard priorities constants currently have the same values as
 	// IPv4's, but the definitions (in the linux kernel) may change in the future.
 	stack.IP6: map[string]standardPriority{ // from uapi/linux/netfilter_ipv6.h
-		"raw":      {name: "raw", value: linux.NF_IP6_PRI_RAW, hooks: supportedHooks[stack.IP6]},
-		"mangle":   {name: "mangle", value: linux.NF_IP6_PRI_MANGLE, hooks: supportedHooks[stack.IP6]},
+		"raw":      {name: "raw", value: linux.NF_IP6_PRI_RAW, hooks: supportedHooksList[stack.IP6]},
+		"mangle":   {name: "mangle", value: linux.NF_IP6_PRI_MANGLE, hooks: supportedHooksList[stack.IP6]},
 		"dstnat":   {name: "dstnat", value: linux.NF_IP6_PRI_NAT_DST, hooks: []stack.NFHook{stack.NFPrerouting}},
-		"filter":   {name: "filter", value: linux.NF_IP6_PRI_FILTER, hooks: supportedHooks[stack.IP6]},
-		"security": {name: "security", value: linux.NF_IP6_PRI_SECURITY, hooks: supportedHooks[stack.IP6]},
+		"filter":   {name: "filter", value: linux.NF_IP6_PRI_FILTER, hooks: supportedHooksList[stack.IP6]},
+		"security": {name: "security", value: linux.NF_IP6_PRI_SECURITY, hooks: supportedHooksList[stack.IP6]},
 		"srcnat":   {name: "srcnat", value: linux.NF_IP6_PRI_NAT_SRC, hooks: []stack.NFHook{stack.NFPostrouting}},
 	},
 	stack.Inet: spmIP,
 	stack.Arp: map[string]standardPriority{ // defined as same as IP filter priority
-		"filter": {name: "filter", value: spmIP["filter"].value, hooks: supportedHooks[stack.Arp]},
+		"filter": {name: "filter", value: spmIP["filter"].value, hooks: supportedHooksList[stack.Arp]},
 	},
 	stack.Bridge: map[string]standardPriority{ // from uapi/linux/netfilter_bridge.h
 		"dstnat": {name: "dstnat", value: linux.NF_BR_PRI_NAT_DST_BRIDGED, hooks: []stack.NFHook{stack.NFPrerouting}},
-		"filter": {name: "filter", value: linux.NF_BR_PRI_FILTER_BRIDGED, hooks: supportedHooks[stack.Bridge]},
+		"filter": {name: "filter", value: linux.NF_BR_PRI_FILTER_BRIDGED, hooks: supportedHooksList[stack.Bridge]},
 		"out":    {name: "out", value: linux.NF_BR_PRI_NAT_DST_OTHER, hooks: []stack.NFHook{stack.NFOutput}},
 		"srcnat": {name: "srcnat", value: linux.NF_BR_PRI_NAT_SRC, hooks: []stack.NFHook{stack.NFPostrouting}},
 	},
 	stack.Netdev: map[string]standardPriority{ // defined as same as IP filter priority
-		"filter": {name: "filter", value: spmIP["filter"].value, hooks: supportedHooks[stack.Netdev]},
+		"filter": {name: "filter", value: spmIP["filter"].value, hooks: supportedHooksList[stack.Netdev]},
 	},
 }
 
 // Used in the standardPriorityMatrix above.
 // Note: IPv4 and Inet address families use the same standard priority names.
 var spmIP = map[string]standardPriority{ // from uapi/linux/netfilter_ipv4.h
-	"raw":      {name: "raw", value: linux.NF_IP_PRI_RAW, hooks: supportedHooks[stack.IP]},
-	"mangle":   {name: "mangle", value: linux.NF_IP_PRI_MANGLE, hooks: supportedHooks[stack.IP]},
+	"raw":      {name: "raw", value: linux.NF_IP_PRI_RAW, hooks: supportedHooksList[stack.IP]},
+	"mangle":   {name: "mangle", value: linux.NF_IP_PRI_MANGLE, hooks: supportedHooksList[stack.IP]},
 	"dstnat":   {name: "dstnat", value: linux.NF_IP_PRI_NAT_DST, hooks: []stack.NFHook{stack.NFPrerouting}},
-	"filter":   {name: "filter", value: linux.NF_IP_PRI_FILTER, hooks: supportedHooks[stack.IP]},
-	"security": {name: "security", value: linux.NF_IP_PRI_SECURITY, hooks: supportedHooks[stack.IP]},
+	"filter":   {name: "filter", value: linux.NF_IP_PRI_FILTER, hooks: supportedHooksList[stack.IP]},
+	"security": {name: "security", value: linux.NF_IP_PRI_SECURITY, hooks: supportedHooksList[stack.IP]},
 	"srcnat":   {name: "srcnat", value: linux.NF_IP_PRI_NAT_SRC, hooks: []stack.NFHook{stack.NFPostrouting}},
 }
 

@@ -412,14 +412,7 @@ func TestAcceptAllForSupportedHooks(t *testing.T) {
 				cmpPkt := pkt.Clone()
 				v, err := nf.EvaluateHook(pktFamily, hook, pkt)
 
-				supported := false
-				for _, h := range supportedHooks[family] {
-					if h == hook {
-						supported = true
-						break
-					}
-				}
-
+				supported := supportedHooks[family][hook]
 				if supported {
 					if err != nil || v.Code != VC(linux.NF_ACCEPT) {
 						t.Fatalf("expecting accept verdict for EvaluateHook with supported hook %v for family %v; got %v verdict, %s packet, and error %v",
