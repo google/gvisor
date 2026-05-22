@@ -1095,6 +1095,10 @@ func (e *endpoint) forwardPacketWithRoute(route *stack.Route, pkt *stack.PacketB
 	//                       each node that forwards the packet.
 	newHdr.SetHopLimit(hopLimit - 1)
 
+	if route.RequiresTXTransportChecksum() {
+		newPkt.CalculateTransportChecksum()
+	}
+
 	forwardToEp, ok := e.protocol.getEndpointForNIC(route.NICID())
 	if !ok {
 		// The interface was removed after we obtained the route.

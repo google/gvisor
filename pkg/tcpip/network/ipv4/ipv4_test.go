@@ -4343,3 +4343,112 @@ func TestIcmpRateLimit(t *testing.T) {
 		})
 	}
 }
+
+func newTCPPacket(t *testing.T, srcAddr, dstAddr tcpip.Address, ttl uint8, tcpChecksum uint16) *stack.PacketBuffer {
+	t.Helper()
+	ipHeaderLength := header.IPv4MinimumSize
+	tcpHeaderLength := header.TCPMinimumSize
+	totalLength := ipHeaderLength + tcpHeaderLength + 10 // 10 bytes payload
+	hdr := prependable.New(totalLength)
+
+	// Payload
+	hdr.Prepend(10)
+	copy(hdr.View(), []byte("1234567890"))
+
+	// TCP Header
+	tcpH := header.TCP(hdr.Prepend(tcpHeaderLength))
+	tcpH.Encode(&header.TCPFields{
+		SrcPort:    1234,
+		DstPort:    80,
+		SeqNum:     100,
+		AckNum:     200,
+		DataOffset: uint8(tcpHeaderLength),
+		Flags:      header.TCPFlagSyn,
+		WindowSize: 65535,
+	})
+	tcpH.SetChecksum(tcpChecksum)
+
+	// IP Header
+	ipH := header.IPv4(hdr.Prepend(ipHeaderLength))
+	ipH.Encode(&header.IPv4Fields{
+		TotalLength: uint16(totalLength),
+		Protocol:    uint8(header.TCPProtocolNumber),
+		TTL:         ttl,
+		SrcAddr:     srcAddr,
+		DstAddr:     dstAddr,
+	})
+	ipH.SetChecksum(0)
+	ipH.SetChecksum(^ipH.CalculateChecksum())
+
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Payload: buffer.MakeWithData(hdr.View()),
+	})
+	pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
+	return pkt
+}
+
+func TestForwardingTCPChecksum(t *testing.T) {
+	ctx := newTestContext()
+	defer ctx.cleanup()
+	s := ctx.s
+
+	endpoints := make(map[tcpip.NICID]*channel.Endpoint)
+	for nicID, addr := range defaultEndpointConfigs {
+		ep := channel.New(1, ipv4.MaxTotalSize, "")
+		defer ep.Close()
+
+		if err := s.CreateNIC(nicID, ep); err != nil {
+			t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
+		}
+		addr := tcpip.ProtocolAddress{Protocol: header.IPv4ProtocolNumber, AddressWithPrefix: addr}
+		if err := s.AddProtocolAddress(nicID, addr, stack.AddressProperties{}); err != nil {
+			t.Fatalf("s.AddProtocolAddress(%d, %+v, {}): %s", nicID, addr, err)
+		}
+		endpoints[nicID] = ep
+	}
+
+	s.SetRouteTable([]tcpip.Route{
+		{
+			Destination: incomingIPv4Addr.Subnet(),
+			NIC:         incomingNICID,
+		},
+		{
+			Destination: outgoingIPv4Addr.Subnet(),
+			NIC:         outgoingNICID,
+		},
+	})
+
+	if err := s.SetForwardingDefaultAndAllNICs(header.IPv4ProtocolNumber, true); err != nil {
+		t.Fatalf("s.SetForwardingDefaultAndAllNICs(%d, true): %s", header.IPv4ProtocolNumber, err)
+	}
+
+	// Inject a TCP packet with checksum 0 (invalid) into incoming NIC.
+	requestPkt := newTCPPacket(t, remoteIPv4Addr1, remoteIPv4Addr2, 64, 0)
+	defer requestPkt.DecRef()
+
+	incomingEndpoint := endpoints[incomingNICID]
+	incomingEndpoint.InjectInbound(header.IPv4ProtocolNumber, requestPkt)
+
+	outgoingEndpoint := endpoints[outgoingNICID]
+	reply := outgoingEndpoint.Read()
+	if reply == nil {
+		t.Fatal("Expected forwarded TCP packet through outgoing NIC")
+	}
+	defer reply.DecRef()
+
+	// Verify that the forwarded packet has a valid TCP checksum.
+	payload := stack.PayloadSince(reply.NetworkHeader())
+	defer payload.Release()
+
+	ipv4Header := header.IPv4(payload.AsSlice())
+	tcpHeaderBytes := ipv4Header.Payload()
+	tcpHeader := header.TCP(tcpHeaderBytes)
+
+	src := ipv4Header.SourceAddress()
+	dst := ipv4Header.DestinationAddress()
+	payloadLength := uint16(len(tcpHeader.Payload()))
+	payloadCsum := checksum.Checksum(tcpHeader.Payload(), 0)
+	if !tcpHeader.IsChecksumValid(src, dst, payloadCsum, payloadLength) {
+		t.Errorf("expected valid TCP checksum, but got invalid")
+	}
+}

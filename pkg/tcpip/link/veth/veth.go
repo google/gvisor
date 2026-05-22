@@ -162,8 +162,7 @@ func (e *Endpoint) SetMTU(mtu uint32) {
 
 // Capabilities implements stack.LinkEndpoint.Capabilities.
 func (e *Endpoint) Capabilities() stack.LinkEndpointCapabilities {
-	// TODO(b/352384218): Enable CapabilityTXChecksumOffload.
-	return stack.CapabilityRXChecksumOffload | stack.CapabilitySaveRestore
+	return stack.CapabilityRXChecksumOffload | stack.CapabilitySaveRestore | stack.CapabilityTXChecksumOffload
 }
 
 // GSOMaxSize implements stack.GSOEndpoint.
