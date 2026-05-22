@@ -48,6 +48,38 @@ The alternative,
 [csv mode](https://github.com/NVIDIA/nvidia-container-toolkit/tree/main/cmd/nvidia-container-runtime#csv-mode),
 is not yet supported.
 
+NOTE: The `nvidia-container-runtime` shim is a *legacy* GPU injection path. In
+environments where the higher-level container runtime understands the
+[Container Device Interface (CDI)](#cdi) (e.g. containerd ≥ 1.7 or CRI-O) GPUs
+can be advertised via CDI specs and `runsc` can be invoked directly, without the
+`nvidia-container-runtime` shim or its `prestart` hook. See the [CDI](#cdi)
+section below. The `nvidia-container-toolkit` package is still required on the
+host because CDI specs reference its `nvidia-ctk` hook binaries, but the runtime
+*shim* is not.
+
+### CDI
+
+The
+[Container Device Interface (CDI)](https://github.com/cncf-tags/container-device-interface)
+is a vendor-neutral specification for how container runtimes inject devices into
+containers. Instead of relying on a runtime shim, the host publishes CDI spec
+files (typically under `/etc/cdi/` or `/var/run/cdi/`) that describe the device
+nodes, bind mounts, environment variables, and hooks needed to expose a device.
+CDI-aware container runtimes (containerd ≥ 1.7, CRI-O, recent Docker) merge
+those specs into the OCI spec before invoking the low-level runtime.
+
+`runsc` is fully CDI-compatible. In particular, it honors the `createContainer`
+hooks emitted by NVIDIA's CDI specs, which is what allows the `nvidia-ctk hook`
+invocations (symlink creation for client libraries, `update-ldcache`, etc.) to
+run correctly inside the sandbox. Both
+[NVIDIA's `k8s-device-plugin`](#nvidia-k8s-device-plugin) operating in
+`DEVICE_LIST_STRATEGY=cdi-cri` mode and statically-generated CDI specs (via
+`nvidia-ctk cdi generate`) are supported.
+
+When using CDI, the `nvidia-container-runtime` shim is not required. `runsc` is
+invoked directly as the low-level runtime, and the higher-level runtime applies
+the CDI spec.
+
 ### Docker
 
 The "legacy" mode of `nvidia-container-runtime` is directly compatible with the
@@ -64,6 +96,13 @@ Test PASSED
 Done
 ```
 
+### NVIDIA `k8s-device-plugin`
+
+`nvproxy` is fully compatible with
+[NVIDIA's `k8s-device-plugin`](https://github.com/NVIDIA/k8s-device-plugin),
+including when it is configured to advertise GPUs via the
+[Container Device Interface (CDI)](#cdi).
+
 ### GKE Device Plugin
 
 [GKE](https://cloud.google.com/kubernetes-engine) uses a different GPU container
@@ -72,10 +111,7 @@ stack than NVIDIA's. GKE has
 (which is different from
 [`k8s-device-plugin`](https://github.com/NVIDIA/k8s-device-plugin)). GKE's
 plugin modifies the container spec in a different way than the above-mentioned
-methods.
-
-NOTE: `nvproxy` does not have integration support for `k8s-device-plugin` yet.
-So k8s environments other than GKE might not be supported.
+methods, and is also supported by `nvproxy`.
 
 ## Compatibility
 
