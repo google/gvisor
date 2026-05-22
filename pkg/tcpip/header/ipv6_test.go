@@ -455,3 +455,150 @@ func TestV6MulticastScope(t *testing.T) {
 		})
 	}
 }
+
+func TestTryParseTransportProtocol(t *testing.T) {
+	tests := []struct {
+		name        string
+		buf         []byte
+		wantProto   tcpip.TransportProtocolNumber
+		wantSuccess bool
+	}{
+		{
+			name: "TCP",
+			buf: func() []byte {
+				b := make([]byte, header.IPv6MinimumSize+1)
+				h := header.IPv6(b)
+				h.SetNextHeader(uint8(header.TCPProtocolNumber))
+				return b
+			}(),
+			wantProto:   header.TCPProtocolNumber,
+			wantSuccess: true,
+		},
+		{
+			name: "UDP",
+			buf: func() []byte {
+				b := make([]byte, header.IPv6MinimumSize+1)
+				h := header.IPv6(b)
+				h.SetNextHeader(uint8(header.UDPProtocolNumber))
+				return b
+			}(),
+			wantProto:   header.UDPProtocolNumber,
+			wantSuccess: true,
+		},
+		{
+			name: "HopHdrBeforeTCP",
+			buf: func() []byte {
+				b := make([]byte, header.IPv6MinimumSize+9)
+				h := header.IPv6(b)
+				h.SetNextHeader(uint8(header.IPv6HopByHopOptionsExtHdrIdentifier))
+				// Hop By Hop Header (8 bytes)
+				b[header.IPv6MinimumSize] = uint8(header.TCPProtocolNumber)
+				b[header.IPv6MinimumSize+1] = 0 // (0+1)*8 = 8 bytes
+				return b
+			}(),
+			wantProto:   header.TCPProtocolNumber,
+			wantSuccess: true,
+		},
+		{
+			name: "RoutingHdrBeforeUDP",
+			buf: func() []byte {
+				b := make([]byte, header.IPv6MinimumSize+9)
+				h := header.IPv6(b)
+				h.SetNextHeader(uint8(header.IPv6RoutingExtHdrIdentifier))
+				// Routing Header (8 bytes)
+				b[header.IPv6MinimumSize] = uint8(header.UDPProtocolNumber)
+				b[header.IPv6MinimumSize+1] = 0 // (0+1)*8 = 8 bytes
+				return b
+			}(),
+			wantProto:   header.UDPProtocolNumber,
+			wantSuccess: true,
+		},
+		{
+			name: "AuthHdrHopHdrTCP",
+			buf: func() []byte {
+				b := make([]byte, header.IPv6MinimumSize+17)
+				h := header.IPv6(b)
+				h.SetNextHeader(uint8(header.IPv6AuthenticationExtHdrIdentifier))
+				// Auth Header (8 bytes)
+				b[header.IPv6MinimumSize] = uint8(header.IPv6HopByHopOptionsExtHdrIdentifier)
+				b[header.IPv6MinimumSize+1] = 0 // (0+2)*4 = 8 bytes
+				// Hop By Hop Header (8 bytes)
+				b[header.IPv6MinimumSize+8] = uint8(header.TCPProtocolNumber)
+				b[header.IPv6MinimumSize+9] = 0 // (0+1)*8 = 8 bytes
+				return b
+			}(),
+			wantProto:   header.TCPProtocolNumber,
+			wantSuccess: true,
+		},
+		{
+			name: "FragHdrDstHdrTCP",
+			buf: func() []byte {
+				b := make([]byte, header.IPv6MinimumSize+17)
+				h := header.IPv6(b)
+				h.SetNextHeader(uint8(header.IPv6FragmentExtHdrIdentifier))
+				// Frag Header (8 bytes)
+				b[header.IPv6MinimumSize] = uint8(header.IPv6DestinationOptionsExtHdrIdentifier)
+				b[header.IPv6MinimumSize+1] = 0
+				b[header.IPv6MinimumSize+2] = 0 // Frag offset = 0
+				b[header.IPv6MinimumSize+3] = 0
+				// Dst Options Header (8 bytes)
+				b[header.IPv6MinimumSize+8] = uint8(header.TCPProtocolNumber)
+				b[header.IPv6MinimumSize+9] = 0 // (0+1)*8 = 8 bytes
+				return b
+			}(),
+			wantProto:   header.TCPProtocolNumber,
+			wantSuccess: true,
+		},
+		{
+			name: "NotFirstFragHdr",
+			buf: func() []byte {
+				b := make([]byte, header.IPv6MinimumSize+9)
+				h := header.IPv6(b)
+				h.SetNextHeader(uint8(header.IPv6FragmentExtHdrIdentifier))
+				// Frag Header (8 bytes + 1 for transport protocol)
+				b[header.IPv6MinimumSize] = uint8(header.TCPProtocolNumber)
+				b[header.IPv6MinimumSize+3] = 8 // offset=1
+				return b
+			}(),
+			wantProto:   header.TCPProtocolNumber,
+			wantSuccess: false,
+		},
+		{
+			name: "ExtHdrLenOutOfBound",
+			buf: func() []byte {
+				b := make([]byte, header.IPv6MinimumSize+5)
+				h := header.IPv6(b)
+				h.SetNextHeader(uint8(header.IPv6HopByHopOptionsExtHdrIdentifier))
+				b[header.IPv6MinimumSize] = uint8(header.TCPProtocolNumber)
+				b[header.IPv6MinimumSize+1] = 1 // (1+1)*8=16 bytes length, but data only has 5 bytes.
+				return b
+			}(),
+			wantProto:   tcpip.TransportProtocolNumber(header.IPv6HopByHopOptionsExtHdrIdentifier),
+			wantSuccess: false,
+		},
+		{
+			name: "TooSmallPacket",
+			buf: func() []byte {
+				b := make([]byte, header.IPv6MinimumSize)
+				h := header.IPv6(b)
+				h.SetNextHeader(uint8(header.TCPProtocolNumber))
+				return b
+			}(),
+			wantProto:   header.TCPProtocolNumber,
+			wantSuccess: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			b := header.IPv6(test.buf)
+			gotProto, ok := b.TryParseTransportProtocol()
+			if ok != test.wantSuccess {
+				t.Errorf("TryParseTransportProtocol got success: %v, want: %v", ok, test.wantSuccess)
+			}
+			if gotProto != test.wantProto {
+				t.Errorf("TryParseTransportProtocol got proto: %d, want: %d", gotProto, test.wantProto)
+			}
+		})
+	}
+}

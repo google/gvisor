@@ -45,6 +45,11 @@ const (
 	// Destination Options extension header, as per RFC 8200 section 4.6.
 	IPv6DestinationOptionsExtHdrIdentifier IPv6ExtensionHeaderIdentifier = 60
 
+	// IPv6AuthenticationExtHdrIdentifier is the header identifier of an
+	// Authentication extension header, as per RFC 8200 section 4.1.
+	// TODO: b/512233021 - Parse Authentication extension header correctly.
+	IPv6AuthenticationExtHdrIdentifier IPv6ExtensionHeaderIdentifier = 51
+
 	// IPv6NoNextHeaderIdentifier is the header identifier used to signify the end
 	// of an IPv6 payload, as per RFC 8200 section 4.7.
 	IPv6NoNextHeaderIdentifier IPv6ExtensionHeaderIdentifier = 59
