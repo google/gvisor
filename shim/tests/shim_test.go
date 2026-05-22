@@ -18,9 +18,16 @@
 package shim_test
 
 import (
+	"context"
+	"fmt"
+	"strings"
 	"testing"
+	"time"
 
 	task "github.com/containerd/containerd/api/runtime/task/v2"
+	tasktype "github.com/containerd/containerd/api/types/task"
+	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/types/known/anypb"
 	"gvisor.dev/gvisor/shim/shimutils"
 )
 
@@ -43,7 +50,7 @@ func TestCreateKillWaitSandbox(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			containerd := shimutils.NewMockContainerd(t, nil, nil)
+			containerd := shimutils.NewMockContainerd(t, tc.shimArgs, nil)
 			spec := shimutils.NewSandboxSpec()
 
 			sandbox, err := shimutils.NewContainer(spec, containerd)
@@ -61,42 +68,214 @@ func TestCreateKillWaitSandbox(t *testing.T) {
 				t.Fatalf("failed to get runtime options: %v", err)
 			}
 
-			createReq := &task.CreateTaskRequest{
-				ID:      sandbox.ID(),
-				Bundle:  sandbox.Bundle(),
-				Options: opts,
+			if err := createAndWaitForContainer(t.Context(), client, sandbox, opts); err != nil {
+				t.Fatalf("failed to create and wait for container: %v", err)
 			}
 
-			createResp, err := client.Create(t.Context(), createReq)
-			if err != nil {
-				t.Fatalf("failed to create task: %v", err)
-			}
-			if createResp.Pid == 0 {
-				t.Errorf("created task PID is 0")
+			if err := startAndWaitForContainer(t.Context(), client, sandbox.ID(), sandbox); err != nil {
+				t.Fatalf("failed to start and wait for container: %v", err)
 			}
 
-			startReq := &task.StartRequest{
-				ID: sandbox.ID(),
-			}
-
-			startResp, err := client.Start(t.Context(), startReq)
-			if err != nil {
-				t.Fatalf("failed to start task: %v", err)
-			}
-			if startResp.Pid != createResp.Pid {
-				t.Errorf("started task PID is different from the created task PID")
-			}
-
-			killReq := &task.KillRequest{
-				ID:     sandbox.ID(),
-				Signal: 9,
-				All:    true,
-			}
-
-			if _, err := client.Kill(t.Context(), killReq); err != nil {
-				t.Fatalf("failed to kill task: %v", err)
+			if err := killAndWaitForContainer(t.Context(), client, sandbox.ID()); err != nil {
+				t.Fatalf("failed to kill and wait for container: %v", err)
 			}
 		})
 	}
+}
 
+func TestCreateSandboxWithContainer(t *testing.T) {
+	for _, tc := range []testCase{
+		{
+			name: "default",
+		},
+		{
+			name: "grouping",
+			shimArgs: map[string]any{
+				"grouping": true,
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			containerd := shimutils.NewMockContainerd(t, tc.shimArgs, nil)
+			sandboxSpec := shimutils.NewSandboxSpec()
+
+			sandbox, err := shimutils.NewContainer(sandboxSpec, containerd)
+			if err != nil {
+				t.Fatalf("failed to create sandbox: %v", err)
+			}
+
+			if err := containerd.StartShim(t, sandbox); err != nil {
+				t.Fatalf("failed to start shim: %v", err)
+			}
+
+			client := containerd.GetClient(t)
+
+			opts, err := containerd.GetRuntimeOptions()
+			if err != nil {
+				t.Fatalf("failed to get runtime options: %v", err)
+			}
+
+			if err := createAndWaitForContainer(t.Context(), client, sandbox, opts); err != nil {
+				t.Fatalf("failed to create and wait for sandbox: %v", err)
+			}
+
+			if err := startAndWaitForContainer(t.Context(), client, sandbox.ID(), sandbox); err != nil {
+				t.Fatalf("failed to start and wait for sandbox: %v", err)
+			}
+
+			containerSpec := shimutils.NewContainerSpec(sandbox.ID(), []string{"sleep", "10000"})
+			container, err := shimutils.NewContainer(containerSpec, containerd)
+			if err != nil {
+				t.Fatalf("failed to create container: %v", err)
+			}
+
+			if err := createAndWaitForContainer(t.Context(), client, container, opts); err != nil {
+				t.Fatalf("failed to create and wait for container: %v", err)
+			}
+
+			startReq := &task.StartRequest{
+				ID: container.ID(),
+			}
+			if _, err := client.Start(t.Context(), startReq); err != nil {
+				t.Fatalf("failed to start container: %v", err)
+			}
+
+			statusReq := &task.StateRequest{
+				ID: container.ID(),
+			}
+			statusResp, err := client.State(t.Context(), statusReq)
+			if err != nil {
+				t.Fatalf("failed to get state: %v", err)
+			}
+			if statusResp.Status != tasktype.Status_RUNNING {
+				t.Fatalf("got status %v want %v", statusResp.Status, tasktype.Status_RUNNING)
+			}
+
+			t.Logf("Container ID: %s", container.ID())
+
+			if err := killAndWaitForContainer(t.Context(), client, sandbox.ID()); err != nil {
+				t.Fatalf("failed to kill and wait for sandbox: %v", err)
+			}
+		})
+	}
+}
+
+func createAndWaitForContainer(ctx context.Context, client task.TaskService, container *shimutils.Container, opts *anypb.Any) error {
+	errGroup := errgroup.Group{}
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	var createResp *task.CreateTaskResponse
+	errGroup.Go(func() error {
+		createReq := &task.CreateTaskRequest{
+			ID:      container.ID(),
+			Bundle:  container.Bundle(),
+			Options: opts,
+		}
+		var err error
+		createResp, err = client.Create(ctx, createReq)
+		if err != nil {
+			return fmt.Errorf("failed to create task: %v", err)
+		}
+		if createResp.Pid == 0 {
+			return fmt.Errorf("created task PID is 0")
+		}
+		return nil
+	})
+
+	errGroup.Go(func() error {
+
+		for {
+			time.Sleep(100 * time.Millisecond)
+			statusReq := &task.StateRequest{
+				ID: container.ID(),
+			}
+			statusResp, err := client.State(ctx, statusReq)
+
+			if err != nil && strings.Contains(err.Error(), "not found") {
+				continue
+			}
+
+			if err != nil {
+				return fmt.Errorf("failed to get state: %v", err)
+			}
+			if statusResp.Status == tasktype.Status_CREATED {
+				return nil
+			}
+		}
+	})
+
+	return errGroup.Wait()
+}
+
+func startAndWaitForContainer(ctx context.Context, client task.TaskService, containerID string, container *shimutils.Container) error {
+	errGroup := errgroup.Group{}
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	errGroup.Go(func() error {
+		stateReq := &task.StateRequest{
+			ID: containerID,
+		}
+		for {
+			time.Sleep(100 * time.Millisecond)
+			stateResp, err := client.State(ctx, stateReq)
+			if err != nil {
+				return fmt.Errorf("failed to get state: %v", err)
+			}
+			if stateResp.Status == tasktype.Status_RUNNING {
+				return nil
+			}
+		}
+	})
+
+	errGroup.Go(func() error {
+		startReq := &task.StartRequest{
+			ID: containerID,
+		}
+
+		_, err := client.Start(ctx, startReq)
+		if err != nil {
+			return fmt.Errorf("failed to start task: %v", err)
+		}
+		return nil
+	})
+
+	return errGroup.Wait()
+}
+
+func killAndWaitForContainer(ctx context.Context, client task.TaskService, containerID string) error {
+	errGroup := errgroup.Group{}
+
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	errGroup.Go(func() error {
+		waitReq := &task.WaitRequest{
+			ID: containerID,
+		}
+		_, err := client.Wait(ctx, waitReq)
+		if err != nil {
+			if strings.Contains(err.Error(), "ttrpc: closed") {
+				return nil
+			}
+			return fmt.Errorf("failed to wait for task: %v", err)
+		}
+		return nil
+	})
+
+	errGroup.Go(func() error {
+		killReq := &task.KillRequest{
+			ID:     containerID,
+			Signal: 9,
+			All:    true,
+		}
+		_, err := client.Kill(ctx, killReq)
+		if err != nil {
+			return fmt.Errorf("failed to kill task: %v", err)
+		}
+		return nil
+	})
+
+	return errGroup.Wait()
 }

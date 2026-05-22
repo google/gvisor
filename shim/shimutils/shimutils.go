@@ -68,9 +68,10 @@ func NewSandboxSpec() *specs.Spec {
 }
 
 // NewContainerSpec returns a new container spec.
-func NewContainerSpec(args ...string) *specs.Spec {
+func NewContainerSpec(sandboxID string, args []string) *specs.Spec {
 	spec := newSpec(args...)
 	spec.Annotations[specutils.ContainerdContainerTypeAnnotation] = specutils.ContainerdContainerTypeContainer
+	spec.Annotations[specutils.ContainerdSandboxIDAnnotation] = sandboxID
 	return spec
 }
 
@@ -259,7 +260,8 @@ func (m *MockContainerd) StartShim(t *testing.T, c *Container) error {
 		waitErr <- m.shim.Wait()
 	}()
 
-	for i := 0; i < 20; i++ {
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
 		select {
 		case err := <-waitErr:
 			return fmt.Errorf("shim exited prematurely: %v", err)
