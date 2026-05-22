@@ -18,7 +18,10 @@ go_library(
         "runtimeoptions.go",
         "runtimeoptions_cri.go",
     ],
-    visibility = ["//pkg/shim/v1:__subpackages__"],
+    visibility = [
+        "//pkg/shim/v1:__subpackages__",
+        "//shim:__subpackages__",
+    ],
     deps = ["@com_github_gogo_protobuf//proto:go_default_library"],
 )
 

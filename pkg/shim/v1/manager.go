@@ -220,16 +220,22 @@ func (manager) Stop(ctx context.Context, id string) (shim.StopStatus, error) {
 
 func getRuntimeOptions() *runsc.Options {
 	opts := &runsc.Options{}
-	shimConfigPaths := []string{"/run/containerd/runsc/config.toml", "/etc/containerd/runsc/config.toml"}
+	shimConfigPaths := []string{
+		"/run/containerd/runsc/config.toml",
+		"/etc/containerd/runsc/config.toml",
+		"config.toml",
+	}
 
 	tomlPath := ""
 	for _, path := range shimConfigPaths {
 		if _, err := os.Stat(path); err == nil {
+			log.L.Debugf("Found shim config file %q", path)
 			tomlPath = path
 			break
 		}
 	}
 	if len(tomlPath) == 0 {
+		log.L.Debugf("Failed to find shim config file")
 		return opts
 	}
 

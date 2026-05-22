@@ -79,23 +79,12 @@ func NewContainer(ctx context.Context, platform stdio.Platform, r *task.CreateTa
 	}
 	var opts Options
 	if r.Options != nil {
-		v, err := typeurl.UnmarshalAny(r.Options)
-		if err != nil {
-			return nil, err
+		runtimeOptions := &runtimeoptions.Options{}
+		if err := typeurl.UnmarshalTo(r.Options, runtimeOptions); err != nil {
+			return nil, fmt.Errorf("unmarshal runtime options: %w", err)
 		}
-		var path string
-		switch o := v.(type) {
-		case *runtimeoptions.Options: // containerd 1.5+
-			if o.ConfigPath == "" {
-				break
-			}
-			if o.TypeUrl != optionsType {
-				return nil, fmt.Errorf("unsupported option type %q", o.TypeUrl)
-			}
-			path = o.ConfigPath
-		default:
-			return nil, fmt.Errorf("unsupported option type %q", r.Options.TypeUrl)
-		}
+
+		path := runtimeOptions.GetConfigPath()
 		if path != "" {
 			// Read runsc options from the config file.
 			if _, err = toml.DecodeFile(path, &opts); err != nil {
