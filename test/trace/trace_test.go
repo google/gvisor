@@ -205,6 +205,9 @@ func checkContextDataOpts(data *pb.ContextData, opts contextDataOpts) error {
 	if data.ThreadGroupId <= 0 {
 		return fmt.Errorf("invalid thread_group_id: %v", data.ThreadGroupId)
 	}
+	if data.ParentThreadGroupId < 0 {
+		return fmt.Errorf("invalid parent_thread_group_id: %v", data.ParentThreadGroupId)
+	}
 	if !opts.skipCwd && len(data.Cwd) == 0 {
 		return fmt.Errorf("invalid cwd: %v", data.Cwd)
 	}

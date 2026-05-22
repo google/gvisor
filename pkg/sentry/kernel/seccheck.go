@@ -81,5 +81,10 @@ func LoadSeccheckDataLocked(t *Task, mask seccheck.FieldMask, info *pb.ContextDa
 	if mask.Contains(seccheck.FieldCtxtProcessName) {
 		info.ProcessName = t.Name()
 	}
+	if mask.Contains(seccheck.FieldCtxtParentThreadGroupID) {
+		if t.parent != nil {
+			info.ParentThreadGroupId = int32(t.k.tasks.Root.tgids[t.parent.tg])
+		}
+	}
 	t.Credentials().LoadSeccheckData(mask, info)
 }

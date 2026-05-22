@@ -46,6 +46,7 @@ const (
 	FieldCtxtThreadID
 	FieldCtxtThreadStartTime
 	FieldCtxtTime
+	FieldCtxtParentThreadGroupID
 )
 
 // Fields for container/start point.
@@ -109,6 +110,10 @@ var defaultContextFields = []FieldDesc{
 	{
 		ID:   FieldCtxtProcessName,
 		Name: "process_name",
+	},
+	{
+		ID:   FieldCtxtParentThreadGroupID,
+		Name: "parent_thread_group_id",
 	},
 }
 
@@ -286,6 +291,10 @@ func genericInit() {
 			{
 				ID:   FieldCtxtProcessName,
 				Name: "process_name",
+			},
+			{
+				ID:   FieldCtxtParentThreadGroupID,
+				Name: "parent_thread_group_id",
 			},
 		},
 	})

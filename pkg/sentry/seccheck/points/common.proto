@@ -92,6 +92,8 @@ message ContextData {
   string cwd = 8;
 
   string process_name = 9;
+
+  int32 parent_thread_group_id = 10;
 }
 
 // MessageType describes the payload of a message sent to the remote process.
