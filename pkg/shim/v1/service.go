@@ -17,7 +17,6 @@ package v1
 
 import (
 	"context"
-	"fmt"
 	"os"
 
 	task "github.com/containerd/containerd/api/runtime/task/v2"
@@ -27,7 +26,6 @@ import (
 	errgrpc "github.com/containerd/errdefs/pkg/errgrpc"
 	"github.com/containerd/log"
 	"github.com/containerd/ttrpc"
-	hibernatepb "gvisor.dev/gvisor/pkg/shim/v1/runsc/hibernate_go_proto"
 
 	"gvisor.dev/gvisor/pkg/shim/v1/extension"
 	rsc "gvisor.dev/gvisor/pkg/shim/v1/runsc"
@@ -92,12 +90,6 @@ type shimRedirector struct {
 
 	// grouping indicates if shim grouping is enabled.
 	grouping bool
-
-	// hibernateServerOnce ensures that the hibernate service is only started once.
-	hibernateServerOnce sync.Once
-
-	// hibernateServerEndpoint is the ttrpc server that listens for hibernate requests.
-	hibernateServerEndpoint *rsc.HibernateServerEndpoint
 
 	shutdown       shutdown.Service
 	runtimeOptions *rsc.Options
@@ -167,31 +159,6 @@ func (s *shimRedirector) initExt(ctx context.Context, r *task.CreateTaskRequest)
 				return err
 			}
 		}
-	}
-	if s.runtimeOptions.EnableHibernateServer && isDaemon() {
-		s.hibernateServerOnce.Do(func() {
-			var err error
-			s.hibernateServerEndpoint, err = rsc.NewHibernateServerEndpoint(s.runtimeOptions.Root, "shim", r.ID)
-			if err != nil {
-				log.L.Errorf("Failed to create hibernate server endpoint: %v", err)
-				return
-			}
-			s.hibernateServerEndpoint.RegisterService(s.getLocked())
-			s.shutdown.RegisterCallback(func(context.Context) error {
-				return s.hibernateServerEndpoint.Shutdown(ctx)
-			})
-			if address, _ := shim.ReadAddress("hibernate_server"); len(address) > 0 {
-				s.shutdown.RegisterCallback(func(context.Context) error {
-					shim.RemoveSocket(fmt.Sprintf("unix://%s", address))
-					return nil
-				})
-			}
-			go func() {
-				if err := s.hibernateServerEndpoint.Serve(context.Background()); err != nil {
-					log.L.Errorf("Failed to start hibernate server: %v", err)
-				}
-			}()
-		})
 	}
 	return nil
 }
@@ -345,18 +312,6 @@ func (s *shimRedirector) Restore(ctx context.Context, r *extension.RestoreReques
 	log.L.Debugf("Restore, id: %s", r.Start.ID)
 	resp, err := s.get().Restore(ctx, r)
 	return resp, errgrpc.ToGRPC(err)
-}
-
-func (s *shimRedirector) Hide(ctx context.Context, r *hibernatepb.HideRequest, resp *hibernatepb.HideResponse) error {
-	log.L.Debugf("Hide, id: %s", r.GetContainerId())
-	err := s.get().Hide(ctx, r, resp)
-	return errgrpc.ToGRPC(err)
-}
-
-func (s *shimRedirector) Unhide(ctx context.Context, r *hibernatepb.UnhideRequest, resp *hibernatepb.UnhideResponse) error {
-	log.L.Debugf("Unhide, id: %s", r.GetContainerId())
-	err := s.get().Unhide(ctx, r, resp)
-	return errgrpc.ToGRPC(err)
 }
 
 func (s *shimRedirector) RegisterTTRPC(server *ttrpc.Server) error {

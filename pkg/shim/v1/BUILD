@@ -20,7 +20,6 @@ go_library(
         "//pkg/shim/v1/extension",
         "//pkg/shim/v1/proc",
         "//pkg/shim/v1/runsc",
-        "//pkg/shim/v1/runsc:hibernate_go_proto",
         "//pkg/shim/v1/runsccmd",
         "//pkg/sync",
         "//runsc/specutils",

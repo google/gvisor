@@ -9,7 +9,6 @@ go_library(
     name = "maincli",
     srcs = [
         "maincli.go",
-        "maincli_impl.go",
     ],
     visibility = [
         "//:__pkg__",

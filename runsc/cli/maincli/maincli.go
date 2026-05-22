@@ -91,7 +91,6 @@ func commands() (map[util.SubCommand]string, []subcommands.Command) {
 		new(cmd.Gofer):  internalGroup,
 		new(cmd.Umount): internalGroup,
 	}
-	extraCmds(cmds)
 
 	helpCmds := []subcommands.Command{
 		// For historical reasons, these subcommands are invoked as `runsc help
