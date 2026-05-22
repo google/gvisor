@@ -115,7 +115,13 @@ enum stub_error {
 #ifndef PAGE_SIZE
 #define PAGE_SIZE 4096
 #endif
+
+#if PAGE_SIZE == 65536
+#define PER_THREAD_MEM_SIZE (5 * PAGE_SIZE)
+#else
 #define PER_THREAD_MEM_SIZE (8 * PAGE_SIZE)
+#endif
+
 #define GUARD_SIZE (PAGE_SIZE)
 #define MSG_OFFSET_FROM_START (PER_THREAD_MEM_SIZE - PAGE_SIZE)
 

@@ -118,6 +118,8 @@ go_library(
     name = "sysmsg",
     srcs = [
         "sysmsg.go",
+        "sysmsg_4k.go",
+        "sysmsg_64k.go",
         "sysmsg_amd64.go",
         "sysmsg_arm64.go",
         "sysmsg_unsafe.go",
