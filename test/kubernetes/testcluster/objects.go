@@ -187,51 +187,18 @@ func (n *Namespace) GetService(name string, spec v13.ServiceSpec) *v13.Service {
 
 // ContainerResourcesRequest holds arguments to set requested resource on a container.
 type ContainerResourcesRequest struct {
-	CPUResources    string // CPUResources to request. Note: Will be overridden by flag above.
-	MemoryResources string // MemoryResources to request. Note: Will be overridden by flag above.
-	GPU             bool
-	TPU             bool
+	GPU bool
+	TPU bool
 }
 
 // String returns a string representation of the `ContainerResourcesRequest`.
 func (crr ContainerResourcesRequest) String() string {
-	return fmt.Sprintf("cpu=%q memory=%q gpu=%v tpu=%v", crr.CPUResources, crr.MemoryResources, crr.GPU, crr.TPU)
+	return fmt.Sprintf("gpu=%v tpu=%v", crr.GPU, crr.TPU)
 }
 
 // SetContainerResources sets container resources.
-// Sets both the resource limits and requests as container runtimes honor
-// them differently.
 // `containerName` is optional if the pod has exactly one container.
 func SetContainerResources(pod *v13.Pod, containerName string, requests ContainerResourcesRequest) (*v13.Pod, error) {
-	resourceList := v13.ResourceList{}
-	if requests.CPUResources != "" {
-		resourceList[v13.ResourceCPU] = resource.MustParse(requests.CPUResources)
-	}
-	if requests.MemoryResources != "" {
-		resourceList[v13.ResourceMemory] = resource.MustParse(requests.MemoryResources)
-	}
-
-	if requests.GPU {
-		acceleratorCount, ok := pod.Spec.NodeSelector[NodepoolNumAcceleratorsKey]
-		if !ok {
-			return nil, fmt.Errorf("cannot determine number of accelerators that the pod should use, make sure to call ConfigurePodForRuntimeTestNodepool first")
-		}
-		resourceList[v13.ResourceName("nvidia.com/gpu")] = resource.MustParse(acceleratorCount)
-	}
-
-	if requests.TPU {
-		acceleratorCount, ok := pod.Spec.NodeSelector[NodepoolTPUNumAcceleratorKey]
-		if !ok {
-			return nil, fmt.Errorf("cannot determine number of accelerators that the pod should use, make sure to call ConfigurePodForRuntimeTestNodepool first")
-		}
-		resourceList[v13.ResourceName("google.com/tpu")] = resource.MustParse(acceleratorCount)
-	}
-
-	requirements := v13.ResourceRequirements{
-		Limits:   resourceList,
-		Requests: resourceList,
-	}
-
 	var containerToChange *v13.Container
 	if containerName == "" {
 		switch len(pod.Spec.Containers) {
@@ -252,7 +219,25 @@ func SetContainerResources(pod *v13.Pod, containerName string, requests Containe
 	if containerToChange == nil {
 		return nil, fmt.Errorf("container %q not found", containerName)
 	}
-	containerToChange.Resources = requirements
+	for _, resourceList := range []v13.ResourceList{
+		containerToChange.Resources.Limits,
+		containerToChange.Resources.Requests,
+	} {
+		if requests.GPU {
+			acceleratorCount, ok := pod.Spec.NodeSelector[NodepoolNumAcceleratorsKey]
+			if !ok {
+				return nil, fmt.Errorf("cannot determine number of accelerators that the pod should use, make sure to call ConfigurePodForRuntimeTestNodepool first")
+			}
+			resourceList[v13.ResourceName("nvidia.com/gpu")] = resource.MustParse(acceleratorCount)
+		}
+		if requests.TPU {
+			acceleratorCount, ok := pod.Spec.NodeSelector[NodepoolTPUNumAcceleratorKey]
+			if !ok {
+				return nil, fmt.Errorf("cannot determine number of accelerators that the pod should use, make sure to call ConfigurePodForRuntimeTestNodepool first")
+			}
+			resourceList[v13.ResourceName("google.com/tpu")] = resource.MustParse(acceleratorCount)
+		}
+	}
 	return pod, nil
 }
 
