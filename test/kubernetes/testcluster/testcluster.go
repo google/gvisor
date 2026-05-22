@@ -163,17 +163,20 @@ type MachineInfo struct {
 
 	// MemoryGiB is the amount of memory in GiB in the machine type.
 	MemoryGiB int
+
+	// IsVirtual is whether the machine type is a virtual machine.
+	IsVirtual bool
 }
 
-// knownMachineTypes is a map of known GCE machine types to their info.
-var knownMachineTypes = map[string]*MachineInfo{
-	"n1-standard-4":         {NumCores: 4, MemoryGiB: 15},
-	"n2-standard-4":         {NumCores: 4, MemoryGiB: 16},
-	"n2-standard-8":         {NumCores: 8, MemoryGiB: 32},
-	"n2d-standard-8":        {NumCores: 8, MemoryGiB: 32},
-	"g2-standard-8":         {NumCores: 8, MemoryGiB: 32},
-	"ct4p-hightpu-4t":       {NumCores: 240, MemoryGiB: 407},
-	"c3-standard-192-metal": {NumCores: 192, MemoryGiB: 768},
+// KnownMachineTypes is a map of known GCE machine types to their info.
+var KnownMachineTypes = map[string]*MachineInfo{
+	"n1-standard-4":         {NumCores: 4, MemoryGiB: 15, IsVirtual: true},
+	"n2-standard-4":         {NumCores: 4, MemoryGiB: 16, IsVirtual: true},
+	"n2-standard-8":         {NumCores: 8, MemoryGiB: 32, IsVirtual: true},
+	"n2d-standard-8":        {NumCores: 8, MemoryGiB: 32, IsVirtual: true},
+	"g2-standard-8":         {NumCores: 8, MemoryGiB: 32, IsVirtual: true},
+	"ct4p-hightpu-4t":       {NumCores: 240, MemoryGiB: 407, IsVirtual: true},
+	"c3-standard-192-metal": {NumCores: 192, MemoryGiB: 768, IsVirtual: false},
 }
 
 // TestCluster wraps clusters with their individual ClientSets so that helper methods can be called.
@@ -390,7 +393,7 @@ func (t *TestCluster) getNodePool(ctx context.Context, nodepoolType NodePoolType
 			if !hasMachineType || machineType == "" {
 				return nil, fmt.Errorf("node %q has no nodepool instance type", node.Name)
 			}
-			knownSpec, hasKnownSpec := knownMachineTypes[machineType]
+			knownSpec, hasKnownSpec := KnownMachineTypes[machineType]
 			if !hasKnownSpec {
 				return nil, fmt.Errorf("node %q has unknown machine type %q; please add it to knownMachineTypes", node.Name, machineType)
 			}
