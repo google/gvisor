@@ -344,6 +344,16 @@ steps:
   - <<: *common
     <<: *docker
     <<: *source_test
+    label: ":kubernetes: Kubernetes smoke test"
+    command: make kubernetes-smoke-test
+    agents:
+      <<: *ubuntu_agents
+      <<: *kvm_agents
+      arch: "amd64"
+      cgroup: "v2"
+  - <<: *common
+    <<: *docker
+    <<: *source_test
     label: ":docker: Docker tests (cgroupv1)"
     command: make docker-tests
     agents:
