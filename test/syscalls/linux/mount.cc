@@ -2590,6 +2590,159 @@ TEST(MountTest, OverlayfsSgidBitIsCopiedUp) {
   }
 }
 
+// Copy-up of a lower with an xattr that the upper-layer filesystem cannot
+// accept (e.g. security.selinux on a tmpfs upper) must skip the xattr rather
+// than abort the whole copy-up, matching Linux's ovl_copy_xattr semantics for
+// non-must-copy xattrs. Regression test for the interaction with the
+// "gofer: Add full xattr support" change, which started exposing security.*
+// xattrs from real host filesystems to overlay copy-up.
+TEST(MountTest, OverlayfsCopyUpSkipsUnsupportedSecurityXattr) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  bool in_overlayfs = ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(base_dir.path()));
+  if (in_overlayfs) {
+    ASSERT_THAT(
+        mount("tmpfs", base_dir.path().c_str(), "tmpfs", 0, "mode=1777"),
+        SyscallSucceeds());
+  }
+  auto tmpfs_cleanup = Cleanup([&base_dir, &in_overlayfs] {
+    if (in_overlayfs) {
+      ASSERT_THAT(umount2(base_dir.path().c_str(), MNT_DETACH),
+                  SyscallSucceeds());
+    }
+  });
+
+  auto lower =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  std::string lower_subdir = JoinPath(lower.path(), "subdir");
+  ASSERT_THAT(mkdir(lower_subdir.c_str(), 0755), SyscallSucceeds());
+
+  // Set an unwritable-on-upper xattr. If the underlying filesystem does
+  // not support security.* at all, the regression can't be triggered.
+  const char kSelinuxLabel[] = "system_u:object_r:container_ro_file_t:s0";
+  if (setxattr(lower_subdir.c_str(), "security.selinux", kSelinuxLabel,
+               sizeof(kSelinuxLabel) - 1, 0) < 0) {
+    SKIP_IF(errno == EOPNOTSUPP || errno == ENOTSUP);
+    ASSERT_NO_ERRNO(PosixError(errno, "setxattr security.selinux"));
+  }
+
+  // Also set a must-copy xattr (user.*) so we can verify that the fix is
+  // selective rather than skipping all xattrs.
+  ASSERT_THAT(setxattr(lower_subdir.c_str(), "user.test_marker", "x", 1, 0),
+              SyscallSucceeds());
+
+  auto upper =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto work = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto merged =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  std::string opts = "lowerdir=" + lower.path() + ",upperdir=" + upper.path() +
+                     ",workdir=" + work.path();
+  ASSERT_THAT(
+      mount("overlay", merged.path().c_str(), "overlay", 0, opts.c_str()),
+      SyscallSucceeds());
+  auto overlayfs_cleanup =
+      Cleanup([&merged] { umount2(merged.path().c_str(), MNT_DETACH); });
+
+  // mkdir through merged triggers copy-up of subdir. On unpatched code,
+  // copy-up aborts with EOPNOTSUPP and mkdir fails. The patched code
+  // skips the security.selinux xattr and the mkdir succeeds.
+  std::string merged_child = JoinPath(merged.path(), "subdir", "child");
+  ASSERT_THAT(mkdir(merged_child.c_str(), 0755), SyscallSucceeds());
+
+  // Confirm copy-up actually happened (not a fast-path no-op).
+  std::string upper_subdir = JoinPath(upper.path(), "subdir");
+  struct stat st;
+  ASSERT_THAT(stat(upper_subdir.c_str(), &st), SyscallSucceeds());
+
+  // The must-copy user.* xattr should be present on the upper copy.
+  char marker_buf[2] = {};
+  EXPECT_THAT(
+      getxattr(upper_subdir.c_str(), "user.test_marker", marker_buf, 1),
+      SyscallSucceeds());
+
+  // The skipped security.selinux xattr must not have been copied.
+  char selinux_buf[64] = {};
+  EXPECT_THAT(getxattr(upper_subdir.c_str(), "security.selinux", selinux_buf,
+                       sizeof(selinux_buf)),
+              SyscallFailsWithErrno(ENODATA));
+}
+
+// Must-copy xattrs (POSIX ACLs, user.*) must NOT be silently skipped during
+// copy-up — if the upper layer rejects them, the whole copy-up must abort.
+// Guards against the fix being too permissive.
+TEST(MountTest, OverlayfsCopyUpFailsForMustCopyXattr) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  bool in_overlayfs = ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(base_dir.path()));
+  if (in_overlayfs) {
+    ASSERT_THAT(
+        mount("tmpfs", base_dir.path().c_str(), "tmpfs", 0, "mode=1777"),
+        SyscallSucceeds());
+  }
+  auto tmpfs_cleanup = Cleanup([&base_dir, &in_overlayfs] {
+    if (in_overlayfs) {
+      ASSERT_THAT(umount2(base_dir.path().c_str(), MNT_DETACH),
+                  SyscallSucceeds());
+    }
+  });
+
+  // Minimal valid POSIX ACL on-disk format (struct posix_acl_xattr_header +
+  // 3 entries): version=2, then USER_OBJ/GROUP_OBJ/OTHER all rwx with id=-1.
+  static constexpr unsigned char kPosixAclDefault[] = {
+      0x02, 0x00, 0x00, 0x00,
+      0x01, 0x00, 0x07, 0x00, 0xFF, 0xFF, 0xFF, 0xFF,
+      0x04, 0x00, 0x07, 0x00, 0xFF, 0xFF, 0xFF, 0xFF,
+      0x20, 0x00, 0x07, 0x00, 0xFF, 0xFF, 0xFF, 0xFF,
+  };
+
+  // Probe whether the upper-layer filesystem accepts POSIX ACLs. If it
+  // does, we can't exercise the must-copy failure path.
+  auto probe_dir =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  if (setxattr(probe_dir.path().c_str(), "system.posix_acl_default",
+               kPosixAclDefault, sizeof(kPosixAclDefault), 0) == 0) {
+    GTEST_SKIP() << "upper filesystem accepts POSIX ACLs; cannot test "
+                    "must-copy failure";
+  }
+  SKIP_IF(errno != EOPNOTSUPP && errno != ENOTSUP);
+
+  auto lower =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  std::string lower_subdir = JoinPath(lower.path(), "subdir");
+  ASSERT_THAT(mkdir(lower_subdir.c_str(), 0755), SyscallSucceeds());
+
+  // The lower-layer filesystem must accept the must-copy xattr in the
+  // first place; if not, the must-copy failure path can't trigger.
+  if (setxattr(lower_subdir.c_str(), "system.posix_acl_default",
+               kPosixAclDefault, sizeof(kPosixAclDefault), 0) < 0) {
+    SKIP_IF(errno == EOPNOTSUPP || errno == ENOTSUP);
+    ASSERT_NO_ERRNO(PosixError(errno, "setxattr system.posix_acl_default"));
+  }
+
+  auto upper =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto work = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto merged =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  std::string opts = "lowerdir=" + lower.path() + ",upperdir=" + upper.path() +
+                     ",workdir=" + work.path();
+  ASSERT_THAT(
+      mount("overlay", merged.path().c_str(), "overlay", 0, opts.c_str()),
+      SyscallSucceeds());
+  auto overlayfs_cleanup =
+      Cleanup([&merged] { umount2(merged.path().c_str(), MNT_DETACH); });
+
+  // mkdir triggers copy-up of subdir. The must-copy POSIX ACL xattr
+  // cannot be set on the upper (probed above), so copy-up must abort
+  // and mkdir must fail with EOPNOTSUPP.
+  std::string merged_child = JoinPath(merged.path(), "subdir", "child");
+  EXPECT_THAT(mkdir(merged_child.c_str(), 0755),
+              SyscallFailsWithErrno(EOPNOTSUPP));
+}
+
 // Renaming a directory on an overlay inside a user namespace requires
 // user.overlay.* xattrs to mark the directory opaque.
 TEST(MountTest, OverlayfsDirectoryRenameInUserNamespace) {

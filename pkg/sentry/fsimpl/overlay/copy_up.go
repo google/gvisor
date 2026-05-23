@@ -16,6 +16,7 @@ package overlay
 
 import (
 	"fmt"
+	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -367,6 +368,14 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 	return nil
 }
 
+// mustCopyXattr returns true if a copy-up failure on the given xattr must
+// abort the copy-up. Mirrors Linux's fs/overlayfs/util.c:ovl_must_copy_xattr.
+func mustCopyXattr(name string) bool {
+	return name == "system.posix_acl_access" ||
+		name == "system.posix_acl_default" ||
+		strings.HasPrefix(name, linux.XATTR_USER_PREFIX)
+}
+
 // copyXattrsLocked copies a subset of lower's extended attributes to upper.
 // Attributes that configure an overlay in the lower are not copied up.
 //
@@ -394,12 +403,26 @@ func (d *dentry) copyXattrsLocked(ctx context.Context) error {
 
 		value, err := vfsObj.GetXattrAt(ctx, d.fs.creds, lowerPop, &vfs.GetXattrOptions{Name: name, Size: 0})
 		if err != nil {
-			ctx.Infof("failed to copy up xattrs because GetXattrAt failed: %v", err)
+			// Match Linux's ovl_copy_xattr: tolerate per-xattr failures
+			// unless the xattr is must-copy. EPERM covers e.g. trusted.*
+			// without CAP_SYS_ADMIN; ENODATA covers an xattr that
+			// disappears between ListXattrAt and GetXattrAt.
+			if !mustCopyXattr(name) && (linuxerr.Equals(linuxerr.EOPNOTSUPP, err) ||
+				linuxerr.Equals(linuxerr.EPERM, err) ||
+				linuxerr.Equals(linuxerr.ENODATA, err)) {
+				ctx.Debugf("skipping copy-up of xattr %q: GetXattrAt: %v", name, err)
+				continue
+			}
+			ctx.Infof("failed to copy up xattrs because GetXattrAt(%q) failed: %v", name, err)
 			return err
 		}
 
 		if err := vfsObj.SetXattrAt(ctx, d.fs.creds, upperPop, &vfs.SetXattrOptions{Name: name, Value: value}); err != nil {
-			ctx.Infof("failed to copy up xattrs because SetXattrAt failed: %v", err)
+			if !mustCopyXattr(name) && linuxerr.Equals(linuxerr.EOPNOTSUPP, err) {
+				ctx.Debugf("skipping copy-up of xattr %q: SetXattrAt: %v", name, err)
+				continue
+			}
+			ctx.Infof("failed to copy up xattrs because SetXattrAt(%q) failed: %v", name, err)
 			return err
 		}
 	}
