@@ -71,12 +71,17 @@ func RunGSUtil(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesContex
 	if image, err = k8sCtx.ResolveImage(ctx, image); err != nil {
 		t.Fatalf("Failed to resolve image: %v", err)
 	}
+	supportsPV, err := cluster.SupportsPersistentVolumes(ctx)
+	if err != nil {
+		t.Fatalf("Failed to check if cluster supports persistent volumes: %v", err)
+	}
 
 	// Run tests with different volume types. We could also use gsutil
 	// parallel sliced downloads as a test dimension.
 	for _, storage := range []struct {
-		name   string
-		volume *v13.Volume
+		name     string
+		volume   *v13.Volume
+		disabled bool
 	}{
 		{
 			name:   "RootFS",
@@ -101,9 +106,13 @@ func RunGSUtil(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesContex
 					},
 				},
 			},
+			disabled: !supportsPV,
 		},
 	} {
 		t.Run(storage.name, func(t *testing.T) {
+			if storage.disabled {
+				t.Skip("Persistent volumes are not supported in this cluster")
+			}
 			for _, slicing := range []struct {
 				name   string
 				option string

@@ -490,7 +490,7 @@ func (t *TestCluster) HasGVisorTestRuntime(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return testNodePool.runtime == RuntimeTypeGVisor || testNodePool.runtime == RuntimeTypeGVisorTPU, nil
+	return testNodePool.runtime == RuntimeTypeGVisor || testNodePool.runtime == RuntimeTypeGVisorCapped || testNodePool.runtime == RuntimeTypeGVisorTPU, nil
 }
 
 // CreatePod is a helper to create a pod.
@@ -753,6 +753,9 @@ func (t *TestCluster) applyCommonPodConfigurations(ctx context.Context, np *Node
 		if targetCores == 0 {
 			targetCores = int(float64(np.spec.NumCores) * defaultMaxResourceUtilization)
 		}
+		if runtimeMaxCores := MaxSupportedCoresAcrossRuntimes(); runtimeMaxCores != 0 && targetCores > runtimeMaxCores {
+			targetCores = runtimeMaxCores
+		}
 		if targetCores < 1 {
 			targetCores = 1
 		}
@@ -984,6 +987,16 @@ func (t *TestCluster) ExecRequestInClientPod(ctx context.Context, service *v13.S
 		return nil, fmt.Errorf("failed to read logs from pod %q: %v", clientPod.GetName(), err)
 	}
 	return []byte(logs), nil
+}
+
+// SupportsPersistentVolumes returns whether the cluster supports persistent volumes.
+func (t *TestCluster) SupportsPersistentVolumes(ctx context.Context) (bool, error) {
+	clientNodePool, err := t.getNodePool(ctx, ClientNodepoolName)
+	if err != nil {
+		return false, fmt.Errorf("failed to get client nodepool: %w", err)
+	}
+	// Only virtual machines support persistent volumes currently.
+	return clientNodePool.spec.IsVirtual, nil
 }
 
 // CreatePersistentVolume creates a persistent volume.

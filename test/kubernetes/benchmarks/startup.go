@@ -32,6 +32,7 @@ import (
 	"gvisor.dev/gvisor/test/kubernetes/k8sctx"
 	"gvisor.dev/gvisor/test/kubernetes/testcluster"
 	v13 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 const (
@@ -183,6 +184,12 @@ func runPodAndGetMetrics(ctx context.Context, t *testing.T, k8sCtx k8sctx.Kubern
 	if err != nil {
 		return nil, fmt.Errorf("failed to set pod for test nodepool: %w", err)
 	}
+	// If the pod has explicit limits set as a result of the runtime choice,
+	// clip them to a tiny size. This is because for runtimes that require
+	// explicit limits (e.g. Kata), initialization may scale together with
+	// the limits, which isn't the point of this benchmark; we want to measure
+	// the runtime of starting a container with minimal footprint.
+	maybeClipResources(p)
 	createdAt := time.Now()
 	p, err = cluster.CreatePod(ctx, p)
 	if err != nil {
@@ -403,4 +410,32 @@ func runPodAndGetMetrics(ctx context.Context, t *testing.T, k8sCtx k8sctx.Kubern
 	}
 	deleted = true
 	return metrics, nil
+}
+
+func maybeClipResources(p *v13.Pod) {
+	// Same size as e2-medium.
+	const (
+		cpuLimit    = "2"
+		memoryLimit = "4Gi"
+	)
+	for _, containers := range [][]v13.Container{
+		p.Spec.InitContainers,
+		p.Spec.Containers,
+	} {
+		for i := range containers {
+			for _, resources := range []v13.ResourceList{
+				containers[i].Resources.Limits,
+				containers[i].Resources.Requests,
+			} {
+				if resources != nil {
+					if _, ok := resources[v13.ResourceCPU]; ok {
+						resources[v13.ResourceCPU] = resource.MustParse(cpuLimit)
+					}
+					if _, ok := resources[v13.ResourceMemory]; ok {
+						resources[v13.ResourceMemory] = resource.MustParse(memoryLimit)
+					}
+				}
+			}
+		}
+	}
 }
