@@ -824,6 +824,14 @@ func inoKeyFromStatx(stat *lisafs.Statx) inoKey {
 	}
 }
 
+func inoKeyFromStatxT(stat *unix.Statx_t) inoKey {
+	return inoKey{
+		ino:      stat.Ino,
+		devMinor: stat.Dev_minor,
+		devMajor: stat.Dev_major,
+	}
+}
+
 func inoKeyFromStat(stat *unix.Stat_t) inoKey {
 	return inoKey{
 		ino:      stat.Ino,
@@ -861,6 +869,14 @@ type inode struct {
 	mtime atomicbitops.Int64
 	ctime atomicbitops.Int64
 	btime atomicbitops.Int64
+
+	// btimeValid is true if btime contains a valid value reported by the
+	// underlying filesystem. statx(STATX_BTIME) on filesystems that don't
+	// track creation time (e.g. NFSv4) won't set STATX_BTIME in the result
+	// mask, so we cache that information here to avoid exposing a zero
+	// btime.
+	btimeValid atomicbitops.Bool
+
 	// File size, which differs from other metadata in two ways:
 	//
 	//	- We make a best-effort attempt to keep it up to date even if
@@ -1237,7 +1253,14 @@ func (i *inode) fileType() uint32 {
 }
 
 func (d *dentry) statTo(stat *linux.Statx) {
-	stat.Mask = linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_NLINK | linux.STATX_UID | linux.STATX_GID | linux.STATX_ATIME | linux.STATX_MTIME | linux.STATX_CTIME | linux.STATX_INO | linux.STATX_SIZE | linux.STATX_BLOCKS | linux.STATX_BTIME
+	stat.Mask = linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_NLINK |
+		linux.STATX_UID | linux.STATX_GID | linux.STATX_ATIME |
+		linux.STATX_MTIME | linux.STATX_CTIME | linux.STATX_INO |
+		linux.STATX_SIZE | linux.STATX_BLOCKS
+	if d.inode.btimeValid.Load() {
+		stat.Mask |= linux.STATX_BTIME
+		stat.Btime = linux.NsecToStatxTimestamp(d.inode.btime.Load())
+	}
 	stat.Blksize = d.inode.blockSize.Load()
 	stat.Nlink = d.inode.nlink.Load()
 	if stat.Nlink == 0 {
@@ -1257,7 +1280,6 @@ func (d *dentry) statTo(stat *linux.Statx) {
 	// as having no holes.
 	stat.Blocks = (stat.Size + 511) / 512
 	stat.Atime = linux.NsecToStatxTimestamp(d.inode.atime.Load())
-	stat.Btime = linux.NsecToStatxTimestamp(d.inode.btime.Load())
 	stat.Ctime = linux.NsecToStatxTimestamp(d.inode.ctime.Load())
 	stat.Mtime = linux.NsecToStatxTimestamp(d.inode.mtime.Load())
 	stat.DevMajor = linux.UNNAMED_MAJOR

@@ -128,20 +128,21 @@ func (fs *filesystem) newSyntheticDentry(opts *createSyntheticOpts) *dentry {
 	child := &dentry{
 		refs: atomicbitops.FromInt64(1), // held by parent.
 		inode: &inode{
-			fs:        fs,
-			ino:       fs.nextIno(),
-			mode:      atomicbitops.FromUint32(uint32(opts.mode)),
-			uid:       atomicbitops.FromUint32(uint32(opts.kuid)),
-			gid:       atomicbitops.FromUint32(uint32(opts.kgid)),
-			blockSize: atomicbitops.FromUint32(hostarch.PageSize), // arbitrary
-			atime:     atomicbitops.FromInt64(now),
-			mtime:     atomicbitops.FromInt64(now),
-			ctime:     atomicbitops.FromInt64(now),
-			btime:     atomicbitops.FromInt64(now),
-			readFD:    atomicbitops.FromInt32(-1),
-			writeFD:   atomicbitops.FromInt32(-1),
-			mmapFD:    atomicbitops.FromInt32(-1),
-			nlink:     atomicbitops.FromUint32(2),
+			fs:         fs,
+			ino:        fs.nextIno(),
+			mode:       atomicbitops.FromUint32(uint32(opts.mode)),
+			uid:        atomicbitops.FromUint32(uint32(opts.kuid)),
+			gid:        atomicbitops.FromUint32(uint32(opts.kgid)),
+			blockSize:  atomicbitops.FromUint32(hostarch.PageSize), // arbitrary
+			atime:      atomicbitops.FromInt64(now),
+			mtime:      atomicbitops.FromInt64(now),
+			ctime:      atomicbitops.FromInt64(now),
+			btime:      atomicbitops.FromInt64(now),
+			btimeValid: atomicbitops.FromBool(true),
+			readFD:     atomicbitops.FromInt32(-1),
+			writeFD:    atomicbitops.FromInt32(-1),
+			mmapFD:     atomicbitops.FromInt32(-1),
+			nlink:      atomicbitops.FromUint32(2),
 		},
 	}
 	switch opts.mode.FileType() {

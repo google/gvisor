@@ -119,19 +119,20 @@ type directfsInode struct {
 //
 // newDirectfsDentry takes ownership of controlFD
 func (fs *filesystem) newDirectfsDentry(controlFD int) (*dentry, error) {
-	var stat unix.Stat_t
-	if err := unix.Fstat(controlFD, &stat); err != nil {
-		log.Warningf("failed to fstat(2) FD %d: %v", controlFD, err)
+	// Directfs initialization only needs basic identity/metadata plus btime.
+	var stat unix.Statx_t
+	if err := unix.Statx(controlFD, "", unix.AT_EMPTY_PATH, unix.STATX_BASIC_STATS|unix.STATX_BTIME, &stat); err != nil {
+		log.Warningf("failed to stat FD %d: %v", controlFD, err)
 		_ = unix.Close(controlFD)
 		return nil, err
 	}
-	if err := checkSupportedFileType(stat.Mode); err != nil {
+	if err := checkSupportedFileType(uint32(stat.Mode)); err != nil {
 		log.Warningf("checkSupportedFileType() failed for controlFD %d with mode %#o: %v", controlFD, stat.Mode, err)
 		_ = unix.Close(controlFD)
 		return nil, err
 	}
-	isDir := stat.Mode&linux.FileTypeMask == linux.ModeDirectory
-	inoKey := inoKeyFromStat(&stat)
+	isDir := uint32(stat.Mode)&linux.FileTypeMask == linux.ModeDirectory
+	inoKey := inoKeyFromStatxT(&stat)
 
 	// Common case. Performance hack which is used to allocate the dentry
 	// and its inode together in the heap. This will help reduce allocations and memory
@@ -151,21 +152,23 @@ func (fs *filesystem) newDirectfsDentry(controlFD int) (*dentry, error) {
 		func() *inode {
 			temp.i = directfsInode{
 				inode: inode{
-					fs:        fs,
-					inoKey:    inoKey,
-					ino:       fs.inoFromKey(inoKey),
-					mode:      atomicbitops.FromUint32(stat.Mode),
-					uid:       atomicbitops.FromUint32(stat.Uid),
-					gid:       atomicbitops.FromUint32(stat.Gid),
-					blockSize: atomicbitops.FromUint32(uint32(stat.Blksize)),
-					readFD:    atomicbitops.FromInt32(-1),
-					writeFD:   atomicbitops.FromInt32(-1),
-					mmapFD:    atomicbitops.FromInt32(-1),
-					size:      atomicbitops.FromUint64(uint64(stat.Size)),
-					atime:     atomicbitops.FromInt64(dentryTimestampFromUnix(stat.Atim)),
-					mtime:     atomicbitops.FromInt64(dentryTimestampFromUnix(stat.Mtim)),
-					ctime:     atomicbitops.FromInt64(dentryTimestampFromUnix(stat.Ctim)),
-					nlink:     atomicbitops.FromUint32(uint32(stat.Nlink)),
+					fs:         fs,
+					inoKey:     inoKey,
+					ino:        fs.inoFromKey(inoKey),
+					mode:       atomicbitops.FromUint32(uint32(stat.Mode)),
+					uid:        atomicbitops.FromUint32(stat.Uid),
+					gid:        atomicbitops.FromUint32(stat.Gid),
+					blockSize:  atomicbitops.FromUint32(stat.Blksize),
+					readFD:     atomicbitops.FromInt32(-1),
+					writeFD:    atomicbitops.FromInt32(-1),
+					mmapFD:     atomicbitops.FromInt32(-1),
+					size:       atomicbitops.FromUint64(stat.Size),
+					atime:      atomicbitops.FromInt64(dentryTimestampFromStatx(stat.Atime)),
+					mtime:      atomicbitops.FromInt64(dentryTimestampFromStatx(stat.Mtime)),
+					ctime:      atomicbitops.FromInt64(dentryTimestampFromStatx(stat.Ctime)),
+					btime:      atomicbitops.FromInt64(dentryTimestampFromStatx(stat.Btime)),
+					btimeValid: atomicbitops.FromBool(stat.Mask&linux.STATX_BTIME != 0),
+					nlink:      atomicbitops.FromUint32(stat.Nlink),
 				},
 				controlFD: controlFD,
 			}

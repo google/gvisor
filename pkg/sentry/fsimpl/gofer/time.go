@@ -28,6 +28,10 @@ func dentryTimestampFromUnix(t unix.Timespec) int64 {
 	return dentryTimestamp(lisafs.StatxTimestamp{Sec: t.Sec, Nsec: uint32(t.Nsec)})
 }
 
+func dentryTimestampFromStatx(t unix.StatxTimestamp) int64 {
+	return dentryTimestamp(lisafs.StatxTimestamp{Sec: t.Sec, Nsec: t.Nsec})
+}
+
 // Preconditions: d.cachedMetadataAuthoritative() == true.
 func (d *dentry) touchAtime(mnt *vfs.Mount) {
 	if opts := mnt.Options(); opts.Flags.NoATime || opts.ReadOnly {

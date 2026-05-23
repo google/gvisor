@@ -65,9 +65,9 @@ func TestStatAfterCreate(t *testing.T) {
 				t.Errorf("got atime=%d, want non-zero", atime)
 			}
 
-			// Btime should be 0, as it is not set by tmpfs.
-			if btime := got.Btime.ToNsec(); btime != 0 {
-				t.Errorf("got btime %d, want 0", got.Btime.ToNsec())
+			// Btime should equal ctime at creation time.
+			if btime := got.Btime.ToNsec(); btime != ctime {
+				t.Errorf("got btime %d, want %d (same as ctime)", btime, ctime)
 			}
 
 			// Size should be 0 (except for directories, which make up a size

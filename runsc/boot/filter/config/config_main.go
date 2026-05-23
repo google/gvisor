@@ -307,7 +307,6 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		seccomp.PerArg{seccomp.AnyValue{}, seccomp.EqualTo(unix.SHUT_RDWR)},
 	},
 	unix.SYS_SIGALTSTACK:     seccomp.MatchAll{},
-	unix.SYS_STATX:           seccomp.MatchAll{},
 	unix.SYS_SYNC_FILE_RANGE: seccomp.MatchAll{},
 	unix.SYS_TEE: seccomp.PerArg{
 		seccomp.AnyValue{},
@@ -341,6 +340,16 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		seccomp.GreaterThan(0),
 	},
 })
+
+func statxFilters() seccomp.SyscallRules {
+	return seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
+		unix.SYS_STATX: seccomp.PerArg{
+			seccomp.NonNegativeFD{},
+			seccomp.AnyValue{},
+			seccomp.MaskedEqual(unix.AT_EMPTY_PATH, unix.AT_EMPTY_PATH),
+		},
+	})
+}
 
 func controlServerFilters(fd uint32) seccomp.SyscallRules {
 	return seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{

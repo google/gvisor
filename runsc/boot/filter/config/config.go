@@ -134,6 +134,7 @@ func Rules(opt Options) (seccomp.SyscallRules, seccomp.SyscallRules) {
 func rules(opt Options, vars precompiledseccomp.Values) (seccomp.SyscallRules, seccomp.SyscallRules) {
 	s := allowedSyscalls.Copy()
 	s.Merge(selfPIDFilters(vars.GetUint64(selfPIDVarName)))
+	s.Merge(statxFilters())
 	s.Merge(controlServerFilters(vars[controllerFDVarName]))
 
 	// Set of additional filters used by -race and -msan. Returns empty
