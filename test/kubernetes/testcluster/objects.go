@@ -361,19 +361,19 @@ type RuntimeType string
 
 // List of known runtime types.
 const (
-	RuntimeTypeGVisor                    = RuntimeType("gvisor")
-	RuntimeTypeUnsandboxed               = RuntimeType("runc")
-	RuntimeTypeGVisorTPU                 = RuntimeType("gvisor-tpu")
-	RuntimeTypeUnsandboxedTPU            = RuntimeType("runc-tpu")
-	RuntimeTypeNestedKataQEMU            = RuntimeType("nested-kata-qemu")
-	RuntimeTypeNestedKataCloudHypervisor = RuntimeType("nested-kata-cloudhypervisor")
-	RuntimeTypeNestedKataFirecracker     = RuntimeType("nested-kata-firecracker")
+	RuntimeTypeGVisor              = RuntimeType("gvisor")
+	RuntimeTypeUnsandboxed         = RuntimeType("runc")
+	RuntimeTypeGVisorTPU           = RuntimeType("gvisor-tpu")
+	RuntimeTypeUnsandboxedTPU      = RuntimeType("runc-tpu")
+	RuntimeTypeKataQEMU            = RuntimeType("kata-qemu")
+	RuntimeTypeKataCloudHypervisor = RuntimeType("kata-cloudhypervisor")
+	RuntimeTypeKataFirecracker     = RuntimeType("kata-firecracker")
 )
 
 // IsValid returns true if the runtime type is valid.
 func (t RuntimeType) IsValid() bool {
 	switch t {
-	case RuntimeTypeGVisor, RuntimeTypeUnsandboxed, RuntimeTypeGVisorTPU, RuntimeTypeUnsandboxedTPU, RuntimeTypeNestedKataQEMU, RuntimeTypeNestedKataCloudHypervisor, RuntimeTypeNestedKataFirecracker:
+	case RuntimeTypeGVisor, RuntimeTypeUnsandboxed, RuntimeTypeGVisorTPU, RuntimeTypeUnsandboxedTPU, RuntimeTypeKataQEMU, RuntimeTypeKataCloudHypervisor, RuntimeTypeKataFirecracker:
 		return true
 	default:
 		return false
@@ -387,17 +387,17 @@ func (t RuntimeType) IsGVisor() bool {
 
 // IsKata returns true if the runtime is a Kata-based runtime.
 func (t RuntimeType) IsKata() bool {
-	return t == RuntimeTypeNestedKataQEMU || t == RuntimeTypeNestedKataCloudHypervisor || t == RuntimeTypeNestedKataFirecracker
+	return t == RuntimeTypeKataQEMU || t == RuntimeTypeKataCloudHypervisor || t == RuntimeTypeKataFirecracker
 }
 
 // KataShimName returns the Kata shim name for the runtime type.
 func (t RuntimeType) KataShimName() (string, error) {
 	switch t {
-	case RuntimeTypeNestedKataQEMU:
+	case RuntimeTypeKataQEMU:
 		return "kata-qemu", nil
-	case RuntimeTypeNestedKataCloudHypervisor:
+	case RuntimeTypeKataCloudHypervisor:
 		return "kata-clh", nil
-	case RuntimeTypeNestedKataFirecracker:
+	case RuntimeTypeKataFirecracker:
 		return "kata-fc", nil
 	default:
 		return "", fmt.Errorf("not a Kata runtime: %q", t)
@@ -436,12 +436,12 @@ func (t RuntimeType) ApplyNodepool(nodepool *cspb.NodePool) {
 		})
 	case RuntimeTypeUnsandboxedTPU:
 		nodepool.Config.Labels[NodepoolRuntimeKey] = string(RuntimeTypeUnsandboxedTPU)
-	case RuntimeTypeNestedKataQEMU:
-		nodepool.Config.Labels[NodepoolRuntimeKey] = string(RuntimeTypeNestedKataQEMU)
-	case RuntimeTypeNestedKataCloudHypervisor:
-		nodepool.Config.Labels[NodepoolRuntimeKey] = string(RuntimeTypeNestedKataCloudHypervisor)
-	case RuntimeTypeNestedKataFirecracker:
-		nodepool.Config.Labels[NodepoolRuntimeKey] = string(RuntimeTypeNestedKataFirecracker)
+	case RuntimeTypeKataQEMU:
+		nodepool.Config.Labels[NodepoolRuntimeKey] = string(RuntimeTypeKataQEMU)
+	case RuntimeTypeKataCloudHypervisor:
+		nodepool.Config.Labels[NodepoolRuntimeKey] = string(RuntimeTypeKataCloudHypervisor)
+	case RuntimeTypeKataFirecracker:
+		nodepool.Config.Labels[NodepoolRuntimeKey] = string(RuntimeTypeKataFirecracker)
 	default:
 		panic(fmt.Sprintf("unsupported runtime %q", t))
 	}
@@ -529,7 +529,7 @@ func (t RuntimeType) ApplyPodSpec(podSpec *v13.PodSpec) {
 			Operator: v13.TolerationOpEqual,
 			Value:    gvisorRuntimeClass,
 		})
-	case RuntimeTypeNestedKataQEMU, RuntimeTypeNestedKataCloudHypervisor, RuntimeTypeNestedKataFirecracker:
+	case RuntimeTypeKataQEMU, RuntimeTypeKataCloudHypervisor, RuntimeTypeKataFirecracker:
 		shimName, err := t.KataShimName()
 		if err != nil {
 			// Logically impossible since we already checked that t is a Kata runtime, so panic is appropriate.
