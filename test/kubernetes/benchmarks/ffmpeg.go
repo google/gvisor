@@ -69,10 +69,15 @@ func RunFFMPEG(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesContex
 	if image, err = k8sCtx.ResolveImage(ctx, image); err != nil {
 		t.Fatalf("Failed to resolve image: %v", err)
 	}
+	supportsPV, err := cluster.SupportsPersistentVolumes(ctx)
+	if err != nil {
+		t.Fatalf("Failed to check if cluster supports persistent volumes: %v", err)
+	}
 
 	for _, test := range []struct {
-		name   string
-		volume *v13.Volume
+		name     string
+		volume   *v13.Volume
+		disabled bool
 	}{
 		{
 			name:   "RootFS",
@@ -97,9 +102,13 @@ func RunFFMPEG(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesContex
 					},
 				},
 			},
+			disabled: !supportsPV,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			if test.disabled {
+				t.Skip("Persistent volumes are not supported in this cluster")
+			}
 			endProfiling, err := profiling.MaybeSetup(ctx, t, k8sCtx, cluster, benchmarkNS)
 			if err != nil {
 				t.Fatalf("Failed to setup profiling: %v", err)
