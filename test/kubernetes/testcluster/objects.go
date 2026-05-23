@@ -361,19 +361,34 @@ type RuntimeType string
 
 // List of known runtime types.
 const (
-	RuntimeTypeGVisor                    = RuntimeType("gvisor")
-	RuntimeTypeUnsandboxed               = RuntimeType("runc")
-	RuntimeTypeGVisorTPU                 = RuntimeType("gvisor-tpu")
-	RuntimeTypeUnsandboxedTPU            = RuntimeType("runc-tpu")
-	RuntimeTypeNestedKataQEMU            = RuntimeType("nested-kata-qemu")
-	RuntimeTypeNestedKataCloudHypervisor = RuntimeType("nested-kata-cloudhypervisor")
-	RuntimeTypeNestedKataFirecracker     = RuntimeType("nested-kata-firecracker")
+	RuntimeTypeGVisor              = RuntimeType("gvisor")
+	RuntimeTypeGVisorCapped        = RuntimeType("gvisor-capped")
+	RuntimeTypeUnsandboxed         = RuntimeType("runc")
+	RuntimeTypeUnsandboxedCapped   = RuntimeType("runc-capped")
+	RuntimeTypeGVisorTPU           = RuntimeType("gvisor-tpu")
+	RuntimeTypeUnsandboxedTPU      = RuntimeType("runc-tpu")
+	RuntimeTypeKataQEMU            = RuntimeType("kata-qemu")
+	RuntimeTypeKataCloudHypervisor = RuntimeType("kata-cloudhypervisor")
+	RuntimeTypeKataFirecracker     = RuntimeType("kata-firecracker")
 )
+
+// AllRuntimes is the list of all runtime types.
+var AllRuntimes = []RuntimeType{
+	RuntimeTypeGVisor,
+	RuntimeTypeGVisorCapped,
+	RuntimeTypeUnsandboxed,
+	RuntimeTypeUnsandboxedCapped,
+	RuntimeTypeGVisorTPU,
+	RuntimeTypeUnsandboxedTPU,
+	RuntimeTypeKataQEMU,
+	RuntimeTypeKataCloudHypervisor,
+	RuntimeTypeKataFirecracker,
+}
 
 // IsValid returns true if the runtime type is valid.
 func (t RuntimeType) IsValid() bool {
 	switch t {
-	case RuntimeTypeGVisor, RuntimeTypeUnsandboxed, RuntimeTypeGVisorTPU, RuntimeTypeUnsandboxedTPU, RuntimeTypeNestedKataQEMU, RuntimeTypeNestedKataCloudHypervisor, RuntimeTypeNestedKataFirecracker:
+	case RuntimeTypeGVisor, RuntimeTypeGVisorCapped, RuntimeTypeUnsandboxed, RuntimeTypeUnsandboxedCapped, RuntimeTypeGVisorTPU, RuntimeTypeUnsandboxedTPU, RuntimeTypeKataQEMU, RuntimeTypeKataCloudHypervisor, RuntimeTypeKataFirecracker:
 		return true
 	default:
 		return false
@@ -382,22 +397,22 @@ func (t RuntimeType) IsValid() bool {
 
 // IsGVisor returns true if the runtime is a gVisor-based runtime.
 func (t RuntimeType) IsGVisor() bool {
-	return t == RuntimeTypeGVisor || t == RuntimeTypeGVisorTPU
+	return t == RuntimeTypeGVisor || t == RuntimeTypeGVisorCapped || t == RuntimeTypeGVisorTPU
 }
 
 // IsKata returns true if the runtime is a Kata-based runtime.
 func (t RuntimeType) IsKata() bool {
-	return t == RuntimeTypeNestedKataQEMU || t == RuntimeTypeNestedKataCloudHypervisor || t == RuntimeTypeNestedKataFirecracker
+	return t == RuntimeTypeKataQEMU || t == RuntimeTypeKataCloudHypervisor || t == RuntimeTypeKataFirecracker
 }
 
 // KataShimName returns the Kata shim name for the runtime type.
 func (t RuntimeType) KataShimName() (string, error) {
 	switch t {
-	case RuntimeTypeNestedKataQEMU:
+	case RuntimeTypeKataQEMU:
 		return "kata-qemu", nil
-	case RuntimeTypeNestedKataCloudHypervisor:
+	case RuntimeTypeKataCloudHypervisor:
 		return "kata-clh", nil
-	case RuntimeTypeNestedKataFirecracker:
+	case RuntimeTypeKataFirecracker:
 		return "kata-fc", nil
 	default:
 		return "", fmt.Errorf("not a Kata runtime: %q", t)
@@ -408,7 +423,40 @@ func (t RuntimeType) KataShimName() (string, error) {
 // explicit resource limits on pods in order to function correctly.
 func (t RuntimeType) RequiresExplicitResourceLimits() bool {
 	// Kata containers requires VMs which require explicit sizing.
-	return t.IsKata()
+	if t.IsKata() {
+		return true
+	}
+	// Capped runtimes require explicit sizing.
+	if t == RuntimeTypeGVisorCapped || t == RuntimeTypeUnsandboxedCapped {
+		return true
+	}
+	return false
+}
+
+// MaxCores returns the maximum number of cores that can be used by a pod using this runtime.
+// Returns 0 if there is no pod core limit.
+func (t RuntimeType) maxCores() int {
+	switch t {
+	case RuntimeTypeKataFirecracker:
+		// Firecracker only supports up to 32 vCPUs:
+		// https://github.com/firecracker-microvm/firecracker/blob/e865b9c5fad47384c15a6c57c6c6e628210f2282/src/vmm/src/vmm_config/machine_config.rs#L11-L13
+		// Experimentally, using 32 still fails, but 31 works.
+		return 31
+	default:
+		return 0
+	}
+}
+
+// MaxSupportedCoresAcrossRuntimes returns the maximum number of cores that all runtimes
+// can support. Returns 0 if there is no limit across all runtimes.
+func MaxSupportedCoresAcrossRuntimes() int {
+	maxSeen := 0
+	for _, runtime := range AllRuntimes {
+		if maxCores := runtime.maxCores(); maxCores != 0 && (maxSeen == 0 || maxSeen > maxCores) {
+			maxSeen = maxCores
+		}
+	}
+	return maxSeen
 }
 
 // ApplyNodepool modifies the nodepool to configure it to use the runtime.
@@ -418,13 +466,13 @@ func (t RuntimeType) ApplyNodepool(nodepool *cspb.NodePool) {
 	}
 
 	switch t {
-	case RuntimeTypeGVisor:
+	case RuntimeTypeGVisor, RuntimeTypeGVisorCapped:
 		nodepool.Config.SandboxConfig = &cspb.SandboxConfig{
 			Type: cspb.SandboxConfig_GVISOR,
 		}
-		nodepool.GetConfig().Labels[NodepoolRuntimeKey] = string(RuntimeTypeGVisor)
-	case RuntimeTypeUnsandboxed:
-		nodepool.GetConfig().Labels[NodepoolRuntimeKey] = string(RuntimeTypeUnsandboxed)
+		nodepool.GetConfig().Labels[NodepoolRuntimeKey] = string(t)
+	case RuntimeTypeUnsandboxed, RuntimeTypeUnsandboxedCapped:
+		nodepool.GetConfig().Labels[NodepoolRuntimeKey] = string(t)
 		// Do nothing.
 	case RuntimeTypeGVisorTPU:
 		nodepool.Config.Labels[gvisorNodepoolKey] = gvisorRuntimeClass
@@ -436,12 +484,12 @@ func (t RuntimeType) ApplyNodepool(nodepool *cspb.NodePool) {
 		})
 	case RuntimeTypeUnsandboxedTPU:
 		nodepool.Config.Labels[NodepoolRuntimeKey] = string(RuntimeTypeUnsandboxedTPU)
-	case RuntimeTypeNestedKataQEMU:
-		nodepool.Config.Labels[NodepoolRuntimeKey] = string(RuntimeTypeNestedKataQEMU)
-	case RuntimeTypeNestedKataCloudHypervisor:
-		nodepool.Config.Labels[NodepoolRuntimeKey] = string(RuntimeTypeNestedKataCloudHypervisor)
-	case RuntimeTypeNestedKataFirecracker:
-		nodepool.Config.Labels[NodepoolRuntimeKey] = string(RuntimeTypeNestedKataFirecracker)
+	case RuntimeTypeKataQEMU:
+		nodepool.Config.Labels[NodepoolRuntimeKey] = string(RuntimeTypeKataQEMU)
+	case RuntimeTypeKataCloudHypervisor:
+		nodepool.Config.Labels[NodepoolRuntimeKey] = string(RuntimeTypeKataCloudHypervisor)
+	case RuntimeTypeKataFirecracker:
+		nodepool.Config.Labels[NodepoolRuntimeKey] = string(RuntimeTypeKataFirecracker)
 	default:
 		panic(fmt.Sprintf("unsupported runtime %q", t))
 	}
@@ -489,14 +537,14 @@ func (t RuntimeType) ApplyPodSpec(podSpec *v13.PodSpec) {
 		podSpec.NodeSelector = map[string]string{}
 	}
 	switch t {
-	case RuntimeTypeGVisor:
+	case RuntimeTypeGVisor, RuntimeTypeGVisorCapped:
 		podSpec.RuntimeClassName = proto.String(gvisorRuntimeClass)
-		podSpec.NodeSelector[NodepoolRuntimeKey] = string(RuntimeTypeGVisor)
+		podSpec.NodeSelector[NodepoolRuntimeKey] = string(t)
 		addToleration(podSpec, v13.Toleration{
 			Key:      "nvidia.com/gpu",
 			Operator: v13.TolerationOpExists,
 		})
-	case RuntimeTypeUnsandboxed:
+	case RuntimeTypeUnsandboxed, RuntimeTypeUnsandboxedCapped:
 		podSpec.RuntimeClassName = nil
 		podSpec.Tolerations = append(podSpec.Tolerations, v13.Toleration{
 			Key:      "nvidia.com/gpu",
@@ -529,7 +577,7 @@ func (t RuntimeType) ApplyPodSpec(podSpec *v13.PodSpec) {
 			Operator: v13.TolerationOpEqual,
 			Value:    gvisorRuntimeClass,
 		})
-	case RuntimeTypeNestedKataQEMU, RuntimeTypeNestedKataCloudHypervisor, RuntimeTypeNestedKataFirecracker:
+	case RuntimeTypeKataQEMU, RuntimeTypeKataCloudHypervisor, RuntimeTypeKataFirecracker:
 		shimName, err := t.KataShimName()
 		if err != nil {
 			// Logically impossible since we already checked that t is a Kata runtime, so panic is appropriate.

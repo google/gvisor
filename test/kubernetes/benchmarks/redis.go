@@ -62,12 +62,54 @@ func BenchmarkRedis(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesC
 	}
 	defer benchmarkNS.Cleanup(ctx)
 
-	persistentVol := benchmarkNS.GetPersistentVolume(redisVolumeName, "30Gi")
-	persistentVol, err := cluster.CreatePersistentVolume(ctx, persistentVol)
-	if err != nil {
-		t.Fatalf("Failed to create persistent volume: %v", err)
+	type redisTest struct {
+		// Benchmark name
+		name string
+		// Suffix for the redis server, must be short to fit in pod name.
+		suffix string
+		// redis-server command-line.
+		serverCommand []string
+		// Volume to use for persistence, if any.
+		volume *v13.PersistentVolumeClaim
 	}
-	defer cluster.DeletePersistentVolume(ctx, persistentVol)
+
+	tests := []redisTest{
+		{
+			name:   "NoPersistence",
+			suffix: "nopersist",
+			serverCommand: []string{
+				"redis-server",
+				"--appendonly", "no",
+				"--save", "",
+			},
+			volume: nil,
+		},
+	}
+
+	supportsPV, err := cluster.SupportsPersistentVolumes(ctx)
+	if err != nil {
+		t.Fatalf("Failed to check if cluster supports persistent volumes: %v", err)
+	}
+	if supportsPV {
+		persistentVol := benchmarkNS.GetPersistentVolume(redisVolumeName, "30Gi")
+		persistentVol, err := cluster.CreatePersistentVolume(ctx, persistentVol)
+		if err != nil {
+			t.Fatalf("Failed to create persistent volume: %v", err)
+		}
+		defer cluster.DeletePersistentVolume(ctx, persistentVol)
+		tests = append(tests, redisTest{
+			name:   "Persistence",
+			suffix: "persist",
+			serverCommand: []string{
+				"redis-server",
+				"--dir", redisDataDirectory,
+				// Default save settings per
+				// https://redis.io/docs/management/config-file/
+				"--save", "3600 1 300 100 60 10000",
+			},
+			volume: persistentVol,
+		})
+	}
 
 	testCPUArch, err := cluster.RuntimeTestNodepoolArchitecture(ctx)
 	if err != nil {
@@ -85,39 +127,7 @@ func BenchmarkRedis(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesC
 	if image, err = k8sCtx.ResolveImage(ctx, image); err != nil {
 		t.Fatalf("Failed to resolve image: %v", err)
 	}
-	for _, test := range []struct {
-		// Benchmark name
-		name string
-		// Suffix for the redis server, must be short to fit in pod name.
-		suffix string
-		// redis-server command-line.
-		serverCommand []string
-		// Volume to use for persistence, if any.
-		volume *v13.PersistentVolumeClaim
-	}{
-		{
-			name:   "Persistence",
-			suffix: "persist",
-			serverCommand: []string{
-				"redis-server",
-				"--dir", redisDataDirectory,
-				// Default save settings per
-				// https://redis.io/docs/management/config-file/
-				"--save", "3600 1 300 100 60 10000",
-			},
-			volume: persistentVol,
-		},
-		{
-			name:   "NoPersistence",
-			suffix: "nopersist",
-			serverCommand: []string{
-				"redis-server",
-				"--appendonly", "no",
-				"--save", "",
-			},
-			volume: nil,
-		},
-	} {
+	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			endProfiling, err := profiling.MaybeSetup(ctx, t, k8sCtx, cluster, benchmarkNS)
 			if err != nil {
