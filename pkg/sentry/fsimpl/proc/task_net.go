@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"strings"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -784,38 +785,49 @@ type netStatData struct {
 
 var _ dynamicInode = (*netStatData)(nil)
 
+const netStatTCPExtFields = "SyncookiesSent SyncookiesRecv SyncookiesFailed " +
+	"EmbryonicRsts PruneCalled RcvPruned OfoPruned OutOfWindowIcmps " +
+	"LockDroppedIcmps ArpFilter TW TWRecycled TWKilled PAWSPassive " +
+	"PAWSActive PAWSEstab DelayedACKs DelayedACKLocked DelayedACKLost " +
+	"ListenOverflows ListenDrops TCPPrequeued TCPDirectCopyFromBacklog " +
+	"TCPDirectCopyFromPrequeue TCPPrequeueDropped TCPHPHits TCPHPHitsToUser " +
+	"TCPPureAcks TCPHPAcks TCPRenoRecovery TCPSackRecovery TCPSACKReneging " +
+	"TCPFACKReorder TCPSACKReorder TCPRenoReorder TCPTSReorder TCPFullUndo " +
+	"TCPPartialUndo TCPDSACKUndo TCPLossUndo TCPLostRetransmit " +
+	"TCPRenoFailures TCPSackFailures TCPLossFailures TCPFastRetrans " +
+	"TCPForwardRetrans TCPSlowStartRetrans TCPTimeouts TCPLossProbes " +
+	"TCPLossProbeRecovery TCPRenoRecoveryFail TCPSackRecoveryFail " +
+	"TCPSchedulerFailed TCPRcvCollapsed TCPDSACKOldSent TCPDSACKOfoSent " +
+	"TCPDSACKRecv TCPDSACKOfoRecv TCPAbortOnData TCPAbortOnClose " +
+	"TCPAbortOnMemory TCPAbortOnTimeout TCPAbortOnLinger TCPAbortFailed " +
+	"TCPMemoryPressures TCPSACKDiscard TCPDSACKIgnoredOld " +
+	"TCPDSACKIgnoredNoUndo TCPSpuriousRTOs TCPMD5NotFound TCPMD5Unexpected " +
+	"TCPMD5Failure TCPSackShifted TCPSackMerged TCPSackShiftFallback " +
+	"TCPBacklogDrop TCPMinTTLDrop TCPDeferAcceptDrop IPReversePathFilter " +
+	"TCPTimeWaitOverflow TCPReqQFullDoCookies TCPReqQFullDrop TCPRetransFail " +
+	"TCPRcvCoalesce TCPOFOQueue TCPOFODrop TCPOFOMerge TCPChallengeACK " +
+	"TCPSYNChallenge TCPFastOpenActive TCPFastOpenActiveFail " +
+	"TCPFastOpenPassive TCPFastOpenPassiveFail TCPFastOpenListenOverflow " +
+	"TCPFastOpenCookieReqd TCPSpuriousRtxHostQueues BusyPollRxPackets " +
+	"TCPAutoCorking TCPFromZeroWindowAdv TCPToZeroWindowAdv " +
+	"TCPWantZeroWindowAdv TCPSynRetrans TCPOrigDataSent TCPHystartTrainDetect " +
+	"TCPHystartTrainCwnd TCPHystartDelayDetect TCPHystartDelayCwnd " +
+	"TCPACKSkippedSynRecv TCPACKSkippedPAWS TCPACKSkippedSeq " +
+	"TCPACKSkippedFinWait2 TCPACKSkippedTimeWait TCPACKSkippedChallenge " +
+	"TCPWinProbe TCPKeepAlive TCPMTUPFail TCPMTUPSuccess"
+
+func writeNetStatHeaderAndZeros(buf *bytes.Buffer, prefix, fields string) {
+	fmt.Fprintf(buf, "%s: %s\n", prefix, fields)
+	fmt.Fprintf(buf, "%s:", prefix)
+	for range strings.Fields(fields) {
+		buf.WriteString(" 0")
+	}
+	buf.WriteByte('\n')
+}
+
 // Generate implements vfs.DynamicBytesSource.Generate.
 // See Linux's net/ipv4/fib_trie.c:fib_route_seq_show.
 func (d *netStatData) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	buf.WriteString("TcpExt: SyncookiesSent SyncookiesRecv SyncookiesFailed " +
-		"EmbryonicRsts PruneCalled RcvPruned OfoPruned OutOfWindowIcmps " +
-		"LockDroppedIcmps ArpFilter TW TWRecycled TWKilled PAWSPassive " +
-		"PAWSActive PAWSEstab DelayedACKs DelayedACKLocked DelayedACKLost " +
-		"ListenOverflows ListenDrops TCPPrequeued TCPDirectCopyFromBacklog " +
-		"TCPDirectCopyFromPrequeue TCPPrequeueDropped TCPHPHits TCPHPHitsToUser " +
-		"TCPPureAcks TCPHPAcks TCPRenoRecovery TCPSackRecovery TCPSACKReneging " +
-		"TCPFACKReorder TCPSACKReorder TCPRenoReorder TCPTSReorder TCPFullUndo " +
-		"TCPPartialUndo TCPDSACKUndo TCPLossUndo TCPLostRetransmit " +
-		"TCPRenoFailures TCPSackFailures TCPLossFailures TCPFastRetrans " +
-		"TCPForwardRetrans TCPSlowStartRetrans TCPTimeouts TCPLossProbes " +
-		"TCPLossProbeRecovery TCPRenoRecoveryFail TCPSackRecoveryFail " +
-		"TCPSchedulerFailed TCPRcvCollapsed TCPDSACKOldSent TCPDSACKOfoSent " +
-		"TCPDSACKRecv TCPDSACKOfoRecv TCPAbortOnData TCPAbortOnClose " +
-		"TCPAbortOnMemory TCPAbortOnTimeout TCPAbortOnLinger TCPAbortFailed " +
-		"TCPMemoryPressures TCPSACKDiscard TCPDSACKIgnoredOld " +
-		"TCPDSACKIgnoredNoUndo TCPSpuriousRTOs TCPMD5NotFound TCPMD5Unexpected " +
-		"TCPMD5Failure TCPSackShifted TCPSackMerged TCPSackShiftFallback " +
-		"TCPBacklogDrop TCPMinTTLDrop TCPDeferAcceptDrop IPReversePathFilter " +
-		"TCPTimeWaitOverflow TCPReqQFullDoCookies TCPReqQFullDrop TCPRetransFail " +
-		"TCPRcvCoalesce TCPOFOQueue TCPOFODrop TCPOFOMerge TCPChallengeACK " +
-		"TCPSYNChallenge TCPFastOpenActive TCPFastOpenActiveFail " +
-		"TCPFastOpenPassive TCPFastOpenPassiveFail TCPFastOpenListenOverflow " +
-		"TCPFastOpenCookieReqd TCPSpuriousRtxHostQueues BusyPollRxPackets " +
-		"TCPAutoCorking TCPFromZeroWindowAdv TCPToZeroWindowAdv " +
-		"TCPWantZeroWindowAdv TCPSynRetrans TCPOrigDataSent TCPHystartTrainDetect " +
-		"TCPHystartTrainCwnd TCPHystartDelayDetect TCPHystartDelayCwnd " +
-		"TCPACKSkippedSynRecv TCPACKSkippedPAWS TCPACKSkippedSeq " +
-		"TCPACKSkippedFinWait2 TCPACKSkippedTimeWait TCPACKSkippedChallenge " +
-		"TCPWinProbe TCPKeepAlive TCPMTUPFail TCPMTUPSuccess\n")
+	writeNetStatHeaderAndZeros(buf, "TcpExt", netStatTCPExtFields)
 	return nil
 }
