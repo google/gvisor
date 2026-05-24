@@ -16,11 +16,13 @@ package runsc
 
 import (
 	"errors"
+	"path/filepath"
 	"testing"
 
 	task "github.com/containerd/containerd/api/runtime/task/v2"
 	"github.com/containerd/errdefs"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/pkg/shim/v1/proc"
 	"gvisor.dev/gvisor/pkg/shim/v1/utils"
 )
 
@@ -126,6 +128,54 @@ func TestCgroupNoUpdate(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if updated := setPodCgroup(tc.spec); updated {
 				t.Errorf("setPodCgroup(%+v), got: %v, want: false", tc.spec.Linux, updated)
+			}
+		})
+	}
+}
+
+func TestNewInitSandboxDefault(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		annotations map[string]string
+		wantSandbox bool
+	}{
+		{
+			name:        "non-cri",
+			wantSandbox: true,
+		},
+		{
+			name: "cri-sandbox",
+			annotations: map[string]string{
+				utils.ContainerTypeAnnotation: "sandbox",
+			},
+			wantSandbox: true,
+		},
+		{
+			name: "cri-container",
+			annotations: map[string]string{
+				utils.ContainerTypeAnnotation: utils.ContainerTypeContainer,
+			},
+			wantSandbox: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bundle := t.TempDir()
+			spec := specs.Spec{
+				Version:     specs.Version,
+				Annotations: tc.annotations,
+			}
+			if err := utils.WriteSpec(bundle, &spec); err != nil {
+				t.Fatalf("WriteSpec: %v", err)
+			}
+			p, err := newInit(filepath.Join(bundle, "work"), "default", nil, &proc.CreateConfig{
+				ID:     "test",
+				Bundle: bundle,
+			}, &Options{}, "")
+			if err != nil {
+				t.Fatalf("newInit: %v", err)
+			}
+			if got := p.Sandbox; got != tc.wantSandbox {
+				t.Fatalf("p.Sandbox: got %v, want %v", got, tc.wantSandbox)
 			}
 		})
 	}
