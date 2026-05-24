@@ -15,14 +15,85 @@
 package runsc
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"testing"
+	"time"
 
+	apievents "github.com/containerd/containerd/api/events"
 	task "github.com/containerd/containerd/api/runtime/task/v2"
+	coreevents "github.com/containerd/containerd/v2/core/events"
 	"github.com/containerd/errdefs"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/shim/v1/utils"
 )
+
+// errorPublisher is a publisher that always returns an error.
+type errorPublisher struct{}
+
+func (p *errorPublisher) Publish(_ context.Context, _ string, _ coreevents.Event) error {
+	return fmt.Errorf("dial unix: missing address")
+}
+
+func (p *errorPublisher) Close() error { return nil }
+
+// TestForwardDoesNotPanicOnPublishError verifies that the event forward
+// function logs errors instead of panicking when the publisher fails and no
+// event sink is configured (empty TTRPC_ADDRESS). This is how the shim runs
+// under CRI-O, where publish errors are expected and non-fatal.
+func TestForwardDoesNotPanicOnPublishError(t *testing.T) {
+	// Empty TTRPC_ADDRESS means no event sink is configured (as under CRI-O).
+	t.Setenv("TTRPC_ADDRESS", "")
+
+	s := &runscService{
+		events: make(chan any, 2),
+	}
+	s.events <- &apievents.TaskCreate{ContainerID: "test"}
+	s.events <- &apievents.TaskExit{ContainerID: "test"}
+	close(s.events)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.forward(context.Background(), &errorPublisher{})
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("forward did not complete within timeout")
+	}
+}
+
+// TestForwardPanicsOnPublishErrorUnderContainerd verifies that, when a
+// containerd event sink is configured (TTRPC_ADDRESS set), a publish failure
+// remains fatal (panics) as it did before CRI-O support was added. This keeps
+// the non-fatal behavior scoped to the CRI-O case only.
+func TestForwardPanicsOnPublishErrorUnderContainerd(t *testing.T) {
+	t.Setenv("TTRPC_ADDRESS", "/run/containerd/containerd.sock.ttrpc")
+
+	s := &runscService{
+		events: make(chan any, 1),
+	}
+	s.events <- &apievents.TaskCreate{ContainerID: "test"}
+	close(s.events)
+
+	panicked := make(chan any, 1)
+	go func() {
+		defer func() { panicked <- recover() }()
+		s.forward(context.Background(), &errorPublisher{})
+	}()
+
+	select {
+	case r := <-panicked:
+		if r == nil {
+			t.Fatal("forward did not panic on publish error under containerd")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("forward did not complete within timeout")
+	}
+}
 
 func TestContainerUpdateNilResources(t *testing.T) {
 	c := &Container{}
