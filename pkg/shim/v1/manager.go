@@ -91,6 +91,21 @@ func (m manager) Name() string {
 	return m.name
 }
 
+// resolveGrouping determines the grouping key from the OCI spec annotations.
+// It checks the containerd annotation first, then falls back to the CRI-O
+// annotation. If neither is found, it returns the container ID unchanged.
+func resolveGrouping(id string, annotations map[string]string) string {
+	if groupID, ok := annotations[kubernetesGroupAnnotation]; ok {
+		log.L.Debugf("group label found %v: %v", kubernetesGroupAnnotation, groupID)
+		return groupID
+	}
+	if groupID, ok := annotations[specutils.CRIOSandboxIDAnnotation]; ok {
+		log.L.Debugf("group label found %v: %v", specutils.CRIOSandboxIDAnnotation, groupID)
+		return groupID
+	}
+	return id
+}
+
 // Start implements shim.Manager.Start.
 func (m *manager) Start(ctx context.Context, id string, opts shim.StartOpts) (shim.BootstrapParams, error) {
 	grouping := id
@@ -107,10 +122,7 @@ func (m *manager) Start(ctx context.Context, id string, opts shim.StartOpts) (sh
 			return shim.BootstrapParams{}, err
 		}
 		configFile.Close()
-		if groupID, ok := readSpec.Annotations[kubernetesGroupAnnotation]; ok {
-			log.L.Debugf("group label found %v: %v", kubernetesGroupAnnotation, groupID)
-			grouping = groupID
-		}
+		grouping = resolveGrouping(id, readSpec.Annotations)
 	}
 
 	cmd, err := newCommand(ctx, id, opts.Address, opts.Debug)

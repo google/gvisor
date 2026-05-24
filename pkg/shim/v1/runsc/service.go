@@ -641,10 +641,10 @@ func (s *runscService) getContainerPids(ctx context.Context, c *Container) ([]ui
 
 func (s *runscService) forward(ctx context.Context, publisher shim.Publisher) {
 	for e := range s.events {
-		err := publisher.Publish(ctx, getTopic(e), e)
-		if err != nil {
-			// Should not happen.
-			panic(fmt.Errorf("post event: %w", err))
+		if err := publisher.Publish(ctx, getTopic(e), e); err != nil {
+			// CRI-O does not provide a containerd event address, so publish
+			// errors are expected and non-fatal — the shim continues running.
+			log.L.Warningf("Failed to post event: %v", err)
 		}
 	}
 }
