@@ -138,6 +138,10 @@ func (d *discipline) WritePacket(pkt *stack.PacketBuffer) tcpip.Error {
 	}
 	qd := &d.dispatchers[int(pkt.Hash)%len(d.dispatchers)]
 	qd.mu.Lock()
+	if d.closed.Load() == qDiscClosed {
+		qd.mu.Unlock()
+		return &tcpip.ErrClosedForSend{}
+	}
 	haveSpace := qd.queue.HasSpace()
 	if haveSpace {
 		qd.queue.PushBack(pkt.IncRef())

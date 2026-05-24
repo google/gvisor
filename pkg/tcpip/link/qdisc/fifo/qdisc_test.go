@@ -17,6 +17,7 @@ package qdisc_test
 import (
 	"math/rand"
 	"os"
+	"runtime"
 	"testing"
 	"time"
 
@@ -111,6 +112,47 @@ func TestWriteMorePacketsThanBatchSize(t *testing.T) {
 			t.Fatalf("expected %d packets, but got only %d", want, lower.packetsWritten)
 		}
 		linkEp.Close()
+	}
+}
+
+// TestCloseConcurrentWithWritePacket fires many WritePackets concurrently
+// with Close. It exercises the race where WritePacket loads closed=false,
+// Close stores closed=true and asserts closeWaker, the dispatcher drains
+// the queue and exits, and then WritePacket pushes a packet that nothing
+// will drain. The leak check in TestMain catches the surviving ref.
+//
+// Distinct from TestFastSimultaneousWrites, which closes only after all
+// writers have completed.
+func TestCloseConcurrentWithWritePacket(t *testing.T) {
+	const trials = 2000
+	const nWriters = 64
+	const nWrites = 50
+	v := make([]byte, 1)
+	for trial := 0; trial < trials; trial++ {
+		lower := &countWriter{}
+		linkEP := fifo.New(lower, 16, 1024)
+		var wg sync.WaitGroup
+		startGate := make(chan struct{})
+		for i := 0; i < nWriters; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-startGate
+				for j := 0; j < nWrites; j++ {
+					pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+						Payload: buffer.MakeWithData(v),
+					})
+					pkt.Hash = rand.Uint32()
+					linkEP.WritePacket(pkt)
+					pkt.DecRef()
+				}
+			}()
+		}
+		close(startGate)
+		runtime.Gosched()
+		linkEP.Close()
+		wg.Wait()
+		refs.DoRepeatedLeakCheck()
 	}
 }
 
