@@ -15,14 +15,52 @@
 package runsc
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"testing"
+	"time"
 
+	apievents "github.com/containerd/containerd/api/events"
 	task "github.com/containerd/containerd/api/runtime/task/v2"
+	coreevents "github.com/containerd/containerd/v2/core/events"
 	"github.com/containerd/errdefs"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/shim/v1/utils"
 )
+
+// errorPublisher is a publisher that always returns an error.
+type errorPublisher struct{}
+
+func (p *errorPublisher) Publish(_ context.Context, _ string, _ coreevents.Event) error {
+	return fmt.Errorf("dial unix: missing address")
+}
+
+func (p *errorPublisher) Close() error { return nil }
+
+// TestForwardDoesNotPanicOnPublishError verifies that the event forward
+// function logs errors instead of panicking when the publisher fails.
+// This is the CRI-O case: CRI-O does not provide a containerd event address.
+func TestForwardDoesNotPanicOnPublishError(t *testing.T) {
+	s := &runscService{
+		events: make(chan any, 2),
+	}
+	s.events <- &apievents.TaskCreate{ContainerID: "test"}
+	s.events <- &apievents.TaskExit{ContainerID: "test"}
+	close(s.events)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.forward(context.Background(), &errorPublisher{})
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("forward did not complete within timeout")
+	}
+}
 
 func TestContainerUpdateNilResources(t *testing.T) {
 	c := &Container{}
