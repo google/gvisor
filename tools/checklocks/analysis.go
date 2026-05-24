@@ -15,6 +15,7 @@
 package checklocks
 
 import (
+	"go/ast"
 	"go/token"
 	"go/types"
 	"strings"
@@ -725,6 +726,16 @@ func (pc *passContext) checkInstruction(inst ssa.Instruction, lff *lockFunctionF
 	return nil, nil
 }
 
+func returnPosition(fn *ssa.Function, rv *ssa.Return) token.Pos {
+	if rv.Pos().IsValid() {
+		return rv.Pos()
+	}
+	if _, ok := fn.Syntax().(*ast.FuncLit); ok {
+		return fn.Pos()
+	}
+	return rv.Pos()
+}
+
 // checkBasicBlock traverses the control flow graph starting at a set of given
 // block and checks each instruction for allowed operations.
 func (pc *passContext) checkBasicBlock(fn *ssa.Function, block *ssa.BasicBlock, lff *lockFunctionFacts, parent *lockState, seen map[*ssa.BasicBlock]*lockState, rg map[*ssa.BasicBlock]struct{}) *lockState {
@@ -769,18 +780,19 @@ func (pc *passContext) checkBasicBlock(fn *ssa.Function, block *ssa.BasicBlock, 
 	for _, inst := range block.Instrs {
 		rv, rls = pc.checkInstruction(inst, lff, ls)
 		if rls != nil {
+			returnPos := returnPosition(fn, rv)
 			failed := false
 			// Validate held locks.
 			for fieldName, fg := range lff.HeldOnExit {
 				r := fg.Resolver.resolveStatic(pc, ls, fn, rv)
 				if !r.valid() {
 					// This cannot be forced, since we have no reference.
-					pc.maybeFail(rv.Pos(), "lock %s cannot be resolved", fieldName)
+					pc.maybeFail(returnPos, "lock %s cannot be resolved", fieldName)
 					continue
 				}
 				if s, ok := rls.isHeld(r, fg.Exclusive); !ok {
-					if _, ok := pc.forced[pc.positionKey(rv.Pos())]; !ok && !lff.Ignore {
-						pc.maybeFail(rv.Pos(), "lock %s (%s) not held %s (locks: %s)", fieldName, s, exclusiveStr(fg.Exclusive), rls.String())
+					if _, ok := pc.forced[pc.positionKey(returnPos)]; !ok && !lff.Ignore {
+						pc.maybeFail(returnPos, "lock %s (%s) not held %s (locks: %s)", fieldName, s, exclusiveStr(fg.Exclusive), rls.String())
 						failed = true
 					} else {
 						// Force the lock to be acquired.
@@ -790,7 +802,7 @@ func (pc *passContext) checkBasicBlock(fn *ssa.Function, block *ssa.BasicBlock, 
 			}
 			// Check for other locks, but only if the above didn't trip.
 			if !failed && rls.count() != len(lff.HeldOnExit) && !lff.Ignore {
-				pc.maybeFail(rv.Pos(), "return with unexpected locks held (locks: %s)", rls.String())
+				pc.maybeFail(returnPos, "return with unexpected locks held (locks: %s)", rls.String())
 			}
 		}
 	}
