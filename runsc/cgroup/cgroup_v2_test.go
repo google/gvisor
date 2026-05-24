@@ -416,6 +416,58 @@ func TestConvertMemorySwapToCgroupV2Value(t *testing.T) {
 	}
 }
 
+func TestInstallPrecreatedCgroupV2SetsMemorySwap(t *testing.T) {
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "cgroup")
+	if err != nil {
+		t.Fatalf("error creating temporary directory: %v", err)
+	}
+	defer os.RemoveAll(dir)
+
+	cg := &cgroupV2{
+		Mountpoint:  dir,
+		Path:        "kubepods-pod",
+		Controllers: mandatoryControllers,
+	}
+	cgPath := filepath.Join(cg.Mountpoint, cg.Path)
+	if err := os.MkdirAll(cgPath, 0o777); err != nil {
+		t.Fatalf("os.MkdirAll(): %v", err)
+	}
+	for name, value := range map[string]string{
+		"memory.max":      "max",
+		"memory.swap.max": "max",
+	} {
+		if err := os.WriteFile(filepath.Join(cgPath, name), []byte(value), 0o666); err != nil {
+			t.Fatalf("os.WriteFile(%q): %v", name, err)
+		}
+	}
+
+	resources := &specs.LinuxResources{
+		Memory: &specs.LinuxMemory{
+			Limit: int64Ptr(1024),
+			Swap:  int64Ptr(1280),
+		},
+	}
+	if err := cg.Install(resources); err != nil {
+		t.Fatalf("Install(): %v", err)
+	}
+
+	gotSwap, err := os.ReadFile(filepath.Join(cgPath, "memory.swap.max"))
+	if err != nil {
+		t.Fatalf("ReadFile(memory.swap.max): %v", err)
+	}
+	if string(gotSwap) != "256" {
+		t.Errorf("memory.swap.max = %q, want %q", string(gotSwap), "256")
+	}
+
+	gotMemory, err := os.ReadFile(filepath.Join(cgPath, "memory.max"))
+	if err != nil {
+		t.Fatalf("ReadFile(memory.max): %v", err)
+	}
+	if string(gotMemory) != "max" {
+		t.Errorf("memory.max = %q, want %q", string(gotMemory), "max")
+	}
+}
+
 func TestParseCPUQuotaAndPeriod(t *testing.T) {
 	cases := []struct {
 		quota     string
