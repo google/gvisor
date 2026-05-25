@@ -403,6 +403,18 @@ func (d *dentry) copyXattrsLocked(ctx context.Context) error {
 			return err
 		}
 	}
+	// Strip security.capability from the upper layer after copy-up.
+	// A lower-layer file may carry file capabilities (e.g. cap_net_raw on
+	// /usr/bin/ping); retaining them on the upper layer allows an
+	// unprivileged in-container process to gain those capabilities via exec
+	// after triggering copy-up. This mirrors Linux's ovl_copy_up_data()
+	// calling security_inode_killpriv().
+	if err := vfsObj.RemoveXattrAt(ctx, d.fs.creds, upperPop, linux.XATTR_SECURITY_CAPABILITY); err != nil {
+		if !linuxerr.Equals(linuxerr.ENODATA, err) && !linuxerr.Equals(linuxerr.EOPNOTSUPP, err) {
+			ctx.Infof("failed to remove security.capability on copy-up: %v", err)
+			return err
+		}
+	}
 	return nil
 }
 
