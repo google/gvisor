@@ -15,6 +15,8 @@
 package sandboxsetup
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -64,6 +66,37 @@ func TestShouldExposeVFIODevice(t *testing.T) {
 				t.Errorf("ShouldExposeVFIODevice(%q) = %v, want %v", tst.path, got, tst.want)
 			}
 		})
+	}
+}
+
+// TestSetupNvidiaProcDriverNoHostDriver verifies that SetupNvidiaProcDriver
+// is a no-op when the host has no NVIDIA driver loaded (the
+// /proc/driver/nvidia directory does not exist). It does this by pointing the
+// helper at a "host" root in a tmpdir that intentionally lacks the directory,
+// via a const test override.
+//
+// We can't run a real bind-mount in a unit test without root + a host with the
+// NVIDIA driver, so the integration-side behavior is exercised separately by
+// the GPU-host tests. This unit test pins the "graceful skip" behavior
+// described in the function doc.
+func TestSetupNvidiaProcDriverNoHostDriver(t *testing.T) {
+	// Skip on hosts that happen to have the NVIDIA driver loaded -- this test
+	// is specifically about the missing-driver path.
+	if _, err := os.Stat(nvidiaProcDriverHostPath); err == nil {
+		t.Skipf("%q exists on this host; this test exercises the missing-driver path", nvidiaProcDriverHostPath)
+	}
+
+	root := t.TempDir()
+	procPath := "/proc"
+	if err := SetupNvidiaProcDriver(root, procPath); err != nil {
+		t.Fatalf("SetupNvidiaProcDriver(no host driver) returned %v, want nil", err)
+	}
+
+	// The function must not have created any state under root when the host
+	// has no driver loaded.
+	dst := filepath.Join(root, nvidiaProcDriverContainerRelPath)
+	if _, err := os.Stat(dst); !os.IsNotExist(err) {
+		t.Errorf("SetupNvidiaProcDriver created %q on host with no driver; stat err = %v, want IsNotExist", dst, err)
 	}
 }
 

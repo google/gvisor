@@ -39,6 +39,16 @@ const ProcFDBindMount = "/proc/fs"
 // vfioPathDir is the directory containing VFIO device nodes.
 const vfioPathDir = "/dev/vfio"
 
+// nvidiaProcDriverHostPath is the host path of the directory exposed by the
+// NVIDIA kernel module to userspace (params, version, registry, ...). It is
+// only present when the NVIDIA driver module is loaded.
+const nvidiaProcDriverHostPath = "/proc/driver/nvidia"
+
+// nvidiaProcDriverContainerRelPath is the path (relative to the container
+// rootfs) at which CDI createContainer hooks expect to find the NVIDIA driver
+// procfs directory.
+const nvidiaProcDriverContainerRelPath = "proc/driver/nvidia"
+
 // MountOpener opens a mount source when the gofer process cannot access it
 // directly (e.g. due to permission restrictions in a user namespace). It
 // returns the opened file for the mount source. The caller is responsible
@@ -201,6 +211,16 @@ func SetupRootFS(spec *specs.Spec, conf *config.Config, mountConfs []specutils.G
 	if devIoFD >= 0 {
 		if err := SetupDev(spec, conf, containerRootFs, procPath); err != nil {
 			util.Fatalf("error setting up /dev: %v", err)
+		}
+	}
+
+	// Expose the host's /proc/driver/nvidia under the container rootfs so that
+	// NVIDIA CDI createContainer hooks (e.g. disable-device-node-modification)
+	// can read and bind-mount over its files. Mirrors what runc gets for free
+	// from having mounted /proc inside the container before hooks run.
+	if specutils.NVProxyEnabled(spec, conf) {
+		if err := SetupNvidiaProcDriver(containerRootFs, procPath); err != nil {
+			util.Fatalf("error exposing nvidia procfs: %v", err)
 		}
 	}
 
@@ -397,6 +417,46 @@ func ShouldExposeVFIODevice(path string) bool {
 func ShouldExposeTpuDevice(path string) bool {
 	valid, _ := util.IsTPUDeviceValid(path)
 	return valid || ShouldExposeVFIODevice(path)
+}
+
+// SetupNvidiaProcDriver bind-mounts the host's /proc/driver/nvidia directory
+// onto root/proc/driver/nvidia.
+//
+// NVIDIA CDI createContainer hooks (e.g. disable-device-node-modification)
+// expect to be able to open, read, and bind-mount over files under
+// /proc/driver/nvidia inside the container's rootfs. With runc, those files
+// are visible because procfs is mounted into the container before hooks run.
+// gVisor does not mount procfs in the container rootfs at hook time (the
+// sentry serves its own /proc later), so without this helper those hooks fail
+// with "open /...rootfs/proc/driver/nvidia/params: no such file or directory".
+//
+// The bind-mount is read-only and only contains kernel-provided NVIDIA driver
+// metadata, so it does not broaden the sandbox attack surface beyond what
+// the host driver already exposes to userspace.
+//
+// No-op when the host does not have an NVIDIA driver loaded.
+func SetupNvidiaProcDriver(root, procPath string) error {
+	if _, err := os.Stat(nvidiaProcDriverHostPath); err != nil {
+		if os.IsNotExist(err) {
+			// nvproxy is enabled but the host hasn't loaded the NVIDIA driver
+			// (rare; e.g. driver still loading at sandbox start). Nothing to
+			// expose; CDI hooks that need it will surface a clearer error.
+			return nil
+		}
+		return fmt.Errorf("stat %q: %w", nvidiaProcDriverHostPath, err)
+	}
+	dst := filepath.Join(root, nvidiaProcDriverContainerRelPath)
+	if err := os.MkdirAll(dst, 0755); err != nil {
+		return fmt.Errorf("creating %q: %w", dst, err)
+	}
+	// Read-only: the hook bind-mounts modified files over this with its own
+	// (rw) tmpfs; we just need the original paths to exist.
+	flags := uint32(unix.MS_BIND | unix.MS_RDONLY)
+	if err := specutils.SafeSetupAndMount(nvidiaProcDriverHostPath, dst, "bind", flags, procPath); err != nil {
+		return fmt.Errorf("bind-mounting %q to %q: %w", nvidiaProcDriverHostPath, dst, err)
+	}
+	log.Infof("Bind-mounted %q to %q for NVIDIA CDI createContainer hooks", nvidiaProcDriverHostPath, dst)
+	return nil
 }
 
 // SetupDev mounts devices from the OCI spec into the gofer's /dev directory.
