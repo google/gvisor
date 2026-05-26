@@ -33,7 +33,7 @@ export GOMODCACHE GOCACHE
   # The gVisor code coverage implementation uses internal packages. More details
   # can be found here: https://github.com/golang/go/issues/76098.
 
-  go_version=1.25.5
+  go_version=1.26.3
 
   go_base_url="https://dl.google.com/go/go${go_version}"
   arch="$(uname -m)"
