@@ -2590,6 +2590,100 @@ TEST(MountTest, OverlayfsSgidBitIsCopiedUp) {
   }
 }
 
+// security.capability must be stripped from the upper layer after copy-up so
+// that an unprivileged container process cannot gain file capabilities by
+// exec-ing a copied-up binary (e.g. /usr/bin/ping carrying cap_net_raw).
+//
+// Copy-up is triggered via utimensat (a metadata-only operation) so that the
+// write path's incidental KillPriv does not mask a missing explicit strip in
+// copyXattrsLocked. Native Linux 6.x does not strip security.capability on
+// utimensat copy-up (only on write), so this test is gVisor-only: gVisor is
+// intentionally stricter to provide a stronger container isolation guarantee.
+TEST(MountTest, OverlayfsSecurityCapabilityStrippedOnCopyUp) {
+  SKIP_IF(!IsRunningOnGvisor());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETFCAP)));
+
+  auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  // Overlayfs cannot be used as the upper layer for another overlayfs mount.
+  // If the test is already running inside overlayfs, mount a tmpfs base first.
+  bool in_overlayfs = ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(base_dir.path()));
+  if (in_overlayfs) {
+    ASSERT_THAT(
+        mount("tmpfs", base_dir.path().c_str(), "tmpfs", 0, "mode=1777"),
+        SyscallSucceeds());
+  }
+  auto tmpfs_cleanup = Cleanup([&base_dir, &in_overlayfs] {
+    if (in_overlayfs) {
+      ASSERT_THAT(umount2(base_dir.path().c_str(), MNT_DETACH),
+                  SyscallSucceeds());
+    }
+  });
+
+  // Create a regular file in the lower layer and attach a VFS2 file-capability
+  // record (cap_net_raw, as carried by /usr/bin/ping in container images).
+  auto lower =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  std::string lower_file = lower.path() + "/testbin";
+  ASSERT_NO_ERRNO(CreateWithContents(lower_file, "data", 0755));
+
+  struct {
+    uint32_t magic_etc;
+    uint32_t permitted_lo;
+    uint32_t inheritable_lo;
+    uint32_t permitted_hi;
+    uint32_t inheritable_hi;
+  } cap_data = {};
+  cap_data.magic_etc = VFS_CAP_REVISION_2 | VFS_CAP_FLAGS_EFFECTIVE;
+  cap_data.permitted_lo = (1u << CAP_NET_RAW);
+  ASSERT_THAT(
+      setxattr(lower_file.c_str(), "security.capability", &cap_data,
+               sizeof(cap_data), 0),
+      SyscallSucceeds());
+
+  // Mount the overlay.
+  auto upper =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto work = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto merged =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  std::string opts = "lowerdir=" + lower.path() + ",upperdir=" + upper.path() +
+                     ",workdir=" + work.path();
+  ASSERT_THAT(
+      mount("overlay", merged.path().c_str(), "overlay", 0, opts.c_str()),
+      SyscallSucceeds());
+  auto overlayfs_cleanup =
+      Cleanup([&merged] { umount2(merged.path().c_str(), MNT_DETACH); });
+
+  std::string merged_file = merged.path() + "/testbin";
+  std::string upper_file = upper.path() + "/testbin";
+  char buf[sizeof(cap_data)] = {};
+
+  // Before copy-up the capability is visible through the overlay.
+  ASSERT_THAT(
+      getxattr(merged_file.c_str(), "security.capability", buf, sizeof(buf)),
+      SyscallSucceedsWithValue(sizeof(cap_data)));
+
+  // Trigger copy-up via utimensat (metadata-only; does not go through the
+  // write path, so KillPriv from the write path is not involved).
+  ASSERT_THAT(utimensat(AT_FDCWD, merged_file.c_str(), nullptr, 0),
+              SyscallSucceeds());
+
+  // Confirm the file was actually copied up to the upper layer.
+  struct stat st;
+  ASSERT_THAT(stat(upper_file.c_str(), &st), SyscallSucceeds());
+
+  // security.capability must be absent from the upper layer after copy-up.
+  EXPECT_THAT(
+      getxattr(upper_file.c_str(), "security.capability", buf, sizeof(buf)),
+      SyscallFailsWithErrno(ENODATA));
+
+  // And must also be absent through the merged (overlay) view.
+  EXPECT_THAT(
+      getxattr(merged_file.c_str(), "security.capability", buf, sizeof(buf)),
+      SyscallFailsWithErrno(ENODATA));
+}
+
 // Renaming a directory on an overlay inside a user namespace requires
 // user.overlay.* xattrs to mark the directory opaque.
 TEST(MountTest, OverlayfsDirectoryRenameInUserNamespace) {
