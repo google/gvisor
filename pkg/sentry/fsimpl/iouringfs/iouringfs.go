@@ -168,6 +168,12 @@ func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, entries uint32, par
 		return nil, err
 	}
 
+	// Transfer cleanup ownership to the FileDescription: vfsfd.DecRef ->
+	// Release will DecRef both MemoryFile allocations and also release the
+	// mount/dentry refs and writer counter that Init took (O_RDWR mode).
+	cu.Release()
+	cu = cleanup.Make(func() { iouringfd.vfsfd.DecRef(ctx) })
+
 	params.SqEntries = numSqEntries
 	params.CqEntries = numCqEntries
 
