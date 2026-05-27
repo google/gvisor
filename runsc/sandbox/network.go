@@ -237,10 +237,6 @@ func collectLinksAndRoutes(conf *config.Config, disableIPv6 bool) (boot.CreateLi
 			return boot.CreateLinksAndRoutesArgs{}, fmt.Errorf("fetching ARP table for %q: %w", iface.Name, err)
 		}
 
-		// PatchArpWarmCache: neighbor list is built AFTER routesForIface so we
-		// know the gateway IPs. See the warm-cache block below.
-		var neighbors []boot.Neighbor
-
 		// Scrape the routes before removing the address, since that
 		// will remove the routes as well.
 		routes, defv4, defv6, err := routesForIface(iface, disableIPv6)
@@ -268,25 +264,6 @@ func collectLinksAndRoutes(conf *config.Config, disableIPv6 bool) (boot.CreateLi
 		// boot.Neighbor so gVisor's netstack starts with a static cache.
 		// Required for silk-cni peer-style /32 setups where gVisor's own ARP
 		// through the FDBased link is unreliable.
-		warmTrace := func(format string, a ...interface{}) {
-			line := fmt.Sprintf("PATCH-WARMCACHE pid="+strconv.Itoa(os.Getpid())+" iface="+iface.Name+" "+format+"\n", a...)
-			fmt.Fprint(os.Stderr, line)
-			if f, ferr := os.OpenFile("/var/vcap/sys/log/runsc-debug/warm-trace.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666); ferr == nil {
-				fmt.Fprint(f, line)
-				f.Close()
-			}
-			if f, ferr := os.OpenFile("/tmp/runsc-warm-trace.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666); ferr == nil {
-				fmt.Fprint(f, line)
-				f.Close()
-			}
-		}
-		warmTrace("ENTER iface=%s idx=%d routes=%d defv4=%v defv6=%v dumpPre=%d", iface.Name, iface.Index, len(routes), defv4, defv6, len(dump))
-		for i, r := range routes {
-			warmTrace("  route[%d] dst=%v gw=%v", i, r.Destination, r.Gateway)
-		}
-		for i, n := range dump {
-			warmTrace("  preDump[%d] ip=%v hw=%v state=0x%x", i, n.IP, n.HardwareAddr, n.State)
-		}
 		gwSet := map[string]net.IP{}
 		for _, r := range routes {
 			if r.Gateway != nil && !r.Gateway.IsUnspecified() {
@@ -299,7 +276,6 @@ func collectLinksAndRoutes(conf *config.Config, disableIPv6 bool) (boot.CreateLi
 		if defv6 != nil && defv6.Gateway != nil && !defv6.Gateway.IsUnspecified() {
 			gwSet[defv6.Gateway.String()] = defv6.Gateway
 		}
-		warmTrace("gwSet size=%d", len(gwSet))
 		haveEntry := func(ip net.IP) bool {
 			for _, n := range dump {
 				if n.IP != nil && n.IP.Equal(ip) && n.HardwareAddr != nil && len(n.HardwareAddr) > 0 {
@@ -311,7 +287,6 @@ func collectLinksAndRoutes(conf *config.Config, disableIPv6 bool) (boot.CreateLi
 		warmed := false
 		for _, gw := range gwSet {
 			if haveEntry(gw) {
-				warmTrace("  gw=%v already cached, skip", gw)
 				continue
 			}
 			network := "udp4"
@@ -320,28 +295,21 @@ func collectLinksAndRoutes(conf *config.Config, disableIPv6 bool) (boot.CreateLi
 			}
 			c, derr := net.DialUDP(network, nil, &net.UDPAddr{IP: gw, Port: 9})
 			if derr != nil {
-				warmTrace("  gw=%v DialUDP failed: %v", gw, derr)
 				log.Debugf("PatchArpWarmCache: DialUDP(%s) failed: %v", gw, derr)
 				continue
 			}
-			nw, werr := c.Write([]byte{})
-			warmTrace("  gw=%v UDP write n=%d err=%v", gw, nw, werr)
-			_ = c.Close()
+			c.Write([]byte{})
+			c.Close()
 			warmed = true
 		}
 		if warmed {
 			time.Sleep(75 * time.Millisecond)
 			if redump, rerr := netlink.NeighList(iface.Index, 0); rerr == nil {
-				warmTrace("post-warm dump=%d (was %d)", len(redump), len(dump))
 				dump = redump
-				for i, n := range dump {
-					warmTrace("  postDump[%d] ip=%v hw=%v state=0x%x", i, n.IP, n.HardwareAddr, n.State)
-				}
-			} else {
-				warmTrace("post-warm NeighList err=%v", rerr)
 			}
 		}
 		const liveStates = netlink.NUD_PERMANENT | netlink.NUD_REACHABLE | netlink.NUD_STALE | netlink.NUD_DELAY | netlink.NUD_PROBE
+		var neighbors []boot.Neighbor
 		for _, n := range dump {
 			if n.HardwareAddr == nil || len(n.HardwareAddr) == 0 {
 				continue
@@ -349,11 +317,8 @@ func collectLinksAndRoutes(conf *config.Config, disableIPv6 bool) (boot.CreateLi
 			if n.State&liveStates == 0 {
 				continue
 			}
-			warmTrace("COPY ip=%v hw=%v state=0x%x", n.IP, n.HardwareAddr, n.State)
-			log.Debugf("PatchArpWarmCache: copying ARP entry state=0x%x ip=%v lladdr=%v", n.State, n.IP, n.HardwareAddr)
 			neighbors = append(neighbors, boot.Neighbor{IP: n.IP, HardwareAddr: n.HardwareAddr})
 		}
-		warmTrace("EXIT neighbors=%d", len(neighbors))
 
 		// Get the link for the interface.
 		ifaceLink, err := netlink.LinkByName(iface.Name)
