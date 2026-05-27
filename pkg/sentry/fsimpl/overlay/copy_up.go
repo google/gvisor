@@ -407,8 +407,12 @@ func (d *dentry) copyXattrsLocked(ctx context.Context) error {
 	// A lower-layer file may carry file capabilities (e.g. cap_net_raw on
 	// /usr/bin/ping); retaining them on the upper layer allows an
 	// unprivileged in-container process to gain those capabilities via exec
-	// after triggering copy-up. This mirrors Linux's ovl_copy_up_data()
-	// calling security_inode_killpriv().
+	// after triggering copy-up. Linux handles this via write ordering:
+	// copy_up.c copies data after xattrs so that the subsequent VFS-level
+	// write triggers cap_inode_killpriv automatically (copy_up.c ~L1029).
+	// gVisor does not have that implicit hook on SetXattrAt, so we strip
+	// security.capability explicitly here. See also PR #13072 which closes
+	// the analogous gap on the SetStat path in tmpfs.
 	if err := vfsObj.RemoveXattrAt(ctx, d.fs.creds, upperPop, linux.XATTR_SECURITY_CAPABILITY); err != nil {
 		if !linuxerr.Equals(linuxerr.ENODATA, err) && !linuxerr.Equals(linuxerr.EOPNOTSUPP, err) {
 			ctx.Infof("failed to remove security.capability on copy-up: %v", err)
