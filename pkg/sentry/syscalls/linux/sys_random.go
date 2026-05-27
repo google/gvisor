@@ -29,6 +29,7 @@ import (
 const (
 	_GRND_NONBLOCK = 0x1
 	_GRND_RANDOM   = 0x2
+	_GRND_INSECURE = 0x4
 )
 
 // GetRandom implements the linux syscall getrandom(2).
@@ -36,15 +37,15 @@ const (
 // In a multi-tenant/shared environment, the only valid implementation is to
 // fetch data from the urandom pool, otherwise starvation attacks become
 // possible. The urandom pool is also expected to have plenty of entropy, thus
-// the GRND_RANDOM flag is ignored. The GRND_NONBLOCK flag does not apply, as
-// the pool will already be initialized.
+// the GRND_RANDOM and GRND_INSECURE flags are ignored. The GRND_NONBLOCK flag
+// does not apply, as the pool will already be initialized.
 func GetRandom(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 	length := args[1].SizeT()
 	flags := args[2].Int()
 
 	// Flags are checked for validity but otherwise ignored. See above.
-	if flags & ^(_GRND_NONBLOCK|_GRND_RANDOM) != 0 {
+	if flags & ^(_GRND_NONBLOCK|_GRND_RANDOM|_GRND_INSECURE) != 0 {
 		return 0, nil, linuxerr.EINVAL
 	}
 
