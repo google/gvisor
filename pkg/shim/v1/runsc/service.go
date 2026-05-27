@@ -657,21 +657,65 @@ func getTopic(e any) string {
 	return runtime.TaskUnknownTopic
 }
 
-func newInit(workDir, namespace string, platform stdio.Platform, r *proc.CreateConfig, options *Options, rootfs string) (*proc.Init, error) {
+func newInit(workDir, namespace string, platform stdio.Platform, r *proc.CreateConfig, options *Options, rootfs string) (*proc.Init, *utils.UserNamespaceConfig, error) {
 	spec, err := utils.ReadSpec(r.Bundle)
 	if err != nil {
-		return nil, fmt.Errorf("read oci spec: %w", err)
+		return nil, nil, fmt.Errorf("read oci spec: %w", err)
 	}
 
 	updated, err := utils.UpdateVolumeAnnotations(spec)
 	if err != nil {
-		return nil, fmt.Errorf("update volume annotations: %w", err)
+		return nil, nil, fmt.Errorf("update volume annotations: %w", err)
 	}
 	updated = setPodCgroup(spec) || updated
 
+	// Shim-side user namespace injection.
+	//
+	// Two gates must both be true: the runtime operator opted in via
+	// enable_user_namespace_annotation, AND the pod's metadata.annotations
+	// requested it via "dev.gvisor.spec.user-namespace": "true". The
+	// operator gate exists so a misconfigured workload cannot unilaterally
+	// enable a userns when the runtime is not configured to support one.
+	//
+	// Only applied to sandbox containers; application/exec containers within
+	// the pod inherit the sandbox's user namespace from runsc. The caller's
+	// pre-existing user namespace or uid/gid mappings (e.g. from kubelet's
+	// pod.spec.hostUsers: false plumbing) take precedence: InjectUserNamespace
+	// returns updated=false in that case and we drop the slot we just claimed.
+	var userNS *utils.UserNamespaceConfig
+	if options.EnableUserNamespaceAnnotation && utils.IsSandbox(spec) && utils.HasUserNamespaceRequest(spec) {
+		userNS = &utils.UserNamespaceConfig{
+			HostUIDBase: options.UserNamespaceHostUIDBase,
+			HostGIDBase: options.UserNamespaceHostGIDBase,
+			RangeSize:   options.UserNamespaceRangeSize,
+			PoolSize:    options.UserNamespacePoolSize,
+			StateDir:    options.UserNamespaceStateDir,
+		}
+		slot, err := utils.AllocateUserNamespaceSlot(userNS, r.ID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("allocate user namespace slot: %w", err)
+		}
+		injected, err := utils.InjectUserNamespace(spec, userNS, slot)
+		if err != nil {
+			_ = utils.ReleaseUserNamespaceSlot(userNS, r.ID)
+			return nil, nil, fmt.Errorf("inject user namespace: %w", err)
+		}
+		if injected {
+			updated = true
+		} else {
+			// Caller already configured a user namespace; release the slot
+			// we claimed and let the caller's spec stand.
+			_ = utils.ReleaseUserNamespaceSlot(userNS, r.ID)
+			userNS = nil
+		}
+	}
+
 	if updated {
 		if err := utils.WriteSpec(r.Bundle, spec); err != nil {
-			return nil, err
+			if userNS != nil {
+				_ = utils.ReleaseUserNamespaceSlot(userNS, r.ID)
+			}
+			return nil, nil, err
 		}
 	}
 
@@ -691,7 +735,7 @@ func newInit(workDir, namespace string, platform stdio.Platform, r *proc.CreateC
 	p.Sandbox = specutils.SpecContainerType(spec) == specutils.ContainerTypeSandbox
 	p.UserLog = utils.UserLogPath(spec)
 	p.Monitor = reaper.Default
-	return p, nil
+	return p, userNS, nil
 }
 
 // setPodCgroup searches for the pod cgroup path inside the container's cgroup

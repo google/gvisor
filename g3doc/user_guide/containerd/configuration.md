@@ -101,6 +101,87 @@ log_level = "debug"
 EOF
 ```
 
+## User Namespace Injection
+
+The shim can inject a Linux user namespace and uid/gid mappings into a
+sandbox container's OCI spec when the pod opts in via an annotation, so the
+workload runs in a user namespace without the caller having to set one up
+explicitly. This is useful on Kubernetes nodes whose runtime stack does not
+yet support `pod.spec.hostUsers: false` ([KEP-127][KEP-127]) for runsc; once
+that path is plumbed through, drop the annotation and use `hostUsers: false`
+instead. See [issue #13303](https://github.com/google/gvisor/issues/13303).
+
+Two gates must both be true for injection to happen:
+
+1.  The operator enables the feature in `runsc.toml` with
+    `enable_user_namespace_annotation = true`.
+2.  The pod sets `metadata.annotations["dev.gvisor.spec.user-namespace"] =
+    "true"`. Containerd propagates `dev.gvisor.*` pod annotations to the
+    sandbox OCI spec via the `pod_annotations` match list.
+
+The operator gate exists so a misconfigured pod cannot unilaterally request
+a userns on a runtime that is not provisioned for one.
+
+Application/exec containers within the same pod inherit the sandbox's user
+namespace from runsc; only the sandbox container's spec is modified. If the
+caller already declared a user namespace or uid/gid mappings (e.g. via
+`hostUsers: false`), the shim leaves the spec untouched.
+
+Each opted-in sandbox is assigned a contiguous, non-overlapping block of
+host UIDs from a per-node pool. Allocations are persisted under
+`user_namespace_state_dir` (default `/run/runsc/userns-pool`) so they
+survive shim restarts, and freed when the sandbox is deleted.
+
+Enable it in `runsc.toml`:
+
+```shell
+cat <<EOF | sudo tee /etc/containerd/runsc.toml
+enable_user_namespace_annotation = true
+user_namespace_host_uid_base = 100000
+user_namespace_host_gid_base = 100000
+# Optional, with defaults shown:
+user_namespace_range_size = 65536          # UIDs/GIDs per sandbox
+user_namespace_pool_size = 1000            # max concurrent sandboxes
+user_namespace_state_dir = "/run/runsc/userns-pool"
+EOF
+```
+
+Ensure the runtime registration in containerd's config has
+`pod_annotations = ["dev.gvisor.*"]` so the opt-in annotation reaches the
+shim:
+
+```shell
+cat <<EOF | sudo tee /etc/containerd/config.toml
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runsc]
+  runtime_type = "io.containerd.runsc.v1"
+  pod_annotations = ["dev.gvisor.*"]
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runsc.options]
+  TypeUrl = "io.containerd.runsc.v1.options"
+  ConfigPath = "/etc/containerd/runsc.toml"
+EOF
+```
+
+A pod opts in by setting the annotation:
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    dev.gvisor.spec.user-namespace: "true"
+spec:
+  runtimeClassName: gvisor
+  containers:
+    - name: app
+      image: ...
+```
+
+The host UID/GID range used by the pool must not overlap with system or
+kubelet-managed UIDs. With the defaults above the pool occupies
+`[100000, 100000 + 1000*65536)`; size accordingly for your node.
+
+[KEP-127]: https://github.com/kubernetes/enhancements/issues/127
+
 ## NVIDIA Container Runtime
 
 If you want to use

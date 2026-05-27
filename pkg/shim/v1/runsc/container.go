@@ -42,6 +42,7 @@ import (
 	"gvisor.dev/gvisor/pkg/shim/v1/proc"
 	"gvisor.dev/gvisor/pkg/shim/v1/runsccmd"
 	"gvisor.dev/gvisor/pkg/shim/v1/runtimeoptions"
+	"gvisor.dev/gvisor/pkg/shim/v1/utils"
 )
 
 // CgroupMode is the cgroups mode that is being used by the container.
@@ -69,6 +70,13 @@ type Container struct {
 
 	// cgroup is the cgroups mode that is being used by the container.
 	cgroup CgroupMode
+
+	// userNS is the user-namespace allocator config that owns this
+	// container's UID/GID slot, set when newInit injected a user namespace
+	// into the spec via UserNamespaceConfig. Nil otherwise (sandbox without
+	// shim-side userns, or non-sandbox container that inherits its
+	// sandbox's userns).
+	userNS *utils.UserNamespaceConfig
 }
 
 // NewContainer returns a new runsc container
@@ -197,9 +205,19 @@ func NewContainer(ctx context.Context, platform stdio.Platform, r *task.CreateTa
 		FSRestoreDirect:    FSRestoreDirect,
 	}
 
-	process, err := newInit(filepath.Join(r.Bundle, "work"), ns, platform, config, &opts, st.Rootfs)
+	process, userNS, err := newInit(filepath.Join(r.Bundle, "work"), ns, platform, config, &opts, st.Rootfs)
 	if err != nil {
 		return nil, err
+	}
+	// Release the user namespace slot if anything from this point on fails.
+	// On success cu.Release() below cancels the cleanup.
+	if userNS != nil {
+		sandboxID := r.ID
+		cu.Add(func() {
+			if err := utils.ReleaseUserNamespaceSlot(userNS, sandboxID); err != nil {
+				log.L.Warningf("failed to release user namespace slot for %s: %v", sandboxID, err)
+			}
+		})
 	}
 	if err := process.Create(ctx, config); err != nil {
 		return nil, err
@@ -218,6 +236,7 @@ func NewContainer(ctx context.Context, platform stdio.Platform, r *task.CreateTa
 		task:      process,
 		cgroup:    cgroupMode,
 		processes: make(map[string]extension.Process),
+		userNS:    userNS,
 	}
 	return &c, nil
 }
@@ -312,6 +331,14 @@ func (c *Container) Delete(ctx context.Context, r *task.DeleteRequest) (extensio
 	// When ExecID is empty, it removes the init task in the container.
 	if r.ExecID != "" {
 		c.ProcessRemove(r.ExecID)
+	} else if c.userNS != nil {
+		// Sandbox init container is being deleted; release its user namespace
+		// slot. Best-effort: a leaked slot is an operator nuisance, not a
+		// correctness issue (cleared on reboot since /run is tmpfs), so log
+		// and continue.
+		if err := utils.ReleaseUserNamespaceSlot(c.userNS, c.ID); err != nil {
+			log.L.Warningf("failed to release user namespace slot for %s: %v", c.ID, err)
+		}
 	}
 	return p, nil
 }
