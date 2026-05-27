@@ -376,7 +376,7 @@ TEST(SemaphoreTest, SemOpRandom) {
       for (size_t i = 0; i < 500; ++i) {
         int16_t val;
         {
-          absl::MutexLock l(&mutex);
+          absl::MutexLock l(mutex);
           if (done) {
             return;
           }
@@ -397,7 +397,7 @@ TEST(SemaphoreTest, SemOpRandom) {
     zero = std::make_unique<ScopedThread>([&sem, &mutex, &done] {
       for (size_t i = 0; i < 500; ++i) {
         {
-          absl::MutexLock l(&mutex);
+          absl::MutexLock l(mutex);
           if (done) {
             return;
           }
@@ -417,7 +417,7 @@ TEST(SemaphoreTest, SemOpRandom) {
       for (size_t i = 0; i < 500; ++i) {
         int16_t val;
         {
-          absl::MutexLock l(&mutex);
+          absl::MutexLock l(mutex);
           val = (rand_r(&seed) % 10 + 1);  // Rand between 1 and 10.
           count += val;
         }
@@ -437,7 +437,7 @@ TEST(SemaphoreTest, SemOpRandom) {
   // Now there could be waiters blocked (remember operations are random).
   // Notify waiters that we're done and signal semaphore just the right amount.
   {
-    absl::MutexLock l(&mutex);
+    absl::MutexLock l(mutex);
     done = true;
     struct sembuf buf = {};
     buf.sem_op = -count;

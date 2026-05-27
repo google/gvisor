@@ -129,7 +129,7 @@ TEST_P(SignalfdTest, Blocking) {
   ScopedThread t([&] {
     // Copy the tid and notify the caller.
     {
-      absl::MutexLock ml(&mu);
+      absl::MutexLock ml(mu);
       tid = gettid();
       has_tid = true;
     }
@@ -142,7 +142,7 @@ TEST_P(SignalfdTest, Blocking) {
   });
 
   // Wait until blocked.
-  absl::MutexLock ml(&mu);
+  absl::MutexLock ml(mu);
   mu.Await(absl::Condition(&has_tid));
 
   // Deliver the signal to either the waiting thread, or
@@ -182,7 +182,7 @@ TEST_P(SignalfdTest, ThreadGroup) {
     EXPECT_EQ(rbuf.ssi_signo, signo);
 
     // Wait for the other thread.
-    absl::MutexLock ml(&mu);
+    absl::MutexLock ml(mu);
     first = true;
     mu.Await(absl::Condition(&second));
   });
@@ -192,7 +192,7 @@ TEST_P(SignalfdTest, ThreadGroup) {
 
   // Wait for the first thread to process.
   {
-    absl::MutexLock ml(&mu);
+    absl::MutexLock ml(mu);
     mu.Await(absl::Condition(&first));
   }
 
@@ -207,7 +207,7 @@ TEST_P(SignalfdTest, ThreadGroup) {
 
   // Mark the test as done.
   {
-    absl::MutexLock ml(&mu);
+    absl::MutexLock ml(mu);
     second = true;
   }
 

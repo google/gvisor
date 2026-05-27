@@ -1250,9 +1250,9 @@ void ExecWithThread() {
   bool started = false;
 
   ScopedThread t([&] {
-    mu.Lock();
+    mu.lock();
     started = true;
-    mu.Unlock();
+    mu.unlock();
 
     while (true) {
       pause();
@@ -1260,7 +1260,7 @@ void ExecWithThread() {
   });
 
   mu.LockWhen(absl::Condition(&started));
-  mu.Unlock();
+  mu.unlock();
 
   const ExecveArray argv = {"/proc/self/exe", kExit42};
   const ExecveArray envv;

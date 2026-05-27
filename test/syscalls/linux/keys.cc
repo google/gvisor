@@ -332,7 +332,7 @@ TEST(KeysTest, ChildThreadInheritsSessionKeyringCreatedAfterChildIsBorn) {
       bool child_ready = false;
       bool parent_keyring_created = false;
       ScopedThread child([&] {
-        absl::MutexLock child_ml(&mu);
+        absl::MutexLock child_ml(mu);
         child_ready = true;
         std::cerr << "Child is spawned and waiting for parent." << std::endl;
         mu.Await(absl::Condition(&parent_keyring_created));
@@ -342,7 +342,7 @@ TEST(KeysTest, ChildThreadInheritsSessionKeyringCreatedAfterChildIsBorn) {
                   << std::endl;
       });
       [&] {
-        absl::MutexLock parent_ml(&mu);
+        absl::MutexLock parent_ml(mu);
         mu.Await(absl::Condition(&child_ready));
         int64_t session_keyring_id =
             ASSERT_NO_ERRNO_AND_VALUE(keyctl(KEYCTL_JOIN_SESSION_KEYRING));
@@ -419,7 +419,7 @@ TEST(KeysTest, ExistingNamedSessionKeyringIsNew) {
     absl::Mutex mu;
     bool first_child_created_keyring = false;
     ScopedThread first_child([&] {
-      absl::MutexLock ml(&mu);
+      absl::MutexLock ml(mu);
       ASSERT_NO_ERRNO(
           keyctl(KEYCTL_JOIN_SESSION_KEYRING, (uint64_t)(kKeyringName.data())));
       first_child_key =
@@ -429,7 +429,7 @@ TEST(KeysTest, ExistingNamedSessionKeyringIsNew) {
       first_child_created_keyring = true;
     });
     ScopedThread([&] {
-      absl::MutexLock ml(&mu);
+      absl::MutexLock ml(mu);
       second_child_initial_key =
           ASSERT_NO_ERRNO_AND_VALUE(DescribeKey(KEY_SPEC_SESSION_KEYRING));
       std::cerr << "Session child's initial session keyring: "
@@ -713,7 +713,7 @@ TEST(KeysTest, SearchableKeyringIsSharedAcrossThreads) {
     //   flipped.
 
     ScopedThread first_child([&] {
-      absl::MutexLock ml(&mu);
+      absl::MutexLock ml(mu);
       first_child_ready = true;
       mu.Await(absl::Condition(&second_child_ready));
       ASSERT_NO_ERRNO(
@@ -746,7 +746,7 @@ TEST(KeysTest, SearchableKeyringIsSharedAcrossThreads) {
       first_child_modified_keyring = true;
     });
     ScopedThread second_child([&] {
-      absl::MutexLock ml(&mu);
+      absl::MutexLock ml(mu);
       second_child_ready = true;
       mu.Await(absl::Condition(&first_child_ready));
       mu.Await(absl::Condition(&first_child_created_keyring));

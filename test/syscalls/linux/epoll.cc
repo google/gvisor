@@ -411,7 +411,7 @@ TEST(EpollTest, DoubleEpollOneShot) {
 
       // Make request.
       {
-        absl::MutexLock lock(&m);
+        absl::MutexLock lock(m);
         ASSERT_EQ(WriteFd(sockets[1], msg1, sizeof(msg1)), sizeof(msg1));
       }
 
@@ -425,7 +425,7 @@ TEST(EpollTest, DoubleEpollOneShot) {
 
       // Read response.
       {
-        absl::MutexLock lock(&m);
+        absl::MutexLock lock(m);
         ASSERT_THAT(ReadFd(sockets[1], &tmp, sizeof(tmp)),
                     SyscallSucceedsWithValue(sizeof(tmp)));
       }
