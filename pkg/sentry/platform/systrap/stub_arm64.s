@@ -44,8 +44,7 @@
 #define SENTRY_MESSAGE_ARG4  (SENTRY_MESSAGE_ARGS + 4*8)
 #define SENTRY_MESSAGE_ARG5  (SENTRY_MESSAGE_ARGS + 5*8)
 
-// syscallStubMessage offsets.
-#define STUB_MESSAGE_OFFSET 4096 // +checkconst . syscallStubMessageOffset
+
 #define STUB_MESSAGE_RET    0    // +checkoffset . syscallStubMessage.ret
 
 // initStubProcess bootstraps the child and sends itself SIGSTOP to wait for attach.
@@ -167,7 +166,7 @@ execute_syscall:
         SVC
 
 	// stubMessage->ret = ret
-	MOVD R0, (STUB_MESSAGE_OFFSET + STUB_MESSAGE_RET)(R12)
+	MOVD R0, (STUB_MESSAGE_RET)(R19)
 
 	// for {
 	//   if futex(sentryMessage->state, FUTEX_WAKE, 1) == 1 {
@@ -208,7 +207,7 @@ seccomp_loop:
 	SVC
 
 	// stubMessage->ret = ret
-	MOVD R0, (STUB_MESSAGE_OFFSET + STUB_MESSAGE_RET)(R12)
+	MOVD R0, (STUB_MESSAGE_RET)(R19)
 	JMP seccomp_loop
 
 // func addrOfInitStubProcess() uintptr

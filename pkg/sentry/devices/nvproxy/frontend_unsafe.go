@@ -156,26 +156,31 @@ func ctrlGpuExecRegOps(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMET
 	if _, err := ctrlParams.CopyIn(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
 		return 0, err
 	}
-	if ctrlParams.RegOps == 0 {
-		return rmControlSimple(fi, ioctlParams)
-	}
-	if !rmapiParamsSizeCheck(ctrlParams.RegOpCount, nvgpu.CtrlGpuRegOpSize) {
-		return 0, frontendFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_ARGUMENT)
-	}
-	regOps := make([]byte, uint64(ctrlParams.RegOpCount)*uint64(nvgpu.CtrlGpuRegOpSize))
-	if _, err := fi.t.CopyInBytes(addrFromP64(ctrlParams.RegOps), regOps); err != nil {
-		return 0, err
+	var regOps []byte
+	if ctrlParams.RegOps != 0 {
+		if !rmapiParamsSizeCheck(ctrlParams.RegOpCount, nvgpu.CtrlGpuRegOpSize) {
+			return 0, frontendFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_ARGUMENT)
+		}
+		regOps = make([]byte, uint64(ctrlParams.RegOpCount)*uint64(nvgpu.CtrlGpuRegOpSize))
+		if _, err := fi.t.CopyInBytes(addrFromP64(ctrlParams.RegOps), regOps); err != nil {
+			return 0, err
+		}
 	}
 
 	origRegOps := ctrlParams.RegOps
-	ctrlParams.RegOps = p64FromPtr(unsafe.Pointer(&regOps[0]))
+	ctrlParams.RegOps = 0
+	if len(regOps) != 0 {
+		ctrlParams.RegOps = p64FromPtr(unsafe.Pointer(&regOps[0]))
+	}
 	n, err := rmControlInvoke(fi, ioctlParams, &ctrlParams)
 	ctrlParams.RegOps = origRegOps
 	if err != nil {
 		return n, err
 	}
-	if _, err := fi.t.CopyOutBytes(addrFromP64(ctrlParams.RegOps), regOps); err != nil {
-		return n, err
+	if len(regOps) != 0 {
+		if _, err := fi.t.CopyOutBytes(addrFromP64(ctrlParams.RegOps), regOps); err != nil {
+			return n, err
+		}
 	}
 	if _, err := ctrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
 		return n, err

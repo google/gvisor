@@ -33,6 +33,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/link/fdbased"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
 	"gvisor.dev/gvisor/pkg/tcpip/link/qdisc/fifo"
+	"gvisor.dev/gvisor/pkg/tcpip/link/qdisc/tbf"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
 	"gvisor.dev/gvisor/pkg/tcpip/link/xdp"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
@@ -108,6 +109,8 @@ type FDBasedLink struct {
 	RXChecksumOffload bool
 	LinkAddress       net.HardwareAddr
 	QDisc             config.QueueingDiscipline
+	TBFRate           uint64
+	TBFBurst          uint32
 	Neighbors         []Neighbor
 
 	// NumChannels controls how many underlying FDs are to be used to
@@ -142,6 +145,8 @@ type XDPLink struct {
 	RXChecksumOffload bool
 	LinkAddress       net.HardwareAddr
 	QDisc             config.QueueingDiscipline
+	TBFRate           uint64
+	TBFBurst          uint32
 	Neighbors         []Neighbor
 	GVisorGRO         bool
 	Bind              BindOpt
@@ -389,6 +394,13 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 			case config.QDiscFIFO:
 				log.Infof("Enabling FIFO QDisc on %q", link.Name)
 				qDisc = fifo.New(linkEP, runtime.GOMAXPROCS(0), 1000)
+			case config.QDiscTBF:
+				log.Infof("Enabling TBF QDisc on %q rate=%d burst=%d", link.Name, link.TBFRate, link.TBFBurst)
+				var err error
+				qDisc, err = tbf.New(linkEP, n.Stack.Clock(), link.TBFRate, link.TBFBurst, 1000)
+				if err != nil {
+					return fmt.Errorf("creating TBF qdisc for %q: %w", link.Name, err)
+				}
 			}
 
 			log.Infof("Enabling interface %q with id %d on addresses %+v (%v) w/ %d channels", link.Name, nicID, link.Addresses, mac, link.NumChannels)
@@ -481,6 +493,13 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		case config.QDiscFIFO:
 			log.Infof("Enabling FIFO QDisc on %q", link.Name)
 			qDisc = fifo.New(linkEP, runtime.GOMAXPROCS(0), 1000)
+		case config.QDiscTBF:
+			log.Infof("Enabling TBF QDisc on %q rate=%d burst=%d", link.Name, link.TBFRate, link.TBFBurst)
+			var err error
+			qDisc, err = tbf.New(linkEP, n.Stack.Clock(), link.TBFRate, link.TBFBurst, 1000)
+			if err != nil {
+				return fmt.Errorf("creating TBF qdisc for %q: %w", link.Name, err)
+			}
 		}
 
 		log.Infof("Enabling interface %q with id %d on addresses %+v (%v) w/ %d channels", link.Name, nicID, link.Addresses, mac, link.NumChannels)

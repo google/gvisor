@@ -165,6 +165,9 @@ func Getgroups(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintp
 
 // Setgroups implements the Linux syscall setgroups.
 func Setgroups(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	if !t.UserNamespace().MaySetgroups() {
+		return 0, nil, linuxerr.EPERM
+	}
 	size := args[0].Int()
 	if size < 0 || size > maxNGroups {
 		return 0, nil, linuxerr.EINVAL

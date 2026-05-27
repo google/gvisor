@@ -305,6 +305,7 @@ type ContextData struct {
 	Credentials            *Credentials           `protobuf:"bytes,7,opt,name=credentials,proto3" json:"credentials,omitempty"`
 	Cwd                    string                 `protobuf:"bytes,8,opt,name=cwd,proto3" json:"cwd,omitempty"`
 	ProcessName            string                 `protobuf:"bytes,9,opt,name=process_name,json=processName,proto3" json:"process_name,omitempty"`
+	ParentThreadGroupId    int32                  `protobuf:"varint,10,opt,name=parent_thread_group_id,json=parentThreadGroupId,proto3" json:"parent_thread_group_id,omitempty"`
 	unknownFields          protoimpl.UnknownFields
 	sizeCache              protoimpl.SizeCache
 }
@@ -402,6 +403,13 @@ func (x *ContextData) GetProcessName() string {
 	return ""
 }
 
+func (x *ContextData) GetParentThreadGroupId() int32 {
+	if x != nil {
+		return x.ParentThreadGroupId
+	}
+	return 0
+}
+
 var File_pkg_sentry_seccheck_points_common_proto protoreflect.FileDescriptor
 
 const file_pkg_sentry_seccheck_points_common_proto_rawDesc = "" +
@@ -415,7 +423,7 @@ const file_pkg_sentry_seccheck_points_common_proto_rawDesc = "" +
 	"\tsaved_uid\x18\x03 \x01(\rR\bsavedUid\x12\x19\n" +
 	"\breal_gid\x18\x04 \x01(\rR\arealGid\x12#\n" +
 	"\reffective_gid\x18\x05 \x01(\rR\feffectiveGid\x12\x1b\n" +
-	"\tsaved_gid\x18\x06 \x01(\rR\bsavedGid\"\xee\x02\n" +
+	"\tsaved_gid\x18\x06 \x01(\rR\bsavedGid\"\xa3\x03\n" +
 	"\vContextData\x12\x17\n" +
 	"\atime_ns\x18\x01 \x01(\x03R\x06timeNs\x12\x1b\n" +
 	"\tthread_id\x18\x02 \x01(\x05R\bthreadId\x12/\n" +
@@ -425,7 +433,9 @@ const file_pkg_sentry_seccheck_points_common_proto_rawDesc = "" +
 	"\fcontainer_id\x18\x06 \x01(\tR\vcontainerId\x12<\n" +
 	"\vcredentials\x18\a \x01(\v2\x1a.gvisor.common.CredentialsR\vcredentials\x12\x10\n" +
 	"\x03cwd\x18\b \x01(\tR\x03cwd\x12!\n" +
-	"\fprocess_name\x18\t \x01(\tR\vprocessName*\x8f\b\n" +
+	"\fprocess_name\x18\t \x01(\tR\vprocessName\x123\n" +
+	"\x16parent_thread_group_id\x18\n" +
+	" \x01(\x05R\x13parentThreadGroupId*\x8f\b\n" +
 	"\vMessageType\x12\x13\n" +
 	"\x0fMESSAGE_UNKNOWN\x10\x00\x12\x1b\n" +
 	"\x17MESSAGE_CONTAINER_START\x10\x01\x12\x18\n" +

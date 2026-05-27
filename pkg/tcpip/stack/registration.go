@@ -365,6 +365,21 @@ type TransportDispatcher interface {
 	DeliverRawPacket(tcpip.TransportProtocolNumber, *PacketBuffer)
 }
 
+// TransportDispatcherWithDefaultHandlerResult extends TransportDispatcher with
+// default-handler-specific delivery metadata.
+type TransportDispatcherWithDefaultHandlerResult interface {
+	TransportDispatcher
+
+	// DeliverTransportPacketWithDefaultHandlerResult delivers packets to the
+	// appropriate transport protocol endpoint and reports whether the packet was
+	// specifically handled by the per-stack default transport protocol handler.
+	//
+	// pkt.NetworkHeader must be set before calling this method.
+	//
+	// DeliverTransportPacketWithDefaultHandlerResult may modify the packet.
+	DeliverTransportPacketWithDefaultHandlerResult(tcpip.TransportProtocolNumber, *PacketBuffer) (TransportPacketDisposition, bool)
+}
+
 // PacketLooping specifies where an outbound packet should be sent.
 type PacketLooping byte
 

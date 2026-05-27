@@ -24,22 +24,26 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff"
 	"github.com/mohae/deepcopy"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/opencontainers/runtime-spec/specs-go/features"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
+	"gvisor.dev/gvisor/runsc/specutils/seccomp"
 )
 
-// LINT.IfChange
+// LINT.IfChange(features_annotations)
 const (
 	// annotationFlagPrefix allows annotations to change the value of flags.
 	//
@@ -85,7 +89,7 @@ const (
 	AnnotationCPUFeatures = "dev.gvisor.internal.cpufeatures"
 )
 
-// LINT.ThenChange(../cmd/features.go)
+// LINT.ThenChange(:Features)
 
 // ExePath must point to runsc binary, which is normally the same binary. It's
 // changed in tests that aren't linked in the same binary.
@@ -93,6 +97,11 @@ var ExePath = "/proc/self/exe"
 
 // Version is the supported spec version.
 var Version = specs.Version
+
+var (
+	globalFeatures *features.Features
+	featuresOnce   sync.Once
+)
 
 // LogSpecDebug writes the spec in a human-friendly format to the debug log.
 func LogSpecDebug(orig *specs.Spec, logSeccomp bool) {
@@ -905,4 +914,102 @@ func AnnotationToBool(spec *specs.Spec, annotation string) bool {
 		return false
 	}
 	return ret
+}
+
+func boolPtr(b bool) *bool {
+	return &b
+}
+
+// Features returns the features supported by the runtime.
+func Features() *features.Features {
+	featuresOnce.Do(func() {
+		feat := features.Features{
+			OCIVersionMin: "1.0.0",
+			OCIVersionMax: specs.Version,
+			Hooks: []string{
+				"prestart",
+				"createRuntime",
+				"createContainer",
+				"startContainer",
+				"poststart",
+				"poststop",
+			},
+			MountOptions: KnownMountOptions(),
+			Linux: &features.Linux{
+				Namespaces:   KnownNamespaces(),
+				Capabilities: AllCapabilities().Bounding,
+				Cgroup: &features.Cgroup{
+					V1:          boolPtr(true),
+					V2:          boolPtr(false),
+					Systemd:     boolPtr(false),
+					SystemdUser: boolPtr(false),
+					Rdma:        boolPtr(false),
+				},
+				Seccomp: &features.Seccomp{
+					Enabled:        boolPtr(true),
+					Actions:        seccomp.KnownActions(),
+					Operators:      seccomp.KnownOperators(),
+					Archs:          seccomp.KnownArchs(),
+					KnownFlags:     seccomp.KnownFlags(),
+					SupportedFlags: seccomp.SupportedFlags(),
+				},
+				Apparmor: &features.Apparmor{
+					Enabled: boolPtr(false),
+				},
+				Selinux: &features.Selinux{
+					Enabled: boolPtr(false),
+				},
+				IntelRdt: &features.IntelRdt{
+					Enabled: boolPtr(false),
+				},
+				MountExtensions: &features.MountExtensions{
+					IDMap: &features.IDMap{
+						Enabled: boolPtr(false),
+					},
+				},
+			},
+		}
+
+		tmpFs := flag.NewFlagSet("tmp", flag.ContinueOnError)
+		config.RegisterFlags(tmpFs)
+		annotations := make(map[string]string)
+		tmpFs.VisitAll(func(f *flag.Flag) {
+			key := "dev.gvisor.flag." + f.Name
+			annotations[key] = f.DefValue
+		})
+
+		// LINT.IfChange
+		annotations["dev.gvisor.container-name-remap."] = ""
+		annotations[AnnotationRootfsUpperTar] = ""
+		annotations["dev.gvisor.internal.seccomp."] = ""
+		annotations["dev.gvisor.internal.seccomp.cont"] = "RuntimeDefault"
+		annotations[AnnotationTPU] = ""
+		annotations[AnnotationCPUFeatures] = ""
+		// LINT.ThenChange(:features_annotations)
+		feat.Annotations = annotations
+
+		var unsafeAnnotations []string
+		tmpFs.VisitAll(func(f *flag.Flag) {
+			if !config.IsFlagSafeToOverride(f.Name) {
+				unsafeAnnotations = append(unsafeAnnotations, "dev.gvisor.flag."+f.Name)
+			}
+		})
+
+		// LINT.IfChange
+		unsafeAnnotations = append(unsafeAnnotations,
+			"dev.gvisor.container-name-remap.",
+			AnnotationRootfsUpperTar,
+			"dev.gvisor.internal.seccomp.",
+			AnnotationTPU,
+			AnnotationCPUFeatures,
+		)
+		// LINT.ThenChange(:features_annotations)
+
+		sort.Strings(unsafeAnnotations)
+		feat.PotentiallyUnsafeConfigAnnotations = unsafeAnnotations
+
+		globalFeatures = &feat
+	})
+
+	return globalFeatures
 }

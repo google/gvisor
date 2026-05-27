@@ -18,11 +18,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"time"
-
-	"io"
 
 	"github.com/BurntSushi/toml"
 	types "github.com/containerd/containerd/api/types"
@@ -31,11 +30,13 @@ import (
 	"github.com/containerd/containerd/v2/pkg/shim"
 	"github.com/containerd/containerd/v2/pkg/sys"
 	"github.com/containerd/log"
+	typeurl "github.com/containerd/typeurl/v2"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/shim/v1/proc"
 	"gvisor.dev/gvisor/pkg/shim/v1/runsc"
 	"gvisor.dev/gvisor/pkg/shim/v1/runsccmd"
+	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 const (
@@ -219,16 +220,22 @@ func (manager) Stop(ctx context.Context, id string) (shim.StopStatus, error) {
 
 func getRuntimeOptions() *runsc.Options {
 	opts := &runsc.Options{}
-	shimConfigPaths := []string{"/run/containerd/runsc/config.toml", "/etc/containerd/runsc/config.toml"}
+	shimConfigPaths := []string{
+		"/run/containerd/runsc/config.toml",
+		"/etc/containerd/runsc/config.toml",
+		"config.toml",
+	}
 
 	tomlPath := ""
 	for _, path := range shimConfigPaths {
 		if _, err := os.Stat(path); err == nil {
+			log.L.Debugf("Found shim config file %q", path)
 			tomlPath = path
 			break
 		}
 	}
 	if len(tomlPath) == 0 {
+		log.L.Debugf("Failed to find shim config file")
 		return opts
 	}
 
@@ -249,12 +256,23 @@ func getEnableGrouping() bool {
 }
 
 func (m *manager) Info(ctx context.Context, optionsR io.Reader) (*types.RuntimeInfo, error) {
-	return &types.RuntimeInfo{
-		Name: "io.containerd.runsc.v1",
+	info := &types.RuntimeInfo{
+		Name: m.name,
 		Version: &types.RuntimeVersion{
 			Version: "v1.0.0",
 		},
-	}, nil
+	}
+
+	feat := specutils.Features()
+	if feat != nil {
+		var err error
+		info.Features, err = typeurl.MarshalAnyToProto(feat)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal %T: %w", feat, err)
+		}
+	}
+
+	return info, nil
 }
 
 func writeAddress(path, address string) error {

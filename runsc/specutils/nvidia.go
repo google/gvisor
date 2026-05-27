@@ -42,21 +42,14 @@ const (
 	AnnotationNVProxy = "dev.gvisor.internal.nvproxy"
 )
 
-// NVProxyEnabled checks both the nvproxy annotation and conf.NVProxy to see if nvproxy is enabled.
+// NVProxyEnabled returns true if nvproxy should be enabled.
 func NVProxyEnabled(spec *specs.Spec, conf *config.Config) bool {
-	if conf.NVProxy {
-		return true
-	}
-	return AnnotationToBool(spec, AnnotationNVProxy)
+	return conf.NVProxy || AnnotationToBool(spec, AnnotationNVProxy) || GPUFunctionalityRequested(spec, conf)
 }
 
 // GPUFunctionalityRequested returns true if the container should have access
-// to GPU functionality.
+// to GPU functionality based on the spec.
 func GPUFunctionalityRequested(spec *specs.Spec, conf *config.Config) bool {
-	if !NVProxyEnabled(spec, conf) {
-		// nvproxy disabled.
-		return false
-	}
 	// In GKE, the nvidia_gpu device plugin injects NVIDIA devices into
 	// spec.Linux.Devices when GPUs are allocated to a container.
 	if spec.Linux != nil {
@@ -66,7 +59,7 @@ func GPUFunctionalityRequested(spec *specs.Spec, conf *config.Config) bool {
 			}
 		}
 	}
-	return gpuFunctionalityRequestedViaHook(spec, conf)
+	return GPUFunctionalityRequestedViaHook(spec, conf)
 }
 
 // GPUFunctionalityRequestedViaHook returns true if the container should have
@@ -75,15 +68,6 @@ func GPUFunctionalityRequested(spec *specs.Spec, conf *config.Config) bool {
 // - Docker when using `--gpus` flag from the CLI.
 // - nvidia-container-runtime when using its legacy mode.
 func GPUFunctionalityRequestedViaHook(spec *specs.Spec, conf *config.Config) bool {
-	if !NVProxyEnabled(spec, conf) {
-		// nvproxy disabled.
-		return false
-	}
-	return gpuFunctionalityRequestedViaHook(spec, conf)
-}
-
-// Precondition: NVProxyEnabled(spec, conf).
-func gpuFunctionalityRequestedViaHook(spec *specs.Spec, conf *config.Config) bool {
 	kind := findNvidiaHook(spec, conf)
 	if kind == nvidiaHookNone {
 		return false

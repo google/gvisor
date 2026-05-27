@@ -654,6 +654,27 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 
 	case header.ICMPv6EchoRequest:
 		received.echoRequest.Increment()
+		replyPayload := pkt.Data().ToBuffer()
+		replyHeader := make([]byte, header.ICMPv6EchoMinimumSize)
+		copy(replyHeader, h[:header.ICMPv6EchoMinimumSize])
+
+		// It's possible that a raw socket or per-stack default handler expects
+		// to receive this packet.
+		defaultHandlerHandled := false
+		if dispatcher, ok := e.dispatcher.(stack.TransportDispatcherWithDefaultHandlerResult); ok {
+			_, defaultHandlerHandled = dispatcher.DeliverTransportPacketWithDefaultHandlerResult(header.ICMPv6ProtocolNumber, pkt)
+		} else {
+			e.dispatcher.DeliverTransportPacket(header.ICMPv6ProtocolNumber, pkt)
+		}
+		pkt = nil
+
+		// Skip the built-in ICMP echo reply if the request was consumed by a
+		// per-stack default handler.
+		if defaultHandlerHandled {
+			replyPayload.Release()
+			return
+		}
+
 		// As per RFC 4291 section 2.7, multicast addresses must not be used as
 		// source addresses in IPv6 packets.
 		localAddr := dstAddr
@@ -664,23 +685,25 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 		r, err := e.protocol.stack.FindRoute(e.nic.ID(), localAddr, srcAddr, ProtocolNumber, false /* multicastLoop */)
 		if err != nil {
 			// If we cannot find a route to the destination, silently drop the packet.
+			replyPayload.Release()
 			return
 		}
 		defer r.Release()
 
 		if !e.protocol.allowICMPReply(header.ICMPv6EchoReply) {
 			sent.rateLimited.Increment()
+			replyPayload.Release()
 			return
 		}
 
 		replyPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			ReserveHeaderBytes: int(r.MaxHeaderLength()) + header.ICMPv6EchoMinimumSize,
-			Payload:            pkt.Data().ToBuffer(),
+			Payload:            replyPayload,
 		})
 		defer replyPkt.DecRef()
 		icmp := header.ICMPv6(replyPkt.TransportHeader().Push(header.ICMPv6EchoMinimumSize))
 		replyPkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber
-		copy(icmp, h)
+		copy(icmp, replyHeader)
 		icmp.SetType(header.ICMPv6EchoReply)
 		replyData := replyPkt.Data()
 		icmp.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{

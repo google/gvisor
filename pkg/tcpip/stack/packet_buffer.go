@@ -20,6 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -991,5 +992,81 @@ func UpdateHeaders(n header.Network, t header.Transport, updateSRCFields, fullCh
 		n.SetSourceAddress(newAddr)
 	} else {
 		n.SetDestinationAddress(newAddr)
+	}
+}
+
+// CalculateTransportChecksum calculates the transport-layer checksum of the
+// packet.
+func (pk *PacketBuffer) CalculateTransportChecksum() {
+	netHdr, transHdr, isICMPError, ok := pk.GetHeaders()
+	if isICMPError {
+		// Skip ICMP errors because GetHeaders() returns inner headers, but pk.Data()
+		// contains the outer payload (including inner IP header), which would
+		// corrupt the checksum calculation if used as the transport payload.
+		// Inner headers are already incrementally updated by NAT if needed.
+		// This aligns with Linux, which also relies on incremental updates for
+		// inner headers and does not perform full recalculation from scratch.
+		return
+	}
+	if !ok {
+		// Try to parse headers from Data if not set (e.g., forwarded packet).
+		if pk.NetworkProtocolNumber == 0 {
+			return
+		}
+		netHdr = pk.Network()
+		transProto := netHdr.TransportProtocol()
+
+		var headerSize int
+		switch transProto {
+		case header.TCPProtocolNumber:
+			// Peek at minimum TCP header to find data offset (which includes options).
+			b, ok := pk.Data().PullUp(header.TCPMinimumSize)
+			if !ok {
+				return
+			}
+			tcp := header.TCP(b)
+			headerSize = int(tcp.DataOffset())
+			if headerSize < header.TCPMinimumSize {
+				return
+			}
+		case header.UDPProtocolNumber:
+			headerSize = header.UDPMinimumSize
+		default:
+			return
+		}
+
+		// Consume the transport header.
+		if _, ok := pk.TransportHeader().Consume(headerSize); !ok {
+			return
+		}
+		pk.TransportProtocolNumber = transProto
+
+		// Refresh headers.
+		netHdr, transHdr, isICMPError, ok = pk.GetHeaders()
+		if !ok || isICMPError {
+			return
+		}
+	}
+
+	var xsum uint16
+	switch t := transHdr.(type) {
+	case header.TCP:
+		src := netHdr.SourceAddress()
+		dst := netHdr.DestinationAddress()
+		proto := netHdr.TransportProtocol()
+		totalLen := uint16(len(t) + pk.Data().Size())
+		xsum = header.PseudoHeaderChecksum(proto, src, dst, totalLen)
+		xsum = checksum.Combine(xsum, pk.Data().Checksum())
+		t.SetChecksum(0)
+		t.SetChecksum(^t.CalculateChecksum(xsum))
+	case header.UDP:
+		src := netHdr.SourceAddress()
+		dst := netHdr.DestinationAddress()
+		proto := netHdr.TransportProtocol()
+		totalLen := uint16(len(t) + pk.Data().Size())
+		xsum = header.PseudoHeaderChecksum(proto, src, dst, totalLen)
+		xsum = checksum.Combine(xsum, pk.Data().Checksum())
+		t.SetChecksum(0)
+		t.SetChecksum(^t.CalculateChecksum(xsum))
 	}
 }

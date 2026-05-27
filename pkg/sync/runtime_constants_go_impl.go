@@ -16,7 +16,7 @@ package sync
 
 // Values for the reason argument to gopark, from Go's src/runtime/runtime2.go.
 const (
-	WaitReasonSelect      uint8 = 9
-	WaitReasonChanReceive uint8 = 14
-	WaitReasonSemacquire  uint8 = 19
+	WaitReasonSelect      uint8 = 18
+	WaitReasonChanReceive uint8 = 19
+	WaitReasonSemacquire  uint8 = 13
 )

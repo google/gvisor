@@ -190,7 +190,7 @@ func (op payloadSet) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *
 }
 
 func (op payloadSet) GetExprName() string {
-	return "payload"
+	return OpTypePayload.String()
 }
 
 func (op payloadSet) Dump() ([]byte, *syserr.AnnotatedError) {

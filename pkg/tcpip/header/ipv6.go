@@ -205,8 +205,78 @@ func (b IPv6) NextHeader() uint8 {
 }
 
 // TransportProtocol implements Network.TransportProtocol.
+//
+// Deprecated: Use TryParseTransportProtocol instead.
+// This function does not parse extension headers and returns the next header
+// field of the IPv6 header as the transport
+// protocol which may not be the actual transport protocol.
+// Use TryParseTransportProtocol to get the transport protocol correctly.
 func (b IPv6) TransportProtocol() tcpip.TransportProtocolNumber {
 	return tcpip.TransportProtocolNumber(b.NextHeader())
+}
+
+// isExtensionHeader returns true if the next header is a known extension header.
+func isExtensionHeader(hdr uint8) bool {
+	extType := IPv6ExtensionHeaderIdentifier(hdr)
+	switch extType {
+	case IPv6HopByHopOptionsExtHdrIdentifier, IPv6RoutingExtHdrIdentifier, IPv6FragmentExtHdrIdentifier, IPv6DestinationOptionsExtHdrIdentifier, IPv6AuthenticationExtHdrIdentifier, IPv6NoNextHeaderIdentifier:
+		return true
+	default:
+		return false
+	}
+}
+
+// TryParseTransportProtocol parses the IPv6 header and extension headers to get the
+// transport protocol.
+// Reference: net/ipv6/exthdrs_core.c:ipv6_skip_exthdr.
+// Returns the transport protocol and a boolean indicating if the transport
+// protocol parsing was successful.
+func (b IPv6) TryParseTransportProtocol() (tcpip.TransportProtocolNumber, bool) {
+	if len(b) < IPv6MinimumSize {
+		return 0, false
+	}
+	data := []byte(b[IPv6MinimumSize:])
+	nxtHdr := b.NextHeader()
+	maybeProto := tcpip.TransportProtocolNumber(nxtHdr)
+	for isExtensionHeader(nxtHdr) {
+		dataLen := len(data)
+		if dataLen < 2 {
+			return maybeProto, false
+		}
+		currHdrLen := 0
+		switch IPv6ExtensionHeaderIdentifier(nxtHdr) {
+		case IPv6FragmentExtHdrIdentifier:
+			// Fragment extension header is always 8 bytes long.
+			if dataLen < 8 {
+				return maybeProto, false
+			}
+			// Get the fragment offset from the fragment extension header.
+			fragOffset := binary.BigEndian.Uint16(data[2:4]) & ^uint16(0x7)
+			if fragOffset != 0 {
+				return tcpip.TransportProtocolNumber(data[0]), false
+			}
+			currHdrLen = 8
+		case IPv6HopByHopOptionsExtHdrIdentifier, IPv6RoutingExtHdrIdentifier, IPv6DestinationOptionsExtHdrIdentifier:
+			currHdrLen = int(data[1]+1) * 8
+		case IPv6AuthenticationExtHdrIdentifier:
+			// Authentication extension header length calculation is different from
+			// other extension headers.
+			currHdrLen = int(data[1]+2) * 4
+		default:
+			// IPv6NoNextHeaderIdentifier or any unknown extension header.
+			return maybeProto, false
+		}
+		if currHdrLen > len(data) {
+			return maybeProto, false
+		}
+		nxtHdr = data[0]
+		maybeProto = tcpip.TransportProtocolNumber(nxtHdr)
+		data = data[currHdrLen:]
+	}
+	if len(data) == 0 {
+		return maybeProto, false
+	}
+	return maybeProto, true
 }
 
 // Payload implements Network.Payload.

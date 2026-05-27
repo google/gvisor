@@ -348,22 +348,6 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 			}
 		}
 	}
-	if conf.NVProxy && b.procDriverNvidiaParams == "" {
-		driverCaps, driverCapsErr := specutils.NVProxyDriverCapsAllowed(conf)
-		nvhs, err := nvconf.GetHostSettings(nvconf.HostSettingsOptions{
-			WantFabricIMEXManagement: driverCapsErr == nil && driverCaps&nvconf.CapFabricIMEXManagement != 0,
-		})
-		if err != nil {
-			log.Warningf("Failed to get nvconf.HostSettings: %v", err)
-		} else {
-			b.procDriverNvidiaParams = nvhs.ProcDriverNvidiaParams
-			argOverride["nvidia-host-params"] = nvhs.ProcDriverNvidiaParams
-			if nvhs.HaveFabricIMEXManagement {
-				b.nvidiaFabricIMEXManagementDevMinor = int64(nvhs.FabricIMEXManagementDevMinor)
-				argOverride["nvidia-fabric-imex-mgmt-minor"] = strconv.FormatUint(uint64(nvhs.FabricIMEXManagementDevMinor), 10)
-			}
-		}
-	}
 
 	if b.attached {
 		// Ensure this process is killed after parent process terminates when
@@ -386,6 +370,23 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	spec, err := specutils.ReadSpecFromFile(b.bundleDir, specFile, conf)
 	if err != nil {
 		util.Fatalf("reading spec: %v", err)
+	}
+
+	if specutils.NVProxyEnabled(spec, conf) && b.procDriverNvidiaParams == "" {
+		driverCaps, driverCapsErr := specutils.NVProxyDriverCapsAllowed(conf)
+		nvhs, err := nvconf.GetHostSettings(nvconf.HostSettingsOptions{
+			WantFabricIMEXManagement: driverCapsErr == nil && driverCaps&nvconf.CapFabricIMEXManagement != 0,
+		})
+		if err != nil {
+			log.Warningf("Failed to get nvconf.HostSettings: %v", err)
+		} else {
+			b.procDriverNvidiaParams = nvhs.ProcDriverNvidiaParams
+			argOverride["nvidia-host-params"] = nvhs.ProcDriverNvidiaParams
+			if nvhs.HaveFabricIMEXManagement {
+				b.nvidiaFabricIMEXManagementDevMinor = int64(nvhs.FabricIMEXManagementDevMinor)
+				argOverride["nvidia-fabric-imex-mgmt-minor"] = strconv.FormatUint(uint64(nvhs.FabricIMEXManagementDevMinor), 10)
+			}
+		}
 	}
 
 	if b.setUpRoot {

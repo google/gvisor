@@ -177,8 +177,8 @@ func SetupRootFS(spec *specs.Spec, conf *config.Config, mountConfs []specutils.G
 	// pivot_root(2) requires the target to be a mount point, so we must
 	// self-bind-mount spec.Root.Path here. runc does this step unconditionally
 	// in libcontainer/rootfs_linux.go:prepareRoot().
-	if err := specutils.SafeMount(containerRootFs, containerRootFs, "", unix.MS_BIND|unix.MS_REC, "", procPath); err != nil {
-		return fmt.Errorf("self-bind-mounting rootfs %q for hooks: %w", containerRootFs, err)
+	if err := unix.Mount(containerRootFs, containerRootFs, "", unix.MS_BIND|unix.MS_REC, ""); err != nil {
+		return fmt.Errorf("self-bind-mounting rootfs %q: %w", containerRootFs, err)
 	}
 
 	// Ensure the containerRootFs is set to the RootfsPropagation that the user
@@ -188,7 +188,7 @@ func SetupRootFS(spec *specs.Spec, conf *config.Config, mountConfs []specutils.G
 	if spec.Linux != nil && spec.Linux.RootfsPropagation != "" {
 		flags = specutils.PropOptionsToFlags([]string{spec.Linux.RootfsPropagation})
 	}
-	if err := specutils.SafeMount("", containerRootFs, "", uintptr(flags), "", procPath); err != nil {
+	if err := unix.Mount("", containerRootFs, "", uintptr(flags), ""); err != nil {
 		return fmt.Errorf("mounting root (%q) with flags: %#x, err: %v", containerRootFs, flags, err)
 	}
 

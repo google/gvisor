@@ -44,8 +44,15 @@ const (
 	flagAllowFlagOverride       = "allow-flag-override"
 	flagPauseExternalNetworking = "pause-external-networking"
 	flagAllowConnectedOnSave    = "allow-connected-on-save"
-	defaultRootDir              = "/var/run/runsc"
-	xdgRuntimeDirEnvVar         = "XDG_RUNTIME_DIR"
+	flagQDisc                   = "qdisc"
+	flagQDiscTBFRate            = "qdisc-tbf-rate"
+	flagQDiscTBFBurst           = "qdisc-tbf-burst"
+
+	maxQDiscTBFBurst     = uint64(1<<32 - 1)
+	defaultQDiscTBFRate  = uint64(0)
+	defaultQDiscTBFBurst = uint64(0)
+	defaultRootDir       = "/var/run/runsc"
+	xdgRuntimeDirEnvVar  = "XDG_RUNTIME_DIR"
 )
 
 // RegisterFlags registers flags used to populate Config.
@@ -149,7 +156,9 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("gvisor-gro", false, "enable gVisor generic receive offload")
 	flagSet.Bool("tx-checksum-offload", false, "enable TX checksum offload.")
 	flagSet.Bool("rx-checksum-offload", true, "enable RX checksum offload.")
-	flagSet.Var(queueingDisciplinePtr(QDiscFIFO), "qdisc", "specifies which queueing discipline to apply by default to the non loopback nics used by the sandbox.")
+	flagSet.Var(queueingDisciplinePtr(QDiscFIFO), flagQDisc, "specifies which queueing discipline to apply by default to the non loopback nics used by the sandbox.")
+	flagSet.Uint64(flagQDiscTBFRate, defaultQDiscTBFRate, "egress rate limit in bytes/sec when --qdisc=tbf.")
+	flagSet.Uint64(flagQDiscTBFBurst, defaultQDiscTBFBurst, "bucket depth in bytes when --qdisc=tbf.")
 	flagSet.Int("num-network-channels", 1, "number of underlying channels(FDs) to use for network link endpoints.")
 	flagSet.Int("network-processors-per-channel", 0, "number of goroutines in each channel for processng inbound packets. If 0, the link endpoint will divide GOMAXPROCS evenly among the number of channels specified by num-network-channels.")
 	flagSet.Var(&xdpConfig, "EXPERIMENTAL-xdp", `whether and how to use XDP. Can be one of: "off" (default), "ns", "redirect:<device name>", or "tunnel:<device name>"`)
@@ -161,7 +170,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool(flagAllowConnectedOnSave, false, "Allow network connections to stay established on save.")
 
 	// Flags that control sandbox runtime behavior: accelerator related.
-	flagSet.Bool("nvproxy", false, "EXPERIMENTAL: enable support for Nvidia GPUs")
+	flagSet.Bool("nvproxy", false, "LEGACY: enable support for Nvidia GPUs. GPU support gets automatically enabled if Nvidia devices are present in the OCI spec.")
 	flagSet.Bool("nvproxy-docker", false, "LEGACY: Injects nvidia-container-runtime-hook as a prestart hook. Try to use nvidia-container-runtime or `docker run --gpus` instead. Or manually add nvidia-container-runtime-hook as a prestart hook and set up NVIDIA_VISIBLE_DEVICES container environment variable.")
 	flagSet.String("nvproxy-driver-version", "", "NVIDIA driver ABI version to use. If empty, autodetect installed driver version. The special value 'latest' may also be used to use the latest ABI.")
 	flagSet.String("nvproxy-allowed-driver-capabilities", "utility,compute", "Comma separated list of NVIDIA driver capabilities that are allowed to be requested by the container. If 'all' is specified here, it is resolved to all driver capabilities supported in nvproxy. If 'all' is requested by the container, it is resolved to this list.")
@@ -182,7 +191,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 // runtime. Flags in this list can be set by container authors and should not
 // make the sandbox less secure.
 var overrideAllowlist = map[string]struct {
-	check func(name string, value string) error
+	check func(c *Config, name string, value string) error
 }{
 	flagDebug:                   {},
 	flagDebugCommand:            {},
@@ -197,11 +206,14 @@ var overrideAllowlist = map[string]struct {
 	flagOCISeccomp:              {check: checkOciSeccomp},
 	flagPauseExternalNetworking: {},
 	flagAllowConnectedOnSave:    {},
+	flagQDisc:                   {check: checkQDisc},
+	flagQDiscTBFRate:            {check: checkQDiscTBFRate},
+	flagQDiscTBFBurst:           {check: checkQDiscTBFBurst},
 }
 
 // checkOverlay2 ensures that overlay2 can only be enabled using "memory" or
 // "self" mediums.
-func checkOverlay2(name string, value string) error {
+func checkOverlay2(_ *Config, name string, value string) error {
 	var o Overlay2
 	if err := o.Set(value); err != nil {
 		return fmt.Errorf("invalid overlay2 annotation: %w", err)
@@ -215,13 +227,57 @@ func checkOverlay2(name string, value string) error {
 }
 
 // checkOciSeccomp ensures that seccomp can be enabled but not disabled.
-func checkOciSeccomp(name string, value string) error {
+func checkOciSeccomp(_ *Config, name string, value string) error {
 	enable, err := strconv.ParseBool(value)
 	if err != nil {
 		return err
 	}
 	if !enable {
 		return fmt.Errorf("disabling %q requires flag %q to be enabled", name, flagAllowFlagOverride)
+	}
+	return nil
+}
+
+// checkQDisc ensures that qdisc annotations can only select TBF, which is more
+// restrictive than the default FIFO qdisc.
+func checkQDisc(_ *Config, name string, value string) error {
+	var q QueueingDiscipline
+	if err := q.Set(value); err != nil {
+		return err
+	}
+	if q != QDiscTBF {
+		return fmt.Errorf("setting %s=%q requires flag %q to be enabled", name, value, flagAllowFlagOverride)
+	}
+	return nil
+}
+
+// checkQDiscTBFRate ensures an annotation can only lower (or match) the
+// runtime-configured egress rate; raising it would weaken operator policy.
+// A runtime-configured rate of 0 means the operator hasn't set a ceiling, so
+// any pod-supplied rate is accepted.
+func checkQDiscTBFRate(c *Config, name string, value string) error {
+	v, err := strconv.ParseUint(value, 0, 64)
+	if err != nil {
+		return fmt.Errorf("invalid %s annotation %q: %w", name, value, err)
+	}
+	if c.TBFRate != 0 && v > c.TBFRate {
+		return fmt.Errorf("%s=%d exceeds runtime-configured rate %d; raising the limit requires flag %q to be enabled",
+			name, v, c.TBFRate, flagAllowFlagOverride)
+	}
+	return nil
+}
+
+// checkQDiscTBFBurst ensures an annotation can only lower (or match) the
+// runtime-configured bucket depth. A runtime-configured burst of 0 means the
+// operator hasn't set a ceiling, so any pod-supplied burst is accepted.
+func checkQDiscTBFBurst(c *Config, name string, value string) error {
+	v, err := strconv.ParseUint(value, 0, 64)
+	if err != nil {
+		return fmt.Errorf("invalid %s annotation %q: %w", name, value, err)
+	}
+	if c.TBFBurst != 0 && v > c.TBFBurst {
+		return fmt.Errorf("%s=%d exceeds runtime-configured burst %d; raising the limit requires flag %q to be enabled",
+			name, v, c.TBFBurst, flagAllowFlagOverride)
 	}
 	return nil
 }
@@ -406,7 +462,7 @@ func (c *Config) isOverrideAllowed(name string, value string) error {
 	// safe to apply.
 	if allow, ok := overrideAllowlist[name]; ok {
 		if allow.check != nil {
-			if err := allow.check(name, value); err != nil {
+			if err := allow.check(c, name, value); err != nil {
 				return err
 			}
 		}

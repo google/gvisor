@@ -106,7 +106,7 @@ func (op ranged) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule
 }
 
 func (op ranged) GetExprName() string {
-	return "ranged"
+	return OpTypeRanged.String()
 }
 
 // TODO: b/452648112 - Implement dump for ranged operation.

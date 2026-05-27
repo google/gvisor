@@ -17,7 +17,6 @@ package stack
 import (
 	"encoding/binary"
 	"fmt"
-	"math/rand"
 	"sync"
 	"time"
 
@@ -205,6 +204,10 @@ func (cn *conn) update(pkt *PacketBuffer, reply bool) {
 	}
 }
 
+type connTrackRNG interface {
+	Uint32() uint32
+}
+
 // ConnTrack tracks all connections created for NAT rules. Most users are
 // expected to only call handlePacket, insertRedirectConn, and maybeInsertNoop.
 //
@@ -224,12 +227,21 @@ type ConnTrack struct {
 	// seed is a one-time random value initialized at stack startup
 	// and is used in the calculation of hash keys for the list of buckets.
 	// It is immutable.
+	//
+	// TODO(gvisor.dev/issue/4595): When Stack.tables becomes savable and
+	// ConnTrack flows into checkpoint state, this seed must be redrawn
+	// from secureRNG during restore AND the entries in buckets must be
+	// rehashed under the new seed. bucket_index = jenkins.Sum32(seed) %
+	// len(buckets) couples the seed value to bucket layout; redrawing the
+	// seed without rehashing leaves restored entries unreachable by
+	// Lookup. Persisting the pre-checkpoint seed extends the brute-force
+	// window across save boundaries.
 	seed uint32
 
 	// clock provides timing used to determine conntrack reapings.
 	clock tcpip.Clock
 	// TODO(b/341946753): Restore when netstack is savable.
-	rand *rand.Rand `state:"nosave"`
+	rng connTrackRNG `state:"nosave"`
 
 	mu connTrackRWMutex `state:"nosave"`
 	// mu protects the buckets slice, but not buckets' contents. Only take

@@ -122,7 +122,7 @@ func SyscallRestartErrorFromReturn(rv uintptr) (*errors.Error, bool) {
 // ConvertIntr converts the provided error code (err) to another one (intr) if
 // the first error corresponds to an interrupted operation.
 func ConvertIntr(err, intr error) error {
-	if err == ErrInterrupted {
+	if Equals(ErrInterrupted, err) {
 		return intr
 	}
 	return err

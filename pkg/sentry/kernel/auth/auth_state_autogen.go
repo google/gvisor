@@ -308,6 +308,7 @@ func (ns *UserNamespace) StateFields() []string {
 		"gidMapFromParent",
 		"gidMapToParent",
 		"parentHadSetfcap",
+		"setgroupsAllowed",
 	}
 }
 
@@ -324,6 +325,7 @@ func (ns *UserNamespace) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &ns.gidMapFromParent)
 	stateSinkObject.Save(6, &ns.gidMapToParent)
 	stateSinkObject.Save(7, &ns.parentHadSetfcap)
+	stateSinkObject.Save(8, &ns.setgroupsAllowed)
 }
 
 func (ns *UserNamespace) afterLoad(context.Context) {}
@@ -338,6 +340,7 @@ func (ns *UserNamespace) StateLoad(ctx context.Context, stateSourceObject state.
 	stateSourceObject.Load(5, &ns.gidMapFromParent)
 	stateSourceObject.Load(6, &ns.gidMapToParent)
 	stateSourceObject.Load(7, &ns.parentHadSetfcap)
+	stateSourceObject.Load(8, &ns.setgroupsAllowed)
 }
 
 func init() {

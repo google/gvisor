@@ -36,6 +36,7 @@ import (
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/fsgofer"
+	"gvisor.dev/gvisor/runsc/fsgofer/extension"
 	"gvisor.dev/gvisor/runsc/fsgofer/filter"
 	"gvisor.dev/gvisor/runsc/profile"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -310,6 +311,9 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		LisafsNeeded:     lisafsNeeded,
 		CgoEnabled:       config.CgoEnabled,
 	}
+	for _, e := range extension.Registered() {
+		opts.ExtraRules = append(opts.ExtraRules, e.SeccompRules())
+	}
 	if err := filter.Install(opts); err != nil {
 		util.Fatalf("installing seccomp filters: %v", err)
 	}
@@ -322,6 +326,7 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
 		sock      *unet.Socket
 		mountPath string
 		readonly  bool
+		mount     *specs.Mount
 	}
 	cfgs := make([]connectionConfig, 0, len(spec.Mounts)+1)
 
@@ -339,8 +344,9 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
 	}
 
 	mountIdx := 1 // first one is the root
-	for _, m := range spec.Mounts {
-		if !specutils.HasMountConfig(m) {
+	for i := range spec.Mounts {
+		m := &spec.Mounts[i]
+		if !specutils.HasMountConfig(*m) {
 			continue
 		}
 		mountConf := g.mountConfs[mountIdx]
@@ -362,6 +368,7 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
 			sock:      sandboxsetup.NewSocket(ioFD),
 			mountPath: m.Destination,
 			readonly:  readonly,
+			mount:     m,
 		})
 		log.Infof("Serving %q mapped on FD %d (ro: %t)", m.Destination, ioFD, readonly)
 	}
@@ -392,8 +399,28 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
 	// Create the server and start connections.
 	server := lisafs.NewServer()
 	for _, cfg := range cfgs {
-		connImpl := fsgofer.NewConnectionImpl(fsgoferConf)
-		conn, err := server.CreateConnection(cfg.sock, cfg.mountPath, fsgofer.ConnectionOpts(cfg.readonly), connImpl)
+		var connImpl lisafs.ConnectionImpl
+		var connOpts lisafs.ConnectionOpts
+		// /dev is always served by the stock fsgofer.
+		if cfg.mountPath != "/dev" {
+			for _, e := range extension.Registered() {
+				impl, opts, err := e.TryHandleMount(spec, cfg.mount, cfg.mountPath, cfg.readonly)
+				if err != nil {
+					util.Fatalf("extension %s for %q: %v", e.Name(), cfg.mountPath, err)
+				}
+				if impl != nil {
+					connImpl = impl
+					connOpts = opts
+					log.Infof("Serving %q via extension %s on FD %d", cfg.mountPath, e.Name(), cfg.sock.FD())
+					break
+				}
+			}
+		}
+		if connImpl == nil {
+			connImpl = fsgofer.NewConnectionImpl(fsgoferConf)
+			connOpts = fsgofer.ConnectionOpts(cfg.readonly)
+		}
+		conn, err := server.CreateConnection(cfg.sock, cfg.mountPath, connOpts, connImpl)
 		if err != nil {
 			util.Fatalf("starting connection on FD %d for gofer mount failed: %v", cfg.sock.FD(), err)
 		}

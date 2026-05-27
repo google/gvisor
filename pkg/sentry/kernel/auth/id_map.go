@@ -251,9 +251,10 @@ func (ns *UserNamespace) SetGIDMap(ctx context.Context, entries []IDMapEntry) er
 		}
 		// "In the case of gid_map, use of the setgroups(2) system call must
 		// first be denied by writing "deny" to the /proc/[pid]/setgroups file
-		// (see below) before writing to gid_map." (This file isn't implemented
-		// in the version of Linux we're emulating; see comment in
-		// UserNamespace.)
+		// (see below) before writing to gid_map."
+		if ns.setgroupsAllowed {
+			return linuxerr.EPERM
+		}
 	}
 	if err := ns.trySetGIDMap(entries); err != nil {
 		ns.gidMapFromParent.RemoveAll()

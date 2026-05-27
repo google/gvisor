@@ -97,6 +97,17 @@ func printHex(title []byte, val uint64) {
 }
 
 //go:nosplit
+func printExitReason(exitReason int) {
+	hostsyscall.RawSyscallErrno(unix.SYS_WRITE, uintptr(unix.Stderr), uintptr(unsafe.Pointer(&printHexTitles[exitReason])), uintptr(len(printHexTitles[exitReason])))
+}
+
+//go:nosplit
+func bluepillDieCleanly(exitReason int) {
+	printExitReason(exitReason)
+	hostsyscall.RawSyscall(unix.SYS_EXIT_GROUP, 99, 0, 0)
+}
+
+//go:nosplit
 func logKVMExitReason(c *vCPU, exitReason int) {
 	printHex(printHexTitles[exitReason], uint64(c.runData.data[0]))
 }
@@ -110,9 +121,11 @@ const (
 	kvmExitMMIOStr
 	kvmExitShutdownStr
 	kvmExitFailEntryStr
+	kvmExitNoMemory
+	kvmExitNoSpace
 )
 
-var printHexTitles = [8][]byte{
+var printHexTitles = [...][]byte{
 	kvmExitExceptionStr:     []byte("unexpected exception exit: "),
 	kvmExitIOStr:            []byte("unexpected I/O exit: "),
 	kvmExitInternalErrorStr: []byte("unexpected internal_error exit: "),
@@ -121,6 +134,8 @@ var printHexTitles = [8][]byte{
 	kvmExitMMIOStr:          []byte("unexpected MMIO exit: "),
 	kvmExitShutdownStr:      []byte("unexpected shutdown exit: "),
 	kvmExitFailEntryStr:     []byte("unexpected fail_entry exit: "),
+	kvmExitNoMemory:         []byte("host out of memory"),
+	kvmExitNoSpace:          []byte("host out of MMU pages"),
 }
 
 // bluepillHandler is called from the signal stub.
@@ -204,6 +219,10 @@ func bluepillHandler(context unsafe.Pointer) {
 		case unix.ENOSYS:
 			bluepillHandleEnosys(c)
 			continue
+		case unix.ENOMEM:
+			bluepillDieCleanly(kvmExitNoMemory)
+		case unix.ENOSPC:
+			bluepillDieCleanly(kvmExitNoSpace)
 		default:
 			throw("run failed")
 		}

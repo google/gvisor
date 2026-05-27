@@ -37,6 +37,7 @@ func (t *syscallThread) detach() {
 	regs.Sp = 0
 	regs.Regs[12] = uint64(t.stubAddr)
 	regs.Regs[13] = uint64(t.sentryMessage.state + 1)
+	regs.Regs[19] = uint64(t.stubAddr + syscallStubMessageOffset)
 	if t.seccompNotify != nil {
 		regs.Regs[9] = _RUN_SECCOMP_LOOP
 	} else {

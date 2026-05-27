@@ -1180,24 +1180,25 @@ func (r *Rule) AddOpFromExprInfo(tab *Table, exprInfo ExprInfo) *syserr.Annotate
 	// TODO - b/434244017: Support parsing expression types other than NFT_IMMEDIATE
 	var op operation
 	var err *syserr.AnnotatedError
-	switch exprInfo.ExprName {
-	case "immediate":
+	exprOpType := ToOpType(exprInfo.ExprName)
+	switch exprOpType {
+	case OpTypeImmediate:
 		if op, err = initImmediate(tab, exprInfo); err != nil {
 			return err
 		}
-	case "payload":
+	case OpTypePayload:
 		if op, err = initPayload(tab, exprInfo); err != nil {
 			return err
 		}
-	case "meta":
+	case OpTypeMeta:
 		if op, err = initMeta(tab, exprInfo); err != nil {
 			return err
 		}
-	case "cmp":
+	case OpTypeComparison:
 		if op, err = initComparison(tab, exprInfo); err != nil {
 			return err
 		}
-	case "counter":
+	case OpTypeCounter:
 		if op, err = initCounter(tab, exprInfo); err != nil {
 			return err
 		}
