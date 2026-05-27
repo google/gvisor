@@ -753,6 +753,9 @@ func (t *TestCluster) applyCommonPodConfigurations(ctx context.Context, np *Node
 		if targetCores == 0 {
 			targetCores = int(float64(np.spec.NumCores) * defaultMaxResourceUtilization)
 		}
+		if runtimeMaxCores := applyRuntime.MaxCores(); runtimeMaxCores != 0 && targetCores > runtimeMaxCores {
+			targetCores = runtimeMaxCores
+		}
 		if targetCores < 1 {
 			targetCores = 1
 		}

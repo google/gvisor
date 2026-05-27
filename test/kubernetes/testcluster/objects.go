@@ -411,6 +411,20 @@ func (t RuntimeType) RequiresExplicitResourceLimits() bool {
 	return t.IsKata()
 }
 
+// MaxCores returns the maximum number of cores that can be used by a pod using this runtime.
+// Returns 0 if there is no pod core limit.
+func (t RuntimeType) MaxCores() int {
+	switch t {
+	case RuntimeTypeKataFirecracker:
+		// Firecracker only supports up to 32 vCPUs:
+		// https://github.com/firecracker-microvm/firecracker/blob/e865b9c5fad47384c15a6c57c6c6e628210f2282/src/vmm/src/vmm_config/machine_config.rs#L11-L13
+		// Experimentally, using 32 still fails, but 31 works.
+		return 31
+	default:
+		return 0
+	}
+}
+
 // ApplyNodepool modifies the nodepool to configure it to use the runtime.
 func (t RuntimeType) ApplyNodepool(nodepool *cspb.NodePool) {
 	if nodepool.GetConfig().GetLabels() == nil {
