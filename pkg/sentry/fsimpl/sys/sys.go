@@ -59,6 +59,12 @@ type InternalData struct {
 	// EnableTPUProxyPaths is whether to populate sysfs paths used by hardware
 	// accelerators.
 	EnableTPUProxyPaths bool
+	// EnableRDMAProxyPaths is whether to populate sysfs paths used by
+	// RDMA/InfiniBand libibverbs device discovery.
+	EnableRDMAProxyPaths bool
+	// RDMADevices contains pre-collected RDMA sysfs data for constructing
+	// virtual /sys/class/infiniband_verbs/ and /sys/class/infiniband/ trees.
+	RDMADevices *RDMAData
 	// TestSysfsPathPrefix is a prefix for the sysfs paths. It is useful for
 	// unit testing.
 	TestSysfsPathPrefix string
@@ -175,6 +181,15 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 				return nil, nil, err
 			}
 			kernelSub["iommu_groups"] = fs.newDir(ctx, creds, defaultSysDirMode, iommuGroups)
+		}
+		if idata.EnableRDMAProxyPaths {
+			ibVerbsDir, ibDir := fs.newRDMASysfsEntries(ctx, creds, idata.RDMADevices)
+			if ibVerbsDir != nil {
+				classSub["infiniband_verbs"] = fs.newDir(ctx, creds, defaultSysDirMode, ibVerbsDir)
+			}
+			if ibDir != nil {
+				classSub["infiniband"] = fs.newDir(ctx, creds, defaultSysDirMode, ibDir)
+			}
 		}
 	}
 
