@@ -14,6 +14,12 @@ proto_library(
     ],
 )
 
+proto_library(
+    name = "tpu_control_proto",
+    srcs = ["tpu_control.proto"],
+    visibility = ["//visibility:public"],
+)
+
 go_library(
     name = "control",
     srcs = [
@@ -28,6 +34,7 @@ go_library(
         "proc.go",
         "state.go",
         "state_cuda.go",
+        "tpu_control.go",
         "usage.go",
     ],
     visibility = [
@@ -35,10 +42,12 @@ go_library(
     ],
     deps = [
         ":control_api_go_proto",
+        ":tpu_control_proto_go_proto",
         "//pkg/abi/linux",
         "//pkg/bpf",
         "//pkg/cleanup",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/eventchannel",
         "//pkg/fd",
         "//pkg/fspath",
@@ -48,6 +57,7 @@ go_library(
         "//pkg/prometheus",
         "//pkg/sentry/devices/memdev",
         "//pkg/sentry/devices/nvproxy",
+        "//pkg/sentry/devices/tpuproxy/vfio",
         "//pkg/sentry/fdcollector",
         "//pkg/sentry/fdimport",
         "//pkg/sentry/fsimpl/host",
@@ -73,6 +83,8 @@ go_library(
         "//pkg/unet",
         "//pkg/urpc",
         "//pkg/usermem",
+        "//pkg/waiter",
+        "@org_golang_google_protobuf//proto:go_default_library",
         "@org_golang_google_protobuf//types/known/timestamppb",
         "@org_golang_x_sys//unix:go_default_library",
     ],

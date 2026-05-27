@@ -179,3 +179,12 @@ func GetTPUDeviceMajor(vfsObj *vfs.VirtualFilesystem) (uint32, error) {
 	})
 	return tpuDeviceMajor, tpuDeviceMajorInitErr
 }
+
+// IsVFIOFD returns true if the file description implementation is a TPU VFIO FD.
+func IsVFIOFD(fd vfs.FileDescriptionImpl) bool {
+	switch fd.(type) {
+	case *tpuFD, *vfioFD, *pciDeviceFD:
+		return true
+	}
+	return false
+}
