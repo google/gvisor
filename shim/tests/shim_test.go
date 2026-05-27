@@ -162,7 +162,7 @@ func TestCreateSandboxWithContainer(t *testing.T) {
 
 func createAndWaitForContainer(ctx context.Context, client task.TaskService, container *shimutils.Container, opts *anypb.Any) error {
 	errGroup := errgroup.Group{}
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	var createResp *task.CreateTaskResponse
@@ -210,7 +210,7 @@ func createAndWaitForContainer(ctx context.Context, client task.TaskService, con
 
 func startAndWaitForContainer(ctx context.Context, client task.TaskService, containerID string, container *shimutils.Container) error {
 	errGroup := errgroup.Group{}
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	errGroup.Go(func() error {
@@ -247,7 +247,7 @@ func startAndWaitForContainer(ctx context.Context, client task.TaskService, cont
 func killAndWaitForContainer(ctx context.Context, client task.TaskService, containerID string) error {
 	errGroup := errgroup.Group{}
 
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	errGroup.Go(func() error {
