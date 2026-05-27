@@ -367,6 +367,17 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 	return nil
 }
 
+// mustCopyXattr returns true if a copy-up failure on the given xattr must
+// abort the copy-up. Loosely analogous to Linux's
+// fs/overlayfs/util.c:ovl_must_copy_xattr(). Here are the differences:
+//   - Linux includes "system.posix_acl_access" and "system.posix_acl_default".
+//     As of writing, these are not supported in gVisor and so are excluded.
+//   - Linux includes all "security.*" xattrs. gVisor only supports
+//     "security.capability" and so only that is included here.
+func mustCopyXattr(name string) bool {
+	return name == linux.XATTR_SECURITY_CAPABILITY
+}
+
 // copyXattrsLocked copies a subset of lower's extended attributes to upper.
 // Attributes that configure an overlay in the lower are not copied up.
 //
@@ -394,12 +405,15 @@ func (d *dentry) copyXattrsLocked(ctx context.Context) error {
 
 		value, err := vfsObj.GetXattrAt(ctx, d.fs.creds, lowerPop, &vfs.GetXattrOptions{Name: name, Size: 0})
 		if err != nil {
-			ctx.Infof("failed to copy up xattrs because GetXattrAt failed: %v", err)
+			ctx.Infof("failed to copy up %q xattr because GetXattrAt failed: %v", name, err)
 			return err
 		}
 
 		if err := vfsObj.SetXattrAt(ctx, d.fs.creds, upperPop, &vfs.SetXattrOptions{Name: name, Value: value}); err != nil {
-			ctx.Infof("failed to copy up xattrs because SetXattrAt failed: %v", err)
+			ctx.Infof("failed to copy up %q xattr because SetXattrAt failed: %v", name, err)
+			if linuxerr.Equals(linuxerr.EOPNOTSUPP, err) && !mustCopyXattr(name) {
+				continue
+			}
 			return err
 		}
 	}
