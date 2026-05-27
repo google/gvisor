@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/vishvananda/netlink"
@@ -129,21 +130,45 @@ func addrBitLength(ip net.IP) int {
 }
 
 // removeLinkAddresses removes IP addresses from the host NIC for a link.
+// PatchPeerAddrDel: list addrs with full netlink attrs (Peer/Scope/Flags) and
+// AddrDel the actual struct. Required for point-to-point links (e.g. CF silk
+// CNI sets eth0 with IFA_LOCAL=local, IFA_ADDRESS=peer); ParseAddr-based
+// AddrDel uses IFA_ADDRESS=local and the kernel rejects with EADDRNOTAVAIL.
 func removeLinkAddresses(linkName string, addresses []boot.IPWithPrefix) error {
 	ifaceLink, err := netlink.LinkByName(linkName)
 	if err != nil {
 		return fmt.Errorf("getting link for interface %q: %w", linkName, err)
+	}
+	existing, err := netlink.AddrList(ifaceLink, netlink.FAMILY_ALL)
+	if err != nil {
+		return fmt.Errorf("listing addresses for interface %q: %w", linkName, err)
 	}
 	for _, addr := range addresses {
 		ipNet := &net.IPNet{
 			IP:   addr.Address,
 			Mask: net.CIDRMask(addr.PrefixLen, addrBitLength(addr.Address)),
 		}
-		if err := removeAddress(ifaceLink, ipNet.String()); err != nil {
-			// If we encounter an error while deleting the ip,
-			// verify the ip is still present on the interface.
-			if present, err := isAddressOnInterface(linkName, ipNet); err != nil {
-				return fmt.Errorf("checking if address %v is on interface %q: %w", ipNet, linkName, err)
+		var nlAddr *netlink.Addr
+		for i := range existing {
+			e := &existing[i]
+			if e.IPNet == nil || !e.IPNet.IP.Equal(ipNet.IP) {
+				continue
+			}
+			ep, _ := e.IPNet.Mask.Size()
+			lp, _ := ipNet.Mask.Size()
+			if ep != lp {
+				continue
+			}
+			nlAddr = e
+			break
+		}
+		if nlAddr == nil {
+			// Already gone.
+			continue
+		}
+		if err := netlink.AddrDel(ifaceLink, nlAddr); err != nil {
+			if present, perr := isAddressOnInterface(linkName, ipNet); perr != nil {
+				return fmt.Errorf("checking if address %v is on interface %q: %w", ipNet, linkName, perr)
 			} else if !present {
 				continue
 			}
@@ -212,16 +237,9 @@ func collectLinksAndRoutes(conf *config.Config, disableIPv6 bool) (boot.CreateLi
 			return boot.CreateLinksAndRoutesArgs{}, fmt.Errorf("fetching ARP table for %q: %w", iface.Name, err)
 		}
 
+		// PatchArpWarmCache: neighbor list is built AFTER routesForIface so we
+		// know the gateway IPs. See the warm-cache block below.
 		var neighbors []boot.Neighbor
-		for _, n := range dump {
-			// There are only two "good" states NUD_PERMANENT and NUD_REACHABLE,
-			// but NUD_REACHABLE is fully dynamic and will be re-probed anyway.
-			if n.State == netlink.NUD_PERMANENT {
-				log.Debugf("Copying a static ARP entry: %+v %+v", n.IP, n.HardwareAddr)
-				// No flags are copied because Stack.AddStaticNeighbor does not support flags right now.
-				neighbors = append(neighbors, boot.Neighbor{IP: n.IP, HardwareAddr: n.HardwareAddr})
-			}
-		}
 
 		// Scrape the routes before removing the address, since that
 		// will remove the routes as well.
@@ -244,6 +262,98 @@ func collectLinksAndRoutes(conf *config.Config, disableIPv6 bool) (boot.CreateLi
 			args.Defaultv6Gateway.Route = *defv6
 			args.Defaultv6Gateway.Name = iface.Name
 		}
+
+		// PatchArpWarmCache: warm the kernel neighbor cache for all gateway
+		// IPs we will hand to the sandbox, then copy "live" entries to
+		// boot.Neighbor so gVisor's netstack starts with a static cache.
+		// Required for silk-cni peer-style /32 setups where gVisor's own ARP
+		// through the FDBased link is unreliable.
+		warmTrace := func(format string, a ...interface{}) {
+			line := fmt.Sprintf("PATCH-WARMCACHE pid="+strconv.Itoa(os.Getpid())+" iface="+iface.Name+" "+format+"\n", a...)
+			fmt.Fprint(os.Stderr, line)
+			if f, ferr := os.OpenFile("/var/vcap/sys/log/runsc-debug/warm-trace.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666); ferr == nil {
+				fmt.Fprint(f, line)
+				f.Close()
+			}
+			if f, ferr := os.OpenFile("/tmp/runsc-warm-trace.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666); ferr == nil {
+				fmt.Fprint(f, line)
+				f.Close()
+			}
+		}
+		warmTrace("ENTER iface=%s idx=%d routes=%d defv4=%v defv6=%v dumpPre=%d", iface.Name, iface.Index, len(routes), defv4, defv6, len(dump))
+		for i, r := range routes {
+			warmTrace("  route[%d] dst=%v gw=%v", i, r.Destination, r.Gateway)
+		}
+		for i, n := range dump {
+			warmTrace("  preDump[%d] ip=%v hw=%v state=0x%x", i, n.IP, n.HardwareAddr, n.State)
+		}
+		gwSet := map[string]net.IP{}
+		for _, r := range routes {
+			if r.Gateway != nil && !r.Gateway.IsUnspecified() {
+				gwSet[r.Gateway.String()] = r.Gateway
+			}
+		}
+		if defv4 != nil && defv4.Gateway != nil && !defv4.Gateway.IsUnspecified() {
+			gwSet[defv4.Gateway.String()] = defv4.Gateway
+		}
+		if defv6 != nil && defv6.Gateway != nil && !defv6.Gateway.IsUnspecified() {
+			gwSet[defv6.Gateway.String()] = defv6.Gateway
+		}
+		warmTrace("gwSet size=%d", len(gwSet))
+		haveEntry := func(ip net.IP) bool {
+			for _, n := range dump {
+				if n.IP != nil && n.IP.Equal(ip) && n.HardwareAddr != nil && len(n.HardwareAddr) > 0 {
+					return true
+				}
+			}
+			return false
+		}
+		warmed := false
+		for _, gw := range gwSet {
+			if haveEntry(gw) {
+				warmTrace("  gw=%v already cached, skip", gw)
+				continue
+			}
+			network := "udp4"
+			if gw.To4() == nil {
+				network = "udp6"
+			}
+			c, derr := net.DialUDP(network, nil, &net.UDPAddr{IP: gw, Port: 9})
+			if derr != nil {
+				warmTrace("  gw=%v DialUDP failed: %v", gw, derr)
+				log.Debugf("PatchArpWarmCache: DialUDP(%s) failed: %v", gw, derr)
+				continue
+			}
+			nw, werr := c.Write([]byte{})
+			warmTrace("  gw=%v UDP write n=%d err=%v", gw, nw, werr)
+			_ = c.Close()
+			warmed = true
+		}
+		if warmed {
+			time.Sleep(75 * time.Millisecond)
+			if redump, rerr := netlink.NeighList(iface.Index, 0); rerr == nil {
+				warmTrace("post-warm dump=%d (was %d)", len(redump), len(dump))
+				dump = redump
+				for i, n := range dump {
+					warmTrace("  postDump[%d] ip=%v hw=%v state=0x%x", i, n.IP, n.HardwareAddr, n.State)
+				}
+			} else {
+				warmTrace("post-warm NeighList err=%v", rerr)
+			}
+		}
+		const liveStates = netlink.NUD_PERMANENT | netlink.NUD_REACHABLE | netlink.NUD_STALE | netlink.NUD_DELAY | netlink.NUD_PROBE
+		for _, n := range dump {
+			if n.HardwareAddr == nil || len(n.HardwareAddr) == 0 {
+				continue
+			}
+			if n.State&liveStates == 0 {
+				continue
+			}
+			warmTrace("COPY ip=%v hw=%v state=0x%x", n.IP, n.HardwareAddr, n.State)
+			log.Debugf("PatchArpWarmCache: copying ARP entry state=0x%x ip=%v lladdr=%v", n.State, n.IP, n.HardwareAddr)
+			neighbors = append(neighbors, boot.Neighbor{IP: n.IP, HardwareAddr: n.HardwareAddr})
+		}
+		warmTrace("EXIT neighbors=%d", len(neighbors))
 
 		// Get the link for the interface.
 		ifaceLink, err := netlink.LinkByName(iface.Name)

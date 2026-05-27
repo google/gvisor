@@ -17,7 +17,6 @@
 package runsccmd
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -610,16 +609,29 @@ func (r *Runsc) command(context context.Context, args ...string) *exec.Cmd {
 }
 
 func cmdOutput(cmd *exec.Cmd, combined bool) ([]byte, []byte, error) {
-	stdout := getBuf()
-	defer putBuf(stdout)
-	cmd.Stdout = stdout
-	cmd.Stderr = stdout
+	// Use *os.File-backed temp files instead of bytes.Buffer. With a
+	// non-*os.File writer Go's exec package creates an internal pipe and
+	// blocks cmd.Wait() until the read-side sees EOF. When runsc daemonizes
+	// a sandbox child, the sandbox inherits the pipe's write end, EOF never
+	// arrives, and the shim's TaskService.Create hangs forever.
+	stdoutFile, err := os.CreateTemp("", "runsc-stdout-*")
+	if err != nil {
+		return nil, nil, err
+	}
+	defer os.Remove(stdoutFile.Name())
+	defer stdoutFile.Close()
+	cmd.Stdout = stdoutFile
+	cmd.Stderr = stdoutFile
 
-	var stderr *bytes.Buffer
+	var stderrFile *os.File
 	if !combined {
-		stderr = getBuf()
-		defer putBuf(stderr)
-		cmd.Stderr = stderr
+		stderrFile, err = os.CreateTemp("", "runsc-stderr-*")
+		if err != nil {
+			return nil, nil, err
+		}
+		defer os.Remove(stderrFile.Name())
+		defer stderrFile.Close()
+		cmd.Stderr = stderrFile
 	}
 	ec, err := Monitor.Start(cmd)
 	if err != nil {
@@ -630,8 +642,11 @@ func cmdOutput(cmd *exec.Cmd, combined bool) ([]byte, []byte, error) {
 	if err == nil && status != 0 {
 		err = fmt.Errorf("%q did not terminate successfully", cmd.Args[0])
 	}
-	if stderr == nil {
-		return stdout.Bytes(), nil, err
+
+	stdoutBytes, _ := os.ReadFile(stdoutFile.Name())
+	if stderrFile == nil {
+		return stdoutBytes, nil, err
 	}
-	return stdout.Bytes(), stderr.Bytes(), err
+	stderrBytes, _ := os.ReadFile(stderrFile.Name())
+	return stdoutBytes, stderrBytes, err
 }

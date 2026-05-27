@@ -197,6 +197,15 @@ func LoadSandbox(rootDir, id string, opts LoadOpts) ([]*Container, error) {
 }
 
 func findContainerID(rootDir, partialID string) (FullID, error) {
+	// PatchExactMatch-state-file: prefer an EXACT container-id match first.
+	// Without this, a lookup for an id that is itself a prefix of other
+	// container ids (e.g. Garden creates child exec containers named
+	// "<id>-envoy-startup-healthcheck-N" alongside "<id>") falls into the
+	// prefix branch below and is rejected as ambiguous.
+	exactPattern := buildPath(rootDir, FullID{SandboxID: "*", ContainerID: partialID}, stateFileExtension)
+	if exact, err := filepath.Glob(exactPattern); err == nil && len(exact) == 1 {
+		return parseFileName(filepath.Base(exact[0]))
+	}
 	// Check whether the id fully specifies an existing container.
 	pattern := buildPath(rootDir, FullID{SandboxID: "*", ContainerID: partialID + "*"}, stateFileExtension)
 	list, err := filepath.Glob(pattern)
@@ -208,6 +217,23 @@ func findContainerID(rootDir, partialID string) (FullID, error) {
 		return FullID{}, os.ErrNotExist
 	case 1:
 		return parseFileName(filepath.Base(list[0]))
+	}
+
+	// PatchPrefixNoMatch-state-file: if the exact-match step above missed
+	// AND every prefix hit is a "<partialID>-..." child id, then partialID
+	// itself does not exist (typical Garden post-cleanup case: parent's
+	// state file removed but pea exec children still on disk). Return
+	// ErrNotExist instead of falling through to the ambiguity branch below.
+	allChildren := true
+	for _, p := range list {
+		full, perr := parseFileName(filepath.Base(p))
+		if perr != nil || !strings.HasPrefix(full.ContainerID, partialID+"-") {
+			allChildren = false
+			break
+		}
+	}
+	if allChildren {
+		return FullID{}, os.ErrNotExist
 	}
 
 	// Now see whether id could be an abbreviation of exactly 1 of the
