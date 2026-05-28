@@ -153,6 +153,14 @@ func setUpChroot(spec *specs.Spec, conf *config.Config) error {
 		return fmt.Errorf("error configuring chroot for RDMA devices: %w", err)
 	}
 
+	if err := pciDevicesUpdateChroot(chroot, spec, conf); err != nil {
+		return fmt.Errorf("error configuring chroot for PCI topology: %w", err)
+	}
+
+	if err := numaUpdateChroot(chroot, spec, conf); err != nil {
+		return fmt.Errorf("error configuring chroot for NUMA topology: %w", err)
+	}
+
 	if err := specutils.SafeMount("", chroot, "", unix.MS_REMOUNT|unix.MS_RDONLY|unix.MS_BIND, "", "/proc"); err != nil {
 		return fmt.Errorf("error remounting chroot in read-only: %v", err)
 	}
@@ -238,6 +246,36 @@ func rdmaProxyUpdateChroot(chroot string, spec *specs.Spec, conf *config.Config)
 	jsonPath := filepath.Join(chroot, sys.RDMADataPath)
 	if err := sys.SerializeRDMAData(data, jsonPath); err != nil {
 		return fmt.Errorf("serializing RDMA data: %w", err)
+	}
+	return nil
+}
+
+func pciDevicesUpdateChroot(chroot string, spec *specs.Spec, conf *config.Config) error {
+	if !conf.NVProxy && !specutils.HasRDMADevicesInSpec(spec) {
+		return nil
+	}
+	data := sys.CollectPCIDeviceData()
+	if data == nil {
+		return nil
+	}
+	jsonPath := filepath.Join(chroot, sys.PCIDevicesDataPath)
+	if err := sys.SerializePCIDevicesData(data, jsonPath); err != nil {
+		return fmt.Errorf("serializing PCI devices data: %w", err)
+	}
+	return nil
+}
+
+func numaUpdateChroot(chroot string, spec *specs.Spec, conf *config.Config) error {
+	if !conf.NVProxy && !specutils.HasRDMADevicesInSpec(spec) {
+		return nil
+	}
+	data := sys.CollectNUMAData()
+	if data == nil {
+		return nil
+	}
+	jsonPath := filepath.Join(chroot, sys.NUMADataPath)
+	if err := sys.SerializeNUMAData(data, jsonPath); err != nil {
+		return fmt.Errorf("serializing NUMA data: %w", err)
 	}
 	return nil
 }
