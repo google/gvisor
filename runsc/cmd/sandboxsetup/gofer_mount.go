@@ -206,19 +206,25 @@ func SetupRootFS(spec *specs.Spec, conf *config.Config, mountConfs []specutils.G
 
 	if rootfsConf.ShouldUseLisafs() {
 		if spec.Hooks != nil && len(spec.Hooks.CreateContainer) > 0 {
-			state := specs.State{
-				Version: specs.Version,
-				ID:      containerID,
-				Status:  specs.StateCreating,
-				// The sandbox pid is not easily available at this point. We'll set
-				// it to -1 for now. A future improvement could plumb this value
-				// through to the gofer if it becomes necessary.
-				Pid:         -1,
-				Bundle:      bundleDir,
-				Annotations: spec.Annotations,
+			hooks := spec.Hooks.CreateContainer
+			if specutils.NVProxyEnabled(spec, conf) {
+				hooks = filterNVProxyNoOpHooks(hooks)
 			}
-			if err := specutils.ExecuteHooks(spec.Hooks.CreateContainer, state); err != nil {
-				util.Fatalf("error executing CreateContainer hooks: %v", err)
+			if len(hooks) > 0 {
+				state := specs.State{
+					Version: specs.Version,
+					ID:      containerID,
+					Status:  specs.StateCreating,
+					// The sandbox pid is not easily available at this point. We'll set
+					// it to -1 for now. A future improvement could plumb this value
+					// through to the gofer if it becomes necessary.
+					Pid:         -1,
+					Bundle:      bundleDir,
+					Annotations: spec.Annotations,
+				}
+				if err := specutils.ExecuteHooks(hooks, state); err != nil {
+					util.Fatalf("error executing CreateContainer hooks: %v", err)
+				}
 			}
 		}
 
@@ -367,6 +373,55 @@ func SetupMounts(conf *config.Config, mounts []specs.Mount, root, procPath strin
 		}
 	}
 	return nil
+}
+
+// isNvidiaDisableDeviceNodeModificationHook reports whether h is the NVIDIA
+// CDI createContainer hook "nvidia-ctk hook disable-device-node-modification",
+// emitted by NVIDIA's k8s-device-plugin and `nvidia-ctk cdi generate`.
+//
+// The hook bind-mounts a modified /proc/driver/nvidia/params (with
+// ModifyDeviceFiles set to 0) over the container's procfs so that in-container
+// libnvidia-ml does not try to recreate /dev/nvidiaN device nodes. Under
+// nvproxy, this hook is a no-op for two reasons:
+//
+//  1. nvproxy mediates all NVIDIA device access and the sentry owns /dev, so
+//     in-container libnvidia-ml cannot create new device files regardless of
+//     what /proc/driver/nvidia/params says.
+//  2. gVisor already exposes /proc/driver/nvidia/params inside the sandbox
+//     with ModifyDeviceFiles forced to 0; see
+//     pkg/sentry/devices/nvproxy/nvproxy.go's procDriverNvidiaParams setup,
+//     which is consistent with libnvidia-container's
+//     src/nvc_mount.c:mount_procfs().
+//
+// In addition, executing this hook is fatal during sandbox setup: the hook
+// opens <containerRootFs>/proc/driver/nvidia/params, but procfs is not
+// mounted into containerRootFs at hook time (the sentry serves /proc
+// itself later), so the open(2) fails with ENOENT and aborts container
+// creation.
+func isNvidiaDisableDeviceNodeModificationHook(h specs.Hook) bool {
+	if !strings.HasSuffix(h.Path, "nvidia-ctk") {
+		return false
+	}
+	// nvidia-ctk hook disable-device-node-modification [...]
+	return len(h.Args) >= 3 && h.Args[1] == "hook" && h.Args[2] == "disable-device-node-modification"
+}
+
+// filterNVProxyNoOpHooks returns hooks with any CDI createContainer hooks
+// that are no-ops under nvproxy removed. Currently this matches only
+// "nvidia-ctk hook disable-device-node-modification"; see
+// isNvidiaDisableDeviceNodeModificationHook for the rationale.
+//
+// Caller must ensure nvproxy is enabled before invoking this.
+func filterNVProxyNoOpHooks(hooks []specs.Hook) []specs.Hook {
+	out := make([]specs.Hook, 0, len(hooks))
+	for _, h := range hooks {
+		if isNvidiaDisableDeviceNodeModificationHook(h) {
+			log.Infof("Skipping CDI createContainer hook %v under nvproxy: no-op (sentry forces ModifyDeviceFiles=0 in /proc/driver/nvidia/params)", h.Args)
+			continue
+		}
+		out = append(out, h)
+	}
+	return out
 }
 
 // ShouldExposeNvidiaDevice returns true if path refers to an Nvidia device
