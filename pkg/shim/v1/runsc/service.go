@@ -340,6 +340,8 @@ func (s *runscService) State(ctx context.Context, r *task.StateRequest) (*task.S
 		status = tasktypes.Status_STOPPED
 	case "pausing":
 		status = tasktypes.Status_PAUSING
+	case "paused":
+		status = tasktypes.Status_PAUSED
 	}
 	sio := p.Stdio()
 	return &task.StateResponse{
@@ -651,6 +653,10 @@ func getTopic(e any) string {
 		return runtime.TaskExecAddedEventTopic
 	case *events.TaskExecStarted:
 		return runtime.TaskExecStartedEventTopic
+	case *events.TaskPaused:
+		return runtime.TaskPausedEventTopic
+	case *events.TaskResumed:
+		return runtime.TaskResumedEventTopic
 	default:
 		log.L.Infof("no topic for type %#v", e)
 	}

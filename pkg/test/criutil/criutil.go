@@ -382,6 +382,46 @@ func (cc *Crictl) StopPodAndContainers(podID string, contIDs []string) error {
 	return nil
 }
 
+// PauseContainer pauses the container using ctr.
+func (cc *Crictl) PauseContainer(contID string) error {
+	_, err := cc.runCTR("tasks", "pause", contID)
+	return err
+}
+
+// ResumeContainer resumes the container using ctr.
+func (cc *Crictl) ResumeContainer(contID string) error {
+	_, err := cc.runCTR("tasks", "resume", contID)
+	return err
+}
+
+// ContainerStatusCTR returns the status of the container task using ctr.
+func (cc *Crictl) ContainerStatusCTR(contID string) (string, error) {
+	out, err := cc.runCTR("tasks", "list")
+	if err != nil {
+		return "", err
+	}
+	lines := strings.Split(out, "\n")
+	for _, line := range lines {
+		fields := strings.Fields(line)
+		if len(fields) >= 3 && fields[0] == contID {
+			return fields[2], nil
+		}
+	}
+	return "", fmt.Errorf("container %q not found in ctr tasks list", contID)
+}
+
+// runCTR runs ctr with the given args.
+func (cc *Crictl) runCTR(args ...string) (string, error) {
+	defaultArgs := []string{
+		ResolvePath("ctr"),
+		fmt.Sprintf("--address=%s", cc.endpoint),
+		"-n", "k8s.io",
+	}
+	fullArgs := append(defaultArgs, args...)
+	out, err := testutil.Command(cc.logger, fullArgs...).CombinedOutput()
+	return string(out), err
+}
+
 // run runs crictl with the given args.
 func (cc *Crictl) run(args ...string) (string, error) {
 	defaultArgs := []string{

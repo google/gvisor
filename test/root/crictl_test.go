@@ -972,6 +972,66 @@ func TestShimGroupingPerformance(t *testing.T) {
 	}
 }
 
+func TestCrictlPauseResume(t *testing.T) {
+	crictl, cleanup, err := setup(t, true /* enableGrouping */)
+	if err != nil {
+		t.Fatalf("failed to setup crictl: %v", err)
+	}
+	defer cleanup()
+
+	if err := crictl.Import("basic/busybox"); err != nil {
+		t.Fatalf("failed to import image: %v", err)
+	}
+
+	spec := SimpleSpec("pause-resume", "basic/busybox", []string{"sleep", "1000"}, nil)
+	podID, contID, err := crictl.StartPodAndContainer(containerdRuntime, "basic/busybox", Sandbox(testutil.RandomID("pause-resume")), spec)
+	if err != nil {
+		t.Fatalf("start failed: %v", err)
+	}
+	defer func() {
+		if err := crictl.StopPodAndContainers(podID, []string{contID}); err != nil {
+			t.Logf("cleanup stop: %v", err)
+		}
+	}()
+
+	// Verify initial status is RUNNING.
+	status, err := crictl.ContainerStatusCTR(contID)
+	if err != nil {
+		t.Fatalf("failed to get container status: %v", err)
+	}
+	if status != "RUNNING" {
+		t.Fatalf("unexpected container status: got %q, want RUNNING", status)
+	}
+
+	// Pause container.
+	if err := crictl.PauseContainer(contID); err != nil {
+		t.Fatalf("failed to pause container: %v", err)
+	}
+
+	// Verify status is PAUSED.
+	status, err = crictl.ContainerStatusCTR(contID)
+	if err != nil {
+		t.Fatalf("failed to get container status after pause: %v", err)
+	}
+	if status != "PAUSED" {
+		t.Fatalf("unexpected container status after pause: got %q, want PAUSED", status)
+	}
+
+	// Resume container.
+	if err := crictl.ResumeContainer(contID); err != nil {
+		t.Fatalf("failed to resume container: %v", err)
+	}
+
+	// Verify status is RUNNING again.
+	status, err = crictl.ContainerStatusCTR(contID)
+	if err != nil {
+		t.Fatalf("failed to get container status after resume: %v", err)
+	}
+	if status != "RUNNING" {
+		t.Fatalf("unexpected container status after resume: got %q, want RUNNING", status)
+	}
+}
+
 // httpGet GETs the contents of a file served from a pod on port 80.
 func httpGet(crictl *criutil.Crictl, podID, filePath string) error {
 	// Get the IP of the httpd server.
