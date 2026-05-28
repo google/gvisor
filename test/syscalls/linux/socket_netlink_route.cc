@@ -1119,7 +1119,6 @@ TEST_P(NetlinkRouteIpInvariantTest, NewRoute) {
   // CAP_NET_ADMIN is required to modify the routing table.
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
   SKIP_IF(!IsRunningOnGvisor());
-  SKIP_IF(IsRunningWithHostinet());
   // Routes are not savable.
   DisableSave ds;
 
@@ -1217,7 +1216,6 @@ TEST_P(NetlinkRouteIpInvariantTest, DeleteRoute) {
   // CAP_NET_ADMIN is required to modify the routing table.
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
   SKIP_IF(!IsRunningOnGvisor());
-  SKIP_IF(IsRunningWithHostinet());
   // Routes are not savable.
   DisableSave ds;
 

@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
+	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
@@ -318,4 +319,24 @@ func addInterfaceAddr(idx int32, addr inet.InterfaceAddr) error {
 
 func removeInterfaceAddr(idx int32, addr inet.InterfaceAddr) error {
 	return doNetlinkInterfaceRequest(linux.RTM_DELADDR, 0, uint32(idx), addr)
+}
+
+func doRouteRequest(typ uint16, msg *nlmsg.Message) error {
+	flags := msg.Header().Flags | linux.NLM_F_REQUEST | linux.NLM_F_ACK
+	hdr := linux.NetlinkMessageHeader{
+		Type:  typ,
+		Flags: flags,
+		Seq:   1,
+	}
+
+	payload := msg.Buffer()[linux.NetlinkMessageHeaderSize:]
+	payloadBytes := primitive.ByteSlice(payload)
+
+	msgs := []marshal.Marshallable{
+		&hdr,
+		&payloadBytes,
+	}
+	hdr.Length = uint32(marshal.TotalSize(msgs))
+
+	return doNetlinkRouteRequest(msgs)
 }
