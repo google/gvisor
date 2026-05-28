@@ -1548,7 +1548,7 @@ func (vfs *VirtualFilesystem) GenerateProcMountInfo(ctx context.Context, taskRoo
 			opts = "ro"
 		}
 		if mnt.flags.NoATime {
-			opts = ",noatime"
+			opts += ",noatime"
 		}
 		if mnt.flags.NoExec {
 			opts += ",noexec"
