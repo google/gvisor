@@ -348,22 +348,22 @@ func ValidateChecksum(ctx context.Context, version string, checksums nvproxy.Che
 		}
 		installer, err := NewInstaller(version, false)
 		if err != nil {
-			return fmt.Errorf("failed to create installer for driver %q: %v", version, err)
+			return fmt.Errorf("failed to create installer for driver %q on arch %q: %v", version, arch, err)
 		}
 		gotChecksum, err := installer.ChecksumDriver(ctx, arch)
 		if wantChecksum == nvproxy.ChecksumNoDriver {
 			log.Infof("Runfile does not exist for driver %q arch: %q", version, arch)
 			if err == nil || !strings.Contains(err.Error(), "failed to download driver with statusCode: 404") {
-				return fmt.Errorf("checksum mismatch for driver %q: got %q, want %q", version, gotChecksum, wantChecksum)
+				return fmt.Errorf("checksum mismatch for driver %q on arch %q: got %q, want %q", version, arch, gotChecksum, wantChecksum)
 			}
 			return nil
 		}
 		log.Infof("Checksum for driver %q arch: %q: %q", version, arch, gotChecksum)
 		if err != nil {
-			return fmt.Errorf("failed to get checksum for driver %q: %v", version, err)
+			return fmt.Errorf("failed to get checksum for driver %q on arch %q: %v", version, arch, err)
 		}
 		if gotChecksum != wantChecksum {
-			return fmt.Errorf("checksum mismatch for driver %q: got %q, want %q", version, gotChecksum, wantChecksum)
+			return fmt.Errorf("checksum mismatch for driver %q on arch %q: got %q, want %q", version, arch, gotChecksum, wantChecksum)
 		}
 	}
 	return nil
