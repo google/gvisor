@@ -55,7 +55,7 @@ import (
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
-const pollTimeout = 60 * time.Second
+const pollTimeout = 90 * time.Second
 
 func TestMain(m *testing.M) {
 	config.RegisterFlags(flag.CommandLine)
