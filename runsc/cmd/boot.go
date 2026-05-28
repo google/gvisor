@@ -583,6 +583,10 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		rdmaDevices = sys.DeserializeRDMAData(sys.RDMADataPath)
 	}
 
+	// Read PCI/NUMA topology data serialized by stage 1.
+	pciDevicesData := sys.DeserializePCIDevicesData(sys.PCIDevicesDataPath)
+	numaData := sys.DeserializeNUMAData(sys.NUMADataPath)
+
 	// Create the loader.
 	bootArgs := boot.Args{
 		ID:                  f.Arg(0),
@@ -618,6 +622,8 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		FSRestoreFDs:     b.fsRestoreFDs.GetFDs(),
 		RootfsUpperTarFD: b.rootfsUpperTarFD,
 		RDMADevices:      rdmaDevices,
+		PCIDevicesData:   pciDevicesData,
+		NUMAData:         numaData,
 	}
 	b.setBootArgsExtra(&bootArgs)
 	l, err := boot.New(bootArgs)
