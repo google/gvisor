@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
@@ -195,4 +196,84 @@ func TestParseSize(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRmdirParentOfWD(t *testing.T) {
+	ctx := contexttest.Context(t)
+	creds := auth.CredentialsFromContext(ctx)
+
+	vfsObj := &vfs.VirtualFilesystem{}
+	if err := vfsObj.Init(ctx); err != nil {
+		t.Fatalf("VFS init: %v", err)
+	}
+
+	vfsObj.MustRegisterFilesystemType("tmpfs", FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
+		AllowUserMount: true,
+	})
+	mntns, err := vfsObj.NewMountNamespace(ctx, creds, "", "tmpfs", &vfs.MountOptions{}, nil)
+	if err != nil {
+		t.Fatalf("failed to create tmpfs root mount: %v", err)
+	}
+	defer mntns.DecRef(ctx)
+
+	root := mntns.Root(ctx)
+	defer root.DecRef(ctx)
+
+	ctx = vfs.WithMountNamespace(ctx, mntns)
+
+	if err := vfsObj.MkdirAt(ctx, creds, &vfs.PathOperation{
+		Root:  root,
+		Start: root,
+		Path:  fspath.Parse("parent"),
+	}, &vfs.MkdirOptions{
+		Mode: 0755,
+	}); err != nil {
+		t.Fatalf("failed to create parent dir: %v", err)
+	}
+
+	if err := vfsObj.MkdirAt(ctx, creds, &vfs.PathOperation{
+		Root:  root,
+		Start: root,
+		Path:  fspath.Parse("parent/child"),
+	}, &vfs.MkdirOptions{
+		Mode: 0755,
+	}); err != nil {
+		t.Fatalf("failed to create child dir: %v", err)
+	}
+
+	childVD, err := vfsObj.GetDentryAt(ctx, creds, &vfs.PathOperation{
+		Root:  root,
+		Start: root,
+		Path:  fspath.Parse("parent/child"),
+	}, &vfs.GetDentryOptions{})
+	if err != nil {
+		t.Fatalf("failed to open child dir: %v", err)
+	}
+	defer childVD.DecRef(ctx)
+
+	if err := vfsObj.RmdirAt(ctx, creds, &vfs.PathOperation{
+		Root:  root,
+		Start: root,
+		Path:  fspath.Parse("parent/child"),
+	}); err != nil {
+		t.Fatalf("failed to rmdir child: %v", err)
+	}
+
+	if err := vfsObj.RmdirAt(ctx, creds, &vfs.PathOperation{
+		Root:  root,
+		Start: root,
+		Path:  fspath.Parse("parent"),
+	}); err != nil {
+		t.Fatalf("failed to rmdir parent: %v", err)
+	}
+
+	parentVD, err := vfsObj.GetDentryAt(ctx, creds, &vfs.PathOperation{
+		Root:  root,
+		Start: childVD,
+		Path:  fspath.Parse(".."),
+	}, &vfs.GetDentryOptions{})
+	if err != nil {
+		t.Fatalf("GetDentryAt(..) failed: %v", err)
+	}
+	parentVD.DecRef(ctx)
 }

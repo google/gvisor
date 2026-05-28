@@ -707,6 +707,10 @@ func (i *inode) decRef(ctx context.Context) {
 		i.watches.HandleDeletion(ctx)
 		// Remove pages used if child being removed is a SymLink or Regular File.
 		switch impl := i.impl.(type) {
+		case *directory:
+			if parent := impl.dentry.parent.Load(); parent != nil {
+				parent.inode.decRef(ctx)
+			}
 		case *symlink:
 			if len(impl.target) >= shortSymlinkLen {
 				impl.inode.fs.unaccountPages(1)

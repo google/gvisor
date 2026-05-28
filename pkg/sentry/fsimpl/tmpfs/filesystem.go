@@ -683,6 +683,8 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		if renamed.inode.isDir() {
 			oldParentDir.inode.decLinksLocked(ctx)
 			newParentDir.inode.incLinksLocked()
+			newParentDir.inode.incRef()
+			oldParentDir.inode.decRef(ctx)
 		}
 		newParentDir.inode.touchCMtime()
 	}
