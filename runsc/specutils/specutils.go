@@ -170,6 +170,9 @@ func ValidateSpec(spec *specs.Spec, conf *config.Config) error {
 			return err
 		}
 	}
+	if err := NormalizeOverlayMounts(spec); err != nil {
+		return err
+	}
 	for _, m := range spec.Mounts {
 		if err := validateMount(&m); err != nil {
 			return err
@@ -564,6 +567,176 @@ func MaybeConvertToBindMount(m *specs.Mount) {
 			return
 		}
 	}
+}
+
+// Synthetic mount options that link the per-layer bind mounts a
+// `type: overlay` entry is decomposed into back to the overlay
+// placeholder they belong to.
+const (
+	// GvisorOverlayParentOpt prefixes the destination of the overlay
+	// mount this layer is part of.
+	GvisorOverlayParentOpt = "x-gvisor-overlay-parent="
+
+	// GvisorOverlayRoleOpt prefixes the layer's role within the
+	// parent overlay (GvisorOverlayLowerRole or GvisorOverlayUpperRole).
+	GvisorOverlayRoleOpt = "x-gvisor-overlay-role="
+
+	// GvisorOverlayLowerRole identifies a lower layer.
+	GvisorOverlayLowerRole = "lower"
+
+	// GvisorOverlayUpperRole identifies the upper (writable) layer.
+	GvisorOverlayUpperRole = "upper"
+
+	// GvisorOverlayComposedOpt marks the placeholder mount whose
+	// destination is the OCI overlay's destination. The mount composer
+	// treats it as the signal to assemble the previously-collected
+	// layers into a single overlay.
+	GvisorOverlayComposedOpt = "x-gvisor-overlay-composed"
+
+	// gvisorOverlayLayerDestPrefix is the destination path used for
+	// synthetic per-layer bind mounts. The path never appears in the
+	// workload's view; the prefix exists because validateMount
+	// requires an absolute destination string.
+	gvisorOverlayLayerDestPrefix = "/.gvisor-overlay-layer/"
+)
+
+// NormalizeOverlayMounts rewrites each `type: overlay` entry in
+// spec.Mounts into a sequence of synthetic per-layer bind mounts
+// followed by an overlay placeholder. The mount composer in
+// runsc/boot/vfs.go reads the binds as disconnected gofer-served
+// Mounts and then assembles them into a single overlay at the
+// placeholder's destination.
+//
+// For an input mount of the form
+//
+//	{destination: D, type: overlay,
+//	 options: ["lowerdir=A:B:...", "upperdir=U", "workdir=W"]}
+//
+// the normalized output is one bind mount per lowerdir entry (each
+// tagged with GvisorOverlayParentOpt=D and
+// GvisorOverlayRoleOpt=lower), an optional bind mount for upperdir
+// (tagged GvisorOverlayRoleOpt=upper), and a placeholder
+// {destination: D, type: overlay} tagged with
+// GvisorOverlayComposedOpt. The workdir option is parsed for
+// compatibility with kernel overlayfs syntax and discarded; gVisor's
+// overlay implementation manages its own scratch state.
+//
+// When upperdir is omitted the placeholder is composed with an
+// in-sentry tmpfs upper layer, giving an ephemeral writable view that
+// is preserved across checkpoint/restore and discarded on container
+// teardown.
+//
+// Synthetic binds intentionally omit the "ro" option: lower layers
+// are made immutable through overlay.FilesystemOptions.LowerRoots
+// rather than through mount-flag propagation, and a "ro" flag on the
+// bind would interact poorly with the upper layer's writability.
+func NormalizeOverlayMounts(spec *specs.Spec) error {
+	if len(spec.Mounts) == 0 {
+		return nil
+	}
+	var expanded []specs.Mount
+	var layerCounter int
+	for i := range spec.Mounts {
+		m := &spec.Mounts[i]
+		if m.Type != "overlay" {
+			expanded = append(expanded, *m)
+			continue
+		}
+		var lowerDirs []string
+		var upperDir string
+		var keep []string
+		for _, o := range m.Options {
+			switch {
+			case strings.HasPrefix(o, "lowerdir="):
+				for _, d := range strings.Split(strings.TrimPrefix(o, "lowerdir="), ":") {
+					if d != "" {
+						lowerDirs = append(lowerDirs, d)
+					}
+				}
+			case strings.HasPrefix(o, "upperdir="):
+				upperDir = strings.TrimPrefix(o, "upperdir=")
+			case strings.HasPrefix(o, "workdir="):
+				// Compatible-parsed and discarded; gVisor's overlay
+				// manages scratch state internally.
+			default:
+				keep = append(keep, o)
+			}
+		}
+		if len(lowerDirs) == 0 {
+			return fmt.Errorf("overlay mount at %q: missing lowerdir= option", m.Destination)
+		}
+		parentDest := m.Destination
+		for _, lower := range lowerDirs {
+			expanded = append(expanded, specs.Mount{
+				Destination: fmt.Sprintf("%s%d", gvisorOverlayLayerDestPrefix, layerCounter),
+				Type:        "bind",
+				Source:      lower,
+				Options: []string{
+					"bind",
+					GvisorOverlayParentOpt + parentDest,
+					GvisorOverlayRoleOpt + GvisorOverlayLowerRole,
+				},
+			})
+			layerCounter++
+		}
+		if upperDir != "" {
+			expanded = append(expanded, specs.Mount{
+				Destination: fmt.Sprintf("%s%d", gvisorOverlayLayerDestPrefix, layerCounter),
+				Type:        "bind",
+				Source:      upperDir,
+				Options: []string{
+					"bind",
+					GvisorOverlayParentOpt + parentDest,
+					GvisorOverlayRoleOpt + GvisorOverlayUpperRole,
+				},
+			})
+			layerCounter++
+		}
+		expanded = append(expanded, specs.Mount{
+			Destination: parentDest,
+			Type:        "overlay",
+			Source:      m.Source,
+			Options:     append(keep, GvisorOverlayComposedOpt),
+		})
+	}
+	spec.Mounts = expanded
+	return nil
+}
+
+// OverlayParentFromOptions returns the destination of the parent
+// overlay mount that opts belongs to, or "" if opts is not a
+// NormalizeOverlayMounts-emitted synthetic bind.
+func OverlayParentFromOptions(opts []string) string {
+	for _, o := range opts {
+		if strings.HasPrefix(o, GvisorOverlayParentOpt) {
+			return strings.TrimPrefix(o, GvisorOverlayParentOpt)
+		}
+	}
+	return ""
+}
+
+// OverlayRoleFromOptions returns the layer role (GvisorOverlayLowerRole
+// or GvisorOverlayUpperRole) of a synthetic bind emitted by
+// NormalizeOverlayMounts, or "" if opts has none.
+func OverlayRoleFromOptions(opts []string) string {
+	for _, o := range opts {
+		if strings.HasPrefix(o, GvisorOverlayRoleOpt) {
+			return strings.TrimPrefix(o, GvisorOverlayRoleOpt)
+		}
+	}
+	return ""
+}
+
+// IsOverlayComposed reports whether opts contains GvisorOverlayComposedOpt,
+// i.e. whether this mount is the placeholder a `type: overlay` entry
+// was rewritten to by NormalizeOverlayMounts.
+func IsOverlayComposed(opts []string) bool {
+	for _, o := range opts {
+		if o == GvisorOverlayComposedOpt {
+			return true
+		}
+	}
+	return false
 }
 
 // WaitForReady waits for a process to become ready. The process is ready when

@@ -1103,6 +1103,13 @@ func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *boot.Pod
 		if specutils.IsReadonlyMount(c.Spec.Mounts[i].Options) {
 			overlayMedium = config.NoOverlay
 		}
+		// Per-layer bind mounts of an OCI overlay are gofer-served like
+		// any other bind, but must not be wrapped in their own overlayfs
+		// — they are layered together by the mount composer.
+		if specutils.OverlayParentFromOptions(c.Spec.Mounts[i].Options) != "" {
+			overlayMedium = config.NoOverlay
+			overlaySize = ""
+		}
 		if hint := mountHints.FindMount(c.Spec.Mounts[i].Source); hint != nil && hint.IsSandboxLocal() {
 			// Note that we want overlayMedium=self even if this is a read-only mount so that
 			// the shared mount is created correctly. Future containers may mount this writably.

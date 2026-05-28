@@ -430,6 +430,19 @@ type containerMounter struct {
 	// rootfsUpperTarFD is the file descriptor to the tar file containing the rootfs
 	// upper layer changes.
 	rootfsUpperTarFD *fd.FD
+
+	// overlayLayers holds the disconnected per-layer Mounts for each
+	// OCI overlay entry, keyed by the entry's destination. Layers are
+	// added as the per-layer bind mounts are processed and drained
+	// when the corresponding overlay placeholder is mounted.
+	overlayLayers map[string]*pendingOverlay
+}
+
+// pendingOverlay holds the disconnected per-layer Mounts of a single
+// OCI overlay entry until they are composed into an overlay mount.
+type pendingOverlay struct {
+	lowers []*vfs.Mount
+	upper  *vfs.Mount
 }
 
 // +checklocks:l.mu
@@ -446,6 +459,7 @@ func (l *Loader) newContainerMounter(info *containerInfo) *containerMounter {
 		containerID:       info.cid,
 		containerName:     info.containerName,
 		rootfsUpperTarFD:  info.rootfsUpperTarFD,
+		overlayLayers:     make(map[string]*pendingOverlay),
 	}
 }
 
@@ -773,8 +787,25 @@ func (c *containerMounter) mountSubmounts(ctx context.Context, spec *specs.Spec,
 		return err
 	}
 
+	// Process per-layer overlay binds first so that placeholder
+	// overlay mounts always find their layers, regardless of the
+	// destination-length ordering applied in prepareMounts.
 	for i := range mounts {
 		submount := &mounts[i]
+		parent := specutils.OverlayParentFromOptions(submount.mount.Options)
+		if parent == "" {
+			continue
+		}
+		if err := c.collectOverlayLayer(ctx, spec, conf, creds, submount, parent); err != nil {
+			return fmt.Errorf("collect overlay layer %q: %w", submount.mount.Source, err)
+		}
+	}
+
+	for i := range mounts {
+		submount := &mounts[i]
+		if specutils.OverlayParentFromOptions(submount.mount.Options) != "" {
+			continue
+		}
 		log.Debugf("Mounting %q to %q, type: %s, options: %s", submount.mount.Source, submount.mount.Destination, submount.mount.Type, submount.mount.Options)
 		var (
 			mnt *vfs.Mount
@@ -794,6 +825,11 @@ func (c *containerMounter) mountSubmounts(ctx context.Context, spec *specs.Spec,
 			// Mount all the cgroups controllers.
 			if err := c.mountCgroupSubmounts(ctx, spec, conf, mns, creds, submount); err != nil {
 				return fmt.Errorf("mount cgroup %q: %w", submount.mount.Destination, err)
+			}
+		} else if specutils.IsOverlayComposed(submount.mount.Options) {
+			mnt, err = c.mountComposedOverlay(ctx, conf, creds, mns, submount)
+			if err != nil {
+				return fmt.Errorf("mount submount %q: %w", submount.mount.Destination, err)
 			}
 		} else {
 			mnt, err = c.mountSubmount(ctx, spec, conf, mns, creds, submount)
@@ -948,6 +984,134 @@ func (c *containerMounter) mountSubmount(ctx context.Context, spec *specs.Spec, 
 
 	log.Infof("Mounted %q to %q type: %s, internal-options: %q",
 		mount.Source, mount.Destination, mount.Type, opts.GetFilesystemOptions.Data)
+	return mnt, nil
+}
+
+// collectOverlayLayer materializes a per-layer bind mount as a
+// disconnected gofer-served Mount and records it under the parent
+// overlay's destination. The mount is not attached to the workload's
+// namespace; mountComposedOverlay consumes it later.
+func (c *containerMounter) collectOverlayLayer(ctx context.Context, spec *specs.Spec, conf *config.Config, creds *auth.Credentials, submount *mountInfo, parent string) error {
+	role := specutils.OverlayRoleFromOptions(submount.mount.Options)
+	if role != specutils.GvisorOverlayLowerRole && role != specutils.GvisorOverlayUpperRole {
+		return fmt.Errorf("overlay layer %q (parent %q) has invalid %s value %q", submount.mount.Source, parent, specutils.GvisorOverlayRoleOpt, role)
+	}
+	pending := c.overlayLayers[parent]
+	if pending == nil {
+		pending = &pendingOverlay{}
+		c.overlayLayers[parent] = pending
+	}
+	if role == specutils.GvisorOverlayUpperRole && pending.upper != nil {
+		return fmt.Errorf("overlay at %q: multiple upper layers declared", parent)
+	}
+	fsName, opts, err := getMountNameAndOptions(spec, conf, submount, c.l.productName, c.containerName, c.containerID, c.l.fsRestore)
+	if err != nil {
+		return fmt.Errorf("mountOptions for overlay layer %q (parent %q): %w", submount.mount.Source, parent, err)
+	}
+	if len(fsName) == 0 {
+		return fmt.Errorf("overlay layer %q (parent %q) has unsupported filesystem type %q", submount.mount.Source, parent, submount.mount.Type)
+	}
+	mnt, err := c.l.k.VFS().MountDisconnected(ctx, creds, "", fsName, opts)
+	if err != nil {
+		return fmt.Errorf("disconnected mount for overlay layer %q (parent %q): %w", submount.mount.Source, parent, err)
+	}
+	// The Mount's reference is owned by overlayLayers until
+	// mountComposedOverlay consumes it.
+	if role == specutils.GvisorOverlayLowerRole {
+		pending.lowers = append(pending.lowers, mnt)
+	} else {
+		pending.upper = mnt
+	}
+	log.Debugf("Collected overlay layer at %q for parent %q (role=%s)", submount.mount.Source, parent, role)
+	return nil
+}
+
+// mountComposedOverlay assembles the per-layer Mounts collected for
+// submount.mount.Destination into an overlay mount and attaches it at
+// the destination. If no upper layer was declared the upper is an
+// in-sentry tmpfs, giving an ephemeral writable view; otherwise the
+// upper is the gofer-served Mount the OCI spec requested.
+func (c *containerMounter) mountComposedOverlay(ctx context.Context, conf *config.Config, creds *auth.Credentials, mns *vfs.MountNamespace, submount *mountInfo) (*vfs.Mount, error) {
+	dst := submount.mount.Destination
+	pending, ok := c.overlayLayers[dst]
+	if !ok {
+		return nil, fmt.Errorf("composed overlay at %q has no collected layers", dst)
+	}
+	delete(c.overlayLayers, dst)
+	if len(pending.lowers) == 0 {
+		return nil, fmt.Errorf("composed overlay at %q has no lower layers", dst)
+	}
+
+	// Build FilesystemOptions from the collected layers. With no
+	// declared upper, mount an in-sentry tmpfs to serve as the
+	// writable upper layer.
+	overlayOpts := overlay.FilesystemOptions{}
+	for _, lower := range pending.lowers {
+		overlayOpts.LowerRoots = append(overlayOpts.LowerRoots, vfs.MakeVirtualDentry(lower, lower.Root()))
+	}
+	var upper *vfs.Mount
+	if pending.upper != nil {
+		upper = pending.upper
+	} else {
+		tmpfsOpts := &vfs.MountOptions{
+			GetFilesystemOptions: vfs.GetFilesystemOptions{InternalMount: true},
+		}
+		var err error
+		upper, err = c.l.k.VFS().MountDisconnected(ctx, creds, "", tmpfs.Name, tmpfsOpts)
+		if err != nil {
+			for _, l := range pending.lowers {
+				l.DecRef(ctx)
+			}
+			return nil, fmt.Errorf("composing overlay at %q: tmpfs upper: %w", dst, err)
+		}
+	}
+	overlayOpts.UpperRoot = vfs.MakeVirtualDentry(upper, upper.Root())
+
+	mountOpts := &vfs.MountOptions{
+		GetFilesystemOptions: vfs.GetFilesystemOptions{
+			InternalMount: true,
+			InternalData:  overlayOpts,
+		},
+	}
+
+	mnt, err := c.l.k.VFS().MountDisconnected(ctx, creds, "", overlay.Name, mountOpts)
+	// overlay.GetFilesystem takes its own references on LowerRoots and
+	// UpperRoot; drop the per-layer Mount references regardless of
+	// success.
+	for _, l := range pending.lowers {
+		l.DecRef(ctx)
+	}
+	upper.DecRef(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("composing overlay at %q: %w", dst, err)
+	}
+	defer mnt.DecRef(ctx)
+
+	root := mns.Root(ctx)
+	defer root.DecRef(ctx)
+	target := &vfs.PathOperation{
+		Root:               root,
+		Start:              root,
+		Path:               fspath.Parse(dst),
+		FollowFinalSymlink: true,
+	}
+	vd := vfs.MakeVirtualDentry(mnt, mnt.Root())
+	rootPath := &vfs.PathOperation{Root: vd, Start: vd}
+	rootMode, err := c.getPathMode(ctx, creds, rootPath)
+	if err != nil {
+		return nil, fmt.Errorf("composed overlay at %q: stat root: %w", dst, err)
+	}
+	if err := c.makeMountPoint(ctx, creds, mns, dst, rootMode); err != nil {
+		return nil, fmt.Errorf("composed overlay at %q: mountpoint: %w", dst, err)
+	}
+	if err := c.l.k.VFS().ConnectMountAt(ctx, creds, mnt, target); err != nil {
+		return nil, fmt.Errorf("composed overlay at %q: attach: %w", dst, err)
+	}
+	upperKind := "gofer"
+	if pending.upper == nil {
+		upperKind = "tmpfs(ephemeral)"
+	}
+	log.Infof("Mounted composed overlay at %q (lowers=%d, upper=%s)", dst, len(pending.lowers), upperKind)
 	return mnt, nil
 }
 

@@ -17,6 +17,7 @@ package specutils
 import (
 	"fmt"
 	"os/exec"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -752,5 +753,340 @@ func TestContainerName(t *testing.T) {
 				t.Errorf("ContainerName() got: %v, want: %v", got, tc.want)
 			}
 		})
+	}
+}
+func TestNormalizeOverlayMounts(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		in        []specs.Mount
+		want      []specs.Mount
+		wantError string
+	}{
+		{
+			name: "no overlay entries are unchanged",
+			in: []specs.Mount{
+				{Destination: "/proc", Type: "proc", Source: "proc"},
+				{Destination: "/data", Type: "bind", Source: "/host/data", Options: []string{"bind"}},
+			},
+			want: []specs.Mount{
+				{Destination: "/proc", Type: "proc", Source: "proc"},
+				{Destination: "/data", Type: "bind", Source: "/host/data", Options: []string{"bind"}},
+			},
+		},
+		{
+			name: "single lower no upper",
+			in: []specs.Mount{
+				{
+					Destination: "/var/log",
+					Type:        "overlay",
+					Source:      "overlay",
+					Options:     []string{"lowerdir=/host/lower"},
+				},
+			},
+			want: []specs.Mount{
+				{
+					Destination: "/.gvisor-overlay-layer/0",
+					Type:        "bind",
+					Source:      "/host/lower",
+					Options: []string{
+						"bind",
+						GvisorOverlayParentOpt + "/var/log",
+						GvisorOverlayRoleOpt + GvisorOverlayLowerRole,
+					},
+				},
+				{
+					Destination: "/var/log",
+					Type:        "overlay",
+					Source:      "overlay",
+					Options:     []string{GvisorOverlayComposedOpt},
+				},
+			},
+		},
+		{
+			name: "single lower with upper and workdir",
+			in: []specs.Mount{
+				{
+					Destination: "/var/log",
+					Type:        "overlay",
+					Source:      "overlay",
+					Options: []string{
+						"lowerdir=/host/lower",
+						"upperdir=/host/upper",
+						"workdir=/host/work",
+					},
+				},
+			},
+			want: []specs.Mount{
+				{
+					Destination: "/.gvisor-overlay-layer/0",
+					Type:        "bind",
+					Source:      "/host/lower",
+					Options: []string{
+						"bind",
+						GvisorOverlayParentOpt + "/var/log",
+						GvisorOverlayRoleOpt + GvisorOverlayLowerRole,
+					},
+				},
+				{
+					Destination: "/.gvisor-overlay-layer/1",
+					Type:        "bind",
+					Source:      "/host/upper",
+					Options: []string{
+						"bind",
+						GvisorOverlayParentOpt + "/var/log",
+						GvisorOverlayRoleOpt + GvisorOverlayUpperRole,
+					},
+				},
+				{
+					Destination: "/var/log",
+					Type:        "overlay",
+					Source:      "overlay",
+					Options:     []string{GvisorOverlayComposedOpt},
+				},
+			},
+		},
+		{
+			name: "multi-lowerdir is split on colons",
+			in: []specs.Mount{
+				{
+					Destination: "/stack",
+					Type:        "overlay",
+					Source:      "overlay",
+					Options:     []string{"lowerdir=/host/a:/host/b:/host/c"},
+				},
+			},
+			want: []specs.Mount{
+				{
+					Destination: "/.gvisor-overlay-layer/0",
+					Type:        "bind",
+					Source:      "/host/a",
+					Options: []string{
+						"bind",
+						GvisorOverlayParentOpt + "/stack",
+						GvisorOverlayRoleOpt + GvisorOverlayLowerRole,
+					},
+				},
+				{
+					Destination: "/.gvisor-overlay-layer/1",
+					Type:        "bind",
+					Source:      "/host/b",
+					Options: []string{
+						"bind",
+						GvisorOverlayParentOpt + "/stack",
+						GvisorOverlayRoleOpt + GvisorOverlayLowerRole,
+					},
+				},
+				{
+					Destination: "/.gvisor-overlay-layer/2",
+					Type:        "bind",
+					Source:      "/host/c",
+					Options: []string{
+						"bind",
+						GvisorOverlayParentOpt + "/stack",
+						GvisorOverlayRoleOpt + GvisorOverlayLowerRole,
+					},
+				},
+				{
+					Destination: "/stack",
+					Type:        "overlay",
+					Source:      "overlay",
+					Options:     []string{GvisorOverlayComposedOpt},
+				},
+			},
+		},
+		{
+			name: "non-layer options are preserved on the placeholder",
+			in: []specs.Mount{
+				{
+					Destination: "/x",
+					Type:        "overlay",
+					Source:      "overlay",
+					Options: []string{
+						"lowerdir=/host/l",
+						"nosuid",
+						"nodev",
+					},
+				},
+			},
+			want: []specs.Mount{
+				{
+					Destination: "/.gvisor-overlay-layer/0",
+					Type:        "bind",
+					Source:      "/host/l",
+					Options: []string{
+						"bind",
+						GvisorOverlayParentOpt + "/x",
+						GvisorOverlayRoleOpt + GvisorOverlayLowerRole,
+					},
+				},
+				{
+					Destination: "/x",
+					Type:        "overlay",
+					Source:      "overlay",
+					Options:     []string{"nosuid", "nodev", GvisorOverlayComposedOpt},
+				},
+			},
+		},
+		{
+			name: "layer counter does not reset between overlay entries",
+			in: []specs.Mount{
+				{
+					Destination: "/first",
+					Type:        "overlay",
+					Source:      "overlay",
+					Options:     []string{"lowerdir=/host/l1"},
+				},
+				{
+					Destination: "/second",
+					Type:        "overlay",
+					Source:      "overlay",
+					Options:     []string{"lowerdir=/host/l2"},
+				},
+			},
+			want: []specs.Mount{
+				{
+					Destination: "/.gvisor-overlay-layer/0",
+					Type:        "bind",
+					Source:      "/host/l1",
+					Options: []string{
+						"bind",
+						GvisorOverlayParentOpt + "/first",
+						GvisorOverlayRoleOpt + GvisorOverlayLowerRole,
+					},
+				},
+				{
+					Destination: "/first",
+					Type:        "overlay",
+					Source:      "overlay",
+					Options:     []string{GvisorOverlayComposedOpt},
+				},
+				{
+					Destination: "/.gvisor-overlay-layer/1",
+					Type:        "bind",
+					Source:      "/host/l2",
+					Options: []string{
+						"bind",
+						GvisorOverlayParentOpt + "/second",
+						GvisorOverlayRoleOpt + GvisorOverlayLowerRole,
+					},
+				},
+				{
+					Destination: "/second",
+					Type:        "overlay",
+					Source:      "overlay",
+					Options:     []string{GvisorOverlayComposedOpt},
+				},
+			},
+		},
+		{
+			name: "missing lowerdir is rejected",
+			in: []specs.Mount{
+				{
+					Destination: "/x",
+					Type:        "overlay",
+					Source:      "overlay",
+					Options:     []string{"upperdir=/host/upper"},
+				},
+			},
+			wantError: "missing lowerdir",
+		},
+		{
+			name: "empty lowerdir entries are dropped before counting",
+			in: []specs.Mount{
+				{
+					Destination: "/x",
+					Type:        "overlay",
+					Source:      "overlay",
+					Options:     []string{"lowerdir=:/host/l::"},
+				},
+			},
+			want: []specs.Mount{
+				{
+					Destination: "/.gvisor-overlay-layer/0",
+					Type:        "bind",
+					Source:      "/host/l",
+					Options: []string{
+						"bind",
+						GvisorOverlayParentOpt + "/x",
+						GvisorOverlayRoleOpt + GvisorOverlayLowerRole,
+					},
+				},
+				{
+					Destination: "/x",
+					Type:        "overlay",
+					Source:      "overlay",
+					Options:     []string{GvisorOverlayComposedOpt},
+				},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			spec := &specs.Spec{Mounts: append([]specs.Mount(nil), tc.in...)}
+			err := NormalizeOverlayMounts(spec)
+			if tc.wantError != "" {
+				if err == nil {
+					t.Fatalf("NormalizeOverlayMounts returned nil error, want one containing %q", tc.wantError)
+				}
+				if !strings.Contains(err.Error(), tc.wantError) {
+					t.Fatalf("NormalizeOverlayMounts error = %q, want one containing %q", err.Error(), tc.wantError)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("NormalizeOverlayMounts returned unexpected error: %v", err)
+			}
+			if !reflect.DeepEqual(spec.Mounts, tc.want) {
+				t.Errorf("NormalizeOverlayMounts spec.Mounts mismatch\ngot:  %#v\nwant: %#v", spec.Mounts, tc.want)
+			}
+		})
+	}
+}
+
+func TestOverlayOptionAccessors(t *testing.T) {
+	const dest = "/var/log"
+	upper := []string{
+		"bind",
+		GvisorOverlayParentOpt + dest,
+		GvisorOverlayRoleOpt + GvisorOverlayUpperRole,
+	}
+	lower := []string{
+		"bind",
+		GvisorOverlayParentOpt + dest,
+		GvisorOverlayRoleOpt + GvisorOverlayLowerRole,
+	}
+	composed := []string{GvisorOverlayComposedOpt}
+	plain := []string{"bind", "ro"}
+
+	if got := OverlayParentFromOptions(upper); got != dest {
+		t.Errorf("OverlayParentFromOptions(upper) = %q, want %q", got, dest)
+	}
+	if got := OverlayParentFromOptions(lower); got != dest {
+		t.Errorf("OverlayParentFromOptions(lower) = %q, want %q", got, dest)
+	}
+	if got := OverlayParentFromOptions(plain); got != "" {
+		t.Errorf("OverlayParentFromOptions(plain) = %q, want %q", got, "")
+	}
+	if got := OverlayParentFromOptions(composed); got != "" {
+		t.Errorf("OverlayParentFromOptions(composed) = %q, want %q", got, "")
+	}
+
+	if got := OverlayRoleFromOptions(upper); got != GvisorOverlayUpperRole {
+		t.Errorf("OverlayRoleFromOptions(upper) = %q, want %q", got, GvisorOverlayUpperRole)
+	}
+	if got := OverlayRoleFromOptions(lower); got != GvisorOverlayLowerRole {
+		t.Errorf("OverlayRoleFromOptions(lower) = %q, want %q", got, GvisorOverlayLowerRole)
+	}
+	if got := OverlayRoleFromOptions(plain); got != "" {
+		t.Errorf("OverlayRoleFromOptions(plain) = %q, want %q", got, "")
+	}
+
+	if !IsOverlayComposed(composed) {
+		t.Errorf("IsOverlayComposed(composed) = false, want true")
+	}
+	if IsOverlayComposed(upper) {
+		t.Errorf("IsOverlayComposed(upper) = true, want false")
+	}
+	if IsOverlayComposed(plain) {
+		t.Errorf("IsOverlayComposed(plain) = true, want false")
 	}
 }
