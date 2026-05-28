@@ -611,8 +611,8 @@ type inode struct {
 	gid   atomicbitops.Uint32 // auth.KGID, but ...
 	ino   uint64              // immutable
 
-	// Linux's tmpfs has no concept of btime.
 	atime atomicbitops.Int64 // nanoseconds
+	btime atomicbitops.Int64 // nanoseconds
 	ctime atomicbitops.Int64 // nanoseconds
 	mtime atomicbitops.Int64 // nanoseconds
 
@@ -651,9 +651,10 @@ func (i *inode) init(impl any, fs *filesystem, kuid auth.KUID, kgid auth.KGID, m
 	i.uid = atomicbitops.FromUint32(uint32(kuid))
 	i.gid = atomicbitops.FromUint32(uint32(kgid))
 	i.ino = fs.nextInoMinusOne.Add(1)
-	// Tmpfs creation sets atime, ctime, and mtime to current time.
+	// Tmpfs creation sets atime, btime, ctime, and mtime to current time.
 	now := fs.clock.Now().Nanoseconds()
 	i.atime = atomicbitops.FromInt64(now)
+	i.btime = atomicbitops.FromInt64(now)
 	i.ctime = atomicbitops.FromInt64(now)
 	i.mtime = atomicbitops.FromInt64(now)
 	// i.nlink initialized by caller
@@ -742,8 +743,8 @@ func (i *inode) checkPermissions(creds *auth.Credentials, ats vfs.AccessTypes) e
 func (i *inode) statTo(stat *linux.Statx) {
 	stat.Mask = linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_NLINK |
 		linux.STATX_UID | linux.STATX_GID | linux.STATX_INO | linux.STATX_SIZE |
-		linux.STATX_BLOCKS | linux.STATX_ATIME | linux.STATX_CTIME |
-		linux.STATX_MTIME
+		linux.STATX_BLOCKS | linux.STATX_ATIME | linux.STATX_BTIME |
+		linux.STATX_CTIME | linux.STATX_MTIME
 	stat.Blksize = hostarch.PageSize
 	stat.Nlink = i.nlink.Load()
 	stat.UID = i.uid.Load()
@@ -751,6 +752,7 @@ func (i *inode) statTo(stat *linux.Statx) {
 	stat.Mode = uint16(i.mode.Load())
 	stat.Ino = i.ino
 	stat.Atime = linux.NsecToStatxTimestamp(i.atime.Load())
+	stat.Btime = linux.NsecToStatxTimestamp(i.btime.Load())
 	stat.Ctime = linux.NsecToStatxTimestamp(i.ctime.Load())
 	stat.Mtime = linux.NsecToStatxTimestamp(i.mtime.Load())
 	stat.DevMajor = linux.UNNAMED_MAJOR
