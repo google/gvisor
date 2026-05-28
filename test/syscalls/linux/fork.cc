@@ -14,7 +14,9 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <linux/sched.h>
 #include <sched.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <sys/mman.h>
 #include <sys/mount.h>
@@ -562,6 +564,73 @@ TEST(CloneTest, Clone3Basic) {
   EXPECT_THAT(waitpid(child_pid, &status, 0),
               SyscallSucceedsWithValue(child_pid));
   EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
+static void DummySignalHandler(int) {}
+
+// Clone3 CLONE_CLEAR_SIGHAND flag works correctly.
+TEST(CloneTest, Clone3ClearSighand) {
+  // Set a signal handler for SIGUSR1
+  struct sigaction act_usr1 = {};
+  act_usr1.sa_handler = DummySignalHandler;
+  ASSERT_THAT(sigaction(SIGUSR1, &act_usr1, nullptr), SyscallSucceeds());
+
+  // Set SIG_IGN for SIGUSR2
+  struct sigaction act_usr2 = {};
+  act_usr2.sa_handler = SIG_IGN;
+  ASSERT_THAT(sigaction(SIGUSR2, &act_usr2, nullptr), SyscallSucceeds());
+
+  // Call clone3() with CLONE_CLEAR_SIGHAND
+  clone_args ca = {};
+  ca.flags = CLONE_CLEAR_SIGHAND;
+  ca.exit_signal = SIGCHLD;
+  int child_pid;
+  EXPECT_THAT(child_pid = clone3(&ca, sizeof(ca)), SyscallSucceeds());
+
+  if (child_pid == 0) {
+    // In the child, check that SIGUSR1 was reset to SIG_DFL
+    struct sigaction cur_usr1 = {};
+    if (sigaction(SIGUSR1, nullptr, &cur_usr1) < 0) {
+      _exit(1);
+    }
+    if (cur_usr1.sa_handler != SIG_DFL) {
+      _exit(2);
+    }
+
+    // And that SIGUSR2 remains set to SIG_IGN
+    struct sigaction cur_usr2 = {};
+    if (sigaction(SIGUSR2, nullptr, &cur_usr2) < 0) {
+      _exit(3);
+    }
+    if (cur_usr2.sa_handler != SIG_IGN) {
+      _exit(4);
+    }
+
+    _exit(0);
+  }
+
+  // Check that the child's assertions passed (i.e. it exited 0)
+  int status;
+  EXPECT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << "status = " << status;
+
+  // Verify that the parent's SIGUSR1 and SIGUSR2 handlers are unchanged
+  struct sigaction parent_usr1 = {};
+  ASSERT_THAT(sigaction(SIGUSR1, nullptr, &parent_usr1), SyscallSucceeds());
+  EXPECT_EQ(parent_usr1.sa_handler, DummySignalHandler);
+  struct sigaction parent_usr2 = {};
+  ASSERT_THAT(sigaction(SIGUSR2, nullptr, &parent_usr2), SyscallSucceeds());
+  EXPECT_EQ(parent_usr2.sa_handler, SIG_IGN);
+}
+
+// CLONE_CLEAR_SIGHAND and CLONE_SIGHAND are mutually exclusive.
+TEST(CloneTest, Clone3ClearSighandIncompatible) {
+  clone_args ca = {};
+  ca.flags = CLONE_CLEAR_SIGHAND | CLONE_SIGHAND | CLONE_VM;
+  ca.exit_signal = SIGCHLD;
+  EXPECT_THAT(clone3(&ca, sizeof(ca)), SyscallFailsWithErrno(EINVAL));
 }
 
 }  // namespace
