@@ -16,6 +16,7 @@ go_test(
     srcs = [
         "cgroup_test.go",
         "chroot_test.go",
+        "crictl_sandbox_test.go",
         "crictl_test.go",
         "main_test.go",
         "oom_score_adj_test.go",

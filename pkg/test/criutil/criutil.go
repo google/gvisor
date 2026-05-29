@@ -431,5 +431,8 @@ func (cc *Crictl) run(args ...string) (string, error) {
 	}
 	fullArgs := append(defaultArgs, args...)
 	out, err := testutil.Command(cc.logger, fullArgs...).CombinedOutput()
-	return string(out), err
+	if err != nil {
+		return string(out), fmt.Errorf("command %v failed: %w (output: %q)", fullArgs, err, string(out))
+	}
+	return string(out), nil
 }

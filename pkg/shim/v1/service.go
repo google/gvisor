@@ -27,6 +27,9 @@ import (
 	"github.com/containerd/log"
 	"github.com/containerd/ttrpc"
 
+	api "github.com/containerd/containerd/api/runtime/sandbox/v1"
+	"github.com/containerd/errdefs"
+
 	"gvisor.dev/gvisor/pkg/shim/v1/extension"
 	rsc "gvisor.dev/gvisor/pkg/shim/v1/runsc"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -46,7 +49,7 @@ func NewShimRedirector(ctx context.Context, publisher shim.Publisher, sd shutdow
 		return nil, err
 	}
 
-	runtimeOptions := getRuntimeOptions()
+	runtimeOptions := rsc.GetRuntimeOptions()
 
 	s := &shimRedirector{
 		shutdown:       sd,
@@ -316,5 +319,117 @@ func (s *shimRedirector) Restore(ctx context.Context, r *extension.RestoreReques
 
 func (s *shimRedirector) RegisterTTRPC(server *ttrpc.Server) error {
 	task.RegisterTaskService(server, s)
+	api.RegisterTTRPCSandboxService(server, s)
 	return nil
+}
+
+func (s *shimRedirector) getSandboxService() (api.TTRPCSandboxService, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if srv, ok := s.getLocked().(api.TTRPCSandboxService); ok {
+		return srv, nil
+	}
+	if srv, ok := s.main.(api.TTRPCSandboxService); ok {
+		return srv, nil
+	}
+	return nil, errdefs.ErrNotImplemented
+}
+
+// CreateSandbox implements api.TTRPCSandboxService.CreateSandbox.
+func (s *shimRedirector) CreateSandbox(ctx context.Context, req *api.CreateSandboxRequest) (*api.CreateSandboxResponse, error) {
+	log.L.Debugf("CreateSandbox redirector, id: %s", req.SandboxID)
+	srv, err := s.getSandboxService()
+	if err != nil {
+		return nil, errgrpc.ToGRPC(err)
+	}
+	resp, err := srv.CreateSandbox(ctx, req)
+	return resp, errgrpc.ToGRPC(err)
+}
+
+// StartSandbox implements api.TTRPCSandboxService.StartSandbox.
+func (s *shimRedirector) StartSandbox(ctx context.Context, req *api.StartSandboxRequest) (*api.StartSandboxResponse, error) {
+	log.L.Debugf("StartSandbox redirector, id: %s", req.SandboxID)
+	srv, err := s.getSandboxService()
+	if err != nil {
+		return nil, errgrpc.ToGRPC(err)
+	}
+	resp, err := srv.StartSandbox(ctx, req)
+	return resp, errgrpc.ToGRPC(err)
+}
+
+// Platform implements api.TTRPCSandboxService.Platform.
+func (s *shimRedirector) Platform(ctx context.Context, req *api.PlatformRequest) (*api.PlatformResponse, error) {
+	log.L.Debugf("Platform redirector, id: %s", req.SandboxID)
+	srv, err := s.getSandboxService()
+	if err != nil {
+		return nil, errgrpc.ToGRPC(err)
+	}
+	resp, err := srv.Platform(ctx, req)
+	return resp, errgrpc.ToGRPC(err)
+}
+
+// StopSandbox implements api.TTRPCSandboxService.StopSandbox.
+func (s *shimRedirector) StopSandbox(ctx context.Context, req *api.StopSandboxRequest) (*api.StopSandboxResponse, error) {
+	log.L.Debugf("StopSandbox redirector, id: %s", req.SandboxID)
+	srv, err := s.getSandboxService()
+	if err != nil {
+		return nil, errgrpc.ToGRPC(err)
+	}
+	resp, err := srv.StopSandbox(ctx, req)
+	return resp, errgrpc.ToGRPC(err)
+}
+
+// WaitSandbox implements api.TTRPCSandboxService.WaitSandbox.
+func (s *shimRedirector) WaitSandbox(ctx context.Context, req *api.WaitSandboxRequest) (*api.WaitSandboxResponse, error) {
+	log.L.Debugf("WaitSandbox redirector, id: %s", req.SandboxID)
+	srv, err := s.getSandboxService()
+	if err != nil {
+		return nil, errgrpc.ToGRPC(err)
+	}
+	resp, err := srv.WaitSandbox(ctx, req)
+	return resp, errgrpc.ToGRPC(err)
+}
+
+// SandboxStatus implements api.TTRPCSandboxService.SandboxStatus.
+func (s *shimRedirector) SandboxStatus(ctx context.Context, req *api.SandboxStatusRequest) (*api.SandboxStatusResponse, error) {
+	log.L.Debugf("SandboxStatus redirector, id: %s", req.SandboxID)
+	srv, err := s.getSandboxService()
+	if err != nil {
+		return nil, errgrpc.ToGRPC(err)
+	}
+	resp, err := srv.SandboxStatus(ctx, req)
+	return resp, errgrpc.ToGRPC(err)
+}
+
+// PingSandbox implements api.TTRPCSandboxService.PingSandbox.
+func (s *shimRedirector) PingSandbox(ctx context.Context, req *api.PingRequest) (*api.PingResponse, error) {
+	log.L.Debugf("PingSandbox redirector, id: %s", req.SandboxID)
+	srv, err := s.getSandboxService()
+	if err != nil {
+		return nil, errgrpc.ToGRPC(err)
+	}
+	resp, err := srv.PingSandbox(ctx, req)
+	return resp, errgrpc.ToGRPC(err)
+}
+
+// ShutdownSandbox implements api.TTRPCSandboxService.ShutdownSandbox.
+func (s *shimRedirector) ShutdownSandbox(ctx context.Context, req *api.ShutdownSandboxRequest) (*api.ShutdownSandboxResponse, error) {
+	log.L.Debugf("ShutdownSandbox redirector, id: %s", req.SandboxID)
+	srv, err := s.getSandboxService()
+	if err != nil {
+		return nil, errgrpc.ToGRPC(err)
+	}
+	resp, err := srv.ShutdownSandbox(ctx, req)
+	return resp, errgrpc.ToGRPC(err)
+}
+
+// SandboxMetrics implements api.TTRPCSandboxService.SandboxMetrics.
+func (s *shimRedirector) SandboxMetrics(ctx context.Context, req *api.SandboxMetricsRequest) (*api.SandboxMetricsResponse, error) {
+	log.L.Debugf("SandboxMetrics redirector, id: %s", req.SandboxID)
+	srv, err := s.getSandboxService()
+	if err != nil {
+		return nil, errgrpc.ToGRPC(err)
+	}
+	resp, err := srv.SandboxMetrics(ctx, req)
+	return resp, errgrpc.ToGRPC(err)
 }

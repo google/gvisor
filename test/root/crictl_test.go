@@ -394,6 +394,8 @@ func TestCrictlUpdateContainerResources(t *testing.T) {
 
 const containerdRuntime = "runsc"
 
+var extraEnv []string
+
 // containerdConfig is the containerd (1.5+) configuration file that
 // configures the gVisor shim.
 //
@@ -533,6 +535,7 @@ grouping = ` + strconv.FormatBool(enableGrouping) + `
 	t.Logf("Using args: %s", strings.Join(args, " "))
 	cmd := exec.Command(args[0], args[1:]...)
 	cmd.Env = append(os.Environ(), "PATH="+modifiedPath)
+	cmd.Env = append(cmd.Env, extraEnv...)
 
 	// Include output in logs.
 	stderrPipe, err := cmd.StderrPipe()
@@ -571,6 +574,12 @@ grouping = ` + strconv.FormatBool(enableGrouping) + `
 		t.Fatalf("failed running containerd: %v", err)
 	}
 
+	// Kill must be the last cleanup (as it will be executed first).
+	cu.Add(func() {
+		// Best effort: ignore errors.
+		testutil.KillCommand(cmd)
+	})
+
 	// Wait for containerd to boot.
 	if err := testutil.WaitUntilRead(startupR, "Start streaming server", 10*time.Second); err != nil {
 		t.Fatalf("failed to start containerd: %v", err)
@@ -582,12 +591,6 @@ grouping = ` + strconv.FormatBool(enableGrouping) + `
 	// Create the crictl interface.
 	cc := criutil.NewCrictl(t, sockAddr)
 	cu.Add(cc.CleanUp)
-
-	// Kill must be the last cleanup (as it will be executed first).
-	cu.Add(func() {
-		// Best effort: ignore errors.
-		testutil.KillCommand(cmd)
-	})
 
 	return cc, cu.Release(), nil
 }
@@ -1067,6 +1070,9 @@ func getContainerd() string {
 	return "/usr/bin/containerd"
 }
 
-func getContainerdConfig(major, minor uint64) string {
+// getContainerdConfig returns the containerd config.
+// The config could change based on the containerd features enabled
+// e.g. enable sandbox API in containerd or not.
+var getContainerdConfig = func(major, minor uint64) string {
 	return containerdConfig
 }

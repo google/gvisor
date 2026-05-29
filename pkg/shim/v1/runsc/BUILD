@@ -14,6 +14,7 @@ go_library(
         "epoll.go",
         "oom_v2.go",
         "options.go",
+        "sandbox.go",
         "service.go",
         "service_linux.go",
         "state.go",
@@ -35,6 +36,7 @@ go_library(
         "@com_github_containerd_cgroups_v3//cgroup2/stats:go_default_library",  # keep
         "@com_github_containerd_console//:go_default_library",
         "@com_github_containerd_containerd_api//events:go_default_library",
+        "@com_github_containerd_containerd_api//runtime/sandbox/v1:go_default_library",
         "@com_github_containerd_containerd_api//runtime/task/v2:go_default_library",
         "@com_github_containerd_containerd_api//types/runc/options:go_default_library",
         "@com_github_containerd_containerd_api//types/task:go_default_library",
