@@ -29,11 +29,11 @@ import (
 )
 
 func validateErrorWithMsg(field, cName string, oldV, newV any, msg string) error {
-	return fmt.Errorf("%v does not match across checkpoint restore for container: %v, checkpoint %v restore %v, got error %v", field, cName, oldV, newV, msg)
+	return fmt.Errorf("%q does not match across checkpoint restore for container: %q, checkpoint %#v restore %#v, got error %v", field, cName, oldV, newV, msg)
 }
 
 func validateError(field, cName string, oldV, newV any) error {
-	return fmt.Errorf("%v does not match across checkpoint restore for container: %v, checkpoint %v restore %v", field, cName, oldV, newV)
+	return fmt.Errorf("%q does not match across checkpoint restore for container: %q, checkpoint %#v restore %#v", field, cName, oldV, newV)
 }
 
 func cloneMount(mnt specs.Mount) specs.Mount {
@@ -472,18 +472,18 @@ func validateSpecForContainer(oSpec, nSpec *specs.Spec, cName string) error {
 
 	// Validate remaining fields of specs.Process.
 	if ok := reflect.DeepEqual(oldProcess, newProcess); !ok {
-		return validateError("Process", cName, oSpec, nSpec)
+		return validateError("Process", cName, oldProcess, newProcess)
 	}
 	oldSpec.Process, newSpec.Process = nil, nil
 
 	// Validate remaining fields of specs.Linux.
 	if ok := reflect.DeepEqual(oldLinux, newLinux); !ok {
-		return validateError("Linux", cName, oSpec, nSpec)
+		return validateError("Linux", cName, oldLinux, newLinux)
 	}
 	oldSpec.Linux, newSpec.Linux = nil, nil
 
 	if ok := reflect.DeepEqual(oldSpec, newSpec); !ok {
-		return validateError("Spec", cName, oSpec, nSpec)
+		return validateError("Spec", cName, oldSpec, newSpec)
 	}
 	return nil
 }

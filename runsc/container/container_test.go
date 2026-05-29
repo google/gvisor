@@ -3985,14 +3985,14 @@ func TestSpecValidation(t *testing.T) {
 			mutate: func(_, restoreSpec *specs.Spec, _, _ string) {
 				restoreSpec.Process.Terminal = true
 			},
-			wantErr: "Terminal does not match across checkpoint restore",
+			wantErr: "\"Terminal\" does not match across checkpoint restore",
 		},
 		{
 			name: "Args",
 			mutate: func(_, restoreSpec *specs.Spec, _, _ string) {
 				restoreSpec.Process.Args = append(restoreSpec.Process.Args, "new arg")
 			},
-			wantErr: "Args does not match across checkpoint restore",
+			wantErr: "\"Args\" does not match across checkpoint restore",
 		},
 		{
 			name: "Device",
@@ -4009,7 +4009,7 @@ func TestSpecValidation(t *testing.T) {
 				}
 				restoreSpec.Linux.Devices = append(restoreSpec.Linux.Devices, dev)
 			},
-			wantErr: "Devices does not match across checkpoint restore",
+			wantErr: "\"Devices\" does not match across checkpoint restore",
 		},
 		{
 			name: "NamespaceFail",
@@ -4021,7 +4021,7 @@ func TestSpecValidation(t *testing.T) {
 					Path: fmt.Sprintf("/proc/%d/ns/net", os.Getpid()),
 				})
 			},
-			wantErr: "Namespace does not match across checkpoint restore",
+			wantErr: "\"Namespace\" does not match across checkpoint restore",
 		},
 		{
 			name: "NamespaceSuccess",
@@ -4048,7 +4048,7 @@ func TestSpecValidation(t *testing.T) {
 					DefaultAction: specs.ActAllow,
 				}
 			},
-			wantErr: "Seccomp does not match across checkpoint restore",
+			wantErr: "\"Seccomp\" does not match across checkpoint restore",
 		},
 		{
 			name: "RestoreDupMountsSuccess",
@@ -4106,7 +4106,7 @@ func TestSpecValidation(t *testing.T) {
 				}
 				restoreSpec.Mounts = append(restoreSpec.Mounts, restoreMnt)
 			},
-			wantErr: "Mounts does not match across checkpoint restore",
+			wantErr: "\"Mounts\" does not match across checkpoint restore",
 		},
 		{
 			name: "AnnotationsMountsSuccess",
@@ -4137,7 +4137,7 @@ func TestSpecValidation(t *testing.T) {
 				spec.Annotations = make(map[string]string)
 				spec.Annotations["dev.gvisor.flag.net-disconnect-ok"] = strconv.FormatBool(true)
 			},
-			wantErr: "Annotations does not match across checkpoint restore",
+			wantErr: "\"Annotations\" does not match across checkpoint restore",
 		},
 		{
 			name: "InternalAnnotationsSuccess",
@@ -4166,7 +4166,7 @@ func TestSpecValidation(t *testing.T) {
 			mutate: func(spec, restoreSpec *specs.Spec, _, _ string) {
 				restoreSpec.Process.Capabilities.Bounding = append(restoreSpec.Process.Capabilities.Bounding, "CAP_NET_RAW")
 			},
-			wantErr: "Capabilities.Bounding does not match across checkpoint restore",
+			wantErr: "\"Capabilities.Bounding\" does not match across checkpoint restore",
 		},
 		{
 			name: "Resources",
