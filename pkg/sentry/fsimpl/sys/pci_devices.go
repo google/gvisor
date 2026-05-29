@@ -88,8 +88,72 @@ func pciClassRelevant(class string) bool {
 		return true
 	case "0604": // PCI bridge
 		return true
+	case "0680": // NVSwitch
+		return true
 	}
 	return false
+}
+
+// pciClassIsNIC returns true if the PCI class code is a network device
+// (Ethernet or InfiniBand controller). Used to gate NIC-class devices
+// against RDMA availability — see rdmaUsablePCISlotNames for the rules on
+// which NIC PCI devices are kept in the virtual PCI tree.
+func pciClassIsNIC(class string) bool {
+	c := strings.TrimPrefix(class, "0x")
+	if len(c) < 4 {
+		return false
+	}
+	prefix := c[:4]
+	// 0200 Ethernet, 0207 InfiniBand network controller (Crusoe B200/EFA),
+	// 0c06 InfiniBand controller.
+	return prefix == "0200" || prefix == "0207" || prefix == "0c06"
+}
+
+// rdmaUsablePCISlotNames returns the set of PCI slot names (lowercase) for
+// RDMA devices that should remain in the virtual PCI tree. A NIC-class PCI
+// device is only useful to NCCL if it backs an RDMA device the sandbox can
+// actually use; the rules differ by link layer:
+//
+//   - InfiniBand link-layer devices are driven directly through uverbs and
+//     need no netdev in the sandbox netns, so they are always kept. Their PCI
+//     entry is required so /sys/class/infiniband/<dev>/device can be a symlink
+//     into the PCI tree (NCCL realpath()s it to place the NIC near its GPU).
+//   - RoCE (Ethernet link-layer) devices are only usable once their netdev has
+//     been moved into the sandbox netns, i.e. a GID entry has a valid ndev.
+//     RoCE NICs without a moved ndev are excluded so NCCL's topology graph
+//     doesn't create dangling NET nodes ("Could not find NET with id N").
+//
+// Returns nil when rdmaData is nil (no RDMA info => no NIC filtering).
+func rdmaUsablePCISlotNames(rdmaData *RDMAData) map[string]bool {
+	if rdmaData == nil {
+		return nil
+	}
+	slots := make(map[string]bool)
+	for _, dev := range rdmaData.Devices {
+		if dev.PCISlotName == "" {
+			continue
+		}
+		keep := false
+		for _, p := range dev.Ports {
+			if p.LinkLayer == "InfiniBand" {
+				keep = true
+				break
+			}
+			for _, g := range p.GIDs {
+				if g.NetDev != "" {
+					keep = true
+					break
+				}
+			}
+			if keep {
+				break
+			}
+		}
+		if keep {
+			slots[strings.ToLower(dev.PCISlotName)] = true
+		}
+	}
+	return slots
 }
 
 // collectDeviceAttrs reads sysfs attributes from the given directory path.
@@ -221,12 +285,26 @@ func DeserializePCIDevicesData(filePath string) *PCIDevicesData {
 //  2. Calling realpath() which resolves through the symlink
 //  3. Walking UP the resolved path reading "class" to find bridges
 //  4. Using the hierarchy depth to compute PCI distance between devices
-func (fs *filesystem) newPCIDevicesSysfsEntries(ctx context.Context, creds *auth.Credentials, data *PCIDevicesData) (devicesSub, pciBusSub, busPCIDevicesSub map[string]kernfs.Inode, pciSlotToRelPath map[string]string) {
+func (fs *filesystem) newPCIDevicesSysfsEntries(ctx context.Context, creds *auth.Credentials, data *PCIDevicesData, rdmaData *RDMAData) (devicesSub, pciBusSub, busPCIDevicesSub map[string]kernfs.Inode, pciSlotToRelPath map[string]string) {
 	if data == nil || len(data.Devices) == 0 {
 		return nil, nil, nil, nil
 	}
 
-	log.Infof("pci sysfs: building virtual sysfs for %d device(s)", len(data.Devices))
+	usableNICSlots := rdmaUsablePCISlotNames(rdmaData)
+
+	kept, skipped := 0, 0
+	for _, dev := range data.Devices {
+		if pciClassIsNIC(dev.Class) {
+			addr := strings.ToLower(dev.Address)
+			if usableNICSlots != nil && !usableNICSlots[addr] {
+				skipped++
+				continue
+			}
+		}
+		kept++
+	}
+
+	log.Infof("pci sysfs: building virtual sysfs for %d device(s) (%d unusable NIC(s) skipped)", kept, skipped)
 
 	// Build a nested map representing the /sys/devices/ tree.
 	// Key: path relative to /sys/ (e.g., "devices/pci0000:07/0000:07:01.0")
@@ -264,6 +342,12 @@ func (fs *filesystem) newPCIDevicesSysfsEntries(ctx context.Context, creds *auth
 	pciAddrToRelPath := make(map[string]string)
 
 	for _, dev := range data.Devices {
+		if pciClassIsNIC(dev.Class) {
+			addr := strings.ToLower(dev.Address)
+			if usableNICSlots != nil && !usableNICSlots[addr] {
+				continue
+			}
+		}
 
 		// dev.RealPath is e.g. "/sys/devices/pci0000:07/0000:07:01.0/0000:0f:00.0"
 		// Convert to relative path from /sys/
@@ -286,6 +370,37 @@ func (fs *filesystem) newPCIDevicesSysfsEntries(ctx context.Context, creds *auth
 		node.files["current_link_speed"] = dev.CurrentLinkSpeed
 		node.files["current_link_width"] = dev.CurrentLinkWidth
 
+		if pciClassIsNIC(dev.Class) && rdmaData != nil {
+			addr := strings.ToLower(dev.Address)
+			for _, rd := range rdmaData.Devices {
+				if strings.ToLower(rd.PCISlotName) != addr {
+					continue
+				}
+				if rd.Modalias != "" {
+					node.files["modalias"] = rd.Modalias
+				}
+				uevent := ""
+				if rd.PCIDriver != "" {
+					uevent += "DRIVER=" + rd.PCIDriver + "\n"
+				}
+				if dev.Class != "" {
+					uevent += "PCI_CLASS=" + strings.TrimPrefix(dev.Class, "0x") + "\n"
+				}
+				if dev.Vendor != "" && dev.Device != "" {
+					uevent += "PCI_ID=" + strings.TrimPrefix(strings.ToUpper(dev.Vendor), "0X") + ":" + strings.TrimPrefix(strings.ToUpper(dev.Device), "0X") + "\n"
+				}
+				if dev.SubsystemVendor != "" && dev.SubsystemDevice != "" {
+					uevent += "PCI_SUBSYS_ID=" + strings.TrimPrefix(strings.ToUpper(dev.SubsystemVendor), "0X") + ":" + strings.TrimPrefix(strings.ToUpper(dev.SubsystemDevice), "0X") + "\n"
+				}
+				uevent += "PCI_SLOT_NAME=" + rd.PCISlotName + "\n"
+				if rd.Modalias != "" {
+					uevent += "MODALIAS=" + rd.Modalias + "\n"
+				}
+				node.files["uevent"] = uevent
+				break
+			}
+		}
+
 		// Create pci_bus entry for this device's secondary bus.
 		// The bus number is the first two hex groups of the address (domain:bus).
 		// E.g., for device "0000:0f:00.0", bus is "0000:0f".
@@ -301,10 +416,41 @@ func (fs *filesystem) newPCIDevicesSysfsEntries(ctx context.Context, creds *auth
 
 				// Symlink: /sys/class/pci_bus/<bus> -> ../../devices/pci.../pci_bus/<bus>
 				pciBusSymlinks[bus] = "../../" + parentRelPath + "/pci_bus/" + bus
+
+				upper := strings.ToUpper(bus)
+				if upper != bus {
+					pciBusSymlinks[upper] = "../../" + parentRelPath + "/pci_bus/" + upper
+					getOrCreate(parentRelPath + "/pci_bus/" + upper)
+				}
 			}
 
 			// Symlink: /sys/bus/pci/devices/<addr> -> ../../../devices/pci.../<addr>
 			busPCIDevicesSymlinks[addr] = "../../../" + relPath
+			upper := strings.ToUpper(addr)
+			if upper != addr {
+				busPCIDevicesSymlinks[upper] = "../../../" + relPath
+			}
+		}
+	}
+
+	if rdmaData != nil {
+		for _, dev := range rdmaData.Devices {
+			if dev.IBDev == "" || dev.PCISlotName == "" {
+				continue
+			}
+			relPath, ok := pciAddrToRelPath[strings.ToLower(dev.PCISlotName)]
+			if !ok {
+				continue
+			}
+			infinibandDir := getOrCreate(relPath + "/infiniband")
+			linkDir := filepath.Join("/sys", relPath, "infiniband")
+			target := filepath.Join("/sys/class/infiniband", dev.IBDev)
+			relTarget, err := filepath.Rel(linkDir, target)
+			if err != nil {
+				log.Warningf("pci sysfs: relative symlink for %s/%s: %v", relPath, dev.IBDev, err)
+				continue
+			}
+			infinibandDir.symlinks[dev.IBDev] = relTarget
 		}
 	}
 

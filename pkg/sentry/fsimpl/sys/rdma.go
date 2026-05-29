@@ -19,9 +19,11 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
@@ -64,8 +66,8 @@ type RDMADeviceData struct {
 	Ports      []RDMAPortData `json:"ports"`
 
 	// PCI device attributes from /sys/class/infiniband/<ibdev>/device/.
-	// libibverbs reads modalias for driver matching; NCCL reads
-	// PCI_SLOT_NAME from uevent to match NICs against GPU topology.
+	// NCCL reads these (especially PCI_SLOT_NAME from uevent) to match
+	// NIC PCI bus IDs against GPU bus IDs in the topology XML.
 	PCISlotName     string `json:"pci_slot_name,omitempty"`
 	PCIDriver       string `json:"pci_driver,omitempty"`
 	PCIClass        string `json:"pci_class,omitempty"`
@@ -81,10 +83,27 @@ type RDMADeviceData struct {
 	DynMajor uint32 `json:"-"`
 }
 
+// RDMANetDeviceData contains the minimal sysfs attributes NCCL/libibverbs read
+// from /sys/class/net/<name>/ when selecting and characterizing NICs.
+type RDMANetDeviceData struct {
+	Name       string `json:"name"`
+	Type       string `json:"type,omitempty"`
+	Address    string `json:"address,omitempty"`
+	MTU        string `json:"mtu,omitempty"`
+	DevID      string `json:"dev_id,omitempty"`
+	DevPort    string `json:"dev_port,omitempty"`
+	Speed      string `json:"speed,omitempty"`
+	Duplex     string `json:"duplex,omitempty"`
+	OperState  string `json:"operstate,omitempty"`
+	DevicePath string `json:"device_path,omitempty"`
+}
+
 // RDMAData holds all collected RDMA sysfs data.
 type RDMAData struct {
-	VerbsABIVersion string           `json:"verbs_abi_version"`
-	Devices         []RDMADeviceData `json:"devices"`
+	VerbsABIVersion string              `json:"verbs_abi_version"`
+	PeerMemVersion  string              `json:"peer_mem_version,omitempty"`
+	Devices         []RDMADeviceData    `json:"devices"`
+	NetDevices      []RDMANetDeviceData `json:"net_devices,omitempty"`
 }
 
 // CollectRDMADeviceData reads the specific sysfs files that libibverbs
@@ -101,6 +120,20 @@ func CollectRDMADeviceData() *RDMAData {
 		VerbsABIVersion: readSysfsFile(path.Join(verbsPath, "abi_version")),
 	}
 
+	peerMemPaths := []string{
+		"/sys/module/nvidia_peermem/version",
+		"/sys/kernel/mm/memory_peers/nv_mem/version",
+		"/sys/kernel/mm/memory_peers/nv_mem_nc/version",
+	}
+	for _, p := range peerMemPaths {
+		if v := readSysfsFile(p); v != "" {
+			data.PeerMemVersion = v
+			log.Infof("rdma collect: nvidia_peermem version=%q (from %s)", v, p)
+			break
+		}
+	}
+
+	netDevices := make(map[string]struct{})
 	log.Infof("rdma collect: scanning %s (%d entries), verbs_abi=%q",
 		verbsPath, len(dents), data.VerbsABIVersion)
 	for _, dent := range dents {
@@ -174,6 +207,9 @@ func CollectRDMADeviceData() *RDMAData {
 							Type:   typeVal,
 							NetDev: ndevVal,
 						})
+						if ndevVal != "" {
+							netDevices[ndevVal] = struct{}{}
+						}
 					}
 				}
 				log.Infof("rdma collect:   port %s: state=%q link_layer=%q rate=%q gids=%d",
@@ -183,8 +219,36 @@ func CollectRDMADeviceData() *RDMAData {
 		}
 		data.Devices = append(data.Devices, dev)
 	}
+	data.NetDevices = collectRDMANetDevices(netDevices)
 	log.Infof("rdma collect: collected %d device(s)", len(data.Devices))
 	return data
+}
+
+func collectRDMANetDevices(names map[string]struct{}) []RDMANetDeviceData {
+	if len(names) == 0 {
+		return nil
+	}
+	var netDevices []RDMANetDeviceData
+	for name := range names {
+		netDir := path.Join("/sys/class/net", name)
+		devicePath, err := filepath.EvalSymlinks(path.Join(netDir, "device"))
+		if err != nil {
+			devicePath = ""
+		}
+		netDevices = append(netDevices, RDMANetDeviceData{
+			Name:       name,
+			Type:       readSysfsFile(path.Join(netDir, "type")),
+			Address:    readSysfsFile(path.Join(netDir, "address")),
+			MTU:        readSysfsFile(path.Join(netDir, "mtu")),
+			DevID:      readSysfsFile(path.Join(netDir, "dev_id")),
+			DevPort:    readSysfsFile(path.Join(netDir, "dev_port")),
+			Speed:      readSysfsFile(path.Join(netDir, "speed")),
+			Duplex:     readSysfsFile(path.Join(netDir, "duplex")),
+			OperState:  readSysfsFile(path.Join(netDir, "operstate")),
+			DevicePath: devicePath,
+		})
+	}
+	return netDevices
 }
 
 // RDMADataPath is the path within the chroot where serialized RDMA data
@@ -301,7 +365,7 @@ func readSysfsFile(filePath string) string {
 
 // newRDMASysfsEntries creates /sys/class/infiniband_verbs/ and
 // /sys/class/infiniband/ directories from pre-collected device data.
-func (fs *filesystem) newRDMASysfsEntries(ctx context.Context, creds *auth.Credentials, data *RDMAData) (ibVerbsDir, ibDir map[string]kernfs.Inode) {
+func (fs *filesystem) newRDMASysfsEntries(ctx context.Context, creds *auth.Credentials, data *RDMAData, pciSlotToRelPath map[string]string) (ibVerbsDir, ibDir map[string]kernfs.Inode) {
 	if data == nil || len(data.Devices) == 0 {
 		log.Infof("rdma sysfs: no RDMA data, skipping sysfs construction")
 		return nil, nil
@@ -343,41 +407,28 @@ func (fs *filesystem) newRDMASysfsEntries(ctx context.Context, creds *auth.Crede
 		addFile(ibDevEntries, "node_guid", dev.NodeGUID)
 		addFile(ibDevEntries, "sys_image_guid", dev.SysImgGUID)
 		addFile(ibDevEntries, "fw_ver", dev.FWVer)
-		// Build the device/ subdirectory with PCI attributes.
-		// libibverbs reads modalias for driver matching; NCCL reads
-		// uevent for PCI_SLOT_NAME to match NICs against GPU topology.
-		deviceEntries := map[string]kernfs.Inode{}
-		addFile(deviceEntries, "modalias", dev.Modalias)
-		addFile(deviceEntries, "class", dev.PCIClass)
-		addFile(deviceEntries, "vendor", dev.PCIVendor)
-		addFile(deviceEntries, "device", dev.PCIDevice)
-		addFile(deviceEntries, "subsystem_vendor", dev.PCISubsysVendor)
-		addFile(deviceEntries, "subsystem_device", dev.PCISubsysDevice)
-		addFile(deviceEntries, "numa_node", dev.NUMANode)
-		addFile(deviceEntries, "local_cpulist", dev.LocalCPUList)
+		// Create the device/ entry. On real Linux this is a symlink from
+		// /sys/class/infiniband/<ibdev>/device -> /sys/devices/pci0000:XX/...
+		// NCCL calls realpath() on this to find the PCI device path and
+		// place NICs in the PCI topology tree for distance computation.
 		if dev.PCISlotName != "" {
-			uevent := ""
-			if dev.PCIDriver != "" {
-				uevent += "DRIVER=" + dev.PCIDriver + "\n"
+			if relPath, ok := pciSlotToRelPath[strings.ToLower(dev.PCISlotName)]; ok {
+				target := "../../../" + relPath
+				ibDevEntries["device"] = kernfs.NewStaticSymlink(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), target)
+				log.Infof("rdma sysfs: %s device -> %s (symlink to PCI tree)", dev.IBDev, target)
+			} else {
+				log.Warningf("rdma sysfs: %s PCI_SLOT_NAME=%s has no matching PCI device; creating device/ as directory (degraded topology)", dev.IBDev, dev.PCISlotName)
+				deviceEntries := map[string]kernfs.Inode{}
+				addFile(deviceEntries, "modalias", dev.Modalias)
+				addFile(deviceEntries, "class", dev.PCIClass)
+				addFile(deviceEntries, "vendor", dev.PCIVendor)
+				addFile(deviceEntries, "device", dev.PCIDevice)
+				addFile(deviceEntries, "subsystem_vendor", dev.PCISubsysVendor)
+				addFile(deviceEntries, "subsystem_device", dev.PCISubsysDevice)
+				addFile(deviceEntries, "numa_node", dev.NUMANode)
+				addFile(deviceEntries, "local_cpulist", dev.LocalCPUList)
+				ibDevEntries["device"] = fs.newDir(ctx, creds, defaultSysDirMode, deviceEntries)
 			}
-			if dev.PCIClass != "" {
-				uevent += "PCI_CLASS=" + strings.TrimPrefix(dev.PCIClass, "0x") + "\n"
-			}
-			if dev.PCIVendor != "" && dev.PCIDevice != "" {
-				uevent += "PCI_ID=" + strings.TrimPrefix(strings.ToUpper(dev.PCIVendor), "0X") + ":" + strings.TrimPrefix(strings.ToUpper(dev.PCIDevice), "0X") + "\n"
-			}
-			if dev.PCISubsysVendor != "" && dev.PCISubsysDevice != "" {
-				uevent += "PCI_SUBSYS_ID=" + strings.TrimPrefix(strings.ToUpper(dev.PCISubsysVendor), "0X") + ":" + strings.TrimPrefix(strings.ToUpper(dev.PCISubsysDevice), "0X") + "\n"
-			}
-			uevent += "PCI_SLOT_NAME=" + dev.PCISlotName + "\n"
-			if dev.Modalias != "" {
-				uevent += "MODALIAS=" + dev.Modalias + "\n"
-			}
-			deviceEntries["uevent"] = fs.newStaticFile(ctx, creds, defaultSysMode, uevent)
-			log.Infof("rdma sysfs: %s device/uevent: PCI_SLOT_NAME=%s", dev.IBDev, dev.PCISlotName)
-		}
-		if len(deviceEntries) > 0 {
-			ibDevEntries["device"] = fs.newDir(ctx, creds, defaultSysDirMode, deviceEntries)
 		}
 		if len(dev.Ports) > 0 {
 			portsDir := map[string]kernfs.Inode{}
@@ -420,4 +471,34 @@ func (fs *filesystem) newRDMASysfsEntries(ctx context.Context, creds *auth.Crede
 		ibDir[dev.IBDev] = fs.newDir(ctx, creds, defaultSysDirMode, ibDevEntries)
 	}
 	return ibVerbsDir, ibDir
+}
+
+func (fs *filesystem) newRDMANetClassEntries(ctx context.Context, creds *auth.Credentials, data *RDMAData) map[string]kernfs.Inode {
+	if data == nil || len(data.NetDevices) == 0 {
+		return nil
+	}
+	netDir := make(map[string]kernfs.Inode)
+	addFile := func(m map[string]kernfs.Inode, name, val string) {
+		if val != "" {
+			m[name] = fs.newStaticFile(ctx, creds, defaultSysMode, val+"\n")
+		}
+	}
+	for _, dev := range data.NetDevices {
+		entries := make(map[string]kernfs.Inode)
+		addFile(entries, "type", dev.Type)
+		addFile(entries, "address", dev.Address)
+		addFile(entries, "mtu", dev.MTU)
+		addFile(entries, "dev_id", dev.DevID)
+		addFile(entries, "dev_port", dev.DevPort)
+		addFile(entries, "speed", dev.Speed)
+		addFile(entries, "duplex", dev.Duplex)
+		addFile(entries, "operstate", dev.OperState)
+		if strings.HasPrefix(dev.DevicePath, "/sys/") {
+			target := "../../../" + strings.TrimPrefix(dev.DevicePath, "/sys/")
+			entries["device"] = kernfs.NewStaticSymlink(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), target)
+		}
+		netDir[dev.Name] = fs.newDir(ctx, creds, defaultSysDirMode, entries)
+	}
+	log.Infof("rdma sysfs: built virtual /sys/class/net entries for %d device(s)", len(netDir))
+	return netDir
 }
