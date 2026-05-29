@@ -38,6 +38,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
+	"gvisor.dev/gvisor/pkg/hostos"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
@@ -81,10 +82,10 @@ func execute(conf *config.Config, cont *Container, name string, arg ...string) (
 // executeCombinedOutput executes a process in the container and captures
 // stdout and stderr. If execFile is supplied, a host file will be executed.
 // Otherwise, the name argument is used to resolve the executable in the guest.
-func executeCombinedOutput(conf *config.Config, cont *Container, execFile *os.File, name string, arg ...string) ([]byte, error) {
+func executeCombinedOutputWithStatus(conf *config.Config, cont *Container, execFile *os.File, name string, arg ...string) ([]byte, int, error) {
 	r, w, err := os.Pipe()
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer r.Close()
 
@@ -102,14 +103,29 @@ func executeCombinedOutput(conf *config.Config, cont *Container, execFile *os.Fi
 	ws, err := cont.executeSync(conf, args)
 	w.Close()
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
+	if !ws.Exited() {
+		return nil, 0, fmt.Errorf("process did not exit properly")
+	}
+	status := ws.ExitStatus()
 	out, err := io.ReadAll(r)
-	switch {
-	case ws != 0 && err != nil:
-		err = fmt.Errorf("exec failed, status: %v, io.ReadAll failed: %v", ws, err)
-	case ws != 0:
-		err = fmt.Errorf("exec failed, status: %v", ws)
+	if err != nil {
+		return nil, status, err
+	}
+
+	return out, status, err
+}
+
+// executeCombinedOutput executes a process in the container and captures
+// stdout and stderr. If execFile is supplied, a host file will be executed.
+// Otherwise, the name argument is used to resolve the executable in the guest.
+func executeCombinedOutput(conf *config.Config, cont *Container, execFile *os.File, name string, arg ...string) ([]byte, error) {
+	out, status, err := executeCombinedOutputWithStatus(conf, cont, execFile, name, arg...)
+	if status != 0 && err != nil {
+		err = fmt.Errorf("exec failed, status: %v, err: %v", status, err)
+	} else if status != 0 {
+		err = fmt.Errorf("exec failed, status: %v", status)
 	}
 	return out, err
 }
@@ -2037,6 +2053,617 @@ func TestReadonlyMount(t *testing.T) {
 			}
 			if !ws.Exited() || unix.Errno(ws.ExitStatus()) != unix.EPERM {
 				t.Fatalf("wrong WaitStatus: %v", ws)
+			}
+		})
+	}
+}
+
+func TestIDMappedMount(t *testing.T) {
+	for name, conf := range configs(t, false /* noOverlay */) {
+		t.Run(name, func(t *testing.T) {
+			kernelVersion, err := hostos.KernelVersion()
+			if err != nil {
+				t.Fatalf("Failed to check kernel version: %v", err)
+			}
+			if !kernelVersion.AtLeast(6, 3) {
+				t.Skipf("Skipping as kernel >=6.3 is required for id mapped mount tests")
+			}
+
+			dir, err := os.MkdirTemp(testutil.TmpDir(), "id-mapped-mount")
+			if err != nil {
+				t.Fatalf("os.MkdirTemp() failed: %v", err)
+			}
+			if err := unix.Mount("tmpfs", dir, "tmpfs", 0, ""); err != nil {
+				t.Fatalf("mount tmpfs failed: %v", err)
+			}
+			defer unix.Unmount(dir, unix.MNT_DETACH)
+
+			// Create a file owned by 0:0
+			testFilePath := filepath.Join(dir, "test-file")
+			f, err := os.OpenFile(testFilePath, os.O_RDONLY|os.O_CREATE, 0644)
+			if err != nil {
+				t.Fatalf("os.OpenFile() failed: %+v", err)
+			}
+			err = f.Chown(0, 0)
+			if err != nil {
+				t.Fatalf("chown failed: %v", err)
+			}
+			f.Close()
+
+			spec, _ := sleepSpecConf(t)
+			spec.Mounts = append(spec.Mounts, specs.Mount{
+				Destination: dir,
+				Source:      dir,
+				Type:        "bind",
+				Options:     []string{"rbind", "idmap", "rw"},
+				// Note that in a mount id-mapping context, the meaning of ContainerID
+				// and HostID is flipped from what the names would suggest.
+				UIDMappings: []specs.LinuxIDMapping{{
+					ContainerID: 100000,
+					HostID:      0,
+					Size:        1,
+				}},
+				GIDMappings: []specs.LinuxIDMapping{{
+					ContainerID: 100000,
+					HostID:      0,
+					Size:        1,
+				}},
+			})
+			spec.Root.Readonly = false
+
+			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer cleanup()
+
+			args := Args{
+				ID:        testutil.RandomContainerID(),
+				Spec:      spec,
+				BundleDir: bundleDir,
+			}
+			c, err := New(conf, args)
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			defer c.Destroy()
+			if err := c.Start(conf); err != nil {
+				t.Fatalf("error starting container: %v", err)
+			}
+
+			// Verify that [dir]/test-file appears to be owned by nobody:nogroup
+			// in the container, since 0:0 on the host is not mapped in the mount's
+			// id mapping.
+			// Unfortunately, we cannot test with a valid mapping, since the lack of
+			// CAP_SETUID and CAP_SETGID in the test environment means we only have
+			// one uid-gid pair available to us.
+			expectedOwner := "65534:65534"
+			cmd := fmt.Sprintf("stat -c '%%u:%%g' '%s'", testFilePath)
+			out, err := executeCombinedOutput(conf, c, nil, "/bin/sh", "-c", cmd)
+			if err != nil {
+				t.Fatalf("exec failed, out: %v, err: %v", string(out), err)
+			}
+			outStr := strings.TrimSpace(string(out))
+			if outStr != expectedOwner {
+				t.Fatalf("file should have been owned by %s, instead owned by %v", expectedOwner, outStr)
+			}
+		})
+	}
+}
+
+func TestIDMappedSubMount(t *testing.T) {
+	for name, conf := range configs(t, false /* noOverlay */) {
+		t.Run(name, func(t *testing.T) {
+			kernelVersion, err := hostos.KernelVersion()
+			if err != nil {
+				t.Fatalf("Failed to check kernel version: %v", err)
+			}
+			if !kernelVersion.AtLeast(6, 3) {
+				t.Skipf("Skipping as kernel >=6.3 is required for id mapped mount tests")
+			}
+
+			dir, err := os.MkdirTemp(testutil.TmpDir(), "id-mapped-mount")
+			if err != nil {
+				t.Fatalf("os.MkdirTemp() failed: %v", err)
+			}
+			err = unix.Mount("tmpfs", dir, "tmpfs", 0, "")
+			if err != nil {
+				t.Fatalf("mount tmpfs failed: %v", err)
+			}
+			defer unix.Unmount(dir, unix.MNT_DETACH)
+
+			// Make a submount
+			subDir := filepath.Join(dir, "sub-mount")
+			err = os.Mkdir(subDir, 0777)
+			if err != nil {
+				t.Fatalf("os.Mkdir() failed: %v", err)
+			}
+			err = unix.Mount("tmpfs", subDir, "tmpfs", 0, "")
+			if err != nil {
+				t.Fatalf("mount tmpfs failed: %v", err)
+			}
+			defer unix.Unmount(subDir, unix.MNT_DETACH)
+
+			// Create a file owned by 0:0
+			testFilePath := filepath.Join(subDir, "test-file")
+			f, err := os.OpenFile(testFilePath, os.O_RDONLY|os.O_CREATE, 0644)
+			if err != nil {
+				t.Fatalf("os.OpenFile() failed: %+v", err)
+			}
+			err = f.Chown(0, 0)
+			if err != nil {
+				t.Fatalf("chown failed: %v", err)
+			}
+			f.Close()
+
+			spec, _ := sleepSpecConf(t)
+			ridmapPath := filepath.Join(dir, "ridmap")
+			spec.Mounts = append(spec.Mounts, specs.Mount{
+				Destination: ridmapPath,
+				Source:      dir,
+				Type:        "bind",
+				// ridmap: recursively apply id mapping
+				Options: []string{"rbind", "ridmap", "rw"},
+				UIDMappings: []specs.LinuxIDMapping{{
+					ContainerID: 100000,
+					HostID:      0,
+					Size:        1,
+				}},
+				GIDMappings: []specs.LinuxIDMapping{{
+					ContainerID: 100000,
+					HostID:      0,
+					Size:        1,
+				}},
+			})
+			idmapPath := filepath.Join(dir, "idmap")
+			spec.Mounts = append(spec.Mounts, specs.Mount{
+				Destination: idmapPath,
+				Source:      dir,
+				Type:        "bind",
+				// idmap: only apply id mapping at the top level
+				Options: []string{"rbind", "idmap", "rw"},
+				UIDMappings: []specs.LinuxIDMapping{{
+					ContainerID: 100000,
+					HostID:      0,
+					Size:        1,
+				}},
+				GIDMappings: []specs.LinuxIDMapping{{
+					ContainerID: 100000,
+					HostID:      0,
+					Size:        1,
+				}},
+			})
+			spec.Root.Readonly = false
+
+			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer cleanup()
+
+			args := Args{
+				ID:        testutil.RandomContainerID(),
+				Spec:      spec,
+				BundleDir: bundleDir,
+			}
+			c, err := New(conf, args)
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			defer c.Destroy()
+			if err := c.Start(conf); err != nil {
+				t.Fatalf("error starting container: %v", err)
+			}
+
+			// Verify that [dir]/ridmap/sub-mount/test-file appears to be owned by
+			// nobody:nogroup in the container.
+			expectedOwner := "65534:65534"
+			cmd := fmt.Sprintf("stat -c '%%u:%%g' '%s'", filepath.Join(ridmapPath, "sub-mount", "test-file"))
+			out, err := executeCombinedOutput(conf, c, nil, "/bin/sh", "-c", cmd)
+			if err != nil {
+				t.Fatalf("exec failed, out: %v, err: %v", string(out), err)
+			}
+			outStr := strings.TrimSpace(string(out))
+			if outStr != expectedOwner {
+				t.Fatalf("file should have been owned by %s, instead owned by %v", expectedOwner, outStr)
+			}
+
+			// Verify that [dir]/idmap/sub-mount/test-file appears to be owned by
+			// 0:0 in the container (since id mapping shouldn't apply to the submount).
+			expectedOwner = "0:0"
+			cmd = fmt.Sprintf("stat -c '%%u:%%g' '%s'", filepath.Join(idmapPath, "sub-mount", "test-file"))
+			out, err = executeCombinedOutput(conf, c, nil, "/bin/sh", "-c", cmd)
+			if err != nil {
+				t.Fatalf("exec failed, out: %v, err: %v", string(out), err)
+			}
+			outStr = strings.TrimSpace(string(out))
+			if outStr != expectedOwner {
+				t.Fatalf("file should have been owned by %s, instead owned by %v", expectedOwner, outStr)
+			}
+		})
+	}
+}
+
+func TestIDMappedMountFlags(t *testing.T) {
+	for name, conf := range configs(t, false /* noOverlay */) {
+		t.Run(name, func(t *testing.T) {
+			kernelVersion, err := hostos.KernelVersion()
+			if err != nil {
+				t.Fatalf("Failed to check kernel version: %v", err)
+			}
+			if !kernelVersion.AtLeast(6, 3) {
+				t.Skipf("Skipping as kernel >=6.3 is required for id mapped mount tests")
+			}
+
+			dir, err := os.MkdirTemp(testutil.TmpDir(), "id-mapped-mount-flags")
+			if err != nil {
+				t.Fatalf("os.MkdirTemp() failed: %v", err)
+			}
+			if err := unix.Mount("tmpfs", dir, "tmpfs", 0, ""); err != nil {
+				t.Fatalf("mount tmpfs failed: %v", err)
+			}
+			defer unix.Unmount(dir, unix.MNT_DETACH)
+
+			dir1 := filepath.Join(dir, "mnt1")
+			dir2 := filepath.Join(dir, "mnt2")
+			if err := os.MkdirAll(dir1, 0777); err != nil {
+				t.Fatalf("os.MkdirAll() failed: %v", err)
+			}
+			if err := os.MkdirAll(dir2, 0777); err != nil {
+				t.Fatalf("os.MkdirAll() failed: %v", err)
+			}
+
+			// Create a file in dir1 owned by 0:0 and a script/binary
+			testFilePath1 := filepath.Join(dir1, "test-file")
+			f, err := os.OpenFile(testFilePath1, os.O_RDONLY|os.O_CREATE, 0644)
+			if err != nil {
+				t.Fatalf("os.OpenFile() failed: %+v", err)
+			}
+			err = f.Chown(0, 0)
+			if err != nil {
+				t.Fatalf("chown failed: %v", err)
+			}
+			f.Close()
+
+			execFilePath1 := filepath.Join(dir1, "test-exec")
+			f, err = os.OpenFile(execFilePath1, os.O_WRONLY|os.O_CREATE, 0755)
+			if err != nil {
+				t.Fatalf("os.OpenFile() failed: %+v", err)
+			}
+			if _, err := f.WriteString("#!/bin/sh\necho hello\n"); err != nil {
+				t.Fatalf("write failed: %v", err)
+			}
+			err = f.Chown(0, 0)
+			if err != nil {
+				t.Fatalf("chown failed: %v", err)
+			}
+			f.Close()
+
+			spec, _ := sleepSpecConf(t)
+			// Test with two mounts, since nodiratime and relatime are mutually exclusive.
+			spec.Mounts = append(spec.Mounts, specs.Mount{
+				Destination: dir1,
+				Source:      dir1,
+				Type:        "bind",
+				Options:     []string{"rbind", "idmap", "ro", "noexec", "noatime", "nodiratime"},
+				UIDMappings: []specs.LinuxIDMapping{{
+					ContainerID: 100000,
+					HostID:      0,
+					Size:        1,
+				}},
+				GIDMappings: []specs.LinuxIDMapping{{
+					ContainerID: 100000,
+					HostID:      0,
+					Size:        1,
+				}},
+			})
+			spec.Mounts = append(spec.Mounts, specs.Mount{
+				Destination: dir2,
+				Source:      dir2,
+				Type:        "bind",
+				Options:     []string{"rbind", "idmap", "rw", "relatime"},
+				UIDMappings: []specs.LinuxIDMapping{{
+					ContainerID: 100000,
+					HostID:      0,
+					Size:        1,
+				}},
+				GIDMappings: []specs.LinuxIDMapping{{
+					ContainerID: 100000,
+					HostID:      0,
+					Size:        1,
+				}},
+			})
+			spec.Root.Readonly = false
+
+			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer cleanup()
+
+			args := Args{
+				ID:        testutil.RandomContainerID(),
+				Spec:      spec,
+				BundleDir: bundleDir,
+			}
+			c, err := New(conf, args)
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			defer c.Destroy()
+			if err := c.Start(conf); err != nil {
+				t.Fatalf("error starting container: %v", err)
+			}
+
+			// Verify ro inside container on dir1
+			_, status, err := executeCombinedOutputWithStatus(conf, c, nil, "/bin/touch", filepath.Join(dir1, "test-ro"))
+			if err != nil {
+				t.Fatalf("execSync touch failed: %v", err)
+			}
+			if status == 0 {
+				t.Fatalf("touch on ro mount got exit status 0, want != 0")
+			}
+
+			// Verify noexec inside container on dir1
+			_, _, err = executeCombinedOutputWithStatus(conf, c, nil, execFilePath1)
+			if err == nil || !strings.Contains(err.Error(), "permission denied") {
+				t.Fatalf("execution on noexec mount got err: %v, want 'permission denied'", err)
+			}
+
+			// Verify mount options in gofer mountinfo
+			mountinfo, err := os.ReadFile(fmt.Sprintf("/proc/%d/mountinfo", c.GoferPid.Load()))
+			if err != nil {
+				t.Fatalf("failed to read gofer mountinfo: %v", err)
+			}
+
+			verifyMountinfo := func(dest string, wantOpts []string) {
+				var foundLine string
+				for _, line := range strings.Split(string(mountinfo), "\n") {
+					fields := strings.Fields(line)
+					if len(fields) >= 6 && fields[4] == dest {
+						foundLine = line
+						break
+					}
+				}
+				if foundLine == "" {
+					t.Fatalf("mount point ending with %s not found in gofer mountinfo:\n%s", dest, string(mountinfo))
+				}
+				fields := strings.Fields(foundLine)
+				optsMap := make(map[string]bool)
+				for _, opt := range strings.Split(fields[5], ",") {
+					optsMap[opt] = true
+				}
+				for _, want := range wantOpts {
+					if !optsMap[want] {
+						t.Fatalf("mount point ending with %s (line: %q) missing expected option %q", dest, foundLine, want)
+					}
+				}
+			}
+
+			verifyMountinfo(dir1, []string{"ro", "noexec", "noatime", "nodiratime"})
+			mnt2Want := []string{"rw", "relatime"}
+			if strings.Contains(name, "-overlay") {
+				mnt2Want = []string{"ro", "relatime"}
+			}
+			verifyMountinfo(dir2, mnt2Want)
+		})
+	}
+}
+
+func TestIDMappedMountPropagation(t *testing.T) {
+	for name, conf := range configs(t, false /* noOverlay */) {
+		t.Run(name, func(t *testing.T) {
+			kernelVersion, err := hostos.KernelVersion()
+			if err != nil {
+				t.Fatalf("Failed to check kernel version: %v", err)
+			}
+			if !kernelVersion.AtLeast(6, 3) {
+				t.Skipf("Skipping as kernel >=6.3 is required for id mapped mount tests")
+			}
+
+			dir, err := os.MkdirTemp(testutil.TmpDir(), "id-mapped-mount-prop")
+			if err != nil {
+				t.Fatalf("os.MkdirTemp() failed: %v", err)
+			}
+			if err := unix.Mount("tmpfs", dir, "tmpfs", 0, ""); err != nil {
+				t.Fatalf("mount tmpfs failed: %v", err)
+			}
+			defer unix.Unmount(dir, unix.MNT_DETACH)
+
+			if err := unix.Mount("", dir, "", unix.MS_SHARED, ""); err != nil {
+				t.Fatalf("make-shared failed: %v", err)
+			}
+
+			subDir := filepath.Join(dir, "sub")
+			if err := os.MkdirAll(filepath.Join(subDir, "new-tmpfs"), 0777); err != nil {
+				t.Fatalf("mkdir failed: %v", err)
+			}
+			if err := os.MkdirAll(filepath.Join(subDir, "private-tmpfs"), 0777); err != nil {
+				t.Fatalf("mkdir failed: %v", err)
+			}
+
+			slavePath := filepath.Join(dir, "slave")
+			privatePath := filepath.Join(dir, "private")
+
+			spec, _ := sleepSpecConf(t)
+			spec.Mounts = append(spec.Mounts, specs.Mount{
+				Destination: slavePath,
+				Source:      dir,
+				Type:        "bind",
+				Options:     []string{"rbind", "ridmap", "rslave", "rw"},
+				UIDMappings: []specs.LinuxIDMapping{{
+					ContainerID: 100000,
+					HostID:      0,
+					Size:        1,
+				}},
+				GIDMappings: []specs.LinuxIDMapping{{
+					ContainerID: 100000,
+					HostID:      0,
+					Size:        1,
+				}},
+			})
+			spec.Mounts = append(spec.Mounts, specs.Mount{
+				Destination: privatePath,
+				Source:      dir,
+				Type:        "bind",
+				Options:     []string{"rbind", "ridmap", "rprivate", "rw"},
+				UIDMappings: []specs.LinuxIDMapping{{
+					ContainerID: 100000,
+					HostID:      0,
+					Size:        1,
+				}},
+				GIDMappings: []specs.LinuxIDMapping{{
+					ContainerID: 100000,
+					HostID:      0,
+					Size:        1,
+				}},
+			})
+			spec.Root.Readonly = false
+
+			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer cleanup()
+
+			args := Args{
+				ID:        testutil.RandomContainerID(),
+				Spec:      spec,
+				BundleDir: bundleDir,
+			}
+			c, err := New(conf, args)
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			defer c.Destroy()
+			if err := c.Start(conf); err != nil {
+				t.Fatalf("error starting container: %v", err)
+			}
+
+			// Mount tmpfs on host
+			newTmpfsPath := filepath.Join(subDir, "new-tmpfs")
+			if err := unix.Mount("tmpfs", newTmpfsPath, "tmpfs", 0, ""); err != nil {
+				t.Fatalf("mount tmpfs failed: %v", err)
+			}
+			defer unix.Unmount(newTmpfsPath, unix.MNT_DETACH)
+
+			privateTmpfsPath := filepath.Join(subDir, "private-tmpfs")
+			if err := unix.Mount("tmpfs", privateTmpfsPath, "tmpfs", 0, ""); err != nil {
+				t.Fatalf("mount tmpfs failed: %v", err)
+			}
+			defer unix.Unmount(privateTmpfsPath, unix.MNT_DETACH)
+
+			// Create a file in each tmpfs to verify propagation
+			if err := os.WriteFile(filepath.Join(newTmpfsPath, "prop-file"), []byte("data"), 0644); err != nil {
+				t.Fatalf("write file failed: %v", err)
+			}
+			if err := os.WriteFile(filepath.Join(privateTmpfsPath, "prop-file"), []byte("data"), 0644); err != nil {
+				t.Fatalf("write file failed: %v", err)
+			}
+
+			// Verify slavePath sees prop-file
+			cmd := fmt.Sprintf("test -f '%s'", filepath.Join(slavePath, "sub", "new-tmpfs", "prop-file"))
+			_, status, err := executeCombinedOutputWithStatus(conf, c, nil, "/bin/sh", "-c", cmd)
+			if err != nil || status != 0 {
+				t.Fatalf("execSync stat failed (expected prop-file to exist in rslave mount), ws: %v, err: %v", status, err)
+			}
+
+			// Verify privatePath does NOT see prop-file
+			cmd = fmt.Sprintf("test -f '%s'", filepath.Join(privatePath, "sub", "private-tmpfs", "prop-file"))
+			_, status, err = executeCombinedOutputWithStatus(conf, c, nil, "/bin/sh", "-c", cmd)
+			if err != nil {
+				t.Fatalf("execSync stat failed unexpectedly: %v", err)
+			}
+			if status == 0 {
+				t.Fatalf("stat on rprivate mount got exit status %d, want != 0", status)
+			}
+		})
+	}
+}
+
+func TestIDMappedMountFile(t *testing.T) {
+	for name, conf := range configs(t, false /* noOverlay */) {
+		t.Run(name, func(t *testing.T) {
+			kernelVersion, err := hostos.KernelVersion()
+			if err != nil {
+				t.Fatalf("Failed to check kernel version: %v", err)
+			}
+			if !kernelVersion.AtLeast(6, 3) {
+				t.Skipf("Skipping as kernel >=6.3 is required for id mapped mount tests")
+			}
+
+			dir, err := os.MkdirTemp(testutil.TmpDir(), "id-mapped-mount-file")
+			if err != nil {
+				t.Fatalf("os.MkdirTemp() failed: %v", err)
+			}
+			if err := unix.Mount("tmpfs", dir, "tmpfs", 0, ""); err != nil {
+				t.Fatalf("mount tmpfs failed: %v", err)
+			}
+			defer unix.Unmount(dir, unix.MNT_DETACH)
+
+			// Create a file owned by 0:0
+			hostFilePath := filepath.Join(dir, "host-file")
+			f, err := os.OpenFile(hostFilePath, os.O_RDONLY|os.O_CREATE, 0644)
+			if err != nil {
+				t.Fatalf("os.OpenFile() failed: %+v", err)
+			}
+			err = f.Chown(0, 0)
+			if err != nil {
+				t.Fatalf("chown failed: %v", err)
+			}
+			f.Close()
+
+			targetFilePath := filepath.Join(dir, "target-file")
+
+			spec, _ := sleepSpecConf(t)
+			spec.Mounts = append(spec.Mounts, specs.Mount{
+				Destination: targetFilePath,
+				Source:      hostFilePath,
+				Type:        "bind",
+				Options:     []string{"rbind", "idmap", "rw"},
+				UIDMappings: []specs.LinuxIDMapping{{
+					ContainerID: 100000,
+					HostID:      0,
+					Size:        1,
+				}},
+				GIDMappings: []specs.LinuxIDMapping{{
+					ContainerID: 100000,
+					HostID:      0,
+					Size:        1,
+				}},
+			})
+			spec.Root.Readonly = false
+
+			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer cleanup()
+
+			args := Args{
+				ID:        testutil.RandomContainerID(),
+				Spec:      spec,
+				BundleDir: bundleDir,
+			}
+			c, err := New(conf, args)
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			defer c.Destroy()
+			if err := c.Start(conf); err != nil {
+				t.Fatalf("error starting container: %v", err)
+			}
+
+			// Verify that targetFilePath appears to be owned by nobody:nogroup
+			expectedOwner := "65534:65534"
+			cmd := fmt.Sprintf("stat -c '%%u:%%g' '%s'", targetFilePath)
+			out, err := executeCombinedOutput(conf, c, nil, "/bin/sh", "-c", cmd)
+			if err != nil {
+				t.Fatalf("exec failed, out: %v, err: %v", string(out), err)
+			}
+			outStr := strings.TrimSpace(string(out))
+			if outStr != expectedOwner {
+				t.Fatalf("file should have been owned by %s, instead owned by %v", expectedOwner, outStr)
 			}
 		})
 	}

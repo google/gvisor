@@ -76,6 +76,7 @@ go_test(
     deps = [
         "//pkg/abi/linux",
         "//pkg/cleanup",
+        "//pkg/hostos",
         "//pkg/log",
         "//pkg/sentry/control",
         "//pkg/sentry/fsimpl/erofs",

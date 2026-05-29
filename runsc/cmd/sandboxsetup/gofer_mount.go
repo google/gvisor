@@ -39,12 +39,18 @@ const ProcFDBindMount = "/proc/fs"
 // vfioPathDir is the directory containing VFIO device nodes.
 const vfioPathDir = "/dev/vfio"
 
-// MountOpener opens a mount source when the gofer process cannot access it
-// directly (e.g. due to permission restrictions in a user namespace). It
-// returns the opened file for the mount source. The caller is responsible
-// for closing the returned file. It may be nil if all mounts are directly
-// accessible.
-type MountOpener func(m *specs.Mount) (*os.File, error)
+// MountOpener is used in two cases:
+//
+// (1) when the gofer process cannot access a mount source directly (e.g.
+// due to permission restrictions in a user namespace). In this case, the
+// returned file is just the opened mount source.
+//
+// (2) when the mount is id-mapped, which the gofer process cannot configure
+// on its own. In this case, the returned file is an open_tree() detached mount
+// point which has had the requested id mapping configured using mount_setattr().
+//
+// The caller is responsible for closing the returned file.
+type MountOpener func(m *specs.Mount, flags uint32) (*os.File, error)
 
 // NewSocket creates a unet.Socket from a file descriptor.
 // It fatally exits if the socket cannot be created.
@@ -257,6 +263,82 @@ func SetupRootFS(spec *specs.Spec, conf *config.Config, mountConfs []specutils.G
 	return nil
 }
 
+func msFlagsToMountAttr(flags uint32) (attrSet uint64, attrClr uint64) {
+	if flags&unix.MS_RDONLY != 0 {
+		attrSet |= unix.MOUNT_ATTR_RDONLY
+	}
+	if flags&unix.MS_NOSUID != 0 {
+		attrSet |= unix.MOUNT_ATTR_NOSUID
+	}
+	if flags&unix.MS_NODEV != 0 {
+		attrSet |= unix.MOUNT_ATTR_NODEV
+	}
+	if flags&unix.MS_NOEXEC != 0 {
+		attrSet |= unix.MOUNT_ATTR_NOEXEC
+	}
+	if flags&unix.MS_NODIRATIME != 0 {
+		attrSet |= unix.MOUNT_ATTR_NODIRATIME
+	}
+
+	if flags&unix.MS_NOATIME != 0 {
+		attrSet |= unix.MOUNT_ATTR_NOATIME
+		attrClr |= unix.MOUNT_ATTR__ATIME
+	} else if flags&unix.MS_RELATIME != 0 {
+		attrSet |= unix.MOUNT_ATTR_RELATIME
+		attrClr |= unix.MOUNT_ATTR__ATIME
+	} else if flags&unix.MS_STRICTATIME != 0 {
+		attrSet |= unix.MOUNT_ATTR_STRICTATIME
+		attrClr |= unix.MOUNT_ATTR__ATIME
+	}
+
+	return attrSet, attrClr
+}
+
+func safeSetupAndMoveMount(srcFileFD int, src, dst, procPath string) error {
+	fi, err := os.Stat(src)
+	if err != nil {
+		return fmt.Errorf("stat(%q) failed: %v", src, err)
+	}
+	if fi.IsDir() {
+		if err := os.MkdirAll(dst, 0777); err != nil {
+			return fmt.Errorf("mkdir(%q) failed: %v", dst, err)
+		}
+	} else {
+		parent := filepath.Dir(dst)
+		if err := os.MkdirAll(parent, 0777); err != nil {
+			return fmt.Errorf("mkdir(%q) failed: %v", parent, err)
+		}
+		f, err := os.OpenFile(dst, unix.O_CREAT, 0777)
+		if err != nil {
+			return fmt.Errorf("open(%q) failed: %v", dst, err)
+		}
+		f.Close()
+	}
+
+	fd, err := unix.Open(dst, unix.O_PATH|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return fmt.Errorf("failed to safely move mount: Open(%s, _, _): %w", dst, err)
+	}
+	defer unix.Close(fd)
+
+	if procPath == "" {
+		procPath = "/proc"
+	}
+	fdPath := fmt.Sprintf("%s/self/fd/%d", procPath, fd)
+	target, err := os.Readlink(fdPath)
+	if err != nil {
+		return fmt.Errorf("failed to safely move mount: Readlink(%s): %w", fdPath, err)
+	}
+	if dst != target {
+		return fmt.Errorf("failed to safely move mount: expected to open %s, but found %s", dst, target)
+	}
+
+	if err := unix.MoveMount(srcFileFD, "", fd, "", unix.MOVE_MOUNT_F_EMPTY_PATH|unix.MOVE_MOUNT_T_EMPTY_PATH); err != nil {
+		return fmt.Errorf("MoveMount(%d, %q) failed: %w", srcFileFD, dst, err)
+	}
+	return nil
+}
+
 // SetupMounts bind-mounts all mounts specified in the spec in their correct
 // location inside root. It resolves relative paths and symlinks, and creates
 // directories as needed.
@@ -288,23 +370,28 @@ func SetupMounts(conf *config.Config, mounts []specs.Mount, root, procPath strin
 			flags |= unix.MS_RDONLY
 		}
 
-		log.Infof("Mounting src: %q, dst: %q, flags: %#x", m.Source, dst, flags)
+		log.Infof("Mounting src: %q, dst: %q, flags: %#x, idMapped: %t", m.Source, dst, flags, specutils.IsIDMappedMount(m))
 		src := m.Source
 		var srcFile *os.File
-		if err := unix.Access(src, unix.R_OK); err != nil {
+		if specutils.IsIDMappedMount(m) || unix.Access(src, unix.R_OK) != nil {
 			if mountOpener == nil {
-				return fmt.Errorf("cannot access mount source %q and no mount opener provided: %v", src, err)
+				return fmt.Errorf("cannot access mount source %q (or id mapped) and no mount opener provided", src)
 			}
 			// The current process doesn't have enough permissions
-			// to open the mount, so let's try to open it via the
+			// to open the mount (or it is ID mapped), so let's try to open it via the
 			// caller-provided opener.
-			srcFile, err = mountOpener(&m)
+			srcFile, err = mountOpener(&m, flags)
 			if err != nil {
 				return fmt.Errorf("opening %s: %w", m.Source, err)
 			}
 			src = fmt.Sprintf("%s/self/fd/%d", procPath, srcFile.Fd())
 		}
-		err = specutils.SafeSetupAndMount(src, dst, m.Type, flags, procPath)
+
+		if specutils.IsIDMappedMount(m) {
+			err = safeSetupAndMoveMount(int(srcFile.Fd()), src, dst, procPath)
+		} else {
+			err = specutils.SafeSetupAndMount(src, dst, m.Type, flags, procPath)
+		}
 		if srcFile != nil {
 			srcFile.Close()
 		}
@@ -319,7 +406,7 @@ func SetupMounts(conf *config.Config, mounts []specs.Mount, root, procPath strin
 		defer unix.Close(dstFD)
 		// Apply mount options after creating all mount points.
 		// Otherwise they can be remounted into read-only.
-		defer func(dstFD int, flags uint32, dst string) {
+		defer func(dstFD int, flags uint32, dst string, isIDMapped bool) {
 			path := fmt.Sprintf("/proc/self/fd/%d", dstFD)
 			// The gofer process doesn't execute anything natively.
 			flags |= unix.MS_NOSUID
@@ -345,18 +432,34 @@ func SetupMounts(conf *config.Config, mounts []specs.Mount, root, procPath strin
 					lockedFlags |= uint32(f.ms)
 				}
 			}
-			if lockedFlags&unix.MS_NOATIME|unix.MS_RELATIME == 0 {
+			if lockedFlags&(unix.MS_NOATIME|unix.MS_RELATIME) == 0 {
 				lockedFlags |= unix.MS_STRICTATIME
 			}
 
-			// The previous SafeSetupAndMount creates a new bind-mount, but
-			// it doesn't change mount flags. A separate MS_BIND|MS_REMOUNT
-			// has to be done to apply the mount options.
-			if err := unix.Mount("", path, "", uintptr(flags|lockedFlags|unix.MS_REMOUNT), ""); err != nil {
-				retErr = fmt.Errorf("mount dst: %q, flags: %#x, err: %v", dst, flags, err)
-				return
+			if isIDMapped {
+				attrSet, attrClr := msFlagsToMountAttr(flags | lockedFlags)
+				setattrFlags := uint(unix.AT_EMPTY_PATH)
+				if flags&unix.MS_REC != 0 {
+					setattrFlags |= unix.AT_RECURSIVE
+				}
+				attr := &unix.MountAttr{
+					Attr_set: attrSet,
+					Attr_clr: attrClr,
+				}
+				if err := unix.MountSetattr(dstFD, "", setattrFlags, attr); err != nil {
+					retErr = fmt.Errorf("mount_setattr dst: %q, flags: %#x, err: %v", dst, flags, err)
+					return
+				}
+			} else {
+				// The previous SafeSetupAndMount creates a new bind-mount, but
+				// it doesn't change mount flags. A separate MS_BIND|MS_REMOUNT
+				// has to be done to apply the mount options.
+				if err := unix.Mount("", path, "", uintptr(flags|lockedFlags|unix.MS_REMOUNT), ""); err != nil {
+					retErr = fmt.Errorf("mount dst: %q, flags: %#x, err: %v", dst, flags, err)
+					return
+				}
 			}
-		}(dstFD, flags, dst)
+		}(dstFD, flags, dst, specutils.IsIDMappedMount(m))
 
 		// Set propagation options that cannot be set together with other options.
 		flags = specutils.PropOptionsToFlags(m.Options)
