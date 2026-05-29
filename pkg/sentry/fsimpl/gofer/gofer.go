@@ -1868,7 +1868,7 @@ func (d *dentry) evictLocked(ctx context.Context) {
 	}
 	// Safe to unlock cachingMu now that d.vfsd.IsDead(). Henceforth any
 	// concurrent caching attempts on d will attempt to destroy it and so will
-	// try to acquire fs.renameMu (which we have already acquiredd). Hence,
+	// try to acquire fs.renameMu (which we have already acquired). Hence,
 	// fs.renameMu will synchronize the destroy attempts.
 	d.cachingMu.Unlock()
 	d.destroyLocked(ctx) // +checklocksforce: owned as precondition.
@@ -1937,7 +1937,7 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 	// scalability.
 	d.inode.fs.renameMu.Unlock()
 
-	// No locks need to be held during destoryDisconnected.
+	// No locks need to be held during destroyDisconnected.
 	d.destroyDisconnected(ctx, destroyInode)
 
 	d.inode.fs.renameMu.Lock()

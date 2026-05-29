@@ -15,7 +15,7 @@
 
 set -euo pipefail
 
-# Run only a subset of tests, otherwise this is simply too long of a benchmark.
+# Run only a subset of tests; otherwise, this is simply too long of a benchmark.
 # This list was compiled using:
 #   $ find -name '*_spec.rb' | shuf | head -100 | cut -d/ -f2- | sort
 specs=(

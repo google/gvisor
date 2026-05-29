@@ -342,9 +342,9 @@ func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.
 	}
 	pagesToFill := rf.data.PagesToFill(required, optional)
 	if !rf.inode.fs.accountPages(pagesToFill) {
-		// If we can not accommodate pagesToFill pages, then retry with just
+		// If we cannot accommodate pagesToFill pages, then retry with just
 		// the required range. Because optional may be larger than required.
-		// Only error out if even the required range can not be allocated for.
+		// Only error out if even the required range cannot be allocated for.
 		pagesToFill = rf.data.PagesToFill(required, required)
 		if !rf.inode.fs.accountPages(pagesToFill) {
 			return nil, &memmap.BusError{linuxerr.ENOSPC}

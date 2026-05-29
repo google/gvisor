@@ -30,7 +30,7 @@ func init() {
 }
 
 // TestZeroWindowProbeRetransmit tests retransmits of zero window probes
-// to be sent at exponentially inreasing time intervals.
+// to be sent at exponentially increasing time intervals.
 func TestZeroWindowProbeRetransmit(t *testing.T) {
 	dut := testbench.NewDUT(t)
 	listenFd, remotePort := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)

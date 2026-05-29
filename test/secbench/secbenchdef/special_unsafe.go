@@ -30,7 +30,7 @@ type SpecialSyscall string
 const (
 	// NanosleepZero calls nanosleep(2) to sleep for zero nanoseconds.
 	NanosleepZero = SpecialSyscall("NanosleepZero")
-	// PPollNonExistent calls ppoll(2) with a non-existent FD and a tiny timeout.
+	// PPollNonExistent calls ppoll(2) with a nonexistent FD and a tiny timeout.
 	PPollNonExistent = SpecialSyscall("PPollNonExistent")
 	// RTSigreturn calls a system call that stands in the place of `rt_sigreturn(2)`.
 	RTSigreturn = SpecialSyscall("RTSigreturn")
@@ -52,7 +52,7 @@ var zeroNanosecond = &linux.Timespec{}
 // oneNanosecond is a timespec that represents a single nanosecond.
 var oneNanosecond = &linux.Timespec{Nsec: 1}
 
-// ppollNonExistent is a PollFD struct with a non-existent FD and no events.
+// ppollNonExistent is a PollFD struct with a nonexistent FD and no events.
 var ppollNonExistent = &linux.PollFD{FD: int32(NonExistentFD)}
 
 // args returns the syscall number and arguments to call,

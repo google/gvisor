@@ -193,7 +193,7 @@ func (i *fdDirInode) DecRef(ctx context.Context) {
 	i.fdDirInodeRefs.DecRef(func() { i.Destroy(ctx) })
 }
 
-// fdSymlink is an symlink for the /proc/[pid]/fd/[fd] file.
+// fdSymlink is a symlink for the /proc/[pid]/fd/[fd] file.
 //
 // +stateify savable
 type fdSymlink struct {

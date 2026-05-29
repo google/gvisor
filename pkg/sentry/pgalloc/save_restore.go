@@ -972,7 +972,7 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 		if errno != 0 {
 			return fmt.Errorf("failed to mmap MemoryFile: %w", errno)
 		}
-		mfTimeline.Reached("mmaped chunks")
+		mfTimeline.Reached("mmapped chunks")
 		for i := range chunks {
 			chunk := &chunks[i]
 			chunk.mapping = m

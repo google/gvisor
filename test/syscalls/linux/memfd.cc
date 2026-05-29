@@ -368,7 +368,7 @@ TEST(MemfdTest, SealWriteWithMmap) {
 
 // Adding F_SEAL_WRITE fails when there are outstanding writable mappings to a
 // memfd.
-TEST(MemfdTest, SealWriteWithOutstandingWritbleMapping) {
+TEST(MemfdTest, SealWriteWithOutstandingWritableMapping) {
   const FileDescriptor memfd =
       ASSERT_NO_ERRNO_AND_VALUE(MemfdCreate(kMemfdName, MFD_ALLOW_SEALING));
   const std::vector<char> buf(kPageSize);

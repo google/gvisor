@@ -40,7 +40,7 @@ type goferToHostRPC struct {
 	goferPID          int
 }
 
-// OpenMountResult is a result of the rpcp.OpenMount call.
+// OpenMountResult is a result of the urpc.OpenMount call.
 type OpenMountResult struct {
 	urpc.FilePayload
 }

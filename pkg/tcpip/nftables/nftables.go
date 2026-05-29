@@ -1122,7 +1122,7 @@ func (c *Chain) checkLoops(source *Chain, depth int) *syserr.AnnotatedError {
 		return syserr.NewAnnotatedError(syserr.ErrTooManyLinks, fmt.Sprintf("chain %s has exceeded the nested jump limit of %d", c.name, nestedJumpLimit))
 	}
 
-	// Jumping to the same chain is not allowed and although implicitly checked, we explcitly
+	// Jumping to the same chain is not allowed and although implicitly checked, we explicitly
 	// check it here for clarity.
 	if c == source {
 		return syserr.NewAnnotatedError(syserr.ErrTooManyLinks, fmt.Sprintf("chain %s cannot jump to itself", c.name))

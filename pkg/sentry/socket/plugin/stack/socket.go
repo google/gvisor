@@ -391,7 +391,7 @@ func interfaceIoctl(ctx context.Context, io usermem.IO, cmd uint32, ifr *linux.I
 			// Populate ifr.ifr_netmask (type sockaddr).
 			hostarch.ByteOrder.PutUint16(ifr.Data[0:2], uint16(addr.Family))
 			hostarch.ByteOrder.PutUint16(ifr.Data[2:4], 0)
-			// Netmask is expected to be returned as a big endian value.
+			// Netmask is expected to be returned as a big-endian value.
 			mask := uint32(0xffffffff << (32 - addr.PrefixLen))
 			binary.BigEndian.PutUint32(ifr.Data[4:8], mask)
 			break

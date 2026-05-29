@@ -1057,7 +1057,7 @@ func TestRouteWithDownNIC(t *testing.T) {
 	nic2Dst := tcpip.AddrFrom4Slice([]byte("\x06\x00\x00\x00"))
 	nic1RouteMTU := 1500
 	nic2RouteMTU := 1460
-	// These are set in setup function, because they depend on protocl being used.
+	// These are set in setup function, because they depend on protocol being used.
 	nic1RouteMTUAtNetworkLayer := 0
 	nic2RouteMTUAtNetworkLayer := 0
 
@@ -5778,7 +5778,7 @@ func TestFindRoute(t *testing.T) {
 				}
 			}
 
-			// Setup the route table.
+			// Set up the route table.
 			var routeTable []tcpip.Route
 			for _, route := range stackConfig.routes {
 				rt := tcpip.Route{

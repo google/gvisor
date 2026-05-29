@@ -447,7 +447,7 @@ TEST(BasicPtyTest, OpenDevTTY) {
 }
 
 TEST(BasicPtyTest, OpenDevTTYNoCTTY) {
-  // Become session leader, otherwise we will never have hope of setting a
+  // Become session leader; otherwise, we will never have hope of setting a
   // controlling terminal. This test verifies that we fail to open /dev/tty for
   // other (expected) reasons.
   setsid();
@@ -2151,7 +2151,7 @@ TEST_F(JobControlTest, SetForegroundProcessGroupDifferentSession) {
     char c = 'c';
     TEST_PCHECK(ReadFd(sync_setsid[0], &c, 1) == 1);
 
-    // Child is in a new session, so we can't make it the foregroup process
+    // Child is in a new session, so we can't make it the foreground process
     // group.
     TEST_PCHECK(ioctl(replica_.get(), TIOCSPGRP, &grandchild) &&
                 errno == EPERM);

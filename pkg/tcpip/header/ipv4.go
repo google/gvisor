@@ -170,7 +170,7 @@ var (
 	// https://www.iana.org/assignments/multicast-addresses/multicast-addresses.xhtml.
 	IPv4AllSystems = tcpip.AddrFrom4([4]byte{0xe0, 0x00, 0x00, 0x01})
 
-	// IPv4Broadcast is the broadcast address of the IPv4 procotol.
+	// IPv4Broadcast is the broadcast address of the IPv4 protocol.
 	IPv4Broadcast = tcpip.AddrFrom4([4]byte{0xff, 0xff, 0xff, 0xff})
 
 	// IPv4Any is the non-routable IPv4 "any" meta address.
@@ -865,7 +865,7 @@ func (i *IPv4OptionIterator) Next() (IPv4Option, bool, *IPv4OptParameterProblem)
 //        order bit of the timestamp field is set to one to indicate the
 //        use of a non-standard value.
 
-// IPv4OptTSFlags sefines the values expected in the Timestamp
+// IPv4OptTSFlags defines the values expected in the Timestamp
 // option Flags field.
 type IPv4OptTSFlags uint8
 
@@ -1163,7 +1163,7 @@ func (s IPv4OptionsSerializer) Length() uint8 {
 // Serialize serializes the provided list of IPV4 options into b.
 //
 // Note, b must be of sufficient size to hold all the options in s. See
-// IPv4OptionsSerializer.Length for details on the getting the total size
+// IPv4OptionsSerializer.Length for details on getting the total size
 // of a serialized IPv4OptionsSerializer.
 //
 // Serialize panics if b is not of sufficient size to hold all the options in s.

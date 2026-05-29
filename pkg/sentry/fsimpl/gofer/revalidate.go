@@ -80,7 +80,7 @@ func (fs *filesystem) revalidateOne(ctx context.Context, vfsObj *vfs.VirtualFile
 
 	state := makeRevalidateState(parent, false /* refreshStart */)
 	defer state.release()
-	// Note that child can not be nil, because we don't cache negative entries
+	// Note that child cannot be nil, because we don't cache negative entries
 	// when InteropModeShared is in effect.
 	state.add(child)
 	return state.doRevalidation(ctx, vfsObj, ds)
@@ -179,7 +179,7 @@ func (fs *filesystem) revalidateStep(ctx context.Context, rp resolvingPath, d *d
 			return nil, errRevalidationStepDone{}
 		}
 
-		// Note that child can not be nil, because we don't cache negative entries
+		// Note that child cannot be nil, because we don't cache negative entries
 		// when InteropModeShared is in effect.
 		state.add(child)
 

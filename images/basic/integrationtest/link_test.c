@@ -65,7 +65,7 @@ int main(int argc, char** argv) {
          new_stat.st_nlink);
   }
 
-  // Check taht contents are the same.
+  // Check that contents are the same.
   fd = open(kNewPath, O_RDONLY);
   if (fd < 0) {
     errx(1, "open(%s) failed", kNewPath);

@@ -141,7 +141,7 @@ func (t *TCB) ReplySendSequenceNumber() seqnum.Value {
 
 // adapResult modifies the supplied "Result" according to the state of the TCB;
 // if r is anything other than "Alive", or if one of the streams isn't closed
-// yet, it is returned unmodified. Otherwise it's converted to either
+// yet, it is returned unmodified. Otherwise, it's converted to either
 // ClosedByOriginator or ClosedByResponder depending on which stream was closed
 // first.
 func (t *TCB) adaptResult(r Result) Result {

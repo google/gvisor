@@ -1272,7 +1272,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		// If File is set, take the File provided directly.
 		args.Filename = args.File.MappedName(ctx)
 	default:
-		// Otherwise look at Argv and see if the first argument is a valid path.
+		// Otherwise, look at Argv and see if the first argument is a valid path.
 		if len(args.Argv) == 0 {
 			return nil, 0, fmt.Errorf("no filename or command provided")
 		}
@@ -1504,7 +1504,7 @@ func (k *Kernel) incRunningTasks() {
 				k.cpuClockTickTimer.Reset(time.Duration(linux.ClockTick.Nanoseconds() - thisTickNS))
 				// Increment k.cpuClock on the CPU clock ticker goroutine's behalf.
 				// (Whole missed ticks don't matter, and adding them to k.cpuClock will
-				// just confuse the watchdog.) At the time the tick occurred, all task
+				// just confuse the watchdog.) When the tick occurred, all task
 				// goroutines were asleep, so there's nothing else to do. This ensures
 				// that our caller (Task.accountTaskGoroutineLeave()) records an
 				// updated k.cpuClock in Task.gosched.Timestamp, so that it's correctly
@@ -1609,7 +1609,7 @@ func (k *Kernel) SendExternalSignal(info *linux.SignalInfo, context string) {
 	k.sendExternalSignal(info, context)
 }
 
-// SendExternalSignalThreadGroup injects a signal into an specific ThreadGroup.
+// SendExternalSignalThreadGroup injects a signal into a specific ThreadGroup.
 //
 // This function doesn't skip signals like SendExternalSignal does.
 func (k *Kernel) SendExternalSignalThreadGroup(tg *ThreadGroup, info *linux.SignalInfo) error {
@@ -2102,7 +2102,7 @@ func (k *Kernel) Release() {
 	k.RootNetworkNamespace().DecRef(ctx)
 	k.rootIPCNamespace.DecRef(ctx)
 	k.rootUTSNamespace.DecRef(ctx)
-	k.cleaupDevGofers()
+	k.cleanupDevGofers()
 	k.mf.Destroy()
 	k.RootPIDNamespace().DecRef(ctx)
 }
@@ -2131,7 +2131,7 @@ func (k *Kernel) PopulateNewCgroupHierarchy(root Cgroup) {
 
 // ReleaseCgroupHierarchy moves all tasks out of all cgroups belonging to the
 // hierarchy with the provided id.  This is intended for use during hierarchy
-// teardown, as otherwise the tasks would be orphaned w.r.t to some controllers.
+// teardown, as otherwise the tasks would be orphaned w.r.t. to some controllers.
 func (k *Kernel) ReleaseCgroupHierarchy(hid uint32) {
 	var releasedCGs []Cgroup
 
@@ -2245,7 +2245,7 @@ func (k *Kernel) GetDevGoferClient(contName string) *devutil.GoferClient {
 	return k.devGofers[contName]
 }
 
-func (k *Kernel) cleaupDevGofers() {
+func (k *Kernel) cleanupDevGofers() {
 	k.devGofersMu.Lock()
 	defer k.devGofersMu.Unlock()
 	for _, client := range k.devGofers {

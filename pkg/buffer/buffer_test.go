@@ -888,7 +888,7 @@ func TestChecksum(t *testing.T) {
 	b.appendOwned(NewViewWithData(data[70:]))
 
 	for offset := 0; offset < 100; offset++ {
-		var cs checksum.Checksumer
+		var cs checksum.Checksummer
 		cs.Add(data[offset:])
 		dataChecksum := cs.Checksum()
 		bufChecksum := b.Checksum(offset)

@@ -305,7 +305,7 @@ func resolvePath(path string) (string, error) {
 // setupNet setups up the sandbox network, including the creation of a network
 // namespace, and iptable rules to redirect the traffic. Returns a cleanup
 // function to tear down the network. Returns errNoDefaultInterface when there
-// is no network interface available to setup the network.
+// is no network interface available to set up the network.
 func (c *Do) setupNet(cid string, spec *specs.Spec) (func(), error) {
 	dev, err := defaultDevice()
 	if err != nil {
@@ -524,7 +524,7 @@ func startContainerAndWait(spec *specs.Spec, conf *config.Config, cid string, wa
 	// Forward signals to init in the container. Thus if we get SIGINT from
 	// ^C, the container gracefully exit, and we can clean up.
 	//
-	// N.B. There is a still a window before this where a signal may kill
+	// N.B. There is still a window before this where a signal may kill
 	// this process, skipping cleanup.
 	stopForwarding := ct.ForwardSignals(0 /* pid */, spec.Process.Terminal /* fgProcess */)
 	defer stopForwarding()

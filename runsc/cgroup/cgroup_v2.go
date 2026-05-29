@@ -716,7 +716,7 @@ func (*io2) set(spec *specs.LinuxResources, path string) error {
 				return err
 			}
 		} else {
-			// bfq io scheduler is not available, fallback to io.weight with
+			// bfq io scheduler is not available, fall back to io.weight with
 			// a conversion scheme
 			ioWeight := convertBlkIOToIOWeightValue(*blkio.Weight)
 			if err = setValue(path, "io.weight", strconv.FormatUint(ioWeight, 10)); err != nil {
@@ -913,7 +913,7 @@ func parseUint(s string, base, bitSize int) (uint64, error) {
 	if err != nil {
 		intValue, intErr := strconv.ParseInt(s, base, bitSize)
 		// 1. Handle negative values greater than MinInt64 (and)
-		// 2. Handle negative values lesser than MinInt64
+		// 2. Handle negative values less than MinInt64
 		if intErr == nil && intValue < 0 {
 			return 0, nil
 		} else if errors.Is(intErr, strconv.ErrRange) && intValue < 0 {

@@ -63,7 +63,7 @@ func (fs *filesystem) handleAnameLisafs(ctx context.Context, rootInode lisafs.In
 	}
 }
 
-// lisafsInode is a gofer inode implementation. It represents a inode backed
+// lisafsInode is a gofer inode implementation. It represents an inode backed
 // by a lisafs connection.
 //
 // +stateify savable
@@ -88,7 +88,7 @@ type lisafsInode struct {
 	// readFDLisa and writeFDLisa may or may not represent the same LISAFS FD.
 	// Once either transitions from closed (Ok() == false) to open
 	// (Ok() == true), it may be mutated with dentry.handleMu locked, but cannot
-	// be closed until the dentry is destroyei. writeFDLisa is protected by
+	// be closed until the dentry is destroyed. writeFDLisa is protected by
 	// dentry.handleMu.
 	writeFDLisa lisafs.ClientFD `state:"nosave"`
 }
@@ -238,7 +238,7 @@ func (i *lisafsInode) updateHandles(ctx context.Context, h handle, readable, wri
 func (i *lisafsInode) updateMetadataLocked(ctx context.Context, h handle) error {
 	handleMuRLocked := false
 	if !h.fdLisa.Ok() {
-		// Use open FDs in preferenece to the control FD. This may be significantly
+		// Use open FDs in preference to the control FD. This may be significantly
 		// more efficient in some implementations. Prefer a writable FD over a
 		// readable one since some filesystem implementations may update a writable
 		// FD's metadata after writes, without making metadata updates immediately

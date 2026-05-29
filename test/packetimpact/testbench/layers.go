@@ -164,7 +164,7 @@ func stringLayer(l Layer) string {
 		// Print byte slices as hex.
 		case v.Kind() == reflect.Slice && v.Type().Elem().Kind() == reflect.Uint8:
 			ret = append(ret, fmt.Sprintf("%s:\n%v", t.Name, hex.Dump(v.Bytes())))
-		// Otherwise just let Go decide how to print.
+		// Otherwise, just let Go decide how to print.
 		default:
 			ret = append(ret, fmt.Sprintf("%s:%v", t.Name, v))
 		}
@@ -1138,7 +1138,7 @@ func payload(l Layer) (buffer.Buffer, error) {
 }
 
 // layerChecksum calculates the checksum of the Layer header, including the
-// peusdeochecksum of the layer before it and all the bytes after it.
+// PseudoHeaderChecksum of the layer before it and all the bytes after it.
 func layerChecksum(l Layer, protoNumber tcpip.TransportProtocolNumber) (uint16, error) {
 	totalLength := uint16(totalLength(l))
 	var xsum uint16
@@ -1336,7 +1336,7 @@ func (l *Payload) merge(other Layer) error {
 // Layers is an array of Layer and supports similar functions to Layer.
 type Layers []Layer
 
-// linkLayers sets the linked-list ponters in ls.
+// linkLayers sets the linked-list pointers in ls.
 func (ls *Layers) linkLayers() {
 	for i, l := range *ls {
 		if i > 0 {
@@ -1353,7 +1353,7 @@ func (ls *Layers) linkLayers() {
 }
 
 // ToBytes converts the Layers into bytes. It creates a linked list of the Layer
-// structs and then concatentates the output of ToBytes on each Layer.
+// structs and then concatenates the output of ToBytes on each Layer.
 func (ls *Layers) ToBytes() ([]byte, error) {
 	ls.linkLayers()
 	outBytes := []byte{}

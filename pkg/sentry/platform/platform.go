@@ -79,7 +79,7 @@ type Platform interface {
 	//
 	// Precondition(s): cpu must be in the range [0, NumCPUs()).
 	//
-	// PreemptCPU is only supported if DetectsCPUPremption() && HasCPUNumbers() == true.
+	// PreemptCPU is only supported if DetectsCPUPreemption() && HasCPUNumbers() == true.
 	// Platforms for which this does not hold may panic if PreemptCPU is
 	// called.
 	PreemptCPU(cpu int32) error
@@ -88,7 +88,7 @@ type Platform interface {
 	// as the first following call to Context.Switch() for each Context, to
 	// return ErrContextCPUPreempted.
 	//
-	// PreemptAllCPUs is only supported if DetectsCPUPremption() == true.
+	// PreemptAllCPUs is only supported if DetectsCPUPreemption() == true.
 	// Platforms for which this does not hold may panic if PreemptAllCPUs is
 	// called.
 	PreemptAllCPUs() error

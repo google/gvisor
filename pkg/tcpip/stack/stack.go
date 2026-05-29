@@ -297,7 +297,7 @@ type TransportEndpointInfo struct {
 // with the specified address. It returns an error if the passed address is
 // incompatible with the receiver.
 //
-// Preconditon: the parent endpoint mu must be held while calling this method.
+// Precondition: the parent endpoint mu must be held while calling this method.
 func (t *TransportEndpointInfo) AddrNetProtoLocked(addr tcpip.FullAddress, v6only bool, bind bool) (tcpip.FullAddress, tcpip.NetworkProtocolNumber, tcpip.Error) {
 	netProto := t.NetProto
 	switch addr.Addr.BitLen() {

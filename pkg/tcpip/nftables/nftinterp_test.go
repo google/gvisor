@@ -352,7 +352,7 @@ func TestInterpretComparisonOps(t *testing.T) {
 	}
 }
 
-// checkComparisonOp checks that the given operation is an comparison operation
+// checkComparisonOp checks that the given operation is a comparison operation
 // and that it matches the expected comparison operation.
 func checkComparisonOp(tname string, expected operation, actual operation) error {
 	expectedCmp := expected.(*comparison)
@@ -531,7 +531,7 @@ func TestInterpretPayloadSetOps(t *testing.T) {
 		},
 		// Simple checksum flags tests.
 		{
-			tname:    "set checksum flags, L4 with psuedoheader flag",
+			tname:    "set checksum flags, L4 with pseudoheader flag",
 			opStr:    "[ payload write reg 1 => 6b @ link header + 0 csum_type 0 csum_off 0 csum_flags 0x1 ]",
 			expected: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_LL_HEADER, 0, 6, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_NONE, 0, linux.NFT_PAYLOAD_L4CSUM_PSEUDOHDR),
 		},
@@ -620,7 +620,7 @@ func TestInterpretPayloadSetOps(t *testing.T) {
 		},
 		// cmd: add rule ip6 tab ch ip6 saddr set 2001:db8::2
 		{
-			tname:    "set 16 bytes from 16-byte register with csum NONE and psuedoheader flag",
+			tname:    "set 16 bytes from 16-byte register with csum NONE and pseudoheader flag",
 			opStr:    "[ payload write reg 1 => 16b @ network header + 8 csum_type 0 csum_off 0 csum_flags 0x1 ]",
 			expected: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_NETWORK_HEADER, 8, 16, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_NONE, 0, linux.NFT_PAYLOAD_L4CSUM_PSEUDOHDR),
 		},

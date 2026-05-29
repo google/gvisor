@@ -72,7 +72,7 @@ type PointConfig struct {
 type SinkConfig struct {
 	// Name is the sink to be created. The sink must exist in the system.
 	Name string `json:"name,omitempty"`
-	// Config is a opaque json object that is passed to the sink.
+	// Config is an opaque json object that is passed to the sink.
 	Config map[string]any `json:"config,omitempty"`
 	// IgnoreSetupError makes errors during sink setup to be ignored. Otherwise,
 	// failures will prevent the container from starting.

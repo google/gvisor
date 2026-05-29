@@ -285,7 +285,7 @@ func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *V
 		return ImageInfo{}, nil, false, syserr.NewDynamic(fmt.Sprintf("error loading VDSO: %v", err), syserr.FromError(err).ToLinux())
 	}
 
-	// Setup the heap. brk starts at the next page after the end of the
+	// Set up the heap. brk starts at the next page after the end of the
 	// executable. Userspace can assume that the remainder of the page after
 	// loaded.end is available for its use.
 	e, ok := loaded.end.RoundUp()

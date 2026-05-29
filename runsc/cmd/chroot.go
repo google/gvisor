@@ -108,7 +108,7 @@ func setupMinimalProcfs(chroot string) error {
 		return fmt.Errorf("error creating symlink %q -> %q: %w", filepath.Join(procRoot, "cpuinfo"), procSubmountDir+"/cpuinfo", err)
 	}
 	if err := os.Chmod(procRoot, 0o111); err != nil {
-		return fmt.Errorf("error chmodding %q: %v", procRoot, err)
+		return fmt.Errorf("error chmoding %q: %v", procRoot, err)
 	}
 	return nil
 }

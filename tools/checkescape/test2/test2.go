@@ -27,7 +27,7 @@ func interfaceFunctionCrossPkg() {
 	test1.InterfaceFunction(i)
 }
 
-// +checkesacape:all
+// +checkescape:all
 //
 //go:nosplit
 func typeFunctionCrossPkg() {
@@ -95,6 +95,6 @@ func dynamicCrossPkg(f func()) {
 //
 //go:noinline
 //go:nosplit
-func splitCrosssPkt() {
+func splitCrossPkt() {
 	test1.Split()
 }

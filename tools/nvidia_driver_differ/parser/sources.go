@@ -93,7 +93,7 @@ func (d *DriverSourceDir) GetUVMIncludePaths() []string {
 	}
 }
 
-// WriteIncludeFile writes an cc file at file that includes all the given sources.
+// WriteIncludeFile writes a cc file at file that includes all the given sources.
 func WriteIncludeFile(sources []string, w io.Writer, ioctls []nvproxy.IoctlName) error {
 	bufW := bufio.NewWriter(w)
 	for _, source := range sources {

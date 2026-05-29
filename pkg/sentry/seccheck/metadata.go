@@ -127,7 +127,7 @@ type SinkDesc struct {
 	// is called. config is an opaque json object passed to the sink.
 	Setup func(config map[string]any) (*os.File, error)
 	// New creates a new sink. config is an opaque json object passed to the sink.
-	// endpoing is a file descriptor to the file returned in Setup. It's set to -1
+	// endpoint is a file descriptor to the file returned in Setup. It's set to -1
 	// if Setup returned nil.
 	New func(config map[string]any, endpoint *fd.FD) (Sink, error)
 }

@@ -596,7 +596,7 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		timeout := time.After(3 * time.Second)
 		select {
 		case <-timeout:
-			log.Infof("runsc debug --stacks is timeouted")
+			log.Infof("runsc debug --stacks is timed out")
 		case <-done:
 		}
 
@@ -879,7 +879,7 @@ func setupHostConnectorTree(spec *specs.Spec) (cleanup func(), err error) {
 		Source:      connectorDir,
 		Type:        "bind",
 	})
-	// We can not create individual attach points for sockets that have not been
+	// We cannot create individual attach points for sockets that have not been
 	// created yet.
 	spec.Process.Env = append(spec.Process.Env, "TEST_CONNECTOR_TREE=/tmp/connectors")
 	return cleanup, nil
@@ -941,7 +941,7 @@ func runTestCaseRunsc(testBin string, tc *gtest.TestCase, args []string, t *test
 	spec.Mounts = nil
 	testTmpDir := "/tmp"
 	if *useTmpfs {
-		// Forces '/tmp' to be mounted as tmpfs, otherwise test that rely on
+		// Forces '/tmp' to be mounted as tmpfs; otherwise, test that rely on
 		// features only available in gVisor's internal tmpfs may fail.
 		spec.Mounts = append(spec.Mounts, specs.Mount{
 			Destination: "/tmp",
@@ -1097,7 +1097,7 @@ func main() {
 		}
 	}
 
-	// Make sure stdout and stderr are opened with O_APPEND, otherwise logs
+	// Make sure stdout and stderr are opened with O_APPEND; otherwise, logs
 	// from outside the sandbox can (and will) stomp on logs from inside
 	// the sandbox.
 	for _, f := range []*os.File{os.Stdout, os.Stderr} {

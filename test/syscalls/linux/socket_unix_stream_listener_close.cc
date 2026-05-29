@@ -49,7 +49,7 @@ class UnixStreamListenerCloseTest : public ::testing::Test {
     addr_len_ =
         offsetof(struct sockaddr_un, sun_path) + 1 + strlen(&addr_.sun_path[1]);
 
-    // Create and setup the listener socket.
+    // Create and set up the listener socket.
     listener_ = ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_STREAM, 0));
 
     ASSERT_THAT(bind(listener_.get(),

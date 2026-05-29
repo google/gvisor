@@ -205,7 +205,7 @@ type Options struct {
 	// disabled.
 	GSOMaxSize uint32
 
-	// GVisorGSOEnabled indicates whether Gvisor GSO is enabled or not.
+	// GVisorGSOEnabled indicates whether or not Gvisor GSO is enabled.
 	GVisorGSOEnabled bool
 
 	// PacketDispatchMode specifies the type of inbound dispatcher to be
@@ -514,7 +514,7 @@ func (h *virtioNetHdr) marshal() []byte {
 		0: byte(h.flags),
 		1: byte(h.gsoType),
 
-		// Manually lay out the fields in little-endian byte order. Little endian =>
+		// Manually lay out the fields in little-endian byte order. little-endian =>
 		// least significant bit goes to the lower address.
 
 		2: byte(h.hdrLen),

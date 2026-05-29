@@ -47,7 +47,7 @@ const syscallThreadMessageSize = hostarch.PageSize * 2
 // syscallThread can be used only in these cases:
 //   - If a system call never fails (e.g munmap).
 //   - If a system call has to return only one know value or if it fails,
-//     it doesn't not reveal any data (e.g. mmap).
+//     it doesn't reveal any data (e.g. mmap).
 type syscallThread struct {
 	// subproc is a link to the subprocess which is used to call native
 	// system calls and track when a sysmsg thread has to be recreated.
@@ -230,7 +230,7 @@ func (t *syscallThread) syscall(sysno uintptr, args ...arch.SyscallArgument) (ui
 		// Wait for reply.
 		//
 		// futex waits for sentryMsg.state that isn't changed, so it will
-		// returns only only when the other side will call FUTEX_WAKE.
+		// returns only when the other side will call FUTEX_WAKE.
 		futexWaitWake(&sentryMsg.state, atomic.LoadUint32(&sentryMsg.state))
 	}
 

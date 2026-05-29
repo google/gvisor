@@ -78,12 +78,12 @@ func MsgToStackAddr(msg uintptr) uintptr {
 // ThreadState is used to store a state of the sysmsg thread.
 type ThreadState uint32
 
-// Set atomicaly sets the state value.
+// Set atomically sets the state value.
 func (s *ThreadState) Set(state ThreadState) {
 	atomic.StoreUint32((*uint32)(s), uint32(state))
 }
 
-// CompareAndSwap atomicaly compares and swaps the state value.
+// CompareAndSwap atomically compares and swaps the state value.
 func (s *ThreadState) CompareAndSwap(old, state ThreadState) bool {
 	return atomic.CompareAndSwapUint32((*uint32)(s), uint32(old), uint32(state))
 }

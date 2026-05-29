@@ -57,8 +57,8 @@ var (
 	wantPercentiles = []int{50, 95, 99}
 )
 
-// BenchmarkWordpress runs a benchmark of WordPress performance.
-func BenchmarkWordpress(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesContext, cluster *testcluster.TestCluster) {
+// BenchmarkWordPress runs a benchmark of WordPress performance.
+func BenchmarkWordPress(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesContext, cluster *testcluster.TestCluster) {
 	benchmarkNS := cluster.Namespace(testcluster.NamespaceBenchmark)
 	if err := benchmarkNS.Reset(ctx); err != nil {
 		t.Fatalf("cannot reset namespace: %v", err)
@@ -109,7 +109,7 @@ func BenchmarkWordpress(ctx context.Context, t *testing.T, k8sCtx k8sctx.Kuberne
 	if err != nil {
 		t.Fatalf("Failed to resolve image: %v", err)
 	}
-	server := newWordpressServer(benchmarkNS, name, wordpressImg, mariaDBIP)
+	server := newWordPressServer(benchmarkNS, name, wordpressImg, mariaDBIP)
 	server, err = cluster.ConfigurePodForRuntimeTestNodepool(ctx, server)
 	if err != nil {
 		t.Fatalf("Failed to configure pod for runtime nodepool: %v", err)
@@ -128,7 +128,7 @@ func BenchmarkWordpress(ctx context.Context, t *testing.T, k8sCtx k8sctx.Kuberne
 		t.Fatalf("Failed to wait for pod: %v", err)
 	}
 
-	service := newWordpressService(benchmarkNS, name)
+	service := newWordPressService(benchmarkNS, name)
 	service, err = cluster.CreateService(ctx, service)
 	if err != nil {
 		t.Fatalf("Failed to create service: %v", err)
@@ -137,20 +137,20 @@ func BenchmarkWordpress(ctx context.Context, t *testing.T, k8sCtx k8sctx.Kuberne
 	wordpressIP := testcluster.GetIPFromService(service)
 
 	// Install WordPress.
-	installWordpressPod := newWordpressInstall(benchmarkNS, "install-wordpress", wordpressIP)
-	installWordpressPod, err = cluster.ConfigurePodForClientNodepool(ctx, installWordpressPod)
+	installWordPressPod := newWordPressInstall(benchmarkNS, "install-wordpress", wordpressIP)
+	installWordPressPod, err = cluster.ConfigurePodForClientNodepool(ctx, installWordPressPod)
 	if err != nil {
 		t.Fatalf("Failed to configure pod for client nodepool: %v", err)
 	}
-	installWordpressPod, err = cluster.CreatePod(ctx, installWordpressPod)
+	installWordPressPod, err = cluster.CreatePod(ctx, installWordPressPod)
 	if err != nil {
 		t.Fatalf("Failed to create pod: %v", err)
 	}
-	defer cluster.DeletePod(ctx, installWordpressPod)
-	if err := cluster.WaitForPodCompleted(ctx, installWordpressPod); err != nil {
+	defer cluster.DeletePod(ctx, installWordPressPod)
+	if err := cluster.WaitForPodCompleted(ctx, installWordPressPod); err != nil {
 		t.Fatalf("Failed to wait for pod: %v", err)
 	}
-	cluster.DeletePod(ctx, installWordpressPod)
+	cluster.DeletePod(ctx, installWordPressPod)
 
 	var rounds []httpbench.Round
 	for _, numThreads := range threads {
@@ -261,7 +261,7 @@ func newMariaDBService(namespace *testcluster.Namespace, name string) *v13.Servi
 	})
 }
 
-func newWordpressServer(namespace *testcluster.Namespace, name, image, mariaDBHost string) *v13.Pod {
+func newWordPressServer(namespace *testcluster.Namespace, name, image, mariaDBHost string) *v13.Pod {
 	return &v13.Pod{
 		TypeMeta: v1.TypeMeta{
 			Kind:       "Pod",
@@ -312,7 +312,7 @@ func newWordpressServer(namespace *testcluster.Namespace, name, image, mariaDBHo
 	}
 }
 
-func newWordpressService(namespace *testcluster.Namespace, name string) *v13.Service {
+func newWordPressService(namespace *testcluster.Namespace, name string) *v13.Service {
 	return namespace.GetService(name, v13.ServiceSpec{
 		Selector: map[string]string{wordpressServerLabelKey: wordpressServerLabelValue},
 		Ports: []v13.ServicePort{
@@ -326,7 +326,7 @@ func newWordpressService(namespace *testcluster.Namespace, name string) *v13.Ser
 	})
 }
 
-func newWordpressInstall(namespace *testcluster.Namespace, name, wpHost string) *v13.Pod {
+func newWordPressInstall(namespace *testcluster.Namespace, name, wpHost string) *v13.Pod {
 	return &v13.Pod{
 		TypeMeta: v1.TypeMeta{
 			Kind:       "Pod",

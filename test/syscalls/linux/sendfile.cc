@@ -490,7 +490,7 @@ TEST(SendFileTest, SendPipeWouldBlock) {
   const FileDescriptor inf =
       ASSERT_NO_ERRNO_AND_VALUE(Open(in_file.path(), O_RDONLY));
 
-  // Setup the output named pipe.
+  // Set up the output named pipe.
   int fds[2];
   ASSERT_THAT(pipe2(fds, O_NONBLOCK), SyscallSucceeds());
   const FileDescriptor rfd(fds[0]);
@@ -513,7 +513,7 @@ TEST(SendFileTest, SendPipeEOF) {
   const FileDescriptor inf =
       ASSERT_NO_ERRNO_AND_VALUE(Open(in_file.path(), O_RDONLY));
 
-  // Setup the output named pipe.
+  // Set up the output named pipe.
   int fds[2];
   ASSERT_THAT(pipe2(fds, O_NONBLOCK), SyscallSucceeds());
   const FileDescriptor rfd(fds[0]);
@@ -560,7 +560,7 @@ TEST(SendFileTest, SendPipeBlocks) {
   const FileDescriptor inf =
       ASSERT_NO_ERRNO_AND_VALUE(Open(in_file.path(), O_RDONLY));
 
-  // Setup the output named pipe.
+  // Set up the output named pipe.
   int fds[2];
   ASSERT_THAT(pipe(fds), SyscallSucceeds());
   const FileDescriptor rfd(fds[0]);

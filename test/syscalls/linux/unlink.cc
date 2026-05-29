@@ -100,10 +100,10 @@ TEST(UnlinkTest, ParentDegradedPermissions) {
   ASSERT_THAT(unlinkat(AT_FDCWD, file.path().c_str(), 0),
               SyscallFailsWithErrno(EACCES));
 
-  // Non-existent files also return EACCES.
-  const std::string nonexist = JoinPath(dir.path(), "doesnotexist");
-  ASSERT_THAT(stat(nonexist.c_str(), &st), SyscallFailsWithErrno(EACCES));
-  ASSERT_THAT(unlinkat(AT_FDCWD, nonexist.c_str(), 0),
+  // Nonexistent files also return EACCES.
+  const std::string nonexistent = JoinPath(dir.path(), "doesnotexist");
+  ASSERT_THAT(stat(nonexistent.c_str(), &st), SyscallFailsWithErrno(EACCES));
+  ASSERT_THAT(unlinkat(AT_FDCWD, nonexistent.c_str(), 0),
               SyscallFailsWithErrno(EACCES));
 }
 

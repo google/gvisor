@@ -71,7 +71,7 @@ declare -r repo_new="${tmp_dir}/repository"
 git clone . "${repo_new}"
 cd "${repo_new}"
 
-# Setup the repository and checkout the branch.
+# Set up the repository and checkout the branch.
 git config user.email "gvisor-bot@google.com"
 git config user.name "gVisor bot"
 git fetch origin "${go_branch}"

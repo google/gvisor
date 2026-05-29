@@ -449,13 +449,13 @@ var sockAddrInetSize = (&linux.SockAddrInet{}).SizeBytes()
 var sockAddrInet6Size = (&linux.SockAddrInet6{}).SizeBytes()
 
 // Ntohs converts a 16-bit number from network byte order to host byte order. It
-// assumes that the host is little endian.
+// assumes that the host is little-endian.
 func Ntohs(v uint16) uint16 {
 	return v<<8 | v>>8
 }
 
 // Htons converts a 16-bit number from host byte order to network byte order. It
-// assumes that the host is little endian.
+// assumes that the host is little-endian.
 func Htons(v uint16) uint16 {
 	return Ntohs(v)
 }
@@ -518,7 +518,7 @@ func BytesToIPAddress(addr []byte) tcpip.Address {
 	return tcpip.AddrFromSlice(addr)
 }
 
-// AddressAndFamily reads an sockaddr struct from the given address and
+// AddressAndFamily reads a sockaddr struct from the given address and
 // converts it to the FullAddress format. It supports AF_INET, AF_INET6, and
 // AF_PACKET addresses.
 //

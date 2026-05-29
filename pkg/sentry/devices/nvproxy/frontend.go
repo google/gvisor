@@ -1096,7 +1096,7 @@ func rmAlloc(fi *frontendIoctlState) (uintptr, error) {
 	}
 	ioctlParams := buf.ToOS64()
 
-	// hClass determines the type of pAllocParms.
+	// hClass determines the type of pAllocParams.
 	if err := fixupHClass(fi, &ioctlParams); err != nil {
 		return 0, err
 	}
@@ -1107,7 +1107,7 @@ func rmAlloc(fi *frontendIoctlState) (uintptr, error) {
 	// - To map hClass to a symbol, look in
 	// src/nvidia/generated/g_allclasses.h.
 	// - See src/nvidia/src/kernel/rmapi/resource_list.h for table mapping class
-	// ("External Class") to the type of pAllocParms ("Alloc Param Info") and
+	// ("External Class") to the type of pAllocParams ("Alloc Param Info") and
 	// the class whose constructor interprets it ("Internal Class").
 	// - Add symbol and parameter type definitions to //pkg/abi/nvgpu.
 	// - Check constructor for calls to refAddDependant(),

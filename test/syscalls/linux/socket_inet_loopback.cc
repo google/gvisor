@@ -1213,7 +1213,7 @@ TEST_P(SocketInetLoopbackTest, TCPResetAfterClose) {
   // have timed out and closed the socket.
   EXPECT_THAT(RetryEINTR(send)(accepted.get(), &data, sizeof(data), 0),
               SyscallSucceeds());
-  // Sleep for a shortwhile to get a RST back.
+  // Sleep for a short while to get a RST back.
   absl::SleepFor(absl::Seconds(1));
 
   // Try writing again and we should get an EPIPE back.
@@ -1332,7 +1332,7 @@ TEST_P(SocketInetLoopbackTest, TCPAcceptAfterReset) {
   ASSERT_THAT(close(conn_fd.release()), SyscallSucceeds());
 
   if (IsRunningOnGvisor()) {
-    // Gvisor packet procssing is asynchronous and can take a bit of time in
+    // Gvisor packet processing is asynchronous and can take a bit of time in
     // some cases so we give it a bit of time to process the RST packet before
     // calling accept.
     //

@@ -247,8 +247,7 @@ PosixError WithSubprocess(SubprocessCallback const& running,
 
   // Wait on the process.
   wait_cleanup.Release()();
-  // If the process is reaped, then then this should return
-  // with ECHILD.
+  // If the process is reaped, then this should return with ECHILD.
   EXPECT_THAT(waitpid(child_pid, &status, WNOHANG),
               SyscallFailsWithErrno(ECHILD));
 
@@ -274,7 +273,7 @@ PosixError AccessWhileRunning(std::function<std::string(int pid)> name,
       nullptr, nullptr);
 }
 
-// Access the file returned by name when the a subprocess is zombied.
+// Access the file returned by name when a subprocess is zombied.
 PosixError AccessWhileZombied(std::function<std::string(int pid)> name,
                               int flags, std::function<void(int fd)> access) {
   FileDescriptor fd;
@@ -292,7 +291,7 @@ PosixError AccessWhileZombied(std::function<std::string(int pid)> name,
       nullptr);
 }
 
-// Access the file returned by name when the a subprocess is exited.
+// Access the file returned by name when a subprocess is exited.
 PosixError AccessWhileExited(std::function<std::string(int pid)> name,
                              int flags, std::function<void(int fd)> access) {
   FileDescriptor fd;
@@ -2644,7 +2643,7 @@ TEST(ProcTask, CommCanSetSelfThreadName) {
 TEST(ProcTask, CommCanSetPeerThreadName) {
   constexpr char kThreadName[] = "TestThread12345";
 
-  // Path correspond to *this* thread's tid. We will changed it from the new
+  // Path correspond to *this* thread's tid. We will change it from the new
   // thread created below.
   auto path = JoinPath("/proc", absl::StrCat(getpid()), "task",
                        absl::StrCat(syscall(SYS_gettid)), "comm");

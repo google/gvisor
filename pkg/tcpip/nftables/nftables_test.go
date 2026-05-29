@@ -2465,7 +2465,7 @@ func TestEvaluateLast(t *testing.T) {
 }
 
 // TestEvaluateRoute tests that the Route operation correctly loads the specific
-// route data into into the destination register.
+// route data into the destination register.
 // The nft binary commands used to generate these are stated above each test.
 // Also note that all these commands mirror the ones in TestInterpretRouteOps.
 // All commands should be preceded by nft --debug=netlink.
@@ -2579,7 +2579,7 @@ func TestEvaluateRoute(t *testing.T) {
 // the result in the destination register.
 // Note: Relies on expected behavior of the Immediate and Comparison operation.
 func TestEvaluateByteorder(t *testing.T) {
-	// Given a big endian and little endian byte slice of the same number, returns
+	// Given a big-endian and little-endian byte slice of the same number, returns
 	// the correct byte slice based on the host endianness.
 	// Note: Uses enclosure so endianness doesn't need to be passed as an arg or
 	// rechecked for every call.
@@ -3098,7 +3098,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 		shouldErr bool
 	}{
 		{
-			tname: "jump to non-existent chain",
+			tname: "jump to nonexistent chain",
 			chains: map[string]*Chain{
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
@@ -3110,7 +3110,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 			shouldErr: true,
 		},
 		{
-			tname: "goto to non-existent chain",
+			tname: "goto to nonexistent chain",
 			chains: map[string]*Chain{
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
@@ -3725,15 +3725,15 @@ func checkPacketEquality(t *testing.T, expected, actual *stack.PacketBuffer) {
 	}
 }
 
-// numToBE converts an n-byte int to Big Endian where n is in [1, 8].
+// numToBE converts an n-byte int to big-endian where n is in [1, 8].
 // Assumes the given number can be represented in n bytes.
 func numToBE(v int, n int) []byte {
 	if n > 8 {
 		panic("cannot support more than 8 bytes")
 	}
-	// Gets 8-byte slice Big Endian representation of the number.
+	// Gets 8-byte slice big-endian representation of the number.
 	be64 := binary.BigEndian.AppendUint64(nil, uint64(v))
-	// Returns last n bytes as the n-byte Big Endian representation.
+	// Returns last n bytes as the n-byte big-endian representation.
 	return be64[8-n:]
 }
 

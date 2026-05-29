@@ -792,7 +792,7 @@ type Endpoint interface {
 	//	Anything else -- the attempt to connect failed.
 	//
 	// If address.Addr is empty, this means that Endpoint has to be
-	// disconnected if this is supported, otherwise
+	// disconnected if this is supported; otherwise,
 	// ErrAddressFamilyNotSupported must be returned.
 	Connect(address FullAddress) Error
 
@@ -995,7 +995,7 @@ const (
 	// TCPWindowClampOption is used by SetSockOptInt/GetSockOptInt to bound
 	// the size of the advertised window to this value.
 	//
-	// NOTE: This option is currently only stubed out and is a no-op
+	// NOTE: This option is currently only stubbed out and is a no-op
 	TCPWindowClampOption
 
 	// IPv6Checksum is used to request the stack to populate and validate the IPv6
@@ -1088,7 +1088,7 @@ func (*TCPSACKEnabled) isGettableTransportProtocolOption() {}
 
 func (*TCPSACKEnabled) isSettableTransportProtocolOption() {}
 
-// TCPRecovery is the loss deteoction algorithm used by TCP.
+// TCPRecovery is the loss detection algorithm used by TCP.
 type TCPRecovery int32
 
 func (*TCPRecovery) isGettableTransportProtocolOption() {}
@@ -2459,7 +2459,7 @@ type NICStats struct {
 	// Tx contains statistics about transmitted packets.
 	Tx NICPacketStats
 
-	// TxPacketsDroppedNoBufferSpace is the number of packets dropepd due to the
+	// TxPacketsDroppedNoBufferSpace is the number of packets dropped due to the
 	// NIC not having enough buffer space to send the packet.
 	//
 	// Packets may be dropped with a no buffer space error when the device TX
@@ -2875,7 +2875,7 @@ func GetDanglingEndpoints() []Endpoint {
 	return es
 }
 
-// ReleaseDanglingEndpoints clears out all all reference counted objects held by
+// ReleaseDanglingEndpoints clears out all reference counted objects held by
 // dangling endpoints.
 func ReleaseDanglingEndpoints() {
 	// Get the dangling endpoints first to avoid locking around Release(), which

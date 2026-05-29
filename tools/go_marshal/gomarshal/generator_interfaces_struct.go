@@ -30,7 +30,7 @@ func (g *interfaceGenerator) fieldAccessor(n *ast.Ident) string {
 
 // areFieldsPackedExpression returns a go expression checking whether g.t's fields are
 // packed. Returns "", false if g.t has no fields that may be potentially not
-// packed, otherwise returns <clause>, true, where <clause> is an expression
+// packed; otherwise, returns <clause>, true, where <clause> is an expression
 // like "t.a.Packed() && t.b.Packed() && t.c.Packed()".
 func (g *interfaceGenerator) areFieldsPackedExpression() (string, bool) {
 	if len(g.as) == 0 {
@@ -270,7 +270,7 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 	g.emit("func (%s *%s) MarshalUnsafe(dst []byte) []byte {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		fallback := func() {
-			g.emit("// Type %s doesn't have a packed layout in memory, fallback to MarshalBytes.\n", g.typeName())
+			g.emit("// Type %s doesn't have a packed layout in memory, fall back to MarshalBytes.\n", g.typeName())
 			g.emit("return %s.MarshalBytes(dst)\n", g.r)
 		}
 		if thisPacked {
@@ -299,7 +299,7 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 	g.emit("func (%s *%s) UnmarshalUnsafe(src []byte) []byte {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		fallback := func() {
-			g.emit("// Type %s doesn't have a packed layout in memory, fallback to UnmarshalBytes.\n", g.typeName())
+			g.emit("// Type %s doesn't have a packed layout in memory, fall back to UnmarshalBytes.\n", g.typeName())
 			g.emit("return %s.UnmarshalBytes(src)\n", g.r)
 		}
 		if thisPacked {

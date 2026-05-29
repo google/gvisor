@@ -106,16 +106,15 @@ some real-world workloads:
     measures compilation performance by compiling
     [abseil.io](https://abseil.io/); this is a highly system call dependent
     workload due to needing to do a lot of I/O filesystem operations (gVisor’s
-    file system overhead is also dependent upon file system isolation it
-    implements, which is something you can learn about
-    [here](https://gvisor.dev/docs/user_guide/filesystem/)).
+    file system overhead is also dependent upon [file system isolation it
+    implements](https://gvisor.dev/docs/user_guide/filesystem/)).
 *   The
     [ffmpeg benchmark](https://github.com/google/gvisor/blob/master/blob/master/test/benchmarks/media/ffmpeg_test.go)
     runs a multimedia processing tool, to perform video stream encoding/decoding
     for example; this workload does not require a significant amount of system
     calls and there are very few userspace to kernel mode switches.
 *   The
-    [Tensorflow benchmark](https://github.com/google/gvisor/blob/master/blob/master/test/benchmarks/ml/tensorflow_test.go)
+    [TensorFlow benchmark](https://github.com/google/gvisor/blob/master/blob/master/test/benchmarks/ml/tensorflow_test.go)
     trains a variety of machine learning models on CPU; the system-call usage of
     this workload is in between compilation and ffmpeg, due to needing to
     retrieve training and validation data, but the majority of time is still

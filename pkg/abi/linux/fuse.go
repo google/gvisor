@@ -292,7 +292,7 @@ type FUSEStatfsOut struct {
 const FUSE_GETATTR_FH = (1 << 0)
 
 // FUSEGetAttrIn is the request sent by the kernel to the daemon,
-// to get the attribute of a inode.
+// to get the attribute of an inode.
 //
 // +marshal
 type FUSEGetAttrIn struct {

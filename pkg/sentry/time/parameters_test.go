@@ -39,7 +39,7 @@ func TestParametersComputeTime(t *testing.T) {
 			want: 5000 * time.Millisecond.Nanoseconds(),
 		},
 		{
-			// Now is the behind the base cycles. Time is frozen.
+			// Now is behind the base cycles. Time is frozen.
 			name: "backwards",
 			params: Parameters{
 				BaseCycles: 10000,

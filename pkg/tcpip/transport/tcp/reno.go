@@ -33,7 +33,7 @@ func newRenoCC(s *sender) *renoState {
 
 // updateSlowStart will update the congestion window as per the slow-start
 // algorithm used by NewReno. If after adjusting the congestion window
-// we cross the SSthreshold then it will return the number of packets that
+// we cross the SS threshold then it will return the number of packets that
 // must be consumed in congestion avoidance mode.
 //
 // +checklocks:r.s.ep.mu

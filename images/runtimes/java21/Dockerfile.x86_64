@@ -25,7 +25,7 @@ RUN set -ex \
 # NOTE: While upgrading jdk version, if this jtreg version does not build
 # openjdk correctly, try using a recent version of jtreg that does work.
 #
-# ALSO NOTE: The installed location of the JDK is annoyingly path dependant,
+# ALSO NOTE: The installed location of the JDK is annoyingly path dependent,
 # and is "/usr/lib/jvm/java-21-openjdk-amd64" on x86_64 but "-aarch64" on
 # ARM64. The `build.sh` step below uses a wildcard to work around the fact that
 # we don't know the full path.

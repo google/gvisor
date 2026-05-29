@@ -401,7 +401,7 @@ func (m *MountResp) CheckedUnmarshal(src []byte) ([]byte, bool) {
 	return UnmarshalUnsafeMIDSlice(m.SupportedMs, srcRemain), true
 }
 
-// ChannelReq is an empty requent to create a Channel.
+// ChannelReq is an empty request to create a Channel.
 type ChannelReq struct{ EmptyMessage }
 
 // String implements fmt.Stringer.String.
@@ -446,7 +446,7 @@ func (s *StatReq) String() string {
 	return fmt.Sprintf("StatReq{FD: %d}", s.FD)
 }
 
-// SetStatReq is used to set attributeds on FDs.
+// SetStatReq is used to set attributes on FDs.
 //
 // +marshal boundCheck
 type SetStatReq struct {

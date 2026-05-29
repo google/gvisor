@@ -119,7 +119,7 @@ TEST(NetdeviceTest, Netmask) {
 
   ASSERT_GE(prefixlen, 0);
 
-  // Netmask is stored big endian in struct sockaddr_in, so we do the same for
+  // Netmask is stored big-endian in struct sockaddr_in, so we do the same for
   // comparison.
   uint32_t mask = 0xffffffff << (32 - prefixlen);
   mask = absl::gbswap_32(mask);

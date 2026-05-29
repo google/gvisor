@@ -654,13 +654,13 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer, deliv
 	// packet for which the fragment offset in the IP header is nonzero).
 	//
 	// TODO(gvisor.dev/issues/4058): Make sure we don't send ICMP errors in
-	// response to a non-initial fragment, but it currently can not happen.
+	// response to a non-initial fragment, but it currently cannot happen.
 	if pkt.NetworkPacketInfo.LocalAddressBroadcast || header.IsV4MulticastAddress(origIPHdrDst) || origIPHdrSrc == header.IPv4Any {
 		return nil
 	}
 
 	// If the packet wasn't delivered locally, do not use the packet's destination
-	// address as the response's source address as we should not not own the
+	// address as the response's source address as we should not own the
 	// destination address of a packet we are forwarding.
 	localAddr := origIPHdrDst
 	if !deliveredLocally {
@@ -694,7 +694,7 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer, deliv
 	// Don't respond to icmp error packets.
 	if origIPHdr.Protocol() == uint8(header.ICMPv4ProtocolNumber) {
 		// We need to decide to explicitly name the packets we can respond to or
-		// the ones we can not respond to. The decision is somewhat arbitrary and
+		// the ones we cannot respond to. The decision is somewhat arbitrary and
 		// if problems arise this could be reversed. It was judged less of a breach
 		// of protocol to not respond to unknown non-error packets than to respond
 		// to unknown error packets so we take the first approach.

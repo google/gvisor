@@ -190,7 +190,7 @@ type pkg struct {
 //
 // Note that this is not a strict implementation of kcov, which is especially
 // tricky to do because we do not have the same coverage tools available in Go
-// that that are available for the actual Linux kernel. In Linux, a kernel
+// that are available for the actual Linux kernel. In Linux, a kernel
 // configuration is set that compiles the kernel with a custom function that is
 // called at the beginning of every basic block to write program counters to the
 // kcov memory mapping. In Go, however, coverage tools only give us a count of

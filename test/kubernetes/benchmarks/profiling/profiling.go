@@ -269,7 +269,7 @@ type profileRun struct {
 
 // MaybeSetup sets up profiling if requested. It returns a cleanup function.
 // If the returned error is nil, the cleanup function is non-nil and should be
-// called regardless of whether profiling is actually enabled or not.
+// called regardless of whether or not profiling is actually enabled.
 func MaybeSetup(ctx context.Context, t *testing.T, k8sCtx k8sctx.KubernetesContext, c *testcluster.TestCluster, ns *testcluster.Namespace) (func(), error) {
 	profileDirName := fmt.Sprintf("%s.%s", t.Name(), time.Now().Format("20060102-150405"))
 	profileDirName = regexp.MustCompile(`[^-_=.\w]+`).ReplaceAllString(profileDirName, ".")

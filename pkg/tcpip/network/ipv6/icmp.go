@@ -748,7 +748,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 		// Validate the RS as per RFC 4861 section 6.1.1.
 		//
 
-		// Is the NDP payload of sufficient size to hold a Router Solictation?
+		// Is the NDP payload of sufficient size to hold a Router Solicitation?
 		if !isNDPValid() || len(h)-header.ICMPv6HeaderSize < header.NDPRSMinimumSize {
 			received.invalid.Increment()
 			return

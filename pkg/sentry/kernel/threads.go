@@ -412,7 +412,7 @@ type threadGroupNode struct {
 	// TID.
 	pidWithinNS atomicbitops.Int32
 
-	// eventQueue is notified whenever a event of interest to Task.Wait occurs
+	// eventQueue is notified whenever an event of interest to Task.Wait occurs
 	// in a child of this thread group, or a ptrace tracee of a task in this
 	// thread group. Events are defined in task_exit.go.
 	eventQueue waiter.Queue

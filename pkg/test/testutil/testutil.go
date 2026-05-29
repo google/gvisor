@@ -400,7 +400,7 @@ func Copy(src, dst string) error {
 	// modes. At the top-level (volume mapping) we have a big read-only
 	// knob that can be applied to prevent modifications.
 	//
-	// Note that this must be done via a separate Chmod call, otherwise the
+	// Note that this must be done via a separate Chmod call; otherwise, the
 	// current process's umask will get in the way.
 	var mode os.FileMode
 	if st.Mode()&0100 != 0 {

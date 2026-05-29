@@ -57,7 +57,7 @@ type PageTables struct {
 	// own the ranges that are shared with other Pagetables.
 	readOnlyShared bool
 
-	// largeAddressesEnabled indicates the Pagetables support addresess
+	// largeAddressesEnabled indicates the Pagetables support addresses
 	// larger than 48 bits.
 	largeAddressesEnabled bool
 }
@@ -79,7 +79,7 @@ func (p *PageTables) Init(allocator Allocator) {
 // starting at upperStart. These pageTables should not be touched (as
 // invalidations may be incorrect) after they are passed as an
 // upperSharedPageTables. Only when all dependent PageTables are gone
-// may they be used. The intenteded use case is for kernel page tables,
+// may they be used. The intended use case is for kernel page tables,
 // which are static and fixed.
 //
 // Precondition: upperStart must be between canonical ranges.
@@ -123,7 +123,7 @@ func (v *mapVisitor) visit(start uintptr, pte *PTE, align uintptr) bool {
 		v.prev = true
 	}
 	if p&align != 0 {
-		// We will install entries at a smaller granulaity if we don't
+		// We will install entries at a smaller granularity if we don't
 		// install a valid entry here, however we must zap any existing
 		// entry to ensure this happens.
 		pte.Clear()

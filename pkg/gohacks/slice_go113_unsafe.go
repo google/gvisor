@@ -33,7 +33,7 @@ type sliceHeader struct {
 	Cap  int
 }
 
-// Slice returns a slice whose underlying array starts at ptr an which length
+// Slice returns a slice whose underlying array starts at ptr and whose length
 // and capacity are len.
 func Slice[T any](ptr *T, length int) []T {
 	var s []T

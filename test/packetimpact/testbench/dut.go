@@ -333,7 +333,7 @@ func (dut *DUT) getSockOpt(ctx context.Context, t *testing.T, sockfd, level, opt
 
 // GetSockOpt calls getsockopt on the DUT and causes a fatal test failure if it
 // doesn't succeed. If more control over the timeout or error handling is
-// needed, use GetSockOptWithErrno. Because endianess and the width of values
+// needed, use GetSockOptWithErrno. Because endianness and the width of values
 // might differ between the testbench and DUT architectures, prefer to use a
 // more specific GetSockOptXxx function.
 func (dut *DUT) GetSockOpt(t *testing.T, sockfd, level, optname, optlen int32) []byte {
@@ -346,7 +346,7 @@ func (dut *DUT) GetSockOpt(t *testing.T, sockfd, level, optname, optlen int32) [
 	return optval
 }
 
-// GetSockOptWithErrno calls getsockopt on the DUT. Because endianess and the
+// GetSockOptWithErrno calls getsockopt on the DUT. Because endianness and the
 // width of values might differ between the testbench and DUT architectures,
 // prefer to use a more specific GetSockOptXxxWithErrno function.
 func (dut *DUT) GetSockOptWithErrno(ctx context.Context, t *testing.T, sockfd, level, optname, optlen int32) (int32, []byte, error) {
@@ -414,7 +414,7 @@ func (dut *DUT) GetSockOptTimevalWithErrno(ctx context.Context, t *testing.T, so
 	return ret, timeval, errno
 }
 
-// GetSockOptTCPInfo retreives TCPInfo for the given socket descriptor.
+// GetSockOptTCPInfo retrieves TCPInfo for the given socket descriptor.
 func (dut *DUT) GetSockOptTCPInfo(t *testing.T, sockfd int32) linux.TCPInfo {
 	t.Helper()
 
@@ -425,7 +425,7 @@ func (dut *DUT) GetSockOptTCPInfo(t *testing.T, sockfd int32) linux.TCPInfo {
 	return info
 }
 
-// GetSockOptTCPInfoWithErrno retreives TCPInfo with any errno.
+// GetSockOptTCPInfoWithErrno retrieves TCPInfo with any errno.
 func (dut *DUT) GetSockOptTCPInfoWithErrno(ctx context.Context, t *testing.T, sockfd int32) (int32, linux.TCPInfo, error) {
 	t.Helper()
 
@@ -587,7 +587,7 @@ func (dut *DUT) SendToWithErrno(ctx context.Context, t *testing.T, sockfd int32,
 }
 
 // SetNonBlocking will set O_NONBLOCK flag for fd if nonblocking
-// is true, otherwise it will clear the flag.
+// is true; otherwise, it will clear the flag.
 func (dut *DUT) SetNonBlocking(t *testing.T, fd int32, nonblocking bool) {
 	t.Helper()
 
@@ -623,7 +623,7 @@ func (dut *DUT) setSockOpt(ctx context.Context, t *testing.T, sockfd, level, opt
 
 // SetSockOpt calls setsockopt on the DUT and causes a fatal test failure if it
 // doesn't succeed. If more control over the timeout or error handling is
-// needed, use SetSockOptWithErrno. Because endianess and the width of values
+// needed, use SetSockOptWithErrno. Because endianness and the width of values
 // might differ between the testbench and DUT architectures, prefer to use a
 // more specific SetSockOptXxx function.
 func (dut *DUT) SetSockOpt(t *testing.T, sockfd, level, optname int32, optval []byte) {
@@ -635,7 +635,7 @@ func (dut *DUT) SetSockOpt(t *testing.T, sockfd, level, optname int32, optval []
 	}
 }
 
-// SetSockOptWithErrno calls setsockopt on the DUT. Because endianess and the
+// SetSockOptWithErrno calls setsockopt on the DUT. Because endianness and the
 // width of values might differ between the testbench and DUT architectures,
 // prefer to use a more specific SetSockOptXxxWithErrno function.
 func (dut *DUT) SetSockOptWithErrno(ctx context.Context, t *testing.T, sockfd, level, optname int32, optval []byte) (int32, error) {

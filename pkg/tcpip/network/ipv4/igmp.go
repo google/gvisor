@@ -70,10 +70,10 @@ const (
 	_ IGMPVersion = iota
 	// IGMPVersion1 indicates IGMPv1.
 	IGMPVersion1
-	// IGMPVersion2 indicates IGMPv2. Note that IGMP may still fallback to V1
+	// IGMPVersion2 indicates IGMPv2. Note that IGMP may still fall back to V1
 	// compatibility mode as required by IGMPv2.
 	IGMPVersion2
-	// IGMPVersion3 indicates IGMPv3. Note that IGMP may still fallback to V2
+	// IGMPVersion3 indicates IGMPv3. Note that IGMP may still fall back to V2
 	// compatibility mode as required by IGMPv3.
 	IGMPVersion3
 )
@@ -201,7 +201,7 @@ func (b *igmpv3ReportBuilder) AddRecord(genericRecordType ip.MulticastGroupProto
 	case ip.MulticastGroupProtocolV2ReportRecordBlockOldSources:
 		recordType = header.IGMPv3ReportRecordBlockOldSources
 	default:
-		panic(fmt.Sprintf("unrecognied genericRecordType = %d", genericRecordType))
+		panic(fmt.Sprintf("unrecognized genericRecordType = %d", genericRecordType))
 	}
 
 	b.records = append(b.records, header.IGMPv3ReportGroupAddressRecordSerializer{

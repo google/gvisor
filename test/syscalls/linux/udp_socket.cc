@@ -462,7 +462,7 @@ TEST_P(UdpSocketTest, ReceiveAfterDisconnect) {
   ASSERT_NO_ERRNO(BindLoopback());
 
   for (int i = 0; i < 2; i++) {
-    // Connet sock_ to bound address.
+    // Connect sock_ to bound address.
     ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
 
     struct sockaddr_storage addr;
@@ -676,7 +676,7 @@ TEST_P(UdpSocketTest, DisconnectAfterConnectWithoutBind) {
   ASSERT_NO_FATAL_FAILURE(ConnectThenDisconnect(sock_, bind_addr_, addrlen_));
 }
 
-TEST_P(UdpSocketTest, BindToAnyConnnectToLocalhost) {
+TEST_P(UdpSocketTest, BindToAnyConnectToLocalhost) {
   ASSERT_NO_ERRNO(BindAny());
 
   struct sockaddr_storage addr_storage = InetLoopbackAddr();
@@ -796,7 +796,7 @@ TEST_P(UdpSocketTest, ConnectAndSendNoReceiver) {
   ASSERT_NO_ERRNO(BindLoopback());
   // Connect to loopback:bind_addr_ which should *hopefully* not be bound by an
   // UDP socket. There is no easy way to ensure that the UDP port is not bound
-  // by another conncurrently running test. *This is potentially flaky*.
+  // by another concurrently running test. *This is potentially flaky*.
   ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
 
   // Close the socket after connecting to the bound address to make sure `sock_`
@@ -903,7 +903,7 @@ TEST_P(UdpSocketTest, RecvErrorConnRefused) {
 
   // Connect to loopback:bind_addr_ which should *hopefully* not be bound by an
   // UDP socket. There is no easy way to ensure that the UDP port is not bound
-  // by another conncurrently running test. *This is potentially flaky*.
+  // by another concurrently running test. *This is potentially flaky*.
   const int kBufLen = 300;
   ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
   char buf[kBufLen];

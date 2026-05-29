@@ -19,7 +19,7 @@
 #ifndef GVISOR_TEST_SYSCALLS_IPTABLES_TYPES_H_
 #define GVISOR_TEST_SYSCALLS_IPTABLES_TYPES_H_
 
-// Netfilter headers require some headers to preceed them.
+// Netfilter headers require some headers to precede them.
 // clang-format off
 #include <netinet/in.h>
 #include <stddef.h>
@@ -128,7 +128,7 @@ struct ipt_getinfo {
 
   // A bitmap of which hooks apply to the table. For example, a table with hooks
   // PREROUTING and FORWARD has the value
-  // (1 << NF_IP_PRE_REOUTING) | (1 << NF_IP_FORWARD).
+  // (1 << NF_IP_PRE_ROUTING) | (1 << NF_IP_FORWARD).
   unsigned int valid_hooks;
 
   // The offset into the entry table for each valid hook. The entry table is
@@ -196,7 +196,7 @@ struct ipt_replace {
   struct xt_counters* counters;
 
   // The entries to write to the table. This will run past the size defined by
-  // sizeof(srtuct ipt_replace);
+  // sizeof(struct ipt_replace);
   struct ipt_entry entries[0];
 };
 

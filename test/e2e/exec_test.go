@@ -56,7 +56,7 @@ func TestExecCapabilities(t *testing.T) {
 
 	// Check that capability.
 	caps := []string{"CapInh", "CapPrm", "CapEff", "CapBnd"}
-	// Expected capabilities for non-root usres.
+	// Expected capabilities for non-root users.
 	wantCaps := map[string]string{}
 	// For the root user.
 	for _, cap := range caps {

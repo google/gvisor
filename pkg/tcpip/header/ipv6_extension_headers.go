@@ -981,7 +981,7 @@ type IPv6ExtHdrSerializer []IPv6SerializableExtHdr
 // Serialize serializes the provided list of IPv6 extension headers into b.
 //
 // Note, b must be of sufficient size to hold all the headers in s. See
-// IPv6ExtHdrSerializer.Length for details on the getting the total size of a
+// IPv6ExtHdrSerializer.Length for details on getting the total size of a
 // serialized IPv6ExtHdrSerializer.
 //
 // Serialize may panic if b is not of sufficient size to hold all the options

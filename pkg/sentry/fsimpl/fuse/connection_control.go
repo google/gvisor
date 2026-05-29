@@ -48,7 +48,7 @@ const (
 	minInitSize = 24
 )
 
-// Adjustable maximums for Connection's cogestion control parameters.
+// Adjustable maximums for Connection's congestion control parameters.
 // Used as the upperbound of the config values.
 // Currently we do not support adjustment to them.
 var (

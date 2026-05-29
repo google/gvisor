@@ -30,7 +30,7 @@
 //	interface: A call is made via an interface which *may* escape (soft).
 //	dynamic:   A dynamic function is dispatched which *may* escape (soft).
 //
-// To the use the package, annotate a function-level comment with either the
+// To use the package, annotate a function-level comment with either the
 // line "// +checkescape" or "// +checkescape:OPTION[,OPTION]". In the second
 // case, the OPTION field is either a type above, or one of:
 //
@@ -222,7 +222,7 @@ type CallSite struct {
 	Resolved LinePosition
 }
 
-// IsValid indicates whether the CallSite is valid or not.
+// IsValid indicates whether or not the CallSite is valid.
 func (cs *CallSite) IsValid() bool {
 	return cs.LocalPos.IsValid()
 }
@@ -738,7 +738,7 @@ func run(pass *analysis.Pass, binary io.Reader) (any, error) {
 				}
 
 				// If this package is the atomic package, the implementation
-				// may be replaced by instrinsics that don't have analysis.
+				// may be replaced by intrinsics that don't have analysis.
 				if x.Pkg != nil && x.Pkg.Pkg.Path() == "sync/atomic" {
 					return
 				}

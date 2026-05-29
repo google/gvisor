@@ -183,7 +183,7 @@ const (
 	IFLA_INFO_SLAVE_DATA = 5
 )
 
-// Virtuall ethernet attributes, from uapi/linux/veth.h.
+// Virtual ethernet attributes, from uapi/linux/veth.h.
 const (
 	VETH_INFO_PEER = 1
 )
@@ -259,7 +259,7 @@ const (
 	// as broadcast, and sent as broadcast).
 	RTN_BROADCAST = 3
 
-	// RTN_ANYCAST represents a anycast route (Traffic is accepted locally as
+	// RTN_ANYCAST represents an anycast route (Traffic is accepted locally as
 	// broadcast but sent as unicast).
 	RTN_ANYCAST = 6
 

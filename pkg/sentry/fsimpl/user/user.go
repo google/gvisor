@@ -92,7 +92,7 @@ func getExecUserHome(ctx context.Context, mns *vfs.MountNamespace, uid auth.KUID
 }
 
 // MaybeAddExecUserHome returns a new slice with the HOME environment
-// variable set if the slice does not already contain it, otherwise it returns
+// variable set if the slice does not already contain it; otherwise, it returns
 // the original slice unmodified.
 func MaybeAddExecUserHome(ctx context.Context, vmns *vfs.MountNamespace, uid auth.KUID, envv []string) ([]string, error) {
 	// Check if the envv already contains HOME.
@@ -345,7 +345,7 @@ func getExecUIDGID(ctx context.Context, mns *vfs.MountNamespace, user string) (a
 		ctx: ctx,
 		fd:  fd,
 	}
-	// This return kGid from the passwd file (if we find one). We might have recieved a group id
+	// This return kGid from the passwd file (if we find one). We might have received a group id
 	// string or numeric from the user.
 	kUID, kGID := FindUIDGIDInPasswd(r, user)
 	usergroup := strings.SplitN(user, ":", 2)

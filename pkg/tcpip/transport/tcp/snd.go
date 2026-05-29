@@ -49,7 +49,7 @@ const (
 	// Linux default TCP_RETR2, net.ipv4.tcp_retries2.
 	MaxRetries = 15
 
-	// InitialSsthresh is the the maximum int value, which depends on the
+	// InitialSsthresh is the maximum int value, which depends on the
 	// platform.
 	InitialSsthresh = math.MaxInt
 
@@ -281,7 +281,7 @@ func initSender(ep *Endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uin
 	ep.snd.lr = ep.snd.initLossRecovery()
 	ep.snd.rc.init(ep.snd, iss)
 
-	// A negative sndWndScale means that no scaling is in use, otherwise we
+	// A negative sndWndScale means that no scaling is in use; otherwise, we
 	// store the scaling value.
 	if sndWndScale > 0 {
 		ep.snd.SndWndScale = uint8(sndWndScale)
@@ -731,7 +731,7 @@ func (s *sender) NextSeg(nextSegHint *segment) (nextSeg, hint *segment, rescueRt
 		// See RFC 6675 Section 4
 		//
 		//     1. If there exists a smallest unSACKED sequence number
-		//     'S2' that meets the following 3 criteria for determinig
+		//     'S2' that meets the following 3 criteria for determining
 		//     loss, the sequence range of one segment of up to SMSS
 		//     octets starting with S2 MUST be returned.
 		if !s.ep.scoreboard.IsSACKED(header.SACKBlock{Start: segSeq, End: segSeq.Add(1)}) {
@@ -1017,7 +1017,7 @@ func (s *sender) sendZeroWindowProbe() {
 func (s *sender) enableZeroWindowProbing() {
 	s.zeroWindowProbing = true
 	// We piggyback the probing on the retransmit timer with the
-	// current retranmission interval, as we may start probing while
+	// current retransmission interval, as we may start probing while
 	// segment retransmissions.
 	if s.firstRetransmittedSegXmitTime == (tcpip.MonotonicTime{}) {
 		s.firstRetransmittedSegXmitTime = s.ep.stack.Clock().NowMonotonic()
@@ -1042,7 +1042,7 @@ func (s *sender) postXmit(dataSent bool, shouldScheduleProbe bool) {
 
 	// If the sender has advertised zero receive window and we have
 	// data to be sent out, start zero window probing to query the
-	// the remote for it's receive window size.
+	// the remote for its receive window size.
 	if s.writeNext != nil && s.SndWnd == 0 {
 		s.enableZeroWindowProbing()
 	}
@@ -1079,7 +1079,7 @@ func (s *sender) sendData() {
 	// Reduce the congestion window to min(IW, cwnd) per RFC 5681, page 10.
 	// "A TCP SHOULD set cwnd to no more than RW before beginning
 	// transmission if the TCP has not sent data in the interval exceeding
-	// the retrasmission timeout."
+	// the retransmission timeout."
 	if !s.FastRecovery.Active && s.state != tcpip.RTORecovery && s.ep.stack.Clock().NowMonotonic().Sub(s.LastSendTime) > s.RTO {
 		if s.SndCwnd > InitialCwnd {
 			s.SndCwnd = InitialCwnd
@@ -1166,7 +1166,7 @@ func (s *sender) leaveRecovery() {
 }
 
 // isAssignedSequenceNumber relies on the fact that we only set flags once a
-// sequencenumber is assigned and that is only done right before we send the
+// sequence number is assigned and that is only done right before we send the
 // segment. As a result any segment that has a non-zero flag has a valid
 // sequence number assigned to it.
 func (s *sender) isAssignedSequenceNumber(seg *segment) bool {
@@ -1211,7 +1211,7 @@ func (s *sender) SetPipe() {
 
 			// SetPipe():
 			//
-			//    (a) If IsLost(S1) returns false, Pipe is incremened by 1.
+			//    (a) If IsLost(S1) returns false, Pipe is incremented by 1.
 			//
 			// NOTE: here we mark the whole segment as lost. We do not try
 			// and test every byte in our write buffer as we maintain our
@@ -1723,7 +1723,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 
 		s.SetPipe()
 
-		// If all outstanding data was acknowledged the disable the timer.
+		// If all outstanding data was acknowledged then disable the timer.
 		// RFC 6298 Rule 5.3
 		if s.SndUna == s.SndNxt {
 			s.Outstanding = 0
@@ -1825,7 +1825,7 @@ func (s *sender) sendSegmentFromPacketBuffer(pkt *stack.PacketBuffer, flags head
 	s.MaxSentAck = rcvNxt
 
 	// We need to clone the packet because sendRaw takes ownership of pkt,
-	// and pkt could be reprocessed later on (i.e retrasmission).
+	// and pkt could be reprocessed later on (i.e retransmission).
 	pkt = pkt.Clone()
 	defer pkt.DecRef()
 

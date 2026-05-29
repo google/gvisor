@@ -36,7 +36,7 @@ type Serializer interface {
 	Serialize(w io.Writer) error
 }
 
-// item is used for serialiation.
+// item is used for serialization.
 type item struct {
 	Key   string
 	Value any

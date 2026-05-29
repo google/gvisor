@@ -45,7 +45,7 @@ struct gvisor_bpf_map_def section("maps") sock_map = {
 section("xdp") int xdp_prog(struct xdp_md *ctx) {
   // Lookup the socket for the current RX queue. Veth devices by default have
   // only one RX queue. If one is found, redirect the packet to that socket.
-  // Otherwise pass it on to the kernel network stack.
+  // Otherwise, pass it on to the kernel network stack.
   //
   // TODO: We can support multiple sockets with a fancier hash-based handoff.
   return bpf_redirect_map(&sock_map, ctx->rx_queue_index, XDP_PASS);

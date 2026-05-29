@@ -78,25 +78,25 @@ func (vfs *VirtualFilesystem) commitMount(ctx context.Context, mnt *Mount) {
 }
 
 // +checklocks:vfs.mountMu
-func (vfs *VirtualFilesystem) abortUncomittedChildren(ctx context.Context, mnt *Mount) {
+func (vfs *VirtualFilesystem) abortUncommittedChildren(ctx context.Context, mnt *Mount) {
 	for c := range mnt.children {
 		if c.neverConnected() {
-			vfs.abortUncommitedMount(ctx, c)
+			vfs.abortUncommittedMount(ctx, c)
 			delete(mnt.children, c)
 		}
 	}
 }
 
-// abortUncommitedMount releases references on mnt and all its descendants.
+// abortUncommittedMount releases references on mnt and all its descendants.
 //
 // Prerequisite: mnt is not connected, i.e. mnt.ns == nil.
 // +checklocks:vfs.mountMu
-func (vfs *VirtualFilesystem) abortUncommitedMount(ctx context.Context, mnt *Mount) {
+func (vfs *VirtualFilesystem) abortUncommittedMount(ctx context.Context, mnt *Mount) {
 	vfs.delayDecRef(mnt)
 	vfs.delayDecRef(mnt.getKey())
 	mnt.setKey(VirtualDentry{})
 	vfs.setPropagation(mnt, linux.MS_PRIVATE)
-	vfs.abortUncomittedChildren(ctx, mnt)
+	vfs.abortUncommittedChildren(ctx, mnt)
 }
 
 // SetMountPropagationAt changes the propagation type of the mount pointed to by
@@ -337,7 +337,7 @@ func (vfs *VirtualFilesystem) propagateMount(ctx context.Context, dstMnt *Mount,
 // to fs/pnode.c:next_group() in Linux.
 func nextFollowerPeerGroup(mnt *Mount, start *Mount) *Mount {
 	for {
-		// If mnt has any followers, this loop returns that follower. Otherwise mnt
+		// If mnt has any followers, this loop returns that follower. Otherwise, mnt
 		// is updated until it is the last peer in its peer group. This has the
 		// effect of moving down the propagation tree until the bottommost follower.
 		// After that the loop moves across peers (if possible) to the last peer

@@ -193,7 +193,7 @@ func (c *Context64) Fork() *Context64 {
 // General purpose registers usage on Arm64:
 // R0...R7: parameter/result registers.
 // R8: indirect result location register.
-// R9...R15: temporary rgisters.
+// R9...R15: temporary registers.
 // R16: the first intra-procedure-call scratch register.
 // R17: the second intra-procedure-call scratch register.
 // R18: the platform register.

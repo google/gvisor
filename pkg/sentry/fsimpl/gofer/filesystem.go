@@ -55,7 +55,7 @@ func (fs *filesystem) Sync(ctx context.Context) error {
 	// regardless.
 	var retErr error
 
-	// Note that lisafs is capable of batching FSync RPCs. However, we can not
+	// Note that lisafs is capable of batching FSync RPCs. However, we cannot
 	// batch all the FDIDs to be synced from ds and sffds. Because the error
 	// handling varies based on file type. FSync errors are only considered for
 	// regular file FDIDs that were opened for writing. We could do individual
@@ -1327,7 +1327,7 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 	}
 	// Insert the dentry into the tree.
 	d.childrenMu.Lock()
-	// We have d.opMu for writing, so there can not be a cached child with
+	// We have d.opMu for writing, so there cannot be a cached child with
 	// this name.  We could not have raced.
 	d.cacheNewChildLocked(child, name)
 	appendNewChildDentry(ds, d, child)

@@ -812,7 +812,7 @@ TEST(MountTest, TmpfsSymlinkAllocCheck) {
   EXPECT_THAT(unlink(pathname.c_str()), SyscallSucceeds());
 }
 
-// Tests memory unallocation for symlinks.
+// Tests memory deallocation for symlinks.
 TEST(MountTest, TmpfsSymlinkUnallocCheck) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   auto const dir_parent = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
@@ -1188,7 +1188,7 @@ TEST(MountTest, ReuseGroupIDs) {
 }
 
 // Tests that a child mount inherits the propagation type of its parent.
-TEST(MountTest, InerheritPropagation) {
+TEST(MountTest, InheritPropagation) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
   auto const dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());

@@ -19,8 +19,8 @@ Docker v29     | not supported        | not supported
 ### GKE standard cluster
 
 Install a GKE standard cluster and deploy a node pool with gVisor enabled. You
-can view the full documentation
-[here](https://cloud.google.com/kubernetes-engine/docs/how-to/sandbox-pods#enabling).
+can view the [full
+documentation](https://cloud.google.com/kubernetes-engine/docs/how-to/sandbox-pods#enabling).
 
 ### GKE Autopilot cluster
 
@@ -36,7 +36,7 @@ granted by the gVisor sandbox which is needed by docker daemon.
 An example command to start an GKE autopilot cluster will be:
 
 ```sh
-gcloud container clusters create-auto [CLUTER_NAME] --workload-policies=allow-net-admin --location=[LOCATION]
+gcloud container clusters create-auto [CLUSTER_NAME] --workload-policies=allow-net-admin --location=[LOCATION]
 ```
 
 ### Get started

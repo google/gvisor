@@ -132,7 +132,7 @@ func (test *udpTest) Send(t *testing.T, dut testbench.DUT, bindTo, sendTo net.IP
 		}
 
 		if !bindToDevice && !bindTo.Equal(dut.Net.RemoteIPv4) && (sendTo.Equal(net.IPv4bcast) || sendTo.Equal(net.IPv4allsys)) {
-			// if not binding to a device, bindTo is not dut's IPv4 addression and sendTo is
+			// if not binding to a device, bindTo is not dut's IPv4 address and sendTo is
 			// 255.255.255.255 or 224.0.0.1, we expect ENETUNERACH.
 			wantErrno = unix.ENETUNREACH
 		}

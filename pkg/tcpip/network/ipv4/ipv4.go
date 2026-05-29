@@ -1296,7 +1296,7 @@ func (e *endpoint) deliverPacketLocally(h header.IPv4, pkt *stack.PacketBuffer, 
 		//
 		// Note that this addition doesn't overflow even on 32bit architecture
 		// because pkt.Data().Size() should not exceed 65535 (the max IP datagram
-		// size). Otherwise the packet would've been rejected as invalid before
+		// size). Otherwise, the packet would've been rejected as invalid before
 		// reaching here.
 		if int(start)+pkt.Data().Size() > header.IPv4MaximumPayloadSize {
 			stats.ip.MalformedPacketsReceived.Increment()
@@ -1939,7 +1939,7 @@ func packetMustBeFragmented(pkt *stack.PacketBuffer, networkMTU uint32) bool {
 	return pkt.GSOOptions.Type == stack.GSONone && uint32(payload) > networkMTU
 }
 
-// addressToUint32 translates an IPv4 address into its little endian uint32
+// addressToUint32 translates an IPv4 address into its little-endian uint32
 // representation.
 //
 // This function does the same thing as binary.LittleEndian.Uint32 but operates

@@ -76,7 +76,7 @@ func (q *QueueConfig) FDs() []int {
 }
 
 // QueueConfigFromFDs constructs a QueueConfig out of a slice of ints where each
-// entry represents an file descriptor. The order of FDs in the slice must be in
+// entry represents a file descriptor. The order of FDs in the slice must be in
 // the order specified below for the config to be valid. QueueConfig.FDs()
 // should be used when the config needs to be serialized or sent as part of a
 // control message to ensure the correct order.

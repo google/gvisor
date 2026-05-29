@@ -257,7 +257,7 @@ static volatile int alarmed = 0;
 void AlarmHandler(int sig, siginfo_t* info, void* context) { alarmed = 1; }
 
 TEST_F(ForkTest, Alarm) {
-  // Setup an alarm handler.
+  // Set up an alarm handler.
   struct sigaction sa;
   sa.sa_sigaction = AlarmHandler;
   sigfillset(&sa.sa_mask);

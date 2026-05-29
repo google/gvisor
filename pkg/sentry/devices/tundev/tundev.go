@@ -102,7 +102,7 @@ func (fd *tunFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args 
 		flags, err := netstack.LinuxToTUNFlags(linuxFlags)
 		if err != nil {
 			if warnRateLimiter.Allow() {
-				ctx.Warningf("Unsuported tun flags: %x", linuxFlags)
+				ctx.Warningf("Unsupported tun flags: %x", linuxFlags)
 			}
 		}
 		return 0, fd.device.SetIff(ctx, stack.Stack, req.Name(), flags)

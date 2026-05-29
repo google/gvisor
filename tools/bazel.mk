@@ -194,7 +194,7 @@ endif
 # NOTE: we pass -l to useradd below because otherwise you can hit a bug
 # best described here:
 #  https://github.com/moby/moby/issues/5419#issuecomment-193876183
-# TLDR; trying to add to /var/log/lastlog (sparse file) runs the machine out
+# TL;DR trying to add to /var/log/lastlog (sparse file) runs the machine out
 # out of disk space.
 ifneq ($(UID),0)
 USERADD_DOCKER += useradd -l --uid $(UID) --non-unique --no-create-home \

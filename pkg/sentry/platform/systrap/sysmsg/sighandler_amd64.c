@@ -289,7 +289,7 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
 
         // Restart syscall if it has been patched by another thread.  When a
         // syscall instruction set is replaced on a function call, all threads
-        // have to call it via the function call. Otherwise the syscall will not
+        // have to call it via the function call. Otherwise, the syscall will not
         // be restarted properly if it will be interrupted by signal.
         syscall_code = (uint8_t *)&syscall_code_int[1];
         uint8_t syscall_opcode = *(syscall_code + 6);

@@ -527,7 +527,7 @@ type Priority struct {
 	value int
 
 	// standardPriority is the standard priority name if the priority is a
-	// predefined standard priority name, otherwise it is the empty string.
+	// predefined standard priority name; otherwise, it is the empty string.
 	standardPriorityName string
 }
 

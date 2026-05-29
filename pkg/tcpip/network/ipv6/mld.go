@@ -40,7 +40,7 @@ const (
 	_ MLDVersion = iota
 	// MLDVersion1 indicates MLDv1.
 	MLDVersion1
-	// MLDVersion2 indicates MLDv2. Note that MLD may still fallback to V1
+	// MLDVersion2 indicates MLDv2. Note that MLD may still fall back to V1
 	// compatibility mode as required by MLDv2.
 	MLDVersion2
 )
@@ -149,7 +149,7 @@ func (b *mldv2ReportBuilder) AddRecord(genericRecordType ip.MulticastGroupProtoc
 	case ip.MulticastGroupProtocolV2ReportRecordBlockOldSources:
 		recordType = header.MLDv2ReportRecordBlockOldSources
 	default:
-		panic(fmt.Sprintf("unrecognied genericRecordType = %d", genericRecordType))
+		panic(fmt.Sprintf("unrecognized genericRecordType = %d", genericRecordType))
 	}
 
 	b.records = append(b.records, header.MLDv2ReportMulticastAddressRecordSerializer{

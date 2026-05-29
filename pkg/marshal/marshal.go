@@ -151,7 +151,7 @@ type CheckedMarshallable interface {
 	// data.
 	CheckedMarshal(dst []byte) ([]byte, bool)
 
-	// CheckedUnmarshal is the same as Marshallable.UmarshalUnsafe but without
+	// CheckedUnmarshal is the same as Marshallable.UnmarshalUnsafe but without
 	// the precondition that src must at least have some appropriate length.
 	// Similar to Marshallable.UnmarshalBytes, it returns a shifted slice
 	// according to how much data is consumed. Additionally it returns a bool

@@ -524,12 +524,12 @@ func TestHandleReport(t *testing.T) {
 		expectReportsFor []tcpip.Address
 	}{
 		{
-			name:             "Unpecified empty",
+			name:             "Unspecified empty",
 			reportAddr:       tcpip.Address{},
 			expectReportsFor: []tcpip.Address{addr1, addr2},
 		},
 		{
-			name:             "Unpecified any",
+			name:             "Unspecified any",
 			reportAddr:       tcpip.AddrFromSlice([]byte("\x00\x00\x00\x00")),
 			expectReportsFor: []tcpip.Address{addr1, addr2},
 		},
@@ -636,14 +636,14 @@ func TestHandleQuery(t *testing.T) {
 		expectDelayedReportsFor []tcpip.Address
 	}{
 		{
-			name:                    "Unpecified empty",
+			name:                    "Unspecified empty",
 			queryAddr:               tcpip.Address{},
 			maxDelay:                0,
 			expectQueriedReportsFor: []tcpip.Address{addr1, addr2},
 			expectDelayedReportsFor: nil,
 		},
 		{
-			name:                    "Unpecified any",
+			name:                    "Unspecified any",
 			queryAddr:               tcpip.AddrFromSlice([]byte("\x00\x00\x00\x00")),
 			maxDelay:                1,
 			expectQueriedReportsFor: []tcpip.Address{addr1, addr2},
@@ -768,14 +768,14 @@ func TestHandleQueryV2Response(t *testing.T) {
 		expectDelayedReportsFor []tcpip.Address
 	}{
 		{
-			name:                    "Unpecified empty",
+			name:                    "Unspecified empty",
 			queryAddr:               tcpip.Address{},
 			maxDelay:                0,
 			expectQueriedReportsFor: []tcpip.Address{addr1, addr2},
 			expectDelayedReportsFor: nil,
 		},
 		{
-			name:                    "Unpecified any",
+			name:                    "Unspecified any",
 			queryAddr:               tcpip.AddrFromSlice([]byte("\x00\x00\x00\x00")),
 			maxDelay:                1,
 			expectQueriedReportsFor: []tcpip.Address{addr1, addr2},
@@ -898,7 +898,7 @@ func TestHandleQueryV2Response(t *testing.T) {
 	}
 }
 
-func TestV1CompatbilityModeTimer(t *testing.T) {
+func TestV1CompatibilityModeTimer(t *testing.T) {
 	tests := []struct {
 		name               string
 		robustnessVariable uint8
@@ -940,7 +940,7 @@ func TestV1CompatbilityModeTimer(t *testing.T) {
 				Rand:                      rand.New(rand.NewSource(3)),
 				Clock:                     clock,
 				MaxUnsolicitedReportDelay: maxUnsolicitedReportDelay,
-			}, false /* v1Compatibiltiy */)
+			}, false /* v1Compatibility */)
 
 			v2Check := func(t *testing.T) {
 				t.Helper()
@@ -1253,7 +1253,7 @@ func TestMakeAllNonMemberAndInitialize(t *testing.T) {
 				}
 			}
 
-			// Should send the initial set of unsolcited V2 reports.
+			// Should send the initial set of unsolicited V2 reports.
 			mgp.initializeGroups()
 			for i := 0; i < unsolicitedTransmissionCount; i++ {
 				if test.v1 {
@@ -1393,7 +1393,7 @@ func TestGroupStateNonMember(t *testing.T) {
 }
 
 // TestMakeAllNonMemberCancelsDelayedReportJob tests that the delayed report job
-// is cancelled on MakeAllNonMember, otherwise the job will panic if the endpoint
+// is cancelled on MakeAllNonMember; otherwise, the job will panic if the endpoint
 // is disabled.
 func TestMakeAllNonMemberCancelsDelayedReportJob(t *testing.T) {
 	const maxRespCode = 1

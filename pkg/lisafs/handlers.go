@@ -90,7 +90,7 @@ func ErrorHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, 
 	return 0, unix.EINVAL
 }
 
-// MountHandler handles the Mount RPC. Note that there can not be concurrent
+// MountHandler handles the Mount RPC. Note that there cannot be concurrent
 // executions of MountHandler on a connection because the connection enforces
 // that Mount is the first message on the connection. Only after the connection
 // has been successfully mounted can other channels be created.
@@ -901,7 +901,7 @@ func LinkAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32,
 	}
 	defer targetFD.DecRef(nil)
 	if targetFD.IsDir() {
-		// Can not create hard link to directory.
+		// Cannot create hard link to directory.
 		return 0, unix.EPERM
 	}
 	var (
@@ -1339,7 +1339,7 @@ func renameAtCommon(c *Connection, comm Communicator, payloadLen uint32, oldDirF
 		}
 
 		// Successful, so update the node tree. Note that since we have global
-		// concurrency guarantee here, the node tree can not be modified
+		// concurrency guarantee here, the node tree cannot be modified
 		// concurrently in any way.
 
 		// First see if a file was deleted by being replaced by the rename. If so,

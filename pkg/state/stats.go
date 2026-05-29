@@ -74,7 +74,7 @@ func (s *Stats) fini(resolve func(id typeID) string) {
 func (s *Stats) sample(id typeID) {
 	now := time.Now()
 	if len(s.byType) <= int(id) {
-		// Allocate all the missing entries in one fell swoop.
+		// Allocate all the missing entries at one fell swoop.
 		s.byType = append(s.byType, make([]statEntry, 1+int(id)-len(s.byType))...)
 	}
 	s.byType[id].total += now.Sub(s.last)

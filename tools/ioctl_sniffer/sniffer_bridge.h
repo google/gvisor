@@ -22,7 +22,7 @@
 inline pid_t gettid() { return syscall(SYS_gettid); }
 
 // Write the ioctl proto to the log output file descriptor. Our format is:
-//   - 8 byte little endian uint64 containing the size of the proto.
+//   - 8 byte little-endian uint64 containing the size of the proto.
 //   - The proto bytes.
 // This should match the format in sniffer_bridge.go.
 void WriteIoctlProto(gvisor::Ioctl &ioctl);

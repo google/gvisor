@@ -53,7 +53,7 @@ PosixErrorOr<bool> HaveRawIPSocketCapability(int family, int protocol) {
       err, absl::StrCat("socket(", family == AF_INET ? "AF_INET" : "AF_INET6",
                         ", SOCK_RAW, ", protocol,
                         ") failed with "
-                        "non-EPERM error, can not determine "
+                        "non-EPERM error, cannot determine "
                         "CAP_NET_RAW capability"));
 }
 
@@ -75,7 +75,7 @@ PosixErrorOr<bool> HavePacketSocketCapability(int type, int protocol) {
       err, absl::StrCat(
                "socket(AF_PACKET, ", type, ", ", protocol,
                ") failed with "
-               "non-EPERM error, can not determine CAP_NET_RAW capability"));
+               "non-EPERM error, cannot determine CAP_NET_RAW capability"));
 }
 
 PosixErrorOr<bool> CanCreateUserNamespace() {

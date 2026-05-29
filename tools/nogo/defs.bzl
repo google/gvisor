@@ -407,7 +407,7 @@ def _nogo_test_impl(ctx):
     ), OutputGroupInfo(
         # Propagate the filtered filters, for consumption by
         # build tooling. Note that the build tooling typically
-        # pays attention to the mnemoic above, so this must be
+        # pays attention to the mnemonic above, so this must be
         # what is expected by the tooling.
         nogo_findings = depset(all_findings),
     )]

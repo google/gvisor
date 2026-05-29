@@ -155,7 +155,7 @@ TEST(SigaltstackTest, WalksOffBottom) {
   auto const cleanup_sigstack =
       ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaltstack(stack));
 
-  // Setup the handler: this must be for SIGSEGV, and it must allow proper
+  // Set up the handler: this must be for SIGSEGV, and it must allow proper
   // nesting (no signal mask, no defer) so that we can trigger multiple times.
   //
   // When we walk off the bottom of the signal stack and force signal delivery

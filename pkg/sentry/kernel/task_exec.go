@@ -543,7 +543,7 @@ func (t *Task) execveCredsMutexStartLock(tg *ThreadGroup) {
 	t.tg.signalHandlers.mu.Lock()
 	defer t.tg.signalHandlers.mu.Unlock()
 	if t.execveCredsMutexOwner != nil {
-		panic("Task already holds a execveCredsMutex lock")
+		panic("Task already holds an execveCredsMutex lock")
 	}
 	if t.killedLocked() {
 		return // No point in taking the lock when we'd give it up first thing come the next runState.
@@ -565,7 +565,7 @@ func (t *Task) execveCredsMutexStartLock(tg *ThreadGroup) {
 // execveCredsMutexStartLock() earlier.
 func (t *Task) execveCredsMutexUnlock() {
 	if t.execveCredsMutexOwner == nil {
-		panic("calling Task does not hold hold any execveCredsMutex lock")
+		panic("calling Task does not hold any execveCredsMutex lock")
 	}
 	tg := t.execveCredsMutexOwner
 
@@ -598,7 +598,7 @@ func (t *Task) execveCredsMutexStartLocked(tg *ThreadGroup, t2 *Task) bool {
 	if _, ok := t2.stop.(*execveCredsMutexStop); ok {
 		tg.execveCredsMutexLocked = true // tg.execveCredsMutexMu being locked is a precondition
 		if t2.execveCredsMutexOwner != nil {
-			panic("Task already holds a execveCredsMutex lock")
+			panic("Task already holds an execveCredsMutex lock")
 		}
 		// The write to t2.execveCredsMutexOwner is safe because we know t2 is in a stop and we hold
 		// the signalHandlers.mu lock, so it cannot exit the stop from under us.

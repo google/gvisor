@@ -33,11 +33,11 @@ type route struct {
 
 	// Route information is stored AS IS. If the data is a field stored by the
 	// kernel, it is stored in host endian. If the data is from the packet, it
-	// is stored in big endian (network order).
+	// is stored in big-endian (network order).
 	// The nft binary handles the necessary endian conversions from user input.
 	// For example, if the user wants to check if some kernel data == 123 vs
 	// payload data == 123, the nft binary passes host endian register data for
-	// the former and big endian register data for the latter.
+	// the former and big-endian register data for the latter.
 }
 
 // routeKey is the key that determines the specific route data to retrieve.
@@ -115,7 +115,7 @@ func (op route) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule)
 	switch op.key {
 
 	// Retrieves next hop IPv4 address (restricted to IPv4).
-	// Stores data in big endian network order.
+	// Stores data in big-endian network order.
 	case linux.NFT_RT_NEXTHOP4:
 		if pkt.NetworkProtocolNumber != header.IPv4ProtocolNumber {
 			break
@@ -123,7 +123,7 @@ func (op route) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule)
 		target = pkt.EgressRoute.NextHop.AsSlice()
 
 	// Retrieves next hop IPv6 address (restricted to IPv6).
-	// Stores data in big endian network order.
+	// Stores data in big-endian network order.
 	case linux.NFT_RT_NEXTHOP6:
 		if pkt.NetworkProtocolNumber != header.IPv6ProtocolNumber {
 			break

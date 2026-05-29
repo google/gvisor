@@ -78,7 +78,7 @@ func (e *Endpoint) Attach(dispatcher stack.NetworkDispatcher) {
 	e.dispatcher = dispatcher
 	e.mu.Unlock()
 	// If we're attaching to a valid dispatcher, pass embedder as the dispatcher
-	// to our child, otherwise detach the child by giving it a nil dispatcher.
+	// to our child; otherwise, detach the child by giving it a nil dispatcher.
 	var pass stack.NetworkDispatcher
 	if dispatcher != nil {
 		pass = e.embedder

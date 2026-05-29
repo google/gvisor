@@ -314,7 +314,7 @@ func (b NDPOptions) Iter(check bool) (NDPOptionIterator, error) {
 // Serialize serializes the provided list of NDP options into b.
 //
 // Note, b must be of sufficient size to hold all the options in s. See
-// NDPOptionsSerializer.Length for details on the getting the total size
+// NDPOptionsSerializer.Length for details on getting the total size
 // of a serialized NDPOptionsSerializer.
 //
 // Serialize may panic if b is not of sufficient size to hold all the options
@@ -586,7 +586,7 @@ func (o NDPPrefixInformation) String() string {
 // that are valid.
 //
 // Valid values are in the range [0, 128], but o may not always contain valid
-// values. It is up to the caller to valdiate the Prefix Information option.
+// values. It is up to the caller to validate the Prefix Information option.
 func (o NDPPrefixInformation) PrefixLength() uint8 {
 	return o[ndpPrefixInformationPrefixLengthOffset]
 }
@@ -806,7 +806,7 @@ func (o NDPDNSSearchList) Lifetime() time.Duration {
 // DomainNames returns a DNS search list of domain names.
 //
 // DomainNames will parse the backing buffer as outlined by RFC 1035 section
-// 3.1 and return a list of strings, with all domain names in lower case.
+// 3.1 and return a list of strings, with all domain names in lowercase.
 func (o NDPDNSSearchList) DomainNames() ([]string, error) {
 	var domainNames []string
 	return domainNames, o.iterDomainNames(func(domainName string) { domainNames = append(domainNames, domainName) })
@@ -907,7 +907,7 @@ func (o NDPDNSSearchList) iterDomainNames(fn func(string)) error {
 					}
 				}
 
-				// If b is an upper case character, make it lower case.
+				// If b is an uppercase character, make it lowercase.
 				if isUpperLetter(b) {
 					b = b - 'A' + 'a'
 				}

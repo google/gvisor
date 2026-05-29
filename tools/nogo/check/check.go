@@ -453,7 +453,7 @@ func (i *errorImporter) ImportFrom(path, dir string, mode types.ImportMode) (*ty
 // one analyzer. This may be expected if e.g. a binary is not provided but a
 // binaryAnalyzer is used.
 //
-// [1] bazelbuid/rules_go/tools/builders/nogo_main.go
+// [1] bazelbuild/rules_go/tools/builders/nogo_main.go
 // [2] golang.org/x/tools/go/checker/internal/checker
 func (i *importer) checkPackage(path string, srcs []string) (*types.Package, FindingSet, *facts.Package, error) {
 	// Load all source files.
@@ -856,7 +856,7 @@ func SplitStdPackages(srcs []string, srcRootPrefix string) (map[string][]string,
 	sources := make(map[string][]string)
 	for _, filename := range srcs {
 		if !strings.HasPrefix(filename, srcRootPrefix) {
-			continue // Superflouous file.
+			continue // Superfluous file.
 		}
 		d := path.Dir(filename)
 		if len(srcRootPrefix) >= len(d) {

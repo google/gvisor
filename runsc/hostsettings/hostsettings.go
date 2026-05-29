@@ -183,7 +183,7 @@ func (s pathSetting) Delta(conf *config.Config) (*Delta, error) {
 	}, nil
 }
 
-// checks checks the host settings and returns any deltas to do or errors
+// checks the host settings and returns any deltas to do or errors
 // occurred while checking.
 func check(conf *config.Config) ([]*Delta, []error) {
 	log.Debugf("Checking host settings")

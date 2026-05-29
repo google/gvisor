@@ -408,7 +408,7 @@ func (r *RouteTable) AddInstalledRoute(key stack.UnicastSourceAndMulticastDestin
 // RemoveInstalledRoute deletes any installed route that matches the provided
 // key.
 //
-// Returns true if a route was removed. Otherwise returns false.
+// Returns true if a route was removed. Otherwise, returns false.
 func (r *RouteTable) RemoveInstalledRoute(key stack.UnicastSourceAndMulticastDestination) bool {
 	r.installedMu.Lock()
 	defer r.installedMu.Unlock()
@@ -434,7 +434,7 @@ func (r *RouteTable) RemoveAllInstalledRoutes() {
 // GetLastUsedTimestamp returns a monotonic timestamp that represents the last
 // time the route that matches the provided key was used or updated.
 //
-// Returns true if a matching route was found. Otherwise returns false.
+// Returns true if a matching route was found. Otherwise, returns false.
 func (r *RouteTable) GetLastUsedTimestamp(key stack.UnicastSourceAndMulticastDestination) (tcpip.MonotonicTime, bool) {
 	r.installedMu.RLock()
 	defer r.installedMu.RUnlock()

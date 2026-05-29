@@ -149,7 +149,7 @@ func createAndInjectIGMPPacket(e *channel.Endpoint, igmpType header.IGMPType, ma
 	pkt.DecRef()
 }
 
-// TestIGMPV1Present tests the node's ability to fallback to V1 when a V1
+// TestIGMPV1Present tests the node's ability to fall back to V1 when a V1
 // router is detected. V1 present status is expected to be reset when the NIC
 // cycles.
 func TestIGMPV1Present(t *testing.T) {

@@ -47,7 +47,7 @@ func (f *futexWaitRestartBlock) Restart(t *kernel.Task) (uintptr, error) {
 // futexWaitAbsolute performs a FUTEX_WAIT_BITSET, blocking until the wait is
 // complete.
 //
-// The wait blocks forever if forever is true, otherwise it blocks until ts.
+// The wait blocks forever if forever is true; otherwise, it blocks until ts.
 //
 // If blocking is interrupted, the syscall is restarted with the original
 // arguments.
@@ -73,7 +73,7 @@ func futexWaitAbsolute(t *kernel.Task, clockRealtime bool, ts linux.Timespec, fo
 // futexWaitDuration performs a FUTEX_WAIT, blocking until the wait is
 // complete.
 //
-// The wait blocks forever if forever is true, otherwise is blocks for
+// The wait blocks forever if forever is true; otherwise, is blocks for
 // duration.
 //
 // If blocking is interrupted, forever determines how to restart the

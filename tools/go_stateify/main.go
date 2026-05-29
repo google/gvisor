@@ -129,7 +129,7 @@ func scanFields(ss *ast.StructType, fn scanFunctions) {
 
 // scanField scans a single struct field with a resolved name.
 func scanField(name string, field *ast.Field, fn scanFunctions) {
-	// Is this a anonymous struct? If yes, then continue the
+	// Is this an anonymous struct? If yes, then continue the
 	// recursion with the given prefix. We don't pay attention to
 	// any tags on the top-level struct field.
 	tag := extractStateTag(field.Tag)

@@ -489,7 +489,7 @@ type PacketHeader struct {
 	typ headerType
 }
 
-// View returns an caller-owned copy of the underlying storage of h as a
+// View returns a caller-owned copy of the underlying storage of h as a
 // *buffer.View.
 func (h PacketHeader) View() *buffer.View {
 	view := h.pk.headerView(h.typ)

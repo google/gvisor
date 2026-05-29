@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package testsuite provides a integration testing suite for lisafs.
+// Package testsuite provides an integration testing suite for lisafs.
 // These tests are intended for servers serving the local filesystem.
 package testsuite
 

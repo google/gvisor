@@ -21,7 +21,7 @@ import (
 	"testing"
 )
 
-// makeFatureSet creates a new FeatureSet.
+// makeFeatureSet creates a new FeatureSet.
 func makeFeatureSet(features ...Feature) FeatureSet {
 	s := make(Static)
 	for _, f := range features {

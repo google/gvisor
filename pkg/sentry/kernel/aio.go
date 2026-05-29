@@ -18,7 +18,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 )
 
-// AIOCallback is an function that does asynchronous I/O on behalf of a task.
+// AIOCallback is a function that does asynchronous I/O on behalf of a task.
 type AIOCallback func(context.Context)
 
 // QueueAIO queues an AIOCallback which will be run asynchronously.

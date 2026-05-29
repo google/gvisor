@@ -1132,7 +1132,7 @@ func TestFilteringEchoPacketsWithLocalForwarding(t *testing.T) {
 						t.Errorf("got ip1Stats.ValidPacketsReceived.Value() = %d, want = 1", got)
 					}
 
-					expectedIP1StatIPTablesForawrdDropped := uint64(0)
+					expectedIP1StatIPTablesForwardDropped := uint64(0)
 					expectedIP1StatIPTablesOutputDropped := uint64(0)
 					expectedIP1StatPacketsSent := uint64(0)
 					expectedIP2StatValidPacketsReceived := uint64(1)
@@ -1143,7 +1143,7 @@ func TestFilteringEchoPacketsWithLocalForwarding(t *testing.T) {
 					case echoRequestDroppedAtInput:
 						expectedIP2StatIPTablesInputDropped = 1
 					case echoRequestDroppedAtForward:
-						expectedIP1StatIPTablesForawrdDropped = 1
+						expectedIP1StatIPTablesForwardDropped = 1
 						expectedIP2StatValidPacketsReceived = 0
 					case echoReplyDropped:
 						expectedIP1StatIPTablesOutputDropped = 1
@@ -1151,8 +1151,8 @@ func TestFilteringEchoPacketsWithLocalForwarding(t *testing.T) {
 						t.Fatalf("unhandled expectResult = %d", subTest.expectResult)
 					}
 
-					if got := ip1Stats.IPTablesForwardDropped.Value(); got != expectedIP1StatIPTablesForawrdDropped {
-						t.Errorf("got ip1Stats.IPTablesForwardDropped.Value() = %d, want = %d", got, expectedIP1StatIPTablesForawrdDropped)
+					if got := ip1Stats.IPTablesForwardDropped.Value(); got != expectedIP1StatIPTablesForwardDropped {
+						t.Errorf("got ip1Stats.IPTablesForwardDropped.Value() = %d, want = %d", got, expectedIP1StatIPTablesForwardDropped)
 					}
 					if got := ip1Stats.IPTablesOutputDropped.Value(); got != expectedIP1StatIPTablesOutputDropped {
 						t.Errorf("got ip1Stats.IPTablesOutputDropped.Value() = %d, want = %d", got, expectedIP1StatIPTablesOutputDropped)

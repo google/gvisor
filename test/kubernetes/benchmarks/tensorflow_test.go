@@ -23,16 +23,16 @@ import (
 	"gvisor.dev/gvisor/test/kubernetes/testcluster"
 )
 
-func TestTensorflowOnCPU(t *testing.T) {
+func TestTensorFlowOnCPU(t *testing.T) {
 	ctx := context.Background()
 	k8sCtx, err := kubectlctx.New(ctx)
 	if err != nil {
 		t.Fatalf("Failed to get kubernetes context: %v", err)
 	}
 	k8sctx.ForEachCluster(ctx, t, k8sCtx, func(cluster *testcluster.TestCluster) {
-		t.Run("TensorflowOnCPU", func(t *testing.T) {
+		t.Run("TensorFlowOnCPU", func(t *testing.T) {
 			t.Parallel()
-			RunTensorflowOnCPU(ctx, t, k8sCtx, cluster)
+			RunTensorFlowOnCPU(ctx, t, k8sCtx, cluster)
 		})
 	})
 }

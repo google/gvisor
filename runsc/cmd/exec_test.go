@@ -187,7 +187,7 @@ func TestJSONArgs(t *testing.T) {
 			},
 		},
 		{
-			name: "capabilities fallback to spec",
+			name: "capabilities fall back to spec",
 			ex:   Exec{},
 			spec: specs.Process{
 				Capabilities: &specs.LinuxCapabilities{

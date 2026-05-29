@@ -21,7 +21,7 @@ import (
 )
 
 // CrossGoroutineRWMutex is equivalent to RWMutex, but it need not be unlocked
-// by a the same goroutine that locked the mutex.
+// by the same goroutine that locked the mutex.
 type CrossGoroutineRWMutex struct {
 	// w is held if there are pending writers
 	//

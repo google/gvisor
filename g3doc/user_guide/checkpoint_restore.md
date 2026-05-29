@@ -163,9 +163,9 @@ stabilize the list of CPU features that will be exposed to applications in the
 sandbox, which makes it possible to checkpoint and restore among machines with
 different set of CPU features.
 
-CPU features in the annotation should be comma-separated. A comprehensive list
-of all supported CPU features can be found
-[here](https://github.com/google/gvisor/blob/61f4c77225e1f5128cad8982f3af0d4278494bd4/pkg/cpuid/features_amd64.go#L457).
+CPU features in the annotation should be comma-separated. There is a [comprehensive list
+of all supported CPU
+features](https://github.com/google/gvisor/blob/61f4c77225e1f5128cad8982f3af0d4278494bd4/pkg/cpuid/features_amd64.go#L457).
 
 The runsc command `runsc cpu-features` lists all CPU features on the current
 machine.

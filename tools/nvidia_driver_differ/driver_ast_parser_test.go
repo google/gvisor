@@ -66,7 +66,7 @@ func TestParser(t *testing.T) {
 		},
 	}
 	if err := json.NewEncoder(inputFile).Encode(&input); err != nil {
-		t.Fatalf("failed to write input input file: %v", err)
+		t.Fatalf("failed to write input file: %v", err)
 	}
 	inputFile.Sync()
 

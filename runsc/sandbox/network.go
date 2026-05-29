@@ -504,7 +504,7 @@ func createSocket(iface net.Interface, ifaceLink netlink.Link, enableGSO bool) (
 
 	// Use SO_RCVBUFFORCE/SO_SNDBUFFORCE because on linux the receive/send buffer
 	// for an AF_PACKET socket is capped by "net.core.rmem_max/wmem_max".
-	// wmem_max/rmem_max default to a unusually low value of 208KB. This is too
+	// wmem_max/rmem_max default to an unusually low value of 208KB. This is too
 	// low for gVisor to be able to receive packets at high throughputs without
 	// incurring packet drops.
 	const bufSize = 4 << 20 // 4MB.
@@ -578,7 +578,7 @@ func loopbackLink(conf *config.Config, iface net.Interface, addrs []net.Addr, di
 }
 
 // routesForIface iterates over all routes for the given interface and converts
-// them to boot.Routes. It also returns the a default v4/v6 route if found.
+// them to boot.Routes. It also returns the default v4/v6 route if found.
 func routesForIface(iface net.Interface, disableIPv6 bool) ([]boot.Route, *boot.Route, *boot.Route, error) {
 	link, err := netlink.LinkByIndex(iface.Index)
 	if err != nil {
@@ -696,7 +696,7 @@ func pcapAndNAT(args *boot.CreateLinksAndRoutesArgs, conf *config.Config) error 
 	return nil
 }
 
-// The below is a work around to generate iptables-legacy rules on machines
+// The below is a workaround to generate iptables-legacy rules on machines
 // that use iptables-nftables. The logic goes something like this:
 //
 //             start

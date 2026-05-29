@@ -25,7 +25,7 @@ comparing versions `550.90.07` and `560.31.02` can be done like so:
 make run TARGETS=//tools/nvidia_driver_differ:run_differ ARGS="--base 550.90.07 --next 560.31.02"
 ```
 
-This will fetch the corresponding source code from Github, parse it using Clang,
+This will fetch the corresponding source code from GitHub, parse it using Clang,
 and then compare the definitions that were found. Any differences will be
 printed to standard output. These differences can be additions of new fields to
 structs, or changes to the name or type of existing fields. For example:

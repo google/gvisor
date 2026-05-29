@@ -457,8 +457,8 @@ func (e *Endpoint) AcquireContextForWrite(opts tcpip.WriteOptions) (WriteContext
 		// interface/address used to send the packet so we need to construct
 		// a new route instead of using the connected route.
 		//
-		// Construct a destination matching the remote the endpoint is connected
-		// to.
+		// Construct a destination matching the remote to which the endpoint
+		// is connected.
 		to = &tcpip.FullAddress{
 			// RegisterNICID is set when the endpoint is connected. It is usually
 			// only set for link-local addresses or multicast addresses if the
@@ -731,7 +731,7 @@ func (e *Endpoint) ConnectAndThen(addr tcpip.FullAddress, f func(netProto tcpip.
 	return nil
 }
 
-// Shutdown shutsdown the endpoint.
+// Shutdown shuts down the endpoint.
 func (e *Endpoint) Shutdown() tcpip.Error {
 	e.mu.Lock()
 	defer e.mu.Unlock()

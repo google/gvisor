@@ -180,7 +180,7 @@ type subprocess struct {
 	// user mode.
 	contextQueue *contextQueue
 
-	// dead indicates whether the subprocess is alive or not.
+	// dead indicates whether or not the subprocess is alive.
 	dead atomicbitops.Bool
 }
 
@@ -338,7 +338,7 @@ func (s *subprocess) handlePtraceSyscallRequest(req any) {
 // The create function will be called in the latter case, which is guaranteed
 // to happen with the runtime thread locked.
 //
-// seccompNotify indicates a ways of comunications with syscall threads.
+// seccompNotify indicates a ways of communications with syscall threads.
 // If it is false, futex-s are used. Otherwise, seccomp-unotify is used.
 // seccomp-unotify can't be used for the source pool process, because it is a
 // parent of all other stub processes, but only one filter can be installed

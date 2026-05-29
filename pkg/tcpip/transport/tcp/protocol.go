@@ -160,7 +160,7 @@ func (p *protocol) QueuePacket(ep stack.TransportEndpoint, id stack.TransportEnd
 //
 // RFC 793, page 36, states that "If the connection does not exist (CLOSED) then
 // a reset is sent in response to any incoming segment except another reset. In
-// particular, SYNs addressed to a non-existent connection are rejected by this
+// particular, SYNs addressed to a nonexistent connection are rejected by this
 // means."
 func (p *protocol) HandleUnknownDestinationPacket(id stack.TransportEndpointID, pkt *stack.PacketBuffer) stack.UnknownDestinationPacketDisposition {
 	s, err := newIncomingSegment(id, p.stack.Clock(), pkt)
@@ -217,11 +217,11 @@ func replyWithReset(st *stack.Stack, s *segment, tos, ipv4TTL uint8, ipv6HopLimi
 	// As per RFC 793 page 35 (Reset Generation)
 	//   1.  If the connection does not exist (CLOSED) then a reset is sent
 	//   in response to any incoming segment except another reset.  In
-	//   particular, SYNs addressed to a non-existent connection are rejected
+	//   particular, SYNs addressed to a nonexistent connection are rejected
 	//   by this means.
 
 	//   If the incoming segment has an ACK field, the reset takes its
-	//   sequence number from the ACK field of the segment, otherwise the
+	//   sequence number from the ACK field of the segment; otherwise, the
 	//   reset has sequence number zero and the ACK field is set to the sum
 	//   of the sequence number and segment length of the incoming segment.
 	//   The connection remains in the CLOSED state.

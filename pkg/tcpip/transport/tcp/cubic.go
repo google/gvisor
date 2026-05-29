@@ -270,7 +270,7 @@ func (c *cubicState) HandleLossDetected() {
 	c.reduceSlowStartThreshold()
 }
 
-// HandleRTOExpired implements congestionContrl.HandleRTOExpired.
+// HandleRTOExpired implements congestionControl.HandleRTOExpired.
 //
 // +checklocks:c.s.ep.mu
 func (c *cubicState) HandleRTOExpired() {

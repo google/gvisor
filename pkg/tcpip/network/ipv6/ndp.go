@@ -627,7 +627,7 @@ type slaacPrefixState struct {
 	// The number of times an address has been generated and added to the IPv6
 	// endpoint.
 	//
-	// Addresses may be regenerated in reseponse to a DAD conflicts.
+	// Addresses may be regenerated in response to a DAD conflicts.
 	generationAttempts uint8
 
 	// The maximum number of times to attempt regeneration of a SLAAC address
@@ -804,7 +804,7 @@ func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 		case header.NDPPrefixInformation:
 			prefix := opt.Subnet()
 
-			// Is the prefix a link-local?
+			// Is the prefix link-local?
 			if header.IsV6LinkLocalUnicastAddress(prefix.ID()) {
 				// ...Yes, skip as per RFC 4861 section 6.3.4,
 				// and RFC 4862 section 5.5.3.b (for SLAAC).
@@ -929,7 +929,7 @@ func (ndp *ndpState) handleOffLinkRouteDiscovery(route offLinkRoute, lifetime ti
 }
 
 // rememberOnLinkPrefix remembers a newly discovered on-link prefix with IPv6
-// address with prefix prefix with lifetime l.
+// address with prefix with lifetime l.
 //
 // The prefix identified by prefix MUST NOT already be known.
 //
@@ -1088,7 +1088,7 @@ func (ndp *ndpState) doSLAAC(prefix tcpip.Subnet, pl, vl time.Duration) {
 
 	// Make sure the prefix is valid (as far as its length is concerned) to
 	// generate a valid IPv6 address from an interface identifier (IID), as
-	// per RFC 4862 sectiion 5.5.3.d.
+	// per RFC 4862 section 5.5.3.d.
 	if prefix.Prefix() != validPrefixLenForAutoGen {
 		return
 	}
@@ -1136,7 +1136,7 @@ func (ndp *ndpState) doSLAAC(prefix tcpip.Subnet, pl, vl time.Duration) {
 		return
 	}
 
-	// Setup the initial jobs to deprecate and invalidate prefix.
+	// Set up the initial jobs to deprecate and invalidate prefix.
 
 	if pl < header.NDPInfiniteLifetime && pl != 0 {
 		state.deprecationJob.Schedule(pl)
@@ -1234,7 +1234,7 @@ func (ndp *ndpState) generateSLAACAddr(prefix tcpip.Subnet, state *slaacPrefixSt
 
 			// Generate an address within prefix from the modified EUI-64 of ndp's
 			// NIC's Ethernet MAC address.
-			header.EthernetAdddressToModifiedEUI64IntoBuf(linkAddr, addrBytes[header.IIDOffsetInIPv6Address:])
+			header.EthernetAddressToModifiedEUI64IntoBuf(linkAddr, addrBytes[header.IIDOffsetInIPv6Address:])
 		} else {
 			// We have no way to regenerate an address in response to an address
 			// conflict when addresses are not generated with opaque IIDs.
@@ -1379,7 +1379,7 @@ func (ndp *ndpState) generateTempSLAACAddr(prefix tcpip.Subnet, prefixState *sla
 		}
 	}
 
-	// As per RFC RFC 4941 section 3.3 step 5, we MUST NOT create a temporary
+	// As per RFC 4941 section 3.3 step 5, we MUST NOT create a temporary
 	// address with a zero preferred lifetime. The checks above ensure this
 	// so we know the address is not deprecated.
 	addressEndpoint := ndp.addAndAcquireSLAACAddr(generatedAddr, true /* temporary */, stack.AddressLifetimes{

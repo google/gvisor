@@ -453,7 +453,7 @@ func TestGetLastUsedTimestampWithNoMatchingRoute(t *testing.T) {
 	}
 
 	if _, found := table.GetLastUsedTimestamp(defaultRouteKey); found {
-		t.Errorf("table.GetLastUsedTimetsamp(%#v) = (_, true), want = (_, false)", defaultRouteKey)
+		t.Errorf("table.GetLastUsedTimestamp(%#v) = (_, true), want = (_, false)", defaultRouteKey)
 	}
 }
 

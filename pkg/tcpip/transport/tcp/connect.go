@@ -118,7 +118,7 @@ type handshake struct {
 	sampleRTTWithTSOnly bool
 
 	// retransmitTimer is used to retransmit SYN/SYN-ACK with exponential backoff
-	// till handshake is either completed or timesout.
+	// till handshake is either completed or times out.
 	retransmitTimer *backoffTimer `state:"nosave"`
 }
 

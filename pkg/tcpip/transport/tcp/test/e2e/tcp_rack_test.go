@@ -531,8 +531,8 @@ func TestRACKDetectDSACK(t *testing.T) {
 	}
 }
 
-// TestRACKDetectDSACKWithOutOfOrder tests that RACK detects DSACK with out of
-// order segments.
+// TestRACKDetectDSACKWithOutOfOrder tests that RACK detects DSACK with
+// out-of-order segments.
 // See: https://tools.ietf.org/html/rfc2883#section-4.1.2.
 func TestRACKDetectDSACKWithOutOfOrder(t *testing.T) {
 	probeDone := make(chan int)

@@ -115,7 +115,7 @@ func (fs *filesystem) newSysNetDir(ctx context.Context, root *auth.Credentials, 
 				"ip_no_pmtu_disc":         fs.newInode(ctx, root, 0444, newStaticFile("1")),
 
 				// tcp_allowed_congestion_control tell the user what they are able to
-				// do as an unprivledged process so we leave it empty.
+				// do as an unprivileged process so we leave it empty.
 				"tcp_allowed_congestion_control":   fs.newInode(ctx, root, 0444, newStaticFile("")),
 				"tcp_available_congestion_control": fs.newInode(ctx, root, 0444, newStaticFile("reno")),
 				"tcp_congestion_control":           fs.newInode(ctx, root, 0444, newStaticFile("reno")),

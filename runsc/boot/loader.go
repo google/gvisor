@@ -357,7 +357,7 @@ type FDMapping struct {
 
 // Args are the arguments for New().
 type Args struct {
-	// Id is the sandbox ID.
+	// ID is the sandbox ID.
 	ID string
 	// Spec is the sandbox specification.
 	Spec *specs.Spec
@@ -558,7 +558,7 @@ func New(args Args) (*Loader, error) {
 	}
 
 	// Make host FDs stable between invocations. Host FDs must map to the exact
-	// same number when the sandbox is restored. Otherwise the wrong FD will be
+	// same number when the sandbox is restored. Otherwise, the wrong FD will be
 	// used.
 	newfd := startingStdioFD
 
@@ -1123,7 +1123,7 @@ func (l *Loader) run() error {
 			panic("Signal-induced panic")
 		}
 
-		// Otherwise forward to root container.
+		// Otherwise, forward to root container.
 		deliveryMode := DeliverToProcess
 		if l.root.spec.Process.Terminal {
 			// Since we are running with a console, we should forward the signal to
@@ -1568,7 +1568,7 @@ func (l *Loader) waitContainer(cid string, waitStatus *uint32) error {
 			// The container has restored, we *should* have found the init process...
 			return fmt.Errorf("could not find init process of restored container %q in state %q", cid, state)
 		case restoreFailed:
-			// If restore failed, we should return the a non-zero exit status here to
+			// If restore failed, we should return a non-zero exit status here to
 			// indicate that the container failed and transition to "stopped" state.
 			log.Warningf("Restore failed, returning from waitContainer with non-zero exit status")
 			*waitStatus = 1
@@ -1811,7 +1811,7 @@ func (l *Loader) signal(cid string, pid, signo int32, mode SignalDeliveryMode) e
 		return nil
 
 	case DeliverToForegroundProcessGroup:
-		if err := l.signalForegrondProcessGroup(cid, kernel.ThreadID(pid), signo); err != nil {
+		if err := l.signalForegroundProcessGroup(cid, kernel.ThreadID(pid), signo); err != nil {
 			return fmt.Errorf("signaling foreground process group in container %q PID %d: %w", cid, pid, err)
 		}
 		return nil
@@ -1865,9 +1865,9 @@ func (l *Loader) signalProcess(cid string, tgid kernel.ThreadID, signo int32) er
 	return l.k.SendExternalSignalThreadGroup(tg, &linux.SignalInfo{Signo: signo})
 }
 
-// signalForegrondProcessGroup looks up foreground process group from the TTY
+// signalForegroundProcessGroup looks up foreground process group from the TTY
 // for the given "tgid" inside container "cid", and send the signal to it.
-func (l *Loader) signalForegrondProcessGroup(cid string, tgid kernel.ThreadID, signo int32) error {
+func (l *Loader) signalForegroundProcessGroup(cid string, tgid kernel.ThreadID, signo int32) error {
 	l.mu.Lock()
 	tg, err := l.tryThreadGroupFromIDLocked(execID{cid: cid, pid: tgid})
 	if err != nil {

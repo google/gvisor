@@ -643,7 +643,7 @@ func (ct *ConnTrack) bucketWithTableLength(id tupleID, tableLength int) int {
 //     Specifically, it traverses len(ct.buckets)/fractionPerReaping.
 //   - After reaping, reapUnused decides when it should next run based on the
 //     ratio of expired connections to examined connections. If the ratio is
-//     greater than maxExpiredPct, it schedules the next run quickly. Otherwise it
+//     greater than maxExpiredPct, it schedules the next run quickly. Otherwise, it
 //     slightly increases the interval between runs.
 //   - maxFullTraversal caps the time it takes to traverse the entire table.
 //

@@ -314,7 +314,7 @@ func max(a, b int) int {
 	return b
 }
 
-func checkFragements(t *testing.T, ep *channel.Endpoint, expectedFragments []fragmentInfo, requestPkt *stack.PacketBuffer) {
+func checkFragments(t *testing.T, ep *channel.Endpoint, expectedFragments []fragmentInfo, requestPkt *stack.PacketBuffer) {
 	t.Helper()
 	var fragmentedPackets []*stack.PacketBuffer
 	for i := 0; i < len(expectedFragments); i++ {
@@ -783,7 +783,7 @@ func TestFragmentForwarding(t *testing.T) {
 			}
 
 			if len(test.expectedFragmentsForwarded) > 0 {
-				checkFragements(t, outgoingEndpoint, test.expectedFragmentsForwarded, requestPkt)
+				checkFragments(t, outgoingEndpoint, test.expectedFragmentsForwarded, requestPkt)
 			} else {
 				if reply := outgoingEndpoint.Read(); reply != nil {
 					t.Errorf("Expected no ICMP Echo packet through outgoing NIC, instead found: %#v", reply)
@@ -932,7 +932,7 @@ func TestMulticastFragmentForwarding(t *testing.T) {
 			}
 
 			if len(test.expectedFragmentsForwarded) > 0 {
-				checkFragements(t, outgoingEndpoint, test.expectedFragmentsForwarded, requestPkt)
+				checkFragments(t, outgoingEndpoint, test.expectedFragmentsForwarded, requestPkt)
 			} else {
 				if reply := outgoingEndpoint.Read(); reply != nil {
 					t.Errorf("Expected no ICMP Echo packet through outgoing NIC, instead found: %#v", reply)
@@ -3332,7 +3332,7 @@ func TestReceiveFragments(t *testing.T) {
 				if err != nil {
 					t.Fatalf("(i=%d) epRaw.Read: %s", i, err)
 				}
-				// Reassambly does not take care of checksum. Here we write our own
+				// Reassembly does not take care of checksum. Here we write our own
 				// check routine instead of using checker.IPv4.
 				ip := header.IPv4(buf.Bytes())
 				for _, check := range []checker.NetworkChecker{

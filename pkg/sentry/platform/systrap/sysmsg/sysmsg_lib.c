@@ -335,7 +335,7 @@ struct thread_context *get_context(struct sysmsg *sysmsg) {
     atomic_sub(&queue->num_spinning_threads, 1);
     atomic_store(&sysmsg->state, THREAD_STATE_ASLEEP);
     uint32_t nr_active_contexts = atomic_load(&queue->num_active_contexts);
-    // We have to make another attempt to get a context here to prevent TOCTTOU
+    // We have to make another attempt to get a context here to prevent TOCTOU
     // races with waitOnState and kickSysmsgThread. There are two assumptions:
     // * If the queue isn't empty, one or more threads have to be active.
     // * A new thread isn't kicked, if the number of active threads are not less

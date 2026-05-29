@@ -262,7 +262,7 @@ func CanActAsOwner(creds *auth.Credentials, kuid auth.KUID) bool {
 }
 
 // CheckLimit enforces file size rlimits. It returns error if the write
-// operation must not proceed. Otherwise it returns the max length allowed to
+// operation must not proceed. Otherwise, it returns the max length allowed to
 // without violating the limit.
 func CheckLimit(ctx context.Context, offset, size int64) (int64, error) {
 	fileSizeLimit := limits.FromContextOrDie(ctx).Get(limits.FileSize).Cur

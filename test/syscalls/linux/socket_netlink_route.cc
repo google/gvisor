@@ -2249,7 +2249,7 @@ TEST(NetlinkRouteTest, LinkMulticastGroupNamespaced) {
 
   constexpr int kPollTimeoutMs = 1000;
   bool got_msg = false;
-  // We expect an RTM_DELINK message for veth2 in the outer netns socket.
+  // We expect an RTM_DELLINK message for veth2 in the outer netns socket.
   // But an RTM_NEWLINK is also expected for veth1 because its peer was moved.
   // Hence the two attempts. N.B. gVisor does not send the RTM_NEWLINK because
   // IFLA_LINK_NETNSID is not yet supported.
@@ -2466,7 +2466,7 @@ TEST(NetlinkRouteTest, LinkMulticastGroupUserToUserSend) {
       /*expect_nlmsgerr=*/true));
   ASSERT_TRUE(got_msg) << "Did not get a response from the kernel.";
 
-  // Now that we know the kernel has processed the message, setup a cleanup.
+  // Now that we know the kernel has processed the message, set up a cleanup.
   auto restore_mtu = Cleanup([&]() {
     MtuRequest mtu_request = GetMtuRequest(link, RTM_SETLINK, link.mtu);
     ASSERT_NO_ERRNO(NetlinkRequestAckOrError(nlsk_send, kSeq, &mtu_request,

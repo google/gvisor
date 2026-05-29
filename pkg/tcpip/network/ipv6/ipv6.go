@@ -569,7 +569,7 @@ func (e *endpoint) Enable() tcpip.Error {
 		return nil
 	}
 
-	// Perform DAD on the all the unicast IPv6 endpoints that are in the permanent
+	// Perform DAD on all the unicast IPv6 endpoints that are in the permanent
 	// state.
 	//
 	// Addresses may have already completed DAD but in the time since the endpoint
@@ -1397,9 +1397,9 @@ func (e *endpoint) handleValidatedPacket(h header.IPv6, pkt *stack.PacketBuffer,
 		// RFC 1812 section 5.2.3 for details regarding the forwarding/local
 		// delivery decision.
 
-		multicastForwading := e.MulticastForwarding() && e.protocol.multicastForwarding()
+		multicastForwarding := e.MulticastForwarding() && e.protocol.multicastForwarding()
 
-		if multicastForwading {
+		if multicastForwarding {
 			e.handleForwardingError(e.forwardMulticastPacket(h, pkt))
 		}
 
@@ -1408,7 +1408,7 @@ func (e *endpoint) handleValidatedPacket(h header.IPv6, pkt *stack.PacketBuffer,
 			return
 		}
 
-		if !multicastForwading {
+		if !multicastForwarding {
 			// Only consider the destination address invalid if we didn't attempt to
 			// forward the pkt and it was not delivered locally.
 			stats.InvalidDestinationAddressesReceived.Increment()

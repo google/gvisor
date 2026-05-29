@@ -32,7 +32,7 @@ import (
 
 // existingPMAsLocked checks that pmas exist for all addresses in ar, and
 // support access of type (at, ignorePermissions). If so, it returns an
-// iterator to the pma containing ar.Start. Otherwise it returns a terminal
+// iterator to the pma containing ar.Start. Otherwise, it returns a terminal
 // iterator.
 //
 // Preconditions:
@@ -200,7 +200,7 @@ func (mm *MemoryManager) getDefaultAllocationDirection() pgalloc.Direction {
 func (mm *MemoryManager) getAllocationDirection(ar hostarch.AddrRange, vma *vma) pgalloc.Direction {
 	lastFault := atomic.LoadUintptr(&vma.lastFault)
 	arStart := uintptr(ar.Start)
-	// If this VMA does not have last page fault or last page fault equals to arStart,
+	// If this VMA does not have last page fault or last page fault equals arStart,
 	// use the default allocation direction.
 	if lastFault == 0 || lastFault == arStart {
 		return mm.getDefaultAllocationDirection()

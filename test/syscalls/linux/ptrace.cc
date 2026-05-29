@@ -2464,7 +2464,7 @@ TEST(PtraceTest, ExecvePtraceLockStress) {
   }
 
   TEST_PCHECK(write(sockets[1], "x", 1) == 1);  // Ask the tracee to exec.
-  // The tracee was able to get the exceveCredsMutex lock, proving that the
+  // The tracee was able to get the execveCredsMutex lock, proving that the
   // last ptracer released it correctly.
   EXPECT_THAT(waitpid(tracee_pid, nullptr, 0), SyscallSucceeds());
 }

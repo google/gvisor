@@ -489,7 +489,7 @@ TEST_P(CookedPacketTest, ReceiveOutbound) {
   //
   // NOTE: We just want to pick an IP that is non-local to avoid having to
   // handle ARP as this should cause the UDP packet to be sent to the default
-  // gateway configured for the system under test. Otherwise the only packet we
+  // gateway configured for the system under test. Otherwise, the only packet we
   // will see is the ARP query unless we picked an IP which will actually
   // resolve. The test is a bit brittle but this was the best compromise for
   // now.

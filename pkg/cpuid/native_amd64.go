@@ -155,7 +155,7 @@ func (*Native) Query(in In) Out {
 	return Out{} // All zeros.
 }
 
-// query is a internal wrapper.
+// query is an internal wrapper.
 //
 //go:nosplit
 func (fs FeatureSet) query(fn cpuidFunction) (uint32, uint32, uint32, uint32) {

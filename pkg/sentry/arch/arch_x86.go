@@ -92,7 +92,7 @@ const (
 // Segment selectors. See arch/x86/include/asm/segment.h.
 const (
 	userCS   = 0x33 // guest ring 3 code selector
-	user32CS = 0x23 // guest ring 3 32 bit code selector
+	user32CS = 0x23 // guest ring 3 32-bit code selector
 	userDS   = 0x2b // guest ring 3 data selector
 
 	_FS_TLS_SEL = 0x63 // Linux FS thread-local storage selector

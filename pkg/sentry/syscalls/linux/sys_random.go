@@ -35,7 +35,7 @@ const (
 // GetRandom implements the linux syscall getrandom(2).
 //
 // In a multi-tenant/shared environment, the only valid implementation is to
-// fetch data from the urandom pool, otherwise starvation attacks become
+// fetch data from the urandom pool; otherwise, starvation attacks become
 // possible. The urandom pool is also expected to have plenty of entropy, thus
 // the GRND_RANDOM and GRND_INSECURE flags are ignored. The GRND_NONBLOCK flag
 // does not apply, as the pool will already be initialized.

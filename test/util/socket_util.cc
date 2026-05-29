@@ -718,7 +718,7 @@ PosixErrorOr<int> TryPortAvailable(int port, AddressFamily family,
       bind(fd.get(), AsSockAddr(&storage), storage_size));
 
   // If the user specified 0 as the port, we will return the port that the
-  // kernel gave us, otherwise we will validate that this socket bound to the
+  // kernel gave us; otherwise, we will validate that this socket bound to the
   // requested port.
   sockaddr_storage bound_storage = {};
   socklen_t bound_storage_size = sizeof(bound_storage);

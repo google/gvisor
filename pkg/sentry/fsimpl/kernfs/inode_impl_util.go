@@ -109,7 +109,7 @@ func (InodeNotDirectory) NewDir(context.Context, string, vfs.MkdirOptions) (Inod
 	panic("NewDir called on non-directory inode")
 }
 
-// NewLink implements Inode.NewLinkink.
+// NewLink implements Inode.NewLink.
 func (InodeNotDirectory) NewLink(context.Context, string, Inode) (Inode, error) {
 	panic("NewLink called on non-directory inode")
 }
@@ -696,7 +696,7 @@ func (o *OrderedChildren) Rename(ctx context.Context, oldname, newname string, c
 // iterator is valid until the caller releases o.mu. Returns nil if the
 // requested index falls out of bounds.
 //
-// Preconditon: Caller must hold o.mu for reading.
+// Precondition: Caller must hold o.mu for reading.
 func (o *OrderedChildren) nthLocked(i int64) *slot {
 	for it := o.order.Front(); it != nil && i >= 0; it = it.Next() {
 		if i == 0 {

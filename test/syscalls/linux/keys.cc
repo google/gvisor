@@ -274,7 +274,7 @@ TEST(KeysTest, GetKeyringThatDoesNotExist) {
       break;
     }
   }
-  EXPECT_TRUE(found_non_existent_key) << "Did not find any non-existent key ID";
+  EXPECT_TRUE(found_non_existent_key) << "Did not find any nonexistent key ID";
 }
 
 TEST(KeysTest, DescribeKeyWithNullBuffer) {
@@ -557,7 +557,7 @@ TEST(KeysTest, DefaultKeyPermissions) {
   EXPECT_EQ(default_named_session_key.perm & key_pos_all, key_pos_all);
 
   // User permissions:
-  // These differ depending on whether the keyring is named or not.
+  // These differ depending on whether or not the keyring is named.
   EXPECT_EQ(default_unnamed_session_key.perm & KEY_USR_VIEW, KEY_USR_VIEW);
   EXPECT_EQ(default_unnamed_session_key.perm & KEY_USR_READ, KEY_USR_READ);
   EXPECT_EQ(default_unnamed_session_key.perm & KEY_USR_WRITE, 0);

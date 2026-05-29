@@ -909,8 +909,8 @@ func TestExec(t *testing.T) {
 				})
 			}
 
-			// Test for exec failure with an non-existent file.
-			t.Run("nonexist", func(t *testing.T) {
+			// Test for exec failure with a nonexistent file.
+			t.Run("nonexistent", func(t *testing.T) {
 				// b/179114837 found by Syzkaller that causes nil pointer panic when
 				// trying to dec-ref an unix socket FD.
 				fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
@@ -920,12 +920,12 @@ func TestExec(t *testing.T) {
 				defer unix.Close(fds[0])
 
 				_, err = cont.executeSync(conf, &control.ExecArgs{
-					Argv: []string{"/nonexist"},
+					Argv: []string{"/nonexistent"},
 					FilePayload: control.NewFilePayload(map[int]*os.File{
 						0: os.NewFile(uintptr(fds[1]), "sock"),
 					}, nil),
 				})
-				want := "failed to load /nonexist"
+				want := "failed to load /nonexistent"
 				if err == nil || !strings.Contains(err.Error(), want) {
 					t.Errorf("executeSync: want err containing %q; got err = %q", want, err)
 				}
@@ -1694,7 +1694,7 @@ func TestPauseResume(t *testing.T) {
 			if err := os.Remove(running); err != nil {
 				t.Fatalf("os.Remove(%q) failed: %v", running, err)
 			}
-			// Script touches the file every 100ms. Give a bit a time for it to run to
+			// Script touches the file every 100ms. Give a bit of time for it to run to
 			// catch the case that pause didn't work.
 			time.Sleep(200 * time.Millisecond)
 			if _, err := os.Stat(running); !os.IsNotExist(err) {
@@ -2763,7 +2763,7 @@ func TestPGIDField(t *testing.T) {
 }
 
 // Test that container can run even when there are corrupt state files in the
-// root directiry.
+// root directory.
 func TestCreateWithCorruptedStateFile(t *testing.T) {
 	conf := testutil.TestConfig(t)
 	spec := testutil.NewSpecWithArgs("/bin/true")
@@ -3957,10 +3957,10 @@ func TestLookupEROFS(t *testing.T) {
 			}
 		}
 
-		// Test for the read failure with a non-existent file.
-		cmd := fmt.Sprintf("cat %s", filepath.Join(targetDir, "nonexist"))
+		// Test for the read failure with a nonexistent file.
+		cmd := fmt.Sprintf("cat %s", filepath.Join(targetDir, "nonexistent"))
 		if out, err := executeCombinedOutput(conf, c, nil, "/bin/sh", "-c", cmd); err == nil {
-			t.Errorf("exec: sh -c %q, succeeded to read the non-existent file: %s", cmd, out)
+			t.Errorf("exec: sh -c %q, succeeded to read the nonexistent file: %s", cmd, out)
 		}
 
 		// Unmount the EROFS image in the container.

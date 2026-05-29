@@ -230,7 +230,7 @@ func TestHandlers(t *testing.T) {
 // expected number of entries relative to the capabilities that are enabled
 // by comparing them against what the ABI handlers would suggest.
 // This also acts as a useful reminder to keep the seccomp filters in sync
-// with the ABI handers.
+// with the ABI handlers.
 func TestFilterCapabilities(t *testing.T) {
 	var (
 		// Set of frontend ioctls that nvproxy accepts but does not forward to the

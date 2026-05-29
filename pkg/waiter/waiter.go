@@ -131,7 +131,7 @@ type EventListener interface {
 	NotifyEvent(mask EventMask)
 }
 
-// Entry represents a waiter that can be add to the a wait queue. It can
+// Entry represents a waiter that can be added to a wait queue. It can
 // only be in one queue at a time, and is added "intrusively" to the queue with
 // no extra memory allocations.
 //

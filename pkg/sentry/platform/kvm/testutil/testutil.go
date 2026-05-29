@@ -72,7 +72,7 @@ func (r RegisterMismatchError) Error() string {
 	return strings.Join([]string(r), ";")
 }
 
-// addRegisterMisatch allows simple chaining of register mismatches.
+// addRegisterMismatch allows simple chaining of register mismatches.
 func addRegisterMismatch(err error, reg string, got, expected any) error {
 	errStr := fmt.Sprintf("%s got %08x, expected %08x", reg, got, expected)
 	switch r := err.(type) {
