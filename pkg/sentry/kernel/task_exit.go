@@ -313,6 +313,7 @@ func (*runExitMain) execute(t *Task) taskRunState {
 	t.ipcns = nil
 	netns := t.netns
 	t.netns = nil
+	userns := t.Credentials().UserNamespace
 	childPIDNS := t.childPIDNamespace
 	t.childPIDNamespace = nil
 	t.mu.Unlock()
@@ -320,6 +321,7 @@ func (*runExitMain) execute(t *Task) taskRunState {
 	utsns.DecRef(t)
 	ipcns.DecRef(t)
 	netns.DecRef(t)
+	userns.DecRef(t)
 	if childPIDNS != nil {
 		childPIDNS.DecRef(t)
 	}

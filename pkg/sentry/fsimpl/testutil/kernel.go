@@ -158,6 +158,7 @@ func CreateTask(ctx context.Context, name string, tc *kernel.ThreadGroup, mntns 
 		UserCounters:     k.GetUserCounters(creds.RealKUID),
 	}
 	config.NetworkNamespace.IncRef()
+	config.Credentials.UserNamespace.IncRef()
 	t, err := k.TaskSet().NewTask(ctx, config)
 	if err != nil {
 		config.ThreadGroup.Release(ctx)

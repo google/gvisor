@@ -99,6 +99,7 @@ go_library(
         "//pkg/errors/linuxerr",
         "//pkg/log",
         "//pkg/rand",
+        "//pkg/refs",
         "//pkg/sentry/seccheck",
         "//pkg/sentry/seccheck/points:points_go_proto",
         "//pkg/sync",
