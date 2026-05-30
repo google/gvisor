@@ -178,7 +178,7 @@ steps:
     <<: *source_test
     label: ":firefighter: GPU Smoke Tests"
     commands:
-      - make sudo TARGETS=//tools/gpu:main ARGS="install --latest" || cat /var/log/nvidia-installer.log
+      - make sudo TARGETS=//tools/gpu:main ARGS="install --latest"
       - make gpu-smoke-tests
       - make sudo TARGETS=//tools/gpu:main ARGS="validate_checksum"
     agents:
@@ -194,7 +194,7 @@ steps:
       <<: *retry_settings
     label: ":screwdriver: GPU Tests"
     commands:
-      - make sudo TARGETS=//tools/gpu:main ARGS="install --latest" || cat /var/log/nvidia-installer.log
+      - make sudo TARGETS=//tools/gpu:main ARGS="install --latest"
       - make gpu-all-tests
     agents:
       queue: gpu
@@ -202,7 +202,7 @@ steps:
     <<: *gpu_test_continuous
     label: ":nuget: L4 GPU Tests"
     commands:
-      - make sudo TARGETS=//tools/gpu:main ARGS="install --latest" || cat /var/log/nvidia-installer.log
+      - make sudo TARGETS=//tools/gpu:main ARGS="install --latest"
       - make l4-gpu-tests
     agents:
       queue: l4-gpu
@@ -222,7 +222,7 @@ steps:
     retry:
       <<: *retry_settings
     commands:
-      - make sudo TARGETS=//tools/gpu:main ARGS="install --latest" || cat /var/log/nvidia-installer.log
+      - make sudo TARGETS=//tools/gpu:main ARGS="install --latest"
       - make cuda-tests
     agents:
       queue: gpu
