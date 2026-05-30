@@ -490,7 +490,7 @@ func (t *TestCluster) HasGVisorTestRuntime(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return testNodePool.runtime == RuntimeTypeGVisor || testNodePool.runtime == RuntimeTypeGVisorTPU, nil
+	return testNodePool.runtime == RuntimeTypeGVisor || testNodePool.runtime == RuntimeTypeGVisorCapped || testNodePool.runtime == RuntimeTypeGVisorTPU, nil
 }
 
 // CreatePod is a helper to create a pod.
@@ -753,7 +753,7 @@ func (t *TestCluster) applyCommonPodConfigurations(ctx context.Context, np *Node
 		if targetCores == 0 {
 			targetCores = int(float64(np.spec.NumCores) * defaultMaxResourceUtilization)
 		}
-		if runtimeMaxCores := applyRuntime.MaxCores(); runtimeMaxCores != 0 && targetCores > runtimeMaxCores {
+		if runtimeMaxCores := MaxSupportedCoresAcrossRuntimes(); runtimeMaxCores != 0 && targetCores > runtimeMaxCores {
 			targetCores = runtimeMaxCores
 		}
 		if targetCores < 1 {

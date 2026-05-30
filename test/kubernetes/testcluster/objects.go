@@ -362,7 +362,9 @@ type RuntimeType string
 // List of known runtime types.
 const (
 	RuntimeTypeGVisor              = RuntimeType("gvisor")
+	RuntimeTypeGVisorCapped        = RuntimeType("gvisor-capped")
 	RuntimeTypeUnsandboxed         = RuntimeType("runc")
+	RuntimeTypeUnsandboxedCapped   = RuntimeType("runc-capped")
 	RuntimeTypeGVisorTPU           = RuntimeType("gvisor-tpu")
 	RuntimeTypeUnsandboxedTPU      = RuntimeType("runc-tpu")
 	RuntimeTypeKataQEMU            = RuntimeType("kata-qemu")
@@ -370,10 +372,23 @@ const (
 	RuntimeTypeKataFirecracker     = RuntimeType("kata-firecracker")
 )
 
+// AllRuntimes is the list of all runtime types.
+var AllRuntimes = []RuntimeType{
+	RuntimeTypeGVisor,
+	RuntimeTypeGVisorCapped,
+	RuntimeTypeUnsandboxed,
+	RuntimeTypeUnsandboxedCapped,
+	RuntimeTypeGVisorTPU,
+	RuntimeTypeUnsandboxedTPU,
+	RuntimeTypeKataQEMU,
+	RuntimeTypeKataCloudHypervisor,
+	RuntimeTypeKataFirecracker,
+}
+
 // IsValid returns true if the runtime type is valid.
 func (t RuntimeType) IsValid() bool {
 	switch t {
-	case RuntimeTypeGVisor, RuntimeTypeUnsandboxed, RuntimeTypeGVisorTPU, RuntimeTypeUnsandboxedTPU, RuntimeTypeKataQEMU, RuntimeTypeKataCloudHypervisor, RuntimeTypeKataFirecracker:
+	case RuntimeTypeGVisor, RuntimeTypeGVisorCapped, RuntimeTypeUnsandboxed, RuntimeTypeUnsandboxedCapped, RuntimeTypeGVisorTPU, RuntimeTypeUnsandboxedTPU, RuntimeTypeKataQEMU, RuntimeTypeKataCloudHypervisor, RuntimeTypeKataFirecracker:
 		return true
 	default:
 		return false
@@ -382,7 +397,7 @@ func (t RuntimeType) IsValid() bool {
 
 // IsGVisor returns true if the runtime is a gVisor-based runtime.
 func (t RuntimeType) IsGVisor() bool {
-	return t == RuntimeTypeGVisor || t == RuntimeTypeGVisorTPU
+	return t == RuntimeTypeGVisor || t == RuntimeTypeGVisorCapped || t == RuntimeTypeGVisorTPU
 }
 
 // IsKata returns true if the runtime is a Kata-based runtime.
@@ -408,12 +423,19 @@ func (t RuntimeType) KataShimName() (string, error) {
 // explicit resource limits on pods in order to function correctly.
 func (t RuntimeType) RequiresExplicitResourceLimits() bool {
 	// Kata containers requires VMs which require explicit sizing.
-	return t.IsKata()
+	if t.IsKata() {
+		return true
+	}
+	// Capped runtimes require explicit sizing.
+	if t == RuntimeTypeGVisorCapped || t == RuntimeTypeUnsandboxedCapped {
+		return true
+	}
+	return false
 }
 
 // MaxCores returns the maximum number of cores that can be used by a pod using this runtime.
 // Returns 0 if there is no pod core limit.
-func (t RuntimeType) MaxCores() int {
+func (t RuntimeType) maxCores() int {
 	switch t {
 	case RuntimeTypeKataFirecracker:
 		// Firecracker only supports up to 32 vCPUs:
@@ -425,6 +447,18 @@ func (t RuntimeType) MaxCores() int {
 	}
 }
 
+// MaxSupportedCoresAcrossRuntimes returns the maximum number of cores that all runtimes
+// can support. Returns 0 if there is no limit across all runtimes.
+func MaxSupportedCoresAcrossRuntimes() int {
+	maxSeen := 0
+	for _, runtime := range AllRuntimes {
+		if maxCores := runtime.maxCores(); maxCores != 0 && (maxSeen == 0 || maxSeen > maxCores) {
+			maxSeen = maxCores
+		}
+	}
+	return maxSeen
+}
+
 // ApplyNodepool modifies the nodepool to configure it to use the runtime.
 func (t RuntimeType) ApplyNodepool(nodepool *cspb.NodePool) {
 	if nodepool.GetConfig().GetLabels() == nil {
@@ -432,13 +466,13 @@ func (t RuntimeType) ApplyNodepool(nodepool *cspb.NodePool) {
 	}
 
 	switch t {
-	case RuntimeTypeGVisor:
+	case RuntimeTypeGVisor, RuntimeTypeGVisorCapped:
 		nodepool.Config.SandboxConfig = &cspb.SandboxConfig{
 			Type: cspb.SandboxConfig_GVISOR,
 		}
-		nodepool.GetConfig().Labels[NodepoolRuntimeKey] = string(RuntimeTypeGVisor)
-	case RuntimeTypeUnsandboxed:
-		nodepool.GetConfig().Labels[NodepoolRuntimeKey] = string(RuntimeTypeUnsandboxed)
+		nodepool.GetConfig().Labels[NodepoolRuntimeKey] = string(t)
+	case RuntimeTypeUnsandboxed, RuntimeTypeUnsandboxedCapped:
+		nodepool.GetConfig().Labels[NodepoolRuntimeKey] = string(t)
 		// Do nothing.
 	case RuntimeTypeGVisorTPU:
 		nodepool.Config.Labels[gvisorNodepoolKey] = gvisorRuntimeClass
@@ -503,14 +537,14 @@ func (t RuntimeType) ApplyPodSpec(podSpec *v13.PodSpec) {
 		podSpec.NodeSelector = map[string]string{}
 	}
 	switch t {
-	case RuntimeTypeGVisor:
+	case RuntimeTypeGVisor, RuntimeTypeGVisorCapped:
 		podSpec.RuntimeClassName = proto.String(gvisorRuntimeClass)
-		podSpec.NodeSelector[NodepoolRuntimeKey] = string(RuntimeTypeGVisor)
+		podSpec.NodeSelector[NodepoolRuntimeKey] = string(t)
 		addToleration(podSpec, v13.Toleration{
 			Key:      "nvidia.com/gpu",
 			Operator: v13.TolerationOpExists,
 		})
-	case RuntimeTypeUnsandboxed:
+	case RuntimeTypeUnsandboxed, RuntimeTypeUnsandboxedCapped:
 		podSpec.RuntimeClassName = nil
 		podSpec.Tolerations = append(podSpec.Tolerations, v13.Toleration{
 			Key:      "nvidia.com/gpu",
