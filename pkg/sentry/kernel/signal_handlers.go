@@ -50,6 +50,24 @@ func (sh *SignalHandlers) Fork() *SignalHandlers {
 	return sh2
 }
 
+// Reset returns a copy of sh where all non-ignored signal handlers are removed.
+// Used for CLONE_CLEAR_SIGHAND.
+func (sh *SignalHandlers) Reset() *SignalHandlers {
+	sh2 := NewSignalHandlers()
+	sh.mu.Lock()
+	defer sh.mu.Unlock()
+	for sig, act := range sh.actions {
+		newHandler := uint64(linux.SIG_DFL)
+		if act.Handler == linux.SIG_IGN {
+			newHandler = linux.SIG_IGN
+		}
+		sh2.actions[sig] = linux.SigAction{
+			Handler: newHandler,
+		}
+	}
+	return sh2
+}
+
 // copyForExecLocked returns a copy of sh for a thread group that is undergoing
 // an execve. (See comments in Task.finishExec.)
 //

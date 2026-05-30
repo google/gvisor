@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fsutil"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -119,19 +120,19 @@ type directfsInode struct {
 //
 // newDirectfsDentry takes ownership of controlFD
 func (fs *filesystem) newDirectfsDentry(controlFD int) (*dentry, error) {
-	var stat unix.Stat_t
-	if err := unix.Fstat(controlFD, &stat); err != nil {
-		log.Warningf("failed to fstat(2) FD %d: %v", controlFD, err)
+	var stat unix.Statx_t
+	if err := unix.Statx(controlFD, "", unix.AT_EMPTY_PATH, unix.STATX_BASIC_STATS|unix.STATX_BTIME, &stat); err != nil {
+		log.Warningf("failed to stat FD %d: %v", controlFD, err)
 		_ = unix.Close(controlFD)
 		return nil, err
 	}
-	if err := checkSupportedFileType(stat.Mode); err != nil {
+	if err := checkSupportedFileType(uint32(stat.Mode)); err != nil {
 		log.Warningf("checkSupportedFileType() failed for controlFD %d with mode %#o: %v", controlFD, stat.Mode, err)
 		_ = unix.Close(controlFD)
 		return nil, err
 	}
-	isDir := stat.Mode&linux.FileTypeMask == linux.ModeDirectory
-	inoKey := inoKeyFromStat(&stat)
+	isDir := uint32(stat.Mode)&linux.FileTypeMask == linux.ModeDirectory
+	inoKey := inoKeyFromUnixStatx(&stat)
 
 	// Common case. Performance hack which is used to allocate the dentry
 	// and its inode together in the heap. This will help reduce allocations and memory
@@ -154,23 +155,60 @@ func (fs *filesystem) newDirectfsDentry(controlFD int) (*dentry, error) {
 					fs:        fs,
 					inoKey:    inoKey,
 					ino:       fs.inoFromKey(inoKey),
-					mode:      atomicbitops.FromUint32(stat.Mode),
-					uid:       atomicbitops.FromUint32(stat.Uid),
-					gid:       atomicbitops.FromUint32(stat.Gid),
-					blockSize: atomicbitops.FromUint32(uint32(stat.Blksize)),
+					mode:      atomicbitops.FromUint32(uint32(stat.Mode)),
+					uid:       atomicbitops.FromUint32(uint32(fs.opts.dfltuid)),
+					gid:       atomicbitops.FromUint32(uint32(fs.opts.dfltgid)),
+					blockSize: atomicbitops.FromUint32(hostarch.PageSize),
 					readFD:    atomicbitops.FromInt32(-1),
 					writeFD:   atomicbitops.FromInt32(-1),
 					mmapFD:    atomicbitops.FromInt32(-1),
-					size:      atomicbitops.FromUint64(uint64(stat.Size)),
-					atime:     atomicbitops.FromInt64(dentryTimestampFromUnix(stat.Atim)),
-					mtime:     atomicbitops.FromInt64(dentryTimestampFromUnix(stat.Mtim)),
-					ctime:     atomicbitops.FromInt64(dentryTimestampFromUnix(stat.Ctim)),
-					nlink:     atomicbitops.FromUint32(uint32(stat.Nlink)),
 				},
 				controlFD: controlFD,
 			}
 			temp.i.inode.init(&temp.i)
-			return &temp.i.inode
+			inode := &temp.i.inode
+			if stat.Mask&linux.STATX_UID != 0 {
+				inode.uid = atomicbitops.FromUint32(stat.Uid)
+			}
+			if stat.Mask&linux.STATX_GID != 0 {
+				inode.gid = atomicbitops.FromUint32(stat.Gid)
+			}
+			if stat.Mask&linux.STATX_SIZE != 0 {
+				inode.size = atomicbitops.FromUint64(stat.Size)
+			}
+			if stat.Blksize != 0 {
+				inode.blockSize = atomicbitops.FromUint32(stat.Blksize)
+			}
+			if stat.Mask&linux.STATX_ATIME != 0 {
+				inode.atime = atomicbitops.FromInt64(dentryTimestampFromUnix(stat.Atime))
+			} else {
+				inode.atime = atomicbitops.FromInt64(fs.clock.Now().Nanoseconds())
+			}
+			if stat.Mask&linux.STATX_MTIME != 0 {
+				inode.mtime = atomicbitops.FromInt64(dentryTimestampFromUnix(stat.Mtime))
+			} else {
+				inode.mtime = atomicbitops.FromInt64(fs.clock.Now().Nanoseconds())
+			}
+			if stat.Mask&linux.STATX_CTIME != 0 {
+				inode.ctime = atomicbitops.FromInt64(dentryTimestampFromUnix(stat.Ctime))
+			} else {
+				// Approximate ctime with mtime if ctime isn't available.
+				inode.ctime = atomicbitops.FromInt64(inode.mtime.Load())
+			}
+			if stat.Mask&linux.STATX_BTIME != 0 {
+				inode.btime = atomicbitops.FromInt64(dentryTimestampFromUnix(stat.Btime))
+				inode.btimeValid = atomicbitops.FromBool(true)
+			}
+			if stat.Mask&linux.STATX_NLINK != 0 {
+				inode.nlink = atomicbitops.FromUint32(stat.Nlink)
+			} else {
+				if isDir {
+					inode.nlink = atomicbitops.FromUint32(2)
+				} else {
+					inode.nlink = atomicbitops.FromUint32(1)
+				}
+			}
+			return inode
 		})
 
 	temp.d.init()
@@ -285,41 +323,61 @@ func (i *directfsInode) updateMetadataLocked(h handle) error {
 		}
 	}
 
-	var stat unix.Stat_t
-	err := unix.Fstat(int(h.fd), &stat)
+	var stat unix.Statx_t
+	err := unix.Statx(int(h.fd), "", unix.AT_EMPTY_PATH, unix.STATX_BASIC_STATS|unix.STATX_BTIME, &stat)
 	if handleMuRLocked {
-		// handleMu must be released before updateMetadataFromStatLocked().
+		// handleMu must be released before updateMetadataFromStatxLocked().
 		i.handleMu.RUnlock() // +checklocksforce: complex case.
 	}
 	if err != nil {
 		return err
 	}
-	return i.updateMetadataFromStatLocked(&stat)
+	i.updateMetadataFromStatxLocked(&stat)
+	return nil
 }
 
-// updateMetadataFromStatLocked is similar to updateMetadataFromStatxLocked,
-// except that it takes a unix.Stat_t argument.
+// updateMetadataFromStatxLocked is called to update d's metadata after an update
+// from the remote filesystem.
 // +checklocks:i.inode.metadataMu
-func (i *directfsInode) updateMetadataFromStatLocked(stat *unix.Stat_t) error {
-	if got, want := stat.Mode&unix.S_IFMT, i.inode.fileType(); got != want {
+func (i *directfsInode) updateMetadataFromStatxLocked(stat *unix.Statx_t) {
+	if got, want := uint32(stat.Mode)&unix.S_IFMT, i.inode.fileType(); got != want {
 		panic(fmt.Sprintf("directfsInode file type changed from %#o to %#o", want, got))
 	}
-	i.inode.mode.Store(stat.Mode)
-	i.inode.uid.Store(stat.Uid)
-	i.inode.gid.Store(stat.Gid)
-	i.inode.blockSize.Store(uint32(stat.Blksize))
-	// Don't override newer client-defined timestamps with old host-defined
+	if stat.Mask&linux.STATX_MODE != 0 {
+		i.inode.mode.Store(uint32(stat.Mode))
+	}
+	if stat.Mask&linux.STATX_UID != 0 {
+		i.inode.uid.Store(stat.Uid)
+	}
+	if stat.Mask&linux.STATX_GID != 0 {
+		i.inode.gid.Store(stat.Gid)
+	}
+	if stat.Blksize != 0 {
+		i.inode.blockSize.Store(stat.Blksize)
+	}
+	// Don't override newer client-defined timestamps with old server-defined
 	// ones.
-	if i.inode.atimeDirty.Load() == 0 {
-		i.inode.atime.Store(dentryTimestampFromUnix(stat.Atim))
+	if stat.Mask&linux.STATX_ATIME != 0 && i.inode.atimeDirty.Load() == 0 {
+		i.inode.atime.Store(dentryTimestampFromUnix(stat.Atime))
 	}
-	if i.inode.mtimeDirty.Load() == 0 {
-		i.inode.mtime.Store(dentryTimestampFromUnix(stat.Mtim))
+	if stat.Mask&linux.STATX_MTIME != 0 && i.inode.mtimeDirty.Load() == 0 {
+		i.inode.mtime.Store(dentryTimestampFromUnix(stat.Mtime))
 	}
-	i.inode.ctime.Store(dentryTimestampFromUnix(stat.Ctim))
-	i.inode.nlink.Store(uint32(stat.Nlink))
-	i.inode.updateSizeLocked(uint64(stat.Size))
-	return nil
+	if stat.Mask&linux.STATX_CTIME != 0 {
+		i.inode.ctime.Store(dentryTimestampFromUnix(stat.Ctime))
+	}
+	if stat.Mask&linux.STATX_BTIME != 0 {
+		i.inode.btime.Store(dentryTimestampFromUnix(stat.Btime))
+		i.inode.btimeValid.Store(true)
+	} else {
+		i.inode.btimeValid.Store(false)
+	}
+	if stat.Mask&linux.STATX_NLINK != 0 {
+		i.inode.nlink.Store(stat.Nlink)
+	}
+	if stat.Mask&linux.STATX_SIZE != 0 {
+		i.updateSizeLocked(stat.Size)
+	}
 }
 
 // Precondition: fs.renameMu is locked if d is a socket.
@@ -803,8 +861,8 @@ func (i *directfsInode) restoreFile(ctx context.Context, controlFD int, opts *vf
 	if controlFD < 0 {
 		return fmt.Errorf("directfsInode.restoreFile called with invalid controlFD")
 	}
-	var stat unix.Stat_t
-	if err := unix.Fstat(controlFD, &stat); err != nil {
+	var stat unix.Statx_t
+	if err := unix.Statx(controlFD, "", unix.AT_EMPTY_PATH, unix.STATX_BASIC_STATS|unix.STATX_BTIME, &stat); err != nil {
 		_ = unix.Close(controlFD)
 		return fmt.Errorf("failed to stat %q in mount %q: %w", genericDebugPathname(i.fs, d), i.fs.iopts.UniqueID, err)
 	}
@@ -816,7 +874,7 @@ func (i *directfsInode) restoreFile(ctx context.Context, controlFD int, opts *vf
 	//		checking inoKey.
 	//
 	//	- We need to associate the new inoKey with the existing d.ino.
-	i.inoKey = inoKeyFromStat(&stat)
+	i.inoKey = inoKeyFromUnixStatx(&stat)
 	i.fs.inoMu.Lock()
 	i.fs.inoByKey[i.inoKey] = i.ino
 	i.fs.inoMu.Unlock()
@@ -837,13 +895,13 @@ func (i *directfsInode) restoreFile(ctx context.Context, controlFD int, opts *vf
 			}
 		}
 		if opts.ValidateFileModificationTimestamps {
-			if want := dentryTimestampFromUnix(stat.Mtim); i.mtime.RacyLoad() != want {
+			if want := dentryTimestampFromUnix(stat.Mtime); i.mtime.RacyLoad() != want {
 				return vfs.ErrCorruption{Err: fmt.Errorf("gofer.dentry(%q in mount %q).restoreFile: mtime validation failed: mtime changed from %+v to %+v", genericDebugPathname(i.fs, d), i.fs.iopts.UniqueID, linux.NsecToStatxTimestamp(i.mtime.RacyLoad()), linux.NsecToStatxTimestamp(want))}
 			}
 		}
 	}
 	if !i.cachedMetadataAuthoritative() {
-		i.updateMetadataFromStatLocked(&stat)
+		i.updateMetadataFromStatxLocked(&stat)
 	}
 
 	if rw, ok := i.fs.savedDentryRW[d]; ok {
@@ -878,12 +936,12 @@ func doRevalidationDirectfs(ctx context.Context, vfsObj *vfs.VirtualFilesystem, 
 			return err
 		}
 
-		var stat unix.Stat_t
+		var stat unix.Statx_t
 		// Lock metadata *before* getting attributes for d.
 		d.inode.metadataMu.Lock()
 		found := err == nil
 		if found {
-			err = unix.Fstat(childFD, &stat)
+			err = unix.Statx(childFD, "", unix.AT_EMPTY_PATH, unix.STATX_BASIC_STATS|unix.STATX_BTIME, &stat)
 			_ = unix.Close(childFD)
 			if err != nil {
 				d.inode.metadataMu.Unlock()
@@ -893,8 +951,8 @@ func doRevalidationDirectfs(ctx context.Context, vfsObj *vfs.VirtualFilesystem, 
 
 		// Note that synthetic dentries will always fail this comparison check.
 		if !found ||
-			d.inode.inoKey != inoKeyFromStat(&stat) ||
-			stat.Mode&unix.S_IFMT != d.inode.fileType() {
+			d.inode.inoKey != inoKeyFromUnixStatx(&stat) ||
+			uint32(stat.Mode)&unix.S_IFMT != d.inode.fileType() {
 			d.inode.metadataMu.Unlock()
 			if !found && d.inode.isSynthetic() {
 				// We have a synthetic file, and no remote file has arisen to replace
@@ -908,7 +966,7 @@ func doRevalidationDirectfs(ctx context.Context, vfsObj *vfs.VirtualFilesystem, 
 		}
 
 		// The file at this path hasn't changed. Just update cached metadata.
-		d.inode.impl.(*directfsInode).updateMetadataFromStatLocked(&stat) // +checklocksforce: i.metadataMu is locked above.
+		d.inode.impl.(*directfsInode).updateMetadataFromStatxLocked(&stat) // +checklocksforce: i.metadataMu is locked above.
 		d.inode.metadataMu.Unlock()
 
 		// Advance parent.

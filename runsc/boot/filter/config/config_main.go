@@ -306,8 +306,12 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		// Used by unet to shutdown connections.
 		seccomp.PerArg{seccomp.AnyValue{}, seccomp.EqualTo(unix.SHUT_RDWR)},
 	},
-	unix.SYS_SIGALTSTACK:     seccomp.MatchAll{},
-	unix.SYS_STATX:           seccomp.MatchAll{},
+	unix.SYS_SIGALTSTACK: seccomp.MatchAll{},
+	unix.SYS_STATX: seccomp.PerArg{
+		seccomp.NonNegativeFD{},
+		seccomp.AnyValue{},
+		seccomp.MaskedEqual(unix.AT_EMPTY_PATH, unix.AT_EMPTY_PATH),
+	},
 	unix.SYS_SYNC_FILE_RANGE: seccomp.MatchAll{},
 	unix.SYS_TEE: seccomp.PerArg{
 		seccomp.AnyValue{},

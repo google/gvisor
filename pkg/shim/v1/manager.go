@@ -23,7 +23,6 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/BurntSushi/toml"
 	types "github.com/containerd/containerd/api/types"
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/containerd/v2/pkg/namespaces"
@@ -218,37 +217,8 @@ func (manager) Stop(ctx context.Context, id string) (shim.StopStatus, error) {
 	}, nil
 }
 
-func getRuntimeOptions() *runsc.Options {
-	opts := &runsc.Options{}
-	shimConfigPaths := []string{
-		"/run/containerd/runsc/config.toml",
-		"/etc/containerd/runsc/config.toml",
-		"config.toml",
-	}
-
-	tomlPath := ""
-	for _, path := range shimConfigPaths {
-		if _, err := os.Stat(path); err == nil {
-			log.L.Debugf("Found shim config file %q", path)
-			tomlPath = path
-			break
-		}
-	}
-	if len(tomlPath) == 0 {
-		log.L.Debugf("Failed to find shim config file")
-		return opts
-	}
-
-	if _, err := toml.DecodeFile(tomlPath, opts); err != nil {
-		log.L.Debugf("Failed to decode shim config file %q: %v", tomlPath, err)
-		return opts
-	}
-
-	return opts
-}
-
 func getEnableGrouping() bool {
-	opts := getRuntimeOptions()
+	opts := runsc.GetRuntimeOptions()
 	if opts == nil {
 		return false
 	}

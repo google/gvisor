@@ -14,7 +14,44 @@
 
 package runsc
 
+import (
+	"os"
+
+	"github.com/BurntSushi/toml"
+	"github.com/containerd/log"
+)
+
 const optionsType = "io.containerd.runsc.v1.options"
+
+// GetRuntimeOptions returns the runtime options from the global config file.
+func GetRuntimeOptions() *Options {
+	opts := &Options{}
+	shimConfigPaths := []string{
+		"/run/containerd/runsc/config.toml",
+		"/etc/containerd/runsc/config.toml",
+		"config.toml",
+	}
+
+	tomlPath := ""
+	for _, path := range shimConfigPaths {
+		if _, err := os.Stat(path); err == nil {
+			log.L.Debugf("Found shim config file %q", path)
+			tomlPath = path
+			break
+		}
+	}
+	if len(tomlPath) == 0 {
+		log.L.Debugf("Failed to find shim config file")
+		return opts
+	}
+
+	if _, err := toml.DecodeFile(tomlPath, opts); err != nil {
+		log.L.Debugf("Failed to decode shim config file %q: %v", tomlPath, err)
+		return opts
+	}
+
+	return opts
+}
 
 // Options is runtime options for io.containerd.runsc.v1.
 type Options struct {

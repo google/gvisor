@@ -465,9 +465,13 @@ func lisafsNeededForDirectFSSuppression(spec *specs.Spec, mountHints *boot.PodMo
 // makeRPCMountOpener returns a MountOpener that opens mount sources via the
 // gofer-to-host RPC channel.
 func makeRPCMountOpener(goferToHostRPC *urpc.Client) sandboxsetup.MountOpener {
-	return func(m *specs.Mount) (*os.File, error) {
+	return func(m *specs.Mount, flags uint32) (*os.File, error) {
+		req := container.OpenMountArgs{
+			Mount: m,
+			Flags: flags,
+		}
 		var res container.OpenMountResult
-		if err := goferToHostRPC.Call("goferToHostRPC.OpenMount", m, &res); err != nil {
+		if err := goferToHostRPC.Call("goferToHostRPC.OpenMount", &req, &res); err != nil {
 			return nil, fmt.Errorf("opening %s: %w", m.Source, err)
 		}
 		return res.Files[0], nil

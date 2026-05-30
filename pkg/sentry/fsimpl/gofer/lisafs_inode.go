@@ -179,8 +179,8 @@ func (fs *filesystem) newLisafsDentry(ctx context.Context, ino *lisafs.Inode) (*
 			}
 			if ino.Stat.Mask&linux.STATX_BTIME != 0 {
 				inode.btime = atomicbitops.FromInt64(dentryTimestamp(ino.Stat.Btime))
+				inode.btimeValid = atomicbitops.FromBool(true)
 			}
-
 			if ino.Stat.Mask&linux.STATX_NLINK != 0 {
 				inode.nlink = atomicbitops.FromUint32(ino.Stat.Nlink)
 			} else {
@@ -260,7 +260,7 @@ func (i *lisafsInode) updateMetadataLocked(ctx context.Context, h handle) error 
 	var stat lisafs.Statx
 	err := h.fdLisa.StatTo(ctx, &stat)
 	if handleMuRLocked {
-		// handleMu must be released before updateMetadataFromStatLocked().
+		// handleMu must be released before updateMetadataFromStatxLocked().
 		i.handleMu.RUnlock() // +checklocksforce: complex case.
 	}
 	if err != nil {
@@ -304,6 +304,9 @@ func (i *lisafsInode) updateMetadataFromStatxLocked(stat *lisafs.Statx) {
 	}
 	if stat.Mask&linux.STATX_BTIME != 0 {
 		i.inode.btime.Store(dentryTimestamp(stat.Btime))
+		i.inode.btimeValid.Store(true)
+	} else {
+		i.inode.btimeValid.Store(false)
 	}
 	if stat.Mask&linux.STATX_NLINK != 0 {
 		i.inode.nlink.Store(stat.Nlink)

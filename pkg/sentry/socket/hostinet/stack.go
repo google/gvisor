@@ -388,14 +388,19 @@ func (s *Stack) RouteTable() []inet.Route {
 }
 
 // NewRoute implements inet.Stack.NewRoute.
-func (*Stack) NewRoute(context.Context, *nlmsg.Message) *syserr.Error {
-	// TODO(b/343524351): implements RTM_NEWROUTE for hostinet.
-	return syserr.ErrNotSupported
+func (*Stack) NewRoute(ctx context.Context, msg *nlmsg.Message) *syserr.Error {
+	if err := doRouteRequest(linux.RTM_NEWROUTE, msg); err != nil {
+		return syserr.FromError(err)
+	}
+	return nil
 }
 
 // RemoveRoute implements inet.Stack.RemoveRoute.
-func (*Stack) RemoveRoute(context.Context, *nlmsg.Message) *syserr.Error {
-	return syserr.ErrNotSupported
+func (*Stack) RemoveRoute(ctx context.Context, msg *nlmsg.Message) *syserr.Error {
+	if err := doRouteRequest(linux.RTM_DELROUTE, msg); err != nil {
+		return syserr.FromError(err)
+	}
+	return nil
 }
 
 // Pause implements inet.Stack.Pause.

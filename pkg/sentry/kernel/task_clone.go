@@ -38,7 +38,7 @@ const SupportedCloneFlags = linux.CLONE_VM | linux.CLONE_FS | linux.CLONE_FILES 
 	linux.CLONE_PARENT_SETTID | linux.CLONE_SETTLS | linux.CLONE_NEWUSER | linux.CLONE_NEWUTS |
 	linux.CLONE_NEWIPC | linux.CLONE_NEWNET | linux.CLONE_PTRACE | linux.CLONE_UNTRACED |
 	linux.CLONE_IO | linux.CLONE_VFORK | linux.CLONE_DETACHED | linux.CLONE_NEWNS |
-	linux.CLONE_PIDFD
+	linux.CLONE_PIDFD | linux.CLONE_CLEAR_SIGHAND
 
 func failCloneAfterTaskCreation(nt *Task) {
 	// nt has been visible to the rest of the system since NewTask, so
@@ -67,6 +67,11 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	// address, any set of signal handlers must refer to the same address
 	// space.
 	if args.Flags&(linux.CLONE_SIGHAND|linux.CLONE_VM) == linux.CLONE_SIGHAND {
+		return 0, nil, linuxerr.EINVAL
+	}
+
+	// CLONE_SIGHAND and CLONE_CLEAR_SIGHAND are mutually exclusive.
+	if args.Flags&(linux.CLONE_SIGHAND|linux.CLONE_CLEAR_SIGHAND) == linux.CLONE_SIGHAND|linux.CLONE_CLEAR_SIGHAND {
 		return 0, nil, linuxerr.EINVAL
 	}
 	if args.SetTID != 0 {
@@ -251,7 +256,13 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	if args.Flags&linux.CLONE_THREAD == 0 {
 		sh := t.tg.signalHandlers
 		if args.Flags&linux.CLONE_SIGHAND == 0 {
-			sh = sh.Fork()
+			if args.Flags&linux.CLONE_CLEAR_SIGHAND == 0 {
+				// copy the existing signal handlers
+				sh = sh.Fork()
+			} else {
+				// CLONE_CLEAR_SIGHAND: reset non-SIG_IGN handlers to SIG_DFL
+				sh = sh.Reset()
+			}
 		}
 		tg = t.k.NewThreadGroup(pidns, sh, linux.Signal(args.ExitSignal), tg.limits.GetCopy())
 		tg.oomScoreAdj = atomicbitops.FromInt32(t.tg.oomScoreAdj.Load())

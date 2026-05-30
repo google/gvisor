@@ -551,6 +551,7 @@ func (i *inode) StateFields() []string {
 		"gid",
 		"ino",
 		"atime",
+		"btime",
 		"ctime",
 		"mtime",
 		"locks",
@@ -573,11 +574,12 @@ func (i *inode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &i.gid)
 	stateSinkObject.Save(7, &i.ino)
 	stateSinkObject.Save(8, &i.atime)
-	stateSinkObject.Save(9, &i.ctime)
-	stateSinkObject.Save(10, &i.mtime)
-	stateSinkObject.Save(11, &i.locks)
-	stateSinkObject.Save(12, &i.watches)
-	stateSinkObject.Save(13, &i.impl)
+	stateSinkObject.Save(9, &i.btime)
+	stateSinkObject.Save(10, &i.ctime)
+	stateSinkObject.Save(11, &i.mtime)
+	stateSinkObject.Save(12, &i.locks)
+	stateSinkObject.Save(13, &i.watches)
+	stateSinkObject.Save(14, &i.impl)
 }
 
 func (i *inode) afterLoad(context.Context) {}
@@ -593,11 +595,12 @@ func (i *inode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(6, &i.gid)
 	stateSourceObject.Load(7, &i.ino)
 	stateSourceObject.Load(8, &i.atime)
-	stateSourceObject.Load(9, &i.ctime)
-	stateSourceObject.Load(10, &i.mtime)
-	stateSourceObject.Load(11, &i.locks)
-	stateSourceObject.Load(12, &i.watches)
-	stateSourceObject.Load(13, &i.impl)
+	stateSourceObject.Load(9, &i.btime)
+	stateSourceObject.Load(10, &i.ctime)
+	stateSourceObject.Load(11, &i.mtime)
+	stateSourceObject.Load(12, &i.locks)
+	stateSourceObject.Load(13, &i.watches)
+	stateSourceObject.Load(14, &i.impl)
 }
 
 func (fd *fileDescription) StateTypeName() string {

@@ -1315,36 +1315,39 @@ func fchown(hostFD int, uid lisafs.UID, gid lisafs.GID) error {
 }
 
 func fstatTo(hostFD int) (lisafs.Statx, error) {
-	var stat unix.Stat_t
-	if err := unix.Fstat(hostFD, &stat); err != nil {
+	var stat unix.Statx_t
+	if err := unix.Statx(hostFD, "", unix.AT_EMPTY_PATH, unix.STATX_BASIC_STATS|unix.STATX_BTIME, &stat); err != nil {
 		return lisafs.Statx{}, err
 	}
-
 	return lisafs.Statx{
-		Mask:      unix.STATX_TYPE | unix.STATX_MODE | unix.STATX_INO | unix.STATX_NLINK | unix.STATX_UID | unix.STATX_GID | unix.STATX_SIZE | unix.STATX_BLOCKS | unix.STATX_ATIME | unix.STATX_MTIME | unix.STATX_CTIME,
-		Mode:      uint16(stat.Mode),
-		DevMinor:  unix.Minor(stat.Dev),
-		DevMajor:  unix.Major(stat.Dev),
+		Mask:      stat.Mask,
+		Mode:      stat.Mode,
+		DevMinor:  stat.Dev_minor,
+		DevMajor:  stat.Dev_major,
 		Ino:       stat.Ino,
-		Nlink:     uint32(stat.Nlink),
+		Nlink:     stat.Nlink,
 		UID:       stat.Uid,
 		GID:       stat.Gid,
-		RdevMinor: unix.Minor(stat.Rdev),
-		RdevMajor: unix.Major(stat.Rdev),
-		Size:      uint64(stat.Size),
-		Blksize:   uint32(stat.Blksize),
-		Blocks:    uint64(stat.Blocks),
+		RdevMinor: stat.Rdev_minor,
+		RdevMajor: stat.Rdev_major,
+		Size:      stat.Size,
+		Blksize:   stat.Blksize,
+		Blocks:    stat.Blocks,
 		Atime: lisafs.StatxTimestamp{
-			Sec:  stat.Atim.Sec,
-			Nsec: uint32(stat.Atim.Nsec),
+			Sec:  stat.Atime.Sec,
+			Nsec: stat.Atime.Nsec,
+		},
+		Btime: lisafs.StatxTimestamp{
+			Sec:  stat.Btime.Sec,
+			Nsec: stat.Btime.Nsec,
 		},
 		Mtime: lisafs.StatxTimestamp{
-			Sec:  stat.Mtim.Sec,
-			Nsec: uint32(stat.Mtim.Nsec),
+			Sec:  stat.Mtime.Sec,
+			Nsec: stat.Mtime.Nsec,
 		},
 		Ctime: lisafs.StatxTimestamp{
-			Sec:  stat.Ctim.Sec,
-			Nsec: uint32(stat.Ctim.Nsec),
+			Sec:  stat.Ctime.Sec,
+			Nsec: stat.Ctime.Nsec,
 		},
 	}, nil
 }

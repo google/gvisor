@@ -549,6 +549,11 @@ func HasMountConfig(m specs.Mount) bool {
 	return IsGoferMount(m) || IsErofsMount(m)
 }
 
+// IsIDMappedMount returns true if the given mount has a UID and GID mapping.
+func IsIDMappedMount(m specs.Mount) bool {
+	return len(m.UIDMappings) > 0 && len(m.GIDMappings) > 0
+}
+
 // MaybeConvertToBindMount converts mount type to "bind" in case any of the
 // mount options are either "bind" or "rbind" as required by the OCI spec.
 //

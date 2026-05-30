@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -75,6 +76,16 @@ func executeHook(h specs.Hook, s specs.State) error {
 	// between sentry and application filesystems.
 	if strings.HasSuffix(h.Path, "/nvidia-container-runtime-hook") {
 		log.Infof("Skipping nvidia-container-runtime-hook")
+		return nil
+	}
+
+	// Don't invoke nvidia-cdi-hook's disable-device-node-modification
+	// CreateContainer hook. This hook effectively overrides the
+	// /proc/driver/nvidia/params setting of `ModifyDeviceFiles: 1` to `0`.
+	// gVisor also exposes /proc/driver/nvidia/params to the application and
+	// applies the same override in nvproxy.Register().
+	if strings.HasSuffix(h.Path, "/nvidia-cdi-hook") && slices.Contains(h.Args, "disable-device-node-modification") {
+		log.Infof("Skipping nvidia-cdi-hook's disable-device-node-modification command")
 		return nil
 	}
 

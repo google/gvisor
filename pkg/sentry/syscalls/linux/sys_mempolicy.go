@@ -105,6 +105,7 @@ func GetMempolicy(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (ui
 	nodemask := args[1].Pointer()
 	maxnode := args[2].Uint()
 	addr := args[3].Pointer()
+	addr = hostarch.UntaggedUserAddr(addr)
 	flags := args[4].Uint()
 
 	if flags&^(linux.MPOL_F_NODE|linux.MPOL_F_ADDR|linux.MPOL_F_MEMS_ALLOWED) != 0 {
