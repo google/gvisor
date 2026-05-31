@@ -33,6 +33,7 @@
 #define ENTRY_STACK_TOP  264 // +checkoffset . kernelEntry.stackTop
 #define ENTRY_CPU_SELF   272 // +checkoffset . kernelEntry.cpuSelf
 #define ENTRY_KERNEL_CR3 280 // +checkoffset . kernelEntry.kernelCR3
+#define ENTRY_ENABLE_VMCALL 288 // +checkoffset . kernelEntry.enableVMCALL
 
 // Bits.
 #define _RFLAGS_IF    512  // +checkconst . _RFLAGS_IF
@@ -63,6 +64,12 @@
 #define SecurityException          30 // +checkconst . SecurityException
 #define SyscallInt80               128 // +checkconst . SyscallInt80
 #define Syscall                    256 // +checkconst . Syscall
+
+#define SyscallExit       60         // +checkconst . SyscallExit
+#define SyscallExitGroup  231        // +checkconst . SyscallExitGroup
+#define SyscallRedPill    4294967295 // +checkconst . SyscallRedPill
+
+#define CPUIntel        0 // +checkconst . CPUIntel
 
 #define PTRACE_R15      0   // +checkoffset linux PtraceRegs.R15
 #define PTRACE_R14      8   // +checkoffset linux PtraceRegs.R14
@@ -159,6 +166,15 @@
 // LOAD_KERNEL_STACK loads the kernel stack.
 #define LOAD_KERNEL_STACK(entry) \
 	MOVQ ENTRY_STACK_TOP(entry), SP;
+
+// VMCALL do vmcall/vmmcal instruction
+#define VMCALL() \
+	CMPQ ·CPUVendor(SB), $CPUIntel; \
+	JE 2(PC); \
+	JMP 5(PC); \ // vmmcall and vmcall will be treated as 3 independent instructions
+	BYTE $0x0F; BYTE $0x01; BYTE $0xC1; \
+	JMP 4(PC); \ // vmmcall and vmcall will be treated as 3 independent instructions
+	BYTE $0x0F; BYTE $0x01; BYTE $0xD9;
 
 // ADDR_OF_FUNC defines a function named 'name' that returns the address of
 // 'symbol'.
@@ -488,6 +504,45 @@ sysenter_skip_gs:
 	RET
 
 kernel:
+	// Handle any syscalls from GR0 in HR3 when EnableVMCALL is false.
+	// Currently there are 2 use cases:
+	// 1. Using KVM platform.
+	// 2. Upgrading SlimVM platform. This is one such method to return M to
+	//    user mode (HR3) for upgrading platform.
+	CMPQ ENTRY_ENABLE_VMCALL(GS), $0
+	JE hr3_do_syscall
+
+	CMPQ AX, $SyscallRedPill
+	JE hr3_do_syscall
+
+	CMPQ AX, $SyscallExit
+	JE hr3_do_syscall
+
+	CMPQ AX, $SyscallExitGroup
+	JE hr3_do_syscall
+
+vmcall:
+	// handle syscall from GR0 in host kernel
+	// copy from "handle system calls from G0" part of __dune_syscall in libdune/dune.S
+	PUSHQ R11
+	POPFQ
+
+	CMPQ AX, $158 // arch_prctl syscall
+	JNE 3(PC)
+	CMPQ DI, $0x1002 //ARCH_SET_FS
+	JE arch_prctl_vmcall
+
+	VMCALL()
+	JMP *CX
+
+arch_prctl_vmcall:
+	VMCALL()
+	CMPQ AX, $0
+	JNE 2(PC)
+	MOVQ SI, CPU_REGISTERS+PTRACE_FS_BASE(GS)
+	JMP *CX
+
+hr3_do_syscall:
 	// We can't restore the original stack, but we can access the registers
 	// in the CPU state directly. No need for temporary juggling.
 	MOVQ AX,  ENTRY_SCRATCH0(GS)

@@ -276,7 +276,7 @@ TEST(ItimerTest, DeliversSIGPROFToThreadsRoughlyFairlyActive) {
   // many" signals are delivered to the thread group leader, so these tests are
   // flaky on these platforms.
   const auto gvisor_platform = GvisorPlatform();
-  SKIP_IF(gvisor_platform == Platform::kPtrace);
+  SKIP_IF(gvisor_platform == Platform::kPtrace || gvisor_platform == Platform::kSlimVM);
 
   pid_t child;
   int execve_errno;
@@ -301,7 +301,7 @@ TEST(ItimerTest, DeliversSIGPROFToThreadsRoughlyFairlyActive) {
 TEST(ItimerTest, DeliversSIGPROFToThreadsRoughlyFairlyIdle) {
   // See comment in DeliversSIGPROFToThreadsRoughlyFairlyActive.
   const auto gvisor_platform = GvisorPlatform();
-  SKIP_IF(gvisor_platform == Platform::kPtrace);
+  SKIP_IF(gvisor_platform == Platform::kPtrace || gvisor_platform == Platform::kSlimVM);
 
   pid_t child;
   int execve_errno;

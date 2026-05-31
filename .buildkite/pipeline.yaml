@@ -310,7 +310,7 @@ steps:
   # All system call tests.
   - <<: *common
     label: ":toolbox: System call tests (AMD64)"
-    command: make BAZEL_OPTIONS=--test_tag_filters=-allsave syscall-tests
+    command: make BAZEL_OPTIONS=--test_tag_filters=-allsave,-runsc_slimvm syscall-tests
     parallelism: 20
     agents:
       <<: *platform_specific_agents

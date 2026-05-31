@@ -108,6 +108,9 @@ type kernelEntry struct {
 	// kernelCR3 is the cr3 used for sentry kernel.
 	kernelCR3 uintptr
 
+	// whether enable VMCALL
+	enableVMCALL uint64
+
 	// gdt is the CPU's descriptor table.
 	gdt descriptorTable
 
@@ -178,6 +181,14 @@ func (c *CPU) Vector() uintptr {
 //go:nosplit
 func (c *CPU) FaultAddr() uintptr {
 	return c.faultAddr
+}
+
+func (c *CPU) EnableVMCALL() {
+	c.enableVMCALL = 1
+}
+
+func (c *CPU) DisableVMCALL() {
+	c.enableVMCALL = 0
 }
 
 // SwitchArchOpts are embedded in SwitchOpts.

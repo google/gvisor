@@ -4,6 +4,7 @@
 platforms = {
     "ptrace": [],
     "kvm": [],
+    "slimvm": ["manual", "requires-slimvm"],
     "systrap": [],
 }
 
@@ -33,6 +34,13 @@ platform_capabilities = {
         _CAPABILITY_VSYSCALL: True,
     },
     "kvm": {
+        _CAPABILITY_32BIT: False,
+        _CAPABILITY_ALIGNMENT_CHECK: True,
+        _CAPABILITY_MULTIPROCESS: True,
+        _CAPABILITY_INT3: False,
+        _CAPABILITY_VSYSCALL: True,
+    },
+    "slimvm": {
         _CAPABILITY_32BIT: False,
         _CAPABILITY_ALIGNMENT_CHECK: True,
         _CAPABILITY_MULTIPROCESS: True,
