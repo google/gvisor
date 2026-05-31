@@ -463,21 +463,35 @@ Creator<SocketPair> TCPAcceptBindPersistentListenerSocketPairCreator(
     }
 
     // Bind the listener once, but create a new connect/accept pair each
-    // time.
+    // time. On bind/listen failure (e.g. EADDRINUSE because a prior test in
+    // the same shard left connections in TIME-WAIT against the small
+    // ephemeral pool) propagate the error and close the listener so the
+    // caller can retry; otherwise the cached (unbound) listener would
+    // poison every subsequent invocation.
     if (domain == AF_INET) {
       if (!addr4->has_value()) {
-        addr4->emplace(
-            TCPBindAndListen<sockaddr_in>(listener->value(), dual_stack)
-                .ValueOrDie());
+        PosixErrorOr<sockaddr_in> bound =
+            TCPBindAndListen<sockaddr_in>(listener->value(), dual_stack);
+        if (!bound.ok()) {
+          close(listener->value());
+          listener->reset();
+          return bound.error();
+        }
+        addr4->emplace(bound.ValueOrDie());
       }
       return CreateTCPConnectAcceptSocketPair(listener->value(),
                                               std::move(connected), type,
                                               dual_stack, addr4->value());
     }
     if (!addr6->has_value()) {
-      addr6->emplace(
-          TCPBindAndListen<sockaddr_in6>(listener->value(), dual_stack)
-              .ValueOrDie());
+      PosixErrorOr<sockaddr_in6> bound =
+          TCPBindAndListen<sockaddr_in6>(listener->value(), dual_stack);
+      if (!bound.ok()) {
+        close(listener->value());
+        listener->reset();
+        return bound.error();
+      }
+      addr6->emplace(bound.ValueOrDie());
     }
     return CreateTCPConnectAcceptSocketPair(listener->value(),
                                             std::move(connected), type,

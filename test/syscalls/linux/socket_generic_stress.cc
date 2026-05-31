@@ -193,6 +193,30 @@ INSTANTIATE_TEST_SUITE_P(
 using DataTransferStressTest = SocketPairTest;
 
 TEST_P(DataTransferStressTest, BigDataTransfer) {
+  // ConnectStressTest / PersistentListenerConnectStressTest narrow the
+  // ephemeral port range to ~50 ports via MaybeLimitEphemeralPorts() so they
+  // can exercise port-exhaustion behavior. That range is process-global, so
+  // when one of them runs before this test in the same shard the small pool is
+  // left full of TIME-WAIT 4-tuples and bind(port=0) fails with EADDRINUSE
+  // that no amount of SO_REUSEADDR / brief sleep can rescue. Widen the pool
+  // back to a large range for this test.
+  const char kRangeFile[] = "/proc/sys/net/ipv4/ip_local_port_range";
+  if (!access(kRangeFile, W_OK)) {
+    FileDescriptor fd =
+        ASSERT_NO_ERRNO_AND_VALUE(Open(kRangeFile, O_WRONLY | O_TRUNC));
+    const char full_range[] = "16000 65535";
+    const int n = write(fd.get(), full_range, sizeof(full_range) - 1);
+    // As root, access()/open() succeed even when the file is read-only (e.g.
+    // the host's port range under hostinet), so write() may still fail with
+    // EACCES. Tolerate that and skip widening rather than failing the test,
+    // mirroring MaybeLimitEphemeralPorts().
+    if (n < 0) {
+      ASSERT_THAT(n, SyscallFailsWithErrno(EACCES));
+    } else {
+      ASSERT_THAT(n, SyscallSucceedsWithValue(sizeof(full_range) - 1));
+    }
+  }
+
   const std::unique_ptr<SocketPair> sockets =
       ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
   int client_fd = sockets->first_fd();
@@ -253,9 +277,20 @@ TEST_P(DataTransferStressTest, BigDataTransfer) {
 
 INSTANTIATE_TEST_SUITE_P(
     AllConnectedSockets, DataTransferStressTest,
-    ::testing::Values(IPv6TCPAcceptBindPersistentListenerSocketPair(0),
-                      IPv4TCPAcceptBindPersistentListenerSocketPair(0),
-                      DualStackTCPAcceptBindPersistentListenerSocketPair(0)));
+    // SO_REUSEADDR is applied to the returned connect/accept sockets (see
+    // SetSockOpt), purely to mirror the PersistentListenerConnectStressTest
+    // instantiation above. Note it does NOT reach the shared persistent
+    // listener, which is created and bound inside the creator before any
+    // setsockopt runs; the actual fix for the listener bind() that would
+    // otherwise fail with EADDRINUSE is the port-range widening at the top of
+    // BigDataTransfer.
+    ::testing::Values(SetSockOpt(SOL_SOCKET, SO_REUSEADDR, &kSockOptOn)(
+                          IPv6TCPAcceptBindPersistentListenerSocketPair(0)),
+                      SetSockOpt(SOL_SOCKET, SO_REUSEADDR, &kSockOptOn)(
+                          IPv4TCPAcceptBindPersistentListenerSocketPair(0)),
+                      SetSockOpt(SOL_SOCKET, SO_REUSEADDR, &kSockOptOn)(
+                          DualStackTCPAcceptBindPersistentListenerSocketPair(
+                              0))));
 
 }  // namespace testing
 }  // namespace gvisor
