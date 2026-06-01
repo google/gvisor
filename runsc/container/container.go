@@ -1962,8 +1962,29 @@ func (c *Container) setupCgroupForSubcontainer(conf *config.Config, spec *specs.
 	if cg == nil || err != nil {
 		return nil, err
 	}
-	// Use empty resources, just want the directory structure created.
-	return cgroupInstall(conf, cg, &specs.LinuxResources{})
+	// Create the directory (and populate the spec-limit files from the OCI
+	// resources) so cAdvisor and other inotify-based tools can discover the
+	// subcontainer and report its container_spec_* series. The compat cgroup
+	// is process-less, so these limits have no kernel-side effect.
+	// InstallSubcontainerCompatDir handles the systemd v2 case (where Install
+	// does not create the directory) while keeping the existing cgroupfs
+	// behavior for v1 / non-systemd v2.
+	if err := cgroup.InstallSubcontainerCompatDir(cg, spec.Linux.Resources); err != nil {
+		return nil, handleCgroupInstallErr(conf, "subcontainer cgroup", err)
+	}
+	return cg, nil
+}
+
+// handleCgroupInstallErr maps an error from a cgroup install operation. In
+// rootless mode, EACCES/EROFS mean we lack permission to configure cgroups,
+// which is non-fatal: it logs and returns nil so the caller proceeds without a
+// cgroup. All other errors are wrapped with what.
+func handleCgroupInstallErr(conf *config.Config, what string, err error) error {
+	if (errors.Is(err, unix.EACCES) || errors.Is(err, unix.EROFS)) && conf.Rootless {
+		log.Warningf("Skipping %s configuration in rootless mode: %v", what, err)
+		return nil
+	}
+	return fmt.Errorf("configuring %s: %v", what, err)
 }
 
 // cgroupInstall creates cgroups dir structure and sets their respective
@@ -1973,13 +1994,7 @@ func (c *Container) setupCgroupForSubcontainer(conf *config.Config, spec *specs.
 // no cgroups was configured.
 func cgroupInstall(conf *config.Config, cg cgroup.Cgroup, res *specs.LinuxResources) (cgroup.Cgroup, error) {
 	if err := cg.Install(res); err != nil {
-		switch {
-		case (errors.Is(err, unix.EACCES) || errors.Is(err, unix.EROFS)) && conf.Rootless:
-			log.Warningf("Skipping cgroup configuration in rootless mode: %v", err)
-			return nil, nil
-		default:
-			return nil, fmt.Errorf("configuring cgroup: %v", err)
-		}
+		return nil, handleCgroupInstallErr(conf, "cgroup", err)
 	}
 	return cg, nil
 }
