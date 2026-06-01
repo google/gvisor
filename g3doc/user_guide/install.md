@@ -27,9 +27,9 @@ To download and install the latest release manually follow these steps:
 To install gVisor as a Docker runtime, run the following commands:
 
 ```shell
-$ /usr/local/bin/runsc install
-$ sudo systemctl reload docker
-$ docker run --rm --runtime=runsc hello-world
+sudo /usr/local/bin/runsc install
+sudo systemctl reload docker
+docker run --rm --runtime=runsc hello-world
 ```
 
 For more details about using gVisor with Docker, see
