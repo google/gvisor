@@ -11,6 +11,7 @@ go_library(
         "config.go",
         "config_amd64.go",
         "config_arm64.go",
+        "config_loong64.go",
         "config_cgo.go",
         "config_main.go",
         "config_precompiled.go",
@@ -22,6 +23,7 @@ go_library(
         "extra_filters_race.go",
         "extra_filters_race_amd64.go",
         "extra_filters_race_arm64.go",
+        "extra_filters_race_loong64.go",
     ],
     visibility = [
         "//runsc/boot/filter:__subpackages__",

@@ -68,6 +68,9 @@ func (t *thread) getFPRegs(fpState *fpu.State, ac *archContext) error {
 		Base: fpState.BytePointer(),
 		Len:  ac.floatingPointLength(),
 	}
+	if iovec.Len == 0 {
+		return nil
+	}
 	_, _, errno := unix.RawSyscall6(
 		unix.SYS_PTRACE,
 		unix.PTRACE_GETREGSET,
@@ -86,6 +89,9 @@ func (t *thread) setFPRegs(fpState *fpu.State, ac *archContext) error {
 	iovec := unix.Iovec{
 		Base: fpState.BytePointer(),
 		Len:  ac.floatingPointLength(),
+	}
+	if iovec.Len == 0 {
+		return nil
 	}
 	_, _, errno := unix.RawSyscall6(
 		unix.SYS_PTRACE,

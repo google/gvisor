@@ -12,6 +12,7 @@ exempt_go_library(
     name = "platforms",
     srcs = [
         "platforms.go",
+        "platforms_loong64.go",
         "platforms_darwin.go",
     ],
     # Nothing needs to be stateified, and stateify has trouble when select is

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build ((linux && amd64) || (linux && arm64)) && go1.18
-// +build linux,amd64 linux,arm64
+//go:build ((linux && amd64) || (linux && arm64) || (linux && loong64)) && go1.18
+// +build linux,amd64 linux,arm64 linux,loong64
 // +build go1.18
 
 // //go:linkname directives type-checked by checklinkname. Any other

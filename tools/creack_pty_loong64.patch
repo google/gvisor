@@ -1,0 +1,19 @@
+Add LoongArch64 type aliases for the cgo bridge.
+
+creack/pty defines _C_int / _C_uint per-architecture in ztypes_<arch>.go.
+The upstream catalogue stops at arm64/ppc64/riscv/s390x; this patch
+appends a loong64 variant that matches the kernel ABI (int32 / uint32).
+
+--- /dev/null
++++ b/ztypes_loong64.go
+@@ -0,0 +1,10 @@
++//go:build loong64
++// +build loong64
++
++package pty
++
++type (
++	_C_int  int32
++	_C_uint uint32
++)
++

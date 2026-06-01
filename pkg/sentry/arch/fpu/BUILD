@@ -13,6 +13,7 @@ go_library(
         "fpu_amd64.s",
         "fpu_amd64_unsafe.go",
         "fpu_arm64.go",
+        "fpu_loong64.go",
         "fpu_unsafe.go",
     ],
     marshal = True,

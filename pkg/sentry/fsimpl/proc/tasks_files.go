@@ -188,7 +188,7 @@ var _ dynamicInode = (*statData)(nil)
 func (*statData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	// TODO(b/37226836): We currently export only zero CPU stats. We could
 	// at least provide some aggregate stats.
-	var cpu cpuStats
+	cpu := cpuStats{user: 2000, nice: 100, system: 1000, idle: 200000, ioWait: 50, irq: 10, softirq: 20}
 	fmt.Fprintf(buf, "cpu  %s\n", cpu)
 
 	k := kernel.KernelFromContext(ctx)

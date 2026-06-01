@@ -41,6 +41,14 @@ func (t *Task) CompareAndSwapUint32(addr hostarch.Addr, old, new uint32) (uint32
 }
 
 // LoadUint32 implements futex.Target.LoadUint32.
+// MemoryBarrier implements futex.Target.MemoryBarrier by delegating to the
+// task's MemoryManager. On weakly-ordered platforms (LoongArch/ptrace) this
+// issues a host global barrier so peer stub writes become visible before a
+// futex re-check, preventing lost wakeups.
+func (t *Task) MemoryBarrier() {
+	t.MemoryManager().MemoryBarrier()
+}
+
 func (t *Task) LoadUint32(addr hostarch.Addr) (uint32, error) {
 	return t.MemoryManager().LoadUint32(t, addr, usermem.IOOpts{})
 }

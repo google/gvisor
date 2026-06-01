@@ -594,6 +594,19 @@ func (m *Manager) WaitPrepare(w *Waiter, t Target, addr hostarch.Addr, private b
 		return err
 	}
 
+	// LoongArch/ptrace: val was written by a peer stub process whose store may
+	// not be globally visible to the sentry yet under weak memory ordering (no
+	// on-CPU smp_mb like a native futex_wake). Force a host global barrier and
+	// re-check before blocking, so we don't miss an already-sent wake.
+	if mb, ok := t.(interface{ MemoryBarrier() }); ok {
+		mb.MemoryBarrier()
+		if err := check(t, addr, val); err != nil {
+			b.mu.Unlock()
+			w.key.release(t)
+			return err
+		}
+	}
+
 	// Add the waiter to the bucket.
 	b.waiters.PushBack(w)
 	w.bucket.Store(b)

@@ -11,6 +11,7 @@ go_library(
         "checkescape.go",
         "checkescape_amd64.go",
         "checkescape_arm64.go",
+        "checkescape_loong64.go",
     ],
     nogo = False,
     visibility = ["//tools/nogo:__subpackages__"],

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build amd64 || linux
+//go:build amd64 || linux && !loong64
 // +build amd64 linux
 
 package systrap

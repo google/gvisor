@@ -1,0 +1,14 @@
+Add the loongarch64 CPU constraint to @platforms 1.0.0.
+
+--- a/cpu/BUILD
++++ b/cpu/BUILD
+@@ -187,4 +187,9 @@
+ constraint_value(
+     name = "riscv64",
+     constraint_setting = ":cpu",
+ )
++
++constraint_value(
++    name = "loongarch64",
++    constraint_setting = ":cpu",
++)

@@ -11,6 +11,7 @@ go_library(
         "hostsyscall.go",
         "hostsyscall_amd64.s",
         "hostsyscall_arm64.s",
+        "hostsyscall_loong64.s",
     ],
     visibility = ["//:sandbox"],
     deps = ["@org_golang_x_sys//unix:go_default_library"],

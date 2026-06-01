@@ -21,12 +21,14 @@ def proto_library(name, has_services = None, **kwargs):
         **kwargs
     )
 
-def select_arch(amd64 = None, arm64 = None, riscv64 = None, default = None, **kwargs):
+def select_arch(amd64 = None, arm64 = None, riscv64 = None, loong64 = None, default = None, **kwargs):
     """Select an option against standard architectures.
 
     Args:
       amd64: the option if the architecture is amd64.
       arm64: the option if the architecture is arm64.
+      riscv64: the option if the architecture is riscv64.
+      loong64: the option if the architecture is loong64.
       default: the option if no matching architecture is provided.
       **kwargs: extra select arguments.
 
@@ -39,6 +41,8 @@ def select_arch(amd64 = None, arm64 = None, riscv64 = None, default = None, **kw
         values["//tools/bazeldefs:arm64"] = arm64
     if riscv64 != None:
         values["//tools/bazeldefs:riscv64"] = riscv64
+    if loong64 != None:
+        values["//tools/bazeldefs:loong64"] = loong64
     if default != None:
         values["//conditions:default"] = default
     return select(values, **kwargs)
@@ -73,6 +77,15 @@ def amd64_config(settings, attr):
         "//command_line_option:cpu": "k8",
         "//command_line_option:crosstool_top": "@crosstool//:toolchains",
         "//command_line_option:platforms": "@io_bazel_rules_go//go/toolchain:linux_amd64",
+    }
+
+def loong64_config(settings, attr):
+    return {
+        # See above.
+        "@io_bazel_rules_go//go/config:race": False,
+        "//command_line_option:cpu": "loongarch64",
+        "//command_line_option:crosstool_top": "@crosstool//:toolchains",
+        "//command_line_option:platforms": "@io_bazel_rules_go//go/toolchain:linux_loong64",
     }
 
 transition_allowlist = "@bazel_tools//tools/allowlists/function_transition_allowlist"

@@ -184,7 +184,7 @@ func Mremap(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr,
 func Mprotect(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	length := args[1].Uint64()
 	prot := args[2].Int()
-	err := t.MemoryManager().MProtect(args[0].Pointer(), length, hostarch.AccessType{
+	err := t.MemoryManager().MProtect(t, args[0].Pointer(), length, hostarch.AccessType{
 		Read:    linux.PROT_READ&prot != 0,
 		Write:   linux.PROT_WRITE&prot != 0,
 		Execute: linux.PROT_EXEC&prot != 0,

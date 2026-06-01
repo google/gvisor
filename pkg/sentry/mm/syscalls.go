@@ -153,19 +153,35 @@ func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (hostar
 		mm.populateVMAAndUnlock(ctx, vseg, ar, opts.PlatformEffect)
 
 	case opts.Mappable == nil && length <= hostarch.HugePageSize:
-		// NOTE(b/63077076, b/63360184): Get pmas and map eagerly in the hope
-		// that doing so will save on future page faults. We only do this for
-		// anonymous mappings, since otherwise the cost of
-		// memmap.Mappable.Translate is unknown; and only for small mappings,
-		// to avoid needing to allocate large amounts of memory that we may
-		// subsequently need to checkpoint.
-		mm.populateVMAAndUnlock(ctx, vseg, ar, memmap.PlatformEffectDefault)
+		// LoongArch: commit eagerly (not just Default) so small anonymous
+		// mappings (stack, .bss) are fully pma-allocated and mapped before
+		// access, avoiding the kernel TLB-miss->SIGSEGV path that clobbers
+		// caller-saved t0/t1.
+		mm.populateVMAAndUnlock(ctx, vseg, ar, memmap.PlatformEffectCommit)
 
 	default:
-		mm.mappingMu.Unlock()
+		// LoongArch: eager-populate so app accesses don't fault via the kernel
+		// TLB-miss->SIGSEGV path that clobbers caller-saved t0/t1. PROT_NONE
+		// reservations no-op in populateVMAAndUnlock; no mlock => no RLIMIT.
+		mm.populateVMAAndUnlock(ctx, vseg, ar, memmap.PlatformEffectCommit)
 	}
 
 	return ar.Start, nil
+}
+
+// PopulateAll eagerly commits and maps every accessible vma into the active
+// AddressSpace. LoongArch workaround: the kernel TLB-miss->page-fault->SIGSEGV
+// path does not restore caller-saved t0/t1, so any lazy fault corrupts the
+// application. Called once after loader.Load() so loader-created memory
+// (stack, ELF segments, GOT) is mapped before the application runs.
+func (mm *MemoryManager) PopulateAll(ctx context.Context) {
+	mm.mappingMu.Lock()
+	defer mm.mappingMu.Unlock()
+	for vseg := mm.vmas.FirstSegment(); vseg.Ok(); vseg = vseg.NextSegment() {
+		if vseg.ValuePtr().effectivePerms.Any() {
+			mm.populateVMA(ctx, vseg, vseg.Range(), memmap.PlatformEffectCommit)
+		}
+	}
 }
 
 // populateVMA obtains pmas for addresses in ar in the given vma, and maps them
@@ -192,7 +208,7 @@ func (mm *MemoryManager) populateVMA(ctx context.Context, vseg vmaIterator, ar h
 	}
 
 	// Ensure that we have usable pmas.
-	pseg, _, err := mm.getPMAsLocked(ctx, vseg, ar, hostarch.NoAccess, platformEffect == memmap.PlatformEffectCommit)
+	pseg, _, err := mm.getPMAsLocked(ctx, vseg, ar, vseg.ValuePtr().effectivePerms, platformEffect == memmap.PlatformEffectCommit)
 	if err != nil {
 		mm.activeMu.Unlock()
 		return err
@@ -238,7 +254,7 @@ func (mm *MemoryManager) populateVMAAndUnlock(ctx context.Context, vseg vmaItera
 	// mm.mappingMu doesn't need to be write-locked for getPMAsLocked, and it
 	// isn't needed at all for mapASLocked.
 	mm.mappingMu.DowngradeLock()
-	pseg, _, err := mm.getPMAsLocked(ctx, vseg, ar, hostarch.NoAccess, platformEffect == memmap.PlatformEffectCommit)
+	pseg, _, err := mm.getPMAsLocked(ctx, vseg, ar, vseg.ValuePtr().effectivePerms, platformEffect == memmap.PlatformEffectCommit)
 	mm.mappingMu.RUnlock()
 	if err != nil {
 		// mm/util.c:vm_mmap_pgoff() ignores the error, if any, from
@@ -471,7 +487,7 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 			NameMut:         vma.nameMut,
 		}, droppedIDs)
 		if err == nil {
-			if vma.mlockMode == memmap.MLockEager {
+			if vma.mlockMode == memmap.MLockEager || true { // LoongArch: always eager-populate remapped pages (mremap), else kernel SIGSEGV fault clobbers t0/t1
 				mm.populateVMA(ctx, vseg, ar, memmap.PlatformEffectCommit)
 			}
 			return oldAddr, nil
@@ -578,7 +594,7 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 		}
 		if vma.mlockMode != memmap.MLockNone {
 			mm.lockedAS += uint64(newAR.Length())
-			if vma.mlockMode == memmap.MLockEager {
+			if vma.mlockMode == memmap.MLockEager || true { // LoongArch: always eager-populate remapped pages (mremap), else kernel SIGSEGV fault clobbers t0/t1
 				mm.populateVMA(ctx, vseg, newAR, memmap.PlatformEffectCommit)
 			}
 		}
@@ -622,7 +638,7 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 		vma.mappable.RemoveMapping(ctx, mm, oldAR, vma.off, vma.canWriteMappableLocked())
 	}
 
-	if vma.mlockMode == memmap.MLockEager {
+	if vma.mlockMode == memmap.MLockEager || true { // LoongArch: always eager-populate remapped pages (mremap), else kernel SIGSEGV fault clobbers t0/t1
 		mm.populateVMA(ctx, vseg, newAR, memmap.PlatformEffectCommit)
 	}
 
@@ -630,7 +646,7 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 }
 
 // MProtect implements the semantics of Linux's mprotect(2).
-func (mm *MemoryManager) MProtect(addr hostarch.Addr, length uint64, realPerms hostarch.AccessType, growsDown bool) error {
+func (mm *MemoryManager) MProtect(ctx context.Context, addr hostarch.Addr, length uint64, realPerms hostarch.AccessType, growsDown bool) error {
 	addr = hostarch.UntaggedUserAddr(addr)
 	if addr.RoundDown() != addr {
 		return linuxerr.EINVAL
@@ -675,14 +691,24 @@ func (mm *MemoryManager) MProtect(addr hostarch.Addr, length uint64, realPerms h
 
 	mm.activeMu.Lock()
 	defer mm.activeMu.Unlock()
+	var didUnmapAS bool
 	defer func() {
 		mm.vmas.MergeInsideRange(ar)
 		mm.vmas.MergeOutsideRange(ar)
 		mm.pmas.MergeInsideRange(ar)
 		mm.pmas.MergeOutsideRange(ar)
+		// LoongArch: if we unmapped the range from the host AS due to a
+		// permission tightening (e.g. RELRO: mprotect RW->R), re-map it
+		// eagerly with the new perms. Otherwise the next access faults via the
+		// kernel TLB-miss->SIGSEGV path that does not restore page-walk
+		// temporaries t0/t1, corrupting application registers.
+		if didUnmapAS {
+			if rpseg := mm.pmas.LowerBoundSegment(ar.Start); rpseg.Ok() {
+				mm.mapASLocked(ctx, rpseg, ar, memmap.PlatformEffectCommit)
+			}
+		}
 	}()
 	pseg := mm.pmas.LowerBoundSegment(ar.Start)
-	var didUnmapAS bool
 	for {
 		// Check for permission validity before splitting vmas, for consistency
 		// with Linux.
@@ -815,11 +841,8 @@ func (mm *MemoryManager) Brk(ctx context.Context, addr hostarch.Addr) (hostarch.
 			return addr, err
 		}
 		mm.brk.End = addr
-		if mm.defMLockMode == memmap.MLockEager {
-			mm.populateVMAAndUnlock(ctx, vseg, ar, memmap.PlatformEffectCommit)
-		} else {
-			mm.mappingMu.Unlock()
-		}
+		// LoongArch: eager-populate the heap (see MMap default case).
+		mm.populateVMAAndUnlock(ctx, vseg, ar, memmap.PlatformEffectCommit)
 
 	case newbrkpg < oldbrkpg:
 		_, droppedIDs = mm.unmapLocked(ctx, hostarch.AddrRange{newbrkpg, oldbrkpg}, droppedIDs)

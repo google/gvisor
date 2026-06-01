@@ -58,7 +58,7 @@ func stubInit() {
 			stubStart,
 			mapLen,
 			unix.PROT_WRITE|unix.PROT_READ,
-			unix.MAP_PRIVATE|unix.MAP_ANONYMOUS,
+			unix.MAP_PRIVATE|unix.MAP_ANONYMOUS|0x100000, // MAP_FIXED_NOREPLACE
 			0 /* fd */, 0 /* offset */)
 		if addr != stubStart || errno != 0 {
 			if addr != 0 {

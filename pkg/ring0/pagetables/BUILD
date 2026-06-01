@@ -51,6 +51,7 @@ go_library(
         "pagetables_arm64.go",
         "pagetables_arm64_4k.go",
         "pagetables_arm64_64k.go",
+        "pagetables_loong64.go",
         "pagetables_x86.go",
         "pcids.go",
         "pcids_aarch64.go",

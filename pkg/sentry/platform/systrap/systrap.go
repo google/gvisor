@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build !loong64
+// +build !loong64
+
 // Package systrap provides a seccomp-based implementation of the platform
 // interface.
 //

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build linux
-// +build linux
+//go:build linux && (amd64 || arm64)
+// +build linux,amd64 linux,arm64
 
 // Package xdp provides link layer endpoints backed by AF_XDP sockets.
 package xdp

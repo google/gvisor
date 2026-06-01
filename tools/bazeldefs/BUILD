@@ -45,6 +45,13 @@ config_setting(
     ],
 )
 
+config_setting(
+    name = "loong64",
+    constraint_values = [
+        "@platforms//cpu:loongarch64",
+    ],
+)
+
 genrule(
     name = "version",
     outs = ["version.txt"],

@@ -15,6 +15,7 @@ go_library(
         "fence.go",
         "fence_amd64.s",
         "fence_arm64.s",
+        "fence_loong64.s",
         "gate_unsafe.go",
         "goyield_go113_unsafe.go",
         "goyield_unsafe.go",

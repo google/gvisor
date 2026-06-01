@@ -10,6 +10,7 @@ go_library(
     srcs = [
         "blockingpoll_amd64.s",
         "blockingpoll_arm64.s",
+        "blockingpoll_loong64.s",
         "blockingpoll_noyield_unsafe.go",
         "blockingpoll_yield_unsafe.go",
         "rawfile_unsafe.go",

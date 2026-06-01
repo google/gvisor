@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !systrap_profiling
+//go:build !systrap_profiling && !loong64
 // +build !systrap_profiling
 
 package systrap

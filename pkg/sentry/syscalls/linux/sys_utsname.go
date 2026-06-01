@@ -40,7 +40,7 @@ func Uname(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 	case arch.ARM64:
 		copy(u.Machine[:], "aarch64")
 	default:
-		copy(u.Machine[:], "unknown")
+		copy(u.Machine[:], "loongarch64")
 	}
 	copy(u.Domainname[:], uts.DomainName())
 

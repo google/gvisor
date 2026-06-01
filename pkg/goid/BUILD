@@ -11,6 +11,7 @@ go_library(
         "goid.go",
         "goid_amd64.tmpl.s",
         "goid_arm64.tmpl.s",
+        "goid_loong64.tmpl.s",
     ],
     stateify = False,
     visibility = ["//visibility:public"],

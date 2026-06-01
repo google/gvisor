@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build linux && !debug
-// +build linux,!debug
+//go:build linux && !debug && !loong64
+// +build linux,!debug,!loong64
 
 // Package platforms imports all available platform packages.
 package platforms

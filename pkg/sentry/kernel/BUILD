@@ -280,6 +280,7 @@ go_library(
         "ptrace.go",
         "ptrace_amd64.go",
         "ptrace_arm64.go",
+        "ptrace_loong64.go",
         "rseq.go",
         "running_tasks_mutex.go",
         "seccheck.go",

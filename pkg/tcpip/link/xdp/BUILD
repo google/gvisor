@@ -17,6 +17,7 @@ go_library(
     name = "xdp",
     srcs = [
         "endpoint.go",
+        "endpoint_loong64.go",
         "endpoint_mutex.go",
     ],
     visibility = ["//visibility:public"],

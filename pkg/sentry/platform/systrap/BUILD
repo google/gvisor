@@ -51,6 +51,7 @@ go_library(
         "subprocess.go",
         "subprocess_amd64.go",
         "subprocess_arm64.go",
+        "systrap_loong64.go",
         "subprocess_linux.go",
         "subprocess_linux_unsafe.go",
         "subprocess_pool.go",

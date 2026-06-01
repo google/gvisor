@@ -10,6 +10,7 @@ go_library(
         "fsutil.go",
         "fsutil_amd64_unsafe.go",
         "fsutil_arm64_unsafe.go",
+        "fsutil_loong64_unsafe.go",
         "fsutil_unsafe.go",
     ],
     visibility = ["//visibility:public"],

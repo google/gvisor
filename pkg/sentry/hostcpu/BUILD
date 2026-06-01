@@ -10,6 +10,7 @@ go_library(
     srcs = [
         "getcpu_amd64.s",
         "getcpu_arm64.s",
+        "getcpu_loong64.s",
         "hostcpu.go",
     ],
     visibility = ["//:sandbox"],

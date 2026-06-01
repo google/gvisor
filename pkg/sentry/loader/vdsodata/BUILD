@@ -18,9 +18,11 @@ go_library(
         "vdsodata.go",
         "vdsodata_amd64.go",
         "vdsodata_arm64.go",
+        "vdsodata_loong64.go",
     ],
     embedsrcs = [
         ":vdso_arch",  # keep
+        "vdso_loong64_stub.so",
     ],
     marshal = False,
     stateify = False,

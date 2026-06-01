@@ -351,7 +351,7 @@ func loadVDSO(ctx context.Context, m *mm.MemoryManager, v *VDSO, bin loadedELF) 
 
 		perms := progFlagsAsPerms(phdr.Flags)
 		if perms != hostarch.Read {
-			if err := m.MProtect(segPage, uint64(segSize), perms, false); err != nil {
+			if err := m.MProtect(ctx, segPage, uint64(segSize), perms, false); err != nil {
 				ctx.Warningf("Unable to set PT_LOAD segment protections %+v at [%#x, %#x): %v", perms, segAddr, segEnd, err)
 				return 0, linuxerr.ENOEXEC
 			}
@@ -368,6 +368,9 @@ func (v *VDSO) Release(ctx context.Context) {
 }
 
 var vdsoSigreturnOffset = func() uint64 {
+	if len(vdsodata.Binary) == 0 {
+		return 0 // LoongArch placeholder vdso
+	}
 	f, err := elf.NewFile(bytes.NewReader(vdsodata.Binary))
 	if err != nil {
 		panic(fmt.Sprintf("failed to parse vdso.so as ELF file: %v", err))

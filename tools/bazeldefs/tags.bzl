@@ -25,6 +25,7 @@ archs = [
     "_arm64",
     "_arm64_4k",
     "_arm64_64k",
+    "_loong64",
     "_mips",
     "_mips64",
     "_mips64le",

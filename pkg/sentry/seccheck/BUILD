@@ -23,6 +23,7 @@ go_library(
         "metadata.go",
         "metadata_amd64.go",
         "metadata_arm64.go",
+        "metadata_loong64.go",
         "seccheck.go",
         "seqatomic_sinkslice_unsafe.go",
         "syscall.go",

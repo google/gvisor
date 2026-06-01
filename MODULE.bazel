@@ -12,6 +12,12 @@ bazel_dep(name = "rules_cc", version = "0.2.16")
 bazel_dep(name = "grpc", version = "1.76.0", repo_name = "com_github_grpc_grpc")
 bazel_dep(name = "protobuf", version = "33.2", repo_name = "com_google_protobuf")
 bazel_dep(name = "platforms", version = "1.0.0")
+
+single_version_override(
+    module_name = "platforms",
+    patch_strip = 1,
+    patches = ["//tools:platforms_loongarch64.patch"],
+)
 bazel_dep(name = "abseil-cpp", version = "20250814.1", repo_name = "com_google_absl")
 bazel_dep(name = "googletest", version = "1.17.0", repo_name = "com_google_googletest")
 bazel_dep(name = "google_benchmark", version = "1.8.4", repo_name = "com_google_benchmark")
@@ -31,6 +37,7 @@ archive_override(
         "//tools:rules_go_sdk.patch",
         "//tools:rules_cgo.patch",
         "//tools:rules_go_export.patch",
+        "//tools:rules_go_loong64.patch",
     ],
     url = "https://github.com/bazel-contrib/rules_go/releases/download/v0.57.0/rules_go-v0.57.0.zip",
 )
@@ -725,4 +732,10 @@ go_deps.gazelle_override(
         "gazelle:proto disable_global",
     ],
     path = "k8s.io/apimachinery",
+)
+
+go_deps.module_override(
+    path = "github.com/creack/pty",
+    patches = ["//tools:creack_pty_loong64.patch"],
+    patch_strip = 1,
 )

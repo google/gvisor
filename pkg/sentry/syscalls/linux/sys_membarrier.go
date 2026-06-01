@@ -52,8 +52,13 @@ func Membarrier(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uint
 		if !t.Kernel().Platform.HaveGlobalMemoryBarrier() {
 			return 0, nil, linuxerr.EINVAL
 		}
+		// LoongArch/ptrace: PRIVATE_EXPEDITED is backed by a host GLOBAL barrier
+		// (stronger than a private one), so prior registration is not required
+		// for correctness. OpenJDK registers, then relies on PRIVATE_EXPEDITED for
+		// global safepoints; returning EPERM here deadlocks the JVM in futex.
+		// Auto-register instead of failing.
 		if cmd == linux.MEMBARRIER_CMD_PRIVATE_EXPEDITED && !t.MemoryManager().IsMembarrierPrivateEnabled() {
-			return 0, nil, linuxerr.EPERM
+			t.MemoryManager().EnableMembarrierPrivate()
 		}
 		return 0, nil, t.Kernel().Platform.GlobalMemoryBarrier()
 	case linux.MEMBARRIER_CMD_REGISTER_GLOBAL_EXPEDITED:

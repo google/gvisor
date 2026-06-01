@@ -15,6 +15,7 @@ go_library(
         "futex.go",
         "linux64_amd64.go",
         "linux64_arm64.go",
+        "linux64_loong64.go",
         "mmap.go",
         "open.go",
         "poll.go",

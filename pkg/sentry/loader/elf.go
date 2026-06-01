@@ -157,6 +157,8 @@ func parseHeader(ctx context.Context, f fullReader) (elfInfo, error) {
 		a = arch.AMD64
 	case elf.EM_AARCH64:
 		a = arch.ARM64
+	case 258: // elf.EM_LOONGARCH
+		a = arch.LOONGARCH64
 	default:
 		log.Infof("Unsupported ELF machine %d", machine)
 		return elfInfo{}, linuxerr.ENOEXEC
