@@ -182,8 +182,14 @@ func (rfd *replicaFileDescription) Ioctl(ctx context.Context, io usermem.IO, sys
 		return 0, err
 	case linux.TIOCGWINSZ:
 		return 0, rfd.inode.t.ld.windowSize(t, args)
+
 	case linux.TIOCSWINSZ:
-		return 0, rfd.inode.t.ld.setWindowSize(t, args)
+		err := rfd.inode.t.ld.setWindowSize(t, args)
+		if err != nil {
+			return 0, err
+		}
+		return 0, nil
+
 	case linux.TIOCSCTTY:
 		// Make the given terminal the controlling terminal of the
 		// calling process.

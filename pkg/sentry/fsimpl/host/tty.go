@@ -236,20 +236,30 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysno uin
 		return 0, err
 
 	case linux.TIOCSWINSZ:
-		// Args: const struct winsize *argp
-		// Set window size.
-
-		// Unlike setting the termios, any process group (even background ones) can
-		// set the winsize.
 
 		var winsize linux.Winsize
 		if _, err := winsize.CopyIn(task, args[2].Pointer()); err != nil {
 			return 0, err
 		}
-		err := ioctlSetWinsize(fd, &winsize)
-		return 0, err
 
-	// Unimplemented commands.
+		oldWinsize, _ := ioctlGetWinsize(fd)
+
+		err := ioctlSetWinsize(fd, &winsize)
+		if err != nil {
+			return 0, err
+		}
+
+		if oldWinsize.Row != winsize.Row || oldWinsize.Col != winsize.Col ||
+			oldWinsize.Xpixel != winsize.Xpixel ||
+			oldWinsize.Ypixel != winsize.Ypixel {
+			if ktty := t.TTY(); ktty != nil {
+				ktty.SignalForegroundProcessGroup(kernel.SignalInfoPriv(linux.SIGWINCH))
+			}
+		}
+
+		return 0, nil
+
+		// Unimplemented commands.
 	case linux.TIOCSETD,
 		linux.TIOCSBRK,
 		linux.TIOCCBRK,

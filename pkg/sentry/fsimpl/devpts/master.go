@@ -190,8 +190,14 @@ func (mfd *masterFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysn
 		return 0, nil
 	case linux.TIOCGWINSZ:
 		return 0, mfd.t.ld.windowSize(t, args)
+
 	case linux.TIOCSWINSZ:
-		return 0, mfd.t.ld.setWindowSize(t, args)
+		err := mfd.t.ld.setWindowSize(t, args)
+		if err != nil {
+			return 0, err
+		}
+		return 0, nil
+
 	case linux.TIOCSCTTY:
 		// Make the given terminal the controlling terminal of the
 		// calling process.
