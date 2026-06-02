@@ -172,7 +172,8 @@ func (fs *filesystem) mkdirFromTar(hdr *tar.Header, pathToInode map[string]*inod
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new directory inode: %v", err)
 	}
-	parentDir.inode.incLinksLocked()
+	parentDir.inode.incLinksLocked() // from child's ".."
+	parentDir.inode.incRef()         // child directory holds a reference to parent
 	childDir.inode.mtime.Store(hdr.ModTime.UnixNano())
 	childDir.inode.setXattrsFromPAXRecords(hdr)
 	parentDir.insertChildLocked(&childDir.dentry, name)

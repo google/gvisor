@@ -63,11 +63,7 @@ func (fs *filesystem) newDirectory(kuid auth.KUID, kgid auth.KGID, mode linux.Fi
 //   - filesystem.mu must be locked for writing.
 //   - dir must not already contain a child with the given name.
 func (dir *directory) insertChildLocked(child *dentry, name string) {
-	isNew := child.parent.Load() == nil
 	genericSetParentAndName(dir.dentry.inode.fs, child, &dir.dentry, name)
-	if child.inode.isDir() && isNew {
-		dir.inode.incRef()
-	}
 	if dir.childMap == nil {
 		dir.childMap = make(map[string]*dentry)
 	}

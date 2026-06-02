@@ -308,6 +308,7 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 			return err
 		}
 		parentDir.inode.incLinksLocked() // from child's ".."
+		parentDir.inode.incRef()         // child directory holds a reference to parent
 		parentDir.insertChildLocked(&childDir.dentry, name)
 		return nil
 	})
@@ -681,10 +682,12 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	oldParentDir.inode.touchCMtime()
 	if oldParentDir != newParentDir {
 		if renamed.inode.isDir() {
+			// Move link for renamed's ".." entry
 			oldParentDir.inode.decLinksLocked(ctx)
 			newParentDir.inode.incLinksLocked()
-			newParentDir.inode.incRef()
+			// Move renamed's reference to parent.
 			oldParentDir.inode.decRef(ctx)
+			newParentDir.inode.incRef()
 		}
 		newParentDir.inode.touchCMtime()
 	}
@@ -750,9 +753,9 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	// defers the child's IN_DELETE_SELF/IN_IGNORED until the last ref is
 	// dropped. decLinksLocked() may emit the child notifications
 	// immediately when no extra refs remain, so notify the parent after it.
-	child.inode.decLinksLocked(ctx)
-	child.inode.decLinksLocked(ctx)
-	parentDir.inode.decLinksLocked(ctx)
+	child.inode.decLinksLocked(ctx)     // link for child/.
+	child.inode.decLinksLocked(ctx)     // link for child
+	parentDir.inode.decLinksLocked(ctx) // link for child/..
 	parentDir.inode.watches.Notify(ctx, name, linux.IN_DELETE|linux.IN_ISDIR, 0, vfs.InodeEvent, true /* unlinked */)
 	toDecRef = vfsObj.CommitDeleteDentry(ctx, &child.vfsd)
 	parentDir.inode.touchCMtime()

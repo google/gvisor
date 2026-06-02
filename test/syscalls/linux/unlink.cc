@@ -16,6 +16,8 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include <cstdlib>
+
 #include "gtest/gtest.h"
 #include "absl/strings/str_cat.h"
 #include "test/util/capability_util.h"
@@ -327,6 +329,28 @@ TEST(UnlinkTest, UnlinkWithOpenFDsWriteOnly) {
     ASSERT_THAT(fstat(file_fd.get(), &st), SyscallSucceeds());
     EXPECT_EQ(st.st_size, sizeof(kHello));
   }
+}
+
+TEST(UnlinkTest, ChdirProcSelfFdParentDeleted) {
+  // Fuse does not support such operations via deleted files.
+  SKIP_IF(getenv("GVISOR_FUSE_TEST"));
+
+  TempPath outer = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  TempPath inner =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(outer.path()));
+
+  // TODO(b/400287667): Add support for deleted files in local gofer.
+  SKIP_IF(IsRunningOnGvisor() && !IsRunningOnRunsc() &&
+          ASSERT_NO_ERRNO_AND_VALUE(IsGoferfs(outer.path())));
+
+  FileDescriptor dir_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(inner.path(), O_RDONLY | O_DIRECTORY));
+
+  ASSERT_THAT(rmdir(inner.path().c_str()), SyscallSucceeds());
+  ASSERT_THAT(rmdir(outer.path().c_str()), SyscallSucceeds());
+
+  std::string proc_path = absl::StrCat("/proc/self/fd/", dir_fd.get(), "/..");
+  EXPECT_THAT(chdir(proc_path.c_str()), SyscallSucceeds());
 }
 
 }  // namespace
