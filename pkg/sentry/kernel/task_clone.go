@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/nsfs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -124,6 +125,8 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	// user_namespaces(7)
 	creds := t.Credentials()
 	userns := creds.UserNamespace
+	cu := cleanup.Make(func() {})
+	defer cu.Clean()
 	if args.Flags&linux.CLONE_NEWUSER != 0 {
 		var err error
 		// "EPERM (since Linux 3.9): CLONE_NEWUSER was specified in flags and
@@ -138,13 +141,16 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 		if err != nil {
 			return 0, nil, err
 		}
+		userns.SetInode(nsfs.NewInode(t, t.k.nsfsMount, userns))
+	} else {
+		userns.IncRef()
 	}
+	cu.Add(func() {
+		userns.DecRef(t)
+	})
 	if args.Flags&(linux.CLONE_NEWPID|linux.CLONE_NEWNET|linux.CLONE_NEWUTS|linux.CLONE_NEWIPC) != 0 && !creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, userns) {
 		return 0, nil, linuxerr.EPERM
 	}
-
-	cu := cleanup.Make(func() {})
-	defer cu.Clean()
 
 	utsns := t.utsns
 	if args.Flags&linux.CLONE_NEWUTS != 0 {
@@ -285,6 +291,10 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	if uc.uid != creds.RealKUID {
 		uc = t.k.GetUserCounters(creds.RealKUID)
 	}
+	childCreds := creds
+	if userns != creds.UserNamespace {
+		childCreds = creds.ForkIntoUserNamespace(userns)
+	}
 
 	cfg := &TaskConfig{
 		Kernel:           t.k,
@@ -293,7 +303,7 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 		TaskImage:        image,
 		FSContext:        fsContext,
 		FDTable:          fdTable,
-		Credentials:      creds,
+		Credentials:      childCreds,
 		NoNewPrivs:       t.GetNoNewPrivs(),
 		Niceness:         t.Niceness(),
 		NetworkNamespace: netns,
@@ -339,10 +349,6 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	// "sigaltstack should be cleared when sharing the same VM".
 	if args.Flags&linux.CLONE_VM == 0 || args.Flags&linux.CLONE_VFORK != 0 {
 		nt.SetSignalStack(t.SignalStack())
-	}
-
-	if userns != creds.UserNamespace {
-		nt.creds.Store(creds.ForkIntoUserNamespace(userns))
 	}
 
 	// This has to happen last, because e.g. ptraceClone may send a SIGSTOP to
@@ -509,6 +515,7 @@ type namespaceSet struct {
 	utsNS      *UTSNamespace
 	ipcNS      *IPCNamespace
 	mountNS    *vfs.MountNamespace
+	userNS     *auth.UserNamespace
 
 	fsContext *FSContext
 }
@@ -529,6 +536,9 @@ func (nss *namespaceSet) release(t *Task) {
 	if nss.mountNS != nil {
 		nss.mountNS.DecRef(t)
 	}
+	if nss.userNS != nil {
+		nss.userNS.DecRef(t)
+	}
 
 	if nss.fsContext != nil {
 		nss.fsContext.DecRef(t)
@@ -536,7 +546,7 @@ func (nss *namespaceSet) release(t *Task) {
 }
 
 func (nss *namespaceSet) initFromTask(t *Task, target *Task, flags int32) error {
-	supported := uint32(linux.CLONE_NEWPID | linux.CLONE_NEWNET | linux.CLONE_NEWUTS | linux.CLONE_NEWIPC | linux.CLONE_NEWNS)
+	supported := uint32(linux.CLONE_NEWPID | linux.CLONE_NEWNET | linux.CLONE_NEWUTS | linux.CLONE_NEWIPC | linux.CLONE_NEWNS | linux.CLONE_NEWUSER)
 	if (uint32(flags) & ^supported) != 0 || flags == 0 {
 		return linuxerr.EINVAL
 	}
@@ -567,6 +577,15 @@ func (nss *namespaceSet) initFromTask(t *Task, target *Task, flags int32) error 
 	target.mu.Lock()
 	defer target.mu.Unlock()
 
+	if flags&linux.CLONE_NEWUSER != 0 {
+		// User namespaces are stored in credentials, which outlive the other
+		// namespace fields cleared during task exit.
+		if target.ExitState() >= TaskExitInitiated {
+			return linuxerr.ESRCH
+		}
+		nss.userNS = target.Credentials().UserNamespace
+		nss.userNS.IncRef()
+	}
 	if flags&linux.CLONE_NEWNET != 0 {
 		nss.netNS = target.netns
 		if nss.netNS == nil {
@@ -631,6 +650,12 @@ func (nss *namespaceSet) initFromNS(ns vfs.Namespace, flags int32) error {
 		}
 		nss.mountNS = ns
 		ns.IncRef()
+	case *auth.UserNamespace:
+		if flags != 0 && flags != linux.CLONE_NEWUSER {
+			return linuxerr.EINVAL
+		}
+		nss.userNS = ns
+		ns.IncRef()
 	default:
 		return linuxerr.EINVAL
 	}
@@ -667,8 +692,29 @@ func (t *Task) Setns(fd *vfs.FileDescription, flags int32) error {
 		return err
 	}
 
+	creds := t.Credentials()
+	checkCreds := creds
+	if nss.userNS != nil {
+		if nss.userNS == creds.UserNamespace {
+			return linuxerr.EINVAL
+		}
+		t.tg.signalHandlers.mu.Lock()
+		if t.tg.tasksCount != 1 {
+			t.tg.signalHandlers.mu.Unlock()
+			return linuxerr.EINVAL
+		}
+		t.tg.signalHandlers.mu.Unlock()
+		if t.FSContext().ReadRefs() != 1 {
+			return linuxerr.EINVAL
+		}
+		if !creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, nss.userNS) {
+			return linuxerr.EPERM
+		}
+		checkCreds = creds.ForkIntoUserNamespace(nss.userNS)
+	}
+
 	if nss.childPIDNS != nil {
-		if !t.HasCapabilityIn(linux.CAP_SYS_ADMIN, nss.childPIDNS.UserNamespace()) || !t.HasSelfCapability(linux.CAP_SYS_ADMIN) {
+		if !checkCreds.HasCapabilityIn(linux.CAP_SYS_ADMIN, nss.childPIDNS.UserNamespace()) || !checkCreds.HasSelfCapability(linux.CAP_SYS_ADMIN) {
 			return linuxerr.EPERM
 		}
 		// Allow setting the current or a child pid namespace.
@@ -685,25 +731,25 @@ func (t *Task) Setns(fd *vfs.FileDescription, flags int32) error {
 	}
 
 	if nss.netNS != nil {
-		if !t.HasCapabilityIn(linux.CAP_SYS_ADMIN, nss.netNS.UserNamespace()) || !t.HasSelfCapability(linux.CAP_SYS_ADMIN) {
+		if !checkCreds.HasCapabilityIn(linux.CAP_SYS_ADMIN, nss.netNS.UserNamespace()) || !checkCreds.HasSelfCapability(linux.CAP_SYS_ADMIN) {
 			return linuxerr.EPERM
 		}
 	}
 
 	if nss.utsNS != nil {
-		if !t.HasCapabilityIn(linux.CAP_SYS_ADMIN, nss.utsNS.UserNamespace()) || !t.HasSelfCapability(linux.CAP_SYS_ADMIN) {
+		if !checkCreds.HasCapabilityIn(linux.CAP_SYS_ADMIN, nss.utsNS.UserNamespace()) || !checkCreds.HasSelfCapability(linux.CAP_SYS_ADMIN) {
 			return linuxerr.EPERM
 		}
 	}
 
 	if nss.ipcNS != nil {
-		if !t.HasCapabilityIn(linux.CAP_SYS_ADMIN, nss.ipcNS.UserNamespace()) || !t.HasSelfCapability(linux.CAP_SYS_ADMIN) {
+		if !checkCreds.HasCapabilityIn(linux.CAP_SYS_ADMIN, nss.ipcNS.UserNamespace()) || !checkCreds.HasSelfCapability(linux.CAP_SYS_ADMIN) {
 			return linuxerr.EPERM
 		}
 	}
 
 	if nss.mountNS != nil {
-		if !t.HasCapabilityIn(linux.CAP_SYS_ADMIN, nss.mountNS.UserNamespace()) || !t.HasSelfCapability(linux.CAP_SYS_CHROOT) || !t.HasSelfCapability(linux.CAP_SYS_ADMIN) {
+		if !checkCreds.HasCapabilityIn(linux.CAP_SYS_ADMIN, nss.mountNS.UserNamespace()) || !checkCreds.HasSelfCapability(linux.CAP_SYS_CHROOT) || !checkCreds.HasSelfCapability(linux.CAP_SYS_ADMIN) {
 			return linuxerr.EPERM
 		}
 		oldFSContext := t.FSContext()
@@ -723,6 +769,10 @@ func (t *Task) Setns(fd *vfs.FileDescription, flags int32) error {
 	// Swap to new namespaces.
 	// Store replaced resources in nss so that they're cleaned up by the deferred function.
 	t.mu.Lock()
+	if nss.userNS != nil {
+		t.creds.Store(checkCreds)
+		nss.userNS = creds.UserNamespace
+	}
 	if nss.childPIDNS != nil {
 		t.childPIDNamespace, nss.childPIDNS = nss.childPIDNS, t.childPIDNamespace
 	}
@@ -786,10 +836,12 @@ func (t *Task) Unshare(flags int32) error {
 
 	// Prepare new execution context.
 	creds := t.Credentials()
+	originalUserNS := creds.UserNamespace
 	var (
 		newFSContext  *FSContext
 		newFDTable    *FDTable
 		newCreds      bool
+		newUserNS     *auth.UserNamespace
 		newChildPIDNS *PIDNamespace
 		newNetNS      *inet.Namespace
 		newUTSNS      *UTSNamespace
@@ -802,6 +854,9 @@ func (t *Task) Unshare(flags int32) error {
 		}
 		if newFDTable != nil {
 			newFDTable.DecRef(t)
+		}
+		if newUserNS != nil {
+			newUserNS.DecRef(t)
 		}
 		if newNetNS != nil {
 			newNetNS.DecRef(t)
@@ -827,10 +882,11 @@ func (t *Task) Unshare(flags int32) error {
 			return linuxerr.EPERM
 		}
 		var err error
-		newUserNS, err := creds.NewChildUserNamespace()
+		newUserNS, err = creds.NewChildUserNamespace()
 		if err != nil {
 			return err
 		}
+		newUserNS.SetInode(nsfs.NewInode(t, t.k.nsfsMount, newUserNS))
 		creds = t.Credentials().ForkIntoUserNamespace(newUserNS)
 		newCreds = true
 	}
@@ -869,11 +925,12 @@ func (t *Task) Unshare(flags int32) error {
 
 	// Switch to new execution context. Store replaced resources in new* so
 	// that they're cleaned up by the deferred function.
-	if newCreds {
-		t.creds.Store(creds)
-	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if newCreds {
+		t.creds.Store(creds)
+		newUserNS = originalUserNS
+	}
 	if newFSContext != nil {
 		oldFSContext := t.FSContext()
 		// unshareFromTask() lowers the old fs context's ref count, but its for us to

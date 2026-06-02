@@ -1461,6 +1461,12 @@ func (s *namespaceSymlink) getInode(t *kernel.Task) *nsfs.Inode {
 			return pidns.GetInode()
 		}
 		return nil
+	case linux.CLONE_NEWUSER:
+		inode, _ := t.UserNamespace().TryGetInode().(*nsfs.Inode)
+		if inode == nil {
+			return nil
+		}
+		return inode
 	default:
 		panic("unknown namespace")
 	}

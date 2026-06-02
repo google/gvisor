@@ -20,6 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/refs"
 )
 
 // A UserNamespace represents a user namespace. See user_namespaces(7) for
@@ -60,6 +61,10 @@ type UserNamespace struct {
 
 	// setgroupsAllowed mirrors USERNS_SETGROUPS_ALLOWED in Linux. Protected by mu.
 	setgroupsAllowed bool
+
+	// inode is the nsfs inode associated with this namespace. This is stored as
+	// refs.TryRefCounter instead of *nsfs.Inode because nsfs imports auth.
+	inode refs.TryRefCounter
 }
 
 // NewRootUserNamespace returns a UserNamespace that is appropriate for a
@@ -97,6 +102,56 @@ func (ns *UserNamespace) Root() *UserNamespace {
 		ns = ns.parent
 	}
 	return ns
+}
+
+// Type implements vfs.Namespace.Type.
+func (ns *UserNamespace) Type() string {
+	return "user"
+}
+
+// Destroy implements vfs.Namespace.Destroy.
+func (ns *UserNamespace) Destroy(ctx context.Context) {}
+
+// UserNamespace implements vfs.Namespace.UserNamespace.
+func (ns *UserNamespace) UserNamespace() *UserNamespace {
+	return ns
+}
+
+// SetInode sets the nsfs inode associated with ns. The initial ref on inode is
+// the task or kernel ref for a newly-created user namespace, so those callers
+// don't need a separate IncRef.
+func (ns *UserNamespace) SetInode(inode refs.TryRefCounter) {
+	ns.mu.Lock()
+	defer ns.mu.Unlock()
+	ns.inode = inode
+}
+
+// IncRef increments ns's inode refcount.
+func (ns *UserNamespace) IncRef() {
+	ns.mu.Lock()
+	defer ns.mu.Unlock()
+	if ns.inode != nil {
+		ns.inode.IncRef()
+	}
+}
+
+// TryGetInode returns ns's inode with an incremented refcount.
+func (ns *UserNamespace) TryGetInode() refs.TryRefCounter {
+	ns.mu.Lock()
+	defer ns.mu.Unlock()
+	if ns.inode == nil || !ns.inode.TryIncRef() {
+		return nil
+	}
+	return ns.inode
+}
+
+// DecRef decrements ns's inode refcount.
+func (ns *UserNamespace) DecRef(ctx context.Context) {
+	ns.mu.Lock()
+	defer ns.mu.Unlock()
+	if ns.inode != nil {
+		ns.inode.DecRef(ctx)
+	}
 }
 
 // "The kernel imposes (since version 3.11) a limit of 32 nested levels of user

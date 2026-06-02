@@ -74,7 +74,9 @@ type TaskConfig struct {
 	// succeeds.
 	FDTable *FDTable
 
-	// Credentials is the Credentials of the new task.
+	// Credentials is the Credentials of the new task. A reference must be held
+	// on Credentials.UserNamespace, which is transferred to TaskSet.NewTask
+	// whether or not it succeeds.
 	Credentials *auth.Credentials
 
 	// NoNewPrivs determines if the task can gain new privileges.
@@ -143,6 +145,7 @@ func (ts *TaskSet) cloneNewTask(ctx context.Context, cfg *TaskConfig) (*Task, in
 	var err error
 	cleanup := func() {
 		cfg.TaskImage.release(ctx)
+		cfg.Credentials.UserNamespace.DecRef(ctx)
 		cfg.FSContext.DecRef(ctx)
 		cfg.FDTable.DecRef(ctx)
 		cfg.UTSNamespace.DecRef(ctx)
