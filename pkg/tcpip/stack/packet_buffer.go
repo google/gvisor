@@ -911,7 +911,7 @@ func (pk *PacketBuffer) GetHeaders() (netHdr header.Network, transHdr header.Tra
 		}
 		return nil, nil, false, false
 	default:
-		panic(fmt.Sprintf("unexpected transport protocol = %d", pk.TransportProtocolNumber))
+		return nil, nil, false, false
 	}
 }
 

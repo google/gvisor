@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 func TestPacketHeaderPush(t *testing.T) {
@@ -719,4 +720,29 @@ func concatViews(views ...[]byte) []byte {
 		all = append(all, v...)
 	}
 	return all
+}
+
+// TestGetHeadersUnknownProtocol verifies that GetHeaders() returns ok = false
+// instead of panicking when called with an unknown transport protocol number.
+func TestGetHeadersUnknownProtocol(t *testing.T) {
+	pk := NewPacketBuffer(PacketBufferOptions{})
+	pk.TransportProtocolNumber = 200
+	netHdr, transHdr, isICMPError, ok := pk.GetHeaders()
+	if ok {
+		t.Errorf("GetHeaders() = (%v, %v, %v, true); want _, _, _, false", netHdr, transHdr, isICMPError)
+	}
+}
+
+// TestCalculateTransportChecksumUnknownProtocol verifies that
+// CalculateTransportChecksum() does not panic when encountering an unknown
+// transport protocol, even when falling back to parsing the network header.
+func TestCalculateTransportChecksumUnknownProtocol(t *testing.T) {
+	pk := NewPacketBuffer(PacketBufferOptions{
+		ReserveHeaderBytes: 20,
+	})
+	pk.TransportProtocolNumber = 200
+	pk.NetworkProtocolNumber = header.IPv4ProtocolNumber
+	pk.NetworkHeader().Push(20)
+	// This should not panic.
+	pk.CalculateTransportChecksum()
 }
