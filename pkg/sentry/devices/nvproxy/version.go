@@ -424,6 +424,7 @@ func Init() {
 					nvgpu.NV50_THIRD_PARTY_P2P:       allocHandler(rmAllocSimple[nvgpu.NV503C_ALLOC_PARAMETERS], compUtil),
 					nvgpu.GF100_PROFILER:             allocHandler(rmAllocNoParams, nvconf.CapProfiling),
 					nvgpu.MAXWELL_PROFILER_DEVICE:    allocHandler(rmAllocSimple[nvgpu.NVB2CC_ALLOC_PARAMETERS], nvconf.CapProfiling),
+					nvgpu.NV_COUNTER_COLLECTION_UNIT: allocHandler(rmAllocNoParams, nvconf.CapProfiling),
 					nvgpu.GT200_DEBUGGER:             allocHandler(rmAllocSMDebuggerSession, compUtil),
 					nvgpu.FERMI_TWOD_A:               allocHandler(rmAllocSimple[nvgpu.NV_GR_ALLOCATION_PARAMETERS], nvconf.CapGraphics),
 					nvgpu.FERMI_CONTEXT_SHARE_A:      allocHandler(rmAllocContextShare, compUtil),
@@ -736,6 +737,7 @@ func Init() {
 							nvgpu.GT200_DEBUGGER:             ioctlInfo("GT200_DEBUGGER", nvgpu.NV83DE_ALLOC_PARAMETERS{}),
 							nvgpu.GF100_PROFILER:             simpleIoctlInfo("GF100_PROFILER"), // No params
 							nvgpu.MAXWELL_PROFILER_DEVICE:    ioctlInfo("MAXWELL_PROFILER_DEVICE", nvgpu.NVB2CC_ALLOC_PARAMETERS{}),
+							nvgpu.NV_COUNTER_COLLECTION_UNIT: simpleIoctlInfo("NV_COUNTER_COLLECTION_UNIT"), // No params
 							nvgpu.FERMI_TWOD_A:               ioctlInfo("FERMI_TWOD_A", nvgpu.NV_GR_ALLOCATION_PARAMETERS{}),
 							nvgpu.FERMI_CONTEXT_SHARE_A:      ioctlInfo("FERMI_CONTEXT_SHARE_A", nvgpu.NV_CTXSHARE_ALLOCATION_PARAMETERS{}),
 							nvgpu.GF100_DISP_SW:              ioctlInfo("GF100_DISP_SW", nvgpu.NV9072_ALLOCATION_PARAMETERS{}),
