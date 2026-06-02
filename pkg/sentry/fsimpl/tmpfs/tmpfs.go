@@ -595,6 +595,11 @@ type inode struct {
 	// A reference is held on all inodes as long as they are reachable in the
 	// filesystem tree, i.e. nlink is nonzero. This reference is dropped when
 	// nlink reaches 0.
+	//
+	// A directory inode also holds a reference on its parent directory. This is
+	// to ensure that the parent directory is not destroyed before the child is
+	// destroyed because the parent is still reachable via
+	// `/proc/self/fd/<dir_fd>/..` even after both directories are unlinked.
 	refs inodeRefs
 
 	// xattrs implements extended attributes.
@@ -709,6 +714,7 @@ func (i *inode) decRef(ctx context.Context) {
 		// Remove pages used if child being removed is a SymLink or Regular File.
 		switch impl := i.impl.(type) {
 		case *directory:
+			// Release the reference that child directories hold on their parent.
 			if parent := impl.dentry.parent.Load(); parent != nil {
 				parent.inode.decRef(ctx)
 			}

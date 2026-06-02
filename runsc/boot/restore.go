@@ -389,24 +389,25 @@ func (r *restorer) restore(l *Loader) error {
 	// This is because `timer.Log` blocks until all timed tasks are finished,
 	// but some restore tasks may still run in the background, and we don't
 	// want to block this function until they finish.
-	postRestoreThread := r.timer.Fork("postRestore")
-	go r.postRestore(l.k, postRestoreThread, r.timer)
+	postRestoreTimeline := r.timer.Fork("postRestore")
+	go r.postRestore(l.k, postRestoreTimeline, r.timer)
 	r.timer = nil
 
 	return nil
 }
 
-func (r *restorer) postRestore(k *kernel.Kernel, postRestoreThread *timing.Timeline, timer *timing.Timer) {
+func (r *restorer) postRestore(k *kernel.Kernel, timeline *timing.Timeline, timer *timing.Timer) {
 	defer timer.Log()
-	defer postRestoreThread.End()
+	defer timeline.End()
 
-	postRestoreThread.Reached("scheduled")
-	if err := control.PostRestore(k, postRestoreThread); err != nil {
+	timeline.Reached("scheduled")
+	if err := control.PostRestore(k, timeline); err != nil {
+		r.cm.onRestoreFailed(fmt.Errorf("post restore work failed: %w", err))
 		log.Warningf("Killing the sandbox after post restore work failed: %v", err)
 		k.Kill(linux.WaitStatusTerminationSignal(linux.SIGKILL))
 		return
 	}
-	postRestoreThread.Reached("post restore done")
+	timeline.Reached("post restore done")
 
 	// Now that post restore work succeeded, increment the checkpoint gen
 	// manually. The count was saved while the previous kernel was being saved
@@ -418,6 +419,7 @@ func (r *restorer) postRestore(k *kernel.Kernel, postRestoreThread *timing.Timel
 	// Wait for page loading to complete if happening in the background.
 	if r.asyncMFLoader != nil {
 		if err := r.asyncMFLoader.Wait(); err != nil {
+			r.cm.onRestoreFailed(fmt.Errorf("async MemoryFile loading failed: %w", err))
 			log.Warningf("Killing the sandbox after MemoryFile page loading failed: %v", err)
 			k.Kill(linux.WaitStatusTerminationSignal(linux.SIGKILL))
 			return
@@ -433,7 +435,7 @@ func (r *restorer) postRestore(k *kernel.Kernel, postRestoreThread *timing.Timel
 	}
 
 	r.cm.onRestoreDone(s)
-	postRestoreThread.Reached("kernel notified")
+	timeline.Reached("kernel notified")
 	log.Infof("Restore successful")
 }
 

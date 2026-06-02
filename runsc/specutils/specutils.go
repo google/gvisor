@@ -969,7 +969,7 @@ func Features() *features.Features {
 				},
 				MountExtensions: &features.MountExtensions{
 					IDMap: &features.IDMap{
-						Enabled: boolPtr(false),
+						Enabled: boolPtr(true),
 					},
 				},
 			},
