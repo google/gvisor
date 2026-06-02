@@ -1361,7 +1361,7 @@ TEST_F(Cgroup2Test, PidsEnforcement) {
   constexpr int kCantFork = 2;
   pid_t pid = fork();
   if (pid == 0) {
-    wfd.reset();
+    wfd.CloseSignalSafe();
     char token;
     if (read(rfd.get(), &token, 1) <= 0) {
       _exit(1);
@@ -1490,7 +1490,7 @@ TEST_F(Cgroup2Test, InotifyEventsOnExit) {
 
   pid_t pid = fork();
   if (pid == 0) {
-    wfd.reset();
+    wfd.CloseSignalSafe();
     char token;
     if (read(rfd.get(), &token, 1) <= 0) {
       _exit(1);
@@ -1528,7 +1528,7 @@ TEST_F(Cgroup2Test, ZombieCgroupMembership) {
 
   pid_t pid = fork();
   if (pid == 0) {
-    wfd.reset();
+    wfd.CloseSignalSafe();
     char token;
     if (read(rfd.get(), &token, 1) <= 0) {
       _exit(1);
@@ -1831,7 +1831,7 @@ TEST_F(Cgroup2Test, KillTree) {
 
   pid_t pid1 = fork();
   if (pid1 == 0) {
-    wfd.reset();
+    wfd.CloseSignalSafe();
     char token;
     if (read(rfd.get(), &token, 1) <= 0) {
       _exit(1);
@@ -1842,7 +1842,7 @@ TEST_F(Cgroup2Test, KillTree) {
 
   pid_t pid2 = fork();
   if (pid2 == 0) {
-    wfd.reset();
+    wfd.CloseSignalSafe();
     char token;
     if (read(rfd.get(), &token, 1) <= 0) {
       _exit(1);
@@ -1969,8 +1969,8 @@ TEST_F(Cgroup2Test, ThreadedDomainComplexTopology) {
 
   pid_t p2 = fork();
   if (p2 == 0) {
-    exit_wfd.reset();
-    start_rfd.reset();
+    exit_wfd.CloseSignalSafe();
+    start_rfd.CloseSignalSafe();
     // Move the child leader into child2.
     ASSERT_NO_ERRNO(child2.WriteIntegerControlFile("cgroup.threads", gettid()));
 

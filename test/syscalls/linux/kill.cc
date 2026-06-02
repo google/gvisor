@@ -71,7 +71,7 @@ TEST(KillTest, CanKillAllPIDs) {
 
   pid_t pid = fork();
   if (pid == 0) {
-    read_fd.reset();
+    read_fd.CloseSignalSafe();
 
     struct sigaction sa;
     sa.sa_sigaction = SigHandler;
@@ -81,7 +81,7 @@ TEST(KillTest, CanKillAllPIDs) {
     MaybeSave();
 
     // Indicate to the parent that we're ready.
-    write_fd.reset();
+    write_fd.CloseSignalSafe();
 
     // Wait until we get the signal from the parent.
     while (true) {

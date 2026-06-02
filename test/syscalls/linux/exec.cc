@@ -1241,7 +1241,7 @@ void writeAndWaitForPid(int child_pid, int pipe_fd) {
   TEST_PCHECK_MSG(waitpid(child_pid, &status, 0) == child_pid,
                   "waitpid failed.");
   TEST_CHECK(WIFEXITED(status) && WEXITSTATUS(status) == 0);
-  exit(42);
+  _exit(42);
 }
 
 void ExecWithThread() {
@@ -1266,7 +1266,7 @@ void ExecWithThread() {
   const ExecveArray envv;
 
   execve("/proc/self/exe", argv.get(), envv.get());
-  exit(errno);
+  _exit(errno);
 }
 
 void ExecFromThread() {
@@ -1275,7 +1275,7 @@ void ExecFromThread() {
     const ExecveArray envv;
 
     execve("/proc/self/exe", argv.get(), envv.get());
-    exit(errno);
+    _exit(errno);
   });
 
   while (true) {

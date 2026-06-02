@@ -83,6 +83,16 @@ class FileDescriptor {
     return fd;
   }
 
+  // Closes the file descriptor without any logging or other operations that are
+  // not async-signal-safe. This should only be used in contexts where
+  // async-signal-safety is required (e.g. after clone() and before execve()).
+  void CloseSignalSafe() {
+    int const fd = release();
+    if (fd >= 0) {
+      close(fd);
+    }
+  }
+
   // If this object is non-empty, closes the owned file descriptor (recording a
   // test failure if the close fails).
   void reset() { reset(-1); }

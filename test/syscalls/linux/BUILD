@@ -967,6 +967,7 @@ cc_binary(
     malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
+        "//test/util:file_descriptor",
         "//test/util:logging",
         "//test/util:memory_util",
         "//test/util:posix_error",

@@ -103,6 +103,11 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 		return 0, nil, linuxerr.EINVAL
 	}
 
+	// The CLONE_PARENT flag can't be used in clone calls by an init process.
+	if args.Flags&linux.CLONE_PARENT != 0 && t.tg.IsInitIn(t.PIDNamespace()) {
+		return 0, nil, linuxerr.EINVAL
+	}
+
 	// Pull task registers and FPU state, a cloned task will inherit the
 	// state of the current task.
 	if err := t.p.PullFullState(t.MemoryManager().AddressSpace(), t.Arch()); err != nil {
@@ -264,7 +269,13 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 				sh = sh.Reset()
 			}
 		}
-		tg = t.k.NewThreadGroup(pidns, sh, linux.Signal(args.ExitSignal), tg.limits.GetCopy())
+		termSig := linux.Signal(args.ExitSignal)
+		if args.Flags&linux.CLONE_PARENT != 0 {
+			t.tg.pidns.owner.mu.RLock()
+			termSig = t.tg.terminationSignal
+			t.tg.pidns.owner.mu.RUnlock()
+		}
+		tg = t.k.NewThreadGroup(pidns, sh, termSig, tg.limits.GetCopy())
 		tg.oomScoreAdj = atomicbitops.FromInt32(t.tg.oomScoreAdj.Load())
 		rseqAddr = t.rseqAddr
 		rseqSignature = t.rseqSignature
@@ -297,7 +308,7 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 		SessionKeyring:   sessionKeyring,
 		Origin:           t.Origin,
 	}
-	if args.Flags&linux.CLONE_THREAD == 0 {
+	if args.Flags&(linux.CLONE_THREAD|linux.CLONE_PARENT) == 0 {
 		cfg.Parent = t
 	} else {
 		cfg.InheritParent = t

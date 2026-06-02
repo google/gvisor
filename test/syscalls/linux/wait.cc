@@ -876,12 +876,12 @@ TEST(WaitTest, TraceeWALL) {
   pid_t child = fork();
   if (child == 0) {
     // Child.
-    rfd.reset();
+    rfd.CloseSignalSafe();
 
     TEST_PCHECK(ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) == 0);
 
     // Notify parent that we're now a tracee.
-    wfd.reset();
+    wfd.CloseSignalSafe();
 
     _exit(0);
   }

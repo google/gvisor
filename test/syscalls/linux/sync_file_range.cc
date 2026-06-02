@@ -63,7 +63,7 @@ TEST(SyncFileRangeTest, CannotSyncFileRangeOnUnopenedFd) {
 
   pid_t pid = fork();
   if (pid == 0) {
-    f.reset();
+    f.CloseSignalSafe();
 
     // fd is now invalid.
     TEST_CHECK(sync_file_range(fd, 0, 0, SYNC_FILE_RANGE_WRITE) == -1);

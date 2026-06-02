@@ -34,6 +34,7 @@
 #include "gtest/gtest.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "test/util/file_descriptor.h"
 #include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
 #include "test/util/memory_util.h"
@@ -517,6 +518,101 @@ int clone3(struct clone_args* ca, size_t size) {
   return syscall(SYS_clone3, ca, size);
 }
 
+TEST(CloneTest, CloneParent) {
+  // A is the test process. B is the child. C is the grandchild.
+  // C is created with CLONE_PARENT, so it should be a adopted by A.
+  pid_t a_pid = getpid();
+
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  FileDescriptor rfd(fds[0]);
+  FileDescriptor wfd(fds[1]);
+
+  pid_t b_pid = fork();
+  if (b_pid == 0) {
+    rfd.CloseSignalSafe();
+
+    clone_args ca = {};
+    ca.flags = CLONE_PARENT;
+    ca.exit_signal = 0;  // clone3 will fail without this.
+    pid_t c_pid = clone3(&ca, sizeof(ca));
+    if (c_pid == 0) {
+      if (getppid() != a_pid) {
+        _exit(42);  // CLONE_PARENT failed.
+      }
+      _exit(0);
+    }
+    if (c_pid < 0) {
+      _exit(1);  // C could not be created.
+    }
+    if (write(wfd.get(), &c_pid, sizeof(c_pid)) != sizeof(c_pid)) {
+      _exit(1);
+    }
+
+    // B should fail to wait on C with ECHILD if CLONE_PARENT worked.
+    int status = -1;
+    int rval = wait4(c_pid, &status, __WALL, NULL);
+    if (rval != -1 || errno != ECHILD) {
+      _exit(43);
+    }
+    _exit(0);
+  }
+  ASSERT_THAT(b_pid, SyscallSucceeds());
+  wfd.reset();
+
+  // A's wait on B.
+  int status;
+  EXPECT_THAT(waitpid(b_pid, &status, 0), SyscallSucceedsWithValue(b_pid));
+  ASSERT_TRUE(WIFEXITED(status));
+  EXPECT_EQ(WEXITSTATUS(status), 0);
+
+  // A's wait on C.
+  pid_t c_pid = -1;
+  EXPECT_THAT(read(rfd.get(), &c_pid, sizeof(c_pid)),
+              SyscallSucceedsWithValue(sizeof(c_pid)));
+  ASSERT_GT(c_pid, 0);
+  EXPECT_THAT(wait4(c_pid, &status, __WALL, NULL),
+              SyscallSucceedsWithValue(c_pid));
+  ASSERT_TRUE(WIFEXITED(status));
+  EXPECT_EQ(WEXITSTATUS(status), 0);
+}
+
+TEST(CloneTest, CloneParentOrThreadWithExitSignalFails) {
+  clone_args ca = {};
+  ca.flags = CLONE_PARENT;
+  ca.exit_signal = SIGCHLD;
+  EXPECT_THAT(clone3(&ca, sizeof(ca)), SyscallFailsWithErrno(EINVAL));
+
+  ca = {};
+  ca.flags = CLONE_THREAD;
+  ca.exit_signal = SIGCHLD;
+  EXPECT_THAT(clone3(&ca, sizeof(ca)), SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(CloneTest, CloneParentInitProcessFails) {
+  clone_args ca = {};
+  ca.flags = CLONE_NEWPID | CLONE_NEWUSER;
+  ca.exit_signal = SIGCHLD;
+  int pid = clone3(&ca, sizeof(ca));
+  ASSERT_THAT(pid, SyscallSucceeds());
+
+  if (pid == 0) {
+    clone_args pca = {};
+    pca.flags = CLONE_PARENT;
+    pca.exit_signal = 0;
+    int ret = clone3(&pca, sizeof(pca));
+    if (ret < 0 && errno == EINVAL) {
+      _exit(0);
+    }
+    _exit(1);
+  }
+
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceeds());
+  EXPECT_TRUE(WIFEXITED(status));
+  EXPECT_EQ(WEXITSTATUS(status), 0);
+}
+
 // Checks that clone fails for any unsupported flag.
 TEST(CloneTest, Clone3UnknownFlag) {
   clone_args ca = {};
@@ -534,7 +630,7 @@ TEST(CloneTest, Clone3AsClone) {
   EXPECT_THAT(child_pid = clone3(&ca, sizeof(ca)), SyscallSucceeds());
 
   if (child_pid == 0) {
-    exit(0);
+    _exit(0);
   }
 
   int status;
@@ -557,7 +653,7 @@ TEST(CloneTest, Clone3Basic) {
   EXPECT_EQ(store_child_tid, child_pid);
 
   if (child_pid == 0) {
-    exit(0);
+    _exit(0);
   }
 
   int status;

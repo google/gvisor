@@ -197,7 +197,7 @@ TEST(SigtimedwaitTest, SIGKILLUncaught) {
 
   pid_t pid = fork();
   if (pid == 0) {
-    rfd.reset();
+    rfd.CloseSignalSafe();
 
     sigset_t mask;
     sigemptyset(&mask);

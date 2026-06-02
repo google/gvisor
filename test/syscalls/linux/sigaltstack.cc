@@ -257,7 +257,7 @@ TEST(SigaltstackTest, SetCurrentStack) {
         // Should not be able to disable the stack.
         stack.ss_flags = SS_DISABLE;
         TEST_CHECK(sigaltstack(&stack, nullptr) == -1 && errno == EPERM);
-        exit(0);
+        _exit(0);
       },
       ::testing::ExitedWithCode(0), "");
 }

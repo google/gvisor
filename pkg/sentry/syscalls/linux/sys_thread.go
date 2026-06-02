@@ -230,6 +230,9 @@ func Clone3(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr,
 	if cloneArgs.Flags&linux.CLONE_DETACHED != 0 {
 		return 0, nil, linuxerr.EINVAL
 	}
+	if cloneArgs.Flags&(linux.CLONE_THREAD|linux.CLONE_PARENT) != 0 && cloneArgs.ExitSignal != 0 {
+		return 0, nil, linuxerr.EINVAL
+	}
 
 	ntid, ctrl, err := t.Clone(&cloneArgs)
 	if err != nil {
