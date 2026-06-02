@@ -1148,6 +1148,11 @@ func TestMultiContainerProcesses(t *testing.T) {
 // TestMultiContainerKillAll checks that all process that belong to a container
 // are killed when SIGKILL is sent to *all* processes in that container.
 func TestMultiContainerKillAll(t *testing.T) {
+	// TODO(b/458092379): This test flakes when running with gotsan.
+	if sync.RaceEnabled {
+		t.Skip("Skipping test when running with race detector (gotsan)")
+	}
+
 	rootDir, cleanup, err := testutil.SetupRootDir()
 	if err != nil {
 		t.Fatalf("error creating root dir: %v", err)
