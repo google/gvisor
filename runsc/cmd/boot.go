@@ -38,6 +38,7 @@ import (
 	"gvisor.dev/gvisor/pkg/prometheus"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sys"
 	"gvisor.dev/gvisor/pkg/sentry/hostmm"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
@@ -576,6 +577,16 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 
 	linux.SetAFSSyscallPanic(conf.TestOnlyAFSSyscallPanic)
 
+	// Read RDMA device data serialized by stage 1 (rdmaProxyUpdateChroot).
+	var rdmaDevices *sys.RDMAData
+	if conf.RDMAProxy && specutils.HasRDMADevicesInSpec(spec) {
+		rdmaDevices = sys.DeserializeRDMAData(sys.RDMADataPath)
+	}
+
+	// Read PCI/NUMA topology data serialized by stage 1.
+	pciDevicesData := sys.DeserializePCIDevicesData(sys.PCIDevicesDataPath)
+	numaData := sys.DeserializeNUMAData(sys.NUMADataPath)
+
 	// Create the loader.
 	bootArgs := boot.Args{
 		ID:                  f.Arg(0),
@@ -610,6 +621,9 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		SaveFDs:          b.saveFDs.GetFDs(),
 		FSRestoreFDs:     b.fsRestoreFDs.GetFDs(),
 		RootfsUpperTarFD: b.rootfsUpperTarFD,
+		RDMADevices:      rdmaDevices,
+		PCIDevicesData:   pciDevicesData,
+		NUMAData:         numaData,
 	}
 	b.setBootArgsExtra(&bootArgs)
 	l, err := boot.New(bootArgs)
