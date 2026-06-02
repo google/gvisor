@@ -1574,8 +1574,7 @@ func (r *RenameAt2Req) CheckedUnmarshal(src []byte) ([]byte, bool) {
 	if !ok {
 		return src, false
 	}
-	srcRemain = r.Flags.UnmarshalUnsafe(srcRemain)
-	return srcRemain, true
+	return r.Flags.CheckedUnmarshal(srcRemain)
 }
 
 // RenameAtResp is an empty response to RenameAtReq and RenameAt2Req.
