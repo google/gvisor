@@ -197,3 +197,78 @@ func TestCreateSpecRootless(t *testing.T) {
 		t.Error("GIDMappings empty")
 	}
 }
+
+func TestCreateSpecEnvExposure(t *testing.T) {
+	secretName := "LAUNCHER_SECRET"
+	secretVal := "super_secret_value"
+	os.Setenv(secretName, secretVal)
+	defer os.Unsetenv(secretName)
+
+	conf := &config.Config{}
+	args := []string{"true"}
+
+	// 1. Default behavior: should NOT inherit host env vars.
+	{
+		opts := &sandboxexecpb.SandboxOptions{}
+		spec, err := createSpec(opts, args, conf)
+		if err != nil {
+			t.Fatalf("createSpec failed: %v", err)
+		}
+		for _, env := range spec.Process.Env {
+			if env == secretName+"="+secretVal || env == secretName {
+				t.Errorf("default spec inherited secret env var: %s", env)
+			}
+		}
+	}
+
+	// 2. Forward policy: should inherit.
+	{
+		opts := &sandboxexecpb.SandboxOptions{
+			EnvVars: []*sandboxexecpb.EnvVar{
+				{
+					Name: secretName,
+					PolicyOrValue: &sandboxexecpb.EnvVar_Policy{
+						Policy: sandboxexecpb.EnvVar_ENV_VAR_POLICY_FORWARD,
+					},
+				},
+			},
+		}
+		spec, err := createSpec(opts, args, conf)
+		if err != nil {
+			t.Fatalf("createSpec failed: %v", err)
+		}
+		found := false
+		for _, env := range spec.Process.Env {
+			if env == secretName+"="+secretVal {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("forwarded env var %s not found in spec", secretName)
+		}
+	}
+
+	// 3. Unset policy: should NOT inherit, even if it was in host.
+	{
+		opts := &sandboxexecpb.SandboxOptions{
+			EnvVars: []*sandboxexecpb.EnvVar{
+				{
+					Name: secretName,
+					PolicyOrValue: &sandboxexecpb.EnvVar_Policy{
+						Policy: sandboxexecpb.EnvVar_ENV_VAR_POLICY_UNSET,
+					},
+				},
+			},
+		}
+		spec, err := createSpec(opts, args, conf)
+		if err != nil {
+			t.Fatalf("createSpec failed: %v", err)
+		}
+		for _, env := range spec.Process.Env {
+			if env == secretName+"="+secretVal || env == secretName {
+				t.Errorf("unset env var %s still found in spec: %s", secretName, env)
+			}
+		}
+	}
+}

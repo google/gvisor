@@ -194,7 +194,6 @@ func createSpec(opts *sandboxexecpb.SandboxOptions, args []string, conf *config.
 		Process: &specs.Process{
 			Cwd:          ".",
 			Args:         args,
-			Env:          os.Environ(),
 			Capabilities: specutils.AllCapabilities(),
 		},
 	}
@@ -212,19 +211,30 @@ func createSpec(opts *sandboxexecpb.SandboxOptions, args []string, conf *config.
 		}
 	}
 
+	envMap := make(map[string]string)
+
 	for _, ev := range opts.GetEnvVars() {
 		name := ev.GetName()
 		switch x := ev.GetPolicyOrValue().(type) {
 		case *sandboxexecpb.EnvVar_Value:
-			spec.Process.Env = append(spec.Process.Env, fmt.Sprintf("%s=%s", name, x.Value))
+			envMap[name] = x.Value
 		case *sandboxexecpb.EnvVar_Policy:
-			if x.Policy == sandboxexecpb.EnvVar_ENV_VAR_POLICY_FORWARD {
+			switch x.Policy {
+			case sandboxexecpb.EnvVar_ENV_VAR_POLICY_FORWARD:
 				if val, ok := os.LookupEnv(name); ok {
-					spec.Process.Env = append(spec.Process.Env, fmt.Sprintf("%s=%s", name, val))
+					envMap[name] = val
 				}
+			case sandboxexecpb.EnvVar_ENV_VAR_POLICY_UNSET:
+				delete(envMap, name)
 			}
 		}
 	}
+
+	var env []string
+	for k, v := range envMap {
+		env = append(env, fmt.Sprintf("%s=%s", k, v))
+	}
+	spec.Process.Env = env
 
 	spec.Mounts = append(spec.Mounts, specs.Mount{
 		Destination: "/proc",
