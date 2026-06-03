@@ -17,6 +17,7 @@ go_library(
     deps = [
         "//runsc/cli",
         "//runsc/cmd",
+        "//runsc/cmd/alias",
         "//runsc/cmd/nvproxy",
         "//runsc/cmd/trace",
         "//runsc/cmd/util",
