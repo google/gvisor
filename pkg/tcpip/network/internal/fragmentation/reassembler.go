@@ -103,8 +103,21 @@ func (r *reassembler) process(first, last uint16, more bool, proto uint8, pkt *s
 		}
 
 		holeFound = true
+		// IPv6: rfc8200#section-4.5
+		//  Changed the text to require that IPv6 nodes must not create
+		//  overlapping fragments.  Also, when reassembling an IPv6
+		//  datagram, if one or more its constituent fragments is
+		//  determined to be an overlapping fragment, the entire datagram
+		//  (and any constituent fragments) must be silently discarded.
+		//  Includes a clarification that no ICMP error message should be
+		//  sent if overlapping fragments are received.
 		if currentHole.filled {
+			// Incoming fragment is a subset of an existing fragment.
+			if first != currentHole.first || last != currentHole.last {
+				return nil, 0, false, 0, ErrFragmentOverlap
+			}
 			// Incoming fragment is a duplicate.
+			// Not dropping packet incase of duplicates.
 			continue
 		}
 

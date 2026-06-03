@@ -215,9 +215,9 @@ func (b IPv6) TransportProtocol() tcpip.TransportProtocolNumber {
 	return tcpip.TransportProtocolNumber(b.NextHeader())
 }
 
-// isExtensionHeader returns true if the next header is a known extension header.
-func isExtensionHeader(hdr uint8) bool {
-	extType := IPv6ExtensionHeaderIdentifier(hdr)
+// IsExtensionHeader returns true if the next header is a known extension header.
+func IsExtensionHeader(nextHdr uint8) bool {
+	extType := IPv6ExtensionHeaderIdentifier(nextHdr)
 	switch extType {
 	case IPv6HopByHopOptionsExtHdrIdentifier, IPv6RoutingExtHdrIdentifier, IPv6FragmentExtHdrIdentifier, IPv6DestinationOptionsExtHdrIdentifier, IPv6AuthenticationExtHdrIdentifier, IPv6NoNextHeaderIdentifier:
 		return true
@@ -238,7 +238,7 @@ func (b IPv6) TryParseTransportProtocol() (tcpip.TransportProtocolNumber, bool) 
 	data := []byte(b[IPv6MinimumSize:])
 	nxtHdr := b.NextHeader()
 	maybeProto := tcpip.TransportProtocolNumber(nxtHdr)
-	for isExtensionHeader(nxtHdr) {
+	for IsExtensionHeader(nxtHdr) {
 		dataLen := len(data)
 		if dataLen < 2 {
 			return maybeProto, false
