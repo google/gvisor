@@ -264,9 +264,72 @@ func (c *vCPU) setSystemTime() error {
 
 //go:nosplit
 func (c *vCPU) loadSegments(tid uint64) {
+	// Disable host pointer authentication on this thread before any
+	// bluepill entry. See disableHostPAC() for the rationale.
+	disableHostPAC()
+
 	// TODO(gvisor.dev/issue/1238):  TLS is not supported.
 	// Get TLS from tpidr_el0.
 	c.tid.Store(tid)
+}
+
+// checkPAC is a quick check to see if the host CPU supports pointer
+// authentication to avoid having to do a host-syscall if it's unnecessary.
+//
+//go:nosplit
+func checkPAC() bool
+
+// addressPACKeys is the bitmask of every ARM64 address pointer
+// authentication key recognised by PR_PAC_SET_ENABLED_KEYS. The generic
+// authentication key (PR_PAC_APGAKEY) is NOT accepted by this prctl on
+// Linux (the kernel returns EINVAL); generic auth applies only to PACGA
+// which the VDSO does not use, so it is irrelevant for this fix.
+const addressPACKeys = unix.PR_PAC_APIAKEY | unix.PR_PAC_APIBKEY |
+	unix.PR_PAC_APDAKEY | unix.PR_PAC_APDBKEY
+
+// disableHostPAC disables host pointer authentication for the calling
+// thread. This is necessary on ARM64 because the sentry's Go runtime runs
+// inside the KVM guest at Guest EL1, where PAC instructions
+// (paciasp/autiasp) behave differently than at Host EL0. When the
+// sentry's Go runtime calls a VDSO function such as __kernel_getrandom,
+// the VDSO's paciasp signs the return address with whatever PAC state
+// the guest happens to have. The subsequent SVC traps to El1_sync, the
+// vCPU exits, and bluepillArchExit copies the VDSO PC into the host's
+// signal context. After sigreturn resumes the host thread at the VDSO,
+// the VDSO epilogue's autiasp tries to verify the return address with
+// the host's PAC keys, fails, and raises SIGILL. The gVisor SIGILL
+// handler then misinterprets R8 (which contains VDSO state, not a
+// vCPU pointer) and crashes with SIGSEGV.
+//
+// The PAC keys are per-process secrets and cannot be read from
+// userspace, so there is no way to synchronise them between Guest EL1
+// and Host EL0. Instead, disable the host's PAC keys entirely; that
+// turns paciasp/autiasp into NOPs at Host EL0, which removes the
+// mismatch without requiring any guest-side coordination.
+//
+// This is called from loadSegments, which runs every time a vCPU is
+// bound to a (potentially new) host thread. Each thread that ever
+// hosts a vCPU therefore has PAC disabled before it can trigger the
+// bluepill SIGILL path. The prctl is per-thread; calling it again on
+// a thread that already has PAC disabled is harmless and idempotent
+// at the kernel level.
+//
+// The prctl return value is intentionally ignored: it returns EINVAL
+// on kernels older than 5.13 (which lack PR_PAC_SET_ENABLED_KEYS) and
+// on hardware without address authentication, both of which imply the
+// crash cannot occur and there is nothing to fix.
+//
+//go:nosplit
+func disableHostPAC() {
+	if !checkPAC() {
+		return
+	}
+	hostsyscall.RawSyscallErrno6(
+		unix.SYS_PRCTL,
+		unix.PR_PAC_SET_ENABLED_KEYS,
+		addressPACKeys, // keys to modify
+		0,              // 0 = disable, 1 = enable
+		0, 0, 0)
 }
 
 //go:nosplit
