@@ -250,15 +250,15 @@ func StackHook(family stack.AddressFamily, hook uint32) (stack.NFHook, *syserr.A
 // NFTables represents the nftables state for all address families.
 // Note: unlike iptables, nftables doesn't start with any initialized tables.
 type NFTables struct {
-	filters            [stack.NumAFs]*addressFamilyFilter // Filters for each address family.
-	ip4InetBaseChains  [stack.NFNumHooks][]*Chain         // List of base chains for each hook in the IPv4-inet family.
-	ip6InetBaseChains  [stack.NFNumHooks][]*Chain         // List of base chains for each hook in the IPv6-inet family.
-	clock              tcpip.Clock                        // Clock for timing evaluations.
-	startTime          time.Time                          // Time NFTables object was created.
-	rng                rand.RNG                           // Random number generator.
-	tableHandleCounter atomicbitops.Uint64                // Table handle counter.
-	Mu                 nfTablesRWMutex                    // Mutex for tableHandles.
-	genid              uint32                             // Generation ID for nftables.
+	filters            [stack.NumAFs]*addressFamilyFilter  // Filters for each address family.
+	ip4InetBaseChains  [stack.NFNumHooks]hookFunctionStack // List of base chains for each hook in the IPv4-inet family.
+	ip6InetBaseChains  [stack.NFNumHooks]hookFunctionStack // List of base chains for each hook in the IPv6-inet family.
+	clock              tcpip.Clock                         // Clock for timing evaluations.
+	startTime          time.Time                           // Time NFTables object was created.
+	rng                rand.RNG                            // Random number generator.
+	tableHandleCounter atomicbitops.Uint64                 // Table handle counter.
+	Mu                 nfTablesRWMutex                     // Mutex for tableHandles.
+	genid              uint32                              // Generation ID for nftables.
 }
 
 // Ensures NFTables implements the NFTablesInterface.
@@ -335,8 +335,8 @@ type HookInfo struct {
 // hookFunctionStack represents the list of base chains for a specific hook.
 // The stack is ordered by priority and built as chains are added to tables.
 type hookFunctionStack struct {
-	hook       stack.NFHook
-	baseChains []*Chain
+	baseChains    []*Chain
+	natBaseChains []*Chain
 }
 
 // TableFlag is a flag for a table as supported by the nftables binary.
@@ -1177,12 +1177,15 @@ func (nf *NFTables) DeepCopy() *NFTables {
 		}
 
 		for hook, hfStack := range filter.hfStacks {
-			hfStackCopy := &hookFunctionStack{
-				hook: hfStack.hook,
-			}
+			hfStackCopy := &hookFunctionStack{}
 			for _, chain := range hfStack.baseChains {
 				chainCopy := nftCopy.filters[i].tables[chain.table.name].chains[chain.name]
 				hfStackCopy.baseChains = append(hfStackCopy.baseChains, chainCopy)
+				nftCopy.addChainToCache(chainCopy)
+			}
+			for _, chain := range hfStack.natBaseChains {
+				chainCopy := nftCopy.filters[i].tables[chain.table.name].chains[chain.name]
+				hfStackCopy.natBaseChains = append(hfStackCopy.natBaseChains, chainCopy)
 				nftCopy.addChainToCache(chainCopy)
 			}
 			nftCopy.filters[i].hfStacks[hook] = hfStackCopy

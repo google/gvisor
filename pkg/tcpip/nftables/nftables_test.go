@@ -20,7 +20,6 @@ import (
 	"math"
 	"reflect"
 	"slices"
-	"strconv"
 	"testing"
 	"time"
 
@@ -4377,29 +4376,36 @@ func TestDumpOperations(t *testing.T) {
 func TestBaseChainEvalOrder(t *testing.T) {
 	nf := newNFTablesStd()
 	hook := stack.NFOutput
-	createNFTablesWithBaseChains := func(t *testing.T, ip stack.AddressFamily, priority int) *NFTables {
+	chainNum := 0
+	createBaseChains := func(t *testing.T, ip stack.AddressFamily, bcType BaseChainType, priority int) *NFTables {
 		tab, err := nf.AddTable(ip, "test_table_"+stack.AddressFamilyStrings[ip], false)
 		if err != nil {
 			t.Fatalf("AddTable failed: %v", err)
 		}
 		bcInfo := &BaseChainInfo{
-			BcType:   BaseChainTypeFilter,
+			BcType:   bcType,
 			Hook:     hook,
 			Priority: NewIntPriority(priority),
 		}
-		_, err = nf.AddChainToTable(tab, "chain"+strconv.Itoa(priority), bcInfo, "test", false, 0, nil, linux.NF_ACCEPT)
+		_, err = nf.AddChainToTable(tab, fmt.Sprintf("chain_%d", chainNum), bcInfo, "test", false, 0, nil, linux.NF_ACCEPT)
 		if err != nil {
 			t.Fatalf("AddChain failed: %v", err)
 		}
+		chainNum++
 		return nf
 	}
-	// Create NFTables with base chains for IP, Inet, and IP6.
-	nf = createNFTablesWithBaseChains(t, stack.IP, 1)
-	nf = createNFTablesWithBaseChains(t, stack.Inet, -100)
-	nf = createNFTablesWithBaseChains(t, stack.IP6, 1)
+	// Create chains with filter base chains for IP, Inet, and IP6.
+	nf = createBaseChains(t, stack.IP, BaseChainTypeFilter, 1)
+	nf = createBaseChains(t, stack.Inet, BaseChainTypeFilter, -100)
+	nf = createBaseChains(t, stack.IP6, BaseChainTypeFilter, 1)
 
-	validateOrder := func(t *testing.T, family stack.AddressFamily, wantLen int) {
-		baseChains, err := nf.getBaseChainsForEvaluation(family, hook)
+	// Create chains with nat base chains for IP, Inet, and IP6.
+	nf = createBaseChains(t, stack.IP, BaseChainTypeNat, 10)
+	nf = createBaseChains(t, stack.Inet, BaseChainTypeNat, -50)
+	nf = createBaseChains(t, stack.IP6, BaseChainTypeNat, 10)
+
+	validateOrder := func(t *testing.T, family stack.AddressFamily, wantNATChains bool, wantLen int) {
+		baseChains, err := nf.getBaseChainsForEvaluation(family, hook, wantNATChains)
 		if err != nil {
 			t.Fatalf("getBaseChainsForEvaluation failed: %v", err)
 		}
@@ -4408,6 +4414,11 @@ func TestBaseChainEvalOrder(t *testing.T) {
 		}
 		prevPriority := math.MinInt32
 		for _, bc := range baseChains {
+			if wantNATChains && bc.baseChainInfo.BcType != BaseChainTypeNat {
+				t.Fatalf("base chain type: got %v, want nat", bc.baseChainInfo.BcType.String())
+			} else if !wantNATChains && bc.baseChainInfo.BcType == BaseChainTypeNat {
+				t.Fatalf("base chain type got nat, want %v", bc.baseChainInfo.BcType.String())
+			}
 			p := bc.baseChainInfo.Priority.GetValue()
 			if p < prevPriority {
 				t.Fatalf("base chain priority %d is less than previous priority %d", p, prevPriority)
@@ -4416,6 +4427,9 @@ func TestBaseChainEvalOrder(t *testing.T) {
 		}
 	}
 
-	validateOrder(t, stack.IP, 2 /*wantLen*/)
-	validateOrder(t, stack.IP6, 2 /*wantLen*/)
+	wantLen := 2 // ip[4|6] + inet
+	validateOrder(t, stack.IP, false /*wantNATChains*/, wantLen)
+	validateOrder(t, stack.IP6, false /*wantNATChains*/, wantLen)
+	validateOrder(t, stack.IP, true /*wantNATChains*/, wantLen)
+	validateOrder(t, stack.IP, true /*wantNATChains*/, wantLen)
 }

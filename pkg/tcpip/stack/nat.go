@@ -22,6 +22,27 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
+// NfNATPriority returns the priority of the NAT hook.
+// Check `ipv4/ipv6_nat_ops` in nf_nat_proto.c.
+func NfNATPriority(hook NFHook) (int, bool) {
+	switch hook {
+	case NFPrerouting:
+		// NF_IP_PRI_NAT_DST
+		return -100, true
+	case NFPostrouting:
+		// NF_IP_PRI_NAT_SRC
+		return 100, true
+	case NFOutput:
+		// NF_IP_PRI_NAT_DST
+		return -100, true
+	case NFInput:
+		// NF_IP_PRI_NAT_SRC
+		return 100, true
+	}
+	// NAT is not supported for other hooks.
+	return 0, false
+}
+
 // handlePacket attempts to handle a packet and perform NAT if the connection
 // has had NAT performed on it.
 //

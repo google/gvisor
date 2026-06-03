@@ -84,16 +84,68 @@ func (nf *NFTables) checkHook(pkt *stack.PacketBuffer, af stack.AddressFamily, h
 	return v.Code == VC(linux.NF_ACCEPT)
 }
 
+// isTerminalCode returns if the hook evaluation should terminate now.
+func isTerminalCode(code uint32) bool {
+	// NF_ACCEPT should continue the evaluation of the other base chains.
+	switch code {
+	case VC(linux.NF_DROP), VC(linux.NF_STOLEN), VC(linux.NF_QUEUE):
+		return true
+	}
+	return false
+}
+
 //
 // Core Evaluation Functions
 //
 
-func (nf *NFTables) getBaseChainsForEvaluation(family stack.AddressFamily, hook stack.NFHook) ([]*Chain, *syserr.AnnotatedError) {
+// extraEvaluator is a struct that holds a priority and a function to call during
+// functions other than base chain evaluations.
+type extraEvaluator struct {
+	priority int
+	handle   func() *syserr.AnnotatedError
+}
+
+// getExtraEvaluators returns a list of extra evaluators beside the nft chains.
+func (nf *NFTables) getExtraEvaluators(family stack.AddressFamily, hook stack.NFHook, pkt *stack.PacketBuffer, regs *registerSet) []*extraEvaluator {
+	var e []*extraEvaluator
+	// Get ConnTrack evaluator.
+	connTrackPriority, connTrackOk := stack.NfConnTrackPriority(hook)
+	if connTrackOk {
+		e = append(e, &extraEvaluator{
+			priority: connTrackPriority,
+			handle: func() *syserr.AnnotatedError {
+				return nil
+			}})
+	}
+	// Get NAT evaluator.
+	natHookPriority, natOk := stack.NfNATPriority(hook)
+	if natOk {
+		e = append(e, &extraEvaluator{
+			priority: natHookPriority,
+			handle: func() *syserr.AnnotatedError {
+				return nil
+			},
+		})
+	}
+	// Sort the evaluators by priority.
+	slices.SortFunc(e, func(a, b *extraEvaluator) int {
+		return a.priority - b.priority
+	})
+	return e
+}
+
+func (nf *NFTables) getBaseChainsForEvaluation(family stack.AddressFamily, hook stack.NFHook, natChains bool) ([]*Chain, *syserr.AnnotatedError) {
+	getBaseChains := func(hf *hookFunctionStack) []*Chain {
+		if natChains {
+			return hf.natBaseChains
+		}
+		return hf.baseChains
+	}
 	switch family {
 	case stack.IP:
-		return nf.ip4InetBaseChains[hook], nil
+		return getBaseChains(&nf.ip4InetBaseChains[hook]), nil
 	case stack.IP6:
-		return nf.ip6InetBaseChains[hook], nil
+		return getBaseChains(&nf.ip6InetBaseChains[hook]), nil
 	case stack.Inet:
 		// A packet can be of only IP or IP6 address family.
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "inet address family is not supported for hook evaluation")
@@ -102,10 +154,10 @@ func (nf *NFTables) getBaseChainsForEvaluation(family stack.AddressFamily, hook 
 		return nil, nil
 	}
 	filter := nf.filters[family]
-	if filter.hfStacks[hook] == nil || len(filter.hfStacks[hook].baseChains) == 0 {
+	if filter.hfStacks[hook] == nil {
 		return nil, nil
 	}
-	return filter.hfStacks[hook].baseChains, nil
+	return getBaseChains(filter.hfStacks[hook]), nil
 }
 
 // EvaluateHook evaluates a packet using the rules of the given hook for the
@@ -129,34 +181,50 @@ func (nf *NFTables) EvaluateHook(family stack.AddressFamily, hook stack.NFHook, 
 		return stack.NFVerdict{}, err
 	}
 
-	baseChains, err := nf.getBaseChainsForEvaluation(family, hook)
+	baseChains, err := nf.getBaseChainsForEvaluation(family, hook, false /* natChains */)
 	if err != nil {
 		return stack.NFVerdict{}, err
 	}
-	// Immediately accept if there are no base chains for the specified hook.
-	if len(baseChains) == 0 {
+
+	// Create a new register set for the evaluation.
+	regs := newRegisterSet()
+	// Evaluates packet through all base chains for given hook in priority order.
+	extraEvaluators := nf.getExtraEvaluators(family, hook, pkt, &regs)
+	ei := 0 // Extra evaluator iterator.
+	numExtraHooks := len(extraEvaluators)
+	ci := 0 // Base chain iterator.
+	numBaseChains := len(baseChains)
+
+	// If there's nothing to evaluate, return accept.
+	if numBaseChains == 0 && numExtraHooks == 0 {
 		return stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}, nil
 	}
+	var lastEvaluatedChain *Chain
 
-	regs := newRegisterSet()
-
-	// Evaluates packet through all base chains for given hook in priority order.
-	var bc *Chain
-	for _, bc = range baseChains {
-		// Doesn't evaluate chain if it's table is flagged as dormant.
-		if _, dormant := bc.table.flagSet[TableFlagDormant]; dormant {
-			continue
-		}
-
-		err := bc.evaluate(&regs, pkt)
-		if err != nil {
-			return stack.NFVerdict{}, err
+	// Evaluate base chains and extra evaluators in priority order.
+	for ei < numExtraHooks || ci < numBaseChains {
+		selectExtra := (ci == numBaseChains) || (ei < numExtraHooks && extraEvaluators[ei].priority < baseChains[ci].GetBaseChainInfo().Priority.GetValue())
+		if selectExtra {
+			if err := extraEvaluators[ei].handle(); err != nil {
+				return stack.NFVerdict{}, err
+			}
+			ei++
+		} else {
+			bc := baseChains[ci]
+			ci++
+			// Doesn't evaluate chain if it's table is flagged as dormant.
+			if _, dormant := bc.table.flagSet[TableFlagDormant]; dormant {
+				continue
+			}
+			if err := bc.evaluate(&regs, pkt); err != nil {
+				return stack.NFVerdict{}, err
+			}
+			lastEvaluatedChain = bc
 		}
 
 		// Terminates immediately on netfilter terminal verdicts.
-		switch regs.Verdict().Code {
-		case VC(linux.NF_ACCEPT), VC(linux.NF_DROP), VC(linux.NF_STOLEN), VC(linux.NF_QUEUE):
-			return regs.Verdict(), nil
+		if v := regs.Verdict(); isTerminalCode(v.Code) {
+			return v, nil
 		}
 	}
 
@@ -164,9 +232,11 @@ func (nf *NFTables) EvaluateHook(family stack.AddressFamily, hook stack.NFHook, 
 	// verdict was issued.
 	switch regs.Verdict().Code {
 	case VC(linux.NFT_CONTINUE), VC(linux.NFT_RETURN):
-		if bc.GetBaseChainInfo().PolicyDrop {
+		if lastEvaluatedChain != nil && lastEvaluatedChain.GetBaseChainInfo().PolicyDrop {
 			return stack.NFVerdict{Code: VC(linux.NF_DROP)}, nil
 		}
+		return stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}, nil
+	case VC(linux.NF_ACCEPT):
 		return stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}, nil
 	}
 
@@ -578,19 +648,17 @@ func (nf *NFTables) removeChainFromCache(c *Chain) *syserr.AnnotatedError {
 	}
 	hook := c.GetBaseChainInfo().Hook
 	af := c.GetAddressFamily()
-	ok := false
+	cn := c.name
 	switch af {
 	case stack.IP:
-		nf.ip4InetBaseChains[hook], ok = removeBaseChain(nf.ip4InetBaseChains[hook], c.name)
+		return nf.ip4InetBaseChains[hook].detachBaseChain(cn)
 	case stack.IP6:
-		nf.ip6InetBaseChains[hook], ok = removeBaseChain(nf.ip6InetBaseChains[hook], c.name)
+		return nf.ip6InetBaseChains[hook].detachBaseChain(cn)
 	case stack.Inet:
-		if nf.ip4InetBaseChains[hook], ok = removeBaseChain(nf.ip4InetBaseChains[hook], c.name); ok {
-			nf.ip6InetBaseChains[hook], ok = removeBaseChain(nf.ip6InetBaseChains[hook], c.name)
+		if err := nf.ip4InetBaseChains[hook].detachBaseChain(cn); err != nil {
+			return err
 		}
-	}
-	if !ok {
-		return syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("chain %s not found for hook %v", c.name, hook))
+		return nf.ip6InetBaseChains[hook].detachBaseChain(cn)
 	}
 	return nil
 }
@@ -604,19 +672,18 @@ func (nf *NFTables) addChainToCache(c *Chain) *syserr.AnnotatedError {
 	}
 	hook := c.GetBaseChainInfo().Hook
 	af := c.GetAddressFamily()
-	ok := false
 	switch af {
 	case stack.IP:
-		nf.ip4InetBaseChains[hook], ok = appendBaseChain(nf.ip4InetBaseChains[hook], c)
+		return nf.ip4InetBaseChains[hook].attachBaseChain(c)
 	case stack.IP6:
-		nf.ip6InetBaseChains[hook], ok = appendBaseChain(nf.ip6InetBaseChains[hook], c)
+		return nf.ip6InetBaseChains[hook].attachBaseChain(c)
 	case stack.Inet:
-		if nf.ip4InetBaseChains[hook], ok = appendBaseChain(nf.ip4InetBaseChains[hook], c); ok {
-			nf.ip6InetBaseChains[hook], ok = appendBaseChain(nf.ip6InetBaseChains[hook], c)
+		if err := nf.ip4InetBaseChains[hook].attachBaseChain(c); err != nil {
+			return err
 		}
-	}
-	if !ok {
-		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("failed to add chain %s to hook %v", c.name, hook))
+		if err := nf.ip6InetBaseChains[hook].attachBaseChain(c); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -934,7 +1001,7 @@ func (c *Chain) setBaseChainInfo(info *BaseChainInfo) *syserr.AnnotatedError {
 	// Initializes hook function stack (and its slice of base chains) if
 	// first base chain for this hook (for the given address family).
 	if hfStacks[info.Hook] == nil {
-		hfStacks[info.Hook] = &hookFunctionStack{hook: info.Hook}
+		hfStacks[info.Hook] = &hookFunctionStack{}
 	}
 
 	// Sets the base chain info and attaches to the pipeline.
@@ -1284,12 +1351,17 @@ func removeBaseChain(list []*Chain, name string) ([]*Chain, bool) {
 // attachBaseChain adds an (assumed/previously checked) base chain to the stack,
 // maintaining ascending priority ordering.
 // Note: assumes stack and base chains slice are initialized and is base chain.
-func (hfStack *hookFunctionStack) attachBaseChain(chain *Chain) {
+func (hfStack *hookFunctionStack) attachBaseChain(chain *Chain) *syserr.AnnotatedError {
 	ok := false
-	hfStack.baseChains, ok = appendBaseChain(hfStack.baseChains, chain)
-	if !ok {
-		panic(fmt.Errorf("failed to append base chain %s to hook %v", chain.name, hfStack.hook))
+	if chain.baseChainInfo.BcType == BaseChainTypeNat {
+		hfStack.natBaseChains, ok = appendBaseChain(hfStack.natBaseChains, chain)
+	} else {
+		hfStack.baseChains, ok = appendBaseChain(hfStack.baseChains, chain)
 	}
+	if ok {
+		return nil
+	}
+	return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("failed to append base chain: %s", chain.name))
 }
 
 // detachBaseChain removes a base chain with the specified name from the stack,
@@ -1297,9 +1369,11 @@ func (hfStack *hookFunctionStack) attachBaseChain(chain *Chain) {
 // Note: assumes stack is initialized.
 func (hfStack *hookFunctionStack) detachBaseChain(name string) *syserr.AnnotatedError {
 	ok := false
-	hfStack.baseChains, ok = removeBaseChain(hfStack.baseChains, name)
-	if !ok {
-		return syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("failed to remove base chain %s from hook %v", name, hfStack.hook))
+	if hfStack.baseChains, ok = removeBaseChain(hfStack.baseChains, name); ok {
+		return nil
 	}
-	return nil
+	if hfStack.natBaseChains, ok = removeBaseChain(hfStack.natBaseChains, name); ok {
+		return nil
+	}
+	return syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("failed to detach base chain: %s, chain not found", name))
 }
