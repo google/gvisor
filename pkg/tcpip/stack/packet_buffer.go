@@ -861,7 +861,7 @@ func (pk *PacketBuffer) GetHeaders() (netHdr header.Network, transHdr header.Tra
 			return pk.Network(), icmpHeader, false, true
 		case header.ICMPv4DstUnreachable, header.ICMPv4TimeExceeded, header.ICMPv4ParamProblem:
 		default:
-			panic(fmt.Sprintf("unexpected ICMPv4 type = %d", icmpType))
+			return nil, nil, false, false
 		}
 
 		h, ok := pk.Data().PullUp(header.IPv4MinimumSize)
