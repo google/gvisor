@@ -506,7 +506,7 @@ containerd-performance-test-%:
 
 # Test runsc go binding.
 go-binding-test: $(RUNTIME_BIN)
-	@export RUNSC_PATH="$(RUNTIME_BIN)"; $(call sudo,test/root:go_binding_test, -test.v $(ARGS))
+	@export RUNSC_PATH="$(RUNTIME_BIN)"; $(call run,test/root:go_binding_test, -test.v $(ARGS))
 .PHONY: go-binding-test
 
 kubernetes-smoke-test: ## Runs the Kubernetes hello test in a KIND cluster.

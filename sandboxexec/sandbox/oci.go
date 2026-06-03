@@ -24,7 +24,7 @@ import (
 )
 
 // NewBundle creates a temporary OCI bundle on the fly.
-func NewBundle(sandboxID string, runscRuntimeDir string) (string, error) {
+func NewBundle(sandboxID string, runscRuntimeDir string, enableNetworking bool) (string, error) {
 	// Create a bundle directory for the sandbox.
 	bundleDir := filepath.Join(runscRuntimeDir, sandboxID)
 	rootfsDir := filepath.Join(bundleDir, "rootfs")
@@ -34,6 +34,20 @@ func NewBundle(sandboxID string, runscRuntimeDir string) (string, error) {
 	}
 
 	// Define the OCI Specification programmatically.
+	namespaces := []specs.LinuxNamespace{
+		{Type: specs.PIDNamespace},
+		{Type: specs.MountNamespace},
+		{Type: specs.UTSNamespace},
+		{Type: specs.IPCNamespace},
+	}
+
+	if os.Geteuid() != 0 {
+		namespaces = append(namespaces, specs.LinuxNamespace{Type: specs.UserNamespace})
+	}
+	if enableNetworking {
+		namespaces = append(namespaces, specs.LinuxNamespace{Type: specs.NetworkNamespace})
+	}
+
 	spec := &specs.Spec{
 		Version: "1.0.0",
 		Root: &specs.Root{
@@ -57,14 +71,17 @@ func NewBundle(sandboxID string, runscRuntimeDir string) (string, error) {
 		},
 		// enable basic namespaces for gVisor.
 		Linux: &specs.Linux{
-			Namespaces: []specs.LinuxNamespace{
-				{Type: specs.PIDNamespace},
-				{Type: specs.NetworkNamespace},
-				{Type: specs.MountNamespace},
-				{Type: specs.UTSNamespace},
-				{Type: specs.IPCNamespace},
-			},
+			Namespaces: namespaces,
 		},
+	}
+
+	if os.Geteuid() != 0 {
+		spec.Linux.UIDMappings = []specs.LinuxIDMapping{
+			{ContainerID: 0, HostID: uint32(os.Geteuid()), Size: 1},
+		}
+		spec.Linux.GIDMappings = []specs.LinuxIDMapping{
+			{ContainerID: 0, HostID: uint32(os.Getegid()), Size: 1},
+		}
 	}
 
 	// Map host binaries & libraries as readonly. The binaries will be

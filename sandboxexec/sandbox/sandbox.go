@@ -29,8 +29,9 @@ import (
 
 // Options holds the configuration for a Sandbox.
 type Options struct {
-	runtimeDir string
-	id         string
+	runtimeDir       string
+	id               string
+	enableNetworking bool
 }
 
 // Option configures the Options struct.
@@ -47,6 +48,13 @@ func WithRuntimeDir(runtimeDir string) Option {
 func WithID(id string) Option {
 	return func(o *Options) {
 		o.id = id
+	}
+}
+
+// WithNetworking configures whether networking is enabled inside the sandbox.
+func WithNetworking(enabled bool) Option {
+	return func(o *Options) {
+		o.enableNetworking = enabled
 	}
 }
 
@@ -85,7 +93,9 @@ func runscPath() string {
 // New spawns a new sandbox as a subprocess, the sandbox
 // will be started and running in detached mode.
 func New(ctx context.Context, opts ...Option) (*Sandbox, error) {
-	options := Options{}
+	options := Options{
+		enableNetworking: true,
+	}
 	for _, o := range opts {
 		o(&options)
 	}
@@ -102,6 +112,10 @@ func New(ctx context.Context, opts ...Option) (*Sandbox, error) {
 		options.id = newID()
 	}
 
+	if os.Geteuid() != 0 && options.enableNetworking {
+		return nil, fmt.Errorf("enabling networking requires running as root")
+	}
+
 	runDir := options.runtimeDir
 	stateDir := filepath.Join(runDir, "state")
 	if err := os.MkdirAll(stateDir, 0700); err != nil {
@@ -116,7 +130,7 @@ func New(ctx context.Context, opts ...Option) (*Sandbox, error) {
 		return nil, fmt.Errorf("sandbox state directory has incorrect permissions: got %v, want %v", fi.Mode().Perm(), os.FileMode(0700))
 	}
 
-	bundleDir, err := NewBundle(options.id, runDir)
+	bundleDir, err := NewBundle(options.id, runDir, options.enableNetworking)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OCI bundle: %v", err)
 	}
@@ -130,7 +144,14 @@ func New(ctx context.Context, opts ...Option) (*Sandbox, error) {
 
 	// Launch the sandbox in detached mode via os/exec, we use `runsc run` here
 	// as a shortcut for `runsc create` and `runsc start`.
-	args := []string{"--root", sb.rootState, "run", "--bundle", sb.bundleDir, "--detach", sb.id}
+	args := []string{"--root", sb.rootState}
+	if os.Geteuid() != 0 {
+		args = append(args, "--ignore-cgroups")
+	}
+	if !options.enableNetworking {
+		args = append(args, "--network=none")
+	}
+	args = append(args, "run", "--bundle", sb.bundleDir, "--detach", sb.id)
 	cmd := exec.CommandContext(ctx, sb.runscPath, args...)
 
 	if err := cmd.Run(); err != nil {

@@ -16,6 +16,7 @@ package go_binding_test
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 
@@ -25,8 +26,9 @@ import (
 func TestExecDmesg(t *testing.T) {
 	ctx := context.Background()
 
+	enableNetworking := os.Geteuid() == 0
 	// Create the background sandbox via subprocess
-	sb, err := sandbox.New(ctx)
+	sb, err := sandbox.New(ctx, sandbox.WithNetworking(enableNetworking))
 	if err != nil {
 		t.Fatalf("failed to create sandbox: %v", err)
 	}
@@ -52,8 +54,15 @@ func TestSandboxOptions(t *testing.T) {
 	ctx := context.Background()
 	runtimeDir := t.TempDir()
 	id := "iwillbeasandbox"
+	enableNetworking := os.Geteuid() == 0
 
-	sb, err := sandbox.New(ctx, sandbox.WithID(id), sandbox.WithRuntimeDir(runtimeDir))
+	opts := []sandbox.Option{
+		sandbox.WithID(id),
+		sandbox.WithRuntimeDir(runtimeDir),
+		sandbox.WithNetworking(enableNetworking),
+	}
+
+	sb, err := sandbox.New(ctx, opts...)
 	if err != nil {
 		t.Fatalf("failed to create sandbox: %v", err)
 	}
@@ -66,5 +75,22 @@ func TestSandboxOptions(t *testing.T) {
 
 	if got := sb.Bundle(); !strings.HasPrefix(got, runtimeDir) {
 		t.Errorf("sb.Bundle() = %v; want prefix %v", got, runtimeDir)
+	}
+}
+
+func TestNonRootNetworkingError(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("Skipping test: this test must be run as non-root")
+	}
+
+	ctx := context.Background()
+	_, err := sandbox.New(ctx, sandbox.WithNetworking(true))
+	if err == nil {
+		t.Fatalf("sandbox.New succeeded as non-root with networking enabled; want error")
+	}
+
+	expectedErr := "enabling networking requires running as root"
+	if !strings.Contains(err.Error(), expectedErr) {
+		t.Errorf("sandbox.New error = %v; want error containing %q", err, expectedErr)
 	}
 }
