@@ -55,7 +55,7 @@ func TestReassemblerProcess(t *testing.T) {
 		})
 	}
 
-	var tests = []struct {
+	tests := []struct {
 		name    string
 		params  []processParams
 		want    []hole
@@ -125,17 +125,15 @@ func TestReassemblerProcess(t *testing.T) {
 			wantPkt: pkt(2, 2),
 		},
 		{
-			name: "Two fragments completing a packet with a partial duplicate",
+			name: "Two fragments completing a packet with a partial overlap",
 			params: []processParams{
 				{first: 0, last: 3, more: true, pkt: pkt(4), wantDone: false, wantError: nil},
-				{first: 1, last: 2, more: true, pkt: pkt(2), wantDone: false, wantError: nil},
-				{first: 4, last: 5, more: false, pkt: pkt(2), wantDone: true, wantError: nil},
+				{first: 1, last: 2, more: true, pkt: pkt(2), wantDone: false, wantError: ErrFragmentOverlap},
 			},
 			want: []hole{
-				{first: 0, last: 3, filled: true, final: false},
-				{first: 4, last: 5, filled: true, final: true},
+				{first: 0, last: 3, filled: true, final: false, pkt: pkt(4)},
+				{first: 4, last: math.MaxUint16, filled: false, final: true},
 			},
-			wantPkt: pkt(4, 2),
 		},
 		{
 			name: "Two overlapping fragments",
@@ -163,7 +161,7 @@ func TestReassemblerProcess(t *testing.T) {
 			name: "Two final fragments - duplicate",
 			params: []processParams{
 				{first: 5, last: 14, more: false, pkt: pkt(10), wantDone: false, wantError: nil},
-				{first: 10, last: 14, more: false, pkt: pkt(5), wantDone: false, wantError: nil},
+				{first: 5, last: 14, more: false, pkt: pkt(10), wantDone: false, wantError: nil},
 			},
 			want: []hole{
 				{first: 5, last: 14, filled: true, final: true, pkt: pkt(10)},

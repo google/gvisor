@@ -82,12 +82,18 @@ func TestIPv6FragmentReassembly(t *testing.T) {
 			description:  "fragment subset",
 			ipPayloadLen: 3000,
 			fragments: []fragmentInfo{
+				{offset: 512, size: 256, id: 103, more: true},
+				// Overlapping fragment must be dropped.
+				// rfc8200#section-4.5
+				// However, the linux kernel may accept overlaps
+				// depending on the order of the fragments.
+				// For example, if we switch the first and the second fragment,
+				// the linux kernel will accept the packet and the test will fail.
 				{offset: 0, size: 1000, id: 103, more: true},
 				{offset: 1000, size: 1000, id: 103, more: true},
-				{offset: 512, size: 256, id: 103, more: true},
 				{offset: 2000, size: 1000, id: 103, more: false},
 			},
-			expectReply: true,
+			expectReply: false,
 		},
 		{
 			description:  "fragment overlap",
