@@ -122,6 +122,9 @@ func (c *SandboxExec) Execute(_ context.Context, f *flag.FlagSet, args ...any) s
 	if err != nil {
 		return util.Errorf("creating tmp dir: %v", err)
 	}
+	if err := os.Mkdir(filepath.Join(tmpDir, "rootfs"), 0755); err != nil {
+		return util.Errorf("creating rootfs dir: %v", err)
+	}
 
 	// Write spec to bundle dir
 	out, err := json.Marshal(spec)
@@ -189,7 +192,7 @@ func (c *SandboxExec) Execute(_ context.Context, f *flag.FlagSet, args ...any) s
 func createSpec(opts *sandboxexecpb.SandboxOptions, args []string, conf *config.Config) (*specs.Spec, error) {
 	spec := &specs.Spec{
 		Root: &specs.Root{
-			Path: "/",
+			Path: "rootfs",
 		},
 		Process: &specs.Process{
 			Cwd:          ".",

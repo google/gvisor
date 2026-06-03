@@ -33,6 +33,13 @@ func TestCreateSpecDefault(t *testing.T) {
 		t.Fatalf("createSpec failed: %v", err)
 	}
 
+	if spec.Root == nil {
+		t.Fatal("spec.Root is nil")
+	}
+	if spec.Root.Path != "rootfs" {
+		t.Errorf("expected Root.Path to be 'rootfs', got %q", spec.Root.Path)
+	}
+
 	if len(spec.Process.Args) != 2 || spec.Process.Args[0] != "echo" || spec.Process.Args[1] != "hello" {
 		t.Errorf("expected args ['echo', 'hello'], got %v", spec.Process.Args)
 	}
