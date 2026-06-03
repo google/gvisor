@@ -28,6 +28,7 @@ import (
 func newProcInternalData(conf *config.Config, _ *specs.Spec) *proc.InternalData {
 	return &proc.InternalData{
 		GVisorMarkerFile: conf.GVisorMarkerFile,
+		OverrideProcs:    procFiles(conf),
 	}
 }
 

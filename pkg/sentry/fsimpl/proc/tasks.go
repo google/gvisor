@@ -103,6 +103,10 @@ func (fs *filesystem) newTasksInode(ctx context.Context, k *kernel.Kernel, pidns
 	}
 	fs.addNvproxyFiles(ctx, root, k, contents)
 
+	for _, name := range internalData.OverrideProcs {
+		contents[name] = fs.newInode(ctx, root, 0444, newStaticFile(""))
+	}
+
 	fs.newTasksInodeExtra(ctx, root, internalData, k, contents)
 
 	inode := &tasksInode{

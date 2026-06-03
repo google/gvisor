@@ -164,6 +164,11 @@ type InternalData struct {
 	// should exist in the procfs.
 	GVisorMarkerFile bool
 
+	// OverrideProcs is a list of proc files to override with stubs. The
+	// /proc/ prefix is removed (e.g., this contains filenames like
+	// "kallsyms").
+	OverrideProcs []string
+
 	// Cgroups-internal data.
 	Cgroups map[string]string
 }

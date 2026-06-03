@@ -16,6 +16,7 @@ package proc
 
 import (
 	"fmt"
+	"io"
 	"math"
 	"path"
 	"strconv"
@@ -105,6 +106,15 @@ var (
 )
 
 func setup(t *testing.T) *testutil.System {
+	return setupWithData(t, &InternalData{
+		Cgroups: map[string]string{
+			"cpuset": "/foo/cpuset",
+			"memory": "/foo/memory",
+		},
+	})
+}
+
+func setupWithData(t *testing.T, data *InternalData) *testutil.System {
 	k, err := testutil.Boot()
 	if err != nil {
 		t.Fatalf("Error creating kernel: %v", err)
@@ -139,12 +149,7 @@ func setup(t *testing.T) *testutil.System {
 	}
 	mntOpts := &vfs.MountOptions{
 		GetFilesystemOptions: vfs.GetFilesystemOptions{
-			InternalData: &InternalData{
-				Cgroups: map[string]string{
-					"cpuset": "/foo/cpuset",
-					"memory": "/foo/memory",
-				},
-			},
+			InternalData: data,
 		},
 	}
 	if _, err := k.VFS().MountAt(ctx, creds, "", pop, Name, mntOpts); err != nil {
@@ -160,6 +165,52 @@ func TestTasksEmpty(t *testing.T) {
 	collector := s.ListDirents(s.PathOpAtRoot("/proc"))
 	s.AssertAllDirentTypes(collector, tasksStaticFiles)
 	s.AssertDirentOffsets(collector, tasksStaticFilesNextOffs)
+}
+
+func TestTasksWithOverrideProc(t *testing.T) {
+	s := setupWithData(t, &InternalData{
+		Cgroups: map[string]string{
+			"cpuset": "/foo/cpuset",
+			"memory": "/foo/memory",
+		},
+		OverrideProcs: []string{"kallsyms", "arbitrary_file"},
+	})
+	defer s.Destroy()
+
+	expected := make(map[string]testutil.DirentType)
+	for k, v := range tasksStaticFiles {
+		expected[k] = v
+	}
+	expected["kallsyms"] = linux.DT_REG
+	expected["arbitrary_file"] = linux.DT_REG
+
+	collector := s.ListDirents(s.PathOpAtRoot("/proc"))
+	s.AssertAllDirentTypes(collector, expected)
+
+	// Verify file contents are empty.
+	for _, name := range []string{"kallsyms", "arbitrary_file"} {
+		filePath := path.Join("/proc", name)
+		fd, err := s.VFS.OpenAt(
+			s.Ctx,
+			s.Creds,
+			s.PathOpAtRoot(filePath),
+			&vfs.OpenOptions{},
+		)
+		if err != nil {
+			t.Fatalf("vfs.OpenAt(%q) failed: %v", filePath, err)
+		}
+		defer fd.DecRef(s.Ctx)
+
+		buf := make([]byte, 1024)
+		bufIOSeq := usermem.BytesIOSequence(buf)
+		n, err := fd.Read(s.Ctx, bufIOSeq, vfs.ReadOptions{})
+		if err != nil && err != io.EOF {
+			t.Errorf("read %q failed: %v", filePath, err)
+		}
+		if n != 0 {
+			t.Errorf("expected empty file %q, got %d bytes: %q", filePath, n, buf[:n])
+		}
+	}
 }
 
 func TestTasks(t *testing.T) {
