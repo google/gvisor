@@ -23,8 +23,8 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
-// NewBundle creates a temporary OCI bundle on the fly.
-func NewBundle(sandboxID string, runscRuntimeDir string) (string, error) {
+// NewBundle creates a temporary OCI bundle on the fly with optional custom annotations.
+func NewBundle(sandboxID string, runscRuntimeDir string, annotations map[string]string) (string, error) {
 	// Create a bundle directory for the sandbox.
 	bundleDir := filepath.Join(runscRuntimeDir, sandboxID)
 	rootfsDir := filepath.Join(bundleDir, "rootfs")
@@ -35,7 +35,8 @@ func NewBundle(sandboxID string, runscRuntimeDir string) (string, error) {
 
 	// Define the OCI Specification programmatically.
 	spec := &specs.Spec{
-		Version: "1.0.0",
+		Version:     "1.0.0",
+		Annotations: annotations,
 		Root: &specs.Root{
 			Path: "rootfs",
 			// The root filesystem is read-only for now. We can add support for

@@ -27,7 +27,7 @@ func TestNewBundle(t *testing.T) {
 	tempDir := t.TempDir()
 	sandboxID := "test-sandbox"
 
-	bundleDir, err := NewBundle(sandboxID, tempDir)
+	bundleDir, err := NewBundle(sandboxID, tempDir, nil)
 	if err != nil {
 		t.Fatalf("NewBundle failed: %v", err)
 	}
@@ -77,5 +77,35 @@ func TestNewBundle(t *testing.T) {
 				t.Errorf("Namespaces[%d].Type = %q, want %q", i, ns.Type, expectedNamespaces[i].Type)
 			}
 		}
+	}
+}
+
+func TestNewBundleWithAnnotations(t *testing.T) {
+	tempDir := t.TempDir()
+	sandboxID := "test-sandbox-annotations"
+	annotations := map[string]string{
+		"dev.gvisor.tar.rootfs.upper": "/tmp/test.tar",
+	}
+
+	bundleDir, err := NewBundle(sandboxID, tempDir, annotations)
+	if err != nil {
+		t.Fatalf("NewBundle failed: %v", err)
+	}
+	defer os.RemoveAll(bundleDir)
+
+	configPath := filepath.Join(bundleDir, "config.json")
+	configFile, err := os.Open(configPath)
+	if err != nil {
+		t.Fatalf("failed to open config.json: %v", err)
+	}
+	defer configFile.Close()
+
+	var spec specs.Spec
+	if err := json.NewDecoder(configFile).Decode(&spec); err != nil {
+		t.Fatalf("failed to decode config.json: %v", err)
+	}
+
+	if val, ok := spec.Annotations["dev.gvisor.tar.rootfs.upper"]; !ok || val != "/tmp/test.tar" {
+		t.Errorf("expected annotation 'dev.gvisor.tar.rootfs.upper' with value '/tmp/test.tar', got spec.Annotations: %+v", spec.Annotations)
 	}
 }
