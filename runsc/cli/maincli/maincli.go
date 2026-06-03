@@ -19,6 +19,7 @@ import (
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/runsc/cli"
 	"gvisor.dev/gvisor/runsc/cmd"
+	"gvisor.dev/gvisor/runsc/cmd/alias"
 	"gvisor.dev/gvisor/runsc/cmd/nvproxy"
 	"gvisor.dev/gvisor/runsc/cmd/trace"
 	"gvisor.dev/gvisor/runsc/cmd/util"
@@ -34,6 +35,7 @@ const (
 
 // Main is the main entrypoint.
 func Main() {
+	alias.HandleAlias()
 	cmds, helpCmds := commands()
 	cli.Run(cmds, helpCmds)
 }
@@ -90,6 +92,11 @@ func commands() (map[util.SubCommand]string, []subcommands.Command) {
 		new(cmd.Boot):   internalGroup,
 		new(cmd.Gofer):  internalGroup,
 		new(cmd.Umount): internalGroup,
+	}
+
+	// Merge alias commands.
+	for k, v := range alias.Commands() {
+		cmds[k] = v
 	}
 
 	helpCmds := []subcommands.Command{
