@@ -464,6 +464,10 @@ nftables-syscall-runc-tests: load-nftables
 	@$(call build_paths,//test/syscalls/linux:socket_netlink_netfilter_test,docker run $(DOCKER_RUN_OPTIONS) --user 0:0 --runtime runc --rm gvisor.dev/images/nftables {})
 .PHONY: nftables-syscall-runc-tests
 
+bwrap-tests: $(RUNTIME_BIN)
+	@$(call sudo,//runsc/cmd/alias/bwrap:bwrap_integration_test,-test.v -runsc=$(RUNTIME_BIN))
+.PHONY: bwrap-tests
+
 packetdrill-tests: load-packetdrill $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),) # Clear flags.
 	@$(call test_runtime,$(RUNTIME),//test/packetdrill:all_tests)
