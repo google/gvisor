@@ -182,6 +182,11 @@ def go_context(ctx, goos = None, goarch = None):
     if go_ctx.mode.msan:
         nogo_args = nogo_args + ["-msan"]
 
+    stdlib_mods = [f for f in go_ctx.sdk.srcs.to_list() if f.path.endswith("/src/go.mod")]
+    if len(stdlib_mods) != 1:
+        fail("expect exactly one stdlib src/go.mod in %s, found %s" % (go_ctx.sdk.srcs, stdlib_mods))
+    stdlib_mod = stdlib_mods[0]
+
     return struct(
         env = dict(go_ctx.env, CGO_ENABLED = "0"),
         go = go_ctx.go,
@@ -192,6 +197,7 @@ def go_context(ctx, goos = None, goarch = None):
         nogo_args = nogo_args,
         runfiles = depset([go_ctx.go] + go_ctx.sdk.srcs.to_list() + go_ctx.sdk.tools.to_list() + go_ctx.stdlib.libs.to_list()),
         stdlib_srcs = go_ctx.sdk.srcs,
+        stdlib_mod = stdlib_mod,
     )
 
 def select_goarch():

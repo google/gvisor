@@ -41,6 +41,12 @@ var (
 	// GOVERSION defines the Go version for analysis.
 	GOVERSION string
 
+	// GOVERSIONModFile is the path to a go.mod to extract the Go version from.
+	//
+	// Only one of GOVERSION or GOVERSIONModFile may be set. cli.Main will
+	// set GOVERSION from this mod file.
+	GOVERSIONModFile string
+
 	// BuildTags defines the set of build tags for analysis. Note that
 	// while this may also be a StringList, it is kept as an explicit
 	// comma-separated list in order to build the standard flag.
@@ -71,6 +77,7 @@ func init() {
 	flag.StringVar(&GOOS, "GOOS", runtime.GOOS, "GOOS for analysis")
 	flag.StringVar(&GOARCH, "GOARCH", runtime.GOARCH, "GOARCH for analysis")
 	flag.StringVar(&GOVERSION, "GOVERSION", "", "GOVERSION for analysis")
+	flag.StringVar(&GOVERSIONModFile, "GOVERSION-mod-file", "", "Path to go.mod containing the GOVERSION for analysis")
 	flag.StringVar(&BuildTags, "tags", "", "comma-separated build tags")
 	flag.BoolVar(&Race, "race", false, "-race build")
 	flag.BoolVar(&MSAN, "msan", false, "-msan build")

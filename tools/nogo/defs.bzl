@@ -69,6 +69,9 @@ def _nogo_stdlib_impl(ctx):
     # Build the configuration for the stdlib.
     go_ctx, args, inputs, raw_findings = _nogo_config(ctx, deps = [])
 
+    # GOVERSION of std is set by the std go.mod.
+    args.append("-GOVERSION-mod-file=%s" % go_ctx.stdlib_mod)
+
     # Build the analyzer command.
     facts_file = ctx.actions.declare_file(ctx.label.name + ".facts")
     findings_file = ctx.actions.declare_file(ctx.label.name + ".raw_findings")
@@ -170,7 +173,6 @@ def _nogo_config(ctx, deps):
         "-go=%s" % go_ctx.go.path,
         "-GOOS=%s" % go_ctx.goos,
         "-GOARCH=%s" % go_ctx.goarch,
-        "-GOVERSION=%s" % go_ctx.lang_version,
         "-tags=%s" % (",".join(go_ctx.gotags)),
     ]
     inputs = []
@@ -213,6 +215,9 @@ def _nogo_package_config(ctx, deps, importpath = None, target = None):
     #
     # Returns (go_ctx, args, inputs, raw_findings).
     go_ctx, args, inputs, raw_findings = _nogo_config(ctx, deps)
+
+    # GOVERSION of packages are set by the project language version.
+    args.append("-GOVERSION=%s" % go_ctx.lang_version)
 
     # Add the module itself, for the type sanity check. This applies only to
     # the libraries, and not binaries or tests.

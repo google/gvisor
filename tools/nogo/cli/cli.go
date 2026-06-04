@@ -18,6 +18,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"go/format"
 	"io"
@@ -512,6 +513,32 @@ func (r *Render) Execute(ctx context.Context, fs *flag.FlagSet, args ...any) sub
 	return subcommands.ExitSuccess
 }
 
+// goVersionRe matches a `go VERSION` line in go.mod, capturing VERSION.
+var goVersionRe = regexp.MustCompile(`^go\s+(\S+)`)
+
+// resolveGOVERSION sets flags.GOVERSION from flags.GOVERSIONModFile, if necessary.
+func resolveGOVERSION() error {
+	if flags.GOVERSIONModFile == "" {
+		// Nothing to do.
+		return nil
+	}
+	if flags.GOVERSION != "" {
+		return errors.New("only one of -GOVERSION or -GOVERSION-mod-file may be set")
+	}
+
+	b, err := os.ReadFile(flags.GOVERSIONModFile)
+	if err != nil {
+		return err
+	}
+
+	m := goVersionRe.FindStringSubmatch(string(b))
+	if len(m) != 2 {
+		return fmt.Errorf("go line not found in go.mod:\n%s", string(b))
+	}
+	flags.GOVERSION = m[1]
+	return nil
+}
+
 // Main is the main entrypoint.
 func Main() {
 	subcommands.Register(&Check{}, "")
@@ -521,5 +548,8 @@ func Main() {
 	subcommands.Register(subcommands.HelpCommand(), "")
 	subcommands.Register(subcommands.FlagsCommand(), "")
 	flag.CommandLine.Parse(os.Args[1:])
+	if err := resolveGOVERSION(); err != nil {
+		failure("error resolving GOVERSION: %v", err)
+	}
 	os.Exit(int(subcommands.Execute(context.Background())))
 }
