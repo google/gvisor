@@ -44,6 +44,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/fdimport"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sys"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/user"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
@@ -246,6 +247,15 @@ type Loader struct {
 	// /sys/devices/virtual/dmi/id/product_name.
 	productName string
 
+	// rdmaDevices contains pre-collected sysfs data for RDMA devices.
+	rdmaDevices *sys.RDMAData
+
+	// pciDevicesData contains pre-collected PCI topology from the host.
+	pciDevicesData *sys.PCIDevicesData
+
+	// numaData contains pre-collected NUMA node layout from the host.
+	numaData *sys.NUMAData
+
 	// cpuQuota and cpuPeriod are the raw host CFS settings that should be
 	// exposed through sandbox cgroupfs.
 	cpuQuota  int64
@@ -433,6 +443,13 @@ type Args struct {
 	// RootfsUpperTarFD is the file descriptor to the tar file containing the rootfs
 	// upper layer changes.
 	RootfsUpperTarFD int
+
+	// RDMADevices contains pre-collected sysfs data for RDMA devices.
+	RDMADevices *sys.RDMAData
+	// PCIDevicesData contains pre-collected PCI topology from the host.
+	PCIDevicesData *sys.PCIDevicesData
+	// NUMAData contains pre-collected NUMA node layout from the host.
+	NUMAData *sys.NUMAData
 }
 
 // HostTHP holds host transparent hugepage settings.
@@ -516,6 +533,9 @@ func New(args Args) (*Loader, error) {
 		sharedMounts:   make(map[string]*vfs.Mount),
 		stopProfiling:  stopProfiling,
 		productName:    args.ProductName,
+		rdmaDevices:    args.RDMADevices,
+		pciDevicesData: args.PCIDevicesData,
+		numaData:       args.NUMAData,
 		cpuQuota:       args.CPUQuota,
 		cpuPeriod:      args.CPUPeriod,
 		hostTHP:        args.HostTHP,

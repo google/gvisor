@@ -14,6 +14,7 @@ go_library(
         "hooks.go",
         "namespace.go",
         "nvidia.go",
+        "rdma.go",
         "restore.go",
         "restore_impl.go",
         "specutils.go",
