@@ -214,6 +214,10 @@ func (d *discipline) WritePacket(pkt *stack.PacketBuffer) tcpip.Error {
 	}
 
 	d.mu.Lock()
+	if d.closed.Load() == qDiscClosed {
+		d.mu.Unlock()
+		return &tcpip.ErrClosedForSend{}
+	}
 	haveSpace := d.queue.HasSpace()
 	if haveSpace {
 		d.queue.PushBack(pkt.IncRef())

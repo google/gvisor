@@ -731,6 +731,41 @@ func TestCloseDrainsQueuedPackets(t *testing.T) {
 	d.Close()
 }
 
+// TestCloseConcurrentWithWritePacket fires many WritePackets concurrently
+// with Close. It exercises the race where WritePacket loads closed=false,
+// Close stores closed=true and asserts closeWaker, the dispatcher drains
+// the queue and exits, and then WritePacket pushes a packet that nothing
+// will drain. The leak check in TestMain catches the surviving ref.
+//
+// Distinct from TestFastSimultaneousWrites, which closes only after all
+// writers have completed.
+func TestCloseConcurrentWithWritePacket(t *testing.T) {
+	const trials = 50
+	const nWriters = 16
+	const nWrites = 200
+	for trial := 0; trial < trials; trial++ {
+		ep := &fakeEndpoint{mtu: 1500, maxHeaderLength: 14}
+		d, err := tbf.New(ep, &faketime.NullClock{}, 1<<40, 1<<20, 1024)
+		if err != nil {
+			t.Fatalf("trial %d: tbf.New: %v", trial, err)
+		}
+		var wg sync.WaitGroup
+		for i := 0; i < nWriters; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for j := 0; j < nWrites; j++ {
+					pkt := newPkt(64)
+					_ = d.WritePacket(pkt)
+					pkt.DecRef()
+				}
+			}()
+		}
+		d.Close()
+		wg.Wait()
+	}
+}
+
 func benchmarkWritePacket(b *testing.B, rate uint64) {
 	b.Helper()
 	ep := &fakeEndpoint{mtu: 1500, maxHeaderLength: 14}
