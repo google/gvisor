@@ -558,6 +558,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	}
 	defer nsfsFilesystem.DecRef(ctx)
 	k.nsfsMount = k.vfs.NewDisconnectedMount(nsfsFilesystem, nil, &vfs.MountOptions{})
+	k.rootUserNamespace.SetInode(nsfs.NewInode(ctx, k.nsfsMount, k.rootUserNamespace))
 	k.rootNetworkNamespace.SetInode(nsfs.NewInode(ctx, k.nsfsMount, k.rootNetworkNamespace))
 	k.rootIPCNamespace.SetInode(nsfs.NewInode(ctx, k.nsfsMount, k.rootIPCNamespace))
 	k.rootUTSNamespace.SetInode(nsfs.NewInode(ctx, k.nsfsMount, k.rootUTSNamespace))
@@ -1330,6 +1331,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 	config.UTSNamespace.IncRef()
 	config.IPCNamespace.IncRef()
 	config.NetworkNamespace.IncRef()
+	config.Credentials.UserNamespace.IncRef()
 	refcountCu.Release() // refs(mntns, fsContext) are transferred to NewTask()
 	t, err := k.tasks.NewTask(ctx, config)
 	if err != nil {
@@ -2105,6 +2107,7 @@ func (k *Kernel) Release() {
 	k.cleaupDevGofers()
 	k.mf.Destroy()
 	k.RootPIDNamespace().DecRef(ctx)
+	k.rootUserNamespace.DecRef(ctx)
 }
 
 // PopulateNewCgroupHierarchy moves all tasks into a newly created cgroup

@@ -156,7 +156,7 @@ func setUpChroot(spec *specs.Spec, conf *config.Config) error {
 }
 
 func tpuProxyUpdateChroot(hostRoot, chroot string, spec *specs.Spec, conf *config.Config) error {
-	if !specutils.TPUProxyIsEnabled(spec, conf) {
+	if !specutils.TPUProxyEnabled(spec, conf) {
 		return nil
 	}
 	allowedDeviceIDs := map[uint64]struct{}{}

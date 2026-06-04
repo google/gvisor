@@ -1607,13 +1607,12 @@ type CheckpointOpts struct {
 	Resume                    bool
 	Direct                    bool
 	ExcludeCommittedZeroPages bool
+	CudaCheckpointPath        string
 
 	// Save/restore exec options.
 	SaveRestoreExecArgv        string
 	SaveRestoreExecTimeout     time.Duration
 	SaveRestoreExecContainerID string
-
-	checkpointOptsExtra
 }
 
 // Checkpoint sends the checkpoint call for a container in the sandbox.
@@ -1631,6 +1630,9 @@ func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, 
 			ContainerID: opts.SaveRestoreExecContainerID,
 		},
 	}
+	if opts.CudaCheckpointPath != "" {
+		opt.Metadata[control.CudaCheckpointPathKey] = opts.CudaCheckpointPath
+	}
 	defer func() {
 		for _, f := range opt.FilePayload.Files {
 			_ = f.Close()
@@ -1639,7 +1641,6 @@ func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, 
 	if err := s.setCheckpointOptsFiles(conf, imagePath, opts, &opt); err != nil {
 		return err
 	}
-	setCheckpointOptsExtra(opts, &opt)
 
 	if err := s.call(boot.ContMgrCheckpoint, &opt, nil); err != nil {
 		return fmt.Errorf("checkpointing container %q: %w", cid, err)

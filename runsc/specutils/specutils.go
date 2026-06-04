@@ -672,18 +672,15 @@ func IsDebugCommand(conf *config.Config, command string) bool {
 	return !rv
 }
 
-// TPUProxyIsEnabled checks if tpuproxy is enabled in the config or annotations.
-func TPUProxyIsEnabled(spec *specs.Spec, conf *config.Config) bool {
-	if conf.TPUProxy {
-		return true
-	}
-	return AnnotationToBool(spec, AnnotationTPU)
+// TPUProxyEnabled checks if tpuproxy is enabled in the config or annotations.
+func TPUProxyEnabled(spec *specs.Spec, conf *config.Config) bool {
+	return conf.TPUProxy || AnnotationToBool(spec, AnnotationTPU) || TPUFunctionalityRequested(spec, conf)
 }
 
 // VFIOFunctionalityRequested returns true if the container should have access
 // to VFIO functionality.
 func VFIOFunctionalityRequested(dev *specs.LinuxDevice) bool {
-	return strings.HasPrefix(dev.Path, "/dev/vfio")
+	return strings.HasPrefix(dev.Path, "/dev/vfio") && dev.Path != "/dev/vfio/vfio"
 }
 
 // AcceleratorFunctionalityRequested returns true if the container should have
@@ -696,9 +693,6 @@ func AcceleratorFunctionalityRequested(dev *specs.LinuxDevice) bool {
 // TPUFunctionalityRequested returns true if the container should have access
 // to TPU functionality.
 func TPUFunctionalityRequested(spec *specs.Spec, conf *config.Config) bool {
-	if !TPUProxyIsEnabled(spec, conf) {
-		return false
-	}
 	if spec.Linux != nil {
 		for _, dev := range spec.Linux.Devices {
 			if AcceleratorFunctionalityRequested(&dev) || VFIOFunctionalityRequested(&dev) {

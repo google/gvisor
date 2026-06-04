@@ -512,7 +512,7 @@ func SetupDev(spec *specs.Spec, conf *config.Config, root, procPath string) erro
 		return nil
 	}
 	nvproxyEnabled := specutils.NVProxyEnabled(spec, conf)
-	tpuproxyEnabled := specutils.TPUProxyIsEnabled(spec, conf)
+	tpuproxyEnabled := specutils.TPUProxyEnabled(spec, conf)
 	for _, dev := range spec.Linux.Devices {
 		shouldMount := (nvproxyEnabled && ShouldExposeNvidiaDevice(dev.Path)) ||
 			(tpuproxyEnabled && ShouldExposeTpuDevice(dev.Path))
