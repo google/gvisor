@@ -27,7 +27,7 @@ go_library(
         "pprof.go",
         "proc.go",
         "state.go",
-        "state_impl.go",
+        "state_cuda.go",
         "usage.go",
     ],
     visibility = [

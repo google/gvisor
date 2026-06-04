@@ -20,16 +20,10 @@ package sandbox
 import (
 	"os/exec"
 
-	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/donation"
 )
 
 func (s *Sandbox) createSandboxProcessExtra(conf *config.Config, args *Args, cmd *exec.Cmd, donations *donation.Agency) error {
 	return nil
-}
-
-type checkpointOptsExtra struct{}
-
-func setCheckpointOptsExtra(opts CheckpointOpts, opt *control.SaveOpts) {
 }

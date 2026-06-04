@@ -170,6 +170,27 @@ of all supported CPU features can be found
 The runsc command `runsc cpu-features` lists all CPU features on the current
 machine.
 
+## GPU Checkpoint/Restore
+
+gVisor supports checkpointing and restoring containers that use GPUs by
+leveraging [cuda-checkpoint](https://github.com/NVIDIA/cuda-checkpoint).
+
+When a snapshot is created via `runsc checkpoint`, the user can provide the
+`--cuda-checkpoint-path` flag to indicate the path to the `cuda-checkpoint`
+binary in the container filesystem. This enables `cuda-checkpoint` automation.
+
+Before pausing the container, gVisor will collect all the CUDA processes in the
+sandbox and checkpoint them using `cuda-checkpoint`. Note that `cuda-checkpoint`
+is invoked in parallel across all processes for performance. Once all
+`cuda-checkpoint` invocations succeed, the regular gVisor checkpointing
+procedure continues.
+
+On restore, after the kernel is restored and started, all CUDA processes which
+were checkpointed earlier are toggled back on using `cuda-checkpoint`. `runsc
+restore` does not require any special flags. If the snapshot was created with
+`runsc checkpoint --cuda-checkpoint-path`, then the same configuration will
+automatically be used on restore.
+
 ### Limitation
 
 GPU checkpoint/restore is not supported on the arm64 architecture due to lack of

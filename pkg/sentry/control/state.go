@@ -261,7 +261,7 @@ func preSave(k *kernel.Kernel, o *state.SaveOpts, execOpts *SaveRestoreExecOpts)
 			return fmt.Errorf("failed to exec save/restore binary: %w", err)
 		}
 	}
-	return preSaveImpl(k, o)
+	return preSaveCuda(k, o)
 }
 
 // PostResume is called after resuming the kernel.
@@ -282,7 +282,7 @@ func PostResume(k *kernel.Kernel, timeline *timing.Timeline) error {
 	if err := SaveRestoreExec(k, SaveRestoreExecResume); err != nil {
 		return fmt.Errorf("failed to wait for save/restore binary: %w", err)
 	}
-	return postResumeImpl(k, timeline)
+	return postResumeCuda(k, timeline)
 }
 
 // PostRestore is called after restoring the kernel.
@@ -303,7 +303,7 @@ func PostRestore(k *kernel.Kernel, timeline *timing.Timeline) error {
 	if err := SaveRestoreExec(k, SaveRestoreExecRestore); err != nil {
 		return fmt.Errorf("failed to wait for save/restore binary: %w", err)
 	}
-	return postRestoreImpl(k, timeline)
+	return postRestoreCuda(k, timeline)
 }
 
 // SaveRestoreExec creates a new process that executes the save/restore
