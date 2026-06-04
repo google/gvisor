@@ -152,3 +152,17 @@ TEXT ·currentEL(SB),NOSPLIT,$0-8
 	UBFX $2, R1, $2, R1
 	MOVD R1, ret+0(FP)
 	RET
+
+// func checkPAC() bool
+TEXT ·checkPAC(SB),NOSPLIT,$0-1
+	MOVD	R30, R0			// Save LR
+	WORD	$0xd503233f		// PACIASP (signs R30)
+	CMP	R0, R30
+	MOVD	$0, R1
+	BEQ	same
+	MOVD	$1, R1
+same:
+	MOVD	R0, R30			// Restore LR
+	MOVB	R1, ret+0(FP)
+	RET
+

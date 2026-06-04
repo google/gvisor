@@ -17,6 +17,7 @@ package stack
 import (
 	"encoding/binary"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -773,4 +774,24 @@ func (ct *ConnTrack) originalDst(epID TransportEndpointID, netProto tcpip.Networ
 
 	id := t.conn.original.tupleID
 	return id.dstAddr, id.dstPortOrEchoReplyIdent, nil
+}
+
+// NfConnTrackPriority returns the priority of the conntrack hook.
+// Check `ipv4/ipv6_conntrack_ops` in nf_conntrack_proto.c.
+func NfConnTrackPriority(hook NFHook) (int, bool) {
+	switch hook {
+	case NFPrerouting:
+		// NF_IP_PRI_CONNTRACK
+		return -200, true
+	case NFInput:
+		// NF_IP_PRI_CONNTRACK_CONFIRM
+		return math.MaxInt32, true
+	case NFPostrouting:
+		// NF_IP_PRI_CONNTRACK_CONFIRM
+		return math.MaxInt32, true
+	case NFOutput:
+		// NF_IP_PRI_CONNTRACK
+		return -200, true
+	}
+	return 0, false
 }
