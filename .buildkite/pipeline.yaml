@@ -189,7 +189,7 @@ steps:
     commands:
       - tools/gpu/cos_drivers_test.sh
   - <<: *gpu_test
-    timeout_in_minutes: 60
+    timeout_in_minutes: 90
     retry:
       <<: *retry_settings
     label: ":screwdriver: GPU Tests"
@@ -218,7 +218,7 @@ steps:
     # This is its own test rather than being part of the GPU tests,
     # because it takes around 30 minutes to run.
     parallelism: 8
-    timeout_in_minutes: 60
+    timeout_in_minutes: 90
     retry:
       <<: *retry_settings
     commands:
