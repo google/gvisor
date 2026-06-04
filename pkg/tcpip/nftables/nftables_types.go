@@ -755,6 +755,8 @@ const (
 	OpTypeByteorder
 	// OpTypeMeta is the meta operation type.
 	OpTypeMeta
+	// OpTypeNAT is the NAT operation type.
+	OpTypeNAT
 	// OpTypeUnknown is the unknown operation type.
 	OpTypeUnknown
 )
@@ -770,6 +772,7 @@ var opTypeStrings = []string{
 	OpTypeRoute:      "route",
 	OpTypeByteorder:  "byteorder",
 	OpTypeMeta:       "meta",
+	OpTypeNAT:        "nat",
 	OpTypeUnknown:    "unknown",
 }
 

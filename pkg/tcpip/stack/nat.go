@@ -22,6 +22,52 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
+// NATType represents the type of NAT.
+type NATType int
+
+const (
+	// SNAT is source NAT.
+	SNAT NATType = iota
+	// DNAT is destination NAT.
+	DNAT
+	// NATUnknown is unknown NAT type.
+	NATUnknown
+)
+
+// ToNATType converts a uint8 to a NATType.
+func ToNATType(t uint8) NATType {
+	switch t {
+	case 0:
+		return SNAT
+	case 1:
+		return DNAT
+	}
+	return NATUnknown
+}
+
+func (natType NATType) String() string {
+	switch natType {
+	case SNAT:
+		return "SNAT"
+	case DNAT:
+		return "DNAT"
+	default:
+		return "NATUnknown"
+	}
+}
+
+// NfHookToNATType returns the applicable NAT type
+// for the given netfilter hook.
+func NfHookToNATType(hook NFHook) NATType {
+	switch hook {
+	case NFPrerouting, NFOutput:
+		return DNAT
+	case NFInput, NFPostrouting:
+		return SNAT
+	}
+	return NATUnknown
+}
+
 // NfNATPriority returns the priority of the NAT hook.
 // Check `ipv4/ipv6_nat_ops` in nf_nat_proto.c.
 func NfNATPriority(hook NFHook) (int, bool) {
