@@ -754,3 +754,90 @@ func TestContainerName(t *testing.T) {
 		})
 	}
 }
+
+func TestTPUProxyEnabled(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		spec specs.Spec
+		conf config.Config
+		want bool
+	}{
+		{
+			name: "default-false",
+			spec: specs.Spec{},
+			conf: config.Config{},
+			want: false,
+		},
+		{
+			name: "config-true",
+			spec: specs.Spec{},
+			conf: config.Config{TPUProxy: true},
+			want: true,
+		},
+		{
+			name: "annotation-true",
+			spec: specs.Spec{
+				Annotations: map[string]string{
+					AnnotationTPU: "true",
+				},
+			},
+			conf: config.Config{},
+			want: true,
+		},
+		{
+			name: "device-accel-true",
+			spec: specs.Spec{
+				Linux: &specs.Linux{
+					Devices: []specs.LinuxDevice{
+						{Path: "/dev/accel0"},
+					},
+				},
+			},
+			conf: config.Config{},
+			want: true,
+		},
+		{
+			name: "device-vfio-group-true",
+			spec: specs.Spec{
+				Linux: &specs.Linux{
+					Devices: []specs.LinuxDevice{
+						{Path: "/dev/vfio/12"},
+					},
+				},
+			},
+			conf: config.Config{},
+			want: true,
+		},
+		{
+			name: "device-vfio-control-false",
+			spec: specs.Spec{
+				Linux: &specs.Linux{
+					Devices: []specs.LinuxDevice{
+						{Path: "/dev/vfio/vfio"},
+					},
+				},
+			},
+			conf: config.Config{},
+			want: false,
+		},
+		{
+			name: "device-other-false",
+			spec: specs.Spec{
+				Linux: &specs.Linux{
+					Devices: []specs.LinuxDevice{
+						{Path: "/dev/null"},
+					},
+				},
+			},
+			conf: config.Config{},
+			want: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := TPUProxyEnabled(&tc.spec, &tc.conf)
+			if got != tc.want {
+				t.Errorf("TPUProxyEnabled() got: %v, want: %v", got, tc.want)
+			}
+		})
+	}
+}

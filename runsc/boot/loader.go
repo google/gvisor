@@ -808,7 +808,7 @@ func New(args Args) (*Loader, error) {
 // createProcessArgs creates args that can be used with kernel.CreateProcess.
 func createProcessArgs(id string, spec *specs.Spec, conf *config.Config, creds *auth.Credentials, k *kernel.Kernel, pidns *kernel.PIDNamespace) (kernel.CreateProcessArgs, error) {
 	// Create initial limits.
-	ls, err := createLimitSet(spec, specutils.TPUProxyIsEnabled(spec, conf))
+	ls, err := createLimitSet(spec, specutils.TPUProxyEnabled(spec, conf))
 	if err != nil {
 		return kernel.CreateProcessArgs{}, fmt.Errorf("creating limits: %w", err)
 	}
@@ -1015,7 +1015,7 @@ func (l *Loader) installSeccompFilters() error {
 			ProfileEnable:         l.root.conf.ProfileEnable,
 			NVProxy:               nvproxyEnabled,
 			NVProxyCaps:           nvproxyCaps,
-			TPUProxy:              specutils.TPUProxyIsEnabled(l.root.spec, l.root.conf),
+			TPUProxy:              specutils.TPUProxyEnabled(l.root.spec, l.root.conf),
 			ControllerFD:          uint32(l.ctrl.srv.FD()),
 			CgoEnabled:            config.CgoEnabled,
 			PluginNetwork:         l.root.conf.Network == config.NetworkPlugin,
@@ -1508,7 +1508,7 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 	}
 	args.PIDNamespace = tg.PIDNamespace()
 
-	args.Limits, err = createLimitSet(l.root.spec, specutils.TPUProxyIsEnabled(l.root.spec, l.root.conf))
+	args.Limits, err = createLimitSet(l.root.spec, specutils.TPUProxyEnabled(l.root.spec, l.root.conf))
 	if err != nil {
 		return 0, fmt.Errorf("creating limits: %w", err)
 	}
