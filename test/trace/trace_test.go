@@ -133,6 +133,7 @@ func matchPoints(t *testing.T, msgs []test.Message) map[pb.MessageType]*checkers
 		pb.MessageType_MESSAGE_SYSCALL_INOTIFY_ADD_WATCH: {checker: checkSyscallInotifyInitAddWatch},
 		pb.MessageType_MESSAGE_SYSCALL_INOTIFY_RM_WATCH:  {checker: checkSyscallInotifyInitRmWatch},
 		pb.MessageType_MESSAGE_SYSCALL_CLONE:             {checker: checkSyscallClone},
+		pb.MessageType_MESSAGE_SYSCALL_POLL:              {checker: checkSyscallPoll},
 	}
 	return matchers
 }
@@ -878,6 +879,28 @@ func checkSyscallInotifyInitRmWatch(msg test.Message) error {
 	}
 	if p.Wd < 0 {
 		return fmt.Errorf("invalid wd: %d", p.Wd)
+	}
+	return nil
+}
+
+func checkSyscallPoll(msg test.Message) error {
+	p := pb.Poll{}
+	if err := proto.Unmarshal(msg.Msg, &p); err != nil {
+		return err
+	}
+	if err := checkContextData(p.ContextData); err != nil {
+		return err
+	}
+	if len(p.Fds) != len(p.Events) {
+		return fmt.Errorf("fds length (%d) does not match events length (%d)", len(p.Fds), len(p.Events))
+	}
+	for i, fd := range p.Fds {
+		if fd != 0 && fd != 3 {
+			return fmt.Errorf("unexpected polled fd: want 0 or 3, got %d", fd)
+		}
+		if fd == 0 && p.Events[i] != unix.POLLIN {
+			return fmt.Errorf("unexpected event for FD 0: want POLLIN (%d), got %d", unix.POLLIN, p.Events[i])
+		}
 	}
 	return nil
 }
