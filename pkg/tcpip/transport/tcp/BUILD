@@ -162,6 +162,7 @@ go_library(
         "pending_processing_mutex.go",
         "protocol.go",
         "protocol_mutex.go",
+        "protocol_state.go",
         "rack.go",
         "rcv.go",
         "rcv_queue_mutex.go",
