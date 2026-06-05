@@ -21,6 +21,7 @@ package seccheck
 // Keep them sorted by syscall number.
 func archInit() {
 	addSyscallPoint(19, "eventfd2", nil)
+	addSyscallPoint(22, "epoll_pwait", nil)
 	addSyscallPoint(23, "dup", []FieldDesc{
 		{
 			ID:   FieldSyscallPath,

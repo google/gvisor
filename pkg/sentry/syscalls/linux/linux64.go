@@ -274,7 +274,7 @@ var AMD64 = &kernel.SyscallTable{
 		229: syscalls.Supported("clock_getres", ClockGetres),
 		230: syscalls.Supported("clock_nanosleep", ClockNanosleep),
 		231: syscalls.Supported("exit_group", ExitGroup),
-		232: syscalls.Supported("epoll_wait", EpollWait),
+		232: syscalls.SupportedPoint("epoll_wait", EpollWait, PointEpollWait),
 		233: syscalls.Supported("epoll_ctl", EpollCtl),
 		234: syscalls.Supported("tgkill", Tgkill),
 		235: syscalls.Supported("utimes", Utimes),
@@ -323,7 +323,7 @@ var AMD64 = &kernel.SyscallTable{
 		278: syscalls.ErrorWithEvent("vmsplice", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/138"}), // TODO(b/29354098)
 		279: syscalls.CapError("move_pages", linux.CAP_SYS_NICE, "", nil),                               // requires cap_sys_nice (mostly)
 		280: syscalls.Supported("utimensat", Utimensat),
-		281: syscalls.Supported("epoll_pwait", EpollPwait),
+		281: syscalls.SupportedPoint("epoll_pwait", EpollPwait, PointEpollPwait),
 		282: syscalls.SupportedPoint("signalfd", Signalfd, PointSignalfd),
 		283: syscalls.SupportedPoint("timerfd_create", TimerfdCreate, PointTimerfdCreate),
 		284: syscalls.SupportedPoint("eventfd", Eventfd, PointEventfd),
@@ -444,7 +444,7 @@ var ARM64 = &kernel.SyscallTable{
 		19:  syscalls.SupportedPoint("eventfd2", Eventfd2, PointEventfd2),
 		20:  syscalls.Supported("epoll_create1", EpollCreate1),
 		21:  syscalls.Supported("epoll_ctl", EpollCtl),
-		22:  syscalls.Supported("epoll_pwait", EpollPwait),
+		22:  syscalls.SupportedPoint("epoll_pwait", EpollPwait, PointEpollPwait),
 		23:  syscalls.SupportedPoint("dup", Dup, PointDup),
 		24:  syscalls.SupportedPoint("dup3", Dup3, PointDup3),
 		25:  syscalls.SupportedPoint("fcntl", Fcntl, PointFcntl),
