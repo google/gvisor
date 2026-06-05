@@ -32,6 +32,7 @@
 #include <unistd.h>
 
 #include <csignal>
+#include <ctime>
 #include <iostream>
 #include <string>
 
@@ -2506,6 +2507,132 @@ TEST_F(JobControlTest, SIGHUPOnMasterClose) {
   master_.reset();
 
   // Wait for the child and verify it received SIGHUP (exited with 42).
+  int wstatus;
+  ASSERT_THAT(waitpid(child, &wstatus, 0), SyscallSucceedsWithValue(child));
+  ASSERT_TRUE(WIFEXITED(wstatus));
+  EXPECT_EQ(WEXITSTATUS(wstatus), 42);
+}
+
+TEST_F(JobControlTest, SigwinchOnWindowSizeChange) {
+  int sync_pipe[2];
+  ASSERT_THAT(pipe(sync_pipe), SyscallSucceeds());
+
+  pid_t child = fork();
+  if (child == 0) {
+    close(sync_pipe[0]);
+
+    // Close inherited master.
+    master_.reset();
+
+    // Create new session and set replica as controlling terminal.
+    TEST_PCHECK(setsid() >= 0);
+    TEST_PCHECK(ioctl(replica_.get(), TIOCSCTTY, 0) >= 0);
+
+    // Block SIGWINCH.
+    sigset_t set;
+    sigemptyset(&set);
+    sigaddset(&set, SIGWINCH);
+    sigset_t old_set;
+    TEST_PCHECK(sigprocmask(SIG_BLOCK, &set, &old_set) == 0);
+
+    // Notify parent we are ready.
+    char c = 'r';
+    TEST_PCHECK(WriteFd(sync_pipe[1], &c, 1) == 1);
+
+    // Wait for SIGWINCH (triggered by parent changing size on master).
+    struct timespec timeout = {};
+    timeout.tv_sec = 10;
+    int sig = RetryEINTR(sigtimedwait)(&set, nullptr, &timeout);
+    if (sig != SIGWINCH) {
+      _exit(1);  // Failed to receive SIGWINCH.
+    }
+
+    // Notify parent we got it.
+    c = '1';
+    TEST_PCHECK(WriteFd(sync_pipe[1], &c, 1) == 1);
+
+    // Now wait for another SIGWINCH (triggered by parent changing size again).
+    sig = RetryEINTR(sigtimedwait)(&set, nullptr, &timeout);
+    if (sig != SIGWINCH) {
+      _exit(2);  // Failed to receive second SIGWINCH.
+    }
+
+    // Notify parent we got it.
+    c = '2';
+    TEST_PCHECK(WriteFd(sync_pipe[1], &c, 1) == 1);
+
+    // Now expect NO SIGWINCH if we set the same size.
+    timeout.tv_sec = 2;
+    sig = RetryEINTR(sigtimedwait)(&set, nullptr, &timeout);
+    if (sig == SIGWINCH) {
+      _exit(3);  // Unexpected SIGWINCH.
+    }
+
+    // Notify parent.
+    c = '3';
+    TEST_PCHECK(WriteFd(sync_pipe[1], &c, 1) == 1);
+
+    // Test TIOCSWINSZ from replica (self-signaling).
+    struct winsize ws = {};
+    TEST_PCHECK(ioctl(replica_.get(), TIOCGWINSZ, &ws) == 0);
+    ws.ws_row++;
+    ws.ws_col++;
+    TEST_PCHECK(ioctl(replica_.get(), TIOCSWINSZ, &ws) == 0);
+    timeout.tv_sec = 10;
+    sig = RetryEINTR(sigtimedwait)(&set, nullptr, &timeout);
+    if (sig != SIGWINCH) {
+      _exit(4);  // Failed to receive SIGWINCH after replica TIOCSWINSZ.
+    }
+
+    // Notify parent.
+    c = '4';
+    TEST_PCHECK(WriteFd(sync_pipe[1], &c, 1) == 1);
+
+    close(sync_pipe[1]);
+    _exit(42);  // Success.
+  }
+  ASSERT_GT(child, 0);
+  close(sync_pipe[1]);
+
+  // Wait for child to be ready.
+  char c;
+  ASSERT_THAT(ReadFd(sync_pipe[0], &c, 1), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(c, 'r');
+
+  // 1. Change size on master.
+  struct winsize ws = {};
+  ASSERT_THAT(ioctl(master_.get(), TIOCGWINSZ, &ws), SyscallSucceeds());
+  ws.ws_row++;
+  ws.ws_col++;
+  ASSERT_THAT(ioctl(master_.get(), TIOCSWINSZ, &ws), SyscallSucceeds());
+
+  // Wait for child to receive it.
+  ASSERT_THAT(ReadFd(sync_pipe[0], &c, 1), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(c, '1');
+
+  // 2. Change size on master again.
+  ws.ws_row++;
+  ws.ws_col++;
+  ASSERT_THAT(ioctl(master_.get(), TIOCSWINSZ, &ws), SyscallSucceeds());
+
+  // Wait for child to receive it.
+  ASSERT_THAT(ReadFd(sync_pipe[0], &c, 1), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(c, '2');
+
+  // 3. Set same size on master.
+  ASSERT_THAT(ioctl(master_.get(), TIOCSWINSZ, &ws), SyscallSucceeds());
+
+  // Wait for child to finish waiting.
+  ASSERT_THAT(ReadFd(sync_pipe[0], &c, 1), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(c, '3');
+
+  // Wait for child to perform self-signaling test.
+  ASSERT_THAT(ReadFd(sync_pipe[0], &c, 1), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(c, '4');
+
+  close(sync_pipe[0]);
+
+  // Wait for child.
   int wstatus;
   ASSERT_THAT(waitpid(child, &wstatus, 0), SyscallSucceedsWithValue(child));
   ASSERT_TRUE(WIFEXITED(wstatus));

@@ -4961,6 +4961,7 @@ cc_binary(
     linkstatic = 1,
     malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
+        "//test/util:logging",
         "//test/util:pty_util",
         "//test/util:test_main",
         "//test/util:test_util",

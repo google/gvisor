@@ -246,8 +246,27 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysno uin
 		if _, err := winsize.CopyIn(task, args[2].Pointer()); err != nil {
 			return 0, err
 		}
-		err := ioctlSetWinsize(fd, &winsize)
-		return 0, err
+		oldSize, err := ioctlGetWinsize(fd)
+		if err != nil {
+			return 0, err
+		}
+		if err := ioctlSetWinsize(fd, &winsize); err != nil {
+			return 0, err
+		}
+		if *oldSize != winsize {
+			t.TTY().SignalForegroundProcessGroup(kernel.SignalInfoPriv(linux.SIGWINCH))
+		}
+		return 0, nil
+
+	case linux.TIOCSCTTY:
+		// Make the given terminal the controlling terminal of the
+		// calling process.
+		steal := args[2].Int() == 1
+		return 0, task.ThreadGroup().SetControllingTTY(ctx, t.TTY(), steal, t.vfsfd.IsReadable())
+
+	case linux.TIOCNOTTY:
+		// Release this process's controlling terminal.
+		return 0, task.ThreadGroup().ReleaseControllingTTY(t.TTY())
 
 	// Unimplemented commands.
 	case linux.TIOCSETD,
@@ -261,8 +280,6 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysno uin
 		linux.TIOCEXCL,
 		linux.TIOCNXCL,
 		linux.TIOCGEXCL,
-		linux.TIOCNOTTY,
-		linux.TIOCSCTTY,
 		linux.TIOCGSID,
 		linux.TIOCGETD,
 		linux.TIOCVHANGUP,

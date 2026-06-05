@@ -28,6 +28,7 @@ const (
 
 // Winsize is struct winsize, defined in uapi/asm-generic/termios.h.
 //
+// +stateify savable
 // +marshal
 type Winsize struct {
 	_      structs.HostLayout
@@ -343,16 +344,4 @@ var DefaultReplicaTermios = KernelTermios{
 	ControlCharacters: DefaultControlCharacters,
 	InputSpeed:        38400,
 	OutputSpeed:       38400,
-}
-
-// WindowSize corresponds to struct winsize defined in
-// include/uapi/asm-generic/termios.h.
-//
-// +stateify savable
-// +marshal
-type WindowSize struct {
-	_    structs.HostLayout
-	Rows uint16
-	Cols uint16
-	_    [4]byte // Padding for 2 unused shorts.
 }
