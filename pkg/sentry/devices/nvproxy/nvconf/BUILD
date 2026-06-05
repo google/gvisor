@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -19,4 +19,11 @@ go_library(
     deps = [
         "//pkg/log",
     ],
+)
+
+go_test(
+    name = "nvconf_test",
+    size = "small",
+    srcs = ["caps_test.go"],
+    library = ":nvconf",
 )
