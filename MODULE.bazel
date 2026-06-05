@@ -115,7 +115,6 @@ http_file(
 # used in any part of the build other than as certificates present in images.
 http_file(
     name = "google_root_pem",
-    sha256 = "0d4b15a365e5158c1f9217b7827c5af8a9b86789e8cfbe21480a57c134fe9d01",
     urls = [
         "https://pki.goog/roots.pem",
     ],
