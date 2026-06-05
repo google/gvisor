@@ -662,6 +662,16 @@ void runInotifyRmWatch() {
   rmdir(pathname);
 }
 
+void runSelect() {
+  timeval tv = {};
+  fd_set rfds;
+  FD_ZERO(&rfds);
+  int res = select(0, &rfds, nullptr, nullptr, &tv);
+  if (res < 0) {
+    err(1, "select");
+  }
+}
+
 }  // namespace testing
 }  // namespace gvisor
 
@@ -697,6 +707,7 @@ int main(int argc, char** argv) {
   ::gvisor::testing::runInotifyInit1();
   ::gvisor::testing::runInotifyAddWatch();
   ::gvisor::testing::runInotifyRmWatch();
+  ::gvisor::testing::runSelect();
 // signalfd(2), fork(2), and vfork(2) system calls are not supported in arm
 // architecture.
 #ifdef __x86_64__

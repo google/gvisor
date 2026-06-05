@@ -311,3 +311,14 @@ message SocketPair {
   int32 socket1 = 7;
   int32 socket2 = 8;
 }
+
+message Select {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  repeated int64 read_fds = 4;
+  int64 nfds = 5;
+  int64 timeout_ms = 6;
+  int64 write_nfds = 7;
+  int64 except_nfds = 8;
+}
