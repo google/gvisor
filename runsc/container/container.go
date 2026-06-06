@@ -1893,15 +1893,24 @@ func (c *Container) populateStats(event *boot.EventOut) {
 
 func (c *Container) createParentCgroup(parentPath string, conf *config.Config) (cgroup.Cgroup, error) {
 	var err error
+	useSystemd := conf.SystemdCgroup
 	if conf.SystemdCgroup {
 		parentPath, err = cgroup.TransformSystemdPath(parentPath, c.ID, conf.Rootless)
 		if err != nil {
 			return nil, err
 		}
 	} else if cgroup.LikelySystemdPath(parentPath) {
-		log.Warningf("cgroup parent path is set to %q which looks like a systemd path. Please set --systemd-cgroup=true if you intend to use systemd to manage container cgroups", parentPath)
+		// Auto-enable systemd cgroup handling when a systemd path is detected.
+		// This ensures proper cgroup initialization when the shim is invoked
+		// directly with systemd paths (e.g., via Docker's --runtime flag).
+		log.Infof("Detected systemd cgroup path %q, enabling systemd cgroup handling", parentPath)
+		useSystemd = true
+		parentPath, err = cgroup.TransformSystemdPath(parentPath, c.ID, conf.Rootless)
+		if err != nil {
+			return nil, err
+		}
 	}
-	parentCgroup, err := cgroup.NewFromPath(parentPath, conf.SystemdCgroup)
+	parentCgroup, err := cgroup.NewFromPath(parentPath, useSystemd)
 	if err != nil {
 		return nil, err
 	}
