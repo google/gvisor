@@ -303,6 +303,7 @@ func (*runExitMain) execute(t *Task) taskRunState {
 	// Detach task from all cgroups. This must happen before potentially the
 	// last ref to the cgroupfs mount is dropped below.
 	t.LeaveCgroups()
+	t.Cgroup2().Exit(t, t)
 
 	t.mu.Lock()
 	mntns := t.mountNamespace
