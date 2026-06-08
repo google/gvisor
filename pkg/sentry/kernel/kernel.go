@@ -500,6 +500,9 @@ type InitKernelArgs struct {
 	// used by processes.  If it is zero, the limit will be set to
 	// unlimited.
 	MaxFDLimit int32
+
+	// Cgroup2FSInit initializes the cgroup2fs filesystem singleton.
+	Cgroup2FSInit func(ctx context.Context, k *Kernel, vfsObj *vfs.VirtualFilesystem) (*vfs.Filesystem, error)
 }
 
 // Init initialize the Kernel with no tasks.
@@ -641,6 +644,16 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	k.sockets = make(map[*vfs.FileDescription]*SocketRecord)
 
 	k.cgroupRegistry = newCgroupRegistry()
+
+	if args.Cgroup2FSInit == nil {
+		return fmt.Errorf("cgroup2fs initializer is required")
+	}
+	cfs, err := args.Cgroup2FSInit(ctx, k, &k.vfs)
+	if err != nil {
+		return fmt.Errorf("failed to initialize cgroup2fs: %v", err)
+	}
+	k.cgroupRegistry.v2fs = cfs
+
 	k.MaxKeySetSize = atomicbitops.FromInt32(auth.MaxSetSize)
 	return nil
 }
@@ -2207,6 +2220,10 @@ func (k *Kernel) Release() {
 	k.shmMount.DecRef(ctx)
 	k.socketMount.DecRef(ctx)
 	k.vfs.Release(ctx)
+	if k.cgroupRegistry != nil {
+		k.cgroupRegistry.v2fs.DecRef(ctx)
+		k.cgroupRegistry.v2fs = nil
+	}
 	k.timekeeper.Destroy()
 	k.vdso.Release(ctx)
 	k.RootNetworkNamespace().DecRef(ctx)

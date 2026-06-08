@@ -19,6 +19,7 @@ go_library(
         "//pkg/fspath",
         "//pkg/hostarch",
         "//pkg/memutil",
+        "//pkg/sentry/fsimpl/cgroup2fs",
         "//pkg/sentry/fsimpl/tmpfs",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",

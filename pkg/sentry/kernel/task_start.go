@@ -129,6 +129,12 @@ type TaskConfig struct {
 	// Used by clone3 to support CLONE_PIDFD.
 	pidFDMode pidFDMode
 	pidFDAddr hostarch.Addr
+
+	// cgroupFD is the CLONE_INTO_CGROUP file descriptor. Valid only if
+	// cloneIntoCgroup is true.
+	cgroupFD uint64
+	// Set only if CLONE_INTO_CGROUP is passed to clone.
+	cloneIntoCgroup bool
 }
 
 // NewTask creates a new task defined by cfg.
@@ -177,6 +183,38 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, int32, 
 	srcT := TaskFromContext(ctx)
 	tg := cfg.ThreadGroup
 	image := cfg.TaskImage
+
+	var cu cleanup.Cleanup
+	defer cu.Clean()
+
+	var cgroup2 Cgroup2      // The destination cgroup2 node.
+	var cachedKillSeq uint64 // To avoid racing with cgroup.kill.
+
+	if cfg.cloneIntoCgroup {
+		c, err := srcT.getCgroup2NodeFromFD(cfg.cgroupFD)
+		if err != nil {
+			return nil, -1, err
+		}
+		// We must lock the cgroup2 tree down to avoid racing with another
+		// thread that might destroy the destination cgroup. Note that we
+		// only lock this after we have extracted the destination cgroup to
+		// respect the prevailing lock order between the kernfs's filesystem
+		// mutex and the cgroup2 tree mutex.
+		srcT.k.Cgroup2FS().RLockTree()
+		cu.Add(func() {
+			// Note how the unlock is not deferred but added to cu.
+			// This means in the happy path, when cu is Release'd, we
+			// must unlock further down in this function, just after
+			// committing the entry of the new task into the cgroup.
+			srcT.k.Cgroup2FS().RUnlockTree()
+		})
+		if err := c.CanCloneInto(ctx, srcT.Credentials()); err != nil {
+			return nil, -1, err
+		}
+		cgroup2 = c
+		cachedKillSeq = cgroup2.KillSeq()
+	}
+
 	t := &Task{
 		taskNode: taskNode{
 			tg:       tg,
@@ -209,6 +247,7 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, int32, 
 		Origin:          cfg.Origin,
 		onDestroyAction: make(map[TaskDestroyAction]struct{}),
 		noNewPrivs:      cfg.NoNewPrivs,
+		cgroup2:         cgroup2,
 	}
 	t.netns = cfg.NetworkNamespace
 	t.creds.Store(cfg.Credentials)
@@ -217,11 +256,7 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, int32, 
 	// We don't construct t.blockingTimer until Task.run(); see that function
 	// for justification.
 
-	var cu cleanup.Cleanup
-	defer cu.Clean()
-
 	pidFD := int32(-1)
-
 	if cfg.pidFDMode != dontMakePIDFD {
 		isThread := cfg.pidFDMode == makeThreadedPIDFD
 		t.pid = &pid{}
@@ -249,35 +284,20 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, int32, 
 		}
 	}
 
-	var (
-		cg                 Cgroup
-		charged, committed bool
-	)
-
 	// Reserve cgroup PIDs controller charge. This is either committed when the
 	// new task enters the cgroup below, or rolled back on failure.
-	//
 	// We may also get here from a non-task context (for example, when
 	// creating the init task, or from the exec control command). In these cases
 	// we skip charging the pids controller, as non-userspace task creation
 	// bypasses pid limits.
+	var commitCgroupV1 func()
 	if srcT != nil {
-		var err error
-		if charged, cg, err = srcT.ChargeFor(t, CgroupControllerPIDs, CgroupResourcePID, 1); err != nil {
+		abort, commit, err := srcT.chargeCgroupV1PIDs(ctx, t)
+		if err != nil {
 			return nil, -1, err
 		}
-		if charged {
-			defer func() {
-				if !committed {
-					if err := cg.Charge(t, cg.Dentry, CgroupControllerPIDs, CgroupResourcePID, -1); err != nil {
-						panic(fmt.Sprintf("Failed to clean up PIDs charge on task creation failure: %v", err))
-					}
-				}
-				// Ref from ChargeFor. Note that we need to drop this outside of
-				// TaskSet.mu critical sections.
-				cg.DecRef(ctx)
-			}()
-		}
+		cu.Add(abort)
+		commitCgroupV1 = commit
 	}
 
 	// If the task was the first to be added to the thread group, check if
@@ -295,8 +315,44 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, int32, 
 	// the system atomically.
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
+
+	// For the standard, non-cloneIntoCgroup fork case, we have to do this
+	// after acquiring the TaskSet mutex to guard against a racing cgroup.procs
+	// write that might migrate the parent to a different cgroup. Note that
+	// task migration locks the taskset mutex for reading, and hence is mutually
+	// excluded from clone here.
+	if !cfg.cloneIntoCgroup {
+		if srcT != nil {
+			cgroup2 = srcT.Cgroup2()
+		} else {
+			// Direct exec into the sandbox.
+			cgroup2 = cfg.Kernel.Cgroup2FS().RootCgroup()
+		}
+		t.cgroup2 = cgroup2 // +checklocksignore: task not visible to anything yet
+
+		// This new task should not escape from a racing cgroup.kill.
+		// If here we cache the pre-kill seq no, we will either:
+		//  - Get killed naturally when the kill finds us in the cgroup task list.
+		//  - We kill ourselves when we find an augmented seq no later in this function.
+		// If instead we see the post-kill seq no, then we will find the parent
+		// to have been killed() below.
+		cachedKillSeq = cgroup2.KillSeq()
+		if srcT != nil && srcT.killed() {
+			return nil, -1, linuxerr.EINTR
+		}
+	}
+
+	abort, commitCgroupV2, err := cgroup2.CanEnter(ctx, t)
+	if err != nil {
+		return nil, -1, err
+	}
+	cu.Add(abort)
+
 	tg.signalHandlers.mu.Lock()
-	defer tg.signalHandlers.mu.Unlock()
+	// N.B. unlock is not deferred for the happy path because calling
+	// commitCgroupV2() with the signals mutex held would violate lock order.
+	cu.Add(func() { tg.signalHandlers.mu.Unlock() })
+
 	if tg.exiting || tg.execing != nil {
 		// If the caller is in the same thread group, then what we return
 		// doesn't matter too much since the caller will exit before it returns
@@ -310,11 +366,14 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, int32, 
 		// explanatory.
 		return nil, -1, fmt.Errorf("task creation disabled after Kernel.WaitExited() may have returned")
 	}
+
 	if err := ts.assignTIDsLocked(t); err != nil {
 		return nil, -1, err
 	}
+
 	// Below this point, newTask is expected not to fail (there is no rollback
 	// of assignTIDsLocked or any of the following).
+	cu.Release()
 
 	ts.liveTasks++
 
@@ -330,12 +389,15 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, int32, 
 		t.parent.children[t] = struct{}{}
 	}
 
+	if commitCgroupV1 != nil {
+		// Can't do this with the TaskSet mutex held.
+		go commitCgroupV1()
+	}
 	// If InitialCgroups is not nil, the new task will be placed in the
 	// specified cgroups. Otherwise, if srcT is not nil, the new task will
 	// be placed in the srcT's cgroups. If neither is specified, the new task
 	// will be in the root cgroups.
-	t.EnterInitialCgroups(srcT, cfg.InitialCgroups)
-	committed = true
+	t.EnterInitialV1Cgroups(srcT, cfg.InitialCgroups)
 
 	if isFirstTask = tg.leader == nil; isFirstTask {
 		// New thread group.
@@ -364,8 +426,6 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, int32, 
 	t.stopCount = atomicbitops.FromInt32(ts.stopCount)
 
 	t.mu.Lock()
-	defer t.mu.Unlock()
-
 	t.cpu = atomicbitops.FromInt32(assignCPU(t.allowedCPUMask, ts.Root.tids[t]))
 
 	t.startTime = t.k.RealtimeClock().Now()
@@ -373,8 +433,25 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, int32, 
 	// As a final step, initialize the platform context. This may require
 	// other pieces to be initialized as the task is used the context.
 	t.p = cfg.Kernel.Platform.NewContext(t.AsyncContext())
+	t.mu.Unlock()
+	tg.signalHandlers.mu.Unlock()
 
-	cu.Release()
+	if commitCgroupV2 != nil {
+		// We can call this only after releasing the signals mutex due to lock
+		// order reasons.
+		commitCgroupV2()
+	}
+	if cfg.cloneIntoCgroup {
+		// Unlock the cgroup v2 tree mutex now that the task is in the desired cgroup.
+		t.k.Cgroup2FS().RUnlockTree()
+	}
+	// We raced with a cgroup.kill write.
+	// Kills occurring after this check will find t in the cgroup's task
+	// list and will kill the task naturally.
+	if t.Cgroup2().KillSeq() != cachedKillSeq {
+		t.SendSignal(SignalInfoPriv(linux.SIGKILL))
+	}
+
 	return t, pidFD, nil
 }
 

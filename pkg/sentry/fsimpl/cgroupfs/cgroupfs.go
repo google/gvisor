@@ -305,7 +305,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	//
 	// Note: we're guaranteed to have at least one requested controller, since
 	// no explicit controller name implies all controllers.
-	vfsfs, err := r.FindHierarchy(name, wantControllers)
+	vfsfs, err := r.FindHierarchy(ctx, name, wantControllers)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -390,7 +390,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	// Register controllers. The registry may be modified concurrently, so if we
 	// get an error, we raced with someone else who registered the same
 	// controllers first.
-	if err := r.Register(name, fs.kcontrollers, fs); err != nil {
+	if err := r.Register(ctx, name, fs.kcontrollers, fs); err != nil {
 		ctx.Infof("cgroupfs.FilesystemType.GetFilesystem: failed to register new hierarchy with controllers %v: %v", wantControllers, err)
 		rootD.DecRef(ctx)
 		fs.VFSFilesystem().DecRef(ctx)
@@ -470,7 +470,7 @@ func (fs *filesystem) Release(ctx context.Context) {
 
 	if fs.hierarchyID != kernel.InvalidCgroupHierarchyID {
 		k.ReleaseCgroupHierarchy(fs.hierarchyID)
-		r.Unregister(fs.hierarchyID)
+		r.Unregister(ctx, fs.hierarchyID)
 	}
 
 	if fs.root != fs.effectiveRoot {

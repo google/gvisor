@@ -20,11 +20,12 @@ import (
 	"sort"
 	"strings"
 
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
 )
 
-// EnterInitialCgroups moves t into an initial set of cgroups.
+// EnterInitialV1Cgroups moves t into an initial set of cgroups.
 // If initCgroups is not nil, the new task will be placed in the specified cgroups.
 // Otherwise, if parent is not nil, the new task will be placed in the parent's cgroups.
 // If neither is specified, the new task will be in the root cgroups.
@@ -32,7 +33,7 @@ import (
 // This is analogous to Linux's kernel/cgroup/cgroup.c:cgroup_css_set_fork().
 //
 // Precondition: t isn't in any cgroups yet, t.cgroups is empty.
-func (t *Task) EnterInitialCgroups(parent *Task, initCgroups map[Cgroup]struct{}) {
+func (t *Task) EnterInitialV1Cgroups(parent *Task, initCgroups map[Cgroup]struct{}) {
 	var inherit map[Cgroup]struct{}
 	if initCgroups != nil {
 		inherit = initCgroups
@@ -293,4 +294,31 @@ func (t *Task) ChargeFor(other *Task, ctl CgroupControllerType, res CgroupResour
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.chargeLocked(other, ctl, res, value)
+}
+
+// chargeCgroupV1PIDs allocates the requested number of PID reservations for the
+// target task on the V1 cgroups (if any are active and mounted).
+// It returns an abortion closure that unrolls the allocation, and a commit
+// closure that unconditionally drops the cgroup reference upon success.
+// Note: The returned funcs must be called without holding TaskSet.mu.
+func (t *Task) chargeCgroupV1PIDs(ctx context.Context, target *Task) (func(), func(), error) {
+	v1Charged, cg, err := t.ChargeFor(target, CgroupControllerPIDs, CgroupResourcePID, 1)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	abort := func() {
+		if v1Charged {
+			if err := cg.Charge(target, cg.Dentry, CgroupControllerPIDs, CgroupResourcePID, -1); err != nil {
+				panic(fmt.Sprintf("Failed to clean up PIDs V1 charge on task creation failure: %v", err))
+			}
+			cg.DecRef(ctx)
+		}
+	}
+	commit := func() {
+		if v1Charged {
+			cg.DecRef(ctx)
+		}
+	}
+	return abort, commit, nil
 }

@@ -77,6 +77,7 @@ var (
 	netstackSR       = flag.Bool("netstack-sr", false, "enables netstack s/r")
 	nftables         = flag.Bool("nftables", false, "enables nftables")
 	kvmUseCPUNums    = flag.Bool("kvm-use-cpu-nums", false, "use cpu numbers in kvm platform")
+	mountCgroupV2    = flag.Bool("mount-cgroup-v2", false, "mount cgroups v2")
 )
 
 const (
@@ -429,6 +430,11 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		args = append(args, "-kvm-use-cpu-nums")
 	} else {
 		args = append(args, "-kvm-use-cpu-nums=false")
+	}
+	if *mountCgroupV2 {
+		args = append(args, "-mount-cgroup-v2=true")
+	} else {
+		args = append(args, "-mount-cgroup-v2=false")
 	}
 
 	testLogDir := ""
