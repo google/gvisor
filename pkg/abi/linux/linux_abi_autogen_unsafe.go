@@ -181,7 +181,6 @@ var _ marshal.Marshallable = (*VFIOIrqSet)(nil)
 var _ marshal.Marshallable = (*VFIORegionInfo)(nil)
 var _ marshal.Marshallable = (*VfsCapData)(nil)
 var _ marshal.Marshallable = (*VfsNsCapData)(nil)
-var _ marshal.Marshallable = (*WindowSize)(nil)
 var _ marshal.Marshallable = (*Winsize)(nil)
 var _ marshal.Marshallable = (*XTCTTargetInfoV0)(nil)
 var _ marshal.Marshallable = (*XTCounters)(nil)
@@ -21905,112 +21904,6 @@ func (t *Termios) WriteTo(writer io.Writer) (int64, error) {
     // Since we bypassed the compiler's escape analysis, indicate that t
     // must live until the use above.
     runtime.KeepAlive(t) // escapes: replaced by intrinsic.
-    return int64(length), err
-}
-
-// SizeBytes implements marshal.Marshallable.SizeBytes.
-func (w *WindowSize) SizeBytes() int {
-    return 4 +
-        1*4
-}
-
-// MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (w *WindowSize) MarshalBytes(dst []byte) []byte {
-    hostarch.ByteOrder.PutUint16(dst[:2], uint16(w.Rows))
-    dst = dst[2:]
-    hostarch.ByteOrder.PutUint16(dst[:2], uint16(w.Cols))
-    dst = dst[2:]
-    // Padding: dst[:sizeof(byte)*4] ~= [4]byte{0}
-    dst = dst[1*(4):]
-    return dst
-}
-
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (w *WindowSize) UnmarshalBytes(src []byte) []byte {
-    w.Rows = uint16(hostarch.ByteOrder.Uint16(src[:2]))
-    src = src[2:]
-    w.Cols = uint16(hostarch.ByteOrder.Uint16(src[:2]))
-    src = src[2:]
-    // Padding: ~ copy([4]byte(w._), src[:sizeof(byte)*4])
-    src = src[1*(4):]
-    return src
-}
-
-// Packed implements marshal.Marshallable.Packed.
-//go:nosplit
-func (w *WindowSize) Packed() bool {
-    return true
-}
-
-// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (w *WindowSize) MarshalUnsafe(dst []byte) []byte {
-    size := w.SizeBytes()
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(w), uintptr(size))
-    return dst[size:]
-}
-
-// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (w *WindowSize) UnmarshalUnsafe(src []byte) []byte {
-    size := w.SizeBytes()
-    gohacks.Memmove(unsafe.Pointer(w), unsafe.Pointer(&src[0]), uintptr(size))
-    return src[size:]
-}
-
-// CopyOutN implements marshal.Marshallable.CopyOutN.
-func (w *WindowSize) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(w)))
-    hdr.Len = w.SizeBytes()
-    hdr.Cap = w.SizeBytes()
-
-    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that w
-    // must live until the use above.
-    runtime.KeepAlive(w) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// CopyOut implements marshal.Marshallable.CopyOut.
-func (w *WindowSize) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
-    return w.CopyOutN(cc, addr, w.SizeBytes())
-}
-
-// CopyInN implements marshal.Marshallable.CopyInN.
-func (w *WindowSize) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(w)))
-    hdr.Len = w.SizeBytes()
-    hdr.Cap = w.SizeBytes()
-
-    length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that w
-    // must live until the use above.
-    runtime.KeepAlive(w) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// CopyIn implements marshal.Marshallable.CopyIn.
-func (w *WindowSize) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
-    return w.CopyInN(cc, addr, w.SizeBytes())
-}
-
-// WriteTo implements io.WriterTo.WriteTo.
-func (w *WindowSize) WriteTo(writer io.Writer) (int64, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(w)))
-    hdr.Len = w.SizeBytes()
-    hdr.Cap = w.SizeBytes()
-
-    length, err := writer.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that w
-    // must live until the use above.
-    runtime.KeepAlive(w) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 

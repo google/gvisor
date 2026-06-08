@@ -686,8 +686,6 @@ func (p *protocol) StateFields() []string {
 		"maxRetries",
 		"synRetries",
 		"dispatcher",
-		"seqnumSecret",
-		"tsOffsetSecret",
 	}
 }
 
@@ -714,11 +712,7 @@ func (p *protocol) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(15, &p.maxRetries)
 	stateSinkObject.Save(16, &p.synRetries)
 	stateSinkObject.Save(17, &p.dispatcher)
-	stateSinkObject.Save(18, &p.seqnumSecret)
-	stateSinkObject.Save(19, &p.tsOffsetSecret)
 }
-
-func (p *protocol) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (p *protocol) StateLoad(ctx context.Context, stateSourceObject state.Source) {
@@ -740,8 +734,7 @@ func (p *protocol) StateLoad(ctx context.Context, stateSourceObject state.Source
 	stateSourceObject.Load(15, &p.maxRetries)
 	stateSourceObject.Load(16, &p.synRetries)
 	stateSourceObject.Load(17, &p.dispatcher)
-	stateSourceObject.Load(18, &p.seqnumSecret)
-	stateSourceObject.Load(19, &p.tsOffsetSecret)
+	stateSourceObject.AfterLoad(func() { p.afterLoad(ctx) })
 }
 
 func (rc *rackControl) StateTypeName() string {

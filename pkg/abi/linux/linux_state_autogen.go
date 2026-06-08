@@ -505,6 +505,40 @@ func (i *ICMP6Filter) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(0, &i.Filter)
 }
 
+func (w *Winsize) StateTypeName() string {
+	return "pkg/abi/linux.Winsize"
+}
+
+func (w *Winsize) StateFields() []string {
+	return []string{
+		"Row",
+		"Col",
+		"Xpixel",
+		"Ypixel",
+	}
+}
+
+func (w *Winsize) beforeSave() {}
+
+// +checklocksignore
+func (w *Winsize) StateSave(stateSinkObject state.Sink) {
+	w.beforeSave()
+	stateSinkObject.Save(0, &w.Row)
+	stateSinkObject.Save(1, &w.Col)
+	stateSinkObject.Save(2, &w.Xpixel)
+	stateSinkObject.Save(3, &w.Ypixel)
+}
+
+func (w *Winsize) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (w *Winsize) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &w.Row)
+	stateSourceObject.Load(1, &w.Col)
+	stateSourceObject.Load(2, &w.Xpixel)
+	stateSourceObject.Load(3, &w.Ypixel)
+}
+
 func (t *KernelTermios) StateTypeName() string {
 	return "pkg/abi/linux.KernelTermios"
 }
@@ -551,34 +585,6 @@ func (t *KernelTermios) StateLoad(ctx context.Context, stateSourceObject state.S
 	stateSourceObject.Load(7, &t.OutputSpeed)
 }
 
-func (w *WindowSize) StateTypeName() string {
-	return "pkg/abi/linux.WindowSize"
-}
-
-func (w *WindowSize) StateFields() []string {
-	return []string{
-		"Rows",
-		"Cols",
-	}
-}
-
-func (w *WindowSize) beforeSave() {}
-
-// +checklocksignore
-func (w *WindowSize) StateSave(stateSinkObject state.Sink) {
-	w.beforeSave()
-	stateSinkObject.Save(0, &w.Rows)
-	stateSinkObject.Save(1, &w.Cols)
-}
-
-func (w *WindowSize) afterLoad(context.Context) {}
-
-// +checklocksignore
-func (w *WindowSize) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &w.Rows)
-	stateSourceObject.Load(1, &w.Cols)
-}
-
 func init() {
 	state.Register((*IOEvent)(nil))
 	state.Register((*BPFInstruction)(nil))
@@ -594,6 +600,6 @@ func init() {
 	state.Register((*ControlMessageIPPacketInfo)(nil))
 	state.Register((*ControlMessageIPv6PacketInfo)(nil))
 	state.Register((*ICMP6Filter)(nil))
+	state.Register((*Winsize)(nil))
 	state.Register((*KernelTermios)(nil))
-	state.Register((*WindowSize)(nil))
 }
