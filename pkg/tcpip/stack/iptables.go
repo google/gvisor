@@ -15,7 +15,6 @@
 package stack
 
 import (
-	"context"
 	"fmt"
 	"math/rand"
 	"reflect"
@@ -681,11 +680,6 @@ func (it *IPTables) beforeSave() {
 	it.connections.mu.Lock()
 }
 
-// afterLoad is invoked by stateify.
-func (it *IPTables) afterLoad(context.Context) {
-	it.startReaper(reaperDelay)
-}
-
 // startReaper periodically reaps timed out connections.
 func (it *IPTables) startReaper(interval time.Duration) {
 	bucket := 0
@@ -783,4 +777,9 @@ func (it *IPTables) OriginalDst(epID TransportEndpointID, netProto tcpip.Network
 		return tcpip.Address{}, 0, &tcpip.ErrNotConnected{}
 	}
 	return it.connections.originalDst(epID, netProto, transProto)
+}
+
+// SetClock sets the clock used by the connection table.
+func (it *IPTables) SetClock(clock tcpip.Clock) {
+	it.connections.SetClock(clock)
 }

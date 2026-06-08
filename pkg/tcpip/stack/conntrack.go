@@ -776,6 +776,11 @@ func (ct *ConnTrack) originalDst(epID TransportEndpointID, netProto tcpip.Networ
 	return id.dstAddr, id.dstPortOrEchoReplyIdent, nil
 }
 
+// SetClock sets the clock used by the conntrack map.
+func (ct *ConnTrack) SetClock(clock tcpip.Clock) {
+	ct.clock = clock
+}
+
 // NfConnTrackPriority returns the priority of the conntrack hook.
 // Check `ipv4/ipv6_conntrack_ops` in nf_conntrack_proto.c.
 func NfConnTrackPriority(hook NFHook) (int, bool) {

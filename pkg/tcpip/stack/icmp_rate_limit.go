@@ -34,7 +34,6 @@ const (
 //
 // +stateify savable
 type ICMPRateLimiter struct {
-	// TODO(b/341946753): Restore when netstack is savable.
 	limiter *rate.Limiter `state:"nosave"`
 	clock   tcpip.Clock
 }

@@ -28,6 +28,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/coverage"
@@ -210,6 +211,10 @@ func (s loaderState) String() string {
 type Loader struct {
 	// k is the kernel.
 	k *kernel.Kernel
+
+	// restoreClock is the temporary clock used by the stack during restore.
+	// It is poisoned immediately after network reconfiguration is complete.
+	restoreClock *poisonableClock
 
 	// ctrl is the control server.
 	ctrl *controller
@@ -446,6 +451,46 @@ type HostTHP struct {
 	Defrag string
 }
 
+// poisonableClock is a clock that wraps a real clock and can be poisoned
+// to panic on any subsequent time-reading or timer-scheduling methods.
+// This allows safe initialization of components during early restore while
+// guaranteeing that any missed clock propagation bugs panic instantly after restore.
+//
+// +stateify savable
+type poisonableClock struct {
+	fwd      tcpip.Clock
+	poisoned atomicbitops.Bool
+}
+
+// Now implements tcpip.Clock.Now.
+func (c *poisonableClock) Now() gtime.Time {
+	if c.poisoned.Load() {
+		panic("PoisonableClock.Now() called after stack was poisoned")
+	}
+	return c.fwd.Now()
+}
+
+// NowMonotonic implements tcpip.Clock.NowMonotonic.
+func (c *poisonableClock) NowMonotonic() tcpip.MonotonicTime {
+	if c.poisoned.Load() {
+		panic("PoisonableClock.NowMonotonic() called after stack was poisoned")
+	}
+	return c.fwd.NowMonotonic()
+}
+
+// AfterFunc implements tcpip.Clock.AfterFunc.
+func (c *poisonableClock) AfterFunc(d gtime.Duration, f func()) tcpip.Timer {
+	if c.poisoned.Load() {
+		panic("PoisonableClock.AfterFunc() called after stack was poisoned")
+	}
+	return c.fwd.AfterFunc(d, f)
+}
+
+// poison poisons the clock so that all future method calls panic.
+func (c *poisonableClock) poison() {
+	c.poisoned.Store(true)
+}
+
 const (
 	// startingStdioFD is the starting stdioFD number used during sandbox
 	// start and restore. This makes sure the stdioFDs are always the same
@@ -652,7 +697,8 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("getting root credentials")
 	}
 	// Create root network namespace/stack.
-	netns, err := newRootNetworkNamespace(args.Conf, tk, creds.UserNamespace, l.k)
+	l.restoreClock = &poisonableClock{fwd: tk}
+	netns, err := newRootNetworkNamespace(args.Conf, l.restoreClock, creds.UserNamespace, l.k)
 	if err != nil {
 		return nil, fmt.Errorf("creating network: %w", err)
 	}

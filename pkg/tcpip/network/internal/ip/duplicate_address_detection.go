@@ -74,6 +74,11 @@ type DAD struct {
 	addresses  map[tcpip.Address]dadState
 }
 
+// OnStackClockUpdatedLocked should be called when the stack's clock changes.
+func (d *DAD) OnStackClockUpdatedLocked(c tcpip.Clock) {
+	d.opts.Clock = c
+}
+
 // Init initializes the DAD state.
 //
 // Must only be called once for the lifetime of d; Init will panic if it is

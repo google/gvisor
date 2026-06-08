@@ -37,6 +37,7 @@ go_library(
         "//pkg/abi",
         "//pkg/abi/linux",
         "//pkg/abi/nvgpu",
+        "//pkg/atomicbitops",
         "//pkg/bpf",
         "//pkg/cleanup",
         "//pkg/context",

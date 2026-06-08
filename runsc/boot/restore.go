@@ -299,6 +299,11 @@ func (r *restorer) restore(l *Loader) error {
 	if err := l.k.LoadFrom(ctx, r.stateFile, r.asyncMFLoader, nil, oldInetStack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}); err != nil {
 		return fmt.Errorf("failed to load kernel: %w", err)
 	}
+	if l.restoreClock != nil {
+		// This clock should not be used by the restored kernel. Make sure the
+		// clock is not used from this point forward.
+		l.restoreClock.poison()
+	}
 	r.timer.Reached("kernel loaded")
 	if oldNvidiaDriverVersion.Major() > 0 && !l.k.NvidiaDriverVersion.Equals(oldNvidiaDriverVersion) {
 		return fmt.Errorf("nvidia driver version changed during restore: was %v, now %v", oldNvidiaDriverVersion, l.k.NvidiaDriverVersion)

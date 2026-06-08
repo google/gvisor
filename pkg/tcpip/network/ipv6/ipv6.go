@@ -291,6 +291,17 @@ func (*endpoint) DuplicateAddressProtocol() tcpip.NetworkProtocolNumber {
 	return ProtocolNumber
 }
 
+// OnStackClockUpdated implements stack.DuplicateAddressDetector.
+func (e *endpoint) OnStackClockUpdated(c tcpip.Clock) {
+	e.dad.mu.Lock()
+	e.dad.mu.dad.OnStackClockUpdatedLocked(c)
+	e.dad.mu.Unlock()
+
+	e.mu.Lock()
+	e.mu.ndp.dad.OnStackClockUpdatedLocked(c)
+	e.mu.Unlock()
+}
+
 // HandleLinkResolutionFailure implements stack.LinkResolvableNetworkEndpoint.
 func (e *endpoint) HandleLinkResolutionFailure(pkt *stack.PacketBuffer) {
 	// If we are operating as a router, we should return an ICMP error to the
@@ -2373,8 +2384,7 @@ type protocol struct {
 	// uint8 portion of it is meaningful.
 	defaultTTL atomicbitops.Uint32
 
-	fragmentation   *fragmentation.Fragmentation
-	icmpRateLimiter *stack.ICMPRateLimiter
+	fragmentation *fragmentation.Fragmentation
 
 	multicastRouteTable multicast.RouteTable
 }

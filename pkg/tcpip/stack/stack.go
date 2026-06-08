@@ -2091,13 +2091,32 @@ func (s *Stack) ReplaceConfig(st *Stack) {
 
 	// Update iptables and nftables.
 	s.tables = st.IPTables()
+	if s.tables != nil {
+		s.tables.SetClock(s.clock)
+	}
 	s.nftables = st.NFTables()
+	if s.nftables != nil {
+		s.nftables.SetClock(s.clock)
+	}
+
+	// addrToRestore preserves configured address properties during endpoint recreation.
+	type addrToRestore struct {
+		netNum tcpip.NetworkProtocolNumber
+		addr   tcpip.AddressWithPrefix
+		opts   AddressProperties
+	}
 
 	// Update NICs.
 	s.nics = make(map[tcpip.NICID]*nic)
 	s.loopbackNIC = nil
 	for id, nic := range nics {
 		nic.stack = s
+		for _, resolver := range nic.linkAddrResolvers {
+			resolver.neigh.state.clock = s.clock
+		}
+		for _, d := range nic.duplicateAddressDetectors {
+			d.OnStackClockUpdated(s.clock)
+		}
 		s.nics[id] = nic
 		if nic.IsLoopback() {
 			s.loopbackNIC = nic
@@ -2105,6 +2124,85 @@ func (s *Stack) ReplaceConfig(st *Stack) {
 			nic.disable()
 		}
 		_ = s.NextNICID()
+
+		// We need to preserve the configured IP addresses and their properties
+		// from the old endpoints before we recreate them.
+		var addrs []addrToRestore
+
+		for netNum, oldEP := range nic.networkEndpoints {
+			if addrEP, ok := oldEP.(AddressableEndpoint); ok {
+				for _, addr := range addrEP.PermanentAddresses() {
+					// Acquire the old address endpoint to extract properties.
+					// We use readOnly = true so we don't need to manage references.
+					oldAddrEP := addrEP.AcquireAssignedAddress(addr.Address, false, 0, true)
+					if oldAddrEP != nil {
+						addrs = append(addrs, addrToRestore{
+							netNum: netNum,
+							addr:   addr,
+							opts: AddressProperties{
+								ConfigType: oldAddrEP.ConfigType(),
+								Temporary:  oldAddrEP.Temporary(),
+								Lifetimes:  oldAddrEP.Lifetimes(),
+							},
+						})
+					}
+				}
+			}
+		}
+
+		// Recreate network endpoints and resolvers using s's protocols.
+		// This ensures they point to s (restored stack) instead of st (temporary stack),
+		// and naturally initializes neighbor caches with the correct restored clock.
+		for _, oldEP := range nic.networkEndpoints {
+			oldEP.Close()
+		}
+		nic.networkEndpoints = make(map[tcpip.NetworkProtocolNumber]NetworkEndpoint)
+		nic.linkAddrResolvers = make(map[tcpip.NetworkProtocolNumber]*linkResolver)
+		resolutionRequired := nic.Capabilities()&CapabilityResolutionRequired != 0
+
+		for _, netProto := range s.networkProtocols {
+			netNum := netProto.Number()
+			netEP := netProto.NewEndpoint(nic, nic)
+			nic.networkEndpoints[netNum] = netEP
+
+			if resolutionRequired {
+				if r, ok := netEP.(LinkAddressResolver); ok {
+					l := &linkResolver{resolver: r}
+					l.neigh.init(nic, r)
+					nic.linkAddrResolvers[netNum] = l
+				}
+			}
+		}
+
+		// Enable the new endpoints first (if the NIC was already enabled).
+		// This ensures default addresses (like broadcast/multicast) are added
+		// automatically by the protocol Enable() method.
+		if nic.Enabled() {
+			for _, netEP := range nic.networkEndpoints {
+				if err := netEP.Enable(); err != nil {
+					panic(fmt.Sprintf("failed to enable recreated endpoint: %v", err))
+				}
+			}
+		}
+
+		// Re-apply the preserved IP addresses to the new endpoints.
+		// We ignore ErrDuplicateAddress because some addresses (like broadcast)
+		// might have been added already by the Enable() call above.
+		for _, a := range addrs {
+			if newEP, ok := nic.networkEndpoints[a.netNum]; ok {
+				if addrEP, ok := newEP.(AddressableEndpoint); ok {
+					addrEP, err := addrEP.AddAndAcquirePermanentAddress(a.addr, a.opts)
+					if err != nil {
+						if _, ok := err.(*tcpip.ErrDuplicateAddress); !ok {
+							panic(fmt.Sprintf("failed to restore address %v to new endpoint: %v", a.addr, err))
+						}
+					}
+					if addrEP != nil {
+						addrEP.DecRef()
+					}
+				}
+			}
+		}
 	}
 }
 
@@ -2128,6 +2226,10 @@ func (s *Stack) Restore() {
 	// Now restore any protocol level background workers.
 	for _, p := range s.transportProtocols {
 		p.proto.Restore()
+	}
+
+	if s.tables != nil {
+		s.tables.Restore()
 	}
 }
 
