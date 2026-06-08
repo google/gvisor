@@ -356,7 +356,6 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 		// DeliverTransportPacket so that is is only done when needed.
 		replyData := stack.PayloadSince(pkt.TransportHeader())
 		defer replyData.Release()
-		ipHdr := header.IPv4(pkt.NetworkHeader().Slice())
 		localAddressTemporary := pkt.NetworkPacketInfo.LocalAddressTemporary
 		localAddressBroadcast := pkt.NetworkPacketInfo.LocalAddressBroadcast
 
@@ -378,95 +377,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 			return
 		}
 
-		sent := e.stats.icmp.packetsSent
-		if !e.protocol.allowICMPReply(header.ICMPv4EchoReply, header.ICMPv4UnusedCode) {
-			sent.rateLimited.Increment()
-			return
-		}
-
-		// As per RFC 1122 section 3.2.1.3, when a host sends any datagram, the IP
-		// source address MUST be one of its own IP addresses (but not a broadcast
-		// or multicast address).
-		localAddr := ipHdr.DestinationAddress()
-		if localAddressBroadcast || header.IsV4MulticastAddress(localAddr) {
-			localAddr = tcpip.Address{}
-		}
-
-		r, err := e.protocol.stack.FindRoute(e.nic.ID(), localAddr, ipHdr.SourceAddress(), ProtocolNumber, false /* multicastLoop */)
-		if err != nil {
-			// If we cannot find a route to the destination, silently drop the packet.
-			return
-		}
-		defer r.Release()
-
-		outgoingEP, ok := e.protocol.getEndpointForNIC(r.NICID())
-		if !ok {
-			// The outgoing NIC went away.
-			sent.dropped.Increment()
-			return
-		}
-
-		// Because IP and ICMP are so closely intertwined, we need to handcraft our
-		// IP header to be able to follow RFC 792. The wording on page 13 is as
-		// follows:
-		//   IP Fields:
-		//   Addresses
-		//     The address of the source in an echo message will be the
-		//     destination of the echo reply message.  To form an echo reply
-		//     message, the source and destination addresses are simply reversed,
-		//     the type code changed to 0, and the checksum recomputed.
-		//
-		// This was interpreted by early implementors to mean that all options must
-		// be copied from the echo request IP header to the echo reply IP header
-		// and this behaviour is still relied upon by some applications.
-		//
-		// Create a copy of the IP header we received, options and all, and change
-		// The fields we need to alter.
-		//
-		// We need to produce the entire packet in the data segment in order to
-		// use WriteHeaderIncludedPacket(). WriteHeaderIncludedPacket sets the
-		// total length and the header checksum so we don't need to set those here.
-		//
-		// Take the base of the incoming request IP header but replace the options.
-		replyHeaderLength := uint8(header.IPv4MinimumSize + len(newOptions))
-		replyIPHdrView := buffer.NewView(int(replyHeaderLength))
-		replyIPHdrView.Write(iph[:header.IPv4MinimumSize])
-		replyIPHdrView.Write(newOptions)
-		replyIPHdr := header.IPv4(replyIPHdrView.AsSlice())
-		replyIPHdr.SetHeaderLength(replyHeaderLength)
-		replyIPHdr.SetSourceAddress(r.LocalAddress())
-		replyIPHdr.SetDestinationAddress(r.RemoteAddress())
-		replyIPHdr.SetTTL(r.DefaultTTL())
-		replyIPHdr.SetTotalLength(uint16(len(replyIPHdr) + len(replyData.AsSlice())))
-		replyIPHdr.SetChecksum(0)
-		replyIPHdr.SetChecksum(^replyIPHdr.CalculateChecksum())
-
-		replyICMPHdr := header.ICMPv4(replyData.AsSlice())
-		replyICMPHdr.SetType(header.ICMPv4EchoReply)
-		replyICMPHdr.SetChecksum(0)
-		replyICMPHdr.SetChecksum(^checksum.Checksum(replyData.AsSlice(), 0))
-
-		replyBuf := buffer.MakeWithView(replyIPHdrView)
-		replyBuf.Append(replyData.Clone())
-		replyPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-			ReserveHeaderBytes: int(r.MaxHeaderLength()),
-			Payload:            replyBuf,
-		})
-		defer replyPkt.DecRef()
-		// Populate the network/transport headers in the packet buffer so the
-		// ICMP packet goes through IPTables.
-		if ok := parse.IPv4(replyPkt); !ok {
-			panic("expected to parse IPv4 header we just created")
-		}
-		if ok := parse.ICMPv4(replyPkt); !ok {
-			panic("expected to parse ICMPv4 header we just created")
-		}
-
-		if err := outgoingEP.writePacket(r, replyPkt); err != nil {
-			sent.dropped.Increment()
-			return
-		}
-		sent.echoReply.Increment()
+		e.sendICMPEchoReply(replyData, iph, newOptions, localAddressBroadcast)
 
 	case header.ICMPv4EchoReply:
 		received.echoReply.Increment()
@@ -537,6 +448,98 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 	default:
 		received.invalid.Increment()
 	}
+}
+
+func (e *endpoint) sendICMPEchoReply(replyData *buffer.View, ipHdr header.IPv4, newOptions header.IPv4Options, localAddressBroadcast bool) {
+	sent := e.stats.icmp.packetsSent
+	if !e.protocol.allowICMPReply(header.ICMPv4EchoReply, header.ICMPv4UnusedCode) {
+		sent.rateLimited.Increment()
+		return
+	}
+
+	// As per RFC 1122 section 3.2.1.3, when a host sends any datagram, the IP
+	// source address MUST be one of its own IP addresses (but not a broadcast
+	// or multicast address).
+	localAddr := ipHdr.DestinationAddress()
+	if localAddressBroadcast || header.IsV4MulticastAddress(localAddr) {
+		localAddr = tcpip.Address{}
+	}
+
+	r, err := e.protocol.stack.FindRoute(e.nic.ID(), localAddr, ipHdr.SourceAddress(), ProtocolNumber, false /* multicastLoop */)
+	if err != nil {
+		// If we cannot find a route to the destination, silently drop the packet.
+		return
+	}
+	defer r.Release()
+
+	outgoingEP, ok := e.protocol.getEndpointForNIC(r.NICID())
+	if !ok {
+		// The outgoing NIC went away.
+		sent.dropped.Increment()
+		return
+	}
+
+	// Because IP and ICMP are so closely intertwined, we need to handcraft our
+	// IP header to be able to follow RFC 792. The wording on page 13 is as
+	// follows:
+	//   IP Fields:
+	//   Addresses
+	//     The address of the source in an echo message will be the
+	//     destination of the echo reply message.  To form an echo reply
+	//     message, the source and destination addresses are simply reversed,
+	//     the type code changed to 0, and the checksum recomputed.
+	//
+	// This was interpreted by early implementors to mean that all options must
+	// be copied from the echo request IP header to the echo reply IP header
+	// and this behaviour is still relied upon by some applications.
+	//
+	// Create a copy of the IP header we received, options and all, and change
+	// The fields we need to alter.
+	//
+	// We need to produce the entire packet in the data segment in order to
+	// use WriteHeaderIncludedPacket(). WriteHeaderIncludedPacket sets the
+	// total length and the header checksum so we don't need to set those here.
+	//
+	// Take the base of the incoming request IP header but replace the options.
+	replyHeaderLength := uint8(header.IPv4MinimumSize + len(newOptions))
+	replyIPHdrView := buffer.NewView(int(replyHeaderLength))
+	replyIPHdrView.Write(ipHdr[:header.IPv4MinimumSize])
+	replyIPHdrView.Write(newOptions)
+	replyIPHdr := header.IPv4(replyIPHdrView.AsSlice())
+	replyIPHdr.SetHeaderLength(replyHeaderLength)
+	replyIPHdr.SetSourceAddress(r.LocalAddress())
+	replyIPHdr.SetDestinationAddress(r.RemoteAddress())
+	replyIPHdr.SetTTL(r.DefaultTTL())
+	replyIPHdr.SetTotalLength(uint16(len(replyIPHdr) + len(replyData.AsSlice())))
+	replyIPHdr.SetChecksum(0)
+	replyIPHdr.SetChecksum(^replyIPHdr.CalculateChecksum())
+
+	replyICMPHdr := header.ICMPv4(replyData.AsSlice())
+	replyICMPHdr.SetType(header.ICMPv4EchoReply)
+	replyICMPHdr.SetChecksum(0)
+	replyICMPHdr.SetChecksum(^checksum.Checksum(replyData.AsSlice(), 0))
+
+	replyBuf := buffer.MakeWithView(replyIPHdrView)
+	replyBuf.Append(replyData.Clone())
+	replyPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		ReserveHeaderBytes: int(r.MaxHeaderLength()),
+		Payload:            replyBuf,
+	})
+	defer replyPkt.DecRef()
+	// Populate the network/transport headers in the packet buffer so the
+	// ICMP packet goes through IPTables.
+	if ok := parse.IPv4(replyPkt); !ok {
+		panic("expected to parse IPv4 header we just created")
+	}
+	if ok := parse.ICMPv4(replyPkt); !ok {
+		panic("expected to parse ICMPv4 header we just created")
+	}
+
+	if err := outgoingEP.writePacket(r, replyPkt); err != nil {
+		sent.dropped.Increment()
+		return
+	}
+	sent.echoReply.Increment()
 }
 
 // ======= ICMP Error packet generation =========
