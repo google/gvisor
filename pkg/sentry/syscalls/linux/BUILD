@@ -33,6 +33,7 @@ go_library(
         "sys_mount.go",
         "sys_mq.go",
         "sys_msgqueue.go",
+        "sys_personality.go",
         "sys_pipe.go",
         "sys_poll.go",
         "sys_prctl.go",

@@ -486,6 +486,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:personality_test",
+)
+
+syscall_test(
     test = "//test/syscalls/linux:pidfd_test",
 )
 
