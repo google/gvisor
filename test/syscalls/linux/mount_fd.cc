@@ -92,12 +92,14 @@
 
 #ifndef SYS_fsopen
 #if defined(__x86_64__)
+#define SYS_open_tree 428
 #define SYS_move_mount 429
 #define SYS_fsopen 430
 #define SYS_fsconfig 431
 #define SYS_fsmount 432
 #define SYS_fspick 433
 #elif defined(__aarch64__)
+#define SYS_open_tree 428
 #define SYS_move_mount 429
 #define SYS_fsopen 430
 #define SYS_fsconfig 431
@@ -106,6 +108,15 @@
 #else
 #error "Unknown architecture"
 #endif
+#endif
+
+#ifndef OPEN_TREE_CLONE
+#define OPEN_TREE_CLONE 1
+#define OPEN_TREE_CLOEXEC O_CLOEXEC
+#endif
+
+#ifndef AT_RECURSIVE
+#define AT_RECURSIVE 0x8000
 #endif
 
 inline int fsopen(const char* fsname, unsigned int flags) {
@@ -122,6 +133,9 @@ inline int move_mount(int from_dirfd, const char* from_pathname, int to_dirfd,
                       const char* to_pathname, unsigned int flags) {
   return syscall(SYS_move_mount, from_dirfd, from_pathname, to_dirfd,
                  to_pathname, flags);
+}
+inline int open_tree(int dirfd, const char* pathname, unsigned int flags) {
+  return syscall(SYS_open_tree, dirfd, pathname, flags);
 }
 
 namespace gvisor {
@@ -611,6 +625,277 @@ TEST(MoveMountTest, MoveMountLoop) {
               SyscallFailsWithErrno(ELOOP));
 
   EXPECT_THAT(umount(dir.path().c_str()), SyscallSucceeds());
+}
+
+// open_tree(2) tests
+
+TEST(OpenTreeTest, OpenTreeNoCloneSuccess) {
+  // No capability needed without OPEN_TREE_CLONE.
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  int fd = open_tree(AT_FDCWD, dir.path().c_str(), 0);
+  ASSERT_THAT(fd, SyscallSucceeds());
+  auto cleanup = Cleanup([&]() { close(fd); });
+
+  // Returned fd is a path fd usable as a dirfd.
+  struct stat st;
+  EXPECT_THAT(fstat(fd, &st), SyscallSucceeds());
+  EXPECT_TRUE(S_ISDIR(st.st_mode));
+}
+
+TEST(OpenTreeTest, OpenTreeCloneRequiresCapSysAdmin) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  ScopedThread([&]() {
+    EXPECT_NO_ERRNO(SetCapability(CAP_SYS_ADMIN, false));
+    EXPECT_THAT(open_tree(AT_FDCWD, dir.path().c_str(), OPEN_TREE_CLONE),
+                SyscallFailsWithErrno(EPERM));
+  });
+}
+
+TEST(OpenTreeTest, OpenTreeRecursiveRequiresClone) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  EXPECT_THAT(open_tree(AT_FDCWD, dir.path().c_str(), AT_RECURSIVE),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(OpenTreeTest, OpenTreeInvalidFlags) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  // A high bit that isn't a known open_tree flag on Linux or gVisor.
+  EXPECT_THAT(open_tree(AT_FDCWD, dir.path().c_str(), 1u << 30),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(OpenTreeTest, OpenTreeCloneNonRecursiveOnAttached) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  // Create and attach the parent tmpfs via the new mount API.
+  int parent_fsfd = fsopen(kTmpfs, 0);
+  ASSERT_THAT(parent_fsfd, SyscallSucceeds());
+  auto cleanup_parent_fs = Cleanup([&]() { close(parent_fsfd); });
+  EXPECT_THAT(fsconfig(parent_fsfd, FSCONFIG_SET_STRING, "source", "parent", 0),
+              SyscallSucceeds());
+  EXPECT_THAT(fsconfig(parent_fsfd, FSCONFIG_CMD_CREATE, NULL, NULL, 0),
+              SyscallSucceeds());
+  int parent_mntfd = fsmount(parent_fsfd, 0, 0);
+  ASSERT_THAT(parent_mntfd, SyscallSucceeds());
+  auto cleanup_parent_mnt = Cleanup([&]() { close(parent_mntfd); });
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  EXPECT_THAT(move_mount(parent_mntfd, "", AT_FDCWD, dir.path().c_str(),
+                         MOVE_MOUNT_F_EMPTY_PATH),
+              SyscallSucceeds());
+  cleanup_parent_mnt.Release()();
+
+  // Create the submount mountpoint, then attach a child tmpfs onto it.
+  std::string sub_path = JoinPath(dir.path(), "sub");
+  ASSERT_THAT(mkdir(sub_path.c_str(), 0755), SyscallSucceeds());
+
+  int child_fsfd = fsopen(kTmpfs, 0);
+  ASSERT_THAT(child_fsfd, SyscallSucceeds());
+  auto cleanup_child_fs = Cleanup([&]() { close(child_fsfd); });
+  EXPECT_THAT(fsconfig(child_fsfd, FSCONFIG_SET_STRING, "source", "child", 0),
+              SyscallSucceeds());
+  EXPECT_THAT(fsconfig(child_fsfd, FSCONFIG_CMD_CREATE, NULL, NULL, 0),
+              SyscallSucceeds());
+  int child_mntfd = fsmount(child_fsfd, 0, 0);
+  ASSERT_THAT(child_mntfd, SyscallSucceeds());
+  auto cleanup_child_mnt = Cleanup([&]() { close(child_mntfd); });
+
+  EXPECT_THAT(move_mount(child_mntfd, "", AT_FDCWD, sub_path.c_str(),
+                         MOVE_MOUNT_F_EMPTY_PATH),
+              SyscallSucceeds());
+  cleanup_child_mnt.Release()();
+  auto cleanup_child_umount = Cleanup([&]() { umount(sub_path.c_str()); });
+  auto cleanup_parent_umount = Cleanup([&]() { umount(dir.path().c_str()); });
+
+  int markerfd =
+      open(JoinPath(sub_path, "marker_sub").c_str(), O_CREAT | O_RDWR, 0644);
+  ASSERT_THAT(markerfd, SyscallSucceeds());
+  EXPECT_THAT(close(markerfd), SyscallSucceeds());
+
+  // Clone parent without AT_RECURSIVE: the submount and its contents should
+  // not be visible in the clone, though the (now-empty) mountpoint dir is.
+  int treefd = open_tree(AT_FDCWD, dir.path().c_str(), OPEN_TREE_CLONE);
+  ASSERT_THAT(treefd, SyscallSucceeds());
+  auto cleanup_tree = Cleanup([&]() { close(treefd); });
+
+  EXPECT_THAT(faccessat(treefd, "sub", F_OK, 0), SyscallSucceeds());
+  EXPECT_THAT(faccessat(treefd, "sub/marker_sub", F_OK, 0),
+              SyscallFailsWithErrno(ENOENT));
+}
+
+TEST(OpenTreeTest, OpenTreeCloneNonRecursiveOnDetached) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  // Create the parent tmpfs as a detached mount.
+  int parent_fsfd = fsopen(kTmpfs, 0);
+  ASSERT_THAT(parent_fsfd, SyscallSucceeds());
+  auto cleanup_parent_fs = Cleanup([&]() { close(parent_fsfd); });
+  EXPECT_THAT(fsconfig(parent_fsfd, FSCONFIG_SET_STRING, "source", "parent", 0),
+              SyscallSucceeds());
+  EXPECT_THAT(fsconfig(parent_fsfd, FSCONFIG_CMD_CREATE, NULL, NULL, 0),
+              SyscallSucceeds());
+  int parent_mntfd = fsmount(parent_fsfd, 0, 0);
+  ASSERT_THAT(parent_mntfd, SyscallSucceeds());
+  auto cleanup_parent_mnt = Cleanup([&]() { close(parent_mntfd); });
+
+  // Create the submount mountpoint inside the detached parent and attach a
+  // child tmpfs there (still all detached).
+  ASSERT_THAT(mkdirat(parent_mntfd, "sub", 0755), SyscallSucceeds());
+
+  int child_fsfd = fsopen(kTmpfs, 0);
+  ASSERT_THAT(child_fsfd, SyscallSucceeds());
+  auto cleanup_child_fs = Cleanup([&]() { close(child_fsfd); });
+  EXPECT_THAT(fsconfig(child_fsfd, FSCONFIG_SET_STRING, "source", "child", 0),
+              SyscallSucceeds());
+  EXPECT_THAT(fsconfig(child_fsfd, FSCONFIG_CMD_CREATE, NULL, NULL, 0),
+              SyscallSucceeds());
+  int child_mntfd = fsmount(child_fsfd, 0, 0);
+  ASSERT_THAT(child_mntfd, SyscallSucceeds());
+  auto cleanup_child_mnt = Cleanup([&]() { close(child_mntfd); });
+
+  EXPECT_THAT(
+      move_mount(child_mntfd, "", parent_mntfd, "sub", MOVE_MOUNT_F_EMPTY_PATH),
+      SyscallSucceeds());
+  cleanup_child_mnt.Release()();
+
+  int markerfd = openat(parent_mntfd, "sub/marker_sub", O_CREAT | O_RDWR, 0644);
+  ASSERT_THAT(markerfd, SyscallSucceeds());
+  EXPECT_THAT(close(markerfd), SyscallSucceeds());
+
+  // Clone parent without AT_RECURSIVE.
+  int treefd = open_tree(parent_mntfd, "", AT_EMPTY_PATH | OPEN_TREE_CLONE);
+  ASSERT_THAT(treefd, SyscallSucceeds());
+  auto cleanup_tree = Cleanup([&]() { close(treefd); });
+
+  EXPECT_THAT(faccessat(treefd, "sub", F_OK, 0), SyscallSucceeds());
+  EXPECT_THAT(faccessat(treefd, "sub/marker_sub", F_OK, 0),
+              SyscallFailsWithErrno(ENOENT));
+}
+
+TEST(OpenTreeTest, OpenTreeCloneRecursiveOnAttached) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  // Create and attach the parent tmpfs.
+  int parent_fsfd = fsopen(kTmpfs, 0);
+  ASSERT_THAT(parent_fsfd, SyscallSucceeds());
+  auto cleanup_parent_fs = Cleanup([&]() { close(parent_fsfd); });
+  EXPECT_THAT(fsconfig(parent_fsfd, FSCONFIG_SET_STRING, "source", "parent", 0),
+              SyscallSucceeds());
+  EXPECT_THAT(fsconfig(parent_fsfd, FSCONFIG_CMD_CREATE, NULL, NULL, 0),
+              SyscallSucceeds());
+  int parent_mntfd = fsmount(parent_fsfd, 0, 0);
+  ASSERT_THAT(parent_mntfd, SyscallSucceeds());
+  auto cleanup_parent_mnt = Cleanup([&]() { close(parent_mntfd); });
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  EXPECT_THAT(move_mount(parent_mntfd, "", AT_FDCWD, dir.path().c_str(),
+                         MOVE_MOUNT_F_EMPTY_PATH),
+              SyscallSucceeds());
+  cleanup_parent_mnt.Release()();
+
+  // Mount a child tmpfs at parent/sub.
+  std::string sub_path = JoinPath(dir.path(), "sub");
+  ASSERT_THAT(mkdir(sub_path.c_str(), 0755), SyscallSucceeds());
+
+  int child_fsfd = fsopen(kTmpfs, 0);
+  ASSERT_THAT(child_fsfd, SyscallSucceeds());
+  auto cleanup_child_fs = Cleanup([&]() { close(child_fsfd); });
+  EXPECT_THAT(fsconfig(child_fsfd, FSCONFIG_SET_STRING, "source", "child", 0),
+              SyscallSucceeds());
+  EXPECT_THAT(fsconfig(child_fsfd, FSCONFIG_CMD_CREATE, NULL, NULL, 0),
+              SyscallSucceeds());
+  int child_mntfd = fsmount(child_fsfd, 0, 0);
+  ASSERT_THAT(child_mntfd, SyscallSucceeds());
+  auto cleanup_child_mnt = Cleanup([&]() { close(child_mntfd); });
+
+  EXPECT_THAT(move_mount(child_mntfd, "", AT_FDCWD, sub_path.c_str(),
+                         MOVE_MOUNT_F_EMPTY_PATH),
+              SyscallSucceeds());
+  cleanup_child_mnt.Release()();
+  auto cleanup_child_umount = Cleanup([&]() { umount(sub_path.c_str()); });
+  auto cleanup_parent_umount = Cleanup([&]() { umount(dir.path().c_str()); });
+
+  int markerfd =
+      open(JoinPath(sub_path, "marker_sub").c_str(), O_CREAT | O_RDWR, 0644);
+  ASSERT_THAT(markerfd, SyscallSucceeds());
+  EXPECT_THAT(close(markerfd), SyscallSucceeds());
+
+  // Clone parent with AT_RECURSIVE: the submount is carried along.
+  int treefd =
+      open_tree(AT_FDCWD, dir.path().c_str(), OPEN_TREE_CLONE | AT_RECURSIVE);
+  ASSERT_THAT(treefd, SyscallSucceeds());
+  auto cleanup_tree = Cleanup([&]() { close(treefd); });
+
+  EXPECT_THAT(faccessat(treefd, "sub/marker_sub", F_OK, 0), SyscallSucceeds());
+
+  // The cloned tree is itself a detached mount; verify it can be attached
+  // via move_mount, with the submount still present at the new location.
+  auto const dst_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  EXPECT_THAT(move_mount(treefd, "", AT_FDCWD, dst_dir.path().c_str(),
+                         MOVE_MOUNT_F_EMPTY_PATH),
+              SyscallSucceeds());
+  cleanup_tree.Release()();
+  EXPECT_THAT(access(JoinPath(dst_dir.path(), "sub/marker_sub").c_str(), F_OK),
+              SyscallSucceeds());
+  EXPECT_THAT(umount(JoinPath(dst_dir.path(), "sub").c_str()),
+              SyscallSucceeds());
+  EXPECT_THAT(umount(dst_dir.path().c_str()), SyscallSucceeds());
+}
+
+TEST(OpenTreeTest, OpenTreeCloneRecursiveOnDetached) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  // Create the parent tmpfs as a detached mount.
+  int parent_fsfd = fsopen(kTmpfs, 0);
+  ASSERT_THAT(parent_fsfd, SyscallSucceeds());
+  auto cleanup_parent_fs = Cleanup([&]() { close(parent_fsfd); });
+  EXPECT_THAT(fsconfig(parent_fsfd, FSCONFIG_SET_STRING, "source", "parent", 0),
+              SyscallSucceeds());
+  EXPECT_THAT(fsconfig(parent_fsfd, FSCONFIG_CMD_CREATE, NULL, NULL, 0),
+              SyscallSucceeds());
+  int parent_mntfd = fsmount(parent_fsfd, 0, 0);
+  ASSERT_THAT(parent_mntfd, SyscallSucceeds());
+  auto cleanup_parent_mnt = Cleanup([&]() { close(parent_mntfd); });
+
+  ASSERT_THAT(mkdirat(parent_mntfd, "sub", 0755), SyscallSucceeds());
+
+  int child_fsfd = fsopen(kTmpfs, 0);
+  ASSERT_THAT(child_fsfd, SyscallSucceeds());
+  auto cleanup_child_fs = Cleanup([&]() { close(child_fsfd); });
+  EXPECT_THAT(fsconfig(child_fsfd, FSCONFIG_SET_STRING, "source", "child", 0),
+              SyscallSucceeds());
+  EXPECT_THAT(fsconfig(child_fsfd, FSCONFIG_CMD_CREATE, NULL, NULL, 0),
+              SyscallSucceeds());
+  int child_mntfd = fsmount(child_fsfd, 0, 0);
+  ASSERT_THAT(child_mntfd, SyscallSucceeds());
+  auto cleanup_child_mnt = Cleanup([&]() { close(child_mntfd); });
+
+  EXPECT_THAT(
+      move_mount(child_mntfd, "", parent_mntfd, "sub", MOVE_MOUNT_F_EMPTY_PATH),
+      SyscallSucceeds());
+  cleanup_child_mnt.Release()();
+
+  int markerfd = openat(parent_mntfd, "sub/marker_sub", O_CREAT | O_RDWR, 0644);
+  ASSERT_THAT(markerfd, SyscallSucceeds());
+  EXPECT_THAT(close(markerfd), SyscallSucceeds());
+
+  // Clone parent with AT_RECURSIVE on the detached mountfd.
+  int treefd = open_tree(parent_mntfd, "",
+                         AT_EMPTY_PATH | OPEN_TREE_CLONE | AT_RECURSIVE);
+  ASSERT_THAT(treefd, SyscallSucceeds());
+  auto cleanup_tree = Cleanup([&]() { close(treefd); });
+
+  EXPECT_THAT(faccessat(treefd, "sub/marker_sub", F_OK, 0), SyscallSucceeds());
 }
 
 }  // namespace

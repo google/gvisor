@@ -412,7 +412,7 @@ func (vfs *VirtualFilesystem) ConnectMountAt(ctx context.Context, creds *auth.Cr
 // The path lookups for source and target checks traversal permissions against creds.
 //
 // Roughly analogous to Linux fs/namespace.c:do_move_mount().
-func (vfs *VirtualFilesystem) MoveMountAt(ctx context.Context, creds *auth.Credentials, source *PathOperation, target *PathOperation) error {
+func (vfs *VirtualFilesystem) MoveMountAt(ctx context.Context, creds *auth.Credentials, taskMountNs *MountNamespace, source *PathOperation, target *PathOperation) error {
 	// Lookup the source path
 	sourceVd, err := vfs.GetDentryAt(ctx, creds, source, &GetDentryOptions{CheckSearchable: true})
 	if err != nil {
@@ -504,13 +504,11 @@ func (vfs *VirtualFilesystem) MoveMountAt(ctx context.Context, creds *auth.Crede
 		}
 		// And the destination, if not in our mount ns, must be:
 		// - Mounted
-		// - In an anonymous mount ns
+		// - In an appropriate anonymous mount ns
 		if !vfs.validInMountNS(ctx, mp.mount) {
-			if mp.mount.umounted || !mp.mount.ns.anon {
+			if mp.mount.umounted || !mp.mount.ns.anonCanBeOperatedOn(taskMountNs) {
 				return linuxerr.EINVAL
 			}
-			// TODO(b/513024543): when open_tree(2) is implemented, we may need to start tracking
-			// and checking the mount namespace's "owner"
 		}
 	}
 

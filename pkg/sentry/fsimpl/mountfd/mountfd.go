@@ -38,7 +38,7 @@ type Fd struct {
 }
 
 // New creates a new mount object file descriptor from the anonymous mount namespace anonNs
-// and the mount at the root of anonNS.
+// and the mount at the root of anonNS. Consumes a reference on anonNS.
 func New(ctx context.Context, anonNS *vfs.MountNamespace, fileFlags uint32) (*vfs.FileDescription, error) {
 	fd := &Fd{
 		anonNS: anonNS,
@@ -54,6 +54,7 @@ func New(ctx context.Context, anonNS *vfs.MountNamespace, fileFlags uint32) (*vf
 		DenyPWrite:        true,
 	})
 	if err != nil {
+		anonNS.DecRef(ctx)
 		return nil, err
 	}
 
