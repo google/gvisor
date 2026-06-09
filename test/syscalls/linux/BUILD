@@ -439,6 +439,25 @@ cc_library(
 )
 
 cc_binary(
+    name = "capabilities_test",
+    testonly = 1,
+    srcs = ["capabilities.cc"],
+    linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
+    deps = select_gtest() + [
+        "//test/util:capability_util",
+        "//test/util:fs_util",
+        "//test/util:logging",
+        "//test/util:posix_error",
+        "//test/util:temp_path",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "//test/util:thread_util",
+        "@com_google_absl//absl/time",
+    ],
+)
+
+cc_binary(
     name = "chdir_test",
     testonly = 1,
     srcs = ["chdir.cc"],

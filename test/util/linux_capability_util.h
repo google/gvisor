@@ -73,6 +73,44 @@ inline PosixError SetCapability(int cap, bool set) {
   return NoError();
 }
 
+struct CapSet {
+  uint64_t effective;
+  uint64_t permitted;
+  uint64_t inheritable;
+};
+
+inline PosixErrorOr<CapSet> GetCapabilitySets() {
+  struct __user_cap_header_struct header = {_LINUX_CAPABILITY_VERSION_3, 0};
+  struct __user_cap_data_struct caps[_LINUX_CAPABILITY_U32S_3] = {};
+  RETURN_ERROR_IF_SYSCALL_FAIL(syscall(__NR_capget, &header, &caps));
+  MaybeSave();
+
+  CapSet cs;
+  cs.effective =
+      (static_cast<uint64_t>(caps[1].effective) << 32) | caps[0].effective;
+  cs.permitted =
+      (static_cast<uint64_t>(caps[1].permitted) << 32) | caps[0].permitted;
+  cs.inheritable =
+      (static_cast<uint64_t>(caps[1].inheritable) << 32) | caps[0].inheritable;
+  return cs;
+}
+
+inline PosixError SetCapabilitySets(CapSet cs) {
+  struct __user_cap_header_struct header = {_LINUX_CAPABILITY_VERSION_3, 0};
+  struct __user_cap_data_struct caps[_LINUX_CAPABILITY_U32S_3] = {};
+  caps[0].effective = cs.effective & 0xffffffff;
+  caps[1].effective = cs.effective >> 32;
+  caps[0].permitted = cs.permitted & 0xffffffff;
+  caps[1].permitted = cs.permitted >> 32;
+  caps[0].inheritable = cs.inheritable & 0xffffffff;
+  caps[1].inheritable = cs.inheritable >> 32;
+
+  RETURN_ERROR_IF_SYSCALL_FAIL(syscall(__NR_capset, &header, &caps));
+  MaybeSave();
+
+  return NoError();
+}
+
 // DropPermittedCapability drops the specified PERMITTED. The EFFECTIVE
 // capabilities must be a subset of PERMITTED, so those are dropped as well.
 inline PosixError DropPermittedCapability(int cap) {

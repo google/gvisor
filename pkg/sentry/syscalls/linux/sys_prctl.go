@@ -229,6 +229,63 @@ func Prctl(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 		}
 		return 0, nil, t.DropBoundingCapability(cp)
 
+	case linux.PR_CAP_AMBIENT:
+		suboption := args[1].Int()
+		switch suboption {
+		case linux.PR_CAP_AMBIENT_IS_SET:
+			if args[3].Int() != 0 || args[4].Int() != 0 {
+				return 0, nil, linuxerr.EINVAL
+			}
+			cp := linux.Capability(args[2].Uint64())
+			if !cp.Ok() {
+				return 0, nil, linuxerr.EINVAL
+			}
+			exist, err := t.AmbientCapability(cp)
+			if err != nil {
+				return 0, nil, err
+			}
+			if exist {
+				return 1, nil, nil
+			}
+			return 0, nil, nil
+
+		case linux.PR_CAP_AMBIENT_RAISE:
+			if args[3].Int() != 0 || args[4].Int() != 0 {
+				return 0, nil, linuxerr.EINVAL
+			}
+			cp := linux.Capability(args[2].Uint64())
+			if !cp.Ok() {
+				return 0, nil, linuxerr.EINVAL
+			}
+			if err := t.RaiseAmbientCapability(cp); err != nil {
+				return 0, nil, err
+			}
+			return 0, nil, nil
+
+		case linux.PR_CAP_AMBIENT_LOWER:
+			if args[3].Int() != 0 || args[4].Int() != 0 {
+				return 0, nil, linuxerr.EINVAL
+			}
+			cp := linux.Capability(args[2].Uint64())
+			if !cp.Ok() {
+				return 0, nil, linuxerr.EINVAL
+			}
+			if err := t.LowerAmbientCapability(cp); err != nil {
+				return 0, nil, err
+			}
+			return 0, nil, nil
+
+		case linux.PR_CAP_AMBIENT_CLEAR_ALL:
+			if args[2].Int() != 0 || args[3].Int() != 0 || args[4].Int() != 0 {
+				return 0, nil, linuxerr.EINVAL
+			}
+			t.ClearAmbientCapabilities()
+			return 0, nil, nil
+
+		default:
+			return 0, nil, linuxerr.EINVAL
+		}
+
 	case linux.PR_SET_CHILD_SUBREAPER:
 		// "If arg2 is nonzero, set the "child subreaper" attribute of
 		// the calling process; if arg2 is zero, unset the attribute."

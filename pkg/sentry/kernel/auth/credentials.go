@@ -50,7 +50,7 @@ type Credentials struct {
 	InheritableCaps CapabilitySet
 	EffectiveCaps   CapabilitySet
 	BoundingCaps    CapabilitySet
-	// Ambient capabilities are not introduced until Linux 4.3.
+	AmbientCaps     CapabilitySet
 
 	// KeepCaps is the flag for PR_SET_KEEPCAPS which allow capabilities to be
 	// maintained after a switch from root user to non-root user via setuid().
@@ -127,7 +127,7 @@ func NewUserCredentials(kuid KUID, kgid KGID, extraKGIDs []KGID, capabilities *T
 		creds.EffectiveCaps = capabilities.EffectiveCaps
 		creds.BoundingCaps = capabilities.BoundingCaps
 		creds.InheritableCaps = capabilities.InheritableCaps
-		// TODO(gvisor.dev/issue/3166): Support ambient capabilities.
+		creds.AmbientCaps = capabilities.AmbientCaps
 	} else {
 		// If no capabilities are specified, grant capabilities consistent with
 		// setresuid + setresgid from NewRootCredentials to the given uid and
@@ -166,6 +166,7 @@ func (c *Credentials) ForkIntoUserNamespace(ns *UserNamespace) *Credentials {
 	nc.InheritableCaps = 0
 	nc.EffectiveCaps = AllCapabilities
 	nc.BoundingCaps = AllCapabilities
+	nc.AmbientCaps = 0
 	// "A call to clone(2), unshare(2), or setns(2) using the CLONE_NEWUSER
 	// flag sets the "securebits" flags (see capabilities(7)) to their default
 	// values (all flags disabled) in the child (for clone(2)) or caller (for

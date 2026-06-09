@@ -174,6 +174,7 @@ func (t *Task) setKUIDsUnchecked(newR, newE, newS auth.KUID) {
 	// nonzero value, then all capabilities are cleared from the permitted and
 	// effective capability sets." - capabilities(7)
 	if (oldR == root || oldE == root || oldS == root) && (newR != root && newE != root && newS != root) {
+		creds.AmbientCaps = 0
 		// prctl(2): "PR_SET_KEEPCAP: Set the state of the calling thread's
 		// "keep capabilities" flag, which determines whether the thread's permitted
 		// capability set is cleared when a change is made to the
@@ -405,6 +406,7 @@ func (t *Task) SetCapabilitySets(permitted, inheritable, effective auth.Capabili
 	creds.PermittedCaps = permitted
 	creds.InheritableCaps = inheritable
 	creds.EffectiveCaps = effective
+	creds.AmbientCaps &= permitted & inheritable
 	t.creds.Store(creds)
 	return nil
 }
@@ -447,4 +449,49 @@ func (t *Task) GetNoNewPrivs() bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.noNewPrivs
+}
+
+// AmbientCapability returns whether the capability cp is in the ambient set.
+func (t *Task) AmbientCapability(cp linux.Capability) (bool, error) {
+	if !cp.Ok() {
+		return false, linuxerr.EINVAL
+	}
+	return auth.CapabilitySetOf(cp)&t.Credentials().AmbientCaps != 0, nil
+}
+
+// RaiseAmbientCapability adds capability cp to the ambient set.
+func (t *Task) RaiseAmbientCapability(cp linux.Capability) error {
+	if !cp.Ok() {
+		return linuxerr.EINVAL
+	}
+	creds := t.Credentials()
+	cs := auth.CapabilitySetOf(cp)
+	// "A capability can be added to the ambient set (PR_CAP_AMBIENT_RAISE) only
+	// if it is already present in both the permitted and inheritable capability
+	// sets of the thread." - capabilities(7)
+	if cs&creds.PermittedCaps == 0 || cs&creds.InheritableCaps == 0 {
+		return linuxerr.EPERM
+	}
+	creds = creds.Fork()
+	creds.AmbientCaps |= cs
+	t.creds.Store(creds)
+	return nil
+}
+
+// LowerAmbientCapability removes capability cp from the ambient set.
+func (t *Task) LowerAmbientCapability(cp linux.Capability) error {
+	if !cp.Ok() {
+		return linuxerr.EINVAL
+	}
+	creds := t.Credentials().Fork()
+	creds.AmbientCaps &^= auth.CapabilitySetOf(cp)
+	t.creds.Store(creds)
+	return nil
+}
+
+// ClearAmbientCapabilities removes all capabilities from the ambient set.
+func (t *Task) ClearAmbientCapabilities() {
+	creds := t.Credentials().Fork()
+	creds.AmbientCaps = 0
+	t.creds.Store(creds)
 }

@@ -66,6 +66,11 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:capabilities_test",
+    use_tmpfs = True,
+)
+
+syscall_test(
     one_sandbox = False,
     test = "//test/syscalls/linux:cgroup_test",
 )

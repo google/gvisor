@@ -22,10 +22,12 @@ import (
 )
 
 // credentialsWithCaps creates a credentials object with the given capabilities.
-func credentialsWithCaps(inheritable, bounding CapabilitySet) *Credentials {
+func credentialsWithCaps(permitted, inheritable, bounding, ambient CapabilitySet) *Credentials {
 	return NewUserCredentials(1001, 1001, nil, &TaskCapabilities{
+		PermittedCaps:   permitted,
 		InheritableCaps: inheritable,
 		BoundingCaps:    bounding,
+		AmbientCaps:     ambient,
 	}, NewRootUserNamespace())
 }
 
@@ -72,7 +74,7 @@ func TestComputeCredsForExec(t *testing.T) {
 				PermittedCaps:   CapabilitySetOf(linux.CAP_NET_ADMIN),
 				InheritableCaps: CapabilitySetOf(linux.CAP_NET_ADMIN),
 			},
-			creds:         credentialsWithCaps(AllCapabilities, AllCapabilities),
+			creds:         credentialsWithCaps(AllCapabilities, AllCapabilities, AllCapabilities, 0),
 			wantPermitted: CapabilitySetOf(linux.CAP_NET_ADMIN),
 			wantEffective: true,
 		},
@@ -84,7 +86,7 @@ func TestComputeCredsForExec(t *testing.T) {
 				PermittedCaps:   CapabilitySetOfMany([]linux.Capability{linux.CAP_CHOWN, linux.CAP_SETUID}),
 				InheritableCaps: CapabilitySetOfMany([]linux.Capability{linux.CAP_CHOWN, linux.CAP_SETGID}),
 			},
-			creds:         credentialsWithCaps(AllCapabilities, AllCapabilities),
+			creds:         credentialsWithCaps(AllCapabilities, AllCapabilities, AllCapabilities, 0),
 			wantPermitted: CapabilitySetOfMany([]linux.Capability{linux.CAP_CHOWN, linux.CAP_SETUID, linux.CAP_SETGID}),
 			wantEffective: true,
 		},
@@ -96,7 +98,7 @@ func TestComputeCredsForExec(t *testing.T) {
 				PermittedCaps:   CapabilitySetOfMany([]linux.Capability{linux.CAP_CHOWN, linux.CAP_SETUID}),
 				InheritableCaps: CapabilitySetOfMany([]linux.Capability{linux.CAP_CHOWN, linux.CAP_SETGID}),
 			},
-			creds:         credentialsWithCaps(AllCapabilities, AllCapabilities),
+			creds:         credentialsWithCaps(AllCapabilities, AllCapabilities, AllCapabilities, 0),
 			wantPermitted: CapabilitySetOfMany([]linux.Capability{linux.CAP_CHOWN, linux.CAP_SETUID, linux.CAP_SETGID}),
 			wantEffective: false,
 		},
@@ -108,8 +110,64 @@ func TestComputeCredsForExec(t *testing.T) {
 				PermittedCaps:   CapabilitySetOfMany([]linux.Capability{linux.CAP_CHOWN, linux.CAP_SETUID}),
 				InheritableCaps: CapabilitySetOf(linux.CAP_CHOWN),
 			},
-			creds:   credentialsWithCaps(AllCapabilities, CapabilitySetOf(linux.CAP_CHOWN)),
+			creds:   credentialsWithCaps(AllCapabilities, AllCapabilities, CapabilitySetOf(linux.CAP_CHOWN), 0),
 			wantErr: linuxerr.EPERM,
+		},
+		{
+			name: "TestAmbientCapsPreservedNonPrivileged",
+			filePrivs: FilePrivileges{
+				HasCaps:   false,
+				Effective: false,
+			},
+			creds:         credentialsWithCaps(AllCapabilities, AllCapabilities, AllCapabilities, CapabilitySetOf(linux.CAP_NET_ADMIN)),
+			wantPermitted: CapabilitySetOf(linux.CAP_NET_ADMIN),
+			wantEffective: true,
+		},
+		{
+			name: "TestAmbientAndFileCapsCombined",
+			filePrivs: FilePrivileges{
+				HasCaps:         true,
+				Effective:       false,
+				PermittedCaps:   CapabilitySetOf(linux.CAP_CHOWN),
+				InheritableCaps: CapabilitySetOf(linux.CAP_CHOWN),
+			},
+			creds:         credentialsWithCaps(AllCapabilities, AllCapabilities, AllCapabilities, CapabilitySetOf(linux.CAP_NET_ADMIN)),
+			wantPermitted: CapabilitySetOf(linux.CAP_CHOWN),
+			wantEffective: false,
+		},
+		{
+			name: "TestAmbientCapsPreservedWithFileCapsAndNoNewPrivs",
+			filePrivs: FilePrivileges{
+				HasCaps:         true,
+				Effective:       false,
+				PermittedCaps:   CapabilitySetOf(linux.CAP_CHOWN),
+				InheritableCaps: CapabilitySetOf(linux.CAP_CHOWN),
+			},
+			creds:         credentialsWithCaps(AllCapabilities, AllCapabilities, AllCapabilities, CapabilitySetOf(linux.CAP_NET_ADMIN)),
+			noNewPrivs:    true,
+			wantPermitted: CapabilitySetOf(linux.CAP_NET_ADMIN),
+			wantEffective: true,
+		},
+		{
+			name: "TestAmbientCapsClearedWithSUIDNonRoot",
+			filePrivs: FilePrivileges{
+				SetUserID: KUID(1002),
+			},
+			creds:         credentialsWithCaps(AllCapabilities, AllCapabilities, AllCapabilities, CapabilitySetOf(linux.CAP_NET_ADMIN)),
+			allowSUID:     true,
+			wantPermitted: 0,
+			wantEffective: false,
+		},
+		{
+			name: "TestAmbientCapsPreservedWithSUIDAndNoNewPrivs",
+			filePrivs: FilePrivileges{
+				SetUserID: KUID(1002),
+			},
+			creds:         credentialsWithCaps(AllCapabilities, AllCapabilities, AllCapabilities, CapabilitySetOf(linux.CAP_NET_ADMIN)),
+			noNewPrivs:    true,
+			allowSUID:     true,
+			wantPermitted: CapabilitySetOf(linux.CAP_NET_ADMIN),
+			wantEffective: true,
 		},
 	} {
 		t.Run(tst.name, func(t *testing.T) {
