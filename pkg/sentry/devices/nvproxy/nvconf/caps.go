@@ -97,14 +97,17 @@ func (c DriverCaps) individualString() string {
 }
 
 // individualNVIDIAFlag returns the flag that can be passed to
-// nvidia-container-cli to enable the given capability.
+// nvidia-container-cli to enable the given capability, and whether such a flag
+// exists. Privileged capabilities (e.g. CapProfiling, CapFabricIMEXManagement)
+// are handled internally by nvproxy and have no nvidia-container-cli flag, so
+// they return ok=false.
 // See nvidia-container-toolkit/blob/main/cmd/nvidia-container-runtime-hook/capabilities.go:capabilityToCLI
-func (c DriverCaps) individualNVIDIAFlag() string {
+func (c DriverCaps) individualNVIDIAFlag() (string, bool) {
 	switch c {
 	case CapCompute, CapDisplay, CapGraphics, CapNGX, CapUtility, CapVideo, CapCompat32:
-		return fmt.Sprintf("--%s", c.individualString())
+		return fmt.Sprintf("--%s", c.individualString()), true
 	default:
-		panic(fmt.Sprintf("capability has no NVIDIA flag mapping: %x", uint16(c)))
+		return "", false
 	}
 }
 
@@ -168,7 +171,9 @@ func (c DriverCaps) String() string {
 }
 
 // NVIDIAFlags returns the nvidia-container-cli flags that can be passed to
-// enable the capabilities in the set.
+// enable the capabilities in the set. Privileged capabilities that nvproxy
+// handles internally (e.g. CapProfiling, CapFabricIMEXManagement) have no
+// nvidia-container-cli flag and are skipped.
 func (c DriverCaps) NVIDIAFlags() []string {
 	if c == 0 {
 		return nil
@@ -177,7 +182,9 @@ func (c DriverCaps) NVIDIAFlags() []string {
 	for i := 0; i < numValidCaps; i++ {
 		cap := DriverCaps(1 << i)
 		if c&cap != 0 {
-			caps = append(caps, cap.individualNVIDIAFlag())
+			if flag, ok := cap.individualNVIDIAFlag(); ok {
+				caps = append(caps, flag)
+			}
 		}
 	}
 	return caps
