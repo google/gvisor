@@ -52,12 +52,14 @@ func (e *Endpoint) beforeSave() {
 		if !e.stack.GetAllowConnectedOnSave() && !e.route.HasSaveRestoreCapability() {
 			if e.stack.GetRemoveConf() {
 				// Terminate the endpoint when resume=false.
-				logDisconnect()
 				e.terminateAtRestore = false
-				e.resetConnectionLocked(&tcpip.ErrConnectionAborted{})
-				e.mu.Unlock()
-				e.Close()
-				e.mu.Lock()
+				if !e.stack.AllowLiveTCPMigration() {
+					logDisconnect()
+					e.resetConnectionLocked(&tcpip.ErrConnectionAborted{})
+					e.mu.Unlock()
+					e.Close()
+					e.mu.Lock()
+				}
 			} else {
 				// This is set only when resume=true, the termination
 				// of this endpoint will happen during restore of the
@@ -201,7 +203,7 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 		e.setEndpointState(StateBound)
 	}
 
-	if terminateAtRestore {
+	if terminateAtRestore && !e.stack.AllowLiveTCPMigration() {
 		e.closeEndpointAtRestore()
 		return
 	}
@@ -209,6 +211,27 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 	epState := EndpointState(e.origEndpointState)
 	switch {
 	case epState.connected():
+		if e.stack.AllowLiveTCPMigration() {
+			// Handle dual stack addresses.
+			netProto := e.NetProto
+			switch e.TransportEndpointInfo.ID.LocalAddress.BitLen() {
+			case header.IPv4AddressSizeBits:
+				netProto = header.IPv4ProtocolNumber
+			case header.IPv6AddressSizeBits:
+				netProto = header.IPv6ProtocolNumber
+			}
+			// Get the new local NIC for source IP and do a FindRoute here to
+			// identify if the network config is same. Then only attempt restore,
+			// else close the connection on our end.
+			r, err := e.stack.FindRoute(0, e.TransportEndpointInfo.ID.LocalAddress, e.TransportEndpointInfo.ID.RemoteAddress, netProto, false /* multicastLoop */)
+			if err != nil {
+				e.closeEndpointAtRestore()
+				log.Infof("Cannot find the route %+v", e.TransportEndpointInfo.ID)
+				return
+			}
+			e.boundNICID = r.NICID()
+			r.Release()
+		}
 		bind()
 		if e.connectingAddress.BitLen() == 0 {
 			e.connectingAddress = e.TransportEndpointInfo.ID.RemoteAddress
@@ -238,6 +261,7 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 			return
 		}
 		e.state.Store(e.origEndpointState)
+		log.Infof("connect success: %+v", e.TransportEndpointInfo.ID)
 		// For FIN-WAIT-2 and TIME-WAIT we need to start the appropriate timers so
 		// that the socket is closed correctly.
 		switch epState {

@@ -187,6 +187,11 @@ type Stack struct {
 	// when resume is false.
 	removeConf bool `state:"nosave"`
 
+	// allowLiveTCPMigration allows TCP connection state to be migrated.
+	// If false, any connected TCP endpoints will be terminated
+	// during save/restore.
+	allowLiveTCPMigration bool `state:"nosave"`
+
 	// externalNetworkingDisabled indicates whether external networking is
 	// disabled. This means all non-loopback NICs are disabled.
 	externalNetworkingDisabled bool
@@ -243,6 +248,11 @@ type Options struct {
 	// AllowPacketEndpointWrite determines if packet endpoints support write
 	// operations.
 	AllowPacketEndpointWrite bool
+
+	// AllowLiveTCPMigration allows TCP connection state to be migrated.
+	// If false, any connected TCP endpoints will be terminated
+	// during save/restore.
+	AllowLiveTCPMigration bool
 
 	// RandSource is an optional source to use to generate random
 	// numbers. If omitted it defaults to a Source seeded by the data
@@ -428,8 +438,9 @@ func New(opts Options) *Stack {
 			Default: DefaultBufferSize,
 			Max:     DefaultMaxBufferSize,
 		},
-		tcpInvalidRateLimit: defaultTCPInvalidRateLimit,
-		tsOffsetSecret:      secureRNG.Uint32(),
+		tcpInvalidRateLimit:   defaultTCPInvalidRateLimit,
+		tsOffsetSecret:        secureRNG.Uint32(),
+		allowLiveTCPMigration: opts.AllowLiveTCPMigration,
 	}
 
 	// Add specified network protocols.
@@ -2564,6 +2575,20 @@ func (s *Stack) GetAllowConnectedOnSave() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.allowConnectedOnSave
+}
+
+// AllowLiveTCPMigration returns if TCP connections can be migrated.
+func (s *Stack) AllowLiveTCPMigration() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.allowLiveTCPMigration
+}
+
+// SetAllowLiveTCPMigration sets if TCP connections can be migrated.
+func (s *Stack) SetAllowLiveTCPMigration(allow bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.allowLiveTCPMigration = allow
 }
 
 // DisableAllNonLoopbackNICs disables all non-loopback NICs in the stack.

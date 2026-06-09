@@ -1686,6 +1686,7 @@ func newRootNetworkNamespace(conf *config.Config, clock tcpip.Clock, userns *aut
 		creator := &sandboxNetstackCreator{
 			clock:                    clock,
 			allowPacketEndpointWrite: conf.AllowPacketEndpointWrite,
+			allowLiveTCPMigration:    conf.AllowLiveTCPMigration,
 			uid:                      uid,
 		}
 		s, err := creator.newEmptySandboxNetworkStack()
@@ -1720,6 +1721,7 @@ func (c *sandboxNetstackCreator) newEmptySandboxNetworkStack() (*netstack.Stack,
 		// privileges.
 		RawFactory:               raw.EndpointFactory{},
 		AllowPacketEndpointWrite: c.allowPacketEndpointWrite,
+		AllowLiveTCPMigration:    c.allowLiveTCPMigration,
 		DefaultIPTables:          netfilter.DefaultLinuxTables,
 	}), c.uid.UniqueID())
 
@@ -1763,6 +1765,7 @@ func (c *sandboxNetstackCreator) newEmptySandboxNetworkStack() (*netstack.Stack,
 type sandboxNetstackCreator struct {
 	clock                    tcpip.Clock
 	allowPacketEndpointWrite bool
+	allowLiveTCPMigration    bool
 	uid                      uniqueid.Provider
 }
 

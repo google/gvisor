@@ -127,6 +127,9 @@ type Config struct {
 	// AllowPacketEndpointWrite enables write operations on packet endpoints.
 	AllowPacketEndpointWrite bool `flag:"allow-packet-socket-write"`
 
+	// AllowLiveTCPMigration allows TCP connection state to be migrated.
+	AllowLiveTCPMigration bool `flag:"allow-live-tcp-migration"`
+
 	// HostGSO indicates that host segmentation offload is enabled.
 	HostGSO bool `flag:"gso"`
 
