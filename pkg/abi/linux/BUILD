@@ -108,6 +108,10 @@ go_test(
     size = "small",
     srcs = [
         "netfilter_test.go",
+        "msgqueue_test.go",
     ],
     library = ":linux",
+    deps = [
+        "//pkg/marshal/primitive",
+    ],
 )
