@@ -161,9 +161,6 @@ type containerInfo struct {
 	// rootfsUpperTarFD is the file descriptor to the tar file containing the rootfs
 	// upper layer changes.
 	rootfsUpperTarFD *fd.FD
-
-	// useCPUNums indicates whether to use platform assigned CPU numbers as CPU numbers in the sentry.
-	useCPUNums bool
 }
 
 type loaderState int
@@ -210,6 +207,10 @@ func (s loaderState) String() string {
 type Loader struct {
 	// k is the kernel.
 	k *kernel.Kernel
+
+	// stack is the network being initialized. It's set to nil after the
+	// kernel has been initialized/restored.
+	stack inet.Stack
 
 	// ctrl is the control server.
 	ctrl *controller
@@ -433,6 +434,10 @@ type Args struct {
 	// RootfsUpperTarFD is the file descriptor to the tar file containing the rootfs
 	// upper layer changes.
 	RootfsUpperTarFD int
+
+	// ForRestore is true if the sandbox is being restored from a previous
+	// save state. A new Kernel is not created in this case.
+	ForRestore bool
 }
 
 // HostTHP holds host transparent hugepage settings.
@@ -606,16 +611,69 @@ func New(args Args) (*Loader, error) {
 		l.root.rootfsUpperTarFD = fd.New(args.RootfsUpperTarFD)
 	}
 
+	var err error
+	l.mountHints, err = NewPodMountHints(args.Spec)
+	if err != nil {
+		return nil, fmt.Errorf("creating pod mount hints: %w", err)
+	}
+
+	// Skip kernel creation for restore.
+	if args.ForRestore {
+		// Network stack is created because it's used to temporarily  store
+		// the current network configuration. This stack is not used and
+		// will be discarded after restore is complete.
+		var err error
+		l.stack, _, err = newNetworkStack(args.Conf, kernel.NewTimekeeper(), &uniqueid.SeqProvider{})
+		if err != nil {
+			return nil, fmt.Errorf("creating network: %w", err)
+		}
+
+		// Initialize defaults before seccomp filters are installed.
+		if _, err := defaults.get(); err != nil {
+			return nil, fmt.Errorf("initializing limits defaults: %w", err)
+		}
+	} else {
+		if err := l.createKernel(&args); err != nil {
+			return nil, fmt.Errorf("create kernel: %w", err)
+		}
+	}
+
+	// Create the control server using the provided FD.
+	//
+	// This must be done *after* we have initialized the kernel since the
+	// controller is used to configure the kernel's network stack.
+	ctrl, err := newController(args.ControllerFD, l)
+	if err != nil {
+		return nil, fmt.Errorf("creating control server: %w", err)
+
+	}
+	l.ctrl = ctrl
+
+	// Only start serving after Loader is set to controller and controller is set
+	// to Loader, because they are both used in the urpc methods.
+	if err := ctrl.srv.StartServing(); err != nil {
+		return nil, fmt.Errorf("starting control server: %w", err)
+	}
+
+	return l, nil
+}
+
+func (l *Loader) createKernel(args *Args) error {
+	if specutils.NVProxyEnabled(args.Spec, args.Conf) {
+		nvproxy.Init()
+	}
+
 	// Create kernel and platform.
 	p, err := createPlatform(args.Conf, args.NumCPU, args.Device)
 	if err != nil {
-		return nil, fmt.Errorf("creating platform: %w", err)
+		return fmt.Errorf("creating platform: %w", err)
 	}
 	if args.Conf.Platform == "kvm" && specutils.NVProxyEnabled(args.Spec, args.Conf) {
 		if caps, err := specutils.NVProxyDriverCapsAllowed(args.Conf); err == nil && caps&nvconf.CapCompute != 0 {
 			log.Warningf("Application cudaMallocManaged() is flaky on -platform=kvm, see gvisor.dev/docs/user_guide/gpu/#platforms")
 		}
 	}
+
 	l.k = &kernel.Kernel{
 		Platform:            p,
 		NvidiaDriverVersion: args.NvidiaDriverVersion,
@@ -626,7 +684,7 @@ func New(args Args) (*Loader, error) {
 	// Create memory file.
 	mf, err := createMemoryFile(args.Conf.AppHugePages, args.HostTHP)
 	if err != nil {
-		return nil, fmt.Errorf("creating memory file: %w", err)
+		return fmt.Errorf("creating memory file: %w", err)
 	}
 	l.k.SetMemoryFile(mf)
 
@@ -635,7 +693,7 @@ func New(args Args) (*Loader, error) {
 	// Pass k as the platform since it is savable, unlike the actual platform.
 	vdso, err := loader.PrepareVDSO(l.k.MemoryFile())
 	if err != nil {
-		return nil, fmt.Errorf("creating vdso: %w", err)
+		return fmt.Errorf("creating vdso: %w", err)
 	}
 
 	// Create timekeeper.
@@ -644,18 +702,20 @@ func New(args Args) (*Loader, error) {
 	tk.SetClocks(time.NewCalibratedClocks(), params)
 
 	if err := enableStrace(args.Conf); err != nil {
-		return nil, fmt.Errorf("enabling strace: %w", err)
+		return fmt.Errorf("enabling strace: %w", err)
 	}
 
 	creds := getRootCredentials(args.Spec, args.Conf, nil /* UserNamespace */)
 	if creds == nil {
-		return nil, fmt.Errorf("getting root credentials")
+		return fmt.Errorf("getting root credentials")
 	}
 	// Create root network namespace/stack.
-	netns, err := newRootNetworkNamespace(args.Conf, tk, creds.UserNamespace, l.k)
+	var creator inet.NetworkStackCreator
+	l.stack, creator, err = newNetworkStack(args.Conf, tk, l.k)
 	if err != nil {
-		return nil, fmt.Errorf("creating network: %w", err)
+		return fmt.Errorf("creating network: %w", err)
 	}
+	netns := inet.NewRootNamespace(l.stack, creator, creds.UserNamespace)
 
 	if args.TotalHostMem > 0 {
 		// tmpfs needs to know the amount of total physical RAM to calculate size limits.
@@ -679,13 +739,13 @@ func New(args Args) (*Loader, error) {
 			}
 			f, ok := cpuid.FeatureFromString(str)
 			if !ok {
-				return nil, fmt.Errorf("annotation %s contains unknown feature %s", specutils.AnnotationCPUFeatures, str)
+				return fmt.Errorf("annotation %s contains unknown feature %s", specutils.AnnotationCPUFeatures, str)
 			}
 			allowedFeatures[f] = struct{}{}
 		}
 		afs, err := cpufs.Intersect(allowedFeatures) // err only needed for now because this isn't implemented on ARM64 yet
 		if err != nil {
-			return nil, err
+			return err
 		}
 		cpufs = afs
 	}
@@ -695,10 +755,10 @@ func New(args Args) (*Loader, error) {
 		if val, ok := args.Spec.Linux.Sysctl["fs.nr_open"]; ok {
 			nrOpen, err := strconv.Atoi(val)
 			if err != nil {
-				return nil, fmt.Errorf("setting fs.nr_open=%s: %w", val, err)
+				return fmt.Errorf("setting fs.nr_open=%s: %w", val, err)
 			}
 			if nrOpen <= 0 || nrOpen > int(kernel.MaxFdLimit) {
-				return nil, fmt.Errorf("setting fs.nr_open=%s", val)
+				return fmt.Errorf("setting fs.nr_open=%s", val)
 			}
 			maxFDLimit = int32(nrOpen)
 		}
@@ -718,11 +778,11 @@ func New(args Args) (*Loader, error) {
 		RootPIDNamespace:     kernel.NewRootPIDNamespace(creds.UserNamespace),
 		MaxFDLimit:           maxFDLimit,
 	}); err != nil {
-		return nil, fmt.Errorf("initializing kernel: %w", err)
+		return fmt.Errorf("initializing kernel: %w", err)
 	}
 
 	if err := registerFilesystems(l.k, &l.root); err != nil {
-		return nil, fmt.Errorf("registering filesystems: %w", err)
+		return fmt.Errorf("registering filesystems: %w", err)
 	}
 
 	// Turn on packet logging if enabled.
@@ -737,29 +797,24 @@ func New(args Args) (*Loader, error) {
 	// Create a watchdog.
 	dogOpts := watchdog.DefaultOpts
 	if err := dogOpts.TaskTimeoutAction.Set(args.Conf.WatchdogAction); err != nil {
-		return nil, fmt.Errorf("setting watchdog action: %w", err)
+		return fmt.Errorf("setting watchdog action: %w", err)
 	}
 	l.watchdog = watchdog.New(l.k, dogOpts)
 
 	procArgs, err := createProcessArgs(args.ID, args.Spec, args.Conf, creds, l.k, l.k.RootPIDNamespace())
 	if err != nil {
-		return nil, fmt.Errorf("creating init process for root container: %w", err)
+		return fmt.Errorf("creating init process for root container: %w", err)
 	}
 	l.root.procArgs = procArgs
 
 	if err := initCompatLogs(args.UserLogFD); err != nil {
-		return nil, fmt.Errorf("initializing compat logs: %w", err)
-	}
-
-	l.mountHints, err = NewPodMountHints(args.Spec)
-	if err != nil {
-		return nil, fmt.Errorf("creating pod mount hints: %w", err)
+		return fmt.Errorf("initializing compat logs: %w", err)
 	}
 
 	// Set up host mount that will be used for imported fds.
 	hostFilesystem, err := host.NewFilesystem(l.k.VFS())
 	if err != nil {
-		return nil, fmt.Errorf("failed to create hostfs filesystem: %w", err)
+		return fmt.Errorf("failed to create hostfs filesystem: %w", err)
 	}
 	defer hostFilesystem.DecRef(l.k.SupervisorContext())
 	l.k.SetHostMount(l.k.VFS().NewDisconnectedMount(hostFilesystem, nil, &vfs.MountOptions{}))
@@ -775,34 +830,20 @@ func New(args Args) (*Loader, error) {
 	// We don't care about child signals; some platforms can generate a
 	// tremendous number of useless ones (I'm looking at you, ptrace).
 	if err := sighandling.IgnoreChildStop(); err != nil {
-		return nil, fmt.Errorf("ignore child stop signals failed: %w", err)
+		return fmt.Errorf("ignore child stop signals failed: %w", err)
 	}
 
 	if len(args.Conf.TestOnlyAutosaveImagePath) != 0 {
+		l.mu.Lock()
 		enableAutosave(l, args.Conf.TestOnlyAutosaveResume, l.saveFDs)
+		l.mu.Unlock()
 	}
 
 	l.kernelInitExtra(l.k.SupervisorContext())
 
 	metric.SentryEntryPointMetric.Increment(&metric.EntryPointTypeRunsc)
 
-	// Create the control server using the provided FD.
-	//
-	// This must be done *after* we have initialized the kernel since the
-	// controller is used to configure the kernel's network stack.
-	ctrl, err := newController(args.ControllerFD, l)
-	if err != nil {
-		return nil, fmt.Errorf("creating control server: %w", err)
-	}
-	l.ctrl = ctrl
-
-	// Only start serving after Loader is set to controller and controller is set
-	// to Loader, because they are both used in the urpc methods.
-	if err := ctrl.srv.StartServing(); err != nil {
-		return nil, fmt.Errorf("starting control server: %w", err)
-	}
-
-	return l, nil
+	return nil
 }
 
 // createProcessArgs creates args that can be used with kernel.CreateProcess.
@@ -985,7 +1026,7 @@ func createMemoryFile(appHugePages bool, hostTHP HostTHP) (*pgalloc.MemoryFile, 
 }
 
 // installSeccompFilters installs sandbox seccomp filters with the host.
-func (l *Loader) installSeccompFilters() error {
+func (l *Loader) installSeccompFilters(p platform.Platform) error {
 	if l.PreSeccompCallback != nil {
 		l.PreSeccompCallback()
 	}
@@ -1008,7 +1049,7 @@ func (l *Loader) installSeccompFilters() error {
 			}
 		}
 		opts := filter.Options{
-			Platform:              l.k.Platform.SeccompInfo(),
+			Platform:              p.SeccompInfo(),
 			HostNetwork:           hostnet,
 			HostNetworkRawSockets: hostnet && l.root.conf.EnableRaw,
 			HostFilesystem:        l.root.conf.DirectFS,
@@ -1043,15 +1084,16 @@ func (l *Loader) Run() error {
 }
 
 func (l *Loader) run() error {
-	if l.root.conf.Network == config.NetworkHost {
+	if inetStack, ok := l.stack.(*hostinet.Stack); ok {
 		// Delay host network configuration to this point because network namespace
 		// is configured after the loader is created and before Run() is called.
 		log.Debugf("Configuring host network")
-		s := l.k.RootNetworkNamespace().Stack().(*hostinet.Stack)
-		if err := s.Configure(l.root.conf.EnableRaw); err != nil {
+		if err := inetStack.Configure(l.root.conf.EnableRaw); err != nil {
 			return err
 		}
 	}
+	// Stack is no longer needed after this point.
+	l.stack = nil
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -1070,7 +1112,7 @@ func (l *Loader) run() error {
 
 		// Finally done with all configuration. Setup filters before user code
 		// is loaded.
-		if err := l.installSeccompFilters(); err != nil {
+		if err := l.installSeccompFilters(l.k.Platform); err != nil {
 			return err
 		}
 
@@ -1666,7 +1708,7 @@ func (l *Loader) WaitExit() linux.WaitStatus {
 	return l.k.GlobalInit().ExitStatus()
 }
 
-func newRootNetworkNamespace(conf *config.Config, clock tcpip.Clock, userns *auth.UserNamespace, uid uniqueid.Provider) (*inet.Namespace, error) {
+func newNetworkStack(conf *config.Config, clock tcpip.Clock, uid uniqueid.Provider) (inet.Stack, inet.NetworkStackCreator, error) {
 	// Create an empty network stack because the network namespace may be empty at
 	// this point. Netns is configured before Run() is called. Netstack is
 	// configured using a control uRPC message. Host network is configured inside
@@ -1677,29 +1719,29 @@ func newRootNetworkNamespace(conf *config.Config, clock tcpip.Clock, userns *aut
 		// stack, make sure that we have CAP_NET_RAW the host,
 		// otherwise we can't make raw sockets.
 		if conf.EnableRaw && !specutils.HasCapabilities(capability.CAP_NET_RAW) {
-			return nil, fmt.Errorf("configuring network=host with raw sockets requires CAP_NET_RAW capability")
+			return nil, nil, fmt.Errorf("configuring network=host with raw sockets requires CAP_NET_RAW capability")
 		}
 		// No network namespacing support for hostinet yet, hence creator is nil.
-		return inet.NewRootNamespace(hostinet.NewStack(), nil, userns), nil
+		return hostinet.NewStack(), nil, nil
 
 	case config.NetworkNone, config.NetworkSandbox:
 		creator := &sandboxNetstackCreator{
 			clock:                    clock,
 			allowPacketEndpointWrite: conf.AllowPacketEndpointWrite,
-			uid:                      uid,
+			uidProvider:              uid,
 		}
 		s, err := creator.newEmptySandboxNetworkStack()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		return inet.NewRootNamespace(s, creator, userns), nil
+		return s, creator, nil
+
 	case config.NetworkPlugin:
-		return inet.NewRootNamespace(plugin.GetPluginStack(), nil, userns), nil
+		return plugin.GetPluginStack(), nil, nil
 
 	default:
 		panic(fmt.Sprintf("invalid network configuration: %v", conf.Network))
 	}
-
 }
 
 func (c *sandboxNetstackCreator) newEmptySandboxNetworkStack() (*netstack.Stack, error) {
@@ -1721,7 +1763,7 @@ func (c *sandboxNetstackCreator) newEmptySandboxNetworkStack() (*netstack.Stack,
 		RawFactory:               raw.EndpointFactory{},
 		AllowPacketEndpointWrite: c.allowPacketEndpointWrite,
 		DefaultIPTables:          netfilter.DefaultLinuxTables,
-	}), c.uid.UniqueID())
+	}), c.uidProvider.UniqueID())
 
 	if nftables.IsNFTablesEnabled() {
 		s.Stack.SetNFTables(nftables.NewNFTables(c.clock, s.Stack.SecureRNG()))
@@ -1763,7 +1805,7 @@ func (c *sandboxNetstackCreator) newEmptySandboxNetworkStack() (*netstack.Stack,
 type sandboxNetstackCreator struct {
 	clock                    tcpip.Clock
 	allowPacketEndpointWrite bool
-	uid                      uniqueid.Provider
+	uidProvider              uniqueid.Provider
 }
 
 // CreateStack implements kernel.NetworkStackCreator.CreateStack.

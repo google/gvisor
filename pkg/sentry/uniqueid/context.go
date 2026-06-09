@@ -17,6 +17,7 @@
 package uniqueid
 
 import (
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 )
 
@@ -42,6 +43,26 @@ const (
 type Provider interface {
 	// UniqueID returns a new unique identifier.
 	UniqueID() uint64
+}
+
+// SeqProvider is a simple implementation of Provider that uses an atomic
+// counter to generate unique identifiers.
+//
+// +stateify savable
+type SeqProvider struct {
+	// uniqueID is used to generate unique identifiers.
+	//
+	// uniqueID is mutable, and is accessed using atomic memory operations.
+	uniqueID atomicbitops.Uint64
+}
+
+// UniqueID returns a unique identifier.
+func (s *SeqProvider) UniqueID() uint64 {
+	id := s.uniqueID.Add(1)
+	if id == 0 {
+		panic("unique identifier generator wrapped around")
+	}
+	return id
 }
 
 // GlobalFromContext returns a system-wide unique identifier from ctx.

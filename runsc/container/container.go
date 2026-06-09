@@ -198,6 +198,8 @@ type Args struct {
 	// for containers in a new Sandbox process.
 	FSRestoreImagePath string
 	FSRestoreDirect    bool
+
+	ForRestore bool
 }
 
 // New creates the container in a new Sandbox process, unless the metadata
@@ -393,6 +395,7 @@ func (c *Container) createRoot(conf *config.Config, args Args, sandboxID string)
 			ExecFile:            args.ExecFile,
 			FSRestoreImagePath:  args.FSRestoreImagePath,
 			FSRestoreDirect:     args.FSRestoreDirect,
+			ForRestore:          args.ForRestore,
 		}
 		sand, err := sandbox.New(conf, sandArgs)
 		if err != nil {

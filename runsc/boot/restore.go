@@ -34,11 +34,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
-	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
-	"gvisor.dev/gvisor/pkg/sentry/socket/hostinet"
-	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	"gvisor.dev/gvisor/pkg/sentry/state"
 	"gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -178,15 +175,6 @@ func (r *restorer) restoreContainerInfo(l *Loader, info *containerInfo, containe
 	return nil
 }
 
-func createNetworkStackForRestore(l *Loader) inet.Stack {
-	// Save the current network stack to slap on top of the one that was restored.
-	curNetwork := l.k.RootNetworkNamespace().Stack()
-	if _, ok := curNetwork.(*netstack.Stack); ok {
-		return curNetwork
-	}
-	return hostinet.NewStack()
-}
-
 func (r *restorer) restore(l *Loader) error {
 	log.Infof("Starting to restore %d containers", len(r.containers))
 
@@ -201,30 +189,26 @@ func (r *restorer) restore(l *Loader) error {
 	}
 	r.timer.Reached("specs validated")
 
-	// Create a new root network namespace with the network stack of the
-	// old kernel to preserve the existing network configuration.
-	oldInetStack := createNetworkStackForRestore(l)
-	r.timer.Reached("netstack created")
+	var oldNvidiaDriverVersion nvconf.DriverVersion
+	if l.k != nil {
+		oldNvidiaDriverVersion = l.k.NvidiaDriverVersion
 
-	// Reset the network stack in the network namespace to nil before
-	// replacing the kernel. This will not free the network stack when this
-	// old kernel is released.
-	l.k.RootNetworkNamespace().ResetStack()
+		// Reset the network stack in the network namespace to nil before
+		// replacing the kernel. This will not free the network stack when this
+		// old kernel is released.
+		l.k.RootNetworkNamespace().ResetStack()
+
+		// Release the kernel and replace it with a new one that will be restored into.
+		l.k.Release()
+		l.k = nil
+		r.timer.Reached("old-kernel released")
+	}
 
 	p, err := createPlatform(l.root.conf, l.root.applicationCores, r.deviceFile)
 	if err != nil {
 		return fmt.Errorf("creating platform: %v", err)
 	}
 
-	// Start the old watchdog before replacing it with a new one below.
-	l.watchdog.Start()
-
-	// Release the kernel and replace it with a new one that will be restored into.
-	var oldNvidiaDriverVersion nvconf.DriverVersion
-	if l.k != nil {
-		oldNvidiaDriverVersion = l.k.NvidiaDriverVersion
-		l.k.Release()
-	}
 	l.k = &kernel.Kernel{
 		Platform: p,
 	}
@@ -238,7 +222,7 @@ func (r *restorer) restore(l *Loader) error {
 
 	// Seccomp filters have to be applied before vfs restore and before parsing
 	// the state file.
-	if err := l.installSeccompFilters(); err != nil {
+	if err := l.installSeccompFilters(p); err != nil {
 		return err
 	}
 
@@ -296,7 +280,7 @@ func (r *restorer) restore(l *Loader) error {
 		r.timer.Reached("rootfs upper layer extracted")
 		return nil
 	}
-	if err := l.k.LoadFrom(ctx, r.stateFile, r.asyncMFLoader, nil, oldInetStack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}); err != nil {
+	if err := l.k.LoadFrom(ctx, r.stateFile, r.asyncMFLoader, nil, l.stack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}); err != nil {
 		return fmt.Errorf("failed to load kernel: %w", err)
 	}
 	r.timer.Reached("kernel loaded")
@@ -319,16 +303,17 @@ func (r *restorer) restore(l *Loader) error {
 	}
 
 	// Since we have a new kernel we also must make a new watchdog.
+	if l.watchdog != nil {
+		l.watchdog.Stop()
+	}
 	dogOpts := watchdog.DefaultOpts
 	if err := dogOpts.TaskTimeoutAction.Set(l.root.conf.WatchdogAction); err != nil {
 		return fmt.Errorf("setting watchdog action: %w", err)
 	}
 	dogOpts.StartupTimeout = 3 * time2.Minute // Give extra time for all containers to restore.
-	dog := watchdog.New(l.k, dogOpts)
+	l.watchdog = watchdog.New(l.k, dogOpts)
 
 	// Change the loader fields to reflect the changes made when restoring.
-	l.watchdog.Stop()
-	l.watchdog = dog
 	l.root.procArgs = kernel.CreateProcessArgs{}
 	l.sandboxID = l.root.cid
 

@@ -317,6 +317,8 @@ type Args struct {
 	// open filesystem checkpoint files using O_DIRECT.
 	FSRestoreImagePath string
 	FSRestoreDirect    bool
+
+	ForRestore bool
 }
 
 // New creates the sandbox process. The caller must call Destroy() on the
@@ -1348,6 +1350,10 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	nextFD = donations.Transfer(cmd, nextFD)
 
 	_ = donation.DonateAndTransferCustomFiles(cmd, nextFD, args.PassFiles)
+
+	if args.ForRestore {
+		cmd.Args = append(cmd.Args, "--for-restore")
+	}
 
 	// Add container ID as the last argument.
 	cmd.Args = append(cmd.Args, s.ID)

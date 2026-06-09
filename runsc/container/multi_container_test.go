@@ -248,9 +248,10 @@ func restoreContainers(conf *config.Config, specs []*specs.Spec, ids []string, i
 		cu.Add(cleanup)
 
 		args := Args{
-			ID:        ids[i],
-			Spec:      spec,
-			BundleDir: bundleDir,
+			ID:         ids[i],
+			Spec:       spec,
+			BundleDir:  bundleDir,
+			ForRestore: true,
 		}
 		cont, err := New(conf, args)
 		if err != nil {

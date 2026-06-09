@@ -146,6 +146,8 @@ type SaveRestoreExecConfig struct {
 //
 // +stateify savable
 type Kernel struct {
+	uniqueid.SeqProvider
+
 	// extMu serializes external changes to the Kernel with calls to
 	// Kernel.SaveTo. (Kernel.SaveTo requires that the state of the Kernel
 	// remains frozen for the duration of the call; it requires that the Kernel
@@ -241,11 +243,6 @@ type Kernel struct {
 	// does not use ktime.SyntheticClock since this clock currently does not
 	// need to support timers.
 	cpuClock atomicbitops.Int64
-
-	// uniqueID is used to generate unique identifiers.
-	//
-	// uniqueID is mutable, and is accessed using atomic memory operations.
-	uniqueID atomicbitops.Uint64
 
 	// nextInotifyCookie is a monotonically increasing counter used for
 	// generating unique inotify event cookies.
@@ -1026,15 +1023,6 @@ func (k *Kernel) ExtractRootfsUpperLayer(ctx context.Context, r io.Reader, async
 	}
 
 	return nil
-}
-
-// UniqueID returns a unique identifier.
-func (k *Kernel) UniqueID() uint64 {
-	id := k.uniqueID.Add(1)
-	if id == 0 {
-		panic("unique identifier generator wrapped around")
-	}
-	return id
 }
 
 // CreateProcessArgs holds arguments to kernel.CreateProcess.

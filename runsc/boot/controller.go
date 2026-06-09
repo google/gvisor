@@ -234,29 +234,30 @@ func newController(fd int, l *Loader) (*controller, error) {
 func (c *controller) registerHandlers() {
 	l := c.manager.l
 	c.srv.Register(c.manager)
-	c.srv.Register(&control.Cgroups{Kernel: l.k})
-	c.srv.Register(&control.Fs{Kernel: l.k})
-	c.srv.Register(&control.Lifecycle{Kernel: l.k})
 	c.srv.Register(&control.Logging{})
-	c.srv.Register(&control.Proc{Kernel: l.k})
-	c.srv.Register(&control.State{Kernel: l.k})
-	c.srv.Register(&control.Usage{Kernel: l.k})
 	c.srv.Register(&control.Metrics{})
 	c.srv.Register(&debug{})
 
-	if eps, ok := l.k.RootNetworkNamespace().Stack().(*netstack.Stack); ok {
-		c.srv.Register(&Network{
-			Stack:  eps.Stack,
-			Kernel: l.k,
-		})
-	}
+	if l.k != nil {
+		c.srv.Register(&control.Cgroups{Kernel: l.k})
+		c.srv.Register(&control.Fs{Kernel: l.k})
+		c.srv.Register(&control.Lifecycle{Kernel: l.k})
+		c.srv.Register(&control.Proc{Kernel: l.k})
+		c.srv.Register(&control.State{Kernel: l.k})
+		c.srv.Register(&control.Usage{Kernel: l.k})
 
-	if pluginStack, ok := l.k.RootNetworkNamespace().Stack().(plugin.PluginStack); ok {
-		c.srv.Register(&Network{PluginStack: pluginStack})
-	}
-
-	if l.root.conf.ProfileEnable {
-		c.srv.Register(control.NewProfile(l.k))
+		if eps, ok := l.k.RootNetworkNamespace().Stack().(*netstack.Stack); ok {
+			c.srv.Register(&Network{
+				Stack:  eps.Stack,
+				Kernel: l.k,
+			})
+		}
+		if pluginStack, ok := l.k.RootNetworkNamespace().Stack().(plugin.PluginStack); ok {
+			c.srv.Register(&Network{PluginStack: pluginStack})
+		}
+		if l.root.conf.ProfileEnable {
+			c.srv.Register(control.NewProfile(l.k))
+		}
 	}
 }
 
@@ -298,6 +299,10 @@ func (cm *containerManager) StartRoot(cid *string, _ *struct{}) error {
 	cm.l.mu.Unlock()
 	if state != created {
 		return fmt.Errorf("sandbox is not in created state, cannot start root container: state=%s", state)
+	}
+	if cm.l.k == nil {
+		// Kernel is nil when it's created with --for-restore flag.
+		return fmt.Errorf("cannot start root container with pending restore")
 	}
 	// Tell the root container to start and wait for the result.
 	return cm.onStart()
@@ -655,9 +660,11 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 	}
 	timer.Reached("restorer ok")
 
-	// Pause the kernel while we build a new one.
-	cm.l.k.Pause()
-	timer.Reached("kernel paused")
+	if cm.l.k != nil {
+		// Pause the kernel while we build a new one.
+		cm.l.k.Pause()
+		timer.Reached("kernel paused")
+	}
 
 	countStr, ok := cm.restorer.metadata[ContainerCountKey]
 	if !ok {
@@ -1240,7 +1247,7 @@ func (cm *containerManager) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs,
 		return fmt.Errorf("cannot set nil networkArgs")
 	}
 
-	if eps, ok := cm.l.k.RootNetworkNamespace().Stack().(*netstack.Stack); ok {
+	if eps, ok := cm.l.stack.(*netstack.Stack); ok {
 		n := &Network{
 			Stack:  eps.Stack,
 			Kernel: cm.l.k,
