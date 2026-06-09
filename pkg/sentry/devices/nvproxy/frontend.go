@@ -1343,6 +1343,9 @@ func rmAllocContextShare(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAM
 
 func rmAllocIMEXSession(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
 	var allocParams nvgpu.NV00F1_ALLOCATION_PARAMETERS
+	if allocParams.SizeBytes() != int(ioctlParams.ParamsSize) {
+		return 0, linuxerr.EINVAL
+	}
 	if _, err := allocParams.CopyIn(fi.t, addrFromP64(ioctlParams.PAllocParms)); err != nil {
 		return 0, err
 	}
@@ -1381,6 +1384,44 @@ func rmAllocIMEXSession(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAME
 
 	allocParams.CapDescriptor = origCapDescriptor
 	allocParams.POsEvent = origEventFD
+	if _, err := allocParams.CopyOut(fi.t, addrFromP64(ioctlParams.PAllocParms)); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
+func rmAllocMulticastFabric[Params any, PtrParams hasPOsEventPtr[Params]](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
+	var allocParamsValue Params
+	allocParams := PtrParams(&allocParamsValue)
+	if allocParams.SizeBytes() != int(ioctlParams.ParamsSize) {
+		return 0, linuxerr.EINVAL
+	}
+	if _, err := allocParams.CopyIn(fi.t, addrFromP64(ioctlParams.PAllocParms)); err != nil {
+		return 0, err
+	}
+
+	// pOsEvent is optional; only translate it if the sandbox supplied one.
+	// See src/nvidia/src/kernel/mem_mgr/mem_multicast_fabric.c:_memMulticastFabricDescriptorEnqueueWait().
+	origEventFD := allocParams.GetPOsEvent()
+	if origEventFD != 0 {
+		eventFileGeneric, _ := fi.t.FDTable().Get(int32(origEventFD))
+		if eventFileGeneric == nil {
+			return 0, linuxerr.EINVAL
+		}
+		defer eventFileGeneric.DecRef(fi.ctx)
+		eventFile, ok := eventFileGeneric.Impl().(*frontendFD)
+		if !ok {
+			return 0, linuxerr.EINVAL
+		}
+		allocParams.SetPOsEvent(nvgpu.P64(uint64(eventFile.hostFD)))
+	}
+
+	n, err := rmAllocInvoke(fi, ioctlParams, allocParams, isNVOS64, addSimpleObjDepParentLocked)
+	if err != nil {
+		return n, err
+	}
+
+	allocParams.SetPOsEvent(origEventFD)
 	if _, err := allocParams.CopyOut(fi.t, addrFromP64(ioctlParams.PAllocParms)); err != nil {
 		return n, err
 	}

@@ -256,6 +256,11 @@ type hasCtrlInfoListPtr[T any] interface {
 	nvgpu.HasCtrlInfoList
 }
 
+type hasPOsEventPtr[T any] interface {
+	marshalPtr[T]
+	nvgpu.HasPOsEvent
+}
+
 // NvidiaDeviceFD is an interface that should be implemented by all
 // vfs.FileDescriptionImpl of Nvidia devices.
 type NvidiaDeviceFD interface {

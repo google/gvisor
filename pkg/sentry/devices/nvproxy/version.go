@@ -415,7 +415,7 @@ func Init() {
 					nvgpu.NV_SEMAPHORE_SURFACE:       allocHandler(rmAllocSimple[nvgpu.NV_SEMAPHORE_SURFACE_ALLOC_PARAMETERS], nvconf.CapGraphics),
 					nvgpu.RM_USER_SHARED_DATA:        allocHandler(rmAllocSimple[nvgpu.NV00DE_ALLOC_PARAMETERS], compUtil),
 					nvgpu.NV_MEMORY_FABRIC:           allocHandler(rmAllocSimple[nvgpu.NV00F8_ALLOCATION_PARAMETERS], compUtil),
-					nvgpu.NV_MEMORY_MULTICAST_FABRIC: allocHandler(rmAllocSimple[nvgpu.NV00FD_ALLOCATION_PARAMETERS], compUtil),
+					nvgpu.NV_MEMORY_MULTICAST_FABRIC: allocHandler(rmAllocMulticastFabric[nvgpu.NV00FD_ALLOCATION_PARAMETERS], compUtil),
 					nvgpu.NV_MEMORY_MAPPER:           allocHandler(rmAllocSimple[nvgpu.NV_MEMORY_MAPPER_ALLOCATION_PARAMS], nvconf.CapGraphics),
 					nvgpu.NV20_SUBDEVICE_0:           allocHandler(rmAllocSimple[nvgpu.NV2080_ALLOC_PARAMETERS], compUtil),
 					nvgpu.NV2081_BINAPI:              allocHandler(rmAllocSimple[nvgpu.NV2081_ALLOC_PARAMETERS], compUtil),
@@ -812,7 +812,7 @@ func Init() {
 			abi.controlCmd[nvgpu.NV00DE_CTRL_CMD_REQUEST_DATA_POLL] = ctrlHandler(rmControlSimple, compUtil)
 			abi.allocationClass[nvgpu.RM_USER_SHARED_DATA] = allocHandler(rmAllocSimple[nvgpu.NV00DE_ALLOC_PARAMETERS_V545], compUtil)
 			abi.allocationClass[nvgpu.NV_MEMORY_EXPORT] = allocHandler(rmAllocSimple[nvgpu.NV00E0_ALLOCATION_PARAMETERS], nvconf.CapFabricIMEXManagement)
-			abi.allocationClass[nvgpu.NV_MEMORY_MULTICAST_FABRIC] = allocHandler(rmAllocSimple[nvgpu.NV00FD_ALLOCATION_PARAMETERS_V545], compUtil)
+			abi.allocationClass[nvgpu.NV_MEMORY_MULTICAST_FABRIC] = allocHandler(rmAllocMulticastFabric[nvgpu.NV00FD_ALLOCATION_PARAMETERS_V545], compUtil)
 			abi.allocationClass[nvgpu.NV01_MEMORY_SYSTEM] = allocHandler(rmAllocSimple[nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545], compUtil)
 			abi.allocationClass[nvgpu.NV01_MEMORY_LOCAL_USER] = allocHandler(rmAllocSimple[nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545], compUtil)
 			abi.allocationClass[nvgpu.NV50_MEMORY_VIRTUAL] = allocHandler(rmAllocSimple[nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545], compUtil)
@@ -1094,7 +1094,7 @@ func Init() {
 			abi.uvmIoctl[nvgpu.UVM_UNREGISTER_CHANNEL] = uvmHandler(uvmIoctlSimple[nvgpu.UVM_UNREGISTER_CHANNEL_PARAMS_V590], compUtil)
 			abi.uvmIoctl[nvgpu.UVM_FREE] = uvmHandler(uvmIoctlSimple[nvgpu.UVM_FREE_PARAMS_V590], compUtil)
 			abi.allocationClass[nvgpu.NV50_P2P] = allocHandler(rmAllocSimple[nvgpu.NV503B_ALLOC_PARAMETERS_V590], compUtil)
-			abi.allocationClass[nvgpu.NV_MEMORY_MULTICAST_FABRIC] = allocHandler(rmAllocSimple[nvgpu.NV00FD_ALLOCATION_PARAMETERS_V590], compUtil)
+			abi.allocationClass[nvgpu.NV_MEMORY_MULTICAST_FABRIC] = allocHandler(rmAllocMulticastFabric[nvgpu.NV00FD_ALLOCATION_PARAMETERS_V590], compUtil)
 
 			prevGetInfo := abi.getInfo
 			abi.getInfo = func() *DriverABIInfo {
