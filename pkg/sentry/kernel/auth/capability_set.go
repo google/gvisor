@@ -234,6 +234,10 @@ func ComputeCredsForExec(c *Credentials, f FilePrivileges, filename string,
 		f.SetUserID = NoID
 		f.SetGroupID = NoID
 	}
+	if noNewPrivs {
+		f.HasCaps = false
+		f.Effective = false
+	}
 	// "...if either the user or the group ID of the file has no mapping inside the namespace, the
 	// set-user-ID (set-group-ID) bit is silently ignored: the new program is executed, but the
 	// process's effective user (group) ID is left unchanged." - user_namespaces(7).
@@ -260,10 +264,19 @@ func ComputeCredsForExec(c *Credentials, f FilePrivileges, filename string,
 		newC.EffectiveKGID = f.SetGroupID
 	}
 
+	// P'(ambient) = (file is privileged) ? 0 : P(ambient)
+	ambientCaps := c.AmbientCaps
+	fileIsPrivileged := f.SetUserID.Ok() || f.SetGroupID.Ok() || f.HasCaps
+	if fileIsPrivileged {
+		ambientCaps = CapabilitySet(0)
+	}
+	// P'(permitted) = (P(inheritable) & F(inheritable)) | (F(permitted) & P(bounding)) | P'(ambient)
 	newC.PermittedCaps = CapabilitySet(0)
+	if !fileIsPrivileged {
+		newC.PermittedCaps = ambientCaps
+	}
 	if f.HasCaps {
-		// P'(permitted) = (P(inheritable) & F(inheritable)) | (F(permitted) & P(bounding))
-		newC.PermittedCaps = (c.InheritableCaps & f.InheritableCaps) | (f.PermittedCaps & c.BoundingCaps)
+		newC.PermittedCaps |= (c.InheritableCaps & f.InheritableCaps) | (f.PermittedCaps & c.BoundingCaps)
 
 		// The "Safety checking for capability-dumb binaries" section of capabilities(7) says:
 		// "...For such applications, the effective capability bit is set on the file...
@@ -290,17 +303,19 @@ func ComputeCredsForExec(c *Credentials, f FilePrivileges, filename string,
 	newC.SavedKGID = newC.EffectiveKGID
 
 	// P'(effective) = effective ? P'(permitted) : P'(ambient).
-	newC.EffectiveCaps = 0
+	newC.EffectiveCaps = ambientCaps
 	if f.Effective {
 		newC.EffectiveCaps = newC.PermittedCaps
 	}
+
+	newC.AmbientCaps = ambientCaps
 
 	// prctl(2): The "keep capabilities" value will be reset to 0 on subsequent calls to execve(2).
 	newC.KeepCaps = false
 
 	root := c.UserNamespace.MapToKUID(RootUID)
-	// See commoncap.c:cap_bprm_secureexec() in Linux 4.2 (before the introduction of ambient caps).
-	secureExec := gainedID || (newC.RealKUID != root && (f.Effective || newC.PermittedCaps != CapabilitySet(0)))
+	// See commoncap.c:cap_bprm_secureexec() in Linux 4.3+.
+	secureExec := gainedID || (newC.RealKUID != root && (f.Effective || !newC.PermittedCaps.IsSubsetOf(ambientCaps)))
 	return newC, secureExec, nil
 }
 

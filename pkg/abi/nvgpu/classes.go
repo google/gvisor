@@ -636,6 +636,20 @@ type NV00FB_ALLOCATION_PARAMETERS struct {
 	ID         uint64
 }
 
+// HasPOsEvent is a type constraint for allocation parameter structs containing
+// an optional pOsEvent field. Despite being P64-typed by the driver, pOsEvent
+// is a file descriptor whose numerical value is resolved by the driver. So it
+// must be translated from a sandbox FD to a host FD. See
+// src/nvidia/src/kernel/mem_mgr/mem_multicast_fabric.c:_memMulticastFabricDescriptorEnqueueWait()
+// => src/nvidia/arch/nvalloc/unix/src/os.c:osUserHandleToKernelPtr().
+//
+// This is necessary because, as of this writing (Go 1.20), there is no way to
+// enable field access using a Go type constraint.
+type HasPOsEvent interface {
+	GetPOsEvent() P64
+	SetPOsEvent(P64)
+}
+
 // NV00FD_ALLOCATION_PARAMETERS is the alloc param type for NV_MEMORY_MULTICAST_FABRIC
 // from src/common/sdk/nvidia/inc/class/cl00fd.h
 //
@@ -648,7 +662,18 @@ type NV00FD_ALLOCATION_PARAMETERS struct {
 	AllocFlags uint32
 	NumGPUs    uint32
 	_          uint32
-	POsEvent   P64
+	// POsEvent is an optional file descriptor; see HasPOsEvent.
+	POsEvent P64
+}
+
+// GetPOsEvent implements HasPOsEvent.GetPOsEvent.
+func (p *NV00FD_ALLOCATION_PARAMETERS) GetPOsEvent() P64 {
+	return p.POsEvent
+}
+
+// SetPOsEvent implements HasPOsEvent.SetPOsEvent.
+func (p *NV00FD_ALLOCATION_PARAMETERS) SetPOsEvent(posEvent P64) {
+	p.POsEvent = posEvent
 }
 
 // NV00FD_ALLOCATION_PARAMETERS_V545 is the updated version of
@@ -677,7 +702,18 @@ type NV00FD_ALLOCATION_PARAMETERS_V590 struct {
 	PageSize   uint64
 	AllocFlags uint32
 	NumGPUs    uint32
-	POsEvent   P64
+	// POsEvent is an optional file descriptor; see HasPOsEvent.
+	POsEvent P64
+}
+
+// GetPOsEvent implements HasPOsEvent.GetPOsEvent.
+func (p *NV00FD_ALLOCATION_PARAMETERS_V590) GetPOsEvent() P64 {
+	return p.POsEvent
+}
+
+// SetPOsEvent implements HasPOsEvent.SetPOsEvent.
+func (p *NV00FD_ALLOCATION_PARAMETERS_V590) SetPOsEvent(posEvent P64) {
+	p.POsEvent = posEvent
 }
 
 // NV_MEMORY_MAPPER_ALLOCATION_PARAMS is the alloc param type for

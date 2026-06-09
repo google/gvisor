@@ -1571,6 +1571,7 @@ func (t *Task) StateFields() []string {
 		"memCgID",
 		"userCounters",
 		"sessionKeyring",
+		"personality",
 		"Origin",
 		"onDestroyAction",
 		"execveCredsMutexOwner",
@@ -1662,10 +1663,11 @@ func (t *Task) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(68, &t.memCgID)
 	stateSinkObject.Save(69, &t.userCounters)
 	stateSinkObject.Save(70, &t.sessionKeyring)
-	stateSinkObject.Save(71, &t.Origin)
-	stateSinkObject.Save(72, &t.onDestroyAction)
-	stateSinkObject.Save(73, &t.execveCredsMutexOwner)
-	stateSinkObject.Save(74, &t.pid)
+	stateSinkObject.Save(71, &t.personality)
+	stateSinkObject.Save(72, &t.Origin)
+	stateSinkObject.Save(73, &t.onDestroyAction)
+	stateSinkObject.Save(74, &t.execveCredsMutexOwner)
+	stateSinkObject.Save(75, &t.pid)
 }
 
 // +checklocksignore
@@ -1737,10 +1739,11 @@ func (t *Task) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(68, &t.memCgID)
 	stateSourceObject.Load(69, &t.userCounters)
 	stateSourceObject.Load(70, &t.sessionKeyring)
-	stateSourceObject.Load(71, &t.Origin)
-	stateSourceObject.Load(72, &t.onDestroyAction)
-	stateSourceObject.Load(73, &t.execveCredsMutexOwner)
-	stateSourceObject.Load(74, &t.pid)
+	stateSourceObject.Load(71, &t.personality)
+	stateSourceObject.Load(72, &t.Origin)
+	stateSourceObject.Load(73, &t.onDestroyAction)
+	stateSourceObject.Load(74, &t.execveCredsMutexOwner)
+	stateSourceObject.Load(75, &t.pid)
 	stateSourceObject.LoadValue(27, new(*FSContext), func(y any) { t.loadFsContext(ctx, y.(*FSContext)) })
 	stateSourceObject.LoadValue(29, new(*Task), func(y any) { t.loadVforkParent(ctx, y.(*Task)) })
 	stateSourceObject.LoadValue(35, new(*Task), func(y any) { t.loadPtraceTracer(ctx, y.(*Task)) })

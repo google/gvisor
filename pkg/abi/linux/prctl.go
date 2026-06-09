@@ -163,6 +163,14 @@ const (
 	PR_SET_TAGGED_ADDR_CTRL = 55
 	PR_GET_TAGGED_ADDR_CTRL = 56
 	PR_TAGGED_ADDR_ENABLE   = (1 << 0)
+
+	// PR_CAP_AMBIENT controls ambient capabilities.
+	PR_CAP_AMBIENT = 47
+
+	PR_CAP_AMBIENT_IS_SET    = 1
+	PR_CAP_AMBIENT_RAISE     = 2
+	PR_CAP_AMBIENT_LOWER     = 3
+	PR_CAP_AMBIENT_CLEAR_ALL = 4
 )
 
 // From <asm/prctl.h>
