@@ -19,7 +19,6 @@ import (
 	"math/rand"
 	"time"
 
-	"golang.org/x/time/rate"
 	cryptorand "gvisor.dev/gvisor/pkg/rand"
 )
 
@@ -52,17 +51,4 @@ func (s *Stack) beforeSave() {
 func (s *Stack) afterLoad(context.Context) {
 	s.insecureRNG = rand.New(rand.NewSource(time.Now().UnixNano()))
 	s.secureRNG = cryptorand.RNGFrom(cryptorand.Reader)
-}
-
-// afterLoad is invoked by stateify.
-func (l *ICMPRateLimiter) afterLoad(context.Context) {
-	// Start with a fresh rate limiter. The fact that a S/R cycle is required
-	// is already rate limiting enough, that losing previous state is fine.
-	l.limiter = rate.NewLimiter(icmpLimit, icmpBurst)
-}
-
-// Restore restarts the reaper. Don't do it in afterLoad because clocks
-// are not initialized yet.
-func (it *IPTables) Restore() {
-	it.startReaper(reaperDelay)
 }

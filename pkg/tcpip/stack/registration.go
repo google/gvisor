@@ -1401,9 +1401,6 @@ type DuplicateAddressDetector interface {
 	// DuplicateAddressProtocol returns the network protocol the receiver can
 	// perform duplicate address detection for.
 	DuplicateAddressProtocol() tcpip.NetworkProtocolNumber
-
-	// OnStackClockUpdated should be called when the stack's clock changes.
-	OnStackClockUpdated(tcpip.Clock)
 }
 
 // LinkAddressResolver handles link address resolution for a network protocol.

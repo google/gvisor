@@ -81,13 +81,6 @@ func (*endpoint) DuplicateAddressProtocol() tcpip.NetworkProtocolNumber {
 	return header.IPv4ProtocolNumber
 }
 
-// OnStackClockUpdated implements stack.DuplicateAddressDetector.
-func (e *endpoint) OnStackClockUpdated(c tcpip.Clock) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	e.dad.OnStackClockUpdatedLocked(c)
-}
-
 // SendDADMessage implements ip.DADProtocol.
 func (e *endpoint) SendDADMessage(addr tcpip.Address, _ []byte) tcpip.Error {
 	return e.sendARPRequest(header.IPv4Any, addr, header.EthernetBroadcastAddress)

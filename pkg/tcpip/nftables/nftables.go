@@ -1381,8 +1381,3 @@ func (hfStack *hookFunctionStack) detachBaseChain(name string) *syserr.Annotated
 	}
 	return syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("failed to detach base chain: %s, chain not found", name))
 }
-
-// SetClock sets the clock used by the NFTables object.
-func (nf *NFTables) SetClock(clock tcpip.Clock) {
-	nf.clock = clock
-}

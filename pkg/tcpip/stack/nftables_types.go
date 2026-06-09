@@ -16,8 +16,6 @@ package stack
 
 import (
 	"fmt"
-
-	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
 // NFTablesInterface is an interface for evaluating chains.
@@ -29,7 +27,6 @@ type NFTablesInterface interface {
 	CheckPostrouting(pkt *PacketBuffer, af AddressFamily) bool
 	CheckIngress(pkt *PacketBuffer, af AddressFamily) bool
 	CheckEgress(pkt *PacketBuffer, af AddressFamily) bool
-	SetClock(clock tcpip.Clock)
 }
 
 // NFHook describes specific points in the pipeline where chains can be attached.
