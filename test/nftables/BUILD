@@ -17,7 +17,10 @@ go_library(
         "nftables_validation.go",
     ],
     visibility = ["//test/nftables:__subpackages__"],
-    deps = ["//test/netutils"],
+    deps = [
+        "//pkg/log",
+        "//test/netutils",
+    ],
 )
 
 go_test(

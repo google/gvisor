@@ -172,8 +172,16 @@ func (n *natOp) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule)
 		minProto, maxProto = n.getProtoRange(regs)
 	}
 
-	// TODO: b/486197011 - Implement NAT operation.
-	log.Warningf("Nftables: natOp.evaluate() is not implemented, changeAddress=%t, changePort=%t, minAddr=%s, maxAddr=%s, minProto=%d, maxProto=%d", changeAddress, changePort, minAddr, maxAddr, minProto, maxProto)
+	ports := stack.PortOrIdentRange{
+		Start: uint16(minProto),
+		Size:  maxProto - minProto + 1,
+	}
+
+	// Configure NAT for the packet.
+	if !pkt.ConfigureNAT(ports, minAddr, n.manipType, changePort, changeAddress) {
+		regs.verdict.Code = VC(linux.NF_DROP)
+		return
+	}
 }
 
 func (n *natOp) GetExprName() string {

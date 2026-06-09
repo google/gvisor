@@ -377,7 +377,7 @@ func TestUnsupportedAddressFamily(t *testing.T) {
 	for _, unsupportedFamily := range []stack.AddressFamily{stack.AddressFamily(stack.NumAFs), stack.AddressFamily(-1)} {
 		// Note: the Prerouting hook is arbitrary (any hook would work).
 		pkt := makeArbitraryPacket(arbitraryReservedHeaderBytes)
-		v, err := nf.EvaluateHook(unsupportedFamily, arbitraryHook, pkt)
+		v, err := nf.EvaluateHook(unsupportedFamily, arbitraryHook, pkt, nil /* route */)
 		if err == nil {
 			t.Fatalf("expecting error for EvaluateHook with unsupported address family %d; got %v verdict, %s packet, and error %v",
 				int(unsupportedFamily),
@@ -409,7 +409,7 @@ func TestAcceptAllForSupportedHooks(t *testing.T) {
 					pkt = makeArbitraryPacket(arbitraryReservedHeaderBytes)
 				}
 				cmpPkt := pkt.Clone()
-				v, err := nf.EvaluateHook(pktFamily, hook, pkt)
+				v, err := nf.EvaluateHook(pktFamily, hook, pkt, nil /* route */)
 
 				supported := supportedHooks[family][hook]
 				if supported {
@@ -607,7 +607,7 @@ func TestEvaluateImmediateVerdict(t *testing.T) {
 
 			// Runs evaluation and checks verdict.
 			pkt := makeArbitraryIPv4Packet()
-			v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt)
+			v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt, nil /* route */)
 
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook: %v", err)
@@ -662,7 +662,7 @@ func TestEvaluateImmediateBytesData(t *testing.T) {
 				}
 				// Runs evaluation and checks for default policy verdict accept
 				pkt := makeArbitraryIPv4Packet()
-				v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt)
+				v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt, nil /* route */)
 				if err != nil {
 					t.Fatalf("unexpected error for EvaluateHook: %v", err)
 				}
@@ -1146,7 +1146,7 @@ func TestEvaluateComparison(t *testing.T) {
 
 			// Runs evaluation and checks verdict.
 			pkt := makeArbitraryIPv4Packet()
-			v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt)
+			v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt, nil /*route*/)
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook: %v", err)
 			}
@@ -1381,7 +1381,7 @@ func TestEvaluateRanged(t *testing.T) {
 
 			// Runs evaluation and checks verdict.
 			pkt := makeArbitraryIPv4Packet()
-			v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt)
+			v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt, nil /* route */)
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook: %v", err)
 			}
@@ -1613,7 +1613,7 @@ func TestEvaluatePayloadLoad(t *testing.T) {
 			}
 
 			// Runs evaluation.
-			v, err := nf.EvaluateHook(getAddrFamilyOrDefault(test.pkt, arbitraryFamily), arbitraryHook, test.pkt)
+			v, err := nf.EvaluateHook(getAddrFamilyOrDefault(test.pkt, arbitraryFamily), arbitraryHook, test.pkt, nil /* route */)
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook: %v", err)
 			}
@@ -2118,7 +2118,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 			}
 
 			// Runs evaluation.
-			v, err := nf.EvaluateHook(getAddrFamilyOrDefault(test.pkt, arbitraryFamily), arbitraryHook, test.pkt)
+			v, err := nf.EvaluateHook(getAddrFamilyOrDefault(test.pkt, arbitraryFamily), arbitraryHook, test.pkt, nil /* route */)
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook: %v", err)
 			}
@@ -2305,7 +2305,7 @@ func TestEvaluateBitwise(t *testing.T) {
 
 			// Runs evaluation and checks verdict.
 			pkt := makeArbitraryIPv4Packet()
-			v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt)
+			v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt, nil /* route */)
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook: %v", err)
 			}
@@ -2364,7 +2364,7 @@ func TestEvaluateCounter(t *testing.T) {
 		prevBytes := counter.bytes.Load()
 		prevPackets := counter.packets.Load()
 		for i, pkt := range pkts {
-			_, err := nf.EvaluateHook(getAddrFamilyOrDefault(pkt, arbitraryFamily), arbitraryHook, pkt)
+			_, err := nf.EvaluateHook(getAddrFamilyOrDefault(pkt, arbitraryFamily), arbitraryHook, pkt, nil /* route */)
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook for packet %d: %v", i, err)
 			}
@@ -2442,7 +2442,7 @@ func TestEvaluateLast(t *testing.T) {
 				defer wg.Done()
 
 				// Evaluates the packet (which should update last's timestamp).
-				_, err := nf.EvaluateHook(pktFamily, arbitraryHook, pkt)
+				_, err := nf.EvaluateHook(pktFamily, arbitraryHook, pkt, nil /* route */)
 				if err != nil {
 					t.Fatalf("unexpected error for EvaluateHook for packet %d: %v", i, err)
 				}
@@ -2560,7 +2560,7 @@ func TestEvaluateRoute(t *testing.T) {
 			}
 
 			// Runs evaluation.
-			v, err := nf.EvaluateHook(getAddrFamilyOrDefault(test.pkt, arbitraryFamily), arbitraryHook, test.pkt)
+			v, err := nf.EvaluateHook(getAddrFamilyOrDefault(test.pkt, arbitraryFamily), arbitraryHook, test.pkt, nil /* route */)
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook: %v", err)
 			}
@@ -2804,7 +2804,7 @@ func TestEvaluateByteorder(t *testing.T) {
 
 			// Runs evaluation and checks verdict.
 			pkt := makeArbitraryIPv4Packet()
-			v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt)
+			v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt, nil /* route */)
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook: %v", err)
 			}
@@ -2982,7 +2982,7 @@ func TestEvaluateMetaLoad(t *testing.T) {
 			}
 
 			// Runs evaluation.
-			v, err := nf.EvaluateHook(getAddrFamilyOrDefault(test.pkt, arbitraryFamily), arbitraryHook, test.pkt)
+			v, err := nf.EvaluateHook(getAddrFamilyOrDefault(test.pkt, arbitraryFamily), arbitraryHook, test.pkt, nil /* route */)
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook: %v", err)
 			}
@@ -3071,7 +3071,7 @@ func TestEvaluateMetaSet(t *testing.T) {
 			}
 
 			// Runs evaluation.
-			v, err := nf.EvaluateHook(getAddrFamilyOrDefault(test.pkt, arbitraryFamily), arbitraryHook, test.pkt)
+			v, err := nf.EvaluateHook(getAddrFamilyOrDefault(test.pkt, arbitraryFamily), arbitraryHook, test.pkt, nil /* route */)
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook: %v", err)
 			}
@@ -3542,7 +3542,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 
 			// Runs evaluation and checks verdict.
 			pkt := makeArbitraryIPv4Packet()
-			v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt)
+			v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt, nil /* route */)
 			if err != nil {
 				if test.verdict.ChainName != "error" {
 					t.Fatalf("unexpected error for EvaluateHook: %v", err)
@@ -3653,7 +3653,7 @@ func TestMaxNestedJumps(t *testing.T) {
 
 			// Runs evaluation and checks verdict.
 			pkt := makeArbitraryIPv4Packet()
-			v, err := nf.EvaluateHook(getAddrFamilyOrDefault(pkt, arbitraryFamily), arbitraryHook, pkt)
+			v, err := nf.EvaluateHook(getAddrFamilyOrDefault(pkt, arbitraryFamily), arbitraryHook, pkt, nil /* route */)
 			if err != nil {
 				if test.verdict.ChainName != "error" {
 					t.Fatalf("unexpected error for EvaluateHook: %v", err)

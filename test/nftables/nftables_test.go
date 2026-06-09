@@ -21,6 +21,7 @@ import (
 	"net"
 	"sync"
 	"testing"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
@@ -58,15 +59,15 @@ func nftablesTest(t *testing.T, test TestCase, ipv6 bool) {
 	var wg sync.WaitGroup
 	defer wg.Wait()
 
-	ctx, cancel := context.WithTimeout(context.Background(), TestTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), test.Timeout())
 	defer cancel()
 
 	d := dockerutil.MakeContainer(ctx, t)
 	defer func() {
 		if logs, err := d.Logs(context.Background()); err != nil {
-			log.Infof("Failed to retrieve container logs.")
+			log.Infof("Failed to retrieve container logs.\n")
 		} else {
-			log.Infof("=== Container logs: ===\n%s", logs)
+			log.Infof("=== Container logs: ===\n%s\n", logs)
 		}
 		// Use a new context, as cleanup should run even when we
 		// timeout.
@@ -101,7 +102,7 @@ func nftablesTest(t *testing.T, test TestCase, ipv6 bool) {
 	}
 
 	// Give the container our IP.
-	if err := sendIP(ip); err != nil {
+	if err := sendIP(ip, test.Timeout()); err != nil {
 		log.Infof("failed to send IP to container: %v", err)
 		t.FailNow()
 	}
@@ -128,8 +129,8 @@ func nftablesTest(t *testing.T, test TestCase, ipv6 bool) {
 		// Wait for the final statement. This structure has the side
 		// effect that all container logs will appear within the
 		// individual test context.
-		if _, err := d.WaitForOutput(ctx, TerminalStatement, TestTimeout); err != nil && !errors.Is(err, context.Canceled) {
-			errCh <- fmt.Errorf("ContainerAction failed: %v", err)
+		if _, err := d.WaitForOutput(ctx, TerminalStatement, test.Timeout()); err != nil && !errors.Is(err, context.Canceled) {
+			errCh <- fmt.Errorf("ContainerAction timeout within: %v or failed: %v", test.Timeout(), err)
 		} else {
 			errCh <- nil
 		}
@@ -140,7 +141,7 @@ func nftablesTest(t *testing.T, test TestCase, ipv6 bool) {
 
 	for i := 0; i < 2; i++ {
 		if err := <-errCh; err != nil {
-			t.Fatal(err)
+			t.Error(err)
 		}
 	}
 }
@@ -155,7 +156,7 @@ func TestNftablesValidation(t *testing.T) {
 	}
 }
 
-func sendIP(ip net.IP) error {
+func sendIP(ip net.IP, timeout time.Duration) error {
 	contAddr := net.TCPAddr{
 		IP:   ip,
 		Port: IPExchangePort,
@@ -168,7 +169,7 @@ func sendIP(ip net.IP) error {
 		conn = c
 		return err
 	}
-	if err := testutil.Poll(cb, TestTimeout); err != nil {
+	if err := testutil.Poll(cb, timeout); err != nil {
 		return fmt.Errorf("timed out waiting to send IP, most recent error: %v", err)
 	}
 	if _, err := conn.Write([]byte{0}); err != nil {

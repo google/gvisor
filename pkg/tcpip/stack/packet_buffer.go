@@ -471,6 +471,46 @@ func (pk *PacketBuffer) DeepCopyForForwarding(reservedHeaderBytes int) *PacketBu
 	return newPk
 }
 
+// IsConnTrackConfigured returns whether connection tracking is configured for this packet.
+func (pk *PacketBuffer) IsConnTrackConfigured() bool {
+	return pk.tuple != nil && pk.tuple.conn != nil
+}
+
+// IsNATConfigured returns whether NAT is configured for this packet.
+func (pk *PacketBuffer) IsNATConfigured(nt NATType) bool {
+	if !pk.IsConnTrackConfigured() {
+		return false
+	}
+	return pk.tuple.conn.IsNATConfigured(nt)
+}
+
+// ConfigureNoopNAT configures a no-op NAT for the packet.
+// Called if no NAT rules are configured for this packet.
+func (pk *PacketBuffer) ConfigureNoopNAT(natType NATType) bool {
+	if !pk.IsConnTrackConfigured() {
+		return false
+	}
+	return pk.tuple.conn.ConfigureNoopNAT(pk, natType)
+}
+
+// ConfigureNAT configures NAT for the packet.
+// Called if NAT rules are configured for this packet.
+// Returns whether NAT was configured or not.
+func (pk *PacketBuffer) ConfigureNAT(portsOrIdents PortOrIdentRange, natAddress tcpip.Address, natType NATType, changePort, changeAddress bool) bool {
+	if !pk.IsConnTrackConfigured() {
+		return false
+	}
+	return pk.tuple.conn.ConfigureNAT(portsOrIdents, natAddress, natType, changePort, changeAddress)
+}
+
+// FinalizeConnTrack finalizes the connection tracking state for the packet.
+func (pk *PacketBuffer) FinalizeConnTrack() bool {
+	if pk.tuple == nil || pk.tuple.conn == nil {
+		return true
+	}
+	return pk.tuple.conn.finalize()
+}
+
 // headerInfo stores metadata about a header in a packet.
 //
 // +stateify savable
@@ -967,7 +1007,7 @@ func UpdateHeaders(n header.Network, t header.Transport, updateSRCFields, fullCh
 				t.SetIdentWithChecksumUpdate(newPortOrIdent)
 			}
 		default:
-			panic(fmt.Sprintf("unexpected ICMPv4 type = %d", icmpType))
+			panic(fmt.Sprintf("unexpected ICMPv6 type = %d", icmpType))
 		}
 
 		var oldAddr tcpip.Address
@@ -997,6 +1037,7 @@ func UpdateHeaders(n header.Network, t header.Transport, updateSRCFields, fullCh
 
 // CalculateTransportChecksum calculates the transport-layer checksum of the
 // packet.
+// TODO: b/521901282 - Verify with GSO.
 func (pk *PacketBuffer) CalculateTransportChecksum() {
 	netHdr, transHdr, isICMPError, ok := pk.GetHeaders()
 	if isICMPError {

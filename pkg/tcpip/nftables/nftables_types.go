@@ -174,7 +174,6 @@ func validateHook(hook stack.NFHook, family stack.AddressFamily) *syserr.Annotat
 	if supportedHooks[family][hook] {
 		return nil
 	}
-
 	// The hook is not supported for the given address family.
 	return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("hook %d is not supported for address family %d", int(hook), int(family)))
 }
@@ -259,6 +258,9 @@ type NFTables struct {
 	tableHandleCounter atomicbitops.Uint64                 // Table handle counter.
 	Mu                 nfTablesRWMutex                     // Mutex for tableHandles.
 	genid              uint32                              // Generation ID for nftables.
+	connTrack          *stack.ConnTrack                    // Conntrack object for tracking connections.
+	connTrackReaper    tcpip.Timer                         // Reaper timer for reaping timed out connections.
+	natEnabled         bool                                // Whether the nat module is enabled.
 }
 
 // Ensures NFTables implements the NFTablesInterface.
@@ -1157,6 +1159,9 @@ func (nf *NFTables) DeepCopy() *NFTables {
 		startTime:          nf.startTime,
 		rng:                nf.rng,
 		tableHandleCounter: atomicbitops.Uint64{},
+		connTrack:          nf.connTrack,
+		connTrackReaper:    nf.connTrackReaper,
+		natEnabled:         nf.natEnabled,
 	}
 
 	nftCopy.tableHandleCounter.Store(nf.tableHandleCounter.Load())
@@ -1199,8 +1204,13 @@ func (nf *NFTables) DeepCopy() *NFTables {
 
 // ReplaceNFTables replaces the tables of the NFTables struct
 // with the tables of the passed in NFTables struct.
+// TODO: b/436922484: The hook function calls (CheckInput, CheckOutput, etc)
+// do not hold a reader lock, fix this.
 func (nf *NFTables) ReplaceNFTables(nftCopy *NFTables) {
 	nf.filters = nftCopy.filters
+	nf.connTrack = nftCopy.connTrack
+	nf.connTrackReaper = nftCopy.connTrackReaper
+	nf.natEnabled = nftCopy.natEnabled
 	nf.ip4InetBaseChains = nftCopy.ip4InetBaseChains
 	nf.ip6InetBaseChains = nftCopy.ip6InetBaseChains
 	nf.genid++

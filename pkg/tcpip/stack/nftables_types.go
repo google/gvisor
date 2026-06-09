@@ -20,13 +20,13 @@ import (
 
 // NFTablesInterface is an interface for evaluating chains.
 type NFTablesInterface interface {
-	CheckPrerouting(pkt *PacketBuffer, af AddressFamily) bool
-	CheckInput(pkt *PacketBuffer, af AddressFamily) bool
-	CheckForward(pkt *PacketBuffer, af AddressFamily) bool
-	CheckOutput(pkt *PacketBuffer, af AddressFamily) bool
-	CheckPostrouting(pkt *PacketBuffer, af AddressFamily) bool
-	CheckIngress(pkt *PacketBuffer, af AddressFamily) bool
-	CheckEgress(pkt *PacketBuffer, af AddressFamily) bool
+	CheckPrerouting(pkt *PacketBuffer, route *Route, af AddressFamily) bool
+	CheckInput(pkt *PacketBuffer, route *Route, af AddressFamily) bool
+	CheckForward(pkt *PacketBuffer, route *Route, af AddressFamily) bool
+	CheckOutput(pkt *PacketBuffer, route *Route, af AddressFamily) bool
+	CheckPostrouting(pkt *PacketBuffer, route *Route, af AddressFamily) bool
+	CheckIngress(pkt *PacketBuffer, route *Route, af AddressFamily) bool
+	CheckEgress(pkt *PacketBuffer, route *Route, af AddressFamily) bool
 }
 
 // NFHook describes specific points in the pipeline where chains can be attached.
