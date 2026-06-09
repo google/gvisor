@@ -317,9 +317,12 @@ func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum
 	return true
 }
 
-// updateRTT updates the receiver RTT measurement based on the sequence number
-// of the received segment.
-func (r *receiver) updateRTT() {
+// updateRTT estimates a receiver-side RTT for receive-buffer autotuning, based
+// on the sequence number of the received segment. rcvdTime is the ingress
+// timestamp of the segment that triggered this measurement; it is used instead
+// of the current clock so that an internal processing delay does not inflate the
+// estimate (which would size the receive buffer too large).
+func (r *receiver) updateRTT(rcvdTime tcpip.MonotonicTime) {
 	// From: https://public.lanl.gov/radiant/pubs/drs/sc2001-poster.pdf
 	//
 	// A system that is only transmitting acknowledgements can still
@@ -329,7 +332,7 @@ func (r *receiver) updateRTT() {
 	r.ep.rcvQueueMu.Lock()
 	if r.ep.RcvAutoParams.RTTMeasureTime == (tcpip.MonotonicTime{}) {
 		// New measurement.
-		r.ep.RcvAutoParams.RTTMeasureTime = r.ep.stack.Clock().NowMonotonic()
+		r.ep.RcvAutoParams.RTTMeasureTime = rcvdTime
 		r.ep.RcvAutoParams.RTTMeasureSeqNumber = r.RcvNxt.Add(r.rcvWnd)
 		r.ep.rcvQueueMu.Unlock()
 		return
@@ -338,14 +341,14 @@ func (r *receiver) updateRTT() {
 		r.ep.rcvQueueMu.Unlock()
 		return
 	}
-	rtt := r.ep.stack.Clock().NowMonotonic().Sub(r.ep.RcvAutoParams.RTTMeasureTime)
+	rtt := rcvdTime.Sub(r.ep.RcvAutoParams.RTTMeasureTime)
 	// We only store the minimum observed RTT here as this is only used in
 	// absence of a SRTT available from either timestamps or a sender
 	// measurement of RTT.
 	if r.ep.RcvAutoParams.RTT == 0 || rtt < r.ep.RcvAutoParams.RTT {
 		r.ep.RcvAutoParams.RTT = rtt
 	}
-	r.ep.RcvAutoParams.RTTMeasureTime = r.ep.stack.Clock().NowMonotonic()
+	r.ep.RcvAutoParams.RTTMeasureTime = rcvdTime
 	r.ep.RcvAutoParams.RTTMeasureSeqNumber = r.RcvNxt.Add(r.rcvWnd)
 	r.ep.rcvQueueMu.Unlock()
 }
@@ -470,8 +473,10 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err tcpip.Error) {
 		}
 	}
 
-	// Store the time of the last ack.
-	r.lastRcvdAckTime = r.ep.stack.Clock().NowMonotonic()
+	// Store the time of the last ack. Use the segment's ingress time rather than
+	// the current clock so a segment delayed inside the stack before processing
+	// records when it actually arrived (consumed by the user-timeout check).
+	r.lastRcvdAckTime = s.rcvdTime
 
 	// Defer segment processing if it can't be consumed now.
 	if !r.consumeSegment(s, segSeq, segLen) {
@@ -514,7 +519,7 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err tcpip.Error) {
 	// Since we consumed a segment update the receiver's RTT estimate
 	// if required.
 	if segLen > 0 {
-		r.updateRTT()
+		r.updateRTT(s.rcvdTime)
 	}
 
 	// By consuming the current segment, we may have filled a gap in the

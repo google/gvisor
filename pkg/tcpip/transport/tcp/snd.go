@@ -74,8 +74,11 @@ type congestionControl interface {
 	// Update is invoked when processing inbound acks. It's passed the
 	// number of packet's that were acked by the most recent cumulative
 	// acknowledgement.  rtt is the round-trip time, or is set to unknownRTT
-	// (above) to indicate the time is unknown.
-	Update(packetsAcked int, rtt time.Duration)
+	// (above) to indicate the time is unknown. ackTime is the time the
+	// processed ACK arrived at the stack (its ingress timestamp), used for
+	// arrival-anchored timing such as CUBIC HyStart's ACK-train detection so
+	// that an ACK delayed inside the stack does not distort it.
+	Update(packetsAcked int, rtt time.Duration, ackTime tcpip.MonotonicTime)
 
 	// PostRecovery is invoked when the sender is exiting a fast retransmit/
 	// recovery phase. This provides congestion control algorithms a way
@@ -426,6 +429,13 @@ func (s *sender) sendAck() {
 //
 // +checklocks:s.ep.mu
 func (s *sender) updateRTO(rtt time.Duration) {
+	// A negative RTT sample is nonsensical and would skew SRTT/RTTVar (and thus
+	// RTO). RTT samples are now anchored to a segment's ingress time, which is
+	// monotonic and never after the corresponding send time, so this should not
+	// occur; guard defensively rather than corrupt the estimator.
+	if rtt < 0 {
+		return
+	}
 	s.rtt.Lock()
 	if !s.rtt.TCPRTTState.SRTTInited {
 		s.rtt.TCPRTTState.RTTVar = rtt / 2
@@ -1513,9 +1523,13 @@ func (s *sender) inRecovery() bool {
 func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 	bestRTT := unknownRTT
 
-	// Check if we can extract an RTT measurement from this ack.
+	// Check if we can extract an RTT measurement from this ack. Measure against
+	// the ACK's ingress time (rcvdSeg.rcvdTime), not the current clock: if the
+	// ACK was delayed inside the stack before being processed (e.g. queued while
+	// the application held the endpoint lock during a Write), using the
+	// processing time would inflate the RTT sample and thus SRTT/RTO.
 	if !rcvdSeg.parsedOptions.TS && s.RTTMeasureSeqNum.LessThan(rcvdSeg.ackNumber) {
-		bestRTT = s.ep.stack.Clock().NowMonotonic().Sub(s.RTTMeasureTime)
+		bestRTT = rcvdSeg.rcvdTime.Sub(s.RTTMeasureTime)
 		s.updateRTO(bestRTT)
 		s.RTTMeasureSeqNum = s.SndNxt
 	}
@@ -1618,7 +1632,10 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 		//    some new data, i.e., only if it advances the left edge of
 		//    the send window.
 		if s.ep.SendTSOk && rcvdSeg.parsedOptions.TSEcr != 0 {
-			tsRTT := s.ep.elapsed(s.ep.stack.Clock().NowMonotonic(), rcvdSeg.parsedOptions.TSEcr)
+			// Compute elapsed time from the ACK's ingress time, not the current
+			// clock, so an ACK delayed inside the stack before processing does
+			// not inflate the timestamp-based RTT sample (and thus SRTT/RTO).
+			tsRTT := s.ep.elapsed(rcvdSeg.rcvdTime, rcvdSeg.parsedOptions.TSEcr)
 			s.updateRTO(tsRTT)
 			// Following Linux, prefer RTT computed from ACKs to TSEcr because,
 			// "broken middle-boxes or peers may corrupt TS-ECR fields"
@@ -1698,7 +1715,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 		// If we are not in fast recovery then update the congestion
 		// window based on the number of acknowledged packets.
 		if !s.FastRecovery.Active {
-			s.cc.Update(originalOutstanding-s.Outstanding, bestRTT)
+			s.cc.Update(originalOutstanding-s.Outstanding, bestRTT, rcvdSeg.rcvdTime)
 			if s.FastRecovery.Last.LessThan(s.SndUna) {
 				s.state = tcpip.Open
 				// Update RACK when we are exiting fast or RTO
