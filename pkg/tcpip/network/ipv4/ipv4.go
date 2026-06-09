@@ -748,7 +748,7 @@ func (e *endpoint) forwardPacketWithRoute(route *stack.Route, pkt *stack.PacketB
 	newHdr.SetChecksum(^newHdr.CalculateChecksum())
 
 	if route.RequiresTXTransportChecksum() {
-		newPkt.CalculateTransportChecksum()
+		newPkt.UpdateForwardedPacketTransportChecksum()
 	}
 
 	switch err := forwardToEp.writePacketPostRouting(route, newPkt, true /* headerIncluded */); err.(type) {

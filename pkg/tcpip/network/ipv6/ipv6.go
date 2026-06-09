@@ -1096,7 +1096,7 @@ func (e *endpoint) forwardPacketWithRoute(route *stack.Route, pkt *stack.PacketB
 	newHdr.SetHopLimit(hopLimit - 1)
 
 	if route.RequiresTXTransportChecksum() {
-		newPkt.CalculateTransportChecksum()
+		newPkt.UpdateForwardedPacketTransportChecksum()
 	}
 
 	forwardToEp, ok := e.protocol.getEndpointForNIC(route.NICID())
