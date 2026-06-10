@@ -353,6 +353,8 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 		printedOpts = append(printedOpts, fmt.Sprintf("gid=%s", gidStr))
 	}
+	// Accept, but ignore, noswap
+	delete(mopts, "noswap")
 
 	if len(mopts) != 0 {
 		ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: unknown options: %v", mopts)
