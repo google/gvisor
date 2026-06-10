@@ -15,11 +15,13 @@
 package extension
 
 import (
+	"errors"
 	"testing"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/seccomp"
+	"gvisor.dev/gvisor/runsc/flag"
 )
 
 type fakeExtension struct {
@@ -38,6 +40,29 @@ func (fakeExtension) SeccompRules() seccomp.SyscallRules {
 	return seccomp.NewSyscallRules()
 }
 
+type flagExtension struct {
+	fakeExtension
+	setFlagsSeen *bool
+}
+
+func (f flagExtension) SetFlags(*flag.FlagSet) {
+	if f.setFlagsSeen != nil {
+		*f.setFlagsSeen = true
+	}
+}
+
+type prepareExtension struct {
+	fakeExtension
+	prepareGofer func(GoferPrepareContext) (GoferPrepareResult, error)
+}
+
+func (f prepareExtension) PrepareGofer(ctx GoferPrepareContext) (GoferPrepareResult, error) {
+	if f.prepareGofer == nil {
+		return GoferPrepareResult{}, nil
+	}
+	return f.prepareGofer(ctx)
+}
+
 func TestRegisterAndRegistered(t *testing.T) {
 	registered = nil
 
@@ -52,5 +77,62 @@ func TestRegisterAndRegistered(t *testing.T) {
 	}
 	if got[0] != e1 || got[1] != e2 {
 		t.Fatalf("Registered() = %v, want [%v %v]", got, e1, e2)
+	}
+}
+
+func TestSetFlags(t *testing.T) {
+	registered = nil
+
+	called := false
+	Register(fakeExtension{name: "first"})
+	Register(flagExtension{fakeExtension: fakeExtension{name: "second"}, setFlagsSeen: &called})
+	SetFlags(&flag.FlagSet{})
+
+	if !called {
+		t.Fatal("SetFlags did not call extension")
+	}
+}
+
+func TestPrepareGofer(t *testing.T) {
+	registered = nil
+
+	Register(fakeExtension{name: "first"})
+	Register(prepareExtension{
+		fakeExtension: fakeExtension{name: "second"},
+		prepareGofer: func(ctx GoferPrepareContext) (GoferPrepareResult, error) {
+			if ctx.ContainerID != "container" || ctx.BundleDir != "/bundle" {
+				t.Fatalf("GoferPrepareContext = %+v", ctx)
+			}
+			return GoferPrepareResult{FlagOverrides: map[string]string{"first-fd": "3"}}, nil
+		},
+	})
+	Register(prepareExtension{
+		fakeExtension: fakeExtension{name: "third"},
+		prepareGofer: func(GoferPrepareContext) (GoferPrepareResult, error) {
+			return GoferPrepareResult{FlagOverrides: map[string]string{"second-fd": "4"}}, nil
+		},
+	})
+
+	got, err := PrepareGofer(GoferPrepareContext{ContainerID: "container", BundleDir: "/bundle"})
+	if err != nil {
+		t.Fatalf("PrepareGofer: %v", err)
+	}
+	if got.FlagOverrides["first-fd"] != "3" || got.FlagOverrides["second-fd"] != "4" {
+		t.Fatalf("PrepareGofer overrides = %v", got.FlagOverrides)
+	}
+}
+
+func TestPrepareGoferError(t *testing.T) {
+	registered = nil
+	want := errors.New("setup failed")
+	Register(prepareExtension{
+		fakeExtension: fakeExtension{name: "first"},
+		prepareGofer: func(GoferPrepareContext) (GoferPrepareResult, error) {
+			return GoferPrepareResult{}, want
+		},
+	})
+
+	if _, err := PrepareGofer(GoferPrepareContext{}); !errors.Is(err, want) {
+		t.Fatalf("PrepareGofer error = %v, want %v", err, want)
 	}
 }
