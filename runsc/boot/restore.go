@@ -120,9 +120,7 @@ type restorer struct {
 }
 
 // restoreSubcontainer restores a subcontainer.
-// `subcontainerTimeline` must either be nil or an orphaned timeline.
-// It takes ownership of subcontainerTimeline and will end it.
-func (r *restorer) restoreSubcontainer(spec *specs.Spec, conf *config.Config, l *Loader, cid string, stdioFDs, goferFDs, goferFilestoreFDs []*fd.FD, devGoferFD *fd.FD, goferMountConfs []specutils.GoferMountConf, subcontainerTimeline *timing.Timeline) error {
+func (r *restorer) restoreSubcontainer(spec *specs.Spec, conf *config.Config, l *Loader, cid string, stdioFDs, goferFDs, goferFilestoreFDs []*fd.FD, devGoferFD *fd.FD, goferMountConfs []specutils.GoferMountConf) error {
 	containerName := l.registerContainer(spec, cid)
 	info := &containerInfo{
 		cid:               cid,
@@ -135,18 +133,13 @@ func (r *restorer) restoreSubcontainer(spec *specs.Spec, conf *config.Config, l 
 		goferFilestoreFDs: goferFilestoreFDs,
 		goferMountConfs:   goferMountConfs,
 	}
-	r.timer.Adopt(subcontainerTimeline)
-	return r.restoreContainerInfo(l, info, subcontainerTimeline)
+	return r.restoreContainerInfo(l, info)
 }
 
 // restoreContainerInfo restores a container.
-// It takes ownership of containerTimeline and will end it.
-func (r *restorer) restoreContainerInfo(l *Loader, info *containerInfo, containerTimeline *timing.Timeline) error {
+func (r *restorer) restoreContainerInfo(l *Loader, info *containerInfo) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	containerTiming := containerTimeline.Lease()
-	defer containerTiming.End()
-	containerTiming.Reached("restorer locked")
 
 	for _, container := range r.containers {
 		if container.containerName == info.containerName {
@@ -164,8 +157,8 @@ func (r *restorer) restoreContainerInfo(l *Loader, info *containerInfo, containe
 			log.Debugf("Restore app FD: %d host FD: %d", i, fd.FD())
 		}
 	}
-	containerTiming.End()
 	log.Infof("Restored container %d of %d", len(r.containers), r.totalContainers)
+	r.timer.Reached(fmt.Sprintf("restore cont %d/%d", len(r.containers), r.totalContainers))
 
 	// Non-container-specific restore work:
 
@@ -296,7 +289,7 @@ func (r *restorer) restore(l *Loader) error {
 		r.timer.Reached("rootfs upper layer extracted")
 		return nil
 	}
-	if err := l.k.LoadFrom(ctx, r.stateFile, r.asyncMFLoader, nil, oldInetStack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}); err != nil {
+	if err := l.k.LoadFrom(ctx, r.stateFile, r.asyncMFLoader, nil, oldInetStack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}, r.timer.Fork("kernel load")); err != nil {
 		return fmt.Errorf("failed to load kernel: %w", err)
 	}
 	r.timer.Reached("kernel loaded")

@@ -83,6 +83,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/timing"
 
 	uspb "gvisor.dev/gvisor/pkg/sentry/unimpl/unimplemented_syscall_go_proto"
 )
@@ -872,7 +873,8 @@ func (k *Kernel) invalidateUnsavableMappings(ctx context.Context) error {
 }
 
 // LoadFrom returns a new Kernel loaded from args.
-func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *AsyncMFLoader, timeReady chan struct{}, net inet.Stack, clocks sentrytime.Clocks, vfsOpts *vfs.CompleteRestoreOptions) error {
+func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *AsyncMFLoader, timeReady chan struct{}, net inet.Stack, clocks sentrytime.Clocks, vfsOpts *vfs.CompleteRestoreOptions, timeline *timing.Timeline) error {
+	defer timeline.End()
 	if hostarch.PageSize != 4096 {
 		return fmt.Errorf("restore is not supported with %dK page size", hostarch.PageSize/1024)
 	}
@@ -893,6 +895,7 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 		return err
 	}
 	log.Infof("CPUID load took [%s].", time.Since(cpuidStart))
+	timeline.Reached("CPUID loaded")
 
 	// Verify that the FeatureSet is usable on this host. We do this before
 	// Kernel load so that the explicit CPUID mismatch error has priority
@@ -901,6 +904,7 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 	if err := k.featureSet.CheckHostCompatible(); err != nil {
 		return err
 	}
+	timeline.Reached("CPUID checked")
 
 	// Suspend fdnotifier notifications.
 	fdnotifier.Pause()
@@ -914,6 +918,7 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 	}
 	log.Infof("Kernel load stats: %s", stats.String())
 	log.Infof("Kernel load took [%s].", time.Since(kernelStart))
+	timeline.Reached("Kernel loaded")
 
 	if asyncMFLoader == nil {
 		mfStart := time.Now()
@@ -921,6 +926,7 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 			return fmt.Errorf("failed to load memory files: %w", err)
 		}
 		log.Infof("Memory files load took [%s].", time.Since(mfStart))
+		timeline.Reached("Memory files loaded")
 	} else {
 		// Timekeeper restore below tries writing to the main MF. If async page
 		// loading is being used, we need to make sure that the main MF loading has
@@ -928,6 +934,7 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 		if err := asyncMFLoader.WaitMainMFStart(); err != nil {
 			return fmt.Errorf("main MF start failed: %w", err)
 		}
+		timeline.Reached("Main MemoryFile loading started")
 	}
 
 	k.Timekeeper().SetClocks(clocks, k.vdsoParams)
@@ -943,11 +950,13 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 		}
 		log.Debugf("Restore network stack")
 		s.Restore()
+		timeline.Reached("Network stack restored")
 	}
 
 	if err := k.vfs.CompleteRestore(ctx, vfsOpts); err != nil {
 		return vfs.PrependErrMsg("vfs.CompleteRestore() failed", err)
 	}
+	timeline.Reached("VFS restored")
 
 	log.Infof("Overall load took [%s] after async work", time.Since(loadStart))
 

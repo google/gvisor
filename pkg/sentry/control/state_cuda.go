@@ -332,25 +332,33 @@ func toggleCudaProcs(sctx context.Context, k *kernel.Kernel, cudaCheckpointPath 
 	}
 
 	// Call cuda-checkpoint for each CUDA PID.
-	proc := &Proc{Kernel: k}
-	ckptProcs := make(map[*kernel.ThreadGroup]checkpointProc)
-	var errs []error
 	ckptTimerNames := make([]string, len(cudaProcs))
 	for i, cudaProc := range cudaProcs {
 		ckptTimerNames[i] = fmt.Sprintf("cuda-ckpt %s", cudaProc.ID())
 	}
-	ckptTimelines := timeline.MultiFork(ckptTimerNames)
-	ckptTimings := make([]*timing.Lease, len(cudaProcs))
-	for i := range cudaProcs {
-		ckptTimings[i] = ckptTimelines[i].Lease()
+	var ckptTimings []*timing.Lease
+	if !sequential {
+		ckptTimelines := timeline.MultiFork(ckptTimerNames)
+		ckptTimings = make([]*timing.Lease, len(cudaProcs))
+		for i := range cudaProcs {
+			ckptTimings[i] = ckptTimelines[i].Lease()
+		}
 	}
 	defer func() {
-		for i := range cudaProcs {
-			ckptTimings[i].End()
+		for _, t := range ckptTimings {
+			t.End()
 		}
 	}()
+	proc := &Proc{Kernel: k}
+	ckptProcs := make(map[*kernel.ThreadGroup]checkpointProc)
+	var errs []error
 	for i, cudaProc := range cudaProcs {
-		ckptTiming := ckptTimings[i]
+		var ckptTiming *timing.Lease
+		if sequential {
+			ckptTiming = timeline.Fork(ckptTimerNames[i]).Lease()
+		} else {
+			ckptTiming = ckptTimings[i]
+		}
 		ckptProc, cleanup, err := invokeCudaCheckpoint(sctx, k, proc, cudaCheckpointPath, cudaProc, "--toggle", nullFD)
 		if err != nil {
 			ckptTiming.Reached("invoke error")
