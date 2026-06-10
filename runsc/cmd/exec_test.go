@@ -117,9 +117,7 @@ func TestCLIArgs(t *testing.T) {
 					EffectiveCaps:   auth.CapabilitySetOfMany([]linux.Capability{linux.CAP_DAC_READ_SEARCH}),
 					PermittedCaps:   auth.CapabilitySetOfMany([]linux.Capability{linux.CAP_DAC_READ_SEARCH}),
 					InheritableCaps: auth.CapabilitySetOfMany([]linux.Capability{linux.CAP_DAC_OVERRIDE}),
-					// TODO(gvisor.dev/issue/3166): Once ambient capabilities is
-					// supported, AmbientCaps should be CAP_DAC_READ_SEARCH.
-					AmbientCaps: 0,
+					AmbientCaps:     auth.CapabilitySetOf(linux.CAP_DAC_READ_SEARCH),
 				},
 				SupportTTYs: true,
 			},
