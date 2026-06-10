@@ -73,6 +73,13 @@ type SaveOpts struct {
 
 	// StartTime stores the start time of the sandbox.
 	StartTime time.Time
+
+	// CudaCheckpointPath is the path to the cuda-checkpoint binary.
+	CudaCheckpointPath string
+
+	// CudaCheckpointSequential indicates whether cuda-checkpoint should be run
+	// sequentially (rather than in parallel).
+	CudaCheckpointSequential bool
 }
 
 // Close releases resources owned by opts.

@@ -100,6 +100,13 @@ type SaveOpts struct {
 	// a Unix domain socket connected to a URPC server implementing
 	// stateipc.AsyncFileServer and providing checkpoint files.
 	UseCheckpointGofer bool `json:"use_checkpoint_gofer"`
+
+	// CudaCheckpointPath is the path to the cuda-checkpoint binary.
+	CudaCheckpointPath string `json:"cuda_checkpoint_path"`
+
+	// CudaCheckpointSequential indicates whether cuda-checkpoint should be run
+	// sequentially (rather than in parallel).
+	CudaCheckpointSequential bool `json:"cuda_checkpoint_sequential"`
 }
 
 // SaveRestoreExecOpts contains options for executing a binary
@@ -125,6 +132,8 @@ func ConvertToStateSaveOpts(o *SaveOpts) (*state.SaveOpts, error) {
 		Metadata:                       o.Metadata,
 		AppMFExcludeCommittedZeroPages: o.AppMFExcludeCommittedZeroPages,
 		Resume:                         o.Resume,
+		CudaCheckpointPath:             o.CudaCheckpointPath,
+		CudaCheckpointSequential:       o.CudaCheckpointSequential,
 	}
 	if err := setSaveOpts(o, saveOpts); err != nil {
 		saveOpts.Close()
