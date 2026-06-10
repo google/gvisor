@@ -206,7 +206,9 @@ var natAttrPolicy = []NlaPolicy{
 // initNATOp initializes a NAT operation from the given expression information.
 // Similar to `nft_nat_init` in kernel.
 func initNATOp(tab *Table, exprInfo ExprInfo) (*natOp, *syserr.AnnotatedError) {
-	attrs, ok := NfParseWithPolicy(exprInfo.ExprData, natAttrPolicy)
+	attrs, ok := NfParseWithOpts(exprInfo.ExprData, &NfParseOpts{
+		Policy: natAttrPolicy,
+	})
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse NAT expression data")
 	}

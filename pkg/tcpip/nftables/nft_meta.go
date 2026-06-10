@@ -112,7 +112,9 @@ var metaAttrPolicy = []NlaPolicy{
 }
 
 func initMeta(tab *Table, exprInfo ExprInfo) (operation, *syserr.AnnotatedError) {
-	attrs, ok := NfParseWithPolicy(exprInfo.ExprData, metaAttrPolicy)
+	attrs, ok := NfParseWithOpts(exprInfo.ExprData, &NfParseOpts{
+		Policy: metaAttrPolicy,
+	})
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse meta expression data")
 	}

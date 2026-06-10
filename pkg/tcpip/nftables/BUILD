@@ -67,6 +67,7 @@ go_test(
     deps = [
         "//pkg/abi/linux",
         "//pkg/buffer",
+        "//pkg/marshal/primitive",
         "//pkg/rand",
         "//pkg/sentry/socket/netlink/nlmsg",
         "//pkg/sync",

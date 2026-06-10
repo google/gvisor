@@ -140,7 +140,9 @@ var cmpAttrPolicy = []NlaPolicy{
 }
 
 func initComparison(tab *Table, exprInfo ExprInfo) (*comparison, *syserr.AnnotatedError) {
-	attrs, ok := NfParseWithPolicy(exprInfo.ExprData, cmpAttrPolicy)
+	attrs, ok := NfParseWithOpts(exprInfo.ExprData, &NfParseOpts{
+		Policy: cmpAttrPolicy,
+	})
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse comparison expression data")
 	}

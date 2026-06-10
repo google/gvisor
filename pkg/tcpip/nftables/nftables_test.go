@@ -26,6 +26,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -3947,16 +3948,206 @@ func TestNfAttrParser(t *testing.T) {
 			if !ok {
 				t.Fatalf("GetData() failed for msg %v", test.msg)
 			}
-			got, gotOk := NfParseWithPolicy(attr, test.policy)
+			got, gotOk := NfParseWithOpts(attr, &NfParseOpts{Policy: test.policy})
 			wantOk := test.want != nil
 			if wantOk != gotOk {
-				t.Fatalf("NfParseWithPolicy() failed, want ok: %v, got ok: %v", wantOk, gotOk)
+				t.Fatalf("NfParseWithOpts() failed, want ok: %v, got ok: %v", wantOk, gotOk)
 			}
 			if !wantOk {
 				return
 			}
 			if diff := cmp.Diff(test.want, got); diff != "" {
-				t.Fatalf("NfParseWithPolicy() returned diff (-want +got): %v", diff)
+				t.Fatalf("NfParseWithOpts() returned diff (-want +got): %v", diff)
+			}
+		})
+	}
+}
+
+func TestNfAttrParserNestedArray(t *testing.T) {
+	putMsg := func(b []byte) *nlmsg.Message {
+		m := createEmptyNlMsg()
+		m.PutNestedAttr(linux.NFTA_RULE_EXPRESSIONS, b)
+		return m
+	}
+
+	newArray := func(elems ...nlmsg.NestedAttr) nlmsg.NestedAttr {
+		arr := nlmsg.NestedAttr{}
+		for _, elem := range elems {
+			arr.PutAttr(linux.NFTA_LIST_ELEM, primitive.AsByteSlice(elem))
+		}
+		return arr
+	}
+
+	tests := []struct {
+		name  string
+		setup func() (msg *nlmsg.Message, policy []NlaPolicy, want map[uint16]nlmsg.BytesView)
+	}{
+		{
+			name: "validArray",
+			setup: func() (*nlmsg.Message, []NlaPolicy, map[uint16]nlmsg.BytesView) {
+				//
+				// [ NFTA_RULE_EXPRESSIONS (Outer Array Container) ]
+				//   └── [ NFTA_LIST_ELEM (Element #1) ]
+				//         ├── [ NFTA_PAYLOAD_SREG ] (Value: 100)
+				//         └── [ NFTA_PAYLOAD_DREG ] (Value: 123)
+				elementPolicy := []NlaPolicy{
+					linux.NFTA_PAYLOAD_SREG: {nlaType: linux.NLA_U32},
+					linux.NFTA_PAYLOAD_DREG: {nlaType: linux.NLA_U32},
+				}
+
+				elems := [2]nlmsg.NestedAttr{}
+				elems[0].PutAttr(linux.NFTA_PAYLOAD_SREG, nlmsg.PutU32(100))
+				elems[0].PutAttr(linux.NFTA_PAYLOAD_DREG, nlmsg.PutU32(123))
+				elems[1].PutAttr(linux.NFTA_PAYLOAD_SREG, nlmsg.
+					PutU32(200))
+				arrayAttr := newArray(elems[:]...)
+
+				policy := []NlaPolicy{
+					linux.NFTA_RULE_EXPRESSIONS: {
+						nlaType:   linux.NLA_NESTED_ARRAY,
+						validator: AttrArrayValidator(elementPolicy),
+					},
+				}
+
+				return putMsg(arrayAttr), policy, map[uint16]nlmsg.BytesView{
+					linux.NFTA_RULE_EXPRESSIONS: nlmsg.BytesView(arrayAttr),
+				}
+			},
+		},
+		{
+			name: "validArrayOfArrays",
+			setup: func() (*nlmsg.Message, []NlaPolicy, map[uint16]nlmsg.BytesView) {
+				//
+				// [ NFTA_RULE_EXPRESSIONS (Outer Array Container) ]
+				//   ├── [ NFTA_LIST_ELEM (Outer Element Wrapper #1) ]
+				//   │     └── [ NFTA_EXPR_DATA (Inner Array Container #1) ]
+				//   │           └── [ NFTA_LIST_ELEM (Inner Element Wrapper #1) ]
+				//   │                 └── [ NFTA_IMMEDIATE_DREG ] (Value: 100)
+				//   │
+				//   └── [ NFTA_LIST_ELEM (Outer Element Wrapper #2) ]
+				//         └── [ NFTA_EXPR_DATA (Inner Array Container #2) ]
+				//               └── [ NFTA_LIST_ELEM (Inner Element Wrapper #2) ]
+				//                     └── [ NFTA_IMMEDIATE_DREG ] (Value: 200)
+				elementPolicy := []NlaPolicy{
+					linux.NFTA_IMMEDIATE_DREG: {nlaType: linux.NLA_U32},
+				}
+				innerArrayPolicy := []NlaPolicy{
+					linux.NFTA_EXPR_DATA: {
+						nlaType:   linux.NLA_NESTED_ARRAY,
+						validator: AttrArrayValidator(elementPolicy),
+					},
+				}
+
+				innerElems := [2]nlmsg.NestedAttr{}
+				innerElems[0].PutAttr(linux.NFTA_IMMEDIATE_DREG, nlmsg.PutU32(100))
+				innerElems[1].PutAttr(linux.NFTA_IMMEDIATE_DREG, nlmsg.PutU32(200))
+
+				outerElems := [2]nlmsg.NestedAttr{}
+				outerElems[0].PutAttr(linux.NFTA_EXPR_DATA, primitive.AsByteSlice(newArray(innerElems[0])))
+				outerElems[1].PutAttr(linux.NFTA_EXPR_DATA, primitive.AsByteSlice(newArray(innerElems[1])))
+
+				outerArray := newArray(outerElems[:]...)
+
+				policy := []NlaPolicy{
+					linux.NFTA_RULE_EXPRESSIONS: {
+						nlaType:   linux.NLA_NESTED_ARRAY,
+						validator: AttrArrayValidator(innerArrayPolicy),
+					},
+				}
+
+				return putMsg(outerArray), policy, map[uint16]nlmsg.BytesView{
+					linux.NFTA_RULE_EXPRESSIONS: nlmsg.BytesView(outerArray),
+				}
+			},
+		},
+		{
+			name: "invalidElement",
+			setup: func() (*nlmsg.Message, []NlaPolicy, map[uint16]nlmsg.BytesView) {
+				//
+				// [ NFTA_RULE_EXPRESSIONS (Outer Array Container) ]
+				//   ├── [ NFTA_LIST_ELEM (Element Wrapper #1) ]
+				//   │     └── [ NFTA_PAYLOAD_SREG ] (Value: 2)
+				//   │
+				//   └── [ NFTA_LIST_ELEM (Element Wrapper #2) ]
+				//         └── [ NFTA_PAYLOAD_SREG ] (Value: 10)
+				elementPolicy := []NlaPolicy{
+					linux.NFTA_PAYLOAD_SREG: {
+						nlaType:   linux.NLA_U32,
+						validator: AttrMaxValidator[uint32](8),
+					},
+				}
+
+				elems := [2]nlmsg.NestedAttr{}
+				elems[0].PutAttr(linux.NFTA_PAYLOAD_SREG, nlmsg.PutU32(2))
+				// Invalid value exceeds max value of validator.
+				elems[1].PutAttr(linux.NFTA_PAYLOAD_SREG, nlmsg.PutU32(10))
+
+				arrayAttr := newArray(elems[:]...)
+
+				policy := []NlaPolicy{
+					linux.NFTA_RULE_EXPRESSIONS: {
+						nlaType:   linux.NLA_NESTED_ARRAY,
+						validator: AttrArrayValidator(elementPolicy),
+					},
+				}
+
+				return putMsg(arrayAttr), policy, nil
+			},
+		},
+		{
+			name: "recursionDepthExceeded",
+			setup: func() (*nlmsg.Message, []NlaPolicy, map[uint16]nlmsg.BytesView) {
+				//
+				// [ NFTA_RULE_EXPRESSIONS (Outer Array Container) ]
+				//   └── [ NFTA_EXPR_DATA ] (Nesting Layer #1)
+				//         └── [ NFTA_EXPR_DATA ] (Nesting Layer #2)
+				//               └── ... (Nesting Layer #10)
+				recursePolicy := []NlaPolicy{
+					linux.NFTA_EXPR_DATA: {
+						nlaType:   linux.NLA_NESTED_ARRAY,
+						validator: AttrArrayValidator(nil),
+					},
+				}
+				recursePolicy[linux.NFTA_EXPR_DATA].validator = AttrArrayValidator(recursePolicy)
+
+				policy := []NlaPolicy{
+					linux.NFTA_RULE_EXPRESSIONS: {
+						nlaType:   linux.NLA_NESTED_ARRAY,
+						validator: AttrArrayValidator(recursePolicy),
+					},
+				}
+
+				curr := nlmsg.NestedAttr{}
+				// Build a nested attribute with maxPolicyRecursionDepth + 1 nesting.
+				for i := 0; i < maxPolicyRecursionDepth; i++ {
+					upper := nlmsg.NestedAttr{}
+					upper.PutAttr(linux.NFTA_EXPR_DATA, primitive.AsByteSlice(curr))
+					curr = upper
+				}
+
+				return putMsg(curr), policy, nil
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			msg, policy, want := test.setup()
+			var nfGenMsg linux.NetFilterGenMsg
+			attr, ok := msg.GetData(&nfGenMsg)
+			if !ok {
+				t.Fatalf("GetData() failed for msg %v", msg)
+			}
+			got, gotOk := NfParseWithOpts(attr, &NfParseOpts{Policy: policy})
+			wantOk := want != nil
+			if wantOk != gotOk {
+				t.Fatalf("NfParseWithOpts() failed, want ok: %v, got ok: %v", wantOk, gotOk)
+			}
+			if !wantOk {
+				return
+			}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Fatalf("NfParseWithOpts() returned diff (-want +got): %v", diff)
 			}
 		})
 	}
