@@ -154,6 +154,22 @@ func (n *natOp) setupNetmap(pkt *stack.PacketBuffer, minAddr, maxAddr *tcpip.Add
 // evaluate performs NAT setup on the connection.
 // Called when the packet matches the NAT op configured.
 func (n *natOp) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
+	// Skip the rule if the packet's family does not match the configured rule
+	// family. With an `inet` table the same base chain is dispatched for both
+	// IPv4 and IPv6 packets, so this mismatch is reachable in practice and
+	// must not panic inside setupNetmap. Matches the behavior of nft_nat_eval
+	// in linux/net/netfilter/nft_nat.c.
+	switch n.family {
+	case linux.NFPROTO_IPV4:
+		if pkt.NetworkProtocolNumber != header.IPv4ProtocolNumber {
+			return
+		}
+	case linux.NFPROTO_IPV6:
+		if pkt.NetworkProtocolNumber != header.IPv6ProtocolNumber {
+			return
+		}
+	}
+
 	// Just fill the data for the NAT operation.
 	changeAddress := false
 	changePort := false
