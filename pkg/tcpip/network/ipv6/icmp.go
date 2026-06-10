@@ -655,8 +655,26 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 	case header.ICMPv6EchoRequest:
 		received.echoRequest.Increment()
 		replyPayload := pkt.Data().ToBuffer()
+		replyPayloadConsumed := false
+		defer func() {
+			if !replyPayloadConsumed {
+				replyPayload.Release()
+			}
+		}()
 		replyHeader := make([]byte, header.ICMPv6EchoMinimumSize)
 		copy(replyHeader, h[:header.ICMPv6EchoMinimumSize])
+		replied := false
+		reply := func() bool {
+			if replied {
+				return true
+			}
+			replied = true
+			if e.sendICMPEchoReply(replyPayload, replyHeader, srcAddr, dstAddr, iph) {
+				replyPayloadConsumed = true
+			}
+			return true
+		}
+		pkt.SetICMPEchoReply(reply)
 
 		// It's possible that a raw socket or per-stack default handler expects
 		// to receive this packet.
@@ -666,16 +684,16 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 		} else {
 			e.dispatcher.DeliverTransportPacket(header.ICMPv6ProtocolNumber, pkt)
 		}
+		pkt.ClearICMPEchoReply()
 		pkt = nil
 
 		// Skip the built-in ICMP echo reply if the request was consumed by a
 		// per-stack default handler.
 		if defaultHandlerHandled {
-			replyPayload.Release()
 			return
 		}
 
-		e.sendICMPEchoReply(replyPayload, replyHeader, srcAddr, dstAddr, iph)
+		reply()
 
 	case header.ICMPv6EchoReply:
 		received.echoReply.Increment()
@@ -871,7 +889,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 	}
 }
 
-func (e *endpoint) sendICMPEchoReply(replyPayload buffer.Buffer, replyHeader []byte, srcAddr, dstAddr tcpip.Address, ipHdr header.IPv6) {
+func (e *endpoint) sendICMPEchoReply(replyPayload buffer.Buffer, replyHeader []byte, srcAddr, dstAddr tcpip.Address, ipHdr header.IPv6) bool {
 	sent := e.stats.icmp.packetsSent
 
 	// As per RFC 4291 section 2.7, multicast addresses must not be used as
@@ -884,15 +902,13 @@ func (e *endpoint) sendICMPEchoReply(replyPayload buffer.Buffer, replyHeader []b
 	r, err := e.protocol.stack.FindRoute(e.nic.ID(), localAddr, srcAddr, ProtocolNumber, false /* multicastLoop */)
 	if err != nil {
 		// If we cannot find a route to the destination, silently drop the packet.
-		replyPayload.Release()
-		return
+		return false
 	}
 	defer r.Release()
 
 	if !e.protocol.allowICMPReply(header.ICMPv6EchoReply) {
 		sent.rateLimited.Increment()
-		replyPayload.Release()
-		return
+		return false
 	}
 
 	replyPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
@@ -922,9 +938,10 @@ func (e *endpoint) sendICMPEchoReply(replyPayload buffer.Buffer, replyHeader []b
 		TOS: replyTClass,
 	}, replyPkt); err != nil {
 		sent.dropped.Increment()
-		return
+		return true
 	}
 	sent.echoReply.Increment()
+	return true
 }
 
 // LinkAddressProtocol implements stack.LinkAddressResolver.
