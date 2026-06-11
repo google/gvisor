@@ -50,6 +50,7 @@ func main() {
 	subcommands.Register(new(forkBomb), "")
 	subcommands.Register(new(fsTreeCreator), "")
 	subcommands.Register(new(fsTreeVerify), "")
+	subcommands.Register(new(assertIsEmpty), "")
 	subcommands.Register(new(gvisorDetect), "")
 	subcommands.Register(new(ptyRunner), "")
 	subcommands.Register(new(reaper), "")
@@ -693,5 +694,56 @@ func (*ptyRunner) Execute(_ context.Context, fs *flag.FlagSet, _ ...any) subcomm
 	// subprocess exits.
 	io.Copy(os.Stdout, f)
 
+	return subcommands.ExitSuccess
+}
+
+type assertIsEmpty struct {
+}
+
+// Name implements subcommands.Command.Name.
+func (*assertIsEmpty) Name() string {
+	return "assertIsEmpty"
+}
+
+// Synopsis implements subcommands.Command.Synopsis.
+func (*assertIsEmpty) Synopsis() string {
+	return "asserts that a directory is empty"
+}
+
+// Usage implements subcommands.Command.Usage.
+func (*assertIsEmpty) Usage() string {
+	return "assertIsEmpty <directory>"
+}
+
+// SetFlags implements subcommands.Command.SetFlags.
+func (*assertIsEmpty) SetFlags(f *flag.FlagSet) {}
+
+// Execute implements subcommands.Command.Execute.
+func (*assertIsEmpty) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
+	if f.NArg() != 1 {
+		log.Printf("assertIsEmpty requires exactly 1 argument, got %d", f.NArg())
+		return subcommands.ExitUsageError
+	}
+	path := f.Arg(0)
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		log.Fatalf("Error reading directory %q: %v", path, err)
+	}
+	// Ignore gVisor internal overlay filestore files, which are automatically
+	// created inside overlay-enabled volume mounts by the runtime. They are not
+	// considered part of the user-visible filesystem.
+	var filteredEntries []os.DirEntry
+	for _, e := range entries {
+		if !strings.HasPrefix(e.Name(), ".gvisor.filestore.") {
+			filteredEntries = append(filteredEntries, e)
+		}
+	}
+	if len(filteredEntries) > 0 {
+		var names []string
+		for _, e := range filteredEntries {
+			names = append(names, e.Name())
+		}
+		log.Fatalf("Directory %q is not empty, contains %d entries: %v", path, len(filteredEntries), names)
+	}
 	return subcommands.ExitSuccess
 }

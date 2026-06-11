@@ -1741,6 +1741,9 @@ type FSSaveOpts struct {
 	// is successful. This is equivalent to !CheckpointOpts.Resume, and is
 	// provided for parity with that feature.
 	ExitAfterSaving bool
+
+	// Path is the path inside the container to save.
+	Path string
 }
 
 // FSSave sends the filesystem checkpointing call to the sandbox.
@@ -1749,6 +1752,7 @@ func (s *Sandbox) FSSave(conf *config.Config, cid string, imagePath string, opts
 
 	args := boot.FSSaveArgs{
 		ExitAfterSaving: opts.ExitAfterSaving,
+		Path:            opts.Path,
 	}
 	defer func() {
 		for _, f := range args.FilePayload.Files {
