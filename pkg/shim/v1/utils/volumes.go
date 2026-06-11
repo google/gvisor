@@ -19,6 +19,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/containerd/log"
@@ -30,6 +31,17 @@ const (
 	volumeKeyPrefix = "dev.gvisor.spec.mount."
 
 	udsFlagAnnotation = "dev.gvisor.flag.host-uds"
+
+	// emptyDirAnnotationPrefix is the prefix for EmptyDir-specific gVisor
+	// annotations. Users can set it in their PodSpec.
+	emptyDirAnnotationPrefix = "dev.gvisor.empty-dir."
+
+	// emptyDirForceSharedField is the EmptyDir annotation field name that, when
+	// set to a true, forces that specific EmptyDir volume to be configured as a
+	// normal shared bind mount instead of being optimized into a gVisor-internal
+	// tmpfs mount. This is useful for EmptyDirs that are shared with host-side
+	// processes.
+	emptyDirForceSharedField = "force-shared"
 
 	// devshmName is the volume name used for /dev/shm. Pick a name that is
 	// unlikely to be used.
@@ -172,11 +184,18 @@ func UpdateVolumeAnnotations(s *specs.Spec) (bool, error) {
 			}
 			s.Annotations[volumeSourceKey(volume)] = path
 			if strings.Contains(path, emptyDirVolumesDir) {
-				if isEmptyDirEmpty(path) {
+				forceShared := emptyDirForceShared(s.Annotations, volume)
+				empty := isEmptyDirEmpty(path)
+				if !forceShared && empty {
 					s.Annotations[k] = "tmpfs" // See note about EmptyDir.
 				} else {
-					// This is a non-empty EmptyDir volume. Configure it as a bind mount.
-					log.L.Infof("Non-empty EmptyDir volume %q, configuring bind mount annotations", volume)
+					// The EmptyDir was either forced to be shared by annotation
+					// or it is non-empty. Configure it as a bind mount.
+					if forceShared {
+						log.L.Infof("EmptyDir volume %q forced to be shared, configuring bind mount annotations", volume)
+					} else {
+						log.L.Infof("Non-empty EmptyDir volume %q, configuring bind mount annotations", volume)
+					}
 					s.Annotations[k] = "bind"
 					s.Annotations[volumeShareKey(volume)] = "shared"
 					if volume == gcsFuseSidecarTmpVolumeName && s.Annotations[udsFlagAnnotation] == "" {
@@ -200,17 +219,27 @@ func UpdateVolumeAnnotations(s *specs.Spec) (bool, error) {
 				// TODO: Pass podUID down to shim for containers to do more accurate
 				// matching.
 				if yes, _ := isVolumePath(volume, s.Mounts[i].Source); yes {
-					if strings.Contains(s.Mounts[i].Source, emptyDirVolumesDir) && !isEmptyDirEmpty(s.Mounts[i].Source) {
-						// This is a non-empty EmptyDir volume. Don't change the mount type.
-						log.L.Infof("Non-empty EmptyDir volume %q, not changing its mount type", volume)
-						if volume == gcsFuseSidecarTmpVolumeName && s.Annotations[udsFlagAnnotation] == "" {
-							// Enable host UDS flag to allow communication with the gcsfuse
-							// driver. Do this for subcontainers too to update fsgofer's UDS
-							// configuration because each subcontainer has its own fsgofer.
-							log.L.Infof("This is a GCS Fuse sidecar container, setting --host-uds=open")
-							s.Annotations[udsFlagAnnotation] = "open"
+					if strings.Contains(s.Mounts[i].Source, emptyDirVolumesDir) {
+						forceShared := emptyDirForceShared(s.Annotations, volume)
+						empty := isEmptyDirEmpty(s.Mounts[i].Source)
+						if forceShared || !empty {
+							// The EmptyDir was either forced to be shared by
+							// annotation or it is non-empty. Keep it as a bind
+							// mount by not changing its mount type.
+							if forceShared {
+								log.L.Infof("EmptyDir volume %q forced to be shared, not changing its mount type", volume)
+							} else {
+								log.L.Infof("Non-empty EmptyDir volume %q, not changing its mount type", volume)
+							}
+							if volume == gcsFuseSidecarTmpVolumeName && s.Annotations[udsFlagAnnotation] == "" {
+								// Enable host UDS flag to allow communication with the gcsfuse
+								// driver. Do this for subcontainers too to update fsgofer's UDS
+								// configuration because each subcontainer has its own fsgofer.
+								log.L.Infof("This is a GCS Fuse sidecar container, setting --host-uds=open")
+								s.Annotations[udsFlagAnnotation] = "open"
+							}
+							continue
 						}
-						continue
 					}
 					// Container mount type must match the mount type specified by
 					// admission controller. See note about EmptyDir.
@@ -229,6 +258,20 @@ func UpdateVolumeAnnotations(s *specs.Spec) (bool, error) {
 	}
 
 	return updated, nil
+}
+
+func emptyDirForceShared(annotations map[string]string, volume string) bool {
+	key := emptyDirAnnotationPrefix + volume + "." + emptyDirForceSharedField
+	v, ok := annotations[key]
+	if !ok {
+		return false
+	}
+	forceShared, err := strconv.ParseBool(v)
+	if err != nil {
+		log.L.Warningf("Ignoring invalid value %q for annotation %q: %v", v, key, err)
+		return false
+	}
+	return forceShared
 }
 
 func isEmptyDirEmpty(path string) bool {

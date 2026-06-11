@@ -194,6 +194,15 @@ to handle each volume:
     globally. Use this for mounts served by a custom gofer that cannot donate a
     host file descriptor for the mount root (for example, virtual or
     network-backed filesystems). Other mounts continue to use directfs.
+-   `dev.gvisor.empty-dir.<NAME>.force-shared`: `true` or `false` (default). By
+    default, gVisor optimizes `emptyDir` volumes by turning them into a
+    gVisor-internal `tmpfs` mount. Setting this to `true` opts the specific
+    `emptyDir` volume out of that optimization and configures it as a normal
+    shared bind mount from the host instead. This is useful for `emptyDir`
+    volumes that must be shared with processes outside the sandbox (e.g., a CSI
+    driver communicating over a UDS), where the internal `tmpfs` would not be
+    visible on the host. This annotation only applies to `emptyDir` volumes; it
+    has no effect on other volume types.
 
 Below is an example Pod spec for a shared `emptyDir` volume named
 `shared-folder`, with annotations that enable cross-container inotify:

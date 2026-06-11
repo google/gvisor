@@ -191,6 +191,75 @@ func TestUpdateVolumeAnnotations(t *testing.T) {
 			},
 		},
 		{
+			name: "force-shared: volume annotations for sandbox",
+			spec: &specs.Spec{
+				Annotations: map[string]string{
+					sandboxLogDirAnnotation:                                                    testLogDirPath,
+					ContainerTypeAnnotation:                                                    containerTypeSandbox,
+					volumeKeyPrefix + testVolumeName + ".share":                                "pod",
+					volumeKeyPrefix + testVolumeName + ".type":                                 "tmpfs",
+					volumeKeyPrefix + testVolumeName + ".options":                              "ro",
+					emptyDirAnnotationPrefix + testVolumeName + "." + emptyDirForceSharedField: "true",
+				},
+			},
+			expected: &specs.Spec{
+				Annotations: map[string]string{
+					sandboxLogDirAnnotation:                                                    testLogDirPath,
+					ContainerTypeAnnotation:                                                    containerTypeSandbox,
+					volumeKeyPrefix + testVolumeName + ".share":                                "shared",
+					volumeKeyPrefix + testVolumeName + ".type":                                 "bind",
+					volumeKeyPrefix + testVolumeName + ".options":                              "ro",
+					volumeKeyPrefix + testVolumeName + ".source":                               testVolumePath,
+					emptyDirAnnotationPrefix + testVolumeName + "." + emptyDirForceSharedField: "true",
+				},
+			},
+		},
+		{
+			name: "force-shared: volume annotations for container",
+			spec: &specs.Spec{
+				Mounts: []specs.Mount{
+					{
+						Destination: "/test",
+						Type:        "bind",
+						Source:      testVolumePath,
+						Options:     []string{"ro"},
+					},
+				},
+				Annotations: map[string]string{
+					ContainerTypeAnnotation:                                                    ContainerTypeContainer,
+					volumeKeyPrefix + testVolumeName + ".share":                                "pod",
+					volumeKeyPrefix + testVolumeName + ".type":                                 "tmpfs",
+					volumeKeyPrefix + testVolumeName + ".options":                              "ro",
+					emptyDirAnnotationPrefix + testVolumeName + "." + emptyDirForceSharedField: "true",
+				},
+			},
+			// The mount type is left as a bind mount, so the spec is unchanged.
+		},
+		{
+			name: "force-shared with false value is a no-op",
+			spec: &specs.Spec{
+				Annotations: map[string]string{
+					sandboxLogDirAnnotation:                                                    testLogDirPath,
+					ContainerTypeAnnotation:                                                    containerTypeSandbox,
+					volumeKeyPrefix + testVolumeName + ".share":                                "pod",
+					volumeKeyPrefix + testVolumeName + ".type":                                 "tmpfs",
+					volumeKeyPrefix + testVolumeName + ".options":                              "ro",
+					emptyDirAnnotationPrefix + testVolumeName + "." + emptyDirForceSharedField: "false",
+				},
+			},
+			expected: &specs.Spec{
+				Annotations: map[string]string{
+					sandboxLogDirAnnotation:                                                    testLogDirPath,
+					ContainerTypeAnnotation:                                                    containerTypeSandbox,
+					volumeKeyPrefix + testVolumeName + ".share":                                "pod",
+					volumeKeyPrefix + testVolumeName + ".type":                                 "tmpfs",
+					volumeKeyPrefix + testVolumeName + ".options":                              "ro",
+					volumeKeyPrefix + testVolumeName + ".source":                               testVolumePath,
+					emptyDirAnnotationPrefix + testVolumeName + "." + emptyDirForceSharedField: "false",
+				},
+			},
+		},
+		{
 			name: "bind: volume annotations for sandbox",
 			spec: &specs.Spec{
 				Annotations: map[string]string{
