@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -77,6 +78,34 @@ func TestIfinet6(t *testing.T) {
 
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Got n.contents() = %v, want = %v", got, want)
+	}
+}
+
+func TestNetStatDataRowsHaveMatchingFields(t *testing.T) {
+	n := &netStatData{}
+	var buf bytes.Buffer
+	if err := n.Generate(contexttest.Context(t), &buf); err != nil {
+		t.Fatalf("n.Generate() failed: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	if len(lines)%2 != 0 {
+		t.Fatalf("got %d lines, want name/value line pairs: %q", len(lines), buf.String())
+	}
+	for i := 0; i < len(lines); i += 2 {
+		names := strings.Fields(lines[i])
+		values := strings.Fields(lines[i+1])
+		if len(names) != len(values) {
+			t.Errorf("line %d has %d names, line %d has %d values: names=%q values=%q", i, len(names), i+1, len(values), lines[i], lines[i+1])
+		}
+		if names[0] != values[0] {
+			t.Errorf("line %d prefix = %q, line %d prefix = %q, want matching prefixes", i, names[0], i+1, values[0])
+		}
+		for _, value := range values[1:] {
+			if value != "0" {
+				t.Errorf("got netstat value %q, want 0", value)
+			}
+		}
 	}
 }
 

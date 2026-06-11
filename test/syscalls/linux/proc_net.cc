@@ -477,9 +477,6 @@ TEST(ProcNetSnmp, UdpIn) {
 }
 
 TEST(ProcNetSnmp, CheckNetStat) {
-  // TODO(b/155123175): SNMP and netstat don't work on gVisor.
-  SKIP_IF(IsRunningOnGvisor());
-
   std::string contents =
       ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/net/netstat"));
 
