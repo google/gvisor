@@ -262,7 +262,7 @@ func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum
 		case StateEstablished:
 			r.ep.setEndpointState(StateCloseWait)
 		case StateFinWait1:
-			if s.flags.Contains(header.TCPFlagAck) && s.ackNumber == r.ep.snd.SndNxt {
+			if s.flags.Contains(header.TCPFlagAck) && r.ep.snd.finSent && s.ackNumber == r.ep.snd.SndNxt {
 				// FIN-ACK, transition to TIME-WAIT.
 				r.ep.setEndpointState(StateTimeWait)
 			} else {
@@ -296,8 +296,9 @@ func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum
 	}
 
 	// Handle ACK (not FIN-ACK, which we handled above) during one of the
-	// shutdown states.
-	if s.flags.Contains(header.TCPFlagAck) && s.ackNumber == r.ep.snd.SndNxt {
+	// shutdown states. These completions require that our FIN was sent;
+	// without finSent a data ACK would be mistaken for a FIN ACK.
+	if s.flags.Contains(header.TCPFlagAck) && r.ep.snd.finSent && s.ackNumber == r.ep.snd.SndNxt {
 		switch r.ep.EndpointState() {
 		case StateFinWait1:
 			r.ep.setEndpointState(StateFinWait2)
