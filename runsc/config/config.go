@@ -357,6 +357,10 @@ type Config struct {
 	// capabilities that are allowed to be requested by the container.
 	NVProxyAllowedDriverCapabilities string `flag:"nvproxy-allowed-driver-capabilities"`
 
+	// NVProxyAllowUnsupportedDriver allows nvproxy to be initialized with an
+	// unsupported driver version.
+	NVProxyAllowUnsupportedDriver bool `flag:"nvproxy-allow-unsupported-driver"`
+
 	// TPUProxy enables support for TPUs.
 	TPUProxy bool `flag:"tpuproxy"`
 

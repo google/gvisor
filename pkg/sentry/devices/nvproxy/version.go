@@ -26,8 +26,9 @@ import (
 )
 
 const (
-	// ChecksumNoDriver is a special value that indicates that the driver runfile does not exist. This
-	// is mostly for ARM drivers that NVIDIA does not provide a driver installer.
+	// ChecksumNoDriver is a special value that indicates that the driver runfile
+	// does not exist. This is mostly for ARM drivers that NVIDIA does not
+	// provide a driver installer.
 	ChecksumNoDriver = "NO_DRIVER"
 )
 
@@ -40,49 +41,39 @@ type driverABIFunc func() *driverABI
 // the driver ABI is not needed.
 type driverABIInfoFunc func() *DriverABIInfo
 
-// Checksums is a struct containing the SHA256 checksum of the linux .run driver installer file from
-// NVIDIA.
+// Checksums is a struct containing the SHA256 checksum of the linux .run
+// driver installer file from NVIDIA.
 type Checksums struct {
-	checksumX86_64 string
-	checksumARM64  string
+	X86_64 string
+	ARM64  string
 }
 
 // NewChecksums creates a new Checksums struct.
-func NewChecksums(checksumX86_64, checksumARM64 string) Checksums {
+func NewChecksums(x86_64, arm64 string) Checksums {
 	return Checksums{
-		checksumX86_64: checksumX86_64,
-		checksumARM64:  checksumARM64,
+		X86_64: x86_64,
+		ARM64:  arm64,
 	}
 }
 
-// Checksum returns the SHA256 checksum of the linux .run driver installer file from NVIDIA for the
-// given architecture.
+// Checksum returns the SHA256 checksum of the linux .run driver installer file
+// from NVIDIA for the given architecture.
 func (c Checksums) Checksum() (string, error) {
 	switch runtime.GOARCH {
 	case "amd64":
-		return c.checksumX86_64, nil
+		return c.X86_64, nil
 	case "arm64":
-		return c.checksumARM64, nil
+		return c.ARM64, nil
 	default:
 		return "", nil
 	}
 }
 
-// X86_64 returns the SHA256 checksum of the linux .run driver installer file from NVIDIA for X86_64.
-func (c Checksums) X86_64() string {
-	return c.checksumX86_64
-}
-
-// Arm64 returns the SHA256 checksum of the linux .run driver installer file from NVIDIA for ARM64.
-func (c Checksums) Arm64() string {
-	return c.checksumARM64
-}
-
-// abiConAndChecksum couples the driver's abiConstructor to the SHA256 checksum of its linux .run
-// driver installer file from NVIDIA.
-type abiConAndChecksum struct {
-	cons      driverABIFunc
-	checksums Checksums
+// driverABIEntry is the registry entry for a driver version.
+type driverABIEntry struct {
+	cons      driverABIFunc // lazy constructor for the driverABI
+	checksums Checksums     // SHA256 of the .run installer
+	supported bool
 }
 
 // driverABI defines the Nvidia kernel driver ABI proxied at a given version.
@@ -103,7 +94,7 @@ type driverABI struct {
 	controlCmd      map[uint32]controlCmdHandler
 	allocationClass map[nvgpu.ClassID]allocationClassHandler
 
-	getInfo driverABIInfoFunc
+	getInfo driverABIInfoFunc // lazy constructor for the DriverABIInfo
 }
 
 // DriverABIInfo defines all the structs and ioctls used by a driverABI.
@@ -139,21 +130,24 @@ type IoctlInfo struct {
 
 // abis is a global map containing all supported Nvidia driver ABIs. This is
 // initialized on Init() and is immutable henceforth.
-var abis map[nvconf.DriverVersion]abiConAndChecksum
+var abis map[nvconf.DriverVersion]driverABIEntry
 var abisOnce sync.Once
 
-// Note: runfileChecksum is the checksum of the .run file of the driver installer for linux from
-// nvidia.
-// To add a new version, add in support as normal and add the "addDriverABI" call for your version.
-// Run `make sudo TARGETS=//tools/gpu:main ARGS="checksum --version={}"` to get checksum.
 func addDriverABI(major, minor, patch int, checksumX86_64, checksumARM64 string, cons driverABIFunc) driverABIFunc {
-	if abis == nil {
-		abis = make(map[nvconf.DriverVersion]abiConAndChecksum)
-	}
 	version := nvconf.NewDriverVersion(major, minor, patch)
-	abis[version] = abiConAndChecksum{
+	abis[version] = driverABIEntry{
 		cons:      cons,
 		checksums: NewChecksums(checksumX86_64, checksumARM64),
+		supported: true,
+	}
+	return cons
+}
+
+func addUnsupportedDriverABI(major, minor, patch int, cons driverABIFunc) driverABIFunc {
+	version := nvconf.NewDriverVersion(major, minor, patch)
+	abis[version] = driverABIEntry{
+		cons:      cons,
+		supported: false,
 	}
 	return cons
 }
@@ -161,7 +155,8 @@ func addDriverABI(major, minor, patch int, checksumX86_64, checksumARM64 string,
 // Init initializes abis global map.
 func Init() {
 	abisOnce.Do(func() {
-		v535_104_05 := func() *driverABI {
+		abis = make(map[nvconf.DriverVersion]driverABIEntry)
+		v535_104_05 := addUnsupportedDriverABI(535, 104, 05, func() *driverABI {
 			// Since there is no parent to inherit from, the driverABI needs to be
 			// constructed with the entirety of the nvproxy functionality.
 			return &driverABI{
@@ -789,10 +784,10 @@ func Init() {
 					}
 				},
 			}
-		}
+		})
 
 		// 535.113.01 is an intermediate unqualified version from the main branch.
-		v535_113_01 := v535_104_05
+		v535_113_01 := addUnsupportedDriverABI(535, 113, 01, v535_104_05)
 
 		// The following versions exist on the "535" branch, which was branched
 		// from the main branch at 535.113.01.
@@ -805,7 +800,7 @@ func Init() {
 		_ = addDriverABI(535, 309, 01, "288b4902ea79b017b49a9226a84f7eaa3e6b49ca0146ae50277c2fe19dd39803", "2b69c9699e42681ebea96d013d151163c1a8983ed8c17d27473abcd9f67d48b1", v535_288_01)
 
 		// 545.23.06 is an intermediate unqualified version from the main branch.
-		v545_23_06 := func() *driverABI {
+		v545_23_06 := addUnsupportedDriverABI(545, 23, 06, func() *driverABI {
 			abi := v535_113_01()
 			abi.controlCmd[nvgpu.NV0000_CTRL_CMD_OS_UNIX_GET_EXPORT_OBJECT_INFO] = ctrlHandler(ctrlHasFrontendFD[nvgpu.NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS_V545], compUtil)
 			abi.controlCmd[nvgpu.NV0000_CTRL_CMD_GPU_GET_ACTIVE_DEVICE_IDS] = ctrlHandler(rmControlSimple, compUtil)
@@ -841,10 +836,10 @@ func Init() {
 			}
 
 			return abi
-		}
+		})
 
 		// 550.40.07 is an intermediate unqualified version from the main branch.
-		v550_40_07 := func() *driverABI {
+		v550_40_07 := addUnsupportedDriverABI(550, 40, 07, func() *driverABI {
 			abi := v545_23_06()
 			abi.frontendIoctl[nvgpu.NV_ESC_WAIT_OPEN_COMPLETE] = feHandler(frontendIoctlSimple[nvgpu.IoctlWaitOpenComplete], compUtil)
 			abi.frontendIoctl[nvgpu.NV_ESC_RM_UNMAP_MEMORY_DMA] = feHandler(frontendIoctlSimple[nvgpu.NVOS47_PARAMETERS_V550], nvconf.CapGraphics|nvconf.CapVideo)
@@ -894,9 +889,9 @@ func Init() {
 			}
 
 			return abi
-		}
+		})
 
-		v550_54_14 := func() *driverABI {
+		v550_54_14 := addUnsupportedDriverABI(550, 54, 14, func() *driverABI {
 			abi := v550_40_07()
 			abi.uvmIoctl[nvgpu.UVM_ALLOC_SEMAPHORE_POOL] = uvmHandler(uvmIoctlSimple[nvgpu.UVM_ALLOC_SEMAPHORE_POOL_PARAMS_V550], compUtil)
 			abi.uvmIoctl[nvgpu.UVM_MAP_EXTERNAL_ALLOCATION] = uvmHandler(uvmIoctlHasFrontendFD[nvgpu.UVM_MAP_EXTERNAL_ALLOCATION_PARAMS_V550], compUtil)
@@ -910,9 +905,9 @@ func Init() {
 			}
 
 			return abi
-		}
+		})
 
-		v550_90_07 := func() *driverABI {
+		v550_90_07 := addUnsupportedDriverABI(550, 90, 07, func() *driverABI {
 			abi := v550_54_14()
 			abi.controlCmd[nvgpu.NV_CONF_COMPUTE_CTRL_CMD_GPU_GET_KEY_ROTATION_STATE] = ctrlHandler(rmControlSimple, compUtil)
 
@@ -924,13 +919,13 @@ func Init() {
 			}
 
 			return abi
-		}
+		})
 
 		// This version does not belong on any branch, but it is a child of 550.90.07.
 		_ = addDriverABI(550, 90, 12, "391883846713b9e700af2ae87f8ac671f5527508ce3f9f60058deb363e05162a", ChecksumNoDriver, v550_90_07) // Internal use.
 
 		// 555.42.02 is an intermediate unqualified version.
-		v555_42_02 := func() *driverABI {
+		v555_42_02 := addUnsupportedDriverABI(555, 42, 02, func() *driverABI {
 			abi := v550_90_07()
 			abi.allocationClass[nvgpu.NV_MEMORY_MAPPER] = allocHandler(rmAllocSimple[nvgpu.NV_MEMORY_MAPPER_ALLOCATION_PARAMS_V555], nvconf.CapVideo)
 			delete(abi.controlCmd, nvgpu.NVC36F_CTRL_GET_CLASS_ENGINEID)
@@ -942,10 +937,10 @@ func Init() {
 				return info
 			}
 			return abi
-		}
+		})
 
 		// 560.28.03 is an intermediate unqualified version from the main branch.
-		v560_28_03 := func() *driverABI {
+		v560_28_03 := addUnsupportedDriverABI(560, 28, 03, func() *driverABI {
 			abi := v555_42_02()
 			abi.allocationClass[nvgpu.NVCDB0_VIDEO_DECODER] = allocHandler(rmAllocSimple[nvgpu.NV_BSP_ALLOCATION_PARAMETERS], nvconf.CapVideo)
 			abi.allocationClass[nvgpu.NVCDD1_VIDEO_NVJPG] = allocHandler(rmAllocSimple[nvgpu.NV_NVJPG_ALLOCATION_PARAMETERS], nvconf.CapVideo)
@@ -975,10 +970,10 @@ func Init() {
 				return info
 			}
 			return abi
-		}
+		})
 
 		// 565.57.01 is an intermediate unqualified version from the main branch.
-		v565_57_01 := func() *driverABI {
+		v565_57_01 := addUnsupportedDriverABI(565, 57, 01, func() *driverABI {
 			abi := v560_28_03()
 			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_GPU_GET_RECOVERY_ACTION] = ctrlHandler(rmControlSimple, nvconf.CapGraphics)
 			prevGetInfo := abi.getInfo
@@ -988,9 +983,9 @@ func Init() {
 				return info
 			}
 			return abi
-		}
+		})
 
-		v570_86_15 := func() *driverABI {
+		v570_86_15 := addUnsupportedDriverABI(570, 86, 15, func() *driverABI {
 			abi := v565_57_01()
 			abi.controlCmd[nvgpu.NVB0CC_CTRL_CMD_RESERVE_CCU_PROF] = ctrlHandler(rmControlSimple, nvconf.CapProfiling)
 			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_INFOROM_SUPPORT] = ctrlHandler(rmControlSimple, compUtil)
@@ -1026,7 +1021,7 @@ func Init() {
 				return info
 			}
 			return abi
-		}
+		})
 
 		v570_124_06 := addDriverABI(570, 124, 06, "1818c90657d17e510de9fa032385ff7e99063e848e901cb4636ee71c8b339313", ChecksumNoDriver, v570_86_15)
 		v570_133_20 := addDriverABI(570, 133, 20, "1253d17b1528e8a24bf1f34a8ac6591c924b98ad7a32344bde253aa622ac1605", ChecksumNoDriver, v570_124_06)
@@ -1037,7 +1032,7 @@ func Init() {
 		_ = addDriverABI(570, 195, 03, "d47de81d9a513496a60adc9cfa72fe9e162c65f2722fb960c4f531bd7ac5dc1e", "a38ae007abe8f82bfdd25272c28bc8c950114464b7475e73610523f9fd67cd64", v570_172_08)
 
 		// 575.51.02 is an intermediate unqualified version from the main branch.
-		v575_51_02 := func() *driverABI {
+		v575_51_02 := addUnsupportedDriverABI(575, 51, 02, func() *driverABI {
 			abi := v570_133_20()
 			delete(abi.controlCmd, nvgpu.NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_INFOROM_SUPPORT)
 			delete(abi.controlCmd, nvgpu.NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_STATUS)
@@ -1055,7 +1050,7 @@ func Init() {
 				return info
 			}
 			return abi
-		}
+		})
 
 		v580_65_06 := addDriverABI(580, 65, 06, "04b10867af585e765cfbfdcf39ed5f4bd112375bebab0172eaa187c6aa5024ff", "e02acdc0d20d4a541aa5026bfddb1b9b4fc6bc64ae3b04ff9cb9c892700cf9c4", func() *driverABI {
 			abi := v575_51_02()
@@ -1089,7 +1084,7 @@ func Init() {
 		v580_159_03 := addDriverABI(580, 159, 03, "32c85d99b0f640c9501f61b39ddad208fd0288d015c4fbc5fd0435c07783fa77", "545445863f84183f4d4769bd35cc00dde269d97f7923d6dff2031b7b52a907d8", v580_126_20)
 		_ = addDriverABI(580, 159, 04, "c1e66761b088d17b3adf6cb6979de9af38be2684d102b001a176dcfafabdca1e", "8912f2623bc7c839765f36fcee3db4a3531834a2caff3aa5d49c1259b2372aeb", v580_159_03)
 
-		v590_44_01 := func() *driverABI {
+		v590_44_01 := addUnsupportedDriverABI(590, 44, 01, func() *driverABI {
 			abi := v580_105_08()
 			abi.uvmIoctl[nvgpu.UVM_UNREGISTER_CHANNEL] = uvmHandler(uvmIoctlSimple[nvgpu.UVM_UNREGISTER_CHANNEL_PARAMS_V590], compUtil)
 			abi.uvmIoctl[nvgpu.UVM_FREE] = uvmHandler(uvmIoctlSimple[nvgpu.UVM_FREE_PARAMS_V590], compUtil)
@@ -1106,7 +1101,7 @@ func Init() {
 				return info
 			}
 			return abi
-		}
+		})
 		_ = addDriverABI(590, 48, 01, "b9e2f80693781431cc87f4cd29109e133dcecb50a50d6b68d4b3bf2d696bd689", "14ecfb7faa56d4d18cd9fef891b3fa2db3628f12a3e59b59d3c6e6d1a0befd80", v590_44_01)
 	})
 }
@@ -1166,7 +1161,9 @@ func newDriverStruct(paramType reflect.Type, name string) DriverStruct {
 // Precondition: Init() must have been called.
 func ForEachSupportDriver(f func(version nvconf.DriverVersion, checksums Checksums)) {
 	for version, abi := range abis {
-		f(version, abi.checksums)
+		if abi.supported {
+			f(version, abi.checksums)
+		}
 	}
 }
 
@@ -1174,8 +1171,8 @@ func ForEachSupportDriver(f func(version nvconf.DriverVersion, checksums Checksu
 // Precondition: Init() must have been called.
 func LatestDriver() nvconf.DriverVersion {
 	var ret nvconf.DriverVersion
-	for version := range abis {
-		if version.IsGreaterThan(ret) {
+	for version, abi := range abis {
+		if abi.supported && version.IsGreaterThan(ret) {
 			ret = version
 		}
 	}
@@ -1186,8 +1183,10 @@ func LatestDriver() nvconf.DriverVersion {
 // Precondition: Init() must have been called.
 func SupportedDrivers() []nvconf.DriverVersion {
 	var ret []nvconf.DriverVersion
-	for version := range abis {
-		ret = append(ret, version)
+	for version, abi := range abis {
+		if abi.supported {
+			ret = append(ret, version)
+		}
 	}
 	sort.Slice(ret, func(i, j int) bool {
 		return !ret[i].IsGreaterThan(ret[j])
@@ -1199,10 +1198,10 @@ func SupportedDrivers() []nvconf.DriverVersion {
 // Precondition: Init() must have been called.
 func ExpectedDriverChecksum(version nvconf.DriverVersion) (Checksums, bool) {
 	abi, ok := abis[version]
-	if !ok {
+	if !ok || !abi.supported {
 		return Checksums{
-			checksumX86_64: ChecksumNoDriver,
-			checksumARM64:  ChecksumNoDriver,
+			X86_64: ChecksumNoDriver,
+			ARM64:  ChecksumNoDriver,
 		}, false
 	}
 	return abi.checksums, true
@@ -1211,11 +1210,11 @@ func ExpectedDriverChecksum(version nvconf.DriverVersion) (Checksums, bool) {
 // SupportedIoctlsNumbers returns the ioctl numbers that are supported by
 // nvproxy at a given version.
 func SupportedIoctlsNumbers(version nvconf.DriverVersion) (frontendIoctls map[uint32]struct{}, uvmIoctls map[uint32]struct{}, controlCmds map[uint32]struct{}, allocClasses map[uint32]struct{}, ok bool) {
-	abiCons, ok := abis[version]
+	abiEntry, ok := abis[version]
 	if !ok {
 		return nil, nil, nil, nil, false
 	}
-	abi := abiCons.cons()
+	abi := abiEntry.cons()
 	frontendIoctls = make(map[uint32]struct{})
 	for ioc := range abi.frontendIoctl {
 		frontendIoctls[ioc] = struct{}{}
@@ -1238,10 +1237,10 @@ func SupportedIoctlsNumbers(version nvconf.DriverVersion) (frontendIoctls map[ui
 // SupportedIoctls returns the DriverABIInfo struct for the given version,
 // which describes the ioctls supported in nvproxy for the given version.
 func SupportedIoctls(version nvconf.DriverVersion) (*DriverABIInfo, bool) {
-	abiCons, ok := abis[version]
+	abiEntry, ok := abis[version]
 	if !ok {
 		return nil, false
 	}
-	abi := abiCons.cons()
+	abi := abiEntry.cons()
 	return abi.getInfo(), true
 }

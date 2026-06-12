@@ -27,11 +27,11 @@ func (nvp *nvproxy) beforeSave() {
 // afterLoad is invoked by stateify.
 func (nvp *nvproxy) afterLoad(ctx goContext.Context) {
 	Init()
-	abiCons, ok := abis[nvp.version]
+	abiEntry, ok := abis[nvp.version]
 	if !ok {
 		panic(fmt.Sprintf("driver version %q not found in abis map", nvp.version))
 	}
-	nvp.abi = abiCons.cons()
+	nvp.abi = abiEntry.cons()
 	nvp.afterLoadImpl(ctx)
 }
 
