@@ -1560,7 +1560,7 @@ func (c *containerMounter) preRegisterRDMADevices(spec *specs.Spec) {
 		minor := uint32(devSpec.Minor)
 		devName := filepath.Base(devSpec.Path)
 		driverName := driverByMinor[minor]
-		dynMajor, err := rdmaproxy.Register(vfsObj, devName, minor, driverName)
+		dynMajor, err := rdmaproxy.Register(vfsObj, devName, minor, driverName, c.rdmaDevices.VerbsABIVersion)
 		if err != nil {
 			log.Warningf("rdma: pre-register %s: %v", devSpec.Path, err)
 			continue
