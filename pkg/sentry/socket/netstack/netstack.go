@@ -3638,9 +3638,17 @@ func interfaceIoctl(ctx context.Context, _ usermem.IO, arg int, ifr *linux.IFReq
 			if addr.Family != linux.AF_INET {
 				continue
 			}
+			// Populate ifr.ifr_addr (type sockaddr_in).
+			hostarch.ByteOrder.PutUint16(ifr.Data[0:], uint16(linux.AF_INET))
+			hostarch.ByteOrder.PutUint16(ifr.Data[2:], 0)
 			copy(ifr.Data[4:8], addr.Addr)
-			break
+			return nil
 		}
+		// Linux returns EADDRNOTAVAIL when the device has no IPv4
+		// address (Linux: net/ipv4/devinet.c:devinet_ioctl()), rather
+		// than succeeding without writing ifr, which would let the
+		// caller read back stale ifreq union data.
+		return syserr.ErrAddressNotAvailable
 
 	case linux.SIOCGIFMETRIC:
 		// Gets the metric of the device. As per netdevice(7), this
@@ -3681,8 +3689,11 @@ func interfaceIoctl(ctx context.Context, _ usermem.IO, arg int, ifr *linux.IFReq
 			// Netmask is expected to be returned as a big endian
 			// value.
 			binary.BigEndian.PutUint32(ifr.Data[4:8], mask)
-			break
+			return nil
 		}
+		// Linux returns EADDRNOTAVAIL when the device has no IPv4
+		// address; see the SIOCGIFADDR case above.
+		return syserr.ErrAddressNotAvailable
 
 	case linux.SIOCETHTOOL:
 		// Stubbed out for now, Ideally we should implement the required
