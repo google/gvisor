@@ -177,6 +177,12 @@ func (c DriverCaps) NVIDIAFlags() []string {
 	for i := 0; i < numValidCaps; i++ {
 		cap := DriverCaps(1 << i)
 		if c&cap != 0 {
+			// Sentry-only capabilities (e.g. profiling) have no
+			// nvidia-container-cli flag; they gate ioctl filtering in
+			// nvproxy but require nothing from the host driver setup.
+			if cap == CapProfiling || cap == CapFabricIMEXManagement {
+				continue
+			}
 			caps = append(caps, cap.individualNVIDIAFlag())
 		}
 	}
