@@ -2719,6 +2719,19 @@ TEST(ProcSysKernelHostname, MatchesUname) {
   EXPECT_EQ(procfs_hostname, hostname);
 }
 
+TEST(ProcSysKernelRandomUuid, Exists) {
+  EXPECT_THAT(open("/proc/sys/kernel/random/uuid", O_RDONLY),
+              SyscallSucceeds());
+}
+
+TEST(ProcSysKernelRandomUuid, DifferentEveryTime) {
+  auto uuid1 =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/kernel/random/uuid"));
+  auto uuid2 =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/kernel/random/uuid"));
+  EXPECT_NE(uuid1, uuid2);
+}
+
 TEST(ProcSysVmMaxmapCount, HasNumericValue) {
   const std::string val_str =
       ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/vm/max_map_count"));
