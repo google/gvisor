@@ -330,43 +330,8 @@ func NewFromFlags(flagSet *flag.FlagSet) (*Config, error) {
 		}
 	}
 
-	if err := conf.validate(); err != nil {
+	if err := conf.Validate(); err != nil {
 		return nil, err
-	}
-	return conf, nil
-}
-
-// NewFromBundle makes a new config from a Bundle.
-func NewFromBundle(bundle Bundle) (*Config, error) {
-	if err := bundle.Validate(); err != nil {
-		return nil, err
-	}
-	flagSet := flag.NewFlagSet("tmp", flag.ContinueOnError)
-	RegisterFlags(flagSet)
-	conf := &Config{explicitlySet: map[string]struct{}{}}
-
-	obj := reflect.ValueOf(conf).Elem()
-	st := obj.Type()
-	for i := 0; i < st.NumField(); i++ {
-		f := st.Field(i)
-		name, ok := f.Tag.Lookup("flag")
-		if !ok {
-			continue
-		}
-		fl := flagSet.Lookup(name)
-		if fl == nil {
-			return nil, fmt.Errorf("flag %q not found", name)
-		}
-		val, ok := bundle[name]
-		if !ok {
-			continue
-		}
-		if err := flagSet.Set(name, val); err != nil {
-			return nil, fmt.Errorf("error setting flag %s=%q: %w", name, val, err)
-		}
-		conf.Override(flagSet, name, val, true)
-
-		conf.explicitlySet[name] = struct{}{}
 	}
 	return conf, nil
 }
@@ -420,7 +385,11 @@ func (c *Config) keyVals(flagSet *flag.FlagSet, onlyIfSet bool) map[string]strin
 	return keyVals
 }
 
-// Override writes a new value to a flag.
+// Override writes a new value to a flag. It does not validate the resulting
+// Config, so flags that are invalid in isolation but valid together (e.g.
+// qdisc=tbf and qdisc-tbf-rate) can be overridden in any order. Callers must
+// call Validate once they are done overriding to ensure the Config is left in
+// a consistent state.
 func (c *Config) Override(flagSet *flag.FlagSet, name string, value string, force bool) error {
 	obj := reflect.ValueOf(c).Elem()
 	st := obj.Type()
@@ -449,9 +418,7 @@ func (c *Config) Override(flagSet *flag.FlagSet, name string, value string, forc
 		}
 		x := reflect.ValueOf(flag.Get(fl.Value))
 		obj.Field(i).Set(x)
-
-		// Validates the config again to ensure it's left in a consistent state.
-		return c.validate()
+		return nil
 	}
 	return fmt.Errorf("flag %q not found. Cannot set it to %q", name, value)
 }
@@ -541,7 +508,7 @@ func (c *Config) ApplyBundles(flagSet *flag.FlagSet, bundleNames ...BundleName) 
 		}
 	}
 
-	return c.validate()
+	return c.Validate()
 }
 
 func getVal(field reflect.Value) string {

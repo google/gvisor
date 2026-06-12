@@ -499,8 +499,7 @@ func TestOverrideAllowlist(t *testing.T) {
 			error: "invalid qdisc",
 		},
 		// Order matters: a successful override mutates the Config ceiling for
-		// later subtests, and qdisc=tbf requires both rate and burst to have
-		// been set first (validate() rejects qdisc=tbf with either at zero).
+		// later subtests.
 		{
 			flag:  "qdisc-tbf-rate",
 			value: fmt.Sprint(defaultQDiscTBFRate),
@@ -530,11 +529,6 @@ func TestOverrideAllowlist(t *testing.T) {
 		},
 		{
 			flag:  "qdisc-tbf-burst",
-			value: "4294967296", // > max uint32
-			error: "qdisc-tbf-burst must be <=",
-		},
-		{
-			flag:  "qdisc-tbf-burst",
 			value: "65536",
 		},
 		{
@@ -553,9 +547,8 @@ func TestOverrideAllowlist(t *testing.T) {
 		},
 		{
 			flag:  "qdisc-tbf-burst",
-			value: "4294967296",
-			force: true, // validate still rejects values that would wrap
-			error: "qdisc-tbf-burst must be <=",
+			value: "4294967296", // > max uint32; rejected by Validate below
+			force: true,
 		},
 	} {
 		t.Run(tc.flag, func(t *testing.T) {
@@ -568,6 +561,12 @@ func TestOverrideAllowlist(t *testing.T) {
 				t.Errorf("Override(%q, %q) wrong error: %v", tc.flag, tc.value, err)
 			}
 		})
+	}
+
+	// Override does not validate, so even force=true cannot bypass Validate:
+	// the out-of-range burst applied above must fail validation.
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "qdisc-tbf-burst must be <=") {
+		t.Errorf("Validate() wrong error: %v", err)
 	}
 }
 
@@ -582,7 +581,6 @@ func TestOverrideAllowlistQDiscTBF(t *testing.T) {
 	if got, want := c.QDisc, QDiscFIFO; got != want {
 		t.Fatalf("default QDisc = %v, want %v", got, want)
 	}
-	// validate() requires rate and burst to be set before qdisc=tbf takes.
 	if err := c.Override(testFlags, "qdisc-tbf-rate", "12500000", false); err != nil {
 		t.Fatalf("Override(qdisc-tbf-rate, 12500000) failed: %v", err)
 	}
@@ -601,6 +599,56 @@ func TestOverrideAllowlistQDiscTBF(t *testing.T) {
 	}
 	if got, want := c.TBFBurst, uint64(524288); got != want {
 		t.Errorf("TBFBurst = %d, want %d", got, want)
+	}
+}
+
+func TestOverrideDeferredValidation(t *testing.T) {
+	// qdisc=tbf is rejected by Validate while rate or burst is still zero.
+	// Override does not validate, so interdependent flags can be applied in
+	// any order (e.g. from randomly-iterated annotation maps), as long as the
+	// final state passes Validate.
+	testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
+	RegisterFlags(testFlags)
+	c, err := NewFromFlags(testFlags)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Worst-case order: qdisc=tbf is applied while rate and burst are zero.
+	for _, o := range []struct{ name, value string }{
+		{"qdisc", "tbf"},
+		{"qdisc-tbf-rate", "12500000"},
+		{"qdisc-tbf-burst", "524288"},
+	} {
+		if err := c.Override(testFlags, o.name, o.value, false); err != nil {
+			t.Fatalf("Override(%s, %s) failed: %v", o.name, o.value, err)
+		}
+	}
+	if err := c.Validate(); err != nil {
+		t.Errorf("Validate() failed: %v", err)
+	}
+	if got, want := c.QDisc, QDiscTBF; got != want {
+		t.Errorf("QDisc = %v, want %v", got, want)
+	}
+	if got, want := c.TBFRate, uint64(12500000); got != want {
+		t.Errorf("TBFRate = %d, want %d", got, want)
+	}
+	if got, want := c.TBFBurst, uint64(524288); got != want {
+		t.Errorf("TBFBurst = %d, want %d", got, want)
+	}
+
+	// Validation is deferred, not skipped: an inconsistent final state must
+	// still fail.
+	testFlags = flag.NewFlagSet("test", flag.ContinueOnError)
+	RegisterFlags(testFlags)
+	c, err = NewFromFlags(testFlags)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Override(testFlags, "qdisc", "tbf", false); err != nil {
+		t.Fatalf("Override(qdisc, tbf) failed: %v", err)
+	}
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "qdisc=tbf requires setting qdisc-tbf-rate") {
+		t.Errorf("Validate() wrong error: %v", err)
 	}
 }
 
