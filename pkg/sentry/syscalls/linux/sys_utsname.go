@@ -63,12 +63,12 @@ func Setdomainname(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (u
 		return 0, nil, linuxerr.EINVAL
 	}
 
-	name, err := t.CopyInString(nameAddr, int(size))
-	if err != nil {
+	name := make([]byte, size)
+	if _, err := t.CopyInBytes(nameAddr, name); err != nil {
 		return 0, nil, err
 	}
 
-	utsns.SetDomainName(name)
+	utsns.SetDomainName(string(name))
 	return 0, nil, nil
 }
 
