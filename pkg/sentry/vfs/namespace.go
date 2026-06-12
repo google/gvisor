@@ -35,6 +35,10 @@ type MountNamespace struct {
 	// Owner is the usernamespace that owns this mount namespace.
 	Owner *auth.UserNamespace
 
+	// vfs is the vfs this namespace belongs to.
+	// vfs is immutable.
+	vfs *VirtualFilesystem
+
 	// root is the MountNamespace's root mount.
 	root *Mount
 
@@ -57,6 +61,9 @@ type MountNamespace struct {
 
 	// pending is the total number of pending mounts in this mount namespace.
 	pending uint32
+
+	// anon indicates whether the mount namespace is anonymous.
+	anon bool
 }
 
 // Namespace is the namespace interface.
@@ -87,7 +94,7 @@ func (vfs *VirtualFilesystem) NewMountNamespace(
 	if err != nil {
 		return nil, err
 	}
-	return vfs.NewMountNamespaceFrom(ctx, creds, fs, root, opts, nsfs), nil
+	return vfs.NewMountNamespaceFrom(ctx, creds, fs, root, opts, nsfs, false /* anon */), nil
 }
 
 type namespaceDefaultRefs struct {
@@ -113,10 +120,13 @@ func (vfs *VirtualFilesystem) NewMountNamespaceFrom(
 	root *Dentry,
 	opts *MountOptions,
 	nsfs NamespaceInodeGetter,
+	anon bool,
 ) *MountNamespace {
 	mntns := &MountNamespace{
+		vfs:         vfs,
 		Owner:       creds.UserNamespace,
 		mountpoints: make(map[*Dentry]uint32),
+		anon:        anon,
 	}
 	if nsfs == nil {
 		refs := &namespaceDefaultRefs{destroy: mntns.Destroy}
@@ -166,6 +176,7 @@ func (vfs *VirtualFilesystem) CloneMountNamespace(
 	nsfs NamespaceInodeGetter,
 ) (*MountNamespace, error) {
 	newns := &MountNamespace{
+		vfs:         vfs,
 		Owner:       uns,
 		mountpoints: make(map[*Dentry]uint32),
 	}
@@ -197,11 +208,13 @@ func (vfs *VirtualFilesystem) CloneMountNamespace(
 
 // Destroy implements nsfs.Namespace.Destroy.
 func (mntns *MountNamespace) Destroy(ctx context.Context) {
-	vfs := mntns.root.fs.VirtualFilesystem()
+	vfs := mntns.vfs
 	vfs.lockMounts()
-	vfs.umountTreeLocked(mntns.root, &umountRecursiveOptions{
-		disconnectHierarchy: true,
-	})
+	if mntns.root != nil {
+		vfs.umountTreeLocked(mntns.root, &umountRecursiveOptions{
+			disconnectHierarchy: true,
+		})
+	}
 	vfs.unlockMounts(ctx)
 }
 
@@ -232,7 +245,12 @@ func (mntns *MountNamespace) TryIncRef() bool {
 
 // Root returns mntns' root. If the root is over-mounted, it returns the top
 // mount.
+// May return an empty virtual dentry if mntns is an anonymous mount namespace and its root
+// has been moved to another mountpoint.
 func (mntns *MountNamespace) Root(ctx context.Context) VirtualDentry {
+	if mntns.root == nil {
+		return VirtualDentry{}
+	}
 	vfs := mntns.root.fs.VirtualFilesystem()
 	vd := VirtualDentry{
 		mount:  mntns.root,
