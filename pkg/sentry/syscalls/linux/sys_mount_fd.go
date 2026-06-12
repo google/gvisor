@@ -284,10 +284,103 @@ func MoveMount(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintp
 
 	// Re-attach the mount to the destination mountpoint
 	vfsObj := t.Kernel().VFS()
-	err = vfsObj.MoveMountAt(t, creds, &from.pop, &to.pop)
+	err = vfsObj.MoveMountAt(t, creds, t.MountNamespace(), &from.pop, &to.pop)
 	if err != nil {
 		return 0, nil, err
 	}
-
 	return 0, nil, nil
+}
+
+// OpenTree implements Linux syscall open_tree(2).
+func OpenTree(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	dirfd := args[0].Int()
+	fromAddr := args[1].Pointer()
+	flags := args[2].Uint()
+
+	// TODO(b/270247637): gVisor does not yet support automount, so
+	// AT_NO_AUTOMOUNT flag is a no-op.
+	flags &= ^(uint32(linux.AT_NO_AUTOMOUNT))
+
+	if flags&^(linux.AT_EMPTY_PATH|linux.AT_SYMLINK_NOFOLLOW|linux.OPEN_TREE_CLOEXEC|linux.OPEN_TREE_CLONE|linux.AT_RECURSIVE) != 0 {
+		return 0, nil, linuxerr.EINVAL
+	}
+
+	recursive := flags&linux.AT_RECURSIVE == linux.AT_RECURSIVE
+	clone := flags&linux.OPEN_TREE_CLONE == linux.OPEN_TREE_CLONE
+	noFollow := flags&linux.AT_SYMLINK_NOFOLLOW == linux.AT_SYMLINK_NOFOLLOW
+	emptyPath := flags&linux.AT_EMPTY_PATH == linux.AT_EMPTY_PATH
+	closeOnExec := flags&linux.OPEN_TREE_CLOEXEC == linux.OPEN_TREE_CLOEXEC
+
+	// AT_RECURSIVE requires OPEN_TREE_CLONE
+	if recursive && !clone {
+		return 0, nil, linuxerr.EINVAL
+	}
+
+	// OPEN_TREE_CLONE: Must have CAP_SYS_ADMIN in the current mount namespace's
+	// associated user namespace.
+	creds := t.Credentials()
+	if clone && !creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, t.MountNamespace().Owner) {
+		return 0, nil, linuxerr.EPERM
+	}
+
+	// Lookup the specified path
+	fromPath, err := copyInPath(t, fromAddr)
+	if err != nil {
+		return 0, nil, err
+	}
+	from, err := getTaskPathOperation(t, dirfd, fromPath, shouldAllowEmptyPath(emptyPath), shouldFollowFinalSymlink(!noFollow))
+	if err != nil {
+		return 0, nil, err
+	}
+	defer from.Release(t)
+
+	vfsObj := t.Kernel().VFS()
+
+	if clone {
+		// OPEN_TREE_CLONE: clone the mount tree into an anonymous mount ns
+
+		// Fetch the path's mount vd
+		fromVd, err := vfsObj.GetDentryAt(t, t.Credentials(), &from.pop, &vfs.GetDentryOptions{CheckSearchable: true})
+		if err != nil {
+			return 0, nil, err
+		}
+		defer fromVd.DecRef(t)
+
+		// Clone the mount (or the mount tree, depending on AT_RECURSIVE) into a new anonymous NS
+		anonNS, err := vfsObj.CloneTreeToAnonNS(t, t.MountNamespace(), fromVd, t.Kernel(), recursive)
+		if err != nil {
+			return 0, nil, err
+		}
+
+		// Construct a mountfd object
+		mountFile, err := mountfd.New(t, anonNS, linux.O_RDONLY)
+		if err != nil {
+			return 0, nil, err
+		}
+		defer mountFile.DecRef(t)
+		mountFd, err := t.NewFDFrom(0, mountFile, kernel.FDFlags{
+			CloseOnExec: closeOnExec,
+		})
+		if err != nil {
+			return 0, nil, err
+		}
+		return uintptr(mountFd), nil, nil
+	}
+
+	// No OPEN_TREE_CLONE: just return a normal O_PATH fd.
+	openatFlags := uint32(linux.O_PATH)
+	if noFollow {
+		openatFlags |= linux.O_NOFOLLOW
+	}
+	file, err := vfsObj.OpenAt(t, t.Credentials(), &from.pop, &vfs.OpenOptions{Flags: openatFlags})
+	if err != nil {
+		return 0, nil, err
+	}
+	defer file.DecRef(t)
+
+	fd, err := t.NewFDFrom(0, file, kernel.FDFlags{
+		CloseOnExec: closeOnExec,
+	})
+
+	return uintptr(fd), nil, err
 }

@@ -148,6 +148,14 @@ const (
 	MOUNT_ATTR_NODIRATIME  = 0x00000080
 	MOUNT_ATTR_IDMAP       = 0x00100000
 	MOUNT_ATTR_NOSYMFOLLOW = 0x00200000
+	AT_RECURSIVE           = 0x8000
+)
+
+// Constants for open_tree(2).
+const (
+	OPEN_TREE_CLONE     = (1 << 0)
+	OPEN_TREE_NAMESPACE = (1 << 1)
+	OPEN_TREE_CLOEXEC   = O_CLOEXEC
 )
 
 // Constants for unlinkat(2).

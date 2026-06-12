@@ -15,6 +15,7 @@
 package vfs
 
 import (
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/refs"
@@ -29,6 +30,9 @@ import (
 //
 // +stateify savable
 type MountNamespace struct {
+	// ID is the immutable mount namespace ID.
+	ID uint64
+
 	// Refs is the reference count for this mount namespace.
 	Refs refs.TryRefCounter
 
@@ -64,6 +68,14 @@ type MountNamespace struct {
 
 	// anon indicates whether the mount namespace is anonymous.
 	anon bool
+
+	// For anonymous mount namespaces, originatorID is the ID of the mount
+	// namespace where the tree originated from. Used for permission checks.
+	// 0 is a special value that indicates "no permission checks required."
+	// All non-anonymous mount namespaces will have originatorID == 0. Some
+	// anonymous mount namespaces may have originatorID == 0 (such as "fresh"
+	// trees created using fsmount(2)).
+	originatorID uint64
 }
 
 // Namespace is the namespace interface.
@@ -71,6 +83,19 @@ type Namespace interface {
 	Type() string
 	Destroy(ctx context.Context)
 	UserNamespace() *auth.UserNamespace
+}
+
+// newMountNamespace initializes a new mount namespace.
+// This method is not intended to be used directly; instead, use one of the
+// NewMountNamespace*() methods, which will set up the ns root as well.
+func (vfs *VirtualFilesystem) newMountNamespace(owner *auth.UserNamespace, anon bool) *MountNamespace {
+	return &MountNamespace{
+		ID:          vfs.lastMountNamespaceID.Add(1),
+		vfs:         vfs,
+		Owner:       owner,
+		mountpoints: make(map[*Dentry]uint32),
+		anon:        anon,
+	}
 }
 
 // NewMountNamespace returns a new mount namespace with a root filesystem
@@ -122,12 +147,7 @@ func (vfs *VirtualFilesystem) NewMountNamespaceFrom(
 	nsfs NamespaceInodeGetter,
 	anon bool,
 ) *MountNamespace {
-	mntns := &MountNamespace{
-		vfs:         vfs,
-		Owner:       creds.UserNamespace,
-		mountpoints: make(map[*Dentry]uint32),
-		anon:        anon,
-	}
+	mntns := vfs.newMountNamespace(creds.UserNamespace, anon)
 	if nsfs == nil {
 		refs := &namespaceDefaultRefs{destroy: mntns.Destroy}
 		refs.InitRefs()
@@ -175,12 +195,7 @@ func (vfs *VirtualFilesystem) CloneMountNamespace(
 	cwd *VirtualDentry,
 	nsfs NamespaceInodeGetter,
 ) (*MountNamespace, error) {
-	newns := &MountNamespace{
-		vfs:         vfs,
-		Owner:       uns,
-		mountpoints: make(map[*Dentry]uint32),
-	}
-
+	newns := vfs.newMountNamespace(uns, false)
 	newns.Refs = nsfs.GetNamespaceInode(ctx, newns)
 	vfs.lockMounts()
 	defer vfs.unlockMounts(ctx)
@@ -204,6 +219,72 @@ func (vfs *VirtualFilesystem) CloneMountNamespace(
 		vfs.lockMountTree(newRoot)
 	}
 	return newns, nil
+}
+
+// CloneTreeToAnonNS implements open_tree(2)'s OPEN_TREE_CLONE. It makes a copy of the existing
+// mount tree at fromVd, placing it at the root of a new anonymous mount namespace.
+func (vfs *VirtualFilesystem) CloneTreeToAnonNS(
+	ctx context.Context,
+	taskMountNs *MountNamespace,
+	fromVd VirtualDentry,
+	nsfs NamespaceInodeGetter,
+	recursive bool,
+) (*MountNamespace, error) {
+	newNs := vfs.newMountNamespace(taskMountNs.Owner, true)
+	newNs.Refs = nsfs.GetNamespaceInode(ctx, newNs)
+	newNsCleanup := cleanup.Make(func() {
+		newNs.DecRef(ctx)
+	})
+	defer newNsCleanup.Clean()
+
+	fromMnt := fromVd.mount
+
+	vfs.lockMounts()
+	defer vfs.unlockMounts(ctx)
+
+	// Keep track of the originator of this anon ns for later permission checking.
+	if fromMnt.ns != nil {
+		if fromMnt.ns.anon {
+			newNs.originatorID = fromMnt.ns.originatorID
+		} else {
+			newNs.originatorID = fromMnt.ns.ID
+		}
+	}
+
+	// Sanity checks
+
+	// TODO(b/305893463): When MS_UNBINDABLE is added,
+	// MS_UNBINDABLE mounts should be rejected here.
+
+	fsName := fromMnt.Filesystem().FilesystemType().Name()
+	// fromMnt must be either:
+	// - In the same mount ns as the current task
+	// - In an appropriate anonymous mount namespace
+	// nsfs mounts are exempted from these requirements.
+	// TODO(b/513023394): when pidfd-fs is implemented, it will also be exempted.
+	if fromMnt.ns != taskMountNs && (fromMnt.ns == nil || !fromMnt.ns.anonCanBeOperatedOn(taskMountNs)) && fsName != nsfsName {
+		return nil, linuxerr.EINVAL
+	}
+
+	if !recursive && vfs.mountHasLockedChildren(fromMnt, fromVd) {
+		return nil, linuxerr.EINVAL
+	}
+
+	var newRoot *Mount
+	var err error
+	if recursive {
+		newRoot, err = vfs.cloneMountTree(ctx, fromMnt, fromVd.dentry, 0, nil)
+	} else {
+		newRoot, err = vfs.cloneMount(fromMnt, fromVd.dentry, nil, 0)
+	}
+	if err != nil {
+		return nil, err
+	}
+	newNs.root = newRoot
+	newNs.root.ns = newNs
+	vfs.commitChildren(ctx, newRoot)
+	newNsCleanup.Release()
+	return newNs, nil
 }
 
 // Destroy implements nsfs.Namespace.Destroy.
@@ -241,6 +322,11 @@ func (mntns *MountNamespace) DecRef(ctx context.Context) {
 // TryIncRef attempts to increment mntns' reference count.
 func (mntns *MountNamespace) TryIncRef() bool {
 	return mntns.Refs.TryIncRef()
+}
+
+// Anon returns whether the namespace is anonymous or not.
+func (mntns *MountNamespace) Anon() bool {
+	return mntns.anon
 }
 
 // Root returns mntns' root. If the root is over-mounted, it returns the top
@@ -284,4 +370,16 @@ func (mntns *MountNamespace) checkMountCount(ctx context.Context, mnt *Mount) er
 	}
 	mntns.pending += mnts
 	return nil
+}
+
+// anonCanBeOperatedOn checks whether the mount namespace is both anonymous
+// and accessible by the mount namespace `by`.
+//
+// It is analogous to fs/namespace.c:check_anonymous_mnt() in Linux.
+func (mntns *MountNamespace) anonCanBeOperatedOn(by *MountNamespace) bool {
+	if !mntns.anon {
+		return false
+	}
+
+	return mntns.originatorID == 0 || mntns.originatorID == by.ID
 }

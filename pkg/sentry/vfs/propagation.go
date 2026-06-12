@@ -269,6 +269,10 @@ func (vfs *VirtualFilesystem) propagateMount(ctx context.Context, dstMnt *Mount,
 	if dstMnt.neverConnected() || dstMnt.umounted {
 		return nil
 	}
+	// Skip anonymous ns mounts.
+	if dstMnt.ns != nil && dstMnt.ns.anon {
+		return nil
+	}
 	mp := VirtualDentry{mount: dstMnt, dentry: dstPoint}
 	if !mp.mount.fs.Impl().IsDescendant(VirtualDentry{dstMnt, dstMnt.root}, mp) {
 		return nil
