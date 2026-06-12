@@ -52,6 +52,7 @@ func (fs *filesystem) newSysDir(ctx context.Context, root *auth.Credentials, k *
 		"kernel": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
 			"cap_last_cap":       fs.newInode(ctx, root, 0444, newStaticFile(fmt.Sprintf("%d\n", linux.CAP_LAST_CAP))),
 			"hostname":           fs.newInode(ctx, root, 0444, &hostnameData{}),
+			"domainname":         fs.newInode(ctx, root, 0444, &domainnameData{}),
 			"overflowgid":        fs.newInode(ctx, root, 0444, newStaticFile(fmt.Sprintf("%d\n", auth.OverflowGID))),
 			"overflowuid":        fs.newInode(ctx, root, 0444, newStaticFile(fmt.Sprintf("%d\n", auth.OverflowUID))),
 			"pid_max":            fs.newInode(ctx, root, 0644, newStaticFile(fmt.Sprintf("%d\n", kernel.TasksLimit))),
@@ -195,6 +196,24 @@ func (*hostnameData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	utsns := kernel.UTSNamespaceFromContext(ctx)
 	defer utsns.DecRef(ctx)
 	buf.WriteString(utsns.HostName())
+	buf.WriteString("\n")
+	return nil
+}
+
+// domainnameData implements vfs.DynamicBytesSource for /proc/sys/kernel/domainname.
+//
+// +stateify savable
+type domainnameData struct {
+	kernfs.DynamicBytesFile
+}
+
+var _ dynamicInode = (*domainnameData)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (*domainnameData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	utsns := kernel.UTSNamespaceFromContext(ctx)
+	defer utsns.DecRef(ctx)
+	buf.WriteString(utsns.DomainName())
 	buf.WriteString("\n")
 	return nil
 }
