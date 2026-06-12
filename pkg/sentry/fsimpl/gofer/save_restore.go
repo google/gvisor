@@ -289,6 +289,15 @@ func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRest
 		return err
 	}
 
+	// Restore deleted files which are still accessible via open application FDs.
+	filesToDelete := make(map[*dentry]string)
+	dirsToDelete := make(map[*dentry]string)
+	for d := range fs.savedDeletedOpenDentries {
+		if err := d.restoreDeleted(ctx, &opts, filesToDelete, dirsToDelete); err != nil {
+			return err
+		}
+	}
+
 	// Re-open handles for specialFileFDs. Unlike the initial open
 	// (dentry.openSpecialFile()), pipes are always opened without blocking;
 	// non-readable pipe FDs are opened last to ensure that they don't get
@@ -314,13 +323,12 @@ func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRest
 		}
 	}
 
-	// Restore deleted files which are still accessible via open application FDs.
-	dirsToDelete := make(map[*dentry]string)
-	for d := range fs.savedDeletedOpenDentries {
-		if err := d.restoreDeleted(ctx, &opts, dirsToDelete); err != nil {
-			return err
+	for leafD, name := range filesToDelete {
+		if err := leafD.parent.Load().inode.unlink(ctx, name, 0 /* flags */); err != nil {
+			return fmt.Errorf("failed to clean up recreated deleted file %q: %v", genericDebugPathname(fs, leafD), err)
 		}
 	}
+
 	for len(dirsToDelete) > 0 {
 		// In case of nested deleted directories, only leaf directories can be
 		// deleted. Then repeat as parent directories become leaves.
@@ -375,17 +383,17 @@ func (d *dentry) restoreDescendantsRecursive(ctx context.Context, opts *vfs.Comp
 // Preconditions:
 //   - d.isRegularFile() || d.isDir()
 //   - d.savedDeletedData != nil iff d.isRegularFile()
-func (d *dentry) restoreDeleted(ctx context.Context, opts *vfs.CompleteRestoreOptions, dirsToDelete map[*dentry]string) error {
+func (d *dentry) restoreDeleted(ctx context.Context, opts *vfs.CompleteRestoreOptions, filesToDelete, dirsToDelete map[*dentry]string) error {
 	parent := d.parent.Load()
 	if _, ok := d.inode.fs.savedDeletedOpenDentries[parent]; ok {
 		// Recursively restore the parent first if the parent is also deleted.
-		if err := parent.restoreDeleted(ctx, opts, dirsToDelete); err != nil {
+		if err := parent.restoreDeleted(ctx, opts, filesToDelete, dirsToDelete); err != nil {
 			return err
 		}
 	}
 	switch {
 	case d.inode.isRegularFile():
-		return d.restoreDeletedRegularFile(ctx, opts)
+		return d.restoreDeletedRegularFile(ctx, opts, filesToDelete)
 	case d.isDir():
 		return d.restoreDeletedDirectory(ctx, opts, dirsToDelete)
 	default:
@@ -430,7 +438,7 @@ func (d *dentry) restoreDeletedDirectory(ctx context.Context, opts *vfs.Complete
 	return nil
 }
 
-func (d *dentry) restoreDeletedRegularFile(ctx context.Context, opts *vfs.CompleteRestoreOptions) error {
+func (d *dentry) restoreDeletedRegularFile(ctx context.Context, opts *vfs.CompleteRestoreOptions, filesToDelete map[*dentry]string) error {
 	// Recreate the file on the host filesystem (this is temporary).
 	parent := d.parent.Load()
 	_, h, err := parent.openCreate(ctx, d.name, linux.O_WRONLY, linux.FileMode(d.inode.mode.Load()), auth.KUID(d.inode.uid.Load()), auth.KGID(d.inode.gid.Load()), false /* createDentry */)
@@ -471,11 +479,9 @@ func (d *dentry) restoreDeletedRegularFile(ctx context.Context, opts *vfs.Comple
 	if err := d.restoreFile(ctx, &recreateOpts); err != nil {
 		return fmt.Errorf("failed to restore deleted regular file: %w", err)
 	}
-	// Finally, unlink the recreated file.
+	// We will delete the file later.
 	unlinkCU.Release()
-	if err := parent.inode.unlink(ctx, d.name, 0 /* flags */); err != nil {
-		return fmt.Errorf("failed to clean up recreated deleted file %q: %v", genericDebugPathname(d.inode.fs, d), err)
-	}
+	filesToDelete[d] = d.name
 	delete(d.inode.fs.savedDeletedOpenDentries, d)
 	return nil
 }
