@@ -198,8 +198,10 @@ const (
 
 // UVERBS_METHOD_REG_DMABUF_MR attr IDs (enum uverbs_attrs_reg_dmabuf_mr_cmd_attr_ids).
 const (
-	uverbsAttrRegDMABufMRHandle = 0 // Output: MR handle
-	uverbsAttrRegDMABufMRFD     = 5 // Input: DMA-BUF file descriptor (inline)
+	uverbsAttrRegDMABufMRHandle   = 0 // Output: MR handle (IDR)
+	uverbsAttrRegDMABufMRFD       = 5 // Input: DMA-BUF file descriptor (inline)
+	uverbsAttrRegDMABufMRRespLKey = 7 // Output: lkey (PTR_OUT, user pointer)
+	uverbsAttrRegDMABufMRRespRKey = 8 // Output: rkey (PTR_OUT, user pointer)
 )
 
 // RDMA_VERBS_IOCTL = _IOWR(0x1b, 1, struct ib_uverbs_ioctl_hdr)
@@ -304,12 +306,28 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 	var attrArena [4096]byte
 	arenaOff := 0
 
+	// REG_DMABUF_MR (modern path) carries its input attrs (OFFSET, LENGTH,
+	// IOVA, FD, ACCESS_FLAGS) inline: the kernel treats PTR_IN attrs of
+	// len <= 8 as immediate values and never dereferences them. The
+	// pointer-probe below must not touch them: an inline value that
+	// happens to alias a mapped app address (e.g. a small LENGTH like
+	// 0x4b0000 falling inside the heap) would be silently replaced with a
+	// sentry pointer, corrupting the call so the host's ibv_reg_dmabuf_mr
+	// fails with EINVAL. Only the response attrs (RESP_LKEY/RESP_RKEY) are
+	// real pointers here: PTR_OUT attrs are always user pointers
+	// regardless of length (the kernel copy_to_user()s through them).
+	isRegDMABufMR := objectID == uverbsObjectMR && methodID == uverbsMethodRegDMABufMR
+
 	for i := 0; i < int(numAttrs); i++ {
 		off := ibUverbsIoctlHdrSize + i*ibUverbsAttrSize
+		attrID := binary.LittleEndian.Uint16(buf[off : off+2])
 		attrLen := binary.LittleEndian.Uint16(buf[off+2 : off+4])
 		attrData := binary.LittleEndian.Uint64(buf[off+8 : off+16])
 
 		if attrLen == 0 {
+			continue
+		}
+		if isRegDMABufMR && attrID != uverbsAttrRegDMABufMRRespLKey && attrID != uverbsAttrRegDMABufMRRespRKey {
 			continue
 		}
 
