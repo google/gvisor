@@ -1107,11 +1107,14 @@ func ConnectWithCredsHandler(c *Connection, comm Communicator, payloadLen uint32
 }
 
 // BindAtHandler handles the BindAt RPC.
-func BindAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
-	var req BindAtReq
-	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
-		return 0, unix.EIO
-	}
+    func BindAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
+        if c.opts.Readonly {
+            return 0, unix.EROFS
+        }
+        var req BindAtReq
+        if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
+            return 0, unix.EIO
+        }
 
 	name := string(req.Name)
 	if err := checkSafeName(name); err != nil {
