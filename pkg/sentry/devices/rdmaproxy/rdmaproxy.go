@@ -38,7 +38,6 @@ package rdmaproxy
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -66,39 +65,12 @@ import (
 // upstream Linux for over a decade.
 const expectedUverbsABIVersion = 6
 
-// uverbsClassDir is the sysfs class directory for the uverbs subsystem.
-// The class-wide abi_version lives at uverbsClassDir/abi_version; per-device
-// driver ABI versions live at uverbsClassDir/uverbsN/abi_version.
+// uverbsClassDir is the sysfs class directory for the uverbs subsystem,
+// where the host kernel publishes the class-wide abi_version. The sentry
+// cannot read it directly (it runs chrooted and seccomp-confined), so the
+// value is collected host-side by runsc create (see
+// sys.CollectRDMADeviceData) and passed to Register.
 const uverbsClassDir = "/sys/class/infiniband_verbs"
-
-// readUverbsClassABIVersion returns the kernel's IB_USER_VERBS_ABI_VERSION
-// as advertised in sysfs, or (0, err) if the file is missing or unreadable.
-func readUverbsClassABIVersion() (int, error) {
-	data, err := os.ReadFile(filepath.Join(uverbsClassDir, "abi_version"))
-	if err != nil {
-		return 0, fmt.Errorf("ReadFile: %w", err)
-	}
-	v, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil {
-		return 0, fmt.Errorf("ParseInt %q: %w", string(data), err)
-	}
-	return v, nil
-}
-
-// readUverbsDeviceABIVersion returns the per-device driver ABI version for
-// the given uverbsN device, or (0, err) on failure. The value is
-// driver-specific (e.g. mlx5_ib reports 1) and is only used for telemetry.
-func readUverbsDeviceABIVersion(devName string) (int, error) {
-	data, err := os.ReadFile(filepath.Join(uverbsClassDir, devName, "abi_version"))
-	if err != nil {
-		return 0, fmt.Errorf("ReadFile: %w", err)
-	}
-	v, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil {
-		return 0, fmt.Errorf("ParseInt %q: %w", string(data), err)
-	}
-	return v, nil
-}
 
 // uverbsDevice implements vfs.Device for /dev/infiniband/uverbs*.
 type uverbsDevice struct {
@@ -370,22 +342,23 @@ func (fd *uverbsFD) Readiness(mask waiter.EventMask) waiter.EventMask {
 // (see runsc/sandbox.MoveRDMANetdevsIntoSandbox). With the netdev local to
 // the calling task's netns, ibv_modify_qp's GID-to-netdev resolution
 // succeeds without any setns or extra capabilities in the sentry.
-func Register(vfsObj *vfs.VirtualFilesystem, devName string, minor uint32, driverName string) (uint32, error) {
+// verbsABIVersion is the host's IB_USER_VERBS_ABI_VERSION as collected
+// host-side from uverbsClassDir/abi_version before the sandbox started
+// (the sentry itself cannot read sysfs). An empty string means the value
+// could not be collected.
+func Register(vfsObj *vfs.VirtualFilesystem, devName string, minor uint32, driverName, verbsABIVersion string) (uint32, error) {
 	// Validate the kernel uverbs ABI version against what the proxy was
 	// built for. A mismatch here means the kernel either ships an
 	// unfamiliar UVERBS interface (we should refuse rather than risk
-	// misinterpreting attribute layouts) or the file is missing (we
+	// misinterpreting attribute layouts) or the value is missing (we
 	// degrade to a warning, not a hard failure, since the file has been
 	// stable in sysfs for over a decade and any absence likely means the
 	// uverbs subsystem isn't loaded — letting the open succeed and fail
 	// later gives a clearer error than refusing here).
-	if v, err := readUverbsClassABIVersion(); err != nil {
-		log.Warningf("rdmaproxy: could not read %s/abi_version (%v); proceeding without ABI check — expected version %d", uverbsClassDir, err, expectedUverbsABIVersion)
+	if v, err := strconv.Atoi(strings.TrimSpace(verbsABIVersion)); err != nil {
+		log.Warningf("rdmaproxy: no usable uverbs ABI version (collected %q from %s/abi_version); proceeding without ABI check — expected version %d", verbsABIVersion, uverbsClassDir, expectedUverbsABIVersion)
 	} else if v != expectedUverbsABIVersion {
-		return 0, fmt.Errorf("rdmaproxy: kernel uverbs ABI version %d does not match expected %d (read from %s/abi_version) — refusing to register %s", v, expectedUverbsABIVersion, uverbsClassDir, devName)
-	}
-	if v, err := readUverbsDeviceABIVersion(devName); err == nil {
-		log.Infof("rdmaproxy: %s driver-specific ABI version %d", devName, v)
+		return 0, fmt.Errorf("rdmaproxy: kernel uverbs ABI version %d does not match expected %d (collected from %s/abi_version) — refusing to register %s", v, expectedUverbsABIVersion, uverbsClassDir, devName)
 	}
 
 	major, err := vfsObj.GetDynamicCharDevMajor()
