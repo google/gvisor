@@ -421,6 +421,9 @@ type NV_MEMORY_DESC_PARAMS struct {
 // NV_BSP_ALLOCATION_PARAMETERS is the alloc params type for
 // NV*VIDEO_DECODER, from src/common/sdk/nvidia/inc/nvos.h.
 //
+// It is also used to represent the following driver structs:
+// - NV_NVDEC_ALLOCATION_PARAMETERS
+//
 // +marshal
 type NV_BSP_ALLOCATION_PARAMETERS struct {
 	_                         structs.HostLayout
@@ -431,6 +434,9 @@ type NV_BSP_ALLOCATION_PARAMETERS struct {
 
 // NV_MSENC_ALLOCATION_PARAMETERS is the alloc params type for
 // NV*_VIDEO_ENCODER, from src/common/sdk/nvidia/inc/nvos.h.
+//
+// It is also used to represent the following driver structs:
+// - NV_NVENC_ALLOCATION_PARAMETERS
 //
 // +marshal
 type NV_MSENC_ALLOCATION_PARAMETERS struct {
@@ -484,6 +490,44 @@ type NV_CHANNEL_ALLOC_PARAMS_V570 struct {
 	NV_CHANNEL_ALLOC_PARAMS
 	TPCConfigID uint32
 	_           uint32
+}
+
+// NV_CHANNEL_ALLOC_PARAMS_V610 is the updated version of
+// NV_CHANNEL_ALLOC_PARAMS since 610.43.02.
+//
+// +marshal
+type NV_CHANNEL_ALLOC_PARAMS_V610 struct {
+	_                   structs.HostLayout
+	HObjectError        Handle
+	HObjectBuffer       Handle
+	GPFIFOOffset        uint64
+	GPFIFOEntries       uint32
+	Flags               uint32
+	HContextShare       Handle
+	HVASpace            Handle
+	HHandleVASpace      Handle
+	HUserdMemory        [NV_MAX_SUBDEVICES]Handle
+	_                   uint32
+	UserdOffset         [NV_MAX_SUBDEVICES]uint64
+	EngineType          uint32
+	CID                 uint32
+	SubDeviceID         uint32
+	HObjectECCError     Handle
+	InstanceMem         NV_MEMORY_DESC_PARAMS
+	UserdMem            NV_MEMORY_DESC_PARAMS
+	RamfcMem            NV_MEMORY_DESC_PARAMS
+	MthdbufMem          NV_MEMORY_DESC_PARAMS
+	HPhysChannelGroup   Handle
+	InternalFlags       uint32
+	ErrorNotifierMem    NV_MEMORY_DESC_PARAMS
+	ECCErrorNotifierMem NV_MEMORY_DESC_PARAMS
+	ProcessID           uint32
+	SubProcessID        uint32
+	EncryptIv           [CC_CHAN_ALLOC_IV_SIZE_DWORD]uint32
+	DecryptIv           [CC_CHAN_ALLOC_IV_SIZE_DWORD]uint32
+	HmacNonce           [CC_CHAN_ALLOC_NONCE_SIZE_DWORD]uint32
+	TPCConfigID         uint32
+	_                   uint32
 }
 
 // NVB0B5_ALLOCATION_PARAMETERS is the alloc param type for TURING_DMA_COPY_A,

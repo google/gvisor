@@ -54,6 +54,7 @@ func (d *DriverSourceDir) GetNonUVMSourcePaths() ([]string, error) {
 		"src/common/sdk/nvidia/inc/class/*.h",
 		"src/common/sdk/nvidia/inc/ctrl/*.h",
 		"src/common/sdk/nvidia/inc/ctrl/*/*.h",
+		"src/common/sdk/nvidia/inc/alloc/*.h",
 		"kernel-open/common/inc/nv-ioctl-numa.h",
 	}
 
@@ -110,7 +111,7 @@ func WriteIncludeFile(sources []string, w io.Writer, ioctls []nvproxy.IoctlName)
 	// in the source file, we create constants with name "GVISOR_<ioctl_name>"
 	// which are initialized with the ioctl macro.
 	for _, ioctl := range ioctls {
-		if _, err := fmt.Fprintf(bufW, "const uint64_t GVISOR_%s = %s;\n", ioctl, ioctl); err != nil {
+		if _, err := fmt.Fprintf(bufW, "#ifdef %s\nconst uint64_t GVISOR_%s = %s;\n#endif\n", ioctl, ioctl, ioctl); err != nil {
 			return fmt.Errorf("failed to write to include file: %w", err)
 		}
 	}

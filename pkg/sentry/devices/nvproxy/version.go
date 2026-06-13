@@ -257,7 +257,7 @@ func Init() {
 					nvgpu.NV00FD_CTRL_CMD_DETACH_MEM:                                       ctrlHandler(rmControlSimple, compUtil),
 					nvgpu.NV2080_CTRL_CMD_BUS_GET_PCI_INFO:                                 ctrlHandler(rmControlSimple, compUtil),
 					nvgpu.NV2080_CTRL_CMD_BUS_GET_PCI_BAR_INFO:                             ctrlHandler(rmControlSimple, compUtil),
-					nvgpu.NV2080_CTRL_CMD_BUS_GET_INFO:                                     ctrlHandler(ctrlIoctlHasInfoList[nvgpu.NvxxxCtrlXxxGetInfoParams], nvconf.CapVideo),
+					nvgpu.NV2080_CTRL_CMD_BUS_GET_INFO:                                     ctrlHandler(ctrlIoctlHasInfoList[nvgpu.NvxxxCtrlXxxGetInfoParams], compUtil|nvconf.CapVideo),
 					nvgpu.NV2080_CTRL_CMD_BUS_GET_INFO_V2:                                  ctrlHandler(rmControlSimple, compUtil),
 					nvgpu.NV2080_CTRL_CMD_BUS_GET_PCIE_SUPPORTED_GPU_ATOMICS:               ctrlHandler(rmControlSimple, compUtil),
 					nvgpu.NV2080_CTRL_CMD_BUS_GET_C2C_INFO:                                 ctrlHandler(rmControlSimple, compUtil),
@@ -1058,7 +1058,7 @@ func Init() {
 			abi.allocationClass[nvgpu.FERMI_VASPACE_A] = allocHandler(rmAllocSimple[nvgpu.NV_VASPACE_ALLOCATION_PARAMETERS_V580], compUtil)
 			abi.allocationClass[nvgpu.NVCEB7_VIDEO_ENCODER] = allocHandler(rmAllocSimple[nvgpu.NV_MSENC_ALLOCATION_PARAMETERS], nvconf.CapVideo)
 			abi.allocationClass[nvgpu.NVD1B7_VIDEO_ENCODER] = allocHandler(rmAllocSimple[nvgpu.NV_MSENC_ALLOCATION_PARAMETERS], nvconf.CapVideo)
-			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_GPU_GET_SKYLINE_INFO] = ctrlHandler(rmControlSimple, nvconf.CapGraphics)
+			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_GPU_GET_SKYLINE_INFO] = ctrlHandler(rmControlSimple, compUtil|nvconf.CapGraphics)
 			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_ECC_GET_REPAIR_STATUS] = ctrlHandler(rmControlSimple, nvconf.CapGraphics)
 
 			prevGetInfo := abi.getInfo
@@ -1102,7 +1102,59 @@ func Init() {
 			}
 			return abi
 		})
-		_ = addDriverABI(590, 48, 01, "b9e2f80693781431cc87f4cd29109e133dcecb50a50d6b68d4b3bf2d696bd689", "14ecfb7faa56d4d18cd9fef891b3fa2db3628f12a3e59b59d3c6e6d1a0befd80", v590_44_01)
+		v590_48_01 := addDriverABI(590, 48, 01, "b9e2f80693781431cc87f4cd29109e133dcecb50a50d6b68d4b3bf2d696bd689", "14ecfb7faa56d4d18cd9fef891b3fa2db3628f12a3e59b59d3c6e6d1a0befd80", v590_44_01)
+
+		_ = addUnsupportedDriverABI(610, 43, 02, func() *driverABI {
+			abi := v590_48_01()
+			// UVM range groups were removed in 610.43.02.
+			delete(abi.uvmIoctl, nvgpu.UVM_CREATE_RANGE_GROUP)
+			delete(abi.uvmIoctl, nvgpu.UVM_DESTROY_RANGE_GROUP)
+			delete(abi.uvmIoctl, nvgpu.UVM_SET_RANGE_GROUP)
+			delete(abi.uvmIoctl, nvgpu.UVM_MIGRATE_RANGE_GROUP)
+
+			abi.allocationClass[nvgpu.TURING_CHANNEL_GPFIFO_A] = allocHandler(rmAllocChannelV610, compUtil)
+			abi.allocationClass[nvgpu.AMPERE_CHANNEL_GPFIFO_A] = allocHandler(rmAllocChannelV610, compUtil)
+			abi.allocationClass[nvgpu.HOPPER_CHANNEL_GPFIFO_A] = allocHandler(rmAllocChannelV610, compUtil)
+			abi.allocationClass[nvgpu.BLACKWELL_CHANNEL_GPFIFO_A] = allocHandler(rmAllocChannelV610, compUtil)
+			abi.allocationClass[nvgpu.BLACKWELL_CHANNEL_GPFIFO_B] = allocHandler(rmAllocChannelV610, compUtil)
+
+			prevGetInfo := abi.getInfo
+			abi.getInfo = func() *DriverABIInfo {
+				info := prevGetInfo()
+				delete(info.UvmInfos, nvgpu.UVM_CREATE_RANGE_GROUP)
+				delete(info.UvmInfos, nvgpu.UVM_DESTROY_RANGE_GROUP)
+				delete(info.UvmInfos, nvgpu.UVM_SET_RANGE_GROUP)
+				delete(info.UvmInfos, nvgpu.UVM_MIGRATE_RANGE_GROUP)
+
+				info.AllocationInfos[nvgpu.TURING_CHANNEL_GPFIFO_A] = ioctlInfoWithStructName("TURING_CHANNEL_GPFIFO_A", nvgpu.NV_CHANNEL_ALLOC_PARAMS_V610{}, "NV_CHANNEL_ALLOC_PARAMS")
+				info.AllocationInfos[nvgpu.AMPERE_CHANNEL_GPFIFO_A] = ioctlInfoWithStructName("AMPERE_CHANNEL_GPFIFO_A", nvgpu.NV_CHANNEL_ALLOC_PARAMS_V610{}, "NV_CHANNEL_ALLOC_PARAMS")
+				info.AllocationInfos[nvgpu.HOPPER_CHANNEL_GPFIFO_A] = ioctlInfoWithStructName("HOPPER_CHANNEL_GPFIFO_A", nvgpu.NV_CHANNEL_ALLOC_PARAMS_V610{}, "NV_CHANNEL_ALLOC_PARAMS")
+				info.AllocationInfos[nvgpu.BLACKWELL_CHANNEL_GPFIFO_A] = ioctlInfoWithStructName("BLACKWELL_CHANNEL_GPFIFO_A", nvgpu.NV_CHANNEL_ALLOC_PARAMS_V610{}, "NV_CHANNEL_ALLOC_PARAMS")
+				info.AllocationInfos[nvgpu.BLACKWELL_CHANNEL_GPFIFO_B] = ioctlInfoWithStructName("BLACKWELL_CHANNEL_GPFIFO_B", nvgpu.NV_CHANNEL_ALLOC_PARAMS_V610{}, "NV_CHANNEL_ALLOC_PARAMS")
+
+				// BSP/MSENC structs were renamed to NVDEC/NVENC in 610.43.02.
+
+				info.ControlInfos[nvgpu.NV0080_CTRL_CMD_BSP_GET_CAPS_V2] = simpleIoctlInfo("NV0080_CTRL_CMD_BSP_GET_CAPS_V2", "NV0080_CTRL_NVDEC_GET_CAPS_PARAMS_V2")
+				info.ControlInfos[nvgpu.NV0080_CTRL_CMD_MSENC_GET_CAPS] = ioctlInfoWithStructName("NV0080_CTRL_CMD_MSENC_GET_CAPS", nvgpu.NV0080_CTRL_GET_CAPS_PARAMS{}, "NV0080_CTRL_NVENC_GET_CAPS_PARAMS")
+
+				info.AllocationInfos[nvgpu.NVC4B7_VIDEO_ENCODER] = ioctlInfoWithStructName("NVC4B7_VIDEO_ENCODER", nvgpu.NV_MSENC_ALLOCATION_PARAMETERS{}, "NV_NVENC_ALLOCATION_PARAMETERS")
+				info.AllocationInfos[nvgpu.NVC7B7_VIDEO_ENCODER] = ioctlInfoWithStructName("NVC7B7_VIDEO_ENCODER", nvgpu.NV_MSENC_ALLOCATION_PARAMETERS{}, "NV_NVENC_ALLOCATION_PARAMETERS")
+				info.AllocationInfos[nvgpu.NVC9B7_VIDEO_ENCODER] = ioctlInfoWithStructName("NVC9B7_VIDEO_ENCODER", nvgpu.NV_MSENC_ALLOCATION_PARAMETERS{}, "NV_NVENC_ALLOCATION_PARAMETERS")
+				info.AllocationInfos[nvgpu.NVCFB7_VIDEO_ENCODER] = ioctlInfoWithStructName("NVCFB7_VIDEO_ENCODER", nvgpu.NV_MSENC_ALLOCATION_PARAMETERS{}, "NV_NVENC_ALLOCATION_PARAMETERS")
+				info.AllocationInfos[nvgpu.NVCEB7_VIDEO_ENCODER] = ioctlInfoWithStructName("NVCEB7_VIDEO_ENCODER", nvgpu.NV_MSENC_ALLOCATION_PARAMETERS{}, "NV_NVENC_ALLOCATION_PARAMETERS")
+				info.AllocationInfos[nvgpu.NVD1B7_VIDEO_ENCODER] = ioctlInfoWithStructName("NVD1B7_VIDEO_ENCODER", nvgpu.NV_MSENC_ALLOCATION_PARAMETERS{}, "NV_NVENC_ALLOCATION_PARAMETERS")
+
+				info.AllocationInfos[nvgpu.NVB8B0_VIDEO_DECODER] = ioctlInfoWithStructName("NVB8B0_VIDEO_DECODER", nvgpu.NV_BSP_ALLOCATION_PARAMETERS{}, "NV_NVDEC_ALLOCATION_PARAMETERS")
+				info.AllocationInfos[nvgpu.NVC4B0_VIDEO_DECODER] = ioctlInfoWithStructName("NVC4B0_VIDEO_DECODER", nvgpu.NV_BSP_ALLOCATION_PARAMETERS{}, "NV_NVDEC_ALLOCATION_PARAMETERS")
+				info.AllocationInfos[nvgpu.NVC6B0_VIDEO_DECODER] = ioctlInfoWithStructName("NVC6B0_VIDEO_DECODER", nvgpu.NV_BSP_ALLOCATION_PARAMETERS{}, "NV_NVDEC_ALLOCATION_PARAMETERS")
+				info.AllocationInfos[nvgpu.NVC7B0_VIDEO_DECODER] = ioctlInfoWithStructName("NVC7B0_VIDEO_DECODER", nvgpu.NV_BSP_ALLOCATION_PARAMETERS{}, "NV_NVDEC_ALLOCATION_PARAMETERS")
+				info.AllocationInfos[nvgpu.NVC9B0_VIDEO_DECODER] = ioctlInfoWithStructName("NVC9B0_VIDEO_DECODER", nvgpu.NV_BSP_ALLOCATION_PARAMETERS{}, "NV_NVDEC_ALLOCATION_PARAMETERS")
+				info.AllocationInfos[nvgpu.NVCDB0_VIDEO_DECODER] = ioctlInfoWithStructName("NVCDB0_VIDEO_DECODER", nvgpu.NV_BSP_ALLOCATION_PARAMETERS{}, "NV_NVDEC_ALLOCATION_PARAMETERS")
+
+				return info
+			}
+			return abi
+		})
 	})
 }
 
