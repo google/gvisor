@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/google/subcommands"
@@ -29,22 +30,45 @@ import (
 )
 
 const (
-	flagBind       = "bind"
-	flagRoBind     = "ro-bind"
-	flagTmpfs      = "tmpfs"
-	flagUnshareNet = "unshare-net"
-	flagChdir      = "chdir"
-	flagHelp       = "help"
+	flagBind        = "bind"
+	flagRoBind      = "ro-bind"
+	flagTmpfs       = "tmpfs"
+	flagUnshareNet  = "unshare-net"
+	flagChdir       = "chdir"
+	flagHelp        = "help"
+	flagSetEnv      = "setenv"
+	flagClearEnv    = "clearenv"
+	flagUnsetEnv    = "unsetenv"
+	flagUID         = "uid"
+	flagGID         = "gid"
+	flagUnshareUser = "unshare-user"
+	flagUserns      = "userns"
+	flagUnshareIPC  = "unshare-ipc"
+	flagUnsharePID  = "unshare-pid"
+	flagUnshareUTS  = "unshare-uts"
+	flagHostname    = "hostname"
+	flagProc        = "proc"
 )
 
 // Cli implements subcommands.Command for the "bwrap" command.
 type Cli struct {
 	// Placeholders for bwrap flags.
-	bind       string
-	roBind     string
-	tmpfs      string
-	unshareNet bool
-	chdir      string
+	bind        string
+	roBind      string
+	tmpfs       string
+	unshareNet  bool
+	chdir       string
+	setEnv      string
+	clearEnv    bool
+	unsetEnv    string
+	uid         int
+	gid         int
+	unshareUser bool
+	unshareIPC  bool
+	unsharePID  bool
+	unshareUTS  bool
+	hostname    string
+	proc        string
 }
 
 // Name implements subcommands.Command.Name.
@@ -69,6 +93,17 @@ func (c *Cli) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.tmpfs, flagTmpfs, "", "Mount tmpfs at DEST.")
 	f.BoolVar(&c.unshareNet, flagUnshareNet, false, "Unshare network namespace.")
 	f.StringVar(&c.chdir, flagChdir, "", "Change directory to DIR.")
+	f.StringVar(&c.setEnv, flagSetEnv, "", "Set an environment variable")
+	f.BoolVar(&c.clearEnv, flagClearEnv, false, "Unset all environment variables")
+	f.StringVar(&c.unsetEnv, flagUnsetEnv, "", "Unset an environment variable")
+	f.IntVar(&c.uid, flagUID, -1, "Custom uid in the sandbox (requires --unshare-user or --userns)")
+	f.IntVar(&c.gid, flagGID, -1, "Custom gid in the sandbox (requires --unshare-user or --userns)")
+	f.BoolVar(&c.unshareUser, flagUnshareUser, false, "Create new user namespace (may be automatically implied if not root)")
+	f.BoolVar(&c.unshareIPC, flagUnshareIPC, false, "Create new ipc namespace")
+	f.BoolVar(&c.unsharePID, flagUnsharePID, false, "Create new pid namespace")
+	f.BoolVar(&c.unshareUTS, flagUnshareUTS, false, "Create new uts namespace")
+	f.StringVar(&c.hostname, flagHostname, "", "Custom hostname in the sandbox")
+	f.StringVar(&c.proc, flagProc, "", "Mount new procfs on DEST")
 
 	// Override the default usage function to print the custom usage message.
 	f.Usage = func() {
@@ -87,7 +122,11 @@ func (c *Cli) FetchSpec(_ *config.Config, _ *flag.FlagSet) (string, *specs.Spec,
 
 // parseBwrapArgs parses the bwrap arguments and returns a bwrapConfig struct.
 func parseBwrapArgs(bwrapArgs []string) (*bwrapConfig, error) {
-	cfg := &bwrapConfig{}
+	cfg := &bwrapConfig{
+		Env: os.Environ(),
+		UID: -1,
+		GID: -1,
+	}
 	var err error
 	for i := 0; i < len(bwrapArgs); {
 		arg := bwrapArgs[i]
@@ -118,6 +157,26 @@ func parseBwrapArgs(bwrapArgs []string) (*bwrapConfig, error) {
 			i, err = cfg.parseUnshareNet(bwrapArgs, i)
 		case flagChdir:
 			i, err = cfg.parseChdir(bwrapArgs, i)
+		case flagSetEnv:
+			i, err = cfg.parseSetEnv(bwrapArgs, i)
+		case flagClearEnv:
+			i, err = cfg.parseClearEnv(bwrapArgs, i)
+		case flagUnsetEnv:
+			i, err = cfg.parseUnsetEnv(bwrapArgs, i)
+		case flagUID:
+			i, err = cfg.parseUID(bwrapArgs, i)
+		case flagGID:
+			i, err = cfg.parseGID(bwrapArgs, i)
+		case flagUnshareUser:
+			i, err = cfg.parseUnshareUser(bwrapArgs, i)
+		case flagUserns:
+			i, err = cfg.parseUserns(bwrapArgs, i)
+		case flagHostname:
+			i, err = cfg.parseHostname(bwrapArgs, i)
+		case flagUnshareIPC, flagUnsharePID, flagUnshareUTS:
+			i, err = cfg.parseNoopZeroArg(bwrapArgs, i)
+		case flagProc:
+			i, err = cfg.parseProc(bwrapArgs, i)
 		default:
 			return nil, fmt.Errorf("bwrap: Unknown option: %s", arg)
 		}
@@ -125,6 +184,9 @@ func parseBwrapArgs(bwrapArgs []string) (*bwrapConfig, error) {
 			return nil, err
 		}
 	}
+
+	cfg.resolveEnv()
+
 	if len(cfg.Args) == 0 || cfg.Args[0] == "" {
 		return nil, fmt.Errorf("bwrap: no command specified")
 	}
@@ -209,4 +271,97 @@ func (c *bwrapConfig) parseChdir(args []string, i int) (int, error) {
 	}
 	c.Chdir = args[i+1]
 	return i + 2, nil
+}
+
+func (c *bwrapConfig) parseSetEnv(args []string, i int) (int, error) {
+	if i+2 >= len(args) {
+		return i, fmt.Errorf("bwrap: --%s takes 2 arguments", flagSetEnv)
+	}
+	c.Env = append(c.Env, args[i+1]+"="+args[i+2])
+	return i + 3, nil
+}
+
+func (c *bwrapConfig) parseClearEnv(args []string, i int) (int, error) {
+	pwd, err := c.mapCWD()
+	if err != nil {
+		return i, fmt.Errorf("bwrap: failed to get current working directory: %v", err)
+	}
+	c.Env = nil
+	if pwd != "" {
+		c.Env = []string{"PWD=" + pwd}
+	}
+	c.UnsetEnv = nil
+	return i + 1, nil
+}
+
+func (c *bwrapConfig) parseUnsetEnv(args []string, i int) (int, error) {
+	if i+1 >= len(args) {
+		return i, fmt.Errorf("bwrap: --%s takes 1 argument", flagUnsetEnv)
+	}
+	c.UnsetEnv = append(c.UnsetEnv, args[i+1])
+	return i + 2, nil
+}
+
+func (c *bwrapConfig) parseUID(args []string, i int) (int, error) {
+	if i+1 >= len(args) {
+		return i, fmt.Errorf("bwrap: --%s takes 1 argument", flagUID)
+	}
+	uid, err := strconv.ParseUint(args[i+1], 10, 32)
+	if err != nil {
+		return i, fmt.Errorf("bwrap: Invalid uid %v: %v", args[i+1], err)
+	}
+	c.UID = int(uid)
+
+	return i + 2, nil
+}
+
+func (c *bwrapConfig) parseGID(args []string, i int) (int, error) {
+	if i+1 >= len(args) {
+		return i, fmt.Errorf("bwrap: --%s takes 1 argument", flagGID)
+	}
+	gid, err := strconv.ParseUint(args[i+1], 10, 32)
+	if err != nil {
+		return i, fmt.Errorf("bwrap: Invalid gid %v: %v", args[i+1], err)
+	}
+	c.GID = int(gid)
+
+	return i + 2, nil
+}
+
+func (c *bwrapConfig) parseUnshareUser(args []string, i int) (int, error) {
+	c.UnshareUser = true
+	return i + 1, nil
+}
+
+func (c *bwrapConfig) parseHostname(args []string, i int) (int, error) {
+	if i+1 >= len(args) {
+		return i, fmt.Errorf("bwrap: --%s takes 1 argument", flagHostname)
+	}
+	c.Hostname = args[i+1]
+	return i + 2, nil
+}
+
+func (c *bwrapConfig) parseProc(args []string, i int) (int, error) {
+	if i+1 >= len(args) {
+		return i, fmt.Errorf("--%s takes 1 argument", flagProc)
+	}
+
+	if c.ProcDest == nil {
+		c.ProcDest = make(map[string]struct{})
+	}
+	c.ProcDest[args[i+1]] = struct{}{}
+	return i + 2, nil
+}
+
+// TODO: b/518882196 - Support joining existing user namespaces.
+// Currently, runsc cannot join an existing user namespace (specs.UserNamespace with Path != "").
+func (c *bwrapConfig) parseUserns(args []string, i int) (int, error) {
+	return i + 2, fmt.Errorf("bwrap: --userns is currently not supported by runsc")
+}
+
+// parseNoopZeroArg parses flags that are treated as no-ops.
+// gVisor's Sentry kernel inherently virtualizes and isolates IPC, PID, and UTS
+// namespaces by default. These flags are parsed solely for CLI compatibility
+func (c *bwrapConfig) parseNoopZeroArg(args []string, i int) (int, error) {
+	return i + 1, nil
 }

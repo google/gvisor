@@ -37,3 +37,21 @@ go_test(
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
     ],
 )
+
+go_test(
+    name = "bwrap_integration_test",
+    srcs = ["bwrap_integration_test.go"],
+    data = [
+        "//runsc",
+    ],
+    library = ":bwrap",
+    tags = [
+        "local",
+        "manual",
+    ],
+    deps = [
+        "//pkg/test/testutil",
+        "//runsc/specutils",
+        "@com_github_google_go_cmp//cmp:go_default_library",
+    ],
+)
