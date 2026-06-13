@@ -310,16 +310,17 @@ func WalkHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, e
 	}
 	payloadBuf := comm.PayloadBuf(uint32(maxPayloadSize))
 	payloadPos := respMetaSize
+	// Track newly created FDIDs in private (non-shared) memory so the cleanup
+	// path below does not need to trust the contents of payloadBuf, which is
+	// writable by the untrusted peer.
+	createdFDIDs := make([]FDID, 0, len(req.Path))
 	if err := c.server.withRenameReadLock(func() error {
 		curDir := startDir
 		cu := cleanup.Make(func() {
-			// Destroy all newly created FDs until now. Read the new FDIDs from the
-			// payload buffer.
-			buf := comm.PayloadBuf(uint32(maxPayloadSize))[respMetaSize:]
-			var curIno Inode
-			for i := 0; i < int(numInodes); i++ {
-				buf = curIno.UnmarshalBytes(buf)
-				c.removeControlFDLocked(curIno.ControlFD)
+			// Destroy all newly created FDs until now, using the privately
+			// tracked FDIDs rather than re-reading from shared memory.
+			for _, fdid := range createdFDIDs {
+				c.removeControlFDLocked(fdid)
 			}
 		})
 		defer cu.Clean()
@@ -351,6 +352,8 @@ func WalkHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, e
 			if err != nil {
 				return err
 			}
+			// Track the newly created FD privately for cleanup purposes.
+			createdFDIDs = append(createdFDIDs, child.id)
 			// Write inode into payload buffer.
 			i := Inode{ControlFD: child.id, Stat: childStat}
 			i.MarshalUnsafe(payloadBuf[payloadPos:])
