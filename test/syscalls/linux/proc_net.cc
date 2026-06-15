@@ -56,6 +56,8 @@ namespace {
 
 constexpr const char kProcNet[] = "/proc/net";
 constexpr const char kIpForward[] = "/proc/sys/net/ipv4/ip_forward";
+constexpr const char kIPv6KeepAddrOnDown[] =
+    "/proc/sys/net/ipv6/conf/all/keep_addr_on_down";
 constexpr const char kRangeFile[] = "/proc/sys/net/ipv4/ip_local_port_range";
 constexpr const char kProcSysNetIpv6[] = "/proc/sys/net/ipv6";
 
@@ -620,6 +622,33 @@ TEST(ProcSysNetIpv4Recovery, CanReadAndWrite) {
 
 TEST(ProcSysNetIpv4IpForward, Exists) {
   auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(kIpForward, O_RDONLY));
+}
+
+TEST(ProcSysNetIpv6KeepAddrOnDown, Exists) {
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(kIPv6KeepAddrOnDown, O_RDONLY));
+}
+
+TEST(ProcSysNetIpv6KeepAddrOnDown, CanReadAndWrite) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability((CAP_NET_ADMIN))) ||
+          IsRunningWithHostinet());
+
+  auto const fd = ASSERT_NO_ERRNO_AND_VALUE(Open(kIPv6KeepAddrOnDown, O_RDWR));
+
+  char buf;
+  EXPECT_THAT(PreadFd(fd.get(), &buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(buf)));
+
+  EXPECT_TRUE(buf == '0' || buf == '1')
+      << "unexpected keep_addr_on_down: " << buf;
+
+  char to_write = (buf == '1') ? '0' : '1';
+  EXPECT_THAT(PwriteFd(fd.get(), &to_write, sizeof(to_write), 0),
+              SyscallSucceedsWithValue(sizeof(to_write)));
+
+  buf = 0;
+  EXPECT_THAT(PreadFd(fd.get(), &buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(buf)));
+  EXPECT_EQ(buf, to_write);
 }
 
 TEST(ProcSysNetIpv4IpForward, DefaultValueEqZero) {

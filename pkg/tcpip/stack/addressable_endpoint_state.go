@@ -719,6 +719,32 @@ func (a *AddressableEndpointState) PermanentAddresses() []tcpip.AddressWithPrefi
 	return addrs
 }
 
+// AddressInfos implements AddressableEndpoint.
+func (a *AddressableEndpointState) AddressInfos() []AddressInfo {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	var infos []AddressInfo
+	for _, ep := range a.endpoints {
+		switch kind := ep.GetKind(); kind {
+		case Permanent, PermanentTentative:
+		case Temporary, PermanentExpired:
+			continue
+		default:
+			panic(fmt.Sprintf("address %s has unknown kind %d", ep.AddressWithPrefix(), kind))
+		}
+
+		lifetimes := ep.Lifetimes()
+		validUntil := lifetimes.ValidUntil
+		infos = append(infos, AddressInfo{
+			AddressWithPrefix: ep.AddressWithPrefix(),
+			Permanent:         !ep.Temporary() && (validUntil == (tcpip.MonotonicTime{}) || validUntil == tcpip.MonotonicTimeInfinite()),
+		})
+	}
+
+	return infos
+}
+
 // Cleanup forcefully leaves all groups and removes all permanent addresses.
 func (a *AddressableEndpointState) Cleanup() {
 	a.mu.Lock()
