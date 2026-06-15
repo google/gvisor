@@ -104,6 +104,11 @@ type sender struct {
 
 	ep *Endpoint
 
+	// finSent is set when the FIN segment is actually transmitted.
+	// The endpoint may be in FIN_WAIT1/LAST_ACK while the FIN is still
+	// queued behind blocked data; finSent guards closing ACK completions.
+	finSent bool
+
 	// lr is the loss recovery algorithm used by the sender.
 	lr lossRecovery
 
@@ -894,15 +899,9 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 		}
 		seg.flags = header.TCPFlagAck | header.TCPFlagFin
 		segEnd = seg.sequenceNumber.Add(1)
-		// Update the state to reflect that we have now
-		// queued a FIN.
-		s.ep.updateConnDirectionState(connDirectionStateSndClosed)
-		switch s.ep.EndpointState() {
-		case StateCloseWait:
-			s.ep.setEndpointState(StateLastAck)
-		default:
-			s.ep.setEndpointState(StateFinWait1)
-		}
+		// FIN is now being transmitted; mark it so the receiver can tell
+		// a data-only ACK apart from one that acknowledges our FIN.
+		s.finSent = true
 	} else {
 		// We're sending a non-FIN segment.
 		if seg.flags&header.TCPFlagFin != 0 {

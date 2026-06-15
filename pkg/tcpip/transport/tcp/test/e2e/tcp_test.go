@@ -9790,6 +9790,87 @@ func TestRSTExactMatchAbortsConnection(t *testing.T) {
 	}
 }
 
+// TestCloseWithPendingDataCwndFull verifies that close() keeps the
+// connection on the graceful FIN path even when the current congestion
+// window is full and the queued FIN cannot be transmitted immediately.
+func TestCloseWithPendingDataCwndFull(t *testing.T) {
+	c := context.New(t, e2e.DefaultMTU)
+	defer c.Cleanup()
+
+	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
+
+	// Write enough segments to fill the congestion window before ACK'ing
+	// any of them.
+	view := make([]byte, 10)
+	var r bytes.Reader
+	for i := tcp.InitialCwnd; i > 0; i-- {
+		r.Reset(view)
+		if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
+			t.Fatalf("Write failed: %s", err)
+		}
+	}
+
+	next := uint32(c.IRS) + 1
+	iss := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+	for i := tcp.InitialCwnd; i > 0; i-- {
+		v := c.GetPacket()
+		defer v.Release()
+		checker.IPv4(t, v,
+			checker.PayloadLen(len(view)+header.TCPMinimumSize),
+			checker.TCP(
+				checker.DstPort(context.TestPort),
+				checker.TCPSeqNum(next),
+				checker.TCPAckNum(uint32(iss)),
+				checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
+			),
+		)
+		next += uint32(len(view))
+	}
+
+	// Close the endpoint. The write queue is still full, so no FIN can be
+	// sent yet; the endpoint should remain on the graceful close path.
+	c.EP.Close()
+
+	v := c.GetPacket()
+	defer v.Release()
+	checker.IPv4(t, v,
+		checker.PayloadLen(len(view)+header.TCPMinimumSize),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.TCPSeqNum(uint32(c.IRS)+1),
+			checker.TCPAckNum(uint32(iss)),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
+		),
+	)
+
+	if got, want := tcp.EndpointState(c.EP.State()), tcp.StateFinWait1; got != want {
+		t.Errorf("unexpected endpoint state: want %s, got %s", want, got)
+	}
+
+	// ACK the queued data; once congestion window allows it, the FIN should
+	// be transmitted instead of sending a reset.
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: c.Port,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  iss,
+		AckNum:  seqnum.Value(next),
+		RcvWnd:  30000,
+	})
+
+	v = c.GetPacket()
+	defer v.Release()
+	checker.IPv4(t, v,
+		checker.PayloadLen(header.TCPMinimumSize),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.TCPSeqNum(next),
+			checker.TCPAckNum(uint32(iss)),
+			checker.TCPFlags(header.TCPFlagAck|header.TCPFlagFin),
+		),
+	)
+}
+
 func TestMain(m *testing.M) {
 	refs.SetLeakMode(refs.LeaksPanic)
 	code := m.Run()
