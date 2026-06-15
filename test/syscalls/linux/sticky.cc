@@ -113,6 +113,109 @@ TEST(StickyTest, StickyBitSameUID) {
   });
 }
 
+// Renaming over an existing destination owned by another user in a sticky
+// directory must fail with EPERM, just like unlinking it would. This mirrors
+// Linux's vfs_rename(), which applies may_delete()/check_sticky() to the rename
+// target as well as the source.
+TEST(StickyTest, StickyBitRenameOverwritePermDenied) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+
+  // Create a sticky directory.
+  const TempPath sticky_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  EXPECT_THAT(chmod(sticky_dir.path().c_str(), 0777 | S_ISVTX),
+              SyscallSucceeds());
+  const FileDescriptor sticky_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(sticky_dir.path(), O_DIRECTORY));
+
+  // Create a non-sticky directory.
+  const TempPath non_sticky_dir =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  EXPECT_THAT(chmod(non_sticky_dir.path().c_str(), 0777), SyscallSucceeds());
+  const FileDescriptor non_sticky_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(non_sticky_dir.path(), O_DIRECTORY));
+
+  // "victim" in sticky directory is owned by current user.
+  ASSERT_THAT(openat(sticky_fd.get(), "victim", O_CREAT, 0644),
+              SyscallSucceeds());
+
+  // "attacker" in non-sticky directory is also owned by current user.
+  ASSERT_THAT(openat(non_sticky_fd.get(), "attacker", O_CREAT, 0644),
+              SyscallSucceeds());
+
+  // Drop privileges and change IDs only in child thread, or else this parent
+  // thread won't be able to open some log files after the test ends.
+  ScopedThread([&] {
+    // Drop privileges.
+    AutoCapability cap(CAP_FOWNER, false);
+
+    // Change EUID and EGID.
+    EXPECT_THAT(
+        syscall(SYS_setresgid, -1, absl::GetFlag(FLAGS_scratch_gid), -1),
+        SyscallSucceeds());
+    EXPECT_THAT(
+        syscall(SYS_setresuid, -1, absl::GetFlag(FLAGS_scratch_uid), -1),
+        SyscallSucceeds());
+
+    // Try to rename "attacker" from non-sticky directory to "victim" in sticky
+    // directory. Since, the current user is not the owner of "victim", the
+    // rename should fail with EPERM.
+    EXPECT_THAT(
+        renameat(non_sticky_fd.get(), "attacker", sticky_fd.get(), "victim"),
+        SyscallFailsWithErrno(EPERM));
+
+    // The victim's file is left intact.
+    EXPECT_THAT(faccessat(sticky_fd.get(), "victim", F_OK, 0),
+                SyscallSucceeds());
+    // The attacker's file is also left intact (rename failed).
+    EXPECT_THAT(faccessat(non_sticky_fd.get(), "attacker", F_OK, 0),
+                SyscallSucceeds());
+  });
+}
+
+// Renaming over an existing destination owned by the same user in a sticky
+// directory is permitted.
+TEST(StickyTest, StickyBitRenameOverwriteSameUID) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+
+  const TempPath parent = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  EXPECT_THAT(chmod(parent.path().c_str(), 0777 | S_ISVTX), SyscallSucceeds());
+
+  // Gofer does not have necessary UID/GID mappings in the test environment to
+  // create files with scratch_uid/scratch_gid below. It will fail with EINVAL.
+  SKIP_IF(IsRunningOnGvisor() &&
+          ASSERT_NO_ERRNO_AND_VALUE(IsGoferfs(parent.path())));
+
+  // After changing credentials below, we need to use an open fd to make
+  // modifications in the parent dir, because there is no guarantee that we will
+  // still have the ability to open it.
+  const FileDescriptor parent_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(parent.path(), O_DIRECTORY));
+
+  // Drop privileges and change IDs only in child thread, or else this parent
+  // thread won't be able to open some log files after the test ends.
+  ScopedThread([&] {
+    // Drop privileges.
+    AutoCapability cap(CAP_FOWNER, false);
+
+    // Change EUID and EGID.
+    EXPECT_THAT(
+        syscall(SYS_setresgid, -1, absl::GetFlag(FLAGS_scratch_gid), -1),
+        SyscallSucceeds());
+    EXPECT_THAT(
+        syscall(SYS_setresuid, -1, absl::GetFlag(FLAGS_scratch_uid), -1),
+        SyscallSucceeds());
+
+    // Both the source and the destination are owned by the scratch UID, so the
+    // rename-overwrite is allowed even though the directory is sticky.
+    ASSERT_THAT(openat(parent_fd.get(), "src", O_CREAT, 0644),
+                SyscallSucceeds());
+    ASSERT_THAT(openat(parent_fd.get(), "dst", O_CREAT, 0644),
+                SyscallSucceeds());
+    EXPECT_THAT(renameat(parent_fd.get(), "src", parent_fd.get(), "dst"),
+                SyscallSucceeds());
+  });
+}
+
 TEST(StickyTest, StickyBitCapFOWNER) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
 
