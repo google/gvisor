@@ -2583,6 +2583,31 @@ func (h *hostnameData) StateLoad(ctx context.Context, stateSourceObject state.So
 	stateSourceObject.Load(0, &h.DynamicBytesFile)
 }
 
+func (d *domainnameData) StateTypeName() string {
+	return "pkg/sentry/fsimpl/proc.domainnameData"
+}
+
+func (d *domainnameData) StateFields() []string {
+	return []string{
+		"DynamicBytesFile",
+	}
+}
+
+func (d *domainnameData) beforeSave() {}
+
+// +checklocksignore
+func (d *domainnameData) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.DynamicBytesFile)
+}
+
+func (d *domainnameData) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (d *domainnameData) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.DynamicBytesFile)
+}
+
 func (u *uuidData) StateTypeName() string {
 	return "pkg/sentry/fsimpl/proc.uuidData"
 }
@@ -2905,6 +2930,7 @@ func init() {
 	state.Register((*tcpMemDir)(nil))
 	state.Register((*mmapMinAddrData)(nil))
 	state.Register((*hostnameData)(nil))
+	state.Register((*domainnameData)(nil))
 	state.Register((*uuidData)(nil))
 	state.Register((*tcpSackData)(nil))
 	state.Register((*tcpRecoveryData)(nil))

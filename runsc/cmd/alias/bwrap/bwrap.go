@@ -176,6 +176,7 @@ type bwrapConfig struct {
 	UID          int
 	GID          int
 	UnshareUser  bool
+	Hostname     string
 }
 
 // String returns a string representation of the bwrapConfig.
@@ -352,6 +353,10 @@ func (c *bwrapConfig) buildRunscSpec() (*specs.Spec, error) {
 				Options:     opts,
 			})
 		}
+	}
+
+	if c.Hostname != "" {
+		spec.Hostname = c.Hostname
 	}
 
 	// TODO: b/508701483 - Fix support for network args.

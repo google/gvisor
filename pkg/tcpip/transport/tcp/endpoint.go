@@ -2586,9 +2586,18 @@ func (e *Endpoint) shutdownLocked(flags tcpip.ShutdownFlags) tcpip.Error {
 				return nil
 			}
 
-			// Queue fin segment.
+			// Queue FIN and transition to the closing state immediately,
+			// matching Linux tcp_close_state(): the FIN may be queued but
+			// not yet transmitted when the write queue is blocked.
 			s := newOutgoingSegment(e.TransportEndpointInfo.ID, e.stack.Clock(), buffer.Buffer{})
 			e.snd.writeList.PushBack(s)
+			e.updateConnDirectionState(connDirectionStateSndClosed)
+			switch e.EndpointState() {
+			case StateCloseWait:
+				e.setEndpointState(StateLastAck)
+			default:
+				e.setEndpointState(StateFinWait1)
+			}
 			// Mark endpoint as closed.
 			e.sndQueueInfo.SndClosed = true
 			e.sndQueueInfo.sndQueueMu.Unlock()
