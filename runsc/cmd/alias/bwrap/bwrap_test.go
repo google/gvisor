@@ -369,6 +369,22 @@ func TestParseFlags(t *testing.T) {
 				Args: []string{"bash"},
 			},
 		},
+		{
+			name: "ValidHostname",
+			args: []string{"--hostname", "test-host", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:      os.Environ(),
+				UID:      -1,
+				GID:      -1,
+				Hostname: "test-host",
+				Args:     []string{"bash"},
+			},
+		},
+		{
+			name:        "MissingHostname",
+			args:        []string{"--hostname"},
+			errContains: "--hostname takes 1 argument",
+		},
 	}
 
 	for _, tc := range tests {

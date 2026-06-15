@@ -46,6 +46,7 @@ const (
 	flagUnshareIPC  = "unshare-ipc"
 	flagUnsharePID  = "unshare-pid"
 	flagUnshareUTS  = "unshare-uts"
+	flagHostname    = "hostname"
 )
 
 // Cli implements subcommands.Command for the "bwrap" command.
@@ -65,6 +66,7 @@ type Cli struct {
 	unshareIPC  bool
 	unsharePID  bool
 	unshareUTS  bool
+	hostname    string
 }
 
 // Name implements subcommands.Command.Name.
@@ -98,6 +100,7 @@ func (c *Cli) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&c.unshareIPC, flagUnshareIPC, false, "Create new ipc namespace")
 	f.BoolVar(&c.unsharePID, flagUnsharePID, false, "Create new pid namespace")
 	f.BoolVar(&c.unshareUTS, flagUnshareUTS, false, "Create new uts namespace")
+	f.StringVar(&c.hostname, flagHostname, "", "Custom hostname in the sandbox")
 
 	// Override the default usage function to print the custom usage message.
 	f.Usage = func() {
@@ -165,6 +168,8 @@ func parseBwrapArgs(bwrapArgs []string) (*bwrapConfig, error) {
 			i, err = cfg.parseUnshareUser(bwrapArgs, i)
 		case flagUserns:
 			i, err = cfg.parseUserns(bwrapArgs, i)
+		case flagHostname:
+			i, err = cfg.parseHostname(bwrapArgs, i)
 		case flagUnshareIPC, flagUnsharePID, flagUnshareUTS:
 			i, err = cfg.parseNoopZeroArg(bwrapArgs, i)
 		default:
@@ -321,6 +326,14 @@ func (c *bwrapConfig) parseGID(args []string, i int) (int, error) {
 func (c *bwrapConfig) parseUnshareUser(args []string, i int) (int, error) {
 	c.UnshareUser = true
 	return i + 1, nil
+}
+
+func (c *bwrapConfig) parseHostname(args []string, i int) (int, error) {
+	if i+1 >= len(args) {
+		return i, fmt.Errorf("bwrap: --%s takes 1 argument", flagHostname)
+	}
+	c.Hostname = args[i+1]
+	return i + 2, nil
 }
 
 // TODO: b/518882196 - Support joining existing user namespaces.

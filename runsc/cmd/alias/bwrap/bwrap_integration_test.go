@@ -235,3 +235,59 @@ func TestUserAndGroup(t *testing.T) {
 func TestUserns(t *testing.T) {
 	t.Skip("Skipping userns joining due to runsc doesn't support joining existing user namespaces")
 }
+
+func TestHostname(t *testing.T) {
+	if err := testutil.ConfigureExePath(); err != nil {
+		t.Fatalf("failed to configure exe path: %v", err)
+	}
+
+	stop := testutil.StartReaper()
+	defer stop()
+
+	rootDir := t.TempDir()
+
+	tests := []struct {
+		name       string
+		bwrapArgs  []string
+		wantOutput string
+	}{
+		{
+			name: "Hostname",
+			bwrapArgs: []string{
+				"--hostname", "test-host",
+				"--ro-bind", "/", "/",
+				"--",
+				"/bin/hostname",
+			},
+			wantOutput: "test-host",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			runRootDir := filepath.Join(rootDir, tc.name)
+			if err := os.MkdirAll(runRootDir, 0755); err != nil {
+				t.Fatalf("creating root dir: %v", err)
+			}
+
+			args := append([]string{
+				"--root", runRootDir,
+				"bwrap",
+			}, tc.bwrapArgs...)
+
+			cmd := exec.Command(specutils.ExePath, args...)
+
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			if err := cmd.Run(); err != nil {
+				t.Fatalf("runsc bwrap failed: %v\nStderr: %s", err, stderr.String())
+			}
+
+			output := strings.TrimSpace(stdout.String())
+			if tc.wantOutput != "" && !strings.Contains(output, tc.wantOutput) {
+				t.Errorf("output = %q, want it to contain %q", output, tc.wantOutput)
+			}
+		})
+	}
+}
