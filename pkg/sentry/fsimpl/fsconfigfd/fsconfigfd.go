@@ -284,9 +284,10 @@ func (fd *Fd) DoCmdCreate(ctx context.Context, vfsObj *vfs.VirtualFilesystem) er
 		return linuxerr.EBUSY
 	}
 
-	if fdContext.source == nil {
-		// Source was not specified
-		return linuxerr.EINVAL
+	// Default source to "" unless it was explicitly set
+	source := ""
+	if fdContext.source != nil {
+		source = *fdContext.source
 	}
 
 	// Check for CAP_SYS_ADMIN in the fd origin's user ns.
@@ -305,7 +306,7 @@ func (fd *Fd) DoCmdCreate(ctx context.Context, vfsObj *vfs.VirtualFilesystem) er
 	if err != nil {
 		return err
 	}
-	fs, root, err := vfsObj.NewFilesystem(ctx, creds, *fdContext.source, fdContext.fsName, opts)
+	fs, root, err := vfsObj.NewFilesystem(ctx, creds, source, fdContext.fsName, opts)
 	if err != nil {
 		// Transition into the failed state (i.e. no retries for this error)
 		fd.context = &failedContext{}

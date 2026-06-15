@@ -216,16 +216,13 @@ TEST(FsConfigTest, FsConfigSetSourceTwice) {
 
 TEST(FsConfigTest, FsConfigCreateWithoutSource) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
-  // Note: Skipped on Linux because Linux tmpfs does not require a source.
-  // Currently, gVisor requires a source for all mounts.
-  SKIP_IF(!IsRunningOnGvisor());
 
   int fsfd = fsopen(kTmpfs, 0);
   ASSERT_THAT(fsfd, SyscallSucceeds());
   auto cleanup = Cleanup([&]() { close(fsfd); });
 
   EXPECT_THAT(fsconfig(fsfd, FSCONFIG_CMD_CREATE, NULL, NULL, 0),
-              SyscallFailsWithErrno(EINVAL));
+              SyscallSucceeds());
 }
 
 TEST(FsConfigTest, FsConfigBadFilesystem) {
