@@ -3870,6 +3870,87 @@ TEST(NetlinkRouteTest, VethAddUnnamedPeer) {
   EXPECT_EQ(link_kinds["veth0"], "veth");
 }
 
+// Returns whether a socket can bind to addr. Linux allows that only once addr
+// is assigned and has completed duplicate address detection.
+PosixErrorOr<bool> Bindable(const struct sockaddr_in6& addr) {
+  ASSIGN_OR_RETURN_ERRNO(FileDescriptor s, Socket(AF_INET6, SOCK_DGRAM, 0));
+  if (bind(s.get(), AsSockAddr(&addr), sizeof(addr)) == 0) {
+    return true;
+  }
+  if (errno == EADDRNOTAVAIL) {
+    return false;
+  }
+  return PosixError(errno, "bind");
+}
+
+// Waits until a socket can bind to addr. On Linux, duplicate address detection
+// takes a few seconds. gVisor does not run it.
+PosixError WaitBindable(const struct sockaddr_in6& addr) {
+  for (int i = 0; i < 100; ++i) {
+    ASSIGN_OR_RETURN_ERRNO(bool bindable, Bindable(addr));
+    if (bindable) {
+      return NoError();
+    }
+    absl::SleepFor(absl::Milliseconds(100));
+  }
+  return PosixError(ETIMEDOUT, "address did not become bindable");
+}
+
+// Like Linux, bringing a veth interface up assigns it an EUI-64 IPv6 link-local
+// address, and bringing it down removes the address.
+TEST(NetlinkRouteTest, VethLinkLocalAddrOnUpDown) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+  // TODO(gvisor.dev/issue/4595): enable cooperative save tests.
+  const DisableSave ds;
+
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  // Linux derives veth1's link-local address, fe80::ff:fe00:1, from this MAC
+  // address.
+  constexpr uint8_t kMac[ETH_ALEN] = {0x02, 0, 0, 0, 0, 0x01};
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  VethRequest req = GetVethRequest(kSeq, "veth1", "veth2");
+  addattr(&req.hdr, sizeof(req), IFLA_ADDRESS, kMac, sizeof(kMac));
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len));
+  const int veth1 = if_nametoindex("veth1");
+  ASSERT_NE(veth1, 0);
+  const int veth2 = if_nametoindex("veth2");
+  ASSERT_NE(veth2, 0);
+
+  struct sockaddr_in6 addr = {};
+  addr.sin6_family = AF_INET6;
+  addr.sin6_scope_id = veth1;
+  ASSERT_EQ(inet_pton(AF_INET6, "fe80::ff:fe00:1", &addr.sin6_addr), 1);
+
+  // Linux creates veth interfaces down, but gVisor creates them up. Take veth1
+  // down so it starts down on both.
+  // TODO(gvisor.dev/issue/16069): Remove this once gVisor creates veth
+  // interfaces down.
+  ASSERT_NO_ERRNO(LinkChangeFlags(veth1, 0, IFF_UP));
+  // Linux configures veth1 only once it has a carrier, which needs veth2 up.
+  ASSERT_NO_ERRNO(LinkChangeFlags(veth2, IFF_UP, IFF_UP));
+
+  // Bringing veth1 up assigns the address.
+  ASSERT_NO_ERRNO(LinkChangeFlags(veth1, IFF_UP, IFF_UP));
+  ASSERT_NO_ERRNO(WaitBindable(addr));
+
+  // Taking it down removes the address.
+  ASSERT_NO_ERRNO(LinkChangeFlags(veth1, 0, IFF_UP));
+  EXPECT_THAT(Bindable(addr), IsPosixErrorOkAndHolds(false));
+
+  // Bringing it back up assigns the address again.
+  ASSERT_NO_ERRNO(LinkChangeFlags(veth1, IFF_UP, IFF_UP));
+  EXPECT_NO_ERRNO(WaitBindable(addr));
+}
+
 TEST(NetlinkRouteTest, BridgeAddUnnamed) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
   SKIP_IF(IsRunningWithHostinet());
@@ -4017,6 +4098,8 @@ TEST(NetlinkRouteTest, NewRouteGatewayNotOnLink) {
 TEST(NetlinkRouteTest, NewRouteGatewayOnLink) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
   SKIP_IF(IsRunningWithHostinet());
+  // TODO(gvisor.dev/issue/4595): enable cooperative save tests.
+  const DisableSave ds;
 
   const FileDescriptor curr_nsfd =
       ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
