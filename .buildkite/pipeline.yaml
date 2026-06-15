@@ -592,6 +592,22 @@ steps:
       <<: *platform_specific_agents
       arch: "amd64"
 
+  # Bwrap tests.
+  - <<: *common
+    <<: *docker
+    <<: *source_test
+    label: ":package: bwrap tests (AMD64)"
+    command: make bwrap-tests
+    agents:
+      arch: "amd64"
+  - <<: *common
+    <<: *docker
+    <<: *source_test
+    label: ":package: bwrap tests (ARM64)"
+    command: make bwrap-tests
+    agents:
+      arch: "arm64"
+
   # Runtime tests (goferfs). Continuous only.
   - <<: *common
     <<: *docker

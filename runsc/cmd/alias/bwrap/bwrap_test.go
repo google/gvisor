@@ -58,6 +58,9 @@ func TestBuildRunscSpec(t *testing.T) {
 		{
 			name: "WithRootMount",
 			cfg: &bwrapConfig{
+				Env: os.Environ(),
+				UID: -1,
+				GID: -1,
 				Mounts: []*MountOp{
 					{Type: "bind", Src: "/src1", Dst: "/dst1"},
 					{Type: "ro-bind", Src: "/", Dst: "/"},
@@ -98,6 +101,9 @@ func TestBuildRunscSpec(t *testing.T) {
 		{
 			name: "NoMountsNoNetNS",
 			cfg: &bwrapConfig{
+				Env:  os.Environ(),
+				UID:  -1,
+				GID:  -1,
 				Args: []string{"ls"},
 			},
 			wantRunscSpec: &specs.Spec{
@@ -264,5 +270,127 @@ func TestSubDirPath(t *testing.T) {
 			t.Errorf("cfg.subDirPath(%q, %q): got %q, %v; want %q, %v",
 				test.parent, test.child, got, ok, test.want, test.ok)
 		}
+	}
+}
+
+// TestParseFlags tests the parsing of bwrap flags.
+func TestParseFlags(t *testing.T) {
+	tests := []struct {
+		name        string
+		args        []string
+		wantCfg     *bwrapConfig
+		errContains string
+	}{
+		{
+			name: "ClearEnv",
+			args: []string{"--clearenv", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:  []string{"PWD=/"},
+				UID:  -1,
+				GID:  -1,
+				Args: []string{"bash"},
+			},
+		},
+		{
+			name: "SetEnv",
+			args: []string{"--setenv", "FOO", "bar", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:  append(os.Environ(), "FOO=bar"),
+				UID:  -1,
+				GID:  -1,
+				Args: []string{"bash"},
+			},
+		},
+		{
+			name: "UnsetEnv",
+			args: []string{"--unsetenv", "FOO", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:      os.Environ(),
+				UnsetEnv: []string{"FOO"},
+				UID:      -1,
+				GID:      -1,
+				Args:     []string{"bash"},
+			},
+		},
+		{
+			name: "UnshareUser",
+			args: []string{"--unshare-user", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:         os.Environ(),
+				UID:         -1,
+				GID:         -1,
+				UnshareUser: true,
+				Args:        []string{"bash"},
+			},
+		},
+		{
+			name: "UID",
+			args: []string{"--unshare-user", "--uid", "0", "--gid", "0", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:         os.Environ(),
+				UID:         0,
+				GID:         0,
+				UnshareUser: true,
+				Args:        []string{"bash"},
+			},
+		},
+		{
+			name:        "Userns",
+			args:        []string{"--userns", "3", "bash"},
+			errContains: "--userns is currently not supported by runsc",
+		},
+		{
+			name: "UnshareIPC",
+			args: []string{"--unshare-ipc", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:  os.Environ(),
+				UID:  -1,
+				GID:  -1,
+				Args: []string{"bash"},
+			},
+		},
+		{
+			name: "UnsharePID",
+			args: []string{"--unshare-pid", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:  os.Environ(),
+				UID:  -1,
+				GID:  -1,
+				Args: []string{"bash"},
+			},
+		},
+		{
+			name: "UnshareUTS",
+			args: []string{"--unshare-uts", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:  os.Environ(),
+				UID:  -1,
+				GID:  -1,
+				Args: []string{"bash"},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := parseBwrapArgs(tc.args)
+			wantError := tc.errContains != ""
+			if wantError {
+				if err == nil {
+					t.Fatalf("got nil, want error containing %v", tc.errContains)
+				}
+				if !strings.Contains(err.Error(), tc.errContains) {
+					t.Fatalf("got error %v, want error containing %v", err, tc.errContains)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+
+			if diff := cmp.Diff(cfg, tc.wantCfg, cmpopts.IgnoreUnexported(bwrapConfig{})); diff != "" {
+				t.Errorf("bwrapConfig mismatch (-got +want):\n%s", diff)
+			}
+		})
 	}
 }
