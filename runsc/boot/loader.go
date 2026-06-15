@@ -1784,12 +1784,20 @@ func (c *sandboxNetstackCreator) CreateStack() (inet.Stack, error) {
 	}
 	link := DefaultLoopbackLink
 	linkEP := ethernet.New(loopback.New())
+
 	opts := stack.NICOptions{
 		Name:               link.Name,
 		DeliverLinkPackets: true,
 	}
 
-	if err := n.createNICWithAddrs(nicID, linkEP, opts, link.Addresses); err != nil {
+	// Linux creates the loopback interface in a freshly created network
+	// namespace in the DOWN state with no addresses assigned. Match that
+	// behavior: create the "lo" NIC without any addresses. The container
+	// application is responsible for assigning the loopback address and
+	// bringing the interface up (e.g. via "ip addr add" and "ip link set lo
+	// up"), just like on Linux. The initial network namespace is configured
+	// separately in Network.CreateLinksAndRoutes with addresses assigned
+	if err := n.createNICWithAddrs(nicID, linkEP, opts, nil /* addrs */); err != nil {
 		return nil, err
 	}
 

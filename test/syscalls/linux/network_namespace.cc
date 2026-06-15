@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <arpa/inet.h>
+#include <net/if.h>
+#include <netinet/in.h>
 #include <sys/mount.h>
 
 #include <cerrno>
@@ -19,6 +22,8 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
+#include "test/syscalls/linux/socket_netlink_route_util.h"
+#include "test/syscalls/linux/socket_netlink_util.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/linux_capability_util.h"
@@ -44,6 +49,34 @@ TEST(NetworkNamespaceTest, LoopbackExists) {
 
     // TODO(gvisor.dev/issue/1833): Update this to test that only "lo" exists.
     ASSERT_NE(ASSERT_NO_ERRNO_AND_VALUE(GetLoopbackIndex()), 0);
+  });
+}
+
+// In a freshly created network namespace, the application must be able to
+// configure the loopback interface itself: assigning the loopback address
+// (RTM_NEWADDR) and bringing the interface up (RTM_NEWLINK with IFF_UP) both
+// succeed, just like on Linux.
+// Test for bug #13438
+TEST(NetworkNamespaceTest, LoopbackConfigurable) {
+  // TODO(b/267210840): Fix this tests for hostinet.
+  SKIP_IF(IsRunningWithHostinet());
+
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+
+  ScopedThread t([&] {
+    ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+    Link lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+
+    // Assigning the loopback address must succeed (RTM_NEWADDR).
+    FileDescriptor fd =
+        ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+    const struct in_addr loopback_addr = {.s_addr = htonl(INADDR_LOOPBACK)};
+    EXPECT_NO_ERRNO(LinkAddLocalAddr(fd, lo.index, AF_INET, /*prefixlen=*/8,
+                                     &loopback_addr, sizeof(loopback_addr)));
+
+    // Bringing the interface up must succeed (RTM_NEWLINK with IFF_UP).
+    EXPECT_NO_ERRNO(LinkChangeFlags(lo.index, IFF_UP, IFF_UP));
   });
 }
 
