@@ -76,10 +76,12 @@ func (u *UTSNamespace) HostName() string {
 }
 
 // SetHostName sets the host name of this UTS namespace.
-func (u *UTSNamespace) SetHostName(host string) {
+func (u *UTSNamespace) SetHostName(ctx context.Context, host string) {
 	u.mu.Lock()
-	defer u.mu.Unlock()
 	u.hostName = host
+	u.mu.Unlock()
+
+	KernelFromContext(ctx).HostNamePoller.Notify()
 }
 
 // DomainName returns the domain name of this UTS namespace.
@@ -90,10 +92,12 @@ func (u *UTSNamespace) DomainName() string {
 }
 
 // SetDomainName sets the domain name of this UTS namespace.
-func (u *UTSNamespace) SetDomainName(domain string) {
+func (u *UTSNamespace) SetDomainName(ctx context.Context, domain string) {
 	u.mu.Lock()
-	defer u.mu.Unlock()
 	u.domainName = domain
+	u.mu.Unlock()
+
+	KernelFromContext(ctx).DomainNamePoller.Notify()
 }
 
 // UserNamespace returns the user namespace associated with this UTS namespace.

@@ -68,7 +68,7 @@ func Setdomainname(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (u
 		return 0, nil, err
 	}
 
-	utsns.SetDomainName(string(name))
+	utsns.SetDomainName(t, string(name))
 	return 0, nil, nil
 }
 
@@ -90,6 +90,6 @@ func Sethostname(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uin
 		return 0, nil, err
 	}
 
-	utsns.SetHostName(string(name))
+	utsns.SetHostName(t, string(name))
 	return 0, nil, nil
 }
