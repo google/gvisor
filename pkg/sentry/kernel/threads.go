@@ -331,6 +331,31 @@ func (ns *PIDNamespace) IDOfThreadGroup(tg *ThreadGroup) ThreadID {
 	return id
 }
 
+// PIDNamespacedIDs returns a snapshot mapping each PID namespace in which tg's
+// leader is visible (tg's PID namespace and every ancestor) to tg's ID (PID)
+// in that namespace.
+//
+// The returned map is intended to be indexed by a PID namespace to which the
+// caller holds a reference. Because the returned map does not hold references
+// on its own, the other keys in the map *MUST NOT* be dereferenced.
+//
+// tg must be visible in its own PID namespace.
+func (tg *ThreadGroup) PIDNamespacedIDs() map[*PIDNamespace]ThreadID {
+	tg.pidns.owner.mu.RLock()
+	defer tg.pidns.owner.mu.RUnlock()
+	ids := make(map[*PIDNamespace]ThreadID)
+	for ns := tg.pidns; ns != nil; ns = ns.parent {
+		id, ok := ns.tgids[tg]
+		if !ok {
+			// If tg is visible in its own pid ns, it must be visible in all ancestors
+			// as per the pid ns invariant.
+			panic("thread group not visible in its own or an ancestor PID namespace")
+		}
+		ids[ns] = id
+	}
+	return ids
+}
+
 // Tasks returns a snapshot of the tasks in ns.
 func (ns *PIDNamespace) Tasks() []*Task {
 	return ns.TasksAppend(nil)
