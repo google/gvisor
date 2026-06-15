@@ -58,6 +58,13 @@ type Stack interface {
 	// SupportsIPv6 returns true if the stack supports IPv6 connectivity.
 	SupportsIPv6() bool
 
+	// IPv6KeepAddrOnDown returns true if IPv6 should keep permanent, non-local
+	// addresses when an interface goes down.
+	IPv6KeepAddrOnDown() bool
+
+	// SetIPv6KeepAddrOnDown changes IPv6 keep_addr_on_down behavior.
+	SetIPv6KeepAddrOnDown(bool) error
+
 	// TCPReceiveBufferSize returns TCP receive buffer size settings.
 	TCPReceiveBufferSize() (TCPBufferSize, error)
 

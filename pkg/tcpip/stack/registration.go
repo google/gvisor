@@ -526,6 +526,27 @@ type AddressProperties struct {
 	Disp      AddressDispatcher
 }
 
+// AddressInfo contains information about an address assigned to an
+// AddressableEndpoint.
+type AddressInfo struct {
+	AddressWithPrefix tcpip.AddressWithPrefix
+
+	// Permanent is true if the address is configured with an infinite valid
+	// lifetime and is not a temporary (RFC 4941) address.
+	Permanent bool
+}
+
+// ProtocolAddressInfo contains information about a protocol address assigned to
+// a NIC.
+type ProtocolAddressInfo struct {
+	Protocol tcpip.NetworkProtocolNumber
+	tcpip.AddressWithPrefix
+
+	// Permanent is true if the address is configured with an infinite valid
+	// lifetime and is not a temporary (RFC 4941) address.
+	Permanent bool
+}
+
 // AddressAssignmentState is an address' assignment state.
 type AddressAssignmentState int
 
@@ -782,6 +803,10 @@ type AddressableEndpoint interface {
 
 	// PermanentAddresses returns all the permanent addresses.
 	PermanentAddresses() []tcpip.AddressWithPrefix
+
+	// AddressInfos returns all configured address endpoints, including tentative
+	// endpoints, but excluding expired endpoints and one-off temporary endpoints.
+	AddressInfos() []AddressInfo
 }
 
 // NDPEndpoint is a network endpoint that supports NDP.
