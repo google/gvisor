@@ -2719,6 +2719,19 @@ TEST(ProcSysKernelHostname, MatchesUname) {
   EXPECT_EQ(procfs_hostname, hostname);
 }
 
+TEST(ProcSysKernelDomainname, Exists) {
+  EXPECT_THAT(open("/proc/sys/kernel/domainname", O_RDONLY), SyscallSucceeds());
+}
+
+TEST(ProcSysKernelDomainname, MatchesUname) {
+  struct utsname buf;
+  EXPECT_THAT(uname(&buf), SyscallSucceeds());
+  const std::string domainname = absl::StrCat(buf.domainname, "\n");
+  auto procfs_domainname =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/kernel/domainname"));
+  EXPECT_EQ(procfs_domainname, domainname);
+}
+
 TEST(ProcSysKernelRandomUuid, Exists) {
   EXPECT_THAT(open("/proc/sys/kernel/random/uuid", O_RDONLY),
               SyscallSucceeds());
