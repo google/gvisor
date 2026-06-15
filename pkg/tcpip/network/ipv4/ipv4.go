@@ -1577,6 +1577,13 @@ func (e *endpoint) PermanentAddresses() []tcpip.AddressWithPrefix {
 	return e.addressableEndpointState.PermanentAddresses()
 }
 
+// AddressInfos implements stack.AddressableEndpoint.
+func (e *endpoint) AddressInfos() []stack.AddressInfo {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.addressableEndpointState.AddressInfos()
+}
+
 // JoinGroup implements stack.GroupAddressableEndpoint.
 func (e *endpoint) JoinGroup(addr tcpip.Address) tcpip.Error {
 	e.mu.Lock()

@@ -1845,12 +1845,20 @@ func (c *sandboxNetstackCreator) CreateStack() (inet.Stack, error) {
 	}
 	link := DefaultLoopbackLink
 	linkEP := ethernet.New(loopback.New())
+
+	// Like Linux, create the loopback interface of a freshly created network
+	// namespace administratively DOWN and with no addresses. The application
+	// brings it up with RTM_NEWLINK (IFF_UP), at which point netstack assigns the
+	// default loopback addresses, just as the Linux kernel does. The initial
+	// network namespace is configured separately in Network.CreateLinksAndRoutes
+	// and keeps its addresses and UP state.
 	opts := stack.NICOptions{
 		Name:               link.Name,
 		DeliverLinkPackets: true,
+		Disabled:           true,
 	}
 
-	if err := n.createNICWithAddrs(nicID, linkEP, opts, link.Addresses); err != nil {
+	if err := n.createNICWithAddrs(nicID, linkEP, opts, nil /* addrs */); err != nil {
 		return nil, err
 	}
 

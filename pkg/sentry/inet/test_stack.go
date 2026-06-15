@@ -32,15 +32,16 @@ var _ Stack = (*TestStack)(nil)
 
 // TestStack is a dummy implementation of Stack for tests.
 type TestStack struct {
-	InterfacesMap     map[int32]Interface
-	InterfaceAddrsMap map[int32][]InterfaceAddr
-	RouteList         []Route
-	SupportsIPv6Flag  bool
-	TCPRecvBufSize    TCPBufferSize
-	TCPSendBufSize    TCPBufferSize
-	TCPSACKFlag       bool
-	Recovery          TCPLossRecovery
-	IPForwarding      bool
+	InterfacesMap          map[int32]Interface
+	InterfaceAddrsMap      map[int32][]InterfaceAddr
+	RouteList              []Route
+	SupportsIPv6Flag       bool
+	TCPRecvBufSize         TCPBufferSize
+	TCPSendBufSize         TCPBufferSize
+	TCPSACKFlag            bool
+	Recovery               TCPLossRecovery
+	IPForwarding           bool
+	IPv6KeepAddrOnDownFlag bool
 }
 
 // NewTestStack returns a TestStack with no network interfaces. The value of
@@ -112,6 +113,17 @@ func (s *TestStack) RemoveInterfaceAddr(idx int32, addr InterfaceAddr) error {
 // SupportsIPv6 implements Stack.
 func (s *TestStack) SupportsIPv6() bool {
 	return s.SupportsIPv6Flag
+}
+
+// IPv6KeepAddrOnDown implements Stack.
+func (s *TestStack) IPv6KeepAddrOnDown() bool {
+	return s.IPv6KeepAddrOnDownFlag
+}
+
+// SetIPv6KeepAddrOnDown implements Stack.
+func (s *TestStack) SetIPv6KeepAddrOnDown(enabled bool) error {
+	s.IPv6KeepAddrOnDownFlag = enabled
+	return nil
 }
 
 // TCPReceiveBufferSize implements Stack.
