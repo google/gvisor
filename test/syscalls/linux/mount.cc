@@ -610,6 +610,74 @@ TEST(MountTest, RenameRemoveMountPoint) {
   ASSERT_THAT(rmdir(dir.path().c_str()), SyscallFailsWithErrno(EBUSY));
 }
 
+TEST(MountTest, MountMoveSuccess) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const privateParent = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto privateMount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("source", privateParent.path(), kTmpfs, 0, "", 0));
+  EXPECT_THAT(mount("", privateParent.path().c_str(), "", MS_PRIVATE, ""),
+              SyscallSucceeds());
+
+  auto const dir1 =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(privateParent.path()));
+  auto const dir2 =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(privateParent.path()));
+  auto mount1 =
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("source", dir1.path(), kTmpfs, 0, "", 0));
+
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(JoinPath(dir1.path(), "foo").c_str(), O_CREAT | O_RDWR, 0777));
+  EXPECT_THAT(close(fd.release()), SyscallSucceeds());
+
+  auto const mount2 = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(dir1.path(), dir2.path(), "", MS_MOVE, "", 0));
+  mount1.Release();
+
+  EXPECT_THAT(Exists(JoinPath(dir1.path(), "foo")),
+              IsPosixErrorOkAndHolds(false));
+  EXPECT_THAT(Exists(JoinPath(dir2.path(), "foo")),
+              IsPosixErrorOkAndHolds(true));
+}
+
+// TODO(b/305893463): When support for MS_UNBINDABLE is added, moving a mount
+// tree with unbindable children to an MS_SHARED destination should EINVAL.
+
+TEST(MountTest, MountMoveSharedParent) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const parentDir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const dir2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  auto parentMount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("source", parentDir1.path(), kTmpfs, 0, "", 0));
+  EXPECT_THAT(mount("", parentDir1.path().c_str(), "", MS_SHARED, ""),
+              SyscallSucceeds());
+
+  auto const subDir =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(parentDir1.path()));
+  auto subMount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("source", subDir.path(), kTmpfs, 0, "", 0));
+
+  EXPECT_THAT(
+      mount(subDir.path().c_str(), dir2.path().c_str(), "", MS_MOVE, nullptr),
+      SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(MountTest, MountMoveSourceNotMounted) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const dir2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(JoinPath(dir1.path(), "foo").c_str(), O_CREAT | O_RDWR, 0777));
+  EXPECT_THAT(close(fd.release()), SyscallSucceeds());
+
+  EXPECT_THAT(mount(dir1.path().c_str(), dir2.path().c_str(), "", MS_MOVE, ""),
+              SyscallFailsWithErrno(EINVAL));
+}
+
 TEST(MountTest, MountInfo) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
