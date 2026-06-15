@@ -98,6 +98,42 @@ go_test(
 )
 
 go_library(
+    name = "openclaw",
+    testonly = True,
+    srcs = ["openclaw.go"],
+    nogo = False,
+    deps = [
+        "//runsc/flag",
+        "//test/kubernetes/benchmetric",
+        "//test/kubernetes/k8sctx",
+        "//test/kubernetes/testcluster",
+        "@io_k8s_api//core/v1:go_default_library",
+        "@io_k8s_apimachinery//pkg/api/errors:go_default_library",
+        "@io_k8s_apimachinery//pkg/api/resource:go_default_library",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:go_default_library",
+        "@io_k8s_apimachinery//pkg/util/intstr:go_default_library",
+        "@io_k8s_client_go//kubernetes:go_default_library",
+    ],
+)
+
+go_test(
+    name = "openclaw_test",
+    srcs = ["openclaw_test.go"],
+    library = ":openclaw",
+    nogo = False,
+    tags = [
+        "local",
+        "noguitar",
+        "notap",
+    ],
+    deps = [
+        "//test/kubernetes/k8sctx",
+        "//test/kubernetes/k8sctx/kubectlctx",
+        "//test/kubernetes/testcluster",
+    ],
+)
+
+go_library(
     name = "redis",
     testonly = True,
     srcs = ["redis.go"],

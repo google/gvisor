@@ -186,6 +186,12 @@ var KnownMachineTypes = map[string]*MachineInfo{
 	"n1-standard-4":   {NumCores: 4, MemoryGiB: 15, IsVirtual: true},
 	"n2-standard-4":   {NumCores: 4, MemoryGiB: 16, IsVirtual: true},
 	"n2-standard-8":   {NumCores: 8, MemoryGiB: 32, IsVirtual: true},
+	"n2-highcpu-32":   {NumCores: 32, MemoryGiB: 32, IsVirtual: true},
+	"n2-standard-32":  {NumCores: 32, MemoryGiB: 128, IsVirtual: true},
+	"n2-standard-64":  {NumCores: 64, MemoryGiB: 256, IsVirtual: true},
+	"n2-standard-80":  {NumCores: 80, MemoryGiB: 320, IsVirtual: true},
+	"n2-standard-96":  {NumCores: 96, MemoryGiB: 384, IsVirtual: true},
+	"n2-standard-128": {NumCores: 128, MemoryGiB: 512, IsVirtual: true},
 	"n2d-standard-8":  {NumCores: 8, MemoryGiB: 32, IsVirtual: true},
 	"g2-standard-8":   {NumCores: 8, MemoryGiB: 32, IsVirtual: true},
 	"ct4p-hightpu-4t": {NumCores: 240, MemoryGiB: 407, IsVirtual: true},
@@ -195,6 +201,11 @@ var KnownMachineTypes = map[string]*MachineInfo{
 		IsVirtual:       false,
 		MaxPodCores:     144,
 		MaxPodMemoryGiB: 64, // More than this causes "Large hotplug" when using ACPI hotplugging.
+	},
+	"c4-standard-288-metal": {
+		NumCores:  288,
+		MemoryGiB: 1080,
+		IsVirtual: false,
 	},
 }
 
