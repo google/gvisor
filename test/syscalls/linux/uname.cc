@@ -54,6 +54,19 @@ TEST(UnameTest, SetNames) {
   EXPECT_THAT(gethostname(hostname, sizeof(hostname)), SyscallSucceeds());
   EXPECT_EQ(absl::string_view(hostname), "0123456789");
 
+  char domainname[65];
+  ASSERT_THAT(setdomainname("abcdefghij", 3), SyscallSucceeds());
+  EXPECT_THAT(getdomainname(domainname, sizeof(domainname)), SyscallSucceeds());
+  EXPECT_EQ(absl::string_view(domainname), "abc");
+
+  ASSERT_THAT(setdomainname("abcdefghij\0xxx", 11), SyscallSucceeds());
+  EXPECT_THAT(getdomainname(domainname, sizeof(domainname)), SyscallSucceeds());
+  EXPECT_EQ(absl::string_view(domainname), "abcdefghij");
+
+  ASSERT_THAT(setdomainname("abcdefghij\0xxx", 12), SyscallSucceeds());
+  EXPECT_THAT(getdomainname(domainname, sizeof(domainname)), SyscallSucceeds());
+  EXPECT_EQ(absl::string_view(domainname), "abcdefghij");
+
   constexpr char kHostname[] = "wubbalubba";
   ASSERT_THAT(sethostname(kHostname, sizeof(kHostname)), SyscallSucceeds());
 
@@ -70,7 +83,6 @@ TEST(UnameTest, SetNames) {
   EXPECT_THAT(gethostname(hostname, sizeof(hostname)), SyscallSucceeds());
   EXPECT_EQ(absl::string_view(hostname), kHostname);
 
-  char domainname[65];
   EXPECT_THAT(getdomainname(domainname, sizeof(domainname)), SyscallSucceeds());
   EXPECT_EQ(absl::string_view(domainname), kDomainname);
 }
