@@ -221,6 +221,9 @@ func (s *Stack) SetInterface(ctx context.Context, msg *nlmsg.Message) *syserr.Er
 	if flags&(linux.NLM_F_EXCL|linux.NLM_F_REPLACE) != 0 {
 		return syserr.ErrExists
 	}
+	// setUp tracks a requested administrative up/down state change (IFF_UP).
+	// It is nil when the message does not change IFF_UP.
+	var setUp *bool
 	if ifinfomsg.Flags != 0 || ifinfomsg.Change != 0 {
 		if ifinfomsg.Change & ^uint32(linux.IFF_UP) != 0 {
 			ctx.Warningf("Unsupported ifi_change flags: %x", ifinfomsg.Change)
@@ -230,7 +233,10 @@ func (s *Stack) SetInterface(ctx context.Context, msg *nlmsg.Message) *syserr.Er
 			ctx.Warningf("Unsupported ifi_flags: %x", ifinfomsg.Change)
 			return syserr.ErrInvalidArgument
 		}
-		// Netstack interfaces are always up.
+		if ifinfomsg.Change&uint32(linux.IFF_UP) != 0 {
+			up := ifinfomsg.Flags&uint32(linux.IFF_UP) != 0
+			setUp = &up
+		}
 	}
 
 	dstNs, err := s.lockSrcAndDst(ctx, attrs)
@@ -238,7 +244,7 @@ func (s *Stack) SetInterface(ctx context.Context, msg *nlmsg.Message) *syserr.Er
 		return err
 	}
 	defer s.unlockSrcAndDst(ctx, dstNs)
-	return s.setLinkLocked(ctx, tcpip.NICID(ifinfomsg.Index), attrs, dstNs)
+	return s.setLinkLocked(ctx, tcpip.NICID(ifinfomsg.Index), attrs, dstNs, setUp)
 }
 
 // If the linkAttrs map contains IFLA_NET_NS_FD, locks the source and
@@ -320,7 +326,10 @@ func (s *Stack) unlockSrcAndDst(ctx context.Context, ns *inet.Namespace) {
 
 // precondition: s.linkLock is held. If dstNs is not nil, dstNs.Stack.linkMu is
 // also held.
-func (s *Stack) setLinkLocked(ctx context.Context, id tcpip.NICID, linkAttrs map[uint16]nlmsg.BytesView, dstNs *inet.Namespace) *syserr.Error {
+//
+// setUp, when non-nil, requests an administrative up (true) or down (false)
+// state change for the interface (IFF_UP).
+func (s *Stack) setLinkLocked(ctx context.Context, id tcpip.NICID, linkAttrs map[uint16]nlmsg.BytesView, dstNs *inet.Namespace, setUp *bool) *syserr.Error {
 	src := s
 	changed := false
 	nicInfo, ok := src.Stack.SingleNICInfo(id)
@@ -358,19 +367,9 @@ func (s *Stack) setLinkLocked(ctx context.Context, id tcpip.NICID, linkAttrs map
 	for t, v := range linkAttrs {
 		switch t {
 		case linux.IFLA_MASTER:
-			master, ok := v.Uint32()
-			if !ok {
-				return syserr.ErrInvalidArgument
-			}
-			if mid, ok := src.Stack.GetNICCoordinatorID(id); ok && mid == tcpip.NICID(master) {
-				continue
-			}
-			if master != 0 {
-				if err := src.Stack.SetNICCoordinator(id, tcpip.NICID(master)); err != nil {
-					return syserr.TranslateNetstackError(err)
-				}
-				changed = true
-			}
+			// Enslavement is applied after the up/down change below, to match
+			// Linux's do_setlink, which calls do_set_master after
+			// dev_change_flags.
 		case linux.IFLA_ADDRESS:
 			if len(v) != tcpip.LinkAddressSize {
 				return syserr.ErrInvalidArgument
@@ -405,6 +404,40 @@ func (s *Stack) setLinkLocked(ctx context.Context, id tcpip.NICID, linkAttrs map
 			changed = true
 		case linux.IFLA_TXQLEN:
 			// TODO(b/340388892): support IFLA_TXQLEN.
+		}
+	}
+
+	// Apply the administrative up/down change after the attribute changes
+	// above. Skip it, like the attribute changes do, when the interface is
+	// already in the requested state: Linux performs no work and sends no
+	// notification for a no-op flag change.
+	if setUp != nil && *setUp != nicInfo.Flags.Up {
+		if *setUp {
+			if err := src.Stack.EnableNIC(id); err != nil {
+				return syserr.TranslateNetstackError(err)
+			}
+		} else {
+			if err := src.Stack.DisableNIC(id); err != nil {
+				return syserr.TranslateNetstackError(err)
+			}
+		}
+		changed = true
+	}
+
+	// Apply enslavement (IFLA_MASTER) after the up/down change, matching
+	// Linux's do_setlink ordering.
+	if v, ok := linkAttrs[linux.IFLA_MASTER]; ok {
+		master, ok := v.Uint32()
+		if !ok {
+			return syserr.ErrInvalidArgument
+		}
+		if master != 0 {
+			if mid, ok := src.Stack.GetNICCoordinatorID(id); !ok || mid != tcpip.NICID(master) {
+				if err := src.Stack.SetNICCoordinator(id, tcpip.NICID(master)); err != nil {
+					return syserr.TranslateNetstackError(err)
+				}
+				changed = true
+			}
 		}
 	}
 
@@ -483,7 +516,7 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 		s.unlockSrcAndDst(ctx, dstNs)
 		return syserr.TranslateNetstackError(err)
 	}
-	if err := s.setLinkLocked(ctx, id, linkAttrs, dstNs); err != nil {
+	if err := s.setLinkLocked(ctx, id, linkAttrs, dstNs, nil /* setUp */); err != nil {
 		s.unlockSrcAndDst(ctx, dstNs)
 		peerEP.Close()
 		return err
@@ -507,7 +540,7 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 		return syserr.TranslateNetstackError(err)
 	}
 	if peerLinkAttrs != nil {
-		if err := peerStack.setLinkLocked(ctx, peerID, peerLinkAttrs, peerDstNs); err != nil {
+		if err := peerStack.setLinkLocked(ctx, peerID, peerLinkAttrs, peerDstNs, nil /* setUp */); err != nil {
 			peerStack.Stack.RemoveNIC(peerID)
 			peerEP.Close()
 			return err
@@ -537,7 +570,7 @@ func (s *Stack) newBridge(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesV
 	if err != nil {
 		return syserr.TranslateNetstackError(err)
 	}
-	if err := s.setLinkLocked(ctx, id, linkAttrs, dstNs); err != nil {
+	if err := s.setLinkLocked(ctx, id, linkAttrs, dstNs, nil /* setUp */); err != nil {
 		return err
 	}
 
