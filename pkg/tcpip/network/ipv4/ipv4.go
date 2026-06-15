@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/header/parse"
 	"gvisor.dev/gvisor/pkg/tcpip/network/hash"
@@ -519,6 +520,40 @@ func (e *endpoint) handleFragments(_ *stack.Route, networkMTU uint32, pkt *stack
 	}
 }
 
+// recalculateChecksum recalculates the checksum of a TCP packet.
+func recalculateChecksum(pkt *stack.PacketBuffer, r *stack.Route) tcpip.Error {
+	// RXChecksumValidated indicates that checksum verification may be
+	// safely skipped.
+	if pkt.RXChecksumValidated {
+		return nil
+	}
+	// NeedsCsum is set if the checksum offload is enabled, so no need to
+	// calculate the checksum.
+	if pkt.GSOOptions.Type != stack.GSONone && pkt.GSOOptions.NeedsCsum {
+		return nil
+	}
+	transportHeader := pkt.TransportHeader().Slice()
+	netHdr := header.IPv4(pkt.NetworkHeader().Slice())
+	if len(transportHeader) < header.TCPMinimumSize {
+		return &tcpip.ErrMalformedHeader{}
+	}
+	switch pkt.TransportProtocolNumber {
+	case header.TCPProtocolNumber:
+		tcp := header.TCP(transportHeader)
+		xsum := r.PseudoHeaderChecksum(header.TCPProtocolNumber, netHdr.PayloadLength())
+		xsum = checksum.Combine(xsum, pkt.Data().Checksum())
+		tcp.SetChecksum(0)
+		tcp.SetChecksum(^tcp.CalculateChecksum(xsum))
+	case header.UDPProtocolNumber:
+		udp := header.UDP(transportHeader)
+		xsum := r.PseudoHeaderChecksum(header.UDPProtocolNumber, netHdr.PayloadLength())
+		xsum = checksum.Combine(xsum, pkt.Data().Checksum())
+		udp.SetChecksum(0)
+		udp.SetChecksum(^udp.CalculateChecksum(xsum))
+	}
+	return nil
+}
+
 // WritePacket writes a packet to the given destination address and protocol.
 func (e *endpoint) WritePacket(r *stack.Route, params stack.NetworkHeaderParams, pkt *stack.PacketBuffer) tcpip.Error {
 	if err := e.addIPHeader(r.LocalAddress(), r.RemoteAddress(), pkt, params, nil /* options */); err != nil {
@@ -542,7 +577,7 @@ func (e *endpoint) writePacket(r *stack.Route, pkt *stack.PacketBuffer) tcpip.Er
 	}
 
 	if nft := stk.NFTables(); nft != nil && stk.IsNFTablesConfigured() {
-		if !nft.CheckOutput(pkt, stack.IP) {
+		if !nft.CheckOutput(pkt, r, stack.IP) {
 			// nftables is telling us to drop the packet.
 			return nil
 		}
@@ -562,6 +597,37 @@ func (e *endpoint) writePacket(r *stack.Route, pkt *stack.PacketBuffer) tcpip.Er
 			ep.handleLocalPacket(pkt, true /* canSkipRXChecksum */)
 			return nil
 		}
+
+		// Similar to the `ip_route_me_harder` in the kernel,
+		// we need to find a new route for the packet.
+		// Implementation is similar to the func forwardUnicastPacket.
+		stk := e.protocol.stack
+		newRoute, err := stk.FindRoute(0 /* nic id */, netHeader.SourceAddress(), newDstAddr, header.IPv4ProtocolNumber, false /* multicastLoop */)
+		if err != nil {
+			return err // Drop the packet
+		}
+		// Release the new route on exit.
+		defer newRoute.Release()
+
+		// Check if we need to recalculate the checksum.
+		// If the original route did not require a checksum but the new one does,
+		// we must calculate the full checksum; otherwise, NAT should have already
+		// done it.
+		if !r.RequiresTXTransportChecksum() && newRoute.RequiresTXTransportChecksum() {
+			if err := recalculateChecksum(pkt, newRoute); err != nil {
+				return err // Drop the packet
+			}
+		}
+
+		// Update the route to the new route.
+		r = newRoute
+
+		// Use the new endpoint to write the packet.
+		forwardToEp, ok := e.protocol.getEndpointForNIC(r.NICID())
+		if !ok {
+			return &tcpip.ErrUnknownNICID{}
+		}
+		return forwardToEp.writePacketPostRouting(r, pkt, true /* headerIncluded */)
 	}
 
 	return e.writePacketPostRouting(r, pkt, false /* headerIncluded */)
@@ -589,7 +655,7 @@ func (e *endpoint) writePacketPostRouting(r *stack.Route, pkt *stack.PacketBuffe
 	}
 
 	if nft := stk.NFTables(); nft != nil && stk.IsNFTablesConfigured() {
-		if !nft.CheckPostrouting(pkt, stack.IP) {
+		if !nft.CheckPostrouting(pkt, r, stack.IP) {
 			// nftables is telling us to drop the packet.
 			return nil
 		}
@@ -706,7 +772,7 @@ func (e *endpoint) forwardPacketWithRoute(route *stack.Route, pkt *stack.PacketB
 	}
 
 	if nft := stk.NFTables(); nft != nil && stk.IsNFTablesConfigured() {
-		if !nft.CheckForward(pkt, stack.IP) {
+		if !nft.CheckForward(pkt, route, stack.IP) {
 			// nftables is telling us to drop the packet.
 			return nil
 		}
@@ -819,7 +885,7 @@ func (e *endpoint) forwardUnicastPacket(pkt *stack.PacketBuffer) ip.ForwardingEr
 		}
 
 		if nft := stk.NFTables(); nft != nil && stk.IsNFTablesConfigured() {
-			if !nft.CheckForward(pkt, stack.IP) {
+			if !nft.CheckForward(pkt, nil /* route */, stack.IP) {
 				// nftables is telling us to drop the packet.
 				return nil
 			}
@@ -913,7 +979,7 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 		}
 
 		if nft := stk.NFTables(); nft != nil && stk.IsNFTablesConfigured() {
-			if !nft.CheckPrerouting(pkt, stack.IP) {
+			if !nft.CheckPrerouting(pkt, nil /* route */, stack.IP) {
 				// nftables is telling us to drop the packet.
 				return
 			}
@@ -1261,7 +1327,7 @@ func (e *endpoint) deliverPacketLocally(h header.IPv4, pkt *stack.PacketBuffer, 
 	}
 
 	if nft := stk.NFTables(); nft != nil && stk.IsNFTablesConfigured() {
-		if !nft.CheckInput(pkt, stack.IP) {
+		if !nft.CheckInput(pkt, nil /* route */, stack.IP) {
 			// nftables is telling us to drop the packet.
 			return
 		}

@@ -42,7 +42,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/state/stateio"
 	"gvisor.dev/gvisor/pkg/sentry/state/stateipc"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/timing"
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot/procfs"
@@ -580,7 +579,6 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 	log.Debugf("containerManager.Restore")
 
 	cm.l.mu.Lock()
-	timer.Reached("cm.l.mu.Lock")
 	cu := cleanup.Make(cm.l.mu.Unlock)
 	defer cu.Clean()
 
@@ -615,6 +613,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 			pagesFile.Close()
 		}
 	}()
+	timer.Reached("got restore readers")
 
 	cm.restorer = &restorer{
 		cm:         cm,
@@ -627,12 +626,14 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 	if err != nil {
 		return fmt.Errorf("creating memory file: %v", err)
 	}
+	timer.Reached("created MemoryFile")
 
 	if o.HavePagesFile {
 		// This immediately starts loading the main MemoryFile asynchronously.
 		cm.restorer.asyncMFLoader = kernel.NewAsyncMFLoader(pagesMetadata, pagesFile, cm.restorer.mainMF, timer.Fork("PagesFileLoader")) // transfers ownership
 		pagesMetadata = nil
 		pagesFile = nil
+		timer.Reached("created async MF loader")
 	}
 
 	cm.restorer.stateFile, cm.restorer.metadata, err = state.NewStatefileReader(stateFile /* transfers ownership on success */, nil)
@@ -640,6 +641,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 		return fmt.Errorf("creating statefile reader: %w", err)
 	}
 	stateFile = nil
+	timer.Reached("created statefile reader")
 
 	cm.l.restoreDone = sync.NewCond(&cm.l.mu)
 	cm.l.state = restoringUnstarted
@@ -653,11 +655,9 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 			return err
 		}
 	}
-	timer.Reached("restorer ok")
 
 	// Pause the kernel while we build a new one.
 	cm.l.k.Pause()
-	timer.Reached("kernel paused")
 
 	countStr, ok := cm.restorer.metadata[ContainerCountKey]
 	if !ok {
@@ -688,7 +688,8 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 	if checkpointVersion != currentVersion {
 		return fmt.Errorf("runsc version does not match across checkpoint restore, checkpoint: %v current: %v", checkpointVersion, currentVersion)
 	}
-	return cm.restorer.restoreContainerInfo(cm.l, &cm.l.root, timer.Fork("cont:root"))
+	timer.Reached("restorer initialized")
+	return cm.restorer.restoreContainerInfo(cm.l, &cm.l.root)
 }
 
 func getRestoreReaders(o *RestoreOpts) (io.ReadCloser, io.ReadCloser, stateio.AsyncReader, error) {
@@ -805,11 +806,8 @@ func (cm *containerManager) onRestoreDone(s Savings) {
 }
 
 func (cm *containerManager) RestoreSubcontainer(args *StartArgs, _ *struct{}) (retErr error) {
-	timeline := timing.OrphanTimeline(fmt.Sprintf("cont:%s", args.CID[0:min(8, len(args.CID))]), gtime.Now()).Lease()
-	defer timeline.End()
 	log.Debugf("containerManager.RestoreSubcontainer, cid: %s, args: %+v", args.CID, args)
 	cm.l.mu.Lock()
-	timeline.Reached("cm.l.mu.Lock")
 	state := cm.l.state
 	cm.l.mu.Unlock()
 	if state != restoringUnstarted {
@@ -887,7 +885,7 @@ func (cm *containerManager) RestoreSubcontainer(args *StartArgs, _ *struct{}) (r
 		return fmt.Errorf("error dup'ing gofer files: %w", err)
 	}
 
-	err = cm.restorer.restoreSubcontainer(args.Spec, args.Conf, cm.l, args.CID, stdios, goferFDs, goferFilestoreFDs, devGoferFD, args.GoferMountConfs, timeline.Transfer())
+	err = cm.restorer.restoreSubcontainer(args.Spec, args.Conf, cm.l, args.CID, stdios, goferFDs, goferFilestoreFDs, devGoferFD, args.GoferMountConfs)
 	if err != nil {
 		log.Debugf("containerManager.RestoreSubcontainer failed, cid: %s, args: %+v, err: %v", args.CID, args, err)
 		return err
@@ -1196,6 +1194,9 @@ type FSSaveArgs struct {
 	// 3. pages metadata file
 	// 4. pages file
 	urpc.FilePayload
+
+	// Path is the path inside the container to save.
+	Path string `json:"path"`
 
 	// Equivalent to kernel.FSSaveOpts fields.
 	ExitAfterSaving bool `json:"exit_after_saving"`

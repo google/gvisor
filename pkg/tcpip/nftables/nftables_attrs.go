@@ -19,6 +19,9 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 )
 
+// MAX_POLICY_RECURSION_DEPTH
+const maxPolicyRecursionDepth = 10
+
 var nlaTypeToString = [...]string{
 	linux.NLA_UNSPEC:       "NLA_UNSPEC",
 	linux.NLA_U8:           "NLA_U8",
@@ -52,7 +55,7 @@ type NlaPolicy struct {
 // NlaPolicyValidator is used to validate the data for a netlink attribute.
 type NlaPolicyValidator func(data any) bool
 
-func validateData(policy *NlaPolicy, data nlmsg.BytesView) bool {
+func validateData(policy *NlaPolicy, data nlmsg.BytesView, depth int) bool {
 	validator := policy.validator
 	if validator == nil {
 		// No validator is set, still check the data type
@@ -100,6 +103,12 @@ func validateData(policy *NlaPolicy, data nlmsg.BytesView) bool {
 		if v, ok := data.Int64(); ok {
 			return validator(v)
 		}
+	case linux.NLA_NESTED_ARRAY:
+		arrayValidatorOpts := arrayValidatorRuntimeOpts{
+			stackDepth: depth + 1,
+			data:       nlmsg.AttrsView(data),
+		}
+		return validator(arrayValidatorOpts)
 	// return true for all other valid types.
 	case linux.NLA_STRING,
 		linux.NLA_NUL_STRING,
@@ -107,7 +116,6 @@ func validateData(policy *NlaPolicy, data nlmsg.BytesView) bool {
 		linux.NLA_FLAG,
 		linux.NLA_MSECS,
 		linux.NLA_NESTED,
-		linux.NLA_NESTED_ARRAY,
 		linux.NLA_BITFIELD32,
 		linux.NLA_REJECT:
 
@@ -136,14 +144,69 @@ func AttrMaskValidator[T integer](mask T) NlaPolicyValidator {
 	}
 }
 
-// NfParseWithPolicy parses the data bytes, clearing the nested attribute bit if present.
+type arrayValidatorRuntimeOpts struct {
+	stackDepth int
+	data       nlmsg.AttrsView
+}
+
+// AttrArrayValidator validates if each element in the attribute array matches the given policy.
+func AttrArrayValidator(policy []NlaPolicy) NlaPolicyValidator {
+	return func(data any) bool {
+		v, ok := data.(arrayValidatorRuntimeOpts)
+		if !ok {
+			return false
+		}
+		if v.stackDepth > maxPolicyRecursionDepth {
+			return false
+		}
+		attrs := v.data
+		for !attrs.Empty() {
+			_, value, rest, ok := attrs.ParseFirst()
+			if !ok {
+				return false
+			}
+			attrs = rest
+			if len(value) == 0 {
+				continue
+			}
+			_, ok = NfParseWithOpts(nlmsg.AttrsView(value), &NfParseOpts{
+				Policy:     policy,
+				StackDepth: v.stackDepth + 1,
+			})
+			if !ok {
+				return false
+			}
+		}
+		return true
+	}
+}
+
+// NfParseOpts contains the options for parsing netlink attributes.
+type NfParseOpts struct {
+	// The policy is used to validate the
+	// attributes with the given validation function, if present.
+	Policy []NlaPolicy
+	// StackDepth is the depth of the parsed stack.
+	StackDepth int
+}
+
+// NfParseWithOpts parses the data bytes, clearing the nested attribute bit if present.
 // For nested attributes, Linux supports these attributes having the bit
-// set or unset. It is cleared here for consistency. The policy map is used to validate the
-// attributes with the given validation function, if present.
-func NfParseWithPolicy(data nlmsg.AttrsView, policy []NlaPolicy) (map[uint16]nlmsg.BytesView, bool) {
+// set or unset. It is cleared here for consistency.
+func NfParseWithOpts(data nlmsg.AttrsView, opts *NfParseOpts) (map[uint16]nlmsg.BytesView, bool) {
 	attrs, ok := data.Parse()
 	if !ok {
 		return nil, ok
+	}
+	var policy []NlaPolicy
+	stackDepth := 0
+	if opts != nil {
+		if opts.Policy != nil {
+			policy = opts.Policy
+		}
+		if opts.StackDepth != 0 {
+			stackDepth = opts.StackDepth
+		}
 	}
 	policyLen := uint16(len(policy))
 	newAttrs := make(map[uint16]nlmsg.BytesView)
@@ -151,7 +214,7 @@ func NfParseWithPolicy(data nlmsg.AttrsView, policy []NlaPolicy) (map[uint16]nlm
 		unNestedAttr := attr & ^linux.NLA_F_NESTED
 		policyExists := unNestedAttr < policyLen
 		if policyExists {
-			if ok := validateData(&policy[unNestedAttr], attrData); !ok {
+			if ok := validateData(&policy[unNestedAttr], attrData, stackDepth); !ok {
 				return nil, false
 			}
 		}
@@ -162,7 +225,7 @@ func NfParseWithPolicy(data nlmsg.AttrsView, policy []NlaPolicy) (map[uint16]nlm
 
 // NfParse parses the data bytes with no validation.
 func NfParse(data nlmsg.AttrsView) (map[uint16]nlmsg.BytesView, bool) {
-	return NfParseWithPolicy(data, nil)
+	return NfParseWithOpts(data, nil)
 }
 
 // HasAttr returns whether the given attribute key is present in the attribute map.

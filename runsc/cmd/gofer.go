@@ -155,6 +155,8 @@ func (g *Gofer) SetFlags(f *flag.FlagSet) {
 
 	// Profiling flags.
 	g.profileFDs.SetFromFlags(f)
+
+	extension.SetFlags(f)
 }
 
 // Execute implements subcommands.Command.
@@ -210,10 +212,21 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 			defer cleanupUnmounter()
 		}
 	}
+	extensionPrepare, err := extension.PrepareGofer(extension.GoferPrepareContext{
+		Spec:        spec,
+		ContainerID: containerID,
+		BundleDir:   g.bundleDir,
+	})
+	if err != nil {
+		util.Fatalf("preparing gofer extensions: %v", err)
+	}
 	if g.applyCaps {
 		overrides := g.syncFDs.flags()
 		overrides["apply-caps"] = "false"
 		overrides["setup-root"] = "false"
+		for key, value := range extensionPrepare.FlagOverrides {
+			overrides[key] = value
+		}
 		args := sandboxsetup.PrepareArgs(g.Name(), f, overrides)
 		capsToApply := goferCaps
 		if conf.GetHostUDS().AllowOpen() {

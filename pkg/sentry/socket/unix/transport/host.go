@@ -88,6 +88,9 @@ type HostConnectedEndpoint struct {
 
 	// wrShutdown is true if transmissions have been shutdown with SHUT_WR.
 	wrShutdown atomicbitops.Bool
+
+	// passcred is true if SO_PASSCRED is enabled on the host socket.
+	passcred bool
 }
 
 // init performs initialization required for creating new
@@ -127,8 +130,14 @@ func (c *HostConnectedEndpoint) initFromOptions() *syserr.Error {
 		return syserr.FromError(err)
 	}
 
+	passcred, err := unix.GetsockoptInt(c.fd, unix.SOL_SOCKET, unix.SO_PASSCRED)
+	if err != nil {
+		return syserr.FromError(err)
+	}
+
 	c.stype = linux.SockType(stype)
 	c.sndbuf.Store(int64(sndbuf))
+	c.passcred = passcred != 0
 
 	return nil
 }
@@ -236,7 +245,7 @@ func (c *HostConnectedEndpoint) Writable() bool {
 
 // Passcred implements ConnectedEndpoint.Passcred.
 func (c *HostConnectedEndpoint) Passcred() bool {
-	return passcredsEnabled(c.fd)
+	return c.passcred
 }
 
 // GetLocalAddress implements ConnectedEndpoint.GetLocalAddress.

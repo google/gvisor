@@ -96,6 +96,10 @@ type VirtualFilesystem struct {
 	// using atomic memory operations.
 	lastMountID atomicbitops.Uint64
 
+	// lastMountNamespaceID is the last allocated mount namespace ID.
+	// lastMountNamespaceID is accessed using atomic memory operations.
+	lastMountNamespaceID atomicbitops.Uint64
+
 	// anonMount is a Mount, not included in mounts or mountpoints,
 	// representing an anonFilesystem. anonMount is used to back
 	// VirtualDentries returned by VirtualFilesystem.NewAnonVirtualDentry().

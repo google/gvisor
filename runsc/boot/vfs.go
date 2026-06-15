@@ -1633,10 +1633,11 @@ func nvproxyRegisterDevices(info *containerInfo, vfsObj *vfs.VirtualFilesystem, 
 		return fmt.Errorf("NVIDIA driver capabilities: %w", err)
 	}
 	devInfo, err := nvproxy.Register(vfsObj, &nvproxy.Options{
-		DriverVersion: nvidiaDriverVersion,
-		DriverCaps:    driverCaps,
-		HostSettings:  info.nvidiaHostSettings,
-		UseDevGofer:   true,
+		DriverVersion:          nvidiaDriverVersion,
+		DriverCaps:             driverCaps,
+		AllowUnsupportedDriver: info.conf.NVProxyAllowUnsupportedDriver,
+		HostSettings:           info.nvidiaHostSettings,
+		UseDevGofer:            true,
 	})
 	if err != nil {
 		return fmt.Errorf("registering nvproxy driver: %w", err)

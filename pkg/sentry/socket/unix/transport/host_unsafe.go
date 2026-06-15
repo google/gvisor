@@ -134,11 +134,3 @@ func fdWriteVec(fd int, bufs [][]byte, maxlen int64, truncate bool, creds bool) 
 
 	return int64(n), length, err
 }
-
-func passcredsEnabled(fd int) bool {
-	enabled, err := unix.GetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_PASSCRED)
-	if err != nil {
-		return false
-	}
-	return enabled != 0
-}

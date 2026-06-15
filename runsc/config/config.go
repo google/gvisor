@@ -39,7 +39,7 @@ import (
 //  1. Create a new field in Config.
 //  2. Add a field tag with the flag name
 //  3. Register a new flag in flags.go, with same name and add a description
-//  4. Add any necessary validation into validate()
+//  4. Add any necessary validation into Validate()
 //  5. If adding an enum, follow the same pattern as FileAccessType
 //  6. Evaluate if the flag can be changed with OCI annotations. See
 //     overrideAllowlist for more details
@@ -126,6 +126,9 @@ type Config struct {
 
 	// AllowPacketEndpointWrite enables write operations on packet endpoints.
 	AllowPacketEndpointWrite bool `flag:"allow-packet-socket-write"`
+
+	// AllowLiveTCPMigration allows TCP connection state to be migrated.
+	AllowLiveTCPMigration bool `flag:"allow-live-tcp-migration"`
 
 	// HostGSO indicates that host segmentation offload is enabled.
 	HostGSO bool `flag:"gso"`
@@ -354,6 +357,10 @@ type Config struct {
 	// capabilities that are allowed to be requested by the container.
 	NVProxyAllowedDriverCapabilities string `flag:"nvproxy-allowed-driver-capabilities"`
 
+	// NVProxyAllowUnsupportedDriver allows nvproxy to be initialized with an
+	// unsupported driver version.
+	NVProxyAllowUnsupportedDriver bool `flag:"nvproxy-allow-unsupported-driver"`
+
 	// TPUProxy enables support for TPUs.
 	TPUProxy bool `flag:"tpuproxy"`
 
@@ -445,7 +452,11 @@ type Config struct {
 	ControlRPCStopTimeout time.Duration `flag:"control-rpc-stop-timeout"`
 }
 
-func (c *Config) validate() error {
+// Validate checks that the Config is in a consistent state, e.g. that no
+// interdependent or mutually-exclusive flag values conflict. Note that
+// Config.Override does not validate, so callers must call Validate once they
+// are done overriding.
+func (c *Config) Validate() error {
 	if c.Overlay && c.Overlay2.Enabled() {
 		// Deprecated flag was used together with flag that replaced it.
 		return fmt.Errorf("overlay flag has been replaced with overlay2 flag")

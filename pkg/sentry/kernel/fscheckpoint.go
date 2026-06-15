@@ -48,6 +48,9 @@ type FSSaveOpts struct {
 	// If ExitAfterSaving is true, all processes exit with status 0 before
 	// FSSave returns, whether or not it returns a non-nil error.
 	ExitAfterSaving bool
+
+	// Path is the path inside the container to save. Empty defaults to `/`.
+	Path string
 }
 
 // FSSave collects a filesystem checkpoint as specified by the fscheckpoint
@@ -71,6 +74,9 @@ func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) error {
 			opts.PagesFile = nil
 		}
 	}()
+	if len(opts.Path) == 0 {
+		opts.Path = "/"
+	}
 
 	k.Pause()
 	defer k.Unpause()
@@ -135,7 +141,7 @@ func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) error {
 				continue
 			}
 			resourceID := mf.ResourceID()
-			if resourceID.Path != "/" {
+			if resourceID.Path != opts.Path {
 				// This excludes:
 				// - MemoryFiles with no ResourceID, i.e. the main MemoryFile.
 				//   This currently needs to be excluded since we have no way

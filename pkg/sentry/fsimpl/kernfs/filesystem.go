@@ -284,6 +284,15 @@ func checkDeleteLocked(ctx context.Context, rp *vfs.ResolvingPath, d *Dentry) er
 	if err := parent.inode.CheckPermissions(ctx, rp.Credentials(), vfs.MayWrite|vfs.MayExec); err != nil {
 		return err
 	}
+	if err := vfs.CheckDeleteSticky(
+		rp.Credentials(),
+		linux.FileMode(parent.inode.Mode()),
+		auth.KUID(parent.inode.UID()),
+		auth.KUID(d.inode.UID()),
+		auth.KGID(d.inode.GID()),
+	); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -789,6 +798,15 @@ func (fs *Filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		if dst == nil {
 			panic(fmt.Sprintf("Child %q for parent Dentry %+v disappeared inside atomic section?", newName, dstDir))
 		}
+		if err := vfs.CheckDeleteSticky(
+			rp.Credentials(),
+			linux.FileMode(dstDir.inode.Mode()),
+			auth.KUID(dstDir.inode.UID()),
+			auth.KUID(dst.inode.UID()),
+			auth.KGID(dst.inode.GID()),
+		); err != nil {
+			return err
+		}
 	default:
 		return err
 	}
@@ -859,9 +877,6 @@ func (fs *Filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	if err != nil {
 		return err
 	}
-	if err := parent.inode.CheckPermissions(ctx, rp.Credentials(), vfs.MayWrite|vfs.MayExec); err != nil {
-		return err
-	}
 	if err := rp.Mount().CheckBeginWrite(); err != nil {
 		return err
 	}
@@ -873,20 +888,11 @@ func (fs *Filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	if name == ".." {
 		return linuxerr.ENOTEMPTY
 	}
-	child, ok := parent.children[name]
-	if !ok {
-		return linuxerr.ENOENT
-	}
-	if err := checkDeleteLocked(ctx, rp, child); err != nil {
+	child, err := fs.revalidateChildLocked(ctx, rp.VirtualFilesystem(), parent, name)
+	if err != nil {
 		return err
 	}
-	if err := vfs.CheckDeleteSticky(
-		rp.Credentials(),
-		linux.FileMode(parent.inode.Mode()),
-		auth.KUID(parent.inode.UID()),
-		auth.KUID(child.inode.UID()),
-		auth.KGID(child.inode.GID()),
-	); err != nil {
+	if err := checkDeleteLocked(ctx, rp, child); err != nil {
 		return err
 	}
 	if !child.isDir() {

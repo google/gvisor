@@ -34,48 +34,48 @@ import (
 //
 
 // CheckPrerouting checks at the Prerouting hook if the packet should continue traversing the stack.
-func (nf *NFTables) CheckPrerouting(pkt *stack.PacketBuffer, af stack.AddressFamily) bool {
-	return nf.checkHook(pkt, af, stack.NFPrerouting)
+func (nf *NFTables) CheckPrerouting(pkt *stack.PacketBuffer, route *stack.Route, af stack.AddressFamily) bool {
+	return nf.checkHook(pkt, route, af, stack.NFPrerouting)
 }
 
 // CheckInput checks at the Input hook if the packet should continue traversing the stack.
-func (nf *NFTables) CheckInput(pkt *stack.PacketBuffer, af stack.AddressFamily) bool {
-	return nf.checkHook(pkt, af, stack.NFInput)
+func (nf *NFTables) CheckInput(pkt *stack.PacketBuffer, route *stack.Route, af stack.AddressFamily) bool {
+	return nf.checkHook(pkt, route, af, stack.NFInput)
 }
 
 // CheckForward checks at the Forward hook if the packet should continue traversing the stack.
-func (nf *NFTables) CheckForward(pkt *stack.PacketBuffer, af stack.AddressFamily) bool {
-	return nf.checkHook(pkt, af, stack.NFForward)
+func (nf *NFTables) CheckForward(pkt *stack.PacketBuffer, route *stack.Route, af stack.AddressFamily) bool {
+	return nf.checkHook(pkt, route, af, stack.NFForward)
 }
 
 // CheckOutput checks at the Output hook if the packet should continue traversing the stack.
-func (nf *NFTables) CheckOutput(pkt *stack.PacketBuffer, af stack.AddressFamily) bool {
-	return nf.checkHook(pkt, af, stack.NFOutput)
+func (nf *NFTables) CheckOutput(pkt *stack.PacketBuffer, route *stack.Route, af stack.AddressFamily) bool {
+	return nf.checkHook(pkt, route, af, stack.NFOutput)
 }
 
 // CheckPostrouting checks at the Postrouting hook if the packet should continue traversing the stack.
-func (nf *NFTables) CheckPostrouting(pkt *stack.PacketBuffer, af stack.AddressFamily) bool {
-	return nf.checkHook(pkt, af, stack.NFPostrouting)
+func (nf *NFTables) CheckPostrouting(pkt *stack.PacketBuffer, route *stack.Route, af stack.AddressFamily) bool {
+	return nf.checkHook(pkt, route, af, stack.NFPostrouting)
 }
 
 // CheckIngress checks at the Ingress hook if the packet should continue traversing the stack.
-func (nf *NFTables) CheckIngress(pkt *stack.PacketBuffer, af stack.AddressFamily) bool {
-	return nf.checkHook(pkt, af, stack.NFIngress)
+func (nf *NFTables) CheckIngress(pkt *stack.PacketBuffer, route *stack.Route, af stack.AddressFamily) bool {
+	return nf.checkHook(pkt, route, af, stack.NFIngress)
 }
 
 // CheckEgress checks at the Egress hook if the packet should continue traversing the stack.
-func (nf *NFTables) CheckEgress(pkt *stack.PacketBuffer, af stack.AddressFamily) bool {
-	return nf.checkHook(pkt, af, stack.NFEgress)
+func (nf *NFTables) CheckEgress(pkt *stack.PacketBuffer, route *stack.Route, af stack.AddressFamily) bool {
+	return nf.checkHook(pkt, route, af, stack.NFEgress)
 }
 
 // checkHook returns true if the packet should continue traversing the stack or false
 // if the packet should be dropped.
 // If NFTables is not enabled, the packet is always allowed to continue traversing the stack.
-func (nf *NFTables) checkHook(pkt *stack.PacketBuffer, af stack.AddressFamily, hook stack.NFHook) bool {
+func (nf *NFTables) checkHook(pkt *stack.PacketBuffer, route *stack.Route, af stack.AddressFamily, hook stack.NFHook) bool {
 	if !IsNFTablesEnabled() {
 		return true
 	}
-	v, err := nf.EvaluateHook(af, hook, pkt)
+	v, err := nf.EvaluateHook(af, hook, pkt, route)
 
 	if err != nil {
 		return false
@@ -98,6 +98,73 @@ func isTerminalCode(code uint32) bool {
 // Core Evaluation Functions
 //
 
+// evaluateNATBaseChains evaluates the packet through the NAT base chains;
+// if NAT has not been configured for this packet.
+// Reserves a no-op NAT if no rules matched.
+// Returns error and whether NAT is/was configured.
+func (nf *NFTables) evaluateNATBaseChains(pkt *stack.PacketBuffer, route *stack.Route, hook stack.NFHook, family stack.AddressFamily, regs *registerSet) (*syserr.AnnotatedError, bool) {
+	natType := stack.NfHookToNATType(hook)
+	if natType == stack.NATUnknown {
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: invalid hook: %s for NATType: %s", hook, natType)), false
+	}
+	// Check if NAT has already been configured for this packet.
+	// If so, skip the evaluation of the NAT base chains.
+	if pkt.IsNATConfigured(natType) {
+		return nil, true
+	}
+	baseChains, err := nf.getBaseChainsForEvaluation(family, hook, true /* natChains */)
+	if err != nil {
+		return err, false
+	}
+	for _, bc := range baseChains {
+		if _, dormant := bc.table.flagSet[TableFlagDormant]; dormant {
+			continue
+		}
+		// Evaluate the packet through the base chain.
+		if err := bc.evaluate(regs, pkt); err != nil {
+			return err, false
+		}
+		// If the verdict is a terminal code, NAT will not be configured for this
+		// packet.
+		if isTerminalCode(regs.Verdict().Code) {
+			return nil, false
+		}
+		// If the current base chain configured NAT for this packet, work is done.
+		if pkt.IsNATConfigured(natType) {
+			return nil, true
+		}
+	}
+	// If none of the base chains configured NAT for this packet, reserve a no-op NAT.
+	// As NAT rules should be only evaluated once for a connection, a no-op NAT must be reserved
+	// to ensure the packet skips the NAT base chains again.
+	if !pkt.ConfigureNoopNAT(natType) {
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: failed to reserve no-op NAT for packet: %v", pkt)), false
+	}
+	return nil, true
+}
+
+// evaluateNAT evaluates then applies NAT to the packet.
+func (nf *NFTables) evaluateNAT(pkt *stack.PacketBuffer, route *stack.Route, hook stack.NFHook, family stack.AddressFamily, regs *registerSet) *syserr.AnnotatedError {
+	if !pkt.IsConnTrackConfigured() {
+		log.Warningf("Nftables: ConnTrack should be configured before NAT")
+		return nil
+	}
+
+	err, natConfigured := nf.evaluateNATBaseChains(pkt, route, hook, family, regs)
+	if err != nil {
+		return err
+	}
+	// If NAT is not configured for this packet, nothing to do.
+	if !natConfigured {
+		return nil
+	}
+	// Apply NAT to the packet;
+	// i.e. rewrite the packet headers and update the conntrack state.
+	_ = stack.NFTApplyNAT(pkt, hook, route)
+	regs.verdict.Code = VC(linux.NF_ACCEPT)
+	return nil
+}
+
 // extraEvaluator is a struct that holds a priority and a function to call during
 // functions other than base chain evaluations.
 type extraEvaluator struct {
@@ -106,24 +173,33 @@ type extraEvaluator struct {
 }
 
 // getExtraEvaluators returns a list of extra evaluators beside the nft chains.
-func (nf *NFTables) getExtraEvaluators(family stack.AddressFamily, hook stack.NFHook, pkt *stack.PacketBuffer, regs *registerSet) []*extraEvaluator {
+func (nf *NFTables) getExtraEvaluators(family stack.AddressFamily, hook stack.NFHook, pkt *stack.PacketBuffer, route *stack.Route, regs *registerSet) []*extraEvaluator {
 	var e []*extraEvaluator
 	// Get ConnTrack evaluator.
-	connTrackPriority, connTrackOk := stack.NfConnTrackPriority(hook)
-	if connTrackOk {
+	connTrackHookPriority, connTrackOk := stack.NfConnTrackPriority(hook)
+	if nf.connTrack != nil && connTrackOk {
 		e = append(e, &extraEvaluator{
-			priority: connTrackPriority,
+			priority: connTrackHookPriority,
 			handle: func() *syserr.AnnotatedError {
+				switch hook {
+				case stack.NFPrerouting, stack.NFOutput:
+					nf.connTrack.GetConnAndUpdatePkt(pkt, hook == stack.NFOutput /* skipChecksumValidation */)
+				case stack.NFInput, stack.NFPostrouting:
+					if !pkt.FinalizeConnTrack() {
+						return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: failed to finalize connTrack for packet: %v", pkt))
+					}
+				}
+				regs.verdict.Code = VC(linux.NFT_CONTINUE)
 				return nil
 			}})
 	}
 	// Get NAT evaluator.
 	natHookPriority, natOk := stack.NfNATPriority(hook)
-	if natOk {
+	if nf.natEnabled && natOk {
 		e = append(e, &extraEvaluator{
 			priority: natHookPriority,
 			handle: func() *syserr.AnnotatedError {
-				return nil
+				return nf.evaluateNAT(pkt, route, hook, family, regs)
 			},
 		})
 	}
@@ -165,7 +241,7 @@ func (nf *NFTables) getBaseChainsForEvaluation(family stack.AddressFamily, hook 
 // in place.
 // Returns an error if address family or hook is invalid or they don't match.
 // TODO(b/345684870): Consider removing error case if we never return an error.
-func (nf *NFTables) EvaluateHook(family stack.AddressFamily, hook stack.NFHook, pkt *stack.PacketBuffer) (stack.NFVerdict, *syserr.AnnotatedError) {
+func (nf *NFTables) EvaluateHook(family stack.AddressFamily, hook stack.NFHook, pkt *stack.PacketBuffer, route *stack.Route) (stack.NFVerdict, *syserr.AnnotatedError) {
 	// Note: none of the other evaluate functions are public because they require
 	// jumping to different chains in the same table, so all chains, rules, and
 	// operations must be tied to a table. Thus, calling evaluate for standalone
@@ -189,7 +265,7 @@ func (nf *NFTables) EvaluateHook(family stack.AddressFamily, hook stack.NFHook, 
 	// Create a new register set for the evaluation.
 	regs := newRegisterSet()
 	// Evaluates packet through all base chains for given hook in priority order.
-	extraEvaluators := nf.getExtraEvaluators(family, hook, pkt, &regs)
+	extraEvaluators := nf.getExtraEvaluators(family, hook, pkt, route, &regs)
 	ei := 0 // Extra evaluator iterator.
 	numExtraHooks := len(extraEvaluators)
 	ci := 0 // Base chain iterator.
@@ -611,6 +687,14 @@ func (nf *NFTables) AddChainToTable(tab *Table, chainName string, bcInfo *BaseCh
 		if err := nf.addChainToCache(chain); err != nil {
 			return nil, err
 		}
+
+		// Initialize ConnTrack and NAT when the first nat expression is added to the rule.
+		// No locks are needed as each update happens
+		// in a new copy.
+		if bcInfo.BcType == BaseChainTypeNat {
+			nf.InitConnTrackOnce()
+			nf.SetNATState(true /*enabled*/)
+		}
 	}
 	return chain, nil
 }
@@ -686,6 +770,30 @@ func (nf *NFTables) addChainToCache(c *Chain) *syserr.AnnotatedError {
 		}
 	}
 	return nil
+}
+
+// InitConnTrackOnce initializes the conntrack.
+// No need to lock the mutex as each NFTables update
+// happens in a new copy of the NFTables struct.
+func (nf *NFTables) InitConnTrackOnce() {
+	if nf.connTrack == nil {
+		nf.connTrack, nf.connTrackReaper = stack.NewConnTrackWithReaper(nf.clock, &nf.rng, nil /* seed */)
+	}
+}
+
+// GetConnTrack returns the conntrack.
+func (nf *NFTables) GetConnTrack() *stack.ConnTrack {
+	return nf.connTrack
+}
+
+// SetNATState sets the NAT state of the NFTables object.
+// Every new connection needs to go through the NAT configuration
+// even if there are no NAT rules to apply.
+// This variable is used to skip these NAT configurations
+// for the new connections and gets only
+// enabled when a NAT chain is added.
+func (nf *NFTables) SetNATState(enabled bool) {
+	nf.natEnabled = enabled
 }
 
 //
@@ -1244,7 +1352,6 @@ func (r *Rule) addOperation(op operation) *syserr.AnnotatedError {
 // AddOpFromExprInfo adds an operation to the rule given the expression information.
 func (r *Rule) AddOpFromExprInfo(tab *Table, exprInfo ExprInfo) *syserr.AnnotatedError {
 	// Centralized here so that operations can do their own validation when being created.
-	// TODO - b/434244017: Support parsing expression types other than NFT_IMMEDIATE
 	var op operation
 	var err *syserr.AnnotatedError
 	exprOpType := ToOpType(exprInfo.ExprName)
@@ -1380,4 +1487,74 @@ func (hfStack *hookFunctionStack) detachBaseChain(name string) *syserr.Annotated
 		return nil
 	}
 	return syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("failed to detach base chain: %s, chain not found", name))
+}
+
+//
+// NFTables Parser functions
+//
+
+// ParseExpr parses the expression attributes and returns the expression information.
+func (nf *NFTables) ParseExpr(attrs nlmsg.AttrsView) (*ExprInfo, *syserr.AnnotatedError) {
+	exprAttrs, ok := NfParse(attrs)
+	if !ok {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse attributes for expression")
+	}
+
+	exprNameBytes, ok := exprAttrs[linux.NFTA_EXPR_NAME]
+	if !ok {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: NFTA_EXPR_NAME attribute is malformed or not found")
+	}
+
+	// exprData holds the expression data for a specific operation.
+	exprData := nlmsg.AttrsView{}
+	// Only assign exprData if the data is present. Later validation will
+	// check if it is needed for the specific operation type.
+	// From linux/net/netfilter/nf_tables_api.c: nf_tables_expr_parse
+	if exprDataBytes, ok := exprAttrs[linux.NFTA_EXPR_DATA]; ok {
+		exprData = nlmsg.AttrsView(exprDataBytes)
+	}
+
+	return &ExprInfo{
+		ExprName: exprNameBytes.String(),
+		ExprData: exprData,
+	}, nil
+}
+
+// ParseNestedExprs parses the rule expressions attributes and adds the
+// operations to the rule.
+func (nf *NFTables) ParseNestedExprs(nestedAttrBytes nlmsg.AttrsView, maxExprs int) ([]ExprInfo, *syserr.AnnotatedError) {
+	// Netlink message structure for rule expressions (NFTA_RULE_EXPRESSIONS):
+	//
+	// [ NFTA_RULE_EXPRESSIONS (Outer Array Container) ]
+	//   ├── [ NFTA_LIST_ELEM (Element Wrapper #1) ]
+	//   │     ├── [ NFTA_EXPR_NAME ] (e.g., "counter")
+	//   │     └── [ NFTA_EXPR_DATA ] (Expression-specific attributes)
+	//   │
+	//   └── [ NFTA_LIST_ELEM (Element Wrapper #2) ]
+	//         ├── [ NFTA_EXPR_NAME ] (e.g., "cmp")
+	//         └── [ NFTA_EXPR_DATA ] (Expression-specific attributes)
+	var exprInfos []ExprInfo
+	numExprs := 0
+	for !nestedAttrBytes.Empty() {
+		hdr, value, rest, ok := nestedAttrBytes.ParseFirst()
+		if !ok {
+			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse list atttribute for rules")
+		}
+
+		nestedAttrBytes = rest
+		if hdr.Type&linux.NLA_TYPE_MASK != linux.NFTA_LIST_ELEM {
+			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: parsed attribute is not of type NFTA_LIST_ELEM")
+		}
+
+		if numExprs == maxExprs {
+			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Too many expressions specified for rule")
+		}
+		numExprs++
+		exprInfo, err := nf.ParseExpr(value)
+		if err != nil {
+			return nil, err
+		}
+		exprInfos = append(exprInfos, *exprInfo)
+	}
+	return exprInfos, nil
 }

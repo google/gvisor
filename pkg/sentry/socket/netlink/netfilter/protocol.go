@@ -744,9 +744,9 @@ func (p *Protocol) deleteChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.By
 	return nil
 }
 
-// NFT_RULE_MAXEXPRS is the maximum number of expressions that can be specified
-// for a rule. From include/uapi/linux/netfilter/nf_tables_api.c.
-const NFT_RULE_MAXEXPRS = 128
+// maxExprs is the maximum number of expressions that can be specified
+// See `NFT_RULE_MAXEXPRS` in kernel.
+const maxExprs = 128
 
 // newRule creates a new rule in the given chain.
 func (p *Protocol) newRule(nft *nftables.NFTables, st *stack.Stack, attrs map[uint16]nlmsg.BytesView, family stack.AddressFamily, msgFlags uint16, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
@@ -831,7 +831,7 @@ func (p *Protocol) newRule(nft *nftables.NFTables, st *stack.Stack, attrs map[ui
 
 	var exprInfos []nftables.ExprInfo
 	if exprBytes, ok := attrs[linux.NFTA_RULE_EXPRESSIONS]; ok {
-		exprInfos, err = parseNestedExprs(nlmsg.AttrsView(exprBytes))
+		exprInfos, err = nft.ParseNestedExprs(nlmsg.AttrsView(exprBytes), maxExprs)
 		if err != nil {
 			return err
 		}
@@ -895,62 +895,6 @@ func (p *Protocol) newRule(nft *nftables.NFTables, st *stack.Stack, attrs map[ui
 
 	// TODO - b/434244017: Support validating the entire table before returning.
 	return nil
-}
-
-// parseNestedExprs parses the rule expressions attributes and adds the
-// operations to the rule.
-func parseNestedExprs(nestedAttrBytes nlmsg.AttrsView) ([]nftables.ExprInfo, *syserr.AnnotatedError) {
-	// NFTA_EXPRESSIONS -> many NFTA_LIST_ELEM that each hold -> NFTA_EXPR_NAME
-	// and NFTA_EXPR_DATA.
-	var exprInfos []nftables.ExprInfo
-	numExprs := 0
-	for !nestedAttrBytes.Empty() {
-		hdr, value, rest, ok := nestedAttrBytes.ParseFirst()
-		if !ok {
-			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse list atttribute for rules")
-		}
-
-		nestedAttrBytes = rest
-		if nlaType(hdr) != linux.NFTA_LIST_ELEM {
-			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: parsed attribute is not of type NFTA_LIST_ELEM")
-		}
-
-		if numExprs == NFT_RULE_MAXEXPRS {
-			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Too many expressions specified for rule")
-		}
-		numExprs++
-
-		exprAttrs, ok := nftables.NfParse(nlmsg.AttrsView(value))
-		if !ok {
-			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse attributes for expression")
-		}
-
-		exprNameBytes, ok := exprAttrs[linux.NFTA_EXPR_NAME]
-		if !ok {
-			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: NFTA_EXPR_NAME attribute is malformed or not found")
-		}
-
-		// exprData holds the expression data for a specific operation.
-		exprData := nlmsg.AttrsView{}
-		// Only assign exprData if the data is present. Later validation will
-		// check if it is needed for the specific operation type.
-		// From linux/net/netfilter/nf_tables_api.c: nf_tables_expr_parse
-		if exprDataBytes, ok := exprAttrs[linux.NFTA_EXPR_DATA]; ok {
-			exprData = nlmsg.AttrsView(exprDataBytes)
-		}
-
-		exprInfos = append(exprInfos, nftables.ExprInfo{
-			ExprName: exprNameBytes.String(),
-			ExprData: exprData,
-		})
-	}
-
-	return exprInfos, nil
-}
-
-// nlaType returns the type of the netlink attribute.
-func nlaType(hdr linux.NetlinkAttrHeader) uint16 {
-	return hdr.Type & linux.NLA_TYPE_MASK
 }
 
 // getRule returns the rule for the given family and message flags.

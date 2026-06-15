@@ -329,7 +329,11 @@ func FixConfig(conf *config.Config, spec *specs.Spec) error {
 			}
 		}
 	}
-	return nil
+	// Override does not validate the config. Validate once after all
+	// annotations have been applied: annotations are iterated in random map
+	// order, so interdependent flags (e.g. qdisc=tbf and qdisc-tbf-rate) may
+	// be applied in an order that is only valid once complete.
+	return conf.Validate()
 }
 
 // ReadMounts reads mount list from a file.
@@ -397,7 +401,9 @@ func Capabilities(enableRaw bool, specCaps *specs.LinuxCapabilities) (*auth.Task
 		if caps.PermittedCaps, err = capsFromNames(specCaps.Permitted, skipSet); err != nil {
 			return nil, err
 		}
-		// TODO(gvisor.dev/issue/3166): Support ambient capabilities.
+		if caps.AmbientCaps, err = capsFromNames(specCaps.Ambient, skipSet); err != nil {
+			return nil, err
+		}
 	}
 	return &caps, nil
 }

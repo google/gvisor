@@ -623,6 +623,9 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		if opts.Flags&linux.RENAME_NOREPLACE != 0 {
 			return linuxerr.EEXIST
 		}
+		if err := newParentDir.mayDelete(rp.Credentials(), replaced); err != nil {
+			return err
+		}
 		replacedDir, ok := replaced.inode.impl.(*directory)
 		if ok {
 			if !renamed.inode.isDir() {

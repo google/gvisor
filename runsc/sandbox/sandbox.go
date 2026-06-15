@@ -1608,6 +1608,7 @@ type CheckpointOpts struct {
 	Direct                    bool
 	ExcludeCommittedZeroPages bool
 	CudaCheckpointPath        string
+	CudaCheckpointSequential  bool
 
 	// Save/restore exec options.
 	SaveRestoreExecArgv        string
@@ -1624,14 +1625,13 @@ func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, 
 		Metadata:                       opts.Compression.ToMetadata(),
 		AppMFExcludeCommittedZeroPages: opts.ExcludeCommittedZeroPages,
 		Resume:                         opts.Resume,
+		CudaCheckpointPath:             opts.CudaCheckpointPath,
+		CudaCheckpointSequential:       opts.CudaCheckpointSequential,
 		ExecOpts: control.SaveRestoreExecOpts{
 			Argv:        opts.SaveRestoreExecArgv,
 			Timeout:     opts.SaveRestoreExecTimeout,
 			ContainerID: opts.SaveRestoreExecContainerID,
 		},
-	}
-	if opts.CudaCheckpointPath != "" {
-		opt.Metadata[control.CudaCheckpointPathKey] = opts.CudaCheckpointPath
 	}
 	defer func() {
 		for _, f := range opt.FilePayload.Files {
@@ -1741,6 +1741,9 @@ type FSSaveOpts struct {
 	// is successful. This is equivalent to !CheckpointOpts.Resume, and is
 	// provided for parity with that feature.
 	ExitAfterSaving bool
+
+	// Path is the path inside the container to save.
+	Path string
 }
 
 // FSSave sends the filesystem checkpointing call to the sandbox.
@@ -1749,6 +1752,7 @@ func (s *Sandbox) FSSave(conf *config.Config, cid string, imagePath string, opts
 
 	args := boot.FSSaveArgs{
 		ExitAfterSaving: opts.ExitAfterSaving,
+		Path:            opts.Path,
 	}
 	defer func() {
 		for _, f := range args.FilePayload.Files {

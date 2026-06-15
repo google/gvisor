@@ -21,6 +21,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/google/subcommands"
@@ -107,6 +108,7 @@ func do(c *bwrapConfig, waitStatus *unix.WaitStatus) subcommands.ExitStatus {
 	c.WorkspaceDir = workspaceDir
 
 	// Build the runsc spec from the bwrap config.
+
 	spec, err := c.buildRunscSpec()
 	if err != nil {
 		return util.Errorf("failed to build runsc spec: %v", err)
@@ -169,6 +171,11 @@ type bwrapConfig struct {
 	Chdir        string
 	WorkspaceDir string
 	runscConfig  *config.Config
+	Env          []string
+	UnsetEnv     []string
+	UID          int
+	GID          int
+	UnshareUser  bool
 }
 
 // String returns a string representation of the bwrapConfig.
@@ -251,6 +258,14 @@ func (c *bwrapConfig) mapCWD() (string, error) {
 // TODO: b/508701483 - Use the causeway library when it is ready
 // and update this function.
 func (c *bwrapConfig) buildRunscSpec() (*specs.Spec, error) {
+	if c.UID != -1 && !c.UnshareUser {
+		return nil, fmt.Errorf("bwrap: Specifying --uid requires --unshare-user")
+	}
+
+	if c.GID != -1 && !c.UnshareUser {
+		return nil, fmt.Errorf("bwrap: Specifying --gid requires --unshare-user")
+	}
+
 	spec := &specs.Spec{}
 	// Find what the current working directory should be in the sandbox.
 	cwd, err := c.mapCWD()
@@ -260,9 +275,11 @@ func (c *bwrapConfig) buildRunscSpec() (*specs.Spec, error) {
 	spec.Process = &specs.Process{
 		Cwd:          cwd,
 		Args:         c.Args,
-		Env:          os.Environ(),
+		Env:          c.Env,
 		Capabilities: specutils.AllCapabilities(),
 	}
+
+	c.setupUserNamespace(spec)
 
 	rootMount, rootMountPresent := c.getRootMount()
 	if rootMountPresent {
@@ -348,4 +365,91 @@ func (c *bwrapConfig) buildRunscSpec() (*specs.Spec, error) {
 	// Set the current working directory.
 	spec.Process.Cwd = cwd
 	return spec, nil
+}
+
+// setupUserNamespace configures the user namespace, UID/GID mappings, and process user in the Spec.
+func (c *bwrapConfig) setupUserNamespace(spec *specs.Spec) {
+	if c.UnshareUser {
+		hostUID := os.Getuid()
+		targetUID := hostUID
+		if c.UID != -1 {
+			targetUID = c.UID
+		}
+		hostGID := os.Getgid()
+		targetGID := hostGID
+		if c.GID != -1 {
+			targetGID = c.GID
+		}
+		spec.Process.User = specs.User{
+			UID: uint32(targetUID),
+			GID: uint32(targetGID),
+		}
+		if spec.Linux == nil {
+			spec.Linux = &specs.Linux{}
+		}
+
+		// When running under sudo (e.g. in CI tests), SUDO_UID/SUDO_GID point to the true non-root workspace owner.
+		// When running without sudo, they gracefully fallback to the current host UID/GID.
+		sudoUID := getEnvInt("SUDO_UID", hostUID)
+		sudoGID := getEnvInt("SUDO_GID", hostGID)
+
+		spec.Linux.UIDMappings = []specs.LinuxIDMapping{
+			{ContainerID: uint32(targetUID), HostID: uint32(sudoUID), Size: 1},
+		}
+		spec.Linux.GIDMappings = []specs.LinuxIDMapping{
+			{ContainerID: uint32(targetGID), HostID: uint32(sudoGID), Size: 1},
+		}
+
+		// When runsc is executed by root (hostUID == 0), gVisor's Gofer initialization requires Container 0:0
+		// to be mapped to Host 0:0 so the Gofer process can successfully call setuid(0)/setgid(0).
+		if hostUID == 0 {
+			if targetUID != 0 {
+				spec.Linux.UIDMappings = append(spec.Linux.UIDMappings, specs.LinuxIDMapping{ContainerID: 0, HostID: 0, Size: 1})
+			}
+			if targetGID != 0 {
+				spec.Linux.GIDMappings = append(spec.Linux.GIDMappings, specs.LinuxIDMapping{ContainerID: 0, HostID: 0, Size: 1})
+			}
+		}
+
+		spec.Linux.Namespaces = append(spec.Linux.Namespaces, specs.LinuxNamespace{Type: specs.UserNamespace})
+		return
+	}
+
+	if c.UID != -1 || c.GID != -1 {
+		spec.Process.User = specs.User{}
+		if c.UID != -1 {
+			spec.Process.User.UID = uint32(c.UID)
+		}
+		if c.GID != -1 {
+			spec.Process.User.GID = uint32(c.GID)
+		}
+	}
+}
+
+// getEnvInt parses an environment variable as an integer, returning fallback if empty or invalid.
+func getEnvInt(key string, fallback int) int {
+	if s := os.Getenv(key); s != "" {
+		if v, err := strconv.Atoi(s); err == nil {
+			return v
+		}
+	}
+	return fallback
+}
+
+func (c *bwrapConfig) resolveEnv() {
+	var env []string
+	for _, e := range c.Env {
+		if strings.Contains(e, "=") {
+			env = append(env, e)
+		}
+	}
+	for _, e := range c.UnsetEnv {
+		for i, v := range env {
+			if strings.HasPrefix(v, e+"=") {
+				env = append(env[:i], env[i+1:]...)
+				break
+			}
+		}
+	}
+	c.Env = env
 }

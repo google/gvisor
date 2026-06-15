@@ -521,6 +521,11 @@ func (ct *ConnTrack) getConnAndUpdate(pkt *PacketBuffer, skipChecksumValidation 
 	return t
 }
 
+// GetConnAndUpdatePkt gets the connection for the packet and also sets the packet's tuple.
+func (ct *ConnTrack) GetConnAndUpdatePkt(pkt *PacketBuffer, skipChecksumValidation bool) {
+	pkt.tuple = ct.getConnAndUpdate(pkt, skipChecksumValidation)
+}
+
 func (ct *ConnTrack) connForTID(tid tupleID) *tuple {
 	ct.mu.RLock()
 	bkt := &ct.buckets[ct.bucket(tid)]
@@ -774,6 +779,35 @@ func (ct *ConnTrack) originalDst(epID TransportEndpointID, netProto tcpip.Networ
 
 	id := t.conn.original.tupleID
 	return id.dstAddr, id.dstPortOrEchoReplyIdent, nil
+}
+
+// NewConnTrack creates and initializes a  new ConnTrack object.
+func NewConnTrack(clock tcpip.Clock, rng connTrackRNG, seed *uint32) *ConnTrack {
+	if seed == nil {
+		r := rng.Uint32()
+		seed = &r
+	}
+	ct := &ConnTrack{
+		clock: clock,
+		rng:   rng,
+		seed:  *seed,
+	}
+	ct.init()
+	return ct
+}
+
+// NewConnTrackWithReaper creates and initializes a new ConnTrack and reaper.
+// Reaper garbage collects unused connections.
+func NewConnTrackWithReaper(clock tcpip.Clock, rng connTrackRNG, seed *uint32) (*ConnTrack, tcpip.Timer) {
+	ct := NewConnTrack(clock, rng, seed)
+	var reaper tcpip.Timer
+	bucket := 0
+	interval := 1 * time.Second
+	reaper = ct.clock.AfterFunc(interval, func() {
+		bucket, interval = ct.reapUnused(bucket, interval)
+		reaper.Reset(interval)
+	})
+	return ct, reaper
 }
 
 // NfConnTrackPriority returns the priority of the conntrack hook.

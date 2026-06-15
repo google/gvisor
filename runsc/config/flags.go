@@ -152,6 +152,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Var(networkTypePtr(NetworkSandbox), "network", "specifies which network to use: sandbox (default), host, none. Using network inside the sandbox is more secure because it's isolated from the host network.")
 	flagSet.Bool("net-raw", false, "enable raw sockets. When false, raw sockets are disabled by removing CAP_NET_RAW from containers (`runsc exec` will still be able to utilize raw sockets). Raw sockets allow malicious containers to craft packets and potentially attack the network.")
 	flagSet.Bool("allow-packet-socket-write", false, "allow writes on AF_PACKET sockets. When false, writes on AF_PACKET sockets will fail. When turned on, untrusted workloads may potentially attack the network because of the ability to craft arbitrary packets.")
+	flagSet.Bool("allow-live-tcp-migration", true, "allow TCP connection state to be migrated. If false, connected TCP endpoints will be terminated during save/restore.")
 	flagSet.Bool("gso", true, "enable host segmentation offload if it is supported by a network device.")
 	flagSet.Bool("software-gso", true, "enable gVisor segmentation offload when host offload can't be enabled.")
 	flagSet.Bool("gvisor-gro", false, "enable gVisor generic receive offload")
@@ -174,6 +175,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("nvproxy", false, "LEGACY: enable support for Nvidia GPUs. GPU support gets automatically enabled if Nvidia devices are present in the OCI spec.")
 	flagSet.Bool("nvproxy-docker", false, "LEGACY: Injects nvidia-container-runtime-hook as a prestart hook. Try to use nvidia-container-runtime or `docker run --gpus` instead. Or manually add nvidia-container-runtime-hook as a prestart hook and set up NVIDIA_VISIBLE_DEVICES container environment variable.")
 	flagSet.String("nvproxy-driver-version", "", "NVIDIA driver ABI version to use. If empty, autodetect installed driver version. The special value 'latest' may also be used to use the latest ABI.")
+	flagSet.Bool("nvproxy-allow-unsupported-driver", false, "allow nvproxy to be initialized with an unsupported driver version.")
 	flagSet.String("nvproxy-allowed-driver-capabilities", "utility,compute", "Comma separated list of NVIDIA driver capabilities that are allowed to be requested by the container. If 'all' is specified here, it is resolved to all driver capabilities supported in nvproxy. If 'all' is requested by the container, it is resolved to this list.")
 	flagSet.Bool("tpuproxy", false, "LEGACY: enable support for TPU devices. TPU support gets automatically enabled if TPU devices are present in the OCI spec.")
 
@@ -329,43 +331,8 @@ func NewFromFlags(flagSet *flag.FlagSet) (*Config, error) {
 		}
 	}
 
-	if err := conf.validate(); err != nil {
+	if err := conf.Validate(); err != nil {
 		return nil, err
-	}
-	return conf, nil
-}
-
-// NewFromBundle makes a new config from a Bundle.
-func NewFromBundle(bundle Bundle) (*Config, error) {
-	if err := bundle.Validate(); err != nil {
-		return nil, err
-	}
-	flagSet := flag.NewFlagSet("tmp", flag.ContinueOnError)
-	RegisterFlags(flagSet)
-	conf := &Config{explicitlySet: map[string]struct{}{}}
-
-	obj := reflect.ValueOf(conf).Elem()
-	st := obj.Type()
-	for i := 0; i < st.NumField(); i++ {
-		f := st.Field(i)
-		name, ok := f.Tag.Lookup("flag")
-		if !ok {
-			continue
-		}
-		fl := flagSet.Lookup(name)
-		if fl == nil {
-			return nil, fmt.Errorf("flag %q not found", name)
-		}
-		val, ok := bundle[name]
-		if !ok {
-			continue
-		}
-		if err := flagSet.Set(name, val); err != nil {
-			return nil, fmt.Errorf("error setting flag %s=%q: %w", name, val, err)
-		}
-		conf.Override(flagSet, name, val, true)
-
-		conf.explicitlySet[name] = struct{}{}
 	}
 	return conf, nil
 }
@@ -419,7 +386,11 @@ func (c *Config) keyVals(flagSet *flag.FlagSet, onlyIfSet bool) map[string]strin
 	return keyVals
 }
 
-// Override writes a new value to a flag.
+// Override writes a new value to a flag. It does not validate the resulting
+// Config, so flags that are invalid in isolation but valid together (e.g.
+// qdisc=tbf and qdisc-tbf-rate) can be overridden in any order. Callers must
+// call Validate once they are done overriding to ensure the Config is left in
+// a consistent state.
 func (c *Config) Override(flagSet *flag.FlagSet, name string, value string, force bool) error {
 	obj := reflect.ValueOf(c).Elem()
 	st := obj.Type()
@@ -448,9 +419,7 @@ func (c *Config) Override(flagSet *flag.FlagSet, name string, value string, forc
 		}
 		x := reflect.ValueOf(flag.Get(fl.Value))
 		obj.Field(i).Set(x)
-
-		// Validates the config again to ensure it's left in a consistent state.
-		return c.validate()
+		return nil
 	}
 	return fmt.Errorf("flag %q not found. Cannot set it to %q", name, value)
 }
@@ -540,7 +509,7 @@ func (c *Config) ApplyBundles(flagSet *flag.FlagSet, bundleNames ...BundleName) 
 		}
 	}
 
-	return c.validate()
+	return c.Validate()
 }
 
 func getVal(field reflect.Value) string {

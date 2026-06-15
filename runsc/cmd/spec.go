@@ -119,7 +119,7 @@ func writeSpec(w io.Writer, cwd string, netns string, args []string, tpu bool) e
 					"CAP_KILL",
 					"CAP_NET_BIND_SERVICE",
 				},
-				// TODO(gvisor.dev/issue/3166): support ambient capabilities
+				Ambient: []string{},
 			},
 			Rlimits: []specs.POSIXRlimit{
 				{

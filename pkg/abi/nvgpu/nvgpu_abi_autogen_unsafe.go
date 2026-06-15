@@ -90,6 +90,7 @@ var _ marshal.Marshallable = (*NVXXXX_CTRL_XXX_INFO)(nil)
 var _ marshal.Marshallable = (*NV_BSP_ALLOCATION_PARAMETERS)(nil)
 var _ marshal.Marshallable = (*NV_CHANNEL_ALLOC_PARAMS)(nil)
 var _ marshal.Marshallable = (*NV_CHANNEL_ALLOC_PARAMS_V570)(nil)
+var _ marshal.Marshallable = (*NV_CHANNEL_ALLOC_PARAMS_V610)(nil)
 var _ marshal.Marshallable = (*NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS)(nil)
 var _ marshal.Marshallable = (*NV_CONFIDENTIAL_COMPUTE_ALLOC_PARAMS)(nil)
 var _ marshal.Marshallable = (*NV_CONTEXT_DMA_ALLOCATION_PARAMS)(nil)
@@ -3712,6 +3713,262 @@ func (n *NV_CHANNEL_ALLOC_PARAMS_V570) CopyIn(cc marshal.CopyContext, addr hosta
 func (n *NV_CHANNEL_ALLOC_PARAMS_V570) WriteTo(writer io.Writer) (int64, error) {
     if !n.NV_CHANNEL_ALLOC_PARAMS.Packed() {
         // Type NV_CHANNEL_ALLOC_PARAMS_V570 doesn't have a packed layout in memory, fall back to MarshalBytes.
+        buf := make([]byte, n.SizeBytes())
+        n.MarshalBytes(buf)
+        length, err := writer.Write(buf)
+        return int64(length), err
+    }
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(n)))
+    hdr.Len = n.SizeBytes()
+    hdr.Cap = n.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that n
+    // must live until the use above.
+    runtime.KeepAlive(n) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (n *NV_CHANNEL_ALLOC_PARAMS_V610) SizeBytes() int {
+    return 52 +
+        (*Handle)(nil).SizeBytes() +
+        (*Handle)(nil).SizeBytes() +
+        (*Handle)(nil).SizeBytes() +
+        (*Handle)(nil).SizeBytes() +
+        (*Handle)(nil).SizeBytes() +
+        (*Handle)(nil).SizeBytes()*NV_MAX_SUBDEVICES +
+        8*NV_MAX_SUBDEVICES +
+        (*Handle)(nil).SizeBytes() +
+        (*NV_MEMORY_DESC_PARAMS)(nil).SizeBytes() +
+        (*NV_MEMORY_DESC_PARAMS)(nil).SizeBytes() +
+        (*NV_MEMORY_DESC_PARAMS)(nil).SizeBytes() +
+        (*NV_MEMORY_DESC_PARAMS)(nil).SizeBytes() +
+        (*Handle)(nil).SizeBytes() +
+        (*NV_MEMORY_DESC_PARAMS)(nil).SizeBytes() +
+        (*NV_MEMORY_DESC_PARAMS)(nil).SizeBytes() +
+        4*CC_CHAN_ALLOC_IV_SIZE_DWORD +
+        4*CC_CHAN_ALLOC_IV_SIZE_DWORD +
+        4*CC_CHAN_ALLOC_NONCE_SIZE_DWORD
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (n *NV_CHANNEL_ALLOC_PARAMS_V610) MarshalBytes(dst []byte) []byte {
+    dst = n.HObjectError.MarshalUnsafe(dst)
+    dst = n.HObjectBuffer.MarshalUnsafe(dst)
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(n.GPFIFOOffset))
+    dst = dst[8:]
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(n.GPFIFOEntries))
+    dst = dst[4:]
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(n.Flags))
+    dst = dst[4:]
+    dst = n.HContextShare.MarshalUnsafe(dst)
+    dst = n.HVASpace.MarshalUnsafe(dst)
+    dst = n.HHandleVASpace.MarshalUnsafe(dst)
+    for idx := 0; idx < NV_MAX_SUBDEVICES; idx++ {
+        dst = n.HUserdMemory[idx].MarshalUnsafe(dst)
+    }
+    // Padding: dst[:sizeof(uint32)] ~= uint32(0)
+    dst = dst[4:]
+    for idx := 0; idx < NV_MAX_SUBDEVICES; idx++ {
+        hostarch.ByteOrder.PutUint64(dst[:8], uint64(n.UserdOffset[idx]))
+        dst = dst[8:]
+    }
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(n.EngineType))
+    dst = dst[4:]
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(n.CID))
+    dst = dst[4:]
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(n.SubDeviceID))
+    dst = dst[4:]
+    dst = n.HObjectECCError.MarshalUnsafe(dst)
+    dst = n.InstanceMem.MarshalUnsafe(dst)
+    dst = n.UserdMem.MarshalUnsafe(dst)
+    dst = n.RamfcMem.MarshalUnsafe(dst)
+    dst = n.MthdbufMem.MarshalUnsafe(dst)
+    dst = n.HPhysChannelGroup.MarshalUnsafe(dst)
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(n.InternalFlags))
+    dst = dst[4:]
+    dst = n.ErrorNotifierMem.MarshalUnsafe(dst)
+    dst = n.ECCErrorNotifierMem.MarshalUnsafe(dst)
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(n.ProcessID))
+    dst = dst[4:]
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(n.SubProcessID))
+    dst = dst[4:]
+    for idx := 0; idx < CC_CHAN_ALLOC_IV_SIZE_DWORD; idx++ {
+        hostarch.ByteOrder.PutUint32(dst[:4], uint32(n.EncryptIv[idx]))
+        dst = dst[4:]
+    }
+    for idx := 0; idx < CC_CHAN_ALLOC_IV_SIZE_DWORD; idx++ {
+        hostarch.ByteOrder.PutUint32(dst[:4], uint32(n.DecryptIv[idx]))
+        dst = dst[4:]
+    }
+    for idx := 0; idx < CC_CHAN_ALLOC_NONCE_SIZE_DWORD; idx++ {
+        hostarch.ByteOrder.PutUint32(dst[:4], uint32(n.HmacNonce[idx]))
+        dst = dst[4:]
+    }
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(n.TPCConfigID))
+    dst = dst[4:]
+    // Padding: dst[:sizeof(uint32)] ~= uint32(0)
+    dst = dst[4:]
+    return dst
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (n *NV_CHANNEL_ALLOC_PARAMS_V610) UnmarshalBytes(src []byte) []byte {
+    src = n.HObjectError.UnmarshalUnsafe(src)
+    src = n.HObjectBuffer.UnmarshalUnsafe(src)
+    n.GPFIFOOffset = uint64(hostarch.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    n.GPFIFOEntries = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    n.Flags = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    src = n.HContextShare.UnmarshalUnsafe(src)
+    src = n.HVASpace.UnmarshalUnsafe(src)
+    src = n.HHandleVASpace.UnmarshalUnsafe(src)
+    for idx := 0; idx < NV_MAX_SUBDEVICES; idx++ {
+        src = n.HUserdMemory[idx].UnmarshalUnsafe(src)
+    }
+    // Padding: var _ uint32 ~= src[:sizeof(uint32)]
+    src = src[4:]
+    for idx := 0; idx < NV_MAX_SUBDEVICES; idx++ {
+        n.UserdOffset[idx] = uint64(hostarch.ByteOrder.Uint64(src[:8]))
+        src = src[8:]
+    }
+    n.EngineType = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    n.CID = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    n.SubDeviceID = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    src = n.HObjectECCError.UnmarshalUnsafe(src)
+    src = n.InstanceMem.UnmarshalUnsafe(src)
+    src = n.UserdMem.UnmarshalUnsafe(src)
+    src = n.RamfcMem.UnmarshalUnsafe(src)
+    src = n.MthdbufMem.UnmarshalUnsafe(src)
+    src = n.HPhysChannelGroup.UnmarshalUnsafe(src)
+    n.InternalFlags = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    src = n.ErrorNotifierMem.UnmarshalUnsafe(src)
+    src = n.ECCErrorNotifierMem.UnmarshalUnsafe(src)
+    n.ProcessID = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    n.SubProcessID = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    for idx := 0; idx < CC_CHAN_ALLOC_IV_SIZE_DWORD; idx++ {
+        n.EncryptIv[idx] = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+        src = src[4:]
+    }
+    for idx := 0; idx < CC_CHAN_ALLOC_IV_SIZE_DWORD; idx++ {
+        n.DecryptIv[idx] = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+        src = src[4:]
+    }
+    for idx := 0; idx < CC_CHAN_ALLOC_NONCE_SIZE_DWORD; idx++ {
+        n.HmacNonce[idx] = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+        src = src[4:]
+    }
+    n.TPCConfigID = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    // Padding: var _ uint32 ~= src[:sizeof(uint32)]
+    src = src[4:]
+    return src
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (n *NV_CHANNEL_ALLOC_PARAMS_V610) Packed() bool {
+    return n.ECCErrorNotifierMem.Packed() && n.ErrorNotifierMem.Packed() && n.HContextShare.Packed() && n.HHandleVASpace.Packed() && n.HObjectBuffer.Packed() && n.HObjectECCError.Packed() && n.HObjectError.Packed() && n.HPhysChannelGroup.Packed() && n.HUserdMemory[0].Packed() && n.HVASpace.Packed() && n.InstanceMem.Packed() && n.MthdbufMem.Packed() && n.RamfcMem.Packed() && n.UserdMem.Packed()
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (n *NV_CHANNEL_ALLOC_PARAMS_V610) MarshalUnsafe(dst []byte) []byte {
+    if n.ECCErrorNotifierMem.Packed() && n.ErrorNotifierMem.Packed() && n.HContextShare.Packed() && n.HHandleVASpace.Packed() && n.HObjectBuffer.Packed() && n.HObjectECCError.Packed() && n.HObjectError.Packed() && n.HPhysChannelGroup.Packed() && n.HUserdMemory[0].Packed() && n.HVASpace.Packed() && n.InstanceMem.Packed() && n.MthdbufMem.Packed() && n.RamfcMem.Packed() && n.UserdMem.Packed() {
+        size := n.SizeBytes()
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(n), uintptr(size))
+        return dst[size:]
+    }
+    // Type NV_CHANNEL_ALLOC_PARAMS_V610 doesn't have a packed layout in memory, fallback to MarshalBytes.
+    return n.MarshalBytes(dst)
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (n *NV_CHANNEL_ALLOC_PARAMS_V610) UnmarshalUnsafe(src []byte) []byte {
+    if n.ECCErrorNotifierMem.Packed() && n.ErrorNotifierMem.Packed() && n.HContextShare.Packed() && n.HHandleVASpace.Packed() && n.HObjectBuffer.Packed() && n.HObjectECCError.Packed() && n.HObjectError.Packed() && n.HPhysChannelGroup.Packed() && n.HUserdMemory[0].Packed() && n.HVASpace.Packed() && n.InstanceMem.Packed() && n.MthdbufMem.Packed() && n.RamfcMem.Packed() && n.UserdMem.Packed() {
+        size := n.SizeBytes()
+        gohacks.Memmove(unsafe.Pointer(n), unsafe.Pointer(&src[0]), uintptr(size))
+        return src[size:]
+    }
+    // Type NV_CHANNEL_ALLOC_PARAMS_V610 doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+    return n.UnmarshalBytes(src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+func (n *NV_CHANNEL_ALLOC_PARAMS_V610) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    if !n.ECCErrorNotifierMem.Packed() && n.ErrorNotifierMem.Packed() && n.HContextShare.Packed() && n.HHandleVASpace.Packed() && n.HObjectBuffer.Packed() && n.HObjectECCError.Packed() && n.HObjectError.Packed() && n.HPhysChannelGroup.Packed() && n.HUserdMemory[0].Packed() && n.HVASpace.Packed() && n.InstanceMem.Packed() && n.MthdbufMem.Packed() && n.RamfcMem.Packed() && n.UserdMem.Packed() {
+        // Type NV_CHANNEL_ALLOC_PARAMS_V610 doesn't have a packed layout in memory, fall back to MarshalBytes.
+        buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
+        n.MarshalBytes(buf) // escapes: fallback.
+        return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    }
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(n)))
+    hdr.Len = n.SizeBytes()
+    hdr.Cap = n.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that n
+    // must live until the use above.
+    runtime.KeepAlive(n) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+func (n *NV_CHANNEL_ALLOC_PARAMS_V610) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return n.CopyOutN(cc, addr, n.SizeBytes())
+}
+
+// CopyInN implements marshal.Marshallable.CopyInN.
+func (n *NV_CHANNEL_ALLOC_PARAMS_V610) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    if !n.ECCErrorNotifierMem.Packed() && n.ErrorNotifierMem.Packed() && n.HContextShare.Packed() && n.HHandleVASpace.Packed() && n.HObjectBuffer.Packed() && n.HObjectECCError.Packed() && n.HObjectError.Packed() && n.HPhysChannelGroup.Packed() && n.HUserdMemory[0].Packed() && n.HVASpace.Packed() && n.InstanceMem.Packed() && n.MthdbufMem.Packed() && n.RamfcMem.Packed() && n.UserdMem.Packed() {
+        // Type NV_CHANNEL_ALLOC_PARAMS_V610 doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+        buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
+        length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
+        // Unmarshal unconditionally. If we had a short copy-in, this results in a
+        // partially unmarshalled struct.
+        n.UnmarshalBytes(buf) // escapes: fallback.
+        return length, err
+    }
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(n)))
+    hdr.Len = n.SizeBytes()
+    hdr.Cap = n.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that n
+    // must live until the use above.
+    runtime.KeepAlive(n) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+func (n *NV_CHANNEL_ALLOC_PARAMS_V610) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return n.CopyInN(cc, addr, n.SizeBytes())
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (n *NV_CHANNEL_ALLOC_PARAMS_V610) WriteTo(writer io.Writer) (int64, error) {
+    if !n.ECCErrorNotifierMem.Packed() && n.ErrorNotifierMem.Packed() && n.HContextShare.Packed() && n.HHandleVASpace.Packed() && n.HObjectBuffer.Packed() && n.HObjectECCError.Packed() && n.HObjectError.Packed() && n.HPhysChannelGroup.Packed() && n.HUserdMemory[0].Packed() && n.HVASpace.Packed() && n.InstanceMem.Packed() && n.MthdbufMem.Packed() && n.RamfcMem.Packed() && n.UserdMem.Packed() {
+        // Type NV_CHANNEL_ALLOC_PARAMS_V610 doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, n.SizeBytes())
         n.MarshalBytes(buf)
         length, err := writer.Write(buf)

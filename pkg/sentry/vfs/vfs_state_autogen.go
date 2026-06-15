@@ -1387,12 +1387,16 @@ func (mntns *MountNamespace) StateTypeName() string {
 
 func (mntns *MountNamespace) StateFields() []string {
 	return []string{
+		"ID",
 		"Refs",
 		"Owner",
+		"vfs",
 		"root",
 		"mountpoints",
 		"mounts",
 		"pending",
+		"anon",
+		"originatorID",
 	}
 }
 
@@ -1401,24 +1405,32 @@ func (mntns *MountNamespace) beforeSave() {}
 // +checklocksignore
 func (mntns *MountNamespace) StateSave(stateSinkObject state.Sink) {
 	mntns.beforeSave()
-	stateSinkObject.Save(0, &mntns.Refs)
-	stateSinkObject.Save(1, &mntns.Owner)
-	stateSinkObject.Save(2, &mntns.root)
-	stateSinkObject.Save(3, &mntns.mountpoints)
-	stateSinkObject.Save(4, &mntns.mounts)
-	stateSinkObject.Save(5, &mntns.pending)
+	stateSinkObject.Save(0, &mntns.ID)
+	stateSinkObject.Save(1, &mntns.Refs)
+	stateSinkObject.Save(2, &mntns.Owner)
+	stateSinkObject.Save(3, &mntns.vfs)
+	stateSinkObject.Save(4, &mntns.root)
+	stateSinkObject.Save(5, &mntns.mountpoints)
+	stateSinkObject.Save(6, &mntns.mounts)
+	stateSinkObject.Save(7, &mntns.pending)
+	stateSinkObject.Save(8, &mntns.anon)
+	stateSinkObject.Save(9, &mntns.originatorID)
 }
 
 func (mntns *MountNamespace) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (mntns *MountNamespace) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &mntns.Refs)
-	stateSourceObject.Load(1, &mntns.Owner)
-	stateSourceObject.Load(2, &mntns.root)
-	stateSourceObject.Load(3, &mntns.mountpoints)
-	stateSourceObject.Load(4, &mntns.mounts)
-	stateSourceObject.Load(5, &mntns.pending)
+	stateSourceObject.Load(0, &mntns.ID)
+	stateSourceObject.Load(1, &mntns.Refs)
+	stateSourceObject.Load(2, &mntns.Owner)
+	stateSourceObject.Load(3, &mntns.vfs)
+	stateSourceObject.Load(4, &mntns.root)
+	stateSourceObject.Load(5, &mntns.mountpoints)
+	stateSourceObject.Load(6, &mntns.mounts)
+	stateSourceObject.Load(7, &mntns.pending)
+	stateSourceObject.Load(8, &mntns.anon)
+	stateSourceObject.Load(9, &mntns.originatorID)
 }
 
 func (fd *opathFD) StateTypeName() string {
@@ -2028,6 +2040,7 @@ func (vfs *VirtualFilesystem) StateFields() []string {
 		"mounts",
 		"mountpoints",
 		"lastMountID",
+		"lastMountNamespaceID",
 		"anonMount",
 		"devices",
 		"dynCharDevMajorUsed",
@@ -2051,18 +2064,19 @@ func (vfs *VirtualFilesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.SaveValue(0, mountsValue)
 	mountPromisesValue := vfs.saveMountPromises()
 	_ = (map[VirtualDentry]*mountPromise)(mountPromisesValue)
-	stateSinkObject.SaveValue(11, mountPromisesValue)
+	stateSinkObject.SaveValue(12, mountPromisesValue)
 	stateSinkObject.Save(1, &vfs.mountpoints)
 	stateSinkObject.Save(2, &vfs.lastMountID)
-	stateSinkObject.Save(3, &vfs.anonMount)
-	stateSinkObject.Save(4, &vfs.devices)
-	stateSinkObject.Save(5, &vfs.dynCharDevMajorUsed)
-	stateSinkObject.Save(6, &vfs.anonBlockDevMinorNext)
-	stateSinkObject.Save(7, &vfs.anonBlockDevMinor)
-	stateSinkObject.Save(8, &vfs.fsTypes)
-	stateSinkObject.Save(9, &vfs.filesystems)
-	stateSinkObject.Save(10, &vfs.groupIDBitmap)
-	stateSinkObject.Save(12, &vfs.toDecRef)
+	stateSinkObject.Save(3, &vfs.lastMountNamespaceID)
+	stateSinkObject.Save(4, &vfs.anonMount)
+	stateSinkObject.Save(5, &vfs.devices)
+	stateSinkObject.Save(6, &vfs.dynCharDevMajorUsed)
+	stateSinkObject.Save(7, &vfs.anonBlockDevMinorNext)
+	stateSinkObject.Save(8, &vfs.anonBlockDevMinor)
+	stateSinkObject.Save(9, &vfs.fsTypes)
+	stateSinkObject.Save(10, &vfs.filesystems)
+	stateSinkObject.Save(11, &vfs.groupIDBitmap)
+	stateSinkObject.Save(13, &vfs.toDecRef)
 }
 
 func (vfs *VirtualFilesystem) afterLoad(context.Context) {}
@@ -2071,17 +2085,18 @@ func (vfs *VirtualFilesystem) afterLoad(context.Context) {}
 func (vfs *VirtualFilesystem) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &vfs.mountpoints)
 	stateSourceObject.Load(2, &vfs.lastMountID)
-	stateSourceObject.Load(3, &vfs.anonMount)
-	stateSourceObject.Load(4, &vfs.devices)
-	stateSourceObject.Load(5, &vfs.dynCharDevMajorUsed)
-	stateSourceObject.Load(6, &vfs.anonBlockDevMinorNext)
-	stateSourceObject.Load(7, &vfs.anonBlockDevMinor)
-	stateSourceObject.Load(8, &vfs.fsTypes)
-	stateSourceObject.Load(9, &vfs.filesystems)
-	stateSourceObject.Load(10, &vfs.groupIDBitmap)
-	stateSourceObject.Load(12, &vfs.toDecRef)
+	stateSourceObject.Load(3, &vfs.lastMountNamespaceID)
+	stateSourceObject.Load(4, &vfs.anonMount)
+	stateSourceObject.Load(5, &vfs.devices)
+	stateSourceObject.Load(6, &vfs.dynCharDevMajorUsed)
+	stateSourceObject.Load(7, &vfs.anonBlockDevMinorNext)
+	stateSourceObject.Load(8, &vfs.anonBlockDevMinor)
+	stateSourceObject.Load(9, &vfs.fsTypes)
+	stateSourceObject.Load(10, &vfs.filesystems)
+	stateSourceObject.Load(11, &vfs.groupIDBitmap)
+	stateSourceObject.Load(13, &vfs.toDecRef)
 	stateSourceObject.LoadValue(0, new([]*Mount), func(y any) { vfs.loadMounts(ctx, y.([]*Mount)) })
-	stateSourceObject.LoadValue(11, new(map[VirtualDentry]*mountPromise), func(y any) { vfs.loadMountPromises(ctx, y.(map[VirtualDentry]*mountPromise)) })
+	stateSourceObject.LoadValue(12, new(map[VirtualDentry]*mountPromise), func(y any) { vfs.loadMountPromises(ctx, y.(map[VirtualDentry]*mountPromise)) })
 }
 
 func (p *PathOperation) StateTypeName() string {

@@ -20,6 +20,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/seccomp"
+	"gvisor.dev/gvisor/runsc/flag"
 )
 
 // Extension is implemented by alternative LisaFS backends. The first
@@ -47,6 +48,29 @@ type Extension interface {
 	SeccompRules() seccomp.SyscallRules
 }
 
+type setFlags interface {
+	SetFlags(f *flag.FlagSet)
+}
+
+// GoferPrepareContext contains inputs available while preparing the gofer,
+// before it drops capabilities and enters its final root.
+type GoferPrepareContext struct {
+	Spec        *specs.Spec
+	ContainerID string
+	BundleDir   string
+}
+
+// GoferPrepareResult contains state for gofer re-exec.
+type GoferPrepareResult struct {
+	// FlagOverrides are applied after setup. File descriptor values must refer
+	// to descriptors with FD_CLOEXEC cleared.
+	FlagOverrides map[string]string
+}
+
+type prepareGofer interface {
+	PrepareGofer(ctx GoferPrepareContext) (GoferPrepareResult, error)
+}
+
 var registered []Extension
 
 // Register adds e to the extension list. Must be called during init or
@@ -58,4 +82,36 @@ func Register(e Extension) {
 // Registered returns all registered extensions in registration order.
 func Registered() []Extension {
 	return registered
+}
+
+// SetFlags lets registered extensions add gofer flags.
+func SetFlags(f *flag.FlagSet) {
+	for _, e := range registered {
+		if setter, ok := e.(setFlags); ok {
+			setter.SetFlags(f)
+		}
+	}
+}
+
+// PrepareGofer lets registered extensions prepare state and merges flag
+// overrides for gofer re-exec.
+func PrepareGofer(ctx GoferPrepareContext) (GoferPrepareResult, error) {
+	var result GoferPrepareResult
+	for _, e := range registered {
+		prepare, ok := e.(prepareGofer)
+		if !ok {
+			continue
+		}
+		extensionResult, err := prepare.PrepareGofer(ctx)
+		if err != nil {
+			return GoferPrepareResult{}, err
+		}
+		for key, value := range extensionResult.FlagOverrides {
+			if result.FlagOverrides == nil {
+				result.FlagOverrides = make(map[string]string)
+			}
+			result.FlagOverrides[key] = value
+		}
+	}
+	return result, nil
 }
