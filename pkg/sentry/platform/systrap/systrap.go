@@ -322,9 +322,11 @@ func New(opts platform.Options) (*Systrap, error) {
 		return nil, stubErr
 	}
 
-	latencyMonitoring.Do(func() {
-		go controlFastPath()
-	})
+	if !neverEnableFastPath {
+		latencyMonitoring.Do(func() {
+			go controlFastPath()
+		})
+	}
 
 	return &Systrap{memoryFile: mf}, nil
 }
