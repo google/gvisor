@@ -15,9 +15,12 @@
 package devpts
 
 import (
+	"strconv"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
@@ -230,6 +233,45 @@ func (mfd *masterFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysn
 		ret := primitive.Int32(mode)
 		_, err := ret.CopyOut(t, args[2].Pointer())
 		return 0, err
+	case linux.TIOCGPTPEER:
+		flags := args[2].Uint()
+		n := mfd.t.n
+		masterMnt := mfd.vfsfd.Mount()
+
+		// devpts files should always be in kernfs mounts on gVisor, but better safe than sorry.
+		if _, ok := masterMnt.Root().Impl().(*kernfs.Dentry); !ok {
+			return 0, linuxerr.EINVAL
+		}
+
+		// Lookup the replica's dentry.
+		// Since devpts can't be written to, userspace shouldn't be able to replace the file underneath us.
+		rootVD := vfs.MakeVirtualDentry(masterMnt, masterMnt.Root())
+		pop := vfs.PathOperation{
+			Root:  rootVD,
+			Start: rootVD,
+			Path:  fspath.Parse(strconv.FormatUint(uint64(n), 10)),
+		}
+		// We use a combination of GetDentryAt() and OpenTTY(), rather than OpenAt(), to avoid
+		// DAC permission checks, which TIOCGPTPEER exists in part to skip.
+		replicaD, err := t.Kernel().VFS().GetDentryAt(t, t.Credentials(), &pop, &vfs.GetDentryOptions{})
+		if err != nil {
+			return 0, err
+		}
+		defer replicaD.DecRef(t)
+		replica, err := mfd.t.OpenTTY(t, masterMnt, replicaD.Dentry(), vfs.OpenOptions{
+			Flags: flags & ^uint32(linux.O_CLOEXEC),
+		})
+		if err != nil {
+			return 0, err
+		}
+		defer replica.DecRef(t)
+		fd, err := t.NewFDFrom(0, replica, kernel.FDFlags{
+			CloseOnExec: flags&linux.O_CLOEXEC != 0,
+		})
+		if err != nil {
+			return 0, err
+		}
+		return uintptr(fd), nil
 
 	default:
 		maybeEmitUnimplementedEvent(ctx, sysno, cmd)
@@ -272,8 +314,7 @@ func maybeEmitUnimplementedEvent(ctx context.Context, sysno uintptr, cmd uint32)
 		linux.TIOCMBIC,
 		linux.TIOCMBIS,
 		linux.TIOCGICOUNT,
-		linux.TIOCSSERIAL,
-		linux.TIOCGPTPEER:
+		linux.TIOCSSERIAL:
 
 		unimpl.EmitUnimplementedEvent(ctx, sysno)
 	}

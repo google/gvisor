@@ -33,6 +33,7 @@ go_library(
         "//pkg/atomicbitops",
         "//pkg/context",
         "//pkg/errors/linuxerr",
+        "//pkg/fspath",
         "//pkg/log",
         "//pkg/marshal",
         "//pkg/marshal/primitive",
