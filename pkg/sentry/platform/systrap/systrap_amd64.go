@@ -22,6 +22,17 @@ func stackPointer(r *arch.Registers) uintptr {
 	return uintptr(r.Rsp)
 }
 
+// nominalTSCFreq is the assumed frequency in Hz of the x86 TSC read by
+// cputicks(). The TSC is invariant (it ticks at a fixed reference rate
+// independent of the core clock), but its exact frequency is not cheaply
+// discoverable, so cputicksFreq() assumes this nominal ~2GHz.
+const nominalTSCFreq = 2 * 1000 * 1000 * 1000
+
+// cputicksFreq returns the frequency in Hz of the counter read by cputicks().
+func cputicksFreq() uint64 {
+	return nominalTSCFreq
+}
+
 // x86 use the fs_base register to store the TLS pointer which can be
 // get/set in "func (t *thread) get/setRegs(regs *arch.Registers)".
 // So both of the get/setTLS() operations are noop here.
