@@ -14,7 +14,7 @@ func (c *scmCredentials) StateTypeName() string {
 
 func (c *scmCredentials) StateFields() []string {
 	return []string{
-		"t",
+		"pids",
 		"kuid",
 		"kgid",
 	}
@@ -25,7 +25,7 @@ func (c *scmCredentials) beforeSave() {}
 // +checklocksignore
 func (c *scmCredentials) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
-	stateSinkObject.Save(0, &c.t)
+	stateSinkObject.Save(0, &c.pids)
 	stateSinkObject.Save(1, &c.kuid)
 	stateSinkObject.Save(2, &c.kgid)
 }
@@ -34,7 +34,7 @@ func (c *scmCredentials) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (c *scmCredentials) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &c.t)
+	stateSourceObject.Load(0, &c.pids)
 	stateSourceObject.Load(1, &c.kuid)
 	stateSourceObject.Load(2, &c.kgid)
 }
