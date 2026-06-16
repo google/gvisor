@@ -232,7 +232,7 @@ nogo-tests:
 #
 # FIXME(gvisor.dev/issue/10045): Need to fix broken tests.
 unit-tests: ## Local package unit tests in pkg/..., tools/.., etc.
-	@$(call test,--test_tag_filters=-nogo$(COMMA)-requires-kvm --build_tag_filters=-network_plugins --test_env=CGROUPV2=$(CGROUPV2) -- //:all pkg/... tools/... runsc/... vdso/... test/trace/... -//pkg/metric:metric_test -//pkg/coretag:coretag_test -//tools/tracereplay:tracereplay_test -//test/trace:trace_test)
+	@$(call test,--test_tag_filters=-nogo$(COMMA)-requires-kvm --build_tag_filters=-network_plugins --test_env=CGROUPV2=$(CGROUPV2) -- //:all pkg/... tools/... runsc/... vdso/... sandboxexec/... test/trace/... -//pkg/metric:metric_test -//pkg/coretag:coretag_test -//tools/tracereplay:tracereplay_test -//test/trace:trace_test)
 .PHONY: unit-tests
 
 # See unit-tests: this includes runsc/container.
@@ -508,10 +508,6 @@ containerd-performance-test-%:
 	@export RUN_SHIM_GROUPING_PERFORMANCE_TEST=true; $(MAKE) containerd-test-$*
 .PHONY: containerd-performance-test-%
 
-# Test runsc go binding.
-go-binding-test: $(RUNTIME_BIN)
-	@export RUNSC_PATH="$(RUNTIME_BIN)"; $(call run,test/root:go_binding_test, -test.v $(ARGS))
-.PHONY: go-binding-test
 
 kubernetes-smoke-test: ## Runs the Kubernetes hello test in a KIND cluster.
 	@test/kubernetes/scripts/run_kind_e2e.sh //test/kubernetes/tests:hello_test
