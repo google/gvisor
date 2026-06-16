@@ -15,7 +15,9 @@
 #include <fcntl.h>
 #include <linux/capability.h>
 #include <sys/prctl.h>
+#include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/vfs.h>
 #include <unistd.h>
 
 #include <cerrno>
@@ -49,6 +51,19 @@ namespace {
 #define PR_CAP_AMBIENT_RAISE 2
 #define PR_CAP_AMBIENT_LOWER 3
 #define PR_CAP_AMBIENT_CLEAR_ALL 4
+#endif
+
+#ifndef PR_SET_SECUREBITS
+#define PR_SET_SECUREBITS 28
+#endif
+#ifndef PR_GET_SECUREBITS
+#define PR_GET_SECUREBITS 27
+#endif
+#ifndef SECBIT_KEEP_CAPS
+#define SECBIT_KEEP_CAPS (1 << 4)
+#endif
+#ifndef SECBIT_KEEP_CAPS_LOCKED
+#define SECBIT_KEEP_CAPS_LOCKED (1 << 5)
 #endif
 
 // Helper to check if a capability is in the ambient set.
@@ -462,6 +477,59 @@ TEST_F(AmbientCapabilitiesTest, ClearedOnFilePriv) {
   int status = 0;
   EXPECT_THAT(waitpid(child_pid, &status, 0),
               SyscallSucceedsWithValue(child_pid));
+}
+
+TEST_F(AmbientCapabilitiesTest, SecurebitsKeepCapsEPERM) {
+  ScopedThread([] {
+    // Unsupported bits return EPERM.
+    EXPECT_THAT(prctl(PR_SET_SECUREBITS, 1ULL << 30, 0, 0, 0),
+                SyscallFailsWithErrno(EPERM));
+
+    int current_sec = prctl(PR_GET_SECUREBITS, 0, 0, 0, 0);
+    ASSERT_THAT(current_sec, SyscallSucceeds());
+
+    // Drop CAP_SETPCAP from permitted and effective sets.
+    CapSet cs = ASSERT_NO_ERRNO_AND_VALUE(GetCapabilitySets());
+    cs.effective &= ~(1ULL << CAP_SETPCAP);
+    cs.permitted &= ~(1ULL << CAP_SETPCAP);
+    ASSERT_NO_ERRNO(SetCapabilitySets(cs));
+
+    // Without CAP_SETPCAP:
+    // 1. Try to set to unchanged value and witness EPERM.
+    EXPECT_THAT(prctl(PR_SET_SECUREBITS, current_sec, 0, 0, 0),
+                SyscallFailsWithErrno(EPERM));
+    // 2. Toggle the unprivileged SECBIT_KEEP_CAPS to witness EPERM.
+    EXPECT_THAT(
+        prctl(PR_SET_SECUREBITS, current_sec ^ SECBIT_KEEP_CAPS, 0, 0, 0),
+        SyscallFailsWithErrno(EPERM));
+  });
+}
+
+TEST_F(AmbientCapabilitiesTest, SecurebitsKeepCapsTransition) {
+  ScopedThread([] {
+    ASSERT_THAT(prctl(PR_SET_SECUREBITS, SECBIT_KEEP_CAPS, 0, 0, 0),
+                SyscallSucceeds());
+    CapSet cs = ASSERT_NO_ERRNO_AND_VALUE(GetCapabilitySets());
+    ASSERT_NE(cs.permitted, 0);
+    ASSERT_THAT(syscall(SYS_setuid, 65534), SyscallSucceeds());
+
+    CapSet post_cs = ASSERT_NO_ERRNO_AND_VALUE(GetCapabilitySets());
+    EXPECT_EQ(post_cs.permitted, cs.permitted);
+  });
+}
+
+TEST_F(AmbientCapabilitiesTest, SecurebitsNoKeepCapsTransition) {
+  ScopedThread([] {
+    int val = prctl(PR_GET_SECUREBITS, 0, 0, 0, 0);
+    ASSERT_THAT(val, SyscallSucceeds());
+    if (val & SECBIT_KEEP_CAPS) {
+      ASSERT_THAT(prctl(PR_SET_SECUREBITS, 0, 0, 0, 0), SyscallSucceeds());
+    }
+    ASSERT_THAT(syscall(SYS_setuid, 65534), SyscallSucceeds());
+
+    CapSet post_cs = ASSERT_NO_ERRNO_AND_VALUE(GetCapabilitySets());
+    EXPECT_EQ(post_cs.permitted, 0);
+  });
 }
 
 }  // namespace

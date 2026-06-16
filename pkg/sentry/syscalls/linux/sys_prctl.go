@@ -95,6 +95,21 @@ func Prctl(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 
 		return 0, nil, nil
 
+	case linux.PR_GET_SECUREBITS:
+		var securebits uintptr
+		creds := t.Credentials()
+		if creds.KeepCaps {
+			securebits |= linux.SECBIT_KEEP_CAPS
+		}
+		return securebits, nil, nil
+
+	case linux.PR_SET_SECUREBITS:
+		val := args[1].Uint64()
+		if err := t.SetSecurebits(val); err != nil {
+			return 0, nil, err
+		}
+		return 0, nil, nil
+
 	case linux.PR_SET_NAME:
 		addr := args[1].Pointer()
 		name, err := t.CopyInString(addr, linux.TASK_COMM_LEN-1)

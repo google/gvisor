@@ -34,6 +34,12 @@ const (
 	// PR_SET_KEEPCAPS sets the value of the keep capabilities flag.
 	PR_SET_KEEPCAPS = 8
 
+	// PR_GET_SECUREBITS gets the securebits flags of the calling thread.
+	PR_GET_SECUREBITS = 27
+
+	// PR_SET_SECUREBITS sets the securebits flags of the calling thread.
+	PR_SET_SECUREBITS = 28
+
 	// PR_GET_TIMING gets the process' timing method.
 	PR_GET_TIMING = 13
 
@@ -171,6 +177,9 @@ const (
 	PR_CAP_AMBIENT_RAISE     = 2
 	PR_CAP_AMBIENT_LOWER     = 3
 	PR_CAP_AMBIENT_CLEAR_ALL = 4
+
+	// SECBIT_* flags are used to control securebits.
+	SECBIT_KEEP_CAPS = 1 << 4
 )
 
 // From <asm/prctl.h>
