@@ -298,6 +298,11 @@ func New(opts platform.Options) (*Systrap, error) {
 		// Don't use sentry and stub fast paths if here is just one cpu.
 		neverEnableFastPath = min(runtime.NumCPU(), runtime.GOMAXPROCS(0)) == 1
 
+		// Convert the spin/deep-sleep timeouts into cputicks() units for
+		// the current architecture. Must happen before stubInit(), which
+		// copies deepSleepTimeout into the stub.
+		initSleepTimeouts()
+
 		// Initialize the stub.
 		stubInit()
 

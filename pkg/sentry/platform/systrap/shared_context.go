@@ -296,18 +296,54 @@ type fastPathDispatcher struct {
 var dispatcher fastPathDispatcher
 
 const (
-	// deepSleepTimeout is the timeout after which both stub threads and the
-	// dispatcher consider whether to stop polling. They need to have elapsed
-	// this timeout twice in a row in order to stop, so the actual timeout
-	// can be considered to be (deepSleepTimeout*2). Falling asleep after two
-	// shorter timeouts instead of one long timeout is done in order to
-	// mitigate the effects of rdtsc inaccuracies.
+	// deepSleepTimeoutNS is the wall-clock duration after which both stub
+	// threads and the dispatcher consider whether to stop polling. They need to
+	// have elapsed this timeout twice in a row in order to stop, so the actual
+	// timeout can be considered to be (deepSleepTimeoutNS*2). Falling asleep
+	// after two shorter timeouts instead of one long timeout is done in order to
+	// mitigate the effects of cputicks() inaccuracies.
 	//
-	// The value is 20µs for 2GHz CPU. 40µs matches the sentry<->stub
+	// 20µs deep sleep means 40µs round trip, which matches the sentry<->stub
 	// round trip in the pure deep sleep case.
-	deepSleepTimeout = uint64(40000)
-	handshakeTimeout = uint64(1000)
+	deepSleepTimeoutNS = uint64(20000)
+
+	// handshakeTimeoutNS is the wall-clock duration after which the dispatcher
+	// kicks a stub thread that hasn't acknowledged a context yet.
+	handshakeTimeoutNS = uint64(500)
 )
+
+// deepSleepTimeout and handshakeTimeout are the deepSleepTimeoutNS and
+// handshakeTimeoutNS durations expressed in cputicks() units (the values
+// returned by the architecture's cycle counter: RDTSC on amd64, CNTVCT_EL0 on
+// arm64).
+//
+// They are zero until initSleepTimeouts() computes them, which happens before
+// any stub thread is created.
+//
+// The conversion is per-architecture because cputicks() advances at a
+// platform-specific fixed rate, unrelated to the CPU clock and not an
+// instruction/cycle counter: a ~GHz reference rate for the invariant TSC on
+// amd64, and CNTFRQ_EL0 for CNTVCT_EL0 on arm64, which varies widely across
+// parts -- from tens of MHz up to ~1GHz on newer cores. A single fixed tick
+// count therefore cannot express the same duration across platforms.
+var (
+	deepSleepTimeout uint64
+	handshakeTimeout uint64
+)
+
+// initSleepTimeouts converts deepSleepTimeoutNS and handshakeTimeoutNS from
+// wall-clock durations into cputicks() units using the measured frequency of
+// the cputicks() counter. It must be called once before any stub thread is
+// created.
+func initSleepTimeouts() {
+	// cputicksFreq() always returns a non-zero, arch-appropriate frequency:
+	// there is no meaningful cross-platform default, so each architecture is
+	// responsible for its own fallback.
+	freq := cputicksFreq()
+	const nsPerSec = uint64(1000000000)
+	deepSleepTimeout = max(1, freq*deepSleepTimeoutNS/nsPerSec)
+	handshakeTimeout = max(1, freq*handshakeTimeoutNS/nsPerSec)
+}
 
 // loop is processing contexts in the queue. Only one instance of it can be
 // running, because it has exclusive access to the list.
