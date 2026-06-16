@@ -18,6 +18,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <sys/statfs.h>
+#include <sys/statvfs.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -231,6 +232,10 @@ PosixErrorOr<bool> IsOverlayfs(const std::string& path);
 
 // IsGoferfs returns true if the file at path is backed by goferfs.
 PosixErrorOr<bool> IsGoferfs(const std::string& path);
+
+// IsNosuid returns true if the file at path is on a filesystem mounted with
+// nosuid.
+PosixErrorOr<bool> IsNosuid(const std::string& path);
 
 PosixError CheckSameFile(const FileDescriptor& fd1, const FileDescriptor& fd2);
 

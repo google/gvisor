@@ -395,6 +395,13 @@ PosixErrorOr<TempPath> CreateSuidToUserSleepExecutable(uid_t uid) {
 }
 
 TEST_F(AmbientCapabilitiesTest, ClearedOnFilePriv) {
+  std::string tmpdir = GetAbsoluteTestTmpdir();
+  bool is_nosuid = ASSERT_NO_ERRNO_AND_VALUE(IsNosuid(tmpdir));
+  if (is_nosuid) {
+    GTEST_SKIP() << "TEST_TMPDIR (" << tmpdir
+                 << ") is mounted nosuid; cannot test SUID transition.";
+  }
+
   // Create a SUID-to-5000 copy of sleep.
   TempPath suid_exe =
       ASSERT_NO_ERRNO_AND_VALUE(CreateSuidToUserSleepExecutable(5000));

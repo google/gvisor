@@ -20,6 +20,7 @@
 #endif  // __linux__
 #include <sys/stat.h>
 #include <sys/statfs.h>
+#include <sys/statvfs.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -749,6 +750,14 @@ PosixError CheckSameFile(const FileDescriptor& fd1, const FileDescriptor& fd2) {
 
 ::testing::Matcher<mode_t> PermissionIs(mode_t want) {
   return MakeMatcher(new ModePermissionMatcher(want));
+}
+
+PosixErrorOr<bool> IsNosuid(const std::string& path) {
+  struct statvfs stat;
+  if (statvfs(path.c_str(), &stat) < 0) {
+    return PosixError(errno, absl::StrCat("statvfs(\"", path, "\")"));
+  }
+  return (stat.f_flag & ST_NOSUID) != 0;
 }
 
 #ifndef __Fuchsia__
