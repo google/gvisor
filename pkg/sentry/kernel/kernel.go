@@ -216,6 +216,17 @@ type Kernel struct {
 	// Invariant: runningTasksCond.L == &runningTasksMu.
 	runningTasksCond sync.Cond `state:"nosave"`
 
+	// activeNotifyCh is closed (and replaced with a fresh channel) when
+	// runningTasks is incremented from 0 to 1, to wake goroutines that park
+	// while the kernel is idle (currently the watchdog; see
+	// Kernel.WaitForTaskActivity()). Unlike runningTasksCond, which only matters
+	// when the CPU clock ticker has actually parked, this fires on every real
+	// 0->1 transition, since a waiter may have parked during the slack tick in
+	// which runningTasks is 0 but cpuClockTickerRunning is still true.
+	//
+	// activeNotifyCh is protected by runningTasksMu.
+	activeNotifyCh chan struct{} `state:"nosave"`
+
 	// cpuClockTickTimer drives increments of cpuClock.
 	cpuClockTickTimer *time.Timer `state:"nosave"`
 
@@ -492,6 +503,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	k.runningTasksCond.L = &k.runningTasksMu
 	k.cpuClockTickerWakeCh = make(chan struct{}, 1)
 	k.cpuClockTickerStopCond.L = &k.runningTasksMu
+	k.activeNotifyCh = make(chan struct{})
 	k.applicationCores = args.ApplicationCores
 	if args.UseHostCores && k.HasCPUNumbers() {
 		args.UseHostCores = false
@@ -883,6 +895,7 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 	k.runningTasksCond.L = &k.runningTasksMu
 	k.cpuClockTickerWakeCh = make(chan struct{}, 1)
 	k.cpuClockTickerStopCond.L = &k.runningTasksMu
+	k.activeNotifyCh = make(chan struct{})
 
 	initAppCores := k.applicationCores
 
@@ -984,6 +997,7 @@ func (k *Kernel) ExtractRootfsUpperLayer(ctx context.Context, r io.Reader, async
 	k.runningTasksCond.L = &k.runningTasksMu
 	k.cpuClockTickerWakeCh = make(chan struct{}, 1)
 	k.cpuClockTickerStopCond.L = &k.runningTasksMu
+	k.activeNotifyCh = make(chan struct{})
 
 	// Load the pre-saved CPUID FeatureSet.
 	cpuidStart := time.Now()
@@ -1536,6 +1550,17 @@ func (k *Kernel) incRunningTasks() {
 			k.cpuClockTickerRunning = true
 			k.runningTasksCond.Signal()
 		}
+
+		// Wake anything parked while the kernel was idle (currently the
+		// watchdog; see Kernel.WaitForTaskActivity()). This is done on every
+		// real 0->1 transition, even when the block above is skipped because the
+		// CPU clock ticker had not yet parked, since a waiter may have parked
+		// during the slack tick in which runningTasks is 0 but the ticker is
+		// still running. Closing the channel broadcasts to all waiters; a fresh
+		// one takes its place for the next idle period.
+		close(k.activeNotifyCh)
+		k.activeNotifyCh = make(chan struct{})
+
 		// This store must happen after the increment of k.cpuClock above to ensure
 		// that concurrent calls to Task.accountTaskGoroutineLeave() also observe
 		// the updated k.cpuClock.
@@ -1555,6 +1580,35 @@ func (k *Kernel) decRunningTasks() {
 	// there is still nothing running. This provides approximately one tick
 	// of slack in which we can switch back and forth between idle and
 	// active without an expensive transition.
+}
+
+// WaitForTaskActivity blocks until at least one task is running (i.e. the
+// kernel is not idle) and returns true, or until stop is signaled and returns
+// false. It returns true immediately if a task is already running.
+//
+// It lets a caller park while the kernel is idle instead of polling: while
+// runningTasks is 0, no task can be in TaskGoroutineRunningSys (such a task
+// counts as running), and the CPU clock is frozen, so a sentry-activity monitor
+// like the watchdog has nothing to observe until a task becomes runnable again.
+func (k *Kernel) WaitForTaskActivity(stop <-chan struct{}) bool {
+	k.runningTasksMu.Lock()
+	if k.runningTasks.Load() != 0 {
+		k.runningTasksMu.Unlock()
+		return true
+	}
+	// Read the current notification channel under the lock so we cannot miss a
+	// 0->1 transition: incRunningTasks closes this exact channel (also under the
+	// lock) before installing a replacement, so any transition after this point
+	// wakes us.
+	ch := k.activeNotifyCh
+	k.runningTasksMu.Unlock()
+
+	select {
+	case <-ch:
+		return true
+	case <-stop:
+		return false
+	}
 }
 
 // WaitExited blocks until all tasks in k have exited. No tasks can be created
