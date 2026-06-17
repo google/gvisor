@@ -34,11 +34,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
-	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
-	"gvisor.dev/gvisor/pkg/sentry/socket/hostinet"
-	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	"gvisor.dev/gvisor/pkg/sentry/state"
 	"gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -171,15 +168,6 @@ func (r *restorer) restoreContainerInfo(l *Loader, info *containerInfo) error {
 	return nil
 }
 
-func createNetworkStackForRestore(l *Loader) inet.Stack {
-	// Save the current network stack to slap on top of the one that was restored.
-	curNetwork := l.k.RootNetworkNamespace().Stack()
-	if _, ok := curNetwork.(*netstack.Stack); ok {
-		return curNetwork
-	}
-	return hostinet.NewStack()
-}
-
 func (r *restorer) restore(l *Loader) error {
 	log.Infof("Starting to restore %d containers", len(r.containers))
 
@@ -193,11 +181,6 @@ func (r *restorer) restore(l *Loader) error {
 		return errors.New("checkpoint not supported when using hostinet")
 	}
 	r.timer.Reached("specs validated")
-
-	// Create a new root network namespace with the network stack of the
-	// old kernel to preserve the existing network configuration.
-	oldInetStack := createNetworkStackForRestore(l)
-	r.timer.Reached("netstack created")
 
 	// Reset the network stack in the network namespace to nil before
 	// replacing the kernel. This will not free the network stack when this
@@ -289,7 +272,7 @@ func (r *restorer) restore(l *Loader) error {
 		r.timer.Reached("rootfs upper layer extracted")
 		return nil
 	}
-	if err := l.k.LoadFrom(ctx, r.stateFile, r.asyncMFLoader, nil, oldInetStack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}, r.timer.Fork("kernel load")); err != nil {
+	if err := l.k.LoadFrom(ctx, r.stateFile, r.asyncMFLoader, nil, l, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}, r.timer.Fork("kernel load")); err != nil {
 		return fmt.Errorf("failed to load kernel: %w", err)
 	}
 	r.timer.Reached("kernel loaded")

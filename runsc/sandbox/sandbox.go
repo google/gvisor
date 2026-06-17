@@ -464,7 +464,7 @@ func (s *Sandbox) StartRoot(conf *config.Config, spec *specs.Spec) error {
 		return err
 	}
 	// Configure the network.
-	if err := setupNetwork(conn, pid, conf, disableIPv6); err != nil {
+	if err := setupNetwork(conn, pid, conf, disableIPv6, false /* isRestore */); err != nil {
 		return fmt.Errorf("setting up network: %w", err)
 	}
 
@@ -572,14 +572,14 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 		if err != nil {
 			return err
 		}
-		// Configure the network.
-		if err := setupNetwork(conn, s.Pid.Load(), conf, disableIPv6); err != nil {
+		// Configure the network args for restore.
+		if err := setupNetwork(conn, s.Pid.Load(), conf, disableIPv6, true /* isRestore */); err != nil {
 			return fmt.Errorf("setting up network: %w", err)
 		}
 	} else {
-		log.Debugf("Setting up network, config: %+v", networkArgs)
-		if err := conn.Call(boot.ContMgrCreateLinksAndRoutes, networkArgs, nil); err != nil {
-			return fmt.Errorf("creating links and routes: %w", err)
+		log.Debugf("Setting up network args, config: %+v", networkArgs)
+		if err := conn.Call(boot.ContMgrSetNetworkArgs, networkArgs, nil); err != nil {
+			return fmt.Errorf("setting network args: %w", err)
 		}
 	}
 

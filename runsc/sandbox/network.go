@@ -52,20 +52,20 @@ import (
 // Run the following container to test it:
 //
 //	docker run -di --runtime=runsc -p 8080:80 -v $PWD:/usr/local/apache2/htdocs/ httpd:2.4
-func setupNetwork(conn *urpc.Client, pid int, conf *config.Config, disableIPv6 bool) error {
+func setupNetwork(conn *urpc.Client, pid int, conf *config.Config, disableIPv6 bool, isRestore bool) error {
 	log.Infof("Setting up network")
 
 	switch conf.Network {
 	case config.NetworkNone:
 		log.Infof("Network is disabled, create loopback interface only")
-		if err := createDefaultLoopbackInterface(conf, conn); err != nil {
+		if err := createDefaultLoopbackInterface(conf, conn, isRestore); err != nil {
 			return fmt.Errorf("creating default loopback interface: %v", err)
 		}
 	case config.NetworkSandbox:
 		// Build the path to the net namespace of the sandbox process.
 		// This is what we will copy.
 		nsPath := filepath.Join("/proc", strconv.Itoa(pid), "ns/net")
-		if err := createInterfacesAndRoutesFromNS(conn, nsPath, conf, disableIPv6); err != nil {
+		if err := createInterfacesAndRoutesFromNS(conn, nsPath, conf, disableIPv6, isRestore); err != nil {
 			return fmt.Errorf("creating interfaces from net namespace %q: %v", nsPath, err)
 		}
 	case config.NetworkHost:
@@ -80,10 +80,14 @@ func setupNetwork(conn *urpc.Client, pid int, conf *config.Config, disableIPv6 b
 	return nil
 }
 
-func createDefaultLoopbackInterface(conf *config.Config, conn *urpc.Client) error {
+func createDefaultLoopbackInterface(conf *config.Config, conn *urpc.Client, isRestore bool) error {
 	link := boot.DefaultLoopbackLink
 	link.GVisorGRO = conf.GVisorGRO
-	if err := conn.Call(boot.ContMgrCreateLinksAndRoutes, &boot.CreateLinksAndRoutesArgs{
+	method := boot.ContMgrCreateLinksAndRoutes
+	if isRestore {
+		method = boot.ContMgrSetNetworkArgs
+	}
+	if err := conn.Call(method, &boot.CreateLinksAndRoutesArgs{
 		LoopbackLinks: []boot.LoopbackLink{link},
 	}, nil); err != nil {
 		return fmt.Errorf("creating loopback link and routes: %v", err)
@@ -302,7 +306,7 @@ func collectLinksAndRoutes(conf *config.Config, disableIPv6 bool) (boot.CreateLi
 // createInterfacesAndRoutesFromNS scrapes the interface and routes from the
 // net namespace with the given path, creates them in the sandbox, and removes
 // them from the host.
-func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *config.Config, disableIPv6 bool) error {
+func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *config.Config, disableIPv6 bool, isRestore bool) error {
 	switch conf.XDP.Mode {
 	case config.XDPModeOff:
 	case config.XDPModeNS:
@@ -407,7 +411,11 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 	}
 
 	log.Debugf("Setting up network, config: %+v", args)
-	if err := conn.Call(boot.ContMgrCreateLinksAndRoutes, &args, nil); err != nil {
+	method := boot.ContMgrCreateLinksAndRoutes
+	if isRestore {
+		method = boot.ContMgrSetNetworkArgs
+	}
+	if err := conn.Call(method, &args, nil); err != nil {
 		return fmt.Errorf("creating links and routes: %w", err)
 	}
 
