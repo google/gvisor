@@ -37,14 +37,6 @@ const (
 	defaultTCPInvalidRateLimit = 500 * time.Millisecond
 )
 
-// ReceiveBufferSizeOption is used by stack.(Stack*).Option/SetOption to
-// get/set the default, min and max receive buffer sizes.
-type ReceiveBufferSizeOption struct {
-	Min     int
-	Default int
-	Max     int
-}
-
 // TCPInvalidRateLimitOption is used by stack.(Stack*).Option/SetOption to get/set
 // stack.tcpInvalidRateLimit.
 type TCPInvalidRateLimitOption time.Duration
