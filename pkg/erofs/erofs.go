@@ -473,14 +473,20 @@ func (i *Image) Inode(nid uint64) (Inode, error) {
 
 	switch dataLayout := inode.DataLayout(); dataLayout {
 	case InodeDataLayoutFlatInline:
-		// Check that whether the file data in the last block fits into
-		// the remaining room of the metadata block.
+		// Inline data follows the inode and must fit within the block that holds
+		// it. The inode itself may straddle a block boundary, so measure the room
+		// from idataOff's offset within its block, not from blockSize-inodeSize.
+		//
+		// Linux also adds xattr_isize to inodeSize when locating the inline data.
+		// Safe to skip here because XattrCount != 0 is rejected above; revisit if
+		// EROFS xattr support is added.
+		idataOff := off + uint64(inodeSize)
 		tailSize := inode.size & (blockSize - 1)
-		if tailSize == 0 || tailSize > blockSize-uint64(inodeSize) {
+		if tailSize == 0 || (idataOff&(blockSize-1))+tailSize > blockSize {
 			log.Warningf("Inline data not found or cross block boundary at inode (nid=%v)", nid)
 			return Inode{}, linuxerr.EUCLEAN
 		}
-		inode.idataOff = off + uint64(inodeSize)
+		inode.idataOff = idataOff
 		fallthrough
 
 	case InodeDataLayoutFlatPlain:
