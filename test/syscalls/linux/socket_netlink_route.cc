@@ -119,6 +119,99 @@ INSTANTIATE_TEST_SUITE_P(
                         absl::StrFormat("NETLINK_ROUTE (%d)", NETLINK_ROUTE)),
         std::make_tuple(SO_PASSCRED, IsEqual(0), "0")));
 
+PosixErrorOr<FileDescriptor> netlinkRouteSocketInLinkGroup() {
+  ASSIGN_OR_RETURN_ERRNO(FileDescriptor fd, NetlinkBoundSocket(NETLINK_ROUTE));
+  const unsigned int group = RTNLGRP_LINK;
+  RETURN_ERROR_IF_SYSCALL_FAIL(setsockopt(
+      fd.get(), SOL_NETLINK, NETLINK_ADD_MEMBERSHIP, &group, sizeof(group)));
+  return fd;
+}
+
+// NETLINK_LIST_MEMBERSHIPS returns the output length when optval is not
+// specified.
+TEST(NetlinkRouteTest, ListMembershipsSizeProbe) {
+  SKIP_IF(IsRunningWithHostinet());
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(netlinkRouteSocketInLinkGroup());
+
+  socklen_t len = 0;
+  EXPECT_THAT(getsockopt(fd.get(), SOL_NETLINK, NETLINK_LIST_MEMBERSHIPS,
+                         nullptr, &len),
+              SyscallSucceeds());
+  EXPECT_GT(len, 0);
+}
+
+// A buffer larger than the value succeeds; optlen is updated to the actual
+// size, which fits within the provided buffer.
+TEST(NetlinkRouteTest, ListMembershipsLargeBuffer) {
+  SKIP_IF(IsRunningWithHostinet());
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(netlinkRouteSocketInLinkGroup());
+
+  // Fetch the real length
+  socklen_t len = 0;
+  EXPECT_THAT(getsockopt(fd.get(), SOL_NETLINK, NETLINK_LIST_MEMBERSHIPS,
+                         nullptr, &len),
+              SyscallSucceeds());
+  EXPECT_GT(len, 0);
+
+  // And make a buffer larger than that
+  socklen_t new_len = len + 10;
+  std::vector<char> buf(new_len, 0);
+
+  EXPECT_THAT(getsockopt(fd.get(), SOL_NETLINK, NETLINK_LIST_MEMBERSHIPS,
+                         buf.data(), &new_len),
+              SyscallSucceeds());
+  EXPECT_EQ(len, new_len);
+
+  // First len elements were set (some may be zero, so all we can do is test
+  // that they're not *all* 0).
+  EXPECT_FALSE(
+      std::all_of(buf.begin(), buf.end() - 10, [](char c) { return c == 0; }));
+  // Last 10 elements were not touched
+  EXPECT_TRUE(
+      std::all_of(buf.begin() + len, buf.end(), [](char c) { return c == 0; }));
+}
+
+// A buffer smaller than the value is truncated to optlen bytes, but optlen is
+// still updated to the full size.
+TEST(NetlinkRouteTest, ListMembershipsTruncated) {
+  SKIP_IF(IsRunningWithHostinet());
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(netlinkRouteSocketInLinkGroup());
+
+  // Fetch the real length
+  socklen_t len = 0;
+  EXPECT_THAT(getsockopt(fd.get(), SOL_NETLINK, NETLINK_LIST_MEMBERSHIPS,
+                         nullptr, &len),
+              SyscallSucceeds());
+
+  // Make a smaller buffer
+  ASSERT_GE(len, 2);
+  socklen_t new_len = len / 2;
+  std::vector<char> buf(new_len, 0);
+
+  int ret = getsockopt(fd.get(), SOL_NETLINK, NETLINK_LIST_MEMBERSHIPS,
+                       buf.data(), &new_len);
+  const bool was_efault = Value(ret, SyscallFailsWithErrno(EFAULT));
+
+  // Strangely, this EFAULTs on native, but only on our testing infrastructure.
+  // Seems like something is intercepting the getsockopt() call. Skip it for
+  // now.
+  SKIP_IF(was_efault && !IsRunningOnGvisor());
+
+  EXPECT_THAT(ret, SyscallSucceeds());
+
+  EXPECT_EQ(new_len, len);
+  // First len / 2 elements were set (some may be zero, so all we can do is test
+  // that they're not *all* 0).
+  EXPECT_FALSE(!buf.empty() && std::all_of(buf.begin(), buf.end(),
+                                           [](char c) { return c == 0; }));
+}
+
 // Validates the responses to RTM_GETLINK + NLM_F_DUMP.
 void CheckGetLinkResponse(const struct nlmsghdr* hdr, int seq, int port) {
   EXPECT_THAT(hdr->nlmsg_type, AnyOf(Eq(RTM_NEWLINK), Eq(NLMSG_DONE)));

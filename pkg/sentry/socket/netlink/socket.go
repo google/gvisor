@@ -516,29 +516,20 @@ func (s *Socket) Shutdown(t *kernel.Task, how int) *syserr.Error {
 }
 
 // GetSockOpt implements socket.Socket.GetSockOpt.
-func (s *Socket) GetSockOpt(t *kernel.Task, level int, name int, outPtr hostarch.Addr, outLen int) (marshal.Marshallable, *syserr.Error) {
+func (s *Socket) GetSockOpt(t *kernel.Task, level int, name int, outPtr hostarch.Addr, _ int) (marshal.Marshallable, *syserr.Error) {
 	switch level {
 	case linux.SOL_SOCKET:
 		switch name {
 		case linux.SO_SNDBUF:
-			if outLen < sizeOfInt32 {
-				return nil, syserr.ErrInvalidArgument
-			}
 			s.mu.Lock()
 			defer s.mu.Unlock()
 			return primitive.AllocateInt32(int32(s.sendBufferSize)), nil
 
 		case linux.SO_RCVBUF:
-			if outLen < sizeOfInt32 {
-				return nil, syserr.ErrInvalidArgument
-			}
 			// We don't have limit on receiving size.
 			return primitive.AllocateInt32(math.MaxInt32), nil
 
 		case linux.SO_PASSCRED:
-			if outLen < sizeOfInt32 {
-				return nil, syserr.ErrInvalidArgument
-			}
 			var passcred primitive.Int32
 			if s.Passcred() {
 				passcred = 1
@@ -546,25 +537,16 @@ func (s *Socket) GetSockOpt(t *kernel.Task, level int, name int, outPtr hostarch
 			return &passcred, nil
 
 		case linux.SO_SNDTIMEO:
-			if outLen < linux.SizeOfTimeval {
-				return nil, syserr.ErrInvalidArgument
-			}
 			sendTimeout := linux.NsecToTimeval(s.SendTimeout())
 			return &sendTimeout, nil
 
 		case linux.SO_RCVTIMEO:
-			if outLen < linux.SizeOfTimeval {
-				return nil, syserr.ErrInvalidArgument
-			}
 			recvTimeout := linux.NsecToTimeval(s.RecvTimeout())
 			return &recvTimeout, nil
 		}
 	case linux.SOL_NETLINK:
 		switch name {
 		case linux.NETLINK_LIST_MEMBERSHIPS:
-			if outLen < sizeOfInt32 {
-				return nil, syserr.ErrInvalidArgument
-			}
 			return primitive.AllocateUint64(s.groups.Load()), nil
 
 		case linux.NETLINK_BROADCAST_ERROR,
