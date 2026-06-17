@@ -78,6 +78,11 @@ func newNATOp(nt, family uint8, sregAddrMin, sregAddrMax, sregProtoMin, sregProt
 	return natOp, nil
 }
 
+func (n *natOp) deepCopy() operation {
+	opCopy := *n
+	return &opCopy
+}
+
 // nfNatRange is the equivalent of struct nf_nat_range2 in Linux.
 type nfNatRange struct {
 	minAddr  tcpip.Address
@@ -87,7 +92,7 @@ type nfNatRange struct {
 	flags    uint16
 }
 
-// setupAddr returns the min and max addresses from the register set.
+// getAddrRange returns the min and max addresses from the register set.
 func (n *natOp) getAddrRange(regs *registerSet) (minAddr, maxAddr tcpip.Address) {
 	regBuffer := regs.data
 	sz := header.IPv4AddressSize
@@ -202,10 +207,12 @@ func (n *natOp) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule)
 	regs.verdict.Code = VC(linux.NF_ACCEPT)
 }
 
+// GetExprName returns the name of the expression.
 func (n *natOp) GetExprName() string {
 	return OpTypeNAT.String()
 }
 
+// Dump dumps the operation info.
 func (n *natOp) Dump() ([]byte, *syserr.AnnotatedError) {
 	log.Warningf("Nftables: natOp.Dump() is not implemented")
 	return nil, nil

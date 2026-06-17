@@ -97,6 +97,11 @@ func newByteorder(sreg, dreg uint8, bop byteorderOp, blen, size uint8) (*byteord
 	return &byteorder{sregIdx: sregIdx, dregIdx: dregIdx, bop: bop, blen: int(blen), size: size}, nil
 }
 
+func (op *byteorder) deepCopy() operation {
+	opCopy := *op
+	return &opCopy
+}
+
 // evaluate for byteorder performs the byte order operation on the source
 // register and stores the result in the destination register.
 func (op byteorder) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {

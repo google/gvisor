@@ -4624,3 +4624,126 @@ func TestBaseChainEvalOrder(t *testing.T) {
 	validateOrder(t, stack.IP, true /*wantNATChains*/, wantLen)
 	validateOrder(t, stack.IP, true /*wantNATChains*/, wantLen)
 }
+
+func TestDeepCopyIsolatesOperations(t *testing.T) {
+	tests := []struct {
+		name        string
+		op          operation
+		valuesEqual func(op1, op2 operation) bool
+	}{
+		{
+			name: "immediate",
+			op: &immediate{
+				data: []byte{1, 2, 3},
+			},
+			valuesEqual: func(op1, op2 operation) bool {
+				// Check that the pointers to the data are different.
+				if &op1.(*immediate).data[0] == &op2.(*immediate).data[0] {
+					return false
+				}
+				// Check that the data values are equal.
+				return slices.Equal(op1.(*immediate).data, op2.(*immediate).data)
+			},
+		},
+		{
+			name: "comparison",
+			op: &comparison{
+				data: []byte{1, 2, 3},
+			},
+			valuesEqual: func(op1, op2 operation) bool {
+				// Check that the pointers to the data are different.
+				if &op1.(*comparison).data[0] == &op2.(*comparison).data[0] {
+					return false
+				}
+				// Check that the data values are equal.
+				return slices.Equal(op1.(*comparison).data, op2.(*comparison).data)
+			},
+		},
+		{
+			name: "ranged",
+			op: &ranged{
+				low:  []byte{1, 2},
+				high: []byte{3, 4},
+			},
+
+			valuesEqual: func(op1, op2 operation) bool {
+				// Check that the pointers are different.
+				if &op1.(*ranged).low[0] != &op2.(*ranged).low[0] &&
+					&op1.(*ranged).high[0] == &op2.(*ranged).high[0] {
+					return false
+				}
+				// Check that the data values are equal.
+				return slices.Equal(op1.(*ranged).low, op2.(*ranged).low) &&
+					slices.Equal(op1.(*ranged).high, op2.(*ranged).high)
+			},
+		},
+		{
+			name: "bitwise",
+			op: &bitwise{
+				mask: []byte{1, 2},
+				xor:  []byte{3, 4},
+			},
+			valuesEqual: func(op1, op2 operation) bool {
+				if &op1.(*bitwise).mask[0] == &op2.(*bitwise).mask[0] ||
+					&op1.(*bitwise).xor[0] == &op2.(*bitwise).xor[0] {
+					return false
+				}
+				return slices.Equal(op1.(*bitwise).mask, op2.(*bitwise).mask) &&
+					slices.Equal(op1.(*bitwise).xor, op2.(*bitwise).xor)
+			},
+		},
+		{
+			name: "counter",
+			op:   newCounter(0, 0),
+			valuesEqual: func(op1, op2 operation) bool {
+				return op1.(*counter).packets.Load() == op2.(*counter).packets.Load()
+			},
+		},
+		{
+			name: "last",
+			op:   &last{},
+			valuesEqual: func(op1, op2 operation) bool {
+				return op1.(*last).timestampMS.Load() == op2.(*last).timestampMS.Load()
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			nf := newNFTablesStd()
+			tab, err := nf.AddTable(stack.IP, "test_table", false)
+			if err != nil {
+				t.Fatalf("AddTable failed, err: %v", err)
+			}
+
+			bc, err := nf.AddChainToTable(tab, "test_chain", arbitraryInfoPolicyAccept, "test chain", false, 0, nil, linux.NF_ACCEPT)
+			if err != nil {
+				t.Fatalf("AddChainToTable failed, err: %v", err)
+			}
+
+			rule := &Rule{}
+			if err := rule.addOperation(test.op); err != nil {
+				t.Fatalf("addOperation failed, err: %v", err)
+			}
+			if err := bc.RegisterRule(rule, -1 /*=index*/); err != nil {
+				t.Fatalf("RegisterRule failed, err: %v", err)
+			}
+
+			nftCopy := nf.DeepCopy()
+			origTable := nf.filters[stack.IP].tables["test_table"]
+			origChain := origTable.chains["test_chain"]
+			origOp := origChain.rules[0].ops[0]
+
+			copyTable := nftCopy.filters[stack.IP].tables["test_table"]
+			copyChain := copyTable.chains["test_chain"]
+			copyOp := copyChain.rules[0].ops[0]
+
+			if origOp == copyOp {
+				t.Fatalf("wanted orig != copy, got %p == %p", origOp, copyOp)
+			}
+			if !test.valuesEqual(origOp, copyOp) {
+				t.Fatalf("wanted valuesEqual(orig, copy) == true, got false")
+			}
+		})
+	}
+}

@@ -108,6 +108,11 @@ func newRoute(key routeKey, dreg uint8) (*route, *syserr.AnnotatedError) {
 	return &route{key: key, dregIdx: dregIdx}, nil
 }
 
+func (op *route) deepCopy() operation {
+	opCopy := *op
+	return &opCopy
+}
+
 // evaluate for Route loads specific routing data into the destination register.
 func (op route) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
 	// Gets the target data to be stored in the destination register.

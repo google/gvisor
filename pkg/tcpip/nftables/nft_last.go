@@ -40,6 +40,13 @@ type last struct {
 	// output, so it has no interpretation, though it is fully implemented.
 }
 
+func (op *last) deepCopy() operation {
+	opCopy := &last{}
+	opCopy.timestampMS.Store(op.timestampMS.Load())
+	opCopy.set.Store(op.set.Load())
+	return opCopy
+}
+
 // evaluate for last records the last time the operation was evaluated and flags
 // if this was the first time the operation was evaluated.
 func (op *last) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
