@@ -584,6 +584,9 @@ type Options struct {
 	// syscalls invocations sites at runtime.
 	DisableSyscallPatching bool
 
+	// DisableFastPath, if true, completely disables the Systrap fast path.
+	DisableFastPath bool
+
 	// ApplicationCores is used by KVM to determine the correct amount of
 	// vCPUs to create.
 	ApplicationCores int

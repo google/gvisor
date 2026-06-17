@@ -295,8 +295,9 @@ func New(opts platform.Options) (*Systrap, error) {
 		// Configure address space parameters for the current host's
 		// VA width. Must be called before any Context64 is created.
 		configureSystrapAddressSpace()
-		// Don't use sentry and stub fast paths if here is just one cpu.
-		neverEnableFastPath = min(runtime.NumCPU(), runtime.GOMAXPROCS(0)) == 1
+		// Don't use sentry and stub fast paths if here is just one cpu,
+		// or if the fast path has been explicitly disabled.
+		neverEnableFastPath = opts.DisableFastPath || min(runtime.NumCPU(), runtime.GOMAXPROCS(0)) == 1
 
 		// Initialize the stub.
 		stubInit()
