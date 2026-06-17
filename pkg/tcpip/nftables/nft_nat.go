@@ -198,6 +198,8 @@ func (n *natOp) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule)
 		regs.verdict.Code = VC(linux.NF_DROP)
 		return
 	}
+	// NAT successful, set verdict to ACCEPT.
+	regs.verdict.Code = VC(linux.NF_ACCEPT)
 }
 
 func (n *natOp) GetExprName() string {

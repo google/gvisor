@@ -891,7 +891,9 @@ func (p *Protocol) newRule(nft *nftables.NFTables, st *stack.Stack, attrs map[ui
 
 	// Once we have a at least one rule registered on a base chain, nftables can
 	// be called to potentially filter the packet.
-	st.SetNFTablesConfigured(chain.IsBaseChain())
+	if !st.IsNFTablesConfigured() && chain.IsBaseChain() {
+		st.SetNFTablesConfigured(true)
+	}
 
 	// TODO - b/434244017: Support validating the entire table before returning.
 	return nil
