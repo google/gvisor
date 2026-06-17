@@ -370,6 +370,7 @@ func Init() {
 					nvgpu.NV0080_CTRL_CMD_GPU_GET_CLASSLIST:                                ctrlHandler(ctrlGetNvU32List, compUtil),
 					nvgpu.NV0080_CTRL_CMD_GR_GET_CAPS:                                      ctrlHandler(ctrlDevGetCaps, nvconf.CapGraphics),
 					nvgpu.NV0080_CTRL_CMD_GR_GET_CAPS_V2:                                   ctrlHandler(rmControlSimple, nvconf.CapGraphics|nvconf.CapVideo),
+					nvgpu.NV0080_CTRL_CMD_GR_SET_TPC_PARTITION_MODE:                        ctrlHandler(rmControlSimple, compUtil),
 					nvgpu.NV0080_CTRL_CMD_GR_GET_INFO:                                      ctrlHandler(ctrlIoctlHasInfoList[nvgpu.NvxxxCtrlXxxGetInfoParams], nvconf.CapGraphics),
 					nvgpu.NV0080_CTRL_CMD_FB_GET_CAPS:                                      ctrlHandler(ctrlDevGetCaps, nvconf.CapGraphics),
 					nvgpu.NV0080_CTRL_CMD_FIFO_GET_CAPS:                                    ctrlHandler(ctrlDevGetCaps, nvconf.CapGraphics),
@@ -420,6 +421,7 @@ func Init() {
 					nvgpu.GF100_PROFILER:             allocHandler(rmAllocNoParams, nvconf.CapProfiling),
 					nvgpu.MAXWELL_PROFILER_DEVICE:    allocHandler(rmAllocSimple[nvgpu.NVB2CC_ALLOC_PARAMETERS], nvconf.CapProfiling),
 					nvgpu.NV_COUNTER_COLLECTION_UNIT: allocHandler(rmAllocNoParams, nvconf.CapProfiling),
+					nvgpu.MPS_COMPUTE:                allocHandler(rmAllocNoParams, compUtil),
 					nvgpu.GT200_DEBUGGER:             allocHandler(rmAllocSMDebuggerSession, compUtil),
 					nvgpu.FERMI_TWOD_A:               allocHandler(rmAllocSimple[nvgpu.NV_GR_ALLOCATION_PARAMETERS], nvconf.CapGraphics),
 					nvgpu.FERMI_CONTEXT_SHARE_A:      allocHandler(rmAllocContextShare, compUtil),
@@ -682,6 +684,7 @@ func Init() {
 							nvgpu.NV0080_CTRL_CMD_GPU_GET_CLASSLIST:                                ioctlInfoWithStructName("NV0080_CTRL_CMD_GPU_GET_CLASSLIST", nvgpu.RmapiParamNvU32List{}, "NV0080_CTRL_GPU_GET_CLASSLIST_PARAMS"),
 							nvgpu.NV0080_CTRL_CMD_GR_GET_CAPS:                                      ioctlInfoWithStructName("NV0080_CTRL_CMD_GR_GET_CAPS", nvgpu.NV0080_CTRL_GET_CAPS_PARAMS{}, "NV0080_CTRL_GR_GET_CAPS_PARAMS"),
 							nvgpu.NV0080_CTRL_CMD_GR_GET_CAPS_V2:                                   simpleIoctlInfo("NV0080_CTRL_CMD_GR_GET_CAPS_V2", "NV0080_CTRL_GR_GET_CAPS_V2_PARAMS"),
+							nvgpu.NV0080_CTRL_CMD_GR_SET_TPC_PARTITION_MODE:                        simpleIoctlInfo("NV0080_CTRL_CMD_GR_SET_TPC_PARTITION_MODE", "NV0080_CTRL_GR_TPC_PARTITION_MODE_PARAMS"),
 							nvgpu.NV0080_CTRL_CMD_GR_GET_INFO:                                      ioctlInfoWithStructName("NV0080_CTRL_CMD_GR_GET_INFO", nvgpu.NvxxxCtrlXxxGetInfoParams{}, "NV0080_CTRL_GR_GET_INFO_PARAMS"),
 							nvgpu.NV0080_CTRL_CMD_FB_GET_CAPS:                                      ioctlInfoWithStructName("NV0080_CTRL_CMD_FB_GET_CAPS", nvgpu.NV0080_CTRL_GET_CAPS_PARAMS{}, "NV0080_CTRL_FB_GET_CAPS_PARAMS"),
 							nvgpu.NV0080_CTRL_CMD_FIFO_GET_CAPS:                                    ioctlInfoWithStructName("NV0080_CTRL_CMD_FIFO_GET_CAPS", nvgpu.NV0080_CTRL_GET_CAPS_PARAMS{}, "NV0080_CTRL_FIFO_GET_CAPS_PARAMS"),
@@ -733,6 +736,7 @@ func Init() {
 							nvgpu.GF100_PROFILER:             simpleIoctlInfo("GF100_PROFILER"), // No params
 							nvgpu.MAXWELL_PROFILER_DEVICE:    ioctlInfo("MAXWELL_PROFILER_DEVICE", nvgpu.NVB2CC_ALLOC_PARAMETERS{}),
 							nvgpu.NV_COUNTER_COLLECTION_UNIT: simpleIoctlInfo("NV_COUNTER_COLLECTION_UNIT"), // No params
+							nvgpu.MPS_COMPUTE:                simpleIoctlInfo("MPS_COMPUTE"),                // No params
 							nvgpu.FERMI_TWOD_A:               ioctlInfo("FERMI_TWOD_A", nvgpu.NV_GR_ALLOCATION_PARAMETERS{}),
 							nvgpu.FERMI_CONTEXT_SHARE_A:      ioctlInfo("FERMI_CONTEXT_SHARE_A", nvgpu.NV_CTXSHARE_ALLOCATION_PARAMETERS{}),
 							nvgpu.GF100_DISP_SW:              ioctlInfo("GF100_DISP_SW", nvgpu.NV9072_ALLOCATION_PARAMETERS{}),
