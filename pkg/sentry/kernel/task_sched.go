@@ -206,6 +206,11 @@ func (k *Kernel) runCPUClockTicker() {
 			if k.runningTasks.Load() == 0 {
 				k.cpuClockTickerRunning = false
 				k.cpuClockTickerStopCond.Broadcast()
+				// Nothing can read the VDSO clock parameters while no tasks
+				// are running, so let the Timekeeper's updater goroutine park
+				// instead of waking up periodically. It is reactivated by
+				// Kernel.incRunningTasks() via Timekeeper.notifyActive().
+				k.timekeeper.markIdle()
 				k.runningTasksCond.Wait()
 				// k.cpuClockTickerRunning was set to true by our waker
 				// (Kernel.incRunningTasks()). For reasons described there, we must

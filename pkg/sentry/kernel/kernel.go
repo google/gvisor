@@ -1535,6 +1535,14 @@ func (k *Kernel) incRunningTasks() {
 			// their CPU usage.
 			k.cpuClockTickerRunning = true
 			k.runningTasksCond.Signal()
+
+			// The Timekeeper's updater goroutine parks together with the CPU
+			// clock ticker (see Kernel.runCPUClockTicker()), so resume it here.
+			// notifyActive also refreshes the clock parameters synchronously on
+			// this task goroutine if they have gone stale while paused, before
+			// the task can return to userspace and read the VDSO, so that it
+			// never observes stale clock data.
+			k.timekeeper.notifyActive(k.vdsoParams)
 		}
 		// This store must happen after the increment of k.cpuClock above to ensure
 		// that concurrent calls to Task.accountTaskGoroutineLeave() also observe
