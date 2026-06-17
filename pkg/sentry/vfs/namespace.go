@@ -257,6 +257,13 @@ func (vfs *VirtualFilesystem) CloneTreeToAnonNS(
 	// MS_UNBINDABLE mounts should be rejected here.
 
 	fsName := fromMnt.Filesystem().FilesystemType().Name()
+	// fromMnt must not have been detached from its mount tree (e.g. via
+	// umount(MNT_DETACH)). Note that fromMnt.ns is not cleared on detach,
+	// only fromMnt.umounted is set, so this must be checked independently
+	// of the namespace-membership check below.
+	if fromMnt.umounted {
+		return nil, linuxerr.EINVAL
+	}
 	// fromMnt must be either:
 	// - In the same mount ns as the current task
 	// - In an appropriate anonymous mount namespace
