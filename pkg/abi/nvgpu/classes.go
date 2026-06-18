@@ -71,6 +71,7 @@ const (
 	NV50_THIRD_PARTY_P2P             = 0x0000503c
 	NV50_MEMORY_VIRTUAL              = 0x000050a0
 	GT200_DEBUGGER                   = 0x000083de
+	MPS_COMPUTE                      = 0x0000900e
 	FERMI_TWOD_A                     = 0x0000902d
 	FERMI_CONTEXT_SHARE_A            = 0x00009067
 	GF100_DISP_SW                    = 0x00009072
