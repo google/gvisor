@@ -299,6 +299,11 @@ func New(opts platform.Options) (*Systrap, error) {
 		// or if the fast path has been explicitly disabled.
 		neverEnableFastPath = opts.DisableFastPath || min(runtime.NumCPU(), runtime.GOMAXPROCS(0)) == 1
 
+		// Convert the spin/deep-sleep timeouts into cputicks() units for
+		// the current architecture. Must happen before stubInit(), which
+		// copies deepSleepTimeout into the stub.
+		initSleepTimeouts()
+
 		// Initialize the stub.
 		stubInit()
 

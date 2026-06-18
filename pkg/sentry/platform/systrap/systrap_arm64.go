@@ -19,6 +19,31 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 
+// getCNTFRQ returns the frequency (in Hz) of the system counter read by
+// cputicks(), as reported by CNTFRQ_EL0.
+func getCNTFRQ() int64
+
+// typicalCNTFRQ is a fallback system counter frequency (24MHz, a common
+// reference-crystal value) used only if CNTFRQ_EL0 reads back as zero. The
+// architecture requires firmware to program CNTFRQ_EL0, so real hardware always
+// reports a non-zero value; this only guards against a misconfigured board.
+// Actual frequencies vary widely -- from tens of MHz up to ~1GHz on newer
+// cores -- so this is a best-effort guess, not a value that fits all hardware.
+const typicalCNTFRQ = 24 * 1000 * 1000
+
+// cputicksFreq returns the frequency in Hz of the counter read by cputicks().
+// On arm64 cputicks() reads CNTVCT_EL0, whose frequency is reported exactly by
+// CNTFRQ_EL0, so no calibration is needed. It always returns a non-zero value:
+// the sleep-timeout conversion needs a frequency, and there is no sane
+// cross-platform default (the counter rate is platform-specific and ranges from
+// tens of MHz to ~GHz), so the fallback must be arch-specific.
+func cputicksFreq() uint64 {
+	if freq := getCNTFRQ(); freq > 0 {
+		return uint64(freq)
+	}
+	return typicalCNTFRQ
+}
+
 func stackPointer(r *arch.Registers) uintptr {
 	return uintptr(r.Sp)
 }
