@@ -1567,6 +1567,11 @@ TEST(ProcStat, Fields) {
     } else if (fields[0] == "procs_running") {
       // Single field.
       EXPECT_EQ(fields.size(), 2) << proc_stat;
+      // The task reading /proc/stat is itself running, so there must be at
+      // least one running task.
+      uint64_t running = 0;
+      EXPECT_TRUE(absl::SimpleAtoi(fields[1], &running)) << proc_stat;
+      EXPECT_GE(running, 1) << proc_stat;
     } else if (fields[0] == "procs_blocked") {
       // Single field.
       EXPECT_EQ(fields.size(), 2) << proc_stat;
@@ -1581,6 +1586,51 @@ TEST(ProcStat, Fields) {
       EXPECT_TRUE(absl::SimpleAtoi(fields[i], &val)) << proc_stat;
     }
   }
+}
+
+// Returns the total non-idle CPU time (user + nice + system, in USER_HZ ticks)
+// reported by the aggregate "cpu" line of /proc/stat.
+PosixErrorOr<uint64_t> ProcStatCpuBusyTicks() {
+  ASSIGN_OR_RETURN_ERRNO(std::string proc_stat, GetContents("/proc/stat"));
+  for (absl::string_view line : absl::StrSplit(proc_stat, '\n')) {
+    std::vector<std::string> fields =
+        absl::StrSplit(line, ' ', absl::SkipWhitespace());
+    if (fields.empty() || fields[0] != "cpu") {
+      continue;
+    }
+    // "cpu" followed by at least the user, nice, and system fields.
+    if (fields.size() < 4) {
+      return PosixError(EINVAL, "malformed aggregate cpu line in /proc/stat");
+    }
+    uint64_t user = 0, nice = 0, system = 0;
+    if (!absl::SimpleAtoi(fields[1], &user) ||
+        !absl::SimpleAtoi(fields[2], &nice) ||
+        !absl::SimpleAtoi(fields[3], &system)) {
+      return PosixError(EINVAL, "non-numeric cpu fields in /proc/stat");
+    }
+    return user + nice + system;
+  }
+  return PosixError(EINVAL, "no aggregate cpu line in /proc/stat");
+}
+
+// Regression test for the aggregate CPU statistics being hardcoded to zero
+// (b/37226836): the "cpu" line of /proc/stat must accrue CPU time as work is
+// done, so that tools like top(1) and htop(1) can compute non-zero usage.
+TEST(ProcStat, CpuTimeAccrues) {
+  uint64_t before = ASSERT_NO_ERRNO_AND_VALUE(ProcStatCpuBusyTicks());
+
+  // Burn CPU for long enough to register several USER_HZ ticks (typically
+  // 10ms each). The volatile sink prevents the loop from being optimized away.
+  const absl::Time deadline = absl::Now() + absl::Milliseconds(500);
+  volatile uint64_t sink = 0;
+  while (absl::Now() < deadline) {
+    for (int i = 0; i < 100000; i++) {
+      sink += i;
+    }
+  }
+
+  uint64_t after = ASSERT_NO_ERRNO_AND_VALUE(ProcStatCpuBusyTicks());
+  EXPECT_GT(after, before);
 }
 
 TEST(ProcLoadavg, EndsWithNewline) {

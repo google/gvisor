@@ -186,14 +186,47 @@ var _ dynamicInode = (*statData)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (*statData) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	// TODO(b/37226836): We currently export only zero CPU stats. We could
-	// at least provide some aggregate stats.
-	var cpu cpuStats
-	fmt.Fprintf(buf, "cpu  %s\n", cpu)
-
 	k := kernel.KernelFromContext(ctx)
-	for c, max := uint(0), k.ApplicationCores(); c < max; c++ {
-		fmt.Fprintf(buf, "cpu%d %s\n", c, cpu)
+
+	// gVisor does not track per-CPU usage. Instead, report the kernel-wide
+	// aggregate user and system CPU time (maintained by the CPU clock ticker)
+	// and approximate idle time from uptime. This allows utilities like top(1)
+	// and htop(1) to compute non-zero CPU usage from the delta between
+	// successive reads of /proc/stat.
+	cpu := k.CPUStats()
+
+	cores := k.ApplicationCores()
+	uptime := ktime.NowFromContext(ctx).Sub(k.Timekeeper().BootTime())
+
+	userTicks := uint64(linux.ClockTFromDuration(cpu.UserTime))
+	sysTicks := uint64(linux.ClockTFromDuration(cpu.SysTime))
+
+	// Idle time is the total available CPU time (one uptime's worth per core)
+	// minus the time spent doing work.
+	var idleTicks uint64
+	if total := uint64(linux.ClockTFromDuration(uptime)) * uint64(cores); total > userTicks+sysTicks {
+		idleTicks = total - userTicks - sysTicks
+	}
+
+	fmt.Fprintf(buf, "cpu  %s\n", cpuStats{user: userTicks, system: sysTicks, idle: idleTicks})
+
+	// gVisor has no per-CPU accounting, so distribute the aggregate stats
+	// evenly across the application cores, assigning any remainder to cpu0.
+	// The per-CPU lines therefore sum back to the aggregate "cpu" line. This
+	// makes the aggregate statistic a reasonable approximation of the total CPU
+	// usage across all cores.
+	for c := uint(0); c < cores; c++ {
+		per := cpuStats{
+			user:   userTicks / uint64(cores),
+			system: sysTicks / uint64(cores),
+			idle:   idleTicks / uint64(cores),
+		}
+		if c == 0 {
+			per.user += userTicks % uint64(cores)
+			per.system += sysTicks % uint64(cores)
+			per.idle += idleTicks % uint64(cores)
+		}
+		fmt.Fprintf(buf, "cpu%d %s\n", c, per)
 	}
 
 	// The total number of interrupts is dependent on the CPUs and PCI
@@ -222,13 +255,12 @@ func (*statData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	// TODO(b/37226836): Count this.
 	fmt.Fprintf(buf, "processes 0\n")
 
-	// Number of runnable tasks.
-	// TODO(b/37226836): Count this.
-	fmt.Fprintf(buf, "procs_running 0\n")
+	// Number of runnable tasks, read directly from the kernel's running-task
+	// counter, which is maintained as tasks change scheduling state.
+	fmt.Fprintf(buf, "procs_running %d\n", k.RunningTasks())
 
-	// Number of tasks waiting on IO.
-	// TODO(b/37226836): Count this.
-	fmt.Fprintf(buf, "procs_blocked 0\n")
+	// Number of tasks in uninterruptible sleep (e.g. waiting on IO).
+	fmt.Fprintf(buf, "procs_blocked %d\n", k.BlockedTasks())
 
 	// Number of each softirq handled.
 	fmt.Fprintf(buf, "softirq 0") // total
