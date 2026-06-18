@@ -15,6 +15,8 @@
 package nftables
 
 import (
+	"slices"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
@@ -114,6 +116,12 @@ func initImmediate(tab *Table, exprInfo ExprInfo) (*immediate, *syserr.Annotated
 		return nil, err
 	}
 	return newImmediate(uint8(reg), regType, data, stack.NFVerdict{})
+}
+
+func (op *immediate) deepCopy() operation {
+	opCopy := *op
+	opCopy.data = slices.Clone(op.data)
+	return &opCopy
 }
 
 // immRegToType returns the corresponding data type for a given register number.

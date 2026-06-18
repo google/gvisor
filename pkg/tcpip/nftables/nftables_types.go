@@ -711,10 +711,10 @@ type operation interface {
 	// Dump dumps the parameters.
 	Dump() ([]byte, *syserr.AnnotatedError)
 
-	// evaluate evaluates the operation on the given packet and register set,
-	// changing the register set and possibly the packet in place. We pass the
-	// assigned rule to allow the operation to access parts of the NFTables state.
 	evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule)
+
+	// deepCopy returns a deep copy of the operation.
+	deepCopy() operation
 }
 
 // Ensures all operations implement the Operation interface at compile time.
@@ -731,6 +731,7 @@ var (
 	_ operation = (*byteorder)(nil)
 	_ operation = (*metaLoad)(nil)
 	_ operation = (*metaSet)(nil)
+	_ operation = (*natOp)(nil)
 )
 
 // OpType represents the type of operation.
@@ -1075,17 +1076,17 @@ func validateVerdictData(tab *Table, bytes nlmsg.AttrsView) (stack.NFVerdict, *s
 
 // deepCopyRule returns a deep copy of the Rule struct.
 func deepCopyRule(rule *Rule, chainCopy *Chain) *Rule {
-	return &Rule{
-		chain: chainCopy,
-		// Because the underlying op data within the slice cannot be
-		// modified, creating a shallow copy is sufficient. Even if the
-		// original struct is modified and an operation is dropped,
-		// the copy will hold a reference to the original operation,
-		// preventing it from being destroyed.
-		ops:    slices.Clone(rule.ops),
+	ruleCopy := &Rule{
+		chain:  chainCopy,
 		handle: rule.handle,
 		udata:  slices.Clone(rule.udata),
 	}
+
+	ruleCopy.ops = make([]operation, 0, len(rule.ops))
+	for _, op := range rule.ops {
+		ruleCopy.ops = append(ruleCopy.ops, op.deepCopy())
+	}
+	return ruleCopy
 }
 
 // deepCopyChain returns a deep copy of the Chain struct.

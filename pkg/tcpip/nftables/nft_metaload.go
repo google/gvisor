@@ -61,6 +61,11 @@ func newMetaLoad(key metaKey, dreg uint8) (*metaLoad, *syserr.AnnotatedError) {
 	return &metaLoad{key: key, dregIdx: dregIdx}, nil
 }
 
+func (op *metaLoad) deepCopy() operation {
+	opCopy := *op
+	return &opCopy
+}
+
 // evaluate for MetaLoad loads specific meta data into the destination register.
 func (op metaLoad) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
 	var target []byte

@@ -17,6 +17,7 @@ package nftables
 import (
 	"encoding/binary"
 	"fmt"
+	"slices"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
@@ -113,6 +114,13 @@ func newBitwiseShift(sreg, dreg uint8, blen int, shift uint32, right bool) (*bit
 		return nil, err
 	}
 	return &bitwise{sregIdx: sregIdx, dregIdx: dregIdx, blen: blen, bop: bop, shift: shift}, nil
+}
+
+func (op *bitwise) deepCopy() operation {
+	opCopy := *op
+	opCopy.mask = slices.Clone(op.mask)
+	opCopy.xor = slices.Clone(op.xor)
+	return &opCopy
 }
 
 // evaluateBitwiseBool performs the bitwise boolean operation on the source register

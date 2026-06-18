@@ -351,8 +351,13 @@ func LogPacket(prefix string, dir Direction, protocol tcpip.NetworkProtocolNumbe
 				details += fmt.Sprintf("invalid packet: tcp data offset too small %d", offset)
 				break
 			}
-			if size := clone.Data().Size() + len(tcp); offset > size && !moreFragments {
-				details += fmt.Sprintf("invalid packet: tcp data offset %d larger than tcp packet length %d", offset, size)
+
+			if size := clone.Data().Size() + len(tcp); offset > size {
+				if !moreFragments {
+					details += fmt.Sprintf("invalid packet: tcp data offset %d larger than tcp packet length %d", offset, size)
+				} else {
+					details += fmt.Sprintf("truncated options (tcp data offset %d, tcp packet length %d)", offset, size)
+				}
 				break
 			}
 
