@@ -3170,10 +3170,12 @@ func TestFSCheckpointCommand(t *testing.T) {
 		savePath string
 		lostPath string
 		all      bool
+		overlay2 string
 	}{
-		{name: "root", savePath: "/", lostPath: "/homedir"},
-		{name: "all", savePath: "/", lostPath: "/homedir", all: true},
-		{name: "homedir", savePath: "/homedir", lostPath: "/lost-dir"},
+		{name: "root", savePath: "/", lostPath: "/homedir", overlay2: "root:self"},
+		{name: "all", savePath: "/", lostPath: "/homedir", all: true, overlay2: "root:self"},
+		{name: "all-root-memory", savePath: "/", lostPath: "/homedir", all: true, overlay2: "root:memory"},
+		{name: "homedir", savePath: "/homedir", lostPath: "/lost-dir", overlay2: "root:self"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			conf := testutil.TestConfig(t)
@@ -3186,7 +3188,13 @@ func TestFSCheckpointCommand(t *testing.T) {
 			conf.RootDir = rootDir
 
 			// Configure overlay.
-			conf.Overlay2.Set("root:self")
+			conf.Overlay2.Set(tc.overlay2)
+
+			// memPath is a memory-backed tmpfs mount (backed by the shared/main
+			// MemoryFile, with no private memory file) added only in the "all"
+			// case to exercise checkpointing memory-backed tmpfs via
+			// --path=all-tmpfs.
+			const memPath = "/memdir"
 
 			// Containers are matched between save and restore by their names. If no
 			// name is specified, runsc auto-assigns container names based on ordering,
@@ -3278,6 +3286,16 @@ func TestFSCheckpointCommand(t *testing.T) {
 				})
 				// Enable overlay for lostPath mount.
 				addMountHint(saveSpecs[0], fmt.Sprintf("lostdir-%d", i), lostdirSource)
+
+				if tc.all {
+					// A plain tmpfs mount (no overlay hint) is backed by the
+					// shared/main MemoryFile.
+					spec.Mounts = append(spec.Mounts, specs.Mount{
+						Source:      "tmpfs",
+						Destination: memPath,
+						Type:        "tmpfs",
+					})
+				}
 			}
 
 			cleanupRootsOld, err := setupSpecRoots(saveSpecs, ids)
@@ -3295,6 +3313,7 @@ func TestFSCheckpointCommand(t *testing.T) {
 			// Populate container filesystems.
 			savePathFsTreeArgs := make([][]string, len(conts))
 			lostPathFsTreeArgs := make([][]string, len(conts))
+			memPathFsTreeArgs := make([][]string, len(conts))
 			for i := range conts {
 				// Populate the path to be checkpointed.
 				args := []string{"--depth=10", "--file-per-level=10", "--file-size=65537", "--create-symlink", "--add-empty-files", "--target-dir=" + tc.savePath, fmt.Sprintf("--seed=%d", rand.Uint64())}
@@ -3308,6 +3327,15 @@ func TestFSCheckpointCommand(t *testing.T) {
 				lostPathFsTreeArgs[i] = args
 				if ws, err := execute(conf, conts[i], "/app", append([]string{"fsTreeCreate"}, args...)...); err != nil || ws != 0 {
 					t.Fatalf("Error creating lost file for container %d: ws: %v, err: %v", i, ws, err)
+				}
+
+				if tc.all {
+					// Populate the memory-backed tmpfs mount.
+					args = []string{"--depth=5", "--file-per-level=5", "--file-size=65537", "--add-empty-files", "--target-dir=" + memPath, fmt.Sprintf("--seed=%d", rand.Uint64())}
+					memPathFsTreeArgs[i] = args
+					if ws, err := execute(conf, conts[i], "/app", append([]string{"fsTreeCreate"}, args...)...); err != nil || ws != 0 {
+						t.Fatalf("Error populating memory-backed tmpfs for container %d, ws: %v, err: %v", i, ws, err)
+					}
 				}
 			}
 
@@ -3390,6 +3418,16 @@ func TestFSCheckpointCommand(t *testing.T) {
 				})
 				// Enable overlay for lostPath mount.
 				addMountHint(restoreSpecs[0], fmt.Sprintf("lostdir-%d", i), lostdirSources[i])
+
+				if tc.all {
+					// A plain tmpfs mount (no overlay hint) is backed by the
+					// shared/main MemoryFile.
+					spec.Mounts = append(spec.Mounts, specs.Mount{
+						Source:      "tmpfs",
+						Destination: memPath,
+						Type:        "tmpfs",
+					})
+				}
 			}
 
 			cleanupRootsNew, err := setupSpecRoots(restoreSpecs, restoreIDs)
@@ -3420,6 +3458,10 @@ func TestFSCheckpointCommand(t *testing.T) {
 					if ws, err := execute(conf, restoreConts[i], "/app", append([]string{"fsTreeVerify"}, lostPathFsTreeArgs[i]...)...); err != nil || ws != 0 {
 						t.Fatalf("Error verifying lost path is also restored for container %d when using --path=all-tmpfs, ws: %v, err: %v", i, ws, err)
 					}
+					// The memory-backed tmpfs mount must also be restored.
+					if ws, err := execute(conf, restoreConts[i], "/app", append([]string{"fsTreeVerify"}, memPathFsTreeArgs[i]...)...); err != nil || ws != 0 {
+						t.Fatalf("Error verifying memory-backed tmpfs is restored for container %d when using --path=all-tmpfs, ws: %v, err: %v", i, ws, err)
+					}
 				} else {
 					// Verify that the lost path is cleared.
 					out, status, err := executeCombinedOutputWithStatus(conf, restoreConts[i], nil, "/app", "assertIsEmpty", tc.lostPath)
@@ -3449,6 +3491,9 @@ func TestFSCheckpointCommand(t *testing.T) {
 			if tc.all {
 				if ws, err := execute(conf, contsRestart[0], "/app", append([]string{"fsTreeVerify"}, lostPathFsTreeArgs[1]...)...); err != nil || ws != 0 {
 					t.Fatalf("Error verifying lost path is also restored for restarted container when using --path=all-tmpfs, ws: %v, err: %v", ws, err)
+				}
+				if ws, err := execute(conf, contsRestart[0], "/app", append([]string{"fsTreeVerify"}, memPathFsTreeArgs[1]...)...); err != nil || ws != 0 {
+					t.Fatalf("Error verifying memory-backed tmpfs is restored for restarted container when using --path=all-tmpfs, ws: %v, err: %v", ws, err)
 				}
 			} else {
 				out, status, err := executeCombinedOutputWithStatus(conf, contsRestart[0], nil, "/app", "assertIsEmpty", tc.lostPath)

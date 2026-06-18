@@ -591,6 +591,58 @@ func (apfs *AsyncPagesFileSave) PagesFileOffset() uint64 {
 	return apfs.saveOff
 }
 
+// AsyncMemoryFileSave represents a MemoryFile registered with an
+// AsyncPagesFileSave for writing individual page ranges to the pages file. It is
+// used to save a subset of a MemoryFile's pages (e.g. the pages owned by a
+// single tmpfs filesystem backed by the shared/main MemoryFile) without saving
+// the whole MemoryFile via MemoryFile.SaveTo. Unlike SaveTo, it does not write
+// any pages metadata; callers are responsible for recording the returned pages
+// file offsets and loading the pages back via
+// AsyncPagesFileLoad.LoadRangesInto.
+type AsyncMemoryFileSave struct {
+	amfs *asyncMemoryFileSave
+}
+
+// RegisterMemoryFile registers f with apfs so that ranges of f can be written to
+// the pages file via AsyncMemoryFileSave.WriteRange. f must remain valid (not
+// destroyed) until async page saving completes.
+func (apfs *AsyncPagesFileSave) RegisterMemoryFile(f *MemoryFile) (*AsyncMemoryFileSave, error) {
+	var sf stateio.SourceFile
+	if apfs.aw.NeedRegisterSourceFD() {
+		fileSize := uint64(len(f.chunksLoad())) * chunkSize
+		var err error
+		sf, err = apfs.aw.RegisterSourceFD(int32(f.file.Fd()), fileSize, f.getClientFileRangeSettings(fileSize))
+		if err != nil {
+			return nil, fmt.Errorf("failed to register MemoryFile with pages file: %w", err)
+		}
+	}
+	return &AsyncMemoryFileSave{amfs: &asyncMemoryFileSave{f: f, pf: apfs, sf: sf}}, nil
+}
+
+// WriteRange enqueues fr (a range of the registered MemoryFile) to be written to
+// the pages file, and returns the offset in the pages file at which fr's
+// contents will be written. The contents are read directly from the MemoryFile,
+// without copying.
+//
+// Preconditions:
+//   - fr is page-aligned and non-empty.
+//   - All pages in fr are allocated for the lifetime of async page saving.
+//   - WriteRange and MemoryFile.SaveTo must not be called concurrently on the
+//     same AsyncPagesFileSave.
+func (s *AsyncMemoryFileSave) WriteRange(fr memmap.FileRange) uint64 {
+	pf := s.amfs.pf
+	pf.mu.Lock()
+	off := pf.saveOff
+	pf.unsaved.PushBack(apsRange{
+		amfs:      s.amfs,
+		FileRange: fr,
+	})
+	pf.saveOff += fr.Length()
+	pf.mu.Unlock()
+	pf.stStatus.Notify(apsSTPending)
+	return off
+}
+
 func (apfs *AsyncPagesFileSave) canEnqueue() bool {
 	return apfs.qavail > 0
 }
@@ -1119,8 +1171,110 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 	return nil
 }
 
+// LoadRangesInto synchronously loads data from the pages file into the given
+// page ranges of f. frs and offs must have equal length; for each i, the pages
+// in frs[i] are filled with frs[i].Length() bytes read from the pages file
+// starting at offset offs[i] (as previously returned by
+// AsyncMemoryFileSave.WriteRange). LoadRangesInto blocks until all reads
+// complete or any read fails.
+//
+// LoadRangesInto is used to load a subset of a MemoryFile's pages saved via
+// AsyncMemoryFileSave.WriteRange, e.g. to relocate the contents of a tmpfs
+// filesystem backed by the shared/main MemoryFile into freshly-allocated pages.
+//
+// Preconditions:
+//   - len(frs) == len(offs).
+//   - Each frs[i] is page-aligned and non-empty, and the frs are disjoint.
+//   - All pages in each frs[i] are allocated and have a reference held that is
+//     not released before LoadRangesInto returns.
+//   - MemoryFile.LoadFrom must not be called on f concurrently with
+//     LoadRangesInto. (Concurrent LoadRangesInto calls are serialized
+//     internally.)
+func (apfl *AsyncPagesFileLoad) LoadRangesInto(ctx context.Context, f *MemoryFile, frs []memmap.FileRange, offs []uint64) error {
+	if len(frs) != len(offs) {
+		return fmt.Errorf("pgalloc.AsyncPagesFileLoad.LoadRangesInto: len(frs)=%d != len(offs)=%d", len(frs), len(offs))
+	}
+	if len(frs) == 0 {
+		return nil
+	}
+
+	// Serialize so that at most one MemoryFile is registered for partial
+	// loading at a time; otherwise concurrent calls could clobber each other's
+	// MemoryFile.asyncPageLoad.
+	apfl.loadRangesIntoMu.Lock()
+	defer apfl.loadRangesIntoMu.Unlock()
+
+	// Register f with the pages file. Unlike MemoryFile.LoadFrom, f's chunks
+	// already exist and are mapped (the caller allocated the destination
+	// ranges), so there is no need to truncate/mmap/madvise here.
+	var df stateio.DestinationFile
+	if apfl.ar.NeedRegisterDestinationFD() {
+		fileSize := uint64(len(f.chunksLoad())) * chunkSize
+		var err error
+		df, err = apfl.ar.RegisterDestinationFD(int32(f.file.Fd()), fileSize, f.getClientFileRangeSettings(fileSize))
+		if err != nil {
+			return fmt.Errorf("failed to register MemoryFile with pages file: %w", err)
+		}
+	}
+	amfl := &asyncMemoryFileLoad{
+		f:  f,
+		pf: apfl,
+		df: df,
+		// timeline is left nil (nil-safe), as in LoadFrom with no Timeline.
+	}
+	apfl.amflsMu.Lock()
+	if err := apfl.err(); err != nil {
+		apfl.amflsMu.Unlock()
+		return err
+	}
+	apfl.amfls.PushBack(amfl)
+	apfl.amflsMu.Unlock()
+	f.asyncPageLoad.Store(amfl)
+
+	// Record the ranges to be loaded.
+	minUnloaded := uint64(math.MaxUint64)
+	apfl.mu.Lock()
+	for i, fr := range frs {
+		amfl.unloaded.InsertRange(fr, aplUnloadedInfo{off: offs[i]})
+		if fr.Start < minUnloaded {
+			minUnloaded = fr.Start
+		}
+	}
+	amfl.minUnloaded.Store(minUnloaded)
+	apfl.mu.Unlock()
+	apfl.lfStatus.Notify(aplLFPending)
+
+	// Mark insertion complete. After this, the async page loader goroutine
+	// removes amfl once all ranges are loaded; but if loading already finished,
+	// do so here instead. This mirrors MemoryFile.LoadFrom's deferred cleanup.
+	apfl.amflsMu.Lock()
+	apfl.mu.Lock()
+	amfl.lfDone = true
+	if amfl.unloaded.IsEmpty() {
+		amfl.minUnloaded.Store(math.MaxUint64)
+		apfl.amfls.Remove(amfl)
+		f.asyncPageLoad.Store(nil)
+	}
+	apfl.mu.Unlock()
+	apfl.amflsMu.Unlock()
+
+	// Wait for all ranges to be loaded (or for an error).
+	var retErr error
+	for _, fr := range frs {
+		if err := amfl.awaitLoad(fr); err != nil {
+			retErr = err
+		}
+	}
+	return retErr
+}
+
 // AsyncPagesFileLoad holds async page loading state for a single pages file.
 type AsyncPagesFileLoad struct {
+	// loadRangesIntoMu serializes calls to LoadRangesInto so that at most one
+	// MemoryFile is registered for partial loading at a time (LoadRangesInto's
+	// serialization precondition).
+	loadRangesIntoMu sync.Mutex
+
 	mu apflMutex
 
 	// If errVal is not nil, it is an error that has terminated asynchronous
