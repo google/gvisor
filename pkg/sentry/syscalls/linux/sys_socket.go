@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -479,8 +480,9 @@ func GetSockOpt(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uint
 		return 0, nil, err
 	}
 
-	if v != nil {
-		if _, err := v.CopyOut(t, optValAddr); err != nil {
+	if optLen != 0 {
+		n := min(int(optLen), v.SizeBytes())
+		if _, err := v.CopyOutN(t, optValAddr, n); err != nil {
 			return 0, nil, err
 		}
 	}
