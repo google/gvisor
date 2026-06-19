@@ -854,16 +854,11 @@ func (e *endpoint) forwardUnicastPacket(pkt *stack.PacketBuffer) ip.ForwardingEr
 	}
 
 	ttl := h.TTL()
-	if ttl == 0 {
-		// As per RFC 792 page 6, Time Exceeded Message,
-		//
-		//  If the gateway processing a datagram finds the time to live field
-		//  is zero it must discard the datagram.  The gateway may also notify
-		//  the source host via the time exceeded message.
-		//
-		// We return the original error rather than the result of returning
-		// the ICMP packet because the original error is more relevant to
-		// the caller.
+	if ttl <= 1 {
+		// As per RFC 791 page 30 and RFC 792 page 6, a gateway must
+		// discard a datagram whose TTL reaches zero after decrementing.
+		// Check before decrement: TTL=0 is already expired, TTL=1 will
+		// reach zero after the mandatory decrement.
 		_ = e.protocol.returnError(&icmpReasonTTLExceeded{}, pkt, false /* deliveredLocally */)
 		return &ip.ErrTTLExceeded{}
 	}
