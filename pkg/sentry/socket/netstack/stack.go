@@ -424,8 +424,14 @@ func (s *Stack) setLinkLocked(ctx context.Context, id tcpip.NICID, linkAttrs map
 				}
 			}
 		} else {
+			// Snapshot addresses before disabling the NIC, since IPv6 address
+			// enumeration hides addresses while disabled.
+			addrs := src.Stack.AllAddresses()[id]
 			if err := src.Stack.DisableNIC(id); err != nil {
 				return syserr.TranslateNetstackError(err)
+			}
+			if err := src.removeIPv6Addrs(id, addrs); err != nil {
+				return err
 			}
 		}
 		changed = true
@@ -482,11 +488,24 @@ var loopbackAddrs = []tcpip.ProtocolAddress{
 // is added through addInterfaceAddr, so its connected route is installed too,
 // just as for any other address.
 //
-// An address that is already assigned (ErrDuplicateAddress) is left as it is, so
-// bringing an already-configured loopback interface up again is a no-op.
+// An address that is already assigned (ErrDuplicateAddress) is left as it is.
 func (s *Stack) addLoopbackAddrs(id tcpip.NICID) *syserr.Error {
 	for _, pa := range loopbackAddrs {
 		if err := s.addInterfaceAddr(id, pa); err != nil && err != syserr.ErrDuplicateAddress {
+			return err
+		}
+	}
+	return nil
+}
+
+// removeIPv6Addrs removes IPv6 addresses from interface id when it is brought
+// down, matching Linux's default keep_addr_on_down=0 behavior.
+func (s *Stack) removeIPv6Addrs(id tcpip.NICID, addrs []tcpip.ProtocolAddress) *syserr.Error {
+	for _, pa := range addrs {
+		if pa.Protocol != ipv6.ProtocolNumber {
+			continue
+		}
+		if err := s.removeInterfaceAddr(id, pa); err != nil && err != syserr.ErrBadLocalAddress {
 			return err
 		}
 	}
@@ -772,11 +791,18 @@ func (s *Stack) RemoveInterfaceAddr(idx int32, addr inet.InterfaceAddr) error {
 	if err != nil {
 		return err
 	}
+	if err := s.removeInterfaceAddr(tcpip.NICID(idx), protocolAddress); err != nil {
+		return err.ToError()
+	}
+	return nil
+}
 
+// removeInterfaceAddr removes protocolAddress from nicID and removes the
+// connected route for its subnet.
+func (s *Stack) removeInterfaceAddr(nicID tcpip.NICID, protocolAddress tcpip.ProtocolAddress) *syserr.Error {
 	// Remove addresses matching the address and prefix.
-	nicID := tcpip.NICID(idx)
 	if err := s.Stack.RemoveAddress(nicID, protocolAddress.AddressWithPrefix.Address); err != nil {
-		return syserr.TranslateNetstackError(err).ToError()
+		return syserr.TranslateNetstackError(err)
 	}
 
 	// Remove the corresponding local network route if it exists.

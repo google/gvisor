@@ -121,6 +121,31 @@ TEST(NetworkNamespaceTest, LoopbackAddressesAddedOnUp) {
       EXPECT_THAT(bind(s6.get(), AsSockAddr(&addr6), sizeof(addr6)),
                   SyscallSucceeds());
     }
+
+    ASSERT_NO_ERRNO(LinkChangeFlags(lo.index, 0, IFF_UP));
+
+    // Linux removes IPv6 local addresses when an interface goes down, so ::1 is
+    // no longer bindable. IPv4 loopback addresses remain assigned.
+    {
+      FileDescriptor s4 =
+          ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, 0));
+      EXPECT_THAT(bind(s4.get(), AsSockAddr(&addr4), sizeof(addr4)),
+                  SyscallSucceeds());
+      FileDescriptor s6 =
+          ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_STREAM, 0));
+      EXPECT_THAT(bind(s6.get(), AsSockAddr(&addr6), sizeof(addr6)),
+                  SyscallFailsWithErrno(EADDRNOTAVAIL));
+    }
+
+    ASSERT_NO_ERRNO(LinkChangeFlags(lo.index, IFF_UP, IFF_UP));
+
+    // Bringing loopback up again recreates ::1.
+    {
+      FileDescriptor s6 =
+          ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_STREAM, 0));
+      EXPECT_THAT(bind(s6.get(), AsSockAddr(&addr6), sizeof(addr6)),
+                  SyscallSucceeds());
+    }
   });
 }
 
