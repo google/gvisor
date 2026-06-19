@@ -172,30 +172,34 @@ func SetupRootFS(spec *specs.Spec, conf *config.Config, mountConfs []specutils.G
 	}
 
 	rootfsConf := mountConfs[0]
-	if !rootfsConf.ShouldUseLisafs() {
+	if rootfsConf.ShouldUseLisafs() {
+		// Some CDI createContainer hooks pivot_root(2) into spec.Root.Path.
+		// pivot_root(2) requires the target to be a mount point, so we must
+		// self-bind-mount spec.Root.Path here. runc does this step unconditionally
+		// in libcontainer/rootfs_linux.go:prepareRoot().
+		if err := unix.Mount(containerRootFs, containerRootFs, "", unix.MS_BIND|unix.MS_REC, ""); err != nil {
+			return fmt.Errorf("self-bind-mounting rootfs %q: %w", containerRootFs, err)
+		}
+
+		// Ensure the containerRootFs is set to the RootfsPropagation that the user
+		// requested. Mounts added under SetupMounts inherit the propagation flags of
+		// the root.
+		flags := uint32(unix.MS_SLAVE | unix.MS_REC)
+		if spec.Linux != nil && spec.Linux.RootfsPropagation != "" {
+			flags = specutils.PropOptionsToFlags([]string{spec.Linux.RootfsPropagation})
+		}
+		if err := unix.Mount("", containerRootFs, "", uintptr(flags), ""); err != nil {
+			return fmt.Errorf("mounting root (%q) with flags: %#x, err: %v", containerRootFs, flags, err)
+		}
+	} else {
 		// When not using gofer mount for rootfs, spec.Root.Path may not be set or
 		// may not be a writable directory. So set up the container rootfs directly
 		// in /proc/fs/root, which is a writable directory.
+		//
+		// The self-bind-mount and propagation change above are skipped here: they
+		// are only needed for lisafs rootfs, and /proc/fs/root is not a mount point
+		// on the MS_UNBINDABLE /proc/fs tmpfs, so both would fail with EINVAL.
 		containerRootFs = goferRootFs
-	}
-
-	// Some CDI createContainer hooks pivot_root(2) into spec.Root.Path.
-	// pivot_root(2) requires the target to be a mount point, so we must
-	// self-bind-mount spec.Root.Path here. runc does this step unconditionally
-	// in libcontainer/rootfs_linux.go:prepareRoot().
-	if err := unix.Mount(containerRootFs, containerRootFs, "", unix.MS_BIND|unix.MS_REC, ""); err != nil {
-		return fmt.Errorf("self-bind-mounting rootfs %q: %w", containerRootFs, err)
-	}
-
-	// Ensure the containerRootFs is set to the RootfsPropagation that the user
-	// requested. Mounts added under SetupMounts inherit the propagation flags of
-	// the root.
-	flags := uint32(unix.MS_SLAVE | unix.MS_REC)
-	if spec.Linux != nil && spec.Linux.RootfsPropagation != "" {
-		flags = specutils.PropOptionsToFlags([]string{spec.Linux.RootfsPropagation})
-	}
-	if err := unix.Mount("", containerRootFs, "", uintptr(flags), ""); err != nil {
-		return fmt.Errorf("mounting root (%q) with flags: %#x, err: %v", containerRootFs, flags, err)
 	}
 
 	// Replace the current spec, with the clean spec with symlinks resolved.
