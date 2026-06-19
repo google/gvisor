@@ -1361,6 +1361,18 @@ func (s *Stack) AllAddresses() map[tcpip.NICID][]tcpip.ProtocolAddress {
 	return nics
 }
 
+// AllAddressInfo returns a map of NICIDs to their protocol address information.
+func (s *Stack) AllAddressInfo() map[tcpip.NICID][]ProtocolAddressInfo {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	nics := make(map[tcpip.NICID][]ProtocolAddressInfo)
+	for id, nic := range s.nics {
+		nics[id] = nic.allAddressInfo()
+	}
+	return nics
+}
+
 // GetMainNICAddress returns the first non-deprecated primary address and prefix
 // for the given NIC and protocol. If no non-deprecated primary addresses exist,
 // a deprecated address will be returned. If no deprecated addresses exist, the

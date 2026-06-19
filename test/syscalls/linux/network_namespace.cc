@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <fcntl.h>
 #include <sys/mount.h>
+#include <unistd.h>
 
 #include <cerrno>
 
@@ -140,6 +142,105 @@ TEST(NetworkNamespaceTest, LoopbackAddressesAddedOnUp) {
     ASSERT_NO_ERRNO(LinkChangeFlags(lo.index, IFF_UP, IFF_UP));
 
     // Bringing loopback up again recreates ::1.
+    {
+      FileDescriptor s6 =
+          ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_STREAM, 0));
+      EXPECT_THAT(bind(s6.get(), AsSockAddr(&addr6), sizeof(addr6)),
+                  SyscallSucceeds());
+    }
+  });
+}
+
+// Like Linux, IPv6 addresses are flushed when an interface goes down. When
+// net/ipv6/conf/all/keep_addr_on_down is enabled, permanent global addresses
+// instead survive a down/up cycle.
+TEST(NetworkNamespaceTest, IPv6KeepAddrOnDown) {
+  // TODO(b/267210840): Fix this tests for hostinet.
+  SKIP_IF(IsRunningWithHostinet());
+
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+
+  ScopedThread t([&] {
+    ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+    FileDescriptor nlsk =
+        ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+    Link lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+    ASSERT_NO_ERRNO(LinkChangeFlags(lo.index, IFF_UP, IFF_UP));
+
+    // A permanent global IPv6 address (2001:db8::1) assigned to loopback. It is
+    // neither link-local nor loopback, so keep_addr_on_down applies to it.
+    struct in6_addr global = {};
+    global.s6_addr[0] = 0x20;
+    global.s6_addr[1] = 0x01;
+    global.s6_addr[2] = 0x0d;
+    global.s6_addr[3] = 0xb8;
+    global.s6_addr[15] = 0x01;
+
+    struct sockaddr_in6 addr6 = {};
+    addr6.sin6_family = AF_INET6;
+    addr6.sin6_addr = global;
+
+    // keep_addr_on_down defaults to off: bringing the interface down flushes
+    // the global address, and bringing it back up does not restore it.
+    ASSERT_NO_ERRNO(LinkAddLocalAddr(nlsk, lo.index, AF_INET6,
+                                     /*prefixlen=*/128, &global,
+                                     sizeof(global)));
+    {
+      FileDescriptor s6 =
+          ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_STREAM, 0));
+      EXPECT_THAT(bind(s6.get(), AsSockAddr(&addr6), sizeof(addr6)),
+                  SyscallSucceeds());
+    }
+
+    ASSERT_NO_ERRNO(LinkChangeFlags(lo.index, 0, IFF_UP));
+    ASSERT_NO_ERRNO(LinkChangeFlags(lo.index, IFF_UP, IFF_UP));
+
+    {
+      FileDescriptor s6 =
+          ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_STREAM, 0));
+      EXPECT_THAT(bind(s6.get(), AsSockAddr(&addr6), sizeof(addr6)),
+                  SyscallFailsWithErrno(EADDRNOTAVAIL));
+    }
+
+    // Enable keep_addr_on_down and re-assign the global address.
+    {
+      const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(
+          Open("/proc/sys/net/ipv6/conf/all/keep_addr_on_down", O_WRONLY));
+      constexpr char kEnable[] = "1";
+      ASSERT_THAT(write(fd.get(), kEnable, sizeof(kEnable) - 1),
+                  SyscallSucceedsWithValue(sizeof(kEnable) - 1));
+    }
+
+    ASSERT_NO_ERRNO(LinkAddLocalAddr(nlsk, lo.index, AF_INET6,
+                                     /*prefixlen=*/128, &global,
+                                     sizeof(global)));
+
+    struct sockaddr_in6 loaddr6 = {};
+    loaddr6.sin6_family = AF_INET6;
+    loaddr6.sin6_addr = in6addr_loopback;
+
+    // Like Linux, keep_addr_on_down does not apply to IPv6 loopback or
+    // link-local addresses: ::1 is still removed when the interface goes down.
+    ASSERT_NO_ERRNO(LinkChangeFlags(lo.index, 0, IFF_UP));
+    {
+      FileDescriptor s6 =
+          ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_STREAM, 0));
+      EXPECT_THAT(bind(s6.get(), AsSockAddr(&loaddr6), sizeof(loaddr6)),
+                  SyscallFailsWithErrno(EADDRNOTAVAIL));
+    }
+
+    ASSERT_NO_ERRNO(LinkChangeFlags(lo.index, IFF_UP, IFF_UP));
+
+    // Bringing the interface back up recreates ::1, and the permanent global
+    // address survived the down/up cycle because keep_addr_on_down is enabled.
+    {
+      FileDescriptor s6 =
+          ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_STREAM, 0));
+      EXPECT_THAT(bind(s6.get(), AsSockAddr(&loaddr6), sizeof(loaddr6)),
+                  SyscallSucceeds());
+    }
     {
       FileDescriptor s6 =
           ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_STREAM, 0));

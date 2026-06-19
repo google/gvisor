@@ -20,6 +20,7 @@ import (
 	"slices"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
@@ -54,6 +55,9 @@ type Stack struct {
 	// id is a unique identifier for this stack, it is currently only
 	// used for a deterministic lock ordering.
 	id uint64
+
+	// ipv6KeepAddrOnDown backs /proc/sys/net/ipv6/conf/all/keep_addr_on_down.
+	ipv6KeepAddrOnDown atomicbitops.Bool
 }
 
 // NewStack creates a new netstack.Stack which wraps the given tcpip.Stack.
@@ -426,7 +430,7 @@ func (s *Stack) setLinkLocked(ctx context.Context, id tcpip.NICID, linkAttrs map
 		} else {
 			// Snapshot addresses before disabling the NIC, since IPv6 address
 			// enumeration hides addresses while disabled.
-			addrs := src.Stack.AllAddresses()[id]
+			addrs := src.Stack.AllAddressInfo()[id]
 			if err := src.Stack.DisableNIC(id); err != nil {
 				return syserr.TranslateNetstackError(err)
 			}
@@ -499,17 +503,36 @@ func (s *Stack) addLoopbackAddrs(id tcpip.NICID) *syserr.Error {
 }
 
 // removeIPv6Addrs removes IPv6 addresses from interface id when it is brought
-// down, matching Linux's default keep_addr_on_down=0 behavior.
-func (s *Stack) removeIPv6Addrs(id tcpip.NICID, addrs []tcpip.ProtocolAddress) *syserr.Error {
-	for _, pa := range addrs {
-		if pa.Protocol != ipv6.ProtocolNumber {
+// down, matching Linux's keep_addr_on_down behavior.
+func (s *Stack) removeIPv6Addrs(id tcpip.NICID, addrs []stack.ProtocolAddressInfo) *syserr.Error {
+	keepAddrOnDown := s.IPv6KeepAddrOnDown()
+	for _, addr := range addrs {
+		if !shouldRemoveIPv6AddrOnDown(addr, keepAddrOnDown) {
 			continue
 		}
-		if err := s.removeInterfaceAddr(id, pa); err != nil && err != syserr.ErrBadLocalAddress {
+		protocolAddress := tcpip.ProtocolAddress{
+			Protocol:          addr.Protocol,
+			AddressWithPrefix: addr.AddressWithPrefix,
+		}
+		if err := s.removeInterfaceAddr(id, protocolAddress); err != nil && err != syserr.ErrBadLocalAddress {
 			return err
 		}
 	}
 	return nil
+}
+
+func shouldRemoveIPv6AddrOnDown(addr stack.ProtocolAddressInfo, keepAddrOnDown bool) bool {
+	if addr.Protocol != ipv6.ProtocolNumber {
+		return false
+	}
+	if !keepAddrOnDown {
+		return true
+	}
+	return !addr.Permanent || ipv6AddrIsLocal(addr.AddressWithPrefix.Address)
+}
+
+func ipv6AddrIsLocal(addr tcpip.Address) bool {
+	return header.IsV6LinkLocalUnicastAddress(addr) || header.IsV6LoopbackAddress(addr)
 }
 
 const defaultMTU = 1500
@@ -815,6 +838,17 @@ func (s *Stack) removeInterfaceAddr(nicID tcpip.NICID, protocolAddress tcpip.Pro
 		return rt.Equal(localRoute)
 	})
 
+	return nil
+}
+
+// IPv6KeepAddrOnDown implements inet.Stack.IPv6KeepAddrOnDown.
+func (s *Stack) IPv6KeepAddrOnDown() bool {
+	return s.ipv6KeepAddrOnDown.Load()
+}
+
+// SetIPv6KeepAddrOnDown implements inet.Stack.SetIPv6KeepAddrOnDown.
+func (s *Stack) SetIPv6KeepAddrOnDown(enabled bool) error {
+	s.ipv6KeepAddrOnDown.Store(enabled)
 	return nil
 }
 

@@ -60,6 +60,7 @@ type Stack struct {
 	netSNMPFile    *os.File
 	// allowedSocketTypes is the list of allowed socket types
 	allowedSocketTypes []AllowedSocketType
+	ipv6KeepAddrOnDown bool
 }
 
 // Destroy implements inet.Stack.Destroy.
@@ -246,6 +247,16 @@ func (*Stack) RemoveInterfaceAddr(idx int32, addr inet.InterfaceAddr) error {
 // SupportsIPv6 implements inet.Stack.SupportsIPv6.
 func (s *Stack) SupportsIPv6() bool {
 	return s.supportsIPv6
+}
+
+// IPv6KeepAddrOnDown implements inet.Stack.IPv6KeepAddrOnDown.
+func (s *Stack) IPv6KeepAddrOnDown() bool {
+	return s.ipv6KeepAddrOnDown
+}
+
+// SetIPv6KeepAddrOnDown implements inet.Stack.SetIPv6KeepAddrOnDown.
+func (*Stack) SetIPv6KeepAddrOnDown(bool) error {
+	return linuxerr.EACCES
 }
 
 // TCPReceiveBufferSize implements inet.Stack.TCPReceiveBufferSize.
