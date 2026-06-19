@@ -234,7 +234,16 @@ func (i *inode) newEntry(ctx context.Context, name string, fileType linux.FileMo
 	if err != nil {
 		return nil, err
 	}
-	if opcode != linux.FUSE_LOOKUP && ((out.Attr.Mode&linux.S_IFMT)^uint32(fileType) != 0 || out.NodeID == 0 || out.NodeID == linux.FUSE_ROOT_ID) {
+	if out.NodeID == 0 {
+		if opcode == linux.FUSE_LOOKUP {
+			return nil, linuxerr.ENOENT
+		}
+		return nil, linuxerr.EIO
+	}
+	if out.NodeID == linux.FUSE_ROOT_ID {
+		return nil, linuxerr.EIO
+	}
+	if opcode != linux.FUSE_LOOKUP && (out.Attr.Mode&linux.S_IFMT)^uint32(fileType) != 0 {
 		return nil, linuxerr.EIO
 	}
 	child, err := i.fs.newInode(ctx, out.FUSEEntryOut)
