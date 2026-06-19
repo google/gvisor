@@ -297,6 +297,7 @@ func NewSpecWithArgs(args ...string) *specs.Spec {
 			},
 		},
 		Hostname:    "runsc-test-hostname",
+		Domainname:  "runsc-test-domain",
 		Annotations: map[string]string{},
 	}
 }

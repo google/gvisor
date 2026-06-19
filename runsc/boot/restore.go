@@ -325,7 +325,10 @@ func (r *restorer) restore(l *Loader) error {
 	l.root.procArgs = kernel.CreateProcessArgs{}
 	l.sandboxID = l.root.cid
 
-	// Update all tasks in the system with their respective new container IDs.
+	// Update all tasks in the system with:
+	// 1. their respective new container IDs.
+	// 2. the new hostname and domainname.
+	visitedUTS := make(map[*kernel.UTSNamespace]struct{})
 	for _, task := range l.k.TaskSet().Root.Tasks() {
 		oldCid := task.ContainerID()
 		name := l.k.ContainerName(oldCid)
@@ -334,6 +337,13 @@ func (r *restorer) restore(l *Loader) error {
 			return fmt.Errorf("unable to remap task with CID %q (name: %q). Available names: %v", task.ContainerID(), name, l.containerIDs)
 		}
 		task.RestoreContainerID(newCid)
+
+		if utsns := task.UTSNamespace(); utsns != nil {
+			if _, ok := visitedUTS[utsns]; !ok {
+				visitedUTS[utsns] = struct{}{}
+				utsns.RestoreSpecValues(l.root.spec.Hostname, l.root.spec.Domainname)
+			}
+		}
 	}
 
 	// Rebuild `processes` map with containers' root process from the restored kernel.

@@ -1341,6 +1341,117 @@ func TestCheckpointRestore(t *testing.T) {
 	}
 }
 
+// TestCheckpointRestoreHostname verifies that hostname is updated on restore
+// if it was not changed inside the container, and is NOT updated if it was changed.
+func TestCheckpointRestoreHostname(t *testing.T) {
+	for _, changed := range []bool{false, true} {
+		t.Run(fmt.Sprintf("changed_%t", changed), func(t *testing.T) {
+			spec, conf := sleepSpecConf(t)
+			spec.Hostname = "old-host"
+
+			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer cleanup()
+
+			args := Args{
+				ID:        testutil.RandomContainerID(),
+				Spec:      spec,
+				BundleDir: bundleDir,
+			}
+			cont, err := New(conf, args)
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			defer cont.Destroy()
+			if err := cont.Start(conf); err != nil {
+				t.Fatalf("error starting container: %v", err)
+			}
+
+			// Verify initial hostname.
+			out, err := executeCombinedOutput(conf, cont, nil, "/bin/sh", "-c", "read -r name < /proc/sys/kernel/hostname && echo $name")
+			if err != nil {
+				t.Fatalf("exec failed: %v", err)
+			}
+			if got, want := strings.TrimSpace(string(out)), "old-host"; got != want {
+				t.Fatalf("hostname got %q, want %q", got, want)
+			}
+
+			if changed {
+				// Change hostname inside container.
+				_, err = executeCombinedOutput(conf, cont, nil, "/bin/sh", "-c", "echo user-host > /proc/sys/kernel/hostname")
+				if err != nil {
+					t.Logf("Failed to write to /proc/sys/kernel/hostname: %v, trying hostname command", err)
+					_, err = executeCombinedOutput(conf, cont, nil, "/bin/sh", "-c", "hostname user-host")
+					if err != nil {
+						t.Fatalf("Failed to change hostname: %v", err)
+					}
+				}
+
+				// Verify it changed.
+				out, err = executeCombinedOutput(conf, cont, nil, "/bin/sh", "-c", "read -r name < /proc/sys/kernel/hostname && echo $name")
+				if err != nil {
+					t.Fatalf("exec failed: %v", err)
+				}
+				if got, want := strings.TrimSpace(string(out)), "user-host"; got != want {
+					t.Fatalf("hostname got %q, want %q", got, want)
+				}
+			}
+
+			// Checkpoint.
+			dir, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-test")
+			if err != nil {
+				t.Fatalf("os.MkdirTemp failed: %v", err)
+			}
+			defer os.RemoveAll(dir)
+			if err := cont.Checkpoint(conf, dir, sandbox.CheckpointOpts{}); err != nil {
+				t.Fatalf("error checkpointing: %v", err)
+			}
+
+			cont.Destroy()
+
+			// Restore with new spec.
+			spec2, _ := sleepSpecConf(t)
+			spec2.Hostname = "new-host"
+
+			_, bundleDir2, cleanup2, err := testutil.SetupContainer(spec2, conf)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer cleanup2()
+
+			args2 := Args{
+				ID:        args.ID,
+				Spec:      spec2,
+				BundleDir: bundleDir2,
+			}
+			cont2, err := New(conf, args2)
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			defer cont2.Destroy()
+
+			if err := cont2.Restore(conf, dir, false, false, nil); err != nil {
+				t.Fatalf("error restoring: %v", err)
+			}
+
+			// Verify hostname.
+			out, err = executeCombinedOutput(conf, cont2, nil, "/bin/sh", "-c", "read -r name < /proc/sys/kernel/hostname && echo $name")
+			if err != nil {
+				t.Fatalf("exec failed: %v", err)
+			}
+			want := "new-host"
+			if changed {
+				want = "user-host"
+			}
+			if got, want := strings.TrimSpace(string(out)), want; got != want {
+				t.Fatalf("hostname got %q, want %q", got, want)
+			}
+		})
+	}
+}
+
 // TestCheckpointRestoreExecKilled checks that exec'd processes are killed
 // after the container is restored.
 func TestCheckpointRestoreExecKilled(t *testing.T) {
