@@ -416,6 +416,13 @@ func (s *Stack) setLinkLocked(ctx context.Context, id tcpip.NICID, linkAttrs map
 			if err := src.Stack.EnableNIC(id); err != nil {
 				return syserr.TranslateNetstackError(err)
 			}
+			// Like Linux, assign the default loopback addresses when the
+			// loopback interface is brought up.
+			if nicInfo.Flags.Loopback {
+				if err := src.addLoopbackAddrs(id); err != nil {
+					return err
+				}
+			}
 		} else {
 			if err := src.Stack.DisableNIC(id); err != nil {
 				return syserr.TranslateNetstackError(err)
@@ -443,6 +450,45 @@ func (s *Stack) setLinkLocked(ctx context.Context, id tcpip.NICID, linkAttrs map
 
 	if changed {
 		src.sendChangeEvent(ctx, id)
+	}
+	return nil
+}
+
+// loopbackAddrs are the addresses Linux automatically assigns to a loopback
+// interface when it is brought up: 127.0.0.1/8 and ::1/128. They mirror
+// boot.DefaultLoopbackLink, which configures the loopback interface of the
+// initial network namespace.
+var loopbackAddrs = []tcpip.ProtocolAddress{
+	{
+		Protocol: ipv4.ProtocolNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   tcpip.AddrFrom4([4]byte{127, 0, 0, 1}),
+			PrefixLen: 8,
+		},
+	},
+	{
+		Protocol: ipv6.ProtocolNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   header.IPv6Loopback,
+			PrefixLen: header.IPv6AddressSize * 8,
+		},
+	},
+}
+
+// addLoopbackAddrs assigns the default loopback addresses to the loopback
+// interface id. Like the Linux kernel, netstack does this when the loopback
+// interface is brought up rather than when it is created, so a freshly created
+// network namespace starts with an unconfigured loopback interface. Each address
+// is added through addInterfaceAddr, so its connected route is installed too,
+// just as for any other address.
+//
+// An address that is already assigned (ErrDuplicateAddress) is left as it is, so
+// bringing an already-configured loopback interface up again is a no-op.
+func (s *Stack) addLoopbackAddrs(id tcpip.NICID) *syserr.Error {
+	for _, pa := range loopbackAddrs {
+		if err := s.addInterfaceAddr(id, pa); err != nil && err != syserr.ErrDuplicateAddress {
+			return err
+		}
 	}
 	return nil
 }

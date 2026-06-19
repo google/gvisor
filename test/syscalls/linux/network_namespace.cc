@@ -19,12 +19,14 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
+#include "test/syscalls/linux/socket_netlink_route_util.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/socket_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -44,6 +46,81 @@ TEST(NetworkNamespaceTest, LoopbackExists) {
 
     // TODO(gvisor.dev/issue/1833): Update this to test that only "lo" exists.
     ASSERT_NE(ASSERT_NO_ERRNO_AND_VALUE(GetLoopbackIndex()), 0);
+  });
+}
+
+// Like Linux, a newly created network namespace starts with its loopback
+// interface administratively DOWN. The application is responsible for bringing
+// it up, after which it reports IFF_UP.
+TEST(NetworkNamespaceTest, LoopbackStartsDown) {
+  // TODO(b/267210840): Fix this tests for hostinet.
+  SKIP_IF(IsRunningWithHostinet());
+
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+
+  ScopedThread t([&] {
+    ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+    Link lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+    EXPECT_EQ(lo.flags & IFF_UP, 0u)
+        << "loopback should start down in a new network namespace";
+
+    // The application can bring it up, just like on Linux.
+    ASSERT_NO_ERRNO(LinkChangeFlags(lo.index, IFF_UP, IFF_UP));
+
+    lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+    EXPECT_NE(lo.flags & IFF_UP, 0u)
+        << "loopback should be up after bringing it up";
+  });
+}
+
+// Like Linux, the loopback interface of a new network namespace starts with no
+// addresses; the kernel assigns 127.0.0.1/8 and ::1/128 when it is brought up.
+TEST(NetworkNamespaceTest, LoopbackAddressesAddedOnUp) {
+  // TODO(b/267210840): Fix this tests for hostinet.
+  SKIP_IF(IsRunningWithHostinet());
+
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+
+  ScopedThread t([&] {
+    ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+    struct sockaddr_in addr4 = {};
+    addr4.sin_family = AF_INET;
+    addr4.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+    struct sockaddr_in6 addr6 = {};
+    addr6.sin6_family = AF_INET6;
+    addr6.sin6_addr = in6addr_loopback;
+
+    // Before the loopback interface is brought up it has no addresses, so
+    // binding to a loopback address fails.
+    {
+      FileDescriptor s4 =
+          ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, 0));
+      EXPECT_THAT(bind(s4.get(), AsSockAddr(&addr4), sizeof(addr4)),
+                  SyscallFailsWithErrno(EADDRNOTAVAIL));
+      FileDescriptor s6 =
+          ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_STREAM, 0));
+      EXPECT_THAT(bind(s6.get(), AsSockAddr(&addr6), sizeof(addr6)),
+                  SyscallFailsWithErrno(EADDRNOTAVAIL));
+    }
+
+    Link lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+    ASSERT_NO_ERRNO(LinkChangeFlags(lo.index, IFF_UP, IFF_UP));
+
+    // Bringing it up assigns the default loopback addresses, just like Linux, so
+    // binding to them now succeeds.
+    {
+      FileDescriptor s4 =
+          ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, 0));
+      EXPECT_THAT(bind(s4.get(), AsSockAddr(&addr4), sizeof(addr4)),
+                  SyscallSucceeds());
+      FileDescriptor s6 =
+          ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_STREAM, 0));
+      EXPECT_THAT(bind(s6.get(), AsSockAddr(&addr6), sizeof(addr6)),
+                  SyscallSucceeds());
+    }
   });
 }
 
