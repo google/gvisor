@@ -688,11 +688,17 @@ func (s *Stack) AddInterfaceAddr(idx int32, addr inet.InterfaceAddr) error {
 	if err != nil {
 		return err
 	}
+	if err := s.addInterfaceAddr(tcpip.NICID(idx), protocolAddress); err != nil {
+		return err.ToError()
+	}
+	return nil
+}
 
-	// Attach address to interface.
-	nicID := tcpip.NICID(idx)
+// addInterfaceAddr attaches protocolAddress to the NIC and, like the Linux
+// kernel, adds the connected route for its subnet if it does not already exist.
+func (s *Stack) addInterfaceAddr(nicID tcpip.NICID, protocolAddress tcpip.ProtocolAddress) *syserr.Error {
 	if err := s.Stack.AddProtocolAddress(nicID, protocolAddress, stack.AddressProperties{}); err != nil {
-		return syserr.TranslateNetstackError(err).ToError()
+		return syserr.TranslateNetstackError(err)
 	}
 
 	// Add route for local network if it doesn't exist already.
