@@ -23,6 +23,7 @@ import (
 	"github.com/containerd/errdefs"
 	runc "github.com/containerd/go-runc"
 	"gvisor.dev/gvisor/pkg/shim/v1/extension"
+	"gvisor.dev/gvisor/pkg/shim/v1/runsccmd"
 )
 
 type deletedState struct{}
@@ -56,4 +57,8 @@ func (s *deletedState) State(context.Context) (string, error) {
 
 func (s *deletedState) Stats(context.Context, string) (*runc.Stats, error) {
 	return nil, fmt.Errorf("cannot stat a stopped container/process")
+}
+
+func (*deletedState) CheckpointSandbox(context.Context, *runsccmd.CheckpointOpts) error {
+	return fmt.Errorf("cannot checkpoint a deleted container/process")
 }
