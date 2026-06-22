@@ -79,6 +79,7 @@ go_test(
         "//pkg/hostos",
         "//pkg/log",
         "//pkg/sentry/control",
+        "//pkg/sentry/fscheckpoint",
         "//pkg/sentry/fsimpl/erofs",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",

@@ -45,6 +45,12 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 )
 
+// AllTmpfsPath is a sentinel value for the Path option of a filesystem
+// checkpoint save (kernel.FSSaveOpts.Path) indicating that all tmpfs
+// filesystems with a ResourceID should be checkpointed, rather than only the
+// tmpfs filesystems mounted at a specific path.
+const AllTmpfsPath = "all-tmpfs"
+
 // Manifest is the type of the JSON object stored in the manifest file.
 type Manifest struct {
 	// Version is the checkpoint format version.

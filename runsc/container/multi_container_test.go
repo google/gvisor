@@ -32,6 +32,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/sentry/control"
+	"gvisor.dev/gvisor/pkg/sentry/fscheckpoint"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -3162,13 +3163,16 @@ func TestMultiContainerCgroupsMemoryUsage(t *testing.T) {
 // It verifies that:
 // - The directory specified by 'path' is checkpointed and its changes are restored.
 // - The directory specified by 'lostPath' is not checkpointed and its changes are NOT preserved.
+// - When 'all' is true, all tmpfs filesystems are checkpointed and restored.
 func TestFSCheckpointCommand(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		savePath string
 		lostPath string
+		all      bool
 	}{
 		{name: "root", savePath: "/", lostPath: "/homedir"},
+		{name: "all", savePath: "/", lostPath: "/homedir", all: true},
 		{name: "homedir", savePath: "/homedir", lostPath: "/lost-dir"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -3232,6 +3236,8 @@ func TestFSCheckpointCommand(t *testing.T) {
 
 			// Helper to add mount hints.
 			addMountHint := func(spec *specs.Spec, name, source string) {
+				// Adding a "bind" mount type annotation with share=container will cause
+				// the bind mount to be overlayed with medium=self.
 				spec.Annotations["dev.gvisor.spec.mount."+name+".source"] = source
 				spec.Annotations["dev.gvisor.spec.mount."+name+".share"] = "container"
 				spec.Annotations["dev.gvisor.spec.mount."+name+".type"] = "bind"
@@ -3254,7 +3260,7 @@ func TestFSCheckpointCommand(t *testing.T) {
 						Destination: tc.savePath,
 						Type:        "bind",
 					})
-					// Enable overlay for homedir mount.
+					// Enable overlay for savePath mount.
 					addMountHint(saveSpecs[0], fmt.Sprintf("savedir-%d", i), saveSource)
 				}
 
@@ -3270,7 +3276,7 @@ func TestFSCheckpointCommand(t *testing.T) {
 					Destination: tc.lostPath,
 					Type:        "bind",
 				})
-				// Enable overlay for lost-dir mount.
+				// Enable overlay for lostPath mount.
 				addMountHint(saveSpecs[0], fmt.Sprintf("lostdir-%d", i), lostdirSource)
 			}
 
@@ -3287,18 +3293,20 @@ func TestFSCheckpointCommand(t *testing.T) {
 			defer cleanupContsOld()
 
 			// Populate container filesystems.
-			fsTreeCommonArgs := []string{"--depth=10", "--file-per-level=10", "--file-size=65537", "--create-symlink", "--add-empty-files"}
-			checkpointFsTreeArgs := make([][]string, len(conts))
+			savePathFsTreeArgs := make([][]string, len(conts))
+			lostPathFsTreeArgs := make([][]string, len(conts))
 			for i := range conts {
 				// Populate the path to be checkpointed.
-				args := append(fsTreeCommonArgs, "--target-dir="+tc.savePath, fmt.Sprintf("seed=%d", rand.Uint64()))
-				checkpointFsTreeArgs[i] = args
+				args := []string{"--depth=10", "--file-per-level=10", "--file-size=65537", "--create-symlink", "--add-empty-files", "--target-dir=" + tc.savePath, fmt.Sprintf("--seed=%d", rand.Uint64())}
+				savePathFsTreeArgs[i] = args
 				if ws, err := execute(conf, conts[i], "/app", append([]string{"fsTreeCreate"}, args...)...); err != nil || ws != 0 {
 					t.Fatalf("Error populating checkpoint filesystem for container %d, ws: %v, err: %v", i, ws, err)
 				}
 
 				// Populate the path to be lost with a single file.
-				if ws, err := execute(conf, conts[i], "/app", "fsTreeCreate", "--depth=1", "--file-per-level=1", "--file-size=0", "--target-dir="+tc.lostPath); err != nil || ws != 0 {
+				args = []string{"--depth=1", "--file-per-level=1", "--file-size=0", "--target-dir=" + tc.lostPath, fmt.Sprintf("--seed=%d", rand.Uint64())}
+				lostPathFsTreeArgs[i] = args
+				if ws, err := execute(conf, conts[i], "/app", append([]string{"fsTreeCreate"}, args...)...); err != nil || ws != 0 {
 					t.Fatalf("Error creating lost file for container %d: ws: %v, err: %v", i, ws, err)
 				}
 			}
@@ -3314,9 +3322,13 @@ func TestFSCheckpointCommand(t *testing.T) {
 			}
 			defer os.RemoveAll(imagePath)
 
+			fsSavePathArg := tc.savePath
+			if tc.all {
+				fsSavePathArg = fscheckpoint.AllTmpfsPath
+			}
 			if err := conts[0].FSSave(conf, imagePath, sandbox.FSSaveOpts{
 				ExitAfterSaving: true,
-				Path:            tc.savePath,
+				Path:            fsSavePathArg,
 			}); err != nil {
 				t.Fatalf("Error saving filesystem checkpoint: %v", err)
 			}
@@ -3344,16 +3356,14 @@ func TestFSCheckpointCommand(t *testing.T) {
 			restoreSpecs[1].Annotations[specutils.ContainerdContainerNameAnnotation] = subName
 			restoreSpecs[2].Annotations[specutils.ContainerdContainerNameAnnotation] = initName
 
-			var lostdirSource2 string
-			lostdirSource2, err = os.MkdirTemp(testutil.TmpDir(), "lostdir-source-2")
+			// Create one more source for the 3rd container (initName)
+			lostdirSource2, err := os.MkdirTemp(testutil.TmpDir(), "lostdir-2")
 			if err != nil {
 				t.Fatalf("Error creating lostdir source: %v", err)
 			}
 			defer os.RemoveAll(lostdirSource2)
 			lostdirSources = append(lostdirSources, lostdirSource2)
-
 			if tc.savePath != "/" {
-				// Create one more homedir source for the 3rd container (initName)
 				saveSource2, err := os.MkdirTemp(testutil.TmpDir(), "savedir-2")
 				if err != nil {
 					t.Fatalf("Error creating savedir source: %v", err)
@@ -3369,7 +3379,8 @@ func TestFSCheckpointCommand(t *testing.T) {
 						Destination: tc.savePath,
 						Type:        "bind",
 					})
-					addMountHint(restoreSpecs[0], fmt.Sprintf("homedir-%d", i), savedirSources[i])
+					// Enable overlay for savePath mount.
+					addMountHint(restoreSpecs[0], fmt.Sprintf("savedir-%d", i), savedirSources[i])
 				}
 
 				spec.Mounts = append(spec.Mounts, specs.Mount{
@@ -3377,6 +3388,7 @@ func TestFSCheckpointCommand(t *testing.T) {
 					Destination: tc.lostPath,
 					Type:        "bind",
 				})
+				// Enable overlay for lostPath mount.
 				addMountHint(restoreSpecs[0], fmt.Sprintf("lostdir-%d", i), lostdirSources[i])
 			}
 
@@ -3398,14 +3410,22 @@ func TestFSCheckpointCommand(t *testing.T) {
 			// Verify container filesystems restored from checkpoint.
 			for i := range restoreConts[:2] {
 				// Checkpointed path must be verified successfully.
-				if ws, err := execute(conf, restoreConts[i], "/app", append([]string{"fsTreeVerify"}, checkpointFsTreeArgs[i]...)...); err != nil || ws != 0 {
+				if ws, err := execute(conf, restoreConts[i], "/app", append([]string{"fsTreeVerify"}, savePathFsTreeArgs[i]...)...); err != nil || ws != 0 {
 					t.Fatalf("Error verifying checkpointed filesystem for container %d, ws: %v, err: %v", i, ws, err)
 				}
 
-				// Verify that the lost path is cleared.
-				out, status, err := executeCombinedOutputWithStatus(conf, restoreConts[i], nil, "/app", "assertIsEmpty", tc.lostPath)
-				if err != nil || status != 0 {
-					t.Fatalf("Lost path %q was not cleared for container %d, status: %v, err: %v, output: %s", tc.lostPath, i, status, err, string(out))
+				if tc.all {
+					// If all tmpfs mounts are checkpointed then the lost path should
+					// also be restored.
+					if ws, err := execute(conf, restoreConts[i], "/app", append([]string{"fsTreeVerify"}, lostPathFsTreeArgs[i]...)...); err != nil || ws != 0 {
+						t.Fatalf("Error verifying lost path is also restored for container %d when using --path=all-tmpfs, ws: %v, err: %v", i, ws, err)
+					}
+				} else {
+					// Verify that the lost path is cleared.
+					out, status, err := executeCombinedOutputWithStatus(conf, restoreConts[i], nil, "/app", "assertIsEmpty", tc.lostPath)
+					if err != nil || status != 0 {
+						t.Fatalf("Lost path %q was not cleared for container %d, status: %v, err: %v, output: %s", tc.lostPath, i, status, err, string(out))
+					}
 				}
 			}
 			for i, cont := range restoreConts[:2] {
@@ -3423,8 +3443,18 @@ func TestFSCheckpointCommand(t *testing.T) {
 				t.Fatalf("Error starting container: %v", err)
 			}
 			defer cleanupContsRestart()
-			if ws, err := execute(conf, contsRestart[0], "/app", append([]string{"fsTreeVerify"}, checkpointFsTreeArgs[1]...)...); err != nil || ws != 0 {
+			if ws, err := execute(conf, contsRestart[0], "/app", append([]string{"fsTreeVerify"}, savePathFsTreeArgs[1]...)...); err != nil || ws != 0 {
 				t.Fatalf("Error verifying filesystem for restarted container, ws: %v, err: %v", ws, err)
+			}
+			if tc.all {
+				if ws, err := execute(conf, contsRestart[0], "/app", append([]string{"fsTreeVerify"}, lostPathFsTreeArgs[1]...)...); err != nil || ws != 0 {
+					t.Fatalf("Error verifying lost path is also restored for restarted container when using --path=all-tmpfs, ws: %v, err: %v", ws, err)
+				}
+			} else {
+				out, status, err := executeCombinedOutputWithStatus(conf, contsRestart[0], nil, "/app", "assertIsEmpty", tc.lostPath)
+				if err != nil || status != 0 {
+					t.Fatalf("Lost path %q was not cleared for restarted container, status: %v, err: %v, output: %s", tc.lostPath, status, err, string(out))
+				}
 			}
 			if err := contsRestart[0].WaitFSRestore(); err != nil {
 				t.Errorf("Error waiting for FS restore: %v", err)
