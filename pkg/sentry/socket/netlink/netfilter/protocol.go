@@ -1224,7 +1224,9 @@ func (p *Protocol) processBatchMessage(ctx context.Context, buf []byte, ms *nlms
 	// **********************************************************************
 	// TODO: b/436922484 - Add a transaction system to avoid deep copying the
 	// entire NFTables structure.
+	// Change logic to just replace atomic ptrs.
 	// **********************************************************************
+
 	nft.Mu.Lock()
 	defer nft.Mu.Unlock()
 
@@ -1327,7 +1329,9 @@ func (p *Protocol) processBatchMessage(ctx context.Context, buf []byte, ms *nlms
 			subErr = p.deleteChain(nftCopy, attrs, family, hdr.Flags, hdr.NetFilterMsgType(), ms)
 		case linux.NFT_MSG_NEWRULE:
 			subErr = p.newRule(nftCopy, st, attrs, family, hdr.Flags, ms)
-		case linux.NFT_MSG_DELRULE, linux.NFT_MSG_DESTROYRULE, linux.NFT_MSG_NEWSET,
+		case linux.NFT_MSG_NEWSET:
+			subErr = nftCopy.NewSet(attrs, family, hdr.Flags, ms)
+		case linux.NFT_MSG_DELRULE, linux.NFT_MSG_DESTROYRULE,
 			linux.NFT_MSG_DELSET, linux.NFT_MSG_DESTROYSET, linux.NFT_MSG_NEWSETELEM,
 			linux.NFT_MSG_DELSETELEM, linux.NFT_MSG_DESTROYSETELEM,
 			linux.NFT_MSG_NEWOBJ, linux.NFT_MSG_DELOBJ, linux.NFT_MSG_DESTROYOBJ,

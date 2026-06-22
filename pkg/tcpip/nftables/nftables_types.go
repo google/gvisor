@@ -307,6 +307,10 @@ type Table struct {
 	// Note: currently nftables only has the single Dormant flag.
 	flagSet map[TableFlag]struct{}
 
+	// sets is a map of sets for each table.
+	sets       map[string]*nftSet
+	setHandles map[uint64]*nftSet
+
 	// handleCounter is the counter for chain and rule handles.
 	handleCounter atomicbitops.Uint64
 
@@ -908,6 +912,61 @@ var netlinkAFToStackAF = map[uint8]stack.AddressFamily{
 	linux.NFPROTO_IPV6:   stack.IP6,
 }
 
+// Set represents an nftables set.
+// Ref: include/net/netfilter/nf_tables.h:nft_set
+type nftSet struct {
+	// name represents the unique name for this set.
+	name string
+	// keyType represents the type of key; i.e. IPv4, IPv6, port, etc.
+	keyType uint32
+	// dataType represents the type of data; i.e. VERDICT or DATA.
+	dataType uint32
+	// objType represents the type of object that the set is storing.
+	objType uint32
+	// descSize represents the max number of elements.
+	// If 0, then the set has no bounds on the number of elements.
+	descSize uint32
+	// fieldLen represents the length of each sub-key.
+	fieldLen []uint8
+	// fieldCount represents the number of sub-keys.
+	fieldCount uint8
+	// timeout represents the timeout for the elements in the set.
+	// TODO: b/505409691 - Add support for set timeout.
+	timeout uint64
+	// gcInterval represents the interval for garbage collection.
+	// GC gets rid of expired elements in the set.
+	// TODO: b/505409691 - Add support for gc interval.
+	gcInterval uint32
+	// policy passed by the user hints at
+	// whether the set should be memory or performance optimized.
+	// TODO: b/505409691 - Add support for set policy.
+	policy uint32
+	// udata represents the user data of the set.
+	udata []byte
+	// exprInfos represents the stateful nft expressions/ops;
+	// counter, limit, etc.
+	// that are directly associated with the individual set elements.
+	// TODO: b/505409691 - Add support for expressions other than the counters.
+	exprInfos []ExprInfo
+	// flags determines the set's configuration.
+	flags uint16
+	// dead marks the set as deleted.
+	dead uint8
+	// genmask links to nftables generation.
+	// We don't need to support this as we make a full copy of
+	// the set on each transaction; so each NFTables instance
+	// is it's own "generation".
+	genmask uint16
+	// keyLen is the length of the key,
+	// or the combined length of all the sub-keys.
+	keyLen uint8
+	// dataLen is the length of the data;
+	// incase of a verdict set, this is not required.
+	dataLen uint8
+	// handle is the NFTables unique identifier for this set.
+	handle uint64
+}
+
 // AFtoNetlinkAF converts a generic address family to a netfilter address family.
 // On error, we simply cast it to be a stack.AddressFamily and return an error to allow netfilter
 // sockets to handle it accordingly if needed.
@@ -1122,6 +1181,32 @@ func deepCopyChain(chain *Chain, tableCopy *Table) *Chain {
 	return chainCopy
 }
 
+// deepCopySet returns a deep copy of the Set struct.
+func deepCopySet(set *nftSet) *nftSet {
+	setCopy := &nftSet{
+		name:       set.name,
+		keyType:    set.keyType,
+		dataType:   set.dataType,
+		objType:    set.objType,
+		descSize:   set.descSize,
+		fieldLen:   slices.Clone(set.fieldLen),
+		fieldCount: set.fieldCount,
+		timeout:    set.timeout,
+		gcInterval: set.gcInterval,
+		policy:     set.policy,
+		udata:      slices.Clone(set.udata),
+		exprInfos:  slices.Clone(set.exprInfos),
+		flags:      set.flags,
+		dead:       set.dead,
+		genmask:    set.genmask,
+		keyLen:     set.keyLen,
+		dataLen:    set.dataLen,
+		handle:     set.handle,
+	}
+
+	return setCopy
+}
+
 // deepCopyTable returns a deep copy of the Table struct.
 func deepCopyTable(table *Table, afFilter *addressFamilyFilter) *Table {
 	tableCopy := &Table{
@@ -1131,6 +1216,8 @@ func deepCopyTable(table *Table, afFilter *addressFamilyFilter) *Table {
 		chainHandles: make(map[uint64]*Chain),
 		flagSet:      make(map[TableFlag]struct{}),
 		handle:       table.handle,
+		sets:         make(map[string]*nftSet),
+		setHandles:   make(map[uint64]*nftSet),
 		owner:        table.owner,
 		userData:     slices.Clone(table.userData),
 	}
@@ -1138,6 +1225,12 @@ func deepCopyTable(table *Table, afFilter *addressFamilyFilter) *Table {
 
 	for flag := range table.flagSet {
 		tableCopy.flagSet[flag] = struct{}{}
+	}
+
+	for setName, set := range table.sets {
+		setCopy := deepCopySet(set)
+		tableCopy.sets[setName] = setCopy
+		tableCopy.setHandles[setCopy.handle] = setCopy
 	}
 
 	for chainName, chain := range table.chains {

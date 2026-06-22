@@ -34,6 +34,7 @@ go_library(
         "nftables.go",
         "nftables_attrs.go",
         "nftables_mutex.go",
+        "nftables_set.go",
         "nftables_types.go",
         "nftinterp.go",
     ],
