@@ -32,10 +32,29 @@ type Options struct {
 	runtimeDir       string
 	id               string
 	enableNetworking bool
+	mounts           []Mount
 }
 
 // Option configures the Options struct.
 type Option func(*Options)
+
+// MountType represents the type of a mount point inside the sandbox.
+type MountType int
+
+const (
+	// MountTypeBind represents a host bind mount.
+	MountTypeBind MountType = iota
+	// MountTypeTmpfs represents an in-memory tmpfs mount.
+	MountTypeTmpfs
+)
+
+// Mount holds settings for a custom host bind directory or in-memory mount.
+type Mount struct {
+	Source      string
+	Destination string
+	Type        MountType
+	ReadOnly    bool
+}
 
 // WithRuntimeDir sets a custom runtime directory where bundle and state files are written.
 func WithRuntimeDir(runtimeDir string) Option {
@@ -55,6 +74,28 @@ func WithID(id string) Option {
 func WithNetworking(enabled bool) Option {
 	return func(o *Options) {
 		o.enableNetworking = enabled
+	}
+}
+
+// WithBindMount adds a custom bind mount from host's source path to the sandbox's destination path.
+func WithBindMount(source, destination string, readOnly bool) Option {
+	return func(o *Options) {
+		o.mounts = append(o.mounts, Mount{
+			Source:      filepath.Clean(source),
+			Destination: filepath.Clean(destination),
+			Type:        MountTypeBind,
+			ReadOnly:    readOnly,
+		})
+	}
+}
+
+// WithTmpfsMount adds an in-memory tmpfs filesystem at the destination path inside the sandbox.
+func WithTmpfsMount(destination string) Option {
+	return func(o *Options) {
+		o.mounts = append(o.mounts, Mount{
+			Destination: filepath.Clean(destination),
+			Type:        MountTypeTmpfs,
+		})
 	}
 }
 
@@ -130,7 +171,7 @@ func New(ctx context.Context, opts ...Option) (*Sandbox, error) {
 		return nil, fmt.Errorf("sandbox state directory has incorrect permissions: got %v, want %v", fi.Mode().Perm(), os.FileMode(0700))
 	}
 
-	bundleDir, err := NewBundle(options.id, runDir, options.enableNetworking)
+	bundleDir, err := NewBundle(options.id, runDir, options.enableNetworking, options.mounts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OCI bundle: %v", err)
 	}

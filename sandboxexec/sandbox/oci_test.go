@@ -31,7 +31,7 @@ func TestNewBundle(t *testing.T) {
 			tempDir := t.TempDir()
 			sandboxID := "test-sandbox"
 
-			bundleDir, err := sandbox.NewBundle(sandboxID, tempDir, enableNetworking)
+			bundleDir, err := sandbox.NewBundle(sandboxID, tempDir, enableNetworking, nil)
 			if err != nil {
 				t.Fatalf("NewBundle(enableNet=%v) failed: %v", enableNetworking, err)
 			}
@@ -95,5 +95,61 @@ func TestNewBundle(t *testing.T) {
 				t.Errorf("enableNetworking=%v: spec.Linux.Namespaces=%+v, want: %+v", enableNetworking, spec.Linux.Namespaces, expectedNamespaces)
 			}
 		})
+	}
+}
+
+func TestNewBundleNormalization(t *testing.T) {
+	tempDir := t.TempDir()
+	sandboxID := "test-sandbox"
+
+	mounts := []sandbox.Mount{
+		{
+			Source:      "/tmp/foo/../bar",
+			Destination: "/mnt/foo/./bar",
+			Type:        sandbox.MountTypeBind,
+		},
+		{
+			Destination: "/mnt/baz/..",
+			Type:        sandbox.MountTypeTmpfs,
+		},
+	}
+
+	bundleDir, err := sandbox.NewBundle(sandboxID, tempDir, false, mounts)
+	if err != nil {
+		t.Fatalf("NewBundle failed: %v", err)
+	}
+	defer os.RemoveAll(bundleDir)
+
+	configPath := filepath.Join(bundleDir, "config.json")
+	configFile, err := os.Open(configPath)
+	if err != nil {
+		t.Fatalf("failed to open config.json: %v", err)
+	}
+	defer configFile.Close()
+
+	var spec specs.Spec
+	if err := json.NewDecoder(configFile).Decode(&spec); err != nil {
+		t.Fatalf("failed to decode config.json: %v", err)
+	}
+
+	// Verify our custom mounts are present and normalized
+	var foundBind, foundTmpfs bool
+	for _, m := range spec.Mounts {
+		if m.Type == "bind" && m.Destination == "/mnt/foo/bar" {
+			foundBind = true
+			if m.Source != "/tmp/bar" {
+				t.Errorf("bind source = %q, want %q", m.Source, "/tmp/bar")
+			}
+		}
+		if m.Type == "tmpfs" && m.Destination == "/mnt" {
+			foundTmpfs = true
+		}
+	}
+
+	if !foundBind {
+		t.Errorf("failed to find normalized bind mount '/mnt/foo/bar'")
+	}
+	if !foundTmpfs {
+		t.Errorf("failed to find normalized tmpfs mount '/mnt'")
 	}
 }
