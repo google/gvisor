@@ -923,6 +923,87 @@ func (r *FUSERmDirIn) SizeBytes() int {
 	return r.Name.SizeBytes()
 }
 
+// FUSEGetXattrHdr contains the static fields of FUSEGetXattrIn.
+//
+// +marshal
+type FUSEGetXattrHdr struct {
+	_    structs.HostLayout
+	Size uint32
+	_    uint32
+}
+
+// FUSEGetXattrIn contains the arguments for FUSE_GETXATTR.
+//
+// +marshal dynamic
+type FUSEGetXattrIn struct {
+	_    structs.HostLayout
+	Hdr  FUSEGetXattrHdr
+	Name CString
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (r *FUSEGetXattrIn) MarshalBytes(buf []byte) []byte {
+	buf = r.Hdr.MarshalBytes(buf)
+	return r.Name.MarshalBytes(buf)
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (r *FUSEGetXattrIn) UnmarshalBytes(buf []byte) []byte {
+	panic("Unimplemented, FUSEGetXattrIn is never unmarshalled")
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (r *FUSEGetXattrIn) SizeBytes() int {
+	return r.Hdr.SizeBytes() + r.Name.SizeBytes()
+}
+
+// FUSEGetXattrOut is the reply sent by the daemon to the kernel
+// for FUSE_GETXATTR and FUSE_LISTXATTR when the input size was 0.
+//
+// +marshal
+type FUSEGetXattrOut struct {
+	_    structs.HostLayout
+	Size uint32
+	_    uint32
+}
+
+// FUSESetXattrHdr contains the static fields of FUSESetXattrIn.
+//
+// +marshal
+type FUSESetXattrHdr struct {
+	_     structs.HostLayout
+	Size  uint32
+	Flags uint32
+}
+
+// FUSESetXattrIn contains the arguments for FUSE_SETXATTR.
+//
+// +marshal dynamic
+type FUSESetXattrIn struct {
+	_     structs.HostLayout
+	Hdr   FUSESetXattrHdr
+	Name  CString
+	Value []byte `hostlayout:"ignore"`
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (r *FUSESetXattrIn) MarshalBytes(buf []byte) []byte {
+	buf = r.Hdr.MarshalBytes(buf)
+	buf = r.Name.MarshalBytes(buf)
+	copy(buf, r.Value)
+	return buf[len(r.Value):]
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (r *FUSESetXattrIn) UnmarshalBytes(buf []byte) []byte {
+	panic("Unimplemented, FUSESetXattrIn is never unmarshalled")
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (r *FUSESetXattrIn) SizeBytes() int {
+	return r.Hdr.SizeBytes() + r.Name.SizeBytes() + len(r.Value)
+}
+
 // FUSEDirents is a list of Dirents received from the FUSE daemon server.
 // It is used for FUSE_READDIR.
 //

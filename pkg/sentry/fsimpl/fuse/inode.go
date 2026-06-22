@@ -862,3 +862,107 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 	}
 	return i.setAttr(ctx, fs, creds, opts, fhOptions{useFh: false})
 }
+
+// GetXattr implements kernfs.InodeWithXattrs.GetXattr.
+func (i *inode) GetXattr(ctx context.Context, opts vfs.GetXattrOptions) (string, error) {
+	in := linux.FUSEGetXattrIn{
+		Hdr: linux.FUSEGetXattrHdr{
+			Size: uint32(opts.Size),
+		},
+		Name: linux.CString(opts.Name),
+	}
+
+	res, err := i.callRaw(ctx, linux.FUSE_GETXATTR, &in)
+	if err != nil {
+		return "", err
+	}
+	if err := res.Error(); err != nil {
+		return "", err
+	}
+
+	if opts.Size == 0 {
+		var out linux.FUSEGetXattrOut
+		if err := res.UnmarshalPayload(&out); err != nil {
+			return "", err
+		}
+		return string(make([]byte, out.Size)), nil
+	}
+
+	if len(res.data) <= res.hdr.SizeBytes() {
+		return "", nil
+	}
+
+	return string(res.data[res.hdr.SizeBytes():]), nil
+}
+
+// SetXattr implements kernfs.InodeWithXattrs.SetXattr.
+func (i *inode) SetXattr(ctx context.Context, opts vfs.SetXattrOptions) error {
+	in := linux.FUSESetXattrIn{
+		Hdr: linux.FUSESetXattrHdr{
+			Size:  uint32(len(opts.Value)),
+			Flags: opts.Flags,
+		},
+		Name:  linux.CString(opts.Name),
+		Value: []byte(opts.Value),
+	}
+
+	return i.callNoReply(ctx, linux.FUSE_SETXATTR, &in)
+}
+
+// ListXattr implements kernfs.InodeWithXattrs.ListXattr.
+func (i *inode) ListXattr(ctx context.Context, size uint64) ([]string, error) {
+	in := linux.FUSEGetXattrHdr{
+		Size: uint32(size),
+	}
+
+	res, err := i.callRaw(ctx, linux.FUSE_LISTXATTR, &in)
+	if err != nil {
+		return nil, err
+	}
+	if err := res.Error(); err != nil {
+		return nil, err
+	}
+
+	if size == 0 {
+		var out linux.FUSEGetXattrOut
+		if err := res.UnmarshalPayload(&out); err != nil {
+			return nil, err
+		}
+		if out.Size == 0 {
+			return nil, nil
+		}
+		if out.Size > linux.XATTR_LIST_MAX {
+			return nil, linuxerr.E2BIG
+		}
+		return []string{string(make([]byte, out.Size-1))}, nil
+	}
+
+	if len(res.data) <= res.hdr.SizeBytes() {
+		return nil, nil
+	}
+
+	payload := res.data[res.hdr.SizeBytes():]
+	if len(payload) > linux.XATTR_LIST_MAX {
+		return nil, linuxerr.E2BIG
+	}
+
+	var names []string
+	start := 0
+	for idx, b := range payload {
+		if b == 0 {
+			name := string(payload[start:idx])
+			if len(name) > linux.XATTR_NAME_MAX {
+				return nil, linuxerr.ERANGE
+			}
+			names = append(names, name)
+			start = idx + 1
+		}
+	}
+	return names, nil
+}
+
+// RemoveXattr implements kernfs.InodeWithXattrs.RemoveXattr.
+func (i *inode) RemoveXattr(ctx context.Context, name string) error {
+	in := linux.CString(name)
+	return i.callNoReply(ctx, linux.FUSE_REMOVEXATTR, &in)
+}

@@ -907,3 +907,18 @@ type inodeSymlink interface {
 	//		VirtualDentry, "", EINVAL).
 	Getlink(ctx context.Context, mnt *vfs.Mount) (vfs.VirtualDentry, string, error)
 }
+
+// InodeWithXattrs should be implemented by kernfs Inodes that support xattrs.
+type InodeWithXattrs interface {
+	// GetXattr returns the value associated with the given extended attribute.
+	GetXattr(ctx context.Context, opts vfs.GetXattrOptions) (string, error)
+
+	// SetXattr changes the value associated with the given extended attribute.
+	SetXattr(ctx context.Context, opts vfs.SetXattrOptions) error
+
+	// ListXattr returns the names of the extended attributes.
+	ListXattr(ctx context.Context, size uint64) ([]string, error)
+
+	// RemoveXattr removes the given extended attribute.
+	RemoveXattr(ctx context.Context, name string) error
+}
