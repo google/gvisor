@@ -106,12 +106,10 @@ type Stack interface {
 	// Restore restarts the network stack after restore.
 	Restore()
 
-	// ReplaceConfig replaces the new network stack configuration to the
-	// loaded or saved network stack after restore.
-	// TODO(b/379115439): This method is a workaround to update netstack config
-	// during restore. It should be removed after a new method is added to
-	// extract the complete config from the spec and update it in the loaded
-	// stack during restore.
+	// ResetConfig resets the stack's NICs and configuration.
+	ResetConfig()
+
+	// ReplaceConfig replaces the network stack configuration with st.
 	ReplaceConfig(st Stack)
 
 	// Destroy the network stack.
@@ -300,4 +298,29 @@ type VethPeerReq struct {
 	Req InterfaceRequest
 	// Stack is the stack where the second end has to be added.
 	Stack Stack
+}
+
+// NetworkArgs configures a network stack directly.
+type NetworkArgs interface {
+	ConfigureNetwork(s Stack) error
+}
+
+// StackNetworkArgs implements NetworkArgs by copying config from a source stack.
+type StackNetworkArgs struct {
+	SrcStack Stack
+}
+
+// ConfigureNetwork implements NetworkArgs.ConfigureNetwork.
+func (s *StackNetworkArgs) ConfigureNetwork(dstStack Stack) error {
+	dstStack.ReplaceConfig(s.SrcStack)
+	return nil
+}
+
+// NetworkArgsFromStack returns a NetworkArgs that configures a stack by copying
+// config from s.
+func NetworkArgsFromStack(st Stack) NetworkArgs {
+	if st == nil {
+		return nil
+	}
+	return &StackNetworkArgs{SrcStack: st}
 }

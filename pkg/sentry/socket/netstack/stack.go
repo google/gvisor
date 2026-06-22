@@ -1112,6 +1112,11 @@ func (s *Stack) Restore() {
 	s.Stack.Restore()
 }
 
+// ResetConfig implements inet.Stack.ResetConfig.
+func (s *Stack) ResetConfig() {
+	s.Stack.ResetConfig()
+}
+
 // ReplaceConfig implements inet.Stack.ReplaceConfig.
 func (s *Stack) ReplaceConfig(st inet.Stack) {
 	if _, ok := st.(*Stack); !ok {

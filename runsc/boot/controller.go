@@ -147,6 +147,9 @@ const (
 	// ContMgrGetNetworkConfig returns the network interfaces and routes applied
 	// during the creation of root container.
 	ContMgrGetNetworkConfig = "containerManager.GetNetworkConfig"
+
+	// ContMgrSetNetworkArgs sets network args in loader without creating links.
+	ContMgrSetNetworkArgs = "containerManager.SetNetworkArgs"
 )
 
 const (
@@ -1241,18 +1244,22 @@ func (cm *containerManager) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs,
 		return fmt.Errorf("cannot set nil networkArgs")
 	}
 
-	if eps, ok := cm.l.k.RootNetworkNamespace().Stack().(*netstack.Stack); ok {
-		n := &Network{
-			Stack:  eps.Stack,
-			Kernel: cm.l.k,
-		}
-		if err := n.CreateLinksAndRoutes(args, nil); err != nil {
-			return err
-		}
-		cm.l.mu.Lock()
-		cm.l.networkArgs = args
-		cm.l.mu.Unlock()
+	cm.l.mu.Lock()
+	cm.l.networkArgs = args
+	cm.l.mu.Unlock()
+
+	return cm.l.ConfigureNetwork(cm.l.k.RootNetworkNamespace().Stack())
+}
+
+// SetNetworkArgs sets the network arguments without creating links and routes.
+func (cm *containerManager) SetNetworkArgs(args *CreateLinksAndRoutesArgs, _ *struct{}) error {
+	log.Debugf("containerManager.SetNetworkArgs")
+	if args == nil {
+		return fmt.Errorf("cannot set nil networkArgs")
 	}
+	cm.l.mu.Lock()
+	cm.l.networkArgs = args
+	cm.l.mu.Unlock()
 	return nil
 }
 
