@@ -713,7 +713,7 @@ func New(args Args) (*Loader, error) {
 		ApplicationCores:     uint(args.NumCPU),
 		Vdso:                 vdso,
 		VdsoParams:           params,
-		RootUTSNamespace:     kernel.NewUTSNamespace(args.Spec.Hostname, args.Spec.Hostname, creds.UserNamespace),
+		RootUTSNamespace:     kernel.NewUTSNamespace(args.Spec.Hostname, args.Spec.Domainname, creds.UserNamespace),
 		RootIPCNamespace:     kernel.NewIPCNamespace(creds.UserNamespace),
 		RootPIDNamespace:     kernel.NewRootPIDNamespace(creds.UserNamespace),
 		MaxFDLimit:           maxFDLimit,

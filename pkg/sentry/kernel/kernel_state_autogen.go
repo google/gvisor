@@ -2862,7 +2862,9 @@ func (u *UTSNamespace) StateTypeName() string {
 func (u *UTSNamespace) StateFields() []string {
 	return []string{
 		"hostName",
+		"hostNameChanged",
 		"domainName",
+		"domainNameChanged",
 		"userns",
 		"inode",
 	}
@@ -2874,9 +2876,11 @@ func (u *UTSNamespace) beforeSave() {}
 func (u *UTSNamespace) StateSave(stateSinkObject state.Sink) {
 	u.beforeSave()
 	stateSinkObject.Save(0, &u.hostName)
-	stateSinkObject.Save(1, &u.domainName)
-	stateSinkObject.Save(2, &u.userns)
-	stateSinkObject.Save(3, &u.inode)
+	stateSinkObject.Save(1, &u.hostNameChanged)
+	stateSinkObject.Save(2, &u.domainName)
+	stateSinkObject.Save(3, &u.domainNameChanged)
+	stateSinkObject.Save(4, &u.userns)
+	stateSinkObject.Save(5, &u.inode)
 }
 
 func (u *UTSNamespace) afterLoad(context.Context) {}
@@ -2884,9 +2888,11 @@ func (u *UTSNamespace) afterLoad(context.Context) {}
 // +checklocksignore
 func (u *UTSNamespace) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &u.hostName)
-	stateSourceObject.Load(1, &u.domainName)
-	stateSourceObject.Load(2, &u.userns)
-	stateSourceObject.Load(3, &u.inode)
+	stateSourceObject.Load(1, &u.hostNameChanged)
+	stateSourceObject.Load(2, &u.domainName)
+	stateSourceObject.Load(3, &u.domainNameChanged)
+	stateSourceObject.Load(4, &u.userns)
+	stateSourceObject.Load(5, &u.inode)
 }
 
 func (v *VDSOParamPage) StateTypeName() string {

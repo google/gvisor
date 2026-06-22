@@ -597,6 +597,8 @@ func (nf *NFTables) AddTable(family stack.AddressFamily, name string,
 		flagSet:       make(map[TableFlag]struct{}),
 		handle:        nf.getNewTableHandle(),
 		handleCounter: atomicbitops.Uint64{},
+		sets:          make(map[string]*nftSet),
+		setHandles:    make(map[uint64]*nftSet),
 	}
 	tableMap[name] = t
 	tableHandleMap[t.handle] = t

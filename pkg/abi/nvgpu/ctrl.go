@@ -382,9 +382,10 @@ type RmapiParamNvU32List struct {
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl0080/ctrl0080gr.h:
 const (
-	NV0080_CTRL_CMD_GR_GET_CAPS    = 0x801102
-	NV0080_CTRL_CMD_GR_GET_INFO    = 0x801104
-	NV0080_CTRL_CMD_GR_GET_CAPS_V2 = 0x801109
+	NV0080_CTRL_CMD_GR_GET_CAPS               = 0x801102
+	NV0080_CTRL_CMD_GR_GET_INFO               = 0x801104
+	NV0080_CTRL_CMD_GR_SET_TPC_PARTITION_MODE = 0x801108
+	NV0080_CTRL_CMD_GR_GET_CAPS_V2            = 0x801109
 )
 
 // NV0080_CTRL_GET_CAPS_PARAMS is used to represent the following:
