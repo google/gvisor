@@ -186,3 +186,23 @@ func (fd *fileDescription) Sync(ctx context.Context) error {
 	conn.CallAsync(ctx, req)
 	return nil
 }
+
+// GetXattr implements vfs.FileDescriptionImpl.GetXattr.
+func (fd *fileDescription) GetXattr(ctx context.Context, opts vfs.GetXattrOptions) (string, error) {
+	return fd.inode().GetXattr(ctx, opts)
+}
+
+// SetXattr implements vfs.FileDescriptionImpl.SetXattr.
+func (fd *fileDescription) SetXattr(ctx context.Context, opts vfs.SetXattrOptions) error {
+	return fd.inode().SetXattr(ctx, opts)
+}
+
+// ListXattr implements vfs.FileDescriptionImpl.ListXattr.
+func (fd *fileDescription) ListXattr(ctx context.Context, size uint64) ([]string, error) {
+	return fd.inode().ListXattr(ctx, size)
+}
+
+// RemoveXattr implements vfs.FileDescriptionImpl.RemoveXattr.
+func (fd *fileDescription) RemoveXattr(ctx context.Context, name string) error {
+	return fd.inode().RemoveXattr(ctx, name)
+}
