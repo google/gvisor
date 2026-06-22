@@ -227,7 +227,7 @@ func (s *Stack) SetInterface(ctx context.Context, msg *nlmsg.Message) *syserr.Er
 			return syserr.ErrInvalidArgument
 		}
 		if ifinfomsg.Flags & ^uint32(linux.IFF_UP) != 0 {
-			ctx.Warningf("Unsupported ifi_flags: %x", ifinfomsg.Change)
+			ctx.Warningf("Unsupported ifi_flags: %x", ifinfomsg.Flags)
 			return syserr.ErrInvalidArgument
 		}
 		// Netstack interfaces are always up.
