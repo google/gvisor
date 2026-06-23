@@ -103,6 +103,10 @@ func (q *contextQueue) queuedContexts() uint32 {
 func (q *contextQueue) add(ctx *sharedContext) *platform.ContextError {
 	ctx.startWaitingTS = cputicks()
 
+	// Let the fast path monitor know the platform is doing work, waking it if
+	// it has parked itself while the sandbox was idle.
+	fastpath.recordActivity()
+
 	if fastpath.stubFastPath() {
 		q.enableFastPath()
 	} else {
