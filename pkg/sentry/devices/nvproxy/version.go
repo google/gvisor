@@ -1108,8 +1108,10 @@ func Init() {
 		})
 		v590_48_01 := addDriverABI(590, 48, 01, "b9e2f80693781431cc87f4cd29109e133dcecb50a50d6b68d4b3bf2d696bd689", "14ecfb7faa56d4d18cd9fef891b3fa2db3628f12a3e59b59d3c6e6d1a0befd80", v590_44_01)
 
+		v595_71_05 := addUnsupportedDriverABI(595, 71, 05, v590_48_01)
+
 		_ = addUnsupportedDriverABI(610, 43, 02, func() *driverABI {
-			abi := v590_48_01()
+			abi := v595_71_05()
 			// UVM range groups were removed in 610.43.02.
 			delete(abi.uvmIoctl, nvgpu.UVM_CREATE_RANGE_GROUP)
 			delete(abi.uvmIoctl, nvgpu.UVM_DESTROY_RANGE_GROUP)
