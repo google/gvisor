@@ -71,13 +71,13 @@ declare_rwmutex(
 go_library(
     name = "proc",
     srcs = [
+        "checkpoint.go",
         "dentries_mutex.go",
         "fd_dir_inode_refs.go",
         "fd_info_dir_inode_refs.go",
         "filesystem.go",
         "keys.go",
         "nvproxy.go",
-        "proc_impl.go",
         "subtasks.go",
         "subtasks_inode_refs.go",
         "task.go",

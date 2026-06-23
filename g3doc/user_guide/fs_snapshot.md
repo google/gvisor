@@ -69,3 +69,59 @@ To restore a filesystem snapshot, pass the directory containing the snapshot to
 ```bash
 runsc create --fs-restore-image-path=<path> <container ID>
 ```
+
+## Application-Driven Filesystem Checkpoint
+
+gVisor also lets the workload *inside* the sandbox trigger filesystem
+checkpoints, without any external call to `runsc`.
+
+This functionality is configured entirely through OCI runtime spec
+**annotations** and is exposed to the workload through files under
+`/proc/gvisor/`.
+
+### Enabling
+
+Application-driven filesystem checkpointing is enabled by setting the
+`dev.gvisor.internal.fscheckpoint.path` annotation on the **root/first
+container**. This annotation serves two purposes:
+
+-   It points to the directory where the checkpoint files will be written (the
+    equivalent of the `--image-path` flag).
+-   It causes the `/proc/gvisor/fscheckpoint` file to be created in the sandbox.
+
+By default `/proc/gvisor/fscheckpoint` is read-only (mode `0444`): a workload
+can read it to *wait* for the next checkpoint. To allow a container to *trigger*
+a checkpoint, set `dev.gvisor.internal.fscheckpoint.enable=true` on that
+container. This is a per-container setting.
+
+> Note: The `path` annotation must be set on the root container; it configures
+> the snapshot destination for the whole sandbox. The `enable` annotation is
+> evaluated per container.
+
+### Checkpoint options
+
+The options normally passed as flags to `runsc fscheckpoint` are instead
+provided as annotations on the root/first container:
+
+Annotation                                        | Description                                                                                                 | Default
+------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | -------
+`dev.gvisor.internal.fscheckpoint.path`           | Directory where filesystem checkpoint files are written. Required to enable.                                | (required)
+`dev.gvisor.internal.fscheckpoint.enable`         | Per-container; creates a writable `/proc/gvisor/fscheckpoint` so the workload can trigger an FS checkpoint. | `false`
+`dev.gvisor.internal.fscheckpoint.resume`         | Keep the sandbox running after the filesystem checkpoint (analogous to `--leave-running`).                  | `false`
+`dev.gvisor.internal.fscheckpoint.direct`         | Use `O_DIRECT` for filesystem checkpoint I/O.                                                               | `false`
+`dev.gvisor.internal.fscheckpoint.container-path` | Path inside the container to snapshot.                                                                      | `/`
+
+### Triggering and waiting via `/proc/gvisor/fscheckpoint`
+
+To trigger a filesystem checkpoint, write `1` to `/proc/gvisor/fscheckpoint` and
+read it back; the read blocks until the operation finishes and returns `resume`
+on success or `error` on failure.
+
+Triggering a second save by writing to the same file will fail with `ENXIO`.
+
+```bash
+# Open FD 3, trigger a fs checkpoint, then read the outcome.
+exec 3<>/proc/gvisor/fscheckpoint
+echo 1 >&3
+cat <&3   # blocks until resume completes, prints "resume" on success
+```

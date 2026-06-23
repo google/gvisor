@@ -106,8 +106,9 @@ func (fs *filesystem) newTasksInode(ctx context.Context, k *kernel.Kernel, pidns
 	for _, name := range internalData.OverrideProcs {
 		contents[name] = fs.newInode(ctx, root, 0444, newStaticFile(""))
 	}
-
-	fs.newTasksInodeExtra(ctx, root, internalData, k, contents)
+	if gvisorDir := fs.newGvisorInode(ctx, root, internalData, k); gvisorDir != nil {
+		contents["gvisor"] = gvisorDir
+	}
 
 	inode := &tasksInode{
 		pidns:                 pidns,

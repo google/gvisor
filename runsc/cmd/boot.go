@@ -159,9 +159,14 @@ type Boot struct {
 
 	sinkFDs sandboxsetup.IntFlags
 
-	saveFDs sandboxsetup.IntFlags
+	saveFDs             sandboxsetup.IntFlags
+	saveCheckpointGofer bool
 
-	fsRestoreFDs sandboxsetup.IntFlags
+	fsSaveFDs             sandboxsetup.IntFlags
+	fsSaveCheckpointGofer bool
+
+	fsRestoreFDs             sandboxsetup.IntFlags
+	fsRestoreCheckpointGofer bool
 
 	// attached is set to true to kill the sandbox process when the parent process
 	// terminates. This flag is set when the command execve's itself because
@@ -213,8 +218,6 @@ type Boot struct {
 
 	// rootfsUpperTarFD is the file descriptor to a tar file that has rootfs change at startup.
 	rootfsUpperTarFD int
-
-	bootExtra
 }
 
 // Name implements subcommands.Command.Name.
@@ -274,7 +277,11 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&b.podInitConfigFD, "pod-init-config-fd", -1, "file descriptor to the pod init configuration file.")
 	f.Var(&b.sinkFDs, "sink-fds", "ordered list of file descriptors to be used by the sinks defined in --pod-init-config.")
 	f.Var(&b.saveFDs, "save-fds", "ordered list of file descriptors to be used save checkpoints. Order: kernel state, page metadata, page file")
+	f.BoolVar(&b.saveCheckpointGofer, "save-checkpoint-gofer", false, "if true, -save-fds is a socket connected to checkpoint gofer")
+	f.Var(&b.fsSaveFDs, "fs-save-fds", "ordered list of file descriptors for filesystem checkpoint save")
+	f.BoolVar(&b.fsSaveCheckpointGofer, "fs-save-checkpoint-gofer", false, "if true, -fs-save-fds is a socket connected to checkpoint gofer")
 	f.Var(&b.fsRestoreFDs, "fs-restore-fds", "ordered list of file descriptors for filesystem checkpoint restore")
+	f.BoolVar(&b.fsRestoreCheckpointGofer, "fs-restore-checkpoint-gofer", false, "if true, -fs-restore-fds is a socket connected to checkpoint gofer")
 	f.IntVar(&b.rootfsUpperTarFD, "rootfs-upper-tar-fd", -1, "file descriptor to the tar file containing the rootfs upper layer changes.")
 
 	// Profiling flags.
@@ -287,8 +294,6 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&b.nvidiaDriverVersion, "nvidia-driver-version", "", "Nvidia driver version on the host")
 	f.StringVar(&b.procDriverNvidiaParams, "nvidia-host-params", "", "value of /proc/driver/nvidia/params on the host")
 	f.Int64Var(&b.nvidiaFabricIMEXManagementDevMinor, "nvidia-fabric-imex-mgmt-minor", -1, "DeviceFileMinor in /proc/driver/nvidia/capabilities/fabric-imex-mgmt on the host")
-
-	b.setFlagsExtra(f)
 }
 
 // Execute implements subcommands.Command.Execute.  It starts a sandbox in a
@@ -606,12 +611,15 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 			HaveFabricIMEXManagement:     b.nvidiaFabricIMEXManagementDevMinor >= 0,
 			FabricIMEXManagementDevMinor: uint32(b.nvidiaFabricIMEXManagementDevMinor),
 		},
-		HostTHP:          b.hostTHP,
-		SaveFDs:          b.saveFDs.GetFDs(),
-		FSRestoreFDs:     b.fsRestoreFDs.GetFDs(),
-		RootfsUpperTarFD: b.rootfsUpperTarFD,
+		HostTHP:                  b.hostTHP,
+		SaveFDs:                  b.saveFDs.GetFDs(),
+		SaveCheckpointGofer:      b.saveCheckpointGofer,
+		FSSaveFDs:                b.fsSaveFDs.GetFDs(),
+		FSSaveCheckpointGofer:    b.fsSaveCheckpointGofer,
+		FSRestoreFDs:             b.fsRestoreFDs.GetFDs(),
+		FSRestoreCheckpointGofer: b.fsRestoreCheckpointGofer,
+		RootfsUpperTarFD:         b.rootfsUpperTarFD,
 	}
-	b.setBootArgsExtra(&bootArgs)
 	l, err := boot.New(bootArgs)
 	if err != nil {
 		util.Fatalf("creating loader: %v", err)

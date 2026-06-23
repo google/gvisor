@@ -198,3 +198,109 @@ support in [cuda-checkpoint](https://github.com/NVIDIA/cuda-checkpoint).
 
 [leave-running]: https://github.com/moby/moby/pull/37360
 [checkpoint-dir]: https://github.com/moby/moby/issues/37344
+
+## Application-Driven Checkpoint/Restore
+
+In addition to the `runsc checkpoint` CLI command, gVisor lets the workload
+*inside* the sandbox trigger checkpoints and synchronize with restore, without
+any external call to `runsc`. This is useful for applications that want to
+checkpoint at a specific, self-determined point (for example, after warming up a
+cache or finishing initialization) and for applications that need to react to
+being restored.
+
+This functionality is configured entirely through OCI runtime spec
+**annotations** and is exposed to the workload through files under
+`/proc/gvisor/`. No new `runsc` flags are involved.
+
+### Enabling
+
+Application-driven checkpointing is enabled by setting the
+`dev.gvisor.internal.checkpoint.path` annotation on the **root/first
+container**. This annotation serves two purposes:
+
+-   It points to the directory where the checkpoint files will be written (the
+    equivalent of the `--image-path` flag).
+-   It causes the `/proc/gvisor/checkpoint` and `/proc/gvisor/spec_environ`
+    files to be created in the sandbox.
+
+By default `/proc/gvisor/checkpoint` is read-only (mode `0444`): a workload can
+read it to *wait* for the next resume/restore. To allow a container to *trigger*
+a checkpoint, set `dev.gvisor.internal.checkpoint.enable=true` on that
+container. This is a per-container setting, so you can let some containers
+trigger checkpoints while others can only observe them.
+
+> Note: The `path` annotation must be set on the root container; it configures
+> the snapshot destination for the whole sandbox. The `enable` annotation is
+> evaluated per container.
+
+### Checkpoint options
+
+When checkpointing is driven by the workload, the options normally passed as
+flags to `runsc checkpoint` are instead provided as annotations on the
+root/first container:
+
+Annotation                                                    | Description                                                                                           | Default
+------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | -------
+`dev.gvisor.internal.checkpoint.path`                         | Directory where checkpoint files are written. Required to enable.                                     | (required)
+`dev.gvisor.internal.checkpoint.enable`                       | Per-container; makes `/proc/gvisor/checkpoint` writable so the workload can trigger a checkpoint.     | `false`
+`dev.gvisor.internal.checkpoint.resume`                       | Keep the sandbox running after the checkpoint (analogous to `--leave-running`).                       | `false`
+`dev.gvisor.internal.checkpoint.compression`                  | Compression level: `none` or `flate-best-speed` (see [Compression](#compression)).                    | none
+`dev.gvisor.internal.checkpoint.direct`                       | Use `O_DIRECT` for checkpoint I/O (see [Direct I/O](#direct-io)).                                     | `false`
+`dev.gvisor.internal.checkpoint.exclude-committed-zero-pages` | Skip saving committed zero pages (see [Exclude Committed Zero Pages](#exclude-committed-zero-pages)). | `false`
+`dev.gvisor.internal.checkpoint.cuda-checkpoint-path`         | Path to the `cuda-checkpoint` binary (see [GPU Checkpoint/Restore](#gpu-checkpointrestore)).          | (unset)
+`dev.gvisor.internal.checkpoint.cuda-checkpoint-sequential`   | Run `cuda-checkpoint` sequentially instead of in parallel.                                            | `false`
+`dev.gvisor.internal.checkpoint.save-restore-exec-argv`       | Argv of a binary to exec around save/restore.                                                         | (unset)
+`dev.gvisor.internal.checkpoint.save-restore-exec-timeout`    | Timeout for the save/restore exec binary (e.g. `30s`).                                                | 10 minutes
+
+### Triggering and waiting via `/proc/gvisor/checkpoint`
+
+The `/proc/gvisor/checkpoint` file is the workload's interface to the
+checkpoint/restore machinery. It behaves like a character device with the
+following protocol:
+
+1.  **Open** the file. The open registers interest in the *next* checkpoint.
+    This means you can open the file and then trigger a checkpoint without
+    racing against it completing.
+2.  **Write** `1` (or `1\n`, so `echo 1` works) to trigger a checkpoint. Writing
+    requires `dev.gvisor.internal.checkpoint.enable=true`. Writing is optional —
+    a process can simply read the file to passively wait for a checkpoint
+    triggered by some other process. Triggering a second save by writing to the
+    same file will fail with `ENXIO`.
+3.  **Read** the file. The read blocks until the checkpoint completes and then
+    returns one of the following lines:
+    -   `resume` — the checkpoint completed and the original workload has
+        resumed running (this is what the process that triggered the checkpoint
+        sees when the sandbox keeps running).
+    -   `restore` — execution is continuing inside a freshly *restored*
+        instance, i.e. this process is running in the restored sandbox.
+    -   `error` — the checkpoint failed; the workload resumes running anyway.
+
+After the result is determined, reads always return the same value. To wait for
+a *subsequent* checkpoint, the file must be opened again.
+
+The `resume` vs. `restore` distinction lets a workload tell whether it is the
+original (post-checkpoint) process or the restored copy, which is handy for
+performing different post-checkpoint vs. post-restore actions on the same code
+path.
+
+For example, from a shell inside an enabled container:
+
+```bash
+# Open FD 3, trigger a checkpoint, then read the outcome.
+exec 3<>/proc/gvisor/checkpoint
+echo 1 >&3
+cat <&3   # blocks until resume/restore completes, prints "resume" or "restore"
+```
+
+### Reading restore-time environment via `/proc/gvisor/spec_environ`
+
+When application-driven checkpointing is enabled, gVisor also exposes
+`/proc/gvisor/spec_environ`. It contains the environment variables from the
+container's spec (NULL-separated, in the same format as `/proc/<pid>/environ`).
+
+Because the environment variables in the spec used to *restore* a container can
+differ from the one used to create it, this file gives the workload a way to
+read environment variables supplied at restore time. A common pattern is to wait
+on `/proc/gvisor/checkpoint`, and once it reports `restore`, re-read
+`/proc/gvisor/spec_environ` to pick up new configuration injected by the
+restoring environment.

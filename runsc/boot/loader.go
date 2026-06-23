@@ -298,6 +298,10 @@ type Loader struct {
 	// +checklocks:mu
 	saveFDs []*fd.FD
 
+	// saveCheckpointGofer is true if saveFDs contains only one FD, which
+	// is a socket connected to a checkpoint gofer.
+	saveCheckpointGofer bool
+
 	// restoreErr is the error that occurred during restore.
 	//
 	// +checklocks:mu
@@ -314,7 +318,12 @@ type Loader struct {
 	// host network namespace during sandbox creation.
 	networkArgs *CreateLinksAndRoutesArgs
 
-	LoaderExtra
+	// fsSaveFDs are FDs used for user-triggered filesystem checkpoint saving.
+	fsSaveFDs []*fd.FD
+
+	// fsSaveCheckpointGofer is true if fsSaveFDs contains only one FD, which
+	// is a socket connected to a checkpoint gofer.
+	fsSaveCheckpointGofer bool
 }
 
 // execID uniquely identifies a sentry process that is executed in a container.
@@ -421,15 +430,21 @@ type Args struct {
 	NvidiaHostSettings  *nvconf.HostSettings
 	// HostTHP contains host transparent hugepage settings.
 	HostTHP HostTHP
-
-	SaveFDs      []*fd.FD
+	// SaveFDs are FDs used for user-triggered checkpoint saving.
+	SaveFDs []*fd.FD
+	// If SaveCheckpointGofer is true, Args.SaveFDs contains only one FD, which
+	// is a socket connected to a checkpoint gofer.
+	SaveCheckpointGofer bool
+	// FSRestoreFDs are FDs used for filesystem checkpoint restore.
 	FSRestoreFDs []*fd.FD
 	// If FSRestoreCheckpointGofer is true, Args.FSRestoreFDs contains only one
 	// FD, which is a socket connected to a checkpoint gofer.
 	FSRestoreCheckpointGofer bool
-
-	ArgsExtra
-
+	// FSSaveFDs are FDs used for user-triggered filesystem checkpoint saving.
+	FSSaveFDs []*fd.FD
+	// If FSSaveCheckpointGofer is true, Args.FSSaveFDs contains only one FD,
+	// which is a socket connected to a checkpoint gofer.
+	FSSaveCheckpointGofer bool
 	// RootfsUpperTarFD is the file descriptor to the tar file containing the rootfs
 	// upper layer changes.
 	RootfsUpperTarFD int
@@ -511,20 +526,22 @@ func New(args Args) (*Loader, error) {
 
 	eid := execID{cid: args.ID}
 	l := &Loader{
-		sandboxID:      args.ID,
-		processes:      map[execID]*execProcess{eid: {}},
-		sharedMounts:   make(map[string]*vfs.Mount),
-		stopProfiling:  stopProfiling,
-		productName:    args.ProductName,
-		cpuQuota:       args.CPUQuota,
-		cpuPeriod:      args.CPUPeriod,
-		hostTHP:        args.HostTHP,
-		containerIDs:   make(map[string]string),
-		containerSpecs: make(map[string]*specs.Spec),
-		failedToStart:  make(map[string]struct{}),
-		saveFDs:        args.SaveFDs,
+		sandboxID:             args.ID,
+		processes:             map[execID]*execProcess{eid: {}},
+		sharedMounts:          make(map[string]*vfs.Mount),
+		stopProfiling:         stopProfiling,
+		productName:           args.ProductName,
+		cpuQuota:              args.CPUQuota,
+		cpuPeriod:             args.CPUPeriod,
+		hostTHP:               args.HostTHP,
+		containerIDs:          make(map[string]string),
+		containerSpecs:        make(map[string]*specs.Spec),
+		failedToStart:         make(map[string]struct{}),
+		saveFDs:               args.SaveFDs,
+		saveCheckpointGofer:   args.SaveCheckpointGofer,
+		fsSaveFDs:             args.FSSaveFDs,
+		fsSaveCheckpointGofer: args.FSSaveCheckpointGofer,
 	}
-	setLoaderFromArgsExtra(l, &args)
 
 	if args.NumCPU == 0 {
 		args.NumCPU = runtime.NumCPU()
@@ -771,6 +788,7 @@ func New(args Args) (*Loader, error) {
 	}
 
 	l.k.RegisterContainerName(args.ID, l.root.containerName)
+	l.k.SetSaver(l)
 
 	// We don't care about child signals; some platforms can generate a
 	// tremendous number of useless ones (I'm looking at you, ptrace).
@@ -2201,6 +2219,17 @@ func (l *Loader) getContainerSpec(containerName string) *specs.Spec {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.containerSpecs[containerName]
+}
+
+// SpecEnviron returns the environment variables for the given container from
+// the container spec it was created with.
+func (l *Loader) SpecEnviron(containerName string) []string {
+	spec := l.getContainerSpec(containerName)
+	if spec == nil {
+		log.Warningf("Container spec not found for container %q", containerName)
+		return nil
+	}
+	return spec.Process.Env
 }
 
 func (l *Loader) containerRuntimeState(cid string) ContainerRuntimeState {

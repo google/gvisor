@@ -12,7 +12,6 @@ go_library(
         "network_unsafe.go",
         "no_xdp.go",
         "sandbox.go",
-        "sandbox_impl.go",
         "xdp.go",
     ],
     visibility = [

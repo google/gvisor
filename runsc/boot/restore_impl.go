@@ -18,19 +18,9 @@
 package boot
 
 import (
-	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/sentry/fsimpl/proc"
 	"gvisor.dev/gvisor/pkg/sentry/state"
-	"gvisor.dev/gvisor/runsc/config"
 )
-
-func newProcInternalData(conf *config.Config, _ *specs.Spec) *proc.InternalData {
-	return &proc.InternalData{
-		GVisorMarkerFile: conf.GVisorMarkerFile,
-		OverrideProcs:    procFiles(conf),
-	}
-}
 
 func (l *Loader) kernelInitExtra(ctx context.Context) {}
 

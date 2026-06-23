@@ -59,7 +59,7 @@ func main() {
 	subcommands.Register(new(taskTreePGID), "")
 	subcommands.Register(new(uds), "")
 	subcommands.Register(new(zombieTest), "")
-	registerSubcommandsExtra()
+	subcommands.Register(new(fsCheckpoint), "")
 
 	flag.Parse()
 
@@ -744,6 +744,49 @@ func (*assertIsEmpty) Execute(ctx context.Context, f *flag.FlagSet, args ...any)
 			names = append(names, e.Name())
 		}
 		log.Fatalf("Directory %q is not empty, contains %d entries: %v", path, len(filteredEntries), names)
+	}
+	return subcommands.ExitSuccess
+}
+
+type fsCheckpoint struct {
+}
+
+// Name implements subcommands.Command.Name.
+func (*fsCheckpoint) Name() string {
+	return "fsCheckpoint"
+}
+
+// Synopsis implements subcommands.Command.Synopsis.
+func (*fsCheckpoint) Synopsis() string {
+	return "trigger filesystem checkpoint via /proc/gvisor/fscheckpoint"
+}
+
+// Usage implements subcommands.Command.Usage.
+func (*fsCheckpoint) Usage() string {
+	return "fsCheckpoint"
+}
+
+// SetFlags implements subcommands.Command.SetFlags.
+func (*fsCheckpoint) SetFlags(f *flag.FlagSet) {
+}
+
+// Execute implements subcommands.Command.Execute.
+func (*fsCheckpoint) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
+	path := "/proc/gvisor/fscheckpoint"
+	file, err := os.OpenFile(path, os.O_RDWR, 0)
+	if err != nil {
+		log.Fatalf("Error opening %s: %v", path, err)
+	}
+	defer file.Close()
+	if n, err := file.WriteString("1"); err != nil {
+		log.Fatalf("Error writing to %s after %d bytes: %v", path, n, err)
+	}
+	res, err := io.ReadAll(file)
+	if err != nil {
+		log.Fatalf("Error reading from %s: %v", path, err)
+	}
+	if !bytes.HasPrefix(res, []byte("resume")) {
+		log.Fatalf("Unexpected read from %s: got %q, want \"resume\"", path, string(res))
 	}
 	return subcommands.ExitSuccess
 }
