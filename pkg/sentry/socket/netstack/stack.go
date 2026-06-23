@@ -434,9 +434,7 @@ func (s *Stack) setLinkLocked(ctx context.Context, id tcpip.NICID, linkAttrs map
 			if err := src.Stack.DisableNIC(id); err != nil {
 				return syserr.TranslateNetstackError(err)
 			}
-			if err := src.removeIPv6Addrs(id, addrs); err != nil {
-				return err
-			}
+			src.removeIPv6Addrs(id, addrs)
 		}
 		changed = true
 	}
@@ -504,7 +502,7 @@ func (s *Stack) addLoopbackAddrs(id tcpip.NICID) *syserr.Error {
 
 // removeIPv6Addrs removes IPv6 addresses from interface id when it is brought
 // down, matching Linux's keep_addr_on_down behavior.
-func (s *Stack) removeIPv6Addrs(id tcpip.NICID, addrs []stack.ProtocolAddressInfo) *syserr.Error {
+func (s *Stack) removeIPv6Addrs(id tcpip.NICID, addrs []stack.ProtocolAddressInfo) {
 	keepAddrOnDown := s.IPv6KeepAddrOnDown()
 	for _, addr := range addrs {
 		if !shouldRemoveIPv6AddrOnDown(addr, keepAddrOnDown) {
@@ -515,10 +513,9 @@ func (s *Stack) removeIPv6Addrs(id tcpip.NICID, addrs []stack.ProtocolAddressInf
 			AddressWithPrefix: addr.AddressWithPrefix,
 		}
 		if err := s.removeInterfaceAddr(id, protocolAddress); err != nil && err != syserr.ErrBadLocalAddress {
-			return err
+			log.Warningf("Failed to remove IPv6 address %s from NIC %d on interface down: %s", protocolAddress.AddressWithPrefix, id, err)
 		}
 	}
-	return nil
 }
 
 func shouldRemoveIPv6AddrOnDown(addr stack.ProtocolAddressInfo, keepAddrOnDown bool) bool {
