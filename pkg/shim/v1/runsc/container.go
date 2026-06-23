@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	cgroups "github.com/containerd/cgroups/v3"
@@ -69,6 +70,24 @@ type Container struct {
 
 	// cgroup is the cgroups mode that is being used by the container.
 	cgroup CgroupMode
+
+	// restoreHostImagePath is an absolute host path containing a gVisor
+	// checkpoint. This is used for Kubernetes sandbox restore: the pod sandbox
+	// must enter runsc's restoring state before workload subcontainers start,
+	// but the workload container is not available when kubelet starts the
+	// sandbox.
+	restoreHostImagePath string
+
+	// restoreDirect controls runsc restore --direct.
+	restoreDirect bool
+
+	// saveRestoreExecArgv, if set, is passed to `runsc checkpoint
+	// --save-restore-exec-argv`: a hook runsc runs inside the sandbox before
+	// saving and after restoring. Sourced from a checkpoint annotation.
+	saveRestoreExecArgv string
+
+	// saveRestoreExecTimeout optionally bounds that hook.
+	saveRestoreExecTimeout time.Duration
 }
 
 // NewContainer returns a new runsc container
@@ -287,6 +306,23 @@ func (c *Container) Start(ctx context.Context, r *task.StartRequest) (extension.
 		return nil, err
 	}
 	return p, nil
+}
+
+// pendingRestore reports whether an init-process Start RPC for this container
+// should be served as a checkpoint restore instead of a cold boot. It is true
+// only for the init process (empty ExecID) of a container created with a
+// gVisor checkpoint annotation whose checkpoint image actually exists on disk;
+// otherwise the container starts normally.
+func (c *Container) pendingRestore(execID string) (string, bool) {
+	if execID != "" || c.restoreHostImagePath == "" {
+		return "", false
+	}
+	stateFile := filepath.Join(c.restoreHostImagePath, "checkpoint.img")
+	if _, err := os.Stat(stateFile); err != nil {
+		log.L.Debugf("pendingRestore: no checkpoint at %s — falling back to normal start", stateFile)
+		return "", false
+	}
+	return c.restoreHostImagePath, true
 }
 
 // Delete the container or a process by id
