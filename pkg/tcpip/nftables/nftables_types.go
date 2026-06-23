@@ -965,6 +965,45 @@ type nftSet struct {
 	dataLen uint8
 	// handle is the NFTables unique identifier for this set.
 	handle uint64
+	// elements represents the stored key-value elements in the set.
+	elements []nftSetElem
+	// catchAllElem is a default element that is used when the key
+	// does not match any of the other elements.
+	catchAllElem *nftSetElem
+}
+
+// dataOrVerdict represents the data or verdict of the set element.
+type dataOrVerdict struct {
+	isVerdict bool
+	verdict   stack.NFVerdict
+	data      []byte
+}
+
+// nftSetElem represents an element in an nftables set.
+// Ref: include/net/netfilter/nf_tables.h:nft_set_elem
+type nftSetElem struct {
+	// startKey represents the lower bound key for the element.
+	// For a simple set, this is the key itself.
+	// For a set range, this is the lower bound of the range.
+	startKey []byte
+	// endKey represents the upper bound key for the element.
+	// Only required for ranged sets.
+	// TODO: b/505409691 - Add support for ranged sets.
+	endKey []byte
+	// data represents the data or verdict of the set element.
+	data dataOrVerdict
+	// ops represents the Nftables ops(counter, limit, etc.)
+	// that are associated with the set element.
+	ops []operation
+	// timeout represents the timeout for the element.
+	// TODO: b/505409691 - Add support for set element timeout.
+	timeout uint64
+	// expiration represents the expiration time of the element.
+	// TODO: b/505409691 - Add support for set element expiration.
+	expiration uint64
+	// userData represents the user data that can be associated with the element.
+	// It's only for the user to see and has no affect on the set element.
+	userData []byte
 }
 
 // AFtoNetlinkAF converts a generic address family to a netfilter address family.
@@ -1181,6 +1220,23 @@ func deepCopyChain(chain *Chain, tableCopy *Table) *Chain {
 	return chainCopy
 }
 
+func deepCopySetElement(elem *nftSetElem) *nftSetElem {
+	elemCopy := &nftSetElem{
+		startKey:   slices.Clone(elem.startKey),
+		endKey:     slices.Clone(elem.endKey),
+		data:       elem.data,
+		timeout:    elem.timeout,
+		expiration: elem.expiration,
+		ops:        make([]operation, 0, len(elem.ops)),
+		userData:   slices.Clone(elem.userData),
+	}
+	elemCopy.data.data = slices.Clone(elem.data.data)
+	for _, op := range elem.ops {
+		elemCopy.ops = append(elemCopy.ops, op.deepCopy())
+	}
+	return elemCopy
+}
+
 // deepCopySet returns a deep copy of the Set struct.
 func deepCopySet(set *nftSet) *nftSet {
 	setCopy := &nftSet{
@@ -1202,6 +1258,14 @@ func deepCopySet(set *nftSet) *nftSet {
 		keyLen:     set.keyLen,
 		dataLen:    set.dataLen,
 		handle:     set.handle,
+	}
+	if set.catchAllElem != nil {
+		setCopy.catchAllElem = deepCopySetElement(set.catchAllElem)
+	}
+	setCopy.elements = make([]nftSetElem, 0, len(set.elements))
+	for _, elem := range set.elements {
+		elemCopy := deepCopySetElement(&elem)
+		setCopy.elements = append(setCopy.elements, *elemCopy)
 	}
 
 	return setCopy

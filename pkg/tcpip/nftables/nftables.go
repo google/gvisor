@@ -1375,7 +1375,7 @@ func (r *Rule) AddOpFromExprInfo(tab *Table, exprInfo ExprInfo) *syserr.Annotate
 			return err
 		}
 	case OpTypeCounter:
-		if op, err = initCounter(tab, exprInfo); err != nil {
+		if op, err = initCounter(exprInfo); err != nil {
 			return err
 		}
 	case OpTypeNAT:
