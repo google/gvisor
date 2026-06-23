@@ -912,6 +912,29 @@ var netlinkAFToStackAF = map[uint8]stack.AddressFamily{
 	linux.NFPROTO_IPV6:   stack.IP6,
 }
 
+// NftSetBackend is an interface for handling set operations.
+type NftSetBackend interface {
+	// Evaluate returns the index of the element in the set if found, otherwise -1.
+	// keyIdx is the index of the key in the register set.
+	Evaluate(regs *registerSet, keyIdx int) int
+
+	// Find returns the index of the element given the raw key data, otherwise -1.
+	Find(key []byte) int
+
+	// Add inserts an element to the set and returns the insertion index.
+	// If the element already exists,
+	// it returns the index of the existing element.
+	Add(e *nftSetElem, idx int) (int, *syserr.AnnotatedError)
+
+	// Remove removes an element from the set and returns the index of the
+	// removed element.
+	// If the element does not exist, it returns -1.
+	Remove(e *nftSetElem) (int, *syserr.AnnotatedError)
+
+	// Clone returns a copy of the set backend.
+	Clone() NftSetBackend
+}
+
 // Set represents an nftables set.
 // Ref: include/net/netfilter/nf_tables.h:nft_set
 type nftSet struct {
@@ -970,6 +993,8 @@ type nftSet struct {
 	// catchAllElem is a default element that is used when the key
 	// does not match any of the other elements.
 	catchAllElem *nftSetElem
+	// backend represents the backend object that handles the set operations.
+	backend NftSetBackend
 }
 
 // dataOrVerdict represents the data or verdict of the set element.
@@ -1258,6 +1283,7 @@ func deepCopySet(set *nftSet) *nftSet {
 		keyLen:     set.keyLen,
 		dataLen:    set.dataLen,
 		handle:     set.handle,
+		backend:    set.backend.Clone(),
 	}
 	if set.catchAllElem != nil {
 		setCopy.catchAllElem = deepCopySetElement(set.catchAllElem)

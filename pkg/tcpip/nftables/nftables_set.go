@@ -466,6 +466,7 @@ func (nf *NFTables) NewSet(attrs map[uint16]nlmsg.BytesView, family stack.Addres
 		return syserr.NewAnnotatedError(syserr.ErrNotSupported, "only map sets are supported yet")
 	}
 
+	newSet.backend = nf.newSetMapBackend(int(keyLen), int(dataLen))
 	return nf.addSetToTable(tab, newSet)
 }
 
@@ -563,6 +564,7 @@ func (nf *NFTables) parseElemDataAttr(tab *Table, set *nftSet, dataAttrs nlmsg.B
 		// TODO: b/505409691 - Fix this check for vmaps.
 		log.Warningf("Unimplemented: vmap verification is not supported yet; assuming it is valid.")
 	}
+
 	dv.data = dataValue
 	dv.verdict = verdict
 	dv.isVerdict = dataType == linux.NFT_DATA_VERDICT
@@ -596,6 +598,31 @@ func (s *nftSet) addCatchAllElement(elem *nftSetElem, msgFlags uint16) *syserr.A
 		return nil
 	}
 	return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "catchall element already exists and is not the same")
+}
+
+// commitElement adds a set element to the set backend.
+func (s *nftSet) commitElement(elem *nftSetElem, msgFlags uint16) *syserr.AnnotatedError {
+	sb := s.backend
+	newIdx := len(s.elements)
+	existingIdx, err := sb.Add(elem, newIdx)
+	if err != nil {
+		return err
+	}
+	// Element was added successfully and no duplicate was found.
+	if existingIdx == newIdx {
+		s.elements = append(s.elements, *elem)
+		return nil
+	}
+	// Handle existing element.
+	if msgFlags&linux.NLM_F_EXCL != 0 {
+		return err
+	}
+	// if NLM_F_EXCL is not set, element should not conflict.
+	existingElem := &s.elements[existingIdx]
+	if !existingElem.conflicts(elem) {
+		return nil
+	}
+	return syserr.NewAnnotatedError(syserr.ErrExists, "set element already exists")
 }
 
 // addElemToSet adds a set element to a set.
@@ -781,8 +808,7 @@ func (nf *NFTables) addElemToSet(tab *Table, set *nftSet, elemAttrs map[uint16]n
 	if flag&linux.NFT_SET_ELEM_CATCHALL != 0 {
 		return set.addCatchAllElement(&newSetElem, msgFlags)
 	}
-	set.elements = append(set.elements, newSetElem)
-	return nil
+	return set.commitElement(&newSetElem, msgFlags)
 }
 
 // addElemListToSet adds a list of elements to a set.
@@ -841,4 +867,86 @@ func (nf *NFTables) NewSetElements(attrs map[uint16]nlmsg.BytesView, family stac
 		return err
 	}
 	return nil
+}
+
+// Add set backend implementations below.
+
+// setMapBackend is a backend to handle map operations.
+type setMapBackend struct {
+	keyLen  int
+	dataLen int
+	m       map[string]int
+}
+
+// Lookup implements NftSetBackend.Lookup.
+// The key-register length access should be validated during the set creation.
+func (s *setMapBackend) Evaluate(regs *registerSet, keyIdx int) int {
+	v, ok := s.m[string(regs.data[keyIdx:keyIdx+s.keyLen])]
+	if !ok {
+		return -1
+	}
+	return v
+}
+
+// Find implements NftSetBackend.Find.
+func (s *setMapBackend) Find(keyData []byte) int {
+	if len(keyData) != s.keyLen {
+		return -1
+	}
+	v, ok := s.m[string(keyData)]
+	if !ok {
+		return -1
+	}
+	return v
+}
+
+// Add implements NftSetBackend.Add.
+func (s *setMapBackend) Add(e *nftSetElem, idx int) (int, *syserr.AnnotatedError) {
+	if e == nil {
+		return -1, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "element is nil")
+	}
+	if len(e.startKey) != s.keyLen {
+		return -1, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "key length does not match set key length")
+	}
+	key := string(e.startKey)
+	if v, ok := s.m[key]; ok {
+		return v, nil
+	}
+	s.m[key] = idx
+	return idx, nil
+}
+
+// Remove implements NftSetBackend.Remove.
+func (s *setMapBackend) Remove(e *nftSetElem) (int, *syserr.AnnotatedError) {
+	if e == nil {
+		return -1, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "element is nil")
+	}
+	key := string(e.startKey)
+	if v, ok := s.m[key]; ok {
+		delete(s.m, key)
+		return v, nil
+	}
+	return -1, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "key not found")
+}
+
+// Clone implements NftSetBackend.Clone.
+func (s *setMapBackend) Clone() NftSetBackend {
+	mCopy := make(map[string]int, len(s.m))
+	for k, v := range s.m {
+		mCopy[k] = v
+	}
+	return &setMapBackend{
+		keyLen:  s.keyLen,
+		dataLen: s.dataLen,
+		m:       mCopy,
+	}
+}
+
+// newSetMapBackend creates a new map backend.
+func (nf *NFTables) newSetMapBackend(keyLen int, dataLen int) *setMapBackend {
+	return &setMapBackend{
+		keyLen:  keyLen,
+		dataLen: dataLen,
+		m:       make(map[string]int),
+	}
 }
