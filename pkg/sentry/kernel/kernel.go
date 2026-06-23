@@ -211,6 +211,14 @@ type Kernel struct {
 	// further protected by runningTasksMu (see incRunningTasks).
 	runningTasks atomicbitops.Int64
 
+	// blockedTasks is the total count of tasks currently in
+	// TaskGoroutineBlockedUninterruptible, i.e. uninterruptible sleep. It is
+	// used to implement procs_blocked in /proc/stat.
+	//
+	// blockedTasks must be accessed atomically. It is not saved; on restore it
+	// is repopulated as tasks re-enter uninterruptible sleep.
+	blockedTasks atomicbitops.Int64 `state:"nosave"`
+
 	// runningTasksCond is signaled when runningTasks is incremented from 0 to 1.
 	//
 	// Invariant: runningTasksCond.L == &runningTasksMu.
@@ -242,6 +250,20 @@ type Kernel struct {
 	// does not use ktime.SyntheticClock since this clock currently does not
 	// need to support timers.
 	cpuClock atomicbitops.Int64
+
+	// userCPUClock and userSysCPUClock are kernel-wide cumulative CPU time
+	// accumulators, in nanoseconds, advanced by the CPU clock ticker as it
+	// accounts ticks to running tasks. userCPUClock mirrors the sum of all
+	// tasks' Task.appCPUClock (i.e. application/user time), while
+	// userSysCPUClock mirrors the sum of all tasks' Task.appSysCPUClock (i.e.
+	// application+sentry time). System time is the difference of the two. Like
+	// the per-task clocks, these are never decremented, so they also include
+	// the CPU time of exited tasks. They are used to implement the aggregate
+	// CPU line in /proc/stat (see Kernel.CPUStats).
+	//
+	// userCPUClock and userSysCPUClock must be accessed atomically.
+	userCPUClock    atomicbitops.Int64
+	userSysCPUClock atomicbitops.Int64
 
 	// uniqueID is used to generate unique identifiers.
 	//
@@ -1555,6 +1577,20 @@ func (k *Kernel) decRunningTasks() {
 	// there is still nothing running. This provides approximately one tick
 	// of slack in which we can switch back and forth between idle and
 	// active without an expensive transition.
+}
+
+// RunningTasks returns the number of tasks currently in
+// TaskGoroutineRunningSys or TaskGoroutineRunningApp, i.e. the number of
+// runnable tasks. It is used to implement procs_running in /proc/stat.
+func (k *Kernel) RunningTasks() int64 {
+	return k.runningTasks.Load()
+}
+
+// BlockedTasks returns the number of tasks currently in
+// TaskGoroutineBlockedUninterruptible, i.e. uninterruptible sleep. It is used
+// to implement procs_blocked in /proc/stat.
+func (k *Kernel) BlockedTasks() int64 {
+	return k.blockedTasks.Load()
 }
 
 // WaitExited blocks until all tasks in k have exited. No tasks can be created

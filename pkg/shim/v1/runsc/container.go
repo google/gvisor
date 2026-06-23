@@ -406,6 +406,15 @@ func (c *Container) Restore(ctx context.Context, r *extension.RestoreRequest) (e
 	return p, nil
 }
 
+// CheckpointSandbox checkpoints the sandbox.
+func (c *Container) CheckpointSandbox(ctx context.Context, opts *runsccmd.CheckpointOpts) error {
+	p, err := c.Process("")
+	if err != nil {
+		return err
+	}
+	return p.(*proc.Init).CheckpointSandbox(ctx, opts)
+}
+
 // Stats returns the stats for the container.
 func (c *Container) Stats(ctx context.Context) (*task.StatsResponse, error) {
 	p, err := c.Process("")

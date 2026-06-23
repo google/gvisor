@@ -275,6 +275,18 @@ func (p *Init) Restore(ctx context.Context, conf *extension.RestoreConfig) error
 	return p.initState.Start(ctx, conf)
 }
 
+// CheckpointSandbox checkpoints the sandbox.
+func (p *Init) CheckpointSandbox(ctx context.Context, opts *runsccmd.CheckpointOpts) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	return p.initState.CheckpointSandbox(ctx, opts)
+}
+
+func (p *Init) checkpointSandbox(ctx context.Context, opts *runsccmd.CheckpointOpts) error {
+	return p.runtime.Checkpoint(ctx, p.id, opts)
+}
+
 // SetExited set the exit status of the init process.
 func (p *Init) SetExited(status int) {
 	p.mu.Lock()

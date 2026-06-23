@@ -8,6 +8,247 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (f *checkpointInode) StateTypeName() string {
+	return "pkg/sentry/fsimpl/proc.checkpointInode"
+}
+
+func (f *checkpointInode) StateFields() []string {
+	return []string{
+		"InodeAttrs",
+		"InodeNoStatFS",
+		"fdInfoDirInodeRefs",
+		"InodeTemporary",
+		"InodeNotAnonymous",
+		"InodeNotDirectory",
+		"InodeNotSymlink",
+		"InodeWatches",
+		"InodeFSOwned",
+		"locks",
+		"k",
+		"rdevMajor",
+		"saveTriggerEnabled",
+	}
+}
+
+func (f *checkpointInode) beforeSave() {}
+
+// +checklocksignore
+func (f *checkpointInode) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.InodeAttrs)
+	stateSinkObject.Save(1, &f.InodeNoStatFS)
+	stateSinkObject.Save(2, &f.fdInfoDirInodeRefs)
+	stateSinkObject.Save(3, &f.InodeTemporary)
+	stateSinkObject.Save(4, &f.InodeNotAnonymous)
+	stateSinkObject.Save(5, &f.InodeNotDirectory)
+	stateSinkObject.Save(6, &f.InodeNotSymlink)
+	stateSinkObject.Save(7, &f.InodeWatches)
+	stateSinkObject.Save(8, &f.InodeFSOwned)
+	stateSinkObject.Save(9, &f.locks)
+	stateSinkObject.Save(10, &f.k)
+	stateSinkObject.Save(11, &f.rdevMajor)
+	stateSinkObject.Save(12, &f.saveTriggerEnabled)
+}
+
+func (f *checkpointInode) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (f *checkpointInode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.InodeAttrs)
+	stateSourceObject.Load(1, &f.InodeNoStatFS)
+	stateSourceObject.Load(2, &f.fdInfoDirInodeRefs)
+	stateSourceObject.Load(3, &f.InodeTemporary)
+	stateSourceObject.Load(4, &f.InodeNotAnonymous)
+	stateSourceObject.Load(5, &f.InodeNotDirectory)
+	stateSourceObject.Load(6, &f.InodeNotSymlink)
+	stateSourceObject.Load(7, &f.InodeWatches)
+	stateSourceObject.Load(8, &f.InodeFSOwned)
+	stateSourceObject.Load(9, &f.locks)
+	stateSourceObject.Load(10, &f.k)
+	stateSourceObject.Load(11, &f.rdevMajor)
+	stateSourceObject.Load(12, &f.saveTriggerEnabled)
+}
+
+func (fd *checkpointFD) StateTypeName() string {
+	return "pkg/sentry/fsimpl/proc.checkpointFD"
+}
+
+func (fd *checkpointFD) StateFields() []string {
+	return []string{
+		"vfsfd",
+		"FileDescriptionDefaultImpl",
+		"NoLockFD",
+		"k",
+		"inode",
+		"countToWaitFor",
+		"waiters",
+		"result",
+		"off",
+	}
+}
+
+func (fd *checkpointFD) beforeSave() {}
+
+// +checklocksignore
+func (fd *checkpointFD) StateSave(stateSinkObject state.Sink) {
+	fd.beforeSave()
+	stateSinkObject.Save(0, &fd.vfsfd)
+	stateSinkObject.Save(1, &fd.FileDescriptionDefaultImpl)
+	stateSinkObject.Save(2, &fd.NoLockFD)
+	stateSinkObject.Save(3, &fd.k)
+	stateSinkObject.Save(4, &fd.inode)
+	stateSinkObject.Save(5, &fd.countToWaitFor)
+	stateSinkObject.Save(6, &fd.waiters)
+	stateSinkObject.Save(7, &fd.result)
+	stateSinkObject.Save(8, &fd.off)
+}
+
+// +checklocksignore
+func (fd *checkpointFD) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &fd.vfsfd)
+	stateSourceObject.Load(1, &fd.FileDescriptionDefaultImpl)
+	stateSourceObject.Load(2, &fd.NoLockFD)
+	stateSourceObject.Load(3, &fd.k)
+	stateSourceObject.Load(4, &fd.inode)
+	stateSourceObject.Load(5, &fd.countToWaitFor)
+	stateSourceObject.Load(6, &fd.waiters)
+	stateSourceObject.Load(7, &fd.result)
+	stateSourceObject.Load(8, &fd.off)
+	stateSourceObject.AfterLoad(func() { fd.afterLoad(ctx) })
+}
+
+func (r *specEnvironData) StateTypeName() string {
+	return "pkg/sentry/fsimpl/proc.specEnvironData"
+}
+
+func (r *specEnvironData) StateFields() []string {
+	return []string{
+		"dynamicBytesFileSetAttr",
+		"k",
+	}
+}
+
+func (r *specEnvironData) beforeSave() {}
+
+// +checklocksignore
+func (r *specEnvironData) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.dynamicBytesFileSetAttr)
+	stateSinkObject.Save(1, &r.k)
+}
+
+func (r *specEnvironData) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (r *specEnvironData) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.dynamicBytesFileSetAttr)
+	stateSourceObject.Load(1, &r.k)
+}
+
+func (i *fsCheckpointInode) StateTypeName() string {
+	return "pkg/sentry/fsimpl/proc.fsCheckpointInode"
+}
+
+func (i *fsCheckpointInode) StateFields() []string {
+	return []string{
+		"InodeAttrs",
+		"InodeNoStatFS",
+		"fdInfoDirInodeRefs",
+		"InodeTemporary",
+		"InodeNotAnonymous",
+		"InodeNotDirectory",
+		"InodeNotSymlink",
+		"InodeWatches",
+		"InodeFSOwned",
+		"locks",
+		"k",
+		"rdevMajor",
+	}
+}
+
+func (i *fsCheckpointInode) beforeSave() {}
+
+// +checklocksignore
+func (i *fsCheckpointInode) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.InodeAttrs)
+	stateSinkObject.Save(1, &i.InodeNoStatFS)
+	stateSinkObject.Save(2, &i.fdInfoDirInodeRefs)
+	stateSinkObject.Save(3, &i.InodeTemporary)
+	stateSinkObject.Save(4, &i.InodeNotAnonymous)
+	stateSinkObject.Save(5, &i.InodeNotDirectory)
+	stateSinkObject.Save(6, &i.InodeNotSymlink)
+	stateSinkObject.Save(7, &i.InodeWatches)
+	stateSinkObject.Save(8, &i.InodeFSOwned)
+	stateSinkObject.Save(9, &i.locks)
+	stateSinkObject.Save(10, &i.k)
+	stateSinkObject.Save(11, &i.rdevMajor)
+}
+
+func (i *fsCheckpointInode) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (i *fsCheckpointInode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.InodeAttrs)
+	stateSourceObject.Load(1, &i.InodeNoStatFS)
+	stateSourceObject.Load(2, &i.fdInfoDirInodeRefs)
+	stateSourceObject.Load(3, &i.InodeTemporary)
+	stateSourceObject.Load(4, &i.InodeNotAnonymous)
+	stateSourceObject.Load(5, &i.InodeNotDirectory)
+	stateSourceObject.Load(6, &i.InodeNotSymlink)
+	stateSourceObject.Load(7, &i.InodeWatches)
+	stateSourceObject.Load(8, &i.InodeFSOwned)
+	stateSourceObject.Load(9, &i.locks)
+	stateSourceObject.Load(10, &i.k)
+	stateSourceObject.Load(11, &i.rdevMajor)
+}
+
+func (f *fsCheckpointFile) StateTypeName() string {
+	return "pkg/sentry/fsimpl/proc.fsCheckpointFile"
+}
+
+func (f *fsCheckpointFile) StateFields() []string {
+	return []string{
+		"vfsfd",
+		"FileDescriptionDefaultImpl",
+		"DentryMetadataFileDescriptionImpl",
+		"NoLockFD",
+		"k",
+		"inode",
+		"q",
+		"resultSaved",
+		"off",
+	}
+}
+
+// +checklocksignore
+func (f *fsCheckpointFile) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.vfsfd)
+	stateSinkObject.Save(1, &f.FileDescriptionDefaultImpl)
+	stateSinkObject.Save(2, &f.DentryMetadataFileDescriptionImpl)
+	stateSinkObject.Save(3, &f.NoLockFD)
+	stateSinkObject.Save(4, &f.k)
+	stateSinkObject.Save(5, &f.inode)
+	stateSinkObject.Save(6, &f.q)
+	stateSinkObject.Save(7, &f.resultSaved)
+	stateSinkObject.Save(8, &f.off)
+}
+
+// +checklocksignore
+func (f *fsCheckpointFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.vfsfd)
+	stateSourceObject.Load(1, &f.FileDescriptionDefaultImpl)
+	stateSourceObject.Load(2, &f.DentryMetadataFileDescriptionImpl)
+	stateSourceObject.Load(3, &f.NoLockFD)
+	stateSourceObject.Load(4, &f.k)
+	stateSourceObject.Load(5, &f.inode)
+	stateSourceObject.Load(6, &f.q)
+	stateSourceObject.Load(7, &f.resultSaved)
+	stateSourceObject.Load(8, &f.off)
+	stateSourceObject.AfterLoad(func() { f.afterLoad(ctx) })
+}
+
 func (r *fdDirInodeRefs) StateTypeName() string {
 	return "pkg/sentry/fsimpl/proc.fdDirInodeRefs"
 }
@@ -139,7 +380,9 @@ func (i *InternalData) StateTypeName() string {
 
 func (i *InternalData) StateFields() []string {
 	return []string{
-		"ExtraInternalData",
+		"AppDrivenCheckpointEnabled",
+		"SaveTriggerEnabled",
+		"FSCheckpointEnabled",
 		"GVisorMarkerFile",
 		"OverrideProcs",
 		"Cgroups",
@@ -151,20 +394,24 @@ func (i *InternalData) beforeSave() {}
 // +checklocksignore
 func (i *InternalData) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
-	stateSinkObject.Save(0, &i.ExtraInternalData)
-	stateSinkObject.Save(1, &i.GVisorMarkerFile)
-	stateSinkObject.Save(2, &i.OverrideProcs)
-	stateSinkObject.Save(3, &i.Cgroups)
+	stateSinkObject.Save(0, &i.AppDrivenCheckpointEnabled)
+	stateSinkObject.Save(1, &i.SaveTriggerEnabled)
+	stateSinkObject.Save(2, &i.FSCheckpointEnabled)
+	stateSinkObject.Save(3, &i.GVisorMarkerFile)
+	stateSinkObject.Save(4, &i.OverrideProcs)
+	stateSinkObject.Save(5, &i.Cgroups)
 }
 
 func (i *InternalData) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (i *InternalData) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &i.ExtraInternalData)
-	stateSourceObject.Load(1, &i.GVisorMarkerFile)
-	stateSourceObject.Load(2, &i.OverrideProcs)
-	stateSourceObject.Load(3, &i.Cgroups)
+	stateSourceObject.Load(0, &i.AppDrivenCheckpointEnabled)
+	stateSourceObject.Load(1, &i.SaveTriggerEnabled)
+	stateSourceObject.Load(2, &i.FSCheckpointEnabled)
+	stateSourceObject.Load(3, &i.GVisorMarkerFile)
+	stateSourceObject.Load(4, &i.OverrideProcs)
+	stateSourceObject.Load(5, &i.Cgroups)
 }
 
 func (i *implStatFS) StateTypeName() string {
@@ -2851,6 +3098,11 @@ func (s *yamaPtraceScope) StateLoad(ctx context.Context, stateSourceObject state
 }
 
 func init() {
+	state.Register((*checkpointInode)(nil))
+	state.Register((*checkpointFD)(nil))
+	state.Register((*specEnvironData)(nil))
+	state.Register((*fsCheckpointInode)(nil))
+	state.Register((*fsCheckpointFile)(nil))
 	state.Register((*fdDirInodeRefs)(nil))
 	state.Register((*fdInfoDirInodeRefs)(nil))
 	state.Register((*FilesystemType)(nil))
