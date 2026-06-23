@@ -113,6 +113,18 @@ func (s *Stack) Configure(allowRawSockets bool) error {
 		s.netSNMPFile = f
 	}
 
+	// keep_addr_on_down is >0 when enabled, and 0 (system default) or <0 when
+	// disabled.
+	if contents, err := os.ReadFile("/proc/sys/net/ipv6/conf/all/keep_addr_on_down"); err == nil {
+		if ipv6KeepAddrOnDown, err := strconv.Atoi(strings.TrimSpace(string(contents))); err == nil {
+			s.ipv6KeepAddrOnDown = ipv6KeepAddrOnDown > 0
+		} else {
+			log.Warningf("Failed to parse IPv6 keep_addr_on_down, setting to false")
+		}
+	} else {
+		log.Warningf("Failed to read IPv6 keep_addr_on_down, setting to false")
+	}
+
 	s.allowedSocketTypes = AllowedSocketTypes
 	if allowRawSockets {
 		s.allowedSocketTypes = append(s.allowedSocketTypes, AllowedRawSocketTypes...)
