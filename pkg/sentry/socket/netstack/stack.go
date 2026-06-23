@@ -493,6 +493,9 @@ var loopbackAddrs = []tcpip.ProtocolAddress{
 // An address that is already assigned (ErrDuplicateAddress) is left as it is.
 func (s *Stack) addLoopbackAddrs(id tcpip.NICID) *syserr.Error {
 	for _, pa := range loopbackAddrs {
+		if pa.Protocol == ipv6.ProtocolNumber && !s.SupportsIPv6() {
+			continue
+		}
 		if err := s.addInterfaceAddr(id, pa); err != nil && err != syserr.ErrDuplicateAddress {
 			return err
 		}
