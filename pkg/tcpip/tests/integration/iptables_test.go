@@ -3541,6 +3541,203 @@ func TestRejectWith(t *testing.T) {
 	}
 }
 
+// Validates that the matched packets get actively aborted
+// (with a valid TCP Reset packet).
+// Unmatched packets (e.g. wrong protocols, subsequent fragments) are silently
+// ignored and generate no TCP Reset packet.
+func TestRejectWithTCPReset(t *testing.T) {
+	tests := []struct {
+		name       string
+		netProto   tcpip.NetworkProtocolNumber
+		srcAddr    tcpip.Address
+		dstAddr    tcpip.Address
+		rejectWith int
+		genTCP     func(src, dst tcpip.Address) *stack.PacketBuffer
+		wantReset  bool
+	}{
+		{
+			name:       "IPv4",
+			netProto:   header.IPv4ProtocolNumber,
+			srcAddr:    utils.Host1IPv4Addr.AddressWithPrefix.Address,
+			dstAddr:    utils.RouterNIC1IPv4Addr.AddressWithPrefix.Address,
+			rejectWith: int(stack.RejectIPv4WithTCPReset),
+			genTCP: func(src, dst tcpip.Address) *stack.PacketBuffer {
+				return genTCP4WithOpts(tcpOpts{
+					srcAddr:    src,
+					dstAddr:    dst,
+					seq:        100,
+					flags:      header.TCPFlagSyn,
+					pktSize:    header.IPv4MinimumSize + header.TCPMinimumSize,
+					dataOffset: header.TCPMinimumSize,
+				})
+			},
+			wantReset: true,
+		},
+		{
+			name:       "IPv6",
+			netProto:   header.IPv6ProtocolNumber,
+			srcAddr:    utils.Host1IPv6Addr.AddressWithPrefix.Address,
+			dstAddr:    utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address,
+			rejectWith: int(stack.RejectIPv6WithTCPReset),
+			genTCP: func(src, dst tcpip.Address) *stack.PacketBuffer {
+				return genTCP6WithOpts(tcpOpts{
+					srcAddr:    src,
+					dstAddr:    dst,
+					seq:        100,
+					flags:      header.TCPFlagSyn,
+					pktSize:    header.IPv6MinimumSize + header.TCPMinimumSize,
+					dataOffset: header.TCPMinimumSize,
+				})
+			},
+			wantReset: true,
+		},
+		{
+			name:       "IPv6 First Fragment",
+			netProto:   header.IPv6ProtocolNumber,
+			srcAddr:    utils.Host1IPv6Addr.AddressWithPrefix.Address,
+			dstAddr:    utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address,
+			rejectWith: int(stack.RejectIPv6WithTCPReset),
+			genTCP: func(src, dst tcpip.Address) *stack.PacketBuffer {
+				return genTCP6WithOpts(tcpOpts{
+					srcAddr:        src,
+					dstAddr:        dst,
+					seq:            100,
+					flags:          header.TCPFlagSyn,
+					pktSize:        header.IPv6MinimumSize + header.IPv6FragmentExtHdrLength + header.TCPMinimumSize,
+					dataOffset:     header.TCPMinimumSize,
+					fragmentOffset: 0,
+					more:           true,
+				})
+			},
+			wantReset: true,
+		},
+		{
+			name:       "IPv6 Subsequent Fragment",
+			netProto:   header.IPv6ProtocolNumber,
+			srcAddr:    utils.Host1IPv6Addr.AddressWithPrefix.Address,
+			dstAddr:    utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address,
+			rejectWith: int(stack.RejectIPv6WithTCPReset),
+			genTCP: func(src, dst tcpip.Address) *stack.PacketBuffer {
+				return genTCP6WithOpts(tcpOpts{
+					srcAddr:        src,
+					dstAddr:        dst,
+					seq:            100,
+					flags:          header.TCPFlagSyn,
+					pktSize:        header.IPv6MinimumSize + header.IPv6FragmentExtHdrLength + header.TCPMinimumSize,
+					dataOffset:     header.TCPMinimumSize,
+					fragmentOffset: 8,
+					more:           true,
+				})
+			},
+			wantReset: false,
+		},
+		{
+			name:       "IPv4 Subsequent Fragment",
+			netProto:   header.IPv4ProtocolNumber,
+			srcAddr:    utils.Host1IPv4Addr.AddressWithPrefix.Address,
+			dstAddr:    utils.RouterNIC1IPv4Addr.AddressWithPrefix.Address,
+			rejectWith: int(stack.RejectIPv4WithTCPReset),
+			genTCP: func(src, dst tcpip.Address) *stack.PacketBuffer {
+				return genTCP4WithOpts(tcpOpts{
+					srcAddr:        src,
+					dstAddr:        dst,
+					seq:            100,
+					flags:          header.TCPFlagSyn,
+					pktSize:        header.IPv4MinimumSize + header.TCPMinimumSize,
+					dataOffset:     header.TCPMinimumSize,
+					fragmentOffset: 8,
+				})
+			},
+			wantReset: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol, tcp.NewProtocol},
+			})
+			defer s.Destroy()
+
+			ep1 := channel.New(1, header.IPv6MinimumMTU, "")
+			ep1.LinkEPCapabilities = stack.CapabilityRXChecksumOffload
+			ep2 := channel.New(1, header.IPv6MinimumMTU, "")
+			utils.SetupRouterStack(t, s, ep1, ep2)
+
+			// Add a rule in the INPUT chain to reject TCP packets.
+			ipv6 := test.netProto == ipv6.ProtocolNumber
+			ipt := s.IPTables()
+			filter := ipt.GetTable(stack.FilterID, ipv6)
+			ruleIdx := filter.BuiltinChains[stack.Input]
+
+			// Setup reject target.
+			var rejectTarget stack.Target
+			netInst := s.NetworkProtocolInstance(test.netProto)
+			if test.netProto == ipv4.ProtocolNumber {
+				rejectTarget = &stack.RejectIPv4Target{
+					Handler:    netInst.(stack.RejectIPv4WithHandler),
+					RejectWith: stack.RejectIPv4WithICMPType(test.rejectWith),
+				}
+			} else {
+				rejectTarget = &stack.RejectIPv6Target{
+					Handler:    netInst.(stack.RejectIPv6WithHandler),
+					RejectWith: stack.RejectIPv6WithICMPType(test.rejectWith),
+				}
+			}
+			filter.Rules[ruleIdx].Target = rejectTarget
+
+			// Make sure the packet is not dropped by the next rule.
+			filter.Rules[ruleIdx+1].Target = &stack.AcceptTarget{}
+			ipt.ForceReplaceTable(stack.FilterID, filter, ipv6)
+
+			// Inject a TCP packet.
+			pkt := test.genTCP(test.srcAddr, test.dstAddr)
+			pkt.RXChecksumValidated = true
+			defer pkt.DecRef()
+			ep1.InjectInbound(test.netProto, pkt)
+
+			// Read the reset packet.
+			rstPkt := ep1.Read()
+			if !test.wantReset {
+				if rstPkt != nil {
+					t.Fatalf("expected no reset packet, but got one: %#v", rstPkt)
+				}
+				return
+			}
+			if rstPkt == nil {
+				t.Fatal("expected to read a TCP Reset packet on ep1")
+			}
+			defer rstPkt.DecRef()
+
+			payload := stack.PayloadSince(rstPkt.NetworkHeader())
+			defer payload.Release()
+
+			if test.netProto == ipv4.ProtocolNumber {
+				checker.IPv4(t, payload,
+					checker.SrcAddr(test.dstAddr),
+					checker.DstAddr(test.srcAddr),
+					checker.TCP(
+						checker.TCPFlags(header.TCPFlagRst|header.TCPFlagAck),
+						checker.TCPAckNum(101),
+						checker.TCPSeqNum(0),
+					),
+				)
+			} else {
+				checker.IPv6(t, payload,
+					checker.SrcAddr(test.dstAddr),
+					checker.DstAddr(test.srcAddr),
+					checker.TCP(
+						checker.TCPFlags(header.TCPFlagRst|header.TCPFlagAck),
+						checker.TCPAckNum(101),
+						checker.TCPSeqNum(0),
+					),
+				)
+			}
+		})
+	}
+}
+
 // TestInvalidTransportHeader tests that bad transport headers (with a bad
 // length/offset field) don't panic.
 func TestInvalidTransportHeader(t *testing.T) {
@@ -3615,30 +3812,48 @@ func TestInvalidTransportHeader(t *testing.T) {
 	}
 }
 
-func genTCP4(offset int8) *stack.PacketBuffer {
-	pktSize := header.IPv4MinimumSize + header.TCPMinimumSize
+type tcpOpts struct {
+	offset         int8
+	flags          header.TCPFlags
+	seq            uint32
+	ack            uint32
+	checksum       *uint16
+	srcAddr        tcpip.Address
+	dstAddr        tcpip.Address
+	pktSize        int
+	dataOffset     uint8
+	fragmentOffset uint16
+	more           bool
+}
+
+func genTCP4WithOpts(opts tcpOpts) *stack.PacketBuffer {
+	pktSize := opts.pktSize
 	hdr := prependable.New(pktSize)
 
 	tcp := header.TCP(hdr.Prepend(header.TCPMinimumSize))
 	tcp.Encode(&header.TCPFields{
-		SeqNum:     0,
-		AckNum:     0,
-		DataOffset: header.TCPMinimumSize + uint8(offset)*4, // DataOffset must be a multiple of 4.
-		Flags:      header.TCPFlagSyn,
-		Checksum:   0,
+		SeqNum:     opts.seq,
+		AckNum:     opts.ack,
+		DataOffset: opts.dataOffset, // DataOffset must be a multiple of 4.
+		Flags:      opts.flags,
 	})
+	if opts.checksum != nil {
+		tcp.SetChecksum(*opts.checksum)
+	} else {
+		xsum := header.PseudoHeaderChecksum(header.TCPProtocolNumber, opts.srcAddr, opts.dstAddr, header.TCPMinimumSize)
+		tcp.SetChecksum(0)
+		tcp.SetChecksum(^tcp.CalculateChecksum(xsum))
+	}
 
 	ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
 	ip.Encode(&header.IPv4Fields{
-		TOS:            0,
 		TotalLength:    uint16(pktSize),
 		ID:             1,
-		Flags:          0,
-		FragmentOffset: 0,
+		FragmentOffset: opts.fragmentOffset,
 		TTL:            48,
 		Protocol:       uint8(header.TCPProtocolNumber),
-		SrcAddr:        srcAddrV4,
-		DstAddr:        dstAddrV4,
+		SrcAddr:        opts.srcAddr,
+		DstAddr:        opts.dstAddr,
 	})
 	ip.SetChecksum(0)
 	ip.SetChecksum(^ip.CalculateChecksum())
@@ -3647,30 +3862,72 @@ func genTCP4(offset int8) *stack.PacketBuffer {
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buf})
 }
 
-func genTCP6(offset int8) *stack.PacketBuffer {
-	pktSize := header.IPv6MinimumSize + header.TCPMinimumSize
+func genTCP6WithOpts(opts tcpOpts) *stack.PacketBuffer {
+	pktSize := opts.pktSize
 	hdr := prependable.New(pktSize)
 
 	tcp := header.TCP(hdr.Prepend(header.TCPMinimumSize))
 	tcp.Encode(&header.TCPFields{
-		SeqNum:     0,
-		AckNum:     0,
-		DataOffset: header.TCPMinimumSize + uint8(offset)*4, // DataOffset must be a multiple of 4.
-		Flags:      header.TCPFlagSyn,
-		Checksum:   0,
+		SeqNum:     opts.seq,
+		AckNum:     opts.ack,
+		DataOffset: opts.dataOffset, // DataOffset must be a multiple of 4.
+		Flags:      opts.flags,
 	})
+	if opts.checksum != nil {
+		tcp.SetChecksum(*opts.checksum)
+	} else {
+		xsum := header.PseudoHeaderChecksum(header.TCPProtocolNumber, opts.srcAddr, opts.dstAddr, header.TCPMinimumSize)
+		tcp.SetChecksum(0)
+		tcp.SetChecksum(^tcp.CalculateChecksum(xsum))
+	}
+
+	nextHeader := header.TCPProtocolNumber
+	if opts.fragmentOffset > 0 || opts.more {
+		s := header.IPv6ExtHdrSerializer{&header.IPv6SerializableFragmentExtHdr{
+			FragmentOffset: opts.fragmentOffset,
+			M:              opts.more,
+			Identification: 12345,
+		}}
+		extBuf := hdr.Prepend(s.Length())
+		s.Serialize(header.TCPProtocolNumber, extBuf)
+		nextHeader = header.IPv6FragmentHeader
+	}
 
 	ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 	ip.Encode(&header.IPv6Fields{
-		PayloadLength:     header.TCPMinimumSize,
-		TransportProtocol: header.TCPProtocolNumber,
-		HopLimit:          255,
-		SrcAddr:           srcAddrV6,
-		DstAddr:           dstAddrV6,
+		PayloadLength:     uint16(pktSize - header.IPv6MinimumSize),
+		TransportProtocol: nextHeader,
+		HopLimit:          64,
+		SrcAddr:           opts.srcAddr,
+		DstAddr:           opts.dstAddr,
 	})
 
 	buf := buffer.MakeWithData(append([]byte{}, hdr.View()...))
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buf})
+}
+
+func genTCP4(offset int8) *stack.PacketBuffer {
+	checksum := uint16(0)
+	return genTCP4WithOpts(tcpOpts{
+		pktSize:    header.IPv4MinimumSize + header.TCPMinimumSize,
+		srcAddr:    srcAddrV4,
+		dstAddr:    dstAddrV4,
+		dataOffset: header.TCPMinimumSize + uint8(offset)*4,
+		flags:      header.TCPFlagSyn,
+		checksum:   &checksum,
+	})
+}
+
+func genTCP6(offset int8) *stack.PacketBuffer {
+	checksum := uint16(0)
+	return genTCP6WithOpts(tcpOpts{
+		pktSize:    header.IPv6MinimumSize + header.TCPMinimumSize,
+		srcAddr:    srcAddrV6,
+		dstAddr:    dstAddrV6,
+		dataOffset: header.TCPMinimumSize + uint8(offset)*4,
+		flags:      header.TCPFlagSyn,
+		checksum:   &checksum,
+	})
 }
 
 func genUDP4(offset int8) *stack.PacketBuffer {

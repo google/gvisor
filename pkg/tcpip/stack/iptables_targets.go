@@ -64,8 +64,11 @@ const (
 	RejectIPv4WithICMPNetUnreachable
 	RejectIPv4WithICMPHostUnreachable
 	RejectIPv4WithICMPPortUnreachable
+	RejectIPv4WithICMPProtUnreachable
+	RejectIPv4WithICMPEchoReply
 	RejectIPv4WithICMPNetProhibited
 	RejectIPv4WithICMPHostProhibited
+	RejectIPv4WithTCPReset
 	RejectIPv4WithICMPAdminProhibited
 )
 
@@ -106,9 +109,14 @@ type RejectIPv6WithICMPType int
 const (
 	_ RejectIPv6WithICMPType = iota
 	RejectIPv6WithICMPNoRoute
+	RejectIPv6WithICMPAdminProhibited
+	RejectIPv6WithICMPNotNeighbour
 	RejectIPv6WithICMPAddrUnreachable
 	RejectIPv6WithICMPPortUnreachable
-	RejectIPv6WithICMPAdminProhibited
+	RejectIPv6WithICMPEchoReply
+	RejectIPv6WithTCPReset
+	RejectIPv6WithICMPPolicyFail
+	RejectIPv6WithICMPRejectRoute
 )
 
 // RejectIPv6Target drops packets and sends back an error packet in response to the

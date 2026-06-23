@@ -844,3 +844,53 @@ const SizeOfXTMultiport = 2 + (XT_MULTI_PORTS * 2)
 
 // SizeOfXTMultiportV1 is the size of XTMultiportV1 (in bytes).
 const SizeOfXTMultiportV1 = SizeOfXTMultiport + XT_MULTI_PORTS + 1
+
+// Ref: include/uapi/linux/netfilter_ipv4/ipt_REJECT.h:enum ipt_reject_with
+const (
+	IPT_ICMP_NET_UNREACHABLE = iota
+	IPT_ICMP_HOST_UNREACHABLE
+	IPT_ICMP_PROT_UNREACHABLE
+	IPT_ICMP_PORT_UNREACHABLE
+	IPT_ICMP_ECHOREPLY
+	IPT_ICMP_NET_PROHIBITED
+	IPT_ICMP_HOST_PROHIBITED
+	IPT_TCP_RESET
+	IPT_ICMP_ADMIN_PROHIBITED
+)
+
+// Ref: include/uapi/linux/netfilter_ipv6/ip6t_REJECT.h:enum ip6t_reject_with
+const (
+	IP6T_ICMP6_NO_ROUTE = iota
+	IP6T_ICMP6_ADM_PROHIBITED
+	IP6T_ICMP6_NOT_NEIGHBOUR
+	IP6T_ICMP6_ADDR_UNREACH
+	IP6T_ICMP6_PORT_UNREACH
+	IP6T_ICMP6_ECHOREPLY
+	IP6T_TCP_RESET
+	IP6T_ICMP6_POLICY_FAIL
+	IP6T_ICMP6_REJECT_ROUTE
+)
+
+// IPTRejectInfo is the argument for the IPT_REJECT target. It corresponds to
+// struct ipt_reject_info in include/uapi/linux/netfilter_ipv4/ipt_REJECT.h.
+//
+// +marshal
+type IPTRejectInfo struct {
+	_    structs.HostLayout
+	With uint32
+}
+
+// SizeOfIPTRejectInfo is the size of an IPTRejectInfo.
+const SizeOfIPTRejectInfo = 4
+
+// IP6TRejectInfo is the argument for the IP6T_REJECT target. It corresponds to
+// struct ip6t_reject_info in include/uapi/linux/netfilter_ipv6/ip6t_REJECT.h.
+//
+// +marshal
+type IP6TRejectInfo struct {
+	_    structs.HostLayout
+	With uint32
+}
+
+// SizeOfIP6TRejectInfo is the size of an IP6TRejectInfo.
+const SizeOfIP6TRejectInfo = 4
