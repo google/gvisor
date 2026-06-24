@@ -1176,12 +1176,11 @@ func rmAllocSimpleParams[Params any, PtrParams marshalPtr[Params]](fi *frontendI
 
 	var allocParamsValue Params
 	allocParams := PtrParams(&allocParamsValue)
-	// Sometimes, the params are optional, in which case the size is 0.
-	if ioctlParams.ParamsSize != 0 && allocParams.SizeBytes() != int(ioctlParams.ParamsSize) {
-		fi.ctx.Warningf("nvproxy: mismatched param sizes for alloc class %v. Param struct has size %v, got %v (bytes).",
-			ioctlParams.HClass, allocParams.SizeBytes(), ioctlParams.ParamsSize)
-		return 0, linuxerr.EINVAL
-	}
+	// The driver derives the alloc param size from the class and ignores the
+	// client-supplied ioctlParams.ParamsSize; see
+	// src/nvidia/src/kernel/rmapi/alloc_free.c:serverAllocApiCopyIn() =>
+	// rmapiGetClassAllocParamSize(). nvproxy copies in the fixed-size struct for
+	// the class, so ParamsSize needs no validation.
 	if _, err := allocParams.CopyIn(fi.t, addrFromP64(ioctlParams.PAllocParms)); err != nil {
 		return 0, err
 	}
@@ -1350,9 +1349,8 @@ func rmAllocContextShare(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAM
 
 func rmAllocIMEXSession(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
 	var allocParams nvgpu.NV00F1_ALLOCATION_PARAMETERS
-	if allocParams.SizeBytes() != int(ioctlParams.ParamsSize) {
-		return 0, linuxerr.EINVAL
-	}
+	// As in rmAllocSimpleParams(), the driver ignores ioctlParams.ParamsSize and
+	// derives the param size from the class, so it is not validated here.
 	if _, err := allocParams.CopyIn(fi.t, addrFromP64(ioctlParams.PAllocParms)); err != nil {
 		return 0, err
 	}
@@ -1400,9 +1398,8 @@ func rmAllocIMEXSession(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAME
 func rmAllocMulticastFabric[Params any, PtrParams hasPOsEventPtr[Params]](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
 	var allocParamsValue Params
 	allocParams := PtrParams(&allocParamsValue)
-	if allocParams.SizeBytes() != int(ioctlParams.ParamsSize) {
-		return 0, linuxerr.EINVAL
-	}
+	// As in rmAllocSimpleParams(), the driver ignores ioctlParams.ParamsSize and
+	// derives the param size from the class, so it is not validated here.
 	if _, err := allocParams.CopyIn(fi.t, addrFromP64(ioctlParams.PAllocParms)); err != nil {
 		return 0, err
 	}
