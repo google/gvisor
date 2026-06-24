@@ -130,6 +130,7 @@ func archInit() {
 	addSyscallPoint(117, "setresuid", nil)
 	addSyscallPoint(119, "setresgid", nil)
 	addSyscallPoint(161, "chroot", nil)
+	addSyscallPoint(232, "epoll_wait", nil)
 	addSyscallPoint(253, "inotify_init", nil)
 	addSyscallPoint(254, "inotify_add_watch", []FieldDesc{
 		{
@@ -149,6 +150,7 @@ func archInit() {
 			Name: "fd_path",
 		},
 	})
+	addSyscallPoint(281, "epoll_pwait", nil)
 	addSyscallPoint(282, "signalfd", []FieldDesc{
 		{
 			ID:   FieldSyscallPath,

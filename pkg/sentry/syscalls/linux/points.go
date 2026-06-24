@@ -992,3 +992,27 @@ func PointSocketpair(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.Conte
 	p.Exit = newExitMaybe(info)
 	return p, pb.MessageType_MESSAGE_SYSCALL_SOCKETPAIR
 }
+
+// PointEpollWait converts epoll_wait(2) syscall to proto.
+func PointEpollWait(t *kernel.Task, _ seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	p := &pb.EpollWait{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		Epfd:        int64(info.Args[0].Int()),
+		MaxEvents:   int64(info.Args[2].Int()),
+	}
+	p.Exit = newExitMaybe(info)
+	return p, pb.MessageType_MESSAGE_SYSCALL_EPOLL_WAIT
+}
+
+// PointEpollPwait converts epoll_pwait(2) syscall to proto.
+func PointEpollPwait(t *kernel.Task, _ seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	p := &pb.EpollWait{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		Epfd:        int64(info.Args[0].Int()),
+		MaxEvents:   int64(info.Args[2].Int()),
+	}
+	p.Exit = newExitMaybe(info)
+	return p, pb.MessageType_MESSAGE_SYSCALL_EPOLL_WAIT
+}
