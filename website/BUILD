@@ -1,5 +1,6 @@
 load("//images:defs.bzl", "docker_image")
 load("//tools:defs.bzl", "bzl_library", "pkg_tar")
+load("//tools/yamltest:defs.bzl", "yaml_test")
 load("//website:defs.bzl", "doc", "docs")
 
 package(
@@ -115,8 +116,10 @@ pkg_tar(
         "_config.yml",
         ":css",
         "//website/blog:index.html",
+        "//website/security_track_record:index.html",
         "//website/users:index.html",
     ] + glob([
+        "_data/**",
         "assets/**",
         "_includes/**",
         "_layouts/**",
@@ -212,4 +215,10 @@ bzl_library(
     name = "defs_bzl",
     srcs = ["defs.bzl"],
     visibility = ["//visibility:private"],
+)
+
+yaml_test(
+    name = "cve_track_record_test",
+    srcs = ["_data/cve-track-record.yml"],
+    schema = "//website:cve-track-record.schema.json",
 )

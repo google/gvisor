@@ -1,0 +1,220 @@
+---
+title: Security Record
+layout: base
+permalink: /security-track-record/
+---
+
+<div class="container">
+  <div class="users-content">
+    <h1>gVisor Security Record</h1>
+
+    <style>
+      .year-chart-btn {
+        cursor: pointer;
+        padding: 12px 6px;
+        border-radius: 12px;
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      .year-chart-btn:hover {
+        background-color: #f8fafc;
+      }
+      .year-chart-btn .chart-bar-defended {
+        background-color: #94a3b8;
+        transition: all 0.25s ease;
+      }
+      .year-chart-btn .chart-bar-not-defended {
+        background-color: #cbd5e1;
+        transition: all 0.25s ease;
+      }
+      .year-chart-btn:hover .chart-bar-defended {
+        background-color: #64748b;
+      }
+      .year-chart-btn:hover .chart-bar-not-defended {
+        background-color: #94a3b8;
+      }
+      .year-chart-btn.active-chart-col {
+        background-color: #f0f6ff;
+        box-shadow: 0 4px 24px rgba(40, 111, 215, 0.12);
+        border: 1px solid #dbe8ff;
+      }
+      .year-chart-btn.active-chart-col .chart-bar-defended {
+        background-color: #286FD7;
+        box-shadow: 0 4px 12px rgba(40, 111, 215, 0.3);
+      }
+      .year-chart-btn.active-chart-col .chart-bar-not-defended {
+        background-color: #d9534f;
+        box-shadow: 0 4px 12px rgba(217, 83, 79, 0.3);
+      }
+      .year-chart-btn.active-chart-col .chart-year-label {
+        color: #286FD7 !important;
+        font-weight: 700 !important;
+      }
+      .year-chart-btn .chart-count-label {
+        font-size: 13px;
+        font-weight: 600;
+        color: #64748b;
+        margin-bottom: 8px;
+        text-align: center;
+        transition: color 0.25s ease;
+      }
+      .year-chart-btn.active-chart-col .chart-count-label {
+        color: #1e293b;
+        font-weight: 700;
+      }
+    </style>
+
+    <div class="marketing-chart-card" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; box-shadow: 0 12px 36px rgba(0, 0, 0, 0.06); margin-top: 35px; margin-bottom: 45px; overflow: hidden;">
+      <div style="padding: 32px 32px 10px 32px;">
+        <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start;">
+          <div>
+            <h3 style="font-size: 24px; font-weight: 700; color: #1a202c; margin: 0 0 8px 0;">Vulnerabilities Defended by Year</h3>
+            <p style="font-size: 15px; color: #64748b; margin: 0; max-width: 540px;">An overview of high-impact Linux kernel vulnerabilities mitigated by gVisor over time.</p>
+          </div>
+          <div style="display: flex; align-items: center; background: #f8fafc; padding: 8px 16px; border-radius: 20px; border: 1px solid #e2e8f0; margin-top: 10px;">
+            <div style="display: flex; align-items: center; margin-right: 16px;">
+              <span style="display: inline-block; width: 12px; height: 12px; border-radius: 3px; background-color: #286FD7; margin-right: 6px;"></span>
+              <span style="font-size: 13px; font-weight: 600; color: #334155;">Defended</span>
+            </div>
+            <div style="display: flex; align-items: center;">
+              <span style="display: inline-block; width: 12px; height: 12px; border-radius: 3px; background-color: #d9534f; margin-right: 6px;"></span>
+              <span style="font-size: 13px; font-weight: 600; color: #334155;">Unmitigated</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="padding: 10px 32px 32px 32px;">
+        <div class="chart-container" style="display: flex; align-items: flex-end; justify-content: space-between; height: 260px; padding: 20px 10px 10px 10px;">
+          {% assign valid_cves = site.data['cve-track-record'].cves | where_exp: "item", "item.cve != nil and item.cve != ''" %}
+          {% assign grouped_cves = valid_cves | group_by_exp: "item", "item.date | slice: 0, 4" %}
+          {% for group in grouped_cves %}
+            {% assign total = group.items | size %}
+            {% assign saved_count = 0 %}
+            {% assign unsaved_count = 0 %}
+            {% for item in group.items %}
+              {% if item.exploitable_under_gvisor %}
+                {% assign unsaved_count = unsaved_count | plus: 1 %}
+              {% else %}
+                {% assign saved_count = saved_count | plus: 1 %}
+              {% endif %}
+            {% endfor %}
+            {% assign total_percentage = total | times: 100.0 | divided_by: 20.0 %}
+            {% assign saved_ratio = saved_count | times: 100.0 | divided_by: total %}
+            {% assign unsaved_ratio = unsaved_count | times: 100.0 | divided_by: total %}
+            <div class="chart-column year-chart-btn {% if forloop.last %}active-chart-col{% endif %}" data-year="{{ group.name }}" style="display: flex; flex-direction: column; justify-content: flex-end; align-items: center; flex-grow: 1; height: 100%; margin: 0 4px;">
+              <div class="chart-count-label">{{ saved_count }}/{{ total }}</div>
+              <div class="chart-bar-wrapper" style="height: {{ total_percentage | at_most: 100 }}%; min-height: 6px; width: 100%; max-width: 48px; display: flex; flex-direction: column; justify-content: flex-end; border-radius: 6px 6px 0 0; box-shadow: 0 2px 4px rgba(0,0,0,0.06); overflow: hidden;">
+                <div class="chart-bar-not-defended" style="height: {{ unsaved_ratio }}%; width: 100%;"></div>
+                <div class="chart-bar-defended" style="height: {{ saved_ratio }}%; width: 100%;"></div>
+              </div>
+              <div class="chart-year-label" style="margin-top: 14px; font-weight: 600; font-size: 14px; color: #64748b; text-align: center; transition: color 0.25s ease;">{{ group.name }}</div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <script>
+      document.addEventListener('DOMContentLoaded', function() {
+        const chartBtns = document.querySelectorAll('.year-chart-btn');
+        chartBtns.forEach(btn => {
+          btn.addEventListener('click', function() {
+            chartBtns.forEach(b => b.classList.remove('active-chart-col'));
+            this.classList.add('active-chart-col');
+
+            const targetYear = this.getAttribute('data-year');
+
+            document.querySelectorAll('.tab-pane').forEach(pane => {
+              pane.classList.remove('active');
+            });
+
+            const activePane = document.getElementById('year-' + targetYear);
+            if (activePane) {
+              activePane.classList.add('active');
+            }
+
+            const header = document.getElementById('defense-database-header');
+            if (header) {
+              header.scrollIntoView({ behavior: 'smooth' });
+            }
+          });
+        });
+      });
+    </script>
+
+    <h2 id="defense-database-header" style="margin-top: 40px;">Vulnerability Defense Database</h2>
+    <hr>
+    <p style="font-size: 16px; line-height: 1.6;">
+      This curated record is not a comprehensive list of all vulnerabilities, but focuses on high-impact CVEs relevant to production Kubernetes environments, specifically tracking critical threats highlighted in official <a href="https://docs.cloud.google.com/kubernetes-engine/security-bulletins" target="_blank" rel="noopener noreferrer">Google Kubernetes Engine (GKE) security bulletins</a>.
+    </p>
+
+    <!-- Nav tabs -->
+    <ul class="nav nav-tabs" role="tablist" style="display: none;">
+      {% for group in grouped_cves %}
+      <li role="presentation" {% if forloop.last %}class="active"{% endif %}>
+        <a href="#year-{{ group.name }}" aria-controls="year-{{ group.name }}" role="tab" data-toggle="tab" style="font-weight: 600;">{{ group.name }} <span class="badge" style="background-color: #666;">{{ group.items | size }}</span></a>
+      </li>
+      {% endfor %}
+    </ul>
+
+    <!-- Tab panes -->
+    <div class="tab-content" style="margin-top: 25px; margin-bottom: 60px;">
+      {% for group in grouped_cves %}
+      <div role="tabpanel" class="tab-pane {% if forloop.last %}active{% endif %}" id="year-{{ group.name }}">
+        <div class="panel-group" id="accordion-{{ group.name }}" role="tablist" aria-multiselectable="true">
+          {% assign quarter_groups = group.items | group_by_exp: "item", "item.date | slice: 5, 2 | plus: 2 | divided_by: 3 | prepend: 'Q'" %}
+          {% for q_group in quarter_groups %}
+          <div class="panel panel-default" style="border-radius: 4px; margin-bottom: 15px;">
+            <div class="panel-heading" role="tab" id="heading-{{ group.name }}-{{ q_group.name }}" style="padding: 15px 20px; background-color: #fff;">
+              <h4 class="panel-title" style="display: flex; justify-content: space-between; align-items: center;">
+                <a role="button" data-toggle="collapse" href="#collapse-{{ group.name }}-{{ q_group.name }}" aria-expanded="true" aria-controls="collapse-{{ group.name }}-{{ q_group.name }}" style="text-decoration: none; display: flex; align-items: center; flex-grow: 1;">
+                  <span style="font-size: 18px; font-weight: bold; color: #333;">{{ q_group.name }} {{ group.name }}</span>
+                </a>
+                <span class="badge" style="background-color: #6c757d; padding: 6px 12px; font-size: 13px; border-radius: 12px; margin-left: 15px;">{{ q_group.items | size }} {% if q_group.items.size == 1 %}Vulnerability{% else %}Vulnerabilities{% endif %}</span>
+              </h4>
+            </div>
+            <div id="collapse-{{ group.name }}-{{ q_group.name }}" class="panel-collapse collapse in" role="tabpanel" aria-labelledby="heading-{{ group.name }}-{{ q_group.name }}">
+              <div class="panel-body" style="background-color: #fcfcfc; padding: 25px 25px 5px 25px; border-top: 1px solid #eee;">
+                {% for item in q_group.items %}
+                <div class="cve-item" style="{% if forloop.last == false %}border-bottom: 1px solid #eee; margin-bottom: 20px; padding-bottom: 20px;{% else %}margin-bottom: 20px;{% endif %}">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <div style="display: flex; align-items: center;">
+                      <span style="font-size: 18px; font-weight: 600; margin-right: 15px;">
+                        <a href="https://nvd.nist.gov/vuln/detail/{{ item.cve }}" target="_blank" rel="noopener noreferrer" style="color: #286FD7; text-decoration: none;">{{ item.cve }}</a>
+                      </span>
+                    </div>
+                    <div>
+                      {% if item.exploitable_under_gvisor %}
+                        <span class="label label-danger" style="padding: 6px 12px; font-size: 13px; border-radius: 12px;">Unmitigated</span>
+                      {% else %}
+                        <span class="label label-success" style="padding: 6px 12px; font-size: 13px; border-radius: 12px;">Defended</span>
+                      {% endif %}
+                    </div>
+                  </div>
+                  <div class="row" style="font-size: 15px; line-height: 1.6;">
+                    <div class="col-md-7" style="margin-bottom: 15px;">
+                      <h5 style="font-weight: 600; color: #333; margin-top: 0; margin-bottom: 10px;">Vulnerability Overview &amp; Impact</h5>
+                      <p style="color: #444;">{{ item.description }}</p>
+                      {% if item.exploitable_under_gvisor and item.mitigation_gap != nil and item.mitigation_gap != '' %}
+                        <div style="margin-top: 10px;"><strong>Mitigation Gap:</strong> <span style="color: #555;">{{ item.mitigation_gap }}</span></div>
+                      {% endif %}
+                      {% if item.exploitable_under_gvisor and item.vm_prevented != nil %}
+                        <div style="margin-top: 10px;"><strong>VM Runtime Prevented:</strong> <span style="color: #555;">{% if item.vm_prevented %}Yes{% else %}No{% endif %}</span></div>
+                      {% endif %}
+                    </div>
+                    <div class="col-md-5" style="border-left: 1px solid #e5e5e5;">
+                      <div style="margin-bottom: 6px;"><strong>Escalation Vector:</strong> <span style="color: #555;">{{ item.risk }}</span></div>
+                      <div style="margin-bottom: 6px;"><strong>Target Ecosystem Scope:</strong> <span style="color: #555;">{{ item.scope }}</span></div>
+                    </div>
+                  </div>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div> <!-- end div with padding -->
+</div> <!-- end container -->
