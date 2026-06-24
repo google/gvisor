@@ -149,6 +149,7 @@ func (vp *VFSPipe) newFD(mnt *vfs.Mount, vfsd *vfs.Dentry, statusFlags uint32, l
 		DenyPRead:         true,
 		DenyPWrite:        true,
 		UseDentryMetadata: true,
+		SpecialFile:       true,
 	}); err != nil {
 		return nil, err
 	}

@@ -69,6 +69,7 @@ func (dev *frontendDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.D
 	}
 	if err := fd.vfsfd.Init(fd, opts.Flags, auth.CredentialsFromContext(ctx), mnt, vfsd, &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,
+		SpecialFile:       true,
 	}); err != nil {
 		unix.Close(int(fd.hostFD))
 		return nil, err

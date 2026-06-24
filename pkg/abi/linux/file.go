@@ -416,6 +416,19 @@ func (m FileMode) IsDir() bool {
 	return m.FileType() == S_IFDIR
 }
 
+// IsSpecialFile returns true if m is the mode of a "special file": a character
+// or block device, FIFO, or socket.
+//
+// Analogous to include/linux/fs.h:special_file().
+func (m FileMode) IsSpecialFile() bool {
+	switch m.FileType() {
+	case ModeCharacterDevice, ModeBlockDevice, ModeNamedPipe, ModeSocket:
+		return true
+	default:
+		return false
+	}
+}
+
 // String returns a string representation of m.
 func (m FileMode) String() string {
 	var s []string
