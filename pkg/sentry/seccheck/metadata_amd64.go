@@ -64,6 +64,7 @@ func archInit() {
 		},
 	})
 	addSyscallPoint(22, "pipe", nil)
+	addSyscallPoint(23, "select", nil)
 	addSyscallPoint(32, "dup", []FieldDesc{
 		{
 			ID:   FieldSyscallPath,
@@ -149,6 +150,7 @@ func archInit() {
 			Name: "fd_path",
 		},
 	})
+	addSyscallPoint(270, "pselect6", nil)
 	addSyscallPoint(282, "signalfd", []FieldDesc{
 		{
 			ID:   FieldSyscallPath,

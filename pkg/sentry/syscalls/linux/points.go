@@ -992,3 +992,88 @@ func PointSocketpair(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.Conte
 	p.Exit = newExitMaybe(info)
 	return p, pb.MessageType_MESSAGE_SYSCALL_SOCKETPAIR
 }
+
+func extractFDs(t *kernel.Task, addr hostarch.Addr, nBytes, nBitsInLastPartialByte int) []int64 {
+	if addr == 0 {
+		return nil
+	}
+	set, err := CopyInFDSet(t, addr, nBytes, nBitsInLastPartialByte)
+	if err != nil {
+		return nil
+	}
+	var fds []int64
+	var fd int64
+	for i := 0; i < nBytes; i++ {
+		v := set[i]
+		m := byte(1)
+		for j := 0; j < 8; j++ {
+			if (v & m) != 0 {
+				fds = append(fds, fd)
+			}
+			fd++
+			m <<= 1
+		}
+	}
+	return fds
+}
+
+// PointSelect converts select(2) syscall to proto.
+func PointSelect(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	nfds := int(info.Args[0].Int())
+	p := &pb.Select{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		Nfds:        int64(nfds),
+	}
+
+	if nfds >= 0 && nfds <= fileCap {
+		nBytes := (nfds + 7) / 8
+		nBitsInLastPartialByte := nfds % 8
+
+		p.ReadFds = extractFDs(t, info.Args[1].Pointer(), nBytes, nBitsInLastPartialByte)
+		p.WriteFds = extractFDs(t, info.Args[2].Pointer(), nBytes, nBitsInLastPartialByte)
+		p.ExceptFds = extractFDs(t, info.Args[3].Pointer(), nBytes, nBitsInLastPartialByte)
+	}
+
+	timeoutMs := int64(-1)
+	if timevalAddr := info.Args[4].Pointer(); timevalAddr != 0 {
+		var timeval linux.Timeval
+		if _, err := timeval.CopyIn(t, timevalAddr); err == nil {
+			if timeval.Sec >= 0 && timeval.Usec >= 0 {
+				timeoutMs = timeval.ToNsecCapped() / 1e6
+			}
+		}
+	}
+	p.TimeoutMs = timeoutMs
+	p.Exit = newExitMaybe(info)
+	return p, pb.MessageType_MESSAGE_SYSCALL_SELECT
+}
+
+// PointPselect6 converts pselect6(2) syscall to proto.
+func PointPselect6(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	nfds := int(info.Args[0].Int())
+	p := &pb.Select{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		Nfds:        int64(nfds),
+	}
+
+	if nfds >= 0 && nfds <= fileCap {
+		nBytes := (nfds + 7) / 8
+		nBitsInLastPartialByte := nfds % 8
+
+		p.ReadFds = extractFDs(t, info.Args[1].Pointer(), nBytes, nBitsInLastPartialByte)
+		p.WriteFds = extractFDs(t, info.Args[2].Pointer(), nBytes, nBitsInLastPartialByte)
+		p.ExceptFds = extractFDs(t, info.Args[3].Pointer(), nBytes, nBitsInLastPartialByte)
+	}
+
+	timeoutMs := int64(-1)
+	if timespecAddr := info.Args[4].Pointer(); timespecAddr != 0 {
+		if timeout, err := copyTimespecInToDuration(t, timespecAddr); err == nil && timeout >= 0 {
+			timeoutMs = timeout.Milliseconds()
+		}
+	}
+	p.TimeoutMs = timeoutMs
+	p.Exit = newExitMaybe(info)
+	return p, pb.MessageType_MESSAGE_SYSCALL_SELECT
+}
