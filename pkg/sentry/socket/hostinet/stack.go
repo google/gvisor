@@ -60,6 +60,7 @@ type Stack struct {
 	netSNMPFile    *os.File
 	// allowedSocketTypes is the list of allowed socket types
 	allowedSocketTypes []AllowedSocketType
+	ipv6KeepAddrOnDown bool
 }
 
 // Destroy implements inet.Stack.Destroy.
@@ -110,6 +111,18 @@ func (s *Stack) Configure(allowRawSockets bool) error {
 		log.Warningf("Failed to open /proc/net/snmp: %v", err)
 	} else {
 		s.netSNMPFile = f
+	}
+
+	// keep_addr_on_down is >0 when enabled, and 0 (system default) or <0 when
+	// disabled.
+	if contents, err := os.ReadFile("/proc/sys/net/ipv6/conf/all/keep_addr_on_down"); err == nil {
+		if ipv6KeepAddrOnDown, err := strconv.Atoi(strings.TrimSpace(string(contents))); err == nil {
+			s.ipv6KeepAddrOnDown = ipv6KeepAddrOnDown > 0
+		} else {
+			log.Warningf("Failed to parse IPv6 keep_addr_on_down, setting to false")
+		}
+	} else {
+		log.Warningf("Failed to read IPv6 keep_addr_on_down, setting to false")
 	}
 
 	s.allowedSocketTypes = AllowedSocketTypes
@@ -246,6 +259,16 @@ func (*Stack) RemoveInterfaceAddr(idx int32, addr inet.InterfaceAddr) error {
 // SupportsIPv6 implements inet.Stack.SupportsIPv6.
 func (s *Stack) SupportsIPv6() bool {
 	return s.supportsIPv6
+}
+
+// IPv6KeepAddrOnDown implements inet.Stack.IPv6KeepAddrOnDown.
+func (s *Stack) IPv6KeepAddrOnDown() bool {
+	return s.ipv6KeepAddrOnDown
+}
+
+// SetIPv6KeepAddrOnDown implements inet.Stack.SetIPv6KeepAddrOnDown.
+func (*Stack) SetIPv6KeepAddrOnDown(bool) error {
+	return linuxerr.EACCES
 }
 
 // TCPReceiveBufferSize implements inet.Stack.TCPReceiveBufferSize.

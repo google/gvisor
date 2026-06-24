@@ -1227,7 +1227,7 @@ func forwardingValue(forwardingFn forwardingFn, proto tcpip.NetworkProtocolNumbe
 // precondition: s.mu is held.
 func (s *Stack) nicInfo(nic *nic, id tcpip.NICID) *NICInfo {
 	flags := NICStateFlags{
-		Up:          true, // Netstack interfaces are always up.
+		Up:          nic.Enabled(),
 		Running:     nic.Enabled(),
 		Promiscuous: nic.Promiscuous(),
 		Loopback:    nic.IsLoopback(),
@@ -1357,6 +1357,18 @@ func (s *Stack) AllAddresses() map[tcpip.NICID][]tcpip.ProtocolAddress {
 	nics := make(map[tcpip.NICID][]tcpip.ProtocolAddress)
 	for id, nic := range s.nics {
 		nics[id] = nic.allPermanentAddresses()
+	}
+	return nics
+}
+
+// AllAddressInfo returns a map of NICIDs to their protocol address information.
+func (s *Stack) AllAddressInfo() map[tcpip.NICID][]ProtocolAddressInfo {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	nics := make(map[tcpip.NICID][]ProtocolAddressInfo)
+	for id, nic := range s.nics {
+		nics[id] = nic.allAddressInfo()
 	}
 	return nics
 }

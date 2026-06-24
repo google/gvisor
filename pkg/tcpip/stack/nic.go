@@ -568,6 +568,25 @@ func (n *nic) allPermanentAddresses() []tcpip.ProtocolAddress {
 	return addrs
 }
 
+func (n *nic) allAddressInfo() []ProtocolAddressInfo {
+	var infos []ProtocolAddressInfo
+	for p, ep := range n.networkEndpoints {
+		addressableEndpoint, ok := ep.(AddressableEndpoint)
+		if !ok {
+			continue
+		}
+
+		for _, info := range addressableEndpoint.AddressInfos() {
+			infos = append(infos, ProtocolAddressInfo{
+				Protocol:          p,
+				AddressWithPrefix: info.AddressWithPrefix,
+				Permanent:         info.Permanent,
+			})
+		}
+	}
+	return infos
+}
+
 // primaryAddresses returns the primary addresses associated with this NIC.
 func (n *nic) primaryAddresses() []tcpip.ProtocolAddress {
 	var addrs []tcpip.ProtocolAddress
