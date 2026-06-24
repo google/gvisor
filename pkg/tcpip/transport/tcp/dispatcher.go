@@ -36,7 +36,7 @@ import (
 // +stateify savable
 type epQueue struct {
 	mu   epQueueMutex `state:"nosave"`
-	list endpointList
+	list endpointList `state:"nosave"`
 }
 
 // enqueue adds e to the queue if the endpoint is not already on the queue.
