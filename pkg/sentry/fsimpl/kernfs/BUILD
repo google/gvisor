@@ -148,6 +148,7 @@ go_library(
         "//pkg/sync",
         "//pkg/sync/locking",
         "//pkg/usermem",
+        "//pkg/waiter",
     ],
 )
 

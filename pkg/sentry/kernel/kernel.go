@@ -440,6 +440,14 @@ type Kernel struct {
 	// protected by fsSaveMu.
 	fsSaveMu      fsSaveMutex  `state:"nosave"`
 	fsSaveWaiters []chan error `state:"nosave"`
+
+	// HostNamePoller is notified when the system hostname changes in *any*
+	// UTS namespace.
+	HostNamePoller vfs.DynamicBytesPoller
+
+	// DomainNamePoller is notified when the system domainname changes in *any*
+	// UTS namespace.
+	DomainNamePoller vfs.DynamicBytesPoller
 }
 
 // InitKernelArgs holds arguments to Init.
