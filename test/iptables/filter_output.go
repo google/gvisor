@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 
 	"gvisor.dev/gvisor/test/netutils"
 )
@@ -49,6 +50,7 @@ func init() {
 	RegisterTestCase(&FilterOutputAcceptInvertSrcPorts{})
 	RegisterTestCase(&FilterOutputDropSrcPorts{})
 	RegisterTestCase(&FilterOutputAcceptInvertPorts{})
+	RegisterTestCase(&FilterOutputOwnerNilAccept{})
 }
 
 // multiportPortCountLimit is the maximum number of
@@ -1057,5 +1059,57 @@ func (*FilterOutputAcceptInvertPorts) LocalAction(ctx context.Context, ip net.IP
 		}
 	}
 
+	return nil
+}
+
+// FilterOutputOwnerNilAccept tests that loopback packets without an owner
+// (like TCP RSTs) are not dropped by the owner matcher.
+type FilterOutputOwnerNilAccept struct{ containerCase }
+
+var _ TestCase = (*FilterOutputOwnerNilAccept)(nil)
+
+// Name implements TestCase.Name.
+func (*FilterOutputOwnerNilAccept) Name() string {
+	return "FilterOutputOwnerNilAccept"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (*FilterOutputOwnerNilAccept) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	// Drop packets from UID 9999. Packets without owner (nil) should NOT match
+	// this rule and should be accepted by default.
+	if err := filterTable(ipv6, "-A", "OUTPUT", "-m", "owner", "--uid-owner", "9999", "-j", "DROP"); err != nil {
+		return err
+	}
+
+	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
+	defer cancel()
+
+	// Connect to local IP on a port that is not listened to.
+	// We expect it to fail with "connection refused" immediately.
+	// If it times out, it means the RST reply was dropped.
+	localIP := "127.0.0.1"
+	if ipv6 {
+		localIP = "::1"
+	}
+	var d net.Dialer
+	addr := net.JoinHostPort(localIP, fmt.Sprintf("%d", acceptPort))
+	conn, err := d.DialContext(timedCtx, "tcp", addr)
+	if conn != nil {
+		conn.Close()
+		return fmt.Errorf("expected connection to fail, but succeeded")
+	}
+
+	if err != nil {
+		if strings.Contains(err.Error(), "connection refused") {
+			return nil // Expected failure.
+		}
+		return fmt.Errorf("unexpected error: %v", err)
+	}
+
+	return nil
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (*FilterOutputOwnerNilAccept) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	return nil
 }
