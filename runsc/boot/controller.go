@@ -192,6 +192,7 @@ const (
 // FS-related commands (see fs.go for more details).
 const (
 	FsTarRootfsUpperLayer = "Fs.TarRootfsUpperLayer"
+	FsRead                = "Fs.Read"
 )
 
 // controller holds the control server, and is used for communication into the

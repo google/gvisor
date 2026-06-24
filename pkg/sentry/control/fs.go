@@ -146,3 +146,57 @@ func cat(k *kernel.Kernel, path string, output *os.File) error {
 	_, err = io.Copy(output, &fdReader{ctx: ctx, fd: fd})
 	return err
 }
+
+// ReadOpts contains options for the Read RPC call.
+type ReadOpts struct {
+	// ContainerID identifies which container's filesystem to read from.
+	ContainerID string `json:"container_id"`
+
+	// Path is the filesystem path for the file to read.
+	Path string `json:"path"`
+
+	// Size is the maximum number of bytes to read (0 means unlimited).
+	Size int64 `json:"size"`
+
+	// FilePayload contains the destination for output.
+	urpc.FilePayload
+}
+
+// Read is a RPC stub which prints out and returns the content of the file up to the specified size.
+func (f *Fs) Read(o *ReadOpts, _ *struct{}) error {
+	if len(o.FilePayload.Files) != 1 {
+		return ErrInvalidFiles
+	}
+
+	output := o.FilePayload.Files[0]
+	ctx := f.Kernel.SupervisorContext()
+	mntns, err := f.mountNamespaceForContainer(o.ContainerID)
+	if err != nil {
+		return err
+	}
+	defer mntns.DecRef(ctx)
+
+	creds := auth.NewRootCredentials(f.Kernel.RootUserNamespace())
+	root := mntns.Root(ctx)
+	defer root.DecRef(ctx)
+
+	fd, err := f.Kernel.VFS().OpenAt(ctx, creds, &vfs.PathOperation{
+		Root:  root,
+		Start: root,
+		Path:  fspath.Parse(o.Path),
+	}, &vfs.OpenOptions{
+		Flags: linux.O_RDONLY,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to open file %s: %v", o.Path, err)
+	}
+	defer fd.DecRef(ctx)
+
+	reader := &fdReader{ctx: ctx, fd: fd}
+	if o.Size > 0 {
+		_, err = io.Copy(output, io.LimitReader(reader, o.Size))
+	} else {
+		_, err = io.Copy(output, reader)
+	}
+	return err
+}
