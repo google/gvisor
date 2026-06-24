@@ -86,6 +86,14 @@ permalink: /security-track-record/
         <div class="chart-container" style="display: flex; align-items: flex-end; justify-content: space-between; height: 260px; padding: 20px 10px 10px 10px;">
           {% assign valid_cves = site.data['cve-track-record'].cves | where_exp: "item", "item.cve != nil and item.cve != ''" %}
           {% assign grouped_cves = valid_cves | group_by_exp: "item", "item.date | slice: 0, 4" %}
+          {% assign max_cves = 1 %}
+          {% for group in grouped_cves %}
+            {% assign group_size = group.items | size %}
+            {% if group_size > max_cves %}
+              {% assign max_cves = group_size %}
+            {% endif %}
+          {% endfor %}
+          {% assign max_cves_float = max_cves | times: 1.0 %}
           {% for group in grouped_cves %}
             {% assign total = group.items | size %}
             {% assign saved_count = 0 %}
@@ -97,7 +105,7 @@ permalink: /security-track-record/
                 {% assign saved_count = saved_count | plus: 1 %}
               {% endif %}
             {% endfor %}
-            {% assign total_percentage = total | times: 100.0 | divided_by: 20.0 %}
+            {% assign total_percentage = total | times: 100.0 | divided_by: max_cves_float %}
             {% assign saved_ratio = saved_count | times: 100.0 | divided_by: total %}
             {% assign unsaved_ratio = unsaved_count | times: 100.0 | divided_by: total %}
             <div class="chart-column year-chart-btn {% if forloop.last %}active-chart-col{% endif %}" data-year="{{ group.name }}" style="display: flex; flex-direction: column; justify-content: flex-end; align-items: center; flex-grow: 1; height: 100%; margin: 0 4px;">
