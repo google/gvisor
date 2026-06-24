@@ -67,7 +67,7 @@ var counterAttrPolicy = []NlaPolicy{
 	linux.NFTA_COUNTER_BYTES:   NlaPolicy{nlaType: linux.NLA_U64},
 }
 
-func initCounter(tab *Table, exprInfo ExprInfo) (*counter, *syserr.AnnotatedError) {
+func initCounter(exprInfo ExprInfo) (*counter, *syserr.AnnotatedError) {
 	attrs, ok := NfParseWithOpts(exprInfo.ExprData, &NfParseOpts{
 		Policy: counterAttrPolicy,
 	})

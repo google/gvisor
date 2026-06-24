@@ -144,6 +144,17 @@ func AttrMaskValidator[T integer](mask T) NlaPolicyValidator {
 	}
 }
 
+// AttrMaxLenValidator checks if the data is less than or equal to the maxLen.
+func AttrMaxLenValidator(maxLen int) NlaPolicyValidator {
+	return func(data any) bool {
+		v, ok := data.([]byte)
+		if !ok {
+			return false
+		}
+		return len(v) <= maxLen
+	}
+}
+
 type arrayValidatorRuntimeOpts struct {
 	stackDepth int
 	data       nlmsg.AttrsView

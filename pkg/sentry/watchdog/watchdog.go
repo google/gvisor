@@ -244,14 +244,36 @@ func (w *Watchdog) waitForStart() {
 
 // loop is the main watchdog routine. It only returns when 'Stop()' is called.
 func (w *Watchdog) loop() {
+	// timer fires w.period after each Reset. It is left stopped and drained
+	// while the watchdog is parked, so an idle sentry arms no host timer and is
+	// not woken every w.period for nothing.
+	timer := time.NewTimer(w.period)
+	defer timer.Stop()
+	timer.Stop()
+
 	// Loop until someone stops it.
 	for {
+		// Park while the sentry is idle. The watchdog only reports tasks stuck
+		// in TaskGoroutineRunningSys, and such a task counts as running, so
+		// while no task is running there is nothing to detect; moreover the CPU
+		// clock that measures how long a task has been stuck is frozen then.
+		// WaitForTaskActivity returns as soon as a task becomes runnable (or
+		// immediately if one already is), at which point we resume monitoring.
+		if !w.k.WaitForTaskActivity(w.stop) {
+			w.done <- struct{}{}
+			return
+		}
+
+		timer.Reset(w.period)
 		select {
 		case <-w.stop:
 			w.done <- struct{}{}
 			return
-		case <-time.After(w.period):
+		case <-timer.C:
 			w.runTurn()
+			// Re-check for idle at the top of the loop. The timer has fired and
+			// been drained, so if the sentry is now idle we park with no host
+			// timer armed.
 		}
 	}
 }
