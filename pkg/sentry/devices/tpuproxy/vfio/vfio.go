@@ -76,6 +76,7 @@ func (dev *tpuDevice) Open(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, o
 	}
 	if err := fd.vfsfd.Init(fd, opts.Flags, auth.CredentialsFromContext(ctx), mnt, d, &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,
+		IsSpecialFile:     true,
 	}); err != nil {
 		unix.Close(hostFD)
 		return nil, err
@@ -109,6 +110,7 @@ func (dev *vfioDevice) Open(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, 
 	}
 	if err := fd.vfsfd.Init(fd, opts.Flags, auth.CredentialsFromContext(ctx), mnt, d, &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,
+		IsSpecialFile:     true,
 	}); err != nil {
 		unix.Close(hostFD)
 		return nil, err

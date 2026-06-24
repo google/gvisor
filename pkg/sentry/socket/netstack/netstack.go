@@ -484,6 +484,7 @@ func New(t *kernel.Task, family int, skType linux.SockType, protocol int, queue 
 		DenyPRead:         true,
 		DenyPWrite:        true,
 		UseDentryMetadata: true,
+		IsSpecialFile:     true,
 	}); err != nil {
 		return nil, syserr.FromError(err)
 	}

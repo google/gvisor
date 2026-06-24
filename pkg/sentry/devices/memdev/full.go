@@ -34,6 +34,7 @@ func (fullDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, op
 	fd := &fullFD{}
 	if err := fd.vfsfd.Init(fd, opts.Flags, auth.CredentialsFromContext(ctx), mnt, vfsd, &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,
+		IsSpecialFile:     true,
 	}); err != nil {
 		return nil, err
 	}

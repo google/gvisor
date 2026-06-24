@@ -724,7 +724,9 @@ func (i *inode) open(ctx context.Context, d *kernfs.Dentry, mnt *vfs.Mount, file
 		fd := &fileDescription{inode: i}
 		fd.LockFD.Init(&i.locks)
 		vfsfd := &fd.vfsfd
-		if err := vfsfd.Init(fd, flags, auth.CredentialsFromContext(ctx), mnt, d.VFSDentry(), &vfs.FileDescriptionOptions{}); err != nil {
+		if err := vfsfd.Init(fd, flags, auth.CredentialsFromContext(ctx), mnt, d.VFSDentry(), &vfs.FileDescriptionOptions{
+			IsSpecialFile: fileType != linux.S_IFREG,
+		}); err != nil {
 			return nil, err
 		}
 		return vfsfd, nil
@@ -747,7 +749,9 @@ func (i *inode) OpenTTY(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, opts
 	}
 	fd.LockFD.Init(&i.locks)
 	vfsfd := &fd.vfsfd
-	if err := vfsfd.Init(fd, flags, auth.CredentialsFromContext(ctx), mnt, d, &vfs.FileDescriptionOptions{}); err != nil {
+	if err := vfsfd.Init(fd, flags, auth.CredentialsFromContext(ctx), mnt, d, &vfs.FileDescriptionOptions{
+		IsSpecialFile: true,
+	}); err != nil {
 		return nil, err
 	}
 	return vfsfd, nil
