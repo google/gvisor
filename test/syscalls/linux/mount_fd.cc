@@ -273,7 +273,7 @@ TEST(FsConfigTest, FsConfigCreateTwice) {
 TEST(FsConfigTest, FsConfigUnsupportedCmds) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   // Note: Skipped on Linux because gVisor currently does not support
-  // FSCONFIG_CMD_CREATE_EXCL or FSCONFIG_CMD_RECONFIGURE (returns EINVAL).
+  // FSCONFIG_CMD_CREATE_EXCL (returns EINVAL).
   SKIP_IF(!IsRunningOnGvisor());
 
   int fsfd = fsopen(kTmpfs, 0);
@@ -282,8 +282,38 @@ TEST(FsConfigTest, FsConfigUnsupportedCmds) {
 
   EXPECT_THAT(fsconfig(fsfd, FSCONFIG_CMD_CREATE_EXCL, NULL, NULL, 0),
               SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(FsConfigTest, FsConfigReconfigureSucceeds) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  int fsfd = fsopen(kTmpfs, 0);
+  ASSERT_THAT(fsfd, SyscallSucceeds());
+  auto cleanup_fs = Cleanup([&]() { close(fsfd); });
+
+  EXPECT_THAT(fsconfig(fsfd, FSCONFIG_SET_STRING, "source", "my_source", 0),
+              SyscallSucceeds());
+  EXPECT_THAT(fsconfig(fsfd, FSCONFIG_CMD_CREATE, NULL, NULL, 0),
+              SyscallSucceeds());
+
+  int mntfd =
+      fsmount(fsfd, FSMOUNT_CLOEXEC, 0);
+  ASSERT_THAT(mntfd, SyscallSucceeds());
+  auto cleanup_mnt = Cleanup([&]() { close(mntfd); });
+
+  EXPECT_THAT(fsconfig(fsfd, FSCONFIG_SET_FLAG, "ro", NULL, 0),
+              SyscallSucceeds());
+  EXPECT_THAT(fsconfig(fsfd, FSCONFIG_SET_STRING, "nr_inodes", "12345", 0),
+              SyscallSucceeds());
   EXPECT_THAT(fsconfig(fsfd, FSCONFIG_CMD_RECONFIGURE, NULL, NULL, 0),
-              SyscallFailsWithErrno(EINVAL));
+              SyscallSucceeds());
+
+	// TODO(gvisor.dev/issues/13450): once reconfiguration is properly supported
+  // on underlying filesystems, this test should be updated.
+  struct statfs st;
+  ASSERT_THAT(fstatfs(mntfd, &st), SyscallSucceeds());
+  EXPECT_NE(st.f_files, 12345);
+  EXPECT_NE(st.f_flags & ST_RDONLY, ST_RDONLY);
 }
 
 TEST(FsConfigTest, FsConfigUnsupportedTypes) {
