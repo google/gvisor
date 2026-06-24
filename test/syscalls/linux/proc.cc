@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/epoll.h>
 #include <sys/mman.h>
 #include <sys/prctl.h>
 #include <sys/ptrace.h>
@@ -68,6 +69,7 @@
 #include "absl/time/time.h"
 #include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
+#include "test/util/epoll_util.h"
 #include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
@@ -2769,6 +2771,57 @@ TEST(ProcSysKernelHostname, MatchesUname) {
   EXPECT_EQ(procfs_hostname, hostname);
 }
 
+// Ensure that epoll triggers EPOLLERR when the hostname changes.
+TEST(ProcSysKernelHostname, EpollNotifiesOnChange) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open("/proc/sys/kernel/hostname", O_RDONLY));
+  const FileDescriptor epfd = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  ASSERT_NO_ERRNO(RegisterEpollFD(epfd.get(), fd.get(), 0, 0));
+
+  constexpr char kNew[] = "epoll-hostname-test";
+  ASSERT_THAT(sethostname(kNew, sizeof(kNew) - 1), SyscallSucceeds());
+
+  struct epoll_event ev;
+  EXPECT_THAT(RetryEINTR(epoll_wait)(epfd.get(), &ev, 1, 5000),
+              SyscallSucceedsWithValue(1));
+  EXPECT_TRUE(ev.events & EPOLLERR);
+}
+
+// Same epoll test as above, but ensure that it works across multiple
+// FDs and does not re-trigger.
+TEST(ProcSysKernelHostname, EpollLatchesAndWakesAllSubscribers) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  const FileDescriptor fd1 = ASSERT_NO_ERRNO_AND_VALUE(
+      Open("/proc/sys/kernel/hostname", O_RDONLY));
+  const FileDescriptor fd2 = ASSERT_NO_ERRNO_AND_VALUE(
+      Open("/proc/sys/kernel/hostname", O_RDONLY));
+  const FileDescriptor epfd1 = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  const FileDescriptor epfd2 = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  ASSERT_NO_ERRNO(RegisterEpollFD(epfd1.get(), fd1.get(), 0, 0));
+  ASSERT_NO_ERRNO(RegisterEpollFD(epfd2.get(), fd2.get(), 0, 0));
+
+  constexpr char kNew[] = "epoll-latch-test";
+  ASSERT_THAT(sethostname(kNew, sizeof(kNew) - 1), SyscallSucceeds());
+
+  // Both subscribers wake on the single write.
+  struct epoll_event ev;
+  EXPECT_THAT(RetryEINTR(epoll_wait)(epfd1.get(), &ev, 1, 5000),
+              SyscallSucceedsWithValue(1));
+  EXPECT_TRUE(ev.events & EPOLLERR);
+  EXPECT_THAT(RetryEINTR(epoll_wait)(epfd2.get(), &ev, 1, 5000),
+              SyscallSucceedsWithValue(1));
+  EXPECT_TRUE(ev.events & EPOLLERR);
+
+  // No further write: neither subscriber refires.
+  EXPECT_THAT(RetryEINTR(epoll_wait)(epfd1.get(), &ev, 1, 100),
+              SyscallSucceedsWithValue(0));
+  EXPECT_THAT(RetryEINTR(epoll_wait)(epfd2.get(), &ev, 1, 100),
+              SyscallSucceedsWithValue(0));
+}
+
 TEST(ProcSysKernelDomainname, Exists) {
   EXPECT_THAT(open("/proc/sys/kernel/domainname", O_RDONLY), SyscallSucceeds());
 }
@@ -2780,6 +2833,23 @@ TEST(ProcSysKernelDomainname, MatchesUname) {
   auto procfs_domainname =
       ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/kernel/domainname"));
   EXPECT_EQ(procfs_domainname, domainname);
+}
+
+TEST(ProcSysKernelDomainname, EpollNotifiesOnChange) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open("/proc/sys/kernel/domainname", O_RDONLY));
+  const FileDescriptor epfd = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  ASSERT_NO_ERRNO(RegisterEpollFD(epfd.get(), fd.get(), 0, 0));
+
+  constexpr char kNew[] = "epoll-domainname-test";
+  ASSERT_THAT(setdomainname(kNew, sizeof(kNew) - 1), SyscallSucceeds());
+
+  struct epoll_event ev;
+  EXPECT_THAT(RetryEINTR(epoll_wait)(epfd.get(), &ev, 1, 5000),
+              SyscallSucceedsWithValue(1));
+  EXPECT_TRUE(ev.events & EPOLLERR);
 }
 
 TEST(ProcSysKernelRandomUuid, Exists) {

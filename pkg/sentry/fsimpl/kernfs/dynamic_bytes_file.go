@@ -18,11 +18,13 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // DataSourceProvider represents a dynamic data source provider for DynamicBytesFile.
@@ -77,10 +79,25 @@ func (f *DynamicBytesFile) Open(ctx context.Context, rp *vfs.ResolvingPath, d *D
 	if err != nil {
 		return nil, err
 	}
+
+	if src, ok := data.(vfs.PollableDynamicBytesSource); ok {
+		if poller := src.GetDynamicBytesPoller(ctx); poller != nil {
+			// Pollable fd
+			fd := &PollableDynamicBytesFD{}
+			if err := fd.Init(rp.Mount(), d, data, &f.locks, opts.Flags, rp.Credentials(), poller); err != nil {
+				return nil, err
+			}
+
+			return &fd.vfsfd, nil
+		}
+	}
+
+	// Non-pollable fd
 	fd := &DynamicBytesFD{}
 	if err := fd.Init(rp.Mount(), d, data, &f.locks, opts.Flags, rp.Credentials()); err != nil {
 		return nil, err
 	}
+
 	return &fd.vfsfd, nil
 }
 
@@ -177,4 +194,56 @@ func (fd *DynamicBytesFD) Stat(ctx context.Context, opts vfs.StatOptions) (linux
 func (fd *DynamicBytesFD) SetStat(context.Context, vfs.SetStatOptions) error {
 	// DynamicBytesFiles are immutable.
 	return linuxerr.EPERM
+}
+
+// PollableDynamicBytesFD represents a DynamicBytesFD that can be monitored
+// for changes using select, poll, or epoll.
+//
+// +stateify savable
+type PollableDynamicBytesFD struct {
+	DynamicBytesFD
+
+	poller       *vfs.DynamicBytesPoller
+	pollSnapshot atomicbitops.Uint64
+}
+
+// Init initializes a PollableDynamicBytesFD.
+func (fd *PollableDynamicBytesFD) Init(m *vfs.Mount, d *Dentry, data vfs.DynamicBytesSource, locks *vfs.FileLocks, flags uint32, creds *auth.Credentials, poller *vfs.DynamicBytesPoller) error {
+	fd.LockFD.Init(locks)
+	if err := fd.vfsfd.Init(fd, flags, creds, m, d.VFSDentry(),
+		&vfs.FileDescriptionOptions{DenySpliceIn: true}); err != nil {
+		return err
+	}
+	fd.inode = d.inode
+	fd.DynamicBytesFileDescriptionImpl.Init(&fd.vfsfd, data)
+	fd.poller = poller
+	fd.pollSnapshot.Store(poller.Seq())
+	return nil
+}
+
+// Epollable implements FileDescriptionImpl.Epollable.
+func (fd *PollableDynamicBytesFD) Epollable() bool {
+	return true
+}
+
+// Readiness implements waiter.Waitable.Readiness.
+func (fd *PollableDynamicBytesFD) Readiness(mask waiter.EventMask) waiter.EventMask {
+	cur := fd.poller.Seq()
+	events := waiter.ReadableEvents | waiter.WritableEvents
+	if cur != fd.pollSnapshot.Load() {
+		fd.pollSnapshot.Store(cur)
+		events = waiter.ReadableEvents | vfs.DynamicBytesPollEvents
+	}
+	return events & mask
+}
+
+// EventRegister implements waiter.Waitable.EventRegister.
+func (fd *PollableDynamicBytesFD) EventRegister(e *waiter.Entry) error {
+	fd.poller.EventRegister(e)
+	return nil
+}
+
+// EventUnregister implements waiter.Waitable.EventUnregister.
+func (fd *PollableDynamicBytesFD) EventUnregister(e *waiter.Entry) {
+	fd.poller.EventUnregister(e)
 }
