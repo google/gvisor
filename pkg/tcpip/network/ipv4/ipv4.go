@@ -1972,6 +1972,8 @@ func (p *protocol) SendRejectionError(pkt *stack.PacketBuffer, rejectWith stack.
 		return p.returnError(&icmpReasonHostProhibited{}, pkt, inputHook)
 	case stack.RejectIPv4WithICMPAdminProhibited:
 		return p.returnError(&icmpReasonAdministrativelyProhibited{}, pkt, inputHook)
+	case stack.RejectIPv4WithTCPReset:
+		return ip.RejectWithTCPReset(pkt, ProtocolNumber, p.stack, inputHook)
 	default:
 		panic(fmt.Sprintf("unhandled %[1]T = %[1]d", rejectWith))
 	}

@@ -15,6 +15,7 @@ go_library(
         "iptables_unsafe.go",
         "iptables_util.go",
         "nat.go",
+        "reject.go",
     ],
     visibility = ["//test/iptables:__subpackages__"],
     deps = [
