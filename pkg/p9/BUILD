@@ -22,4 +22,5 @@ go_test(
     size = "small",
     srcs = ["p9_test.go"],
     library = ":p9",
+    deps = ["@org_golang_x_sys//unix:go_default_library"],
 )
