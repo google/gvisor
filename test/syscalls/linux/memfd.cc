@@ -254,8 +254,24 @@ TEST(MemfdTest, SealGrowPartialWriteTruncated) {
   // within the file and requires no growth, but attempting to write the final
   // 3/4 page would require growing the file.
   const std::vector<char> buf(kPageSize);
-  EXPECT_THAT(write(memfd.get(), buf.data(), buf.size()),
-              SyscallSucceedsWithValue(kPageSize / 4));
+
+  // TODO(b/527998184): Determine what Linux change causes us to see EPERM.
+  // gVisor should evolve to match the latest Linux behavior.
+  bool is_new_linux = false;
+  if (!IsRunningOnGvisor()) {
+    auto version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
+    if (version.major > 6 || (version.major == 6 && version.minor >= 12)) {
+      is_new_linux = true;
+    }
+  }
+
+  if (is_new_linux) {
+    EXPECT_THAT(write(memfd.get(), buf.data(), buf.size()),
+                SyscallFailsWithErrno(EPERM));
+  } else {
+    EXPECT_THAT(write(memfd.get(), buf.data(), buf.size()),
+                SyscallSucceedsWithValue(kPageSize / 4));
+  }
 }
 
 // F_SEAL_GROW causes writes which partially extend off the current EOF to fail
