@@ -16,7 +16,7 @@
 package wire
 
 // CurrentVersion is the current wire and protocol version.
-const CurrentVersion = 1
+const CurrentVersion = 2
 
 // HeaderStructSize size of header struct in bytes.
 const HeaderStructSize = 8
