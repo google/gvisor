@@ -156,6 +156,20 @@ TEST(RlimitTest, RlimitNProc) {
   }).Join();
 }
 
+TEST(RlimitTest, SetRlimitRtPrio) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_RESOURCE)));
+
+  struct rlimit rl = {
+      .rlim_cur = 5,
+      .rlim_max = 10,
+  };
+  EXPECT_THAT(setrlimit(RLIMIT_RTPRIO, &rl), SyscallSucceeds());
+
+  EXPECT_THAT(getrlimit(RLIMIT_RTPRIO, &rl), SyscallSucceeds());
+  EXPECT_EQ(rl.rlim_cur, 5);
+  EXPECT_EQ(rl.rlim_max, 10);
+}
+
 TEST(RlimitTest, ParseProcPidLimits) {
   auto proc_self_limits =
       ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/self/limits"));
