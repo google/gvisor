@@ -245,6 +245,18 @@ func (s *runscService) Start(ctx context.Context, r *task.StartRequest) (*task.S
 	if err != nil {
 		return nil, errgrpc.ToGRPC(err)
 	}
+	if len(r.ExecID) == 0 {
+		s.send(&events.TaskStart{
+			ContainerID: r.ID,
+			Pid:         uint32(p.Pid()),
+		})
+	} else {
+		s.send(&events.TaskExecStarted{
+			ContainerID: r.ID,
+			ExecID:      r.ExecID,
+			Pid:         uint32(p.Pid()),
+		})
+	}
 	// TODO: Set the cgroup and oom notifications on restore.
 	return &task.StartResponse{
 		Pid: uint32(p.Pid()),
