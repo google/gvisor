@@ -40,6 +40,7 @@ func NewNullFD(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opts vfs.O
 	fd := &nullFD{}
 	if err := fd.vfsfd.Init(fd, opts.Flags, auth.CredentialsFromContext(ctx), mnt, vfsd, &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,
+		SpecialFile:       true,
 	}); err != nil {
 		return nil, err
 	}

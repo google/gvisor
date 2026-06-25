@@ -132,6 +132,11 @@ type FileDescriptionOptions struct {
 
 	// If DenySpliceIn is true, splice into descriptor isn't allowed.
 	DenySpliceIn bool
+
+	// If SpecialFile is true, this file description is for a special file.
+	// Currently, the only difference for special files is that they can be
+	// opened for writing through read-only mounts.
+	SpecialFile bool
 }
 
 // FileCreationFlags are the set of flags passed to FileDescription.Init() but
@@ -143,8 +148,11 @@ const FileCreationFlags = linux.O_CREAT | linux.O_EXCL | linux.O_NOCTTY | linux.
 // is usually the full set of flags passed to open(2).
 func (fd *FileDescription) Init(impl FileDescriptionImpl, flags uint32, creds *auth.Credentials, mnt *Mount, d *Dentry, opts *FileDescriptionOptions) error {
 	if MayWriteFileWithOpenFlags(flags) {
-		if err := mnt.CheckBeginWrite(); err != nil {
-			return err
+		// Skip the mount writability check for special files.
+		if !opts.SpecialFile {
+			if err := mnt.CheckBeginWrite(); err != nil {
+				return err
+			}
 		}
 		fd.fmodeFlags |= linux.FMODE_WRITE
 	}
@@ -216,7 +224,8 @@ func (fd *FileDescription) DecRef(ctx context.Context) {
 
 		// Release implementation resources.
 		fd.impl.Release(ctx)
-		if fd.IsWritable() {
+		// Only release a mount write reference if Init() acquired one.
+		if fd.IsWritable() && !fd.opts.SpecialFile {
 			fd.vd.mount.EndWrite()
 		}
 		fd.vd.DecRef(ctx)

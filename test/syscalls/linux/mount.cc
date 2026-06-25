@@ -481,6 +481,70 @@ TEST(MountTest, BindMountReadonly) {
   EXPECT_EQ(s.st_size, strlen(msg));
 }
 
+// Special files (such as FIFO) should be openable for writing even on a
+// read-only mount. Regular files should not.
+TEST(MountTest, FifoWritableOnReadonlyMount) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mnt =
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir.path(), kTmpfs, 0, "", 0));
+
+  // Populate the still-writable mount with a FIFO and a regular file.
+  std::string const fifo_path = JoinPath(dir.path(), "fifo");
+  std::string const reg_path = JoinPath(dir.path(), "reg");
+  ASSERT_THAT(mkfifo(fifo_path.c_str(), 0666), SyscallSucceeds());
+  FileDescriptor reg_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(reg_path, O_WRONLY | O_CREAT, 0644));
+  reg_fd.reset();
+
+  // Remount read-only.
+  ASSERT_THAT(
+      mount("", dir.path().c_str(), nullptr, MS_REMOUNT | MS_RDONLY, nullptr),
+      SyscallSucceeds());
+  ASSERT_THAT(access(dir.path().c_str(), W_OK), SyscallFailsWithErrno(EROFS));
+
+  // The FIFO opens writably despite the RO mount.
+  FileDescriptor fifo_fd = ASSERT_NO_ERRNO_AND_VALUE(Open(fifo_path, O_RDWR));
+  EXPECT_THAT(write(fifo_fd.get(), "x", 1), SyscallSucceedsWithValue(1));
+
+  // The regular file still fails a writable open with EROFS, but a read-only
+  // open succeeds.
+  EXPECT_THAT(open(reg_path.c_str(), O_WRONLY), SyscallFailsWithErrno(EROFS));
+  ASSERT_NO_ERRNO_AND_VALUE(Open(reg_path, O_RDONLY));
+}
+
+// Same test as above, but for a character device.
+TEST(MountTest, DeviceFileWritableOnReadonlyMount) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mnt =
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir.path(), kTmpfs, 0, "", 0));
+
+  // Create a /dev/null-style character device while the mount is writable.
+  std::string const dev_path = JoinPath(dir.path(), "null");
+  int ret = mknod(dev_path.c_str(), S_IFCHR | 0666, makedev(1, 3));
+  const bool was_eperm = Value(ret, SyscallFailsWithErrno(EPERM));
+
+  // In our test infrastructure, this may not always be possible to test on
+  // native since CAP_MKNOD is required in the *initial* user ns, and native
+  // tests are sometimes run in a user ns.
+  SKIP_IF(was_eperm);
+
+  // (But otherwise, mknod() should succeed.)
+  ASSERT_THAT(ret, SyscallSucceeds());
+
+  // Remount read-only.
+  ASSERT_THAT(
+      mount("", dir.path().c_str(), nullptr, MS_REMOUNT | MS_RDONLY, nullptr),
+      SyscallSucceeds());
+
+  // The device node opens writably and accepts writes despite the RO mount.
+  FileDescriptor dev_fd = ASSERT_NO_ERRNO_AND_VALUE(Open(dev_path, O_WRONLY));
+  EXPECT_THAT(write(dev_fd.get(), "x", 1), SyscallSucceedsWithValue(1));
+}
+
 // Test that bind mounting a directory onto a regular file fails with ENOTDIR.
 TEST(MountTest, BindMountDirectoryOntoFileFails) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
