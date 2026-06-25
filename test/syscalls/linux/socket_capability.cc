@@ -15,9 +15,12 @@
 // Subset of socket tests that need Linux-specific headers (compared to POSIX
 // headers).
 
+#include <cerrno>
+
 #include "gtest/gtest.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/linux_capability_util.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
@@ -53,6 +56,30 @@ TEST(SocketTest, UnixConnectNeedsWritePerm) {
   EXPECT_THAT(connect(client.get(), reinterpret_cast<struct sockaddr*>(&addr),
                       sizeof(addr)),
               SyscallSucceeds());
+}
+
+TEST(SocketTest, SetMarkNeedsNetAdminOrRaw) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)) &&
+          !ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+
+  FileDescriptor bound =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, 0));
+
+  int mark = 1234;
+
+  EXPECT_THAT(setsockopt(bound.get(), SOL_SOCKET, SO_MARK, &mark, sizeof(mark)),
+              SyscallSucceeds());
+
+  AutoCapability cap_admin(CAP_NET_ADMIN, false);
+  AutoCapability cap_raw(CAP_NET_RAW, false);
+  EXPECT_THAT(setsockopt(bound.get(), SOL_SOCKET, SO_MARK, &mark, sizeof(mark)),
+              SyscallFailsWithErrno(EPERM));
+
+  int get_mark = 0;
+  socklen_t optlen = sizeof(get_mark);
+  EXPECT_THAT(getsockopt(bound.get(), SOL_SOCKET, SO_MARK, &get_mark, &optlen),
+              SyscallSucceeds());
+  EXPECT_EQ(get_mark, mark);
 }
 
 }  // namespace testing

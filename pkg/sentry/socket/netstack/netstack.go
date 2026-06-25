@@ -1170,6 +1170,14 @@ func GetSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, family
 
 		v := primitive.Int32(ep.SocketOptions().GetRcvlowat())
 		return &v, nil
+
+	case linux.SO_MARK:
+		if outLen < sizeOfInt32 {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		v := primitive.Uint32(ep.SocketOptions().GetMark())
+		return &v, nil
 	default:
 		if v, err, handled := getSockOptSocketCustom(t, s, ep, name, outLen); handled {
 			return v, err
@@ -2157,6 +2165,20 @@ func SetSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 		v := hostarch.ByteOrder.Uint32(optVal)
 		ep.SocketOptions().SetRcvlowat(int32(v))
 		return nil
+	case linux.SO_MARK:
+		ns := t.NetworkNamespace().UserNamespace()
+		if !t.HasCapabilityIn(linux.CAP_NET_RAW, ns) &&
+			!t.HasCapabilityIn(linux.CAP_NET_ADMIN, ns) {
+			return syserr.ErrNotPermitted
+		}
+
+		if len(optVal) < sizeOfInt32 {
+			return syserr.ErrInvalidArgument
+		}
+
+		v := hostarch.ByteOrder.Uint32(optVal)
+		ep.SocketOptions().SetMark(v)
+		return nil
 	case linux.SO_DEBUG,
 		linux.SO_TYPE,
 		linux.SO_ERROR,
@@ -2173,7 +2195,6 @@ func SetSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 		linux.SO_SNDBUFFORCE,
 		linux.SO_PASSSEC,
 		linux.SO_TIMESTAMPNS,
-		linux.SO_MARK,
 		linux.SO_TIMESTAMPING,
 		linux.SO_PROTOCOL,
 		linux.SO_DOMAIN,

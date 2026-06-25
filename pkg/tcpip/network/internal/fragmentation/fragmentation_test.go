@@ -530,6 +530,7 @@ func TestPacketFragmenter(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			pkt := testutil.MakeRandPkt(test.transportHeaderLen, reserve, []int{test.payloadSize}, proto)
 			defer pkt.DecRef()
+			pkt.Mark = 0x1234
 			payloadView := stack.PayloadSince(pkt.TransportHeader())
 			defer payloadView.Release()
 			originalPayload := payloadView.AsSlice()
@@ -539,6 +540,9 @@ func TestPacketFragmenter(t *testing.T) {
 			for i := 0; ; i++ {
 				fragPkt, offset, copied, more := pf.BuildNextFragment()
 				defer fragPkt.DecRef()
+				if fragPkt.Mark != 0x1234 {
+					t.Errorf("(fragment #%d) got Mark = 0x%x, want = 0x1234", i, fragPkt.Mark)
+				}
 				wantFragment := test.wantFragments[i]
 				if got := pf.RemainingFragmentCount(); got != wantFragment.remaining {
 					t.Errorf("(fragment #%d) got pf.RemainingFragmentCount() = %d, want = %d", i, got, wantFragment.remaining)

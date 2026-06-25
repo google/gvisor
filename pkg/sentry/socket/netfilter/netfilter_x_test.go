@@ -20,6 +20,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netfilter"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -81,5 +82,80 @@ func TestAcceptBlob(t *testing.T) {
 	}
 	if stk.IPTables().Modified() {
 		t.Fatalf("ACCEPT rules shouldn't cause iptables modifications, but did")
+	}
+}
+
+// TestMarkMatchingCheckOutput verifies that iptables Output filtering
+// correctly matches and drops/accepts packets based on their mark.
+func TestMarkMatchingCheckOutput(t *testing.T) {
+	stk := stack.New(stack.Options{
+		DefaultIPTables: netfilter.DefaultLinuxTables,
+	})
+
+	table := stack.Table{
+		Rules: []stack.Rule{
+			{
+				Target: &stack.AcceptTarget{},
+			},
+			{
+				Target: &stack.AcceptTarget{},
+			},
+			{
+				// Output hook
+				Matchers: []stack.Matcher{netfilter.NewMarkMatcher(0x1234, 0xffffffff, false)},
+				Target:   &stack.DropTarget{},
+			},
+			{
+				Target: &stack.AcceptTarget{},
+			},
+			{
+				Target: &stack.ErrorTarget{},
+			},
+		},
+		BuiltinChains: [stack.NumHooks]int{
+			stack.Prerouting:  stack.HookUnset,
+			stack.Input:       0,
+			stack.Forward:     1,
+			stack.Output:      2,
+			stack.Postrouting: stack.HookUnset,
+		},
+		Underflows: [stack.NumHooks]int{
+			stack.Prerouting:  stack.HookUnset,
+			stack.Input:       0,
+			stack.Forward:     1,
+			stack.Output:      2,
+			stack.Postrouting: stack.HookUnset,
+		},
+	}
+	stk.IPTables().ForceReplaceTable(stack.FilterID, table, false /* ipv4 */)
+
+	pkt1 := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		ReserveHeaderBytes: header.IPv4MinimumSize,
+	})
+	defer pkt1.DecRef()
+	pkt1.NetworkProtocolNumber = header.IPv4ProtocolNumber
+	ip1 := header.IPv4(pkt1.NetworkHeader().Push(header.IPv4MinimumSize))
+	ip1.Encode(&header.IPv4Fields{
+		TotalLength: header.IPv4MinimumSize,
+		Protocol:    99,
+	})
+	pkt1.Mark = 0x5678 // Does not match 0x1234
+	if ok := stk.IPTables().CheckOutput(pkt1, nil, ""); !ok {
+		t.Errorf("CheckOutput(Mark=0x5678) = false (dropped), want true (accepted)")
+	}
+
+	pkt2 := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		ReserveHeaderBytes: header.IPv4MinimumSize,
+	})
+	defer pkt2.DecRef()
+	pkt2.NetworkProtocolNumber = header.IPv4ProtocolNumber
+	ip2 := header.IPv4(pkt2.NetworkHeader().Push(header.IPv4MinimumSize))
+	ip2.Encode(&header.IPv4Fields{
+		TotalLength: header.IPv4MinimumSize,
+		Protocol:    99,
+	})
+	pkt2.Mark = 0x1234 // Matches 0x1234
+	if ok := stk.IPTables().CheckOutput(pkt2, nil, ""); ok {
+		t.Errorf("CheckOutput(Mark=0x1234) = true (accepted), want false (dropped)")
 	}
 }

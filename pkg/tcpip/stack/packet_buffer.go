@@ -57,6 +57,9 @@ type PacketBufferOptions struct {
 	// OnRelease is a function to be run when the packet buffer is no longer
 	// referenced (released back to the pool).
 	OnRelease func()
+
+	// Mark is the mark value of this packet.
+	Mark uint32
 }
 
 // A PacketBuffer contains all the data of a network packet.
@@ -162,6 +165,9 @@ type PacketBuffer struct {
 	// NetworkPacketInfo holds an incoming packet's network-layer information.
 	NetworkPacketInfo NetworkPacketInfo
 
+	// Mark is the mark value of this packet.
+	Mark uint32
+
 	tuple *tuple
 
 	// onRelease is a function to be run when the packet buffer is no longer
@@ -183,6 +189,7 @@ func NewPacketBuffer(opts PacketBufferOptions) *PacketBuffer {
 	}
 	pk.NetworkPacketInfo.IsForwardedPacket = opts.IsForwardedPacket
 	pk.onRelease = opts.OnRelease
+	pk.Mark = opts.Mark
 	pk.InitRefs()
 	return pk
 }
@@ -381,6 +388,7 @@ func (pk *PacketBuffer) Clone() *PacketBuffer {
 	newPk.headers = pk.headers
 	newPk.Hash = pk.Hash
 	newPk.Owner = pk.Owner
+	newPk.Mark = pk.Mark
 	newPk.GSOOptions = pk.GSOOptions
 	newPk.EgressRoute = pk.EgressRoute
 	newPk.NetworkProtocolNumber = pk.NetworkProtocolNumber
@@ -432,6 +440,7 @@ func (pk *PacketBuffer) CloneToInbound() *PacketBuffer {
 	newPk.InitRefs()
 	// Treat unfilled header portion as reserved.
 	newPk.reserved = pk.AvailableHeaderBytes()
+	newPk.Mark = pk.Mark
 	newPk.tuple = pk.tuple
 	return newPk
 }
@@ -467,6 +476,7 @@ func (pk *PacketBuffer) DeepCopyForForwarding(reservedHeaderBytes int) *PacketBu
 	}
 
 	newPk.tuple = pk.tuple
+	newPk.Mark = pk.Mark
 
 	return newPk
 }

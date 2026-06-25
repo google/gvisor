@@ -1004,6 +1004,7 @@ func (s *sender) sendZeroWindowProbe() {
 	// we re-send an ACKed byte to goad the receiver into responding.
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Payload: buffer.MakeWithData(zeroProbeJunk),
+		Mark:    s.ep.ops.GetMark(),
 	})
 	defer pkt.DecRef()
 	s.sendSegmentFromPacketBuffer(pkt, header.TCPFlagAck, s.SndUna-1)
