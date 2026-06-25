@@ -730,6 +730,34 @@ TEST(OpenTreeTest, OpenTreeCloneNonRecursiveOnAttached) {
               SyscallFailsWithErrno(ENOENT));
 }
 
+TEST(OpenTreeTest, OpenTreeCloneFailsOnDetachedMount) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  // Create a detached tmpfs mount fd via fsopen/fsmount (no path attachment).
+  int fsfd = fsopen(kTmpfs, 0);
+  ASSERT_THAT(fsfd, SyscallSucceeds());
+  auto cleanup_fs = Cleanup([&]() { close(fsfd); });
+  ASSERT_THAT(fsconfig(fsfd, FSCONFIG_CMD_CREATE, NULL, NULL, 0),
+              SyscallSucceeds());
+  int mntfd = fsmount(fsfd, 0, 0);
+  ASSERT_THAT(mntfd, SyscallSucceeds());
+  auto cleanup_mnt = Cleanup([&]() { close(mntfd); });
+
+  // Attach the mount to a path and then detach it via MNT_DETACH while
+  // keeping the mount fd alive.
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  ASSERT_THAT(move_mount(mntfd, "", AT_FDCWD, dir.path().c_str(),
+                         MOVE_MOUNT_F_EMPTY_PATH),
+              SyscallSucceeds());
+  ASSERT_THAT(umount2(dir.path().c_str(), MNT_DETACH), SyscallSucceeds());
+
+  // open_tree(OPEN_TREE_CLONE) on a mount that has already been detached via
+  // MNT_DETACH must fail with EINVAL, matching Linux. Regression test for
+  // CloneTreeToAnonNS() not checking Mount.umounted (gvisor.dev/issue/13481).
+  EXPECT_THAT(open_tree(mntfd, "", AT_EMPTY_PATH | OPEN_TREE_CLONE),
+              SyscallFailsWithErrno(EINVAL));
+}
+
 TEST(OpenTreeTest, OpenTreeCloneNonRecursiveOnDetached) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
