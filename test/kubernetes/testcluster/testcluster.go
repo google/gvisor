@@ -774,7 +774,12 @@ func (t *TestCluster) applyCommonPodConfigurations(ctx context.Context, np *Node
 		if targetMemoryMiB == 0 {
 			targetMemoryMiB = int(float64(np.spec.MemoryGiB*1024) * defaultMaxResourceUtilization)
 		}
-		resCPU := resource.MustParse(fmt.Sprintf("%d", targetCores))
+		requestCores := int(float64(targetCores) * defaultMaxResourceUtilization)
+		if requestCores < 1 {
+			requestCores = 1
+		}
+		resLimitCPU := resource.MustParse(fmt.Sprintf("%d", targetCores))
+		resRequestCPU := resource.MustParse(fmt.Sprintf("%d", requestCores))
 		resMem := resource.MustParse(fmt.Sprintf("%dMi", targetMemoryMiB))
 		for _, containers := range [][]v13.Container{
 			podSpec.InitContainers,
@@ -787,19 +792,17 @@ func (t *TestCluster) applyCommonPodConfigurations(ctx context.Context, np *Node
 				if containers[i].Resources.Requests == nil {
 					containers[i].Resources.Requests = make(v13.ResourceList)
 				}
-				for _, res := range []struct {
-					key v13.ResourceName
-					val resource.Quantity
-				}{
-					{v13.ResourceCPU, resCPU},
-					{v13.ResourceMemory, resMem},
-				} {
-					if _, ok := containers[i].Resources.Requests[res.key]; !ok {
-						containers[i].Resources.Requests[res.key] = res.val
-					}
-					if _, ok := containers[i].Resources.Limits[res.key]; !ok {
-						containers[i].Resources.Limits[res.key] = res.val
-					}
+				if _, ok := containers[i].Resources.Requests[v13.ResourceCPU]; !ok {
+					containers[i].Resources.Requests[v13.ResourceCPU] = resRequestCPU
+				}
+				if _, ok := containers[i].Resources.Limits[v13.ResourceCPU]; !ok {
+					containers[i].Resources.Limits[v13.ResourceCPU] = resLimitCPU
+				}
+				if _, ok := containers[i].Resources.Requests[v13.ResourceMemory]; !ok {
+					containers[i].Resources.Requests[v13.ResourceMemory] = resMem
+				}
+				if _, ok := containers[i].Resources.Limits[v13.ResourceMemory]; !ok {
+					containers[i].Resources.Limits[v13.ResourceMemory] = resMem
 				}
 			}
 		}
