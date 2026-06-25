@@ -21,8 +21,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
@@ -83,5 +85,54 @@ exit 0
 	}
 	if got.Memory == nil || got.Memory.Limit == nil || *got.Memory.Limit != limit {
 		t.Fatalf("stdin resources: got %+v, want memory limit %d", got.Memory, limit)
+	}
+}
+
+// TestCheckpointOptsArgs verifies the save/restore-exec flags are emitted only
+// when set, so that `runsc checkpoint` runs the configured hook in the sandbox.
+func TestCheckpointOptsArgs(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		opts CheckpointOpts
+		want []string
+	}{
+		{
+			name: "empty",
+			opts: CheckpointOpts{},
+			want: nil,
+		},
+		{
+			name: "image-and-leave-running",
+			opts: CheckpointOpts{ImagePath: "/img", LeaveRunning: true},
+			want: []string{"--image-path=/img", "--leave-running"},
+		},
+		{
+			name: "save-restore-exec-argv",
+			opts: CheckpointOpts{SaveRestoreExecArgv: "/usr/local/bin/hook --flag"},
+			want: []string{"--save-restore-exec-argv=/usr/local/bin/hook --flag"},
+		},
+		{
+			name: "save-restore-exec-argv-and-timeout",
+			opts: CheckpointOpts{
+				SaveRestoreExecArgv:    "/usr/local/bin/hook",
+				SaveRestoreExecTimeout: 90 * time.Second,
+			},
+			want: []string{
+				"--save-restore-exec-argv=/usr/local/bin/hook",
+				"--save-restore-exec-timeout=1m30s",
+			},
+		},
+		{
+			name: "timeout-without-argv-is-omitted",
+			opts: CheckpointOpts{SaveRestoreExecTimeout: 90 * time.Second},
+			want: nil,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tc.opts.args()
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("args() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

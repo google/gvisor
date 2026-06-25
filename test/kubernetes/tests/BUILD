@@ -79,3 +79,31 @@ go_test(
     ],
     deps = ["//test/kubernetes/k8sctx/kubectlctx"],
 )
+
+go_library(
+    name = "checkpointrestore",
+    testonly = True,
+    srcs = ["checkpoint_restore.go"],
+    deps = [
+        "//test/kubernetes/k8sctx",
+        "//test/kubernetes/testcluster",
+        "@io_k8s_api//core/v1:go_default_library",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:go_default_library",
+        "@io_k8s_apimachinery//pkg/util/intstr:go_default_library",
+        "@io_k8s_client_go//kubernetes:go_default_library",
+        "@org_golang_google_protobuf//proto:go_default_library",
+    ],
+)
+
+go_test(
+    name = "checkpoint_restore_test",
+    srcs = ["checkpoint_restore_test.go"],
+    library = ":checkpointrestore",
+    tags = [
+        "local",
+        "manual",
+        "noguitar",
+        "notap",
+    ],
+    deps = ["//test/kubernetes/k8sctx/kubectlctx"],
+)

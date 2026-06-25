@@ -20,14 +20,18 @@ package shim_test
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	task "github.com/containerd/containerd/api/runtime/task/v2"
 	tasktype "github.com/containerd/containerd/api/types/task"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/types/known/anypb"
+	"gvisor.dev/gvisor/runsc/specutils"
 	"gvisor.dev/gvisor/shim/shimutils"
 )
 
@@ -158,6 +162,122 @@ func TestCreateSandboxWithContainer(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCheckpointRestoreSandboxWithContainer(t *testing.T) {
+	containerd := shimutils.NewMockContainerd(t, nil, nil)
+	sandboxSpec := shimutils.NewSandboxSpec()
+	containerSpec := shimutils.NewContainerSpec("", []string{"sleep", "10000"})
+
+	sandbox, err := shimutils.NewContainer(sandboxSpec, containerd)
+	if err != nil {
+		t.Fatalf("failed to create sandbox: %v", err)
+	}
+	containerSpec.Annotations[specutils.ContainerdSandboxIDAnnotation] = sandbox.ID()
+	container, err := shimutils.NewContainer(containerSpec, containerd)
+	if err != nil {
+		t.Fatalf("failed to create container: %v", err)
+	}
+
+	if err := containerd.StartShim(t, sandbox); err != nil {
+		t.Fatalf("failed to start shim: %v", err)
+	}
+	client := containerd.GetClient(t)
+	opts, err := containerd.GetRuntimeOptions()
+	if err != nil {
+		t.Fatalf("failed to get runtime options: %v", err)
+	}
+
+	if err := createAndWaitForContainer(t.Context(), client, sandbox, opts); err != nil {
+		t.Fatalf("failed to create and wait for sandbox: %v", err)
+	}
+	if err := startAndWaitForContainer(t.Context(), client, sandbox.ID(), sandbox); err != nil {
+		t.Fatalf("failed to start and wait for sandbox: %v", err)
+	}
+	if err := createAndWaitForContainer(t.Context(), client, container, opts); err != nil {
+		t.Fatalf("failed to create and wait for container: %v", err)
+	}
+	if err := startAndWaitForContainer(t.Context(), client, container.ID(), container); err != nil {
+		t.Fatalf("failed to start and wait for container: %v", err)
+	}
+
+	checkpointDir := filepath.Join(containerd.WorkingDir(), "checkpoint")
+	if err := os.MkdirAll(checkpointDir, 0o777); err != nil {
+		t.Fatalf("failed to create checkpoint dir: %v", err)
+	}
+	if _, err := client.Checkpoint(t.Context(), &task.CheckpointTaskRequest{
+		ID:   sandbox.ID(),
+		Path: checkpointDir,
+	}); err != nil {
+		t.Fatalf("failed to checkpoint sandbox: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(checkpointDir, "checkpoint.img")); err != nil {
+		t.Fatalf("checkpoint did not create checkpoint.img: %v", err)
+	}
+
+	restoreContainerd := shimutils.NewMockContainerd(t, nil, nil)
+	restoreSandboxSpec := cloneSpecWithCheckpoint(sandboxSpec, checkpointDir, "")
+	restoreSandbox, err := shimutils.NewContainer(restoreSandboxSpec, restoreContainerd)
+	if err != nil {
+		t.Fatalf("failed to create restore sandbox: %v", err)
+	}
+	restoreContainerSpec := cloneSpecWithCheckpoint(containerSpec, checkpointDir, restoreSandbox.ID())
+	restoreContainer, err := shimutils.NewContainer(restoreContainerSpec, restoreContainerd)
+	if err != nil {
+		t.Fatalf("failed to create restore container: %v", err)
+	}
+
+	if err := restoreContainerd.StartShim(t, restoreSandbox); err != nil {
+		t.Fatalf("failed to start restore shim: %v", err)
+	}
+	restoreClient := restoreContainerd.GetClient(t)
+	restoreOpts, err := restoreContainerd.GetRuntimeOptions()
+	if err != nil {
+		t.Fatalf("failed to get restore runtime options: %v", err)
+	}
+
+	if err := createAndWaitForContainer(t.Context(), restoreClient, restoreSandbox, restoreOpts); err != nil {
+		t.Fatalf("failed to create and wait for restore sandbox: %v", err)
+	}
+	if err := startAndWaitForContainer(t.Context(), restoreClient, restoreSandbox.ID(), restoreSandbox); err != nil {
+		t.Fatalf("failed to restore sandbox: %v", err)
+	}
+	if err := createAndWaitForContainer(t.Context(), restoreClient, restoreContainer, restoreOpts); err != nil {
+		t.Fatalf("failed to create and wait for restore container: %v", err)
+	}
+	if err := startAndWaitForContainer(t.Context(), restoreClient, restoreContainer.ID(), restoreContainer); err != nil {
+		t.Fatalf("failed to restore container: %v", err)
+	}
+
+	for _, id := range []string{restoreSandbox.ID(), restoreContainer.ID()} {
+		statusResp, err := restoreClient.State(t.Context(), &task.StateRequest{ID: id})
+		if err != nil {
+			t.Fatalf("failed to get restored state for %q: %v", id, err)
+		}
+		if statusResp.Status != tasktype.Status_RUNNING {
+			t.Fatalf("restored container %q status = %v, want %v", id, statusResp.Status, tasktype.Status_RUNNING)
+		}
+	}
+
+	if err := killAndWaitForContainer(t.Context(), client, sandbox.ID()); err != nil {
+		t.Fatalf("failed to kill checkpoint source sandbox: %v", err)
+	}
+	if err := killAndWaitForContainer(t.Context(), restoreClient, restoreSandbox.ID()); err != nil {
+		t.Fatalf("failed to kill restored sandbox: %v", err)
+	}
+}
+
+func cloneSpecWithCheckpoint(spec *specs.Spec, checkpointDir, sandboxID string) *specs.Spec {
+	clone := *spec
+	clone.Annotations = map[string]string{}
+	for k, v := range spec.Annotations {
+		clone.Annotations[k] = v
+	}
+	clone.Annotations["dev.gvisor.checkpoint.host-image-path"] = checkpointDir
+	if sandboxID != "" {
+		clone.Annotations[specutils.ContainerdSandboxIDAnnotation] = sandboxID
+	}
+	return &clone
 }
 
 func createAndWaitForContainer(ctx context.Context, client task.TaskService, container *shimutils.Container, opts *anypb.Any) error {
