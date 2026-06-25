@@ -249,11 +249,15 @@ type MockContainerd struct {
 // We need this directory structure to be created before we can start the
 // shim.
 
-// NewMockContainerd creates a new MockContainerd.
-func NewMockContainerd(t *testing.T, shimArgs, runscArgs map[string]any) *MockContainerd {
+// NewMockContainerdWithSuffix creates a new MockContainerd with a custom suffix for the working directory to avoid conflicts.
+func NewMockContainerdWithSuffix(t *testing.T, suffix string, shimArgs, runscArgs map[string]any) *MockContainerd {
 	s := &MockContainerd{}
 	// Create working directory.
-	wd, err := newWorkingDir(t.Name())
+	name := t.Name()
+	if suffix != "" {
+		name = name + "-" + suffix
+	}
+	wd, err := newWorkingDir(name)
 	if err != nil {
 		t.Fatalf("failed to create working directory: %v", err)
 	}
@@ -305,6 +309,11 @@ func NewMockContainerd(t *testing.T, shimArgs, runscArgs map[string]any) *MockCo
 	})
 
 	return s
+}
+
+// NewMockContainerd creates a new MockContainerd.
+func NewMockContainerd(t *testing.T, shimArgs, runscArgs map[string]any) *MockContainerd {
+	return NewMockContainerdWithSuffix(t, "", shimArgs, runscArgs)
 }
 
 // WorkingDir returns the working directory of the mock containerd.

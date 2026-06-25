@@ -49,6 +49,9 @@ type testCase struct {
 	runscArgs map[string]any
 }
 
+// TestCreateKillWaitSandbox verifies that a sandbox can be created, started,
+// and then successfully killed and cleaned up. It also verifies that the
+// containerd shim emits the correct TaskStart and TaskExit events.
 func TestCreateKillWaitSandbox(t *testing.T) {
 	for _, tc := range []testCase{
 		{
@@ -63,30 +66,7 @@ func TestCreateKillWaitSandbox(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			containerd := shimutils.NewMockContainerd(t, tc.shimArgs, nil)
-			spec := shimutils.NewSandboxSpec()
-
-			sandbox, err := shimutils.NewContainer(spec, containerd)
-			if err != nil {
-				t.Fatalf("failed to create container: %v", err)
-			}
-			if err := containerd.StartShim(t, sandbox); err != nil {
-				t.Fatalf("failed to start shim: %v", err)
-			}
-
-			client := containerd.GetClient(t)
-
-			opts, err := containerd.GetRuntimeOptions()
-			if err != nil {
-				t.Fatalf("failed to get runtime options: %v", err)
-			}
-
-			if err := createAndWaitForContainer(t.Context(), client, sandbox, opts); err != nil {
-				t.Fatalf("failed to create and wait for container: %v", err)
-			}
-
-			if err := startAndWaitForContainer(t.Context(), client, sandbox.ID(), containerd); err != nil {
-				t.Fatalf("failed to start and wait for container: %v", err)
-			}
+			sandbox, client := setupSandbox(t, containerd)
 
 			if err := killAndWaitForContainer(t.Context(), client, sandbox.ID(), containerd); err != nil {
 				t.Fatalf("failed to kill and wait for container: %v", err)
@@ -117,6 +97,9 @@ func TestCreateKillWaitSandbox(t *testing.T) {
 	}
 }
 
+// TestCreateSandboxWithContainer verifies that we can start a second
+// container inside an already running sandbox, and that we can successfully
+// query its state, kill it, and wait for its exit status.
 func TestCreateSandboxWithContainer(t *testing.T) {
 	for _, tc := range []testCase{
 		{
@@ -131,30 +114,11 @@ func TestCreateSandboxWithContainer(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			containerd := shimutils.NewMockContainerd(t, tc.shimArgs, nil)
-			sandboxSpec := shimutils.NewSandboxSpec()
-
-			sandbox, err := shimutils.NewContainer(sandboxSpec, containerd)
-			if err != nil {
-				t.Fatalf("failed to create sandbox: %v", err)
-			}
-
-			if err := containerd.StartShim(t, sandbox); err != nil {
-				t.Fatalf("failed to start shim: %v", err)
-			}
-
-			client := containerd.GetClient(t)
+			sandbox, client := setupSandbox(t, containerd)
 
 			opts, err := containerd.GetRuntimeOptions()
 			if err != nil {
 				t.Fatalf("failed to get runtime options: %v", err)
-			}
-
-			if err := createAndWaitForContainer(t.Context(), client, sandbox, opts); err != nil {
-				t.Fatalf("failed to create and wait for sandbox: %v", err)
-			}
-
-			if err := startAndWaitForContainer(t.Context(), client, sandbox.ID(), containerd); err != nil {
-				t.Fatalf("failed to start and wait for sandbox: %v", err)
 			}
 
 			containerSpec := shimutils.NewContainerSpec(sandbox.ID(), []string{"sleep", "10000"})
@@ -312,6 +276,42 @@ func killAndWaitForContainer(ctx context.Context, client task.TaskService, conta
 	return errGroup.Wait()
 }
 
+// setupSandbox is a helper that creates and starts a new sandbox container
+// using the provided MockContainerd. It returns the created container and the
+// task service client. It fails the test if any setup step fails.
+func setupSandbox(t *testing.T, containerd *shimutils.MockContainerd) (*shimutils.Container, task.TaskService) {
+	t.Helper()
+	sandboxSpec := shimutils.NewSandboxSpec()
+	sandbox, err := shimutils.NewContainer(sandboxSpec, containerd)
+	if err != nil {
+		t.Fatalf("failed to create sandbox: %v", err)
+	}
+
+	if err := containerd.StartShim(t, sandbox); err != nil {
+		t.Fatalf("failed to start shim: %v", err)
+	}
+
+	client := containerd.GetClient(t)
+
+	opts, err := containerd.GetRuntimeOptions()
+	if err != nil {
+		t.Fatalf("failed to get runtime options: %v", err)
+	}
+
+	if err := createAndWaitForContainer(t.Context(), client, sandbox, opts); err != nil {
+		t.Fatalf("failed to create sandbox: %v", err)
+	}
+
+	if err := startAndWaitForContainer(t.Context(), client, sandbox.ID(), containerd); err != nil {
+		t.Fatalf("failed to start sandbox: %v", err)
+	}
+
+	return sandbox, client
+}
+
+// TestPauseResumeSandbox verifies that a running sandbox can be paused
+// (suspended) and resumed, and that the shim emits the corresponding
+// TaskPaused and TaskResumed events.
 func TestPauseResumeSandbox(t *testing.T) {
 	for _, tc := range []testCase{
 		{
@@ -326,31 +326,7 @@ func TestPauseResumeSandbox(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			containerd := shimutils.NewMockContainerd(t, tc.shimArgs, nil)
-			sandboxSpec := shimutils.NewSandboxSpec()
-
-			sandbox, err := shimutils.NewContainer(sandboxSpec, containerd)
-			if err != nil {
-				t.Fatalf("failed to create sandbox: %v", err)
-			}
-
-			if err := containerd.StartShim(t, sandbox); err != nil {
-				t.Fatalf("failed to start shim: %v", err)
-			}
-
-			client := containerd.GetClient(t)
-
-			opts, err := containerd.GetRuntimeOptions()
-			if err != nil {
-				t.Fatalf("failed to get runtime options: %v", err)
-			}
-
-			if err := createAndWaitForContainer(t.Context(), client, sandbox, opts); err != nil {
-				t.Fatalf("failed to create sandbox: %v", err)
-			}
-
-			if err := startAndWaitForContainer(t.Context(), client, sandbox.ID(), containerd); err != nil {
-				t.Fatalf("failed to start sandbox: %v", err)
-			}
+			sandbox, client := setupSandbox(t, containerd)
 
 			pauseReq := &task.PauseRequest{
 				ID: sandbox.ID(),
@@ -393,6 +369,8 @@ func TestPauseResumeSandbox(t *testing.T) {
 	}
 }
 
+// TestPidsSandbox verifies that we can query the list of processes (PIDs)
+// running inside a sandbox, and that it returns at least one valid PID.
 func TestPidsSandbox(t *testing.T) {
 	for _, tc := range []testCase{
 		{
@@ -407,31 +385,7 @@ func TestPidsSandbox(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			containerd := shimutils.NewMockContainerd(t, tc.shimArgs, nil)
-			sandboxSpec := shimutils.NewSandboxSpec()
-
-			sandbox, err := shimutils.NewContainer(sandboxSpec, containerd)
-			if err != nil {
-				t.Fatalf("failed to create sandbox: %v", err)
-			}
-
-			if err := containerd.StartShim(t, sandbox); err != nil {
-				t.Fatalf("failed to start shim: %v", err)
-			}
-
-			client := containerd.GetClient(t)
-
-			opts, err := containerd.GetRuntimeOptions()
-			if err != nil {
-				t.Fatalf("failed to get runtime options: %v", err)
-			}
-
-			if err := createAndWaitForContainer(t.Context(), client, sandbox, opts); err != nil {
-				t.Fatalf("failed to create sandbox: %v", err)
-			}
-
-			if err := startAndWaitForContainer(t.Context(), client, sandbox.ID(), containerd); err != nil {
-				t.Fatalf("failed to start sandbox: %v", err)
-			}
+			sandbox, client := setupSandbox(t, containerd)
 
 			pidsReq := &task.PidsRequest{
 				ID: sandbox.ID(),
@@ -454,6 +408,9 @@ func TestPidsSandbox(t *testing.T) {
 	}
 }
 
+// TestDeleteContainer verifies that a container inside a sandbox can be
+// successfully deleted after it has been killed, and that subsequent
+// state queries for that container return an error.
 func TestDeleteContainer(t *testing.T) {
 	for _, tc := range []testCase{
 		{
@@ -468,30 +425,11 @@ func TestDeleteContainer(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			containerd := shimutils.NewMockContainerd(t, tc.shimArgs, nil)
-			sandboxSpec := shimutils.NewSandboxSpec()
-
-			sandbox, err := shimutils.NewContainer(sandboxSpec, containerd)
-			if err != nil {
-				t.Fatalf("failed to create sandbox: %v", err)
-			}
-
-			if err := containerd.StartShim(t, sandbox); err != nil {
-				t.Fatalf("failed to start shim: %v", err)
-			}
-
-			client := containerd.GetClient(t)
+			sandbox, client := setupSandbox(t, containerd)
 
 			opts, err := containerd.GetRuntimeOptions()
 			if err != nil {
 				t.Fatalf("failed to get runtime options: %v", err)
-			}
-
-			if err := createAndWaitForContainer(t.Context(), client, sandbox, opts); err != nil {
-				t.Fatalf("failed to create sandbox: %v", err)
-			}
-
-			if err := startAndWaitForContainer(t.Context(), client, sandbox.ID(), containerd); err != nil {
-				t.Fatalf("failed to start sandbox: %v", err)
 			}
 
 			containerSpec := shimutils.NewContainerSpec(sandbox.ID(), []string{"sleep", "10000"})
@@ -541,6 +479,9 @@ func TestDeleteContainer(t *testing.T) {
 	}
 }
 
+// TestExecContainer verifies that we can execute a new process (exec)
+// inside a running container in the sandbox, and that we can correctly
+// capture its exit status.
 func TestExecContainer(t *testing.T) {
 	for _, tc := range []testCase{
 		{
@@ -555,30 +496,11 @@ func TestExecContainer(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			containerd := shimutils.NewMockContainerd(t, tc.shimArgs, nil)
-			sandboxSpec := shimutils.NewSandboxSpec()
-
-			sandbox, err := shimutils.NewContainer(sandboxSpec, containerd)
-			if err != nil {
-				t.Fatalf("failed to create sandbox: %v", err)
-			}
-
-			if err := containerd.StartShim(t, sandbox); err != nil {
-				t.Fatalf("failed to start shim: %v", err)
-			}
-
-			client := containerd.GetClient(t)
+			sandbox, client := setupSandbox(t, containerd)
 
 			opts, err := containerd.GetRuntimeOptions()
 			if err != nil {
 				t.Fatalf("failed to get runtime options: %v", err)
-			}
-
-			if err := createAndWaitForContainer(t.Context(), client, sandbox, opts); err != nil {
-				t.Fatalf("failed to create sandbox: %v", err)
-			}
-
-			if err := startAndWaitForContainer(t.Context(), client, sandbox.ID(), containerd); err != nil {
-				t.Fatalf("failed to start sandbox: %v", err)
 			}
 
 			containerSpec := shimutils.NewContainerSpec(sandbox.ID(), []string{"sleep", "10000"})

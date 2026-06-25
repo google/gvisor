@@ -7,7 +7,10 @@ package(
 
 go_test(
     name = "shim_test",
-    srcs = ["shim_test.go"],
+    srcs = [
+        "metric_server_test.go",
+        "shim_test.go",
+    ],
     deps = [
         "//shim/shimutils",
         "@com_github_containerd_containerd_api//events:go_default_library",
