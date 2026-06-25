@@ -23,7 +23,7 @@
 namespace gvisor {
 namespace testing {
 
-void IPv4UDPUnboundExternalNetworkingSocketTest::SetUp() {
+void IPv4UDPUnboundExternalNetworkingTestBase::SetUpInterfaces() {
 #ifdef ANDROID
   GTEST_SKIP() << "Android does not support getifaddrs in r22";
 #endif
@@ -228,12 +228,10 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
               SyscallFailsWithErrno(EAGAIN));
 }
 
-// Verifies that a UDP broadcast can be sent and then received back on the same
-// socket that is bound to the broadcast address (255.255.255.255).
-// FIXME(b/141938460): This can be combined with the next test
-//                     (UDPBroadcastSendRecvOnSocketBoundToAny).
-TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
-       UDPBroadcastSendRecvOnSocketBoundToBroadcast) {
+// Verifies that a UDP broadcast can be sent and then received back on the
+// same socket.
+TEST_P(IPv4UDPUnboundExternalNetworkingSocketAddressTest,
+       UDPBroadcastSendRecvOnSocketBoundToAddress) {
   auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
   // Enable SO_BROADCAST.
@@ -241,47 +239,8 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
                          sizeof(kSockOptOn)),
               SyscallSucceedsWithValue(0));
 
-  // Bind the sender to the broadcast address.
-  auto src_addr = V4Broadcast();
-  ASSERT_THAT(
-      bind(sender->get(), AsSockAddr(&src_addr.addr), src_addr.addr_len),
-      SyscallSucceedsWithValue(0));
-  socklen_t src_sz = src_addr.addr_len;
-  ASSERT_THAT(getsockname(sender->get(), AsSockAddr(&src_addr.addr), &src_sz),
-              SyscallSucceedsWithValue(0));
-  EXPECT_EQ(src_sz, src_addr.addr_len);
-
-  // Send the message.
-  auto dst_addr = V4Broadcast();
-  reinterpret_cast<sockaddr_in*>(&dst_addr.addr)->sin_port =
-      reinterpret_cast<sockaddr_in*>(&src_addr.addr)->sin_port;
-  constexpr char kTestMsg[] = "hello, world";
-  EXPECT_THAT(sendto(sender->get(), kTestMsg, sizeof(kTestMsg), 0,
-                     AsSockAddr(&dst_addr.addr), dst_addr.addr_len),
-              SyscallSucceedsWithValue(sizeof(kTestMsg)));
-
-  // Verify that the message was received.
-  char buf[sizeof(kTestMsg)] = {};
-  EXPECT_THAT(RetryEINTR(recv)(sender->get(), buf, sizeof(buf), 0),
-              SyscallSucceedsWithValue(sizeof(kTestMsg)));
-  EXPECT_EQ(0, memcmp(buf, kTestMsg, sizeof(kTestMsg)));
-}
-
-// Verifies that a UDP broadcast can be sent and then received back on the same
-// socket that is bound to the ANY address (0.0.0.0).
-// FIXME(b/141938460): This can be combined with the previous test
-//                     (UDPBroadcastSendRecvOnSocketBoundToBroadcast).
-TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
-       UDPBroadcastSendRecvOnSocketBoundToAny) {
-  auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
-
-  // Enable SO_BROADCAST.
-  ASSERT_THAT(setsockopt(sender->get(), SOL_SOCKET, SO_BROADCAST, &kSockOptOn,
-                         sizeof(kSockOptOn)),
-              SyscallSucceedsWithValue(0));
-
-  // Bind the sender to the ANY address.
-  auto src_addr = V4Any();
+  // Bind the sender to the source address.
+  auto src_addr = address();
   ASSERT_THAT(
       bind(sender->get(), AsSockAddr(&src_addr.addr), src_addr.addr_len),
       SyscallSucceedsWithValue(0));
