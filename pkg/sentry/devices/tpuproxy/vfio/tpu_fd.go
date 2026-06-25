@@ -62,10 +62,8 @@ type tpuFD struct {
 	vfs.NoLockFD
 	memmap.MappableNoTrackMappings
 
-	// If hostFD is -1, this file descriptor has been restored from a save state,
-	// and should be treated as invalid. Any operations on this file descriptor
-	// will effectively be a no-op.
-	hostFD int32
+	hostFD        int32
+	containerName string
 
 	device *tpuDevice
 	queue  waiter.Queue
@@ -80,6 +78,7 @@ func (fd *tpuFD) isRestored() bool {
 
 // Release implements vfs.FileDescriptionImpl.Release.
 func (fd *tpuFD) Release(context.Context) {
+	defer fd.device.tpuproxy.untrackFD(fd)
 	if fd.isRestored() {
 		return
 	}
@@ -188,7 +187,10 @@ func (fd *tpuFD) getPciDeviceFd(t *kernel.Task, arg hostarch.Addr) (uintptr, fun
 		unix.Close(int(hostFD))
 	}
 	pciDevFD := &pciDeviceFD{
-		hostFD: int32(hostFD),
+		hostFD:        int32(hostFD),
+		deviceAddress: pciAddress,
+		containerName: fd.containerName,
+		tpuproxy:      fd.device.tpuproxy,
 	}
 	// See drivers/vfio/group.c:vfio_device_open_file(), the PCI device
 	// is accessed for both reads and writes.
@@ -214,6 +216,7 @@ func (fd *tpuFD) getPciDeviceFd(t *kernel.Task, arg hostarch.Addr) (uintptr, fun
 	// MemoryTypeWriteBack is consistent with legacy behavior, but not clearly
 	// correct; drivers/vfio/pci/vfio_pci_core.c:vfio_pci_core_mmap() uses
 	// pgprot_noncached(), which would correspond to our MemoryTypeUncached.
+	pciDevFD.tpuproxy.trackFD(pciDevFD)
 	return uintptr(newFD), func() {}, nil
 }
 

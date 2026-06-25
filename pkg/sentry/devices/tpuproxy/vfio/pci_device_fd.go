@@ -45,11 +45,10 @@ type pciDeviceFD struct {
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
 
-	// If hostFD is -1, this file descriptor has been restored from a save state,
-	// and should be treated as invalid. Any operations on this file descriptor
-	// will effectively be a no-op.
-	hostFD int32
-	queue  waiter.Queue
+	hostFD        int32
+	deviceAddress string
+	containerName string
+	queue         waiter.Queue
 
 	// TODO: pciDeviceFD.InvalidateUnsavable uses this state, but AFAIU
 	// pciDeviceFD.Translate will return the same File and offset after
@@ -59,6 +58,7 @@ type pciDeviceFD struct {
 	// +checklocks:mapsMu
 	mappings   memmap.MappingSet
 	memmapFile fsutil.MmapPreciseFile
+	tpuproxy   *tpuproxy
 }
 
 func (fd *pciDeviceFD) isRestored() bool {
@@ -67,6 +67,7 @@ func (fd *pciDeviceFD) isRestored() bool {
 
 // Release implements vfs.FileDescriptionImpl.Release.
 func (fd *pciDeviceFD) Release(context.Context) {
+	defer fd.tpuproxy.untrackFD(fd)
 	if fd.isRestored() {
 		return
 	}
