@@ -162,6 +162,10 @@ type PacketBuffer struct {
 	// NetworkPacketInfo holds an incoming packet's network-layer information.
 	NetworkPacketInfo NetworkPacketInfo
 
+	// icmpEchoReply replies to an ICMP Echo Request using the stack's built-in
+	// Echo Reply path.
+	icmpEchoReply *icmpEchoReplyHook `state:"nosave"`
+
 	tuple *tuple
 
 	// onRelease is a function to be run when the packet buffer is no longer
@@ -394,6 +398,71 @@ func (pk *PacketBuffer) Clone() *PacketBuffer {
 	newPk.tuple = pk.tuple
 	newPk.InitRefs()
 	return newPk
+}
+
+type icmpEchoReplyHook struct {
+	mu      sync.Mutex
+	active  bool
+	replied bool
+	reply   func() bool
+}
+
+// SetICMPEchoReply sets the built-in ICMP Echo Reply hook for an ICMP Echo
+// Request packet. SetICMPEchoReply is a cross-package bridge for ICMP network
+// endpoint reply paths; ICMP forwarder users should call the forwarder
+// request's Reply method instead.
+func (pk *PacketBuffer) SetICMPEchoReply(reply func() bool) {
+	pk.icmpEchoReply = &icmpEchoReplyHook{
+		active: true,
+		reply:  reply,
+	}
+}
+
+// ClearICMPEchoReply clears the built-in ICMP Echo Reply hook. It is paired
+// with SetICMPEchoReply by ICMP network endpoint reply paths.
+func (pk *PacketBuffer) ClearICMPEchoReply() {
+	if hook := pk.icmpEchoReply; hook != nil {
+		hook.deactivate()
+	}
+	pk.icmpEchoReply = nil
+}
+
+// ReplyICMPEcho asks the stack to synthesize its built-in ICMP Echo Reply for
+// pkt. ReplyICMPEcho is a cross-package bridge for the ICMP forwarder; ICMP
+// forwarder users should call the forwarder request's Reply method instead.
+// ReplyICMPEcho is idempotent and returns false if pkt has no active built-in
+// reply path. A true return value does not guarantee that the reply packet was
+// delivered.
+func ReplyICMPEcho(pkt *PacketBuffer) bool {
+	if pkt == nil {
+		return false
+	}
+	if hook := pkt.icmpEchoReply; hook != nil {
+		return hook.replyOnce()
+	}
+	return false
+}
+
+func (h *icmpEchoReplyHook) replyOnce() bool {
+	h.mu.Lock()
+	if !h.active {
+		h.mu.Unlock()
+		return false
+	}
+	if h.replied {
+		h.mu.Unlock()
+		return true
+	}
+	h.replied = true
+	reply := h.reply
+	h.mu.Unlock()
+	return reply()
+}
+
+func (h *icmpEchoReplyHook) deactivate() {
+	h.mu.Lock()
+	h.active = false
+	h.mu.Unlock()
 }
 
 // ReserveHeaderBytes prepends reserved space for headers at the front
