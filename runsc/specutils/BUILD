@@ -15,12 +15,12 @@ go_library(
         "namespace.go",
         "nvidia.go",
         "restore.go",
-        "restore_impl.go",
         "specutils.go",
     ],
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/abi/nvgpu",
         "//pkg/log",
         "//pkg/sentry/devices/nvproxy/nvconf",
         "//pkg/sentry/kernel/auth",

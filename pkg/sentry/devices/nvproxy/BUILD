@@ -57,7 +57,7 @@ go_library(
         "open_only.go",
         "procfs.go",
         "save_restore.go",
-        "save_restore_impl.go",
+        "save_restore_unsafe.go",
         "seccomp_filters.go",
         "uvm.go",
         "uvm_mmap.go",

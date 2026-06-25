@@ -100,7 +100,7 @@ func validateMounts(field, cName string, o, n []specs.Mount) error {
 
 func validateDevices(field, cName string, o, n []specs.LinuxDevice) error {
 	var err error
-	o, n, err = prevalidateDevicesImpl(field, cName, o, n)
+	o, n, err = removeNvproxyFrontendDevices(field, cName, o, n)
 	if err != nil {
 		return err
 	}
