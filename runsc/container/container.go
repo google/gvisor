@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+	"github.com/moby/sys/capability"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -2153,6 +2154,21 @@ func nvproxyLoadKernelModules() {
 	}
 }
 
+// isUnprivileged checks if the current process is running in an unprivileged
+// context by checking for the CAP_SETUID capability. This is used to determine
+// whether nvidia-container-cli needs special handling for rootless mode.
+func isUnprivileged() bool {
+	caps, err := capability.NewPid2(0)
+	if err != nil {
+		return true
+	}
+	if err := caps.Load(); err != nil {
+		return true
+	}
+	// If we don't have CAP_SETUID, we're in an unprivileged context.
+	return !caps.Get(capability.EFFECTIVE, capability.CAP_SETUID)
+}
+
 // nvproxySetup runs `nvidia-container-cli configure` with gofer's PID. This
 // sets up the container filesystem with bind mounts that allow it to use
 // NVIDIA devices and libraries.
@@ -2203,15 +2219,29 @@ func nvproxySetup(spec *specs.Spec, conf *config.Config, goferPid int) error {
 		return fmt.Errorf("failed to get nvidia device numbers: %w", err)
 	}
 
+	// Check if we're running in an unprivileged context.
+	unprivileged := isUnprivileged()
+
 	argv := []string{
 		cliPath,
 		"--load-kmods",
 		"configure",
-		fmt.Sprintf("--ldconfig=@%s", ldconfigPath),
-		"--no-cgroups", // runsc doesn't configure device cgroups yet
-		fmt.Sprintf("--pid=%d", goferPid),
-		fmt.Sprintf("--device=%s", devices),
 	}
+	// In unprivileged mode, use direct ldconfig path without '@' prefix
+	// to avoid privilege escalation issues.
+	if unprivileged {
+		argv = append(argv, fmt.Sprintf("--ldconfig=%s", ldconfigPath))
+	} else {
+		argv = append(argv, fmt.Sprintf("--ldconfig=@%s", ldconfigPath))
+	}
+	argv = append(argv, "--no-cgroups") // runsc doesn't configure device cgroups yet
+	argv = append(argv, fmt.Sprintf("--pid=%d", goferPid))
+	// In unprivileged mode, signal to nvidia-container-cli that we're running
+	// as root in a user namespace and don't attempt privilege changes.
+	if unprivileged {
+		argv = append(argv, "--user=root:root")
+	}
+	argv = append(argv, fmt.Sprintf("--device=%s", devices))
 	if nvidiaContainerCliConfigureNeedsCudaCompatModeFlag(cliPath) {
 		// "mount" is the flag's intended default value.
 		argv = append(argv, "--cuda-compat-mode=mount")
