@@ -24,7 +24,7 @@ import (
 )
 
 // NewBundle creates a temporary OCI bundle on the fly.
-func NewBundle(sandboxID string, runscRuntimeDir string, enableNetworking bool) (string, error) {
+func NewBundle(sandboxID string, runscRuntimeDir string, enableNetworking bool, mounts []Mount) (string, error) {
 	// Create a bundle directory for the sandbox.
 	bundleDir := filepath.Join(runscRuntimeDir, sandboxID)
 	rootfsDir := filepath.Join(bundleDir, "rootfs")
@@ -97,6 +97,32 @@ func NewBundle(sandboxID string, runscRuntimeDir string, enableNetworking bool) 
 				Type:        "bind",
 				Source:      p,
 				Options:     opts,
+			})
+		}
+	}
+
+	// Add custom mounts. Custom mounts overriding default host mounts create duplicate OCI
+	// entries. The later entry overrides the earlier one, as expected by OCI specs.
+	for _, m := range mounts {
+		switch m.Type {
+		case MountTypeBind:
+			opts := []string{"rbind"}
+			if m.ReadOnly {
+				opts = append(opts, "ro")
+			} else {
+				opts = append(opts, "rw")
+			}
+			spec.Mounts = append(spec.Mounts, specs.Mount{
+				Destination: filepath.Clean(m.Destination),
+				Source:      filepath.Clean(m.Source),
+				Type:        "bind",
+				Options:     opts,
+			})
+		case MountTypeTmpfs:
+			spec.Mounts = append(spec.Mounts, specs.Mount{
+				Destination: filepath.Clean(m.Destination),
+				Source:      "tmpfs",
+				Type:        "tmpfs",
 			})
 		}
 	}
