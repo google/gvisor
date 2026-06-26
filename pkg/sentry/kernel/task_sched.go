@@ -462,10 +462,45 @@ func (t *Task) Priority() int {
 }
 
 // SetNiceness sets t's niceness to n.
+// Values outside of [-20, 19] are clamped to fit within the range.
 func (t *Task) SetNiceness(n int) {
+	if n < -20 {
+		n = -20
+	} else if n > 19 {
+		n = 19
+	}
+
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.niceness = n
+}
+
+// SetIOPrio sets t's ioprio.
+func (t *Task) SetIOPrio(ioprio int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.ioprio = ioprio
+}
+
+// GetIOPrio fetches t's ioprio.
+func (t *Task) GetIOPrio() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.ioprio
+}
+
+// SetScheduler sets t's scheduler.
+func (t *Task) SetScheduler(scheduler uint) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.scheduler = scheduler
+}
+
+// GetScheduler fetches t's scheduler.
+func (t *Task) GetScheduler() uint {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.scheduler
 }
 
 // NumaPolicy returns t's current numa policy.

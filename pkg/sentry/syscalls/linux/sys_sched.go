@@ -22,9 +22,13 @@ import (
 )
 
 const (
-	onlyScheduler = linux.SCHED_NORMAL
-	onlyPriority  = 0
+	onlyPriority = 0
 )
+
+func isSchedulerSupported(policy uint) bool {
+	// We only support SCHED_NORMAL (manpage refers to as SCHED_OTHER), SCHED_BATCH, or SCHED_IDLE
+	return policy == linux.SCHED_NORMAL || policy == linux.SCHED_BATCH || policy == linux.SCHED_IDLE
+}
 
 // SchedParam replicates struct sched_param in sched.h.
 //
@@ -56,30 +60,56 @@ func SchedGetparam(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (u
 
 // SchedGetscheduler implements linux syscall sched_getscheduler(2).
 func SchedGetscheduler(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	pid := args[0].Int()
+	pid := kernel.ThreadID(args[0].Int())
+
 	if pid < 0 {
 		return 0, nil, linuxerr.EINVAL
 	}
-	if pid != 0 && t.PIDNamespace().TaskWithID(kernel.ThreadID(pid)) == nil {
-		return 0, nil, linuxerr.ESRCH
+
+	var task *kernel.Task
+	if pid == 0 {
+		task = t
+	} else {
+		task = t.PIDNamespace().TaskWithID(pid)
+		if task == nil {
+			return 0, nil, linuxerr.ESRCH
+		}
 	}
-	return onlyScheduler, nil, nil
+
+	scheduler := uintptr(task.GetScheduler())
+
+	return scheduler, nil, nil
 }
 
 // SchedSetscheduler implements linux syscall sched_setscheduler(2).
 func SchedSetscheduler(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	pid := args[0].Int()
-	policy := args[1].Int()
+	pid := kernel.ThreadID(args[0].Int())
+	uPolicy := args[1].Int()
 	param := args[2].Pointer()
-	if pid < 0 {
+
+	if pid < 0 || uPolicy < 0 {
 		return 0, nil, linuxerr.EINVAL
 	}
-	if policy != onlyScheduler {
+	policy := uint(uPolicy)
+	if !isSchedulerSupported(policy) {
 		return 0, nil, linuxerr.EINVAL
 	}
-	if pid != 0 && t.PIDNamespace().TaskWithID(kernel.ThreadID(pid)) == nil {
-		return 0, nil, linuxerr.ESRCH
+
+	var task *kernel.Task
+	if pid == 0 {
+		task = t
+	} else {
+		task = t.PIDNamespace().TaskWithID(pid)
+		if task == nil {
+			return 0, nil, linuxerr.ESRCH
+		}
+
+		// See kernel/sched/syscalls.c:user_check_sched_setscheduler().
+		if !canSetTaskNice(t, task) {
+			return 0, nil, linuxerr.EPERM
+		}
 	}
+
 	var r SchedParam
 	if _, err := r.CopyIn(t, param); err != nil {
 		return 0, nil, linuxerr.EINVAL
@@ -87,6 +117,9 @@ func SchedSetscheduler(t *kernel.Task, sysno uintptr, args arch.SyscallArguments
 	if r.schedPriority != onlyPriority {
 		return 0, nil, linuxerr.EINVAL
 	}
+
+	task.SetScheduler(policy)
+
 	return 0, nil, nil
 }
 

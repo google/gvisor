@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <sys/resource.h>
+#include <sys/syscall.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -25,9 +26,13 @@
 #include "gtest/gtest.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_split.h"
+#include "absl/time/clock.h"
+#include "absl/time/time.h"
+#include "test/util/cleanup.h"
 #include "test/util/fs_util.h"
 #include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
+#include "test/util/posix_error.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
@@ -35,6 +40,30 @@ namespace gvisor {
 namespace testing {
 
 namespace {
+
+int ioprio_set(int which, int who, int ioprio) {
+  return syscall(SYS_ioprio_set, which, who, ioprio);
+}
+
+int ioprio_get(int which, int who) {
+  return syscall(SYS_ioprio_get, which, who);
+}
+
+#ifndef IOPRIO_WHO_PROCESS
+
+#define IOPRIO_WHO_PROCESS 1
+#define IOPRIO_WHO_PGRP 2
+#define IOPRIO_WHO_USER 3
+
+#define IOPRIO_CLASS_NONE 0
+#define IOPRIO_CLASS_RT 1
+#define IOPRIO_CLASS_IDLE 3
+
+#define IOPRIO_CLASS_SHIFT 13
+
+#define IOPRIO_PRIO_VALUE(class, data) ((class << IOPRIO_CLASS_SHIFT) | data)
+
+#endif
 
 // These tests are for both the getpriority(2) and setpriority(2) syscalls
 // These tests are very rudimentary because getpriority and setpriority
@@ -262,6 +291,100 @@ TEST(GetpriorityTest, CloneMaintainsPriority) {
   // Check that parent's priority reemained the same even though
   // the child's priority was altered
   EXPECT_EQ(kParentPriority, getpriority(PRIO_PROCESS, syscall(__NR_gettid)));
+}
+
+PosixErrorOr<Cleanup> ioPrioCleanup() {
+  int old_prio = ioprio_get(IOPRIO_WHO_PROCESS, 0);
+  if (old_prio < 0) {
+    return PosixError(errno, "ioprio_get() failed");
+  }
+
+  return Cleanup([old_prio] { ioprio_set(IOPRIO_WHO_PROCESS, 0, old_prio); });
+}
+
+TEST(IoprioTest, BasicSetGet) {
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(ioPrioCleanup());
+
+  EXPECT_THAT(
+      ioprio_get(IOPRIO_WHO_PROCESS, 0),
+      SyscallSucceedsWithValue(IOPRIO_PRIO_VALUE(IOPRIO_CLASS_NONE, 0)));
+
+  // Try setting IO class to IDLE
+  EXPECT_THAT(ioprio_set(IOPRIO_WHO_PROCESS, 0,
+                         IOPRIO_PRIO_VALUE(IOPRIO_CLASS_IDLE, 0)),
+              SyscallSucceeds());
+  EXPECT_THAT(
+      ioprio_get(IOPRIO_WHO_PROCESS, 0),
+      SyscallSucceedsWithValue(IOPRIO_PRIO_VALUE(IOPRIO_CLASS_IDLE, 0)));
+}
+
+TEST(IoprioTest, ValidWho) {
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(ioPrioCleanup());
+
+  EXPECT_THAT(ioprio_set(IOPRIO_WHO_PROCESS, getpid(),
+                         IOPRIO_PRIO_VALUE(IOPRIO_CLASS_IDLE, 0)),
+              SyscallSucceeds());
+  EXPECT_THAT(
+      ioprio_get(IOPRIO_WHO_PROCESS, getpid()),
+      SyscallSucceedsWithValue(IOPRIO_PRIO_VALUE(IOPRIO_CLASS_IDLE, 0)));
+}
+
+TEST(IoprioTest, InvalidClassesAndData) {
+  // Using an invalid class
+  EXPECT_THAT(ioprio_set(IOPRIO_WHO_PROCESS, 0, IOPRIO_PRIO_VALUE(5, 0)),
+              SyscallFailsWithErrno(EINVAL));
+
+  // Class NONE with non-zero data
+  EXPECT_THAT(ioprio_set(IOPRIO_WHO_PROCESS, 0,
+                         IOPRIO_PRIO_VALUE(IOPRIO_CLASS_NONE, 1)),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(IoprioTest, RtRequiresCapability) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_NICE)));
+
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(ioPrioCleanup());
+
+  EXPECT_THAT(
+      ioprio_set(IOPRIO_WHO_PROCESS, 0, IOPRIO_PRIO_VALUE(IOPRIO_CLASS_RT, 4)),
+      SyscallSucceeds());
+
+  AutoCapability cap_admin(CAP_SYS_ADMIN, false);
+  AutoCapability cap_nice(CAP_SYS_NICE, false);
+
+  EXPECT_THAT(
+      ioprio_set(IOPRIO_WHO_PROCESS, 0, IOPRIO_PRIO_VALUE(IOPRIO_CLASS_RT, 4)),
+      SyscallFailsWithErrno(EPERM));
+}
+
+TEST(IoprioTest, ChildPID) {
+  pid_t pid = fork();
+  ASSERT_THAT(pid, SyscallSucceeds());
+  if (pid == 0) {
+    while (1) {
+      absl::SleepFor(absl::Seconds(60));
+    }
+  }
+
+  auto cleanup = Cleanup([&pid] {
+    kill(pid, SIGKILL);
+    waitpid(pid, nullptr, 0);
+  });
+
+  // Child ioprio starts out as 0
+  EXPECT_THAT(
+      ioprio_get(IOPRIO_WHO_PROCESS, pid),
+      SyscallSucceedsWithValue(IOPRIO_PRIO_VALUE(IOPRIO_CLASS_NONE, 0)));
+
+  // Parent: try to set child's ioprio
+  EXPECT_THAT(ioprio_set(IOPRIO_WHO_PROCESS, pid,
+                         IOPRIO_PRIO_VALUE(IOPRIO_CLASS_IDLE, 0)),
+              SyscallSucceeds());
+
+  EXPECT_THAT(
+      ioprio_get(IOPRIO_WHO_PROCESS, pid),
+      SyscallSucceedsWithValue(IOPRIO_PRIO_VALUE(IOPRIO_CLASS_IDLE, 0)));
 }
 
 }  // namespace
