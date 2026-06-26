@@ -69,8 +69,8 @@ func (fd *fileDescription) statusFlags() uint32 {
 // Release implements vfs.FileDescriptionImpl.Release.
 func (fd *fileDescription) Release(ctx context.Context) {
 	// no need to release if FUSE server doesn't implement Open.
-	conn := fd.inode().fs.conn
-	if conn.noOpen {
+	fs := fd.inode().fs
+	if fs.conn.noOpen {
 		return
 	}
 
@@ -89,19 +89,19 @@ func (fd *fileDescription) Release(ctx context.Context) {
 		opcode = linux.FUSE_RELEASE
 	}
 	// Ignoring errors and FUSE server replies is analogous to Linux's behavior.
-	req := conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), inode.nodeID, opcode, &in)
+	req := fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), inode.nodeID, opcode, &in)
 	// The reply will be ignored since no callback is defined in asyncCallBack().
-	conn.Call(ctx, req)
+	fs.conn.Call(ctx, req)
 }
 
 // OnClose implements vfs.FileDescriptionImpl.OnClose.
 func (fd *fileDescription) OnClose(ctx context.Context) error {
 	inode := fd.inode()
-	conn := inode.fs.conn
+	fs := inode.fs
 	inode.attrMu.Lock()
 	defer inode.attrMu.Unlock()
 
-	if conn.noOpen {
+	if fs.conn.noOpen {
 		return nil
 	}
 	if fd.OpenFlag&linux.FOPEN_NOFLUSH != 0 {
@@ -112,8 +112,8 @@ func (fd *fileDescription) OnClose(ctx context.Context) error {
 		Fh:        fd.Fh,
 		LockOwner: 0, // TODO(gvisor.dev/issue/3245): file lock
 	}
-	req := conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), inode.nodeID, linux.FUSE_FLUSH, &in)
-	res, err := conn.Call(ctx, req)
+	req := fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), inode.nodeID, linux.FUSE_FLUSH, &in)
+	res, err := fs.conn.Call(ctx, req)
 	if err != nil {
 		return err
 	}
@@ -170,9 +170,9 @@ func (fd *fileDescription) Sync(ctx context.Context) error {
 	inode := fd.inode()
 	inode.attrMu.Lock()
 	defer inode.attrMu.Unlock()
-	conn := inode.fs.conn
+	fs := inode.fs
 	// no need to proceed if FUSE server doesn't implement Open.
-	if conn.noOpen {
+	if fs.conn.noOpen {
 		return linuxerr.EINVAL
 	}
 
@@ -181,9 +181,9 @@ func (fd *fileDescription) Sync(ctx context.Context) error {
 		FsyncFlags: fd.statusFlags(),
 	}
 	// Ignoring errors and FUSE server replies is analogous to Linux's behavior.
-	req := conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), inode.nodeID, linux.FUSE_FSYNC, &in)
+	req := fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), inode.nodeID, linux.FUSE_FSYNC, &in)
 	// The reply will be ignored since no callback is defined in asyncCallBack().
-	conn.CallAsync(ctx, req)
+	fs.conn.CallAsync(ctx, req)
 	return nil
 }
 
