@@ -40,6 +40,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/devices/memdev"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
+	"gvisor.dev/gvisor/pkg/sentry/devices/rdmaproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/tpuproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/tpuproxy/vfio"
 	"gvisor.dev/gvisor/pkg/sentry/devices/ttydev"
@@ -1623,6 +1624,18 @@ func createDeviceFile(ctx context.Context, creds *auth.Credentials, info *contai
 		if info.nvproxyDevInfo.CapsIMEXChannelsDevMajor != 0 && major != info.nvproxyDevInfo.CapsIMEXChannelsDevMajor {
 			major = info.nvproxyDevInfo.CapsIMEXChannelsDevMajor
 			log.Infof("Switching %s device major number from %d to %d", devSpec.Path, devSpec.Major, major)
+		}
+	} else if strings.HasPrefix(devSpec.Path, "/dev/infiniband/uverbs") {
+		devNum, err := strconv.ParseUint(strings.TrimPrefix(devSpec.Path, "/dev/infiniband/uverbs"), 10, 32)
+		if err != nil {
+			return fmt.Errorf("parsing RDMA device number: %w", err)
+		}
+		if err := rdmaproxy.RegisterRDMADevice(vfsObj, minor, uint32(devNum), true /* useDevGofer */); err != nil {
+			return fmt.Errorf("registering RDMA driver: %w", err)
+		}
+	} else if devSpec.Path == "/dev/infiniband/rdma_cm" {
+		if err := rdmaproxy.RegisterRDMACMDevice(vfsObj, minor, true /* useDevGofer */); err != nil {
+			return fmt.Errorf("registering RDMA connection manager: %w", err)
 		}
 	}
 	return dev.CreateDeviceFile(ctx, vfsObj, creds, root, devSpec.Path, major, minor, mode, devSpec.UID, devSpec.GID)

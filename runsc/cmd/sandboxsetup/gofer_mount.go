@@ -399,11 +399,12 @@ func ShouldExposeTpuDevice(path string) bool {
 	return valid || ShouldExposeVFIODevice(path)
 }
 
-// ShouldExposeRDMADevice returns true if path refers to an RDMA uverbs device.
+// ShouldExposeRDMADevice returns true if path refers to an RDMA device
+// (uverbs or rdma_cm).
 //
 // Precondition: rdmaproxy is enabled.
 func ShouldExposeRDMADevice(path string) bool {
-	return strings.HasPrefix(path, "/dev/infiniband/uverbs")
+	return strings.HasPrefix(path, "/dev/infiniband/uverbs") || path == "/dev/infiniband/rdma_cm"
 }
 
 // SetupDev mounts devices from the OCI spec into the gofer's /dev directory.
