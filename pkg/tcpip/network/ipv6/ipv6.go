@@ -672,7 +672,7 @@ func (e *endpoint) Disable() {
 }
 
 func (e *endpoint) disableLocked() {
-	if !e.Enabled() {
+	if !e.isEnabled() {
 		return
 	}
 
