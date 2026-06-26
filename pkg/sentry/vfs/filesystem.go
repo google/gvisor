@@ -567,3 +567,8 @@ type PrependPathSyntheticError struct{}
 func (PrependPathSyntheticError) Error() string {
 	return "vfs.FilesystemImpl.PrependPath() prepended synthetic name"
 }
+
+// HostFDProvider is implemented by VFS objects backed by a host FD.
+type HostFDProvider interface {
+	HostFD() int
+}
