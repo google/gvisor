@@ -314,8 +314,9 @@ def syscall_test_variants(
             **kwargs
         )
 
-    # TODO(b/192114729): hostinet is not supported with S/R.
-    if add_hostinet and not (save or save_resume):
+    # Connected host sockets do not survive restore, so the save tests are
+    # skipped and only the save_resume tests are generated.
+    if add_hostinet and not save:
         _syscall_test(
             test = test,
             platform = default_platform,
