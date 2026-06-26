@@ -183,16 +183,21 @@ type awaitingMountContext struct {
 	// Note that the filesystem-specific options have already been processed by
 	// FSCONFIG_CMD_CREATE, so only the mount-specific options are relevant here.
 	opts *vfs.MountOptions
+
+	// The credentials of the process that mounted the filesystem.
+	creds *auth.Credentials
 }
 
 func (awaitingMountContext) isFSContext() {}
 
-// doneContext represents a filesystem configuration context after fsmount(2) has been called.
-// TODO(b/513024543): this should be removed once reconfiguration support is added.
-type doneContext struct {
+// reconfParamsContext represents a filesystem configuration context after fsmount(2) has
+// been called.
+type reconfParamsContext struct {
+	// The credentials of the process that mounted the filesystem.
+	creds *auth.Credentials
 }
 
-func (doneContext) isFSContext() {}
+func (reconfParamsContext) isFSContext() {}
 
 // failedContext represents a filesystem configuration context after an operation has failed
 // and left an unrecoverable state.
@@ -241,31 +246,41 @@ func (fd *Fd) SetParam(key string, param FSParameter) error {
 	fd.contextMu.Lock()
 	defer fd.contextMu.Unlock()
 
-	fdContext, ok := fd.context.(*createParamsContext)
-	if !ok {
+	switch fdContext := fd.context.(type) {
+	case *createParamsContext:
+		// Filesystem has not been created yet
+
+		if key == "source" {
+			// source= is handled separately
+			source, ok := param.Value.(FSValueString)
+			if !ok {
+				// source= must be a string
+				return linuxerr.EINVAL
+			}
+			if fdContext.source != nil {
+				// source= can only be set once
+				return linuxerr.EINVAL
+			}
+			src := string(source)
+			fdContext.source = &src
+		} else if clearFlag, ok := clearFlags[key]; ok {
+			delete(fdContext.params, clearFlag)
+		} else {
+			// TODO(b/513024543): refactor filesystems to parse options at fsconfig() time
+			// rather than at mount time
+			fdContext.params[key] = param
+		}
+	case *reconfParamsContext:
+		// Filesystem has already been created: reconfiguration mode
+		if key == "source" {
+			// Cannot reconfigure source
+			return linuxerr.EINVAL
+		}
+
+		// TODO(gvisor.dev/issues/13450): properly support reconfiguration on underlying filesystems.
+	default:
 		// Filesystem context is in the wrong state to add a param
 		return linuxerr.EBUSY
-	}
-
-	if key == "source" {
-		// source= is handled separately
-		source, ok := param.Value.(FSValueString)
-		if !ok {
-			// source= must be a string
-			return linuxerr.EINVAL
-		}
-		if fdContext.source != nil {
-			// source= can only be set once
-			return linuxerr.EINVAL
-		}
-		src := string(source)
-		fdContext.source = &src
-	} else if clearFlag, ok := clearFlags[key]; ok {
-		delete(fdContext.params, clearFlag)
-	} else {
-		// TODO(b/513024543): refactor filesystems to parse options at fsconfig() time
-		// rather than at mount time
-		fdContext.params[key] = param
 	}
 
 	return nil
@@ -318,7 +333,32 @@ func (fd *Fd) DoCmdCreate(ctx context.Context, vfsObj *vfs.VirtualFilesystem) er
 		filesystem: fs,
 		root:       root,
 		opts:       opts,
+		creds:      creds,
 	}
+
+	return nil
+}
+
+// DoCmdReconfigure reconfigures the underlying filesystem with the parameters queued
+// up by fsconfig(2), including permission checks.
+// Currently a no-op.
+func (fd *Fd) DoCmdReconfigure(ctx context.Context, vfsObj *vfs.VirtualFilesystem) error {
+	fd.contextMu.Lock()
+	defer fd.contextMu.Unlock()
+
+	fdContext, ok := fd.context.(*reconfParamsContext)
+	if !ok {
+		// Filesystem context is in the wrong state to reconfigure the fs
+		return linuxerr.EBUSY
+	}
+
+	// Check for CAP_SYS_ADMIN in the fd origin's user ns.
+	creds := fdContext.creds
+	if !creds.HasSelfCapability(linux.CAP_SYS_ADMIN) {
+		return linuxerr.EPERM
+	}
+
+	// TODO(gvisor.dev/issues/13450): properly support reconfiguration on underlying filesystems.
 
 	return nil
 }
@@ -347,8 +387,10 @@ func (fd *Fd) GetFilesystem() (*vfs.Filesystem, *vfs.Dentry, *vfs.MountOptions, 
 	root := fdContext.root
 	opts := fdContext.opts
 
-	// Transition into doneContext
-	fd.context = &doneContext{}
+	// Transition into reconfParamsContext
+	fd.context = &reconfParamsContext{
+		creds: fdContext.creds,
+	}
 
 	return fs, root, opts, nil
 }
