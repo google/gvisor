@@ -459,6 +459,10 @@ func (r *restorer) restore(l *Loader) error {
 	if err != nil {
 		return err
 	}
+	ctx, err = r.prepareTPURestoreContextLocked(ctx, l)
+	if err != nil {
+		return err
+	}
 
 	// Load the state.
 	r.timer.Reached("loading kernel")
@@ -701,6 +705,9 @@ func (l *Loader) saveWithOpts(saveOpts *state.SaveOpts, execOpts *control.SaveRe
 	saveOpts.StartTime = starttime.Get()
 
 	if err := l.setNvproxyDeviceRemapMetadata(saveOpts); err != nil {
+		return err
+	}
+	if err := l.setTPUDeviceRemapMetadata(saveOpts); err != nil {
 		return err
 	}
 

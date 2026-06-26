@@ -1514,6 +1514,21 @@ func (c *containerMounter) configureRestore(fdmap map[checkpoint.ResourceID]int,
 
 func createDeviceFiles(ctx context.Context, creds *auth.Credentials, info *containerInfo, vfsObj *vfs.VirtualFilesystem, root vfs.VirtualDentry) error {
 	if info.spec.Linux != nil {
+		// Register vfio control device early if TPUv5 is enabled, so that
+		// subsequent TPU devices can find the tpuproxy object.
+		tpuv5Enabled := false
+		for _, dev := range info.spec.Linux.Devices {
+			if tpuproxy.TPUv5DeviceRegex.MatchString(dev.Path) {
+				tpuv5Enabled = true
+				break
+			}
+		}
+		if tpuv5Enabled {
+			if err := vfio.Register(vfsObj, true /* useDevGofer */); err != nil {
+				return fmt.Errorf("registering vfio driver: %w", err)
+			}
+		}
+
 		// Create any device files specified in the spec.
 		for _, dev := range info.spec.Linux.Devices {
 			if err := createDeviceFile(ctx, creds, info, vfsObj, root, dev); err != nil {
@@ -1586,7 +1601,7 @@ func createDeviceFile(ctx context.Context, creds *auth.Credentials, info *contai
 	// Convert host-assigned device major numbers to sentry-assigned ones.
 	if strings.HasPrefix(devSpec.Path, "/dev/vfio") || strings.HasPrefix(devSpec.Path, "/dev/accel") {
 		if devSpec.Path == "/dev/vfio/vfio" {
-			if err := vfio.RegisterVFIODevice(vfsObj, true /* useDevGofer */); err != nil {
+			if err := vfio.Register(vfsObj, true /* useDevGofer */); err != nil {
 				return fmt.Errorf("registering vfio driver: %w", err)
 			}
 		} else if tpuproxy.TPUv4DeviceRegex.MatchString(devSpec.Path) {
