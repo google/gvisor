@@ -17,6 +17,7 @@ package sandbox_test
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -100,5 +101,120 @@ func TestNonRootNetworkingError(t *testing.T) {
 	expectedErr := "enabling networking requires running as root"
 	if !strings.Contains(err.Error(), expectedErr) {
 		t.Errorf("sandbox.New error = %v; want error containing %q", err, expectedErr)
+	}
+}
+
+func TestRootfsTarSnapshot(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	storageDir := filepath.Join(tempDir, "storage")
+	if err := os.MkdirAll(storageDir, 0700); err != nil {
+		t.Fatalf("failed to create storage dir: %v", err)
+	}
+	storage, err := sandbox.NewFilesystemStorage(storageDir)
+	if err != nil {
+		t.Fatalf("failed to create storage: %v", err)
+	}
+	sandbox.SetDefaultSnapshotStorage(storage)
+	defer sandbox.SetDefaultSnapshotStorage(nil)
+
+	runtimeDirA := filepath.Join(tempDir, "runtime-a")
+	enableNetworking := os.Geteuid() == 0
+	sbA, err := sandbox.New(ctx,
+		sandbox.WithRuntimeDir(runtimeDirA),
+		sandbox.WithNetworking(enableNetworking),
+		sandbox.WithWritableRootfs(true),
+	)
+	if err != nil {
+		t.Fatalf("failed to start sandbox A: %v", err)
+	}
+	defer sbA.Close(ctx)
+
+	// Create a file inside Sandbox A.
+	_, _, err = sbA.Exec(ctx, "sh", "-c", "echo 'hello' > /test.txt")
+	if err != nil {
+		t.Fatalf("failed to create file in sandbox A: %v", err)
+	}
+
+	// Verify the file was created in A.
+	out, _, err := sbA.Exec(ctx, "cat", "/test.txt")
+	if err != nil {
+		t.Fatalf("failed to cat file in sandbox A: %v", err)
+	}
+	if strings.TrimSpace(out) != "hello" {
+		t.Fatalf("unexpected content in A: %q", out)
+	}
+
+	// Take a RootfsTarSnapshot.
+	snapshotID, err := sbA.Snapshot(ctx, sandbox.RootfsTarSnapshot, storage)
+	if err != nil {
+		t.Fatalf("failed to take snapshot: %v", err)
+	}
+
+	// Start Sandbox B restoring from the snapshot.
+	runtimeDirB := filepath.Join(tempDir, "runtime-b")
+	sbB, err := sandbox.New(ctx,
+		sandbox.WithRuntimeDir(runtimeDirB),
+		sandbox.WithNetworking(enableNetworking),
+		sandbox.WithSnapshotID(snapshotID),
+		sandbox.WithWritableRootfs(true),
+	)
+	if err != nil {
+		t.Fatalf("failed to start sandbox B: %v", err)
+	}
+	defer sbB.Close(ctx)
+
+	// Verify the file exists in Sandbox B.
+	outB, _, err := sbB.Exec(ctx, "cat", "/test.txt")
+	if err != nil {
+		t.Fatalf("failed to cat file in sandbox B: %v", err)
+	}
+	if strings.TrimSpace(outB) != "hello" {
+		t.Errorf("unexpected content in B: got %q, want %q", outB, "hello")
+	}
+}
+
+func TestNoSnapshotStorageError(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	// Ensure default storage is nil.
+	sandbox.SetDefaultSnapshotStorage(nil)
+
+	runtimeDir := filepath.Join(tempDir, "runtime")
+	enableNetworking := os.Geteuid() == 0
+	_, err := sandbox.New(ctx,
+		sandbox.WithRuntimeDir(runtimeDir),
+		sandbox.WithNetworking(enableNetworking),
+		sandbox.WithSnapshotID("some-snapshot-id"),
+		sandbox.WithWritableRootfs(true),
+	)
+	if err == nil {
+		t.Fatalf("expected error when starting sandbox with SnapshotID but no SnapshotStore or default storage configured, got nil")
+	}
+	expectedErrSubstr := "no snapshot storage configured for restore"
+	if !strings.Contains(err.Error(), expectedErrSubstr) {
+		t.Errorf("unexpected error: %v, want it to contain %q", err, expectedErrSubstr)
+	}
+}
+
+func TestRestoreReadOnlyRootfsError(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	runtimeDir := filepath.Join(tempDir, "runtime")
+	enableNetworking := os.Geteuid() == 0
+	_, err := sandbox.New(ctx,
+		sandbox.WithRuntimeDir(runtimeDir),
+		sandbox.WithNetworking(enableNetworking),
+		sandbox.WithSnapshotID("some-snapshot-id"),
+	)
+	if err == nil {
+		t.Fatalf("expected error when restoring sandbox with read-only rootfs, got nil")
+	}
+	expectedErrSubstr := "rootfs must be writable when restoring from snapshot"
+	if !strings.Contains(err.Error(), expectedErrSubstr) {
+		t.Errorf("unexpected error: %v, want it to contain %q", err, expectedErrSubstr)
 	}
 }
