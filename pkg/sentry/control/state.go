@@ -261,6 +261,10 @@ func (s *State) SaveWithOpts(saveOpts *state.SaveOpts, execOpts *SaveRestoreExec
 
 // preSave is called before saving the kernel.
 func preSave(k *kernel.Kernel, o *state.SaveOpts, execOpts *SaveRestoreExecOpts) error {
+	if err := preSaveTPU(k); err != nil {
+		return err
+	}
+
 	if execOpts.Argv != "" {
 		argv := strings.Split(execOpts.Argv, " ")
 		if err := ConfigureSaveRestoreExec(k, argv, execOpts.Timeout, execOpts.ContainerID); err != nil {
@@ -291,6 +295,11 @@ func PostResume(k *kernel.Kernel, timeline *timing.Timeline) error {
 	if err := SaveRestoreExec(k, SaveRestoreExecResume); err != nil {
 		return fmt.Errorf("failed to wait for save/restore binary: %w", err)
 	}
+
+	if err := postResumeTPU(k); err != nil {
+		return err
+	}
+
 	return postResumeCuda(k, timeline)
 }
 
@@ -312,6 +321,11 @@ func PostRestore(k *kernel.Kernel, timeline *timing.Timeline) error {
 	if err := SaveRestoreExec(k, SaveRestoreExecRestore); err != nil {
 		return fmt.Errorf("failed to wait for save/restore binary: %w", err)
 	}
+
+	if err := postRestoreTPU(k); err != nil {
+		return err
+	}
+
 	return postRestoreCuda(k, timeline)
 }
 
