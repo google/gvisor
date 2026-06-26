@@ -128,3 +128,21 @@ func InitDefault() {
 	cpuid.Initialize()
 	Init(cpuid.HostFeatureSet())
 }
+
+// DisableLA57 forces ring0 to behave as if the host CPU did not advertise
+// 5-level paging: hasLA57 is cleared so CR4.LA57 stays 0, and the address-
+// space sizes are clamped to a 4-level layout (48-bit VA, 2^47 userspace).
+//
+// Must be called after Init/InitDefault and before any vCPU loads CR4 or
+// any PageTables are created. Use this if the platform's hardware-
+// virtualization layer cannot follow a 5-level page table walk (e.g. an
+// EPT implementation limited to 4 levels) regardless of host CPUID.
+func DisableLA57() {
+	hasLA57 = false
+	if VirtualAddressBits > 48 {
+		VirtualAddressBits = 48
+		UserspaceSize = uintptr(1) << (VirtualAddressBits - 1)
+		MaximumUserAddress = (UserspaceSize - 1) &^ uintptr(hostarch.PageSize-1)
+		KernelStartAddress = ^uintptr(0) - (UserspaceSize - 1)
+	}
+}

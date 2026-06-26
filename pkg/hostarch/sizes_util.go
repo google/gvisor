@@ -11,6 +11,7 @@ const (
 	PageMask      = PageSize - 1
 	HugePageMask  = HugePageSize - 1
 	CacheLineMask = CacheLineSize - 1
+	JumboPageMask = ^uintptr(JumboPageSize - 1)
 )
 
 type bytecount interface {

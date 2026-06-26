@@ -595,6 +595,10 @@ type Options struct {
 	// as CPU numbers in the sentry. This is necessary to support features like
 	// rseq
 	UseCPUNums bool
+
+	// SandboxID is the sandbox identifier, used by slimvm to pass to the
+	// host kernel module for sandbox identification.
+	SandboxID string
 }
 
 // Constructor represents a platform type.
