@@ -9,6 +9,7 @@ go_library(
     name = "utils",
     srcs = [
         "annotations.go",
+        "userns.go",
         "utils.go",
         "volumes.go",
     ],
@@ -25,7 +26,10 @@ go_library(
 go_test(
     name = "utils_test",
     size = "small",
-    srcs = ["volumes_test.go"],
+    srcs = [
+        "userns_test.go",
+        "volumes_test.go",
+    ],
     library = ":utils",
     deps = [
         "@com_github_mohae_deepcopy//:go_default_library",
