@@ -23,20 +23,17 @@ Compared to [rootfs tar snapshots](rootfs_snapshot.md):
 
 ## Prerequisites
 
-*   Container root filesystems must be an overlay whose upper layer is
-    disk-backed tmpfs. This behavior is enabled by default, via the default
-    value of the `runsc -overlay2` flag. The requirement that the tmpfs is
-    disk-backed may be removed in the future.
+*   Container root filesystems must be an overlay whose upper layer is a tmpfs.
+    This behavior is enabled by default, via the default value of the `runsc
+    -overlay2` flag.
 
 *   By default, filesystem snapshots include only root filesystem upper layers.
-    Non-root tmpfs upper layers (created by the `-overlay2` flag with mount
-    specifier `all`, by container-spec tmpfs mounts, or inferred from Kubernetes
-    `emptyDir` volumes) can be included by passing `--path=all-tmpfs` to `runsc
-    fscheckpoint`; see [Usage](#usage). This only includes tmpfs mounts that
-    have a private (typically disk-backed) memory file. tmpfs mounts backed by
-    the main (application) memory file, and tmpfs mounts created by sandboxed
-    applications via `mount(2)`, are still excluded. Options to include these
-    may be added in the future.
+    All other tmpfs mounts from the OCI spec — non-root tmpfs upper layers
+    (created by the `-overlay2` flag with mount specifier `all`), container-spec
+    tmpfs mounts, and tmpfs mounts inferred from Kubernetes `emptyDir` volumes —
+    can be included by passing `--path=all-tmpfs` to `runsc fscheckpoint`; see
+    [Usage](#usage). tmpfs mounts created by sandboxed applications via
+    `mount(2)` are still excluded.
 
 *   Filesystem snapshots can only be restored by the same runsc binary that
     produced the snapshot. This restriction may be removed in the future.
@@ -58,10 +55,11 @@ containers in the sandbox). The `--path` flag selects which tmpfs mounts to
 save:
 
 *   `--path=<dir>` saves the tmpfs mounted at `<dir>` (in every container of the
-    sandbox). It must be a disk-backed tmpfs or overlayfs which has a
-    disk-backed tmpfs as the upper layer.
+    sandbox). It must be a tmpfs, or an overlayfs which has a tmpfs as the upper
+    layer.
 
-*   `--path=all-tmpfs` saves all disk-backed tmpfs mounts.
+*   `--path=all-tmpfs` saves all tmpfs mounts from the OCI spec (e.g. `emptyDir`
+    volumes).
 
 To restore a filesystem snapshot, pass the directory containing the snapshot to
 `runsc create` or `runsc run` using the `--fs-restore-image-path` flag:

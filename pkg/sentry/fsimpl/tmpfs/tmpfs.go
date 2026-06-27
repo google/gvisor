@@ -45,6 +45,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/ktime"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
@@ -71,6 +72,16 @@ type filesystem struct {
 	// mf is used to allocate memory that stores regular file contents. mf is
 	// immutable, except it is changed during restore.
 	mf *pgalloc.MemoryFile `state:".(checkpoint.ResourceID)"`
+
+	// resourceID identifies this filesystem in a filesystem checkpoint. It is
+	// set for tmpfs filesystems created from the OCI spec (so that they can be
+	// checkpointed and matched on restore) and is empty otherwise (e.g. for
+	// tmpfs filesystems created by the application via mount(2)). Unlike
+	// mf.ResourceID(), resourceID is set even when the filesystem is backed by
+	// the shared/main MemoryFile (which has no ResourceID of its own). When mf
+	// is a private MemoryFile, resourceID equals mf.ResourceID(). resourceID is
+	// immutable.
+	resourceID checkpoint.ResourceID
 
 	// clock is a realtime clock used to set timestamps in file operations.
 	clock ktime.Clock
@@ -158,6 +169,12 @@ type FilesystemOpts struct {
 	// this is nil, then MemoryFileFromContext() is used.
 	MemoryFile *pgalloc.MemoryFile
 
+	// ResourceID identifies this filesystem in a filesystem checkpoint; see
+	// filesystem.resourceID. It should be set for tmpfs filesystems created
+	// from the OCI spec, regardless of whether MemoryFile is a private or the
+	// shared/main MemoryFile.
+	ResourceID checkpoint.ResourceID
+
 	// DisableDefaultSizeLimit disables setting a default size limit. In Linux,
 	// SB_KERNMOUNT has this effect on tmpfs mounts; see mm/shmem.c:shmem_fill_super().
 	DisableDefaultSizeLimit bool
@@ -174,6 +191,15 @@ type FilesystemOpts struct {
 	// TarWrite.
 	SourceTar             io.ReadCloser
 	SourceTarFSCheckpoint bool
+
+	// RelocatePagesFile, if non-nil, indicates that the filesystem's MemoryFile
+	// (mf) is the shared/main MemoryFile, so the offsets in SourceTar are pages
+	// file offsets rather than offsets into mf (see
+	// FSCheckpointWriteShared). It is only valid when SourceTarFSCheckpoint is
+	// true. While untarring, GetFilesystem allocates fresh pages in mf and loads
+	// the checkpointed contents into them from RelocatePagesFile, rather than
+	// reusing the checkpointed MemoryFile offsets verbatim.
+	RelocatePagesFile *pgalloc.AsyncPagesFileLoad
 }
 
 // Amount of total physical RAM, in bytes. It is immutable after initialization.
@@ -372,6 +398,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	}
 	fs := filesystem{
 		mf:               mf,
+		resourceID:       tmpfsOpts.ResourceID,
 		clock:            clock,
 		devMinor:         devMinor,
 		mopts:            strings.Join(printedOpts, ","),
@@ -414,11 +441,14 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 	if tmpfsOptsOk && tmpfsOpts.SourceTar != nil {
 		var cb tarReaderCallbacks
+		var fsckptCB *fsckptTarReaderCallbacks
 		if tmpfsOpts.SourceTarFSCheckpoint {
-			cb = &fsckptTarReaderCallbacks{
+			fsckptCB = &fsckptTarReaderCallbacks{
 				fs:           &fs,
+				relocate:     tmpfsOpts.RelocatePagesFile != nil,
 				regularFiles: make(map[*tar.Header]*fsckptRegularFile),
 			}
+			cb = fsckptCB
 		} else {
 			cb = &tarDefaultReaderCallbacks{
 				headerToContent: make(map[*tar.Header]*bytes.Buffer),
@@ -428,6 +458,16 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		if err := fs.tarRead(ctx, tmpfsOpts.SourceTar, cb); err != nil {
 			fs.vfsfs.DecRef(ctx)
 			return nil, nil, err
+		}
+		// If the filesystem is backed by the shared/main MemoryFile, the pages
+		// allocated above are still empty; load their contents from the pages
+		// file into them. References on these pages are held by fs (via
+		// regularFile.data) until the load completes.
+		if fsckptCB != nil && fsckptCB.relocate && len(fsckptCB.relocFRs) != 0 {
+			if err := tmpfsOpts.RelocatePagesFile.LoadRangesInto(ctx, fs.mf, fsckptCB.relocFRs, fsckptCB.relocOffs); err != nil {
+				fs.vfsfs.DecRef(ctx)
+				return nil, nil, fmt.Errorf("failed to load filesystem checkpoint pages: %w", err)
+			}
 		}
 		ctx.Infof("tmpfs.filesystem: loaded SourceTar in %s", time.Since(timeUntarStart))
 	}
