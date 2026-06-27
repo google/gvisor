@@ -19,6 +19,7 @@ import (
 	"math"
 	"strconv"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -88,7 +89,8 @@ type filesystem struct {
 	devMinor uint32
 
 	// conn is used for communication between the FUSE server
-	// daemon and the sentry fusefs.
+	// daemon and the sentry fusefs. It holds shared protocol state and
+	// delegates call dispatch to its internal fuseConn transport.
 	conn *connection
 
 	// opts is the options the fusefs is initialized with.
@@ -130,14 +132,36 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	}
 	defer fuseFDGeneric.DecRef(ctx)
 	fuseFD, ok := fuseFDGeneric.Impl().(*DeviceFD)
-	if !ok {
-		log.Warningf("%s.GetFilesystem: device FD is %T, not a FUSE device", fsType.Name(), fuseFDGeneric)
+	if ok {
+		return fsType.getFilesystemDeviceFD(ctx, vfsObj, creds, kernelTask, fuseFD, devMinor, fsopts)
+	}
+
+	// Check if this is a host FD. Try the file description first (for
+	// regular files, pipes), then the dentry inode (for sockets, which
+	// have a different file description type but the same host inode).
+	rawHostFD := -1
+	if hfd, ok := fuseFDGeneric.Impl().(vfs.HostFDProvider); ok {
+		rawHostFD = hfd.HostFD()
+	} else if d := fuseFDGeneric.Dentry(); d != nil {
+		if kd, ok := d.Impl().(*kernfs.Dentry); ok {
+			if hfd, ok := kd.Inode().(vfs.HostFDProvider); ok {
+				rawHostFD = hfd.HostFD()
+			}
+		}
+	}
+	if rawHostFD == -1 {
+		log.Warningf("%s.GetFilesystem: fd is %T, not a FUSE device or host FD", fsType.Name(), fuseFDGeneric.Impl())
 		return nil, nil, linuxerr.EINVAL
 	}
 
+	return fsType.getFilesystemHostFD(ctx, vfsObj, creds, kernelTask, int32(rawHostFD), devMinor, fsopts)
+}
+
+// getFilesystemDeviceFD creates a FUSE filesystem backed by an in-sandbox
+// /dev/fuse DeviceFD.
+func (fsType FilesystemType) getFilesystemDeviceFD(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, kernelTask *kernel.Task, fuseFD *DeviceFD, devMinor uint32, fsopts *filesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
 	fuseFD.mu.Lock()
 	connected := fuseFD.connected()
-	// Create a new FUSE filesystem.
 	fs, err := newFUSEFilesystem(ctx, vfsObj, &fsType, fuseFD, devMinor, fsopts)
 	if err != nil {
 		log.Warningf("%s.NewFUSEFilesystem: failed with error: %v", fsType.Name(), err)
@@ -155,9 +179,56 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		}
 	}
 
-	// root is the fusefs root directory.
 	root := fs.newRoot(ctx, creds, fsopts.rootMode)
+	return fs.VFSFilesystem(), root.VFSDentry(), nil
+}
 
+// getFilesystemHostFD creates a FUSE filesystem that communicates with a FUSE
+// server running on the host via a host file descriptor.
+func (fsType FilesystemType) getFilesystemHostFD(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, kernelTask *kernel.Task, hostFD int32, devMinor uint32, fsopts *filesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
+	// Dup the host FD so that the FUSE connection owns its own copy.
+	// The original may be shared with or closed by the host import path
+	// (e.g. socket endpoints take ownership of the FD).
+	dupFD, err := unix.Dup(int(hostFD))
+	if err != nil {
+		log.Warningf("%s.getFilesystemHostFD: dup failed: %v", fsType.Name(), err)
+		return nil, nil, err
+	}
+	// The host import path sets the FD to non-blocking for epoll-based I/O.
+	// The FUSE passthrough connection uses synchronous blocking I/O, so
+	// clear the non-blocking flag.
+	if err := unix.SetNonblock(dupFD, false); err != nil {
+		unix.Close(dupFD)
+		log.Warningf("%s.getFilesystemHostFD: SetNonblock failed: %v", fsType.Name(), err)
+		return nil, nil, err
+	}
+
+	conn, err := newFUSEConnectionOpts(fsopts)
+	if err != nil {
+		unix.Close(dupFD)
+		log.Warningf("%s.getFilesystemHostFD: newFUSEConnection failed: %v", fsType.Name(), err)
+		return nil, nil, err
+	}
+
+	hostConn := newHostConnection(conn, int32(dupFD))
+	conn.fuseConn = hostConn
+
+	fs := &filesystem{
+		devMinor: devMinor,
+		opts:     fsopts,
+		conn:     conn,
+		clock:    ktime.RealtimeClockFromContext(ctx),
+	}
+	fs.VFSFilesystem().Init(vfsObj, &fsType, fs)
+
+	rootUserNs := kernel.KernelFromContext(ctx).RootUserNamespace()
+	hasSysAdmin := creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, rootUserNs)
+	if err := hostConn.InitSend(creds, uint32(kernelTask.ThreadID()), hasSysAdmin); err != nil {
+		log.Warningf("%s.getFilesystemHostFD: InitSend failed: %v", fsType.Name(), err)
+		return nil, nil, err
+	}
+
+	root := fs.newRoot(ctx, creds, fsopts.rootMode)
 	return fs.VFSFilesystem(), root.VFSDentry(), nil
 }
 
@@ -295,6 +366,7 @@ func newFUSEFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, fsTyp
 
 // Release implements vfs.FilesystemImpl.Release.
 func (fs *filesystem) Release(ctx context.Context) {
+	fs.conn.fuseConn.release(ctx)
 	fs.Filesystem.VFSFilesystem().VirtualFilesystem().PutAnonBlockDevMinor(fs.devMinor)
 	fs.Filesystem.Release(ctx)
 }
