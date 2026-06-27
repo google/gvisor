@@ -329,7 +329,11 @@ func FixConfig(conf *config.Config, spec *specs.Spec) error {
 			}
 		}
 	}
-	return nil
+	// Override does not validate the config. Validate once after all
+	// annotations have been applied: annotations are iterated in random map
+	// order, so interdependent flags (e.g. qdisc=tbf and qdisc-tbf-rate) may
+	// be applied in an order that is only valid once complete.
+	return conf.Validate()
 }
 
 // ReadMounts reads mount list from a file.

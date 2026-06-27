@@ -68,8 +68,10 @@ Add the following `runtimeArgs` to your Docker configuration
 gVisor can rate limit outbound sandbox traffic with a
 [Token Bucket Filter (TBF)][tc-tbf] queueing discipline. TBF is modeled after
 Linux's `tbf` qdisc and supports a single-rate bucket. It applies to
-non-loopback NICs when using netstack; ingress and loopback traffic are not
-shaped. The implementation lives in [pkg/tcpip/link/qdisc/tbf][tbf-source].
+non-loopback NICs when using netstack; loopback traffic is not shaped. Inbound
+traffic is shaped separately, see
+[Ingress traffic shaping](#ingress-traffic-shaping-tbf). The implementation
+lives in [pkg/tcpip/link/qdisc/tbf][tbf-source].
 
 To enable TBF globally, add the following `runtimeArgs` to your Docker
 configuration (`/etc/docker/daemon.json`) and restart the Docker daemon. For
@@ -159,6 +161,63 @@ Offload (GSO) to run with a kernel that is newer than 3.17. Add the
     }
 }
 ```
+
+## Ingress traffic shaping (TBF) {#ingress-traffic-shaping-tbf}
+
+gVisor can also rate limit inbound sandbox traffic with the same single-rate
+TBF. Because netstack runs in userspace, gVisor queues inbound packets until
+the bucket refills — true shaping — rather than only dropping them the way
+Linux's ingress policer does. Packets that arrive while the backlog queue is
+full are dropped. Like the egress qdisc, ingress shaping applies to
+non-loopback NICs when using netstack.
+
+Ingress shaping is configured with a parallel flag family and is disabled by
+default:
+
+```json
+{
+    "runtimes": {
+        "runsc": {
+            "path": "/usr/local/bin/runsc",
+            "runtimeArgs": [
+                "--network=sandbox",
+                "--ingress-qdisc=tbf",
+                "--ingress-qdisc-tbf-rate=12500000",
+                "--ingress-qdisc-tbf-burst=1048576"
+            ]
+       }
+    }
+}
+```
+
+`--ingress-qdisc=tbf` enables ingress shaping (`none`, the default, disables
+it; there is no `fifo` option on ingress since queueing inbound packets without
+a rate limit has no effect). `--ingress-qdisc-tbf-rate` and
+`--ingress-qdisc-tbf-burst` have the same semantics, units, and
+required-when-enabled rules as their egress counterparts, and the same
+annotation keys exist with the same lowering-only behavior:
+
+```
+dev.gvisor.flag.ingress-qdisc: "tbf"
+dev.gvisor.flag.ingress-qdisc-tbf-rate: "12500000"
+dev.gvisor.flag.ingress-qdisc-tbf-burst: "1048576"
+```
+
+Ingress and egress shaping are independent; enable either or both. To
+rate-limit a sandbox in both directions, set both flag families.
+
+A few operational notes. The backlog queue holds up to 1000 packets (the same
+fixed depth the egress qdiscs use); packets beyond that are dropped. An
+inbound packet larger than the configured burst — possible when receive
+offloads coalesce TCP segments — is not dropped: it is delivered once the
+bucket completely refills and its full cost is charged against future
+traffic, so the sustained rate still holds. All inbound traffic on the link
+is shaped, including ARP and neighbor discovery, so under a sustained inbound
+flood at the configured rate, control traffic competes with data for the
+queue just as it would behind a Linux `tbf` on an `ifb` device. Shaped
+inbound delivery is serialized on a single goroutine; for the rates traffic
+shaping is typically used at this is not a bottleneck, but it does reduce
+multi-queue receive parallelism while enabled.
 
 [netstack]: /docs/architecture_guide/networking/
 [Production guide]: /docs/user_guide/production/

@@ -111,6 +111,9 @@ type FDBasedLink struct {
 	QDisc             config.QueueingDiscipline
 	TBFRate           uint64
 	TBFBurst          uint32
+	IngressQDisc      config.QueueingDiscipline
+	IngressTBFRate    uint64
+	IngressTBFBurst   uint32
 	Neighbors         []Neighbor
 
 	// NumChannels controls how many underlying FDs are to be used to
@@ -147,6 +150,9 @@ type XDPLink struct {
 	QDisc             config.QueueingDiscipline
 	TBFRate           uint64
 	TBFBurst          uint32
+	IngressQDisc      config.QueueingDiscipline
+	IngressTBFRate    uint64
+	IngressTBFBurst   uint32
 	Neighbors         []Neighbor
 	GVisorGRO         bool
 	Bind              BindOpt
@@ -388,6 +394,14 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 				linkEP = sniffer.New(linkEP)
 			}
 
+			// The ingress shaper wraps outside the sniffer so that logged
+			// inbound packets carry their arrival time rather than their
+			// post-shaping delivery time, as on Linux.
+			linkEP, err = wrapWithIngressShaper(linkEP, n.Stack.Clock(), link.Name, link.IngressQDisc, link.IngressTBFRate, link.IngressTBFBurst)
+			if err != nil {
+				return err
+			}
+
 			var qDisc stack.QueueingDiscipline
 			switch link.QDisc {
 			case config.QDiscNone:
@@ -487,6 +501,14 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 			linkEP = sniffer.New(linkEP)
 		}
 
+		// The ingress shaper wraps outside the sniffer so that logged inbound
+		// packets carry their arrival time rather than their post-shaping
+		// delivery time, as on Linux.
+		linkEP, err = wrapWithIngressShaper(linkEP, n.Stack.Clock(), link.Name, link.IngressQDisc, link.IngressTBFRate, link.IngressTBFBurst)
+		if err != nil {
+			return err
+		}
+
 		var qDisc stack.QueueingDiscipline
 		switch link.QDisc {
 		case config.QDiscNone:
@@ -574,6 +596,27 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 	n.Stack.SetAllowConnectedOnSave(args.AllowConnectedOnSave)
 
 	return nil
+}
+
+// wrapWithIngressShaper wraps linkEP with an ingress traffic shaper if one is
+// configured for the link, mirroring the egress qdisc setup below it. The
+// shaper delays (and under sustained overload drops) inbound packets before
+// they enter the network stack.
+func wrapWithIngressShaper(linkEP stack.LinkEndpoint, clock tcpip.Clock, name string, qDisc config.QueueingDiscipline, rate uint64, burst uint32) (stack.LinkEndpoint, error) {
+	switch qDisc {
+	case config.QDiscNone:
+	case config.QDiscTBF:
+		log.Infof("Enabling ingress TBF on %q rate=%d burst=%d", name, rate, burst)
+		ingress, err := tbf.NewIngress(linkEP, clock, rate, burst, 1000)
+		if err != nil {
+			return nil, fmt.Errorf("creating ingress TBF for %q: %w", name, err)
+		}
+		return ingress, nil
+	default:
+		// Config validation only lets none and tbf through.
+		return nil, fmt.Errorf("unsupported ingress qdisc %v for %q", qDisc, name)
+	}
+	return linkEP, nil
 }
 
 // createNICWithAddrs creates a NIC in the network stack and adds the given

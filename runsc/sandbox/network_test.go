@@ -37,6 +37,12 @@ func fdbasedLinkEqual(a, b boot.FDBasedLink) bool {
 	if a.QDisc != b.QDisc {
 		return false
 	}
+	if a.TBFRate != b.TBFRate || a.TBFBurst != b.TBFBurst {
+		return false
+	}
+	if a.IngressQDisc != b.IngressQDisc || a.IngressTBFRate != b.IngressTBFRate || a.IngressTBFBurst != b.IngressTBFBurst {
+		return false
+	}
 	// LinkAddress is randomly assigned for veth pairs, so compare lengths.
 	if len(a.LinkAddress) != len(b.LinkAddress) {
 		return false

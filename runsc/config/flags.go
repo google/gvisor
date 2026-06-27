@@ -47,6 +47,9 @@ const (
 	flagQDisc                   = "qdisc"
 	flagQDiscTBFRate            = "qdisc-tbf-rate"
 	flagQDiscTBFBurst           = "qdisc-tbf-burst"
+	flagIngressQDisc            = "ingress-qdisc"
+	flagIngressQDiscTBFRate     = "ingress-qdisc-tbf-rate"
+	flagIngressQDiscTBFBurst    = "ingress-qdisc-tbf-burst"
 
 	maxQDiscTBFBurst     = uint64(1<<32 - 1)
 	defaultQDiscTBFRate  = uint64(0)
@@ -161,6 +164,9 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Var(queueingDisciplinePtr(QDiscFIFO), flagQDisc, "specifies which queueing discipline to apply by default to the non loopback nics used by the sandbox.")
 	flagSet.Uint64(flagQDiscTBFRate, defaultQDiscTBFRate, "egress rate limit in bytes/sec when --qdisc=tbf.")
 	flagSet.Uint64(flagQDiscTBFBurst, defaultQDiscTBFBurst, "bucket depth in bytes when --qdisc=tbf.")
+	flagSet.Var(queueingDisciplinePtr(QDiscNone), flagIngressQDisc, "specifies the shaping to apply to inbound traffic on the non loopback nics used by the sandbox: none (default), tbf.")
+	flagSet.Uint64(flagIngressQDiscTBFRate, defaultQDiscTBFRate, "ingress rate limit in bytes/sec when --ingress-qdisc=tbf.")
+	flagSet.Uint64(flagIngressQDiscTBFBurst, defaultQDiscTBFBurst, "bucket depth in bytes when --ingress-qdisc=tbf.")
 	flagSet.Int("num-network-channels", 1, "number of underlying channels(FDs) to use for network link endpoints.")
 	flagSet.Int("network-processors-per-channel", 0, "number of goroutines in each channel for processng inbound packets. If 0, the link endpoint will divide GOMAXPROCS evenly among the number of channels specified by num-network-channels.")
 	flagSet.Var(&xdpConfig, "EXPERIMENTAL-xdp", `whether and how to use XDP. Can be one of: "off" (default), "ns", "redirect:<device name>", or "tunnel:<device name>"`)
@@ -211,6 +217,9 @@ var overrideAllowlist = map[string]struct {
 	flagQDisc:                   {check: checkQDisc},
 	flagQDiscTBFRate:            {check: checkQDiscTBFRate},
 	flagQDiscTBFBurst:           {check: checkQDiscTBFBurst},
+	flagIngressQDisc:            {check: checkIngressQDisc},
+	flagIngressQDiscTBFRate:     {check: checkIngressQDiscTBFRate},
+	flagIngressQDiscTBFBurst:    {check: checkIngressQDiscTBFBurst},
 }
 
 // checkOverlay2 ensures that overlay2 can only be enabled using "memory" or
@@ -284,6 +293,51 @@ func checkQDiscTBFBurst(c *Config, name string, value string) error {
 	return nil
 }
 
+// checkIngressQDisc ensures that ingress-qdisc annotations can only select
+// TBF, which is more restrictive than the default of no ingress shaping.
+func checkIngressQDisc(_ *Config, name string, value string) error {
+	var q QueueingDiscipline
+	if err := q.Set(value); err != nil {
+		return err
+	}
+	if q != QDiscTBF {
+		return fmt.Errorf("setting %s=%q requires flag %q to be enabled", name, value, flagAllowFlagOverride)
+	}
+	return nil
+}
+
+// checkIngressQDiscTBFRate ensures an annotation can only lower (or match)
+// the runtime-configured ingress rate; raising it would weaken operator
+// policy. A runtime-configured rate of 0 means the operator hasn't set a
+// ceiling, so any pod-supplied rate is accepted.
+func checkIngressQDiscTBFRate(c *Config, name string, value string) error {
+	v, err := strconv.ParseUint(value, 0, 64)
+	if err != nil {
+		return fmt.Errorf("invalid %s annotation %q: %w", name, value, err)
+	}
+	if c.IngressTBFRate != 0 && v > c.IngressTBFRate {
+		return fmt.Errorf("%s=%d exceeds runtime-configured rate %d; raising the limit requires flag %q to be enabled",
+			name, v, c.IngressTBFRate, flagAllowFlagOverride)
+	}
+	return nil
+}
+
+// checkIngressQDiscTBFBurst ensures an annotation can only lower (or match)
+// the runtime-configured ingress bucket depth. A runtime-configured burst of
+// 0 means the operator hasn't set a ceiling, so any pod-supplied burst is
+// accepted.
+func checkIngressQDiscTBFBurst(c *Config, name string, value string) error {
+	v, err := strconv.ParseUint(value, 0, 64)
+	if err != nil {
+		return fmt.Errorf("invalid %s annotation %q: %w", name, value, err)
+	}
+	if c.IngressTBFBurst != 0 && v > c.IngressTBFBurst {
+		return fmt.Errorf("%s=%d exceeds runtime-configured burst %d; raising the limit requires flag %q to be enabled",
+			name, v, c.IngressTBFBurst, flagAllowFlagOverride)
+	}
+	return nil
+}
+
 // isFlagExplicitlySet returns whether the given flag name is explicitly set.
 // Doesn't check for flag existence; returns `false` for flags that don't exist.
 func isFlagExplicitlySet(flagSet *flag.FlagSet, name string) bool {
@@ -330,43 +384,8 @@ func NewFromFlags(flagSet *flag.FlagSet) (*Config, error) {
 		}
 	}
 
-	if err := conf.validate(); err != nil {
+	if err := conf.Validate(); err != nil {
 		return nil, err
-	}
-	return conf, nil
-}
-
-// NewFromBundle makes a new config from a Bundle.
-func NewFromBundle(bundle Bundle) (*Config, error) {
-	if err := bundle.Validate(); err != nil {
-		return nil, err
-	}
-	flagSet := flag.NewFlagSet("tmp", flag.ContinueOnError)
-	RegisterFlags(flagSet)
-	conf := &Config{explicitlySet: map[string]struct{}{}}
-
-	obj := reflect.ValueOf(conf).Elem()
-	st := obj.Type()
-	for i := 0; i < st.NumField(); i++ {
-		f := st.Field(i)
-		name, ok := f.Tag.Lookup("flag")
-		if !ok {
-			continue
-		}
-		fl := flagSet.Lookup(name)
-		if fl == nil {
-			return nil, fmt.Errorf("flag %q not found", name)
-		}
-		val, ok := bundle[name]
-		if !ok {
-			continue
-		}
-		if err := flagSet.Set(name, val); err != nil {
-			return nil, fmt.Errorf("error setting flag %s=%q: %w", name, val, err)
-		}
-		conf.Override(flagSet, name, val, true)
-
-		conf.explicitlySet[name] = struct{}{}
 	}
 	return conf, nil
 }
@@ -420,7 +439,11 @@ func (c *Config) keyVals(flagSet *flag.FlagSet, onlyIfSet bool) map[string]strin
 	return keyVals
 }
 
-// Override writes a new value to a flag.
+// Override writes a new value to a flag. It does not validate the resulting
+// Config, so flags that are invalid in isolation but valid together (e.g.
+// qdisc=tbf and qdisc-tbf-rate) can be overridden in any order. Callers must
+// call Validate once they are done overriding to ensure the Config is left in
+// a consistent state.
 func (c *Config) Override(flagSet *flag.FlagSet, name string, value string, force bool) error {
 	obj := reflect.ValueOf(c).Elem()
 	st := obj.Type()
@@ -449,9 +472,7 @@ func (c *Config) Override(flagSet *flag.FlagSet, name string, value string, forc
 		}
 		x := reflect.ValueOf(flag.Get(fl.Value))
 		obj.Field(i).Set(x)
-
-		// Validates the config again to ensure it's left in a consistent state.
-		return c.validate()
+		return nil
 	}
 	return fmt.Errorf("flag %q not found. Cannot set it to %q", name, value)
 }
@@ -541,7 +562,7 @@ func (c *Config) ApplyBundles(flagSet *flag.FlagSet, bundleNames ...BundleName) 
 		}
 	}
 
-	return c.validate()
+	return c.Validate()
 }
 
 func getVal(field reflect.Value) string {

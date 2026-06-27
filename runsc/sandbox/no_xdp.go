@@ -32,7 +32,7 @@ import (
 
 const noXDPMsg = "XDP support was not built into this release -- rebuild with --define=gotags=xdp"
 
-func createRedirectInterfacesAndRoutes(conn *urpc.Client, conf *config.Config) error {
+func createRedirectInterfacesAndRoutes(conn *urpc.Client, conf *config.Config, disableIPv6 bool) error {
 	return errors.New(noXDPMsg)
 }
 
@@ -40,6 +40,6 @@ func createSocketXDP(iface net.Interface) ([]*os.File, error) {
 	return nil, errors.New(noXDPMsg)
 }
 
-func createXDPTunnel(conn *urpc.Client, nsPath string, conf *config.Config) error {
+func createXDPTunnel(conn *urpc.Client, nsPath string, conf *config.Config, disableIPv6 bool) error {
 	return errors.New(noXDPMsg)
 }

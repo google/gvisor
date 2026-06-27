@@ -178,7 +178,7 @@ func NVProxyDriverCapsAllowed(conf *config.Config) (nvconf.DriverCaps, error) {
 		return 0, fmt.Errorf("invalid set of allowed NVIDIA driver capabilities %q: %w", conf.NVProxyAllowedDriverCapabilities, err)
 	}
 	// allowedDriverCaps is already a subset of `nvconf.SupportedDriverCaps`
-	// as this was checked by `config.Config.validate`.
+	// as this was checked by `config.Config.Validate`.
 	if hasAll {
 		allowedDriverCaps |= nvconf.AllContainerDriverCaps
 	}

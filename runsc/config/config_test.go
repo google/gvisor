@@ -202,6 +202,11 @@ func TestInvalidFlags(t *testing.T) {
 			error: "invalid qdisc",
 		},
 		{
+			name:  "ingress-qdisc",
+			value: "invalid",
+			error: "invalid qdisc",
+		},
+		{
 			name:  "ref-leak-mode",
 			value: "invalid",
 			error: "invalid ref leak mode",
@@ -285,6 +290,36 @@ func TestValidationFail(t *testing.T) {
 				"qdisc-tbf-rate": "12500000",
 			},
 			error: "qdisc=tbf requires setting qdisc-tbf-burst",
+		},
+		{
+			name: "ingress-qdisc-tbf-burst-overflow",
+			flags: map[string]string{
+				"ingress-qdisc-tbf-burst": "4294967296",
+			},
+			error: "ingress-qdisc-tbf-burst must be <=",
+		},
+		{
+			name: "ingress-qdisc-tbf-without-rate",
+			flags: map[string]string{
+				"ingress-qdisc":           "tbf",
+				"ingress-qdisc-tbf-burst": "524288",
+			},
+			error: "ingress-qdisc=tbf requires setting ingress-qdisc-tbf-rate",
+		},
+		{
+			name: "ingress-qdisc-tbf-without-burst",
+			flags: map[string]string{
+				"ingress-qdisc":          "tbf",
+				"ingress-qdisc-tbf-rate": "12500000",
+			},
+			error: "ingress-qdisc=tbf requires setting ingress-qdisc-tbf-burst",
+		},
+		{
+			name: "ingress-qdisc-fifo-rejected",
+			flags: map[string]string{
+				"ingress-qdisc": "fifo",
+			},
+			error: "ingress-qdisc must be \"none\" or \"tbf\"",
 		},
 		{
 			name: "fsgofer-host-uds+host-uds:open",
@@ -499,8 +534,7 @@ func TestOverrideAllowlist(t *testing.T) {
 			error: "invalid qdisc",
 		},
 		// Order matters: a successful override mutates the Config ceiling for
-		// later subtests, and qdisc=tbf requires both rate and burst to have
-		// been set first (validate() rejects qdisc=tbf with either at zero).
+		// later subtests.
 		{
 			flag:  "qdisc-tbf-rate",
 			value: fmt.Sprint(defaultQDiscTBFRate),
@@ -530,8 +564,7 @@ func TestOverrideAllowlist(t *testing.T) {
 		},
 		{
 			flag:  "qdisc-tbf-burst",
-			value: "4294967296", // > max uint32
-			error: "qdisc-tbf-burst must be <=",
+			value: "4294967296", // > max uint32; rejected by Validate below.
 		},
 		{
 			flag:  "qdisc-tbf-burst",
@@ -546,16 +579,76 @@ func TestOverrideAllowlist(t *testing.T) {
 			flag:  "qdisc",
 			value: "tbf",
 		},
+		// Ingress mirrors of the qdisc subtests above; the same ordering
+		// constraints apply.
+		{
+			flag:  "ingress-qdisc",
+			value: "fifo",
+			error: `requires flag "allow-flag-override"`,
+		},
+		{
+			flag:  "ingress-qdisc",
+			value: "none",
+			error: `requires flag "allow-flag-override"`,
+		},
+		{
+			flag:  "ingress-qdisc",
+			value: "invalid",
+			error: "invalid qdisc",
+		},
+		{
+			flag:  "ingress-qdisc-tbf-rate",
+			value: "abc",
+			error: "invalid",
+		},
+		{
+			flag:  "ingress-qdisc-tbf-rate",
+			value: "1000000",
+		},
+		{
+			flag:  "ingress-qdisc-tbf-rate",
+			value: "2000000", // attempts to raise above the 1M ceiling without force
+			error: "raising the limit requires",
+		},
+		{
+			flag:  "ingress-qdisc-tbf-burst",
+			value: "4294967296", // > max uint32; rejected by Validate below.
+		},
+		{
+			flag:  "ingress-qdisc-tbf-burst",
+			value: "65536",
+		},
+		{
+			flag:  "ingress-qdisc-tbf-burst",
+			value: "131072", // attempts to raise above the 65536 ceiling without force
+			error: "raising the limit requires",
+		},
+		{
+			flag:  "ingress-qdisc",
+			value: "tbf",
+		},
+		// The force-escape-hatch burst subtests leave rejected (too large)
+		// burst values behind in the Config. Override does not validate; the
+		// final Validate call below rejects them.
 		{
 			flag:  "qdisc-tbf-rate",
 			value: "2147483648",
 			force: true, // admin escape hatch bypasses the check
 		},
 		{
+			flag:  "ingress-qdisc-tbf-rate",
+			value: "2147483648",
+			force: true, // admin escape hatch bypasses the check
+		},
+		{
+			flag:  "ingress-qdisc-tbf-burst",
+			value: "4294967296",
+			force: true, // Validate still rejects values that would wrap.
+		},
+		{
 			flag:  "qdisc-tbf-burst",
 			value: "4294967296",
-			force: true, // validate still rejects values that would wrap
-			error: "qdisc-tbf-burst must be <=",
+			force: true, // Validate still rejects values that would wrap.
 		},
 	} {
 		t.Run(tc.flag, func(t *testing.T) {
@@ -568,6 +661,12 @@ func TestOverrideAllowlist(t *testing.T) {
 				t.Errorf("Override(%q, %q) wrong error: %v", tc.flag, tc.value, err)
 			}
 		})
+	}
+
+	// Override does not validate, so even force=true cannot bypass Validate:
+	// the out-of-range burst applied above must fail validation.
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "qdisc-tbf-burst must be <=") {
+		t.Errorf("Validate() wrong error: %v", err)
 	}
 }
 
@@ -582,7 +681,6 @@ func TestOverrideAllowlistQDiscTBF(t *testing.T) {
 	if got, want := c.QDisc, QDiscFIFO; got != want {
 		t.Fatalf("default QDisc = %v, want %v", got, want)
 	}
-	// validate() requires rate and burst to be set before qdisc=tbf takes.
 	if err := c.Override(testFlags, "qdisc-tbf-rate", "12500000", false); err != nil {
 		t.Fatalf("Override(qdisc-tbf-rate, 12500000) failed: %v", err)
 	}
@@ -591,6 +689,9 @@ func TestOverrideAllowlistQDiscTBF(t *testing.T) {
 	}
 	if err := c.Override(testFlags, "qdisc", "tbf", false); err != nil {
 		t.Fatalf("Override(qdisc, tbf) failed: %v", err)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("Validate() failed: %v", err)
 	}
 
 	if got, want := c.QDisc, QDiscTBF; got != want {
@@ -601,6 +702,101 @@ func TestOverrideAllowlistQDiscTBF(t *testing.T) {
 	}
 	if got, want := c.TBFBurst, uint64(524288); got != want {
 		t.Errorf("TBFBurst = %d, want %d", got, want)
+	}
+}
+
+func TestOverrideAllowlistIngressQDiscTBF(t *testing.T) {
+	testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
+	RegisterFlags(testFlags)
+	c, err := NewFromFlags(testFlags)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got, want := c.IngressQDisc, QDiscNone; got != want {
+		t.Fatalf("default IngressQDisc = %v, want %v", got, want)
+	}
+	if err := c.Override(testFlags, "ingress-qdisc-tbf-rate", "12500000", false); err != nil {
+		t.Fatalf("Override(ingress-qdisc-tbf-rate, 12500000) failed: %v", err)
+	}
+	if err := c.Override(testFlags, "ingress-qdisc-tbf-burst", "524288", false); err != nil {
+		t.Fatalf("Override(ingress-qdisc-tbf-burst, 524288) failed: %v", err)
+	}
+	if err := c.Override(testFlags, "ingress-qdisc", "tbf", false); err != nil {
+		t.Fatalf("Override(ingress-qdisc, tbf) failed: %v", err)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("Validate() failed: %v", err)
+	}
+
+	if got, want := c.IngressQDisc, QDiscTBF; got != want {
+		t.Errorf("IngressQDisc = %v, want %v", got, want)
+	}
+	if got, want := c.IngressTBFRate, uint64(12500000); got != want {
+		t.Errorf("IngressTBFRate = %d, want %d", got, want)
+	}
+	if got, want := c.IngressTBFBurst, uint64(524288); got != want {
+		t.Errorf("IngressTBFBurst = %d, want %d", got, want)
+	}
+}
+
+func TestOverrideDeferredValidation(t *testing.T) {
+	// qdisc=tbf and ingress-qdisc=tbf are rejected by Validate while their
+	// rate or burst are still zero. Override does not validate, so
+	// interdependent flags can be applied in any order (e.g. from randomly
+	// iterated annotation maps), as long as the final state passes Validate.
+	testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
+	RegisterFlags(testFlags)
+	c, err := NewFromFlags(testFlags)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, o := range []struct{ name, value string }{
+		{"qdisc", "tbf"},
+		{"ingress-qdisc", "tbf"},
+		{"qdisc-tbf-rate", "12500000"},
+		{"ingress-qdisc-tbf-rate", "12500000"},
+		{"qdisc-tbf-burst", "1048576"},
+		{"ingress-qdisc-tbf-burst", "1048576"},
+	} {
+		if err := c.Override(testFlags, o.name, o.value, false); err != nil {
+			t.Fatalf("Override(%s, %s) failed: %v", o.name, o.value, err)
+		}
+	}
+	if err := c.Validate(); err != nil {
+		t.Errorf("Validate() failed: %v", err)
+	}
+	if got, want := c.QDisc, QDiscTBF; got != want {
+		t.Errorf("QDisc = %v, want %v", got, want)
+	}
+	if got, want := c.IngressQDisc, QDiscTBF; got != want {
+		t.Errorf("IngressQDisc = %v, want %v", got, want)
+	}
+	if got, want := c.TBFRate, uint64(12500000); got != want {
+		t.Errorf("TBFRate = %d, want %d", got, want)
+	}
+	if got, want := c.IngressTBFBurst, uint64(1048576); got != want {
+		t.Errorf("IngressTBFBurst = %d, want %d", got, want)
+	}
+
+	// Validation is deferred, not skipped: an inconsistent final state must
+	// still fail.
+	testFlags = flag.NewFlagSet("test", flag.ContinueOnError)
+	RegisterFlags(testFlags)
+	c, err = NewFromFlags(testFlags)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Override(testFlags, "ingress-qdisc", "tbf", false); err != nil {
+		t.Fatalf("Override(ingress-qdisc, tbf) failed: %v", err)
+	}
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "ingress-qdisc=tbf requires setting ingress-qdisc-tbf-rate") {
+		t.Errorf("Validate() wrong error: %v", err)
+	}
+
+	// Allowlist checks still apply per-flag.
+	if err := c.Override(testFlags, "profile", "true", false); err == nil || !strings.Contains(err.Error(), "flag override disabled") {
+		t.Errorf("Override(profile=true) error = %v, want flag override disabled", err)
 	}
 }
 

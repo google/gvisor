@@ -39,7 +39,7 @@ import (
 //  1. Create a new field in Config.
 //  2. Add a field tag with the flag name
 //  3. Register a new flag in flags.go, with same name and add a description
-//  4. Add any necessary validation into validate()
+//  4. Add any necessary validation into Validate()
 //  5. If adding an enum, follow the same pattern as FileAccessType
 //  6. Evaluate if the flag can be changed with OCI annotations. See
 //     overrideAllowlist for more details
@@ -155,6 +155,17 @@ type Config struct {
 
 	// TBFBurst is the bucket depth in bytes when QDisc=tbf.
 	TBFBurst uint64 `flag:"qdisc-tbf-burst"`
+
+	// IngressQDisc indicates the type of shaping to apply to inbound traffic
+	// on non-loopback interfaces. Only QDiscNone and QDiscTBF are supported.
+	IngressQDisc QueueingDiscipline `flag:"ingress-qdisc"`
+
+	// IngressTBFRate is the ingress rate limit in bytes/sec when
+	// IngressQDisc=tbf.
+	IngressTBFRate uint64 `flag:"ingress-qdisc-tbf-rate"`
+
+	// IngressTBFBurst is the bucket depth in bytes when IngressQDisc=tbf.
+	IngressTBFBurst uint64 `flag:"ingress-qdisc-tbf-burst"`
 
 	// LogPackets indicates that all network packets should be logged.
 	LogPackets bool `flag:"log-packets"`
@@ -448,7 +459,11 @@ type Config struct {
 	ControlRPCStopTimeout time.Duration `flag:"control-rpc-stop-timeout"`
 }
 
-func (c *Config) validate() error {
+// Validate checks that the Config is in a consistent state, e.g. that no
+// interdependent or mutually-exclusive flag values conflict. Note that
+// Config.Override does not validate, so callers must call Validate once they
+// are done overriding.
+func (c *Config) Validate() error {
 	if c.Overlay && c.Overlay2.Enabled() {
 		// Deprecated flag was used together with flag that replaced it.
 		return fmt.Errorf("overlay flag has been replaced with overlay2 flag")
@@ -472,6 +487,23 @@ func (c *Config) validate() error {
 		if c.TBFBurst == 0 {
 			return fmt.Errorf("qdisc=tbf requires setting qdisc-tbf-burst")
 		}
+	}
+	if c.IngressTBFBurst > maxQDiscTBFBurst {
+		return fmt.Errorf("ingress-qdisc-tbf-burst must be <= %d, got: %d", maxQDiscTBFBurst, c.IngressTBFBurst)
+	}
+	switch c.IngressQDisc {
+	case QDiscNone:
+	case QDiscTBF:
+		if c.IngressTBFRate == 0 {
+			return fmt.Errorf("ingress-qdisc=tbf requires setting ingress-qdisc-tbf-rate")
+		}
+		if c.IngressTBFBurst == 0 {
+			return fmt.Errorf("ingress-qdisc=tbf requires setting ingress-qdisc-tbf-burst")
+		}
+	default:
+		// There is no benefit to queueing inbound packets without a rate
+		// limit, so fifo is not supported on ingress.
+		return fmt.Errorf("ingress-qdisc must be \"none\" or \"tbf\", got: %q", c.IngressQDisc)
 	}
 	// Require profile flags to explicitly opt-in to profiling with
 	// -profile rather than implying it since these options have security
