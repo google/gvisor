@@ -12,15 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <fcntl.h>
 #include <linux/ethtool.h>
+#include <linux/if_tun.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <linux/sockios.h>
+#include <netinet/in.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 
+#include <cstring>
+
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/socket_netlink_util.h"
+#include "test/util/capability_util.h"
+#include "test/util/linux_capability_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
@@ -56,6 +63,45 @@ TEST(NetdeviceTest, Loopback) {
   EXPECT_EQ(ifr.ifr_hwaddr.sa_data[3], 0);
   EXPECT_EQ(ifr.ifr_hwaddr.sa_data[4], 0);
   EXPECT_EQ(ifr.ifr_hwaddr.sa_data[5], 0);
+}
+
+TEST(NetdeviceTest, InterfaceAddr) {
+  FileDescriptor sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+
+  // Loopback always has 127.0.0.1 assigned, and Linux returns it as a
+  // sockaddr_in with the family filled in.
+  struct ifreq ifr = {};
+  snprintf(ifr.ifr_name, IFNAMSIZ, "lo");
+  ASSERT_THAT(ioctl(sock.get(), SIOCGIFADDR, &ifr), SyscallSucceeds());
+  struct sockaddr_in* sin =
+      reinterpret_cast<struct sockaddr_in*>(&ifr.ifr_addr);
+  EXPECT_EQ(sin->sin_family, AF_INET);
+  EXPECT_EQ(ntohl(sin->sin_addr.s_addr), INADDR_LOOPBACK);
+}
+
+TEST(NetdeviceTest, InterfaceAddrIoctlsNoIPv4Addr) {
+  // SIOCGIFADDR and SIOCGIFNETMASK fail with EADDRNOTAVAIL on an interface
+  // that has no IPv4 address assigned, rather than returning success without
+  // writing ifr, which would let callers read back stale ifreq data.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+
+  // Create a tun interface, which starts out with no addresses assigned.
+  FileDescriptor tun =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/net/tun", O_RDWR));
+  struct ifreq tun_ifr = {};
+  tun_ifr.ifr_flags = IFF_TUN;
+  strncpy(tun_ifr.ifr_name, "tun_noaddr", IFNAMSIZ);
+  ASSERT_THAT(ioctl(tun.get(), TUNSETIFF, &tun_ifr), SyscallSucceeds());
+
+  FileDescriptor sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+  struct ifreq ifr = {};
+  strncpy(ifr.ifr_name, "tun_noaddr", IFNAMSIZ);
+  EXPECT_THAT(ioctl(sock.get(), SIOCGIFADDR, &ifr),
+              SyscallFailsWithErrno(EADDRNOTAVAIL));
+  EXPECT_THAT(ioctl(sock.get(), SIOCGIFNETMASK, &ifr),
+              SyscallFailsWithErrno(EADDRNOTAVAIL));
 }
 
 TEST(NetdeviceTest, Netmask) {
