@@ -152,8 +152,9 @@ func sandboxPid(pid int) (int, error) {
 	return 0, nil
 }
 
-// Tests that the sandbox process is running with no environment variables. We
-// don't want to leak any env vars from the caller to the sandbox process.
+// Tests that the sandbox process is running with no environment variables
+// except the small allowlist required for sandbox setup. We don't want to leak
+// env vars from the caller to the sandbox process.
 func TestSandboxProcessEnv(t *testing.T) {
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
@@ -173,6 +174,7 @@ func TestSandboxProcessEnv(t *testing.T) {
 		t.Fatal(err)
 	}
 	got = regexp.MustCompile("(^|\x00)RUNSC_START_TIME_NANOS=\\d+\x00").ReplaceAll(got, []byte("$1"))
+	got = regexp.MustCompile("(^|\x00)TMPDIR=[^\x00]*\x00").ReplaceAll(got, []byte("$1"))
 	if len(got) != 0 && string(got) != "GLIBC_TUNABLES=glibc.pthread.rseq=0\x00" {
 		t.Errorf("sandbox process's environment is not empty: got %s (%v)", string(got), got)
 	}

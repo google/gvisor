@@ -870,6 +870,26 @@ func (s *Sandbox) connError(err error) error {
 	return fmt.Errorf("connecting to control server at PID %d: %v", s.Pid.Load(), err)
 }
 
+func sandboxProcessEnv(conf *config.Config) []string {
+	var env []string
+	if !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
+		// Setting cmd.Env = nil causes cmd to inherit the current process's env.
+		// Clear it, except for TMPDIR which must match the parent runsc process
+		// because the sandbox uses os.TempDir() to set up its chroot.
+		env = []string{}
+		if tmpDir := os.Getenv("TMPDIR"); tmpDir != "" {
+			env = append(env, "TMPDIR="+tmpDir)
+		}
+	}
+	if config.CgoEnabled {
+		// Platforms that use stub processes are not compatible with
+		// the glibc rseq, because they unmap everything from a process
+		// address space.
+		env = append(env, "GLIBC_TUNABLES=glibc.pthread.rseq=0")
+	}
+	return env
+}
+
 // createSandboxProcess starts the sandbox as a subprocess by running the "boot"
 // command, passing in the bundle dir.
 func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyncFile *os.File) error {
@@ -960,17 +980,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	// All flags after this must be for the boot command
 	cmd.Args = append(cmd.Args, "boot", "--bundle="+args.BundleDir)
 
-	// Clear environment variables, unless --TESTONLY-unsafe-nonroot is set.
-	if !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
-		// Setting cmd.Env = nil causes cmd to inherit the current process's env.
-		cmd.Env = []string{}
-	}
-	if config.CgoEnabled {
-		// Platforms that use stub processes are not compatible with
-		// the glibc rseq, because they unmap everything from a process
-		// address space.
-		cmd.Env = append(cmd.Env, "GLIBC_TUNABLES=glibc.pthread.rseq=0")
-	}
+	cmd.Env = sandboxProcessEnv(conf)
 
 	// If there is a gofer, sends all socket ends to the sandbox.
 	donations.DonateAndClose("io-fds", args.IOFiles...)
