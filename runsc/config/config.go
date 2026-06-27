@@ -304,6 +304,9 @@ type Config struct {
 	// Don't configure cgroups.
 	IgnoreCgroups bool `flag:"ignore-cgroups"`
 
+	// Mount cgroup v2 instead of cgroup v1 inside the sandbox.
+	MountCgroupV2 bool `flag:"mount-cgroup-v2"`
+
 	// Use systemd to configure cgroups.
 	SystemdCgroup bool `flag:"systemd-cgroup"`
 

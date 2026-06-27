@@ -322,6 +322,31 @@ func (ns *PIDNamespace) IDOfTask(t *Task) ThreadID {
 	return id
 }
 
+// IDsOfTasks returns the deduplicated TIDs assigned to the given tasks in PID namespace ns.
+// If a task is not visible in that namespace or is exiting, its TID is not included in the
+// returned map. If threadGroupIDs is true, the returned thread IDs correspond to the
+// thread groups of the given tasks.
+func (ns *PIDNamespace) IDsOfTasks(tasks []*Task, threadGroupIDs bool) map[ThreadID]struct{} {
+	ns.owner.mu.RLock()
+	defer ns.owner.mu.RUnlock()
+
+	idMap := make(map[ThreadID]struct{})
+	for _, task := range tasks {
+		if task.exitStateLocked() < TaskExitInitiated {
+			var id ThreadID
+			if threadGroupIDs {
+				id = ns.tgids[task.tg]
+			} else {
+				id = ns.tids[task]
+			}
+			if id != 0 {
+				idMap[id] = struct{}{}
+			}
+		}
+	}
+	return idMap
+}
+
 // IDOfThreadGroup returns the TID assigned to tg's leader in PID namespace ns.
 // If the task is not visible in that namespace, IDOfThreadGroup returns 0.
 func (ns *PIDNamespace) IDOfThreadGroup(tg *ThreadGroup) ThreadID {
@@ -541,11 +566,25 @@ func (tg *ThreadGroup) MemberIDs(pidns *PIDNamespace) []ThreadID {
 func (tg *ThreadGroup) ForEachTask(f func(t *Task) bool) {
 	tg.pidns.owner.mu.RLock()
 	defer tg.pidns.owner.mu.RUnlock()
+	tg.ForEachTaskLocked(f)
+}
+
+// ForEachTaskLocked invokes f() on each task in tg.
+//
+// Preconditions: The TaskSet mutex must be locked (for reading or writing).
+func (tg *ThreadGroup) ForEachTaskLocked(f func(t *Task) bool) {
 	for t := tg.tasks.Front(); t != nil; t = t.Next() {
 		if !f(t) {
 			break
 		}
 	}
+}
+
+// WithTaskSetRLock executes the given function f while holding the TaskSet's read lock.
+func (tg *ThreadGroup) WithTaskSetRLock(f func()) {
+	tg.pidns.owner.mu.RLock()
+	defer tg.pidns.owner.mu.RUnlock()
+	f()
 }
 
 // ID returns tg's leader's thread ID in its own PID namespace.

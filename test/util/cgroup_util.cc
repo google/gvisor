@@ -85,11 +85,6 @@ PosixErrorOr<absl::flat_hash_set<pid_t>> Cgroup::Tasks() const {
   return ParsePIDList(buf);
 }
 
-PosixErrorOr<absl::flat_hash_set<pid_t>> Cgroup::Threads() const {
-  ASSIGN_OR_RETURN_ERRNO(std::string buf, ReadControlFile("cgroup.threads"));
-  return ParsePIDList(buf);
-}
-
 PosixError Cgroup::PollControlFileForChange(absl::string_view name,
                                             absl::Duration timeout) const {
   return PollControlFileForChangeAfter(name, timeout, []() {});
@@ -325,8 +320,7 @@ ProcPIDCgroupEntries(pid_t pid) {
     // 1:memory:/
 
     PIDCgroupEntry entry;
-    std::vector<std::string> fields =
-        absl::StrSplit(line, absl::ByChar(':'), absl::SkipEmpty());
+    std::vector<std::string> fields = absl::StrSplit(line, absl::ByChar(':'));
 
     ASSIGN_OR_RETURN_ERRNO(entry.hierarchy, Atoi<uint32_t>(fields[0]));
     entry.controllers = fields[1];

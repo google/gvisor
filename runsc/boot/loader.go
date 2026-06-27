@@ -43,6 +43,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/fdimport"
+	cgroup2fs "gvisor.dev/gvisor/pkg/sentry/fsimpl/cgroup2fs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/user"
@@ -734,6 +735,7 @@ func New(args Args) (*Loader, error) {
 		RootIPCNamespace:     kernel.NewIPCNamespace(creds.UserNamespace),
 		RootPIDNamespace:     kernel.NewRootPIDNamespace(creds.UserNamespace),
 		MaxFDLimit:           maxFDLimit,
+		Cgroup2FSInit:        cgroup2fs.NewFilesystem,
 	}); err != nil {
 		return nil, fmt.Errorf("initializing kernel: %w", err)
 	}
@@ -1345,7 +1347,7 @@ func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGrou
 	}
 	l.startGoferMonitor(info)
 
-	if l.root.cid == l.sandboxID {
+	if l.root.cid == l.sandboxID && !l.root.conf.MountCgroupV2 {
 		// Mounts cgroups for all the controllers.
 		if err := l.mountCgroupMounts(info.conf, info.procArgs.Credentials); err != nil {
 			return nil, nil, err

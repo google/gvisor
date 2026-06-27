@@ -275,6 +275,9 @@ type cgroupFS interface {
 //
 // +stateify savable
 type CgroupRegistry struct {
+	// v2fs is the cgroup v2 filesystem singleton.
+	v2fs *vfs.Filesystem
+
 	// lastHierarchyID is the id of the last allocated cgroup hierarchy. Valid
 	// ids are from 1 to math.MaxUint32.
 	//
@@ -312,6 +315,43 @@ type CgroupRegistry struct {
 	cgroups map[uint32]CgroupImpl
 }
 
+// IsControllerBound returns true if the controller type is bound to a v1 hierarchy.
+func (r *CgroupRegistry) IsControllerBound(ctype CgroupControllerType) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	_, ok := r.controllers[ctype]
+	return ok
+}
+
+// IsCgroup2CtrlBound returns true if the cgroup v2 controller is bound to a v1 hierarchy.
+func (r *CgroupRegistry) IsCgroup2CtrlBound(cType Cgroup2Ctrl) bool {
+	var v1Type CgroupControllerType
+	switch cType {
+	case Cgroup2CPU:
+		v1Type = CgroupControllerCPU
+	case Cgroup2Memory:
+		v1Type = CgroupControllerMemory
+	case Cgroup2PIDs:
+		v1Type = CgroupControllerPIDs
+	default:
+		return false
+	}
+	return r.IsControllerBound(v1Type)
+}
+
+func toCgroup2Ctrl(cType CgroupControllerType) (Cgroup2Ctrl, bool) {
+	switch cType {
+	case CgroupControllerCPU:
+		return Cgroup2CPU, true
+	case CgroupControllerMemory:
+		return Cgroup2Memory, true
+	case CgroupControllerPIDs:
+		return Cgroup2PIDs, true
+	default:
+		return 0, false
+	}
+}
+
 func newCgroupRegistry() *CgroupRegistry {
 	return &CgroupRegistry{
 		controllers:       make(map[CgroupControllerType]CgroupController),
@@ -333,7 +373,10 @@ func (r *CgroupRegistry) nextHierarchyID() (uint32, error) {
 // controllers named in ctypes, and optionally the name specified in name if it
 // isn't empty. If no such FS is found, FindHierarchy return nil. FindHierarchy
 // takes a reference on the returned FS, which is transferred to the caller.
-func (r *CgroupRegistry) FindHierarchy(name string, ctypes []CgroupControllerType) (*vfs.Filesystem, error) {
+func (r *CgroupRegistry) FindHierarchy(ctx context.Context, name string, ctypes []CgroupControllerType) (*vfs.Filesystem, error) {
+	c2fs := r.v2fs.Impl().(Cgroup2FS)
+	c2fs.LockTree()
+	defer c2fs.UnlockTree()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -348,7 +391,7 @@ func (r *CgroupRegistry) FindHierarchy(name string, ctypes []CgroupControllerTyp
 		if h.match(ctypes) {
 			if !h.fs.TryIncRef() {
 				// May be racing with filesystem destruction, see below.
-				r.unregisterLocked(h.id)
+				r.unregisterLocked(ctx, h.id)
 				return nil, nil
 			}
 			return h.fs, nil
@@ -377,7 +420,7 @@ func (r *CgroupRegistry) FindHierarchy(name string, ctypes []CgroupControllerTyp
 				// uniqueness of controllers enforced by Register, drop the
 				// dying hierarchy now. The eventual unregister by the FS
 				// teardown will become a no-op.
-				r.unregisterLocked(h.id)
+				r.unregisterLocked(ctx, h.id)
 				return nil, nil
 			}
 			return h.fs, nil
@@ -397,7 +440,7 @@ func (r *CgroupRegistry) FindCgroup(ctx context.Context, ctype CgroupControllerT
 		return Cgroup{}, fmt.Errorf("path must be absolute")
 	}
 	k := KernelFromContext(ctx)
-	vfsfs, err := r.FindHierarchy("", []CgroupControllerType{ctype})
+	vfsfs, err := r.FindHierarchy(ctx, "", []CgroupControllerType{ctype})
 	if err != nil {
 		return Cgroup{}, err
 	}
@@ -420,7 +463,10 @@ func (r *CgroupRegistry) FindCgroup(ctx context.Context, ctype CgroupControllerT
 // hierarchy. If any controller is already registered, the function returns an
 // error without modifying the registry. Register sets the hierarchy ID for the
 // filesystem on success.
-func (r *CgroupRegistry) Register(name string, cs []CgroupController, fs cgroupFS) error {
+func (r *CgroupRegistry) Register(ctx context.Context, name string, cs []CgroupController, fs cgroupFS) error {
+	c2fs := r.v2fs.Impl().(Cgroup2FS)
+	c2fs.LockTree()
+	defer c2fs.UnlockTree()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -429,7 +475,8 @@ func (r *CgroupRegistry) Register(name string, cs []CgroupController, fs cgroupF
 	}
 
 	for _, c := range cs {
-		if _, ok := r.controllers[c.Type()]; ok {
+		n := c.Type()
+		if _, ok := r.controllers[n]; ok {
 			return fmt.Errorf("controllers may only be mounted on a single hierarchy")
 		}
 	}
@@ -441,6 +488,20 @@ func (r *CgroupRegistry) Register(name string, cs []CgroupController, fs cgroupF
 	hid, err := r.nextHierarchyID()
 	if err != nil {
 		return err
+	}
+
+	for i, c := range cs {
+		if c2Type, ok := toCgroup2Ctrl(c.Type()); ok {
+			if err := c2fs.StealControllerLocked(ctx, c2Type); err != nil {
+				// Rollback steals for earlier controllers
+				for _, rollbackC := range cs[:i] {
+					if rollbackC2Type, ok := toCgroup2Ctrl(rollbackC.Type()); ok {
+						c2fs.ReturnControllerLocked(ctx, rollbackC2Type)
+					}
+				}
+				return err
+			}
+		}
 	}
 
 	// Must not fail below here, once we publish the hierarchy ID.
@@ -467,18 +528,25 @@ func (r *CgroupRegistry) Register(name string, cs []CgroupController, fs cgroupF
 
 // Unregister removes a previously registered hierarchy from the registry. If no
 // such hierarchy is registered, Unregister is a no-op.
-func (r *CgroupRegistry) Unregister(hid uint32) {
+func (r *CgroupRegistry) Unregister(ctx context.Context, hid uint32) {
+	c2fs := r.v2fs.Impl().(Cgroup2FS)
+	c2fs.LockTree()
+	defer c2fs.UnlockTree()
 	r.mu.Lock()
-	r.unregisterLocked(hid)
+	r.unregisterLocked(ctx, hid)
 	r.mu.Unlock()
 }
 
-// Precondition: Caller must hold r.mu.
+// Precondition: Caller must hold r.mu and must have called c2fs.LockTree().
 // +checklocks:r.mu
-func (r *CgroupRegistry) unregisterLocked(hid uint32) {
+func (r *CgroupRegistry) unregisterLocked(ctx context.Context, hid uint32) {
 	if h, ok := r.hierarchies[hid]; ok {
 		for name := range h.controllers {
 			delete(r.controllers, name)
+			c2fs := r.v2fs.Impl().(Cgroup2FS)
+			if c2Type, isV2Mapped := toCgroup2Ctrl(name); isV2Mapped {
+				c2fs.ReturnControllerLocked(ctx, c2Type)
+			}
 		}
 		delete(r.hierarchies, hid)
 	}

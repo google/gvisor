@@ -42,6 +42,9 @@ import (
 	// Platforms are pluggable.
 	_ "gvisor.dev/gvisor/pkg/sentry/platform/kvm"
 	_ "gvisor.dev/gvisor/pkg/sentry/platform/ptrace"
+
+	// Cgroup2fs is required by Kernel.Init.
+	cgroup2fs "gvisor.dev/gvisor/pkg/sentry/fsimpl/cgroup2fs"
 )
 
 var (
@@ -106,6 +109,7 @@ func Boot() (*kernel.Kernel, error) {
 		RootUTSNamespace:  kernel.NewUTSNamespace("hostname", "domain", creds.UserNamespace),
 		RootIPCNamespace:  kernel.NewIPCNamespace(creds.UserNamespace),
 		RootPIDNamespace:  kernel.NewRootPIDNamespace(creds.UserNamespace),
+		Cgroup2FSInit:     cgroup2fs.NewFilesystem,
 	}); err != nil {
 		return nil, fmt.Errorf("initializing kernel: %v", err)
 	}
