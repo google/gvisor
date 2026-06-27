@@ -768,9 +768,9 @@ type Endpoint interface {
 	// the data cannot be written.
 	//
 	// Unlike io.Writer.Write, Endpoint.Write transfers ownership of any bytes
-	// successfully written to the Endpoint. That is, if a call to
-	// Write(SlicePayload{data}) returns (n, err), it may retain data[:n], and
-	// the caller should not use data[:n] after Write returns.
+	// successfully written to the Endpoint. That is, if Write(p, opts) returns
+	// (n, err), it may retain the first n bytes fetched from p, and the caller
+	// should not use those bytes after Write returns.
 	//
 	// Note that unlike io.Writer.Write, it is not an error for Write to
 	// perform a partial write (if n > 0, no error may be returned). Only
