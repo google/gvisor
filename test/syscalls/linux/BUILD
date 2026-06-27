@@ -3034,6 +3034,7 @@ cc_library(
         "socket_ipv4_udp_unbound_external_networking.h",
     ],
     deps = select_gtest() + [
+        ":ip_socket_test_util",
         ":socket_ip_udp_unbound_external_networking",
         "//test/util:capability_util",
         "//test/util:socket_util",
