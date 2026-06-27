@@ -150,7 +150,8 @@ TEST_P(WallClockNanosleepTest, SleepUntil) {
 }
 
 INSTANTIATE_TEST_SUITE_P(Sleepers, WallClockNanosleepTest,
-                         ::testing::Values(CLOCK_REALTIME, CLOCK_MONOTONIC));
+                         ::testing::Values(CLOCK_REALTIME, CLOCK_MONOTONIC,
+                                           CLOCK_BOOTTIME));
 
 TEST(ClockNanosleepProcessTest, SleepFiveSeconds) {
   const absl::Duration kSleepDuration = absl::Seconds(5);

@@ -15,6 +15,8 @@
 #include <sys/time.h>
 #include <time.h>
 
+#include <string>
+
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/util/test_util.h"
@@ -24,12 +26,29 @@ namespace testing {
 
 namespace {
 
+class ClockGetresTest : public ::testing::TestWithParam<clockid_t> {};
+
 // clock_getres works regardless of whether or not a timespec is passed.
-TEST(ClockGetres, Timespec) {
+TEST_P(ClockGetresTest, Timespec) {
   struct timespec ts;
-  EXPECT_THAT(clock_getres(CLOCK_MONOTONIC, &ts), SyscallSucceeds());
-  EXPECT_THAT(clock_getres(CLOCK_MONOTONIC, nullptr), SyscallSucceeds());
+  EXPECT_THAT(clock_getres(GetParam(), &ts), SyscallSucceeds());
+  EXPECT_THAT(clock_getres(GetParam(), nullptr), SyscallSucceeds());
 }
+
+std::string PrintClockId(::testing::TestParamInfo<clockid_t> info) {
+  switch (info.param) {
+    case CLOCK_MONOTONIC:
+      return "CLOCK_MONOTONIC";
+    case CLOCK_BOOTTIME:
+      return "CLOCK_BOOTTIME";
+    default:
+      return std::to_string(info.param);
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(ClockGetres, ClockGetresTest,
+                         ::testing::Values(CLOCK_MONOTONIC, CLOCK_BOOTTIME),
+                         PrintClockId);
 
 }  // namespace
 
