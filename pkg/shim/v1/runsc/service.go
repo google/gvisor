@@ -511,8 +511,7 @@ func (s *runscService) Stats(ctx context.Context, r *task.StatsRequest) (*task.S
 	// gvisor currently (as of 2020-03-03) only returns the total memory
 	// usage and current PID value[0]. However, we copy the common fields here
 	// so that future updates will propagate correct information.  We're
-	// using the cgroups.Metrics structure so we're returning the same type
-	// as runc.
+	// using the same cgroup Metrics protobuf types as runc (v1 or v2 layout).
 	//
 	// [0]: https://github.com/google/gvisor/blob/277a0d5a1fbe8272d4729c01ee4c6e374d047ebc/runsc/boot/events.go#L61-L81
 	return c.Stats(ctx)
