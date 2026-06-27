@@ -3633,6 +3633,7 @@ func interfaceIoctl(ctx context.Context, _ usermem.IO, arg int, ifr *linux.IFReq
 
 	case linux.SIOCGIFADDR:
 		// Copy the IPv4 address out.
+		found := false
 		for _, addr := range stk.InterfaceAddrs()[index] {
 			// This ioctl is only compatible with AF_INET addresses.
 			if addr.Family != linux.AF_INET {
@@ -3642,13 +3643,16 @@ func interfaceIoctl(ctx context.Context, _ usermem.IO, arg int, ifr *linux.IFReq
 			hostarch.ByteOrder.PutUint16(ifr.Data[0:], uint16(linux.AF_INET))
 			hostarch.ByteOrder.PutUint16(ifr.Data[2:], 0)
 			copy(ifr.Data[4:8], addr.Addr)
-			return nil
+			found = true
+			break
 		}
-		// Linux returns EADDRNOTAVAIL when the device has no IPv4
-		// address (Linux: net/ipv4/devinet.c:devinet_ioctl()), rather
-		// than succeeding without writing ifr, which would let the
-		// caller read back stale ifreq union data.
-		return syserr.ErrAddressNotAvailable
+		if !found {
+			// Linux returns EADDRNOTAVAIL when the device has no IPv4
+			// address (Linux: net/ipv4/devinet.c:devinet_ioctl()), rather
+			// than succeeding without writing ifr, which would let the
+			// caller read back stale ifreq union data.
+			return syserr.ErrAddressNotAvailable
+		}
 
 	case linux.SIOCGIFMETRIC:
 		// Gets the metric of the device. As per netdevice(7), this
@@ -3677,6 +3681,7 @@ func interfaceIoctl(ctx context.Context, _ usermem.IO, arg int, ifr *linux.IFReq
 
 	case linux.SIOCGIFNETMASK:
 		// Gets the network mask of a device.
+		found := false
 		for _, addr := range stk.InterfaceAddrs()[index] {
 			// This ioctl is only compatible with AF_INET addresses.
 			if addr.Family != linux.AF_INET {
@@ -3689,11 +3694,14 @@ func interfaceIoctl(ctx context.Context, _ usermem.IO, arg int, ifr *linux.IFReq
 			// Netmask is expected to be returned as a big endian
 			// value.
 			binary.BigEndian.PutUint32(ifr.Data[4:8], mask)
-			return nil
+			found = true
+			break
 		}
-		// Linux returns EADDRNOTAVAIL when the device has no IPv4
-		// address; see the SIOCGIFADDR case above.
-		return syserr.ErrAddressNotAvailable
+		if !found {
+			// Linux returns EADDRNOTAVAIL when the device has no IPv4
+			// address; see the SIOCGIFADDR case above.
+			return syserr.ErrAddressNotAvailable
+		}
 
 	case linux.SIOCETHTOOL:
 		// Stubbed out for now, Ideally we should implement the required
