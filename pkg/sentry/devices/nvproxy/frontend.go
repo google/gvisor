@@ -69,6 +69,7 @@ func (dev *frontendDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.D
 	}
 	if err := fd.vfsfd.Init(fd, opts.Flags, auth.CredentialsFromContext(ctx), mnt, vfsd, &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,
+		SpecialFile:       true,
 	}); err != nil {
 		unix.Close(int(fd.hostFD))
 		return nil, err
@@ -1176,12 +1177,11 @@ func rmAllocSimpleParams[Params any, PtrParams marshalPtr[Params]](fi *frontendI
 
 	var allocParamsValue Params
 	allocParams := PtrParams(&allocParamsValue)
-	// Sometimes, the params are optional, in which case the size is 0.
-	if ioctlParams.ParamsSize != 0 && allocParams.SizeBytes() != int(ioctlParams.ParamsSize) {
-		fi.ctx.Warningf("nvproxy: mismatched param sizes for alloc class %v. Param struct has size %v, got %v (bytes).",
-			ioctlParams.HClass, allocParams.SizeBytes(), ioctlParams.ParamsSize)
-		return 0, linuxerr.EINVAL
-	}
+	// The driver derives the alloc param size from the class and ignores the
+	// client-supplied ioctlParams.ParamsSize; see
+	// src/nvidia/src/kernel/rmapi/alloc_free.c:serverAllocApiCopyIn() =>
+	// rmapiGetClassAllocParamSize(). nvproxy copies in the fixed-size struct for
+	// the class, so ParamsSize needs no validation.
 	if _, err := allocParams.CopyIn(fi.t, addrFromP64(ioctlParams.PAllocParms)); err != nil {
 		return 0, err
 	}
@@ -1329,6 +1329,13 @@ func rmAllocChannelV570(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAME
 	})
 }
 
+// rmAllocChannelV610 is the same as rmAllocChannel, but for 610.43.02.
+func rmAllocChannelV610(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
+	return rmAllocSimpleParams(fi, ioctlParams, isNVOS64, func(fi *frontendIoctlState, client *rootClient, ioctlParams *nvgpu.NVOS64_PARAMETERS, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.NV_CHANNEL_ALLOC_PARAMS_V610) {
+		fi.fd.dev.nvp.objAdd(fi.ctx, client, ioctlParams.HObjectNew, ioctlParams.HClass, newRmAllocObject(fi.fd, ioctlParams, rightsRequested, allocParams), ioctlParams.HObjectParent, allocParams.HVASpace, allocParams.HContextShare)
+	})
+}
+
 func rmAllocContextShare(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
 	return rmAllocSimpleParams(fi, ioctlParams, isNVOS64, func(fi *frontendIoctlState, client *rootClient, ioctlParams *nvgpu.NVOS64_PARAMETERS, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.NV_CTXSHARE_ALLOCATION_PARAMETERS) {
 		// See
@@ -1343,9 +1350,8 @@ func rmAllocContextShare(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAM
 
 func rmAllocIMEXSession(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
 	var allocParams nvgpu.NV00F1_ALLOCATION_PARAMETERS
-	if allocParams.SizeBytes() != int(ioctlParams.ParamsSize) {
-		return 0, linuxerr.EINVAL
-	}
+	// As in rmAllocSimpleParams(), the driver ignores ioctlParams.ParamsSize and
+	// derives the param size from the class, so it is not validated here.
 	if _, err := allocParams.CopyIn(fi.t, addrFromP64(ioctlParams.PAllocParms)); err != nil {
 		return 0, err
 	}
@@ -1393,9 +1399,8 @@ func rmAllocIMEXSession(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAME
 func rmAllocMulticastFabric[Params any, PtrParams hasPOsEventPtr[Params]](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
 	var allocParamsValue Params
 	allocParams := PtrParams(&allocParamsValue)
-	if allocParams.SizeBytes() != int(ioctlParams.ParamsSize) {
-		return 0, linuxerr.EINVAL
-	}
+	// As in rmAllocSimpleParams(), the driver ignores ioctlParams.ParamsSize and
+	// derives the param size from the class, so it is not validated here.
 	if _, err := allocParams.CopyIn(fi.t, addrFromP64(ioctlParams.PAllocParms)); err != nil {
 		return 0, err
 	}

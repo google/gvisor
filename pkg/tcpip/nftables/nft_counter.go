@@ -41,6 +41,10 @@ func newCounter(startBytes, startPackets uint64) *counter {
 	return cntr
 }
 
+func (op *counter) deepCopy() operation {
+	return newCounter(op.bytes.Load(), op.packets.Load())
+}
+
 // evaluate for counter increments the counter for the packet and bytes.
 func (op *counter) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
 	op.bytes.Add(uint64(pkt.Size()))
@@ -63,7 +67,7 @@ var counterAttrPolicy = []NlaPolicy{
 	linux.NFTA_COUNTER_BYTES:   NlaPolicy{nlaType: linux.NLA_U64},
 }
 
-func initCounter(tab *Table, exprInfo ExprInfo) (*counter, *syserr.AnnotatedError) {
+func initCounter(exprInfo ExprInfo) (*counter, *syserr.AnnotatedError) {
 	attrs, ok := NfParseWithOpts(exprInfo.ExprData, &NfParseOpts{
 		Policy: counterAttrPolicy,
 	})

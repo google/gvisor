@@ -342,9 +342,9 @@ func tryToPrintFailureLogs() {
 // ValidateChecksum validates the checksum of the driver.
 func ValidateChecksum(ctx context.Context, version string, checksums nvproxy.Checksums) error {
 	for _, arch := range []string{archAMD64, archARM64} {
-		wantChecksum := checksums.X86_64()
+		wantChecksum := checksums.X86_64
 		if arch == archARM64 {
-			wantChecksum = checksums.Arm64()
+			wantChecksum = checksums.ARM64
 		}
 		installer, err := NewInstaller(version, false)
 		if err != nil {

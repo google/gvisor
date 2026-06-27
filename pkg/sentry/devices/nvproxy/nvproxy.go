@@ -47,6 +47,10 @@ type Options struct {
 	// DriverVersion is the Nvidia GPU driver version.
 	DriverVersion nvconf.DriverVersion
 
+	// AllowUnsupportedDriver allows nvproxy to be initialized with an
+	// unsupported driver version.
+	AllowUnsupportedDriver bool
+
 	// DriverCaps is the set of driver capabilities exposed to applications.
 	DriverCaps nvconf.DriverCaps
 
@@ -63,15 +67,21 @@ func Register(vfsObj *vfs.VirtualFilesystem, opts *Options) (*DeviceInfo, error)
 	// The kernel driver's interface is unstable, so only allow versions of the
 	// driver that are known to be supported.
 	log.Infof("NVIDIA driver version: %s", opts.DriverVersion)
-	abiCons, ok := abis[opts.DriverVersion]
+	abiEntry, ok := abis[opts.DriverVersion]
 	if !ok {
 		return nil, fmt.Errorf("unsupported Nvidia driver version: %s", opts.DriverVersion)
+	}
+	if !abiEntry.supported {
+		if !opts.AllowUnsupportedDriver {
+			return nil, fmt.Errorf("unsupported Nvidia driver version: %s", opts.DriverVersion)
+		}
+		log.Warningf("NVIDIA driver version %s is not officially supported", opts.DriverVersion)
 	}
 	if opts.DriverCaps == 0 {
 		log.Warningf("nvproxy: NVIDIA driver capability set is empty; all GPU operations will fail")
 	}
 	nvp := &nvproxy{
-		abi:                    abiCons.cons(),
+		abi:                    abiEntry.cons(),
 		version:                opts.DriverVersion,
 		capsEnabled:            opts.DriverCaps,
 		useDevGofer:            opts.UseDevGofer,

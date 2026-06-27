@@ -52,12 +52,14 @@ func (fs *filesystem) newSysDir(ctx context.Context, root *auth.Credentials, k *
 		"kernel": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
 			"cap_last_cap":       fs.newInode(ctx, root, 0444, newStaticFile(fmt.Sprintf("%d\n", linux.CAP_LAST_CAP))),
 			"hostname":           fs.newInode(ctx, root, 0444, &hostnameData{}),
+			"domainname":         fs.newInode(ctx, root, 0444, &domainnameData{}),
 			"overflowgid":        fs.newInode(ctx, root, 0444, newStaticFile(fmt.Sprintf("%d\n", auth.OverflowGID))),
 			"overflowuid":        fs.newInode(ctx, root, 0444, newStaticFile(fmt.Sprintf("%d\n", auth.OverflowUID))),
 			"pid_max":            fs.newInode(ctx, root, 0644, newStaticFile(fmt.Sprintf("%d\n", kernel.TasksLimit))),
 			"randomize_va_space": fs.newInode(ctx, root, 0644, newStaticFile("2\n")),
 			"random": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
 				"boot_id": fs.newInode(ctx, root, 0444, newStaticFile(randUUID())),
+				"uuid":    fs.newInode(ctx, root, 0444, &uuidData{}),
 			}),
 			"sem":    fs.newInode(ctx, root, 0444, newStaticFile(fmt.Sprintf("%d\t%d\t%d\t%d\n", linux.SEMMSL, linux.SEMMNS, linux.SEMOPM, linux.SEMMNI))),
 			"shmall": fs.newInode(ctx, root, 0444, ipcData(linux.SHMALL)),
@@ -196,6 +198,49 @@ func (*hostnameData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	buf.WriteString(utsns.HostName())
 	buf.WriteString("\n")
 	return nil
+}
+
+// GetDynamicBytesPoller implements vfs.PollableDynamicBytesSource.GetDynamicBytesPoller.
+func (*hostnameData) GetDynamicBytesPoller(ctx context.Context) *vfs.DynamicBytesPoller {
+	return &kernel.KernelFromContext(ctx).HostNamePoller
+}
+
+// domainnameData implements vfs.DynamicBytesSource for /proc/sys/kernel/domainname.
+//
+// +stateify savable
+type domainnameData struct {
+	kernfs.DynamicBytesFile
+}
+
+var _ dynamicInode = (*domainnameData)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (*domainnameData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	utsns := kernel.UTSNamespaceFromContext(ctx)
+	defer utsns.DecRef(ctx)
+	buf.WriteString(utsns.DomainName())
+	buf.WriteString("\n")
+	return nil
+}
+
+// uuidData implements vfs.DynamicBytesSource for /proc/sys/kernel/random/uuid.
+//
+// +stateify savable
+type uuidData struct {
+	kernfs.DynamicBytesFile
+}
+
+var _ dynamicInode = (*uuidData)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (*uuidData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	buf.WriteString(randUUID())
+	return nil
+}
+
+// GetDynamicBytesPoller implements vfs.PollableDynamicBytesSource.GetDynamicBytesPoller.
+func (*domainnameData) GetDynamicBytesPoller(ctx context.Context) *vfs.DynamicBytesPoller {
+	return &kernel.KernelFromContext(ctx).DomainNamePoller
 }
 
 // tcpSackData implements vfs.WritableDynamicBytesSource for

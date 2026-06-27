@@ -48,6 +48,9 @@ type FSSaveOpts struct {
 	// If ExitAfterSaving is true, all processes exit with status 0 before
 	// FSSave returns, whether or not it returns a non-nil error.
 	ExitAfterSaving bool
+
+	// Path is the path inside the container to save. Empty defaults to `/`.
+	Path string
 }
 
 // FSSave collects a filesystem checkpoint as specified by the fscheckpoint
@@ -71,6 +74,12 @@ func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) error {
 			opts.PagesFile = nil
 		}
 	}()
+	if len(opts.Path) == 0 {
+		opts.Path = "/"
+	}
+	// saveAll indicates that all tmpfs filesystems with a ResourceID should be
+	// checkpointed, rather than only those mounted at opts.Path.
+	saveAll := opts.Path == fscheckpoint.AllTmpfsPath
 
 	k.Pause()
 	defer k.Unpause()
@@ -135,36 +144,39 @@ func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) error {
 				continue
 			}
 			resourceID := mf.ResourceID()
-			if resourceID.Path != "/" {
-				// This excludes:
-				// - MemoryFiles with no ResourceID, i.e. the main MemoryFile.
-				//   This currently needs to be excluded since we have no way
-				//   to save only the contents of the main MemoryFile owned by
-				//   a checkpointed filesystem, and don't want to save all
-				//   application memory.
-				// - Disk-backed MemoryFiles for non-rootfs tmpfs filesystems.
-				//   This is currently needed to exclude disk-backed Kubernetes
-				//   emptyDir volumes, which is in turn for consistency with
-				//   memory-backed emptyDir volumes, which are excluded by the
-				//   above. (This confusion isn't considered a problem for
-				//   rootfs because rootfs tmpfs is typically disk-backed via
-				//   the default value of the runsc -overlay2 flag.) This also
-				//   has the side effect of excluding non-rootfs tmpfs
-				//   filesystems created by runsc -overlay2=all:self.
+			if saveAll {
+				// Checkpoint every tmpfs filesystem that has a ResourceID, i.e.
+				// every tmpfs with a private (typically disk-backed)
+				// MemoryFile. This still excludes tmpfs filesystems backed by
+				// the main MemoryFile (which have no ResourceID), since we
+				// currently have no way to save only the contents of the main
+				// MemoryFile owned by a checkpointed filesystem, and don't want
+				// to save all application memory.
 				//
-				// TODO: NOLINT - Provide an option to relax this requirement
-				// by implementing the ability to save a subset of a
-				// pgalloc.MemoryFile, and using it to save only the subset of
-				// each MemoryFile used by any checkpointed tmpfs filesystem.
-				// This would also avoid saving MemoryFile pages that are
-				// referenced by e.g. a previous MM.Pin() but no longer owned
+				// TODO: NOLINT - Support checkpointing tmpfs filesystems backed
+				// by the main MemoryFile by implementing the ability to save a
+				// subset of a pgalloc.MemoryFile, and using it to save only the
+				// subset of each MemoryFile used by any checkpointed tmpfs
+				// filesystem. This would also avoid saving MemoryFile pages that
+				// are referenced by e.g. a previous MM.Pin() but no longer owned
 				// by a regularFile; in such cases, the holder of the extra
 				// reference won't be restored by filesystem checkpointing,
 				// causing the referenced pages to be leaked. (As of this
 				// writing, this leak is unlikely to be an issue in practice,
-				// since the primary user of MM.Pin() is nvproxy, and the
-				// Nvidia driver appears to reject pinning mappings of
-				// disk-backed files.)
+				// since the primary user of MM.Pin() is nvproxy, and the Nvidia
+				// driver appears to reject pinning mappings of disk-backed
+				// files.)
+				if !resourceID.Ok() {
+					continue
+				}
+			} else if resourceID.Path != opts.Path {
+				// Only checkpoint tmpfs filesystems mounted at opts.Path. Note
+				// that ResourceID.Path does not include the container name, so
+				// this matches such filesystems across all containers (e.g. the
+				// default opts.Path of "/" matches every container's rootfs
+				// upper layer). This excludes tmpfs filesystems backed by the
+				// main MemoryFile (which have no ResourceID, so resourceID.Path
+				// is "") for the reasons described above.
 				continue
 			}
 			if old, ok := resourceIDs[resourceID]; ok {

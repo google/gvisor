@@ -437,6 +437,41 @@ func (t *Task) SetKeepCaps(k bool) {
 	t.creds.Store(creds)
 }
 
+// PrivilegedSecureBits is the set of securebits that are privileged.
+const PrivilegedSecureBits = linux.SECBIT_KEEP_CAPS
+
+// SetSecurebits sets the securebits flags of the task.
+//
+// Preconditions: The caller must be running on the task goroutine.
+func (t *Task) SetSecurebits(arg2 uint64) error {
+	// We only support SECBIT_KEEP_CAPS.
+	supported := uint64(linux.SECBIT_KEEP_CAPS)
+	if (arg2 & ^supported) != 0 {
+		return linuxerr.EPERM
+	}
+
+	if !t.HasSelfCapability(linux.CAP_SETPCAP) {
+		creds := t.Credentials()
+		var oldSec uint64
+		if creds.KeepCaps {
+			oldSec |= linux.SECBIT_KEEP_CAPS
+		}
+
+		// Linux EPERMs if the value is unchanged for unprivileged callers.
+		changed := oldSec ^ arg2
+		if changed == 0 {
+			return linuxerr.EPERM
+		}
+
+		if changed&PrivilegedSecureBits != 0 {
+			return linuxerr.EPERM
+		}
+	}
+
+	t.SetKeepCaps((arg2 & linux.SECBIT_KEEP_CAPS) != 0)
+	return nil
+}
+
 // SetNoNewPrivs will set the no new privileges flag PR_SET_NO_NEW_PRIVS.
 func (t *Task) SetNoNewPrivs() {
 	t.mu.Lock()

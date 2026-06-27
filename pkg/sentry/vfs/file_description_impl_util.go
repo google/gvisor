@@ -239,6 +239,47 @@ func (DentryMetadataFileDescriptionImpl) SetStat(ctx context.Context, opts SetSt
 	panic("illegal call to DentryMetadataFileDescriptionImpl.SetStat")
 }
 
+// DynamicBytesPollEvents represents the poll events that are triggered
+// when a dynamic bytes file is updated.
+const DynamicBytesPollEvents = waiter.EventPri | waiter.EventErr
+
+// DynamicBytesPoller represents a handle to notify a dynamic bytes file when
+// its data has been updated.
+//
+// +stateify savable
+type DynamicBytesPoller struct {
+	// queue is notified when the data has been updated
+	queue waiter.Queue
+
+	// seq is a counter that increases monotonically when
+	// the dynamic bytes file data is updated
+	seq atomicbitops.Uint64
+}
+
+// Notify is called to indicate that the data in the dynamic bytes file
+// should be reported to userspace as having changed.
+func (p *DynamicBytesPoller) Notify() {
+	p.seq.Add(1)
+	p.queue.Notify(waiter.ReadableEvents | DynamicBytesPollEvents)
+}
+
+// EventRegister passes through a waiter to the DynamicBytesPoller's
+// underlying queue.
+func (p *DynamicBytesPoller) EventRegister(e *waiter.Entry) {
+	p.queue.EventRegister(e)
+}
+
+// EventUnregister passes through a waiter unregistration to the
+// DynamicBytesPoller's underlying queue.
+func (p *DynamicBytesPoller) EventUnregister(e *waiter.Entry) {
+	p.queue.EventUnregister(e)
+}
+
+// Seq returns the current sequence number for the poller.
+func (p *DynamicBytesPoller) Seq() uint64 {
+	return p.seq.Load()
+}
+
 // DynamicBytesSource represents a data source for a
 // DynamicBytesFileDescriptionImpl.
 //
@@ -246,6 +287,13 @@ func (DentryMetadataFileDescriptionImpl) SetStat(ctx context.Context, opts SetSt
 type DynamicBytesSource interface {
 	// Generate writes the file's contents to buf.
 	Generate(ctx context.Context, buf *bytes.Buffer) error
+}
+
+// PollableDynamicBytesSource represents a data source for
+// a DynamicBytesFileDescriptionImpl that supports polling.
+type PollableDynamicBytesSource interface {
+	DynamicBytesSource
+	GetDynamicBytesPoller(ctx context.Context) *DynamicBytesPoller
 }
 
 // StaticData implements DynamicBytesSource over a static string.

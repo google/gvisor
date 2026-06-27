@@ -69,15 +69,3 @@ go_test(
         "@org_golang_x_sync//errgroup:go_default_library",
     ],
 )
-
-go_test(
-    name = "go_binding_test",
-    srcs = ["go_binding_test.go"],
-    tags = [
-        "local",
-        "manual",
-    ],
-    deps = [
-        "//sandboxexec/sandbox",
-    ],
-)

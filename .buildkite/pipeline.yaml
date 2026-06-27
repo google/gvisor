@@ -536,20 +536,6 @@ steps:
       # This test is flaky on old agents.
       cgroup: "v2"
       kernel: "modern"
-  - <<: *common
-    <<: *source_test
-    label: ":golang: runsc go binding tests (amd64)"
-    command: make go-binding-test
-    agents:
-      cgroup: "v2"
-      arch: "amd64"
-  - <<: *common
-    <<: *source_test
-    label: ":golang: runsc go binding tests (arm64)"
-    command: make go-binding-test
-    agents:
-      cgroup: "v2"
-      arch: "arm64"
   # Runtime tests.
   - <<: *common
     <<: *docker
@@ -591,6 +577,22 @@ steps:
     agents:
       <<: *platform_specific_agents
       arch: "amd64"
+
+  # Bwrap tests.
+  - <<: *common
+    <<: *docker
+    <<: *source_test
+    label: ":package: bwrap tests (AMD64)"
+    command: make bwrap-tests
+    agents:
+      arch: "amd64"
+  - <<: *common
+    <<: *docker
+    <<: *source_test
+    label: ":package: bwrap tests (ARM64)"
+    command: make bwrap-tests
+    agents:
+      arch: "arm64"
 
   # Runtime tests (goferfs). Continuous only.
   - <<: *common

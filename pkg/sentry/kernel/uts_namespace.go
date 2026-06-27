@@ -27,9 +27,11 @@ import (
 // +stateify savable
 type UTSNamespace struct {
 	// mu protects all fields below.
-	mu         sync.Mutex `state:"nosave"`
-	hostName   string
-	domainName string
+	mu                sync.Mutex `state:"nosave"`
+	hostName          string
+	hostNameChanged   bool
+	domainName        string
+	domainNameChanged bool
 
 	// userns is the user namespace associated with the UTSNamespace.
 	// Privileged operations on this UTSNamespace must have appropriate
@@ -76,10 +78,13 @@ func (u *UTSNamespace) HostName() string {
 }
 
 // SetHostName sets the host name of this UTS namespace.
-func (u *UTSNamespace) SetHostName(host string) {
+func (u *UTSNamespace) SetHostName(ctx context.Context, host string) {
 	u.mu.Lock()
-	defer u.mu.Unlock()
 	u.hostName = host
+	u.hostNameChanged = true
+	u.mu.Unlock()
+
+	KernelFromContext(ctx).HostNamePoller.Notify()
 }
 
 // DomainName returns the domain name of this UTS namespace.
@@ -90,10 +95,13 @@ func (u *UTSNamespace) DomainName() string {
 }
 
 // SetDomainName sets the domain name of this UTS namespace.
-func (u *UTSNamespace) SetDomainName(domain string) {
+func (u *UTSNamespace) SetDomainName(ctx context.Context, domain string) {
 	u.mu.Lock()
-	defer u.mu.Unlock()
 	u.domainName = domain
+	u.domainNameChanged = true
+	u.mu.Unlock()
+
+	KernelFromContext(ctx).DomainNamePoller.Notify()
 }
 
 // UserNamespace returns the user namespace associated with this UTS namespace.
@@ -145,8 +153,23 @@ func (u *UTSNamespace) Clone(userns *auth.UserNamespace) *UTSNamespace {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	return &UTSNamespace{
-		hostName:   u.hostName,
-		domainName: u.domainName,
-		userns:     userns,
+		hostName:          u.hostName,
+		hostNameChanged:   u.hostNameChanged,
+		domainName:        u.domainName,
+		domainNameChanged: u.domainNameChanged,
+		userns:            userns,
+	}
+}
+
+// RestoreSpecValues updates the hostname and domainname if they haven't been
+// explicitly set by the user.
+func (u *UTSNamespace) RestoreSpecValues(hostName, domainName string) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if !u.hostNameChanged {
+		u.hostName = hostName
+	}
+	if !u.domainNameChanged {
+		u.domainName = domainName
 	}
 }

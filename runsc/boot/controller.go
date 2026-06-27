@@ -1195,6 +1195,9 @@ type FSSaveArgs struct {
 	// 4. pages file
 	urpc.FilePayload
 
+	// Path is the path inside the container to save.
+	Path string `json:"path"`
+
 	// Equivalent to kernel.FSSaveOpts fields.
 	ExitAfterSaving bool `json:"exit_after_saving"`
 

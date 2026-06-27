@@ -327,31 +327,26 @@ func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.
 	if optional.End > pgend {
 		optional.End = pgend
 	}
-	// Constrain allocation to at most maxOptionalBytes or required.Length(),
-	// whichever is greater.
-	const maxOptionalBytes = 64 << 10 // 64 KB, arbitrarily matches Linux's default fault_around_pages
-	if required.Length() >= maxOptionalBytes {
-		optional = required
-	} else {
-		if optional.Length() > maxOptionalBytes {
-			optional.Start = required.Start
-			if optional.Length() > maxOptionalBytes {
-				optional.End = optional.Start + maxOptionalBytes
-			}
-		}
-	}
-	pagesToFill := rf.data.PagesToFill(required, optional)
+
+	// fillRange bounds how far Translate allocates ("fills") ahead of the
+	// faulting page. It is kept small to bound speculative allocation against
+	// tmpfs size limits (see filesystem.accountPages): a fault that touches a
+	// hole must not commit an unbounded number of pages and prematurely exhaust
+	// the mount's size limit. This matches gofer.maxFillRange().
+	const maxFillBytes = 64 << 10 // 64 KiB
+	fillRange := maxOptionalRange(required, optional, maxFillBytes)
+	pagesToFill := rf.data.PagesToFill(required, fillRange)
 	if !rf.inode.fs.accountPages(pagesToFill) {
 		// If we can not accommodate pagesToFill pages, then retry with just
-		// the required range. Because optional may be larger than required.
+		// the required range. Because fillRange may be larger than required.
 		// Only error out if even the required range can not be allocated for.
 		pagesToFill = rf.data.PagesToFill(required, required)
 		if !rf.inode.fs.accountPages(pagesToFill) {
 			return nil, &memmap.BusError{linuxerr.ENOSPC}
 		}
-		optional = required
+		fillRange = required
 	}
-	pagesAlloced, cerr := rf.data.Fill(ctx, required, optional, rf.size.RacyLoad(), rf.inode.fs.mf, pgalloc.AllocOpts{
+	pagesAlloced, cerr := rf.data.Fill(ctx, required, fillRange, rf.size.RacyLoad(), rf.inode.fs.mf, pgalloc.AllocOpts{
 		Kind:    rf.memoryUsageKind,
 		MemCgID: memCgID,
 		Huge:    mayHuge,
@@ -360,10 +355,22 @@ func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.
 	// were allocated, irrespective of an error.
 	rf.inode.fs.adjustPageAcct(pagesToFill, pagesAlloced)
 
+	// translateRange bounds how far Translate extends the returned translation
+	// over pages that are *already* present, beyond the allocation-bounded
+	// fillRange. Extending a translation over present pages does not allocate,
+	// so it can use a much larger window than fillRange without affecting tmpfs
+	// size accounting. Under gVisor each translation becomes a pma that requires
+	// establishing a host AddressSpace mapping (platform.AddressSpace.MapFile),
+	// so returning larger translations substantially reduces the number of such
+	// mappings (and faults) during sequential access of large mmap'd files and
+	// /dev/shm segments.
+	const maxTranslateBytes = 2 << 20 // 2 MiB
+	translateRange := maxOptionalRange(required, optional, maxTranslateBytes)
+
 	var ts []memmap.Translation
 	var translatedEnd uint64
 	for seg := rf.data.FindSegment(required.Start); seg.Ok() && seg.Start() < required.End; seg, _ = seg.NextNonEmpty() {
-		segMR := seg.Range().Intersect(optional)
+		segMR := seg.Range().Intersect(translateRange)
 		ts = append(ts, memmap.Translation{
 			Source: segMR,
 			File:   rf.inode.fs.mf,
@@ -382,6 +389,27 @@ func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.
 		return ts, &memmap.BusError{io.EOF}
 	}
 	return ts, nil
+}
+
+// maxOptionalRange returns the largest subrange of optional that contains
+// required and is at most maxBytes long, or required itself if it already
+// exceeds maxBytes. It is used to bound how far Translate fills/translates
+// ahead of required. This applies the same logic as gofer.maxFillRange().
+//
+// Preconditions: optional.IsSupersetOf(required).
+func maxOptionalRange(required, optional memmap.MappableRange, maxBytes uint64) memmap.MappableRange {
+	if required.Length() >= maxBytes {
+		return required
+	}
+	if optional.Length() <= maxBytes {
+		return optional
+	}
+	optional.Start = required.Start
+	if optional.Length() <= maxBytes {
+		return optional
+	}
+	optional.End = optional.Start + maxBytes
+	return optional
 }
 
 // InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.

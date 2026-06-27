@@ -38,7 +38,11 @@ import (
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/specutils"
 
+	"context"
+
+	events "github.com/containerd/containerd/api/services/ttrpc/events/v1"
 	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 const (
@@ -170,11 +174,64 @@ func (c *Container) writeSpec(spec *specs.Spec) error {
 	return nil
 }
 
+// dummyEventsServer is a mock implementation of the events service.
+type dummyEventsServer struct {
+	t  *testing.T
+	ch chan any
+
+	mu     sync.Mutex
+	events []any
+}
+
+// Forward forwards the event to the event channel.
+func (s *dummyEventsServer) Forward(ctx context.Context, req *events.ForwardRequest) (*emptypb.Empty, error) {
+	if req.Envelope != nil && req.Envelope.Event != nil {
+		evt, err := typeurl.UnmarshalAny(req.Envelope.Event)
+		if err != nil {
+			s.t.Errorf("dummyEventsServer: failed to unmarshal event: %v", err)
+			return &emptypb.Empty{}, nil
+		}
+
+		s.mu.Lock()
+		s.events = append(s.events, evt)
+		s.mu.Unlock()
+
+		select {
+		case s.ch <- evt:
+		default:
+			s.t.Logf("dummyEventsServer: event channel full, dropping from channel (still in history): %v", evt)
+		}
+	} else {
+		s.t.Errorf("dummyEventsServer: received nil envelope or event: %+v", req)
+	}
+	return &emptypb.Empty{}, nil
+}
+
+func (s *dummyEventsServer) getEvents() []any {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	copied := make([]any, len(s.events))
+	copy(copied, s.events)
+	return copied
+}
+
+func (s *dummyEventsServer) clearEvents() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.events = nil
+}
+
 // MockContainerd plays the role of containerd to test the shim. It creates
 // the necessary directory structure and files for the shim to run and sends requests to the shim.
 type MockContainerd struct {
-	wd   string
-	shim *exec.Cmd
+	wd            string
+	shim          *exec.Cmd
+	eventServer   *ttrpc.Server
+	eventListener net.Listener
+	EventChan     chan any
+	eventWd       string
+	eventSocket   string
+	eventsImpl    *dummyEventsServer
 }
 
 // We need a directory structure to save and other artifacts. The directory
@@ -192,11 +249,15 @@ type MockContainerd struct {
 // We need this directory structure to be created before we can start the
 // shim.
 
-// NewMockContainerd creates a new MockContainerd.
-func NewMockContainerd(t *testing.T, shimArgs, runscArgs map[string]any) *MockContainerd {
+// NewMockContainerdWithSuffix creates a new MockContainerd with a custom suffix for the working directory to avoid conflicts.
+func NewMockContainerdWithSuffix(t *testing.T, suffix string, shimArgs, runscArgs map[string]any) *MockContainerd {
 	s := &MockContainerd{}
 	// Create working directory.
-	wd, err := newWorkingDir(t.Name())
+	name := t.Name()
+	if suffix != "" {
+		name = name + "-" + suffix
+	}
+	wd, err := newWorkingDir(name)
 	if err != nil {
 		t.Fatalf("failed to create working directory: %v", err)
 	}
@@ -210,12 +271,64 @@ func NewMockContainerd(t *testing.T, shimArgs, runscArgs map[string]any) *MockCo
 	if err := newRunscConfig(s, shimArgs, runscArgs); err != nil {
 		t.Fatalf("failed to create runsc config: %v", err)
 	}
+
+	// Start TTRPC event server on a short socket path under /tmp to prevent
+	// "bind: invalid argument" unix socket length limit errors.
+	eventWd, err := os.MkdirTemp("/tmp", "containerd-events-")
+	if err != nil {
+		t.Fatalf("failed to create temp dir for events: %v", err)
+	}
+	s.eventWd = eventWd
+	s.eventSocket = filepath.Join(eventWd, "events.sock")
+
+	if s.eventListener, err = net.Listen("unix", s.eventSocket); err != nil {
+		os.RemoveAll(eventWd)
+		t.Fatalf("failed to listen on events socket: %v", err)
+	}
+
+	server, err := ttrpc.NewServer()
+	if err != nil {
+		s.eventListener.Close()
+		os.RemoveAll(eventWd)
+		t.Fatalf("failed to create ttrpc server: %v", err)
+	}
+	s.eventServer = server
+
+	s.EventChan = make(chan any, 128)
+	s.eventsImpl = &dummyEventsServer{t: t, ch: s.EventChan}
+	events.RegisterEventsService(server, s.eventsImpl)
+
+	go func() {
+		_ = server.Serve(t.Context(), s.eventListener)
+	}()
+
+	t.Cleanup(func() {
+		server.Close()
+		s.eventListener.Close()
+		os.RemoveAll(eventWd)
+	})
+
 	return s
+}
+
+// NewMockContainerd creates a new MockContainerd.
+func NewMockContainerd(t *testing.T, shimArgs, runscArgs map[string]any) *MockContainerd {
+	return NewMockContainerdWithSuffix(t, "", shimArgs, runscArgs)
 }
 
 // WorkingDir returns the working directory of the mock containerd.
 func (m *MockContainerd) WorkingDir() string {
 	return m.wd
+}
+
+// Events returns all events received by the mock containerd.
+func (m *MockContainerd) Events() []any {
+	return m.eventsImpl.getEvents()
+}
+
+// ClearEvents clears the received events history.
+func (m *MockContainerd) ClearEvents() {
+	m.eventsImpl.clearEvents()
 }
 
 // root returns the root directory for containers.
@@ -246,6 +359,7 @@ func (m *MockContainerd) StartShim(t *testing.T, c *Container) error {
 	m.shim.Dir = m.wd
 	m.shim.Stdout = f
 	m.shim.Stderr = f
+	m.shim.Env = append(os.Environ(), "TTRPC_ADDRESS="+m.eventSocket)
 	t.Logf("starting shim binary: %s with args: %v", shimBinary, args)
 	if err := m.shim.Start(); err != nil {
 		return fmt.Errorf("failed to start shim: %v", err)

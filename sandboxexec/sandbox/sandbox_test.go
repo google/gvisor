@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package go_binding_test
+package sandbox_test
 
 import (
 	"context"
@@ -20,8 +20,16 @@ import (
 	"strings"
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/sandboxexec/sandbox"
 )
+
+func TestMain(m *testing.M) {
+	if path, err := testutil.FindFile("runsc/runsc"); err == nil {
+		os.Setenv("RUNSC_PATH", path)
+	}
+	os.Exit(m.Run())
+}
 
 func TestExecDmesg(t *testing.T) {
 	ctx := context.Background()

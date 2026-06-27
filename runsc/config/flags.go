@@ -121,6 +121,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Var(HostSettingsCheck.Ptr(), "host-settings", "how to handle non-optimal host kernel settings: check (default, advisory-only), ignore (do not check), adjust (best-effort auto-adjustment), or enforce (auto-adjustment must succeed).")
 	flagSet.Var(RestoreSpecValidationEnforce.Ptr(), "restore-spec-validation", "how to handle spec validation during restore.")
 	flagSet.Bool("systrap-disable-syscall-patching", false, "disables syscall patching when using the Systrap platform. May be necessary to use in case the workload uses the GS register, or uses ptrace within gVisor. Has significant performance implications and is only recommended when the sandbox is known to run otherwise-incompatible workloads. Only relevant for x86.")
+	flagSet.Bool("systrap-disable-fast-path", false, "unconditionally disables the Systrap fast path.")
 	flagSet.Bool("allow-suid", false, "allows ID elevation when executing binaries with the SUID/SGID bits set. The OCI --no-new-privileges flag continues to prevent ID elevation even when this flag is true.")
 	flagSet.Bool("kvm-use-cpu-nums", false, "on KVM use vCPU numbers as CPU numbers in the sentry. This is necessary to support features like rseq.")
 	flagSet.Bool("allow-rootfs-tar-annotation", false, "allows the rootfs tar annotation to be set.")
@@ -181,6 +182,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("nvproxy", false, "LEGACY: enable support for Nvidia GPUs. GPU support gets automatically enabled if Nvidia devices are present in the OCI spec.")
 	flagSet.Bool("nvproxy-docker", false, "LEGACY: Injects nvidia-container-runtime-hook as a prestart hook. Try to use nvidia-container-runtime or `docker run --gpus` instead. Or manually add nvidia-container-runtime-hook as a prestart hook and set up NVIDIA_VISIBLE_DEVICES container environment variable.")
 	flagSet.String("nvproxy-driver-version", "", "NVIDIA driver ABI version to use. If empty, autodetect installed driver version. The special value 'latest' may also be used to use the latest ABI.")
+	flagSet.Bool("nvproxy-allow-unsupported-driver", false, "allow nvproxy to be initialized with an unsupported driver version.")
 	flagSet.String("nvproxy-allowed-driver-capabilities", "utility,compute", "Comma separated list of NVIDIA driver capabilities that are allowed to be requested by the container. If 'all' is specified here, it is resolved to all driver capabilities supported in nvproxy. If 'all' is requested by the container, it is resolved to this list.")
 	flagSet.Bool("tpuproxy", false, "LEGACY: enable support for TPU devices. TPU support gets automatically enabled if TPU devices are present in the OCI spec.")
 

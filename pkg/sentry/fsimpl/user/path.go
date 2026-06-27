@@ -31,7 +31,14 @@ import (
 
 // ExecutableResolveError represents a failure to resolve the executable
 // in ResolveExecutablePath.
-type ExecutableResolveError struct{ error }
+type ExecutableResolveError struct {
+	msg string
+}
+
+// Error implements the error interface.
+func (e ExecutableResolveError) Error() string {
+	return e.msg
+}
 
 // ResolveExecutablePath resolves the given executable name given the working
 // dir and environment.
@@ -67,7 +74,7 @@ func ResolveExecutablePath(ctx context.Context, args *kernel.CreateProcessArgs) 
 	paths := getPath(args.Envv)
 	f, err := resolve(ctx, args.Credentials, args.MountNamespace, paths, name)
 	if err != nil {
-		return "", &ExecutableResolveError{fmt.Errorf("error finding executable %q in PATH %v: %v", name, paths, err)}
+		return "", ExecutableResolveError{fmt.Sprintf("error finding executable %q in PATH %v: %v", name, paths, err)}
 	}
 	return f, nil
 }

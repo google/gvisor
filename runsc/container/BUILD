@@ -79,6 +79,7 @@ go_test(
         "//pkg/hostos",
         "//pkg/log",
         "//pkg/sentry/control",
+        "//pkg/sentry/fscheckpoint",
         "//pkg/sentry/fsimpl/erofs",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
@@ -104,6 +105,7 @@ go_test(
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_protobuf//proto:go_default_library",
+        "@org_golang_google_protobuf//types/known/emptypb:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

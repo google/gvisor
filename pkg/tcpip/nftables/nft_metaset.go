@@ -49,6 +49,10 @@ func checkMetaKeySetCompatible(key metaKey) *syserr.AnnotatedError {
 		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("meta key %v is not supported for meta set", key))
 	}
 }
+func (op *metaSet) deepCopy() operation {
+	opCopy := *op
+	return &opCopy
+}
 
 // evaluate for metaSet sets specific meta data to the value in the source
 // register.

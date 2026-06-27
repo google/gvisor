@@ -18,6 +18,8 @@ import (
 	"bytes"
 	"fmt"
 
+	"slices"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/syserr"
@@ -90,6 +92,13 @@ func newRanged(sreg uint8, op int, low, high []byte) (*ranged, *syserr.Annotated
 		return nil, err
 	}
 	return &ranged{sregIdx: sregIdx, rop: rop, low: low, high: high}, nil
+}
+
+func (op *ranged) deepCopy() operation {
+	opCopy := *op
+	opCopy.low = slices.Clone(op.low)
+	opCopy.high = slices.Clone(op.high)
+	return &opCopy
 }
 
 // evaluate for Ranged checks whether the source register data is within the

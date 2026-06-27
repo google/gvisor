@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package sandbox
+package sandbox_test
 
 import (
 	"encoding/json"
@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/sandboxexec/sandbox"
 )
 
 func TestNewBundle(t *testing.T) {
@@ -30,7 +31,7 @@ func TestNewBundle(t *testing.T) {
 			tempDir := t.TempDir()
 			sandboxID := "test-sandbox"
 
-			bundleDir, err := NewBundle(sandboxID, tempDir, enableNetworking)
+			bundleDir, err := sandbox.NewBundle(sandboxID, tempDir, enableNetworking)
 			if err != nil {
 				t.Fatalf("NewBundle(enableNet=%v) failed: %v", enableNetworking, err)
 			}

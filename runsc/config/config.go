@@ -368,6 +368,10 @@ type Config struct {
 	// capabilities that are allowed to be requested by the container.
 	NVProxyAllowedDriverCapabilities string `flag:"nvproxy-allowed-driver-capabilities"`
 
+	// NVProxyAllowUnsupportedDriver allows nvproxy to be initialized with an
+	// unsupported driver version.
+	NVProxyAllowUnsupportedDriver bool `flag:"nvproxy-allow-unsupported-driver"`
+
 	// TPUProxy enables support for TPUs.
 	TPUProxy bool `flag:"tpuproxy"`
 
@@ -425,6 +429,9 @@ type Config struct {
 
 	// SystrapDisableSyscallPatching disables syscall patching in Systrap.
 	SystrapDisableSyscallPatching bool `flag:"systrap-disable-syscall-patching"`
+
+	// SystrapDisableFastPath disables the Systrap fast path entirely.
+	SystrapDisableFastPath bool `flag:"systrap-disable-fast-path"`
 
 	// Nftables enables support for nftables to be used instead of iptables.
 	Nftables bool `flag:"TESTONLY-nftables"`

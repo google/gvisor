@@ -157,6 +157,30 @@ TEST(IPTablesBasic, GetRevision) {
   EXPECT_THAT(
       getsockopt(sock, SOL_IP, IPT_SO_GET_REVISION_TARGET, &rev, &rev_len),
       SyscallFailsWithErrno(EPROTONOSUPPORT));
+
+  ASSERT_THAT(close(sock), SyscallSucceeds());
+}
+
+TEST(IPTablesBasic, GetRevisionMatchMark) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+
+  int sock;
+  ASSERT_THAT(sock = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP),
+              SyscallSucceeds());
+
+  struct xt_get_revision rev = {};
+  socklen_t rev_len = sizeof(rev);
+
+  snprintf(rev.name, sizeof(rev.name), "mark");
+  rev.revision = 1;
+
+  // Revision 1 exists for mark.
+  EXPECT_THAT(
+      getsockopt(sock, SOL_IP, IPT_SO_GET_REVISION_MATCH, &rev, &rev_len),
+      SyscallSucceeds());
+  EXPECT_EQ(rev.revision, 1);
+
+  ASSERT_THAT(close(sock), SyscallSucceeds());
 }
 
 // Fixture for iptables tests.

@@ -286,8 +286,7 @@ func (s *shimRedirector) Shutdown(ctx context.Context, r *task.ShutdownRequest) 
 		return resp, errgrpc.ToGRPC(nil)
 	}
 	s.shutdown.Shutdown()
-	os.Exit(0)
-	panic("Should not get here")
+	return resp, nil
 }
 
 func (s *shimRedirector) Stats(ctx context.Context, r *task.StatsRequest) (*task.StatsResponse, error) {

@@ -180,13 +180,31 @@ supported GPU.
 
 ### Rolling Version Support Window {#driver-versions}
 
-The range of driver versions supported by `nvproxy` directly aligns with those
+gVisor categorizes NVIDIA driver versions into three groups:
+
+*   **Supported Drivers**: These are officially supported and qualified
+    versions. We run continuous tests on them. They work by default.
+*   **Unsupported Drivers**: These are "unsupported" (or unqualified) driver
+    versions defined in the gVisor source code. They have not been fully tested.
+    By default, `runsc` will fail to start on these versions, but you can allow
+    them by passing the `--nvproxy-allow-unsupported-driver` flag. If allowed,
+    `runsc` will log a warning and attempt to run, but this is *not* officially
+    supported.
+*   **Unknown Drivers**: These are drivers completely unknown to gVisor (not
+    defined in the source code at all). They will always fail to start, even if
+    `--nvproxy-allow-unsupported-driver` is specified.
+
+Due to limited GPUs available to our testing infrastructure, it is currently not
+feasible to test and qualify too many drivers continuously. Hence, we have a
+policy that tries to keep the set of supported drivers limited.
+
+The range of officially supported driver versions directly aligns with those
 available within GKE. As GKE incorporates newer drivers, `nvproxy` will extend
 support accordingly. Conversely, to manage versioning complexity, `nvproxy` will
-drop support for drivers removed from GKE. This strategy ensures a streamlined
-process and avoids unbounded growth in `nvproxy`'s versioning.
+shrink the window as drivers are removed from GKE. This strategy ensures a
+streamlined process and avoids unbounded growth in `nvproxy`'s versioning.
 
-To see what drivers a given `runsc` version supports, run:
+To see what drivers a given `runsc` version officially supports, run:
 
 ```
 $ runsc nvproxy list-supported-drivers
@@ -195,10 +213,9 @@ $ runsc nvproxy list-supported-drivers
 **NOTE**: `runsc`'s driver version is a strict version match because `runsc`
 cannot assume ABI compatibility between driver versions. You may force `runsc`
 to use a given supported ABI version with the `--nvproxy-driver-version` even
-when running on a host that has an unsupported driver version. However, doing so
-is **not officially supported**, and running old drivers is generally not secure
-as many driver updates address security bugs. Bug reports with the
-`--nvproxy-driver-version` flag set will be treated as invalid.
+when running on a host that has an unknown driver version. However, doing so is
+**not officially supported**, and running old drivers is generally not secure as
+many driver updates address security bugs.
 
 ### Supported Driver Capabilities {#driver-capabilities}
 

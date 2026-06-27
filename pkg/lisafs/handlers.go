@@ -16,7 +16,6 @@ package lisafs
 
 import (
 	"fmt"
-	"math"
 	"os"
 	"strings"
 
@@ -304,7 +303,7 @@ func WalkHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, e
 	)
 	respMetaSize := status.SizeBytes() + numInodes.SizeBytes()
 	maxPayloadSize := respMetaSize + (len(req.Path) * (*Inode)(nil).SizeBytes())
-	if maxPayloadSize > math.MaxUint32 {
+	if maxPayloadSize > int(c.maxMessageSize) {
 		// Too much to walk, can't do.
 		return 0, unix.EIO
 	}
@@ -406,7 +405,7 @@ func WalkStatHandler(c *Connection, comm Communicator, payloadLen uint32) (uint3
 	// the same as WalkStatResp's.
 	var numStats primitive.Uint16
 	maxPayloadSize := numStats.SizeBytes() + (len(req.Path) * SizeOfStatx)
-	if maxPayloadSize > math.MaxUint32 {
+	if maxPayloadSize > int(c.maxMessageSize) {
 		// Too much to walk, can't do.
 		return 0, unix.EIO
 	}
@@ -1108,6 +1107,9 @@ func ConnectWithCredsHandler(c *Connection, comm Communicator, payloadLen uint32
 
 // BindAtHandler handles the BindAt RPC.
 func BindAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, error) {
+	if c.opts.Readonly {
+		return 0, unix.EROFS
+	}
 	var req BindAtReq
 	if _, ok := req.CheckedUnmarshal(comm.PayloadBuf(payloadLen)); !ok {
 		return 0, unix.EIO

@@ -34,6 +34,7 @@ type FSCheckpoint struct {
 	imagePath    string
 	leaveRunning bool
 	direct       bool
+	path         string
 }
 
 // Name implements subcommands.Command.Name.
@@ -58,6 +59,7 @@ func (c *FSCheckpoint) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.imagePath, "image-path", "", "directory path to saved filesystem checkpoint")
 	f.BoolVar(&c.leaveRunning, "leave-running", false, "if true, resume containers after checkpointing; if false, containers exit with status 0 after checkpointing")
 	f.BoolVar(&c.direct, "direct", false, "use O_DIRECT for writing checkpoint files")
+	f.StringVar(&c.path, "path", "/", `path inside the container to save to the checkpoint; the special value "all-tmpfs" saves all tmpfs mounts from the OCI spec that are disk-backed`)
 }
 
 // FetchSpec implements util.SubCommand.FetchSpec.
@@ -94,6 +96,7 @@ func (c *FSCheckpoint) Execute(_ context.Context, f *flag.FlagSet, args ...any) 
 	if err := cont.FSSave(conf, c.imagePath, sandbox.FSSaveOpts{
 		Direct:          c.direct,
 		ExitAfterSaving: !c.leaveRunning,
+		Path:            c.path,
 	}); err != nil {
 		util.Fatalf("filesystem checkpoint saving failed: %v", err)
 	}

@@ -362,6 +362,7 @@ func (e *Endpoint) propagateInheritableOptionsLocked(n *Endpoint) {
 	n.boundBindToDevice = e.boundBindToDevice
 	n.boundPortFlags = e.boundPortFlags
 	n.userMSS = e.userMSS
+	n.ops.SetMark(e.ops.GetMark())
 }
 
 // reserveTupleLocked reserves an accepted endpoint's tuple.

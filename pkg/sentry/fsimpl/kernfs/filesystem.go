@@ -284,6 +284,15 @@ func checkDeleteLocked(ctx context.Context, rp *vfs.ResolvingPath, d *Dentry) er
 	if err := parent.inode.CheckPermissions(ctx, rp.Credentials(), vfs.MayWrite|vfs.MayExec); err != nil {
 		return err
 	}
+	if err := vfs.CheckDeleteSticky(
+		rp.Credentials(),
+		linux.FileMode(parent.inode.Mode()),
+		auth.KUID(parent.inode.UID()),
+		auth.KUID(d.inode.UID()),
+		auth.KGID(d.inode.GID()),
+	); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -789,6 +798,15 @@ func (fs *Filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		if dst == nil {
 			panic(fmt.Sprintf("Child %q for parent Dentry %+v disappeared inside atomic section?", newName, dstDir))
 		}
+		if err := vfs.CheckDeleteSticky(
+			rp.Credentials(),
+			linux.FileMode(dstDir.inode.Mode()),
+			auth.KUID(dstDir.inode.UID()),
+			auth.KUID(dst.inode.UID()),
+			auth.KGID(dst.inode.GID()),
+		); err != nil {
+			return err
+		}
 	default:
 		return err
 	}
@@ -859,9 +877,6 @@ func (fs *Filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	if err != nil {
 		return err
 	}
-	if err := parent.inode.CheckPermissions(ctx, rp.Credentials(), vfs.MayWrite|vfs.MayExec); err != nil {
-		return err
-	}
 	if err := rp.Mount().CheckBeginWrite(); err != nil {
 		return err
 	}
@@ -873,20 +888,11 @@ func (fs *Filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	if name == ".." {
 		return linuxerr.ENOTEMPTY
 	}
-	child, ok := parent.children[name]
-	if !ok {
-		return linuxerr.ENOENT
-	}
-	if err := checkDeleteLocked(ctx, rp, child); err != nil {
+	child, err := fs.revalidateChildLocked(ctx, rp.VirtualFilesystem(), parent, name)
+	if err != nil {
 		return err
 	}
-	if err := vfs.CheckDeleteSticky(
-		rp.Credentials(),
-		linux.FileMode(parent.inode.Mode()),
-		auth.KUID(parent.inode.UID()),
-		auth.KUID(child.inode.UID()),
-		auth.KGID(child.inode.GID()),
-	); err != nil {
+	if err := checkDeleteLocked(ctx, rp, child); err != nil {
 		return err
 	}
 	if !child.isDir() {
@@ -1085,9 +1091,25 @@ func (fs *Filesystem) ListXattrAt(ctx context.Context, rp *vfs.ResolvingPath, si
 	fs.mu.RLock()
 	defer fs.processDeferredDecRefs(ctx)
 	defer fs.mu.RUnlock()
-	_, err := fs.walkExistingLocked(ctx, rp)
+	d, err := fs.walkExistingLocked(ctx, rp)
 	if err != nil {
 		return nil, err
+	}
+	if xi, ok := d.inode.(InodeWithXattrs); ok {
+		creds := rp.Credentials()
+		mode := d.inode.Mode()
+		kuid := d.inode.UID()
+		names, err := xi.ListXattr(ctx, size)
+		if err != nil {
+			return nil, err
+		}
+		filtered := make([]string, 0, len(names))
+		for _, name := range names {
+			if err := vfs.CheckXattrPermissions(creds, vfs.MayRead, mode, kuid, name); err == nil {
+				filtered = append(filtered, name)
+			}
+		}
+		return filtered, nil
 	}
 	// kernfs currently does not support extended attributes.
 	return nil, linuxerr.ENOTSUP
@@ -1098,9 +1120,22 @@ func (fs *Filesystem) GetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 	fs.mu.RLock()
 	defer fs.processDeferredDecRefs(ctx)
 	defer fs.mu.RUnlock()
-	_, err := fs.walkExistingLocked(ctx, rp)
+	d, err := fs.walkExistingLocked(ctx, rp)
 	if err != nil {
 		return "", err
+	}
+	if xi, ok := d.inode.(InodeWithXattrs); ok {
+		creds := rp.Credentials()
+		mode := d.inode.Mode()
+		kuid := d.inode.UID()
+		kgid := d.inode.GID()
+		if err := vfs.GenericCheckPermissions(creds, vfs.MayRead, mode, kuid, kgid); err != nil {
+			return "", err
+		}
+		if err := vfs.CheckXattrPermissions(creds, vfs.MayRead, mode, kuid, opts.Name); err != nil {
+			return "", err
+		}
+		return xi.GetXattr(ctx, opts)
 	}
 	// kernfs currently does not support extended attributes.
 	return "", linuxerr.ENOTSUP
@@ -1111,9 +1146,22 @@ func (fs *Filesystem) SetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 	fs.mu.RLock()
 	defer fs.processDeferredDecRefs(ctx)
 	defer fs.mu.RUnlock()
-	_, err := fs.walkExistingLocked(ctx, rp)
+	d, err := fs.walkExistingLocked(ctx, rp)
 	if err != nil {
 		return err
+	}
+	if xi, ok := d.inode.(InodeWithXattrs); ok {
+		creds := rp.Credentials()
+		mode := d.inode.Mode()
+		kuid := d.inode.UID()
+		kgid := d.inode.GID()
+		if err := vfs.GenericCheckPermissions(creds, vfs.MayWrite, mode, kuid, kgid); err != nil {
+			return err
+		}
+		if err := vfs.CheckXattrPermissions(creds, vfs.MayWrite, mode, kuid, opts.Name); err != nil {
+			return err
+		}
+		return xi.SetXattr(ctx, opts)
 	}
 	// kernfs currently does not support extended attributes.
 	return linuxerr.ENOTSUP
@@ -1124,9 +1172,22 @@ func (fs *Filesystem) RemoveXattrAt(ctx context.Context, rp *vfs.ResolvingPath, 
 	fs.mu.RLock()
 	defer fs.processDeferredDecRefs(ctx)
 	defer fs.mu.RUnlock()
-	_, err := fs.walkExistingLocked(ctx, rp)
+	d, err := fs.walkExistingLocked(ctx, rp)
 	if err != nil {
 		return err
+	}
+	if xi, ok := d.inode.(InodeWithXattrs); ok {
+		creds := rp.Credentials()
+		mode := d.inode.Mode()
+		kuid := d.inode.UID()
+		kgid := d.inode.GID()
+		if err := vfs.GenericCheckPermissions(creds, vfs.MayWrite, mode, kuid, kgid); err != nil {
+			return err
+		}
+		if err := vfs.CheckXattrPermissions(creds, vfs.MayWrite, mode, kuid, name); err != nil {
+			return err
+		}
+		return xi.RemoveXattr(ctx, name)
 	}
 	// kernfs currently does not support extended attributes.
 	return linuxerr.ENOTSUP

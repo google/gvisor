@@ -243,6 +243,30 @@ type fastPathState struct {
 	// curState is the current fastpath state function, which is called at
 	// the end of every recording period.
 	curState func(*fastPathState)
+
+	_ [hostarch.CacheLineSize]byte
+	// recentActivity is set whenever a context is submitted to a stub thread
+	// (see contextQueue.add). It is checked and reset by the fast path monitor
+	// (controlFastPath) at the end of every recording period to determine
+	// whether the platform is idle.
+	recentActivity atomicbitops.Bool
+
+	_ [hostarch.CacheLineSize]byte
+	// monitorParked is true while the fast path monitor goroutine has stopped
+	// polling and is blocked waiting for activity. It is used by recordActivity
+	// to decide whether the monitor needs to be woken up.
+	monitorParked atomicbitops.Bool
+
+	// monitorWakeup wakes the fast path monitor goroutine when it is parked.
+	// It is buffered so that recordActivity never blocks. It is assigned once at
+	// init and only read thereafter, so it shares monitorParked's line rather
+	// than needing one of its own.
+	monitorWakeup chan struct{}
+
+	// Pad the tail so monitorParked (the last hot field) does not share a cache
+	// line with whatever global the linker places after fastpath -- e.g. the
+	// latencies recorder, which is written on every context switch.
+	_ [hostarch.CacheLineSize]byte
 }
 
 var (
@@ -250,6 +274,7 @@ var (
 		stubFPBackoff:   fastPathBackoffMin,
 		sentryFPBackoff: fastPathBackoffMin,
 		curState:        sentryOffStubOff,
+		monitorWakeup:   make(chan struct{}, 1),
 	}
 
 	// fastPathContextLimit is the maximum number of contexts after which the fast
@@ -263,6 +288,72 @@ var (
 	fastPathContextLimit = uint32(0)
 )
 
+// recordActivity notes that the platform did some work during the current
+// recording period and wakes the fast path monitor if it has parked itself due
+// to inactivity. It is called on the context submission hot path, so it must
+// stay cheap: in the common case (monitor awake, activity already recorded this
+// period) it is two atomic loads and no writes to shared state.
+func (s *fastPathState) recordActivity() {
+	// recentActivity is a single process-global flag touched by every
+	// contextQueue.add() across all subprocesses, so an unconditional store
+	// would bounce its cache line between cores under load. Only the caller that
+	// flips it false->true this period needs to write; later callers just read.
+	// All callers still run the wakeup check below.
+	if !s.recentActivity.Load() {
+		s.recentActivity.Store(true)
+	}
+	// Pairs with the store of monitorParked in park(): if the monitor has
+	// announced it is parked, it is guaranteed to observe recentActivity (and
+	// not block) or to be woken up below. The caller that performs the
+	// false->true transition above is the one responsible for the wakeup: its
+	// store lands after the monitor's recentActivity load, so its monitorParked
+	// load lands after the monitor's monitorParked store and sees the park.
+	if s.monitorParked.Load() {
+		select {
+		case s.monitorWakeup <- struct{}{}:
+		default:
+		}
+	}
+}
+
+// park blocks the fast path monitor until recordActivity signals new activity.
+func (s *fastPathState) park() {
+	// Idle for a full recording period: turn the fast path off so the next
+	// sporadic wakeup doesn't spin for deepSleepTimeout before re-sleeping.
+	//
+	// Cleared directly, not via disableStub/SentryFP, since idleness isn't a
+	// measured fast-path failure and shouldn't trip their disable hysteresis.
+	// curState must return to sentryOffStubOff because the "On" states never
+	// re-enable a flag.
+	//
+	// Store only on a real change: the monitor is the sole writer (so the load is
+	// race-free), and a redundant store would needlessly invalidate the flag's
+	// read-mostly cache line on cores holding it. curState is monitor-private, so
+	// it's set unconditionally.
+	if s.sentryFastPathEnabled.Load() {
+		s.sentryFastPathEnabled.Store(false)
+	}
+	if s.stubFastPathEnabled.Load() {
+		s.stubFastPathEnabled.Store(false)
+	}
+	s.curState = sentryOffStubOff
+
+	// Drop any wakeup left over from a previous park cycle.
+	select {
+	case <-s.monitorWakeup:
+	default:
+	}
+	s.monitorParked.Store(true)
+	// Re-check for activity after announcing that we are parked. This closes
+	// the race with a concurrent recordActivity that set recentActivity before
+	// monitorParked became visible to it: such a call would not have sent a
+	// wakeup, but we observe its store here and avoid blocking.
+	if !s.recentActivity.Load() {
+		<-s.monitorWakeup
+	}
+	s.monitorParked.Store(false)
+}
+
 // controlFastPath is used to spawn a goroutine when creating the Systrap
 // platform.
 func controlFastPath() {
@@ -275,6 +366,13 @@ func controlFastPath() {
 		// Reset FP trackers.
 		fastpath.usedStubFastPath.Store(false)
 		fastpath.usedSentryFastPath.Store(false)
+
+		// If the platform did no work during this period, park until the next
+		// context is submitted. While parked the monitor stops polling, so an
+		// idle sandbox lets the sentry process sleep.
+		if !fastpath.recentActivity.Swap(false) {
+			fastpath.park()
+		}
 	}
 }
 

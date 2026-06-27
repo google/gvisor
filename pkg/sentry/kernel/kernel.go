@@ -211,10 +211,29 @@ type Kernel struct {
 	// further protected by runningTasksMu (see incRunningTasks).
 	runningTasks atomicbitops.Int64
 
+	// blockedTasks is the total count of tasks currently in
+	// TaskGoroutineBlockedUninterruptible, i.e. uninterruptible sleep. It is
+	// used to implement procs_blocked in /proc/stat.
+	//
+	// blockedTasks must be accessed atomically. It is not saved; on restore it
+	// is repopulated as tasks re-enter uninterruptible sleep.
+	blockedTasks atomicbitops.Int64 `state:"nosave"`
+
 	// runningTasksCond is signaled when runningTasks is incremented from 0 to 1.
 	//
 	// Invariant: runningTasksCond.L == &runningTasksMu.
 	runningTasksCond sync.Cond `state:"nosave"`
+
+	// taskActivityCh is closed (and replaced with a fresh channel) when
+	// runningTasks is incremented from 0 to 1, to wake goroutines that park
+	// while the kernel is idle (currently the watchdog; see
+	// Kernel.WaitForTaskActivity()). Unlike runningTasksCond, which only matters
+	// when the CPU clock ticker has actually parked, this fires on every real
+	// 0->1 transition, since a waiter may have parked during the slack tick in
+	// which runningTasks is 0 but cpuClockTickerRunning is still true.
+	//
+	// activeNotifyCh is protected by runningTasksMu.
+	taskActivityCh chan struct{} `state:"nosave"`
 
 	// cpuClockTickTimer drives increments of cpuClock.
 	cpuClockTickTimer *time.Timer `state:"nosave"`
@@ -242,6 +261,20 @@ type Kernel struct {
 	// does not use ktime.SyntheticClock since this clock currently does not
 	// need to support timers.
 	cpuClock atomicbitops.Int64
+
+	// userCPUClock and userSysCPUClock are kernel-wide cumulative CPU time
+	// accumulators, in nanoseconds, advanced by the CPU clock ticker as it
+	// accounts ticks to running tasks. userCPUClock mirrors the sum of all
+	// tasks' Task.appCPUClock (i.e. application/user time), while
+	// userSysCPUClock mirrors the sum of all tasks' Task.appSysCPUClock (i.e.
+	// application+sentry time). System time is the difference of the two. Like
+	// the per-task clocks, these are never decremented, so they also include
+	// the CPU time of exited tasks. They are used to implement the aggregate
+	// CPU line in /proc/stat (see Kernel.CPUStats).
+	//
+	// userCPUClock and userSysCPUClock must be accessed atomically.
+	userCPUClock    atomicbitops.Int64
+	userSysCPUClock atomicbitops.Int64
 
 	// uniqueID is used to generate unique identifiers.
 	//
@@ -407,6 +440,14 @@ type Kernel struct {
 	// protected by fsSaveMu.
 	fsSaveMu      fsSaveMutex  `state:"nosave"`
 	fsSaveWaiters []chan error `state:"nosave"`
+
+	// HostNamePoller is notified when the system hostname changes in *any*
+	// UTS namespace.
+	HostNamePoller vfs.DynamicBytesPoller
+
+	// DomainNamePoller is notified when the system domainname changes in *any*
+	// UTS namespace.
+	DomainNamePoller vfs.DynamicBytesPoller
 }
 
 // InitKernelArgs holds arguments to Init.
@@ -492,6 +533,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	k.runningTasksCond.L = &k.runningTasksMu
 	k.cpuClockTickerWakeCh = make(chan struct{}, 1)
 	k.cpuClockTickerStopCond.L = &k.runningTasksMu
+	k.taskActivityCh = make(chan struct{})
 	k.applicationCores = args.ApplicationCores
 	if args.UseHostCores && k.HasCPUNumbers() {
 		args.UseHostCores = false
@@ -883,6 +925,7 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 	k.runningTasksCond.L = &k.runningTasksMu
 	k.cpuClockTickerWakeCh = make(chan struct{}, 1)
 	k.cpuClockTickerStopCond.L = &k.runningTasksMu
+	k.taskActivityCh = make(chan struct{})
 
 	initAppCores := k.applicationCores
 
@@ -984,6 +1027,7 @@ func (k *Kernel) ExtractRootfsUpperLayer(ctx context.Context, r io.Reader, async
 	k.runningTasksCond.L = &k.runningTasksMu
 	k.cpuClockTickerWakeCh = make(chan struct{}, 1)
 	k.cpuClockTickerStopCond.L = &k.runningTasksMu
+	k.taskActivityCh = make(chan struct{})
 
 	// Load the pre-saved CPUID FeatureSet.
 	cpuidStart := time.Now()
@@ -1536,6 +1580,17 @@ func (k *Kernel) incRunningTasks() {
 			k.cpuClockTickerRunning = true
 			k.runningTasksCond.Signal()
 		}
+
+		// Wake anything parked while the kernel was idle (currently the
+		// watchdog; see Kernel.WaitForTaskActivity()). This is done on every
+		// real 0->1 transition, even when the block above is skipped because the
+		// CPU clock ticker had not yet parked, since a waiter may have parked
+		// during the slack tick in which runningTasks is 0 but the ticker is
+		// still running. Closing the channel broadcasts to all waiters; a fresh
+		// one takes its place for the next idle period.
+		close(k.taskActivityCh)
+		k.taskActivityCh = make(chan struct{})
+
 		// This store must happen after the increment of k.cpuClock above to ensure
 		// that concurrent calls to Task.accountTaskGoroutineLeave() also observe
 		// the updated k.cpuClock.
@@ -1555,6 +1610,49 @@ func (k *Kernel) decRunningTasks() {
 	// there is still nothing running. This provides approximately one tick
 	// of slack in which we can switch back and forth between idle and
 	// active without an expensive transition.
+}
+
+// RunningTasks returns the number of tasks currently in
+// TaskGoroutineRunningSys or TaskGoroutineRunningApp, i.e. the number of
+// runnable tasks. It is used to implement procs_running in /proc/stat.
+func (k *Kernel) RunningTasks() int64 {
+	return k.runningTasks.Load()
+}
+
+// BlockedTasks returns the number of tasks currently in
+// TaskGoroutineBlockedUninterruptible, i.e. uninterruptible sleep. It is used
+// to implement procs_blocked in /proc/stat.
+func (k *Kernel) BlockedTasks() int64 {
+	return k.blockedTasks.Load()
+}
+
+// WaitForTaskActivity blocks until at least one task is running (i.e. the
+// kernel is not idle) and returns true, or until stop is signaled and returns
+// false. It returns true immediately if a task is already running.
+//
+// It lets a caller park while the kernel is idle instead of polling: while
+// runningTasks is 0, no task can be in TaskGoroutineRunningSys (such a task
+// counts as running), and the CPU clock is frozen, so a sentry-activity monitor
+// like the watchdog has nothing to observe until a task becomes runnable again.
+func (k *Kernel) WaitForTaskActivity(stop <-chan struct{}) bool {
+	k.runningTasksMu.Lock()
+	if k.runningTasks.Load() != 0 {
+		k.runningTasksMu.Unlock()
+		return true
+	}
+	// Read the current notification channel under the lock so we cannot miss a
+	// 0->1 transition: incRunningTasks closes this exact channel (also under the
+	// lock) before installing a replacement, so any transition after this point
+	// wakes us.
+	ch := k.taskActivityCh
+	k.runningTasksMu.Unlock()
+
+	select {
+	case <-ch:
+		return true
+	case <-stop:
+		return false
+	}
 }
 
 // WaitExited blocks until all tasks in k have exited. No tasks can be created

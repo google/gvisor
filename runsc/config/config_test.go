@@ -751,12 +751,14 @@ func TestOverrideDeferredValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Worst-case order: qdisc=tbf and ingress-qdisc=tbf are applied while their
+	// rate and burst values are still zero.
 	for _, o := range []struct{ name, value string }{
 		{"qdisc", "tbf"},
 		{"ingress-qdisc", "tbf"},
 		{"qdisc-tbf-rate", "12500000"},
 		{"ingress-qdisc-tbf-rate", "12500000"},
-		{"qdisc-tbf-burst", "1048576"},
+		{"qdisc-tbf-burst", "524288"},
 		{"ingress-qdisc-tbf-burst", "1048576"},
 	} {
 		if err := c.Override(testFlags, o.name, o.value, false); err != nil {
@@ -769,11 +771,17 @@ func TestOverrideDeferredValidation(t *testing.T) {
 	if got, want := c.QDisc, QDiscTBF; got != want {
 		t.Errorf("QDisc = %v, want %v", got, want)
 	}
+	if got, want := c.TBFRate, uint64(12500000); got != want {
+		t.Errorf("TBFRate = %d, want %d", got, want)
+	}
+	if got, want := c.TBFBurst, uint64(524288); got != want {
+		t.Errorf("TBFBurst = %d, want %d", got, want)
+	}
 	if got, want := c.IngressQDisc, QDiscTBF; got != want {
 		t.Errorf("IngressQDisc = %v, want %v", got, want)
 	}
-	if got, want := c.TBFRate, uint64(12500000); got != want {
-		t.Errorf("TBFRate = %d, want %d", got, want)
+	if got, want := c.IngressTBFRate, uint64(12500000); got != want {
+		t.Errorf("IngressTBFRate = %d, want %d", got, want)
 	}
 	if got, want := c.IngressTBFBurst, uint64(1048576); got != want {
 		t.Errorf("IngressTBFBurst = %d, want %d", got, want)
@@ -781,6 +789,19 @@ func TestOverrideDeferredValidation(t *testing.T) {
 
 	// Validation is deferred, not skipped: an inconsistent final state must
 	// still fail.
+	testFlags = flag.NewFlagSet("test", flag.ContinueOnError)
+	RegisterFlags(testFlags)
+	c, err = NewFromFlags(testFlags)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Override(testFlags, "qdisc", "tbf", false); err != nil {
+		t.Fatalf("Override(qdisc, tbf) failed: %v", err)
+	}
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "qdisc=tbf requires setting qdisc-tbf-rate") {
+		t.Errorf("Validate() wrong error: %v", err)
+	}
+
 	testFlags = flag.NewFlagSet("test", flag.ContinueOnError)
 	RegisterFlags(testFlags)
 	c, err = NewFromFlags(testFlags)

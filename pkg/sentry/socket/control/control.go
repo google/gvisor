@@ -17,6 +17,7 @@
 package control
 
 import (
+	"maps"
 	"math"
 	"time"
 
@@ -47,7 +48,12 @@ type SCMCredentials interface {
 //
 // +stateify savable
 type scmCredentials struct {
-	t    *kernel.Task
+	// Add any new fields here to scmCredentials.Equals().
+
+	// pids snapshots the peer's PID in every PID namespace in which it is
+	// visible, captured when the credentials were created.
+	pids map[*kernel.PIDNamespace]kernel.ThreadID
+
 	kuid auth.KUID
 	kgid auth.KGID
 }
@@ -64,16 +70,17 @@ func NewSCMCredentials(t *kernel.Task, cred linux.ControlMessageCredentials) (SC
 	if err != nil {
 		return nil, err
 	}
-	if kernel.ThreadID(cred.PID) != t.ThreadGroup().ID() && !t.HasCapabilityIn(linux.CAP_SYS_ADMIN, t.PIDNamespace().UserNamespace()) {
+	tg := t.ThreadGroup()
+	if kernel.ThreadID(cred.PID) != tg.ID() && !t.HasCapabilityIn(linux.CAP_SYS_ADMIN, t.PIDNamespace().UserNamespace()) {
 		return nil, linuxerr.EPERM
 	}
-	return &scmCredentials{t, kuid, kgid}, nil
+	return &scmCredentials{tg.PIDNamespacedIDs(), kuid, kgid}, nil
 }
 
 // Equals implements transport.CredentialsControlMessage.Equals.
 func (c *scmCredentials) Equals(oc transport.CredentialsControlMessage) bool {
-	if oc, _ := oc.(*scmCredentials); oc != nil && *c == *oc {
-		return true
+	if oc, _ := oc.(*scmCredentials); oc != nil {
+		return c.kuid == oc.kuid && c.kgid == oc.kgid && maps.Equal(c.pids, oc.pids)
 	}
 	return false
 }
@@ -159,7 +166,11 @@ func (c *scmCredentials) Credentials(t *kernel.Task) (kernel.ThreadID, auth.UID,
 	// of SCM_CREDENTIALS in unix(7)), they are translated into the
 	// corresponding values as per the receiving process's user and group ID
 	// mappings." - user_namespaces(7)
-	pid := t.PIDNamespace().IDOfTask(c.t)
+	//
+	// If t.PIDNamespace() is not present in c.pids, that means the peer
+	// is not visible to the caller's PID namespace. In this case, returning
+	// 0 is appropriate.
+	pid := c.pids[t.PIDNamespace()]
 	uid := c.kuid.In(t.UserNamespace()).OrOverflow()
 	gid := c.kgid.In(t.UserNamespace()).OrOverflow()
 
@@ -633,7 +644,7 @@ func MakeCreds(t *kernel.Task) SCMCredentials {
 		return nil
 	}
 	tcred := t.Credentials()
-	return &scmCredentials{t, tcred.EffectiveKUID, tcred.EffectiveKGID}
+	return &scmCredentials{t.ThreadGroup().PIDNamespacedIDs(), tcred.EffectiveKUID, tcred.EffectiveKGID}
 }
 
 // New creates default control messages if needed.

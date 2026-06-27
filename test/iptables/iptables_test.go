@@ -261,6 +261,10 @@ func TestFilterOutputInvertUIDAndGIDOwner(t *testing.T) {
 	singleTest(t, &FilterOutputInvertUIDAndGIDOwner{})
 }
 
+func TestFilterOutputOwnerNilAccept(t *testing.T) {
+	singleTest(t, &FilterOutputOwnerNilAccept{})
+}
+
 func TestFilterOutputInterfaceAccept(t *testing.T) {
 	singleTest(t, &FilterOutputInterfaceAccept{})
 }

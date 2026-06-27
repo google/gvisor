@@ -17,7 +17,15 @@ go_library(
 
 go_test(
     name = "sandbox_test",
-    srcs = ["oci_test.go"],
-    library = ":sandbox",
-    deps = ["@com_github_opencontainers_runtime_spec//specs-go:go_default_library"],
+    srcs = [
+        "oci_test.go",
+        "sandbox_test.go",
+    ],
+    data = ["//runsc"],
+    tags = ["nogotsan"],
+    deps = [
+        ":sandbox",
+        "//pkg/test/testutil",
+        "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
+    ],
 )

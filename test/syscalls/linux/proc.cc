@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/epoll.h>
 #include <sys/mman.h>
 #include <sys/prctl.h>
 #include <sys/ptrace.h>
@@ -68,6 +69,7 @@
 #include "absl/time/time.h"
 #include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
+#include "test/util/epoll_util.h"
 #include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
@@ -1567,6 +1569,11 @@ TEST(ProcStat, Fields) {
     } else if (fields[0] == "procs_running") {
       // Single field.
       EXPECT_EQ(fields.size(), 2) << proc_stat;
+      // The task reading /proc/stat is itself running, so there must be at
+      // least one running task.
+      uint64_t running = 0;
+      EXPECT_TRUE(absl::SimpleAtoi(fields[1], &running)) << proc_stat;
+      EXPECT_GE(running, 1) << proc_stat;
     } else if (fields[0] == "procs_blocked") {
       // Single field.
       EXPECT_EQ(fields.size(), 2) << proc_stat;
@@ -1581,6 +1588,51 @@ TEST(ProcStat, Fields) {
       EXPECT_TRUE(absl::SimpleAtoi(fields[i], &val)) << proc_stat;
     }
   }
+}
+
+// Returns the total non-idle CPU time (user + nice + system, in USER_HZ ticks)
+// reported by the aggregate "cpu" line of /proc/stat.
+PosixErrorOr<uint64_t> ProcStatCpuBusyTicks() {
+  ASSIGN_OR_RETURN_ERRNO(std::string proc_stat, GetContents("/proc/stat"));
+  for (absl::string_view line : absl::StrSplit(proc_stat, '\n')) {
+    std::vector<std::string> fields =
+        absl::StrSplit(line, ' ', absl::SkipWhitespace());
+    if (fields.empty() || fields[0] != "cpu") {
+      continue;
+    }
+    // "cpu" followed by at least the user, nice, and system fields.
+    if (fields.size() < 4) {
+      return PosixError(EINVAL, "malformed aggregate cpu line in /proc/stat");
+    }
+    uint64_t user = 0, nice = 0, system = 0;
+    if (!absl::SimpleAtoi(fields[1], &user) ||
+        !absl::SimpleAtoi(fields[2], &nice) ||
+        !absl::SimpleAtoi(fields[3], &system)) {
+      return PosixError(EINVAL, "non-numeric cpu fields in /proc/stat");
+    }
+    return user + nice + system;
+  }
+  return PosixError(EINVAL, "no aggregate cpu line in /proc/stat");
+}
+
+// Regression test for the aggregate CPU statistics being hardcoded to zero
+// (b/37226836): the "cpu" line of /proc/stat must accrue CPU time as work is
+// done, so that tools like top(1) and htop(1) can compute non-zero usage.
+TEST(ProcStat, CpuTimeAccrues) {
+  uint64_t before = ASSERT_NO_ERRNO_AND_VALUE(ProcStatCpuBusyTicks());
+
+  // Burn CPU for long enough to register several USER_HZ ticks (typically
+  // 10ms each). The volatile sink prevents the loop from being optimized away.
+  const absl::Time deadline = absl::Now() + absl::Milliseconds(500);
+  volatile uint64_t sink = 0;
+  while (absl::Now() < deadline) {
+    for (int i = 0; i < 100000; i++) {
+      sink += i;
+    }
+  }
+
+  uint64_t after = ASSERT_NO_ERRNO_AND_VALUE(ProcStatCpuBusyTicks());
+  EXPECT_GT(after, before);
 }
 
 TEST(ProcLoadavg, EndsWithNewline) {
@@ -2717,6 +2769,100 @@ TEST(ProcSysKernelHostname, MatchesUname) {
   auto procfs_hostname =
       ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/kernel/hostname"));
   EXPECT_EQ(procfs_hostname, hostname);
+}
+
+// Ensure that epoll triggers EPOLLERR when the hostname changes.
+TEST(ProcSysKernelHostname, EpollNotifiesOnChange) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/sys/kernel/hostname", O_RDONLY));
+  const FileDescriptor epfd = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  ASSERT_NO_ERRNO(RegisterEpollFD(epfd.get(), fd.get(), 0, 0));
+
+  constexpr char kNew[] = "epoll-hostname-test";
+  ASSERT_THAT(sethostname(kNew, sizeof(kNew) - 1), SyscallSucceeds());
+
+  struct epoll_event ev;
+  EXPECT_THAT(RetryEINTR(epoll_wait)(epfd.get(), &ev, 1, 5000),
+              SyscallSucceedsWithValue(1));
+  EXPECT_TRUE(ev.events & EPOLLERR);
+}
+
+// Same epoll test as above, but ensure that it works across multiple
+// FDs and does not re-trigger.
+TEST(ProcSysKernelHostname, EpollLatchesAndWakesAllSubscribers) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  const FileDescriptor fd1 =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/sys/kernel/hostname", O_RDONLY));
+  const FileDescriptor fd2 =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/sys/kernel/hostname", O_RDONLY));
+  const FileDescriptor epfd1 = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  const FileDescriptor epfd2 = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  ASSERT_NO_ERRNO(RegisterEpollFD(epfd1.get(), fd1.get(), 0, 0));
+  ASSERT_NO_ERRNO(RegisterEpollFD(epfd2.get(), fd2.get(), 0, 0));
+
+  constexpr char kNew[] = "epoll-latch-test";
+  ASSERT_THAT(sethostname(kNew, sizeof(kNew) - 1), SyscallSucceeds());
+
+  // Both subscribers wake on the single write.
+  struct epoll_event ev;
+  EXPECT_THAT(RetryEINTR(epoll_wait)(epfd1.get(), &ev, 1, 5000),
+              SyscallSucceedsWithValue(1));
+  EXPECT_TRUE(ev.events & EPOLLERR);
+  EXPECT_THAT(RetryEINTR(epoll_wait)(epfd2.get(), &ev, 1, 5000),
+              SyscallSucceedsWithValue(1));
+  EXPECT_TRUE(ev.events & EPOLLERR);
+
+  // No further write: neither subscriber refires.
+  EXPECT_THAT(RetryEINTR(epoll_wait)(epfd1.get(), &ev, 1, 100),
+              SyscallSucceedsWithValue(0));
+  EXPECT_THAT(RetryEINTR(epoll_wait)(epfd2.get(), &ev, 1, 100),
+              SyscallSucceedsWithValue(0));
+}
+
+TEST(ProcSysKernelDomainname, Exists) {
+  EXPECT_THAT(open("/proc/sys/kernel/domainname", O_RDONLY), SyscallSucceeds());
+}
+
+TEST(ProcSysKernelDomainname, MatchesUname) {
+  struct utsname buf;
+  EXPECT_THAT(uname(&buf), SyscallSucceeds());
+  const std::string domainname = absl::StrCat(buf.domainname, "\n");
+  auto procfs_domainname =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/kernel/domainname"));
+  EXPECT_EQ(procfs_domainname, domainname);
+}
+
+TEST(ProcSysKernelDomainname, EpollNotifiesOnChange) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/sys/kernel/domainname", O_RDONLY));
+  const FileDescriptor epfd = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  ASSERT_NO_ERRNO(RegisterEpollFD(epfd.get(), fd.get(), 0, 0));
+
+  constexpr char kNew[] = "epoll-domainname-test";
+  ASSERT_THAT(setdomainname(kNew, sizeof(kNew) - 1), SyscallSucceeds());
+
+  struct epoll_event ev;
+  EXPECT_THAT(RetryEINTR(epoll_wait)(epfd.get(), &ev, 1, 5000),
+              SyscallSucceedsWithValue(1));
+  EXPECT_TRUE(ev.events & EPOLLERR);
+}
+
+TEST(ProcSysKernelRandomUuid, Exists) {
+  EXPECT_THAT(open("/proc/sys/kernel/random/uuid", O_RDONLY),
+              SyscallSucceeds());
+}
+
+TEST(ProcSysKernelRandomUuid, DifferentEveryTime) {
+  auto uuid1 =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/kernel/random/uuid"));
+  auto uuid2 =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/kernel/random/uuid"));
+  EXPECT_NE(uuid1, uuid2);
 }
 
 TEST(ProcSysVmMaxmapCount, HasNumericValue) {

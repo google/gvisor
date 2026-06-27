@@ -25,6 +25,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"gvisor.dev/gvisor/pkg/shim/v1/extension"
+	"gvisor.dev/gvisor/pkg/shim/v1/runsccmd"
 )
 
 type stateTransition int
@@ -58,6 +59,7 @@ type initState interface {
 	Stats(context.Context, string) (*runc.Stats, error)
 	Kill(context.Context, uint32, bool) error
 	SetExited(int)
+	CheckpointSandbox(context.Context, *runsccmd.CheckpointOpts) error
 }
 
 type createdState struct {
@@ -133,6 +135,10 @@ func (s *createdState) Stats(ctx context.Context, id string) (*runc.Stats, error
 	return s.p.stats(ctx, id)
 }
 
+func (s *createdState) CheckpointSandbox(ctx context.Context, opts *runsccmd.CheckpointOpts) error {
+	return fmt.Errorf("cannot checkpoint a created container (not running)")
+}
+
 type runningState struct {
 	p *Init
 }
@@ -183,6 +189,10 @@ func (s *runningState) Stats(ctx context.Context, id string) (*runc.Stats, error
 	return s.p.stats(ctx, id)
 }
 
+func (s *runningState) CheckpointSandbox(ctx context.Context, opts *runsccmd.CheckpointOpts) error {
+	return s.p.checkpointSandbox(ctx, opts)
+}
+
 type stoppedState struct {
 	process *Init
 }
@@ -230,6 +240,10 @@ func (s *stoppedState) State(context.Context) (string, error) {
 
 func (s *stoppedState) Stats(context.Context, string) (*runc.Stats, error) {
 	return nil, fmt.Errorf("cannot stat a stopped container")
+}
+
+func (s *stoppedState) CheckpointSandbox(ctx context.Context, opts *runsccmd.CheckpointOpts) error {
+	return fmt.Errorf("cannot checkpoint a stopped container")
 }
 
 func handleStoppedKill(signal uint32) error {

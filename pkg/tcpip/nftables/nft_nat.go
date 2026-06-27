@@ -78,6 +78,11 @@ func newNATOp(nt, family uint8, sregAddrMin, sregAddrMax, sregProtoMin, sregProt
 	return natOp, nil
 }
 
+func (n *natOp) deepCopy() operation {
+	opCopy := *n
+	return &opCopy
+}
+
 // nfNatRange is the equivalent of struct nf_nat_range2 in Linux.
 type nfNatRange struct {
 	minAddr  tcpip.Address
@@ -87,7 +92,7 @@ type nfNatRange struct {
 	flags    uint16
 }
 
-// setupAddr returns the min and max addresses from the register set.
+// getAddrRange returns the min and max addresses from the register set.
 func (n *natOp) getAddrRange(regs *registerSet) (minAddr, maxAddr tcpip.Address) {
 	regBuffer := regs.data
 	sz := header.IPv4AddressSize
@@ -154,6 +159,22 @@ func (n *natOp) setupNetmap(pkt *stack.PacketBuffer, minAddr, maxAddr *tcpip.Add
 // evaluate performs NAT setup on the connection.
 // Called when the packet matches the NAT op configured.
 func (n *natOp) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
+	// Skip the rule if the packet's family does not match the configured rule
+	// family. With an `inet` table the same base chain is dispatched for both
+	// IPv4 and IPv6 packets, so this mismatch is reachable in practice and
+	// must not panic inside setupNetmap. Matches the behavior of nft_nat_eval
+	// in linux/net/netfilter/nft_nat.c.
+	switch n.family {
+	case linux.NFPROTO_IPV4:
+		if pkt.NetworkProtocolNumber != header.IPv4ProtocolNumber {
+			return
+		}
+	case linux.NFPROTO_IPV6:
+		if pkt.NetworkProtocolNumber != header.IPv6ProtocolNumber {
+			return
+		}
+	}
+
 	// Just fill the data for the NAT operation.
 	changeAddress := false
 	changePort := false
@@ -182,12 +203,16 @@ func (n *natOp) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule)
 		regs.verdict.Code = VC(linux.NF_DROP)
 		return
 	}
+	// NAT successful, set verdict to ACCEPT.
+	regs.verdict.Code = VC(linux.NF_ACCEPT)
 }
 
+// GetExprName returns the name of the expression.
 func (n *natOp) GetExprName() string {
 	return OpTypeNAT.String()
 }
 
+// Dump dumps the operation info.
 func (n *natOp) Dump() ([]byte, *syserr.AnnotatedError) {
 	log.Warningf("Nftables: natOp.Dump() is not implemented")
 	return nil, nil

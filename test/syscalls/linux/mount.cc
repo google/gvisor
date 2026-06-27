@@ -481,6 +481,70 @@ TEST(MountTest, BindMountReadonly) {
   EXPECT_EQ(s.st_size, strlen(msg));
 }
 
+// Special files (such as FIFO) should be openable for writing even on a
+// read-only mount. Regular files should not.
+TEST(MountTest, FifoWritableOnReadonlyMount) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mnt =
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir.path(), kTmpfs, 0, "", 0));
+
+  // Populate the still-writable mount with a FIFO and a regular file.
+  std::string const fifo_path = JoinPath(dir.path(), "fifo");
+  std::string const reg_path = JoinPath(dir.path(), "reg");
+  ASSERT_THAT(mkfifo(fifo_path.c_str(), 0666), SyscallSucceeds());
+  FileDescriptor reg_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(reg_path, O_WRONLY | O_CREAT, 0644));
+  reg_fd.reset();
+
+  // Remount read-only.
+  ASSERT_THAT(
+      mount("", dir.path().c_str(), nullptr, MS_REMOUNT | MS_RDONLY, nullptr),
+      SyscallSucceeds());
+  ASSERT_THAT(access(dir.path().c_str(), W_OK), SyscallFailsWithErrno(EROFS));
+
+  // The FIFO opens writably despite the RO mount.
+  FileDescriptor fifo_fd = ASSERT_NO_ERRNO_AND_VALUE(Open(fifo_path, O_RDWR));
+  EXPECT_THAT(write(fifo_fd.get(), "x", 1), SyscallSucceedsWithValue(1));
+
+  // The regular file still fails a writable open with EROFS, but a read-only
+  // open succeeds.
+  EXPECT_THAT(open(reg_path.c_str(), O_WRONLY), SyscallFailsWithErrno(EROFS));
+  ASSERT_NO_ERRNO_AND_VALUE(Open(reg_path, O_RDONLY));
+}
+
+// Same test as above, but for a character device.
+TEST(MountTest, DeviceFileWritableOnReadonlyMount) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mnt =
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir.path(), kTmpfs, 0, "", 0));
+
+  // Create a /dev/null-style character device while the mount is writable.
+  std::string const dev_path = JoinPath(dir.path(), "null");
+  int ret = mknod(dev_path.c_str(), S_IFCHR | 0666, makedev(1, 3));
+  const bool was_eperm = Value(ret, SyscallFailsWithErrno(EPERM));
+
+  // In our test infrastructure, this may not always be possible to test on
+  // native since CAP_MKNOD is required in the *initial* user ns, and native
+  // tests are sometimes run in a user ns.
+  SKIP_IF(was_eperm);
+
+  // (But otherwise, mknod() should succeed.)
+  ASSERT_THAT(ret, SyscallSucceeds());
+
+  // Remount read-only.
+  ASSERT_THAT(
+      mount("", dir.path().c_str(), nullptr, MS_REMOUNT | MS_RDONLY, nullptr),
+      SyscallSucceeds());
+
+  // The device node opens writably and accepts writes despite the RO mount.
+  FileDescriptor dev_fd = ASSERT_NO_ERRNO_AND_VALUE(Open(dev_path, O_WRONLY));
+  EXPECT_THAT(write(dev_fd.get(), "x", 1), SyscallSucceedsWithValue(1));
+}
+
 // Test that bind mounting a directory onto a regular file fails with ENOTDIR.
 TEST(MountTest, BindMountDirectoryOntoFileFails) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
@@ -608,6 +672,74 @@ TEST(MountTest, RenameRemoveMountPoint) {
               SyscallFailsWithErrno(EBUSY));
 
   ASSERT_THAT(rmdir(dir.path().c_str()), SyscallFailsWithErrno(EBUSY));
+}
+
+TEST(MountTest, MountMoveSuccess) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const privateParent = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto privateMount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("source", privateParent.path(), kTmpfs, 0, "", 0));
+  EXPECT_THAT(mount("", privateParent.path().c_str(), "", MS_PRIVATE, ""),
+              SyscallSucceeds());
+
+  auto const dir1 =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(privateParent.path()));
+  auto const dir2 =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(privateParent.path()));
+  auto mount1 =
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("source", dir1.path(), kTmpfs, 0, "", 0));
+
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(JoinPath(dir1.path(), "foo").c_str(), O_CREAT | O_RDWR, 0777));
+  EXPECT_THAT(close(fd.release()), SyscallSucceeds());
+
+  auto const mount2 = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(dir1.path(), dir2.path(), "", MS_MOVE, "", 0));
+  mount1.Release();
+
+  EXPECT_THAT(Exists(JoinPath(dir1.path(), "foo")),
+              IsPosixErrorOkAndHolds(false));
+  EXPECT_THAT(Exists(JoinPath(dir2.path(), "foo")),
+              IsPosixErrorOkAndHolds(true));
+}
+
+// TODO(b/305893463): When support for MS_UNBINDABLE is added, moving a mount
+// tree with unbindable children to an MS_SHARED destination should EINVAL.
+
+TEST(MountTest, MountMoveSharedParent) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const parentDir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const dir2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  auto parentMount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("source", parentDir1.path(), kTmpfs, 0, "", 0));
+  EXPECT_THAT(mount("", parentDir1.path().c_str(), "", MS_SHARED, ""),
+              SyscallSucceeds());
+
+  auto const subDir =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(parentDir1.path()));
+  auto subMount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("source", subDir.path(), kTmpfs, 0, "", 0));
+
+  EXPECT_THAT(
+      mount(subDir.path().c_str(), dir2.path().c_str(), "", MS_MOVE, nullptr),
+      SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(MountTest, MountMoveSourceNotMounted) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const dir2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(JoinPath(dir1.path(), "foo").c_str(), O_CREAT | O_RDWR, 0777));
+  EXPECT_THAT(close(fd.release()), SyscallSucceeds());
+
+  EXPECT_THAT(mount(dir1.path().c_str(), dir2.path().c_str(), "", MS_MOVE, ""),
+              SyscallFailsWithErrno(EINVAL));
 }
 
 TEST(MountTest, MountInfo) {

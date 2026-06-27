@@ -82,6 +82,11 @@ func newPayloadLoad(base payloadBase, offset uint8, blen int, dreg uint8) (*payl
 	return &payloadLoad{base: base, offset: offset, blen: blen, dregIdx: dregIdx}, nil
 }
 
+func (op *payloadLoad) deepCopy() operation {
+	opCopy := *op
+	return &opCopy
+}
+
 // evaluate for PayloadLoad loads data from the packet payload into the
 // destination register.
 func (op payloadLoad) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {

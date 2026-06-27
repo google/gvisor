@@ -94,6 +94,11 @@ func newPayloadSet(base payloadBase, offset, blen, sreg, csumType, csumOffset, c
 		csumType: csumType, csumOffset: csumOffset, csumFlags: csumFlags}, nil
 }
 
+func (op *payloadSet) deepCopy() operation {
+	opCopy := *op
+	return &opCopy
+}
+
 // evaluate for PayloadSet sets data in the packet payload to the value in the
 // source register.
 func (op payloadSet) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {

@@ -12,10 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !false
-// +build !false
+package openclaw
 
-package main
+import (
+	"context"
+	"testing"
 
-func registerSubcommandsExtra() {
+	"gvisor.dev/gvisor/test/kubernetes/k8sctx"
+	"gvisor.dev/gvisor/test/kubernetes/k8sctx/kubectlctx"
+	"gvisor.dev/gvisor/test/kubernetes/testcluster"
+)
+
+func TestOpenClaw(t *testing.T) {
+	ctx := context.Background()
+	k8sCtx, err := kubectlctx.New(ctx)
+	if err != nil {
+		t.Fatalf("Failed to get kubernetes context: %v", err)
+	}
+	k8sctx.ForEachCluster(ctx, t, k8sCtx, func(cluster *testcluster.TestCluster) {
+		t.Run("openclaw", func(t *testing.T) {
+			t.Parallel()
+			RunOpenClaw(ctx, t, k8sCtx, cluster)
+		})
+	})
 }

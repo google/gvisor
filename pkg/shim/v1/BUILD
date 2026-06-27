@@ -42,10 +42,17 @@ go_library(
 )
 
 go_test(
-    name = "v1_test",
-    srcs = ["manager_test.go"],
+    name = "shim_test",
+    srcs = [
+        "manager_test.go",
+        "service_test.go",
+    ],
     library = ":v1",
     deps = [
+        "@com_github_containerd_containerd_api//runtime/task/v2:go_default_library",
+        "@com_github_containerd_containerd_v2//core/events:go_default_library",
+        "@com_github_containerd_containerd_v2//pkg/shim:go_default_library",
+        "@com_github_containerd_containerd_v2//pkg/shutdown:go_default_library",
         "@com_github_containerd_typeurl_v2//:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go/features:go_default_library",
     ],

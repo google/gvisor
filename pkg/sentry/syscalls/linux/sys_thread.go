@@ -517,14 +517,8 @@ func SchedSetaffinity(t *kernel.Task, sysno uintptr, args arch.SyscallArguments)
 		if task == nil {
 			return 0, nil, linuxerr.ESRCH
 		}
-		// Linux requires the caller's EUID to match the target's
-		// real or effective UID, or CAP_SYS_NICE in the target's user
-		// namespace. See kernel/sched/syscalls.c:sched_setaffinity().
-		creds := t.Credentials()
-		tcreds := task.Credentials()
-		if creds.EffectiveKUID != tcreds.EffectiveKUID &&
-			creds.EffectiveKUID != tcreds.RealKUID &&
-			!creds.HasCapabilityIn(linux.CAP_SYS_NICE, tcreds.UserNamespace) {
+		// See kernel/sched/syscalls.c:sched_setaffinity().
+		if !canSetTaskNice(t, task) {
 			return 0, nil, linuxerr.EPERM
 		}
 	}
@@ -574,6 +568,283 @@ func SchedGetaffinity(t *kernel.Task, sysno uintptr, args arch.SyscallArguments)
 	// interface. The raw sched_getaffinity syscall returns the number of
 	// bytes used to represent a cpu mask.
 	return uintptr(mask.Size()), nil, err
+}
+
+func canSetTaskNice(tSrc *kernel.Task, tDst *kernel.Task) bool {
+	// Linux requires the caller's EUID to match the target's
+	// real or effective UID, or CAP_SYS_NICE in the target's
+	// user namespace.
+	srcCreds := tSrc.Credentials()
+	dstCreds := tDst.Credentials()
+	return srcCreds.EffectiveKUID == dstCreds.RealKUID ||
+		srcCreds.EffectiveKUID == dstCreds.EffectiveKUID ||
+		srcCreds.HasCapabilityIn(linux.CAP_SYS_NICE, dstCreds.UserNamespace)
+}
+
+const supportedSchedFlags = 0
+
+// SchedSetattr implements linux syscall sched_setattr(2).
+func SchedSetattr(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	tid := kernel.ThreadID(args[0].Int())
+	schedAttrAddr := args[1].Pointer()
+	flags := args[2].Uint()
+
+	if flags != 0 || tid < 0 || schedAttrAddr == 0 {
+		return 0, nil, linuxerr.EINVAL
+	}
+
+	schedAttr, err := copyInSchedAttr(t, schedAttrAddr)
+	if err == linuxerr.E2BIG {
+		// On E2BIG, indicate the "correct" struct size to userspace
+		kSize := uint32(linux.SCHED_ATTR_SIZE_LATEST)
+		if _, err := primitive.CopyUint32Out(t, schedAttrAddr, kSize); err != nil {
+			return 0, nil, err
+		}
+
+		return 0, nil, linuxerr.E2BIG
+	}
+	if err != nil {
+		return 0, nil, err
+	}
+
+	var task *kernel.Task
+	if tid == 0 {
+		task = t
+	} else {
+		task = t.PIDNamespace().TaskWithID(tid)
+		if task == nil {
+			return 0, nil, linuxerr.ESRCH
+		}
+
+		// See kernel/sched/syscalls.c:user_check_sched_setscheduler().
+		if !canSetTaskNice(t, task) {
+			return 0, nil, linuxerr.EPERM
+		}
+
+		// Note that we do not enforce CAP_SYS_NICE for increasing one's *own* nice priority.
+		// This matches Setpriority(), and doesn't matter since niceness has no effect.
+	}
+
+	if schedAttr.SchedFlags&^supportedSchedFlags != 0 {
+		return 0, nil, linuxerr.EINVAL
+	}
+
+	policy := uint(schedAttr.SchedPolicy)
+	if !isSchedulerSupported(policy) {
+		return 0, nil, linuxerr.EINVAL
+	}
+
+	if schedAttr.SchedPriority != 0 {
+		// SchedPriority only used for rt scheduling policies, which we don't support.
+		// If we ever add it, SchedPriority should be checked against RLIMIT_RTPRIO.
+		return 0, nil, linuxerr.EINVAL
+	}
+
+	if schedAttr.SchedRuntime != 0 || schedAttr.SchedDeadline != 0 || schedAttr.SchedPeriod != 0 {
+		// SCHED_DEADLINE fields (we don't support).
+		return 0, nil, linuxerr.EINVAL
+	}
+
+	if schedAttr.SchedUtilMin != 0 || schedAttr.SchedUtilMax != 0 {
+		// Utilization hints are not supported.
+		// In the future, we may support them for set/query.
+		return 0, nil, linuxerr.EINVAL
+	}
+
+	task.SetScheduler(policy)
+
+	// Niceness is only set for SCHED_NORMAL and SCHED_BATCH
+	if policy == linux.SCHED_NORMAL || policy == linux.SCHED_BATCH {
+		nice := int(schedAttr.SchedNice)
+		task.SetNiceness(nice)
+	}
+
+	return 0, nil, nil
+}
+
+func copyInSchedAttr(t *kernel.Task, addr hostarch.Addr) (linux.SchedAttr, error) {
+	var schedAttr linux.SchedAttr
+
+	// Read the struct's size
+	var size uint32
+	if _, err := primitive.CopyUint32In(t, addr, &size); err != nil {
+		return linux.SchedAttr{}, err
+	}
+
+	if size == 0 {
+		size = linux.SCHED_ATTR_SIZE_VER0
+	}
+	if size < linux.SCHED_ATTR_SIZE_VER0 || size > hostarch.PageSize {
+		return linux.SchedAttr{}, linuxerr.E2BIG
+	}
+
+	if _, err := schedAttr.CopyInN(t, addr, min(int(size), linux.SCHED_ATTR_SIZE_LATEST)); err != nil {
+		return linux.SchedAttr{}, err
+	}
+
+	if size > linux.SCHED_ATTR_SIZE_LATEST {
+		// Userspace has a newer struct version. Check that the fields we don't
+		// know about are zeroed out.
+		buf := make([]byte, size-linux.SCHED_ATTR_SIZE_LATEST)
+		if _, err := t.CopyInBytes(addr+linux.SCHED_ATTR_SIZE_LATEST, buf); err != nil {
+			return linux.SchedAttr{}, err
+		}
+
+		for _, b := range buf {
+			if b != 0 {
+				return linux.SchedAttr{}, linuxerr.E2BIG
+			}
+		}
+	}
+
+	if schedAttr.SchedFlags&(linux.SCHED_FLAG_UTIL_CLAMP_MIN|linux.SCHED_FLAG_UTIL_CLAMP_MAX) != 0 && size < linux.SCHED_ATTR_SIZE_VER1 {
+		// Cannot specify schedUtilMin/schedUtilMax fields if userspace struct has
+		// no space for those fields
+		return linux.SchedAttr{}, linuxerr.EINVAL
+	}
+
+	return schedAttr, nil
+}
+
+// SchedGetattr implements linux syscall sched_getattr(2).
+func SchedGetattr(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	tid := kernel.ThreadID(args[0].Int())
+	schedAttrAddr := args[1].Pointer()
+	schedAttrSize := args[2].Uint()
+	flags := args[3].Uint()
+
+	if flags != 0 || tid < 0 || schedAttrAddr == 0 {
+		return 0, nil, linuxerr.EINVAL
+	}
+	if schedAttrSize < linux.SCHED_ATTR_SIZE_VER0 || schedAttrSize > hostarch.PageSize {
+		return 0, nil, linuxerr.EINVAL
+	}
+
+	// Lookup the target process
+	var task *kernel.Task
+	if tid == 0 {
+		task = t
+	} else {
+		task = t.PIDNamespace().TaskWithID(tid)
+		if task == nil {
+			return 0, nil, linuxerr.ESRCH
+		}
+	}
+
+	policy := uint32(task.GetScheduler())
+
+	ret := linux.SchedAttr{
+		SchedPolicy: policy,
+		SchedNice:   int32(task.Niceness()),
+	}
+
+	if err := copyOutSchedAttr(t, schedAttrAddr, schedAttrSize, &ret); err != nil {
+		return 0, nil, err
+	}
+
+	return 0, nil, nil
+}
+
+func copyOutSchedAttr(t *kernel.Task, addr hostarch.Addr, size uint32, schedAttr *linux.SchedAttr) error {
+	size = min(size, linux.SCHED_ATTR_SIZE_LATEST)
+	schedAttr.Size = size
+
+	if _, err := schedAttr.CopyOutN(t, addr, int(size)); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// IOPrioset implements linux syscall ioprio_set(2).
+func IOPrioset(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	which := args[0].Int()
+	who := args[1].Int()
+	ioprio := args[2].Int()
+
+	// Sanity checks on ioprio
+	ioclass, _ := linux.UnwrapIOPrio(int(ioprio))
+	switch ioclass {
+	case linux.IOPRIO_CLASS_RT:
+		// Real-time class requires CAP_SYS_ADMIN or CAP_SYS_NICE
+		if !t.HasRootCapability(linux.CAP_SYS_ADMIN) && !t.HasRootCapability(linux.CAP_SYS_NICE) {
+			return 0, nil, linuxerr.EPERM
+		}
+	case linux.IOPRIO_CLASS_BE:
+	case linux.IOPRIO_CLASS_IDLE:
+	case linux.IOPRIO_CLASS_NONE:
+		if ioprio != 0 {
+			return 0, nil, linuxerr.EINVAL
+		}
+
+	default:
+		// Unknown class
+		return 0, nil, linuxerr.EINVAL
+	}
+
+	switch which {
+	case linux.IOPRIO_WHO_PROCESS:
+		var task *kernel.Task
+		if who == 0 {
+			task = t
+		} else {
+			task = t.PIDNamespace().TaskWithID(kernel.ThreadID(who))
+			if task == nil {
+				return 0, nil, linuxerr.ESRCH
+			}
+
+			if !canSetTaskNice(t, task) {
+				return 0, nil, linuxerr.EPERM
+			}
+		}
+
+		task.SetIOPrio(int(ioprio))
+
+	case linux.IOPRIO_WHO_PGRP:
+		fallthrough
+	case linux.IOPRIO_WHO_USER:
+		// IOPRIO_WHO_PGRP and IOPRIO_WHO_USER have no further implementation yet.
+		return 0, nil, nil
+	default:
+		return 0, nil, linuxerr.EINVAL
+	}
+
+	return 0, nil, nil
+}
+
+// IOPrioget implements linux syscall ioprio_get(2).
+func IOPrioget(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	which := args[0].Int()
+	who := args[1].Int()
+
+	switch which {
+	case linux.IOPRIO_WHO_PROCESS:
+		var task *kernel.Task
+		if who == 0 {
+			task = t
+		} else {
+			task = t.PIDNamespace().TaskWithID(kernel.ThreadID(who))
+			if task == nil {
+				return 0, nil, linuxerr.ESRCH
+			}
+
+			if !canSetTaskNice(t, task) {
+				return 0, nil, linuxerr.EPERM
+			}
+		}
+
+		ioprio := task.GetIOPrio()
+
+		return uintptr(ioprio), nil, nil
+
+	case linux.IOPRIO_WHO_PGRP:
+		fallthrough
+	case linux.IOPRIO_WHO_USER:
+		// IOPRIO_WHO_PGRP and IOPRIO_WHO_USER have no further implementation yet.
+		return 0, nil, nil
+	default:
+		return 0, nil, linuxerr.EINVAL
+	}
 }
 
 // Getcpu implements linux syscall getcpu(2).
@@ -754,15 +1025,6 @@ func Setpriority(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uin
 	who := kernel.ThreadID(args[1].Int())
 	niceval := int(args[2].Int())
 
-	// In the kernel's implementation, values outside the range
-	// of [-20, 19] are truncated to these minimum and maximum
-	// values.
-	if niceval < -20 /* min niceval */ {
-		niceval = -20
-	} else if niceval > 19 /* max niceval */ {
-		niceval = 19
-	}
-
 	switch which {
 	case linux.PRIO_PROCESS:
 		// Look for who, return ESRCH if not found.
@@ -774,16 +1036,13 @@ func Setpriority(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uin
 			if task == nil {
 				return 0, nil, linuxerr.ESRCH
 			}
-			// Linux requires the caller's EUID to match the target's
-			// real or effective UID, or CAP_SYS_NICE in the target's
-			// user namespace. See kernel/sys.c:set_one_prio_perm().
-			creds := t.Credentials()
-			tcreds := task.Credentials()
-			if creds.EffectiveKUID != tcreds.RealKUID &&
-				creds.EffectiveKUID != tcreds.EffectiveKUID &&
-				!creds.HasCapabilityIn(linux.CAP_SYS_NICE, tcreds.UserNamespace) {
+			// See kernel/sys.c:set_one_prio_perm().
+			if !canSetTaskNice(t, task) {
 				return 0, nil, linuxerr.EPERM
 			}
+
+			// Note that we do not enforce CAP_SYS_NICE for increasing one's *own* nice priority.
+			// This doesn't matter since niceness has no effect.
 		}
 
 		task.SetNiceness(niceval)

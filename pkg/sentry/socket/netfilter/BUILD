@@ -13,6 +13,7 @@ go_library(
         "extensions.go",
         "ipv4.go",
         "ipv6.go",
+        "mark_matcher.go",
         "multiport_matcher.go",
         "multiport_matcher_v1.go",
         "netfilter.go",
@@ -52,6 +53,18 @@ go_test(
     deps = [
         ":netfilter",
         "//pkg/sentry/kernel/auth",
+        "//pkg/tcpip/header",
+        "//pkg/tcpip/stack",
+    ],
+)
+
+go_test(
+    name = "netfilter_test",
+    srcs = ["mark_matcher_test.go"],
+    library = ":netfilter",
+    deps = [
+        "//pkg/abi/linux",
+        "//pkg/marshal",
         "//pkg/tcpip/stack",
     ],
 )

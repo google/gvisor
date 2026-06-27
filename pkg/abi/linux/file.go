@@ -100,6 +100,64 @@ const (
 	UMOUNT_NOFOLLOW = 0x8
 )
 
+// Constants for fsopen(2).
+const (
+	FSOPEN_CLOEXEC = 0x1
+)
+
+// Constants for fsconfig(2).
+const (
+	FSCONFIG_SET_FLAG        = 0x0
+	FSCONFIG_SET_STRING      = 0x1
+	FSCONFIG_SET_BINARY      = 0x2
+	FSCONFIG_SET_PATH        = 0x3
+	FSCONFIG_SET_PATH_EMPTY  = 0x4
+	FSCONFIG_SET_FD          = 0x5
+	FSCONFIG_CMD_CREATE      = 0x6
+	FSCONFIG_CMD_RECONFIGURE = 0x7
+	FSCONFIG_CMD_CREATE_EXCL = 0x8
+)
+
+// Constants for fsmount(2).
+const (
+	FSMOUNT_CLOEXEC = 0x1
+)
+
+// Constants for move_mount(2).
+const (
+	MOVE_MOUNT_F_SYMLINKS   = 0x00000001
+	MOVE_MOUNT_F_AUTOMOUNTS = 0x00000002
+	MOVE_MOUNT_F_EMPTY_PATH = 0x00000004
+	MOVE_MOUNT_T_SYMLINKS   = 0x00000010
+	MOVE_MOUNT_T_AUTOMOUNTS = 0x00000020
+	MOVE_MOUNT_T_EMPTY_PATH = 0x00000040
+	MOVE_MOUNT_SET_GROUP    = 0x00000100
+	MOVE_MOUNT_BENEATH      = 0x00000200
+)
+
+// Constants for mount_setattr(2).
+const (
+	MOUNT_ATTR_RDONLY      = 0x00000001
+	MOUNT_ATTR_NOSUID      = 0x00000002
+	MOUNT_ATTR_NODEV       = 0x00000004
+	MOUNT_ATTR_NOEXEC      = 0x00000008
+	MOUNT_ATTR__ATIME      = 0x00000070
+	MOUNT_ATTR_RELATIME    = 0x00000000
+	MOUNT_ATTR_NOATIME     = 0x00000010
+	MOUNT_ATTR_STRICTATIME = 0x00000020
+	MOUNT_ATTR_NODIRATIME  = 0x00000080
+	MOUNT_ATTR_IDMAP       = 0x00100000
+	MOUNT_ATTR_NOSYMFOLLOW = 0x00200000
+	AT_RECURSIVE           = 0x8000
+)
+
+// Constants for open_tree(2).
+const (
+	OPEN_TREE_CLONE     = (1 << 0)
+	OPEN_TREE_NAMESPACE = (1 << 1)
+	OPEN_TREE_CLOEXEC   = O_CLOEXEC
+)
+
 // Constants for unlinkat(2).
 const (
 	AT_REMOVEDIR = 0x200
@@ -356,6 +414,19 @@ func (m FileMode) ExtraBits() FileMode {
 // IsDir returns true if file type represents a directory.
 func (m FileMode) IsDir() bool {
 	return m.FileType() == S_IFDIR
+}
+
+// IsSpecialFile returns true if m is the mode of a "special file": a character
+// or block device, FIFO, or socket.
+//
+// Analogous to include/linux/fs.h:special_file().
+func (m FileMode) IsSpecialFile() bool {
+	switch m.FileType() {
+	case ModeCharacterDevice, ModeBlockDevice, ModeNamedPipe, ModeSocket:
+		return true
+	default:
+		return false
+	}
 }
 
 // String returns a string representation of m.

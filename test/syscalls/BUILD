@@ -425,6 +425,12 @@ syscall_test(
 )
 
 syscall_test(
+    add_overlay = True,
+    save = False,
+    test = "//test/syscalls/linux:mount_fd_test",
+)
+
+syscall_test(
     test = "//test/syscalls/linux:mq_test",
 )
 
@@ -1318,6 +1324,7 @@ syscall_test(
 )
 
 syscall_test(
+    add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:xattr_test",
 )

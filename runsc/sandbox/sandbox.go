@@ -1030,7 +1030,10 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		donations.DonateAndClose("fs-restore-fds", files...)
 	}
 
-	if err := s.createSandboxProcessExtra(conf, args, cmd, &donations); err != nil {
+	if err := s.maybeConfigureSandboxProcessForWorkloadTriggerSave(conf, args, cmd, &donations); err != nil {
+		return err
+	}
+	if err := s.maybeConfigureSandboxProcessForWorkloadTriggerFSSave(conf, args, cmd, &donations); err != nil {
 		return err
 	}
 
@@ -1741,6 +1744,9 @@ type FSSaveOpts struct {
 	// is successful. This is equivalent to !CheckpointOpts.Resume, and is
 	// provided for parity with that feature.
 	ExitAfterSaving bool
+
+	// Path is the path inside the container to save.
+	Path string
 }
 
 // FSSave sends the filesystem checkpointing call to the sandbox.
@@ -1749,6 +1755,7 @@ func (s *Sandbox) FSSave(conf *config.Config, cid string, imagePath string, opts
 
 	args := boot.FSSaveArgs{
 		ExitAfterSaving: opts.ExitAfterSaving,
+		Path:            opts.Path,
 	}
 	defer func() {
 		for _, f := range args.FilePayload.Files {
@@ -1938,6 +1945,66 @@ func (s *Sandbox) maybeStartCheckpointGoferAndGetSocket(conf *config.Config, cg 
 		return nil, fmt.Errorf("failed to start checkpoint gofer: %w", err)
 	}
 	return clientSockFile, nil
+}
+
+func (s *Sandbox) maybeConfigureSandboxProcessForWorkloadTriggerSave(conf *config.Config, args *Args, cmd *exec.Cmd, donations *donation.Agency) error {
+	path, err := boot.GetAnnotationCheckpointPath(conf, args.Spec)
+	if err != nil {
+		return err
+	}
+	if len(path) == 0 {
+		// Annotation is empty or non-existent, nothing else to do.
+		return nil
+	}
+
+	comp, err := boot.GetAnnotationCheckpointCompression(args.Spec)
+	if err != nil {
+		return err
+	}
+	direct := boot.GetAnnotationCheckpointDirect(args.Spec)
+
+	clientSockFile, err := s.maybeStartCheckpointGoferAndGetSocket(conf, s.CgroupJSON.Cgroup, path, "-allow-checkpoint-writes")
+	if err != nil {
+		return err
+	}
+	if clientSockFile != nil {
+		donations.DonateAndClose("save-fds", clientSockFile)
+		cmd.Args = append(cmd.Args, "-save-checkpoint-gofer")
+		log.Infof("Enabling workload-trigger saving to GCS via checkpoint gofer")
+	} else {
+		files, err := createSaveFiles(path, direct, comp)
+		if err != nil {
+			return fmt.Errorf("failed to create auto save files: %w", err)
+		}
+		donations.DonateAndClose("save-fds", files...)
+	}
+
+	return nil
+}
+
+func (s *Sandbox) maybeConfigureSandboxProcessForWorkloadTriggerFSSave(conf *config.Config, args *Args, cmd *exec.Cmd, donations *donation.Agency) error {
+	path := boot.GetAnnotationFSCheckpointPath(args.Spec)
+	if len(path) == 0 {
+		return nil
+	}
+
+	clientSockFile, err := s.maybeStartCheckpointGoferAndGetSocket(conf, s.CgroupJSON.Cgroup, path, "-allow-fscheckpoint-writes")
+	if err != nil {
+		return err
+	}
+	if clientSockFile != nil {
+		donations.DonateAndClose("fs-save-fds", clientSockFile)
+		cmd.Args = append(cmd.Args, "-fs-save-checkpoint-gofer")
+		log.Infof("Enabling workload-trigger filesystem checkpoint saving to GCS via checkpoint gofer")
+	} else {
+		files, err := openFSCheckpointLocalFiles(path, os.O_CREATE|os.O_EXCL|os.O_RDWR, boot.GetAnnotationFSCheckpointDirect(args.Spec))
+		if err != nil {
+			return fmt.Errorf("failed to create auto fs save files: %w", err)
+		}
+		donations.DonateAndClose("fs-save-fds", files...)
+	}
+
+	return nil
 }
 
 // Pause sends the pause call for a container in the sandbox.

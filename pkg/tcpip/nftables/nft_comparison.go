@@ -18,6 +18,8 @@ import (
 	"bytes"
 	"fmt"
 
+	"slices"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
@@ -84,7 +86,13 @@ func newComparison(sreg uint8, op int, data []byte) (*comparison, *syserr.Annota
 	return &comparison{sregIdx: sregIdx, cop: cop, data: data}, nil
 }
 
-// evaluate for Comparison compares the data in the source register to the given
+func (op *comparison) deepCopy() operation {
+	opCopy := *op
+	opCopy.data = slices.Clone(op.data)
+	return &opCopy
+}
+
+// evaluate for comparison compares the data in the source register to the given
 // data and breaks from the rule if the comparison is false.
 func (op comparison) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
 	// Gets the data to compare to.

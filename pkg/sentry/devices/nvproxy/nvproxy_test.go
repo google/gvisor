@@ -38,7 +38,10 @@ func TestInit(t *testing.T) {
 func TestAllSupportedHashesPresent(t *testing.T) {
 	Init()
 	for version, abi := range abis {
-		if abi.checksums.checksumX86_64 == "" || abi.checksums.checksumARM64 == "" {
+		if !abi.supported {
+			continue
+		}
+		if abi.checksums.X86_64 == "" || abi.checksums.ARM64 == "" {
 			t.Errorf("unexpected empty value for driver %q", version.String())
 		}
 	}
@@ -48,9 +51,9 @@ func TestAllSupportedHashesPresent(t *testing.T) {
 // by GetStructNames.
 func TestABIStructNamesInSync(t *testing.T) {
 	Init()
-	for version, abiCons := range abis {
+	for version, abiEntry := range abis {
 		t.Run(version.String(), func(t *testing.T) {
-			abi := abiCons.cons()
+			abi := abiEntry.cons()
 			info := abi.getInfo()
 
 			for ioctl := range abi.frontendIoctl {
@@ -276,8 +279,8 @@ func TestFilterCapabilities(t *testing.T) {
 	// Build all the ABIs.
 	Init()
 	allAbis := make(map[string]*driverABI, len(abis))
-	for version, abiCons := range abis {
-		allAbis[version.String()] = abiCons.cons()
+	for version, abiEntry := range abis {
+		allAbis[version.String()] = abiEntry.cons()
 	}
 
 	// Check that the filters are correct for each capability set.

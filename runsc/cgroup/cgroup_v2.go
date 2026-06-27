@@ -142,6 +142,13 @@ func (c *cgroupV2) Install(res *specs.LinuxResources) error {
 		if err := c.Update(res); err != nil {
 			return err
 		}
+	} else {
+		// Kubernetes can pre-create the pod cgroup and pass the swap limit
+		// through the OCI spec. Preserve the existing resource ownership
+		// contract for pre-created cgroups, but still honor memory.swap.max.
+		if err := setMemorySwap(res, c.MakePath("")); err != nil {
+			return err
+		}
 	}
 
 	clean.Release()
@@ -594,29 +601,8 @@ func (*memory2) set(spec *specs.LinuxResources, path string) error {
 		return nil
 	}
 
-	if spec.Memory.Swap != nil {
-		// in cgroup v2, we set memory and swap separately, but the spec specifies
-		// Swap field as memory+swap, so we need memory limit here to be set in
-		// order to get the correct swap value.
-		if spec.Memory.Limit == nil {
-			return errors.New("cgroup: Memory.Swap is set without Memory.Limit")
-		}
-
-		swap, err := convertMemorySwapToCgroupV2Value(*spec.Memory.Swap, *spec.Memory.Limit)
-		if err != nil {
-			return err
-		}
-		swapStr := numToStr(swap)
-		// memory and memorySwap set to the same value -- disable swap
-		if swapStr == "" && swap == 0 && *spec.Memory.Swap > 0 {
-			swapStr = "0"
-		}
-		// never write empty string to `memory.swap.max`, it means set to 0.
-		if swapStr != "" {
-			if err := setValue(path, "memory.swap.max", swapStr); err != nil {
-				return err
-			}
-		}
+	if err := setMemorySwap(spec, path); err != nil {
+		return err
 	}
 
 	if spec.Memory.Limit != nil {
@@ -635,6 +621,35 @@ func (*memory2) set(spec *specs.LinuxResources, path string) error {
 		}
 	}
 
+	return nil
+}
+
+func setMemorySwap(spec *specs.LinuxResources, path string) error {
+	if spec == nil || spec.Memory == nil || spec.Memory.Swap == nil {
+		return nil
+	}
+
+	// In cgroup v2, memory and swap are set separately, but the OCI spec's Swap
+	// field is memory+swap, so the memory limit is needed to derive swap.max.
+	if spec.Memory.Limit == nil {
+		return errors.New("cgroup: Memory.Swap is set without Memory.Limit")
+	}
+
+	swap, err := convertMemorySwapToCgroupV2Value(*spec.Memory.Swap, *spec.Memory.Limit)
+	if err != nil {
+		return err
+	}
+	swapStr := numToStr(swap)
+	// memory and memorySwap set to the same value -- disable swap
+	if swapStr == "" && swap == 0 && *spec.Memory.Swap > 0 {
+		swapStr = "0"
+	}
+	// never write empty string to `memory.swap.max`, it means set to 0.
+	if swapStr != "" {
+		if err := setValue(path, "memory.swap.max", swapStr); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

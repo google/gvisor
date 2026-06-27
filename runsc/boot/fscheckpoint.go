@@ -21,8 +21,12 @@ import (
 	"io"
 	"time"
 
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
@@ -35,13 +39,83 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/pkg/urpc"
+	"gvisor.dev/gvisor/runsc/specutils"
 	"gvisor.dev/gvisor/runsc/version"
 )
+
+const (
+	annotationFSCheckpointPrefix = "dev.gvisor.internal.fscheckpoint."
+
+	// annotationFSCheckpointEnable indicates whether files under /proc/gvisor
+	// should be present in the container to allow the workload to trigger a
+	// filesystem checkpoint.
+	annotationFSCheckpointEnable = annotationFSCheckpointPrefix + "enable"
+
+	// annotationFSCheckpointPath is the path to the directory where the
+	// filesystem checkpoint files will be created. When present, it allows for
+	// the workload running inside to trigger a filesystem checkpoint without
+	// having to use the runsc CLI.
+	annotationFSCheckpointPath = annotationFSCheckpointPrefix + "path"
+
+	// annotationFSCheckpointResume indicates whether the sandbox should
+	// continue running after filesystem checkpoint saving triggered via
+	// /proc/gvisor. Optional, defaults to false.
+	annotationFSCheckpointResume = annotationFSCheckpointPrefix + "resume"
+
+	// annotationFSCheckpointDirect indicates whether filesystem checkpoint
+	// I/Os triggered via /proc/gvisor should use O_DIRECT. Optional, defaults
+	// to false.
+	annotationFSCheckpointDirect = annotationFSCheckpointPrefix + "direct"
+
+	// annotationFSCheckpointContainerPath is the path inside the container
+	// to save. Optional, defaults to "/".
+	annotationFSCheckpointContainerPath = annotationFSCheckpointPrefix + "container-path"
+)
+
+// GetAnnotationFSCheckpointPath returns the filesystem checkpoint path
+// specified in the container annotation. Return empty string if no annotation
+// is specified.
+func GetAnnotationFSCheckpointPath(spec *specs.Spec) string {
+	return spec.Annotations[annotationFSCheckpointPath]
+}
+
+// GetAnnotationFSCheckpointDirect returns true if filesystem checkpoint I/O
+// controlled by the containing annotation should use O_DIRECT.
+func GetAnnotationFSCheckpointDirect(spec *specs.Spec) bool {
+	return specutils.AnnotationToBool(spec, annotationFSCheckpointDirect)
+}
+
+// FSSave implements kernel.Saver.FSSave.
+func (l *Loader) FSSave() error {
+	l.mu.Lock()
+	fsSaveFDs := l.fsSaveFDs
+	l.fsSaveFDs = nil
+	useCheckpointGofer := l.fsSaveCheckpointGofer
+	l.mu.Unlock()
+	if len(fsSaveFDs) == 0 {
+		return linuxerr.ENXIO
+	}
+	args := FSSaveArgs{
+		ExitAfterSaving: !specutils.AnnotationToBool(l.root.spec, annotationFSCheckpointResume),
+		Path:            l.root.spec.Annotations[annotationFSCheckpointContainerPath],
+	}
+	args.FilePayload.Files = fd.ReleaseToFiles(fsSaveFDs, "fs-checkpoint")
+	args.UseCheckpointGofer = useCheckpointGofer
+	opts := kernel.FSSaveOpts{
+		RunscVersion: version.Version(),
+		Path:         args.Path,
+	}
+	if err := setKernelFSSaveOptsFiles(&args, &opts); err != nil {
+		return err
+	}
+	return l.k.FSSave(context.Background(), &opts)
+}
 
 func convertToKernelFSSaveOpts(args *FSSaveArgs) (kernel.FSSaveOpts, error) {
 	opts := kernel.FSSaveOpts{
 		RunscVersion:    version.Version(),
 		ExitAfterSaving: args.ExitAfterSaving,
+		Path:            args.Path,
 	}
 	if err := setKernelFSSaveOptsFiles(args, &opts); err != nil {
 		return kernel.FSSaveOpts{}, err

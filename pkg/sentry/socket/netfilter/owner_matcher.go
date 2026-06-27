@@ -126,16 +126,17 @@ func (om *OwnerMatcher) Match(hook stack.Hook, pkt *stack.PacketBuffer, _, _ str
 		return false, true
 	}
 
-	// If the packet owner is not set, drop the packet.
-	if pkt.Owner == nil {
-		return false, true
-	}
+	// If the packet has no owner, it cannot match any UID/GID directly, but
+	// we must still evaluate the inversion flags (i.e. a nil owner matches
+	// if the rule is inverted). This follows Linux's behavior in
+	// net/netfilter/xt_owner.c:owner_mt().
+	// See https://github.com/torvalds/linux/blob/master/net/netfilter/xt_owner.c
 
-	var matches bool
 	// Check for UID match.
 	if om.matchUID {
-		if auth.KUID(pkt.Owner.KUID()) == om.uid {
-			matches = true
+		var matches bool
+		if pkt.Owner != nil {
+			matches = auth.KUID(pkt.Owner.KUID()) == om.uid
 		}
 		if matches == om.invertUID {
 			return false, false
@@ -144,9 +145,9 @@ func (om *OwnerMatcher) Match(hook stack.Hook, pkt *stack.PacketBuffer, _, _ str
 
 	// Check for GID match.
 	if om.matchGID {
-		matches = false
-		if auth.KGID(pkt.Owner.KGID()) == om.gid {
-			matches = true
+		var matches bool
+		if pkt.Owner != nil {
+			matches = auth.KGID(pkt.Owner.KGID()) == om.gid
 		}
 		if matches == om.invertGID {
 			return false, false

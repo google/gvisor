@@ -28,6 +28,7 @@ const (
 	NFT_OBJ_MAXNAMELEN   = NFT_NAME_MAXLEN
 	NFT_USERDATA_MAXLEN  = 256
 	NFT_OSF_MAXGENRELEN  = 16
+	NFT_SET_EXPR_MAX     = 2
 )
 
 // 16-byte Registers that can be used to maintain state for rules.
@@ -536,4 +537,126 @@ const (
 	NFTA_NAT_FLAGS
 	__NFTA_NAT_MAX
 	NFTA_NAT_MAX = __NFTA_NAT_MAX - 1
+)
+
+// NfTableSetFlags represents the netfilter set flags.
+// These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFT_SET_ANONYMOUS = uint16(0x1)
+	NFT_SET_CONSTANT  = uint16(0x2)
+	NFT_SET_INTERVAL  = uint16(0x4)
+	NFT_SET_MAP       = uint16(0x8)
+	NFT_SET_TIMEOUT   = uint16(0x10)
+	NFT_SET_EVAL      = uint16(0x20)
+	NFT_SET_OBJECT    = uint16(0x40)
+	NFT_SET_CONCAT    = uint16(0x80)
+	NFT_SET_EXPR      = uint16(0x100)
+)
+
+// NfTableSetAttributes represents the netfilter set attributes.
+// These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFTA_SET_UNSPEC uint16 = iota
+	NFTA_SET_TABLE
+	NFTA_SET_NAME
+	NFTA_SET_FLAGS
+	NFTA_SET_KEY_TYPE
+	NFTA_SET_KEY_LEN
+	NFTA_SET_DATA_TYPE
+	NFTA_SET_DATA_LEN
+	NFTA_SET_POLICY
+	NFTA_SET_DESC
+	NFTA_SET_ID
+	NFTA_SET_TIMEOUT
+	NFTA_SET_GC_INTERVAL
+	NFTA_SET_USERDATA
+	NFTA_SET_PAD
+	NFTA_SET_OBJ_TYPE
+	NFTA_SET_HANDLE
+	NFTA_SET_EXPR
+	NFTA_SET_EXPRESSIONS
+	__NFTA_SET_MAX
+	NFTA_SET_MAX = __NFTA_SET_MAX - 1
+)
+
+// NfTableSetPolicies represents the netfilter set policies.
+// These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFT_SET_POL_PERFORMANCE uint32 = iota // prefer high performance over low memory use
+	NFT_SET_POL_MEMORY                    // prefer low memory use over high performance
+)
+
+// NfTableSetDescAttributes represents the netfilter set description attributes.
+// These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFTA_SET_DESC_UNSPEC uint16 = iota
+	NFTA_SET_DESC_SIZE
+	NFTA_SET_DESC_CONCAT
+	__NFTA_SET_DESC_MAX
+	NFTA_SET_DESC_MAX = __NFTA_SET_DESC_MAX - 1
+)
+
+// NfTableSetFieldAttributes represents the netfilter set field attributes.
+// These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFTA_SET_FIELD_UNSPEC uint16 = iota
+	NFTA_SET_FIELD_LEN
+	__NFTA_SET_FIELD_MAX
+	NFTA_SET_FIELD_MAX = __NFTA_SET_FIELD_MAX - 1
+)
+
+// NfTableObjectAttributes represents the netfilter object attributes.
+// These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFT_OBJECT_UNSPEC uint32 = iota
+	NFT_OBJECT_COUNTER
+	NFT_OBJECT_QUOTA
+	NFT_OBJECT_CT_HELPER
+	NFT_OBJECT_LIMIT
+	NFT_OBJECT_CONNLIMIT
+	NFT_OBJECT_TUNNEL
+	NFT_OBJECT_CT_TIMEOUT
+	NFT_OBJECT_SECMARK
+	NFT_OBJECT_CT_EXPECT
+	NFT_OBJECT_SYNPROXY
+	__NFT_OBJECT_MAX
+	NFT_OBJECT_MAX = __NFT_OBJECT_MAX - 1
+)
+
+// NfTableSetElemListAttributes represents the netfilter set element list attributes.
+// These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFTA_SET_ELEM_LIST_UNSPEC uint16 = iota
+	NFTA_SET_ELEM_LIST_TABLE
+	NFTA_SET_ELEM_LIST_SET
+	NFTA_SET_ELEM_LIST_ELEMENTS
+	NFTA_SET_ELEM_LIST_SET_ID
+	__NFTA_SET_ELEM_LIST_MAX
+	NFTA_SET_ELEM_LIST_MAX = __NFTA_SET_ELEM_LIST_MAX - 1
+)
+
+// NfTableSetElemAttributes represents the netfilter set element attributes.
+// These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFTA_SET_ELEM_UNSPEC uint16 = iota
+	NFTA_SET_ELEM_KEY
+	NFTA_SET_ELEM_DATA
+	NFTA_SET_ELEM_FLAGS
+	NFTA_SET_ELEM_TIMEOUT
+	NFTA_SET_ELEM_EXPIRATION
+	NFTA_SET_ELEM_USERDATA
+	NFTA_SET_ELEM_EXPR
+	NFTA_SET_ELEM_PAD
+	NFTA_SET_ELEM_OBJREF
+	NFTA_SET_ELEM_KEY_END
+	NFTA_SET_ELEM_EXPRESSIONS
+	__NFTA_SET_ELEM_MAX
+	NFTA_SET_ELEM_MAX = __NFTA_SET_ELEM_MAX - 1
+)
+
+// NfTableSetElemFlags represents the netfilter set element flags.
+// These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFT_SET_ELEM_INTERVAL_END = uint16(0x1)
+	NFT_SET_ELEM_CATCHALL     = uint16(0x2)
 )

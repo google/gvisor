@@ -15,6 +15,8 @@
 package erofs
 
 import (
+	"bytes"
+	"os"
 	"testing"
 )
 
@@ -33,5 +35,68 @@ func TestOnDiskStructureSizes(t *testing.T) {
 
 	if d := new(Dirent); d.SizeBytes() != DirentSize {
 		t.Errorf("wrong dirent size: want %d, got %d", DirentSize, d.SizeBytes())
+	}
+}
+
+// TestInlineInodeStraddlingBlockBoundary checks that a FlatInline inode whose
+// extended inode straddles a block boundary (its inline tail begins in the next
+// block) is accepted, not rejected with EUCLEAN. erofs-utils >= 1.9 emits this
+// layout and the Linux kernel reads it.
+func TestInlineInodeStraddlingBlockBoundary(t *testing.T) {
+	const (
+		blockSize = 4096
+		nid       = 127  // off = nid<<InodeSlotBits = 4064: 32 bytes before block end
+		size      = 4050 // tail 4050 > blockSize-InodeExtendedSize (4032), but valid
+	)
+
+	img := make([]byte, 3*blockSize)
+
+	sb := SuperBlock{
+		Magic:         SuperBlockMagicV1,
+		BlockSizeBits: 12, // 4096
+		RootNid:       nid,
+		Blocks:        3,
+	}
+	sb.MarshalUnsafe(img[SuperBlockOffset:])
+
+	off := nid << InodeSlotBits
+	ino := InodeExtended{
+		Format: uint16(InodeLayoutExtended<<InodeLayoutBit | InodeDataLayoutFlatInline<<InodeDataLayoutBit),
+		Mode:   0x81a4, // S_IFREG | 0o644
+		Size:   size,
+		Nlink:  1,
+	}
+	ino.MarshalUnsafe(img[off:])
+
+	idataOff := off + InodeExtendedSize
+	want := make([]byte, size)
+	for i := range want {
+		want[i] = byte(i % 251)
+	}
+	copy(img[idataOff:], want)
+
+	f, err := os.CreateTemp(t.TempDir(), "erofs")
+	if err != nil {
+		t.Fatalf("CreateTemp: %v", err)
+	}
+	if _, err := f.Write(img); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	image, err := OpenImage(f) // takes ownership of f
+	if err != nil {
+		t.Fatalf("OpenImage: %v", err)
+	}
+	defer image.Close()
+
+	inode, err := image.Inode(nid)
+	if err != nil {
+		t.Fatalf("Inode(%d): %v", nid, err)
+	}
+	got, err := image.BytesAt(inode.idataOff, inode.size)
+	if err != nil {
+		t.Fatalf("BytesAt: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("inline data mismatch: got %d bytes, want %d", len(got), len(want))
 	}
 }

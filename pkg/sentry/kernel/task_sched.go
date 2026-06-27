@@ -96,6 +96,10 @@ func (t *Task) accountTaskGoroutineEnter(state TaskGoroutineState) {
 		// Task is blocking/stopping.
 		t.k.decRunningTasks()
 	}
+	if state == TaskGoroutineBlockedUninterruptible {
+		// Task is entering uninterruptible sleep.
+		t.k.blockedTasks.Add(1)
+	}
 }
 
 // Preconditions:
@@ -106,6 +110,10 @@ func (t *Task) accountTaskGoroutineLeave(state TaskGoroutineState) {
 	if state != TaskGoroutineRunningApp {
 		// Task is unblocking/continuing.
 		t.k.incRunningTasks()
+	}
+	if state == TaskGoroutineBlockedUninterruptible {
+		// Task is leaving uninterruptible sleep.
+		t.k.blockedTasks.Add(-1)
 	}
 	if oldState := t.TaskGoroutineState(); oldState != state {
 		panic(fmt.Sprintf("Task goroutine switching from state %v (expected %v) to %v", oldState, state, TaskGoroutineRunningSys))
@@ -177,6 +185,22 @@ func (tg *ThreadGroup) CPUStats() usage.CPUStats {
 		UserTime:          time.Duration(appNS),
 		SysTime:           time.Duration(sysNS),
 		VoluntarySwitches: tg.yieldCount.Load(),
+	}
+}
+
+// CPUStats returns the aggregate CPU usage statistics of all tasks in the
+// kernel (including tasks that have since exited), as accumulated by the CPU
+// clock ticker. It is used to implement the aggregate "cpu" line in
+// /proc/stat.
+func (k *Kernel) CPUStats() usage.CPUStats {
+	// The CPU clock ticker advances userCPUClock before userSysCPUClock, so
+	// it's possible for the former to transiently exceed the latter.
+	userNS := k.userCPUClock.Load()
+	userSysNS := k.userSysCPUClock.Load()
+	sysNS := max(userSysNS-userNS, 0)
+	return usage.CPUStats{
+		UserTime: time.Duration(userNS),
+		SysTime:  time.Duration(sysNS),
 	}
 }
 
@@ -271,12 +295,18 @@ func (k *Kernel) runCPUClockTicker() {
 		rand.Shuffle(numIncTasks, func(i, j int) {
 			incTasks[i], incTasks[j] = incTasks[j], incTasks[i]
 		})
+		// userTickInc counts ticks accounted as application (user) time;
+		// userSysTickInc counts ticks accounted as application+sentry time.
+		// These mirror the per-task appCPUClock and appSysCPUClock increments
+		// below and feed the kernel-wide CPU time accumulators.
+		var userTickInc, userSysTickInc int64
 		for _, t := range incTasks[:numIncTasks] {
 			switch t.TaskGoroutineState() {
 			case TaskGoroutineRunningApp:
 				t.appCPUClock.Add(linux.ClockTick)
 				t.tg.appCPUClockLast.Store(t)
 				t.tg.appCPUClock.Add(linux.ClockTick)
+				userTickInc++
 				if preempt {
 					t.p.Preempt()
 				}
@@ -285,7 +315,14 @@ func (k *Kernel) runCPUClockTicker() {
 				t.appSysCPUClock.Add(linux.ClockTick)
 				t.tg.appSysCPUClockLast.Store(t)
 				t.tg.appSysCPUClock.Add(linux.ClockTick)
+				userSysTickInc++
 			}
+		}
+		if userTickInc != 0 {
+			k.userCPUClock.Add(userTickInc * linux.ClockTick.Nanoseconds())
+		}
+		if userSysTickInc != 0 {
+			k.userSysCPUClock.Add(userSysTickInc * linux.ClockTick.Nanoseconds())
 		}
 
 		// Reset storage for the next iteration.
@@ -425,10 +462,45 @@ func (t *Task) Priority() int {
 }
 
 // SetNiceness sets t's niceness to n.
+// Values outside of [-20, 19] are clamped to fit within the range.
 func (t *Task) SetNiceness(n int) {
+	if n < -20 {
+		n = -20
+	} else if n > 19 {
+		n = 19
+	}
+
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.niceness = n
+}
+
+// SetIOPrio sets t's ioprio.
+func (t *Task) SetIOPrio(ioprio int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.ioprio = ioprio
+}
+
+// GetIOPrio fetches t's ioprio.
+func (t *Task) GetIOPrio() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.ioprio
+}
+
+// SetScheduler sets t's scheduler.
+func (t *Task) SetScheduler(scheduler uint) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.scheduler = scheduler
+}
+
+// GetScheduler fetches t's scheduler.
+func (t *Task) GetScheduler() uint {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.scheduler
 }
 
 // NumaPolicy returns t's current numa policy.

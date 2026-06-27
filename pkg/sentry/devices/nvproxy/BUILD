@@ -57,7 +57,7 @@ go_library(
         "open_only.go",
         "procfs.go",
         "save_restore.go",
-        "save_restore_impl.go",
+        "save_restore_unsafe.go",
         "seccomp_filters.go",
         "uvm.go",
         "uvm_mmap.go",
@@ -114,6 +114,7 @@ go_test(
 
 go_test(
     name = "nvproxy_driver_parity_test",
+    size = "large",
     srcs = ["nvproxy_driver_parity_test.go"],
     data = ["//tools/nvidia_driver_differ:driver_ast_parser"],
     deps = [

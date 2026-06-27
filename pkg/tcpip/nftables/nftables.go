@@ -597,6 +597,8 @@ func (nf *NFTables) AddTable(family stack.AddressFamily, name string,
 		flagSet:       make(map[TableFlag]struct{}),
 		handle:        nf.getNewTableHandle(),
 		handleCounter: atomicbitops.Uint64{},
+		sets:          make(map[string]*nftSet),
+		setHandles:    make(map[uint64]*nftSet),
 	}
 	tableMap[name] = t
 	tableHandleMap[t.handle] = t
@@ -1373,7 +1375,7 @@ func (r *Rule) AddOpFromExprInfo(tab *Table, exprInfo ExprInfo) *syserr.Annotate
 			return err
 		}
 	case OpTypeCounter:
-		if op, err = initCounter(tab, exprInfo); err != nil {
+		if op, err = initCounter(exprInfo); err != nil {
 			return err
 		}
 	case OpTypeNAT:
@@ -1487,4 +1489,74 @@ func (hfStack *hookFunctionStack) detachBaseChain(name string) *syserr.Annotated
 		return nil
 	}
 	return syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("failed to detach base chain: %s, chain not found", name))
+}
+
+//
+// NFTables Parser functions
+//
+
+// ParseExpr parses the expression attributes and returns the expression information.
+func (nf *NFTables) ParseExpr(attrs nlmsg.AttrsView) (*ExprInfo, *syserr.AnnotatedError) {
+	exprAttrs, ok := NfParse(attrs)
+	if !ok {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse attributes for expression")
+	}
+
+	exprNameBytes, ok := exprAttrs[linux.NFTA_EXPR_NAME]
+	if !ok {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: NFTA_EXPR_NAME attribute is malformed or not found")
+	}
+
+	// exprData holds the expression data for a specific operation.
+	exprData := nlmsg.AttrsView{}
+	// Only assign exprData if the data is present. Later validation will
+	// check if it is needed for the specific operation type.
+	// From linux/net/netfilter/nf_tables_api.c: nf_tables_expr_parse
+	if exprDataBytes, ok := exprAttrs[linux.NFTA_EXPR_DATA]; ok {
+		exprData = nlmsg.AttrsView(exprDataBytes)
+	}
+
+	return &ExprInfo{
+		ExprName: exprNameBytes.String(),
+		ExprData: exprData,
+	}, nil
+}
+
+// ParseNestedExprs parses the rule expressions attributes and adds the
+// operations to the rule.
+func (nf *NFTables) ParseNestedExprs(nestedAttrBytes nlmsg.AttrsView, maxExprs int) ([]ExprInfo, *syserr.AnnotatedError) {
+	// Netlink message structure for rule expressions (NFTA_RULE_EXPRESSIONS):
+	//
+	// [ NFTA_RULE_EXPRESSIONS (Outer Array Container) ]
+	//   ├── [ NFTA_LIST_ELEM (Element Wrapper #1) ]
+	//   │     ├── [ NFTA_EXPR_NAME ] (e.g., "counter")
+	//   │     └── [ NFTA_EXPR_DATA ] (Expression-specific attributes)
+	//   │
+	//   └── [ NFTA_LIST_ELEM (Element Wrapper #2) ]
+	//         ├── [ NFTA_EXPR_NAME ] (e.g., "cmp")
+	//         └── [ NFTA_EXPR_DATA ] (Expression-specific attributes)
+	var exprInfos []ExprInfo
+	numExprs := 0
+	for !nestedAttrBytes.Empty() {
+		hdr, value, rest, ok := nestedAttrBytes.ParseFirst()
+		if !ok {
+			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse list atttribute for rules")
+		}
+
+		nestedAttrBytes = rest
+		if hdr.Type&linux.NLA_TYPE_MASK != linux.NFTA_LIST_ELEM {
+			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: parsed attribute is not of type NFTA_LIST_ELEM")
+		}
+
+		if numExprs == maxExprs {
+			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Too many expressions specified for rule")
+		}
+		numExprs++
+		exprInfo, err := nf.ParseExpr(value)
+		if err != nil {
+			return nil, err
+		}
+		exprInfos = append(exprInfos, *exprInfo)
+	}
+	return exprInfos, nil
 }
