@@ -248,6 +248,7 @@ func updateGlobalOnce(fd int) error {
 	ring0.Init(cpuid.FeatureSet{
 		Function: s,
 	})
+	initFaultBlocks()
 	physicalInit()
 	return nil
 }

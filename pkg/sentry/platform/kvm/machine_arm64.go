@@ -205,3 +205,16 @@ func (m *machine) getMaxVCPU() {
 		}
 	}
 }
+
+const mapEntireAddressSpaceDefault = true
+
+func initFaultBlocks() {
+	if ring0.PhysicalAddressBits <= 39 {
+		faultBlockSize = uintptr(1 << 30) // 1 GiB
+	} else {
+		faultBlockSize = uintptr(8 << 30) // 8 GiB
+	}
+	faultBlockMask = ^uintptr(faultBlockSize - 1)
+}
+
+func archOverrideFaultBlocks() {}

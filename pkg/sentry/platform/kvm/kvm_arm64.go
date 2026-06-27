@@ -20,7 +20,9 @@ package kvm
 import (
 	"fmt"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
@@ -66,7 +68,18 @@ type kvmVcpuEvents struct {
 // updateGlobalOnce does global initialization. It has to be called only once.
 func updateGlobalOnce(fd int) error {
 	err := updateSystemValues(int(fd))
+
+	maxIPA, errno := hostsyscall.RawSyscall(unix.SYS_IOCTL, uintptr(fd), KVM_CHECK_EXTENSION, _KVM_CAP_ARM_VM_IPA_SIZE)
+	if errno == 0 && maxIPA > 0 {
+		if maxIPA < 40 {
+			ring0.PhysicalAddressBits = uintptr(maxIPA)
+		} else {
+			ring0.PhysicalAddressBits = 40
+		}
+	}
+
 	ring0.Init()
+	initFaultBlocks()
 	physicalInit()
 
 	// Explicitly configure address space for 48-bit VA.
