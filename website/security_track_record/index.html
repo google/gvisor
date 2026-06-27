@@ -22,14 +22,28 @@ permalink: /security-track-record/
         background-color: #94a3b8;
         transition: all 0.25s ease;
       }
-      .year-chart-btn .chart-bar-not-defended {
+      .year-chart-btn .chart-bar-patched {
+        background-color: #cbd5e1;
+        transition: all 0.25s ease;
+      }
+      .year-chart-btn .chart-bar-mitigated {
+        background-color: #cbd5e1;
+        transition: all 0.25s ease;
+      }
+      .year-chart-btn .chart-bar-vulnerable {
         background-color: #cbd5e1;
         transition: all 0.25s ease;
       }
       .year-chart-btn:hover .chart-bar-defended {
         background-color: #64748b;
       }
-      .year-chart-btn:hover .chart-bar-not-defended {
+      .year-chart-btn:hover .chart-bar-patched {
+        background-color: #94a3b8;
+      }
+      .year-chart-btn:hover .chart-bar-mitigated {
+        background-color: #94a3b8;
+      }
+      .year-chart-btn:hover .chart-bar-vulnerable {
         background-color: #94a3b8;
       }
       .year-chart-btn.active-chart-col {
@@ -41,9 +55,17 @@ permalink: /security-track-record/
         background-color: #286FD7;
         box-shadow: 0 4px 12px rgba(40, 111, 215, 0.3);
       }
-      .year-chart-btn.active-chart-col .chart-bar-not-defended {
-        background-color: #d9534f;
-        box-shadow: 0 4px 12px rgba(217, 83, 79, 0.3);
+      .year-chart-btn.active-chart-col .chart-bar-patched {
+        background-color: #f4c430;
+        box-shadow: 0 4px 12px rgba(244, 196, 48, 0.3);
+      }
+      .year-chart-btn.active-chart-col .chart-bar-mitigated {
+        background-color: #ed7d31;
+        box-shadow: 0 4px 12px rgba(237, 125, 49, 0.3);
+      }
+      .year-chart-btn.active-chart-col .chart-bar-vulnerable {
+        background-color: #b91c1c;
+        box-shadow: 0 4px 12px rgba(185, 28, 28, 0.3);
       }
       .year-chart-btn.active-chart-col .chart-year-label {
         color: #286FD7 !important;
@@ -61,34 +83,96 @@ permalink: /security-track-record/
         color: #1e293b;
         font-weight: 700;
       }
+      .cve-meta-col {
+        border-left: 1px solid #e5e5e5;
+      }
+      @media (max-width: 991px) {
+        /* The two detail columns stack vertically below Bootstrap's md breakpoint,
+           so the divider border-left would appear as a stray vertical line. */
+        .cve-meta-col {
+          border-left: none;
+        }
+      }
+      .cve-item code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+        background-color: #f1f5f9;
+        color: #0f172a;
+        padding: 1px 5px;
+        border-radius: 4px;
+        font-size: 0.88em;
+      }
     </style>
 
     <div class="marketing-chart-card" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; box-shadow: 0 12px 36px rgba(0, 0, 0, 0.06); margin-top: 35px; margin-bottom: 45px; overflow: hidden;">
       <div style="padding: 32px 32px 10px 32px;">
+        {% assign legend_cves = site.data['cve-track-record'].cves %}
+        {% assign total_defended = 0 %}
+        {% assign total_patched = 0 %}
+        {% assign total_mitigatable = 0 %}
+        {% assign total_vulnerable = 0 %}
+        {% for item in legend_cves %}
+          {% if item.exploitable_under_gvisor %}
+            {% if item.patched == "PATCHED" %}
+              {% assign total_patched = total_patched | plus: 1 %}
+            {% elsif item.patched == "EXTERNAL_MITIGATION_REQUIRED" %}
+              {% assign total_mitigatable = total_mitigatable | plus: 1 %}
+            {% else %}
+              {% assign total_vulnerable = total_vulnerable | plus: 1 %}
+            {% endif %}
+          {% else %}
+            {% assign total_defended = total_defended | plus: 1 %}
+          {% endif %}
+        {% endfor %}
+        {% assign legend_total = legend_cves | size %}
+        {% assign pct_defended = total_defended | times: 100.0 | divided_by: legend_total | round %}
+        {% assign pct_patched = total_patched | times: 100.0 | divided_by: legend_total | round %}
+        {% assign pct_mitigatable = total_mitigatable | times: 100.0 | divided_by: legend_total | round %}
+        {% assign pct_vulnerable = total_vulnerable | times: 100.0 | divided_by: legend_total | round %}
         <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start;">
           <div>
             <h3 style="font-size: 24px; font-weight: 700; color: #1a202c; margin: 0 0 8px 0;">Vulnerabilities Defended by Year</h3>
             <p style="font-size: 15px; color: #64748b; margin: 0; max-width: 540px;">An overview of high-impact Linux kernel vulnerabilities mitigated by gVisor over time.</p>
           </div>
-          <div style="display: flex; align-items: center; background: #f8fafc; padding: 8px 16px; border-radius: 20px; border: 1px solid #e2e8f0; margin-top: 10px;">
+          <div style="display: flex; flex-wrap: wrap; row-gap: 6px; align-items: center; background: #f8fafc; padding: 8px 16px; border-radius: 20px; border: 1px solid #e2e8f0; margin-top: 10px;">
             <div style="display: flex; align-items: center; margin-right: 16px;">
               <span style="display: inline-block; width: 12px; height: 12px; border-radius: 3px; background-color: #286FD7; margin-right: 6px;"></span>
-              <span style="font-size: 13px; font-weight: 600; color: #334155;">Defended</span>
+              <span style="font-size: 13px; font-weight: 600; color: #334155;">Defended ({{ pct_defended }}%)</span>
+            </div>
+            <div style="display: flex; align-items: center; margin-right: 16px;">
+              <span style="display: inline-block; width: 12px; height: 12px; border-radius: 3px; background-color: #f4c430; margin-right: 6px;"></span>
+              <span style="font-size: 13px; font-weight: 600; color: #334155;">Patched ({{ pct_patched }}%)</span>
+            </div>
+            <div style="display: flex; align-items: center; margin-right: 16px;">
+              <span style="display: inline-block; width: 12px; height: 12px; border-radius: 3px; background-color: #ed7d31; margin-right: 6px;"></span>
+              <span style="font-size: 13px; font-weight: 600; color: #334155;">Mitigatable ({{ pct_mitigatable }}%)</span>
             </div>
             <div style="display: flex; align-items: center;">
-              <span style="display: inline-block; width: 12px; height: 12px; border-radius: 3px; background-color: #d9534f; margin-right: 6px;"></span>
-              <span style="font-size: 13px; font-weight: 600; color: #334155;">Unmitigated</span>
+              <span style="display: inline-block; width: 12px; height: 12px; border-radius: 3px; background-color: #b91c1c; margin-right: 6px;"></span>
+              <span style="font-size: 13px; font-weight: 600; color: #334155;">Vulnerable ({{ pct_vulnerable }}%)</span>
             </div>
           </div>
         </div>
       </div>
       <div style="padding: 10px 32px 32px 32px;">
-        <div class="chart-container" style="display: flex; align-items: flex-end; justify-content: space-between; height: 260px; padding: 20px 10px 10px 10px;">
-          {% assign valid_cves = site.data['cve-track-record'].cves | where_exp: "item", "item.cve != nil and item.cve != ''" %}
+        <div class="chart-container" style="display: flex; align-items: flex-end; justify-content: flex-start; height: 260px; padding: 32px 10px 10px 10px; overflow-x: auto; -webkit-overflow-scrolling: touch;">
+          {% assign valid_cves = site.data['cve-track-record'].cves %}
           {% assign grouped_cves = valid_cves | group_by_exp: "item", "item.date | slice: 0, 4" %}
+          {% comment %} Current year + day-of-year (assuming 365-day years) for the ghost extrapolation. {% endcomment %}
+          {% assign current_year = site.time | date: "%Y" %}
+          {% assign day_of_year = site.time | date: "%j" | plus: 0 %}
           {% assign max_cves = 1 %}
           {% for group in grouped_cves %}
             {% assign group_size = group.items | size %}
+            {% if group.name == current_year %}
+              {% assign group_projected = group_size | times: 365.0 | divided_by: day_of_year | round %}
+              {% assign group_days_remaining = 365 | minus: day_of_year %}
+              {% assign group_projected_scaled = group_projected | times: 100 %}
+              {% assign group_actual_threshold = group_size | times: 115 %}
+              {% comment %} Only let the projection drive the scale when it is shown: >= 2 months left and >= 15% above the actual count. {% endcomment %}
+              {% if group_projected_scaled >= group_actual_threshold and group_days_remaining >= 61 %}
+                {% assign group_size = group_projected %}
+              {% endif %}
+            {% endif %}
             {% if group_size > max_cves %}
               {% assign max_cves = group_size %}
             {% endif %}
@@ -97,22 +181,54 @@ permalink: /security-track-record/
           {% for group in grouped_cves %}
             {% assign total = group.items | size %}
             {% assign saved_count = 0 %}
-            {% assign unsaved_count = 0 %}
+            {% assign patched_count = 0 %}
+            {% assign mitigated_count = 0 %}
+            {% assign vulnerable_count = 0 %}
             {% for item in group.items %}
               {% if item.exploitable_under_gvisor %}
-                {% assign unsaved_count = unsaved_count | plus: 1 %}
+                {% if item.patched == "PATCHED" %}
+                  {% assign patched_count = patched_count | plus: 1 %}
+                {% elsif item.patched == "EXTERNAL_MITIGATION_REQUIRED" %}
+                  {% assign mitigated_count = mitigated_count | plus: 1 %}
+                {% else %}
+                  {% assign vulnerable_count = vulnerable_count | plus: 1 %}
+                {% endif %}
               {% else %}
                 {% assign saved_count = saved_count | plus: 1 %}
               {% endif %}
             {% endfor %}
             {% assign total_percentage = total | times: 100.0 | divided_by: max_cves_float %}
+            {% assign is_current_year = false %}
+            {% assign projected = 0 %}
+            {% assign projected_percentage = 0 %}
+            {% if group.name == current_year %}
+              {% assign projected = total | times: 365.0 | divided_by: day_of_year | round %}
+              {% assign days_remaining = 365 | minus: day_of_year %}
+              {% assign projected_scaled = projected | times: 100 %}
+              {% assign actual_threshold = total | times: 115 %}
+              {% comment %} Suppress the extrapolation when the year is nearly over (< 2 months left) or the projection is within 15% of the actual count. {% endcomment %}
+              {% if projected_scaled >= actual_threshold and days_remaining >= 61 %}
+                {% assign is_current_year = true %}
+                {% assign projected_percentage = projected | times: 100.0 | divided_by: max_cves_float %}
+              {% endif %}
+            {% endif %}
             {% assign saved_ratio = saved_count | times: 100.0 | divided_by: total %}
-            {% assign unsaved_ratio = unsaved_count | times: 100.0 | divided_by: total %}
-            <div class="chart-column year-chart-btn {% if forloop.last %}active-chart-col{% endif %}" data-year="{{ group.name }}" style="display: flex; flex-direction: column; justify-content: flex-end; align-items: center; flex-grow: 1; height: 100%; margin: 0 4px;">
-              <div class="chart-count-label">{{ saved_count }}/{{ total }}</div>
-              <div class="chart-bar-wrapper" style="height: {{ total_percentage | at_most: 100 }}%; min-height: 6px; width: 100%; max-width: 48px; display: flex; flex-direction: column; justify-content: flex-end; border-radius: 6px 6px 0 0; box-shadow: 0 2px 4px rgba(0,0,0,0.06); overflow: hidden;">
-                <div class="chart-bar-not-defended" style="height: {{ unsaved_ratio }}%; width: 100%;"></div>
-                <div class="chart-bar-defended" style="height: {{ saved_ratio }}%; width: 100%;"></div>
+            {% assign patched_ratio = patched_count | times: 100.0 | divided_by: total %}
+            {% assign mitigated_ratio = mitigated_count | times: 100.0 | divided_by: total %}
+            {% assign vulnerable_ratio = vulnerable_count | times: 100.0 | divided_by: total %}
+            <div class="chart-column year-chart-btn {% if forloop.last %}active-chart-col{% endif %}" data-year="{{ group.name }}" style="display: flex; flex-direction: column; justify-content: flex-end; align-items: center; flex-grow: 1; flex-shrink: 0; min-width: 52px; height: 100%; margin: 0 4px;">
+              <div class="chart-bar-area" style="position: relative; flex: 1 1 0%; min-height: 0; width: 100%; max-width: 48px; display: flex; flex-direction: column; justify-content: flex-end; align-items: stretch;">
+                {% if is_current_year %}
+                <div class="chart-ghost-bar" title="Projected total for {{ group.name }} at current pace" style="position: absolute; left: 0; right: 0; bottom: 0; height: {{ projected_percentage | at_most: 100 }}%; border: 2px dashed #cbd5e1; border-bottom: none; border-radius: 6px 6px 0 0; background-color: rgba(203, 213, 225, 0.08); z-index: 1; pointer-events: none;"></div>
+                <div class="chart-ghost-label" title="Extrapolated: projected total for {{ group.name }} at current pace" style="position: absolute; left: 0; right: 0; bottom: {{ projected_percentage | at_most: 100 }}%; margin-bottom: 4px; z-index: 1; pointer-events: auto; cursor: help; font-size: 12px; font-weight: 600; font-style: italic; color: #94a3b8; text-align: center; white-space: nowrap;">~{{ projected }}</div>
+                {% endif %}
+                <div class="chart-count-label" style="position: absolute; left: 0; right: 0; bottom: {{ total_percentage | at_most: 100 }}%; white-space: nowrap; z-index: 3;">{{ saved_count }}/{{ total }}</div>
+                <div class="chart-bar-wrapper" style="position: relative; z-index: 2; height: {{ total_percentage | at_most: 100 }}%; min-height: 6px; width: 100%; display: flex; flex-direction: column; justify-content: flex-end; border-radius: 6px 6px 0 0; box-shadow: 0 2px 4px rgba(0,0,0,0.06); overflow: hidden;">
+                  <div class="chart-bar-vulnerable" style="height: {{ vulnerable_ratio }}%; width: 100%;"></div>
+                  <div class="chart-bar-mitigated" style="height: {{ mitigated_ratio }}%; width: 100%;"></div>
+                  <div class="chart-bar-patched" style="height: {{ patched_ratio }}%; width: 100%;"></div>
+                  <div class="chart-bar-defended" style="height: {{ saved_ratio }}%; width: 100%;"></div>
+                </div>
               </div>
               <div class="chart-year-label" style="margin-top: 14px; font-weight: 600; font-size: 14px; color: #64748b; text-align: center; transition: color 0.25s ease;">{{ group.name }}</div>
             </div>
@@ -123,21 +239,50 @@ permalink: /security-track-record/
 
     <script>
       document.addEventListener('DOMContentLoaded', function() {
+        const chartContainer = document.querySelector('.chart-container');
         const chartBtns = document.querySelectorAll('.year-chart-btn');
+
+        // Horizontally scroll the chart so the given year's column is centered in view.
+        function centerChartOn(btn) {
+          if (!chartContainer || !btn) return;
+          const cRect = chartContainer.getBoundingClientRect();
+          const bRect = btn.getBoundingClientRect();
+          chartContainer.scrollLeft += (bRect.left - cRect.left) - (chartContainer.clientWidth / 2) + (bRect.width / 2);
+        }
+
+        // Highlight a year's chart column and show its CVE list. Returns true on success.
+        function activateYear(year) {
+          const btn = document.querySelector('.year-chart-btn[data-year="' + year + '"]');
+          if (!btn) return false;
+          chartBtns.forEach(b => b.classList.remove('active-chart-col'));
+          btn.classList.add('active-chart-col');
+          document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.remove('active'));
+          const activePane = document.getElementById('year-' + year);
+          if (activePane) activePane.classList.add('active');
+          return true;
+        }
+
+        // Restore the highlighted year from the URL anchor (e.g. #2026), if present.
+        const hashYear = (window.location.hash || '').replace('#', '');
+        let restored = false;
+        if (/^\d{4}$/.test(hashYear) && activateYear(hashYear)) {
+          restored = true;
+          centerChartOn(document.querySelector('.year-chart-btn[data-year="' + hashYear + '"]'));
+        }
+        // Default: start scrolled all the way right so the most recent year is visible
+        // by default on narrow/mobile viewports.
+        if (!restored && chartContainer) {
+          chartContainer.scrollLeft = chartContainer.scrollWidth;
+        }
+
         chartBtns.forEach(btn => {
           btn.addEventListener('click', function() {
-            chartBtns.forEach(b => b.classList.remove('active-chart-col'));
-            this.classList.add('active-chart-col');
-
             const targetYear = this.getAttribute('data-year');
+            activateYear(targetYear);
 
-            document.querySelectorAll('.tab-pane').forEach(pane => {
-              pane.classList.remove('active');
-            });
-
-            const activePane = document.getElementById('year-' + targetYear);
-            if (activePane) {
-              activePane.classList.add('active');
+            // Preserve the highlighted year in the URL anchor (without jumping the page).
+            if (targetYear) {
+              history.replaceState(null, '', '#' + targetYear);
             }
 
             const header = document.getElementById('defense-database-header');
@@ -187,12 +332,31 @@ permalink: /security-track-record/
                   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                     <div style="display: flex; align-items: center;">
                       <span style="font-size: 18px; font-weight: 600; margin-right: 15px;">
-                        <a href="https://nvd.nist.gov/vuln/detail/{{ item.cve }}" target="_blank" rel="noopener noreferrer" style="color: #286FD7; text-decoration: none;">{{ item.cve }}</a>
+                        {% if item.cve != nil and item.cve != '' %}
+                          <a href="https://nvd.nist.gov/vuln/detail/{{ item.cve }}" target="_blank" rel="noopener noreferrer" style="color: #286FD7; text-decoration: none;">{{ item.cve }}</a>
+                        {% else %}
+                          <span style="color: #64748b;">No CVE assigned</span>
+                        {% endif %}
                       </span>
+                      {% if item.cvss != nil %}
+                        {% comment %} CVSS chip: 11-color green→yellow→orange→red palette indexed by the rounded score (0-10), with a per-swatch readable text color. {% endcomment %}
+                        {% assign cvss_index = item.cvss | round %}
+                        {% if cvss_index < 0 %}{% assign cvss_index = 0 %}{% endif %}
+                        {% if cvss_index > 10 %}{% assign cvss_index = 10 %}{% endif %}
+                        {% assign cvss_bg_palette = "#2f6b4d,#3d8a5e,#82b481,#b9cf94,#d8e0a6,#eee9c2,#e8d3a2,#e0ad82,#d07a5e,#c0564d,#9c4a48" | split: "," %}
+                        {% assign cvss_fg_palette = "#ffffff,#ffffff,#333333,#333333,#333333,#333333,#333333,#333333,#ffffff,#ffffff,#ffffff" | split: "," %}
+                        <span class="label" title="CVSS: {{ item.cvss }}" style="background-color: {{ cvss_bg_palette[cvss_index] }}; color: {{ cvss_fg_palette[cvss_index] }}; padding: 2px 7px; font-size: 11px; font-weight: 600; border-radius: 10px;">{{ item.cvss }}</span>
+                      {% endif %}
                     </div>
                     <div>
                       {% if item.exploitable_under_gvisor %}
-                        <span class="label label-danger" style="padding: 6px 12px; font-size: 13px; border-radius: 12px;">Unmitigated</span>
+                        {% if item.patched == "PATCHED" %}
+                          <span class="label" style="background-color: #f4c430; color: #333; padding: 6px 12px; font-size: 13px; border-radius: 12px;">Patched</span>
+                        {% elsif item.patched == "EXTERNAL_MITIGATION_REQUIRED" %}
+                          <span class="label" style="background-color: #ed7d31; color: #fff; padding: 6px 12px; font-size: 13px; border-radius: 12px;">External mitigation required</span>
+                        {% else %}
+                          <span class="label" style="background-color: #b91c1c; color: #fff; padding: 6px 12px; font-size: 13px; border-radius: 12px;">Vulnerable</span>
+                        {% endif %}
                       {% else %}
                         <span class="label label-success" style="padding: 6px 12px; font-size: 13px; border-radius: 12px;">Defended</span>
                       {% endif %}
@@ -200,8 +364,10 @@ permalink: /security-track-record/
                   </div>
                   <div class="row" style="font-size: 15px; line-height: 1.6;">
                     <div class="col-md-7" style="margin-bottom: 15px;">
-                      <h5 style="font-weight: 600; color: #333; margin-top: 0; margin-bottom: 10px;">Vulnerability Overview &amp; Impact</h5>
-                      <p style="color: #444;">{{ item.description }}</p>
+                      {% comment %} Render markdown-style `backticks` as monospace. Segments between paired backticks (odd split indices) become <code>. {% endcomment %}
+                      {% assign desc_parts = item.description | split: '`' %}
+                      {% capture rendered_description %}{% for desc_part in desc_parts %}{% assign part_parity = forloop.index0 | modulo: 2 %}{% if part_parity == 1 %}<code>{{ desc_part }}</code>{% else %}{{ desc_part }}{% endif %}{% endfor %}{% endcapture %}
+                      <p style="color: #444;">{{ rendered_description }}</p>
                       {% if item.exploitable_under_gvisor and item.mitigation_gap != nil and item.mitigation_gap != '' %}
                         <div style="margin-top: 10px;"><strong>Mitigation Gap:</strong> <span style="color: #555;">{{ item.mitigation_gap }}</span></div>
                       {% endif %}
@@ -209,9 +375,9 @@ permalink: /security-track-record/
                         <div style="margin-top: 10px;"><strong>VM Runtime Prevented:</strong> <span style="color: #555;">{% if item.vm_prevented %}Yes{% else %}No{% endif %}</span></div>
                       {% endif %}
                     </div>
-                    <div class="col-md-5" style="border-left: 1px solid #e5e5e5;">
+                    <div class="col-md-5 cve-meta-col">
                       <div style="margin-bottom: 6px;"><strong>Escalation Vector:</strong> <span style="color: #555;">{{ item.risk }}</span></div>
-                      <div style="margin-bottom: 6px;"><strong>Target Ecosystem Scope:</strong> <span style="color: #555;">{{ item.scope }}</span></div>
+                      <div style="margin-bottom: 6px;"><strong>Scope:</strong> <span style="color: #555;">{{ item.scope }}</span></div>
                     </div>
                   </div>
                 </div>
