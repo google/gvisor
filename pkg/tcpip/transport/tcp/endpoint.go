@@ -868,9 +868,9 @@ func newEndpoint(s *stack.Stack, protocol *protocol, netProto tcpip.NetworkProto
 		waiterQueue: waiterQueue,
 		state:       atomicbitops.FromUint32(uint32(StateInitial)),
 		keepalive: keepalive{
-			idle:     protocol.defaultKeepaliveIdle,
-			interval: protocol.defaultKeepaliveInterval,
-			count:    protocol.defaultKeepaliveCount,
+			idle:     protocol.DefaultKeepaliveIdle(),
+			interval: protocol.DefaultKeepaliveInterval(),
+			count:    protocol.DefaultKeepaliveCount(),
 		},
 		ipv4TTL:      tcpip.UseDefaultIPv4TTL,
 		ipv6HopLimit: tcpip.UseDefaultIPv6HopLimit,

@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/header/parse"
@@ -107,9 +108,9 @@ type protocol struct {
 	maxRetries                 uint32
 	synRetries                 uint8
 	dispatcher                 dispatcher
-	defaultKeepaliveIdle       time.Duration
-	defaultKeepaliveInterval   time.Duration
-	defaultKeepaliveCount      int
+	defaultKeepaliveIdle       atomicbitops.Int64
+	defaultKeepaliveInterval   atomicbitops.Int64
+	defaultKeepaliveCount      atomicbitops.Int32
 
 	// probe, if not nil, will be invoked any time an endpoint receives a
 	// TCP segment.
@@ -597,9 +598,9 @@ func newProtocol(s *stack.Stack, cc string, probe TCPProbeFunc) stack.TransportP
 		maxRTO:                     MaxRTO,
 		maxRetries:                 MaxRetries,
 		recovery:                   tcpip.TCPRACKLossDetection,
-		defaultKeepaliveIdle:       DefaultKeepaliveIdle,
-		defaultKeepaliveInterval:   DefaultKeepaliveInterval,
-		defaultKeepaliveCount:      DefaultKeepaliveCount,
+		defaultKeepaliveIdle:       atomicbitops.FromInt64(int64(DefaultKeepaliveIdle)),
+		defaultKeepaliveInterval:   atomicbitops.FromInt64(int64(DefaultKeepaliveInterval)),
+		defaultKeepaliveCount:      atomicbitops.FromInt32(int32(DefaultKeepaliveCount)),
 		seqnumSecret:               seqnumSecret,
 		tsOffsetSecret:             tsOffsetSecret,
 		probe:                      probe,
@@ -620,42 +621,30 @@ func ProtocolFromStack(s *stack.Stack) *protocol {
 
 // SetDefaultKeepaliveIdle sets the default keepalive idle time for new TCP endpoints.
 func (p *protocol) SetDefaultKeepaliveIdle(d time.Duration) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.defaultKeepaliveIdle = d
+	p.defaultKeepaliveIdle.Store(int64(d))
 }
 
 // SetDefaultKeepaliveInterval sets the default keepalive interval for new TCP endpoints.
 func (p *protocol) SetDefaultKeepaliveInterval(d time.Duration) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.defaultKeepaliveInterval = d
+	p.defaultKeepaliveInterval.Store(int64(d))
 }
 
 // SetDefaultKeepaliveCount sets the default keepalive count for new TCP endpoints.
 func (p *protocol) SetDefaultKeepaliveCount(count int) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.defaultKeepaliveCount = count
+	p.defaultKeepaliveCount.Store(int32(count))
 }
 
 // DefaultKeepaliveIdle returns the default keepalive idle time.
 func (p *protocol) DefaultKeepaliveIdle() time.Duration {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.defaultKeepaliveIdle
+	return time.Duration(p.defaultKeepaliveIdle.Load())
 }
 
 // DefaultKeepaliveInterval returns the default keepalive interval.
 func (p *protocol) DefaultKeepaliveInterval() time.Duration {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.defaultKeepaliveInterval
+	return time.Duration(p.defaultKeepaliveInterval.Load())
 }
 
 // DefaultKeepaliveCount returns the default keepalive count.
 func (p *protocol) DefaultKeepaliveCount() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.defaultKeepaliveCount
+	return int(p.defaultKeepaliveCount.Load())
 }
