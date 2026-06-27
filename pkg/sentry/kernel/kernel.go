@@ -28,6 +28,7 @@
 //	          Task.mu
 //	            FSContext.mu
 //	      runningTasksMu
+//	        Timekeeper.updateMu
 //
 // Locking SignalHandlers.mu in multiple SignalHandlers requires locking
 // TaskSet.mu exclusively first. Locking Task.mu in multiple Tasks at the same
@@ -1591,6 +1592,11 @@ func (k *Kernel) incRunningTasks() {
 		close(k.taskActivityCh)
 		k.taskActivityCh = make(chan struct{})
 
+		// take a timekeeper reference that says alive until we transition
+		// back from 1 to 0 tasks so vDSO stays updated; this also updates
+		// the vDSO before returning if it was parked
+		k.timekeeper.addRef()
+
 		// This store must happen after the increment of k.cpuClock above to ensure
 		// that concurrent calls to Task.accountTaskGoroutineLeave() also observe
 		// the updated k.cpuClock.
@@ -1604,6 +1610,9 @@ func (k *Kernel) decRunningTasks() {
 	tasks := k.runningTasks.Add(-1)
 	if tasks < 0 {
 		panic(fmt.Sprintf("Invalid running count %d", tasks))
+	}
+	if tasks == 0 {
+		k.timekeeper.release()
 	}
 
 	// Nothing to do. The next CPU clock tick will disable the timer if

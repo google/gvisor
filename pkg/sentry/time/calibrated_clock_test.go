@@ -43,7 +43,7 @@ func TestConstantFrequency(t *testing.T) {
 
 	// Update from all samples.
 	for range samples {
-		c.Update()
+		c.Update(false)
 	}
 
 	c.mu.RLock()
@@ -109,12 +109,12 @@ func TestErrorCorrection(t *testing.T) {
 			c := newTestCalibratedClock(tc.samples[:], nil)
 
 			// Initial calibration takes two updates.
-			_, ok := c.Update()
+			_, ok := c.Update(false)
 			if ok {
 				t.Fatalf("Update ready too early")
 			}
 
-			params, ok := c.Update()
+			params, ok := c.Update(false)
 			if !ok {
 				t.Fatalf("Update not ready")
 			}
@@ -139,7 +139,7 @@ func TestErrorCorrection(t *testing.T) {
 			}
 
 			// Update again to see the changed reference clock.
-			params, ok = c.Update()
+			params, ok = c.Update(false)
 			if !ok {
 				t.Fatalf("Update not ready")
 			}
@@ -165,7 +165,7 @@ func TestErrorCorrection(t *testing.T) {
 			initialErr := c.errorNS
 			t.Logf("initial error: %v ns", initialErr)
 
-			_, ok = c.Update()
+			_, ok = c.Update(false)
 			if !ok {
 				t.Fatalf("Update not ready")
 			}
@@ -173,7 +173,7 @@ func TestErrorCorrection(t *testing.T) {
 				t.Errorf("errorNS increased, got %v want |%v| <= |%v|", c.errorNS, c.errorNS, initialErr)
 			}
 
-			_, ok = c.Update()
+			_, ok = c.Update(false)
 			if !ok {
 				t.Fatalf("Update not ready")
 			}
