@@ -16,6 +16,7 @@ package linux
 
 import (
 	"fmt"
+	"math/bits"
 
 	"google.golang.org/protobuf/proto"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -991,4 +992,111 @@ func PointSocketpair(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.Conte
 	}
 	p.Exit = newExitMaybe(info)
 	return p, pb.MessageType_MESSAGE_SYSCALL_SOCKETPAIR
+}
+
+// populateSelectFields extracts the file descriptors from the read FD set into p.ReadFds
+// (specifically to enable host auditing of guest stdin / FD 0 read selections) while
+// computing the total set bit counts for write and except sets using bits.OnesCount8
+// (to avoid unnecessary serialization overhead and message bloat for write/except sets).
+func populateSelectFields(t *kernel.Task, nfds int, readFDs, writeFDs, exceptFDs hostarch.Addr, p *pb.Select) {
+	if nfds > 0 && nfds <= fileCap {
+		nBytes := (nfds + 7) / 8
+		nBitsInLastPartialByte := nfds % 8
+
+		if readFDs != 0 {
+			if r, err := CopyInFDSet(t, readFDs, nBytes, nBitsInLastPartialByte); err == nil {
+				var fd int64
+				for i := 0; i < nBytes; i++ {
+					rV := r[i]
+					m := byte(1)
+					for j := 0; j < 8; j++ {
+						if (rV&m) != 0 && fd < int64(nfds) {
+							p.ReadFds = append(p.ReadFds, fd)
+						}
+						fd++
+						m <<= 1
+					}
+				}
+			}
+		}
+
+		if writeFDs != 0 {
+			if w, err := CopyInFDSet(t, writeFDs, nBytes, nBitsInLastPartialByte); err == nil {
+				for i := 0; i < nBytes; i++ {
+					p.WriteNfds += int64(bits.OnesCount8(w[i]))
+				}
+			}
+		}
+
+		if exceptFDs != 0 {
+			if e, err := CopyInFDSet(t, exceptFDs, nBytes, nBitsInLastPartialByte); err == nil {
+				for i := 0; i < nBytes; i++ {
+					p.ExceptNfds += int64(bits.OnesCount8(e[i]))
+				}
+			}
+		}
+	}
+}
+
+// PointSelect converts select(2) syscall to proto.
+// Only the read FD set is extracted as a list (to allow host auditing of stdin read selections),
+// while write and except sets only report total counts to minimize message serialization overhead.
+func PointSelect(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	nfds := int(info.Args[0].Int())
+	readFDs := info.Args[1].Pointer()
+	writeFDs := info.Args[2].Pointer()
+	exceptFDs := info.Args[3].Pointer()
+	timevalAddr := info.Args[4].Pointer()
+
+	p := &pb.Select{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		Nfds:        int64(nfds),
+	}
+
+	timeoutMs := int64(-1)
+	if timevalAddr != 0 {
+		var timeval linux.Timeval
+		if _, err := timeval.CopyIn(t, timevalAddr); err == nil {
+			timeoutMs = timeval.ToNsecCapped() / 1e6
+		}
+	}
+	p.TimeoutMs = timeoutMs
+
+	populateSelectFields(t, nfds, readFDs, writeFDs, exceptFDs, p)
+
+	p.Exit = newExitMaybe(info)
+	return p, pb.MessageType_MESSAGE_SYSCALL_SELECT
+}
+
+// PointPselect6 converts pselect6(2) syscall to proto.
+// Only the read FD set is extracted as a list (to allow host auditing of stdin read selections),
+// while write and except sets only report total counts to minimize message serialization overhead.
+func PointPselect6(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	nfds := int(info.Args[0].Int())
+	readFDs := info.Args[1].Pointer()
+	writeFDs := info.Args[2].Pointer()
+	exceptFDs := info.Args[3].Pointer()
+	timespecAddr := info.Args[4].Pointer()
+
+	p := &pb.Select{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		Nfds:        int64(nfds),
+	}
+
+	timeoutMs := int64(-1)
+	if timespecAddr != 0 {
+		if timeout, err := copyTimespecInToDuration(t, timespecAddr); err == nil {
+			if timeout >= 0 {
+				timeoutMs = timeout.Nanoseconds() / 1e6
+			}
+		}
+	}
+	p.TimeoutMs = timeoutMs
+
+	populateSelectFields(t, nfds, readFDs, writeFDs, exceptFDs, p)
+
+	p.Exit = newExitMaybe(info)
+	return p, pb.MessageType_MESSAGE_SYSCALL_SELECT
 }
