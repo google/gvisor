@@ -86,6 +86,7 @@ func (s *syslog) Log() []byte {
 		"Asking an AI agent to fix the bugs...",
 		"Rewriting the kernel in Rust...",
 		"Politicking the oom killer...",
+		"The first rule of the Sentry is: you do not talk about the Sentry...", // A nod to my favorite movie
 	}
 
 	selectMessage := func() string {
