@@ -15,6 +15,7 @@
 #include <bits/types/struct_itimerspec.h>
 #include <err.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <sched.h>
 #include <stdlib.h>
 #include <sys/eventfd.h>
@@ -662,6 +663,13 @@ void runInotifyRmWatch() {
   rmdir(pathname);
 }
 
+void runPoll() {
+  struct pollfd pfd;
+  pfd.fd = 0;
+  pfd.events = POLLIN;
+  poll(&pfd, 1, 0);
+}
+
 }  // namespace testing
 }  // namespace gvisor
 
@@ -697,6 +705,7 @@ int main(int argc, char** argv) {
   ::gvisor::testing::runInotifyInit1();
   ::gvisor::testing::runInotifyAddWatch();
   ::gvisor::testing::runInotifyRmWatch();
+  ::gvisor::testing::runPoll();
 // signalfd(2), fork(2), and vfork(2) system calls are not supported in arm
 // architecture.
 #ifdef __x86_64__

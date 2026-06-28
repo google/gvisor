@@ -39,6 +39,7 @@ func archInit() {
 			Name: "fd_path",
 		},
 	})
+	addSyscallPoint(7, "poll", nil)
 	addSyscallPoint(17, "pread64", []FieldDesc{
 		{
 			ID:   FieldSyscallPath,
@@ -181,6 +182,7 @@ func archInit() {
 			Name: "fd_path",
 		},
 	})
+	addSyscallPoint(271, "ppoll", nil)
 	addSyscallPoint(290, "eventfd2", nil)
 	addSyscallPoint(292, "dup3", []FieldDesc{
 		{
