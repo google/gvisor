@@ -32,6 +32,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/container/flat_hash_set.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "test/syscalls/linux/socket_netlink_netfilter_util.h"
@@ -274,6 +275,260 @@ TEST(NetlinkNetfilterTest, GetDumpTables) {
       },
       false));
   ASSERT_TRUE(expected_tables.empty());
+}
+
+TEST(NetlinkNetfilterTest, GetSets) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(!IsRunningOnGvisor());
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
+
+  std::string test_table_name = GetUniqueTestTableName();
+  const char test_set_name_1[] = "test_set_one";
+  const char test_set_name_2[] = "test_set_two";
+
+  // Creates the parent table to hold our test sets.
+  AddDefaultTable({.fd = fd, .table_name = test_table_name, .seq = kSeq});
+
+  // Assemble Netlink structures to create multiple sets via NFT_MSG_NEWSET.
+  //   [NLM_F_DEFAULT_BATCH]
+  //     ├── [NFT_MSG_NEWSET]
+  //     │     ├── NFTA_SET_TABLE = "test_table"
+  //     │     ├── NFTA_SET_NAME  = "test_set_one"
+  //     │     └── NFTA_SET_KEY_LEN = 4
+  //     │
+  //     └── [NFT_MSG_NEWSET]
+  //           ├── NFTA_SET_TABLE = "test_table"
+  //           ├── NFTA_SET_NAME  = "test_set_two"
+  //           └── NFTA_SET_KEY_LEN = 4
+
+  std::vector<char> add_sets_request_buffer =
+      NlBatchReq()
+          .SeqStart(kSeq + 3)
+          .Req(NlReq()
+                   .MsgType(NFT_MSG_NEWSET)
+                   .Flags(NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE)
+                   .Family(NFPROTO_INET)
+                   .Seq(kSeq + 4)
+                   .StrAttr(NFTA_SET_TABLE, test_table_name)
+                   .StrAttr(NFTA_SET_NAME, test_set_name_1)
+                   .U32Attr(NFTA_SET_KEY_LEN, 4)
+                   .U32Attr(NFTA_SET_ID, 1)
+                   .U32Attr(NFTA_SET_FLAGS, NFT_SET_MAP)
+                   .U32Attr(NFTA_SET_DATA_LEN, 4)
+                   .U32Attr(NFTA_SET_DATA_TYPE, 0)
+                   .Build())
+          .Req(NlReq()
+                   .MsgType(NFT_MSG_NEWSET)
+                   .Flags(NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE)
+                   .Family(NFPROTO_INET)
+                   .Seq(kSeq + 5)
+                   .StrAttr(NFTA_SET_TABLE, test_table_name)
+                   .StrAttr(NFTA_SET_NAME, test_set_name_2)
+                   .U32Attr(NFTA_SET_KEY_LEN, 4)
+                   .U32Attr(NFTA_SET_ID, 2)
+                   .U32Attr(NFTA_SET_FLAGS, NFT_SET_MAP)
+                   .U32Attr(NFTA_SET_DATA_LEN, 4)
+                   .U32Attr(NFTA_SET_DATA_TYPE, 0)
+                   .Build())
+          .SeqEnd(kSeq + 6)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq + 3, kSeq + 6, add_sets_request_buffer.data(),
+      add_sets_request_buffer.size()));
+
+  // Setup the global dump request: NFT_MSG_GETSET with NLM_F_DUMP flag set.
+  std::vector<char> get_request_buffer = NlReq()
+                                             .MsgType(NFT_MSG_GETSET)
+                                             .Flags(NLM_F_REQUEST | NLM_F_DUMP)
+                                             .Family(NFPROTO_INET)
+                                             .Seq(kSeq + 7)
+                                             .Build();
+
+  absl::flat_hash_set<std::string> expected_sets = {test_set_name_1,
+                                                    test_set_name_2};
+
+  // Perform the dump iteratively and extract NLM_F_MULTI sequenced packets.
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd, get_request_buffer.data(), get_request_buffer.size(),
+      [&](const struct nlmsghdr* hdr) {
+        if (hdr->nlmsg_type == NLMSG_DONE) {
+          return;
+        }
+
+        // Entire response must properly utilize chunk streaming flags.
+        EXPECT_TRUE(hdr->nlmsg_flags & NLM_F_MULTI);
+
+        const struct nfattr* set_name_attr =
+            FindNfAttr(hdr, nullptr, NFTA_SET_NAME);
+        if (set_name_attr) {
+          std::string set_name(
+              reinterpret_cast<const char*>(NFA_DATA(set_name_attr)));
+          expected_sets.erase(set_name);
+        }
+      },
+      false));
+
+  // Verify we saw exactly the requested sets successfully dumped out.
+  ASSERT_TRUE(expected_sets.empty());
+}
+
+TEST(NetlinkNetfilterTest, GetSetElements) {
+  const uint32_t kCatchallFlag = 0x2;
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(!IsRunningOnGvisor());
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
+
+  std::string test_table_name = GetUniqueTestTableName();
+  const char test_set_name[] = "test_set_one";
+
+  // Creates the parent table to hold our test set.
+  AddDefaultTable({.fd = fd, .table_name = test_table_name, .seq = kSeq});
+
+  // Assemble Netlink structure native creation of an overarching map set.
+  std::vector<char> add_set_request_buffer =
+      NlBatchReq()
+          .SeqStart(kSeq + 3)
+          .Req(NlReq()
+                   .MsgType(NFT_MSG_NEWSET)
+                   .Flags(NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE)
+                   .Family(NFPROTO_INET)
+                   .Seq(kSeq + 4)
+                   .StrAttr(NFTA_SET_TABLE, test_table_name)
+                   .StrAttr(NFTA_SET_NAME, test_set_name)
+                   .U32Attr(NFTA_SET_KEY_LEN, 4)
+                   .U32Attr(NFTA_SET_ID, 1)
+                   .U32Attr(NFTA_SET_FLAGS, NFT_SET_MAP)
+                   .U32Attr(NFTA_SET_DATA_LEN, 4)
+                   .U32Attr(NFTA_SET_DATA_TYPE, 0)
+                   .Build())
+          .SeqEnd(kSeq + 5)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq + 3, kSeq + 5, add_set_request_buffer.data(),
+      add_set_request_buffer.size()));
+
+  uint8_t key1_data[4] = {192, 168, 1, 1};
+  uint8_t val1_data[4] = {10, 0, 0, 1};
+  std::vector<char> elem1_key_data =
+      NlNestedAttr().RawAttr(NFTA_DATA_VALUE, key1_data, 4).Build();
+  std::vector<char> elem1_val_data =
+      NlNestedAttr().RawAttr(NFTA_DATA_VALUE, val1_data, 4).Build();
+  std::vector<char> elem1 =
+      NlNestedAttr()
+          .RawAttr(NFTA_SET_ELEM_KEY, elem1_key_data.data(),
+                   elem1_key_data.size())
+          .RawAttr(NFTA_SET_ELEM_DATA, elem1_val_data.data(),
+                   elem1_val_data.size())
+          .Build();
+
+  std::vector<char> elem2 =
+      NlNestedAttr()
+          .U32Attr(NFTA_SET_ELEM_FLAGS, kCatchallFlag)
+          .RawAttr(NFTA_SET_ELEM_DATA, elem1_val_data.data(),
+                   elem1_val_data.size())
+          .Build();
+
+  std::vector<char> elements = NlListAttr().Add(elem1).Add(elem2).Build();
+
+  // Assemble array Netlink structures to create set elements natively.
+  //   [NLM_F_DEFAULT_BATCH]
+  //     └── [NFT_MSG_NEWSETELEM]
+  //           ├── NFTA_SET_ELEM_LIST_TABLE = "test_table"
+  //           ├── NFTA_SET_ELEM_LIST_SET   = "test_set_one"
+  //           └── NFTA_SET_ELEM_LIST_ELEMENTS (Nested Array)
+  //                 ├── NFTA_LIST_ELEM
+  //                 │     └── NFTA_SET_ELEM_KEY
+  //                 │           └── NFTA_DATA_VALUE
+  //                 └── NFTA_LIST_ELEM
+  //                       └── NFTA_SET_ELEM_FLAGS (CATCHALL)
+  std::vector<char> add_elements_buffer =
+      NlBatchReq()
+          .SeqStart(kSeq + 6)
+          .Req(NlReq()
+                   .MsgType(NFT_MSG_NEWSETELEM)
+                   .Flags(NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE)
+                   .Family(NFPROTO_INET)
+                   .Seq(kSeq + 7)
+                   .StrAttr(NFTA_SET_ELEM_LIST_TABLE, test_table_name)
+                   .StrAttr(NFTA_SET_ELEM_LIST_SET, test_set_name)
+                   .RawAttr(NFTA_SET_ELEM_LIST_ELEMENTS, elements.data(),
+                            elements.size())
+                   .Build())
+          .SeqEnd(kSeq + 8)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq + 6, kSeq + 8, add_elements_buffer.data(),
+      add_elements_buffer.size()));
+
+  // Setup the global set elements dump request: NFT_MSG_GETSETELEM
+  std::vector<char> get_dump_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_GETSETELEM)
+          .Flags(NLM_F_REQUEST | NLM_F_DUMP)
+          .Family(NFPROTO_INET)
+          .Seq(kSeq + 9)
+          .StrAttr(NFTA_SET_ELEM_LIST_TABLE, test_table_name)
+          .StrAttr(NFTA_SET_ELEM_LIST_SET, test_set_name)
+          .Build();
+
+  bool found_elem1 = false;
+  bool found_elem2 = false;
+
+  // Process the dumped multiplex stream.
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd, get_dump_request_buffer.data(), get_dump_request_buffer.size(),
+      [&](const struct nlmsghdr* hdr) {
+        if (hdr->nlmsg_type == NLMSG_DONE) {
+          return;
+        }
+
+        // Output stream MUST chunk successfully.
+        EXPECT_TRUE(hdr->nlmsg_flags & NLM_F_MULTI);
+
+        const struct nfattr* elements_attr =
+            FindNfAttr(hdr, nullptr, NFTA_SET_ELEM_LIST_ELEMENTS);
+
+        // Element chunk list block absent from this subset message string.
+        if (!elements_attr) {
+          return;
+        }
+
+        int nested_len = NFA_PAYLOAD(elements_attr);
+        const struct nfattr* nested_attr =
+            reinterpret_cast<const struct nfattr*>(NFA_DATA(elements_attr));
+
+        // Process each extracted list container recursively natively.
+        for (; NFA_OK(nested_attr, nested_len);
+             nested_attr = NFA_NEXT(nested_attr, nested_len)) {
+          int elem_len = NFA_PAYLOAD(nested_attr);
+          const struct nfattr* elem_data =
+              reinterpret_cast<const struct nfattr*>(NFA_DATA(nested_attr));
+
+          for (; NFA_OK(elem_data, elem_len);
+               elem_data = NFA_NEXT(elem_data, elem_len)) {
+            // Find key-value native structures.
+            if (elem_data->nfa_type == NFTA_SET_ELEM_KEY) {
+              found_elem1 = true;
+            }
+            // Find macro-overlaid flag payload chunks.
+            if (elem_data->nfa_type == NFTA_SET_ELEM_FLAGS) {
+              uint32_t flags =
+                  *reinterpret_cast<const uint32_t*>(NFA_DATA(elem_data));
+              if (ntohl(flags) & kCatchallFlag) {
+                found_elem2 = true;
+              }
+            }
+          }
+        }
+      },
+      false));
+
+  // Assert both generated subset mappings successfully unpacked.
+  ASSERT_TRUE(found_elem1);
+  ASSERT_TRUE(found_elem2);
 }
 
 TEST(NetlinkNetfilterTest, ErrGettingTableWithDifferentFamily) {

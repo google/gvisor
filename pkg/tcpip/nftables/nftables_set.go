@@ -21,6 +21,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -867,6 +868,392 @@ func (nf *NFTables) NewSetElements(attrs map[uint16]nlmsg.BytesView, family stac
 		return err
 	}
 	return nil
+}
+
+func (nf *NFTables) dumpSetDescInfo(set *nftSet, tab *Table, family stack.AddressFamily, ms *nlmsg.MessageSet) ([]byte, *syserr.AnnotatedError) {
+	m := &nlmsg.Message{}
+	if set.descSize != 0 {
+		m.PutAttr(linux.NFTA_SET_DESC_SIZE, nlmsg.PutU32(set.descSize))
+	}
+	if set.fieldCount > 1 {
+		var concatList nlmsg.NestedAttr
+		for _, concat := range set.fieldLen {
+			var concatAttrs nlmsg.NestedAttr
+			concatAttrs.PutAttr(linux.NFTA_SET_FIELD_LEN, primitive.AsByteSlice([]byte{concat}))
+			concatList.PutAttr(linux.NFTA_LIST_ELEM, primitive.AsByteSlice(concatAttrs))
+		}
+		m.PutNestedAttr(linux.NFTA_SET_DESC_CONCAT, concatList)
+	}
+	return m.Buffer(), nil
+}
+
+func (nf *NFTables) fillSetInfo(set *nftSet, tab *Table, family stack.AddressFamily, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
+	m := ms.AddMessage(linux.NetlinkMessageHeader{
+		Type: uint16(linux.NFNL_SUBSYS_NFTABLES)<<8 | uint16(linux.NFT_MSG_NEWSET),
+	})
+	m.Put(&linux.NetFilterGenMsg{
+		Family:  uint8(AfProtocol(tab.GetAddressFamily())),
+		Version: uint8(linux.NFNETLINK_V0),
+		// Unused, set to 0.
+		ResourceID: uint16(0),
+	})
+
+	m.PutAttrString(linux.NFTA_SET_TABLE, tab.GetName())
+	m.PutAttrString(linux.NFTA_SET_NAME, set.name)
+	m.PutAttr(linux.NFTA_SET_HANDLE, nlmsg.PutU64(set.handle))
+	if set.flags != 0 {
+		m.PutAttr(linux.NFTA_SET_FLAGS, nlmsg.PutU32(uint32(set.flags)))
+	}
+
+	m.PutAttr(linux.NFTA_SET_KEY_TYPE, nlmsg.PutU32(set.keyType))
+	m.PutAttr(linux.NFTA_SET_KEY_LEN, nlmsg.PutU32(uint32(set.keyLen)))
+	if set.flags&linux.NFT_SET_MAP != 0 {
+		m.PutAttr(linux.NFTA_SET_DATA_TYPE, nlmsg.PutU32(set.dataType))
+		m.PutAttr(linux.NFTA_SET_DATA_LEN, nlmsg.PutU32(uint32(set.dataLen)))
+	}
+	if set.flags&linux.NFT_SET_OBJECT != 0 {
+		m.PutAttr(linux.NFTA_SET_OBJ_TYPE, nlmsg.PutU32(set.objType))
+	}
+	if set.timeout != 0 {
+		m.PutAttr(linux.NFTA_SET_TIMEOUT, nlmsg.PutU64(set.timeout))
+	}
+	if set.gcInterval != 0 {
+		m.PutAttr(linux.NFTA_SET_GC_INTERVAL, nlmsg.PutU32(set.gcInterval))
+	}
+	if set.policy != linux.NFT_SET_POL_PERFORMANCE {
+		m.PutAttr(linux.NFTA_SET_POLICY, nlmsg.PutU32(set.policy))
+	}
+	if set.udata != nil {
+		m.PutAttr(linux.NFTA_SET_USERDATA, primitive.AsByteSlice(set.udata))
+	}
+
+	descAttr, err := nf.dumpSetDescInfo(set, tab, family, ms)
+	if err != nil {
+		return err
+	}
+	if len(descAttr) > 0 {
+		m.PutNestedAttr(linux.NFTA_SET_DESC, descAttr)
+	}
+
+	if len(set.exprInfos) == 1 {
+		var exprAttr nlmsg.NestedAttr
+		exprAttr.PutAttrString(linux.NFTA_EXPR_NAME, set.exprInfos[0].ExprName)
+		if len(set.exprInfos[0].ExprData) > 0 {
+			exprAttr.PutAttr(linux.NFTA_EXPR_DATA, primitive.AsByteSlice(set.exprInfos[0].ExprData))
+		}
+		m.PutNestedAttr(linux.NFTA_SET_EXPR, exprAttr)
+	} else if len(set.exprInfos) > 1 {
+		var exprList nlmsg.NestedAttr
+		for _, info := range set.exprInfos {
+			var exprAttr nlmsg.NestedAttr
+			exprAttr.PutAttrString(linux.NFTA_EXPR_NAME, info.ExprName)
+			if len(info.ExprData) > 0 {
+				exprAttr.PutAttr(linux.NFTA_EXPR_DATA, primitive.AsByteSlice(info.ExprData))
+			}
+			exprList.PutAttr(linux.NFTA_LIST_ELEM, primitive.AsByteSlice(exprAttr))
+		}
+		m.PutNestedAttr(linux.NFTA_SET_EXPRESSIONS, exprList)
+	}
+	return nil
+}
+
+func (nf *NFTables) dumpSets(family stack.AddressFamily, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
+	for f := range stack.NumAFs {
+		if family != stack.Unspec && f != family {
+			continue
+		}
+		for _, tab := range nf.GetAddressFamilyTables(f) {
+			for _, set := range tab.sets {
+				if err := nf.fillSetInfo(set, tab, f, ms); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// GetSet handles dumping sets.
+// Ref: net/netfilter/nf_tables_api.c:nf_tables_getset()
+func (nf *NFTables) GetSet(attrs map[uint16]nlmsg.BytesView, family stack.AddressFamily, flags uint16, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
+	if (flags & linux.NLM_F_DUMP) != 0 {
+		ms.Multi = true
+		return nf.dumpSets(family, ms)
+	}
+	tableNameBytes, ok := attrs[linux.NFTA_SET_TABLE]
+	if !ok {
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "set table attribute is missing")
+	}
+	tableName := tableNameBytes.String()
+
+	table, err := nf.GetTable(family, tableName, uint32(ms.PortID))
+	if err != nil {
+		return err
+	}
+
+	setNameBytes, ok := attrs[linux.NFTA_SET_NAME]
+	if !ok {
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "set name attribute is missing")
+	}
+	setName := setNameBytes.String()
+
+	set, ok := table.sets[setName]
+	if !ok {
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "set does not exist")
+	}
+
+	return nf.fillSetInfo(set, table, family, ms)
+}
+
+func dumpSetElem(set *nftSet, elem *nftSetElem, isCatchAll bool) (nlmsg.NestedAttr, *syserr.AnnotatedError) {
+	var elemAttrs nlmsg.NestedAttr
+	if !isCatchAll {
+		if len(elem.startKey) > 0 {
+			b, err := dumpDataAttr(elem.startKey)
+			if err != nil {
+				return nil, err
+			}
+			elemAttrs.PutAttr(linux.NFTA_SET_ELEM_KEY, primitive.AsByteSlice(b))
+		}
+		if len(elem.endKey) > 0 {
+			b, err := dumpDataAttr(elem.endKey)
+			if err != nil {
+				return nil, err
+			}
+			elemAttrs.PutAttr(linux.NFTA_SET_ELEM_KEY_END, primitive.AsByteSlice(b))
+		}
+	} else {
+		elemAttrs.PutAttr(linux.NFTA_SET_ELEM_FLAGS, nlmsg.PutU32(uint32(linux.NFT_SET_ELEM_CATCHALL)))
+	}
+
+	if (set.flags & linux.NFT_SET_MAP) != 0 {
+		var dataDump []byte
+		var err *syserr.AnnotatedError
+		if elem.data.isVerdict {
+			dataDump, err = dumpVerdictDataAttr(elem.data.verdict)
+		} else if len(elem.data.data) > 0 {
+			dataDump, err = dumpDataAttr(elem.data.data)
+		}
+		if err != nil {
+			return nil, err
+		}
+		if dataDump != nil {
+			elemAttrs.PutAttr(linux.NFTA_SET_ELEM_DATA, primitive.AsByteSlice(dataDump))
+		}
+	}
+
+	if elem.timeout != 0 {
+		elemAttrs.PutAttr(linux.NFTA_SET_ELEM_TIMEOUT, nlmsg.PutU64(elem.timeout))
+	}
+	if elem.expiration != 0 {
+		elemAttrs.PutAttr(linux.NFTA_SET_ELEM_EXPIRATION, nlmsg.PutU64(elem.expiration))
+	}
+	if len(elem.userData) > 0 {
+		elemAttrs.PutAttr(linux.NFTA_SET_ELEM_USERDATA, primitive.AsByteSlice(elem.userData))
+	}
+
+	if len(elem.ops) > 0 {
+		if len(elem.ops) == 1 {
+			opDump, err := elem.ops[0].Dump()
+			if err != nil {
+				return nil, err
+			}
+			if opDump != nil {
+				elemAttrs.PutAttr(linux.NFTA_SET_ELEM_EXPR, primitive.AsByteSlice(opDump))
+			}
+		} else {
+			var exprList nlmsg.NestedAttr
+			for _, op := range elem.ops {
+				opDump, err := op.Dump()
+				if err != nil {
+					return nil, err
+				}
+				if opDump != nil {
+					exprList.PutAttr(linux.NFTA_LIST_ELEM, primitive.AsByteSlice(opDump))
+				}
+			}
+			elemAttrs.PutAttr(linux.NFTA_SET_ELEM_EXPRESSIONS, primitive.AsByteSlice(exprList))
+		}
+	}
+	return elemAttrs, nil
+}
+
+// fillSetElemListInfo populates the message set with information about all
+// elements in a given set.
+// Ref: net/netfilter/nf_tables_api.c:nf_tables_fill_setelem
+func (nf *NFTables) fillSetElemListInfo(set *nftSet, tab *Table, family stack.AddressFamily, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
+	var elemAttrList nlmsg.NestedAttr
+
+	flushElems := func() {
+		m := ms.AddMessage(linux.NetlinkMessageHeader{
+			Type:  uint16(linux.NFNL_SUBSYS_NFTABLES)<<8 | uint16(linux.NFT_MSG_NEWSETELEM),
+			Flags: linux.NLM_F_MULTI,
+		})
+		m.Put(&linux.NetFilterGenMsg{
+			Family:     uint8(AfProtocol(tab.GetAddressFamily())),
+			Version:    uint8(linux.NFNETLINK_V0),
+			ResourceID: uint16(0),
+		})
+
+		m.PutAttrString(linux.NFTA_SET_ELEM_LIST_TABLE, tab.GetName())
+		m.PutAttrString(linux.NFTA_SET_ELEM_LIST_SET, set.name)
+		m.PutNestedAttr(linux.NFTA_SET_ELEM_LIST_ELEMENTS, elemAttrList)
+		elemAttrList = nil
+	}
+
+	for i := range set.elements {
+		elemAttrs, err := dumpSetElem(set, &set.elements[i], false)
+		if err != nil {
+			return err
+		}
+
+		// A Netlink attribute header is 4 bytes. The total nested attribute size
+		// cannot exceed math.MaxUint16.
+		elemSize := linux.NetlinkAttrHeaderSize + len(elemAttrs)
+		if len(elemAttrList) > 0 && len(elemAttrList)+elemSize > math.MaxUint16 {
+			flushElems()
+		}
+
+		elemAttrList.PutAttr(linux.NFTA_LIST_ELEM, primitive.AsByteSlice(elemAttrs))
+	}
+	if set.catchAllElem != nil {
+		elemAttrs, err := dumpSetElem(set, set.catchAllElem, true)
+		if err != nil {
+			return err
+		}
+
+		elemSize := linux.NetlinkAttrHeaderSize + len(elemAttrs)
+		if len(elemAttrList) > 0 && len(elemAttrList)+elemSize > math.MaxUint16 {
+			flushElems()
+		}
+
+		elemAttrList.PutAttr(linux.NFTA_LIST_ELEM, primitive.AsByteSlice(elemAttrs))
+	}
+
+	if len(elemAttrList) > 0 {
+		flushElems()
+	}
+
+	return nil
+}
+
+// getSetElem fills the message set with the requested set element.
+// Ref: net/netfilter/nf_tables_api.c:nft_get_set_elem
+func (nf *NFTables) getSetElem(set *nftSet, table *Table, family stack.AddressFamily, ms *nlmsg.MessageSet, elementsMap map[uint16]nlmsg.BytesView) *syserr.AnnotatedError {
+	var foundElem *nftSetElem
+
+	for _, elemViewBytes := range elementsMap {
+		elemMap, ok := NfParse(nlmsg.AttrsView(elemViewBytes))
+		if !ok {
+			return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse inner element contents")
+		}
+
+		// Parse Catchall
+		elemFlagsVal, flagExists := AttrNetToHost[uint32](linux.NFTA_SET_ELEM_FLAGS, elemMap)
+		if flagExists && (uint16(elemFlagsVal)&linux.NFT_SET_ELEM_CATCHALL != 0) {
+			if set.catchAllElem == nil {
+				return syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, "catchall element does not exist in set")
+			}
+			foundElem = set.catchAllElem
+			break
+		}
+
+		keyAttr, keyOk := elemMap[linux.NFTA_SET_ELEM_KEY]
+		if !keyOk {
+			return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "missing key to lookup in element")
+		}
+
+		keyMap, ok := NfParse(nlmsg.AttrsView(keyAttr))
+		if !ok {
+			return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse key data attributes for lookup")
+		}
+
+		keyData, dataOk := keyMap[linux.NFTA_DATA_VALUE]
+		if !dataOk {
+			return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "missing data value in key for lookup")
+		}
+
+		// Execute lookup and locate matching element.
+		idx := set.backend.Find(keyData)
+		if idx == -1 {
+			return syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, "element does not exist in set")
+		}
+
+		foundElem = &set.elements[idx]
+		break
+	}
+
+	if foundElem == nil {
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "no valid element provided in lookup payload")
+	}
+
+	elemAttrs, err := dumpSetElem(set, foundElem, foundElem == set.catchAllElem)
+	if err != nil {
+		return err
+	}
+
+	var elemAttrList nlmsg.NestedAttr
+	elemAttrList.PutAttr(linux.NFTA_LIST_ELEM, primitive.AsByteSlice(elemAttrs))
+
+	m := ms.AddMessage(linux.NetlinkMessageHeader{
+		Type:  uint16(linux.NFNL_SUBSYS_NFTABLES)<<8 | uint16(linux.NFT_MSG_NEWSETELEM),
+		Flags: 0,
+	})
+	m.Put(&linux.NetFilterGenMsg{
+		Family:     uint8(AfProtocol(table.GetAddressFamily())),
+		Version:    uint8(linux.NFNETLINK_V0),
+		ResourceID: uint16(0),
+	})
+
+	m.PutAttrString(linux.NFTA_SET_ELEM_LIST_TABLE, table.GetName())
+	m.PutAttrString(linux.NFTA_SET_ELEM_LIST_SET, set.name)
+	m.PutNestedAttr(linux.NFTA_SET_ELEM_LIST_ELEMENTS, elemAttrList)
+
+	return nil
+}
+
+// GetSetElements handles dumping set elements.
+// Ref: net/netfilter/nf_tables_api.c:nf_tables_getsetelem
+func (nf *NFTables) GetSetElements(attrs map[uint16]nlmsg.BytesView, family stack.AddressFamily, flags uint16, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
+	tableNameBytes, tabOk := attrs[linux.NFTA_SET_ELEM_LIST_TABLE]
+	if !tabOk {
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "set elem list table attribute is missing")
+	}
+
+	tableName := tableNameBytes.String()
+	table, err := nf.GetTable(family, tableName, uint32(ms.PortID))
+	if err != nil {
+		return err
+	}
+
+	setNameBytes, setOk := attrs[linux.NFTA_SET_ELEM_LIST_SET]
+	if !setOk {
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "set elem list set attribute is missing")
+	}
+
+	setName := setNameBytes.String()
+	set, ok := table.sets[setName]
+	if !ok {
+		return syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, "set does not exist")
+	}
+
+	if (flags & linux.NLM_F_DUMP) != 0 {
+		ms.Multi = true
+		return nf.fillSetElemListInfo(set, table, family, ms)
+	}
+
+	// This is a direct lookup (`nf_tables_getsetelem`).
+	// We must parse the requested element block to find its key.
+	elementsAttr, elementsOk := attrs[linux.NFTA_SET_ELEM_LIST_ELEMENTS]
+	if !elementsOk {
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "set elem list elements attribute is missing for lookup")
+	}
+
+	elementsMap, ok := NfParse(nlmsg.AttrsView(elementsAttr))
+	if !ok {
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse elements wrapper for lookup")
+	}
+	return nf.getSetElem(set, table, family, ms, elementsMap)
 }
 
 // Add set backend implementations below.

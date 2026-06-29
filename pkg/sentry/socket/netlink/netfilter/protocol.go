@@ -1137,13 +1137,16 @@ func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *n
 		}
 		return nil
 	case linux.NFT_MSG_GETSET:
-		// TODO - b/421437663: Implement sets for nftables. This skeleton is
-		// left here to satisfy auxiliary calls from the nft CLI not needed
-		// for packet filtering functionality.
-		ms.Multi = true
+		if err := nft.GetSet(attrs, family, hdr.Flags, ms); err != nil {
+			return err.GetError()
+		}
 		return nil
-	case linux.NFT_MSG_GETRULE_RESET, linux.NFT_MSG_GETSETELEM,
-		linux.NFT_MSG_GETSETELEM_RESET,
+	case linux.NFT_MSG_GETSETELEM:
+		if err := nft.GetSetElements(attrs, family, hdr.Flags, ms); err != nil {
+			return err.GetError()
+		}
+		return nil
+	case linux.NFT_MSG_GETRULE_RESET, linux.NFT_MSG_GETSETELEM_RESET,
 		linux.NFT_MSG_GETOBJ, linux.NFT_MSG_GETOBJ_RESET,
 		linux.NFT_MSG_GETFLOWTABLE:
 

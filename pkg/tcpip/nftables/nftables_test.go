@@ -4668,7 +4668,7 @@ func TestDeepCopyIsolatesOperations(t *testing.T) {
 
 			valuesEqual: func(op1, op2 operation) bool {
 				// Check that the pointers are different.
-				if &op1.(*ranged).low[0] != &op2.(*ranged).low[0] &&
+				if &op1.(*ranged).low[0] == &op2.(*ranged).low[0] ||
 					&op1.(*ranged).high[0] == &op2.(*ranged).high[0] {
 					return false
 				}
@@ -4743,6 +4743,429 @@ func TestDeepCopyIsolatesOperations(t *testing.T) {
 			}
 			if !test.valuesEqual(origOp, copyOp) {
 				t.Fatalf("wanted valuesEqual(orig, copy) == true, got false")
+			}
+		})
+	}
+}
+
+func TestGetSet(t *testing.T) {
+	tabName := "test_table"
+	setName := "test_set"
+
+	tests := []struct {
+		name         string
+		setAttrs     map[uint16]nlmsg.BytesView
+		getAttrs     map[uint16]nlmsg.BytesView
+		getFlags     uint16
+		expectGetErr *syserr.Error
+		verifyMsg    func(*testing.T, *nlmsg.MessageSet)
+	}{
+		{
+			name: "GetSet",
+			setAttrs: map[uint16]nlmsg.BytesView{
+				linux.NFTA_SET_TABLE:     nlmsg.BytesView(tabName),
+				linux.NFTA_SET_NAME:      nlmsg.BytesView(setName),
+				linux.NFTA_SET_ID:        nlmsg.BytesView([]byte{0, 0, 0, 1}),
+				linux.NFTA_SET_KEY_LEN:   nlmsg.BytesView([]byte{0, 0, 0, 4}),
+				linux.NFTA_SET_FLAGS:     nlmsg.BytesView([]byte{0, 0, 0, 8}),
+				linux.NFTA_SET_DATA_TYPE: nlmsg.BytesView([]byte{0xff, 0xff, 0xff, 0x00}),
+			},
+			getAttrs: map[uint16]nlmsg.BytesView{
+				linux.NFTA_SET_TABLE: nlmsg.BytesView(tabName),
+				linux.NFTA_SET_NAME:  nlmsg.BytesView(setName),
+			},
+			verifyMsg: func(t *testing.T, ms *nlmsg.MessageSet) {
+				if ms.Multi {
+					t.Errorf("Expected Multi to be false for non-DUMP GetSet")
+				}
+				if len(ms.Messages) != 1 {
+					t.Fatalf("Expected 1 message, got %d", len(ms.Messages))
+				}
+				attrs, ok := ms.Messages[0].GetData(&linux.NetFilterGenMsg{})
+				if !ok {
+					t.Fatalf("Failed to extract NetFilterGenMsg")
+				}
+				attrMap, ok := NfParse(attrs)
+				if !ok {
+					t.Fatalf("Failed to parse netlink attributes")
+				}
+				if string(attrMap[linux.NFTA_SET_TABLE][:len(tabName)]) != tabName {
+					t.Errorf("Unexpected table name: got %q, want %q", attrMap[linux.NFTA_SET_TABLE], tabName)
+				}
+				if string(attrMap[linux.NFTA_SET_NAME][:len(setName)]) != setName {
+					t.Errorf("Unexpected set name: got %q, want %q", attrMap[linux.NFTA_SET_NAME], setName)
+				}
+			},
+		},
+		{
+			name: "GetAllSets",
+			setAttrs: map[uint16]nlmsg.BytesView{
+				linux.NFTA_SET_TABLE:     nlmsg.BytesView(tabName),
+				linux.NFTA_SET_NAME:      nlmsg.BytesView(setName),
+				linux.NFTA_SET_ID:        nlmsg.BytesView([]byte{0, 0, 0, 1}),
+				linux.NFTA_SET_KEY_LEN:   nlmsg.BytesView([]byte{0, 0, 0, 4}),
+				linux.NFTA_SET_FLAGS:     nlmsg.BytesView([]byte{0, 0, 0, 8}),
+				linux.NFTA_SET_DATA_TYPE: nlmsg.BytesView([]byte{0xff, 0xff, 0xff, 0x00}),
+			},
+			getAttrs: map[uint16]nlmsg.BytesView{},
+			getFlags: linux.NLM_F_DUMP,
+			verifyMsg: func(t *testing.T, ms *nlmsg.MessageSet) {
+				if !ms.Multi {
+					t.Errorf("Expected Multi to be true for DUMP GetSet")
+				}
+				if len(ms.Messages) != 1 {
+					t.Fatalf("Expected 1 message, got %d", len(ms.Messages))
+				}
+			},
+		},
+		{
+			name: "GetNonExistentSet",
+			setAttrs: map[uint16]nlmsg.BytesView{
+				linux.NFTA_SET_TABLE:     nlmsg.BytesView(tabName),
+				linux.NFTA_SET_NAME:      nlmsg.BytesView(setName),
+				linux.NFTA_SET_ID:        nlmsg.BytesView([]byte{0, 0, 0, 1}),
+				linux.NFTA_SET_KEY_LEN:   nlmsg.BytesView([]byte{0, 0, 0, 4}),
+				linux.NFTA_SET_FLAGS:     nlmsg.BytesView([]byte{0, 0, 0, 8}),
+				linux.NFTA_SET_DATA_TYPE: nlmsg.BytesView([]byte{0xff, 0xff, 0xff, 0x00}),
+			},
+			getAttrs: map[uint16]nlmsg.BytesView{
+				linux.NFTA_SET_TABLE: nlmsg.BytesView(tabName),
+				linux.NFTA_SET_NAME:  nlmsg.BytesView("BAD_SET"),
+			},
+			expectGetErr: syserr.ErrInvalidArgument,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			nf := &NFTables{}
+			nf.filters[stack.Inet] = &addressFamilyFilter{
+				family: stack.Inet,
+				tables: make(map[string]*Table),
+			}
+
+			tab := &Table{
+				name:       tabName,
+				sets:       make(map[string]*nftSet),
+				setHandles: make(map[uint64]*nftSet),
+				afFilter:   nf.filters[stack.Inet],
+			}
+			nf.filters[stack.Inet].tables[tabName] = tab
+
+			if tc.setAttrs != nil {
+				ms := &nlmsg.MessageSet{Multi: false, PortID: 100}
+				if err := nf.NewSet(tc.setAttrs, stack.Inet, linux.NLM_F_CREATE, ms); err != nil {
+					t.Fatalf("NewSet failed: %v", err)
+				}
+			}
+
+			ms := &nlmsg.MessageSet{Multi: false, PortID: 100}
+			err := nf.GetSet(tc.getAttrs, stack.Inet, tc.getFlags, ms)
+			if tc.expectGetErr != nil {
+				if err == nil || err.GetError() != tc.expectGetErr {
+					t.Fatalf("Expected GetSet error %v, got %v", tc.expectGetErr, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("GetSet failed: %v", err)
+			}
+			if tc.verifyMsg != nil {
+				tc.verifyMsg(t, ms)
+			}
+		})
+	}
+}
+
+type wantSetElem struct {
+	key        []byte
+	userData   []byte
+	verdict    *stack.NFVerdict
+	isCatchAll bool
+}
+
+func parseDumpedElements(t *testing.T, ms *nlmsg.MessageSet) []wantSetElem {
+	var parsed []wantSetElem
+	for _, msg := range ms.Messages {
+		msgData, ok := msg.GetData(&linux.NetFilterGenMsg{})
+		if !ok {
+			continue
+		}
+		attrMap, ok := NfParse(msgData)
+		if !ok {
+			continue
+		}
+		elementsAttr, ok := attrMap[linux.NFTA_SET_ELEM_LIST_ELEMENTS]
+		if !ok {
+			continue
+		}
+
+		elementsView := nlmsg.AttrsView(elementsAttr)
+		for len(elementsView) > 0 {
+			hdrType, elem, rest, ok := elementsView.ParseFirst()
+			if !ok {
+				t.Fatalf("Failed to parse nested element in list")
+			}
+			elementsView = rest
+			if hdrType.Type != linux.NFTA_LIST_ELEM {
+				continue
+			}
+
+			elemMap, ok := NfParse(nlmsg.AttrsView(elem))
+			if !ok {
+				continue
+			}
+
+			var item wantSetElem
+			flagsAttr, flagsExists := elemMap[linux.NFTA_SET_ELEM_FLAGS]
+			if flagsExists {
+				flagVal := binary.BigEndian.Uint32([]byte(flagsAttr))
+				if uint16(flagVal)&linux.NFT_SET_ELEM_CATCHALL != 0 {
+					item.isCatchAll = true
+				}
+			}
+
+			if !item.isCatchAll {
+				keyAttr, ok := elemMap[linux.NFTA_SET_ELEM_KEY]
+				if ok {
+					keyMap, _ := NfParse(nlmsg.AttrsView(keyAttr))
+					keyData := keyMap[linux.NFTA_DATA_VALUE]
+					item.key = slices.Clone(keyData)
+				}
+			}
+
+			userDataAttr, userDataExists := elemMap[linux.NFTA_SET_ELEM_USERDATA]
+			if userDataExists {
+				item.userData = slices.Clone(userDataAttr)
+			}
+
+			dataAttr, dataExists := elemMap[linux.NFTA_SET_ELEM_DATA]
+			if dataExists {
+				dataMap, _ := NfParse(nlmsg.AttrsView(dataAttr))
+				verdictData, ok := dataMap[linux.NFTA_DATA_VERDICT]
+				if ok {
+					verdictMap, _ := NfParse(nlmsg.AttrsView(verdictData))
+					verdictCode, ok := AttrNetToHost[uint32](linux.NFTA_VERDICT_CODE, verdictMap)
+					if ok {
+						item.verdict = &stack.NFVerdict{Code: verdictCode}
+					}
+				}
+			}
+			parsed = append(parsed, item)
+		}
+	}
+	return parsed
+}
+
+func TestGetSetElements(t *testing.T) {
+	tabName := "test_table"
+	setName := "test_set"
+
+	key1 := []byte{192, 168, 1, 1}
+	keyData1, _ := dumpDataAttr(key1)
+	verdict1, _ := dumpVerdictDataAttr(stack.NFVerdict{Code: VC(linux.NF_ACCEPT)})
+
+	key2 := []byte{10, 0, 0, 1}
+	keyData2, _ := dumpDataAttr(key2)
+	verdict2, _ := dumpVerdictDataAttr(stack.NFVerdict{Code: VC(linux.NF_DROP)})
+	userData2 := []byte("my-element-userdata")
+
+	// Standard element 1
+	var qElem1 nlmsg.NestedAttr
+	qElem1.PutAttr(linux.NFTA_SET_ELEM_KEY, primitive.AsByteSlice(keyData1))
+	qElem1.PutAttr(linux.NFTA_SET_ELEM_DATA, primitive.AsByteSlice(verdict1))
+
+	// Userdata element 2
+	var qElem2 nlmsg.NestedAttr
+	qElem2.PutAttr(linux.NFTA_SET_ELEM_KEY, primitive.AsByteSlice(keyData2))
+	qElem2.PutAttr(linux.NFTA_SET_ELEM_DATA, primitive.AsByteSlice(verdict2))
+	qElem2.PutAttr(linux.NFTA_SET_ELEM_USERDATA, primitive.AsByteSlice(userData2))
+
+	// Catchall element 3
+	var qElem3 nlmsg.NestedAttr
+	qElem3.PutAttr(linux.NFTA_SET_ELEM_FLAGS, nlmsg.PutU32(uint32(linux.NFT_SET_ELEM_CATCHALL)))
+	qElem3.PutAttr(linux.NFTA_SET_ELEM_DATA, primitive.AsByteSlice(verdict1))
+
+	tests := []struct {
+		name             string
+		elemAttrs        map[uint16]nlmsg.BytesView // elements to create via NewSetElements
+		getAttrs         map[uint16]nlmsg.BytesView // elements to get via GetSetElements
+		getFlags         uint16
+		expectNewElemErr *syserr.Error
+		expectGetErr     *syserr.Error
+		wanted           []wantSetElem
+	}{
+		{
+			name:      "GetEmptyElements",
+			elemAttrs: nil,
+			getAttrs: map[uint16]nlmsg.BytesView{
+				linux.NFTA_SET_ELEM_LIST_TABLE: nlmsg.BytesView(tabName),
+				linux.NFTA_SET_ELEM_LIST_SET:   nlmsg.BytesView(setName),
+			},
+			getFlags: linux.NLM_F_DUMP,
+			wanted:   nil,
+		},
+		{
+			name: "GetAllElements",
+			elemAttrs: func() map[uint16]nlmsg.BytesView {
+				var list nlmsg.NestedAttr
+				list.PutAttr(linux.NFTA_LIST_ELEM, primitive.AsByteSlice(qElem1))
+				list.PutAttr(linux.NFTA_LIST_ELEM, primitive.AsByteSlice(qElem2))
+				list.PutAttr(linux.NFTA_LIST_ELEM, primitive.AsByteSlice(qElem3))
+				return map[uint16]nlmsg.BytesView{
+					linux.NFTA_SET_ELEM_LIST_TABLE:    nlmsg.BytesView(tabName),
+					linux.NFTA_SET_ELEM_LIST_SET:      nlmsg.BytesView(setName),
+					linux.NFTA_SET_ELEM_LIST_ELEMENTS: nlmsg.BytesView(list),
+				}
+			}(),
+			getAttrs: map[uint16]nlmsg.BytesView{
+				linux.NFTA_SET_ELEM_LIST_TABLE: nlmsg.BytesView(tabName),
+				linux.NFTA_SET_ELEM_LIST_SET:   nlmsg.BytesView(setName),
+			},
+			getFlags: linux.NLM_F_DUMP,
+			wanted: []wantSetElem{
+				{
+					key:     key1,
+					verdict: &stack.NFVerdict{Code: VC(linux.NF_ACCEPT)},
+				},
+				{
+					key:      key2,
+					userData: userData2,
+					verdict:  &stack.NFVerdict{Code: VC(linux.NF_DROP)},
+				},
+				{
+					isCatchAll: true,
+					verdict:    &stack.NFVerdict{Code: VC(linux.NF_ACCEPT)},
+				},
+			},
+		},
+		{
+			name: "GetElement",
+			elemAttrs: func() map[uint16]nlmsg.BytesView {
+				var list nlmsg.NestedAttr
+				list.PutAttr(linux.NFTA_LIST_ELEM, primitive.AsByteSlice(qElem2))
+				return map[uint16]nlmsg.BytesView{
+					linux.NFTA_SET_ELEM_LIST_TABLE:    nlmsg.BytesView(tabName),
+					linux.NFTA_SET_ELEM_LIST_SET:      nlmsg.BytesView(setName),
+					linux.NFTA_SET_ELEM_LIST_ELEMENTS: nlmsg.BytesView(list),
+				}
+			}(),
+			getAttrs: func() map[uint16]nlmsg.BytesView {
+				var queryElemAttr nlmsg.NestedAttr
+				queryKeyData, _ := dumpDataAttr(key2)
+				queryElemAttr.PutAttr(linux.NFTA_SET_ELEM_KEY, primitive.AsByteSlice(queryKeyData))
+
+				var queryListAttr nlmsg.NestedAttr
+				queryListAttr.PutAttr(linux.NFTA_LIST_ELEM, primitive.AsByteSlice(queryElemAttr))
+				return map[uint16]nlmsg.BytesView{
+					linux.NFTA_SET_ELEM_LIST_TABLE:    nlmsg.BytesView(tabName),
+					linux.NFTA_SET_ELEM_LIST_SET:      nlmsg.BytesView(setName),
+					linux.NFTA_SET_ELEM_LIST_ELEMENTS: nlmsg.BytesView(queryListAttr),
+				}
+			}(),
+			wanted: []wantSetElem{
+				{
+					key:      key2,
+					userData: userData2,
+					verdict:  &stack.NFVerdict{Code: VC(linux.NF_DROP)},
+				},
+			},
+		},
+		{
+			name: "GetElementsFromNonExistentSet",
+			getAttrs: map[uint16]nlmsg.BytesView{
+				linux.NFTA_SET_ELEM_LIST_TABLE: nlmsg.BytesView(tabName),
+				linux.NFTA_SET_ELEM_LIST_SET:   nlmsg.BytesView("BAD_SET"),
+			},
+			getFlags:     linux.NLM_F_DUMP,
+			expectGetErr: syserr.ErrNoFileOrDir,
+		},
+		{
+			name: "GetNonExistentElement",
+			getAttrs: func() map[uint16]nlmsg.BytesView {
+				var queryElemAttr nlmsg.NestedAttr
+				queryKeyData, _ := dumpDataAttr([]byte{255, 255, 255, 255})
+				queryElemAttr.PutAttr(linux.NFTA_SET_ELEM_KEY, primitive.AsByteSlice(queryKeyData))
+
+				var queryListAttr nlmsg.NestedAttr
+				queryListAttr.PutAttr(linux.NFTA_LIST_ELEM, primitive.AsByteSlice(queryElemAttr))
+				return map[uint16]nlmsg.BytesView{
+					linux.NFTA_SET_ELEM_LIST_TABLE:    nlmsg.BytesView(tabName),
+					linux.NFTA_SET_ELEM_LIST_SET:      nlmsg.BytesView(setName),
+					linux.NFTA_SET_ELEM_LIST_ELEMENTS: nlmsg.BytesView(queryListAttr),
+				}
+			}(),
+			expectGetErr: syserr.ErrNoFileOrDir,
+		},
+		{
+			name: "GetElementsMissingElementsAttr",
+			getAttrs: map[uint16]nlmsg.BytesView{
+				linux.NFTA_SET_ELEM_LIST_TABLE: nlmsg.BytesView(tabName),
+				linux.NFTA_SET_ELEM_LIST_SET:   nlmsg.BytesView(setName),
+			},
+			expectGetErr: syserr.ErrInvalidArgument,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			nf := &NFTables{}
+			nf.filters[stack.Inet] = &addressFamilyFilter{
+				family: stack.Inet,
+				tables: make(map[string]*Table),
+			}
+
+			tab := &Table{
+				name:       tabName,
+				sets:       make(map[string]*nftSet),
+				setHandles: make(map[uint64]*nftSet),
+				afFilter:   nf.filters[stack.Inet],
+			}
+			nf.filters[stack.Inet].tables[tabName] = tab
+
+			// Pre-create the set where elements will be added/queried
+			newSetAttrs := map[uint16]nlmsg.BytesView{
+				linux.NFTA_SET_TABLE:     nlmsg.BytesView(tabName),
+				linux.NFTA_SET_NAME:      nlmsg.BytesView(setName),
+				linux.NFTA_SET_ID:        nlmsg.BytesView([]byte{0, 0, 0, 1}),
+				linux.NFTA_SET_KEY_LEN:   nlmsg.BytesView([]byte{0, 0, 0, 4}),
+				linux.NFTA_SET_FLAGS:     nlmsg.BytesView([]byte{0, 0, 0, 8}),
+				linux.NFTA_SET_DATA_TYPE: nlmsg.BytesView([]byte{0xff, 0xff, 0xff, 0x00}),
+			}
+			if err := nf.NewSet(newSetAttrs, stack.Inet, linux.NLM_F_CREATE, &nlmsg.MessageSet{}); err != nil {
+				t.Fatalf("Setup NewSet failed: %v", err)
+			}
+
+			if tc.elemAttrs != nil {
+				ms := &nlmsg.MessageSet{Multi: false, PortID: 100}
+				err := nf.NewSetElements(tc.elemAttrs, stack.Inet, 0, ms)
+				if tc.expectNewElemErr != nil {
+					if err == nil || err.GetError() != tc.expectNewElemErr {
+						t.Fatalf("Expected NewSetElements error %v, got %v", tc.expectNewElemErr, err)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatalf("NewSetElements failed: %v", err)
+				}
+			}
+
+			ms := &nlmsg.MessageSet{Multi: false, PortID: 100}
+			err := nf.GetSetElements(tc.getAttrs, stack.Inet, tc.getFlags, ms)
+			if tc.expectGetErr != nil {
+				if err == nil || err.GetError() != tc.expectGetErr {
+					t.Fatalf("Expected GetSetElements error %v, got %v", tc.expectGetErr, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("GetSetElements failed: %v", err)
+			}
+
+			// Validate returned elements against expected elements list
+			parsed := parseDumpedElements(t, ms)
+			if diff := cmp.Diff(tc.wanted, parsed, cmp.AllowUnexported(wantSetElem{})); diff != "" {
+				t.Errorf("GetSetElements returned unexpected elements diff (-want +got):\n%s", diff)
 			}
 		})
 	}
