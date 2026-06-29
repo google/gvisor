@@ -189,6 +189,20 @@ func modifyEntries6(mapper IDMapper, stk *stack.Stack, optVal []byte, replace *l
 				nflog("failed to parse target: %v", err)
 				return nil, err
 			}
+			// Set the handler for REJECT targets.
+			if rejectTarget, ok := target.(*rejectIPv6Target); ok {
+				if replace.Name.String() != filterTable {
+					nflog("REJECT target is only supported in the filter table")
+					return nil, syserr.ErrInvalidArgument
+				}
+				netProto := stk.NetworkProtocolInstance(header.IPv6ProtocolNumber)
+				handler, ok := netProto.(stack.RejectIPv6WithHandler)
+				if !ok {
+					nflog("modifyEntries6: expected %T to implement stack.RejectIPv6WithHandler", netProto)
+					return nil, syserr.ErrInvalidArgument
+				}
+				rejectTarget.Handler = handler
+			}
 			rule.Target = target
 		}
 		optVal = optVal[targetSize:]

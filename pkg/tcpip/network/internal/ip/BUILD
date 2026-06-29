@@ -11,6 +11,7 @@ go_library(
         "duplicate_address_detection.go",
         "errors.go",
         "generic_multicast_protocol.go",
+        "reject_with_reset.go",
         "stats.go",
     ],
     visibility = [
@@ -19,6 +20,7 @@ go_library(
         "//pkg/tcpip/network/ipv6:__pkg__",
     ],
     deps = [
+        "//pkg/buffer",
         "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/header",

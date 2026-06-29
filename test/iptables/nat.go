@@ -1086,11 +1086,15 @@ func (*NATOutDNAT) Name() string {
 // ContainerAction implements TestCase.ContainerAction.
 func (*NATOutDNAT) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	dst := netutils.NowhereIP(ipv6)
+	target := fmt.Sprintf("127.0.0.1:%d", acceptPort)
+	if ipv6 {
+		target = fmt.Sprintf("[%s]:%d", "::1", acceptPort)
+	}
 	return loopbackTest(ctx, ipv6, net.ParseIP(dst),
 		"-A", "OUTPUT",
 		"-d", dst,
 		"-p", "udp", "-m", "udp",
-		"-j", "DNAT", "--to-destination", fmt.Sprintf("127.0.0.1:%d", acceptPort))
+		"-j", "DNAT", "--to-destination", target)
 }
 
 // LocalAction implements TestCase.LocalAction.
@@ -1112,11 +1116,15 @@ func (*NATOutDNATAddrOnly) Name() string {
 // ContainerAction implements TestCase.ContainerAction.
 func (*NATOutDNATAddrOnly) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	dst := netutils.NowhereIP(ipv6)
+	target := "127.0.0.1"
+	if ipv6 {
+		target = "::1"
+	}
 	return loopbackTestPort(ctx, ipv6, net.ParseIP(dst), acceptPort,
 		"-A", "OUTPUT",
 		"-d", dst,
 		"-p", "udp", "-m", "udp",
-		"-j", "DNAT", "--to-destination", "127.0.0.1")
+		"-j", "DNAT", "--to-destination", target)
 }
 
 // LocalAction implements TestCase.LocalAction.
@@ -1138,7 +1146,10 @@ func (*NATOutDNATPortOnly) Name() string {
 
 // ContainerAction implements TestCase.ContainerAction.
 func (*NATOutDNATPortOnly) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
-	const dst = "127.0.0.1"
+	dst := "127.0.0.1"
+	if ipv6 {
+		dst = "::1"
+	}
 	return loopbackTest(ctx, ipv6, net.ParseIP(dst),
 		"-A", "OUTPUT",
 		"-d", dst,
