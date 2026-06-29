@@ -26,17 +26,41 @@ import (
 )
 
 func TestNewBundle(t *testing.T) {
-	for _, enableNetworking := range []bool{false, true} {
-		t.Run(t.Name(), func(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		enableNetworking bool
+		readonlyRootfs   bool
+	}{
+		{
+			name:             "network_disabled_writable_rootfs",
+			enableNetworking: false,
+			readonlyRootfs:   false,
+		},
+		{
+			name:             "network_disabled_readonly_rootfs",
+			enableNetworking: false,
+			readonlyRootfs:   true,
+		},
+		{
+			name:             "network_enabled_writable_rootfs",
+			enableNetworking: true,
+			readonlyRootfs:   false,
+		},
+		{
+			name:             "network_enabled_readonly_rootfs",
+			enableNetworking: true,
+			readonlyRootfs:   true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			tempDir := t.TempDir()
 			sandboxID := "test-sandbox"
 
-			bundleDir, err := sandbox.NewBundle(sandboxID, tempDir, enableNetworking)
+			bundleDir, err := sandbox.NewBundle(sandboxID, tempDir, tc.enableNetworking, tc.readonlyRootfs, nil)
 			if err != nil {
-				t.Fatalf("NewBundle(enableNet=%v) failed: %v", enableNetworking, err)
+				t.Fatalf("NewBundle(enableNet=%v, readonlyRootfs=%v) failed: %v", tc.enableNetworking, tc.readonlyRootfs, err)
 			}
 			defer os.RemoveAll(bundleDir)
-
 			expectedBundleDir := filepath.Join(tempDir, sandboxID)
 			if bundleDir != expectedBundleDir {
 				t.Fatalf("NewBundle(%v, %v) = %q, want %q", sandboxID, tempDir, bundleDir, expectedBundleDir)
@@ -61,13 +85,16 @@ func TestNewBundle(t *testing.T) {
 			if spec.Root == nil || spec.Root.Path != "rootfs" {
 				t.Errorf("spec.Root.Path is not 'rootfs', got: %+v", spec.Root)
 			}
+			if spec.Root.Readonly != tc.readonlyRootfs {
+				t.Errorf("spec.Root.Readonly = %v, want %v", spec.Root.Readonly, tc.readonlyRootfs)
+			}
 			if spec.Linux == nil {
 				t.Fatalf("spec.Linux is nil")
 			}
 
 			var expectedNamespaces []specs.LinuxNamespace
 			expectedNamespaces = append(expectedNamespaces, specs.LinuxNamespace{Type: specs.PIDNamespace})
-			if enableNetworking {
+			if tc.enableNetworking {
 				expectedNamespaces = append(expectedNamespaces, specs.LinuxNamespace{Type: specs.NetworkNamespace})
 			}
 			expectedNamespaces = append(expectedNamespaces, specs.LinuxNamespace{Type: specs.MountNamespace})
@@ -78,7 +105,7 @@ func TestNewBundle(t *testing.T) {
 			}
 
 			if len(spec.Linux.Namespaces) != len(expectedNamespaces) {
-				t.Errorf("enableNetworking=%v: Namespaces length = %d, want %d. Got: %+v, Want: %+v", enableNetworking, len(spec.Linux.Namespaces), len(expectedNamespaces), spec.Linux.Namespaces, expectedNamespaces)
+				t.Errorf("enableNetworking=%v: Namespaces length = %d, want %d. Got: %+v, Want: %+v", tc.enableNetworking, len(spec.Linux.Namespaces), len(expectedNamespaces), spec.Linux.Namespaces, expectedNamespaces)
 			}
 			namespaceComparator := func(a, b specs.LinuxNamespace) int {
 				if a.Type == b.Type && a.Path == b.Path {
@@ -92,8 +119,38 @@ func TestNewBundle(t *testing.T) {
 			slices.SortFunc(spec.Linux.Namespaces, namespaceComparator)
 			slices.SortFunc(expectedNamespaces, namespaceComparator)
 			if !slices.Equal(spec.Linux.Namespaces, expectedNamespaces) {
-				t.Errorf("enableNetworking=%v: spec.Linux.Namespaces=%+v, want: %+v", enableNetworking, spec.Linux.Namespaces, expectedNamespaces)
+				t.Errorf("enableNetworking=%v: spec.Linux.Namespaces=%+v, want: %+v", tc.enableNetworking, spec.Linux.Namespaces, expectedNamespaces)
 			}
 		})
+	}
+}
+
+func TestNewBundleWithAnnotations(t *testing.T) {
+	tempDir := t.TempDir()
+	sandboxID := "test-sandbox-annotations"
+	annotations := map[string]string{
+		"dev.gvisor.tar.rootfs.upper": "/tmp/test.tar",
+	}
+
+	bundleDir, err := sandbox.NewBundle(sandboxID, tempDir, false, false, annotations)
+	if err != nil {
+		t.Fatalf("NewBundle failed: %v", err)
+	}
+	defer os.RemoveAll(bundleDir)
+
+	configPath := filepath.Join(bundleDir, "config.json")
+	configFile, err := os.Open(configPath)
+	if err != nil {
+		t.Fatalf("failed to open config.json: %v", err)
+	}
+	defer configFile.Close()
+
+	var spec specs.Spec
+	if err := json.NewDecoder(configFile).Decode(&spec); err != nil {
+		t.Fatalf("failed to decode config.json: %v", err)
+	}
+
+	if val, ok := spec.Annotations["dev.gvisor.tar.rootfs.upper"]; !ok || val != "/tmp/test.tar" {
+		t.Errorf("expected annotation 'dev.gvisor.tar.rootfs.upper' with value '/tmp/test.tar', got spec.Annotations: %+v", spec.Annotations)
 	}
 }

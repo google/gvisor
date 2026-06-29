@@ -19,19 +19,31 @@ package sandbox
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"time"
 )
+
+var defaultSnapshotStorage SnapshotStorage
+
+// SetDefaultSnapshotStorage sets the default SnapshotStorage used for restoring sandboxes.
+func SetDefaultSnapshotStorage(storage SnapshotStorage) {
+	defaultSnapshotStorage = storage
+}
 
 // Options holds the configuration for a Sandbox.
 type Options struct {
 	runtimeDir       string
 	id               string
 	enableNetworking bool
+	writableRootfs   bool
+	snapshotID       SnapshotID
+	snapshotStore    SnapshotStorage
 }
 
 // Option configures the Options struct.
@@ -55,6 +67,31 @@ func WithID(id string) Option {
 func WithNetworking(enabled bool) Option {
 	return func(o *Options) {
 		o.enableNetworking = enabled
+	}
+}
+
+// WithWritableRootfs configures whether the root filesystem is writable.
+func WithWritableRootfs(writable bool) Option {
+	return func(o *Options) {
+		o.writableRootfs = writable
+	}
+}
+
+// WithSnapshotID configures the sandbox to restore state from the given snapshot ID.
+// The sandbox automatically reads the snapshot metadata to determine if it is a
+// full Checkpoint/Restore, Filesystem snapshot, or Rootfs Tar snapshot.
+// It uses the default SnapshotStorage set by SetDefaultSnapshotStorage.
+func WithSnapshotID(snapshotID SnapshotID) Option {
+	return func(o *Options) {
+		o.snapshotID = snapshotID
+	}
+}
+
+// WithSnapshotStore configures a custom SnapshotStorage for this restore operation,
+// overriding the default SnapshotStorage.
+func WithSnapshotStore(storage SnapshotStorage) Option {
+	return func(o *Options) {
+		o.snapshotStore = storage
 	}
 }
 
@@ -130,7 +167,70 @@ func New(ctx context.Context, opts ...Option) (*Sandbox, error) {
 		return nil, fmt.Errorf("sandbox state directory has incorrect permissions: got %v, want %v", fi.Mode().Perm(), os.FileMode(0700))
 	}
 
-	bundleDir, err := NewBundle(options.id, runDir, options.enableNetworking)
+	var annotations map[string]string
+	var globalFlags []string
+	var runFlags []string
+	var isCheckpointRestore bool
+	var checkpointRestoreDir string
+
+	if options.snapshotID != "" && !options.writableRootfs {
+		return nil, fmt.Errorf("rootfs must be writable when restoring from snapshot")
+	}
+
+	if options.snapshotID != "" {
+		store := options.snapshotStore
+		if store == nil {
+			store = defaultSnapshotStorage
+		}
+		if store == nil {
+			return nil, fmt.Errorf("no snapshot storage configured for restore")
+		}
+
+		// Fetch metadata.json from store.
+		metaReader, err := store.GetReader(ctx, options.snapshotID, MetadataAsset)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read snapshot metadata: %w", err)
+		}
+		defer metaReader.Close()
+
+		var meta SnapshotMetadata
+		if err := json.NewDecoder(metaReader).Decode(&meta); err != nil {
+			return nil, fmt.Errorf("failed to parse snapshot metadata: %w", err)
+		}
+
+		// Perform restore based on type.
+		switch meta.Type {
+		case RootfsTarSnapshot:
+			tarPath, err := readRootfsTar(ctx, options.snapshotID, store)
+			if err != nil {
+				return nil, err
+			}
+			defer os.Remove(tarPath)
+
+			annotations = map[string]string{
+				"dev.gvisor.tar.rootfs.upper": tarPath,
+			}
+			globalFlags = append(globalFlags, "--allow-rootfs-tar-annotation")
+
+		case FilesystemSnapshot:
+			fsRestoreDir := filepath.Join(stateDir, "fs-restore")
+			if err := os.MkdirAll(fsRestoreDir, 0700); err != nil {
+				return nil, err
+			}
+			// TODO: List assets in store and download all filesystem image assets to fsRestoreDir.
+			runFlags = append(runFlags, fmt.Sprintf("--fs-restore-image-path=%s", fsRestoreDir))
+
+		case CheckpointRestore:
+			checkpointRestoreDir = filepath.Join(stateDir, "checkpoint-restore")
+			if err := os.MkdirAll(checkpointRestoreDir, 0700); err != nil {
+				return nil, err
+			}
+			// TODO: List assets in store and download all checkpoint image assets to checkpointRestoreDir.
+			isCheckpointRestore = true
+		}
+	}
+
+	bundleDir, err := NewBundle(options.id, runDir, options.enableNetworking, !options.writableRootfs, annotations)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OCI bundle: %v", err)
 	}
@@ -142,8 +242,7 @@ func New(ctx context.Context, opts ...Option) (*Sandbox, error) {
 		rootState: stateDir,
 	}
 
-	// Launch the sandbox in detached mode via os/exec, we use `runsc run` here
-	// as a shortcut for `runsc create` and `runsc start`.
+	// Launch the sandbox in detached mode via os/exec.
 	args := []string{"--root", sb.rootState}
 	if os.Geteuid() != 0 {
 		args = append(args, "--ignore-cgroups")
@@ -151,9 +250,16 @@ func New(ctx context.Context, opts ...Option) (*Sandbox, error) {
 	if !options.enableNetworking {
 		args = append(args, "--network=none")
 	}
-	args = append(args, "run", "--bundle", sb.bundleDir, "--detach", sb.id)
-	cmd := exec.CommandContext(ctx, sb.runscPath, args...)
+	args = append(args, globalFlags...)
 
+	if isCheckpointRestore {
+		args = append(args, "restore", "--image-path", checkpointRestoreDir, "--detach", sb.id)
+	} else {
+		args = append(args, "run")
+		args = append(args, runFlags...)
+		args = append(args, "--bundle", sb.bundleDir, "--detach", sb.id)
+	}
+	cmd := exec.CommandContext(ctx, sb.runscPath, args...)
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("failed to create sandbox via subprocess: %v", err)
 	}
@@ -194,10 +300,146 @@ func (s *Sandbox) Close(ctx context.Context) error {
 		return fmt.Errorf("failed to clean up sandbox bundle directory: %v", err)
 	}
 
+	if err := os.RemoveAll(s.rootState); err != nil {
+		return fmt.Errorf("failed to clean up sandbox state directory: %v", err)
+	}
+
 	return nil
 }
 
 // Bundle returns the path to the OCI bundle directory for this sandbox.
 func (s *Sandbox) Bundle() string {
 	return s.bundleDir
+}
+
+// SnapshotOptions holds configuration for taking a snapshot.
+type SnapshotOptions struct {
+	LeaveRunning bool
+}
+
+// SnapshotOption configures SnapshotOptions.
+type SnapshotOption func(*SnapshotOptions)
+
+// WithLeaveRunning keeps the sandbox running after taking the snapshot.
+func WithLeaveRunning(leaveRunning bool) SnapshotOption {
+	return func(o *SnapshotOptions) {
+		o.LeaveRunning = leaveRunning
+	}
+}
+
+func newSnapshotID() SnapshotID {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		panic(fmt.Sprintf("failed to generate random bytes for snapshot ID: %v", err))
+	}
+	return SnapshotID(fmt.Sprintf("snap-%x", b))
+}
+
+// Snapshot serializes and saves the sandbox state to storage, returning the generated snapshot ID.
+// Depending on the snapshotType, it will perform a full Checkpoint, a Filesystem Snapshot, or a Rootfs Tar Snapshot.
+// It also automatically generates and writes "metadata.json" into the storage.
+func (s *Sandbox) Snapshot(ctx context.Context, snapshotType SnapshotType, storage SnapshotStorage, opts ...SnapshotOption) (SnapshotID, error) {
+	options := SnapshotOptions{
+		LeaveRunning: false, // Default is false.
+	}
+	for _, o := range opts {
+		o(&options)
+	}
+
+	snapshotID := newSnapshotID()
+
+	switch snapshotType {
+	case RootfsTarSnapshot:
+		if err := s.snapshotRootfsTar(ctx, snapshotID, storage); err != nil {
+			return "", err
+		}
+
+	case FilesystemSnapshot:
+		// TODO: Run `runsc fscheckpoint --image-path=<localTempDir> [--leave-running] <sandboxID>`.
+		// TODO: Walk `<localTempDir>` and upload each file to storage.
+
+	case CheckpointRestore:
+		// TODO: Run `runsc checkpoint --image-path=<localTempDir> [--leave-running] <sandboxID>`.
+		// TODO: Walk `<localTempDir>` and upload each file to storage.
+	}
+
+	meta := SnapshotMetadata{
+		Type:      snapshotType,
+		CreatedAt: time.Now().UTC().Format(time.RFC3339),
+	}
+
+	metaWriter, err := storage.PutWriter(ctx, snapshotID, MetadataAsset)
+	if err != nil {
+		return "", fmt.Errorf("failed to create metadata.json in storage: %w", err)
+	}
+	defer metaWriter.Close()
+
+	if err := json.NewEncoder(metaWriter).Encode(&meta); err != nil {
+		return "", fmt.Errorf("failed to write metadata.json to storage: %w", err)
+	}
+
+	return snapshotID, nil
+}
+
+func (s *Sandbox) snapshotRootfsTar(ctx context.Context, snapshotID SnapshotID, storage SnapshotStorage) error {
+	tarFile, err := os.CreateTemp(os.TempDir(), "rootfs-*.tar")
+	if err != nil {
+		return fmt.Errorf("failed to create temp tar file: %w", err)
+	}
+	tarPath := tarFile.Name()
+	tarFile.Close()
+	defer os.Remove(tarPath)
+
+	cmd := exec.CommandContext(ctx, s.runscPath, "--root", s.rootState, "tar", "rootfs-upper", "--file", tarPath, s.id)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("runsc tar failed: %v (stderr: %q)", err, stderr.String())
+	}
+
+	localFile, err := os.Open(tarPath)
+	if err != nil {
+		return fmt.Errorf("failed to open temp tar file: %w", err)
+	}
+	defer localFile.Close()
+
+	storageWriter, err := storage.PutWriter(ctx, snapshotID, RootfsAsset)
+	if err != nil {
+		return fmt.Errorf("failed to create storage writer: %w", err)
+	}
+	defer storageWriter.Close()
+
+	if _, err := io.Copy(storageWriter, localFile); err != nil {
+		return fmt.Errorf("failed to upload rootfs tar: %w", err)
+	}
+	return nil
+}
+
+func readRootfsTar(ctx context.Context, snapshotID SnapshotID, store SnapshotStorage) (string, error) {
+	tarFile, err := os.CreateTemp(os.TempDir(), "rootfs-*.tar")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp tar file: %w", err)
+	}
+	tarPath := tarFile.Name()
+	defer tarFile.Close()
+
+	cleanup := true
+	defer func() {
+		if cleanup {
+			os.Remove(tarPath)
+		}
+	}()
+
+	storageReader, err := store.GetReader(ctx, snapshotID, RootfsAsset)
+	if err != nil {
+		return "", fmt.Errorf("failed to get rootfs reader from storage: %w", err)
+	}
+	defer storageReader.Close()
+
+	if _, err := io.Copy(tarFile, storageReader); err != nil {
+		return "", fmt.Errorf("failed to download rootfs asset: %w", err)
+	}
+
+	cleanup = false
+	return tarPath, nil
 }
