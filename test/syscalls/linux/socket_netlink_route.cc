@@ -191,9 +191,13 @@ TEST(NetlinkRouteTest, ListMembershipsTruncated) {
 
   // Make a smaller buffer
   ASSERT_GE(len, 2);
-  socklen_t new_len = len / 2;
-  std::vector<char> buf(new_len, 0);
+  socklen_t pre_len = len / 2;
+  // ASan intercepts getsockopt and checks if buf has size up to the returned
+  // new_len, so we must allocate a buffer of size `len` to avoid a false
+  // positive heap-buffer-overflow.
+  std::vector<char> buf(len, 0);
 
+  socklen_t new_len = pre_len;
   int ret = getsockopt(fd.get(), SOL_NETLINK, NETLINK_LIST_MEMBERSHIPS,
                        buf.data(), &new_len);
   const bool was_efault = Value(ret, SyscallFailsWithErrno(EFAULT));
@@ -206,10 +210,10 @@ TEST(NetlinkRouteTest, ListMembershipsTruncated) {
   EXPECT_THAT(ret, SyscallSucceeds());
 
   EXPECT_EQ(new_len, len);
-  // First len / 2 elements were set (some may be zero, so all we can do is test
+  // First pre_len elements were set (some may be zero, so all we can do is test
   // that they're not *all* 0).
-  EXPECT_FALSE(!buf.empty() && std::all_of(buf.begin(), buf.end(),
-                                           [](char c) { return c == 0; }));
+  EXPECT_FALSE(pre_len > 0 && std::all_of(buf.begin(), buf.begin() + pre_len,
+                                          [](char c) { return c == 0; }));
 }
 
 // Validates the responses to RTM_GETLINK + NLM_F_DUMP.
