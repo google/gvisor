@@ -282,7 +282,9 @@ func (c *WriteContext) TryNewPacketBuffer(reserveHdrBytes int, data buffer.Buffe
 	if !e.hasSendSpaceRLocked() {
 		return nil
 	}
-	return c.newPacketBufferLocked(reserveHdrBytes, data)
+
+	mark := e.ops.GetMark()
+	return c.newPacketBufferLocked(reserveHdrBytes, data, mark)
 }
 
 // TryNewPacketBufferFromPayloader returns a new packet buffer if the endpoint's send buffer
@@ -301,11 +303,12 @@ func (c *WriteContext) TryNewPacketBufferFromPayloader(reserveHdrBytes int, payl
 		data.Release()
 		return nil, &tcpip.ErrBadBuffer{}
 	}
-	return c.newPacketBufferLocked(reserveHdrBytes, data), nil
+	mark := e.ops.GetMark()
+	return c.newPacketBufferLocked(reserveHdrBytes, data, mark), nil
 }
 
 // +checklocks:c.e.sendBufferSizeInUseMu
-func (c *WriteContext) newPacketBufferLocked(reserveHdrBytes int, data buffer.Buffer) *stack.PacketBuffer {
+func (c *WriteContext) newPacketBufferLocked(reserveHdrBytes int, data buffer.Buffer, mark uint32) *stack.PacketBuffer {
 	e := c.e
 	// Note that we allow oversubscription - if there is any space at all in the
 	// send buffer, we accept the full packet which may be larger than the space
@@ -328,6 +331,7 @@ func (c *WriteContext) newPacketBufferLocked(reserveHdrBytes int, data buffer.Bu
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: reserveHdrBytes,
 		Payload:            data,
+		Mark:               mark,
 		OnRelease: func() {
 			e.sendBufferSizeInUseMu.Lock()
 			if got := e.sendBufferSizeInUse; got < pktSize {

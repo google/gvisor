@@ -455,7 +455,7 @@ func (r *restorer) restore(l *Loader) error {
 		r.asyncMFLoader.KickoffPrivate(mfmap)
 	}
 
-	ctx, err = r.prepareRestoreContextExtraLocked(ctx, l)
+	ctx, err = r.prepareNvproxyRestoreContextLocked(ctx, l)
 	if err != nil {
 		return err
 	}
@@ -554,8 +554,7 @@ func (r *restorer) restore(l *Loader) error {
 
 	l.k.RestoreContainerMapping(l.containerIDs)
 	l.k.SetSaver(l)
-
-	l.kernelInitExtra(ctx)
+	l.createRemappedNvproxyDeviceFiles(ctx)
 
 	// Refresh the control server with the newly created kernel.
 	l.ctrl.refreshHandlers()
@@ -701,7 +700,7 @@ func (l *Loader) saveWithOpts(saveOpts *state.SaveOpts, execOpts *control.SaveRe
 	// Save start time of the runsc process.
 	saveOpts.StartTime = starttime.Get()
 
-	if err := l.prepareSaveOptsExtra(saveOpts); err != nil {
+	if err := l.setNvproxyDeviceRemapMetadata(saveOpts); err != nil {
 		return err
 	}
 

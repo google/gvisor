@@ -468,6 +468,8 @@ func (k *Kernel) StateFields() []string {
 		"AllowSUID",
 		"IOUringEnabled",
 		"MaxKeySetSize",
+		"HostNamePoller",
+		"DomainNamePoller",
 	}
 }
 
@@ -528,6 +530,8 @@ func (k *Kernel) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(47, &k.AllowSUID)
 	stateSinkObject.Save(48, &k.IOUringEnabled)
 	stateSinkObject.Save(49, &k.MaxKeySetSize)
+	stateSinkObject.Save(50, &k.HostNamePoller)
+	stateSinkObject.Save(51, &k.DomainNamePoller)
 }
 
 func (k *Kernel) afterLoad(context.Context) {}
@@ -583,6 +587,8 @@ func (k *Kernel) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.Load(47, &k.AllowSUID)
 	stateSourceObject.Load(48, &k.IOUringEnabled)
 	stateSourceObject.Load(49, &k.MaxKeySetSize)
+	stateSourceObject.Load(50, &k.HostNamePoller)
+	stateSourceObject.Load(51, &k.DomainNamePoller)
 	stateSourceObject.LoadValue(23, new([]tcpip.Endpoint), func(y any) { k.loadDanglingEndpoints(ctx, y.([]tcpip.Endpoint)) })
 }
 
@@ -1562,7 +1568,9 @@ func (t *Task) StateFields() []string {
 		"cleartid",
 		"allowedCPUMask",
 		"cpu",
+		"scheduler",
 		"niceness",
+		"ioprio",
 		"numaPolicy",
 		"numaNodeMask",
 		"netns",
@@ -1654,26 +1662,28 @@ func (t *Task) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(53, &t.cleartid)
 	stateSinkObject.Save(54, &t.allowedCPUMask)
 	stateSinkObject.Save(55, &t.cpu)
-	stateSinkObject.Save(56, &t.niceness)
-	stateSinkObject.Save(57, &t.numaPolicy)
-	stateSinkObject.Save(58, &t.numaNodeMask)
-	stateSinkObject.Save(59, &t.netns)
-	stateSinkObject.Save(60, &t.rseqCPU)
-	stateSinkObject.Save(61, &t.oldRSeqCPUAddr)
-	stateSinkObject.Save(62, &t.rseqAddr)
-	stateSinkObject.Save(63, &t.rseqSignature)
-	stateSinkObject.Save(64, &t.robustList)
-	stateSinkObject.Save(65, &t.startTime)
-	stateSinkObject.Save(66, &t.kcov)
-	stateSinkObject.Save(67, &t.cgroups)
-	stateSinkObject.Save(68, &t.memCgID)
-	stateSinkObject.Save(69, &t.userCounters)
-	stateSinkObject.Save(70, &t.sessionKeyring)
-	stateSinkObject.Save(71, &t.personality)
-	stateSinkObject.Save(72, &t.Origin)
-	stateSinkObject.Save(73, &t.onDestroyAction)
-	stateSinkObject.Save(74, &t.execveCredsMutexOwner)
-	stateSinkObject.Save(75, &t.pid)
+	stateSinkObject.Save(56, &t.scheduler)
+	stateSinkObject.Save(57, &t.niceness)
+	stateSinkObject.Save(58, &t.ioprio)
+	stateSinkObject.Save(59, &t.numaPolicy)
+	stateSinkObject.Save(60, &t.numaNodeMask)
+	stateSinkObject.Save(61, &t.netns)
+	stateSinkObject.Save(62, &t.rseqCPU)
+	stateSinkObject.Save(63, &t.oldRSeqCPUAddr)
+	stateSinkObject.Save(64, &t.rseqAddr)
+	stateSinkObject.Save(65, &t.rseqSignature)
+	stateSinkObject.Save(66, &t.robustList)
+	stateSinkObject.Save(67, &t.startTime)
+	stateSinkObject.Save(68, &t.kcov)
+	stateSinkObject.Save(69, &t.cgroups)
+	stateSinkObject.Save(70, &t.memCgID)
+	stateSinkObject.Save(71, &t.userCounters)
+	stateSinkObject.Save(72, &t.sessionKeyring)
+	stateSinkObject.Save(73, &t.personality)
+	stateSinkObject.Save(74, &t.Origin)
+	stateSinkObject.Save(75, &t.onDestroyAction)
+	stateSinkObject.Save(76, &t.execveCredsMutexOwner)
+	stateSinkObject.Save(77, &t.pid)
 }
 
 // +checklocksignore
@@ -1730,26 +1740,28 @@ func (t *Task) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(53, &t.cleartid)
 	stateSourceObject.Load(54, &t.allowedCPUMask)
 	stateSourceObject.Load(55, &t.cpu)
-	stateSourceObject.Load(56, &t.niceness)
-	stateSourceObject.Load(57, &t.numaPolicy)
-	stateSourceObject.Load(58, &t.numaNodeMask)
-	stateSourceObject.Load(59, &t.netns)
-	stateSourceObject.Load(60, &t.rseqCPU)
-	stateSourceObject.Load(61, &t.oldRSeqCPUAddr)
-	stateSourceObject.Load(62, &t.rseqAddr)
-	stateSourceObject.Load(63, &t.rseqSignature)
-	stateSourceObject.Load(64, &t.robustList)
-	stateSourceObject.Load(65, &t.startTime)
-	stateSourceObject.Load(66, &t.kcov)
-	stateSourceObject.Load(67, &t.cgroups)
-	stateSourceObject.Load(68, &t.memCgID)
-	stateSourceObject.Load(69, &t.userCounters)
-	stateSourceObject.Load(70, &t.sessionKeyring)
-	stateSourceObject.Load(71, &t.personality)
-	stateSourceObject.Load(72, &t.Origin)
-	stateSourceObject.Load(73, &t.onDestroyAction)
-	stateSourceObject.Load(74, &t.execveCredsMutexOwner)
-	stateSourceObject.Load(75, &t.pid)
+	stateSourceObject.Load(56, &t.scheduler)
+	stateSourceObject.Load(57, &t.niceness)
+	stateSourceObject.Load(58, &t.ioprio)
+	stateSourceObject.Load(59, &t.numaPolicy)
+	stateSourceObject.Load(60, &t.numaNodeMask)
+	stateSourceObject.Load(61, &t.netns)
+	stateSourceObject.Load(62, &t.rseqCPU)
+	stateSourceObject.Load(63, &t.oldRSeqCPUAddr)
+	stateSourceObject.Load(64, &t.rseqAddr)
+	stateSourceObject.Load(65, &t.rseqSignature)
+	stateSourceObject.Load(66, &t.robustList)
+	stateSourceObject.Load(67, &t.startTime)
+	stateSourceObject.Load(68, &t.kcov)
+	stateSourceObject.Load(69, &t.cgroups)
+	stateSourceObject.Load(70, &t.memCgID)
+	stateSourceObject.Load(71, &t.userCounters)
+	stateSourceObject.Load(72, &t.sessionKeyring)
+	stateSourceObject.Load(73, &t.personality)
+	stateSourceObject.Load(74, &t.Origin)
+	stateSourceObject.Load(75, &t.onDestroyAction)
+	stateSourceObject.Load(76, &t.execveCredsMutexOwner)
+	stateSourceObject.Load(77, &t.pid)
 	stateSourceObject.LoadValue(27, new(*FSContext), func(y any) { t.loadFsContext(ctx, y.(*FSContext)) })
 	stateSourceObject.LoadValue(29, new(*Task), func(y any) { t.loadVforkParent(ctx, y.(*Task)) })
 	stateSourceObject.LoadValue(35, new(*Task), func(y any) { t.loadPtraceTracer(ctx, y.(*Task)) })

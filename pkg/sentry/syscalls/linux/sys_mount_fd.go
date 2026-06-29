@@ -144,18 +144,25 @@ func FSConfig(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintpt
 		return 0, nil, err
 	}
 
-	if cmd == linux.FSCONFIG_CMD_CREATE {
+	vfsObj := t.Kernel().VFS()
+	switch cmd {
+	case linux.FSCONFIG_CMD_CREATE:
 		// FSCONFIG_CMD_CREATE: create a detached mount
 
 		// CAP_SYS_ADMIN check performed in fsfd.DoCmdCreate().
-		vfsObj := t.Kernel().VFS()
 		err := fsfd.DoCmdCreate(t, vfsObj)
 		return 0, nil, err
+	case linux.FSCONFIG_CMD_RECONFIGURE:
+		// FSCONFIG_CMD_RECONFIGURE: reconfigure the underlying filesystem
+
+		// CAP_SYS_ADMIN check performed in fsfd.DoCmdReconfigure().
+		err := fsfd.DoCmdReconfigure(t, vfsObj)
+		return 0, nil, err
+	default:
+		return 0, nil, linuxerr.EINVAL
 	}
 
-	// TODO(b/513024543): support FSCONFIG_CMD_CREATE_EXCL and FSCONFIG_CMD_RECONFIGURE
-
-	return 0, nil, linuxerr.EINVAL
+	// TODO(b/513024543): support FSCONFIG_CMD_CREATE_EXCL
 }
 
 var fsmountValidAttrFlags = uint32(linux.MOUNT_ATTR_RDONLY | linux.MOUNT_ATTR_NOSUID | linux.MOUNT_ATTR_NODEV | linux.MOUNT_ATTR_NOEXEC | linux.MOUNT_ATTR__ATIME)

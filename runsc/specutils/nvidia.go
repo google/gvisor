@@ -16,10 +16,14 @@ package specutils
 
 import (
 	"fmt"
+	"path/filepath"
+	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/pkg/abi/nvgpu"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/runsc/config"
@@ -240,4 +244,28 @@ func IsLegacyCudaImage(spec *specs.Spec) bool {
 	cudaVersion, _ := EnvVar(spec.Process.Env, cudaVersionEnv)
 	requireCuda, _ := EnvVar(spec.Process.Env, requireCudaEnv)
 	return len(cudaVersion) > 0 && len(requireCuda) == 0
+}
+
+// removeNvproxyFrontendDevices removes regular Nvidia frontend devices from
+// both o and n, since we handle these by remapping.
+func removeNvproxyFrontendDevices(field, cName string, o, n []specs.LinuxDevice) ([]specs.LinuxDevice, []specs.LinuxDevice, error) {
+	nvidiaDeviceRegex := regexp.MustCompile(`^nvidia(\d+)$`)
+	shouldDelete := func(dev specs.LinuxDevice) bool {
+		basename := filepath.Base(dev.Path)
+		ms := nvidiaDeviceRegex.FindStringSubmatch(basename)
+		if ms == nil {
+			return false
+		}
+		minor, err := strconv.ParseUint(ms[1], 10, 32)
+		if err != nil {
+			return false
+		}
+		if minor > nvgpu.NV_MINOR_DEVICE_NUMBER_REGULAR_MAX {
+			return false
+		}
+		return dev.Major == nvgpu.NV_MAJOR_DEVICE_NUMBER && dev.Minor == int64(minor)
+	}
+	o = slices.DeleteFunc(slices.Clone(o), shouldDelete)
+	n = slices.DeleteFunc(slices.Clone(n), shouldDelete)
+	return o, n, nil
 }

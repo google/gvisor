@@ -95,8 +95,9 @@ var setableLimits = map[limits.LimitType]struct{}{
 	limits.Rss: {},
 	// These are not enforced, but we include them here to avoid returning
 	// EPERM, since some apps expect them to succeed.
-	limits.Core:         {},
-	limits.ProcessCount: {},
+	limits.Core:             {},
+	limits.ProcessCount:     {},
+	limits.RealTimePriority: {},
 }
 
 func prlimit64(t *kernel.Task, resource limits.LimitType, newLim *limits.Limit) (limits.Limit, error) {

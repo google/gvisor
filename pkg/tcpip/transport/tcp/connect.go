@@ -829,7 +829,10 @@ func (e *Endpoint) sendSynTCP(r *stack.Route, tf tcpFields, opts header.TCPSynOp
 	if r.NetProto() == header.IPv6ProtocolNumber && tf.expOptVal != 0 {
 		hdrSize += header.IPv6ExperimentHdrLength
 	}
-	p := stack.NewPacketBuffer(stack.PacketBufferOptions{ReserveHeaderBytes: hdrSize})
+	p := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		ReserveHeaderBytes: hdrSize,
+		Mark:               e.ops.GetMark(),
+	})
 	defer p.DecRef()
 	if err := e.sendTCP(r, tf, p, stack.GSO{}); err != nil {
 		e.stats.SendErrors.SynSendToNetworkFailed.Increment()
@@ -905,7 +908,10 @@ func sendTCPBatch(r *stack.Route, tf tcpFields, pkt *stack.PacketBuffer, gso sta
 				// Reserve extra bytes for the experiment option.
 				hdrSize += header.IPv6ExperimentHdrLength
 			}
-			splitPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{ReserveHeaderBytes: hdrSize})
+			splitPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+				ReserveHeaderBytes: hdrSize,
+				Mark:               pkt.Mark,
+			})
 			splitPkt.Data().ReadFromPacketData(pkt.Data(), packetSize)
 			pkt = splitPkt
 		}
@@ -1013,7 +1019,9 @@ func (e *Endpoint) makeOptions(sackBlocks []header.SACKBlock) []byte {
 //
 // +checklocks:e.mu
 func (e *Endpoint) sendEmptyRaw(flags header.TCPFlags, seq, ack seqnum.Value, rcvWnd seqnum.Size) tcpip.Error {
-	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{})
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Mark: e.ops.GetMark(),
+	})
 	defer pkt.DecRef()
 	return e.sendRaw(pkt, flags, seq, ack, rcvWnd)
 }

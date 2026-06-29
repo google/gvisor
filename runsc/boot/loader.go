@@ -800,8 +800,6 @@ func New(args Args) (*Loader, error) {
 		enableAutosave(l, args.Conf.TestOnlyAutosaveResume, l.saveFDs)
 	}
 
-	l.kernelInitExtra(l.k.SupervisorContext())
-
 	metric.SentryEntryPointMetric.Increment(&metric.EntryPointTypeRunsc)
 
 	// Create the control server using the provided FD.

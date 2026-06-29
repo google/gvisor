@@ -186,6 +186,7 @@ func (a *awaitingMountContext) StateFields() []string {
 		"filesystem",
 		"root",
 		"opts",
+		"creds",
 	}
 }
 
@@ -197,6 +198,7 @@ func (a *awaitingMountContext) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &a.filesystem)
 	stateSinkObject.Save(1, &a.root)
 	stateSinkObject.Save(2, &a.opts)
+	stateSinkObject.Save(3, &a.creds)
 }
 
 func (a *awaitingMountContext) afterLoad(context.Context) {}
@@ -206,6 +208,7 @@ func (a *awaitingMountContext) StateLoad(ctx context.Context, stateSourceObject 
 	stateSourceObject.Load(0, &a.filesystem)
 	stateSourceObject.Load(1, &a.root)
 	stateSourceObject.Load(2, &a.opts)
+	stateSourceObject.Load(3, &a.creds)
 }
 
 func (f *failedContext) StateTypeName() string {

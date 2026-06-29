@@ -139,11 +139,14 @@ func newIncomingSegment(id stack.TransportEndpointID, clock tcpip.Clock, pkt *st
 	return s, nil
 }
 
-func newOutgoingSegment(id stack.TransportEndpointID, clock tcpip.Clock, buf buffer.Buffer) *segment {
+func newOutgoingSegment(id stack.TransportEndpointID, clock tcpip.Clock, buf buffer.Buffer, mark uint32) *segment {
 	s := newSegment()
 	s.id = id
 	s.rcvdTime = clock.NowMonotonic()
-	s.pkt = stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buf})
+	s.pkt = stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Payload: buf,
+		Mark:    mark,
+	})
 	s.dataMemSize = s.pkt.MemSize()
 	return s
 }

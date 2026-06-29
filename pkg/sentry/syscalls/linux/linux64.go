@@ -293,8 +293,8 @@ var AMD64 = &kernel.SyscallTable{
 		248: syscalls.Error("add_key", linuxerr.EACCES, "Not available to user.", nil),
 		249: syscalls.Error("request_key", linuxerr.EACCES, "Not available to user.", nil),
 		250: syscalls.PartiallySupported("keyctl", Keyctl, "Only supports session keyrings with zero keys in them.", nil),
-		251: syscalls.CapError("ioprio_set", linux.CAP_SYS_ADMIN, "", nil), // requires cap_sys_nice or cap_sys_admin (depending)
-		252: syscalls.CapError("ioprio_get", linux.CAP_SYS_ADMIN, "", nil), // requires cap_sys_nice or cap_sys_admin (depending)
+		251: syscalls.PartiallySupported("ioprio_set", IOPrioset, "Stub implementation.", nil),
+		252: syscalls.PartiallySupported("ioprio_get", IOPrioget, "Stub implementation.", nil),
 		253: syscalls.PartiallySupportedPoint("inotify_init", InotifyInit, PointInotifyInit, "inotify events are only available inside the sandbox.", nil),
 		254: syscalls.PartiallySupportedPoint("inotify_add_watch", InotifyAddWatch, PointInotifyAddWatch, "inotify events are only available inside the sandbox.", nil),
 		255: syscalls.PartiallySupportedPoint("inotify_rm_watch", InotifyRmWatch, PointInotifyRmWatch, "inotify events are only available inside the sandbox.", nil),
@@ -356,8 +356,8 @@ var AMD64 = &kernel.SyscallTable{
 		311: syscalls.Supported("process_vm_writev", ProcessVMWritev),
 		312: syscalls.CapError("kcmp", linux.CAP_SYS_PTRACE, "", nil),
 		313: syscalls.CapError("finit_module", linux.CAP_SYS_MODULE, "", nil),
-		314: syscalls.ErrorWithEvent("sched_setattr", linuxerr.ENOSYS, "gVisor does not implement a scheduler.", []string{"gvisor.dev/issue/264"}), // TODO(b/118902272)
-		315: syscalls.ErrorWithEvent("sched_getattr", linuxerr.ENOSYS, "gVisor does not implement a scheduler.", []string{"gvisor.dev/issue/264"}), // TODO(b/118902272)
+		314: syscalls.PartiallySupported("sched_setattr", SchedSetattr, "Stub implementation.", nil),
+		315: syscalls.PartiallySupported("sched_getattr", SchedGetattr, "Stub implementation.", nil),
 		316: syscalls.Supported("renameat2", Renameat2),
 		317: syscalls.Supported("seccomp", Seccomp),
 		318: syscalls.Supported("getrandom", GetRandom),
@@ -452,8 +452,8 @@ var ARM64 = &kernel.SyscallTable{
 		27:  syscalls.PartiallySupportedPoint("inotify_add_watch", InotifyAddWatch, PointInotifyAddWatch, "inotify events are only available inside the sandbox.", nil),
 		28:  syscalls.PartiallySupportedPoint("inotify_rm_watch", InotifyRmWatch, PointInotifyRmWatch, "inotify events are only available inside the sandbox.", nil),
 		29:  syscalls.Supported("ioctl", Ioctl),
-		30:  syscalls.CapError("ioprio_set", linux.CAP_SYS_ADMIN, "", nil), // requires cap_sys_nice or cap_sys_admin (depending)
-		31:  syscalls.CapError("ioprio_get", linux.CAP_SYS_ADMIN, "", nil), // requires cap_sys_nice or cap_sys_admin (depending)
+		30:  syscalls.PartiallySupported("ioprio_set", IOPrioset, "Stub implementation.", nil),
+		31:  syscalls.PartiallySupported("ioprio_get", IOPrioget, "Stub implementation.", nil),
 		32:  syscalls.Supported("flock", Flock),
 		33:  syscalls.Supported("mknodat", Mknodat),
 		34:  syscalls.Supported("mkdirat", Mkdirat),
@@ -680,8 +680,8 @@ var ARM64 = &kernel.SyscallTable{
 		271: syscalls.Supported("process_vm_writev", ProcessVMWritev),
 		272: syscalls.CapError("kcmp", linux.CAP_SYS_PTRACE, "", nil),
 		273: syscalls.CapError("finit_module", linux.CAP_SYS_MODULE, "", nil),
-		274: syscalls.ErrorWithEvent("sched_setattr", linuxerr.ENOSYS, "gVisor does not implement a scheduler.", []string{"gvisor.dev/issue/264"}), // TODO(b/118902272)
-		275: syscalls.ErrorWithEvent("sched_getattr", linuxerr.ENOSYS, "gVisor does not implement a scheduler.", []string{"gvisor.dev/issue/264"}), // TODO(b/118902272)
+		274: syscalls.PartiallySupported("sched_setattr", SchedSetattr, "Stub implementation.", nil),
+		275: syscalls.PartiallySupported("sched_getattr", SchedGetattr, "Stub implementation.", nil),
 		276: syscalls.Supported("renameat2", Renameat2),
 		277: syscalls.Supported("seccomp", Seccomp),
 		278: syscalls.Supported("getrandom", GetRandom),

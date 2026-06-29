@@ -512,6 +512,13 @@ type Task struct {
 	// entirely if Kernel.useHostCores is true.
 	cpu atomicbitops.Int32
 
+	// This is used to keep track of the scheduling policy for this task.
+	// It has no effect and is only used to provide a reasonable return value for
+	// sched_getattr() and similar.
+	//
+	// scheduler is protected by mu.
+	scheduler uint
+
 	// This is used to keep track of changes made to a process' priority/niceness.
 	// It is mostly used to provide some reasonable return value from
 	// getpriority(2) after a call to setpriority(2) has been made.
@@ -521,6 +528,12 @@ type Task struct {
 	//
 	// niceness is protected by mu.
 	niceness int
+
+	// This is used to keep track of a process's IO class and priority.
+	// It is only used to provide a reasonable return value for ioprio_get().
+	//
+	// ioprio is protected by mu.
+	ioprio int
 
 	// This is used to track the numa policy for the current thread. This can be
 	// modified through a set_mempolicy(2) syscall. Since we always report a

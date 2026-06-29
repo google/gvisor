@@ -844,3 +844,18 @@ const SizeOfXTMultiport = 2 + (XT_MULTI_PORTS * 2)
 
 // SizeOfXTMultiportV1 is the size of XTMultiportV1 (in bytes).
 const SizeOfXTMultiportV1 = SizeOfXTMultiport + XT_MULTI_PORTS + 1
+
+// XTMarkMtinfo1 holds data for matching packets against a mark.
+// It corresponds to struct xt_mark_mtinfo1 in include/uapi/linux/netfilter/xt_mark.h.
+//
+// +marshal
+type XTMarkMtinfo1 struct {
+	_      structs.HostLayout
+	Mark   uint32
+	Mask   uint32
+	Invert uint8
+	_      [3]byte
+}
+
+// SizeOfXTMarkMtinfo1 is the size of XTMarkMtinfo1.
+const SizeOfXTMarkMtinfo1 = 12

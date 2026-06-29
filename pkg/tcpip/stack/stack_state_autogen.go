@@ -1557,6 +1557,7 @@ func (pk *PacketBuffer) StateFields() []string {
 		"NICID",
 		"RXChecksumValidated",
 		"NetworkPacketInfo",
+		"Mark",
 		"tuple",
 	}
 }
@@ -1584,7 +1585,8 @@ func (pk *PacketBuffer) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(15, &pk.NICID)
 	stateSinkObject.Save(16, &pk.RXChecksumValidated)
 	stateSinkObject.Save(17, &pk.NetworkPacketInfo)
-	stateSinkObject.Save(18, &pk.tuple)
+	stateSinkObject.Save(18, &pk.Mark)
+	stateSinkObject.Save(19, &pk.tuple)
 }
 
 func (pk *PacketBuffer) afterLoad(context.Context) {}
@@ -1609,7 +1611,8 @@ func (pk *PacketBuffer) StateLoad(ctx context.Context, stateSourceObject state.S
 	stateSourceObject.Load(15, &pk.NICID)
 	stateSourceObject.Load(16, &pk.RXChecksumValidated)
 	stateSourceObject.Load(17, &pk.NetworkPacketInfo)
-	stateSourceObject.Load(18, &pk.tuple)
+	stateSourceObject.Load(18, &pk.Mark)
+	stateSourceObject.Load(19, &pk.tuple)
 }
 
 func (h *headerInfo) StateTypeName() string {

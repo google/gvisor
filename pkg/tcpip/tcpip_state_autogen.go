@@ -1097,9 +1097,10 @@ func (so *SocketOptions) StateFields() []string {
 		"bindToDevice",
 		"sendBufferSize",
 		"receiveBufferSize",
-		"linger",
 		"rcvlowat",
 		"experimentOptionValue",
+		"mark",
+		"linger",
 	}
 }
 
@@ -1134,9 +1135,10 @@ func (so *SocketOptions) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(23, &so.bindToDevice)
 	stateSinkObject.Save(24, &so.sendBufferSize)
 	stateSinkObject.Save(25, &so.receiveBufferSize)
-	stateSinkObject.Save(26, &so.linger)
-	stateSinkObject.Save(27, &so.rcvlowat)
-	stateSinkObject.Save(28, &so.experimentOptionValue)
+	stateSinkObject.Save(26, &so.rcvlowat)
+	stateSinkObject.Save(27, &so.experimentOptionValue)
+	stateSinkObject.Save(28, &so.mark)
+	stateSinkObject.Save(29, &so.linger)
 }
 
 func (so *SocketOptions) afterLoad(context.Context) {}
@@ -1169,9 +1171,10 @@ func (so *SocketOptions) StateLoad(ctx context.Context, stateSourceObject state.
 	stateSourceObject.Load(23, &so.bindToDevice)
 	stateSourceObject.Load(24, &so.sendBufferSize)
 	stateSourceObject.Load(25, &so.receiveBufferSize)
-	stateSourceObject.Load(26, &so.linger)
-	stateSourceObject.Load(27, &so.rcvlowat)
-	stateSourceObject.Load(28, &so.experimentOptionValue)
+	stateSourceObject.Load(26, &so.rcvlowat)
+	stateSourceObject.Load(27, &so.experimentOptionValue)
+	stateSourceObject.Load(28, &so.mark)
+	stateSourceObject.Load(29, &so.linger)
 }
 
 func (l *LocalSockError) StateTypeName() string {

@@ -514,6 +514,7 @@ func (f *FileDescriptionOptions) StateFields() []string {
 		"DenyPWrite",
 		"UseDentryMetadata",
 		"DenySpliceIn",
+		"SpecialFile",
 	}
 }
 
@@ -527,6 +528,7 @@ func (f *FileDescriptionOptions) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &f.DenyPWrite)
 	stateSinkObject.Save(3, &f.UseDentryMetadata)
 	stateSinkObject.Save(4, &f.DenySpliceIn)
+	stateSinkObject.Save(5, &f.SpecialFile)
 }
 
 func (f *FileDescriptionOptions) afterLoad(context.Context) {}
@@ -538,6 +540,7 @@ func (f *FileDescriptionOptions) StateLoad(ctx context.Context, stateSourceObjec
 	stateSourceObject.Load(2, &f.DenyPWrite)
 	stateSourceObject.Load(3, &f.UseDentryMetadata)
 	stateSourceObject.Load(4, &f.DenySpliceIn)
+	stateSourceObject.Load(5, &f.SpecialFile)
 }
 
 func (d *Dirent) StateTypeName() string {
@@ -635,6 +638,34 @@ func (d *DentryMetadataFileDescriptionImpl) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (d *DentryMetadataFileDescriptionImpl) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+}
+
+func (p *DynamicBytesPoller) StateTypeName() string {
+	return "pkg/sentry/vfs.DynamicBytesPoller"
+}
+
+func (p *DynamicBytesPoller) StateFields() []string {
+	return []string{
+		"queue",
+		"seq",
+	}
+}
+
+func (p *DynamicBytesPoller) beforeSave() {}
+
+// +checklocksignore
+func (p *DynamicBytesPoller) StateSave(stateSinkObject state.Sink) {
+	p.beforeSave()
+	stateSinkObject.Save(0, &p.queue)
+	stateSinkObject.Save(1, &p.seq)
+}
+
+func (p *DynamicBytesPoller) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (p *DynamicBytesPoller) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &p.queue)
+	stateSourceObject.Load(1, &p.seq)
 }
 
 func (s *StaticData) StateTypeName() string {
@@ -2183,6 +2214,7 @@ func init() {
 	state.Register((*FileDescriptionDefaultImpl)(nil))
 	state.Register((*DirectoryFileDescriptionDefaultImpl)(nil))
 	state.Register((*DentryMetadataFileDescriptionImpl)(nil))
+	state.Register((*DynamicBytesPoller)(nil))
 	state.Register((*StaticData)(nil))
 	state.Register((*DynamicBytesFileDescriptionImpl)(nil))
 	state.Register((*LockFD)(nil))

@@ -196,6 +196,7 @@ func (fd *tpuFD) getPciDeviceFd(t *kernel.Task, arg hostarch.Addr) (uintptr, fun
 	defer vd.DecRef(t)
 	if err := pciDevFD.vfsfd.Init(pciDevFD, linux.O_RDWR, t.Credentials(), vd.Mount(), vd.Dentry(), &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,
+		SpecialFile:       true,
 	}); err != nil {
 		return 0, cleanup, err
 	}

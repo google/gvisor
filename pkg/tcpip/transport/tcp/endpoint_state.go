@@ -277,6 +277,7 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 			e.snd.corkTimer.enable(MinRTO)
 		}
 		e.mu.Unlock()
+		e.requeueOnRestore()
 		connectedLoading.Done()
 	case epState == StateListen:
 		tcpip.AsyncLoading.Add(1)
@@ -290,6 +291,7 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 			rcvWnd := seqnum.Size(e.receiveBufferAvailable())
 			e.listenCtx = newListenContext(e.stack, e.protocol, e, rcvWnd, e.ops.GetV6Only(), e.NetProto)
 			e.UnlockUser()
+			e.requeueOnRestore()
 			listenLoading.Done()
 			tcpip.AsyncLoading.Done()
 		}()
@@ -337,6 +339,7 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 			connectingLoading.Done()
 			tcpip.AsyncLoading.Done()
 			e.mu.Unlock()
+			e.requeueOnRestore()
 		}()
 	case epState == StateBound:
 		tcpip.AsyncLoading.Add(1)
@@ -362,4 +365,13 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 // Resume implements tcpip.ResumableEndpoint.Resume.
 func (e *Endpoint) Resume() {
 	e.segmentQueue.thaw()
+}
+
+// requeueOnRestore re-adds the endpoint to its processor's run-queue if it has
+// queued segments. The run-queue is not saved across checkpoint/restore.
+func (e *Endpoint) requeueOnRestore() {
+	if e.segmentQueue.empty() || e.isOwnedByUser() {
+		return
+	}
+	e.protocol.dispatcher.selectProcessor(e.TransportEndpointInfo.ID).queueEndpoint(e)
 }

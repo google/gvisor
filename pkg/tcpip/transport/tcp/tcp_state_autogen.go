@@ -150,9 +150,7 @@ func (q *epQueue) StateTypeName() string {
 }
 
 func (q *epQueue) StateFields() []string {
-	return []string{
-		"list",
-	}
+	return []string{}
 }
 
 func (q *epQueue) beforeSave() {}
@@ -160,14 +158,12 @@ func (q *epQueue) beforeSave() {}
 // +checklocksignore
 func (q *epQueue) StateSave(stateSinkObject state.Sink) {
 	q.beforeSave()
-	stateSinkObject.Save(0, &q.list)
 }
 
 func (q *epQueue) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (q *epQueue) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &q.list)
 }
 
 func (p *processor) StateTypeName() string {

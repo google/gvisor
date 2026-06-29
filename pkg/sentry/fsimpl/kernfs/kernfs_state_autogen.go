@@ -156,6 +156,37 @@ func (fd *DynamicBytesFD) StateLoad(ctx context.Context, stateSourceObject state
 	stateSourceObject.Load(4, &fd.inode)
 }
 
+func (fd *PollableDynamicBytesFD) StateTypeName() string {
+	return "pkg/sentry/fsimpl/kernfs.PollableDynamicBytesFD"
+}
+
+func (fd *PollableDynamicBytesFD) StateFields() []string {
+	return []string{
+		"DynamicBytesFD",
+		"poller",
+		"pollSnapshot",
+	}
+}
+
+func (fd *PollableDynamicBytesFD) beforeSave() {}
+
+// +checklocksignore
+func (fd *PollableDynamicBytesFD) StateSave(stateSinkObject state.Sink) {
+	fd.beforeSave()
+	stateSinkObject.Save(0, &fd.DynamicBytesFD)
+	stateSinkObject.Save(1, &fd.poller)
+	stateSinkObject.Save(2, &fd.pollSnapshot)
+}
+
+func (fd *PollableDynamicBytesFD) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (fd *PollableDynamicBytesFD) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &fd.DynamicBytesFD)
+	stateSourceObject.Load(1, &fd.poller)
+	stateSourceObject.Load(2, &fd.pollSnapshot)
+}
+
 func (s *SeekEndConfig) StateTypeName() string {
 	return "pkg/sentry/fsimpl/kernfs.SeekEndConfig"
 }
@@ -1012,6 +1043,7 @@ func init() {
 	state.Register((*dentryEntry)(nil))
 	state.Register((*DynamicBytesFile)(nil))
 	state.Register((*DynamicBytesFD)(nil))
+	state.Register((*PollableDynamicBytesFD)(nil))
 	state.Register((*SeekEndConfig)(nil))
 	state.Register((*GenericDirectoryFDOptions)(nil))
 	state.Register((*GenericDirectoryFD)(nil))

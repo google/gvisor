@@ -1648,7 +1648,7 @@ func (e *Endpoint) queueSegment(p tcpip.Payloader, opts tcpip.WriteOptions) (*se
 
 	// Add data to the send queue.
 	size := int(buf.Size())
-	s := newOutgoingSegment(e.TransportEndpointInfo.ID, e.stack.Clock(), buf)
+	s := newOutgoingSegment(e.TransportEndpointInfo.ID, e.stack.Clock(), buf, e.ops.GetMark())
 	e.sndQueueInfo.SndBufUsed += size
 	e.snd.writeList.PushBack(s)
 
@@ -2589,7 +2589,7 @@ func (e *Endpoint) shutdownLocked(flags tcpip.ShutdownFlags) tcpip.Error {
 			// Queue FIN and transition to the closing state immediately,
 			// matching Linux tcp_close_state(): the FIN may be queued but
 			// not yet transmitted when the write queue is blocked.
-			s := newOutgoingSegment(e.TransportEndpointInfo.ID, e.stack.Clock(), buffer.Buffer{})
+			s := newOutgoingSegment(e.TransportEndpointInfo.ID, e.stack.Clock(), buffer.Buffer{}, e.ops.GetMark())
 			e.snd.writeList.PushBack(s)
 			e.updateConnDirectionState(connDirectionStateSndClosed)
 			switch e.EndpointState() {
