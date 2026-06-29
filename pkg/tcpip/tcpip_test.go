@@ -16,6 +16,7 @@ package tcpip
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -344,4 +345,26 @@ func padTo4(partial string) []byte {
 		partial += "\x00"
 	}
 	return []byte(partial)
+}
+
+func TestStats_Marshal(t *testing.T) {
+	s := Stats{}.FillIn()
+	s.TCP.ForwardMaxInFlightDrop.Increment()
+	jb, err := json.Marshal(s)
+	if err != nil {
+		t.Fail()
+	}
+	if !bytes.Contains(jb, []byte(`"ForwardMaxInFlightDrop":1`)) {
+		t.Fatalf("Marshal did not contain ForwardMaxInFlightDrop")
+	}
+
+	todo := `{"TCP":{"ForwardMaxInFlightDrop":1}}`
+	var to Stats
+	err = json.Unmarshal([]byte(todo), &to)
+	if err != nil {
+		t.Fail()
+	}
+	if got := to.TCP.ForwardMaxInFlightDrop.Value(); got != uint64(1) {
+		t.Fatalf("got ForwardMaxInFlightDrop.Value() = %d, want = %d", got, uint64(1))
+	}
 }
