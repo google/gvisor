@@ -175,6 +175,14 @@ func (s *Socket) GetSockOpt(t *kernel.Task, level, name int, optValAddr hostarch
 	if !sockOpt.AllowGet {
 		return nil, syserr.ErrInvalidArgument
 	}
+	if s.fd < 0 {
+		// Reading SO_ERROR after EPOLLERR must still succeed.
+		if level == linux.SOL_SOCKET && name == linux.SO_ERROR {
+			v := primitive.Int32(int32(unix.ECONNABORTED))
+			return &v, nil
+		}
+		return nil, syserr.ErrConnectionAborted
+	}
 	var opt []byte
 	if sockOpt.Size > 0 {
 		// Validate size of input buffer.
@@ -239,6 +247,9 @@ func (s *Socket) SetSockOpt(t *kernel.Task, level, name int, opt []byte) *syserr
 	}
 	if !sockOpt.AllowSet {
 		return syserr.ErrInvalidArgument
+	}
+	if s.fd < 0 {
+		return syserr.ErrConnectionAborted
 	}
 	if sockOpt.Size > 0 {
 		if uint64(len(opt)) < sockOpt.Size {

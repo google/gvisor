@@ -129,18 +129,24 @@ type Socket struct {
 	// masks, as when e.g. applications repeatedly call poll() with the same
 	// event mask, or blocking accept() / read() / write() / recvmsg() /
 	// sendmsg() / etc., on the same socket.
-	persistentEventMu   sync.Mutex
+	persistentEventMu   sync.Mutex `state:"nosave"`
 	persistentEventMask atomicbitops.Uint64
 	persistentEntry     waiter.Entry
 
 	// fd is the host socket fd. It must have O_NONBLOCK, so that operations
 	// will return EWOULDBLOCK instead of blocking on the host. This allows us to
 	// handle blocking behavior independently in the sentry.
-	fd int
+	fd int `state:"nosave"`
 
 	// recvClosed indicates that the socket has been shutdown for reading
 	// (SHUT_RD or SHUT_RDWR).
 	recvClosed atomicbitops.Bool
+
+	// listenBacklog is the backlog passed to the most recent listen(2).
+	listenBacklog atomicbitops.Int32
+
+	// savedListener is set by beforeSave if this socket is listening.
+	savedListener *listenerState
 }
 
 var _ = socket.Socket(&Socket{})
@@ -175,6 +181,9 @@ func newSocket(t *kernel.Task, family int, stype linux.SockType, protocol int, f
 // Release implements vfs.FileDescriptionImpl.Release.
 func (s *Socket) Release(ctx context.Context) {
 	kernel.KernelFromContext(ctx).DeleteSocket(&s.vfsfd)
+	if s.fd < 0 {
+		return
+	}
 	fdnotifier.RemoveFD(int32(s.fd))
 	_ = unix.Close(s.fd)
 }
@@ -186,6 +195,9 @@ func (s *Socket) Epollable() bool {
 
 // Ioctl implements vfs.FileDescriptionImpl.
 func (s *Socket) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
+	if s.fd < 0 {
+		return 0, linuxerr.ECONNABORTED
+	}
 	return ioctl(ctx, s.fd, uio, sysno, args)
 }
 
@@ -200,6 +212,10 @@ func (s *Socket) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.Read
 	// TODO(gvisor.dev/issue/2601): Support RWF_NOWAIT.
 	if opts.Flags != 0 {
 		return 0, linuxerr.EOPNOTSUPP
+	}
+
+	if s.fd < 0 {
+		return 0, linuxerr.ECONNABORTED
 	}
 
 	reader := hostfd.GetReadWriterAt(int32(s.fd), -1, opts.Flags)
@@ -224,6 +240,10 @@ func (s *Socket) Write(ctx context.Context, src usermem.IOSequence, opts vfs.Wri
 	// TODO(gvisor.dev/issue/2601): Support RWF_NOWAIT.
 	if opts.Flags != 0 {
 		return 0, linuxerr.EOPNOTSUPP
+	}
+
+	if s.fd < 0 {
+		return 0, linuxerr.ECONNABORTED
 	}
 
 	writer := hostfd.GetReadWriterAt(int32(s.fd), -1, opts.Flags)
@@ -303,11 +323,18 @@ func (p *socketProvider) Pair(t *kernel.Task, stype linux.SockType, protocol int
 
 // Readiness implements waiter.Waitable.Readiness.
 func (s *Socket) Readiness(mask waiter.EventMask) waiter.EventMask {
+	if s.fd < 0 {
+		return waiter.EventHUp | waiter.EventErr | waiter.EventRdHUp
+	}
 	return fdnotifier.NonBlockingPoll(int32(s.fd), mask)
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
 func (s *Socket) EventRegister(e *waiter.Entry) error {
+	if s.fd < 0 {
+		s.queue.EventRegister(e)
+		return nil
+	}
 	if em, pem := e.Mask(), waiter.EventMask(s.persistentEventMask.Load()); em&^pem != 0 {
 		s.persistentEventMu.Lock()
 		pem = waiter.EventMask(s.persistentEventMask.RacyLoad())
@@ -362,6 +389,9 @@ func (s *Socket) eventUnregisterTransient(e *waiter.Entry) {
 
 // Connect implements socket.Socket.Connect.
 func (s *Socket) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr.Error {
+	if s.fd < 0 {
+		return syserr.ErrConnectionAborted
+	}
 	if len(sockaddr) > sizeofSockaddr {
 		sockaddr = sockaddr[:sizeofSockaddr]
 	}
@@ -424,6 +454,9 @@ func (s *Socket) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr
 
 // Accept implements socket.Socket.Accept.
 func (s *Socket) Accept(t *kernel.Task, peerRequested bool, flags int, blocking bool) (int32, linux.SockAddr, uint32, *syserr.Error) {
+	if s.fd < 0 {
+		return 0, nil, 0, syserr.ErrConnectionAborted
+	}
 	var peerAddr linux.SockAddr
 	var peerAddrBuf []byte
 	var peerAddrlen uint32
@@ -484,24 +517,36 @@ func (s *Socket) Accept(t *kernel.Task, peerRequested bool, flags int, blocking 
 
 // Bind implements socket.Socket.Bind.
 func (s *Socket) Bind(_ *kernel.Task, sockaddr []byte) *syserr.Error {
+	if s.fd < 0 {
+		return syserr.ErrConnectionAborted
+	}
 	if len(sockaddr) > sizeofSockaddr {
 		sockaddr = sockaddr[:sizeofSockaddr]
 	}
 
-	_, _, errno := unix.Syscall(unix.SYS_BIND, uintptr(s.fd), uintptr(firstBytePtr(sockaddr)), uintptr(len(sockaddr)))
-	if errno != 0 {
-		return syserr.FromError(errno)
+	if err := bind(s.fd, sockaddr); err != nil {
+		return syserr.FromError(err)
 	}
 	return nil
 }
 
 // Listen implements socket.Socket.Listen.
 func (s *Socket) Listen(_ *kernel.Task, backlog int) *syserr.Error {
-	return syserr.FromError(unix.Listen(s.fd, backlog))
+	if s.fd < 0 {
+		return syserr.ErrConnectionAborted
+	}
+	if err := unix.Listen(s.fd, backlog); err != nil {
+		return syserr.FromError(err)
+	}
+	s.listenBacklog.Store(int32(backlog))
+	return nil
 }
 
 // Shutdown implements socket.Socket.Shutdown.
 func (s *Socket) Shutdown(_ *kernel.Task, how int) *syserr.Error {
+	if s.fd < 0 {
+		return syserr.ErrConnectionAborted
+	}
 	switch how {
 	case unix.SHUT_RD, unix.SHUT_RDWR:
 		// Mark the socket as closed for reading.
@@ -558,6 +603,9 @@ func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, have
 	// Only allow known and safe flags.
 	if flags&^allowedRecvMsgFlags != 0 {
 		return 0, 0, nil, 0, socket.ControlMessages{}, syserr.ErrInvalidArgument
+	}
+	if s.fd < 0 {
+		return 0, 0, nil, 0, socket.ControlMessages{}, syserr.ErrConnectionAborted
 	}
 
 	var senderAddrBuf []byte
@@ -745,6 +793,10 @@ func (s *Socket) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flag
 		return 0, syserr.ErrInvalidArgument
 	}
 
+	if s.fd < 0 {
+		return 0, syserr.ErrConnectionAborted
+	}
+
 	// If the src is zero-length, call SENDTO directly with a null buffer in
 	// order to generate poll/epoll notifications.
 	if src.NumBytes() == 0 {
@@ -840,6 +892,12 @@ func translateIOSyscallError(err error) error {
 
 // State implements socket.Socket.State.
 func (s *Socket) State() uint32 {
+	if s.fd < 0 {
+		if s.stype == linux.SOCK_STREAM {
+			return linux.TCP_CLOSE
+		}
+		return 0
+	}
 	info := linux.TCPInfo{}
 	buf := make([]byte, linux.SizeOfTCPInfo)
 	var err error
