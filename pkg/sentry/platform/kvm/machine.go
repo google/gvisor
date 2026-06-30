@@ -331,13 +331,9 @@ func newMachine(vm int, config *Config) (*machine, error) {
 	// mmap isn't called frequently, it seems better than the memory and
 	// startup time overhead introduced by mapping the entire address
 	// space.
-	mapEntireAddressSpace := forceMappingEntireAddressSpace ||
-		runtime.GOARCH != "amd64"
+	mapEntireAddressSpace := forceMappingEntireAddressSpace || mapEntireAddressSpaceDefault
 	if mapEntireAddressSpace {
-		// Increase faultBlockSize to be sure that we will not reach the limit.
-		// faultBlockSize has to equal or less than KVM_MEM_MAX_NR_PAGES.
-		faultBlockSize = uintptr(1) << 42
-		faultBlockMask = ^uintptr(faultBlockSize - 1)
+		archOverrideFaultBlocks()
 	} else {
 		// Install seccomp rules to trap runtime mmap system calls. They will
 		// be handled by seccompMmapHandler.
