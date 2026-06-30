@@ -31,15 +31,13 @@ import (
 )
 
 // SupportedCloneFlags is the bitwise OR of all the supported flags for clone.
-// TODO(b/290826530): Implement CLONE_INTO_CGROUP when cgroups v2 is
-// implemented.
 const SupportedCloneFlags = linux.CLONE_VM | linux.CLONE_FS | linux.CLONE_FILES | linux.CLONE_SYSVSEM |
 	linux.CLONE_THREAD | linux.CLONE_SIGHAND | linux.CLONE_NEWPID |
 	linux.CLONE_CHILD_CLEARTID | linux.CLONE_CHILD_SETTID | linux.CLONE_PARENT |
 	linux.CLONE_PARENT_SETTID | linux.CLONE_SETTLS | linux.CLONE_NEWUSER | linux.CLONE_NEWUTS |
 	linux.CLONE_NEWIPC | linux.CLONE_NEWNET | linux.CLONE_PTRACE | linux.CLONE_UNTRACED |
 	linux.CLONE_IO | linux.CLONE_VFORK | linux.CLONE_DETACHED | linux.CLONE_NEWNS |
-	linux.CLONE_PIDFD | linux.CLONE_CLEAR_SIGHAND
+	linux.CLONE_PIDFD | linux.CLONE_CLEAR_SIGHAND | linux.CLONE_INTO_CGROUP
 
 func failCloneAfterTaskCreation(nt *Task) {
 	// nt has been visible to the rest of the system since NewTask, so
@@ -318,6 +316,8 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 		SessionKeyring:   sessionKeyring,
 		Personality:      t.personality.Load(),
 		Origin:           t.Origin,
+		cgroupFD:         args.Cgroup,
+		cloneIntoCgroup:  args.Flags&linux.CLONE_INTO_CGROUP != 0,
 	}
 	if args.Flags&(linux.CLONE_THREAD|linux.CLONE_PARENT) == 0 {
 		cfg.Parent = t

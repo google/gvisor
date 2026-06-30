@@ -7,13 +7,19 @@ package(
 
 go_library(
     name = "bitmap",
-    srcs = ["bitmap.go"],
+    srcs = [
+        "bitmap.go",
+        "format.go",
+    ],
     visibility = ["//:sandbox"],
 )
 
 go_test(
     name = "bitmap_test",
     size = "small",
-    srcs = ["bitmap_test.go"],
+    srcs = [
+        "bitmap_test.go",
+        "format_test.go",
+    ],
     library = ":bitmap",
 )

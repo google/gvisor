@@ -12,14 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package cgroupfs
+package bitmap
 
 import (
 	"fmt"
 	"slices"
 	"testing"
-
-	"gvisor.dev/gvisor/pkg/bitmap"
 )
 
 func TestFormat(t *testing.T) {
@@ -36,15 +34,15 @@ func TestFormat(t *testing.T) {
 	}
 	for i, tt := range tests {
 		t.Run(fmt.Sprintf("case-%d", i), func(t *testing.T) {
-			b := bitmap.New(64)
+			b := New(64)
 			for _, v := range tt.input {
 				b.Add(v)
 			}
-			s := formatBitmap(&b)
+			s := FormatList(&b)
 			if s != tt.output {
 				t.Errorf("Expected %q, got %q", tt.output, s)
 			}
-			b1, err := parseBitmap(s, 64)
+			b1, err := ParseList(s, 64)
 			if err != nil {
 				t.Fatalf("Failed to parse formatted bitmap: %v", err)
 			}
@@ -77,7 +75,7 @@ func TestParse(t *testing.T) {
 	}
 	for i, tt := range tests {
 		t.Run(fmt.Sprintf("case-%d", i), func(t *testing.T) {
-			b, err := parseBitmap(tt.input, 64)
+			b, err := ParseList(tt.input, 64)
 			if tt.shouldFail {
 				if err == nil {
 					t.Fatalf("Expected parsing of %q to fail, but it didn't", tt.input)

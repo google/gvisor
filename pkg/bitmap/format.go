@@ -12,22 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package cgroupfs
+package bitmap
 
 import (
 	"fmt"
 	"strconv"
 	"strings"
-
-	"gvisor.dev/gvisor/pkg/bitmap"
 )
 
-// formatBitmap produces a string representation of b, which lists the indices
+// FormatList produces a string representation of b, which lists the indices
 // of set bits in the bitmap. Indices are separated by commas and ranges of
 // set bits are abbreviated. Example outputs: "0,2,4", "0,3-7,10", "0-10".
 //
-// Inverse of parseBitmap.
-func formatBitmap(b *bitmap.Bitmap) string {
+// Inverse of ParseList.
+func FormatList(b *Bitmap) string {
 	ones := b.ToSlice()
 	if len(ones) == 0 {
 		return ""
@@ -104,7 +102,7 @@ func parseToken(token string) (start, end uint32, err error) {
 	}
 }
 
-// parseBitmap parses input as a bitmap. input should be a comma separated list
+// ParseList parses input as a bitmap. input should be a comma separated list
 // of indices, and ranges of set bits may be abbreviated. Examples: "0,2,4",
 // "0,3-7,10", "0-10". Input after the first newline or null byte is discarded.
 //
@@ -112,9 +110,9 @@ func parseToken(token string) (start, end uint32, err error) {
 // when growing the bitmap during parsing. Ideally sizeHint should be at least
 // as large as the bitmap represented by input, but this is not required.
 //
-// Inverse of formatBitmap.
-func parseBitmap(input string, sizeHint uint32) (*bitmap.Bitmap, error) {
-	b := bitmap.New(sizeHint)
+// Inverse of FormatList.
+func ParseList(input string, sizeHint uint32) (*Bitmap, error) {
+	b := New(sizeHint)
 
 	if termIdx := strings.IndexAny(input, "\n\000"); termIdx != -1 {
 		input = input[:termIdx]

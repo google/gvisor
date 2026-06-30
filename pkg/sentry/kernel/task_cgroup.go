@@ -24,7 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 )
 
-// EnterInitialCgroups moves t into an initial set of cgroups.
+// EnterInitialV1Cgroups moves t into an initial set of cgroups.
 // If initCgroups is not nil, the new task will be placed in the specified cgroups.
 // Otherwise, if parent is not nil, the new task will be placed in the parent's cgroups.
 // If neither is specified, the new task will be in the root cgroups.
@@ -32,7 +32,7 @@ import (
 // This is analogous to Linux's kernel/cgroup/cgroup.c:cgroup_css_set_fork().
 //
 // Precondition: t isn't in any cgroups yet, t.cgroups is empty.
-func (t *Task) EnterInitialCgroups(parent *Task, initCgroups map[Cgroup]struct{}) {
+func (t *Task) EnterInitialV1Cgroups(parent *Task, initCgroups map[Cgroup]struct{}) {
 	var inherit map[Cgroup]struct{}
 	if initCgroups != nil {
 		inherit = initCgroups
