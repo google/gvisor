@@ -4538,6 +4538,51 @@ func TestDumpOperations(t *testing.T) {
 			},
 		},
 		{
+			name: "lookup",
+			op: &lookupOp{
+				set:      &nftSet{name: "map_set"},
+				sregIdx:  0,
+				invert:   true,
+				fillData: true,
+				dregIdx:  16,
+			},
+			validate: func(dump []byte) error {
+				attrs, ok := NfParse(dump)
+				if !ok {
+					return fmt.Errorf("failed to parse dumped attributes")
+				}
+				setName, ok := attrs[linux.NFTA_LOOKUP_SET]
+				if !ok {
+					return fmt.Errorf("failed to get set name")
+				}
+				if setName.String() != "map_set" {
+					return fmt.Errorf("unexpected set name: %q, want %q", setName.String(), "map_set")
+				}
+				sreg, ok := AttrNetToHost[uint32](linux.NFTA_LOOKUP_SREG, attrs)
+				if !ok {
+					return fmt.Errorf("failed to get sreg")
+				}
+				if sreg != linux.NFT_REG_1 {
+					return fmt.Errorf("unexpected sreg: %d, want %d", sreg, linux.NFT_REG_1)
+				}
+				dreg, ok := AttrNetToHost[uint32](linux.NFTA_LOOKUP_DREG, attrs)
+				if !ok {
+					return fmt.Errorf("failed to get dreg")
+				}
+				if dreg != linux.NFT_REG_2 {
+					return fmt.Errorf("unexpected dreg: %d, want %d", dreg, linux.NFT_REG_2)
+				}
+				flags, ok := AttrNetToHost[uint32](linux.NFTA_LOOKUP_FLAGS, attrs)
+				if !ok {
+					return fmt.Errorf("failed to get flags")
+				}
+				if flags != linux.NFT_LOOKUP_F_INV {
+					return fmt.Errorf("unexpected flags: %d, want %d", flags, linux.NFT_LOOKUP_F_INV)
+				}
+				return nil
+			},
+		},
+		{
 			name: "last",
 			op:   &last{},
 			validate: func(dump []byte) error {

@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/log"
@@ -30,6 +31,7 @@ var validationTests = []TestCase{
 	&JumpAndDropAll{},
 	&tcpDNAT{},
 	&tcpSNAT{},
+	&mapTest{},
 }
 
 func init() {
@@ -504,5 +506,196 @@ func (*udpSNAT) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 
 // Timeout implements TestCase.Timeout.
 func (*udpSNAT) Timeout() time.Duration {
+	return 30 * time.Second
+}
+
+// mapTest tests installs Nftables rules such that:
+//  1. Incoming packets to port 9000 match a verdict map and jump to a sub-chain.
+//  2. In the sub-chain, the source IP should match a map and
+//     be translated to a new source IP.
+//  3. The packet is then forwarded to the destination port 9000.
+type mapTest struct{ containerCase }
+
+var _ TestCase = (*mapTest)(nil)
+
+func (*mapTest) Name() string {
+	return "mapTest"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (t *mapTest) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	if ipv6 {
+		log.Warningf("mapTest is not supported for IPv6 yet.")
+		return nil
+	}
+
+	snatAddr := "127.0.0.99"
+
+	//
+	if err := func() error {
+		// Start a listener on port 8999
+		// This verifies that:
+		//   a) the ContainerAction and the LocalAction can connect to each other.
+		//   b) sync with LocalAction that the nft-rules are programmed.
+		l1, err := net.Listen("tcp", "0.0.0.0:8999")
+		if err != nil {
+			return fmt.Errorf("initial net.Listen failed: %v", err)
+		}
+		defer l1.Close()
+
+		// 2. Program the rules targeting port 9000 while the client waits on 8999.
+		cmds := [][]string{
+			// Create NAT table.
+			{"add", "table", "inet", "nat"},
+			// Create input chain.
+			{"add", "chain", "inet", "nat", "input", "{ type nat hook input priority 100; }"},
+			// Create target sub-chain (non-base chain).
+			{"add", "chain", "inet", "nat", "snat_chain"},
+			// Create maps.
+			{"add", "map", "inet", "nat", "client_vmap", "{ type ipv4_addr : verdict; }"},
+			{"add", "map", "inet", "nat", "client_snat_map", "{ type ipv4_addr : ipv4_addr; }"},
+			// Add element to verdict map to jump to sub-chain.
+			{"add", "element", "inet", "nat", "client_vmap", fmt.Sprintf("{ %s : jump snat_chain }", ip.String())},
+			// Add element to normal map mapping client IP -> snatAddr.
+			{"add", "element", "inet", "nat", "client_snat_map", fmt.Sprintf("{ %s : %s }", ip.String(), snatAddr)},
+			// Add rule on base input chain to use vmap.
+			{"add", "rule", "inet", "nat", "input", "tcp", "dport", "9000", "ip", "saddr", "vmap", "@client_vmap"},
+			// Add rule inside snat_chain to apply SNAT map translation on matching packet.
+			{"add", "rule", "inet", "nat", "snat_chain", "snat", "ip", "to", "ip", "saddr", "map", "@client_snat_map"},
+		}
+
+		for _, cmd := range cmds {
+			if err := nftCmd(cmd); err != nil {
+				return fmt.Errorf("nft cmd: %v, failed with error: %v", cmd, err)
+			}
+		}
+
+		// Dump & list client_vmap and client_snat_map to verify map dump and setup.
+		out, err := nftCmdOut([]string{"list", "map", "inet", "nat", "client_vmap"})
+		if err != nil {
+			return fmt.Errorf("failed to list client_vmap: %v", err)
+		}
+		if !strings.Contains(out, ip.String()) || !strings.Contains(out, "jump snat_chain") {
+			return fmt.Errorf("unexpected verdict map dump output: %s", out)
+		}
+
+		out, err = nftCmdOut([]string{"list", "map", "inet", "nat", "client_snat_map"})
+		if err != nil {
+			return fmt.Errorf("failed to list client_snat_map: %v", err)
+		}
+		if !strings.Contains(out, ip.String()) || !strings.Contains(out, snatAddr) {
+			return fmt.Errorf("unexpected normal map dump output: %s", out)
+		}
+
+		// 3. Accept connection on 8999 to sync with the LocalAction.
+		errCh1 := make(chan error, 1)
+		go func() {
+			conn, err := l1.Accept()
+			if err != nil {
+				errCh1 <- err
+				return
+			}
+			conn.Close()
+			errCh1 <- nil
+		}()
+
+		select {
+		case err := <-errCh1:
+			if err != nil {
+				return err
+			}
+		case <-time.After(10 * time.Second):
+			return fmt.Errorf("timeout waiting for initial client TCP connection on port 8999")
+		}
+		return nil
+	}(); err != nil {
+		return err
+	}
+
+	// 4. Verify both maps behave correctly by listening on TCP port 9000.
+	// Packet must jump to snat_chain and get source IP translated to snatAddr.
+	l2, err := net.Listen("tcp", "0.0.0.0:9000")
+	if err != nil {
+		return fmt.Errorf("second net.Listen failed: %v", err)
+	}
+
+	errCh2 := make(chan error, 1)
+	go func() {
+		defer l2.Close()
+		conn, err := l2.Accept()
+		if err != nil {
+			errCh2 <- err
+			return
+		}
+		defer conn.Close()
+
+		remoteAddr, _, err := net.SplitHostPort(conn.RemoteAddr().String())
+		if err != nil {
+			errCh2 <- fmt.Errorf("failed to parse client address, err: %v", err)
+			return
+		}
+		if remoteAddr != snatAddr {
+			errCh2 <- fmt.Errorf("unexpected client address after SNAT: %s, expected: %s", remoteAddr, snatAddr)
+			return
+		}
+		errCh2 <- nil
+	}()
+
+	select {
+	case err := <-errCh2:
+		if err != nil {
+			return err
+		}
+	case <-time.After(15 * time.Second):
+		l2.Close()
+		return fmt.Errorf("timeout waiting for client TCP connection post-SNAT on port 9000")
+	}
+
+	return nil
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (t *mapTest) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	if ipv6 {
+		return nil
+	}
+
+	dialAddr1 := net.JoinHostPort(ip.String(), "8999")
+	dialAddr2 := net.JoinHostPort(ip.String(), "9000")
+
+	// Sync by waiting for the container to be ready to accept connections on port 8999.
+	var conn1 net.Conn
+	var err error
+	for i := 0; i < 10; i++ {
+		conn1, err = net.Dial("tcp", dialAddr1)
+		if err == nil {
+			break
+		}
+		time.Sleep(1 * time.Second)
+	}
+	if err != nil {
+		return fmt.Errorf("first net.Dial failed: %v", err)
+	}
+	conn1.Close()
+
+	// Send a TCP packet to port 9000 to verify SNAT is working.
+	var conn2 net.Conn
+	for i := 0; i < 10; i++ {
+		conn2, err = net.Dial("tcp", dialAddr2)
+		if err == nil {
+			break
+		}
+		time.Sleep(1 * time.Second)
+	}
+	if err != nil {
+		return fmt.Errorf("second net.Dial failed: %v", err)
+	}
+	conn2.Close()
+
+	return nil
+}
+
+// Timeout implements TestCase.Timeout.
+func (*mapTest) Timeout() time.Duration {
 	return 30 * time.Second
 }

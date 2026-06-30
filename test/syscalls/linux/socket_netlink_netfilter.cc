@@ -3953,6 +3953,36 @@ INSTANTIATE_TEST_SUITE_P(NATRuleTest, AddRuleWithExprTest,
                            return info.param.test_name;
                          });
 
+std::vector<RuleWithExprTestParams> GetLookupRuleTestParams() {
+  return {
+      RuleWithExprTestParams{
+          .test_name = "SetNotFound",
+          .expr_name = "lookup",
+          .expr_attrs = NlNestedAttr()
+                            .StrAttr(NFTA_LOOKUP_SET, "bad_set")
+                            .U32Attr(NFTA_LOOKUP_SREG, NFT_REG_1),
+          .expected_error_no = ENOENT},
+      RuleWithExprTestParams{
+          .test_name = "MissingSet",
+          .expr_name = "lookup",
+          .expr_attrs = NlNestedAttr().U32Attr(NFTA_LOOKUP_SREG, NFT_REG_1),
+          .expected_error_no = EINVAL},
+      RuleWithExprTestParams{
+          .test_name = "MissingSreg",
+          .expr_name = "lookup",
+          .expr_attrs = NlNestedAttr().StrAttr(NFTA_LOOKUP_SET, "bad_set"),
+          .expected_error_no = EINVAL},
+  };
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    LookupRuleTest, AddRuleWithExprTest,
+    /*param_generator=*/ValuesIn(GetLookupRuleTestParams()),
+    /*param_name_generator=*/
+    [](const TestParamInfo<RuleWithExprTestParams>& info) {
+      return info.param.test_name;
+    });
+
 }  // namespace
 
 }  // namespace testing

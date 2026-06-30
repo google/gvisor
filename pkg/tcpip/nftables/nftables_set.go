@@ -561,9 +561,16 @@ func (nf *NFTables) parseElemDataAttr(tab *Table, set *nftSet, dataAttrs nlmsg.B
 		if lenData != int(set.dataLen) {
 			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "data length does not match set data length")
 		}
+		for _, ops := range set.bindings {
+			if validateDataRegister(ops.dregIdx, lenData) != nil {
+				return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Data register does not match set data length")
+			}
+		}
 	case linux.NFT_DATA_VERDICT:
-		// TODO: b/505409691 - Fix this check for vmaps.
-		log.Warningf("Unimplemented: vmap verification is not supported yet; assuming it is valid.")
+		// TODO: b/505409691 - Support validation for verdict lookups.
+		// For verdict data, it should check that the jump/gotos
+		// are not illegal or out of bounds.
+		log.Warningf("Unimplemented: verdict data verification is not supported yet; assuming it is valid.")
 	}
 
 	dv.data = dataValue
@@ -862,6 +869,10 @@ func (nf *NFTables) NewSetElements(attrs map[uint16]nlmsg.BytesView, family stac
 	var set *nftSet
 	if set, ok = tab.sets[setName]; !ok {
 		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "set does not exist")
+	}
+
+	if len(set.bindings) != 0 && (set.flags&linux.NFT_SET_CONSTANT != 0 || set.flags&linux.NFT_SET_ANONYMOUS != 0) {
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "set is constant or anonymous and cannot be modified")
 	}
 
 	if err := nf.addElemListToSet(nlmsg.AttrsView(elemListAttr), set, tab, flags); err != nil {
