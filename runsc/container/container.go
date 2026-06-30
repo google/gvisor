@@ -1570,10 +1570,18 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 	// users in the sandbox.
 	if !rootlessEUID {
 		if userNS, ok := specutils.GetNS(specs.UserNamespace, c.Spec); ok {
-			nss = append(nss, userNS)
-			specutils.SetUIDGIDMappings(cmd, c.Spec)
-			// We need to set UID and GID to have capabilities in a new user namespace.
-			cmd.SysProcAttr.Credential = &syscall.Credential{Uid: 0, Gid: 0}
+			// PatchGoferUserns: only join the sandbox userns if our host uid is
+			// mapped into it. With unprivileged userns where host uid 0 is
+			// unmapped, setns() fails (no CAP_SYS_ADMIN in target). Run the
+			// gofer in the init userns as root in that case.
+			if goferCanJoinUserNS(userNS) {
+				nss = append(nss, userNS)
+				specutils.SetUIDGIDMappings(cmd, c.Spec)
+				// We need to set UID and GID to have capabilities in a new user namespace.
+				cmd.SysProcAttr.Credential = &syscall.Credential{Uid: 0, Gid: 0}
+			} else {
+				log.Warningf("PatchGoferUserns: host uid 0 not mapped in %q; running gofer in init userns", userNS.Path)
+			}
 		}
 	} else {
 		userNS, ok := specutils.GetNS(specs.UserNamespace, c.Spec)
@@ -2300,4 +2308,32 @@ func (c *Container) GetNetworkConfig() (*boot.CreateLinksAndRoutesArgs, error) {
 		return nil, fmt.Errorf("sandbox is not running")
 	}
 	return c.Sandbox.GetNetworkConfig()
+}
+
+// PatchGoferUserns: returns true if it is safe for the gofer to setns() into
+// the sandbox userns referenced by ns. When the userns has a Path (existing
+// NS), we read its uid_map and verify host uid 0 falls inside any mapped
+// range. If we can't determine, default to true (preserve original behaviour).
+func goferCanJoinUserNS(ns specs.LinuxNamespace) bool {
+	if ns.Path == "" {
+		return true // a new NS will be created via clone — always fine
+	}
+	// ns.Path is typically "/proc/<pid>/ns/user"; resolve sibling uid_map.
+	parts := strings.Split(strings.Trim(ns.Path, "/"), "/")
+	if len(parts) < 4 || parts[0] != "proc" || parts[2] != "ns" {
+		return true
+	}
+	data, err := os.ReadFile("/" + parts[0] + "/" + parts[1] + "/uid_map")
+	if err != nil {
+		return true // can't tell — let StartInNS try
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		var inID, outID, sz int
+		if _, err := fmt.Sscanf(line, "%d %d %d", &inID, &outID, &sz); err == nil {
+			if outID <= 0 && 0 < outID+sz {
+				return true
+			}
+		}
+	}
+	return false
 }
