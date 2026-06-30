@@ -20,6 +20,10 @@ func (fRes *futureResponse) afterLoad(context.Context) {
 	fRes.ch = make(chan struct{})
 }
 
+func (conn *connection) afterLoad(context.Context) {
+	conn.fuseConn = &deviceConn{conn: conn}
+}
+
 func (conn *connection) saveFullQueueCh() int {
 	return cap(conn.fullQueueCh)
 }

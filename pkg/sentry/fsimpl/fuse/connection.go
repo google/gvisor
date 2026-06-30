@@ -43,6 +43,34 @@ const (
 	fuseDefaultMaxPagesPerReq = 32
 )
 
+// fuseConn abstracts the FUSE request/response transport. The connection
+// struct delegates call dispatch to its fuseConn implementation.
+type fuseConn interface {
+	call(ctx context.Context, r *Request) (*Response, error)
+	release(ctx context.Context)
+}
+
+// deviceConn implements fuseConn for the in-sandbox /dev/fuse path.
+// It uses the queue-based mechanism where the FUSE daemon reads requests
+// from and writes responses to the DeviceFD.
+type deviceConn struct {
+	conn *connection
+}
+
+func (dc *deviceConn) call(ctx context.Context, r *Request) (*Response, error) {
+	fut, err := dc.conn.callFuture(ctx, r)
+	if err != nil {
+		return nil, linuxError(err)
+	}
+	res, err := fut.resolve(ctx)
+	if err != nil {
+		return res, linuxError(err)
+	}
+	return res, nil
+}
+
+func (dc *deviceConn) release(ctx context.Context) {}
+
 // connection is the struct by which the sentry communicates with the FUSE server daemon.
 //
 // Lock order:
@@ -53,6 +81,10 @@ const (
 // +stateify savable
 type connection struct {
 	connectionRefs
+
+	// fuseConn is the transport implementation. For the DeviceFD path this
+	// is a *deviceConn; for host passthrough this is a *hostConnection.
+	fuseConn fuseConn `state:"nosave"`
 
 	// We target FUSE 7.23.
 	// The following FUSE_INIT flags are currently unsupported by this implementation:
@@ -309,7 +341,12 @@ func newFUSEConnection(_ context.Context, fuseFD *DeviceFD, opts *filesystemOpti
 	// synchronization and without checking if fuseFD has already been used to
 	// mount another filesystem.
 
-	// Create the writeBuf for the header to be stored in.
+	return newFUSEConnectionOpts(opts)
+}
+
+// newFUSEConnectionOpts creates a FUSE connection with the given options.
+// This is used by both the DeviceFD path and the host FD passthrough path.
+func newFUSEConnectionOpts(opts *filesystemOptions) (*connection, error) {
 	conn := &connection{
 		completions:              make(map[linux.FUSEOpID]*futureResponse),
 		fullQueueCh:              make(chan struct{}, opts.maxActiveRequests),
@@ -321,6 +358,7 @@ func newFUSEConnection(_ context.Context, fuseFD *DeviceFD, opts *filesystemOpti
 		initializedChan:          make(chan struct{}),
 		connected:                true,
 	}
+	conn.fuseConn = &deviceConn{conn: conn}
 	conn.InitRefs()
 	return conn, nil
 }
@@ -379,16 +417,7 @@ func (conn *connection) Call(ctx context.Context, r *Request) (*Response, error)
 		return nil, linuxerr.ECONNREFUSED
 	}
 
-	fut, err := conn.callFuture(ctx, r)
-	if err != nil {
-		return nil, linuxError(err)
-	}
-
-	res, err := fut.resolve(ctx)
-	if err != nil {
-		return res, linuxError(err)
-	}
-	return res, nil
+	return conn.fuseConn.call(ctx, r)
 }
 
 // callFuture makes a request to the server and returns a future response.

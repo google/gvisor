@@ -806,6 +806,16 @@ func (f *fileDescription) Release(context.Context) {
 	// noop
 }
 
+// HostFD returns the underlying host file descriptor number.
+func (f *fileDescription) HostFD() int {
+	return f.inode.hostFD
+}
+
+// HostFD returns the underlying host file descriptor number.
+func (i *inode) HostFD() int {
+	return i.hostFD
+}
+
 // Allocate implements vfs.FileDescriptionImpl.Allocate.
 func (f *fileDescription) Allocate(ctx context.Context, mode, offset, length uint64) error {
 	if f.inode.readonly {

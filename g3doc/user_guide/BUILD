@@ -50,6 +50,14 @@ doc(
 )
 
 doc(
+    name = "fuse",
+    src = "fuse.md",
+    category = "User Guide",
+    permalink = "/docs/user_guide/fuse/",
+    weight = "41",
+)
+
+doc(
     name = "networking",
     src = "networking.md",
     category = "User Guide",
