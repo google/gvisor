@@ -32,6 +32,7 @@
 
 #include <atomic>
 #include <cerrno>
+#include <csignal>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -50,6 +51,7 @@
 #include "test/util/memory_util.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
@@ -320,17 +322,35 @@ TEST(PidfdTest, SendSignalViaPidfdOpenPidfdToDeadChildFails) {
 }
 
 TEST(PidfdTest, Clone3InvalidFdAddrFails) {
-  auto mapping =
-      ASSERT_NO_ERRNO_AND_VALUE(MmapAnon(kPageSize, PROT_NONE, MAP_PRIVATE));
+  // Unmapped or PROT_NONE pointer EFAULTs.
+  {
+    auto mapping =
+        ASSERT_NO_ERRNO_AND_VALUE(MmapAnon(kPageSize, PROT_NONE, MAP_PRIVATE));
 
-  clone_args ca = {};
-  ca.flags = CLONE_PIDFD;
-  ca.exit_signal = SIGCHLD;
-  ca.pidfd = static_cast<uint64_t>(mapping.addr());
+    clone_args ca = {};
+    ca.flags = CLONE_PIDFD;
+    ca.exit_signal = SIGCHLD;
+    ca.pidfd = static_cast<uint64_t>(mapping.addr());
 
-  pid_t child = syscall(SYS_clone3, &ca, sizeof(ca));
-  ASSERT_LT(child, 0);
-  EXPECT_EQ(errno, EFAULT);
+    pid_t child = syscall(SYS_clone3, &ca, sizeof(ca));
+    ASSERT_LT(child, 0);
+    EXPECT_EQ(errno, EFAULT);
+  }
+
+  // Read-only pointer EFAULTs.
+  {
+    auto mapping =
+        ASSERT_NO_ERRNO_AND_VALUE(MmapAnon(kPageSize, PROT_READ, MAP_PRIVATE));
+
+    clone_args ca = {};
+    ca.flags = CLONE_PIDFD;
+    ca.exit_signal = SIGCHLD;
+    ca.pidfd = static_cast<uint64_t>(mapping.addr());
+
+    pid_t child = syscall(SYS_clone3, &ca, sizeof(ca));
+    ASSERT_LT(child, 0);
+    EXPECT_EQ(errno, EFAULT);
+  }
 }
 
 TEST(PidfdTest, SendSignalToDeadChildFails) {
@@ -1210,6 +1230,59 @@ TEST(PidfdTest, FasyncIsUnsupported) {
 
   EXPECT_THAT(ioctl(pidfd.get(), FIOSETOWN, &who),
               SyscallFailsWithErrno(want_errno));
+}
+
+// This reproduces the race condition where pidfd_send_signal can target
+// a cloned task whose struct task is initialized but has not
+// yet completed `updateInfoLocked()` (initializing `logPrefix`), triggering
+// a nil pointer dereference on the target task's Debugf/Infof logging paths.
+TEST(PidfdTest, SendSignalToStartingTaskRace) {
+  DisableSave ds;  // Violent test that hopes to trigger a crash.
+  std::atomic<int> shared_pidfd{-1};
+  std::atomic<bool> stop_signal_thread{false};
+
+  // These threads will try to race with clone(CLONE_PIDFD)
+  // to get at the pidfd FD before the corresponding task is
+  // fully initialized.
+  std::unique_ptr<ScopedThread> signallers[4];
+  for (int i = 0; i < 4; ++i) {
+    signallers[i] =
+        std::make_unique<ScopedThread>([&shared_pidfd, &stop_signal_thread]() {
+          while (!stop_signal_thread.load(std::memory_order_relaxed)) {
+            int fd = shared_pidfd.load(std::memory_order_relaxed);
+            if (fd != -1) {
+              syscall(SYS_pidfd_send_signal, fd, SIGUSR1, nullptr, 0);
+            }
+          }
+        });
+  }
+
+  for (int iter = 0; iter < 20; ++iter) {
+    shared_pidfd.store(-1, std::memory_order_relaxed);
+
+    clone_args ca = {};
+    ca.flags = CLONE_PIDFD;
+    ca.exit_signal = SIGCHLD;
+    ca.pidfd = reinterpret_cast<uint64_t>(&shared_pidfd);
+
+    pid_t child = syscall(SYS_clone3, &ca, sizeof(ca));
+    if (child == 0) {
+      // Child immediately exits.
+      _exit(0);
+    }
+    ASSERT_GT(child, 0);
+
+    int status;
+    EXPECT_THAT(RetryEINTR(waitpid)(child, &status, 0),
+                SyscallSucceedsWithValue(child));
+
+    int fd = shared_pidfd.load(std::memory_order_relaxed);
+    if (fd != -1) {
+      close(fd);
+    }
+  }
+
+  stop_signal_thread.store(true, std::memory_order_relaxed);
 }
 
 }  // namespace
