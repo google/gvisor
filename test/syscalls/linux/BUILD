@@ -4155,6 +4155,7 @@ cc_binary(
     malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":socket_netlink_util",
+        "//test/util:capability_util",
         "//test/util:file_descriptor",
         "//test/util:socket_util",
         "//test/util:test_main",
