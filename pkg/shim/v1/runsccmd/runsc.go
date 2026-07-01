@@ -296,6 +296,17 @@ type CheckpointOpts struct {
 	ImagePath    string
 	LeaveRunning bool
 	Direct       bool
+
+	// SaveRestoreExecArgv, if set, is the argv (split by spaces, argv[0] is the
+	// binary path) of a hook that runsc executes inside the sandbox before
+	// saving and after restoring. A non-zero exit fails the save/restore. For an
+	// external checkpoint this must be passed explicitly; the boot-time
+	// annotation is only honored on the workload-triggered path.
+	SaveRestoreExecArgv string
+
+	// SaveRestoreExecTimeout bounds the save/restore hook. It is only emitted
+	// when SaveRestoreExecArgv is set.
+	SaveRestoreExecTimeout time.Duration
 }
 
 func (o *CheckpointOpts) args() []string {
@@ -308,6 +319,12 @@ func (o *CheckpointOpts) args() []string {
 	}
 	if o.Direct {
 		out = append(out, "--direct")
+	}
+	if o.SaveRestoreExecArgv != "" {
+		out = append(out, fmt.Sprintf("--save-restore-exec-argv=%s", o.SaveRestoreExecArgv))
+		if o.SaveRestoreExecTimeout > 0 {
+			out = append(out, fmt.Sprintf("--save-restore-exec-timeout=%s", o.SaveRestoreExecTimeout))
+		}
 	}
 	return out
 }
