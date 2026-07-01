@@ -742,6 +742,45 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("registering filesystems: %w", err)
 	}
 
+	// Apply network sysctl settings from OCI spec.
+	if args.Spec.Linux != nil && args.Spec.Linux.Sysctl != nil {
+		if ns, ok := l.k.RootNetworkNamespace().Stack().(*netstack.Stack); ok {
+			if val, ok := args.Spec.Linux.Sysctl["net.ipv4.tcp_keepalive_time"]; ok {
+				keepaliveTime, err := strconv.Atoi(val)
+				if err != nil {
+					return nil, fmt.Errorf("invalid net.ipv4.tcp_keepalive_time=%s: %w", val, err)
+				}
+				if keepaliveTime <= 0 {
+					return nil, fmt.Errorf("invalid net.ipv4.tcp_keepalive_time=%d: must be positive", keepaliveTime)
+				}
+				tcpProto := tcp.ProtocolFromStack(ns.Stack)
+				tcpProto.SetDefaultKeepaliveIdle(gtime.Duration(keepaliveTime) * gtime.Second)
+			}
+			if val, ok := args.Spec.Linux.Sysctl["net.ipv4.tcp_keepalive_intvl"]; ok {
+				keepaliveIntvl, err := strconv.Atoi(val)
+				if err != nil {
+					return nil, fmt.Errorf("invalid net.ipv4.tcp_keepalive_intvl=%s: %w", val, err)
+				}
+				if keepaliveIntvl <= 0 {
+					return nil, fmt.Errorf("invalid net.ipv4.tcp_keepalive_intvl=%d: must be positive", keepaliveIntvl)
+				}
+				tcpProto := tcp.ProtocolFromStack(ns.Stack)
+				tcpProto.SetDefaultKeepaliveInterval(gtime.Duration(keepaliveIntvl) * gtime.Second)
+			}
+			if val, ok := args.Spec.Linux.Sysctl["net.ipv4.tcp_keepalive_probes"]; ok {
+				keepaliveProbes, err := strconv.Atoi(val)
+				if err != nil {
+					return nil, fmt.Errorf("invalid net.ipv4.tcp_keepalive_probes=%s: %w", val, err)
+				}
+				if keepaliveProbes <= 0 {
+					return nil, fmt.Errorf("invalid net.ipv4.tcp_keepalive_probes=%d: must be positive", keepaliveProbes)
+				}
+				tcpProto := tcp.ProtocolFromStack(ns.Stack)
+				tcpProto.SetDefaultKeepaliveCount(keepaliveProbes)
+			}
+		}
+	}
+
 	// Turn on packet logging if enabled.
 	if args.Conf.LogPackets {
 		log.Infof("Packet logging enabled")
