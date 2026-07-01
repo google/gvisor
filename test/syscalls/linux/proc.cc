@@ -2865,6 +2865,179 @@ TEST(ProcSysKernelRandomUuid, DifferentEveryTime) {
   EXPECT_NE(uuid1, uuid2);
 }
 
+TEST(ProcSysUserMaxUserNamespaces, Exists) {
+  EXPECT_THAT(open("/proc/sys/user/max_user_namespaces", O_RDONLY),
+              SyscallSucceeds());
+}
+
+TEST(ProcSysUserMaxUserNamespaces, HasNumericValue) {
+  const std::string val_str = ASSERT_NO_ERRNO_AND_VALUE(
+      GetContents("/proc/sys/user/max_user_namespaces"));
+  int64_t val;
+  EXPECT_TRUE(absl::SimpleAtoi(val_str, &val))
+      << "/proc/sys/user/max_user_namespaces does not contain a numeric value: "
+      << val_str;
+  // The default permits creating user namespaces.
+  EXPECT_GT(val, 0);
+}
+
+// Writing the limit in a fresh user namespace reads back unchanged.
+TEST(ProcSysUserMaxUserNamespaces, WriteUpdatesValue) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
+
+  EXPECT_THAT(InForkedProcess([] {
+                // Throwaway namespace: we hold full caps here, so may write it.
+                TEST_PCHECK(unshare(CLONE_NEWUSER) == 0);
+                MaybeSave();
+
+                int wfd = open("/proc/sys/user/max_user_namespaces", O_WRONLY);
+                TEST_PCHECK(wfd >= 0);
+                TEST_PCHECK(write(wfd, "42", 2) == 2);
+                TEST_PCHECK(close(wfd) == 0);
+
+                int rfd = open("/proc/sys/user/max_user_namespaces", O_RDONLY);
+                TEST_PCHECK(rfd >= 0);
+                char buf[32] = {};
+                TEST_PCHECK(read(rfd, buf, sizeof(buf) - 1) >= 2);
+                TEST_PCHECK(close(rfd) == 0);
+                // Compare bytes directly to stay async-signal-safe.
+                TEST_PCHECK(buf[0] == '4' && buf[1] == '2');
+              }),
+              IsPosixErrorOkAndHolds(0));
+}
+
+// A negative limit is rejected.
+TEST(ProcSysUserMaxUserNamespaces, RejectsNegativeValue) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
+
+  EXPECT_THAT(InForkedProcess([] {
+                // Throwaway namespace so the host's value is left untouched.
+                TEST_PCHECK(unshare(CLONE_NEWUSER) == 0);
+                MaybeSave();
+
+                int fd = open("/proc/sys/user/max_user_namespaces", O_WRONLY);
+                TEST_PCHECK(fd >= 0);
+                TEST_CHECK_ERRNO(write(fd, "-1", 2), EINVAL);
+                TEST_PCHECK(close(fd) == 0);
+              }),
+              IsPosixErrorOkAndHolds(0));
+}
+
+// With the limit at zero, creating a nested user namespace must fail.
+TEST(ProcSysUserMaxUserNamespaces, LimitBlocksNestedUserNamespace) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
+
+  // An unmapped namespace returns EPERM before the limit is checked, so map it
+  // first; mapping from the parent (not /proc/self) keeps teardown clean.
+  char ubuf[32], gbuf[32];
+  snprintf(ubuf, sizeof(ubuf), "0 %u 1", getuid());
+  snprintf(gbuf, sizeof(gbuf), "0 %u 1", getgid());
+  const std::string uid_map = ubuf;
+  const std::string gid_map = gbuf;
+
+  EXPECT_THAT(InForkedProcess([&uid_map, &gid_map] {
+                int ready[2], go[2];
+                TEST_PCHECK(pipe(ready) == 0);
+                TEST_PCHECK(pipe(go) == 0);
+                pid_t child = fork();
+                TEST_PCHECK(child >= 0);
+                if (child == 0) {
+                  TEST_PCHECK(close(ready[0]) == 0);
+                  TEST_PCHECK(close(go[1]) == 0);
+                  TEST_PCHECK(unshare(CLONE_NEWUSER) == 0);
+                  TEST_PCHECK(close(ready[1]) == 0);  // namespace created
+                  char x;
+                  RetryEINTR(read)(go[0], &x, 1);  // wait until mapped
+
+                  // Forbid descendants, then the next unshare must be ENOSPC.
+                  int fd = open("/proc/sys/user/max_user_namespaces", O_WRONLY);
+                  TEST_PCHECK(fd >= 0);
+                  TEST_PCHECK(write(fd, "0", 1) == 1);
+                  TEST_PCHECK(close(fd) == 0);
+                  TEST_CHECK_ERRNO(unshare(CLONE_NEWUSER), ENOSPC);
+                  _exit(0);
+                }
+                TEST_PCHECK(close(ready[1]) == 0);
+                TEST_PCHECK(close(go[0]) == 0);
+                char c;
+                TEST_PCHECK(RetryEINTR(read)(ready[0], &c, 1) == 0);
+
+                // Map the child's namespace (uid_map, then setgroups, gid_map).
+                auto write_file = [](const char* path, const char* data,
+                                     size_t len) {
+                  int fd = open(path, O_WRONLY);
+                  TEST_PCHECK(fd >= 0);
+                  TEST_PCHECK(write(fd, data, len) ==
+                              static_cast<ssize_t>(len));
+                  TEST_PCHECK(close(fd) == 0);
+                };
+                char path[64];
+                snprintf(path, sizeof(path), "/proc/%d/uid_map", child);
+                write_file(path, uid_map.c_str(), uid_map.size());
+                snprintf(path, sizeof(path), "/proc/%d/setgroups", child);
+                write_file(path, "deny", 4);
+                snprintf(path, sizeof(path), "/proc/%d/gid_map", child);
+                write_file(path, gid_map.c_str(), gid_map.size());
+
+                TEST_PCHECK(close(go[1]) == 0);  // release child
+                int status;
+                TEST_PCHECK(RetryEINTR(waitpid)(child, &status, 0) == child);
+                TEST_PCHECK(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+              }),
+              IsPosixErrorOkAndHolds(0));
+}
+
+// A parent namespace with a limit of one still blocks a grandchild namespace:
+// each new namespace is charged to its ancestors, so the child uses up the
+// parent's single-namespace budget even though the child's own limit is the
+// default. This is the case bubblewrap exercises.
+TEST(ProcSysUserMaxUserNamespaces, RecursiveLimitBlocksGrandchild) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
+
+  // Each namespace is mapped before nesting deeper, otherwise the next unshare
+  // returns EPERM from an unmapped namespace before the limit is checked.
+  char ubuf[32], gbuf[32];
+  snprintf(ubuf, sizeof(ubuf), "0 %u 1", getuid());
+  snprintf(gbuf, sizeof(gbuf), "0 %u 1", getgid());
+  const std::string uid_map = ubuf;
+  const std::string gid_map = gbuf;
+
+  EXPECT_THAT(InForkedProcess([&uid_map, &gid_map] {
+                auto self_map = [](const char* name, const char* data,
+                                   size_t len) {
+                  char path[64];
+                  snprintf(path, sizeof(path), "/proc/self/%s", name);
+                  int fd = open(path, O_WRONLY);
+                  TEST_PCHECK(fd >= 0);
+                  TEST_PCHECK(write(fd, data, len) ==
+                              static_cast<ssize_t>(len));
+                  TEST_PCHECK(close(fd) == 0);
+                };
+
+                // Parent namespace A, mapped, allowing exactly one descendant.
+                TEST_PCHECK(unshare(CLONE_NEWUSER) == 0);
+                self_map("uid_map", uid_map.c_str(), uid_map.size());
+                self_map("setgroups", "deny", 4);
+                self_map("gid_map", gid_map.c_str(), gid_map.size());
+                int fd = open("/proc/sys/user/max_user_namespaces", O_WRONLY);
+                TEST_PCHECK(fd >= 0);
+                TEST_PCHECK(write(fd, "1", 1) == 1);
+                TEST_PCHECK(close(fd) == 0);
+
+                // Child namespace B succeeds and consumes A's budget. The mapped
+                // uid is now 0, so map it to itself.
+                TEST_PCHECK(unshare(CLONE_NEWUSER) == 0);
+                self_map("uid_map", "0 0 1", 5);
+                self_map("setgroups", "deny", 4);
+                self_map("gid_map", "0 0 1", 5);
+
+                // The grandchild is still charged to A, whose budget is gone, so
+                // the unshare must fail with ENOSPC rather than succeeding.
+                TEST_CHECK_ERRNO(unshare(CLONE_NEWUSER), ENOSPC);
+              }),
+              IsPosixErrorOkAndHolds(0));
+}
+
 TEST(ProcSysVmMaxmapCount, HasNumericValue) {
   const std::string val_str =
       ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/vm/max_map_count"));
