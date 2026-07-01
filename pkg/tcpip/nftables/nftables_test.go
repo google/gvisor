@@ -2087,6 +2087,20 @@ func TestEvaluatePayloadSet(t *testing.T) {
 			op1: mustCreateImmediate(t, linux.NFT_REG_3, arbitraryIPv6AddrB[:], stack.NFVerdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv6DstAddrOffset, ipv6DstAddrLen, linux.NFT_REG_3, linux.NFT_PAYLOAD_CSUM_NONE, 0, linux.NFT_PAYLOAD_L4CSUM_PSEUDOHDR),
 		},
+		{
+			tname:  "csumOffset equal to network header length triggers NFT_BREAK",
+			pkt:    makeIPv4Packet(header.IPv4MinimumSize, arbitraryIPv4Fields()),
+			outPkt: nil,
+			op1:    mustCreateImmediate(t, linux.NFT_REG_1, numToBE(0, ipv4LengthLen), stack.NFVerdict{}),
+			op2:    mustCreatePayloadSet(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv4LengthOffset, ipv4LengthLen, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_INET, header.IPv4MinimumSize, 0x0),
+		},
+		{
+			tname:  "csumOffset past network header length triggers NFT_BREAK",
+			pkt:    makeIPv4Packet(header.IPv4MinimumSize, arbitraryIPv4Fields()),
+			outPkt: nil,
+			op1:    mustCreateImmediate(t, linux.NFT_REG_1, numToBE(0, ipv4LengthLen), stack.NFVerdict{}),
+			op2:    mustCreatePayloadSet(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv4LengthOffset, ipv4LengthLen, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_INET, 250, 0x0),
+		},
 	} {
 		t.Run(test.tname, func(t *testing.T) {
 			// Sets up an NFTables object with a single table, chain, and rule.
