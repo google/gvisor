@@ -572,14 +572,17 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 		if err != nil {
 			return err
 		}
-		// Configure the network.
+		// Scrape the host network to get the network config and store it in the
+		// loader. The kernel will restore loaded network stack with this config.
 		if err := setupNetwork(conn, s.Pid.Load(), conf, disableIPv6); err != nil {
 			return fmt.Errorf("setting up network: %w", err)
 		}
 	} else {
-		log.Debugf("Setting up network, config: %+v", networkArgs)
-		if err := conn.Call(boot.ContMgrCreateLinksAndRoutes, networkArgs, nil); err != nil {
-			return fmt.Errorf("creating links and routes: %w", err)
+		// When network args is not nil, set it in the loader which will be used
+		// during restore to configure the loaded stack.
+		log.Debugf("Setting up network args, config: %+v", networkArgs)
+		if err := conn.Call(boot.ContMgrSetNetworkArgs, networkArgs, nil); err != nil {
+			return fmt.Errorf("setting network args: %w", err)
 		}
 	}
 

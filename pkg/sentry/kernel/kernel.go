@@ -915,7 +915,7 @@ func (k *Kernel) invalidateUnsavableMappings(ctx context.Context) error {
 }
 
 // LoadFrom returns a new Kernel loaded from args.
-func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *AsyncMFLoader, timeReady chan struct{}, net inet.Stack, clocks sentrytime.Clocks, vfsOpts *vfs.CompleteRestoreOptions, timeline *timing.Timeline) error {
+func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *AsyncMFLoader, timeReady chan struct{}, networkArgs inet.NetworkArgs, clocks sentrytime.Clocks, vfsOpts *vfs.CompleteRestoreOptions, timeline *timing.Timeline) error {
 	defer timeline.End()
 	if hostarch.PageSize != 4096 {
 		return fmt.Errorf("restore is not supported with %dK page size", hostarch.PageSize/1024)
@@ -987,11 +987,14 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 	}
 
 	if s := k.rootNetworkNamespace.Stack(); s != nil {
-		if net != nil {
-			log.Infof("Reconfiguring network for restore")
-			s.ReplaceConfig(net)
+		if networkArgs == nil {
+			return fmt.Errorf("network configuration cannot be nil during restore")
 		}
-		log.Debugf("Restore network stack")
+		log.Infof("Reconfiguring network for restore")
+		s.ResetConfig()
+		if err := networkArgs.ConfigureNetwork(s); err != nil {
+			return fmt.Errorf("configuring network: %w", err)
+		}
 		s.Restore()
 		timeline.Reached("Network stack restored")
 	}

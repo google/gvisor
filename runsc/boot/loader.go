@@ -821,6 +821,37 @@ func New(args Args) (*Loader, error) {
 	return l, nil
 }
 
+// ConfigureNetwork implements inet.NetworkArgs.ConfigureNetwork.
+func (l *Loader) ConfigureNetwork(s inet.Stack) error {
+	if l.networkArgs == nil {
+		return nil
+	}
+
+	// Close the FDs after they are used to configure the stack.
+	defer func() {
+		for _, f := range l.networkArgs.FilePayload.Files {
+			f.Close()
+		}
+		l.networkArgs.FilePayload.Files = nil
+	}()
+
+	eps, ok := s.(*netstack.Stack)
+	if !ok {
+		return nil
+	}
+	if eps.Stack.IPTables() == nil {
+		eps.Stack.SetIPTables(netfilter.DefaultLinuxTables(eps.Stack.Clock(), eps.Stack.InsecureRNG()))
+	}
+	if nftables.IsNFTablesEnabled() && eps.Stack.NFTables() == nil {
+		eps.Stack.SetNFTables(nftables.NewNFTables(eps.Stack.Clock(), eps.Stack.SecureRNG()))
+	}
+	n := &Network{
+		Stack:  eps.Stack,
+		Kernel: l.k,
+	}
+	return n.CreateLinksAndRoutes(l.networkArgs, nil)
+}
+
 // createProcessArgs creates args that can be used with kernel.CreateProcess.
 func createProcessArgs(id string, spec *specs.Spec, conf *config.Config, creds *auth.Credentials, k *kernel.Kernel, pidns *kernel.PIDNamespace) (kernel.CreateProcessArgs, error) {
 	// Create initial limits.
@@ -1084,6 +1115,12 @@ func (l *Loader) run() error {
 	case created:
 		if l.root.conf.ProfileEnable {
 			pprof.Initialize()
+		}
+
+		if l.networkArgs != nil {
+			if err := l.ConfigureNetwork(l.k.RootNetworkNamespace().Stack()); err != nil {
+				return err
+			}
 		}
 
 		// Finally done with all configuration. Setup filters before user code
