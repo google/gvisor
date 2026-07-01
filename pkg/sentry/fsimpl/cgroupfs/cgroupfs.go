@@ -468,6 +468,14 @@ func (fs *filesystem) Release(ctx context.Context) {
 	k := kernel.KernelFromContext(ctx)
 	r := k.CgroupRegistry()
 
+	// Drop any registry entries still held by this filesystem's cgroup
+	// inodes. RmDir already calls RemoveCgroup for cgroups that were
+	// unlinked through rmdir; the remaining entries are the root cgroup
+	// and, when GetFilesystem fails after newCgroupInode, any partially
+	// initialised children. RemoveCgroup is a no-op for ids not in the
+	// map, mirroring the symmetry with AddCgroup at base.go newCgroupInode.
+	fs.removeCgroupsFromRegistryLocked(r)
+
 	if fs.hierarchyID != kernel.InvalidCgroupHierarchyID {
 		k.ReleaseCgroupHierarchy(fs.hierarchyID)
 		r.Unregister(fs.hierarchyID)
@@ -479,6 +487,30 @@ func (fs *filesystem) Release(ctx context.Context) {
 
 	fs.Filesystem.VFSFilesystem().VirtualFilesystem().PutAnonBlockDevMinor(fs.devMinor)
 	fs.Filesystem.Release(ctx)
+}
+
+// removeCgroupsFromRegistryLocked walks fs.root and removes the id of every
+// cgroupInode in the subtree from the kernel cgroup registry. RemoveCgroup is
+// a no-op for ids already removed via RmDir, so calling it for cgroups that
+// were rmdir'd before the filesystem was released is safe.
+func (fs *filesystem) removeCgroupsFromRegistryLocked(r *kernel.CgroupRegistry) {
+	if fs.root == nil {
+		return
+	}
+	rootInode, ok := fs.root.Inode().(*cgroupInode)
+	if !ok {
+		return
+	}
+	var walk func(c *cgroupInode)
+	walk = func(c *cgroupInode) {
+		r.RemoveCgroup(c.id)
+		c.dir.forEachChildDir(func(child *dir) {
+			if child.cgi != nil {
+				walk(child.cgi)
+			}
+		})
+	}
+	walk(rootInode)
 }
 
 // MountOptions implements vfs.FilesystemImpl.MountOptions.
