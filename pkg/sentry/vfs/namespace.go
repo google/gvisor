@@ -76,6 +76,11 @@ type MountNamespace struct {
 	// anonymous mount namespaces may have originatorID == 0 (such as "fresh"
 	// trees created using fsmount(2)).
 	originatorID uint64
+
+	// Poller is notified on every mount namespace change (mount, unmount,
+	// remount, move). Used by /proc/[pid]/mounts and /proc/[pid]/mountinfo
+	// to support poll().
+	Poller DynamicBytesPoller
 }
 
 // Namespace is the namespace interface.
@@ -389,4 +394,13 @@ func (mntns *MountNamespace) anonCanBeOperatedOn(by *MountNamespace) bool {
 	}
 
 	return mntns.originatorID == 0 || mntns.originatorID == by.ID
+}
+
+// notify notifies poll waiters of a mount namespace change.
+// Analogous to Linux's touch_mnt_namespace().
+func (mntns *MountNamespace) notify() {
+	if mntns == nil {
+		return
+	}
+	mntns.Poller.Notify()
 }
