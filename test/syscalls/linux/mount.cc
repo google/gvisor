@@ -19,6 +19,7 @@
 #include <sched.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/mman.h>
 #include <sys/mount.h>
@@ -2895,6 +2896,97 @@ TEST(MountTest, OverlayfsOnGoferBehavior) {
                          sizeof(xattr_buf)),
                 SyscallSucceeds());
     EXPECT_STREQ(xattr_buf, "value");
+  }
+}
+
+TEST(MountTest, PollMountsAndMountinfo) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  for (const char* path : {"/proc/self/mounts", "/proc/self/mountinfo"}) {
+    FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(path, O_RDONLY));
+    int epfd_raw = epoll_create1(0);
+    ASSERT_GE(epfd_raw, 0) << "epoll_create1 failed: " << strerror(errno);
+    FileDescriptor epfd(epfd_raw);
+
+    struct epoll_event ev = {};
+    ev.events = EPOLLPRI | EPOLLERR;
+    ev.data.fd = fd.get();
+    ASSERT_THAT(epoll_ctl(epfd.get(), EPOLL_CTL_ADD, fd.get(), &ev),
+                SyscallSucceeds());
+
+    // Drains one event and assert it has EPOLLPRI or EPOLLERR.
+    auto expectEvent = [&](absl::string_view label) {
+      struct epoll_event events[1] = {};
+      int nfds = epoll_wait(epfd.get(), events, 1, 0);
+      ASSERT_GE(nfds, 0) << label << ": epoll_wait failed: " << strerror(errno);
+      ASSERT_EQ(nfds, 1) << label << ": expected 1 event";
+      EXPECT_TRUE(events[0].events & (EPOLLPRI | EPOLLERR)) << label;
+    };
+
+    // Asserts no events pending.
+    auto expectNoEvent = [&](absl::string_view label) {
+      struct epoll_event events[1] = {};
+      int nfds = epoll_wait(epfd.get(), events, 1, 0);
+      ASSERT_GE(nfds, 0) << label << ": epoll_wait failed: " << strerror(errno);
+      EXPECT_EQ(nfds, 0) << label;
+    };
+
+    // Initially, there should be no events.
+    expectNoEvent("initial");
+
+    // mount() triggers event.
+    auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+    auto mnt =
+        ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir.path(), kTmpfs, 0, "", 0));
+    expectEvent("mount");
+
+    // Event is consumed by poll itself, no read needed.
+    expectNoEvent("after mount consumed");
+
+    // remount triggers event.
+    ASSERT_THAT(
+        mount("", dir.path().c_str(), nullptr, MS_REMOUNT | MS_RDONLY, nullptr),
+        SyscallSucceeds());
+    expectEvent("remount");
+    expectNoEvent("after remount consumed");
+
+    // Undo the read-only remount so umount works cleanly.
+    ASSERT_THAT(mount("", dir.path().c_str(), nullptr, MS_REMOUNT, nullptr),
+                SyscallSucceeds());
+    // Drain the remount-undo event.
+    expectEvent("remount undo");
+
+    // Umount triggers event.
+    mnt.Release();
+    ASSERT_THAT(umount2(dir.path().c_str(), 0), SyscallSucceeds());
+    expectEvent("umount");
+    expectNoEvent("after umount consumed");
+
+    // Move mount triggers event.
+    //
+    // MS_MOVE is not allowed under a MS_SHARED parent mount, so we create a
+    // private parent mount containing both src and dst.
+    auto const privateParent = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+    auto privateMount = ASSERT_NO_ERRNO_AND_VALUE(
+        Mount("", privateParent.path(), kTmpfs, 0, "", 0));
+    expectEvent("move setup private parent mount");
+
+    ASSERT_THAT(mount("", privateParent.path().c_str(), "", MS_PRIVATE, ""),
+                SyscallSucceeds());
+
+    auto const src =
+        ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(privateParent.path()));
+    auto const dst =
+        ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(privateParent.path()));
+    auto srcMnt =
+        ASSERT_NO_ERRNO_AND_VALUE(Mount("", src.path(), kTmpfs, 0, "", 0));
+    expectEvent("move setup src mount");
+
+    auto dstMnt = ASSERT_NO_ERRNO_AND_VALUE(
+        Mount(src.path(), dst.path(), "", MS_MOVE, "", 0));
+    srcMnt.Release();
+    expectEvent("move mount");
+    expectNoEvent("after move consumed");
   }
 }
 
