@@ -45,6 +45,14 @@ func hostInetFilters(allowRawSockets bool) seccomp.SyscallRules {
 			},
 			seccomp.PerArg{
 				seccomp.NonNegativeFD{},
+				seccomp.EqualTo(linux.SIOCGIFBRDADDR),
+			},
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
+				seccomp.EqualTo(linux.SIOCGIFDSTADDR),
+			},
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(unix.SIOCGIFFLAGS),
 			},
 			seccomp.PerArg{
@@ -54,6 +62,10 @@ func hostInetFilters(allowRawSockets bool) seccomp.SyscallRules {
 			seccomp.PerArg{
 				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(unix.SIOCGIFINDEX),
+			},
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
+				seccomp.EqualTo(linux.SIOCGIFMAP),
 			},
 			seccomp.PerArg{
 				seccomp.NonNegativeFD{},
