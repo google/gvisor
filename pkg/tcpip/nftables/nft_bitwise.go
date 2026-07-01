@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/syserr"
-	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 // bitwiseOp is the bitwise operator for a bitwise operation.
@@ -198,7 +197,7 @@ func evaluateBitwiseRshift(sregBuf, dregBuf []byte, shift uint32) {
 
 // evaluate for bitwise performs the bitwise operation on the source register
 // data and stores the result in the destination register.
-func (op bitwise) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
+func (op bitwise) evaluate(regs *registerSet, evalCtx opEvalCtx) {
 	// Gets the specified buffers of the source and destination registers.
 	sregBuf := regs.data[op.sregIdx : op.sregIdx+op.blen]
 	dregBuf := regs.data[op.dregIdx : op.dregIdx+op.blen]
@@ -223,4 +222,9 @@ func (op bitwise) GetExprName() string {
 func (op bitwise) Dump() ([]byte, *syserr.AnnotatedError) {
 	log.Warningf("Nftables: Dumping bitwise operation is not implemented")
 	return nil, nil
+}
+
+// checkCompatibility implements operation.checkCompatibility.
+func (op bitwise) checkCompatibility(cCtx *opCompatCtx) *syserr.AnnotatedError {
+	return nil
 }

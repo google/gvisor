@@ -708,6 +708,18 @@ type ExprInfo struct {
 	ExprData nlmsg.AttrsView
 }
 
+type opCompatCtx struct {
+	chain *Chain
+}
+
+type opEvalCtx struct {
+	pkt      *stack.PacketBuffer
+	hook     stack.NFHook
+	rule     *Rule
+	route    *stack.Route
+	nftState *NFTables
+}
+
 // operation represents a single operation in a rule.
 type operation interface {
 	// GetExprName returns the name of the expression.
@@ -715,7 +727,12 @@ type operation interface {
 	// Dump dumps the parameters.
 	Dump() ([]byte, *syserr.AnnotatedError)
 
-	evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule)
+	evaluate(regs *registerSet, evalCtx opEvalCtx)
+
+	// checkCompatibility returns if the operation is compatible with the context
+	// it is being bound to. It is called during rule registration to verify
+	// that the operation's requirements are met by the NFTables execution context.
+	checkCompatibility(cCtx *opCompatCtx) *syserr.AnnotatedError
 
 	// deepCopy returns a deep copy of the operation.
 	deepCopy() operation
@@ -736,6 +753,7 @@ var (
 	_ operation = (*metaLoad)(nil)
 	_ operation = (*metaSet)(nil)
 	_ operation = (*natOp)(nil)
+	_ operation = (*lookupOp)(nil)
 )
 
 // OpType represents the type of operation.
@@ -764,6 +782,8 @@ const (
 	OpTypeMeta
 	// OpTypeNAT is the NAT operation type.
 	OpTypeNAT
+	// OpTypeLookup is the lookup operation type.
+	OpTypeLookup
 	// OpTypeUnknown is the unknown operation type.
 	OpTypeUnknown
 )
@@ -780,6 +800,7 @@ var opTypeStrings = []string{
 	OpTypeByteorder:  "byteorder",
 	OpTypeMeta:       "meta",
 	OpTypeNAT:        "nat",
+	OpTypeLookup:     "lookup",
 	OpTypeUnknown:    "unknown",
 }
 
@@ -953,6 +974,8 @@ type nftSet struct {
 	fieldLen []uint8
 	// fieldCount represents the number of sub-keys.
 	fieldCount uint8
+	// bindings represents the list of lookupOps that use this set.
+	bindings []*lookupOp
 	// timeout represents the timeout for the elements in the set.
 	// TODO: b/505409691 - Add support for set timeout.
 	timeout uint64
@@ -1263,7 +1286,7 @@ func deepCopySetElement(elem *nftSetElem) *nftSetElem {
 }
 
 // deepCopySet returns a deep copy of the Set struct.
-func deepCopySet(set *nftSet) *nftSet {
+func deepCopySet(set *nftSet, copyBindings bool) *nftSet {
 	setCopy := &nftSet{
 		name:       set.name,
 		keyType:    set.keyType,
@@ -1318,7 +1341,8 @@ func deepCopyTable(table *Table, afFilter *addressFamilyFilter) *Table {
 	}
 
 	for setName, set := range table.sets {
-		setCopy := deepCopySet(set)
+		// Bindings are updated in the rule deepCopy.
+		setCopy := deepCopySet(set, false /*=copyBindings*/)
 		tableCopy.sets[setName] = setCopy
 		tableCopy.setHandles[setCopy.handle] = setCopy
 	}
@@ -1327,7 +1351,19 @@ func deepCopyTable(table *Table, afFilter *addressFamilyFilter) *Table {
 		chainCopy := deepCopyChain(chain, tableCopy)
 		tableCopy.chains[chainName] = chainCopy
 		tableCopy.chainHandles[chainCopy.handle] = chainCopy
+		// Update the set-bindings for lookup operations.
+		for _, ruleCopy := range chainCopy.rules {
+			for _, op := range ruleCopy.ops {
+				lookup, ok := op.(*lookupOp)
+				if !ok {
+					continue
+				}
+				lookup.set = tableCopy.sets[lookup.set.name]
+				lookup.set.bindings = append(lookup.set.bindings, lookup)
+			}
+		}
 	}
+
 	return tableCopy
 }
 

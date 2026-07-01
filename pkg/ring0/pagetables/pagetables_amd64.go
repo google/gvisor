@@ -25,7 +25,21 @@ var (
 	pgdShift            = 39
 	pgdMask     uintptr = 0x1ff << pgdShift
 	pgdSize     uintptr = 1 << pgdShift
+
+	// la57Enabled gates whether InitArch promotes new PageTables to a
+	// 5-level layout when the host CPU advertises LA57. Defaults to true
+	// so existing behavior is unchanged; platforms whose hardware-
+	// virtualization layer cannot walk a 5-level page table call
+	// DisableLA57 once at startup to force 4-level.
+	la57Enabled = true
 )
+
+// DisableLA57 forces all subsequently-created PageTables to use a 4-level
+// layout regardless of host CPUID. Must be called before any PageTables is
+// created.
+func DisableLA57() {
+	la57Enabled = false
+}
 
 const (
 	pteShift = 12
@@ -54,7 +68,7 @@ const (
 //go:nosplit
 func (p *PageTables) InitArch(allocator Allocator) {
 	featureSet := cpuid.HostFeatureSet()
-	if featureSet.HasFeature(cpuid.X86FeatureLA57) {
+	if la57Enabled && featureSet.HasFeature(cpuid.X86FeatureLA57) {
 		p.largeAddressesEnabled = true
 		lowerTop = 0x00FFFFFFFFFFFFFF
 		upperBottom = 0xFF00000000000000

@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/syserr"
-	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 // byteorder is an operation that performs byte order operations on a register.
@@ -104,7 +103,7 @@ func (op *byteorder) deepCopy() operation {
 
 // evaluate for byteorder performs the byte order operation on the source
 // register and stores the result in the destination register.
-func (op byteorder) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
+func (op byteorder) evaluate(regs *registerSet, evalCtx opEvalCtx) {
 	// Gets the source and destination registers.
 	src := regs.data[op.sregIdx:]
 	dst := regs.data[op.dregIdx:]
@@ -170,4 +169,9 @@ func (op byteorder) GetExprName() string {
 func (op byteorder) Dump() ([]byte, *syserr.AnnotatedError) {
 	log.Warningf("Nftables: Dumping byteorder operation is not implemented")
 	return nil, nil
+}
+
+// checkCompatibility implements operation.checkCompatibility.
+func (op byteorder) checkCompatibility(cCtx *opCompatCtx) *syserr.AnnotatedError {
+	return nil
 }

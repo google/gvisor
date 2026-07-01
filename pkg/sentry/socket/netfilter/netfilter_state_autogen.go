@@ -342,6 +342,81 @@ func (jt *JumpTarget) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(2, &jt.NetworkProtocol)
 }
 
+func (rt *rejectIPv4Target) StateTypeName() string {
+	return "pkg/sentry/socket/netfilter.rejectIPv4Target"
+}
+
+func (rt *rejectIPv4Target) StateFields() []string {
+	return []string{
+		"RejectIPv4Target",
+	}
+}
+
+func (rt *rejectIPv4Target) beforeSave() {}
+
+// +checklocksignore
+func (rt *rejectIPv4Target) StateSave(stateSinkObject state.Sink) {
+	rt.beforeSave()
+	stateSinkObject.Save(0, &rt.RejectIPv4Target)
+}
+
+func (rt *rejectIPv4Target) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (rt *rejectIPv4Target) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &rt.RejectIPv4Target)
+}
+
+func (rt *rejectIPv6Target) StateTypeName() string {
+	return "pkg/sentry/socket/netfilter.rejectIPv6Target"
+}
+
+func (rt *rejectIPv6Target) StateFields() []string {
+	return []string{
+		"RejectIPv6Target",
+	}
+}
+
+func (rt *rejectIPv6Target) beforeSave() {}
+
+// +checklocksignore
+func (rt *rejectIPv6Target) StateSave(stateSinkObject state.Sink) {
+	rt.beforeSave()
+	stateSinkObject.Save(0, &rt.RejectIPv6Target)
+}
+
+func (rt *rejectIPv6Target) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (rt *rejectIPv6Target) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &rt.RejectIPv6Target)
+}
+
+func (rm *rejectTargetMaker) StateTypeName() string {
+	return "pkg/sentry/socket/netfilter.rejectTargetMaker"
+}
+
+func (rm *rejectTargetMaker) StateFields() []string {
+	return []string{
+		"NetworkProtocol",
+	}
+}
+
+func (rm *rejectTargetMaker) beforeSave() {}
+
+// +checklocksignore
+func (rm *rejectTargetMaker) StateSave(stateSinkObject state.Sink) {
+	rm.beforeSave()
+	stateSinkObject.Save(0, &rm.NetworkProtocol)
+}
+
+func (rm *rejectTargetMaker) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (rm *rejectTargetMaker) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &rm.NetworkProtocol)
+}
+
 func init() {
 	state.Register((*ctTarget)(nil))
 	state.Register((*ctTargetMaker)(nil))
@@ -356,4 +431,7 @@ func init() {
 	state.Register((*redirectTargetMaker)(nil))
 	state.Register((*nfNATTargetMaker)(nil))
 	state.Register((*JumpTarget)(nil))
+	state.Register((*rejectIPv4Target)(nil))
+	state.Register((*rejectIPv6Target)(nil))
+	state.Register((*rejectTargetMaker)(nil))
 }

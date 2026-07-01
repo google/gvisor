@@ -19,7 +19,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/syserr"
-	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 // last is an operation that records the last time the operation was evaluated
@@ -49,8 +48,8 @@ func (op *last) deepCopy() operation {
 
 // evaluate for last records the last time the operation was evaluated and flags
 // if this was the first time the operation was evaluated.
-func (op *last) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
-	clock := rule.chain.table.afFilter.nftState.clock
+func (op *last) evaluate(regs *registerSet, evalCtx opEvalCtx) {
+	clock := evalCtx.nftState.clock
 	op.timestampMS.Store(clock.Now().UnixMilli())
 	op.set.CompareAndSwap(false, true)
 }
@@ -63,4 +62,9 @@ func (op *last) GetExprName() string {
 func (op *last) Dump() ([]byte, *syserr.AnnotatedError) {
 	log.Warningf("Nftables: Dumping last operation is not implemented")
 	return nil, nil
+}
+
+// checkCompatibility implements operation.checkCompatibility.
+func (op *last) checkCompatibility(cCtx *opCompatCtx) *syserr.AnnotatedError {
+	return nil
 }

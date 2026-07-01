@@ -204,6 +204,7 @@ func (p *protocol) tsOffset(src, dst tcpip.Address) tcp.TSOffset {
 // then the route's default TTL will be used.
 func replyWithReset(st *stack.Stack, s *segment, tos, ipv4TTL uint8, ipv6HopLimit int16) tcpip.Error {
 	net := s.pkt.Network()
+	// TODO: b/528377510 - Verify if passing the NICID is correct.
 	route, err := st.FindRoute(s.pkt.NICID, net.DestinationAddress(), net.SourceAddress(), s.pkt.NetworkProtocolNumber, false /* multicastLoop */)
 	if err != nil {
 		return err

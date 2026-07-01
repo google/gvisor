@@ -1049,7 +1049,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 
 	// TODO(b/151157106): syscall tests fail by timeout if asyncpreemptoff
 	// isn't set.
-	if conf.Platform == "kvm" {
+	if conf.Platform == "kvm" || conf.Platform == "slimvm" {
 		cmd.Env = append(cmd.Env, "GODEBUG=asyncpreemptoff=1")
 	}
 

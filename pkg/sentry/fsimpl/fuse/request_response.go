@@ -144,6 +144,10 @@ type futureResponse struct {
 
 	// If this request is async.
 	async bool
+
+	// buf is a fixed-size buffer for response data. The host connection
+	// path slices data from this buffer to avoid a per-response allocation.
+	buf [linux.FUSE_MIN_READ_BUFFER]byte
 }
 
 // newFutureResponse creates a future response to a FUSE request.

@@ -660,3 +660,17 @@ const (
 	NFT_SET_ELEM_INTERVAL_END = uint16(0x1)
 	NFT_SET_ELEM_CATCHALL     = uint16(0x2)
 )
+
+// NfTableLookupAttributes represents the netfilter lookup attributes.
+// These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFTA_LOOKUP_UNSPEC uint16 = iota
+	NFTA_LOOKUP_SET
+	NFTA_LOOKUP_SREG
+	NFTA_LOOKUP_DREG
+	NFTA_LOOKUP_SET_ID
+	NFTA_LOOKUP_FLAGS
+	__NFTA_LOOKUP_MAX
+	NFTA_LOOKUP_MAX = __NFTA_LOOKUP_MAX - 1
+)
+const NFT_LOOKUP_F_INV = uint32(1 << 0)

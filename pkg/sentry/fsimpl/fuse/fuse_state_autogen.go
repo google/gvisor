@@ -88,8 +88,6 @@ func (conn *connection) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(29, &conn.noOpen)
 }
 
-func (conn *connection) afterLoad(context.Context) {}
-
 // +checklocksignore
 func (conn *connection) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &conn.connectionRefs)
@@ -122,6 +120,7 @@ func (conn *connection) StateLoad(ctx context.Context, stateSourceObject state.S
 	stateSourceObject.Load(29, &conn.noOpen)
 	stateSourceObject.LoadValue(2, new(bool), func(y any) { conn.loadInitializedChan(ctx, y.(bool)) })
 	stateSourceObject.LoadValue(4, new(int), func(y any) { conn.loadFullQueueCh(ctx, y.(int)) })
+	stateSourceObject.AfterLoad(func() { conn.afterLoad(ctx) })
 }
 
 func (r *connectionRefs) StateTypeName() string {
@@ -679,6 +678,7 @@ func (fRes *futureResponse) StateFields() []string {
 		"hdr",
 		"data",
 		"async",
+		"buf",
 	}
 }
 
@@ -691,6 +691,7 @@ func (fRes *futureResponse) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &fRes.hdr)
 	stateSinkObject.Save(2, &fRes.data)
 	stateSinkObject.Save(3, &fRes.async)
+	stateSinkObject.Save(4, &fRes.buf)
 }
 
 // +checklocksignore
@@ -699,6 +700,7 @@ func (fRes *futureResponse) StateLoad(ctx context.Context, stateSourceObject sta
 	stateSourceObject.Load(1, &fRes.hdr)
 	stateSourceObject.Load(2, &fRes.data)
 	stateSourceObject.Load(3, &fRes.async)
+	stateSourceObject.Load(4, &fRes.buf)
 	stateSourceObject.AfterLoad(func() { fRes.afterLoad(ctx) })
 }
 

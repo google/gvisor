@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 // metaSet is an operation that sets specific meta data into to the value in a
@@ -56,7 +55,7 @@ func (op *metaSet) deepCopy() operation {
 
 // evaluate for metaSet sets specific meta data to the value in the source
 // register.
-func (op metaSet) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
+func (op metaSet) evaluate(regs *registerSet, evalCtx opEvalCtx) {
 	// Gets the data from the source register.
 	src := regs.data[op.sregIdx : op.sregIdx+metaDataLengths[op.key]]
 
@@ -64,7 +63,7 @@ func (op metaSet) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rul
 	switch op.key {
 	// Only Packet Type is supported for now.
 	case linux.NFT_META_PKTTYPE:
-		pkt.PktType = tcpip.PacketType(src[0])
+		evalCtx.pkt.PktType = tcpip.PacketType(src[0])
 		return
 	}
 }
@@ -78,6 +77,11 @@ func (op metaSet) Dump() ([]byte, *syserr.AnnotatedError) {
 	m.PutAttr(linux.NFTA_META_KEY, nlmsg.PutU32(uint32(op.key)))
 	m.PutAttr(linux.NFTA_META_SREG, nlmsg.PutU32(formatRegIdxForDump(op.sregIdx)))
 	return m.Buffer(), nil
+}
+
+// checkCompatibility implements operation.checkCompatibility.
+func (op metaSet) checkCompatibility(cCtx *opCompatCtx) *syserr.AnnotatedError {
+	return nil
 }
 
 // newMetaSet creates a new metaSet operation.

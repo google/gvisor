@@ -20,7 +20,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
-	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 // counter is an operation that increments a counter for the packets and number
@@ -46,8 +45,8 @@ func (op *counter) deepCopy() operation {
 }
 
 // evaluate for counter increments the counter for the packet and bytes.
-func (op *counter) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
-	op.bytes.Add(uint64(pkt.Size()))
+func (op *counter) evaluate(regs *registerSet, evalCtx opEvalCtx) {
+	op.bytes.Add(uint64(evalCtx.pkt.Size()))
 	op.packets.Add(1)
 }
 
@@ -60,6 +59,11 @@ func (op *counter) Dump() ([]byte, *syserr.AnnotatedError) {
 	m.PutAttr(linux.NFTA_COUNTER_BYTES, nlmsg.PutU64(op.bytes.Load()))
 	m.PutAttr(linux.NFTA_COUNTER_PACKETS, nlmsg.PutU64(op.packets.Load()))
 	return m.Buffer(), nil
+}
+
+// checkCompatibility implements operation.checkCompatibility.
+func (op *counter) checkCompatibility(cCtx *opCompatCtx) *syserr.AnnotatedError {
+	return nil
 }
 
 var counterAttrPolicy = []NlaPolicy{

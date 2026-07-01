@@ -89,9 +89,9 @@ func (op *payloadLoad) deepCopy() operation {
 
 // evaluate for PayloadLoad loads data from the packet payload into the
 // destination register.
-func (op payloadLoad) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
+func (op payloadLoad) evaluate(regs *registerSet, evalCtx opEvalCtx) {
 	// Gets the packet payload.
-	payload := getPayloadBuffer(pkt, op.base)
+	payload := getPayloadBuffer(evalCtx.pkt, op.base)
 
 	// Breaks if could not retrieve packet data.
 	if payload == nil || len(payload) < int(op.offset)+op.blen {
@@ -136,4 +136,9 @@ func (op payloadLoad) Dump() ([]byte, *syserr.AnnotatedError) {
 	m.PutAttr(linux.NFTA_PAYLOAD_OFFSET, nlmsg.PutU32(uint32(op.offset)))
 	m.PutAttr(linux.NFTA_PAYLOAD_LEN, nlmsg.PutU32(uint32(op.blen)))
 	return m.Buffer(), nil
+}
+
+// checkCompatibility implements operation.checkCompatibility.
+func (op payloadLoad) checkCompatibility(cCtx *opCompatCtx) *syserr.AnnotatedError {
+	return nil
 }

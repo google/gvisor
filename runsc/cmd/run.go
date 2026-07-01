@@ -84,11 +84,10 @@ func (r *Run) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Sp
 		return id, r.spec, nil
 	}
 
-	bundleDir := r.bundleDir
-	if bundleDir == "" {
+	if r.bundleDir == "" {
 		r.bundleDir = getwdOrDie()
 	}
-	spec, err := specutils.ReadSpec(bundleDir, conf)
+	spec, err := specutils.ReadSpec(r.bundleDir, conf)
 	if err != nil {
 		return "", nil, fmt.Errorf("reading spec: %w", err)
 	}
