@@ -33,7 +33,7 @@ type immediate struct {
 }
 
 // evaluate for immediate sets the data in the destination register.
-func (op immediate) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
+func (op immediate) evaluate(regs *registerSet, evalCtx opEvalCtx) {
 	switch op.dataType {
 	case linux.NFT_DATA_VALUE:
 		copy(regs.data[op.dregIdx:], op.data)
@@ -122,6 +122,11 @@ func (op *immediate) deepCopy() operation {
 	opCopy := *op
 	opCopy.data = slices.Clone(op.data)
 	return &opCopy
+}
+
+// checkCompatibility implements operation.checkCompatibility.
+func (op immediate) checkCompatibility(cCtx *opCompatCtx) *syserr.AnnotatedError {
+	return nil
 }
 
 // immRegToType returns the corresponding data type for a given register number.

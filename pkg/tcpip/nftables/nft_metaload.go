@@ -67,10 +67,12 @@ func (op *metaLoad) deepCopy() operation {
 }
 
 // evaluate for MetaLoad loads specific meta data into the destination register.
-func (op metaLoad) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
+func (op metaLoad) evaluate(regs *registerSet, evalCtx opEvalCtx) {
 	var target []byte
-	switch op.key {
+	pkt := evalCtx.pkt
+	rule := evalCtx.rule
 
+	switch op.key {
 	// Packet Length, in bytes (32-bit, host order).
 	case linux.NFT_META_LEN:
 		target = binary.NativeEndian.AppendUint32(nil, uint32(pkt.Size()))
@@ -184,6 +186,11 @@ func (op metaLoad) Dump() ([]byte, *syserr.AnnotatedError) {
 	m.PutAttr(linux.NFTA_META_KEY, nlmsg.PutU32(uint32(op.key)))
 	m.PutAttr(linux.NFTA_META_DREG, nlmsg.PutU32(formatRegIdxForDump(op.dregIdx)))
 	return m.Buffer(), nil
+}
+
+// checkCompatibility implements operation.checkCompatibility.
+func (op metaLoad) checkCompatibility(cCtx *opCompatCtx) *syserr.AnnotatedError {
+	return nil
 }
 
 func initMetaLoad(attrs map[uint16]nlmsg.BytesView) (*metaLoad, *syserr.AnnotatedError) {

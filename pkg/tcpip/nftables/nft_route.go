@@ -114,9 +114,10 @@ func (op *route) deepCopy() operation {
 }
 
 // evaluate for Route loads specific routing data into the destination register.
-func (op route) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
+func (op route) evaluate(regs *registerSet, evalCtx opEvalCtx) {
 	// Gets the target data to be stored in the destination register.
 	var target []byte
+	pkt := evalCtx.pkt
 	switch op.key {
 
 	// Retrieves next hop IPv4 address (restricted to IPv4).
@@ -162,4 +163,9 @@ func (op route) GetExprName() string {
 func (op route) Dump() ([]byte, *syserr.AnnotatedError) {
 	log.Warningf("Nftables: Dumping route operation is not implemented")
 	return nil, nil
+}
+
+// checkCompatibility implements operation.checkCompatibility.
+func (op route) checkCompatibility(cCtx *opCompatCtx) *syserr.AnnotatedError {
+	return nil
 }

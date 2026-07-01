@@ -103,7 +103,7 @@ func (op *ranged) deepCopy() operation {
 
 // evaluate for Ranged checks whether the source register data is within the
 // specified inclusive range and breaks from the rule if comparison is false.
-func (op ranged) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
+func (op ranged) evaluate(regs *registerSet, evalCtx opEvalCtx) {
 	// Gets the data from the source register.
 	regBuf := regs.data[op.sregIdx : op.sregIdx+len(op.low)]
 	// Compares register data to both lower and upper bounds.
@@ -122,4 +122,9 @@ func (op ranged) GetExprName() string {
 func (op ranged) Dump() ([]byte, *syserr.AnnotatedError) {
 	log.Warningf("Nftables: Dumping ranged operation is not implemented")
 	return nil, nil
+}
+
+// checkCompatibility implements operation.checkCompatibility.
+func (op ranged) checkCompatibility(cCtx *opCompatCtx) *syserr.AnnotatedError {
+	return nil
 }

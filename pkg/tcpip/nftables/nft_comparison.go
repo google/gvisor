@@ -94,7 +94,7 @@ func (op *comparison) deepCopy() operation {
 
 // evaluate for comparison compares the data in the source register to the given
 // data and breaks from the rule if the comparison is false.
-func (op comparison) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
+func (op comparison) evaluate(regs *registerSet, evalCtx opEvalCtx) {
 	// Gets the data to compare to.
 	data := op.data
 
@@ -139,6 +139,11 @@ func (op comparison) Dump() ([]byte, *syserr.AnnotatedError) {
 	}
 	m.PutAttr(linux.NFTA_CMP_DATA, primitive.AsByteSlice(regDump))
 	return m.Buffer(), nil
+}
+
+// checkCompatibility implements operation.checkCompatibility.
+func (op comparison) checkCompatibility(cCtx *opCompatCtx) *syserr.AnnotatedError {
+	return nil
 }
 
 var cmpAttrPolicy = []NlaPolicy{

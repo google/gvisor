@@ -158,7 +158,8 @@ func (n *natOp) setupNetmap(pkt *stack.PacketBuffer, minAddr, maxAddr *tcpip.Add
 
 // evaluate performs NAT setup on the connection.
 // Called when the packet matches the NAT op configured.
-func (n *natOp) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
+func (n *natOp) evaluate(regs *registerSet, evalCtx opEvalCtx) {
+	pkt := evalCtx.pkt
 	// Skip the rule if the packet's family does not match the configured rule
 	// family. With an `inet` table the same base chain is dispatched for both
 	// IPv4 and IPv6 packets, so this mismatch is reachable in practice and
@@ -216,6 +217,11 @@ func (n *natOp) GetExprName() string {
 func (n *natOp) Dump() ([]byte, *syserr.AnnotatedError) {
 	log.Warningf("Nftables: natOp.Dump() is not implemented")
 	return nil, nil
+}
+
+// checkCompatibility implements operation.checkCompatibility.
+func (n *natOp) checkCompatibility(cCtx *opCompatCtx) *syserr.AnnotatedError {
+	return nil
 }
 
 var natAttrPolicy = []NlaPolicy{

@@ -116,12 +116,18 @@ func (nf *NFTables) evaluateNATBaseChains(pkt *stack.PacketBuffer, route *stack.
 	if err != nil {
 		return err, false
 	}
+	evalCtx := opEvalCtx{
+		pkt:      pkt,
+		route:    route,
+		hook:     hook,
+		nftState: nf,
+	}
 	for _, bc := range baseChains {
 		if _, dormant := bc.table.flagSet[TableFlagDormant]; dormant {
 			continue
 		}
 		// Evaluate the packet through the base chain.
-		if err := bc.evaluate(regs, pkt); err != nil {
+		if err := bc.evaluate(regs, evalCtx); err != nil {
 			return err, false
 		}
 		// If the verdict is a terminal code, NAT will not be configured for this
@@ -276,7 +282,12 @@ func (nf *NFTables) EvaluateHook(family stack.AddressFamily, hook stack.NFHook, 
 		return stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}, nil
 	}
 	var lastEvaluatedChain *Chain
-
+	evalCtx := opEvalCtx{
+		pkt:      pkt,
+		route:    route,
+		hook:     hook,
+		nftState: nf,
+	}
 	// Evaluate base chains and extra evaluators in priority order.
 	for ei < numExtraHooks || ci < numBaseChains {
 		selectExtra := (ci == numBaseChains) || (ei < numExtraHooks && extraEvaluators[ei].priority < baseChains[ci].GetBaseChainInfo().Priority.GetValue())
@@ -292,7 +303,7 @@ func (nf *NFTables) EvaluateHook(family stack.AddressFamily, hook stack.NFHook, 
 			if _, dormant := bc.table.flagSet[TableFlagDormant]; dormant {
 				continue
 			}
-			if err := bc.evaluate(&regs, pkt); err != nil {
+			if err := bc.evaluate(&regs, evalCtx); err != nil {
 				return stack.NFVerdict{}, err
 			}
 			lastEvaluatedChain = bc
@@ -321,7 +332,7 @@ func (nf *NFTables) EvaluateHook(family stack.AddressFamily, hook stack.NFHook, 
 
 // evaluateFromRule is a helper function for Chain.evaluate that evaluates the
 // packet through the rules in the chain starting at the specified rule index.
-func (c *Chain) evaluateFromRule(rIdx int, jumpDepth int, regs *registerSet, pkt *stack.PacketBuffer) *syserr.AnnotatedError {
+func (c *Chain) evaluateFromRule(rIdx int, jumpDepth int, regs *registerSet, evalCtx opEvalCtx) *syserr.AnnotatedError {
 	if jumpDepth >= nestedJumpLimit {
 		return syserr.NewAnnotatedError(syserr.ErrTooManyLinks, fmt.Sprintf("exceeded nested jump limit of %d", nestedJumpLimit))
 	}
@@ -333,7 +344,8 @@ func (c *Chain) evaluateFromRule(rIdx int, jumpDepth int, regs *registerSet, pkt
 evalLoop:
 	for ; rIdx < len(c.rules); rIdx++ {
 		rule := c.rules[rIdx]
-		if err := rule.evaluate(regs, pkt); err != nil {
+		evalCtx.rule = rule
+		if err := rule.evaluate(regs, evalCtx); err != nil {
 			return err
 		}
 
@@ -350,7 +362,7 @@ evalLoop:
 			if !exists {
 				return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("chain %s not found in table %s", regs.verdict.ChainName, c.table.name))
 			}
-			if err := nextChain.evaluateFromRule(0, jumpDepth, regs, pkt); err != nil {
+			if err := nextChain.evaluateFromRule(0, jumpDepth, regs, evalCtx); err != nil {
 				return err
 			}
 			// Ends evaluation for goto (and continues evaluation for jump).
@@ -378,17 +390,17 @@ evalLoop:
 
 // evaluate for Chain evaluates the packet through the chain's rules and returns
 // the verdict and modifies the packet in place.
-func (c *Chain) evaluate(regs *registerSet, pkt *stack.PacketBuffer) *syserr.AnnotatedError {
-	return c.evaluateFromRule(0, 0, regs, pkt)
+func (c *Chain) evaluate(regs *registerSet, evalCtx opEvalCtx) *syserr.AnnotatedError {
+	return c.evaluateFromRule(0, 0, regs, evalCtx)
 }
 
 // evaluate evaluates the rule on the given packet and register set, changing
 // the register set and possibly the packet in place.
 // The verdict in regs.Verdict() may be an nf table internal verdict or a
 // netfilter terminal verdict.
-func (r *Rule) evaluate(regs *registerSet, pkt *stack.PacketBuffer) *syserr.AnnotatedError {
+func (r *Rule) evaluate(regs *registerSet, evalCtx opEvalCtx) *syserr.AnnotatedError {
 	for _, op := range r.ops {
-		op.evaluate(regs, pkt, r)
+		op.evaluate(regs, evalCtx)
 		if regs.Verdict().Code != VC(linux.NFT_CONTINUE) {
 			break
 		}
@@ -1164,6 +1176,9 @@ func (c *Chain) RegisterRule(rule *Rule, index int) *syserr.AnnotatedError {
 
 	// Checks if there are loops from all jump and goto operations in the rule.
 	for _, op := range rule.ops {
+		if err := op.checkCompatibility(&opCompatCtx{chain: c}); err != nil {
+			return err
+		}
 		isJumpOrGoto, targetChainName := isJumpOrGotoOperation(op)
 		if !isJumpOrGoto {
 			continue

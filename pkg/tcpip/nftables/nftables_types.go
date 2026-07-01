@@ -708,6 +708,18 @@ type ExprInfo struct {
 	ExprData nlmsg.AttrsView
 }
 
+type opCompatCtx struct {
+	chain *Chain
+}
+
+type opEvalCtx struct {
+	pkt      *stack.PacketBuffer
+	hook     stack.NFHook
+	rule     *Rule
+	route    *stack.Route
+	nftState *NFTables
+}
+
 // operation represents a single operation in a rule.
 type operation interface {
 	// GetExprName returns the name of the expression.
@@ -715,7 +727,12 @@ type operation interface {
 	// Dump dumps the parameters.
 	Dump() ([]byte, *syserr.AnnotatedError)
 
-	evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule)
+	evaluate(regs *registerSet, evalCtx opEvalCtx)
+
+	// checkCompatibility returns if the operation is compatible with the context
+	// it is being bound to. It is called during rule registration to verify
+	// that the operation's requirements are met by the NFTables execution context.
+	checkCompatibility(cCtx *opCompatCtx) *syserr.AnnotatedError
 
 	// deepCopy returns a deep copy of the operation.
 	deepCopy() operation

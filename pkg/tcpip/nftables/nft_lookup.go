@@ -41,7 +41,7 @@ type lookupOp struct {
 
 // evaluate implements operation.evaluate.
 // Ref: net/netfilter/nft_lookup.c:nft_lookup_eval()
-func (op *lookupOp) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
+func (op *lookupOp) evaluate(regs *registerSet, evalCtx opEvalCtx) {
 	valIdx := op.set.backend.Evaluate(regs, op.sregIdx)
 	found := valIdx != -1
 	if op.invert {
@@ -78,7 +78,7 @@ func (op *lookupOp) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *R
 
 	// Evaluate expressions for set elements.
 	for _, eOp := range elem.ops {
-		eOp.evaluate(regs, pkt, rule)
+		eOp.evaluate(regs, evalCtx)
 	}
 }
 
@@ -111,6 +111,11 @@ func (op *lookupOp) deepCopy() operation {
 	opCopy.dregIdx = op.dregIdx
 	opCopy.invert = op.invert
 	return opCopy
+}
+
+// checkCompatibility implements operation.checkCompatibility.
+func (op *lookupOp) checkCompatibility(cCtx *opCompatCtx) *syserr.AnnotatedError {
+	return nil
 }
 
 // lookupPolicy represents the policy for parsing the lookup attributes.

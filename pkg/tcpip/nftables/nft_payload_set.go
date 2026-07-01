@@ -101,7 +101,9 @@ func (op *payloadSet) deepCopy() operation {
 
 // evaluate for PayloadSet sets data in the packet payload to the value in the
 // source register.
-func (op payloadSet) evaluate(regs *registerSet, pkt *stack.PacketBuffer, rule *Rule) {
+func (op payloadSet) evaluate(regs *registerSet, evalCtx opEvalCtx) {
+	pkt := evalCtx.pkt
+
 	// Gets the packet payload.
 	payload := getPayloadBuffer(pkt, op.base)
 	offset := int(op.offset)
@@ -208,6 +210,11 @@ func (op payloadSet) Dump() ([]byte, *syserr.AnnotatedError) {
 	m.PutAttr(linux.NFTA_PAYLOAD_CSUM_OFFSET, nlmsg.PutU32(uint32(op.csumOffset)))
 	m.PutAttr(linux.NFTA_PAYLOAD_CSUM_FLAGS, nlmsg.PutU32(uint32(op.csumFlags)))
 	return m.Buffer(), nil
+}
+
+// checkCompatibility implements operation.checkCompatibility.
+func (op payloadSet) checkCompatibility(cCtx *opCompatCtx) *syserr.AnnotatedError {
+	return nil
 }
 
 func initPayloadSet(tab *Table, attrs map[uint16]nlmsg.BytesView) (*payloadSet, *syserr.AnnotatedError) {
