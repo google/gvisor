@@ -158,10 +158,6 @@ func (fs *filesystem) newStaticDir(ctx context.Context, creds *auth.Credentials,
 //
 // +stateify savable
 type InternalData struct {
-	// AppDrivenCheckpointEnabled indicates whether application driven
-	// checkpointing functionality is enabled via files in /proc/gvisor/.
-	AppDrivenCheckpointEnabled bool
-
 	// SaveTriggerEnabled indicates whether the application can trigger a
 	// checkpoint by writing to /proc/gvisor/checkpoint.
 	SaveTriggerEnabled bool

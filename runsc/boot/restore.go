@@ -225,18 +225,13 @@ func saveOptsFromSpec(spec *specs.Spec, fds []*fd.FD, useCheckpointGofer bool) (
 // application-driven checkpoint is enabled. Since the root container is
 // always the first container, we can use it to initialize this global variable
 // and it will inform the future sub-containers.
-var appDrivenCheckpointEnabled = false
 
 func newProcInternalData(conf *config.Config, spec *specs.Spec) *proc.InternalData {
-	if len(spec.Annotations[annotationCheckpointPath]) != 0 {
-		appDrivenCheckpointEnabled = true
-	}
 	return &proc.InternalData{
-		GVisorMarkerFile:           conf.GVisorMarkerFile,
-		OverrideProcs:              procFiles(conf),
-		AppDrivenCheckpointEnabled: appDrivenCheckpointEnabled,
-		SaveTriggerEnabled:         specutils.AnnotationToBool(spec, annotationCheckpointEnable),
-		FSCheckpointEnabled:        specutils.AnnotationToBool(spec, annotationFSCheckpointEnable),
+		GVisorMarkerFile:    conf.GVisorMarkerFile,
+		OverrideProcs:       procFiles(conf),
+		SaveTriggerEnabled:  specutils.AnnotationToBool(spec, annotationCheckpointEnable),
+		FSCheckpointEnabled: specutils.AnnotationToBool(spec, annotationFSCheckpointEnable),
 	}
 }
 

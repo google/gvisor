@@ -212,22 +212,30 @@ This functionality is configured entirely through OCI runtime spec
 **annotations** and is exposed to the workload through files under
 `/proc/gvisor/`. No new `runsc` flags are involved.
 
-### Enabling
+### Enabling and Configuration
 
-Application-driven checkpointing is enabled by setting the
-`dev.gvisor.internal.checkpoint.path` annotation on the **root/first
-container**. This annotation serves two purposes:
+The files `/proc/gvisor/checkpoint` and `/proc/gvisor/spec_environ` are always
+present in the sandbox.
 
--   It points to the directory where the checkpoint files will be written (the
-    equivalent of the `--image-path` flag).
--   It causes the `/proc/gvisor/checkpoint` and `/proc/gvisor/spec_environ`
-    files to be created in the sandbox.
+By default, `/proc/gvisor/checkpoint` is read-only (mode `0444`): a workload can
+read it to *wait* for the next resume/restore (which might be triggered
+externally, e.g., via `runsc checkpoint`).
 
-By default `/proc/gvisor/checkpoint` is read-only (mode `0444`): a workload can
-read it to *wait* for the next resume/restore. To allow a container to *trigger*
-a checkpoint, set `dev.gvisor.internal.checkpoint.enable=true` on that
-container. This is a per-container setting, so you can let some containers
-trigger checkpoints while others can only observe them.
+To allow the workload to *trigger* a checkpoint from within the container:
+
+1.  Specify where the checkpoint files should be written by setting the
+    `dev.gvisor.internal.checkpoint.path` annotation on the **root/first
+    container**.
+2.  Enable write access to the checkpoint file by setting
+    `dev.gvisor.internal.checkpoint.enable=true` on the specific container that
+    needs to trigger the checkpoint. This makes `/proc/gvisor/checkpoint`
+    writable (mode `0666`) for that container.
+
+Note that `dev.gvisor.internal.checkpoint.enable` is a per-container setting,
+allowing some containers to trigger checkpoints while others can only observe
+them. However, the `path` annotation must be set on the root container to
+configure the snapshot destination for the entire sandbox; if `path` is not set,
+attempts to trigger a checkpoint will fail.
 
 > Note: The `path` annotation must be set on the root container; it configures
 > the snapshot destination for the whole sandbox. The `enable` annotation is
