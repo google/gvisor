@@ -63,15 +63,25 @@ const xSaveInfoNumLeaves = 64 // Maximum number of xSaveInfo leaves.
 
 // The "extended" functions.
 const (
-	extendedStart         cpuidFunction = 0x80000000
-	extendedFunctionInfo  cpuidFunction = extendedStart + 0 // Returns highest available extended function in eax.
-	extendedFeatures                    = extendedStart + 1 // Returns some extended feature bits in edx and ecx.
-	processorBrandString2               = extendedStart + 2 // Processor Name String Identifier.
-	processorBrandString3               = extendedStart + 3 // Processor Name String Identifier.
-	processorBrandString4               = extendedStart + 4 // Processor Name String Identifier.
-	l1CacheAndTLBInfo                   = extendedStart + 5 // Returns L2 cache information.
-	l2CacheInfo                         = extendedStart + 6 // Returns L2 cache information.
-	addressSizes                        = extendedStart + 8 // Physical and virtual address sizes.
+	extendedStart           cpuidFunction = 0x80000000
+	extendedFunctionInfo    cpuidFunction = extendedStart + 0  // Returns highest available extended function in eax.
+	extendedFeatures                      = extendedStart + 1  // Returns some extended feature bits in edx and ecx.
+	processorBrandString2                 = extendedStart + 2  // Processor Name String Identifier.
+	processorBrandString3                 = extendedStart + 3  // Processor Name String Identifier.
+	processorBrandString4                 = extendedStart + 4  // Processor Name String Identifier.
+	l1CacheAndTLBInfo                     = extendedStart + 5  // Returns L2 cache information.
+	l2CacheInfo                           = extendedStart + 6  // Returns L2 cache information.
+	addressSizes                          = extendedStart + 8  // Physical and virtual address sizes.
+	amdMemoryEncryptionInfo               = extendedStart + 31 // AMD memory encryption information.
+)
+
+// AMD-defined memory encryption feature bits and fields.
+const (
+	amdSecureMemoryEncryption        = 1 << 0
+	amdSecureEncryptedVirtualization = 1 << 1
+	amdMemoryEncryptionFeatureMask   = amdSecureMemoryEncryption | amdSecureEncryptedVirtualization
+	amdPhysAddrReductionShift        = 6
+	amdPhysAddrReductionMask         = 0x3f
 )
 
 var allowedBasicFunctions = [...]bool{
@@ -84,14 +94,15 @@ var allowedBasicFunctions = [...]bool{
 }
 
 var allowedExtendedFunctions = [...]bool{
-	extendedFunctionInfo - extendedStart:  true,
-	extendedFeatures - extendedStart:      true,
-	addressSizes - extendedStart:          true,
-	processorBrandString2 - extendedStart: true,
-	processorBrandString3 - extendedStart: true,
-	processorBrandString4 - extendedStart: true,
-	l1CacheAndTLBInfo - extendedStart:     true,
-	l2CacheInfo - extendedStart:           true,
+	extendedFunctionInfo - extendedStart:    true,
+	extendedFeatures - extendedStart:        true,
+	addressSizes - extendedStart:            true,
+	processorBrandString2 - extendedStart:   true,
+	processorBrandString3 - extendedStart:   true,
+	processorBrandString4 - extendedStart:   true,
+	l1CacheAndTLBInfo - extendedStart:       true,
+	l2CacheInfo - extendedStart:             true,
+	amdMemoryEncryptionInfo - extendedStart: true,
 }
 
 // Function executes a CPUID function.
@@ -119,7 +130,7 @@ func (i *In) normalize() {
 	switch cpuidFunction(i.Eax) {
 	case vendorID, featureInfo, intelCacheDescriptors, extendedFunctionInfo, extendedFeatures:
 		i.Ecx = 0 // Ignore.
-	case processorBrandString2, processorBrandString3, processorBrandString4, l1CacheAndTLBInfo, l2CacheInfo:
+	case processorBrandString2, processorBrandString3, processorBrandString4, l1CacheAndTLBInfo, l2CacheInfo, amdMemoryEncryptionInfo:
 		i.Ecx = 0 // Ignore.
 	case intelDeterministicCacheParams, extendedFeatureInfo:
 		// Preserve i.Ecx.

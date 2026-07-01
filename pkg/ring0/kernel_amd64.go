@@ -324,3 +324,30 @@ func startGo(c *CPU) {
 func ReadCR2() uintptr {
 	return readCR2()
 }
+
+//go:noinline
+//go:nosplit
+func (c *CPU) PrefaultIDT() uint32 {
+	return c.kernel.globalIDT[0].bits[0] + c.kernel.globalIDT[_NR_INTERRUPTS-1].bits[3]
+}
+
+// SetCPUIDFaulting sets CPUID faulting per the boolean value.
+//
+// True is returned if faulting could be set.
+//
+//go:nosplit
+func SetCPUIDFaulting(on bool) bool {
+	// Per the SDM (Vol 3, Table 2-43), PLATFORM_INFO bit 31 denotes support
+	// for CPUID faulting, and we enable and disable via the MISC_FEATURES MSR.
+	if rdmsr(_MSR_PLATFORM_INFO)&_PLATFORM_INFO_CPUID_FAULT != 0 {
+		features := rdmsr(_MSR_MISC_FEATURES)
+		if on {
+			features |= _MISC_FEATURE_CPUID_TRAP
+		} else {
+			features &^= _MISC_FEATURE_CPUID_TRAP
+		}
+		wrmsr(_MSR_MISC_FEATURES, features)
+		return true // Setting successful.
+	}
+	return false
+}

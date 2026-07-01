@@ -53,10 +53,16 @@ const (
 	_EFER_LMA = 0x400
 	_EFER_NX  = 0x800
 
-	_MSR_STAR         = 0xc0000081
-	_MSR_LSTAR        = 0xc0000082
-	_MSR_CSTAR        = 0xc0000083
-	_MSR_SYSCALL_MASK = 0xc0000084
+	_MSR_STAR          = 0xc0000081
+	_MSR_LSTAR         = 0xc0000082
+	_MSR_CSTAR         = 0xc0000083
+	_MSR_SYSCALL_MASK  = 0xc0000084
+	_MSR_PLATFORM_INFO = 0xce
+	_MSR_MISC_FEATURES = 0x140
+
+	_PLATFORM_INFO_CPUID_FAULT = 1 << 31
+
+	_MISC_FEATURE_CPUID_TRAP = 0x1
 )
 
 const (
@@ -137,6 +143,13 @@ const (
 // System call vectors.
 const (
 	Syscall Vector = _NR_INTERRUPTS
+)
+
+// System call number
+const (
+	SyscallExit      uint32 = 0x3c
+	SyscallExitGroup uint32 = 0xe7
+	SyscallRedPill   uint32 = ^uint32(0)
 )
 
 // Selector is a segment Selector.

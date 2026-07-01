@@ -76,6 +76,7 @@ go_library(
     visibility = [
         "//pkg/ring0:__subpackages__",
         "//pkg/sentry/platform/kvm:__subpackages__",
+        "//pkg/sentry/platform/slimvm:__subpackages__",
     ],
     deps = [
         "//pkg/cpuid",

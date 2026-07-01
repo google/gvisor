@@ -384,7 +384,7 @@ func (r *restorer) restore(l *Loader) error {
 	// old kernel is released.
 	l.k.RootNetworkNamespace().ResetStack()
 
-	p, err := createPlatform(l.root.conf, l.root.applicationCores, r.deviceFile)
+	p, err := createPlatform(l.root.conf, l.root.applicationCores, r.deviceFile, l.sandboxID)
 	if err != nil {
 		return fmt.Errorf("creating platform: %v", err)
 	}

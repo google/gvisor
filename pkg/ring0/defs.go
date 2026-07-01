@@ -20,6 +20,18 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
 )
 
+const (
+	// CPUIntel is Intel CPU.
+	CPUIntel uint64 = iota
+
+	// CPUAMD is AMD (and compatible) CPU.
+	CPUAMD
+)
+
+var (
+	CPUVendor uint64
+)
+
 // Kernel is a global kernel object.
 //
 // This contains global state, shared by multiple CPUs.

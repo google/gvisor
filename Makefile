@@ -567,15 +567,22 @@ run_benchmark = \
 	fi; \
 	rm -rf $$T)
 
+# TODO: b/529809802 - Enable benchmarks for slimvm.
 benchmark-platforms: load-benchmarks $(RUNTIME_BIN) ## Runs benchmarks for runc and all (selected) platforms.
 	@set -xe; if test -z "$(BENCHMARKS_PLATFORMS)"; then \
 	  for PLATFORM in $$($(RUNTIME_BIN) help platforms); do \
+	    if test "$${PLATFORM}" = "slimvm"; then \
+	      continue; \
+	    fi; \
 	    export PLATFORM; \
 	    $(call install_runtime,$${PLATFORM},--platform $${PLATFORM} --profile); \
 	    $(call run_benchmark,$${PLATFORM}); \
 	  done; \
 	else \
 	  for PLATFORM in $(BENCHMARKS_PLATFORMS); do \
+	    if test "$${PLATFORM}" = "slimvm"; then \
+	      continue; \
+	    fi; \
 	    export PLATFORM; \
 	    $(call install_runtime,$${PLATFORM},--platform $${PLATFORM} --profile); \
 	    $(call run_benchmark,$${PLATFORM}); \
@@ -602,6 +609,7 @@ BENCHMARKS_PGO_REFRESH_THRESHOLD ?= 0.7
 # of the repository size.
 BENCHMARKS_PGO_REFRESH_MIN_DAYS_SINCE_LAST_UPDATE ?= 28
 
+# TODO: b/529809802 - Enable benchmarks for slimvm.
 benchmark-refresh-pgo: load-benchmarks $(RUNTIME_BIN) ## Refresh profiles of all benchmarks for PGO purposes.
 	@set -e; if test -z "$(BENCHMARKS_PLATFORMS)"; then \
 		echo 'Must specify BENCHMARKS_PLATFORMS.' >&2; \
@@ -612,6 +620,9 @@ benchmark-refresh-pgo: load-benchmarks $(RUNTIME_BIN) ## Refresh profiles of all
 		PGO_LAST_PKG_COMMIT_HASH="$$(git log --max-count=1 --format='%H' -- pkg)"; \
 		export PGO_LAST_PKG_COMMIT_HASH; \
 		for PLATFORM in $(BENCHMARKS_PLATFORMS); do \
+			if test "$${PLATFORM}" = "slimvm"; then \
+				continue; \
+			fi; \
 			export PLATFORM; \
 			mkdir -p "$(REPO_DIR)/runsc/profiles/data/$${PGO_RUNTIME_KEY}_$${PLATFORM}"; \
 			PLATFORM_TMPDIR="$$(mktemp --tmpdir=/tmp --directory "pgo_$${PGO_RUNTIME_KEY}_$${PLATFORM}.XXXXXXXX")"; \

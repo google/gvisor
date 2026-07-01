@@ -29,8 +29,14 @@ const (
 	// HugePageSize is the system huge page size.
 	HugePageSize = 1 << HugePageShift
 
+	// JumboPageSize is the 1GB jumbo page size.
+	JumboPageSize = 1 << JumboPageShift
+
 	// CacheLineSize is the size of the cache line.
 	CacheLineSize = 1 << CacheLineShift
+
+	// JumboPageShift is the binary log of jumbo page whose size is 1GB.
+	JumboPageShift = 30
 
 	// CacheLineShift is the binary log of the cache line size.
 	CacheLineShift = 6
