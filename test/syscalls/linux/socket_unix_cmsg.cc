@@ -16,17 +16,19 @@
 
 #include <errno.h>
 #include <net/if.h>
-#include <stdio.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/un.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include <vector>
 
 #include "gtest/gtest.h"
-#include "absl/strings/string_view.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
+#include "test/util/cleanup.h"
+#include "test/util/linux_capability_util.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -720,6 +722,150 @@ TEST_P(UnixSocketPairCmsgTest, BasicCredPass) {
   EXPECT_EQ(sent_creds.pid, received_creds.pid);
   EXPECT_EQ(sent_creds.uid, received_creds.uid);
   EXPECT_EQ(sent_creds.gid, received_creds.gid);
+}
+
+// A privileged sender (CAP_SYS_ADMIN) may attach SCM_CREDENTIALS naming the PID
+// of a different, live process. The receiver must observe that process's PID.
+TEST_P(UnixSocketPairCmsgTest, BasicCredPassDifferentPID) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  // Pipe to signal to child when to exit.
+  int pipefd[2];
+  ASSERT_THAT(pipe(pipefd), SyscallSucceeds());
+
+  pid_t child = fork();
+  if (child == 0) {
+    close(pipefd[1]);
+    char c;
+    RetryEINTR(read)(pipefd[0], &c, 1);
+    _exit(0);
+  }
+  ASSERT_THAT(child, SyscallSucceeds());
+  ASSERT_THAT(close(pipefd[0]), SyscallSucceeds());
+
+  auto cleanup = Cleanup([&child, &pipefd] {
+    ASSERT_THAT(close(pipefd[1]), SyscallSucceeds());
+    ASSERT_THAT(RetryEINTR(waitpid)(child, nullptr, 0),
+                SyscallSucceedsWithValue(child));
+  });
+
+  char sent_data[20];
+  RandomizeBuffer(sent_data, sizeof(sent_data));
+
+  struct ucred sent_creds;
+  sent_creds.pid = child;
+  ASSERT_THAT(sent_creds.uid = getuid(), SyscallSucceeds());
+  ASSERT_THAT(sent_creds.gid = getgid(), SyscallSucceeds());
+
+  ASSERT_NO_FATAL_FAILURE(
+      SendCreds(sockets->first_fd(), sent_creds, sent_data, sizeof(sent_data)));
+
+  SetSoPassCred(sockets->second_fd());
+
+  char received_data[20];
+  struct ucred received_creds;
+  ASSERT_NO_FATAL_FAILURE(RecvCreds(sockets->second_fd(), &received_creds,
+                                    received_data, sizeof(received_data)));
+
+  EXPECT_EQ(0, memcmp(sent_data, received_data, sizeof(sent_data)));
+  // The received PID must be the child's, not the sender's.
+  EXPECT_EQ(received_creds.pid, child);
+  EXPECT_NE(received_creds.pid, getpid());
+  EXPECT_EQ(received_creds.uid, sent_creds.uid);
+  EXPECT_EQ(received_creds.gid, sent_creds.gid);
+}
+
+// A sender without CAP_SYS_ADMIN should not be able to send SCM_CREDENTIALS
+// messages with a different PID.
+TEST_P(UnixSocketPairCmsgTest, CredPassDifferentPIDUnprivileged) {
+  // Drop CAP_SYS_ADMIN
+  AutoCapability cap(CAP_SYS_ADMIN, false);
+
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  // Pipe to signal to child when to exit.
+  int pipefd[2];
+  ASSERT_THAT(pipe(pipefd), SyscallSucceeds());
+
+  pid_t child = fork();
+  if (child == 0) {
+    close(pipefd[1]);
+    char c;
+    RetryEINTR(read)(pipefd[0], &c, 1);
+    _exit(0);
+  }
+  ASSERT_THAT(child, SyscallSucceeds());
+  ASSERT_THAT(close(pipefd[0]), SyscallSucceeds());
+
+  auto cleanup = Cleanup([&child, &pipefd] {
+    ASSERT_THAT(close(pipefd[1]), SyscallSucceeds());
+    ASSERT_THAT(RetryEINTR(waitpid)(child, nullptr, 0),
+                SyscallSucceedsWithValue(child));
+  });
+
+  char sent_data[20];
+  RandomizeBuffer(sent_data, sizeof(sent_data));
+
+  struct ucred sent_creds;
+  sent_creds.pid = child;
+  ASSERT_THAT(sent_creds.uid = getuid(), SyscallSucceeds());
+  ASSERT_THAT(sent_creds.gid = getgid(), SyscallSucceeds());
+  struct msghdr msg = {};
+  char control[CMSG_SPACE(sizeof(struct ucred))];
+  msg.msg_control = control;
+  msg.msg_controllen = sizeof(control);
+
+  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+  cmsg->cmsg_level = SOL_SOCKET;
+  cmsg->cmsg_type = SCM_CREDENTIALS;
+  cmsg->cmsg_len = CMSG_LEN(sizeof(struct ucred));
+  memcpy(CMSG_DATA(cmsg), &sent_creds, sizeof(struct ucred));
+
+  struct iovec iov;
+  iov.iov_base = sent_data;
+  iov.iov_len = sizeof(sent_data);
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+
+  ASSERT_THAT(RetryEINTR(sendmsg)(sockets->first_fd(), &msg, 0),
+              SyscallFailsWithErrno(EPERM));
+}
+
+// Sending SCM_CREDENTIALS naming a PID that does not exist fails with ESRCH.
+TEST_P(UnixSocketPairCmsgTest, CredPassNonexistentPID) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  char sent_data[20];
+  RandomizeBuffer(sent_data, sizeof(sent_data));
+
+  struct ucred sent_creds;
+  sent_creds.pid = -1;
+  ASSERT_THAT(sent_creds.uid = getuid(), SyscallSucceeds());
+  ASSERT_THAT(sent_creds.gid = getgid(), SyscallSucceeds());
+
+  struct msghdr msg = {};
+  char control[CMSG_SPACE(sizeof(struct ucred))];
+  msg.msg_control = control;
+  msg.msg_controllen = sizeof(control);
+
+  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+  cmsg->cmsg_level = SOL_SOCKET;
+  cmsg->cmsg_type = SCM_CREDENTIALS;
+  cmsg->cmsg_len = CMSG_LEN(sizeof(struct ucred));
+  memcpy(CMSG_DATA(cmsg), &sent_creds, sizeof(struct ucred));
+
+  struct iovec iov;
+  iov.iov_base = sent_data;
+  iov.iov_len = sizeof(sent_data);
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+
+  ASSERT_THAT(RetryEINTR(sendmsg)(sockets->first_fd(), &msg, 0),
+              SyscallFailsWithErrno(ESRCH));
 }
 
 TEST_P(UnixSocketPairCmsgTest, SendNullCredsBeforeSoPassCredRecvEnd) {
