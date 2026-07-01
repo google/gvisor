@@ -1,8 +1,19 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(
     default_applicable_licenses = ["//:license"],
     licenses = ["notice"],
+)
+
+go_test(
+    name = "hostinet_test",
+    size = "small",
+    srcs = ["stack_test.go"],
+    library = ":hostinet",
+    deps = [
+        "//pkg/abi/linux",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
 )
 
 go_library(
@@ -10,6 +21,7 @@ go_library(
     srcs = [
         "hostinet.go",
         "netlink.go",
+        "save_restore.go",
         "socket.go",
         "socket_unsafe.go",
         "sockopt.go",

@@ -150,6 +150,25 @@ docker start --checkpoint <checkpoint-name> <container-name>
     `--checkpoint-dir` flag but this will be required when restoring from a
     checkpoint made in another container.
 
+## Networking
+
+Checkpoint/restore is supported with `--network=sandbox` (default),
+`--network=none`, and `--network=host`.
+
+With `--network=host`, host sockets cannot be saved, so:
+
+-   Checkpoint with `--leave-running` does not touch the running sandbox's
+    sockets. It keeps using them as before.
+-   TCP listening sockets are re-created during restore and keep accepting new
+    connections. Connections that were pending in the backlog at checkpoint time
+    are lost. If the listen address cannot be bound on the restoring host, the
+    restore fails.
+-   Sockets that were connected at checkpoint time return `ECONNABORTED`, and
+    `epoll_wait` on them returns `EPOLLERR | EPOLLHUP` immediately. Applications
+    must reconnect after restore.
+-   Network configuration visible inside the sandbox (interface statistics, TCP
+    buffer sizes) reflects the host the sandbox was restored on.
+
 ## Checkpoint & Restore with different CPU features
 
 When restoring a state file, gVisor verifies that the target host machine
