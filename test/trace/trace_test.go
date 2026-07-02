@@ -133,6 +133,7 @@ func matchPoints(t *testing.T, msgs []test.Message) map[pb.MessageType]*checkers
 		pb.MessageType_MESSAGE_SYSCALL_INOTIFY_ADD_WATCH: {checker: checkSyscallInotifyInitAddWatch},
 		pb.MessageType_MESSAGE_SYSCALL_INOTIFY_RM_WATCH:  {checker: checkSyscallInotifyInitRmWatch},
 		pb.MessageType_MESSAGE_SYSCALL_CLONE:             {checker: checkSyscallClone},
+		pb.MessageType_MESSAGE_SYSCALL_SELECT:            {checker: checkSyscallSelect},
 	}
 	return matchers
 }
@@ -880,4 +881,12 @@ func checkSyscallInotifyInitRmWatch(msg test.Message) error {
 		return fmt.Errorf("invalid wd: %d", p.Wd)
 	}
 	return nil
+}
+
+func checkSyscallSelect(msg test.Message) error {
+	p := pb.Select{}
+	if err := proto.Unmarshal(msg.Msg, &p); err != nil {
+		return err
+	}
+	return checkContextData(p.ContextData)
 }

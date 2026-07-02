@@ -122,6 +122,7 @@ func archInit() {
 			Name: "fd_path",
 		},
 	})
+	addSyscallPoint(72, "pselect6", nil)
 	addSyscallPoint(74, "signalfd4", []FieldDesc{
 		{
 			ID:   FieldSyscallPath,
