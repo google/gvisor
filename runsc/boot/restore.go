@@ -406,10 +406,13 @@ func (r *restorer) restore(l *Loader) error {
 
 	fdmap := make(map[checkpoint.ResourceID]int)
 	mfmap := make(map[checkpoint.ResourceID]*pgalloc.MemoryFile)
+	// Tracks pod-shared overlay sources so their single MemoryFile is registered
+	// once by the owning container, not duplicated by peers.
+	sharedMFSources := make(map[string]struct{})
 	for _, cont := range r.containers {
 		// TODO(b/298078576): Need to process hints here probably
 		mntr := l.newContainerMounter(cont)
-		if err = mntr.configureRestore(fdmap, mfmap); err != nil {
+		if err = mntr.configureRestore(fdmap, mfmap, sharedMFSources); err != nil {
 			return fmt.Errorf("configuring filesystem restore: %v", err)
 		}
 
