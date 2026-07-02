@@ -170,6 +170,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool(flagReproduceNFTables, false, "Attempt to scrape and reproduce nftable rules inside the sandbox. Overrides reproduce-nat when true.")
 	flagSet.Bool(flagNetDisconnectOK, true, "Indicates whether open network connections and open unix domain sockets should be disconnected upon save.")
 	flagSet.Bool(flagPauseExternalNetworking, false, "Start the sandbox with external networking disabled. Only supported when using the sandbox network type. The network can be unpaused manually after the sandbox is running.")
+	flagSet.Bool("restrict-bind-to-loopback", false, "Reject bind(2) calls to non-loopback addresses (including INADDR_ANY/::). Sandboxed processes may only bind to 127.x.x.x or ::1. Only meaningful with sandbox networking.")
 	flagSet.Bool(flagAllowConnectedOnSave, false, "Allow network connections to stay established on save.")
 
 	// Flags that control sandbox runtime behavior: accelerator related.
