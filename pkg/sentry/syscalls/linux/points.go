@@ -992,3 +992,56 @@ func PointSocketpair(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.Conte
 	p.Exit = newExitMaybe(info)
 	return p, pb.MessageType_MESSAGE_SYSCALL_SOCKETPAIR
 }
+
+// PointPoll converts poll(2) syscall to proto.
+func PointPoll(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	p := &pb.Poll{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		TimeoutMs:   int64(info.Args[2].Int()),
+	}
+
+	addr := info.Args[0].Pointer()
+	nfds := uint(info.Args[1].Uint())
+	if pfd, err := CopyInPollFDs(t, addr, nfds); err == nil {
+		p.Fds = make([]int32, len(pfd))
+		p.Events = make([]uint32, len(pfd))
+		for i, fd := range pfd {
+			p.Fds[i] = int32(fd.FD)
+			p.Events[i] = uint32(fd.Events)
+		}
+	}
+
+	p.Exit = newExitMaybe(info)
+	return p, pb.MessageType_MESSAGE_SYSCALL_POLL
+}
+
+// PointPpoll converts ppoll(2) syscall to proto.
+func PointPpoll(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	p := &pb.Poll{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		TimeoutMs:   -1,
+	}
+
+	timespecAddr := info.Args[2].Pointer()
+	if timeout, err := copyTimespecInToDuration(t, timespecAddr); err == nil {
+		if timeout >= 0 {
+			p.TimeoutMs = timeout.Milliseconds()
+		}
+	}
+
+	addr := info.Args[0].Pointer()
+	nfds := uint(info.Args[1].Uint())
+	if pfd, err := CopyInPollFDs(t, addr, nfds); err == nil {
+		p.Fds = make([]int32, len(pfd))
+		p.Events = make([]uint32, len(pfd))
+		for i, fd := range pfd {
+			p.Fds[i] = int32(fd.FD)
+			p.Events[i] = uint32(fd.Events)
+		}
+	}
+
+	p.Exit = newExitMaybe(info)
+	return p, pb.MessageType_MESSAGE_SYSCALL_POLL
+}
