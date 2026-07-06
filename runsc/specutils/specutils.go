@@ -19,6 +19,7 @@ package specutils
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -238,7 +239,9 @@ func ReadSpec(bundleDir string, conf *config.Config) (*specs.Spec, error) {
 //  3. Removes seccomp rules if `RuntimeDefault` was used.
 func ReadSpecFromFile(bundleDir string, specFile *os.File, conf *config.Config) (*specs.Spec, error) {
 	if _, err := specFile.Seek(0, io.SeekStart); err != nil {
-		return nil, fmt.Errorf("error seeking to beginning of file %q: %v", specFile.Name(), err)
+		if !errors.Is(err, unix.ESPIPE) {
+			return nil, fmt.Errorf("error seeking to beginning of file %q: %v", specFile.Name(), err)
+		}
 	}
 	specBytes, err := io.ReadAll(specFile)
 	if err != nil {
@@ -1017,4 +1020,32 @@ func Features() *features.Features {
 	})
 
 	return globalFeatures
+}
+
+// DefaultSandboxSpec returns a default spec for a sandbox.
+func DefaultSandboxSpec(id string) *specs.Spec {
+	return &specs.Spec{
+		Version: "1.0.0",
+		Process: &specs.Process{
+			User: specs.User{
+				UID: 0,
+				GID: 0,
+			},
+			Capabilities: &specs.LinuxCapabilities{},
+			Args:         []string{"/pause"},
+		},
+		Root: &specs.Root{
+			Path:     "rootfs",
+			Readonly: true,
+		},
+		Hostname: id,
+		Linux: &specs.Linux{
+			Namespaces: []specs.LinuxNamespace{
+				{Type: specs.PIDNamespace},
+				{Type: specs.IPCNamespace},
+				{Type: specs.UTSNamespace},
+				{Type: specs.MountNamespace},
+			},
+		},
+	}
 }

@@ -92,6 +92,10 @@ func (c *Create) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs
 		return "", nil, fmt.Errorf("a container id is required")
 	}
 	cid := f.Arg(0)
+	if conf.Sandbox {
+		c.spec = specutils.DefaultSandboxSpec(cid)
+		return cid, c.spec, nil
+	}
 	if c.spec != nil {
 		return cid, c.spec, nil
 	}
@@ -115,7 +119,7 @@ func (c *Create) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcom
 
 	conf := args[0].(*config.Config)
 
-	if conf.Rootless {
+	if conf.Rootless && !conf.Sandbox {
 		return util.Errorf("Rootless mode not supported with %q", c.Name())
 	}
 

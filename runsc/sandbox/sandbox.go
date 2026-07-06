@@ -1006,9 +1006,28 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	log.Infof("Control socket path: %q", s.ControlSocketPath)
 	donations.DonateAndClose("controller-fd", os.NewFile(uintptr(sockFD), "control_server_socket"))
 
-	specFile, err := specutils.OpenSpec(args.BundleDir)
-	if err != nil {
-		return fmt.Errorf("cannot open spec file in bundle dir %v: %w", args.BundleDir, err)
+	var specFile *os.File
+	if conf.Sandbox {
+		fd, err := unix.MemfdCreate("spec-file", 0)
+		if err != nil {
+			return fmt.Errorf("creating memfd for spec: %w", err)
+		}
+		specFile = os.NewFile(uintptr(fd), "spec-file")
+		enc := json.NewEncoder(specFile)
+		if err := enc.Encode(args.Spec); err != nil {
+			specFile.Close()
+			return fmt.Errorf("error encoding spec: %w", err)
+		}
+		if _, err := specFile.Seek(0, io.SeekStart); err != nil {
+			specFile.Close()
+			return fmt.Errorf("error seeking spec file: %w", err)
+		}
+	} else {
+		var err error
+		specFile, err = specutils.OpenSpec(args.BundleDir)
+		if err != nil {
+			return fmt.Errorf("cannot open spec file in bundle dir %v: %w", args.BundleDir, err)
+		}
 	}
 	donations.DonateAndClose("spec-fd", specFile)
 

@@ -368,9 +368,14 @@ func (c *Container) createRoot(conf *config.Config, args Args, sandboxID string)
 		return err
 	}
 	if err := cgroup.RunInCgroup(containerCgroup, func() error {
-		ioFiles, goferFilestores, devIOFile, specFile, err := c.createGoferProcess(conf, mountHints, args.Attached)
-		if err != nil {
-			return fmt.Errorf("cannot create gofer process: %w", err)
+		var ioFiles, goferFilestores []*os.File
+		var devIOFile, specFile *os.File
+		if !conf.Sandbox {
+			var err error
+			ioFiles, goferFilestores, devIOFile, specFile, err = c.createGoferProcess(conf, mountHints, args.Attached)
+			if err != nil {
+				return fmt.Errorf("cannot create gofer process: %w", err)
+			}
 		}
 
 		// Start a new sandbox for this container. Any errors after this point

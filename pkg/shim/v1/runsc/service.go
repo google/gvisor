@@ -188,7 +188,18 @@ func (s *runscService) CreateWithFSRestore(ctx context.Context, rfs *extension.C
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	c, err := NewContainer(ctx, s.platform, rfs.Create, rfs.Conf.ImagePath, rfs.Conf.Direct)
+	c, err := NewContainer(ctx, s.platform, &ContainerConfig{
+		ID:                 rfs.Create.ID,
+		Bundle:             rfs.Create.Bundle,
+		Rootfs:             rfs.Create.Rootfs,
+		Options:            rfs.Create.Options,
+		Terminal:           rfs.Create.Terminal,
+		Stdin:              rfs.Create.Stdin,
+		Stdout:             rfs.Create.Stdout,
+		Stderr:             rfs.Create.Stderr,
+		FSRestoreImagePath: rfs.Conf.ImagePath,
+		FSRestoreDirect:    rfs.Conf.Direct,
+	})
 	if err != nil {
 		return nil, err
 	}

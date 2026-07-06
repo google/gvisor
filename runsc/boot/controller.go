@@ -235,7 +235,10 @@ func (c *controller) registerHandlers() {
 	c.srv.Register(c.manager)
 	c.srv.Register(&control.Cgroups{Kernel: l.k})
 	c.srv.Register(&control.Fs{Kernel: l.k})
-	c.srv.Register(&control.Lifecycle{Kernel: l.k})
+	c.srv.Register(&control.Lifecycle{
+		Kernel:     l.k,
+		ShutdownCh: l.sandboxShutdownCh,
+	})
 	c.srv.Register(&control.Logging{})
 	c.srv.Register(&control.Proc{Kernel: l.k})
 	c.srv.Register(&control.State{Kernel: l.k})

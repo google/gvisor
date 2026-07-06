@@ -99,6 +99,10 @@ type Config struct {
 	// will be backed by application memory.
 	Overlay bool `flag:"overlay"`
 
+	// Sandbox indicates that we are creating/starting a sandbox without a
+	// root container.
+	Sandbox bool `flag:"sandbox"`
+
 	// Overlay2 holds configuration about wrapping mounts in overlayfs.
 	// DO NOT call it directly, use GetOverlay2() instead.
 	Overlay2 Overlay2 `flag:"overlay2"`
