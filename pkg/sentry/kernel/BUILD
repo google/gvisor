@@ -88,6 +88,13 @@ declare_mutex(
 )
 
 declare_mutex(
+    name = "cgroup_v2_mutex",
+    out = "cgroup_v2_mutex.go",
+    package = "kernel",
+    prefix = "cgroup2",
+)
+
+declare_mutex(
     name = "fd_table_mutex",
     out = "fd_table_mutex.go",
     package = "kernel",
@@ -251,8 +258,10 @@ go_library(
         "atomicptr_bucket_unsafe.go",
         "atomicptr_descriptor_unsafe.go",
         "cgroup.go",
+        "cgroup2.go",
         "cgroup_mounts_mutex.go",
         "cgroup_mutex.go",
+        "cgroup_v2_mutex.go",
         "context.go",
         "fd_table.go",
         "fd_table_mutex.go",

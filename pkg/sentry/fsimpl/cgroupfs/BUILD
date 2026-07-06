@@ -1,5 +1,5 @@
 load("//pkg/sync/locking:locking.bzl", "declare_mutex", "declare_rwmutex")
-load("//tools:defs.bzl", "go_library", "go_test")
+load("//tools:defs.bzl", "go_library")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(default_applicable_licenses = ["//:license"])
@@ -35,7 +35,6 @@ go_library(
     name = "cgroupfs",
     srcs = [
         "base.go",
-        "bitmap.go",
         "cgroupfs.go",
         "cpu.go",
         "cpuacct.go",
@@ -71,12 +70,4 @@ go_library(
         "//pkg/sync/locking",
         "//pkg/usermem",
     ],
-)
-
-go_test(
-    name = "cgroupfs_test",
-    size = "small",
-    srcs = ["bitmap_test.go"],
-    library = ":cgroupfs",
-    deps = ["//pkg/bitmap"],
 )

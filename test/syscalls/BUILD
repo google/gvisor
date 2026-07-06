@@ -76,6 +76,12 @@ syscall_test(
 )
 
 syscall_test(
+    size = "large",
+    mount_cgroup_v2 = True,
+    test = "//test/syscalls/linux:cgroup2_test",
+)
+
+syscall_test(
     add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:chdir_test",
