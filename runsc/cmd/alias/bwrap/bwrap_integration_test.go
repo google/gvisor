@@ -291,3 +291,60 @@ func TestHostname(t *testing.T) {
 		})
 	}
 }
+
+func TestProc(t *testing.T) {
+	if err := testutil.ConfigureExePath(); err != nil {
+		t.Fatalf("failed to configure exe path: %v", err)
+	}
+
+	stop := testutil.StartReaper()
+	defer stop()
+
+	rootDir := t.TempDir()
+
+	tests := []struct {
+		name       string
+		bwrapArgs  []string
+		wantOutput string
+	}{
+		{
+			name: "Proc",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--proc", "/proc1",
+				"--",
+				"/bin/ls", "/proc1",
+			},
+			wantOutput: "cpuinfo",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			runRootDir := filepath.Join(rootDir, tc.name)
+			if err := os.MkdirAll(runRootDir, 0755); err != nil {
+				t.Fatalf("creating root dir: %v", err)
+			}
+
+			args := append([]string{
+				"--root", runRootDir,
+				"bwrap",
+			}, tc.bwrapArgs...)
+
+			cmd := exec.Command(specutils.ExePath, args...)
+
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			if err := cmd.Run(); err != nil {
+				t.Fatalf("runsc bwrap failed: %v\nStderr: %s", err, stderr.String())
+			}
+
+			output := strings.TrimSpace(stdout.String())
+			if tc.wantOutput != "" && !strings.Contains(output, tc.wantOutput) {
+				t.Errorf("output = %q, want it to contain %q", output, tc.wantOutput)
+			}
+		})
+	}
+}

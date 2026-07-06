@@ -385,6 +385,46 @@ func TestParseFlags(t *testing.T) {
 			args:        []string{"--hostname"},
 			errContains: "--hostname takes 1 argument",
 		},
+		{
+			name: "SingleProc",
+			args: []string{"--proc", "/proc1", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:  os.Environ(),
+				UID:  -1,
+				GID:  -1,
+				Args: []string{"bash"},
+				Mounts: []*MountOp{
+					{Type: "proc", Dst: "/proc1"},
+				},
+			},
+		},
+		{
+			name: "DeduplicatedProc",
+			args: []string{"--proc", "/proc1", "--proc", "/proc1", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:  os.Environ(),
+				UID:  -1,
+				GID:  -1,
+				Args: []string{"bash"},
+				Mounts: []*MountOp{
+					{Type: "proc", Dst: "/proc1"},
+				},
+			},
+		},
+		{
+			name: "MultipleProc",
+			args: []string{"--proc", "/proc1", "--proc", "/proc2", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:  os.Environ(),
+				UID:  -1,
+				GID:  -1,
+				Args: []string{"bash"},
+				Mounts: []*MountOp{
+					{Type: "proc", Dst: "/proc1"},
+					{Type: "proc", Dst: "/proc2"},
+				},
+			},
+		},
 	}
 
 	for _, tc := range tests {
