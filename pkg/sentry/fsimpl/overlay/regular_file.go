@@ -181,10 +181,11 @@ func (fd *regularFileFD) SetStat(ctx context.Context, opts vfs.SetStatOptions) e
 	// Changes to d's attributes are serialized by d.copyMu.
 	d.copyMu.Lock()
 	defer d.copyMu.Unlock()
-	wrappedFD, err := fd.currentFDLocked(ctx)
+	wrappedFD, err := fd.getCurrentFD(ctx)
 	if err != nil {
 		return err
 	}
+	defer wrappedFD.DecRef(ctx)
 	if err := wrappedFD.SetStat(ctx, opts); err != nil {
 		return err
 	}
