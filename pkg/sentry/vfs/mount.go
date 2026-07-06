@@ -34,9 +34,10 @@ import (
 // configured by the user at /proc/sys/fs/mount-max, but the default is
 // 100,000. We set the gVisor limit to 10,000.
 const (
-	MountMax     = 10000
-	nsfsName     = "nsfs"
-	cgroupFsName = "cgroup"
+	MountMax      = 10000
+	nsfsName      = "nsfs"
+	cgroupFsName  = "cgroup"
+	cgroup2FsName = "cgroup2"
 )
 
 // A Mount is a replacement of a Dentry (Mount.key.point) from one Filesystem
@@ -404,6 +405,11 @@ func (vfs *VirtualFilesystem) ConnectMountAt(ctx context.Context, creds *auth.Cr
 		vfs.delayDecRef(mp)
 		return linuxerr.EINVAL
 	}
+	if mp.dentry == mnt.root {
+		mp.dentry.mu.Unlock()
+		vfs.delayDecRef(mp)
+		return linuxerr.EBUSY
+	}
 	return vfs.attachTreeLocked(ctx, mnt, mp, false)
 }
 
@@ -733,7 +739,7 @@ func (vfs *VirtualFilesystem) BindAt(ctx context.Context, creds *auth.Credential
 	defer cleanup.Clean()
 	// Namespace mounts can be binded to other mount points.
 	fsName := sourceVd.mount.Filesystem().FilesystemType().Name()
-	if !vfs.validInMountNS(ctx, sourceVd.mount) && fsName != nsfsName && fsName != cgroupFsName {
+	if !vfs.validInMountNS(ctx, sourceVd.mount) && fsName != nsfsName && fsName != cgroupFsName && fsName != cgroup2FsName {
 		return linuxerr.EINVAL
 	}
 	if !vfs.validInMountNS(ctx, mp.mount) {

@@ -77,6 +77,7 @@ func (r *CgroupRegistry) StateTypeName() string {
 
 func (r *CgroupRegistry) StateFields() []string {
 	return []string{
+		"v2fs",
 		"lastHierarchyID",
 		"lastCgroupID",
 		"controllers",
@@ -91,24 +92,26 @@ func (r *CgroupRegistry) beforeSave() {}
 // +checklocksignore
 func (r *CgroupRegistry) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
-	stateSinkObject.Save(0, &r.lastHierarchyID)
-	stateSinkObject.Save(1, &r.lastCgroupID)
-	stateSinkObject.Save(2, &r.controllers)
-	stateSinkObject.Save(3, &r.hierarchies)
-	stateSinkObject.Save(4, &r.hierarchiesByName)
-	stateSinkObject.Save(5, &r.cgroups)
+	stateSinkObject.Save(0, &r.v2fs)
+	stateSinkObject.Save(1, &r.lastHierarchyID)
+	stateSinkObject.Save(2, &r.lastCgroupID)
+	stateSinkObject.Save(3, &r.controllers)
+	stateSinkObject.Save(4, &r.hierarchies)
+	stateSinkObject.Save(5, &r.hierarchiesByName)
+	stateSinkObject.Save(6, &r.cgroups)
 }
 
 func (r *CgroupRegistry) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (r *CgroupRegistry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &r.lastHierarchyID)
-	stateSourceObject.Load(1, &r.lastCgroupID)
-	stateSourceObject.Load(2, &r.controllers)
-	stateSourceObject.Load(3, &r.hierarchies)
-	stateSourceObject.Load(4, &r.hierarchiesByName)
-	stateSourceObject.Load(5, &r.cgroups)
+	stateSourceObject.Load(0, &r.v2fs)
+	stateSourceObject.Load(1, &r.lastHierarchyID)
+	stateSourceObject.Load(2, &r.lastCgroupID)
+	stateSourceObject.Load(3, &r.controllers)
+	stateSourceObject.Load(4, &r.hierarchies)
+	stateSourceObject.Load(5, &r.hierarchiesByName)
+	stateSourceObject.Load(6, &r.cgroups)
 }
 
 func (f *FDFlags) StateTypeName() string {
@@ -1582,6 +1585,7 @@ func (t *Task) StateFields() []string {
 		"startTime",
 		"kcov",
 		"cgroups",
+		"cgroup2",
 		"memCgID",
 		"userCounters",
 		"sessionKeyring",
@@ -1676,14 +1680,15 @@ func (t *Task) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(67, &t.startTime)
 	stateSinkObject.Save(68, &t.kcov)
 	stateSinkObject.Save(69, &t.cgroups)
-	stateSinkObject.Save(70, &t.memCgID)
-	stateSinkObject.Save(71, &t.userCounters)
-	stateSinkObject.Save(72, &t.sessionKeyring)
-	stateSinkObject.Save(73, &t.personality)
-	stateSinkObject.Save(74, &t.Origin)
-	stateSinkObject.Save(75, &t.onDestroyAction)
-	stateSinkObject.Save(76, &t.execveCredsMutexOwner)
-	stateSinkObject.Save(77, &t.pid)
+	stateSinkObject.Save(70, &t.cgroup2)
+	stateSinkObject.Save(71, &t.memCgID)
+	stateSinkObject.Save(72, &t.userCounters)
+	stateSinkObject.Save(73, &t.sessionKeyring)
+	stateSinkObject.Save(74, &t.personality)
+	stateSinkObject.Save(75, &t.Origin)
+	stateSinkObject.Save(76, &t.onDestroyAction)
+	stateSinkObject.Save(77, &t.execveCredsMutexOwner)
+	stateSinkObject.Save(78, &t.pid)
 }
 
 // +checklocksignore
@@ -1754,14 +1759,15 @@ func (t *Task) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(67, &t.startTime)
 	stateSourceObject.Load(68, &t.kcov)
 	stateSourceObject.Load(69, &t.cgroups)
-	stateSourceObject.Load(70, &t.memCgID)
-	stateSourceObject.Load(71, &t.userCounters)
-	stateSourceObject.Load(72, &t.sessionKeyring)
-	stateSourceObject.Load(73, &t.personality)
-	stateSourceObject.Load(74, &t.Origin)
-	stateSourceObject.Load(75, &t.onDestroyAction)
-	stateSourceObject.Load(76, &t.execveCredsMutexOwner)
-	stateSourceObject.Load(77, &t.pid)
+	stateSourceObject.Load(70, &t.cgroup2)
+	stateSourceObject.Load(71, &t.memCgID)
+	stateSourceObject.Load(72, &t.userCounters)
+	stateSourceObject.Load(73, &t.sessionKeyring)
+	stateSourceObject.Load(74, &t.personality)
+	stateSourceObject.Load(75, &t.Origin)
+	stateSourceObject.Load(76, &t.onDestroyAction)
+	stateSourceObject.Load(77, &t.execveCredsMutexOwner)
+	stateSourceObject.Load(78, &t.pid)
 	stateSourceObject.LoadValue(27, new(*FSContext), func(y any) { t.loadFsContext(ctx, y.(*FSContext)) })
 	stateSourceObject.LoadValue(29, new(*Task), func(y any) { t.loadVforkParent(ctx, y.(*Task)) })
 	stateSourceObject.LoadValue(35, new(*Task), func(y any) { t.loadPtraceTracer(ctx, y.(*Task)) })

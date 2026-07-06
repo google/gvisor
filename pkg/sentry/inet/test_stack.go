@@ -184,8 +184,12 @@ func (s *TestStack) Pause() {}
 // Restore implements Stack.
 func (s *TestStack) Restore() {}
 
-// ReplaceConfig implements Stack.
-func (s *TestStack) ReplaceConfig(_ Stack) {}
+// ResetConfig implements Stack.
+func (s *TestStack) ResetConfig() {
+	s.InterfacesMap = make(map[int32]Interface)
+	s.InterfaceAddrsMap = make(map[int32][]InterfaceAddr)
+	s.RouteList = nil
+}
 
 // Resume implements Stack.
 func (s *TestStack) Resume() {}

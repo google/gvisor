@@ -1598,6 +1598,8 @@ var _ dynamicInode = (*taskCgroupData)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (d *taskCgroupData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	v2Mounted := kernel.KernelFromContext(ctx).Cgroup2FS().EverMounted()
+
 	// When a task is existing on Linux, a task's cgroup set is cleared and
 	// reset to the initial cgroup set, which is essentially the set of root
 	// cgroups. Because of this, the /proc/<pid>/cgroup file is always readable
@@ -1607,11 +1609,16 @@ func (d *taskCgroupData) Generate(ctx context.Context, buf *bytes.Buffer) error 
 	// doesn't move them into an initial cgroup set, so partway through task
 	// exit this file show a task is in no cgroups, which is incorrect. Instead,
 	// once a task has left its cgroups, we return an error.
-	if d.task.ExitState() >= kernel.TaskExitInitiated {
+	if d.task.ExitState() >= kernel.TaskExitInitiated && !v2Mounted {
 		return linuxerr.ESRCH
 	}
 
 	d.task.GenerateProcTaskCgroup(buf)
+	if v2Mounted {
+		if cg2Entry := d.task.GetCgroup2Entry(); cg2Entry != nil {
+			fmt.Fprintf(buf, "0::%s\n", cg2Entry.Path)
+		}
+	}
 	return nil
 }
 

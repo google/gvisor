@@ -44,6 +44,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/devices/tpuproxy/vfio"
 	"gvisor.dev/gvisor/pkg/sentry/devices/ttydev"
 	"gvisor.dev/gvisor/pkg/sentry/devices/tundev"
+	cgroup2fs "gvisor.dev/gvisor/pkg/sentry/fsimpl/cgroup2fs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/cgroupfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/dev"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/devpts"
@@ -124,6 +125,12 @@ func registerFilesystems(k *kernel.Kernel, info *containerInfo) error {
 		AllowUserMount: true,
 		AllowUserList:  true,
 	})
+	if info.conf.MountCgroupV2 {
+		vfsObj.MustRegisterFilesystemType(cgroup2fs.Name, &cgroup2fs.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
+			AllowUserMount: true,
+			AllowUserList:  true,
+		})
+	}
 	vfsObj.MustRegisterFilesystemType(devpts.Name, &devpts.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
 		AllowUserList:  true,
 		AllowUserMount: true,
@@ -207,7 +214,7 @@ func setupContainerVFS(ctx context.Context, info *containerInfo, mntr *container
 
 	// If cgroups are mounted, then only check for the cgroup mounts per
 	// container. Otherwise the root cgroups will be enabled.
-	if mntr.cgroupsMounted {
+	if mntr.cgroupsMounted && !info.conf.MountCgroupV2 {
 		cgroupRegistry := mntr.l.k.CgroupRegistry()
 		for _, ctrl := range kernel.CgroupCtrls {
 			cg, err := cgroupRegistry.FindCgroup(ctx, ctrl, "/"+mntr.containerID)
@@ -260,11 +267,20 @@ func compileMounts(spec *specs.Spec, conf *config.Config, containerID string) []
 
 	// Mount all submounts from the spec.
 	for _, m := range spec.Mounts {
-		// Mount all the cgroup controllers when "/sys/fs/cgroup" mount
-		// is present. If any other cgroup controller mounts are there,
-		// it will be a no-op, drop them.
-		if m.Type == cgroupfs.Name && cgroupsMounted {
-			continue
+		if conf.MountCgroupV2 {
+			// Under this flag, we only want a single unified mount at
+			// /sys/fs/cgroup. Skip any legacy v1 controller sub-mounts
+			// (e.g., /sys/fs/cgroup/cpu) requested by the OCI spec.
+			if (m.Type == cgroupfs.Name || m.Type == cgroup2fs.Name) && strings.HasPrefix(filepath.Clean(m.Destination), "/sys/fs/cgroup/") {
+				continue
+			}
+		} else {
+			// Mount all the cgroup controllers when "/sys/fs/cgroup" mount
+			// is present. If any other cgroup controller mounts are there,
+			// it will be a no-op, drop them.
+			if m.Type == cgroupfs.Name && cgroupsMounted {
+				continue
+			}
 		}
 
 		switch filepath.Clean(m.Destination) {
@@ -790,10 +806,25 @@ func (c *containerMounter) mountSubmounts(ctx context.Context, spec *specs.Spec,
 			if err != nil {
 				return fmt.Errorf("mount shared mount %q to %q: %v", submount.hint.Name, submount.mount.Destination, err)
 			}
-		} else if submount.mount.Type == cgroupfs.Name {
-			// Mount all the cgroups controllers.
-			if err := c.mountCgroupSubmounts(ctx, spec, conf, mns, creds, submount); err != nil {
-				return fmt.Errorf("mount cgroup %q: %w", submount.mount.Destination, err)
+		} else if submount.mount.Type == cgroupfs.Name || submount.mount.Type == cgroup2fs.Name {
+			if conf.MountCgroupV2 {
+				// There is no "type: cgroup2" defined in the OCI spec.
+				// So, when the runsc flag MountCgroupV2 is set, we honor the
+				// OCI request for "type: cgroupfs" by a v2 mount.
+				if submount.mount.Type == cgroupfs.Name {
+					submount.mount.Type = cgroup2fs.Name
+				}
+				// TODO (b/524360347): Bind a per-container cgroup2 mount rooted at /sys/fs/cgroup/$cid,
+				// much like we do for cgroup v1 in mountCgroupSubmounts.
+				mnt, err = c.mountSubmount(ctx, spec, conf, mns, creds, submount)
+				if err != nil {
+					return fmt.Errorf("mount cgroup2 %q: %w", submount.mount.Destination, err)
+				}
+			} else {
+				// Mount all the cgroups controllers.
+				if err := c.mountCgroupSubmounts(ctx, spec, conf, mns, creds, submount); err != nil {
+					return fmt.Errorf("mount cgroup %q: %w", submount.mount.Destination, err)
+				}
 			}
 		} else {
 			mnt, err = c.mountSubmount(ctx, spec, conf, mns, creds, submount)
@@ -963,7 +994,7 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 
 	// Find filesystem name and FS specific data field.
 	switch m.mount.Type {
-	case devpts.Name, dev.Name:
+	case devpts.Name, dev.Name, cgroup2fs.Name:
 		// Nothing to do.
 
 	case Nonefs:

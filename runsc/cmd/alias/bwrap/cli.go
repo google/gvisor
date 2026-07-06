@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -30,43 +31,51 @@ import (
 )
 
 const (
-	flagBind        = "bind"
-	flagRoBind      = "ro-bind"
-	flagTmpfs       = "tmpfs"
-	flagUnshareNet  = "unshare-net"
-	flagChdir       = "chdir"
-	flagHelp        = "help"
-	flagSetEnv      = "setenv"
-	flagClearEnv    = "clearenv"
-	flagUnsetEnv    = "unsetenv"
-	flagUID         = "uid"
-	flagGID         = "gid"
-	flagUnshareUser = "unshare-user"
-	flagUserns      = "userns"
-	flagUnshareIPC  = "unshare-ipc"
-	flagUnsharePID  = "unshare-pid"
-	flagUnshareUTS  = "unshare-uts"
-	flagHostname    = "hostname"
+	flagBind          = "bind"
+	flagRoBind        = "ro-bind"
+	flagTmpfs         = "tmpfs"
+	flagUnshareNet    = "unshare-net"
+	flagChdir         = "chdir"
+	flagHelp          = "help"
+	flagSetEnv        = "setenv"
+	flagClearEnv      = "clearenv"
+	flagUnsetEnv      = "unsetenv"
+	flagUID           = "uid"
+	flagGID           = "gid"
+	flagUnshareUser   = "unshare-user"
+	flagUserns        = "userns"
+	flagUnshareIPC    = "unshare-ipc"
+	flagUnsharePID    = "unshare-pid"
+	flagUnshareUTS    = "unshare-uts"
+	flagHostname      = "hostname"
+	flagProc          = "proc"
+	flagUnshareCgroup = "unshare-cgroup"
+	flagUnshareAll    = "unshare-all"
+	flagShareNet      = "share-net"
 )
 
 // Cli implements subcommands.Command for the "bwrap" command.
 type Cli struct {
 	// Placeholders for bwrap flags.
-	bind        string
-	roBind      string
-	tmpfs       string
-	unshareNet  bool
-	chdir       string
-	setEnv      string
-	clearEnv    bool
-	unsetEnv    string
-	uid         int
-	gid         int
-	unshareUser bool
-	unshareIPC  bool
-	unsharePID  bool
-	unshareUTS  bool
-	hostname    string
+	bind          string
+	roBind        string
+	tmpfs         string
+	unshareNet    bool
+	shareNet      bool
+	chdir         string
+	setEnv        string
+	clearEnv      bool
+	unsetEnv      string
+	uid           int
+	gid           int
+	unshareUser   bool
+	unshareIPC    bool
+	unsharePID    bool
+	unshareUTS    bool
+	unshareCgroup bool
+	unshareAll    bool
+	hostname      string
+	proc          string
 }
 
 // Name implements subcommands.Command.Name.
@@ -90,6 +99,7 @@ func (c *Cli) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.roBind, flagRoBind, "", "Read-only bind mount SRC to DEST.")
 	f.StringVar(&c.tmpfs, flagTmpfs, "", "Mount tmpfs at DEST.")
 	f.BoolVar(&c.unshareNet, flagUnshareNet, false, "Unshare network namespace.")
+	f.BoolVar(&c.shareNet, flagShareNet, false, "Share network namespace.")
 	f.StringVar(&c.chdir, flagChdir, "", "Change directory to DIR.")
 	f.StringVar(&c.setEnv, flagSetEnv, "", "Set an environment variable")
 	f.BoolVar(&c.clearEnv, flagClearEnv, false, "Unset all environment variables")
@@ -101,6 +111,9 @@ func (c *Cli) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&c.unsharePID, flagUnsharePID, false, "Create new pid namespace")
 	f.BoolVar(&c.unshareUTS, flagUnshareUTS, false, "Create new uts namespace")
 	f.StringVar(&c.hostname, flagHostname, "", "Custom hostname in the sandbox")
+	f.StringVar(&c.proc, flagProc, "", "Mount new procfs on DEST")
+	f.BoolVar(&c.unshareCgroup, flagUnshareCgroup, false, "Create new cgroup namespace")
+	f.BoolVar(&c.unshareAll, flagUnshareAll, false, "Unshare every namespace we support by default")
 
 	// Override the default usage function to print the custom usage message.
 	f.Usage = func() {
@@ -152,6 +165,8 @@ func parseBwrapArgs(bwrapArgs []string) (*bwrapConfig, error) {
 			i, err = cfg.parseTmpfs(bwrapArgs, i)
 		case flagUnshareNet:
 			i, err = cfg.parseUnshareNet(bwrapArgs, i)
+		case flagShareNet:
+			i, err = cfg.parseShareNet(bwrapArgs, i)
 		case flagChdir:
 			i, err = cfg.parseChdir(bwrapArgs, i)
 		case flagSetEnv:
@@ -170,8 +185,12 @@ func parseBwrapArgs(bwrapArgs []string) (*bwrapConfig, error) {
 			i, err = cfg.parseUserns(bwrapArgs, i)
 		case flagHostname:
 			i, err = cfg.parseHostname(bwrapArgs, i)
-		case flagUnshareIPC, flagUnsharePID, flagUnshareUTS:
+		case flagUnshareIPC, flagUnsharePID, flagUnshareUTS, flagUnshareCgroup:
 			i, err = cfg.parseNoopZeroArg(bwrapArgs, i)
+		case flagProc:
+			i, err = cfg.parseProc(bwrapArgs, i)
+		case flagUnshareAll:
+			i, err = cfg.parseUnshareAll(bwrapArgs, i)
 		default:
 			return nil, fmt.Errorf("bwrap: Unknown option: %s", arg)
 		}
@@ -336,6 +355,26 @@ func (c *bwrapConfig) parseHostname(args []string, i int) (int, error) {
 	return i + 2, nil
 }
 
+func (c *bwrapConfig) parseProc(args []string, i int) (int, error) {
+	if i+1 >= len(args) {
+		return i, fmt.Errorf("--%s takes 1 argument", flagProc)
+	}
+
+	dst := filepath.Clean(args[i+1])
+	for _, m := range c.Mounts {
+		if m.Type == MountOpProc && m.Dst == dst {
+			return i + 2, nil
+		}
+	}
+	mnt, err := c.newMountOp("", dst, MountOpProc)
+	if err != nil {
+		return i, err
+	}
+	c.Mounts = append(c.Mounts, mnt)
+
+	return i + 2, nil
+}
+
 // TODO: b/518882196 - Support joining existing user namespaces.
 // Currently, runsc cannot join an existing user namespace (specs.UserNamespace with Path != "").
 func (c *bwrapConfig) parseUserns(args []string, i int) (int, error) {
@@ -346,5 +385,17 @@ func (c *bwrapConfig) parseUserns(args []string, i int) (int, error) {
 // gVisor's Sentry kernel inherently virtualizes and isolates IPC, PID, and UTS
 // namespaces by default. These flags are parsed solely for CLI compatibility
 func (c *bwrapConfig) parseNoopZeroArg(args []string, i int) (int, error) {
+	return i + 1, nil
+}
+
+func (c *bwrapConfig) parseShareNet(args []string, i int) (int, error) {
+	c.ShareNet = true
+	return i + 1, nil
+}
+
+// Todo: - set unshare-user-try to true also after implementing it.
+func (c *bwrapConfig) parseUnshareAll(args []string, i int) (int, error) {
+	c.UnshareUser = true
+	c.UnshareNet = true
 	return i + 1, nil
 }

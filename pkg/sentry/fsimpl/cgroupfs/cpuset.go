@@ -95,7 +95,7 @@ type cpusData struct {
 func (d *cpusData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	d.c.mu.Lock()
 	defer d.c.mu.Unlock()
-	fmt.Fprintf(buf, "%s\n", formatBitmap(d.c.cpus))
+	fmt.Fprintf(buf, "%s\n", bitmap.FormatList(d.c.cpus))
 	return nil
 }
 
@@ -117,7 +117,7 @@ func (d *cpusData) WriteBackground(ctx context.Context, src usermem.IOSequence) 
 	}
 	buf = buf[:n]
 
-	b, err := parseBitmap(string(buf), d.c.maxCpus)
+	b, err := bitmap.ParseList(string(buf), d.c.maxCpus)
 	if err != nil {
 		log.Warningf("cgroupfs cpuset controller: Failed to parse bitmap: %v", err)
 		return 0, linuxerr.EINVAL
@@ -143,7 +143,7 @@ type memsData struct {
 func (d *memsData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	d.c.mu.Lock()
 	defer d.c.mu.Unlock()
-	fmt.Fprintf(buf, "%s\n", formatBitmap(d.c.mems))
+	fmt.Fprintf(buf, "%s\n", bitmap.FormatList(d.c.mems))
 	return nil
 }
 
@@ -165,7 +165,7 @@ func (d *memsData) WriteBackground(ctx context.Context, src usermem.IOSequence) 
 	}
 	buf = buf[:n]
 
-	b, err := parseBitmap(string(buf), d.c.maxMems)
+	b, err := bitmap.ParseList(string(buf), d.c.maxMems)
 	if err != nil {
 		log.Warningf("cgroupfs cpuset controller: Failed to parse bitmap: %v", err)
 		return 0, linuxerr.EINVAL

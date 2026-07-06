@@ -128,6 +128,8 @@ const (
 	MountOpRoBind MountOpType = "ro-bind"
 	// MountOpTmpfs represents a tmpfs mount operation.
 	MountOpTmpfs MountOpType = "tmpfs"
+	// MountOpProc represents a proc mount operation.
+	MountOpProc MountOpType = "proc"
 )
 
 // MountOp represents a mount operation.
@@ -143,7 +145,7 @@ func (c *bwrapConfig) newMountOp(src, dst string, mountType MountOpType) (*Mount
 		return nil, fmt.Errorf("bwrap: destination path is empty")
 	}
 	dst = filepath.Clean(dst)
-	if mountType == MountOpTmpfs {
+	if mountType == MountOpTmpfs || mountType == MountOpProc {
 		return &MountOp{
 			Type: mountType,
 			Dst:  dst,
@@ -177,6 +179,7 @@ type bwrapConfig struct {
 	GID          int
 	UnshareUser  bool
 	Hostname     string
+	ShareNet     bool
 }
 
 // String returns a string representation of the bwrapConfig.
@@ -349,6 +352,12 @@ func (c *bwrapConfig) buildRunscSpec() (*specs.Spec, error) {
 		case MountOpTmpfs:
 			spec.Mounts = append(spec.Mounts, specs.Mount{
 				Type:        "tmpfs",
+				Destination: mount.Dst,
+				Options:     opts,
+			})
+		case MountOpProc:
+			spec.Mounts = append(spec.Mounts, specs.Mount{
+				Type:        "proc",
 				Destination: mount.Dst,
 				Options:     opts,
 			})

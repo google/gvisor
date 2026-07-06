@@ -1,0 +1,241 @@
+// Copyright 2026 The gVisor Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Package cgroup2fs provides the cgroupv2 filesystem implementation.
+package cgroup2fs
+
+import (
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
+)
+
+// Name is the default filesystem name.
+const Name = "cgroup2"
+
+// FilesystemType implements vfs.FilesystemType for cgroup2 (cgroup v2).
+//
+// +stateify savable
+type FilesystemType struct{}
+
+// Name implements vfs.FilesystemType.Name.
+func (FilesystemType) Name() string {
+	return Name
+}
+
+// Release implements vfs.FilesystemType.Release.
+func (FilesystemType) Release(ctx context.Context) {}
+
+// GetFilesystem implements vfs.FilesystemType.GetFilesystem.
+func (ft FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
+	mopts := vfs.GenericParseMountOptions(opts.Data)
+	for k := range mopts {
+		switch k {
+		case "nsdelegate":
+			// TODO (b/513700867): Silently ignore because we don't support cgroup namespaces anyway.
+		default:
+			ctx.Debugf("cgroup2fs.FilesystemType.GetFilesystem: unknown option: %s", k)
+			return nil, nil, linuxerr.EINVAL
+		}
+	}
+
+	fs := kernel.KernelFromContext(ctx).Cgroup2FS().(*filesystem)
+	fs.mounted.Store(1)
+	fs.root.IncRef()
+	vfsfs := fs.VFSFilesystem()
+	vfsfs.IncRef()
+	return vfsfs, fs.root.VFSDentry(), nil
+}
+
+// NewFilesystem creates and registers the cgroup2fs singleton. It should be called early
+// during boot before the first task is created.
+func NewFilesystem(ctx context.Context, k *kernel.Kernel, vfsObj *vfs.VirtualFilesystem) (*vfs.Filesystem, error) {
+	devMinor, err := vfsObj.GetAnonBlockDevMinor()
+	if err != nil {
+		return nil, err
+	}
+
+	fs := &filesystem{
+		rootCreds: auth.NewRootCredentials(k.RootUserNamespace()),
+		devMinor:  devMinor,
+	}
+	fs.VFSFilesystem().Init(vfsObj, &FilesystemType{}, fs)
+
+	rootMode := linux.FileMode(0755) | linux.ModeDirectory
+	rootInode := fs.newRootInode(ctx, rootMode)
+
+	rootD := &kernfs.Dentry{}
+	rootD.InitRoot(&fs.Filesystem, rootInode)
+	fs.root = rootD
+
+	return fs.VFSFilesystem(), nil
+}
+
+// filesystem implements vfs.FilesystemImpl for cgroup2.
+//
+// +stateify savable
+type filesystem struct {
+	kernfs.Filesystem
+	rootCreds *auth.Credentials
+	devMinor  uint32
+
+	root *kernfs.Dentry
+
+	// mounted tracks whether the filesystem has been mounted/initialized.
+	mounted atomicbitops.Uint32
+
+	// nextMemCgroupID is used to allocate unique IDs to memory controllers.
+	nextMemCgroupID atomicbitops.Uint32
+
+	// treeMu protects controller hierarchy enablement traversals, and tracking of owned controllers.
+	treeMu treeRWMutex `state:"nosave"`
+
+	// tasksMu protects the task-to-cgroup mapping (the c.tasks map across all cgroups)
+	// and population bubbling.
+	tasksMu tasksRWMutex `state:"nosave"`
+}
+
+// EverMounted implements EverMounted.
+func (fs *filesystem) EverMounted() bool {
+	return fs.mounted.Load() != 0
+}
+
+// Release implements vfs.FilesystemImpl.Release.
+func (fs *filesystem) Release(ctx context.Context) {
+	if fs.root != nil {
+		fs.root.DecRef(ctx)
+		fs.root = nil
+	}
+
+	fs.Filesystem.VFSFilesystem().VirtualFilesystem().PutAnonBlockDevMinor(fs.devMinor)
+	fs.Filesystem.Release(ctx)
+}
+
+// MountOptions implements vfs.FilesystemImpl.MountOptions.
+func (fs *filesystem) MountOptions() string {
+	return ""
+}
+
+// LockTree implements kernel.Cgroup2FS.LockTree.
+func (fs *filesystem) LockTree() {
+	fs.treeMu.Lock()
+}
+
+// UnlockTree implements kernel.Cgroup2FS.UnlockTree.
+func (fs *filesystem) UnlockTree() {
+	fs.treeMu.Unlock()
+}
+
+// RLockTree implements kernel.Cgroup2FS.RLockTree.
+func (fs *filesystem) RLockTree() {
+	fs.treeMu.RLock()
+}
+
+// RUnlockTree implements kernel.Cgroup2FS.RUnlockTree.
+func (fs *filesystem) RUnlockTree() {
+	fs.treeMu.RUnlock()
+}
+
+// StealControllerLocked implements kernel.Cgroup2FS.StealControllerLocked.
+// +checklocks:fs.treeMu
+func (fs *filesystem) StealControllerLocked(ctx context.Context, cType kernel.Cgroup2Ctrl) error {
+	rootCG := fs.root.Inode().(*cgroup)
+	return rootCG.stealController(ctx, cType) // +checklocksforce: fs.treeMu is locked
+}
+
+// ReturnControllerLocked implements kernel.Cgroup2FS.ReturnControllerLocked.
+// +checklocks:fs.treeMu
+func (fs *filesystem) ReturnControllerLocked(ctx context.Context, cType kernel.Cgroup2Ctrl) {
+	rootCG := fs.root.Inode().(*cgroup)
+	rootCG.returnController(ctx, cType) // +checklocksforce: fs.treeMu is locked
+}
+
+// RootCgroup implements kernel.Cgroup2FS.RootCgroup.
+func (fs *filesystem) RootCgroup() kernel.Cgroup2 {
+	return fs.root.Inode().(*cgroup)
+}
+
+func (fs *filesystem) newRootInode(ctx context.Context, mode linux.FileMode) kernfs.Inode {
+	c := &cgroup{
+		fs:       fs,
+		tasks:    make(map[*kernel.Task]struct{}),
+		path:     "/",
+		parent:   nil,
+		children: make(map[*cgroup]struct{}),
+	}
+	c.InodeAttrs.Init(ctx, fs.rootCreds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), mode)
+	c.OrderedChildren.Init(kernfs.OrderedChildrenOptions{Writable: true})
+
+	c.IncLinks(c.OrderedChildren.Populate(fs.rootInodes(ctx, fs.rootCreds.EffectiveKUID, fs.rootCreds.EffectiveKGID, c)))
+
+	c.fs.treeMu.Lock()
+	defer c.fs.treeMu.Unlock()
+	c.initRoot(ctx)
+	c.maxDescendants.Store(limitMax)
+	c.maxDepth.Store(limitMax)
+
+	return c
+}
+
+// +checklocks:fs.treeMu
+func (fs *filesystem) newCgroupLocked(ctx context.Context, creds *auth.Credentials, mode linux.FileMode, path string, parent *cgroup) kernfs.Inode {
+	c := &cgroup{
+		fs:       fs,
+		tasks:    make(map[*kernel.Task]struct{}),
+		path:     path,
+		parent:   parent,
+		children: make(map[*cgroup]struct{}),
+		level:    parent.level + 1,
+	}
+	c.InodeAttrs.Init(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), mode)
+	c.OrderedChildren.Init(kernfs.OrderedChildrenOptions{Writable: true})
+
+	c.IncLinks(c.OrderedChildren.Populate(fs.cgroupInodes(ctx, creds.EffectiveKUID, creds.EffectiveKGID, c)))
+
+	c.init(ctx) // +checklocksforce: c.fs.treeMu is locked
+	c.maxDescendants.Store(limitMax)
+	c.maxDepth.Store(limitMax)
+	parent.children[c] = struct{}{} // +checklocksforce: c.fs.treeMu is locked
+	for curr := parent; curr != nil; curr = curr.parent {
+		curr.nrDescendants.Add(1) // +checklocksforce: c.fs.treeMu is locked
+	}
+
+	return c
+}
+
+// +stateify savable
+type implStatFS struct{}
+
+// StatFS implements kernfs.Inode.StatFS.
+func (*implStatFS) StatFS(context.Context, *vfs.Filesystem) (linux.Statfs, error) {
+	return vfs.GenericStatFS(linux.CGROUP2_SUPER_MAGIC), nil
+}
+
+// StatFSAt implements vfs.FilesystemImpl.StatFSAt.
+func (fs *filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linux.Statfs, error) {
+	return vfs.GenericStatFS(linux.CGROUP2_SUPER_MAGIC), nil
+}
+
+func (fs *filesystem) nextMemoryID() uint32 {
+	id := fs.nextMemCgroupID.Add(1)
+	if id == 0 {
+		id = fs.nextMemCgroupID.Add(1)
+	}
+	return id
+}

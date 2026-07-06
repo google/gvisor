@@ -83,7 +83,7 @@ func setupNetwork(conn *urpc.Client, pid int, conf *config.Config, disableIPv6 b
 func createDefaultLoopbackInterface(conf *config.Config, conn *urpc.Client) error {
 	link := boot.DefaultLoopbackLink
 	link.GVisorGRO = conf.GVisorGRO
-	if err := conn.Call(boot.ContMgrCreateLinksAndRoutes, &boot.CreateLinksAndRoutesArgs{
+	if err := conn.Call(boot.ContMgrSetNetworkArgs, &boot.CreateLinksAndRoutesArgs{
 		LoopbackLinks: []boot.LoopbackLink{link},
 	}, nil); err != nil {
 		return fmt.Errorf("creating loopback link and routes: %v", err)
@@ -407,7 +407,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 	}
 
 	log.Debugf("Setting up network, config: %+v", args)
-	if err := conn.Call(boot.ContMgrCreateLinksAndRoutes, &args, nil); err != nil {
+	if err := conn.Call(boot.ContMgrSetNetworkArgs, &args, nil); err != nil {
 		return fmt.Errorf("creating links and routes: %w", err)
 	}
 

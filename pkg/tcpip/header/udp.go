@@ -134,6 +134,10 @@ func (b UDP) Encode(u *UDPFields) {
 
 // SetSourcePortWithChecksumUpdate implements ChecksummableTransport.
 func (b UDP) SetSourcePortWithChecksumUpdate(new uint16) {
+	if b.Checksum() == 0 {
+		b.SetSourcePort(new)
+		return
+	}
 	old := b.SourcePort()
 	b.SetSourcePort(new)
 	b.SetChecksum(^checksumUpdate2ByteAlignedUint16(^b.Checksum(), old, new))
@@ -141,6 +145,10 @@ func (b UDP) SetSourcePortWithChecksumUpdate(new uint16) {
 
 // SetDestinationPortWithChecksumUpdate implements ChecksummableTransport.
 func (b UDP) SetDestinationPortWithChecksumUpdate(new uint16) {
+	if b.Checksum() == 0 {
+		b.SetDestinationPort(new)
+		return
+	}
 	old := b.DestinationPort()
 	b.SetDestinationPort(new)
 	b.SetChecksum(^checksumUpdate2ByteAlignedUint16(^b.Checksum(), old, new))
@@ -148,6 +156,9 @@ func (b UDP) SetDestinationPortWithChecksumUpdate(new uint16) {
 
 // UpdateChecksumPseudoHeaderAddress implements ChecksummableTransport.
 func (b UDP) UpdateChecksumPseudoHeaderAddress(old, new tcpip.Address, fullChecksum bool) {
+	if b.Checksum() == 0 {
+		return
+	}
 	xsum := b.Checksum()
 	if fullChecksum {
 		xsum = ^xsum

@@ -634,6 +634,14 @@ type Task struct {
 	// +checklocks:mu
 	cgroups map[Cgroup]struct{}
 
+	// cgroup2 is the cgroup v2 node this task belongs to.
+	// Protected by cgroup2Mu.
+	// +checklocks:cgroup2Mu
+	cgroup2 Cgroup2
+
+	// cgroup2Mu protects the cgroup2 field.
+	cgroup2Mu cgroup2Mutex `state:"nosave"`
+
 	// memCgID is the memory cgroup id.
 	memCgID atomicbitops.Uint32
 

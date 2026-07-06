@@ -73,6 +73,15 @@ func (f *DynamicBytesFile) Init(ctx context.Context, creds *auth.Credentials, de
 	f.data = data
 }
 
+// InitWithIDs initializes a dynamic bytes file with the given owner UIDs and GIDs.
+func (f *DynamicBytesFile) InitWithIDs(ctx context.Context, uid auth.KUID, gid auth.KGID, devMajor, devMinor uint32, ino uint64, data vfs.DynamicBytesSource, perm linux.FileMode) {
+	if perm&^linux.PermissionsMask != 0 {
+		panic(fmt.Sprintf("Only permission mask must be set: %x", perm&linux.PermissionsMask))
+	}
+	f.InodeAttrs.InitWithIDs(ctx, uid, gid, devMajor, devMinor, ino, linux.ModeRegular|perm)
+	f.data = data
+}
+
 // Open implements Inode.Open.
 func (f *DynamicBytesFile) Open(ctx context.Context, rp *vfs.ResolvingPath, d *Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	data, err := f.Data(ctx)

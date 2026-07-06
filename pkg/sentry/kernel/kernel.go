@@ -500,6 +500,9 @@ type InitKernelArgs struct {
 	// used by processes.  If it is zero, the limit will be set to
 	// unlimited.
 	MaxFDLimit int32
+
+	// Cgroup2FSInit initializes the cgroup2fs filesystem singleton.
+	Cgroup2FSInit func(ctx context.Context, k *Kernel, vfsObj *vfs.VirtualFilesystem) (*vfs.Filesystem, error)
 }
 
 // Init initialize the Kernel with no tasks.
@@ -641,6 +644,16 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	k.sockets = make(map[*vfs.FileDescription]*SocketRecord)
 
 	k.cgroupRegistry = newCgroupRegistry()
+
+	if args.Cgroup2FSInit == nil {
+		return fmt.Errorf("cgroup2fs initializer is required")
+	}
+	cfs, err := args.Cgroup2FSInit(ctx, k, &k.vfs)
+	if err != nil {
+		return fmt.Errorf("failed to initialize cgroup2fs: %v", err)
+	}
+	k.cgroupRegistry.v2fs = cfs
+
 	k.MaxKeySetSize = atomicbitops.FromInt32(auth.MaxSetSize)
 	return nil
 }
@@ -915,7 +928,7 @@ func (k *Kernel) invalidateUnsavableMappings(ctx context.Context) error {
 }
 
 // LoadFrom returns a new Kernel loaded from args.
-func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *AsyncMFLoader, timeReady chan struct{}, net inet.Stack, clocks sentrytime.Clocks, vfsOpts *vfs.CompleteRestoreOptions, timeline *timing.Timeline) error {
+func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *AsyncMFLoader, timeReady chan struct{}, networkArgs inet.NetworkArgs, clocks sentrytime.Clocks, vfsOpts *vfs.CompleteRestoreOptions, timeline *timing.Timeline) error {
 	defer timeline.End()
 	if hostarch.PageSize != 4096 {
 		return fmt.Errorf("restore is not supported with %dK page size", hostarch.PageSize/1024)
@@ -987,11 +1000,14 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 	}
 
 	if s := k.rootNetworkNamespace.Stack(); s != nil {
-		if net != nil {
-			log.Infof("Reconfiguring network for restore")
-			s.ReplaceConfig(net)
+		if networkArgs == nil {
+			return fmt.Errorf("network configuration cannot be nil during restore")
 		}
-		log.Debugf("Restore network stack")
+		log.Infof("Reconfiguring network for restore")
+		s.ResetConfig()
+		if err := networkArgs.ConfigureNetwork(s); err != nil {
+			return fmt.Errorf("configuring network: %w", err)
+		}
 		s.Restore()
 		timeline.Reached("Network stack restored")
 	}
@@ -2207,6 +2223,10 @@ func (k *Kernel) Release() {
 	k.shmMount.DecRef(ctx)
 	k.socketMount.DecRef(ctx)
 	k.vfs.Release(ctx)
+	if k.cgroupRegistry != nil {
+		k.cgroupRegistry.v2fs.DecRef(ctx)
+		k.cgroupRegistry.v2fs = nil
+	}
 	k.timekeeper.Destroy()
 	k.vdso.Release(ctx)
 	k.RootNetworkNamespace().DecRef(ctx)
