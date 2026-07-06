@@ -1,0 +1,70 @@
+// Copyright 2026 The gVisor Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+edition = "2024";
+
+package cloud_gvisor.tpu;
+
+enum ControlAction {
+  ACTION_UNSPECIFIED = 0;
+  ACTION_LOCK = 1;
+  ACTION_CHECKPOINT = 2;
+  ACTION_RESTORE = 3;
+  ACTION_UNLOCK = 4;
+  ACTION_GETSTATE = 5;
+}
+
+enum RuntimeState {
+  STATE_UNSPECIFIED = 0;
+  STATE_RUNNING = 1;    // Workload active
+  STATE_LOCKED = 2;     // PjRT API locked
+  STATE_DETACHED = 3;   // Safe to snapshot
+  STATE_RESTORING = 4;  // Hydrating TPU state
+  STATE_FAULTED = 5;    // Unrecoverable error
+}
+
+// Prevents migration mismatches
+message TpuTopology {
+  string chip_architecture = 1;  // e.g., "v5e", "v5p"
+  int32 num_chips = 2;           // e.g., 4
+  string mesh_shape = 3;         // e.g., "2x2x1"
+
+  // Ensures the restored PjRT API matches the checkpointed API
+  string pjrt_version = 4;
+}
+
+message ControlRequest {
+  ControlAction action = 1;
+  int32 timeout_secs = 2;
+
+  // Used during ACTION_RESTORE. The runtime verifies this matches
+  // the physical hardware it is currently sitting on before proceeding.
+  TpuTopology expected_topology = 3;
+}
+
+message ControlResponse {
+  bool success = 1;
+  RuntimeState current_state = 2;
+  string error_message = 3;
+
+  TpuTopology active_topology = 4;
+
+  oneof telemetry {
+    CheckpointTelemetry checkpoint_stats = 5;
+    RestoreTelemetry restore_stats = 6;
+  }
+}
+
+message CheckpointTelemetry {}
+message RestoreTelemetry {}
