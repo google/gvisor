@@ -25,6 +25,7 @@ go_library(
         "seccheck.go",
         "seccomp.go",
         "strace.go",
+        "tpuproxy.go",
         "vfs.go",
     ],
     visibility = [
