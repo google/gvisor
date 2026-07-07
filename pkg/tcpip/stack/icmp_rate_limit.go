@@ -15,8 +15,6 @@
 package stack
 
 import (
-	"context"
-
 	"golang.org/x/time/rate"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
@@ -36,15 +34,9 @@ const (
 //
 // +stateify savable
 type ICMPRateLimiter struct {
+	// TODO(b/341946753): Restore when netstack is savable.
 	limiter *rate.Limiter `state:"nosave"`
 	clock   tcpip.Clock
-	limit   rate.Limit
-	burst   int
-}
-
-// afterLoad is invoked by stateify.
-func (l *ICMPRateLimiter) afterLoad(context.Context) {
-	l.limiter = rate.NewLimiter(l.limit, l.burst)
 }
 
 // NewICMPRateLimiter returns a global rate limiter for controlling the rate
@@ -54,14 +46,11 @@ func NewICMPRateLimiter(clock tcpip.Clock) *ICMPRateLimiter {
 	return &ICMPRateLimiter{
 		clock:   clock,
 		limiter: rate.NewLimiter(icmpLimit, icmpBurst),
-		limit:   icmpLimit,
-		burst:   icmpBurst,
 	}
 }
 
 // SetLimit sets a new Limit for the limiter.
 func (l *ICMPRateLimiter) SetLimit(limit rate.Limit) {
-	l.limit = limit
 	l.limiter.SetLimitAt(l.clock.Now(), limit)
 }
 
@@ -72,7 +61,6 @@ func (l *ICMPRateLimiter) Limit() rate.Limit {
 
 // SetBurst sets a new burst size for the limiter.
 func (l *ICMPRateLimiter) SetBurst(burst int) {
-	l.burst = burst
 	l.limiter.SetBurstAt(l.clock.Now(), burst)
 }
 
