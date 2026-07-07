@@ -32,6 +32,47 @@ func TestContainerUpdateNilResources(t *testing.T) {
 	}
 }
 
+func TestStripGVisorRestoreAnnotations(t *testing.T) {
+	spec := &specs.Spec{
+		Annotations: map[string]string{
+			RestoreHostPathAnnotation:                  "/var/lib/criu-dumps/runsc-test",
+			RestoreDirectAnnotation:                    "true",
+			"dev.gvisor.internal.restore.extra":        "ignored",
+			CheckpointSaveRestoreExecArgvAnnotation:    "/usr/local/bin/gvisor-cuda-hook",
+			CheckpointSaveRestoreExecTimeoutAnnotation: "10m",
+			utils.ContainerTypeAnnotation:              "sandbox",
+			"dev.gvisor.keep":                          "yes",
+			"example.com/annotation":                   "kept",
+		},
+	}
+
+	stripGVisorRestoreAnnotations(spec)
+
+	// restore.* annotations are shim-only and must be stripped.
+	for _, key := range []string{
+		RestoreHostPathAnnotation,
+		RestoreDirectAnnotation,
+		"dev.gvisor.internal.restore.extra",
+	} {
+		if _, ok := spec.Annotations[key]; ok {
+			t.Errorf("stripGVisorRestoreAnnotations kept %q", key)
+		}
+	}
+	// checkpoint.* (and everything else) must survive — the sentry consumes the
+	// save-restore-exec annotations.
+	for key, want := range map[string]string{
+		CheckpointSaveRestoreExecArgvAnnotation:    "/usr/local/bin/gvisor-cuda-hook",
+		CheckpointSaveRestoreExecTimeoutAnnotation: "10m",
+		utils.ContainerTypeAnnotation:              "sandbox",
+		"dev.gvisor.keep":                          "yes",
+		"example.com/annotation":                   "kept",
+	} {
+		if got := spec.Annotations[key]; got != want {
+			t.Errorf("stripGVisorRestoreAnnotations annotation %q = %q, want %q", key, got, want)
+		}
+	}
+}
+
 func TestCgroupPath(t *testing.T) {
 	for _, tc := range []struct {
 		name string
