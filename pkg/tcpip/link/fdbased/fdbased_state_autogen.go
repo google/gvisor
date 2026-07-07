@@ -121,8 +121,6 @@ func (o *Options) StateFields() []string {
 		"InterfaceIndex",
 		"GRO",
 		"ProcessorsPerChannel",
-		"IsPacketSocket",
-		"PreConfigured",
 	}
 }
 
@@ -146,8 +144,6 @@ func (o *Options) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(12, &o.InterfaceIndex)
 	stateSinkObject.Save(13, &o.GRO)
 	stateSinkObject.Save(14, &o.ProcessorsPerChannel)
-	stateSinkObject.Save(15, &o.IsPacketSocket)
-	stateSinkObject.Save(16, &o.PreConfigured)
 }
 
 func (o *Options) afterLoad(context.Context) {}
@@ -169,8 +165,6 @@ func (o *Options) StateLoad(ctx context.Context, stateSourceObject state.Source)
 	stateSourceObject.Load(12, &o.InterfaceIndex)
 	stateSourceObject.Load(13, &o.GRO)
 	stateSourceObject.Load(14, &o.ProcessorsPerChannel)
-	stateSourceObject.Load(15, &o.IsPacketSocket)
-	stateSourceObject.Load(16, &o.PreConfigured)
 }
 
 func (e *InjectableEndpoint) StateTypeName() string {
