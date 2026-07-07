@@ -219,6 +219,12 @@ func SetContainerResources(pod *v13.Pod, containerName string, requests Containe
 	if containerToChange == nil {
 		return nil, fmt.Errorf("container %q not found", containerName)
 	}
+	if containerToChange.Resources.Limits == nil {
+		containerToChange.Resources.Limits = make(v13.ResourceList)
+	}
+	if containerToChange.Resources.Requests == nil {
+		containerToChange.Resources.Requests = make(v13.ResourceList)
+	}
 	for _, resourceList := range []v13.ResourceList{
 		containerToChange.Resources.Limits,
 		containerToChange.Resources.Requests,

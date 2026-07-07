@@ -313,6 +313,37 @@ func TestSetContainerResources(t *testing.T) {
 				verifyResource(t, c.Resources.Requests, v23.ResourceMemory, "1Gi")
 			},
 		},
+		{
+			name: "handles nil Limits and Requests maps",
+			pod: &v23.Pod{
+				Spec: v23.PodSpec{
+					NodeSelector: map[string]string{
+						"num-accelerators": "4",
+					},
+					Containers: []v23.Container{
+						{
+							Name: "container-1",
+							Resources: v23.ResourceRequirements{
+								Limits:   nil,
+								Requests: nil,
+							},
+						},
+					},
+				},
+			},
+			containerName: "",
+			requests: ContainerResourcesRequest{
+				GPU: true,
+			},
+			wantPod: func(t *testing.T, got *v23.Pod) {
+				if got == nil {
+					t.Fatal("got nil pod")
+				}
+				c := got.Spec.Containers[0]
+				verifyResource(t, c.Resources.Limits, "nvidia.com/gpu", "4")
+				verifyResource(t, c.Resources.Requests, "nvidia.com/gpu", "4")
+			},
+		},
 	}
 
 	for _, tc := range testCases {
