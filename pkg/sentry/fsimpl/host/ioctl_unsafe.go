@@ -77,3 +77,25 @@ func ioctlSetWinsize(fd int, w *linux.Winsize) error {
 	}
 	return nil
 }
+
+const (
+	tiocgwinsz_fuse = 0x800854f0
+	tiocswinsz_fuse = 0x400854f1
+)
+
+func ioctlGetWinsizeFuse(fd int) (*linux.Winsize, error) {
+	var w linux.Winsize
+	_, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), tiocgwinsz_fuse, uintptr(unsafe.Pointer(&w)))
+	if errno != 0 {
+		return nil, errno
+	}
+	return &w, nil
+}
+
+func ioctlSetWinsizeFuse(fd int, w *linux.Winsize) error {
+	_, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), tiocswinsz_fuse, uintptr(unsafe.Pointer(w)))
+	if errno != 0 {
+		return errno
+	}
+	return nil
+}

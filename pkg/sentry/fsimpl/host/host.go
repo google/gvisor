@@ -19,6 +19,7 @@ package host
 import (
 	"fmt"
 	"math"
+	"runtime"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -89,8 +90,7 @@ func isEpollable(fd int) bool {
 		Fd:     int32(fd),
 		Events: unix.EPOLLIN,
 	}
-	err = unix.EpollCtl(epollfd, unix.EPOLL_CTL_ADD, fd, &event)
-	return err == nil
+	return unix.EpollCtl(epollfd, unix.EPOLL_CTL_ADD, fd, &event) == nil
 }
 
 // inode implements kernfs.Inode.
@@ -199,11 +199,26 @@ func newInode(ctx context.Context, fs *filesystem, hostFD int, savable bool, res
 	// Determine if hostFD is seekable.
 	_, err := unix.Seek(hostFD, 0, linux.SEEK_CUR)
 	seekable := !linuxerr.Equals(linuxerr.ESPIPE, err)
+	if isTTY {
+		seekable = false
+	}
 	// We expect regular files to be seekable, as this is required for them to
 	// be memory-mappable.
-	if !seekable && fileType == unix.S_IFREG {
+	if !seekable && fileType == unix.S_IFREG && !isTTY {
 		ctx.Infof("host.newInode: host FD %d is a non-seekable regular file", hostFD)
 		return nil, linuxerr.ESPIPE
+	}
+
+	epollable := isEpollable(hostFD)
+	// Detect FUSE-backed FDs and force them to non-epollable, since FUSE
+	// does not support epoll for blocking read semantics.
+	if fileType != linux.S_IFIFO {
+		var statfs unix.Statfs_t
+		if err := unix.Fstatfs(hostFD, &statfs); err == nil {
+			if statfs.Type == unix.FUSE_SUPER_MAGIC {
+				epollable = false
+			}
+		}
 	}
 
 	i := &inode{
@@ -211,7 +226,7 @@ func newInode(ctx context.Context, fs *filesystem, hostFD int, savable bool, res
 		ino:        fs.NextIno(),
 		ftype:      uint16(fileType),
 		devMinor:   fs.devMinor,
-		epollable:  isEpollable(hostFD),
+		epollable:  epollable,
 		seekable:   seekable,
 		savable:    savable,
 		restoreKey: restoreKey,
@@ -856,7 +871,16 @@ func (f *fileDescription) Read(ctx context.Context, dst usermem.IOSequence, opts
 		if err != nil {
 			return bufN, err
 		}
-		n, err := readFromHostFD(ctx, i.hostFD, dst, -1, opts.Flags)
+		var n int64
+		if !i.epollable {
+			runtime.LockOSThread()
+			defer runtime.UnlockOSThread()
+			if task := kernel.TaskFromContext(ctx); task != nil {
+				task.SetHostTID(unix.Gettid())
+				defer task.ClearHostTID()
+			}
+		}
+		n, err = readFromHostFD(ctx, i.hostFD, dst, -1, opts.Flags)
 		total := bufN + n
 		if isBlockError(err) {
 			// If we got any data at all, return it as a "completed" partial read
