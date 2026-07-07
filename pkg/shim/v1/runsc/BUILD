@@ -38,6 +38,7 @@ go_library(
         "@com_github_containerd_containerd_api//events:go_default_library",
         "@com_github_containerd_containerd_api//runtime/sandbox/v1:go_default_library",
         "@com_github_containerd_containerd_api//runtime/task/v2:go_default_library",
+        "@com_github_containerd_containerd_api//types:go_default_library",
         "@com_github_containerd_containerd_api//types/runc/options:go_default_library",
         "@com_github_containerd_containerd_api//types/task:go_default_library",
         "@com_github_containerd_containerd_v2//cmd/containerd-shim-runc-v2/process:go_default_library",
@@ -59,6 +60,7 @@ go_library(
         "@com_github_containerd_typeurl_v2//:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
         "@com_github_sirupsen_logrus//:go_default_library",
+        "@org_golang_google_protobuf//types/known/anypb:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
