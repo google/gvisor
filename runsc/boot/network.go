@@ -120,6 +120,13 @@ type FDBasedLink struct {
 	// ProcessorsPerChannel controls how many goroutines are used to handle
 	// packets on each channel.
 	ProcessorsPerChannel int
+
+	// IsPacket indicates whether each FD in this link is a packet socket.
+	IsPacket []bool
+
+	// PreConfigured indicates that getsockname and setsockopt(PACKET_FANOUT)
+	// have already been performed on the host FDs.
+	PreConfigured bool
 }
 
 // BindOpt indicates whether the sentry or runsc process is responsible for
@@ -367,6 +374,8 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 				RXChecksumOffload:    link.RXChecksumOffload,
 				GRO:                  link.GVisorGRO,
 				ProcessorsPerChannel: link.ProcessorsPerChannel,
+				IsPacketSocket:       link.IsPacket,
+				PreConfigured:        link.PreConfigured,
 			})
 			if err != nil {
 				return err

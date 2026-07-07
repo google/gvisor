@@ -51,7 +51,8 @@ type vfioFD struct {
 	// If hostFD is -1, this file descriptor has been restored from a save state,
 	// and should be treated as invalid. Any operations on this file descriptor
 	// will effectively be a no-op.
-	hostFD int32
+	hostFD        int32
+	containerName string
 
 	device     *vfioDevice
 	queue      waiter.Queue
@@ -68,6 +69,7 @@ func (fd *vfioFD) isRestored() bool {
 
 // Release implements vfs.FileDescriptionImpl.Release.
 func (fd *vfioFD) Release(context.Context) {
+	defer fd.device.tpuproxy.untrackFD(fd)
 	if fd.isRestored() {
 		return
 	}

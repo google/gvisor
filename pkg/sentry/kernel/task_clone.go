@@ -20,6 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/nsfs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
@@ -45,10 +46,12 @@ func failCloneAfterTaskCreation(nt *Task) {
 	// for group signal delivery, had children reparented to it, etc.
 	// Thus we can't just drop it on the floor. Instead, instruct the
 	// task goroutine to exit immediately, as quietly as possible.
+	nt.k.tasks.mu.Lock()
 	nt.exitTracerNotified = true
 	nt.exitTracerAcked = true
 	nt.exitParentNotified = true
 	nt.exitParentAcked = true
+	nt.k.tasks.mu.Unlock()
 	nt.runState = (*runExitMain)(nil)
 }
 
@@ -325,15 +328,10 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 		cfg.InheritParent = t
 	}
 	if args.Flags&linux.CLONE_PIDFD != 0 {
-		if args.Flags&linux.CLONE_THREAD != 0 {
-			cfg.pidFDMode = makeThreadedPIDFD
-		} else {
-			cfg.pidFDMode = makePIDFD
-		}
-		cfg.pidFDAddr = hostarch.Addr(args.Pidfd)
+		cfg.makePIDFD = true
 	}
-	nt, pidFD, err := t.tg.pidns.owner.cloneNewTask(t, cfg)
-	// If cloneNewTask succeeds, we transfer references to nt. If cloneNewTask fails, it does
+	nt, err := t.tg.pidns.owner.NewTask(t, cfg)
+	// If NewTask succeeds, we transfer references to nt. If cloneNewTask fails, it does
 	// the cleanup for us.
 	cu.Release()
 	if err != nil {
@@ -356,6 +354,31 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	// nt that it must receive before its task goroutine starts running.
 	tid := nt.k.tasks.Root.IDOfTask(nt)
 	defer nt.Start(tid)
+
+	var pidFD int32 = -1
+	if args.Flags&linux.CLONE_PIDFD != 0 {
+		isThread := args.Flags&linux.CLONE_THREAD != 0
+		vfsfd, err := t.pidFDOpen(nt.pid, isThread, false /*nonblock*/)
+		if err != nil {
+			failCloneAfterTaskCreation(nt)
+			return 0, nil, err
+		}
+		defer vfsfd.DecRef(t)
+
+		fd, err := t.NewFDFrom(0, vfsfd, FDFlags{CloseOnExec: true})
+		if err != nil {
+			failCloneAfterTaskCreation(nt)
+			return 0, nil, err
+		}
+		pidFD = fd
+		if _, err := primitive.CopyInt32Out(t, hostarch.Addr(args.Pidfd), fd); err != nil {
+			failCloneAfterTaskCreation(nt)
+			if oldFile := t.FDTable().Remove(t, fd); oldFile != nil {
+				oldFile.DecRef(t)
+			}
+			return 0, nil, err
+		}
+	}
 
 	if seccheck.Global.Enabled(seccheck.PointClone) {
 		mask, info := getCloneSeccheckInfo(t, nt, args.Flags)

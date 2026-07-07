@@ -234,6 +234,14 @@ type Options struct {
 	// ProcessorsPerChannel is the number of goroutines used to handle packets
 	// from each FD.
 	ProcessorsPerChannel int
+
+	// IsPacketSocket indicates whether each FD is a packet socket.
+	// If nil, getsockname will be called.
+	IsPacketSocket []bool
+
+	// PreConfigured indicates that socket setup (getsockname, setsockopt)
+	// has already been performed on the host.
+	PreConfigured bool
 }
 
 // fallbackFanoutID is used only when PACKET_FANOUT_FLAG_UNIQUEID is not
@@ -297,12 +305,12 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 	fid := int32(-1)
 
 	// Create per channel dispatchers.
-	for _, fd := range opts.FDs {
+	for i, fd := range opts.FDs {
 		if err := unix.SetNonblock(fd, true); err != nil {
 			return nil, fmt.Errorf("unix.SetNonblock(%v) failed: %v", fd, err)
 		}
 
-		isSocket, err := isSocketFD(fd)
+		isSocket, err := IsSocketFD(fd)
 		if err != nil {
 			return nil, err
 		}
@@ -321,13 +329,27 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 			opts.ProcessorsPerChannel = max(1, runtime.GOMAXPROCS(0)/len(opts.FDs))
 		}
 
-		if isPacket, err := isPacketSocket(fd, isSocket); err != nil {
-			return nil, err
-		} else if isPacket {
-			if fid < 0 {
-				fid, err = createPacketFanoutGroup(fd)
+		var isPacket bool
+		if opts.PreConfigured {
+			if opts.IsPacketSocket != nil && i < len(opts.IsPacketSocket) {
+				isPacket = opts.IsPacketSocket[i]
 			} else {
-				err = joinPacketFanoutGroup(fd, fid)
+				return nil, fmt.Errorf("PreConfigured is true but IsPacketSocket is missing or too short (index %d, len %d)", i, len(opts.IsPacketSocket))
+			}
+		} else {
+			var err error
+			isPacket, err = IsPacketSocket(fd, isSocket)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		if isPacket && !opts.PreConfigured {
+			var err error
+			if fid < 0 {
+				fid, err = CreatePacketFanoutGroup(fd)
+			} else {
+				err = JoinPacketFanoutGroup(fd, fid)
 			}
 			if err != nil {
 				return nil, fmt.Errorf("failed to enable PACKET_FANOUT option: %v", err)
@@ -375,7 +397,8 @@ func createInboundDispatcher(e *endpoint, fd int, isSocket bool, opts *Options) 
 	return inboundDispatcher, nil
 }
 
-func isPacketSocket(fd int, isSocket bool) (bool, error) {
+// IsPacketSocket checks if the FD is an AF_PACKET socket.
+func IsPacketSocket(fd int, isSocket bool) (bool, error) {
 	if !isSocket {
 		return false, nil
 	}
@@ -387,7 +410,7 @@ func isPacketSocket(fd int, isSocket bool) (bool, error) {
 	return ok, nil
 }
 
-// createPacketFanoutGroup enables PACKET_FANOUT for the first AF_PACKET socket
+// CreatePacketFanoutGroup enables PACKET_FANOUT for the first AF_PACKET socket
 // in an endpoint and returns the fanout id the group joined.
 //
 // All AF_PACKET FDs that back the same endpoint must join the same fanout
@@ -421,7 +444,7 @@ func isPacketSocket(fd int, isSocket bool) (bool, error) {
 // proper value if zero.
 //
 // See: https://github.com/torvalds/linux/blob/7acac4b3196caee5e21fb5ea53f8bc124e6a16fc/net/packet/af_packet.c#L3881
-func createPacketFanoutGroup(fd int) (int32, error) {
+func CreatePacketFanoutGroup(fd int) (int32, error) {
 	const fanoutType = unix.PACKET_FANOUT_HASH
 	fanoutArg := (fanoutType | unix.PACKET_FANOUT_FLAG_UNIQUEID) << 16
 	if err := unix.SetsockoptInt(fd, unix.SOL_PACKET, unix.PACKET_FANOUT, fanoutArg); err != nil {
@@ -441,13 +464,15 @@ func createPacketFanoutGroup(fd int) (int32, error) {
 	return int32(fanoutArg & 0xffff), nil
 }
 
-func joinPacketFanoutGroup(fd int, fID int32) error {
+// JoinPacketFanoutGroup joins the FD to the specified fanout group.
+func JoinPacketFanoutGroup(fd int, fID int32) error {
 	const fanoutType = unix.PACKET_FANOUT_HASH
 	fanoutArg := (int(fID) & 0xffff) | fanoutType<<16
 	return unix.SetsockoptInt(fd, unix.SOL_PACKET, unix.PACKET_FANOUT, fanoutArg)
 }
 
-func isSocketFD(fd int) (bool, error) {
+// IsSocketFD checks if the FD is a socket.
+func IsSocketFD(fd int) (bool, error) {
 	var stat unix.Stat_t
 	if err := unix.Fstat(fd, &stat); err != nil {
 		return false, fmt.Errorf("unix.Fstat(%v,...) failed: %v", fd, err)
@@ -932,7 +957,7 @@ func (e *InjectableEndpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber,
 // NewInjectable creates a new fd-based InjectableEndpoint.
 func NewInjectable(fd int, mtu uint32, capabilities stack.LinkEndpointCapabilities) (*InjectableEndpoint, error) {
 	unix.SetNonblock(fd, true)
-	isSocket, err := isSocketFD(fd)
+	isSocket, err := IsSocketFD(fd)
 	if err != nil {
 		return nil, err
 	}
