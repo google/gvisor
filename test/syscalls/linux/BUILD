@@ -5084,6 +5084,7 @@ cc_binary(
         "//test/util:memory_util",
         "//test/util:multiprocess_util",
         "//test/util:posix_error",
+        "//test/util:save_util",
         "//test/util:test_main",
         "//test/util:test_util",
         "//test/util:thread_util",
