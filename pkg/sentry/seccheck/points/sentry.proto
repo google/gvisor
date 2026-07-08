@@ -59,6 +59,10 @@ message ExecveInfo {
   // Note that this requires reading the entire file into memory, which is
   // likely to be extremely slow.
   bytes binary_sha256 = 8;
+
+  // binary_overlayfs_upper indicates whether the executable binary is on
+  // the upper layer of the overlay filesystem.
+  bool binary_overlayfs_upper = 9;
 }
 
 message ExitNotifyParentInfo {

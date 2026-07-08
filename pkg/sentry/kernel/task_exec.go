@@ -72,6 +72,7 @@ import (
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
+	overlay "gvisor.dev/gvisor/pkg/sentry/fsimpl/overlay"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/loader"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
@@ -470,6 +471,7 @@ func getExecveSeccheckInfo(t *Task, argv, env []string, executable *vfs.FileDesc
 	if executable != nil {
 		info.BinaryPath = pathname
 		if fields.Local.Contains(seccheck.FieldSentryExecveBinaryInfo) {
+			info.BinaryOverlayfsUpper = overlay.IsCopiedUp(executable.Dentry())
 			statOpts := vfs.StatOptions{
 				Mask: linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID,
 			}

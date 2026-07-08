@@ -387,6 +387,7 @@ go_library(
         "//pkg/sentry/fsimpl/lock",
         "//pkg/sentry/fsimpl/mqfs",
         "//pkg/sentry/fsimpl/nsfs",
+        "//pkg/sentry/fsimpl/overlay",
         "//pkg/sentry/fsimpl/pipefs",
         "//pkg/sentry/fsimpl/sockfs",
         "//pkg/sentry/fsimpl/timerfd",

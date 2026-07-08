@@ -428,6 +428,10 @@ func checkSentryExec(msg test.Message) error {
 		return fmt.Errorf("BinarySha256, want: %q, got: %q", got, want)
 	}
 
+	if p.BinaryOverlayfsUpper {
+		return fmt.Errorf("BinaryOverlayfsUpper, want: false, got: true")
+	}
+
 	return nil
 }
 
