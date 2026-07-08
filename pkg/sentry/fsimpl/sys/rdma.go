@@ -379,6 +379,12 @@ func (fs *filesystem) newRDMASysfsEntries(ctx context.Context, creds *auth.Crede
 			m[name] = fs.newStaticFile(ctx, creds, defaultSysMode, val+"\n")
 		}
 	}
+	// addHostFile serves attrs whose host values can change after collect.
+	// Requires the corresponding path to be bind-mounted into the sentry
+	// chroot (see rdmaProxyUpdateChroot).
+	addHostFile := func(m map[string]kernfs.Inode, name, hostPath string) {
+		m[name] = fs.newHostFile(ctx, creds, defaultSysMode, hostPath)
+	}
 	addFile(ibVerbsDir, "abi_version", data.VerbsABIVersion)
 
 	for _, dev := range data.Devices {
@@ -435,23 +441,24 @@ func (fs *filesystem) newRDMASysfsEntries(ctx context.Context, creds *auth.Crede
 			for _, port := range dev.Ports {
 				log.Infof("rdma sysfs:   port %s: state=%q link_layer=%q rate=%q",
 					port.Number, port.State, port.LinkLayer, port.Rate)
+				portBase := path.Join("/sys/class/infiniband", dev.IBDev, "ports", port.Number)
 				portEntries := map[string]kernfs.Inode{}
-				addFile(portEntries, "state", port.State)
-				addFile(portEntries, "phys_state", port.PhysState)
+				addHostFile(portEntries, "state", path.Join(portBase, "state"))
+				addHostFile(portEntries, "phys_state", path.Join(portBase, "phys_state"))
 				addFile(portEntries, "link_layer", port.LinkLayer)
-				addFile(portEntries, "rate", port.Rate)
-				addFile(portEntries, "lid", port.LID)
-				addFile(portEntries, "sm_lid", port.SMLID)
-				addFile(portEntries, "sm_sl", port.SMSL)
+				addHostFile(portEntries, "rate", path.Join(portBase, "rate"))
+				addHostFile(portEntries, "lid", path.Join(portBase, "lid"))
+				addHostFile(portEntries, "sm_lid", path.Join(portBase, "sm_lid"))
+				addHostFile(portEntries, "sm_sl", path.Join(portBase, "sm_sl"))
 				addFile(portEntries, "cap_mask", port.CapMask)
 				if len(port.GIDs) > 0 {
 					gidsEntries := map[string]kernfs.Inode{}
 					typesEntries := map[string]kernfs.Inode{}
 					ndevsEntries := map[string]kernfs.Inode{}
 					for _, gid := range port.GIDs {
-						addFile(gidsEntries, gid.Index, gid.GID)
+						addHostFile(gidsEntries, gid.Index, path.Join(portBase, "gids", gid.Index))
 						addFile(typesEntries, gid.Index, gid.Type)
-						addFile(ndevsEntries, gid.Index, gid.NetDev)
+						addHostFile(ndevsEntries, gid.Index, path.Join(portBase, "gid_attrs", "ndevs", gid.Index))
 					}
 					log.Infof("rdma sysfs:   port %s: %d gids, gidsEntries=%d typesEntries=%d ndevsEntries=%d",
 						port.Number, len(port.GIDs), len(gidsEntries), len(typesEntries), len(ndevsEntries))
@@ -483,16 +490,20 @@ func (fs *filesystem) newRDMANetClassEntries(ctx context.Context, creds *auth.Cr
 			m[name] = fs.newStaticFile(ctx, creds, defaultSysMode, val+"\n")
 		}
 	}
+	addHostFile := func(m map[string]kernfs.Inode, name, hostPath string) {
+		m[name] = fs.newHostFile(ctx, creds, defaultSysMode, hostPath)
+	}
 	for _, dev := range data.NetDevices {
+		netBase := path.Join("/sys/class/net", dev.Name)
 		entries := make(map[string]kernfs.Inode)
 		addFile(entries, "type", dev.Type)
-		addFile(entries, "address", dev.Address)
-		addFile(entries, "mtu", dev.MTU)
+		addHostFile(entries, "address", path.Join(netBase, "address"))
+		addHostFile(entries, "mtu", path.Join(netBase, "mtu"))
 		addFile(entries, "dev_id", dev.DevID)
 		addFile(entries, "dev_port", dev.DevPort)
-		addFile(entries, "speed", dev.Speed)
-		addFile(entries, "duplex", dev.Duplex)
-		addFile(entries, "operstate", dev.OperState)
+		addHostFile(entries, "speed", path.Join(netBase, "speed"))
+		addHostFile(entries, "duplex", path.Join(netBase, "duplex"))
+		addHostFile(entries, "operstate", path.Join(netBase, "operstate"))
 		if strings.HasPrefix(dev.DevicePath, "/sys/") {
 			target := "../../../" + strings.TrimPrefix(dev.DevicePath, "/sys/")
 			entries["device"] = kernfs.NewStaticSymlink(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), target)

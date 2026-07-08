@@ -233,11 +233,13 @@ func rdmaProxyUpdateChroot(chroot string, spec *specs.Spec, conf *config.Config)
 	}
 	// Collect RDMA device data from the real host sysfs (accessible now,
 	// before pivot_root) and serialize it as JSON into the chroot. Stage 2
-	// deserializes this instead of trying to read sysfs — avoids all the
-	// symlink resolution and depth-limiting complexity of copying sysfs
-	// trees. The RoCE netdev backing each ibdev should have already been
-	// moved into the sandbox netns by MoveRDMANetdevsIntoSandbox; the GID
-	// sysfs entries we read here therefore include the kernel's normal
+	// deserializes this for mostly-static attrs. Dynamic port/netdev attrs
+	// are served via hostFile and need the bind mounts below so those
+	// paths remain openable after pivot_root.
+	//
+	// The RoCE netdev backing each ibdev should have already been moved
+	// into the sandbox netns by MoveRDMANetdevsIntoSandbox; the GID sysfs
+	// entries we read here therefore include the kernel's normal
 	// IPv4-mapped RoCE v2 entries.
 	data := sys.CollectRDMADeviceData()
 	if data == nil {
@@ -246,6 +248,49 @@ func rdmaProxyUpdateChroot(chroot string, spec *specs.Spec, conf *config.Config)
 	jsonPath := filepath.Join(chroot, sys.RDMADataPath)
 	if err := sys.SerializeRDMAData(data, jsonPath); err != nil {
 		return fmt.Errorf("serializing RDMA data: %w", err)
+	}
+
+	const bindFlags = unix.MS_BIND | unix.MS_RDONLY
+
+	// Only bind-mount RDMA-backed netdevs discovered via GID ndevs — not
+	// all of /sys/class/net, which would expose unrelated host interfaces
+	// (and confuse --network=sandbox / hostinet modes).
+	seenNetDev := make(map[string]struct{})
+	for _, netDev := range data.NetDevices {
+		if netDev.Name == "" {
+			continue
+		}
+		if _, ok := seenNetDev[netDev.Name]; ok {
+			continue
+		}
+		seenNetDev[netDev.Name] = struct{}{}
+		netPath := path.Join("/sys/class/net", netDev.Name)
+		if _, err := os.Stat(netPath); err != nil {
+			log.Infof("rdma chroot: %s not present, skipping bind mount: %v", netPath, err)
+			continue
+		}
+		if err := mountInChroot(chroot, netPath, netPath, "bind", bindFlags); err != nil {
+			return fmt.Errorf("error mounting %q in chroot: %w", netPath, err)
+		}
+	}
+
+	seenIBDev := make(map[string]struct{})
+	for _, dev := range data.Devices {
+		if dev.IBDev == "" {
+			continue
+		}
+		if _, ok := seenIBDev[dev.IBDev]; ok {
+			continue
+		}
+		seenIBDev[dev.IBDev] = struct{}{}
+		portsPath := path.Join("/sys/class/infiniband", dev.IBDev, "ports")
+		if _, err := os.Stat(portsPath); err != nil {
+			log.Infof("rdma chroot: %s not present, skipping bind mount: %v", portsPath, err)
+			continue
+		}
+		if err := mountInChroot(chroot, portsPath, portsPath, "bind", bindFlags); err != nil {
+			return fmt.Errorf("error mounting %q in chroot: %w", portsPath, err)
+		}
 	}
 	return nil
 }
