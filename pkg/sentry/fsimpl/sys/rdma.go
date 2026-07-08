@@ -170,6 +170,15 @@ func CollectRDMADeviceData() *RDMAData {
 		}
 		log.Infof("rdma collect: %s → ibdev=%s dev=%s node_type=%q fw_ver=%q pci=%s numa=%s",
 			dent.Name(), ibdev, dev.Dev, dev.NodeType, dev.FWVer, dev.PCISlotName, dev.NUMANode)
+
+		// Primary netdev discovery: kernel lists RoCE/IPoIB netdevs under
+		// the IB device's PCI node at device/net/<name>. This does not
+		// depend on GID ndevs being populated (often empty at collect time)
+		// or on the ibdev2netdev host utility.
+		for _, name := range netdevsForIBDev(ibdev) {
+			netDevices[name] = struct{}{}
+		}
+
 		portsPath := path.Join(ibDir, "ports")
 		portDents, err := os.ReadDir(portsPath)
 		if err == nil {
@@ -207,6 +216,8 @@ func CollectRDMADeviceData() *RDMAData {
 							Type:   typeVal,
 							NetDev: ndevVal,
 						})
+						// Secondary: nonempty GID ndevs (may be blank when
+						// the netdev is in another netns at collect time).
 						if ndevVal != "" {
 							netDevices[ndevVal] = struct{}{}
 						}
@@ -220,8 +231,32 @@ func CollectRDMADeviceData() *RDMAData {
 		data.Devices = append(data.Devices, dev)
 	}
 	data.NetDevices = collectRDMANetDevices(netDevices)
-	log.Infof("rdma collect: collected %d device(s)", len(data.Devices))
+	log.Infof("rdma collect: collected %d device(s), %d netdev(s)", len(data.Devices), len(data.NetDevices))
 	return data
+}
+
+// netdevsForIBDev returns netdev names bound to ibdev via
+// /sys/class/infiniband/<ibdev>/device/net/*. This is the kernel's
+// ibdev↔netdev association (what ibdev2netdev prints) without requiring
+// that host utility.
+func netdevsForIBDev(ibdev string) []string {
+	netDir := path.Join("/sys/class/infiniband", ibdev, "device", "net")
+	dents, err := os.ReadDir(netDir)
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, dent := range dents {
+		// Entries are directories named after the netdev (e.g. rdma0).
+		if dent.Name() == "." || dent.Name() == ".." {
+			continue
+		}
+		names = append(names, dent.Name())
+	}
+	if len(names) > 0 {
+		log.Infof("rdma collect: %s device/net → %v", ibdev, names)
+	}
+	return names
 }
 
 func collectRDMANetDevices(names map[string]struct{}) []RDMANetDeviceData {
@@ -231,6 +266,10 @@ func collectRDMANetDevices(names map[string]struct{}) []RDMANetDeviceData {
 	var netDevices []RDMANetDeviceData
 	for name := range names {
 		netDir := path.Join("/sys/class/net", name)
+		if _, err := os.Stat(netDir); err != nil {
+			log.Infof("rdma collect: netdev %s not in this netns (%v), skipping attrs", name, err)
+			continue
+		}
 		devicePath, err := filepath.EvalSymlinks(path.Join(netDir, "device"))
 		if err != nil {
 			devicePath = ""

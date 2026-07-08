@@ -252,9 +252,9 @@ func rdmaProxyUpdateChroot(chroot string, spec *specs.Spec, conf *config.Config)
 
 	const bindFlags = unix.MS_BIND | unix.MS_RDONLY
 
-	// Only bind-mount RDMA-backed netdevs discovered via GID ndevs — not
-	// all of /sys/class/net, which would expose unrelated host interfaces
-	// (and confuse --network=sandbox / hostinet modes).
+	// Only bind-mount RDMA-backed netdevs from CollectRDMADeviceData
+	// (primarily /sys/class/infiniband/<ibdev>/device/net/*) — not all of
+	// /sys/class/net, which would expose unrelated host interfaces.
 	seenNetDev := make(map[string]struct{})
 	for _, netDev := range data.NetDevices {
 		if netDev.Name == "" {
