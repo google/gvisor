@@ -44,7 +44,7 @@ func TestSendWindowSizesPiggyback(t *testing.T) {
 		expectedPayload2 []byte
 		enqueue          bool
 	}{
-		// Expect the first segment to be split as it cannot be accomodated in
+		// Expect the first segment to be split as it cannot be accommodated in
 		// the sender window. This means we need not enqueue a new segment after
 		// the first segment.
 		{"WindowSmallerThanSegment", segmentSize - 1, sampleData[:(segmentSize - 1)], sampleData[(segmentSize - 1):], false /* enqueue */},

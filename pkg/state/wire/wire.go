@@ -509,7 +509,7 @@ func loadMap(r *Reader) Map {
 func (m *Map) save(w *Writer) {
 	l := Uint(len(m.Keys))
 	if int(l) != len(m.Values) {
-		panic(fmt.Sprintf("mismatched keys (%d) Aand values (%d)", len(m.Keys), len(m.Values)))
+		panic(fmt.Sprintf("mismatched keys (%d) and values (%d)", len(m.Keys), len(m.Values)))
 	}
 	l.save(w)
 	if l == 0 {

@@ -1502,7 +1502,7 @@ TEST_P(IPv4UDPUnboundSocketTest, ReuseAddrDistribution) {
 
     // Send a new message to the SO_REUSEADDR group. We use a new socket each
     // time so that a new ephemeral port will be used each time. This ensures
-    // that we aren't doing REUSEPORT-like hash load blancing.
+    // that we aren't doing REUSEPORT-like hash load balancing.
     auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
     char send_buf[kMessageSize];
     RandomizeBuffer(send_buf, sizeof(send_buf));

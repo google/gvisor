@@ -239,7 +239,7 @@ func getBufReadWriterParams(maxIOBytes64 uint64, maxParallel, maxSize int) (byte
 	if maxSize <= 0 {
 		return maxIOBytes, maxParallel
 	}
-	// Can we accomodate at least two reads/writes of size maxIOBytes? We don't
+	// Can we accommodate at least two reads/writes of size maxIOBytes? We don't
 	// want to set the read/write size below maxIOBytes unless necessary, and
 	// two is the minimum number of chunks required to have any amount of
 	// async prefetching/writeback.

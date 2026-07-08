@@ -75,7 +75,7 @@ Packetdrill tests are **multi-platform** and can run against both Linux and
 gVisor. They are **concise** and use a special packetdrill scripting language.
 They are **more flexible** than a syscall test in that they can send packets
 that a syscall test would have difficulty sending, like a packet with a
-calcuated ACK number. But they are also somewhat limimted in flexibiilty in that
+calculated ACK number. But they are also somewhat limited in flexibility in that
 they can't do tests with multiple sockets. They have **no control-flow** ability
 like variables or conditionals. For example, it isn't possible to send a packet
 that depends on the window size of a previous packet because the packetdrill

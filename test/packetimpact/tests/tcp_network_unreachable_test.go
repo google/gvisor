@@ -30,7 +30,7 @@ func init() {
 }
 
 // TestTCPSynSentUnreachable verifies that TCP connections fail immediately when
-// an ICMP destination unreachable message is sent in response to the inital
+// an ICMP destination unreachable message is sent in response to the initial
 // SYN.
 func TestTCPSynSentUnreachable(t *testing.T) {
 	for _, tt := range []struct {
