@@ -579,3 +579,17 @@ func (m *machine) getMaxVCPU() {
 func archPhysicalRegions(physicalRegions []physicalRegion) []physicalRegion {
 	return physicalRegions
 }
+
+const mapEntireAddressSpaceDefault = false
+
+func initFaultBlocks() {
+	faultBlockSize = uintptr(8 << 30) // 8 GiB
+	faultBlockMask = ^uintptr(faultBlockSize - 1)
+}
+
+func archOverrideFaultBlocks() {
+	// Increase faultBlockSize to be sure that we will not reach the limit.
+	// faultBlockSize has to equal or less than KVM_MEM_MAX_NR_PAGES.
+	faultBlockSize = uintptr(1) << 42
+	faultBlockMask = ^uintptr(faultBlockSize - 1)
+}
