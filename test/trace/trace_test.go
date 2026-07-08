@@ -106,6 +106,7 @@ func matchPoints(t *testing.T, msgs []test.Message) map[pb.MessageType]*checkers
 		pb.MessageType_MESSAGE_SENTRY_EXEC:               {checker: checkSentryExec},
 		pb.MessageType_MESSAGE_SENTRY_EXIT_NOTIFY_PARENT: {checker: checkSentryExitNotifyParent},
 		pb.MessageType_MESSAGE_SENTRY_TASK_EXIT:          {checker: checkSentryTaskExit},
+		pb.MessageType_MESSAGE_SENTRY_MMAP:               {checker: checkSentryMmap},
 		pb.MessageType_MESSAGE_SYSCALL_CLOSE:             {checker: checkSyscallClose},
 		pb.MessageType_MESSAGE_SYSCALL_CONNECT:           {checker: checkSyscallConnect},
 		pb.MessageType_MESSAGE_SYSCALL_EXECVE:            {checker: checkSyscallExecve},
@@ -256,6 +257,21 @@ func checkSentryTaskExit(msg test.Message) error {
 	p := pb.TaskExit{}
 	if err := proto.Unmarshal(msg.Msg, &p); err != nil {
 		return err
+	}
+	if err := checkContextData(p.ContextData); err != nil {
+		return err
+	}
+	return nil
+}
+
+func checkSentryMmap(msg test.Message) error {
+	p := pb.MmapInfo{}
+	if err := proto.Unmarshal(msg.Msg, &p); err != nil {
+		return err
+	}
+	// Print out mmap events
+	if p.IsInitialMmap || p.MappedPath != "" {
+		fmt.Printf("Mmap event: path=%q, ino=%d, mode=%o, uid=%d, gid=%d, initial=%v\n", p.MappedPath, p.MappedIno, p.MappedMode, p.MappedUid, p.MappedGid, p.IsInitialMmap)
 	}
 	if err := checkContextData(p.ContextData); err != nil {
 		return err

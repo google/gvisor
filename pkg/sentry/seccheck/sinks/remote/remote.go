@@ -265,6 +265,12 @@ func (r *remote) TaskExit(_ context.Context, _ seccheck.FieldSet, info *pb.TaskE
 	return nil
 }
 
+// Mmap implements seccheck.Sink.
+func (r *remote) Mmap(_ context.Context, _ seccheck.FieldSet, info *pb.MmapInfo) error {
+	r.write(info, pb.MessageType_MESSAGE_SENTRY_MMAP)
+	return nil
+}
+
 // ContainerStart implements seccheck.Sink.
 func (r *remote) ContainerStart(_ context.Context, _ seccheck.FieldSet, info *pb.Start) error {
 	r.write(info, pb.MessageType_MESSAGE_CONTAINER_START)

@@ -40,6 +40,10 @@
       },
       {
         "name": "syscall/sysno/1/exit"
+      },
+      {
+        "name": "sentry/mmap",
+        "context_fields": ["time", "container_id", "thread_id"]
       }
     ],
     "sinks": [

@@ -80,3 +80,26 @@ message TaskExit {
   // by wait*().
   int32 exit_status = 2;
 }
+
+message MmapInfo {
+  gvisor.common.ContextData context_data = 1;
+
+  // MappedPath is the path of the file backing the memory mapping, if any.
+  string mapped_path = 2;
+
+  // MappedIno is the inode number of the backing file.
+  uint64 mapped_ino = 3;
+
+  // MappedMode is the file mode (permissions and type) of the backing file.
+  uint32 mapped_mode = 4;
+
+  // MappedUid is the user ID of the owner of the backing file.
+  uint32 mapped_uid = 5;
+
+  // MappedGid is the group ID of the owner of the backing file.
+  uint32 mapped_gid = 6;
+
+  // IsInitialMmap indicates whether this mapping corresponds to the task's
+  // initial executable file.
+  bool is_initial_mmap = 7;
+}
