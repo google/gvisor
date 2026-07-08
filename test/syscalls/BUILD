@@ -582,6 +582,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:proc_pid_coredump_test",
+)
+
+syscall_test(
     test = "//test/syscalls/linux:proc_pid_oomscore_test",
 )
 

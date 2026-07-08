@@ -291,6 +291,12 @@ type ThreadGroup struct {
 	// without a matching call to SigsegvUnlock(). Decrementing
 	// sigsegvLockCount to 0 requires that the signal mutex is locked.
 	sigsegvLockCount atomicbitops.Int32
+
+	// coredumpFilter is used to track which memory regions the process requests to be
+	// saved on core dump. It can be accessed from userspace as /proc/[pid]/coredump_filter.
+	//
+	// Since gVisor does not perform core dumps, it has no effect.
+	coredumpFilter atomicbitops.Uint32
 }
 
 // NewThreadGroup returns a new, empty thread group in PID namespace pidns. The

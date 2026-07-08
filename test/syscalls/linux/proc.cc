@@ -2287,6 +2287,9 @@ TEST(ProcPidFile, SubprocessRunning) {
 
   EXPECT_THAT(ReadWhileRunning("oom_score_adj", buf, sizeof(buf)),
               SyscallSucceedsWithValue(sizeof(buf)));
+
+  EXPECT_THAT(ReadWhileRunning("coredump_filter", buf, sizeof(buf)),
+              SyscallSucceedsWithValue(sizeof(buf)));
 }
 
 // Test whether /proc/PID/ files can be read for a zombie process.
@@ -2330,6 +2333,14 @@ TEST(ProcPidFile, SubprocessZombie) {
 
   // FIXME(gvisor.dev/issue/164): Inconsistent behavior between gVisor and linux
   // on proc files.
+  //
+  // gVisor: Succeeds and returns 1.
+  // Linux 6.18: Succeeds and returns 0.
+  EXPECT_THAT(ReadWhileZombied("coredump_filter", buf, sizeof(buf)),
+              SyscallSucceeds());
+
+  // FIXME(gvisor.dev/issue/164): Inconsistent behavior between gVisor and
+  // linux.
   //
   // ~4.3: Fails and returns EACCES.
   // gVisor & 4.17: Succeeds and returns 1.
@@ -2397,6 +2408,9 @@ TEST(ProcPidFile, SubprocessExited) {
   }
 
   EXPECT_THAT(ReadWhileExited("oom_score_adj", buf, sizeof(buf)),
+              SyscallFailsWithErrno(ESRCH));
+
+  EXPECT_THAT(ReadWhileExited("coredump_filter", buf, sizeof(buf)),
               SyscallFailsWithErrno(ESRCH));
 }
 

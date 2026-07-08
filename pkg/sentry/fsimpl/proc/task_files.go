@@ -1654,3 +1654,57 @@ func (d *childrenData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 
 	return nil
 }
+
+// coredumpFilterData implements vfs.WritableDynamicBytesSource for /proc/[pid]/coredump_filter.
+//
+// +stateify savable
+type coredumpFilterData struct {
+	kernfs.DynamicBytesFile
+
+	task *kernel.Task
+}
+
+var _ dynamicInode = (*commData)(nil)
+var _ vfs.WritableDynamicBytesSource = (*commData)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (c *coredumpFilterData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	if c.task.ExitState() == kernel.TaskExitDead {
+		return linuxerr.ESRCH
+	}
+	fmt.Fprintf(buf, "%08x\n", c.task.GetCoredumpFilter())
+	return nil
+}
+
+// Write implements vfs.WritableDynamicBytesSource.Write.
+func (c *coredumpFilterData) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
+	if src.NumBytes() == 0 {
+		return 0, nil
+	}
+
+	// Limit input size so as not to impact performance if input size is large.
+	src = src.TakeFirst(hostarch.PageSize - 1)
+
+	str, err := usermem.CopyStringIn(ctx, src.IO, src.Addrs.Head().Start, int(src.Addrs.Head().Length()), src.Opts)
+	if err != nil && err != linuxerr.ENAMETOOLONG {
+		return 0, err
+	}
+
+	str = strings.TrimSpace(str)
+	base := 0
+	if strings.HasPrefix(str, "0x") {
+		str = str[2:]
+		base = 16
+	}
+	v, err := strconv.ParseUint(str, base, 32)
+	if err != nil {
+		return 0, linuxerr.EINVAL
+	}
+
+	if c.task.ExitState() == kernel.TaskExitDead {
+		return 0, linuxerr.ESRCH
+	}
+	c.task.SetCoredumpFilter(uint32(v))
+
+	return src.NumBytes(), nil
+}

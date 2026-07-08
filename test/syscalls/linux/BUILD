@@ -2118,6 +2118,23 @@ cc_binary(
 )
 
 cc_binary(
+    name = "proc_pid_coredump_test",
+    testonly = 1,
+    srcs = ["proc_pid_coredump.cc"],
+    linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
+    deps = select_gtest() + [
+        "//test/util:file_descriptor",
+        "//test/util:fs_util",
+        "//test/util:logging",
+        "//test/util:posix_error",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_binary(
     name = "proc_pid_oomscore_test",
     testonly = 1,
     srcs = ["proc_pid_oomscore.cc"],
