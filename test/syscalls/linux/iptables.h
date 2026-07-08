@@ -19,7 +19,7 @@
 #ifndef GVISOR_TEST_SYSCALLS_IPTABLES_TYPES_H_
 #define GVISOR_TEST_SYSCALLS_IPTABLES_TYPES_H_
 
-// Netfilter headers require some headers to preceed them.
+// Netfilter headers require some headers to precede them.
 // clang-format off
 #include <netinet/in.h>
 #include <stddef.h>
