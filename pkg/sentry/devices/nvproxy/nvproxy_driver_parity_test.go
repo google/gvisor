@@ -21,6 +21,7 @@ package nvproxy_driver_parity_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"regexp"
@@ -70,6 +71,9 @@ func getDriverDefs(t *testing.T, runner *parser.Runner, version nvconf.DriverVer
 	// Run parser
 	defs, err := runner.ParseDriver(version)
 	if err != nil {
+		if errors.Is(err, parser.ErrDriverSourceNotFound) {
+			t.Skipf("Skipping parity test for %s because driver source is not available: %v", version, err)
+		}
 		t.Fatalf("failed to run driver_ast_parser: %v", err)
 	}
 

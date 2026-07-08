@@ -15,14 +15,19 @@
 package parser
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path"
+	"strings"
 
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 )
+
+// ErrDriverSourceNotFound is returned when the driver source code cannot be found.
+var ErrDriverSourceNotFound = errors.New("driver source not found")
 
 // GitRepoURL is the URL for the NVIDIA open-gpu-kernel-modules repo.
 const GitRepoURL = "https://github.com/NVIDIA/open-gpu-kernel-modules.git"
@@ -41,6 +46,9 @@ func CloneDriverSource(dir string, version nvconf.DriverVersion) (*DriverSourceD
 	}
 	cmd := exec.Command("git", args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
+		if strings.Contains(string(out), "not found in upstream origin") {
+			return nil, fmt.Errorf("%w: %s", ErrDriverSourceNotFound, string(out))
+		}
 		return nil, fmt.Errorf("failed to clone %s: %w\n%s", version, err, string(out))
 	}
 	return &DriverSourceDir{
