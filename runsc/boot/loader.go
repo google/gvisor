@@ -254,6 +254,9 @@ type Loader struct {
 
 	hostTHP HostTHP
 
+	// sandboxShutdownCh is closed when the sandbox is requested to shut down.
+	sandboxShutdownCh chan struct{}
+
 	// mu guards the fields below.
 	mu sync.Mutex
 
@@ -542,6 +545,7 @@ func New(args Args) (*Loader, error) {
 		saveCheckpointGofer:   args.SaveCheckpointGofer,
 		fsSaveFDs:             args.FSSaveFDs,
 		fsSaveCheckpointGofer: args.FSSaveCheckpointGofer,
+		sandboxShutdownCh:     make(chan struct{}),
 	}
 
 	if args.NumCPU == 0 {
@@ -1094,35 +1098,37 @@ func (l *Loader) run() error {
 			return err
 		}
 
-		// Create the root container init task. It will begin running
-		// when the kernel is started.
-		var (
-			tg  *kernel.ThreadGroup
-			err error
-		)
-		tg, ep.tty, err = l.createContainerProcess(&l.root)
-		if err != nil {
-			return err
-		}
+		if !l.root.conf.Sandbox {
+			// Create the root container init task. It will begin running
+			// when the kernel is started.
+			var (
+				tg  *kernel.ThreadGroup
+				err error
+			)
+			tg, ep.tty, err = l.createContainerProcess(&l.root)
+			if err != nil {
+				return err
+			}
 
-		if seccheck.Global.Enabled(seccheck.PointContainerStart) {
-			evt := pb.Start{
-				Id:       l.sandboxID,
-				Cwd:      l.root.spec.Process.Cwd,
-				Args:     l.root.spec.Process.Args,
-				Terminal: l.root.spec.Process.Terminal,
+			if seccheck.Global.Enabled(seccheck.PointContainerStart) {
+				evt := pb.Start{
+					Id:       l.sandboxID,
+					Cwd:      l.root.spec.Process.Cwd,
+					Args:     l.root.spec.Process.Args,
+					Terminal: l.root.spec.Process.Terminal,
+				}
+				fields := seccheck.Global.GetFieldSet(seccheck.PointContainerStart)
+				if fields.Local.Contains(seccheck.FieldContainerStartEnv) {
+					evt.Env = l.root.spec.Process.Env
+				}
+				if !fields.Context.Empty() {
+					evt.ContextData = &pb.ContextData{}
+					kernel.LoadSeccheckData(tg.Leader(), fields.Context, evt.ContextData)
+				}
+				_ = seccheck.Global.SentToSinks(func(c seccheck.Sink) error {
+					return c.ContainerStart(context.Background(), fields, &evt)
+				})
 			}
-			fields := seccheck.Global.GetFieldSet(seccheck.PointContainerStart)
-			if fields.Local.Contains(seccheck.FieldContainerStartEnv) {
-				evt.Env = l.root.spec.Process.Env
-			}
-			if !fields.Context.Empty() {
-				evt.ContextData = &pb.ContextData{}
-				kernel.LoadSeccheckData(tg.Leader(), fields.Context, evt.ContextData)
-			}
-			_ = seccheck.Global.SentToSinks(func(c seccheck.Sink) error {
-				return c.ContainerStart(context.Background(), fields, &evt)
-			})
 		}
 	case restoringUnstarted:
 		// If we are restoring, we do not want to create a process.
@@ -1130,32 +1136,34 @@ func (l *Loader) run() error {
 		return fmt.Errorf("Loader.Run() called in unexpected state=%s", l.state)
 	}
 
-	ep.tg = l.k.GlobalInit()
-	if ns, ok := specutils.GetNS(specs.PIDNamespace, l.root.spec); ok {
-		ep.pidnsPath = ns.Path
+	if !l.root.conf.Sandbox {
+		ep.tg = l.k.GlobalInit()
+		if ns, ok := specutils.GetNS(specs.PIDNamespace, l.root.spec); ok {
+			ep.pidnsPath = ns.Path
+		}
+
+		// Handle signals by forwarding them to the root container process
+		// (except for panic signal, which should cause a panic).
+		l.stopSignalForwarding = sighandling.StartSignalForwarding(func(sig linux.Signal) {
+			// Panic signal should cause a panic.
+			if l.root.conf.PanicSignal != -1 && sig == linux.Signal(l.root.conf.PanicSignal) {
+				panic("Signal-induced panic")
+			}
+
+			// Otherwise forward to root container.
+			deliveryMode := DeliverToProcess
+			if l.root.spec.Process.Terminal {
+				// Since we are running with a console, we should forward the signal to
+				// the foreground process group so that job control signals like ^C can
+				// be handled properly.
+				deliveryMode = DeliverToForegroundProcessGroup
+			}
+			log.Infof("Received external signal %d, mode: %s", sig, deliveryMode)
+			if err := l.signal(l.sandboxID, 0, int32(sig), deliveryMode); err != nil {
+				log.Warningf("error sending signal %d to container %q: %s", sig, l.sandboxID, err)
+			}
+		})
 	}
-
-	// Handle signals by forwarding them to the root container process
-	// (except for panic signal, which should cause a panic).
-	l.stopSignalForwarding = sighandling.StartSignalForwarding(func(sig linux.Signal) {
-		// Panic signal should cause a panic.
-		if l.root.conf.PanicSignal != -1 && sig == linux.Signal(l.root.conf.PanicSignal) {
-			panic("Signal-induced panic")
-		}
-
-		// Otherwise forward to root container.
-		deliveryMode := DeliverToProcess
-		if l.root.spec.Process.Terminal {
-			// Since we are running with a console, we should forward the signal to
-			// the foreground process group so that job control signals like ^C can
-			// be handled properly.
-			deliveryMode = DeliverToForegroundProcessGroup
-		}
-		log.Infof("Received external signal %d, mode: %s", sig, deliveryMode)
-		if err := l.signal(l.sandboxID, 0, int32(sig), deliveryMode); err != nil {
-			log.Warningf("error sending signal %d to container %q: %s", sig, l.sandboxID, err)
-		}
-	})
 
 	log.Infof("Process should have started...")
 	l.watchdog.Start()
@@ -1680,6 +1688,13 @@ func (l *Loader) WaitForStartSignal() {
 
 // WaitExit waits for the root container to exit, and returns its exit status.
 func (l *Loader) WaitExit() linux.WaitStatus {
+	if l.root.conf.Sandbox {
+		<-l.sandboxShutdownCh
+		l.k.Kill(linux.WaitStatus(0))
+		l.k.WaitExited()
+		return linux.WaitStatus(0)
+	}
+
 	// Wait for container.
 	l.k.WaitExited()
 

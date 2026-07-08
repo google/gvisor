@@ -5531,3 +5531,108 @@ func TestIPv6DisableAllSysctl(t *testing.T) {
 		}
 	}
 }
+
+func TestSandboxMode(t *testing.T) {
+	// Start the child reaper.
+	childReaper := &testutil.Reaper{}
+	childReaper.Start()
+	defer childReaper.Stop()
+
+	tests := []struct {
+		name        string
+		sandboxMode bool
+		wantProcs   int
+		wantCmd     string
+	}{
+		{
+			name:        "SandboxMode",
+			sandboxMode: true,
+			wantProcs:   0,
+		},
+		{
+			name:        "ClassicMode",
+			sandboxMode: false,
+			wantProcs:   1,
+			wantCmd:     "sleep",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			for name, conf := range configs(t, false /* noOverlay */) {
+				t.Run(name, func(t *testing.T) {
+					conf.Sandbox = tc.sandboxMode
+
+					// Use sleep spec.
+					spec, _ := sleepSpecConf(t)
+
+					rootDir, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+					if err != nil {
+						t.Fatalf("error setting up container: %v", err)
+					}
+					defer cleanup()
+
+					id := testutil.RandomContainerID()
+					args := Args{
+						ID:        id,
+						Spec:      spec,
+						BundleDir: bundleDir,
+					}
+
+					c, err := New(conf, args)
+					if err != nil {
+						t.Fatalf("error creating container: %v", err)
+					}
+					defer c.Destroy()
+
+					// Load the container from disk and check the status.
+					fullID := FullID{
+						SandboxID:   args.ID,
+						ContainerID: args.ID,
+					}
+					c, err = Load(rootDir, fullID, LoadOpts{})
+					if err != nil {
+						t.Fatalf("error loading container: %v", err)
+					}
+					if got, want := c.Status, Created; got != want {
+						t.Errorf("container status got %v, want %v", got, want)
+					}
+
+					// Start the container.
+					if err := c.Start(conf); err != nil {
+						t.Fatalf("error starting container: %v", err)
+					}
+
+					// Load the container from disk and check the status.
+					c, err = Load(rootDir, fullID, LoadOpts{Exact: true})
+					if err != nil {
+						t.Fatalf("error loading container: %v", err)
+					}
+					if got, want := c.Status, Running; got != want {
+						t.Errorf("container status got %v, want %v", got, want)
+					}
+
+					// Verify processes.
+					pList, err := c.Processes()
+					if err != nil {
+						t.Fatalf("error getting processes: %v", err)
+					}
+
+					if got, want := len(pList), tc.wantProcs; got != want {
+						t.Errorf("expected %d processes, got %d: %v", want, got, pList)
+					}
+					if tc.wantProcs > 0 {
+						if got, want := pList[0].Cmd, tc.wantCmd; got != want {
+							t.Errorf("expected process cmd %q, got %q", want, got)
+						}
+					}
+
+					// Destroy the container.
+					if err := c.Destroy(); err != nil {
+						t.Fatalf("error destroying container: %v", err)
+					}
+				})
+			}
+		})
+	}
+}
