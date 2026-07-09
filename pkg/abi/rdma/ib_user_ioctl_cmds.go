@@ -1,0 +1,485 @@
+// Copyright 2026 The gVisor Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package rdma
+
+// Object, method, and attribute ID constants from
+// include/uapi/rdma/ib_user_ioctl_cmds.h.
+
+// Namespace constants.
+const (
+	UVERBS_ID_NS_MASK  = 0xf000
+	UVERBS_ID_NS_SHIFT = 12
+)
+
+// uverbs_default_objects.
+const (
+	UVERBS_OBJECT_DEVICE = iota
+	UVERBS_OBJECT_PD
+	UVERBS_OBJECT_COMP_CHANNEL
+	UVERBS_OBJECT_CQ
+	UVERBS_OBJECT_QP
+	UVERBS_OBJECT_SRQ
+	UVERBS_OBJECT_AH
+	UVERBS_OBJECT_MR
+	UVERBS_OBJECT_MW
+	UVERBS_OBJECT_FLOW
+	UVERBS_OBJECT_XRCD
+	UVERBS_OBJECT_RWQ_IND_TBL
+	UVERBS_OBJECT_WQ
+	UVERBS_OBJECT_FLOW_ACTION
+	UVERBS_OBJECT_DM
+	UVERBS_OBJECT_COUNTERS
+	UVERBS_OBJECT_ASYNC_EVENT
+	UVERBS_OBJECT_DMAH
+	UVERBS_OBJECT_DMABUF
+)
+
+// Driver namespace IDs.
+const UVERBS_ID_DRIVER_NS = 1 << UVERBS_ID_NS_SHIFT
+
+const (
+	UVERBS_ATTR_UHW_IN = UVERBS_ID_DRIVER_NS + iota
+	UVERBS_ATTR_UHW_OUT
+	UVERBS_ID_DRIVER_NS_WITH_UHW
+)
+
+// uverbs_methods_device.
+const (
+	UVERBS_METHOD_INVOKE_WRITE = iota
+	UVERBS_METHOD_INFO_HANDLES
+	UVERBS_METHOD_QUERY_PORT
+	UVERBS_METHOD_GET_CONTEXT
+	UVERBS_METHOD_QUERY_CONTEXT
+	UVERBS_METHOD_QUERY_GID_TABLE
+	UVERBS_METHOD_QUERY_GID_ENTRY
+	UVERBS_METHOD_QUERY_PORT_SPEED
+)
+
+// uverbs_attrs_invoke_write_cmd_attr_ids.
+const (
+	UVERBS_ATTR_CORE_IN = iota
+	UVERBS_ATTR_CORE_OUT
+	UVERBS_ATTR_WRITE_CMD
+)
+
+// uverbs_attrs_query_port_cmd_attr_ids.
+const (
+	UVERBS_ATTR_QUERY_PORT_PORT_NUM = iota
+	UVERBS_ATTR_QUERY_PORT_RESP
+)
+
+// uverbs_attrs_query_port_speed_cmd_attr_ids.
+const (
+	UVERBS_ATTR_QUERY_PORT_SPEED_PORT_NUM = iota
+	UVERBS_ATTR_QUERY_PORT_SPEED_RESP
+)
+
+// uverbs_attrs_get_context_attr_ids.
+const (
+	UVERBS_ATTR_GET_CONTEXT_NUM_COMP_VECTORS = iota
+	UVERBS_ATTR_GET_CONTEXT_CORE_SUPPORT
+	UVERBS_ATTR_GET_CONTEXT_FD_ARR
+)
+
+// uverbs_attrs_query_context_attr_ids.
+const (
+	UVERBS_ATTR_QUERY_CONTEXT_NUM_COMP_VECTORS = iota
+	UVERBS_ATTR_QUERY_CONTEXT_CORE_SUPPORT
+)
+
+// uverbs_attrs_info_handles_id.
+const (
+	UVERBS_ATTR_INFO_OBJECT_ID = iota
+	UVERBS_ATTR_INFO_TOTAL_HANDLES
+	UVERBS_ATTR_INFO_HANDLES_LIST
+)
+
+// uverbs_attrs_query_gid_table_cmd_attr_ids.
+const (
+	UVERBS_ATTR_QUERY_GID_TABLE_ENTRY_SIZE = iota
+	UVERBS_ATTR_QUERY_GID_TABLE_FLAGS
+	UVERBS_ATTR_QUERY_GID_TABLE_RESP_ENTRIES
+	UVERBS_ATTR_QUERY_GID_TABLE_RESP_NUM_ENTRIES
+)
+
+// uverbs_attrs_query_gid_entry_cmd_attr_ids.
+const (
+	UVERBS_ATTR_QUERY_GID_ENTRY_PORT = iota
+	UVERBS_ATTR_QUERY_GID_ENTRY_GID_INDEX
+	UVERBS_ATTR_QUERY_GID_ENTRY_FLAGS
+	UVERBS_ATTR_QUERY_GID_ENTRY_RESP_ENTRY
+)
+
+// uverbs_methods_cq.
+const (
+	UVERBS_METHOD_CQ_CREATE = iota
+	UVERBS_METHOD_CQ_DESTROY
+)
+
+// uverbs_attrs_create_cq_cmd_attr_ids.
+const (
+	UVERBS_ATTR_CREATE_CQ_HANDLE = iota
+	UVERBS_ATTR_CREATE_CQ_CQE
+	UVERBS_ATTR_CREATE_CQ_USER_HANDLE
+	UVERBS_ATTR_CREATE_CQ_COMP_CHANNEL
+	UVERBS_ATTR_CREATE_CQ_COMP_VECTOR
+	UVERBS_ATTR_CREATE_CQ_FLAGS
+	UVERBS_ATTR_CREATE_CQ_RESP_CQE
+	UVERBS_ATTR_CREATE_CQ_EVENT_FD
+	UVERBS_ATTR_CREATE_CQ_BUFFER_VA
+	UVERBS_ATTR_CREATE_CQ_BUFFER_LENGTH
+	UVERBS_ATTR_CREATE_CQ_BUFFER_FD
+	UVERBS_ATTR_CREATE_CQ_BUFFER_OFFSET
+	UVERBS_ATTR_CREATE_CQ_BUF_UMEM
+)
+
+// uverbs_attrs_destroy_cq_cmd_attr_ids.
+const (
+	UVERBS_ATTR_DESTROY_CQ_HANDLE = iota
+	UVERBS_ATTR_DESTROY_CQ_RESP
+)
+
+// uverbs_methods_qp.
+const (
+	UVERBS_METHOD_QP_CREATE = iota
+	UVERBS_METHOD_QP_DESTROY
+)
+
+// uverbs_attrs_create_qp_cmd_attr_ids.
+const (
+	UVERBS_ATTR_CREATE_QP_HANDLE = iota
+	UVERBS_ATTR_CREATE_QP_XRCD_HANDLE
+	UVERBS_ATTR_CREATE_QP_PD_HANDLE
+	UVERBS_ATTR_CREATE_QP_SRQ_HANDLE
+	UVERBS_ATTR_CREATE_QP_SEND_CQ_HANDLE
+	UVERBS_ATTR_CREATE_QP_RECV_CQ_HANDLE
+	UVERBS_ATTR_CREATE_QP_IND_TABLE_HANDLE
+	UVERBS_ATTR_CREATE_QP_USER_HANDLE
+	UVERBS_ATTR_CREATE_QP_CAP
+	UVERBS_ATTR_CREATE_QP_TYPE
+	UVERBS_ATTR_CREATE_QP_FLAGS
+	UVERBS_ATTR_CREATE_QP_SOURCE_QPN
+	UVERBS_ATTR_CREATE_QP_EVENT_FD
+	UVERBS_ATTR_CREATE_QP_RESP_CAP
+	UVERBS_ATTR_CREATE_QP_RESP_QP_NUM
+	UVERBS_ATTR_CREATE_QP_BUF_UMEM
+	UVERBS_ATTR_CREATE_QP_RQ_BUF_UMEM
+	UVERBS_ATTR_CREATE_QP_SQ_BUF_UMEM
+)
+
+// uverbs_attrs_destroy_qp_cmd_attr_ids.
+const (
+	UVERBS_ATTR_DESTROY_QP_HANDLE = iota
+	UVERBS_ATTR_DESTROY_QP_RESP
+)
+
+// uverbs_methods_srq.
+const (
+	UVERBS_METHOD_SRQ_CREATE = iota
+	UVERBS_METHOD_SRQ_DESTROY
+)
+
+// uverbs_attrs_create_srq_cmd_attr_ids.
+const (
+	UVERBS_ATTR_CREATE_SRQ_HANDLE = iota
+	UVERBS_ATTR_CREATE_SRQ_PD_HANDLE
+	UVERBS_ATTR_CREATE_SRQ_XRCD_HANDLE
+	UVERBS_ATTR_CREATE_SRQ_CQ_HANDLE
+	UVERBS_ATTR_CREATE_SRQ_USER_HANDLE
+	UVERBS_ATTR_CREATE_SRQ_MAX_WR
+	UVERBS_ATTR_CREATE_SRQ_MAX_SGE
+	UVERBS_ATTR_CREATE_SRQ_LIMIT
+	UVERBS_ATTR_CREATE_SRQ_MAX_NUM_TAGS
+	UVERBS_ATTR_CREATE_SRQ_TYPE
+	UVERBS_ATTR_CREATE_SRQ_EVENT_FD
+	UVERBS_ATTR_CREATE_SRQ_RESP_MAX_WR
+	UVERBS_ATTR_CREATE_SRQ_RESP_MAX_SGE
+	UVERBS_ATTR_CREATE_SRQ_RESP_SRQ_NUM
+)
+
+// uverbs_attrs_destroy_srq_cmd_attr_ids.
+const (
+	UVERBS_ATTR_DESTROY_SRQ_HANDLE = iota
+	UVERBS_ATTR_DESTROY_SRQ_RESP
+)
+
+// uverbs_methods_mr.
+const (
+	UVERBS_METHOD_DM_MR_REG = iota
+	UVERBS_METHOD_MR_DESTROY
+	UVERBS_METHOD_ADVISE_MR
+	UVERBS_METHOD_QUERY_MR
+	UVERBS_METHOD_REG_DMABUF_MR
+	UVERBS_METHOD_REG_MR
+)
+
+// uverbs_attrs_reg_dm_mr_cmd_attr_ids.
+const (
+	UVERBS_ATTR_REG_DM_MR_HANDLE = iota
+	UVERBS_ATTR_REG_DM_MR_OFFSET
+	UVERBS_ATTR_REG_DM_MR_LENGTH
+	UVERBS_ATTR_REG_DM_MR_PD_HANDLE
+	UVERBS_ATTR_REG_DM_MR_ACCESS_FLAGS
+	UVERBS_ATTR_REG_DM_MR_DM_HANDLE
+	UVERBS_ATTR_REG_DM_MR_RESP_LKEY
+	UVERBS_ATTR_REG_DM_MR_RESP_RKEY
+)
+
+// uverbs_attrs_mr_destroy_ids.
+const (
+	UVERBS_ATTR_DESTROY_MR_HANDLE = 0
+)
+
+// uverbs_attrs_advise_mr_cmd_attr_ids.
+const (
+	UVERBS_ATTR_ADVISE_MR_PD_HANDLE = iota
+	UVERBS_ATTR_ADVISE_MR_ADVICE
+	UVERBS_ATTR_ADVISE_MR_FLAGS
+	UVERBS_ATTR_ADVISE_MR_SGE_LIST
+)
+
+// uverbs_attrs_query_mr_cmd_attr_ids.
+const (
+	UVERBS_ATTR_QUERY_MR_HANDLE = iota
+	UVERBS_ATTR_QUERY_MR_RESP_LKEY
+	UVERBS_ATTR_QUERY_MR_RESP_RKEY
+	UVERBS_ATTR_QUERY_MR_RESP_LENGTH
+	UVERBS_ATTR_QUERY_MR_RESP_IOVA
+)
+
+// uverbs_attrs_reg_dmabuf_mr_cmd_attr_ids.
+const (
+	UVERBS_ATTR_REG_DMABUF_MR_HANDLE = iota
+	UVERBS_ATTR_REG_DMABUF_MR_PD_HANDLE
+	UVERBS_ATTR_REG_DMABUF_MR_OFFSET
+	UVERBS_ATTR_REG_DMABUF_MR_LENGTH
+	UVERBS_ATTR_REG_DMABUF_MR_IOVA
+	UVERBS_ATTR_REG_DMABUF_MR_FD
+	UVERBS_ATTR_REG_DMABUF_MR_ACCESS_FLAGS
+	UVERBS_ATTR_REG_DMABUF_MR_RESP_LKEY
+	UVERBS_ATTR_REG_DMABUF_MR_RESP_RKEY
+)
+
+// uverbs_attrs_reg_mr_cmd_attr_ids.
+const (
+	UVERBS_ATTR_REG_MR_HANDLE = iota
+	UVERBS_ATTR_REG_MR_PD_HANDLE
+	UVERBS_ATTR_REG_MR_DMA_HANDLE
+	UVERBS_ATTR_REG_MR_IOVA
+	UVERBS_ATTR_REG_MR_ADDR
+	UVERBS_ATTR_REG_MR_LENGTH
+	UVERBS_ATTR_REG_MR_ACCESS_FLAGS
+	UVERBS_ATTR_REG_MR_FD
+	UVERBS_ATTR_REG_MR_FD_OFFSET
+	UVERBS_ATTR_REG_MR_RESP_LKEY
+	UVERBS_ATTR_REG_MR_RESP_RKEY
+)
+
+// uverbs_methods_dm.
+const (
+	UVERBS_METHOD_DM_ALLOC = iota
+	UVERBS_METHOD_DM_FREE
+)
+
+// uverbs_attrs_alloc_dm_cmd_attr_ids.
+const (
+	UVERBS_ATTR_ALLOC_DM_HANDLE = iota
+	UVERBS_ATTR_ALLOC_DM_LENGTH
+	UVERBS_ATTR_ALLOC_DM_ALIGNMENT
+)
+
+// uverbs_attrs_free_dm_cmd_attr_ids.
+const (
+	UVERBS_ATTR_FREE_DM_HANDLE = 0
+)
+
+// uverbs_methods_dmah.
+const (
+	UVERBS_METHOD_DMAH_ALLOC = iota
+	UVERBS_METHOD_DMAH_FREE
+)
+
+// uverbs_attrs_alloc_dmah_cmd_attr_ids.
+const (
+	UVERBS_ATTR_ALLOC_DMAH_HANDLE = iota
+	UVERBS_ATTR_ALLOC_DMAH_CPU_ID
+	UVERBS_ATTR_ALLOC_DMAH_TPH_MEM_TYPE
+	UVERBS_ATTR_ALLOC_DMAH_PH
+)
+
+// uverbs_attrs_free_dmah_cmd_attr_ids.
+const (
+	UVERBS_ATTR_FREE_DMA_HANDLE = 0
+)
+
+// uverbs_methods_dmabuf.
+const (
+	UVERBS_METHOD_DMABUF_ALLOC = 0
+)
+
+// uverbs_attrs_alloc_dmabuf_cmd_attr_ids.
+const (
+	UVERBS_ATTR_ALLOC_DMABUF_HANDLE = iota
+	UVERBS_ATTR_ALLOC_DMABUF_PGOFF
+)
+
+// uverbs_methods_wq.
+const (
+	UVERBS_METHOD_WQ_CREATE = iota
+	UVERBS_METHOD_WQ_DESTROY
+)
+
+// uverbs_attrs_create_wq_cmd_attr_ids.
+const (
+	UVERBS_ATTR_CREATE_WQ_HANDLE = iota
+	UVERBS_ATTR_CREATE_WQ_PD_HANDLE
+	UVERBS_ATTR_CREATE_WQ_CQ_HANDLE
+	UVERBS_ATTR_CREATE_WQ_USER_HANDLE
+	UVERBS_ATTR_CREATE_WQ_TYPE
+	UVERBS_ATTR_CREATE_WQ_EVENT_FD
+	UVERBS_ATTR_CREATE_WQ_MAX_WR
+	UVERBS_ATTR_CREATE_WQ_MAX_SGE
+	UVERBS_ATTR_CREATE_WQ_FLAGS
+	UVERBS_ATTR_CREATE_WQ_RESP_MAX_WR
+	UVERBS_ATTR_CREATE_WQ_RESP_MAX_SGE
+	UVERBS_ATTR_CREATE_WQ_RESP_WQ_NUM
+)
+
+// uverbs_attrs_destroy_wq_cmd_attr_ids.
+const (
+	UVERBS_ATTR_DESTROY_WQ_HANDLE = iota
+	UVERBS_ATTR_DESTROY_WQ_RESP
+)
+
+// uverbs_methods_actions_counters_ops.
+const (
+	UVERBS_METHOD_COUNTERS_CREATE = iota
+	UVERBS_METHOD_COUNTERS_DESTROY
+	UVERBS_METHOD_COUNTERS_READ
+)
+
+// uverbs_attrs_create_counters_cmd_attr_ids.
+const (
+	UVERBS_ATTR_CREATE_COUNTERS_HANDLE = 0
+)
+
+// uverbs_attrs_destroy_counters_cmd_attr_ids.
+const (
+	UVERBS_ATTR_DESTROY_COUNTERS_HANDLE = 0
+)
+
+// uverbs_attrs_read_counters_cmd_attr_ids.
+const (
+	UVERBS_ATTR_READ_COUNTERS_HANDLE = iota
+	UVERBS_ATTR_READ_COUNTERS_BUFF
+	UVERBS_ATTR_READ_COUNTERS_FLAGS
+)
+
+// uverbs_methods_actions_flow_action_ops.
+const (
+	UVERBS_METHOD_FLOW_ACTION_ESP_CREATE = iota
+	UVERBS_METHOD_FLOW_ACTION_DESTROY
+	UVERBS_METHOD_FLOW_ACTION_ESP_MODIFY
+)
+
+// uverbs_attrs_create_flow_action_esp.
+const (
+	UVERBS_ATTR_CREATE_FLOW_ACTION_ESP_HANDLE = iota
+	UVERBS_ATTR_FLOW_ACTION_ESP_ATTRS
+	UVERBS_ATTR_FLOW_ACTION_ESP_ESN
+	UVERBS_ATTR_FLOW_ACTION_ESP_KEYMAT
+	UVERBS_ATTR_FLOW_ACTION_ESP_REPLAY
+	UVERBS_ATTR_FLOW_ACTION_ESP_ENCAP
+)
+
+// uverbs_attrs_modify_flow_action_esp.
+const (
+	UVERBS_ATTR_MODIFY_FLOW_ACTION_ESP_HANDLE = UVERBS_ATTR_CREATE_FLOW_ACTION_ESP_HANDLE
+)
+
+// uverbs_attrs_destroy_flow_action_esp.
+const (
+	UVERBS_ATTR_DESTROY_FLOW_ACTION_HANDLE = 0
+)
+
+// uverbs_methods_pd.
+const (
+	UVERBS_METHOD_PD_DESTROY = 0
+)
+
+// uverbs_attrs_pd_destroy_ids.
+const (
+	UVERBS_ATTR_DESTROY_PD_HANDLE = 0
+)
+
+// uverbs_methods_mw.
+const (
+	UVERBS_METHOD_MW_DESTROY = 0
+)
+
+// uverbs_attrs_mw_destroy_ids.
+const (
+	UVERBS_ATTR_DESTROY_MW_HANDLE = 0
+)
+
+// uverbs_methods_xrcd.
+const (
+	UVERBS_METHOD_XRCD_DESTROY = 0
+)
+
+// uverbs_attrs_xrcd_destroy_ids.
+const (
+	UVERBS_ATTR_DESTROY_XRCD_HANDLE = 0
+)
+
+// uverbs_methods_ah.
+const (
+	UVERBS_METHOD_AH_DESTROY = 0
+)
+
+// uverbs_attrs_ah_destroy_ids.
+const (
+	UVERBS_ATTR_DESTROY_AH_HANDLE = 0
+)
+
+// uverbs_methods_rwq_ind_tbl.
+const (
+	UVERBS_METHOD_RWQ_IND_TBL_DESTROY = 0
+)
+
+// uverbs_attrs_rwq_ind_tbl_destroy_ids.
+const (
+	UVERBS_ATTR_DESTROY_RWQ_IND_TBL_HANDLE = 0
+)
+
+// uverbs_methods_flow.
+const (
+	UVERBS_METHOD_FLOW_DESTROY = 0
+)
+
+// uverbs_attrs_flow_destroy_ids.
+const (
+	UVERBS_ATTR_DESTROY_FLOW_HANDLE = 0
+)
+
+// uverbs_method_async_event.
+const (
+	UVERBS_METHOD_ASYNC_EVENT_ALLOC = 0
+)
+
+// uverbs_attrs_async_event_create.
+const (
+	UVERBS_ATTR_ASYNC_EVENT_ALLOC_FD_HANDLE = 0
+)
