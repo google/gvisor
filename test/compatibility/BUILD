@@ -39,3 +39,39 @@ compatibility_test(
         "//test/compatibility",
     ],
 )
+
+compatibility_test(
+    name = "mariadb",
+    srcs = ["mariadb/mariadb_test.go"],
+    deps = [
+        "//pkg/test/dockerutil",
+        "//test/compatibility",
+    ],
+)
+
+compatibility_test(
+    name = "postgresql",
+    srcs = ["postgresql/postgresql_test.go"],
+    deps = [
+        "//pkg/test/dockerutil",
+        "//test/compatibility",
+    ],
+)
+
+compatibility_test(
+    name = "redis",
+    srcs = ["redis/redis_test.go"],
+    deps = [
+        "//pkg/test/dockerutil",
+        "//test/compatibility",
+    ],
+)
+
+compatibility_test(
+    name = "valkey",
+    srcs = ["valkey/valkey_test.go"],
+    deps = [
+        "//pkg/test/dockerutil",
+        "//test/compatibility",
+    ],
+)
