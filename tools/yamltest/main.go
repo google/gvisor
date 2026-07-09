@@ -28,9 +28,36 @@ import (
 )
 
 var (
-	schema = flag.String("schema", "", "path to JSON schema file.")
-	strict = flag.Bool("strict", true, "Whether to enable strict mode for YAML decoding")
+	schema           = flag.String("schema", "", "path to JSON schema file.")
+	strict           = flag.Bool("strict", true, "Whether to enable strict mode for YAML decoding")
+	disallowComments = flag.Bool("disallow_comments", false, "Whether to disallow comments in the YAML file")
 )
+
+func hasComments(data []byte) bool {
+	inDoubleQuotes := false
+	inSingleQuotes := false
+	escaped := false
+	for _, b := range data {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if b == '\\' {
+			escaped = true
+			continue
+		}
+		if b == '"' && !inSingleQuotes {
+			inDoubleQuotes = !inDoubleQuotes
+		}
+		if b == '\'' && !inDoubleQuotes {
+			inSingleQuotes = !inSingleQuotes
+		}
+		if b == '#' && !inDoubleQuotes && !inSingleQuotes {
+			return true
+		}
+	}
+	return false
+}
 
 func fixup(v any) (any, error) {
 	switch x := v.(type) {
@@ -104,6 +131,16 @@ func main() {
 		// Record the filename with an empty slice for below, where
 		// we will emit all files (even those without any errors).
 		allErrors[filename] = nil
+		if *disallowComments {
+			data, err := os.ReadFile(filename)
+			if err != nil {
+				allErrors[filename] = append(allErrors[filename], err)
+				continue
+			}
+			if hasComments(data) {
+				allErrors[filename] = append(allErrors[filename], errors.New("YAML comments are disallowed in this file"))
+			}
+		}
 		documentLoader, err := loadFile(filename)
 		if err != nil {
 			allErrors[filename] = append(allErrors[filename], err)

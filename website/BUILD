@@ -222,5 +222,6 @@ bzl_library(
 yaml_test(
     name = "cve_track_record_test",
     srcs = ["_data/cve-track-record.yml"],
+    disallow_comments = True,
     schema = "//website:cve-track-record.schema.json",
 )

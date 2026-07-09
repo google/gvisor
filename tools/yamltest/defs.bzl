@@ -6,10 +6,11 @@ def _yaml_test_impl(ctx):
     ctx.actions.write(runner, "\n".join([
         "#!/bin/bash",
         "set -euo pipefail",
-        "%s '-schema=%s' -strict=%s -- %s" % (
+        "%s '-schema=%s' -strict=%s -disallow_comments=%s -- %s" % (
             ctx.files._tool[0].short_path,
             ctx.files.schema[0].short_path,
             "true" if ctx.attr.strict else "false",
+            "true" if ctx.attr.disallow_comments else "false",
             " ".join([f.short_path for f in ctx.files.srcs]),
         ),
     ]), is_executable = True)
@@ -36,6 +37,11 @@ yaml_test = rule(
             doc = "Whether to use strict mode for YAML decoding.",
             mandatory = False,
             default = True,
+        ),
+        "disallow_comments": attr.bool(
+            doc = "Whether to disallow comments in the YAML file.",
+            mandatory = False,
+            default = False,
         ),
         "_tool": attr.label(
             executable = True,
