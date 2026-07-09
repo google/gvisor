@@ -28,6 +28,7 @@ import (
 	cgroupsv2stats "github.com/containerd/cgroups/v3/cgroup2/stats"
 	"github.com/containerd/console"
 	task "github.com/containerd/containerd/api/runtime/task/v2"
+	types "github.com/containerd/containerd/api/types"
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/containerd/v2/pkg/namespaces"
 	"github.com/containerd/containerd/v2/pkg/stdio"
@@ -37,6 +38,7 @@ import (
 	"github.com/containerd/log"
 	typeurl "github.com/containerd/typeurl/v2"
 	"github.com/sirupsen/logrus"
+	"google.golang.org/protobuf/types/known/anypb"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/shim/v1/extension"
 	"gvisor.dev/gvisor/pkg/shim/v1/proc"
@@ -71,16 +73,30 @@ type Container struct {
 	cgroup CgroupMode
 }
 
+// ContainerConfig contains configuration for creating a container.
+type ContainerConfig struct {
+	ID                 string
+	Bundle             string
+	Rootfs             []*types.Mount
+	Options            *anypb.Any
+	Terminal           bool
+	Stdin              string
+	Stdout             string
+	Stderr             string
+	FSRestoreImagePath string
+	FSRestoreDirect    bool
+}
+
 // NewContainer returns a new runsc container
-func NewContainer(ctx context.Context, platform stdio.Platform, r *task.CreateTaskRequest, FSRestoreImagePath string, FSRestoreDirect bool) (*Container, error) {
+func NewContainer(ctx context.Context, platform stdio.Platform, conf *ContainerConfig) (*Container, error) {
 	ns, err := namespaces.NamespaceRequired(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("create namespace: %w", err)
 	}
 	var opts Options
-	if r.Options != nil {
+	if conf.Options != nil {
 		runtimeOptions := &runtimeoptions.Options{}
-		if err := typeurl.UnmarshalTo(r.Options, runtimeOptions); err != nil {
+		if err := typeurl.UnmarshalTo(conf.Options, runtimeOptions); err != nil {
 			return nil, fmt.Errorf("unmarshal runtime options: %w", err)
 		}
 
@@ -101,7 +117,7 @@ func NewContainer(ctx context.Context, platform stdio.Platform, r *task.CreateTa
 		logrus.SetLevel(lvl)
 	}
 	if len(opts.LogPath) != 0 {
-		logPath := runsccmd.FormatShimLogPath(opts.LogPath, r.ID)
+		logPath := runsccmd.FormatShimLogPath(opts.LogPath, conf.ID)
 		if err := os.MkdirAll(filepath.Dir(logPath), 0777); err != nil {
 			return nil, fmt.Errorf("failed to create log dir: %w", err)
 		}
@@ -116,13 +132,13 @@ func NewContainer(ctx context.Context, platform stdio.Platform, r *task.CreateTa
 		log.L.Debugf("***************************")
 		log.L.Debugf("Args: %s", os.Args)
 		log.L.Debugf("PID: %d", os.Getpid())
-		log.L.Debugf("ID: %s", r.ID)
+		log.L.Debugf("ID: %s", conf.ID)
 		log.L.Debugf("Options: %+v", opts)
-		log.L.Debugf("Bundle: %s", r.Bundle)
-		log.L.Debugf("Terminal: %t", r.Terminal)
-		log.L.Debugf("stdin: %s", r.Stdin)
-		log.L.Debugf("stdout: %s", r.Stdout)
-		log.L.Debugf("stderr: %s", r.Stderr)
+		log.L.Debugf("Bundle: %s", conf.Bundle)
+		log.L.Debugf("Terminal: %t", conf.Terminal)
+		log.L.Debugf("stdin: %s", conf.Stdin)
+		log.L.Debugf("stdout: %s", conf.Stdout)
+		log.L.Debugf("stderr: %s", conf.Stderr)
 		log.L.Debugf("***************************")
 		if log.L.Logger.IsLevelEnabled(logrus.DebugLevel) {
 			setDebugSigHandler()
@@ -132,10 +148,10 @@ func NewContainer(ctx context.Context, platform stdio.Platform, r *task.CreateTa
 	// Save state before any action is taken to ensure Cleanup() will have all
 	// the information it needs to undo the operations.
 	st := State{
-		Rootfs:  filepath.Join(r.Bundle, "rootfs"),
+		Rootfs:  filepath.Join(conf.Bundle, "rootfs"),
 		Options: opts,
 	}
-	if err := st.Save(r.Bundle); err != nil {
+	if err := st.Save(conf.Bundle); err != nil {
 		return nil, err
 	}
 
@@ -145,7 +161,7 @@ func NewContainer(ctx context.Context, platform stdio.Platform, r *task.CreateTa
 
 	// Convert from types.Mount to proc.Mount.
 	var mounts []proc.Mount
-	for _, m := range r.Rootfs {
+	for _, m := range conf.Rootfs {
 		mounts = append(mounts, proc.Mount{
 			Type:    m.Type,
 			Source:  m.Source,
@@ -174,19 +190,19 @@ func NewContainer(ctx context.Context, platform stdio.Platform, r *task.CreateTa
 	}
 
 	config := &proc.CreateConfig{
-		ID:                 r.ID,
-		Bundle:             r.Bundle,
+		ID:                 conf.ID,
+		Bundle:             conf.Bundle,
 		Runtime:            opts.BinaryName,
 		Rootfs:             mounts,
-		Terminal:           r.Terminal,
-		Stdin:              r.Stdin,
-		Stdout:             r.Stdout,
-		Stderr:             r.Stderr,
-		FSRestoreImagePath: FSRestoreImagePath,
-		FSRestoreDirect:    FSRestoreDirect,
+		Terminal:           conf.Terminal,
+		Stdin:              conf.Stdin,
+		Stdout:             conf.Stdout,
+		Stderr:             conf.Stderr,
+		FSRestoreImagePath: conf.FSRestoreImagePath,
+		FSRestoreDirect:    conf.FSRestoreDirect,
 	}
 
-	process, err := newInit(filepath.Join(r.Bundle, "work"), ns, platform, config, &opts, st.Rootfs)
+	process, err := newInit(filepath.Join(conf.Bundle, "work"), ns, platform, config, &opts, st.Rootfs)
 	if err != nil {
 		return nil, err
 	}
@@ -202,8 +218,8 @@ func NewContainer(ctx context.Context, platform stdio.Platform, r *task.CreateTa
 	// Success
 	cu.Release()
 	c := Container{
-		ID:        r.ID,
-		Bundle:    r.Bundle,
+		ID:        conf.ID,
+		Bundle:    conf.Bundle,
 		task:      process,
 		cgroup:    cgroupMode,
 		processes: make(map[string]extension.Process),

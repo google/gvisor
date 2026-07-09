@@ -19,10 +19,16 @@ package ring0
 const (
 	// VirtualAddressBits is fixed at 48.
 	VirtualAddressBits = 48
+)
 
-	// PhysicalAddressBits is fixed at 40.
-	PhysicalAddressBits = 40
+var (
+	// PhysicalAddressBits is the number of bits available in the physical
+	// address space. On ARM64, this is dynamically limited by the host KVM IPA size,
+	// up to a maximum of 40 bits.
+	PhysicalAddressBits uintptr = 40
+)
 
+const (
 	// DAIF bits:debug, sError, IRQ, FIQ.
 	_PSR_D_BIT      = 0x00000200
 	_PSR_A_BIT      = 0x00000100

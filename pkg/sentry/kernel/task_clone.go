@@ -284,6 +284,7 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 		}
 		tg = t.k.NewThreadGroup(pidns, sh, termSig, tg.limits.GetCopy())
 		tg.oomScoreAdj = atomicbitops.FromInt32(t.tg.oomScoreAdj.Load())
+		tg.coredumpFilter = atomicbitops.FromUint32(t.tg.coredumpFilter.Load())
 		rseqAddr = t.rseqAddr
 		rseqSignature = t.rseqSignature
 	}

@@ -2465,6 +2465,7 @@ func (tg *ThreadGroup) StateFields() []string {
 		"execveCredsMutexLocked",
 		"execveCredsMutexWaiters",
 		"sigsegvLockCount",
+		"coredumpFilter",
 	}
 }
 
@@ -2525,6 +2526,7 @@ func (tg *ThreadGroup) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(43, &tg.execveCredsMutexLocked)
 	stateSinkObject.Save(44, &tg.execveCredsMutexWaiters)
 	stateSinkObject.Save(45, &tg.sigsegvLockCount)
+	stateSinkObject.Save(46, &tg.coredumpFilter)
 }
 
 func (tg *ThreadGroup) afterLoad(context.Context) {}
@@ -2574,6 +2576,7 @@ func (tg *ThreadGroup) StateLoad(ctx context.Context, stateSourceObject state.So
 	stateSourceObject.Load(43, &tg.execveCredsMutexLocked)
 	stateSourceObject.Load(44, &tg.execveCredsMutexWaiters)
 	stateSourceObject.Load(45, &tg.sigsegvLockCount)
+	stateSourceObject.Load(46, &tg.coredumpFilter)
 	stateSourceObject.LoadValue(26, new(*Task), func(y any) { tg.loadAppCPUClockLast(ctx, y.(*Task)) })
 	stateSourceObject.LoadValue(28, new(*Task), func(y any) { tg.loadAppSysCPUClockLast(ctx, y.(*Task)) })
 	stateSourceObject.LoadValue(38, new(*OldRSeqCriticalRegion), func(y any) { tg.loadOldRSeqCritical(ctx, y.(*OldRSeqCriticalRegion)) })

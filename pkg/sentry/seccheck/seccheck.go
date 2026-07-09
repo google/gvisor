@@ -108,6 +108,7 @@ type Sink interface {
 	Execve(ctx context.Context, fields FieldSet, info *pb.ExecveInfo) error
 	ExitNotifyParent(ctx context.Context, fields FieldSet, info *pb.ExitNotifyParentInfo) error
 	TaskExit(context.Context, FieldSet, *pb.TaskExit) error
+	Mmap(context.Context, FieldSet, *pb.MmapInfo) error
 
 	ContainerStart(context.Context, FieldSet, *pb.Start) error
 
@@ -166,6 +167,11 @@ func (SinkDefaults) ContainerStart(context.Context, FieldSet, *pb.Start) error {
 
 // TaskExit implements Sink.TaskExit.
 func (SinkDefaults) TaskExit(context.Context, FieldSet, *pb.TaskExit) error {
+	return nil
+}
+
+// Mmap implements Sink.Mmap.
+func (SinkDefaults) Mmap(context.Context, FieldSet, *pb.MmapInfo) error {
 	return nil
 }
 

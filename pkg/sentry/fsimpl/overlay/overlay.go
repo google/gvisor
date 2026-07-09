@@ -1003,3 +1003,12 @@ func (fd *fileDescription) RemoveXattr(ctx context.Context, name string) error {
 	defer fs.renameMu.RUnlock()
 	return fs.removeXattrLocked(ctx, fd.dentry(), fd.vfsfd.Mount(), auth.CredentialsFromContext(ctx), name)
 }
+
+// IsCopiedUp returns true if the given vfs.Dentry is an overlayfs dentry that has
+// been copied up to the upper layer.
+func IsCopiedUp(d *vfs.Dentry) bool {
+	if impl, ok := d.Impl().(*dentry); ok {
+		return impl.isCopiedUp()
+	}
+	return false
+}

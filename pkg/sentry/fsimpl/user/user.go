@@ -345,7 +345,7 @@ func getExecUIDGID(ctx context.Context, mns *vfs.MountNamespace, user string) (a
 		ctx: ctx,
 		fd:  fd,
 	}
-	// This return kGid from the passwd file (if we find one). We might have recieved a group id
+	// This return kGid from the passwd file (if we find one). We might have received a group id
 	// string or numeric from the user.
 	kUID, kGID := FindUIDGIDInPasswd(r, user)
 	usergroup := strings.SplitN(user, ":", 2)

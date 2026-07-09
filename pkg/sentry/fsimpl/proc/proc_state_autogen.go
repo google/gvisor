@@ -1927,6 +1927,34 @@ func (d *childrenData) StateLoad(ctx context.Context, stateSourceObject state.So
 	stateSourceObject.Load(2, &d.pidns)
 }
 
+func (c *coredumpFilterData) StateTypeName() string {
+	return "pkg/sentry/fsimpl/proc.coredumpFilterData"
+}
+
+func (c *coredumpFilterData) StateFields() []string {
+	return []string{
+		"DynamicBytesFile",
+		"task",
+	}
+}
+
+func (c *coredumpFilterData) beforeSave() {}
+
+// +checklocksignore
+func (c *coredumpFilterData) StateSave(stateSinkObject state.Sink) {
+	c.beforeSave()
+	stateSinkObject.Save(0, &c.DynamicBytesFile)
+	stateSinkObject.Save(1, &c.task)
+}
+
+func (c *coredumpFilterData) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (c *coredumpFilterData) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &c.DynamicBytesFile)
+	stateSourceObject.Load(1, &c.task)
+}
+
 func (r *taskInodeRefs) StateTypeName() string {
 	return "pkg/sentry/fsimpl/proc.taskInodeRefs"
 }
@@ -3151,6 +3179,7 @@ func init() {
 	state.Register((*namespaceFD)(nil))
 	state.Register((*taskCgroupData)(nil))
 	state.Register((*childrenData)(nil))
+	state.Register((*coredumpFilterData)(nil))
 	state.Register((*taskInodeRefs)(nil))
 	state.Register((*ifinet6)(nil))
 	state.Register((*netDevData)(nil))

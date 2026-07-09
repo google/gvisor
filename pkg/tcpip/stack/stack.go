@@ -2086,19 +2086,10 @@ func (s *Stack) getNICs() map[tcpip.NICID]*nic {
 	return nics
 }
 
-// ResetConfig resets the stack's NICs and ID generator.
-func (s *Stack) ResetConfig() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.nics = make(map[tcpip.NICID]*nic)
-	s.loopbackNIC = nil
-	s.nicIDGen.Store(0)
-}
-
 // ReplaceConfig replaces config in the loaded stack.
 func (s *Stack) ReplaceConfig(st *Stack) {
 	if st == nil {
-		panic("stack.Stack cannot be nil when replacing config")
+		panic("stack.Stack cannot be nil when netstack s/r is enabled")
 	}
 
 	// Update route table.
@@ -2113,6 +2104,9 @@ func (s *Stack) ReplaceConfig(st *Stack) {
 	s.tables = st.IPTables()
 	s.nftables = st.NFTables()
 
+	// Update NICs.
+	s.nics = make(map[tcpip.NICID]*nic)
+	s.loopbackNIC = nil
 	for id, nic := range nics {
 		nic.stack = s
 		s.nics[id] = nic
@@ -2324,11 +2318,6 @@ func (s *Stack) IsInGroup(nicID tcpip.NICID, multicastAddr tcpip.Address) (bool,
 // IPTables returns the stack's iptables.
 func (s *Stack) IPTables() *IPTables {
 	return s.tables
-}
-
-// SetIPTables sets the stack's iptables.
-func (s *Stack) SetIPTables(tables *IPTables) {
-	s.tables = tables
 }
 
 // NFTables returns the stack's nftables.

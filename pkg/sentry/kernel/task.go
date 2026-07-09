@@ -936,3 +936,13 @@ func (t *Task) Personality() uint32 {
 func (t *Task) SetPersonality(personality uint32) uint32 {
 	return t.personality.Swap(personality)
 }
+
+// SetCoredumpFilter sets the task's coredump filter.
+func (t *Task) SetCoredumpFilter(coredumpFilter uint32) {
+	t.tg.coredumpFilter.Store(coredumpFilter)
+}
+
+// GetCoredumpFilter returns the task's coredump filter.
+func (t *Task) GetCoredumpFilter() uint32 {
+	return t.tg.coredumpFilter.Load()
+}

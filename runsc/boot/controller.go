@@ -141,12 +141,12 @@ const (
 	// ContMgrContainerRuntimeState returns the runtime state of a container.
 	ContMgrContainerRuntimeState = "containerManager.ContainerRuntimeState"
 
+	// ContMgrCreateLinksAndRoutes creates links and routes, and sets network args in loader.
+	ContMgrCreateLinksAndRoutes = "containerManager.CreateLinksAndRoutes"
+
 	// ContMgrGetNetworkConfig returns the network interfaces and routes applied
 	// during the creation of root container.
 	ContMgrGetNetworkConfig = "containerManager.GetNetworkConfig"
-
-	// ContMgrSetNetworkArgs sets network args in loader without creating links.
-	ContMgrSetNetworkArgs = "containerManager.SetNetworkArgs"
 )
 
 const (
@@ -192,6 +192,7 @@ const (
 // FS-related commands (see fs.go for more details).
 const (
 	FsTarRootfsUpperLayer = "Fs.TarRootfsUpperLayer"
+	FsRead                = "Fs.Read"
 )
 
 // controller holds the control server, and is used for communication into the
@@ -1234,27 +1235,25 @@ func (cm *containerManager) GetSavings(_ *struct{}, s *Savings) error {
 	return nil
 }
 
-// SetNetworkArgs sets the network arguments without creating links and routes.
-func (cm *containerManager) SetNetworkArgs(args *CreateLinksAndRoutesArgs, _ *struct{}) error {
-	log.Debugf("containerManager.SetNetworkArgs")
+// CreateLinksAndRoutes creates links and routes, and sets the network arguments.
+func (cm *containerManager) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct{}) error {
+	log.Debugf("containerManager.CreateLinksAndRoutes")
 	if args == nil {
 		return fmt.Errorf("cannot set nil networkArgs")
 	}
 
-	// Create a new CreateLinksAndRoutesArgs variable to store in the loader
-	// as the fds associated with the original argument passed to this urpc
-	// will be closed when it returns.
-	networkArgs := *args
-	dupedFDs, err := fd.NewFromFiles(args.FilePayload.Files)
-	if err != nil {
-		return fmt.Errorf("failed to dup network FDs: %w", err)
+	if eps, ok := cm.l.k.RootNetworkNamespace().Stack().(*netstack.Stack); ok {
+		n := &Network{
+			Stack:  eps.Stack,
+			Kernel: cm.l.k,
+		}
+		if err := n.CreateLinksAndRoutes(args, nil); err != nil {
+			return err
+		}
+		cm.l.mu.Lock()
+		cm.l.networkArgs = args
+		cm.l.mu.Unlock()
 	}
-	// Release the duplicated FDs back to os.File objects and store them in the copy.
-	networkArgs.FilePayload.Files = fd.ReleaseToFiles(dupedFDs, "network-fd")
-
-	cm.l.mu.Lock()
-	cm.l.networkArgs = &networkArgs
-	cm.l.mu.Unlock()
 	return nil
 }
 

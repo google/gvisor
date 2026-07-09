@@ -57,7 +57,7 @@ type PageTables struct {
 	// own the ranges that are shared with other Pagetables.
 	readOnlyShared bool
 
-	// largeAddressesEnabled indicates the Pagetables support addresess
+	// largeAddressesEnabled indicates the Pagetables support addresses
 	// larger than 48 bits.
 	largeAddressesEnabled bool
 }

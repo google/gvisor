@@ -25,6 +25,10 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
+
+	ppb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 )
 
 // Brk implements linux syscall brk(2).
@@ -81,6 +85,7 @@ func Mmap(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *
 		}
 	}()
 
+	var mappedFile *vfs.FileDescription
 	if !anon {
 		// Convert the passed FD to a file reference.
 		file := t.GetFile(fd)
@@ -122,6 +127,7 @@ func Mmap(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *
 		if err := file.ConfigureMMap(t, &opts); err != nil {
 			return 0, nil, err
 		}
+		mappedFile = file
 	} else if shared {
 		// Back shared anonymous mappings with an anonymous tmpfs file.
 		opts.Offset = 0
@@ -133,8 +139,15 @@ func Mmap(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *
 		if err := file.ConfigureMMap(t, &opts); err != nil {
 			return 0, nil, err
 		}
+		mappedFile = file
 	} else {
 		opts.NameMut = memmap.NameMutAnon
+	}
+
+	if opts.Perms.Execute && seccheck.Global.Enabled(seccheck.PointMmap) {
+		if err := traceMmap(t, mappedFile); err != nil {
+			return 0, nil, err
+		}
 	}
 
 	rv, err := t.MemoryManager().MMap(t, opts)
@@ -347,5 +360,48 @@ func Munlockall(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uint
 		Current: true,
 		Future:  true,
 		Mode:    memmap.MLockNone,
+	})
+}
+
+func traceMmap(t *kernel.Task, file *vfs.FileDescription) error {
+	fields := seccheck.Global.GetFieldSet(seccheck.PointMmap)
+	info := &ppb.MmapInfo{}
+	if file != nil {
+		info.MappedPath = file.MappedName(t)
+		statOpts := vfs.StatOptions{
+			Mask: linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | linux.STATX_INO,
+		}
+		if stat, err := file.Stat(t, statOpts); err == nil {
+			if stat.Mask&(linux.STATX_TYPE|linux.STATX_MODE) == (linux.STATX_TYPE | linux.STATX_MODE) {
+				info.MappedMode = uint32(stat.Mode)
+			}
+			if stat.Mask&linux.STATX_UID != 0 {
+				info.MappedUid = stat.UID
+			}
+			if stat.Mask&linux.STATX_GID != 0 {
+				info.MappedGid = stat.GID
+			}
+			if stat.Mask&linux.STATX_INO != 0 {
+				info.MappedIno = stat.Ino
+			}
+		}
+	}
+	if exe := t.MemoryManager().Executable(); exe != nil {
+		if exe == file {
+			info.IsInitialMmap = true
+		} else {
+			statOpts := vfs.StatOptions{Mask: linux.STATX_INO}
+			if exeStat, err := exe.Stat(t, statOpts); err == nil && info.MappedIno != 0 && exeStat.Ino == info.MappedIno {
+				info.IsInitialMmap = true
+			}
+		}
+		exe.DecRef(t)
+	}
+	if !fields.Context.Empty() {
+		info.ContextData = &ppb.ContextData{}
+		kernel.LoadSeccheckData(t, fields.Context, info.ContextData)
+	}
+	return seccheck.Global.SentToSinks(func(c seccheck.Sink) error {
+		return c.Mmap(t, fields, info)
 	})
 }

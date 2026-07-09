@@ -30,6 +30,7 @@ const (
 	PointExecve
 	PointExitNotifyParent
 	PointTaskExit
+	PointMmap
 
 	// Add new Points above this line.
 	pointLengthBeforeSyscalls
@@ -301,6 +302,11 @@ func genericInit() {
 	registerPoint(PointDesc{
 		ID:            PointTaskExit,
 		Name:          "sentry/task_exit",
+		ContextFields: defaultContextFields,
+	})
+	registerPoint(PointDesc{
+		ID:            PointMmap,
+		Name:          "sentry/mmap",
 		ContextFields: defaultContextFields,
 	})
 }

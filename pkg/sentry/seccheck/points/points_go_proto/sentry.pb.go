@@ -98,17 +98,18 @@ func (x *CloneInfo) GetFlags() uint64 {
 }
 
 type ExecveInfo struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ContextData   *ContextData           `protobuf:"bytes,1,opt,name=context_data,json=contextData,proto3" json:"context_data,omitempty"`
-	BinaryPath    string                 `protobuf:"bytes,2,opt,name=binary_path,json=binaryPath,proto3" json:"binary_path,omitempty"`
-	Argv          []string               `protobuf:"bytes,3,rep,name=argv,proto3" json:"argv,omitempty"`
-	Env           []string               `protobuf:"bytes,4,rep,name=env,proto3" json:"env,omitempty"`
-	BinaryMode    uint32                 `protobuf:"varint,5,opt,name=binary_mode,json=binaryMode,proto3" json:"binary_mode,omitempty"`
-	BinaryUid     uint32                 `protobuf:"varint,6,opt,name=binary_uid,json=binaryUid,proto3" json:"binary_uid,omitempty"`
-	BinaryGid     uint32                 `protobuf:"varint,7,opt,name=binary_gid,json=binaryGid,proto3" json:"binary_gid,omitempty"`
-	BinarySha256  []byte                 `protobuf:"bytes,8,opt,name=binary_sha256,json=binarySha256,proto3" json:"binary_sha256,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	ContextData          *ContextData           `protobuf:"bytes,1,opt,name=context_data,json=contextData,proto3" json:"context_data,omitempty"`
+	BinaryPath           string                 `protobuf:"bytes,2,opt,name=binary_path,json=binaryPath,proto3" json:"binary_path,omitempty"`
+	Argv                 []string               `protobuf:"bytes,3,rep,name=argv,proto3" json:"argv,omitempty"`
+	Env                  []string               `protobuf:"bytes,4,rep,name=env,proto3" json:"env,omitempty"`
+	BinaryMode           uint32                 `protobuf:"varint,5,opt,name=binary_mode,json=binaryMode,proto3" json:"binary_mode,omitempty"`
+	BinaryUid            uint32                 `protobuf:"varint,6,opt,name=binary_uid,json=binaryUid,proto3" json:"binary_uid,omitempty"`
+	BinaryGid            uint32                 `protobuf:"varint,7,opt,name=binary_gid,json=binaryGid,proto3" json:"binary_gid,omitempty"`
+	BinarySha256         []byte                 `protobuf:"bytes,8,opt,name=binary_sha256,json=binarySha256,proto3" json:"binary_sha256,omitempty"`
+	BinaryOverlayfsUpper bool                   `protobuf:"varint,9,opt,name=binary_overlayfs_upper,json=binaryOverlayfsUpper,proto3" json:"binary_overlayfs_upper,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *ExecveInfo) Reset() {
@@ -195,6 +196,13 @@ func (x *ExecveInfo) GetBinarySha256() []byte {
 		return x.BinarySha256
 	}
 	return nil
+}
+
+func (x *ExecveInfo) GetBinaryOverlayfsUpper() bool {
+	if x != nil {
+		return x.BinaryOverlayfsUpper
+	}
+	return false
 }
 
 type ExitNotifyParentInfo struct {
@@ -301,6 +309,98 @@ func (x *TaskExit) GetExitStatus() int32 {
 	return 0
 }
 
+type MmapInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ContextData   *ContextData           `protobuf:"bytes,1,opt,name=context_data,json=contextData,proto3" json:"context_data,omitempty"`
+	MappedPath    string                 `protobuf:"bytes,2,opt,name=mapped_path,json=mappedPath,proto3" json:"mapped_path,omitempty"`
+	MappedIno     uint64                 `protobuf:"varint,3,opt,name=mapped_ino,json=mappedIno,proto3" json:"mapped_ino,omitempty"`
+	MappedMode    uint32                 `protobuf:"varint,4,opt,name=mapped_mode,json=mappedMode,proto3" json:"mapped_mode,omitempty"`
+	MappedUid     uint32                 `protobuf:"varint,5,opt,name=mapped_uid,json=mappedUid,proto3" json:"mapped_uid,omitempty"`
+	MappedGid     uint32                 `protobuf:"varint,6,opt,name=mapped_gid,json=mappedGid,proto3" json:"mapped_gid,omitempty"`
+	IsInitialMmap bool                   `protobuf:"varint,7,opt,name=is_initial_mmap,json=isInitialMmap,proto3" json:"is_initial_mmap,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MmapInfo) Reset() {
+	*x = MmapInfo{}
+	mi := &file_pkg_sentry_seccheck_points_sentry_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MmapInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MmapInfo) ProtoMessage() {}
+
+func (x *MmapInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_sentry_seccheck_points_sentry_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MmapInfo.ProtoReflect.Descriptor instead.
+func (*MmapInfo) Descriptor() ([]byte, []int) {
+	return file_pkg_sentry_seccheck_points_sentry_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *MmapInfo) GetContextData() *ContextData {
+	if x != nil {
+		return x.ContextData
+	}
+	return nil
+}
+
+func (x *MmapInfo) GetMappedPath() string {
+	if x != nil {
+		return x.MappedPath
+	}
+	return ""
+}
+
+func (x *MmapInfo) GetMappedIno() uint64 {
+	if x != nil {
+		return x.MappedIno
+	}
+	return 0
+}
+
+func (x *MmapInfo) GetMappedMode() uint32 {
+	if x != nil {
+		return x.MappedMode
+	}
+	return 0
+}
+
+func (x *MmapInfo) GetMappedUid() uint32 {
+	if x != nil {
+		return x.MappedUid
+	}
+	return 0
+}
+
+func (x *MmapInfo) GetMappedGid() uint32 {
+	if x != nil {
+		return x.MappedGid
+	}
+	return 0
+}
+
+func (x *MmapInfo) GetIsInitialMmap() bool {
+	if x != nil {
+		return x.IsInitialMmap
+	}
+	return false
+}
+
 var File_pkg_sentry_seccheck_points_sentry_proto protoreflect.FileDescriptor
 
 const file_pkg_sentry_seccheck_points_sentry_proto_rawDesc = "" +
@@ -311,7 +411,7 @@ const file_pkg_sentry_seccheck_points_sentry_proto_rawDesc = "" +
 	"\x11created_thread_id\x18\x03 \x01(\x05R\x0fcreatedThreadId\x125\n" +
 	"\x17created_thread_group_id\x18\x04 \x01(\x05R\x14createdThreadGroupId\x12>\n" +
 	"\x1ccreated_thread_start_time_ns\x18\x05 \x01(\x03R\x18createdThreadStartTimeNs\x12\x14\n" +
-	"\x05flags\x18\x06 \x01(\x04R\x05flags\"\x96\x02\n" +
+	"\x05flags\x18\x06 \x01(\x04R\x05flags\"\xcc\x02\n" +
 	"\n" +
 	"ExecveInfo\x12=\n" +
 	"\fcontext_data\x18\x01 \x01(\v2\x1a.gvisor.common.ContextDataR\vcontextData\x12\x1f\n" +
@@ -325,7 +425,8 @@ const file_pkg_sentry_seccheck_points_sentry_proto_rawDesc = "" +
 	"binary_uid\x18\x06 \x01(\rR\tbinaryUid\x12\x1d\n" +
 	"\n" +
 	"binary_gid\x18\a \x01(\rR\tbinaryGid\x12#\n" +
-	"\rbinary_sha256\x18\b \x01(\fR\fbinarySha256\"v\n" +
+	"\rbinary_sha256\x18\b \x01(\fR\fbinarySha256\x124\n" +
+	"\x16binary_overlayfs_upper\x18\t \x01(\bR\x14binaryOverlayfsUpper\"v\n" +
 	"\x14ExitNotifyParentInfo\x12=\n" +
 	"\fcontext_data\x18\x01 \x01(\v2\x1a.gvisor.common.ContextDataR\vcontextData\x12\x1f\n" +
 	"\vexit_status\x18\x02 \x01(\x05R\n" +
@@ -333,7 +434,20 @@ const file_pkg_sentry_seccheck_points_sentry_proto_rawDesc = "" +
 	"\bTaskExit\x12=\n" +
 	"\fcontext_data\x18\x01 \x01(\v2\x1a.gvisor.common.ContextDataR\vcontextData\x12\x1f\n" +
 	"\vexit_status\x18\x02 \x01(\x05R\n" +
-	"exitStatusb\x06proto3"
+	"exitStatus\"\x90\x02\n" +
+	"\bMmapInfo\x12=\n" +
+	"\fcontext_data\x18\x01 \x01(\v2\x1a.gvisor.common.ContextDataR\vcontextData\x12\x1f\n" +
+	"\vmapped_path\x18\x02 \x01(\tR\n" +
+	"mappedPath\x12\x1d\n" +
+	"\n" +
+	"mapped_ino\x18\x03 \x01(\x04R\tmappedIno\x12\x1f\n" +
+	"\vmapped_mode\x18\x04 \x01(\rR\n" +
+	"mappedMode\x12\x1d\n" +
+	"\n" +
+	"mapped_uid\x18\x05 \x01(\rR\tmappedUid\x12\x1d\n" +
+	"\n" +
+	"mapped_gid\x18\x06 \x01(\rR\tmappedGid\x12&\n" +
+	"\x0fis_initial_mmap\x18\a \x01(\bR\risInitialMmapb\x06proto3"
 
 var (
 	file_pkg_sentry_seccheck_points_sentry_proto_rawDescOnce sync.Once
@@ -347,24 +461,26 @@ func file_pkg_sentry_seccheck_points_sentry_proto_rawDescGZIP() []byte {
 	return file_pkg_sentry_seccheck_points_sentry_proto_rawDescData
 }
 
-var file_pkg_sentry_seccheck_points_sentry_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_pkg_sentry_seccheck_points_sentry_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_pkg_sentry_seccheck_points_sentry_proto_goTypes = []any{
 	(*CloneInfo)(nil),            // 0: gvisor.sentry.CloneInfo
 	(*ExecveInfo)(nil),           // 1: gvisor.sentry.ExecveInfo
 	(*ExitNotifyParentInfo)(nil), // 2: gvisor.sentry.ExitNotifyParentInfo
 	(*TaskExit)(nil),             // 3: gvisor.sentry.TaskExit
-	(*ContextData)(nil),          // 4: gvisor.common.ContextData
+	(*MmapInfo)(nil),             // 4: gvisor.sentry.MmapInfo
+	(*ContextData)(nil),          // 5: gvisor.common.ContextData
 }
 var file_pkg_sentry_seccheck_points_sentry_proto_depIdxs = []int32{
-	4, // 0: gvisor.sentry.CloneInfo.context_data:type_name -> gvisor.common.ContextData
-	4, // 1: gvisor.sentry.ExecveInfo.context_data:type_name -> gvisor.common.ContextData
-	4, // 2: gvisor.sentry.ExitNotifyParentInfo.context_data:type_name -> gvisor.common.ContextData
-	4, // 3: gvisor.sentry.TaskExit.context_data:type_name -> gvisor.common.ContextData
-	4, // [4:4] is the sub-list for method output_type
-	4, // [4:4] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	5, // 0: gvisor.sentry.CloneInfo.context_data:type_name -> gvisor.common.ContextData
+	5, // 1: gvisor.sentry.ExecveInfo.context_data:type_name -> gvisor.common.ContextData
+	5, // 2: gvisor.sentry.ExitNotifyParentInfo.context_data:type_name -> gvisor.common.ContextData
+	5, // 3: gvisor.sentry.TaskExit.context_data:type_name -> gvisor.common.ContextData
+	5, // 4: gvisor.sentry.MmapInfo.context_data:type_name -> gvisor.common.ContextData
+	5, // [5:5] is the sub-list for method output_type
+	5, // [5:5] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_pkg_sentry_seccheck_points_sentry_proto_init() }
@@ -379,7 +495,7 @@ func file_pkg_sentry_seccheck_points_sentry_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_sentry_seccheck_points_sentry_proto_rawDesc), len(file_pkg_sentry_seccheck_points_sentry_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

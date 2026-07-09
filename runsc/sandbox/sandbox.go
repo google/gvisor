@@ -572,17 +572,14 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 		if err != nil {
 			return err
 		}
-		// Scrape the host network to get the network config and store it in the
-		// loader. The kernel will restore loaded network stack with this config.
+		// Configure the network.
 		if err := setupNetwork(conn, s.Pid.Load(), conf, disableIPv6); err != nil {
 			return fmt.Errorf("setting up network: %w", err)
 		}
 	} else {
-		// When network args is not nil, set it in the loader which will be used
-		// during restore to configure the loaded stack.
-		log.Debugf("Setting up network args, config: %+v", networkArgs)
-		if err := conn.Call(boot.ContMgrSetNetworkArgs, networkArgs, nil); err != nil {
-			return fmt.Errorf("setting network args: %w", err)
+		log.Debugf("Setting up network, config: %+v", networkArgs)
+		if err := conn.Call(boot.ContMgrCreateLinksAndRoutes, networkArgs, nil); err != nil {
+			return fmt.Errorf("creating links and routes: %w", err)
 		}
 	}
 
@@ -2533,6 +2530,21 @@ func (s *Sandbox) TarRootfsUpperLayer(containerID string, outFD *os.File) error 
 	}
 	if err := s.call(boot.FsTarRootfsUpperLayer, &opts, nil); err != nil {
 		return fmt.Errorf("serializing rootfs upper layer to tar: %w", err)
+	}
+	return nil
+}
+
+// ReadFile reads a file of the sandbox from the given container (or root container if containerID is empty) up to the specified size.
+func (s *Sandbox) ReadFile(containerID, path string, size int64, outFD *os.File) error {
+	log.Debugf("ReadFile, sandbox: %q, container: %q, path: %q, size: %d", s.ID, containerID, path, size)
+	opts := control.ReadOpts{
+		ContainerID: containerID,
+		Path:        path,
+		Size:        size,
+		FilePayload: urpc.FilePayload{Files: []*os.File{outFD}},
+	}
+	if err := s.call(boot.FsRead, &opts, nil); err != nil {
+		return fmt.Errorf("reading file %q: %w", path, err)
 	}
 	return nil
 }

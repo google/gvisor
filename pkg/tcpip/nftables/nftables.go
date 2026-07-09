@@ -1559,7 +1559,7 @@ func (nf *NFTables) ParseNestedExprs(nestedAttrBytes nlmsg.AttrsView, maxExprs i
 	for !nestedAttrBytes.Empty() {
 		hdr, value, rest, ok := nestedAttrBytes.ParseFirst()
 		if !ok {
-			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse list atttribute for rules")
+			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse list attribute for rules")
 		}
 
 		nestedAttrBytes = rest

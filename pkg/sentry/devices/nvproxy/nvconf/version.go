@@ -37,7 +37,7 @@ func NewDriverVersion(major, minor, patch int) DriverVersion {
 // DriverVersionFrom returns a DriverVersion from a string.
 func DriverVersionFrom(version string) (DriverVersion, error) {
 	parts := strings.Split(version, ".")
-	if len(parts) != 3 {
+	if len(parts) < 2 || len(parts) > 3 {
 		return DriverVersion{}, fmt.Errorf("invalid format of version string %q", version)
 	}
 	var (
@@ -52,9 +52,13 @@ func DriverVersionFrom(version string) (DriverVersion, error) {
 	if err != nil {
 		return DriverVersion{}, fmt.Errorf("invalid format for minor version %q: %v", version, err)
 	}
-	res.patch, err = strconv.Atoi(parts[2])
-	if err != nil {
-		return DriverVersion{}, fmt.Errorf("invalid format for patch version %q: %v", version, err)
+	if len(parts) == 3 {
+		res.patch, err = strconv.Atoi(parts[2])
+		if err != nil {
+			return DriverVersion{}, fmt.Errorf("invalid format for patch version %q: %v", version, err)
+		}
+	} else {
+		res.patch = 0
 	}
 	return res, nil
 }
