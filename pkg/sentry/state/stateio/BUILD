@@ -25,6 +25,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/aio",
+        "//pkg/atomicbitops",
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/memutil",
@@ -41,6 +42,7 @@ go_test(
     srcs = [
         "bufreader_test.go",
         "bufwriter_test.go",
+        "fdwriter_test.go",
         "ioreader_test.go",
         "iowriter_test.go",
     ],
