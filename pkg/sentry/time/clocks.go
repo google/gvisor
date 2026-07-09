@@ -21,7 +21,9 @@ type Clocks interface {
 	// reference host clocks, and returning the new timekeeping parameters.
 	//
 	// Update should be called at approximately ApproxUpdateInterval.
-	Update() (monotonicParams Parameters, monotonicOk bool, realtimeParam Parameters, realtimeOk bool)
+	//
+	// parked indicates that the clock was not read for at least ApproxUpdateInterval
+	Update(parked bool) (monotonicParams Parameters, monotonicOk bool, realtimeParam Parameters, realtimeOk bool)
 
 	// GetTime returns the current time in nanoseconds for the given clock.
 	//

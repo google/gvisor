@@ -33,11 +33,11 @@ type mockClocks struct {
 }
 
 // Update implements sentrytime.Clocks.Update. It does nothing.
-func (*mockClocks) Update() (monotonicParams sentrytime.Parameters, monotonicOk bool, realtimeParam sentrytime.Parameters, realtimeOk bool) {
+func (*mockClocks) Update(parked bool) (monotonicParams sentrytime.Parameters, monotonicOk bool, realtimeParam sentrytime.Parameters, realtimeOk bool) {
 	return
 }
 
-// Update implements sentrytime.Clocks.GetTime.
+// GetTime implements sentrytime.Clocks.GetTime.
 func (c *mockClocks) GetTime(id sentrytime.ClockID) (int64, error) {
 	switch id {
 	case sentrytime.Monotonic:
