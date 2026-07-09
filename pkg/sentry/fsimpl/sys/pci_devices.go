@@ -90,7 +90,7 @@ func pciClassRelevant(class string) bool {
 		return true
 	case 0x0604: // PCI bridge
 		return true
-	case "0680": // NVSwitch
+	case 0x0680: // NVSwitch
 		return true
 	}
 	return false
@@ -101,14 +101,19 @@ func pciClassRelevant(class string) bool {
 // against RDMA availability — see rdmaUsablePCISlotNames for the rules on
 // which NIC PCI devices are kept in the virtual PCI tree.
 func pciClassIsNIC(class string) bool {
-	c := strings.TrimPrefix(class, "0x")
-	if len(c) < 4 {
+	c, err := strconv.ParseInt(strings.TrimSpace(class), 0, 0)
+	if err != nil {
 		return false
 	}
-	prefix := c[:4]
-	// 0200 Ethernet, 0207 InfiniBand network controller (Crusoe B200/EFA),
-	// 0c06 InfiniBand controller.
-	return prefix == "0200" || prefix == "0207" || prefix == "0c06"
+	switch c >> 8 {
+	case 0x0200: // Ethernet
+		return true
+	case 0x0207: // InfiniBand network controller (Crusoe B200/EFA)
+		return true
+	case 0x0c06: // InfiniBand controller
+		return true
+	}
+	return false
 }
 
 // rdmaUsablePCISlotNames returns the set of PCI slot names (lowercase) for
