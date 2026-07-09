@@ -20,6 +20,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -72,21 +73,22 @@ type PCIDevicesData struct {
 // Extend this switch when adding support for additional accelerator/NIC
 // families.
 func pciClassRelevant(class string) bool {
-	c := strings.TrimPrefix(class, "0x")
-	if len(c) < 4 {
+	c, err := strconv.ParseInt(strings.TrimSpace(class), 0, 0)
+	if err != nil {
 		return false
 	}
-	prefix := c[:4]
-	switch prefix {
-	case "0302", "0300": // GPU (3D controller, VGA)
+	// The last byte of the class string is the programming interface byte, which is too restrictive
+	// for our class matching control. We ignore it by truncating the last byte.
+	switch c >> 8 {
+	case 0x0302, 0x0300: // GPU (3D controller, VGA)
 		return true
-	case "0200": // Ethernet controller (NIC)
+	case 0x0200: // Ethernet controller (NIC)
 		return true
-	case "0c06": // InfiniBand controller
+	case 0x0c06: // InfiniBand controller
 		return true
-	case "0207": // InfiniBand network controller (e.g. Crusoe B200 RDMA NICs report 0x020700)
+	case 0x0207: // InfiniBand network controller (e.g. Crusoe B200 RDMA NICs report 0x020700)
 		return true
-	case "0604": // PCI bridge
+	case 0x0604: // PCI bridge
 		return true
 	}
 	return false
@@ -138,7 +140,11 @@ func CollectPCIDeviceData() *PCIDevicesData {
 		}
 		realPath, err := filepath.EvalSymlinks(devDir)
 		if err != nil {
-			realPath = devDir
+			// NCCL needs the resolved /sys/devices/pci... hierarchy to
+			// compute PCI distances. The flat bus path is not usable as a
+			// substitute, so skip rather than collect a broken RealPath.
+			log.Warningf("pci collect: EvalSymlinks(%s): %v; skipping", devDir, err)
+			continue
 		}
 		leaves = append(leaves, leafDev{addr: dent.Name(), realPath: realPath})
 	}
