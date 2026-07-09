@@ -249,7 +249,7 @@ integration-tests: docker-tests overlay-tests hostnet-tests swgso-tests
 integration-tests: do-tests kvm-tests containerd-tests-min
 .PHONY: integration-tests
 
-integration-test-images: load-image-test load-basic
+integration-test-images: load-image-test load-basic load-systemd-integ
 .PHONY: integration-test-images
 
 network-tests: ## Run all networking integration tests.
@@ -393,6 +393,7 @@ docker-tests: integration-test-images $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME)-dcache,--fdlimit=2000 --dcache=100) # Used by TestDentryCacheLimit.
 	@$(call install_runtime,$(RUNTIME)-host-uds,--host-uds=all) # Used by TestHostSocketConnect.
 	@$(call install_runtime,$(RUNTIME)-overlay,--overlay2=all:self) # Used by TestOverlay*.
+	@$(call install_runtime,$(RUNTIME)-cgroupv2,--mount-cgroup-v2) # Used by TestSystemd*.
 	@$(call test_runtime_cached,$(RUNTIME),$(INTEGRATION_TARGETS) --test_env=TEST_SAVE_RESTORE_NETSTACK=true //test/e2e:integration_runtime_test //test/e2e:runtime_in_docker_test)
 .PHONY: docker-tests
 
