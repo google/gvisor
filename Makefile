@@ -283,6 +283,14 @@ RUNTIME_TESTS_FLAKY_SHORT_CIRCUIT ?= true
 	@IMAGE_TAG=$(call tag,runtimes_$*) && \
 	$(call test_runtime_cached,$(RUNTIME),--test_timeout=1800 --test_env=RUNTIME_TESTS_FILTER=$(RUNTIME_TESTS_FILTER) --test_env=RUNTIME_TESTS_PER_TEST_TIMEOUT=$(RUNTIME_TESTS_PER_TEST_TIMEOUT) --test_env=RUNTIME_TESTS_RUNS_PER_TEST=$(RUNTIME_TESTS_RUNS_PER_TEST) --test_env=RUNTIME_TESTS_FLAKY_IS_ERROR=$(RUNTIME_TESTS_FLAKY_IS_ERROR) --test_env=RUNTIME_TESTS_FLAKY_SHORT_CIRCUIT=$(RUNTIME_TESTS_FLAKY_SHORT_CIRCUIT) --test_env=IMAGE_TAG=$${IMAGE_TAG} //test/runtimes:$*)
 
+# TODO: b/486197011 - Enable moby runtime tests for runsc.
+# Hardcoded to runsc for now.
+moby-runtime-tests: load-runtimes_moby $(RUNTIME_BIN)
+	@echo "WARNING: moby-runtime-tests running with runc for now."
+	@IMAGE_TAG=$(call tag,runtimes_moby) && \
+	$(call test_runtime_cached,runc,--test_timeout=180 --test_env=RUNTIME_TESTS_FILTER=$(RUNTIME_TESTS_FILTER) --test_env=RUNTIME_TESTS_PER_TEST_TIMEOUT=$(RUNTIME_TESTS_PER_TEST_TIMEOUT) --test_env=RUNTIME_TESTS_RUNS_PER_TEST=$(RUNTIME_TESTS_RUNS_PER_TEST) --test_env=RUNTIME_TESTS_FLAKY_IS_ERROR=$(RUNTIME_TESTS_FLAKY_IS_ERROR) --test_env=RUNTIME_TESTS_FLAKY_SHORT_CIRCUIT=$(RUNTIME_TESTS_FLAKY_SHORT_CIRCUIT) --test_env=IMAGE_TAG=$${IMAGE_TAG} //test/runtimes:moby)
+.PHONY: moby-runtime-tests
+
 do-tests: $(RUNTIME_BIN)
 	@$(RUNTIME_BIN) --rootless do true
 	@$(RUNTIME_BIN) --rootless -network=none do true
