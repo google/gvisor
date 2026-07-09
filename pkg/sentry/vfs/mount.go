@@ -351,12 +351,18 @@ func (vfs *VirtualFilesystem) attachTreeLocked(ctx context.Context, mnt *Mount, 
 		owner = mntns.Owner
 		mntns.DecRef(ctx)
 	}
+	notifiedNS := map[*MountNamespace]struct{}{mp.mount.ns: {}}
+	mp.mount.ns.notify()
 	for pmnt := range propMnts {
 		vfs.commitMount(ctx, pmnt)
 		if pmnt.parent().ns.Owner != owner {
 			vfs.lockMountTree(pmnt)
 		}
 		pmnt.locked = false
+		if _, ok := notifiedNS[pmnt.parent().ns]; !ok {
+			notifiedNS[pmnt.parent().ns] = struct{}{}
+			pmnt.parent().ns.notify()
+		}
 	}
 	return nil
 }
@@ -782,7 +788,11 @@ func (vfs *VirtualFilesystem) RemountAt(ctx context.Context, creds *auth.Credent
 	if !vfs.validInMountNS(ctx, mnt) {
 		return linuxerr.EINVAL
 	}
-	return mnt.setMountOptions(opts)
+	if err := mnt.setMountOptions(opts); err != nil {
+		return err
+	}
+	mnt.ns.notify()
+	return nil
 }
 
 // MountAt creates and mounts a Filesystem configured by the given arguments.
@@ -927,11 +937,21 @@ func (vfs *VirtualFilesystem) umountTreeLocked(mnt *Mount, opts *umountRecursive
 		vfs.unlockPropagationMounts(mnt)
 	}
 	umountMnts := mnt.submountsLocked()
+	// Collect affected namespaces before umounting, since ns pointers may be
+	// cleared during disconnect.
+	affectedNS := make(map[*MountNamespace]struct{})
+	for _, m := range umountMnts {
+		affectedNS[m.ns] = struct{}{}
+	}
 	for _, mnt := range umountMnts {
 		vfs.umount(mnt)
 	}
 	if opts.propagate {
-		umountMnts = append(umountMnts, vfs.propagateUmount(umountMnts)...)
+		propMnts := vfs.propagateUmount(umountMnts)
+		for _, m := range propMnts {
+			affectedNS[m.ns] = struct{}{}
+		}
+		umountMnts = append(umountMnts, propMnts...)
 	}
 
 	vfs.mounts.seq.BeginWrite()
@@ -965,6 +985,9 @@ func (vfs *VirtualFilesystem) umountTreeLocked(mnt *Mount, opts *umountRecursive
 		vfs.setPropagation(mnt, linux.MS_PRIVATE)
 	}
 	vfs.mounts.seq.EndWrite()
+	for ns := range affectedNS {
+		ns.notify()
+	}
 }
 
 // +checklocks:vfs.mountMu
@@ -989,6 +1012,7 @@ func (vfs *VirtualFilesystem) changeMountpoint(mnt *Mount, mp VirtualDentry) {
 	mp.IncRef()
 	vfs.connectLocked(mnt, mp, mp.mount.ns)
 	mp.dentry.mu.Unlock()
+	mp.mount.ns.notify()
 }
 
 // migrateChildrenNs recursively migrates mnt's children into newNs.
