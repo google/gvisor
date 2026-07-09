@@ -308,12 +308,14 @@ gpu-smoke-tests: gpu-smoke-images $(RUNTIME_BIN)
 	@$(call sudo,test/gpu:smoke_test,--runtime=runc -test.v $(ARGS))
 	@$(call install_runtime,$(RUNTIME),--nvproxy=true)
 	@$(call sudo,test/gpu:smoke_test,--runtime=$(RUNTIME) -test.v $(ARGS))
+	@$(call sudo,test/gpu:sr_test,--runtime=$(RUNTIME) -test.v $(ARGS))
 .PHONY: gpu-smoke-tests
 
 cos-gpu-smoke-tests: gpu-smoke-images $(RUNTIME_BIN)
 	@$(call sudo,test/gpu:smoke_test,--runtime=runc -test.v --cos-gpu $(ARGS))
 	@$(call install_runtime,$(RUNTIME),--nvproxy=true)
 	@$(call sudo,test/gpu:smoke_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
+	@$(call sudo,test/gpu:sr_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
 .PHONY: cos-gpu-smoke-tests
 
 # Images needed for GPU tests.
