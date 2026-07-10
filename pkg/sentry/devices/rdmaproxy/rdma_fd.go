@@ -23,7 +23,9 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -41,11 +43,9 @@ type rdmaFD struct {
 	queue      waiter.Queue
 	memmapFile fsutil.MmapNoInternalFile
 
-	/* TODO: Add back once memory mapping is supported.
 	mu sync.Mutex `state:"nosave"`
 	// +checklocks:mu
-	devAddrSet DevAddrSet `state:"nosave"`
-	*/
+	mrPins map[uint32][]mm.PinnedRange
 }
 
 func (fd *rdmaFD) isRestored() bool {
@@ -57,8 +57,7 @@ func (fd *rdmaFD) Release(context.Context) {
 	if fd.isRestored() {
 		return
 	}
-	// TODO: add back
-	// fd.unpinRange(DevAddrRange{0, ^uint64(0)})
+	fd.unpinAll()
 	fdnotifier.RemoveFD(fd.hostFD)
 	fd.queue.Notify(waiter.EventHUp)
 	fd.memmapFile.Closer = &fd.memmapFile
@@ -103,10 +102,12 @@ func (fd *rdmaFD) Epollable() bool {
 }
 
 // Ioctl implements vfs.FileDescriptionImpl.Ioctl.
-// No-op for now.
+//
+// The ioctl-based uverbs interface is not yet supported. Returning ENOTTY tells
+// rdma-core that the ioctl framework is entirely absent, causing it to fall
+// back to the legacy write() command ABI for all verbs (see
+// _execute_ioctl_fallback() in rdma-core's libibverbs/cmd_fallback.c), which
+// is proxied by Write in rdma_fd_write.go.
 func (fd *rdmaFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
-	if fd.isRestored() {
-		return 0, nil
-	}
-	return 0, linuxerr.ENOSYS
+	return 0, linuxerr.ENOTTY
 }
