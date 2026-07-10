@@ -115,6 +115,7 @@ pkg_tar(
     srcs = [
         "_config.yml",
         ":css",
+        "//website/application_compatibility:index.html",
         "//website/blog:index.html",
         "//website/security_track_record:index.html",
         "//website/users:index.html",
@@ -224,4 +225,10 @@ yaml_test(
     srcs = ["_data/cve-track-record.yml"],
     disallow_comments = True,
     schema = "//website:cve-track-record.schema.json",
+)
+
+yaml_test(
+    name = "application_compatibility_test",
+    srcs = ["_data/application-compatibility.yml"],
+    schema = "//website:application-compatibility.schema.json",
 )
