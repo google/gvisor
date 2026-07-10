@@ -70,7 +70,7 @@ func TestTotalSystemMemory(t *testing.T) {
 			err:     "too large",
 		},
 		{
-			name:    "unkown-unit",
+			name:    "unknown-unit",
 			content: "MemTotal: 123 mB\n",
 			err:     "unknown unit",
 		},

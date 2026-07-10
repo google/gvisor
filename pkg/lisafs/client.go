@@ -140,7 +140,7 @@ func (c *Client) StartChannels() error {
 	}
 	channelsWg.Wait()
 
-	// Check that atleast 1 channel is created. This is not required by lisafs
+	// Check that at least 1 channel is created. This is not required by lisafs
 	// protocol. It exists to flag server side issues in channel creation.
 	c.channelsMu.Lock()
 	numChannels := len(c.channels)
