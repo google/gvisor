@@ -1428,6 +1428,7 @@ func (mntns *MountNamespace) StateFields() []string {
 		"pending",
 		"anon",
 		"originatorID",
+		"Poller",
 	}
 }
 
@@ -1446,6 +1447,7 @@ func (mntns *MountNamespace) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(7, &mntns.pending)
 	stateSinkObject.Save(8, &mntns.anon)
 	stateSinkObject.Save(9, &mntns.originatorID)
+	stateSinkObject.Save(10, &mntns.Poller)
 }
 
 func (mntns *MountNamespace) afterLoad(context.Context) {}
@@ -1462,6 +1464,7 @@ func (mntns *MountNamespace) StateLoad(ctx context.Context, stateSourceObject st
 	stateSourceObject.Load(7, &mntns.pending)
 	stateSourceObject.Load(8, &mntns.anon)
 	stateSourceObject.Load(9, &mntns.originatorID)
+	stateSourceObject.Load(10, &mntns.Poller)
 }
 
 func (fd *opathFD) StateTypeName() string {

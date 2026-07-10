@@ -20,6 +20,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/aio"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/hostfd"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -29,8 +30,8 @@ import (
 type FDWriter struct {
 	NoRegisterClientFD
 
-	// fd is the file descriptor. fd is immutable.
-	fd int32
+	// fd is the file descriptor.
+	fd atomicbitops.Int32
 
 	// maxWriteBytes and maxRanges are AsyncWriter parameters. Both are
 	// immutable.
@@ -126,7 +127,7 @@ func NewFDWriter(fd int32, maxWriteBytes uint64, maxRanges, maxParallel int) *FD
 	}
 
 	return &FDWriter{
-		fd:            fd,
+		fd:            atomicbitops.FromInt32(fd),
 		maxWriteBytes: uint32(min(maxWriteBytes, uint64(linux.MAX_RW_COUNT))),
 		maxRanges:     uint32(min(maxRanges, hostfd.MaxReadWriteIov)),
 		preextend:     preextend,
@@ -138,8 +139,12 @@ func NewFDWriter(fd int32, maxWriteBytes uint64, maxRanges, maxParallel int) *FD
 
 // Close implements AsyncWriter.Close.
 func (w *FDWriter) Close() error {
+	fd := w.fd.Swap(-1)
+	if fd == -1 {
+		return nil
+	}
 	w.q.Destroy()
-	return unix.Close(int(w.fd))
+	return unix.Close(int(fd))
 }
 
 // MaxWriteBytes implements AsyncWriter.MaxWriteBytes.
@@ -159,7 +164,7 @@ func (w *FDWriter) MaxParallel() int {
 
 // AddWrite implements AsyncWriter.AddWrite.
 func (w *FDWriter) AddWrite(id int, _ SourceFile, _ memmap.FileRange, srcMap []byte) {
-	aio.Write(w.q, uint64(id), w.fd, w.off, srcMap)
+	aio.Write(w.q, uint64(id), w.fd.Load(), w.off, srcMap)
 	w.inflight[id] = fdWrite{
 		off:   w.off,
 		total: uint64(len(srcMap)),
@@ -170,7 +175,7 @@ func (w *FDWriter) AddWrite(id int, _ SourceFile, _ memmap.FileRange, srcMap []b
 
 // AddWritev implements AsyncWriter.AddWritev.
 func (w *FDWriter) AddWritev(id int, total uint64, _ SourceFile, _ []memmap.FileRange, srcMaps []unix.Iovec) {
-	aio.Writev(w.q, uint64(id), w.fd, w.off, srcMaps)
+	aio.Writev(w.q, uint64(id), w.fd.Load(), w.off, srcMaps)
 	w.inflight[id] = fdWrite{
 		off:   w.off,
 		total: total,
@@ -186,10 +191,10 @@ func (w *FDWriter) Wait(cs []Completion, minCompletions int) ([]Completion, erro
 	if w.preextend && w.fileSize < w.off {
 		newSize := max(w.off, w.reserved)
 		w.reserved = 0
-		if err := unix.Ftruncate(int(w.fd), newSize); err != nil {
+		if err := unix.Ftruncate(int(w.fd.Load()), newSize); err != nil {
 			// This can occur if e.g. the file is FUSE-backed, and the FUSE
 			// server doesn't support file extension.
-			log.Infof("stateio.FDWriter: ftruncate(%d, %d) failed: %v", w.fd, newSize, err)
+			log.Infof("stateio.FDWriter: ftruncate(%d, %d) failed: %v", w.fd.Load(), newSize, err)
 			w.preextend = false
 			// Update w.fileSize assuming that all writes complete
 			// successfully, as below.
@@ -240,9 +245,9 @@ retry:
 				inflight.done = done
 				inflight.src = inflight.src.DropFirst(n)
 				if inflight.src.Mapping != nil {
-					aio.Write(w.q, aioC.ID, w.fd, inflight.off, inflight.src.Mapping)
+					aio.Write(w.q, aioC.ID, w.fd.Load(), inflight.off, inflight.src.Mapping)
 				} else {
-					aio.Writev(w.q, aioC.ID, w.fd, inflight.off, inflight.src.Iovecs)
+					aio.Writev(w.q, aioC.ID, w.fd.Load(), inflight.off, inflight.src.Iovecs)
 				}
 				// w.q may be an aio.LinuxQueue, in which case we need to call
 				// w.q.Wait() again to submit this write.

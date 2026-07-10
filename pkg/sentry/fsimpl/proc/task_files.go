@@ -1349,6 +1349,7 @@ type mountInfoData struct {
 }
 
 var _ dynamicInode = (*mountInfoData)(nil)
+var _ vfs.PollableDynamicBytesSource = (*mountInfoData)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (i *mountInfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
@@ -1369,6 +1370,15 @@ func (i *mountInfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	return i.task.Kernel().VFS().GenerateProcMountInfo(ctx, rootDir, buf)
 }
 
+// GetDynamicBytesPoller implements vfs.PollableDynamicBytesSource.GetDynamicBytesPoller.
+func (i *mountInfoData) GetDynamicBytesPoller(ctx context.Context) *vfs.DynamicBytesPoller {
+	mntns := i.task.MountNamespace()
+	if mntns == nil {
+		return nil
+	}
+	return &mntns.Poller
+}
+
 // mountsData is used to implement /proc/[pid]/mounts.
 //
 // +stateify savable
@@ -1380,6 +1390,7 @@ type mountsData struct {
 }
 
 var _ dynamicInode = (*mountsData)(nil)
+var _ vfs.PollableDynamicBytesSource = (*mountsData)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (i *mountsData) Generate(ctx context.Context, buf *bytes.Buffer) error {
@@ -1398,6 +1409,15 @@ func (i *mountsData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	}
 	defer i.fs.SafeDecRef(ctx, rootDir)
 	return i.task.Kernel().VFS().GenerateProcMounts(ctx, rootDir, buf)
+}
+
+// GetDynamicBytesPoller implements vfs.PollableDynamicBytesSource.GetDynamicBytesPoller.
+func (i *mountsData) GetDynamicBytesPoller(ctx context.Context) *vfs.DynamicBytesPoller {
+	mntns := i.task.MountNamespace()
+	if mntns == nil {
+		return nil
+	}
+	return &mntns.Poller
 }
 
 // +stateify savable
