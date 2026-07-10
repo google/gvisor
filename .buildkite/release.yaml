@@ -76,18 +76,6 @@ steps:
       - make gpu-all-tests
     agents:
       queue: gpu
-  - label: ":fish: CUDA 12.2 tests"
-    # This is its own test rather than being part of the GPU tests,
-    # because it takes around 30 minutes to run.
-    parallelism: 32
-    timeout_in_minutes: 120
-    retry:
-      <<: *retry_settings
-    commands:
-      - make sudo TARGETS=//tools/gpu:main ARGS="install --latest"
-      - make cuda-tests
-    agents:
-      queue: gpu
   - label: ":batfish: CUDA 12.8 tests"
     # This is its own test rather than being part of the GPU tests,
     # because it takes around 30 minutes to run.

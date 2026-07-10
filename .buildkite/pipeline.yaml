@@ -223,7 +223,7 @@ steps:
       <<: *retry_settings
     commands:
       - make sudo TARGETS=//tools/gpu:main ARGS="install --latest"
-      - make cuda-tests
+      - make cuda-12-8-tests
     agents:
       queue: gpu
   - <<: *common
@@ -478,7 +478,7 @@ steps:
     command: make containerd-test-2.2.3
     agents:
       <<: *ubuntu_agents
-      <<: *containerd_agents      
+      <<: *containerd_agents
   - <<: *common
     <<: *source_test
     label: ":podman: Podman"
