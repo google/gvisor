@@ -260,6 +260,26 @@ func ExtractMinorUint32(dev string) (uint32, bool) {
 	return uint32(v), true
 }
 
+// spoofModaliasForDriverMatch rewrites the IDPF PCI device ID (8086:145C)
+// to E810 (8086:1593) in the modalias served to the container. rdma-core's
+// libirdma match table has no IDPF entry; on the host the irdma provider
+// binds via the netlink nldev UVERBS_DRIVER_ID, which the sentry does not
+// implement, leaving sysfs modalias matching as the only binding path
+// inside the sandbox. The matched table entry carries no driver_data, so
+// the rewrite only affects binding, not provider behavior; device
+// capabilities are negotiated via GET_CONTEXT at open time. The uevent
+// MODALIAS is intentionally left unspoofed.
+//
+// TODO: replace with a sentry NETLINK_RDMA nldev shim that reports
+// RDMA_NLDEV_ATTR_UVERBS_DRIVER_ID.
+func spoofModaliasForDriverMatch(modalias string) string {
+	const idpfPrefix = "pci:v00008086d0000145C"
+	if strings.HasPrefix(modalias, idpfPrefix) {
+		return "pci:v00008086d00001593" + modalias[len(idpfPrefix):]
+	}
+	return modalias
+}
+
 // inferRoCEType returns the RoCE GID type based on GID table index.
 // The sandbox's restricted sysfs mount masks gid_attrs/types/ content,
 // so we infer from the well-known mlx5 kernel assignment:
@@ -317,37 +337,14 @@ func (fs *filesystem) newRDMASysfsEntries(ctx context.Context, creds *auth.Crede
 	}
 	addFile(ibVerbsDir, "abi_version", data.VerbsABIVersion)
 
-	for _, dev := range data.Devices {
-		verbsEntries := map[string]kernfs.Inode{}
-		addFile(verbsEntries, "ibdev", dev.IBDev)
-		addFile(verbsEntries, "abi_version", dev.ABIVersion)
-		devVal := dev.Dev
-		if dev.DynMajor != 0 {
-			minor := extractMinor(dev.Dev)
-			devVal = fmt.Sprintf("%d:%s", dev.DynMajor, minor)
-			log.Infof("rdma sysfs: %s dev=%s (patched from host %s, dynMajor=%d)",
-				dev.Name, devVal, dev.Dev, dev.DynMajor)
-		} else {
-			log.Infof("rdma sysfs: %s dev=%s (no dynMajor, using host value)", dev.Name, devVal)
-		}
-		addFile(verbsEntries, "dev", devVal)
-		ibVerbsDir[dev.Name] = fs.newDir(ctx, creds, defaultSysDirMode, verbsEntries)
-
-		if dev.IBDev == "" {
-			continue
-		}
-		log.Infof("rdma sysfs: %s → ibdev=%s node_type=%q fw_ver=%q guid=%s ports=%d",
-			dev.Name, dev.IBDev, dev.NodeType, dev.FWVer, dev.NodeGUID, len(dev.Ports))
-		ibDevEntries := map[string]kernfs.Inode{}
-		addFile(ibDevEntries, "node_type", dev.NodeType)
-		addFile(ibDevEntries, "node_guid", dev.NodeGUID)
-		addFile(ibDevEntries, "sys_image_guid", dev.SysImgGUID)
-		addFile(ibDevEntries, "fw_ver", dev.FWVer)
-		// Build the device/ subdirectory with PCI attributes.
-		// libibverbs reads modalias for driver matching; NCCL reads
-		// uevent for PCI_SLOT_NAME to match NICs against GPU topology.
+	// newPCIDeviceDir builds a device/ subdirectory with PCI attributes.
+	// On the host both class nodes symlink to the same PCI device, and
+	// libibverbs reads modalias through either path depending on rdma-core
+	// version, so it must exist under both. kernfs inodes cannot be shared
+	// across parents, so each call builds fresh inodes.
+	newPCIDeviceDir := func(dev *RDMADeviceData) kernfs.Inode {
 		deviceEntries := map[string]kernfs.Inode{}
-		addFile(deviceEntries, "modalias", dev.Modalias)
+		addFile(deviceEntries, "modalias", spoofModaliasForDriverMatch(dev.Modalias))
 		addFile(deviceEntries, "class", dev.PCIClass)
 		addFile(deviceEntries, "vendor", dev.PCIVendor)
 		addFile(deviceEntries, "device", dev.PCIDevice)
@@ -376,8 +373,43 @@ func (fs *filesystem) newRDMASysfsEntries(ctx context.Context, creds *auth.Crede
 			deviceEntries["uevent"] = fs.newStaticFile(ctx, creds, defaultSysMode, uevent)
 			log.Infof("rdma sysfs: %s device/uevent: PCI_SLOT_NAME=%s", dev.IBDev, dev.PCISlotName)
 		}
-		if len(deviceEntries) > 0 {
-			ibDevEntries["device"] = fs.newDir(ctx, creds, defaultSysDirMode, deviceEntries)
+		if len(deviceEntries) == 0 {
+			return nil
+		}
+		return fs.newDir(ctx, creds, defaultSysDirMode, deviceEntries)
+	}
+
+	for _, dev := range data.Devices {
+		verbsEntries := map[string]kernfs.Inode{}
+		addFile(verbsEntries, "ibdev", dev.IBDev)
+		addFile(verbsEntries, "abi_version", dev.ABIVersion)
+		devVal := dev.Dev
+		if dev.DynMajor != 0 {
+			minor := extractMinor(dev.Dev)
+			devVal = fmt.Sprintf("%d:%s", dev.DynMajor, minor)
+			log.Infof("rdma sysfs: %s dev=%s (patched from host %s, dynMajor=%d)",
+				dev.Name, devVal, dev.Dev, dev.DynMajor)
+		} else {
+			log.Infof("rdma sysfs: %s dev=%s (no dynMajor, using host value)", dev.Name, devVal)
+		}
+		addFile(verbsEntries, "dev", devVal)
+		if devDir := newPCIDeviceDir(&dev); devDir != nil {
+			verbsEntries["device"] = devDir
+		}
+		ibVerbsDir[dev.Name] = fs.newDir(ctx, creds, defaultSysDirMode, verbsEntries)
+
+		if dev.IBDev == "" {
+			continue
+		}
+		log.Infof("rdma sysfs: %s → ibdev=%s node_type=%q fw_ver=%q guid=%s ports=%d",
+			dev.Name, dev.IBDev, dev.NodeType, dev.FWVer, dev.NodeGUID, len(dev.Ports))
+		ibDevEntries := map[string]kernfs.Inode{}
+		addFile(ibDevEntries, "node_type", dev.NodeType)
+		addFile(ibDevEntries, "node_guid", dev.NodeGUID)
+		addFile(ibDevEntries, "sys_image_guid", dev.SysImgGUID)
+		addFile(ibDevEntries, "fw_ver", dev.FWVer)
+		if devDir := newPCIDeviceDir(&dev); devDir != nil {
+			ibDevEntries["device"] = devDir
 		}
 		if len(dev.Ports) > 0 {
 			portsDir := map[string]kernfs.Inode{}

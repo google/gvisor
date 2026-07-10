@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/devutil"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -29,6 +30,29 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 )
+
+// enabled records whether RDMA device proxying is in use for this sentry.
+// Used by pkg/sentry/fsimpl/proc/rdmaproxy.go to decide whether to expose a
+// working /proc/bus/pci/devices: RDMA userspace tools built against libpci
+// (e.g. perftest) call into pciutils, which fatally exits if no PCI access
+// method succeeds at all; an empty /proc/bus/pci/devices is a valid,
+// zero-device outcome that avoids that exit.
+//
+// This must be set by SetEnabled before any container's VFS is set up, since
+// procfs is built from a static content map at mount time; by the time
+// RegisterRDMADevice runs, device nodes are already being created after
+// mounts, so it is too late for this purpose.
+var enabled atomicbitops.Bool
+
+// SetEnabled records whether RDMA device proxying is in use for this sentry.
+func SetEnabled(v bool) {
+	enabled.Store(v)
+}
+
+// Enabled returns whether RDMA device proxying is in use for this sentry.
+func Enabled() bool {
+	return enabled.Load()
+}
 
 const (
 	// See drivers/infiniband/core/uverbs_main.c

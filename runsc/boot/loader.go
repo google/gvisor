@@ -42,6 +42,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
+	"gvisor.dev/gvisor/pkg/sentry/devices/rdmaproxy"
 	"gvisor.dev/gvisor/pkg/sentry/fdimport"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sys"
@@ -514,6 +515,15 @@ func New(args Args) (*Loader, error) {
 
 	if specutils.NVProxyEnabled(args.Spec, args.Conf) {
 		nvproxy.Init()
+	}
+
+	// This must happen before any container's VFS is set up: procfs's
+	// /proc/bus/pci (see pkg/sentry/fsimpl/proc/rdmaproxy.go) is built from
+	// a static content map at mount time, which for the root container
+	// happens before device nodes (and thus rdmaproxy.RegisterRDMADevice)
+	// are created.
+	if args.Conf.RDMAProxy && specutils.HasRDMADevicesInSpec(args.Spec) {
+		rdmaproxy.SetEnabled(true)
 	}
 
 	eid := execID{cid: args.ID}
@@ -1024,6 +1034,7 @@ func (l *Loader) installSeccompFilters() error {
 			NVProxy:               nvproxyEnabled,
 			NVProxyCaps:           nvproxyCaps,
 			TPUProxy:              specutils.TPUProxyIsEnabled(l.root.spec, l.root.conf),
+			RDMAProxy:             l.root.conf.RDMAProxy && specutils.HasRDMADevicesInSpec(l.root.spec),
 			ControllerFD:          uint32(l.ctrl.srv.FD()),
 			CgoEnabled:            config.CgoEnabled,
 			PluginNetwork:         l.root.conf.Network == config.NetworkPlugin,

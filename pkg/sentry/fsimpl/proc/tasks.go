@@ -102,6 +102,7 @@ func (fs *filesystem) newTasksInode(ctx context.Context, k *kernel.Kernel, pidns
 		contents["cgroups"] = fs.newInode(ctx, root, 0444, &cgroupsData{})
 	}
 	fs.addNvproxyFiles(ctx, root, k, contents)
+	fs.addRDMAProxyFiles(ctx, root, k, contents)
 
 	fs.newTasksInodeExtra(ctx, root, internalData, k, contents)
 
