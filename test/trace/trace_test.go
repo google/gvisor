@@ -428,6 +428,9 @@ func checkSentryExec(msg test.Message) error {
 	if p.BinaryGid != nobody {
 		return fmt.Errorf("BinaryGid, want: %d, got: %d", nobody, p.BinaryGid)
 	}
+	if p.BinaryIno == 0 {
+		return fmt.Errorf("BinaryIno should not be 0")
+	}
 
 	// Get SHA256 from the binary and compare it with the one from the event.
 	out, err := exec.Command("sha256sum", p.BinaryPath).CombinedOutput()

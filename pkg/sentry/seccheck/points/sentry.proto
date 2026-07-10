@@ -54,15 +54,18 @@ message ExecveInfo {
   uint32 binary_uid = 6;
   uint32 binary_gid = 7;
 
-  // binary_sha256 is the SHA-256 hash of the executable binary file.
+  // BinarySha256 is the SHA-256 hash of the executable binary file.
   //
   // Note that this requires reading the entire file into memory, which is
   // likely to be extremely slow.
   bytes binary_sha256 = 8;
 
-  // binary_overlayfs_upper indicates whether the executable binary is on
+  // BinaryOverlayfsUpper indicates whether the executable binary is on
   // the upper layer of the overlay filesystem.
   bool binary_overlayfs_upper = 9;
+
+  // BinaryIno is the virtualized inode number of the executable binary file.
+  uint64 binary_ino = 10;
 }
 
 message ExitNotifyParentInfo {
