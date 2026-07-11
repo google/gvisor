@@ -1112,7 +1112,12 @@ func (s *Stack) Restore() {
 	s.Stack.Restore()
 }
 
-// ReplaceConfig implements inet.Stack.ReplaceConfig.
+// ResetConfig implements inet.Stack.ResetConfig.
+func (s *Stack) ResetConfig() {
+	s.Stack.ResetConfig()
+}
+
+// ReplaceConfig replaces config in the loaded stack.
 func (s *Stack) ReplaceConfig(st inet.Stack) {
 	if _, ok := st.(*Stack); !ok {
 		panic("netstack.Stack cannot be nil when netstack s/r is enabled")

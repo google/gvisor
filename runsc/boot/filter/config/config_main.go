@@ -42,7 +42,6 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 	},
 	unix.SYS_EVENTFD2: seccomp.PerArg{
 		seccomp.EqualTo(0),
-		seccomp.EqualTo(0),
 	},
 	unix.SYS_EXIT:       seccomp.MatchAll{},
 	unix.SYS_EXIT_GROUP: seccomp.MatchAll{},

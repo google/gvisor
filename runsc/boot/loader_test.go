@@ -663,7 +663,7 @@ func TestNetworkConfig(t *testing.T) {
 			},
 		},
 	}
-	if err := l.ctrl.manager.CreateLinksAndRoutes(args, nil); err != nil {
+	if err := l.ctrl.manager.SetNetworkArgs(args, nil); err != nil {
 		t.Errorf("error calling SetNetworkConfig: %v", err)
 	}
 	var networkArgs CreateLinksAndRoutesArgs
