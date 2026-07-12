@@ -59,6 +59,11 @@ type Cgroup2 interface {
 	// KillSeq returns the kill sequence number of the cgroup.
 	// It helps prevent fork()s racing with cgroup.kill.
 	KillSeq() uint64
+
+	// IsFrozen returns whether the cgroup is effectively frozen (it or any
+	// ancestor has cgroup.freeze set). It lets a task forked into a frozen
+	// subtree start frozen.
+	IsFrozen() bool
 }
 
 // Cgroup2FS is the public interface to cgroup2fs.

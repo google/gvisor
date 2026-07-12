@@ -194,6 +194,16 @@ type Task struct {
 	// groupStopPending is protected by the signal mutex.
 	groupStopPending bool
 
+	// If frozen is true, this task should be stopped via a frozenStop in the
+	// interrupt path because its cgroup v2 cgroup (or an ancestor) has
+	// cgroup.freeze set. It is the effective frozen state relayed by cgroup2fs
+	// under the signal mutex (see Task.SetCgroupFrozen); the reconciliation in
+	// runInterrupt reads it without taking any cgroup lock, which is what keeps
+	// the signalHandlers.mu -> fs.tasksMu deadlock from ever arising.
+	//
+	// frozen is protected by the signal mutex.
+	frozen bool
+
 	// If groupStopAcknowledged is true, the task has already acknowledged that
 	// it is entering the most recent group stop that has been initiated on its
 	// thread group.

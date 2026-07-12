@@ -421,6 +421,21 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		t.SendSignal(SignalInfoPriv(linux.SIGKILL))
 	}
 
+	// A task forked into an effectively-frozen subtree must start frozen, before
+	// it runs any application code. This runs for EVERY clone, so it covers both
+	// a new process (via CLONE_INTO_CGROUP or inheriting the creator's cgroup)
+	// AND a CLONE_THREAD thread in an already-frozen thread group (which
+	// inherits srcT.Cgroup2() above) — a new thread of a frozen process must not
+	// run. This mirrors the KillSeq re-check above and preserves its lock order
+	// (ts.mu held; IsFrozen takes tasksMu, SetCgroupFrozen takes
+	// signalHandlers.mu). run() calls interruptSelf() before its loop and the
+	// initial runState is runApp, which bounces to runInterrupt when
+	// interrupted, so setting t.frozen here guarantees the task parks in
+	// frozenStop on its first schedule, before reaching application code.
+	if t.Cgroup2().IsFrozen() {
+		t.SetCgroupFrozen(true)
+	}
+
 	return t, nil
 }
 

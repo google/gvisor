@@ -125,6 +125,28 @@ type cgroup struct {
 	// killSeq tracks cgroup.kill invocations.
 	// +checklocks:fs.tasksMu
 	killSeq uint64
+
+	// frozen records whether cgroup.freeze has been set on this cgroup itself.
+	// A cgroup is *effectively* frozen if it or any of its ancestors has frozen
+	// set; see isFrozenLocked.
+	// +checklocks:fs.tasksMu
+	frozen bool
+}
+
+// isFrozenLocked returns whether this cgroup is effectively frozen, i.e. it or
+// any of its ancestors has cgroup.freeze set. parent pointers are immutable, so
+// walking them only requires fs.tasksMu to read each frozen field.
+// +checklocksread:c.fs.tasksMu
+func (c *cgroup) isFrozenLocked() bool {
+	for cg := c; cg != nil; cg = cg.parent {
+		// All cgroups in a tree share one filesystem, so cg.fs.tasksMu is the
+		// same mutex as the c.fs.tasksMu the caller holds; checklocks cannot
+		// prove cg.fs == c.fs across the parent walk.
+		if cg.frozen { // +checklocksforce: c.fs.tasksMu is locked
+			return true
+		}
+	}
+	return false
 }
 
 // +checklocks:c.fs.treeMu
@@ -588,6 +610,17 @@ func (c *cgroup) attach(ctx context.Context, actx *attachCtx) {
 		if c.tasksCount.Add(1) == 1 {
 			c.updatePopulated(ctx, true)
 		}
+
+		// Migrating t changes its effective freeze state (it may move into or
+		// out of a frozen subtree), so refresh the per-task frozen cache.
+		// Otherwise freeze would be escapable via cgroup.procs. We relay the
+		// destination's effective state (isFrozenLocked ancestor-walk), not
+		// oldNode's flag: a task moved out may still be frozen via a higher
+		// destination ancestor, and one moved in must freeze. isFrozenLocked
+		// (not IsFrozen) is called because we already hold fs.tasksMu here;
+		// SetCgroupFrozen then takes signalHandlers.mu, preserving the
+		// fs.tasksMu -> signalHandlers.mu order.
+		t.SetCgroupFrozen(c.isFrozenLocked())
 	}
 
 	curSet := c.closestCtrls.Load()
@@ -647,6 +680,17 @@ func (c *cgroup) KillSeq() uint64 {
 	c.fs.tasksMu.RLock()
 	defer c.fs.tasksMu.RUnlock()
 	return c.killSeq
+}
+
+// IsFrozen implements kernel.Cgroup2.IsFrozen. It returns whether this cgroup
+// is effectively frozen (it or any ancestor has cgroup.freeze set), as the
+// tasksMu-locked wrapper around isFrozenLocked, mirroring KillSeq. Used both by
+// the clone path (a task forked into a frozen subtree starts frozen) and by
+// cgroup.events generation.
+func (c *cgroup) IsFrozen() bool {
+	c.fs.tasksMu.RLock()
+	defer c.fs.tasksMu.RUnlock()
+	return c.isFrozenLocked()
 }
 
 // +checklocksread:c.fs.treeMu
@@ -891,6 +935,66 @@ func (c *cgroup) kill() error {
 	for _, t := range toKill {
 		t.SendSignal(kernel.SignalInfoPriv(linux.SIGKILL))
 	}
+	return nil
+}
+
+// freeze() handles writes to cgroup.freeze. If frozen is true, every task in
+// this cgroup and its descendants is stopped; if false, they resume (unless
+// still frozen by another ancestor). Like kill(), freeze() does not stop tasks
+// directly: it computes each task's effective freeze state under the tree locks
+// and relays it into the task via Task.SetCgroupFrozen, which enters/leaves the
+// stop on the correct goroutine.
+//
+// Lock ordering: freeze() acquires treeMu, then tasksMu, then (per task, inside
+// SetCgroupFrozen) signalHandlers.mu. This matches the established
+//
+//	fs.tasksMu -> signalHandlers.mu   (see kill() -> Task.SendSignal)
+//
+// order. The runInterrupt reconciliation reads only the relayed per-task frozen
+// field under signalHandlers.mu and never takes a cgroup lock, so the reverse
+// (signalHandlers.mu -> fs.tasksMu) ordering — which would deadlock against
+// this function — never occurs.
+func (c *cgroup) freeze(frozen bool) error {
+	c.fs.treeMu.Lock()
+	defer c.fs.treeMu.Unlock()
+	if c.deleted.Load() {
+		return linuxerr.ENODEV
+	}
+
+	c.fs.tasksMu.Lock()
+	defer c.fs.tasksMu.Unlock()
+
+	// Record the self-requested state on this node only. A cgroup is
+	// effectively frozen if it or any ancestor is frozen (see isFrozenLocked),
+	// so inheritance is resolved by the ancestor-walk below rather than by
+	// marking descendants. This differs from killSeq, which is bumped on every
+	// descendant.
+	c.frozen = frozen
+
+	// Relay the *effective* frozen state to every task in this cgroup and its
+	// descendants. We relay each task's owning cgroup's isFrozenLocked() value,
+	// not this node's flag: thawing c must keep a task frozen if a higher
+	// ancestor is still frozen, and a descendant with its own cgroup.freeze set
+	// must stay frozen. Task membership is readable here under fs.tasksMu.
+	//
+	// The per-task frozen field is a cache of this ancestor-walk. It is
+	// refreshed at every site that can change a task's effective value:
+	//   - freeze/thaw at any level: here (a freeze/thaw of c only changes the
+	//     effective value for c's own subtree, which is exactly the set walked
+	//     below).
+	//   - migration in/out of a frozen subtree: cgroup.attach.
+	//   - a task forked into a frozen subtree: kernel.newTask.
+	eff := c.isFrozenLocked()
+	for t := range c.tasks {
+		t.SetCgroupFrozen(eff)
+	}
+	c.walkSubtreeLocked(func(child *cgroup) bool {
+		childEff := child.isFrozenLocked() // +checklocksforce: c.fs.tasksMu is locked
+		for t := range child.tasks {       // +checklocksforce: c.fs.tasksMu is locked
+			t.SetCgroupFrozen(childEff)
+		}
+		return true
+	})
 	return nil
 }
 
