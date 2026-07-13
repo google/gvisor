@@ -7,6 +7,7 @@ licenses(["notice"])
 go_library(
     name = "rdmaproxy",
     srcs = [
+        "driver_id.go",
         "rdma.go",
         "rdma_cm.go",
         "rdma_cm_fd.go",
@@ -15,6 +16,7 @@ go_library(
         "rdma_fd_pin.go",
         "rdma_fd_unsafe.go",
         "rdma_fd_write.go",
+        "registry.go",
         "seccomp_filter.go",
     ],
     visibility = [

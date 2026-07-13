@@ -93,6 +93,7 @@ import (
 	// Include other supported socket providers.
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink"
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink/netfilter"
+	rdmanetlink "gvisor.dev/gvisor/pkg/sentry/socket/netlink/rdma"
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink/route"
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink/uevent"
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/unix"
@@ -524,6 +525,9 @@ func New(args Args) (*Loader, error) {
 	// are created.
 	if args.Conf.RDMAProxy && specutils.HasRDMADevicesInSpec(args.Spec) {
 		rdmaproxy.SetEnabled(true)
+		// Publish device data to NETLINK_RDMA sockets so that rdma-core
+		// can discover devices via netlink instead of scanning sysfs.
+		rdmanetlink.Init(args.RDMADevices)
 	}
 
 	eid := execID{cid: args.ID}

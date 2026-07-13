@@ -65,6 +65,7 @@ func (dev *rdmaCMDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Den
 
 // RegisterRDMACMDevice registers all devices implemented by this package in vfsObj.
 func RegisterRDMACMDevice(vfsObj *vfs.VirtualFilesystem, minor uint32, useDevGofer bool) error {
+	recordRDMACMDevice(minor)
 	if vfsObj.IsDeviceRegistered(vfs.CharDevice, linux.MISC_MAJOR, minor) {
 		return nil
 	}

@@ -83,8 +83,12 @@ type RDMADeviceData struct {
 
 // RDMAData holds all collected RDMA sysfs data.
 type RDMAData struct {
-	VerbsABIVersion string           `json:"verbs_abi_version"`
-	Devices         []RDMADeviceData `json:"devices"`
+	VerbsABIVersion string `json:"verbs_abi_version"`
+	// RDMACMABIVersion is the rdma_cm (ucma) ABI version from
+	// /sys/class/misc/rdma_cm/abi_version, reported over netlink in
+	// RDMA_NLDEV_CMD_GET_CHARDEV responses for "rdma_cm".
+	RDMACMABIVersion string           `json:"rdma_cm_abi_version,omitempty"`
+	Devices          []RDMADeviceData `json:"devices"`
 }
 
 // CollectRDMADeviceData reads the specific sysfs files that libibverbs
@@ -98,7 +102,12 @@ func CollectRDMADeviceData() *RDMAData {
 		return nil
 	}
 	data := &RDMAData{
-		VerbsABIVersion: readSysfsFile(path.Join(verbsPath, "abi_version")),
+		VerbsABIVersion:  readSysfsFile(path.Join(verbsPath, "abi_version")),
+		RDMACMABIVersion: readSysfsFile("/sys/class/misc/rdma_cm/abi_version"),
+	}
+	if data.RDMACMABIVersion == "" {
+		// Older kernels expose the ucma ABI under a different class name.
+		data.RDMACMABIVersion = readSysfsFile("/sys/class/infiniband_ucma/abi_version")
 	}
 
 	log.Infof("rdma collect: scanning %s (%d entries), verbs_abi=%q",
@@ -260,26 +269,6 @@ func ExtractMinorUint32(dev string) (uint32, bool) {
 	return uint32(v), true
 }
 
-// spoofModaliasForDriverMatch rewrites the IDPF PCI device ID (8086:145C)
-// to E810 (8086:1593) in the modalias served to the container. rdma-core's
-// libirdma match table has no IDPF entry; on the host the irdma provider
-// binds via the netlink nldev UVERBS_DRIVER_ID, which the sentry does not
-// implement, leaving sysfs modalias matching as the only binding path
-// inside the sandbox. The matched table entry carries no driver_data, so
-// the rewrite only affects binding, not provider behavior; device
-// capabilities are negotiated via GET_CONTEXT at open time. The uevent
-// MODALIAS is intentionally left unspoofed.
-//
-// TODO: replace with a sentry NETLINK_RDMA nldev shim that reports
-// RDMA_NLDEV_ATTR_UVERBS_DRIVER_ID.
-func spoofModaliasForDriverMatch(modalias string) string {
-	const idpfPrefix = "pci:v00008086d0000145C"
-	if strings.HasPrefix(modalias, idpfPrefix) {
-		return "pci:v00008086d00001593" + modalias[len(idpfPrefix):]
-	}
-	return modalias
-}
-
 // inferRoCEType returns the RoCE GID type based on GID table index.
 // The sandbox's restricted sysfs mount masks gid_attrs/types/ content,
 // so we infer from the well-known mlx5 kernel assignment:
@@ -344,7 +333,11 @@ func (fs *filesystem) newRDMASysfsEntries(ctx context.Context, creds *auth.Crede
 	// across parents, so each call builds fresh inodes.
 	newPCIDeviceDir := func(dev *RDMADeviceData) kernfs.Inode {
 		deviceEntries := map[string]kernfs.Inode{}
-		addFile(deviceEntries, "modalias", spoofModaliasForDriverMatch(dev.Modalias))
+		// The modalias is served unmodified: provider binding happens via
+		// the NETLINK_RDMA nldev shim (pkg/sentry/socket/netlink/rdma),
+		// which reports RDMA_NLDEV_ATTR_UVERBS_DRIVER_ID, so rdma-core does
+		// not depend on sysfs PCI ID matching.
+		addFile(deviceEntries, "modalias", dev.Modalias)
 		addFile(deviceEntries, "class", dev.PCIClass)
 		addFile(deviceEntries, "vendor", dev.PCIVendor)
 		addFile(deviceEntries, "device", dev.PCIDevice)
