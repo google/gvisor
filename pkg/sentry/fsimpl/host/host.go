@@ -954,10 +954,16 @@ func (f *fileDescription) writeToHostFD(ctx context.Context, src usermem.IOSeque
 	writer := hostfd.GetReadWriterAt(int32(hostFD), offset, flags)
 	n, err := src.CopyInTo(ctx, writer)
 	hostfd.PutReadWriterAt(writer)
-	// NOTE(gvisor.dev/issue/2979): We always sync everything, even for O_DSYNC.
-	if n > 0 && f.vfsfd.StatusFlags()&(linux.O_DSYNC|linux.O_SYNC) != 0 {
-		if syncErr := unix.Fsync(hostFD); syncErr != nil {
-			return int64(n), syncErr
+	if n > 0 {
+		statusFlags := f.vfsfd.StatusFlags()
+		if statusFlags&linux.O_SYNC != 0 {
+			if syncErr := unix.Fsync(hostFD); syncErr != nil {
+				return int64(n), syncErr
+			}
+		} else if statusFlags&linux.O_DSYNC != 0 {
+			if syncErr := unix.Fdatasync(hostFD); syncErr != nil {
+				return int64(n), syncErr
+			}
 		}
 	}
 	return int64(n), err
@@ -1035,6 +1041,14 @@ func (f *fileDescription) Sync(ctx context.Context) error {
 	}
 	// TODO(gvisor.dev/issue/1897): Currently, we always sync everything.
 	return unix.Fsync(f.inode.hostFD)
+}
+
+// SyncData implements vfs.FileDescriptionImpl.SyncData.
+func (f *fileDescription) SyncData(ctx context.Context) error {
+	if f.inode.readonly {
+		return linuxerr.EPERM
+	}
+	return unix.Fdatasync(f.inode.hostFD)
 }
 
 // ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.

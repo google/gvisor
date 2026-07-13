@@ -358,7 +358,9 @@ func (fd *specialFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 		// O_SYNC, so we return zero bytes written. Compare Linux's
 		// mm/filemap.c:generic_file_write_iter() =>
 		// include/linux/fs.h:generic_write_sync().
-		if err := fd.sync(ctx, false /* forFilesystemSync */); err != nil {
+		statusFlags := fd.vfsfd.StatusFlags()
+		dataOnly := (statusFlags&linux.O_SYNC) == 0 && (statusFlags&linux.O_DSYNC) != 0
+		if err := fd.sync(ctx, false /* forFilesystemSync */, dataOnly); err != nil {
 			return 0, offset, err
 		}
 	}
@@ -411,15 +413,26 @@ func (fd *specialFileFD) Seek(ctx context.Context, offset int64, whence int32) (
 
 // Sync implements vfs.FileDescriptionImpl.Sync.
 func (fd *specialFileFD) Sync(ctx context.Context) error {
-	return fd.sync(ctx, false /* forFilesystemSync */)
+	return fd.sync(ctx, false /* forFilesystemSync */, false /* dataOnly */)
 }
 
-func (fd *specialFileFD) sync(ctx context.Context, forFilesystemSync bool) error {
+// SyncData implements vfs.FileDescriptionImpl.SyncData.
+func (fd *specialFileFD) SyncData(ctx context.Context) error {
+	return fd.sync(ctx, false /* forFilesystemSync */, true /* dataOnly */)
+}
+
+func (fd *specialFileFD) sync(ctx context.Context, forFilesystemSync bool, dataOnly bool) error {
 	// Locks to ensure it didn't race with fd.Release().
 	fd.releaseMu.RLock()
 	defer fd.releaseMu.RUnlock()
 
-	if err := fd.handle.sync(ctx); err != nil {
+	var err error
+	if dataOnly {
+		err = fd.handle.syncData(ctx)
+	} else {
+		err = fd.handle.sync(ctx)
+	}
+	if err != nil {
 		if !forFilesystemSync {
 			return err
 		}
