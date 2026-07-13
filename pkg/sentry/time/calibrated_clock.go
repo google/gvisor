@@ -107,14 +107,15 @@ func (c *CalibratedClock) resetLocked(str string, v ...any) {
 // may need to be adjusted slightly from these values to compensate for error.
 //
 // Preconditions: c.mu must be held for writing.
-func (c *CalibratedClock) updateParams(actual Parameters) {
-	if !c.ready {
-		// At initial calibration there is nothing to correct.
+func (c *CalibratedClock) updateParams(actual Parameters, parked bool) {
+	if !c.ready || parked {
+		// when parked nothing has read the time for a whole interval, so
+		// assume errors have been compensated and recalibrate from scratch
 		c.params = actual
-		c.ready = true
-
-		c.Infof("ready")
-
+		if !c.ready {
+			c.ready = true
+			c.Infof("ready")
+		}
 		return
 	}
 
@@ -148,9 +149,12 @@ func (c *CalibratedClock) updateParams(actual Parameters) {
 // the clock is calibrated. Update should be called regularly to prevent the
 // clock from getting significantly out of sync from the reference clock.
 //
+// parked indicates that this Update resumes a parked (unobserved) period; see
+// updateParams.
+//
 // The returned timekeeping parameters are invalidated on the next call to
 // Update.
-func (c *CalibratedClock) Update() (Parameters, bool) {
+func (c *CalibratedClock) Update(parked bool) (Parameters, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -188,7 +192,7 @@ func (c *CalibratedClock) Update() (Parameters, bool) {
 		Frequency:  (minHz + maxHz) / 2,
 		BaseRef:    newest.ref,
 		BaseCycles: newest.after,
-	})
+	}, parked)
 
 	return c.params, true
 }
@@ -241,9 +245,9 @@ func NewCalibratedClocks() *CalibratedClocks {
 }
 
 // Update implements Clocks.Update.
-func (c *CalibratedClocks) Update() (Parameters, bool, Parameters, bool) {
-	monotonicParams, monotonicOk := c.monotonic.Update()
-	realtimeParams, realtimeOk := c.realtime.Update()
+func (c *CalibratedClocks) Update(parked bool) (Parameters, bool, Parameters, bool) {
+	monotonicParams, monotonicOk := c.monotonic.Update(parked)
+	realtimeParams, realtimeOk := c.realtime.Update(parked)
 
 	return monotonicParams, monotonicOk, realtimeParams, realtimeOk
 }
