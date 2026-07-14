@@ -3833,6 +3833,8 @@ cc_library(
     ],
     deps = select_gtest() + [
         ":unix_domain_socket_test_util",
+        "//test/util:capability_util",
+        "//test/util:cleanup",
         "//test/util:socket_util",
         "//test/util:test_util",
         "//test/util:thread_util",
