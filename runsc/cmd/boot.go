@@ -36,6 +36,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/prometheus"
+	"gvisor.dev/gvisor/pkg/rdma"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/hostmm"
@@ -581,6 +582,15 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 
 	linux.SetAFSSyscallPanic(conf.TestOnlyAFSSyscallPanic)
 
+	var rdmaSnap *rdma.Snapshot
+	if specutils.RDMAEnabled(spec, conf) {
+		// Load the RDMA sysfs snapshot serialized by the chroot stage.
+		var err error
+		if rdmaSnap, err = rdma.Load(rdma.Path); err != nil {
+			util.Fatalf("loading RDMA sysfs snapshot: %v", err)
+		}
+	}
+
 	// Create the loader.
 	bootArgs := boot.Args{
 		ID:                  f.Arg(0),
@@ -601,6 +611,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		TotalMem:            b.totalMem,
 		TotalHostMem:        b.totalHostMem,
 		UserLogFD:           b.userLogFD,
+		RDMASysfs:           rdmaSnap,
 		ProductName:         b.productName,
 		PodInitConfigFD:     b.podInitConfigFD,
 		SinkFDs:             b.sinkFDs.GetArray(),

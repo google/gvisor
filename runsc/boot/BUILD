@@ -56,6 +56,7 @@ go_library(
         "//pkg/memutil",
         "//pkg/metric",
         "//pkg/rand",
+        "//pkg/rdma",
         "//pkg/refs",
         "//pkg/sentry/arch",
         "//pkg/sentry/arch:registers_go_proto",

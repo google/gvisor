@@ -367,6 +367,12 @@ type Config struct {
 	// TPUProxy enables support for TPUs.
 	TPUProxy bool `flag:"tpuproxy"`
 
+	// RDMAProxy enables RDMA support for containers with
+	// /dev/infiniband/uverbs* devices. It currently gates only the RDMA
+	// device sysfs topology; the verbs device proxy that makes it usable is
+	// still in development.
+	RDMAProxy bool `flag:"rdmaproxy"`
+
 	// TestOnlyAllowRunAsCurrentUserWithoutChroot should only be used in
 	// tests. It allows runsc to start the sandbox process as the current
 	// user, and without chrooting the sandbox process. This can be
