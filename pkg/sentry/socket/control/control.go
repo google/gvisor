@@ -70,9 +70,12 @@ func NewSCMCredentials(t *kernel.Task, cred linux.ControlMessageCredentials) (SC
 	if err != nil {
 		return nil, err
 	}
-	tg := t.ThreadGroup()
-	if kernel.ThreadID(cred.PID) != tg.ID() && !t.HasCapabilityIn(linux.CAP_SYS_ADMIN, t.PIDNamespace().UserNamespace()) {
+	if kernel.ThreadID(cred.PID) != t.ThreadGroup().ID() && !t.HasCapabilityIn(linux.CAP_SYS_ADMIN, t.PIDNamespace().UserNamespace()) {
 		return nil, linuxerr.EPERM
+	}
+	tg := t.PIDNamespace().ThreadGroupWithID(kernel.ThreadID(cred.PID))
+	if tg == nil {
+		return nil, linuxerr.ESRCH
 	}
 	return &scmCredentials{tg.PIDNamespacedIDs(), kuid, kgid}, nil
 }
