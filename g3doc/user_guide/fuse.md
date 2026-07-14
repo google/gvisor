@@ -2,7 +2,7 @@
 
 [TOC]
 
-gVisor supports [FUSE](Filesystem in Userspace), allowing userspace programs to
+gVisor supports [FUSE] (Filesystem in Userspace), allowing userspace programs to
 serve filesystems inside a sandbox. There are two modes of operation:
 
 *   **In-sandbox FUSE**: A FUSE daemon runs inside the sandbox and communicates

@@ -253,7 +253,7 @@ $ docker run -d --runtime=runsc-metric-server --name=runsc-metric-server \
 Yes, this means the metric server will report data about its own sandbox:
 
 ```
-$ metric_server_id="$(docker inspect --format='{{.ID}}' runsc-metric-server)"
+$ metric_server_id="$(docker inspect --format='{% raw %}{{.ID}}{% endraw %}' runsc-metric-server)"
 $ sudo curl --unix-socket /run/docker/runsc-metrics.sock http://runsc-metrics/metrics | grep "$metric_server_id"
 ＃   - Snapshot with 175 data points taken at 2023-01-25 15:45:33.70256855 -0800 -0800: map[iteration:2407456650315156914 sandbox:737ce142058561d764ad870d028130a29944821dd918c7979351b249d5d30481]
 runsc_fs_opens{iteration="2407456650315156914",sandbox="737ce142058561d764ad870d028130a29944821dd918c7979351b249d5d30481"} 54 1674690333702
