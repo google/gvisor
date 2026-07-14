@@ -22,6 +22,7 @@
 #include <sys/mman.h>
 #include <sys/mount.h>
 #include <sys/statfs.h>
+#include <sys/xattr.h>
 #include <unistd.h>
 
 #include <cerrno>
@@ -1763,6 +1764,47 @@ TEST_F(Cgroup2Test, CpuLimits) {
               PosixErrorIs(ERANGE));
   EXPECT_THAT(parent.WriteControlFile("cpu.weight", "abc"),
               PosixErrorIs(EINVAL));
+}
+
+TEST_F(Cgroup2Test, Xattr) {
+  const char* path = c().Path().c_str();
+  const char name[] = "trusted.test";
+  const char val = 'a';
+  const size_t size = sizeof(val);
+
+  EXPECT_THAT(setxattr(path, name, &val, size, /*flags=*/0), SyscallSucceeds());
+
+  char got = '\0';
+  EXPECT_THAT(getxattr(path, name, &got, size), SyscallSucceedsWithValue(size));
+  EXPECT_EQ(val, got);
+
+  char list[sizeof(name)];
+  EXPECT_THAT(listxattr(path, list, sizeof(list)),
+              SyscallSucceedsWithValue(sizeof(name)));
+  EXPECT_STREQ(list, name);
+
+  EXPECT_THAT(removexattr(path, name), SyscallSucceeds());
+  EXPECT_THAT(getxattr(path, name, &got, size), SyscallFailsWithErrno(ENODATA));
+}
+
+TEST_F(Cgroup2Test, TrustedXattrWithoutCapSysAdmin) {
+  const char* path = c().Path().c_str();
+  AutoCapability cap(CAP_SYS_ADMIN, false);
+
+  const char name[] = "trusted.test";
+  const char val = 'a';
+  const size_t size = sizeof(val);
+
+  EXPECT_THAT(setxattr(path, name, &val, size, /*flags=*/0),
+              SyscallFailsWithErrno(EPERM));
+
+  char got = '\0';
+  EXPECT_THAT(getxattr(path, name, &got, size), SyscallFailsWithErrno(ENODATA));
+
+  char list[sizeof(name)];
+  EXPECT_THAT(listxattr(path, list, sizeof(list)), SyscallSucceedsWithValue(0));
+
+  EXPECT_THAT(removexattr(path, name), SyscallFailsWithErrno(EPERM));
 }
 
 }  // namespace
