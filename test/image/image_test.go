@@ -563,14 +563,13 @@ func startDockerdInGvisor(ctx context.Context, t *testing.T, overlay bool) *dock
 	}
 
 	// Wait for the docker daemon.
-	for i := 0; i < 10; i++ {
+	cb := backoff.NewConstantBackOff(5 * time.Second)
+	err := backoff.Retry(func() error {
 		_, err := d.Exec(ctx, dockerutil.ExecOpts{}, "docker", "info")
-		if err != nil {
-			t.Logf("docker exec failed: %v", err)
-			time.Sleep(5 * time.Second)
-			continue
-		}
-		break
+		return err
+	}, backoff.WithMaxRetries(cb, 10))
+	if err != nil {
+		t.Fatalf("docker daemon failed to start: %v", err)
 	}
 	return d
 }
@@ -671,15 +670,19 @@ func testDockerExec(ctx context.Context, t *testing.T, d *dockerutil.Container, 
 		}
 	}()
 
-	for i := 0; i < 10; i++ {
+	cb := backoff.NewConstantBackOff(5 * time.Second)
+	err = backoff.Retry(func() error {
 		inspectOutput, err := dockerInGvisorExecOutput(ctx, d, []string{"docker", "container", "inspect", containerName})
 		if err != nil {
-			t.Fatalf("docker exec failed: %v", err)
+			return err
 		}
-		if strings.Contains(inspectOutput, "\"Status\": \"running\"") {
-			break
+		if !strings.Contains(inspectOutput, "\"Status\": \"running\"") {
+			return fmt.Errorf("container %s is not running yet", containerName)
 		}
-		time.Sleep(5 * time.Second)
+		return nil
+	}, backoff.WithMaxRetries(cb, 10))
+	if err != nil {
+		t.Fatalf("container failed to start: %v", err)
 	}
 
 	execCmd := []string{"docker", "exec"}
