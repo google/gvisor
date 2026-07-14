@@ -167,7 +167,7 @@ func (fd *regularFileFD) Allocate(ctx context.Context, mode, offset, length uint
 func (fd *regularFileFD) SetStat(ctx context.Context, opts vfs.SetStatOptions) error {
 	d := fd.dentry()
 	mode := linux.FileMode(d.mode.Load())
-	if err := vfs.CheckSetStat(ctx, auth.CredentialsFromContext(ctx), &opts, mode, auth.KUID(d.uid.Load()), auth.KGID(d.gid.Load())); err != nil {
+	if err := vfs.CheckSetStat(ctx, auth.CredentialsFromContext(ctx), &opts, mode, nil, auth.KUID(d.uid.Load()), auth.KGID(d.gid.Load())); err != nil {
 		return err
 	}
 	mnt := fd.vfsfd.Mount()

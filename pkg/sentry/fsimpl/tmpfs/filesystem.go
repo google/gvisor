@@ -280,7 +280,7 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 		if i.isDir() {
 			return linuxerr.EPERM
 		}
-		if err := vfs.MayLink(auth.CredentialsFromContext(ctx), linux.FileMode(i.mode.Load()), auth.KUID(i.uid.Load()), auth.KGID(i.gid.Load())); err != nil {
+		if err := vfs.MayLink(auth.CredentialsFromContext(ctx), linux.FileMode(i.mode.Load()), i.accessACL.Load(), auth.KUID(i.uid.Load()), auth.KGID(i.gid.Load())); err != nil {
 			return err
 		}
 		if i.nlink.Load() == 0 {

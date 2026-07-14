@@ -1500,7 +1500,7 @@ func (fs *filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts
 // Precondition: d.fs.renameMu must be held for reading.
 func (d *dentry) setStatLocked(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetStatOptions) error {
 	mode := linux.FileMode(d.mode.Load())
-	if err := vfs.CheckSetStat(ctx, rp.Credentials(), &opts, mode, auth.KUID(d.uid.Load()), auth.KGID(d.gid.Load())); err != nil {
+	if err := vfs.CheckSetStat(ctx, rp.Credentials(), &opts, mode, nil, auth.KUID(d.uid.Load()), auth.KGID(d.gid.Load())); err != nil {
 		return err
 	}
 	mnt := rp.Mount()

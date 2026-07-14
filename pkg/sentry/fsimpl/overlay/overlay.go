@@ -872,14 +872,14 @@ func (d *dentry) topLookupLayer() lookupLayer {
 }
 
 func (d *dentry) checkPermissions(creds *auth.Credentials, ats vfs.AccessTypes) error {
-	return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(d.mode.Load()), auth.KUID(d.uid.Load()), auth.KGID(d.gid.Load()))
+	return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(d.mode.Load()), nil, auth.KUID(d.uid.Load()), auth.KGID(d.gid.Load()))
 }
 
 func (d *dentry) checkXattrPermissions(creds *auth.Credentials, name string, ats vfs.AccessTypes) error {
 	mode := linux.FileMode(d.mode.Load())
 	kuid := auth.KUID(d.uid.Load())
 	kgid := auth.KGID(d.gid.Load())
-	if err := vfs.GenericCheckPermissions(creds, ats, mode, kuid, kgid); err != nil {
+	if err := vfs.GenericCheckPermissions(creds, ats, mode, nil, kuid, kgid); err != nil {
 		return err
 	}
 	return vfs.CheckXattrPermissions(creds, ats, mode, kuid, name)

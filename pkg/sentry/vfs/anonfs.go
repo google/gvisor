@@ -108,7 +108,7 @@ func (fs *anonFilesystem) AccessAt(ctx context.Context, rp *ResolvingPath, creds
 	if !rp.Done() || rp.MustBeDir() {
 		return linuxerr.ENOTDIR
 	}
-	return GenericCheckPermissions(creds, ats, anonFileMode, anonFileUID, anonFileGID)
+	return GenericCheckPermissions(creds, ats, anonFileMode, nil, anonFileUID, anonFileGID)
 }
 
 // GetDentryAt implements FilesystemImpl.GetDentryAt.
@@ -252,7 +252,7 @@ func (fs *anonFilesystem) BoundEndpointAt(ctx context.Context, rp *ResolvingPath
 	if !rp.Final() {
 		return nil, linuxerr.ENOTDIR
 	}
-	if err := GenericCheckPermissions(rp.Credentials(), MayWrite, anonFileMode, anonFileUID, anonFileGID); err != nil {
+	if err := GenericCheckPermissions(rp.Credentials(), MayWrite, anonFileMode, nil, anonFileUID, anonFileGID); err != nil {
 		return nil, err
 	}
 	return nil, linuxerr.ECONNREFUSED

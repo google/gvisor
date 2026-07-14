@@ -415,7 +415,7 @@ func (fs *Filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 	if inode.Mode().IsDir() {
 		return linuxerr.EPERM
 	}
-	if err := vfs.MayLink(rp.Credentials(), inode.Mode(), inode.UID(), inode.GID()); err != nil {
+	if err := vfs.MayLink(rp.Credentials(), inode.Mode(), nil, inode.UID(), inode.GID()); err != nil {
 		return err
 	}
 	parent.dirMu.Lock()
@@ -1129,7 +1129,7 @@ func (fs *Filesystem) GetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 		mode := d.inode.Mode()
 		kuid := d.inode.UID()
 		kgid := d.inode.GID()
-		if err := vfs.GenericCheckPermissions(creds, vfs.MayRead, mode, kuid, kgid); err != nil {
+		if err := vfs.GenericCheckPermissions(creds, vfs.MayRead, mode, nil, kuid, kgid); err != nil {
 			return "", err
 		}
 		if err := vfs.CheckXattrPermissions(creds, vfs.MayRead, mode, kuid, opts.Name); err != nil {
@@ -1155,7 +1155,7 @@ func (fs *Filesystem) SetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 		mode := d.inode.Mode()
 		kuid := d.inode.UID()
 		kgid := d.inode.GID()
-		if err := vfs.GenericCheckPermissions(creds, vfs.MayWrite, mode, kuid, kgid); err != nil {
+		if err := vfs.GenericCheckPermissions(creds, vfs.MayWrite, mode, nil, kuid, kgid); err != nil {
 			return err
 		}
 		if err := vfs.CheckXattrPermissions(creds, vfs.MayWrite, mode, kuid, opts.Name); err != nil {
@@ -1181,7 +1181,7 @@ func (fs *Filesystem) RemoveXattrAt(ctx context.Context, rp *vfs.ResolvingPath, 
 		mode := d.inode.Mode()
 		kuid := d.inode.UID()
 		kgid := d.inode.GID()
-		if err := vfs.GenericCheckPermissions(creds, vfs.MayWrite, mode, kuid, kgid); err != nil {
+		if err := vfs.GenericCheckPermissions(creds, vfs.MayWrite, mode, nil, kuid, kgid); err != nil {
 			return err
 		}
 		if err := vfs.CheckXattrPermissions(creds, vfs.MayWrite, mode, kuid, name); err != nil {
