@@ -311,3 +311,16 @@ message SocketPair {
   int32 socket1 = 7;
   int32 socket2 = 8;
 }
+
+message Mmap {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int64 fd = 4;
+  string fd_path = 5;
+  uint64 addr = 6;
+  uint64 length = 7;
+  uint32 prot = 8;
+  uint32 flags = 9;
+  int64 offset = 10;
+}

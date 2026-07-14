@@ -134,6 +134,7 @@ func matchPoints(t *testing.T, msgs []test.Message) map[pb.MessageType]*checkers
 		pb.MessageType_MESSAGE_SYSCALL_INOTIFY_ADD_WATCH: {checker: checkSyscallInotifyInitAddWatch},
 		pb.MessageType_MESSAGE_SYSCALL_INOTIFY_RM_WATCH:  {checker: checkSyscallInotifyInitRmWatch},
 		pb.MessageType_MESSAGE_SYSCALL_CLONE:             {checker: checkSyscallClone},
+		pb.MessageType_MESSAGE_SYSCALL_MMAP:              {checker: checkSyscallMmap},
 	}
 	return matchers
 }
@@ -306,6 +307,17 @@ func checkSyscallClose(msg test.Message) error {
 	if p.Fd < 0 {
 		// Although negative FD is possible, it doesn't happen in the test.
 		return fmt.Errorf("closing negative FD: %d", p.Fd)
+	}
+	return nil
+}
+
+func checkSyscallMmap(msg test.Message) error {
+	var p pb.Mmap
+	if err := proto.Unmarshal(msg.Msg, &p); err != nil {
+		return err
+	}
+	if err := checkContextData(p.ContextData); err != nil {
+		return err
 	}
 	return nil
 }

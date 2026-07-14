@@ -39,6 +39,12 @@ func archInit() {
 			Name: "fd_path",
 		},
 	})
+	addSyscallPoint(9, "mmap", []FieldDesc{
+		{
+			ID:   FieldSyscallPath,
+			Name: "fd_path",
+		},
+	})
 	addSyscallPoint(17, "pread64", []FieldDesc{
 		{
 			ID:   FieldSyscallPath,
