@@ -54,3 +54,26 @@ func GenericStatFS(fsMagic uint64) linux.Statfs {
 		NameLength: linux.NAME_MAX,
 	}
 }
+
+// KeyValuePair represents a key-value pair of mount options.
+type KeyValuePair struct {
+	Key   string
+	Value string
+}
+
+// GenericParseMountOptionsOrdered parses a comma-separated list of options
+// of the form "key" or "key=value", preserving the original order.
+func GenericParseMountOptionsOrdered(str string) []KeyValuePair {
+	var options []KeyValuePair
+	for _, opt := range strings.Split(str, ",") {
+		if len(opt) > 0 {
+			res := strings.SplitN(opt, "=", 2)
+			if len(res) == 2 {
+				options = append(options, KeyValuePair{Key: res[0], Value: res[1]})
+			} else {
+				options = append(options, KeyValuePair{Key: opt, Value: ""})
+			}
+		}
+	}
+	return options
+}

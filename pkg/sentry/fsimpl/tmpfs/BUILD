@@ -172,6 +172,7 @@ go_test(
         "//pkg/context",
         "//pkg/errors/linuxerr",
         "//pkg/fspath",
+        "//pkg/hostarch",
         "//pkg/sentry/contexttest",
         "//pkg/sentry/fsimpl/lock",
         "//pkg/sentry/kernel/auth",

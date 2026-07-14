@@ -57,6 +57,17 @@ import (
 // Name is the default filesystem name.
 const Name = "tmpfs"
 
+// Mount options for tmpfs.
+const (
+	optSize     = "size"
+	optNrBlocks = "nr_blocks"
+	optNrInodes = "nr_inodes"
+	optMode     = "mode"
+	optUID      = "uid"
+	optGID      = "gid"
+	optNoSwap   = "noswap"
+)
+
 // FilesystemType implements vfs.FilesystemType.
 //
 // +stateify savable
@@ -256,109 +267,118 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		rootMode = 01777
 	}
 
-	mopts := vfs.GenericParseMountOptions(opts.Data)
-	var printedOpts []string
-
 	maxSizeInPages := getDefaultSizeLimit(disableDefaultSizeLimit) / hostarch.PageSize
-	maxSizeStr, ok := mopts["size"]
-	if ok {
-		delete(mopts, "size")
-		maxSizeInBytes, _, err := parseSize(maxSizeStr)
-		if err != nil {
-			ctx.Debugf("tmpfs.FilesystemType.GetFilesystem: parseSize() failed: %v", err)
-			return nil, nil, linuxerr.EINVAL
-		}
+	maxInodes := getDefaultInodeLimit(disableDefaultSizeLimit)
+	rootKUID := creds.EffectiveKUID
+	rootKGID := creds.EffectiveKGID
 
-		var printedSize uint64
-		if maxSizeInBytes > 0 {
-			// If size > 0, convert size in bytes to nearest Page Size
-			// bytes as Linux allocates memory in terms of Page size.
-			maxSizeInPages, ok = hostarch.ToPagesRoundUp(maxSizeInBytes)
-			if !ok {
-				ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: Pages RoundUp Overflow error: %v", ok)
+	printedOptsMap := make(map[string]string)
+
+	for _, opt := range vfs.GenericParseMountOptionsOrdered(opts.Data) {
+		key := opt.Key
+		value := opt.Value
+
+		switch key {
+		case optSize:
+			maxSizeInBytes, _, err := parseSize(value)
+			if err != nil {
+				ctx.Debugf("tmpfs.FilesystemType.GetFilesystem: parseSize() failed for size: %v", err)
 				return nil, nil, linuxerr.EINVAL
 			}
-			printedSize = (maxSizeInPages*hostarch.PageSize + 1023) / 1024
-		} else {
-			// size = 0 is a special case: no size limit
-			maxSizeInPages = math.MaxInt64
-			printedSize = 0
-		}
+			var printedSize uint64
+			if maxSizeInBytes > 0 {
+				var ok bool
+				maxSizeInPages, ok = hostarch.ToPagesRoundUp(maxSizeInBytes)
+				if !ok {
+					ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: Pages RoundUp Overflow error")
+					return nil, nil, linuxerr.EINVAL
+				}
+				printedSize = (maxSizeInPages*hostarch.PageSize + 1023) / 1024
+			} else {
+				maxSizeInPages = math.MaxInt64
+				printedSize = 0
+			}
+			printedOptsMap[optSize] = fmt.Sprintf("size=%vk", printedSize)
 
-		printedOpts = append(printedOpts, fmt.Sprintf("size=%vk", printedSize))
+		case optNrBlocks:
+			maxBlocks, percentageSpecified, err := parseSize(value)
+			if percentageSpecified {
+				ctx.Debugf("tmpfs.FilesystemType.GetFilesystem: percentage not allowed for nr_blocks")
+				return nil, nil, linuxerr.EINVAL
+			}
+			if err != nil {
+				ctx.Debugf("tmpfs.FilesystemType.GetFilesystem: parseSize() failed for nr_blocks: %v", err)
+				return nil, nil, linuxerr.EINVAL
+			}
+			maxSizeInPages = maxBlocks
+			printedSize := (maxSizeInPages*hostarch.PageSize + 1023) / 1024
+			printedOptsMap[optSize] = fmt.Sprintf("size=%vk", printedSize)
+
+		case optNrInodes:
+			var err error
+			var percentageSpecified bool
+			maxInodes, percentageSpecified, err = parseSize(value)
+			if percentageSpecified {
+				ctx.Debugf("tmpfs.FilesystemType.GetFilesystem: percentage not allowed for nr_inodes")
+				return nil, nil, linuxerr.EINVAL
+			}
+			if err != nil {
+				ctx.Debugf("tmpfs.FilesystemType.GetFilesystem: parseSize() failed for nr_inodes: %v", err)
+				return nil, nil, linuxerr.EINVAL
+			}
+			printedOptsMap[optNrInodes] = fmt.Sprintf("nr_inodes=%v", maxInodes)
+
+		case optMode:
+			mode, err := strconv.ParseUint(value, 8, 32)
+			if err != nil {
+				ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: invalid mode: %q", value)
+				return nil, nil, linuxerr.EINVAL
+			}
+			rootMode = linux.FileMode(mode & 07777)
+			printedOptsMap[optMode] = fmt.Sprintf("mode=%s", value)
+
+		case optUID:
+			uid, err := strconv.ParseUint(value, 10, 32)
+			if err != nil {
+				ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: invalid uid: %q", value)
+				return nil, nil, linuxerr.EINVAL
+			}
+			kuid := creds.UserNamespace.MapToKUID(auth.UID(uid))
+			if !kuid.Ok() {
+				ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: unmapped uid: %d", uid)
+				return nil, nil, linuxerr.EINVAL
+			}
+			rootKUID = kuid
+			printedOptsMap[optUID] = fmt.Sprintf("uid=%s", value)
+
+		case optGID:
+			gid, err := strconv.ParseUint(value, 10, 32)
+			if err != nil {
+				ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: invalid gid: %q", value)
+				return nil, nil, linuxerr.EINVAL
+			}
+			kgid := creds.UserNamespace.MapToKGID(auth.GID(gid))
+			if !kgid.Ok() {
+				ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: unmapped gid: %d", gid)
+				return nil, nil, linuxerr.EINVAL
+			}
+			rootKGID = kgid
+			printedOptsMap[optGID] = fmt.Sprintf("gid=%s", value)
+
+		case optNoSwap:
+			// Accept, but ignore, noswap.
+
+		default:
+			ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: unknown option: %s", key)
+			return nil, nil, linuxerr.EINVAL
+		}
 	}
-	maxInodes := getDefaultInodeLimit(disableDefaultSizeLimit)
-	maxInodesStr, ok := mopts["nr_inodes"]
-	if ok {
-		delete(mopts, "nr_inodes")
-		var err error
-		var percentageSpecified bool
-		maxInodes, percentageSpecified, err = parseSize(maxInodesStr)
-		if percentageSpecified {
-			// Percentage not allowed for specifying inode limit
-			return nil, nil, linuxerr.EINVAL
-		}
-		if err != nil {
-			ctx.Debugf("tmpfs.FilesystemType.GetFilesystem: parseSize() failed: %v", err)
-			return nil, nil, linuxerr.EINVAL
-		}
 
-		printedOpts = append(printedOpts, fmt.Sprintf("nr_inodes=%v", maxInodes))
-	}
-	modeStr, ok := mopts["mode"]
-	if ok {
-		delete(mopts, "mode")
-		mode, err := strconv.ParseUint(modeStr, 8, 32)
-		if err != nil {
-			ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: invalid mode: %q", modeStr)
-			return nil, nil, linuxerr.EINVAL
+	var printedOpts []string
+	for _, key := range []string{optSize, optNrInodes, optMode, optUID, optGID} {
+		if val, ok := printedOptsMap[key]; ok {
+			printedOpts = append(printedOpts, val)
 		}
-		rootMode = linux.FileMode(mode & 07777)
-
-		printedOpts = append(printedOpts, fmt.Sprintf("mode=%s", modeStr))
-	}
-	rootKUID := creds.EffectiveKUID
-	uidStr, ok := mopts["uid"]
-	if ok {
-		delete(mopts, "uid")
-		uid, err := strconv.ParseUint(uidStr, 10, 32)
-		if err != nil {
-			ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: invalid uid: %q", uidStr)
-			return nil, nil, linuxerr.EINVAL
-		}
-		kuid := creds.UserNamespace.MapToKUID(auth.UID(uid))
-		if !kuid.Ok() {
-			ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: unmapped uid: %d", uid)
-			return nil, nil, linuxerr.EINVAL
-		}
-		rootKUID = kuid
-
-		printedOpts = append(printedOpts, fmt.Sprintf("uid=%s", uidStr))
-	}
-	rootKGID := creds.EffectiveKGID
-	gidStr, ok := mopts["gid"]
-	if ok {
-		delete(mopts, "gid")
-		gid, err := strconv.ParseUint(gidStr, 10, 32)
-		if err != nil {
-			ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: invalid gid: %q", gidStr)
-			return nil, nil, linuxerr.EINVAL
-		}
-		kgid := creds.UserNamespace.MapToKGID(auth.GID(gid))
-		if !kgid.Ok() {
-			ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: unmapped gid: %d", gid)
-			return nil, nil, linuxerr.EINVAL
-		}
-		rootKGID = kgid
-
-		printedOpts = append(printedOpts, fmt.Sprintf("gid=%s", gidStr))
-	}
-	// Accept, but ignore, noswap
-	delete(mopts, "noswap")
-
-	if len(mopts) != 0 {
-		ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: unknown options: %v", mopts)
-		return nil, nil, linuxerr.EINVAL
 	}
 
 	devMinor, err := vfsObj.GetAnonBlockDevMinor()
