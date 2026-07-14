@@ -2769,6 +2769,122 @@ func (x *SocketPair) GetSocket2() int32 {
 	return 0
 }
 
+type Mmap struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ContextData   *ContextData           `protobuf:"bytes,1,opt,name=context_data,json=contextData,proto3" json:"context_data,omitempty"`
+	Exit          *Exit                  `protobuf:"bytes,2,opt,name=exit,proto3" json:"exit,omitempty"`
+	Sysno         uint64                 `protobuf:"varint,3,opt,name=sysno,proto3" json:"sysno,omitempty"`
+	Fd            int64                  `protobuf:"varint,4,opt,name=fd,proto3" json:"fd,omitempty"`
+	FdPath        string                 `protobuf:"bytes,5,opt,name=fd_path,json=fdPath,proto3" json:"fd_path,omitempty"`
+	Addr          uint64                 `protobuf:"varint,6,opt,name=addr,proto3" json:"addr,omitempty"`
+	Length        uint64                 `protobuf:"varint,7,opt,name=length,proto3" json:"length,omitempty"`
+	Prot          uint32                 `protobuf:"varint,8,opt,name=prot,proto3" json:"prot,omitempty"`
+	Flags         uint32                 `protobuf:"varint,9,opt,name=flags,proto3" json:"flags,omitempty"`
+	Offset        int64                  `protobuf:"varint,10,opt,name=offset,proto3" json:"offset,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Mmap) Reset() {
+	*x = Mmap{}
+	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Mmap) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Mmap) ProtoMessage() {}
+
+func (x *Mmap) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Mmap.ProtoReflect.Descriptor instead.
+func (*Mmap) Descriptor() ([]byte, []int) {
+	return file_pkg_sentry_seccheck_points_syscall_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *Mmap) GetContextData() *ContextData {
+	if x != nil {
+		return x.ContextData
+	}
+	return nil
+}
+
+func (x *Mmap) GetExit() *Exit {
+	if x != nil {
+		return x.Exit
+	}
+	return nil
+}
+
+func (x *Mmap) GetSysno() uint64 {
+	if x != nil {
+		return x.Sysno
+	}
+	return 0
+}
+
+func (x *Mmap) GetFd() int64 {
+	if x != nil {
+		return x.Fd
+	}
+	return 0
+}
+
+func (x *Mmap) GetFdPath() string {
+	if x != nil {
+		return x.FdPath
+	}
+	return ""
+}
+
+func (x *Mmap) GetAddr() uint64 {
+	if x != nil {
+		return x.Addr
+	}
+	return 0
+}
+
+func (x *Mmap) GetLength() uint64 {
+	if x != nil {
+		return x.Length
+	}
+	return 0
+}
+
+func (x *Mmap) GetProt() uint32 {
+	if x != nil {
+		return x.Prot
+	}
+	return 0
+}
+
+func (x *Mmap) GetFlags() uint32 {
+	if x != nil {
+		return x.Flags
+	}
+	return 0
+}
+
+func (x *Mmap) GetOffset() int64 {
+	if x != nil {
+		return x.Offset
+	}
+	return 0
+}
+
 var File_pkg_sentry_seccheck_points_syscall_proto protoreflect.FileDescriptor
 
 const file_pkg_sentry_seccheck_points_syscall_proto_rawDesc = "" +
@@ -3006,7 +3122,19 @@ const file_pkg_sentry_seccheck_points_syscall_proto_rawDesc = "" +
 	"\x04type\x18\x05 \x01(\x05R\x04type\x12\x1a\n" +
 	"\bprotocol\x18\x06 \x01(\x05R\bprotocol\x12\x18\n" +
 	"\asocket1\x18\a \x01(\x05R\asocket1\x12\x18\n" +
-	"\asocket2\x18\b \x01(\x05R\asocket2b\x06proto3"
+	"\asocket2\x18\b \x01(\x05R\asocket2\"\x9c\x02\n" +
+	"\x04Mmap\x12=\n" +
+	"\fcontext_data\x18\x01 \x01(\v2\x1a.gvisor.common.ContextDataR\vcontextData\x12(\n" +
+	"\x04exit\x18\x02 \x01(\v2\x14.gvisor.syscall.ExitR\x04exit\x12\x14\n" +
+	"\x05sysno\x18\x03 \x01(\x04R\x05sysno\x12\x0e\n" +
+	"\x02fd\x18\x04 \x01(\x03R\x02fd\x12\x17\n" +
+	"\afd_path\x18\x05 \x01(\tR\x06fdPath\x12\x12\n" +
+	"\x04addr\x18\x06 \x01(\x04R\x04addr\x12\x16\n" +
+	"\x06length\x18\a \x01(\x04R\x06length\x12\x12\n" +
+	"\x04prot\x18\b \x01(\rR\x04prot\x12\x14\n" +
+	"\x05flags\x18\t \x01(\rR\x05flags\x12\x16\n" +
+	"\x06offset\x18\n" +
+	" \x01(\x03R\x06offsetb\x06proto3"
 
 var (
 	file_pkg_sentry_seccheck_points_syscall_proto_rawDescOnce sync.Once
@@ -3020,7 +3148,7 @@ func file_pkg_sentry_seccheck_points_syscall_proto_rawDescGZIP() []byte {
 	return file_pkg_sentry_seccheck_points_syscall_proto_rawDescData
 }
 
-var file_pkg_sentry_seccheck_points_syscall_proto_msgTypes = make([]protoimpl.MessageInfo, 33)
+var file_pkg_sentry_seccheck_points_syscall_proto_msgTypes = make([]protoimpl.MessageInfo, 34)
 var file_pkg_sentry_seccheck_points_syscall_proto_goTypes = []any{
 	(*Exit)(nil),            // 0: gvisor.syscall.Exit
 	(*Syscall)(nil),         // 1: gvisor.syscall.Syscall
@@ -3055,79 +3183,82 @@ var file_pkg_sentry_seccheck_points_syscall_proto_goTypes = []any{
 	(*InotifyAddWatch)(nil), // 30: gvisor.syscall.InotifyAddWatch
 	(*InotifyRmWatch)(nil),  // 31: gvisor.syscall.InotifyRmWatch
 	(*SocketPair)(nil),      // 32: gvisor.syscall.SocketPair
-	(*ContextData)(nil),     // 33: gvisor.common.ContextData
+	(*Mmap)(nil),            // 33: gvisor.syscall.Mmap
+	(*ContextData)(nil),     // 34: gvisor.common.ContextData
 }
 var file_pkg_sentry_seccheck_points_syscall_proto_depIdxs = []int32{
-	33, // 0: gvisor.syscall.Syscall.context_data:type_name -> gvisor.common.ContextData
+	34, // 0: gvisor.syscall.Syscall.context_data:type_name -> gvisor.common.ContextData
 	0,  // 1: gvisor.syscall.Syscall.exit:type_name -> gvisor.syscall.Exit
-	33, // 2: gvisor.syscall.Open.context_data:type_name -> gvisor.common.ContextData
+	34, // 2: gvisor.syscall.Open.context_data:type_name -> gvisor.common.ContextData
 	0,  // 3: gvisor.syscall.Open.exit:type_name -> gvisor.syscall.Exit
-	33, // 4: gvisor.syscall.Close.context_data:type_name -> gvisor.common.ContextData
+	34, // 4: gvisor.syscall.Close.context_data:type_name -> gvisor.common.ContextData
 	0,  // 5: gvisor.syscall.Close.exit:type_name -> gvisor.syscall.Exit
-	33, // 6: gvisor.syscall.Read.context_data:type_name -> gvisor.common.ContextData
+	34, // 6: gvisor.syscall.Read.context_data:type_name -> gvisor.common.ContextData
 	0,  // 7: gvisor.syscall.Read.exit:type_name -> gvisor.syscall.Exit
-	33, // 8: gvisor.syscall.Write.context_data:type_name -> gvisor.common.ContextData
+	34, // 8: gvisor.syscall.Write.context_data:type_name -> gvisor.common.ContextData
 	0,  // 9: gvisor.syscall.Write.exit:type_name -> gvisor.syscall.Exit
-	33, // 10: gvisor.syscall.Connect.context_data:type_name -> gvisor.common.ContextData
+	34, // 10: gvisor.syscall.Connect.context_data:type_name -> gvisor.common.ContextData
 	0,  // 11: gvisor.syscall.Connect.exit:type_name -> gvisor.syscall.Exit
-	33, // 12: gvisor.syscall.Execve.context_data:type_name -> gvisor.common.ContextData
+	34, // 12: gvisor.syscall.Execve.context_data:type_name -> gvisor.common.ContextData
 	0,  // 13: gvisor.syscall.Execve.exit:type_name -> gvisor.syscall.Exit
-	33, // 14: gvisor.syscall.Socket.context_data:type_name -> gvisor.common.ContextData
+	34, // 14: gvisor.syscall.Socket.context_data:type_name -> gvisor.common.ContextData
 	0,  // 15: gvisor.syscall.Socket.exit:type_name -> gvisor.syscall.Exit
-	33, // 16: gvisor.syscall.Chdir.context_data:type_name -> gvisor.common.ContextData
+	34, // 16: gvisor.syscall.Chdir.context_data:type_name -> gvisor.common.ContextData
 	0,  // 17: gvisor.syscall.Chdir.exit:type_name -> gvisor.syscall.Exit
-	33, // 18: gvisor.syscall.Setresid.context_data:type_name -> gvisor.common.ContextData
+	34, // 18: gvisor.syscall.Setresid.context_data:type_name -> gvisor.common.ContextData
 	0,  // 19: gvisor.syscall.Setresid.exit:type_name -> gvisor.syscall.Exit
-	33, // 20: gvisor.syscall.Setid.context_data:type_name -> gvisor.common.ContextData
+	34, // 20: gvisor.syscall.Setid.context_data:type_name -> gvisor.common.ContextData
 	0,  // 21: gvisor.syscall.Setid.exit:type_name -> gvisor.syscall.Exit
-	33, // 22: gvisor.syscall.Prlimit.context_data:type_name -> gvisor.common.ContextData
+	34, // 22: gvisor.syscall.Prlimit.context_data:type_name -> gvisor.common.ContextData
 	0,  // 23: gvisor.syscall.Prlimit.exit:type_name -> gvisor.syscall.Exit
 	12, // 24: gvisor.syscall.Prlimit.new_limit:type_name -> gvisor.syscall.StructRlimit
 	12, // 25: gvisor.syscall.Prlimit.old_limit:type_name -> gvisor.syscall.StructRlimit
-	33, // 26: gvisor.syscall.Pipe.context_data:type_name -> gvisor.common.ContextData
+	34, // 26: gvisor.syscall.Pipe.context_data:type_name -> gvisor.common.ContextData
 	0,  // 27: gvisor.syscall.Pipe.exit:type_name -> gvisor.syscall.Exit
-	33, // 28: gvisor.syscall.Fcntl.context_data:type_name -> gvisor.common.ContextData
+	34, // 28: gvisor.syscall.Fcntl.context_data:type_name -> gvisor.common.ContextData
 	0,  // 29: gvisor.syscall.Fcntl.exit:type_name -> gvisor.syscall.Exit
-	33, // 30: gvisor.syscall.Dup.context_data:type_name -> gvisor.common.ContextData
+	34, // 30: gvisor.syscall.Dup.context_data:type_name -> gvisor.common.ContextData
 	0,  // 31: gvisor.syscall.Dup.exit:type_name -> gvisor.syscall.Exit
-	33, // 32: gvisor.syscall.Signalfd.context_data:type_name -> gvisor.common.ContextData
+	34, // 32: gvisor.syscall.Signalfd.context_data:type_name -> gvisor.common.ContextData
 	0,  // 33: gvisor.syscall.Signalfd.exit:type_name -> gvisor.syscall.Exit
-	33, // 34: gvisor.syscall.Chroot.context_data:type_name -> gvisor.common.ContextData
+	34, // 34: gvisor.syscall.Chroot.context_data:type_name -> gvisor.common.ContextData
 	0,  // 35: gvisor.syscall.Chroot.exit:type_name -> gvisor.syscall.Exit
-	33, // 36: gvisor.syscall.Eventfd.context_data:type_name -> gvisor.common.ContextData
+	34, // 36: gvisor.syscall.Eventfd.context_data:type_name -> gvisor.common.ContextData
 	0,  // 37: gvisor.syscall.Eventfd.exit:type_name -> gvisor.syscall.Exit
-	33, // 38: gvisor.syscall.Clone.context_data:type_name -> gvisor.common.ContextData
+	34, // 38: gvisor.syscall.Clone.context_data:type_name -> gvisor.common.ContextData
 	0,  // 39: gvisor.syscall.Clone.exit:type_name -> gvisor.syscall.Exit
-	33, // 40: gvisor.syscall.Bind.context_data:type_name -> gvisor.common.ContextData
+	34, // 40: gvisor.syscall.Bind.context_data:type_name -> gvisor.common.ContextData
 	0,  // 41: gvisor.syscall.Bind.exit:type_name -> gvisor.syscall.Exit
-	33, // 42: gvisor.syscall.Accept.context_data:type_name -> gvisor.common.ContextData
+	34, // 42: gvisor.syscall.Accept.context_data:type_name -> gvisor.common.ContextData
 	0,  // 43: gvisor.syscall.Accept.exit:type_name -> gvisor.syscall.Exit
-	33, // 44: gvisor.syscall.TimerfdCreate.context_data:type_name -> gvisor.common.ContextData
+	34, // 44: gvisor.syscall.TimerfdCreate.context_data:type_name -> gvisor.common.ContextData
 	0,  // 45: gvisor.syscall.TimerfdCreate.exit:type_name -> gvisor.syscall.Exit
 	24, // 46: gvisor.syscall.ItimerSpec.interval:type_name -> gvisor.syscall.Timespec
 	24, // 47: gvisor.syscall.ItimerSpec.value:type_name -> gvisor.syscall.Timespec
-	33, // 48: gvisor.syscall.TimerfdSetTime.context_data:type_name -> gvisor.common.ContextData
+	34, // 48: gvisor.syscall.TimerfdSetTime.context_data:type_name -> gvisor.common.ContextData
 	0,  // 49: gvisor.syscall.TimerfdSetTime.exit:type_name -> gvisor.syscall.Exit
 	25, // 50: gvisor.syscall.TimerfdSetTime.new_value:type_name -> gvisor.syscall.ItimerSpec
 	25, // 51: gvisor.syscall.TimerfdSetTime.old_value:type_name -> gvisor.syscall.ItimerSpec
-	33, // 52: gvisor.syscall.TimerfdGetTime.context_data:type_name -> gvisor.common.ContextData
+	34, // 52: gvisor.syscall.TimerfdGetTime.context_data:type_name -> gvisor.common.ContextData
 	0,  // 53: gvisor.syscall.TimerfdGetTime.exit:type_name -> gvisor.syscall.Exit
 	25, // 54: gvisor.syscall.TimerfdGetTime.cur_value:type_name -> gvisor.syscall.ItimerSpec
-	33, // 55: gvisor.syscall.Fork.context_data:type_name -> gvisor.common.ContextData
+	34, // 55: gvisor.syscall.Fork.context_data:type_name -> gvisor.common.ContextData
 	0,  // 56: gvisor.syscall.Fork.exit:type_name -> gvisor.syscall.Exit
-	33, // 57: gvisor.syscall.InotifyInit.context_data:type_name -> gvisor.common.ContextData
+	34, // 57: gvisor.syscall.InotifyInit.context_data:type_name -> gvisor.common.ContextData
 	0,  // 58: gvisor.syscall.InotifyInit.exit:type_name -> gvisor.syscall.Exit
-	33, // 59: gvisor.syscall.InotifyAddWatch.context_data:type_name -> gvisor.common.ContextData
+	34, // 59: gvisor.syscall.InotifyAddWatch.context_data:type_name -> gvisor.common.ContextData
 	0,  // 60: gvisor.syscall.InotifyAddWatch.exit:type_name -> gvisor.syscall.Exit
-	33, // 61: gvisor.syscall.InotifyRmWatch.context_data:type_name -> gvisor.common.ContextData
+	34, // 61: gvisor.syscall.InotifyRmWatch.context_data:type_name -> gvisor.common.ContextData
 	0,  // 62: gvisor.syscall.InotifyRmWatch.exit:type_name -> gvisor.syscall.Exit
-	33, // 63: gvisor.syscall.SocketPair.context_data:type_name -> gvisor.common.ContextData
+	34, // 63: gvisor.syscall.SocketPair.context_data:type_name -> gvisor.common.ContextData
 	0,  // 64: gvisor.syscall.SocketPair.exit:type_name -> gvisor.syscall.Exit
-	65, // [65:65] is the sub-list for method output_type
-	65, // [65:65] is the sub-list for method input_type
-	65, // [65:65] is the sub-list for extension type_name
-	65, // [65:65] is the sub-list for extension extendee
-	0,  // [0:65] is the sub-list for field type_name
+	34, // 65: gvisor.syscall.Mmap.context_data:type_name -> gvisor.common.ContextData
+	0,  // 66: gvisor.syscall.Mmap.exit:type_name -> gvisor.syscall.Exit
+	67, // [67:67] is the sub-list for method output_type
+	67, // [67:67] is the sub-list for method input_type
+	67, // [67:67] is the sub-list for extension type_name
+	67, // [67:67] is the sub-list for extension extendee
+	0,  // [0:67] is the sub-list for field type_name
 }
 
 func init() { file_pkg_sentry_seccheck_points_syscall_proto_init() }
@@ -3142,7 +3273,7 @@ func file_pkg_sentry_seccheck_points_syscall_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_sentry_seccheck_points_syscall_proto_rawDesc), len(file_pkg_sentry_seccheck_points_syscall_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   33,
+			NumMessages:   34,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

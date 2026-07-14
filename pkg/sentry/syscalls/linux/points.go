@@ -269,6 +269,27 @@ func PointWrite(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextDat
 	return p, pb.MessageType_MESSAGE_SYSCALL_WRITE
 }
 
+// PointMmap converts mmap(2) syscall to proto.
+func PointMmap(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	p := &pb.Mmap{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		Addr:        uint64(info.Args[0].Pointer()),
+		Length:      info.Args[1].Uint64(),
+		Prot:        info.Args[2].Uint(),
+		Flags:       info.Args[3].Uint(),
+		Fd:          int64(info.Args[4].Int()),
+		Offset:      info.Args[5].Int64(),
+	}
+	if fields.Local.Contains(seccheck.FieldSyscallPath) {
+		p.FdPath = getFilePath(t, int32(p.Fd))
+	}
+
+	p.Exit = newExitMaybe(info)
+
+	return p, pb.MessageType_MESSAGE_SYSCALL_MMAP
+}
+
 // PointPwrite64 converts pwrite64(2) syscall to proto.
 func PointPwrite64(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
 	p := &pb.Write{

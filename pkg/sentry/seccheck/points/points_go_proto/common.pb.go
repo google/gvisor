@@ -60,6 +60,7 @@ const (
 	MessageType_MESSAGE_SYSCALL_SOCKETPAIR        MessageType = 33
 	MessageType_MESSAGE_SYSCALL_WRITE             MessageType = 34
 	MessageType_MESSAGE_SENTRY_MMAP               MessageType = 35
+	MessageType_MESSAGE_SYSCALL_MMAP              MessageType = 36
 )
 
 // Enum value maps for MessageType.
@@ -101,6 +102,7 @@ var (
 		33: "MESSAGE_SYSCALL_SOCKETPAIR",
 		34: "MESSAGE_SYSCALL_WRITE",
 		35: "MESSAGE_SENTRY_MMAP",
+		36: "MESSAGE_SYSCALL_MMAP",
 	}
 	MessageType_value = map[string]int32{
 		"MESSAGE_UNKNOWN":                   0,
@@ -139,6 +141,7 @@ var (
 		"MESSAGE_SYSCALL_SOCKETPAIR":        33,
 		"MESSAGE_SYSCALL_WRITE":             34,
 		"MESSAGE_SENTRY_MMAP":               35,
+		"MESSAGE_SYSCALL_MMAP":              36,
 	}
 )
 
@@ -438,7 +441,7 @@ const file_pkg_sentry_seccheck_points_common_proto_rawDesc = "" +
 	"\x03cwd\x18\b \x01(\tR\x03cwd\x12!\n" +
 	"\fprocess_name\x18\t \x01(\tR\vprocessName\x123\n" +
 	"\x16parent_thread_group_id\x18\n" +
-	" \x01(\x05R\x13parentThreadGroupId*\xa8\b\n" +
+	" \x01(\x05R\x13parentThreadGroupId*\xc2\b\n" +
 	"\vMessageType\x12\x13\n" +
 	"\x0fMESSAGE_UNKNOWN\x10\x00\x12\x1b\n" +
 	"\x17MESSAGE_CONTAINER_START\x10\x01\x12\x18\n" +
@@ -476,7 +479,8 @@ const file_pkg_sentry_seccheck_points_common_proto_rawDesc = "" +
 	" MESSAGE_SYSCALL_INOTIFY_RM_WATCH\x10 \x12\x1e\n" +
 	"\x1aMESSAGE_SYSCALL_SOCKETPAIR\x10!\x12\x19\n" +
 	"\x15MESSAGE_SYSCALL_WRITE\x10\"\x12\x17\n" +
-	"\x13MESSAGE_SENTRY_MMAP\x10#b\x06proto3"
+	"\x13MESSAGE_SENTRY_MMAP\x10#\x12\x18\n" +
+	"\x14MESSAGE_SYSCALL_MMAP\x10$b\x06proto3"
 
 var (
 	file_pkg_sentry_seccheck_points_common_proto_rawDescOnce sync.Once
