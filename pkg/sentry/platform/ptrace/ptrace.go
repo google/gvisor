@@ -52,6 +52,7 @@ import (
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/hostmm"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/platform/interrupt"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -233,6 +234,7 @@ type PTrace struct {
 
 // New returns a new ptrace-based implementation of the platform interface.
 func New() (*PTrace, error) {
+	mbCh := hostmm.Probe(false)
 	stubInitialized.Do(func() {
 		// Initialize the stub.
 		stubInit()
@@ -248,8 +250,9 @@ func New() (*PTrace, error) {
 		// Set the master on the globalPool.
 		globalPool.master = master
 	})
-
-	return &PTrace{}, nil
+	return &PTrace{
+		UseHostGlobalMemoryBarrier: platform.UseHostGlobalMemoryBarrier{MemBarrier: <-mbCh},
+	}, nil
 }
 
 // SupportsAddressSpaceIO implements platform.Platform.SupportsAddressSpaceIO.

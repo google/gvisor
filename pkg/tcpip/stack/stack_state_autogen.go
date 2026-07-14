@@ -339,6 +339,8 @@ func (l *ICMPRateLimiter) StateTypeName() string {
 func (l *ICMPRateLimiter) StateFields() []string {
 	return []string{
 		"clock",
+		"limit",
+		"burst",
 	}
 }
 
@@ -348,13 +350,16 @@ func (l *ICMPRateLimiter) beforeSave() {}
 func (l *ICMPRateLimiter) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	stateSinkObject.Save(0, &l.clock)
+	stateSinkObject.Save(1, &l.limit)
+	stateSinkObject.Save(2, &l.burst)
 }
-
-func (l *ICMPRateLimiter) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (l *ICMPRateLimiter) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.clock)
+	stateSourceObject.Load(1, &l.limit)
+	stateSourceObject.Load(2, &l.burst)
+	stateSourceObject.AfterLoad(func() { l.afterLoad(ctx) })
 }
 
 func (a *AcceptTarget) StateTypeName() string {

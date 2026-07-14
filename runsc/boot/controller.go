@@ -42,6 +42,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/state/stateio"
 	"gvisor.dev/gvisor/pkg/sentry/state/stateipc"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/tcpip/link/fdbased"
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot/procfs"
@@ -141,8 +142,8 @@ const (
 	// ContMgrContainerRuntimeState returns the runtime state of a container.
 	ContMgrContainerRuntimeState = "containerManager.ContainerRuntimeState"
 
-	// ContMgrCreateLinksAndRoutes creates links and routes, and sets network args in loader.
-	ContMgrCreateLinksAndRoutes = "containerManager.CreateLinksAndRoutes"
+	// ContMgrSetNetworkArgs sets network args in loader without creating links.
+	ContMgrSetNetworkArgs = "containerManager.SetNetworkArgs"
 
 	// ContMgrGetNetworkConfig returns the network interfaces and routes applied
 	// during the creation of root container.
@@ -1235,25 +1236,88 @@ func (cm *containerManager) GetSavings(_ *struct{}, s *Savings) error {
 	return nil
 }
 
-// CreateLinksAndRoutes creates links and routes, and sets the network arguments.
-func (cm *containerManager) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct{}) error {
-	log.Debugf("containerManager.CreateLinksAndRoutes")
+// SetNetworkArgs sets the network arguments. It configures host sockets
+// (packet fanout groups) before seccomp is installed, but does not create
+// the netstack links and routes.
+func (cm *containerManager) SetNetworkArgs(args *CreateLinksAndRoutesArgs, _ *struct{}) error {
+	log.Debugf("containerManager.SetNetworkArgs")
 	if args == nil {
 		return fmt.Errorf("cannot set nil networkArgs")
 	}
 
-	if eps, ok := cm.l.k.RootNetworkNamespace().Stack().(*netstack.Stack); ok {
-		n := &Network{
-			Stack:  eps.Stack,
-			Kernel: cm.l.k,
-		}
-		if err := n.CreateLinksAndRoutes(args, nil); err != nil {
-			return err
-		}
-		cm.l.mu.Lock()
-		cm.l.networkArgs = args
-		cm.l.mu.Unlock()
+	cm.l.mu.Lock()
+	state := cm.l.state
+	cm.l.mu.Unlock()
+	if state == started || state == restored || state == restoringStarted {
+		log.Warningf("SetNetworkArgs called after sandbox started (state=%s), ignoring", state)
+		return nil
 	}
+
+	// Create a new CreateLinksAndRoutesArgs variable to store in the loader
+	// as the FDs associated with the original argument passed to this urpc
+	// will be closed when it returns.
+	networkArgs := *args
+	dupedFDs, err := fd.NewFromFiles(args.FilePayload.Files)
+	if err != nil {
+		return fmt.Errorf("failed to dup network FDs: %w", err)
+	}
+	c := cleanup.Make(func() {
+		for _, f := range dupedFDs {
+			_ = f.Close()
+		}
+	})
+	defer c.Clean()
+
+	// Configure FDs before seccomp is installed.
+	fdIdx := 0
+	for i := range networkArgs.FDBasedLinks {
+		link := &networkArgs.FDBasedLinks[i]
+		link.IsPacket = make([]bool, link.NumChannels)
+
+		fid := int32(-1)
+		for ch := 0; ch < link.NumChannels; ch++ {
+			if fdIdx >= len(dupedFDs) {
+				return fmt.Errorf("insufficient FDs provided for link %q", link.Name)
+			}
+			f := dupedFDs[fdIdx]
+			fdIdx++
+
+			isSocket, err := fdbased.IsSocketFD(f.FD())
+			if err != nil {
+				return err
+			}
+
+			isPacket, err := fdbased.IsPacketSocket(f.FD(), isSocket)
+			if err != nil {
+				return err
+			}
+			link.IsPacket[ch] = isPacket
+
+			if isPacket {
+				if fid < 0 {
+					fid, err = fdbased.CreatePacketFanoutGroup(f.FD())
+				} else {
+					err = fdbased.JoinPacketFanoutGroup(f.FD(), fid)
+				}
+				if err != nil {
+					return fmt.Errorf("pre-configuring PACKET_FANOUT failed for link %q: %w", link.Name, err)
+				}
+			}
+		}
+		if networkArgs.PCAP {
+			// Skip PCAP fd.
+			fdIdx++
+		}
+		link.PreConfigured = true
+	}
+
+	// Release the duplicated FDs back to os.File objects and store them in the copy.
+	networkArgs.FilePayload.Files = fd.ReleaseToFiles(dupedFDs, "network-fd")
+	c.Release()
+
+	cm.l.mu.Lock()
+	cm.l.networkArgs = &networkArgs
+	cm.l.mu.Unlock()
 	return nil
 }
 

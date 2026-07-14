@@ -120,6 +120,13 @@ type FDBasedLink struct {
 	// ProcessorsPerChannel controls how many goroutines are used to handle
 	// packets on each channel.
 	ProcessorsPerChannel int
+
+	// IsPacket indicates whether each FD in this link is a packet socket.
+	IsPacket []bool
+
+	// PreConfigured indicates that getsockname and setsockopt(PACKET_FANOUT)
+	// have already been performed on the host FDs.
+	PreConfigured bool
 }
 
 // BindOpt indicates whether the sentry or runsc process is responsible for
@@ -195,6 +202,9 @@ type CreateLinksAndRoutesArgs struct {
 	// AllowConnectedOnSave indicates whether connections should be allowed to
 	// remain connected during save.
 	AllowConnectedOnSave bool
+
+	// IsRestore indicates whether this is part of a restore flow.
+	IsRestore bool
 }
 
 // InitPluginStackArgs are arguments to InitPluginStack.
@@ -353,7 +363,6 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 			}
 
 			mac := tcpip.LinkAddress(link.LinkAddress)
-			log.Infof("gso max size is: %d", link.GSOMaxSize)
 
 			linkEP, err := fdbased.New(&fdbased.Options{
 				FDs:                  FDs,
@@ -367,6 +376,8 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 				RXChecksumOffload:    link.RXChecksumOffload,
 				GRO:                  link.GVisorGRO,
 				ProcessorsPerChannel: link.ProcessorsPerChannel,
+				IsPacketSocket:       link.IsPacket,
+				PreConfigured:        link.PreConfigured,
 			})
 			if err != nil {
 				return err
