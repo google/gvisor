@@ -1118,6 +1118,11 @@ func (pk *PacketBuffer) CalculateTransportChecksum() {
 		xsum = header.PseudoHeaderChecksum(proto, src, dst, totalLen)
 		xsum = checksum.Combine(xsum, pk.Data().Checksum())
 		t.SetChecksum(0)
-		t.SetChecksum(^t.CalculateChecksum(xsum))
+		csum := ^t.CalculateChecksum(xsum)
+		// udp csum RFC 768.
+		if csum == 0 {
+			csum = 0xFFFF
+		}
+		t.SetChecksum(csum)
 	}
 }
