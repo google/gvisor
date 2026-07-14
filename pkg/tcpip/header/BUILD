@@ -72,6 +72,7 @@ go_test(
     size = "small",
     srcs = [
         "eth_test.go",
+        "ipv6_extension_headers_offset_test.go",
         "ipv6_extension_headers_test.go",
         "mld_test.go",
         "ndp_test.go",
