@@ -61,6 +61,7 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/memutil"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/hostmm"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/platform/interrupt"
@@ -271,7 +272,7 @@ func (*Systrap) MinUserAddress() hostarch.Addr {
 
 // New returns a new seccomp-based implementation of the platform interface.
 func New(opts platform.Options) (*Systrap, error) {
-
+	mbCh := hostmm.Probe(false)
 	if !disableSyscallPatching {
 		disableSyscallPatching = opts.DisableSyscallPatching
 	}
@@ -334,7 +335,10 @@ func New(opts platform.Options) (*Systrap, error) {
 		})
 	}
 
-	return &Systrap{memoryFile: mf}, nil
+	return &Systrap{
+		UseHostGlobalMemoryBarrier: platform.UseHostGlobalMemoryBarrier{MemBarrier: <-mbCh},
+		memoryFile:                 mf,
+	}, nil
 }
 
 // SupportsAddressSpaceIO implements platform.Platform.SupportsAddressSpaceIO.

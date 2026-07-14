@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
+	"gvisor.dev/gvisor/pkg/sentry/hostmm"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sync"
 )
@@ -93,7 +94,7 @@ func New(deviceFile *fd.FD, config Config) (*KVM, error) {
 	if hostarch.PageSize != 4096 {
 		return nil, fmt.Errorf("KVM platform does not support %dK page size", hostarch.PageSize/1024)
 	}
-
+	mbCh := hostmm.Probe(true)
 	fd := deviceFile.FD()
 
 	// Ensure global initialization is done.
@@ -128,10 +129,9 @@ func New(deviceFile *fd.FD, config Config) (*KVM, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	// All set.
 	return &KVM{
-		machine: machine,
+		UseHostProcessMemoryBarrier: platform.UseHostProcessMemoryBarrier{MemBarrier: <-mbCh},
+		machine:                     machine,
 	}, nil
 }
 

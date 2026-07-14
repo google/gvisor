@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
+	"gvisor.dev/gvisor/pkg/sentry/hostmm"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 )
 
@@ -65,9 +66,9 @@ func OpenDevice(devicePath string) (*fd.FD, error) {
 
 // New returns a new SlimVM-based implementation of the platform interface.
 func New(deviceFile *fd.FD, sandboxID string, applicationCores int) (*SlimVM, error) {
+	mbCh := hostmm.Probe(true)
 	slimvmFile = deviceFile
 	slimvmFD = uintptr(slimvmFile.FD())
-
 	// Ensure global initialization is done.
 	globalOnce.Do(func() {
 		updateGlobalOnce(int(slimvmFD))
@@ -85,9 +86,9 @@ func New(deviceFile *fd.FD, sandboxID string, applicationCores int) (*SlimVM, er
 		return nil, err
 	}
 
-	// All set.
 	return &SlimVM{
-		machine: machine,
+		UseHostProcessMemoryBarrier: platform.UseHostProcessMemoryBarrier{MemBarrier: <-mbCh},
+		machine:                     machine,
 	}, nil
 }
 
