@@ -476,6 +476,194 @@ func (x *ContextData) GetIsExecSession() bool {
 	return false
 }
 
+type SocketIp struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Family        uint32                 `protobuf:"varint,1,opt,name=family,proto3" json:"family,omitempty"`
+	Ip            []byte                 `protobuf:"bytes,2,opt,name=ip,proto3" json:"ip,omitempty"`
+	Port          uint32                 `protobuf:"varint,3,opt,name=port,proto3" json:"port,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SocketIp) Reset() {
+	*x = SocketIp{}
+	mi := &file_pkg_sentry_seccheck_points_common_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SocketIp) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SocketIp) ProtoMessage() {}
+
+func (x *SocketIp) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_sentry_seccheck_points_common_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SocketIp.ProtoReflect.Descriptor instead.
+func (*SocketIp) Descriptor() ([]byte, []int) {
+	return file_pkg_sentry_seccheck_points_common_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *SocketIp) GetFamily() uint32 {
+	if x != nil {
+		return x.Family
+	}
+	return 0
+}
+
+func (x *SocketIp) GetIp() []byte {
+	if x != nil {
+		return x.Ip
+	}
+	return nil
+}
+
+func (x *SocketIp) GetPort() uint32 {
+	if x != nil {
+		return x.Port
+	}
+	return 0
+}
+
+type SocketInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Family        uint32                 `protobuf:"varint,1,opt,name=family,proto3" json:"family,omitempty"`
+	Local         *SocketIp              `protobuf:"bytes,2,opt,name=local,proto3" json:"local,omitempty"`
+	Remote        *SocketIp              `protobuf:"bytes,3,opt,name=remote,proto3" json:"remote,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SocketInfo) Reset() {
+	*x = SocketInfo{}
+	mi := &file_pkg_sentry_seccheck_points_common_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SocketInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SocketInfo) ProtoMessage() {}
+
+func (x *SocketInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_sentry_seccheck_points_common_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SocketInfo.ProtoReflect.Descriptor instead.
+func (*SocketInfo) Descriptor() ([]byte, []int) {
+	return file_pkg_sentry_seccheck_points_common_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *SocketInfo) GetFamily() uint32 {
+	if x != nil {
+		return x.Family
+	}
+	return 0
+}
+
+func (x *SocketInfo) GetLocal() *SocketIp {
+	if x != nil {
+		return x.Local
+	}
+	return nil
+}
+
+func (x *SocketInfo) GetRemote() *SocketIp {
+	if x != nil {
+		return x.Remote
+	}
+	return nil
+}
+
+type FdInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Mode          uint32                 `protobuf:"varint,1,opt,name=mode,proto3" json:"mode,omitempty"`
+	Ino           uint64                 `protobuf:"varint,2,opt,name=ino,proto3" json:"ino,omitempty"`
+	Path          string                 `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
+	Socket        *SocketInfo            `protobuf:"bytes,4,opt,name=socket,proto3" json:"socket,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FdInfo) Reset() {
+	*x = FdInfo{}
+	mi := &file_pkg_sentry_seccheck_points_common_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FdInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FdInfo) ProtoMessage() {}
+
+func (x *FdInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_sentry_seccheck_points_common_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FdInfo.ProtoReflect.Descriptor instead.
+func (*FdInfo) Descriptor() ([]byte, []int) {
+	return file_pkg_sentry_seccheck_points_common_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *FdInfo) GetMode() uint32 {
+	if x != nil {
+		return x.Mode
+	}
+	return 0
+}
+
+func (x *FdInfo) GetIno() uint64 {
+	if x != nil {
+		return x.Ino
+	}
+	return 0
+}
+
+func (x *FdInfo) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *FdInfo) GetSocket() *SocketInfo {
+	if x != nil {
+		return x.Socket
+	}
+	return nil
+}
+
 var File_pkg_sentry_seccheck_points_common_proto protoreflect.FileDescriptor
 
 const file_pkg_sentry_seccheck_points_common_proto_rawDesc = "" +
@@ -505,7 +693,21 @@ const file_pkg_sentry_seccheck_points_common_proto_rawDesc = "" +
 	"\fprocess_name\x18\t \x01(\tR\vprocessName\x123\n" +
 	"\x16parent_thread_group_id\x18\n" +
 	" \x01(\x05R\x13parentThreadGroupId\x12&\n" +
-	"\x0fis_exec_session\x18\v \x01(\bR\risExecSession*\xc2\b\n" +
+	"\x0fis_exec_session\x18\v \x01(\bR\risExecSession\"F\n" +
+	"\bSocketIp\x12\x16\n" +
+	"\x06family\x18\x01 \x01(\rR\x06family\x12\x0e\n" +
+	"\x02ip\x18\x02 \x01(\fR\x02ip\x12\x12\n" +
+	"\x04port\x18\x03 \x01(\rR\x04port\"\x84\x01\n" +
+	"\n" +
+	"SocketInfo\x12\x16\n" +
+	"\x06family\x18\x01 \x01(\rR\x06family\x12-\n" +
+	"\x05local\x18\x02 \x01(\v2\x17.gvisor.common.SocketIpR\x05local\x12/\n" +
+	"\x06remote\x18\x03 \x01(\v2\x17.gvisor.common.SocketIpR\x06remote\"u\n" +
+	"\x06FdInfo\x12\x12\n" +
+	"\x04mode\x18\x01 \x01(\rR\x04mode\x12\x10\n" +
+	"\x03ino\x18\x02 \x01(\x04R\x03ino\x12\x12\n" +
+	"\x04path\x18\x03 \x01(\tR\x04path\x121\n" +
+	"\x06socket\x18\x04 \x01(\v2\x19.gvisor.common.SocketInfoR\x06socket*\xc2\b\n" +
 	"\vMessageType\x12\x13\n" +
 	"\x0fMESSAGE_UNKNOWN\x10\x00\x12\x1b\n" +
 	"\x17MESSAGE_CONTAINER_START\x10\x01\x12\x18\n" +
@@ -559,21 +761,27 @@ func file_pkg_sentry_seccheck_points_common_proto_rawDescGZIP() []byte {
 }
 
 var file_pkg_sentry_seccheck_points_common_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_pkg_sentry_seccheck_points_common_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_pkg_sentry_seccheck_points_common_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_pkg_sentry_seccheck_points_common_proto_goTypes = []any{
 	(MessageType)(0),    // 0: gvisor.common.MessageType
 	(*Handshake)(nil),   // 1: gvisor.common.Handshake
 	(*Timespec)(nil),    // 2: gvisor.common.Timespec
 	(*Credentials)(nil), // 3: gvisor.common.Credentials
 	(*ContextData)(nil), // 4: gvisor.common.ContextData
+	(*SocketIp)(nil),    // 5: gvisor.common.SocketIp
+	(*SocketInfo)(nil),  // 6: gvisor.common.SocketInfo
+	(*FdInfo)(nil),      // 7: gvisor.common.FdInfo
 }
 var file_pkg_sentry_seccheck_points_common_proto_depIdxs = []int32{
 	3, // 0: gvisor.common.ContextData.credentials:type_name -> gvisor.common.Credentials
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	5, // 1: gvisor.common.SocketInfo.local:type_name -> gvisor.common.SocketIp
+	5, // 2: gvisor.common.SocketInfo.remote:type_name -> gvisor.common.SocketIp
+	6, // 3: gvisor.common.FdInfo.socket:type_name -> gvisor.common.SocketInfo
+	4, // [4:4] is the sub-list for method output_type
+	4, // [4:4] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_pkg_sentry_seccheck_points_common_proto_init() }
@@ -587,7 +795,7 @@ func file_pkg_sentry_seccheck_points_common_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_sentry_seccheck_points_common_proto_rawDesc), len(file_pkg_sentry_seccheck_points_common_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   4,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

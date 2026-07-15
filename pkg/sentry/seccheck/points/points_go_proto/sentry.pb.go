@@ -110,6 +110,9 @@ type ExecveInfo struct {
 	BinaryOverlayfsUpper bool                   `protobuf:"varint,9,opt,name=binary_overlayfs_upper,json=binaryOverlayfsUpper,proto3" json:"binary_overlayfs_upper,omitempty"`
 	BinaryIno            uint64                 `protobuf:"varint,10,opt,name=binary_ino,json=binaryIno,proto3" json:"binary_ino,omitempty"`
 	BinaryCtime          *Timespec              `protobuf:"bytes,11,opt,name=binary_ctime,json=binaryCtime,proto3" json:"binary_ctime,omitempty"`
+	Stdin                *FdInfo                `protobuf:"bytes,12,opt,name=stdin,proto3" json:"stdin,omitempty"`
+	Stdout               *FdInfo                `protobuf:"bytes,13,opt,name=stdout,proto3" json:"stdout,omitempty"`
+	Stderr               *FdInfo                `protobuf:"bytes,14,opt,name=stderr,proto3" json:"stderr,omitempty"`
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
@@ -217,6 +220,27 @@ func (x *ExecveInfo) GetBinaryIno() uint64 {
 func (x *ExecveInfo) GetBinaryCtime() *Timespec {
 	if x != nil {
 		return x.BinaryCtime
+	}
+	return nil
+}
+
+func (x *ExecveInfo) GetStdin() *FdInfo {
+	if x != nil {
+		return x.Stdin
+	}
+	return nil
+}
+
+func (x *ExecveInfo) GetStdout() *FdInfo {
+	if x != nil {
+		return x.Stdout
+	}
+	return nil
+}
+
+func (x *ExecveInfo) GetStderr() *FdInfo {
+	if x != nil {
+		return x.Stderr
 	}
 	return nil
 }
@@ -435,7 +459,7 @@ const file_pkg_sentry_seccheck_points_sentry_proto_rawDesc = "" +
 	"\x11created_thread_id\x18\x03 \x01(\x05R\x0fcreatedThreadId\x125\n" +
 	"\x17created_thread_group_id\x18\x04 \x01(\x05R\x14createdThreadGroupId\x12>\n" +
 	"\x1ccreated_thread_start_time_ns\x18\x05 \x01(\x03R\x18createdThreadStartTimeNs\x12\x14\n" +
-	"\x05flags\x18\x06 \x01(\x04R\x05flags\"\xa7\x03\n" +
+	"\x05flags\x18\x06 \x01(\x04R\x05flags\"\xb2\x04\n" +
 	"\n" +
 	"ExecveInfo\x12=\n" +
 	"\fcontext_data\x18\x01 \x01(\v2\x1a.gvisor.common.ContextDataR\vcontextData\x12\x1f\n" +
@@ -454,7 +478,10 @@ const file_pkg_sentry_seccheck_points_sentry_proto_rawDesc = "" +
 	"\n" +
 	"binary_ino\x18\n" +
 	" \x01(\x04R\tbinaryIno\x12:\n" +
-	"\fbinary_ctime\x18\v \x01(\v2\x17.gvisor.common.TimespecR\vbinaryCtime\"v\n" +
+	"\fbinary_ctime\x18\v \x01(\v2\x17.gvisor.common.TimespecR\vbinaryCtime\x12+\n" +
+	"\x05stdin\x18\f \x01(\v2\x15.gvisor.common.FdInfoR\x05stdin\x12-\n" +
+	"\x06stdout\x18\r \x01(\v2\x15.gvisor.common.FdInfoR\x06stdout\x12-\n" +
+	"\x06stderr\x18\x0e \x01(\v2\x15.gvisor.common.FdInfoR\x06stderr\"v\n" +
 	"\x14ExitNotifyParentInfo\x12=\n" +
 	"\fcontext_data\x18\x01 \x01(\v2\x1a.gvisor.common.ContextDataR\vcontextData\x12\x1f\n" +
 	"\vexit_status\x18\x02 \x01(\x05R\n" +
@@ -499,20 +526,24 @@ var file_pkg_sentry_seccheck_points_sentry_proto_goTypes = []any{
 	(*MmapInfo)(nil),             // 4: gvisor.sentry.MmapInfo
 	(*ContextData)(nil),          // 5: gvisor.common.ContextData
 	(*Timespec)(nil),             // 6: gvisor.common.Timespec
+	(*FdInfo)(nil),               // 7: gvisor.common.FdInfo
 }
 var file_pkg_sentry_seccheck_points_sentry_proto_depIdxs = []int32{
-	5, // 0: gvisor.sentry.CloneInfo.context_data:type_name -> gvisor.common.ContextData
-	5, // 1: gvisor.sentry.ExecveInfo.context_data:type_name -> gvisor.common.ContextData
-	6, // 2: gvisor.sentry.ExecveInfo.binary_ctime:type_name -> gvisor.common.Timespec
-	5, // 3: gvisor.sentry.ExitNotifyParentInfo.context_data:type_name -> gvisor.common.ContextData
-	5, // 4: gvisor.sentry.TaskExit.context_data:type_name -> gvisor.common.ContextData
-	5, // 5: gvisor.sentry.MmapInfo.context_data:type_name -> gvisor.common.ContextData
-	6, // 6: gvisor.sentry.MmapInfo.mapped_ctime:type_name -> gvisor.common.Timespec
-	7, // [7:7] is the sub-list for method output_type
-	7, // [7:7] is the sub-list for method input_type
-	7, // [7:7] is the sub-list for extension type_name
-	7, // [7:7] is the sub-list for extension extendee
-	0, // [0:7] is the sub-list for field type_name
+	5,  // 0: gvisor.sentry.CloneInfo.context_data:type_name -> gvisor.common.ContextData
+	5,  // 1: gvisor.sentry.ExecveInfo.context_data:type_name -> gvisor.common.ContextData
+	6,  // 2: gvisor.sentry.ExecveInfo.binary_ctime:type_name -> gvisor.common.Timespec
+	7,  // 3: gvisor.sentry.ExecveInfo.stdin:type_name -> gvisor.common.FdInfo
+	7,  // 4: gvisor.sentry.ExecveInfo.stdout:type_name -> gvisor.common.FdInfo
+	7,  // 5: gvisor.sentry.ExecveInfo.stderr:type_name -> gvisor.common.FdInfo
+	5,  // 6: gvisor.sentry.ExitNotifyParentInfo.context_data:type_name -> gvisor.common.ContextData
+	5,  // 7: gvisor.sentry.TaskExit.context_data:type_name -> gvisor.common.ContextData
+	5,  // 8: gvisor.sentry.MmapInfo.context_data:type_name -> gvisor.common.ContextData
+	6,  // 9: gvisor.sentry.MmapInfo.mapped_ctime:type_name -> gvisor.common.Timespec
+	10, // [10:10] is the sub-list for method output_type
+	10, // [10:10] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_pkg_sentry_seccheck_points_sentry_proto_init() }
