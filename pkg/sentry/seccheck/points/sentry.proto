@@ -69,6 +69,11 @@ message ExecveInfo {
 
   // BinaryCtime is the ctime of the executable binary file.
   gvisor.common.Timespec binary_ctime = 11;
+
+  // Standard input, output, and error file descriptor info.
+  gvisor.common.FdInfo stdin = 12;
+  gvisor.common.FdInfo stdout = 13;
+  gvisor.common.FdInfo stderr = 14;
 }
 
 message ExitNotifyParentInfo {

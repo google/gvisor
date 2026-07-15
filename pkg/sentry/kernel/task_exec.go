@@ -78,6 +78,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/usermem"
 
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
@@ -521,11 +522,83 @@ func getExecveSeccheckInfo(t *Task, argv, env []string, executable *vfs.FileDesc
 		}
 	}
 
+	if fields.Local.Contains(seccheck.FieldSentryExecveFdInfo) {
+		info.Stdin = execveFdInfo(t, 0)
+		info.Stdout = execveFdInfo(t, 1)
+		info.Stderr = execveFdInfo(t, 2)
+	}
+
 	if !fields.Context.Empty() {
 		info.ContextData = &pb.ContextData{}
 		LoadSeccheckData(t, fields.Context, info.ContextData)
 	}
 	return fields, info
+}
+
+type socket interface {
+	GetSockName(t *Task) (linux.SockAddr, uint32, *syserr.Error)
+	GetPeerName(t *Task) (linux.SockAddr, uint32, *syserr.Error)
+}
+
+func sockAddrToProto(sa linux.SockAddr) (*pb.SocketIp, uint32) {
+	if sa == nil {
+		return nil, 0
+	}
+	switch a := sa.(type) {
+	case *linux.SockAddrInet:
+		return &pb.SocketIp{
+			Family: uint32(a.Family),
+			Ip:     a.Addr[:],
+			Port:   uint32(a.Port),
+		}, uint32(a.Family)
+	case *linux.SockAddrInet6:
+		return &pb.SocketIp{
+			Family: uint32(a.Family),
+			Ip:     a.Addr[:],
+			Port:   uint32(a.Port),
+		}, uint32(a.Family)
+	case *linux.SockAddrUnix:
+		return &pb.SocketIp{
+			Family: uint32(a.Family),
+		}, uint32(a.Family)
+	}
+	return nil, 0
+}
+
+func execveFdInfo(t *Task, fd int32) *pb.FdInfo {
+	file := t.GetFile(fd)
+	if file == nil {
+		return nil
+	}
+	defer file.DecRef(t)
+
+	pbfd := &pb.FdInfo{
+		Path: file.MappedName(t),
+	}
+
+	statOpts := vfs.StatOptions{
+		Mask: linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_INO,
+	}
+	if stat, err := file.Stat(t, statOpts); err == nil {
+		if stat.Mask&(linux.STATX_TYPE|linux.STATX_MODE) == (linux.STATX_TYPE | linux.STATX_MODE) {
+			pbfd.Mode = uint32(stat.Mode)
+		}
+		if stat.Mask&linux.STATX_INO != 0 {
+			pbfd.Ino = stat.Ino
+		}
+	}
+
+	if sops, ok := file.Impl().(socket); ok {
+		pbfd.Socket = &pb.SocketInfo{}
+		if local, _, err := sops.GetSockName(t); err == nil {
+			pbfd.Socket.Local, pbfd.Socket.Family = sockAddrToProto(local)
+		}
+		if remote, _, err := sops.GetPeerName(t); err == nil {
+			pbfd.Socket.Remote, pbfd.Socket.Family = sockAddrToProto(remote)
+		}
+	}
+
+	return pbfd
 }
 
 // execveCredsMutexStop is a TaskStop that a task enters if it fails to acquire the execveCredsMutex

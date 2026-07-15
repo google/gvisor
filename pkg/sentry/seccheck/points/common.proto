@@ -105,6 +105,25 @@ message ContextData {
   bool is_exec_session = 11;
 }
 
+message SocketIp {
+  uint32 family = 1;
+  bytes ip = 2;
+  uint32 port = 3;
+}
+
+message SocketInfo {
+  uint32 family = 1;
+  SocketIp local = 2;
+  SocketIp remote = 3;
+}
+
+message FdInfo {
+  uint32 mode = 1;
+  uint64 ino = 2;
+  string path = 3;
+  SocketInfo socket = 4;
+}
+
 // MessageType describes the payload of a message sent to the remote process.
 // LINT.IfChange
 enum MessageType {
