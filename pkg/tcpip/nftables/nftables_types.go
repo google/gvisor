@@ -1088,6 +1088,9 @@ func validateDataRegister(regStartIdx int, dataSizeBytes int) *syserr.AnnotatedE
 	if dataSizeBytes == 0 {
 		return syserr.NewAnnotatedError(syserr.ErrRange, "data size cannot be zero")
 	}
+	if regStartIdx < 0 {
+		return syserr.NewAnnotatedError(syserr.ErrRange, "register start index is negative")
+	}
 	// Although this check is not needed as the next check will catch this,
 	// added it just for readable error messages.
 	if regStartIdx >= registersByteSize {

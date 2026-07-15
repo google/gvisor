@@ -196,6 +196,9 @@ func initLookup(tab *Table, exprInfo ExprInfo) (*lookupOp, *syserr.AnnotatedErro
 			if err != nil {
 				return nil, err
 			}
+		} else if set.dataType != linux.NFT_DATA_VERDICT {
+			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument,
+				"verdict destination register requires a set with verdict data type")
 		}
 	}
 
