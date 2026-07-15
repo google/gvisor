@@ -180,6 +180,18 @@ func (FileDescriptionDefaultImpl) RemoveXattr(ctx context.Context, name string) 
 	return linuxerr.ENOTSUP
 }
 
+// GetPosixACL implements FileDescriptionImpl.GetPosixACL for filesystems that
+// do not support POSIX ACLs.
+func (FileDescriptionDefaultImpl) GetPosixACL(ctx context.Context, t ACLType) (*PosixACL, error) {
+	return nil, nil
+}
+
+// SetPosixACL implements FileDescriptionImpl.SetPosixACL for filesystems that
+// do not support POSIX ACLs.
+func (FileDescriptionDefaultImpl) SetPosixACL(ctx context.Context, t ACLType, acl *PosixACL, clearSGID bool) (*PosixACL, linux.FileMode, error) {
+	return nil, 0, linuxerr.EOPNOTSUPP
+}
+
 // RegisterFileAsyncHandler implements FileDescriptionImpl.RegisterFileAsyncHandler.
 func (FileDescriptionDefaultImpl) RegisterFileAsyncHandler(fd *FileDescription) error {
 	return fd.asyncHandler.Register(fd)

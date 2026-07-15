@@ -1009,6 +1009,57 @@ func TestTmpMountWithSize(t *testing.T) {
 	}
 }
 
+func TestLibaclOnTmpMount(t *testing.T) {
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	opts := dockerutil.RunOpts{
+		Image: "basic/libacl",
+		Mounts: []mount.Mount{
+			{
+				Type:   mount.TypeTmpfs,
+				Target: "/mymnt",
+			},
+		},
+	}
+
+	if err := d.Create(ctx, opts, "sleep", "infinity"); err != nil {
+		t.Fatalf("docker create failed: %v", err)
+	}
+	if err := d.Start(ctx); err != nil {
+		t.Fatalf("docker start failed: %v", err)
+	}
+
+	if _, err := d.Exec(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", "mkdir /mymnt/acl_test"); err != nil {
+		t.Fatalf("docker exec failed: %v", err)
+	}
+
+	// Try to add named users/groups to the directory as a default ACL.
+	cmd := "setfacl -d -m u:alice:rwx,g:employees:rwx /mymnt/acl_test"
+	if _, err := d.Exec(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", cmd); err != nil {
+		t.Fatalf("docker exec failed: %v", err)
+	}
+
+	// Create a new file in the directory.
+	if _, err := d.Exec(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", "echo hello > /mymnt/acl_test/file"); err != nil {
+		t.Fatalf("docker exec failed: %v", err)
+	}
+
+	// The default ACL is inherited as the file's access ACL.
+	cmd = "getfacl --access --no-effective --omit-header /mymnt/acl_test/file"
+	out, err := d.Exec(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", cmd)
+	if err != nil {
+		t.Fatalf("docker exec failed: %v", err)
+	}
+	lines := strings.Fields(out)
+	for _, y := range []string{"user:alice:rwx", "group:employees:rwx"} {
+		if !slices.Contains(lines, y) {
+			t.Fatalf("getfacl output: expected %v, not found in: %v", y, lines)
+		}
+	}
+}
+
 // NOTE(b/236028361): Regression test. Check we can handle a working directory
 // without execute permissions. See comment in
 // pkg/sentry/kernel/kernel.go:CreateProcess() for more context.

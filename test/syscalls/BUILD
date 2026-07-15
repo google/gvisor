@@ -1339,3 +1339,7 @@ syscall_test(
     add_overlay = True,
     test = "//test/syscalls/linux:xattr_test",
 )
+
+syscall_test(
+    test = "//test/syscalls/linux:posix_acl_test",
+)

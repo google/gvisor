@@ -861,6 +861,46 @@ func (vfs *VirtualFilesystem) RemoveXattrAt(ctx context.Context, creds *auth.Cre
 	}
 }
 
+// GetPosixACLAt fetches the POSIX ACL from the file at rp.
+// No permission checks are performed.
+func (vfs *VirtualFilesystem) GetPosixACLAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, t ACLType) (*PosixACL, error) {
+	rp := vfs.getResolvingPath(creds, pop)
+	defer rp.Release(ctx)
+	for {
+		if err := vfs.maybeBlockOnMountPromise(ctx, rp); err != nil {
+			return nil, err
+		}
+		acl, err := rp.mount.fs.impl.GetPosixACLAt(ctx, rp, t)
+		if err == nil {
+			return acl, nil
+		}
+		if !rp.handleError(ctx, err) {
+			return nil, err
+		}
+	}
+}
+
+// SetPosixACLAt sets the POSIX ACL for the file at rp.
+// No permission checks are performed.
+//
+// The resulting ACL (which may be nil) and mode are returned.
+func (vfs *VirtualFilesystem) SetPosixACLAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, t ACLType, acl *PosixACL, clearSGID bool) (*PosixACL, linux.FileMode, error) {
+	rp := vfs.getResolvingPath(creds, pop)
+	defer rp.Release(ctx)
+	for {
+		if err := vfs.maybeBlockOnMountPromise(ctx, rp); err != nil {
+			return nil, 0, err
+		}
+		acl, mode, err := rp.mount.fs.impl.SetPosixACLAt(ctx, rp, t, acl, clearSGID)
+		if err == nil {
+			return acl, mode, nil
+		}
+		if !rp.handleError(ctx, err) {
+			return nil, 0, err
+		}
+	}
+}
+
 // SyncAllFilesystems has the semantics of Linux's sync(2).
 func (vfs *VirtualFilesystem) SyncAllFilesystems(ctx context.Context) error {
 	var retErr error

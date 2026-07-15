@@ -280,7 +280,7 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 		if i.isDir() {
 			return linuxerr.EPERM
 		}
-		if err := vfs.MayLink(auth.CredentialsFromContext(ctx), linux.FileMode(i.mode.Load()), auth.KUID(i.uid.Load()), auth.KGID(i.gid.Load())); err != nil {
+		if err := vfs.MayLink(auth.CredentialsFromContext(ctx), linux.FileMode(i.mode.Load()), i.accessACL.Load(), auth.KUID(i.uid.Load()), auth.KGID(i.gid.Load())); err != nil {
 			return err
 		}
 		if i.nlink.Load() == 0 {
@@ -972,6 +972,37 @@ func (fs *filesystem) RemoveXattrAt(ctx context.Context, rp *vfs.ResolvingPath, 
 
 	d.InotifyWithParent(ctx, linux.IN_ATTRIB, 0, vfs.InodeEvent)
 	return nil
+}
+
+// GetPosixACLAt implements vfs.FilesystemImpl.GetPosixACLAt.
+func (fs *filesystem) GetPosixACLAt(ctx context.Context, rp *vfs.ResolvingPath, t vfs.ACLType) (*vfs.PosixACL, error) {
+	fs.mu.RLock()
+	defer fs.mu.RUnlock()
+	d, err := resolveLocked(ctx, rp)
+	if err != nil {
+		return nil, err
+	}
+
+	switch t {
+	case vfs.AccessACL:
+		return d.inode.accessACL.Load(), nil
+	case vfs.DefaultACL:
+		return d.inode.defaultACL.Load(), nil
+	}
+
+	return nil, linuxerr.EINVAL
+}
+
+// SetPosixACLAt implements vfs.FilesystemImpl.SetPosixACLAt.
+func (fs *filesystem) SetPosixACLAt(ctx context.Context, rp *vfs.ResolvingPath, t vfs.ACLType, acl *vfs.PosixACL, clearSGID bool) (*vfs.PosixACL, linux.FileMode, error) {
+	fs.mu.RLock()
+	defer fs.mu.RUnlock()
+	d, err := resolveLocked(ctx, rp)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return d.inode.setPosixACL(rp.Credentials(), t, acl, clearSGID)
 }
 
 // PrependPath implements vfs.FilesystemImpl.PrependPath.
