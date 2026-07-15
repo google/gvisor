@@ -674,3 +674,38 @@ const (
 	NFTA_LOOKUP_MAX = __NFTA_LOOKUP_MAX - 1
 )
 const NFT_LOOKUP_F_INV = uint32(1 << 0)
+
+// NfTable fib expression netlink attributes.
+// These correspond to enum values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFTA_FIB_UNSPEC uint16 = iota
+	NFTA_FIB_DREG
+	NFTA_FIB_RESULT
+	NFTA_FIB_FLAGS
+	__NFTA_FIB_MAX
+)
+
+const NFTA_FIB_MAX = __NFTA_FIB_MAX - 1
+
+// NfTable fib result types.
+// These correspond to enum values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFT_FIB_RESULT_UNSPEC = iota
+	NFT_FIB_RESULT_OIF
+	NFT_FIB_RESULT_OIFNAME
+	NFT_FIB_RESULT_ADDRTYPE
+	__NFT_FIB_RESULT_MAX
+)
+
+const NFT_FIB_RESULT_MAX = __NFT_FIB_RESULT_MAX - 1
+
+// NfTable fib flags.
+// These correspond to enum values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFTA_FIB_F_SADDR   = 1 << 0
+	NFTA_FIB_F_DADDR   = 1 << 1
+	NFTA_FIB_F_MARK    = 1 << 2
+	NFTA_FIB_F_IIF     = 1 << 3
+	NFTA_FIB_F_OIF     = 1 << 4
+	NFTA_FIB_F_PRESENT = 1 << 5
+)

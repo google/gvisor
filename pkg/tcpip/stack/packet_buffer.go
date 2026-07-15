@@ -158,6 +158,10 @@ type PacketBuffer struct {
 	// NICID is the ID of the last interface the network packet was handled at.
 	NICID tcpip.NICID
 
+	// InputNICID is the ID of the interface that the network packet
+	// was received on.
+	InputNICID tcpip.NICID
+
 	// RXChecksumValidated indicates that checksum verification may be
 	// safely skipped.
 	RXChecksumValidated bool
@@ -397,6 +401,7 @@ func (pk *PacketBuffer) Clone() *PacketBuffer {
 	newPk.TransportProtocolNumber = pk.TransportProtocolNumber
 	newPk.PktType = pk.PktType
 	newPk.NICID = pk.NICID
+	newPk.InputNICID = pk.InputNICID
 	newPk.RXChecksumValidated = pk.RXChecksumValidated
 	newPk.NetworkPacketInfo = pk.NetworkPacketInfo
 	newPk.tuple = pk.tuple
