@@ -369,7 +369,7 @@ func traceMmap(t *kernel.Task, file *vfs.FileDescription) error {
 	if file != nil {
 		info.MappedPath = file.MappedName(t)
 		statOpts := vfs.StatOptions{
-			Mask: linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | linux.STATX_INO,
+			Mask: linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | linux.STATX_INO | linux.STATX_CTIME,
 		}
 		if stat, err := file.Stat(t, statOpts); err == nil {
 			if stat.Mask&(linux.STATX_TYPE|linux.STATX_MODE) == (linux.STATX_TYPE | linux.STATX_MODE) {
@@ -383,6 +383,12 @@ func traceMmap(t *kernel.Task, file *vfs.FileDescription) error {
 			}
 			if stat.Mask&linux.STATX_INO != 0 {
 				info.MappedIno = stat.Ino
+			}
+			if stat.Mask&linux.STATX_CTIME != 0 {
+				info.MappedCtime = &ppb.Timespec{
+					Sec:  stat.Ctime.Sec,
+					Nsec: int64(stat.Ctime.Nsec),
+				}
 			}
 		}
 	}

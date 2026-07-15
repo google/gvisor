@@ -274,6 +274,9 @@ func checkSentryMmap(msg test.Message) error {
 	if p.IsInitialMmap || p.MappedPath != "" {
 		fmt.Printf("Mmap event: path=%q, ino=%d, mode=%o, uid=%d, gid=%d, initial=%v\n", p.MappedPath, p.MappedIno, p.MappedMode, p.MappedUid, p.MappedGid, p.IsInitialMmap)
 	}
+	if p.MappedPath != "" && (p.MappedCtime == nil || (p.MappedCtime.Sec == 0 && p.MappedCtime.Nsec == 0)) {
+		return fmt.Errorf("MappedCtime should not be empty for mapped file: %q", p.MappedPath)
+	}
 	if err := checkContextData(p.ContextData); err != nil {
 		return err
 	}
@@ -442,6 +445,9 @@ func checkSentryExec(msg test.Message) error {
 	}
 	if p.BinaryIno == 0 {
 		return fmt.Errorf("BinaryIno should not be 0")
+	}
+	if p.BinaryCtime == nil || (p.BinaryCtime.Sec == 0 && p.BinaryCtime.Nsec == 0) {
+		return fmt.Errorf("BinaryCtime should not be empty")
 	}
 
 	// Get SHA256 from the binary and compare it with the one from the event.

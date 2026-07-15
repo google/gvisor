@@ -473,7 +473,7 @@ func getExecveSeccheckInfo(t *Task, argv, env []string, executable *vfs.FileDesc
 		if fields.Local.Contains(seccheck.FieldSentryExecveBinaryInfo) {
 			info.BinaryOverlayfsUpper = overlay.IsCopiedUp(executable.Dentry())
 			statOpts := vfs.StatOptions{
-				Mask: linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | linux.STATX_INO,
+				Mask: linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | linux.STATX_INO | linux.STATX_CTIME,
 			}
 			if stat, err := executable.Stat(t, statOpts); err == nil {
 				if stat.Mask&(linux.STATX_TYPE|linux.STATX_MODE) == (linux.STATX_TYPE | linux.STATX_MODE) {
@@ -487,6 +487,12 @@ func getExecveSeccheckInfo(t *Task, argv, env []string, executable *vfs.FileDesc
 				}
 				if stat.Mask&linux.STATX_INO != 0 {
 					info.BinaryIno = stat.Ino
+				}
+				if stat.Mask&linux.STATX_CTIME != 0 {
+					info.BinaryCtime = &pb.Timespec{
+						Sec:  stat.Ctime.Sec,
+						Nsec: int64(stat.Ctime.Nsec),
+					}
 				}
 			}
 		}

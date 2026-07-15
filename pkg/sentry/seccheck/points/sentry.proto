@@ -66,6 +66,9 @@ message ExecveInfo {
 
   // BinaryIno is the virtualized inode number of the executable binary file.
   uint64 binary_ino = 10;
+
+  // BinaryCtime is the ctime of the executable binary file.
+  gvisor.common.Timespec binary_ctime = 11;
 }
 
 message ExitNotifyParentInfo {
@@ -105,4 +108,7 @@ message MmapInfo {
   // IsInitialMmap indicates whether this mapping corresponds to the task's
   // initial executable file.
   bool is_initial_mmap = 7;
+
+  // MappedCtime is the ctime of the backing file.
+  gvisor.common.Timespec mapped_ctime = 8;
 }

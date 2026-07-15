@@ -64,6 +64,11 @@ message Handshake {
   uint32 version = 1;
 }
 
+message Timespec {
+  int64 sec = 1;
+  int64 nsec = 2;
+}
+
 message Credentials {
   uint32 real_uid = 1;
   uint32 effective_uid = 2;

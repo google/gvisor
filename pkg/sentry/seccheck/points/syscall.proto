@@ -239,14 +239,9 @@ message TimerfdCreate {
   int32 flags = 5;
 }
 
-message Timespec {
-  int64 sec = 1;
-  int64 nsec = 2;
-}
-
 message ItimerSpec {
-  Timespec interval = 1;
-  Timespec value = 2;
+  gvisor.common.Timespec interval = 1;
+  gvisor.common.Timespec value = 2;
 }
 
 message TimerfdSetTime {
