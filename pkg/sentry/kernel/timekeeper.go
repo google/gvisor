@@ -26,6 +26,21 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
+// Possible values of Timekeeper.updaterState
+const (
+	// manually stopped
+	updaterStopped int32 = iota
+
+	// timer not armed due to being idle for a whole interval
+	updaterParked
+
+	// set when timer triggers if no tasks are running; any task running
+	// or internal timekeeper usage transitions back to updaterActive
+	updaterIdle
+
+	updaterActive
+)
+
 // Timekeeper manages all of the kernel clocks.
 //
 // +stateify savable
@@ -86,6 +101,26 @@ type Timekeeper struct {
 
 	// wg is used to indicate that the update goroutine has exited.
 	wg sync.WaitGroup `state:"nosave"`
+
+	// atomic enum with updater* values
+	//
+	// the goroutine moves it active->idle->parked (under updateMu)
+	// GetTime or 0->1 tasks moves to active if not stopped (lockless)
+	// startUpdater/stopUpdater move in/out of stopped (under updateMu)
+	updaterState atomicbitops.Int32 `state:"nosave"`
+
+	// (runningTasks > 0 ? 1 : 0) + number_of_tasks_running_GetTime
+	refs atomicbitops.Int64 `state:"nosave"`
+
+	// guards updates of the vDSO parameter page and of updaterState
+	// except for raising updaterState to active on usage
+	updateMu sync.Mutex `state:"nosave"`
+
+	// timer to periodically update the time calibration
+	timer *time.Timer `state:"nosave"`
+
+	// vDSO parameter page kept updated by the Timekeeper mechanism
+	params *VDSOParamPage `state:"nosave"`
 }
 
 // NewTimekeeper returns a Timekeeper that is automatically kept up-to-date.
@@ -170,6 +205,35 @@ func (t *Timekeeper) SetClocks(c sentrytime.Clocks, params *VDSOParamPage) {
 	}
 }
 
+// update samples the backing clocks and writes the new parameters to the VDSO
+// parameter page.
+//
+// Preconditions: updateMu must be held
+func (t *Timekeeper) update(parked bool) {
+	// Call Update within a Write block to prevent the VDSO from using the old
+	// params between Update and Write.
+	if err := t.params.Write(func() vdsoParams {
+		monotonicParams, monotonicOk, realtimeParams, realtimeOk := t.clocks.Update(parked)
+
+		var p vdsoParams
+		if monotonicOk {
+			p.monotonicReady = 1
+			p.monotonicBaseCycles = int64(monotonicParams.BaseCycles)
+			p.monotonicBaseRef = int64(monotonicParams.BaseRef) + t.monotonicOffset
+			p.monotonicFrequency = monotonicParams.Frequency
+		}
+		if realtimeOk {
+			p.realtimeReady = 1
+			p.realtimeBaseCycles = int64(realtimeParams.BaseCycles)
+			p.realtimeBaseRef = int64(realtimeParams.BaseRef)
+			p.realtimeFrequency = realtimeParams.Frequency
+		}
+		return p
+	}); err != nil {
+		log.Warningf("Unable to update VDSO parameter page: %v", err)
+	}
+}
+
 // startUpdater starts an update goroutine that keeps the clocks updated.
 //
 // mu must be held.
@@ -179,6 +243,7 @@ func (t *Timekeeper) startUpdater(params *VDSOParamPage) {
 		return
 	}
 	t.stop = make(chan struct{})
+	t.params = params
 
 	// Keep the clocks up to date.
 	//
@@ -186,45 +251,96 @@ func (t *Timekeeper) startUpdater(params *VDSOParamPage) {
 	// timer, so it may run at a *slightly* different rate from the
 	// application CLOCK_MONOTONIC. That is fine, as we only need to update
 	// at approximately this rate.
-	timer := time.NewTicker(sentrytime.ApproxUpdateInterval)
+	t.timer = time.NewTimer(sentrytime.ApproxUpdateInterval)
+	t.timer.Stop()
+
+	t.updateMu.Lock()
+	// store-then-load to synchronize with addRef
+	t.updaterState.Store(updaterParked)
+	if t.refs.Load() != 0 {
+		t.timer.Reset(sentrytime.ApproxUpdateInterval)
+		t.update(true)
+		t.updaterState.Store(updaterActive)
+	}
+	t.updateMu.Unlock()
+
 	t.wg.Add(1)
 	go func() { // S/R-SAFE: stopped during save.
 		defer t.wg.Done()
+		defer t.timer.Stop()
 		for {
-			// Start with an update immediately, so the clocks are
-			// ready ASAP.
-
-			// Call Update within a Write block to prevent the VDSO
-			// from using the old params between Update and
-			// Write.
-			if err := params.Write(func() vdsoParams {
-				monotonicParams, monotonicOk, realtimeParams, realtimeOk := t.clocks.Update()
-
-				var p vdsoParams
-				if monotonicOk {
-					p.monotonicReady = 1
-					p.monotonicBaseCycles = int64(monotonicParams.BaseCycles)
-					p.monotonicBaseRef = int64(monotonicParams.BaseRef) + t.monotonicOffset
-					p.monotonicFrequency = monotonicParams.Frequency
-				}
-				if realtimeOk {
-					p.realtimeReady = 1
-					p.realtimeBaseCycles = int64(realtimeParams.BaseCycles)
-					p.realtimeBaseRef = int64(realtimeParams.BaseRef)
-					p.realtimeFrequency = realtimeParams.Frequency
-				}
-				return p
-			}); err != nil {
-				log.Warningf("Unable to update VDSO parameter page: %v", err)
-			}
-
+			// wait until next tick or if parked until addRef is called
 			select {
-			case <-timer.C:
+			case <-t.timer.C:
 			case <-t.stop:
 				return
 			}
+
+			t.updateMu.Lock()
+
+			switch t.updaterState.Load() {
+			case updaterStopped:
+				t.updateMu.Unlock()
+				return
+
+			case updaterActive:
+				// store-then-load to synchronize with addRef
+				t.updaterState.Store(updaterIdle)
+				if t.refs.Load() != 0 {
+					t.updaterState.Store(updaterActive)
+				}
+
+			case updaterIdle:
+				// no Timekeeper usage for a whole interval: park
+				// store-then-load to synchronize with addRef
+				t.updaterState.Store(updaterParked)
+				if t.refs.Load() != 0 {
+					t.updaterState.Store(updaterActive)
+				} else {
+					t.updateMu.Unlock()
+					continue
+				}
+			}
+
+			t.timer.Reset(sentrytime.ApproxUpdateInterval)
+			t.update(false)
+			t.updateMu.Unlock()
 		}
 	}()
+}
+
+// add a reference to the Timekeeper: as long as there are references,
+// it doesn't park. Call release() to release.
+func (t *Timekeeper) addRef() {
+	// store-then-load to synchronize with the goroutine
+	t.refs.Add(1)
+	switch t.updaterState.Load() {
+	case updaterActive:
+	case updaterIdle:
+		// this is enough because the goroutine will
+		// itself recheck refs after parking
+		t.updaterState.CompareAndSwap(updaterIdle, updaterActive)
+	case updaterParked:
+		t.updateMu.Lock()
+		cur := t.updaterState.Load()
+		if cur == updaterParked {
+			t.timer.Reset(sentrytime.ApproxUpdateInterval)
+			t.update(true)
+		}
+		if cur != updaterStopped {
+			t.updaterState.Store(updaterActive)
+		}
+		t.updateMu.Unlock()
+	case updaterStopped:
+	}
+}
+
+// release drops a reference taken by addRef; when refs are 0 the timekeeper can park
+func (t *Timekeeper) release() {
+	r := t.refs.Add(-1)
+	if r < 0 {
+		panic("Timekeeper.release called with no reference held")
+	}
 }
 
 // stopUpdater stops the update goroutine, blocking until it exits.
@@ -236,9 +352,17 @@ func (t *Timekeeper) stopUpdater() {
 		return
 	}
 
+	// lock to ensure it can't be taken out of stopped by non-startUpdater code
+	t.updateMu.Lock()
+	t.updaterState.Store(updaterStopped)
+	t.updateMu.Unlock()
+
+	// this wakes up the goroutine
 	close(t.stop)
 	t.wg.Wait()
 	t.stop = nil
+	t.timer = nil
+	t.params = nil
 }
 
 // Destroy destroys the Timekeeper, freeing all associated resources.
@@ -250,7 +374,8 @@ func (t *Timekeeper) Destroy() {
 }
 
 // PauseUpdates stops clock parameter updates. This should only be used when
-// Tasks are not running and thus cannot access the clock.
+// Tasks are not running and thus cannot access the clock and when
+// GetTime is not being called internally
 func (t *Timekeeper) PauseUpdates() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -272,6 +397,12 @@ func (t *Timekeeper) GetTime(c sentrytime.ClockID) (int64, error) {
 		}
 		<-t.restored
 	}
+
+	// update the calibration if needed and keep the timekeeper calibrated
+	// during the read
+	t.addRef()
+	defer t.release()
+
 	now, err := t.clocks.GetTime(c)
 	if err == nil && c == sentrytime.Monotonic {
 		now += t.monotonicOffset
