@@ -83,7 +83,7 @@ func (op *lookupOp) evaluate(regs *registerSet, evalCtx opEvalCtx) {
 }
 
 func (op *lookupOp) GetExprName() string {
-	return "lookup"
+	return OpTypeLookup.String()
 }
 
 // Dump implements operation.Dump.

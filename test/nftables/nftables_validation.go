@@ -32,6 +32,7 @@ var validationTests = []TestCase{
 	&tcpDNAT{},
 	&tcpSNAT{},
 	&mapTest{},
+	&fibTest{},
 }
 
 func init() {
@@ -698,4 +699,210 @@ func (t *mapTest) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 // Timeout implements TestCase.Timeout.
 func (*mapTest) Timeout() time.Duration {
 	return 30 * time.Second
+}
+
+// fibTest tests installs Nftables rules such that:
+//  1. Incoming packets to port 9005 match a FIB lookup.
+//  2. If matched, the packet is accepted. Otherwise dropped.
+type fibTest struct{ containerCase }
+
+var _ TestCase = (*fibTest)(nil)
+
+func (*fibTest) Name() string {
+	return "fibTest"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (t *fibTest) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	if ipv6 {
+		log.Warningf("fibTest is not supported for IPv6 yet.")
+		return nil
+	}
+
+	// Find the interface dynamically.
+	targetIface, ok := netutils.GetNonLoopbackInterface()
+	if !ok {
+		return fmt.Errorf("no non-loopback interface found")
+	}
+	log.Infof("FIB test using interface: %s (Index: %d)", targetIface.Name, targetIface.Index)
+
+	// install_rules
+	{
+		cmds := [][]string{
+			{"add", "table", "inet", "filter"},
+			// Policy set to drop by default; if FIB fails, packet should be dropped.
+			{"add", "chain", "inet", "filter", "input", "{ type filter hook input priority 0; policy drop; }"},
+			// Accept connections to 8995 to bypass drop policy for the test setup sync
+			{"add", "rule", "inet", "filter", "input", "tcp", "dport", "8995", "accept"},
+			// Try to trigger all the FIB paths.
+			{"add", "rule", "inet", "filter", "input", "udp", "dport", "9005",
+				"fib", "saddr", ".", "iif", "oif", fmt.Sprintf("%d", targetIface.Index),
+				"fib", "saddr", ".", "iif", "oifname", targetIface.Name,
+				"fib", "saddr", ".", "iif", "oif", "exists",
+				"fib", "saddr", ".", "iif", "oifname", "exists",
+				"fib", "saddr", "type", "unicast",
+				"fib", "daddr", "type", "local",
+				"accept"},
+		}
+
+		for _, cmd := range cmds {
+			if err := nftCmd(cmd); err != nil {
+				return fmt.Errorf("nft cmd: %v, failed with error: %v", cmd, err)
+			}
+		}
+		log.Infof("fibTest: NFT rules installed successfully")
+	}
+
+	// Verify that the UDP packets from outside the container can reach port 9005.
+	// This verifies that the FIB rules are evaluated correctly.
+	udpListener, err := net.ListenPacket("udp", "0.0.0.0:9005")
+	if err != nil {
+		return fmt.Errorf("UDP net.ListenPacket failed on 9005: %v", err)
+	}
+	defer udpListener.Close()
+	log.Infof("fibTest: Listening for UDP on port 9005")
+
+	udpErrCh := make(chan error, 1)
+	go func() {
+		buf := make([]byte, 1024)
+		for {
+			udpListener.SetReadDeadline(time.Now().Add(30 * time.Second))
+			n, _, err := udpListener.ReadFrom(buf)
+			if err != nil {
+				udpErrCh <- fmt.Errorf("failed receiving remote UDP packet: %v", err)
+				return
+			}
+			if string(buf[:n]) == "remote_test" {
+				break
+			}
+		}
+		udpErrCh <- nil
+	}()
+
+	// Sync setup with LocalAction.
+	{
+		syncListener, err := net.Listen("tcp", "0.0.0.0:8995")
+		if err != nil {
+			return fmt.Errorf("net.Listen failed on 8995: %v", err)
+		}
+		log.Infof("fibTest: Listening for sync connection on port 8995")
+
+		syncErrCh := make(chan error, 1)
+		go func() {
+			defer syncListener.Close()
+			conn, err := syncListener.Accept()
+			if err != nil {
+				syncErrCh <- err
+				return
+			}
+			defer conn.Close()
+			syncErrCh <- nil
+		}()
+
+		select {
+		case err := <-syncErrCh:
+			if err != nil {
+				return err
+			}
+			log.Infof("fibTest: Sync with LocalAction successful")
+		case <-time.After(15 * time.Second):
+			syncListener.Close()
+			return fmt.Errorf("timeout waiting for client TCP connection on 8995")
+		}
+	}
+
+	// Wait for remote UDP
+	select {
+	case err := <-udpErrCh:
+		if err != nil {
+			return err
+		}
+		log.Infof("fibTest: Received remote UDP packet 'remote_test'")
+	case <-time.After(15 * time.Second):
+		return fmt.Errorf("timeout waiting for remote client UDP connection on 9005")
+	}
+
+	// verify UDP negative logic (Local Loopback)
+	// Packets sent to itself (127.0.0.1) should fail the FIB interface check
+	// and be dropped by the default policy.
+	log.Infof("fibTest: Starting negative test (Local Loopback to 127.0.0.1:9005)")
+	conn, err := net.Dial("udp", "127.0.0.1:9005")
+	if err != nil {
+		return fmt.Errorf("local UDP dial failed: %v", err)
+	}
+
+	if _, err := conn.Write([]byte("local_test")); err != nil {
+		conn.Close()
+		return fmt.Errorf("failed to write local UDP packet: %v", err)
+	}
+	conn.Close()
+
+	// Read loop to verify local_test doesn't arrive.
+	buf := make([]byte, 1024)
+	udpListener.SetReadDeadline(time.Now().Add(1 * time.Second))
+	for {
+		n, _, err := udpListener.ReadFrom(buf)
+		if err != nil {
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				log.Infof("fibTest: Success! Local UDP packet was dropped (Timed out waiting for packet)")
+				break
+			}
+			return fmt.Errorf("unexpected error waiting for local UDP: %v", err)
+		}
+		if string(buf[:n]) == "local_test" {
+			return fmt.Errorf("local UDP transmission to 9005 succeeded when it should have been dropped")
+		}
+	}
+	return nil
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (t *fibTest) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	if ipv6 {
+		return nil
+	}
+
+	// 1. Sync with ContainerAction by connecting to port 8995.
+	log.Infof("fibTest (LocalAction): Attempting to sync with container on port 8995")
+	{
+		addr := net.JoinHostPort(ip.String(), "8995")
+		var err error
+		var conn net.Conn
+		for i := 0; i < 10; i++ {
+			conn, err = net.Dial("tcp", addr)
+			if err == nil {
+				conn.Close()
+				break
+			}
+			time.Sleep(1 * time.Second)
+		}
+		if err != nil {
+			return fmt.Errorf("sync dial failed: %v", err)
+		}
+		log.Infof("fibTest (LocalAction): Sync successful")
+	}
+
+	// 2. Validate that remote UDP packets reach Container..
+	log.Infof("fibTest (LocalAction): Sending remote UDP packets to container")
+	{
+		conn, err := net.Dial("udp", net.JoinHostPort(ip.String(), "9005"))
+		if err != nil {
+			return fmt.Errorf("udp dial failed: %v", err)
+		}
+		defer conn.Close()
+
+		// Send multiple times to ensure delivery over UDP
+		for i := 0; i < 10; i++ {
+			conn.Write([]byte("remote_test"))
+			time.Sleep(1 * time.Second)
+		}
+		log.Infof("fibTest (LocalAction): Finished sending remote UDP packets")
+	}
+
+	return nil
+}
+
+// Timeout implements TestCase.Timeout.
+func (*fibTest) Timeout() time.Duration {
+	return 90 * time.Second
 }

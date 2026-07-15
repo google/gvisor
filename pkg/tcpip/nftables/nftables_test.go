@@ -2407,7 +2407,7 @@ func TestEvaluateLast(t *testing.T) {
 		// Sets up an NFTables object with a base chain and fake manual clock.
 		fakeClock := faketime.NewManualClock()
 		fixedRNG := rand.RNGFrom(&fixedReader{})
-		nf := NewNFTables(fakeClock, fixedRNG)
+		nf := NewNFTables(nil /* stack */, fakeClock, fixedRNG)
 		tab, err := nf.AddTable(arbitraryFamily, "test", false)
 		if err != nil {
 			t.Fatalf("unexpected error for AddTable: %v", err)
@@ -2954,7 +2954,7 @@ func TestEvaluateMetaLoad(t *testing.T) {
 		t.Run(test.tname, func(t *testing.T) {
 			// Sets up an NFTables object with a base chain and fake manual clock.
 			// Using Manual Clock sets time.Now to Unix Epoch which fixes rng seed!
-			nf := NewNFTables(fakeClock, rand.RNGFrom(&fixedReader{}))
+			nf := NewNFTables(nil /* stack */, fakeClock, rand.RNGFrom(&fixedReader{}))
 
 			tab, err := nf.AddTable(arbitraryFamily, "test", false)
 			if err != nil {
@@ -3753,7 +3753,7 @@ func packetResultString(initial, final *stack.PacketBuffer) string {
 func newNFTablesStd() *NFTables {
 	stdClock := tcpip.NewStdClock()
 	fixedRNG := rand.RNGFrom(&fixedReader{})
-	return NewNFTables(stdClock, fixedRNG)
+	return NewNFTables(nil /* stack */, stdClock, fixedRNG)
 }
 
 // mustCreateImmediate wraps the newImmediate function for brevity.

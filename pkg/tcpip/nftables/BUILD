@@ -20,6 +20,7 @@ go_library(
         "nft_byteorder.go",
         "nft_comparison.go",
         "nft_counter.go",
+        "nft_fib.go",
         "nft_immediate.go",
         "nft_last.go",
         "nft_lookup.go",

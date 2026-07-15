@@ -978,8 +978,10 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 			}
 		}
 
+		nicID := e.nic.ID()
 		// Loopback traffic skips the prerouting chain.
-		inNicName := stk.FindNICNameFromID(e.nic.ID())
+		inNicName := stk.FindNICNameFromID(nicID)
+		pkt.InputNICID = nicID
 		if ok := stk.IPTables().CheckPrerouting(pkt, e, inNicName); !ok {
 			// iptables is telling us to drop the packet.
 			stats.IPTablesPreroutingDropped.Increment()

@@ -3983,6 +3983,92 @@ INSTANTIATE_TEST_SUITE_P(
       return info.param.test_name;
     });
 
+std::vector<RuleWithExprTestParams> GetFibRuleTestParams() {
+  return {
+      RuleWithExprTestParams{
+          .test_name = "MissingDreg",
+          .expr_name = "fib",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_FIB_RESULT, NFT_FIB_RESULT_OIF)
+                            .U32Attr(NFTA_FIB_FLAGS, NFTA_FIB_F_SADDR),
+          .expected_error_no = EINVAL},
+      RuleWithExprTestParams{
+          .test_name = "MissingResult",
+          .expr_name = "fib",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_FIB_DREG, NFT_REG_1)
+                            .U32Attr(NFTA_FIB_FLAGS, NFTA_FIB_F_SADDR),
+          .expected_error_no = EINVAL},
+      RuleWithExprTestParams{
+          .test_name = "MissingFlags",
+          .expr_name = "fib",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_FIB_DREG, NFT_REG_1)
+                            .U32Attr(NFTA_FIB_RESULT, NFT_FIB_RESULT_OIF),
+          .expected_error_no = EINVAL},
+      RuleWithExprTestParams{
+          .test_name = "BothSaddrDaddr",
+          .expr_name = "fib",
+          .expr_attrs =
+              NlNestedAttr()
+                  .U32Attr(NFTA_FIB_DREG, NFT_REG_1)
+                  .U32Attr(NFTA_FIB_RESULT, NFT_FIB_RESULT_OIF)
+                  .U32Attr(NFTA_FIB_FLAGS, NFTA_FIB_F_SADDR | NFTA_FIB_F_DADDR),
+          .expected_error_no = EINVAL},
+      RuleWithExprTestParams{
+          .test_name = "BothOifIif",
+          .expr_name = "fib",
+          .expr_attrs =
+              NlNestedAttr()
+                  .U32Attr(NFTA_FIB_DREG, NFT_REG_1)
+                  .U32Attr(NFTA_FIB_RESULT, NFT_FIB_RESULT_OIF)
+                  .U32Attr(NFTA_FIB_FLAGS,
+                           NFTA_FIB_F_SADDR | NFTA_FIB_F_IIF | NFTA_FIB_F_OIF),
+          .expected_error_no = EINVAL},
+      RuleWithExprTestParams{
+          .test_name = "InvalidResult",
+          .expr_name = "fib",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_FIB_DREG, NFT_REG_1)
+                            .U32Attr(NFTA_FIB_RESULT, 999)
+                            .U32Attr(NFTA_FIB_FLAGS, NFTA_FIB_F_SADDR),
+          .expected_error_no = EINVAL},
+      RuleWithExprTestParams{
+          .test_name = "ValidOIF",
+          .expr_name = "fib",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_FIB_DREG, NFT_REG_1)
+                            .U32Attr(NFTA_FIB_RESULT, NFT_FIB_RESULT_OIF)
+                            .U32Attr(NFTA_FIB_FLAGS, NFTA_FIB_F_SADDR),
+          .expected_error_no = 0},
+      RuleWithExprTestParams{
+          .test_name = "ValidOIFNAME",
+          .expr_name = "fib",
+          .expr_attrs =
+              NlNestedAttr()
+                  .U32Attr(NFTA_FIB_DREG, NFT_REG_1)
+                  .U32Attr(NFTA_FIB_RESULT, NFT_FIB_RESULT_OIFNAME)
+                  .U32Attr(NFTA_FIB_FLAGS, NFTA_FIB_F_DADDR | NFTA_FIB_F_IIF),
+          .expected_error_no = 0},
+      RuleWithExprTestParams{
+          .test_name = "ValidADDRTYPE",
+          .expr_name = "fib",
+          .expr_attrs =
+              NlNestedAttr()
+                  .U32Attr(NFTA_FIB_DREG, NFT_REG_1)
+                  .U32Attr(NFTA_FIB_RESULT, NFT_FIB_RESULT_ADDRTYPE)
+                  .U32Attr(NFTA_FIB_FLAGS, NFTA_FIB_F_SADDR | NFTA_FIB_F_IIF),
+          .expected_error_no = 0},
+  };
+}
+
+INSTANTIATE_TEST_SUITE_P(FibRuleTest, AddRuleWithExprTest,
+                         /*param_generator=*/ValuesIn(GetFibRuleTestParams()),
+                         /*param_name_generator=*/
+                         [](const TestParamInfo<RuleWithExprTestParams>& info) {
+                           return info.param.test_name;
+                         });
+
 }  // namespace
 
 }  // namespace testing
