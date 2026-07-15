@@ -109,6 +109,7 @@ type ExecveInfo struct {
 	BinarySha256         []byte                 `protobuf:"bytes,8,opt,name=binary_sha256,json=binarySha256,proto3" json:"binary_sha256,omitempty"`
 	BinaryOverlayfsUpper bool                   `protobuf:"varint,9,opt,name=binary_overlayfs_upper,json=binaryOverlayfsUpper,proto3" json:"binary_overlayfs_upper,omitempty"`
 	BinaryIno            uint64                 `protobuf:"varint,10,opt,name=binary_ino,json=binaryIno,proto3" json:"binary_ino,omitempty"`
+	BinaryCtime          *Timespec              `protobuf:"bytes,11,opt,name=binary_ctime,json=binaryCtime,proto3" json:"binary_ctime,omitempty"`
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
@@ -211,6 +212,13 @@ func (x *ExecveInfo) GetBinaryIno() uint64 {
 		return x.BinaryIno
 	}
 	return 0
+}
+
+func (x *ExecveInfo) GetBinaryCtime() *Timespec {
+	if x != nil {
+		return x.BinaryCtime
+	}
+	return nil
 }
 
 type ExitNotifyParentInfo struct {
@@ -326,6 +334,7 @@ type MmapInfo struct {
 	MappedUid     uint32                 `protobuf:"varint,5,opt,name=mapped_uid,json=mappedUid,proto3" json:"mapped_uid,omitempty"`
 	MappedGid     uint32                 `protobuf:"varint,6,opt,name=mapped_gid,json=mappedGid,proto3" json:"mapped_gid,omitempty"`
 	IsInitialMmap bool                   `protobuf:"varint,7,opt,name=is_initial_mmap,json=isInitialMmap,proto3" json:"is_initial_mmap,omitempty"`
+	MappedCtime   *Timespec              `protobuf:"bytes,8,opt,name=mapped_ctime,json=mappedCtime,proto3" json:"mapped_ctime,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -409,6 +418,13 @@ func (x *MmapInfo) GetIsInitialMmap() bool {
 	return false
 }
 
+func (x *MmapInfo) GetMappedCtime() *Timespec {
+	if x != nil {
+		return x.MappedCtime
+	}
+	return nil
+}
+
 var File_pkg_sentry_seccheck_points_sentry_proto protoreflect.FileDescriptor
 
 const file_pkg_sentry_seccheck_points_sentry_proto_rawDesc = "" +
@@ -419,7 +435,7 @@ const file_pkg_sentry_seccheck_points_sentry_proto_rawDesc = "" +
 	"\x11created_thread_id\x18\x03 \x01(\x05R\x0fcreatedThreadId\x125\n" +
 	"\x17created_thread_group_id\x18\x04 \x01(\x05R\x14createdThreadGroupId\x12>\n" +
 	"\x1ccreated_thread_start_time_ns\x18\x05 \x01(\x03R\x18createdThreadStartTimeNs\x12\x14\n" +
-	"\x05flags\x18\x06 \x01(\x04R\x05flags\"\xeb\x02\n" +
+	"\x05flags\x18\x06 \x01(\x04R\x05flags\"\xa7\x03\n" +
 	"\n" +
 	"ExecveInfo\x12=\n" +
 	"\fcontext_data\x18\x01 \x01(\v2\x1a.gvisor.common.ContextDataR\vcontextData\x12\x1f\n" +
@@ -437,7 +453,8 @@ const file_pkg_sentry_seccheck_points_sentry_proto_rawDesc = "" +
 	"\x16binary_overlayfs_upper\x18\t \x01(\bR\x14binaryOverlayfsUpper\x12\x1d\n" +
 	"\n" +
 	"binary_ino\x18\n" +
-	" \x01(\x04R\tbinaryIno\"v\n" +
+	" \x01(\x04R\tbinaryIno\x12:\n" +
+	"\fbinary_ctime\x18\v \x01(\v2\x17.gvisor.common.TimespecR\vbinaryCtime\"v\n" +
 	"\x14ExitNotifyParentInfo\x12=\n" +
 	"\fcontext_data\x18\x01 \x01(\v2\x1a.gvisor.common.ContextDataR\vcontextData\x12\x1f\n" +
 	"\vexit_status\x18\x02 \x01(\x05R\n" +
@@ -445,7 +462,7 @@ const file_pkg_sentry_seccheck_points_sentry_proto_rawDesc = "" +
 	"\bTaskExit\x12=\n" +
 	"\fcontext_data\x18\x01 \x01(\v2\x1a.gvisor.common.ContextDataR\vcontextData\x12\x1f\n" +
 	"\vexit_status\x18\x02 \x01(\x05R\n" +
-	"exitStatus\"\x90\x02\n" +
+	"exitStatus\"\xcc\x02\n" +
 	"\bMmapInfo\x12=\n" +
 	"\fcontext_data\x18\x01 \x01(\v2\x1a.gvisor.common.ContextDataR\vcontextData\x12\x1f\n" +
 	"\vmapped_path\x18\x02 \x01(\tR\n" +
@@ -458,7 +475,8 @@ const file_pkg_sentry_seccheck_points_sentry_proto_rawDesc = "" +
 	"mapped_uid\x18\x05 \x01(\rR\tmappedUid\x12\x1d\n" +
 	"\n" +
 	"mapped_gid\x18\x06 \x01(\rR\tmappedGid\x12&\n" +
-	"\x0fis_initial_mmap\x18\a \x01(\bR\risInitialMmapb\x06proto3"
+	"\x0fis_initial_mmap\x18\a \x01(\bR\risInitialMmap\x12:\n" +
+	"\fmapped_ctime\x18\b \x01(\v2\x17.gvisor.common.TimespecR\vmappedCtimeb\x06proto3"
 
 var (
 	file_pkg_sentry_seccheck_points_sentry_proto_rawDescOnce sync.Once
@@ -480,18 +498,21 @@ var file_pkg_sentry_seccheck_points_sentry_proto_goTypes = []any{
 	(*TaskExit)(nil),             // 3: gvisor.sentry.TaskExit
 	(*MmapInfo)(nil),             // 4: gvisor.sentry.MmapInfo
 	(*ContextData)(nil),          // 5: gvisor.common.ContextData
+	(*Timespec)(nil),             // 6: gvisor.common.Timespec
 }
 var file_pkg_sentry_seccheck_points_sentry_proto_depIdxs = []int32{
 	5, // 0: gvisor.sentry.CloneInfo.context_data:type_name -> gvisor.common.ContextData
 	5, // 1: gvisor.sentry.ExecveInfo.context_data:type_name -> gvisor.common.ContextData
-	5, // 2: gvisor.sentry.ExitNotifyParentInfo.context_data:type_name -> gvisor.common.ContextData
-	5, // 3: gvisor.sentry.TaskExit.context_data:type_name -> gvisor.common.ContextData
-	5, // 4: gvisor.sentry.MmapInfo.context_data:type_name -> gvisor.common.ContextData
-	5, // [5:5] is the sub-list for method output_type
-	5, // [5:5] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	6, // 2: gvisor.sentry.ExecveInfo.binary_ctime:type_name -> gvisor.common.Timespec
+	5, // 3: gvisor.sentry.ExitNotifyParentInfo.context_data:type_name -> gvisor.common.ContextData
+	5, // 4: gvisor.sentry.TaskExit.context_data:type_name -> gvisor.common.ContextData
+	5, // 5: gvisor.sentry.MmapInfo.context_data:type_name -> gvisor.common.ContextData
+	6, // 6: gvisor.sentry.MmapInfo.mapped_ctime:type_name -> gvisor.common.Timespec
+	7, // [7:7] is the sub-list for method output_type
+	7, // [7:7] is the sub-list for method input_type
+	7, // [7:7] is the sub-list for extension type_name
+	7, // [7:7] is the sub-list for extension extendee
+	0, // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_pkg_sentry_seccheck_points_sentry_proto_init() }

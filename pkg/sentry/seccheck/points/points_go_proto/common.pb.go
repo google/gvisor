@@ -216,6 +216,58 @@ func (x *Handshake) GetVersion() uint32 {
 	return 0
 }
 
+type Timespec struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Sec           int64                  `protobuf:"varint,1,opt,name=sec,proto3" json:"sec,omitempty"`
+	Nsec          int64                  `protobuf:"varint,2,opt,name=nsec,proto3" json:"nsec,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Timespec) Reset() {
+	*x = Timespec{}
+	mi := &file_pkg_sentry_seccheck_points_common_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Timespec) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Timespec) ProtoMessage() {}
+
+func (x *Timespec) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_sentry_seccheck_points_common_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Timespec.ProtoReflect.Descriptor instead.
+func (*Timespec) Descriptor() ([]byte, []int) {
+	return file_pkg_sentry_seccheck_points_common_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *Timespec) GetSec() int64 {
+	if x != nil {
+		return x.Sec
+	}
+	return 0
+}
+
+func (x *Timespec) GetNsec() int64 {
+	if x != nil {
+		return x.Nsec
+	}
+	return 0
+}
+
 type Credentials struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RealUid       uint32                 `protobuf:"varint,1,opt,name=real_uid,json=realUid,proto3" json:"real_uid,omitempty"`
@@ -230,7 +282,7 @@ type Credentials struct {
 
 func (x *Credentials) Reset() {
 	*x = Credentials{}
-	mi := &file_pkg_sentry_seccheck_points_common_proto_msgTypes[1]
+	mi := &file_pkg_sentry_seccheck_points_common_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -242,7 +294,7 @@ func (x *Credentials) String() string {
 func (*Credentials) ProtoMessage() {}
 
 func (x *Credentials) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_sentry_seccheck_points_common_proto_msgTypes[1]
+	mi := &file_pkg_sentry_seccheck_points_common_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -255,7 +307,7 @@ func (x *Credentials) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Credentials.ProtoReflect.Descriptor instead.
 func (*Credentials) Descriptor() ([]byte, []int) {
-	return file_pkg_sentry_seccheck_points_common_proto_rawDescGZIP(), []int{1}
+	return file_pkg_sentry_seccheck_points_common_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *Credentials) GetRealUid() uint32 {
@@ -319,7 +371,7 @@ type ContextData struct {
 
 func (x *ContextData) Reset() {
 	*x = ContextData{}
-	mi := &file_pkg_sentry_seccheck_points_common_proto_msgTypes[2]
+	mi := &file_pkg_sentry_seccheck_points_common_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -331,7 +383,7 @@ func (x *ContextData) String() string {
 func (*ContextData) ProtoMessage() {}
 
 func (x *ContextData) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_sentry_seccheck_points_common_proto_msgTypes[2]
+	mi := &file_pkg_sentry_seccheck_points_common_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -344,7 +396,7 @@ func (x *ContextData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ContextData.ProtoReflect.Descriptor instead.
 func (*ContextData) Descriptor() ([]byte, []int) {
-	return file_pkg_sentry_seccheck_points_common_proto_rawDescGZIP(), []int{2}
+	return file_pkg_sentry_seccheck_points_common_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ContextData) GetTimeNs() int64 {
@@ -430,7 +482,10 @@ const file_pkg_sentry_seccheck_points_common_proto_rawDesc = "" +
 	"\n" +
 	"'pkg/sentry/seccheck/points/common.proto\x12\rgvisor.common\"%\n" +
 	"\tHandshake\x12\x18\n" +
-	"\aversion\x18\x01 \x01(\rR\aversion\"\xc7\x01\n" +
+	"\aversion\x18\x01 \x01(\rR\aversion\"0\n" +
+	"\bTimespec\x12\x10\n" +
+	"\x03sec\x18\x01 \x01(\x03R\x03sec\x12\x12\n" +
+	"\x04nsec\x18\x02 \x01(\x03R\x04nsec\"\xc7\x01\n" +
 	"\vCredentials\x12\x19\n" +
 	"\breal_uid\x18\x01 \x01(\rR\arealUid\x12#\n" +
 	"\reffective_uid\x18\x02 \x01(\rR\feffectiveUid\x12\x1b\n" +
@@ -504,15 +559,16 @@ func file_pkg_sentry_seccheck_points_common_proto_rawDescGZIP() []byte {
 }
 
 var file_pkg_sentry_seccheck_points_common_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_pkg_sentry_seccheck_points_common_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_pkg_sentry_seccheck_points_common_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_pkg_sentry_seccheck_points_common_proto_goTypes = []any{
 	(MessageType)(0),    // 0: gvisor.common.MessageType
 	(*Handshake)(nil),   // 1: gvisor.common.Handshake
-	(*Credentials)(nil), // 2: gvisor.common.Credentials
-	(*ContextData)(nil), // 3: gvisor.common.ContextData
+	(*Timespec)(nil),    // 2: gvisor.common.Timespec
+	(*Credentials)(nil), // 3: gvisor.common.Credentials
+	(*ContextData)(nil), // 4: gvisor.common.ContextData
 }
 var file_pkg_sentry_seccheck_points_common_proto_depIdxs = []int32{
-	2, // 0: gvisor.common.ContextData.credentials:type_name -> gvisor.common.Credentials
+	3, // 0: gvisor.common.ContextData.credentials:type_name -> gvisor.common.Credentials
 	1, // [1:1] is the sub-list for method output_type
 	1, // [1:1] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
@@ -531,7 +587,7 @@ func file_pkg_sentry_seccheck_points_common_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_sentry_seccheck_points_common_proto_rawDesc), len(file_pkg_sentry_seccheck_points_common_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   3,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

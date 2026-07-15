@@ -2077,58 +2077,6 @@ func (x *TimerfdCreate) GetFlags() int32 {
 	return 0
 }
 
-type Timespec struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Sec           int64                  `protobuf:"varint,1,opt,name=sec,proto3" json:"sec,omitempty"`
-	Nsec          int64                  `protobuf:"varint,2,opt,name=nsec,proto3" json:"nsec,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *Timespec) Reset() {
-	*x = Timespec{}
-	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[24]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *Timespec) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*Timespec) ProtoMessage() {}
-
-func (x *Timespec) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[24]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use Timespec.ProtoReflect.Descriptor instead.
-func (*Timespec) Descriptor() ([]byte, []int) {
-	return file_pkg_sentry_seccheck_points_syscall_proto_rawDescGZIP(), []int{24}
-}
-
-func (x *Timespec) GetSec() int64 {
-	if x != nil {
-		return x.Sec
-	}
-	return 0
-}
-
-func (x *Timespec) GetNsec() int64 {
-	if x != nil {
-		return x.Nsec
-	}
-	return 0
-}
-
 type ItimerSpec struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Interval      *Timespec              `protobuf:"bytes,1,opt,name=interval,proto3" json:"interval,omitempty"`
@@ -2139,7 +2087,7 @@ type ItimerSpec struct {
 
 func (x *ItimerSpec) Reset() {
 	*x = ItimerSpec{}
-	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[25]
+	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2151,7 +2099,7 @@ func (x *ItimerSpec) String() string {
 func (*ItimerSpec) ProtoMessage() {}
 
 func (x *ItimerSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[25]
+	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2164,7 +2112,7 @@ func (x *ItimerSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ItimerSpec.ProtoReflect.Descriptor instead.
 func (*ItimerSpec) Descriptor() ([]byte, []int) {
-	return file_pkg_sentry_seccheck_points_syscall_proto_rawDescGZIP(), []int{25}
+	return file_pkg_sentry_seccheck_points_syscall_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ItimerSpec) GetInterval() *Timespec {
@@ -2197,7 +2145,7 @@ type TimerfdSetTime struct {
 
 func (x *TimerfdSetTime) Reset() {
 	*x = TimerfdSetTime{}
-	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[26]
+	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2209,7 +2157,7 @@ func (x *TimerfdSetTime) String() string {
 func (*TimerfdSetTime) ProtoMessage() {}
 
 func (x *TimerfdSetTime) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[26]
+	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2222,7 +2170,7 @@ func (x *TimerfdSetTime) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TimerfdSetTime.ProtoReflect.Descriptor instead.
 func (*TimerfdSetTime) Descriptor() ([]byte, []int) {
-	return file_pkg_sentry_seccheck_points_syscall_proto_rawDescGZIP(), []int{26}
+	return file_pkg_sentry_seccheck_points_syscall_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *TimerfdSetTime) GetContextData() *ContextData {
@@ -2295,7 +2243,7 @@ type TimerfdGetTime struct {
 
 func (x *TimerfdGetTime) Reset() {
 	*x = TimerfdGetTime{}
-	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[27]
+	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2307,7 +2255,7 @@ func (x *TimerfdGetTime) String() string {
 func (*TimerfdGetTime) ProtoMessage() {}
 
 func (x *TimerfdGetTime) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[27]
+	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2320,7 +2268,7 @@ func (x *TimerfdGetTime) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TimerfdGetTime.ProtoReflect.Descriptor instead.
 func (*TimerfdGetTime) Descriptor() ([]byte, []int) {
-	return file_pkg_sentry_seccheck_points_syscall_proto_rawDescGZIP(), []int{27}
+	return file_pkg_sentry_seccheck_points_syscall_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *TimerfdGetTime) GetContextData() *ContextData {
@@ -2376,7 +2324,7 @@ type Fork struct {
 
 func (x *Fork) Reset() {
 	*x = Fork{}
-	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[28]
+	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2388,7 +2336,7 @@ func (x *Fork) String() string {
 func (*Fork) ProtoMessage() {}
 
 func (x *Fork) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[28]
+	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2401,7 +2349,7 @@ func (x *Fork) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Fork.ProtoReflect.Descriptor instead.
 func (*Fork) Descriptor() ([]byte, []int) {
-	return file_pkg_sentry_seccheck_points_syscall_proto_rawDescGZIP(), []int{28}
+	return file_pkg_sentry_seccheck_points_syscall_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *Fork) GetContextData() *ContextData {
@@ -2437,7 +2385,7 @@ type InotifyInit struct {
 
 func (x *InotifyInit) Reset() {
 	*x = InotifyInit{}
-	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[29]
+	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2449,7 +2397,7 @@ func (x *InotifyInit) String() string {
 func (*InotifyInit) ProtoMessage() {}
 
 func (x *InotifyInit) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[29]
+	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2462,7 +2410,7 @@ func (x *InotifyInit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InotifyInit.ProtoReflect.Descriptor instead.
 func (*InotifyInit) Descriptor() ([]byte, []int) {
-	return file_pkg_sentry_seccheck_points_syscall_proto_rawDescGZIP(), []int{29}
+	return file_pkg_sentry_seccheck_points_syscall_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *InotifyInit) GetContextData() *ContextData {
@@ -2508,7 +2456,7 @@ type InotifyAddWatch struct {
 
 func (x *InotifyAddWatch) Reset() {
 	*x = InotifyAddWatch{}
-	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[30]
+	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2520,7 +2468,7 @@ func (x *InotifyAddWatch) String() string {
 func (*InotifyAddWatch) ProtoMessage() {}
 
 func (x *InotifyAddWatch) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[30]
+	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2533,7 +2481,7 @@ func (x *InotifyAddWatch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InotifyAddWatch.ProtoReflect.Descriptor instead.
 func (*InotifyAddWatch) Descriptor() ([]byte, []int) {
-	return file_pkg_sentry_seccheck_points_syscall_proto_rawDescGZIP(), []int{30}
+	return file_pkg_sentry_seccheck_points_syscall_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *InotifyAddWatch) GetContextData() *ContextData {
@@ -2599,7 +2547,7 @@ type InotifyRmWatch struct {
 
 func (x *InotifyRmWatch) Reset() {
 	*x = InotifyRmWatch{}
-	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[31]
+	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2611,7 +2559,7 @@ func (x *InotifyRmWatch) String() string {
 func (*InotifyRmWatch) ProtoMessage() {}
 
 func (x *InotifyRmWatch) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[31]
+	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2624,7 +2572,7 @@ func (x *InotifyRmWatch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InotifyRmWatch.ProtoReflect.Descriptor instead.
 func (*InotifyRmWatch) Descriptor() ([]byte, []int) {
-	return file_pkg_sentry_seccheck_points_syscall_proto_rawDescGZIP(), []int{31}
+	return file_pkg_sentry_seccheck_points_syscall_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *InotifyRmWatch) GetContextData() *ContextData {
@@ -2685,7 +2633,7 @@ type SocketPair struct {
 
 func (x *SocketPair) Reset() {
 	*x = SocketPair{}
-	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[32]
+	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2697,7 +2645,7 @@ func (x *SocketPair) String() string {
 func (*SocketPair) ProtoMessage() {}
 
 func (x *SocketPair) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[32]
+	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2710,7 +2658,7 @@ func (x *SocketPair) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SocketPair.ProtoReflect.Descriptor instead.
 func (*SocketPair) Descriptor() ([]byte, []int) {
-	return file_pkg_sentry_seccheck_points_syscall_proto_rawDescGZIP(), []int{32}
+	return file_pkg_sentry_seccheck_points_syscall_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *SocketPair) GetContextData() *ContextData {
@@ -2787,7 +2735,7 @@ type Mmap struct {
 
 func (x *Mmap) Reset() {
 	*x = Mmap{}
-	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[33]
+	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2799,7 +2747,7 @@ func (x *Mmap) String() string {
 func (*Mmap) ProtoMessage() {}
 
 func (x *Mmap) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[33]
+	mi := &file_pkg_sentry_seccheck_points_syscall_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2812,7 +2760,7 @@ func (x *Mmap) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Mmap.ProtoReflect.Descriptor instead.
 func (*Mmap) Descriptor() ([]byte, []int) {
-	return file_pkg_sentry_seccheck_points_syscall_proto_rawDescGZIP(), []int{33}
+	return file_pkg_sentry_seccheck_points_syscall_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *Mmap) GetContextData() *ContextData {
@@ -3065,14 +3013,11 @@ const file_pkg_sentry_seccheck_points_syscall_proto_rawDesc = "" +
 	"\x04exit\x18\x02 \x01(\v2\x14.gvisor.syscall.ExitR\x04exit\x12\x14\n" +
 	"\x05sysno\x18\x03 \x01(\x04R\x05sysno\x12\x19\n" +
 	"\bclock_id\x18\x04 \x01(\x05R\aclockId\x12\x14\n" +
-	"\x05flags\x18\x05 \x01(\x05R\x05flags\"0\n" +
-	"\bTimespec\x12\x10\n" +
-	"\x03sec\x18\x01 \x01(\x03R\x03sec\x12\x12\n" +
-	"\x04nsec\x18\x02 \x01(\x03R\x04nsec\"r\n" +
+	"\x05flags\x18\x05 \x01(\x05R\x05flags\"p\n" +
 	"\n" +
-	"ItimerSpec\x124\n" +
-	"\binterval\x18\x01 \x01(\v2\x18.gvisor.syscall.TimespecR\binterval\x12.\n" +
-	"\x05value\x18\x02 \x01(\v2\x18.gvisor.syscall.TimespecR\x05value\"\xc0\x02\n" +
+	"ItimerSpec\x123\n" +
+	"\binterval\x18\x01 \x01(\v2\x17.gvisor.common.TimespecR\binterval\x12-\n" +
+	"\x05value\x18\x02 \x01(\v2\x17.gvisor.common.TimespecR\x05value\"\xc0\x02\n" +
 	"\x0eTimerfdSetTime\x12=\n" +
 	"\fcontext_data\x18\x01 \x01(\v2\x1a.gvisor.common.ContextDataR\vcontextData\x12(\n" +
 	"\x04exit\x18\x02 \x01(\v2\x14.gvisor.syscall.ExitR\x04exit\x12\x14\n" +
@@ -3148,7 +3093,7 @@ func file_pkg_sentry_seccheck_points_syscall_proto_rawDescGZIP() []byte {
 	return file_pkg_sentry_seccheck_points_syscall_proto_rawDescData
 }
 
-var file_pkg_sentry_seccheck_points_syscall_proto_msgTypes = make([]protoimpl.MessageInfo, 34)
+var file_pkg_sentry_seccheck_points_syscall_proto_msgTypes = make([]protoimpl.MessageInfo, 33)
 var file_pkg_sentry_seccheck_points_syscall_proto_goTypes = []any{
 	(*Exit)(nil),            // 0: gvisor.syscall.Exit
 	(*Syscall)(nil),         // 1: gvisor.syscall.Syscall
@@ -3174,85 +3119,85 @@ var file_pkg_sentry_seccheck_points_syscall_proto_goTypes = []any{
 	(*Bind)(nil),            // 21: gvisor.syscall.Bind
 	(*Accept)(nil),          // 22: gvisor.syscall.Accept
 	(*TimerfdCreate)(nil),   // 23: gvisor.syscall.TimerfdCreate
-	(*Timespec)(nil),        // 24: gvisor.syscall.Timespec
-	(*ItimerSpec)(nil),      // 25: gvisor.syscall.ItimerSpec
-	(*TimerfdSetTime)(nil),  // 26: gvisor.syscall.TimerfdSetTime
-	(*TimerfdGetTime)(nil),  // 27: gvisor.syscall.TimerfdGetTime
-	(*Fork)(nil),            // 28: gvisor.syscall.Fork
-	(*InotifyInit)(nil),     // 29: gvisor.syscall.InotifyInit
-	(*InotifyAddWatch)(nil), // 30: gvisor.syscall.InotifyAddWatch
-	(*InotifyRmWatch)(nil),  // 31: gvisor.syscall.InotifyRmWatch
-	(*SocketPair)(nil),      // 32: gvisor.syscall.SocketPair
-	(*Mmap)(nil),            // 33: gvisor.syscall.Mmap
-	(*ContextData)(nil),     // 34: gvisor.common.ContextData
+	(*ItimerSpec)(nil),      // 24: gvisor.syscall.ItimerSpec
+	(*TimerfdSetTime)(nil),  // 25: gvisor.syscall.TimerfdSetTime
+	(*TimerfdGetTime)(nil),  // 26: gvisor.syscall.TimerfdGetTime
+	(*Fork)(nil),            // 27: gvisor.syscall.Fork
+	(*InotifyInit)(nil),     // 28: gvisor.syscall.InotifyInit
+	(*InotifyAddWatch)(nil), // 29: gvisor.syscall.InotifyAddWatch
+	(*InotifyRmWatch)(nil),  // 30: gvisor.syscall.InotifyRmWatch
+	(*SocketPair)(nil),      // 31: gvisor.syscall.SocketPair
+	(*Mmap)(nil),            // 32: gvisor.syscall.Mmap
+	(*ContextData)(nil),     // 33: gvisor.common.ContextData
+	(*Timespec)(nil),        // 34: gvisor.common.Timespec
 }
 var file_pkg_sentry_seccheck_points_syscall_proto_depIdxs = []int32{
-	34, // 0: gvisor.syscall.Syscall.context_data:type_name -> gvisor.common.ContextData
+	33, // 0: gvisor.syscall.Syscall.context_data:type_name -> gvisor.common.ContextData
 	0,  // 1: gvisor.syscall.Syscall.exit:type_name -> gvisor.syscall.Exit
-	34, // 2: gvisor.syscall.Open.context_data:type_name -> gvisor.common.ContextData
+	33, // 2: gvisor.syscall.Open.context_data:type_name -> gvisor.common.ContextData
 	0,  // 3: gvisor.syscall.Open.exit:type_name -> gvisor.syscall.Exit
-	34, // 4: gvisor.syscall.Close.context_data:type_name -> gvisor.common.ContextData
+	33, // 4: gvisor.syscall.Close.context_data:type_name -> gvisor.common.ContextData
 	0,  // 5: gvisor.syscall.Close.exit:type_name -> gvisor.syscall.Exit
-	34, // 6: gvisor.syscall.Read.context_data:type_name -> gvisor.common.ContextData
+	33, // 6: gvisor.syscall.Read.context_data:type_name -> gvisor.common.ContextData
 	0,  // 7: gvisor.syscall.Read.exit:type_name -> gvisor.syscall.Exit
-	34, // 8: gvisor.syscall.Write.context_data:type_name -> gvisor.common.ContextData
+	33, // 8: gvisor.syscall.Write.context_data:type_name -> gvisor.common.ContextData
 	0,  // 9: gvisor.syscall.Write.exit:type_name -> gvisor.syscall.Exit
-	34, // 10: gvisor.syscall.Connect.context_data:type_name -> gvisor.common.ContextData
+	33, // 10: gvisor.syscall.Connect.context_data:type_name -> gvisor.common.ContextData
 	0,  // 11: gvisor.syscall.Connect.exit:type_name -> gvisor.syscall.Exit
-	34, // 12: gvisor.syscall.Execve.context_data:type_name -> gvisor.common.ContextData
+	33, // 12: gvisor.syscall.Execve.context_data:type_name -> gvisor.common.ContextData
 	0,  // 13: gvisor.syscall.Execve.exit:type_name -> gvisor.syscall.Exit
-	34, // 14: gvisor.syscall.Socket.context_data:type_name -> gvisor.common.ContextData
+	33, // 14: gvisor.syscall.Socket.context_data:type_name -> gvisor.common.ContextData
 	0,  // 15: gvisor.syscall.Socket.exit:type_name -> gvisor.syscall.Exit
-	34, // 16: gvisor.syscall.Chdir.context_data:type_name -> gvisor.common.ContextData
+	33, // 16: gvisor.syscall.Chdir.context_data:type_name -> gvisor.common.ContextData
 	0,  // 17: gvisor.syscall.Chdir.exit:type_name -> gvisor.syscall.Exit
-	34, // 18: gvisor.syscall.Setresid.context_data:type_name -> gvisor.common.ContextData
+	33, // 18: gvisor.syscall.Setresid.context_data:type_name -> gvisor.common.ContextData
 	0,  // 19: gvisor.syscall.Setresid.exit:type_name -> gvisor.syscall.Exit
-	34, // 20: gvisor.syscall.Setid.context_data:type_name -> gvisor.common.ContextData
+	33, // 20: gvisor.syscall.Setid.context_data:type_name -> gvisor.common.ContextData
 	0,  // 21: gvisor.syscall.Setid.exit:type_name -> gvisor.syscall.Exit
-	34, // 22: gvisor.syscall.Prlimit.context_data:type_name -> gvisor.common.ContextData
+	33, // 22: gvisor.syscall.Prlimit.context_data:type_name -> gvisor.common.ContextData
 	0,  // 23: gvisor.syscall.Prlimit.exit:type_name -> gvisor.syscall.Exit
 	12, // 24: gvisor.syscall.Prlimit.new_limit:type_name -> gvisor.syscall.StructRlimit
 	12, // 25: gvisor.syscall.Prlimit.old_limit:type_name -> gvisor.syscall.StructRlimit
-	34, // 26: gvisor.syscall.Pipe.context_data:type_name -> gvisor.common.ContextData
+	33, // 26: gvisor.syscall.Pipe.context_data:type_name -> gvisor.common.ContextData
 	0,  // 27: gvisor.syscall.Pipe.exit:type_name -> gvisor.syscall.Exit
-	34, // 28: gvisor.syscall.Fcntl.context_data:type_name -> gvisor.common.ContextData
+	33, // 28: gvisor.syscall.Fcntl.context_data:type_name -> gvisor.common.ContextData
 	0,  // 29: gvisor.syscall.Fcntl.exit:type_name -> gvisor.syscall.Exit
-	34, // 30: gvisor.syscall.Dup.context_data:type_name -> gvisor.common.ContextData
+	33, // 30: gvisor.syscall.Dup.context_data:type_name -> gvisor.common.ContextData
 	0,  // 31: gvisor.syscall.Dup.exit:type_name -> gvisor.syscall.Exit
-	34, // 32: gvisor.syscall.Signalfd.context_data:type_name -> gvisor.common.ContextData
+	33, // 32: gvisor.syscall.Signalfd.context_data:type_name -> gvisor.common.ContextData
 	0,  // 33: gvisor.syscall.Signalfd.exit:type_name -> gvisor.syscall.Exit
-	34, // 34: gvisor.syscall.Chroot.context_data:type_name -> gvisor.common.ContextData
+	33, // 34: gvisor.syscall.Chroot.context_data:type_name -> gvisor.common.ContextData
 	0,  // 35: gvisor.syscall.Chroot.exit:type_name -> gvisor.syscall.Exit
-	34, // 36: gvisor.syscall.Eventfd.context_data:type_name -> gvisor.common.ContextData
+	33, // 36: gvisor.syscall.Eventfd.context_data:type_name -> gvisor.common.ContextData
 	0,  // 37: gvisor.syscall.Eventfd.exit:type_name -> gvisor.syscall.Exit
-	34, // 38: gvisor.syscall.Clone.context_data:type_name -> gvisor.common.ContextData
+	33, // 38: gvisor.syscall.Clone.context_data:type_name -> gvisor.common.ContextData
 	0,  // 39: gvisor.syscall.Clone.exit:type_name -> gvisor.syscall.Exit
-	34, // 40: gvisor.syscall.Bind.context_data:type_name -> gvisor.common.ContextData
+	33, // 40: gvisor.syscall.Bind.context_data:type_name -> gvisor.common.ContextData
 	0,  // 41: gvisor.syscall.Bind.exit:type_name -> gvisor.syscall.Exit
-	34, // 42: gvisor.syscall.Accept.context_data:type_name -> gvisor.common.ContextData
+	33, // 42: gvisor.syscall.Accept.context_data:type_name -> gvisor.common.ContextData
 	0,  // 43: gvisor.syscall.Accept.exit:type_name -> gvisor.syscall.Exit
-	34, // 44: gvisor.syscall.TimerfdCreate.context_data:type_name -> gvisor.common.ContextData
+	33, // 44: gvisor.syscall.TimerfdCreate.context_data:type_name -> gvisor.common.ContextData
 	0,  // 45: gvisor.syscall.TimerfdCreate.exit:type_name -> gvisor.syscall.Exit
-	24, // 46: gvisor.syscall.ItimerSpec.interval:type_name -> gvisor.syscall.Timespec
-	24, // 47: gvisor.syscall.ItimerSpec.value:type_name -> gvisor.syscall.Timespec
-	34, // 48: gvisor.syscall.TimerfdSetTime.context_data:type_name -> gvisor.common.ContextData
+	34, // 46: gvisor.syscall.ItimerSpec.interval:type_name -> gvisor.common.Timespec
+	34, // 47: gvisor.syscall.ItimerSpec.value:type_name -> gvisor.common.Timespec
+	33, // 48: gvisor.syscall.TimerfdSetTime.context_data:type_name -> gvisor.common.ContextData
 	0,  // 49: gvisor.syscall.TimerfdSetTime.exit:type_name -> gvisor.syscall.Exit
-	25, // 50: gvisor.syscall.TimerfdSetTime.new_value:type_name -> gvisor.syscall.ItimerSpec
-	25, // 51: gvisor.syscall.TimerfdSetTime.old_value:type_name -> gvisor.syscall.ItimerSpec
-	34, // 52: gvisor.syscall.TimerfdGetTime.context_data:type_name -> gvisor.common.ContextData
+	24, // 50: gvisor.syscall.TimerfdSetTime.new_value:type_name -> gvisor.syscall.ItimerSpec
+	24, // 51: gvisor.syscall.TimerfdSetTime.old_value:type_name -> gvisor.syscall.ItimerSpec
+	33, // 52: gvisor.syscall.TimerfdGetTime.context_data:type_name -> gvisor.common.ContextData
 	0,  // 53: gvisor.syscall.TimerfdGetTime.exit:type_name -> gvisor.syscall.Exit
-	25, // 54: gvisor.syscall.TimerfdGetTime.cur_value:type_name -> gvisor.syscall.ItimerSpec
-	34, // 55: gvisor.syscall.Fork.context_data:type_name -> gvisor.common.ContextData
+	24, // 54: gvisor.syscall.TimerfdGetTime.cur_value:type_name -> gvisor.syscall.ItimerSpec
+	33, // 55: gvisor.syscall.Fork.context_data:type_name -> gvisor.common.ContextData
 	0,  // 56: gvisor.syscall.Fork.exit:type_name -> gvisor.syscall.Exit
-	34, // 57: gvisor.syscall.InotifyInit.context_data:type_name -> gvisor.common.ContextData
+	33, // 57: gvisor.syscall.InotifyInit.context_data:type_name -> gvisor.common.ContextData
 	0,  // 58: gvisor.syscall.InotifyInit.exit:type_name -> gvisor.syscall.Exit
-	34, // 59: gvisor.syscall.InotifyAddWatch.context_data:type_name -> gvisor.common.ContextData
+	33, // 59: gvisor.syscall.InotifyAddWatch.context_data:type_name -> gvisor.common.ContextData
 	0,  // 60: gvisor.syscall.InotifyAddWatch.exit:type_name -> gvisor.syscall.Exit
-	34, // 61: gvisor.syscall.InotifyRmWatch.context_data:type_name -> gvisor.common.ContextData
+	33, // 61: gvisor.syscall.InotifyRmWatch.context_data:type_name -> gvisor.common.ContextData
 	0,  // 62: gvisor.syscall.InotifyRmWatch.exit:type_name -> gvisor.syscall.Exit
-	34, // 63: gvisor.syscall.SocketPair.context_data:type_name -> gvisor.common.ContextData
+	33, // 63: gvisor.syscall.SocketPair.context_data:type_name -> gvisor.common.ContextData
 	0,  // 64: gvisor.syscall.SocketPair.exit:type_name -> gvisor.syscall.Exit
-	34, // 65: gvisor.syscall.Mmap.context_data:type_name -> gvisor.common.ContextData
+	33, // 65: gvisor.syscall.Mmap.context_data:type_name -> gvisor.common.ContextData
 	0,  // 66: gvisor.syscall.Mmap.exit:type_name -> gvisor.syscall.Exit
 	67, // [67:67] is the sub-list for method output_type
 	67, // [67:67] is the sub-list for method input_type
@@ -3273,7 +3218,7 @@ func file_pkg_sentry_seccheck_points_syscall_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_sentry_seccheck_points_syscall_proto_rawDesc), len(file_pkg_sentry_seccheck_points_syscall_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   34,
+			NumMessages:   33,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
