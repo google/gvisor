@@ -94,6 +94,10 @@ message ContextData {
   string process_name = 9;
 
   int32 parent_thread_group_id = 10;
+
+  // is_exec_session indicates whether the task originated from an exec session
+  // inside the container (`e.g., from `runsc exec` or `kubectl exec`).
+  bool is_exec_session = 11;
 }
 
 // MessageType describes the payload of a message sent to the remote process.
