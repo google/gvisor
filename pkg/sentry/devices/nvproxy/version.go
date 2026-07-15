@@ -175,6 +175,7 @@ func Init() {
 					nvgpu.NV_ESC_ALLOC_OS_EVENT:                feHandler(frontendIoctlHasFD[nvgpu.IoctlAllocOSEvent], compUtil),
 					nvgpu.NV_ESC_FREE_OS_EVENT:                 feHandler(frontendIoctlHasFD[nvgpu.IoctlFreeOSEvent], compUtil),
 					nvgpu.NV_ESC_NUMA_INFO:                     feHandler(rmNumaInfo, compUtil),
+					nvgpu.NV_ESC_EXPORT_TO_DMABUF_FD:           feHandler(frontendExportToDMABufFD[nvgpu.IoctlExportToDMABufFD], nvconf.CapRDMA),
 					nvgpu.NV_ESC_RM_ALLOC_CONTEXT_DMA2:         feHandler(rmAllocContextDMA2, nvconf.CapGraphics),
 					nvgpu.NV_ESC_RM_ALLOC_MEMORY:               feHandler(rmAllocMemory, compUtil|nvconf.CapGraphics),
 					nvgpu.NV_ESC_RM_FREE:                       feHandler(rmFree, compUtil),
@@ -490,6 +491,7 @@ func Init() {
 							nvgpu.NV_ESC_ALLOC_OS_EVENT:                ioctlInfoWithStructName("NV_ESC_ALLOC_OS_EVENT", nvgpu.IoctlAllocOSEvent{}, "nv_ioctl_alloc_os_event_t"),
 							nvgpu.NV_ESC_FREE_OS_EVENT:                 ioctlInfoWithStructName("NV_ESC_FREE_OS_EVENT", nvgpu.IoctlFreeOSEvent{}, "nv_ioctl_free_os_event_t"),
 							nvgpu.NV_ESC_NUMA_INFO:                     simpleIoctlInfo("NV_ESC_NUMA_INFO"), // No params struct because nvproxy ignores this ioctl
+							nvgpu.NV_ESC_EXPORT_TO_DMABUF_FD:           ioctlInfoWithStructName("NV_ESC_EXPORT_TO_DMABUF_FD", nvgpu.IoctlExportToDMABufFD{}, "nv_ioctl_export_to_dma_buf_fd_t"),
 							nvgpu.NV_ESC_RM_ALLOC_MEMORY:               ioctlInfoWithStructName("NV_ESC_RM_ALLOC_MEMORY", nvgpu.IoctlNVOS02ParametersWithFD{}, "nv_ioctl_nvos02_parameters_with_fd"),
 							nvgpu.NV_ESC_RM_FREE:                       ioctlInfo("NV_ESC_RM_FREE", nvgpu.NVOS00_PARAMETERS{}),
 							nvgpu.NV_ESC_RM_CONTROL:                    ioctlInfo("NV_ESC_RM_CONTROL", nvgpu.NVOS54_PARAMETERS{}),
@@ -1005,9 +1007,11 @@ func Init() {
 			abi.allocationClass[nvgpu.BLACKWELL_COMPUTE_B] = allocHandler(rmAllocSimple[nvgpu.NV_GR_ALLOCATION_PARAMETERS], compUtil)
 			abi.allocationClass[nvgpu.BLACKWELL_USERMODE_A] = allocHandler(rmAllocSimple[nvgpu.NV_HOPPER_USERMODE_A_PARAMS], compUtil)
 			abi.allocationClass[nvgpu.NVCFB7_VIDEO_ENCODER] = allocHandler(rmAllocSimple[nvgpu.NV_MSENC_ALLOCATION_PARAMETERS], nvconf.CapVideo)
+			abi.frontendIoctl[nvgpu.NV_ESC_EXPORT_TO_DMABUF_FD] = feHandler(frontendExportToDMABufFD[nvgpu.IoctlExportToDMABufFD_V570], nvconf.CapRDMA)
 			prevGetInfo := abi.getInfo
 			abi.getInfo = func() *DriverABIInfo {
 				info := prevGetInfo()
+				info.FrontendInfos[nvgpu.NV_ESC_EXPORT_TO_DMABUF_FD] = ioctlInfoWithStructName("NV_ESC_EXPORT_TO_DMABUF_FD", nvgpu.IoctlExportToDMABufFD_V570{}, "nv_ioctl_export_to_dma_buf_fd_t")
 				info.ControlInfos[nvgpu.NVB0CC_CTRL_CMD_RESERVE_CCU_PROF] = simpleIoctlInfo("NVB0CC_CTRL_CMD_RESERVE_CCU_PROF", "NVB0CC_CTRL_RESERVE_CCUPROF_PARAMS")
 				info.ControlInfos[nvgpu.NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_INFOROM_SUPPORT] = simpleIoctlInfo("NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_INFOROM_SUPPORT", "NV2080_CTRL_FB_DRAM_ENCRYPTION_INFOROM_SUPPORT_PARAMS")
 				info.ControlInfos[nvgpu.NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_STATUS] = simpleIoctlInfo("NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_STATUS", "NV2080_CTRL_FB_QUERY_DRAM_ENCRYPTION_STATUS_PARAMS")
@@ -1064,10 +1068,12 @@ func Init() {
 			abi.allocationClass[nvgpu.NVD1B7_VIDEO_ENCODER] = allocHandler(rmAllocSimple[nvgpu.NV_MSENC_ALLOCATION_PARAMETERS], nvconf.CapVideo)
 			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_GPU_GET_SKYLINE_INFO] = ctrlHandler(rmControlSimple, compUtil|nvconf.CapGraphics)
 			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_ECC_GET_REPAIR_STATUS] = ctrlHandler(rmControlSimple, nvconf.CapGraphics)
+			abi.frontendIoctl[nvgpu.NV_ESC_EXPORT_TO_DMABUF_FD] = feHandler(frontendExportToDMABufFD[nvgpu.IoctlExportToDMABufFD_V580], nvconf.CapRDMA)
 
 			prevGetInfo := abi.getInfo
 			abi.getInfo = func() *DriverABIInfo {
 				info := prevGetInfo()
+				info.FrontendInfos[nvgpu.NV_ESC_EXPORT_TO_DMABUF_FD] = ioctlInfoWithStructName("NV_ESC_EXPORT_TO_DMABUF_FD", nvgpu.IoctlExportToDMABufFD_V580{}, "nv_ioctl_export_to_dma_buf_fd_t")
 				info.FrontendInfos[nvgpu.NV_ESC_RM_MAP_MEMORY_DMA] = ioctlInfoWithStructName("NV_ESC_RM_MAP_MEMORY_DMA", nvgpu.NVOS46_PARAMETERS_V580{}, "NVOS46_PARAMETERS")
 				info.AllocationInfos[nvgpu.FERMI_VASPACE_A] = ioctlInfoWithStructName("FERMI_VASPACE_A", nvgpu.NV_VASPACE_ALLOCATION_PARAMETERS_V580{}, "NV_VASPACE_ALLOCATION_PARAMETERS")
 				info.AllocationInfos[nvgpu.NVCEB7_VIDEO_ENCODER] = ioctlInfo("NVCEB7_VIDEO_ENCODER", nvgpu.NV_MSENC_ALLOCATION_PARAMETERS{})
