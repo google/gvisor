@@ -40,19 +40,28 @@ uint64_t __export_deep_sleep_timeout;
 #define CQ_INDEX_SHIFT 32
 #define CQ_CONTEXT_MASK ((1UL << CQ_INDEX_SHIFT) - 1)
 
-// See systrap/context_queue.go
+#define CACHE_LINE_SIZE 64
+
+// See `systrap/context_queue.go` for the bye layout of this struct and the
+// semantics of the fields.
 struct context_queue {
-  uint32_t start;
   uint32_t end;
+  uint8_t _pad_end[CACHE_LINE_SIZE - 4];
+  uint32_t start;
+  uint8_t _pad_start[CACHE_LINE_SIZE - 4];
+  uint32_t fast_path_disabled;
+  uint32_t num_awake_contexts;
+  uint8_t _pad_sentry_written[CACHE_LINE_SIZE - 8];
   uint32_t num_active_threads;
   uint32_t num_spinning_threads;
+  uint8_t _pad_stub_written[CACHE_LINE_SIZE - 8];
   uint32_t num_threads_to_wakeup;
+  uint8_t _pad_futex[CACHE_LINE_SIZE - 4];
   uint32_t num_active_contexts;
-  uint32_t num_awake_contexts;
-  uint32_t fast_path_disabled;
   uint32_t used_fast_path;
+  uint8_t _pad_both_written[CACHE_LINE_SIZE - 8];
   uint64_t ringbuffer[MAX_CONTEXT_QUEUE_ENTRIES];
-};
+} __attribute__((aligned(CACHE_LINE_SIZE)));
 
 struct context_queue *__export_context_queue_addr;
 
@@ -415,4 +424,27 @@ void verify_offsets() {
 
   BUILD_BUG_ON(sizeof(struct thread_context) >
                ALLOCATED_SIZEOF_THREAD_CONTEXT_STRUCT);
+
+  // struct context_queue must stay byte-identical to the Go `contextQueue`.
+  BUILD_BUG_ON(offsetof(struct context_queue, end) != 0 * CACHE_LINE_SIZE);
+  BUILD_BUG_ON(offsetof(struct context_queue, start) != 1 * CACHE_LINE_SIZE);
+  BUILD_BUG_ON(offsetof(struct context_queue, fast_path_disabled) !=
+               2 * CACHE_LINE_SIZE);
+  BUILD_BUG_ON(offsetof(struct context_queue, num_awake_contexts) !=
+               2 * CACHE_LINE_SIZE + 4);
+  BUILD_BUG_ON(offsetof(struct context_queue, num_active_threads) !=
+               3 * CACHE_LINE_SIZE);
+  BUILD_BUG_ON(offsetof(struct context_queue, num_spinning_threads) !=
+               3 * CACHE_LINE_SIZE + 4);
+  BUILD_BUG_ON(offsetof(struct context_queue, num_threads_to_wakeup) !=
+               4 * CACHE_LINE_SIZE);
+  BUILD_BUG_ON(offsetof(struct context_queue, num_active_contexts) !=
+               5 * CACHE_LINE_SIZE);
+  BUILD_BUG_ON(offsetof(struct context_queue, used_fast_path) !=
+               5 * CACHE_LINE_SIZE + 4);
+  BUILD_BUG_ON(offsetof(struct context_queue, ringbuffer) !=
+               6 * CACHE_LINE_SIZE);
+  BUILD_BUG_ON(sizeof(struct context_queue) !=
+               6 * CACHE_LINE_SIZE +
+                   MAX_CONTEXT_QUEUE_ENTRIES * sizeof(uint64_t));
 }
