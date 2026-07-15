@@ -906,7 +906,17 @@ func (*cpuSet) set(spec *specs.LinuxResources, path string) error {
 }
 
 type blockIO struct {
-	mandatory
+}
+
+func (*blockIO) optional() bool {
+	return true
+}
+
+func (*blockIO) skip(spec *specs.LinuxResources) error {
+	if spec != nil && spec.BlockIO != nil {
+		return fmt.Errorf("blkio controller is missing but limits are set in OCI spec")
+	}
+	return nil
 }
 
 func (*blockIO) set(spec *specs.LinuxResources, path string) error {
