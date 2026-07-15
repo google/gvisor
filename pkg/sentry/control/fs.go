@@ -18,8 +18,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
+	"strings"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -199,4 +203,188 @@ func (f *Fs) Read(o *ReadOpts, _ *struct{}) error {
 		_, err = io.Copy(output, reader)
 	}
 	return err
+}
+
+// MountOpts contains options for the Mount RPC call.
+type MountOpts struct {
+	// ContainerID identifies which container's mount namespace to mount into.
+	ContainerID string `json:"container_id"`
+
+	// Source is the mount source (e.g. device name or host path).
+	Source string `json:"source"`
+
+	// Target is the absolute path inside the container where the filesystem
+	// will be mounted.
+	Target string `json:"target"`
+
+	// FSType is the filesystem type name (e.g., "gofer", "tmpfs").
+	FSType string `json:"fs_type"`
+
+	// Flags are the Linux mount flags (e.g. MS_RDONLY, MS_NOEXEC).
+	Flags uint64 `json:"flags"`
+
+	// Data contains filesystem-specific mount options (e.g. "cache=remote,aname=/").
+	Data string `json:"data"`
+
+	// FilePayload contains file descriptors sent over SCM_RIGHTS (e.g. socket FD to Gofer).
+	urpc.FilePayload
+}
+
+// Mount is a RPC stub which mounts a filesystem into a container's mount namespace.
+func (f *Fs) Mount(o *MountOpts, _ *struct{}) error {
+	target := path.Clean(o.Target)
+	if target == "" || !path.IsAbs(target) {
+		return fmt.Errorf("target must be an absolute path: %q", o.Target)
+	}
+
+	supportedFlags := uint64(linux.MS_RDONLY | linux.MS_NOEXEC | linux.MS_NODEV | linux.MS_NOSUID | linux.MS_NOATIME)
+	if (o.Flags & ^supportedFlags) != 0 {
+		return unix.EINVAL
+	}
+
+	// Close all payload files upon return.
+	defer func() {
+		for _, file := range o.FilePayload.Files {
+			file.Close()
+		}
+	}()
+
+	var cu cleanup.Cleanup
+	defer cu.Clean()
+
+	ctx := f.Kernel.SupervisorContext()
+	mntns, err := f.mountNamespaceForContainer(o.ContainerID)
+	if err != nil {
+		return err
+	}
+	defer mntns.DecRef(ctx)
+
+	creds := auth.NewRootCredentials(f.Kernel.RootUserNamespace())
+	root := mntns.Root(ctx)
+	defer root.DecRef(ctx)
+
+	fsType := o.FSType
+	if fsType == "gofer" {
+		fsType = "9p"
+	}
+
+	data := o.Data
+	goferFD := -1
+	// For 9p/gofer mounts, we receive the host connection FD in FilePayload.
+	// We must duplicate this FD because the incoming FD will be closed when the
+	// RPC returns (via FilePayload cleanup), but the VFS mount needs to keep
+	// the connection open.
+	if len(o.FilePayload.Files) > 0 && fsType == "9p" {
+		fd := int(o.FilePayload.Files[0].Fd())
+		dupFD, err := unix.Dup(fd)
+		if err != nil {
+			return fmt.Errorf("failed to dup gofer FD: %v", err)
+		}
+		goferFD = dupFD
+		cu.Add(func() { _ = unix.Close(goferFD) })
+		// Append the duped FD to mount options if not already specified.
+		if !strings.Contains(data, "trans=fd") {
+			if len(data) > 0 {
+				data += ","
+			}
+			data += fmt.Sprintf("trans=fd,rfdno=%d,wfdno=%d", goferFD, goferFD)
+		}
+	}
+
+	// Ensure the parent directory exists. We do not automatically create
+	// parent directories to match standard Linux mount behavior where the
+	// target mount point's parent must exist.
+	parent := path.Dir(target)
+	parentPop := &vfs.PathOperation{
+		Root:               root,
+		Start:              root,
+		Path:               fspath.Parse(parent),
+		FollowFinalSymlink: true,
+	}
+	if stat, err := f.Kernel.VFS().StatAt(ctx, creds, parentPop, &vfs.StatOptions{Mask: linux.STATX_TYPE}); err != nil {
+		return fmt.Errorf("parent directory %s does not exist: %w", parent, err)
+	} else if stat.Mask&linux.STATX_TYPE == 0 || stat.Mode&linux.FileTypeMask != linux.ModeDirectory {
+		return fmt.Errorf("parent %s is not a directory", parent)
+	}
+
+	// Ensure target directory exists (or create it if parent is writeable).
+	if err := f.Kernel.VFS().MkdirAllAt(ctx, target, root, creds, &vfs.MkdirOptions{Mode: 0755, ForSyntheticMountpoint: true}, true /* mustBeDir */); err != nil {
+		return fmt.Errorf("failed to ensure target directory %s exists: %v", target, err)
+	}
+
+	opts := &vfs.MountOptions{
+		ReadOnly: (o.Flags & linux.MS_RDONLY) != 0,
+		Flags: vfs.MountFlags{
+			NoExec:  (o.Flags & linux.MS_NOEXEC) != 0,
+			NoDev:   (o.Flags & linux.MS_NODEV) != 0,
+			NoSUID:  (o.Flags & linux.MS_NOSUID) != 0,
+			NoATime: (o.Flags & linux.MS_NOATIME) != 0,
+		},
+		GetFilesystemOptions: vfs.GetFilesystemOptions{
+			Data:          data,
+			InternalMount: true,
+		},
+	}
+
+	pop := &vfs.PathOperation{
+		Root:               root,
+		Start:              root,
+		Path:               fspath.Parse(target),
+		FollowFinalSymlink: true,
+	}
+
+	if _, err := f.Kernel.VFS().MountAt(ctx, creds, o.Source, pop, fsType, opts); err != nil {
+		return fmt.Errorf("failed to mount %s at %s: %v", o.FSType, target, err)
+	}
+
+	cu.Release()
+	return nil
+}
+
+// UmountOpts contains options for the Umount RPC call.
+type UmountOpts struct {
+	// ContainerID identifies which container's mount namespace to unmount from.
+	ContainerID string `json:"container_id"`
+
+	// Target is the absolute path inside the container to unmount.
+	Target string `json:"target"`
+
+	// Flags are Linux umount2 flags (e.g. MNT_DETACH).
+	Flags uint32 `json:"flags"`
+}
+
+// Umount is a RPC stub which unmounts a filesystem from a container's mount namespace.
+func (f *Fs) Umount(o *UmountOpts, _ *struct{}) error {
+	target := path.Clean(o.Target)
+	if target == "" || !path.IsAbs(target) {
+		return fmt.Errorf("target must be an absolute path: %q", o.Target)
+	}
+
+	ctx := f.Kernel.SupervisorContext()
+	mntns, err := f.mountNamespaceForContainer(o.ContainerID)
+	if err != nil {
+		return err
+	}
+	defer mntns.DecRef(ctx)
+
+	creds := auth.NewRootCredentials(f.Kernel.RootUserNamespace())
+	root := mntns.Root(ctx)
+	defer root.DecRef(ctx)
+
+	pop := &vfs.PathOperation{
+		Root:               root,
+		Start:              root,
+		Path:               fspath.Parse(target),
+		FollowFinalSymlink: (o.Flags & linux.UMOUNT_NOFOLLOW) == 0,
+	}
+
+	opts := &vfs.UmountOptions{
+		Flags: o.Flags,
+	}
+
+	if err := f.Kernel.VFS().UmountAt(ctx, creds, pop, opts); err != nil {
+		return fmt.Errorf("failed to unmount %s: %v", target, err)
+	}
+
+	return nil
 }
