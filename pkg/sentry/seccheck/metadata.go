@@ -48,6 +48,7 @@ const (
 	FieldCtxtThreadStartTime
 	FieldCtxtTime
 	FieldCtxtParentThreadGroupID
+	FieldCtxtIsExecSession
 )
 
 // Fields for container/start point.
@@ -115,6 +116,10 @@ var defaultContextFields = []FieldDesc{
 	{
 		ID:   FieldCtxtParentThreadGroupID,
 		Name: "parent_thread_group_id",
+	},
+	{
+		ID:   FieldCtxtIsExecSession,
+		Name: "is_exec_session",
 	},
 }
 
