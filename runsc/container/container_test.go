@@ -17,6 +17,7 @@ package container
 import (
 	"bufio"
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"math"
@@ -36,6 +37,7 @@ import (
 	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/hostos"
@@ -5281,6 +5283,162 @@ func TestTarRootfsUpperLayerOpaqueDir(t *testing.T) {
 		t.Fatalf("opaque xattr not preserved: expected only 'marker' in /usr/share, got: %v (stale lower layer files leaked through)", restoredFiles)
 	}
 	t.Logf("/usr/share in restored container correctly contains only: %v", restoredFiles)
+}
+
+// buildACLXattr serializes entries into the system.posix_acl_access /
+// system.posix_acl_default xattr wire format (a little-endian version header
+// followed by 8-byte entries).
+func buildACLXattr(entries []linux.PosixACLXattrEntry) []byte {
+	x := linux.PosixACLXattr{Version: linux.POSIX_ACL_XATTR_VERSION, Entries: entries}
+	buf := make([]byte, x.SizeBytes())
+	x.MarshalBytes(buf)
+	return buf
+}
+
+// TestTarRootfsUpperLayerACL verifies that POSIX ACLs set on files in the overlay's
+// tmpfs layer are preserved across tar serialization and restoration.
+func TestTarRootfsUpperLayerACL(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	conf.Overlay2.Set("root:memory")
+
+	spec, _ := sleepSpecConf(t)
+	spec.Root.Readonly = false
+
+	app, err := testutil.FindFile("test/cmd/test_app/test_app")
+	if err != nil {
+		t.Fatalf("error finding test_app: %v", err)
+	}
+
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	// Create and start the container.
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	// Paths in the writable (upper) layer that will receive ACLs.
+	const (
+		aclFile = "/acltest-file"
+		aclDir  = "/acltest-dir"
+	)
+
+	// Use ACLs with named users to ensure that the ACL is actually stored as an ACL
+	// rather than folded into the mode
+	accessACL := base64.StdEncoding.EncodeToString(buildACLXattr([]linux.PosixACLXattrEntry{
+		{Tag: linux.ACL_USER_OBJ, Perm: linux.ACL_READ | linux.ACL_WRITE, ID: linux.ACL_UNDEFINED_ID},
+		{Tag: linux.ACL_USER, Perm: linux.ACL_READ, ID: 1000},
+		{Tag: linux.ACL_GROUP_OBJ, Perm: linux.ACL_READ, ID: linux.ACL_UNDEFINED_ID},
+		{Tag: linux.ACL_MASK, Perm: linux.ACL_READ | linux.ACL_WRITE, ID: linux.ACL_UNDEFINED_ID},
+		{Tag: linux.ACL_OTHER, Perm: linux.ACL_READ, ID: linux.ACL_UNDEFINED_ID},
+	}))
+	defaultACL := base64.StdEncoding.EncodeToString(buildACLXattr([]linux.PosixACLXattrEntry{
+		{Tag: linux.ACL_USER_OBJ, Perm: linux.ACL_READ | linux.ACL_WRITE | linux.ACL_EXECUTE, ID: linux.ACL_UNDEFINED_ID},
+		{Tag: linux.ACL_USER, Perm: linux.ACL_READ | linux.ACL_EXECUTE, ID: 1001},
+		{Tag: linux.ACL_GROUP_OBJ, Perm: linux.ACL_READ | linux.ACL_EXECUTE, ID: linux.ACL_UNDEFINED_ID},
+		{Tag: linux.ACL_MASK, Perm: linux.ACL_READ | linux.ACL_WRITE | linux.ACL_EXECUTE, ID: linux.ACL_UNDEFINED_ID},
+		{Tag: linux.ACL_OTHER, Perm: 0, ID: linux.ACL_UNDEFINED_ID},
+	}))
+
+	// Create the file and directory in the writable (upper) layer.
+	if out, err := executeCombinedOutput(conf, cont, nil, "/bin/touch", aclFile); err != nil {
+		t.Fatalf("error creating ACL test file: %v, output: %s", err, out)
+	}
+	if out, err := executeCombinedOutput(conf, cont, nil, "/bin/mkdir", aclDir); err != nil {
+		t.Fatalf("error creating ACL test directory: %v, output: %s", err, out)
+	}
+
+	// setACL sets an ACL xattr on path via test_app.
+	setACL := func(path, name, b64 string) {
+		t.Helper()
+		if out, err := executeCombinedOutput(conf, cont, nil, app, "setxattr",
+			"--path="+path, "--name="+name, "--value="+b64); err != nil {
+			t.Fatalf("error setting %s on %s: %v, output: %s", name, path, err, out)
+		}
+	}
+	// getACL returns the base64-encoded ACL xattr on path in container c.
+	getACL := func(c *Container, path, name string) string {
+		t.Helper()
+		out, err := executeCombinedOutput(conf, c, nil, app, "getxattr",
+			"--path="+path, "--name="+name)
+		if err != nil {
+			t.Fatalf("error getting %s on %s: %v, output: %s", name, path, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+
+	setACL(aclFile, linux.XATTR_NAME_POSIX_ACL_ACCESS, accessACL)
+	wantFileAccess := getACL(cont, aclFile, linux.XATTR_NAME_POSIX_ACL_ACCESS)
+
+	setACL(aclDir, linux.XATTR_NAME_POSIX_ACL_ACCESS, accessACL)
+	wantDirAccess := getACL(cont, aclDir, linux.XATTR_NAME_POSIX_ACL_ACCESS)
+
+	setACL(aclDir, linux.XATTR_NAME_POSIX_ACL_DEFAULT, defaultACL)
+	wantDirDefault := getACL(cont, aclDir, linux.XATTR_NAME_POSIX_ACL_DEFAULT)
+
+	for name, v := range map[string]string{"file access": wantFileAccess, "dir access": wantDirAccess, "dir default": wantDirDefault} {
+		if v == "" {
+			t.Fatalf("%s ACL was unexpectedly empty", name)
+		}
+	}
+
+	// Tar the upper layer.
+	tarFile, err := os.CreateTemp(testutil.TmpDir(), "tarfile-acl-*.tar")
+	if err != nil {
+		t.Fatalf("error creating temp file: %v", err)
+	}
+	defer os.Remove(tarFile.Name())
+	defer tarFile.Close()
+	if err := cont.TarRootfsUpperLayer(tarFile); err != nil {
+		t.Fatalf("error serializing rootfs upper layer to tar: %v", err)
+	}
+
+	// Restore the tar into a new container.
+	spec.Annotations[specutils.AnnotationRootfsUpperTar] = tarFile.Name()
+	conf.AllowRootfsTarAnnotation = true
+	_, bundleDir2, cleanup2, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up restored container: %v", err)
+	}
+	defer cleanup2()
+
+	args2 := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir2,
+	}
+	newCont, err := New(conf, args2)
+	if err != nil {
+		t.Fatalf("error creating restored container: %v", err)
+	}
+	defer newCont.Destroy()
+	if err := newCont.Start(conf); err != nil {
+		t.Fatalf("error starting restored container: %v", err)
+	}
+
+	// Verify the ACLs survived the round-trip.
+	if got := getACL(newCont, aclFile, linux.XATTR_NAME_POSIX_ACL_ACCESS); got != wantFileAccess {
+		t.Errorf("file access ACL mismatch after restore:\n got %q\nwant %q", got, wantFileAccess)
+	}
+	if got := getACL(newCont, aclDir, linux.XATTR_NAME_POSIX_ACL_ACCESS); got != wantDirAccess {
+		t.Errorf("dir access ACL mismatch after restore:\n got %q\nwant %q", got, wantDirAccess)
+	}
+	if got := getACL(newCont, aclDir, linux.XATTR_NAME_POSIX_ACL_DEFAULT); got != wantDirDefault {
+		t.Errorf("dir default ACL mismatch after restore:\n got %q\nwant %q", got, wantDirDefault)
+	}
 }
 
 func TestSpecValidationIgnore(t *testing.T) {

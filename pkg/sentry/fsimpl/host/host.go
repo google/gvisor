@@ -21,6 +21,7 @@ import (
 	"math"
 
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
@@ -412,7 +413,7 @@ func (i *inode) CheckPermissions(ctx context.Context, creds *auth.Credentials, a
 	if err := i.stat(&s); err != nil {
 		return err
 	}
-	return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(s.Mode), auth.KUID(s.Uid), auth.KGID(s.Gid))
+	return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(s.Mode), nil, auth.KUID(s.Uid), auth.KGID(s.Gid))
 }
 
 // Mode implements kernfs.Inode.Mode.
@@ -607,7 +608,7 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 	if err := i.stat(&hostStat); err != nil {
 		return err
 	}
-	if err := vfs.CheckSetStat(ctx, creds, &opts, linux.FileMode(hostStat.Mode), auth.KUID(hostStat.Uid), auth.KGID(hostStat.Gid)); err != nil {
+	if err := vfs.CheckSetStat(ctx, creds, &opts, linux.FileMode(hostStat.Mode), nil, auth.KUID(hostStat.Uid), auth.KGID(hostStat.Gid)); err != nil {
 		return err
 	}
 

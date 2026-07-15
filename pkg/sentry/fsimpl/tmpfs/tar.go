@@ -17,6 +17,7 @@ package tmpfs
 import (
 	"archive/tar"
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"os"
@@ -142,6 +143,12 @@ func (fs *filesystem) mkdirFromTar(hdr *tar.Header, pathToInode map[string]*inod
 		ino := fs.root.inode
 		ino.uid.Store(uint32(hdr.Uid))
 		ino.gid.Store(uint32(hdr.Gid))
+		acl, defaultACL, err := getACLsFromHeader(hdr)
+		if err != nil {
+			return nil, err
+		}
+		ino.accessACL.Store(acl)
+		ino.defaultACL.Store(defaultACL)
 		ino.mode.Store(uint32(hdr.Mode) | linux.S_IFDIR)
 		ino.mtime.Store(hdr.ModTime.UnixNano())
 		ino.setXattrsFromPAXRecords(hdr)
@@ -172,6 +179,12 @@ func (fs *filesystem) mkdirFromTar(hdr *tar.Header, pathToInode map[string]*inod
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new directory inode: %v", err)
 	}
+	acl, defaultACL, err := getACLsFromHeader(hdr)
+	if err != nil {
+		return nil, err
+	}
+	childDir.inode.accessACL.Store(acl)
+	childDir.inode.defaultACL.Store(defaultACL)
 	parentDir.inode.incLinksLocked() // from child's ".."
 	parentDir.inode.incRef()         // child directory holds a reference to parent
 	childDir.inode.mtime.Store(hdr.ModTime.UnixNano())
@@ -211,6 +224,12 @@ func (fs *filesystem) mknodFromTar(ctx context.Context, hdr *tar.Header, pathToI
 	if err != nil {
 		return err
 	}
+	acl, defaultACL, err := getACLsFromHeader(hdr)
+	if err != nil {
+		return err
+	}
+	childInode.accessACL.Store(acl)
+	childInode.defaultACL.Store(defaultACL)
 	childInode.mtime.Store(hdr.ModTime.UnixNano())
 	childInode.setXattrsFromPAXRecords(hdr)
 	child := fs.newDentry(childInode)
@@ -278,6 +297,12 @@ func (fs *filesystem) symlinkFromTar(hdr *tar.Header, pathToInode map[string]*in
 		return fmt.Errorf("failed to create inode from tar: %v", err)
 	}
 	child := fs.newDentry(childInode)
+	acl, defaultACL, err := getACLsFromHeader(hdr)
+	if err != nil {
+		return err
+	}
+	child.inode.accessACL.Store(acl)
+	child.inode.defaultACL.Store(defaultACL)
 	child.inode.mtime.Store(hdr.ModTime.UnixNano())
 	child.inode.setXattrsFromPAXRecords(hdr)
 	parentDir.insertChildLocked(child, name)
@@ -469,6 +494,20 @@ func (d *dentry) createTarHeader(path string, inoToPath map[uint64]string, cb ta
 		}
 	}
 
+	// Serialize POSIX ACLs to PAXRecords.
+	if acl := d.inode.accessACL.Load(); acl != nil {
+		if header.PAXRecords == nil {
+			header.PAXRecords = make(map[string]string)
+		}
+		header.PAXRecords[paxXattrPrefix+linux.XATTR_NAME_POSIX_ACL_ACCESS] = aclToPAXRecord(acl)
+	}
+	if acl := d.inode.defaultACL.Load(); acl != nil {
+		if header.PAXRecords == nil {
+			header.PAXRecords = make(map[string]string)
+		}
+		header.PAXRecords[paxXattrPrefix+linux.XATTR_NAME_POSIX_ACL_DEFAULT] = aclToPAXRecord(acl)
+	}
+
 	inoToPath[d.inode.ino] = path
 	return header, nil
 }
@@ -510,4 +549,50 @@ func (tarDefaultWriterCallbacks) regularFileWrite(ctx context.Context, rf *regul
 		return fmt.Errorf("failed to write file content to tar: %w", err)
 	}
 	return nil
+}
+
+func aclToPAXRecord(acl *vfs.PosixACL) string {
+	// We can use a "fake" root userns for this serialization
+	// since the values are KUIDs anyway.
+	data := acl.Serialize(auth.NewRootUserNamespace())
+
+	// Base64 encode the ACLs since PaxRecords must be UTF-8 strings.
+	// Omit padding characters (RawStdEncoding) to avoid '=' chars
+	// as well (which tar PAXRecords disallows).
+	dataEncoded := base64.RawStdEncoding.EncodeToString(data)
+
+	return dataEncoded
+}
+
+func aclFromHeader(hdr *tar.Header, aclName string) (*vfs.PosixACL, error) {
+	record, ok := hdr.PAXRecords[paxXattrPrefix+aclName]
+	if !ok {
+		return nil, nil
+	}
+
+	dataDecoded, err := base64.RawStdEncoding.DecodeString(record)
+	if err != nil {
+		return &vfs.PosixACL{}, err
+	}
+
+	acl, err := vfs.ParsePosixACL(dataDecoded, auth.NewRootUserNamespace())
+	if err != nil {
+		return &vfs.PosixACL{}, err
+	}
+
+	return &acl, nil
+}
+
+func getACLsFromHeader(hdr *tar.Header) (*vfs.PosixACL, *vfs.PosixACL, error) {
+	acl, err := aclFromHeader(hdr, linux.XATTR_NAME_POSIX_ACL_ACCESS)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	defaultACL, err := aclFromHeader(hdr, linux.XATTR_NAME_POSIX_ACL_DEFAULT)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return acl, defaultACL, nil
 }

@@ -21,6 +21,7 @@ import (
 	"sync"
 
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
@@ -828,7 +829,7 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 		gid := auth.KGID(d.inode.gid.Load())
 		uid := auth.KUID(d.inode.uid.Load())
 		mode := linux.FileMode(d.inode.mode.Load())
-		if err := vfs.MayLink(rp.Credentials(), mode, uid, gid); err != nil {
+		if err := vfs.MayLink(rp.Credentials(), mode, nil, uid, gid); err != nil {
 			return nil, err
 		}
 		if d.inode.nlink.Load() == 0 {

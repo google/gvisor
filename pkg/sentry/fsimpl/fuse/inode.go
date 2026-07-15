@@ -476,12 +476,12 @@ func (i *inode) CheckPermissions(ctx context.Context, creds *auth.Credentials, a
 	}
 
 	if i.fs.opts.defaultPermissions || (ats.MayExec() && i.filemode().FileType() == linux.S_IFREG) {
-		err := vfs.GenericCheckPermissions(creds, ats, linux.FileMode(i.mode.Load()), auth.KUID(i.uid.Load()), auth.KGID(i.gid.Load()))
+		err := vfs.GenericCheckPermissions(creds, ats, linux.FileMode(i.mode.Load()), nil, auth.KUID(i.uid.Load()), auth.KGID(i.gid.Load()))
 		if linuxerr.Equals(linuxerr.EACCES, err) && !refreshed {
 			if _, err := i.getAttr(ctx, creds, i.fs.VFSFilesystem(), opts, 0, 0); err != nil {
 				return err
 			}
-			return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(i.mode.Load()), auth.KUID(i.uid.Load()), auth.KGID(i.gid.Load()))
+			return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(i.mode.Load()), nil, auth.KUID(i.uid.Load()), auth.KGID(i.gid.Load()))
 		}
 		return err
 	}
@@ -854,7 +854,7 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 
 	i.attrMu.Lock()
 	defer i.attrMu.Unlock()
-	if err := vfs.CheckSetStat(ctx, creds, &opts, i.filemode(), auth.KUID(i.uid.Load()), auth.KGID(i.gid.Load())); err != nil {
+	if err := vfs.CheckSetStat(ctx, creds, &opts, i.filemode(), nil, auth.KUID(i.uid.Load()), auth.KGID(i.gid.Load())); err != nil {
 		return err
 	}
 	if opts.Stat.Mask == 0 {
