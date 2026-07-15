@@ -186,6 +186,12 @@ func NVProxyDriverCapsAllowed(conf *config.Config) (nvconf.DriverCaps, error) {
 	if hasAll {
 		allowedDriverCaps |= nvconf.AllContainerDriverCaps
 	}
+	// GPUDirect RDMA requires the privileged CapRDMA capability to export GPU
+	// memory to a dma-buf fd. There is no container-facing driver-capability
+	// flag for it, so enable it implicitly whenever RDMA passthrough is on.
+	if conf.RDMAProxy {
+		allowedDriverCaps |= nvconf.CapRDMA
+	}
 	return allowedDriverCaps, nil
 }
 
