@@ -12,6 +12,7 @@ go_library(
     srcs = [
         "oci.go",
         "sandbox.go",
+        "storage.go",
     ],
     visibility = ["//:__subpackages__"],
     deps = ["@com_github_opencontainers_runtime_spec//specs-go:go_default_library"],
@@ -22,6 +23,7 @@ go_test(
     srcs = [
         "oci_test.go",
         "sandbox_test.go",
+        "storage_test.go",
     ],
     data = ["//runsc"],
     tags = ["nogotsan"],

@@ -31,12 +31,11 @@ func TestNewBundle(t *testing.T) {
 			tempDir := t.TempDir()
 			sandboxID := "test-sandbox"
 
-			bundleDir, err := sandbox.NewBundle(sandboxID, tempDir, enableNetworking, nil)
+			bundleDir, err := sandbox.NewBundle(sandboxID, tempDir, enableNetworking, nil, nil)
 			if err != nil {
 				t.Fatalf("NewBundle(enableNet=%v) failed: %v", enableNetworking, err)
 			}
 			defer os.RemoveAll(bundleDir)
-
 			expectedBundleDir := filepath.Join(tempDir, sandboxID)
 			if bundleDir != expectedBundleDir {
 				t.Fatalf("NewBundle(%v, %v) = %q, want %q", sandboxID, tempDir, bundleDir, expectedBundleDir)
@@ -114,7 +113,7 @@ func TestNewBundleNormalization(t *testing.T) {
 		},
 	}
 
-	bundleDir, err := sandbox.NewBundle(sandboxID, tempDir, false, mounts)
+	bundleDir, err := sandbox.NewBundle(sandboxID, tempDir, false, mounts, nil)
 	if err != nil {
 		t.Fatalf("NewBundle failed: %v", err)
 	}
@@ -151,5 +150,35 @@ func TestNewBundleNormalization(t *testing.T) {
 	}
 	if !foundTmpfs {
 		t.Errorf("failed to find normalized tmpfs mount '/mnt'")
+	}
+}
+
+func TestNewBundleWithAnnotations(t *testing.T) {
+	tempDir := t.TempDir()
+	sandboxID := "test-sandbox-annotations"
+	annotations := map[string]string{
+		"dev.gvisor.tar.rootfs.upper": "/tmp/test.tar",
+	}
+
+	bundleDir, err := sandbox.NewBundle(sandboxID, tempDir, false, nil, annotations)
+	if err != nil {
+		t.Fatalf("NewBundle failed: %v", err)
+	}
+	defer os.RemoveAll(bundleDir)
+
+	configPath := filepath.Join(bundleDir, "config.json")
+	configFile, err := os.Open(configPath)
+	if err != nil {
+		t.Fatalf("failed to open config.json: %v", err)
+	}
+	defer configFile.Close()
+
+	var spec specs.Spec
+	if err := json.NewDecoder(configFile).Decode(&spec); err != nil {
+		t.Fatalf("failed to decode config.json: %v", err)
+	}
+
+	if val, ok := spec.Annotations["dev.gvisor.tar.rootfs.upper"]; !ok || val != "/tmp/test.tar" {
+		t.Errorf("expected annotation 'dev.gvisor.tar.rootfs.upper' with value '/tmp/test.tar', got spec.Annotations: %+v", spec.Annotations)
 	}
 }
