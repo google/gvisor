@@ -59,6 +59,21 @@ type InternalData struct {
 	// EnableTPUProxyPaths is whether to populate sysfs paths used by hardware
 	// accelerators.
 	EnableTPUProxyPaths bool
+	// EnableRDMAProxyPaths is whether to populate sysfs paths used by
+	// RDMA/InfiniBand devices.
+	EnableRDMAProxyPaths bool
+	// RDMADevices contains pre-read sysfs data for RDMA devices, collected
+	// before the sandbox chroot is entered.
+	RDMADevices *RDMAData
+	// PCIDevicesData contains pre-read sysfs data for PCI devices (GPUs,
+	// NICs, bridges), collected before the sandbox chroot is entered.
+	// Used by NCCL for topology discovery.
+	PCIDevicesData *PCIDevicesData
+	// NUMAData contains pre-read NUMA topology, collected before the sandbox
+	// chroot is entered. Used by NCCL to populate the per-NUMA-node CPU
+	// affinity bitmaps in its topology XML; without this, NCCL falls back to
+	// a single-rail layout and loses NUMA-aware ring/tree placement.
+	NUMAData *NUMAData
 	// TestSysfsPathPrefix is a prefix for the sysfs paths. It is useful for
 	// unit testing.
 	TestSysfsPathPrefix string
@@ -123,14 +138,17 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	classSub := map[string]kernfs.Inode{
 		"power_supply": fs.newDir(ctx, creds, defaultSysDirMode, nil),
 	}
-	devicesSub := map[string]kernfs.Inode{
-		"system": fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
-			"cpu": cpuDir(ctx, fs, creds),
-		}),
+	// systemSub holds the children of /sys/devices/system/. It's populated
+	// here with the cpu/ subtree and then potentially extended below with
+	// the per-NUMA-node directories before being installed into devicesSub.
+	systemSub := map[string]kernfs.Inode{
+		"cpu": cpuDir(ctx, fs, creds),
 	}
+	devicesSub := map[string]kernfs.Inode{}
 
 	productName := ""
 	busSub := make(map[string]kernfs.Inode)
+	moduleSub := make(map[string]kernfs.Inode)
 	kernelSub := kernelDir(ctx, fs, creds)
 	if opts.InternalData != nil {
 		idata := opts.InternalData.(*InternalData)
@@ -176,7 +194,59 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			}
 			kernelSub["iommu_groups"] = fs.newDir(ctx, creds, defaultSysDirMode, iommuGroups)
 		}
+		var pciSlotToRelPath map[string]string
+		if idata.PCIDevicesData != nil {
+			var pciDeviceTreeSub, pciBusSub, busPCIDevSub map[string]kernfs.Inode
+			pciDeviceTreeSub, pciBusSub, busPCIDevSub, pciSlotToRelPath = fs.newPCIDevicesSysfsEntries(ctx, creds, idata.PCIDevicesData, idata.RDMADevices)
+			for name, inode := range pciDeviceTreeSub {
+				devicesSub[name] = inode
+			}
+			if len(pciBusSub) > 0 {
+				classSub["pci_bus"] = fs.newDir(ctx, creds, defaultSysDirMode, pciBusSub)
+			}
+			if len(busPCIDevSub) > 0 {
+				if _, ok := busSub["pci"]; !ok {
+					busSub["pci"] = fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+						"devices": fs.newDir(ctx, creds, defaultSysDirMode, busPCIDevSub),
+					})
+				}
+			}
+		}
+		if nodeSub := fs.newNUMASysfsEntries(ctx, creds, idata.NUMAData); nodeSub != nil {
+			systemSub["node"] = fs.newDir(ctx, creds, defaultSysDirMode, nodeSub)
+		}
+		if idata.EnableRDMAProxyPaths {
+			ibVerbsDir, ibDir := fs.newRDMASysfsEntries(ctx, creds, idata.RDMADevices, pciSlotToRelPath)
+			if ibVerbsDir != nil {
+				classSub["infiniband_verbs"] = fs.newDir(ctx, creds, defaultSysDirMode, ibVerbsDir)
+			}
+			if ibDir != nil {
+				classSub["infiniband"] = fs.newDir(ctx, creds, defaultSysDirMode, ibDir)
+			}
+			if netDir := fs.newRDMANetClassEntries(ctx, creds, idata.RDMADevices); netDir != nil {
+				classSub["net"] = fs.newDir(ctx, creds, defaultSysDirMode, netDir)
+			}
+			if idata.RDMADevices != nil && idata.RDMADevices.PeerMemVersion != "" {
+				peerMemVer := idata.RDMADevices.PeerMemVersion + "\n"
+				moduleSub["nvidia_peermem"] = fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+					"version": fs.newStaticFile(ctx, creds, defaultSysMode, peerMemVer),
+				})
+				if kernelSub["mm"] == nil {
+					kernelSub["mm"] = fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+						"memory_peers": fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+							"nv_mem": fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+								"version": fs.newStaticFile(ctx, creds, defaultSysMode, peerMemVer),
+							}),
+						}),
+					})
+				}
+			}
+		}
 	}
+
+	// Install /sys/devices/system/ now that systemSub may have been extended
+	// (e.g. with the per-NUMA-node directories above).
+	devicesSub["system"] = fs.newDir(ctx, creds, defaultSysDirMode, systemSub)
 
 	if len(productName) > 0 {
 		log.Debugf("Setting product_name: %q", productName)
@@ -203,7 +273,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		"firmware": fs.newDir(ctx, creds, defaultSysDirMode, nil),
 		"fs":       fs.newDir(ctx, creds, defaultSysDirMode, fsDirChildren),
 		"kernel":   fs.newDir(ctx, creds, defaultSysDirMode, kernelSub),
-		"module":   fs.newDir(ctx, creds, defaultSysDirMode, nil),
+		"module":   fs.newDir(ctx, creds, defaultSysDirMode, moduleSub),
 		"power":    fs.newDir(ctx, creds, defaultSysDirMode, nil),
 	})
 	fs.root = root.(*dir)
