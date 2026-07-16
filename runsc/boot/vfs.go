@@ -921,7 +921,7 @@ func (c *containerMounter) getPathMode(ctx context.Context, creds *auth.Credenti
 }
 
 func (c *containerMounter) mountSubmount(ctx context.Context, spec *specs.Spec, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials, submount *mountInfo) (*vfs.Mount, error) {
-	fsName, opts, err := getMountNameAndOptions(spec, conf, submount, c.l.productName, c.containerName, c.containerID, c.l.fsRestore)
+	fsName, opts, err := getMountNameAndOptions(spec, conf, submount, c.l.productName, c.containerName, c.containerID, c.l.fsRestore, c.l.rdmaDevices, c.l.pciDevicesData, c.l.numaData)
 	if err != nil {
 		return nil, fmt.Errorf("mountOptions failed: %w", err)
 	}
@@ -984,7 +984,7 @@ func (c *containerMounter) mountSubmount(ctx context.Context, spec *specs.Spec, 
 
 // getMountNameAndOptions retrieves the fsName, opts, and useOverlay values
 // used for mounts.
-func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo, productName, containerName, containerID string, fsr *fsRestore) (string, *vfs.MountOptions, error) {
+func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo, productName, containerName, containerID string, fsr *fsRestore, rdmaDevices *sys.RDMAData, pciDevicesData *sys.PCIDevicesData, numaData *sys.NUMAData) (string, *vfs.MountOptions, error) {
 	fsName := m.mount.Type
 	var (
 		mopts        = m.mount.Options
@@ -1004,7 +1004,13 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 		internalData = newProcInternalData(conf, spec)
 
 	case sys.Name:
-		sysData := &sys.InternalData{EnableTPUProxyPaths: specutils.TPUProxyEnabled(spec, conf)}
+		sysData := &sys.InternalData{
+			EnableTPUProxyPaths:  specutils.TPUProxyEnabled(spec, conf),
+			EnableRDMAProxyPaths: conf.RDMAProxy && specutils.HasRDMADevicesInSpec(spec),
+			RDMADevices:          rdmaDevices,
+			PCIDevicesData:       pciDevicesData,
+			NUMAData:             numaData,
+		}
 		if len(productName) > 0 {
 			sysData.ProductName = productName
 		}
@@ -1385,7 +1391,7 @@ func (c *containerMounter) mountSharedMaster(ctx context.Context, spec *specs.Sp
 	// Mount the master using the options from the hint (mount annotations).
 	origOpts := mntInfo.mount.Options
 	mntInfo.mount.Options = mntInfo.hint.Mount.Options
-	fsName, opts, err := getMountNameAndOptions(spec, conf, mntInfo, c.l.productName, c.containerName, c.containerID, c.l.fsRestore)
+	fsName, opts, err := getMountNameAndOptions(spec, conf, mntInfo, c.l.productName, c.containerName, c.containerID, c.l.fsRestore, c.l.rdmaDevices, c.l.pciDevicesData, c.l.numaData)
 	mntInfo.mount.Options = origOpts
 	if err != nil {
 		return nil, err
