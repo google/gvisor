@@ -5,31 +5,6 @@ package(
     licenses = ["notice"],
 )
 
-config_setting(
-    name = "metric_server_elided",
-    values = {
-        "compilation_mode": "fastbuild",
-    },
-)
-
-# @unused
-glaze_ignore = [
-    "metric_server_elided.go",
-    "metric_server_embedded.go",
-]
-
-# Use either metric_server_elided.go or metric_server_embedded.go
-# as metric_server.go.
-genrule(
-    name = "metricserver_cmd",
-    srcs = select({
-        ":metric_server_elided": ["metric_server_elided.go"],
-        "//conditions:default": ["metric_server_embedded.go"],
-    }),
-    outs = ["metric_server.go"],
-    cmd = "cat < $(SRCS) > $(OUTS)",
-)
-
 go_library(
     name = "cmd",
     srcs = [
@@ -122,6 +97,7 @@ go_library(
         "//runsc/fsgofer",
         "//runsc/fsgofer/extension",
         "//runsc/fsgofer/filter",
+        "//runsc/gvisorbinaries",
         "//runsc/metricserver/containermetrics",
         "//runsc/mitigate",
         "//runsc/profile",
@@ -138,12 +114,7 @@ go_library(
         "@org_golang_google_protobuf//encoding/prototext:go_default_library",
         "@org_golang_google_protobuf//proto:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
-    ] + select({
-        ":metric_server_elided": [],
-        "//conditions:default": [
-            "//runsc/cmd/metricserver",
-        ],
-    }),
+    ],
 )
 
 go_test(
