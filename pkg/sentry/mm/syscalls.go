@@ -1539,3 +1539,18 @@ func (mm *MemoryManager) FindVMAByName(ar hostarch.AddrRange, name string) (host
 	}
 	return 0, 0, fmt.Errorf("could not find %q in %s", name, ar)
 }
+
+// FindVMARange returns the address range of the vma containing addr, or an
+// error if addr is not mapped. The RDMA proxy uses it to bound a
+// driver-private DMA buffer (work queue / doorbell) whose backing region the
+// guest describes by start address only, with no explicit length.
+func (mm *MemoryManager) FindVMARange(addr hostarch.Addr) (hostarch.AddrRange, error) {
+	mm.mappingMu.RLock()
+	defer mm.mappingMu.RUnlock()
+
+	vseg := mm.vmas.FindSegment(addr)
+	if !vseg.Ok() {
+		return hostarch.AddrRange{}, linuxerr.EFAULT
+	}
+	return vseg.Range(), nil
+}
