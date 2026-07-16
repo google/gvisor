@@ -161,6 +161,45 @@ func (t *Task) EndExternalStop() {
 	t.endStopLocked()
 }
 
+// BeginCgroupFreeze indicates that t has entered a frozen cgroup or its cgroup was frozen.
+// BeginCgroupFreeze does not wait for t's task goroutine to stop.
+func (t *Task) BeginCgroupFreeze() {
+	sh := t.tg.signalLock()
+	defer sh.mu.Unlock()
+	t.BeginCgroupFreezeLocked()
+}
+
+// BeginCgroupFreezeLocked indicates that t has entered a frozen cgroup or its cgroup was frozen.
+//
+// Preconditions: The signal mutex must be locked.
+func (t *Task) BeginCgroupFreezeLocked() {
+	if t.cgroupFrozen {
+		return
+	}
+	t.cgroupFrozen = true
+	t.beginStopLocked()
+	t.interrupt()
+}
+
+// EndCgroupFreeze indicates that t is no longer in a frozen cgroup.
+// EndCgroupFreeze does not wait for t's task goroutine to resume.
+func (t *Task) EndCgroupFreeze() {
+	sh := t.tg.signalLock()
+	defer sh.mu.Unlock()
+	t.EndCgroupFreezeLocked()
+}
+
+// EndCgroupFreezeLocked indicates that t is no longer in a frozen cgroup.
+//
+// Preconditions: The signal mutex must be locked.
+func (t *Task) EndCgroupFreezeLocked() {
+	if !t.cgroupFrozen {
+		return
+	}
+	t.cgroupFrozen = false
+	t.endStopLocked()
+}
+
 // beginStopLocked increments t.stopCount to indicate that a new internal or
 // external stop applies to t.
 //
