@@ -1079,7 +1079,8 @@ func Init() {
 			return abi
 		})
 
-		v580_105_08 := addDriverABI(580, 105, 8, "d9c6e8188672f3eb74dd04cfa69dd58479fa1d0162c8c28c8d17625763293475", ChecksumNoDriver, v580_65_06)
+		v580_95_05 := addUnsupportedDriverABI(580, 95, 05, v580_65_06)
+		v580_105_08 := addDriverABI(580, 105, 8, "d9c6e8188672f3eb74dd04cfa69dd58479fa1d0162c8c28c8d17625763293475", ChecksumNoDriver, v580_95_05)
 
 		// The following versions exist on the "580" branch, which was branched
 		// from the main branch at 580.105.08.
