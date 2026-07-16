@@ -35,6 +35,7 @@ go_library(
     ],
     deps = [
         "//pkg/abi",
+        "//pkg/abi/ib",
         "//pkg/abi/linux",
         "//pkg/abi/nvgpu",
         "//pkg/bpf",
@@ -65,6 +66,8 @@ go_library(
         "//pkg/sentry/devices/memdev",
         "//pkg/sentry/devices/nvproxy",
         "//pkg/sentry/devices/nvproxy/nvconf",
+        "//pkg/sentry/devices/rdmaproxy",
+        "//pkg/sentry/devices/rdmaproxy/cxproxy",
         "//pkg/sentry/devices/tpuproxy",
         "//pkg/sentry/devices/tpuproxy/vfio",
         "//pkg/sentry/devices/ttydev",

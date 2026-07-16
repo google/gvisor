@@ -43,6 +43,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
+	"gvisor.dev/gvisor/pkg/sentry/devices/rdmaproxy/cxproxy"
 	"gvisor.dev/gvisor/pkg/sentry/fdimport"
 	cgroup2fs "gvisor.dev/gvisor/pkg/sentry/fsimpl/cgroup2fs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
@@ -539,6 +540,9 @@ func New(args Args) (*Loader, error) {
 	if specutils.NVProxyEnabled(args.Spec, args.Conf) {
 		nvproxy.Init()
 	}
+	if specutils.RDMAEnabled(args.Spec, args.Conf) {
+		cxproxy.Init()
+	}
 
 	eid := execID{cid: args.ID}
 	l := &Loader{
@@ -756,7 +760,7 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("initializing kernel: %w", err)
 	}
 
-	if err := registerFilesystems(l.k, &l.root); err != nil {
+	if err := registerFilesystems(l.k, &l.root, l.rdmaSysfs); err != nil {
 		return nil, fmt.Errorf("registering filesystems: %w", err)
 	}
 
@@ -1094,6 +1098,7 @@ func (l *Loader) installSeccompFilters() error {
 			NVProxy:               nvproxyEnabled,
 			NVProxyCaps:           nvproxyCaps,
 			TPUProxy:              specutils.TPUProxyEnabled(l.root.spec, l.root.conf),
+			RDMAProxy:             specutils.RDMAEnabled(l.root.spec, l.root.conf),
 			ControllerFD:          uint32(l.ctrl.srv.FD()),
 			CgoEnabled:            config.CgoEnabled,
 			PluginNetwork:         l.root.conf.Network == config.NetworkPlugin,
