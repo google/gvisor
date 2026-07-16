@@ -475,6 +475,11 @@ type Task struct {
 	// ipcns is protected by mu. ipcns is owned by the task goroutine.
 	ipcns *IPCNamespace
 
+	// cgroupns is the task's cgroup namespace.
+	//
+	// cgroupns is protected by mu. cgroupns is owned by the task goroutine.
+	cgroupns *CgroupNamespace
+
 	// mountNamespace is the task's mount namespace.
 	//
 	// It is protected by mu. It is owned by the task goroutine.

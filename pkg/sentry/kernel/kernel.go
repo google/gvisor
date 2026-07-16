@@ -184,6 +184,7 @@ type Kernel struct {
 	vdsoParams           *VDSOParamPage
 	rootUTSNamespace     *UTSNamespace
 	rootIPCNamespace     *IPCNamespace
+	rootCgroupNamespace  *CgroupNamespace
 
 	// futexes is the "root" futex.Manager, from which all others are forked.
 	// This is necessary to ensure that shared futexes are coherent across all
@@ -654,6 +655,12 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 		return fmt.Errorf("failed to initialize cgroup2fs: %v", err)
 	}
 	k.cgroupRegistry.v2fs = cfs
+
+	// The root cgroup namespace is rooted at the root cgroup of the cgroup2
+	// filesystem singleton. It must be created after the cgroup2fs singleton,
+	// and after the nsfs mount.
+	k.rootCgroupNamespace = newCgroupNamespace(k.Cgroup2FS().RootCgroup(), k.rootUserNamespace)
+	k.rootCgroupNamespace.SetInode(nsfs.NewInode(ctx, k.nsfsMount, k.rootCgroupNamespace))
 
 	k.MaxKeySetSize = atomicbitops.FromInt32(auth.MaxSetSize)
 	return nil
@@ -1390,6 +1397,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		AllowedCPUMask:   sched.NewFullCPUSet(k.applicationCores),
 		UTSNamespace:     args.UTSNamespace,
 		IPCNamespace:     args.IPCNamespace,
+		CgroupNamespace:  k.rootCgroupNamespace,
 		MountNamespace:   mntns,
 		ContainerID:      args.ContainerID,
 		InitialCgroups:   args.InitialCgroups,
@@ -1401,6 +1409,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 	}
 	config.UTSNamespace.IncRef()
 	config.IPCNamespace.IncRef()
+	config.CgroupNamespace.IncRef()
 	config.NetworkNamespace.IncRef()
 	config.Credentials.UserNamespace.IncRef()
 	refcountCu.Release() // refs(mntns, fsContext) are transferred to NewTask()
@@ -1847,6 +1856,11 @@ func (k *Kernel) RootUTSNamespace() *UTSNamespace {
 	return k.rootUTSNamespace
 }
 
+// RootCgroupNamespace returns the root (initial) CgroupNamespace.
+func (k *Kernel) RootCgroupNamespace() *CgroupNamespace {
+	return k.rootCgroupNamespace
+}
+
 // RootIPCNamespace takes a reference and returns the root IPCNamespace.
 func (k *Kernel) RootIPCNamespace() *IPCNamespace {
 	return k.rootIPCNamespace
@@ -2244,6 +2258,7 @@ func (k *Kernel) Release() {
 	k.RootNetworkNamespace().DecRef(ctx)
 	k.rootIPCNamespace.DecRef(ctx)
 	k.rootUTSNamespace.DecRef(ctx)
+	k.rootCgroupNamespace.DecRef(ctx)
 	k.cleaupDevGofers()
 	k.mf.Destroy()
 	k.RootPIDNamespace().DecRef(ctx)

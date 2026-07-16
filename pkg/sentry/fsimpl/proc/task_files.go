@@ -1470,6 +1470,14 @@ func (s *namespaceSymlink) getInode(t *kernel.Task) *nsfs.Inode {
 			return utsns.GetInode()
 		}
 		return nil
+	case linux.CLONE_NEWCGROUP:
+		if !t.Kernel().Cgroup2FS().EverMounted() {
+			return nil
+		}
+		if cgroupns := t.GetCgroupNamespace(); cgroupns != nil {
+			return cgroupns.GetInode()
+		}
+		return nil
 	case linux.CLONE_NEWNS:
 		mntns := t.GetMountNamespace()
 		if mntns == nil {
@@ -1635,7 +1643,13 @@ func (d *taskCgroupData) Generate(ctx context.Context, buf *bytes.Buffer) error 
 
 	d.task.GenerateProcTaskCgroup(buf)
 	if v2Mounted {
-		if cg2Entry := d.task.GetCgroup2Entry(); cg2Entry != nil {
+		// The cgroup path is shown relative to the cgroup namespace of the
+		// task reading this file, per Linux's proc_cgroup_show().
+		var readerNS *kernel.CgroupNamespace
+		if reader := kernel.TaskFromContext(ctx); reader != nil {
+			readerNS = reader.CgroupNamespace()
+		}
+		if cg2Entry := d.task.GetCgroup2Entry(readerNS); cg2Entry != nil {
 			fmt.Fprintf(buf, "0::%s\n", cg2Entry.Path)
 		}
 	}

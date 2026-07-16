@@ -1663,12 +1663,16 @@ func (vfs *VirtualFilesystem) GenerateProcMountInfo(ctx context.Context, taskRoo
 			continue
 		}
 		var pathFromFS string
-		pathFromFS, err = vfs.PathnameInFilesystem(ctx, mntRootVD)
-		if err != nil {
-			// For some reason we didn't get a path. Log a warning
-			// and run with empty path.
-			ctx.Warningf("VFS.GenerateProcMountInfo: error getting pathname for mount root: %v", err)
-			continue
+		if mrpp, ok := mntRootVD.mount.fs.impl.(MountRootPathProvider); ok {
+			pathFromFS = mrpp.MountRootPath(ctx, mntRootVD)
+		} else {
+			pathFromFS, err = vfs.PathnameInFilesystem(ctx, mntRootVD)
+			if err != nil {
+				// For some reason we didn't get a path. Log a warning
+				// and run with empty path.
+				ctx.Warningf("VFS.GenerateProcMountInfo: error getting pathname for mount root: %v", err)
+				continue
+			}
 		}
 		if pathFromFS == "" {
 			// The path is not reachable from root.
