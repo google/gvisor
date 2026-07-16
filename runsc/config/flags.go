@@ -180,6 +180,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("nvproxy-allow-unsupported-driver", false, "allow nvproxy to be initialized with an unsupported driver version.")
 	flagSet.String("nvproxy-allowed-driver-capabilities", "utility,compute", "Comma separated list of NVIDIA driver capabilities that are allowed to be requested by the container. If 'all' is specified here, it is resolved to all driver capabilities supported in nvproxy. If 'all' is requested by the container, it is resolved to this list.")
 	flagSet.Bool("tpuproxy", false, "LEGACY: enable support for TPU devices. TPU support gets automatically enabled if TPU devices are present in the OCI spec.")
+	flagSet.Bool("rdmaproxy", false, "EXPERIMENTAL: enable support for RDMA device passthrough.")
 
 	// Test flags, not to be used outside tests, ever.
 	flagSet.Bool("TESTONLY-unsafe-nonroot", false, "TEST ONLY; do not ever use! This skips many security measures that isolate the host from the sandbox.")
