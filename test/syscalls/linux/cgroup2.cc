@@ -15,6 +15,7 @@
 // All tests in this file rely on being about to mount and unmount cgroupfs,
 // which isn't expected to work, or be safe on a general linux system.
 
+#include <fcntl.h>
 #include <limits.h>
 #include <poll.h>
 #include <sched.h>
@@ -22,6 +23,8 @@
 #include <sys/mman.h>
 #include <sys/mount.h>
 #include <sys/statfs.h>
+#include <sys/syscall.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <cerrno>
@@ -67,6 +70,14 @@
 
 #ifndef CGROUP2_SUPER_MAGIC
 #define CGROUP2_SUPER_MAGIC 0x63677270
+#endif
+
+#ifndef CLONE_NEWCGROUP
+#define CLONE_NEWCGROUP 0x02000000
+#endif
+
+#ifndef SYS_pidfd_open
+#define SYS_pidfd_open 434
 #endif
 
 namespace gvisor {
@@ -1763,6 +1774,411 @@ TEST_F(Cgroup2Test, CpuLimits) {
               PosixErrorIs(ERANGE));
   EXPECT_THAT(parent.WriteControlFile("cpu.weight", "abc"),
               PosixErrorIs(EINVAL));
+}
+
+// The helpers below are for use in forked children: they only use raw
+// syscalls and operate on caller-provided buffers to be async-signal-safe.
+
+// Reads the cgroup2 ("0::") entry from the /proc/<pid>/cgroup file at
+// proc_path and copies the path portion (after "0::") into out. Returns false
+// on failure.
+bool ReadV2PathRaw(const char* proc_path, char* out, size_t out_len) {
+  char data[4096];
+  int fd = open(proc_path, O_RDONLY);
+  if (fd < 0) {
+    return false;
+  }
+  ssize_t n = read(fd, data, sizeof(data) - 1);
+  close(fd);
+  if (n <= 0) {
+    return false;
+  }
+  data[n] = '\0';
+  char* entry = strstr(data, "0::");
+  if (entry == nullptr) {
+    return false;
+  }
+  entry += 3;
+  char* end = strchr(entry, '\n');
+  if (end != nullptr) {
+    *end = '\0';
+  }
+  strncpy(out, entry, out_len);
+  out[out_len - 1] = '\0';
+  return true;
+}
+
+// Writes val to the file at path. Returns 0 on success, the failing errno
+// otherwise.
+int WriteFileErrno(const char* path, absl::string_view val) {
+  if (path == nullptr) {
+    return EINVAL;
+  }
+  const int fd = open(path, O_WRONLY);
+  if (fd < 0) {
+    return errno;
+  }
+  const ssize_t n = WriteFd(fd, val.data(), val.size());
+  const int err = (n < 0 || static_cast<size_t>(n) != val.size()) ? errno : 0;
+  close(fd);
+  return err;
+}
+
+// Copies the "root" field (field 4) of the /proc/self/mountinfo entry whose
+// mount point is `mp`, into `out`. Returns false if no such entry exists.
+bool MountInfoRootRaw(absl::string_view mp, char* out, size_t out_len) {
+  if (out == nullptr || out_len == 0) {
+    return false;
+  }
+  static char data[1 << 16];
+  const int fd = open("/proc/self/mountinfo", O_RDONLY);
+  if (fd < 0) {
+    return false;
+  }
+  const ssize_t total = ReadFd(fd, data, sizeof(data));
+  close(fd);
+  if (total < 0) {
+    return false;
+  }
+
+  absl::string_view content(data, total);
+  while (!content.empty()) {
+    const size_t newline_pos = content.find('\n');
+    absl::string_view line = content.substr(0, newline_pos);
+    if (newline_pos != absl::string_view::npos) {
+      content.remove_prefix(newline_pos + 1);
+    } else {
+      content = absl::string_view();
+    }
+
+    // Fields: mountID parentID major:minor root mountpoint ...
+    absl::string_view fields[5];
+    bool parsed = true;
+    for (int i = 0; i < 5; ++i) {
+      const size_t space_pos = line.find(' ');
+      if (space_pos == absl::string_view::npos && i < 4) {
+        parsed = false;
+        break;
+      }
+      fields[i] = line.substr(0, space_pos);
+      if (space_pos != absl::string_view::npos) {
+        line.remove_prefix(space_pos + 1);
+      }
+    }
+    if (parsed && fields[4] == mp) {
+      const size_t copied = fields[3].copy(out, out_len - 1);
+      out[copied] = '\0';
+      return true;
+    }
+  }
+  return false;
+}
+
+// readlink() into out, NUL-terminating the result. Returns false on failure.
+bool ReadLinkRaw(const char* path, char* out, size_t out_len) {
+  if (path == nullptr || out == nullptr || out_len == 0) {
+    return false;
+  }
+  const ssize_t n = readlink(path, out, out_len - 1);
+  if (n < 0) {
+    return false;
+  }
+  out[n] = '\0';
+  return true;
+}
+
+TEST_F(Cgroup2Test, CgroupNamespaceUnshare) {
+  Cgroup cg = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("ns_unshare"));
+  Cgroup sub = ASSERT_NO_ERRNO_AND_VALUE(cg.CreateChild("sub"));
+  const std::string procs = cg.Relpath("cgroup.procs");
+  const std::string sub_procs = sub.Relpath("cgroup.procs");
+
+  const pid_t pid = fork();
+  if (pid == 0) {
+    TEST_CHECK(WriteFileErrno(procs.c_str(), "0") == 0);
+    char before[256];
+    char after[256];
+    TEST_CHECK(ReadLinkRaw("/proc/self/ns/cgroup", before, sizeof(before)));
+    TEST_PCHECK(unshare(CLONE_NEWCGROUP) == 0);
+    TEST_CHECK(ReadLinkRaw("/proc/self/ns/cgroup", after, sizeof(after)));
+    TEST_CHECK(strcmp(before, after) != 0);
+
+    // The namespace root is the cgroup we were in when unsharing.
+    char path[256];
+    TEST_CHECK(ReadV2PathRaw("/proc/self/cgroup", path, sizeof(path)));
+    TEST_CHECK_MSG(strcmp(path, "/") == 0, path);
+
+    // Moving to a sub-cgroup is reflected relative to the namespace root.
+    TEST_CHECK(WriteFileErrno(sub_procs.c_str(), "0") == 0);
+    TEST_CHECK(ReadV2PathRaw("/proc/self/cgroup", path, sizeof(path)));
+    TEST_CHECK_MSG(strcmp(path, "/sub") == 0, path);
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
+TEST_F(Cgroup2Test, CgroupNamespaceUnshareRequiresCapability) {
+  c();  // Initialize the fixture, skipping the test if necessary.
+  AutoCapability cap(CAP_SYS_ADMIN, false);
+  EXPECT_THAT(unshare(CLONE_NEWCGROUP), SyscallFailsWithErrno(EPERM));
+}
+
+TEST_F(Cgroup2Test, CgroupNamespaceClone) {
+  c();  // Initialize the fixture, skipping the test if necessary.
+  const std::string self_ns =
+      ASSERT_NO_ERRNO_AND_VALUE(ReadLink("/proc/self/ns/cgroup"));
+
+  const pid_t pid = syscall(SYS_clone, CLONE_NEWCGROUP | SIGCHLD, 0, 0, 0, 0);
+  if (pid == 0) {
+    char path[256];
+    TEST_CHECK(ReadV2PathRaw("/proc/self/cgroup", path, sizeof(path)));
+    TEST_CHECK_MSG(strcmp(path, "/") == 0, path);
+    char link[256];
+    TEST_CHECK(ReadLinkRaw("/proc/self/ns/cgroup", link, sizeof(link)));
+    TEST_CHECK(strcmp(link, self_ns.c_str()) != 0);
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
+// A process in a sibling cgroup namespace is shown with a "/.." relative path.
+TEST_F(Cgroup2Test, CgroupNamespaceSiblingPaths) {
+  Cgroup ca = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("ns_a"));
+  Cgroup cb = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("ns_b"));
+  const std::string cb_procs = cb.Relpath("cgroup.procs");
+
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  FileDescriptor rfd(fds[0]);
+  FileDescriptor wfd(fds[1]);
+
+  // Park a process in ns_a.
+  const pid_t parked = fork();
+  if (parked == 0) {
+    close(wfd.get());
+    char token;
+    TEST_CHECK(read(rfd.get(), &token, 1) == 0);
+    _exit(0);
+  }
+  ASSERT_GT(parked, 0);
+  ASSERT_NO_ERRNO(ca.Enter(parked));
+  const std::string parked_proc = absl::StrFormat("/proc/%d/cgroup", parked);
+
+  const pid_t pid = fork();
+  if (pid == 0) {
+    TEST_CHECK(WriteFileErrno(cb_procs.c_str(), "0") == 0);
+    TEST_PCHECK(unshare(CLONE_NEWCGROUP) == 0);
+    char path[256];
+    TEST_CHECK(ReadV2PathRaw("/proc/self/cgroup", path, sizeof(path)));
+    TEST_CHECK_MSG(strcmp(path, "/") == 0, path);
+    // The parked process is in a sibling cgroup, outside our namespace.
+    TEST_CHECK(ReadV2PathRaw(parked_proc.c_str(), path, sizeof(path)));
+    TEST_CHECK_MSG(strcmp(path, "/../ns_a") == 0, path);
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+  wfd.reset();  // Release the parked process.
+  ASSERT_THAT(waitpid(parked, &status, 0), SyscallSucceedsWithValue(parked));
+}
+
+TEST_F(Cgroup2Test, CgroupNamespaceSetns) {
+  Cgroup cg = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("ns_setns"));
+  const std::string procs = cg.Relpath("cgroup.procs");
+  const std::string canonical = cg.CanonicalPath();
+
+  const pid_t pid = fork();
+  if (pid == 0) {
+    int initns = open("/proc/self/ns/cgroup", O_RDONLY);
+    TEST_PCHECK(initns >= 0);
+    TEST_CHECK(WriteFileErrno(procs.c_str(), "0") == 0);
+    TEST_PCHECK(unshare(CLONE_NEWCGROUP) == 0);
+    char path[256];
+    TEST_CHECK(ReadV2PathRaw("/proc/self/cgroup", path, sizeof(path)));
+    TEST_CHECK_MSG(strcmp(path, "/") == 0, path);
+
+    // Return to the initial namespace; the full path becomes visible again.
+    TEST_PCHECK(setns(initns, CLONE_NEWCGROUP) == 0);
+    TEST_CHECK(ReadV2PathRaw("/proc/self/cgroup", path, sizeof(path)));
+    TEST_CHECK_MSG(strcmp(path, canonical.c_str()) == 0, path);
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
+TEST_F(Cgroup2Test, CgroupNamespaceSetnsPidfd) {
+  Cgroup cg = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("ns_pidfd"));
+  const std::string procs = cg.Relpath("cgroup.procs");
+
+  int ready_fds[2];
+  int release_fds[2];
+  ASSERT_THAT(pipe(ready_fds), SyscallSucceeds());
+  ASSERT_THAT(pipe(release_fds), SyscallSucceeds());
+  FileDescriptor ready_r(ready_fds[0]), ready_w(ready_fds[1]);
+  FileDescriptor release_r(release_fds[0]), release_w(release_fds[1]);
+
+  // The target process unshares into a new cgroup namespace rooted at
+  // ns_pidfd, then waits.
+  const pid_t target = fork();
+  if (target == 0) {
+    close(ready_r.get());
+    close(release_w.get());
+    TEST_CHECK(WriteFileErrno(procs.c_str(), "0") == 0);
+    TEST_PCHECK(unshare(CLONE_NEWCGROUP) == 0);
+    char token = 't';
+    TEST_CHECK(write(ready_w.get(), &token, 1) == 1);
+    close(ready_w.get());
+    TEST_CHECK(read(release_r.get(), &token, 1) == 0);
+    _exit(0);
+  }
+  ASSERT_GT(target, 0);
+  ready_w.reset();
+  char token;
+  ASSERT_THAT(read(ready_r.get(), &token, 1), SyscallSucceedsWithValue(1));
+  const std::string target_proc = absl::StrFormat("/proc/%d/cgroup", target);
+
+  const pid_t pid = fork();
+  if (pid == 0) {
+    int pidfd = syscall(SYS_pidfd_open, target, 0);
+    TEST_PCHECK(pidfd >= 0);
+    TEST_PCHECK(setns(pidfd, CLONE_NEWCGROUP) == 0);
+    // The target sits at the root of the namespace we just joined.
+    char path[256];
+    TEST_CHECK(ReadV2PathRaw(target_proc.c_str(), path, sizeof(path)));
+    TEST_CHECK_MSG(strcmp(path, "/") == 0, path);
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+  release_w.reset();
+  ASSERT_THAT(waitpid(target, &status, 0), SyscallSucceedsWithValue(target));
+}
+
+// Mounting cgroup2 from inside a cgroup namespace roots the mount at the
+// namespace root cgroup.
+TEST_F(Cgroup2Test, CgroupNamespaceMount) {
+  Cgroup cg = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("ns_mount"));
+  ASSERT_NO_ERRNO(cg.CreateChild("inner"));
+  const std::string procs = cg.Relpath("cgroup.procs");
+
+  TempPath mntdir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string dir = mntdir.path();
+  const std::string inner_path = JoinPath(dir, "inner");
+  // cgroup.type only exists on non-root cgroups, so its presence at the mount
+  // root proves the mount is rooted at the (non-root) namespace root.
+  const std::string type_path = JoinPath(dir, "cgroup.type");
+  // The fixture's "test" cgroup exists at the hierarchy root, and must not be
+  // visible at the mount root.
+  const std::string outside_path = JoinPath(dir, "test");
+
+  const pid_t pid = fork();
+  if (pid == 0) {
+    TEST_CHECK(WriteFileErrno(procs.c_str(), "0") == 0);
+    TEST_PCHECK(unshare(CLONE_NEWCGROUP) == 0);
+    TEST_PCHECK(mount("none", dir.c_str(), "cgroup2", 0, nullptr) == 0);
+    TEST_CHECK(access(inner_path.c_str(), F_OK) == 0);
+    TEST_CHECK(access(type_path.c_str(), F_OK) == 0);
+    TEST_CHECK(access(outside_path.c_str(), F_OK) != 0);
+    TEST_PCHECK(umount2(dir.c_str(), MNT_DETACH) == 0);
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+  // In case the child died before unmounting.
+  umount2(dir.c_str(), MNT_DETACH);
+}
+
+// Verifies the mountinfo "root" field for cgroup2 mounts with and without a
+// cgroup namespace.
+//
+//   mount rooted at        read from init ns    read from cgroupns @ /test/mi
+//   ---------------        -----------------    -----------------------------
+//   the real root          "/"                  "/../.."
+//   /test/mi               "/test/mi"           "/"
+TEST_F(Cgroup2Test, MountInfoRootIsCgroupNamespaceRelative) {
+  Cgroup cg = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("mi"));
+  const std::string procs = cg.Relpath("cgroup.procs");
+  const std::string canonical = cg.CanonicalPath();  // "/test/mi"
+  // The fixture's mount of the full hierarchy.
+  const std::string full_mp = root().Path();
+
+  TempPath mntdir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string ns_mp = mntdir.path();
+
+  int ready_fds[2];
+  int done_fds[2];
+  ASSERT_THAT(pipe(ready_fds), SyscallSucceeds());
+  ASSERT_THAT(pipe(done_fds), SyscallSucceeds());
+  FileDescriptor ready_r(ready_fds[0]), ready_w(ready_fds[1]);
+  FileDescriptor done_r(done_fds[0]), done_w(done_fds[1]);
+
+  const pid_t child = fork();
+  if (child == 0) {
+    close(ready_r.get());
+    close(done_w.get());
+    TEST_CHECK(WriteFileErrno(procs.c_str(), "0") == 0);
+    TEST_PCHECK(unshare(CLONE_NEWCGROUP) == 0);
+    TEST_PCHECK(mount("none", ns_mp.c_str(), "cgroup2", 0, nullptr) == 0);
+
+    char field[256];
+    // Read from inside the namespace, the mount rooted at the namespace root
+    // shows "/"...
+    TEST_CHECK(MountInfoRootRaw(ns_mp.c_str(), field, sizeof(field)));
+    TEST_CHECK_MSG(strcmp(field, "/") == 0, field);
+    // ... and the full-hierarchy mount shows the real root relative to the
+    // namespace root.
+    TEST_CHECK(MountInfoRootRaw(full_mp.c_str(), field, sizeof(field)));
+    TEST_CHECK_MSG(strcmp(field, "/../..") == 0, field);
+
+    char token = 't';
+    TEST_CHECK(write(ready_w.get(), &token, 1) == 1);
+    TEST_CHECK(read(done_r.get(), &token, 1) == 0);
+    TEST_PCHECK(umount2(ns_mp.c_str(), MNT_DETACH) == 0);
+    _exit(0);
+  }
+  ASSERT_GT(child, 0);
+  ready_w.reset();
+  done_r.reset();
+
+  char token;
+  ASSERT_THAT(read(ready_r.get(), &token, 1), SyscallSucceedsWithValue(1));
+
+  // The mounts are shared with the child, but this process reads from the
+  // init cgroup namespace: the namespaced mount shows its real path, and the
+  // full-hierarchy mount shows "/".
+  char field[256];
+  EXPECT_TRUE(MountInfoRootRaw(ns_mp.c_str(), field, sizeof(field)));
+  EXPECT_STREQ(field, canonical.c_str());
+  EXPECT_TRUE(MountInfoRootRaw(full_mp.c_str(), field, sizeof(field)));
+  EXPECT_STREQ(field, "/");
+
+  done_w.reset();  // Release the child.
+  int status;
+  ASSERT_THAT(waitpid(child, &status, 0), SyscallSucceedsWithValue(child));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+  // In case the child died before unmounting.
+  umount2(ns_mp.c_str(), MNT_DETACH);
 }
 
 }  // namespace

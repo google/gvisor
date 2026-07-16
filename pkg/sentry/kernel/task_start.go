@@ -87,6 +87,9 @@ type TaskConfig struct {
 	// IPCNamespace is the IPCNamespace of the new task.
 	IPCNamespace *IPCNamespace
 
+	// CgroupNamespace is the CgroupNamespace of the new task.
+	CgroupNamespace *CgroupNamespace
+
 	// MountNamespace is the MountNamespace of the new task.
 	MountNamespace *vfs.MountNamespace
 
@@ -141,6 +144,7 @@ func (ts *TaskSet) NewTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		cfg.FDTable.DecRef(ctx)
 		cfg.UTSNamespace.DecRef(ctx)
 		cfg.IPCNamespace.DecRef(ctx)
+		cfg.CgroupNamespace.DecRef(ctx)
 		cfg.NetworkNamespace.DecRef(ctx)
 		if cfg.MountNamespace != nil {
 			cfg.MountNamespace.DecRef(ctx)
@@ -216,6 +220,7 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		niceness:        cfg.Niceness,
 		utsns:           cfg.UTSNamespace,
 		ipcns:           cfg.IPCNamespace,
+		cgroupns:        cfg.CgroupNamespace,
 		mountNamespace:  cfg.MountNamespace,
 		rseqCPU:         -1,
 		rseqAddr:        cfg.RSeqAddr,

@@ -156,12 +156,14 @@ func CreateTask(ctx context.Context, name string, tc *kernel.ThreadGroup, mntns 
 		AllowedCPUMask:   sched.NewFullCPUSet(k.ApplicationCores()),
 		UTSNamespace:     kernel.UTSNamespaceFromContext(ctx),
 		IPCNamespace:     kernel.IPCNamespaceFromContext(ctx),
+		CgroupNamespace:  k.RootCgroupNamespace(),
 		MountNamespace:   mntns,
 		FSContext:        kernel.NewFSContext(root, cwd, 0022),
 		FDTable:          k.NewFDTable(),
 		UserCounters:     k.GetUserCounters(creds.RealKUID),
 	}
 	config.NetworkNamespace.IncRef()
+	config.CgroupNamespace.IncRef()
 	config.Credentials.UserNamespace.IncRef()
 	t, err := k.TaskSet().NewTask(ctx, config)
 	if err != nil {
