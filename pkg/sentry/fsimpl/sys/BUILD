@@ -21,7 +21,10 @@ go_library(
     srcs = [
         "dir_refs.go",
         "kcov.go",
+        "numa.go",
         "pci.go",
+        "pci_devices.go",
+        "rdma.go",
         "save_restore.go",
         "sys.go",
     ],

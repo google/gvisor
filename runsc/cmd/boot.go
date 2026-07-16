@@ -38,6 +38,7 @@ import (
 	"gvisor.dev/gvisor/pkg/prometheus"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sys"
 	"gvisor.dev/gvisor/pkg/sentry/hostmm"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
@@ -581,6 +582,24 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 
 	linux.SetAFSSyscallPanic(conf.TestOnlyAFSSyscallPanic)
 
+	// Read RDMA device data serialized by stage 1 (rdmaProxyUpdateChroot).
+	var rdmaDevices *sys.RDMAData
+	if conf.RDMAProxy {
+		rdmaDevices = sys.DeserializeRDMAData(sys.RDMADataPath)
+	}
+
+	// Read PCI device topology data serialized by stage 1 (pciDevicesUpdateChroot).
+	var pciDevicesData *sys.PCIDevicesData
+	if conf.NVProxy || conf.RDMAProxy {
+		pciDevicesData = sys.DeserializePCIDevicesData(sys.PCIDevicesDataPath)
+	}
+
+	// Read host NUMA topology serialized by stage 1 (numaUpdateChroot).
+	var numaData *sys.NUMAData
+	if conf.NVProxy || conf.RDMAProxy {
+		numaData = sys.DeserializeNUMAData(sys.NUMADataPath)
+	}
+
 	// Create the loader.
 	bootArgs := boot.Args{
 		ID:                  f.Arg(0),
@@ -619,6 +638,9 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		FSRestoreFDs:             b.fsRestoreFDs.GetFDs(),
 		FSRestoreCheckpointGofer: b.fsRestoreCheckpointGofer,
 		RootfsUpperTarFD:         b.rootfsUpperTarFD,
+		RDMADevices:              rdmaDevices,
+		PCIDevicesData:           pciDevicesData,
+		NUMAData:                 numaData,
 	}
 	l, err := boot.New(bootArgs)
 	if err != nil {
