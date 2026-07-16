@@ -1361,6 +1361,36 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	donation.LogDonations(cmd)
 	log.Debugf("Starting sandbox: %s %v", cmd.Path, cmd.Args)
 	log.Debugf("SysProcAttr: %+v", cmd.SysProcAttr)
+	// If rdmaproxy is enabled and netdev-moving is opted in, move the
+	// RDMA-fabric netdevs (RoCE Ethernet ports and IPoIB InfiniBand ports
+	// alike) that back the spec's uverbs devices into the sandbox netns
+	// before the sandbox process forks. This lets the sentry run normally
+	// — no setns, no extra capabilities — because the netdev/route required
+	// for ibv_modify_qp GID resolution lives directly in the calling task's
+	// netns. The privileged work runs in this parent process which has
+	// CAP_NET_ADMIN against init_user_ns.
+	//
+	// Gated behind --rdmaproxy-move-netdevs (default off): moving netdevs
+	// mutates host network state, so operators must opt in. RoCE collective
+	// workloads under --network=sandbox require it; native InfiniBand and
+	// shared-NIC scenarios may opt in for netdev isolation. Per-container
+	// override available via the generic
+	// "dev.gvisor.flag.rdmaproxy-move-netdevs" annotation.
+	if conf.RDMAProxy && conf.RDMAProxyMoveNetdevs && args.Spec.Linux != nil {
+		if ns, ok := specutils.GetNS(specs.NetworkNamespace, args.Spec); ok && ns.Path != "" && conf.Network != config.NetworkHost {
+			devicePaths := make([]string, 0, len(args.Spec.Linux.Devices))
+			for _, d := range args.Spec.Linux.Devices {
+				devicePaths = append(devicePaths, d.Path)
+			}
+			netdevs := RDMANetdevsForSpec(devicePaths)
+			if len(netdevs) > 0 {
+				if err := MoveRDMANetdevsIntoSandbox(netdevs, ns.Path); err != nil {
+					return fmt.Errorf("MoveRDMANetdevsIntoSandbox: %w", err)
+				}
+			}
+		}
+	}
+
 	if err := specutils.StartInNS(cmd, nss); err != nil {
 		err := fmt.Errorf("starting sandbox: %v", err)
 		// If the sandbox failed to start, it may be because the binary

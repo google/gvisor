@@ -367,6 +367,19 @@ type Config struct {
 	// TPUProxy enables support for TPUs.
 	TPUProxy bool `flag:"tpuproxy"`
 
+	// RDMAProxy enables support for RDMA device passthrough.
+	RDMAProxy bool `flag:"rdmaproxy"`
+	// RDMAProxyMoveNetdevs controls whether RDMA-fabric netdevs (RoCE
+	// Ethernet ports and IPoIB InfiniBand ports) backing the container's
+	// uverbs devices are moved from the host netns into the sandbox netns
+	// at boot. Default off — moving netdevs is required for RoCE
+	// collective workloads under --network=sandbox but mutates host
+	// network state and is not desired for every rdmaproxy use case
+	// (e.g. shared-NIC, debug). Native InfiniBand users may opt in too
+	// for netdev isolation. Per-container override available via
+	// "dev.gvisor.flag.rdmaproxy-move-netdevs" annotation.
+	RDMAProxyMoveNetdevs bool `flag:"rdmaproxy-move-netdevs"`
+
 	// TestOnlyAllowRunAsCurrentUserWithoutChroot should only be used in
 	// tests. It allows runsc to start the sandbox process as the current
 	// user, and without chrooting the sandbox process. This can be

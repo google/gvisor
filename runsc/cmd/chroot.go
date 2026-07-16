@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/cmd/sandboxsetup"
 	"gvisor.dev/gvisor/runsc/cmd/util"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sys"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
@@ -148,6 +149,18 @@ func setUpChroot(spec *specs.Spec, conf *config.Config) error {
 		return fmt.Errorf("error configuring chroot for TPU devices: %w", err)
 	}
 
+	if err := rdmaProxyUpdateChroot(chroot, spec, conf); err != nil {
+		return fmt.Errorf("error configuring chroot for RDMA devices: %w", err)
+	}
+
+	if err := pciDevicesUpdateChroot(chroot, spec, conf); err != nil {
+		return fmt.Errorf("error configuring chroot for PCI topology: %w", err)
+	}
+
+	if err := numaUpdateChroot(chroot, spec, conf); err != nil {
+		return fmt.Errorf("error configuring chroot for NUMA topology: %w", err)
+	}
+
 	if err := specutils.SafeMount("", chroot, "", unix.MS_REMOUNT|unix.MS_RDONLY|unix.MS_BIND, "", "/proc"); err != nil {
 		return fmt.Errorf("error remounting chroot in read-only: %v", err)
 	}
@@ -212,4 +225,102 @@ func tpuProxyUpdateChroot(hostRoot, chroot string, spec *specs.Spec, conf *confi
 		}
 	}
 	return err
+}
+
+func rdmaProxyUpdateChroot(chroot string, spec *specs.Spec, conf *config.Config) error {
+	if !specutils.RDMAFunctionalityRequested(spec, conf) {
+		return nil
+	}
+	// Collect RDMA device data from the real host sysfs (accessible now,
+	// before pivot_root) and serialize it as JSON into the chroot. Stage 2
+	// deserializes this for mostly-static attrs. Dynamic port/netdev attrs
+	// are served via hostFile and need the bind mounts below so those
+	// paths remain openable after pivot_root.
+	//
+	// The RoCE netdev backing each ibdev should have already been moved
+	// into the sandbox netns by MoveRDMANetdevsIntoSandbox; the GID sysfs
+	// entries we read here therefore include the kernel's normal
+	// IPv4-mapped RoCE v2 entries.
+	data := sys.CollectRDMADeviceData()
+	if data == nil {
+		return nil
+	}
+	jsonPath := filepath.Join(chroot, sys.RDMADataPath)
+	if err := sys.SerializeRDMAData(data, jsonPath); err != nil {
+		return fmt.Errorf("serializing RDMA data: %w", err)
+	}
+
+	const bindFlags = unix.MS_BIND | unix.MS_RDONLY
+
+	// Only bind-mount RDMA-backed netdevs from CollectRDMADeviceData
+	// (primarily /sys/class/infiniband/<ibdev>/device/net/*) — not all of
+	// /sys/class/net, which would expose unrelated host interfaces.
+	seenNetDev := make(map[string]struct{})
+	for _, netDev := range data.NetDevices {
+		if netDev.Name == "" {
+			continue
+		}
+		if _, ok := seenNetDev[netDev.Name]; ok {
+			continue
+		}
+		seenNetDev[netDev.Name] = struct{}{}
+		netPath := path.Join("/sys/class/net", netDev.Name)
+		if _, err := os.Stat(netPath); err != nil {
+			log.Infof("rdma chroot: %s not present, skipping bind mount: %v", netPath, err)
+			continue
+		}
+		if err := mountInChroot(chroot, netPath, netPath, "bind", bindFlags); err != nil {
+			return fmt.Errorf("error mounting %q in chroot: %w", netPath, err)
+		}
+	}
+
+	seenIBDev := make(map[string]struct{})
+	for _, dev := range data.Devices {
+		if dev.IBDev == "" {
+			continue
+		}
+		if _, ok := seenIBDev[dev.IBDev]; ok {
+			continue
+		}
+		seenIBDev[dev.IBDev] = struct{}{}
+		portsPath := path.Join("/sys/class/infiniband", dev.IBDev, "ports")
+		if _, err := os.Stat(portsPath); err != nil {
+			log.Infof("rdma chroot: %s not present, skipping bind mount: %v", portsPath, err)
+			continue
+		}
+		if err := mountInChroot(chroot, portsPath, portsPath, "bind", bindFlags); err != nil {
+			return fmt.Errorf("error mounting %q in chroot: %w", portsPath, err)
+		}
+	}
+	return nil
+}
+
+func pciDevicesUpdateChroot(chroot string, spec *specs.Spec, conf *config.Config) error {
+	if !conf.NVProxy && !specutils.RDMAFunctionalityRequested(spec, conf) {
+		return nil
+	}
+	data := sys.CollectPCIDeviceData()
+	if data == nil {
+		return nil
+	}
+	jsonPath := filepath.Join(chroot, sys.PCIDevicesDataPath)
+	if err := sys.SerializePCIDevicesData(data, jsonPath); err != nil {
+		return fmt.Errorf("serializing PCI devices data: %w", err)
+	}
+	return nil
+}
+
+func numaUpdateChroot(chroot string, spec *specs.Spec, conf *config.Config) error {
+	if !conf.NVProxy && !specutils.RDMAFunctionalityRequested(spec, conf) {
+		return nil
+	}
+	data := sys.CollectNUMAData()
+	if data == nil {
+		return nil
+	}
+	jsonPath := filepath.Join(chroot, sys.NUMADataPath)
+	if err := sys.SerializeNUMAData(data, jsonPath); err != nil {
+		return fmt.Errorf("serializing NUMA data: %w", err)
+	}
+	return nil
 }

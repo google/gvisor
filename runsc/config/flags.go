@@ -180,6 +180,8 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("nvproxy-allow-unsupported-driver", false, "allow nvproxy to be initialized with an unsupported driver version.")
 	flagSet.String("nvproxy-allowed-driver-capabilities", "utility,compute", "Comma separated list of NVIDIA driver capabilities that are allowed to be requested by the container. If 'all' is specified here, it is resolved to all driver capabilities supported in nvproxy. If 'all' is requested by the container, it is resolved to this list.")
 	flagSet.Bool("tpuproxy", false, "LEGACY: enable support for TPU devices. TPU support gets automatically enabled if TPU devices are present in the OCI spec.")
+	flagSet.Bool("rdmaproxy", false, "EXPERIMENTAL: enable support for RDMA device passthrough.")
+	flagSet.Bool("rdmaproxy-move-netdevs", false, "EXPERIMENTAL: when --rdmaproxy is enabled, move RDMA-fabric netdevs (RoCE Ethernet ports and IPoIB InfiniBand ports) from the host's network namespace into the sandbox's network namespace at boot. Required for RoCE collective workloads (e.g. NCCL) under --network=sandbox; native InfiniBand users may opt in for netdev isolation. Default off because moving netdevs mutates host network state — operators must opt in. Per-container override via dev.gvisor.flag.rdmaproxy-move-netdevs.")
 
 	// Test flags, not to be used outside tests, ever.
 	flagSet.Bool("TESTONLY-unsafe-nonroot", false, "TEST ONLY; do not ever use! This skips many security measures that isolate the host from the sandbox.")
