@@ -181,29 +181,24 @@ func (p *Process) IsRunning(ctx context.Context) (bool, error) {
 	return running, err
 }
 
-// WaitExitStatus until process completes and returns exit status.
+// WaitExitStatus waits until process completes and returns exit status.
 func (p *Process) WaitExitStatus(ctx context.Context) (int, error) {
-	waitChan := make(chan (int))
-	errChan := make(chan (error))
-
-	go func() {
-		for {
-			running, exitcode, err := p.runningExitCode(ctx)
-			if err != nil {
-				errChan <- fmt.Errorf("error waiting process %s: container %v", p.execid, p.container.Name)
-			}
-			if !running {
-				waitChan <- exitcode
-			}
-			time.Sleep(time.Millisecond * 500)
+	for {
+		if err := ctx.Err(); err != nil {
+			return -1, err
 		}
-	}()
-
-	select {
-	case ws := <-waitChan:
-		return ws, nil
-	case err := <-errChan:
-		return -1, err
+		running, exitcode, err := p.runningExitCode(ctx)
+		if err != nil {
+			return -1, fmt.Errorf("error waiting process %s: container %s: %w", p.execid, p.container.Name, err)
+		}
+		if !running {
+			return exitcode, nil
+		}
+		select {
+		case <-ctx.Done():
+			return -1, ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
 	}
 }
 

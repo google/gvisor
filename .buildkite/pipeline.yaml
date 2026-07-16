@@ -373,6 +373,25 @@ steps:
       cgroup: "v2"
   - <<: *common
     <<: *docker
+    <<: *source_test
+    label: ":docker: :docker: Docker-in-gVisor tests (cgroupv1)"
+    command: make docker-in-gvisor-tests
+    agents:
+      <<: *ubuntu_agents
+      arch: "amd64"
+      cgroup: "v1"
+      kernel: "modern"
+  - <<: *common
+    <<: *docker
+    <<: *source_test
+    label: ":docker: :docker: Docker-in-gVisor tests (cgroupv2)"
+    command: make docker-in-gvisor-tests
+    agents:
+      <<: *ubuntu_agents
+      arch: "amd64"
+      cgroup: "v2"
+  - <<: *common
+    <<: *docker
     label: ":goggles: Overlay tests"
     command: make overlay-tests
     agents:

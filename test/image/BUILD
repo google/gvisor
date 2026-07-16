@@ -20,8 +20,31 @@ go_test(
     library = ":image",
     tags = [
         # Requires docker and runsc to be configured before the test runs.
-        "manual",
         "local",
+        "manual",
+    ],
+    visibility = ["//:sandbox"],
+    deps = [
+        "//pkg/test/dockerutil",
+        "//pkg/test/testutil",
+    ],
+)
+
+go_test(
+    name = "dind_test",
+    size = "large",
+    srcs = [
+        "dind_test.go",
+    ],
+    data = [
+        # runsc is needed to invalidate the bazel cache in case of any code changes.
+        "//runsc",
+    ],
+    library = ":image",
+    tags = [
+        # Requires docker and runsc to be configured before the test runs.
+        "local",
+        "manual",
     ],
     visibility = ["//:sandbox"],
     deps = [

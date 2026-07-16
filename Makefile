@@ -399,6 +399,12 @@ docker-tests: integration-test-images $(RUNTIME_BIN)
 	@$(call test_runtime_cached,$(RUNTIME),$(INTEGRATION_TARGETS) --test_env=TEST_SAVE_RESTORE_NETSTACK=true //test/e2e:integration_runtime_test //test/e2e:runtime_in_docker_test)
 .PHONY: docker-tests
 
+docker-in-gvisor-tests: integration-test-images $(RUNTIME_BIN)
+	@$(call install_runtime,$(RUNTIME),) # Clear flags.
+	@$(call install_runtime,$(RUNTIME)-docker,--net-raw --allow-packet-socket-write) # Used by TestDocker*.
+	@$(call test_runtime_cached,$(RUNTIME),//test/image:dind_test)
+.PHONY: docker-in-gvisor-tests
+
 plugin-network-tests: integration-test-images $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME)-dpdk,--network=plugin)
 	@$(call test_runtime_cached,$(RUNTIME)-dpdk, --test_arg=-test.run=ConnectToSelf $(INTEGRATION_TARGETS))

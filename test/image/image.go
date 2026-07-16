@@ -14,3 +14,14 @@
 
 // Package image is empty. See image_test.go for description.
 package image
+
+import "time"
+
+// defaultWait defines how long to wait for progress.
+//
+// See BUILD: This is at least a "large" test, so allow up to 1 minute for any
+// given "wait" step. Note that all tests are run in parallel, which may cause
+// individual slow-downs (but a huge speed-up in aggregate).
+const defaultWait = time.Minute
+
+const testAlpineImage = "gcr.io/gvisor-presubmit/basic/alpine_x86_64:1ce68c8160724eb9"
