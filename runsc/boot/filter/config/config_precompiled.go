@@ -111,6 +111,15 @@ func optionsToPrecompile() ([]Options, error) {
 			tpuProxyNo.TPUProxy = false
 			return []Options{tpuProxyYes, tpuProxyNo}, nil
 		},
+
+		// Expand RDMAProxy vs not.
+		func(opt Options) ([]Options, error) {
+			rdmaProxyYes := opt
+			rdmaProxyYes.RDMAProxy = true
+			rdmaProxyNo := opt
+			rdmaProxyNo.RDMAProxy = false
+			return []Options{rdmaProxyYes, rdmaProxyNo}, nil
+		},
 	} {
 		var newOpts []Options
 		for _, opt := range opts {
