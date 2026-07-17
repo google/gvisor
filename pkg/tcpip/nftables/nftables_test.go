@@ -15,6 +15,7 @@
 package nftables
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"math"
@@ -2213,63 +2214,63 @@ func TestEvaluateBitwise(t *testing.T) {
 		// No nft binary commands were observed that directly used shift operations.
 		{
 			tname: "0 shift left for bitwise lshift",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_01, numToBE(4783, 4), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_01, binary.NativeEndian.AppendUint32(nil, 4783), stack.NFVerdict{}),
 			op2:   mustCreateBitwiseShift(t, linux.NFT_REG32_01, linux.NFT_REG32_01, 4, 0, false),
-			op3:   mustCreateComparison(t, linux.NFT_REG32_01, linux.NFT_CMP_EQ, numToBE(4783, 4)),
+			op3:   mustCreateComparison(t, linux.NFT_REG32_01, linux.NFT_CMP_EQ, binary.NativeEndian.AppendUint32(nil, 4783)),
 		},
 		{
 			tname: "0 shift right for bitwise rshift",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(4783, 4), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, binary.NativeEndian.AppendUint32(nil, 4783), stack.NFVerdict{}),
 			op2:   mustCreateBitwiseShift(t, linux.NFT_REG_1, linux.NFT_REG_1, 4, 0, true),
-			op3:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, numToBE(4783, 4)),
+			op3:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, binary.NativeEndian.AppendUint32(nil, 4783)),
 		},
 		{
 			tname: "1-bit shift left for bitwise lshift",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, numToBE(4782, 4), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, binary.NativeEndian.AppendUint32(nil, 4782), stack.NFVerdict{}),
 			op2:   mustCreateBitwiseShift(t, linux.NFT_REG_4, linux.NFT_REG_4, 4, 1, false),
-			op3:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ, numToBE(4782<<1, 4)),
+			op3:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ, binary.NativeEndian.AppendUint32(nil, 4782<<1)),
 		},
 		{
 			tname: "1-bit shift right for bitwise rshift",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_06, numToBE(4782, 4), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_06, binary.NativeEndian.AppendUint32(nil, 4782), stack.NFVerdict{}),
 			op2:   mustCreateBitwiseShift(t, linux.NFT_REG32_06, linux.NFT_REG32_06, 4, 1, true),
-			op3:   mustCreateComparison(t, linux.NFT_REG32_06, linux.NFT_CMP_EQ, numToBE(4782>>1, 4)),
+			op3:   mustCreateComparison(t, linux.NFT_REG32_06, linux.NFT_CMP_EQ, binary.NativeEndian.AppendUint32(nil, 4782>>1)),
 		},
 		{
 			tname: "8-bit shift left for bitwise lshift",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, numToBE(4782, 4), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, binary.NativeEndian.AppendUint32(nil, 4782), stack.NFVerdict{}),
 			op2:   mustCreateBitwiseShift(t, linux.NFT_REG_4, linux.NFT_REG_4, 4, 8, false),
-			op3:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ, numToBE(4782<<8, 4)),
+			op3:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ, binary.NativeEndian.AppendUint32(nil, 4782<<8)),
 		},
 		{
 			tname: "8-bit shift right for bitwise rshift",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_06, numToBE(4782, 4), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_06, binary.NativeEndian.AppendUint32(nil, 4782), stack.NFVerdict{}),
 			op2:   mustCreateBitwiseShift(t, linux.NFT_REG32_06, linux.NFT_REG32_06, 4, 8, true),
-			op3:   mustCreateComparison(t, linux.NFT_REG32_06, linux.NFT_CMP_EQ, numToBE(4782>>8, 4)),
+			op3:   mustCreateComparison(t, linux.NFT_REG32_06, linux.NFT_CMP_EQ, binary.NativeEndian.AppendUint32(nil, 4782>>8)),
 		},
 		{
 			tname: "16-bit shift left for bitwise lshift",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, numToBE(0x45678910, 8), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, append(binary.NativeEndian.AppendUint32(nil, 0), binary.NativeEndian.AppendUint32(nil, 0x45678910)...), stack.NFVerdict{}),
 			op2:   mustCreateBitwiseShift(t, linux.NFT_REG_4, linux.NFT_REG_4, 8, 16, false),
-			op3:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ, numToBE(0x45678910<<16, 8)),
+			op3:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ, append(binary.NativeEndian.AppendUint32(nil, 0x00004567), binary.NativeEndian.AppendUint32(nil, 0x89100000)...)),
 		},
 		{
 			tname: "16-bit shift right for bitwise rshift",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_06, numToBE(0x45678910, 4), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_06, binary.NativeEndian.AppendUint32(nil, 0x45678910), stack.NFVerdict{}),
 			op2:   mustCreateBitwiseShift(t, linux.NFT_REG32_06, linux.NFT_REG32_06, 4, 16, true),
-			op3:   mustCreateComparison(t, linux.NFT_REG32_06, linux.NFT_CMP_EQ, numToBE(0x45678910>>16, 4)),
+			op3:   mustCreateComparison(t, linux.NFT_REG32_06, linux.NFT_CMP_EQ, binary.NativeEndian.AppendUint32(nil, 0x45678910>>16)),
 		},
 		{
 			tname: "max-bit shift left for bitwise lshift",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_03, numToBE(0x45678910, 4), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_03, binary.NativeEndian.AppendUint32(nil, 0x45678910), stack.NFVerdict{}),
 			op2:   mustCreateBitwiseShift(t, linux.NFT_REG32_03, linux.NFT_REG_2, 4, bitshiftLimit-1, false),
-			op3:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, numToBE(0x45678910<<(bitshiftLimit-1), 4)),
+			op3:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, binary.NativeEndian.AppendUint32(nil, 0)), // 0x45678910 << 31 in 32-bit is 0
 		},
 		{
 			tname: "max-bit shift right for bitwise rshift",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_3, numToBE(0x45678910, 8), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, append(binary.NativeEndian.AppendUint32(nil, 0x45678910), binary.NativeEndian.AppendUint32(nil, 0)...), stack.NFVerdict{}),
 			op2:   mustCreateBitwiseShift(t, linux.NFT_REG_3, linux.NFT_REG_2, 8, bitshiftLimit-1, true),
-			op3:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, numToBE(0x45678910>>(bitshiftLimit-1), 8)),
+			op3:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, append(binary.NativeEndian.AppendUint32(nil, 0), binary.NativeEndian.AppendUint32(nil, 0x8ACF1220)...)),
 		},
 	} {
 		t.Run(test.tname, func(t *testing.T) {
@@ -3804,7 +3805,7 @@ func mustCreatePayloadSet(t *testing.T, base payloadBase, offset uint8, len uint
 
 // mustCreateBitwiseBool wraps the newBitwiseBool function for brevity.
 func mustCreateBitwiseBool(t *testing.T, sreg, dreg uint8, mask, xor []byte) *bitwise {
-	bit, err := newBitwiseBool(sreg, dreg, mask, xor)
+	bit, err := newBitwiseBool(sreg, dreg, mask, xor, len(mask))
 	if err != nil {
 		t.Fatalf("failed to create bitwise bool: %v", err)
 	}
@@ -4433,10 +4434,71 @@ func TestDumpOperations(t *testing.T) {
 			name: "bitwise",
 			op:   mustCreateBitwiseBool(t, linux.NFT_REG_1, linux.NFT_REG_2, []byte{0xff}, []byte{0x00}),
 			validate: func(dump []byte) error {
-				// TODO: b/452648112 - Implement validation for bitwise operation when dump is implemented.
-				if dump != nil {
-					return fmt.Errorf("unexpected dump: %v, want nil", dump)
+				attrs, ok := NfParse(dump)
+				if !ok {
+					return fmt.Errorf("failed to parse dumped attributes")
 				}
+				sreg, ok := AttrNetToHost[uint32](linux.NFTA_BITWISE_SREG, attrs)
+				if !ok {
+					return fmt.Errorf("failed to get sreg")
+				}
+				if sreg != linux.NFT_REG_1 {
+					return fmt.Errorf("unexpected sreg: %d, want %d", sreg, linux.NFT_REG_1)
+				}
+				dreg, ok := AttrNetToHost[uint32](linux.NFTA_BITWISE_DREG, attrs)
+				if !ok {
+					return fmt.Errorf("failed to get dreg")
+				}
+				if dreg != linux.NFT_REG_2 {
+					return fmt.Errorf("unexpected dreg: %d, want %d", dreg, linux.NFT_REG_2)
+				}
+				lenAttr, ok := AttrNetToHost[uint32](linux.NFTA_BITWISE_LEN, attrs)
+				if !ok {
+					return fmt.Errorf("failed to get len")
+				}
+				if lenAttr != 1 {
+					return fmt.Errorf("unexpected len: %d, want %d", lenAttr, 1)
+				}
+				bop, ok := AttrNetToHost[uint32](linux.NFTA_BITWISE_OP, attrs)
+				if !ok {
+					return fmt.Errorf("failed to get op")
+				}
+				if bop != linux.NFT_BITWISE_BOOL {
+					return fmt.Errorf("unexpected op: %d, want %d", bop, linux.NFT_BITWISE_BOOL)
+				}
+
+				maskAttr, ok := attrs[linux.NFTA_BITWISE_MASK]
+				if !ok {
+					return fmt.Errorf("failed to get mask")
+				}
+				maskAttrs, ok := NfParse(nlmsg.AttrsView(maskAttr))
+				if !ok {
+					return fmt.Errorf("failed to parse mask")
+				}
+				maskValue, err := parseDataAttrs(maskAttrs)
+				if err != nil {
+					return fmt.Errorf("failed to parse mask data: %v", err)
+				}
+				if !bytes.Equal(maskValue, []byte{0xff}) {
+					return fmt.Errorf("unexpected mask value: %v, want %v", maskValue, []byte{0xff})
+				}
+
+				xorAttr, ok := attrs[linux.NFTA_BITWISE_XOR]
+				if !ok {
+					return fmt.Errorf("failed to get xor")
+				}
+				xorAttrs, ok := NfParse(nlmsg.AttrsView(xorAttr))
+				if !ok {
+					return fmt.Errorf("failed to parse xor")
+				}
+				xorValue, err := parseDataAttrs(xorAttrs)
+				if err != nil {
+					return fmt.Errorf("failed to parse xor data: %v", err)
+				}
+				if !bytes.Equal(xorValue, []byte{0x00}) {
+					return fmt.Errorf("unexpected xor value: %v, want %v", xorValue, []byte{0x00})
+				}
+
 				return nil
 			},
 		},

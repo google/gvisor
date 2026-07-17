@@ -63,8 +63,9 @@ func (*JumpAndDropAll) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool
 		{"add", "chain", "inet", tableName, "FORWARDS_TO_DROP_CHAIN", "{ jump DROPS_ALL_CHAIN; }"},
 		// Create BASE_CHAIN with accept all policy.
 		{"add", "chain", "inet", tableName, "BASE_CHAIN", "{ type filter hook input priority 0; policy accept; }"},
-		// Add rule to BASE_CHAIN to jump to FORWARDS_TO_DROP_CHAIN.
-		{"add", "rule", "inet", tableName, "BASE_CHAIN", "jump", "FORWARDS_TO_DROP_CHAIN"},
+		// Add rule to BASE_CHAIN to jump to FORWARDS_TO_DROP_CHAIN
+		// if dport(0x0961) & 0x0fff == 0x961.
+		{"add", "rule", "inet", tableName, "BASE_CHAIN", "udp", "dport", "&", "0x0fff", "==", "0x0961", "jump", "FORWARDS_TO_DROP_CHAIN"},
 	}
 	// Run all the commands.
 	for _, cmd := range cmds {

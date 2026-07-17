@@ -1381,6 +1381,10 @@ func (r *Rule) AddOpFromExprInfo(tab *Table, exprInfo ExprInfo) *syserr.Annotate
 		if op, err = initPayload(tab, exprInfo); err != nil {
 			return err
 		}
+	case OpTypeBitwise:
+		if op, err = initBitwise(tab, exprInfo); err != nil {
+			return err
+		}
 	case OpTypeMeta:
 		if op, err = initMeta(tab, exprInfo); err != nil {
 			return err

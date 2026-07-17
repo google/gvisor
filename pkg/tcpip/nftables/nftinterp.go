@@ -626,7 +626,7 @@ func InterpretBitwiseBool(line string, lnIdx int) (operation, *syserr.AnnotatedE
 	}
 
 	// Create the operation with the specified arguments.
-	bitwiseBool, err := newBitwiseBool(sreg, dreg, mask, xor)
+	bitwiseBool, err := newBitwiseBool(sreg, dreg, mask, xor, len(mask))
 	if err != nil {
 		return nil, err
 	}

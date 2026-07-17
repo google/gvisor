@@ -420,6 +420,21 @@ const (
 	NFT_BITWISE_RSHIFT        // right-shift operation
 )
 
+// Nf table bitwise expression netlink attributes.
+// These correspond to enum values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFTA_BITWISE_UNSPEC uint16 = iota
+	NFTA_BITWISE_SREG
+	NFTA_BITWISE_DREG
+	NFTA_BITWISE_LEN
+	NFTA_BITWISE_MASK
+	NFTA_BITWISE_XOR
+	NFTA_BITWISE_OP
+	NFTA_BITWISE_DATA
+	__NFTA_BITWISE_MAX
+	NFTA_BITWISE_MAX = __NFTA_BITWISE_MAX - 1
+)
+
 // Nf table route expression keys.
 // Used by the nft route operation to determine the routing data to retrieve.
 // These correspond to enum values in include/uapi/linux/netfilter/nf_tables.h.

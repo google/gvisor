@@ -4069,6 +4069,156 @@ INSTANTIATE_TEST_SUITE_P(FibRuleTest, AddRuleWithExprTest,
                            return info.param.test_name;
                          });
 
+std::vector<RuleWithExprTestParams> GetBitwiseRuleTestParams() {
+  uint8_t mask_val[4] = {0xaa, 0xbb, 0xcc, 0xdd};
+  uint8_t xor_val[4] = {0x11, 0x22, 0x33, 0x44};
+  uint8_t data_val[4] = {0x02, 0x00, 0x00, 0x00};
+
+  std::vector<char> mask_nested =
+      NlNestedAttr().RawAttr(NFTA_DATA_VALUE, mask_val, 4).Build();
+  std::vector<char> xor_nested =
+      NlNestedAttr().RawAttr(NFTA_DATA_VALUE, xor_val, 4).Build();
+  std::vector<char> data_nested =
+      NlNestedAttr().RawAttr(NFTA_DATA_VALUE, data_val, 4).Build();
+
+  uint8_t short_mask_val[2] = {0xaa, 0xbb};
+  std::vector<char> short_mask_nested =
+      NlNestedAttr().RawAttr(NFTA_DATA_VALUE, short_mask_val, 2).Build();
+
+  return {
+      RuleWithExprTestParams{
+          .test_name = "ValidBool",
+          .expr_name = "bitwise",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_BITWISE_SREG, NFT_REG_1)
+                            .U32Attr(NFTA_BITWISE_DREG, NFT_REG_2)
+                            .U32Attr(NFTA_BITWISE_LEN, 4)
+                            .U32Attr(NFTA_BITWISE_OP, NFT_BITWISE_BOOL)
+                            .RawAttr(NFTA_BITWISE_MASK, mask_nested.data(),
+                                     mask_nested.size())
+                            .RawAttr(NFTA_BITWISE_XOR, xor_nested.data(),
+                                     xor_nested.size()),
+          .expected_error_no = 0},
+      RuleWithExprTestParams{
+          .test_name = "ValidLshift",
+          .expr_name = "bitwise",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_BITWISE_SREG, NFT_REG_1)
+                            .U32Attr(NFTA_BITWISE_DREG, NFT_REG_2)
+                            .U32Attr(NFTA_BITWISE_LEN, 4)
+                            .U32Attr(NFTA_BITWISE_OP, NFT_BITWISE_LSHIFT)
+                            .RawAttr(NFTA_BITWISE_DATA, data_nested.data(),
+                                     data_nested.size()),
+          .expected_error_no = 0},
+      RuleWithExprTestParams{
+          .test_name = "LenMismatchMaskBool",
+          .expr_name = "bitwise",
+          .expr_attrs =
+              NlNestedAttr()
+                  .U32Attr(NFTA_BITWISE_SREG, NFT_REG_1)
+                  .U32Attr(NFTA_BITWISE_DREG, NFT_REG_2)
+                  .U32Attr(NFTA_BITWISE_LEN, 4)
+                  .U32Attr(NFTA_BITWISE_OP, NFT_BITWISE_BOOL)
+                  .RawAttr(NFTA_BITWISE_MASK, short_mask_nested.data(),
+                           short_mask_nested.size())
+                  .RawAttr(NFTA_BITWISE_XOR, xor_nested.data(),
+                           xor_nested.size()),
+          .expected_error_no = EINVAL},
+      RuleWithExprTestParams{
+          .test_name = "LenMismatchDataShift",
+          .expr_name = "bitwise",
+          .expr_attrs =
+              NlNestedAttr()
+                  .U32Attr(NFTA_BITWISE_SREG, NFT_REG_1)
+                  .U32Attr(NFTA_BITWISE_DREG, NFT_REG_2)
+                  .U32Attr(NFTA_BITWISE_LEN, 4)
+                  .U32Attr(NFTA_BITWISE_OP, NFT_BITWISE_LSHIFT)
+                  .RawAttr(NFTA_BITWISE_DATA, short_mask_nested.data(),
+                           short_mask_nested.size()),
+          .expected_error_no = EINVAL},
+      RuleWithExprTestParams{
+          .test_name = "VerdictRegSreg",
+          .expr_name = "bitwise",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_BITWISE_SREG, NFT_REG_VERDICT)
+                            .U32Attr(NFTA_BITWISE_DREG, NFT_REG_2)
+                            .U32Attr(NFTA_BITWISE_LEN, 4)
+                            .U32Attr(NFTA_BITWISE_OP, NFT_BITWISE_BOOL)
+                            .RawAttr(NFTA_BITWISE_MASK, mask_nested.data(),
+                                     mask_nested.size())
+                            .RawAttr(NFTA_BITWISE_XOR, xor_nested.data(),
+                                     xor_nested.size()),
+          .expected_error_no = EINVAL},
+      RuleWithExprTestParams{
+          .test_name = "MissingSreg",
+          .expr_name = "bitwise",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_BITWISE_DREG, NFT_REG_2)
+                            .U32Attr(NFTA_BITWISE_LEN, 4)
+                            .RawAttr(NFTA_BITWISE_MASK, mask_nested.data(),
+                                     mask_nested.size())
+                            .RawAttr(NFTA_BITWISE_XOR, xor_nested.data(),
+                                     xor_nested.size()),
+          .expected_error_no = EINVAL},
+      RuleWithExprTestParams{
+          .test_name = "MissingMaskBool",
+          .expr_name = "bitwise",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_BITWISE_SREG, NFT_REG_1)
+                            .U32Attr(NFTA_BITWISE_DREG, NFT_REG_2)
+                            .U32Attr(NFTA_BITWISE_LEN, 4)
+                            .U32Attr(NFTA_BITWISE_OP, NFT_BITWISE_BOOL)
+                            .RawAttr(NFTA_BITWISE_XOR, xor_nested.data(),
+                                     xor_nested.size()),
+          .expected_error_no = EINVAL},
+      RuleWithExprTestParams{
+          .test_name = "HasDataBool",
+          .expr_name = "bitwise",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_BITWISE_SREG, NFT_REG_1)
+                            .U32Attr(NFTA_BITWISE_DREG, NFT_REG_2)
+                            .U32Attr(NFTA_BITWISE_LEN, 4)
+                            .U32Attr(NFTA_BITWISE_OP, NFT_BITWISE_BOOL)
+                            .RawAttr(NFTA_BITWISE_MASK, mask_nested.data(),
+                                     mask_nested.size())
+                            .RawAttr(NFTA_BITWISE_XOR, xor_nested.data(),
+                                     xor_nested.size())
+                            .RawAttr(NFTA_BITWISE_DATA, data_nested.data(),
+                                     data_nested.size()),
+          .expected_error_no = EINVAL},
+      RuleWithExprTestParams{
+          .test_name = "MissingDataShift",
+          .expr_name = "bitwise",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_BITWISE_SREG, NFT_REG_1)
+                            .U32Attr(NFTA_BITWISE_DREG, NFT_REG_2)
+                            .U32Attr(NFTA_BITWISE_LEN, 4)
+                            .U32Attr(NFTA_BITWISE_OP, NFT_BITWISE_LSHIFT),
+          .expected_error_no = EINVAL},
+      RuleWithExprTestParams{
+          .test_name = "BothMaskAndShift",
+          .expr_name = "bitwise",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_BITWISE_SREG, NFT_REG_1)
+                            .U32Attr(NFTA_BITWISE_DREG, NFT_REG_2)
+                            .U32Attr(NFTA_BITWISE_LEN, 4)
+                            .U32Attr(NFTA_BITWISE_OP, NFT_BITWISE_LSHIFT)
+                            .RawAttr(NFTA_BITWISE_DATA, data_nested.data(),
+                                     data_nested.size())
+                            .RawAttr(NFTA_BITWISE_MASK, mask_nested.data(),
+                                     mask_nested.size()),
+          .expected_error_no = EINVAL},
+  };
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    BitwiseRuleTest, AddRuleWithExprTest,
+    /*param_generator=*/ValuesIn(GetBitwiseRuleTestParams()),
+    /*param_name_generator=*/
+    [](const TestParamInfo<RuleWithExprTestParams>& info) {
+      return info.param.test_name;
+    });
+
 }  // namespace
 
 }  // namespace testing
