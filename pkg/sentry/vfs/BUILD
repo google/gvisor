@@ -163,6 +163,7 @@ go_library(
         "options.go",
         "pathname.go",
         "permissions.go",
+        "posix_acl.go",
         "propagation.go",
         "resolving_path.go",
         "save_restore.go",
@@ -212,12 +213,14 @@ go_test(
     srcs = [
         "file_description_impl_util_test.go",
         "mount_test.go",
+        "posix_acl_test.go",
     ],
     library = ":vfs",
     deps = [
         "//pkg/abi/linux",
         "//pkg/atomicbitops",
         "//pkg/context",
+        "//pkg/errors",
         "//pkg/errors/linuxerr",
         "//pkg/sentry/contexttest",
         "//pkg/sentry/kernel/auth",

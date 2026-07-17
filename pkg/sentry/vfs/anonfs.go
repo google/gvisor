@@ -108,7 +108,7 @@ func (fs *anonFilesystem) AccessAt(ctx context.Context, rp *ResolvingPath, creds
 	if !rp.Done() || rp.MustBeDir() {
 		return linuxerr.ENOTDIR
 	}
-	return GenericCheckPermissions(creds, ats, anonFileMode, anonFileUID, anonFileGID)
+	return GenericCheckPermissions(creds, ats, anonFileMode, nil, anonFileUID, anonFileGID)
 }
 
 // GetDentryAt implements FilesystemImpl.GetDentryAt.
@@ -252,7 +252,7 @@ func (fs *anonFilesystem) BoundEndpointAt(ctx context.Context, rp *ResolvingPath
 	if !rp.Final() {
 		return nil, linuxerr.ENOTDIR
 	}
-	if err := GenericCheckPermissions(rp.Credentials(), MayWrite, anonFileMode, anonFileUID, anonFileGID); err != nil {
+	if err := GenericCheckPermissions(rp.Credentials(), MayWrite, anonFileMode, nil, anonFileUID, anonFileGID); err != nil {
 		return nil, err
 	}
 	return nil, linuxerr.ECONNREFUSED
@@ -288,6 +288,22 @@ func (fs *anonFilesystem) RemoveXattrAt(ctx context.Context, rp *ResolvingPath, 
 		return linuxerr.ENOTDIR
 	}
 	return linuxerr.EPERM
+}
+
+// GetPosixACLAt implements FilesystemImpl.GetPosixACLAt.
+func (fs *anonFilesystem) GetPosixACLAt(ctx context.Context, rp *ResolvingPath, t ACLType) (*PosixACL, error) {
+	if !rp.Done() || rp.MustBeDir() {
+		return nil, linuxerr.ENOTDIR
+	}
+	return nil, nil
+}
+
+// SetPosixACLAt implements FilesystemImpl.SetPosixACLAt.
+func (fs *anonFilesystem) SetPosixACLAt(ctx context.Context, rp *ResolvingPath, t ACLType, acl *PosixACL, clearSGID bool) (*PosixACL, linux.FileMode, error) {
+	if !rp.Done() || rp.MustBeDir() {
+		return nil, 0, linuxerr.ENOTDIR
+	}
+	return nil, 0, linuxerr.EOPNOTSUPP
 }
 
 // IsDescendant implements FilesystemImpl.IsDescendant.

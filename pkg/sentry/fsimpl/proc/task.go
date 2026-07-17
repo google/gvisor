@@ -262,7 +262,7 @@ func (i *taskOwnedInode) Stat(ctx context.Context, fs *vfs.Filesystem, opts vfs.
 func (i *taskOwnedInode) CheckPermissions(ctx context.Context, creds *auth.Credentials, ats vfs.AccessTypes) error {
 	mode := i.Mode()
 	uid, gid := i.getOwner(mode)
-	return vfs.GenericCheckPermissions(creds, ats, mode, uid, gid)
+	return vfs.GenericCheckPermissions(creds, ats, mode, nil, uid, gid)
 }
 
 func (i *taskOwnedInode) getOwner(mode linux.FileMode) (auth.KUID, auth.KGID) {

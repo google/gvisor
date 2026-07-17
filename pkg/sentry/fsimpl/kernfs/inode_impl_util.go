@@ -310,7 +310,7 @@ func (a *InodeAttrs) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *aut
 	if opts.Stat.Mask&linux.STATX_SIZE != 0 && a.Mode().IsDir() {
 		return linuxerr.EISDIR
 	}
-	if err := vfs.CheckSetStat(ctx, creds, &opts, a.Mode(), auth.KUID(a.uid.Load()), auth.KGID(a.gid.Load())); err != nil {
+	if err := vfs.CheckSetStat(ctx, creds, &opts, a.Mode(), nil, auth.KUID(a.uid.Load()), auth.KGID(a.gid.Load())); err != nil {
 		return err
 	}
 
@@ -373,6 +373,7 @@ func (a *InodeAttrs) CheckPermissions(_ context.Context, creds *auth.Credentials
 		creds,
 		ats,
 		a.Mode(),
+		nil,
 		auth.KUID(a.uid.Load()),
 		auth.KGID(a.gid.Load()),
 	)

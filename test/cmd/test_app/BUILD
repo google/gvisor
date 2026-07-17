@@ -11,6 +11,7 @@ go_binary(
     srcs = [
         "fds.go",
         "main.go",
+        "xattr.go",
         "zombies.go",
     ],
     features = ["fully_static_link"],

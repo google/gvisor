@@ -103,6 +103,11 @@ func (fd *opathFD) RemoveXattr(ctx context.Context, name string) error {
 	return linuxerr.EBADF
 }
 
+// GetPosixACL implements FileDescriptionImpl.GetPosixACL.
+func (fd *opathFD) GetPosixACL(ctx context.Context, t ACLType) (*PosixACL, error) {
+	return nil, linuxerr.EBADF
+}
+
 // Sync implements FileDescriptionImpl.Sync.
 func (fd *opathFD) Sync(ctx context.Context) error {
 	return linuxerr.EBADF
