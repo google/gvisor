@@ -197,6 +197,7 @@ use_repo(
     "com_github_mdlayher_vsock",
     "com_github_moby_docker_image_spec",
     "com_github_moby_sys_capability",
+    "com_github_moby_sys_mountinfo",
     "com_github_moby_sys_sequential",
     "com_github_moby_sys_signal",
     "com_github_moby_sys_symlink",
@@ -206,6 +207,7 @@ use_repo(
     "com_github_munnerz_goautoneg",
     "com_github_opencontainers_image_spec",
     "com_github_opencontainers_runtime_spec",
+    "com_github_pkg_errors",
     "com_github_prometheus_client_model",
     "com_github_prometheus_common",
     "com_github_sirupsen_logrus",
@@ -226,6 +228,8 @@ use_repo(
     "in_gopkg_evanphx_json_patch_v4",
     "in_gopkg_yaml_v2",
     "in_gopkg_yaml_v3",
+    "in_yaml_go_yaml_v2",
+    "in_yaml_go_yaml_v3",
     "io_k8s_api",
     "io_k8s_apimachinery",
     "io_k8s_client_go",
@@ -474,6 +478,11 @@ go_deps.module(
 go_deps.module(
     path = "gopkg.in/yaml.v3",
     sum = "h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=",
+    version = "v3.0.1",
+)
+go_deps.module(
+    path = "go.yaml.in/yaml/v3",
+    sum = "h1:XDp0bdmK8yhjHY72LqCnqEpEHMlIZgqKewnYfT7YV/U=",
     version = "v3.0.1",
 )
 go_deps.module(

@@ -25,6 +25,7 @@ go_library(
         "//runsc/config",
         "@com_github_cenkalti_backoff//:go_default_library",
         "@com_github_prometheus_common//expfmt",
+        "@com_github_prometheus_common//model",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

@@ -21,6 +21,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	types "github.com/containerd/containerd/api/types"
@@ -93,6 +94,24 @@ func (m manager) Name() string {
 
 // Start implements shim.Manager.Start.
 func (m *manager) Start(ctx context.Context, id string, opts shim.StartOpts) (shim.BootstrapParams, error) {
+	if opts.Address == "" {
+		for i, arg := range os.Args {
+			if (arg == "-address" || arg == "--address") && i+1 < len(os.Args) {
+				opts.Address = os.Args[i+1]
+				break
+			} else if strings.HasPrefix(arg, "-address=") {
+				opts.Address = strings.TrimPrefix(arg, "-address=")
+				break
+			} else if strings.HasPrefix(arg, "--address=") {
+				opts.Address = strings.TrimPrefix(arg, "--address=")
+				break
+			}
+		}
+	}
+	if opts.TTRPCAddress == "" {
+		opts.TTRPCAddress = opts.Address
+	}
+
 	grouping := id
 	enableGrouping := getEnableGrouping()
 	if enableGrouping {
@@ -122,6 +141,7 @@ func (m *manager) Start(ctx context.Context, id string, opts shim.StartOpts) (sh
 	if err != nil {
 		return shim.BootstrapParams{}, err
 	}
+	address = strings.TrimPrefix(address, "ttrpc+")
 	socket, err := shim.NewSocket(address)
 	if err != nil {
 		// The only time where this would happen is if there is a bug and the socket
