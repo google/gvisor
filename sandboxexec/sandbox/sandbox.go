@@ -26,6 +26,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -36,6 +37,8 @@ type Options struct {
 	enableNetworking bool
 	mounts           []Mount
 	snapshot         *Snapshot
+	env              []string
+	err              error
 }
 
 // Option configures the Options struct.
@@ -111,6 +114,20 @@ func WithSnapshot(snapshot *Snapshot) Option {
 	}
 }
 
+// WithEnv sets one or more environment variables in the sandbox process.
+// Each env string must be in the "KEY=VALUE" format.
+func WithEnv(envs ...string) Option {
+	return func(o *Options) {
+		for _, env := range envs {
+			if !strings.Contains(env, "=") {
+				o.err = fmt.Errorf("invalid environment variable format, expected KEY=VALUE: %q", env)
+				return
+			}
+		}
+		o.env = append(o.env, envs...)
+	}
+}
+
 // Sandbox represents a running gVisor sandbox where applications
 // run inside.
 type Sandbox struct {
@@ -151,6 +168,10 @@ func New(ctx context.Context, opts ...Option) (*Sandbox, error) {
 	}
 	for _, o := range opts {
 		o(&options)
+	}
+
+	if options.err != nil {
+		return nil, options.err
 	}
 
 	if options.runtimeDir == "" {
@@ -236,7 +257,7 @@ func New(ctx context.Context, opts ...Option) (*Sandbox, error) {
 		}
 	}
 
-	bundleDir, err := NewBundle(options.id, runDir, options.enableNetworking, options.mounts, annotations)
+	bundleDir, err := NewBundle(options.id, runDir, options.enableNetworking, options.mounts, options.env, annotations)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OCI bundle: %v", err)
 	}
