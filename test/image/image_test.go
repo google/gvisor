@@ -29,6 +29,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path"
 	"strings"
 	"testing"
 	"time"
@@ -636,14 +637,25 @@ func testDockerRun(ctx context.Context, t *testing.T, d *dockerutil.Container, o
 }
 
 func testDockerBuild(ctx context.Context, t *testing.T, d *dockerutil.Container, opts dockerCommandOptions) {
+	tmpDir, err := d.Exec(ctx, dockerutil.ExecOpts{}, "mktemp", "-d")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	tmpDir = strings.TrimSpace(tmpDir)
+	defer func() {
+		if _, err := d.Exec(ctx, dockerutil.ExecOpts{}, "rm", "-rf", tmpDir); err != nil {
+			t.Logf("failed to cleanup temp dir %s: %v", tmpDir, err)
+		}
+	}()
+
 	parts := []string{"echo", fmt.Sprintf("\"FROM %s\nRUN apk add git\"", testAlpineImage), "|", "docker", "build"}
 	if opts.hostNetwork {
 		parts = append(parts, "--network", "host")
 	}
 	imageName := strings.ToLower(strings.ReplaceAll(testutil.RandomID("test_docker_build"), "/", "-"))
-	parts = append(parts, "-t", imageName, "-f", "-", ".")
+	parts = append(parts, "-t", imageName, "-f", "-", tmpDir)
 	cmd := strings.Join(parts, " ")
-	_, err := dockerInGvisorExecOutput(ctx, d, []string{"/bin/sh", "-c", cmd})
+	_, err = dockerInGvisorExecOutput(ctx, d, []string{"/bin/sh", "-c", cmd})
 	if err != nil {
 		t.Fatalf("docker exec failed: %v", err)
 	}
@@ -703,7 +715,17 @@ func testDockerExec(ctx context.Context, t *testing.T, d *dockerutil.Container, 
 }
 
 func testDockerComposeBuild(ctx context.Context, t *testing.T, d *dockerutil.Container, opts dockerCommandOptions) {
-	dockerComposeFileName := strings.ToLower(strings.ReplaceAll(testutil.RandomID("docker-compose-build"), "/", "-"))
+	tmpDir, err := d.Exec(ctx, dockerutil.ExecOpts{}, "mktemp", "-d")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	tmpDir = strings.TrimSpace(tmpDir)
+	defer func() {
+		if _, err := d.Exec(ctx, dockerutil.ExecOpts{}, "rm", "-rf", tmpDir); err != nil {
+			t.Logf("failed to cleanup temp dir %s: %v", tmpDir, err)
+		}
+	}()
+
 	// Letters in image name must be lowercase.
 	imageName := strings.ToLower(strings.ReplaceAll(testutil.RandomID("testdockercomposebuild"), "/", "-"))
 	network := ""
@@ -730,20 +752,23 @@ func testDockerComposeBuild(ctx context.Context, t *testing.T, d *dockerutil.Con
 		log.Fatalf("error marshaling to docker-compose.yml: %v", err)
 	}
 	dockerfileContent := fmt.Sprintf("\"FROM %s\nRUN apk add curl\"", testAlpineImage)
-	cmd := []string{"echo", dockerfileContent, ">", "Dockerfile"}
+	dockerfilePath := path.Join(tmpDir, "Dockerfile")
+	dockerComposePath := path.Join(tmpDir, "docker-compose.yml")
+
+	cmd := []string{"echo", dockerfileContent, ">", dockerfilePath}
 	_, err = d.ExecProcess(ctx, dockerutil.ExecOpts{},
 		"/bin/sh", "-c", strings.Join(cmd, " "))
 	if err != nil {
 		t.Fatalf("failed to write Dockerfile: %v", err)
 	}
-	cmd = []string{"echo", fmt.Sprintf("\"%s\"", string(buildConfig)), ">", dockerComposeFileName}
+	cmd = []string{"echo", fmt.Sprintf("\"%s\"", string(buildConfig)), ">", dockerComposePath}
 	// Write a config file for docker compose.
 	_, err = d.ExecProcess(ctx, dockerutil.ExecOpts{},
 		"/bin/sh", "-c", strings.Join(cmd, " "))
 	if err != nil {
 		t.Fatalf("failed to write docker-compose.yml: %v", err)
 	}
-	_, err = d.ExecProcess(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", fmt.Sprintf("docker compose -f %s build", dockerComposeFileName))
+	_, err = d.ExecProcess(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", fmt.Sprintf("docker compose -f %s build", dockerComposePath))
 	if err != nil {
 		t.Fatalf("docker compose build failed: %v", err)
 	}
