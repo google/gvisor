@@ -316,6 +316,7 @@ steps:
       <<: *platform_specific_agents
       <<: *kvm_agents
       arch: "amd64"
+      kernel: "modern"
   - <<: *common
     <<: *source_test
     label: ":muscle: System call tests (ARM64)"
@@ -331,6 +332,7 @@ steps:
     parallelism: 20
     agents:
       arch: "amd64"
+      kernel: "modern"
   # With Save Resume on ARM64.
   - <<: *common
     <<: *source_test_continuous
@@ -553,6 +555,7 @@ steps:
     agents:
       <<: *platform_specific_agents
       arch: "amd64"
+      kernel: "modern"
   - <<: *common
     <<: *docker
     label: ":golang: Go runtime tests"
@@ -569,6 +572,7 @@ steps:
     agents:
       <<: *platform_specific_agents
       arch: "amd64"
+      kernel: "modern"
   - <<: *common
     <<: *docker
     label: ":python: Python runtime tests"
