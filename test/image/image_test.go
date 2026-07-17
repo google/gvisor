@@ -23,6 +23,7 @@ package image
 
 import (
 	"context"
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"io"
@@ -463,6 +464,12 @@ type dockerBuild struct {
 }
 
 func testDockerMatrix(t *testing.T, overlay bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	d := startDockerdInGvisor(ctx, t, overlay)
+	defer d.CleanUp(ctx)
+
 	definitions := []struct {
 		name            string
 		testFunc        func(ctx context.Context, t *testing.T, d *dockerutil.Container, opts dockerCommandOptions)
@@ -508,22 +515,6 @@ func testDockerMatrix(t *testing.T, overlay bool) {
 				}
 				name := strings.Join(nameParts, "_")
 				t.Run(name, func(t *testing.T) {
-					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-					defer cancel()
-					d := startDockerdInGvisor(ctx, t, overlay)
-					defer d.CleanUp(ctx)
-					if err := backoff.Retry(func() error {
-						output, err := dockerInGvisorExecOutput(ctx, d, []string{"docker", "info"})
-						if err != nil {
-							return fmt.Errorf("docker exec failed: %v", err)
-						}
-						if !strings.Contains(output, "Cannot connect to the Docker daemon") {
-							return nil
-						}
-						return fmt.Errorf("docker daemon not ready")
-					}, backoff.WithMaxRetries(backoff.NewConstantBackOff(1*time.Second), 10)); err != nil {
-						t.Fatalf("failed to run docker test %q: %v", name, err)
-					}
 					def.testFunc(ctx, t, d, opts)
 				})
 			}
@@ -535,6 +526,7 @@ func TestDockerWithVFS(t *testing.T) {
 	if testutil.IsRunningWithHostNet() {
 		t.Skip("docker doesn't work with hostinet")
 	}
+	t.Parallel()
 	testDockerMatrix(t, false)
 }
 
@@ -542,6 +534,7 @@ func TestDockerWithOverlay(t *testing.T) {
 	if testutil.IsRunningWithHostNet() {
 		t.Skip("docker doesn't work with hostinet")
 	}
+	t.Parallel()
 	testDockerMatrix(t, true)
 }
 
@@ -564,12 +557,11 @@ func startDockerdInGvisor(ctx context.Context, t *testing.T, overlay bool) *dock
 	}
 
 	// Wait for the docker daemon.
-	cb := backoff.NewConstantBackOff(5 * time.Second)
-	err := backoff.Retry(func() error {
-		_, err := d.Exec(ctx, dockerutil.ExecOpts{}, "docker", "info")
+	cb := backoff.NewConstantBackOff(1 * time.Second)
+	if err := backoff.Retry(func() error {
+		_, err := dockerInGvisorExecOutput(ctx, d, []string{"docker", "info"})
 		return err
-	}, backoff.WithMaxRetries(cb, 10))
-	if err != nil {
+	}, backoff.WithMaxRetries(cb, 30)); err != nil {
 		t.Fatalf("docker daemon failed to start: %v", err)
 	}
 	return d
@@ -578,30 +570,23 @@ func startDockerdInGvisor(ctx context.Context, t *testing.T, overlay bool) *dock
 // checkDockerImage list available images and checks if the given image is
 // present.
 func checkDockerImage(ctx context.Context, imageName string, d *dockerutil.Container) error {
-	listImages, err := d.ExecProcess(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", "docker images")
+	_, err := dockerInGvisorExecOutput(ctx, d, []string{"docker", "image", "inspect", imageName})
 	if err != nil {
-		return fmt.Errorf("docker exec failed: %v", err)
-	}
-	got, err := listImages.Logs()
-	if err != nil {
-		return fmt.Errorf("docker logs failed: %v", err)
-	}
-	if !strings.Contains(got, imageName) {
-		return fmt.Errorf("docker didn't get expected image: %q, got: %q", imageName, got)
+		return fmt.Errorf("docker image inspect %q failed: %v", imageName, err)
 	}
 	return nil
 }
 
 func removeDockerImage(ctx context.Context, imageName string, d *dockerutil.Container) error {
-	cmd := []string{"docker", "image", "rm", imageName}
-	_, err := d.ExecProcess(
-		ctx,
-		dockerutil.ExecOpts{},
-		"/bin/sh", "-c", strings.Join(cmd, " "))
-	if err != nil {
-		return fmt.Errorf("docker exec failed: %v", err)
-	}
-	return nil
+	_, err := dockerInGvisorExecOutput(ctx, d, []string{"docker", "image", "rm", imageName})
+	return err
+}
+
+func writeFileInContainer(ctx context.Context, d *dockerutil.Container, filePath, content string) error {
+	encoded := base64.StdEncoding.EncodeToString([]byte(content))
+	cmd := []string{"/bin/sh", "-c", `echo "$1" | base64 -d > "$2"`, "--", encoded, filePath}
+	_, err := dockerInGvisorExecOutput(ctx, d, cmd)
+	return err
 }
 
 func dockerInGvisorExecOutput(ctx context.Context, d *dockerutil.Container, cmd []string) (string, error) {
@@ -612,6 +597,13 @@ func dockerInGvisorExecOutput(ctx context.Context, d *dockerutil.Container, cmd 
 	output, err := execProc.Logs()
 	if err != nil {
 		return "", fmt.Errorf("docker logs failed: %v", err)
+	}
+	status, err := execProc.ExitCode(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get exit code: %v", err)
+	}
+	if status != 0 {
+		return output, fmt.Errorf("command %v failed with status %d, output: %q", cmd, status, output)
 	}
 	return output, nil
 }
@@ -648,18 +640,26 @@ func testDockerBuild(ctx context.Context, t *testing.T, d *dockerutil.Container,
 		}
 	}()
 
-	parts := []string{"echo", fmt.Sprintf("\"FROM %s\nRUN apk add git\"", testAlpineImage), "|", "docker", "build"}
-	if opts.hostNetwork {
-		parts = append(parts, "--network", "host")
+	dockerfilePath := path.Join(tmpDir, "Dockerfile")
+	dockerfileContent := fmt.Sprintf("FROM %s\nRUN apk add git\n", testAlpineImage)
+	if err := writeFileInContainer(ctx, d, dockerfilePath, dockerfileContent); err != nil {
+		t.Fatalf("failed to write Dockerfile: %v", err)
 	}
+
 	imageName := strings.ToLower(strings.ReplaceAll(testutil.RandomID("test_docker_build"), "/", "-"))
-	parts = append(parts, "-t", imageName, "-f", "-", tmpDir)
-	cmd := strings.Join(parts, " ")
-	_, err = dockerInGvisorExecOutput(ctx, d, []string{"/bin/sh", "-c", cmd})
-	if err != nil {
+	cmd := []string{"docker", "build"}
+	if opts.hostNetwork {
+		cmd = append(cmd, "--network", "host")
+	}
+	cmd = append(cmd, "-t", imageName, tmpDir)
+	if _, err := dockerInGvisorExecOutput(ctx, d, cmd); err != nil {
 		t.Fatalf("docker exec failed: %v", err)
 	}
-	defer removeDockerImage(ctx, imageName, d)
+	defer func() {
+		if err := removeDockerImage(ctx, imageName, d); err != nil {
+			t.Logf("failed to remove docker image %s: %v", imageName, err)
+		}
+	}()
 	if err := checkDockerImage(ctx, imageName, d); err != nil {
 		t.Fatalf("failed to find docker image: %v", err)
 	}
@@ -670,20 +670,18 @@ func testDockerExec(ctx context.Context, t *testing.T, d *dockerutil.Container, 
 	// Start a container with a sleep command to ensure that the container
 	// doesn't exit immediately.
 	cmd := []string{"docker", "run", "--rm", "-d", "--name", containerName, testAlpineImage, "sleep", "180"}
-	_, err := d.ExecProcess(ctx, dockerutil.ExecOpts{}, cmd...)
-	if err != nil {
+	if _, err := dockerInGvisorExecOutput(ctx, d, cmd); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 	// Kill the container at the end of the test.
 	defer func() {
-		_, err := d.ExecProcess(ctx, dockerutil.ExecOpts{}, []string{"docker", "kill", containerName}...)
-		if err != nil {
-			t.Fatalf("docker container kill failed: %v", err)
+		if _, err := dockerInGvisorExecOutput(ctx, d, []string{"docker", "kill", containerName}); err != nil {
+			t.Logf("docker container kill failed: %v", err)
 		}
 	}()
 
-	cb := backoff.NewConstantBackOff(5 * time.Second)
-	err = backoff.Retry(func() error {
+	cb := backoff.NewConstantBackOff(500 * time.Millisecond)
+	err := backoff.Retry(func() error {
 		inspectOutput, err := dockerInGvisorExecOutput(ctx, d, []string{"docker", "container", "inspect", containerName})
 		if err != nil {
 			return err
@@ -692,7 +690,7 @@ func testDockerExec(ctx context.Context, t *testing.T, d *dockerutil.Container, 
 			return fmt.Errorf("container %s is not running yet", containerName)
 		}
 		return nil
-	}, backoff.WithMaxRetries(cb, 10))
+	}, backoff.WithMaxRetries(cb, 20))
 	if err != nil {
 		t.Fatalf("container failed to start: %v", err)
 	}
@@ -749,39 +747,48 @@ func testDockerComposeBuild(ctx context.Context, t *testing.T, d *dockerutil.Con
 	}
 	buildConfig, err := yaml.Marshal(config)
 	if err != nil {
-		log.Fatalf("error marshaling to docker-compose.yml: %v", err)
+		t.Fatalf("error marshaling to docker-compose.yml: %v", err)
 	}
-	dockerfileContent := fmt.Sprintf("\"FROM %s\nRUN apk add curl\"", testAlpineImage)
+	dockerfileContent := fmt.Sprintf("FROM %s\nRUN apk add curl\n", testAlpineImage)
 	dockerfilePath := path.Join(tmpDir, "Dockerfile")
 	dockerComposePath := path.Join(tmpDir, "docker-compose.yml")
 
-	cmd := []string{"echo", dockerfileContent, ">", dockerfilePath}
-	_, err = d.ExecProcess(ctx, dockerutil.ExecOpts{},
-		"/bin/sh", "-c", strings.Join(cmd, " "))
-	if err != nil {
+	if err := writeFileInContainer(ctx, d, dockerfilePath, dockerfileContent); err != nil {
 		t.Fatalf("failed to write Dockerfile: %v", err)
 	}
-	cmd = []string{"echo", fmt.Sprintf("\"%s\"", string(buildConfig)), ">", dockerComposePath}
-	// Write a config file for docker compose.
-	_, err = d.ExecProcess(ctx, dockerutil.ExecOpts{},
-		"/bin/sh", "-c", strings.Join(cmd, " "))
-	if err != nil {
+	if err := writeFileInContainer(ctx, d, dockerComposePath, string(buildConfig)); err != nil {
 		t.Fatalf("failed to write docker-compose.yml: %v", err)
 	}
-	_, err = d.ExecProcess(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", fmt.Sprintf("docker compose -f %s build", dockerComposePath))
-	if err != nil {
+
+	cmd := []string{"docker", "compose", "-f", dockerComposePath, "build"}
+	if _, err := dockerInGvisorExecOutput(ctx, d, cmd); err != nil {
 		t.Fatalf("docker compose build failed: %v", err)
 	}
-	defer removeDockerImage(ctx, imageName, d)
-	d.WaitForOutput(ctx, fmt.Sprintf("%s  Built", imageName), defaultWait)
+	defer func() {
+		if err := removeDockerImage(ctx, imageName, d); err != nil {
+			t.Logf("failed to remove docker image %s: %v", imageName, err)
+		}
+	}()
+
 	if err := checkDockerImage(ctx, imageName, d); err != nil {
 		t.Fatalf("failed to find docker image: %v", err)
 	}
 }
 
 func testDockerComposeRun(ctx context.Context, t *testing.T, d *dockerutil.Container, opts dockerCommandOptions) {
+	tmpDir, err := d.Exec(ctx, dockerutil.ExecOpts{}, "mktemp", "-d")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	tmpDir = strings.TrimSpace(tmpDir)
+	defer func() {
+		if _, err := d.Exec(ctx, dockerutil.ExecOpts{}, "rm", "-rf", tmpDir); err != nil {
+			t.Logf("failed to cleanup temp dir %s: %v", tmpDir, err)
+		}
+	}()
+
 	dockerComposeAppName := strings.ToLower(strings.ReplaceAll(testutil.RandomID("docker-compose-run-test-app"), "/", "-"))
-	dockerComposeFileName := strings.ToLower(strings.ReplaceAll(testutil.RandomID("docker-compose-run"), "/", "-"))
+	dockerComposeFilePath := path.Join(tmpDir, "docker-compose.yml")
 	networkMode := ""
 	// TODO(b/436936268): test bridge network driver in docker compose run.
 	// The option now has no impact since the test command doesn't attempt to connect to internet.
@@ -800,24 +807,17 @@ func testDockerComposeRun(ctx context.Context, t *testing.T, d *dockerutil.Conta
 	}
 	dockerComposeContent, err := yaml.Marshal(config)
 	if err != nil {
-		log.Fatalf("error marshaling to docker-compose.yml: %v", err)
+		t.Fatalf("error marshaling to docker-compose.yml: %v", err)
 	}
-	cmd := []string{"echo", fmt.Sprintf("\"%s\"", string(dockerComposeContent)), ">", dockerComposeFileName}
-	_, err = d.ExecProcess(
-		ctx,
-		dockerutil.ExecOpts{},
-		"/bin/sh", "-c", strings.Join(cmd, " "))
-	if err != nil {
-		t.Fatalf("failed to write %s: %v", dockerComposeFileName, err)
+
+	if err := writeFileInContainer(ctx, d, dockerComposeFilePath, string(dockerComposeContent)); err != nil {
+		t.Fatalf("failed to write %s: %v", dockerComposeFilePath, err)
 	}
-	execProc, err := d.ExecProcess(ctx, dockerutil.ExecOpts{},
-		[]string{"docker", "compose", "-f", dockerComposeFileName, "run", "--rm", dockerComposeAppName, "sh", "-c", "echo hello gVisor"}...)
+
+	cmd := []string{"docker", "compose", "-f", dockerComposeFilePath, "run", "--rm", dockerComposeAppName, "sh", "-c", "echo hello gVisor"}
+	output, err := dockerInGvisorExecOutput(ctx, d, cmd)
 	if err != nil {
 		t.Fatalf("docker compose run failed: %v", err)
-	}
-	output, err := execProc.Logs()
-	if err != nil {
-		t.Fatalf("docker logs failed: %v", err)
 	}
 	expectedOutput := "hello gVisor"
 	if !strings.Contains(output, expectedOutput) {
