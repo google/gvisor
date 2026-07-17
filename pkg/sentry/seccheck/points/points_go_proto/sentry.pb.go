@@ -108,6 +108,7 @@ type ExecveInfo struct {
 	BinaryGid            uint32                 `protobuf:"varint,7,opt,name=binary_gid,json=binaryGid,proto3" json:"binary_gid,omitempty"`
 	BinarySha256         []byte                 `protobuf:"bytes,8,opt,name=binary_sha256,json=binarySha256,proto3" json:"binary_sha256,omitempty"`
 	BinaryOverlayfsUpper bool                   `protobuf:"varint,9,opt,name=binary_overlayfs_upper,json=binaryOverlayfsUpper,proto3" json:"binary_overlayfs_upper,omitempty"`
+	BinaryOverlayfsLower bool                   `protobuf:"varint,15,opt,name=binary_overlayfs_lower,json=binaryOverlayfsLower,proto3" json:"binary_overlayfs_lower,omitempty"`
 	BinaryIno            uint64                 `protobuf:"varint,10,opt,name=binary_ino,json=binaryIno,proto3" json:"binary_ino,omitempty"`
 	BinaryCtime          *Timespec              `protobuf:"bytes,11,opt,name=binary_ctime,json=binaryCtime,proto3" json:"binary_ctime,omitempty"`
 	Stdin                *FdInfo                `protobuf:"bytes,12,opt,name=stdin,proto3" json:"stdin,omitempty"`
@@ -206,6 +207,13 @@ func (x *ExecveInfo) GetBinarySha256() []byte {
 func (x *ExecveInfo) GetBinaryOverlayfsUpper() bool {
 	if x != nil {
 		return x.BinaryOverlayfsUpper
+	}
+	return false
+}
+
+func (x *ExecveInfo) GetBinaryOverlayfsLower() bool {
+	if x != nil {
+		return x.BinaryOverlayfsLower
 	}
 	return false
 }
@@ -459,7 +467,7 @@ const file_pkg_sentry_seccheck_points_sentry_proto_rawDesc = "" +
 	"\x11created_thread_id\x18\x03 \x01(\x05R\x0fcreatedThreadId\x125\n" +
 	"\x17created_thread_group_id\x18\x04 \x01(\x05R\x14createdThreadGroupId\x12>\n" +
 	"\x1ccreated_thread_start_time_ns\x18\x05 \x01(\x03R\x18createdThreadStartTimeNs\x12\x14\n" +
-	"\x05flags\x18\x06 \x01(\x04R\x05flags\"\xb2\x04\n" +
+	"\x05flags\x18\x06 \x01(\x04R\x05flags\"\xe8\x04\n" +
 	"\n" +
 	"ExecveInfo\x12=\n" +
 	"\fcontext_data\x18\x01 \x01(\v2\x1a.gvisor.common.ContextDataR\vcontextData\x12\x1f\n" +
@@ -474,7 +482,8 @@ const file_pkg_sentry_seccheck_points_sentry_proto_rawDesc = "" +
 	"\n" +
 	"binary_gid\x18\a \x01(\rR\tbinaryGid\x12#\n" +
 	"\rbinary_sha256\x18\b \x01(\fR\fbinarySha256\x124\n" +
-	"\x16binary_overlayfs_upper\x18\t \x01(\bR\x14binaryOverlayfsUpper\x12\x1d\n" +
+	"\x16binary_overlayfs_upper\x18\t \x01(\bR\x14binaryOverlayfsUpper\x124\n" +
+	"\x16binary_overlayfs_lower\x18\x0f \x01(\bR\x14binaryOverlayfsLower\x12\x1d\n" +
 	"\n" +
 	"binary_ino\x18\n" +
 	" \x01(\x04R\tbinaryIno\x12:\n" +
