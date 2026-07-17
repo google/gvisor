@@ -1,0 +1,26 @@
+# This workflow is used to automatically assign PRs to maintainers.
+name: Auto Assign
+
+"on":
+  pull_request_target:
+    types: [opened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  assign:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v7
+
+    - name: PR Assigner Bot (Round Robin MVP)
+      uses: actions/github-script@v9
+      with:
+        script: |-
+            const autoAssign = require('./.github/workflows/auto_assign.js');
+            await autoAssign({ github, context, core });
