@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   assign:
-    if: github.event.pull_request.draft == false
+    if: github.event.pull_request.draft == false && github.event.pull_request.head.repo.fork == false
     runs-on: ubuntu-latest
     steps:
     - name: Checkout repository
