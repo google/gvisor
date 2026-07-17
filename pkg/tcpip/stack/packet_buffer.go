@@ -491,6 +491,24 @@ func (pk *PacketBuffer) IsConnTrackConfigured() bool {
 	return pk.tuple != nil && pk.tuple.conn != nil
 }
 
+// FillConnTrackInfo fills connection tracking information for the packet.
+func (pk *PacketBuffer) FillConnTrackInfo(opts ConnTrackInfoOpts, info *ConnTrackInfo) bool {
+	t := pk.tuple
+	if t == nil || t.conn == nil {
+		return false
+	}
+	return t.conn.FillConnTrackInfo(opts, info)
+}
+
+// IsReplyPacket returns whether the packet is a reply packet.
+func (pk *PacketBuffer) IsReplyPacket() bool {
+	t := pk.tuple
+	if t == nil {
+		return false
+	}
+	return t.reply
+}
+
 // IsNATConfigured returns whether NAT is configured for this packet.
 func (pk *PacketBuffer) IsNATConfigured(nt NATType) bool {
 	if !pk.IsConnTrackConfigured() {

@@ -756,6 +756,8 @@ var (
 	_ operation = (*natOp)(nil)
 	_ operation = (*lookupOp)(nil)
 	_ operation = (*fib)(nil)
+	_ operation = (*ctGet)(nil)
+	_ operation = (*ctSet)(nil)
 )
 
 // OpType represents the type of operation.
@@ -788,6 +790,8 @@ const (
 	OpTypeLookup
 	// OpTypeFIB is the FIB operation type.
 	OpTypeFIB
+	// OpTypeCT is the conntrack operation type.
+	OpTypeCT
 	// OpTypeUnknown is the unknown operation type.
 	OpTypeUnknown
 )
@@ -806,6 +810,7 @@ var opTypeStrings = []string{
 	OpTypeNAT:        "nat",
 	OpTypeLookup:     "lookup",
 	OpTypeFIB:        "fib",
+	OpTypeCT:         "ct",
 	OpTypeUnknown:    "unknown",
 }
 

@@ -846,7 +846,7 @@ func (p *Protocol) newRule(nft *nftables.NFTables, st *stack.Stack, attrs map[ui
 	}
 
 	for _, exprInfo := range exprInfos {
-		err = rule.AddOpFromExprInfo(tab, exprInfo)
+		err = rule.AddOpFromExprInfo(nft, tab, exprInfo)
 		// TODO - b/434244017: Create a copy of nftables structure when modifying the table.
 		// Because we will create a copy of the table, no cleanup is necessary on the error case.
 		// The table will simply be reverted to the original state.

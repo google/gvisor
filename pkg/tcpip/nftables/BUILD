@@ -20,6 +20,7 @@ go_library(
         "nft_byteorder.go",
         "nft_comparison.go",
         "nft_counter.go",
+        "nft_ct.go",
         "nft_fib.go",
         "nft_immediate.go",
         "nft_last.go",
@@ -57,6 +58,7 @@ go_library(
         "//pkg/tcpip/checksum",
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
+        "//pkg/tcpip/transport/tcpconntrack",
     ],
 )
 

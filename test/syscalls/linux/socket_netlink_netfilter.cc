@@ -4219,6 +4219,92 @@ INSTANTIATE_TEST_SUITE_P(
       return info.param.test_name;
     });
 
+std::vector<RuleWithExprTestParams> GetCTRuleTestParams() {
+  return {
+      RuleWithExprTestParams{
+          .test_name = "ValidGetState",
+          .expr_name = "ct",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_CT_DREG, NFT_REG_1)
+                            .U32Attr(NFTA_CT_KEY, NFT_CT_STATE),
+          .expected_error_no = 0},
+      RuleWithExprTestParams{.test_name = "ValidGetSrcWithDirection",
+                             .expr_name = "ct",
+                             .expr_attrs = NlNestedAttr()
+                                               .U32Attr(NFTA_CT_DREG, NFT_REG_1)
+                                               .U32Attr(NFTA_CT_KEY, NFT_CT_SRC)
+                                               .U8Attr(NFTA_CT_DIRECTION, 0),
+                             .expected_error_no = 0},
+      RuleWithExprTestParams{
+          .test_name = "MissingDregAndSreg",
+          .expr_name = "ct",
+          .expr_attrs = NlNestedAttr().U32Attr(NFTA_CT_KEY, NFT_CT_STATE),
+          .expected_error_no = EINVAL},
+      RuleWithExprTestParams{
+          .test_name = "BothDregAndSreg",
+          .expr_name = "ct",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_CT_DREG, NFT_REG_1)
+                            .U32Attr(NFTA_CT_SREG, NFT_REG_2)
+                            .U32Attr(NFTA_CT_KEY, NFT_CT_STATE),
+          .expected_error_no = EINVAL},
+      RuleWithExprTestParams{
+          .test_name = "MissingKey",
+          .expr_name = "ct",
+          .expr_attrs = NlNestedAttr().U32Attr(NFTA_CT_DREG, NFT_REG_1),
+          .expected_error_no = EINVAL},
+      RuleWithExprTestParams{
+          .test_name = "DirectionNotAllowed",
+          .expr_name = "ct",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_CT_DREG, NFT_REG_1)
+                            .U32Attr(NFTA_CT_KEY, NFT_CT_STATE)
+                            .U8Attr(NFTA_CT_DIRECTION, 0),
+          .expected_error_no = EINVAL},
+      RuleWithExprTestParams{
+          .test_name = "DirectionRequiredMissing",
+          .expr_name = "ct",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_CT_DREG, NFT_REG_1)
+                            .U32Attr(NFTA_CT_KEY, NFT_CT_SRC),
+          .expected_error_no = EINVAL},
+      RuleWithExprTestParams{.test_name = "InvalidDirection",
+                             .expr_name = "ct",
+                             .expr_attrs = NlNestedAttr()
+                                               .U32Attr(NFTA_CT_DREG, NFT_REG_1)
+                                               .U32Attr(NFTA_CT_KEY, NFT_CT_SRC)
+                                               .U8Attr(NFTA_CT_DIRECTION, 2),
+                             .expected_error_no = EINVAL},
+      RuleWithExprTestParams{
+          .test_name = "UnsupportedKeyMark",
+          .expr_name = "ct",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_CT_DREG, NFT_REG_1)
+                            .U32Attr(NFTA_CT_KEY, NFT_CT_MARK),
+          .expected_error_no = ENOTSUP},
+      RuleWithExprTestParams{
+          .test_name = "SetOperationUnsupported",
+          .expr_name = "ct",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_CT_SREG, NFT_REG_1)
+                            .U32Attr(NFTA_CT_KEY, NFT_CT_MARK),
+          .expected_error_no = ENOTSUP},
+      RuleWithExprTestParams{.test_name = "InvalidKeyTooLarge",
+                             .expr_name = "ct",
+                             .expr_attrs = NlNestedAttr()
+                                               .U32Attr(NFTA_CT_DREG, NFT_REG_1)
+                                               .U32Attr(NFTA_CT_KEY, 256),
+                             .expected_error_no = EINVAL},
+  };
+}
+
+INSTANTIATE_TEST_SUITE_P(CTRuleTest, AddRuleWithExprTest,
+                         /*param_generator=*/ValuesIn(GetCTRuleTestParams()),
+                         /*param_name_generator=*/
+                         [](const TestParamInfo<RuleWithExprTestParams>& info) {
+                           return info.param.test_name;
+                         });
+
 }  // namespace
 
 }  // namespace testing

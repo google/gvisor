@@ -20,8 +20,10 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"syscall"
 	"time"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/test/netutils"
 )
@@ -33,6 +35,7 @@ var validationTests = []TestCase{
 	&tcpSNAT{},
 	&mapTest{},
 	&fibTest{},
+	&ctTest{},
 }
 
 func init() {
@@ -200,6 +203,7 @@ func (*tcpDNAT) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 
 // Timeout implements TestCase.Timeout.
 func (*tcpDNAT) Timeout() time.Duration {
+	// TODO: b/486197011 - Reduce the timeout.
 	return 1 * time.Minute
 }
 
@@ -404,6 +408,7 @@ func (*udpDNAT) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 
 // Timeout implements TestCase.Timeout.
 func (*udpDNAT) Timeout() time.Duration {
+	// TODO: b/486197011 - Reduce the timeout.
 	return 1 * time.Minute
 }
 
@@ -905,5 +910,230 @@ func (t *fibTest) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 
 // Timeout implements TestCase.Timeout.
 func (*fibTest) Timeout() time.Duration {
+	// TODO: b/486197011 - Reduce the timeout.
 	return 90 * time.Second
+}
+
+// ctTest verifies conntrack functionality.
+type ctTest struct{ containerCase }
+
+var _ TestCase = (*ctTest)(nil)
+
+func (*ctTest) Name() string {
+	return "ctTest"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (t *ctTest) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	if ipv6 {
+		log.Warningf("ctTest is not supported for IPv6 yet.")
+		return nil
+	}
+
+	// install_rules
+	{
+		cmds := [][]string{
+			{"add", "table", "inet", "filter"},
+			// Policy set to drop by default; if conntrack fails, packet should be dropped.
+			{"add", "chain", "inet", "filter", "input",
+				"{ type filter hook input priority 0; policy drop; }"},
+			// Accept connections to 8995 to bypass drop policy for the test setup sync
+			{"add", "rule", "inet", "filter", "input", "tcp", "dport", "8995", "accept"},
+			// Rule 1: Allow initial packet of a new connection.
+			{"add", "rule", "inet", "filter", "input", "tcp", "dport", "29008",
+				"ct", "state", "new",
+				"ct", "original", "protocol", "tcp",
+				"ct", "original", "proto-src", "29007",
+				"ct", "direction", "original",
+				"accept"},
+			// Rule 2: Allow all subsequent packets for connections that have already
+			// been established or are related to them.
+			{"add", "rule", "inet", "filter", "input", "ct", "state", "established,related", "accept"},
+			// Output Chain
+			{"add", "chain", "inet", "filter", "output", "{ type filter hook output priority 0; policy drop; }"},
+			// Accept LocalAction sync replies.
+			{"add", "rule", "inet", "filter", "output", "tcp", "sport", "8995", "accept"},
+			// Rule 3: Verify Reply packets on Output chain.
+			{"add", "rule", "inet", "filter", "output", "tcp", "sport", "29008",
+				"ct", "direction", "reply",
+				"ct", "reply", "proto-src", "29008",
+				"ct", "reply", "proto-dst", "29007",
+				"accept"},
+		}
+
+		for _, cmd := range cmds {
+			if err := nftCmd(cmd); err != nil {
+				return fmt.Errorf("nft cmd: %v, failed with error: %v", cmd, err)
+			}
+		}
+		log.Infof("ctTest: NFT rules installed successfully")
+	}
+
+	// Start listening on 29008.
+	l, err := net.Listen("tcp", "0.0.0.0:29008")
+	if err != nil {
+		return fmt.Errorf("net.Listen failed on 29008: %v", err)
+	}
+	defer l.Close()
+	log.Infof("ctTest: Listening for TCP on port 29008")
+
+	errCh := make(chan error, 1)
+	go func() {
+		conn, err := l.Accept()
+		if err != nil {
+			errCh <- err
+			return
+		}
+		defer conn.Close()
+		buf := make([]byte, 1024)
+		conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+		n, err := conn.Read(buf)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		if string(buf[:n]) == "remote_test" {
+			errCh <- nil
+		} else {
+			errCh <- fmt.Errorf("unexpected message: %s", string(buf[:n]))
+		}
+	}()
+
+	// Sync setup with LocalAction.
+	{
+		syncListener, err := net.Listen("tcp", "0.0.0.0:8995")
+		if err != nil {
+			return fmt.Errorf("net.Listen failed on 8995: %v", err)
+		}
+		log.Infof("ctTest: Listening for sync connection on port 8995")
+
+		syncErrCh := make(chan error, 1)
+		go func() {
+			defer syncListener.Close()
+			conn, err := syncListener.Accept()
+			if err != nil {
+				syncErrCh <- err
+				return
+			}
+			defer conn.Close()
+			syncErrCh <- nil
+		}()
+
+		select {
+		case err := <-syncErrCh:
+			if err != nil {
+				return err
+			}
+			log.Infof("ctTest: Sync with LocalAction successful")
+		case <-time.After(15 * time.Second):
+			syncListener.Close()
+			return fmt.Errorf("timeout waiting for client TCP connection on 8995")
+		}
+	}
+
+	// Wait for remote TCP
+	select {
+	case err := <-errCh:
+		if err != nil {
+			return err
+		}
+		log.Infof("ctTest: Received remote TCP packet 'remote_test'")
+	case <-time.After(15 * time.Second):
+		return fmt.Errorf("timeout waiting for remote client TCP connection on 29008")
+	}
+
+	return nil
+}
+
+// dialTCPWithReuseAddr dials a TCP connection with the SO_REUSEADDR and SO_LINGER option set.
+func dialTCPWithReuseAddr(ctx context.Context, localAddr, remoteAddr net.Addr) (net.Conn, error) {
+	d := net.Dialer{
+		LocalAddr: localAddr,
+		Control: func(network, address string, c syscall.RawConn) error {
+			var err error
+			c.Control(func(fd uintptr) {
+				err = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_REUSEADDR, 1)
+			})
+			return err
+		},
+	}
+	conn, err := d.DialContext(ctx, "tcp", remoteAddr.String())
+	if err != nil {
+		return nil, err
+	}
+	conn.(*net.TCPConn).SetLinger(0)
+	return conn, nil
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (t *ctTest) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	if ipv6 {
+		// ctTest is not supported for IPv6 yet.
+		return nil
+	}
+
+	// 1. Sync with ContainerAction setup.
+	{
+		log.Infof("ctTest (LocalAction): Waiting for sync...")
+		var conn net.Conn
+		var err error
+		for i := 0; i < 10; i++ {
+			conn, err = net.DialTimeout("tcp", net.JoinHostPort(ip.String(), "8995"), 2*time.Second)
+			if err == nil {
+				conn.Close()
+				break
+			}
+			time.Sleep(1 * time.Second)
+		}
+		if err != nil {
+			return fmt.Errorf("sync dial failed: %v", err)
+		}
+		log.Infof("ctTest (LocalAction): Sync successful")
+	}
+
+	// 2. Connect using source port 29007 (allowed port).
+	log.Infof("ctTest (LocalAction): Sending positive TCP packets to container (port 29007 -> 29008)")
+	{
+		localAddr, err := net.ResolveTCPAddr("tcp", "0.0.0.0:29007")
+		if err != nil {
+			return fmt.Errorf("resolve local TCP addr failed: %v", err)
+		}
+		remoteAddr, err := net.ResolveTCPAddr("tcp", net.JoinHostPort(ip.String(), "29008"))
+		if err != nil {
+			return fmt.Errorf("resolve remote TCP addr failed: %v", err)
+		}
+
+		dialCtx, dialCancel := context.WithTimeout(ctx, 5*time.Second)
+		defer dialCancel()
+		conn, err := dialTCPWithReuseAddr(dialCtx, localAddr, remoteAddr)
+		if err != nil {
+			return fmt.Errorf("positive TCP dial failed: %v", err)
+		}
+		defer conn.Close()
+
+		if _, err := conn.Write([]byte("remote_test")); err != nil {
+			return fmt.Errorf("failed to write positive TCP payload: %v", err)
+		}
+		log.Infof("ctTest (LocalAction): Finished sending positive TCP packets")
+	}
+
+	// 3. Negative Test: Connecting using ephemeral port should be dropped.
+	log.Infof("ctTest (LocalAction): Sending negative TCP packets to container (ephemeral port -> 29008)")
+	{
+		// Expect this to timeout or fail to connect because it won't match proto-src 29007.
+		conn, err := net.DialTimeout("tcp", net.JoinHostPort(ip.String(), "29008"), 5*time.Second)
+		if err == nil {
+			conn.Close()
+			return fmt.Errorf("TCP connection succeeded when it should have been dropped")
+		}
+		log.Infof("ctTest (LocalAction): Connection failed as expected: %v", err)
+	}
+
+	return nil
+}
+
+// Timeout implements TestCase.Timeout.
+func (*ctTest) Timeout() time.Duration {
+	// TODO: b/486197011 - Reduce the timeout.
+	return 60 * time.Second
 }
