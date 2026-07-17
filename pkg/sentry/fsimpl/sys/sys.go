@@ -59,6 +59,18 @@ type InternalData struct {
 	// EnableTPUProxyPaths is whether to populate sysfs paths used by hardware
 	// accelerators.
 	EnableTPUProxyPaths bool
+	// EnableRDMAProxyPaths is whether to populate sysfs paths used by
+	// RDMA/InfiniBand libibverbs device discovery.
+	EnableRDMAProxyPaths bool
+	// RDMADevices contains pre-collected RDMA sysfs data for constructing
+	// virtual /sys/class/infiniband_verbs/ and /sys/class/infiniband/ trees.
+	RDMADevices *RDMAData
+	// PCIDevicesData contains pre-read PCI device topology from the host,
+	// used for NCCL PCI distance computation.
+	PCIDevicesData *PCIDevicesData
+	// NUMAData contains pre-read NUMA node layout from the host, used for
+	// NCCL CPU-affinity and distance calculations.
+	NUMAData *NUMAData
 	// TestSysfsPathPrefix is a prefix for the sysfs paths. It is useful for
 	// unit testing.
 	TestSysfsPathPrefix string
@@ -123,11 +135,12 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	classSub := map[string]kernfs.Inode{
 		"power_supply": fs.newDir(ctx, creds, defaultSysDirMode, nil),
 	}
-	devicesSub := map[string]kernfs.Inode{
-		"system": fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
-			"cpu": cpuDir(ctx, fs, creds),
-		}),
+	// systemSub holds the children of /sys/devices/system/. It's populated
+	// initially with cpu and may be extended with NUMA node entries below.
+	systemSub := map[string]kernfs.Inode{
+		"cpu": cpuDir(ctx, fs, creds),
 	}
+	devicesSub := map[string]kernfs.Inode{}
 
 	productName := ""
 	busSub := make(map[string]kernfs.Inode)
@@ -176,6 +189,39 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			}
 			kernelSub["iommu_groups"] = fs.newDir(ctx, creds, defaultSysDirMode, iommuGroups)
 		}
+		if idata.EnableRDMAProxyPaths {
+			ibVerbsDir, ibDir := fs.newRDMASysfsEntries(ctx, creds, idata.RDMADevices)
+			if ibVerbsDir != nil {
+				classSub["infiniband_verbs"] = fs.newDir(ctx, creds, defaultSysDirMode, ibVerbsDir)
+			}
+			if ibDir != nil {
+				classSub["infiniband"] = fs.newDir(ctx, creds, defaultSysDirMode, ibDir)
+			}
+		}
+		if idata.PCIDevicesData != nil {
+			pciDeviceTreeSub, pciBusSub, busPCIDevSub, _ := fs.newPCIDevicesSysfsEntries(ctx, creds, idata.PCIDevicesData)
+			for name, inode := range pciDeviceTreeSub {
+				devicesSub[name] = inode
+			}
+			if len(pciBusSub) > 0 {
+				classSub["pci_bus"] = fs.newDir(ctx, creds, defaultSysDirMode, pciBusSub)
+			}
+			if len(busPCIDevSub) > 0 {
+				// On GPU nodes NVProxy enables EnableTPUProxyPaths, which
+				// already populates busSub["pci"] with the TPU/GPU PCI device
+				// symlinks above. Only fall back to the serialized PCI device
+				// tree when no PCI bus directory has been set, so we don't
+				// clobber those entries.
+				if _, ok := busSub["pci"]; !ok {
+					busSub["pci"] = fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+						"devices": fs.newDir(ctx, creds, defaultSysDirMode, busPCIDevSub),
+					})
+				}
+			}
+		}
+		if nodeSub := fs.newNUMASysfsEntries(ctx, creds, idata.NUMAData); nodeSub != nil {
+			systemSub["node"] = fs.newDir(ctx, creds, defaultSysDirMode, nodeSub)
+		}
 	}
 
 	if len(productName) > 0 {
@@ -191,6 +237,10 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			}),
 		})
 	}
+	// Install /sys/devices/system/ now that systemSub may have been extended
+	// with NUMA node entries.
+	devicesSub["system"] = fs.newDir(ctx, creds, defaultSysDirMode, systemSub)
+
 	root := fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
 		"block": fs.newDir(ctx, creds, defaultSysDirMode, nil),
 		"bus":   fs.newDir(ctx, creds, defaultSysDirMode, busSub),
