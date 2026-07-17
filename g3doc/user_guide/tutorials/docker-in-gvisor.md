@@ -6,41 +6,47 @@ applications.
 In gVisor, all basic docker commands should function as expected. The host
 network driver and the bridge network driver are tested and supported.
 
+### Supported Docker Versions
+
+<!-- mdformat off -->
+
+| Docker Version | Support Status | Required gVisor Configuration |
+| -------------- | -------------- | ----------------------------- |
+| Docker v27     | Supported      | * `--net-raw` |
+| Docker v28     | Supported      | * `--net-raw`<br>* `--allow-packet-socket-write` |
+| Docker v29     | Supported      | * `--net-raw`<br>* `--allow-packet-socket-write`<br>* Either `tmpfs` mount at `/var/lib/docker` OR `--feature containerd-snapshotter=false` |
+
+<!-- mdformat on -->
+
 ### Limitations
 
--   Since version 29, docker defaults to using the
-    [containerd image store](https://docs.docker.com/engine/storage/containerd/)
-    as its default storage backend. For this to work inside gVisor, we need to
-    mount a tmpfs at `/var/lib/docker` because gVisor currently only allows
-    tmpfs mounts as upper layers of an overlay filesystem. See
-    [images/basic/docker/start-dockerd.sh](https://github.com/google/gvisor/blob/master/images/basic/docker/start-dockerd.sh)
-    for reference. Alternately, one can chose to avoid the new storage backend
-    altogether by launching dockerd with `--feature
-    containerd-snapshotter=false`.
 -   `dockerd` inside gVisor needs to be executed with flags `--iptables=false
     --ip6tables=false` and additional network setup is needed, check
     [images/basic/docker/start-dockerd.sh](https://github.com/google/gvisor/blob/master/images/basic/docker/start-dockerd.sh)
-    for reference.
--   With iptables disabled, `docker run --expose=` does not expose the port; if
-    a nested container needs to expose ports, inside gVisor use `docker run
-    --network=host`.
+    for reference. With iptables disabled, `docker run --expose=` does not
+    expose the port; if a nested container needs to expose ports, inside gVisor
+    use `docker run --network=host`.
 
-### NOTE on runsc setup
+### Configuration Reference
 
-To run docker within gvisor, runsc must be enabled to allow raw sockets. This is
-not the default, `--net-raw` must be passed to runsc.
+To run Docker inside gVisor, you need to configure `runsc` and potentially the
+container storage depending on the Docker version.
 
-In addition, Docker versions 28 and beyond need the ability to write to
-AF_PACKET sockets. This is because dockerd sends unsolicited ARP/NA requests
-when bringing up interfaces. To allow this, the `--allow-packet-socket-write` is
-also to be supplied (the default behavior is to disallow writes to AF_PACKET
-sockets).
+#### runsc Flags (in `/etc/docker/daemon.json`)
 
-To use the following tutorial, that means having the following runtimes
-configuration in `/etc/docker/daemon.json`:
+To update your `/etc/docker/daemon.json` with the necessary `runtimeArgs`:
 
-> **Note:** `--allow-packet-socket-write` allows sandboxed code to craft
-> arbitrary packets. It is only needed for Docker versions 28 and beyond.
+*   **`--net-raw`** (Required for all Docker versions)
+    *   Enables raw sockets inside the sandbox. This is required for Docker's
+        networking to function.
+*   **`--allow-packet-socket-write`** (Required for Docker v28 and later)
+    *   Allows the sandbox to write to `AF_PACKET` sockets. This is necessary
+        because `dockerd` (v28+) sends unsolicited ARP/NA requests when bringing
+        up network interfaces.
+    *   > **Note:** `--allow-packet-socket-write` allows sandboxed code to craft
+        arbitrary network packets.
+
+##### Example `/etc/docker/daemon.json`
 
 ```json
 {
@@ -56,9 +62,31 @@ configuration in `/etc/docker/daemon.json`:
 }
 ```
 
-If you have an existing entry for `runsc`, likely created by `runsc install`,
-then edit the entry and add the `"runtimeArgs"` key and value to the existing
-entry.
+If you have an existing entry for `runsc` (likely created by `runsc install`),
+edit the entry to add the `"runtimeArgs"` key and value.
+
+#### Docker Storage Backend
+
+Since version 29, Docker Engine defaults to using the containerd image store,
+which uses `overlayfs` for container root filesystems.
+
+In nested container and sandbox environments where `/var/lib/docker` is already
+on an `overlayfs` mount, attempting to mount another `overlayfs` on top will
+fail because Linux does not permit overlay-on-overlay mounts (and gVisor
+currently requires `tmpfs` as an upper layer for `overlayfs`).
+
+To run Docker in gVisor, you must use one of the following workarounds:
+
+*   **Mount `tmpfs` at `/var/lib/docker` (Recommended):** Mount a `tmpfs`
+    filesystem at `/var/lib/docker` before starting the Docker daemon inside the
+    sandbox so `overlayfs` can use `tmpfs` as its backing store.
+*   **Disable containerd image store:** Launch `dockerd` with `--feature
+    containerd-snapshotter=false` to fall back to classic storage drivers.
+
+See
+[images/basic/docker/start-dockerd.sh](https://github.com/google/gvisor/blob/master/images/basic/docker/start-dockerd.sh)
+as a reference implementation of how to handle these configurations at container
+startup.
 
 ## How to run Docker in a gVisor container
 
