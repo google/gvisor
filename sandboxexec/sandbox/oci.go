@@ -24,7 +24,7 @@ import (
 )
 
 // NewBundle creates a temporary OCI bundle on the fly with optional custom annotations.
-func NewBundle(sandboxID string, runscRuntimeDir string, enableNetworking bool, mounts []Mount, annotations map[string]string) (string, error) {
+func NewBundle(sandboxID string, runscRuntimeDir string, enableNetworking bool, mounts []Mount, env []string, annotations map[string]string) (string, error) {
 	// Create a bundle directory for the sandbox.
 	bundleDir := filepath.Join(runscRuntimeDir, sandboxID)
 	rootfsDir := filepath.Join(bundleDir, "rootfs")
@@ -63,7 +63,6 @@ func NewBundle(sandboxID string, runscRuntimeDir string, enableNetworking bool, 
 			// Keeps the sandbox alive on the background.
 			Args: []string{"sleep", "infinity"},
 			Cwd:  "/",
-			Env:  []string{"PATH=/bin:/usr/bin:/usr/local/bin"},
 		},
 		Mounts: []specs.Mount{
 			// Mandatory Linux API Filesystems
@@ -75,6 +74,9 @@ func NewBundle(sandboxID string, runscRuntimeDir string, enableNetworking bool, 
 			Namespaces: namespaces,
 		},
 	}
+
+	baseEnv := []string{"PATH=/bin:/usr/bin:/usr/local/bin"}
+	spec.Process.Env = append(baseEnv, env...)
 
 	if os.Geteuid() != 0 {
 		spec.Linux.UIDMappings = []specs.LinuxIDMapping{

@@ -203,3 +203,72 @@ func TestCustomBindMountWrite(t *testing.T) {
 		t.Errorf("ReadFile(%q) = %q, want %q", hostFile, got, want)
 	}
 }
+
+func TestSandboxEnv(t *testing.T) {
+	ctx := context.Background()
+
+	sb, err := sandbox.New(ctx,
+		sandbox.WithNetworking(false),
+		sandbox.WithEnv(
+			"TEST_VAR=value1",
+			"TEST_VAR=value2", // Duplicate var to test append behavior
+			"ANOTHER_VAR=abc",
+		),
+	)
+	if err != nil {
+		t.Fatalf("failed to start sandbox: %v", err)
+	}
+	defer func() {
+		if err := sb.Close(ctx); err != nil {
+			t.Fatalf("failed to clean up sandbox: %v", err)
+		}
+	}()
+
+	// Read environment in the sandbox
+	output, _, err := sb.Exec(ctx, "env")
+	if err != nil {
+		t.Fatalf("failed to exec env in sandbox: %v", err)
+	}
+
+	lines := strings.Split(output, "\n")
+	envMap := make(map[string]string)
+	for _, l := range lines {
+		if l == "" {
+			continue
+		}
+		parts := strings.SplitN(l, "=", 2)
+		if len(parts) == 2 {
+			envMap[parts[0]] = parts[1]
+		}
+	}
+
+	// Verify duplicated variable is handled correctly (typically last value wins in most systems)
+	if got, want := envMap["TEST_VAR"], "value2"; got != want {
+		t.Errorf("TEST_VAR = %v, want %v", got, want)
+	}
+
+	// Verify normal variable injection
+	if got, want := envMap["ANOTHER_VAR"], "abc"; got != want {
+		t.Errorf("ANOTHER_VAR = %v, want %v", got, want)
+	}
+
+	// Verify default env vars
+	if _, ok := envMap["PATH"]; !ok {
+		t.Errorf("PATH is missing but no unset was requested")
+	}
+}
+
+func TestSandboxInvalidEnvFormat(t *testing.T) {
+	ctx := context.Background()
+
+	_, err := sandbox.New(ctx,
+		sandbox.WithNetworking(false),
+		sandbox.WithEnv("MALFORMED_INPUT_NO_EQUALS"),
+	)
+	if err == nil {
+		t.Fatalf("sandbox.New succeeded with malformed environment variable; want error")
+	}
+	if !strings.Contains(err.Error(), "invalid environment variable format") {
+		t.Errorf("sandbox.New error = %v; want error containing %q", err, "invalid environment variable format")
+	}
+}

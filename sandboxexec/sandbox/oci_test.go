@@ -31,7 +31,7 @@ func TestNewBundle(t *testing.T) {
 			tempDir := t.TempDir()
 			sandboxID := "test-sandbox"
 
-			bundleDir, err := sandbox.NewBundle(sandboxID, tempDir, enableNetworking, nil, nil)
+			bundleDir, err := sandbox.NewBundle(sandboxID, tempDir, enableNetworking, nil, nil, nil)
 			if err != nil {
 				t.Fatalf("NewBundle(enableNet=%v) failed: %v", enableNetworking, err)
 			}
@@ -113,7 +113,7 @@ func TestNewBundleNormalization(t *testing.T) {
 		},
 	}
 
-	bundleDir, err := sandbox.NewBundle(sandboxID, tempDir, false, mounts, nil)
+	bundleDir, err := sandbox.NewBundle(sandboxID, tempDir, false, mounts, nil, nil)
 	if err != nil {
 		t.Fatalf("NewBundle failed: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestNewBundleWithAnnotations(t *testing.T) {
 		"dev.gvisor.tar.rootfs.upper": "/tmp/test.tar",
 	}
 
-	bundleDir, err := sandbox.NewBundle(sandboxID, tempDir, false, nil, annotations)
+	bundleDir, err := sandbox.NewBundle(sandboxID, tempDir, false, nil, nil, annotations)
 	if err != nil {
 		t.Fatalf("NewBundle failed: %v", err)
 	}
@@ -180,5 +180,40 @@ func TestNewBundleWithAnnotations(t *testing.T) {
 
 	if val, ok := spec.Annotations["dev.gvisor.tar.rootfs.upper"]; !ok || val != "/tmp/test.tar" {
 		t.Errorf("expected annotation 'dev.gvisor.tar.rootfs.upper' with value '/tmp/test.tar', got spec.Annotations: %+v", spec.Annotations)
+	}
+}
+
+func TestNewBundleEnv(t *testing.T) {
+	tempDir := t.TempDir()
+	sandboxID := "test-sandbox-env"
+
+	env := []string{"TEST_VAR=A", "TEST_VAR=B"}
+
+	bundleDir, err := sandbox.NewBundle(sandboxID, tempDir, false, nil, env, nil)
+	if err != nil {
+		t.Fatalf("NewBundle failed: %v", err)
+	}
+	defer os.RemoveAll(bundleDir)
+
+	configPath := filepath.Join(bundleDir, "config.json")
+	configFile, err := os.Open(configPath)
+	if err != nil {
+		t.Fatalf("failed to open config.json: %v", err)
+	}
+	defer configFile.Close()
+
+	var spec specs.Spec
+	if err := json.NewDecoder(configFile).Decode(&spec); err != nil {
+		t.Fatalf("failed to decode config.json: %v", err)
+	}
+
+	expectedEnv := []string{
+		"PATH=/bin:/usr/bin:/usr/local/bin",
+		"TEST_VAR=A",
+		"TEST_VAR=B",
+	}
+
+	if !slices.Equal(spec.Process.Env, expectedEnv) {
+		t.Errorf("spec.Process.Env = %+v, want %+v", spec.Process.Env, expectedEnv)
 	}
 }
