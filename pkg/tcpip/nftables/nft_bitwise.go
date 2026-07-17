@@ -127,6 +127,9 @@ func (op *bitwise) deepCopy() operation {
 	return &opCopy
 }
 
+// destroy implements operation.destroy.
+func (op *bitwise) destroy() {}
+
 // evaluateBitwiseBool performs the bitwise boolean operation on the source register
 // data and stores the result in the destination register.
 func evaluateBitwiseBool(sregBuf, dregBuf, mask, xor []byte) {
