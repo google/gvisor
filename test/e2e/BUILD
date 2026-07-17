@@ -50,6 +50,7 @@ go_test(
     ],
     visibility = ["//:sandbox"],
     deps = [
+        "//pkg/cleanup",
         "//pkg/fsutil",
         "//pkg/test/dockerutil",
         "//pkg/test/testutil",

@@ -249,7 +249,7 @@ integration-tests: docker-tests overlay-tests hostnet-tests swgso-tests
 integration-tests: do-tests kvm-tests containerd-tests-min
 .PHONY: integration-tests
 
-integration-test-images: load-image-test load-basic load-systemd-integ
+integration-test-images: load-image-test load-basic load-systemd-integ load-systemd-services
 .PHONY: integration-test-images
 
 network-tests: ## Run all networking integration tests.
