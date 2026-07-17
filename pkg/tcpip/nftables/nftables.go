@@ -195,7 +195,6 @@ func (nf *NFTables) getExtraEvaluators(family stack.AddressFamily, hook stack.NF
 						return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: failed to finalize connTrack for packet: %v", pkt))
 					}
 				}
-				regs.verdict.Code = VC(linux.NFT_CONTINUE)
 				return nil
 			}})
 	}
@@ -1367,7 +1366,7 @@ func (r *Rule) addOperation(op operation) *syserr.AnnotatedError {
 }
 
 // AddOpFromExprInfo adds an operation to the rule given the expression information.
-func (r *Rule) AddOpFromExprInfo(tab *Table, exprInfo ExprInfo) *syserr.AnnotatedError {
+func (r *Rule) AddOpFromExprInfo(nf *NFTables, tab *Table, exprInfo ExprInfo) *syserr.AnnotatedError {
 	// Centralized here so that operations can do their own validation when being created.
 	var op operation
 	var err *syserr.AnnotatedError
@@ -1379,6 +1378,10 @@ func (r *Rule) AddOpFromExprInfo(tab *Table, exprInfo ExprInfo) *syserr.Annotate
 		}
 	case OpTypePayload:
 		if op, err = initPayload(tab, exprInfo); err != nil {
+			return err
+		}
+	case OpTypeBitwise:
+		if op, err = initBitwise(tab, exprInfo); err != nil {
 			return err
 		}
 	case OpTypeMeta:
@@ -1405,6 +1408,11 @@ func (r *Rule) AddOpFromExprInfo(tab *Table, exprInfo ExprInfo) *syserr.Annotate
 		if op, err = initFIB(tab, exprInfo); err != nil {
 			return err
 		}
+	case OpTypeCT:
+		if op, err = initCT(tab, exprInfo); err != nil {
+			return err
+		}
+		nf.InitConnTrackOnce()
 
 	default:
 		return syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("Nftables: Unknown expression type not found: %s", exprInfo.ExprName))

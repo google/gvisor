@@ -420,6 +420,21 @@ const (
 	NFT_BITWISE_RSHIFT        // right-shift operation
 )
 
+// Nf table bitwise expression netlink attributes.
+// These correspond to enum values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFTA_BITWISE_UNSPEC uint16 = iota
+	NFTA_BITWISE_SREG
+	NFTA_BITWISE_DREG
+	NFTA_BITWISE_LEN
+	NFTA_BITWISE_MASK
+	NFTA_BITWISE_XOR
+	NFTA_BITWISE_OP
+	NFTA_BITWISE_DATA
+	__NFTA_BITWISE_MAX
+	NFTA_BITWISE_MAX = __NFTA_BITWISE_MAX - 1
+)
+
 // Nf table route expression keys.
 // Used by the nft route operation to determine the routing data to retrieve.
 // These correspond to enum values in include/uapi/linux/netfilter/nf_tables.h.
@@ -708,4 +723,90 @@ const (
 	NFTA_FIB_F_IIF     = 1 << 3
 	NFTA_FIB_F_OIF     = 1 << 4
 	NFTA_FIB_F_PRESENT = 1 << 5
+)
+
+// Nf table ct expression keys.
+// These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFT_CT_STATE = iota
+	NFT_CT_DIRECTION
+	NFT_CT_STATUS
+	NFT_CT_MARK
+	NFT_CT_SECMARK
+	NFT_CT_EXPIRATION
+	NFT_CT_HELPER
+	NFT_CT_L3PROTOCOL
+	NFT_CT_SRC
+	NFT_CT_DST
+	NFT_CT_PROTOCOL
+	NFT_CT_PROTO_SRC
+	NFT_CT_PROTO_DST
+	NFT_CT_LABELS
+	NFT_CT_PKTS
+	NFT_CT_BYTES
+	NFT_CT_AVGPKT
+	NFT_CT_ZONE
+	NFT_CT_EVENTMASK
+	NFT_CT_SRC_IP
+	NFT_CT_DST_IP
+	NFT_CT_SRC_IP6
+	NFT_CT_DST_IP6
+	NFT_CT_ID
+	__NFT_CT_MAX
+	NFT_CT_MAX = __NFT_CT_MAX - 1
+)
+
+// Nf table ct expression netlink attributes.
+// These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFTA_CT_UNSPEC uint16 = iota
+	NFTA_CT_DREG
+	NFTA_CT_KEY
+	NFTA_CT_DIRECTION
+	NFTA_CT_SREG
+	__NFTA_CT_MAX
+	NFTA_CT_MAX = __NFTA_CT_MAX - 1
+)
+
+// IPCTInfo represents the state of a connection.
+// Used with NF_CT_STATE to represent the state of a connection.
+// Ref: enum include/uapi/linux/netfilter/nf_conntrack.h:ip_conntrack_info
+type IPCTInfo int
+
+const (
+	// IP_CT_ESTABLISHED represents an established connection (either direction).
+	IP_CT_ESTABLISHED IPCTInfo = iota
+	// IP_CT_RELATED represents a connection related to an existing connection,
+	// or an ICMP error (in either direction).
+	IP_CT_RELATED
+	// IP_CT_NEW represents a new connection to track.
+	IP_CT_NEW
+	// IP_CT_IS_REPLY indicates reply direction.
+	IP_CT_IS_REPLY
+	// IP_CT_ESTABLISHED_REPLY represents an established connection in the reply direction.
+	IP_CT_ESTABLISHED_REPLY = IP_CT_ESTABLISHED + IP_CT_IS_REPLY
+	// IP_CT_RELATED_REPLY represents a connection related to an existing connection,
+	// or an ICMP error in the reply direction.
+	IP_CT_RELATED_REPLY = IP_CT_RELATED + IP_CT_IS_REPLY
+	// IP_CT_NUMBER is the number of distinct IP_CT types.
+	IP_CT_NUMBER = 5
+	// IP_CT_NEW_REPLY is for userspace compatibility.
+	IP_CT_NEW_REPLY = IP_CT_NUMBER
+	// IP_CT_UNTRACKED represents an untracked connection.
+	IP_CT_UNTRACKED = 7
+)
+
+// Conntrack states.
+const (
+	// NF_CT_STATE_INVALID_BIT represents an invalid connection state.
+	NF_CT_STATE_INVALID_BIT = 1 << 0
+	// NF_CT_STATE_UNTRACKED_BIT represents an untracked connection state.
+	NF_CT_STATE_UNTRACKED_BIT = 1 << 6
+)
+
+// From include/uapi/linux/netfilter/nf_conntrack_common.h.
+const (
+	IP_CT_DIR_ORIGINAL uint8 = iota
+	IP_CT_DIR_REPLY
+	IP_CT_DIR_MAX
 )

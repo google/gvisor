@@ -283,6 +283,7 @@ func (ct *ConnTrack) StateTypeName() string {
 func (ct *ConnTrack) StateFields() []string {
 	return []string{
 		"seed",
+		"nftIDSeed",
 		"clock",
 		"buckets",
 	}
@@ -294,8 +295,9 @@ func (ct *ConnTrack) beforeSave() {}
 func (ct *ConnTrack) StateSave(stateSinkObject state.Sink) {
 	ct.beforeSave()
 	stateSinkObject.Save(0, &ct.seed)
-	stateSinkObject.Save(1, &ct.clock)
-	stateSinkObject.Save(2, &ct.buckets)
+	stateSinkObject.Save(1, &ct.nftIDSeed)
+	stateSinkObject.Save(2, &ct.clock)
+	stateSinkObject.Save(3, &ct.buckets)
 }
 
 func (ct *ConnTrack) afterLoad(context.Context) {}
@@ -303,8 +305,9 @@ func (ct *ConnTrack) afterLoad(context.Context) {}
 // +checklocksignore
 func (ct *ConnTrack) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &ct.seed)
-	stateSourceObject.Load(1, &ct.clock)
-	stateSourceObject.Load(2, &ct.buckets)
+	stateSourceObject.Load(1, &ct.nftIDSeed)
+	stateSourceObject.Load(2, &ct.clock)
+	stateSourceObject.Load(3, &ct.buckets)
 }
 
 func (bkt *bucket) StateTypeName() string {

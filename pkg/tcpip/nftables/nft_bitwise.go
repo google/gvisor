@@ -17,10 +17,12 @@ package nftables
 import (
 	"encoding/binary"
 	"fmt"
+	"math"
 	"slices"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
+	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
 )
 
@@ -67,16 +69,19 @@ type bitwise struct {
 }
 
 // newBitwiseBool creates a new bitwise boolean operation.
-func newBitwiseBool(sreg, dreg uint8, mask, xor []byte) (*bitwise, *syserr.AnnotatedError) {
+func newBitwiseBool(sreg, dreg uint8, mask, xor []byte, blen int) (*bitwise, *syserr.AnnotatedError) {
 	if isVerdictRegister(sreg) || isVerdictRegister(dreg) {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "bitwise operation does not support verdict register as source or destination register")
 	}
-	blen := len(mask)
-	if blen != len(xor) {
+	l := len(mask)
+	if l != len(xor) {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "bitwise boolean operation mask and xor data lengths must be the same")
 	}
+	if l != blen {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "bitwise boolean operation invalid length")
+	}
 	if blen > linux.NFT_REG_SIZE || (blen > linux.NFT_REG32_SIZE && (is4ByteRegister(sreg) || is4ByteRegister(dreg))) {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("bitwise boolean operation cannot use more than %d bytes", linux.NFT_REG_SIZE))
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "bitwise boolean operation invalid length")
 	}
 	var err *syserr.AnnotatedError
 	var sregIdx, dregIdx int
@@ -86,7 +91,7 @@ func newBitwiseBool(sreg, dreg uint8, mask, xor []byte) (*bitwise, *syserr.Annot
 	if dregIdx, err = regNumToIdx(dreg, blen); err != nil {
 		return nil, err
 	}
-	return &bitwise{sregIdx: sregIdx, dregIdx: dregIdx, bop: linux.NFT_BITWISE_BOOL, blen: blen, mask: mask, xor: xor}, nil
+	return &bitwise{sregIdx: sregIdx, dregIdx: dregIdx, bop: linux.NFT_BITWISE_BOOL, blen: blen, mask: mask[:blen], xor: xor[:blen]}, nil
 }
 
 // newBitwiseShift creates a new bitwise shift operation.
@@ -140,11 +145,11 @@ func evaluateBitwiseLshift(sregBuf, dregBuf []byte, shift uint32) {
 		// Extracts the 4-byte chunk from the source register, padding if necessary.
 		var chunk uint32
 		if start+4 <= len(sregBuf) {
-			chunk = binary.BigEndian.Uint32(sregBuf[start:])
+			chunk = binary.NativeEndian.Uint32(sregBuf[start:])
 		} else {
 			var padded [4]byte
 			copy(padded[:], sregBuf[start:])
-			chunk = binary.BigEndian.Uint32(padded[:])
+			chunk = binary.NativeEndian.Uint32(padded[:])
 		}
 
 		// Does left shift, adds the carry, and calculates the new carry.
@@ -154,10 +159,10 @@ func evaluateBitwiseLshift(sregBuf, dregBuf []byte, shift uint32) {
 		// Stores the result in the destination register, using temporary buffer
 		// if necessary.
 		if start+4 <= len(dregBuf) {
-			binary.BigEndian.PutUint32(dregBuf[start:], res)
+			binary.NativeEndian.PutUint32(dregBuf[start:], res)
 		} else {
 			var padded [4]byte
-			binary.BigEndian.PutUint32(padded[:], res)
+			binary.NativeEndian.PutUint32(padded[:], res)
 			copy(dregBuf[start:], padded[:])
 		}
 	}
@@ -172,11 +177,11 @@ func evaluateBitwiseRshift(sregBuf, dregBuf []byte, shift uint32) {
 		// Extracts the 4-byte chunk from the source register, padding if necessary.
 		var chunk uint32
 		if start+4 <= len(sregBuf) {
-			chunk = binary.BigEndian.Uint32(sregBuf[start:])
+			chunk = binary.NativeEndian.Uint32(sregBuf[start:])
 		} else {
 			var padded [4]byte
 			copy(padded[:], sregBuf[start:])
-			chunk = binary.BigEndian.Uint32(padded[:])
+			chunk = binary.NativeEndian.Uint32(padded[:])
 		}
 
 		// Does right shift, adds the carry, and calculates the new carry.
@@ -186,10 +191,10 @@ func evaluateBitwiseRshift(sregBuf, dregBuf []byte, shift uint32) {
 		// Stores the result in the destination register, using temporary buffer
 		// if necessary.
 		if start+4 <= len(dregBuf) {
-			binary.BigEndian.PutUint32(dregBuf[start:], res)
+			binary.NativeEndian.PutUint32(dregBuf[start:], res)
 		} else {
 			var padded [4]byte
-			binary.BigEndian.PutUint32(padded[:], res)
+			binary.NativeEndian.PutUint32(padded[:], res)
 			copy(dregBuf[start:], padded[:])
 		}
 	}
@@ -218,13 +223,159 @@ func (op bitwise) GetExprName() string {
 	return OpTypeBitwise.String()
 }
 
-// TODO: b/452648112 - Implement dump for bitwise operation.
 func (op bitwise) Dump() ([]byte, *syserr.AnnotatedError) {
-	log.Warningf("Nftables: Dumping bitwise operation is not implemented")
-	return nil, nil
+	m := &nlmsg.Message{}
+	m.PutAttr(linux.NFTA_BITWISE_SREG, nlmsg.PutU32(formatRegIdxForDump(op.sregIdx)))
+	m.PutAttr(linux.NFTA_BITWISE_DREG, nlmsg.PutU32(formatRegIdxForDump(op.dregIdx)))
+	m.PutAttr(linux.NFTA_BITWISE_LEN, nlmsg.PutU32(uint32(op.blen)))
+	m.PutAttr(linux.NFTA_BITWISE_OP, nlmsg.PutU32(uint32(op.bop)))
+
+	switch op.bop {
+	case linux.NFT_BITWISE_BOOL:
+		maskDump, err := dumpDataAttr(op.mask)
+		if err != nil {
+			return nil, err
+		}
+		m.PutAttr(linux.NFTA_BITWISE_MASK, primitive.AsByteSlice(maskDump))
+
+		xorDump, err := dumpDataAttr(op.xor)
+		if err != nil {
+			return nil, err
+		}
+		m.PutAttr(linux.NFTA_BITWISE_XOR, primitive.AsByteSlice(xorDump))
+	case linux.NFT_BITWISE_LSHIFT, linux.NFT_BITWISE_RSHIFT:
+		shiftData := make([]byte, 4)
+		binary.NativeEndian.PutUint32(shiftData, op.shift)
+		dataDump, err := dumpDataAttr(shiftData)
+		if err != nil {
+			return nil, err
+		}
+		m.PutAttr(linux.NFTA_BITWISE_DATA, primitive.AsByteSlice(dataDump))
+	}
+
+	return m.Buffer(), nil
 }
 
 // checkCompatibility implements operation.checkCompatibility.
 func (op bitwise) checkCompatibility(cCtx *opCompatCtx) *syserr.AnnotatedError {
 	return nil
+}
+
+// initBitwiseBool initializes a bitwise boolean operation.
+// Ref: net/netfilter/nft_bitwise.c:nft_bitwise_init_bool()
+func initBitwiseBool(maskAttrBytes, xorAttrBytes nlmsg.BytesView, l uint32, sreg, dreg uint8) (*bitwise, *syserr.AnnotatedError) {
+	maskAttrs, ok := NfParse(nlmsg.AttrsView(maskAttrBytes))
+	if !ok {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse bitwise boolean operation mask attribute")
+	}
+	mask, err := parseDataAttrs(maskAttrs)
+	if err != nil {
+		return nil, err
+	}
+	xorAttrs, ok := NfParse(nlmsg.AttrsView(xorAttrBytes))
+	if !ok {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse bitwise boolean operation xor attribute")
+	}
+	xor, err := parseDataAttrs(xorAttrs)
+	if err != nil {
+		return nil, err
+	}
+
+	return newBitwiseBool(uint8(sreg), uint8(dreg), mask, xor, int(l))
+}
+
+// initBitwiseShift initializes a bitwise shift operation.
+// Ref: net/netfilter/nft_bitwise.c:nft_bitwise_init_shift()
+func initBitwiseShift(dataAttrBytes nlmsg.BytesView, l uint32, sreg, dreg uint8, bitwiseOp uint32) (*bitwise, *syserr.AnnotatedError) {
+	dataAttrs, ok := NfParse(nlmsg.AttrsView(dataAttrBytes))
+	if !ok {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse bitwise shift operation data attribute")
+	}
+	shiftData, err := parseDataAttrs(dataAttrs)
+	if err != nil {
+		return nil, err
+	}
+	if len(shiftData) != 4 {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "bitwise shift operation data length must be 4 bytes")
+	}
+	shift := binary.NativeEndian.Uint32(shiftData[:4])
+	return newBitwiseShift(uint8(sreg), uint8(dreg), int(l), shift, bitwiseOp == linux.NFT_BITWISE_RSHIFT)
+}
+
+// bitwiseAttrPolicy is the policy for parsing the attributes of a bitwise operation.
+// Ref: net/netfilter/nft_bitwise.c:nft_bitwise_policy
+var bitwiseAttrPolicy = []NlaPolicy{
+	linux.NFTA_BITWISE_SREG: {nlaType: linux.NLA_U32},
+	linux.NFTA_BITWISE_DREG: {nlaType: linux.NLA_U32},
+	linux.NFTA_BITWISE_LEN:  {nlaType: linux.NLA_U32},
+	linux.NFTA_BITWISE_MASK: {nlaType: linux.NLA_NESTED},
+	linux.NFTA_BITWISE_XOR:  {nlaType: linux.NLA_NESTED},
+	linux.NFTA_BITWISE_OP:   NlaPolicy{nlaType: linux.NLA_BE32, validator: AttrMaxValidator[uint32](math.MaxUint8)},
+	linux.NFTA_BITWISE_DATA: {nlaType: linux.NLA_NESTED},
+}
+
+// initBitwise initializes a bitwise operation.
+// Ref: net/netfilter/nft_bitwise.c:nft_bitwise_init()
+func initBitwise(tab *Table, exprInfo ExprInfo) (*bitwise, *syserr.AnnotatedError) {
+	attrs, ok := NfParseWithOpts(exprInfo.ExprData, &NfParseOpts{
+		Policy: bitwiseAttrPolicy,
+	})
+	if !ok {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse bitwise expression data")
+	}
+
+	blen, ok := AttrNetToHost[uint32](linux.NFTA_BITWISE_LEN, attrs)
+	if !ok {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse bitwise expression data length")
+	}
+
+	sreg, ok := AttrNetToHost[uint32](linux.NFTA_BITWISE_SREG, attrs)
+	if !ok {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse bitwise expression source register")
+	}
+
+	dreg, ok := AttrNetToHost[uint32](linux.NFTA_BITWISE_DREG, attrs)
+	if !ok {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse bitwise expression destination register")
+	}
+
+	bitwiseOp, ok := AttrNetToHost[uint32](linux.NFTA_BITWISE_OP, attrs)
+	if !ok {
+		bitwiseOp = uint32(linux.NFT_BITWISE_BOOL)
+	} else {
+		switch int(bitwiseOp) {
+		case linux.NFT_BITWISE_BOOL, linux.NFT_BITWISE_LSHIFT, linux.NFT_BITWISE_RSHIFT:
+		default:
+			return nil, syserr.NewAnnotatedError(syserr.ErrNotSupported, "unsupported bitwise operation")
+		}
+	}
+
+	data, dataOk := attrs[linux.NFTA_BITWISE_DATA]
+	mask, maskOk := attrs[linux.NFTA_BITWISE_MASK]
+	xor, xorOk := attrs[linux.NFTA_BITWISE_XOR]
+
+	if bitwiseOp == linux.NFT_BITWISE_BOOL {
+		if dataOk {
+			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "bitwise boolean operation cannot use data attribute")
+		}
+
+		if !maskOk {
+			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "bitwise boolean operation mask attribute is missing")
+		}
+		if !xorOk {
+			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "bitwise boolean operation xor attribute is missing")
+		}
+		return initBitwiseBool(mask, xor, blen, uint8(sreg), uint8(dreg))
+	}
+
+	if bitwiseOp == linux.NFT_BITWISE_LSHIFT || bitwiseOp == linux.NFT_BITWISE_RSHIFT {
+		if maskOk || xorOk {
+			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "bitwise shift operation cannot use mask or xor attribute")
+		}
+		if !dataOk {
+			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "bitwise shift operation data attribute is missing")
+		}
+		return initBitwiseShift(data, blen, uint8(sreg), uint8(dreg), bitwiseOp)
+	}
+	return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse bitwise expression operation")
 }
