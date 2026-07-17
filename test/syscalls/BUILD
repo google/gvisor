@@ -359,6 +359,11 @@ syscall_test(
 )
 
 syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:landlock_test",
+)
+
+syscall_test(
     add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:link_test",
