@@ -551,7 +551,9 @@ func (s *runscService) Wait(ctx context.Context, r *task.WaitRequest) (*task.Wai
 	if err != nil {
 		return nil, errgrpc.ToGRPC(err)
 	}
-	p.Wait()
+	if err := p.Wait(ctx); err != nil {
+		return nil, errgrpc.ToGRPC(err)
+	}
 
 	res := &task.WaitResponse{
 		ExitStatus: uint32(p.ExitStatus()),

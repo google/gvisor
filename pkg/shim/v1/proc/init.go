@@ -177,8 +177,13 @@ func (p *Init) Create(ctx context.Context, r *CreateConfig) (err error) {
 }
 
 // Wait waits for the process to exit.
-func (p *Init) Wait() {
-	<-p.waitBlock
+func (p *Init) Wait(ctx context.Context) error {
+	select {
+	case <-p.waitBlock:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // ID returns the ID of the process.
