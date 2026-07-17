@@ -317,7 +317,7 @@ func (s *shimRedirector) Restore(ctx context.Context, r *extension.RestoreReques
 }
 
 func (s *shimRedirector) RegisterTTRPC(server *ttrpc.Server) error {
-	task.RegisterTaskService(server, s)
+	task.RegisterTTRPCTaskService(server, s)
 	api.RegisterTTRPCSandboxService(server, s)
 	return nil
 }

@@ -21,6 +21,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	types "github.com/containerd/containerd/api/types"
@@ -122,6 +123,7 @@ func (m *manager) Start(ctx context.Context, id string, opts shim.StartOpts) (sh
 	if err != nil {
 		return shim.BootstrapParams{}, err
 	}
+	address = strings.TrimPrefix(address, "ttrpc+")
 	socket, err := shim.NewSocket(address)
 	if err != nil {
 		// The only time where this would happen is if there is a bug and the socket
