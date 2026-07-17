@@ -212,11 +212,19 @@ func (t *Task) canTraceStandard(target *Task, attach bool) bool {
 		return false
 	}
 	var targetMM *mm.MemoryManager
+	var targetUserDumpable bool
 	target.WithMuLocked(func(t *Task) {
 		targetMM = t.MemoryManager()
+		targetUserDumpable = t.userDumpable
 	})
-	if targetMM != nil && targetMM.Dumpability() != mm.UserDumpable {
-		return false
+	if targetMM != nil {
+		if targetMM.Dumpability() != mm.UserDumpable {
+			return false
+		}
+	} else {
+		if !targetUserDumpable && !callerCreds.HasCapabilityIn(linux.CAP_SYS_PTRACE, t.Kernel().RootUserNamespace()) {
+			return false
+		}
 	}
 	if callerCreds.UserNamespace != targetCreds.UserNamespace {
 		return false
