@@ -60,9 +60,25 @@ message ExecveInfo {
   // likely to be extremely slow.
   bytes binary_sha256 = 8;
 
-  // BinaryOverlayfsUpper indicates whether the executable binary is on
-  // the upper layer of the overlay filesystem.
+  // BinaryOverlayfsUpper indicates whether the executable binary is on the
+  // upper layer of the overlay filesystem.
+  //
+  // Note that this only indicates presence on the upper layer, NOT that the
+  // file exists *only* on the upper layer. Specifically,
+  // binary_overlayfs_upper=true alone does not mean the file was copied up from
+  // a lower layer (e.g., it could have been created or downloaded directly on
+  // the upper layer).
   bool binary_overlayfs_upper = 9;
+
+  // BinaryOverlayfsLower indicates whether the executable binary is on the
+  // lower layer of the overlay filesystem.
+  //
+  // Note that this only indicates presence on the lower layer, NOT that the
+  // file exists *only* on the lower layer. Specifically,
+  // binary_overlayfs_lower=true alone does not mean the file is unmodified
+  // (e.g., if binary_overlayfs_upper=true also, the file was modified and
+  // copied up to the upper layer).
+  bool binary_overlayfs_lower = 15;
 
   // BinaryIno is the virtualized inode number of the executable binary file.
   uint64 binary_ino = 10;

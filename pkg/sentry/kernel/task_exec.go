@@ -472,7 +472,11 @@ func getExecveSeccheckInfo(t *Task, argv, env []string, executable *vfs.FileDesc
 	if executable != nil {
 		info.BinaryPath = pathname
 		if fields.Local.Contains(seccheck.FieldSentryExecveBinaryInfo) {
+			// Note that despite the method name IsCopiedUp, this returns true for any file located on the
+			// upper layer, including files created or downloaded directly on the upper layer that were
+			// never copied up from a lower layer.
 			info.BinaryOverlayfsUpper = overlay.IsCopiedUp(executable.Dentry())
+			info.BinaryOverlayfsLower = overlay.IsOnLower(executable.Dentry())
 			statOpts := vfs.StatOptions{
 				Mask: linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | linux.STATX_INO | linux.STATX_CTIME,
 			}

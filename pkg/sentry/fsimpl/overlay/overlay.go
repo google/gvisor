@@ -1012,3 +1012,12 @@ func IsCopiedUp(d *vfs.Dentry) bool {
 	}
 	return false
 }
+
+// IsOnLower returns true if the given vfs.Dentry is an overlayfs dentry that
+// exists on the lower layer(s).
+func IsOnLower(d *vfs.Dentry) bool {
+	if impl, ok := d.Impl().(*dentry); ok {
+		return impl.isOnLower()
+	}
+	return false
+}

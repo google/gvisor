@@ -468,6 +468,9 @@ func checkSentryExec(msg test.Message) error {
 	if p.BinaryOverlayfsUpper {
 		return fmt.Errorf("BinaryOverlayfsUpper, want: false, got: true")
 	}
+	if !p.BinaryOverlayfsLower {
+		return fmt.Errorf("BinaryOverlayfsLower, want: true, got: false")
+	}
 
 	return nil
 }
