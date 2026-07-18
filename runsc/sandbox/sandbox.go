@@ -27,6 +27,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -1293,34 +1294,9 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 
 	mem := totalSysMem
 	if s.CgroupJSON.Cgroup != nil {
-		cpuNum, err := s.CgroupJSON.Cgroup.NumCPU()
+		cpuNum, cpuQuota, cpuPeriod, err := calculateCPUNum(s.CgroupJSON.Cgroup, conf.CPUNumFromQuota)
 		if err != nil {
-			return fmt.Errorf("getting cpu count from cgroups: %v", err)
-		}
-		cpuQuota, err := s.CgroupJSON.Cgroup.CPUQuota()
-		if err != nil {
-			return fmt.Errorf("getting raw cpu quota from cgroups: %v", err)
-		}
-		cpuPeriod, err := s.CgroupJSON.Cgroup.CPUPeriod()
-		if err != nil {
-			return fmt.Errorf("getting raw cpu period from cgroups: %v", err)
-		}
-		if conf.CPUNumFromQuota && cpuQuota > 0 && cpuPeriod > 0 {
-			// Dropping below 2 CPUs can trigger application to disable
-			// locks that can lead do hard to debug errors, so just
-			// leaving two cores as reasonable default.
-			const minCPUs = 2
-
-			quota := float64(cpuQuota) / float64(cpuPeriod)
-			if n := int(math.Ceil(quota)); n > 0 {
-				if n < minCPUs {
-					n = minCPUs
-				}
-				if n < cpuNum {
-					// Only lower the cpu number.
-					cpuNum = n
-				}
-			}
+			return err
 		}
 		cmd.Args = append(cmd.Args, "--cpu-num", strconv.Itoa(cpuNum))
 		if cpuQuota > 0 {
@@ -1391,6 +1367,40 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	log.Infof("Sandbox started, PID: %d", cmd.Process.Pid)
 
 	return nil
+}
+
+func calculateCPUNum(cg cgroup.Cgroup, cpuNumFromQuota bool) (int, int64, int64, error) {
+	cpuNum, err := cg.NumCPU()
+	if err != nil {
+		log.Warningf("Failed to get cpu count from cgroups: %v. Falling back to runtime.NumCPU()", err)
+		cpuNum = runtime.NumCPU()
+	}
+	cpuQuota, err := cg.CPUQuota()
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("getting raw cpu quota from cgroups: %v", err)
+	}
+	cpuPeriod, err := cg.CPUPeriod()
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("getting raw cpu period from cgroups: %v", err)
+	}
+	if cpuNumFromQuota && cpuQuota > 0 && cpuPeriod > 0 {
+		// Dropping below 2 CPUs can trigger application to disable
+		// locks that can lead do hard to debug errors, so just
+		// leaving two cores as reasonable default.
+		const minCPUs = 2
+
+		quota := float64(cpuQuota) / float64(cpuPeriod)
+		if n := int(math.Ceil(quota)); n > 0 {
+			if n < minCPUs {
+				n = minCPUs
+			}
+			if n < cpuNum {
+				// Only lower the cpu number.
+				cpuNum = n
+			}
+		}
+	}
+	return cpuNum, cpuQuota, cpuPeriod, nil
 }
 
 func rootMappedInContainer(IDMap []specs.LinuxIDMapping) bool {
