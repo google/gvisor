@@ -16,11 +16,13 @@ package cmd
 
 import (
 	"context"
+	"os"
 
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/runsc/cmd/metricserver/metricservercmd"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/flag"
+	"gvisor.dev/gvisor/runsc/gvisorbinaries"
 )
 
 // MetricServer implements subcommands.Command for the "metric-server" command.
@@ -30,6 +32,13 @@ type MetricServer struct {
 
 // Execute implements subcommands.Command.Execute.
 func (m *MetricServer) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
-	util.Fatalf("this build does not support the metric-server subcommand")
+	err := gvisorbinaries.MetricServer.Exec(gvisorbinaries.Options{
+		Argv: os.Args,
+		Envv: os.Environ(),
+	})
+	if err != nil {
+		util.Fatalf("metric server: %v", err)
+	}
+	util.Fatalf("unreachable")
 	return subcommands.ExitFailure
 }
