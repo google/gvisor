@@ -113,6 +113,7 @@ if [[ "${BUILDKITE_PIPELINE_INSTALL_RUNTIME:-}" == "true" ]]; then
     echo 'Removed all Docker runtimes; reloading Docker daemon with this new configuration:' >&2
     cat /etc/docker/daemon.json >&2
     bash -c "$DOCKER_RELOAD_COMMAND"
+    sleep 3  # Give some time for Docker to actually reload.
   fi
 fi
 
