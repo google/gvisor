@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -46,6 +47,11 @@ import (
 )
 
 const pagesPerHugePage = hostarch.HugePageSize / hostarch.PageSize
+
+const (
+	maxPrefaultWorkers = 8
+	prefaultChunkSize  = 256 << 20
+)
 
 // MemoryFile is a memmap.File whose pages may be allocated to arbitrary
 // users.
@@ -1459,6 +1465,93 @@ func (f *MemoryFile) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (s
 		blocks = append(blocks, safemem.BlockFromSafeSlice(bs))
 	})
 	return safemem.BlockSeqFromSlice(blocks), nil
+}
+
+// PrefaultRanges installs writable host page table entries for ranges in f.
+// This is useful before a host device pins restored application memory,
+// including sparse ranges omitted from the checkpoint because they contained
+// only zero pages.
+func (f *MemoryFile) PrefaultRanges(ranges []memmap.FileRange) (uint64, bool, error) {
+	normalized, err := normalizeFileRanges(ranges)
+	if err != nil {
+		return 0, false, err
+	}
+
+	var blocks []safemem.Block
+	for _, fr := range normalized {
+		bs, err := f.MapInternal(fr, hostarch.Write)
+		if err != nil {
+			return 0, false, err
+		}
+		for !bs.IsEmpty() {
+			block := bs.Head()
+			for block.Len() > prefaultChunkSize {
+				blocks = append(blocks, block.TakeFirst(prefaultChunkSize))
+				block = block.DropFirst(prefaultChunkSize)
+			}
+			if block.Len() != 0 {
+				blocks = append(blocks, block)
+			}
+			bs = bs.Tail()
+		}
+	}
+	if len(blocks) == 0 {
+		return 0, true, nil
+	}
+
+	workers := min(maxPrefaultWorkers, len(blocks))
+	jobs := make(chan safemem.Block)
+	var (
+		wg        sync.WaitGroup
+		populated atomic.Uint64
+		failed    atomic.Bool
+	)
+	wg.Add(workers)
+	for range workers {
+		go func() {
+			defer wg.Done()
+			for block := range jobs {
+				if tryPopulate(block) {
+					populated.Add(uint64(block.Len()))
+				} else {
+					failed.Store(true)
+				}
+			}
+		}()
+	}
+	for _, block := range blocks {
+		jobs <- block
+	}
+	close(jobs)
+	wg.Wait()
+	return populated.Load(), !failed.Load(), nil
+}
+
+func normalizeFileRanges(ranges []memmap.FileRange) ([]memmap.FileRange, error) {
+	ranges = slices.Clone(ranges)
+	for _, fr := range ranges {
+		if !fr.WellFormed() || fr.Length() == 0 {
+			return nil, fmt.Errorf("invalid range: %v", fr)
+		}
+	}
+	slices.SortFunc(ranges, func(a, b memmap.FileRange) int {
+		if a.Start < b.Start {
+			return -1
+		}
+		if a.Start > b.Start {
+			return 1
+		}
+		return 0
+	})
+	merged := ranges[:0]
+	for _, fr := range ranges {
+		if len(merged) == 0 || merged[len(merged)-1].End < fr.Start {
+			merged = append(merged, fr)
+		} else if fr.End > merged[len(merged)-1].End {
+			merged[len(merged)-1].End = fr.End
+		}
+	}
+	return merged, nil
 }
 
 // forEachMappingSlice invokes fn on a sequence of byte slices that

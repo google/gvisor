@@ -15,6 +15,7 @@
 package mm
 
 import (
+	"reflect"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/context"
@@ -47,6 +48,36 @@ func testMemoryManagerWithMmapDirection(ctx context.Context, t *testing.T, mmapD
 
 func testMemoryManager(ctx context.Context, t *testing.T) *MemoryManager {
 	return testMemoryManagerWithMmapDirection(ctx, t, arch.MmapBottomUp)
+}
+
+func TestMappedFileRanges(t *testing.T) {
+	target := &pgalloc.MemoryFile{}
+	other := &pgalloc.MemoryFile{}
+	mm := &MemoryManager{}
+	page := hostarch.Addr(hostarch.PageSize)
+	mm.pmas.Insert(mm.pmas.FindGap(page), hostarch.AddrRange{Start: page, End: 3 * page}, pma{
+		file: target,
+		off:  5 * hostarch.PageSize,
+	})
+	mm.pmas.Insert(mm.pmas.FindGap(4*page), hostarch.AddrRange{Start: 4 * page, End: 5 * page}, pma{
+		file: other,
+		off:  9 * hostarch.PageSize,
+	})
+	mm.pmas.Insert(mm.pmas.FindGap(6*page), hostarch.AddrRange{Start: 6 * page, End: 7 * page}, pma{
+		file: target,
+		off:  2 * hostarch.PageSize,
+	})
+
+	want := []memmap.FileRange{
+		{Start: 5 * hostarch.PageSize, End: 7 * hostarch.PageSize},
+		{Start: 2 * hostarch.PageSize, End: 3 * hostarch.PageSize},
+	}
+	if got := mm.MappedFileRanges(target); !reflect.DeepEqual(got, want) {
+		t.Fatalf("MappedFileRanges got %v, want %v", got, want)
+	}
+	if got := mm.MappedFileRanges(nil); got != nil {
+		t.Fatalf("MappedFileRanges(nil) got %v, want nil", got)
+	}
 }
 
 func (mm *MemoryManager) realUsageAS() uint64 {

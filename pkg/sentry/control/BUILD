@@ -68,6 +68,7 @@ go_library(
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/ktime",
         "//pkg/sentry/limits",
+        "//pkg/sentry/memmap",
         "//pkg/sentry/socket/netstack",
         "//pkg/sentry/state",
         "//pkg/sentry/state/checkpointfiles",

@@ -17,11 +17,44 @@
 package pgalloc
 
 import (
+	"reflect"
+	"slices"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 )
+
+func TestNormalizeFileRanges(t *testing.T) {
+	input := []memmap.FileRange{
+		{Start: 8 * page, End: 10 * page},
+		{Start: 2 * page, End: 4 * page},
+		{Start: 4 * page, End: 6 * page},
+		{Start: 3 * page, End: 5 * page},
+	}
+	want := []memmap.FileRange{
+		{Start: 2 * page, End: 6 * page},
+		{Start: 8 * page, End: 10 * page},
+	}
+	original := slices.Clone(input)
+
+	got, err := normalizeFileRanges(input)
+	if err != nil {
+		t.Fatalf("normalizeFileRanges failed: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("normalizeFileRanges got %v, want %v", got, want)
+	}
+	if !reflect.DeepEqual(input, original) {
+		t.Fatalf("normalizeFileRanges mutated input: got %v, want %v", input, original)
+	}
+}
+
+func TestNormalizeFileRangesRejectsEmptyRange(t *testing.T) {
+	if _, err := normalizeFileRanges([]memmap.FileRange{{Start: page, End: page}}); err == nil {
+		t.Fatal("normalizeFileRanges accepted an empty range")
+	}
+}
 
 const (
 	page     = hostarch.PageSize

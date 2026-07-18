@@ -30,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fdcollector"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/pipefs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/state"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/timing"
@@ -141,10 +142,14 @@ func cudaProcs(sctx context.Context, k *kernel.Kernel, cudaCheckpointPath string
 }
 
 func postRestoreCuda(k *kernel.Kernel, timeline *timing.Timeline) error {
-	return postResumeCuda(k, timeline)
+	return resumeCuda(k, timeline, true)
 }
 
 func postResumeCuda(k *kernel.Kernel, timeline *timing.Timeline) error {
+	return resumeCuda(k, timeline, false)
+}
+
+func resumeCuda(k *kernel.Kernel, timeline *timing.Timeline, restored bool) error {
 	cudaCheckpointPathVal := k.PopCheckpointState(cudaCheckpointPathKey)
 	if cudaCheckpointPathVal == nil {
 		return nil
@@ -152,6 +157,11 @@ func postResumeCuda(k *kernel.Kernel, timeline *timing.Timeline) error {
 	cudaCheckpointPath := cudaCheckpointPathVal.(string)
 	cudaCheckpointSequential := k.PopCheckpointState(cudaCheckpointSequentialKey).(bool)
 	cudaProcs := k.PopCheckpointState(cudaProcsKey).([]*kernel.ThreadGroup)
+	if restored {
+		if err := prefaultCudaMemory(k, cudaProcs, timeline); err != nil {
+			return err
+		}
+	}
 	timeline.Reached("starting cuda-ckpt")
 	// FIXME: b/460451448 - pass --device-map to cuda-checkpoint if accepted
 	err := toggleCudaProcs(k.SupervisorContext(), k, cudaCheckpointPath, cudaProcs, timeline, cudaCheckpointSequential)
@@ -160,6 +170,37 @@ func postResumeCuda(k *kernel.Kernel, timeline *timing.Timeline) error {
 		tg.SigsegvUnlock()
 	}
 	return err
+}
+
+func prefaultCudaMemory(k *kernel.Kernel, cudaProcs []*kernel.ThreadGroup, timeline *timing.Timeline) error {
+	if err := k.MemoryFile().AwaitLoadAll(); err != nil {
+		return fmt.Errorf("failed to load restored CUDA memory: %w", err)
+	}
+	timeline.Reached("cuda memory loaded")
+
+	var ranges []memmap.FileRange
+	for _, tg := range cudaProcs {
+		leader := tg.Leader()
+		if leader == nil {
+			continue
+		}
+		mm := leader.MemoryManager()
+		if mm == nil {
+			continue
+		}
+		ranges = append(ranges, mm.MappedFileRanges(k.MemoryFile())...)
+	}
+	start := time.Now()
+	prefaulted, complete, err := k.MemoryFile().PrefaultRanges(ranges)
+	if err != nil {
+		return fmt.Errorf("failed to prefault restored CUDA memory: %w", err)
+	}
+	if !complete {
+		log.Warningf("Unable to prefault all restored CUDA memory")
+	}
+	log.Infof("Prefaulted %d bytes of CUDA process memory in %s", prefaulted, time.Since(start))
+	timeline.Reached("cuda memory prefaulted")
+	return nil
 }
 
 type checkpointProc struct {

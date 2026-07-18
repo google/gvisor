@@ -791,6 +791,25 @@ func (mm *MemoryManager) Pin(ctx context.Context, ar hostarch.AddrRange, at host
 	return prs, verr
 }
 
+// MappedFileRanges returns the ranges in file that back existing PMAs in mm.
+// The returned ranges may overlap and do not hold references to file.
+func (mm *MemoryManager) MappedFileRanges(file memmap.File) []memmap.FileRange {
+	if file == nil {
+		return nil
+	}
+
+	mm.activeMu.RLock()
+	defer mm.activeMu.RUnlock()
+
+	var ranges []memmap.FileRange
+	for pseg := mm.pmas.FirstSegment(); pseg.Ok(); pseg = pseg.NextSegment() {
+		if pseg.ValuePtr().file == file {
+			ranges = append(ranges, pseg.fileRange())
+		}
+	}
+	return ranges
+}
+
 // PinnedRanges are returned by MemoryManager.Pin.
 type PinnedRange struct {
 	// Source is the corresponding range of addresses.
