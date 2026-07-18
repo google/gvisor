@@ -738,10 +738,15 @@ func (t *fibTest) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) err
 			{"add", "table", "inet", "filter"},
 			// Policy set to drop by default; if FIB fails, packet should be dropped.
 			{"add", "chain", "inet", "filter", "input", "{ type filter hook input priority 0; policy drop; }"},
-			// Accept connections to 8995 to bypass drop policy for the test setup sync
-			{"add", "rule", "inet", "filter", "input", "tcp", "dport", "8995", "accept"},
-			// Try to trigger all the FIB paths.
+			// Accept connections to 8995 to bypass drop policy for the test setup sync, also validate iifname.
+			{"add", "rule", "inet", "filter", "input", "tcp", "dport", "8995", "meta", "iifname", targetIface.Name, "accept"},
+			// Output Chain to validate oifname.
+			{"add", "chain", "inet", "filter", "output", "{ type filter hook output priority 0; policy drop; }"},
+			{"add", "rule", "inet", "filter", "output", "meta", "oifname", "lo", "accept"},
+			{"add", "rule", "inet", "filter", "output", "tcp", "sport", "8995", "meta", "oifname", targetIface.Name, "accept"},
+			// Try to trigger all the FIB paths and validate iifname.
 			{"add", "rule", "inet", "filter", "input", "udp", "dport", "9005",
+				"meta", "iifname", targetIface.Name,
 				"fib", "saddr", ".", "iif", "oif", fmt.Sprintf("%d", targetIface.Index),
 				"fib", "saddr", ".", "iif", "oifname", targetIface.Name,
 				"fib", "saddr", ".", "iif", "oif", "exists",
