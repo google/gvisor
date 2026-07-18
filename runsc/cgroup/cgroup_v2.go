@@ -281,6 +281,9 @@ func (c *cgroupV2) Join() (func(), error) {
 func readCPUQuotaAndPeriod(path string) (int64, int64, error) {
 	cpuMax, err := getValue(path, cpuLimitCgroup)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return -1, -1, nil
+		}
 		return -1, -1, err
 	}
 	return parseCPUQuotaAndPeriod(cpuMax)
@@ -300,7 +303,7 @@ func (c *cgroupV2) CPUQuota() (int64, error) {
 		if parentErr != nil && !errors.Is(parentErr, os.ErrNotExist) {
 			return -1, parentErr
 		}
-		if parentErr == nil {
+		if parentErr == nil && parentQuota != -1 {
 			quota = parentQuota
 		}
 	}
@@ -320,7 +323,7 @@ func (c *cgroupV2) CPUPeriod() (int64, error) {
 		if parentErr != nil && !errors.Is(parentErr, os.ErrNotExist) {
 			return -1, parentErr
 		}
-		if parentErr == nil {
+		if parentErr == nil && parentPeriod != -1 {
 			period = parentPeriod
 		}
 	}

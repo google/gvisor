@@ -16,12 +16,14 @@ package cgroup
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
@@ -858,49 +860,186 @@ func TestLoadPaths(t *testing.T) {
 
 func TestOptional(t *testing.T) {
 	for _, tc := range []struct {
-		name  string
-		ctrlr controller
-		spec  *specs.LinuxResources
-		err   string
+		name       string
+		ctrlr      controller
+		extraValid []*specs.LinuxResources
+		invalid    []struct {
+			name string
+			spec *specs.LinuxResources
+			err  string
+		}
 	}{
 		{
 			name:  "pids",
 			ctrlr: &pids{},
-			spec:  &specs.LinuxResources{Pids: &specs.LinuxPids{Limit: 1}},
-			err:   "Pids.Limit set but pids cgroup controller not found",
+			invalid: []struct {
+				name string
+				spec *specs.LinuxResources
+				err  string
+			}{
+				{
+					name: "limit",
+					spec: &specs.LinuxResources{Pids: &specs.LinuxPids{Limit: 1}},
+					err:  "Pids.Limit set but pids cgroup controller not found",
+				},
+			},
 		},
 		{
 			name:  "net-cls",
 			ctrlr: &networkClass{},
-			spec:  &specs.LinuxResources{Network: &specs.LinuxNetwork{ClassID: uint32Ptr(1)}},
-			err:   "Network.ClassID set but net_cls cgroup controller not found",
+			invalid: []struct {
+				name string
+				spec *specs.LinuxResources
+				err  string
+			}{
+				{
+					name: "classID",
+					spec: &specs.LinuxResources{Network: &specs.LinuxNetwork{ClassID: uint32Ptr(1)}},
+					err:  "Network.ClassID set but net_cls cgroup controller not found",
+				},
+			},
 		},
 		{
 			name:  "net-prio",
 			ctrlr: &networkPrio{},
-			spec: &specs.LinuxResources{Network: &specs.LinuxNetwork{
-				Priorities: []specs.LinuxInterfacePriority{
-					{Name: "foo", Priority: 1},
+			invalid: []struct {
+				name string
+				spec *specs.LinuxResources
+				err  string
+			}{
+				{
+					name: "priorities",
+					spec: &specs.LinuxResources{Network: &specs.LinuxNetwork{
+						Priorities: []specs.LinuxInterfacePriority{
+							{Name: "foo", Priority: 1},
+						},
+					}},
+					err: "Network.Priorities set but net_prio cgroup controller not found",
 				},
-			}},
-			err: "Network.Priorities set but net_prio cgroup controller not found",
+			},
 		},
 		{
 			name:  "hugetlb",
 			ctrlr: &hugeTLB{},
-			spec: &specs.LinuxResources{HugepageLimits: []specs.LinuxHugepageLimit{
-				{Pagesize: "1", Limit: 2},
-			}},
-			err: "HugepageLimits set but hugetlb cgroup controller not found",
+			invalid: []struct {
+				name string
+				spec *specs.LinuxResources
+				err  string
+			}{
+				{
+					name: "hugepageLimits",
+					spec: &specs.LinuxResources{HugepageLimits: []specs.LinuxHugepageLimit{
+						{Pagesize: "1", Limit: 2},
+					}},
+					err: "HugepageLimits set but hugetlb cgroup controller not found",
+				},
+			},
+		},
+		{
+			name:  "blkio",
+			ctrlr: &blockIO{},
+			invalid: []struct {
+				name string
+				spec *specs.LinuxResources
+				err  string
+			}{
+				{
+					name: "weight",
+					spec: &specs.LinuxResources{BlockIO: &specs.LinuxBlockIO{Weight: uint16Ptr(1)}},
+					err:  "blkio controller is missing but limits are set in OCI spec",
+				},
+			},
+		},
+		{
+			name:  "cpuset",
+			ctrlr: &cpuSet{},
+			extraValid: []*specs.LinuxResources{
+				{CPU: nil},
+				{CPU: &specs.LinuxCPU{}},
+				{CPU: &specs.LinuxCPU{Cpus: "", Mems: ""}},
+			},
+			invalid: []struct {
+				name string
+				spec *specs.LinuxResources
+				err  string
+			}{
+				{
+					name: "cpuset-cpus",
+					spec: &specs.LinuxResources{CPU: &specs.LinuxCPU{Cpus: "0-1"}},
+					err:  "cpuset controller is missing but limits are set in OCI spec",
+				},
+				{
+					name: "cpuset-mems",
+					spec: &specs.LinuxResources{CPU: &specs.LinuxCPU{Mems: "0"}},
+					err:  "cpuset controller is missing but limits are set in OCI spec",
+				},
+				{
+					name: "cpuset-both",
+					spec: &specs.LinuxResources{CPU: &specs.LinuxCPU{Cpus: "0-1", Mems: "0"}},
+					err:  "cpuset controller is missing but limits are set in OCI spec",
+				},
+			},
+		},
+		{
+			name:  "cpu",
+			ctrlr: &cpu{},
+			extraValid: []*specs.LinuxResources{
+				{CPU: nil},
+				{CPU: &specs.LinuxCPU{}},
+				{CPU: &specs.LinuxCPU{Shares: uint64Ptr(0), Quota: int64Ptr(0), Period: uint64Ptr(0)}},
+			},
+			invalid: []struct {
+				name string
+				spec *specs.LinuxResources
+				err  string
+			}{
+				{
+					name: "cpu-shares",
+					spec: &specs.LinuxResources{CPU: &specs.LinuxCPU{Shares: uint64Ptr(100)}},
+					err:  "cpu controller is missing but limits are set in OCI spec",
+				},
+				{
+					name: "cpu-quota",
+					spec: &specs.LinuxResources{CPU: &specs.LinuxCPU{Quota: int64Ptr(1000)}},
+					err:  "cpu controller is missing but limits are set in OCI spec",
+				},
+				{
+					name: "cpu-period",
+					spec: &specs.LinuxResources{CPU: &specs.LinuxCPU{Period: uint64Ptr(100000)}},
+					err:  "cpu controller is missing but limits are set in OCI spec",
+				},
+				{
+					name: "cpu-realtime-period",
+					spec: &specs.LinuxResources{CPU: &specs.LinuxCPU{RealtimePeriod: uint64Ptr(100000)}},
+					err:  "cpu controller is missing but limits are set in OCI spec",
+				},
+				{
+					name: "cpu-realtime-runtime",
+					spec: &specs.LinuxResources{CPU: &specs.LinuxCPU{RealtimeRuntime: int64Ptr(100000)}},
+					err:  "cpu controller is missing but limits are set in OCI spec",
+				},
+			},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := tc.ctrlr.skip(tc.spec)
-			if err == nil {
-				t.Fatalf("ctrlr.skip() didn't fail")
+			if !tc.ctrlr.optional() {
+				t.Errorf("%s.optional() = false, want true", tc.name)
 			}
-			if !strings.Contains(err.Error(), tc.err) {
-				t.Errorf("ctrlr.skip() want: *%s*, got: %q", tc.err, err)
+			for _, emptySpec := range append([]*specs.LinuxResources{nil, {}}, tc.extraValid...) {
+				if err := tc.ctrlr.skip(emptySpec); err != nil {
+					t.Errorf("%s.skip(%+v) unexpected error: %v", tc.name, emptySpec, err)
+				}
+			}
+			for _, inv := range tc.invalid {
+				t.Run(inv.name, func(t *testing.T) {
+					err := tc.ctrlr.skip(inv.spec)
+					if err == nil {
+						t.Fatalf("ctrlr.skip() didn't fail")
+					}
+					if !strings.Contains(err.Error(), inv.err) {
+						t.Errorf("ctrlr.skip() want: *%s*, got: %q", inv.err, err)
+					}
+				})
 			}
 		})
 	}
@@ -955,5 +1094,98 @@ func TestJSON(t *testing.T) {
 				t.Errorf("cgroup incorrectly deserialized from JSON: got %v, want %v", out.Cgroup, tc.cg)
 			}
 		}
+	}
+}
+
+func TestParseCgroupRoot(t *testing.T) {
+	testCases := []struct {
+		name      string
+		mountinfo string
+		want      string
+	}{
+		{
+			name:      "debian-v1",
+			mountinfo: debianMountinfo,
+			want:      "/sys/fs/cgroup",
+		},
+		{
+			name:      "dind-v1",
+			mountinfo: dindMountinfo,
+			want:      "/sys/fs/cgroup",
+		},
+		{
+			name:      "cgroup2-v2",
+			mountinfo: "1 2 0:3 / /sys/fs/cgroup rw shared:4 - cgroup2 cgroup2 rw,seclabel,nsdelegate",
+			want:      "/sys/fs/cgroup",
+		},
+		{
+			name:      "some-v1-controller-dir",
+			mountinfo: "4 5 0:6 / /dev/cgroup/memory rw shared:9 - cgroup cgroup rw,memory",
+			want:      "/dev/cgroup",
+		},
+		{
+			name:      "some-v1-root-dir",
+			mountinfo: "77 88 0:99 / /dev/cgroup rw shared:9 - cgroup cgroup rw,memory",
+			want:      "/dev/cgroup",
+		},
+		{
+			name:      "empty",
+			mountinfo: "",
+			want:      "/sys/fs/cgroup",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parseCgroupRoot(strings.NewReader(tc.mountinfo))
+			if got != tc.want {
+				t.Errorf("parseCgroupRoot() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestCreateController(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cgroupRoot()
+	oldCgroupRoot := cgroupRootInternal
+	cgroupRootInternal = tmpDir
+	defer func() { cgroupRootInternal = oldCgroupRoot }()
+
+	c := &cgroupV1{Name: "test-cgroup"}
+
+	// 1. Controller directory does not exist. Should skip and return ErrNotExist.
+	skip, err := createController(c, "nonexistent")
+	if !skip {
+		t.Errorf("createController() for nonexistent controller got skip = false, want true")
+	}
+	if !os.IsNotExist(err) {
+		t.Errorf("createController() for nonexistent controller got err = %v, want ErrNotExist", err)
+	}
+
+	// 2. Controller directory exists and is writable. Should succeed with skip = false, err = nil.
+	writableCtrlr := filepath.Join(tmpDir, "writable")
+	if err := os.Mkdir(writableCtrlr, 0755); err != nil {
+		t.Fatalf("os.Mkdir(%q) failed: %v", writableCtrlr, err)
+	}
+	skip, err = createController(c, "writable")
+	if skip || err != nil {
+		t.Errorf("createController() for writable controller got (skip=%v, err=%v), want (false, nil)", skip, err)
+	}
+
+	// 3. Controller directory exists but is read-only (EACCES on MkdirAll). Should return skip = true and EACCES error.
+	readOnlyCtrlr := filepath.Join(tmpDir, "readonly")
+	if err := os.Mkdir(readOnlyCtrlr, 0555); err != nil {
+		t.Fatalf("os.Mkdir(%q) failed: %v", readOnlyCtrlr, err)
+	}
+	defer os.Chmod(readOnlyCtrlr, 0755)
+
+	skip, err = createController(c, "readonly")
+	if !skip {
+		t.Errorf("createController() for read-only controller got skip = false, want true")
+	}
+	if !errors.Is(err, unix.EACCES) {
+		t.Errorf("createController() for read-only controller got err = %v, want unix.EACCES", err)
 	}
 }
