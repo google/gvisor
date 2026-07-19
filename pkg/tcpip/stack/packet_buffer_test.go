@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -745,4 +746,41 @@ func TestCalculateTransportChecksumUnknownProtocol(t *testing.T) {
 	pk.NetworkHeader().Push(20)
 	// This should not panic.
 	pk.CalculateTransportChecksum()
+}
+
+// TestCalculateTransportChecksumUDPZero verifies that
+// CalculateTransportChecksum() when the checksum evaluates to zero.
+func TestCalculateTransportChecksumUDPZero(t *testing.T) {
+	pk := NewPacketBuffer(PacketBufferOptions{
+		ReserveHeaderBytes: header.IPv4MinimumSize + header.UDPMinimumSize,
+		Payload:            buffer.MakeWithData([]byte{0xFF, 0xDA}),
+	})
+	pk.TransportProtocolNumber = header.UDPProtocolNumber
+	pk.NetworkProtocolNumber = header.IPv4ProtocolNumber
+
+	// Push headers.
+	pk.TransportHeader().Push(header.UDPMinimumSize)
+	pk.NetworkHeader().Push(header.IPv4MinimumSize)
+
+	// Encode Network Header (IPv4)
+	netHdr := header.IPv4(pk.NetworkHeader().Slice())
+	netHdr.Encode(&header.IPv4Fields{
+		Protocol: uint8(header.UDPProtocolNumber),
+		SrcAddr:  tcpip.AddrFrom4Slice([]byte{0, 0, 0, 0}),
+		DstAddr:  tcpip.AddrFrom4Slice([]byte{0, 0, 0, 0}),
+	})
+
+	// Encode Transport Header (UDP)
+	udpHdr := header.UDP(pk.TransportHeader().Slice())
+	udpHdr.Encode(&header.UDPFields{
+		SrcPort: 0,
+		DstPort: 0,
+		Length:  header.UDPMinimumSize + 2, // 8 + 2
+	})
+
+	pk.CalculateTransportChecksum()
+
+	if got, want := udpHdr.Checksum(), uint16(0xFFFF); got != want {
+		t.Errorf("got udpHdr.Checksum() = 0x%x, want = 0x%x", got, want)
+	}
 }

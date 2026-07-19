@@ -310,6 +310,13 @@ type Task struct {
 	// fdTable is protected by mu, and is owned by the task goroutine.
 	fdTable *FDTable
 
+	// userDumpable caches the dumpability state of the task's MemoryManager
+	// before it is cleared during process exit. This cached state is used to perform
+	// ptrace access checks after the MemoryManager has been released.
+	//
+	// userDumpable is protected by mu.
+	userDumpable bool
+
 	// If vforkParent is not nil, it is the task that created this task with
 	// vfork() or clone(CLONE_VFORK), and should have its vforkStop ended when
 	// this TaskImage is released.
@@ -484,6 +491,11 @@ type Task struct {
 	//
 	// ipcns is protected by mu. ipcns is owned by the task goroutine.
 	ipcns *IPCNamespace
+
+	// cgroupns is the task's cgroup namespace.
+	//
+	// cgroupns is protected by mu. cgroupns is owned by the task goroutine.
+	cgroupns *CgroupNamespace
 
 	// mountNamespace is the task's mount namespace.
 	//

@@ -64,6 +64,11 @@ message Handshake {
   uint32 version = 1;
 }
 
+message Timespec {
+  int64 sec = 1;
+  int64 nsec = 2;
+}
+
 message Credentials {
   uint32 real_uid = 1;
   uint32 effective_uid = 2;
@@ -94,6 +99,29 @@ message ContextData {
   string process_name = 9;
 
   int32 parent_thread_group_id = 10;
+
+  // is_exec_session indicates whether the task originated from an exec session
+  // inside the container (`e.g., from `runsc exec` or `kubectl exec`).
+  bool is_exec_session = 11;
+}
+
+message SocketIp {
+  uint32 family = 1;
+  bytes ip = 2;
+  uint32 port = 3;
+}
+
+message SocketInfo {
+  uint32 family = 1;
+  SocketIp local = 2;
+  SocketIp remote = 3;
+}
+
+message FdInfo {
+  uint32 mode = 1;
+  uint64 ino = 2;
+  string path = 3;
+  SocketInfo socket = 4;
 }
 
 // MessageType describes the payload of a message sent to the remote process.
@@ -135,5 +163,6 @@ enum MessageType {
   MESSAGE_SYSCALL_SOCKETPAIR = 33;
   MESSAGE_SYSCALL_WRITE = 34;
   MESSAGE_SENTRY_MMAP = 35;
+  MESSAGE_SYSCALL_MMAP = 36;
 }
 // LINT.ThenChange(../../../../examples/seccheck/server.cc)

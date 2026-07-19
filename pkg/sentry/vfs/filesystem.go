@@ -572,3 +572,10 @@ func (PrependPathSyntheticError) Error() string {
 type HostFDProvider interface {
 	HostFD() int
 }
+
+// MountRootPathProvider is an interface for filesystems that customize the
+// root path of a mount as displayed in /proc/<pid>/mountinfo.
+type MountRootPathProvider interface {
+	// MountRootPath returns the root path of the mount rooted at vd in mountinfo.
+	MountRootPath(ctx context.Context, vd VirtualDentry) string
+}

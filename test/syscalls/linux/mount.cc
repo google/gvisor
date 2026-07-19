@@ -799,6 +799,31 @@ TEST(MountTest, TmpfsSizeRoundUpSinglePageSize) {
   EXPECT_EQ(buf.st_size, kPageSize);
 }
 
+TEST(MountTest, TmpfsNrBlocksAllocation) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir.path(), kTmpfs, 0, "nr_blocks=1", 0));
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(JoinPath(dir.path(), "foo"), O_CREAT | O_RDWR, 0777));
+
+  // Check that it starts at size zero.
+  struct stat buf;
+  ASSERT_THAT(fstat(fd.get(), &buf), SyscallSucceeds());
+  EXPECT_EQ(buf.st_size, 0);
+
+  // Grow to 1 Page Size.
+  ASSERT_THAT(fallocate(fd.get(), 0, 0, kPageSize), SyscallSucceeds());
+  ASSERT_THAT(fstat(fd.get(), &buf), SyscallSucceeds());
+  EXPECT_EQ(buf.st_size, kPageSize);
+
+  // Grow to size beyond the block limit.
+  ASSERT_THAT(fallocate(fd.get(), 0, 0, kPageSize + 1),
+              SyscallFailsWithErrno(ENOSPC));
+  ASSERT_THAT(fstat(fd.get(), &buf), SyscallSucceeds());
+  EXPECT_EQ(buf.st_size, kPageSize);
+}
+
 TEST(MountTest, TmpfsSizeAllocationMultiplePages) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());

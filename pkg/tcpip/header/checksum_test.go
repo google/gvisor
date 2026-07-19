@@ -345,3 +345,85 @@ func TestChecksummableTransportUpdatePseudoHeaderAddress(t *testing.T) {
 		})
 	}
 }
+
+// TestUDPChecksumIncrementalUpdate tests that the UDP checksum is handled
+// correctly during incremental updates.
+func TestUDPChecksumIncrementalUpdate(t *testing.T) {
+	tests := []struct {
+		name            string
+		initialChecksum uint16
+		newPort         uint16
+		oldAddr         tcpip.Address
+		newAddr         tcpip.Address
+		wantChecksum    uint16
+	}{
+		{
+			name:            "ChecksumIncrementalUpdate",
+			initialChecksum: 0x1234,
+			newPort:         0x5678,
+			oldAddr:         tcpip.AddrFromSlice([]byte{0, 0, 0, 0}),
+			newAddr:         tcpip.AddrFromSlice([]byte{0x56, 0x78, 0, 0}),
+			wantChecksum:    0xBBBB,
+		},
+		{
+			name:            "ChecksumNoUpdate",
+			initialChecksum: 0x1234,
+			newPort:         0,
+			oldAddr:         tcpip.AddrFromSlice([]byte{0, 0, 0, 0}),
+			newAddr:         tcpip.AddrFromSlice([]byte{0, 0, 0, 0}),
+			wantChecksum:    0x1234,
+		},
+		{
+			name:            "ChecksumZero",
+			initialChecksum: 0xEFFF,
+			newPort:         0xEFFF,
+			oldAddr:         tcpip.AddrFromSlice([]byte{0, 0, 0, 0}),
+			newAddr:         tcpip.AddrFromSlice([]byte{0xEF, 0xFF, 0, 0}),
+			wantChecksum:    0xFFFF,
+		},
+		{
+			name:            "ChecksumDisabled",
+			initialChecksum: 0,
+			newPort:         0xEFFF,
+			oldAddr:         tcpip.AddrFromSlice([]byte{0, 0, 0, 0}),
+			newAddr:         tcpip.AddrFromSlice([]byte{0xEF, 0xFF, 0, 0}),
+			wantChecksum:    0,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			newHeader := func() header.UDP {
+				h := header.UDP(make([]byte, header.UDPMinimumSize))
+				h.Encode(&header.UDPFields{
+					SrcPort:  0,
+					DstPort:  0,
+					Length:   0,
+					Checksum: test.initialChecksum,
+				})
+				return h
+			}
+
+			// Incremental CSUM:
+			// new_csum = ^(^old_csum - old_data + new_data)
+
+			h := newHeader()
+			h.SetSourcePortWithChecksumUpdate(test.newPort)
+			if got := h.Checksum(); got != test.wantChecksum {
+				t.Errorf("SetSourcePortWithChecksumUpdate: got = 0x%x, want = 0x%x", got, test.wantChecksum)
+			}
+
+			h = newHeader()
+			h.SetDestinationPortWithChecksumUpdate(test.newPort)
+			if got := h.Checksum(); got != test.wantChecksum {
+				t.Errorf("SetDestinationPortWithChecksumUpdate: got = 0x%x, want = 0x%x", got, test.wantChecksum)
+			}
+
+			h = newHeader()
+			h.UpdateChecksumPseudoHeaderAddress(test.oldAddr, test.newAddr, true)
+			if got := h.Checksum(); got != test.wantChecksum {
+				t.Errorf("UpdateChecksumPseudoHeaderAddress: got = 0x%x, want = 0x%x", got, test.wantChecksum)
+			}
+		})
+	}
+}

@@ -134,6 +134,7 @@ func matchPoints(t *testing.T, msgs []test.Message) map[pb.MessageType]*checkers
 		pb.MessageType_MESSAGE_SYSCALL_INOTIFY_ADD_WATCH: {checker: checkSyscallInotifyInitAddWatch},
 		pb.MessageType_MESSAGE_SYSCALL_INOTIFY_RM_WATCH:  {checker: checkSyscallInotifyInitRmWatch},
 		pb.MessageType_MESSAGE_SYSCALL_CLONE:             {checker: checkSyscallClone},
+		pb.MessageType_MESSAGE_SYSCALL_MMAP:              {checker: checkSyscallMmap},
 	}
 	return matchers
 }
@@ -273,6 +274,9 @@ func checkSentryMmap(msg test.Message) error {
 	if p.IsInitialMmap || p.MappedPath != "" {
 		fmt.Printf("Mmap event: path=%q, ino=%d, mode=%o, uid=%d, gid=%d, initial=%v\n", p.MappedPath, p.MappedIno, p.MappedMode, p.MappedUid, p.MappedGid, p.IsInitialMmap)
 	}
+	if p.MappedPath != "" && (p.MappedCtime == nil || (p.MappedCtime.Sec == 0 && p.MappedCtime.Nsec == 0)) {
+		return fmt.Errorf("MappedCtime should not be empty for mapped file: %q", p.MappedPath)
+	}
 	if err := checkContextData(p.ContextData); err != nil {
 		return err
 	}
@@ -306,6 +310,17 @@ func checkSyscallClose(msg test.Message) error {
 	if p.Fd < 0 {
 		// Although negative FD is possible, it doesn't happen in the test.
 		return fmt.Errorf("closing negative FD: %d", p.Fd)
+	}
+	return nil
+}
+
+func checkSyscallMmap(msg test.Message) error {
+	var p pb.Mmap
+	if err := proto.Unmarshal(msg.Msg, &p); err != nil {
+		return err
+	}
+	if err := checkContextData(p.ContextData); err != nil {
+		return err
 	}
 	return nil
 }
@@ -431,6 +446,9 @@ func checkSentryExec(msg test.Message) error {
 	if p.BinaryIno == 0 {
 		return fmt.Errorf("BinaryIno should not be 0")
 	}
+	if p.BinaryCtime == nil || (p.BinaryCtime.Sec == 0 && p.BinaryCtime.Nsec == 0) {
+		return fmt.Errorf("BinaryCtime should not be empty")
+	}
 
 	// Get SHA256 from the binary and compare it with the one from the event.
 	out, err := exec.Command("sha256sum", p.BinaryPath).CombinedOutput()
@@ -449,6 +467,9 @@ func checkSentryExec(msg test.Message) error {
 
 	if p.BinaryOverlayfsUpper {
 		return fmt.Errorf("BinaryOverlayfsUpper, want: false, got: true")
+	}
+	if !p.BinaryOverlayfsLower {
+		return fmt.Errorf("BinaryOverlayfsLower, want: true, got: false")
 	}
 
 	return nil

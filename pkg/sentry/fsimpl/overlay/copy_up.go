@@ -31,6 +31,10 @@ func (d *dentry) isCopiedUp() bool {
 	return d.copiedUp.Load() != 0
 }
 
+func (d *dentry) isOnLower() bool {
+	return len(d.lowerVDs) > 0
+}
+
 func (d *dentry) canBeCopiedUp() bool {
 	ftype := d.mode.Load() & linux.S_IFMT
 	switch ftype {

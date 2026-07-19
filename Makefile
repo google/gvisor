@@ -150,7 +150,9 @@ configure_noreload = \
 
 reload_docker = \
   $(call header,DOCKER RELOAD); \
-  bash -xc "$(DOCKER_RELOAD_COMMAND)" && \
+  ( timeout --kill-after=20s 15s bash -xc "$(DOCKER_RELOAD_COMMAND)" || timeout --kill-after=20s 15s bash -xc "$(DOCKER_RELOAD_COMMAND)" || timeout --kill-after=20s 15s bash -xc "$(DOCKER_RELOAD_COMMAND)" ) && \
+  sleep 3 && \
+  ( $(MAKE) ensure-bazel-server || echo 'Failed to reload bazel-server container' >&2 ) && \
   if test -f /etc/docker/daemon.json; then \
     sudo chmod 0755 /etc/docker && \
     sudo chmod 0644 /etc/docker/daemon.json; \
@@ -249,7 +251,7 @@ integration-tests: docker-tests overlay-tests hostnet-tests swgso-tests
 integration-tests: do-tests kvm-tests containerd-tests-min
 .PHONY: integration-tests
 
-integration-test-images: load-image-test load-basic load-systemd-integ
+integration-test-images: load-image-test load-basic load-systemd-integ load-systemd-services
 .PHONY: integration-test-images
 
 network-tests: ## Run all networking integration tests.

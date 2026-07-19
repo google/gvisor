@@ -1285,6 +1285,56 @@ TEST(PidfdTest, SendSignalToStartingTaskRace) {
   stop_signal_thread.store(true, std::memory_order_relaxed);
 }
 
+TEST(PidfdTest, PidfdGetfdNonDumpableExitingRace) {
+  // Skip when running natively because the host kernel may be vulnerable to
+  // CVE-2026-46333, which would cause the test to fail. We only want to verify
+  // the fix inside the gVisor sandbox.
+  SKIP_IF(!IsRunningOnGvisor());
+  AutoCapability cap(CAP_SYS_PTRACE, false);
+  for (int iter = 0; iter < 100; ++iter) {
+    int pfd[2];
+    ASSERT_THAT(pipe(pfd), SyscallSucceeds());
+    FileDescriptor read_pipe(pfd[0]);
+    FileDescriptor write_pipe(pfd[1]);
+
+    pid_t child = -1;
+    auto pidfd = ASSERT_NO_ERRNO_AND_VALUE(
+        Clone3Pidfd(child, [&write_pipe, &read_pipe]() {
+          read_pipe.reset();
+          TEST_PCHECK(prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) == 0);
+          char c = 'r';
+          TEST_PCHECK(write(write_pipe.get(), &c, 1) == 1);
+          write_pipe.reset();
+          _exit(0);
+        }));
+    ScopedChildReaper reaper(child);
+    write_pipe.reset();
+
+    char c;
+    ASSERT_THAT(read(read_pipe.get(), &c, 1), SyscallSucceedsWithValue(1));
+    read_pipe.reset();
+
+    bool succeeded = false;
+    for (;;) {
+      auto res = PidfdGetfd(pidfd.get(), 0, 0);
+      if (res.ok()) {
+        succeeded = true;
+        break;
+      } else {
+        if (res.error().errno_value() == ESRCH) {
+          break;
+        }
+      }
+    }
+    EXPECT_FALSE(succeeded) << "Unexpectedly succeeded calling pidfd_getfd on "
+                               "non-dumpable exiting process at iteration "
+                            << iter;
+    if (succeeded) {
+      break;
+    }
+  }
+}
+
 }  // namespace
 }  // namespace testing
 }  // namespace gvisor

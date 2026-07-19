@@ -23,6 +23,10 @@ import (
 	"gvisor.dev/gvisor/runsc/cmd/nvproxy"
 	"gvisor.dev/gvisor/runsc/cmd/trace"
 	"gvisor.dev/gvisor/runsc/cmd/util"
+
+	// TODO(gvisor.dev/issue/13718): Temporary.
+	// Remove this import once sidecar binaries are replaced by on-disk binaries.
+	_ "gvisor.dev/gvisor/runsc/gvisorbinaries/embed"
 )
 
 const (

@@ -534,22 +534,30 @@ func recalculateChecksum(pkt *stack.PacketBuffer, r *stack.Route) tcpip.Error {
 	}
 	transportHeader := pkt.TransportHeader().Slice()
 	netHdr := header.IPv4(pkt.NetworkHeader().Slice())
-	if len(transportHeader) < header.TCPMinimumSize {
-		return &tcpip.ErrMalformedHeader{}
-	}
 	switch pkt.TransportProtocolNumber {
 	case header.TCPProtocolNumber:
+		if len(transportHeader) < header.TCPMinimumSize {
+			return &tcpip.ErrMalformedHeader{}
+		}
 		tcp := header.TCP(transportHeader)
 		xsum := r.PseudoHeaderChecksum(header.TCPProtocolNumber, netHdr.PayloadLength())
 		xsum = checksum.Combine(xsum, pkt.Data().Checksum())
 		tcp.SetChecksum(0)
 		tcp.SetChecksum(^tcp.CalculateChecksum(xsum))
 	case header.UDPProtocolNumber:
+		if len(transportHeader) < header.UDPMinimumSize {
+			return &tcpip.ErrMalformedHeader{}
+		}
 		udp := header.UDP(transportHeader)
 		xsum := r.PseudoHeaderChecksum(header.UDPProtocolNumber, netHdr.PayloadLength())
 		xsum = checksum.Combine(xsum, pkt.Data().Checksum())
 		udp.SetChecksum(0)
-		udp.SetChecksum(^udp.CalculateChecksum(xsum))
+		csum := ^udp.CalculateChecksum(xsum)
+		// RFC 768: If the computed checksum is zero, it is transmitted as all ones.
+		if csum == 0 {
+			csum = 0xFFFF
+		}
+		udp.SetChecksum(csum)
 	}
 	return nil
 }
@@ -970,8 +978,10 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 			}
 		}
 
+		nicID := e.nic.ID()
 		// Loopback traffic skips the prerouting chain.
-		inNicName := stk.FindNICNameFromID(e.nic.ID())
+		inNicName := stk.FindNICNameFromID(nicID)
+		pkt.InputNICID = nicID
 		if ok := stk.IPTables().CheckPrerouting(pkt, e, inNicName); !ok {
 			// iptables is telling us to drop the packet.
 			stats.IPTablesPreroutingDropped.Increment()

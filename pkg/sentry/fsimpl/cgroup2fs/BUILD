@@ -29,6 +29,7 @@ go_library(
         "//pkg/bitmap",
         "//pkg/context",
         "//pkg/errors/linuxerr",
+        "//pkg/fspath",
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/sentry/fsimpl/kernfs",

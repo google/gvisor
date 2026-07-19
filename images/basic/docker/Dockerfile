@@ -1,22 +1,6 @@
-FROM ubuntu:24.04
+FROM docker:dind
 
-ARG DOCKER_VERSION="5:28.5.2-1~ubuntu.24.04~noble"
+RUN apk add --no-cache bash iproute2 iptables
 
-ENV DEBIAN_FRONTEND="noninteractive"
-RUN apt-get update && apt-get -y install ca-certificates curl
-
-RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc && \
-    chmod a+r /etc/apt/keyrings/docker.asc && \
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
-    $(. /etc/os-release && echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list && \
-    apt-get update && \
-    apt-get install -qqy \
-    docker-ce=${DOCKER_VERSION} \
-    docker-ce-cli=${DOCKER_VERSION} \
-    containerd.io \
-    docker-buildx-plugin \
-    docker-compose-plugin \
-    iproute2
-
-COPY start-dockerd.sh .
+COPY start-dockerd.sh /start-dockerd.sh
 ENTRYPOINT ["/start-dockerd.sh"]

@@ -20,7 +20,9 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/nsfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // Cgroup2Ctrl represents a supported cgroup v2 controller.
@@ -45,6 +47,12 @@ type Cgroup2 interface {
 	// Used by procfs.
 	Path() string
 
+	// PathFrom returns the path of the cgroup relative to nsRoot, following
+	// Linux's cgroup_path_ns() semantics: the result always starts with '/',
+	// and contains leading "/.." components if the cgroup is not a descendant
+	// of nsRoot. Used by procfs for cgroup namespace path virtualization.
+	PathFrom(nsRoot Cgroup2) string
+
 	// The following are used by clone() and CreateProcess().
 	// CanEnter checks if a task can enter the cgroup.
 	CanEnter(ctx context.Context, t *Task) (func(), func(), error)
@@ -64,6 +72,8 @@ type Cgroup2 interface {
 	// ancestor has cgroup.freeze set). It lets a task forked into a frozen
 	// subtree start frozen.
 	IsFrozen() bool
+	// Deleted returns true if the cgroup has been deleted.
+	Deleted() bool
 }
 
 // Cgroup2FS is the public interface to cgroup2fs.
@@ -137,18 +147,124 @@ func (t *Task) getCgroup2NodeFromFD(cgroupFD uint64) (Cgroup2, error) {
 	return c, nil
 }
 
-// GetCgroup2Entry returns the cgroup v2 entry if cgroup v2 is mounted.
-func (t *Task) GetCgroup2Entry() *TaskCgroupEntry {
+// GetCgroup2Entry returns the cgroup v2 entry if cgroup v2 is mounted. The
+// cgroup path is expressed relative to the root of readerNS, the cgroup
+// namespace of the task reading the entry. If readerNS is nil (e.g. for
+// background contexts), the absolute path is used.
+func (t *Task) GetCgroup2Entry(readerNS *CgroupNamespace) *TaskCgroupEntry {
 	var path string
 	if c := t.Cgroup2(); c != nil {
-		path = c.Path()
+		if readerNS != nil {
+			path = c.PathFrom(readerNS.Root())
+		} else {
+			path = c.Path()
+		}
+		if c.Deleted() {
+			path += " (deleted)"
+		}
 	}
 	if path == "" {
 		path = "/"
 	}
 	return &TaskCgroupEntry{
 		HierarchyID: 0,
-		Controllers: "",
 		Path:        path,
 	}
+}
+
+// CgroupNamespace represents a cgroup namespace. A cgroup namespace
+// virtualizes the view of a task's cgroups: paths in /proc/<pid>/cgroup are
+// shown relative to the namespace root, and cgroup2 mounts created from
+// within the namespace are rooted at the namespace root.
+//
+// +stateify savable
+type CgroupNamespace struct {
+	// root is the cgroup2 node this namespace is rooted at. It was the
+	// creating task's cgroup at the time the namespace was created, and does
+	// not change even if that task subsequently migrates. Immutable.
+	root Cgroup2
+
+	// userns is the user namespace that owns this cgroup namespace. Immutable.
+	userns *auth.UserNamespace
+
+	// mu protects inode.
+	mu sync.Mutex `state:"nosave"`
+
+	// inode is the nsfs inode backing /proc/<pid>/ns/cgroup for this
+	// namespace. It also holds this namespace's reference count.
+	// +checklocks:mu
+	inode *nsfs.Inode
+}
+
+// newCgroupNamespace creates a new cgroup namespace rooted at root and owned
+// by userns.
+func newCgroupNamespace(root Cgroup2, userns *auth.UserNamespace) *CgroupNamespace {
+	return &CgroupNamespace{
+		root:   root,
+		userns: userns,
+	}
+}
+
+// Root returns the cgroup2 node this namespace is rooted at.
+func (ns *CgroupNamespace) Root() Cgroup2 {
+	return ns.root
+}
+
+// UserNamespace returns the user namespace that owns this cgroup namespace.
+func (ns *CgroupNamespace) UserNamespace() *auth.UserNamespace {
+	return ns.userns
+}
+
+// Type implements vfs.Namespace.Type.
+func (ns *CgroupNamespace) Type() string {
+	return "cgroup"
+}
+
+// Destroy implements vfs.Namespace.Destroy.
+func (ns *CgroupNamespace) Destroy(ctx context.Context) {}
+
+// SetInode sets the nsfs inode of the cgroup namespace.
+func (ns *CgroupNamespace) SetInode(inode *nsfs.Inode) {
+	ns.mu.Lock()
+	defer ns.mu.Unlock()
+	ns.inode = inode
+}
+
+// GetInode returns the nsfs inode associated with the cgroup namespace.
+func (ns *CgroupNamespace) GetInode() *nsfs.Inode {
+	ns.mu.Lock()
+	defer ns.mu.Unlock()
+	return ns.inode
+}
+
+// IncRef increments the namespace's reference count.
+func (ns *CgroupNamespace) IncRef() {
+	ns.mu.Lock()
+	defer ns.mu.Unlock()
+	ns.inode.IncRef()
+}
+
+// DecRef decrements the namespace's reference count.
+func (ns *CgroupNamespace) DecRef(ctx context.Context) {
+	ns.mu.Lock()
+	defer ns.mu.Unlock()
+	ns.inode.DecRef(ctx)
+}
+
+// CgroupNamespace returns the task's cgroup namespace.
+func (t *Task) CgroupNamespace() *CgroupNamespace {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.cgroupns
+}
+
+// GetCgroupNamespace takes a reference on the task's cgroup namespace and
+// returns it. It returns nil if the task has exited.
+func (t *Task) GetCgroupNamespace() *CgroupNamespace {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.cgroupns != nil {
+		t.cgroupns.IncRef()
+	}
+	return t.cgroupns
 }

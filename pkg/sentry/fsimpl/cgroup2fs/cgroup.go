@@ -667,12 +667,49 @@ func (c *cgroup) removeInterfaceFiles(ctx context.Context, ctrl controller) {
 	}
 }
 
-// Path returns the path of the cgroup.
+// Path returns the path of the cgroup (`without " (deleted)"`).
 func (c *cgroup) Path() string {
-	if c.deleted.Load() {
-		return c.path + " (deleted)"
-	}
 	return c.path
+}
+
+// PathFrom implements kernel.Cgroup2.PathFrom.
+//
+// It mirrors Linux's cgroup_path_ns(): the returned path is relative
+// to nsRoot, always starts with '/', and contains one leading "/.." component
+// per level separating nsRoot from the lowest common ancestor of the two
+// cgroups.
+//
+// It relies only on immutable fields (parent, level, path), so it
+// needs no locks.
+func (c *cgroup) PathFrom(nsRoot kernel.Cgroup2) string {
+	root, ok := nsRoot.(*cgroup)
+	if !ok || root.fs != c.fs || root.parent == nil {
+		// Namespace rooted at the real root (or a foreign node, which
+		// shouldn't happen): the path is absolute.
+		return c.Path()
+	}
+
+	lca := lowestCommonAncestor(c, root)
+	var b strings.Builder
+	for i := 0; i < root.level-lca.level; i++ {
+		b.WriteString("/..")
+	}
+	if c != lca {
+		if lca.parent == nil {
+			b.WriteString(c.path)
+		} else {
+			b.WriteString(c.path[len(lca.path):])
+		}
+	}
+	if b.Len() == 0 {
+		b.WriteString("/")
+	}
+	return b.String()
+}
+
+// Deleted implements kernel.Cgroup2.Deleted.
+func (c *cgroup) Deleted() bool {
+	return c.deleted.Load()
 }
 
 // KillSeq implements kernel.Cgroup2.KillSeq.

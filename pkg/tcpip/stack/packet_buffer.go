@@ -158,6 +158,10 @@ type PacketBuffer struct {
 	// NICID is the ID of the last interface the network packet was handled at.
 	NICID tcpip.NICID
 
+	// InputNICID is the ID of the interface that the network packet
+	// was received on.
+	InputNICID tcpip.NICID
+
 	// RXChecksumValidated indicates that checksum verification may be
 	// safely skipped.
 	RXChecksumValidated bool
@@ -397,6 +401,7 @@ func (pk *PacketBuffer) Clone() *PacketBuffer {
 	newPk.TransportProtocolNumber = pk.TransportProtocolNumber
 	newPk.PktType = pk.PktType
 	newPk.NICID = pk.NICID
+	newPk.InputNICID = pk.InputNICID
 	newPk.RXChecksumValidated = pk.RXChecksumValidated
 	newPk.NetworkPacketInfo = pk.NetworkPacketInfo
 	newPk.tuple = pk.tuple
@@ -484,6 +489,24 @@ func (pk *PacketBuffer) DeepCopyForForwarding(reservedHeaderBytes int) *PacketBu
 // IsConnTrackConfigured returns whether connection tracking is configured for this packet.
 func (pk *PacketBuffer) IsConnTrackConfigured() bool {
 	return pk.tuple != nil && pk.tuple.conn != nil
+}
+
+// FillConnTrackInfo fills connection tracking information for the packet.
+func (pk *PacketBuffer) FillConnTrackInfo(opts ConnTrackInfoOpts, info *ConnTrackInfo) bool {
+	t := pk.tuple
+	if t == nil || t.conn == nil {
+		return false
+	}
+	return t.conn.FillConnTrackInfo(opts, info)
+}
+
+// IsReplyPacket returns whether the packet is a reply packet.
+func (pk *PacketBuffer) IsReplyPacket() bool {
+	t := pk.tuple
+	if t == nil {
+		return false
+	}
+	return t.reply
 }
 
 // IsNATConfigured returns whether NAT is configured for this packet.
@@ -1118,6 +1141,11 @@ func (pk *PacketBuffer) CalculateTransportChecksum() {
 		xsum = header.PseudoHeaderChecksum(proto, src, dst, totalLen)
 		xsum = checksum.Combine(xsum, pk.Data().Checksum())
 		t.SetChecksum(0)
-		t.SetChecksum(^t.CalculateChecksum(xsum))
+		csum := ^t.CalculateChecksum(xsum)
+		// udp csum RFC 768.
+		if csum == 0 {
+			csum = 0xFFFF
+		}
+		t.SetChecksum(csum)
 	}
 }

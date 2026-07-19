@@ -173,6 +173,12 @@ func archInit() {
 			Name: "envv",
 		},
 	})
+	addSyscallPoint(222, "mmap", []FieldDesc{
+		{
+			ID:   FieldSyscallPath,
+			Name: "fd_path",
+		},
+	})
 	addSyscallPoint(242, "accept4", []FieldDesc{
 		{
 			ID:   FieldSyscallPath,

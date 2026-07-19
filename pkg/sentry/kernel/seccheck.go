@@ -86,5 +86,8 @@ func LoadSeccheckDataLocked(t *Task, mask seccheck.FieldMask, info *pb.ContextDa
 			info.ParentThreadGroupId = int32(t.k.tasks.Root.tgids[t.parent.tg])
 		}
 	}
+	if mask.Contains(seccheck.FieldCtxtIsExecSession) {
+		info.IsExecSession = (t.Origin == OriginExec)
+	}
 	t.Credentials().LoadSeccheckData(mask, info)
 }

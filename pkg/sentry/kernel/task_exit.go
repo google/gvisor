@@ -34,6 +34,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/waiter"
 
@@ -288,11 +289,16 @@ func (*runExitMain) execute(t *Task) taskRunState {
 	// of that lock.
 	t.p.PrepareExit()
 	t.mu.Lock()
-	mm := t.image.MemoryManager
+	taskMM := t.image.MemoryManager
+	if taskMM != nil {
+		t.userDumpable = (taskMM.Dumpability() == mm.UserDumpable)
+	}
 	t.image.MemoryManager = nil
 	t.image.fu = nil
 	t.mu.Unlock()
-	mm.DecUsers(t)
+	if taskMM != nil {
+		taskMM.DecUsers(t)
+	}
 
 	// Releasing the MM unblocks a blocked CLONE_VFORK parent.
 	t.unstopVforkParent()
@@ -312,6 +318,8 @@ func (*runExitMain) execute(t *Task) taskRunState {
 	t.utsns = nil
 	ipcns := t.ipcns
 	t.ipcns = nil
+	cgroupns := t.cgroupns
+	t.cgroupns = nil
 	netns := t.netns
 	t.netns = nil
 	userns := t.Credentials().UserNamespace
@@ -321,6 +329,7 @@ func (*runExitMain) execute(t *Task) taskRunState {
 	mntns.DecRef(t)
 	utsns.DecRef(t)
 	ipcns.DecRef(t)
+	cgroupns.DecRef(t)
 	netns.DecRef(t)
 	userns.DecRef(t)
 	if childPIDNS != nil {

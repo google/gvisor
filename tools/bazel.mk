@@ -297,7 +297,7 @@ bazel-image: load-default ## Ensures that the local builder exists.
 .PHONY: bazel-image
 
 ifneq (true,$(shell $(wrapper echo true)))
-bazel-server: bazel-image ## Ensures that the server exists.
+bazel-server: bazel-image ## Restart bazel server/container.
 ifneq (,$(PRE_BAZEL_INIT))
 	@$(call header,PRE_BAZEL_INIT)
 	@bash -euxo pipefail -c "$(PRE_BAZEL_INIT)"
@@ -331,6 +331,15 @@ endif
 # As of version 4.4, Make will ignore phony targets in include statements, so
 # we make a non-phony version of bazel-server that can be included.
 bazel-server-inc: bazel-server
+
+ifneq (true,$(shell $(wrapper echo true)))
+ensure-bazel-server:  ## Ensures that the bazel server exists, else restart.
+	@$(DOCKER_CLI_PATH) inspect $(DOCKER_NAME) &>/dev/null || $(MAKE) bazel-server
+else
+ensure-bazel-server:
+	@
+endif
+.PHONY: ensure-bazel-server
 
 # build_paths extracts the built binary from the bazel stderr output.
 #

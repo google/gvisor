@@ -5,31 +5,6 @@ package(
     licenses = ["notice"],
 )
 
-config_setting(
-    name = "metric_server_elided",
-    values = {
-        "compilation_mode": "fastbuild",
-    },
-)
-
-# @unused
-glaze_ignore = [
-    "metric_server_elided.go",
-    "metric_server_embedded.go",
-]
-
-# Use either metric_server_elided.go or metric_server_embedded.go
-# as metric_server.go.
-genrule(
-    name = "metricserver_cmd",
-    srcs = select({
-        ":metric_server_elided": ["metric_server_elided.go"],
-        "//conditions:default": ["metric_server_embedded.go"],
-    }),
-    outs = ["metric_server.go"],
-    cmd = "cat < $(SRCS) > $(OUTS)",
-)
-
 go_library(
     name = "cmd",
     srcs = [
@@ -99,12 +74,10 @@ go_library(
         "//pkg/ring0",
         "//pkg/sentry/control",
         "//pkg/sentry/devices/nvproxy/nvconf",
-        "//pkg/sentry/devices/tpuproxy",
         "//pkg/sentry/hostmm",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/platform",
-        "//pkg/sentry/socket/plugin",
         "//pkg/sentry/syscalls/linux",
         "//pkg/state/pretty",
         "//pkg/state/statefile",
@@ -122,28 +95,20 @@ go_library(
         "//runsc/fsgofer",
         "//runsc/fsgofer/extension",
         "//runsc/fsgofer/filter",
+        "//runsc/gvisorbinaries",
         "//runsc/metricserver/containermetrics",
         "//runsc/mitigate",
         "//runsc/profile",
         "//runsc/sandbox",
         "//runsc/specutils",
-        "//runsc/specutils/seccomp",
-        "//runsc/starttime",
-        "//runsc/version",
         "//sandboxexec/proto:sandbox_options_go_proto",
         "@com_github_google_subcommands//:go_default_library",
         "@com_github_moby_sys_capability//:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
-        "@com_github_opencontainers_runtime_spec//specs-go/features:go_default_library",
         "@org_golang_google_protobuf//encoding/prototext:go_default_library",
         "@org_golang_google_protobuf//proto:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
-    ] + select({
-        ":metric_server_elided": [],
-        "//conditions:default": [
-            "//runsc/cmd/metricserver",
-        ],
-    }),
+    ],
 )
 
 go_test(

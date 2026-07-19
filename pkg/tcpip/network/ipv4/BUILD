@@ -77,3 +77,20 @@ go_test(
         "//pkg/tcpip/testutil",
     ],
 )
+
+go_test(
+    name = "ipv4_unit_test",
+    size = "small",
+    srcs = ["ipv4_unit_test.go"],
+    library = ":ipv4",
+    deps = [
+        "//pkg/buffer",
+        "//pkg/tcpip",
+        "//pkg/tcpip/checksum",
+        "//pkg/tcpip/header",
+        "//pkg/tcpip/network/internal/testutil",
+        "//pkg/tcpip/stack",
+        "//pkg/tcpip/transport/tcp",
+        "//pkg/tcpip/transport/udp",
+    ],
+)

@@ -55,6 +55,7 @@ go_library(
         "//pkg/seccomp",
         "//pkg/sentry/arch",
         "//pkg/sentry/arch/fpu",
+        "//pkg/sentry/hostmm",
         "//pkg/sentry/memmap",
         "//pkg/sentry/platform",
         "//pkg/sentry/platform/interrupt",

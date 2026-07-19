@@ -20,6 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -48,7 +49,7 @@ func (ft FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualF
 	for k := range mopts {
 		switch k {
 		case "nsdelegate":
-			// TODO (b/513700867): Silently ignore because we don't support cgroup namespaces anyway.
+			// TODO (b/513700867): Actually implement instead of silently ignoring.
 		default:
 			ctx.Debugf("cgroup2fs.FilesystemType.GetFilesystem: unknown option: %s", k)
 			return nil, nil, linuxerr.EINVAL
@@ -56,11 +57,74 @@ func (ft FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualF
 	}
 
 	fs := kernel.KernelFromContext(ctx).Cgroup2FS().(*filesystem)
+	rootD, err := fs.mountRoot(ctx, vfsObj)
+	if err != nil {
+		return nil, nil, err
+	}
 	fs.mounted.Store(1)
-	fs.root.IncRef()
 	vfsfs := fs.VFSFilesystem()
 	vfsfs.IncRef()
-	return vfsfs, fs.root.VFSDentry(), nil
+	return vfsfs, rootD.VFSDentry(), nil
+}
+
+// mountRoot returns the dentry a new cgroup2 mount should be rooted at, with
+// a reference taken on it. Mounts created from within a non-init cgroup
+// namespace are rooted at the namespace's root cgroup, per cgroup-v2.rst
+// "Interaction with Other Namespaces". Otherwise, the mount is rooted at the
+// real root of the hierarchy.
+func (fs *filesystem) mountRoot(ctx context.Context, vfsObj *vfs.VirtualFilesystem) (*kernfs.Dentry, error) {
+	t := kernel.TaskFromContext(ctx)
+	if t == nil {
+		fs.root.IncRef()
+		return fs.root, nil
+	}
+	cgns := t.CgroupNamespace()
+	if cgns == nil {
+		fs.root.IncRef()
+		return fs.root, nil
+	}
+	nsRoot, ok := cgns.Root().(*cgroup)
+	if !ok || nsRoot.fs != fs || nsRoot.parent == nil {
+		fs.root.IncRef()
+		return fs.root, nil
+	}
+	if nsRoot.deleted.Load() {
+		return nil, linuxerr.ENOENT
+	}
+	// Cgroups can't be renamed and nsRoot.path is immutable, so walking the
+	// path from the real root reliably finds nsRoot's dentry unless it has
+	// been removed.
+	d, err := fs.root.WalkDentryTree(ctx, vfsObj, fspath.Parse(nsRoot.path))
+	if err != nil {
+		return nil, err
+	}
+	if d.Inode() != nsRoot {
+		d.DecRef(ctx)
+		return nil, linuxerr.ENOENT
+	}
+	return d, nil
+}
+
+// MountRootPath implements vfs.MountRootPathProvider.MountRootPath.
+func (fs *filesystem) MountRootPath(ctx context.Context, vd vfs.VirtualDentry) string {
+	d, ok := vd.Dentry().Impl().(*kernfs.Dentry)
+	if !ok {
+		return ""
+	}
+	c, ok := d.Inode().(*cgroup)
+	if !ok {
+		return ""
+	}
+	var path string
+	if t := kernel.TaskFromContext(ctx); t != nil {
+		if cgns := t.CgroupNamespace(); cgns != nil {
+			path = c.PathFrom(cgns.Root())
+		}
+	}
+	if path == "" {
+		path = c.Path()
+	}
+	return path
 }
 
 // NewFilesystem creates and registers the cgroup2fs singleton. It should be called early
