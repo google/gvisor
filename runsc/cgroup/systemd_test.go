@@ -18,6 +18,7 @@ package cgroup
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	systemdDbus "github.com/coreos/go-systemd/v22/dbus"
@@ -31,6 +32,15 @@ var (
 	defaultProps         = []systemdDbus.Property{}
 	mandatoryControllers = []string{"cpu", "cpuset", "io", "memory", "pids"}
 )
+
+type fakeSystemdManagerPropertyGetter struct {
+	value string
+	err   error
+}
+
+func (f fakeSystemdManagerPropertyGetter) GetManagerProperty(string) (string, error) {
+	return f.value, f.err
+}
 
 func TestIsValidSlice(t *testing.T) {
 	for _, tc := range []struct {
@@ -70,6 +80,51 @@ func TestIsValidSlice(t *testing.T) {
 			err := validSlice(tc.slice)
 			if !errors.Is(err, tc.err) {
 				t.Errorf("validSlice(%s) = %v, want %v", tc.slice, err, tc.err)
+			}
+		})
+	}
+}
+
+func TestSystemdVersionGetManagerPropertyError(t *testing.T) {
+	wantErr := errors.New("dbus timeout")
+	_, err := systemdVersion(fakeSystemdManagerPropertyGetter{err: wantErr})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("systemdVersion() error = %v, want error wrapping %v", err, wantErr)
+	}
+	if got, want := err.Error(), "unable to get systemd version: dbus timeout"; !strings.Contains(got, want) {
+		t.Fatalf("systemdVersion() error = %q, want substring %q", got, want)
+	}
+}
+
+func TestSystemdVersionParsesManagerProperty(t *testing.T) {
+	for _, tc := range []struct {
+		version string
+		want    int
+	}{
+		{
+			version: "v245.4-1.fc32",
+			want:    245,
+		},
+		{
+			version: "245",
+			want:    245,
+		},
+		{
+			version: "v245-1.fc32",
+			want:    245,
+		},
+		{
+			version: "245-1.fc32",
+			want:    245,
+		},
+	} {
+		t.Run(tc.version, func(t *testing.T) {
+			got, err := systemdVersion(fakeSystemdManagerPropertyGetter{value: tc.version})
+			if err != nil {
+				t.Fatalf("systemdVersion() failed: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("systemdVersion() = %d, want %d", got, tc.want)
 			}
 		})
 	}
