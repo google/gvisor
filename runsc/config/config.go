@@ -1001,8 +1001,10 @@ type Overlay2 struct {
 }
 
 func defaultOverlay2() *Overlay2 {
-	// Rootfs overlay is enabled by default and backed by a file in rootfs itself.
-	return &Overlay2{rootMount: true, subMounts: false, medium: SelfOverlay}
+	// PatchNoDefaultRootfsOverlay: default to no overlay so that host-side
+	// rootfs writes after sandbox start (e.g. Garden streamInToBundleRoot
+	// for CF /tmp/app) are visible inside the sandbox via the gofer.
+	return &Overlay2{rootMount: false, subMounts: false, medium: NoOverlay}
 }
 
 func setOverlay2Err(v string) error {
