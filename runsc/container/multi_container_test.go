@@ -32,6 +32,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fscheckpoint"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -3400,7 +3401,7 @@ func TestFSCheckpointCommand(t *testing.T) {
 			}
 			if err := conts[0].FSSave(conf, imagePath, sandbox.FSSaveOpts{
 				ExitAfterSaving: true,
-				Path:            fsSavePathArg,
+				Paths:           []checkpoint.ResourceID{{Path: fsSavePathArg}},
 			}); err != nil {
 				t.Fatalf("Error saving filesystem checkpoint: %v", err)
 			}
@@ -3976,5 +3977,480 @@ func TestMultiContainerExecSeccomp(t *testing.T) {
 	_, err = executeCombinedOutput(conf, containers[1], nil, "/bin/uname")
 	if err != nil {
 		t.Errorf("uname in container 1 should have succeeded: %v", err)
+	}
+}
+
+func TestFSCheckpointMultiPath(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		useAnnotation bool
+	}{
+		{name: "Command", useAnnotation: false},
+		{name: "Annotation", useAnnotation: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conf := testutil.TestConfig(t)
+
+			rootDir, cleanupRoot, err := testutil.SetupRootDir()
+			if err != nil {
+				t.Fatalf("Error creating root dir: %v", err)
+			}
+			defer cleanupRoot()
+			conf.RootDir = rootDir
+
+			// Configure overlay.
+			conf.Overlay2.Set("root:self")
+
+			const (
+				rootName = "root-container"
+				subName  = "sub-container"
+			)
+
+			appSrc, err := testutil.FindFile("test/cmd/test_app/test_app")
+			if err != nil {
+				t.Fatal("Error finding test_app:", err)
+			}
+			setupSpecRoots := func(containerSpecs []*specs.Spec, ids []string) (func(), error) {
+				var cleanupSpecRoots cleanup.Cleanup
+				defer cleanupSpecRoots.Clean()
+				for i, spec := range containerSpecs {
+					contRootPath, err := os.MkdirTemp(testutil.TmpDir(), fmt.Sprintf("%s-root", ids[i]))
+					if err != nil {
+						return nil, fmt.Errorf("error creating root directory for container %d: %v", i, err)
+					}
+					cleanupSpecRoots.Add(func() { os.RemoveAll(contRootPath) })
+					spec.Root.Path = contRootPath
+					spec.Root.Readonly = false
+					appDst := filepath.Join(contRootPath, "app")
+					if err := copyFile(appSrc, appDst); err != nil {
+						return nil, fmt.Errorf("error copying app binary from %q to %q: %v", appSrc, appDst, err)
+					}
+				}
+				return cleanupSpecRoots.Release(), nil
+			}
+
+			testAppSleepArgv := []string{"/app", "reaper"}
+			saveSpecs, ids := createSpecs(testAppSleepArgv, testAppSleepArgv)
+
+			saveSpecs[0].Annotations[specutils.ContainerdContainerNameAnnotation] = rootName
+			saveSpecs[1].Annotations[specutils.ContainerdContainerNameAnnotation] = subName
+
+			addMountHint := func(spec *specs.Spec, name, source string) {
+				spec.Annotations["dev.gvisor.spec.mount."+name+".source"] = source
+				spec.Annotations["dev.gvisor.spec.mount."+name+".share"] = "pod"
+				spec.Annotations["dev.gvisor.spec.mount."+name+".type"] = "bind"
+			}
+
+			saveSource0_1, err := os.MkdirTemp(testutil.TmpDir(), "savedir-0-1")
+			if err != nil {
+				t.Fatalf("Error creating savedir source: %v", err)
+			}
+			defer os.RemoveAll(saveSource0_1)
+			saveSpecs[0].Mounts = append(saveSpecs[0].Mounts, specs.Mount{
+				Source:      saveSource0_1,
+				Destination: "/data1",
+				Type:        "bind",
+			})
+			addMountHint(saveSpecs[0], "savedir-0-1", saveSource0_1)
+
+			lostSource0, err := os.MkdirTemp(testutil.TmpDir(), "lostdir-0")
+			if err != nil {
+				t.Fatalf("Error creating lostdir source: %v", err)
+			}
+			defer os.RemoveAll(lostSource0)
+			saveSpecs[0].Mounts = append(saveSpecs[0].Mounts, specs.Mount{
+				Source:      lostSource0,
+				Destination: "/data_lost",
+				Type:        "bind",
+			})
+			addMountHint(saveSpecs[0], "lostdir-0", lostSource0)
+
+			saveSource1_1, err := os.MkdirTemp(testutil.TmpDir(), "savedir-1-1")
+			if err != nil {
+				t.Fatalf("Error creating savedir source: %v", err)
+			}
+			defer os.RemoveAll(saveSource1_1)
+			saveSpecs[1].Mounts = append(saveSpecs[1].Mounts, specs.Mount{
+				Source:      saveSource1_1,
+				Destination: "/data2",
+				Type:        "bind",
+			})
+			addMountHint(saveSpecs[0], "savedir-1-1", saveSource1_1)
+
+			imagePath, err := os.MkdirTemp(testutil.TmpDir(), "fscheckpoint-image")
+			if err != nil {
+				t.Fatalf("Error creating temp dir: %v", err)
+			}
+			defer os.RemoveAll(imagePath)
+
+			if tc.useAnnotation {
+				saveSpecs[0].Annotations["dev.gvisor.internal.fscheckpoint.path"] = imagePath
+				saveSpecs[0].Annotations["dev.gvisor.internal.fscheckpoint.resume"] = "true"
+				saveSpecs[0].Annotations["dev.gvisor.internal.fscheckpoint.paths"] = fmt.Sprintf("%s:/data1,%s:/data2", rootName, subName)
+				saveSpecs[1].Annotations["dev.gvisor.internal.fscheckpoint.enable"] = "true"
+			}
+
+			cleanupRootsOld, err := setupSpecRoots(saveSpecs, ids)
+			if err != nil {
+				t.Fatalf("Error setting up container roots: %v", err)
+			}
+			defer cleanupRootsOld()
+
+			conts, cleanupContsOld, err := startContainers(conf, saveSpecs, ids)
+			if err != nil {
+				t.Fatalf("Error starting containers: %v", err)
+			}
+			defer cleanupContsOld()
+
+			seed := rand.Uint64()
+			savePathFsTreeArgs0 := []string{"--depth=5", "--file-per-level=5", "--file-size=100", "--target-dir=/data1", fmt.Sprintf("--seed=%d", seed)}
+			if ws, err := execute(conf, conts[0], "/app", append([]string{"fsTreeCreate"}, savePathFsTreeArgs0...)...); err != nil || ws != 0 {
+				t.Fatalf("Error populating /data1 for container 0, ws: %v, err: %v", ws, err)
+			}
+
+			lostPathFsTreeArgs0 := []string{"--depth=1", "--file-per-level=1", "--file-size=0", "--target-dir=/data_lost", fmt.Sprintf("--seed=%d", seed+1)}
+			if ws, err := execute(conf, conts[0], "/app", append([]string{"fsTreeCreate"}, lostPathFsTreeArgs0...)...); err != nil || ws != 0 {
+				t.Fatalf("Error populating /data_lost for container 0, ws: %v, err: %v", ws, err)
+			}
+
+			savePathFsTreeArgs1 := []string{"--depth=5", "--file-per-level=5", "--file-size=100", "--target-dir=/data2", fmt.Sprintf("--seed=%d", seed+2)}
+			if ws, err := execute(conf, conts[1], "/app", append([]string{"fsTreeCreate"}, savePathFsTreeArgs1...)...); err != nil || ws != 0 {
+				t.Fatalf("Error populating /data2 for container 1, ws: %v, err: %v", ws, err)
+			}
+
+			if tc.useAnnotation {
+				if ws, err := execute(conf, conts[1], "/app", "fsCheckpoint"); err != nil || ws != 0 {
+					t.Fatalf("Error saving filesystem checkpoint from container 1, ws: %v, err: %v", ws, err)
+				}
+			} else {
+				if err := conts[0].FSSave(conf, imagePath, sandbox.FSSaveOpts{
+					ExitAfterSaving: true,
+					Paths: []checkpoint.ResourceID{
+						{ContainerName: rootName, Path: "/data1"},
+						{ContainerName: subName, Path: "/data2"},
+					},
+				}); err != nil {
+					t.Fatalf("Error saving filesystem checkpoint: %v", err)
+				}
+			}
+
+			for i, c := range conts {
+				if err := c.SignalContainer(unix.SIGKILL, false); err != nil {
+					t.Fatalf("Error killing container %d: %v", i, err)
+				}
+			}
+
+			restoreSpecs, restoreIDs := createSpecs(testAppSleepArgv, testAppSleepArgv)
+			restoreSpecs[0].Annotations[specutils.ContainerdContainerNameAnnotation] = rootName
+			restoreSpecs[1].Annotations[specutils.ContainerdContainerNameAnnotation] = subName
+
+			restoreSpecs[0].Mounts = append(restoreSpecs[0].Mounts, specs.Mount{
+				Source:      saveSource0_1,
+				Destination: "/data1",
+				Type:        "bind",
+			})
+			addMountHint(restoreSpecs[0], "savedir-0-1", saveSource0_1)
+
+			restoreSpecs[0].Mounts = append(restoreSpecs[0].Mounts, specs.Mount{
+				Source:      lostSource0,
+				Destination: "/data_lost",
+				Type:        "bind",
+			})
+			addMountHint(restoreSpecs[0], "lostdir-0", lostSource0)
+
+			restoreSpecs[1].Mounts = append(restoreSpecs[1].Mounts, specs.Mount{
+				Source:      saveSource1_1,
+				Destination: "/data2",
+				Type:        "bind",
+			})
+			addMountHint(restoreSpecs[0], "savedir-1-1", saveSource1_1)
+
+			cleanupRootsNew, err := setupSpecRoots(restoreSpecs, restoreIDs)
+			if err != nil {
+				t.Fatalf("Error setting up container roots: %v", err)
+			}
+			defer cleanupRootsNew()
+
+			restoreConts, cleanupContsNew, err := startContainersWithArgs(conf, restoreSpecs, restoreIDs, func(i int, contArgs *Args) {
+				if i == 0 {
+					contArgs.FSRestoreImagePath = imagePath
+				}
+			})
+			if err != nil {
+				t.Fatalf("Error starting containers: %v", err)
+			}
+			defer cleanupContsNew()
+
+			if ws, err := execute(conf, restoreConts[0], "/app", append([]string{"fsTreeVerify"}, savePathFsTreeArgs0...)...); err != nil || ws != 0 {
+				t.Fatalf("Error verifying /data1 for container 0, ws: %v, err: %v", ws, err)
+			}
+			out, status, err := executeCombinedOutputWithStatus(conf, restoreConts[0], nil, "/app", "assertIsEmpty", "/data_lost")
+			if err != nil || status != 0 {
+				t.Fatalf("/data_lost was not cleared for container 0, status: %v, err: %v, output: %s", status, err, string(out))
+			}
+
+			if ws, err := execute(conf, restoreConts[1], "/app", append([]string{"fsTreeVerify"}, savePathFsTreeArgs1...)...); err != nil || ws != 0 {
+				t.Fatalf("Error verifying /data2 for container 1, ws: %v, err: %v", ws, err)
+			}
+		})
+	}
+}
+
+func TestFSCheckpointAnnotationConflict(t *testing.T) {
+	conf := testutil.TestConfig(t)
+
+	rootDir, cleanupRoot, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("Error creating root dir: %v", err)
+	}
+	defer cleanupRoot()
+	conf.RootDir = rootDir
+
+	// Configure overlay.
+	conf.Overlay2.Set("root:self")
+
+	const (
+		rootName = "root-container"
+		subName  = "sub-container"
+	)
+
+	appSrc, err := testutil.FindFile("test/cmd/test_app/test_app")
+	if err != nil {
+		t.Fatal("Error finding test_app:", err)
+	}
+	setupSpecRoots := func(containerSpecs []*specs.Spec, ids []string) (func(), error) {
+		var cleanupSpecRoots cleanup.Cleanup
+		defer cleanupSpecRoots.Clean()
+		for i, spec := range containerSpecs {
+			contRootPath, err := os.MkdirTemp(testutil.TmpDir(), fmt.Sprintf("%s-root", ids[i]))
+			if err != nil {
+				return nil, fmt.Errorf("error creating root directory for container %d: %v", i, err)
+			}
+			cleanupSpecRoots.Add(func() { os.RemoveAll(contRootPath) })
+			spec.Root.Path = contRootPath
+			spec.Root.Readonly = false
+			appDst := filepath.Join(contRootPath, "app")
+			if err := copyFile(appSrc, appDst); err != nil {
+				return nil, fmt.Errorf("error copying app binary from %q to %q: %v", appSrc, appDst, err)
+			}
+		}
+		return cleanupSpecRoots.Release(), nil
+	}
+
+	imagePath, err := os.MkdirTemp(testutil.TmpDir(), "fscheckpoint-image")
+	if err != nil {
+		t.Fatalf("Error creating temp dir: %v", err)
+	}
+	defer os.RemoveAll(imagePath)
+
+	testAppSleepArgv := []string{"/app", "reaper"}
+	saveSpecs, ids := createSpecs(testAppSleepArgv, testAppSleepArgv)
+
+	saveSpecs[0].Annotations[specutils.ContainerdContainerNameAnnotation] = rootName
+	saveSpecs[1].Annotations[specutils.ContainerdContainerNameAnnotation] = subName
+
+	addMountHint := func(spec *specs.Spec, name, source string) {
+		spec.Annotations["dev.gvisor.spec.mount."+name+".source"] = source
+		spec.Annotations["dev.gvisor.spec.mount."+name+".share"] = "pod"
+		spec.Annotations["dev.gvisor.spec.mount."+name+".type"] = "bind"
+	}
+
+	saveSource0_1, err := os.MkdirTemp(testutil.TmpDir(), "savedir-0-1")
+	if err != nil {
+		t.Fatalf("Error creating savedir source: %v", err)
+	}
+	defer os.RemoveAll(saveSource0_1)
+	saveSpecs[0].Mounts = append(saveSpecs[0].Mounts, specs.Mount{
+		Source:      saveSource0_1,
+		Destination: "/data1",
+		Type:        "bind",
+	})
+	addMountHint(saveSpecs[0], "savedir-0-1", saveSource0_1)
+
+	// Specify BOTH paths and container-path annotations.
+	saveSpecs[0].Annotations["dev.gvisor.internal.fscheckpoint.path"] = imagePath
+	saveSpecs[0].Annotations["dev.gvisor.internal.fscheckpoint.resume"] = "true"
+	saveSpecs[0].Annotations["dev.gvisor.internal.fscheckpoint.paths"] = fmt.Sprintf("%s:/data1", rootName)
+	saveSpecs[0].Annotations["dev.gvisor.internal.fscheckpoint.container-path"] = "/data1"
+
+	saveSpecs[0].Annotations["dev.gvisor.internal.fscheckpoint.enable"] = "true"
+
+	cleanupRootsOld, err := setupSpecRoots(saveSpecs, ids)
+	if err != nil {
+		t.Fatalf("Error setting up container roots: %v", err)
+	}
+	defer cleanupRootsOld()
+
+	conts, cleanupContsOld, err := startContainers(conf, saveSpecs, ids)
+	if err != nil {
+		t.Fatalf("Error starting containers: %v", err)
+	}
+	defer cleanupContsOld()
+
+	// Triggering checkpoint should fail.
+	out, status, err := executeCombinedOutputWithStatus(conf, conts[0], nil, "/app", "fsCheckpoint")
+	if err == nil && status == 0 {
+		t.Fatalf("Expected fsCheckpoint to fail when both annotations are specified, but it succeeded. Output: %s", string(out))
+	}
+}
+
+func TestFSCheckpointSharedVolume(t *testing.T) {
+	conf := testutil.TestConfig(t)
+
+	rootDir, cleanupRoot, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("Error creating root dir: %v", err)
+	}
+	defer cleanupRoot()
+	conf.RootDir = rootDir
+
+	// Configure overlay.
+	conf.Overlay2.Set("root:self")
+
+	const (
+		rootName = "root-container"
+		subName  = "sub-container"
+	)
+
+	appSrc, err := testutil.FindFile("test/cmd/test_app/test_app")
+	if err != nil {
+		t.Fatal("Error finding test_app:", err)
+	}
+	setupSpecRoots := func(containerSpecs []*specs.Spec, ids []string) (func(), error) {
+		var cleanupSpecRoots cleanup.Cleanup
+		defer cleanupSpecRoots.Clean()
+		for i, spec := range containerSpecs {
+			contRootPath, err := os.MkdirTemp(testutil.TmpDir(), fmt.Sprintf("%s-root", ids[i]))
+			if err != nil {
+				return nil, fmt.Errorf("error creating root directory for container %d: %v", i, err)
+			}
+			cleanupSpecRoots.Add(func() { os.RemoveAll(contRootPath) })
+			spec.Root.Path = contRootPath
+			spec.Root.Readonly = false
+			appDst := filepath.Join(contRootPath, "app")
+			if err := copyFile(appSrc, appDst); err != nil {
+				return nil, fmt.Errorf("error copying app binary from %q to %q: %v", appSrc, appDst, err)
+			}
+		}
+		return cleanupSpecRoots.Release(), nil
+	}
+
+	sharedSource, err := os.MkdirTemp(testutil.TmpDir(), "shared-source")
+	if err != nil {
+		t.Fatalf("Error creating shared source: %v", err)
+	}
+	defer os.RemoveAll(sharedSource)
+
+	testAppSleepArgv := []string{"/app", "reaper"}
+	saveSpecs, ids := createSpecs(testAppSleepArgv, testAppSleepArgv)
+
+	saveSpecs[0].Annotations[specutils.ContainerdContainerNameAnnotation] = rootName
+	saveSpecs[1].Annotations[specutils.ContainerdContainerNameAnnotation] = subName
+
+	// Add mount hint for shared volume.
+	saveSpecs[0].Annotations["dev.gvisor.spec.mount.shared-vol.source"] = sharedSource
+	saveSpecs[0].Annotations["dev.gvisor.spec.mount.shared-vol.share"] = "pod"
+	saveSpecs[0].Annotations["dev.gvisor.spec.mount.shared-vol.type"] = "tmpfs"
+
+	// Both containers mount the same source to /shared.
+	saveSpecs[0].Mounts = append(saveSpecs[0].Mounts, specs.Mount{
+		Source:      sharedSource,
+		Destination: "/shared",
+		Type:        "bind",
+	})
+	saveSpecs[1].Mounts = append(saveSpecs[1].Mounts, specs.Mount{
+		Source:      sharedSource,
+		Destination: "/shared",
+		Type:        "bind",
+	})
+
+	imagePath, err := os.MkdirTemp(testutil.TmpDir(), "fscheckpoint-image")
+	if err != nil {
+		t.Fatalf("Error creating temp dir: %v", err)
+	}
+	defer os.RemoveAll(imagePath)
+
+	cleanupRootsOld, err := setupSpecRoots(saveSpecs, ids)
+	if err != nil {
+		t.Fatalf("Error setting up container roots: %v", err)
+	}
+	defer cleanupRootsOld()
+
+	conts, cleanupContsOld, err := startContainers(conf, saveSpecs, ids)
+	if err != nil {
+		t.Fatalf("Error starting containers: %v", err)
+	}
+	defer cleanupContsOld()
+
+	// Write file from root-container.
+	if ws, err := execute(conf, conts[0], "/app", "fsTreeCreate", "--depth=1", "--file-per-level=1", "--file-size=10", "--target-dir=/shared", "--seed=123"); err != nil || ws != 0 {
+		t.Fatalf("Error writing to shared volume from root container, ws: %v, err: %v", ws, err)
+	}
+
+	// Verify file is visible in sub-container.
+	if ws, err := execute(conf, conts[1], "/app", "fsTreeVerify", "--depth=1", "--file-per-level=1", "--file-size=10", "--target-dir=/shared", "--seed=123"); err != nil || ws != 0 {
+		t.Fatalf("Error verifying shared volume from sub-container before checkpoint, ws: %v, err: %v", ws, err)
+	}
+
+	// Checkpoint specifying BOTH paths.
+	// Since share=pod is used, the filesystem is created by the first container (root-container).
+	// Specifying both ensures it matches container0's mount and gets saved.
+	if err := conts[0].FSSave(conf, imagePath, sandbox.FSSaveOpts{
+		ExitAfterSaving: true,
+		Paths: []checkpoint.ResourceID{
+			{ContainerName: rootName, Path: "/shared"},
+			{ContainerName: subName, Path: "/shared"},
+		},
+	}); err != nil {
+		t.Fatalf("Error saving filesystem checkpoint: %v", err)
+	}
+
+	for i, c := range conts {
+		if err := c.SignalContainer(unix.SIGKILL, false); err != nil {
+			t.Fatalf("Error killing container %d: %v", i, err)
+		}
+	}
+
+	restoreSpecs, restoreIDs := createSpecs(testAppSleepArgv, testAppSleepArgv)
+	restoreSpecs[0].Annotations[specutils.ContainerdContainerNameAnnotation] = rootName
+	restoreSpecs[1].Annotations[specutils.ContainerdContainerNameAnnotation] = subName
+
+	restoreSpecs[0].Annotations["dev.gvisor.spec.mount.shared-vol.source"] = sharedSource
+	restoreSpecs[0].Annotations["dev.gvisor.spec.mount.shared-vol.share"] = "pod"
+	restoreSpecs[0].Annotations["dev.gvisor.spec.mount.shared-vol.type"] = "tmpfs"
+
+	restoreSpecs[0].Mounts = append(restoreSpecs[0].Mounts, specs.Mount{
+		Source:      sharedSource,
+		Destination: "/shared",
+		Type:        "bind",
+	})
+	restoreSpecs[1].Mounts = append(restoreSpecs[1].Mounts, specs.Mount{
+		Source:      sharedSource,
+		Destination: "/shared",
+		Type:        "bind",
+	})
+
+	cleanupRootsNew, err := setupSpecRoots(restoreSpecs, restoreIDs)
+	if err != nil {
+		t.Fatalf("Error setting up container roots: %v", err)
+	}
+	defer cleanupRootsNew()
+
+	restoreConts, cleanupContsNew, err := startContainersWithArgs(conf, restoreSpecs, restoreIDs, func(i int, contArgs *Args) {
+		if i == 0 {
+			contArgs.FSRestoreImagePath = imagePath
+		}
+	})
+	if err != nil {
+		t.Fatalf("Error starting containers: %v", err)
+	}
+	defer cleanupContsNew()
+
+	// Verify data is restored in both containers.
+	if ws, err := execute(conf, restoreConts[0], "/app", "fsTreeVerify", "--depth=1", "--file-per-level=1", "--file-size=10", "--target-dir=/shared", "--seed=123"); err != nil || ws != 0 {
+		t.Fatalf("Error verifying shared volume from root container after restore, ws: %v, err: %v", ws, err)
+	}
+	if ws, err := execute(conf, restoreConts[1], "/app", "fsTreeVerify", "--depth=1", "--file-per-level=1", "--file-size=10", "--target-dir=/shared", "--seed=123"); err != nil || ws != 0 {
+		t.Fatalf("Error verifying shared volume from sub-container after restore, ws: %v, err: %v", ws, err)
 	}
 }

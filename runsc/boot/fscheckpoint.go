@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -70,6 +71,10 @@ const (
 	// annotationFSCheckpointContainerPath is the path inside the container
 	// to save. Optional, defaults to "/".
 	annotationFSCheckpointContainerPath = annotationFSCheckpointPrefix + "container-path"
+
+	// annotationFSCheckpointPaths is a comma-separated list of paths inside the
+	// containers to save. Optional.
+	annotationFSCheckpointPaths = annotationFSCheckpointPrefix + "paths"
 )
 
 // GetAnnotationFSCheckpointPath returns the filesystem checkpoint path
@@ -95,15 +100,26 @@ func (l *Loader) FSSave() error {
 	if len(fsSaveFDs) == 0 {
 		return linuxerr.ENXIO
 	}
+	paths, err := parseFSCheckpointPaths(l.root.spec.Annotations[annotationFSCheckpointPaths])
+	if err != nil {
+		return err
+	}
+	if oldPath, ok := l.root.spec.Annotations[annotationFSCheckpointContainerPath]; ok {
+		if len(paths) > 0 {
+			log.Warningf("Both %q and %q annotations are specified. Only one should be used.", annotationFSCheckpointPaths, annotationFSCheckpointContainerPath)
+			return fmt.Errorf("both %q and %q annotations are specified", annotationFSCheckpointPaths, annotationFSCheckpointContainerPath)
+		}
+		paths = []checkpoint.ResourceID{{Path: oldPath}}
+	}
 	args := FSSaveArgs{
 		ExitAfterSaving: !specutils.AnnotationToBool(l.root.spec, annotationFSCheckpointResume),
-		Path:            l.root.spec.Annotations[annotationFSCheckpointContainerPath],
+		Paths:           paths,
 	}
 	args.FilePayload.Files = fd.ReleaseToFiles(fsSaveFDs, "fs-checkpoint")
 	args.UseCheckpointGofer = useCheckpointGofer
 	opts := kernel.FSSaveOpts{
 		RunscVersion: version.Version(),
-		Path:         args.Path,
+		Paths:        paths,
 	}
 	if err := setKernelFSSaveOptsFiles(&args, &opts); err != nil {
 		return err
@@ -111,11 +127,44 @@ func (l *Loader) FSSave() error {
 	return l.k.FSSave(context.Background(), &opts)
 }
 
+func parseFSCheckpointPaths(val string) ([]checkpoint.ResourceID, error) {
+	if val == "" {
+		return nil, nil
+	}
+	var paths []checkpoint.ResourceID
+	for _, part := range strings.Split(val, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		subparts := strings.SplitN(part, ":", 2)
+		if len(subparts) == 1 {
+			p := strings.TrimSpace(subparts[0])
+			if p == "" {
+				return nil, fmt.Errorf("empty path in fscheckpoint paths: %q", val)
+			}
+			paths = append(paths, checkpoint.ResourceID{Path: p})
+		} else {
+			c := strings.TrimSpace(subparts[0])
+			p := strings.TrimSpace(subparts[1])
+			if p == "" {
+				return nil, fmt.Errorf("empty path in fscheckpoint paths: %q", val)
+			}
+			paths = append(paths, checkpoint.ResourceID{ContainerName: c, Path: p})
+		}
+	}
+	return paths, nil
+}
+
 func convertToKernelFSSaveOpts(args *FSSaveArgs) (kernel.FSSaveOpts, error) {
+	paths := args.Paths
+	if len(paths) == 0 && args.Path != "" {
+		paths = []checkpoint.ResourceID{{Path: args.Path}}
+	}
 	opts := kernel.FSSaveOpts{
 		RunscVersion:    version.Version(),
 		ExitAfterSaving: args.ExitAfterSaving,
-		Path:            args.Path,
+		Paths:           paths,
 	}
 	if err := setKernelFSSaveOptsFiles(args, &opts); err != nil {
 		return kernel.FSSaveOpts{}, err
