@@ -129,7 +129,7 @@ func (tm *TCPMatcher) Match(hook stack.Hook, pkt *stack.PacketBuffer, _, _ strin
 		// As in Linux, we do not perform an IPv6 fragment check. See
 		// xt_action_param.fragoff in
 		// include/linux/netfilter/x_tables.h.
-		if header.IPv6(pkt.NetworkHeader().Slice()).TransportProtocol() != header.TCPProtocolNumber {
+		if pkt.TransportProtocolNumber != header.TCPProtocolNumber {
 			return false, false
 		}
 
