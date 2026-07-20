@@ -272,3 +272,77 @@ func TestSandboxInvalidEnvFormat(t *testing.T) {
 		t.Errorf("sandbox.New error = %v; want error containing %q", err, "invalid environment variable format")
 	}
 }
+
+func TestRootfsTarSnapshot(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	storageDir := filepath.Join(tempDir, "storage")
+	if err := os.MkdirAll(storageDir, 0700); err != nil {
+		t.Fatalf("failed to create storage dir: %v", err)
+	}
+	storage, err := sandbox.NewFilesystemStorage(storageDir)
+	if err != nil {
+		t.Fatalf("failed to create storage: %v", err)
+	}
+
+	runtimeDirA := filepath.Join(tempDir, "runtime-a")
+	enableNetworking := os.Geteuid() == 0
+	sbA, err := sandbox.New(ctx,
+		sandbox.WithRuntimeDir(runtimeDirA),
+		sandbox.WithNetworking(enableNetworking),
+	)
+	if err != nil {
+		t.Fatalf("failed to start sandbox A: %v", err)
+	}
+	defer sbA.Close(ctx)
+
+	_, _, err = sbA.Exec(ctx, "sh", "-c", "echo 'hello' > /test.txt")
+	if err != nil {
+		t.Fatalf("failed to create file in sandbox A: %v", err)
+	}
+
+	snapshot, err := sbA.Snapshot(ctx, sandbox.RootfsTarSnapshot, storage)
+	if err != nil {
+		t.Fatalf("failed to take snapshot: %v", err)
+	}
+
+	runtimeDirB := filepath.Join(tempDir, "runtime-b")
+	sbB, err := sandbox.New(ctx,
+		sandbox.WithRuntimeDir(runtimeDirB),
+		sandbox.WithNetworking(enableNetworking),
+		sandbox.WithSnapshot(snapshot),
+	)
+	if err != nil {
+		t.Fatalf("failed to start sandbox B: %v", err)
+	}
+	defer sbB.Close(ctx)
+
+	outB, _, err := sbB.Exec(ctx, "cat", "/test.txt")
+	if err != nil {
+		t.Fatalf("failed to cat file in sandbox B: %v", err)
+	}
+	if strings.TrimSpace(outB) != "hello" {
+		t.Errorf("unexpected content in B: got %q, want %q", outB, "hello")
+	}
+}
+
+func TestNoSnapshotStorageError(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	runtimeDir := filepath.Join(tempDir, "runtime")
+	enableNetworking := os.Geteuid() == 0
+	_, err := sandbox.New(ctx,
+		sandbox.WithRuntimeDir(runtimeDir),
+		sandbox.WithNetworking(enableNetworking),
+		sandbox.WithSnapshot(&sandbox.Snapshot{ID: "some-snapshot-id"}),
+	)
+	if err == nil {
+		t.Fatalf("expected error when starting sandbox with SnapshotID but no SnapshotStore or default storage configured, got nil")
+	}
+	expectedErrSubstr := "no snapshot storage configured for restore"
+	if !strings.Contains(err.Error(), expectedErrSubstr) {
+		t.Errorf("unexpected error: %v, want it to contain %q", err, expectedErrSubstr)
+	}
+}

@@ -30,8 +30,11 @@ func TestNewBundle(t *testing.T) {
 		t.Run(t.Name(), func(t *testing.T) {
 			tempDir := t.TempDir()
 			sandboxID := "test-sandbox"
-
-			bundleDir, err := sandbox.NewBundle(sandboxID, tempDir, enableNetworking, nil, nil, nil)
+			bundleDir, err := sandbox.NewBundle(sandbox.BundleConfig{
+				ID:               sandboxID,
+				RuntimeDir:       tempDir,
+				EnableNetworking: enableNetworking,
+			})
 			if err != nil {
 				t.Fatalf("NewBundle(enableNet=%v) failed: %v", enableNetworking, err)
 			}
@@ -41,7 +44,6 @@ func TestNewBundle(t *testing.T) {
 				t.Fatalf("NewBundle(%v, %v) = %q, want %q", sandboxID, tempDir, bundleDir, expectedBundleDir)
 			}
 
-			// Verify config.json was created and contains valid OCI spec.
 			configPath := filepath.Join(bundleDir, "config.json")
 			configFile, err := os.Open(configPath)
 			if err != nil {
@@ -59,6 +61,9 @@ func TestNewBundle(t *testing.T) {
 			}
 			if spec.Root == nil || spec.Root.Path != "rootfs" {
 				t.Errorf("spec.Root.Path is not 'rootfs', got: %+v", spec.Root)
+			}
+			if spec.Root.Readonly {
+				t.Errorf("spec.Root.Readonly is true, want false")
 			}
 			if spec.Linux == nil {
 				t.Fatalf("spec.Linux is nil")
@@ -113,7 +118,11 @@ func TestNewBundleNormalization(t *testing.T) {
 		},
 	}
 
-	bundleDir, err := sandbox.NewBundle(sandboxID, tempDir, false, mounts, nil, nil)
+	bundleDir, err := sandbox.NewBundle(sandbox.BundleConfig{
+		ID:         sandboxID,
+		RuntimeDir: tempDir,
+		Mounts:     mounts,
+	})
 	if err != nil {
 		t.Fatalf("NewBundle failed: %v", err)
 	}
@@ -131,7 +140,6 @@ func TestNewBundleNormalization(t *testing.T) {
 		t.Fatalf("failed to decode config.json: %v", err)
 	}
 
-	// Verify our custom mounts are present and normalized
 	var foundBind, foundTmpfs bool
 	for _, m := range spec.Mounts {
 		if m.Type == "bind" && m.Destination == "/mnt/foo/bar" {
@@ -159,8 +167,11 @@ func TestNewBundleWithAnnotations(t *testing.T) {
 	annotations := map[string]string{
 		"dev.gvisor.tar.rootfs.upper": "/tmp/test.tar",
 	}
-
-	bundleDir, err := sandbox.NewBundle(sandboxID, tempDir, false, nil, nil, annotations)
+	bundleDir, err := sandbox.NewBundle(sandbox.BundleConfig{
+		ID:          sandboxID,
+		RuntimeDir:  tempDir,
+		Annotations: annotations,
+	})
 	if err != nil {
 		t.Fatalf("NewBundle failed: %v", err)
 	}
@@ -189,7 +200,11 @@ func TestNewBundleEnv(t *testing.T) {
 
 	env := []string{"TEST_VAR=A", "TEST_VAR=B"}
 
-	bundleDir, err := sandbox.NewBundle(sandboxID, tempDir, false, nil, env, nil)
+	bundleDir, err := sandbox.NewBundle(sandbox.BundleConfig{
+		ID:         sandboxID,
+		RuntimeDir: tempDir,
+		Env:        env,
+	})
 	if err != nil {
 		t.Fatalf("NewBundle failed: %v", err)
 	}

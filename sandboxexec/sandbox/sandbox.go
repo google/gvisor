@@ -232,8 +232,12 @@ func New(ctx context.Context, opts ...Option) (*Sandbox, error) {
 		// Perform restore based on type.
 		switch meta.Type {
 		case RootfsTarSnapshot:
-			tarPath := filepath.Join(stateDir, "rootfs.tar")
-			// TODO: Download RootfsAsset from store to tarPath.
+			tarPath, err := readRootfsTar(ctx, snapshotID, store)
+			if err != nil {
+				return nil, err
+			}
+			defer os.Remove(tarPath)
+
 			annotations = map[string]string{
 				"dev.gvisor.tar.rootfs.upper": tarPath,
 			}
@@ -256,8 +260,14 @@ func New(ctx context.Context, opts ...Option) (*Sandbox, error) {
 			isCheckpointRestore = true
 		}
 	}
-
-	bundleDir, err := NewBundle(options.id, runDir, options.enableNetworking, options.mounts, options.env, annotations)
+	bundleDir, err := NewBundle(BundleConfig{
+		ID:               options.id,
+		RuntimeDir:       runDir,
+		EnableNetworking: options.enableNetworking,
+		Mounts:           options.mounts,
+		Env:              options.env,
+		Annotations:      annotations,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OCI bundle: %v", err)
 	}
@@ -327,6 +337,10 @@ func (s *Sandbox) Close(ctx context.Context) error {
 		return fmt.Errorf("failed to clean up sandbox bundle directory: %v", err)
 	}
 
+	if err := os.RemoveAll(s.rootState); err != nil {
+		return fmt.Errorf("failed to clean up sandbox state directory: %v", err)
+	}
+
 	return nil
 }
 
@@ -373,8 +387,9 @@ func (s *Sandbox) Snapshot(ctx context.Context, snapshotType SnapshotType, stora
 
 	switch snapshotType {
 	case RootfsTarSnapshot:
-		// TODO: Run `runsc tar rootfs-upper --file=<localTempTar> <sandboxID>`.
-		// TODO: Upload `<localTempTar>` to storage with asset name RootfsAsset.
+		if err := s.snapshotRootfsTar(ctx, snapshotID, storage); err != nil {
+			return nil, err
+		}
 
 	case FilesystemSnapshot:
 		// TODO: Run `runsc fscheckpoint --image-path=<localTempDir> [--leave-running] <sandboxID>`.
@@ -404,4 +419,67 @@ func (s *Sandbox) Snapshot(ctx context.Context, snapshotType SnapshotType, stora
 		ID:      snapshotID,
 		Storage: storage,
 	}, nil
+}
+
+func (s *Sandbox) snapshotRootfsTar(ctx context.Context, snapshotID SnapshotID, storage SnapshotStorage) error {
+	tarFile, err := os.CreateTemp(os.TempDir(), "rootfs-*.tar")
+	if err != nil {
+		return fmt.Errorf("failed to create temp tar file: %w", err)
+	}
+	tarPath := tarFile.Name()
+	tarFile.Close()
+	defer os.Remove(tarPath)
+
+	cmd := exec.CommandContext(ctx, s.runscPath, "--root", s.rootState, "tar", "rootfs-upper", "--file", tarPath, s.id)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("runsc tar failed: %v (stderr: %q)", err, stderr.String())
+	}
+
+	localFile, err := os.Open(tarPath)
+	if err != nil {
+		return fmt.Errorf("failed to open temp tar file: %w", err)
+	}
+	defer localFile.Close()
+
+	storageWriter, err := storage.PutWriter(ctx, snapshotID, RootfsAsset)
+	if err != nil {
+		return fmt.Errorf("failed to create storage writer: %w", err)
+	}
+	defer storageWriter.Close()
+
+	if _, err := io.Copy(storageWriter, localFile); err != nil {
+		return fmt.Errorf("failed to upload rootfs tar: %w", err)
+	}
+	return nil
+}
+
+func readRootfsTar(ctx context.Context, snapshotID SnapshotID, store SnapshotStorage) (string, error) {
+	tarFile, err := os.CreateTemp(os.TempDir(), "rootfs-*.tar")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp tar file: %w", err)
+	}
+	tarPath := tarFile.Name()
+	defer tarFile.Close()
+
+	cleanup := true
+	defer func() {
+		if cleanup {
+			os.Remove(tarPath)
+		}
+	}()
+
+	storageReader, err := store.GetReader(ctx, snapshotID, RootfsAsset)
+	if err != nil {
+		return "", fmt.Errorf("failed to get rootfs reader from storage: %w", err)
+	}
+	defer storageReader.Close()
+
+	if _, err := io.Copy(tarFile, storageReader); err != nil {
+		return "", fmt.Errorf("failed to download rootfs asset: %w", err)
+	}
+
+	cleanup = false
+	return tarPath, nil
 }
