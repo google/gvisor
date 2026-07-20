@@ -61,11 +61,9 @@ module.exports = async ({github, context, core}) => {
 
   // Apply assignment
   try {
-    await github.rest.issues.addAssignees(
-        {owner, repo, issue_number: prNum, assignees: [selectedMatch]});
     await github.rest.pulls.requestReviewers(
         {owner, repo, pull_number: prNum, reviewers: [selectedMatch]});
-    console.log(`Successfully assigned and requested review from ${
+    console.log(`Successfully requested review from ${
         selectedMatch} for PR #${prNum}`);
   } catch (error) {
     core.setFailed(`Failed to apply assignment API calls: ${error.message}`);
