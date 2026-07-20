@@ -139,6 +139,7 @@ func (n *Namespace) NewPod(name string) *v13.Pod {
 
 // GetPersistentVolume gets a persistent volume spec for benchmarks.
 func (n *Namespace) GetPersistentVolume(name, size string) *v13.PersistentVolumeClaim {
+	storageClass := "standard-rwo"
 	pvc := &v13.PersistentVolumeClaim{
 		TypeMeta: v1.TypeMeta{
 			Kind:       "PersistentVolumeClaim",
@@ -149,7 +150,8 @@ func (n *Namespace) GetPersistentVolume(name, size string) *v13.PersistentVolume
 			Namespace: n.Namespace,
 		},
 		Spec: v13.PersistentVolumeClaimSpec{
-			AccessModes: []v13.PersistentVolumeAccessMode{v13.ReadWriteOnce},
+			StorageClassName: &storageClass,
+			AccessModes:      []v13.PersistentVolumeAccessMode{v13.ReadWriteOnce},
 		},
 	}
 
