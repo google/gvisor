@@ -323,13 +323,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 
 	// Do these before chroot takes effect, otherwise we can't read /proc and /sys.
 	if len(b.productName) == 0 {
-		if product, err := os.ReadFile("/sys/devices/virtual/dmi/id/product_name"); err != nil {
-			log.Warningf("Not setting product_name: %v", err)
-		} else {
-			b.productName = strings.TrimSpace(string(product))
-			log.Infof("Setting product_name: %q", b.productName)
-			argOverride["product-name"] = b.productName
-		}
+		b.productName = "gVisor"
 	}
 	if conf.AppHugePages {
 		if len(b.hostTHP.ShmemEnabled) == 0 {
