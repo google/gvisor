@@ -15,7 +15,6 @@
 package boot
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -105,6 +104,8 @@ const (
 	// annotationSaveRestoreExecTimeout is the timeout to use for the save/restore
 	// exec binary.
 	annotationSaveRestoreExecTimeout = annotationCheckpointPrefix + "save-restore-exec-timeout"
+
+	networkKey = "network"
 )
 
 // GetAnnotationCheckpointPath returns the checkpoint path specified in the
@@ -356,9 +357,17 @@ func (r *restorer) restore(l *Loader) error {
 	if err := specutils.RestoreValidateSpec(r.checkpointedSpecs, l.GetContainerSpecs(), l.root.conf); err != nil {
 		return fmt.Errorf("failed to handle restore spec validation: %w", err)
 	}
-	if l.root.conf.Network != config.NetworkSandbox && l.root.conf.Network != config.NetworkNone {
-		// TODO(gvisor.dev/issues/6243): save/restore not supported w/ hostinet
-		return errors.New("checkpoint not supported when using hostinet")
+	if l.root.conf.Network != config.NetworkSandbox && l.root.conf.Network != config.NetworkNone && l.root.conf.Network != config.NetworkHost {
+		return fmt.Errorf("checkpoint not supported when using %s networking", l.root.conf.Network)
+	}
+	// Checkpoints without the network key predate hostinet support.
+	savedNetwork, ok := r.metadata[networkKey]
+	if !ok {
+		savedNetwork = config.NetworkSandbox.String()
+	}
+	savedHost := savedNetwork == config.NetworkHost.String()
+	if restoreHost := l.root.conf.Network == config.NetworkHost; savedHost != restoreHost {
+		return fmt.Errorf("checkpoint created with %s networking cannot be restored with %s networking", savedNetwork, l.root.conf.Network)
 	}
 	r.timer.Reached("specs validated")
 
@@ -385,6 +394,31 @@ func (r *restorer) restore(l *Loader) error {
 		// pprof.Initialize opens /proc/self/maps, so has to be called before
 		// installing seccomp filters.
 		pprof.Initialize()
+	}
+
+	if l.root.conf.Network == config.NetworkHost {
+		devFile, err := os.Open("/proc/net/dev")
+		if err != nil {
+			log.Warningf("Failed to open /proc/net/dev during restore: %v", err)
+		} else {
+			l.hostinetNetDevFile = devFile
+		}
+		snmpFile, err := os.Open("/proc/net/snmp")
+		if err != nil {
+			log.Warningf("Failed to open /proc/net/snmp during restore: %v", err)
+		} else {
+			l.hostinetNetSNMPFile = snmpFile
+		}
+		defer func() {
+			if l.hostinetNetDevFile != nil {
+				l.hostinetNetDevFile.Close()
+				l.hostinetNetDevFile = nil
+			}
+			if l.hostinetNetSNMPFile != nil {
+				l.hostinetNetSNMPFile.Close()
+				l.hostinetNetSNMPFile = nil
+			}
+		}()
 	}
 
 	// Seccomp filters have to be applied before vfs restore and before parsing
@@ -659,11 +693,6 @@ func (l *Loader) saveWithOpts(saveOpts *state.SaveOpts, execOpts *control.SaveRe
 		l.k.OnCheckpointAttempt(err)
 	}()
 
-	// TODO(gvisor.dev/issues/6243): save/restore not supported w/ hostinet
-	if l.root.conf.Network == config.NetworkHost {
-		return errors.New("checkpoint not supported when using hostinet")
-	}
-
 	if saveOpts.Metadata == nil {
 		saveOpts.Metadata = make(map[string]string)
 	}
@@ -671,6 +700,8 @@ func (l *Loader) saveWithOpts(saveOpts *state.SaveOpts, execOpts *control.SaveRe
 
 	// Save runsc version.
 	saveOpts.Metadata[VersionKey] = version.Version()
+
+	saveOpts.Metadata[networkKey] = l.root.conf.Network.String()
 
 	// Save container specs.
 	specsStr, err := specutils.ConvertSpecsToString(l.GetContainerSpecs())
