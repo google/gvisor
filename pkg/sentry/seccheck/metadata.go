@@ -71,6 +71,10 @@ const (
 	// FieldSentryExecveFdInfo is an optional field to collect information
 	// about standard file descriptors (stdin, stdout, stderr).
 	FieldSentryExecveFdInfo
+
+	// FieldSentryExecvePipeProcInfo is an optional field to collect information
+	// about peer processes connected via pipes on stdin/stdout.
+	FieldSentryExecvePipeProcInfo
 )
 
 // Points is a map with all the trace points registered in the system.
@@ -266,6 +270,10 @@ func genericInit() {
 			{
 				ID:   FieldSentryExecveFdInfo,
 				Name: "fd_info",
+			},
+			{
+				ID:   FieldSentryExecvePipeProcInfo,
+				Name: "pipe_proc_info",
 			},
 		},
 		ContextFields: defaultContextFields,

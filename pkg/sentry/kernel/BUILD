@@ -399,6 +399,7 @@ go_library(
         "//pkg/sentry/kernel/ipc",
         "//pkg/sentry/kernel/mq",
         "//pkg/sentry/kernel/msgqueue",
+        "//pkg/sentry/kernel/pipe",
         "//pkg/sentry/kernel/sched",
         "//pkg/sentry/kernel/semaphore",
         "//pkg/sentry/kernel/shm",

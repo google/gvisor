@@ -67,13 +67,16 @@ package kernel
 import (
 	"crypto/sha256"
 	"io"
+	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	overlay "gvisor.dev/gvisor/pkg/sentry/fsimpl/overlay"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
 	"gvisor.dev/gvisor/pkg/sentry/loader"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
@@ -532,6 +535,62 @@ func getExecveSeccheckInfo(t *Task, argv, env []string, executable *vfs.FileDesc
 		info.Stderr = execveFdInfo(t, 2)
 	}
 
+	if fields.Local.Contains(seccheck.FieldSentryExecvePipeProcInfo) {
+		// If standard input or output is connected to a pipe, extract the underlying pipe object
+		// so we can identify any peer processes connected to the other end.
+		var pipeIn, pipeOut *pipe.Pipe
+		if fileIn := t.GetFile(0); fileIn != nil {
+			if pfd, ok := fileIn.Impl().(*pipe.VFSPipeFD); ok {
+				pipeIn = pfd.Pipe()
+			}
+			fileIn.DecRef(t)
+		}
+		if fileOut := t.GetFile(1); fileOut != nil {
+			if pfd, ok := fileOut.Impl().(*pipe.VFSPipeFD); ok {
+				pipeOut = pfd.Pipe()
+			}
+			fileOut.DecRef(t)
+		}
+
+		// Inspect sibling tasks under the same parent to find processes connected to the
+		// opposite end of stdin (pipeIn) or stdout (pipeOut).
+		if pipeIn != nil || pipeOut != nil {
+			if parent := t.Parent(); parent != nil {
+				for child := range parent.Children() {
+					if child == t {
+						continue
+					}
+					// Early termination: stop scanning siblings as soon as all applicable
+					// pipe peers (stdin and/or stdout) have been found or are not pipes.
+					if (pipeIn == nil || info.PipeInputProc != nil) && (pipeOut == nil || info.PipeOutputProc != nil) {
+						break
+					}
+
+					if fdt := child.FDTable(); fdt != nil {
+						// Check if the sibling writes to t's stdin pipe via stdout (fd 1).
+						if pipeIn != nil && info.PipeInputProc == nil {
+							if childOut, _ := fdt.Get(1); childOut != nil {
+								if pfd, ok := childOut.Impl().(*pipe.VFSPipeFD); ok && pfd.Pipe() == pipeIn {
+									info.PipeInputProc = pipeProcInfo(t, child, fields.Context)
+								}
+								childOut.DecRef(t)
+							}
+						}
+						// Check if the sibling reads from t's stdout pipe via stdin (fd 0).
+						if pipeOut != nil && info.PipeOutputProc == nil {
+							if childIn, _ := fdt.Get(0); childIn != nil {
+								if pfd, ok := childIn.Impl().(*pipe.VFSPipeFD); ok && pfd.Pipe() == pipeOut {
+									info.PipeOutputProc = pipeProcInfo(t, child, fields.Context)
+								}
+								childIn.DecRef(t)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
 	if !fields.Context.Empty() {
 		info.ContextData = &pb.ContextData{}
 		LoadSeccheckData(t, fields.Context, info.ContextData)
@@ -567,6 +626,59 @@ func sockAddrToProto(sa linux.SockAddr) (*pb.SocketIp, uint32) {
 		}, uint32(a.Family)
 	}
 	return nil, 0
+}
+
+// acquireMM safely acquires a reference to the child Task's MemoryManager under the task mutex.
+// Returns nil if the MemoryManager is unavailable or its user count cannot be incremented.
+func acquireMM(child *Task) *mm.MemoryManager {
+	var m *mm.MemoryManager
+	child.WithMuLocked(func(*Task) {
+		m = child.MemoryManager()
+	})
+	if m == nil || !m.IncUsers() {
+		return nil
+	}
+	return m
+}
+
+// pipeProcInfo collects Seccheck process information for a sibling task connected via a pipe.
+// Populates context data, executable binary path, and argument list from user memory.
+func pipeProcInfo(t *Task, child *Task, contextMask seccheck.FieldMask) *pb.PipeProcInfo {
+	res := &pb.PipeProcInfo{}
+	if !contextMask.Empty() {
+		res.ContextData = &pb.ContextData{}
+		LoadSeccheckData(child, contextMask, res.ContextData)
+	}
+	m := acquireMM(child)
+	if m == nil {
+		return res
+	}
+	defer m.DecUsers(t)
+
+	if exec := m.Executable(); exec != nil {
+		res.BinaryPath = exec.MappedName(t)
+		exec.DecRef(t)
+	}
+
+	ar := hostarch.AddrRange{
+		Start: m.ArgvStart(),
+		End:   m.ArgvEnd(),
+	}
+	if ar.Start != 0 && ar.End != 0 && ar.Length() > 0 {
+		// Cap the amount of argv memory read to avoid copying excessively large buffers.
+		length := ar.Length()
+		if length > hostarch.PageSize*16 {
+			length = hostarch.PageSize * 16
+		}
+		buf := make([]byte, length)
+		if n, err := m.CopyIn(t, ar.Start, buf, usermem.IOOpts{IgnorePermissions: true}); n > 0 && (err == nil || err == io.EOF) {
+			s := strings.TrimSuffix(string(buf[:n]), "\000")
+			if len(s) > 0 {
+				res.Argv = strings.Split(s, "\000")
+			}
+		}
+	}
+	return res
 }
 
 func execveFdInfo(t *Task, fd int32) *pb.FdInfo {

@@ -90,6 +90,18 @@ message ExecveInfo {
   gvisor.common.FdInfo stdin = 12;
   gvisor.common.FdInfo stdout = 13;
   gvisor.common.FdInfo stderr = 14;
+
+  // PipeProcInfo contains information of a sibling process connected via pipe
+  // on stdin/stdout.
+  PipeProcInfo pipe_input_proc = 17;
+  PipeProcInfo pipe_output_proc = 18;
+}
+
+// PipeProcInfo contains information of a sibling process connected via pipe.
+message PipeProcInfo {
+  gvisor.common.ContextData context_data = 1;
+  string binary_path = 2;
+  repeated string argv = 3;
 }
 
 message ExitNotifyParentInfo {
