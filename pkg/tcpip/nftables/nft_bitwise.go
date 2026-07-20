@@ -225,8 +225,8 @@ func (op bitwise) GetExprName() string {
 
 func (op bitwise) Dump() ([]byte, *syserr.AnnotatedError) {
 	m := &nlmsg.Message{}
-	m.PutAttr(linux.NFTA_BITWISE_SREG, nlmsg.PutU32(formatRegIdxForDump(op.sregIdx)))
-	m.PutAttr(linux.NFTA_BITWISE_DREG, nlmsg.PutU32(formatRegIdxForDump(op.dregIdx)))
+	m.PutAttr(linux.NFTA_BITWISE_SREG, formatRegIdxForDump(op.sregIdx))
+	m.PutAttr(linux.NFTA_BITWISE_DREG, formatRegIdxForDump(op.dregIdx))
 	m.PutAttr(linux.NFTA_BITWISE_LEN, nlmsg.PutU32(uint32(op.blen)))
 	m.PutAttr(linux.NFTA_BITWISE_OP, nlmsg.PutU32(uint32(op.bop)))
 

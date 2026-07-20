@@ -131,7 +131,7 @@ func (op comparison) GetExprName() string {
 
 func (op comparison) Dump() ([]byte, *syserr.AnnotatedError) {
 	m := &nlmsg.Message{}
-	m.PutAttr(linux.NFTA_CMP_SREG, nlmsg.PutU32(uint32(formatRegIdxForDump(op.sregIdx))))
+	m.PutAttr(linux.NFTA_CMP_SREG, formatRegIdxForDump(op.sregIdx))
 	m.PutAttr(linux.NFTA_CMP_OP, nlmsg.PutU32(uint32(op.cop)))
 	regDump, err := dumpDataAttr(op.data)
 	if err != nil {

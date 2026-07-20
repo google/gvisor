@@ -48,6 +48,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/atomicbitops",
         "//pkg/log",
+        "//pkg/marshal",
         "//pkg/marshal/primitive",
         "//pkg/rand",
         "//pkg/sentry/socket/netlink/nlmsg",
