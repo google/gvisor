@@ -39,7 +39,9 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/container/flat_hash_set.h"
+#include "absl/strings/ascii.h"
 #include "absl/strings/match.h"
+#include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_split.h"
@@ -2179,6 +2181,148 @@ TEST_F(Cgroup2Test, MountInfoRootIsCgroupNamespaceRelative) {
   EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
   // In case the child died before unmounting.
   umount2(ns_mp.c_str(), MNT_DETACH);
+}
+
+int64_t ParseCpuUsageUsec(const Cgroup& cg) {
+  PosixErrorOr<std::string> stat_or = cg.ReadControlFile("cpu.stat");
+  if (!stat_or.ok()) return -1;
+  for (absl::string_view line : absl::StrSplit(stat_or.ValueOrDie(), '\n')) {
+    line = absl::StripAsciiWhitespace(line);
+    constexpr absl::string_view kUsagePrefix = "usage_usec ";
+    if (absl::StartsWith(line, kUsagePrefix)) {
+      int64_t usage_usec = -1;
+      if (absl::SimpleAtoi(line.substr(kUsagePrefix.size()), &usage_usec)) {
+        return usage_usec;
+      }
+    }
+  }
+  return -1;
+}
+
+TEST_F(Cgroup2Test, CpuStat) {
+  std::string controllers =
+      ASSERT_NO_ERRNO_AND_VALUE(c().ReadControlFile("cgroup.controllers"));
+  SKIP_IF(!absl::StrContains(controllers, "cpu"));
+
+  ASSERT_NO_ERRNO(c().WriteControlFile("cgroup.subtree_control", "+cpu"));
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("child"));
+
+  std::string stat_before =
+      ASSERT_NO_ERRNO_AND_VALUE(child.ReadControlFile("cpu.stat"));
+  EXPECT_THAT(stat_before, HasSubstr("usage_usec "));
+
+  int fds_start[2];
+  ASSERT_THAT(pipe(fds_start), SyscallSucceeds());
+
+  pid_t pid = fork();
+  ASSERT_THAT(pid, SyscallSucceeds());
+  if (pid == 0) {
+    close(fds_start[1]);
+    char c;
+    if (read(fds_start[0], &c, 1) != 1) _exit(1);
+    close(fds_start[0]);
+    volatile int x = 0;
+    for (int i = 0; i < 50000000; ++i) {
+      x++;
+    }
+    _exit(0);
+  }
+  close(fds_start[0]);
+  ASSERT_NO_ERRNO(child.Enter(pid));
+  char c = 'g';
+  ASSERT_THAT(write(fds_start[1], &c, 1), SyscallSucceeds());
+  close(fds_start[1]);
+
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceeds());
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+
+  int64_t usage_usec = ParseCpuUsageUsec(child);
+  EXPECT_GT(usage_usec, 0);
+}
+
+TEST_F(Cgroup2Test, CpuStatMigration) {
+  std::string controllers =
+      ASSERT_NO_ERRNO_AND_VALUE(c().ReadControlFile("cgroup.controllers"));
+  SKIP_IF(!absl::StrContains(controllers, "cpu"));
+
+  ASSERT_NO_ERRNO(c().WriteControlFile("cgroup.subtree_control", "+cpu"));
+  Cgroup cg_a = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("cg_a"));
+  Cgroup cg_b = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("cg_b"));
+
+  int fds_start[2];
+  int fds_phase1[2];
+  int fds_proceed[2];
+  ASSERT_THAT(pipe(fds_start), SyscallSucceeds());
+  ASSERT_THAT(pipe(fds_phase1), SyscallSucceeds());
+  ASSERT_THAT(pipe(fds_proceed), SyscallSucceeds());
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    close(fds_start[1]);
+    close(fds_phase1[0]);
+    close(fds_proceed[1]);
+
+    char c;
+    if (read(fds_start[0], &c, 1) != 1) _exit(1);
+    close(fds_start[0]);
+
+    // Burn some CPU in cg_a.
+    volatile int x = 0;
+    for (int i = 0; i < 50000000; ++i) {
+      x++;
+    }
+    c = '1';
+    if (write(fds_phase1[1], &c, 1) != 1) _exit(1);
+    close(fds_phase1[1]);
+
+    if (read(fds_proceed[0], &c, 1) != 1) _exit(1);
+    close(fds_proceed[0]);
+
+    // Burn some CPU in cg_b.
+    for (int i = 0; i < 50000000; ++i) {
+      x++;
+    }
+    _exit(0);
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+  close(fds_start[0]);
+  close(fds_phase1[1]);
+  close(fds_proceed[0]);
+
+  ASSERT_NO_ERRNO(cg_a.Enter(pid));
+  // Commence first loop in the child.
+  char c = 'g';
+  ASSERT_THAT(write(fds_start[1], &c, 1), SyscallSucceeds());
+  close(fds_start[1]);
+  // Loop ended, child burned cpu in cg_a.
+  ASSERT_THAT(read(fds_phase1[0], &c, 1), SyscallSucceeds());
+  close(fds_phase1[0]);
+
+  int64_t usage_a_before_migration = ParseCpuUsageUsec(cg_a);
+  EXPECT_GT(usage_a_before_migration, 0);
+
+  ASSERT_NO_ERRNO(cg_b.Enter(pid));  // Move to cg_b, loop yet to run.
+
+  int64_t usage_b_post_migration = ParseCpuUsageUsec(cg_b);
+  int64_t usage_a_post_migration = ParseCpuUsageUsec(cg_a);
+  EXPECT_GE(usage_b_post_migration, 0);
+  EXPECT_LT(usage_b_post_migration, 30000);  // Bounded setup (< 30 ms).
+  EXPECT_GE(usage_a_post_migration, usage_a_before_migration);
+
+  // Commence second loop in the child.
+  c = '2';
+  ASSERT_THAT(write(fds_proceed[1], &c, 1), SyscallSucceeds());
+  close(fds_proceed[1]);
+
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceeds());
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+
+  int64_t usage_b_final = ParseCpuUsageUsec(cg_b);
+  int64_t usage_a_final = ParseCpuUsageUsec(cg_a);
+  EXPECT_GT(usage_b_final, usage_b_post_migration);
+  EXPECT_EQ(usage_a_final, usage_a_post_migration);
 }
 
 }  // namespace

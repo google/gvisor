@@ -12,6 +12,7 @@ go_library(
         "cgroup.go",
         "controllers.go",
         "cpu.go",
+        "cpu_mutex.go",
         "cpuset.go",
         "event.go",
         "filesystem.go",
@@ -63,4 +64,11 @@ declare_mutex(
     out = "pids_mutex.go",
     package = "cgroup2fs",
     prefix = "pids",
+)
+
+declare_mutex(
+    name = "cpu_mutex",
+    out = "cpu_mutex.go",
+    package = "cgroup2fs",
+    prefix = "cpu",
 )

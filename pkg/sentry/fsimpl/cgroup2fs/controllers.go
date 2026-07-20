@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
@@ -113,11 +114,15 @@ func (c *cgroup) newController(cType kernel.Cgroup2Ctrl) controller {
 		if parent != nil {
 			cpuParent = parent.(*cpu)
 		}
-		cpuCtrl := &cpu{c: c, parent: cpuParent}
-		cpuCtrl.weight.Store(100)
-		cpuCtrl.maxUSec.Store(math.MaxInt64)
-		cpuCtrl.periodUSec.Store(100000)
-		return cpuCtrl
+		cc := &cpu{
+			c:               c,
+			parent:          cpuParent,
+			baselineCharges: make(map[*kernel.Task]usage.CPUStats),
+		}
+		cc.weight.Store(100)
+		cc.maxUSec.Store(math.MaxInt64)
+		cc.periodUSec.Store(100000)
+		return cc
 	case kernel.Cgroup2Memory:
 		var memParent *memory
 		if parent != nil {
