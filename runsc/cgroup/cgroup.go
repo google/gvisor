@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff"
@@ -43,10 +44,56 @@ const (
 
 	// procRoot is the procfs root this module uses.
 	procRoot = "/proc"
-
-	// cgroupRoot is the cgroupfs root this module uses.
-	cgroupRoot = "/sys/fs/cgroup"
 )
+
+var (
+	cgroupRootInternal string
+	cgroupRootOnce     sync.Once
+)
+
+// cgroupRoot returns the cgroupfs root this module uses.
+func cgroupRoot() string {
+	cgroupRootOnce.Do(func() {
+		cgroupRootInternal = findCgroupRoot()
+	})
+	return cgroupRootInternal
+}
+
+// findCgroupRoot parses /proc/self/mountinfo to dynamically detect the cgroup root path.
+// It defaults to "/sys/fs/cgroup" if detection fails.
+func findCgroupRoot() string {
+	f, err := os.Open(filepath.Join(procRoot, "self/mountinfo"))
+	if err != nil {
+		return "/sys/fs/cgroup"
+	}
+	defer f.Close()
+
+	return parseCgroupRoot(f)
+}
+
+func parseCgroupRoot(r io.Reader) string {
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) < 9 {
+			continue
+		}
+		fstype := fields[len(fields)-3]
+		if fstype == cgroupv1FsName || fstype == cgroupv2FsName {
+			mountPoint := fields[4]
+			// If mountPoint is a controller subdirectory (e.g., /sys/fs/cgroup/memory,
+			// /sys/fs/cgroup/cpu,cpuacct, or /sys/fs/cgroup/unified), return its parent
+			// directory as the cgroup root. Otherwise, return mountPoint directly
+			// (e.g., /sys/fs/cgroup or /dev/cgroup).
+			base := filepath.Base(mountPoint)
+			if _, ok := controllers[base]; ok || base == "unified" || strings.Contains(base, ",") {
+				return filepath.Dir(mountPoint)
+			}
+			return mountPoint
+		}
+	}
+	return "/sys/fs/cgroup"
+}
 
 var controllers = map[string]controller{
 	"blkio":    &blockIO{},
@@ -71,7 +118,7 @@ var controllers = map[string]controller{
 // IsOnlyV2 checks whether cgroups V2 is enabled and V1 is not.
 func IsOnlyV2() bool {
 	var stat unix.Statfs_t
-	if err := unix.Statfs(cgroupRoot, &stat); err != nil {
+	if err := unix.Statfs(cgroupRoot(), &stat); err != nil {
 		// It's not used for anything important, assume not V2 on failure.
 		return false
 	}
@@ -415,7 +462,7 @@ func new(pid, cgroupsPath string, useSystemd bool) (Cgroup, error) {
 			cgroupsPath = filepath.Join(filepath.Dir(p), cgroupsPath)
 		}
 		// Assume that for v2, cgroup is always mounted at cgroupRoot.
-		cg, err = newCgroupV2(cgroupRoot, cgroupsPath, useSystemd)
+		cg, err = newCgroupV2(cgroupRoot(), cgroupsPath, useSystemd)
 		if err != nil {
 			return nil, err
 		}
@@ -586,7 +633,7 @@ func (c *cgroupV1) Update(res *specs.LinuxResources) error {
 // the controller should be skipped (e.g. controller is disabled). In case it
 // should be skipped, it also returns the error it got.
 func createController(c Cgroup, name string) (bool, error) {
-	ctrlrPath := filepath.Join(cgroupRoot, name)
+	ctrlrPath := filepath.Join(cgroupRoot(), name)
 	if _, err := os.Stat(ctrlrPath); err != nil {
 		return os.IsNotExist(err), err
 	}
@@ -648,7 +695,7 @@ func (c *cgroupV1) Join() (func(), error) {
 	for ctrlr, path := range paths {
 		// Skip controllers we don't handle.
 		if _, ok := controllers[ctrlr]; ok {
-			fullPath := filepath.Join(cgroupRoot, ctrlr, path)
+			fullPath := filepath.Join(cgroupRoot(), ctrlr, path)
 			undoPaths = append(undoPaths, fullPath)
 		}
 	}
@@ -739,7 +786,7 @@ func (c *cgroupV1) MakePath(controllerName string) string {
 	if parent, ok := c.Parents[controllerName]; ok {
 		path = filepath.Join(parent, c.Name)
 	}
-	return filepath.Join(cgroupRoot, controllerName, path)
+	return filepath.Join(cgroupRoot(), controllerName, path)
 }
 
 type controller interface {

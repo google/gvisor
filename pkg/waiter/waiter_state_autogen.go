@@ -39,6 +39,27 @@ func (e *Entry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &e.mask)
 }
 
+func (n *NoopListener) StateTypeName() string {
+	return "pkg/waiter.NoopListener"
+}
+
+func (n *NoopListener) StateFields() []string {
+	return []string{}
+}
+
+func (n *NoopListener) beforeSave() {}
+
+// +checklocksignore
+func (n *NoopListener) StateSave(stateSinkObject state.Sink) {
+	n.beforeSave()
+}
+
+func (n *NoopListener) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (n *NoopListener) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+}
+
 func (q *Queue) StateTypeName() string {
 	return "pkg/waiter.Queue"
 }
@@ -122,6 +143,7 @@ func (e *waiterEntry) StateLoad(ctx context.Context, stateSourceObject state.Sou
 
 func init() {
 	state.Register((*Entry)(nil))
+	state.Register((*NoopListener)(nil))
 	state.Register((*Queue)(nil))
 	state.Register((*waiterList)(nil))
 	state.Register((*waiterEntry)(nil))
