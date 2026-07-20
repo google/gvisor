@@ -1,0 +1,118 @@
+---
+title: Application Compatibility
+layout: base
+permalink: /application-compatibility/
+---
+
+<div class="container">
+  <div class="users-content">
+    <h1>gVisor Application Compatibility</h1>
+
+    <style>
+      .app-item {
+        border-bottom: 1px solid #eee;
+        margin-bottom: 20px;
+        padding-bottom: 20px;
+      }
+      /* The last visible app in a category has no separator. :last-child covers
+         the static render; .app-item--last is set by the search filter to the
+         last still-visible row. */
+      .app-item:last-child,
+      .app-item.app-item--last {
+        border-bottom: none;
+        padding-bottom: 0;
+      }
+    </style>
+
+    {% assign apps = site.data['application-compatibility'].apps %}
+
+    <p style="font-size: 16px; line-height: 1.6; margin-top: 20px;">
+      Below is a list of applications that have been tested under gVisor.
+      <br>
+      This is a <b>best-effort list</b>, not a guarantee that applications marked "Compatible" are fully functional.
+      If you notice an issue, contributions to this list are welcome! Please open a pull request on <a href="https://github.com/google/gvisor">GitHub</a>.
+    </p>
+
+    <div style="margin-top: 30px;">
+      <input
+        type="search"
+        id="app-search"
+        placeholder="Search applications…"
+        aria-label="Search applications"
+        autocomplete="off"
+        style="width: 100%; box-sizing: border-box; padding: 12px 16px; font-size: 16px; border: 1px solid #d1d9e0; border-radius: 8px; outline: none;"
+      />
+    </div>
+
+    {% assign cat_groups = apps | group_by: "category" | sort: "name" %}
+    <div id="app-list" style="margin-top: 25px; margin-bottom: 60px;">
+      <p id="app-search-noresults" style="display: none; color: #64748b; font-size: 16px; padding: 20px 0;">No applications match your search.</p>
+      {% for cat in cat_groups %}
+      <div class="panel panel-default category-panel" style="border-radius: 4px; margin-bottom: 25px;">
+        <div class="panel-heading" style="padding: 15px 20px; background-color: #fff;">
+          <h2 style="font-size: 20px; font-weight: bold; color: #333; margin: 0;">{{ cat.name }}</h2>
+        </div>
+        <div class="panel-body" style="background-color: #fcfcfc; padding: 25px 25px 5px 25px; border-top: 1px solid #eee;">
+          {% assign sorted_items = cat.items | sort_natural: "name" %}
+          {% for item in sorted_items %}
+          <div class="app-item" data-name="{{ item.name | downcase | escape }}">
+            <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap;">
+              <div style="display: flex; align-items: baseline; flex-wrap: wrap;">
+                <span style="font-size: 18px; font-weight: 600; margin-right: 12px; color: #1a202c;">{{ item.name }}</span>
+                <span style="font-size: 13px; color: #94a3b8;">{% if item.version and item.version != '' %}Latest version tested: {{ item.version }}{% endif %}{% if item.version and item.version != '' and item.test_source and item.test_source != '' %}. {% endif %}{% if item.test_source and item.test_source != '' %}<a href="https://github.com/google/gvisor/blob/master/{{ item.test_source }}" target="_blank" rel="noopener" style="color: #94a3b8; text-decoration: underline;">Testing methodology</a>{% endif %}</span>
+              </div>
+              <div>
+                {% case item.verdict %}
+                  {% when 'yes' %}
+                    <span class="label label-success" style="padding: 6px 12px; font-size: 13px; border-radius: 12px;">Compatible</span>
+                  {% when 'partial' %}
+                    <span class="label label-warning" style="padding: 6px 12px; font-size: 13px; border-radius: 12px;">Partial</span>
+                  {% when 'experimental' %}
+                    <span class="label label-primary" style="padding: 6px 12px; font-size: 13px; border-radius: 12px;">Experimental</span>
+                  {% when 'coming-soon' %}
+                    <span class="label label-info" style="padding: 6px 12px; font-size: 13px; border-radius: 12px;">Coming Soon</span>
+                  {% when 'no' %}
+                    <span class="label label-danger" style="padding: 6px 12px; font-size: 13px; border-radius: 12px;">Not compatible</span>
+                {% endcase %}
+              </div>
+            </div>
+            {% if item.notes and item.notes != '' %}
+              <p style="color: #555; font-size: 14px; line-height: 1.6; margin: 10px 0 0 0;"><strong>Notes:</strong> {{ item.notes | markdownify | remove: '<p>' | remove: '</p>' | strip }}</p>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <script>
+      (function () {
+        var input = document.getElementById('app-search');
+        if (!input) return;
+        var panels = document.querySelectorAll('#app-list .category-panel');
+        var noResults = document.getElementById('app-search-noresults');
+
+        function applyFilter() {
+          var q = input.value.trim().toLowerCase();
+          var anyVisible = false;
+          panels.forEach(function (panel) {
+            var lastVisible = null;
+            panel.querySelectorAll('.app-item').forEach(function (item) {
+              var match = q === '' || (item.getAttribute('data-name') || '').indexOf(q) !== -1;
+              item.style.display = match ? '' : 'none';
+              item.classList.remove('app-item--last');
+              if (match) lastVisible = item;
+            });
+            if (lastVisible) lastVisible.classList.add('app-item--last');
+            panel.style.display = lastVisible ? '' : 'none';
+            if (lastVisible) anyVisible = true;
+          });
+          if (noResults) noResults.style.display = anyVisible ? 'none' : '';
+        }
+
+        input.addEventListener('input', applyFilter);
+      })();
+    </script>
+  </div> <!-- end users-content -->
+</div> <!-- end container -->
