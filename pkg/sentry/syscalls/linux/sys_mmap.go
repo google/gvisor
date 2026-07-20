@@ -15,8 +15,6 @@
 package linux
 
 import (
-	"bytes"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -270,9 +268,23 @@ func Mincore(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr
 	if mapped != uint64(la) {
 		return 0, nil, linuxerr.ENOMEM
 	}
-	resident := bytes.Repeat([]byte{1}, int(mapped/hostarch.PageSize))
-	_, err := t.CopyOutBytes(vec, resident)
-	return 0, nil, err
+	total := int(mapped / hostarch.PageSize)
+	const batchSize = 4096
+	var buf [batchSize]byte
+	for i := range buf {
+		buf[i] = 1
+	}
+	for written := 0; written < total; {
+		n := total - written
+		if n > batchSize {
+			n = batchSize
+		}
+		if _, err := t.CopyOutBytes(vec+hostarch.Addr(written), buf[:n]); err != nil {
+			return 0, nil, err
+		}
+		written += n
+	}
+	return 0, nil, nil
 }
 
 // Msync implements Linux syscall msync(2).
