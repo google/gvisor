@@ -209,9 +209,11 @@ func NewContainer(ctx context.Context, platform stdio.Platform, conf *ContainerC
 	if err := process.Create(ctx, config); err != nil {
 		return nil, err
 	}
-	// Set up cgroup mode.
+	// Set up cgroup mode for stats protobuf layout: match host hierarchy (same as
+	// OOM/cgroup handling in the shim), not runsc's systemd-cgroup flag. Otherwise
+	// containerd on unified v2 hosts may fail unmarshaling v1.Metrics into v2.Metrics.
 	cgroupMode := CgroupMode(cgroups.Legacy)
-	if opts.RunscConfig["systemd-cgroup"] == "true" {
+	if cgroups.Mode() == cgroups.Unified {
 		cgroupMode = CgroupMode(cgroups.Unified)
 	}
 
