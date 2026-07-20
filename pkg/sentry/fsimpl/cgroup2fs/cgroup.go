@@ -31,6 +31,8 @@ package cgroup2fs
 // the tasks associated with each cgroup.
 
 import (
+	"bytes"
+	"fmt"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -43,6 +45,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // limitMax is the value for max.descendants and max.depth that indicates no limit.
@@ -836,7 +839,17 @@ func (c *cgroup) attachProcess(ctx context.Context, creds *auth.Credentials, pid
 
 // getPIDs handles reads from cgroup.procs.
 func (c *cgroup) getPIDs(t *kernel.Task) []int {
-	currPidns := t.PIDNamespace()
+	if t == nil {
+		return nil
+	}
+	return c.getPIDsInNamespace(t.PIDNamespace())
+}
+
+// getPIDsInNamespace returns task IDs in currPidns for all tasks in c.
+func (c *cgroup) getPIDsInNamespace(currPidns *kernel.PIDNamespace) []int {
+	if currPidns == nil {
+		return nil
+	}
 	var tasks []*kernel.Task
 
 	c.fs.tasksMu.RLock()
@@ -997,4 +1010,64 @@ func (c *cgroup) updateTaskMemoryCgIDsLocked() {
 	for t := range c.tasks {
 		t.SetMemCgID(memCgID)
 	}
+}
+
+// ReadControl implements kernel.Cgroup2.ReadControl.
+// It allows reading from control files from outside the sandbox.
+func (c *cgroup) ReadControl(ctx context.Context, name string) (string, error) {
+	cfi, err := c.Lookup(ctx, name)
+	if err != nil {
+		return "", fmt.Errorf("no such control file")
+	}
+	dbf, ok := cfi.(*cgroupInterfaceFile)
+	var data vfs.DynamicBytesSource
+	if ok {
+		data, err = dbf.Data(ctx)
+		if err != nil {
+			return "", err
+		}
+	} else if ef, ok := cfi.(*eventFile); ok {
+		data, err = ef.Data(ctx)
+		if err != nil {
+			return "", err
+		}
+	} else {
+		return "", fmt.Errorf("no such control file")
+	}
+
+	var buf bytes.Buffer
+	if err := data.Generate(ctx, &buf); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
+}
+
+// WriteControl implements kernel.Cgroup2.WriteControl.
+// It allows writing to control files from outside the sandbox.
+func (c *cgroup) WriteControl(ctx context.Context, name string, val string) error {
+	cfi, err := c.Lookup(ctx, name)
+	if err != nil {
+		return fmt.Errorf("no such control file")
+	}
+	dbf, ok := cfi.(*cgroupInterfaceFile)
+	if !ok {
+		return fmt.Errorf("control file not writable")
+	}
+	data, err := dbf.Data(ctx)
+	if err != nil {
+		return err
+	}
+	wdata, ok := data.(vfs.WritableDynamicBytesSource)
+	if !ok {
+		return fmt.Errorf("control file not writable")
+	}
+	ioSeq := usermem.BytesIOSequence([]byte(val))
+	n, err := wdata.Write(ctx, nil, ioSeq, 0)
+	if err != nil {
+		return err
+	}
+	if n != int64(len(val)) {
+		return fmt.Errorf("short write")
+	}
+	return nil
 }
