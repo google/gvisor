@@ -6,11 +6,31 @@ package(
     licenses = ["notice"],
 )
 
+# _SIDECARS maps each sidecar binary target to the filename runsc expects
+# to exist under `gvisor-bin/`.
+_SIDECARS = {
+    "//runsc/checkpointgofer:checkpointgofer_binary": "checkpointgofer",
+    "//runsc/cmd/metricserver:runsc-metric-server": "runsc-metric-server",
+}
+
+pkg_tar(
+    name = "gvisor-bin-tar",
+    files = _SIDECARS,
+    mode = "0755",
+    package_dir = "gvisor-bin",
+)
+
+pkg_tar(
+    name = "debian-gvisor-bin",
+    files = _SIDECARS,
+    mode = "0755",
+    package_dir = "/usr/bin/gvisor-bin",
+)
+
 pkg_tar(
     name = "debian-bin",
     srcs = [
         "//runsc",
-        "//runsc/cmd/metricserver:runsc-metric-server",
         "//shim:containerd-shim-runsc-v1",
     ],
     mode = "0755",
@@ -22,6 +42,7 @@ pkg_tar(
     extension = "tar.gz",
     deps = [
         ":debian-bin",
+        ":debian-gvisor-bin",
         "//shim:config",
     ],
 )
@@ -49,5 +70,27 @@ pkg_deb(
     version_file = version,
     visibility = [
         "//visibility:public",
+    ],
+)
+
+# Downloadable release tarball containing all gVisor files.
+# This is not the Debian package, but it is in this BUILD file anyway
+# because it needs to contain the same set of files in practice, so
+# easier to keep in sync.
+pkg_tar(
+    name = "gvisor-release-tar",
+    srcs = [
+        "//runsc",
+        # containerd shim needs to be at the top level (not gvisor-bin/)
+        # because containerd requires it to be in $PATH.
+        "//shim:containerd-shim-runsc-v1",
+    ],
+    extension = "tar.bz2",
+    mode = "0755",
+    package_file_name = "gvisor.tar.bz2",
+    visibility = ["//visibility:public"],
+    deps = [
+        # gvisor-bin/ subdir contents:
+        ":gvisor-bin-tar",
     ],
 )
