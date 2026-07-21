@@ -759,6 +759,7 @@ var (
 	_ operation = (*fib)(nil)
 	_ operation = (*ctGet)(nil)
 	_ operation = (*ctSet)(nil)
+	_ operation = (*masqOp)(nil)
 )
 
 // OpType represents the type of operation.
@@ -793,6 +794,8 @@ const (
 	OpTypeFIB
 	// OpTypeCT is the conntrack operation type.
 	OpTypeCT
+	// OpTypeMasq is the masquerade operation type.
+	OpTypeMasq
 	// OpTypeUnknown is the unknown operation type.
 	OpTypeUnknown
 )
@@ -812,6 +815,7 @@ var opTypeStrings = []string{
 	OpTypeLookup:     "lookup",
 	OpTypeFIB:        "fib",
 	OpTypeCT:         "ct",
+	OpTypeMasq:       "masq",
 	OpTypeUnknown:    "unknown",
 }
 

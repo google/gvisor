@@ -76,8 +76,9 @@ func nftablesTest(t *testing.T, test TestCase, ipv6 bool) {
 
 	// Create and start the container.
 	opts := dockerutil.RunOpts{
-		Image:  "nftables",
-		CapAdd: []string{"NET_ADMIN"},
+		Image:      "nftables",
+		CapAdd:     []string{"NET_ADMIN", "SYS_ADMIN"},
+		Privileged: true,
 	}
 	d.CopyFiles(&opts, "/runner", "test/nftables/runner/runner")
 	args := []string{"/runner/runner", "-name", test.Name()}

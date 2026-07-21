@@ -1412,10 +1412,18 @@ func (r *Rule) AddOpFromExprInfo(nf *NFTables, tab *Table, exprInfo ExprInfo) *s
 		if op, err = initCT(tab, exprInfo); err != nil {
 			return err
 		}
-		nf.InitConnTrackOnce()
+	case OpTypeMasq:
+		if op, err = initMasqOp(tab, exprInfo); err != nil {
+			return err
+		}
 
 	default:
 		return syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("Nftables: Unknown expression type not found: %s", exprInfo.ExprName))
+	}
+
+	if exprOpType == OpTypeCT || exprOpType == OpTypeNAT || exprOpType == OpTypeMasq {
+		// NAT and Masq operations require connection tracking.
+		nf.InitConnTrackOnce()
 	}
 
 	return r.addOperation(op)

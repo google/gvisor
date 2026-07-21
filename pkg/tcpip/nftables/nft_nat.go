@@ -44,21 +44,20 @@ type natOp struct {
 	flags uint16
 }
 
-// regIdxOrDefault returns the register index if it is valid
-// otherwise returns the default value.
-func regIdxOrDefault(reg int8, len int, defaultIdx int8) int8 {
-	if reg < 0 {
-		return defaultIdx
-	}
-	v, err := regNumToIdx(uint8(reg), len)
-	if err == nil {
-		return int8(v)
-	}
-	return defaultIdx
-}
-
 // newNATOp creates a new NAT operation.
-func newNATOp(nt, family uint8, sregAddrMin, sregAddrMax, sregProtoMin, sregProtoMax int8, flags uint16) (*natOp, *syserr.AnnotatedError) {
+func newNATOp(nt, family uint8, sregAddrMin, sregAddrMax, sregProtoMin, sregProtoMax int, flags uint16) (*natOp, *syserr.AnnotatedError) {
+	const unsetReg = -1
+	regIdxOrDefault := func(reg int, len int, defaultIdx int8) (int8, *syserr.AnnotatedError) {
+		if reg == unsetReg {
+			return defaultIdx, nil
+		}
+		v, err := regNumToIdx(uint8(reg), len)
+		if err != nil {
+			return -1, err
+		}
+		return int8(v), nil
+	}
+
 	natOp := &natOp{
 		family: family,
 		flags:  flags,
@@ -71,10 +70,27 @@ func newNATOp(nt, family uint8, sregAddrMin, sregAddrMax, sregProtoMin, sregProt
 	if family == linux.NFPROTO_IPV6 {
 		len = header.IPv6AddressSize
 	}
-	natOp.sregAddrMinIdx = regIdxOrDefault(sregAddrMin, len, -1 /*defaultIdx*/)
-	natOp.sregAddrMaxIdx = regIdxOrDefault(sregAddrMax, len, natOp.sregAddrMinIdx)
-	natOp.sregProtoMinIdx = regIdxOrDefault(sregProtoMin, 2 /*len*/, -1)
-	natOp.sregProtoMaxIdx = regIdxOrDefault(sregProtoMax, 2 /*len*/, natOp.sregProtoMinIdx)
+
+	var err *syserr.AnnotatedError
+	if natOp.sregAddrMinIdx, err = regIdxOrDefault(sregAddrMin, len, unsetReg); err != nil {
+		return nil, err
+	}
+
+	// addr max is set to min if not set.
+	if natOp.sregAddrMaxIdx, err = regIdxOrDefault(sregAddrMax, len, natOp.sregAddrMinIdx); err != nil {
+		return nil, err
+	}
+
+	protoLen := linux.SizeOfNfConntrackManProto
+	if natOp.sregProtoMinIdx, err = regIdxOrDefault(sregProtoMin, protoLen, unsetReg); err != nil {
+		return nil, err
+	}
+
+	// proto max is set to proto min if not set.
+	if natOp.sregProtoMaxIdx, err = regIdxOrDefault(sregProtoMax, protoLen, natOp.sregProtoMinIdx); err != nil {
+		return nil, err
+	}
+
 	return natOp, nil
 }
 
@@ -227,10 +243,10 @@ func (n *natOp) checkCompatibility(cCtx *opCompatCtx) *syserr.AnnotatedError {
 var natAttrPolicy = []NlaPolicy{
 	linux.NFTA_NAT_TYPE:          {nlaType: linux.NLA_U32},
 	linux.NFTA_NAT_FAMILY:        {nlaType: linux.NLA_U32},
-	linux.NFTA_NAT_REG_ADDR_MIN:  {nlaType: linux.NLA_U32},
-	linux.NFTA_NAT_REG_ADDR_MAX:  {nlaType: linux.NLA_U32},
-	linux.NFTA_NAT_REG_PROTO_MIN: {nlaType: linux.NLA_U32},
-	linux.NFTA_NAT_REG_PROTO_MAX: {nlaType: linux.NLA_U32},
+	linux.NFTA_NAT_REG_ADDR_MIN:  {nlaType: linux.NLA_BE32, validator: AttrMaxValidator[uint32](255)},
+	linux.NFTA_NAT_REG_ADDR_MAX:  {nlaType: linux.NLA_BE32, validator: AttrMaxValidator[uint32](255)},
+	linux.NFTA_NAT_REG_PROTO_MIN: {nlaType: linux.NLA_BE32, validator: AttrMaxValidator[uint32](255)},
+	linux.NFTA_NAT_REG_PROTO_MAX: {nlaType: linux.NLA_BE32, validator: AttrMaxValidator[uint32](255)},
 	linux.NFTA_NAT_FLAGS:         {nlaType: linux.NLA_BE32, validator: AttrMaskValidator[uint32](linux.NF_NAT_RANGE_MASK)},
 }
 
@@ -266,26 +282,26 @@ func initNATOp(tab *Table, exprInfo ExprInfo) (*natOp, *syserr.AnnotatedError) {
 	}
 
 	flags, _ := AttrNetToHost[uint32](linux.NFTA_NAT_FLAGS, attrs)
-	sregAddrMin, sregAddrMax := int8(-1), int8(-1)
+	sregAddrMin, sregAddrMax := -1, -1
 	if regAddrMinOk {
-		sregAddrMin = int8(regAddrMin)
+		sregAddrMin = int(regAddrMin)
 		regAddrMax, regAddrMaxOk := AttrNetToHost[uint32](linux.NFTA_NAT_REG_ADDR_MAX, attrs)
 		if !regAddrMaxOk {
 			sregAddrMax = sregAddrMin
 		} else {
-			sregAddrMax = int8(regAddrMax)
+			sregAddrMax = int(regAddrMax)
 		}
 		flags |= linux.NF_NAT_RANGE_MAP_IPS
 	}
 
-	sregProtoMin, sregProtoMax := int8(-1), int8(-1)
+	sregProtoMin, sregProtoMax := -1, -1
 	if regProtoMinOk {
-		sregProtoMin = int8(regProtoMin)
+		sregProtoMin = int(regProtoMin)
 		regProtoMax, regProtoMaxOk := AttrNetToHost[uint32](linux.NFTA_NAT_REG_PROTO_MAX, attrs)
 		if !regProtoMaxOk {
 			sregProtoMax = sregProtoMin
 		} else {
-			sregProtoMax = int8(regProtoMax)
+			sregProtoMax = int(regProtoMax)
 		}
 		flags |= linux.NF_NAT_RANGE_PROTO_SPECIFIED
 	}

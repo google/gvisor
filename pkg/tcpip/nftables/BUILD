@@ -25,6 +25,7 @@ go_library(
         "nft_immediate.go",
         "nft_last.go",
         "nft_lookup.go",
+        "nft_masq.go",
         "nft_meta.go",
         "nft_metaload.go",
         "nft_metaset.go",

@@ -28,6 +28,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/base/no_destructor.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
 #include "test/syscalls/linux/socket_netlink_util.h"
@@ -381,7 +382,7 @@ void AddDefaultTable(const AddDefaultTableOptions& options) {
   std::vector<char> add_table_request_buffer =
       NlBatchReq()
           .SeqStart(options.seq)
-          .Req(NlReq("newtable req ack inet")
+          .Req(NlReq(absl::StrCat("newtable req ack ", options.family_name))
                    .Seq(options.seq + 1)
                    .StrAttr(NFTA_TABLE_NAME, *table_name)
                    .Build())
@@ -404,9 +405,13 @@ void AddDefaultBaseChain(const AddDefaultBaseChainOptions& options) {
     chain_name = &GetDefaultChainName();
   }
 
-  const char test_chain_type_name[] = "filter";
+  const char* test_chain_type_name = "filter";
+  if (!options.chain_type.empty()) {
+    test_chain_type_name = options.chain_type.c_str();
+  }
   const uint32_t test_policy = NF_ACCEPT;
-  const uint32_t test_hook_num = NF_INET_PRE_ROUTING;
+  const uint32_t test_hook_num =
+      options.chain_type.empty() ? NF_INET_PRE_ROUTING : options.hook_num;
   const uint32_t test_hook_priority = 0;
   const uint32_t test_chain_flags = NFT_CHAIN_BASE;
 
@@ -419,10 +424,11 @@ void AddDefaultBaseChain(const AddDefaultBaseChainOptions& options) {
   std::vector<char> add_chain_request_buffer =
       NlBatchReq()
           .SeqStart(options.seq)
-          .Req(NlReq("newchain req ack inet")
+          .Req(NlReq(absl::StrCat("newchain req ack ", options.family_name))
                    .Seq(options.seq + 1)
                    .StrAttr(NFTA_CHAIN_TABLE, *table_name)
                    .StrAttr(NFTA_CHAIN_NAME, *chain_name)
+                   .StrAttr(NFTA_CHAIN_TYPE, test_chain_type_name)
                    .U32Attr(NFTA_CHAIN_POLICY, test_policy)
                    .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
                             nested_hook_data.size())

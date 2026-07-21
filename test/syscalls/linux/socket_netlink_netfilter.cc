@@ -3610,6 +3610,9 @@ struct RuleWithExprTestParams {
   std::string expr_name;
   NlNestedAttr expr_attrs;
   int expected_error_no;
+  std::string chain_type;
+  uint32_t hook_num;
+  std::string family_name = "inet";
 };
 
 class AddRuleWithExprTest
@@ -3634,7 +3637,8 @@ TEST_P(AddRuleWithExprTest, AddRuleWithExpr) {
   std::vector<char> add_rule_request_buffer =
       NlBatchReq()
           .SeqStart(kSeq + 6)
-          .Req(NlReq("newrule req ack create inet")
+          .Req(NlReq(absl::StrCat("newrule req ack create ",
+                                  GetParam().family_name))
                    .Seq(kSeq + 7)
                    .StrAttr(NFTA_RULE_TABLE, table_name)
                    .StrAttr(NFTA_RULE_CHAIN, chain_name)
@@ -3644,11 +3648,23 @@ TEST_P(AddRuleWithExprTest, AddRuleWithExpr) {
           .SeqEnd(kSeq + 8)
           .Build();
 
-  AddDefaultTable({.fd = fd, .table_name = table_name, .seq = kSeq});
+  AddDefaultTable({.fd = fd,
+                   .table_name = table_name,
+                   .seq = kSeq,
+                   .family_name = GetParam().family_name});
+  std::string test_chain_type = GetParam().chain_type;
+  if (test_chain_type.empty() &&
+      (GetParam().expr_name == "nat" || GetParam().expr_name == "masq")) {
+    test_chain_type = "nat";
+  }
+
   AddDefaultBaseChain({.fd = fd,
                        .table_name = table_name,
                        .chain_name = chain_name,
-                       .seq = kSeq + 3});
+                       .seq = kSeq + 3,
+                       .chain_type = test_chain_type,
+                       .hook_num = GetParam().hook_num,
+                       .family_name = GetParam().family_name});
 
   if (GetParam().expected_error_no != 0) {
     ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
@@ -3902,17 +3918,20 @@ std::vector<RuleWithExprTestParams> GetNATRuleTestParams() {
                             .U32Attr(NFTA_NAT_REG_ADDR_MIN, NFT_REG_1)
                             .U32Attr(NFTA_NAT_REG_ADDR_MAX, NFT_REG_4)
                             .U32Attr(NFTA_NAT_REG_PROTO_MIN, NFT_REG32_00)
-                            .U32Attr(NFTA_NAT_REG_PROTO_MAX, NFT_REG32_15)},
+                            .U32Attr(NFTA_NAT_REG_PROTO_MAX, NFT_REG32_15),
+          .hook_num = NF_INET_PRE_ROUTING,
+          .family_name = "ipv4"},
       RuleWithExprTestParams{
           .test_name = "DNATAddrProtoMinMaxIPv6",
           .expr_name = "nat",
           .expr_attrs = NlNestedAttr()
                             .U32Attr(NFTA_NAT_TYPE, NFT_NAT_DNAT)
                             .U32Attr(NFTA_NAT_FAMILY, AF_INET6)
-                            .U32Attr(NFTA_NAT_REG_ADDR_MIN, NFT_REG32_00)
-                            .U32Attr(NFTA_NAT_REG_ADDR_MAX, NFT_REG32_15)
-                            .U32Attr(NFTA_NAT_REG_PROTO_MIN, NFT_REG_1)
-                            .U32Attr(NFTA_NAT_REG_PROTO_MAX, NFT_REG_4)},
+                            .U32Attr(NFTA_NAT_REG_ADDR_MIN, NFT_REG_1)
+                            .U32Attr(NFTA_NAT_REG_ADDR_MAX, NFT_REG_2)
+                            .U32Attr(NFTA_NAT_REG_PROTO_MIN, NFT_REG_3)
+                            .U32Attr(NFTA_NAT_REG_PROTO_MAX, NFT_REG_4),
+          .family_name = "ipv6"},
       RuleWithExprTestParams{
           .test_name = "NoNATType",
           .expr_name = "nat",
@@ -3948,6 +3967,80 @@ std::vector<RuleWithExprTestParams> GetNATRuleTestParams() {
 
 INSTANTIATE_TEST_SUITE_P(NATRuleTest, AddRuleWithExprTest,
                          /*param_generator=*/ValuesIn(GetNATRuleTestParams()),
+                         /*param_name_generator=*/
+                         [](const TestParamInfo<RuleWithExprTestParams>& info) {
+                           return info.param.test_name;
+                         });
+
+std::vector<RuleWithExprTestParams> GetMasqRuleTestParams() {
+  return {
+      RuleWithExprTestParams{.test_name = "MasqNoAttrs",
+                             .expr_name = "masq",
+                             .expr_attrs = NlNestedAttr(),
+                             .expected_error_no = 0,
+                             .chain_type = "nat",
+                             .hook_num = NF_INET_POST_ROUTING},
+      RuleWithExprTestParams{
+          .test_name = "MasqWithFlags",
+          .expr_name = "masq",
+          .expr_attrs = NlNestedAttr().U32Attr(NFTA_MASQ_FLAGS, 1),
+          .expected_error_no = 0,
+          .chain_type = "nat",
+          .hook_num = NF_INET_POST_ROUTING},
+      RuleWithExprTestParams{.test_name = "MasqWithProtoMin",
+                             .expr_name = "masq",
+                             .expr_attrs = NlNestedAttr().U32Attr(
+                                 NFTA_MASQ_REG_PROTO_MIN, NFT_REG32_00),
+                             .expected_error_no = 0,
+                             .chain_type = "nat",
+                             .hook_num = NF_INET_POST_ROUTING},
+      RuleWithExprTestParams{
+          .test_name = "MasqWithProtoMinMax",
+          .expr_name = "masq",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_MASQ_REG_PROTO_MIN, NFT_REG32_00)
+                            .U32Attr(NFTA_MASQ_REG_PROTO_MAX, NFT_REG32_15),
+          .expected_error_no = 0,
+          .chain_type = "nat",
+          .hook_num = NF_INET_POST_ROUTING},
+      RuleWithExprTestParams{
+          .test_name = "MasqInvalidFlags",
+          .expr_name = "masq",
+          .expr_attrs = NlNestedAttr().U32Attr(NFTA_MASQ_FLAGS, 0xffffffff),
+          .expected_error_no = EINVAL,
+          .chain_type = "nat",
+          .hook_num = NF_INET_POST_ROUTING},
+      RuleWithExprTestParams{
+          .test_name = "MasqInvalidReg",
+          .expr_name = "masq",
+          .expr_attrs = NlNestedAttr().U32Attr(NFTA_MASQ_REG_PROTO_MIN, 256),
+          .expected_error_no = EINVAL,
+          .chain_type = "nat",
+          .hook_num = NF_INET_POST_ROUTING},
+      RuleWithExprTestParams{
+          .test_name = "MasqRegNumberNotExist",
+          .expr_name = "masq",
+          .expr_attrs = NlNestedAttr().U32Attr(NFTA_MASQ_REG_PROTO_MIN, 5),
+          .expected_error_no = ERANGE,
+          .chain_type = "nat",
+          .hook_num = NF_INET_POST_ROUTING},
+      RuleWithExprTestParams{.test_name = "MasqWrongChainType",
+                             .expr_name = "masq",
+                             .expr_attrs = NlNestedAttr(),
+                             .expected_error_no = EINVAL,
+                             .chain_type = "filter",
+                             .hook_num = NF_INET_POST_ROUTING},
+      RuleWithExprTestParams{.test_name = "MasqWrongHook",
+                             .expr_name = "masq",
+                             .expr_attrs = NlNestedAttr(),
+                             .expected_error_no = EINVAL,
+                             .chain_type = "nat",
+                             .hook_num = NF_INET_PRE_ROUTING},
+  };
+}
+
+INSTANTIATE_TEST_SUITE_P(MasqRuleTest, AddRuleWithExprTest,
+                         /*param_generator=*/ValuesIn(GetMasqRuleTestParams()),
                          /*param_name_generator=*/
                          [](const TestParamInfo<RuleWithExprTestParams>& info) {
                            return info.param.test_name;

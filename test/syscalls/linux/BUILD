@@ -3929,6 +3929,7 @@ cc_library(
         "//test/util:test_util",
         "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/log",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
     ],
