@@ -29,16 +29,19 @@
 #include <sys/un.h>
 #include <unistd.h>
 
-#include <csignal>
 #include <cstdio>
-#include <iostream>
-#include <ostream>
+#include <cstring>
+#include <string>
+#include <utility>
 
+#include "absl/base/macros.h"
 #include "absl/cleanup/cleanup.h"
 #include "absl/strings/str_cat.h"
 #include "absl/time/clock.h"
+#include "absl/time/time.h"
 #include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/logging.h"
 #include "test/util/memory_util.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
@@ -57,7 +60,7 @@ void runForkExecve() {
   ExecveArray envv = {"TEST=123"};
   auto kill_or_error = ForkAndExecveat(root.get(), "/bin/true", argv, envv, 0,
                                        nullptr, &child, &execve_errno);
-  ASSERT_EQ(0, execve_errno);
+  TEST_CHECK(execve_errno == 0);
   // Don't kill child, just wait for gracefully exit.
   kill_or_error.ValueOrDie().Release();
   RetryEINTR(waitpid)(child, nullptr, 0);
@@ -93,7 +96,7 @@ void runSocket() {
     err(1, "fork");
   } else if (pid == 0) {
     // Child.
-    close(parent_sock);  // ensure it's not mistakely used in child.
+    close(parent_sock);  // ensure it's not mistakenly used in child.
 
     int server = socket(AF_UNIX, SOCK_STREAM, 0);
     if (server < 0) {

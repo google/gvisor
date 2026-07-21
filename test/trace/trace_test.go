@@ -39,7 +39,7 @@ type checkers struct {
 	count   int
 }
 
-// TestAll enabled all trace points in the system with all optional and context
+// TestAll enables all trace points in the system with all optional and context
 // fields enabled. Then it runs a workload that will trigger those points and
 // run some basic validation over the points generated.
 func TestAll(t *testing.T) {
@@ -455,7 +455,7 @@ func checkSentryExec(msg test.Message) error {
 	if err != nil {
 		return fmt.Errorf("Not able to calculate sha256sum: %v", err)
 	}
-	want := strings.SplitN(string(out), " ", 2)[0]
+	want, _, _ := strings.Cut(string(out), " ")
 
 	got := ""
 	for _, b := range p.BinarySha256 {
