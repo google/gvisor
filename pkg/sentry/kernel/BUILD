@@ -279,6 +279,7 @@ go_library(
         "kernel_opts.go",
         "kernel_restore.go",
         "kernel_state.go",
+        "pac.go",
         "pending_signals.go",
         "pending_signals_list.go",
         "pending_signals_state.go",

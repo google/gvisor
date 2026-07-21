@@ -128,6 +128,11 @@ type subprocess struct {
 	platform.NoAddressSpaceIO
 	subprocessRefs
 
+	// pacKeys/havePACKeys: ARM64 PAC keys installed on guest threads at creation so
+	// PAC survives C/R. Sandbox-wide, set when the address space is created. // PAC-KEY-CR
+	pacKeys     [10]uint64
+	havePACKeys bool
+
 	// requests is used to signal creation of new threads.
 	requests chan any
 
@@ -304,6 +309,14 @@ func (s *subprocess) handlePtraceSyscallRequest(req any) {
 			}
 		}
 
+		// PAC-KEY-CR: install the sandbox PAC keys on the new guest thread so signed
+		// pointers survive checkpoint/restore (arm64 only).
+		if s.havePACKeys {
+			if err := t.installPACKeys(s.pacKeys); err != nil {
+				t.Debugf("installPACKeys: %v", err)
+			}
+		}
+
 		id, ok := s.sysmsgStackPool.Get()
 		if !ok {
 			handlePtraceSyscallRequestError(req, "unable to allocate a sysmsg stub thread")
@@ -343,10 +356,13 @@ func (s *subprocess) handlePtraceSyscallRequest(req any) {
 // seccomp-unotify can't be used for the source pool process, because it is a
 // parent of all other stub processes, but only one filter can be installed
 // with SECCOMP_FILTER_FLAG_NEW_LISTENER.
-func newSubprocess(create func() (*thread, error), memoryFile *pgalloc.MemoryFile, seccompNotify bool) (*subprocess, error) {
+func newSubprocess(create func() (*thread, error), memoryFile *pgalloc.MemoryFile, seccompNotify bool, pacKeys [10]uint64, havePAC bool) (*subprocess, error) {
 	if sp := globalPool.fetchAvailable(); sp != nil {
 		sp.subprocessRefs.InitRefs()
 		sp.usertrap = usertrap.New()
+		// Sandbox-wide key: a pooled subprocess already uses the same key. // PAC-KEY-CR
+		sp.pacKeys = pacKeys
+		sp.havePACKeys = havePAC
 		return sp, nil
 	}
 
@@ -364,6 +380,8 @@ func newSubprocess(create func() (*thread, error), memoryFile *pgalloc.MemoryFil
 		threadContextPool: pool.Pool{Start: 0, Limit: maxGuestContexts},
 		memoryFile:        memoryFile,
 		sysmsgThreads:     make(map[uint32]*sysmsgThread),
+		pacKeys:           pacKeys,
+		havePACKeys:       havePAC,
 	}
 	sp.subprocessRefs.InitRefs()
 	runtime.LockOSThread()
