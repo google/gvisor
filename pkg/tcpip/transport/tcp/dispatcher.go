@@ -313,6 +313,10 @@ func (p *processor) start(wg *sync.WaitGroup) {
 				if ep == nil {
 					break
 				}
+				if !ep.hasQueuedWork() {
+					continue
+				}
+				ep.handleQueuedTransportErrors()
 				if ep.segmentQueue.empty() {
 					continue
 				}
@@ -337,10 +341,10 @@ func (p *processor) start(wg *sync.WaitGroup) {
 				default:
 					panic(fmt.Sprintf("unexpected tcp state in processor: %v", state))
 				}
-				// If there are more segments to process and the
+				// If there is more work to process and the
 				// endpoint lock is not held by user then
 				// requeue this endpoint for processing.
-				if !ep.segmentQueue.empty() && !ep.isOwnedByUser() {
+				if ep.hasQueuedWork() && !ep.isOwnedByUser() {
 					p.epQ.enqueue(ep)
 				}
 			}
