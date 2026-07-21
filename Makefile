@@ -135,10 +135,14 @@ $(RUNTIME_BIN): # See below.
 	@mkdir -p "$(RUNTIME_DIR)"
 ifeq (,$(STAGED_BINARIES))
 	@$(call copy,$(RUNSC_TARGET),$(RUNTIME_BIN))
+	@# Install sidecar binaries next to `RUNTIME_BIN`:
+	@$(call copy,//debian:gvisor-bin-tar,$(RUNTIME_DIR))
+	@tar -C "$(RUNTIME_DIR)" -xf "$(RUNTIME_DIR)/gvisor-bin-tar.tar"
+	@rm -f "$(RUNTIME_DIR)/gvisor-bin-tar.tar"
 else
 	gcloud storage cat "${STAGED_BINARIES}" | \
-	  tar -C "$(RUNTIME_DIR)" -zxvf - runsc && \
-	  chmod a+rx "$(RUNTIME_BIN)"
+	  tar -C "$(RUNTIME_DIR)" -zxvf - ./runsc ./gvisor-bin && \
+	  chmod -R a+rx "$(RUNTIME_BIN)" "$(RUNTIME_DIR)/gvisor-bin"
 endif
 .PHONY: $(RUNTIME_BIN) # Real file, but force rebuild.
 
@@ -813,11 +817,29 @@ $(RELEASE_ARTIFACTS)/%:
 	@$(call copy,//runsc/cmd/metricserver:runsc-metric-server,$@)
 	@$(call copy,//shim:containerd-shim-runsc-v1,$@)
 	@$(call copy,//debian:debian,$@)
+	@$(call copy,//debian:gvisor-release-tar,$@)
 
 release: $(RELEASE_KEY) $(RELEASE_ARTIFACTS)/$(ARCH)
 	@mkdir -p $(RELEASE_ROOT)
 	@NIGHTLY=$(RELEASE_NIGHTLY) tools/make_release.sh $(RELEASE_KEY) $(RELEASE_ROOT) $$(find $(RELEASE_ARTIFACTS) -type f)
 .PHONY: release
+
+staged-binaries-check: ## Verifies STAGED_BINARIES contains all files from the //debian:gvisor-release-tar fileset.
+ifeq (,$(STAGED_BINARIES))
+	@echo "STAGED_BINARIES not set; nothing to check."
+else
+	@# T is exported so the nested `cp` inside the copy macro (a child process)
+	@# sees it; the rest of the recipe runs in this shell directly.
+	@export T=$$(mktemp -d --tmpdir staged-check.XXXXXX); \
+	$(call copy,//debian:gvisor-release-tar,$$T) && \
+	tar -tjf "$$T/gvisor.tar.bz2" | sed 's#^\./##' | grep -v '/$$' | sort >"$$T/release.txt" && \
+	gcloud storage cat "$(STAGED_BINARIES)" | tar -tzf - | sed 's#^\./##' | grep -v '/$$' | sort >"$$T/staged.txt" && \
+	comm -23 "$$T/release.txt" "$$T/staged.txt" >"$$T/missing.txt" && \
+	test ! -s "$$T/missing.txt" \
+	  || { echo "ERROR: STAGED_BINARIES missing members from //debian:gvisor-release-tar:" >&2; cat "$$T/missing.txt" >&2; rm -rf "$$T"; exit 1; }; \
+	rm -rf "$$T"
+endif
+.PHONY: staged-binaries-check
 
 tag: ## Creates and pushes a release tag.
 	@tools/tag_release.sh "$(RELEASE_COMMIT)" "$(RELEASE_NAME)" "$(RELEASE_NOTES)"

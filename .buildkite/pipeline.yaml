@@ -246,6 +246,16 @@ steps:
     agents:
       arch: "amd64"
 
+  # Verify STAGED_BINARIES contents match the release tarball fileset.
+  # Runs only when `STAGED_BINARIES` is set (so cannot use `*source_test`).
+  - <<: *common
+    label: ":package: Staged binaries consistency check"
+    if: build.env("STAGED_BINARIES") != null
+    commands:
+      - make staged-binaries-check
+    agents:
+      arch: "amd64"
+
   # Images tests.
   - <<: *common
     label: ":docker: Images (x86_64)"
