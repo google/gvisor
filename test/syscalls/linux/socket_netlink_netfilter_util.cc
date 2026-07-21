@@ -64,6 +64,14 @@ PosixErrorOr<FileDescriptor> NetfilterBoundSocket() {
   tv.tv_usec = 0;
   RETURN_ERROR_IF_SYSCALL_FAIL(setsockopt(fd.get(), SOL_SOCKET, SO_RCVTIMEO,
                                           (const char*)&tv, sizeof(tv)));
+  if (!IsRunningOnGvisor()) {
+    // The kernel may fail to allocate the necessary room for the
+    // acknowledgement message back to user space.
+    // This option trims off the payload of the original netlink message.
+    int val = 1;
+    RETURN_ERROR_IF_SYSCALL_FAIL(
+        setsockopt(fd.get(), SOL_NETLINK, NETLINK_CAP_ACK, &val, sizeof(val)));
+  }
   MaybeSave();
 
   return std::move(fd);
@@ -419,7 +427,6 @@ void AddDefaultBaseChain(const AddDefaultBaseChainOptions& options) {
       NlNestedAttr()
           .U32Attr(NFTA_HOOK_HOOKNUM, test_hook_num)
           .U32Attr(NFTA_HOOK_PRIORITY, test_hook_priority)
-          .StrAttr(NFTA_CHAIN_TYPE, test_chain_type_name)
           .Build();
   std::vector<char> add_chain_request_buffer =
       NlBatchReq()

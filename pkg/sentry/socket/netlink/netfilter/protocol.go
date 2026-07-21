@@ -845,6 +845,8 @@ func (p *Protocol) newRule(nft *nftables.NFTables, st *stack.Stack, attrs map[ui
 		}
 	}
 
+	// TODO: b/486197011 - Support uninitialized register verification in gvisor.
+	// Should reject the rule if any of the registers are uninitialized.
 	for _, exprInfo := range exprInfos {
 		err = rule.AddOpFromExprInfo(nft, tab, exprInfo)
 		// TODO - b/434244017: Create a copy of nftables structure when modifying the table.

@@ -72,11 +72,11 @@ var counterAttrPolicy = []NlaPolicy{
 }
 
 func initCounter(exprInfo ExprInfo) (*counter, *syserr.AnnotatedError) {
-	attrs, ok := NfParseWithOpts(exprInfo.ExprData, &NfParseOpts{
+	attrs, err := NfParseWithOpts(exprInfo.ExprData, &NfParseOpts{
 		Policy: counterAttrPolicy,
 	})
-	if !ok {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse counter expression data")
+	if err != nil {
+		return nil, err
 	}
 	// Nftables uses 0 as the default value for both bytes and packets if the
 	// attributes are not specified.

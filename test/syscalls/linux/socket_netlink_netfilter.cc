@@ -218,7 +218,6 @@ TEST(NetlinkNetfilterTest, AddAndRetrieveNewTable) {
 
 TEST(NetlinkNetfilterTest, GetDumpTables) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-  SKIP_IF(!IsRunningOnGvisor());
   std::string test_table_name = GetUniqueTestTableName();
   const char test_table_name_2[] = "test_tab_two";
   uint32_t expected_chain_count = 0;
@@ -279,7 +278,6 @@ TEST(NetlinkNetfilterTest, GetDumpTables) {
 
 TEST(NetlinkNetfilterTest, GetSets) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-  SKIP_IF(!IsRunningOnGvisor());
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
 
   std::string test_table_name = GetUniqueTestTableName();
@@ -376,7 +374,6 @@ TEST(NetlinkNetfilterTest, GetSets) {
 TEST(NetlinkNetfilterTest, GetSetElements) {
   const uint32_t kCatchallFlag = 0x2;
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-  SKIP_IF(!IsRunningOnGvisor());
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
 
   std::string test_table_name = GetUniqueTestTableName();
@@ -1409,8 +1406,6 @@ TEST(NetlinkNetfilterTest, ErrNewBaseChainWithInvalidChainType) {
 
 TEST(NetlinkNetfilterTest, ErrNewNATBaseChainWithInvalidPriority) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-  // TODO: b/421437663 - Fix this error test for native Linux.
-  SKIP_IF(!IsRunningOnGvisor());
   std::string test_table_name = GetUniqueTestTableName();
   const char test_chain_name[] = "test_chain_bad_policy";
   const char test_chain_type_name[] = "nat";
@@ -1826,7 +1821,6 @@ TEST(NetlinkNetfilterTest, AddBaseChainWithDropPolicy) {
 
 TEST(NetlinkNetfilterTest, GetChainWithDumpFlagSet) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-  SKIP_IF(!IsRunningOnGvisor());
   std::string test_table_name = GetUniqueTestTableName();
   const char test_chain_name[] = "test_chain";
   const char test_chain_two_name[] = "test_chain_two";
@@ -2695,8 +2689,6 @@ TEST(NetlinkNetfilterTest, ErrRuleExpressionWrongType) {
 
 TEST(NetlinkNetfilterTest, ErrRuleTooManyExpressions) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-  // TODO: b/421437663 - Fix this error test for native Linux.
-  SKIP_IF(!IsRunningOnGvisor());
   std::string test_table_name = GetUniqueTestTableName();
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
 
@@ -3290,7 +3282,6 @@ TEST(NetlinkNetfilterTest, GetRule) {
 
 TEST(NetlinkNetfilterTest, GetRuleDump) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-  SKIP_IF(!IsRunningOnGvisor());
   std::string test_table_name = GetUniqueTestTableName();
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
 
@@ -3369,7 +3360,6 @@ TEST(NetlinkNetfilterTest, GetRuleDump) {
 
 TEST(NetlinkNetfilterTest, GetRuleDumpTableSpecified) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-  SKIP_IF(!IsRunningOnGvisor());
   std::string test_table_name = GetUniqueTestTableName();
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
 
@@ -3479,7 +3469,6 @@ TEST(NetlinkNetfilterTest, GetRuleDumpTableSpecified) {
 
 TEST(NetlinkNetfilterTest, GetRuleDumpTableChainSpecified) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-  SKIP_IF(!IsRunningOnGvisor());
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
 
   std::string test_table_name = GetUniqueTestTableName();
@@ -3583,7 +3572,6 @@ TEST(NetlinkNetfilterTest, GetRuleDumpTableChainSpecified) {
 
 TEST(NetlinkNetfilterTest, GetGenerationID) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-  SKIP_IF(!IsRunningOnGvisor());
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
 
   std::vector<char> get_gen_request =
@@ -3610,6 +3598,8 @@ struct RuleWithExprTestParams {
   std::string expr_name;
   NlNestedAttr expr_attrs;
   int expected_error_no;
+  // List of registers to initialize to zero before accessing in a rule.
+  std::vector<uint32_t> regs_to_init = {};
   std::string chain_type;
   uint32_t hook_num;
   std::string family_name = "inet";
@@ -3620,7 +3610,6 @@ class AddRuleWithExprTest
 
 TEST_P(AddRuleWithExprTest, AddRuleWithExpr) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-  SKIP_IF(!IsRunningOnGvisor());
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_NETFILTER));
   std::vector<char> expr_data = NlNestedAttr(GetParam().expr_attrs).Build();
@@ -3630,7 +3619,24 @@ TEST_P(AddRuleWithExprTest, AddRuleWithExpr) {
           .StrAttr(NFTA_EXPR_NAME, GetParam().expr_name)
           .RawAttr(NFTA_EXPR_DATA, expr_data.data(), expr_data.size())
           .Build();
-  std::vector<char> list_expr_data = NlListAttr().Add(rule_expr_data).Build();
+  NlListAttr list_attr;
+  // Initialize the registers to zero.
+  // Linux throws error if a Nftable opcode tries to read from an uninitialized
+  // register.
+  // TODO: b/486197011 - Support uninitialized register verification in gvisor.
+  for (uint32_t reg : GetParam().regs_to_init) {
+    std::vector<char> zero_data;
+    if (reg >= NFT_REG_1 && reg <= NFT_REG_4) {
+      zero_data = std::vector<char>(16, 0);
+    } else {
+      zero_data = std::vector<char>(4, 0);
+    }
+    std::vector<char> imm_expr =
+        NlImmExpr().Dreg(reg).Value(zero_data).ValueBuild();
+    list_attr.Add(imm_expr);
+  }
+  list_attr.Add(rule_expr_data);
+  std::vector<char> list_expr_data = list_attr.Build();
   const std::string table_name =
       absl::StrCat("table_", GetParam().expr_name, "_", GetParam().test_name);
   const std::string chain_name = "test_chain";
@@ -3665,7 +3671,6 @@ TEST_P(AddRuleWithExprTest, AddRuleWithExpr) {
                        .chain_type = test_chain_type,
                        .hook_num = GetParam().hook_num,
                        .family_name = GetParam().family_name});
-
   if (GetParam().expected_error_no != 0) {
     ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
                     fd, kSeq + 6, kSeq + 8, add_rule_request_buffer.data(),
@@ -3697,7 +3702,8 @@ std::vector<RuleWithExprTestParams> GetPayloadRuleTestParams() {
                   .U32Attr(NFTA_PAYLOAD_BASE, NFT_PAYLOAD_NETWORK_HEADER)
                   .U32Attr(NFTA_PAYLOAD_OFFSET, 1)
                   .U32Attr(NFTA_PAYLOAD_LEN, 4)
-                  .U32Attr(NFTA_PAYLOAD_SREG, NFT_REG32_00)},
+                  .U32Attr(NFTA_PAYLOAD_SREG, NFT_REG32_00),
+          .regs_to_init = {NFT_REG32_00}},
       RuleWithExprTestParams{
           .test_name = "SetWithCsumValid",
           .expr_name = "payload",
@@ -3708,7 +3714,8 @@ std::vector<RuleWithExprTestParams> GetPayloadRuleTestParams() {
                   .U32Attr(NFTA_PAYLOAD_LEN, 4)
                   .U32Attr(NFTA_PAYLOAD_SREG, NFT_REG_1)
                   .U32Attr(NFTA_PAYLOAD_CSUM_TYPE, NFT_PAYLOAD_CSUM_INET)
-                  .U32Attr(NFTA_PAYLOAD_CSUM_OFFSET, 1)},
+                  .U32Attr(NFTA_PAYLOAD_CSUM_OFFSET, 1),
+          .regs_to_init = {NFT_REG_1}},
       RuleWithExprTestParams{
           .test_name = "LoadWithInvalidRegister",
           .expr_name = "payload",
@@ -3729,7 +3736,7 @@ std::vector<RuleWithExprTestParams> GetPayloadRuleTestParams() {
                   .U32Attr(NFTA_PAYLOAD_OFFSET, UINT32_MAX)
                   .U32Attr(NFTA_PAYLOAD_LEN, 4)
                   .U32Attr(NFTA_PAYLOAD_SREG, NFT_REG_VERDICT),
-          .expected_error_no = EINVAL},
+          .expected_error_no = ERANGE},
       RuleWithExprTestParams{
           .test_name = "LoadWithInvalidLen",
           .expr_name = "payload",
@@ -3739,16 +3746,6 @@ std::vector<RuleWithExprTestParams> GetPayloadRuleTestParams() {
                   .U32Attr(NFTA_PAYLOAD_OFFSET, 1)
                   .U32Attr(NFTA_PAYLOAD_LEN, NFT_REG_SIZE + 1)
                   .U32Attr(NFTA_PAYLOAD_SREG, NFT_REG_VERDICT),
-          .expected_error_no = EINVAL},
-      RuleWithExprTestParams{
-          .test_name = "SetWithInvalidBase",
-          .expr_name = "payload",
-          .expr_attrs =
-              NlNestedAttr()
-                  .U32Attr(NFTA_PAYLOAD_BASE, /* NFT_PAYLOAD_INNER_HEADER */ 3)
-                  .U32Attr(NFTA_PAYLOAD_OFFSET, 1)
-                  .U32Attr(NFTA_PAYLOAD_LEN, 4)
-                  .U32Attr(NFTA_PAYLOAD_DREG, NFT_REG_1),
           .expected_error_no = EINVAL},
       RuleWithExprTestParams{
           .test_name = "SetWithInvalidRegister",
@@ -3820,7 +3817,7 @@ std::vector<RuleWithExprTestParams> GetMetaRuleTestParams() {
           .expr_attrs = NlNestedAttr()
                             .U32Attr(NFTA_META_DREG, NFT_REG_1)
                             .U32Attr(NFTA_META_KEY, 256),
-          .expected_error_no = EINVAL},
+          .expected_error_no = ERANGE},
   };
 }
 
@@ -3845,7 +3842,8 @@ std::vector<RuleWithExprTestParams> GetCmpRuleTestParams() {
                     .U32Attr(NFTA_CMP_OP, NFT_CMP_EQ)
                     .RawAttr(NFTA_CMP_DATA, data_value.data(),
                              data_value.size());
-              }()},
+              }(),
+          .regs_to_init = {NFT_REG_1}},
       RuleWithExprTestParams{
           .test_name = "InvalidCmpOp",
           .expr_name = "cmp",
@@ -3900,7 +3898,10 @@ std::vector<RuleWithExprTestParams> GetNATRuleTestParams() {
                             .U32Attr(NFTA_NAT_TYPE, NFT_NAT_SNAT)
                             .U32Attr(NFTA_NAT_FAMILY, AF_INET)
                             .U32Attr(NFTA_NAT_REG_ADDR_MIN, NFT_REG_1)
-                            .U32Attr(NFTA_NAT_REG_PROTO_MIN, NFT_REG_2)},
+                            .U32Attr(NFTA_NAT_REG_PROTO_MIN, NFT_REG_2),
+          .regs_to_init = {NFT_REG_1, NFT_REG_2},
+          .hook_num = NF_INET_POST_ROUTING,
+          .family_name = "ipv4"},
       RuleWithExprTestParams{
           .test_name = "DNATAddrPortIPv4",
           .expr_name = "nat",
@@ -3908,7 +3909,10 @@ std::vector<RuleWithExprTestParams> GetNATRuleTestParams() {
                             .U32Attr(NFTA_NAT_TYPE, NFT_NAT_DNAT)
                             .U32Attr(NFTA_NAT_FAMILY, AF_INET)
                             .U32Attr(NFTA_NAT_REG_ADDR_MIN, NFT_REG_1)
-                            .U32Attr(NFTA_NAT_REG_PROTO_MIN, NFT_REG_2)},
+                            .U32Attr(NFTA_NAT_REG_PROTO_MIN, NFT_REG_2),
+          .regs_to_init = {NFT_REG_1, NFT_REG_2},
+          .hook_num = NF_INET_PRE_ROUTING,
+          .family_name = "ipv4"},
       RuleWithExprTestParams{
           .test_name = "SNATAddrProtoMinMaxIPv4",
           .expr_name = "nat",
@@ -3919,7 +3923,8 @@ std::vector<RuleWithExprTestParams> GetNATRuleTestParams() {
                             .U32Attr(NFTA_NAT_REG_ADDR_MAX, NFT_REG_4)
                             .U32Attr(NFTA_NAT_REG_PROTO_MIN, NFT_REG32_00)
                             .U32Attr(NFTA_NAT_REG_PROTO_MAX, NFT_REG32_15),
-          .hook_num = NF_INET_PRE_ROUTING,
+          .regs_to_init = {NFT_REG_1, NFT_REG_4, NFT_REG32_00, NFT_REG32_15},
+          .hook_num = NF_INET_POST_ROUTING,
           .family_name = "ipv4"},
       RuleWithExprTestParams{
           .test_name = "DNATAddrProtoMinMaxIPv6",
@@ -3931,6 +3936,8 @@ std::vector<RuleWithExprTestParams> GetNATRuleTestParams() {
                             .U32Attr(NFTA_NAT_REG_ADDR_MAX, NFT_REG_2)
                             .U32Attr(NFTA_NAT_REG_PROTO_MIN, NFT_REG_3)
                             .U32Attr(NFTA_NAT_REG_PROTO_MAX, NFT_REG_4),
+          .regs_to_init = {NFT_REG_1, NFT_REG_2, NFT_REG_3, NFT_REG_4},
+          .hook_num = NF_INET_PRE_ROUTING,
           .family_name = "ipv6"},
       RuleWithExprTestParams{
           .test_name = "NoNATType",
@@ -3938,21 +3945,29 @@ std::vector<RuleWithExprTestParams> GetNATRuleTestParams() {
           .expr_attrs = NlNestedAttr()
                             .U32Attr(NFTA_NAT_FAMILY, AF_INET)
                             .U32Attr(NFTA_NAT_REG_ADDR_MIN, NFT_REG_1),
-          .expected_error_no = EINVAL},
+          .expected_error_no = EINVAL,
+          .regs_to_init = {NFT_REG_1},
+          .hook_num = NF_INET_POST_ROUTING,
+          .family_name = "ipv4"},
       RuleWithExprTestParams{
           .test_name = "NoNATFamily",
           .expr_name = "nat",
           .expr_attrs = NlNestedAttr()
                             .U32Attr(NFTA_NAT_TYPE, NFT_NAT_SNAT)
                             .U32Attr(NFTA_NAT_REG_ADDR_MIN, NFT_REG_1),
-          .expected_error_no = EINVAL},
+          .expected_error_no = EINVAL,
+          .regs_to_init = {NFT_REG_1},
+          .hook_num = NF_INET_POST_ROUTING,
+          .family_name = "ipv4"},
       RuleWithExprTestParams{
           .test_name = "NoAddrOrProto",
           .expr_name = "nat",
           .expr_attrs = NlNestedAttr()
                             .U32Attr(NFTA_NAT_TYPE, NFT_NAT_SNAT)
                             .U32Attr(NFTA_NAT_FAMILY, AF_INET),
-          .expected_error_no = EINVAL},
+          .expected_error_no = EINVAL,
+          .hook_num = NF_INET_POST_ROUTING,
+          .family_name = "ipv4"},
       RuleWithExprTestParams{
           .test_name = "InvalidNATType",
           .expr_name = "nat",
@@ -3961,7 +3976,10 @@ std::vector<RuleWithExprTestParams> GetNATRuleTestParams() {
                             .U32Attr(NFTA_NAT_TYPE, 2)
                             .U32Attr(NFTA_NAT_FAMILY, AF_INET)
                             .U32Attr(NFTA_NAT_REG_ADDR_MIN, NFT_REG_1),
-          .expected_error_no = EINVAL},
+          .expected_error_no = EOPNOTSUPP,
+          .regs_to_init = {NFT_REG_1},
+          .hook_num = NF_INET_POST_ROUTING,
+          .family_name = "ipv4"},
   };
 }
 
@@ -3992,6 +4010,7 @@ std::vector<RuleWithExprTestParams> GetMasqRuleTestParams() {
                              .expr_attrs = NlNestedAttr().U32Attr(
                                  NFTA_MASQ_REG_PROTO_MIN, NFT_REG32_00),
                              .expected_error_no = 0,
+                             .regs_to_init = {NFT_REG32_00},
                              .chain_type = "nat",
                              .hook_num = NF_INET_POST_ROUTING},
       RuleWithExprTestParams{
@@ -4001,6 +4020,7 @@ std::vector<RuleWithExprTestParams> GetMasqRuleTestParams() {
                             .U32Attr(NFTA_MASQ_REG_PROTO_MIN, NFT_REG32_00)
                             .U32Attr(NFTA_MASQ_REG_PROTO_MAX, NFT_REG32_15),
           .expected_error_no = 0,
+          .regs_to_init = {NFT_REG32_00, NFT_REG32_15},
           .chain_type = "nat",
           .hook_num = NF_INET_POST_ROUTING},
       RuleWithExprTestParams{
@@ -4014,7 +4034,7 @@ std::vector<RuleWithExprTestParams> GetMasqRuleTestParams() {
           .test_name = "MasqInvalidReg",
           .expr_name = "masq",
           .expr_attrs = NlNestedAttr().U32Attr(NFTA_MASQ_REG_PROTO_MIN, 256),
-          .expected_error_no = EINVAL,
+          .expected_error_no = ERANGE,
           .chain_type = "nat",
           .hook_num = NF_INET_POST_ROUTING},
       RuleWithExprTestParams{
@@ -4027,13 +4047,13 @@ std::vector<RuleWithExprTestParams> GetMasqRuleTestParams() {
       RuleWithExprTestParams{.test_name = "MasqWrongChainType",
                              .expr_name = "masq",
                              .expr_attrs = NlNestedAttr(),
-                             .expected_error_no = EINVAL,
+                             .expected_error_no = EOPNOTSUPP,
                              .chain_type = "filter",
                              .hook_num = NF_INET_POST_ROUTING},
       RuleWithExprTestParams{.test_name = "MasqWrongHook",
                              .expr_name = "masq",
                              .expr_attrs = NlNestedAttr(),
-                             .expected_error_no = EINVAL,
+                             .expected_error_no = EOPNOTSUPP,
                              .chain_type = "nat",
                              .hook_num = NF_INET_PRE_ROUTING},
   };
@@ -4191,7 +4211,8 @@ std::vector<RuleWithExprTestParams> GetBitwiseRuleTestParams() {
                                      mask_nested.size())
                             .RawAttr(NFTA_BITWISE_XOR, xor_nested.data(),
                                      xor_nested.size()),
-          .expected_error_no = 0},
+          .expected_error_no = 0,
+          .regs_to_init = {NFT_REG_1}},
       RuleWithExprTestParams{
           .test_name = "ValidLshift",
           .expr_name = "bitwise",
@@ -4202,7 +4223,8 @@ std::vector<RuleWithExprTestParams> GetBitwiseRuleTestParams() {
                             .U32Attr(NFTA_BITWISE_OP, NFT_BITWISE_LSHIFT)
                             .RawAttr(NFTA_BITWISE_DATA, data_nested.data(),
                                      data_nested.size()),
-          .expected_error_no = 0},
+          .expected_error_no = 0,
+          .regs_to_init = {NFT_REG_1}},
       RuleWithExprTestParams{
           .test_name = "LenMismatchMaskBool",
           .expr_name = "bitwise",
@@ -4216,7 +4238,8 @@ std::vector<RuleWithExprTestParams> GetBitwiseRuleTestParams() {
                            short_mask_nested.size())
                   .RawAttr(NFTA_BITWISE_XOR, xor_nested.data(),
                            xor_nested.size()),
-          .expected_error_no = EINVAL},
+          .expected_error_no = EINVAL,
+          .regs_to_init = {NFT_REG_1}},
       RuleWithExprTestParams{
           .test_name = "LenMismatchDataShift",
           .expr_name = "bitwise",
@@ -4228,7 +4251,8 @@ std::vector<RuleWithExprTestParams> GetBitwiseRuleTestParams() {
                   .U32Attr(NFTA_BITWISE_OP, NFT_BITWISE_LSHIFT)
                   .RawAttr(NFTA_BITWISE_DATA, short_mask_nested.data(),
                            short_mask_nested.size()),
-          .expected_error_no = EINVAL},
+          .expected_error_no = EINVAL,
+          .regs_to_init = {NFT_REG_1}},
       RuleWithExprTestParams{
           .test_name = "VerdictRegSreg",
           .expr_name = "bitwise",
@@ -4263,7 +4287,8 @@ std::vector<RuleWithExprTestParams> GetBitwiseRuleTestParams() {
                             .U32Attr(NFTA_BITWISE_OP, NFT_BITWISE_BOOL)
                             .RawAttr(NFTA_BITWISE_XOR, xor_nested.data(),
                                      xor_nested.size()),
-          .expected_error_no = EINVAL},
+          .expected_error_no = EINVAL,
+          .regs_to_init = {NFT_REG_1}},
       RuleWithExprTestParams{
           .test_name = "HasDataBool",
           .expr_name = "bitwise",
@@ -4278,7 +4303,8 @@ std::vector<RuleWithExprTestParams> GetBitwiseRuleTestParams() {
                                      xor_nested.size())
                             .RawAttr(NFTA_BITWISE_DATA, data_nested.data(),
                                      data_nested.size()),
-          .expected_error_no = EINVAL},
+          .expected_error_no = EINVAL,
+          .regs_to_init = {NFT_REG_1}},
       RuleWithExprTestParams{
           .test_name = "MissingDataShift",
           .expr_name = "bitwise",
@@ -4287,7 +4313,8 @@ std::vector<RuleWithExprTestParams> GetBitwiseRuleTestParams() {
                             .U32Attr(NFTA_BITWISE_DREG, NFT_REG_2)
                             .U32Attr(NFTA_BITWISE_LEN, 4)
                             .U32Attr(NFTA_BITWISE_OP, NFT_BITWISE_LSHIFT),
-          .expected_error_no = EINVAL},
+          .expected_error_no = EINVAL,
+          .regs_to_init = {NFT_REG_1}},
       RuleWithExprTestParams{
           .test_name = "BothMaskAndShift",
           .expr_name = "bitwise",
@@ -4300,7 +4327,8 @@ std::vector<RuleWithExprTestParams> GetBitwiseRuleTestParams() {
                                      data_nested.size())
                             .RawAttr(NFTA_BITWISE_MASK, mask_nested.data(),
                                      mask_nested.size()),
-          .expected_error_no = EINVAL},
+          .expected_error_no = EINVAL,
+          .regs_to_init = {NFT_REG_1}},
   };
 }
 
@@ -4340,7 +4368,8 @@ std::vector<RuleWithExprTestParams> GetCTRuleTestParams() {
                             .U32Attr(NFTA_CT_DREG, NFT_REG_1)
                             .U32Attr(NFTA_CT_SREG, NFT_REG_2)
                             .U32Attr(NFTA_CT_KEY, NFT_CT_STATE),
-          .expected_error_no = EINVAL},
+          .expected_error_no = EINVAL,
+          .regs_to_init = {NFT_REG_2}},
       RuleWithExprTestParams{
           .test_name = "MissingKey",
           .expr_name = "ct",
@@ -4368,26 +4397,12 @@ std::vector<RuleWithExprTestParams> GetCTRuleTestParams() {
                                                .U32Attr(NFTA_CT_KEY, NFT_CT_SRC)
                                                .U8Attr(NFTA_CT_DIRECTION, 2),
                              .expected_error_no = EINVAL},
-      RuleWithExprTestParams{
-          .test_name = "UnsupportedKeyMark",
-          .expr_name = "ct",
-          .expr_attrs = NlNestedAttr()
-                            .U32Attr(NFTA_CT_DREG, NFT_REG_1)
-                            .U32Attr(NFTA_CT_KEY, NFT_CT_MARK),
-          .expected_error_no = ENOTSUP},
-      RuleWithExprTestParams{
-          .test_name = "SetOperationUnsupported",
-          .expr_name = "ct",
-          .expr_attrs = NlNestedAttr()
-                            .U32Attr(NFTA_CT_SREG, NFT_REG_1)
-                            .U32Attr(NFTA_CT_KEY, NFT_CT_MARK),
-          .expected_error_no = ENOTSUP},
       RuleWithExprTestParams{.test_name = "InvalidKeyTooLarge",
                              .expr_name = "ct",
                              .expr_attrs = NlNestedAttr()
                                                .U32Attr(NFTA_CT_DREG, NFT_REG_1)
                                                .U32Attr(NFTA_CT_KEY, 256),
-                             .expected_error_no = EINVAL},
+                             .expected_error_no = ERANGE},
   };
 }
 
@@ -4397,7 +4412,6 @@ INSTANTIATE_TEST_SUITE_P(CTRuleTest, AddRuleWithExprTest,
                          [](const TestParamInfo<RuleWithExprTestParams>& info) {
                            return info.param.test_name;
                          });
-
 }  // namespace
 
 }  // namespace testing

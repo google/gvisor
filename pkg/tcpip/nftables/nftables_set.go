@@ -244,11 +244,11 @@ func parseSetConcatAttr(descConcatAttrs nlmsg.BytesView, keyLen uint32) (concat 
 		if hdr.Type != linux.NFTA_LIST_ELEM {
 			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "set description concat element is not of type NFTA_LIST_ELEM")
 		}
-		concatElem, ok := NfParseWithOpts(nlmsg.AttrsView(value), &NfParseOpts{
+		concatElem, err := NfParseWithOpts(nlmsg.AttrsView(value), &NfParseOpts{
 			Policy: setConcatPolicy,
 		})
-		if !ok {
-			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse set description concat element attributes")
+		if err != nil {
+			return nil, err
 		}
 		fieldLen, ok := AttrNetToHost[uint32](linux.NFTA_SET_FIELD_LEN, concatElem)
 		if !ok {
@@ -295,11 +295,11 @@ func parseSetDescAttr(attrs map[uint16]nlmsg.BytesView, keyLen uint32, setFlags 
 		// If the descSize is 0, then the set has no bounds on the number of elements.
 		return nil, 0, nil
 	}
-	subAttrs, ok := NfParseWithOpts(nlmsg.AttrsView(descAttrs), &NfParseOpts{
+	subAttrs, err := NfParseWithOpts(nlmsg.AttrsView(descAttrs), &NfParseOpts{
 		Policy: setDescPolicy,
 	})
-	if !ok {
-		return nil, 0, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse set description attributes")
+	if err != nil {
+		return nil, 0, err
 	}
 	descSize, ok = AttrNetToHost[uint32](linux.NFTA_SET_DESC_SIZE, subAttrs)
 	if !ok {
@@ -828,11 +828,11 @@ func (nf *NFTables) addElemListToSet(attr nlmsg.AttrsView, set *nftSet, tab *Tab
 			return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse set elem list attributes")
 		}
 		attr = rest
-		elemAttrs, ok := NfParseWithOpts(nlmsg.AttrsView(elem), &NfParseOpts{
+		elemAttrs, err := NfParseWithOpts(nlmsg.AttrsView(elem), &NfParseOpts{
 			Policy: setElemPolicy,
 		})
-		if !ok {
-			return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse set element attributes")
+		if err != nil {
+			return err
 		}
 		if err := nf.addElemToSet(tab, set, elemAttrs, msgFlags); err != nil {
 			return err

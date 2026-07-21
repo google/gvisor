@@ -64,7 +64,7 @@ func newNATOp(nt, family uint8, sregAddrMin, sregAddrMax, sregProtoMin, sregProt
 	}
 	natOp.manipType = stack.ToNATType(nt)
 	if natOp.manipType == stack.NATUnknown {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Invalid NAT type")
+		return nil, syserr.NewAnnotatedError(syserr.ErrNotSupported, "Nftables: Invalid NAT type")
 	}
 	len := header.IPv4AddressSize
 	if family == linux.NFPROTO_IPV6 {
@@ -253,11 +253,11 @@ var natAttrPolicy = []NlaPolicy{
 // initNATOp initializes a NAT operation from the given expression information.
 // Similar to `nft_nat_init` in kernel.
 func initNATOp(tab *Table, exprInfo ExprInfo) (*natOp, *syserr.AnnotatedError) {
-	attrs, ok := NfParseWithOpts(exprInfo.ExprData, &NfParseOpts{
+	attrs, parseErr := NfParseWithOpts(exprInfo.ExprData, &NfParseOpts{
 		Policy: natAttrPolicy,
 	})
-	if !ok {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse NAT expression data")
+	if parseErr != nil {
+		return nil, parseErr
 	}
 
 	nt, typeOk := AttrNetToHost[uint32](linux.NFTA_NAT_TYPE, attrs)

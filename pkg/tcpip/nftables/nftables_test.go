@@ -3949,12 +3949,12 @@ func TestNfAttrParser(t *testing.T) {
 			if !ok {
 				t.Fatalf("GetData() failed for msg %v", test.msg)
 			}
-			got, gotOk := NfParseWithOpts(attr, &NfParseOpts{Policy: test.policy})
-			wantOk := test.want != nil
-			if wantOk != gotOk {
-				t.Fatalf("NfParseWithOpts() failed, want ok: %v, got ok: %v", wantOk, gotOk)
+			got, gotErr := NfParseWithOpts(attr, &NfParseOpts{Policy: test.policy})
+			wantErr := test.want == nil
+			if wantErr && gotErr == nil {
+				t.Fatalf("NfParseWithOpts() failed, want error, got nil error")
 			}
-			if !wantOk {
+			if gotErr != nil {
 				return
 			}
 			if diff := cmp.Diff(test.want, got); diff != "" {
@@ -4139,12 +4139,12 @@ func TestNfAttrParserNestedArray(t *testing.T) {
 			if !ok {
 				t.Fatalf("GetData() failed for msg %v", msg)
 			}
-			got, gotOk := NfParseWithOpts(attr, &NfParseOpts{Policy: policy})
-			wantOk := want != nil
-			if wantOk != gotOk {
-				t.Fatalf("NfParseWithOpts() failed, want ok: %v, got ok: %v", wantOk, gotOk)
+			got, gotErr := NfParseWithOpts(attr, &NfParseOpts{Policy: policy})
+			wantErr := want == nil
+			if wantErr && gotErr == nil {
+				t.Fatalf("NfParseWithOpts() failed, want error, got nil error")
 			}
-			if !wantOk {
+			if gotErr != nil {
 				return
 			}
 			if diff := cmp.Diff(want, got); diff != "" {

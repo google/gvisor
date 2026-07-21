@@ -353,7 +353,7 @@ func initCTGet(tab *Table, dreg uint8, attrs map[uint16]nlmsg.BytesView) (*ctGet
 
 	// TODO: b/531808852 - Support these keys.
 	switch key {
-	case linux.NFT_CT_STATUS, linux.NFT_CT_SECMARK, linux.NFT_CT_MARK, linux.NFT_CT_EVENTMASK,
+	case linux.NFT_CT_STATUS, linux.NFT_CT_SECMARK, linux.NFT_CT_EVENTMASK,
 		linux.NFT_CT_PKTS, linux.NFT_CT_BYTES, linux.NFT_CT_AVGPKT, linux.NFT_CT_ZONE:
 
 		return nil, syserr.NewAnnotatedError(
@@ -420,11 +420,11 @@ var ctAttrPolicy = []NlaPolicy{
 // initCT initializes a ct operation (either get or set).
 // Ref: net/netfilter/nft_ct.c:nft_ct_init()
 func initCT(tab *Table, exprInfo ExprInfo) (operation, *syserr.AnnotatedError) {
-	attrs, ok := NfParseWithOpts(exprInfo.ExprData, &NfParseOpts{
+	attrs, err := NfParseWithOpts(exprInfo.ExprData, &NfParseOpts{
 		Policy: ctAttrPolicy,
 	})
-	if !ok {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse ct expression data")
+	if err != nil {
+		return nil, err
 	}
 
 	dreg, dregOK := AttrNetToHost[uint32](linux.NFTA_CT_DREG, attrs)

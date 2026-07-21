@@ -155,10 +155,10 @@ func (m *masqOp) checkCompatibility(cCtx *opCompatCtx) *syserr.AnnotatedError {
 		return nil
 	}
 	if chain.baseChainInfo.Hook != stack.NFPostrouting {
-		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "masq expression is only valid in postrouting hook")
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, "masq expression is only valid in postrouting hook")
 	}
 	if chain.baseChainInfo.BcType != BaseChainTypeNat {
-		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "masq expression is only valid in NAT chains")
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, "masq expression is only valid in NAT chains")
 	}
 	return nil
 }
@@ -173,11 +173,11 @@ var masqAttrPolicy = []NlaPolicy{
 // initMasqOp initializes a masquerade operation from the given expression information.
 // Ref: net/netfilter/nft_masq.c:nft_masq_init()
 func initMasqOp(tab *Table, exprInfo ExprInfo) (*masqOp, *syserr.AnnotatedError) {
-	attrs, ok := NfParseWithOpts(exprInfo.ExprData, &NfParseOpts{
+	attrs, err := NfParseWithOpts(exprInfo.ExprData, &NfParseOpts{
 		Policy: masqAttrPolicy,
 	})
-	if !ok {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse masq expression data")
+	if err != nil {
+		return nil, err
 	}
 
 	// Use flag value as `0` if not set; so the err can be ignored here.
