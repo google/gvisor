@@ -385,6 +385,15 @@ steps:
       cgroup: "v2"
   - <<: *common
     <<: *docker
+    <<: *source_test
+    label: ":docker: Docker tests (ARM64)"
+    command: make docker-tests
+    agents:
+      <<: *ubuntu_agents
+      arch: "arm64"
+      cgroup: "v2"
+  - <<: *common
+    <<: *docker
     label: ":goggles: Overlay tests"
     command: make overlay-tests
     agents:
