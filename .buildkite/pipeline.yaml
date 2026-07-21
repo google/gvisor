@@ -88,6 +88,15 @@ steps:
     label: ":fire: Smoke race tests"
     command: make smoke-race-tests
   - <<: *common
+    <<: *docker
+    <<: *source_test
+    label: ":fire: CPU Save/Restore Smoke Test (AMD64)"
+    command: make cpu-sr-smoke-tests
+    agents:
+      <<: *ubuntu_agents
+      arch: "amd64"
+  - <<: *common
+
     <<: *source_test
     label: ":speedboat: Compile runsc-plugin-stack (AMD64)"
     command: make runsc-plugin-stack
