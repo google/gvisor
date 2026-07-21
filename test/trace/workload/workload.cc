@@ -37,6 +37,7 @@
 #include "absl/cleanup/cleanup.h"
 #include "absl/strings/str_cat.h"
 #include "absl/time/clock.h"
+#include "absl/time/time.h"
 #include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/memory_util.h"
@@ -515,6 +516,49 @@ void runPipe2() {
   close(fd[1]);
 }
 
+void runPipeExecve() {
+  int fds[2];
+  if (pipe(fds) < 0) {
+    err(1, "pipe");
+  }
+
+  pid_t pid1 = fork();
+  if (pid1 < 0) {
+    err(1, "fork");
+  } else if (pid1 == 0) {
+    close(fds[0]);
+    if (dup2(fds[1], STDOUT_FILENO) < 0) {
+      err(1, "dup2");
+    }
+    close(fds[1]);
+    ExecveArray argv = {"/bin/sleep", "2"};
+    ExecveArray envv = {"TEST=writer"};
+    execve("/bin/sleep", argv.get(), envv.get());
+    _exit(1);
+  }
+
+  pid_t pid2 = fork();
+  if (pid2 < 0) {
+    err(1, "fork");
+  } else if (pid2 == 0) {
+    close(fds[1]);
+    if (dup2(fds[0], STDIN_FILENO) < 0) {
+      err(1, "dup2");
+    }
+    close(fds[0]);
+    absl::SleepFor(absl::Milliseconds(100));
+    ExecveArray argv = {"/bin/sleep", "2"};
+    ExecveArray envv = {"TEST=reader"};
+    execve("/bin/sleep", argv.get(), envv.get());
+    _exit(1);
+  }
+
+  close(fds[0]);
+  close(fds[1]);
+  RetryEINTR(waitpid)(pid1, nullptr, 0);
+  RetryEINTR(waitpid)(pid2, nullptr, 0);
+}
+
 void runTimerfdCreate() {
   int fd = timerfd_create(CLOCK_REALTIME, 0);
   if (fd < 0) {
@@ -689,6 +733,7 @@ int main(int argc, char** argv) {
   ::gvisor::testing::runFcntl();
   ::gvisor::testing::runPipe();
   ::gvisor::testing::runPipe2();
+  ::gvisor::testing::runPipeExecve();
   ::gvisor::testing::runTimerfdCreate();
   ::gvisor::testing::runTimerfdSettime();
   ::gvisor::testing::runTimerfdGettime();

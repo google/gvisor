@@ -85,7 +85,9 @@ func TestAll(t *testing.T) {
 		"--pod-init-config", cfgFile.Name(),
 		"do", workload)
 	out, err := cmd.CombinedOutput()
-	t.Log(string(out))
+	if err != nil {
+		t.Log(string(out))
+	}
 	if err != nil {
 		t.Fatalf("runsc do: %v", err)
 	}
@@ -141,7 +143,6 @@ func matchPoints(t *testing.T, msgs []test.Message) map[pb.MessageType]*checkers
 
 func validatePoints(t *testing.T, msgs []test.Message, matchers map[pb.MessageType]*checkers) {
 	for _, msg := range msgs {
-		t.Logf("Processing message type %v", msg.MsgType)
 		if handler := matchers[msg.MsgType]; handler == nil {
 			// All points generated should have a corresponding matcher.
 			t.Errorf("No matcher for message type %v", msg.MsgType)
@@ -418,7 +419,11 @@ func checkSentryExec(msg test.Message) error {
 	}
 	// As test runs locally the binary path may resolve to a symlink so would not be exactly same
 	// as the pathname passed.
-	if want := "/bin/true"; !strings.Contains(p.BinaryPath, want) {
+	want := "/bin/true"
+	if len(p.Env) > 0 && (p.Env[0] == "TEST=writer" || p.Env[0] == "TEST=reader") {
+		want = "/bin/sleep"
+	}
+	if !strings.Contains(p.BinaryPath, want) {
 		return fmt.Errorf("wrong BinaryPath, want: %q, got: %q", want, p.BinaryPath)
 	}
 	if len(p.Argv) == 0 {
@@ -430,18 +435,34 @@ func checkSentryExec(msg test.Message) error {
 	if len(p.Env) == 0 {
 		return fmt.Errorf("empty Env")
 	}
-	if want := "TEST=123"; want != p.Env[0] {
+	if want := "TEST=123"; want != p.Env[0] && p.Env[0] != "TEST=writer" && p.Env[0] != "TEST=reader" {
 		return fmt.Errorf("wrong Env[0], want: %q, got: %q", want, p.Env[0])
+	}
+	if p.Env[0] == "TEST=reader" {
+		if p.PipeInputProc == nil {
+			return fmt.Errorf("PipeInputProc should not be nil for TEST=reader")
+		}
+		if !strings.Contains(p.PipeInputProc.BinaryPath, "sleep") && !strings.Contains(p.PipeInputProc.BinaryPath, "workload") {
+			return fmt.Errorf("wrong PipeInputProc.BinaryPath: %q", p.PipeInputProc.BinaryPath)
+		}
+	}
+	if p.Env[0] == "TEST=writer" {
+		if p.PipeOutputProc == nil {
+			return fmt.Errorf("PipeOutputProc should not be nil for TEST=writer")
+		}
+		if len(p.PipeOutputProc.BinaryPath) == 0 || len(p.PipeOutputProc.Argv) == 0 {
+			return fmt.Errorf("PipeOutputProc BinaryPath and Argv should not be empty, got path: %q, argv: %v", p.PipeOutputProc.BinaryPath, p.PipeOutputProc.Argv)
+		}
 	}
 	if (p.BinaryMode & 0111) == 0 {
 		return fmt.Errorf("executing non-executable file, mode: %#o (%#x)", p.BinaryMode, p.BinaryMode)
 	}
 	const nobody = 65534
-	if p.BinaryUid != nobody {
-		return fmt.Errorf("BinaryUid, want: %d, got: %d", nobody, p.BinaryUid)
+	if p.BinaryUid != nobody && p.BinaryUid != 0 {
+		return fmt.Errorf("BinaryUid, want: %d or 0, got: %d", nobody, p.BinaryUid)
 	}
-	if p.BinaryGid != nobody {
-		return fmt.Errorf("BinaryGid, want: %d, got: %d", nobody, p.BinaryGid)
+	if p.BinaryGid != nobody && p.BinaryGid != 0 {
+		return fmt.Errorf("BinaryGid, want: %d or 0, got: %d", nobody, p.BinaryGid)
 	}
 	if p.BinaryIno == 0 {
 		return fmt.Errorf("BinaryIno should not be 0")
@@ -455,14 +476,14 @@ func checkSentryExec(msg test.Message) error {
 	if err != nil {
 		return fmt.Errorf("Not able to calculate sha256sum: %v", err)
 	}
-	want := strings.SplitN(string(out), " ", 2)[0]
+	wantSha := strings.SplitN(string(out), " ", 2)[0]
 
 	got := ""
 	for _, b := range p.BinarySha256 {
 		got += fmt.Sprintf("%02x", b)
 	}
-	if want != got {
-		return fmt.Errorf("BinarySha256, want: %q, got: %q", got, want)
+	if wantSha != got {
+		return fmt.Errorf("BinarySha256, want: %q, got: %q", got, wantSha)
 	}
 
 	if p.BinaryOverlayfsUpper {
@@ -483,26 +504,32 @@ func checkSyscallExecve(msg test.Message) error {
 	if err := checkContextData(p.ContextData); err != nil {
 		return err
 	}
-	if p.Fd < 3 {
-		return fmt.Errorf("execve invalid FD: %d", p.Fd)
-	}
-	if want := "/"; want != p.FdPath {
-		return fmt.Errorf("wrong FdPath, want: %q, got: %q", want, p.FdPath)
-	}
-	if want := "/bin/true"; want != p.Pathname {
-		return fmt.Errorf("wrong Pathname, want: %q, got: %q", want, p.Pathname)
-	}
-	if len(p.Argv) == 0 {
-		return fmt.Errorf("empty Argv")
-	}
-	if p.Argv[0] != p.Pathname {
-		return fmt.Errorf("wrong Argv[0], want: %q, got: %q", p.Pathname, p.Argv[0])
-	}
 	if len(p.Envv) == 0 {
 		return fmt.Errorf("empty Envv")
 	}
-	if want := "TEST=123"; want != p.Envv[0] {
+	if want := "TEST=123"; want != p.Envv[0] && p.Envv[0] != "TEST=writer" && p.Envv[0] != "TEST=reader" {
 		return fmt.Errorf("wrong Envv[0], want: %q, got: %q", want, p.Envv[0])
+	}
+	if p.Envv[0] == "TEST=123" {
+		if p.Fd < 3 {
+			return fmt.Errorf("execve invalid FD: %d", p.Fd)
+		}
+		if want := "/"; want != p.FdPath {
+			return fmt.Errorf("wrong FdPath, want: %q, got: %q", want, p.FdPath)
+		}
+		if want := "/bin/true"; want != p.Pathname {
+			return fmt.Errorf("wrong Pathname, want: %q, got: %q", want, p.Pathname)
+		}
+		if len(p.Argv) == 0 {
+			return fmt.Errorf("empty Argv")
+		}
+		if p.Argv[0] != p.Pathname {
+			return fmt.Errorf("wrong Argv[0], want: %q, got: %q", p.Pathname, p.Argv[0])
+		}
+	} else {
+		if want := "/bin/sleep"; want != p.Pathname {
+			return fmt.Errorf("wrong Pathname, want: %q, got: %q", want, p.Pathname)
+		}
 	}
 	return nil
 }
