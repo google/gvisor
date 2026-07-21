@@ -455,6 +455,14 @@ func TestOverrideAllowlist(t *testing.T) {
 			error: "error setting flag",
 		},
 		{
+			flag:  "mount-cgroup-v2",
+			value: "true",
+		},
+		{
+			flag:  "mount-cgroup-v2",
+			value: "false",
+		},
+		{
 			flag:  "oci-seccomp",
 			value: "true",
 		},

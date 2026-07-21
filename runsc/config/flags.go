@@ -47,6 +47,7 @@ const (
 	flagQDisc                   = "qdisc"
 	flagQDiscTBFRate            = "qdisc-tbf-rate"
 	flagQDiscTBFBurst           = "qdisc-tbf-burst"
+	flagMountCgroupV2           = "mount-cgroup-v2"
 
 	maxQDiscTBFBurst     = uint64(1<<32 - 1)
 	defaultQDiscTBFRate  = uint64(0)
@@ -143,7 +144,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.String("override-procs", "", "comma-separated list of proc files to override with stubs (e.g. kallsyms)")
 
 	flagSet.Bool("ignore-cgroups", false, "don't configure cgroups.")
-	flagSet.Bool("mount-cgroup-v2", false, "EXPERIMENTAL. Mount cgroup v2 instead of cgroup v1 inside the sandbox. cgroup v2 support in gVisor is experimental and incomplete. Do not use for production workloads.")
+	flagSet.Bool(flagMountCgroupV2, false, "EXPERIMENTAL. Mount cgroup v2 instead of cgroup v1 inside the sandbox. cgroup v2 support in gVisor is experimental and incomplete. Do not use for production workloads.")
 	flagSet.Int("fdlimit", -1, "Specifies a limit on the number of host file descriptors that can be open. Applies separately to the sentry and gofer. Note: each file in the sandbox holds more than one host FD open.")
 	flagSet.Int("dcache", -1, "Set the global dentry cache size. This acts as a coarse-grained control on the number of host FDs simultaneously open by the sentry. If negative, per-mount caches are used.")
 	flagSet.Bool("iouring", false, "TEST ONLY; Enables io_uring syscalls in the sentry. Support is experimental and very limited.")
@@ -214,6 +215,7 @@ var overrideAllowlist = map[string]struct {
 	flagQDisc:                   {check: checkQDisc},
 	flagQDiscTBFRate:            {check: checkQDiscTBFRate},
 	flagQDiscTBFBurst:           {check: checkQDiscTBFBurst},
+	flagMountCgroupV2:           {},
 }
 
 // checkOverlay2 ensures that overlay2 can only be enabled using "memory" or
