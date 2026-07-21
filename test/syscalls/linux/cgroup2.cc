@@ -224,6 +224,32 @@ class Cgroup2Test : public ::testing::Test {
     EXPECT_THAT(poll(&pfd, 1, 0), SyscallSucceedsWithValue(0));
   }
 
+  // ReadMarker returns true if a progress marker becomes readable on fd within
+  // timeout_ms. Poll-based, so it never blocks on an empty pipe.
+  bool ReadMarker(int fd, int timeout_ms) {
+    struct pollfd pfd = {fd, POLLIN, 0};
+    if (poll(&pfd, 1, timeout_ms) <= 0) {
+      return false;
+    }
+    char buf[64];
+    return read(fd, buf, sizeof(buf)) > 0;
+  }
+
+  // DrainMarkers consumes any currently-available progress markers on fd
+  // without blocking.
+  void DrainMarkers(int fd) {
+    while (true) {
+      struct pollfd pfd = {fd, POLLIN, 0};
+      if (poll(&pfd, 1, 0) <= 0) {
+        break;
+      }
+      char buf[4096];
+      if (read(fd, buf, sizeof(buf)) <= 0) {
+        break;
+      }
+    }
+  }
+
   void ExpectDefaultControlFiles(const Cgroup& cg, bool is_root = false) {
     EXPECT_THAT(Exists(cg.Relpath("cgroup.procs")),
                 IsPosixErrorOkAndHolds(true));
@@ -1447,6 +1473,356 @@ TEST_F(Cgroup2Test, KillTree) {
   ASSERT_EQ(waitpid(pid2, &status, 0), pid2);
   EXPECT_TRUE(WIFSIGNALED(status));
   EXPECT_EQ(WTERMSIG(status), SIGKILL);
+}
+
+// FreezeStopsAndResumesProgress verifies that writing 1 to cgroup.freeze stops
+// a running process from making progress, and writing 0 resumes it.
+TEST_F(Cgroup2Test, FreezeStopsAndResumesProgress) {
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("child"));
+
+  // cgroup.freeze starts at 0.
+  EXPECT_THAT(child.ReadControlFile("cgroup.freeze"),
+              IsPosixErrorOkAndHolds(HasSubstr("0")));
+
+  // prog: child emits a marker per loop iteration; parent observes progress.
+  int prog_fds[2];
+  ASSERT_THAT(pipe(prog_fds), SyscallSucceeds());
+  FileDescriptor prog_r(prog_fds[0]);
+  FileDescriptor prog_w(prog_fds[1]);
+  // go: parent tells the child to begin looping (after it's in the cgroup).
+  int go_fds[2];
+  ASSERT_THAT(pipe(go_fds), SyscallSucceeds());
+  FileDescriptor go_r(go_fds[0]);
+  FileDescriptor go_w(go_fds[1]);
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    prog_r.reset();
+    go_w.reset();
+    char token;
+    if (read(go_r.get(), &token, 1) <= 0) {
+      _exit(1);
+    }
+    while (true) {
+      if (write(prog_w.get(), "x", 1) != 1) {
+        _exit(2);
+      }
+      usleep(10000);  // 10ms
+    }
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+  prog_w.reset();
+  go_r.reset();
+
+  ASSERT_NO_ERRNO(child.Enter(pid));
+  ASSERT_THAT(write(go_w.get(), "x", 1), SyscallSucceeds());
+
+  // poll-based helpers avoid blocking on an empty pipe.
+  auto read_marker = [&](int timeout_ms) -> bool {
+    struct pollfd pfd = {prog_r.get(), POLLIN, 0};
+    if (poll(&pfd, 1, timeout_ms) <= 0) {
+      return false;
+    }
+    char buf[64];
+    return read(prog_r.get(), buf, sizeof(buf)) > 0;
+  };
+  auto drain = [&]() {
+    while (true) {
+      struct pollfd pfd = {prog_r.get(), POLLIN, 0};
+      if (poll(&pfd, 1, 0) <= 0) {
+        break;
+      }
+      char buf[4096];
+      if (read(prog_r.get(), buf, sizeof(buf)) <= 0) {
+        break;
+      }
+    }
+  };
+
+  // The child is running and making progress.
+  ASSERT_TRUE(read_marker(5000));
+
+  // Freeze: the child must stop making progress.
+  ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "1"));
+  EXPECT_THAT(child.ReadControlFile("cgroup.freeze"),
+              IsPosixErrorOkAndHolds(HasSubstr("1")));
+
+  // Let the freeze take effect, then drain any markers buffered before the
+  // child parked.
+  absl::SleepFor(absl::Milliseconds(100));
+  drain();
+
+  // No new markers arrive while frozen (~50 missed 10ms iterations).
+  EXPECT_FALSE(read_marker(500));
+
+  // Thaw: progress resumes.
+  ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "0"));
+  EXPECT_THAT(child.ReadControlFile("cgroup.freeze"),
+              IsPosixErrorOkAndHolds(HasSubstr("0")));
+  EXPECT_TRUE(read_marker(5000));
+
+  ASSERT_THAT(kill(pid, SIGKILL), SyscallSucceeds());
+  int status;
+  ASSERT_EQ(waitpid(pid, &status, 0), pid);
+}
+
+// FrozenProcessKillableBySIGKILL verifies that a frozen process (parked in a
+// killable internal stop) is still terminated by SIGKILL. This is the runtime
+// proof of frozenStop.Killable().
+TEST_F(Cgroup2Test, FrozenProcessKillableBySIGKILL) {
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("child"));
+
+  int go_fds[2];
+  ASSERT_THAT(pipe(go_fds), SyscallSucceeds());
+  FileDescriptor go_r(go_fds[0]);
+  FileDescriptor go_w(go_fds[1]);
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    go_w.reset();
+    // Block indefinitely; the parent never writes and holds the write end open.
+    char token;
+    if (read(go_r.get(), &token, 1) <= 0) {
+      _exit(0);
+    }
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+  go_r.reset();
+
+  ASSERT_NO_ERRNO(child.Enter(pid));
+
+  // Freeze and confirm the effective state took hold via cgroup.events.
+  ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "1"));
+  absl::SleepFor(absl::Milliseconds(100));
+  EXPECT_THAT(child.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 1")));
+
+  // A frozen task must still die on SIGKILL.
+  ASSERT_THAT(kill(pid, SIGKILL), SyscallSucceeds());
+  int status;
+  ASSERT_EQ(waitpid(pid, &status, 0), pid);
+  EXPECT_TRUE(WIFSIGNALED(status));
+  EXPECT_EQ(WTERMSIG(status), SIGKILL);
+}
+
+// CgroupFreezeEffectiveStateAndPropagation verifies that the cgroup.events
+// "frozen" line reflects the effective state (self or any ancestor), that
+// freeze propagates to descendants, and that cgroup.freeze itself reports only
+// the cgroup's own requested flag.
+TEST_F(Cgroup2Test, CgroupFreezeEffectiveStateAndPropagation) {
+  Cgroup parent = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("parent"));
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(parent.CreateChild("child"));
+
+  // Initially nothing is frozen.
+  EXPECT_THAT(parent.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 0")));
+  EXPECT_THAT(child.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 0")));
+
+  // Freeze the parent: effective state propagates to the child, but the child's
+  // own cgroup.freeze flag stays 0.
+  ASSERT_NO_ERRNO(parent.WriteControlFile("cgroup.freeze", "1"));
+  EXPECT_THAT(parent.ReadControlFile("cgroup.freeze"),
+              IsPosixErrorOkAndHolds(HasSubstr("1")));
+  EXPECT_THAT(child.ReadControlFile("cgroup.freeze"),
+              IsPosixErrorOkAndHolds(HasSubstr("0")));
+  EXPECT_THAT(parent.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 1")));
+  EXPECT_THAT(child.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 1")));
+
+  // Thaw the parent: effective state clears everywhere.
+  ASSERT_NO_ERRNO(parent.WriteControlFile("cgroup.freeze", "0"));
+  EXPECT_THAT(parent.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 0")));
+  EXPECT_THAT(child.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 0")));
+
+  // Freeze only the child: the parent is unaffected.
+  ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "1"));
+  EXPECT_THAT(child.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 1")));
+  EXPECT_THAT(parent.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 0")));
+  ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "0"));
+}
+
+// CgroupFreezeInvalidInput verifies input validation on cgroup.freeze.
+TEST_F(Cgroup2Test, CgroupFreezeInvalidInput) {
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("child"));
+  // Matches Linux: an out-of-range integer is ERANGE, a non-integer is EINVAL.
+  EXPECT_THAT(child.WriteControlFile("cgroup.freeze", "2"), PosixErrorIs(ERANGE));
+  EXPECT_THAT(child.WriteControlFile("cgroup.freeze", "abc"),
+              PosixErrorIs(EINVAL));
+  EXPECT_TRUE(child.WriteControlFile("cgroup.freeze", "1").ok());
+  EXPECT_TRUE(child.WriteControlFile("cgroup.freeze", "0").ok());
+}
+
+// FreezeAncestorStopsDescendantTasks proves task-level freeze propagation: a
+// process in a descendant cgroup actually stops when an ancestor is frozen (not
+// merely that cgroup.events reports "frozen 1").
+TEST_F(Cgroup2Test, FreezeAncestorStopsDescendantTasks) {
+  Cgroup parent = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("parent"));
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(parent.CreateChild("child"));
+
+  int prog_fds[2];
+  ASSERT_THAT(pipe(prog_fds), SyscallSucceeds());
+  FileDescriptor prog_r(prog_fds[0]);
+  FileDescriptor prog_w(prog_fds[1]);
+  int go_fds[2];
+  ASSERT_THAT(pipe(go_fds), SyscallSucceeds());
+  FileDescriptor go_r(go_fds[0]);
+  FileDescriptor go_w(go_fds[1]);
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    prog_r.reset();
+    go_w.reset();
+    char token;
+    if (read(go_r.get(), &token, 1) <= 0) {
+      _exit(1);
+    }
+    while (true) {
+      if (write(prog_w.get(), "x", 1) != 1) {
+        _exit(2);
+      }
+      usleep(10000);
+    }
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+  prog_w.reset();
+  go_r.reset();
+
+  // The process lives in the descendant cgroup.
+  ASSERT_NO_ERRNO(child.Enter(pid));
+  ASSERT_THAT(write(go_w.get(), "x", 1), SyscallSucceeds());
+  ASSERT_TRUE(ReadMarker(prog_r.get(), 5000));
+
+  // Freeze the ANCESTOR: the descendant's process must stop.
+  ASSERT_NO_ERRNO(parent.WriteControlFile("cgroup.freeze", "1"));
+  EXPECT_THAT(child.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 1")));
+  absl::SleepFor(absl::Milliseconds(100));
+  DrainMarkers(prog_r.get());
+  EXPECT_FALSE(ReadMarker(prog_r.get(), 500));
+
+  // Thaw the ancestor: the descendant's process resumes.
+  ASSERT_NO_ERRNO(parent.WriteControlFile("cgroup.freeze", "0"));
+  EXPECT_TRUE(ReadMarker(prog_r.get(), 5000));
+
+  ASSERT_THAT(kill(pid, SIGKILL), SyscallSucceeds());
+  int status;
+  ASSERT_EQ(waitpid(pid, &status, 0), pid);
+}
+
+// CloneIntoFrozenCgroupStartsFrozen verifies that a task born (via
+// CLONE_INTO_CGROUP) directly into a frozen cgroup starts frozen and runs no
+// application code until thawed. (A plain fork/CLONE_THREAD into a frozen group
+// isn't reachable from within it — the creating task would already be frozen —
+// so CLONE_INTO_CGROUP from an unfrozen parent is the testable birth case.)
+TEST_F(Cgroup2Test, CloneIntoFrozenCgroupStartsFrozen) {
+  Cgroup frozen_cg = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("frozen"));
+  ASSERT_NO_ERRNO(frozen_cg.WriteControlFile("cgroup.freeze", "1"));
+  FileDescriptor cgroup_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(frozen_cg.Path(), O_RDONLY | O_DIRECTORY));
+
+  int prog_fds[2];
+  ASSERT_THAT(pipe(prog_fds), SyscallSucceeds());
+  FileDescriptor prog_r(prog_fds[0]);
+  FileDescriptor prog_w(prog_fds[1]);
+
+  clone_args args = {};
+  args.flags = CLONE_INTO_CGROUP;
+  args.cgroup = cgroup_fd.get();
+  args.exit_signal = SIGCHLD;
+  pid_t pid = clone3(&args, sizeof(args));
+  ASSERT_THAT(pid, SyscallSucceeds());
+  if (pid == 0) {
+    prog_r.reset();
+    // Born into a frozen cgroup: this loop must not run until thawed.
+    while (true) {
+      if (write(prog_w.get(), "x", 1) != 1) {
+        _exit(2);
+      }
+      usleep(10000);
+    }
+    _exit(0);
+  }
+  prog_w.reset();
+
+  // The child was born frozen: no progress markers appear.
+  EXPECT_FALSE(ReadMarker(prog_r.get(), 500));
+  EXPECT_THAT(frozen_cg.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 1")));
+
+  // Thaw: the child now runs for the first time.
+  ASSERT_NO_ERRNO(frozen_cg.WriteControlFile("cgroup.freeze", "0"));
+  EXPECT_TRUE(ReadMarker(prog_r.get(), 5000));
+
+  ASSERT_THAT(kill(pid, SIGKILL), SyscallSucceeds());
+  int status;
+  ASSERT_EQ(waitpid(pid, &status, 0), pid);
+}
+
+// MigrateIntoFrozenFreezesAndOutResumes proves the attach() reconciliation: a
+// running task migrated (via cgroup.procs) into a frozen cgroup stops, and
+// migrated back out resumes. Without the attach() fix, freeze would be
+// escapable by moving a task out of a frozen subtree.
+TEST_F(Cgroup2Test, MigrateIntoFrozenFreezesAndOutResumes) {
+  Cgroup frozen_cg = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("frozen"));
+  Cgroup normal_cg = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("normal"));
+  ASSERT_NO_ERRNO(frozen_cg.WriteControlFile("cgroup.freeze", "1"));
+
+  int prog_fds[2];
+  ASSERT_THAT(pipe(prog_fds), SyscallSucceeds());
+  FileDescriptor prog_r(prog_fds[0]);
+  FileDescriptor prog_w(prog_fds[1]);
+  int go_fds[2];
+  ASSERT_THAT(pipe(go_fds), SyscallSucceeds());
+  FileDescriptor go_r(go_fds[0]);
+  FileDescriptor go_w(go_fds[1]);
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    prog_r.reset();
+    go_w.reset();
+    char token;
+    if (read(go_r.get(), &token, 1) <= 0) {
+      _exit(1);
+    }
+    while (true) {
+      if (write(prog_w.get(), "x", 1) != 1) {
+        _exit(2);
+      }
+      usleep(10000);
+    }
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+  prog_w.reset();
+  go_r.reset();
+
+  // Start out running in the unfrozen cgroup.
+  ASSERT_NO_ERRNO(normal_cg.Enter(pid));
+  ASSERT_THAT(write(go_w.get(), "x", 1), SyscallSucceeds());
+  ASSERT_TRUE(ReadMarker(prog_r.get(), 5000));
+
+  // Migrate into the frozen cgroup: the task must stop.
+  ASSERT_NO_ERRNO(frozen_cg.Enter(pid));
+  absl::SleepFor(absl::Milliseconds(100));
+  DrainMarkers(prog_r.get());
+  EXPECT_FALSE(ReadMarker(prog_r.get(), 500));
+
+  // Migrate back out to the unfrozen cgroup: the task must resume.
+  ASSERT_NO_ERRNO(normal_cg.Enter(pid));
+  EXPECT_TRUE(ReadMarker(prog_r.get(), 5000));
+
+  ASSERT_THAT(kill(pid, SIGKILL), SyscallSucceeds());
+  int status;
+  ASSERT_EQ(waitpid(pid, &status, 0), pid);
 }
 
 TEST_F(Cgroup2Test, DescendantsStatAndLimit) {

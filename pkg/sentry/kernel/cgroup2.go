@@ -74,6 +74,10 @@ type Cgroup2 interface {
 	// It helps prevent fork()s racing with cgroup.kill.
 	KillSeq() uint64
 
+	// IsFrozen returns whether the cgroup is effectively frozen (it or any
+	// ancestor has cgroup.freeze set). It lets a task forked into a frozen
+	// subtree start frozen.
+	IsFrozen() bool
 	// Deleted returns true if the cgroup has been deleted.
 	Deleted() bool
 }

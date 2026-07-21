@@ -756,6 +756,16 @@ type groupStop struct{}
 // Killable implements TaskStop.Killable.
 func (*groupStop) Killable() bool { return true }
 
+// frozenStop is a TaskStop placed on tasks frozen via cgroup v2's
+// cgroup.freeze. Like groupStop it is killable, so a frozen task remains
+// SIGKILL-able (a frozen task must never be un-killable).
+//
+// +stateify savable
+type frozenStop struct{}
+
+// Killable implements TaskStop.Killable.
+func (*frozenStop) Killable() bool { return true }
+
 // initiateGroupStop attempts to initiate a group stop based on a
 // previously-dequeued stop signal.
 //
@@ -835,6 +845,13 @@ func (tg *ThreadGroup) endGroupStopLocked(broadcast bool) {
 		} else {
 			if _, ok := t.stop.(*groupStop); ok {
 				t.endInternalStopLocked()
+				// The task may still be effectively frozen (cgroup.freeze). It
+				// could not enter frozenStop while parked in the group stop
+				// (a single t.stop slot), so nudge it to re-check and re-enter
+				// frozenStop in runInterrupt now that the group stop has ended.
+				if t.frozen {
+					t.interrupt()
+				}
 			}
 		}
 	}
@@ -1068,6 +1085,23 @@ func (*runInterrupt) execute(t *Task) taskRunState {
 		act := t.tg.signalHandlers.dequeueAction(linux.Signal(info.Signo))
 		t.tg.signalHandlers.mu.Unlock()
 		return t.deliverSignal(info, act)
+	}
+
+	// Reconcile cgroup v2 freeze state. This mirrors groupStop: the enter is
+	// self-service (a task can only stop its own goroutine), while thaw ends
+	// the stop authoritatively in Task.SetCgroupFrozen. t.frozen is the
+	// effective frozen state relayed under this same signal mutex by cgroup2fs,
+	// so no cgroup lock is taken here; this keeps the ordering
+	// fs.tasksMu -> signalHandlers.mu and avoids the reverse (which would
+	// deadlock against cgroup2fs freeze()/kill()). The !killedLocked() guard
+	// matches groupStop so a task being killed is never parked, preserving
+	// SIGKILL delivery (frozenStop.Killable()). Placed after signal handling so
+	// that a task resuming from a group stop (whose runState is runInterrupt)
+	// re-checks and re-enters frozenStop here once the group stop has ended.
+	if t.frozen && t.stop == nil && !t.killedLocked() {
+		t.beginInternalStopLocked((*frozenStop)(nil))
+		t.tg.signalHandlers.mu.Unlock()
+		return (*runInterrupt)(nil)
 	}
 
 	t.unsetInterrupted()

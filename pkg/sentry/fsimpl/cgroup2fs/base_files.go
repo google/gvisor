@@ -130,6 +130,7 @@ func (fs *filesystem) cgroupInodes(ctx context.Context, uid auth.KUID, gid auth.
 	contents["cgroup.stat"] = fs.newInode(ctx, uid, gid, c, interfaceFile{name: "cgroup.stat", source: &cgroupStat{c: c}, perm: 0444})
 	contents["cgroup.type"] = fs.newInode(ctx, uid, gid, c, interfaceFile{name: "cgroup.type", source: &cgroupType{c: c}, perm: 0444})
 	contents["cgroup.kill"] = fs.newInode(ctx, uid, gid, c, interfaceFile{name: "cgroup.kill", source: &cgroupKill{c: c}, perm: 0200})
+	contents["cgroup.freeze"] = fs.newInode(ctx, uid, gid, c, interfaceFile{name: "cgroup.freeze", source: &cgroupFreeze{c: c}, perm: 0644})
 
 	contents["cgroup.events"] = fs.newInode(ctx, uid, gid, c, interfaceFile{
 		name:    "cgroup.events",
@@ -452,6 +453,55 @@ func (cf *cgroupKill) Write(ctx context.Context, fd *vfs.FileDescription, src us
 	return src.NumBytes(), nil
 }
 
+// cgroupFreeze implements vfs.WritableDynamicBytesSource for "cgroup.freeze".
+// Unlike cgroup.kill it is readable (reports the self-requested freeze state)
+// and accepts both 0 (thaw) and 1 (freeze).
+// +stateify savable
+type cgroupFreeze struct{ c *cgroup }
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (cf *cgroupFreeze) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	if cf.c.deleted.Load() {
+		return linuxerr.ENODEV
+	}
+	// cgroup.freeze reports this cgroup's own requested state, not the
+	// effective (ancestor-inherited) state; the effective state is surfaced via
+	// the "frozen" line in cgroup.events. This matches Linux.
+	cf.c.fs.tasksMu.RLock()
+	frozen := cf.c.frozen
+	cf.c.fs.tasksMu.RUnlock()
+	if frozen {
+		fmt.Fprintf(buf, "1\n")
+	} else {
+		fmt.Fprintf(buf, "0\n")
+	}
+	return nil
+}
+
+// Write implements vfs.WritableDynamicBytesSource.Write.
+func (cf *cgroupFreeze) Write(ctx context.Context, fd *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
+	if cf.c.deleted.Load() {
+		return 0, linuxerr.ENODEV
+	}
+	data := make([]byte, src.NumBytes())
+	if _, err := src.CopyIn(ctx, data); err != nil {
+		return 0, err
+	}
+	val, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		return 0, linuxerr.EINVAL
+	}
+	// Match Linux cgroup_freeze_write: a non-integer is EINVAL (above), but an
+	// out-of-range integer is ERANGE.
+	if val != 0 && val != 1 {
+		return 0, linuxerr.ERANGE
+	}
+	if err := cf.c.freeze(val == 1); err != nil {
+		return 0, err
+	}
+	return src.NumBytes(), nil
+}
+
 // cgroupEvents implements vfs.DynamicBytesSource for "cgroup.events".
 // +stateify savable
 type cgroupEvents struct {
@@ -467,6 +517,13 @@ func (cf *cgroupEvents) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	if cf.c.populated() {
 		populated = 1
 	}
-	fmt.Fprintf(buf, "populated %d\nfrozen 0\n", populated)
+	// Unlike cgroup.freeze (which reports this cgroup's own requested state),
+	// the events "frozen" line reports the effective state: 1 if this cgroup or
+	// any ancestor is frozen. This matches Linux's CGRP_FROZEN semantics.
+	frozen := 0
+	if cf.c.IsFrozen() {
+		frozen = 1
+	}
+	fmt.Fprintf(buf, "populated %d\nfrozen %d\n", populated, frozen)
 	return nil
 }
