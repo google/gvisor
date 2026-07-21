@@ -51,7 +51,6 @@ import (
 	"gvisor.dev/gvisor/test/kubernetes/k8sctx"
 	"gvisor.dev/gvisor/test/kubernetes/testcluster"
 	v13 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -497,20 +496,30 @@ func verifyBatchHealth(ctx context.Context, t *testing.T, cluster *testcluster.T
 //   - stopReason (string): Descriptive failure reason if stopped, empty otherwise.
 //   - err (error): Non-nil if a lifecycle failure was detected.
 func checkTargetPodsAPI(ctx context.Context, t *testing.T, cluster *testcluster.TestCluster, clientPod *v13.Pod, pods []*v13.Pod, podNames []string, batchStart, batchEnd int, hasReachedRunning map[string]bool) (int, string, error) {
+	if len(pods) == 0 || pods[0] == nil {
+		return 0, "", nil
+	}
+	podList, err := cluster.ListPods(ctx, pods[0].Namespace)
+	if err != nil {
+		t.Logf("Warning: ListPods failed during health check: %v", err)
+		return 0, "", nil
+	}
+	podMap := make(map[string]*v13.Pod, len(podList.Items))
+	for i := range podList.Items {
+		podMap[podList.Items[i].Name] = &podList.Items[i]
+	}
+
 	for j := 0; j < batchEnd; j++ {
-		p, err := cluster.GetPod(ctx, pods[j])
-		if err != nil {
+		p, ok := podMap[podNames[j]]
+		if !ok {
 			// Failure 1: Pod has been completely deleted and removed from the API.
-			if apierrors.IsNotFound(err) {
-				t.Logf("Pod %d (%s) disappeared from GKE", j, podNames[j])
-				uniqueSuccesses := countUniqueSuccesses(ctx, cluster, clientPod)
-				stableDensity := uniqueSuccesses
-				if j < uniqueSuccesses {
-					stableDensity = uniqueSuccesses - 1
-				}
-				return stableDensity, fmt.Sprintf("peer-not-found-%s", podNames[j]), fmt.Errorf("pod disappeared from GKE")
+			t.Logf("Pod %d (%s) disappeared from GKE", j, podNames[j])
+			uniqueSuccesses := countUniqueSuccesses(ctx, cluster, clientPod)
+			stableDensity := uniqueSuccesses
+			if j < uniqueSuccesses {
+				stableDensity = uniqueSuccesses - 1
 			}
-			continue
+			return stableDensity, fmt.Sprintf("peer-not-found-%s", podNames[j]), fmt.Errorf("pod disappeared from GKE")
 		}
 
 		// Failure 2: Pod is undergoing graceful shutdown (DeletionTimestamp is set).
@@ -684,16 +693,17 @@ func checkClientLogs(t *testing.T, logs string, batchStart, batchEnd int) (int, 
 // if they ended up on multiple nodes.
 func verifySameNode(ctx context.Context, t *testing.T, cluster *testcluster.TestCluster, pods []*v13.Pod) {
 	nodeNames := make(map[string]struct{})
-	for _, p := range pods {
-		if p == nil {
-			continue
-		}
-		updatedPod, err := cluster.GetPod(ctx, p)
-		if err != nil {
-			continue
-		}
-		if updatedPod.Spec.NodeName != "" {
-			nodeNames[updatedPod.Spec.NodeName] = struct{}{}
+	if len(pods) == 0 || pods[0] == nil {
+		return
+	}
+	podList, err := cluster.ListPods(ctx, pods[0].Namespace)
+	if err != nil {
+		t.Logf("Warning: ListPods failed in verifySameNode: %v", err)
+		return
+	}
+	for _, p := range podList.Items {
+		if p.Spec.NodeName != "" && strings.HasPrefix(p.Name, "openclaw-maxpods-") {
+			nodeNames[p.Spec.NodeName] = struct{}{}
 		}
 	}
 	t.Logf("Pods scheduled on nodes: %v", nodeNames)
