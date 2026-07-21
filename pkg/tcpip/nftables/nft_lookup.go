@@ -131,11 +131,11 @@ var lookupPolicy = []NlaPolicy{
 // initLookup initializes a lookup operation.
 // Ref: net/netfilter/nft_lookup.c:nft_lookup_init()
 func initLookup(tab *Table, exprInfo ExprInfo) (*lookupOp, *syserr.AnnotatedError) {
-	lookupAttrs, ok := NfParseWithOpts(exprInfo.ExprData, &NfParseOpts{
+	lookupAttrs, err := NfParseWithOpts(exprInfo.ExprData, &NfParseOpts{
 		Policy: lookupPolicy,
 	})
-	if !ok {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse lookup expression data")
+	if err != nil {
+		return nil, err
 	}
 
 	setAttr, ok := lookupAttrs[linux.NFTA_LOOKUP_SET]
