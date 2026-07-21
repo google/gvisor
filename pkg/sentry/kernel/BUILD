@@ -420,6 +420,7 @@ go_library(
         "//pkg/sentry/uniqueid",
         "//pkg/sentry/usage",
         "//pkg/sentry/vfs",
+        "//pkg/sighandling",
         "//pkg/state",
         "//pkg/state/wire",
         "//pkg/sync",

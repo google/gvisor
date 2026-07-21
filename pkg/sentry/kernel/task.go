@@ -104,7 +104,8 @@ type Task struct {
 	//
 	// interruptChan is not saved; because saving interrupts all tasks,
 	// interruptChan is always notified after restore (see Task.run).
-	interruptChan chan struct{} `state:"nosave"`
+	interruptChan chan struct{}      `state:"nosave"`
+	hostTID       atomicbitops.Int32 `state:"nosave"`
 
 	// gostateSeq allows Task.TaskGoroutineStateTime() to read gostate and
 	// gostateTime atomically.
@@ -957,4 +958,14 @@ func (t *Task) SetCoredumpFilter(coredumpFilter uint32) {
 // GetCoredumpFilter returns the task's coredump filter.
 func (t *Task) GetCoredumpFilter() uint32 {
 	return t.tg.coredumpFilter.Load()
+}
+
+// SetHostTID sets the host thread ID running this task.
+func (t *Task) SetHostTID(tid int) {
+	t.hostTID.Store(int32(tid))
+}
+
+// ClearHostTID clears the host thread ID running this task.
+func (t *Task) ClearHostTID() {
+	t.hostTID.Store(0)
 }

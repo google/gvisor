@@ -278,6 +278,7 @@ func (s *Server) Register(obj any) {
 			argType:    argType,
 			resultType: resultType,
 		}
+		log.Infof("urpc: registered method %q", prettyName)
 	}
 }
 

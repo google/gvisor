@@ -183,6 +183,7 @@ func (c *SandboxExec) Execute(_ context.Context, f *flag.FlagSet, args ...any) s
 	}
 
 	// Return PID and Control Socket Path
+	fmt.Printf("ID: %s\n", cid)
 	fmt.Printf("PID: %d\n", cont.SandboxPid())
 	fmt.Printf("Control Socket: %s\n", cont.Sandbox.GetControlSocketPath())
 
@@ -195,6 +196,7 @@ func createSpec(opts *sandboxexecpb.SandboxOptions, args []string, conf *config.
 			Path: "rootfs",
 		},
 		Process: &specs.Process{
+			Terminal:     opts.GetTerminal(),
 			Cwd:          ".",
 			Args:         args,
 			Capabilities: specutils.AllCapabilities(),

@@ -21,6 +21,11 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/link/fdbased"
 )
 
+const (
+	tiocgwinsz_fuse = 0x800854f0
+	tiocswinsz_fuse = 0x400854f1
+)
+
 // allowedSyscalls is the set of syscalls executed by the Sentry to the host OS.
 var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 	unix.SYS_CLOCK_GETTIME: seccomp.MatchAll{},
@@ -169,6 +174,16 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		seccomp.PerArg{
 			seccomp.NonNegativeFD{}, /* fd */
 			seccomp.EqualTo(linux.TIOCGWINSZ),
+			seccomp.AnyValue{}, /* winsize struct */
+		},
+		seccomp.PerArg{
+			seccomp.NonNegativeFD{}, /* fd */
+			seccomp.EqualTo(tiocgwinsz_fuse),
+			seccomp.AnyValue{}, /* winsize struct */
+		},
+		seccomp.PerArg{
+			seccomp.NonNegativeFD{}, /* fd */
+			seccomp.EqualTo(tiocswinsz_fuse),
 			seccomp.AnyValue{}, /* winsize struct */
 		},
 		seccomp.PerArg{

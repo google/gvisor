@@ -19,6 +19,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -130,6 +131,13 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysno uin
 	case linux.TCGETS:
 		termios, err := ioctlGetTermios(fd)
 		if err != nil {
+			// Host ioctl failed (e.g., FUSE fd). Fall back to cached
+			// termios from the sentry. This enables TTY emulation for
+			// non-terminal host fds.
+			t.inode.termiosMu.Lock()
+			fallback := t.inode.termios.ToTermios()
+			t.inode.termiosMu.Unlock()
+			_, err = fallback.CopyOut(task, args[2].Pointer())
 			return 0, err
 		}
 		_, err = termios.CopyOut(task, args[2].Pointer())
@@ -138,6 +146,11 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysno uin
 	case linux.TCGETS2:
 		termios, err := ioctlGetTermios2(fd)
 		if err != nil {
+			// Host ioctl failed. Fall back to cached termios.
+			t.inode.termiosMu.Lock()
+			fallback := t.inode.termios
+			t.inode.termiosMu.Unlock()
+			_, err = fallback.CopyOut(task, args[2].Pointer())
 			return 0, err
 		}
 		_, err = termios.CopyOut(task, args[2].Pointer())
@@ -230,6 +243,17 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysno uin
 		// Get window size.
 		winsize, err := ioctlGetWinsize(fd)
 		if err != nil {
+			log.Warningf("ioctlGetWinsize failed: %v, trying FUSE winsize", err)
+			// Try FUSE-specific winsize ioctl.
+			winsize, err = ioctlGetWinsizeFuse(fd)
+			if err != nil {
+				log.Warningf("ioctlGetWinsizeFuse failed: %v", err)
+			}
+		}
+		if err != nil {
+			// Host ioctl failed. Return a default window size.
+			defaultWinsize := linux.Winsize{Row: 24, Col: 80}
+			_, err = defaultWinsize.CopyOut(task, args[2].Pointer())
 			return 0, err
 		}
 		_, err = winsize.CopyOut(task, args[2].Pointer())
@@ -248,10 +272,21 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysno uin
 		}
 		oldSize, err := ioctlGetWinsize(fd)
 		if err != nil {
-			return 0, err
+			log.Warningf("TIOCSWINSZ: ioctlGetWinsize failed: %v, trying FUSE", err)
+			oldSize, err = ioctlGetWinsizeFuse(fd)
+			if err != nil {
+				log.Warningf("TIOCSWINSZ: ioctlGetWinsizeFuse failed: %v", err)
+				return 0, err
+			}
 		}
-		if err := ioctlSetWinsize(fd, &winsize); err != nil {
-			return 0, err
+		err = ioctlSetWinsize(fd, &winsize)
+		if err != nil {
+			log.Warningf("TIOCSWINSZ: ioctlSetWinsize failed: %v, trying FUSE", err)
+			err = ioctlSetWinsizeFuse(fd, &winsize)
+			if err != nil {
+				log.Warningf("TIOCSWINSZ: ioctlSetWinsizeFuse failed: %v", err)
+				return 0, err
+			}
 		}
 		if *oldSize != winsize {
 			t.TTY().SignalForegroundProcessGroup(kernel.SignalInfoPriv(linux.SIGWINCH))
