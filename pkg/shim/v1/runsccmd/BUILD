@@ -13,6 +13,8 @@ go_library(
     ],
     visibility = ["//pkg/shim:__subpackages__"],
     deps = [
+        "//pkg/control/client",
+        "//runsc/cgroup",
         "@com_github_containerd_go_runc//:go_default_library",
         "@com_github_containerd_log//:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
@@ -25,5 +27,8 @@ go_test(
     size = "small",
     srcs = ["runsc_test.go"],
     library = ":runsccmd",
-    deps = ["@com_github_opencontainers_runtime_spec//specs-go:go_default_library"],
+    deps = [
+        "@com_github_containerd_go_runc//:go_default_library",
+        "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
+    ],
 )
