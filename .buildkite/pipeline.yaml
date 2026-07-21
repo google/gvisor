@@ -368,6 +368,7 @@ steps:
     <<: *source_test
     label: ":docker: Docker tests (cgroupv1)"
     command: make docker-tests
+    parallelism: 8
     agents:
       <<: *ubuntu_agents
       arch: "amd64"
@@ -379,6 +380,7 @@ steps:
     <<: *source_test
     label: ":docker: Docker tests (cgroupv2)"
     command: make docker-tests
+    parallelism: 8
     agents:
       <<: *ubuntu_agents
       arch: "amd64"
@@ -387,6 +389,7 @@ steps:
     <<: *docker
     label: ":goggles: Overlay tests"
     command: make overlay-tests
+    parallelism: 8
     agents:
       <<: *platform_specific_agents
       <<: *ubuntu_agents
@@ -404,6 +407,7 @@ steps:
     <<: *docker
     label: ":safety_pin: Host network tests"
     command: make hostnet-tests
+    parallelism: 8
     agents:
       <<: *platform_specific_agents
       <<: *ubuntu_agents
@@ -413,6 +417,7 @@ steps:
     <<: *docker
     label: ":satellite: gVisor GSO tests"
     command: make swgso-tests
+    parallelism: 8
     agents:
       <<: *platform_specific_agents
       <<: *ubuntu_agents
@@ -423,12 +428,13 @@ steps:
     <<: *source_test
     label: ":satellite: gVisor network plugin tests"
     command: make plugin-network-tests
+    parallelism: 8
     agents:
       <<: *kvm_agents
       arch: "amd64"
   - <<: *common
     <<: *source_test
-    label: ":coffee: Do tests"
+    label: ":dodo: Do tests"
     command: make do-tests
     agents:
       arch: "amd64"
@@ -437,6 +443,7 @@ steps:
     <<: *source_test
     label: ":person_in_lotus_position: KVM tests"
     command: make kvm-tests
+    parallelism: 8
     agents:
       <<: *kvm_agents
       arch: "amd64"
@@ -446,6 +453,7 @@ steps:
     <<: *source_test
     label: ":rocket: Systrap tests"
     command: make systrap-tests
+    parallelism: 8
     agents:
       <<: *kvm_agents
       arch: "amd64"
