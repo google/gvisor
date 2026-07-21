@@ -355,5 +355,5 @@ func (fd *directoryFD) Seek(ctx context.Context, offset int64, whence int32) (in
 
 // Sync implements vfs.FileDescriptionImpl.Sync.
 func (fd *directoryFD) Sync(ctx context.Context) error {
-	return fd.dentry().syncRemoteFile(ctx)
+	return fd.dentry().syncRemoteFile(ctx, false /* dataOnly */)
 }

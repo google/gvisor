@@ -737,6 +737,16 @@ func (fd *FileDescription) Sync(ctx context.Context) error {
 	return fd.impl.Sync(ctx)
 }
 
+// SyncData has the semantics of fdatasync(2).
+func (fd *FileDescription) SyncData(ctx context.Context) error {
+	if sd, ok := fd.impl.(interface {
+		SyncData(ctx context.Context) error
+	}); ok {
+		return sd.SyncData(ctx)
+	}
+	return fd.impl.Sync(ctx)
+}
+
 // ConfigureMMap mutates opts to implement mmap(2) for the file represented by
 // fd.
 func (fd *FileDescription) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {

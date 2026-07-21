@@ -258,7 +258,9 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 			return 0, offset, err
 		}
 		// Request the remote filesystem to sync the remote file.
-		if err := d.syncRemoteFile(ctx); err != nil {
+		statusFlags := fd.vfsfd.StatusFlags()
+		dataOnly := (statusFlags&linux.O_SYNC) == 0 && (statusFlags&linux.O_DSYNC) != 0
+		if err := d.syncRemoteFile(ctx, dataOnly); err != nil {
 			return 0, offset, err
 		}
 	}
@@ -656,7 +658,12 @@ func regularFileSeekLocked(ctx context.Context, d *dentry, fdOffset, offset int6
 
 // Sync implements vfs.FileDescriptionImpl.Sync.
 func (fd *regularFileFD) Sync(ctx context.Context) error {
-	return fd.dentry().syncCachedFile(ctx, false /* forFilesystemSync */)
+	return fd.dentry().syncCachedFile(ctx, false /* forFilesystemSync */, false /* dataOnly */)
+}
+
+// SyncData implements vfs.FileDescriptionImpl.SyncData.
+func (fd *regularFileFD) SyncData(ctx context.Context) error {
+	return fd.dentry().syncCachedFile(ctx, false /* forFilesystemSync */, true /* dataOnly */)
 }
 
 // ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.

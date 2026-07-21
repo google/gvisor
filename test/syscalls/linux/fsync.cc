@@ -37,6 +37,25 @@ TEST(FsyncTest, TempFileSucceeds) {
   EXPECT_THAT(fsync(fd.get()), SyscallSucceeds());
 }
 
+TEST(FsyncTest, FdatasyncTempFileSucceeds) {
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR, 0666));
+  const std::string data = "some data to sync";
+  EXPECT_THAT(write(fd.get(), data.c_str(), data.size()),
+              SyscallSucceedsWithValue(data.size()));
+  EXPECT_THAT(fdatasync(fd.get()), SyscallSucceeds());
+}
+
+TEST(FsyncTest, ODsyncWriteSucceeds) {
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  auto fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR | O_DSYNC, 0666));
+  const std::string data = "some data to sync";
+
+  EXPECT_THAT(write(fd.get(), data.c_str(), data.size()),
+              SyscallSucceedsWithValue(data.size()));
+}
+
 TEST(FsyncTest, TempDirSucceeds) {
   auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_RDONLY | O_DIRECTORY));

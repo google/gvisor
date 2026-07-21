@@ -365,6 +365,24 @@ func (fd *regularFileFD) Sync(ctx context.Context) error {
 	return wrappedFD.Sync(ctx)
 }
 
+// SyncData implements vfs.FileDescriptionImpl.SyncData.
+func (fd *regularFileFD) SyncData(ctx context.Context) error {
+	fd.mu.Lock()
+	if !fd.dentry().isCopiedUp() {
+		fd.mu.Unlock()
+		return nil
+	}
+	wrappedFD, err := fd.currentFDLocked(ctx)
+	if err != nil {
+		fd.mu.Unlock()
+		return err
+	}
+	wrappedFD.IncRef()
+	defer wrappedFD.DecRef(ctx)
+	fd.mu.Unlock()
+	return wrappedFD.SyncData(ctx)
+}
+
 // Ioctl implements vfs.FileDescriptionImpl.Ioctl.
 func (fd *regularFileFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
 	wrappedFD, err := fd.getCurrentFD(ctx)
