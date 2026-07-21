@@ -548,12 +548,13 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 	}
 
 	if vma := vseg.ValuePtr(); vma.mappable != nil {
+		off := vseg.mappableOffsetAt(oldAR.Start)
 		// Check that offset+length does not overflow.
-		if vma.off+uint64(newAR.Length()) < vma.off {
+		if off+uint64(newAR.Length()) < off {
 			return 0, linuxerr.EINVAL
 		}
 		// Inform the Mappable, if any, of the new mapping.
-		if err := vma.mappable.CopyMapping(ctx, mm, oldAR, newAR, vseg.mappableOffsetAt(oldAR.Start), vma.canWriteMappableLocked()); err != nil {
+		if err := vma.mappable.CopyMapping(ctx, mm, oldAR, newAR, off, vma.canWriteMappableLocked()); err != nil {
 			return 0, err
 		}
 	}
