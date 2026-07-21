@@ -47,12 +47,17 @@ func (*ReadControl) Usage() string {
 	return `read-control <container-id> <controller> <cgroup-path> <control-value-name>
 
 Where "<container-id>" is the name for the instance of the container,
-"<controller>" is the name of an active cgroupv1 controller, <cgroup-path> is
-the path to the cgroup to read and <control-value-name> is the name of the
-control file to read.
+"<controller>" is the name of an active cgroup controller (used for cgroup v1
+hierarchies; ignored for cgroup v2 unified hierarchy), <cgroup-path> is the path
+to the cgroup to read and <control-value-name> is the name of the control file
+to read.
 
 EXAMPLE:
+       # cgroup v1:
        # runsc read-control <container-id> cpuacct / cpuacct.usage
+       # cgroup v2:
+       # runsc read-control <container-id> memory / memory.current
+       # runsc read-control <container-id> cpu / cpu.stat
 `
 }
 

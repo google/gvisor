@@ -91,9 +91,9 @@ func (op *lookupOp) GetExprName() string {
 func (op *lookupOp) Dump() ([]byte, *syserr.AnnotatedError) {
 	m := &nlmsg.Message{}
 	m.PutAttrString(linux.NFTA_LOOKUP_SET, op.set.name)
-	m.PutAttr(linux.NFTA_LOOKUP_SREG, nlmsg.PutU32(formatRegIdxForDump(op.sregIdx)))
+	m.PutAttr(linux.NFTA_LOOKUP_SREG, formatRegIdxForDump(op.sregIdx))
 	if op.fillData {
-		m.PutAttr(linux.NFTA_LOOKUP_DREG, nlmsg.PutU32(formatRegIdxForDump(op.dregIdx)))
+		m.PutAttr(linux.NFTA_LOOKUP_DREG, formatRegIdxForDump(op.dregIdx))
 	}
 	var flags uint32
 	if op.invert {

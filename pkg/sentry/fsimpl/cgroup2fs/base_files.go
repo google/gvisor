@@ -154,12 +154,13 @@ func (cf *cgroupProcs) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	if cf.c.deleted.Load() {
 		return linuxerr.ENODEV
 	}
-	t := kernel.TaskFromContext(ctx)
-	if t == nil {
-		return nil
+	var currPidns *kernel.PIDNamespace
+	if t := kernel.TaskFromContext(ctx); t != nil {
+		currPidns = t.PIDNamespace()
+	} else if k := kernel.KernelFromContext(ctx); k != nil {
+		currPidns = k.RootPIDNamespace()
 	}
-
-	pids := cf.c.getPIDs(t)
+	pids := cf.c.getPIDsInNamespace(currPidns)
 	for _, pid := range pids {
 		fmt.Fprintf(buf, "%d\n", pid)
 	}

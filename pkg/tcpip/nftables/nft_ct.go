@@ -248,7 +248,7 @@ func (op *ctGet) deepCopy() operation {
 func (op *ctGet) Dump() ([]byte, *syserr.AnnotatedError) {
 	m := &nlmsg.Message{}
 	m.PutAttr(linux.NFTA_CT_KEY, nlmsg.PutU32(uint32(op.key)))
-	m.PutAttr(linux.NFTA_CT_DREG, nlmsg.PutU32(formatRegIdxForDump(op.dregIdx)))
+	m.PutAttr(linux.NFTA_CT_DREG, formatRegIdxForDump(op.dregIdx))
 	if op.dir != linux.IP_CT_DIR_MAX {
 		m.PutAttr(linux.NFTA_CT_DIRECTION, nlmsg.PutU8(uint8(op.dir)))
 	}
@@ -271,7 +271,7 @@ func (op *ctSet) GetExprName() string {
 func (op *ctSet) Dump() ([]byte, *syserr.AnnotatedError) {
 	m := &nlmsg.Message{}
 	m.PutAttr(linux.NFTA_CT_KEY, nlmsg.PutU32(uint32(op.key)))
-	m.PutAttr(linux.NFTA_CT_SREG, nlmsg.PutU32(formatRegIdxForDump(op.sregIdx)))
+	m.PutAttr(linux.NFTA_CT_SREG, formatRegIdxForDump(op.sregIdx))
 	if op.dir != linux.IP_CT_DIR_MAX {
 		m.PutAttr(linux.NFTA_CT_DIRECTION, nlmsg.PutU8(uint8(op.dir)))
 	}

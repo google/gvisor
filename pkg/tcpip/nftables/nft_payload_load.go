@@ -131,7 +131,7 @@ func (op payloadLoad) GetExprName() string {
 
 func (op payloadLoad) Dump() ([]byte, *syserr.AnnotatedError) {
 	m := &nlmsg.Message{}
-	m.PutAttr(linux.NFTA_PAYLOAD_DREG, nlmsg.PutU32(formatRegIdxForDump(op.dregIdx)))
+	m.PutAttr(linux.NFTA_PAYLOAD_DREG, formatRegIdxForDump(op.dregIdx))
 	m.PutAttr(linux.NFTA_PAYLOAD_BASE, nlmsg.PutU32(uint32(op.base)))
 	m.PutAttr(linux.NFTA_PAYLOAD_OFFSET, nlmsg.PutU32(uint32(op.offset)))
 	m.PutAttr(linux.NFTA_PAYLOAD_LEN, nlmsg.PutU32(uint32(op.blen)))

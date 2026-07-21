@@ -331,7 +331,7 @@ func (op *fib) GetExprName() string {
 // Dump implements operation's Dump interface.
 func (op *fib) Dump() ([]byte, *syserr.AnnotatedError) {
 	m := &nlmsg.Message{}
-	m.PutAttr(linux.NFTA_FIB_DREG, nlmsg.PutU32(formatRegIdxForDump(op.dregIdx)))
+	m.PutAttr(linux.NFTA_FIB_DREG, formatRegIdxForDump(op.dregIdx))
 	m.PutAttr(linux.NFTA_FIB_RESULT, nlmsg.PutU32(uint32(op.result)))
 	m.PutAttr(linux.NFTA_FIB_FLAGS, nlmsg.PutU32(op.flags))
 	return m.Buffer(), nil

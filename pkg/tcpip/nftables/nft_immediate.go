@@ -50,18 +50,18 @@ func (op immediate) Dump() ([]byte, *syserr.AnnotatedError) {
 	m := &nlmsg.Message{}
 	var regDump []byte
 	var err *syserr.AnnotatedError
-	reg := uint32(0)
+	reg := nlmsg.PutU32(0)
 	switch op.dataType {
 	case linux.NFT_DATA_VERDICT:
 		regDump, err = dumpVerdictDataAttr(op.verdict)
 	case linux.NFT_DATA_VALUE:
-		reg = uint32(formatRegIdxForDump(op.dregIdx))
+		reg = formatRegIdxForDump(op.dregIdx)
 		regDump, err = dumpDataAttr(op.data)
 	}
 	if err != nil {
 		return nil, err
 	}
-	m.PutAttr(linux.NFTA_IMMEDIATE_DREG, nlmsg.PutU32(reg))
+	m.PutAttr(linux.NFTA_IMMEDIATE_DREG, reg)
 	m.PutAttr(linux.NFTA_IMMEDIATE_DATA, primitive.AsByteSlice(regDump))
 	return m.Buffer(), nil
 }

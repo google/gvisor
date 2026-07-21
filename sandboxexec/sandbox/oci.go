@@ -23,10 +23,20 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
-// NewBundle creates a temporary OCI bundle on the fly with optional custom annotations.
-func NewBundle(sandboxID string, runscRuntimeDir string, enableNetworking bool, mounts []Mount, env []string, annotations map[string]string) (string, error) {
+// BundleConfig holds configuration for creating an OCI bundle.
+type BundleConfig struct {
+	ID               string
+	RuntimeDir       string
+	EnableNetworking bool
+	Mounts           []Mount
+	Env              []string
+	Annotations      map[string]string
+}
+
+// NewBundle creates a temporary OCI bundle on the fly with the given configuration.
+func NewBundle(cfg BundleConfig) (string, error) {
 	// Create a bundle directory for the sandbox.
-	bundleDir := filepath.Join(runscRuntimeDir, sandboxID)
+	bundleDir := filepath.Join(cfg.RuntimeDir, cfg.ID)
 	rootfsDir := filepath.Join(bundleDir, "rootfs")
 
 	if err := os.MkdirAll(rootfsDir, 0755); err != nil {
@@ -44,18 +54,16 @@ func NewBundle(sandboxID string, runscRuntimeDir string, enableNetworking bool, 
 	if os.Geteuid() != 0 {
 		namespaces = append(namespaces, specs.LinuxNamespace{Type: specs.UserNamespace})
 	}
-	if enableNetworking {
+	if cfg.EnableNetworking {
 		namespaces = append(namespaces, specs.LinuxNamespace{Type: specs.NetworkNamespace})
 	}
 
 	spec := &specs.Spec{
 		Version:     "1.0.0",
-		Annotations: annotations,
+		Annotations: cfg.Annotations,
 		Root: &specs.Root{
-			Path: "rootfs",
-			// The root filesystem is read-only for now. We can add support for
-			// writable rootfs later if needed.
-			Readonly: true,
+			Path:     "rootfs",
+			Readonly: false,
 		},
 		Process: &specs.Process{
 			Terminal: false,
@@ -76,7 +84,7 @@ func NewBundle(sandboxID string, runscRuntimeDir string, enableNetworking bool, 
 	}
 
 	baseEnv := []string{"PATH=/bin:/usr/bin:/usr/local/bin"}
-	spec.Process.Env = append(baseEnv, env...)
+	spec.Process.Env = append(baseEnv, cfg.Env...)
 
 	if os.Geteuid() != 0 {
 		spec.Linux.UIDMappings = []specs.LinuxIDMapping{
@@ -106,7 +114,7 @@ func NewBundle(sandboxID string, runscRuntimeDir string, enableNetworking bool, 
 
 	// Add custom mounts. Custom mounts overriding default host mounts create duplicate OCI
 	// entries. The later entry overrides the earlier one, as expected by OCI specs.
-	for _, m := range mounts {
+	for _, m := range cfg.Mounts {
 		switch m.Type {
 		case MountTypeBind:
 			opts := []string{"rbind"}

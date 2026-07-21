@@ -19,6 +19,7 @@ package platform
 
 import (
 	"fmt"
+	"sort"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -640,6 +641,7 @@ func List() (available []string) {
 	for name := range platforms {
 		available = append(available, name)
 	}
+	sort.Strings(available)
 	return
 }
 

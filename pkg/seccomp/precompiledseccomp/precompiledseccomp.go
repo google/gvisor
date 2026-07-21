@@ -122,6 +122,12 @@ func Precompile(name string, varNames []string, fn func(Values) *seccomp.Program
 		return Program{}, fmt.Errorf("non-unique variable names: %q", varNames)
 	}
 
+	// Make a sorted copy of varNames to ensure deterministic processing.
+	sortedVarNames := make([]string, len(varNames))
+	copy(sortedVarNames, varNames)
+	sort.Strings(sortedVarNames)
+	varNames = sortedVarNames
+
 	// These constants are chosen to be recognizable and unique within
 	// seccomp-bpf programs.
 	// These could of course show up in seccomp-bpf programs for legitimate
@@ -142,7 +148,7 @@ func Precompile(name string, varNames []string, fn func(Values) *seccomp.Program
 	// Remember at which offsets we saw these values show up in the bytecode.
 	values1 := Values(make(map[string]uint32, len(vars)))
 	v := varStart1
-	for varName := range vars {
+	for _, varName := range varNames {
 		values1[varName] = v
 		v += 2
 	}
