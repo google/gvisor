@@ -38,8 +38,10 @@ message CloneInfo {
 message ExecveInfo {
   gvisor.common.ContextData context_data = 1;
 
-  // BinaryPath is a path to the executable binary file being switched to in
-  // the mount namespace in which it was opened.
+  // BinaryPath is the resolved filesystem path to the executable binary file in
+  // the mount namespace in which it was opened. Unlike Execfn (which preserves
+  // the original string passed to execve(2)), BinaryPath reflects symlink and
+  // interpreter script resolution.
   string binary_path = 2;
 
   // Argv is the new process image's argument vector.
@@ -90,6 +92,11 @@ message ExecveInfo {
   gvisor.common.FdInfo stdin = 12;
   gvisor.common.FdInfo stdout = 13;
   gvisor.common.FdInfo stderr = 14;
+
+  // Execfn is the exact pathname string passed to execve(2) (used for
+  // AT_EXECFN). Unlike BinaryPath, this preserves the original relative or
+  // unresolved path argument before symlink or interpreter script resolution.
+  string execfn = 17;
 }
 
 message ExitNotifyParentInfo {

@@ -50,7 +50,38 @@
 namespace gvisor {
 namespace testing {
 
+// runForkExecve triggers a ForkAndExec process which results in the execution
+// of an execve() syscall by Sentry. It executes a symlink, which creates an
+// execution point with distinct properties for binary execution paths to
+// validate.
 void runForkExecve() {
+  // trace_test.go's checkSentryExec/checkSyscallExecve validates these specific
+  // distinct execution properties for this function path:
+
+  // 1. BinaryPath: Expects the fully resolved binary path -> /bin/true
+  symlink("/bin/true", "/tmp/test_symlink");
+
+  pid_t child;
+  int execve_errno;
+
+  // 2. Argv[0]: Expects the synthetic argument name -> "test_binary_name"
+  ExecveArray argv = {"test_binary_name"};
+  ExecveArray envv = {"TEST=123"};
+
+  // 3. Execfn: Expects the executing symlink path -> /tmp/test_symlink
+  auto kill_or_error = ForkAndExec("/tmp/test_symlink", argv, envv, nullptr,
+                                   &child, &execve_errno);
+  TEST_CHECK(execve_errno == 0);
+  // Don't kill child, just wait for gracefully exit.
+  kill_or_error.ValueOrDie().Release();
+  RetryEINTR(waitpid)(child, nullptr, 0);
+  unlink("/tmp/test_symlink");
+}
+
+// runForkExecveat triggers a ForkAndExecveat process using the "root_or_error"
+// directory file descriptor, which ultimately results in the execution
+// of an execveat() syscall by Sentry.
+void runForkExecveat() {
   auto root_or_error = Open("/", O_RDONLY, 0);
   auto& root = root_or_error.ValueOrDie();
 
@@ -670,6 +701,7 @@ void runInotifyRmWatch() {
 
 int main(int argc, char** argv) {
   ::gvisor::testing::runForkExecve();
+  ::gvisor::testing::runForkExecveat();
   ::gvisor::testing::runSocket();
   ::gvisor::testing::runReadWrite();
   ::gvisor::testing::runChdir();

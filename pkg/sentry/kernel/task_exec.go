@@ -111,7 +111,8 @@ func (t *Task) Execve(argv, envv []string, flags int32, pathname string, executa
 	r := runExecveAfterExecveCredsLock{
 		argv:        argv,
 		envv:        envv,
-		pathname:    pathname,
+		pathname:    pathname, // may be modified during resolution
+		execfn:      pathname, // remains unmodified
 		flags:       flags,
 		executable:  executable,
 		closeOnExec: closeOnExec,
@@ -125,7 +126,8 @@ func (t *Task) Execve(argv, envv []string, flags int32, pathname string, executa
 // +stateify savable
 type runExecveAfterExecveCredsLock struct {
 	argv, envv  []string
-	pathname    string
+	pathname    string // the mapped VFS path of the executable after resolution
+	execfn      string // the immutable original pathname passed to execve(2)
 	flags       int32
 	executable  *vfs.FileDescription
 	closeOnExec bool
@@ -222,7 +224,7 @@ func (r *runExecveAfterExecveCredsLock) execveWithImage(t *Task, newImage *TaskI
 	defer cu.Clean()
 	// We can't clearly hold kernel package locks while stat'ing executable.
 	if seccheck.Global.Enabled(seccheck.PointExecve) {
-		mask, info := getExecveSeccheckInfo(t, r.argv, r.envv, r.executable, r.pathname)
+		mask, info := execveSeccheckInfo(t, r.argv, r.envv, r.executable, r.pathname, r.execfn)
 		if err := seccheck.Global.SentToSinks(func(c seccheck.Sink) error {
 			return c.Execve(t, mask, info)
 		}); err != nil {
@@ -463,12 +465,17 @@ func (t *Task) promoteLocked() {
 	oldLeader.exitNotifyLocked(false)
 }
 
-func getExecveSeccheckInfo(t *Task, argv, env []string, executable *vfs.FileDescription, pathname string) (seccheck.FieldSet, *pb.ExecveInfo) {
+func execveSeccheckInfo(t *Task, argv, env []string, executable *vfs.FileDescription, pathname, execfn string) (seccheck.FieldSet, *pb.ExecveInfo) {
 	fields := seccheck.Global.GetFieldSet(seccheck.PointExecve)
 	info := &pb.ExecveInfo{
-		Argv: argv,
-		Env:  env,
+		Argv:   argv,
+		Env:    env,
+		Execfn: execfn,
 	}
+
+	// executable is nil if opening the binary failed early or if checked before opening.
+	// Only populate file-backed metadata (such as BinaryPath, mode, or SHA-256) when an open
+	// FileDescription is available.
 	if executable != nil {
 		info.BinaryPath = pathname
 		if fields.Local.Contains(seccheck.FieldSentryExecveBinaryInfo) {
