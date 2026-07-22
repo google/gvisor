@@ -119,3 +119,35 @@ go_test(
         "@org_golang_google_protobuf//proto:go_default_library",
     ],
 )
+
+go_test(
+    name = "dynamic_mount_bench_test",
+    size = "large",
+    srcs = ["dynamic_mount_bench_test.go"],
+    args = select({
+        "//conditions:default": [
+            "--test_platforms=%s" % ",".join([p for (p, tags) in platforms.items() if "manual" not in tags]) or default_platform,
+        ],
+        "//tools:gotsan": [
+            "--test_platforms=%s" % default_platform,
+        ],
+    }),
+    data = [
+        "//runsc",
+        "//test/cmd/test_app",
+    ],
+    library = ":container",
+    tags = [
+        "manual",
+        "requires-kvm",
+    ],
+    deps = [
+        "//pkg/log",
+        "//pkg/sentry/control",
+        "//pkg/test/testutil",
+        "//runsc/config",
+        "//runsc/flag",
+        "//runsc/specutils",
+        "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
+    ],
+)
