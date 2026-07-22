@@ -477,6 +477,23 @@ func new(pid, cgroupsPath string, useSystemd bool) (Cgroup, error) {
 	return cg, nil
 }
 
+// InstallSubcontainerCompatDir creates the host-side cgroup directory for a
+// subcontainer so cAdvisor (and other inotify-based tools) can discover it,
+// populating the container_spec_* limit files from res when non-nil. The
+// directory is tracked by cg for removal at Uninstall.
+//
+// systemd v2 is routed through installCompatDir, which mkdirs directly instead
+// of registering a process-less transient unit. cgroupfs (v1 / non-systemd v2)
+// delegates to Install, which already creates the directory and writes the
+// same files. The compat cgroup is process-less, so these limits have no
+// accounting effect; runtime counters stay zero (see #13067).
+func InstallSubcontainerCompatDir(cg Cgroup, res *specs.LinuxResources) error {
+	if sd, ok := cg.(*cgroupSystemd); ok {
+		return sd.installCompatDir(res)
+	}
+	return cg.Install(res)
+}
+
 // CgroupJSON is a wrapper for Cgroup that can be encoded to JSON.
 type CgroupJSON struct {
 	Cgroup Cgroup
