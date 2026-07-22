@@ -366,13 +366,6 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		t.parent.children[t] = struct{}{}
 	}
 
-	// If InitialCgroups is not nil, the new task will be placed in the
-	// specified cgroups. Otherwise, if srcT is not nil, the new task will
-	// be placed in the srcT's cgroups. If neither is specified, the new task
-	// will be in the root cgroups.
-	t.EnterInitialV1Cgroups(srcT, cfg.InitialCgroups)
-	committed = true
-
 	if isFirstTask = tg.leader == nil; isFirstTask {
 		// New thread group.
 		tg.leader = t
@@ -409,6 +402,15 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 	t.p = cfg.Kernel.Platform.NewContext(t.AsyncContext())
 	t.mu.Unlock()
 	tg.signalHandlers.mu.Unlock()
+
+	// If InitialCgroups is not nil, the new task will be placed in the
+	// specified cgroups. Otherwise, if srcT is not nil, the new task will
+	// be placed in the srcT's cgroups. If neither is specified, the new task
+	// will be in the root cgroups.
+	// We must call this after releasing the signals mutex due to lock order
+	// reasons (cgroupfs.tasksMu -> tg.signalHandlers.mu).
+	t.EnterInitialV1Cgroups(srcT, cfg.InitialCgroups)
+	committed = true
 
 	if commitCgroupV2 != nil {
 		// We can call this only after releasing the signals mutex due to lock

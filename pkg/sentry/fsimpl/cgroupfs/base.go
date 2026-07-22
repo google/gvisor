@@ -16,6 +16,7 @@ package cgroupfs
 
 import (
 	"bytes"
+	goContext "context"
 	"fmt"
 	"sort"
 	"strconv"
@@ -245,26 +246,62 @@ func (c *cgroupInode) tasks() []*kernel.Task {
 	return ts
 }
 
+func (c *cgroupInode) afterLoad(goContext.Context) {
+	c.fs.tasksMu.Lock()
+	var toFreeze []*kernel.Task
+	for _, ctl := range c.controllers {
+		if fc, ok := ctl.(*freezerController); ok {
+			fc.mu.Lock()
+			fc.cg = c
+			fc.mu.Unlock()
+			if fc.effectiveFrozenLocked() {
+				for t := range c.ts {
+					toFreeze = append(toFreeze, t)
+				}
+			}
+		}
+	}
+	c.fs.tasksMu.Unlock()
+
+	for _, t := range toFreeze {
+		t.BeginCgroupFreeze()
+	}
+}
+
 // Enter implements kernel.CgroupImpl.Enter.
 func (c *cgroupInode) Enter(t *kernel.Task) {
 	c.fs.tasksMu.Lock()
-	defer c.fs.tasksMu.Unlock()
-
 	c.ts[t] = struct{}{}
+	var freeze bool
 	for _, ctl := range c.controllers {
 		ctl.Enter(t)
+		if fc, ok := ctl.(*freezerController); ok && fc.effectiveFrozenLocked() {
+			freeze = true
+		}
+	}
+	c.fs.tasksMu.Unlock()
+
+	if freeze {
+		t.BeginCgroupFreeze()
 	}
 }
 
 // Leave implements kernel.CgroupImpl.Leave.
 func (c *cgroupInode) Leave(t *kernel.Task) {
 	c.fs.tasksMu.Lock()
-	defer c.fs.tasksMu.Unlock()
-
+	var thaw bool
 	for _, ctl := range c.controllers {
 		ctl.Leave(t)
+		if fc, ok := ctl.(*freezerController); ok && fc.effectiveFrozenLocked() {
+			thaw = true
+		}
 	}
 	delete(c.ts, t)
+	c.fs.tasksMu.Unlock()
+
+	if thaw {
+		t.EndCgroupFreeze()
+	}
 }
 
 // PrepareMigrate implements kernel.CgroupImpl.PrepareMigrate.
@@ -290,15 +327,34 @@ func (c *cgroupInode) PrepareMigrate(t *kernel.Task, src *kernel.Cgroup) error {
 // CommitMigrate implements kernel.CgroupImpl.CommitMigrate.
 func (c *cgroupInode) CommitMigrate(t *kernel.Task, src *kernel.Cgroup) {
 	c.fs.tasksMu.Lock()
-	defer c.fs.tasksMu.Unlock()
 
+	var freeze, thaw bool
 	for srcType, srcCtl := range src.CgroupImpl.(*cgroupInode).controllers {
-		c.controllers[srcType].CommitMigrate(t, srcCtl)
+		ctl := c.controllers[srcType]
+		ctl.CommitMigrate(t, srcCtl)
+		if fc, ok := ctl.(*freezerController); ok {
+			if srcFC, okSrc := srcCtl.(*freezerController); okSrc {
+				srcFrozen := srcFC.effectiveFrozenLocked()
+				dstFrozen := fc.effectiveFrozenLocked()
+				if srcFrozen && !dstFrozen {
+					thaw = true
+				} else if !srcFrozen && dstFrozen {
+					freeze = true
+				}
+			}
+		}
 	}
 
 	srcI := src.CgroupImpl.(*cgroupInode)
 	delete(srcI.ts, t)
 	c.ts[t] = struct{}{}
+	c.fs.tasksMu.Unlock()
+
+	if thaw {
+		t.EndCgroupFreeze()
+	} else if freeze {
+		t.BeginCgroupFreeze()
+	}
 }
 
 // AbortMigrate implements kernel.CgroupImpl.AbortMigrate.
