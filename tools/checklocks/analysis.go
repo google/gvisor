@@ -727,7 +727,11 @@ func (pc *passContext) checkInstruction(inst ssa.Instruction, lff *lockFunctionF
 
 // checkBasicBlock traverses the control flow graph starting at a set of given
 // block and checks each instruction for allowed operations.
-func (pc *passContext) checkBasicBlock(fn *ssa.Function, block *ssa.BasicBlock, lff *lockFunctionFacts, parent *lockState, seen map[*ssa.BasicBlock]*lockState, rg map[*ssa.BasicBlock]struct{}) *lockState {
+//
+// entry is the lock state at function entry for inline analyses (anonymous
+// functions and closures, which inherit the caller's lock state); it is nil
+// when a function is analyzed on its own.
+func (pc *passContext) checkBasicBlock(fn *ssa.Function, block *ssa.BasicBlock, lff *lockFunctionFacts, parent *lockState, seen map[*ssa.BasicBlock]*lockState, rg map[*ssa.BasicBlock]struct{}, entry *lockState) *lockState {
 	// Check for cached results from entering this block from a *different*
 	// execution path. Note that this is not the same path, which is
 	// checked with the recursion guard below.
@@ -789,8 +793,19 @@ func (pc *passContext) checkBasicBlock(fn *ssa.Function, block *ssa.BasicBlock, 
 				}
 			}
 			// Check for other locks, but only if the above didn't trip.
-			if !failed && rls.count() != len(lff.HeldOnExit) && !lff.Ignore {
-				pc.maybeFail(rv.Pos(), "return with unexpected locks held (locks: %s)", rls.String())
+			if !failed && !lff.Ignore {
+				if entry != nil {
+					// This is an inline analysis, which inherits the
+					// caller's lock state: locks held on entry may
+					// legitimately still be held on return (they belong
+					// to the caller). Flag only locks acquired within
+					// this function and never released.
+					if !rls.isSubset(entry) {
+						pc.maybeFail(rv.Pos(), "return with unexpected locks held (locks: %s)", rls.String())
+					}
+				} else if rls.count() != len(lff.HeldOnExit) {
+					pc.maybeFail(rv.Pos(), "return with unexpected locks held (locks: %s)", rls.String())
+				}
 			}
 		}
 	}
@@ -802,7 +817,7 @@ func (pc *passContext) checkBasicBlock(fn *ssa.Function, block *ssa.BasicBlock, 
 		// above. Note that checkBasicBlock will recursively analyze
 		// the lock state to ensure that Releases and Acquires are
 		// respected.
-		if pls := pc.checkBasicBlock(fn, succ, lff, ls, seen, rg); pls != nil {
+		if pls := pc.checkBasicBlock(fn, succ, lff, ls, seen, rg, entry); pls != nil {
 			if rls != nil && !rls.isCompatible(pls) {
 				if _, ok := pc.forced[pc.positionKey(fn.Pos())]; !ok && !lff.Ignore {
 					pc.maybeFail(fn.Pos(), "incompatible return states (first: %s, second: %s)", rls.String(), pls.String())
@@ -870,13 +885,20 @@ func (pc *passContext) checkFunction(call callCommon, fn *ssa.Function, lff *loc
 
 	// Scan the blocks.
 	seen := make(map[*ssa.BasicBlock]*lockState)
+	var entry *lockState
+	if parent != nil {
+		// Snapshot the entry state for inline analyses; see
+		// checkBasicBlock. The fork ensures copy-on-write semantics
+		// for any subsequent modifications.
+		entry = ls.fork()
+	}
 	if len(fn.Blocks) > 0 {
-		pc.checkBasicBlock(fn, fn.Blocks[0], lff, ls, seen, nil)
+		pc.checkBasicBlock(fn, fn.Blocks[0], lff, ls, seen, nil, entry)
 	}
 
 	// Scan the recover block.
 	if fn.Recover != nil {
-		pc.checkBasicBlock(fn, fn.Recover, lff, ls, seen, nil)
+		pc.checkBasicBlock(fn, fn.Recover, lff, ls, seen, nil, entry)
 	}
 
 	// Update all lock state accordingly. This will be called only if we
