@@ -181,6 +181,7 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		if err != nil {
 			return nil, err
 		}
+		srcCgroupNS := srcT.CgroupNamespace()
 		// We must lock the cgroup2 tree down to avoid racing with another
 		// thread that might destroy the destination cgroup. Note that we
 		// only lock this after we have extracted the destination cgroup to
@@ -194,7 +195,7 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 			// committing the entry of the new task into the cgroup.
 			srcT.k.Cgroup2FS().RUnlockTree()
 		})
-		if err := c.CanCloneInto(ctx, srcT.Credentials()); err != nil {
+		if err := c.CanCloneInto(ctx, srcT.Credentials(), srcCgroupNS); err != nil {
 			return nil, err
 		}
 		cgroup2 = c
