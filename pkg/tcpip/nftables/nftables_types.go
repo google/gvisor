@@ -1067,6 +1067,10 @@ type nftSetElem struct {
 	// userData represents the user data that can be associated with the element.
 	// It's only for the user to see and has no affect on the set element.
 	userData []byte
+	// intervalEnd reports whether this element is an interval-end marker
+	// (NFT_SET_ELEM_INTERVAL_END), i.e. the exclusive upper bound of an
+	// interval in an interval set.
+	intervalEnd bool
 }
 
 // AFtoNetlinkAF converts a generic address family to a netfilter address family.
@@ -1287,13 +1291,14 @@ func deepCopyChain(chain *Chain, tableCopy *Table) *Chain {
 
 func deepCopySetElement(elem *nftSetElem) *nftSetElem {
 	elemCopy := &nftSetElem{
-		startKey:   slices.Clone(elem.startKey),
-		endKey:     slices.Clone(elem.endKey),
-		data:       elem.data,
-		timeout:    elem.timeout,
-		expiration: elem.expiration,
-		ops:        make([]operation, 0, len(elem.ops)),
-		userData:   slices.Clone(elem.userData),
+		startKey:    slices.Clone(elem.startKey),
+		endKey:      slices.Clone(elem.endKey),
+		intervalEnd: elem.intervalEnd,
+		data:        elem.data,
+		timeout:     elem.timeout,
+		expiration:  elem.expiration,
+		ops:         make([]operation, 0, len(elem.ops)),
+		userData:    slices.Clone(elem.userData),
 	}
 	elemCopy.data.data = slices.Clone(elem.data.data)
 	for _, op := range elem.ops {
