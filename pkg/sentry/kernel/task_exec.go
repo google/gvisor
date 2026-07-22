@@ -65,13 +65,9 @@ package kernel
 // """
 
 import (
-	"crypto/sha256"
-	"io"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
-	"gvisor.dev/gvisor/pkg/log"
 	overlay "gvisor.dev/gvisor/pkg/sentry/fsimpl/overlay"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/loader"
@@ -79,7 +75,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserr"
-	"gvisor.dev/gvisor/pkg/usermem"
 
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 )
@@ -509,25 +504,19 @@ func execveSeccheckInfo(t *Task, argv, env []string, executable *vfs.FileDescrip
 			}
 		}
 
-		if fields.Local.Contains(seccheck.FieldSentryExecveBinarySha256) {
-			hash := sha256.New()
-			buf := make([]byte, 1024*1024) // Read 1MB at a time.
-			dest := usermem.BytesIOSequence(buf)
-			offset := int64(0)
-
-			for {
-				if read, err := executable.PRead(t, dest, offset, vfs.ReadOptions{}); err == nil {
-					hash.Write(buf[0:read])
-					offset += read
-
-				} else if err == io.EOF {
-					hash.Write(buf[0:read])
-					info.BinarySha256 = hash.Sum(nil)
-					break
-
-				} else {
-					log.Warningf("Failed to read executable for SHA-256 hash: %v", err)
-					break
+		if fields.Local.Contains(seccheck.FieldSentryExecveBinarySHA256) || fields.Local.Contains(seccheck.FieldSentryExecveBinarySHA1) {
+			// Note: The current implementation only supports a single global ("Default")
+			// seccheck session. This is why we pull the cache directly from seccheck.Global.
+			if cache := seccheck.Global.ExecveHashCache(); cache != nil {
+				opts := cache.Opts()
+				if opts.SHA256 || opts.SHA1 {
+					hashes := resolveBinaryHashes(t, executable, cache)
+					if opts.SHA256 {
+						info.BinarySha256 = hashes.SHA256
+					}
+					if opts.SHA1 {
+						info.BinarySha1 = hashes.SHA1
+					}
 				}
 			}
 		}

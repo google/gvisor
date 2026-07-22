@@ -267,6 +267,7 @@ go_library(
         "fd_table_mutex.go",
         "fd_table_refs.go",
         "fd_table_unsafe.go",
+        "file_hash.go",
         "fs_context.go",
         "fs_context_mutex.go",
         "fs_context_refs.go",

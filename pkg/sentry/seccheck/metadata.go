@@ -64,9 +64,13 @@ const (
 	// about the binary being executed.
 	FieldSentryExecveBinaryInfo Field = iota
 
-	// FieldSentryExecveBinarySha256 is an optional field to collect the SHA-256
+	// FieldSentryExecveBinarySHA256 is an optional field to collect the SHA-256
 	// hash of the binary being executed.
-	FieldSentryExecveBinarySha256
+	FieldSentryExecveBinarySHA256
+
+	// FieldSentryExecveBinarySHA1 is an optional field to collect the SHA-1
+	// hash of the binary being executed.
+	FieldSentryExecveBinarySHA1
 
 	// FieldSentryExecveFdInfo is an optional field to collect information
 	// about standard file descriptors (stdin, stdout, stderr).
@@ -260,8 +264,12 @@ func genericInit() {
 				Name: "binary_info",
 			},
 			{
-				ID:   FieldSentryExecveBinarySha256,
+				ID:   FieldSentryExecveBinarySHA256,
 				Name: "binary_sha256",
+			},
+			{
+				ID:   FieldSentryExecveBinarySHA1,
+				Name: "binary_sha1",
 			},
 			{
 				ID:   FieldSentryExecveFdInfo,

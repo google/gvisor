@@ -62,6 +62,9 @@ message ExecveInfo {
   // likely to be extremely slow.
   bytes binary_sha256 = 8;
 
+  // BinarySha1 is the SHA-1 hash of the executable binary file.
+  bytes binary_sha1 = 16;
+
   // BinaryOverlayfsUpper indicates whether the executable binary is on the
   // upper layer of the overlay filesystem.
   //
