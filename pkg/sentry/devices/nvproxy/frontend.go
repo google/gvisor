@@ -772,18 +772,35 @@ func rmControl(fi *frontendIoctlState) (uintptr, error) {
 		// Processor (GSP). Consequently, its parameters cannot reasonably
 		// contain application pointers, and the control is in any case
 		// undocumented.
+		//
+		// These controls are forwarded as opaque bytes (up to 1 MB) to the
+		// host NVIDIA driver without content validation, expanding the host
+		// kernel attack surface that a sandboxed workload can reach. Because
+		// the user-mode NVIDIA driver may still emit GSP legacy controls on
+		// some driver versions (e.g. 525), this audit log preserves
+		// compatibility while giving operators visibility — a future change
+		// can switch to outright rejection or allowlisting of specific
+		// commands once the real-world set is observed.
+		//
 		// See
 		// src/nvidia/src/kernel/rmapi/entry_points.c:_nv04ControlWithSecInfo()
 		// =>
 		// src/nvidia/interface/deprecated/rmapi_deprecated_control.c:RmDeprecatedGetControlHandler()
 		// =>
 		// src/nvidia/interface/deprecated/rmapi_gss_legacy_control.c:RmGssLegacyRpcCmd().
+		fi.ctx.Warningf("nvproxy: forwarding opaque GSP legacy control command %#x (paramsSize=%d)", ioctlParams.Cmd, ioctlParams.ParamsSize)
 		return rmControlSimple(fi, &ioctlParams)
 	}
 	if (ioctlParams.Cmd>>16)&0xffff == nvgpu.NV2081_BINAPI {
 		// NV2081_BINAPI forwards all control commands to the GSP in
 		// src/nvidia/src/kernel/rmapi/binary_api.c:binapiControl_IMPL().
 		// Consequently, its parameters cannot reasonably contain pointers.
+		//
+		// Like GSP legacy controls, these forward up to 1 MB of opaque bytes
+		// to the host NVIDIA driver. Audit-log the forwarding so operators
+		// can observe the real-world surface in their fleet before
+		// considering tighter handling (allowlist or rejection).
+		fi.ctx.Warningf("nvproxy: forwarding opaque NV2081_BINAPI control command %#x (paramsSize=%d)", ioctlParams.Cmd, ioctlParams.ParamsSize)
 		return rmControlSimple(fi, &ioctlParams)
 	}
 	// Implementors:
