@@ -348,3 +348,151 @@ func TestProc(t *testing.T) {
 		})
 	}
 }
+
+func TestNamespaces(t *testing.T) {
+	if err := testutil.ConfigureExePath(); err != nil {
+		t.Fatalf("failed to configure exe path: %v", err)
+	}
+
+	stop := testutil.StartReaper()
+	defer stop()
+
+	rootDir := t.TempDir()
+
+	tests := []struct {
+		name       string
+		bwrapArgs  []string
+		wantOutput string
+	}{
+		{
+			name: "UnshareAll",
+			bwrapArgs: []string{
+				"--unshare-all",
+				"--ro-bind", "/", "/",
+				"--",
+				"/usr/bin/id", "-u",
+			},
+			wantOutput: fmt.Sprintf("%d", os.Getuid()),
+		},
+		{
+			name: "UnshareCgroup",
+			bwrapArgs: []string{
+				"--unshare-cgroup",
+				"--ro-bind", "/", "/",
+				"--",
+				"/usr/bin/id", "-u",
+			},
+			wantOutput: fmt.Sprintf("%d", os.Getuid()),
+		},
+		{
+			name: "ShareNetOverride",
+			bwrapArgs: []string{
+				"--unshare-net",
+				"--share-net",
+				"--ro-bind", "/", "/",
+				"--",
+				"/bin/echo", "network-shared",
+			},
+			wantOutput: "network-shared",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			runRootDir := filepath.Join(rootDir, tc.name)
+			if err := os.MkdirAll(runRootDir, 0755); err != nil {
+				t.Fatalf("creating root dir: %v", err)
+			}
+
+			args := append([]string{
+				"--root", runRootDir,
+				"bwrap",
+			}, tc.bwrapArgs...)
+
+			cmd := exec.Command(specutils.ExePath, args...)
+
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			if err := cmd.Run(); err != nil {
+				t.Fatalf("runsc bwrap failed: %v\nStderr: %s", err, stderr.String())
+			}
+
+			output := strings.TrimSpace(stdout.String())
+			if tc.wantOutput != "" && !strings.Contains(output, tc.wantOutput) {
+				t.Errorf("output = %q, want it to contain %q", output, tc.wantOutput)
+			}
+		})
+	}
+}
+
+func TestCapabilities(t *testing.T) {
+	if err := testutil.ConfigureExePath(); err != nil {
+		t.Fatalf("failed to configure exe path: %v", err)
+	}
+
+	stop := testutil.StartReaper()
+	defer stop()
+
+	rootDir := t.TempDir()
+
+	tests := []struct {
+		name       string
+		bwrapArgs  []string
+		wantOutput string
+	}{
+		{
+			name: "CapDropAll",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--cap-drop", "ALL",
+				"--",
+				"/bin/cat", "/proc/self/status",
+			},
+			// All bits zeroed out after dropping ALL capabilities.
+			wantOutput: "CapEff:\t0000000000000000",
+		},
+		{
+			name: "CapDropAllAndAddNetAdmin",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--cap-drop", "ALL",
+				"--cap-add", "NET_ADMIN",
+				"--",
+				"/bin/cat", "/proc/self/status",
+			},
+			// CAP_NET_ADMIN is bit 12 (1 << 12 = 0x1000).
+			wantOutput: "CapEff:\t0000000000001000",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			runRootDir := filepath.Join(rootDir, tc.name)
+			if err := os.MkdirAll(runRootDir, 0755); err != nil {
+				t.Fatalf("creating root dir: %v", err)
+			}
+
+			args := append([]string{
+				"--root", runRootDir,
+				"bwrap",
+			}, tc.bwrapArgs...)
+
+			cmd := exec.Command(specutils.ExePath, args...)
+
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			if err := cmd.Run(); err != nil {
+				t.Fatalf("runsc bwrap failed: %v\nStderr: %s", err, stderr.String())
+			}
+
+			output := strings.TrimSpace(stdout.String())
+			if tc.wantOutput != "" && !strings.Contains(output, tc.wantOutput) {
+				t.Errorf("output missing expected capability mask:\ngot:\n%s\nwant to contain: %q", output, tc.wantOutput)
+			}
+		})
+	}
+}

@@ -370,6 +370,50 @@ func TestParseFlags(t *testing.T) {
 			},
 		},
 		{
+			name: "UnshareCgroup",
+			args: []string{"--unshare-cgroup", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:  os.Environ(),
+				UID:  -1,
+				GID:  -1,
+				Args: []string{"bash"},
+			},
+		},
+		{
+			name: "UnshareNet",
+			args: []string{"--unshare-net", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:        os.Environ(),
+				UID:        -1,
+				GID:        -1,
+				UnshareNet: true,
+				Args:       []string{"bash"},
+			},
+		},
+		{
+			name: "ShareNet",
+			args: []string{"--unshare-net", "--share-net", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:        os.Environ(),
+				UID:        -1,
+				GID:        -1,
+				UnshareNet: false,
+				Args:       []string{"bash"},
+			},
+		},
+		{
+			name: "UnshareAll",
+			args: []string{"--unshare-all", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:         os.Environ(),
+				UID:         -1,
+				GID:         -1,
+				UnshareUser: true,
+				UnshareNet:  true,
+				Args:        []string{"bash"},
+			},
+		},
+		{
 			name: "ValidHostname",
 			args: []string{"--hostname", "test-host", "bash"},
 			wantCfg: &bwrapConfig{
@@ -424,6 +468,43 @@ func TestParseFlags(t *testing.T) {
 					{Type: "proc", Dst: "/proc2"},
 				},
 			},
+		},
+		{
+			name: "CapDrop",
+			args: []string{"--cap-drop", "all", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:  os.Environ(),
+				UID:  -1,
+				GID:  -1,
+				Args: []string{"bash"},
+				CapOps: []*CapOp{
+					{Type: CapOpDrop, Cap: "all"},
+				},
+			},
+		},
+		{
+			name: "CapAddAndDrop",
+			args: []string{"--cap-drop", "all", "--cap-add", "net_admin", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:  os.Environ(),
+				UID:  -1,
+				GID:  -1,
+				Args: []string{"bash"},
+				CapOps: []*CapOp{
+					{Type: CapOpDrop, Cap: "all"},
+					{Type: CapOpAdd, Cap: "net_admin"},
+				},
+			},
+		},
+		{
+			name:        "MissingCapAddArg",
+			args:        []string{"--cap-add"},
+			errContains: "--cap-add takes 1 argument",
+		},
+		{
+			name:        "MissingCapDropArg",
+			args:        []string{"--cap-drop"},
+			errContains: "--cap-drop takes 1 argument",
 		},
 	}
 
