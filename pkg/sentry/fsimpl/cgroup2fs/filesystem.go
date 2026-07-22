@@ -47,22 +47,32 @@ func (FilesystemType) Release(ctx context.Context) {}
 
 // GetFilesystem implements vfs.FilesystemType.GetFilesystem.
 func (ft FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
+	nsDelegate := false
 	mopts := vfs.GenericParseMountOptions(opts.Data)
 	for k := range mopts {
 		switch k {
 		case "nsdelegate":
-			// TODO (b/513700867): Actually implement instead of silently ignoring.
+			nsDelegate = true
 		default:
 			ctx.Debugf("cgroup2fs.FilesystemType.GetFilesystem: unknown option: %s", k)
 			return nil, nil, linuxerr.EINVAL
 		}
 	}
 
-	fs := kernel.KernelFromContext(ctx).Cgroup2FS().(*filesystem)
+	k := kernel.KernelFromContext(ctx)
+	fs := k.Cgroup2FS().(*filesystem)
 	rootD, err := fs.mountRoot(ctx, vfsObj)
 	if err != nil {
 		return nil, nil, err
 	}
+
+	// "nsdelegate" is system wide: every mount from the init cgroup namespace
+	// sets or clears it, and it is ignored on non-init namespace mounts.
+	// A failed mount must not change the flag, hence the store is ordered after mountRoot().
+	if t := kernel.TaskFromContext(ctx); t == nil || t.CgroupNamespace() == nil || t.CgroupNamespace() == k.RootCgroupNamespace() {
+		fs.nsDelegate.Store(nsDelegate)
+	}
+
 	fs.mounted.Store(1)
 	vfsfs := fs.VFSFilesystem()
 	vfsfs.IncRef()
@@ -166,6 +176,11 @@ type filesystem struct {
 	// mounted tracks whether the filesystem has been mounted/initialized.
 	mounted atomicbitops.Uint32
 
+	// nsDelegate tracks whether cgroup namespaces are delegation boundaries.
+	// It is system wide, and may only be changed by mounts from the init
+	// cgroup namespace.
+	nsDelegate atomicbitops.Bool
+
 	// nextMemCgroupID is used to allocate unique IDs to memory controllers.
 	nextMemCgroupID atomicbitops.Uint32
 
@@ -195,6 +210,9 @@ func (fs *filesystem) Release(ctx context.Context) {
 
 // MountOptions implements vfs.FilesystemImpl.MountOptions.
 func (fs *filesystem) MountOptions() string {
+	if fs.nsDelegate.Load() {
+		return "nsdelegate"
+	}
 	return ""
 }
 

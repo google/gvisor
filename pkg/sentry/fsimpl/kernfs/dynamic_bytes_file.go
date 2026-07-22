@@ -152,8 +152,16 @@ type DynamicBytesFD struct {
 
 // Init initializes a DynamicBytesFD.
 func (fd *DynamicBytesFD) Init(m *vfs.Mount, d *Dentry, data vfs.DynamicBytesSource, locks *vfs.FileLocks, flags uint32, creds *auth.Credentials) error {
+	return fd.InitWithImpl(fd, m, d, data, locks, flags, creds)
+}
+
+// InitWithImpl initializes a DynamicBytesFD, registering impl as the
+// vfs.FileDescriptionImpl. Use it when embedding DynamicBytesFD in another
+// file description implementation: pass the outer implementation so that its
+// method overrides are honored.
+func (fd *DynamicBytesFD) InitWithImpl(impl vfs.FileDescriptionImpl, m *vfs.Mount, d *Dentry, data vfs.DynamicBytesSource, locks *vfs.FileLocks, flags uint32, creds *auth.Credentials) error {
 	fd.LockFD.Init(locks)
-	if err := fd.vfsfd.Init(fd, flags, creds, m, d.VFSDentry(),
+	if err := fd.vfsfd.Init(impl, flags, creds, m, d.VFSDentry(),
 		&vfs.FileDescriptionOptions{
 			DenySpliceIn: true,
 		},
@@ -163,6 +171,12 @@ func (fd *DynamicBytesFD) Init(m *vfs.Mount, d *Dentry, data vfs.DynamicBytesSou
 	fd.inode = d.inode
 	fd.DynamicBytesFileDescriptionImpl.Init(&fd.vfsfd, data)
 	return nil
+}
+
+// VFSFileDescription returns a pointer to the vfs.FileDescription
+// representing this object.
+func (fd *DynamicBytesFD) VFSFileDescription() *vfs.FileDescription {
+	return &fd.vfsfd
 }
 
 // Seek implements vfs.FileDescriptionImpl.Seek.
