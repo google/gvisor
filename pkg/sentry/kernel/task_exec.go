@@ -480,7 +480,7 @@ func execveSeccheckInfo(t *Task, argv, env []string, executable *vfs.FileDescrip
 			info.BinaryOverlayfsUpper = overlay.IsCopiedUp(executable.Dentry())
 			info.BinaryOverlayfsLower = overlay.IsOnLower(executable.Dentry())
 			statOpts := vfs.StatOptions{
-				Mask: linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | linux.STATX_INO | linux.STATX_CTIME,
+				Mask: linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | linux.STATX_INO | linux.STATX_CTIME | linux.STATX_SIZE | linux.STATX_NLINK,
 			}
 			if stat, err := executable.Stat(t, statOpts); err == nil {
 				if stat.Mask&(linux.STATX_TYPE|linux.STATX_MODE) == (linux.STATX_TYPE | linux.STATX_MODE) {
@@ -500,6 +500,12 @@ func execveSeccheckInfo(t *Task, argv, env []string, executable *vfs.FileDescrip
 						Sec:  stat.Ctime.Sec,
 						Nsec: int64(stat.Ctime.Nsec),
 					}
+				}
+				if stat.Mask&linux.STATX_SIZE != 0 {
+					info.BinarySize = int64(stat.Size)
+				}
+				if stat.Mask&linux.STATX_NLINK != 0 {
+					info.BinaryNlink = stat.Nlink
 				}
 			}
 		}
