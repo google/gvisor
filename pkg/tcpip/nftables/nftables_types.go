@@ -796,6 +796,8 @@ const (
 	OpTypeCT
 	// OpTypeMasq is the masquerade operation type.
 	OpTypeMasq
+	// OpTypeRedir is the redirect operation type.
+	OpTypeRedir
 	// OpTypeUnknown is the unknown operation type.
 	OpTypeUnknown
 )
@@ -816,6 +818,7 @@ var opTypeStrings = []string{
 	OpTypeFIB:        "fib",
 	OpTypeCT:         "ct",
 	OpTypeMasq:       "masq",
+	OpTypeRedir:      "redir",
 	OpTypeUnknown:    "unknown",
 }
 

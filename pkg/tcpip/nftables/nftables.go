@@ -1416,13 +1416,17 @@ func (r *Rule) AddOpFromExprInfo(nf *NFTables, tab *Table, exprInfo ExprInfo) *s
 		if op, err = initMasqOp(tab, exprInfo); err != nil {
 			return err
 		}
+	case OpTypeRedir:
+		if op, err = initRedirOp(tab, exprInfo); err != nil {
+			return err
+		}
 
 	default:
 		return syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("Nftables: Unknown expression type not found: %s", exprInfo.ExprName))
 	}
 
-	if exprOpType == OpTypeCT || exprOpType == OpTypeNAT || exprOpType == OpTypeMasq {
-		// NAT and Masq operations require connection tracking.
+	if exprOpType == OpTypeCT || exprOpType == OpTypeNAT || exprOpType == OpTypeMasq || exprOpType == OpTypeRedir {
+		// NAT, Masq and Redir operations require connection tracking.
 		nf.InitConnTrackOnce()
 	}
 
