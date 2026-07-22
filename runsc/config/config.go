@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -180,6 +181,10 @@ type Config struct {
 	// an indication that the container being created wishes that its metrics should be exported).
 	// The value of this flag must also match across the two command lines.
 	MetricServer string `flag:"metric-server"`
+
+	// SidecarReleaseEnforcementPolicy controls when spawned sidecar binaries
+	// must match `runsc`'s build label.
+	SidecarReleaseEnforcementPolicy SidecarPolicy `flag:"sidecar-release-enforcement-policy"`
 
 	// FinalMetricsLog is the file to which all metric data should be written
 	// upon sandbox termination.
@@ -1208,6 +1213,57 @@ func (p HostSettingsPolicy) String() string {
 	default:
 		panic(fmt.Sprintf("Invalid host settings policy %d", p))
 	}
+}
+
+// SidecarPolicy controls when a sidecar-related action applies.
+type SidecarPolicy string
+
+// SidecarPolicy values.
+const (
+	SidecarNever          SidecarPolicy = "NEVER"
+	SidecarAlways         SidecarPolicy = "ALWAYS"
+	SidecarIfReleaseBuild SidecarPolicy = "IF_RELEASE_BUILD"
+)
+
+// Set implements flag.Value. Set(String()) should be idempotent.
+func (p *SidecarPolicy) Set(v string) error {
+	sp := SidecarPolicy(strings.ToUpper(v))
+	switch sp {
+	case SidecarNever, SidecarAlways, SidecarIfReleaseBuild:
+		*p = sp
+		return nil
+	}
+	return fmt.Errorf("invalid value %q; must be %s, %s, or %s", v, SidecarNever, SidecarAlways, SidecarIfReleaseBuild)
+}
+
+// Ptr returns a pointer to `p`.
+// Useful in flag declaration line.
+func (p SidecarPolicy) Ptr() *SidecarPolicy {
+	return &p
+}
+
+// Get implements flag.Get.
+func (p *SidecarPolicy) Get() any {
+	return *p
+}
+
+// String implements flag.String.
+func (p SidecarPolicy) String() string {
+	return string(p)
+}
+
+// Applies returns whether the policy is in effect for this runsc build.
+func (p SidecarPolicy) Applies() bool {
+	return p == SidecarAlways || (p == SidecarIfReleaseBuild && IsReleaseVersion(version.Version()))
+}
+
+// releaseVersionRE matches the version strings of production release builds:
+// a `release-` or `g<lowercase>-` prefix, then the release date.
+var releaseVersionRE = regexp.MustCompile(`^(?:release|g[a-z]*)-\d{8}(?:\.\d+)?$`)
+
+// IsReleaseVersion returns whether ver is a tagged-release version string.
+func IsReleaseVersion(ver string) bool {
+	return releaseVersionRE.MatchString(ver)
 }
 
 // RestoreSpecValidationPolicy dictates how spec validation should be handled.

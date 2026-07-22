@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
+	"gvisor.dev/gvisor/runsc/gvisorbinaries"
 	"gvisor.dev/gvisor/runsc/metricserver"
 )
 
@@ -61,6 +62,7 @@ func main() {
 	subcommands.Register(&cmd{}, "metrics")
 	config.RegisterFlags(flag.CommandLine)
 	flag.Parse()
+	gvisorbinaries.VerifyMatchingRelease(&gvisorbinaries.MetricServer)
 	subcmdCode := subcommands.Execute(context.Background())
 	if subcmdCode == subcommands.ExitSuccess {
 		os.Exit(0)

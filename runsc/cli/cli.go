@@ -36,6 +36,7 @@ import (
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
+	"gvisor.dev/gvisor/runsc/gvisorbinaries"
 	"gvisor.dev/gvisor/runsc/specutils"
 	"gvisor.dev/gvisor/runsc/starttime"
 	"gvisor.dev/gvisor/runsc/version"
@@ -58,9 +59,12 @@ var (
 )
 
 // Run runs the binary, whose behavior is determined by the subcommand passed
-// on the command line. commands is a mapping of all top level runsc commands
-// to their command group name. helpTopics is a list of additional help topics.
-func Run(commands map[util.SubCommand]string, helpTopics []subcommands.Command) {
+// on the command line.
+// `sidecar` is the calling sidecar binary, or `nil` when called by `runsc`.
+// `commands` is a mapping of all top-level commands to their command group
+// name.
+// `helpTopics` is a list of additional help topics.
+func Run(sidecar *gvisorbinaries.Binary, commands map[util.SubCommand]string, helpTopics []subcommands.Command) {
 	// Set the start time as soon as possible.
 	startTime := starttime.Get()
 
@@ -281,6 +285,8 @@ func Run(commands map[util.SubCommand]string, helpTopics []subcommands.Command) 
 		}
 	}
 	log.Infof(delimString)
+	gvisorbinaries.ReleaseEnforcementPolicy = conf.SidecarReleaseEnforcementPolicy
+	gvisorbinaries.VerifyMatchingRelease(sidecar)
 
 	if *coverageFD >= 0 {
 		f := os.NewFile(uintptr(*coverageFD), "coverage file")

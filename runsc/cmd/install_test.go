@@ -293,7 +293,11 @@ func TestReleaseTarballURL(t *testing.T) {
 	}{
 		{"release-20260706.0", "amd64", "https://storage.googleapis.com/gvisor/releases/release/20260706.0/x86_64/gvisor.tar.bz2"},
 		{"release-20260706", "arm64", "https://storage.googleapis.com/gvisor/releases/release/20260706/aarch64/gvisor.tar.bz2"},
+		{"gfoo-20260706.0", "amd64", "https://storage.googleapis.com/gvisor/releases/release/20260706.0/x86_64/gvisor.tar.bz2"},
 		{"release-20260706.0-14-gabcdef123456", "amd64", ""},
+		{"gfoo-20260706.0-14-gabcdef123456", "amd64", ""},
+		{"xfoo-20260706.0", "amd64", ""},
+		{"g1-20260706.0", "amd64", ""},
 		{"VERSION_MISSING", "amd64", ""},
 		{"release-20260706.0", "riscv64", ""},
 	} {
