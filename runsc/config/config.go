@@ -119,6 +119,10 @@ type Config struct {
 	// Network indicates what type of network to use.
 	Network NetworkType `flag:"network"`
 
+	// GoferNetworkNamespace controls the network namespace used by gofer
+	// processes. The default is a new, empty network namespace.
+	GoferNetworkNamespace GoferNetworkNamespace `flag:"gofer-network-namespace"`
+
 	// EnableRaw indicates whether raw sockets should be enabled. Raw
 	// sockets are disabled by stripping CAP_NET_RAW from the list of
 	// capabilities.
@@ -753,6 +757,45 @@ func (n NetworkType) String() string {
 		return "plugin"
 	}
 	panic(fmt.Sprintf("Invalid network type %d", n))
+}
+
+// GoferNetworkNamespace controls the network namespace used by gofer processes.
+type GoferNetworkNamespace string
+
+const (
+	// GoferNetworkNamespaceNew creates an empty network namespace for each gofer.
+	GoferNetworkNamespaceNew GoferNetworkNamespace = "new"
+
+	// GoferNetworkNamespaceHost runs gofers in runsc's current network namespace.
+	GoferNetworkNamespaceHost GoferNetworkNamespace = "host"
+)
+
+func goferNetworkNamespacePtr(v GoferNetworkNamespace) *GoferNetworkNamespace {
+	return &v
+}
+
+// Set implements flag.Value. Set(String()) should be idempotent.
+func (n *GoferNetworkNamespace) Set(v string) error {
+	switch v {
+	case string(GoferNetworkNamespaceHost), string(GoferNetworkNamespaceNew):
+		*n = GoferNetworkNamespace(v)
+	default:
+		if !filepath.IsAbs(v) {
+			return fmt.Errorf("invalid gofer network namespace %q; must be new, host, or an absolute path", v)
+		}
+		*n = GoferNetworkNamespace(v)
+	}
+	return nil
+}
+
+// Get implements flag.Value.
+func (n *GoferNetworkNamespace) Get() any {
+	return *n
+}
+
+// String implements flag.Value.
+func (n GoferNetworkNamespace) String() string {
+	return string(n)
 }
 
 // QueueingDiscipline is used to specify the kind of Queueing Discipline to

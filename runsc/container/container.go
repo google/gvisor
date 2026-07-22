@@ -1558,9 +1558,11 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 	nss := []specs.LinuxNamespace{
 		{Type: specs.IPCNamespace},
 		{Type: specs.MountNamespace},
-		{Type: specs.NetworkNamespace},
 		{Type: specs.PIDNamespace},
 		{Type: specs.UTSNamespace},
+	}
+	if ns, ok := goferNetworkNamespace(conf.GoferNetworkNamespace); ok {
+		nss = append(nss, ns)
 	}
 
 	rootlessEUID := unix.Geteuid() != 0
@@ -1650,6 +1652,20 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 	}
 
 	return sandEnds, goferFilestores, devSandEnd, mountsSand, nil
+}
+
+func goferNetworkNamespace(namespace config.GoferNetworkNamespace) (specs.LinuxNamespace, bool) {
+	switch namespace {
+	case config.GoferNetworkNamespaceNew:
+		return specs.LinuxNamespace{Type: specs.NetworkNamespace}, true
+	case config.GoferNetworkNamespaceHost:
+		return specs.LinuxNamespace{}, false
+	default:
+		return specs.LinuxNamespace{
+			Type: specs.NetworkNamespace,
+			Path: string(namespace),
+		}, true
+	}
 }
 
 // changeStatus transitions from one status to another ensuring that the
