@@ -4846,7 +4846,7 @@ func createRootfsEROFS(dir string) (string, string, error) {
 	// Handcraft the following mount points that the sentry mounts need, because EROFS
 	// does not support creating synthetic directories yet and we may not want to use
 	// overlay in some tests.
-	for _, dir := range []string{"dev", "proc", "sys", "tmp"} {
+	for _, dir := range []string{"data", "dev", "proc", "sys", "tmp"} {
 		if err := os.Mkdir(filepath.Join(rootfsDir, dir), 0755); err != nil {
 			return "", "", fmt.Errorf("os.Mkdir() failed: %v", err)
 		}
@@ -4907,6 +4907,17 @@ func TestRootfsEROFS(t *testing.T) {
 				Type:        "bind",
 				Destination: "/tmp",
 				Source:      mountDir,
+			},
+		},
+
+		// Case 3: EROFS rootfs with an EROFS backed config mount. This stays
+		// in goferless mode and requires donating both EROFS image FDs.
+		{
+			{
+				Type:        erofs.Name,
+				Destination: "/data",
+				Source:      rootfsImage,
+				Options:     []string{"ro"},
 			},
 		},
 	} {
