@@ -97,6 +97,10 @@ message ExecveInfo {
   // BinaryNlink is the number of hard links to the executable binary file.
   uint32 binary_nlink = 19;
 
+  // BinaryInMemfd is true if the executable binary file is in a memfd
+  // (anonymous shmem/tmpfs file created via memfd_create).
+  bool binary_in_memfd = 20;
+
   // Standard input, output, and error file descriptor info.
   gvisor.common.FdInfo stdin = 12;
   gvisor.common.FdInfo stdout = 13;
