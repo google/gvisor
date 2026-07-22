@@ -19,12 +19,14 @@ import (
 	"math"
 	"slices"
 	"sort"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -470,8 +472,10 @@ func (nf *NFTables) NewSet(attrs map[uint16]nlmsg.BytesView, family stack.Addres
 		newSet.backend = nf.newSetMapBackend(int(keyLen), int(dataLen))
 	case setFlags&linux.NFT_SET_INTERVAL != 0:
 		newSet.backend = nf.newSetIntervalBackend(int(keyLen))
+	case setFlags&linux.NFT_SET_TIMEOUT != 0:
+		newSet.backend = nf.newSetTimeoutBackend(int(keyLen))
 	default:
-		return syserr.NewAnnotatedError(syserr.ErrNotSupported, "only map and interval sets are supported yet")
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, "only map, interval and timeout sets are supported yet")
 	}
 	return nf.addSetToTable(tab, newSet)
 }
@@ -1524,5 +1528,96 @@ func incrementKey(key []byte) []byte {
 		}
 	}
 	return nil
+}
+
+// setTimeoutEntry is a member of a timeout set: an element index plus an
+// optional absolute expiry after which the element stops being a member.
+type setTimeoutEntry struct {
+	idx    int
+	expiry tcpip.MonotonicTime
+	hasExp bool
+}
+
+// setTimeoutBackend is a backend for timeout sets (NFT_SET_TIMEOUT): exact-match
+// membership with per-element expiry, as used by dynamically-populated allow
+// sets. Expiry is evaluated lazily on lookup against the stack clock.
+type setTimeoutBackend struct {
+	keyLen int
+	clock  tcpip.Clock
+	m      map[string]setTimeoutEntry
+}
+
+func (s *setTimeoutBackend) expired(e setTimeoutEntry) bool {
+	return e.hasExp && !s.clock.NowMonotonic().Before(e.expiry)
+}
+
+// Evaluate implements NftSetBackend.Evaluate.
+func (s *setTimeoutBackend) Evaluate(regs *registerSet, keyIdx int) int {
+	return s.Find(regs.data[keyIdx : keyIdx+s.keyLen])
+}
+
+// Find implements NftSetBackend.Find.
+func (s *setTimeoutBackend) Find(keyData []byte) int {
+	if len(keyData) != s.keyLen {
+		return -1
+	}
+	e, ok := s.m[string(keyData)]
+	if !ok || s.expired(e) {
+		return -1
+	}
+	return e.idx
+}
+
+// Add implements NftSetBackend.Add.
+func (s *setTimeoutBackend) Add(e *nftSetElem, idx int) (int, *syserr.AnnotatedError) {
+	if e == nil {
+		return -1, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "element is nil")
+	}
+	if len(e.startKey) != s.keyLen {
+		return -1, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "key length does not match set key length")
+	}
+	key := string(e.startKey)
+	if existing, ok := s.m[key]; ok && !s.expired(existing) {
+		return existing.idx, nil
+	}
+	entry := setTimeoutEntry{idx: idx}
+	if e.timeout != 0 {
+		// nft set-element timeouts are expressed in milliseconds.
+		entry.expiry = s.clock.NowMonotonic().Add(time.Duration(e.timeout) * time.Millisecond)
+		entry.hasExp = true
+	}
+	s.m[key] = entry
+	return idx, nil
+}
+
+// Remove implements NftSetBackend.Remove.
+func (s *setTimeoutBackend) Remove(e *nftSetElem) (int, *syserr.AnnotatedError) {
+	if e == nil {
+		return -1, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "element is nil")
+	}
+	key := string(e.startKey)
+	if existing, ok := s.m[key]; ok {
+		delete(s.m, key)
+		return existing.idx, nil
+	}
+	return -1, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "key not found")
+}
+
+// Clone implements NftSetBackend.Clone.
+func (s *setTimeoutBackend) Clone() NftSetBackend {
+	c := &setTimeoutBackend{
+		keyLen: s.keyLen,
+		clock:  s.clock,
+		m:      make(map[string]setTimeoutEntry, len(s.m)),
+	}
+	for k, v := range s.m {
+		c.m[k] = v
+	}
+	return c
+}
+
+// newSetTimeoutBackend creates a new timeout backend.
+func (nf *NFTables) newSetTimeoutBackend(keyLen int) *setTimeoutBackend {
+	return &setTimeoutBackend{keyLen: keyLen, clock: nf.clock, m: make(map[string]setTimeoutEntry)}
 }
 
