@@ -579,6 +579,21 @@ func loopbackLink(conf *config.Config, iface net.Interface, addrs []net.Addr, di
 	return link, nil
 }
 
+func isDefaultRoute(dst *net.IPNet) bool {
+	if dst == nil {
+		return true
+	}
+	if len(dst.Mask) == 0 {
+		return false
+	}
+	for _, b := range dst.Mask {
+		if b != 0 {
+			return false
+		}
+	}
+	return true
+}
+
 // routesForIface iterates over all routes for the given interface and converts
 // them to boot.Routes. It also returns the a default v4/v6 route if found.
 func routesForIface(iface net.Interface, disableIPv6 bool) ([]boot.Route, *boot.Route, *boot.Route, error) {
@@ -597,7 +612,7 @@ func routesForIface(iface net.Interface, disableIPv6 bool) ([]boot.Route, *boot.
 		mtu := uint32(r.MTU)
 
 		// Is it a default route?
-		if r.Dst == nil {
+		if isDefaultRoute(r.Dst) {
 			if r.Gw == nil {
 				return nil, nil, nil, fmt.Errorf("default route with no gateway %q: %+v", iface.Name, r)
 			}
