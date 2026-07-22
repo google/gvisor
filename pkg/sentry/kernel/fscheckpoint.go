@@ -49,8 +49,9 @@ type FSSaveOpts struct {
 	// FSSave returns, whether or not it returns a non-nil error.
 	ExitAfterSaving bool
 
-	// Path is the path inside the container to save. Empty defaults to `/`.
-	Path string
+	// Paths is the list of paths inside the containers to save.
+	// If empty, defaults to a single path "/" for all containers.
+	Paths []checkpoint.ResourceID
 }
 
 // FSSave collects a filesystem checkpoint as specified by the fscheckpoint
@@ -74,12 +75,14 @@ func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) error {
 			opts.PagesFile = nil
 		}
 	}()
-	if len(opts.Path) == 0 {
-		opts.Path = "/"
+	paths := opts.Paths
+	if len(paths) == 0 {
+		paths = []checkpoint.ResourceID{{Path: "/"}}
 	}
-	// saveAll indicates that all tmpfs filesystems with a ResourceID should be
-	// checkpointed, rather than only those mounted at opts.Path.
-	saveAll := opts.Path == fscheckpoint.AllTmpfsPath
+	pathsMap := make(map[checkpoint.ResourceID]struct{}, len(paths))
+	for _, p := range paths {
+		pathsMap[p] = struct{}{}
+	}
 
 	k.Pause()
 	defer k.Unpause()
@@ -144,39 +147,40 @@ func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) error {
 				continue
 			}
 			resourceID := mf.ResourceID()
-			if saveAll {
-				// Checkpoint every tmpfs filesystem that has a ResourceID, i.e.
-				// every tmpfs with a private (typically disk-backed)
-				// MemoryFile. This still excludes tmpfs filesystems backed by
-				// the main MemoryFile (which have no ResourceID), since we
-				// currently have no way to save only the contents of the main
-				// MemoryFile owned by a checkpointed filesystem, and don't want
-				// to save all application memory.
-				//
-				// TODO: NOLINT - Support checkpointing tmpfs filesystems backed
-				// by the main MemoryFile by implementing the ability to save a
-				// subset of a pgalloc.MemoryFile, and using it to save only the
-				// subset of each MemoryFile used by any checkpointed tmpfs
-				// filesystem. This would also avoid saving MemoryFile pages that
-				// are referenced by e.g. a previous MM.Pin() but no longer owned
-				// by a regularFile; in such cases, the holder of the extra
-				// reference won't be restored by filesystem checkpointing,
-				// causing the referenced pages to be leaked. (As of this
-				// writing, this leak is unlikely to be an issue in practice,
-				// since the primary user of MM.Pin() is nvproxy, and the Nvidia
-				// driver appears to reject pinning mappings of disk-backed
-				// files.)
-				if !resourceID.Ok() {
-					continue
-				}
-			} else if resourceID.Path != opts.Path {
-				// Only checkpoint tmpfs filesystems mounted at opts.Path. Note
-				// that ResourceID.Path does not include the container name, so
-				// this matches such filesystems across all containers (e.g. the
-				// default opts.Path of "/" matches every container's rootfs
-				// upper layer). This excludes tmpfs filesystems backed by the
-				// main MemoryFile (which have no ResourceID, so resourceID.Path
-				// is "") for the reasons described above.
+			// Exclude tmpfs filesystems backed by the main MemoryFile (which
+			// have no ResourceID) since we currently have no way to save only
+			// the contents of the main MemoryFile owned by a checkpointed
+			// filesystem, and don't want to save all application memory.
+			//
+			// TODO: NOLINT - Support checkpointing tmpfs filesystems backed
+			// by the main MemoryFile by implementing the ability to save a
+			// subset of a pgalloc.MemoryFile, and using it to save only the
+			// subset of each MemoryFile used by any checkpointed tmpfs
+			// filesystem. This would also avoid saving MemoryFile pages that
+			// are referenced by e.g. a previous MM.Pin() but no longer owned
+			// by a regularFile; in such cases, the holder of the extra
+			// reference won't be restored by filesystem checkpointing,
+			// causing the referenced pages to be leaked. (As of this
+			// writing, this leak is unlikely to be an issue in practice,
+			// since the primary user of MM.Pin() is nvproxy, and the Nvidia
+			// driver appears to reject pinning mappings of disk-backed
+			// files.)
+			if !resourceID.Ok() {
+				continue
+			}
+
+			matched := false
+			if _, ok := pathsMap[resourceID]; ok {
+				matched = true
+			} else if _, ok := pathsMap[checkpoint.ResourceID{Path: resourceID.Path}]; ok {
+				matched = true
+			} else if _, ok := pathsMap[checkpoint.ResourceID{ContainerName: resourceID.ContainerName, Path: fscheckpoint.AllTmpfsPath}]; ok {
+				matched = true
+			} else if _, ok := pathsMap[checkpoint.ResourceID{Path: fscheckpoint.AllTmpfsPath}]; ok {
+				matched = true
+			}
+
+			if !matched {
 				continue
 			}
 			if old, ok := resourceIDs[resourceID]; ok {

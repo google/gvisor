@@ -72,6 +72,7 @@ go_library(
         "//pkg/metric",
         "//pkg/prometheus",
         "//pkg/ring0",
+        "//pkg/sentry/checkpoint",
         "//pkg/sentry/control",
         "//pkg/sentry/devices/nvproxy/nvconf",
         "//pkg/sentry/hostmm",
