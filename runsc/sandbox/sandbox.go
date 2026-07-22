@@ -47,6 +47,7 @@ import (
 	"gvisor.dev/gvisor/pkg/hostos"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/prometheus"
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
@@ -1748,8 +1749,8 @@ type FSSaveOpts struct {
 	// provided for parity with that feature.
 	ExitAfterSaving bool
 
-	// Path is the path inside the container to save.
-	Path string
+	// Paths is the list of paths inside the containers to save.
+	Paths []checkpoint.ResourceID
 }
 
 // FSSave sends the filesystem checkpointing call to the sandbox.
@@ -1758,7 +1759,10 @@ func (s *Sandbox) FSSave(conf *config.Config, cid string, imagePath string, opts
 
 	args := boot.FSSaveArgs{
 		ExitAfterSaving: opts.ExitAfterSaving,
-		Path:            opts.Path,
+		Paths:           opts.Paths,
+	}
+	if len(opts.Paths) == 1 {
+		args.Path = opts.Paths[0].Path
 	}
 	defer func() {
 		for _, f := range args.FilePayload.Files {
