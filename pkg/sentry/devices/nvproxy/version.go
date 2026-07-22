@@ -344,7 +344,7 @@ func Init() {
 					nvgpu.NVB0CC_CTRL_CMD_BIND_PM_RESOURCES:                                ctrlHandler(rmControlSimple, nvconf.CapProfiling),
 					nvgpu.NVB0CC_CTRL_CMD_UNBIND_PM_RESOURCES:                              ctrlHandler(rmControlSimple, nvconf.CapProfiling),
 					nvgpu.NVB0CC_CTRL_CMD_PMA_STREAM_UPDATE_GET_PUT:                        ctrlHandler(rmControlSimple, nvconf.CapProfiling),
-					nvgpu.NVB0CC_CTRL_CMD_EXEC_REG_OPS:                                     ctrlHandler(rmControlSimple, nvconf.CapProfiling),
+					nvgpu.NVB0CC_CTRL_CMD_EXEC_REG_OPS:                                     ctrlHandler(ctrlGpuExecRegOps, nvconf.CapProfiling),
 					nvgpu.NVB0CC_CTRL_CMD_RESERVE_PM_AREA_PC_SAMPLER:                       ctrlHandler(rmControlSimple, nvconf.CapProfiling),
 					nvgpu.NVB0CC_CTRL_CMD_RELEASE_PM_AREA_PC_SAMPLER:                       ctrlHandler(rmControlSimple, nvconf.CapProfiling),
 					nvgpu.NVB0CC_CTRL_CMD_GET_TOTAL_HS_CREDITS:                             ctrlHandler(rmControlSimple, nvconf.CapProfiling),
@@ -658,7 +658,7 @@ func Init() {
 							nvgpu.NVB0CC_CTRL_CMD_BIND_PM_RESOURCES:                                simpleIoctlInfo("NVB0CC_CTRL_CMD_BIND_PM_RESOURCES"),
 							nvgpu.NVB0CC_CTRL_CMD_UNBIND_PM_RESOURCES:                              simpleIoctlInfo("NVB0CC_CTRL_CMD_UNBIND_PM_RESOURCES"),
 							nvgpu.NVB0CC_CTRL_CMD_PMA_STREAM_UPDATE_GET_PUT:                        simpleIoctlInfo("NVB0CC_CTRL_CMD_PMA_STREAM_UPDATE_GET_PUT", "NVB0CC_CTRL_PMA_STREAM_UPDATE_GET_PUT_PARAMS"),
-							nvgpu.NVB0CC_CTRL_CMD_EXEC_REG_OPS:                                     simpleIoctlInfo("NVB0CC_CTRL_CMD_EXEC_REG_OPS", "NVB0CC_CTRL_EXEC_REG_OPS_PARAMS"),
+							nvgpu.NVB0CC_CTRL_CMD_EXEC_REG_OPS:                                     ioctlInfo("NVB0CC_CTRL_CMD_EXEC_REG_OPS", nvgpu.NV2080_CTRL_GPU_EXEC_REG_OPS_PARAMS{}),
 							nvgpu.NVB0CC_CTRL_CMD_RESERVE_PM_AREA_PC_SAMPLER:                       simpleIoctlInfo("NVB0CC_CTRL_CMD_RESERVE_PM_AREA_PC_SAMPLER"), // No params.
 							nvgpu.NVB0CC_CTRL_CMD_RELEASE_PM_AREA_PC_SAMPLER:                       simpleIoctlInfo("NVB0CC_CTRL_CMD_RELEASE_PM_AREA_PC_SAMPLER"),
 							nvgpu.NVB0CC_CTRL_CMD_GET_TOTAL_HS_CREDITS:                             simpleIoctlInfo("NVB0CC_CTRL_CMD_GET_TOTAL_HS_CREDITS", "NVB0CC_CTRL_GET_TOTAL_HS_CREDITS_PARAMS"),

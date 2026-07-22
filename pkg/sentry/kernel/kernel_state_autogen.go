@@ -2023,6 +2023,7 @@ func (r *runExecveAfterExecveCredsLock) StateFields() []string {
 		"argv",
 		"envv",
 		"pathname",
+		"execfn",
 		"flags",
 		"executable",
 		"closeOnExec",
@@ -2037,9 +2038,10 @@ func (r *runExecveAfterExecveCredsLock) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &r.argv)
 	stateSinkObject.Save(1, &r.envv)
 	stateSinkObject.Save(2, &r.pathname)
-	stateSinkObject.Save(3, &r.flags)
-	stateSinkObject.Save(4, &r.executable)
-	stateSinkObject.Save(5, &r.closeOnExec)
+	stateSinkObject.Save(3, &r.execfn)
+	stateSinkObject.Save(4, &r.flags)
+	stateSinkObject.Save(5, &r.executable)
+	stateSinkObject.Save(6, &r.closeOnExec)
 }
 
 func (r *runExecveAfterExecveCredsLock) afterLoad(context.Context) {}
@@ -2049,9 +2051,10 @@ func (r *runExecveAfterExecveCredsLock) StateLoad(ctx context.Context, stateSour
 	stateSourceObject.Load(0, &r.argv)
 	stateSourceObject.Load(1, &r.envv)
 	stateSourceObject.Load(2, &r.pathname)
-	stateSourceObject.Load(3, &r.flags)
-	stateSourceObject.Load(4, &r.executable)
-	stateSourceObject.Load(5, &r.closeOnExec)
+	stateSourceObject.Load(3, &r.execfn)
+	stateSourceObject.Load(4, &r.flags)
+	stateSourceObject.Load(5, &r.executable)
+	stateSourceObject.Load(6, &r.closeOnExec)
 }
 
 func (s *siblingExitStop) StateTypeName() string {

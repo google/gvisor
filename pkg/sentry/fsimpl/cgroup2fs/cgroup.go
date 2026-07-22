@@ -45,6 +45,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sentry/vfs/memxattr"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -128,6 +129,9 @@ type cgroup struct {
 	// killSeq tracks cgroup.kill invocations.
 	// +checklocks:fs.tasksMu
 	killSeq uint64
+
+	// xattrs stores extended attributes on this cgroup directory.
+	xattrs memxattr.SimpleExtendedAttributes
 }
 
 // +checklocks:c.fs.treeMu

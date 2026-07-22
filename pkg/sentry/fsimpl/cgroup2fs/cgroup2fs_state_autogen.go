@@ -356,6 +356,7 @@ func (c *cgroup) StateFields() []string {
 		"maxDepth",
 		"nrDescendants",
 		"killSeq",
+		"xattrs",
 	}
 }
 
@@ -393,6 +394,7 @@ func (c *cgroup) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(24, &c.maxDepth)
 	stateSinkObject.Save(25, &c.nrDescendants)
 	stateSinkObject.Save(26, &c.killSeq)
+	stateSinkObject.Save(27, &c.xattrs)
 }
 
 func (c *cgroup) afterLoad(context.Context) {}
@@ -425,6 +427,7 @@ func (c *cgroup) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.Load(24, &c.maxDepth)
 	stateSourceObject.Load(25, &c.nrDescendants)
 	stateSourceObject.Load(26, &c.killSeq)
+	stateSourceObject.Load(27, &c.xattrs)
 	stateSourceObject.LoadValue(21, new(*ctrlSet), func(y any) { c.loadClosestCtrls(ctx, y.(*ctrlSet)) })
 }
 

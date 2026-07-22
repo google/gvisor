@@ -114,6 +114,7 @@ type ExecveInfo struct {
 	Stdin                *FdInfo                `protobuf:"bytes,12,opt,name=stdin,proto3" json:"stdin,omitempty"`
 	Stdout               *FdInfo                `protobuf:"bytes,13,opt,name=stdout,proto3" json:"stdout,omitempty"`
 	Stderr               *FdInfo                `protobuf:"bytes,14,opt,name=stderr,proto3" json:"stderr,omitempty"`
+	Execfn               string                 `protobuf:"bytes,17,opt,name=execfn,proto3" json:"execfn,omitempty"`
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
@@ -251,6 +252,13 @@ func (x *ExecveInfo) GetStderr() *FdInfo {
 		return x.Stderr
 	}
 	return nil
+}
+
+func (x *ExecveInfo) GetExecfn() string {
+	if x != nil {
+		return x.Execfn
+	}
+	return ""
 }
 
 type ExitNotifyParentInfo struct {
@@ -467,7 +475,7 @@ const file_pkg_sentry_seccheck_points_sentry_proto_rawDesc = "" +
 	"\x11created_thread_id\x18\x03 \x01(\x05R\x0fcreatedThreadId\x125\n" +
 	"\x17created_thread_group_id\x18\x04 \x01(\x05R\x14createdThreadGroupId\x12>\n" +
 	"\x1ccreated_thread_start_time_ns\x18\x05 \x01(\x03R\x18createdThreadStartTimeNs\x12\x14\n" +
-	"\x05flags\x18\x06 \x01(\x04R\x05flags\"\xe8\x04\n" +
+	"\x05flags\x18\x06 \x01(\x04R\x05flags\"\x80\x05\n" +
 	"\n" +
 	"ExecveInfo\x12=\n" +
 	"\fcontext_data\x18\x01 \x01(\v2\x1a.gvisor.common.ContextDataR\vcontextData\x12\x1f\n" +
@@ -490,7 +498,8 @@ const file_pkg_sentry_seccheck_points_sentry_proto_rawDesc = "" +
 	"\fbinary_ctime\x18\v \x01(\v2\x17.gvisor.common.TimespecR\vbinaryCtime\x12+\n" +
 	"\x05stdin\x18\f \x01(\v2\x15.gvisor.common.FdInfoR\x05stdin\x12-\n" +
 	"\x06stdout\x18\r \x01(\v2\x15.gvisor.common.FdInfoR\x06stdout\x12-\n" +
-	"\x06stderr\x18\x0e \x01(\v2\x15.gvisor.common.FdInfoR\x06stderr\"v\n" +
+	"\x06stderr\x18\x0e \x01(\v2\x15.gvisor.common.FdInfoR\x06stderr\x12\x16\n" +
+	"\x06execfn\x18\x11 \x01(\tR\x06execfn\"v\n" +
 	"\x14ExitNotifyParentInfo\x12=\n" +
 	"\fcontext_data\x18\x01 \x01(\v2\x1a.gvisor.common.ContextDataR\vcontextData\x12\x1f\n" +
 	"\vexit_status\x18\x02 \x01(\x05R\n" +
