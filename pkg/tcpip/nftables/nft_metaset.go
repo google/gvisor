@@ -53,6 +53,9 @@ func (op *metaSet) deepCopy() operation {
 	return &opCopy
 }
 
+// destroy implements operation.destroy.
+func (op *metaSet) destroy() {}
+
 // evaluate for metaSet sets specific meta data to the value in the source
 // register.
 func (op metaSet) evaluate(regs *registerSet, evalCtx opEvalCtx) {
