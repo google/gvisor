@@ -57,6 +57,7 @@ constexpr uint32_t kSeq = 12345;
 using ::testing::_;
 using ::testing::TestParamInfo;
 using ::testing::UnitTest;
+using ::testing::UnorderedElementsAreArray;
 using ::testing::ValuesIn;
 
 using SockOptTest = ::testing::TestWithParam<
@@ -371,161 +372,184 @@ TEST(NetlinkNetfilterTest, GetSets) {
   ASSERT_TRUE(expected_sets.empty());
 }
 
-TEST(NetlinkNetfilterTest, GetSetElements) {
+class NetlinkNetfilterSetElementsTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    constexpr uint32_t kKeyLen = 4;
+    constexpr uint32_t kDataLen = 4;
+
+    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+    fd_ = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
+    test_table_name_ = GetUniqueTestTableName();
+
+    // Creates the parent table to hold our test set.
+    AddDefaultTable({.fd = fd_, .table_name = test_table_name_, .seq = kSeq});
+
+    // Create set.
+    std::vector<char> add_set_request_buffer =
+        NlBatchReq()
+            .SeqStart(kSeq + 3)
+            .Req(NlReq()
+                     .MsgType(NFT_MSG_NEWSET)
+                     .Flags(NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE)
+                     .Family(NFPROTO_INET)
+                     .Seq(kSeq + 4)
+                     .StrAttr(NFTA_SET_TABLE, test_table_name_)
+                     .StrAttr(NFTA_SET_NAME, test_set_name_)
+                     .U32Attr(NFTA_SET_KEY_LEN, kKeyLen)
+                     .U32Attr(NFTA_SET_ID, 1)
+                     .U32Attr(NFTA_SET_FLAGS, NFT_SET_MAP)
+                     .U32Attr(NFTA_SET_DATA_LEN, kDataLen)
+                     .U32Attr(NFTA_SET_DATA_TYPE, 0)
+                     .Build())
+            .SeqEnd(kSeq + 5)
+            .Build();
+
+    ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+        fd_, kSeq + 3, kSeq + 5, add_set_request_buffer.data(),
+        add_set_request_buffer.size()));
+
+    // Add 2 elements.
+    elem1_desc_ = {.key = {192, 168, 1, 1}, .data = {10, 0, 0, 1}, .flags = 0};
+    elem2_desc_ = {.key = {}, .data = {10, 0, 0, 1}, .flags = kCatchallFlag};
+
+    std::vector<char> elem1 = BuildNetlinkElement(elem1_desc_);
+    std::vector<char> elem2 = BuildNetlinkElement(elem2_desc_);
+
+    std::vector<char> elements = NlListAttr().Add(elem1).Add(elem2).Build();
+
+    // Assemble array Netlink structures to create set elements natively.
+    //   [NLM_F_DEFAULT_BATCH]
+    //     └── [NFT_MSG_NEWSETELEM]
+    //           ├── NFTA_SET_ELEM_LIST_TABLE = "test_table"
+    //           ├── NFTA_SET_ELEM_LIST_SET   = "test_set_one"
+    //           └── NFTA_SET_ELEM_LIST_ELEMENTS (Nested Array)
+    //                 ├── NFTA_LIST_ELEM
+    //                 │     └── NFTA_SET_ELEM_KEY
+    //                 │           └── NFTA_DATA_VALUE
+    //                 └── NFTA_LIST_ELEM
+    //                       └── NFTA_SET_ELEM_FLAGS (CATCHALL)
+    std::vector<char> add_elements_buffer =
+        NlBatchReq()
+            .SeqStart(kSeq + 6)
+            .Req(NlReq()
+                     .MsgType(NFT_MSG_NEWSETELEM)
+                     .Flags(NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE)
+                     .Family(NFPROTO_INET)
+                     .Seq(kSeq + 7)
+                     .StrAttr(NFTA_SET_ELEM_LIST_TABLE, test_table_name_)
+                     .StrAttr(NFTA_SET_ELEM_LIST_SET, test_set_name_)
+                     .RawAttr(NFTA_SET_ELEM_LIST_ELEMENTS, elements.data(),
+                              elements.size())
+                     .Build())
+            .SeqEnd(kSeq + 8)
+            .Build();
+
+    ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+        fd_, kSeq + 6, kSeq + 8, add_elements_buffer.data(),
+        add_elements_buffer.size()));
+  }
+
+  std::vector<char> BuildDeleteElementsReq(
+      const std::vector<ElementDescriptor>& elems, uint32_t seq,
+      bool delete_all = false) {
+    NlReq req = NlReq()
+                    .MsgType(NFT_MSG_DELSETELEM)
+                    .Flags(NLM_F_REQUEST | NLM_F_ACK)
+                    .Family(NFPROTO_INET)
+                    .Seq(seq + 1)
+                    .StrAttr(NFTA_SET_ELEM_LIST_TABLE, test_table_name_)
+                    .StrAttr(NFTA_SET_ELEM_LIST_SET, test_set_name_);
+
+    if (!delete_all) {
+      NlListAttr list_attr;
+      for (const auto& elem : elems) {
+        list_attr.Add(BuildNetlinkElement(elem));
+      }
+      std::vector<char> elem_list = list_attr.Build();
+      req.RawAttr(NFTA_SET_ELEM_LIST_ELEMENTS, elem_list.data(),
+                  elem_list.size());
+    }
+
+    return NlBatchReq().SeqStart(seq).Req(req.Build()).SeqEnd(seq + 2).Build();
+  }
+
   const uint32_t kCatchallFlag = 0x2;
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
+  const char* test_set_name_ = "test_set_one";
+  FileDescriptor fd_;
+  std::string test_table_name_;
+  ElementDescriptor elem1_desc_;
+  ElementDescriptor elem2_desc_;
+};
 
-  std::string test_table_name = GetUniqueTestTableName();
-  const char test_set_name[] = "test_set_one";
+TEST_F(NetlinkNetfilterSetElementsTest, GetSetElements) {
+  std::vector<ElementDescriptor> elements = ASSERT_NO_ERRNO_AND_VALUE(
+      GetSetElements(fd_, test_table_name_, test_set_name_, kSeq + 9));
+  EXPECT_THAT(elements,
+              UnorderedElementsAreArray(
+                  std::vector<ElementDescriptor>{elem1_desc_, elem2_desc_}));
+}
 
-  // Creates the parent table to hold our test set.
-  AddDefaultTable({.fd = fd, .table_name = test_table_name, .seq = kSeq});
+TEST_F(NetlinkNetfilterSetElementsTest, DeleteNonExistentSetElement) {
+  // Delete a non-existent element.
+  ElementDescriptor elem = {.key = {192, 168, 1, 2}};
+  std::vector<char> delete_req = BuildDeleteElementsReq({elem}, kSeq + 10);
 
-  // Assemble Netlink structure native creation of an overarching map set.
-  std::vector<char> add_set_request_buffer =
-      NlBatchReq()
-          .SeqStart(kSeq + 3)
-          .Req(NlReq()
-                   .MsgType(NFT_MSG_NEWSET)
-                   .Flags(NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE)
-                   .Family(NFPROTO_INET)
-                   .Seq(kSeq + 4)
-                   .StrAttr(NFTA_SET_TABLE, test_table_name)
-                   .StrAttr(NFTA_SET_NAME, test_set_name)
-                   .U32Attr(NFTA_SET_KEY_LEN, 4)
-                   .U32Attr(NFTA_SET_ID, 1)
-                   .U32Attr(NFTA_SET_FLAGS, NFT_SET_MAP)
-                   .U32Attr(NFTA_SET_DATA_LEN, 4)
-                   .U32Attr(NFTA_SET_DATA_TYPE, 0)
-                   .Build())
-          .SeqEnd(kSeq + 5)
-          .Build();
+  ASSERT_THAT(
+      NetlinkNetfilterBatchRequestAckOrError(
+          fd_, kSeq + 10, kSeq + 12, delete_req.data(), delete_req.size()),
+      PosixErrorIs(ENOENT, _));
 
-  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
-      fd, kSeq + 3, kSeq + 5, add_set_request_buffer.data(),
-      add_set_request_buffer.size()));
+  // Verify both of the elements are still there.
+  std::vector<ElementDescriptor> elements = ASSERT_NO_ERRNO_AND_VALUE(
+      GetSetElements(fd_, test_table_name_, test_set_name_, kSeq + 13));
+  EXPECT_THAT(elements,
+              UnorderedElementsAreArray(
+                  std::vector<ElementDescriptor>{elem1_desc_, elem2_desc_}));
+}
 
-  uint8_t key1_data[4] = {192, 168, 1, 1};
-  uint8_t val1_data[4] = {10, 0, 0, 1};
-  std::vector<char> elem1_key_data =
-      NlNestedAttr().RawAttr(NFTA_DATA_VALUE, key1_data, 4).Build();
-  std::vector<char> elem1_val_data =
-      NlNestedAttr().RawAttr(NFTA_DATA_VALUE, val1_data, 4).Build();
-  std::vector<char> elem1 =
-      NlNestedAttr()
-          .RawAttr(NFTA_SET_ELEM_KEY, elem1_key_data.data(),
-                   elem1_key_data.size())
-          .RawAttr(NFTA_SET_ELEM_DATA, elem1_val_data.data(),
-                   elem1_val_data.size())
-          .Build();
-
-  std::vector<char> elem2 =
-      NlNestedAttr()
-          .U32Attr(NFTA_SET_ELEM_FLAGS, kCatchallFlag)
-          .RawAttr(NFTA_SET_ELEM_DATA, elem1_val_data.data(),
-                   elem1_val_data.size())
-          .Build();
-
-  std::vector<char> elements = NlListAttr().Add(elem1).Add(elem2).Build();
-
-  // Assemble array Netlink structures to create set elements natively.
-  //   [NLM_F_DEFAULT_BATCH]
-  //     └── [NFT_MSG_NEWSETELEM]
-  //           ├── NFTA_SET_ELEM_LIST_TABLE = "test_table"
-  //           ├── NFTA_SET_ELEM_LIST_SET   = "test_set_one"
-  //           └── NFTA_SET_ELEM_LIST_ELEMENTS (Nested Array)
-  //                 ├── NFTA_LIST_ELEM
-  //                 │     └── NFTA_SET_ELEM_KEY
-  //                 │           └── NFTA_DATA_VALUE
-  //                 └── NFTA_LIST_ELEM
-  //                       └── NFTA_SET_ELEM_FLAGS (CATCHALL)
-  std::vector<char> add_elements_buffer =
-      NlBatchReq()
-          .SeqStart(kSeq + 6)
-          .Req(NlReq()
-                   .MsgType(NFT_MSG_NEWSETELEM)
-                   .Flags(NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE)
-                   .Family(NFPROTO_INET)
-                   .Seq(kSeq + 7)
-                   .StrAttr(NFTA_SET_ELEM_LIST_TABLE, test_table_name)
-                   .StrAttr(NFTA_SET_ELEM_LIST_SET, test_set_name)
-                   .RawAttr(NFTA_SET_ELEM_LIST_ELEMENTS, elements.data(),
-                            elements.size())
-                   .Build())
-          .SeqEnd(kSeq + 8)
-          .Build();
+TEST_F(NetlinkNetfilterSetElementsTest, DeleteSetElement) {
+  // Delete elem1 (keyed).
+  ElementDescriptor elem_desc = {.key = elem1_desc_.key};
+  std::vector<char> delete_req = BuildDeleteElementsReq({elem_desc}, kSeq + 10);
 
   ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
-      fd, kSeq + 6, kSeq + 8, add_elements_buffer.data(),
-      add_elements_buffer.size()));
+      fd_, kSeq + 10, kSeq + 12, delete_req.data(), delete_req.size()));
 
-  // Setup the global set elements dump request: NFT_MSG_GETSETELEM
-  std::vector<char> get_dump_request_buffer =
-      NlReq()
-          .MsgType(NFT_MSG_GETSETELEM)
-          .Flags(NLM_F_REQUEST | NLM_F_DUMP)
-          .Family(NFPROTO_INET)
-          .Seq(kSeq + 9)
-          .StrAttr(NFTA_SET_ELEM_LIST_TABLE, test_table_name)
-          .StrAttr(NFTA_SET_ELEM_LIST_SET, test_set_name)
-          .Build();
+  // Verify that elem2 is still there.
+  std::vector<ElementDescriptor> elements = ASSERT_NO_ERRNO_AND_VALUE(
+      GetSetElements(fd_, test_table_name_, test_set_name_, kSeq + 13));
+  EXPECT_THAT(elements, UnorderedElementsAreArray(
+                            std::vector<ElementDescriptor>{elem2_desc_}));
+}
 
-  bool found_elem1 = false;
-  bool found_elem2 = false;
+TEST_F(NetlinkNetfilterSetElementsTest, DeleteCatchallSetElement) {
+  // Delete elem2 (catchall).
+  ElementDescriptor elem_desc = {.flags = kCatchallFlag};
+  std::vector<char> delete_req = BuildDeleteElementsReq({elem_desc}, kSeq + 10);
 
-  // Process the dumped multiplex stream.
-  ASSERT_NO_ERRNO(NetlinkRequestResponse(
-      fd, get_dump_request_buffer.data(), get_dump_request_buffer.size(),
-      [&](const struct nlmsghdr* hdr) {
-        if (hdr->nlmsg_type == NLMSG_DONE) {
-          return;
-        }
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd_, kSeq + 10, kSeq + 12, delete_req.data(), delete_req.size()));
 
-        // Output stream MUST chunk successfully.
-        EXPECT_TRUE(hdr->nlmsg_flags & NLM_F_MULTI);
+  // Verify that only elem1 exists.
+  std::vector<ElementDescriptor> elements = ASSERT_NO_ERRNO_AND_VALUE(
+      GetSetElements(fd_, test_table_name_, test_set_name_, kSeq + 13));
+  EXPECT_THAT(elements, UnorderedElementsAreArray(
+                            std::vector<ElementDescriptor>{elem1_desc_}));
+}
 
-        const struct nfattr* elements_attr =
-            FindNfAttr(hdr, nullptr, NFTA_SET_ELEM_LIST_ELEMENTS);
+TEST_F(NetlinkNetfilterSetElementsTest, DeleteAllSetElements) {
+  // Remove all elements.
+  std::vector<char> delete_req =
+      BuildDeleteElementsReq({}, kSeq + 10, /*delete_all=*/true);
 
-        // Element chunk list block absent from this subset message string.
-        if (!elements_attr) {
-          return;
-        }
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd_, kSeq + 10, kSeq + 12, delete_req.data(), delete_req.size()));
 
-        int nested_len = NFA_PAYLOAD(elements_attr);
-        const struct nfattr* nested_attr =
-            reinterpret_cast<const struct nfattr*>(NFA_DATA(elements_attr));
-
-        // Process each extracted list container recursively natively.
-        for (; NFA_OK(nested_attr, nested_len);
-             nested_attr = NFA_NEXT(nested_attr, nested_len)) {
-          int elem_len = NFA_PAYLOAD(nested_attr);
-          const struct nfattr* elem_data =
-              reinterpret_cast<const struct nfattr*>(NFA_DATA(nested_attr));
-
-          for (; NFA_OK(elem_data, elem_len);
-               elem_data = NFA_NEXT(elem_data, elem_len)) {
-            // Find key-value native structures.
-            if (elem_data->nfa_type == NFTA_SET_ELEM_KEY) {
-              found_elem1 = true;
-            }
-            // Find macro-overlaid flag payload chunks.
-            if (elem_data->nfa_type == NFTA_SET_ELEM_FLAGS) {
-              uint32_t flags =
-                  *reinterpret_cast<const uint32_t*>(NFA_DATA(elem_data));
-              if (ntohl(flags) & kCatchallFlag) {
-                found_elem2 = true;
-              }
-            }
-          }
-        }
-      },
-      false));
-
-  // Assert both generated subset mappings successfully unpacked.
-  ASSERT_TRUE(found_elem1);
-  ASSERT_TRUE(found_elem2);
+  // Verify elements are deleted.
+  std::vector<ElementDescriptor> elements = ASSERT_NO_ERRNO_AND_VALUE(
+      GetSetElements(fd_, test_table_name_, test_set_name_, kSeq + 13));
+  EXPECT_TRUE(elements.empty());
 }
 
 TEST(NetlinkNetfilterTest, ErrGettingTableWithDifferentFamily) {
@@ -1038,6 +1062,77 @@ TEST(NetlinkNetfilterTest, DeleteAllTablesUnspecifiedNameAndHandle) {
       NetlinkRequestAckOrError(fd, kSeq + 8, get_request_buffer_2.data(),
                                get_request_buffer_2.size()),
       PosixErrorIs(ENOENT, _));
+}
+
+TEST(NetlinkNetfilterTest, DeleteAllTablesInetFamily) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  char test_table_name_inet[] = "test_table_inet";
+  char test_table_name_arp[] = "test_table_arp";
+
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
+
+  std::vector<char> add_request_buffer =
+      NlBatchReq()
+          .SeqStart(kSeq)
+          .Req(NlReq("newtable req ack inet")
+                   .Seq(kSeq + 1)
+                   .StrAttr(NFTA_TABLE_NAME, test_table_name_inet)
+                   .Build())
+          .Req(NlReq("newtable req ack arp")
+                   .Seq(kSeq + 2)
+                   .StrAttr(NFTA_TABLE_NAME, test_table_name_arp)
+                   .Build())
+          .SeqEnd(kSeq + 3)
+          .Build();
+
+  // Delete all tables in inet family only.
+  std::vector<char> destroy_request_buffer =
+      NlBatchReq()
+          .SeqStart(kSeq + 4)
+          .Req(NlReq("deltable req ack inet").Seq(kSeq + 5).Build())
+          .SeqEnd(kSeq + 6)
+          .Build();
+
+  std::vector<char> get_request_buffer_inet =
+      NlReq("gettable req inet")
+          .Seq(kSeq + 7)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name_inet)
+          .Build();
+
+  std::vector<char> get_request_buffer_arp =
+      NlReq("gettable req arp")
+          .Seq(kSeq + 8)
+          .StrAttr(NFTA_TABLE_NAME, test_table_name_arp)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq, kSeq + 3, add_request_buffer.data(),
+      add_request_buffer.size()));
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq + 4, kSeq + 6, destroy_request_buffer.data(),
+      destroy_request_buffer.size()));
+
+  // Inet table should be gone.
+  ASSERT_THAT(
+      NetlinkRequestAckOrError(fd, kSeq + 7, get_request_buffer_inet.data(),
+                               get_request_buffer_inet.size()),
+      PosixErrorIs(ENOENT, _));
+  // Arp table should still exist.
+  bool arp_table_exists = false;
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd, get_request_buffer_arp.data(), get_request_buffer_arp.size(),
+      [&](const struct nlmsghdr* hdr) {
+        const struct nfattr* table_name_attr =
+            FindNfAttr(hdr, nullptr, NFTA_TABLE_NAME);
+        ASSERT_NE(table_name_attr, nullptr);
+        EXPECT_EQ(table_name_attr->nfa_type, NFTA_TABLE_NAME);
+        std::string name(
+            reinterpret_cast<const char*>(NFA_DATA(table_name_attr)));
+        EXPECT_EQ(name, test_table_name_arp);
+        arp_table_exists = true;
+      },
+      false));
+  ASSERT_TRUE(arp_table_exists);
 }
 
 TEST(NetlinkNetfilterTest, ErrNewChainWithNoSpecifiedTableName) {
@@ -2519,6 +2614,267 @@ TEST(NetlinkNetfilterTest, ErrAddRuleNoChainSpecified) {
                   fd, kSeq + 6, kSeq + 8, add_rule_request_buffer.data(),
                   add_rule_request_buffer.size()),
               PosixErrorIs(EINVAL, _));
+}
+
+class NetlinkNetfilterDeletionTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+    fd_ = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
+    test_table_name_ = GetUniqueTestTableName();
+
+    std::vector<char> rule_expr_data = NlImmExpr::DefaultAcceptAll();
+    std::vector<char> list_expr_data = NlListAttr().Add(rule_expr_data).Build();
+
+    // Create table, 2 chains with rules in both.
+    std::vector<char> add_request =
+        NlBatchReq()
+            .SeqStart(kSeq)
+            .Req(NlReq("newtable req ack inet")
+                     .Seq(kSeq + 1)
+                     .StrAttr(NFTA_TABLE_NAME, test_table_name_)
+                     .Build())
+            .Req(NlReq("newchain req ack inet")
+                     .Seq(kSeq + 2)
+                     .StrAttr(NFTA_TABLE_NAME, test_table_name_)
+                     .StrAttr(NFTA_CHAIN_NAME, chain_1_)
+                     .Build())
+            .Req(NlReq("newchain req ack inet")
+                     .Seq(kSeq + 3)
+                     .StrAttr(NFTA_TABLE_NAME, test_table_name_)
+                     .StrAttr(NFTA_CHAIN_NAME, chain_2_)
+                     .Build())
+            .Req(NlReq("newrule req ack create inet")
+                     .Seq(kSeq + 4)
+                     .StrAttr(NFTA_RULE_TABLE, test_table_name_)
+                     .StrAttr(NFTA_RULE_CHAIN, chain_1_)
+                     .RawAttr(NFTA_RULE_EXPRESSIONS, list_expr_data.data(),
+                              list_expr_data.size())
+                     .Build())
+            .Req(NlReq("newrule req ack create inet")
+                     .Seq(kSeq + 5)
+                     .StrAttr(NFTA_RULE_TABLE, test_table_name_)
+                     .StrAttr(NFTA_RULE_CHAIN, chain_2_)
+                     .RawAttr(NFTA_RULE_EXPRESSIONS, list_expr_data.data(),
+                              list_expr_data.size())
+                     .Build())
+            .SeqEnd(kSeq + 6)
+            .Build();
+
+    ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+        fd_, kSeq, kSeq + 6, add_request.data(), add_request.size()));
+  }
+
+  FileDescriptor fd_;
+  std::string test_table_name_;
+  const std::string chain_1_ = "test_chain_1";
+  const std::string chain_2_ = "test_chain_2";
+};
+
+TEST_F(NetlinkNetfilterDeletionTest, FlushChainRules) {
+  // Flush chain rules (Delete rule without handle).
+  std::vector<char> flush_request =
+      NlBatchReq()
+          .SeqStart(kSeq + 7)
+          .Req(NlReq("delrule req ack inet")
+                   .Seq(kSeq + 8)
+                   .StrAttr(NFTA_RULE_TABLE, test_table_name_)
+                   .StrAttr(NFTA_RULE_CHAIN, chain_1_)
+                   .Build())
+          .SeqEnd(kSeq + 9)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd_, kSeq + 7, kSeq + 9, flush_request.data(), flush_request.size()));
+
+  struct Expectation {
+    std::string chain;
+    int want_rules_count;
+  } expectations[] = {{chain_1_, 0}, {chain_2_, 1}};
+
+  uint32_t seq = kSeq + 10;
+  for (const auto& exp : expectations) {
+    std::vector<char> get_dump_request =
+        NlReq("getrule req dump inet")
+            .Seq(seq++)
+            .StrAttr(NFTA_RULE_TABLE, test_table_name_)
+            .StrAttr(NFTA_RULE_CHAIN, exp.chain)
+            .Build();
+
+    int rules_in_chain = 0;
+    ASSERT_NO_ERRNO(NetlinkRequestResponse(
+        fd_, get_dump_request.data(), get_dump_request.size(),
+        [&](const struct nlmsghdr* hdr) {
+          if (hdr->nlmsg_type == NLMSG_DONE) {
+            return;
+          }
+          rules_in_chain++;
+        },
+        false));
+    EXPECT_EQ(rules_in_chain, exp.want_rules_count) << "Chain: " << exp.chain;
+  }
+}
+
+TEST_F(NetlinkNetfilterDeletionTest, FlushTableRules) {
+  // Flush table rules (Delete rule without chain and handle).
+  std::vector<char> flush_request =
+      NlBatchReq()
+          .SeqStart(kSeq + 7)
+          .Req(NlReq("delrule req ack inet")
+                   .Seq(kSeq + 8)
+                   .StrAttr(NFTA_RULE_TABLE, test_table_name_)
+                   .Build())
+          .SeqEnd(kSeq + 9)
+          .Build();
+
+  // Verify rules are gone.
+  std::vector<char> get_dump_request =
+      NlReq("getrule req dump inet")
+          .Seq(kSeq + 10)
+          .StrAttr(NFTA_RULE_TABLE, test_table_name_)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd_, kSeq + 7, kSeq + 9, flush_request.data(), flush_request.size()));
+
+  int rules_in_table = 0;
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd_, get_dump_request.data(), get_dump_request.size(),
+      [&](const struct nlmsghdr* hdr) {
+        if (hdr->nlmsg_type == NLMSG_DONE) {
+          return;
+        }
+        rules_in_table++;
+      },
+      false));
+  EXPECT_EQ(rules_in_table, 0);
+}
+
+TEST_F(NetlinkNetfilterDeletionTest, DeleteRuleByHandle) {
+  // 1. Get the handle of the rule in chain_1_ and verify it has exactly 1 rule.
+  std::vector<char> get_dump_request =
+      NlReq("getrule req dump inet")
+          .Seq(kSeq + 7)
+          .StrAttr(NFTA_RULE_TABLE, test_table_name_)
+          .StrAttr(NFTA_RULE_CHAIN, chain_1_)
+          .Build();
+
+  uint64_t rule_handle = 0;
+  int rules_in_chain_before = 0;
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd_, get_dump_request.data(), get_dump_request.size(),
+      [&](const struct nlmsghdr* hdr) {
+        if (hdr->nlmsg_type == NLMSG_DONE) {
+          return;
+        }
+        rules_in_chain_before++;
+        const struct nfattr* handle_attr =
+            FindNfAttr(hdr, nullptr, NFTA_RULE_HANDLE);
+        if (handle_attr != nullptr) {
+          EXPECT_EQ(handle_attr->nfa_len - NLA_HDRLEN, sizeof(uint64_t));
+          uint64_t aligned_value;
+          memcpy(&aligned_value, NFA_DATA(handle_attr), sizeof(uint64_t));
+          rule_handle = be64toh(aligned_value);
+        }
+      },
+      false));
+
+  EXPECT_EQ(rules_in_chain_before, 1);
+  ASSERT_NE(rule_handle, 0);
+
+  // 2. Delete the rule by handle.
+  std::vector<char> delete_request =
+      NlBatchReq()
+          .SeqStart(kSeq + 8)
+          .Req(NlReq("delrule req ack inet")
+                   .Seq(kSeq + 9)
+                   .StrAttr(NFTA_RULE_TABLE, test_table_name_)
+                   .StrAttr(NFTA_RULE_CHAIN, chain_1_)
+                   .U64Attr(NFTA_RULE_HANDLE, rule_handle)
+                   .Build())
+          .SeqEnd(kSeq + 10)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd_, kSeq + 8, kSeq + 10, delete_request.data(), delete_request.size()));
+
+  // 3. Verify chain_1_ has 0 rules and chain_2_ still has 1 rule.
+  struct Expectation {
+    std::string chain;
+    int want_rules_count;
+  } expectations[] = {{chain_1_, 0}, {chain_2_, 1}};
+
+  uint32_t seq = kSeq + 11;
+  for (const auto& exp : expectations) {
+    std::vector<char> get_dump_request_verify =
+        NlReq("getrule req dump inet")
+            .Seq(seq++)
+            .StrAttr(NFTA_RULE_TABLE, test_table_name_)
+            .StrAttr(NFTA_RULE_CHAIN, exp.chain)
+            .Build();
+
+    int rules_in_chain = 0;
+    ASSERT_NO_ERRNO(NetlinkRequestResponse(
+        fd_, get_dump_request_verify.data(), get_dump_request_verify.size(),
+        [&](const struct nlmsghdr* hdr) {
+          if (hdr->nlmsg_type == NLMSG_DONE) {
+            return;
+          }
+          rules_in_chain++;
+        },
+        false));
+    EXPECT_EQ(rules_in_chain, exp.want_rules_count) << "Chain: " << exp.chain;
+  }
+}
+
+TEST_F(NetlinkNetfilterDeletionTest, ErrFlushChainRulesUnknownTable) {
+  std::vector<char> flush_request =
+      NlBatchReq()
+          .SeqStart(kSeq + 7)
+          .Req(NlReq("delrule req ack inet")
+                   .Seq(kSeq + 8)
+                   .StrAttr(NFTA_RULE_TABLE, "unknown_table")
+                   .StrAttr(NFTA_RULE_CHAIN, "valid_chain")
+                   .Build())
+          .SeqEnd(kSeq + 9)
+          .Build();
+
+  ASSERT_THAT(
+      NetlinkNetfilterBatchRequestAckOrError(
+          fd_, kSeq + 7, kSeq + 9, flush_request.data(), flush_request.size()),
+      PosixErrorIs(ENOENT, _));
+}
+
+TEST_F(NetlinkNetfilterDeletionTest, ErrFlushChainRulesUnknownChain) {
+  std::vector<char> flush_request =
+      NlBatchReq()
+          .SeqStart(kSeq + 7)
+          .Req(NlReq("delrule req ack inet")
+                   .Seq(kSeq + 8)
+                   .StrAttr(NFTA_RULE_TABLE, test_table_name_)
+                   .StrAttr(NFTA_RULE_CHAIN, "unknown_chain")
+                   .Build())
+          .SeqEnd(kSeq + 9)
+          .Build();
+
+  ASSERT_THAT(
+      NetlinkNetfilterBatchRequestAckOrError(
+          fd_, kSeq + 7, kSeq + 9, flush_request.data(), flush_request.size()),
+      PosixErrorIs(ENOENT, _));
+}
+
+TEST_F(NetlinkNetfilterDeletionTest, ErrFlushRulesMissingTable) {
+  std::vector<char> flush_request =
+      NlBatchReq()
+          .SeqStart(kSeq + 7)
+          .Req(NlReq("delrule req ack inet").Seq(kSeq + 8).Build())
+          .SeqEnd(kSeq + 9)
+          .Build();
+
+  ASSERT_THAT(
+      NetlinkNetfilterBatchRequestAckOrError(
+          fd_, kSeq + 7, kSeq + 9, flush_request.data(), flush_request.size()),
+      PosixErrorIs(EINVAL, _));
 }
 
 TEST(NetlinkNetfilterTest,

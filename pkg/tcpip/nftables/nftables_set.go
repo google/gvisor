@@ -410,13 +410,13 @@ func (nf *NFTables) NewSet(attrs map[uint16]nlmsg.BytesView, family stack.Addres
 
 	var exprInfos []ExprInfo
 	if singleExpr, ok := attrs[linux.NFTA_SET_EXPR]; ok {
-		exprInfo, err := nf.ParseExpr(nlmsg.AttrsView(singleExpr))
+		exprInfo, err := ParseExpr(nlmsg.AttrsView(singleExpr))
 		if err != nil {
 			return err
 		}
 		exprInfos = []ExprInfo{*exprInfo}
 	} else if exprBytes, ok := attrs[linux.NFTA_SET_EXPRESSIONS]; ok {
-		exprInfos, err = nf.ParseNestedExprs(nlmsg.AttrsView(exprBytes), linux.NFT_SET_EXPR_MAX)
+		exprInfos, err = ParseNestedExprs(nlmsg.AttrsView(exprBytes), linux.NFT_SET_EXPR_MAX)
 		if err != nil {
 			return err
 		}
@@ -502,9 +502,9 @@ var setElemListPolicy = []NlaPolicy{
 	linux.NFTA_SET_ELEM_LIST_SET_ID:   {nlaType: linux.NLA_U32},
 }
 
-// validateElemFlags validates the set element flags.
+// validateSetElemFlags validates the set element flags.
 // Ref: net/netfilter/nf_tables_api.c:nft_setelem_parse_flags
-func (nf *NFTables) validateElemFlags(setFlags uint16, elemFlags uint16) *syserr.AnnotatedError {
+func validateSetElemFlags(setFlags uint16, elemFlags uint16) *syserr.AnnotatedError {
 	if elemFlags & ^(linux.NFT_SET_ELEM_INTERVAL_END|linux.NFT_SET_ELEM_CATCHALL) != 0 {
 		return syserr.NewAnnotatedError(syserr.ErrNotSupported, "unsupported set element flags")
 	}
@@ -521,7 +521,7 @@ func (nf *NFTables) validateElemFlags(setFlags uint16, elemFlags uint16) *syserr
 
 // parseElemKeyAttr parses the set element key attribute.
 // Ref: net/netfilter/nf_tables_api.c:nft_setelem_parse_key
-func (nf *NFTables) parseElemKeyAttr(attrs nlmsg.BytesView, setKeyLen int) ([]byte, *syserr.AnnotatedError) {
+func parseSetElemKeyAttr(attrs nlmsg.BytesView, setKeyLen int) ([]byte, *syserr.AnnotatedError) {
 	keyDataAttrs, ok := NfParse(nlmsg.AttrsView(attrs))
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse key attributes")
@@ -536,7 +536,24 @@ func (nf *NFTables) parseElemKeyAttr(attrs nlmsg.BytesView, setKeyLen int) ([]by
 	return keyBytes, nil
 }
 
-func (nf *NFTables) parseElemDataAttr(tab *Table, set *nftSet, dataAttrs nlmsg.BytesView) (*dataOrVerdict, *syserr.AnnotatedError) {
+// parseSetElemKeys parses the element key attributes.
+func parseSetElemKeys(elemAttrs map[uint16]nlmsg.BytesView, setKeyLen int) (startKey []byte, endKey []byte, err *syserr.AnnotatedError) {
+	if keyAttr, ok := elemAttrs[linux.NFTA_SET_ELEM_KEY]; ok {
+		startKey, err = parseSetElemKeyAttr(keyAttr, setKeyLen)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	if endKeyAttr, ok := elemAttrs[linux.NFTA_SET_ELEM_KEY_END]; ok {
+		endKey, err = parseSetElemKeyAttr(endKeyAttr, setKeyLen)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	return startKey, endKey, nil
+}
+
+func (s *nftSet) parseElemDataAttr(tab *Table, dataAttrs nlmsg.BytesView) (*dataOrVerdict, *syserr.AnnotatedError) {
 	dv := &dataOrVerdict{}
 	dataValueAttr, ok := NfParse(nlmsg.AttrsView(dataAttrs))
 	if !ok {
@@ -558,10 +575,10 @@ func (nf *NFTables) parseElemDataAttr(tab *Table, set *nftSet, dataAttrs nlmsg.B
 	switch dataType {
 	case linux.NFT_DATA_VALUE:
 		lenData := len(dataValue)
-		if lenData != int(set.dataLen) {
+		if lenData != int(s.dataLen) {
 			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "data length does not match set data length")
 		}
-		for _, ops := range set.bindings {
+		for _, ops := range s.bindings {
 			if validateDataRegister(ops.dregIdx, lenData) != nil {
 				return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Data register does not match set data length")
 			}
@@ -589,6 +606,13 @@ func (e *nftSetElem) conflicts(other *nftSetElem) bool {
 	}
 	// TODO: b/505409691 - Compare objref when supported.
 	return false
+}
+
+// destroy destroys the set element and its operations.
+func (e *nftSetElem) destroy() {
+	for _, op := range e.ops {
+		op.destroy()
+	}
 }
 
 // addCatchallElement adds a catchall element to the set.
@@ -633,13 +657,65 @@ func (s *nftSet) commitElement(elem *nftSetElem, msgFlags uint16) *syserr.Annota
 	return syserr.NewAnnotatedError(syserr.ErrExists, "set element already exists")
 }
 
+// removeElement removes a regular element from the set and its backend.
+func (s *nftSet) removeElement(startKey, endKey []byte) *syserr.AnnotatedError {
+	elem := &nftSetElem{
+		startKey: startKey,
+		endKey:   endKey,
+	}
+
+	// Remove from backend.
+	idx, err := s.backend.Remove(elem)
+	if err != nil {
+		return err
+	}
+	if idx == -1 {
+		return syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, "element does not exist")
+	}
+
+	// Remove from set.elements.
+	lastIdx := len(s.elements) - 1
+	de := s.elements[idx]
+
+	if idx != lastIdx {
+		// Swap with the last element and update its index in backend.
+		movedElem := s.elements[lastIdx]
+		s.elements[idx] = movedElem
+		if err := s.backend.Update(&s.elements[idx], idx); err != nil {
+			return err
+		}
+	}
+
+	// Slice off last element.
+	s.elements = s.elements[:lastIdx]
+	de.destroy()
+
+	return nil
+}
+
+// removeAllElements removes all elements from a set.
+func (s *nftSet) removeAllElements() *syserr.AnnotatedError {
+	// Destroy all elements in the set.
+	for i := range s.elements {
+		s.elements[i].destroy()
+	}
+	// Destroy the catchall element.
+	if s.catchAllElem != nil {
+		s.catchAllElem.destroy()
+	}
+	s.backend.RemoveAll()
+	s.elements = nil
+	s.catchAllElem = nil
+	return nil
+}
+
 // addElemToSet adds a set element to a set.
 // Ref: net/netfilter/nf_tables_api.c:nft_add_set_elem
-func (nf *NFTables) addElemToSet(tab *Table, set *nftSet, elemAttrs map[uint16]nlmsg.BytesView, msgFlags uint16) *syserr.AnnotatedError {
+func (s *nftSet) addElemToSet(tab *Table, elemAttrs map[uint16]nlmsg.BytesView, msgFlags uint16) *syserr.AnnotatedError {
 	// If the set has a desc size, check if the set is full.
 	// Otherwise, allow any number of elements to be added to the set.
 	// Ref: net/netfilter/nf_tables_api.c:nft_set_maxsize
-	if set.descSize > 0 && len(set.elements) >= int(set.descSize) {
+	if s.descSize > 0 && len(s.elements) >= int(s.descSize) {
 		return syserr.NewAnnotatedError(syserr.ErrTooManyOpenFiles, "set element limit reached")
 	}
 
@@ -649,11 +725,11 @@ func (nf *NFTables) addElemToSet(tab *Table, set *nftSet, elemAttrs map[uint16]n
 	}
 	flag := uint16(flagU32)
 
-	if err := nf.validateElemFlags(set.flags, flag); err != nil {
+	if err := validateSetElemFlags(s.flags, flag); err != nil {
 		return err
 	}
 
-	keyStartAttr, keyExists := elemAttrs[linux.NFTA_SET_ELEM_KEY]
+	_, keyExists := elemAttrs[linux.NFTA_SET_ELEM_KEY]
 	if keyExists && (flag&linux.NFT_SET_ELEM_CATCHALL != 0) {
 		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "set element key attribute should not be present for catchall element")
 	}
@@ -662,7 +738,7 @@ func (nf *NFTables) addElemToSet(tab *Table, set *nftSet, elemAttrs map[uint16]n
 	}
 
 	dataAttr, dataExists := elemAttrs[linux.NFTA_SET_ELEM_DATA]
-	if (set.flags & linux.NFT_SET_MAP) != 0 {
+	if (s.flags & linux.NFT_SET_MAP) != 0 {
 		if !dataExists && (flag&linux.NFT_SET_ELEM_INTERVAL_END == 0) {
 			return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "set element data attribute is missing for non-interval element")
 		}
@@ -671,7 +747,7 @@ func (nf *NFTables) addElemToSet(tab *Table, set *nftSet, elemAttrs map[uint16]n
 	}
 
 	_, objRefExists := elemAttrs[linux.NFTA_SET_ELEM_OBJREF]
-	if (set.flags & linux.NFT_SET_OBJECT) != 0 {
+	if (s.flags & linux.NFT_SET_OBJECT) != 0 {
 		if !objRefExists && (flag&linux.NFT_SET_ELEM_INTERVAL_END == 0) {
 			return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "set element object reference attribute is missing for non-interval element")
 		}
@@ -694,17 +770,17 @@ func (nf *NFTables) addElemToSet(tab *Table, set *nftSet, elemAttrs map[uint16]n
 	// TODO: b/505409691 - Add support for timeout and gc.
 	timeout, ok := AttrNetToHost[uint64](linux.NFTA_SET_ELEM_TIMEOUT, elemAttrs)
 	if ok {
-		if (set.flags & linux.NFT_SET_TIMEOUT) == 0 {
+		if (s.flags & linux.NFT_SET_TIMEOUT) == 0 {
 			return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "timeout flag is not set but timeout attribute is present")
 		}
-	} else if (set.flags&linux.NFT_SET_TIMEOUT) != 0 && (flag&linux.NFT_SET_ELEM_INTERVAL_END) == 0 {
-		timeout = set.timeout
+	} else if (s.flags&linux.NFT_SET_TIMEOUT) != 0 && (flag&linux.NFT_SET_ELEM_INTERVAL_END) == 0 {
+		timeout = s.timeout
 	}
 
 	// TODO: b/505409691 - Add support for expiration.
 	expiration, ok := AttrNetToHost[uint64](linux.NFTA_SET_ELEM_EXPIRATION, elemAttrs)
 	if ok {
-		if (set.flags & linux.NFT_SET_TIMEOUT) == 0 {
+		if (s.flags & linux.NFT_SET_TIMEOUT) == 0 {
 			return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "expiration flag is not set but expiration attribute is present")
 		}
 		if timeout == 0 {
@@ -719,10 +795,10 @@ func (nf *NFTables) addElemToSet(tab *Table, set *nftSet, elemAttrs map[uint16]n
 	var err *syserr.AnnotatedError
 	expr, ok := elemAttrs[linux.NFTA_SET_ELEM_EXPR]
 	if ok {
-		if len(set.exprInfos) > 0 && len(set.exprInfos) != 1 {
+		if len(s.exprInfos) > 0 && len(s.exprInfos) != 1 {
 			return syserr.NewAnnotatedError(syserr.ErrNotSupported, "only one expression is supported for set element expression")
 		}
-		exprInfo, err := nf.ParseExpr(nlmsg.AttrsView(expr))
+		exprInfo, err := ParseExpr(nlmsg.AttrsView(expr))
 		if err != nil {
 			return err
 		}
@@ -730,24 +806,24 @@ func (nf *NFTables) addElemToSet(tab *Table, set *nftSet, elemAttrs map[uint16]n
 	} else {
 		exprListAttr, ok := elemAttrs[linux.NFTA_SET_ELEM_EXPRESSIONS]
 		if ok {
-			exprInfos, err = nf.ParseNestedExprs(nlmsg.AttrsView(exprListAttr), linux.NFT_SET_EXPR_MAX)
+			exprInfos, err = ParseNestedExprs(nlmsg.AttrsView(exprListAttr), linux.NFT_SET_EXPR_MAX)
 			if err != nil {
 				return err
 			}
 		}
 	}
 
-	if len(exprInfos) > 0 && len(set.exprInfos) > 0 {
-		if len(exprInfos) != len(set.exprInfos) {
+	if len(exprInfos) > 0 && len(s.exprInfos) > 0 {
+		if len(exprInfos) != len(s.exprInfos) {
 			return syserr.NewAnnotatedError(syserr.ErrNotSupported, "number of set element expressions does not match number of set operations")
 		}
 		for i, exprInfo := range exprInfos {
-			if exprInfo.ExprName != set.exprInfos[i].ExprName {
+			if exprInfo.ExprName != s.exprInfos[i].ExprName {
 				return syserr.NewAnnotatedError(syserr.ErrNotSupported, "set element expression operation does not match set operation")
 			}
 		}
-	} else if len(set.exprInfos) != 0 && (flag&linux.NFT_SET_ELEM_INTERVAL_END) == 0 {
-		exprInfos = set.exprInfos
+	} else if len(s.exprInfos) != 0 && (flag&linux.NFT_SET_ELEM_INTERVAL_END) == 0 {
+		exprInfos = s.exprInfos
 	}
 
 	// Convert expressions to operations to execute at evaluation time.
@@ -765,22 +841,9 @@ func (nf *NFTables) addElemToSet(tab *Table, set *nftSet, elemAttrs map[uint16]n
 		}
 	}
 
-	var startKey []byte
-	setKeyLen := int(set.keyLen)
-	if keyExists {
-		startKey, err = nf.parseElemKeyAttr(keyStartAttr, setKeyLen)
-		if err != nil {
-			return err
-		}
-	}
-
-	endKeyAttr, endKeyExists := elemAttrs[linux.NFTA_SET_ELEM_KEY_END]
-	var endKey []byte
-	if endKeyExists {
-		endKey, err = nf.parseElemKeyAttr(endKeyAttr, setKeyLen)
-		if err != nil {
-			return err
-		}
+	startKey, endKey, err := parseSetElemKeys(elemAttrs, int(s.keyLen))
+	if err != nil {
+		return err
 	}
 
 	if objRefExists {
@@ -790,7 +853,7 @@ func (nf *NFTables) addElemToSet(tab *Table, set *nftSet, elemAttrs map[uint16]n
 
 	var dv dataOrVerdict
 	if dataExists {
-		parsedDv, err := nf.parseElemDataAttr(tab, set, dataAttr)
+		parsedDv, err := s.parseElemDataAttr(tab, dataAttr)
 		if err != nil {
 			return err
 		}
@@ -814,14 +877,14 @@ func (nf *NFTables) addElemToSet(tab *Table, set *nftSet, elemAttrs map[uint16]n
 	}
 
 	if flag&linux.NFT_SET_ELEM_CATCHALL != 0 {
-		return set.addCatchAllElement(&newSetElem, msgFlags)
+		return s.addCatchAllElement(&newSetElem, msgFlags)
 	}
-	return set.commitElement(&newSetElem, msgFlags)
+	return s.commitElement(&newSetElem, msgFlags)
 }
 
-// addElemListToSet adds a list of elements to a set.
+// parseAttrAndAddElements adds a list of elements to a set.
 // Ref: net/netfilter/nf_tables_api.c:nf_tables_newsetelem
-func (nf *NFTables) addElemListToSet(attr nlmsg.AttrsView, set *nftSet, tab *Table, msgFlags uint16) *syserr.AnnotatedError {
+func (s *nftSet) parseAttrAndAddElements(tab *Table, attr nlmsg.AttrsView, msgFlags uint16) *syserr.AnnotatedError {
 	for len(attr) > 0 {
 		_, elem, rest, ok := attr.ParseFirst()
 		if !ok {
@@ -834,17 +897,83 @@ func (nf *NFTables) addElemListToSet(attr nlmsg.AttrsView, set *nftSet, tab *Tab
 		if err != nil {
 			return err
 		}
-		if err := nf.addElemToSet(tab, set, elemAttrs, msgFlags); err != nil {
+		if err := s.addElemToSet(tab, elemAttrs, msgFlags); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// NewSetElements is a top level function to create
-// a new set with a list of elements.
+// removeElemFromSet removes a single element from a set.
+// Ref: net/netfilter/nf_tables_api.c:nft_del_setelem()
+func (s *nftSet) parseAttrAndRemoveElem(elemAttrs map[uint16]nlmsg.BytesView, msgFlags uint16) *syserr.AnnotatedError {
+	flagU32, flagExists := AttrNetToHost[uint32](linux.NFTA_SET_ELEM_FLAGS, elemAttrs)
+	if !flagExists {
+		flagU32 = uint32(0)
+	}
+	flag := uint16(flagU32)
+
+	if err := validateSetElemFlags(s.flags, flag); err != nil {
+		return err
+	}
+
+	_, keyExists := elemAttrs[linux.NFTA_SET_ELEM_KEY]
+	if flag&linux.NFT_SET_ELEM_CATCHALL != 0 {
+		if keyExists {
+			return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "set element key attribute should not be present for catchall element")
+		}
+		if s.catchAllElem == nil {
+			return syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, "catchall element does not exist")
+		}
+		s.catchAllElem.destroy()
+		s.catchAllElem = nil
+		return nil
+	}
+
+	if !keyExists {
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "set element key attribute is missing")
+	}
+
+	startKey, endKey, err := parseSetElemKeys(elemAttrs, int(s.keyLen))
+	if err != nil {
+		return err
+	}
+
+	return s.removeElement(startKey, endKey)
+}
+
+// parseAttrAndRemoveElements removes a list of elements from a set.
+func (s *nftSet) parseAttrAndRemoveElements(attr nlmsg.AttrsView, tab *Table, msgFlags uint16, msgType linux.NfTableMsgType) *syserr.AnnotatedError {
+	for len(attr) > 0 {
+		_, elem, rest, ok := attr.ParseFirst()
+		if !ok {
+			return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse set elem list attributes")
+		}
+		attr = rest
+		elemAttrs, err := NfParseWithOpts(nlmsg.AttrsView(elem), &NfParseOpts{
+			Policy: setElemPolicy,
+		})
+		if err != nil {
+			return err
+		}
+		if err := s.parseAttrAndRemoveElem(elemAttrs, msgFlags); err != nil {
+			if err.GetError() == syserr.ErrNoFileOrDir && msgType == linux.NFT_MSG_DESTROYSETELEM {
+				continue
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+// NewSetElements handles NFT_MSG_NEWSETELEM.
 // Ref: net/netfilter/nf_tables_api.c:nf_tables_newsetelem()
-func (nf *NFTables) NewSetElements(attrs map[uint16]nlmsg.BytesView, family stack.AddressFamily, flags uint16, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
+func (nf *NFTables) NewSetElements(atr nlmsg.AttrsView, family stack.AddressFamily, flags uint16, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
+	attrs, err := NfParseWithOpts(atr, &NfParseOpts{Policy: setElemListPolicy})
+	if err != nil {
+		return err
+	}
+
 	elemListAttr, ok := attrs[linux.NFTA_SET_ELEM_LIST_ELEMENTS]
 	if !ok {
 		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "set elem list elements attribute is missing")
@@ -875,7 +1004,65 @@ func (nf *NFTables) NewSetElements(attrs map[uint16]nlmsg.BytesView, family stac
 		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "set is constant or anonymous and cannot be modified")
 	}
 
-	if err := nf.addElemListToSet(nlmsg.AttrsView(elemListAttr), set, tab, flags); err != nil {
+	if err := set.parseAttrAndAddElements(tab, nlmsg.AttrsView(elemListAttr), flags); err != nil {
+		return err
+	}
+	return nil
+}
+
+// DeleteSetElements handles NFT_MSG_DELSETELEM and NFT_MSG_DESTROYSETELEM.
+// Ref: net/netfilter/nf_tables_api.c:nf_tables_delsetelem()
+func (nf *NFTables) DeleteSetElements(atr nlmsg.AttrsView, family stack.AddressFamily, flags uint16, msgType linux.NfTableMsgType, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
+	// Use NfParseWithOpts to parse and validate attributes in one go.
+	attrs, err := NfParseWithOpts(atr, &NfParseOpts{Policy: setElemListPolicy})
+	if err != nil {
+		return err
+	}
+
+	// Get the table name from the attributes.
+	tabNameBytes, ok := attrs[linux.NFTA_SET_ELEM_LIST_TABLE]
+	if !ok {
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "attribute NFTA_SET_ELEM_LIST_TABLE is missing")
+	}
+	tabName := tabNameBytes.String()
+
+	// Get the set name from the attributes.
+	setNameBytes, ok := attrs[linux.NFTA_SET_ELEM_LIST_SET]
+	if !ok {
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "attribute NFTA_SET_ELEM_LIST_SET is missing")
+	}
+	setName := setNameBytes.String()
+
+	// Find the table in the NFTables object.
+	tab, err := nf.GetTable(family, tabName, uint32(ms.PortID))
+	if err != nil {
+		return err
+	}
+
+	// Find the set in the table.
+	set, ok := tab.sets[setName]
+	if !ok {
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "set does not exist")
+	}
+
+	// Anonymous set modification is not allowed.
+	if set.flags&linux.NFT_SET_ANONYMOUS != 0 {
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, "anonymous set modification is not supported")
+	}
+
+	// Constant set modification is not allowed if bound.
+	if len(set.bindings) != 0 && set.flags&linux.NFT_SET_CONSTANT != 0 {
+		return syserr.NewAnnotatedError(syserr.ErrBusy, "set is constant and bound, cannot be modified")
+	}
+
+	elemListAttr, ok := attrs[linux.NFTA_SET_ELEM_LIST_ELEMENTS]
+	// Remove all elements from the set if the element list attribute is not
+	// present.
+	if !ok {
+		return set.removeAllElements()
+	}
+
+	if err := set.parseAttrAndRemoveElements(nlmsg.AttrsView(elemListAttr), tab, flags, msgType); err != nil {
 		return err
 	}
 	return nil
@@ -1324,7 +1511,26 @@ func (s *setMapBackend) Remove(e *nftSetElem) (int, *syserr.AnnotatedError) {
 		delete(s.m, key)
 		return v, nil
 	}
-	return -1, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "key not found")
+	return -1, syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, "key not found")
+}
+
+// Update implements NftSetBackend.Update.
+func (s *setMapBackend) Update(e *nftSetElem, idx int) *syserr.AnnotatedError {
+	if e == nil {
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "element is nil")
+	}
+	key := string(e.startKey)
+	if _, ok := s.m[key]; !ok {
+		return syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, "key not found")
+	}
+	s.m[key] = idx
+	return nil
+}
+
+// RemoveAll implements NftSetBackend.RemoveAll.
+func (s *setMapBackend) RemoveAll() *syserr.AnnotatedError {
+	s.m = make(map[string]int)
+	return nil
 }
 
 // Clone implements NftSetBackend.Clone.

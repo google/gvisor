@@ -15,6 +15,7 @@
 #include "test/syscalls/linux/socket_netlink_netfilter_util.h"
 
 #include <endian.h>
+#include <errno.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -113,6 +114,75 @@ uint64_t GetNfAttrU64(const struct nfattr* attr) {
   const uint8_t* source_ptr = reinterpret_cast<const uint8_t*>(NFA_DATA(attr));
   memcpy(&aligned_value, source_ptr, sizeof(uint64_t));
   return be64toh(aligned_value);
+}
+
+// Reads a data value from a nested nfattr.
+PosixErrorOr<std::vector<uint8_t>> GetNestedDataValue(
+    const struct nfattr* parent_attr) {
+  int len = NFA_PAYLOAD(parent_attr);
+  if (len < sizeof(struct nfattr)) {
+    return PosixError(EINVAL, "Nested attribute too short");
+  }
+  const struct nfattr* attr =
+      reinterpret_cast<const struct nfattr*>(NFA_DATA(parent_attr));
+
+  if (attr->nfa_type == NFTA_DATA_VALUE ||
+      attr->nfa_type == NFTA_DATA_VERDICT) {
+    const uint8_t* p = reinterpret_cast<const uint8_t*>(NFA_DATA(attr));
+    return std::vector<uint8_t>(p, p + NFA_PAYLOAD(attr));
+  }
+
+  return PosixError(EINVAL, "Unexpected nested data attribute type");
+}
+
+// Helper function to parse a single set element from its nested attribute
+// representation.
+PosixErrorOr<ElementDescriptor> ParseElement(const struct nfattr* nested_attr) {
+  int elem_len = NFA_PAYLOAD(nested_attr);
+  const struct nfattr* elem_data =
+      reinterpret_cast<const struct nfattr*>(NFA_DATA(nested_attr));
+
+  ElementDescriptor current_elem;
+
+  for (; NFA_OK(elem_data, elem_len);
+       elem_data = NFA_NEXT(elem_data, elem_len)) {
+    if (elem_data->nfa_type == NFTA_SET_ELEM_KEY) {
+      auto val = GetNestedDataValue(elem_data);
+      if (!val.ok()) return val.error();
+      current_elem.key = val.ValueOrDie();
+    } else if (elem_data->nfa_type == NFTA_SET_ELEM_DATA) {
+      auto val = GetNestedDataValue(elem_data);
+      if (!val.ok()) return val.error();
+      current_elem.data = val.ValueOrDie();
+    } else if (elem_data->nfa_type == NFTA_SET_ELEM_FLAGS) {
+      current_elem.flags = GetNfAttrU32(elem_data);
+    }
+  }
+  return current_elem;
+}
+
+// Builds a netlink element with the given descriptor.
+std::vector<char> BuildNetlinkElement(const ElementDescriptor& desc) {
+  NlNestedAttr attr;
+  if (desc.flags != 0) {
+    attr.U32Attr(NFTA_SET_ELEM_FLAGS, desc.flags);
+  }
+  if (!desc.key.empty()) {
+    std::vector<char> key_data_attr =
+        NlNestedAttr()
+            .RawAttr(NFTA_DATA_VALUE, desc.key.data(), desc.key.size())
+            .Build();
+    attr.RawAttr(NFTA_SET_ELEM_KEY, key_data_attr.data(), key_data_attr.size());
+  }
+  if (!desc.data.empty()) {
+    std::vector<char> val_data_attr =
+        NlNestedAttr()
+            .RawAttr(NFTA_DATA_VALUE, desc.data.data(), desc.data.size())
+            .Build();
+    attr.RawAttr(NFTA_SET_ELEM_DATA, val_data_attr.data(),
+                 val_data_attr.size());
+  }
+  return attr.Build();
 }
 
 // Helper function to check the netfilter table attributes.
@@ -555,7 +625,7 @@ bool NlReq::MsgTypeToken(const std::string& token) {
       {"newchain", NFT_MSG_NEWCHAIN}, {"getchain", NFT_MSG_GETCHAIN},
       {"delchain", NFT_MSG_DELCHAIN}, {"destroychain", NFT_MSG_DESTROYCHAIN},
       {"newrule", NFT_MSG_NEWRULE},   {"getrule", NFT_MSG_GETRULE},
-      {"getgen", NFT_MSG_GETGEN}};
+      {"delrule", NFT_MSG_DELRULE},   {"getgen", NFT_MSG_GETGEN}};
   auto it = token_to_msg_type.find(token);
   if (it != token_to_msg_type.end()) {
     EXPECT_FALSE(msg_type_set_) << "Message type already set: " << msg_type_;
@@ -896,6 +966,71 @@ PosixError DestroyNetfilterTable(FileDescriptor& fd,
   return NetlinkNetfilterBatchRequestAckOrError(fd, seq_num, seq_num + 2,
                                                 destroy_request_buffer.data(),
                                                 destroy_request_buffer.size());
+}
+
+// GetSetElements returns the elements of a set by
+// parsing the response of a netlink set dump request.
+PosixErrorOr<std::vector<ElementDescriptor>> GetSetElements(
+    const FileDescriptor& fd, absl::string_view table_name,
+    absl::string_view set_name, uint32_t seq) {
+  std::vector<ElementDescriptor> actual_elements;
+  PosixError parse_err;
+
+  // Setup set elements dump request: NFT_MSG_GETSETELEM
+  std::vector<char> get_dump_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_GETSETELEM)
+          .Flags(NLM_F_REQUEST | NLM_F_DUMP)
+          .Family(NFPROTO_INET)
+          .Seq(seq)
+          .StrAttr(NFTA_SET_ELEM_LIST_TABLE, std::string(table_name))
+          .StrAttr(NFTA_SET_ELEM_LIST_SET, std::string(set_name))
+          .Build();
+
+  // Process the dumped msgs.
+  PosixError err = NetlinkRequestResponse(
+      fd, get_dump_request_buffer.data(), get_dump_request_buffer.size(),
+      [&](const struct nlmsghdr* hdr) {
+        if (!parse_err.ok()) {
+          return;
+        }
+        if (hdr->nlmsg_type == NLMSG_DONE) {
+          return;
+        }
+        // Output stream MUST chunk successfully.
+        EXPECT_TRUE(hdr->nlmsg_flags & NLM_F_MULTI);
+
+        const struct nfattr* elements_attr =
+            FindNfAttr(hdr, nullptr, NFTA_SET_ELEM_LIST_ELEMENTS);
+        // Element chunk list block absent from this subset message string.
+        if (!elements_attr) {
+          return;
+        }
+
+        int nested_len = NFA_PAYLOAD(elements_attr);
+        const struct nfattr* nested_attr =
+            reinterpret_cast<const struct nfattr*>(NFA_DATA(elements_attr));
+
+        // Process each extracted list container recursively.
+        for (; NFA_OK(nested_attr, nested_len);
+             nested_attr = NFA_NEXT(nested_attr, nested_len)) {
+          auto parsed = ParseElement(nested_attr);
+          if (!parsed.ok()) {
+            parse_err = parsed.error();
+            return;
+          }
+          actual_elements.push_back(parsed.ValueOrDie());
+        }
+      },
+      false);
+
+  if (!parse_err.ok()) {
+    return parse_err;
+  }
+  if (!err.ok()) {
+    return err;
+  }
+  return actual_elements;
 }
 
 }  // namespace testing

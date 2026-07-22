@@ -5095,7 +5095,7 @@ func TestGetSetElements(t *testing.T) {
 
 	tests := []struct {
 		name             string
-		elemAttrs        map[uint16]nlmsg.BytesView // elements to create via NewSetElements
+		elemAttrs        nlmsg.AttrsView            // elements to create via NewSetElements
 		getAttrs         map[uint16]nlmsg.BytesView // elements to get via GetSetElements
 		getFlags         uint16
 		expectNewElemErr *syserr.Error
@@ -5114,16 +5114,17 @@ func TestGetSetElements(t *testing.T) {
 		},
 		{
 			name: "GetAllElements",
-			elemAttrs: func() map[uint16]nlmsg.BytesView {
+			elemAttrs: func() nlmsg.AttrsView {
 				var list nlmsg.NestedAttr
 				list.PutAttr(linux.NFTA_LIST_ELEM, primitive.AsByteSlice(qElem1))
 				list.PutAttr(linux.NFTA_LIST_ELEM, primitive.AsByteSlice(qElem2))
 				list.PutAttr(linux.NFTA_LIST_ELEM, primitive.AsByteSlice(qElem3))
-				return map[uint16]nlmsg.BytesView{
-					linux.NFTA_SET_ELEM_LIST_TABLE:    nlmsg.BytesView(tabName),
-					linux.NFTA_SET_ELEM_LIST_SET:      nlmsg.BytesView(setName),
-					linux.NFTA_SET_ELEM_LIST_ELEMENTS: nlmsg.BytesView(list),
-				}
+
+				var attrs nlmsg.NestedAttr
+				attrs.PutAttrString(linux.NFTA_SET_ELEM_LIST_TABLE, tabName)
+				attrs.PutAttrString(linux.NFTA_SET_ELEM_LIST_SET, setName)
+				attrs.PutAttr(linux.NFTA_SET_ELEM_LIST_ELEMENTS, primitive.AsByteSlice(list))
+				return nlmsg.AttrsView(attrs)
 			}(),
 			getAttrs: map[uint16]nlmsg.BytesView{
 				linux.NFTA_SET_ELEM_LIST_TABLE: nlmsg.BytesView(tabName),
@@ -5148,14 +5149,15 @@ func TestGetSetElements(t *testing.T) {
 		},
 		{
 			name: "GetElement",
-			elemAttrs: func() map[uint16]nlmsg.BytesView {
+			elemAttrs: func() nlmsg.AttrsView {
 				var list nlmsg.NestedAttr
 				list.PutAttr(linux.NFTA_LIST_ELEM, primitive.AsByteSlice(qElem2))
-				return map[uint16]nlmsg.BytesView{
-					linux.NFTA_SET_ELEM_LIST_TABLE:    nlmsg.BytesView(tabName),
-					linux.NFTA_SET_ELEM_LIST_SET:      nlmsg.BytesView(setName),
-					linux.NFTA_SET_ELEM_LIST_ELEMENTS: nlmsg.BytesView(list),
-				}
+
+				var attrs nlmsg.NestedAttr
+				attrs.PutAttrString(linux.NFTA_SET_ELEM_LIST_TABLE, tabName)
+				attrs.PutAttrString(linux.NFTA_SET_ELEM_LIST_SET, setName)
+				attrs.PutAttr(linux.NFTA_SET_ELEM_LIST_ELEMENTS, primitive.AsByteSlice(list))
+				return nlmsg.AttrsView(attrs)
 			}(),
 			getAttrs: func() map[uint16]nlmsg.BytesView {
 				var queryElemAttr nlmsg.NestedAttr
@@ -5273,6 +5275,112 @@ func TestGetSetElements(t *testing.T) {
 			parsed := parseDumpedElements(t, ms)
 			if diff := cmp.Diff(tc.wanted, parsed, cmp.AllowUnexported(wantSetElem{})); diff != "" {
 				t.Errorf("GetSetElements returned unexpected elements diff (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestSetMapRemoveElement(t *testing.T) {
+	key1 := []byte{192, 168, 1, 1}
+	key2 := []byte{10, 0, 0, 1}
+	key3 := []byte{172, 16, 0, 1}
+	keyNone := []byte{1, 2, 3, 4}
+
+	testCases := []struct {
+		name           string
+		initialElems   [][]byte
+		keyToRemove    []byte
+		wantErr        *syserr.Error
+		wantElems      [][]byte
+		wantBackendMap map[string]int
+	}{
+		{
+			name:         "delete first element",
+			initialElems: [][]byte{key1, key2, key3},
+			keyToRemove:  key1,
+			wantElems:    [][]byte{key3, key2},
+			wantBackendMap: map[string]int{
+				string(key3): 0,
+				string(key2): 1,
+			},
+		},
+		{
+			name:         "delete middle element",
+			initialElems: [][]byte{key1, key2, key3},
+			keyToRemove:  key2,
+			wantElems:    [][]byte{key1, key3},
+			wantBackendMap: map[string]int{
+				string(key1): 0,
+				string(key3): 1,
+			},
+		},
+		{
+			name:         "delete last element",
+			initialElems: [][]byte{key1, key2, key3},
+			keyToRemove:  key3,
+			wantElems:    [][]byte{key1, key2},
+			wantBackendMap: map[string]int{
+				string(key1): 0,
+				string(key2): 1,
+			},
+		},
+		{
+			name:         "delete non-existent element",
+			initialElems: [][]byte{key1, key2, key3},
+			keyToRemove:  keyNone,
+			wantErr:      syserr.ErrNoFileOrDir,
+			wantElems:    [][]byte{key1, key2, key3},
+			wantBackendMap: map[string]int{
+				string(key1): 0,
+				string(key2): 1,
+				string(key3): 2,
+			},
+		},
+		{
+			name:           "delete from single element set",
+			initialElems:   [][]byte{key1},
+			keyToRemove:    key1,
+			wantBackendMap: map[string]int{},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			set := &nftSet{
+				name:   "test_set",
+				keyLen: 4,
+				backend: &setMapBackend{
+					m: make(map[string]int),
+				},
+			}
+
+			for i, k := range tc.initialElems {
+				set.elements = append(set.elements, nftSetElem{startKey: k})
+				set.backend.(*setMapBackend).m[string(k)] = i
+			}
+
+			err := set.removeElement(tc.keyToRemove, nil)
+			if tc.wantErr != nil {
+				if err == nil || err.GetError() != tc.wantErr {
+					t.Errorf("Expected error %v, got %v", tc.wantErr, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("removeElement failed: %v", err)
+			}
+
+			var gotElems [][]byte
+			for _, e := range set.elements {
+				gotElems = append(gotElems, e.startKey)
+			}
+			if diff := cmp.Diff(tc.wantElems, gotElems); diff != "" {
+				t.Errorf("Elements mismatch (-want +got):\n%s", diff)
+			}
+
+			backend := set.backend.(*setMapBackend)
+			if diff := cmp.Diff(tc.wantBackendMap, backend.m); diff != "" {
+				t.Errorf("Backend mapping mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

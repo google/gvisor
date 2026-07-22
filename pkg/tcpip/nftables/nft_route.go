@@ -113,6 +113,9 @@ func (op *route) deepCopy() operation {
 	return &opCopy
 }
 
+// destroy implements operation.destroy.
+func (op *route) destroy() {}
+
 // evaluate for Route loads specific routing data into the destination register.
 func (op route) evaluate(regs *registerSet, evalCtx opEvalCtx) {
 	// Gets the target data to be stored in the destination register.
