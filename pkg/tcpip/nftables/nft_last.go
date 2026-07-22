@@ -46,6 +46,9 @@ func (op *last) deepCopy() operation {
 	return opCopy
 }
 
+// destroy implements operation.destroy.
+func (op *last) destroy() {}
+
 // evaluate for last records the last time the operation was evaluated and flags
 // if this was the first time the operation was evaluated.
 func (op *last) evaluate(regs *registerSet, evalCtx opEvalCtx) {

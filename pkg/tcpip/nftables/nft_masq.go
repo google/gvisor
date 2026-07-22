@@ -134,6 +134,9 @@ func (m *masqOp) deepCopy() operation {
 	return &opCopy
 }
 
+// destroy implements operation.destroy.
+func (m *masqOp) destroy() {}
+
 // Dump implements operation.Dump.
 func (m *masqOp) Dump() ([]byte, *syserr.AnnotatedError) {
 	msg := &nlmsg.Message{}

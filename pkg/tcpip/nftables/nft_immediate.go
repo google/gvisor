@@ -124,6 +124,9 @@ func (op *immediate) deepCopy() operation {
 	return &opCopy
 }
 
+// destroy implements operation.destroy.
+func (op *immediate) destroy() {}
+
 // checkCompatibility implements operation.checkCompatibility.
 func (op immediate) checkCompatibility(cCtx *opCompatCtx) *syserr.AnnotatedError {
 	return nil
