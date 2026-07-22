@@ -59,7 +59,7 @@ func (c *FSCheckpoint) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.imagePath, "image-path", "", "directory path to saved filesystem checkpoint")
 	f.BoolVar(&c.leaveRunning, "leave-running", false, "if true, resume containers after checkpointing; if false, containers exit with status 0 after checkpointing")
 	f.BoolVar(&c.direct, "direct", false, "use O_DIRECT for writing checkpoint files")
-	f.StringVar(&c.path, "path", "/", `path inside the container to save to the checkpoint; the special value "all-tmpfs" saves all tmpfs mounts from the OCI spec that are disk-backed`)
+	f.StringVar(&c.path, "path", "/", `path inside the container to save to the checkpoint; the special value "all-tmpfs" saves all tmpfs mounts from the OCI spec`)
 }
 
 // FetchSpec implements util.SubCommand.FetchSpec.

@@ -686,9 +686,10 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 		// tmpfs size limit.
 		DisableDefaultSizeLimit: true,
 	}
+	resourceID := checkpoint.ResourceID{ContainerName: c.containerName, Path: dst}
+	tmpfsOpts.ResourceID = resourceID
 	if filestoreFD != nil {
 		// Create memory file for disk-backed overlays.
-		resourceID := checkpoint.ResourceID{ContainerName: c.containerName, Path: dst}
 		mf, err := createPrivateMemoryFile(filestoreFD.ReleaseToFile("overlay-filestore"), resourceID, c.containerID, c.l.fsRestore)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create memory file for overlay: %v", err)
@@ -703,6 +704,23 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 			log.Infof("Loading filesystem checkpoint tree for %q", resourceID)
 			tmpfsOpts.SourceTar = sourceTar
 			tmpfsOpts.SourceTarFSCheckpoint = true
+		}
+	} else {
+		// Use the main MemoryFile, so leave tmpfsOpts.MemoryFile unset.
+		sourceTar, err := c.l.fsRestore.tmpfsSourceTar(resourceID, c.containerID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get tar archive from filesystem checkpoint: %w", err)
+		}
+		if sourceTar != nil {
+			// A filesystem checkpoint exists. Since this is backed by the main
+			// MemoryFile, we need to relocate the pages file into it. The tar
+			// archive records pages file offsets; tmpfs will allocate fresh pages
+			// in the main MemoryFile and load the checkpointed contents into them
+			// from the pages file via RelocatePagesFile.
+			log.Infof("Loading filesystem checkpoint tree for %q (relocating into main MemoryFile)", resourceID)
+			tmpfsOpts.SourceTar = sourceTar
+			tmpfsOpts.SourceTarFSCheckpoint = true
+			tmpfsOpts.RelocatePagesFile = c.l.fsRestore.apfl
 		}
 	}
 	// If the rootfs upper tar file is provided, it will be applied to the
@@ -1016,18 +1034,17 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 		if err != nil {
 			return "", nil, err
 		}
+		resourceID := checkpoint.ResourceID{ContainerName: containerName, Path: m.mount.Destination}
+		tmpfsOpts := tmpfs.FilesystemOpts{ResourceID: resourceID}
 		if m.filestoreFD != nil {
-			resourceID := checkpoint.ResourceID{ContainerName: containerName, Path: m.mount.Destination}
 			mf, err := createPrivateMemoryFile(m.filestoreFD.ReleaseToFile("tmpfs-filestore"), resourceID, containerID, fsr)
 			if err != nil {
 				return "", nil, fmt.Errorf("failed to create memory file for tmpfs: %w", err)
 			}
-			tmpfsOpts := tmpfs.FilesystemOpts{
-				MemoryFile: mf,
-				// If a mount is being overlaid with tmpfs, it should not be limited by
-				// the default tmpfs size limit.
-				DisableDefaultSizeLimit: true,
-			}
+			tmpfsOpts.MemoryFile = mf
+			// If a mount is being overlaid with tmpfs, it should not be limited by
+			// the default tmpfs size limit.
+			tmpfsOpts.DisableDefaultSizeLimit = true
 			sourceTar, err := fsr.tmpfsSourceTar(resourceID, containerID)
 			if err != nil {
 				return "", nil, fmt.Errorf("failed to get tar archive from filesystem checkpoint: %w", err)
@@ -1037,8 +1054,25 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 				tmpfsOpts.SourceTar = sourceTar
 				tmpfsOpts.SourceTarFSCheckpoint = true
 			}
-			internalData = tmpfsOpts
+		} else {
+			// Use the main MemoryFile, so leave tmpfsOpts.MemoryFile unset.
+			sourceTar, err := fsr.tmpfsSourceTar(resourceID, containerID)
+			if err != nil {
+				return "", nil, fmt.Errorf("failed to get tar archive from filesystem checkpoint: %w", err)
+			}
+			if sourceTar != nil {
+				// A filesystem checkpoint exists. Since this is backed by the main
+				// MemoryFile, we need to relocate the pages file into it. The tar
+				// archive records pages file offsets; tmpfs will allocate fresh pages
+				// in the main MemoryFile and load the checkpointed contents into them
+				// from the pages file via RelocatePagesFile.
+				log.Infof("Loading filesystem checkpoint tree for %q (relocating into main MemoryFile)", resourceID)
+				tmpfsOpts.SourceTar = sourceTar
+				tmpfsOpts.SourceTarFSCheckpoint = true
+				tmpfsOpts.RelocatePagesFile = fsr.apfl
+			}
 		}
+		internalData = tmpfsOpts
 
 	case Bind:
 		fsName = gofer.Name

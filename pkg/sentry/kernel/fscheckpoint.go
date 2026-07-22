@@ -119,6 +119,12 @@ func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) error {
 			mf *pgalloc.MemoryFile
 		}
 		resourceIDs := make(map[checkpoint.ResourceID]tmpfsAndPrivateMemoryFile)
+		// mainMFSave is the registration of the main MemoryFile (the sandbox's
+		// single shared MemoryFile, which backs all relocating tmpfs
+		// filesystems) with the async pages file, used to write their pages (see
+		// the relocating branch below). It is created lazily on the first such
+		// filesystem and reused for the rest.
+		var mainMFSave *pgalloc.AsyncMemoryFileSave
 		multiTarWriter := &countingWriter{w: opts.MultiTarFile}
 		pagesMetadataWriter := &countingWriter{w: opts.PagesMetadataFile}
 		prevTarOffset := uint64(0)
@@ -143,62 +149,59 @@ func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) error {
 			if mf == nil {
 				continue
 			}
-			resourceID := mf.ResourceID()
-			if saveAll {
-				// Checkpoint every tmpfs filesystem that has a ResourceID, i.e.
-				// every tmpfs with a private (typically disk-backed)
-				// MemoryFile. This still excludes tmpfs filesystems backed by
-				// the main MemoryFile (which have no ResourceID), since we
-				// currently have no way to save only the contents of the main
-				// MemoryFile owned by a checkpointed filesystem, and don't want
-				// to save all application memory.
-				//
-				// TODO: NOLINT - Support checkpointing tmpfs filesystems backed
-				// by the main MemoryFile by implementing the ability to save a
-				// subset of a pgalloc.MemoryFile, and using it to save only the
-				// subset of each MemoryFile used by any checkpointed tmpfs
-				// filesystem. This would also avoid saving MemoryFile pages that
-				// are referenced by e.g. a previous MM.Pin() but no longer owned
-				// by a regularFile; in such cases, the holder of the extra
-				// reference won't be restored by filesystem checkpointing,
-				// causing the referenced pages to be leaked. (As of this
-				// writing, this leak is unlikely to be an issue in practice,
-				// since the primary user of MM.Pin() is nvproxy, and the Nvidia
-				// driver appears to reject pinning mappings of disk-backed
-				// files.)
-				if !resourceID.Ok() {
-					continue
-				}
-			} else if resourceID.Path != opts.Path {
-				// Only checkpoint tmpfs filesystems mounted at opts.Path. Note
-				// that ResourceID.Path does not include the container name, so
-				// this matches such filesystems across all containers (e.g. the
-				// default opts.Path of "/" matches every container's rootfs
-				// upper layer). This excludes tmpfs filesystems backed by the
-				// main MemoryFile (which have no ResourceID, so resourceID.Path
-				// is "") for the reasons described above.
+			// resourceID identifies the tmpfs filesystem in the checkpoint. It
+			// is set for all tmpfs filesystems created from the OCI spec and empty
+			// for tmpfs filesystems created by the application via mount(2).
+			resourceID := tmpfs.ResourceIDOf(fs)
+			if !resourceID.Ok() {
+				// App-created (mount(2)) tmpfs mounts are excluded: the application isn't
+				// restored, so on cold start it will recreate them. Only spec mounts are
+				// set up, matching what the freshly-started application expects.
+				continue
+			}
+			if !saveAll && resourceID.Path != opts.Path {
+				// When saveAll is false, only checkpoint tmpfs filesystems mounted
+				// at opts.Path. Note that ResourceID.Path does not include the
+				// container name, so this matches such filesystems across all
+				// containers (e.g. the default opts.Path of "/" matches every
+				// container's rootfs upper layer). tmpfs filesystems created by the
+				// application via mount(2) have no ResourceID (resourceID.Path is "")
+				// and are thus excluded.
 				continue
 			}
 			if old, ok := resourceIDs[resourceID]; ok {
-				return fmt.Errorf("pgalloc.MemoryFile restore ID %q is used by both tmpfs filesystem %p (MemoryFile %p) and tmpfs filesystem %p (MemoryFile %p)", resourceID, old.fs, old.mf, fs, mf)
+				return fmt.Errorf("filesystem checkpoint ResourceID %q is used by both tmpfs filesystem %p (MemoryFile %p) and tmpfs filesystem %p (MemoryFile %p)", resourceID, old.fs, old.mf, fs, mf)
 			}
 			resourceIDs[resourceID] = tmpfsAndPrivateMemoryFile{fs, mf}
+
+			// Decide how to save the filesystem's contents. If mf is a private
+			// MemoryFile (i.e. it has its own ResourceID), it is saved verbatim
+			// via MemoryFile.SaveTo, recording a MemoryFile manifest entry, and
+			// the tar archive records offsets into mf. Otherwise mf is the
+			// shared/main MemoryFile, whose contents cannot be saved as a whole;
+			// instead, the filesystem's pages are written directly to the pages
+			// file (without copying) and the tar archive records the resulting
+			// pages file offsets, which are loaded back into freshly-allocated
+			// pages on restore. No MemoryFile manifest entry is recorded in this
+			// case.
+			relocating := !mf.ResourceID().Ok()
 			if log.IsLogging(log.Debug) {
-				log.Debugf("Filesystem checkpoint saving tmpfs with resourceID %s", resourceID)
+				log.Debugf("Filesystem checkpoint saving tmpfs with resourceID %s (relocating=%t)", resourceID, relocating)
 			}
-			if err := mf.SaveTo(ctx, pagesMetadataWriter, &mfOpts); err != nil {
-				return fmt.Errorf("failed to save MemoryFile with resourceID %s: %w", resourceID, err)
-			}
-			manifest.MemoryFiles = append(manifest.MemoryFiles, fscheckpoint.MemoryFile{
-				ResourceID:         resourceID,
-				PagesMetadataStart: prevPagesMetadataOffset,
-				PagesMetadataEnd:   pagesMetadataWriter.count,
-				PagesStart:         prevPagesOffset,
-			})
-			prevPagesMetadataOffset = pagesMetadataWriter.count
-			prevPagesOffset = apfs.PagesFileOffset()
-			if err := tmpfs.FSCheckpointWrite(ctx, fs, multiTarWriter); err != nil {
-				return fmt.Errorf("failed to write tmpfs with resourceID %s to multi-tar file: %w", resourceID, err)
+			if relocating {
+				if mainMFSave == nil {
+					mainMFSave, err = apfs.RegisterMemoryFile(mf)
+					if err != nil {
+						return fmt.Errorf("failed to register MemoryFile for resourceID %s: %w", resourceID, err)
+					}
+				}
+				if err := tmpfs.FSCheckpointWriteShared(ctx, fs, mainMFSave, multiTarWriter); err != nil {
+					return fmt.Errorf("failed to write tmpfs with resourceID %s to multi-tar file: %w", resourceID, err)
+				}
+			} else {
+				if err := tmpfs.FSCheckpointWrite(ctx, fs, multiTarWriter); err != nil {
+					return fmt.Errorf("failed to write tmpfs with resourceID %s to multi-tar file: %w", resourceID, err)
+				}
 			}
 			manifest.Tmpfs = append(manifest.Tmpfs, fscheckpoint.Tmpfs{
 				ResourceID: resourceID,
@@ -206,6 +209,23 @@ func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) error {
 				TarEnd:     multiTarWriter.count,
 			})
 			prevTarOffset = multiTarWriter.count
+
+			if !relocating {
+				if err := mf.SaveTo(ctx, pagesMetadataWriter, &mfOpts); err != nil {
+					return fmt.Errorf("failed to save MemoryFile with resourceID %s: %w", resourceID, err)
+				}
+				manifest.MemoryFiles = append(manifest.MemoryFiles, fscheckpoint.MemoryFile{
+					ResourceID:         resourceID,
+					PagesMetadataStart: prevPagesMetadataOffset,
+					PagesMetadataEnd:   pagesMetadataWriter.count,
+					PagesStart:         prevPagesOffset,
+				})
+				prevPagesMetadataOffset = pagesMetadataWriter.count
+			}
+			// Keep prevPagesOffset in sync with the pages file, which advances
+			// for both verbatim saves (MemoryFile.SaveTo) and relocating saves
+			// (FSCheckpointWriteShared).
+			prevPagesOffset = apfs.PagesFileOffset()
 		}
 		if len(resourceIDs) == 0 {
 			return fmt.Errorf("no checkpointable filesystems")
