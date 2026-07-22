@@ -110,9 +110,9 @@ func (b *Binary) DeclareEmbedded(execFn func(Options) error, forkExecFn func(Opt
 	b.embeddedForkExec = forkExecFn
 }
 
-// binDir returns the directory in which sidecar binaries are located.
+// Dir returns the directory in which sidecar binaries are located.
 // Not guaranteed to exist.
-func binDir() (string, error) {
+func Dir() (string, error) {
 	if dir := os.Getenv(sidecarBinariesDirEnv); dir != "" {
 		return dir, nil
 	}
@@ -126,7 +126,7 @@ func binDir() (string, error) {
 // Path returns the path to a usable on-disk copy of the binary.
 // Returns error if not present or executable.
 func (b *Binary) Path() (string, error) {
-	dir, err := binDir()
+	dir, err := Dir()
 	if err != nil {
 		return "", err
 	}
@@ -147,7 +147,7 @@ func (b *Binary) Path() (string, error) {
 // notAvailableError returns an error for the case where the binary is
 // not available.
 func (b *Binary) notAvailableError() error {
-	dir, err := binDir()
+	dir, err := Dir()
 	if err != nil {
 		return err
 	}

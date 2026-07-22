@@ -107,10 +107,13 @@ type ExecveInfo struct {
 	BinaryUid            uint32                 `protobuf:"varint,6,opt,name=binary_uid,json=binaryUid,proto3" json:"binary_uid,omitempty"`
 	BinaryGid            uint32                 `protobuf:"varint,7,opt,name=binary_gid,json=binaryGid,proto3" json:"binary_gid,omitempty"`
 	BinarySha256         []byte                 `protobuf:"bytes,8,opt,name=binary_sha256,json=binarySha256,proto3" json:"binary_sha256,omitempty"`
+	BinarySha1           []byte                 `protobuf:"bytes,16,opt,name=binary_sha1,json=binarySha1,proto3" json:"binary_sha1,omitempty"`
 	BinaryOverlayfsUpper bool                   `protobuf:"varint,9,opt,name=binary_overlayfs_upper,json=binaryOverlayfsUpper,proto3" json:"binary_overlayfs_upper,omitempty"`
 	BinaryOverlayfsLower bool                   `protobuf:"varint,15,opt,name=binary_overlayfs_lower,json=binaryOverlayfsLower,proto3" json:"binary_overlayfs_lower,omitempty"`
 	BinaryIno            uint64                 `protobuf:"varint,10,opt,name=binary_ino,json=binaryIno,proto3" json:"binary_ino,omitempty"`
 	BinaryCtime          *Timespec              `protobuf:"bytes,11,opt,name=binary_ctime,json=binaryCtime,proto3" json:"binary_ctime,omitempty"`
+	BinarySize           int64                  `protobuf:"varint,18,opt,name=binary_size,json=binarySize,proto3" json:"binary_size,omitempty"`
+	BinaryNlink          uint32                 `protobuf:"varint,19,opt,name=binary_nlink,json=binaryNlink,proto3" json:"binary_nlink,omitempty"`
 	Stdin                *FdInfo                `protobuf:"bytes,12,opt,name=stdin,proto3" json:"stdin,omitempty"`
 	Stdout               *FdInfo                `protobuf:"bytes,13,opt,name=stdout,proto3" json:"stdout,omitempty"`
 	Stderr               *FdInfo                `protobuf:"bytes,14,opt,name=stderr,proto3" json:"stderr,omitempty"`
@@ -205,6 +208,13 @@ func (x *ExecveInfo) GetBinarySha256() []byte {
 	return nil
 }
 
+func (x *ExecveInfo) GetBinarySha1() []byte {
+	if x != nil {
+		return x.BinarySha1
+	}
+	return nil
+}
+
 func (x *ExecveInfo) GetBinaryOverlayfsUpper() bool {
 	if x != nil {
 		return x.BinaryOverlayfsUpper
@@ -231,6 +241,20 @@ func (x *ExecveInfo) GetBinaryCtime() *Timespec {
 		return x.BinaryCtime
 	}
 	return nil
+}
+
+func (x *ExecveInfo) GetBinarySize() int64 {
+	if x != nil {
+		return x.BinarySize
+	}
+	return 0
+}
+
+func (x *ExecveInfo) GetBinaryNlink() uint32 {
+	if x != nil {
+		return x.BinaryNlink
+	}
+	return 0
 }
 
 func (x *ExecveInfo) GetStdin() *FdInfo {
@@ -475,7 +499,7 @@ const file_pkg_sentry_seccheck_points_sentry_proto_rawDesc = "" +
 	"\x11created_thread_id\x18\x03 \x01(\x05R\x0fcreatedThreadId\x125\n" +
 	"\x17created_thread_group_id\x18\x04 \x01(\x05R\x14createdThreadGroupId\x12>\n" +
 	"\x1ccreated_thread_start_time_ns\x18\x05 \x01(\x03R\x18createdThreadStartTimeNs\x12\x14\n" +
-	"\x05flags\x18\x06 \x01(\x04R\x05flags\"\x80\x05\n" +
+	"\x05flags\x18\x06 \x01(\x04R\x05flags\"\xe5\x05\n" +
 	"\n" +
 	"ExecveInfo\x12=\n" +
 	"\fcontext_data\x18\x01 \x01(\v2\x1a.gvisor.common.ContextDataR\vcontextData\x12\x1f\n" +
@@ -489,13 +513,18 @@ const file_pkg_sentry_seccheck_points_sentry_proto_rawDesc = "" +
 	"binary_uid\x18\x06 \x01(\rR\tbinaryUid\x12\x1d\n" +
 	"\n" +
 	"binary_gid\x18\a \x01(\rR\tbinaryGid\x12#\n" +
-	"\rbinary_sha256\x18\b \x01(\fR\fbinarySha256\x124\n" +
+	"\rbinary_sha256\x18\b \x01(\fR\fbinarySha256\x12\x1f\n" +
+	"\vbinary_sha1\x18\x10 \x01(\fR\n" +
+	"binarySha1\x124\n" +
 	"\x16binary_overlayfs_upper\x18\t \x01(\bR\x14binaryOverlayfsUpper\x124\n" +
 	"\x16binary_overlayfs_lower\x18\x0f \x01(\bR\x14binaryOverlayfsLower\x12\x1d\n" +
 	"\n" +
 	"binary_ino\x18\n" +
 	" \x01(\x04R\tbinaryIno\x12:\n" +
-	"\fbinary_ctime\x18\v \x01(\v2\x17.gvisor.common.TimespecR\vbinaryCtime\x12+\n" +
+	"\fbinary_ctime\x18\v \x01(\v2\x17.gvisor.common.TimespecR\vbinaryCtime\x12\x1f\n" +
+	"\vbinary_size\x18\x12 \x01(\x03R\n" +
+	"binarySize\x12!\n" +
+	"\fbinary_nlink\x18\x13 \x01(\rR\vbinaryNlink\x12+\n" +
 	"\x05stdin\x18\f \x01(\v2\x15.gvisor.common.FdInfoR\x05stdin\x12-\n" +
 	"\x06stdout\x18\r \x01(\v2\x15.gvisor.common.FdInfoR\x06stdout\x12-\n" +
 	"\x06stderr\x18\x0e \x01(\v2\x15.gvisor.common.FdInfoR\x06stderr\x12\x16\n" +

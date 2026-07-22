@@ -1389,7 +1389,29 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 		if err != nil {
 			return nil, nil, nil, nil, fmt.Errorf("opening rootfs image %q: %v", rootfsHint.Mount.Source, err)
 		}
-		return []*os.File{ioFile}, nil, nil, nil, nil
+		ioFiles := []*os.File{ioFile}
+		cu := cleanup.Make(func() {
+			for _, f := range ioFiles {
+				_ = f.Close()
+			}
+		})
+		defer cu.Clean()
+		cfgIdx := 1
+		for _, m := range c.Spec.Mounts {
+			if !specutils.HasMountConfig(m) {
+				continue
+			}
+			if c.GoferMountConfs[cfgIdx].ShouldUseErofs() {
+				f, err := os.Open(m.Source)
+				if err != nil {
+					return nil, nil, nil, nil, fmt.Errorf("opening EROFS image %q: %v", m.Source, err)
+				}
+				ioFiles = append(ioFiles, f)
+			}
+			cfgIdx++
+		}
+		cu.Release()
+		return ioFiles, nil, nil, nil, nil
 	}
 
 	// Ensure we don't leak FDs to the gofer process.
