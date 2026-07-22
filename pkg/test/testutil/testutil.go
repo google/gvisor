@@ -22,6 +22,7 @@ import (
 	"encoding/base32"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"log"
 	"math"
@@ -656,4 +657,25 @@ func TestIndicesForShard(numTests int) ([]int, error) {
 		}
 	}
 	return indices, nil
+}
+
+// Partition returns the current partition number (1-indexed).
+func Partition() int {
+	return *partition
+}
+
+// TotalPartitions returns the total number of partitions.
+func TotalPartitions() int {
+	return *totalPartitions
+}
+
+// ShouldRun returns true if the test should run on the current partition/shard.
+func ShouldRun(testName string) bool {
+	if *totalPartitions <= 1 {
+		return true
+	}
+	h := fnv.New32a()
+	h.Write([]byte(testName))
+	idx := int(h.Sum32() % uint32(*totalPartitions))
+	return idx == (*partition - 1)
 }
