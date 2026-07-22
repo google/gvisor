@@ -284,3 +284,32 @@ func TestUninstall(t *testing.T) {
 		})
 	}
 }
+
+func TestReleaseTarballURL(t *testing.T) {
+	for _, tc := range []struct {
+		version string
+		goarch  string
+		want    string // Empty means an error is expected.
+	}{
+		{"release-20260706.0", "amd64", "https://storage.googleapis.com/gvisor/releases/release/20260706.0/x86_64/gvisor.tar.bz2"},
+		{"release-20260706", "arm64", "https://storage.googleapis.com/gvisor/releases/release/20260706/aarch64/gvisor.tar.bz2"},
+		{"release-20260706.0-14-gabcdef123456", "amd64", ""},
+		{"VERSION_MISSING", "amd64", ""},
+		{"release-20260706.0", "riscv64", ""},
+	} {
+		got, err := releaseTarballURL(tc.version, tc.goarch)
+		if tc.want == "" {
+			if err == nil {
+				t.Errorf("releaseTarballURL(%q, %q) = %q, want error", tc.version, tc.goarch, got)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("releaseTarballURL(%q, %q): %v", tc.version, tc.goarch, err)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("releaseTarballURL(%q, %q) = %q, want %q", tc.version, tc.goarch, got, tc.want)
+		}
+	}
+}
