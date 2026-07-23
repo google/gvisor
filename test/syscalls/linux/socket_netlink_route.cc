@@ -910,7 +910,7 @@ TEST(NetlinkRouteTest, GetAddrDump) {
     struct rtgenmsg rgm;
   };
 
-  struct request req;
+  struct request req = {};
   req.hdr.nlmsg_len = sizeof(req);
   req.hdr.nlmsg_type = RTM_GETADDR;
   req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
@@ -1584,7 +1584,7 @@ TEST(NetlinkRouteTest, RecvmsgTrunc) {
     struct rtgenmsg rgm;
   };
 
-  struct request req;
+  struct request req = {};
   req.hdr.nlmsg_len = sizeof(req);
   req.hdr.nlmsg_type = RTM_GETADDR;
   req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
@@ -1659,7 +1659,7 @@ TEST(NetlinkRouteTest, RecvmsgTruncPeek) {
     struct rtgenmsg rgm;
   };
 
-  struct request req;
+  struct request req = {};
   req.hdr.nlmsg_len = sizeof(req);
   req.hdr.nlmsg_type = RTM_GETADDR;
   req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
@@ -1737,7 +1737,7 @@ TEST(NetlinkRouteTest, NoPasscredNoCreds) {
     struct rtgenmsg rgm;
   };
 
-  struct request req;
+  struct request req = {};
   req.hdr.nlmsg_len = sizeof(req);
   req.hdr.nlmsg_type = RTM_GETADDR;
   req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
@@ -1783,7 +1783,7 @@ TEST(NetlinkRouteTest, PasscredCreds) {
     struct rtgenmsg rgm;
   };
 
-  struct request req;
+  struct request req = {};
   req.hdr.nlmsg_len = sizeof(req);
   req.hdr.nlmsg_type = RTM_GETADDR;
   req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
