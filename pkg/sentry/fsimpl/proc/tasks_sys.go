@@ -74,7 +74,7 @@ func (fs *filesystem) newSysDir(ctx context.Context, root *auth.Credentials, k *
 			"keys": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
 				"maxkeys": fs.newMaxKeySizeFile(ctx, k, root),
 			}),
-			"osrelease": fs.newInode(ctx, root, 0444, newStaticFile(version.LinuxRelease)),
+			"osrelease": fs.newInode(ctx, root, 0444, newStaticFile(version.LinuxRelease())),
 			"ostype":    fs.newInode(ctx, root, 0444, newStaticFile(version.LinuxSysname)),
 			"version":   fs.newInode(ctx, root, 0444, newStaticFile(version.LinuxVersion)),
 		}),
