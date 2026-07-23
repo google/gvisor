@@ -5990,3 +5990,213 @@ func TestReadFile(t *testing.T) {
 		t.Errorf("Got %q (%d bytes), want 'Linux' (5 bytes)", string(content2), len(content2))
 	}
 }
+
+func TestCLITmpfsMount(t *testing.T) {
+	spec, conf := sleepSpecConf(t)
+	_, bundleDir, cleanupContainer, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanupContainer()
+
+	// Create and start the container.
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	c, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer c.Destroy()
+	if err := c.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	testCases := []struct {
+		name       string
+		mountArgs  []string
+		source     string
+		readonly   bool
+		lazyUmount bool
+	}{
+		{
+			name:      "ReadWrite2Args",
+			mountArgs: []string{"mount", "-t", "tmpfs"},
+			readonly:  false,
+		},
+		{
+			name:       "ReadOnly3Args",
+			mountArgs:  []string{"mount", "-t", "tmpfs", "-o", "ro"},
+			source:     "none",
+			readonly:   true,
+			lazyUmount: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			targetDir := filepath.Join(testutil.TmpDir(), "tmpfs-"+tc.name)
+			cmdArgs := append([]string{"--root", conf.RootDir}, tc.mountArgs...)
+			cmdArgs = append(cmdArgs, c.ID)
+			if tc.source != "" {
+				cmdArgs = append(cmdArgs, tc.source)
+			}
+			cmdArgs = append(cmdArgs, targetDir)
+
+			mountCmd := exec.Command(specutils.ExePath, cmdArgs...)
+			if out, err := mountCmd.CombinedOutput(); err != nil {
+				t.Fatalf("runsc mount failed: %v, output: %s", err, out)
+			}
+
+			testFile := filepath.Join(targetDir, "test.txt")
+			if tc.readonly {
+				if out, err := executeCombinedOutput(conf, c, nil, "/bin/sh", "-c", "echo -n fail > \"$1\"", "sh", testFile); err == nil {
+					t.Errorf("expected write to read-only mount to fail, but succeeded with output: %s", out)
+				}
+			} else {
+				testContent := "hello tmpfs"
+				if out, err := executeCombinedOutput(conf, c, nil, "/bin/sh", "-c", "echo -n \"$1\" > \"$2\"", "sh", testContent, testFile); err != nil {
+					t.Fatalf("failed to write to tmpfs: %v, output: %s", err, out)
+				}
+				if out, err := executeCombinedOutput(conf, c, nil, "/bin/cat", testFile); err != nil {
+					t.Fatalf("failed to read from tmpfs: %v, output: %s", err, out)
+				} else if string(out) != testContent {
+					t.Errorf("content mismatch, got: %q, want: %q", string(out), testContent)
+				}
+			}
+
+			umountArgs := []string{"--root", conf.RootDir, "umount"}
+			if tc.lazyUmount {
+				umountArgs = append(umountArgs, "-l")
+			}
+			umountArgs = append(umountArgs, c.ID, targetDir)
+			umountCmd := exec.Command(specutils.ExePath, umountArgs...)
+			if out, err := umountCmd.CombinedOutput(); err != nil {
+				t.Fatalf("runsc umount failed: %v, output: %s", err, out)
+			}
+
+			if !tc.readonly {
+				if out, err := executeCombinedOutput(conf, c, nil, "/bin/cat", testFile); err == nil {
+					t.Errorf("file still exists after umount, content: %q, output: %s", string(out), out)
+				}
+			}
+		})
+	}
+
+	t.Run("RelativeTargetPathRejected", func(t *testing.T) {
+		relMountCmd := exec.Command(specutils.ExePath, "--root", conf.RootDir, "mount", "-t", "tmpfs", c.ID, "relative/target")
+		if err := relMountCmd.Run(); err == nil {
+			t.Errorf("expected relative mount path to fail on CLI, but it succeeded")
+		}
+	})
+}
+
+func TestCLIGoferMount(t *testing.T) {
+	spec, conf := sleepSpecConf(t)
+	_, bundleDir, cleanupContainer, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanupContainer()
+
+	// Create and start the container.
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	c, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer c.Destroy()
+	if err := c.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	testCases := []struct {
+		name       string
+		mountArgs  []string
+		readonly   bool
+		lazyUmount bool
+	}{
+		{
+			name:      "ReadWrite",
+			mountArgs: []string{"mount", "-t", "gofer"},
+			readonly:  false,
+		},
+		{
+			name:       "ReadOnly",
+			mountArgs:  []string{"mount", "-t", "gofer", "-o", "ro"},
+			readonly:   true,
+			lazyUmount: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			hostDir := filepath.Join(testutil.TmpDir(), "host-dir-"+tc.name)
+			if err := os.MkdirAll(hostDir, 0755); err != nil {
+				t.Fatalf("failed to create host dir: %v", err)
+			}
+			hostFile := filepath.Join(hostDir, "hello.txt")
+			if err := os.WriteFile(hostFile, []byte("hello from host"), 0644); err != nil {
+				t.Fatalf("failed to write host file: %v", err)
+			}
+
+			targetDir := filepath.Join(testutil.TmpDir(), "gofer-target-"+tc.name)
+			cmdArgs := append([]string{"--root", conf.RootDir}, tc.mountArgs...)
+			cmdArgs = append(cmdArgs, c.ID, hostDir, targetDir)
+
+			mountCmd := exec.Command(specutils.ExePath, cmdArgs...)
+			if out, err := mountCmd.CombinedOutput(); err != nil {
+				t.Fatalf("runsc mount gofer failed: %v, output: %s", err, out)
+			}
+
+			containerHostFile := filepath.Join(targetDir, "hello.txt")
+			if out, err := executeCombinedOutput(conf, c, nil, "/bin/cat", containerHostFile); err != nil {
+				t.Fatalf("failed to read gofer mounted file from container: %v, output: %s", err, out)
+			} else if string(out) != "hello from host" {
+				t.Errorf("content mismatch for gofer mount, got: %q, want: %q", string(out), "hello from host")
+			}
+
+			if tc.readonly {
+				writeTestFile := filepath.Join(targetDir, "write_test.txt")
+				if out, err := executeCombinedOutput(conf, c, nil, "/bin/sh", "-c", "echo -n fail > \"$1\"", "sh", writeTestFile); err == nil {
+					t.Errorf("expected write to read-only gofer mount to fail, but succeeded with output: %s", out)
+				}
+			} else {
+				// Write a new file from inside the container.
+				guestWriteFile := filepath.Join(targetDir, "guest.txt")
+				guestContent := "written from container"
+				if out, err := executeCombinedOutput(conf, c, nil, "/bin/sh", "-c", "echo -n \"$1\" > \"$2\"", "sh", guestContent, guestWriteFile); err != nil {
+					t.Fatalf("failed to write from container to gofer mount: %v, output: %s", err, out)
+				}
+
+				// Verify the file was actually created on the host filesystem.
+				hostWrittenFile := filepath.Join(hostDir, "guest.txt")
+				if content, err := os.ReadFile(hostWrittenFile); err != nil {
+					t.Fatalf("failed to read file on host written by container: %v", err)
+				} else if string(content) != guestContent {
+					t.Errorf("host file content mismatch, got: %q, want: %q", string(content), guestContent)
+				}
+			}
+
+			umountArgs := []string{"--root", conf.RootDir, "umount"}
+			if tc.lazyUmount {
+				umountArgs = append(umountArgs, "-l")
+			}
+			umountArgs = append(umountArgs, c.ID, targetDir)
+			umountCmd := exec.Command(specutils.ExePath, umountArgs...)
+			if out, err := umountCmd.CombinedOutput(); err != nil {
+				t.Fatalf("runsc umount gofer failed: %v, output: %s", err, out)
+			}
+
+			if out, err := executeCombinedOutput(conf, c, nil, "/bin/cat", containerHostFile); err == nil {
+				t.Errorf("file still exists after umount gofer, content: %q, output: %s", string(out), out)
+			}
+		})
+	}
+}

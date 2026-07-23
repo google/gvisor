@@ -90,6 +90,13 @@ func OptionsToFlags(opts []string) uint32 {
 	return optionsToFlags(opts, optionsMap)
 }
 
+// IsMountFlag returns true if the option is a generic VFS mount flag or propagation flag.
+func IsMountFlag(opt string) bool {
+	_, ok1 := optionsMap[opt]
+	_, ok2 := propOptionsMap[opt]
+	return ok1 || ok2
+}
+
 // PropOptionsToFlags converts propagation mount options to syscall flags.
 // Propagation options cannot be set other with other options and must be
 // handled separately.
