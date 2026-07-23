@@ -38,6 +38,9 @@ const (
 
 	// CtxUTSNamespace is a Context.Value key for a UTSNamespace.
 	CtxUTSNamespace
+
+	// CtxCgroupNamespace is a Context.Value key for a CgroupNamespace.
+	CtxCgroupNamespace
 )
 
 // ContextCanTrace returns true if ctx is permitted to trace t, in the same sense
@@ -82,6 +85,16 @@ func UTSNamespaceFromContext(ctx context.Context) *UTSNamespace {
 func IPCNamespaceFromContext(ctx context.Context) *IPCNamespace {
 	if v := ctx.Value(ipc.CtxIPCNamespace); v != nil {
 		return v.(*IPCNamespace)
+	}
+	return nil
+}
+
+// CgroupNamespaceFromContext returns the cgroup namespace in which ctx is
+// executing, or nil if there is no such cgroup namespace. No reference is
+// transferred: the returned namespace is only valid while ctx is.
+func CgroupNamespaceFromContext(ctx context.Context) *CgroupNamespace {
+	if v := ctx.Value(CtxCgroupNamespace); v != nil {
+		return v.(*CgroupNamespace)
 	}
 	return nil
 }

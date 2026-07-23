@@ -64,6 +64,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
@@ -814,8 +815,9 @@ func (c *containerMounter) mountSubmounts(ctx context.Context, spec *specs.Spec,
 				if submount.mount.Type == cgroupfs.Name {
 					submount.mount.Type = cgroup2fs.Name
 				}
-				// TODO (b/524360347): Bind a per-container cgroup2 mount rooted at /sys/fs/cgroup/$cid,
-				// much like we do for cgroup v1 in mountCgroupSubmounts.
+				// The mount is rooted per the container's cgroup namespace
+				// (see cgroup2fs.mountRoot): private-ns containers see only their
+				// "/<cid>" subtree, created earlier by createContainerCgroup2.
 				mnt, err = c.mountSubmount(ctx, spec, conf, mns, creds, submount)
 				if err != nil {
 					return fmt.Errorf("mount cgroup2 %q: %w", submount.mount.Destination, err)
@@ -1259,6 +1261,197 @@ func (c *containerMounter) getSharedMount(ctx context.Context, spec *specs.Spec,
 	}
 	c.sharedMounts[mount.hint.Mount.Source] = sharedMount
 	return sharedMount, nil
+}
+
+// setupCgroup2 initializes sandbox-wide cgroup2 state: an internal mount of
+// the cgroup2fs singleton used to manage per-container cgroups, the
+// system-wide nsdelegate flag, and controller enablement for per-container
+// child cgroups.
+//
+// +checklocks:l.mu
+func (l *Loader) setupCgroup2() error {
+	l.cgroup2Mount = cgroup2fs.NewInternalMount(l.k, l.k.VFS())
+	cgroup2fs.SetNSDelegate(l.k, true)
+
+	// Enable all supported controllers for per-container child cgroups. The
+	// root cgroup is exempt from the no-internal-processes rule, and no
+	// application tasks exist yet at this point anyway.
+	ctx := l.k.SupervisorContext()
+	creds := auth.NewRootCredentials(l.k.RootUserNamespace())
+	root := vfs.MakeVirtualDentry(l.cgroup2Mount, l.cgroup2Mount.Root())
+	pop := vfs.PathOperation{
+		Root:  root,
+		Start: root,
+		Path:  fspath.Parse("cgroup.subtree_control"),
+	}
+	fd, err := l.k.VFS().OpenAt(ctx, creds, &pop, &vfs.OpenOptions{Flags: linux.O_WRONLY})
+	if err != nil {
+		return fmt.Errorf("opening cgroup.subtree_control: %w", err)
+	}
+	defer fd.DecRef(ctx)
+	data := []byte("+cpu +memory +pids +cpuset")
+	if _, err := fd.Write(ctx, usermem.BytesIOSequence(data), vfs.WriteOptions{}); err != nil {
+		return fmt.Errorf("enabling cgroup2 controllers: %w", err)
+	}
+	return nil
+}
+
+func specHasCgroupMount(spec *specs.Spec) bool {
+	for _, m := range spec.Mounts {
+		if m.Type == cgroupfs.Name || m.Type == cgroup2fs.Name {
+			return true
+		}
+	}
+	return false
+}
+
+// setupContainerCgroup2 sets up the container's cgroup2 state: it creates
+// the per-container cgroup "/<cid>", sets it as the container's initial
+// cgroup, and resolves the container's cgroup namespace from its spec,
+// mirroring PID namespace policy: no spec entry means the root namespace, a
+// matching path joins that container's namespace, and anything else gets a
+// new namespace rooted at "/<cid>".
+//
+// The returned cleanup releases the references that keep the container's
+// cgroup and cgroup namespace alive until CreateProcess takes its own;
+// call it (typically via defer) once the container's process has been
+// created, or once creation has failed.
+//
+// +checklocks:l.mu
+func (l *Loader) setupContainerCgroup2(info *containerInfo) (func(), error) {
+	ctx := l.k.SupervisorContext()
+	creds := auth.NewRootCredentials(l.k.RootUserNamespace())
+	var (
+		cg kernel.Cgroup2
+		vd vfs.VirtualDentry
+	)
+
+	if specHasCgroupMount(info.spec) {
+		root := vfs.MakeVirtualDentry(l.cgroup2Mount, l.cgroup2Mount.Root())
+		pop := vfs.PathOperation{
+			Root:  root,
+			Start: root,
+			Path:  fspath.Parse(info.cid),
+		}
+		// EEXIST is tolerated to allow container ID reuse after a destroy that
+		// could not remove the cgroup.
+		if err := l.k.VFS().MkdirAt(ctx, creds, &pop, &vfs.MkdirOptions{Mode: 0755}); err != nil &&
+			!linuxerr.Equals(linuxerr.EEXIST, err) {
+			return nil, fmt.Errorf("creating container cgroup %q: %w", info.cid, err)
+		}
+		var err error
+		vd, err = l.k.VFS().GetDentryAt(ctx, creds, &pop, &vfs.GetDentryOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("resolving container cgroup %q: %w", info.cid, err)
+		}
+		var ok bool
+		cg, ok = cgroup2fs.CgroupFromDentry(vd.Dentry())
+		if !ok {
+			vd.DecRef(ctx)
+			return nil, fmt.Errorf("container cgroup %q is not a cgroup", info.cid)
+		}
+		info.procArgs.InitialCgroupV2 = cg
+	} else {
+		// No cgroup mount in the spec, no per-container cgroup.
+		cg = l.k.Cgroup2FS().RootCgroup()
+	}
+
+	ns, ok := specutils.GetNS(specs.CgroupNamespace, info.spec)
+	if !ok {
+		// No namespace entry in the spec: stay in the root namespace.
+		return func() {
+			if vd.Ok() {
+				vd.DecRef(ctx)
+			}
+		}, nil
+	}
+
+	var cgroupns *kernel.CgroupNamespace
+	if ns.Path != "" {
+		cgroupns = l.findCgroupNamespace(ns.Path)
+	}
+	if cgroupns != nil {
+		log.Debugf("Joining cgroup namespace named %q", ns.Path)
+	} else {
+		if ns.Path != "" {
+			log.Warningf("Cgroup namespace %q not found, running in new cgroup namespace", ns.Path)
+		}
+		cgroupns = l.k.NewCgroupNamespace(ctx, cg, info.procArgs.Credentials.UserNamespace)
+	}
+
+	info.procArgs.CgroupNamespace = cgroupns
+	if ep := l.processes[execID{cid: info.cid}]; ep != nil {
+		ep.cgroupnsPath = ns.Path
+	}
+
+	return func() {
+		if vd.Ok() {
+			vd.DecRef(ctx)
+		}
+		cgroupns.DecRef(ctx)
+	}, nil
+}
+
+// findCgroupNamespace returns the cgroup namespace of the container whose
+// spec declared the given cgroup namespace path, or nil if no such container
+// exists. A non-nil return holds a reference for the caller.
+//
+// +checklocks:l.mu
+func (l *Loader) findCgroupNamespace(path string) *kernel.CgroupNamespace {
+	for _, p := range l.processes {
+		if p.cgroupnsPath != path || p.tg == nil {
+			continue
+		}
+		if nsref := p.tg.Leader().GetCgroupNamespace(); nsref != nil {
+			return nsref
+		}
+	}
+	return nil
+}
+
+// removeContainerCgroup2 makes a best-effort attempt at removing the
+// destroyed container's cgroup, including any sub-cgroups the container
+// created. It may legitimately fail, e.g. if another container migrated a
+// task into the subtree.
+//
+// +checklocks:l.mu
+func (l *Loader) removeContainerCgroup2(cid string) {
+	if l.cgroup2Mount == nil {
+		return
+	}
+	ctx := l.k.SupervisorContext()
+	creds := auth.NewRootCredentials(l.k.RootUserNamespace())
+	root := vfs.MakeVirtualDentry(l.cgroup2Mount, l.cgroup2Mount.Root())
+	if err := l.removeCgroup2Subtree(ctx, creds, root, cid); err != nil && !linuxerr.Equals(linuxerr.ENOENT, err) {
+		log.Warningf("Failed to remove cgroup of container %q: %v", cid, err)
+	}
+}
+
+// removeCgroup2Subtree removes the cgroup directory at path along with its
+// descendant cgroups, depth first, mirroring runc's recursive cgroup removal
+// on container deletion. It is best-effort: a descendant that cannot be
+// removed (e.g. one populated by a task that another container migrated into
+// the subtree) leaves its ancestors in place.
+func (l *Loader) removeCgroup2Subtree(ctx context.Context, creds *auth.Credentials, root vfs.VirtualDentry, path string) error {
+	pop := vfs.PathOperation{
+		Root:  root,
+		Start: root,
+		Path:  fspath.Parse(path),
+	}
+	if fd, err := l.k.VFS().OpenAt(ctx, creds, &pop, &vfs.OpenOptions{Flags: linux.O_RDONLY | linux.O_DIRECTORY}); err == nil {
+		var children []string
+		_ = fd.IterDirents(ctx, vfs.IterDirentsCallbackFunc(func(d vfs.Dirent) error {
+			if d.Type == linux.DT_DIR && d.Name != "." && d.Name != ".." {
+				children = append(children, d.Name)
+			}
+			return nil
+		}))
+		fd.DecRef(ctx)
+		for _, child := range children {
+			_ = l.removeCgroup2Subtree(ctx, creds, root, path+"/"+child)
+		}
+	}
+	return l.k.VFS().RmdirAt(ctx, creds, &pop)
 }
 
 // mountCgroupMounts mounts the cgroups which are shared across all containers.

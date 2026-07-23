@@ -62,6 +62,11 @@ type interfaceFile struct {
 	onEventCreated func(inode *eventFile)
 	showAtRoot     bool
 	ctrl           controller
+
+	// nsDelegatable marks files that remain writable on a cgroup namespace
+	// root from inside the namespace when the "nsdelegate" mount option is
+	// set.
+	nsDelegatable bool
 }
 
 type attachCtx struct {

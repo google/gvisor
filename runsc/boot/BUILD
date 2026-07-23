@@ -140,6 +140,7 @@ go_library(
         "//pkg/timing",
         "//pkg/unet",
         "//pkg/urpc",
+        "//pkg/usermem",
         "//runsc/boot/filter",
         "//runsc/boot/portforward",
         "//runsc/boot/pprof",

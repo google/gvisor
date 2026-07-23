@@ -508,9 +508,10 @@ func (c *cgroup) Exit(ctx context.Context, t *kernel.Task) {
 }
 
 // CanCloneInto implements kernel.Cgroup2.CanCloneInto.
-// It is used to check permissions for CLONE_CGROUP_INTO.
+// It is used to check permissions for CLONE_CGROUP_INTO. ns is the forking
+// task's cgroup namespace.
 // +checklocksread:c.fs.treeMu
-func (c *cgroup) CanCloneInto(ctx context.Context, creds *auth.Credentials) error {
+func (c *cgroup) CanCloneInto(ctx context.Context, creds *auth.Credentials, ns *kernel.CgroupNamespace) error {
 	if c.deleted.Load() {
 		return linuxerr.ENOENT
 	}
@@ -530,7 +531,11 @@ func (c *cgroup) CanCloneInto(ctx context.Context, creds *auth.Credentials) erro
 	t := kernel.TaskFromContext(ctx)
 	if t != nil {
 		if parentCg, ok := t.Cgroup2().(*cgroup); ok {
-			return c.checkMigrationPermsLocked(ctx, creds, parentCg)
+			var nsRoot *cgroup
+			if ns != nil {
+				nsRoot, _ = ns.Root().(*cgroup)
+			}
+			return c.checkMigrationPermsLocked(ctx, creds, parentCg, nsRoot)
 		}
 	}
 	return nil
@@ -712,8 +717,11 @@ func (c *cgroup) walkSubtreeLocked(f func(n *cgroup) bool) {
 	}
 }
 
+// checkMigrationPermsLocked checks whether the caller may migrate a process
+// from oldNode to c. nsRoot is the root cgroup of the calling task's cgroup
+// namespace.
 // +checklocksread:c.fs.treeMu
-func (c *cgroup) checkMigrationPermsLocked(ctx context.Context, creds *auth.Credentials, oldNode *cgroup) error {
+func (c *cgroup) checkMigrationPermsLocked(ctx context.Context, creds *auth.Credentials, oldNode, nsRoot *cgroup) error {
 	lca := lowestCommonAncestor(oldNode, c)
 	if lca == nil {
 		return nil
@@ -722,7 +730,53 @@ func (c *cgroup) checkMigrationPermsLocked(ctx context.Context, creds *auth.Cred
 	if err != nil {
 		return err
 	}
-	return lcaProcs.CheckPermissions(ctx, creds, vfs.MayWrite)
+	if err := lcaProcs.CheckPermissions(ctx, creds, vfs.MayWrite); err != nil {
+		return err
+	}
+
+	// If cgroup namespaces are delegation boundaries, both the source and
+	// destination cgroups must be reachable from the migrating task's cgroup
+	// namespace.
+	if c.fs.nsDelegate.Load() && nsRoot != nil {
+		if !oldNode.isDescendantOf(nsRoot) || !c.isDescendantOf(nsRoot) {
+			return linuxerr.ENOENT
+		}
+	}
+	return nil
+}
+
+// isDescendantOf returns true if c is a descendant of (or the same as) a.
+// It relies only on immutable fields and needs no locks.
+func (c *cgroup) isDescendantOf(a *cgroup) bool {
+	if c == nil || a == nil {
+		return false
+	}
+	for c != nil && c.level > a.level {
+		c = c.parent
+	}
+	return c == a
+}
+
+// checkNSDelegateWrite enforces the "nsdelegate" mount option: cgroup
+// namespace roots are delegation boundaries, so writes from inside a
+// non-init namespace to non-delegatable interface files of the namespace
+// root cgroup are rejected.
+func (c *cgroup) checkNSDelegateWrite(ctx context.Context, fd *vfs.FileDescription) error {
+	if !c.fs.nsDelegate.Load() {
+		return nil
+	}
+	ifd, ok := fd.Impl().(*interfaceFD)
+	if !ok || ifd.ns == nil {
+		return nil
+	}
+	cgns := ifd.ns
+	if k := kernel.KernelFromContext(ctx); k == nil || cgns == k.RootCgroupNamespace() {
+		return nil
+	}
+	if nsRoot, ok := cgns.Root().(*cgroup); ok && nsRoot == c {
+		return linuxerr.EPERM
+	}
+	return nil
 }
 
 func lowestCommonAncestor(a, b *cgroup) *cgroup {
@@ -776,7 +830,9 @@ func (c *cgroup) hasControllersEnabledLocked() bool {
 }
 
 // attachProcess handles writes to cgroup.procs.
-func (c *cgroup) attachProcess(ctx context.Context, creds *auth.Credentials, pid int64) error {
+// nsRoot is the root cgroup of the cgroupns of the task at the time of the
+// opening of the cgroup.procs fd.
+func (c *cgroup) attachProcess(ctx context.Context, creds *auth.Credentials, nsRoot *cgroup, pid int64) error {
 	c.fs.treeMu.Lock()
 	defer c.fs.treeMu.Unlock()
 	if c.deleted.Load() {
@@ -804,7 +860,7 @@ func (c *cgroup) attachProcess(ctx context.Context, creds *auth.Credentials, pid
 		return linuxerr.ESRCH
 	}
 	oldNode := targetTask.Cgroup2().(*cgroup)
-	if err := c.checkMigrationPermsLocked(ctx, creds, oldNode); err != nil {
+	if err := c.checkMigrationPermsLocked(ctx, creds, oldNode, nsRoot); err != nil {
 		return err
 	}
 

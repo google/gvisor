@@ -155,8 +155,6 @@ func (cm *containerManager) Event(cid *string, out *EventOut) error {
 	}
 
 	// Memory usage.
-	// TODO(b/524360347): Once per-container submounting is implemented in cgroup2fs,
-	// cgroup v2 subcontainer queries ("/" + *cid) will resolve directly without fallback.
 	memFile := control.CgroupControlFile{
 		Controller: "memory",
 		Path:       "/" + *cid,
