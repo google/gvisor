@@ -73,12 +73,14 @@ Make sure the following dependencies are installed:
 
 ### Building
 
-Build and install the `runsc` binary:
+Build and install `runsc`, the `containerd-shim-runsc-v1` containerd shim, and
+a few sidecar binaries that `runsc` expects to find in a `gvisor-bin/`
+directory next to itself:
 
 ```sh
 mkdir -p bin
-make copy TARGETS=runsc DESTINATION=bin/
-sudo cp ./bin/runsc /usr/local/bin
+make copy TARGETS=//:release DESTINATION=bin/
+sudo cp -r --preserve=mode bin/runsc bin/containerd-shim-runsc-v1 bin/gvisor-bin /usr/local/bin/
 ```
 
 To build specific libraries or binaries, you can specify the target:
@@ -100,7 +102,7 @@ to get started:
 After setting up dependencies, using Bazel is similar to the Makefile:
 
 ```sh
-bazel build //runsc:runsc
+bazel build //:release
 ```
 
 ### Testing
@@ -137,25 +139,15 @@ $(brew --prefix bazel@8)/bin/bazel test --macos_sdk_version=$(xcrun --show-sdk-v
 
 This project uses [bazel][bazel] to build and manage dependencies. A synthetic
 `go` branch is maintained that is compatible with standard `go` tooling for
-convenience.
+convenience. This is useful for external packages and libraries that depend on
+gVisor subpackages (e.g. userspace networking via Netstack) to import gVisor
+Go code into their Go projects.
 
-For example, to build and install `runsc` directly from this branch:
-
-```sh
-echo "module runsc" > go.mod
-GO111MODULE=on go get gvisor.dev/gvisor/runsc@go
-CGO_ENABLED=0 GO111MODULE=on sudo -E go build -o /usr/local/bin/runsc gvisor.dev/gvisor/runsc
-```
-
-Subsequently, you can build and install the shim binary for `containerd`:
-
-```sh
-GO111MODULE=on sudo -E go build -o /usr/local/bin/containerd-shim-runsc-v1 gvisor.dev/gvisor/shim
-```
-
-Note that this branch is supported in a best effort capacity, and direct
-development on this branch is not supported. Development should occur on the
-`master` branch, which is then reflected into the `go` branch.
+**NOTE**: **`runsc` builds from this branch are not supported**. gVisor and
+`runsc` require several binaries (some of which are not even written in Go)
+in order to function. The `go` branch is supported in a best effort capacity,
+and direct development on this branch is not supported. Development should
+occur on the `master` branch, which is then reflected into the `go` branch.
 
 ## Community & Governance
 
