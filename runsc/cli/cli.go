@@ -126,6 +126,7 @@ func Run(sidecar *gvisorbinaries.Binary, commands map[util.SubCommand]string, he
 	if err != nil {
 		util.Fatalf("%s", err.Error())
 	}
+	specutils.ExePath = conf.SelfPath
 
 	var errorLogger io.Writer
 	if *logFD > -1 {
@@ -175,6 +176,7 @@ func Run(sidecar *gvisorbinaries.Binary, commands map[util.SubCommand]string, he
 			if err := specutils.FixConfig(conf, spec); err != nil {
 				util.Fatalf("Failed to apply OCI spec annotations to runsc config: %v", err)
 			}
+			specutils.ExePath = conf.SelfPath
 		}
 	}
 

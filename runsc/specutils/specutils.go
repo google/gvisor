@@ -92,8 +92,8 @@ const (
 // LINT.ThenChange(:Features)
 
 // ExePath must point to runsc binary, which is normally the same binary. It's
-// changed in tests that aren't linked in the same binary.
-var ExePath = "/proc/self/exe"
+// changed in tests that aren't linked in the same binary and by --self-path.
+var ExePath = config.DefaultSelfPath
 
 // Version is the supported spec version.
 var Version = specs.Version
