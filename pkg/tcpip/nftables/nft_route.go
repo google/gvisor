@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 // route is an operation that loads specific route data into a register.
@@ -145,7 +144,7 @@ func (op route) evaluate(regs *registerSet, evalCtx opEvalCtx) {
 
 	// Breaks if could not retrieve target data.
 	if target == nil {
-		regs.verdict = stack.NFVerdict{Code: VC(linux.NFT_BREAK)}
+		regs.verdict = Verdict{Code: VC(linux.NFT_BREAK)}
 		return
 	}
 

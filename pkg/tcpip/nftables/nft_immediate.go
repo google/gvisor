@@ -21,15 +21,14 @@ import (
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
-	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 // immediate is an operation that sets the data in a register.
 type immediate struct {
-	dregIdx  int             // Index of the destination register in registerSet.data.
-	dataType uint32          // Type of data in the register (NFT_DATA_VALUE or NFT_DATA_VERDICT).
-	data     []byte          // optional
-	verdict  stack.NFVerdict // optional
+	dregIdx  int     // Index of the destination register in registerSet.data.
+	dataType uint32  // Type of data in the register (NFT_DATA_VALUE or NFT_DATA_VERDICT).
+	data     []byte  // optional
+	verdict  Verdict // optional
 }
 
 // evaluate for immediate sets the data in the destination register.
@@ -67,7 +66,7 @@ func (op immediate) Dump() ([]byte, *syserr.AnnotatedError) {
 }
 
 // newImmediate creates a new immediate operation.
-func newImmediate(dreg uint8, dataType uint32, data []byte, verdict stack.NFVerdict) (*immediate, *syserr.AnnotatedError) {
+func newImmediate(dreg uint8, dataType uint32, data []byte, verdict Verdict) (*immediate, *syserr.AnnotatedError) {
 	switch dataType {
 	case linux.NFT_DATA_VALUE:
 		dregIdx, err := regNumToIdx(dreg, len(data))
@@ -115,7 +114,7 @@ func initImmediate(tab *Table, exprInfo ExprInfo) (*immediate, *syserr.Annotated
 	if err != nil {
 		return nil, err
 	}
-	return newImmediate(uint8(reg), regType, data, stack.NFVerdict{})
+	return newImmediate(uint8(reg), regType, data, Verdict{})
 }
 
 func (op *immediate) deepCopy() operation {

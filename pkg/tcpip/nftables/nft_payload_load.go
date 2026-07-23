@@ -95,7 +95,7 @@ func (op payloadLoad) evaluate(regs *registerSet, evalCtx opEvalCtx) {
 
 	// Breaks if could not retrieve packet data.
 	if payload == nil || len(payload) < int(op.offset)+op.blen {
-		regs.verdict = stack.NFVerdict{Code: VC(linux.NFT_BREAK)}
+		regs.verdict = Verdict{Code: VC(linux.NFT_BREAK)}
 		return
 	}
 

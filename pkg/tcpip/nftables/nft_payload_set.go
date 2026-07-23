@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 // payloadSet is an operation that sets data in the packet payload to the value
@@ -110,7 +109,7 @@ func (op payloadSet) evaluate(regs *registerSet, evalCtx opEvalCtx) {
 
 	// Breaks if could not retrieve packet data.
 	if payload == nil || len(payload) < offset+op.blen {
-		regs.verdict = stack.NFVerdict{Code: VC(linux.NFT_BREAK)}
+		regs.verdict = Verdict{Code: VC(linux.NFT_BREAK)}
 		return
 	}
 

@@ -440,131 +440,131 @@ func TestEvaluateImmediateVerdict(t *testing.T) {
 		baseOp1  operation // will be nil if unused
 		baseOp2  operation // will be nil if unused
 		targetOp operation // will be nil if unused
-		verdict  stack.NFVerdict
+		verdict  Verdict
 	}{
 		{
 			tname:   "no operations",
-			verdict: stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
+			verdict: Verdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
 		},
 		{
 			tname:   "immediately accept",
-			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}),
-			verdict: stack.NFVerdict{Code: VC(linux.NF_ACCEPT)},
+			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_ACCEPT)}),
+			verdict: Verdict{Code: VC(linux.NF_ACCEPT)},
 		},
 		{
 			tname:   "immediately drop",
-			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_DROP)}),
-			verdict: stack.NFVerdict{Code: VC(linux.NF_DROP)},
+			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)}),
+			verdict: Verdict{Code: VC(linux.NF_DROP)},
 		},
 		{
 			tname:   "immediately continue with base chain policy accept",
-			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_CONTINUE)}),
-			verdict: stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
+			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_CONTINUE)}),
+			verdict: Verdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
 		},
 		{
 			tname:   "immediately return with base chain policy accept",
-			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_RETURN)}),
-			verdict: stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
+			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_RETURN)}),
+			verdict: Verdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
 		},
 		{
 			tname:    "immediately jump to target chain that accepts",
-			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: arbitraryTargetChain}),
-			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}),
-			verdict:  stack.NFVerdict{Code: VC(linux.NF_ACCEPT)},
+			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: arbitraryTargetChain}),
+			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_ACCEPT)}),
+			verdict:  Verdict{Code: VC(linux.NF_ACCEPT)},
 		},
 		{
 			tname:    "immediately jump to target chain that drops",
-			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: arbitraryTargetChain}),
-			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_DROP)}),
-			verdict:  stack.NFVerdict{Code: VC(linux.NF_DROP)},
+			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: arbitraryTargetChain}),
+			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)}),
+			verdict:  Verdict{Code: VC(linux.NF_DROP)},
 		},
 		{
 			tname:    "immediately jump to target chain that continues with second rule that accepts",
-			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: arbitraryTargetChain}),
-			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_CONTINUE)}),
-			baseOp2:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}),
-			verdict:  stack.NFVerdict{Code: VC(linux.NF_ACCEPT)},
+			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: arbitraryTargetChain}),
+			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_CONTINUE)}),
+			baseOp2:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_ACCEPT)}),
+			verdict:  Verdict{Code: VC(linux.NF_ACCEPT)},
 		},
 		{
 			tname:    "immediately jump to target chain that continues with second rule that drops",
-			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: arbitraryTargetChain}),
-			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_CONTINUE)}),
-			baseOp2:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_DROP)}),
-			verdict:  stack.NFVerdict{Code: VC(linux.NF_DROP)},
+			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: arbitraryTargetChain}),
+			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_CONTINUE)}),
+			baseOp2:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)}),
+			verdict:  Verdict{Code: VC(linux.NF_DROP)},
 		},
 		{
 			tname:    "immediately goto to target chain that accepts",
-			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: arbitraryTargetChain}),
-			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}),
-			verdict:  stack.NFVerdict{Code: VC(linux.NF_ACCEPT)},
+			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: arbitraryTargetChain}),
+			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_ACCEPT)}),
+			verdict:  Verdict{Code: VC(linux.NF_ACCEPT)},
 		},
 		{
 			tname:    "immediately goto to target chain that drops",
-			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: arbitraryTargetChain}),
-			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_DROP)}),
-			verdict:  stack.NFVerdict{Code: VC(linux.NF_DROP)},
+			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: arbitraryTargetChain}),
+			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)}),
+			verdict:  Verdict{Code: VC(linux.NF_DROP)},
 		},
 		{
 			tname:    "immediately goto to target chain that continues with second rule that accepts",
-			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: arbitraryTargetChain}),
-			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_CONTINUE)}),
-			baseOp2:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}),
-			verdict:  stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
+			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: arbitraryTargetChain}),
+			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_CONTINUE)}),
+			baseOp2:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_ACCEPT)}),
+			verdict:  Verdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
 		},
 		{
 			tname:    "immediately goto to target chain that continues with second rule that drops",
-			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: arbitraryTargetChain}),
-			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_CONTINUE)}),
-			baseOp2:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_DROP)}),
-			verdict:  stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
+			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: arbitraryTargetChain}),
+			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_CONTINUE)}),
+			baseOp2:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)}),
+			verdict:  Verdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
 		},
 		{
 			tname:   "add data to register then accept",
-			baseOp1: mustCreateImmediate(t, linux.NFT_REG32_13, []byte{0, 1, 2, 3}, stack.NFVerdict{}),
-			baseOp2: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}),
-			verdict: stack.NFVerdict{Code: VC(linux.NF_ACCEPT)},
+			baseOp1: mustCreateImmediate(t, linux.NFT_REG32_13, []byte{0, 1, 2, 3}, Verdict{}),
+			baseOp2: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_ACCEPT)}),
+			verdict: Verdict{Code: VC(linux.NF_ACCEPT)},
 		},
 		{
 			tname:   "add data to register then drop",
-			baseOp1: mustCreateImmediate(t, linux.NFT_REG32_15, []byte{0, 1, 2, 3}, stack.NFVerdict{}),
-			baseOp2: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_DROP)}),
-			verdict: stack.NFVerdict{Code: VC(linux.NF_DROP)},
+			baseOp1: mustCreateImmediate(t, linux.NFT_REG32_15, []byte{0, 1, 2, 3}, Verdict{}),
+			baseOp2: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)}),
+			verdict: Verdict{Code: VC(linux.NF_DROP)},
 		},
 		{
 			tname:   "add data to register then continue",
-			baseOp1: mustCreateImmediate(t, linux.NFT_REG_4, []byte{0, 1, 2, 3}, stack.NFVerdict{}),
-			baseOp2: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_CONTINUE)}),
-			verdict: stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
+			baseOp1: mustCreateImmediate(t, linux.NFT_REG_4, []byte{0, 1, 2, 3}, Verdict{}),
+			baseOp2: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_CONTINUE)}),
+			verdict: Verdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
 		},
 		{
 			tname:   "multiple accepts",
-			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}),
-			baseOp2: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}),
-			verdict: stack.NFVerdict{Code: VC(linux.NF_ACCEPT)},
+			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_ACCEPT)}),
+			baseOp2: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_ACCEPT)}),
+			verdict: Verdict{Code: VC(linux.NF_ACCEPT)},
 		},
 		{
 			tname:   "multiple drops",
-			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_DROP)}),
-			baseOp2: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_DROP)}),
-			verdict: stack.NFVerdict{Code: VC(linux.NF_DROP)},
+			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)}),
+			baseOp2: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)}),
+			verdict: Verdict{Code: VC(linux.NF_DROP)},
 		},
 		{
 			tname:   "immediately accept then drop",
-			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}),
-			baseOp2: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_DROP)}),
-			verdict: stack.NFVerdict{Code: VC(linux.NF_ACCEPT)},
+			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_ACCEPT)}),
+			baseOp2: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)}),
+			verdict: Verdict{Code: VC(linux.NF_ACCEPT)},
 		},
 		{
 			tname:   "immediately drop then accept",
-			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_DROP)}),
-			baseOp2: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}),
-			verdict: stack.NFVerdict{Code: VC(linux.NF_DROP)},
+			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)}),
+			baseOp2: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_ACCEPT)}),
+			verdict: Verdict{Code: VC(linux.NF_DROP)},
 		},
 		{
 			tname:   "immediate load register",
-			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_DROP)}),
-			baseOp2: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}),
-			verdict: stack.NFVerdict{Code: VC(linux.NF_DROP)},
+			baseOp1: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)}),
+			baseOp2: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_ACCEPT)}),
+			verdict: Verdict{Code: VC(linux.NF_DROP)},
 		},
 	} {
 		t.Run(test.tname, func(t *testing.T) {
@@ -648,7 +648,7 @@ func TestEvaluateImmediateBytesData(t *testing.T) {
 				case linux.NFT_REG32_SIZE:
 					for reg := linux.NFT_REG32_00; reg <= linux.NFT_REG32_15; reg++ {
 						rule := &Rule{}
-						rule.addOperation(mustCreateImmediate(t, uint8(reg), bytes[:blen], stack.NFVerdict{}))
+						rule.addOperation(mustCreateImmediate(t, uint8(reg), bytes[:blen], Verdict{}))
 						if err := bc.RegisterRule(rule, -1); err != nil {
 							t.Fatalf("unexpected error for RegisterRule for rule %d: %v", reg-linux.NFT_REG32_00, err)
 						}
@@ -656,7 +656,7 @@ func TestEvaluateImmediateBytesData(t *testing.T) {
 				case linux.NFT_REG_SIZE:
 					for reg := linux.NFT_REG_1; reg <= linux.NFT_REG_4; reg++ {
 						rule := &Rule{}
-						rule.addOperation(mustCreateImmediate(t, uint8(reg), bytes[:blen], stack.NFVerdict{}))
+						rule.addOperation(mustCreateImmediate(t, uint8(reg), bytes[:blen], Verdict{}))
 						if err := bc.RegisterRule(rule, -1); err != nil {
 							t.Fatalf("unexpected error for RegisterRule for rule %d: %v", reg-linux.NFT_REG_1, err)
 						}
@@ -689,388 +689,388 @@ func TestEvaluateComparison(t *testing.T) {
 		// 4-byte data comparisons, alternates between 4-byte and 16-byte registers.
 		{
 			tname: "compare register == 4-byte data, true",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_1, []byte{0, 0, 0, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, []byte{0, 0, 0, 0}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, []byte{0, 0, 0, 0}),
 			res:   true,
 		},
 		{
 			tname: "compare register == 4-byte data, false",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_11, []byte{1, 0, 0, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_11, []byte{1, 0, 0, 0}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG32_11, linux.NFT_CMP_EQ, []byte{0, 0, 0, 0}),
 			res:   false,
 		},
 		{
 			tname: "compare register != 4-byte data, true",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_03, []byte{1, 7, 0, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_03, []byte{1, 7, 0, 0}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG32_03, linux.NFT_CMP_NEQ, []byte{1, 98, 0, 56}),
 			res:   true,
 		},
 		{
 			tname: "compare register != 4-byte data, false",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{1, 98, 0, 56}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{1, 98, 0, 56}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_3, linux.NFT_CMP_NEQ, []byte{1, 98, 0, 56}),
 			res:   false,
 		},
 		{
 			tname: "compare register < 4-byte data, true",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, []byte{29, 0, 0, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, []byte{29, 0, 0, 0}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_LT, []byte{100, 0, 0, 0}),
 			res:   true,
 		},
 		{
 			tname: "compare register < 4-byte data, false eq",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_04, []byte{100, 0, 0, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_04, []byte{100, 0, 0, 0}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG32_04, linux.NFT_CMP_LT, []byte{100, 0, 0, 0}),
 			res:   false,
 		},
 		{
 			tname: "compare register < 4-byte data, false gt",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_14, []byte{200, 0, 0, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_14, []byte{200, 0, 0, 0}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG32_14, linux.NFT_CMP_LT, []byte{100, 0, 0, 0}),
 			res:   false,
 		},
 		{
 			tname: "compare register > 4-byte data, true",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_15, []byte{29, 76, 230, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_15, []byte{29, 76, 230, 0}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG32_15, linux.NFT_CMP_GT, []byte{0, 0, 0, 1}),
 			res:   true,
 		},
 		{
 			tname: "compare register > 4-byte data, false eq",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_07, []byte{29, 76, 230, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_07, []byte{29, 76, 230, 0}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG32_07, linux.NFT_CMP_GT, []byte{29, 76, 230, 0}),
 			res:   false,
 		},
 		{
 			tname: "compare register > 4-byte data, false lt",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_05, []byte{28, 76, 230, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_05, []byte{28, 76, 230, 0}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG32_05, linux.NFT_CMP_GT, []byte{29, 76, 230, 0}),
 			res:   false,
 		},
 		{
 			tname: "compare register <= 4-byte data, true lt",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_2, []byte{29, 0, 0, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_2, []byte{29, 0, 0, 0}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_LTE, []byte{100, 0, 0, 0}),
 			res:   true,
 		},
 		{
 			tname: "compare register <= 4-byte data, true eq",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_09, []byte{100, 0, 0, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_09, []byte{100, 0, 0, 0}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG32_09, linux.NFT_CMP_LTE, []byte{100, 0, 0, 0}),
 			res:   true,
 		},
 		{
 			tname: "compare register <= 4-byte data, false",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_06, []byte{200, 0, 0, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_06, []byte{200, 0, 0, 0}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG32_06, linux.NFT_CMP_LTE, []byte{100, 0, 0, 0}),
 			res:   false,
 		},
 		{
 			tname: "compare register >= 4-byte data, true gt",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_12, []byte{29, 76, 230, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_12, []byte{29, 76, 230, 0}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG32_12, linux.NFT_CMP_GTE, []byte{0, 0, 0, 1}),
 			res:   true,
 		},
 		{
 			tname: "compare register >= 4-byte data, true eq",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_1, []byte{29, 76, 230, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, []byte{29, 76, 230, 0}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_GTE, []byte{29, 76, 230, 0}),
 			res:   true,
 		},
 		{
 			tname: "compare register >= 4-byte data, false",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{28, 76, 230, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{28, 76, 230, 0}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_3, linux.NFT_CMP_GTE, []byte{29, 76, 230, 0}),
 			res:   false,
 		},
 		// 8-byte data comparisons.
 		{
 			tname: "compare register == 8-byte data, true",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_1, []byte{0, 0, 0, 0, 0, 0, 0, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, []byte{0, 0, 0, 0, 0, 0, 0, 0}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, []byte{0, 0, 0, 0, 0, 0, 0, 0}),
 			res:   true,
 		},
 		{
 			tname: "compare register == 8-byte data, false",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_2, []byte{1, 0, 0, 0, 0, 0, 0, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_2, []byte{1, 0, 0, 0, 0, 0, 0, 0}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, []byte{0, 0, 0, 0, 0, 0, 0, 0}),
 			res:   false,
 		},
 		{
 			tname: "compare register != 8-byte data, true",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{1, 7, 0, 0, 0, 0, 0, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{1, 7, 0, 0, 0, 0, 0, 0}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_3, linux.NFT_CMP_NEQ, []byte{1, 98, 0, 56, 0, 0, 0, 0}),
 			res:   true,
 		},
 		{
 			tname: "compare register != 8-byte data, false",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, []byte{1, 98, 0, 56, 0, 0, 0, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, []byte{1, 98, 0, 56, 0, 0, 0, 0}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_NEQ, []byte{1, 98, 0, 56, 0, 0, 0, 0}),
 			res:   false,
 		},
 		{
 			tname: "compare register < 8-byte data, true",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_1, []byte{29, 0, 0, 0, 0, 0, 0, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, []byte{29, 0, 0, 0, 0, 0, 0, 0}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_LT, []byte{100, 0, 0, 0, 0, 0, 0, 0}),
 			res:   true,
 		},
 		{
 			tname: "compare register < 8-byte data, false eq",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_2, []byte{100, 0, 0, 0, 0, 0, 0, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_2, []byte{100, 0, 0, 0, 0, 0, 0, 0}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_LT, []byte{100, 0, 0, 0, 0, 0, 0, 0}),
 			res:   false,
 		},
 		{
 			tname: "compare register < 8-byte data, false gt",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{200, 0, 0, 0, 0, 0, 0, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{200, 0, 0, 0, 0, 0, 0, 0}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_3, linux.NFT_CMP_LT, []byte{100, 0, 0, 0, 0, 0, 0, 0}),
 			res:   false,
 		},
 		{
 			tname: "compare register > 8-byte data, true",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, []byte{29, 76, 230, 0, 0, 0, 0, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, []byte{29, 76, 230, 0, 0, 0, 0, 0}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_GT, []byte{0, 0, 0, 1, 0, 0, 0, 0}),
 			res:   true,
 		},
 		{
 			tname: "compare register > 8-byte data, false eq",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_1, []byte{29, 76, 230, 0, 0, 0, 0, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, []byte{29, 76, 230, 0, 0, 0, 0, 0}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_GT, []byte{29, 76, 230, 0, 0, 0, 0, 0}),
 			res:   false,
 		},
 		{
 			tname: "compare register > 8-byte data, false lt",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_2, []byte{28, 76, 230, 0, 0, 0, 0, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_2, []byte{28, 76, 230, 0, 0, 0, 0, 0}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_GT, []byte{29, 76, 230, 0, 0, 0, 0, 0}),
 			res:   false,
 		},
 		{
 			tname: "compare register <= 8-byte data, true lt",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{29, 0, 0, 0, 0, 0, 0, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{29, 0, 0, 0, 0, 0, 0, 0}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_3, linux.NFT_CMP_LTE, []byte{100, 0, 0, 0, 0, 0, 0, 0}),
 			res:   true,
 		},
 		{
 			tname: "compare register <= 8-byte data, true eq",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, []byte{100, 0, 0, 0, 0, 0, 0, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, []byte{100, 0, 0, 0, 0, 0, 0, 0}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_LTE, []byte{100, 0, 0, 0, 0, 0, 0, 0}),
 			res:   true,
 		},
 		{
 			tname: "compare register <= 8-byte data, false",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_1, []byte{200, 0, 0, 0, 0, 0, 0, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, []byte{200, 0, 0, 0, 0, 0, 0, 0}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_LTE, []byte{100, 0, 0, 0, 0, 0, 0, 0}),
 			res:   false,
 		},
 		{
 			tname: "compare register >= 8-byte data, true gt",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_2, []byte{30, 0, 0, 1, 0, 0, 0, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_2, []byte{30, 0, 0, 1, 0, 0, 0, 0}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_GTE, []byte{29, 76, 230, 0, 0, 0, 0, 0}),
 			res:   true,
 		},
 		{
 			tname: "compare register >= 8-byte data, true eq",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{29, 76, 230, 0, 0, 0, 0, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{29, 76, 230, 0, 0, 0, 0, 0}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_3, linux.NFT_CMP_GTE, []byte{29, 76, 230, 0, 0, 0, 0, 0}),
 			res:   true,
 		},
 		{
 			tname: "compare register >= 8-byte data, false",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, []byte{28, 76, 230, 0, 0, 0, 0, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, []byte{28, 76, 230, 0, 0, 0, 0, 0}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_GTE, []byte{29, 76, 230, 0, 0, 0, 0, 0}),
 			res:   false,
 		},
 		// 12-byte data comparisons.
 		{
 			tname: "compare register == 12-byte data, true",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_1, []byte{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, []byte{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, []byte{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}),
 			res:   true,
 		},
 		{
 			tname: "compare register == 12-byte data, false",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_2, []byte{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_2, []byte{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, []byte{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}),
 			res:   false,
 		},
 		{
 			tname: "compare register != 12-byte data, true",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_3, linux.NFT_CMP_NEQ, []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}),
 			res:   true,
 		},
 		{
 			tname: "compare register != 12-byte data, false",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_NEQ, []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}),
 			res:   false,
 		},
 		{
 			tname: "compare register < 12-byte data, true",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_1, []byte{0x0a, 0x00, 0x01, 0x1f, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, []byte{0x0a, 0x00, 0x01, 0x1f, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_LT, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00}),
 			res:   true,
 		},
 		{
 			tname: "compare register < 12-byte data, false eq",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_2, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_2, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_LT, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00}),
 			res:   false,
 		},
 		{
 			tname: "compare register < 12-byte data, false gt",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{0x0a, 0x00, 0x01, 0x21, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{0x0a, 0x00, 0x01, 0x21, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_3, linux.NFT_CMP_LT, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00}),
 			res:   false,
 		},
 		{
 			tname: "compare register > 12-byte data, true",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, []byte{0x0a, 0x00, 0x01, 0x21, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, []byte{0x0a, 0x00, 0x01, 0x21, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_GT, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00}),
 			res:   true,
 		},
 		{
 			tname: "compare register > 12-byte data, false eq",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_1, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_GT, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00}),
 			res:   false,
 		},
 		{
 			tname: "compare register > 12-byte data, false lt",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_2, []byte{0x0a, 0x00, 0x01, 0x1f, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_2, []byte{0x0a, 0x00, 0x01, 0x1f, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_GT, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00}),
 			res:   false,
 		},
 		{
 			tname: "compare register <= 12-byte data, true lt",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_3, linux.NFT_CMP_LTE, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00}),
 			res:   true,
 		},
 		{
 			tname: "compare register <= 12-byte data, true eq",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_LTE, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00}),
 			res:   true,
 		},
 		{
 			tname: "compare register <= 12-byte data, false",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_1, []byte{0xaa, 0xaa, 0xaa, 0x20, 0xaa, 0xaa, 0xaa, 0x13, 0xc0, 0x09, 0x00, 0x00}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, []byte{0xaa, 0xaa, 0xaa, 0x20, 0xaa, 0xaa, 0xaa, 0x13, 0xc0, 0x09, 0x00, 0x00}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_LTE, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00}),
 			res:   false,
 		},
 		{
 			tname: "compare register >= 12-byte data, true gt",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_2, []byte{0xaa, 0xaa, 0xaa, 0x20, 0xaa, 0xaa, 0xaa, 0x13, 0xc0, 0x09, 0x00, 0x00}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_2, []byte{0xaa, 0xaa, 0xaa, 0x20, 0xaa, 0xaa, 0xaa, 0x13, 0xc0, 0x09, 0x00, 0x00}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_GTE, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00}),
 			res:   true,
 		},
 		{
 			tname: "compare register >= 12-byte data, true eq",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{0xab, 0xbc, 0xcd, 0xde, 0xef, 0x00, 0x01, 0x12, 0x23, 0x34, 0x45, 0x56}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{0xab, 0xbc, 0xcd, 0xde, 0xef, 0x00, 0x01, 0x12, 0x23, 0x34, 0x45, 0x56}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_3, linux.NFT_CMP_GTE, []byte{0xab, 0xbc, 0xcd, 0xde, 0xef, 0x00, 0x01, 0x12, 0x23, 0x34, 0x45, 0x56}),
 			res:   true,
 		},
 		{
 			tname: "compare register >= 12-byte data, false",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, []byte{0x0a, 0x00, 0x01, 0x19, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, []byte{0x0a, 0x00, 0x01, 0x19, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_GTE, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00}),
 			res:   false,
 		},
 		// 16-byte data comparisons.
 		{
 			tname: "compare register == 16-byte data, true",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_1, []byte{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, []byte{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, []byte{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}),
 			res:   true,
 		},
 		{
 			tname: "compare register == 16-byte data, false",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_2, []byte{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_2, []byte{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, []byte{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}),
 			res:   false,
 		},
 		{
 			tname: "compare register != 16-byte data, true",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_3, linux.NFT_CMP_NEQ, []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}),
 			res:   true,
 		},
 		{
 			tname: "compare register != 16-byte data, false",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_NEQ, []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}),
 			res:   false,
 		},
 		{
 			tname: "compare register < 16-byte data, true",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_1, []byte{0x0a, 0x00, 0x01, 0x1f, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0xaa}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, []byte{0x0a, 0x00, 0x01, 0x1f, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0xaa}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_LT, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87}),
 			res:   true,
 		},
 		{
 			tname: "compare register < 16-byte data, false eq",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_2, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_2, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_LT, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87}),
 			res:   false,
 		},
 		{
 			tname: "compare register < 16-byte data, false gt",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{0x0a, 0x00, 0x01, 0x21, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0xaa}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{0x0a, 0x00, 0x01, 0x21, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0xaa}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_3, linux.NFT_CMP_LT, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87}),
 			res:   false,
 		},
 		{
 			tname: "compare register > 16-byte data, true",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, []byte{0x0a, 0x00, 0x01, 0x21, 0xaa, 0xaa, 0xaa, 0xaa, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, []byte{0x0a, 0x00, 0x01, 0x21, 0xaa, 0xaa, 0xaa, 0xaa, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_GT, []byte{0x0a, 0x00, 0x01, 0x20, 0xcc, 0xcc, 0xcc, 0xcc, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87}),
 			res:   true,
 		},
 		{
 			tname: "compare register > 16-byte data, false eq",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_1, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_GT, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87}),
 			res:   false,
 		},
 		{
 			tname: "compare register > 16-byte data, false lt",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_2, []byte{0x0a, 0x00, 0x01, 0x1f, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x90}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_2, []byte{0x0a, 0x00, 0x01, 0x1f, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x90}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_GT, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87}),
 			res:   false,
 		},
 		{
 			tname: "compare register <= 16-byte data, true lt",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_1, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x86}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x86}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_LTE, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87}),
 			res:   true,
 		},
 		{
 			tname: "compare register <= 16-byte data, true eq",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_2, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_2, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_LTE, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87}),
 			res:   true,
 		},
 		{
 			tname: "compare register <= 16-byte data, false",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0xaa, 0x00, 0x0b, 0x13, 0x6a, 0x88}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0xaa, 0x00, 0x0b, 0x13, 0x6a, 0x88}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_3, linux.NFT_CMP_LTE, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87}),
 			res:   false,
 		},
 		{
 			tname: "compare register >= 16-byte data, true gt",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, []byte{0xaa, 0xaa, 0xaa, 0x20, 0xaa, 0xaa, 0xaa, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, []byte{0xaa, 0xaa, 0xaa, 0x20, 0xaa, 0xaa, 0xaa, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_GTE, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87}),
 			res:   true,
 		},
 		{
 			tname: "compare register >= 16-byte data, true eq",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{0xab, 0xbc, 0xcd, 0xde, 0xef, 0x00, 0x01, 0x12, 0x23, 0x34, 0x45, 0x56, 0x67, 0x78, 0x89, 0x90}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{0xab, 0xbc, 0xcd, 0xde, 0xef, 0x00, 0x01, 0x12, 0x23, 0x34, 0x45, 0x56, 0x67, 0x78, 0x89, 0x90}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_3, linux.NFT_CMP_GTE, []byte{0xab, 0xbc, 0xcd, 0xde, 0xef, 0x00, 0x01, 0x12, 0x23, 0x34, 0x45, 0x56, 0x67, 0x78, 0x89, 0x90}),
 			res:   true,
 		},
 		{
 			tname: "compare register >= 16-byte data, false",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0a, 0x13, 0x6a, 0x85}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0a, 0x13, 0x6a, 0x85}, Verdict{}),
 			op2:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_GTE, []byte{0x0a, 0x00, 0x01, 0x20, 0x00, 0x00, 0x0f, 0x13, 0xc0, 0x09, 0x00, 0x00, 0x0b, 0x13, 0x6a, 0x87}),
 			res:   false,
 		},
@@ -1139,7 +1139,7 @@ func TestEvaluateComparison(t *testing.T) {
 
 			// Add an operation that drops. This is what the final verdict should be
 			// if all the comparisons are true (res = true).
-			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_DROP)}))
+			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)}))
 
 			// Registers the rule to the base chain.
 			if err := bc.RegisterRule(rule, -1); err != nil {
@@ -1183,171 +1183,171 @@ func TestEvaluateRanged(t *testing.T) {
 		// 4-byte ranges, alternates between 4-byte and 16-byte registers.
 		{
 			tname: "4-byte data eq within range",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(1, 4), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(1, 4), Verdict{}),
 			op2:   mustCreateRanged(t, linux.NFT_REG_1, linux.NFT_RANGE_EQ, numToBE(0, 4), numToBE(5, 4)),
 			res:   true,
 		},
 		{
 			tname: "4-byte data neq within range",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(4, 4), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(4, 4), Verdict{}),
 			op2:   mustCreateRanged(t, linux.NFT_REG_1, linux.NFT_RANGE_NEQ, numToBE(0, 4), numToBE(5, 4)),
 			res:   false,
 		},
 		{
 			tname: "4-byte data eq below range",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_00, numToBE(1, 4), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_00, numToBE(1, 4), Verdict{}),
 			op2:   mustCreateRanged(t, linux.NFT_REG32_00, linux.NFT_RANGE_EQ, numToBE(3, 4), numToBE(5, 4)),
 			res:   false,
 		},
 		{
 			tname: "4-byte data neq below range",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_00, numToBE(1, 4), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_00, numToBE(1, 4), Verdict{}),
 			op2:   mustCreateRanged(t, linux.NFT_REG32_00, linux.NFT_RANGE_NEQ, numToBE(3, 4), numToBE(5, 4)),
 			res:   true,
 		},
 		{
 			tname: "4-byte data eq above range",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_00, numToBE(954, 4), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_00, numToBE(954, 4), Verdict{}),
 			op2:   mustCreateRanged(t, linux.NFT_REG32_00, linux.NFT_RANGE_EQ, numToBE(3, 4), numToBE(5, 4)),
 			res:   false,
 		},
 		{
 			tname: "4-byte data neq above range",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_00, numToBE(954, 4), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_00, numToBE(954, 4), Verdict{}),
 			op2:   mustCreateRanged(t, linux.NFT_REG32_00, linux.NFT_RANGE_NEQ, numToBE(3, 4), numToBE(5, 4)),
 			res:   true,
 		},
 		{
 			tname: "4-byte data eq on lower bound",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_00, numToBE(1, 4), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_00, numToBE(1, 4), Verdict{}),
 			op2:   mustCreateRanged(t, linux.NFT_REG32_00, linux.NFT_RANGE_EQ, numToBE(1, 4), numToBE(5, 4)),
 			res:   true,
 		},
 		{
 			tname: "4-byte data neq on lower bound",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_00, numToBE(1, 4), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_00, numToBE(1, 4), Verdict{}),
 			op2:   mustCreateRanged(t, linux.NFT_REG32_00, linux.NFT_RANGE_NEQ, numToBE(1, 4), numToBE(5, 4)),
 			res:   false,
 		},
 		{
 			tname: "4-byte data eq on upper bound",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, numToBE(100, 4), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, numToBE(100, 4), Verdict{}),
 			op2:   mustCreateRanged(t, linux.NFT_REG_4, linux.NFT_RANGE_EQ, numToBE(4, 4), numToBE(100, 4)),
 			res:   true,
 		},
 		{
 			tname: "4-byte data neq on upper bound",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, numToBE(100, 4), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, numToBE(100, 4), Verdict{}),
 			op2:   mustCreateRanged(t, linux.NFT_REG_4, linux.NFT_RANGE_NEQ, numToBE(4, 4), numToBE(100, 4)),
 			res:   false,
 		},
 		{
 			tname: "4-byte data eq on point range",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, numToBE(123, 4), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, numToBE(123, 4), Verdict{}),
 			op2:   mustCreateRanged(t, linux.NFT_REG_4, linux.NFT_RANGE_EQ, numToBE(123, 4), numToBE(123, 4)),
 			res:   true,
 		},
 		{
 			tname: "4-byte data neq on point range",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, numToBE(123, 4), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, numToBE(123, 4), Verdict{}),
 			op2:   mustCreateRanged(t, linux.NFT_REG_4, linux.NFT_RANGE_NEQ, numToBE(123, 4), numToBE(123, 4)),
 			res:   false,
 		},
 		// 8-byte ranges.
 		{
 			tname: "8-byte data eq within range",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(1, 8), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(1, 8), Verdict{}),
 			op2:   mustCreateRanged(t, linux.NFT_REG_1, linux.NFT_RANGE_EQ, numToBE(0, 8), numToBE(5, 8)),
 			res:   true,
 		},
 		{
 			tname: "8-byte data neq within range",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_2, numToBE(4, 8), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_2, numToBE(4, 8), Verdict{}),
 			op2:   mustCreateRanged(t, linux.NFT_REG_2, linux.NFT_RANGE_NEQ, numToBE(0, 8), numToBE(5, 8)),
 			res:   false,
 		},
 		{
 			tname: "8-byte data eq below range",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_3, numToBE(1, 8), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, numToBE(1, 8), Verdict{}),
 			op2:   mustCreateRanged(t, linux.NFT_REG_3, linux.NFT_RANGE_EQ, numToBE(3, 8), numToBE(5, 8)),
 			res:   false,
 		},
 		{
 			tname: "8-byte data neq below range",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, numToBE(1, 8), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, numToBE(1, 8), Verdict{}),
 			op2:   mustCreateRanged(t, linux.NFT_REG_4, linux.NFT_RANGE_NEQ, numToBE(3, 8), numToBE(5, 8)),
 			res:   true,
 		},
 		{
 			tname: "8-byte data eq above range",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(954, 8), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(954, 8), Verdict{}),
 			op2:   mustCreateRanged(t, linux.NFT_REG_1, linux.NFT_RANGE_EQ, numToBE(3, 8), numToBE(5, 8)),
 			res:   false,
 		},
 		{
 			tname: "8-byte data neq above range",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_2, numToBE(954, 8), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_2, numToBE(954, 8), Verdict{}),
 			op2:   mustCreateRanged(t, linux.NFT_REG_2, linux.NFT_RANGE_NEQ, numToBE(3, 8), numToBE(5, 8)),
 			res:   true,
 		},
 		{
 			tname: "8-byte data eq on lower bound",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_3, numToBE(1, 8), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, numToBE(1, 8), Verdict{}),
 			op2:   mustCreateRanged(t, linux.NFT_REG_3, linux.NFT_RANGE_EQ, numToBE(1, 8), numToBE(5, 8)),
 			res:   true,
 		},
 		{
 			tname: "8-byte data neq on lower bound",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, numToBE(1, 8), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, numToBE(1, 8), Verdict{}),
 			op2:   mustCreateRanged(t, linux.NFT_REG_4, linux.NFT_RANGE_NEQ, numToBE(1, 8), numToBE(5, 8)),
 			res:   false,
 		},
 		{
 			tname: "8-byte data eq on upper bound",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, numToBE(100, 8), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, numToBE(100, 8), Verdict{}),
 			op2:   mustCreateRanged(t, linux.NFT_REG_4, linux.NFT_RANGE_EQ, numToBE(4, 8), numToBE(100, 8)),
 			res:   true,
 		},
 		{
 			tname: "8-byte data neq on upper bound",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, numToBE(100, 8), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, numToBE(100, 8), Verdict{}),
 			op2:   mustCreateRanged(t, linux.NFT_REG_4, linux.NFT_RANGE_NEQ, numToBE(4, 8), numToBE(100, 8)),
 			res:   false,
 		},
 		{
 			tname: "8-byte data eq on point range",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(123, 8), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(123, 8), Verdict{}),
 			op2:   mustCreateRanged(t, linux.NFT_REG_1, linux.NFT_RANGE_EQ, numToBE(123, 8), numToBE(123, 8)),
 			res:   true,
 		},
 		{
 			tname: "8-byte data neq on point range",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_3, numToBE(123, 8), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, numToBE(123, 8), Verdict{}),
 			op2:   mustCreateRanged(t, linux.NFT_REG_3, linux.NFT_RANGE_NEQ, numToBE(123, 8), numToBE(123, 8)),
 			res:   false,
 		},
 		// simpler 16-byte ranges.
 		{
 			tname: "16-byte data eq within range",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_1, []byte{1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, []byte{1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, Verdict{}),
 			op2:   mustCreateRanged(t, linux.NFT_REG_1, linux.NFT_RANGE_EQ, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0}, []byte{5, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0}),
 			res:   true,
 		},
 		{
 			tname: "16-byte data neq within range",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_2, []byte{1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_2, []byte{1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, Verdict{}),
 			op2:   mustCreateRanged(t, linux.NFT_REG_2, linux.NFT_RANGE_NEQ, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0}, []byte{5, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0}),
 			res:   false,
 		},
 		{
 			tname: "16-byte data eq outside range",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{0x45, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{0x45, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, Verdict{}),
 			op2:   mustCreateRanged(t, linux.NFT_REG_3, linux.NFT_RANGE_EQ, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0}, []byte{5, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0}),
 			res:   false,
 		},
 		{
 			tname: "16-byte data neq outside range",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, []byte{0x45, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, []byte{0x45, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, Verdict{}),
 			op2:   mustCreateRanged(t, linux.NFT_REG_4, linux.NFT_RANGE_NEQ, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0}, []byte{5, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0}),
 			res:   true,
 		},
@@ -1374,7 +1374,7 @@ func TestEvaluateRanged(t *testing.T) {
 			}
 
 			// Adds drop operation. Will be final verdict if comparison is true.
-			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_DROP)}))
+			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)}))
 
 			// Registers the rule to the base chain.
 			if err := bc.RegisterRule(rule, -1); err != nil {
@@ -1607,7 +1607,7 @@ func TestEvaluatePayloadLoad(t *testing.T) {
 			}
 
 			// Adds drop operation. Will be final verdict if all comparisons are true.
-			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_DROP)}))
+			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)}))
 
 			// Registers the rule to the base chain.
 			if err := bc.RegisterRule(rule, -1); err != nil {
@@ -1661,7 +1661,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				fields.Type = header.IPv4ProtocolNumber
 				return makeEthernetPacket(0, fields)
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_1, arbitraryLinkAddrB2[:], stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_1, arbitraryLinkAddrB2[:], Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_LL_HEADER, ethSrcAddrOffset, ethSrcAddrLen, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_NONE, 0, 0x0),
 		},
 		{ // cmd: add rule ip tab ch ether daddr set 02:02:03:04:05:06
@@ -1672,7 +1672,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				fields.DstAddr = arbitraryLinkAddr
 				return makeEthernetPacket(0, fields)
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_2, arbitraryLinkAddrB[:], stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_2, arbitraryLinkAddrB[:], Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_LL_HEADER, ethDstAddrOffset, ethDstAddrLen, linux.NFT_REG_2, linux.NFT_PAYLOAD_CSUM_NONE, 0, 0x0),
 		},
 		{ // cmd: add rule ip tab ch ether type set ip6
@@ -1683,7 +1683,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				fields.Type = header.IPv6ProtocolNumber
 				return makeEthernetPacket(0, fields)
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(int(header.IPv6ProtocolNumber), ethTypeLen), stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(int(header.IPv6ProtocolNumber), ethTypeLen), Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_LL_HEADER, ethTypeOffset, ethTypeLen, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_NONE, 0, 0x0),
 		},
 
@@ -1696,7 +1696,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				fields.TotalLength = uint16(30)
 				return makeIPv4Packet(header.IPv4MinimumSize, fields)
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(30, ipv4LengthLen), stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(30, ipv4LengthLen), Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv4LengthOffset, ipv4LengthLen, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_INET, 10, linux.NFT_PAYLOAD_L4CSUM_PSEUDOHDR),
 		},
 		{ // cmd: add rule ip tab ch ip id set 12345
@@ -1707,7 +1707,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				fields.ID = uint16(12345)
 				return makeIPv4Packet(header.IPv4MinimumSize, fields)
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(12345, ipv4IDLen), stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(12345, ipv4IDLen), Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv4IDOffset, ipv4IDLen, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_INET, 10, 0x0),
 		},
 		// Note: Fragment offsets are divided by 8 because they are in units of 8
@@ -1716,14 +1716,14 @@ func TestEvaluatePayloadSet(t *testing.T) {
 			tname:  "set ipv4 header fragment offset, set fragment on",
 			pkt:    makeIPv4Packet(header.IPv4MinimumSize, arbitraryIPv4Fields()),
 			outPkt: makeIPv4Packet(header.IPv4MinimumSize, fragmentedIPv4Fields()),
-			op1:    mustCreateImmediate(t, linux.NFT_REG_1, numToBE(arbitraryNonZeroFragmentOffset/8, ipv4FragOffLen), stack.NFVerdict{}),
+			op1:    mustCreateImmediate(t, linux.NFT_REG_1, numToBE(arbitraryNonZeroFragmentOffset/8, ipv4FragOffLen), Verdict{}),
 			op2:    mustCreatePayloadSet(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv4FragOffOffset, ipv4FragOffLen, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_INET, 10, 0x0),
 		},
 		{ // cmd: add rule ip tab ch ip frag-off set 0
 			tname:  "set ipv4 header fragment offset, set fragment off for fragmented packet",
 			pkt:    makeIPv4Packet(header.IPv4MinimumSize, fragmentedIPv4Fields()),
 			outPkt: makeIPv4Packet(header.IPv4MinimumSize, arbitraryIPv4Fields()),
-			op1:    mustCreateImmediate(t, linux.NFT_REG_1, numToBE(0, ipv4FragOffLen), stack.NFVerdict{}),
+			op1:    mustCreateImmediate(t, linux.NFT_REG_1, numToBE(0, ipv4FragOffLen), Verdict{}),
 			op2:    mustCreatePayloadSet(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv4FragOffOffset, ipv4FragOffLen, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_INET, 10, 0x0),
 		},
 		{ // cmd: add rule ip tab ch ip frag-off set 10 (80 bytes)
@@ -1734,7 +1734,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				fields.FragmentOffset = uint16(10 * 8)
 				return makeIPv4Packet(header.IPv4MinimumSize, fields)
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(10, ipv4FragOffLen), stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(10, ipv4FragOffLen), Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv4FragOffOffset, ipv4FragOffLen, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_INET, 10, 0x0),
 		},
 		{ // cmd: add rule ip tab ch ip ttl set 128
@@ -1745,7 +1745,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				fields.TTL = uint8(128)
 				return makeIPv4Packet(header.IPv4MinimumSize, fields)
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG32_01, numToBE(128, ipv4TTLLen), stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG32_01, numToBE(128, ipv4TTLLen), Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv4TTLOffset, ipv4TTLLen, linux.NFT_REG32_01, linux.NFT_PAYLOAD_CSUM_INET, 10, 0x0),
 		},
 		{ // cmd: add rule ip tab ch ip saddr set 192.168.1.9
@@ -1756,7 +1756,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				fields.SrcAddr = tcpip.AddrFrom4(arbitraryIPv4AddrB2)
 				return makeIPv4Packet(header.IPv4MinimumSize, fields)
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_1, arbitraryIPv4AddrB2[:], stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_1, arbitraryIPv4AddrB2[:], Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv4SrcAddrOffset, ipv4SrcAddrLen, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_INET, 10, linux.NFT_PAYLOAD_L4CSUM_PSEUDOHDR),
 		},
 		{ // cmd: add rule ip tab ch ip daddr set 192.168.1.1
@@ -1767,7 +1767,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				fields.DstAddr = tcpip.AddrFrom4(arbitraryIPv4AddrB)
 				return makeIPv4Packet(header.IPv4MinimumSize, fields)
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_4, arbitraryIPv4AddrB[:], stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_4, arbitraryIPv4AddrB[:], Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv4DstAddrOffset, ipv4DstAddrLen, linux.NFT_REG_4, linux.NFT_PAYLOAD_CSUM_INET, 10, linux.NFT_PAYLOAD_L4CSUM_PSEUDOHDR),
 		},
 		{ // cmd: add rule ip tab ch ip checksum set 6060
@@ -1778,7 +1778,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				pkt.Network().SetChecksum(6060)
 				return pkt
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(6060, ipv4ChecksumLen), stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(6060, ipv4ChecksumLen), Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv4ChecksumOffset, ipv4ChecksumLen, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_INET, 10, 0x0),
 		},
 
@@ -1791,7 +1791,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				fields.PayloadLength = uint16(232)
 				return makeIPv6Packet(header.IPv6MinimumSize, fields)
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(232, ipv6LengthLen), stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(232, ipv6LengthLen), Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv6LengthOffset, ipv6LengthLen, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_NONE, 0, linux.NFT_PAYLOAD_L4CSUM_PSEUDOHDR),
 		},
 		{ // cmd: add rule ip6 tab ch ip6 hoplimit set 54
@@ -1802,7 +1802,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				fields.HopLimit = uint8(54)
 				return makeIPv6Packet(header.IPv6MinimumSize, fields)
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(54, ipv6HopLimitLen), stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(54, ipv6HopLimitLen), Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv6HopLimitOffset, ipv6HopLimitLen, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_NONE, 0, 0x0),
 		},
 		{ // cmd: add rule ip6 tab ch ip6 saddr set 2001:db8:85a3::bb
@@ -1813,7 +1813,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				fields.SrcAddr = tcpip.AddrFrom16(arbitraryIPv6AddrB2)
 				return makeIPv6Packet(header.IPv6MinimumSize, fields)
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_1, arbitraryIPv6AddrB2[:], stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_1, arbitraryIPv6AddrB2[:], Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv6SrcAddrOffset, ipv6SrcAddrLen, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_NONE, 0, linux.NFT_PAYLOAD_L4CSUM_PSEUDOHDR),
 		},
 		{ // cmd: add rule ip6 tab ch ip6 daddr set 2001:db8:85a3::aa
@@ -1824,7 +1824,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				fields.DstAddr = tcpip.AddrFrom16(arbitraryIPv6AddrB)
 				return makeIPv6Packet(header.IPv6MinimumSize, fields)
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_3, arbitraryIPv6AddrB[:], stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_3, arbitraryIPv6AddrB[:], Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv6DstAddrOffset, ipv6DstAddrLen, linux.NFT_REG_3, linux.NFT_PAYLOAD_CSUM_NONE, 0, linux.NFT_PAYLOAD_L4CSUM_PSEUDOHDR),
 		},
 
@@ -1836,7 +1836,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 			tname:  "set for transport header with a fragmented ipv4 packet",
 			pkt:    makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, fragmentedIPv4Fields(), arbitraryTCPFields()),
 			outPkt: nil,
-			op1:    mustCreateImmediate(t, linux.NFT_REG_1, numToBE(arbitraryPort, tcpSrcPortLen), stack.NFVerdict{}),
+			op1:    mustCreateImmediate(t, linux.NFT_REG_1, numToBE(arbitraryPort, tcpSrcPortLen), Verdict{}),
 			op2:    mustCreatePayloadSet(t, linux.NFT_PAYLOAD_TRANSPORT_HEADER, tcpSrcPortOffset, tcpSrcPortLen, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_INET, 16, 0x0),
 		},
 		{ // cmd: add rule ip tab ch tcp sport set 80
@@ -1847,7 +1847,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				tcpFields.SrcPort = arbitraryPort2
 				return makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, arbitraryIPv4Fields(), tcpFields)
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(arbitraryPort2, tcpSrcPortLen), stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(arbitraryPort2, tcpSrcPortLen), Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_TRANSPORT_HEADER, tcpSrcPortOffset, tcpSrcPortLen, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_INET, 16, 0x0),
 		},
 		{ // cmd: add rule ip tab ch tcp dport set 12345
@@ -1858,7 +1858,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				tcpFields.DstPort = arbitraryPort
 				return makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, arbitraryIPv4Fields(), tcpFields)
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(arbitraryPort, tcpDstPortLen), stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(arbitraryPort, tcpDstPortLen), Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_TRANSPORT_HEADER, tcpDstPortOffset, tcpDstPortLen, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_INET, 16, 0x0),
 		},
 		{ // cmd: add rule ip tab ch tcp sequence set 33
@@ -1869,7 +1869,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				tcpFields.SeqNum = uint32(33)
 				return makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, arbitraryIPv4Fields(), tcpFields)
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(33, tcpSeqNumLen), stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(33, tcpSeqNumLen), Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_TRANSPORT_HEADER, tcpSeqNumOffset, tcpSeqNumLen, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_INET, 16, 0x0),
 		},
 		{ // cmd: add rule ip tab ch tcp ackseq set 245
@@ -1880,7 +1880,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				tcpFields.AckNum = uint32(245)
 				return makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, arbitraryIPv4Fields(), tcpFields)
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(245, tcpAckNumLen), stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(245, tcpAckNumLen), Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_TRANSPORT_HEADER, tcpAckNumOffset, tcpAckNumLen, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_INET, 16, 0x0),
 		},
 		{ // cmd: add rule ip tab ch tcp window set 91
@@ -1891,7 +1891,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				tcpFields.WindowSize = 91
 				return makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, arbitraryIPv4Fields(), tcpFields)
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(91, tcpWindowLen), stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(91, tcpWindowLen), Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_TRANSPORT_HEADER, tcpWindowOffset, tcpWindowLen, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_INET, 16, 0x0),
 		},
 		{ // cmd: add rule ip tab ch tcp checksum set 7654
@@ -1903,7 +1903,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				tcpHdr.SetChecksum(7654)
 				return pkt
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(7654, tcpChecksumLen), stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(7654, tcpChecksumLen), Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_TRANSPORT_HEADER, tcpChecksumOffset, tcpChecksumLen, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_INET, 16, 0x0),
 		},
 		{ // cmd: add rule ip tab ch tcp urgptr set 40
@@ -1914,7 +1914,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				tcpFields.UrgentPointer = 40
 				return makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, arbitraryIPv4Fields(), tcpFields)
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(40, tcpUrgPtrLen), stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(40, tcpUrgPtrLen), Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_TRANSPORT_HEADER, tcpUrgPtrOffset, tcpUrgPtrLen, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_INET, 16, 0x0),
 		},
 		// IPv4 set commands.
@@ -1926,7 +1926,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				ipFields.ID = uint16(12345)
 				return makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, ipFields, arbitraryTCPFields())
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(12345, ipv4IDLen), stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(12345, ipv4IDLen), Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv4IDOffset, ipv4IDLen, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_INET, 10, 0x0),
 		},
 		{ // cmd: add rule ip tab ch ip ttl set 128
@@ -1937,7 +1937,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				ipFields.TTL = uint8(128)
 				return makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, ipFields, arbitraryTCPFields())
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG32_01, numToBE(128, ipv4TTLLen), stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG32_01, numToBE(128, ipv4TTLLen), Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv4TTLOffset, ipv4TTLLen, linux.NFT_REG32_01, linux.NFT_PAYLOAD_CSUM_INET, 10, 0x0),
 		},
 		{ // cmd: add rule ip tab ch ip saddr set 192.168.1.9
@@ -1948,7 +1948,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				ipFields.SrcAddr = tcpip.AddrFrom4(arbitraryIPv4AddrB2)
 				return makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, ipFields, arbitraryTCPFields())
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_1, arbitraryIPv4AddrB2[:], stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_1, arbitraryIPv4AddrB2[:], Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv4SrcAddrOffset, ipv4SrcAddrLen, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_INET, 10, linux.NFT_PAYLOAD_L4CSUM_PSEUDOHDR),
 		},
 		{ // cmd: add rule ip tab ch ip daddr set 192.168.1.1
@@ -1959,7 +1959,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				ipFields.DstAddr = tcpip.AddrFrom4(arbitraryIPv4AddrB)
 				return makeIPv4TCPPacket(header.IPv4MinimumSize+header.TCPMinimumSize, ipFields, arbitraryTCPFields())
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_4, arbitraryIPv4AddrB[:], stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_4, arbitraryIPv4AddrB[:], Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv4DstAddrOffset, ipv4DstAddrLen, linux.NFT_REG_4, linux.NFT_PAYLOAD_CSUM_INET, 10, linux.NFT_PAYLOAD_L4CSUM_PSEUDOHDR),
 		},
 
@@ -1973,7 +1973,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				tcpFields.SrcPort = arbitraryPort2
 				return makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, arbitraryIPv6Fields(), tcpFields)
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(arbitraryPort2, tcpSrcPortLen), stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(arbitraryPort2, tcpSrcPortLen), Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_TRANSPORT_HEADER, tcpSrcPortOffset, tcpSrcPortLen, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_INET, 16, 0x0),
 		},
 		{ // cmd: add rule ip tab ch tcp dport set 12345
@@ -1984,7 +1984,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				tcpFields.DstPort = arbitraryPort
 				return makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, arbitraryIPv6Fields(), tcpFields)
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(arbitraryPort, tcpDstPortLen), stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(arbitraryPort, tcpDstPortLen), Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_TRANSPORT_HEADER, tcpDstPortOffset, tcpDstPortLen, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_INET, 16, 0x0),
 		},
 		{ // cmd: add rule ip tab ch tcp sequence set 33
@@ -1995,7 +1995,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				tcpFields.SeqNum = uint32(33)
 				return makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, arbitraryIPv6Fields(), tcpFields)
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(33, tcpSeqNumLen), stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(33, tcpSeqNumLen), Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_TRANSPORT_HEADER, tcpSeqNumOffset, tcpSeqNumLen, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_INET, 16, 0x0),
 		},
 		{ // cmd: add rule ip tab ch tcp ackseq set 245
@@ -2006,7 +2006,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				tcpFields.AckNum = uint32(245)
 				return makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, arbitraryIPv6Fields(), tcpFields)
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(245, tcpAckNumLen), stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(245, tcpAckNumLen), Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_TRANSPORT_HEADER, tcpAckNumOffset, tcpAckNumLen, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_INET, 16, 0x0),
 		},
 		{ // cmd: add rule ip tab ch tcp window set 91
@@ -2017,7 +2017,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				tcpFields.WindowSize = uint16(91)
 				return makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, arbitraryIPv6Fields(), tcpFields)
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(91, tcpWindowLen), stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(91, tcpWindowLen), Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_TRANSPORT_HEADER, tcpWindowOffset, tcpWindowLen, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_INET, 16, 0x0),
 		},
 		{ // cmd: add rule ip tab ch tcp checksum set 7654
@@ -2029,7 +2029,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				tcpHdr.SetChecksum(7654)
 				return pkt
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(7654, tcpChecksumLen), stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(7654, tcpChecksumLen), Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_TRANSPORT_HEADER, tcpChecksumOffset, tcpChecksumLen, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_INET, 16, 0x0),
 		},
 		{ // cmd: add rule ip tab ch tcp urgptr set 40
@@ -2040,7 +2040,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				tcpFields.UrgentPointer = uint16(40)
 				return makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, arbitraryIPv6Fields(), tcpFields)
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(40, tcpUrgPtrLen), stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(40, tcpUrgPtrLen), Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_TRANSPORT_HEADER, tcpUrgPtrOffset, tcpUrgPtrLen, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_INET, 16, 0x0),
 		},
 		// IPv6 set commands.
@@ -2052,7 +2052,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				fields.PayloadLength = uint16(232)
 				return makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, fields, arbitraryTCPFields())
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(232, ipv6LengthLen), stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(232, ipv6LengthLen), Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv6LengthOffset, ipv6LengthLen, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_NONE, 0, linux.NFT_PAYLOAD_L4CSUM_PSEUDOHDR),
 		},
 		{ // cmd: add rule ip6 tab ch ip6 hoplimit set 54
@@ -2063,7 +2063,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				fields.HopLimit = uint8(54)
 				return makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, fields, arbitraryTCPFields())
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(54, ipv6HopLimitLen), stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_1, numToBE(54, ipv6HopLimitLen), Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv6HopLimitOffset, ipv6HopLimitLen, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_NONE, 0, 0x0),
 		},
 		{ // cmd: add rule ip6 tab ch ip6 saddr set 2001:db8:85a3::bb
@@ -2074,7 +2074,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				fields.SrcAddr = tcpip.AddrFrom16(arbitraryIPv6AddrB2)
 				return makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, fields, arbitraryTCPFields())
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_1, arbitraryIPv6AddrB2[:], stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_1, arbitraryIPv6AddrB2[:], Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv6SrcAddrOffset, ipv6SrcAddrLen, linux.NFT_REG_1, linux.NFT_PAYLOAD_CSUM_NONE, 0, linux.NFT_PAYLOAD_L4CSUM_PSEUDOHDR),
 		},
 		{ // cmd: add rule ip6 tab ch ip6 daddr set 2001:db8:85a3::aa
@@ -2085,7 +2085,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 				fields.DstAddr = tcpip.AddrFrom16(arbitraryIPv6AddrB)
 				return makeIPv6TCPPacket(header.IPv6MinimumSize+header.TCPMinimumSize, fields, arbitraryTCPFields())
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_3, arbitraryIPv6AddrB[:], stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_3, arbitraryIPv6AddrB[:], Verdict{}),
 			op2: mustCreatePayloadSet(t, linux.NFT_PAYLOAD_NETWORK_HEADER, ipv6DstAddrOffset, ipv6DstAddrLen, linux.NFT_REG_3, linux.NFT_PAYLOAD_CSUM_NONE, 0, linux.NFT_PAYLOAD_L4CSUM_PSEUDOHDR),
 		},
 	} {
@@ -2112,7 +2112,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 
 			// Adds drop operation. Will be final verdict if payload set evaluation is
 			// successful (operation breaks if anything goes wrong).
-			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_DROP)}))
+			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)}))
 
 			// Registers the rule to the base chain.
 			if err := bc.RegisterRule(rule, -1); err != nil {
@@ -2162,51 +2162,51 @@ func TestEvaluateBitwise(t *testing.T) {
 		// cmd: add rule ip filter input ip saddr and _ or _ == 105
 		{
 			tname: "same 4-byte register with 4-byte data for bitwise bool",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_01, numToBE(4783, 4), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_01, numToBE(4783, 4), Verdict{}),
 			op2:   mustCreateBitwiseBool(t, linux.NFT_REG32_01, linux.NFT_REG32_01, numToBE(55, 4), numToBE(78, 4)),
 			op3:   mustCreateComparison(t, linux.NFT_REG32_01, linux.NFT_CMP_EQ, numToBE((4783&55)^78, 4)),
 		},
 		{
 			tname: "same 16-byte register with 4-byte data for bitwise bool",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(4783, 4), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(4783, 4), Verdict{}),
 			op2:   mustCreateBitwiseBool(t, linux.NFT_REG_1, linux.NFT_REG_1, numToBE(55, 4), numToBE(78, 4)),
 			op3:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, numToBE((4783&55)^78, 4)),
 		},
 		// cmd: add rule ip filter input ip saddr and 0x11111111 == 285217024
 		{
 			tname: "dif 4-byte registers with 4-byte data for bitwise bool",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_01, numToBE(400700800, 4), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_01, numToBE(400700800, 4), Verdict{}),
 			op2:   mustCreateBitwiseBool(t, linux.NFT_REG32_01, linux.NFT_REG32_02, numToBE(0x11111111, 4), numToBE(0, 4)),
 			op3:   mustCreateComparison(t, linux.NFT_REG32_02, linux.NFT_CMP_EQ, numToBE(400700800&0x11111111, 4)),
 		},
 		{
 			tname: "dif 16-byte registers with 4-byte data for bitwise bool",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(400700800, 4), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(400700800, 4), Verdict{}),
 			op2:   mustCreateBitwiseBool(t, linux.NFT_REG_1, linux.NFT_REG_2, numToBE(0x11111111, 4), numToBE(0, 4)),
 			op3:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, numToBE(400700800&0x11111111, 4)),
 		},
 		// add rule ip filter input ip saddr or 0xff0230ff == 267583535
 		{
 			tname: "4- and 16-byte registers with 4-byte data for bitwise bool",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_10, numToBE(0, 4), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_10, numToBE(0, 4), Verdict{}),
 			op2:   mustCreateBitwiseBool(t, linux.NFT_REG32_10, linux.NFT_REG_2, numToBE(0x00cffd00, 4), numToBE(0xff3002ff, 4)),
 			op3:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, numToBE((0&0x00cffd00)^0xff3002ff, 4)),
 		},
 		{
 			tname: "16- and 4-byte registers with 4-byte data for bitwise bool",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_3, numToBE(0, 4), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, numToBE(0, 4), Verdict{}),
 			op2:   mustCreateBitwiseBool(t, linux.NFT_REG_3, linux.NFT_REG32_05, numToBE(0x00cffd00, 4), numToBE(0xff3002ff, 4)),
 			op3:   mustCreateComparison(t, linux.NFT_REG32_05, linux.NFT_CMP_EQ, numToBE((0&0x00cffd00)^0xff3002ff, 4)),
 		},
 		{
 			tname: "8-byte data for bitwise bool",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(0x12345678, 8), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(0x12345678, 8), Verdict{}),
 			op2:   mustCreateBitwiseBool(t, linux.NFT_REG_1, linux.NFT_REG_1, numToBE(0x00cffd00, 8), numToBE(0xff3002ff, 8)),
 			op3:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, numToBE((0x12345678&0x00cffd00)^0xff3002ff, 8)),
 		},
 		{
 			tname: "16-byte data for bitwise bool",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, Verdict{}),
 			op2:   mustCreateBitwiseBool(t, linux.NFT_REG_4, linux.NFT_REG_2, []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, []byte{0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe}),
 			op3:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, []byte{0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}),
 		},
@@ -2214,61 +2214,61 @@ func TestEvaluateBitwise(t *testing.T) {
 		// No nft binary commands were observed that directly used shift operations.
 		{
 			tname: "0 shift left for bitwise lshift",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_01, binary.NativeEndian.AppendUint32(nil, 4783), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_01, binary.NativeEndian.AppendUint32(nil, 4783), Verdict{}),
 			op2:   mustCreateBitwiseShift(t, linux.NFT_REG32_01, linux.NFT_REG32_01, 4, 0, false),
 			op3:   mustCreateComparison(t, linux.NFT_REG32_01, linux.NFT_CMP_EQ, binary.NativeEndian.AppendUint32(nil, 4783)),
 		},
 		{
 			tname: "0 shift right for bitwise rshift",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_1, binary.NativeEndian.AppendUint32(nil, 4783), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, binary.NativeEndian.AppendUint32(nil, 4783), Verdict{}),
 			op2:   mustCreateBitwiseShift(t, linux.NFT_REG_1, linux.NFT_REG_1, 4, 0, true),
 			op3:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, binary.NativeEndian.AppendUint32(nil, 4783)),
 		},
 		{
 			tname: "1-bit shift left for bitwise lshift",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, binary.NativeEndian.AppendUint32(nil, 4782), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, binary.NativeEndian.AppendUint32(nil, 4782), Verdict{}),
 			op2:   mustCreateBitwiseShift(t, linux.NFT_REG_4, linux.NFT_REG_4, 4, 1, false),
 			op3:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ, binary.NativeEndian.AppendUint32(nil, 4782<<1)),
 		},
 		{
 			tname: "1-bit shift right for bitwise rshift",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_06, binary.NativeEndian.AppendUint32(nil, 4782), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_06, binary.NativeEndian.AppendUint32(nil, 4782), Verdict{}),
 			op2:   mustCreateBitwiseShift(t, linux.NFT_REG32_06, linux.NFT_REG32_06, 4, 1, true),
 			op3:   mustCreateComparison(t, linux.NFT_REG32_06, linux.NFT_CMP_EQ, binary.NativeEndian.AppendUint32(nil, 4782>>1)),
 		},
 		{
 			tname: "8-bit shift left for bitwise lshift",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, binary.NativeEndian.AppendUint32(nil, 4782), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, binary.NativeEndian.AppendUint32(nil, 4782), Verdict{}),
 			op2:   mustCreateBitwiseShift(t, linux.NFT_REG_4, linux.NFT_REG_4, 4, 8, false),
 			op3:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ, binary.NativeEndian.AppendUint32(nil, 4782<<8)),
 		},
 		{
 			tname: "8-bit shift right for bitwise rshift",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_06, binary.NativeEndian.AppendUint32(nil, 4782), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_06, binary.NativeEndian.AppendUint32(nil, 4782), Verdict{}),
 			op2:   mustCreateBitwiseShift(t, linux.NFT_REG32_06, linux.NFT_REG32_06, 4, 8, true),
 			op3:   mustCreateComparison(t, linux.NFT_REG32_06, linux.NFT_CMP_EQ, binary.NativeEndian.AppendUint32(nil, 4782>>8)),
 		},
 		{
 			tname: "16-bit shift left for bitwise lshift",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, append(binary.NativeEndian.AppendUint32(nil, 0), binary.NativeEndian.AppendUint32(nil, 0x45678910)...), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, append(binary.NativeEndian.AppendUint32(nil, 0), binary.NativeEndian.AppendUint32(nil, 0x45678910)...), Verdict{}),
 			op2:   mustCreateBitwiseShift(t, linux.NFT_REG_4, linux.NFT_REG_4, 8, 16, false),
 			op3:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ, append(binary.NativeEndian.AppendUint32(nil, 0x00004567), binary.NativeEndian.AppendUint32(nil, 0x89100000)...)),
 		},
 		{
 			tname: "16-bit shift right for bitwise rshift",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_06, binary.NativeEndian.AppendUint32(nil, 0x45678910), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_06, binary.NativeEndian.AppendUint32(nil, 0x45678910), Verdict{}),
 			op2:   mustCreateBitwiseShift(t, linux.NFT_REG32_06, linux.NFT_REG32_06, 4, 16, true),
 			op3:   mustCreateComparison(t, linux.NFT_REG32_06, linux.NFT_CMP_EQ, binary.NativeEndian.AppendUint32(nil, 0x45678910>>16)),
 		},
 		{
 			tname: "max-bit shift left for bitwise lshift",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_03, binary.NativeEndian.AppendUint32(nil, 0x45678910), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_03, binary.NativeEndian.AppendUint32(nil, 0x45678910), Verdict{}),
 			op2:   mustCreateBitwiseShift(t, linux.NFT_REG32_03, linux.NFT_REG_2, 4, bitshiftLimit-1, false),
 			op3:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, binary.NativeEndian.AppendUint32(nil, 0)), // 0x45678910 << 31 in 32-bit is 0
 		},
 		{
 			tname: "max-bit shift right for bitwise rshift",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_3, append(binary.NativeEndian.AppendUint32(nil, 0x45678910), binary.NativeEndian.AppendUint32(nil, 0)...), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, append(binary.NativeEndian.AppendUint32(nil, 0x45678910), binary.NativeEndian.AppendUint32(nil, 0)...), Verdict{}),
 			op2:   mustCreateBitwiseShift(t, linux.NFT_REG_3, linux.NFT_REG_2, 8, bitshiftLimit-1, true),
 			op3:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, append(binary.NativeEndian.AppendUint32(nil, 0), binary.NativeEndian.AppendUint32(nil, 0x8ACF1220)...)),
 		},
@@ -2298,7 +2298,7 @@ func TestEvaluateBitwise(t *testing.T) {
 			}
 
 			// Adds drop operation. Will be final verdict if comparison is true.
-			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_DROP)}))
+			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)}))
 
 			// Registers the rule to the base chain.
 			if err := bc.RegisterRule(rule, -1); err != nil {
@@ -2554,7 +2554,7 @@ func TestEvaluateRoute(t *testing.T) {
 			}
 
 			// Adds drop operation. Will be final verdict if all comparisons are true.
-			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_DROP)}))
+			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)}))
 
 			// Registers the rule to the base chain.
 			if err := bc.RegisterRule(rule, -1); err != nil {
@@ -2607,74 +2607,74 @@ func TestEvaluateByteorder(t *testing.T) {
 		// Size 2 tests (Lengths 2, 3, 4, 6, 8, 16)
 		{
 			tname: "ntoh size 2 len 2",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_01, numToBE(0x0102, 2), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_01, numToBE(0x0102, 2), Verdict{}),
 			op2:   mustCreateByteorder(t, linux.NFT_REG32_01, linux.NFT_REG32_01, linux.NFT_BYTEORDER_NTOH, 2, 2),
 			op3:   mustCreateComparison(t, linux.NFT_REG32_01, linux.NFT_CMP_EQ, chooseOrderN(0x0102, 0x0201, 2)),
 		},
 		{
 			tname: "hton size 2 len 2",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_01, numToBE(0x0102, 2), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_01, numToBE(0x0102, 2), Verdict{}),
 			op2:   mustCreateByteorder(t, linux.NFT_REG32_01, linux.NFT_REG_1, linux.NFT_BYTEORDER_HTON, 2, 2),
 			op3:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, chooseOrderN(0x0102, 0x0201, 2)),
 		},
 		{
 			tname: "ntoh size 2 len 3",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_01, numToBE(0x010203, 3), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_01, numToBE(0x010203, 3), Verdict{}),
 			op2:   mustCreateByteorder(t, linux.NFT_REG32_01, linux.NFT_REG_1, linux.NFT_BYTEORDER_NTOH, 3, 2),
 			op3:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, chooseOrderN(0x010203, 0x020100, 3)),
 		},
 		{
 			tname: "hton size 2 len 3",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(0x010203, 3), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(0x010203, 3), Verdict{}),
 			op2:   mustCreateByteorder(t, linux.NFT_REG_1, linux.NFT_REG32_01, linux.NFT_BYTEORDER_HTON, 3, 2),
 			op3:   mustCreateComparison(t, linux.NFT_REG32_01, linux.NFT_CMP_EQ, chooseOrderN(0x010203, 0x020100, 3)),
 		},
 		{
 			tname: "ntoh size 2 len 4",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_10, numToBE(0x01020304, 4), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_10, numToBE(0x01020304, 4), Verdict{}),
 			op2:   mustCreateByteorder(t, linux.NFT_REG32_10, linux.NFT_REG32_05, linux.NFT_BYTEORDER_NTOH, 4, 2),
 			op3:   mustCreateComparison(t, linux.NFT_REG32_05, linux.NFT_CMP_EQ, chooseOrderN(0x01020304, 0x02010403, 4)),
 		},
 		{
 			tname: "hton size 2 len 4",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, numToBE(0x01020304, 4), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, numToBE(0x01020304, 4), Verdict{}),
 			op2:   mustCreateByteorder(t, linux.NFT_REG_4, linux.NFT_REG32_09, linux.NFT_BYTEORDER_HTON, 4, 2),
 			op3:   mustCreateComparison(t, linux.NFT_REG32_09, linux.NFT_CMP_EQ, chooseOrderN(0x01020304, 0x02010403, 4)),
 		},
 		{
 			tname: "ntoh size 2 len 6",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(0x010203040506, 6), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(0x010203040506, 6), Verdict{}),
 			op2:   mustCreateByteorder(t, linux.NFT_REG_1, linux.NFT_REG_1, linux.NFT_BYTEORDER_NTOH, 6, 2),
 			op3:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, chooseOrderN(0x010203040506, 0x020104030605, 6)),
 		},
 		{
 			tname: "hton size 2 len 6",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(0x010203040506, 6), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(0x010203040506, 6), Verdict{}),
 			op2:   mustCreateByteorder(t, linux.NFT_REG_1, linux.NFT_REG_1, linux.NFT_BYTEORDER_HTON, 6, 2),
 			op3:   mustCreateComparison(t, linux.NFT_REG_1, linux.NFT_CMP_EQ, chooseOrderN(0x010203040506, 0x020104030605, 6)),
 		},
 		{
 			tname: "ntoh size 2 len 8",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(0x0102030405060708, 8), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(0x0102030405060708, 8), Verdict{}),
 			op2:   mustCreateByteorder(t, linux.NFT_REG_1, linux.NFT_REG_4, linux.NFT_BYTEORDER_NTOH, 8, 2),
 			op3:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ, chooseOrderN(0x0102030405060708, 0x0201040306050807, 8)),
 		},
 		{
 			tname: "hton size 2 len 8",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(0x0102030405060708, 8), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(0x0102030405060708, 8), Verdict{}),
 			op2:   mustCreateByteorder(t, linux.NFT_REG_1, linux.NFT_REG_4, linux.NFT_BYTEORDER_HTON, 8, 2),
 			op3:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ, chooseOrderN(0x0102030405060708, 0x0201040306050807, 8)),
 		},
 		{
 			tname: "ntoh size 2 len 16",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10}, Verdict{}),
 			op2:   mustCreateByteorder(t, linux.NFT_REG_3, linux.NFT_REG_2, linux.NFT_BYTEORDER_NTOH, 16, 2),
 			op3: mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, chooseOrder([]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10},
 				[]byte{0x02, 0x01, 0x04, 0x03, 0x06, 0x05, 0x08, 0x07, 0x0a, 0x09, 0x0c, 0x0b, 0x0e, 0x0d, 0x10, 0x0f})),
 		},
 		{
 			tname: "hton size 2 len 16",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10}, Verdict{}),
 			op2:   mustCreateByteorder(t, linux.NFT_REG_3, linux.NFT_REG_2, linux.NFT_BYTEORDER_HTON, 16, 2),
 			op3: mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, chooseOrder([]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10},
 				[]byte{0x02, 0x01, 0x04, 0x03, 0x06, 0x05, 0x08, 0x07, 0x0a, 0x09, 0x0c, 0x0b, 0x0e, 0x0d, 0x10, 0x0f})),
@@ -2682,50 +2682,50 @@ func TestEvaluateByteorder(t *testing.T) {
 		// Size 4 tests (Lengths 4, 6, 8, 16)
 		{
 			tname: "ntoh size 4 len 4",
-			op1:   mustCreateImmediate(t, linux.NFT_REG32_05, numToBE(0x01020304, 4), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG32_05, numToBE(0x01020304, 4), Verdict{}),
 			op2:   mustCreateByteorder(t, linux.NFT_REG32_05, linux.NFT_REG_2, linux.NFT_BYTEORDER_NTOH, 4, 4),
 			op3:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, chooseOrderN(0x01020304, 0x04030201, 4)),
 		},
 		{
 			tname: "hton size 4 len 4",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, numToBE(0x01020304, 4), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, numToBE(0x01020304, 4), Verdict{}),
 			op2:   mustCreateByteorder(t, linux.NFT_REG_4, linux.NFT_REG32_09, linux.NFT_BYTEORDER_HTON, 4, 4),
 			op3:   mustCreateComparison(t, linux.NFT_REG32_09, linux.NFT_CMP_EQ, chooseOrderN(0x01020304, 0x04030201, 4)),
 		},
 		{
 			tname: "ntoh size 4 len 6",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, numToBE(0x010203040506, 6), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, numToBE(0x010203040506, 6), Verdict{}),
 			op2:   mustCreateByteorder(t, linux.NFT_REG_4, linux.NFT_REG_2, linux.NFT_BYTEORDER_NTOH, 6, 4),
 			op3:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, chooseOrderN(0x010203040506, 0x040302010000, 6)),
 		},
 		{
 			tname: "hton size 4 len 6",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, numToBE(0x010203040506, 6), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, numToBE(0x010203040506, 6), Verdict{}),
 			op2:   mustCreateByteorder(t, linux.NFT_REG_4, linux.NFT_REG_2, linux.NFT_BYTEORDER_HTON, 6, 4),
 			op3:   mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, chooseOrderN(0x010203040506, 0x040302010000, 6)),
 		},
 		{
 			tname: "ntoh size 4 len 8",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(0x0102030405060708, 8), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(0x0102030405060708, 8), Verdict{}),
 			op2:   mustCreateByteorder(t, linux.NFT_REG_1, linux.NFT_REG_4, linux.NFT_BYTEORDER_NTOH, 8, 4),
 			op3:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ, chooseOrderN(0x0102030405060708, 0x0403020108070605, 8)),
 		},
 		{
 			tname: "hton size 4 len 8",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(0x0102030405060708, 8), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(0x0102030405060708, 8), Verdict{}),
 			op2:   mustCreateByteorder(t, linux.NFT_REG_1, linux.NFT_REG_4, linux.NFT_BYTEORDER_HTON, 8, 4),
 			op3:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ, chooseOrderN(0x0102030405060708, 0x0403020108070605, 8)),
 		},
 		{
 			tname: "ntoh size 4 len 16",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10}, Verdict{}),
 			op2:   mustCreateByteorder(t, linux.NFT_REG_3, linux.NFT_REG_2, linux.NFT_BYTEORDER_NTOH, 16, 4),
 			op3: mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, chooseOrder([]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10},
 				[]byte{0x04, 0x03, 0x02, 0x01, 0x08, 0x07, 0x06, 0x05, 0x0c, 0x0b, 0x0a, 0x09, 0x10, 0x0f, 0x0e, 0x0d})),
 		},
 		{
 			tname: "hton size 4 len 16",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10}, Verdict{}),
 			op2:   mustCreateByteorder(t, linux.NFT_REG_3, linux.NFT_REG_2, linux.NFT_BYTEORDER_HTON, 16, 4),
 			op3: mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, chooseOrder([]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10},
 				[]byte{0x04, 0x03, 0x02, 0x01, 0x08, 0x07, 0x06, 0x05, 0x0c, 0x0b, 0x0a, 0x09, 0x10, 0x0f, 0x0e, 0x0d})),
@@ -2733,40 +2733,40 @@ func TestEvaluateByteorder(t *testing.T) {
 		// Size 8 tests (Lengths 8, 12, 16)
 		{
 			tname: "ntoh size 8 len 8",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(0x0102030405060708, 8), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(0x0102030405060708, 8), Verdict{}),
 			op2:   mustCreateByteorder(t, linux.NFT_REG_1, linux.NFT_REG_4, linux.NFT_BYTEORDER_NTOH, 8, 8),
 			op3:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ, chooseOrderN(0x0102030405060708, 0x0807060504030201, 8)),
 		},
 		{
 			tname: "hton size 8 len 8",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(0x0102030405060708, 8), stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_1, numToBE(0x0102030405060708, 8), Verdict{}),
 			op2:   mustCreateByteorder(t, linux.NFT_REG_1, linux.NFT_REG_4, linux.NFT_BYTEORDER_HTON, 8, 8),
 			op3:   mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ, chooseOrderN(0x0102030405060708, 0x0807060504030201, 8)),
 		},
 		{
 			tname: "ntoh size 8 len 12",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c}, Verdict{}),
 			op2:   mustCreateByteorder(t, linux.NFT_REG_3, linux.NFT_REG_2, linux.NFT_BYTEORDER_NTOH, 12, 8),
 			op3: mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, chooseOrder([]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c},
 				[]byte{0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0x00, 0x00, 0x00, 0x00})),
 		},
 		{
 			tname: "hton size 8 len 12",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_3, []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c}, Verdict{}),
 			op2:   mustCreateByteorder(t, linux.NFT_REG_3, linux.NFT_REG_2, linux.NFT_BYTEORDER_HTON, 12, 8),
 			op3: mustCreateComparison(t, linux.NFT_REG_2, linux.NFT_CMP_EQ, chooseOrder([]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c},
 				[]byte{0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0x00, 0x00, 0x00, 0x00})),
 		},
 		{
 			tname: "ntoh size 8 len 16",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10}, Verdict{}),
 			op2:   mustCreateByteorder(t, linux.NFT_REG_4, linux.NFT_REG_4, linux.NFT_BYTEORDER_NTOH, 16, 8),
 			op3: mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ, chooseOrder([]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10},
 				[]byte{0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0x10, 0x0f, 0x0e, 0x0d, 0x0c, 0x0b, 0x0a, 0x09})),
 		},
 		{
 			tname: "hton size 8 len 16",
-			op1:   mustCreateImmediate(t, linux.NFT_REG_4, []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10}, stack.NFVerdict{}),
+			op1:   mustCreateImmediate(t, linux.NFT_REG_4, []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10}, Verdict{}),
 			op2:   mustCreateByteorder(t, linux.NFT_REG_4, linux.NFT_REG_4, linux.NFT_BYTEORDER_HTON, 16, 8),
 			op3: mustCreateComparison(t, linux.NFT_REG_4, linux.NFT_CMP_EQ, chooseOrder([]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10},
 				[]byte{0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0x10, 0x0f, 0x0e, 0x0d, 0x0c, 0x0b, 0x0a, 0x09})),
@@ -2797,7 +2797,7 @@ func TestEvaluateByteorder(t *testing.T) {
 			}
 
 			// Adds drop operation. Will be final verdict if comparison is true.
-			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_DROP)}))
+			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)}))
 
 			// Registers the rule to the base chain.
 			if err := bc.RegisterRule(rule, -1); err != nil {
@@ -2976,7 +2976,7 @@ func TestEvaluateMetaLoad(t *testing.T) {
 			}
 
 			// Adds drop operation. Will be final verdict if all comparisons are true.
-			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_DROP)}))
+			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)}))
 
 			// Registers the rule to the base chain.
 			if err := bc.RegisterRule(rule, -1); err != nil {
@@ -3028,7 +3028,7 @@ func TestEvaluateMetaSet(t *testing.T) {
 				pkt.PktType = testPktType
 				return pkt
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG32_06, []byte{uint8(testPktType)}, stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG32_06, []byte{uint8(testPktType)}, Verdict{}),
 			op2: mustCreateMetaSet(t, linux.NFT_META_PKTTYPE, linux.NFT_REG32_06),
 		},
 		{
@@ -3039,7 +3039,7 @@ func TestEvaluateMetaSet(t *testing.T) {
 				pkt.PktType = testPktType
 				return pkt
 			}(),
-			op1: mustCreateImmediate(t, linux.NFT_REG_3, []byte{uint8(testPktType)}, stack.NFVerdict{}),
+			op1: mustCreateImmediate(t, linux.NFT_REG_3, []byte{uint8(testPktType)}, Verdict{}),
 			op2: mustCreateMetaSet(t, linux.NFT_META_PKTTYPE, linux.NFT_REG_3),
 		},
 	} {
@@ -3065,7 +3065,7 @@ func TestEvaluateMetaSet(t *testing.T) {
 			}
 
 			// Adds drop operation, to be final verdict if evaluation is successful.
-			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_DROP)}))
+			rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)}))
 
 			// Registers the rule to the base chain.
 			if err := bc.RegisterRule(rule, -1); err != nil {
@@ -3095,7 +3095,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 	for _, test := range []struct {
 		tname     string
 		chains    map[string]*Chain
-		verdict   stack.NFVerdict
+		verdict   Verdict
 		shouldErr bool
 	}{
 		{
@@ -3104,7 +3104,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "non_existent_chain"})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "non_existent_chain"})},
 					}},
 				},
 			},
@@ -3116,7 +3116,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "non_existent_chain"})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: "non_existent_chain"})},
 					}},
 				},
 			},
@@ -3128,7 +3128,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "base_chain"})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "base_chain"})},
 					}},
 				},
 			},
@@ -3140,7 +3140,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"})},
 					}},
 				},
 			},
@@ -3152,12 +3152,12 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})},
 					}},
 				},
 				"aux_chain": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"})},
 					}},
 				},
 			},
@@ -3169,17 +3169,17 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})},
 					}},
 				},
 				"aux_chain": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"})},
 					}},
 				},
 				"aux_chain2": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain"})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain"})},
 					}},
 				},
 			},
@@ -3191,17 +3191,17 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})},
 					}},
 				},
 				"aux_chain": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"})},
 					}},
 				},
 				"aux_chain2": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"})},
 					}},
 				},
 			},
@@ -3213,27 +3213,27 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})},
 					}},
 				},
 				"aux_chain": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"})},
 					}},
 				},
 				"aux_chain2": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"})},
 					}},
 				},
 				"aux_chain3": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain4"})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain4"})},
 					}},
 				},
 				"aux_chain4": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"})},
 					}},
 				},
 			},
@@ -3245,22 +3245,22 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})},
 					}},
 				},
 				"aux_chain": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"})},
 					}},
 				},
 				"aux_chain2": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"})},
 					}},
 				},
 				"aux_chain3": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"})},
 					}},
 				},
 			},
@@ -3272,22 +3272,22 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})},
 					}},
 				},
 				"aux_chain": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"})},
 					}},
 				},
 				"aux_chain2": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"})},
 					}},
 				},
 				"aux_chain3": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"})},
 					}},
 				},
 			},
@@ -3304,28 +3304,28 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{{
 						ops: []operation{
-							mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}),
-							mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"}),
+							mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}),
+							mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"}),
 						},
 					}},
 				},
 				"aux_chain": {
 					comment: "strictly target",
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_DROP)})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)})},
 					}},
 				},
 				"aux_chain2": {
 					rules: []*Rule{{
 						ops: []operation{
-							mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}),
-							mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"}),
+							mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}),
+							mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"}),
 						},
 					}},
 				},
 				"aux_chain3": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"})},
 					}},
 				},
 			},
@@ -3337,32 +3337,32 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{
-						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_1, []byte{0, 1, 2, 3}, stack.NFVerdict{})}},
-						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG32_14, []byte{0, 1, 2, 3}, stack.NFVerdict{})}},
-						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})}},
+						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_1, []byte{0, 1, 2, 3}, Verdict{})}},
+						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG32_14, []byte{0, 1, 2, 3}, Verdict{})}},
+						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})}},
 					},
 				},
 				"aux_chain": {
 					rules: []*Rule{{
 						ops: []operation{
-							mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_DROP)}),
-							mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"}),
+							mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)}),
+							mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"}),
 						},
 					}},
 				},
 				"aux_chain2": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"})},
 					}},
 				},
 				"aux_chain3": {
 					rules: []*Rule{
-						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_1, []byte{0, 1, 2, 3}, stack.NFVerdict{})}},
-						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG32_14, []byte{0, 1, 2, 3}, stack.NFVerdict{})}},
+						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_1, []byte{0, 1, 2, 3}, Verdict{})}},
+						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG32_14, []byte{0, 1, 2, 3}, Verdict{})}},
 						{ops: []operation{
-							mustCreateImmediate(t, linux.NFT_REG_4, []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, stack.NFVerdict{}),
-							mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain"}),
-							mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_DROP)}),
+							mustCreateImmediate(t, linux.NFT_REG_4, []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, Verdict{}),
+							mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain"}),
+							mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)}),
 						}},
 					},
 				},
@@ -3377,33 +3377,33 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 					rules: []*Rule{
 						{
 							ops: []operation{
-								mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}),
-								mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"}),
+								mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}),
+								mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"}),
 							},
 						},
-						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"})}},
+						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"})}},
 					},
 				},
 				"aux_chain": {
 					comment: "strictly target",
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_2, []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, stack.NFVerdict{})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_2, []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, Verdict{})},
 					}},
 				},
 				"aux_chain2": {
 					comment: "strictly target",
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_3, []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, stack.NFVerdict{})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_3, []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, Verdict{})},
 					}},
 				},
 				"aux_chain3": {
 					comment: "strictly target",
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_4, []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, stack.NFVerdict{})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_4, []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, Verdict{})},
 					}},
 				},
 			},
-			verdict: stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
+			verdict: Verdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
 		},
 		{
 			tname: "base chain jump to 3 other chains with last chain dropping",
@@ -3413,32 +3413,32 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 					rules: []*Rule{
 						{
 							ops: []operation{
-								mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}),
-								mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"}),
+								mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}),
+								mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"}),
 							},
 						},
-						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"})}},
+						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"})}},
 					},
 				},
 				"aux_chain": {
 					comment: "strictly target",
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_2, []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, stack.NFVerdict{})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_2, []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, Verdict{})},
 					}}},
 				"aux_chain2": {
 					comment: "strictly target",
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_3, []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, stack.NFVerdict{})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_3, []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, Verdict{})},
 					}},
 				},
 				"aux_chain3": {
 					comment: "strictly target",
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_DROP)})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)})},
 					}},
 				},
 			},
-			verdict: stack.NFVerdict{Code: VC(linux.NF_DROP)}, // from last chain
+			verdict: Verdict{Code: VC(linux.NF_DROP)}, // from last chain
 		},
 		{
 			tname: "base chain jump to 3 other chains with last rule in base chain dropping",
@@ -3448,33 +3448,33 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 					rules: []*Rule{
 						{
 							ops: []operation{
-								mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}),
-								mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"}),
+								mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}),
+								mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"}),
 							},
 						},
-						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"})}},
-						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_DROP)})}},
+						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"})}},
+						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)})}},
 					},
 				},
 				"aux_chain": {
 					comment: "strictly target",
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_2, []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, stack.NFVerdict{})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_2, []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, Verdict{})},
 					}}},
 				"aux_chain2": {
 					comment: "strictly target",
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_3, []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, stack.NFVerdict{})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_3, []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, Verdict{})},
 					}},
 				},
 				"aux_chain3": {
 					comment: "strictly target",
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_4, []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, stack.NFVerdict{})},
+						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_4, []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, Verdict{})},
 					}},
 				},
 			},
-			verdict: stack.NFVerdict{Code: VC(linux.NF_DROP)}, // from last rule in base chain
+			verdict: Verdict{Code: VC(linux.NF_DROP)}, // from last rule in base chain
 		},
 		{
 			tname: "jump to the same chain",
@@ -3484,8 +3484,8 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 					rules: []*Rule{
 						{
 							ops: []operation{
-								mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}),
-								mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}),
+								mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}),
+								mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}),
 							},
 						},
 					},
@@ -3495,7 +3495,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 					rules:   []*Rule{{}},
 				},
 			},
-			verdict: stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
+			verdict: Verdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
 		},
 	} {
 		t.Run(test.tname, func(t *testing.T) {
@@ -3587,31 +3587,31 @@ func TestMaxNestedJumps(t *testing.T) {
 		tname         string
 		useJumpOp     bool
 		numberOfJumps int
-		verdict       stack.NFVerdict // ChainName is set to "error" if an error is expected
+		verdict       Verdict // ChainName is set to "error" if an error is expected
 	}{
 		{
 			tname:         "nested jump limit reached with jumps",
 			useJumpOp:     true,
 			numberOfJumps: nestedJumpLimit,
-			verdict:       stack.NFVerdict{Code: VC(linux.NF_DROP)},
+			verdict:       Verdict{Code: VC(linux.NF_DROP)},
 		},
 		{
 			tname:         "nested jump limit reached with gotos",
 			useJumpOp:     false,
 			numberOfJumps: nestedJumpLimit,
-			verdict:       stack.NFVerdict{Code: VC(linux.NF_DROP)},
+			verdict:       Verdict{Code: VC(linux.NF_DROP)},
 		},
 		{
 			tname:         "nested jump limit exceeded with jumps",
 			useJumpOp:     true,
 			numberOfJumps: nestedJumpLimit + 1,
-			verdict:       stack.NFVerdict{ChainName: "error"},
+			verdict:       Verdict{ChainName: "error"},
 		},
 		{
 			tname:         "nested jump limit exceeded with gotos",
 			useJumpOp:     false,
 			numberOfJumps: nestedJumpLimit + 1,
-			verdict:       stack.NFVerdict{Code: VC(linux.NF_DROP)}, // limit only for jumps
+			verdict:       Verdict{Code: VC(linux.NF_DROP)}, // limit only for jumps
 		},
 	} {
 		t.Run(test.tname, func(t *testing.T) {
@@ -3636,14 +3636,14 @@ func TestMaxNestedJumps(t *testing.T) {
 				}
 				r := &Rule{}
 				if i == test.numberOfJumps-1 {
-					err = r.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: VC(linux.NF_DROP)}))
+					err = r.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)}))
 				} else {
 					targetName := fmt.Sprintf("chain %d", i+1)
 					code := VC(linux.NFT_JUMP)
 					if !test.useJumpOp {
 						code = VC(linux.NFT_GOTO)
 					}
-					err = r.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, stack.NFVerdict{Code: code, ChainName: targetName}))
+					err = r.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: code, ChainName: targetName}))
 				}
 				if err != nil {
 					t.Fatalf("unexpected error for AddOperation: %v", err)
@@ -3758,7 +3758,7 @@ func newNFTablesStd() *NFTables {
 }
 
 // mustCreateImmediate wraps the newImmediate function for brevity.
-func mustCreateImmediate(t *testing.T, dreg uint8, data []byte, verdict stack.NFVerdict) *immediate {
+func mustCreateImmediate(t *testing.T, dreg uint8, data []byte, verdict Verdict) *immediate {
 	dataType := immRegToType(uint32(dreg))
 	imm, err := newImmediate(dreg, dataType, data, verdict)
 	if err != nil {
@@ -4249,7 +4249,7 @@ func TestDumpOperations(t *testing.T) {
 	}{
 		{
 			name: "immediate",
-			op:   mustCreateImmediate(t, linux.NFT_REG_1 /*dreg*/, []byte{1, 2, 3, 4} /*data*/, stack.NFVerdict{}),
+			op:   mustCreateImmediate(t, linux.NFT_REG_1 /*dreg*/, []byte{1, 2, 3, 4} /*data*/, Verdict{}),
 			validate: func(dump []byte) error {
 				attrs, ok := NfParse(dump)
 				if !ok {
@@ -4987,7 +4987,7 @@ func TestGetSet(t *testing.T) {
 type wantSetElem struct {
 	key        []byte
 	userData   []byte
-	verdict    *stack.NFVerdict
+	verdict    *Verdict
 	isCatchAll bool
 }
 
@@ -5054,7 +5054,7 @@ func parseDumpedElements(t *testing.T, ms *nlmsg.MessageSet) []wantSetElem {
 					verdictMap, _ := NfParse(nlmsg.AttrsView(verdictData))
 					verdictCode, ok := AttrNetToHost[uint32](linux.NFTA_VERDICT_CODE, verdictMap)
 					if ok {
-						item.verdict = &stack.NFVerdict{Code: verdictCode}
+						item.verdict = &Verdict{Code: verdictCode}
 					}
 				}
 			}
@@ -5070,11 +5070,11 @@ func TestGetSetElements(t *testing.T) {
 
 	key1 := []byte{192, 168, 1, 1}
 	keyData1, _ := dumpDataAttr(key1)
-	verdict1, _ := dumpVerdictDataAttr(stack.NFVerdict{Code: VC(linux.NF_ACCEPT)})
+	verdict1, _ := dumpVerdictDataAttr(Verdict{Code: VC(linux.NF_ACCEPT)})
 
 	key2 := []byte{10, 0, 0, 1}
 	keyData2, _ := dumpDataAttr(key2)
-	verdict2, _ := dumpVerdictDataAttr(stack.NFVerdict{Code: VC(linux.NF_DROP)})
+	verdict2, _ := dumpVerdictDataAttr(Verdict{Code: VC(linux.NF_DROP)})
 	userData2 := []byte("my-element-userdata")
 
 	// Standard element 1
@@ -5133,16 +5133,16 @@ func TestGetSetElements(t *testing.T) {
 			wanted: []wantSetElem{
 				{
 					key:     key1,
-					verdict: &stack.NFVerdict{Code: VC(linux.NF_ACCEPT)},
+					verdict: &Verdict{Code: VC(linux.NF_ACCEPT)},
 				},
 				{
 					key:      key2,
 					userData: userData2,
-					verdict:  &stack.NFVerdict{Code: VC(linux.NF_DROP)},
+					verdict:  &Verdict{Code: VC(linux.NF_DROP)},
 				},
 				{
 					isCatchAll: true,
-					verdict:    &stack.NFVerdict{Code: VC(linux.NF_ACCEPT)},
+					verdict:    &Verdict{Code: VC(linux.NF_ACCEPT)},
 				},
 			},
 		},
@@ -5174,7 +5174,7 @@ func TestGetSetElements(t *testing.T) {
 				{
 					key:      key2,
 					userData: userData2,
-					verdict:  &stack.NFVerdict{Code: VC(linux.NF_DROP)},
+					verdict:  &Verdict{Code: VC(linux.NF_DROP)},
 				},
 			},
 		},
