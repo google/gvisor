@@ -32,9 +32,11 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/version"
+	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -132,9 +134,9 @@ func (fs *filesystem) newSysNetDir(ctx context.Context, root *auth.Credentials, 
 				"tcp_fastopen":              fs.newInode(ctx, root, 0444, newStaticFile("0")),
 				"tcp_fastopen_key":          fs.newInode(ctx, root, 0444, newStaticFile("")),
 				"tcp_invalid_ratelimit":     fs.newInode(ctx, root, 0444, newStaticFile("0")),
-				"tcp_keepalive_intvl":       fs.newInode(ctx, root, 0444, newStaticFile("0")),
-				"tcp_keepalive_probes":      fs.newInode(ctx, root, 0444, newStaticFile("0")),
-				"tcp_keepalive_time":        fs.newInode(ctx, root, 0444, newStaticFile("7200")),
+				"tcp_keepalive_intvl":       fs.newInode(ctx, root, 0444, &tcpKeepaliveIntvlData{stack: stack}),
+				"tcp_keepalive_probes":      fs.newInode(ctx, root, 0444, &tcpKeepaliveProbesData{stack: stack}),
+				"tcp_keepalive_time":        fs.newInode(ctx, root, 0444, &tcpKeepaliveTimeData{stack: stack}),
 				"tcp_mtu_probing":           fs.newInode(ctx, root, 0444, newStaticFile("0")),
 				"tcp_no_metrics_save":       fs.newInode(ctx, root, 0444, newStaticFile("1")),
 				"tcp_probe_interval":        fs.newInode(ctx, root, 0444, newStaticFile("0")),
@@ -583,4 +585,79 @@ func ParseInt32Vec(ctx context.Context, src usermem.IOSequence, buf []int32) (in
 	src = src.TakeFirst(hostarch.PageSize - 1)
 
 	return usermem.CopyInt32StringsInVec(ctx, src.IO, src.Addrs, buf, src.Opts)
+}
+
+// tcpKeepaliveTimeData implements vfs.DynamicBytesSource for
+// /proc/sys/net/ipv4/tcp_keepalive_time.
+//
+// +stateify savable
+type tcpKeepaliveTimeData struct {
+	kernfs.DynamicBytesFile
+
+	stack inet.Stack `state:"wait"`
+}
+
+var _ vfs.DynamicBytesSource = (*tcpKeepaliveTimeData)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (d *tcpKeepaliveTimeData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	if ns, ok := d.stack.(*netstack.Stack); ok {
+		tcpProto := tcp.ProtocolFromStack(ns.Stack)
+		idle := tcpProto.DefaultKeepaliveIdle()
+		_, err := fmt.Fprintf(buf, "%d\n", int(idle.Seconds()))
+		return err
+	}
+	// Fallback to default value if not netstack.
+	_, err := buf.WriteString("7200\n")
+	return err
+}
+
+// tcpKeepaliveIntvlData implements vfs.DynamicBytesSource for
+// /proc/sys/net/ipv4/tcp_keepalive_intvl.
+//
+// +stateify savable
+type tcpKeepaliveIntvlData struct {
+	kernfs.DynamicBytesFile
+
+	stack inet.Stack `state:"wait"`
+}
+
+var _ vfs.DynamicBytesSource = (*tcpKeepaliveIntvlData)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (d *tcpKeepaliveIntvlData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	if ns, ok := d.stack.(*netstack.Stack); ok {
+		tcpProto := tcp.ProtocolFromStack(ns.Stack)
+		interval := tcpProto.DefaultKeepaliveInterval()
+		_, err := fmt.Fprintf(buf, "%d\n", int(interval.Seconds()))
+		return err
+	}
+	// Fallback to default value if not netstack.
+	_, err := buf.WriteString("75\n")
+	return err
+}
+
+// tcpKeepaliveProbesData implements vfs.DynamicBytesSource for
+// /proc/sys/net/ipv4/tcp_keepalive_probes.
+//
+// +stateify savable
+type tcpKeepaliveProbesData struct {
+	kernfs.DynamicBytesFile
+
+	stack inet.Stack `state:"wait"`
+}
+
+var _ vfs.DynamicBytesSource = (*tcpKeepaliveProbesData)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (d *tcpKeepaliveProbesData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	if ns, ok := d.stack.(*netstack.Stack); ok {
+		tcpProto := tcp.ProtocolFromStack(ns.Stack)
+		count := tcpProto.DefaultKeepaliveCount()
+		_, err := fmt.Fprintf(buf, "%d\n", count)
+		return err
+	}
+	// Fallback to default value if not netstack.
+	_, err := buf.WriteString("9\n")
+	return err
 }
