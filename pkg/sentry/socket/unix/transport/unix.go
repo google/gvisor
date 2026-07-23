@@ -43,6 +43,11 @@ type RightsControlMessage interface {
 	// Clone returns a copy of the RightsControlMessage.
 	Clone() RightsControlMessage
 
+	// TransferRights moves ownership of the underlying FDs to a new
+	// `RightsControlMessage`, leaving the receiver empty.
+	// Reference counts are left unchanged.
+	TransferRights() RightsControlMessage
+
 	// Release releases any resources owned by the RightsControlMessage.
 	Release(ctx context.Context)
 }
@@ -169,7 +174,14 @@ type Endpoint interface {
 	// SendMsg writes data and a control message to the endpoint's peer.
 	// This method does not block if the data cannot be written.
 	//
-	// SendMsg does not take ownership of any of its arguments on error.
+	// Ownership of the ControlMessages' Rights transfers to the callee iff
+	// the message is consumed, i.e. either enqueued or deliberately dropped
+	// (see `queue.Enqueue`).
+	// That is the case whenever `SendMsg` returns a nil error, or returns
+	// `syserr.ErrWouldBlock` along with a non-zero number of bytes written
+	// (i.e. a truncated stream write).
+	// In every other case, the caller retains ownership and must release
+	// them. Ownership of all other arguments stays with the caller.
 	//
 	// If set, notify is a callback that should be called after RecvMesg
 	// completes without mm.activeMu held.
@@ -692,6 +704,9 @@ type ConnectedEndpoint interface {
 	//
 	// syserr.ErrWouldBlock can be returned along with a partial write if
 	// the caller should block to send the rest of the data.
+	//
+	// Ownership of c.Rights follows the same rules as Endpoint.SendMsg: it
+	// transfers to the callee if and only if err is nil or n is non-zero.
 	Send(ctx context.Context, data [][]byte, c ControlMessages, from Address) (n int64, notify bool, err *syserr.Error)
 
 	// SendNotify notifies the ConnectedEndpoint of a successful Send. This
