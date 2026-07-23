@@ -158,7 +158,7 @@ func TestCreateSandboxWithContainer(t *testing.T) {
 	}
 }
 
-func createAndWaitForContainer(ctx context.Context, client task.TaskService, container *shimutils.Container, opts *anypb.Any) error {
+func createAndWaitForContainer(ctx context.Context, client task.TTRPCTaskService, container *shimutils.Container, opts *anypb.Any) error {
 	errGroup := errgroup.Group{}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -205,7 +205,7 @@ func createAndWaitForContainer(ctx context.Context, client task.TaskService, con
 	return errGroup.Wait()
 }
 
-func startAndWaitForContainer(ctx context.Context, client task.TaskService, containerID string, containerd *shimutils.MockContainerd) error {
+func startAndWaitForContainer(ctx context.Context, client task.TTRPCTaskService, containerID string, containerd *shimutils.MockContainerd) error {
 	errGroup := errgroup.Group{}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -238,7 +238,7 @@ func startAndWaitForContainer(ctx context.Context, client task.TaskService, cont
 	return errGroup.Wait()
 }
 
-func killAndWaitForContainer(ctx context.Context, client task.TaskService, containerID string, containerd *shimutils.MockContainerd) error {
+func killAndWaitForContainer(ctx context.Context, client task.TTRPCTaskService, containerID string, containerd *shimutils.MockContainerd) error {
 	errGroup := errgroup.Group{}
 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -279,7 +279,7 @@ func killAndWaitForContainer(ctx context.Context, client task.TaskService, conta
 // setupSandbox is a helper that creates and starts a new sandbox container
 // using the provided MockContainerd. It returns the created container and the
 // task service client. It fails the test if any setup step fails.
-func setupSandbox(t *testing.T, containerd *shimutils.MockContainerd) (*shimutils.Container, task.TaskService) {
+func setupSandbox(t *testing.T, containerd *shimutils.MockContainerd) (*shimutils.Container, task.TTRPCTaskService) {
 	t.Helper()
 	sandboxSpec := shimutils.NewSandboxSpec()
 	sandbox, err := shimutils.NewContainer(sandboxSpec, containerd)
