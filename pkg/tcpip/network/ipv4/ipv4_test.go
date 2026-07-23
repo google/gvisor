@@ -4452,3 +4452,68 @@ func TestForwardingTCPChecksum(t *testing.T) {
 		t.Errorf("expected valid TCP checksum, but got invalid")
 	}
 }
+
+func TestForwardedICMPInnerIPv4OptionsPanics(t *testing.T) {
+	ctx := newTestContext()
+	defer ctx.cleanup()
+	s := ctx.s
+
+	endpoints := make(map[tcpip.NICID]*channel.Endpoint)
+	for nicID, addr := range defaultEndpointConfigs {
+		ep := channel.New(1, ipv4.MaxTotalSize, "")
+		defer ep.Close()
+		if err := s.CreateNIC(nicID, ep); err != nil {
+			t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
+		}
+		protoAddr := tcpip.ProtocolAddress{Protocol: header.IPv4ProtocolNumber, AddressWithPrefix: addr}
+		if err := s.AddProtocolAddress(nicID, protoAddr, stack.AddressProperties{}); err != nil {
+			t.Fatalf("s.AddProtocolAddress(%d, %+v, {}): %s", nicID, protoAddr, err)
+		}
+		endpoints[nicID] = ep
+	}
+
+	s.SetRouteTable([]tcpip.Route{
+		{Destination: incomingIPv4Addr.Subnet(), NIC: incomingNICID},
+		{Destination: outgoingIPv4Addr.Subnet(), NIC: outgoingNICID},
+	})
+
+	if err := s.SetForwardingDefaultAndAllNICs(header.IPv4ProtocolNumber, true); err != nil {
+		t.Fatalf("s.SetForwardingDefaultAndAllNICs(%d, true): %s", header.IPv4ProtocolNumber, err)
+	}
+
+	// Inner IPv4 header with IHL=6 (24 bytes -> has options).
+	inner := header.IPv4(make([]byte, 24))
+	inner.Encode(&header.IPv4Fields{
+		TotalLength: 24,
+		TTL:         64,
+		Protocol:    uint8(header.UDPProtocolNumber),
+		SrcAddr:     remoteIPv4Addr1,
+		DstAddr:     remoteIPv4Addr2,
+	})
+	inner.SetHeaderLength(24)
+
+	icmp := header.ICMPv4(make([]byte, header.ICMPv4MinimumSize+len(inner)))
+	icmp.SetType(header.ICMPv4DstUnreachable)
+	icmp.SetCode(header.ICMPv4PortUnreachable)
+	copy(icmp.Payload(), inner)
+
+	// Outer: remote-to-remote (10.0.0.2 -> 11.0.0.2) so the packet is forwarded.
+	outer := header.IPv4(make([]byte, header.IPv4MinimumSize+len(icmp)))
+	outer.Encode(&header.IPv4Fields{
+		TotalLength: uint16(len(outer)),
+		TTL:         64,
+		Protocol:    uint8(header.ICMPv4ProtocolNumber),
+		SrcAddr:     remoteIPv4Addr1,
+		DstAddr:     remoteIPv4Addr2,
+	})
+	copy(outer[header.IPv4MinimumSize:], icmp)
+	outer.SetChecksum(0)
+	outer.SetChecksum(^outer.CalculateChecksum())
+
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Payload: buffer.MakeWithData(outer),
+	})
+	defer pkt.DecRef()
+
+	endpoints[incomingNICID].InjectInbound(header.IPv4ProtocolNumber, pkt)
+}

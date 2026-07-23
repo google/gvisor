@@ -442,6 +442,13 @@ TEST(LinkTest, LinkAtWithEmptyPathNeedsNoCapForSameCreds) {
 }
 
 TEST(LinkTest, LinkAtWithEmptyPathNeedsCapDacReadSearch) {
+  // The Linux commit 42bd2af5950456d described above appears only in 6.10.
+  if (!IsRunningOnGvisor()) {
+    KernelVersion version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
+    if (version.major < 6 || (version.major == 6 && version.minor < 10)) {
+      GTEST_SKIP() << "Kernel version is too old";
+    }
+  }
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_DAC_READ_SEARCH)));
 
   auto old_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());

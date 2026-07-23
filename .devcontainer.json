@@ -1,7 +1,7 @@
 {
     "dockerFile": "images/default/Dockerfile",
     "overrideCommand": true,
-    "postStartCommand": "tools/devcontainer-init-go.sh",
+    "postStartCommand": "tools/devcontainer-init.sh",
     "waitFor": "postStartCommand",
     "mounts": [
         "source=/var/run/docker.sock,target=/var/run/docker-host.sock,type=bind"
@@ -15,7 +15,8 @@
         "vscode": {
             "extensions": [
                 "bazelbuild.vscode-bazel",
-                "golang.go"
+                "golang.go",
+                "llvm-vs-code-extensions.vscode-clangd"
             ],
             "settings": {
                 "go.goroot": "${workspaceFolder}/bazel-${workspaceFolderBasename}/external/rules_go++go_sdk+main___download_0/"

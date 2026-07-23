@@ -1164,7 +1164,25 @@ func Init() {
 			return abi
 		})
 
-		_ = addDriverABI(615, 15, 00, ChecksumNoDriver, "d5a40daa72e011395721f2a3de8598b77c3271eec057948de9b3d1755d8d02bc", v610_43_02)
+		v615_15_00 := addDriverABI(615, 15, 00, ChecksumNoDriver, "d5a40daa72e011395721f2a3de8598b77c3271eec057948de9b3d1755d8d02bc", v610_43_02)
+		_ = addDriverABI(620, 6, 0, ChecksumNoDriver, "95b94e43fd0cb0fb409fd523be491ac7248fec6d1cf82543fa4119cdcbad05b3", func() *driverABI {
+			abi := v615_15_00()
+			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_NVLINK_LOCK_REMAP_TABLE_AND_MSE] = ctrlHandler(rmControlSimple, nvconf.CapFabricIMEXManagement)
+			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_NVLINK_SETUP_NVLE_ENCRYPTION_KEY] = ctrlHandler(rmControlSimple, nvconf.CapFabricIMEXManagement)
+			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_NVLINK_GET_REMAP_TABLE_INFO_V2] = ctrlHandler(rmControlSimple, nvconf.CapFabricIMEXManagement)
+			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_NVLINK_GET_UPDATE_NVLE_LIDS_V2] = ctrlHandler(rmControlSimple, nvconf.CapFabricIMEXManagement)
+
+			prevGetInfo := abi.getInfo
+			abi.getInfo = func() *DriverABIInfo {
+				info := prevGetInfo()
+				info.ControlInfos[nvgpu.NV2080_CTRL_CMD_NVLINK_LOCK_REMAP_TABLE_AND_MSE] = simpleIoctlInfo("NV2080_CTRL_CMD_NVLINK_LOCK_REMAP_TABLE_AND_MSE", "NV2080_CTRL_NVLINK_LOCK_REMAP_TABLE_AND_MSE_PARAMS")
+				info.ControlInfos[nvgpu.NV2080_CTRL_CMD_NVLINK_SETUP_NVLE_ENCRYPTION_KEY] = simpleIoctlInfo("NV2080_CTRL_CMD_NVLINK_SETUP_NVLE_ENCRYPTION_KEY", "NV2080_CTRL_NVLINK_SETUP_NVLE_ENCRYPTION_KEY_PARAMS")
+				info.ControlInfos[nvgpu.NV2080_CTRL_CMD_NVLINK_GET_REMAP_TABLE_INFO_V2] = simpleIoctlInfo("NV2080_CTRL_CMD_NVLINK_GET_REMAP_TABLE_INFO_V2", "NV2080_CTRL_NVLINK_GET_REMAP_TABLE_INFO_V2_PARAMS")
+				info.ControlInfos[nvgpu.NV2080_CTRL_CMD_NVLINK_GET_UPDATE_NVLE_LIDS_V2] = simpleIoctlInfo("NV2080_CTRL_CMD_NVLINK_GET_UPDATE_NVLE_LIDS_V2", "NV2080_CTRL_NVLINK_GET_UPDATE_NVLE_LIDS_V2_PARAMS")
+				return info
+			}
+			return abi
+		})
 	})
 }
 

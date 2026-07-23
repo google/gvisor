@@ -61,6 +61,8 @@ func main() {
 	subcommands.Register(new(uds), "")
 	subcommands.Register(new(zombieTest), "")
 	subcommands.Register(new(fsCheckpoint), "")
+	subcommands.Register(new(setXattr), "")
+	subcommands.Register(new(getXattr), "")
 
 	flag.Parse()
 
