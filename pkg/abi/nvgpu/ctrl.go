@@ -826,6 +826,11 @@ const (
 	NV90E6_CTRL_CMD_MASTER_GET_VIRTUAL_FUNCTION_ERROR_CONT_INTR_MASK = 0x90e60102
 )
 
+// From src/common/sdk/nvidia/inc/ctrl/ctrl90e7/ctrl90e7bbx.h:
+const (
+	NV90E7_CTRL_CMD_BBX_GET_LAST_FLUSH_TIME = 0x90e70113
+)
+
 // From src/common/sdk/nvidia/inc/ctrl/ctrla06c.h:
 const (
 	NVA06C_CTRL_CMD_GPFIFO_SCHEDULE = 0xa06c0101
