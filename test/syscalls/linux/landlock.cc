@@ -53,7 +53,6 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#include <linux/landlock.h>
 #include <netinet/in.h>
 #include <signal.h>
 #include <sys/ioctl.h>
@@ -84,6 +83,67 @@ namespace gvisor {
 namespace testing {
 
 namespace {
+
+// Landlock UAPI definitions.
+//
+// We deliberately do not #include <linux/landlock.h>. The build sysroot may
+// ship kernel headers older than the ABI this suite targets (it exercises up to
+// v6), in which case the header would be missing newer constants and struct
+// fields (e.g. landlock_ruleset_attr::scoped, added in v6) and the test would
+// fail to compile even though the syscalls are driven directly via syscall(2).
+// Defining the UAPI locally keeps the test buildable against any kernel headers;
+// these layouts and values are part of the stable kernel ABI. Each symbol is
+// annotated with the ABI version that introduced it; tests guard their use with
+// SKIP_IF(LandlockAbiVersion() < N) so nothing here runs on a kernel too old to
+// support it.
+struct landlock_ruleset_attr {
+  uint64_t handled_access_fs;
+  uint64_t handled_access_net;  // ABI v4+
+  uint64_t scoped;              // ABI v6+
+};
+
+enum landlock_rule_type {
+  LANDLOCK_RULE_PATH_BENEATH = 1,  // ABI v1+
+  LANDLOCK_RULE_NET_PORT = 2,      // ABI v4+
+};
+
+struct landlock_path_beneath_attr {
+  uint64_t allowed_access;
+  int32_t parent_fd;
+} __attribute__((packed));
+
+struct landlock_net_port_attr {
+  uint64_t allowed_access;
+  uint64_t port;
+};
+
+#define LANDLOCK_CREATE_RULESET_VERSION (1U << 0)
+
+// Filesystem access rights.
+#define LANDLOCK_ACCESS_FS_EXECUTE (1ULL << 0)      // v1
+#define LANDLOCK_ACCESS_FS_WRITE_FILE (1ULL << 1)   // v1
+#define LANDLOCK_ACCESS_FS_READ_FILE (1ULL << 2)    // v1
+#define LANDLOCK_ACCESS_FS_READ_DIR (1ULL << 3)     // v1
+#define LANDLOCK_ACCESS_FS_REMOVE_DIR (1ULL << 4)   // v1
+#define LANDLOCK_ACCESS_FS_REMOVE_FILE (1ULL << 5)  // v1
+#define LANDLOCK_ACCESS_FS_MAKE_CHAR (1ULL << 6)    // v1
+#define LANDLOCK_ACCESS_FS_MAKE_DIR (1ULL << 7)     // v1
+#define LANDLOCK_ACCESS_FS_MAKE_REG (1ULL << 8)     // v1
+#define LANDLOCK_ACCESS_FS_MAKE_SOCK (1ULL << 9)    // v1
+#define LANDLOCK_ACCESS_FS_MAKE_FIFO (1ULL << 10)   // v1
+#define LANDLOCK_ACCESS_FS_MAKE_BLOCK (1ULL << 11)  // v1
+#define LANDLOCK_ACCESS_FS_MAKE_SYM (1ULL << 12)    // v1
+#define LANDLOCK_ACCESS_FS_REFER (1ULL << 13)       // v2
+#define LANDLOCK_ACCESS_FS_TRUNCATE (1ULL << 14)    // v3
+#define LANDLOCK_ACCESS_FS_IOCTL_DEV (1ULL << 15)   // v5
+
+// Network access rights (ABI v4+).
+#define LANDLOCK_ACCESS_NET_BIND_TCP (1ULL << 0)
+#define LANDLOCK_ACCESS_NET_CONNECT_TCP (1ULL << 1)
+
+// Scope flags (ABI v6+).
+#define LANDLOCK_SCOPE_ABSTRACT_UNIX_SOCKET (1ULL << 0)
+#define LANDLOCK_SCOPE_SIGNAL (1ULL << 1)
 
 // glibc does not (portably) wrap the Landlock syscalls, so invoke them via
 // syscall(2). The __NR_* numbers come from <asm/unistd.h> on supported kernels.
