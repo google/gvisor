@@ -20,6 +20,7 @@ go_library(
         "clone.go",
         "context.go",
         "dev.go",
+        "ebpf.go",
         "elf.go",
         "epoll.go",
         "epoll_amd64.go",

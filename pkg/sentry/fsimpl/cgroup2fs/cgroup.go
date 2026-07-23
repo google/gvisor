@@ -46,6 +46,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sentry/vfs/memxattr"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -132,6 +133,13 @@ type cgroup struct {
 
 	// xattrs stores extended attributes on this cgroup directory.
 	xattrs memxattr.SimpleExtendedAttributes
+
+	// bpfMu protects the cgroup BPF filters in bpf.
+	bpfMu sync.Mutex `state:"nosave"`
+
+	// bpf contains eBPF programs associated with the cgroup.
+	// bpf is protected by bpfMu.
+	bpf kernel.Cgroup2BPF
 }
 
 // +checklocks:c.fs.treeMu
@@ -684,6 +692,21 @@ func (c *cgroup) PathFrom(nsRoot kernel.Cgroup2) string {
 // Deleted implements kernel.Cgroup2.Deleted.
 func (c *cgroup) Deleted() bool {
 	return c.deleted.Load()
+}
+
+// Parent implements kernel.Cgroup2.Parent.
+func (c *cgroup) Parent() kernel.Cgroup2 {
+	if c.parent == nil {
+		return nil
+	}
+	return c.parent
+}
+
+// AccessBPF implements kernel.Cgroup2.AccessBPF.
+func (c *cgroup) AccessBPF(f func(*kernel.Cgroup2BPF)) {
+	c.bpfMu.Lock()
+	defer c.bpfMu.Unlock()
+	f(&c.bpf)
 }
 
 // KillSeq implements kernel.Cgroup2.KillSeq.

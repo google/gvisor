@@ -30,6 +30,7 @@ go_library(
         "//pkg/atomicbitops",
         "//pkg/bitmap",
         "//pkg/context",
+        "//pkg/ebpf",
         "//pkg/errors/linuxerr",
         "//pkg/fspath",
         "//pkg/hostarch",
