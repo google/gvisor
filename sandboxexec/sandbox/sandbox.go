@@ -39,6 +39,7 @@ type Options struct {
 	snapshot         *Snapshot
 	env              []string
 	err              error
+	workingDir       string
 }
 
 // Option configures the Options struct.
@@ -128,6 +129,25 @@ func WithEnv(envs ...string) Option {
 	}
 }
 
+// WithWorkingDir sets the current working directory for the sandbox process.
+// If the path is relative, it will be resolved as an absolute path from the root directory "/".
+// This is not a bind mount; it is simply setting the cwd inside the sandbox process.
+// Defaults to "/".
+func WithWorkingDir(cwd string) Option {
+	return func(o *Options) {
+		if cwd == "" {
+			o.err = fmt.Errorf("working directory cannot be empty")
+			return
+		}
+		// ensure absolute path inside sandbox
+		if !filepath.IsAbs(cwd) {
+			cwd = filepath.Join("/", cwd)
+		}
+		cwd = filepath.Clean(cwd)
+		o.workingDir = cwd
+	}
+}
+
 // Sandbox represents a running gVisor sandbox where applications
 // run inside.
 type Sandbox struct {
@@ -165,6 +185,7 @@ func runscPath() string {
 func New(ctx context.Context, opts ...Option) (*Sandbox, error) {
 	options := Options{
 		enableNetworking: true,
+		workingDir:       "/",
 	}
 	for _, o := range opts {
 		o(&options)
@@ -267,6 +288,7 @@ func New(ctx context.Context, opts ...Option) (*Sandbox, error) {
 		Mounts:           options.mounts,
 		Env:              options.env,
 		Annotations:      annotations,
+		WorkingDir:       options.workingDir,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OCI bundle: %v", err)

@@ -346,3 +346,42 @@ func TestNoSnapshotStorageError(t *testing.T) {
 		t.Errorf("unexpected error: %v, want it to contain %q", err, expectedErrSubstr)
 	}
 }
+
+func TestSandboxWorkingDir(t *testing.T) {
+	ctx := context.Background()
+
+	sb, err := sandbox.New(ctx,
+		sandbox.WithNetworking(false),
+		sandbox.WithWorkingDir("tmp/custom"),
+	)
+	if err != nil {
+		t.Fatalf("failed to start sandbox: %v", err)
+	}
+	defer sb.Close(ctx)
+
+	configPath := filepath.Join(sb.Bundle(), "config.json")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("failed to read config.json: %v", err)
+	}
+
+	// Because of relative dir sanitization, it should be /tmp/custom
+	if !strings.Contains(string(data), `cwd": "/tmp/custom"`) {
+		t.Errorf("config.json does not contain custom working directory. got: %s", string(data))
+	}
+}
+
+func TestSandboxBadWorkingDir(t *testing.T) {
+	ctx := context.Background()
+
+	_, err := sandbox.New(ctx,
+		sandbox.WithNetworking(false),
+		sandbox.WithWorkingDir(""),
+	)
+	if err == nil {
+		t.Fatalf("sandbox.New succeeded with empty working directory; want error")
+	}
+	if !strings.Contains(err.Error(), "working directory cannot be empty") {
+		t.Errorf("sandbox.New error = %v; want error containing %q", err, "working directory cannot be empty")
+	}
+}
