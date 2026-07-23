@@ -47,6 +47,10 @@ type directory struct {
 	childList dentryList
 }
 
+// newDirectory creates a new directory.
+//
+// If parentDir is not nil, certain fields (such as setgid and default ACL) will be inherited
+// from parentDir.
 func (fs *filesystem) newDirectory(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, parentDir *directory) (*directory, error) {
 	dir := &directory{}
 	err := dir.inode.init(dir, fs, kuid, kgid, linux.S_IFDIR|mode, parentDir)

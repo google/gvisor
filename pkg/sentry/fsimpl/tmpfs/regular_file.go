@@ -101,6 +101,10 @@ type regularFile struct {
 	size atomicbitops.Uint64
 }
 
+// newRegularFile creates a new regular file.
+//
+// If parentDir is not nil, certain fields (such as setgid and default ACL) will be inherited
+// from parentDir.
 func (fs *filesystem) newRegularFile(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, parentDir *directory) (*inode, error) {
 	file := &regularFile{
 		memoryUsageKind: fs.usage,

@@ -1500,7 +1500,7 @@ func (fs *filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts
 // Precondition: d.fs.renameMu must be held for reading.
 func (d *dentry) setStatLocked(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetStatOptions) error {
 	mode := linux.FileMode(d.mode.Load())
-	if err := vfs.CheckSetStat(ctx, rp.Credentials(), &opts, mode, auth.KUID(d.uid.Load()), auth.KGID(d.gid.Load())); err != nil {
+	if err := vfs.CheckSetStat(ctx, rp.Credentials(), &opts, mode, nil, auth.KUID(d.uid.Load()), auth.KGID(d.gid.Load())); err != nil {
 		return err
 	}
 	mnt := rp.Mount()
@@ -1860,6 +1860,32 @@ func (fs *filesystem) removeXattrLocked(ctx context.Context, d *dentry, mnt *vfs
 	}
 	vfsObj := d.fs.vfsfs.VirtualFilesystem()
 	return vfsObj.RemoveXattrAt(ctx, fs.creds, &vfs.PathOperation{Root: d.upperVD, Start: d.upperVD}, name)
+}
+
+// GetPosixACLAt implements vfs.FilesystemImpl.GetPosixACLAt.
+func (fs *filesystem) GetPosixACLAt(ctx context.Context, rp *vfs.ResolvingPath, t vfs.ACLType) (*vfs.PosixACL, error) {
+	var ds *[]*dentry
+	fs.renameMu.RLock()
+	defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
+	_, err := fs.resolveLocked(ctx, rp, &ds)
+	if err != nil {
+		return nil, err
+	}
+
+	return nil, nil
+}
+
+// SetPosixACLAt implements vfs.FilesystemImpl.SetPosixACLAt.
+func (fs *filesystem) SetPosixACLAt(ctx context.Context, rp *vfs.ResolvingPath, t vfs.ACLType, acl *vfs.PosixACL, clearSGID bool) (*vfs.PosixACL, linux.FileMode, error) {
+	var ds *[]*dentry
+	fs.renameMu.RLock()
+	defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
+	_, err := fs.resolveLocked(ctx, rp, &ds)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return nil, 0, linuxerr.EOPNOTSUPP
 }
 
 // PrependPath implements vfs.FilesystemImpl.PrependPath.

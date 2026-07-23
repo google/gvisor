@@ -49,6 +49,7 @@ import (
 	"sync/atomic"
 
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/cleanup"
@@ -1292,7 +1293,7 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs
 		return linuxerr.EPERM
 	}
 	mode := linux.FileMode(d.inode.mode.Load())
-	if err := vfs.CheckSetStat(ctx, creds, opts, mode, auth.KUID(d.inode.uid.Load()), auth.KGID(d.inode.gid.Load())); err != nil {
+	if err := vfs.CheckSetStat(ctx, creds, opts, mode, nil, auth.KUID(d.inode.uid.Load()), auth.KGID(d.inode.gid.Load())); err != nil {
 		return err
 	}
 	if err := mnt.CheckBeginWrite(); err != nil {
@@ -1505,7 +1506,7 @@ func (i *inode) updateSizeAndUnlockDataMuLocked(newSize uint64) {
 }
 
 func (d *dentry) checkPermissions(creds *auth.Credentials, ats vfs.AccessTypes) error {
-	return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(d.inode.mode.Load()), auth.KUID(d.inode.uid.Load()), auth.KGID(d.inode.gid.Load()))
+	return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(d.inode.mode.Load()), nil, auth.KUID(d.inode.uid.Load()), auth.KGID(d.inode.gid.Load()))
 }
 
 // Preconditions: d.inode.metadataMu must be locked.
@@ -1529,7 +1530,7 @@ func (d *dentry) checkXattrPermissions(creds *auth.Credentials, name string, ats
 	mode := linux.FileMode(d.inode.mode.RacyLoad())
 	kuid := auth.KUID(d.inode.uid.RacyLoad())
 	kgid := auth.KGID(d.inode.gid.RacyLoad())
-	if err := vfs.GenericCheckPermissions(creds, ats, mode, kuid, kgid); err != nil {
+	if err := vfs.GenericCheckPermissions(creds, ats, mode, nil, kuid, kgid); err != nil {
 		return err
 	}
 	return vfs.CheckXattrPermissions(creds, ats, mode, kuid, name)

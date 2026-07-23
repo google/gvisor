@@ -51,6 +51,11 @@ func isOvlWhiteoutDev(mode linux.FileMode, major, minor uint32) bool {
 		linux.MakeDeviceID(uint16(major), minor) == linux.WHITEOUT_DEV
 }
 
+// newDeviceFileLocked creates a new device file.
+//
+// If parentDir is not nil, certain fields (such as setgid and default ACL) will be inherited
+// from parentDir.
+//
 // Precondition: fs.mu must be locked for writing.
 func (fs *filesystem) newDeviceFileLocked(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, major, minor uint32, parentDir *directory) (*inode, error) {
 	ovlWhiteout := isOvlWhiteoutDev(mode, major, minor)

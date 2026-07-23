@@ -428,6 +428,22 @@ func (fs *filesystem) RemoveXattrAt(ctx context.Context, rp *vfs.ResolvingPath, 
 	return linuxerr.EROFS
 }
 
+// GetPosixACLAt implements vfs.FilesystemImpl.GetPosixACLAt.
+func (fs *filesystem) GetPosixACLAt(ctx context.Context, rp *vfs.ResolvingPath, t vfs.ACLType) (*vfs.PosixACL, error) {
+	if _, err := resolve(ctx, rp); err != nil {
+		return nil, err
+	}
+	return nil, nil
+}
+
+// SetPosixACLAt implements vfs.FilesystemImpl.SetPosixACLAt.
+func (fs *filesystem) SetPosixACLAt(ctx context.Context, rp *vfs.ResolvingPath, t vfs.ACLType, acl *vfs.PosixACL, clearSGID bool) (*vfs.PosixACL, linux.FileMode, error) {
+	if _, err := resolve(ctx, rp); err != nil {
+		return nil, 0, err
+	}
+	return nil, 0, linuxerr.EOPNOTSUPP
+}
+
 // PrependPath implements vfs.FilesystemImpl.PrependPath.
 func (fs *filesystem) PrependPath(ctx context.Context, vfsroot, vd vfs.VirtualDentry, b *fspath.Builder) error {
 	return genericPrependPath(fs, vfsroot, vd.Mount(), vd.Dentry().Impl().(*dentry), b)
