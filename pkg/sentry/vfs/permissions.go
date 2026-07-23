@@ -57,20 +57,31 @@ func (a AccessTypes) MayExec() bool {
 	return a&MayExec != 0
 }
 
+func (a AccessTypes) checkPerms(perms AccessTypes) bool {
+	return uint16(a)&uint16(perms) == uint16(a)
+}
+
 // GenericCheckPermissions checks that creds has the given access rights on a
 // file with the given permissions, UID, and GID, subject to the rules of
 // fs/namei.c:generic_permission().
-func GenericCheckPermissions(creds *auth.Credentials, ats AccessTypes, mode linux.FileMode, kuid auth.KUID, kgid auth.KGID) error {
-	// Check permission bits.
-	perms := uint16(mode.Permissions())
-	if creds.EffectiveKUID == kuid {
-		perms >>= 6
-	} else if creds.InGroup(kgid) {
-		perms >>= 3
-	}
-	if uint16(ats)&perms == uint16(ats) {
-		// All permission bits match, access granted.
-		return nil
+func GenericCheckPermissions(creds *auth.Credentials, ats AccessTypes, mode linux.FileMode, acl *PosixACL, kuid auth.KUID, kgid auth.KGID) error {
+	if acl != nil {
+		// Check against the ACL (if present)
+		if acl.checkPermissions(creds, ats, kuid, kgid) {
+			return nil
+		}
+	} else {
+		// Fallback: check permission bits.
+		perms := uint16(mode.Permissions())
+		if creds.EffectiveKUID == kuid {
+			perms >>= 6
+		} else if creds.InGroup(kgid) {
+			perms >>= 3
+		}
+		if uint16(ats)&perms == uint16(ats) {
+			// All permission bits match, access granted.
+			return nil
+		}
 	}
 
 	// CAP_DAC_READ_SEARCH allows the caller to read and search arbitrary
@@ -95,7 +106,7 @@ func GenericCheckPermissions(creds *auth.Credentials, ats AccessTypes, mode linu
 // mode, kuid, and kgid is permitted.
 //
 // This corresponds to Linux's fs/namei.c:may_linkat.
-func MayLink(creds *auth.Credentials, mode linux.FileMode, kuid auth.KUID, kgid auth.KGID) error {
+func MayLink(creds *auth.Credentials, mode linux.FileMode, acl *PosixACL, kuid auth.KUID, kgid auth.KGID) error {
 	// Source inode owner can hardlink all they like; otherwise, it must be a
 	// safe source.
 	if CanActAsOwner(creds, kuid) {
@@ -116,7 +127,7 @@ func MayLink(creds *auth.Credentials, mode linux.FileMode, kuid auth.KUID, kgid 
 	// don't support S_IXGRP anyway.
 
 	// Hardlinking to unreadable or unwritable sources is dangerous.
-	if err := GenericCheckPermissions(creds, MayRead|MayWrite, mode, kuid, kgid); err != nil {
+	if err := GenericCheckPermissions(creds, MayRead|MayWrite, mode, acl, kuid, kgid); err != nil {
 		return linuxerr.EPERM
 	}
 	return nil
@@ -177,10 +188,20 @@ func MayWriteFileWithOpenFlags(flags uint32) bool {
 	}
 }
 
+// ShouldClearSGID determines if a change to the file's mode by the given
+// creds, kuid, and kgid should trigger clearing of the file's setgid bit.
+func ShouldClearSGID(creds *auth.Credentials, mode linux.FileMode, kuid auth.KUID, kgid auth.KGID) bool {
+	// "If the calling process is not privileged (Linux: does not have the CAP_FSETID capability),
+	// and the group of the file does not match the effective group ID of the process or one of its
+	// supplementary group IDs, the S_ISGID bit will be turned off, but this will not cause an error
+	// to be returned." - chmod(2)
+	return mode&linux.S_ISGID != 0 && !creds.HasCapabilityOnFile(linux.CAP_FSETID, kuid, kgid) && !creds.InGroup(kgid)
+}
+
 // CheckSetStat checks that creds has permission to change the metadata of a
 // file with the given permissions, UID, and GID as specified by stat, subject
 // to the rules of Linux's fs/attr.c:setattr_prepare(). Might mutate `opts`.
-func CheckSetStat(ctx context.Context, creds *auth.Credentials, opts *SetStatOptions, mode linux.FileMode, kuid auth.KUID, kgid auth.KGID) error {
+func CheckSetStat(ctx context.Context, creds *auth.Credentials, opts *SetStatOptions, mode linux.FileMode, acl *PosixACL, kuid auth.KUID, kgid auth.KGID) error {
 	stat := &opts.Stat
 	if stat.Mask&linux.STATX_SIZE != 0 {
 		limit, err := CheckLimit(ctx, 0, int64(stat.Size))
@@ -195,11 +216,7 @@ func CheckSetStat(ctx context.Context, creds *auth.Credentials, opts *SetStatOpt
 		if !CanActAsOwner(creds, kuid) {
 			return linuxerr.EPERM
 		}
-		// "If the calling process is not privileged (Linux: does not have the CAP_FSETID capability),
-		// and the group of the file does not match the effective group ID of the process or one of its
-		// supplementary group IDs, the S_ISGID bit will be turned off, but this will not cause an error
-		// to be returned." - chmod(2)
-		if stat.Mode&linux.S_ISGID != 0 && !creds.HasCapabilityOnFile(linux.CAP_FSETID, kuid, kgid) && !creds.InGroup(kgid) {
+		if ShouldClearSGID(creds, linux.FileMode(stat.Mode), kuid, kgid) {
 			stat.Mode &^= linux.S_ISGID
 		}
 	}
@@ -216,7 +233,7 @@ func CheckSetStat(ctx context.Context, creds *auth.Credentials, opts *SetStatOpt
 		}
 	}
 	if opts.NeedWritePerm {
-		if err := GenericCheckPermissions(creds, MayWrite, mode, kuid, kgid); err != nil {
+		if err := GenericCheckPermissions(creds, MayWrite, mode, acl, kuid, kgid); err != nil {
 			return err
 		}
 	}
@@ -227,7 +244,7 @@ func CheckSetStat(ctx context.Context, creds *auth.Credentials, opts *SetStatOpt
 				(stat.Mask&linux.STATX_CTIME != 0 && stat.Ctime.Nsec != linux.UTIME_NOW) {
 				return linuxerr.EPERM
 			}
-			if err := GenericCheckPermissions(creds, MayWrite, mode, kuid, kgid); err != nil {
+			if err := GenericCheckPermissions(creds, MayWrite, mode, acl, kuid, kgid); err != nil {
 				return err
 			}
 		}
