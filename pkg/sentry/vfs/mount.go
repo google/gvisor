@@ -676,6 +676,7 @@ func (vfs *VirtualFilesystem) cloneMountTree(ctx context.Context, mnt *Mount, ro
 				dentry: c.point(),
 			}
 			mp.IncRef()
+			m.IncRef()
 			m.setKey(mp)
 			if p.parentMount.children == nil {
 				p.parentMount.children = make(map[*Mount]struct{})

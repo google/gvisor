@@ -363,7 +363,7 @@ var AMD64 = &kernel.SyscallTable{
 		318: syscalls.Supported("getrandom", GetRandom),
 		319: syscalls.Supported("memfd_create", MemfdCreate),
 		320: syscalls.CapError("kexec_file_load", linux.CAP_SYS_BOOT, "", nil),
-		321: syscalls.CapError("bpf", linux.CAP_SYS_ADMIN, "", nil),
+		321: syscalls.PartiallySupported("bpf", Bpf, "Only loading, querying, and attaching of CGROUP_DEVICE programs are supported. Loaded programs have no effect.", nil),
 		322: syscalls.SupportedPoint("execveat", Execveat, PointExecveat),
 		323: syscalls.ErrorWithEvent("userfaultfd", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/266"}), // TODO(b/118906345)
 		324: syscalls.PartiallySupported("membarrier", Membarrier, "Not supported on all platforms.", nil),
@@ -686,7 +686,7 @@ var ARM64 = &kernel.SyscallTable{
 		277: syscalls.Supported("seccomp", Seccomp),
 		278: syscalls.Supported("getrandom", GetRandom),
 		279: syscalls.Supported("memfd_create", MemfdCreate),
-		280: syscalls.CapError("bpf", linux.CAP_SYS_ADMIN, "", nil),
+		280: syscalls.PartiallySupported("bpf", Bpf, "Only loading, querying, and attaching of CGROUP_DEVICE programs are supported. Loaded programs have no effect.", nil),
 		281: syscalls.SupportedPoint("execveat", Execveat, PointExecveat),
 		282: syscalls.ErrorWithEvent("userfaultfd", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/266"}), // TODO(b/118906345)
 		283: syscalls.PartiallySupported("membarrier", Membarrier, "Not supported on all platforms.", nil),
