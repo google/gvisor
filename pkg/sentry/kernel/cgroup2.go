@@ -67,8 +67,9 @@ type Cgroup2 interface {
 	// Called by exiting tasks.
 	Exit(ctx context.Context, t *Task)
 
-	// Called by clone() to check permissions for CLONE_CGROUP_INTO.
-	CanCloneInto(ctx context.Context, creds *auth.Credentials) error
+	// Called by clone() to check permissions for CLONE_CGROUP_INTO. ns is
+	// the forking task's cgroup namespace.
+	CanCloneInto(ctx context.Context, creds *auth.Credentials, ns *CgroupNamespace) error
 
 	// KillSeq returns the kill sequence number of the cgroup.
 	// It helps prevent fork()s racing with cgroup.kill.
@@ -208,6 +209,15 @@ func newCgroupNamespace(root Cgroup2, userns *auth.UserNamespace) *CgroupNamespa
 		root:   root,
 		userns: userns,
 	}
+}
+
+// NewCgroupNamespace creates a new cgroup namespace rooted at root and owned
+// by userns, along with its backing nsfs inode. The returned namespace holds
+// one reference, owned by the caller.
+func (k *Kernel) NewCgroupNamespace(ctx context.Context, root Cgroup2, userns *auth.UserNamespace) *CgroupNamespace {
+	ns := newCgroupNamespace(root, userns)
+	ns.SetInode(nsfs.NewInode(ctx, k.nsfsMount, ns))
+	return ns
 }
 
 // Root returns the cgroup2 node this namespace is rooted at.

@@ -46,14 +46,18 @@ func (f *eventFile) Valid(ctx context.Context, parent *kernfs.Dentry, name strin
 }
 
 func (fs *filesystem) newEventFile(ctx context.Context, uid auth.KUID, gid auth.KGID, c *cgroup, data vfs.DynamicBytesSource, ctrl controller) *eventFile {
+	// Event files are read-only: eventFD.Write unconditionally returns
+	// EBADF. A writable event file would additionally need interfaceFD's
+	// opener-namespace capture for the nsdelegate check to apply; reject
+	// the combination outright rather than silently mishandling it.
+	if _, ok := data.(vfs.WritableDynamicBytesSource); ok {
+		panic("cgroup2fs: writable event file sources are not supported")
+	}
+
 	f := &eventFile{c: c}
 	f.eventSeq.Store(1)
-	var src vfs.DynamicBytesSource
-	if ws, ok := data.(vfs.WritableDynamicBytesSource); ok {
-		src = &cgroupSourceWritable{c: c, ctrl: ctrl, src: ws}
-	} else {
-		src = &cgroupSourceReadOnly{c: c, ctrl: ctrl, src: data}
-	}
+
+	src := &cgroupSourceReadOnly{c: c, ctrl: ctrl, src: data}
 	f.DynamicBytesFile.InitWithIDs(ctx, uid, gid, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), src, 0444)
 	return f
 }
@@ -69,11 +73,19 @@ func (f *eventFile) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.D
 	if err != nil {
 		return nil, err
 	}
+
 	fd := &eventFD{ep: f, data: data}
-	if err := fd.Init(rp.Mount(), d, fd, opts.Flags, rp.Credentials()); err != nil {
+	// fd is passed twice, deliberately. As the vfs.FileDescriptionImpl
+	// (first argument), VFS dispatches operations to eventFD rather than
+	// the embedded DynamicBytesFD, which is what makes the Readiness/
+	// EventRegister/EventUnregister overrides and the EBADF Write overrides
+	// reachable.  As the bytes source (fourth argument), reads are routed
+	// through eventFD.Generate, which snapshots into lastEventSeq the event
+	// sequence number current at read time.
+	if err := fd.InitWithImpl(fd, rp.Mount(), d, fd, f.Locks(), opts.Flags, rp.Credentials()); err != nil {
 		return nil, err
 	}
-	return &fd.vfsfd, nil
+	return fd.VFSFileDescription(), nil
 }
 
 // Notify signals waiters and inotify watches that an event has occurred.
@@ -87,49 +99,18 @@ func (f *eventFile) Notify(ctx context.Context) {
 //
 // +stateify savable
 type eventFD struct {
-	vfs.FileDescriptionDefaultImpl
-	vfs.DynamicBytesFileDescriptionImpl
-	vfs.NoLockFD
+	kernfs.DynamicBytesFD
 
-	vfsfd vfs.FileDescription
-	ep    *eventFile
+	ep *eventFile
 
 	lastEventSeq atomicbitops.Uint64
 	data         vfs.DynamicBytesSource
-}
-
-// Init overrides DynamicBytesFD.Init to initialize vfsfd correctly.
-func (fd *eventFD) Init(m *vfs.Mount, d *kernfs.Dentry, data vfs.DynamicBytesSource, flags uint32, creds *auth.Credentials) error {
-	if err := fd.vfsfd.Init(fd, flags, creds, m, d.VFSDentry(),
-		&vfs.FileDescriptionOptions{
-			DenySpliceIn: true,
-		},
-	); err != nil {
-		return err
-	}
-	fd.DynamicBytesFileDescriptionImpl.Init(&fd.vfsfd, data)
-	return nil
-}
-
-// Seek implements vfs.FileDescriptionImpl.Seek.
-func (fd *eventFD) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
-	return fd.DynamicBytesFileDescriptionImpl.Seek(ctx, offset, whence)
 }
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (fd *eventFD) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	fd.lastEventSeq.Store(fd.ep.eventSeq.Load())
 	return fd.data.Generate(ctx, buf)
-}
-
-// Read implements vfs.FileDescriptionImpl.Read.
-func (fd *eventFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
-	return fd.DynamicBytesFileDescriptionImpl.Read(ctx, dst, opts)
-}
-
-// PRead implements vfs.FileDescriptionImpl.PRead.
-func (fd *eventFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
-	return fd.DynamicBytesFileDescriptionImpl.PRead(ctx, dst, offset, opts)
 }
 
 // Write implements vfs.FileDescriptionImpl.Write.
@@ -140,20 +121,6 @@ func (fd *eventFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.W
 // PWrite implements vfs.FileDescriptionImpl.PWrite.
 func (fd *eventFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
 	return 0, linuxerr.EBADF
-}
-
-// Release implements vfs.FileDescriptionImpl.Release.
-func (fd *eventFD) Release(context.Context) {}
-
-// Stat implements vfs.FileDescriptionImpl.Stat.
-func (fd *eventFD) Stat(ctx context.Context, opts vfs.StatOptions) (linux.Statx, error) {
-	fs := fd.vfsfd.VirtualDentry().Mount().Filesystem()
-	return fd.ep.Stat(ctx, fs, opts)
-}
-
-// SetStat implements vfs.FileDescriptionImpl.SetStat.
-func (fd *eventFD) SetStat(context.Context, vfs.SetStatOptions) error {
-	return linuxerr.EPERM
 }
 
 // Readiness implements waiter.Waitable.Readiness.

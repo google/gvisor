@@ -47,26 +47,49 @@ func (FilesystemType) Release(ctx context.Context) {}
 
 // GetFilesystem implements vfs.FilesystemType.GetFilesystem.
 func (ft FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
+	nsDelegate := false
 	mopts := vfs.GenericParseMountOptions(opts.Data)
 	for k := range mopts {
 		switch k {
 		case "nsdelegate":
-			// TODO (b/513700867): Actually implement instead of silently ignoring.
+			nsDelegate = true
 		default:
 			ctx.Debugf("cgroup2fs.FilesystemType.GetFilesystem: unknown option: %s", k)
 			return nil, nil, linuxerr.EINVAL
 		}
 	}
 
-	fs := kernel.KernelFromContext(ctx).Cgroup2FS().(*filesystem)
-	rootD, err := fs.mountRoot(ctx, vfsObj)
+	k := kernel.KernelFromContext(ctx)
+	fs := k.Cgroup2FS().(*filesystem)
+	cgns := mountingCgroupNS(ctx)
+	if cgns != nil {
+		defer cgns.DecRef(ctx)
+	}
+	rootD, err := fs.mountRoot(ctx, vfsObj, cgns)
 	if err != nil {
 		return nil, nil, err
 	}
+
+	// "nsdelegate" is system wide: every mount from the init cgroup namespace
+	// sets or clears it, and it is ignored on non-init namespace mounts.
+	// A failed mount must not change the flag, hence the store is ordered after mountRoot().
+	if cgns == nil || cgns == k.RootCgroupNamespace() {
+		fs.nsDelegate.Store(nsDelegate)
+	}
+
 	fs.mounted.Store(1)
 	vfsfs := fs.VFSFilesystem()
 	vfsfs.IncRef()
 	return vfsfs, rootD.VFSDentry(), nil
+}
+
+// mountingCgroupNS returns the cgroup namespace a mount originates from.
+// A reference is taken on the namespace if it is not nil.
+func mountingCgroupNS(ctx context.Context) *kernel.CgroupNamespace {
+	if t := kernel.TaskFromContext(ctx); t != nil {
+		return t.GetCgroupNamespace()
+	}
+	return kernel.CgroupNamespaceFromContext(ctx)
 }
 
 // mountRoot returns the dentry a new cgroup2 mount should be rooted at, with
@@ -74,13 +97,7 @@ func (ft FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualF
 // namespace are rooted at the namespace's root cgroup, per cgroup-v2.rst
 // "Interaction with Other Namespaces". Otherwise, the mount is rooted at the
 // real root of the hierarchy.
-func (fs *filesystem) mountRoot(ctx context.Context, vfsObj *vfs.VirtualFilesystem) (*kernfs.Dentry, error) {
-	t := kernel.TaskFromContext(ctx)
-	if t == nil {
-		fs.root.IncRef()
-		return fs.root, nil
-	}
-	cgns := t.CgroupNamespace()
+func (fs *filesystem) mountRoot(ctx context.Context, vfsObj *vfs.VirtualFilesystem, cgns *kernel.CgroupNamespace) (*kernfs.Dentry, error) {
 	if cgns == nil {
 		fs.root.IncRef()
 		return fs.root, nil
@@ -129,6 +146,36 @@ func (fs *filesystem) MountRootPath(ctx context.Context, vd vfs.VirtualDentry) s
 	return path
 }
 
+// NewInternalMount returns a disconnected mount of the cgroup2fs singleton,
+// rooted at the true root of the hierarchy, for use by the sentry control
+// plane (e.g. to create per-container cgroups). The caller owns the returned
+// mount reference.
+func NewInternalMount(k *kernel.Kernel, vfsObj *vfs.VirtualFilesystem) *vfs.Mount {
+	fs := k.Cgroup2FS().(*filesystem)
+	fs.mounted.Store(1)
+	return vfsObj.NewDisconnectedMount(fs.VFSFilesystem(), fs.root.VFSDentry(), &vfs.MountOptions{
+		GetFilesystemOptions: vfs.GetFilesystemOptions{InternalMount: true},
+	})
+}
+
+// SetNSDelegate sets the system-wide nsdelegate flag, which makes cgroup
+// namespace roots delegation boundaries. Calling this at sandbox boot is the
+// analog of the host's init mounting cgroup2 with the "nsdelegate" option
+// from the init cgroup namespace.
+func SetNSDelegate(k *kernel.Kernel, v bool) {
+	k.Cgroup2FS().(*filesystem).nsDelegate.Store(v)
+}
+
+// CgroupFromDentry returns the cgroup2 node backing d, if any.
+func CgroupFromDentry(d *vfs.Dentry) (kernel.Cgroup2, bool) {
+	kd, ok := d.Impl().(*kernfs.Dentry)
+	if !ok {
+		return nil, false
+	}
+	c, ok := kd.Inode().(*cgroup)
+	return c, ok
+}
+
 // NewFilesystem creates and registers the cgroup2fs singleton. It should be called early
 // during boot before the first task is created.
 func NewFilesystem(ctx context.Context, k *kernel.Kernel, vfsObj *vfs.VirtualFilesystem) (*vfs.Filesystem, error) {
@@ -166,6 +213,11 @@ type filesystem struct {
 	// mounted tracks whether the filesystem has been mounted/initialized.
 	mounted atomicbitops.Uint32
 
+	// nsDelegate tracks whether cgroup namespaces are delegation boundaries.
+	// It is system wide, and may only be changed by mounts from the init
+	// cgroup namespace.
+	nsDelegate atomicbitops.Bool
+
 	// nextMemCgroupID is used to allocate unique IDs to memory controllers.
 	nextMemCgroupID atomicbitops.Uint32
 
@@ -195,6 +247,9 @@ func (fs *filesystem) Release(ctx context.Context) {
 
 // MountOptions implements vfs.FilesystemImpl.MountOptions.
 func (fs *filesystem) MountOptions() string {
+	if fs.nsDelegate.Load() {
+		return "nsdelegate"
+	}
 	return ""
 }
 

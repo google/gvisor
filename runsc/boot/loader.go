@@ -266,6 +266,13 @@ type Loader struct {
 	// +checklocks:mu
 	sharedMounts map[string]*vfs.Mount
 
+	// cgroup2Mount is an internal mount of the cgroup2fs singleton used to
+	// manage per-container cgroups. It is only set when MountCgroupV2 is
+	// enabled.
+	//
+	// +checklocks:mu
+	cgroup2Mount *vfs.Mount
+
 	// processes maps containers init process and invocation of exec. Root
 	// processes are keyed with container ID and pid=0, while exec invocations
 	// have the corresponding pid set.
@@ -349,6 +356,9 @@ type execProcess struct {
 
 	// pidnsPath is the pid namespace path in spec
 	pidnsPath string
+
+	// cgroupnsPath is the cgroup namespace path in spec
+	cgroupnsPath string
 
 	// hostTTY is present when creating a sub-container with terminal enabled.
 	// TTY file is passed during container create and must be saved until
@@ -928,6 +938,10 @@ func (l *Loader) Destroy() {
 	for _, m := range l.sharedMounts {
 		m.DecRef(ctx)
 	}
+	if l.cgroup2Mount != nil {
+		l.cgroup2Mount.DecRef(ctx)
+		l.cgroup2Mount = nil
+	}
 	l.mu.Unlock()
 
 	// Wake up all checkpoint waiters. This must be done before the controller
@@ -1402,11 +1416,27 @@ func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGrou
 	}
 	l.startGoferMonitor(info)
 
-	if l.root.cid == l.sandboxID && !l.root.conf.MountCgroupV2 {
-		// Mounts cgroups for all the controllers.
-		if err := l.mountCgroupMounts(info.conf, info.procArgs.Credentials); err != nil {
+	if l.root.cid == l.sandboxID {
+		if l.root.conf.MountCgroupV2 {
+			if err := l.setupCgroup2(); err != nil {
+				return nil, nil, err
+			}
+		} else {
+			// Mounts cgroups for all the controllers.
+			if err := l.mountCgroupMounts(info.conf, info.procArgs.Credentials); err != nil {
+				return nil, nil, err
+			}
+		}
+	}
+	if l.root.conf.MountCgroupV2 {
+		// Create the container's cgroup and resolve its cgroup namespace
+		// before the container's mounts are set up, so that its
+		// /sys/fs/cgroup mount is rooted per the namespace.
+		cgCleanup, err := l.setupContainerCgroup2(info)
+		if err != nil {
 			return nil, nil, err
 		}
+		defer cgCleanup()
 	}
 	// We can share l.sharedMounts with containerMounter since l.mu is locked.
 	// Hence, mntr must only be used within this function (while l.mu is locked).
@@ -1539,6 +1569,10 @@ func (l *Loader) destroySubcontainer(cid string) error {
 	// Cleanup the device gofer.
 	l.k.RemoveDevGofer(l.k.ContainerName(cid))
 
+	if l.root.conf.MountCgroupV2 {
+		l.removeContainerCgroup2(cid)
+	}
+
 	log.Debugf("Container destroyed, cid: %s", cid)
 	return nil
 }
@@ -1581,6 +1615,17 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 		return 0, err
 	}
 	args.PIDNamespace = tg.PIDNamespace()
+
+	if l.root.conf.MountCgroupV2 {
+		// Join the container's cgroup and cgroup namespace, like Linux's
+		// runc exec does.
+		leader := tg.Leader()
+		args.InitialCgroupV2 = leader.Cgroup2()
+		if cgroupns := leader.GetCgroupNamespace(); cgroupns != nil {
+			args.CgroupNamespace = cgroupns
+			defer cgroupns.DecRef(sctx)
+		}
+	}
 
 	args.Limits, err = createLimitSet(l.root.spec, specutils.TPUProxyEnabled(l.root.spec, l.root.conf))
 	if err != nil {
