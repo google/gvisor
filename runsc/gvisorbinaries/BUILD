@@ -13,7 +13,9 @@ go_library(
     ],
     deps = [
         "//pkg/log",
+        "//runsc/config",
         "//runsc/specutils",
+        "//runsc/version",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

@@ -21,17 +21,48 @@
 // itself, which can be extracted and exec'd when the on-disk copy is not
 // available. This will go away after some time in order to lighten up the
 // size of the runsc binary.
+//
+// # Release enforcement
+//
+// On-disk sidecars can come from a different gVisor release than the `runsc`
+// binary, which can lead to hard-to-debug issue reports.
+// The `GVISOR_ENFORCE_RELEASE` environment variable makes this skew obvious
+// by panic'ing in the sidecar rather than silently failing
+//
+// Semantics of this env var:
+//
+//   - "<label>": panic at startup if its own build label is any different.
+//   - "SKIP" or "SKIP:<expected>": no enforcement, but warning log on
+//     mismatch.
+//   - "TESTONLY_SKIP[:<expected>]": same as SKIP, but info-level log.
+//
+// Spawning sidecars always sets GVISOR_ENFORCE_RELEASE in the sidecar's env.
+//
+//   - A skip form in the parent keeps being skipped, but env var is suffixed
+//     to make the sidecar still log a better error message by knowing the
+//     parent's release version.
+//   - If `config.ReleaseEnforcementPolicy` applies, then sidecar gets that.
+//   - Otherwise, it gets "SKIP:<label>".
+//
+// `VerifyMatchingRelease` is where we check, intended to be called
+// both by `runsc` and by every sidecar at startup.
+// An unset variable is normal for `runsc`, but logged as a warning in
+// sidecars (should only happen when sidecars are launched by hand, which is
+// never supported).
 package gvisorbinaries
 
 import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
+	"gvisor.dev/gvisor/runsc/version"
 )
 
 // Sidecar binary filenames under the "gvisor-bin/" directory.
@@ -48,6 +79,114 @@ const binDirName = "gvisor-bin"
 // the directory in which sidecar binaries are located.
 // Specified by tests.
 const sidecarBinariesDirEnv = "GVISOR_SIDECAR_BINARIES_DIR"
+
+const (
+	// enforceReleaseEnv is set in spawned sidecar env vars and checked by
+	// VerifyMatchingRelease.
+	enforceReleaseEnv = "GVISOR_ENFORCE_RELEASE"
+)
+
+// Special prefixes that bypass the check.
+const (
+	enforceReleaseSkip         = "SKIP"
+	enforceReleaseTestonlySkip = "TESTONLY_SKIP"
+)
+
+// cutSkip returns the expected release embedded in `val` (env var).
+func cutSkip(val, prefix string) (string, bool) {
+	if val == prefix {
+		return "", true
+	}
+	return strings.CutPrefix(val, prefix+":")
+}
+
+// ReleaseEnforcementPolicy controls whether Exec/ForkExec set
+// GVISOR_ENFORCE_RELEASE in the sidecar env.
+// Set from config flag.
+var ReleaseEnforcementPolicy = config.SidecarNever
+
+// withEnforceRelease returns envv with `GVISOR_ENFORCE_RELEASE` set for
+// sidecar processes.
+func withEnforceRelease(envv []string) []string {
+	val := os.Getenv(enforceReleaseEnv)
+	prefix, want := "", ""
+	if w, ok := cutSkip(val, enforceReleaseTestonlySkip); ok {
+		prefix, want = enforceReleaseTestonlySkip, w
+	} else if w, ok := cutSkip(val, enforceReleaseSkip); ok {
+		prefix, want = enforceReleaseSkip, w
+	} else if !ReleaseEnforcementPolicy.Applies() {
+		prefix = enforceReleaseSkip
+	}
+	value := version.Version()
+	if prefix != "" {
+		if want == "" {
+			want = version.Version()
+		}
+		value = prefix + ":" + want
+	}
+	out := make([]string, 0, len(envv)+1)
+	for _, kv := range envv {
+		if !strings.HasPrefix(kv, enforceReleaseEnv+"=") {
+			out = append(out, kv)
+		}
+	}
+	return append(out, enforceReleaseEnv+"="+value)
+}
+
+// VerifyMatchingRelease panics if `GVISOR_ENFORCE_RELEASE` is set and doesn't
+// match this binary's build label.
+// See `gvisorbinaries` top-level package comment for full semantics.
+func VerifyMatchingRelease(b *Binary) {
+	val := os.Getenv(enforceReleaseEnv)
+	got := version.Version()
+	var who string
+	if b != nil {
+		who = fmt.Sprintf(" in sidecar %q", b.Name)
+	}
+	if val == "" {
+		if b != nil {
+			log.Warningf("Release match check not enforced%s (did you start this sidecar binary manually?); this build is %q.", who, got)
+		}
+		return
+	}
+	want, skip := cutSkip(val, enforceReleaseSkip)
+	wantTest, testOnly := cutSkip(val, enforceReleaseTestonlySkip)
+	if testOnly {
+		want, skip = wantTest, true
+	}
+	if !skip {
+		if got != val {
+			errMsg := fmt.Sprintf("this binary's build label %q%s does not match the expected release %q; all gVisor binaries must come from the same release (fix your gVisor installation deployment, or disable enforcement with `--sidecar-release-enforcement-policy=...` at your own risk)", got, who, val)
+			log.Warningf("Release check: %s.", errMsg)
+			panic(errMsg)
+		}
+		if b != nil {
+			log.Infof("[Sidecar release match check] Build label %q matches the expected release%s.", got, who)
+		} else {
+			log.Infof("[Release match check] Build label %q matches the expected release%s.", got, who)
+		}
+		return
+	}
+	if b == nil {
+		return
+	}
+	var msg string
+	info := testOnly
+	switch want {
+	case "":
+		msg = fmt.Sprintf("Sidecar release match check not enforced%s; this build is %q.", who, got)
+	case got:
+		msg = fmt.Sprintf("Sidecar release match check not enforced%s; build label %q matches the expected release.", who, got)
+		info = true
+	default:
+		msg = fmt.Sprintf("Sidecar release match check not enforced%s; this build is %q but the expected release is %q.", who, got, want)
+	}
+	if info {
+		log.Infof("%s", msg)
+	} else {
+		log.Warningf("%s", msg)
+	}
+}
 
 // The sidecar binaries that runsc may need to execute.
 // Their embedded fallbacks are not wired here directly to avoid import cycles.
@@ -157,6 +296,7 @@ func (b *Binary) notAvailableError() error {
 // Exec resolves the binary and replaces the current process with it. It only
 // returns if execution could not be started.
 func (b *Binary) Exec(opts Options) error {
+	opts.Envv = withEnforceRelease(opts.Envv)
 	if p, err := b.Path(); err == nil {
 		log.Infof("sidecar %q found: executing %s (%v)", b.Name, p, &opts)
 		return execDisk(p, opts)
@@ -171,6 +311,7 @@ func (b *Binary) Exec(opts Options) error {
 // ForkExec resolves the binary and runs it in a new process, returning the
 // child's PID.
 func (b *Binary) ForkExec(opts Options) (int, error) {
+	opts.Envv = withEnforceRelease(opts.Envv)
 	if p, err := b.Path(); err == nil {
 		log.Infof("sidecar %q: executing %s (%v)", b.Name, p, &opts)
 		return forkExecDisk(p, opts)
