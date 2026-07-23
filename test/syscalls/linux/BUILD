@@ -1110,6 +1110,7 @@ cc_binary(
         "@com_google_absl//absl/container:node_hash_map",
         "@com_google_absl//absl/container:node_hash_set",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
     ],
 )
 

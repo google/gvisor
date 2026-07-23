@@ -29,6 +29,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -36,6 +37,7 @@
 #include "absl/container/node_hash_set.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/str_format.h"
 #include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
@@ -490,6 +492,54 @@ TYPED_TEST(GetdentsTest, Issue128ProcSeekEnd) {
   ASSERT_THAT(RetryEINTR(syscall)(this->SyscallNum(), fd.get(), dirents.Data(),
                                   dirents.Size()),
               SyscallSucceeds());
+}
+
+// Tests that getdents does not drop files when directory entries straddle the
+// FUSE readdir boundary.
+TYPED_TEST(GetdentsTest, BoundaryStraddling) {
+  // Sentry FUSE readdir uses 4096-byte buffers.
+  // 100 entries with name length 45 -> aligned size 76 bytes.
+  // 4096 / 76 = 53 entries fit completely, 54th entry straddles the boundary.
+  const size_t num_files = 100;
+  std::vector<std::string> filenames;
+  filenames.reserve(num_files);
+  for (size_t i = 0; i < num_files; ++i) {
+    std::string name = absl::StrFormat("file_%035d.json", i);
+    ASSERT_EQ(name.length(), 45);
+    filenames.push_back(name);
+  }
+
+  this->FillDirectoryWithFiles(filenames);
+
+  typename TestFixture::DirentBufferType dirents(8192);
+  std::map<std::string, bool> found;
+  found["."] = false;
+  found[".."] = false;
+  for (const auto& name : filenames) {
+    found[name] = false;
+  }
+
+  EXPECT_NO_ERRNO(this->ReadDirents(
+      &dirents, [&](typename TestFixture::LinuxDirentType* d) {
+        std::string name(d->d_name);
+        if (name.empty()) {
+          ADD_FAILURE() << "found phantom empty-name entry";
+          return PosixError(EINVAL, "empty name");
+        }
+        auto kv = found.find(name);
+        if (kv == found.end()) {
+          ADD_FAILURE() << "found unexpected entry: " << name;
+        } else {
+          EXPECT_FALSE(kv->second) << "found duplicate entry: " << name;
+          kv->second = true;
+        }
+        return NoError();
+      }));
+
+  for (const auto& kv : found) {
+    EXPECT_TRUE(kv.second) << "file not found in directory listing: "
+                           << kv.first;
+  }
 }
 
 // Tests that getdents() fails when called with a zero-length buffer.

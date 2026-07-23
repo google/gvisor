@@ -1058,19 +1058,17 @@ func (r *FUSEDirents) MarshalBytes(buf []byte) []byte {
 
 // UnmarshalBytes deserializes FUSEDirents from the src buffer.
 func (r *FUSEDirents) UnmarshalBytes(src []byte) []byte {
-	for len(src) > (*FUSEDirentMeta)(nil).SizeBytes() {
-		// Its unclear how many dirents there are in src. Each dirent is dynamically
-		// sized and so we can't make assumptions about how many dirents we can allocate.
+	for len(src) >= (*FUSEDirentMeta)(nil).SizeBytes() {
+		var dirent FUSEDirent
+		rem := dirent.UnmarshalBytes(src)
+		if len(rem) == len(src) || len(dirent.Name) == 0 {
+			break
+		}
 		if r.Dirents == nil {
 			r.Dirents = make([]*FUSEDirent, 0)
 		}
-
-		// We have to allocate a struct for each dirent - there must be a better way
-		// to do this. Linux allocates 1 page to store all the dirents and then
-		// simply reads them from the page.
-		var dirent FUSEDirent
-		src = dirent.UnmarshalBytes(src)
 		r.Dirents = append(r.Dirents, &dirent)
+		src = rem
 	}
 	return src
 }
@@ -1102,12 +1100,18 @@ func (r *FUSEDirent) shiftNextDirent(buf []byte) []byte {
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (r *FUSEDirent) UnmarshalBytes(src []byte) []byte {
+	if len(src) < (*FUSEDirentMeta)(nil).SizeBytes() {
+		return src
+	}
 	srcP := r.Meta.UnmarshalBytes(src)
 
-	if r.Meta.NameLen > FUSE_NAME_MAX || r.Meta.NameLen > uint32(len(srcP)) {
-		// The name is too long and therefore invalid. We don't
-		// need to unmarshal the name since it'll be thrown away.
-		return r.shiftNextDirent(src)
+	// Calculate the 8-byte aligned size of this directory entry record.
+	recLen := (r.Meta.SizeBytes() + int(r.Meta.NameLen) + (FUSE_DIRENT_ALIGN - 1)) & ^(FUSE_DIRENT_ALIGN - 1)
+	// If the name is invalid or if the record straddles the end of the source
+	// buffer (making it incomplete), return the buffer unconsumed. This leaves
+	// the offset at the start of this entry so it can be re-fetched whole.
+	if r.Meta.NameLen == 0 || r.Meta.NameLen > FUSE_NAME_MAX || recLen > len(src) {
+		return src
 	}
 
 	buf := make([]byte, r.Meta.NameLen)
