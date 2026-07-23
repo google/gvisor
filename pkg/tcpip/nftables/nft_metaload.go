@@ -121,6 +121,10 @@ func (op metaLoad) evaluate(regs *registerSet, evalCtx opEvalCtx) {
 		}
 		target = binary.NativeEndian.AppendUint32(nil, pkt.Owner.KGID())
 
+	// Packet Mark (32-bit, host order).
+	case linux.NFT_META_MARK:
+		target = binary.NativeEndian.AppendUint32(nil, pkt.Mark)
+
 	// Route Traffic Class ID, same as Route equivalent (32-bit, host order).
 	// Currently only implemented for IPv6, but should be for IPv4 as well.
 	case linux.NFT_META_RTCLASSID:
