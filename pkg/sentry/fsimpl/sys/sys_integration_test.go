@@ -323,6 +323,10 @@ func TestEnableTPUProxyPathsV5(t *testing.T) {
 	}
 }
 
+// rdmaTestPCIConfig is a fake raw PCI config space blob; deliberately not
+// valid UTF-8 to check binary-faithful mirroring.
+var rdmaTestPCIConfig = []byte{0x86, 0x80, 0x0d, 0x02, 0x00, 0x00, 0x10, 0x00}
+
 // newRDMATestSnapshot returns a snapshot with a ConnectX NIC behind a bridge
 // on domain 0000 and a GPU on an extended (VMD-style, 5-hex-digit) domain.
 func newRDMATestSnapshot() *rdma.Snapshot {
@@ -331,10 +335,10 @@ func newRDMATestSnapshot() *rdma.Snapshot {
 		VerbsABIVersion: "6\n",
 		PCINodes: []rdma.PCINode{
 			{Path: "devices/pci0000:07"},
-			{Path: "devices/pci0000:07/0000:07:01.0", Attrs: map[string]string{"class": "0x060400\n"}},
+			{Path: "devices/pci0000:07/0000:07:01.0", Attrs: map[string]string{"class": "0x060400\n"}, Config: rdmaTestPCIConfig},
 			{Path: nicLeaf, Attrs: map[string]string{
 				"vendor": "0x15b3\n",
-				"uevent": "PCI_SLOT_NAME=0000:0c:00.0\n",
+				"uevent": "DRIVER=mlx5_core\nPCI_SLOT_NAME=0000:0c:00.0\n",
 				// Host-view CPU affinity: must be rewritten to the sandbox's
 				// single-node view.
 				"numa_node":     "1\n",
@@ -399,12 +403,14 @@ func TestRDMASysfs(t *testing.T) {
 			"pci_bus":      linux.DT_DIR,
 			"subsystem":    linux.DT_LNK,
 			"class":        linux.DT_REG,
+			"config":       linux.DT_REG,
 		},
 		nicLeaf: {
 			"infiniband":       linux.DT_DIR,
 			"infiniband_verbs": linux.DT_DIR,
 			"net":              linux.DT_DIR,
 			"subsystem":        linux.DT_LNK,
+			"driver":           linux.DT_LNK,
 			"vendor":           linux.DT_REG,
 			"uevent":           linux.DT_REG,
 			"numa_node":        linux.DT_REG,
@@ -455,6 +461,8 @@ func TestRDMASysfs(t *testing.T) {
 			"0000:0c:00.0":  linux.DT_LNK,
 			"10000:e0:06.0": linux.DT_LNK,
 		},
+		"/bus/pci/drivers":           {"mlx5_core": linux.DT_DIR},
+		"/bus/pci/drivers/mlx5_core": {"0000:0c:00.0": linux.DT_LNK},
 		// The two host nodes collapse into a single sandbox node.
 		"/devices/system/node": {"online": linux.DT_REG, "possible": linux.DT_REG, "node0": linux.DT_DIR},
 		"/devices/system/node/node0": {
@@ -486,6 +494,13 @@ func TestRDMASysfs(t *testing.T) {
 		nicLeaf + "/numa_node":                                 "0\n",
 		nicLeaf + "/local_cpulist":                             wantCPUList,
 		"/devices/pci10000:e0/10000:e0:06.0/numa_node":         "-1\n",
+		// Raw PCI config space is mirrored byte-faithfully.
+		"/devices/pci0000:07/0000:07:01.0/config": string(rdmaTestPCIConfig),
+		// The device/driver symlink and the /sys/bus/pci/drivers back-symlink
+		// resolve to the same PCI function (libfabric realpath's the former
+		// during EFA discovery).
+		nicLeaf + "/driver/0000:0c:00.0/vendor":          "0x15b3\n",
+		"/bus/pci/drivers/mlx5_core/0000:0c:00.0/vendor": "0x15b3\n",
 	} {
 		got, err := readTestFile(s, p)
 		if err != nil {
