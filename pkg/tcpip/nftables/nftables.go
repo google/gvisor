@@ -246,7 +246,7 @@ func (nf *NFTables) getBaseChainsForEvaluation(family stack.AddressFamily, hook 
 // in place.
 // Returns an error if address family or hook is invalid or they don't match.
 // TODO(b/345684870): Consider removing error case if we never return an error.
-func (nf *NFTables) EvaluateHook(family stack.AddressFamily, hook stack.NFHook, pkt *stack.PacketBuffer, route *stack.Route) (stack.NFVerdict, *syserr.AnnotatedError) {
+func (nf *NFTables) EvaluateHook(family stack.AddressFamily, hook stack.NFHook, pkt *stack.PacketBuffer, route *stack.Route) (Verdict, *syserr.AnnotatedError) {
 	// Note: none of the other evaluate functions are public because they require
 	// jumping to different chains in the same table, so all chains, rules, and
 	// operations must be tied to a table. Thus, calling evaluate for standalone
@@ -254,17 +254,17 @@ func (nf *NFTables) EvaluateHook(family stack.AddressFamily, hook stack.NFHook, 
 
 	// Ensures address family is valid.
 	if err := validateAddressFamily(family); err != nil {
-		return stack.NFVerdict{}, err
+		return Verdict{}, err
 	}
 
 	// Ensures hook is valid.
 	if err := validateHook(hook, family); err != nil {
-		return stack.NFVerdict{}, err
+		return Verdict{}, err
 	}
 
 	baseChains, err := nf.getBaseChainsForEvaluation(family, hook, false /* natChains */)
 	if err != nil {
-		return stack.NFVerdict{}, err
+		return Verdict{}, err
 	}
 
 	// Create a new register set for the evaluation.
@@ -278,7 +278,7 @@ func (nf *NFTables) EvaluateHook(family stack.AddressFamily, hook stack.NFHook, 
 
 	// If there's nothing to evaluate, return accept.
 	if numBaseChains == 0 && numExtraHooks == 0 {
-		return stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}, nil
+		return Verdict{Code: VC(linux.NF_ACCEPT)}, nil
 	}
 	var lastEvaluatedChain *Chain
 	evalCtx := opEvalCtx{
@@ -292,7 +292,7 @@ func (nf *NFTables) EvaluateHook(family stack.AddressFamily, hook stack.NFHook, 
 		selectExtra := (ci == numBaseChains) || (ei < numExtraHooks && extraEvaluators[ei].priority < baseChains[ci].GetBaseChainInfo().Priority.GetValue())
 		if selectExtra {
 			if err := extraEvaluators[ei].handle(); err != nil {
-				return stack.NFVerdict{}, err
+				return Verdict{}, err
 			}
 			ei++
 		} else {
@@ -303,7 +303,7 @@ func (nf *NFTables) EvaluateHook(family stack.AddressFamily, hook stack.NFHook, 
 				continue
 			}
 			if err := bc.evaluate(&regs, evalCtx); err != nil {
-				return stack.NFVerdict{}, err
+				return Verdict{}, err
 			}
 			lastEvaluatedChain = bc
 		}
@@ -319,11 +319,11 @@ func (nf *NFTables) EvaluateHook(family stack.AddressFamily, hook stack.NFHook, 
 	switch regs.Verdict().Code {
 	case VC(linux.NFT_CONTINUE), VC(linux.NFT_RETURN):
 		if lastEvaluatedChain != nil && lastEvaluatedChain.GetBaseChainInfo().PolicyDrop {
-			return stack.NFVerdict{Code: VC(linux.NF_DROP)}, nil
+			return Verdict{Code: VC(linux.NF_DROP)}, nil
 		}
-		return stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}, nil
+		return Verdict{Code: VC(linux.NF_ACCEPT)}, nil
 	case VC(linux.NF_ACCEPT):
-		return stack.NFVerdict{Code: VC(linux.NF_ACCEPT)}, nil
+		return Verdict{Code: VC(linux.NF_ACCEPT)}, nil
 	}
 
 	panic(fmt.Sprintf("unexpected verdict from hook evaluation: %s", VerdictCodeToString(regs.Verdict().Code)))
@@ -350,16 +350,16 @@ evalLoop:
 
 		// Continues evaluation at target chains for jump and goto verdicts.
 		jumped := false
-		switch regs.Verdict().Code {
+		v := regs.Verdict()
+		switch v.Code {
 		case VC(linux.NFT_JUMP):
 			jumpDepth++
 			jumped = true
 			fallthrough
 		case VC(linux.NFT_GOTO):
-			// Finds the chain named in the same table as the calling chain.
-			nextChain, exists := c.table.chains[regs.verdict.ChainName]
-			if !exists {
-				return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("chain %s not found in table %s", regs.verdict.ChainName, c.table.name))
+			nextChain := v.Chain
+			if nextChain == nil {
+				return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "chain not found for jump/goto verdict")
 			}
 			if err := nextChain.evaluateFromRule(0, jumpDepth, regs, evalCtx); err != nil {
 				return err
@@ -371,8 +371,11 @@ evalLoop:
 			jumpDepth--
 		}
 
+		// Update verdict after jumps/gotos.
+		v = regs.Verdict()
+
 		// Only continues evaluation for Continue and Break verdicts.
-		switch regs.Verdict().Code {
+		switch v.Code {
 		case VC(linux.NFT_BREAK):
 			// Resets verdict for next rule (after breaking from a single operation).
 			regs.verdict.Code = VC(linux.NFT_CONTINUE)
@@ -1178,13 +1181,12 @@ func (c *Chain) RegisterRule(rule *Rule, index int) *syserr.AnnotatedError {
 		if err := op.checkCompatibility(&opCompatCtx{chain: c}); err != nil {
 			return err
 		}
-		isJumpOrGoto, targetChainName := isJumpOrGotoOperation(op)
+		isJumpOrGoto, nextChain := isJumpOrGotoOperation(op)
 		if !isJumpOrGoto {
 			continue
 		}
-		nextChain, exists := c.table.chains[targetChainName]
-		if !exists {
-			return syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("chain %s not found for table %s", targetChainName, c.table.name))
+		if nextChain == nil {
+			return syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, "jump or goto operation does not have a target chain")
 		}
 		if err := nextChain.checkLoops(c, 0); err != nil {
 			return err
@@ -1285,19 +1287,19 @@ func (c *Chain) RuleCount() int {
 // isJumpOrGoto returns whether the operation is an immediate operation that
 // sets the verdict register to a jump or goto verdict, returns the name of
 // the target chain to jump or goto if so and returns the verdict code.
-func isJumpOrGotoOperation(op operation) (bool, string) {
+func isJumpOrGotoOperation(op operation) (bool, *Chain) {
 	imm, ok := op.(*immediate)
 	if !ok {
-		return false, ""
+		return false, nil
 	}
 	if imm.dataType != linux.NFT_DATA_VERDICT {
-		return false, ""
+		return false, nil
 	}
 	verdict := imm.verdict
 	if verdict.Code != VC(linux.NFT_JUMP) && verdict.Code != VC(linux.NFT_GOTO) {
-		return false, ""
+		return false, nil
 	}
-	return true, verdict.ChainName
+	return true, verdict.Chain
 }
 
 // checkLoops detects if there are any loops via jumps and gotos between chains
@@ -1321,13 +1323,12 @@ func (c *Chain) checkLoops(source *Chain, depth int) *syserr.AnnotatedError {
 
 	for _, rule := range c.rules {
 		for _, op := range rule.ops {
-			isJumpOrGoto, targetChainName := isJumpOrGotoOperation(op)
+			isJumpOrGoto, nextChain := isJumpOrGotoOperation(op)
 			if !isJumpOrGoto {
 				continue
 			}
-			nextChain, exists := c.table.chains[targetChainName]
-			if !exists {
-				return syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("chain %s not found for table %s", targetChainName, c.table.name))
+			if nextChain == nil {
+				return syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, "jump or goto operation does not have a target chain")
 			}
 
 			// Depth is incremented regardless if the verdict is a NFT_JUMP or NFT_GOTO.

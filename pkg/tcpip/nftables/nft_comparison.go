@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
-	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 // comparison is an operation that compares the data in a register to a given
@@ -92,6 +91,9 @@ func (op *comparison) deepCopy() operation {
 	return &opCopy
 }
 
+// updateReferences implements operation.updateReferences.
+func (op *comparison) updateReferences(table *Table, sourceTable *Table, sourceOp operation) {}
+
 // evaluate for comparison compares the data in the source register to the given
 // data and breaks from the rule if the comparison is false.
 func (op comparison) evaluate(regs *registerSet, evalCtx opEvalCtx) {
@@ -122,7 +124,7 @@ func (op comparison) evaluate(regs *registerSet, evalCtx opEvalCtx) {
 	}
 	if !result {
 		// Comparison is false, so break from the rule.
-		regs.verdict = stack.NFVerdict{Code: VC(linux.NFT_BREAK)}
+		regs.verdict = Verdict{Code: VC(linux.NFT_BREAK)}
 	}
 }
 func (op comparison) GetExprName() string {

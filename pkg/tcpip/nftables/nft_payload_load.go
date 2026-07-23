@@ -87,6 +87,9 @@ func (op *payloadLoad) deepCopy() operation {
 	return &opCopy
 }
 
+// updateReferences implements operation.updateReferences.
+func (op *payloadLoad) updateReferences(table *Table, sourceTable *Table, sourceOp operation) {}
+
 // evaluate for PayloadLoad loads data from the packet payload into the
 // destination register.
 func (op payloadLoad) evaluate(regs *registerSet, evalCtx opEvalCtx) {
@@ -95,7 +98,7 @@ func (op payloadLoad) evaluate(regs *registerSet, evalCtx opEvalCtx) {
 
 	// Breaks if could not retrieve packet data.
 	if payload == nil || len(payload) < int(op.offset)+op.blen {
-		regs.verdict = stack.NFVerdict{Code: VC(linux.NFT_BREAK)}
+		regs.verdict = Verdict{Code: VC(linux.NFT_BREAK)}
 		return
 	}
 

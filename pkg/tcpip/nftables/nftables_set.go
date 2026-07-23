@@ -544,7 +544,7 @@ func (nf *NFTables) parseElemDataAttr(tab *Table, set *nftSet, dataAttrs nlmsg.B
 	}
 
 	var dataValue []byte
-	var verdict stack.NFVerdict
+	var verdict Verdict
 	dataType := linux.NFT_DATA_VALUE
 	if b, err := parseDataAttrs(dataValueAttr); err == nil {
 		dataValue = b

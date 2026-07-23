@@ -163,7 +163,7 @@ func (op *ctGet) evaluate(regs *registerSet, evalCtx opEvalCtx) {
 			binary.NativeEndian.PutUint32(regs.data[start:end], uint32(linux.NF_CT_STATE_INVALID_BIT))
 			return
 		}
-		regs.verdict = stack.NFVerdict{Code: VC(linux.NFT_BREAK)}
+		regs.verdict = Verdict{Code: VC(linux.NFT_BREAK)}
 		return
 	}
 
@@ -197,30 +197,30 @@ func (op *ctGet) evaluate(regs *registerSet, evalCtx opEvalCtx) {
 		binary.BigEndian.PutUint16(regs.data[start:start+2], ctInfo.DstPort)
 	case linux.NFT_CT_SRC_IP:
 		if !isIPv4 {
-			regs.verdict = stack.NFVerdict{Code: VC(linux.NFT_BREAK)}
+			regs.verdict = Verdict{Code: VC(linux.NFT_BREAK)}
 			return
 		}
 		copy(regs.data[start:end], ctInfo.SrcAddr.AsSlice())
 	case linux.NFT_CT_DST_IP:
 		if !isIPv4 {
-			regs.verdict = stack.NFVerdict{Code: VC(linux.NFT_BREAK)}
+			regs.verdict = Verdict{Code: VC(linux.NFT_BREAK)}
 			return
 		}
 		copy(regs.data[start:end], ctInfo.DstAddr.AsSlice())
 	case linux.NFT_CT_SRC_IP6:
 		if !isIPv6 {
-			regs.verdict = stack.NFVerdict{Code: VC(linux.NFT_BREAK)}
+			regs.verdict = Verdict{Code: VC(linux.NFT_BREAK)}
 			return
 		}
 		copy(regs.data[start:end], ctInfo.SrcAddr.AsSlice())
 	case linux.NFT_CT_DST_IP6:
 		if !isIPv6 {
-			regs.verdict = stack.NFVerdict{Code: VC(linux.NFT_BREAK)}
+			regs.verdict = Verdict{Code: VC(linux.NFT_BREAK)}
 			return
 		}
 		copy(regs.data[start:end], ctInfo.DstAddr.AsSlice())
 	default:
-		regs.verdict = stack.NFVerdict{Code: VC(linux.NFT_BREAK)}
+		regs.verdict = Verdict{Code: VC(linux.NFT_BREAK)}
 	}
 }
 
@@ -244,6 +244,9 @@ func (op *ctGet) deepCopy() operation {
 	}
 }
 
+// updateReferences implements operation.updateReferences.
+func (op *ctGet) updateReferences(table *Table, sourceTable *Table, sourceOp operation) {}
+
 // Dump implements operation's Dump interface.
 func (op *ctGet) Dump() ([]byte, *syserr.AnnotatedError) {
 	m := &nlmsg.Message{}
@@ -259,7 +262,7 @@ func (op *ctGet) Dump() ([]byte, *syserr.AnnotatedError) {
 func (op *ctSet) evaluate(regs *registerSet, evalCtx opEvalCtx) {
 	// TODO: b/531808852 - Implement ct set operation.
 	log.Warningf("ctSet.evaluate is not implemented")
-	regs.verdict = stack.NFVerdict{Code: VC(linux.NFT_BREAK)}
+	regs.verdict = Verdict{Code: VC(linux.NFT_BREAK)}
 }
 
 // GetExprName implements operation's ExprName interface.
@@ -292,6 +295,9 @@ func (op *ctSet) deepCopy() operation {
 		len:     op.len,
 	}
 }
+
+// updateReferences implements operation.updateReferences.
+func (op *ctSet) updateReferences(table *Table, sourceTable *Table, sourceOp operation) {}
 
 // initCTSet initializes a ct set operation.
 func initCTSet(tab *Table, sreg uint8, attrs map[uint16]nlmsg.BytesView) (*ctSet, *syserr.AnnotatedError) {
