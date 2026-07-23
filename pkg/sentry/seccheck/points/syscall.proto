@@ -231,6 +231,18 @@ message Accept {
   int32 flags = 7;
 }
 
+message Listen {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int32 fd = 4;
+  string fd_path = 5;
+  int32 backlog = 6;
+  bytes address = 7;
+  int32 socket_family = 8;
+  int32 socket_type = 9;
+}
+
 message TimerfdCreate {
   gvisor.common.ContextData context_data = 1;
   Exit exit = 2;

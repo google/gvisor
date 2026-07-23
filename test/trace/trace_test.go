@@ -135,6 +135,7 @@ func matchPoints(t *testing.T, msgs []test.Message) map[pb.MessageType]*checkers
 		pb.MessageType_MESSAGE_SYSCALL_INOTIFY_RM_WATCH:  {checker: checkSyscallInotifyInitRmWatch},
 		pb.MessageType_MESSAGE_SYSCALL_CLONE:             {checker: checkSyscallClone},
 		pb.MessageType_MESSAGE_SYSCALL_MMAP:              {checker: checkSyscallMmap},
+		pb.MessageType_MESSAGE_SYSCALL_LISTEN:            {checker: checkSyscallListen},
 	}
 	return matchers
 }
@@ -746,6 +747,32 @@ func checkSyscallAccept(msg test.Message) error {
 	}
 	if p.Flags != 0 && p.Flags != unix.SOCK_CLOEXEC {
 		return fmt.Errorf("invalid flag got: %d", p.Flags)
+	}
+	return nil
+}
+
+func checkSyscallListen(msg test.Message) error {
+	p := pb.Listen{}
+	if err := proto.Unmarshal(msg.Msg, &p); err != nil {
+		return err
+	}
+	if err := checkContextData(p.ContextData); err != nil {
+		return err
+	}
+	if p.Fd < 0 {
+		return fmt.Errorf("invalid fd: %d", p.Fd)
+	}
+	if p.FdPath == "" {
+		return fmt.Errorf("invalid path: %v", p.FdPath)
+	}
+	if len(p.Address) == 0 {
+		return fmt.Errorf("invalid address: %d", len(p.Address))
+	}
+	if p.SocketFamily != int32(unix.AF_UNIX) {
+		return fmt.Errorf("invalid socket family got: %d", p.SocketFamily)
+	}
+	if p.SocketType != int32(unix.SOCK_STREAM) && p.SocketType != int32(unix.SOCK_SEQPACKET) {
+		return fmt.Errorf("invalid socket type got: %d", p.SocketType)
 	}
 	return nil
 }

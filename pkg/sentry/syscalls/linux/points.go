@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
+	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -790,6 +791,41 @@ func PointBind(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData
 
 	p.Exit = newExitMaybe(info)
 	return p, pb.MessageType_MESSAGE_SYSCALL_BIND
+}
+
+// PointListen converts listen(2) syscall to proto.
+func PointListen(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	p := &pb.Listen{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		Fd:          info.Args[0].Int(),
+		Backlog:     info.Args[1].Int(),
+	}
+
+	file := t.GetFile(p.Fd)
+	if file != nil {
+		defer file.DecRef(t)
+		if s, ok := file.Impl().(socket.Socket); ok {
+			family, skType, _ := s.Type()
+			p.SocketFamily = int32(family)
+			p.SocketType = int32(skType)
+			if v, vl, err := s.GetSockName(t); err == nil && v != nil {
+				buf := make([]byte, v.SizeBytes())
+				v.MarshalUnsafe(buf)
+				if int(vl) < len(buf) {
+					buf = buf[:vl]
+				}
+				p.Address = buf
+			}
+		}
+	}
+
+	if fields.Local.Contains(seccheck.FieldSyscallPath) {
+		p.FdPath = getFilePath(t, int32(p.Fd))
+	}
+
+	p.Exit = newExitMaybe(info)
+	return p, pb.MessageType_MESSAGE_SYSCALL_LISTEN
 }
 
 func acceptHelper(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo, flags int32) (proto.Message, pb.MessageType) {

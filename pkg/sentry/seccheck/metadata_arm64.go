@@ -154,6 +154,12 @@ func archInit() {
 			Name: "fd_path",
 		},
 	})
+	addSyscallPoint(201, "listen", []FieldDesc{
+		{
+			ID:   FieldSyscallPath,
+			Name: "fd_path",
+		},
+	})
 	addSyscallPoint(202, "accept", []FieldDesc{
 		{
 			ID:   FieldSyscallPath,
