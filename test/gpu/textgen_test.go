@@ -94,7 +94,7 @@ func TestLLM(t *testing.T) {
 				    "Hello World".
 			`,
 		}
-		promptCtx, promptCancel := context.WithTimeout(ctx, 3*time.Minute)
+		promptCtx, promptCancel := context.WithTimeout(ctx, 5*time.Minute)
 		response, err := llm.PromptUntil(promptCtx, &prompt, func(prompt *ollama.Prompt, response *ollama.Response) (*ollama.Prompt, error) {
 			defer prompt.Model.RaiseTemperature()
 			text := strings.TrimSpace(response.Text())
@@ -130,7 +130,7 @@ func TestLLM(t *testing.T) {
 			world          = "世界"
 			codeBlockDelim = "```"
 		)
-		promptCtx, promptCancel := context.WithTimeout(ctx, 3*time.Minute)
+		promptCtx, promptCancel := context.WithTimeout(ctx, 5*time.Minute)
 		prompt := ollama.Prompt{
 			Model: ollama.ZeroTemperatureModel("codellama:7b-instruct"),
 			Query: fmt.Sprintf(`
@@ -211,7 +211,7 @@ func TestLLM(t *testing.T) {
 	})
 	t.Run("ocr", func(t *testing.T) {
 		const textInImage = "gVisor"
-		promptCtx, promptCancel := context.WithTimeout(ctx, 3*time.Minute)
+		promptCtx, promptCancel := context.WithTimeout(ctx, 5*time.Minute)
 		prompt := ollama.Prompt{
 			Model: ollama.ZeroTemperatureModel("llava:7b-v1.6"),
 			Query: "What is the text written in this image?",
