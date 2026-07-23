@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"math"
 	"slices"
+	"sort"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
@@ -462,12 +463,16 @@ func (nf *NFTables) NewSet(attrs map[uint16]nlmsg.BytesView, family stack.Addres
 		return syserr.NewAnnotatedError(syserr.ErrNotSupported, "NLM_F_CREATE is required for set creation")
 	}
 
-	// TODO: b/505409691 - Support non-map sets.
-	if setFlags&linux.NFT_SET_MAP == 0 {
-		return syserr.NewAnnotatedError(syserr.ErrNotSupported, "only map sets are supported yet")
+	// Select the set backend based on the set flags.
+	// TODO: b/505409691 - Support the remaining non-map set types.
+	switch {
+	case setFlags&linux.NFT_SET_MAP != 0:
+		newSet.backend = nf.newSetMapBackend(int(keyLen), int(dataLen))
+	case setFlags&linux.NFT_SET_INTERVAL != 0:
+		newSet.backend = nf.newSetIntervalBackend(int(keyLen))
+	default:
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, "only map and interval sets are supported yet")
 	}
-
-	newSet.backend = nf.newSetMapBackend(int(keyLen), int(dataLen))
 	return nf.addSetToTable(tab, newSet)
 }
 
@@ -804,13 +809,14 @@ func (nf *NFTables) addElemToSet(tab *Table, set *nftSet, elemAttrs map[uint16]n
 	}
 
 	newSetElem := nftSetElem{
-		startKey:   startKey,
-		endKey:     endKey,
-		timeout:    timeout,
-		expiration: expiration,
-		ops:        ops,
-		userData:   userData,
-		data:       dv,
+		startKey:    startKey,
+		endKey:      endKey,
+		intervalEnd: flag&linux.NFT_SET_ELEM_INTERVAL_END != 0,
+		timeout:     timeout,
+		expiration:  expiration,
+		ops:         ops,
+		userData:    userData,
+		data:        dv,
 	}
 
 	if flag&linux.NFT_SET_ELEM_CATCHALL != 0 {
@@ -1033,6 +1039,9 @@ func dumpSetElem(set *nftSet, elem *nftSetElem, isCatchAll bool) (nlmsg.NestedAt
 			}
 			elemAttrs.PutAttr(linux.NFTA_SET_ELEM_KEY_END, primitive.AsByteSlice(b))
 		}
+		if elem.intervalEnd {
+			elemAttrs.PutAttr(linux.NFTA_SET_ELEM_FLAGS, nlmsg.PutU32(uint32(linux.NFT_SET_ELEM_INTERVAL_END)))
+		}
 	} else {
 		elemAttrs.PutAttr(linux.NFTA_SET_ELEM_FLAGS, nlmsg.PutU32(uint32(linux.NFT_SET_ELEM_CATCHALL)))
 	}
@@ -1112,7 +1121,21 @@ func (nf *NFTables) fillSetElemListInfo(set *nftSet, tab *Table, family stack.Ad
 		elemAttrList = nil
 	}
 
-	for i := range set.elements {
+	// nftables stores interval sets as their raw boundary endpoints and dumps
+	// them in ascending key order with the interval-end flag preserved; nft
+	// userspace reconstructs the ranges. Non-interval sets dump in insertion
+	// order.
+	order := make([]int, len(set.elements))
+	for i := range order {
+		order[i] = i
+	}
+	if set.flags&linux.NFT_SET_INTERVAL != 0 {
+		sort.SliceStable(order, func(a, b int) bool {
+			return bytes.Compare(set.elements[order[a]].startKey, set.elements[order[b]].startKey) < 0
+		})
+	}
+
+	for _, i := range order {
 		elemAttrs, err := dumpSetElem(set, &set.elements[i], false)
 		if err != nil {
 			return err
@@ -1348,3 +1371,158 @@ func (nf *NFTables) newSetMapBackend(keyLen int, dataLen int) *setMapBackend {
 		m:       make(map[string]int),
 	}
 }
+
+// setIntervalEndpoint is one boundary in an interval set. nft represents an
+// interval set as a sorted sequence of endpoints; a key is a member iff the
+// greatest endpoint whose key is <= the lookup key is an interval start (not an
+// interval-end marker). This is the half-open [start, end) model used by the
+// kernel's rbtree set.
+type setIntervalEndpoint struct {
+	key   []byte
+	isEnd bool // NFT_SET_ELEM_INTERVAL_END: exclusive upper bound of an interval.
+	idx   int
+}
+
+// setIntervalBackend is a backend for interval sets (NFT_SET_INTERVAL). It
+// stores endpoints sorted by key and matches a key when the greatest endpoint
+// with key <= the lookup key is an interval start.
+//
+// Keys are compared as big-endian byte slices, which matches the numeric
+// ordering of the network-order ipv4_addr/ipv6_addr keys interval sets use.
+type setIntervalBackend struct {
+	keyLen    int
+	endpoints []setIntervalEndpoint // sorted by key.
+}
+
+// search returns the index of the first endpoint whose key is >= the given key.
+func (s *setIntervalBackend) search(key []byte) int {
+	return sort.Search(len(s.endpoints), func(i int) bool {
+		return bytes.Compare(s.endpoints[i].key, key) >= 0
+	})
+}
+
+// Evaluate implements NftSetBackend.Evaluate.
+func (s *setIntervalBackend) Evaluate(regs *registerSet, keyIdx int) int {
+	return s.Find(regs.data[keyIdx : keyIdx+s.keyLen])
+}
+
+// Find implements NftSetBackend.Find: returns the element index of the
+// containing interval's start endpoint, or -1 if the key is not a member.
+func (s *setIntervalBackend) Find(keyData []byte) int {
+	if len(keyData) != s.keyLen {
+		return -1
+	}
+	// Locate the greatest endpoint whose key is <= keyData.
+	pos := s.search(keyData)
+	if pos >= len(s.endpoints) || !bytes.Equal(s.endpoints[pos].key, keyData) {
+		// No exact match: the candidate is the endpoint just before pos.
+		pos--
+	}
+	if pos < 0 {
+		return -1
+	}
+	if s.endpoints[pos].isEnd {
+		return -1
+	}
+	return s.endpoints[pos].idx
+}
+
+// insertEndpoint inserts a single endpoint keeping endpoints sorted by key. If
+// an endpoint with the same key already exists, its idx is returned unchanged.
+func (s *setIntervalBackend) insertEndpoint(key []byte, isEnd bool, idx int) int {
+	pos := s.search(key)
+	if pos < len(s.endpoints) && bytes.Equal(s.endpoints[pos].key, key) {
+		return s.endpoints[pos].idx
+	}
+	ep := setIntervalEndpoint{key: slices.Clone(key), isEnd: isEnd, idx: idx}
+	s.endpoints = append(s.endpoints, setIntervalEndpoint{})
+	copy(s.endpoints[pos+1:], s.endpoints[pos:])
+	s.endpoints[pos] = ep
+	return idx
+}
+
+// removeEndpoint removes the endpoint with the given key, if present.
+func (s *setIntervalBackend) removeEndpoint(key []byte) (int, bool) {
+	pos := s.search(key)
+	if pos < len(s.endpoints) && bytes.Equal(s.endpoints[pos].key, key) {
+		idx := s.endpoints[pos].idx
+		s.endpoints = append(s.endpoints[:pos], s.endpoints[pos+1:]...)
+		return idx, true
+	}
+	return -1, false
+}
+
+// Add implements NftSetBackend.Add.
+func (s *setIntervalBackend) Add(e *nftSetElem, idx int) (int, *syserr.AnnotatedError) {
+	if e == nil {
+		return -1, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "element is nil")
+	}
+	if len(e.startKey) != s.keyLen {
+		return -1, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "key length does not match set key length")
+	}
+	// nft sends interval bounds as individual endpoints: a start endpoint and a
+	// separate NFT_SET_ELEM_INTERVAL_END endpoint (the exclusive upper bound).
+	if len(e.endKey) == 0 {
+		return s.insertEndpoint(e.startKey, e.intervalEnd, idx), nil
+	}
+	// Concatenated range form: a single element carrying [startKey, endKey]
+	// (both inclusive). Represent it as a start endpoint at startKey and an
+	// interval-end endpoint at endKey+1 (exclusive).
+	if len(e.endKey) != s.keyLen {
+		return -1, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "interval end key length does not match set key length")
+	}
+	s.insertEndpoint(e.startKey, false, idx)
+	if end := incrementKey(e.endKey); end != nil {
+		s.insertEndpoint(end, true, idx)
+	}
+	return idx, nil
+}
+
+// Remove implements NftSetBackend.Remove.
+func (s *setIntervalBackend) Remove(e *nftSetElem) (int, *syserr.AnnotatedError) {
+	if e == nil {
+		return -1, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "element is nil")
+	}
+	idx, ok := s.removeEndpoint(e.startKey)
+	if !ok {
+		return -1, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "key not found")
+	}
+	if len(e.endKey) == s.keyLen {
+		if end := incrementKey(e.endKey); end != nil {
+			s.removeEndpoint(end)
+		}
+	}
+	return idx, nil
+}
+
+// Clone implements NftSetBackend.Clone.
+func (s *setIntervalBackend) Clone() NftSetBackend {
+	c := &setIntervalBackend{
+		keyLen:    s.keyLen,
+		endpoints: make([]setIntervalEndpoint, len(s.endpoints)),
+	}
+	for i, ep := range s.endpoints {
+		c.endpoints[i] = setIntervalEndpoint{key: slices.Clone(ep.key), isEnd: ep.isEnd, idx: ep.idx}
+	}
+	return c
+}
+
+// newSetIntervalBackend creates a new interval backend.
+func (nf *NFTables) newSetIntervalBackend(keyLen int) *setIntervalBackend {
+	return &setIntervalBackend{keyLen: keyLen}
+}
+
+// incrementKey returns a copy of the big-endian key incremented by one, or nil
+// if the key is already the maximum value (all ones), i.e. the interval extends
+// to the maximum key.
+func incrementKey(key []byte) []byte {
+	out := slices.Clone(key)
+	for i := len(out) - 1; i >= 0; i-- {
+		out[i]++
+		if out[i] != 0 {
+			return out
+		}
+	}
+	return nil
+}
+
