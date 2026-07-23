@@ -169,6 +169,16 @@ func (q *queue) Enqueue(ctx context.Context, data [][]byte, c ControlMessages, f
 
 	notify = true
 	q.used += l
+	if c.Rights != nil {
+		// `c` is passed by value, but `c.Rights` is an interface over a
+		// pointer pointing to the same `RightsControlMessage` implementation
+		// (e.g. `*RightsFiles`) regardless of `c` being passed by value.
+		// Here we empty that underlying shared `RightsControlMessage`
+		// implementation and allocate a new one specifically so that we can
+		// queue it as such with the queued `ControlMessages` being the only
+		// one that has it.
+		c.Rights = c.Rights.TransferRights()
+	}
 	q.dataList.PushBack(&message{
 		Data:    v,
 		Control: c,

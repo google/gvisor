@@ -42,6 +42,13 @@ func (c *SCMRights) Clone() RightsControlMessage {
 	return nil
 }
 
+// TransferRights implements RightsControlMessage.TransferRights.
+func (c *SCMRights) TransferRights() RightsControlMessage {
+	nc := &SCMRights{FDs: c.FDs}
+	c.FDs = nil
+	return nc
+}
+
 // Release implements RightsControlMessage.Release.
 func (c *SCMRights) Release(ctx context.Context) {
 	for _, fd := range c.FDs {

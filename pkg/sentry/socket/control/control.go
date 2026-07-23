@@ -715,6 +715,13 @@ func (fs *RightsFiles) Clone() transport.RightsControlMessage {
 	return &nfs
 }
 
+// TransferRights implements transport.RightsControlMessage.TransferRights.
+func (fs *RightsFiles) TransferRights() transport.RightsControlMessage {
+	nfs := *fs
+	*fs = nil
+	return &nfs
+}
+
 // Release implements transport.RightsControlMessage.Release.
 func (fs *RightsFiles) Release(ctx context.Context) {
 	for _, f := range *fs {
