@@ -942,20 +942,20 @@ func (pk *PacketBuffer) GetHeaders() (netHdr header.Network, transHdr header.Tra
 			return pk.Network(), icmpHeader, false, true
 		case header.ICMPv4DstUnreachable, header.ICMPv4TimeExceeded, header.ICMPv4ParamProblem:
 		default:
-			panic(fmt.Sprintf("unexpected ICMPv4 type = %d", icmpType))
+			return nil, nil, false, false
 		}
 
 		h, ok := pk.Data().PullUp(header.IPv4MinimumSize)
 		if !ok {
-			panic(fmt.Sprintf("should have a valid IPv4 packet; only have %d bytes, want at least %d bytes", pk.Data().Size(), header.IPv4MinimumSize))
+			return nil, nil, false, false
 		}
 
 		if header.IPv4(h).HeaderLength() > header.IPv4MinimumSize {
 			// TODO(https://gvisor.dev/issue/6765): Handle IPv4 options.
-			panic("should have dropped packets with IPv4 options")
+			return nil, nil, false, false
 		}
 
-		if netHdr, transHdr, ok := pk.GetEmbeddedNetAndTransHeaders(header.IPv4MinimumSize, v4NetAndTransHdr, pk.tuple.tupleID.transProto); ok {
+		if netHdr, transHdr, ok := pk.GetEmbeddedNetAndTransHeaders(header.IPv4MinimumSize, v4NetAndTransHdr, tcpip.TransportProtocolNumber(header.IPv4(h).Protocol())); ok {
 			return netHdr, transHdr, true, true
 		}
 		return nil, nil, false, false
@@ -970,24 +970,19 @@ func (pk *PacketBuffer) GetHeaders() (netHdr header.Network, transHdr header.Tra
 			return pk.Network(), icmpHeader, false, true
 		case header.ICMPv6DstUnreachable, header.ICMPv6PacketTooBig, header.ICMPv6TimeExceeded, header.ICMPv6ParamProblem:
 		default:
-			panic(fmt.Sprintf("unexpected ICMPv6 type = %d", icmpType))
+			return nil, nil, false, false
 		}
 
 		h, ok := pk.Data().PullUp(header.IPv6MinimumSize)
 		if !ok {
-			panic(fmt.Sprintf("should have a valid IPv6 packet; only have %d bytes, want at least %d bytes", pk.Data().Size(), header.IPv6MinimumSize))
+			return nil, nil, false, false
 		}
 
 		// We do not support extension headers in ICMP errors so the next header
 		// in the IPv6 packet should be a tracked protocol if we reach this point.
 		//
 		// TODO(https://gvisor.dev/issue/6789): Support extension headers.
-		transProto := pk.tuple.tupleID.transProto
-		if got := header.IPv6(h).TransportProtocol(); got != transProto {
-			panic(fmt.Sprintf("got TransportProtocol() = %d, want = %d", got, transProto))
-		}
-
-		if netHdr, transHdr, ok := pk.GetEmbeddedNetAndTransHeaders(header.IPv6MinimumSize, v6NetAndTransHdr, transProto); ok {
+		if netHdr, transHdr, ok := pk.GetEmbeddedNetAndTransHeaders(header.IPv6MinimumSize, v6NetAndTransHdr, tcpip.TransportProtocolNumber(header.IPv6(h).TransportProtocol())); ok {
 			return netHdr, transHdr, true, true
 		}
 		return nil, nil, false, false
