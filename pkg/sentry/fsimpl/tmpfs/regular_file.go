@@ -89,6 +89,10 @@ type regularFile struct {
 	// alignment padding.
 	initiallyUnlinked bool
 
+	// memfd is true if this file was created using NewMemfd. Like
+	// initiallyUnlinked, memfd is immutable.
+	memfd bool
+
 	// huge is true if pages in this file may be hugepage-backed.
 	huge bool
 
@@ -173,8 +177,10 @@ func NewMemfd(ctx context.Context, creds *auth.Credentials, mount *vfs.Mount, al
 	if err != nil {
 		return nil, err
 	}
+	rf := fd.inode().impl.(*regularFile)
+	rf.memfd = true
 	if allowSeals {
-		fd.inode().impl.(*regularFile).seals = 0
+		rf.seals = 0
 	}
 	return &fd.vfsfd, nil
 }
@@ -964,4 +970,28 @@ func AddSeals(fd *vfs.FileDescription, val uint32) error {
 	// Seals can only be added, never removed.
 	rf.seals |= val
 	return nil
+}
+
+// IsMemfd returns whether fd represents a memfd.
+func IsMemfd(fd *vfs.FileDescription) bool {
+	if fd == nil {
+		return false
+	}
+	return IsMemfdDentry(fd.Dentry())
+}
+
+// IsMemfdDentry returns whether d represents a memfd.
+func IsMemfdDentry(d *vfs.Dentry) bool {
+	if d == nil {
+		return false
+	}
+	f, ok := d.Impl().(*dentry)
+	if !ok {
+		return false
+	}
+	rf, ok := f.inode.impl.(*regularFile)
+	if !ok {
+		return false
+	}
+	return rf.memfd
 }

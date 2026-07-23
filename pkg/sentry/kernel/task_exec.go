@@ -68,7 +68,8 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
-	overlay "gvisor.dev/gvisor/pkg/sentry/fsimpl/overlay"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/overlay"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/loader"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
@@ -479,6 +480,7 @@ func execveSeccheckInfo(t *Task, argv, env []string, executable *vfs.FileDescrip
 			// never copied up from a lower layer.
 			info.BinaryOverlayfsUpper = overlay.IsCopiedUp(executable.Dentry())
 			info.BinaryOverlayfsLower = overlay.IsOnLower(executable.Dentry())
+			info.BinaryInMemfd = tmpfs.IsMemfd(executable)
 			statOpts := vfs.StatOptions{
 				Mask: linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | linux.STATX_INO | linux.STATX_CTIME | linux.STATX_SIZE | linux.STATX_NLINK,
 			}

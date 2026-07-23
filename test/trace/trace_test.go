@@ -417,18 +417,19 @@ func checkSentryExec(msg test.Message) error {
 		return err
 	}
 
-	if want := "/bin/true"; !strings.Contains(p.BinaryPath, want) {
+	if want := "/bin/true"; !strings.Contains(p.BinaryPath, want) && p.Argv[0] != "test_memfd" {
 		return fmt.Errorf("wrong BinaryPath, got: %q, want substring: %q", p.BinaryPath, want)
 	}
 	if len(p.Argv) == 0 {
 		return fmt.Errorf("empty Argv")
 	}
 
-	// workload.cc fires two distinct ForkAndExec execution workloads:
-	// 1. A test checking execve syscall resolution using a symlink.
-	//    This uses "test_binary_name" as argv[0] mapping to a symlink at "/tmp/test_symlink".
-	// 2. A test covering execveat testing, which represents "/bin/true" relative to its path.
-	if p.Argv[0] == "test_binary_name" {
+	// workload.cc fires distinct execution workloads:
+	// 1. A test checking execve syscall resolution using a symlink ("test_binary_name").
+	// 2. A test covering execveat testing from a memfd ("test_memfd").
+	// 3. A test covering execveat testing ("/bin/true").
+	switch p.Argv[0] {
+	case "test_binary_name":
 		// In this case, we expect the following distinct path values:
 		// 1. BinaryPath: The fully resolved system path mapped by Sentry
 		//    (points to /bin/true).
@@ -442,7 +443,13 @@ func checkSentryExec(msg test.Message) error {
 		if p.BinaryPath == p.Execfn {
 			return fmt.Errorf("BinaryPath (%q) should differ from Execfn (%q)", p.BinaryPath, p.Execfn)
 		}
-	} else {
+	case "test_memfd":
+		// For memfd files, BinaryPath is the path in the mount namespace of the memfd file descriptor.
+		// This path is `/dev/fd/<fd>` for a memfd file descriptor.
+		if !strings.HasPrefix(p.BinaryPath, "/dev/fd/") && !strings.HasPrefix(p.BinaryPath, "/proc/") {
+			return fmt.Errorf("wrong BinaryPath for memfd, got: %q", p.BinaryPath)
+		}
+	default:
 		if !strings.Contains(p.BinaryPath, p.Argv[0]) {
 			return fmt.Errorf("wrong Argv[0], got: %q, want substring: %q", p.Argv[0], p.BinaryPath)
 		}
@@ -457,11 +464,16 @@ func checkSentryExec(msg test.Message) error {
 		return fmt.Errorf("executing non-executable file, mode: %#o (%#x)", p.BinaryMode, p.BinaryMode)
 	}
 	const nobody = 65534
-	if p.BinaryUid != nobody {
-		return fmt.Errorf("BinaryUid, want: %d, got: %d", nobody, p.BinaryUid)
+	expectedUIDGID := uint32(nobody)
+	if p.Argv[0] == "test_memfd" {
+		// test_memfd is created by the test runner itself (root).
+		expectedUIDGID = 0
 	}
-	if p.BinaryGid != nobody {
-		return fmt.Errorf("BinaryGid, want: %d, got: %d", nobody, p.BinaryGid)
+	if p.BinaryUid != expectedUIDGID {
+		return fmt.Errorf("BinaryUid, got: %d, want: %d", p.BinaryUid, expectedUIDGID)
+	}
+	if p.BinaryGid != expectedUIDGID {
+		return fmt.Errorf("BinaryGid, got: %d, want: %d", p.BinaryGid, expectedUIDGID)
 	}
 	if p.BinaryIno == 0 {
 		return fmt.Errorf("BinaryIno should not be 0")
@@ -471,7 +483,14 @@ func checkSentryExec(msg test.Message) error {
 	}
 
 	// Get SHA256 from the binary and compare it with the one from the event.
-	out, err := exec.Command("sha256sum", p.BinaryPath).CombinedOutput()
+	binaryPathForSha256 := p.BinaryPath
+	if p.Argv[0] == "test_memfd" {
+		// The workload creates a memfd and copies /bin/true into it. Since the
+		// memfd is not accessible from here, we use /bin/true to calculate the
+		// expected SHA256.
+		binaryPathForSha256 = "/bin/true"
+	}
+	out, err := exec.Command("sha256sum", binaryPathForSha256).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("Not able to calculate SHA256sum: %v", err)
 	}
@@ -482,14 +501,28 @@ func checkSentryExec(msg test.Message) error {
 		got += fmt.Sprintf("%02x", b)
 	}
 	if want != got {
-		return fmt.Errorf("BinarySHA256, want: %q, got: %q", got, want)
+		return fmt.Errorf("BinarySHA256, got: %q, want: %q", got, want)
 	}
 
 	if p.BinaryOverlayfsUpper {
-		return fmt.Errorf("BinaryOverlayfsUpper, want: false, got: true")
+		return fmt.Errorf("BinaryOverlayfsUpper, got: true, want: false")
 	}
-	if !p.BinaryOverlayfsLower {
-		return fmt.Errorf("BinaryOverlayfsLower, want: true, got: false")
+	if p.Argv[0] == "test_memfd" {
+		// memfd is not on overlayfs and is in-memory.
+		if p.BinaryOverlayfsLower {
+			return fmt.Errorf("BinaryOverlayfsLower, got: true, want: false")
+		}
+		if !p.BinaryInMemfd {
+			return fmt.Errorf("BinaryInMemfd, got: false, want: true")
+		}
+	} else {
+		// Other binaries are on the rootfs, which is an overlayfs mount.
+		if !p.BinaryOverlayfsLower {
+			return fmt.Errorf("BinaryOverlayfsLower, got: false, want: true")
+		}
+		if p.BinaryInMemfd {
+			return fmt.Errorf("BinaryInMemfd, got: true, want: false")
+		}
 	}
 
 	return nil
@@ -506,10 +539,12 @@ func checkSyscallExecve(msg test.Message) error {
 	if len(p.Argv) == 0 {
 		return fmt.Errorf("empty Argv")
 	}
-	// We handle two separate execs from workload.cc:
+	// We handle separate execs from workload.cc:
 	// 1. ForkAndExec, which tests execve relative to "/tmp/test_symlink" using "test_binary_name".
-	// 2. ForkAndExecveat, which tests execveat against "/bin/true" relative to its path.
-	if p.Argv[0] == "test_binary_name" {
+	// 2. ForkAndExecveMemfd, which tests execveat against a memfd using "test_memfd".
+	// 3. ForkAndExecveat, which tests execveat against "/bin/true" relative to its path.
+	switch p.Argv[0] {
+	case "test_binary_name":
 		// PointExecve doesn't populate Fd, so it defaults to 0.
 		if p.Fd != 0 {
 			return fmt.Errorf("execve invalid FD: %d", p.Fd)
@@ -517,7 +552,15 @@ func checkSyscallExecve(msg test.Message) error {
 		if want := "/tmp/test_symlink"; want != p.Pathname {
 			return fmt.Errorf("wrong Pathname, got: %q, want: %q", p.Pathname, want)
 		}
-	} else {
+	case "test_memfd":
+		// test_memfd uses execveat(fd, "", ..., AT_EMPTY_PATH).
+		if p.Fd < 3 {
+			return fmt.Errorf("execve invalid FD: %d", p.Fd)
+		}
+		if want := ""; want != p.Pathname {
+			return fmt.Errorf("wrong Pathname, got: %q, want: %q", p.Pathname, want)
+		}
+	default:
 		// PointExecveat gets a dirfd that is explicitly opened by the workload so it is >= 3.
 		if p.Fd < 3 {
 			return fmt.Errorf("execve invalid FD: %d", p.Fd)
@@ -553,7 +596,7 @@ func checkSentryExitNotifyParent(msg test.Message) error {
 		return err
 	}
 	if p.ExitStatus != 0 {
-		return fmt.Errorf("wrong ExitStatus, want: 0, got: %d", p.ExitStatus)
+		return fmt.Errorf("wrong ExitStatus, got: %d, want: 0", p.ExitStatus)
 	}
 	return nil
 }
@@ -570,7 +613,7 @@ func checkSyscallConnect(msg test.Message) error {
 		return fmt.Errorf("invalid FD: %d", p.Fd)
 	}
 	if want := "socket:"; !strings.HasPrefix(p.FdPath, want) {
-		return fmt.Errorf("FdPath should start with %q, got: %q", want, p.FdPath)
+		return fmt.Errorf("wrong FdPath, got: %q, want prefix: %q", p.FdPath, want)
 	}
 	if len(p.Address) == 0 {
 		return fmt.Errorf("empty address: %q", string(p.Address))
@@ -588,13 +631,13 @@ func checkSyscallSocket(msg test.Message) error {
 		return err
 	}
 	if want := unix.AF_UNIX; int32(want) != p.Domain {
-		return fmt.Errorf("wrong Domain, want: %v, got: %v", want, p.Domain)
+		return fmt.Errorf("wrong Domain, got: %v, want: %v", p.Domain, want)
 	}
 	if want := unix.SOCK_STREAM; int32(want) != p.Type {
-		return fmt.Errorf("wrong Type, want: %v, got: %v", want, p.Type)
+		return fmt.Errorf("wrong Type, got: %v, want: %v", p.Type, want)
 	}
 	if want := int32(0); want != p.Protocol {
-		return fmt.Errorf("wrong Protocol, want: %v, got: %v", want, p.Protocol)
+		return fmt.Errorf("wrong Protocol, got: %v, want: %v", p.Protocol, want)
 	}
 
 	return nil
