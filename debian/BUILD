@@ -1,21 +1,15 @@
 load("//tools:arch.bzl", "select_arch")
 load("//tools:defs.bzl", "pkg_deb", "pkg_tar", "version")
+load("//tools:release.bzl", "SIDECARS")
 
 package(
     default_applicable_licenses = ["//:license"],
     licenses = ["notice"],
 )
 
-# _SIDECARS maps each sidecar binary target to the filename runsc expects
-# to exist under `gvisor-bin/`.
-_SIDECARS = {
-    "//runsc/checkpointgofer:checkpointgofer_binary": "checkpointgofer",
-    "//runsc/cmd/metricserver:runsc-metric-server": "runsc-metric-server",
-}
-
 pkg_tar(
     name = "gvisor-bin-tar",
-    files = _SIDECARS,
+    files = SIDECARS,
     mode = "0755",
     package_dir = "gvisor-bin",
     tags = ["staging"],
@@ -23,7 +17,7 @@ pkg_tar(
 
 pkg_tar(
     name = "debian-gvisor-bin",
-    files = _SIDECARS,
+    files = SIDECARS,
     mode = "0755",
     package_dir = "/usr/bin/gvisor-bin",
 )

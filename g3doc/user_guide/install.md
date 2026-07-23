@@ -5,44 +5,7 @@
 > Note: gVisor supports x86\_64 and ARM64, and requires Linux 4.14.77+
 > ([older Linux](./networking.md#gso)).
 
-## Install latest release {#install-latest}
-
-To download and install the latest release manually follow these steps:
-
-```bash
-(
-  set -e
-  ARCH=$(uname -m)
-  URL=https://storage.googleapis.com/gvisor/releases/release/latest/${ARCH}
-  wget ${URL}/runsc ${URL}/runsc.sha512 \
-    ${URL}/containerd-shim-runsc-v1 ${URL}/containerd-shim-runsc-v1.sha512
-  sha512sum -c runsc.sha512 \
-    -c containerd-shim-runsc-v1.sha512
-  rm -f *.sha512
-  chmod a+rx runsc containerd-shim-runsc-v1
-  sudo mv runsc containerd-shim-runsc-v1 /usr/local/bin
-)
-```
-
-To install gVisor as a Docker runtime, run the following commands:
-
-```shell
-sudo /usr/local/bin/runsc install
-sudo systemctl reload docker
-docker run --rm --runtime=runsc hello-world
-```
-
-For more details about using gVisor with Docker, see
-[Docker Quick Start](./quick_start/docker.md). Please read the
-[Production guide](/docs/user_guide/production/) before running such a setup for
-production purposes.
-
-> **Note**: It is important to copy `runsc` to a location that is readable and
-> executable to all users, since `runsc` may need to re-execute itself as an
-> unprivileged user to increase security. The `/usr/local/bin` directory is a
-> good place to put the `runsc` binary.
-
-## Install from an `apt` repository
+## Install from an `apt` repository {#apt}
 
 First, appropriate dependencies must be installed to allow `apt` to install
 packages via https:
@@ -73,6 +36,73 @@ sudo apt-get update && sudo apt-get install -y runsc
 ```
 
 If you have Docker installed, it will be automatically configured.
+
+## Install latest release {#install-latest}
+
+If you can install gVisor from a Debian package, [do that instead](#apt) as this
+is more future-proof. Only follow these instructions if you cannot use the
+Debian package.
+
+To download and install the latest release manually follow these steps:
+
+```bash
+(
+  set -e
+  ARCH=$(uname -m)
+  URL=https://storage.googleapis.com/gvisor/releases/release/latest/${ARCH}
+  wget ${URL}/gvisor.tar.bz2 ${URL}/gvisor.tar.bz2.sha512
+  sha512sum -c gvisor.tar.bz2.sha512
+  sudo tar -xjf gvisor.tar.bz2 -C /usr/local/bin
+  rm -f gvisor.tar.bz2 gvisor.tar.bz2.sha512
+)
+```
+
+The `gvisor.tar.bz2` tarball contains `runsc`, the `containerd-shim-runsc-v1`
+containerd shim, and a `gvisor-bin/` directory with sidecar binaries that
+`runsc` executes at runtime. `runsc` looks for `gvisor-bin/` next to its own
+binary, so keep them together if you move them.
+
+To install gVisor as a Docker runtime, run the following commands:
+
+```shell
+sudo /usr/local/bin/runsc install
+sudo systemctl reload docker
+docker run --rm --runtime=runsc hello-world
+```
+
+For more details about using gVisor with Docker, see
+[Docker Quick Start](./quick_start/docker.md). Please read the
+[Production guide](/docs/user_guide/production/) before running such a setup for
+production purposes.
+
+> **Note**: It is important to copy `runsc` to a location that is readable and
+> executable to all users, since `runsc` may need to re-execute itself as an
+> unprivileged user to increase security. The `/usr/local/bin` directory is a
+> good place to put the `runsc` binary. The `gvisor-bin/` directory needs to be
+> moved with it.
+
+## Migrating from legacy `runsc`-binary-only installations {#install-legacy}
+
+Prior to 2026-07, gVisor releases were limited to 2 binaries (`runsc` and
+`containerd-shim-runsc-v1`), with all accompanying material bundled inside of
+the `runsc` binary. This is changing to a multi-file approach; see
+[this gVisor issue for background](https://github.com/google/gvisor/issues/13718).
+
+If any binary is missing, `runsc install` will best-effort attempt to install it
+into the `gvisor-bin/` subdirectory next to itself. **This auto-download
+functionality will be dropped at the end of September 2026**. You are
+responsible for updating your install procedure before then.
+
+This auto-download functionality can be disabled via flag, and requires:
+
+*   Network access to `storage.googleapis.com`.
+*   Write access to the parent directory of `runsc` at `runsc install` time.
+*   Either `curl` or `wget` installed on the system (due to technical
+    limitations preventing linkage of `net/http` within `runsc` at this time).
+
+To **migrate to the new installation method**, either
+[use the Debian apt package repository](#apt) (most future-proof, preferred) or
+[install from tarball](#install-latest).
 
 ## Versions
 
