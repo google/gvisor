@@ -1315,6 +1315,22 @@ cc_binary(
 )
 
 cc_binary(
+    name = "landlock_test",
+    testonly = 1,
+    srcs = ["landlock.cc"],
+    linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
+    deps = select_gtest() + [
+        "//test/util:fs_util",
+        "//test/util:multiprocess_util",
+        "//test/util:posix_error",
+        "//test/util:temp_path",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
     name = "link_test",
     testonly = 1,
     srcs = ["link.cc"],
