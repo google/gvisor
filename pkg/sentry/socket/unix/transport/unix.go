@@ -43,6 +43,11 @@ type RightsControlMessage interface {
 	// Clone returns a copy of the RightsControlMessage.
 	Clone() RightsControlMessage
 
+	// TransferRights moves ownership of the underlying FDs to a new
+	// `RightsControlMessage`, leaving the receiver empty.
+	// Reference counts are left unchanged.
+	TransferRights() RightsControlMessage
+
 	// Release releases any resources owned by the RightsControlMessage.
 	Release(ctx context.Context)
 }
