@@ -46,6 +46,14 @@ bzl_library(
     ],
 )
 
+bzl_library(
+    name = "release_bzl",
+    srcs = ["release.bzl"],
+    visibility = [
+        "//:sandbox",
+    ],
+)
+
 exports_files([
     "build_cover.sh",
     "go-allow-internal.patch",
