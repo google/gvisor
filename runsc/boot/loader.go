@@ -641,10 +641,11 @@ func New(args Args) (*Loader, error) {
 		}
 	}
 	l.k = &kernel.Kernel{
-		Platform:            p,
-		NvidiaDriverVersion: args.NvidiaDriverVersion,
-		AllowSUID:           args.Conf.AllowSUID,
-		IOUringEnabled:      args.Conf.IOUring,
+		Platform:               p,
+		NvidiaDriverVersion:    args.NvidiaDriverVersion,
+		AllowSUID:              args.Conf.AllowSUID,
+		IOUringEnabled:         args.Conf.IOUring,
+		RestrictBindToLoopback: args.Conf.RestrictBindToLoopback,
 	}
 
 	// Create memory file.

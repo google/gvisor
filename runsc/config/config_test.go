@@ -179,6 +179,35 @@ func TestToFlagsFromManual(t *testing.T) {
 	}
 }
 
+// TestRestrictBindToLoopback verifies that the restrict-bind-to-loopback flag
+// round-trips correctly through RegisterFlags/NewFromFlags/ToFlags.
+func TestRestrictBindToLoopback(t *testing.T) {
+	testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
+	RegisterFlags(testFlags)
+	if err := testFlags.Lookup("restrict-bind-to-loopback").Value.Set("true"); err != nil {
+		t.Fatalf("setting restrict-bind-to-loopback: %v", err)
+	}
+	c, err := NewFromFlags(testFlags)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.RestrictBindToLoopback {
+		t.Error("expected RestrictBindToLoopback=true after setting flag, got false")
+	}
+
+	flags := c.ToFlags()
+	found := false
+	for _, f := range flags {
+		if f == "--restrict-bind-to-loopback=true" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("--restrict-bind-to-loopback=true not in ToFlags() output: %v", flags)
+	}
+}
+
 // TestInvalidFlags checks that enum flags fail when value is not in enum set.
 func TestInvalidFlags(t *testing.T) {
 	for _, tc := range []struct {

@@ -446,6 +446,12 @@ type Config struct {
 	// and can be unpaused manually.
 	PauseExternalNetworking bool `flag:"pause-external-networking"`
 
+	// RestrictBindToLoopback, when true, causes bind(2) to return EACCES for
+	// any address that is not a loopback address (127.x.x.x or ::1), including
+	// INADDR_ANY (0.0.0.0) and IN6ADDR_ANY (::). Only meaningful with sandbox
+	// networking.
+	RestrictBindToLoopback bool `flag:"restrict-bind-to-loopback"`
+
 	// AllowConnectedOnSave allows network connections to stay established on save.
 	AllowConnectedOnSave bool `flag:"allow-connected-on-save"`
 
