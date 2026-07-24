@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/coverage"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/rdma"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -59,6 +60,11 @@ type InternalData struct {
 	// EnableTPUProxyPaths is whether to populate sysfs paths used by hardware
 	// accelerators.
 	EnableTPUProxyPaths bool
+	// RDMASysfs, when non-nil, is the host sysfs snapshot from which the
+	// RDMA device topology (/sys/devices/pci..., /sys/class/infiniband*,
+	// /sys/class/net, /sys/class/pci_bus, /sys/bus/pci/devices,
+	// /sys/devices/system/node) is constructed.
+	RDMASysfs *rdma.Snapshot
 	// TestSysfsPathPrefix is a prefix for the sysfs paths. It is useful for
 	// unit testing.
 	TestSysfsPathPrefix string
@@ -120,18 +126,18 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		fsDirChildren["cgroup"] = fs.newCgroupDir(ctx, creds, defaultSysDirMode, nil)
 	}
 
-	classSub := map[string]kernfs.Inode{
+	classSub := map[string]kernfs.Inode{ // /sys/class
 		"power_supply": fs.newDir(ctx, creds, defaultSysDirMode, nil),
 	}
-	devicesSub := map[string]kernfs.Inode{
-		"system": fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
-			"cpu": cpuDir(ctx, fs, creds),
-		}),
+	devicesSub := map[string]kernfs.Inode{} // /sys/devices
+	systemSub := map[string]kernfs.Inode{   // /sys/devices/system
+		"cpu": cpuDir(ctx, fs, creds),
 	}
 
 	productName := ""
-	busSub := make(map[string]kernfs.Inode)
-	kernelSub := kernelDir(ctx, fs, creds)
+	busSub := make(map[string]kernfs.Inode)     // /sys/bus
+	pciDevices := make(map[string]kernfs.Inode) // /sys/bus/pci/devices
+	kernelSub := kernelDir(ctx, fs, creds)      // /sys/kernel
 	if opts.InternalData != nil {
 		idata := opts.InternalData.(*InternalData)
 		productName = idata.ProductName
@@ -166,9 +172,9 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			if err != nil {
 				return nil, nil, err
 			}
-			busSub["pci"] = fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
-				"devices": fs.newDir(ctx, creds, defaultSysDirMode, pciDevicesSub),
-			})
+			for name, sub := range pciDevicesSub {
+				pciDevices[name] = sub
+			}
 
 			iommuGroups, err := fs.mirrorIOMMUGroups(ctx, creds, iommuGroupsPath, pciInfos)
 			if err != nil {
@@ -176,7 +182,39 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			}
 			kernelSub["iommu_groups"] = fs.newDir(ctx, creds, defaultSysDirMode, iommuGroups)
 		}
+		if idata.RDMASysfs != nil {
+			rdmaDirs, err := fs.newRDMASysfs(ctx, creds, idata.RDMASysfs)
+			if err != nil {
+				return nil, nil, err
+			}
+			for name, sub := range rdmaDirs.devices {
+				// The TPU-proxy devices and the RDMA ConnectX devices come from
+				// two different accelerator stacks and aren't exposed to the
+				// same sandbox today, so a shared /sys/devices root complex
+				// shouldn't occur. Deep-merging two sealed kernfs subtrees
+				// isn't supported, so reject a overlap.
+				if _, ok := devicesSub[name]; ok {
+					return nil, nil, fmt.Errorf("TPU proxy and RDMA sysfs both populate /sys/devices/%s", name)
+				}
+				devicesSub[name] = sub
+			}
+			for name, sub := range rdmaDirs.class {
+				classSub[name] = sub
+			}
+			for name, sub := range rdmaDirs.busPCIDevices {
+				pciDevices[name] = sub
+			}
+			if rdmaDirs.node != nil {
+				systemSub["node"] = rdmaDirs.node
+			}
+		}
 	}
+	if len(pciDevices) > 0 {
+		busSub["pci"] = fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+			"devices": fs.newDir(ctx, creds, defaultSysDirMode, pciDevices),
+		})
+	}
+	devicesSub["system"] = fs.newDir(ctx, creds, defaultSysDirMode, systemSub)
 
 	if len(productName) > 0 {
 		log.Debugf("Setting product_name: %q", productName)
