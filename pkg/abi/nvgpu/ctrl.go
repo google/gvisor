@@ -791,10 +791,28 @@ type NV503C_CTRL_REGISTER_VA_SPACE_PARAMS struct {
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl83de/ctrl83dedebug.h:
 const (
+	NV83DE_CTRL_CMD_DEBUG_SET_MODE_MMU_DEBUG        = 0x83de0307
 	NV83DE_CTRL_CMD_DEBUG_SET_EXCEPTION_MASK        = 0x83de0309
 	NV83DE_CTRL_CMD_DEBUG_READ_ALL_SM_ERROR_STATES  = 0x83de030c
 	NV83DE_CTRL_CMD_DEBUG_CLEAR_ALL_SM_ERROR_STATES = 0x83de0310
+	NV83DE_CTRL_CMD_DEBUG_READ_MEMORY               = 0x83de0315
+	NV83DE_CTRL_CMD_DEBUG_SUSPEND_CONTEXT           = 0x83de0317
+	NV83DE_CTRL_CMD_DEBUG_RESUME_CONTEXT            = 0x83de0318
+	NV83DE_CTRL_CMD_DEBUG_SET_MODE_ERRBAR_DEBUG     = 0x83de031f
 )
+
+// NV83DE_CTRL_DEBUG_READ_MEMORY_PARAMS is the params type for
+// NV83DE_CTRL_CMD_DEBUG_READ_MEMORY, from
+// src/common/sdk/nvidia/inc/ctrl/ctrl83de/ctrl83dedebug.h.
+//
+// +marshal
+type NV83DE_CTRL_DEBUG_READ_MEMORY_PARAMS struct {
+	_       structs.HostLayout
+	HMemory Handle
+	Length  uint32
+	Offset  uint64
+	Buffer  P64
+}
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrlc36f.h:
 const (
