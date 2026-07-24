@@ -25,6 +25,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/tpu"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/rdma"
 	"gvisor.dev/gvisor/runsc/cmd/sandboxsetup"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
@@ -148,6 +149,10 @@ func setUpChroot(spec *specs.Spec, conf *config.Config) error {
 		return fmt.Errorf("error configuring chroot for TPU devices: %w", err)
 	}
 
+	if err := rdmaSysfsUpdateChroot(chroot, spec, conf); err != nil {
+		return fmt.Errorf("error configuring chroot for RDMA sysfs: %w", err)
+	}
+
 	if err := specutils.SafeMount("", chroot, "", unix.MS_REMOUNT|unix.MS_RDONLY|unix.MS_BIND, "", "/proc"); err != nil {
 		return fmt.Errorf("error remounting chroot in read-only: %v", err)
 	}
@@ -212,4 +217,82 @@ func tpuProxyUpdateChroot(hostRoot, chroot string, spec *specs.Spec, conf *confi
 		}
 	}
 	return err
+}
+
+// rdmaSysfsUpdateChroot collects the host's RDMA sysfs state into a JSON
+// snapshot saved in the sandbox chroot, from which the sentry later builds the
+// sandbox's virtual RDMA sysfs tree. Per-port dynamic files (GID tables, port
+// state, counters) are not snapshotted; instead the host's per-ibdev "ports"
+// subtrees are bind-mounted into the chroot read-only so the sentry can serve
+// them live.
+//
+// Preconditions:
+//   - Must run before pivot_root, while the host /sys is still reachable.
+//   - The RDMA netdevs must still be in the host netns, so that they and their
+//     /sys/class/net/<dev> attributes are visible in the host sysfs read here.
+//
+// The RDMA netdevs must therefore stay in the host netns until this collection
+// runs; moving them into the sandbox netns should only be done afterwards.
+//
+// We deliberately do not support the reverse ordering - a sandbox netns
+// pre-created and populated with the RDMA netdevs before `runsc create` - for
+// two reasons:
+//
+//   - /sys/class/net entries are netns-tagged: a sysfs mount shows only the
+//     netdevs of the netns that mounted it. Once a netdev is in the sandbox
+//     netns it is gone from the host sysfs we read here, so its attributes
+//     could only be collected via a sysfs mount tagged with the sandbox netns.
+//   - The sandbox cannot make such a mount. Mounting a fresh sysfs requires the
+//     current netns to be owned by the current userns (the kernel's
+//     net_ns_current_may_mount check: net_ns->user_ns == current_user_ns).
+//     Under directfs the sandbox runs in a new userns that does not own the
+//     pre-created netns (that netns is owned by the host userns), so the mount
+//     fails with EPERM.
+//
+// The per-ibdev "ports" bind mounts, by contrast, keep working after the
+// netdevs move, because the InfiniBand class is not netns-tagged when the RDMA
+// subsystem is in "rdma system netns shared" mode (a requirement for RDMA
+// support here). GID tables and port state therefore stay readable through
+// those mounts.
+func rdmaSysfsUpdateChroot(chroot string, spec *specs.Spec, conf *config.Config) error {
+	if !specutils.RDMAEnabled(spec, conf) {
+		return nil
+	}
+	snap, err := rdma.Collect("/sys", specutils.UverbsDevicesInSpec(spec))
+	if err != nil {
+		return fmt.Errorf("collecting RDMA sysfs snapshot: %w", err)
+	}
+	if snap == nil {
+		return nil
+	}
+	if err := snap.Save(filepath.Join(chroot, rdma.Path)); err != nil {
+		return fmt.Errorf("saving RDMA sysfs snapshot: %w", err)
+	}
+	for i := range snap.Devices {
+		// Bind-mount the host's per-ibdev "ports" subtree inside the chroot at
+		// /sys/class/infiniband/<ibdev>/ports. On the host
+		// /sys/class/infiniband/<ibdev> is a symlink into /sys/devices, and
+		// the bind mount resolves it, so the real ports directory is what
+		// lands in the chroot. In the sandbox the sentry builds the canonical
+		// tree at /sys/devices/pci.../infiniband/<ibdev>/ (with
+		// /sys/class/infiniband/<ibdev> as a symlink to it, mirroring the
+		// host), and each live port file there records this
+		// /sys/class/infiniband/<ibdev>/ports/... path as its host source; the
+		// sentry opens that path to serve the file's contents live. So the
+		// class path here need NOT match the sandbox's canonical (devices)
+		// path since it only has to be where the sentry looks.
+		portsPath := filepath.Join("/sys/class/infiniband", snap.Devices[i].IBDev, "ports")
+		if err := mountInChroot(chroot, portsPath, portsPath, "bind", unix.MS_BIND); err != nil {
+			return fmt.Errorf("bind-mounting %q in chroot: %w", portsPath, err)
+		}
+		// mount(2) ignores other flags when MS_BIND is set, so the bind above
+		// is read-write; making it read-only takes a remount. Preserve the
+		// attribute flags the bind inherited from the host sysfs mount.
+		if err := specutils.SafeMount("", filepath.Join(chroot, portsPath), "",
+			unix.MS_REMOUNT|unix.MS_BIND|unix.MS_RDONLY|unix.MS_NOSUID|unix.MS_NODEV|unix.MS_NOEXEC,
+			"", "/proc"); err != nil {
+			return fmt.Errorf("remounting %q read-only: %w", portsPath, err)
+		}
+	}
+	return nil
 }
