@@ -132,6 +132,22 @@ type RunOpts struct {
 	Annotations map[string]string
 }
 
+func ensureShouldRun(logger testutil.Logger) {
+	if !testutil.ShouldRun(logger.Name()) {
+		if s, ok := logger.(interface {
+			Skipf(format string, args ...any)
+		}); ok {
+			s.Skipf("Skipping test %q for shard %d of %d", logger.Name(), testutil.Partition(), testutil.TotalPartitions())
+		} else if f, ok := logger.(interface {
+			Fatalf(format string, args ...any)
+		}); ok {
+			f.Fatalf("Running redundant test %q for shard %d of %d; pipeline is misconfigured", logger.Name(), testutil.Partition(), testutil.TotalPartitions())
+		} else {
+			panic(fmt.Sprintf("Running redundant test %q for shard %d of %d; pipeline is misconfigured", logger.Name(), testutil.Partition(), testutil.TotalPartitions()))
+		}
+	}
+}
+
 func makeContainer(ctx context.Context, logger testutil.Logger, runtime string) *Container {
 	// Slashes and pluses are not allowed in container names.
 	name := testutil.RandomID(logger.Name())
@@ -156,12 +172,14 @@ func makeContainer(ctx context.Context, logger testutil.Logger, runtime string) 
 //
 // Containers will check flags for profiling requests.
 func MakeContainer(ctx context.Context, logger testutil.Logger) *Container {
+	ensureShouldRun(logger)
 	return makeContainer(ctx, logger, *runtime)
 }
 
 // MakeContainerWithRuntime is like MakeContainer, but allows for a runtime
 // to be specified by suffix.
 func MakeContainerWithRuntime(ctx context.Context, logger testutil.Logger, suffix string) *Container {
+	ensureShouldRun(logger)
 	return makeContainer(ctx, logger, *runtime+suffix)
 }
 
@@ -171,6 +189,7 @@ func MakeContainerWithRuntime(ctx context.Context, logger testutil.Logger, suffi
 //
 // Native containers aren't profiled.
 func MakeNativeContainer(ctx context.Context, logger testutil.Logger) *Container {
+	ensureShouldRun(logger)
 	unsandboxedRuntime := "runc"
 	if override, found := os.LookupEnv("UNSANDBOXED_RUNTIME"); found {
 		unsandboxedRuntime = override
