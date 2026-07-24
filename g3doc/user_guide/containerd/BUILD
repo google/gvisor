@@ -16,6 +16,15 @@ doc(
 )
 
 doc(
+    name = "crio",
+    src = "crio.md",
+    category = "User Guide",
+    permalink = "/docs/user_guide/containerd/crio/",
+    subcategory = "Containerd",
+    weight = "20",
+)
+
+doc(
     name = "configuration",
     src = "configuration.md",
     category = "User Guide",
