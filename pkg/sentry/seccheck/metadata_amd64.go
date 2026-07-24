@@ -136,6 +136,7 @@ func archInit() {
 			Name: "fd_path",
 		},
 	})
+	addSyscallPoint(101, "ptrace", nil)
 	addSyscallPoint(105, "setuid", nil)
 	addSyscallPoint(106, "setgid", nil)
 	addSyscallPoint(112, "setsid", nil)

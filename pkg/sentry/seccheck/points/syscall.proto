@@ -331,3 +331,11 @@ message Mmap {
   uint32 flags = 9;
   int64 offset = 10;
 }
+
+message Ptrace {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int64 request = 4;
+  int32 pid = 5;
+}

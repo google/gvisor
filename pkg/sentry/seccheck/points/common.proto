@@ -165,5 +165,6 @@ enum MessageType {
   MESSAGE_SENTRY_MMAP = 35;
   MESSAGE_SYSCALL_MMAP = 36;
   MESSAGE_SYSCALL_LISTEN = 37;
+  MESSAGE_SYSCALL_PTRACE = 38;
 }
 // LINT.ThenChange(../../../../examples/seccheck/server.cc)

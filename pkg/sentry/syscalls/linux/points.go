@@ -346,6 +346,22 @@ func PointPwritev(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextD
 	return p, pb.MessageType_MESSAGE_SYSCALL_WRITE
 }
 
+// PointPtrace converts ptrace(2) syscall to proto.
+func PointPtrace(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
+	p := &pb.Ptrace{
+		ContextData: cxtData,
+		Sysno:       uint64(info.Sysno),
+		// Request maps to ptrace request constants (e.g. linux.PTRACE_ATTACH, linux.PTRACE_SEIZE,
+		// linux.PTRACE_TRACEME) defined in pkg/abi/linux/ptrace.go.
+		Request: info.Args[0].Int64(),
+		Pid:     int32(info.Args[1].Int()),
+	}
+
+	p.Exit = newExitMaybe(info)
+
+	return p, pb.MessageType_MESSAGE_SYSCALL_PTRACE
+}
+
 // PointPwritev2 converts pwritev2(2) syscall to proto.
 func PointPwritev2(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
 	p := &pb.Write{
