@@ -27,9 +27,10 @@ permalink: /application-compatibility/
     {% assign apps = site.data['application-compatibility'].apps %}
 
     <p style="font-size: 16px; line-height: 1.6; margin-top: 20px;">
-      Below is a list of applications that have been tested under gVisor.
+      Compatibility issues while running applications in gVisor are rare; a large majority of workloads, including those not listed on this page, will "just work."
       <br>
-      This is a <b>best-effort list</b>, not a guarantee that applications marked "Compatible" are fully functional.
+      Below is a small (but growing) sample of applications that are known to work in gVisor.
+      This is a <b>best-effort</b> list, not a guarantee that applications marked "Compatible" are fully functional.
       If you notice an issue, contributions to this list are welcome! Please open a pull request on <a href="https://github.com/google/gvisor">GitHub</a>.
     </p>
 
