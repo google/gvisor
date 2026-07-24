@@ -38,6 +38,7 @@ import (
 	"gvisor.dev/gvisor/pkg/memutil"
 	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/rand"
+	"gvisor.dev/gvisor/pkg/rdma"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
@@ -247,6 +248,10 @@ type Loader struct {
 	// /sys/devices/virtual/dmi/id/product_name.
 	productName string
 
+	// rdmaSysfs is the host sysfs snapshot for RDMA device topology, or
+	// nil when disabled.
+	rdmaSysfs *rdma.Snapshot
+
 	// cpuQuota and cpuPeriod are the raw host CFS settings that should be
 	// exposed through sandbox cgroupfs.
 	cpuQuota  int64
@@ -422,6 +427,10 @@ type Args struct {
 	// ProductName is the value to show in
 	// /sys/devices/virtual/dmi/id/product_name.
 	ProductName string
+
+	// RDMASysfs is the host sysfs snapshot for RDMA device topology, or
+	// nil when disabled.
+	RDMASysfs *rdma.Snapshot
 	// PodInitConfigFD is the file descriptor to a file passed in the
 	//	--pod-init-config flag
 	PodInitConfigFD int
@@ -538,6 +547,7 @@ func New(args Args) (*Loader, error) {
 		sharedMounts:          make(map[string]*vfs.Mount),
 		stopProfiling:         stopProfiling,
 		productName:           args.ProductName,
+		rdmaSysfs:             args.RDMASysfs,
 		cpuQuota:              args.CPUQuota,
 		cpuPeriod:             args.CPUPeriod,
 		hostTHP:               args.HostTHP,
