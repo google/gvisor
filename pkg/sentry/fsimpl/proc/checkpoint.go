@@ -39,11 +39,9 @@ func (fs *filesystem) newGvisorInode(ctx context.Context, root *auth.Credentials
 	if internalData.GVisorMarkerFile {
 		gvisorFiles["kernel_is_gvisor"] = fs.newInode(ctx, root, 0444, newStaticFile("gvisor\n"))
 	}
-	if internalData.AppDrivenCheckpointEnabled {
-		log.Infof("Setting up checkpoint files under [procfs]/gvisor")
-		gvisorFiles["checkpoint"] = newCheckpointInode(ctx, k, root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), internalData.SaveTriggerEnabled)
-		gvisorFiles["spec_environ"] = fs.newInode(ctx, root, 0444, &specEnvironData{k: k})
-	}
+	log.Infof("Setting up checkpoint files under [procfs]/gvisor")
+	gvisorFiles["checkpoint"] = newCheckpointInode(ctx, k, root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), internalData.SaveTriggerEnabled)
+	gvisorFiles["spec_environ"] = fs.newInode(ctx, root, 0444, &specEnvironData{k: k})
 	if internalData.FSCheckpointEnabled {
 		log.Infof("Setting up fscheckpoint files under [procfs]/gvisor")
 		gvisorFiles["fscheckpoint"] = newFSCheckpointInode(ctx, k, root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno())
