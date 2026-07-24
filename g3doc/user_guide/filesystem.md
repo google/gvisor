@@ -309,3 +309,14 @@ needs beyond the stock gofer allowlist. `PrepareGofer` can return
 `FlagOverrides` for state that must survive gofer re-exec, such as file
 descriptor numbers. Extensions that pass file descriptors this way must clear
 `FD_CLOEXEC` on those descriptors before returning.
+
+## Gofer network namespace
+
+By default, each gofer runs in a new, empty network namespace. To avoid creating
+a network namespace for every gofer, set `--gofer-network-namespace=host`; the
+gofer then uses runsc caller's current network namespace. To use another
+existing network namespace, pass its absolute path, for example
+`--gofer-network-namespace=/var/run/netns/gofer`.
+
+This removes the gofer's default network isolation. Only use `host` or an
+existing namespace when that network access is acceptable.
