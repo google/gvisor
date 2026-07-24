@@ -23,6 +23,11 @@
 #include <unistd.h>
 
 #include <array>
+#include <cerrno>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -35,21 +40,23 @@
 #include "pkg/sentry/seccheck/points/syscall.pb.h"
 #include "google/protobuf/text_format.h"
 
+namespace {
+
 typedef std::function<void(absl::string_view buf)> Callback;
 
-constexpr size_t maxEventSize = 300 * 1024;
+constexpr size_t kMaxEventSize = 300 * 1024;
 
 bool quiet = false;
 
 #pragma pack(push, 1)
-struct header {
+struct Header {
   uint16_t header_size;
   uint16_t message_type;
   uint32_t dropped_count;
 };
 #pragma pack(pop)
 
-void log(const char* fmt, ...) {
+void Log(const char* fmt, ...) {
   if (!quiet) {
     va_list ap;
     va_start(ap, fmt);
@@ -59,7 +66,7 @@ void log(const char* fmt, ...) {
 }
 
 template <class T>
-std::string shortfmt(T msg) {
+std::string ShortFmt(T msg) {
   std::string short_text_msg;
   google::protobuf::TextFormat::PrintToString(msg, &short_text_msg);
   return absl::StrReplaceAll(short_text_msg,
@@ -67,25 +74,25 @@ std::string shortfmt(T msg) {
 }
 
 template <class T>
-void unpackSyscall(absl::string_view buf) {
+void UnpackSyscall(absl::string_view buf) {
   T evt;
-  if (!evt.ParseFromArray(buf.data(), buf.size())) {
+  if (!evt.ParseFromString(buf)) {
     err(1, "ParseFromString(): %.*s", static_cast<int>(buf.size()), buf.data());
   }
   absl::string_view name = evt.GetDescriptor()->name();
-  log("%s %.*s %s\n", evt.has_exit() ? "X" : "E", static_cast<int>(name.size()),
-      name.data(), shortfmt(evt).c_str());
+  Log("%s %.*s %s\n", evt.has_exit() ? "X" : "E", static_cast<int>(name.size()),
+      name.data(), ShortFmt(evt).c_str());
 }
 
 template <class T>
-void unpack(absl::string_view buf) {
+void Unpack(absl::string_view buf) {
   T evt;
-  if (!evt.ParseFromArray(buf.data(), buf.size())) {
+  if (!evt.ParseFromString(buf)) {
     err(1, "ParseFromString(): %.*s", static_cast<int>(buf.size()), buf.data());
   }
   absl::string_view name = evt.GetDescriptor()->name();
-  log("%.*s => %s\n", static_cast<int>(name.size()), name.data(),
-      shortfmt(evt).c_str());
+  Log("%.*s => %s\n", static_cast<int>(name.size()), name.data(),
+      ShortFmt(evt).c_str());
 }
 
 // List of dispatchers indexed based on MessageType enum values.
@@ -93,87 +100,87 @@ void unpack(absl::string_view buf) {
 const std::vector<Callback> dispatchers = [] {
   std::vector<Callback> result(::gvisor::common::MessageType_MAX + 1, nullptr);
   result[::gvisor::common::MESSAGE_CONTAINER_START] =
-      unpack<::gvisor::container::Start>;
+      Unpack<::gvisor::container::Start>;
   result[::gvisor::common::MESSAGE_SENTRY_CLONE] =
-      unpack<::gvisor::sentry::CloneInfo>;
+      Unpack<::gvisor::sentry::CloneInfo>;
   result[::gvisor::common::MESSAGE_SENTRY_EXEC] =
-      unpack<::gvisor::sentry::ExecveInfo>;
+      Unpack<::gvisor::sentry::ExecveInfo>;
   result[::gvisor::common::MESSAGE_SENTRY_EXIT_NOTIFY_PARENT] =
-      unpack<::gvisor::sentry::ExitNotifyParentInfo>;
+      Unpack<::gvisor::sentry::ExitNotifyParentInfo>;
   result[::gvisor::common::MESSAGE_SENTRY_TASK_EXIT] =
-      unpack<::gvisor::sentry::TaskExit>;
+      Unpack<::gvisor::sentry::TaskExit>;
   result[::gvisor::common::MESSAGE_SYSCALL_RAW] =
-      unpackSyscall<::gvisor::syscall::Syscall>;
+      UnpackSyscall<::gvisor::syscall::Syscall>;
   result[::gvisor::common::MESSAGE_SYSCALL_OPEN] =
-      unpackSyscall<::gvisor::syscall::Open>;
+      UnpackSyscall<::gvisor::syscall::Open>;
   result[::gvisor::common::MESSAGE_SYSCALL_CLOSE] =
-      unpackSyscall<::gvisor::syscall::Close>;
+      UnpackSyscall<::gvisor::syscall::Close>;
   result[::gvisor::common::MESSAGE_SYSCALL_READ] =
-      unpackSyscall<::gvisor::syscall::Read>;
+      UnpackSyscall<::gvisor::syscall::Read>;
   result[::gvisor::common::MESSAGE_SYSCALL_CONNECT] =
-      unpackSyscall<::gvisor::syscall::Connect>;
+      UnpackSyscall<::gvisor::syscall::Connect>;
   result[::gvisor::common::MESSAGE_SYSCALL_EXECVE] =
-      unpackSyscall<::gvisor::syscall::Execve>;
+      UnpackSyscall<::gvisor::syscall::Execve>;
   result[::gvisor::common::MESSAGE_SYSCALL_SOCKET] =
-      unpackSyscall<::gvisor::syscall::Socket>;
+      UnpackSyscall<::gvisor::syscall::Socket>;
   result[::gvisor::common::MESSAGE_SYSCALL_CHDIR] =
-      unpackSyscall<::gvisor::syscall::Chdir>;
+      UnpackSyscall<::gvisor::syscall::Chdir>;
   result[::gvisor::common::MESSAGE_SYSCALL_SETID] =
-      unpackSyscall<::gvisor::syscall::Setid>;
+      UnpackSyscall<::gvisor::syscall::Setid>;
   result[::gvisor::common::MESSAGE_SYSCALL_SETRESID] =
-      unpackSyscall<::gvisor::syscall::Setresid>;
+      UnpackSyscall<::gvisor::syscall::Setresid>;
   result[::gvisor::common::MESSAGE_SYSCALL_DUP] =
-      unpackSyscall<::gvisor::syscall::Dup>;
+      UnpackSyscall<::gvisor::syscall::Dup>;
   result[::gvisor::common::MESSAGE_SYSCALL_PRLIMIT64] =
-      unpackSyscall<::gvisor::syscall::Prlimit>;
+      UnpackSyscall<::gvisor::syscall::Prlimit>;
   result[::gvisor::common::MESSAGE_SYSCALL_PIPE] =
-      unpackSyscall<::gvisor::syscall::Pipe>;
+      UnpackSyscall<::gvisor::syscall::Pipe>;
   result[::gvisor::common::MESSAGE_SYSCALL_FCNTL] =
-      unpackSyscall<::gvisor::syscall::Fcntl>;
+      UnpackSyscall<::gvisor::syscall::Fcntl>;
   result[::gvisor::common::MESSAGE_SYSCALL_SIGNALFD] =
-      unpackSyscall<::gvisor::syscall::Signalfd>;
+      UnpackSyscall<::gvisor::syscall::Signalfd>;
   result[::gvisor::common::MESSAGE_SYSCALL_EVENTFD] =
-      unpackSyscall<::gvisor::syscall::Eventfd>;
+      UnpackSyscall<::gvisor::syscall::Eventfd>;
   result[::gvisor::common::MESSAGE_SYSCALL_CHROOT] =
-      unpackSyscall<::gvisor::syscall::Chroot>;
+      UnpackSyscall<::gvisor::syscall::Chroot>;
   result[::gvisor::common::MESSAGE_SYSCALL_CLONE] =
-      unpackSyscall<::gvisor::syscall::Clone>;
+      UnpackSyscall<::gvisor::syscall::Clone>;
   result[::gvisor::common::MESSAGE_SYSCALL_BIND] =
-      unpackSyscall<::gvisor::syscall::Bind>;
+      UnpackSyscall<::gvisor::syscall::Bind>;
   result[::gvisor::common::MESSAGE_SYSCALL_ACCEPT] =
-      unpackSyscall<::gvisor::syscall::Accept>;
+      UnpackSyscall<::gvisor::syscall::Accept>;
   result[::gvisor::common::MESSAGE_SYSCALL_TIMERFD_CREATE] =
-      unpackSyscall<::gvisor::syscall::TimerfdCreate>;
+      UnpackSyscall<::gvisor::syscall::TimerfdCreate>;
   result[::gvisor::common::MESSAGE_SYSCALL_TIMERFD_SETTIME] =
-      unpackSyscall<::gvisor::syscall::TimerfdSetTime>;
+      UnpackSyscall<::gvisor::syscall::TimerfdSetTime>;
   result[::gvisor::common::MESSAGE_SYSCALL_TIMERFD_GETTIME] =
-      unpackSyscall<::gvisor::syscall::TimerfdGetTime>;
+      UnpackSyscall<::gvisor::syscall::TimerfdGetTime>;
   result[::gvisor::common::MESSAGE_SYSCALL_FORK] =
-      unpackSyscall<::gvisor::syscall::Fork>;
+      UnpackSyscall<::gvisor::syscall::Fork>;
   result[::gvisor::common::MESSAGE_SYSCALL_INOTIFY_INIT] =
-      unpackSyscall<::gvisor::syscall::InotifyInit>;
+      UnpackSyscall<::gvisor::syscall::InotifyInit>;
   result[::gvisor::common::MESSAGE_SYSCALL_INOTIFY_ADD_WATCH] =
-      unpackSyscall<::gvisor::syscall::InotifyAddWatch>;
+      UnpackSyscall<::gvisor::syscall::InotifyAddWatch>;
   result[::gvisor::common::MESSAGE_SYSCALL_INOTIFY_RM_WATCH] =
-      unpackSyscall<::gvisor::syscall::InotifyRmWatch>;
+      UnpackSyscall<::gvisor::syscall::InotifyRmWatch>;
   result[::gvisor::common::MESSAGE_SYSCALL_SOCKETPAIR] =
-      unpackSyscall<::gvisor::syscall::SocketPair>;
+      UnpackSyscall<::gvisor::syscall::SocketPair>;
   result[::gvisor::common::MESSAGE_SYSCALL_WRITE] =
-      unpackSyscall<::gvisor::syscall::Write>;
+      UnpackSyscall<::gvisor::syscall::Write>;
   result[::gvisor::common::MESSAGE_SENTRY_MMAP] =
-      unpack<::gvisor::sentry::MmapInfo>;
+      Unpack<::gvisor::sentry::MmapInfo>;
   result[::gvisor::common::MESSAGE_SYSCALL_MMAP] =
-      unpackSyscall<::gvisor::syscall::Mmap>;
+      UnpackSyscall<::gvisor::syscall::Mmap>;
   result[::gvisor::common::MESSAGE_SYSCALL_LISTEN] =
-      unpackSyscall<::gvisor::syscall::Listen>;
+      UnpackSyscall<::gvisor::syscall::Listen>;
   result[::gvisor::common::MESSAGE_SYSCALL_PTRACE] =
-      unpackSyscall<::gvisor::syscall::Ptrace>;
+      UnpackSyscall<::gvisor::syscall::Ptrace>;
   return result;
 }();
 // LINT.ThenChange(../../pkg/sentry/seccheck/points/common.proto)
 
-void unpack(absl::string_view buf) {
-  const header* hdr = reinterpret_cast<const header*>(&buf[0]);
+void Unpack(absl::string_view buf) {
+  const Header* hdr = reinterpret_cast<const Header*>(&buf[0]);
 
   // Payload size can be zero when proto object contains only defaults values.
   size_t payload_size = buf.size() - hdr->header_size;
@@ -203,8 +210,8 @@ void unpack(absl::string_view buf) {
   }
 }
 
-bool readAndUnpack(int client) {
-  std::array<char, maxEventSize> buf;
+bool ReadAndUnpack(int client) {
+  std::array<char, kMaxEventSize> buf;
   int bytes = read(client, buf.data(), buf.size());
   if (bytes < 0) {
     err(1, "read");
@@ -212,11 +219,11 @@ bool readAndUnpack(int client) {
   if (bytes == 0) {
     return false;
   }
-  unpack(absl::string_view(buf.data(), bytes));
+  Unpack(absl::string_view(buf.data(), bytes));
   return true;
 }
 
-void* pollLoop(void* ptr) {
+void* PollLoop(void* ptr) {
   const int poll_fd = *reinterpret_cast<int*>(&ptr);
   for (;;) {
     epoll_event evts[64];
@@ -231,12 +238,12 @@ void* pollLoop(void* ptr) {
     for (int i = 0; i < nfds; ++i) {
       if (evts[i].events & EPOLLIN) {
         int client = evts[i].data.fd;
-        readAndUnpack(client);
+        ReadAndUnpack(client);
       }
       if ((evts[i].events & (EPOLLRDHUP | EPOLLHUP)) != 0) {
         int client = evts[i].data.fd;
         // Drain any remaining messages before closing the socket.
-        while (readAndUnpack(client)) {
+        while (ReadAndUnpack(client)) {
         }
         close(client);
         printf("Connection closed\n");
@@ -248,32 +255,32 @@ void* pollLoop(void* ptr) {
   }
 }
 
-void startPollThread(int poll_fd) {
+void StartPollThread(int poll_fd) {
   pthread_t thread;
-  if (pthread_create(&thread, nullptr, pollLoop,
+  if (pthread_create(&thread, nullptr, PollLoop,
                      reinterpret_cast<void*>(poll_fd)) != 0) {
     err(1, "pthread_create");
   }
   pthread_detach(thread);
 }
 
-// handshake performs version exchange with client. See common.proto for details
+// Handshake performs version exchange with client. See common.proto for details
 // about the protocol.
-bool handshake(int client_fd) {
+bool Handshake(int client_fd) {
   std::vector<char> buf(10240);
   int bytes = read(client_fd, buf.data(), buf.size());
   if (bytes < 0) {
-    printf("Error receiving handshake message: %d\n", errno);
+    printf("Error receiving Handshake message: %d\n", errno);
     return false;
   } else if (bytes == (int)buf.size()) {
-    // Protect against the handshake becoming larger than the buffer allocated
+    // Protect against the Handshake becoming larger than the buffer allocated
     // for it.
-    printf("handshake message too big\n");
+    printf("Handshake message too big\n");
     return false;
   }
   ::gvisor::common::Handshake in = {};
   if (!in.ParseFromString(absl::string_view(buf.data(), bytes))) {
-    printf("Error parsing handshake message\n");
+    printf("Error parsing Handshake message\n");
     return false;
   }
 
@@ -286,11 +293,12 @@ bool handshake(int client_fd) {
   ::gvisor::common::Handshake out;
   out.set_version(1);
   if (!out.SerializeToFileDescriptor(client_fd)) {
-    printf("Error sending handshake message: %d\n", errno);
+    printf("Error sending Handshake message: %d\n", errno);
     return false;
   }
   return true;
 }
+}  // namespace
 
 int main(int argc, char** argv) {
   for (int c = 0; (c = getopt(argc, argv, "q")) != -1;) {
@@ -338,7 +346,7 @@ int main(int argc, char** argv) {
     err(1, "epoll_create");
   }
   auto epoll_closer = absl::MakeCleanup([epoll_fd] { close(epoll_fd); });
-  startPollThread(epoll_fd);
+  StartPollThread(epoll_fd);
 
   for (;;) {
     int client = accept(sock, nullptr, nullptr);
@@ -350,7 +358,7 @@ int main(int argc, char** argv) {
     }
     printf("Connection accepted\n");
 
-    if (!handshake(client)) {
+    if (!Handshake(client)) {
       close(client);
       continue;
     }
