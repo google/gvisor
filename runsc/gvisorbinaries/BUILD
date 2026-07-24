@@ -13,6 +13,7 @@ go_library(
     ],
     deps = [
         "//pkg/log",
+        "//pkg/sync",
         "//runsc/config",
         "//runsc/specutils",
         "//runsc/version",
