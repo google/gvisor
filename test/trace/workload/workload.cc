@@ -24,6 +24,7 @@
 #include <sys/signalfd.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/timerfd.h>
 #include <sys/types.h>
 #include <sys/un.h>
@@ -95,6 +96,41 @@ void runForkExecveat() {
   // Don't kill child, just wait for gracefully exit.
   kill_or_error.ValueOrDie().Release();
   RetryEINTR(waitpid)(child, nullptr, 0);
+}
+
+// runForkExecveatMemfd triggers a ForkAndExecveat process executing from a
+// memfd file descriptor, which results in the execution of an execveat()
+// syscall by Sentry on an anonymous tmpfs file.
+void runForkExecveatMemfd() {
+  auto bin_fd_or_error = Open("/bin/true", O_RDONLY, 0);
+  auto& bin_fd = bin_fd_or_error.ValueOrDie();
+  struct stat st;
+  TEST_CHECK(fstat(bin_fd.get(), &st) == 0);
+  std::string buf(st.st_size, 0);
+  TEST_CHECK(ReadFd(bin_fd.get(), &buf[0], st.st_size) == st.st_size);
+
+#ifndef __NR_memfd_create
+#if defined(__x86_64__)
+#define __NR_memfd_create 319
+#elif defined(__aarch64__)
+#define __NR_memfd_create 279
+#endif
+#endif
+
+  int memfd = syscall(__NR_memfd_create, "test_memfd", 0);
+  TEST_CHECK(memfd >= 0);
+  TEST_CHECK(WriteFd(memfd, &buf[0], st.st_size) == st.st_size);
+
+  pid_t child;
+  int execve_errno;
+  ExecveArray argv = {"test_memfd"};
+  ExecveArray envv = {"TEST=123"};
+  auto kill_or_error = ForkAndExecveat(memfd, "", argv, envv, AT_EMPTY_PATH,
+                                       nullptr, &child, &execve_errno);
+  TEST_CHECK(execve_errno == 0);
+  kill_or_error.ValueOrDie().Release();
+  RetryEINTR(waitpid)(child, nullptr, 0);
+  close(memfd);
 }
 
 // Creates a simple UDS in the abstract namespace and send one byte from the
@@ -702,6 +738,7 @@ void runInotifyRmWatch() {
 int main(int argc, char** argv) {
   ::gvisor::testing::runForkExecve();
   ::gvisor::testing::runForkExecveat();
+  ::gvisor::testing::runForkExecveatMemfd();
   ::gvisor::testing::runSocket();
   ::gvisor::testing::runReadWrite();
   ::gvisor::testing::runChdir();
