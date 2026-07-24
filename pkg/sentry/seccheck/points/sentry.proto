@@ -65,7 +65,7 @@ message ExecveInfo {
   // BinarySha1 is the SHA-1 hash of the executable binary file.
   bytes binary_sha1 = 16;
 
-  // BinaryOverlayfsUpper indicates whether the executable binary is on the
+  // BinaryOverlayfsUpper indicates whether the executable binary exists on the
   // upper layer of the overlay filesystem.
   //
   // Note that this only indicates presence on the upper layer, NOT that the
@@ -75,7 +75,7 @@ message ExecveInfo {
   // the upper layer).
   bool binary_overlayfs_upper = 9;
 
-  // BinaryOverlayfsLower indicates whether the executable binary is on the
+  // BinaryOverlayfsLower indicates whether the executable binary exists on the
   // lower layer of the overlay filesystem.
   //
   // Note that this only indicates presence on the lower layer, NOT that the
@@ -148,4 +148,24 @@ message MmapInfo {
 
   // MappedCtime is the ctime of the backing file.
   gvisor.common.Timespec mapped_ctime = 8;
+
+  // OverlayfsUpper indicates whether the mapped file exists on the upper layer
+  // of the overlay filesystem.
+  //
+  // Note that this only indicates presence on the upper layer, NOT that the
+  // file exists *only* on the upper layer. Specifically,
+  // overlayfs_upper=true alone does not mean the file was copied up from
+  // a lower layer (e.g., it could have been created or downloaded directly on
+  // the upper layer).
+  bool overlayfs_upper = 9;
+
+  // OverlayfsLower indicates whether the mapped file exists on the lower layer
+  // of the overlay filesystem.
+  //
+  // Note that this only indicates presence on the lower layer, NOT that the
+  // file exists *only* on the lower layer. Specifically,
+  // overlayfs_lower=true alone does not mean the file is unmodified
+  // (e.g., if overlayfs_upper=true also, the file was modified and
+  // copied up to the upper layer).
+  bool overlayfs_lower = 10;
 }
