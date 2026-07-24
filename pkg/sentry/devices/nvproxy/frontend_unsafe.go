@@ -264,7 +264,7 @@ func ctrlClientSystemGetP2PCapsInitializeArray(origArr nvgpu.P64, gpuCount uint3
 	// portSafeMulU32(). See
 	// src/nvidia/src/kernel/rmapi/embedded_param_copy.c::embeddedParamCopyIn().
 	numEntries := uint64(gpuCount) * uint64(gpuCount)
-	if numEntries == 0 || numEntries*4 > nvgpu.RMAPI_PARAM_COPY_MAX_PARAMS_SIZE {
+	if numEntries == 0 || numEntries > nvgpu.RMAPI_PARAM_COPY_MAX_PARAMS_SIZE/4 {
 		return 0, nil, false
 	}
 
