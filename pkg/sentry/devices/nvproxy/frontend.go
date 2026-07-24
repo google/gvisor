@@ -369,6 +369,125 @@ func frontendRegisterFD(fi *frontendIoctlState) (uintptr, error) {
 	return frontendIoctlInvokeNoStatus(fi, &ioctlParams)
 }
 
+// frontendExportToDMABufFD handles NV_ESC_EXPORT_TO_DMABUF_FD. CUDA uses this
+// to export GPU memory as a dma-buf fd for ibv_reg_dmabuf_mr (GPUDirect RDMA).
+func frontendExportToDMABufFD[Params any, PtrParams hasFrontendFDAndStatusPtr[Params]](fi *frontendIoctlState) (uintptr, error) {
+	var ioctlParamsValue Params
+	ioctlParams := PtrParams(&ioctlParamsValue)
+	if int(fi.ioctlParamsSize) != ioctlParams.SizeBytes() {
+		return 0, linuxerr.EINVAL
+	}
+	if _, err := ioctlParams.CopyIn(fi.t, fi.ioctlParamsAddr); err != nil {
+		return 0, err
+	}
+
+	// The FD field is both input and output (see nv_dma_buf_export() in
+	// kernel-open/nvidia/nv-dmabuf.c):
+	//   - FD == -1: the driver creates a new dma-buf and returns its fd by
+	//     updating the ioctlParams. We wrap that host fd in a new application
+	//     FD installed in the task's fd table and return it via ioctlParams to
+	//     the app, so the app can hand it to the RDMA verbs library.
+	//   - FD >= 0: the app is appending more handles to a dma-buf it exported
+	//     in an earlier call, identified by that fd. The value is an app FD,
+	//     we translate it back to the host fd of the dma-buf we wrapped
+	//     before. The driver leaves the host fd unchanged, so we restore the
+	//     app fd on the way out.
+	if appFD := ioctlParams.GetFrontendFD(); appFD >= 0 {
+		fileGeneric, _ := fi.t.FDTable().Get(appFD)
+		if fileGeneric == nil {
+			return 0, linuxerr.EINVAL
+		}
+		defer fileGeneric.DecRef(fi.ctx)
+		wrapper, ok := fileGeneric.Impl().(*dmaBufFDWrapper)
+		if !ok {
+			return 0, linuxerr.EINVAL
+		}
+		ioctlParams.SetFrontendFD(wrapper.hostFD)
+		n, err := frontendIoctlInvokeNoStatus(fi, ioctlParams)
+		ioctlParams.SetFrontendFD(appFD)
+		if err != nil {
+			return n, err
+		}
+		if _, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
+			return n, err
+		}
+		return n, nil
+	}
+
+	// Create path: FD == -1 (any other negative value is rejected by the
+	// driver, so FD < -1 will fail below).
+	n, err := frontendIoctlInvokeNoStatus(fi, ioctlParams)
+	if err != nil {
+		return n, err
+	}
+
+	// The driver only allocates a dma-buf fd when the export succeeded.
+	if ioctlParams.GetStatus() == nvgpu.NV_OK && ioctlParams.GetFrontendFD() >= 0 {
+		hostFD := ioctlParams.GetFrontendFD()
+		sandboxFD, err := newDMABufFDWrapper(fi.t, hostFD)
+		if err != nil {
+			unix.Close(int(hostFD))
+			return n, err
+		}
+		ioctlParams.SetFrontendFD(sandboxFD)
+		if _, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
+			// Roll back the fd we installed so the guest doesn't retain a
+			// dma-buf it never learned the number of. Remove drops the table's
+			// reference; DecRef releases it (closing the host fd).
+			if removed := fi.t.FDTable().Remove(fi.ctx, sandboxFD); removed != nil {
+				removed.DecRef(fi.ctx)
+			}
+			return n, err
+		}
+		return n, nil
+	}
+
+	if _, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
+// dmaBufFDWrapper wraps a host dma-buf fd returned by the NVIDIA driver's
+// export operation as an application FD. It implements vfs.HostFDProvider so
+// that rdmaproxy can recover the host fd to hand to ibv_reg_dmabuf_mr.
+//
+// +stateify savable
+type dmaBufFDWrapper struct {
+	vfsfd vfs.FileDescription
+	vfs.FileDescriptionDefaultImpl
+	vfs.DentryMetadataFileDescriptionImpl
+	vfs.NoLockFD
+
+	hostFD int32
+}
+
+// HostFD implements vfs.HostFDProvider.HostFD.
+func (fd *dmaBufFDWrapper) HostFD() int {
+	return int(fd.hostFD)
+}
+
+// Release implements vfs.FileDescriptionImpl.Release.
+func (fd *dmaBufFDWrapper) Release(ctx context.Context) {
+	unix.Close(int(fd.hostFD))
+}
+
+// newDMABufFDWrapper wraps hostFD in a sentry FileDescription and installs it
+// in t's fd table, returning the sandbox fd number.
+func newDMABufFDWrapper(t *kernel.Task, hostFD int32) (int32, error) {
+	vfsObj := t.Kernel().VFS()
+	vd := vfsObj.NewAnonVirtualDentry("[nvidia-dmabuf]")
+	defer vd.DecRef(t)
+	w := &dmaBufFDWrapper{hostFD: hostFD}
+	if err := w.vfsfd.Init(w, linux.O_RDWR, t.Credentials(), vd.Mount(), vd.Dentry(), &vfs.FileDescriptionOptions{
+		UseDentryMetadata: true,
+	}); err != nil {
+		return -1, err
+	}
+	defer w.vfsfd.DecRef(t)
+	return t.NewFDFrom(0, &w.vfsfd, kernel.FDFlags{CloseOnExec: true})
+}
+
 func frontendIoctlHasFD[Params any, PtrParams hasFrontendFDAndStatusPtr[Params]](fi *frontendIoctlState) (uintptr, error) {
 	var ioctlParamsValue Params
 	ioctlParams := PtrParams(&ioctlParamsValue)

@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/pkg/abi/ib"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
 	"gvisor.dev/gvisor/pkg/cleanup"
@@ -36,10 +37,12 @@ import (
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/fsutil"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/rdma"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/devices/memdev"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
+	"gvisor.dev/gvisor/pkg/sentry/devices/rdmaproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/tpuproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/tpuproxy/vfio"
 	"gvisor.dev/gvisor/pkg/sentry/devices/ttydev"
@@ -117,7 +120,7 @@ func cgroupfsMemoryDefaults(memoryLimit uint64) map[string]int64 {
 	}
 }
 
-func registerFilesystems(k *kernel.Kernel, info *containerInfo) error {
+func registerFilesystems(k *kernel.Kernel, info *containerInfo, rdmaSnapshot *rdma.Snapshot) error {
 	ctx := k.SupervisorContext()
 	vfsObj := k.VFS()
 
@@ -192,6 +195,71 @@ func registerFilesystems(k *kernel.Kernel, info *containerInfo) error {
 		return err
 	}
 
+	if err := rdmaproxyRegisterDevices(info, vfsObj, rdmaSnapshot); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// rdmaproxyRegisterDevices registers a proxied VFS char device for each
+// /dev/infiniband/uverbs* device in the spec, so the sandbox can drive RDMA
+// verbs against the host. Devices are registered at the fixed uverbs
+// char-device major (see rdmaproxy.Register), which matches the major the
+// guest device node and its /sys .../dev entry carry. The vendor driver
+// plug-in is selected per device from the PCI driver name in the host sysfs
+// snapshot (e.g. mlx5_core -> cxproxy).
+func rdmaproxyRegisterDevices(info *containerInfo, vfsObj *vfs.VirtualFilesystem, snapshot *rdma.Snapshot) error {
+	if snapshot == nil || !specutils.RDMAEnabled(info.spec, info.conf) {
+		return nil
+	}
+	// Map host uverbs minor -> PCI driver name, resolved from the leaf PCI
+	// node's uevent in the snapshot.
+	leafUevent := make(map[string]string, len(snapshot.PCINodes))
+	for i := range snapshot.PCINodes {
+		leafUevent[snapshot.PCINodes[i].Path] = snapshot.PCINodes[i].Attrs["uevent"]
+	}
+	driverByMinor := make(map[uint32]string)
+	for i := range snapshot.Devices {
+		dev := &snapshot.Devices[i]
+		// Snapshot attribute values are verbatim file contents; trim before
+		// parsing "major:minor".
+		devStr := strings.TrimSpace(dev.Dev)
+		sep := strings.IndexByte(devStr, ':')
+		if sep < 0 {
+			continue
+		}
+		minor64, err := strconv.ParseUint(devStr[sep+1:], 10, 32)
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(leafUevent[dev.LeafPCI], "\n") {
+			if driver, ok := strings.CutPrefix(line, "DRIVER="); ok {
+				driverByMinor[uint32(minor64)] = driver
+				break
+			}
+		}
+	}
+	for _, devSpec := range info.spec.Linux.Devices {
+		if !strings.HasPrefix(devSpec.Path, "/dev/infiniband/uverbs") {
+			continue
+		}
+		// We expect the host uverbs devices to carry the fixed InfiniBand
+		// uverbs major (IB_UVERBS_MAJOR). A device with any other major is one
+		// the host assigned a dynamically-allocated number (happen with a host
+		// with >32 RDMA devices), which we currently do not support.
+		if uint32(devSpec.Major) != ib.IB_UVERBS_MAJOR {
+			return fmt.Errorf("rdma: uverbs device %s has char-device major %d, want %d: devices with a dynamically-allocated major are not supported", devSpec.Path, devSpec.Major, ib.IB_UVERBS_MAJOR)
+		}
+		minor := uint32(devSpec.Minor)
+		devName := filepath.Base(devSpec.Path)
+		driverName := driverByMinor[minor]
+		if err := rdmaproxy.Register(vfsObj, devName, minor, driverName, snapshot.VerbsABIVersion); err != nil {
+			log.Warningf("rdma: register %s: %v", devSpec.Path, err)
+			continue
+		}
+		log.Infof("rdma: registered %s minor=%d driver=%q", devSpec.Path, minor, driverName)
+	}
 	return nil
 }
 
@@ -921,7 +989,7 @@ func (c *containerMounter) getPathMode(ctx context.Context, creds *auth.Credenti
 }
 
 func (c *containerMounter) mountSubmount(ctx context.Context, spec *specs.Spec, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials, submount *mountInfo) (*vfs.Mount, error) {
-	fsName, opts, err := getMountNameAndOptions(spec, conf, submount, c.l.productName, c.containerName, c.containerID, c.l.fsRestore)
+	fsName, opts, err := getMountNameAndOptions(spec, conf, submount, c.l.productName, c.containerName, c.containerID, c.l.fsRestore, c.l.rdmaSysfs)
 	if err != nil {
 		return nil, fmt.Errorf("mountOptions failed: %w", err)
 	}
@@ -984,7 +1052,7 @@ func (c *containerMounter) mountSubmount(ctx context.Context, spec *specs.Spec, 
 
 // getMountNameAndOptions retrieves the fsName, opts, and useOverlay values
 // used for mounts.
-func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo, productName, containerName, containerID string, fsr *fsRestore) (string, *vfs.MountOptions, error) {
+func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo, productName, containerName, containerID string, fsr *fsRestore, rdmaSysfs *rdma.Snapshot) (string, *vfs.MountOptions, error) {
 	fsName := m.mount.Type
 	var (
 		mopts        = m.mount.Options
@@ -1004,7 +1072,10 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 		internalData = newProcInternalData(conf, spec)
 
 	case sys.Name:
-		sysData := &sys.InternalData{EnableTPUProxyPaths: specutils.TPUProxyEnabled(spec, conf)}
+		sysData := &sys.InternalData{
+			EnableTPUProxyPaths: specutils.TPUProxyEnabled(spec, conf),
+			RDMASysfs:           rdmaSysfs,
+		}
 		if len(productName) > 0 {
 			sysData.ProductName = productName
 		}
@@ -1385,7 +1456,7 @@ func (c *containerMounter) mountSharedMaster(ctx context.Context, spec *specs.Sp
 	// Mount the master using the options from the hint (mount annotations).
 	origOpts := mntInfo.mount.Options
 	mntInfo.mount.Options = mntInfo.hint.Mount.Options
-	fsName, opts, err := getMountNameAndOptions(spec, conf, mntInfo, c.l.productName, c.containerName, c.containerID, c.l.fsRestore)
+	fsName, opts, err := getMountNameAndOptions(spec, conf, mntInfo, c.l.productName, c.containerName, c.containerID, c.l.fsRestore, c.l.rdmaSysfs)
 	mntInfo.mount.Options = origOpts
 	if err != nil {
 		return nil, err

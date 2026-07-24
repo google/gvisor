@@ -38,10 +38,12 @@ import (
 	"gvisor.dev/gvisor/pkg/memutil"
 	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/rand"
+	"gvisor.dev/gvisor/pkg/rdma"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
+	"gvisor.dev/gvisor/pkg/sentry/devices/rdmaproxy/cxproxy"
 	"gvisor.dev/gvisor/pkg/sentry/fdimport"
 	cgroup2fs "gvisor.dev/gvisor/pkg/sentry/fsimpl/cgroup2fs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
@@ -247,6 +249,10 @@ type Loader struct {
 	// /sys/devices/virtual/dmi/id/product_name.
 	productName string
 
+	// rdmaSysfs is the host sysfs snapshot for RDMA device topology, or
+	// nil when disabled.
+	rdmaSysfs *rdma.Snapshot
+
 	// cpuQuota and cpuPeriod are the raw host CFS settings that should be
 	// exposed through sandbox cgroupfs.
 	cpuQuota  int64
@@ -422,6 +428,10 @@ type Args struct {
 	// ProductName is the value to show in
 	// /sys/devices/virtual/dmi/id/product_name.
 	ProductName string
+
+	// RDMASysfs is the host sysfs snapshot for RDMA device topology, or
+	// nil when disabled.
+	RDMASysfs *rdma.Snapshot
 	// PodInitConfigFD is the file descriptor to a file passed in the
 	//	--pod-init-config flag
 	PodInitConfigFD int
@@ -530,6 +540,9 @@ func New(args Args) (*Loader, error) {
 	if specutils.NVProxyEnabled(args.Spec, args.Conf) {
 		nvproxy.Init()
 	}
+	if specutils.RDMAEnabled(args.Spec, args.Conf) {
+		cxproxy.Init()
+	}
 
 	eid := execID{cid: args.ID}
 	l := &Loader{
@@ -538,6 +551,7 @@ func New(args Args) (*Loader, error) {
 		sharedMounts:          make(map[string]*vfs.Mount),
 		stopProfiling:         stopProfiling,
 		productName:           args.ProductName,
+		rdmaSysfs:             args.RDMASysfs,
 		cpuQuota:              args.CPUQuota,
 		cpuPeriod:             args.CPUPeriod,
 		hostTHP:               args.HostTHP,
@@ -746,7 +760,7 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("initializing kernel: %w", err)
 	}
 
-	if err := registerFilesystems(l.k, &l.root); err != nil {
+	if err := registerFilesystems(l.k, &l.root, l.rdmaSysfs); err != nil {
 		return nil, fmt.Errorf("registering filesystems: %w", err)
 	}
 
@@ -1084,6 +1098,7 @@ func (l *Loader) installSeccompFilters() error {
 			NVProxy:               nvproxyEnabled,
 			NVProxyCaps:           nvproxyCaps,
 			TPUProxy:              specutils.TPUProxyEnabled(l.root.spec, l.root.conf),
+			RDMAProxy:             specutils.RDMAEnabled(l.root.spec, l.root.conf),
 			ControllerFD:          uint32(l.ctrl.srv.FD()),
 			CgoEnabled:            config.CgoEnabled,
 			PluginNetwork:         l.root.conf.Network == config.NetworkPlugin,

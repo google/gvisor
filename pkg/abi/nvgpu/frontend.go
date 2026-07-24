@@ -28,15 +28,16 @@ const NV_IOCTL_MAGIC = uint32('F')
 // Note that these are only the IOC_NR part of the ioctl command.
 const (
 	// From kernel-open/common/inc/nv-ioctl-numbers.h:
-	NV_IOCTL_BASE             = 200
-	NV_ESC_CARD_INFO          = NV_IOCTL_BASE + 0
-	NV_ESC_REGISTER_FD        = NV_IOCTL_BASE + 1
-	NV_ESC_ALLOC_OS_EVENT     = NV_IOCTL_BASE + 6
-	NV_ESC_FREE_OS_EVENT      = NV_IOCTL_BASE + 7
-	NV_ESC_CHECK_VERSION_STR  = NV_IOCTL_BASE + 10
-	NV_ESC_ATTACH_GPUS_TO_FD  = NV_IOCTL_BASE + 12
-	NV_ESC_SYS_PARAMS         = NV_IOCTL_BASE + 14
-	NV_ESC_WAIT_OPEN_COMPLETE = NV_IOCTL_BASE + 18
+	NV_IOCTL_BASE              = 200
+	NV_ESC_CARD_INFO           = NV_IOCTL_BASE + 0
+	NV_ESC_REGISTER_FD         = NV_IOCTL_BASE + 1
+	NV_ESC_ALLOC_OS_EVENT      = NV_IOCTL_BASE + 6
+	NV_ESC_FREE_OS_EVENT       = NV_IOCTL_BASE + 7
+	NV_ESC_CHECK_VERSION_STR   = NV_IOCTL_BASE + 10
+	NV_ESC_ATTACH_GPUS_TO_FD   = NV_IOCTL_BASE + 12
+	NV_ESC_SYS_PARAMS          = NV_IOCTL_BASE + 14
+	NV_ESC_EXPORT_TO_DMABUF_FD = NV_IOCTL_BASE + 17
+	NV_ESC_WAIT_OPEN_COMPLETE  = NV_IOCTL_BASE + 18
 
 	// From kernel-open/common/inc/nv-ioctl-numa.h:
 	NV_ESC_NUMA_INFO = NV_IOCTL_BASE + 15
@@ -202,6 +203,114 @@ func (p *IoctlWaitOpenComplete) GetStatus() uint32 {
 func (p *IoctlWaitOpenComplete) SetStatus(status uint32) {
 	p.AdapterStatus = status
 }
+
+// NV_DMABUF_EXPORT_MAX_HANDLES is the fixed size of the handle/offset/size
+// arrays in nv_ioctl_export_to_dma_buf_fd_t.
+// From kernel-open/common/inc/nv-ioctl.h.
+const NV_DMABUF_EXPORT_MAX_HANDLES = 128
+
+// IoctlExportToDMABufFD is nv_ioctl_export_to_dma_buf_fd_t, the parameter type
+// for NV_ESC_EXPORT_TO_DMABUF_FD (kernel-open/common/inc/nv-ioctl.h).
+//
+// +marshal
+type IoctlExportToDMABufFD struct {
+	_            structs.HostLayout
+	FD           int32
+	HClient      Handle
+	TotalObjects uint32
+	NumObjects   uint32
+	Index        uint32
+	Pad0         uint32
+	TotalSize    uint64
+	Handles      [NV_DMABUF_EXPORT_MAX_HANDLES]Handle
+	Offsets      [NV_DMABUF_EXPORT_MAX_HANDLES]uint64
+	Sizes        [NV_DMABUF_EXPORT_MAX_HANDLES]uint64
+	Status       uint32
+	Pad1         uint32
+}
+
+// GetFrontendFD implements HasFrontendFD.GetFrontendFD.
+func (p *IoctlExportToDMABufFD) GetFrontendFD() int32 { return p.FD }
+
+// SetFrontendFD implements HasFrontendFD.SetFrontendFD.
+func (p *IoctlExportToDMABufFD) SetFrontendFD(fd int32) { p.FD = fd }
+
+// GetStatus implements HasStatus.GetStatus.
+func (p *IoctlExportToDMABufFD) GetStatus() uint32 { return p.Status }
+
+// SetStatus implements HasStatus.SetStatus.
+func (p *IoctlExportToDMABufFD) SetStatus(status uint32) { p.Status = status }
+
+// IoctlExportToDMABufFD_V570 is the updated version of
+// nv_ioctl_export_to_dma_buf_fd_t since 570.86.15.
+//
+// +marshal
+type IoctlExportToDMABufFD_V570 struct {
+	_            structs.HostLayout
+	FD           int32
+	HClient      Handle
+	TotalObjects uint32
+	NumObjects   uint32
+	Index        uint32
+	Pad0         uint32
+	TotalSize    uint64
+	MappingType  uint8
+	Pad1         [3]byte
+	Handles      [NV_DMABUF_EXPORT_MAX_HANDLES]Handle
+	Pad2         uint32
+	Offsets      [NV_DMABUF_EXPORT_MAX_HANDLES]uint64
+	Sizes        [NV_DMABUF_EXPORT_MAX_HANDLES]uint64
+	Status       uint32
+	Pad3         uint32
+}
+
+// GetFrontendFD implements HasFrontendFD.GetFrontendFD.
+func (p *IoctlExportToDMABufFD_V570) GetFrontendFD() int32 { return p.FD }
+
+// SetFrontendFD implements HasFrontendFD.SetFrontendFD.
+func (p *IoctlExportToDMABufFD_V570) SetFrontendFD(fd int32) { p.FD = fd }
+
+// GetStatus implements HasStatus.GetStatus.
+func (p *IoctlExportToDMABufFD_V570) GetStatus() uint32 { return p.Status }
+
+// SetStatus implements HasStatus.SetStatus.
+func (p *IoctlExportToDMABufFD_V570) SetStatus(status uint32) { p.Status = status }
+
+// IoctlExportToDMABufFD_V580 is the updated version of
+// nv_ioctl_export_to_dma_buf_fd_t since 580.65.06.
+//
+// +marshal
+type IoctlExportToDMABufFD_V580 struct {
+	_            structs.HostLayout
+	FD           int32
+	HClient      Handle
+	TotalObjects uint32
+	NumObjects   uint32
+	Index        uint32
+	Pad0         uint32
+	TotalSize    uint64
+	MappingType  uint8
+	AllowMmap    uint8
+	Pad1         [2]byte
+	Handles      [NV_DMABUF_EXPORT_MAX_HANDLES]Handle
+	Pad2         uint32
+	Offsets      [NV_DMABUF_EXPORT_MAX_HANDLES]uint64
+	Sizes        [NV_DMABUF_EXPORT_MAX_HANDLES]uint64
+	Status       uint32
+	Pad3         uint32
+}
+
+// GetFrontendFD implements HasFrontendFD.GetFrontendFD.
+func (p *IoctlExportToDMABufFD_V580) GetFrontendFD() int32 { return p.FD }
+
+// SetFrontendFD implements HasFrontendFD.SetFrontendFD.
+func (p *IoctlExportToDMABufFD_V580) SetFrontendFD(fd int32) { p.FD = fd }
+
+// GetStatus implements HasStatus.GetStatus.
+func (p *IoctlExportToDMABufFD_V580) GetStatus() uint32 { return p.Status }
+
+// SetStatus implements HasStatus.SetStatus.
+func (p *IoctlExportToDMABufFD_V580) SetStatus(status uint32) { p.Status = status }
 
 // IoctlNVOS02ParametersWithFD is the parameter type for NV_ESC_RM_ALLOC_MEMORY.
 //
