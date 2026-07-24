@@ -89,47 +89,88 @@ void unpack(absl::string_view buf) {
 }
 
 // List of dispatchers indexed based on MessageType enum values.
-std::vector<Callback> dispatchers = {
-    nullptr,
-    unpack<::gvisor::container::Start>,
-    unpack<::gvisor::sentry::CloneInfo>,
-    unpack<::gvisor::sentry::ExecveInfo>,
-    unpack<::gvisor::sentry::ExitNotifyParentInfo>,
-    unpack<::gvisor::sentry::TaskExit>,
-    unpackSyscall<::gvisor::syscall::Syscall>,
-    unpackSyscall<::gvisor::syscall::Open>,
-    unpackSyscall<::gvisor::syscall::Close>,
-    unpackSyscall<::gvisor::syscall::Read>,
-    unpackSyscall<::gvisor::syscall::Connect>,
-    unpackSyscall<::gvisor::syscall::Execve>,
-    unpackSyscall<::gvisor::syscall::Socket>,
-    unpackSyscall<::gvisor::syscall::Chdir>,
-    unpackSyscall<::gvisor::syscall::Setid>,
-    unpackSyscall<::gvisor::syscall::Setresid>,
-    unpackSyscall<::gvisor::syscall::Dup>,
-    unpackSyscall<::gvisor::syscall::Prlimit>,
-    unpackSyscall<::gvisor::syscall::Pipe>,
-    unpackSyscall<::gvisor::syscall::Fcntl>,
-    unpackSyscall<::gvisor::syscall::Signalfd>,
-    unpackSyscall<::gvisor::syscall::Eventfd>,
-    unpackSyscall<::gvisor::syscall::Chroot>,
-    unpackSyscall<::gvisor::syscall::Clone>,
-    unpackSyscall<::gvisor::syscall::Bind>,
-    unpackSyscall<::gvisor::syscall::Accept>,
-    unpackSyscall<::gvisor::syscall::TimerfdCreate>,
-    unpackSyscall<::gvisor::syscall::TimerfdSetTime>,
-    unpackSyscall<::gvisor::syscall::TimerfdGetTime>,
-    unpackSyscall<::gvisor::syscall::Fork>,
-    unpackSyscall<::gvisor::syscall::InotifyInit>,
-    unpackSyscall<::gvisor::syscall::InotifyAddWatch>,
-    unpackSyscall<::gvisor::syscall::InotifyRmWatch>,
-    unpackSyscall<::gvisor::syscall::SocketPair>,
-    unpackSyscall<::gvisor::syscall::Write>,
-    unpack<::gvisor::sentry::MmapInfo>,
-    unpackSyscall<::gvisor::syscall::Mmap>,
-    unpackSyscall<::gvisor::syscall::Listen>,
-    unpackSyscall<::gvisor::syscall::Ptrace>,
-};
+// LINT.IfChange
+const std::vector<Callback> dispatchers = [] {
+  std::vector<Callback> result(::gvisor::common::MessageType_MAX + 1, nullptr);
+  result[::gvisor::common::MESSAGE_CONTAINER_START] =
+      unpack<::gvisor::container::Start>;
+  result[::gvisor::common::MESSAGE_SENTRY_CLONE] =
+      unpack<::gvisor::sentry::CloneInfo>;
+  result[::gvisor::common::MESSAGE_SENTRY_EXEC] =
+      unpack<::gvisor::sentry::ExecveInfo>;
+  result[::gvisor::common::MESSAGE_SENTRY_EXIT_NOTIFY_PARENT] =
+      unpack<::gvisor::sentry::ExitNotifyParentInfo>;
+  result[::gvisor::common::MESSAGE_SENTRY_TASK_EXIT] =
+      unpack<::gvisor::sentry::TaskExit>;
+  result[::gvisor::common::MESSAGE_SYSCALL_RAW] =
+      unpackSyscall<::gvisor::syscall::Syscall>;
+  result[::gvisor::common::MESSAGE_SYSCALL_OPEN] =
+      unpackSyscall<::gvisor::syscall::Open>;
+  result[::gvisor::common::MESSAGE_SYSCALL_CLOSE] =
+      unpackSyscall<::gvisor::syscall::Close>;
+  result[::gvisor::common::MESSAGE_SYSCALL_READ] =
+      unpackSyscall<::gvisor::syscall::Read>;
+  result[::gvisor::common::MESSAGE_SYSCALL_CONNECT] =
+      unpackSyscall<::gvisor::syscall::Connect>;
+  result[::gvisor::common::MESSAGE_SYSCALL_EXECVE] =
+      unpackSyscall<::gvisor::syscall::Execve>;
+  result[::gvisor::common::MESSAGE_SYSCALL_SOCKET] =
+      unpackSyscall<::gvisor::syscall::Socket>;
+  result[::gvisor::common::MESSAGE_SYSCALL_CHDIR] =
+      unpackSyscall<::gvisor::syscall::Chdir>;
+  result[::gvisor::common::MESSAGE_SYSCALL_SETID] =
+      unpackSyscall<::gvisor::syscall::Setid>;
+  result[::gvisor::common::MESSAGE_SYSCALL_SETRESID] =
+      unpackSyscall<::gvisor::syscall::Setresid>;
+  result[::gvisor::common::MESSAGE_SYSCALL_DUP] =
+      unpackSyscall<::gvisor::syscall::Dup>;
+  result[::gvisor::common::MESSAGE_SYSCALL_PRLIMIT64] =
+      unpackSyscall<::gvisor::syscall::Prlimit>;
+  result[::gvisor::common::MESSAGE_SYSCALL_PIPE] =
+      unpackSyscall<::gvisor::syscall::Pipe>;
+  result[::gvisor::common::MESSAGE_SYSCALL_FCNTL] =
+      unpackSyscall<::gvisor::syscall::Fcntl>;
+  result[::gvisor::common::MESSAGE_SYSCALL_SIGNALFD] =
+      unpackSyscall<::gvisor::syscall::Signalfd>;
+  result[::gvisor::common::MESSAGE_SYSCALL_EVENTFD] =
+      unpackSyscall<::gvisor::syscall::Eventfd>;
+  result[::gvisor::common::MESSAGE_SYSCALL_CHROOT] =
+      unpackSyscall<::gvisor::syscall::Chroot>;
+  result[::gvisor::common::MESSAGE_SYSCALL_CLONE] =
+      unpackSyscall<::gvisor::syscall::Clone>;
+  result[::gvisor::common::MESSAGE_SYSCALL_BIND] =
+      unpackSyscall<::gvisor::syscall::Bind>;
+  result[::gvisor::common::MESSAGE_SYSCALL_ACCEPT] =
+      unpackSyscall<::gvisor::syscall::Accept>;
+  result[::gvisor::common::MESSAGE_SYSCALL_TIMERFD_CREATE] =
+      unpackSyscall<::gvisor::syscall::TimerfdCreate>;
+  result[::gvisor::common::MESSAGE_SYSCALL_TIMERFD_SETTIME] =
+      unpackSyscall<::gvisor::syscall::TimerfdSetTime>;
+  result[::gvisor::common::MESSAGE_SYSCALL_TIMERFD_GETTIME] =
+      unpackSyscall<::gvisor::syscall::TimerfdGetTime>;
+  result[::gvisor::common::MESSAGE_SYSCALL_FORK] =
+      unpackSyscall<::gvisor::syscall::Fork>;
+  result[::gvisor::common::MESSAGE_SYSCALL_INOTIFY_INIT] =
+      unpackSyscall<::gvisor::syscall::InotifyInit>;
+  result[::gvisor::common::MESSAGE_SYSCALL_INOTIFY_ADD_WATCH] =
+      unpackSyscall<::gvisor::syscall::InotifyAddWatch>;
+  result[::gvisor::common::MESSAGE_SYSCALL_INOTIFY_RM_WATCH] =
+      unpackSyscall<::gvisor::syscall::InotifyRmWatch>;
+  result[::gvisor::common::MESSAGE_SYSCALL_SOCKETPAIR] =
+      unpackSyscall<::gvisor::syscall::SocketPair>;
+  result[::gvisor::common::MESSAGE_SYSCALL_WRITE] =
+      unpackSyscall<::gvisor::syscall::Write>;
+  result[::gvisor::common::MESSAGE_SENTRY_MMAP] =
+      unpack<::gvisor::sentry::MmapInfo>;
+  result[::gvisor::common::MESSAGE_SYSCALL_MMAP] =
+      unpackSyscall<::gvisor::syscall::Mmap>;
+  result[::gvisor::common::MESSAGE_SYSCALL_LISTEN] =
+      unpackSyscall<::gvisor::syscall::Listen>;
+  result[::gvisor::common::MESSAGE_SYSCALL_PTRACE] =
+      unpackSyscall<::gvisor::syscall::Ptrace>;
+  return result;
+}();
+// LINT.ThenChange(../../pkg/sentry/seccheck/points/common.proto)
 
 void unpack(absl::string_view buf) {
   const header* hdr = reinterpret_cast<const header*>(&buf[0]);
@@ -154,7 +195,12 @@ void unpack(absl::string_view buf) {
     return;
   }
   Callback cb = dispatchers[hdr->message_type];
-  cb(proto);
+  if (cb) {
+    cb(proto);
+  } else {
+    printf("No dispatcher configured for message type: %u\n",
+           hdr->message_type);
+  }
 }
 
 bool readAndUnpack(int client) {
