@@ -316,35 +316,36 @@ TEST(SemaphoreTest, SemOpRemoveWithWaiter) {
   AutoSem sem(semget(IPC_PRIVATE, 2, 0600 | IPC_CREAT));
   ASSERT_THAT(sem.get(), SyscallSucceeds());
 
-  ScopedThread th([&sem] {
+  int sem_id = sem.release();
+  ScopedThread th([sem_id] {
     absl::SleepFor(absl::Milliseconds(250));
-    ASSERT_THAT(semctl(sem.release(), 0, IPC_RMID), SyscallSucceeds());
+    ASSERT_THAT(semctl(sem_id, 0, IPC_RMID), SyscallSucceeds());
   });
 
   // This must happen before IPC_RMID runs above. Otherwise it fails with EINVAL
   // instead because the semaphore has already been removed.
   struct sembuf buf = {};
   buf.sem_op = -1;
-  ASSERT_THAT(RetryEINTR(semop)(sem.get(), &buf, 1),
-              SyscallFailsWithErrno(EIDRM));
+  ASSERT_THAT(RetryEINTR(semop)(sem_id, &buf, 1), SyscallFailsWithErrno(EIDRM));
 }
 
-// Semaphore isn't fair. It will execute any waiter that can satisfy the
-// request even if it gets in front of other waiters.
+// Semaphore isn't fair. It will execute any request that can currently be
+// satisfied, bypassing older, blocked waiters.
 TEST(SemaphoreTest, SemOpBestFitExecution) {
   AutoSem sem(semget(IPC_PRIVATE, 1, 0600 | IPC_CREAT));
   ASSERT_THAT(sem.get(), SyscallSucceeds());
 
-  ScopedThread th([&sem] {
+  int sem_id = sem.get();
+  ScopedThread th([sem_id] {
     struct sembuf buf = {};
     buf.sem_op = -2;
-    ASSERT_THAT(RetryEINTR(semop)(sem.get(), &buf, 1), SyscallFails());
+    ASSERT_THAT(RetryEINTR(semop)(sem_id, &buf, 1), SyscallFails());
     // Ensure that wait will only unblock when the semaphore is removed. On
     // EINTR retry it may race with deletion and return EINVAL.
     ASSERT_TRUE(errno == EIDRM || errno == EINVAL) << "errno=" << errno;
   });
 
-  // Ensures that '-1' below will unblock even though '-10' above is waiting
+  // Ensures that '-1' below will unblock even though '-2' above is waiting
   // for the same semaphore.
   for (size_t i = 0; i < 10; ++i) {
     struct sembuf buf = {};
