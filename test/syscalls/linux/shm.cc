@@ -12,12 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <errno.h>
 #include <stdio.h>
 #include <sys/ipc.h>
 #include <sys/mman.h>
 #include <sys/shm.h>
 #include <sys/types.h>
 
+#include "gmock/gmock.h"
 #include "absl/time/clock.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
@@ -503,6 +505,38 @@ TEST(ShmTest, NoDestructionOfAttachedSegmentWithMultipleRmid) {
   // detached.
   addr2[0] = 'x';
   ASSERT_NO_ERRNO(Shmdt(addr2));
+}
+
+TEST(ShmTest, MprotectWriteOnReadonlySegmentFails) {
+  const ShmSegment shm = ASSERT_NO_ERRNO_AND_VALUE(
+      Shmget(IPC_PRIVATE, kAllocSize, IPC_CREAT | 0777));
+  char* addr = ASSERT_NO_ERRNO_AND_VALUE(Shmat(shm.id(), nullptr, SHM_RDONLY));
+
+  // Try to mprotect to write. This should fail with EACCES.
+  EXPECT_THAT(mprotect(addr, kAllocSize, PROT_READ | PROT_WRITE),
+              SyscallFailsWithErrno(EACCES));
+
+  ASSERT_NO_ERRNO(Shmdt(addr));
+}
+
+TEST(ShmTest, MprotectWriteOnWritableSegmentSucceeds) {
+  const ShmSegment shm = ASSERT_NO_ERRNO_AND_VALUE(
+      Shmget(IPC_PRIVATE, kAllocSize, IPC_CREAT | 0777));
+  char* addr = ASSERT_NO_ERRNO_AND_VALUE(Shmat(shm.id(), nullptr, 0));
+
+  // Downgrade to read-only.
+  ASSERT_THAT(mprotect(addr, kAllocSize, PROT_READ), SyscallSucceeds());
+
+  // Upgrade back to writable. This should succeed because it was originally
+  // attached writable.
+  EXPECT_THAT(mprotect(addr, kAllocSize, PROT_READ | PROT_WRITE),
+              SyscallSucceeds());
+
+  // Writing succeeds now.
+  addr[0] = 'y';
+  EXPECT_EQ(addr[0], 'y');
+
+  ASSERT_NO_ERRNO(Shmdt(addr));
 }
 
 }  // namespace
