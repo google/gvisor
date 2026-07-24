@@ -19,22 +19,28 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <algorithm>
+#include <cstdint>
+#include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <ctime>
 #include <memory>
+#include <string>
+#include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/memory/memory.h"
 #include "absl/strings/string_view.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/syscalls/linux/file_base.h"
-#include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/linux_capability_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -132,7 +138,7 @@ TEST_F(OpenTest, MustCreateExisting) {
 }
 
 TEST_F(OpenTest, ReadOnly) {
-  char buf;
+  char buf = 0;
   const FileDescriptor ro_file =
       ASSERT_NO_ERRNO_AND_VALUE(Open(test_file_name_, O_RDONLY));
 
@@ -142,7 +148,7 @@ TEST_F(OpenTest, ReadOnly) {
 }
 
 TEST_F(OpenTest, WriteOnly) {
-  char buf;
+  char buf = 0;
   const FileDescriptor wo_file =
       ASSERT_NO_ERRNO_AND_VALUE(Open(test_file_name_, O_WRONLY));
 
@@ -172,7 +178,7 @@ TEST_F(OpenTest, CreateWithAppend) {
 }
 
 TEST_F(OpenTest, ReadWrite) {
-  char buf;
+  char buf = 0;
   const FileDescriptor rw_file =
       ASSERT_NO_ERRNO_AND_VALUE(Open(test_file_name_, O_RDWR));
 
