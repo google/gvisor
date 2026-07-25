@@ -22,6 +22,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -34,6 +35,15 @@ func MemoryFileOf(vfsfs *vfs.Filesystem) *pgalloc.MemoryFile {
 		return fs.mf
 	}
 	return nil
+}
+
+// ResourceIDOf returns the filesystem checkpoint ResourceID of the given tmpfs
+// filesystem, or the zero ResourceID if vfsfs is not a tmpfs filesystem.
+func ResourceIDOf(vfsfs *vfs.Filesystem) checkpoint.ResourceID {
+	if fs, _ := vfsfs.Impl().(*filesystem); fs != nil {
+		return fs.resourceID
+	}
+	return checkpoint.ResourceID{}
 }
 
 // FSCheckpointWrite serializes the given tmpfs filesystem to dst. The contents
@@ -50,6 +60,78 @@ func FSCheckpointWrite(ctx context.Context, vfsfs *vfs.Filesystem, dst io.Writer
 	return fs.tarWrite(ctx, dst, &fsckptTarWriterCallbacks{
 		regularFiles: make(map[*regularFile]*fsckptRegularFile),
 	})
+}
+
+// FSCheckpointWriteShared is like FSCheckpointWrite, except that it is used for
+// tmpfs filesystems whose MemoryFile is the shared/main MemoryFile, whose
+// contents cannot be saved as a whole. Instead of recording MemoryFile offsets,
+// it writes each regular file's pages directly to the pages file via amfs
+// (which must be a registration of the filesystem's MemoryFile) and records the
+// resulting pages file offsets in the tar archive. On restore, the contents are
+// loaded back into freshly-allocated pages via
+// pgalloc.AsyncPagesFileLoad.LoadRangesInto (see fsckptTarReaderCallbacks). If
+// vfsfs is not a tmpfs filesystem, FSCheckpointWriteShared returns an error.
+//
+// Preconditions: The Kernel must be paused and quiesced.
+func FSCheckpointWriteShared(ctx context.Context, vfsfs *vfs.Filesystem, amfs *pgalloc.AsyncMemoryFileSave, dst io.Writer) error {
+	fs, _ := vfsfs.Impl().(*filesystem)
+	if fs == nil {
+		return fmt.Errorf("non-tmpfs filesystem: %T", vfsfs.Impl())
+	}
+	return fs.tarWrite(ctx, dst, &fsckptSharedTarWriterCallbacks{amfs: amfs})
+}
+
+// fsckptSharedTarWriterCallbacks implements tarWriterCallbacks for a tmpfs
+// filesystem backed by the shared/main MemoryFile. It writes each regular
+// file's pages to the pages file (without copying) and stores the resulting
+// pages file offsets in the tar archive. The on-tar format is identical to
+// fsckptTarWriterCallbacks; only the meaning of the stored offsets differs (they
+// are pages file offsets rather than offsets into the filesystem's MemoryFile),
+// which the reader handles via its relocate field.
+type fsckptSharedTarWriterCallbacks struct {
+	amfs *pgalloc.AsyncMemoryFileSave
+}
+
+// regularFileNumSegments returns the number of segments in rf.data.
+//
+// Preconditions: rf.dataMu must be locked.
+func regularFileNumSegments(rf *regularFile) int64 {
+	n := int64(0)
+	for seg := rf.data.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
+		n++
+	}
+	return n
+}
+
+func (cb *fsckptSharedTarWriterCallbacks) regularFileSize(rf *regularFile) int64 {
+	rf.dataMu.RLock()
+	defer rf.dataMu.RUnlock()
+	return 8 /* size */ + regularFileNumSegments(rf)*int64((*fsckptRegularFileSegment)(nil).SizeBytes())
+}
+
+func (cb *fsckptSharedTarWriterCallbacks) regularFileWrite(ctx context.Context, rf *regularFile, tw *tar.Writer) error {
+	rf.dataMu.RLock()
+	defer rf.dataMu.RUnlock()
+	var buf [8]byte
+	binary.LittleEndian.PutUint64(buf[:], rf.size.RacyLoad())
+	if _, err := tw.Write(buf[:]); err != nil {
+		return fmt.Errorf("failed to write file size to tar: %w", err)
+	}
+	segs := make([]fsckptRegularFileSegment, 0, regularFileNumSegments(rf))
+	for seg := rf.data.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
+		// Write this segment's pages to the pages file (read directly from the
+		// shared MemoryFile, without copying) and record the pages file offset.
+		pagesFileOffset := cb.amfs.WriteRange(seg.FileRangeOf(seg.Range()))
+		segs = append(segs, fsckptRegularFileSegment{
+			Start: seg.Start(),
+			End:   seg.End(),
+			Value: pagesFileOffset,
+		})
+	}
+	if _, err := WriteCheckpointRegularFileSegmentSlice(tw, segs); err != nil {
+		return fmt.Errorf("failed to write file segments to tar: %w", err)
+	}
+	return nil
 }
 
 // fsckptTarWriterCallbacks implements tarWriterCallbacks by storing MemoryFile
@@ -114,7 +196,22 @@ func (cb *fsckptTarWriterCallbacks) regularFileWrite(ctx context.Context, rf *re
 // fsckptTarReaderCallbacks implements tarReaderCallbacks by storing MemoryFile
 // offsets containing regular file data in the tar archive.
 type fsckptTarReaderCallbacks struct {
-	fs           *filesystem
+	fs *filesystem
+
+	// relocate indicates that the filesystem's MemoryFile (fs.mf) is the
+	// shared/main MemoryFile, so the offsets stored in the tar archive are pages
+	// file offsets (written by FSCheckpointWriteShared) rather than offsets into
+	// fs.mf. In this case, regularFileSetContents allocates fresh pages in fs.mf
+	// and records, in relocFRs/relocOffs, the pages that must be loaded from the
+	// pages file; the caller (GetFilesystem) then loads them via
+	// pgalloc.AsyncPagesFileLoad.LoadRangesInto.
+	relocate bool
+
+	// relocFRs and relocOffs accumulate the freshly-allocated ranges of fs.mf
+	// and their corresponding pages file offsets when relocate is true.
+	relocFRs  []memmap.FileRange
+	relocOffs []uint64
+
 	regularFiles map[*tar.Header]*fsckptRegularFile
 }
 
@@ -152,7 +249,27 @@ func (cb *fsckptTarReaderCallbacks) regularFileSetContents(ctx context.Context, 
 	gap := rf.data.FirstGap()
 	n := uint64(0)
 	for _, rfseg := range crf.data {
-		gap = rf.data.Insert(gap, memmap.MappableRange{rfseg.Start, rfseg.End}, rfseg.Value).NextGap()
+		value := rfseg.Value
+		if cb.relocate {
+			// The filesystem is backed by the shared/main MemoryFile, so
+			// rfseg.Value is a pages file offset rather than an offset into
+			// fs.mf. Allocate fresh pages in fs.mf to hold the file's contents
+			// (using AllocateAndWritePopulate to match the normal tmpfs shmem
+			// write path; see regularFileReadWriter.WriteFromBlocks) and record
+			// them to be loaded from the pages file later by GetFilesystem.
+			length := rfseg.End - rfseg.Start
+			dstFR, err := cb.fs.mf.Allocate(length, pgalloc.AllocOpts{
+				Kind: cb.fs.usage,
+				Mode: pgalloc.AllocateAndWritePopulate,
+			})
+			if err != nil {
+				return fmt.Errorf("failed to allocate memory for restored file: %w", err)
+			}
+			cb.relocFRs = append(cb.relocFRs, dstFR)
+			cb.relocOffs = append(cb.relocOffs, value)
+			value = dstFR.Start
+		}
+		gap = rf.data.Insert(gap, memmap.MappableRange{rfseg.Start, rfseg.End}, value).NextGap()
 		n += (rfseg.End - rfseg.Start) / hostarch.PageSize
 	}
 	if !cb.fs.accountPages(n) {
