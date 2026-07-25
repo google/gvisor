@@ -50,6 +50,18 @@
 #define SECCOMP_RET_KILL_PROCESS 0x80000000U
 #endif
 
+#ifndef SECCOMP_RET_USER_NOTIF
+#define SECCOMP_RET_USER_NOTIF 0x7fc00000U
+#endif
+
+#ifndef SECCOMP_RET_LOG
+#define SECCOMP_RET_LOG 0x7ffc0000U
+#endif
+
+#ifndef SECCOMP_GET_ACTION_AVAIL
+#define SECCOMP_GET_ACTION_AVAIL 2
+#endif
+
 namespace gvisor {
 namespace testing {
 
@@ -177,16 +189,18 @@ void TriggerFilteredSyscallInCloneThreadThenExit(void* stack_top) {
   // N.B. clone(2) is not officially async-signal-safe, but at minimum glibc's
   // x86_64 implementation is safe. See glibc
   // sysdeps/unix/sysv/linux/x86_64/clone.S.
-  clone(
-      +[](void* arg) {
-        syscall(kFilteredSyscall);  // should kill the whole thread group
-        _exit(1);                   // should be unreachable
-        return 2;  // should be very unreachable, shut up the compiler
-      },
-      stack_top,
-      CLONE_FILES | CLONE_FS | CLONE_SIGHAND | CLONE_THREAD | CLONE_VM |
-          CLONE_VFORK,
-      nullptr);
+  TEST_PCHECK(clone(
+                  +[](void* arg) {
+                    syscall(kFilteredSyscall);  // should kill the whole
+                                                // thread group
+                    _exit(1);                   // should be unreachable
+                    return 2;  // should be very unreachable, shut up the
+                               // compiler
+                  },
+                  stack_top,
+                  CLONE_FILES | CLONE_FS | CLONE_SIGHAND | CLONE_THREAD |
+                      CLONE_VM | CLONE_VFORK,
+                  nullptr) != -1);
   // This is only reachable if the seccomp violation in the clone thread
   // killed only that thread, i.e. if SECCOMP_RET_KILL_PROCESS incorrectly
   // behaved like SECCOMP_RET_KILL_THREAD (gvisor.dev/issue/13819).
@@ -284,6 +298,89 @@ TEST(SeccompTest, RetKillProcessKillsAllThreads) {
   int status;
   ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
   EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGSYS)
+      << "status " << status;
+}
+
+// Installing an uncacheable filter alongside the SECCOMP_RET_KILL_PROCESS
+// filter forces the sentry to evaluate the filters at syscall time rather
+// than serving the action from its per-syscall-number cache, covering both
+// evaluation paths.
+TEST(SeccompTest, RetKillProcessKillsAllThreadsNonCacheable) {
+  Mapping stack = ASSERT_NO_ERRNO_AND_VALUE(
+      MmapAnon(2 * kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE));
+
+  pid_t const pid = fork();
+  if (pid == 0) {
+    // Register a signal handler for SIGSYS that we don't expect to be invoked.
+    RegisterSignalHandler(SIGSYS, +[](int, siginfo_t*, void*) { _exit(1); });
+    ApplySeccompFilter(kFilteredSyscall, SECCOMP_RET_KILL_PROCESS);
+    ApplyUncacheableFilter(kFilteredSyscall);
+    TriggerFilteredSyscallInCloneThreadThenExit(stack.endptr());
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGSYS)
+      << "status " << status;
+}
+
+// Unknown filter return values kill the entire thread group, like
+// SECCOMP_RET_KILL_PROCESS. See Linux commit 4d671d922d51 ("seccomp: kill
+// process instead of thread for unknown actions").
+TEST(SeccompTest, RetUnknownActionKillsProcess) {
+  Mapping stack = ASSERT_NO_ERRNO_AND_VALUE(
+      MmapAnon(2 * kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE));
+
+  pid_t const pid = fork();
+  if (pid == 0) {
+    // Register a signal handler for SIGSYS that we don't expect to be invoked.
+    RegisterSignalHandler(SIGSYS, +[](int, siginfo_t*, void*) { _exit(1); });
+    ApplySeccompFilter(kFilteredSyscall, 0x00010000);
+    TriggerFilteredSyscallInCloneThreadThenExit(stack.endptr());
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGSYS)
+      << "status " << status;
+}
+
+TEST(SeccompTest, RetLogAllowsSyscall) {
+  pid_t const pid = fork();
+  if (pid == 0) {
+    // Register a signal handler for SIGSYS that we don't expect to be invoked.
+    RegisterSignalHandler(SIGSYS, +[](int, siginfo_t*, void*) { _exit(1); });
+    ApplySeccompFilter(SYS_getpid, SECCOMP_RET_LOG);
+    // The syscall must be executed: getpid() succeeds rather than being
+    // killed, trapped, or failed with an error.
+    TEST_CHECK(syscall(SYS_getpid) > 0);
+    _exit(0);
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << "status " << status;
+}
+
+// A filter returning SECCOMP_RET_USER_NOTIF without an attached listener
+// causes the syscall to fail with ENOSYS without being executed. gVisor never
+// has listeners (SECCOMP_FILTER_FLAG_NEW_LISTENER is unsupported), so this is
+// always the behavior there; on Linux, filters installed via prctl cannot
+// have a listener either.
+TEST(SeccompTest, RetUserNotifWithoutListenerReturnsENOSYS) {
+  pid_t const pid = fork();
+  if (pid == 0) {
+    // Register a signal handler for SIGSYS that we don't expect to be invoked.
+    RegisterSignalHandler(SIGSYS, +[](int, siginfo_t*, void*) { _exit(1); });
+    ApplySeccompFilter(SYS_getpid, SECCOMP_RET_USER_NOTIF);
+    TEST_CHECK(syscall(SYS_getpid) == -1 && errno == ENOSYS);
+    _exit(0);
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
       << "status " << status;
 }
 
@@ -428,6 +525,22 @@ TEST(SeccompTest, RetErrnoReturnsErrno) {
       << "status " << status;
 }
 
+// The errno provided by a SECCOMP_RET_ERRNO filter is capped at MAX_ERRNO
+// (4095). See Linux's kernel/seccomp.c:__seccomp_filter().
+TEST(SeccompTest, RetErrnoIsCappedAtMaxErrno) {
+  pid_t const pid = fork();
+  if (pid == 0) {
+    ApplySeccompFilter(kFilteredSyscall, SECCOMP_RET_ERRNO | 5000);
+    TEST_CHECK(syscall(kFilteredSyscall) == -1 && errno == 4095);
+    _exit(0);
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << "status " << status;
+}
+
 TEST(SeccompTest, RetAllowAllowsSyscall) {
   pid_t const pid = fork();
   if (pid == 0) {
@@ -505,6 +618,48 @@ TEST(SeccompTest, SeccompRejectsUnknownFlags) {
   ASSERT_THAT(
       syscall(__NR_seccomp, SECCOMP_SET_MODE_FILTER, kInvalidFlag, nullptr),
       SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(SeccompTest, SeccompGetActionAvail) {
+  uint32_t action = SECCOMP_RET_KILL_THREAD;
+  // Probe for SECCOMP_GET_ACTION_AVAIL support; kernels predating it fail
+  // with EINVAL.
+  SKIP_IF(syscall(__NR_seccomp, SECCOMP_GET_ACTION_AVAIL, 0, &action) == -1 &&
+          errno == EINVAL);
+
+  const uint32_t supported_actions[] = {
+      SECCOMP_RET_KILL_PROCESS, SECCOMP_RET_KILL_THREAD, SECCOMP_RET_TRAP,
+      SECCOMP_RET_ERRNO,        SECCOMP_RET_TRACE,       SECCOMP_RET_LOG,
+      SECCOMP_RET_ALLOW,
+  };
+  for (uint32_t supported_action : supported_actions) {
+    action = supported_action;
+    EXPECT_THAT(syscall(__NR_seccomp, SECCOMP_GET_ACTION_AVAIL, 0, &action),
+                SyscallSucceeds())
+        << "action " << std::hex << supported_action;
+  }
+
+  // An unknown action value is reported as unavailable.
+  action = 0x12340000;
+  EXPECT_THAT(syscall(__NR_seccomp, SECCOMP_GET_ACTION_AVAIL, 0, &action),
+              SyscallFailsWithErrno(EOPNOTSUPP));
+
+  // Flags must be zero.
+  action = SECCOMP_RET_KILL_PROCESS;
+  EXPECT_THAT(syscall(__NR_seccomp, SECCOMP_GET_ACTION_AVAIL, 7, &action),
+              SyscallFailsWithErrno(EINVAL));
+
+  // The action is read from user memory.
+  EXPECT_THAT(syscall(__NR_seccomp, SECCOMP_GET_ACTION_AVAIL, 0, nullptr),
+              SyscallFailsWithErrno(EFAULT));
+
+  // gVisor does not support seccomp user notification, so it reports
+  // SECCOMP_RET_USER_NOTIF as unavailable; modern Linux supports it.
+  action = SECCOMP_RET_USER_NOTIF;
+  if (IsRunningOnGvisor()) {
+    EXPECT_THAT(syscall(__NR_seccomp, SECCOMP_GET_ACTION_AVAIL, 0, &action),
+                SyscallFailsWithErrno(EOPNOTSUPP));
+  }
 }
 
 TEST(SeccompTest, LeastPermissiveFilterReturnValueApplies) {

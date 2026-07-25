@@ -34,6 +34,10 @@ const (
 	// It is used as a sentinel value in `taskSeccompFilters.cache` to indicate
 	// that a specific syscall number is uncachable.
 	uncacheableBPFAction = linux.SECCOMP_RET_ACTION_FULL
+
+	// maxSeccompErrno is Linux's MAX_ERRNO (include/linux/err.h), the
+	// largest errno that a SECCOMP_RET_ERRNO filter may return.
+	maxSeccompErrno = 4095
 )
 
 // taskSeccomp holds seccomp-related data for a `Task`.
@@ -113,8 +117,14 @@ func (t *Task) checkSeccompSyscall(sysno int32, args arch.SyscallArguments, ip h
 
 	case linux.SECCOMP_RET_ERRNO:
 		// "Results in the lower 16-bits of the return value being passed to
-		// userland as the errno without executing the system call."
-		t.Arch().SetReturn(-uintptr(result.Data()))
+		// userland as the errno without executing the system call." Linux
+		// caps the errno at MAX_ERRNO; see
+		// kernel/seccomp.c:__seccomp_filter().
+		errno := result.Data()
+		if errno > maxSeccompErrno {
+			errno = maxSeccompErrno
+		}
+		t.Arch().SetReturn(-uintptr(errno))
 
 	case linux.SECCOMP_RET_TRACE:
 		// "When returned, this value will cause the kernel to attempt to
@@ -127,6 +137,24 @@ func (t *Task) checkSeccompSyscall(sysno int32, args arch.SyscallArguments, ip h
 			t.Arch().SetReturn(-tmp)
 			return linux.SECCOMP_RET_ERRNO
 		}
+
+	case linux.SECCOMP_RET_USER_NOTIF:
+		// gVisor does not support seccomp user notification (there is no
+		// way to attach a listener to a filter), so behave as Linux does
+		// when a filter returns SECCOMP_RET_USER_NOTIF and no listener is
+		// attached: the system call is not executed and fails with ENOSYS.
+		// See kernel/seccomp.c:seccomp_do_user_notification().
+		// This useless-looking temporary is needed because Go.
+		tmp := uintptr(unix.ENOSYS)
+		t.Arch().SetReturn(-tmp)
+		return linux.SECCOMP_RET_ERRNO
+
+	case linux.SECCOMP_RET_LOG:
+		// "Results in the system call being executed after the action has
+		// been logged." Linux logs to the kernel audit log; log to the
+		// sentry debug log instead.
+		t.Debugf("Syscall %d: logged by seccomp filter", sysno)
+		return linux.SECCOMP_RET_ALLOW
 
 	case linux.SECCOMP_RET_ALLOW:
 		// "Results in the system call being executed."
@@ -142,8 +170,11 @@ func (t *Task) checkSeccompSyscall(sysno int32, args arch.SyscallArguments, ip h
 		// SIGKILL."
 
 	default:
-		// consistent with Linux
-		return linux.SECCOMP_RET_KILL_THREAD
+		// Unknown actions kill the entire process, not just the thread:
+		// Linux's __seccomp_filter() groups the default case with
+		// SECCOMP_RET_KILL_PROCESS (see commit 4d671d922d51, "seccomp: kill
+		// process instead of thread for unknown actions").
+		return linux.SECCOMP_RET_KILL_PROCESS
 	}
 	return action
 }
