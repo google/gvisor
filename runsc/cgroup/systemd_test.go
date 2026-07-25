@@ -226,6 +226,69 @@ func TestMakePath(t *testing.T) {
 	}
 }
 
+func TestCheckControllers(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		controllers string
+		requested   []string
+		wantErr     bool
+	}{
+		{
+			name:        "nothing requested",
+			controllers: "cpu memory\n",
+			requested:   nil,
+		},
+		{
+			name:        "all available",
+			controllers: "cpuset cpu io memory pids\n",
+			requested:   []string{"cpu", "memory"},
+		},
+		{
+			// systemd accepts properties for controllers it was not delegated and
+			// silently drops them, so this must be caught here.
+			name:        "requested but not delegated",
+			controllers: "cpuset cpu memory pids\n",
+			requested:   []string{"cpu", "io"},
+			wantErr:     true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cg := cgroupSystemd{
+				Name:            "123",
+				Parent:          "test.slice",
+				ScopePrefix:     "runsc",
+				propControllers: tc.requested,
+				cgroupV2:        cgroupV2{Mountpoint: t.TempDir()},
+			}
+			path := cg.MakePath("")
+			if err := os.MkdirAll(path, 0755); err != nil {
+				t.Fatalf("os.MkdirAll(%q): %v", path, err)
+			}
+			ctrlFile := filepath.Join(path, controllersFile)
+			if err := os.WriteFile(ctrlFile, []byte(tc.controllers), 0644); err != nil {
+				t.Fatalf("os.WriteFile(%q): %v", ctrlFile, err)
+			}
+			err := cg.checkControllers()
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Errorf("checkControllers() error = %v, wantErr = %t", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestCheckControllersUnreadable(t *testing.T) {
+	cg := cgroupSystemd{
+		Name:            "123",
+		Parent:          "test.slice",
+		ScopePrefix:     "runsc",
+		propControllers: []string{"cpu"},
+		cgroupV2:        cgroupV2{Mountpoint: t.TempDir()},
+	}
+	if err := cg.checkControllers(); err == nil {
+		t.Error("checkControllers() = nil, want error when cgroup.controllers is missing")
+	}
+}
+
 func TestInstall(t *testing.T) {
 	const dialErr = "dial unix /var/run/dbus/system_bus_socket: connect: no such file or directory"
 	for _, tc := range []struct {

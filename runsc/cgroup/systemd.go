@@ -61,7 +61,41 @@ type cgroupSystemd struct {
 	ManagerCG string
 
 	properties []systemdDbus.Property
-	dbusConn   *systemdDbus.Conn
+	// propControllers are the controllers for which properties were generated,
+	// i.e. those the runtime spec actually requests limits for.
+	propControllers []string
+	dbusConn        *systemdDbus.Conn
+}
+
+// checkControllers returns an error if a limit was requested for a controller
+// that is not available in the cgroup. systemd accepts properties for
+// controllers it was not delegated and silently drops them, so looking
+// afterwards is the only way to know whether a limit took effect.
+//
+// Preconditions: The cgroup must have been created.
+func (c *cgroupSystemd) checkControllers() error {
+	if len(c.propControllers) == 0 {
+		return nil
+	}
+	path := c.MakePath("")
+	data, err := os.ReadFile(filepath.Join(path, controllersFile))
+	if err != nil {
+		return fmt.Errorf("reading cgroup controllers for %q: %w", path, err)
+	}
+	available := make(map[string]struct{})
+	for _, name := range strings.Fields(string(data)) {
+		available[name] = struct{}{}
+	}
+	var missing []string
+	for _, name := range c.propControllers {
+		if _, ok := available[name]; !ok {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("resource limits were requested for cgroup controllers %s, but they are not available in %q; they may not be delegated to this systemd instance", strings.Join(missing, ","), path)
+	}
+	return nil
 }
 
 // translateUID translates uid through the user namespace ID map in mapPath.
@@ -316,6 +350,11 @@ func (c *cgroupSystemd) Join() (func(), error) {
 	if _, err = c.createCgroupPaths(); err != nil {
 		return nil, err
 	}
+	// The scope is a transient unit, so systemd releases it once this process
+	// exits; returning an error here does not leak it.
+	if err := c.checkControllers(); err != nil {
+		return nil, err
+	}
 	return clean.Release(), nil
 }
 
@@ -434,6 +473,8 @@ func newProp(name string, units any) systemdDbus.Property {
 }
 
 func (c *cgroupSystemd) updateControllersProps(res *specs.LinuxResources) error {
+	// Update() may be called more than once.
+	c.propControllers = nil
 	for controllerName, ctrlr := range controllers2 {
 		// First check if our controller is found in the system.
 		found := false
@@ -447,6 +488,9 @@ func (c *cgroupSystemd) updateControllersProps(res *specs.LinuxResources) error 
 			props, err := ctrlr.generateProperties(res)
 			if err != nil {
 				return err
+			}
+			if len(props) > 0 {
+				c.propControllers = append(c.propControllers, controllerName)
 			}
 			c.properties = append(c.properties, props...)
 			continue
