@@ -253,6 +253,7 @@ tests: unit-tests nogo-tests container-tests syscall-tests
 integration-tests: ## Run all standard integration tests.
 integration-tests: docker-tests overlay-tests hostnet-tests swgso-tests
 integration-tests: do-tests kvm-tests containerd-tests-min
+integration-tests: sandbox-posture-tests
 .PHONY: integration-tests
 
 integration-test-images: load-image-test load-basic load-systemd-integ load-systemd-services
@@ -390,6 +391,22 @@ portforward-tests: load-basic_redis load-basic_nginx $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),--network=host)
 	@$(call sudo,test/root:portforward_test,--runtime=$(RUNTIME) -test.v $(ARGS))
 .PHONY: portforward-test
+
+POSTURE_TEST_ARGS := -test.run=TestSandboxPosture -test.v
+sandbox-posture-tests: load-basic_alpine $(RUNTIME_BIN)
+	@$(call install_runtime,$(RUNTIME)-posture,) # Clear flags.
+	@$(call sudo,test/root:root_test,--runtime=$(RUNTIME)-posture $(POSTURE_TEST_ARGS) $(ARGS))
+	@$(call install_runtime,$(RUNTIME)-posture-hostnet,--network=host)
+	@$(call sudo,test/root:root_test,--runtime=$(RUNTIME)-posture-hostnet --network=host $(POSTURE_TEST_ARGS) $(ARGS))
+	@$(call install_runtime,$(RUNTIME)-posture-hostnet-raw,--network=host --net-raw)
+	@$(call sudo,test/root:root_test,--runtime=$(RUNTIME)-posture-hostnet-raw --network=host --net-raw $(POSTURE_TEST_ARGS) $(ARGS))
+	@$(call install_runtime,$(RUNTIME)-posture-nodirectfs,--directfs=false)
+	@$(call sudo,test/root:root_test,--runtime=$(RUNTIME)-posture-nodirectfs --directfs=false $(POSTURE_TEST_ARGS) $(ARGS))
+	@$(call install_runtime,$(RUNTIME)-posture-nodirectfs-hostnet,--directfs=false --network=host)
+	@$(call sudo,test/root:root_test,--runtime=$(RUNTIME)-posture-nodirectfs-hostnet --directfs=false --network=host $(POSTURE_TEST_ARGS) $(ARGS))
+	@$(call install_runtime,$(RUNTIME)-posture-kvm,--platform=kvm)
+	@$(call sudo,test/root:root_test,--runtime=$(RUNTIME)-posture-kvm --platform=kvm $(POSTURE_TEST_ARGS) $(ARGS))
+.PHONY: sandbox-posture-tests
 
 # Standard integration targets.
 INTEGRATION_TARGETS := //test/image:image_test //test/e2e:integration_test

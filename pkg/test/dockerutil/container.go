@@ -495,6 +495,17 @@ func (c *Container) SandboxPid(ctx context.Context) (int, error) {
 	return resp.ContainerJSONBase.State.Pid, nil
 }
 
+// NetworkSandboxKey returns the path of the network namespace Docker created
+// for the container, e.g. "/var/run/docker/netns/<key>". It is empty for a
+// container that shares the host's network namespace.
+func (c *Container) NetworkSandboxKey(ctx context.Context) (string, error) {
+	resp, err := c.client.ContainerInspect(ctx, c.id)
+	if err != nil {
+		return "", err
+	}
+	return resp.NetworkSettings.SandboxKey, nil
+}
+
 // ErrNoIP indicates that no IP address is available.
 var ErrNoIP = errors.New("no IP available")
 
