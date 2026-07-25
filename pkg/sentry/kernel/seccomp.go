@@ -95,7 +95,11 @@ func seccompSiginfo(t *Task, errno, sysno int32, ip hostarch.Addr) *linux.Signal
 // Preconditions: The caller must be running on the task goroutine.
 func (t *Task) checkSeccompSyscall(sysno int32, args arch.SyscallArguments, ip hostarch.Addr) linux.BPFAction {
 	result := linux.BPFAction(t.evaluateSyscallFilters(sysno, args, ip))
-	action := result & linux.SECCOMP_RET_ACTION
+	// The action must be masked with SECCOMP_RET_ACTION_FULL rather than
+	// SECCOMP_RET_ACTION; the latter drops the high bit, which would truncate
+	// SECCOMP_RET_KILL_PROCESS (0x80000000) to SECCOMP_RET_KILL_THREAD (0).
+	// Compare Linux's kernel/seccomp.c:__seccomp_filter().
+	action := result & linux.SECCOMP_RET_ACTION_FULL
 	switch action {
 	case linux.SECCOMP_RET_TRAP:
 		// "Results in the kernel sending a SIGSYS signal to the triggering
@@ -126,6 +130,11 @@ func (t *Task) checkSeccompSyscall(sysno int32, args arch.SyscallArguments, ip h
 
 	case linux.SECCOMP_RET_ALLOW:
 		// "Results in the system call being executed."
+
+	case linux.SECCOMP_RET_KILL_PROCESS:
+		// "Results in the entire process exiting immediately without executing
+		// the system call. The exit status of the task will be SIGSYS, not
+		// SIGKILL."
 
 	case linux.SECCOMP_RET_KILL_THREAD:
 		// "Results in the task exiting immediately without executing the
@@ -186,7 +195,13 @@ func (t *Task) evaluateSyscallFilters(sysno int32, args arch.SyscallArguments, i
 		// "The ordering ensures that a min_t() over composed return values
 		// always selects the least permissive choice." -
 		// include/uapi/linux/seccomp.h
-		if (thisRet & linux.SECCOMP_RET_ACTION) < (ret & linux.SECCOMP_RET_ACTION) {
+		//
+		// Note that the comparison is signed over the full action mask,
+		// matching ACTION_ONLY() in Linux's kernel/seccomp.c:
+		// "#define ACTION_ONLY(ret) ((s32)((ret) & (SECCOMP_RET_ACTION_FULL)))"
+		// This gives SECCOMP_RET_KILL_PROCESS (0x80000000, negative as s32)
+		// precedence over all other actions.
+		if int32(thisRet&linux.SECCOMP_RET_ACTION_FULL) < int32(ret&linux.SECCOMP_RET_ACTION_FULL) {
 			ret = thisRet
 		}
 	}
@@ -252,7 +267,7 @@ func (ts *taskSeccomp) populateCache(t *Task) {
 				sysnoIsCacheable = false
 				break
 			}
-			if (linux.BPFAction(result) & linux.SECCOMP_RET_ACTION) < (ret & linux.SECCOMP_RET_ACTION) {
+			if int32(linux.BPFAction(result)&linux.SECCOMP_RET_ACTION_FULL) < int32(ret&linux.SECCOMP_RET_ACTION_FULL) {
 				ret = linux.BPFAction(result)
 			}
 		}

@@ -46,6 +46,10 @@
 #define SYS_SECCOMP 1
 #endif
 
+#ifndef SECCOMP_RET_KILL_PROCESS
+#define SECCOMP_RET_KILL_PROCESS 0x80000000U
+#endif
+
 namespace gvisor {
 namespace testing {
 
@@ -161,6 +165,34 @@ void RegisterSignalHandler(int signum,
   MaybeSave();
 }
 
+// Spawns a thread that invokes kFilteredSyscall, which is expected to kill
+// the entire thread group, then exits 0 if the original thread survives.
+// Must be called from a forked, otherwise-single-threaded child process whose
+// seccomp filters return SECCOMP_RET_KILL_PROCESS for kFilteredSyscall.
+// Async-signal-safe.
+void TriggerFilteredSyscallInCloneThreadThenExit(void* stack_top) {
+  // Pass CLONE_VFORK to block the original thread in the child process until
+  // the clone thread exits.
+  //
+  // N.B. clone(2) is not officially async-signal-safe, but at minimum glibc's
+  // x86_64 implementation is safe. See glibc
+  // sysdeps/unix/sysv/linux/x86_64/clone.S.
+  clone(
+      +[](void* arg) {
+        syscall(kFilteredSyscall);  // should kill the whole thread group
+        _exit(1);                   // should be unreachable
+        return 2;  // should be very unreachable, shut up the compiler
+      },
+      stack_top,
+      CLONE_FILES | CLONE_FS | CLONE_SIGHAND | CLONE_THREAD | CLONE_VM |
+          CLONE_VFORK,
+      nullptr);
+  // This is only reachable if the seccomp violation in the clone thread
+  // killed only that thread, i.e. if SECCOMP_RET_KILL_PROCESS incorrectly
+  // behaved like SECCOMP_RET_KILL_THREAD (gvisor.dev/issue/13819).
+  _exit(0);
+}
+
 // All of the following tests execute in a subprocess to ensure that each test
 // is run in a separate process. This avoids cross-contamination of seccomp
 // state between tests, and is necessary to ensure that test processes killed
@@ -214,6 +246,44 @@ TEST(SeccompTest, RetKillOnlyKillsOneThread) {
   int status;
   ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
   EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << "status " << status;
+}
+
+TEST(SeccompTest, RetKillProcessCausesDeathBySIGSYS) {
+  pid_t const pid = fork();
+  if (pid == 0) {
+    // Register a signal handler for SIGSYS that we don't expect to be invoked.
+    RegisterSignalHandler(SIGSYS, +[](int, siginfo_t*, void*) { _exit(1); });
+    ApplySeccompFilter(kFilteredSyscall, SECCOMP_RET_KILL_PROCESS);
+    syscall(kFilteredSyscall);
+    TEST_CHECK_MSG(false, "Survived invocation of test syscall");
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGSYS)
+      << "status " << status;
+}
+
+// Unlike SECCOMP_RET_KILL_THREAD, SECCOMP_RET_KILL_PROCESS kills the entire
+// thread group, not only the thread that invoked the filtered syscall.
+// Regression test for gvisor.dev/issue/13819, in which
+// SECCOMP_RET_KILL_PROCESS was truncated to SECCOMP_RET_KILL_THREAD.
+TEST(SeccompTest, RetKillProcessKillsAllThreads) {
+  Mapping stack = ASSERT_NO_ERRNO_AND_VALUE(
+      MmapAnon(2 * kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE));
+
+  pid_t const pid = fork();
+  if (pid == 0) {
+    // Register a signal handler for SIGSYS that we don't expect to be invoked.
+    RegisterSignalHandler(SIGSYS, +[](int, siginfo_t*, void*) { _exit(1); });
+    ApplySeccompFilter(kFilteredSyscall, SECCOMP_RET_KILL_PROCESS);
+    TriggerFilteredSyscallInCloneThreadThenExit(stack.endptr());
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGSYS)
       << "status " << status;
 }
 
@@ -298,6 +368,25 @@ TEST(SeccompTest, RetKillVsyscallCausesDeathBySIGSYS) {
     // Register a signal handler for SIGSYS that we don't expect to be invoked.
     RegisterSignalHandler(SIGSYS, +[](int, siginfo_t*, void*) { _exit(1); });
     ApplySeccompFilter(SYS_time, SECCOMP_RET_KILL);
+    vsyscall_time(nullptr);  // Should result in death.
+    TEST_CHECK_MSG(false, "Survived invocation of test syscall");
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGSYS)
+      << "status " << status;
+}
+
+TEST(SeccompTest, RetKillProcessVsyscallCausesDeathBySIGSYS) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(IsVsyscallEnabled()));
+  SKIP_IF(PlatformSupportVsyscall() == PlatformSupport::NotSupported);
+
+  pid_t const pid = fork();
+  if (pid == 0) {
+    // Register a signal handler for SIGSYS that we don't expect to be invoked.
+    RegisterSignalHandler(SIGSYS, +[](int, siginfo_t*, void*) { _exit(1); });
+    ApplySeccompFilter(SYS_time, SECCOMP_RET_KILL_PROCESS);
     vsyscall_time(nullptr);  // Should result in death.
     TEST_CHECK_MSG(false, "Survived invocation of test syscall");
   }
@@ -429,6 +518,51 @@ TEST(SeccompTest, LeastPermissiveFilterReturnValueApplies) {
     ApplySeccompFilter(kFilteredSyscall, SECCOMP_RET_ERRNO | ENOTNAM);
     syscall(kFilteredSyscall);
     TEST_CHECK_MSG(false, "Survived invocation of test syscall");
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGSYS)
+      << "status " << status;
+}
+
+// The return value comparison across stacked filters is signed over the full
+// action mask (see ACTION_ONLY() in Linux's kernel/seccomp.c), so
+// SECCOMP_RET_KILL_PROCESS (0x80000000) is the least permissive action and
+// takes precedence over SECCOMP_RET_KILL_THREAD (0), regardless of the order
+// in which the filters were installed.
+TEST(SeccompTest, RetKillProcessTakesPrecedenceOverRetKillThread) {
+  Mapping stack = ASSERT_NO_ERRNO_AND_VALUE(
+      MmapAnon(2 * kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE));
+
+  pid_t const pid = fork();
+  if (pid == 0) {
+    // Register a signal handler for SIGSYS that we don't expect to be invoked.
+    RegisterSignalHandler(SIGSYS, +[](int, siginfo_t*, void*) { _exit(1); });
+    ApplySeccompFilter(kFilteredSyscall, SECCOMP_RET_KILL_PROCESS);
+    ApplySeccompFilter(kFilteredSyscall, SECCOMP_RET_KILL);
+    TriggerFilteredSyscallInCloneThreadThenExit(stack.endptr());
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGSYS)
+      << "status " << status;
+}
+
+// Same as RetKillProcessTakesPrecedenceOverRetKillThread, with the filters
+// installed in the opposite order.
+TEST(SeccompTest, RetKillProcessTakesPrecedenceOverEarlierRetKillThread) {
+  Mapping stack = ASSERT_NO_ERRNO_AND_VALUE(
+      MmapAnon(2 * kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE));
+
+  pid_t const pid = fork();
+  if (pid == 0) {
+    // Register a signal handler for SIGSYS that we don't expect to be invoked.
+    RegisterSignalHandler(SIGSYS, +[](int, siginfo_t*, void*) { _exit(1); });
+    ApplySeccompFilter(kFilteredSyscall, SECCOMP_RET_KILL);
+    ApplySeccompFilter(kFilteredSyscall, SECCOMP_RET_KILL_PROCESS);
+    TriggerFilteredSyscallInCloneThreadThenExit(stack.endptr());
   }
   ASSERT_THAT(pid, SyscallSucceeds());
   int status;
