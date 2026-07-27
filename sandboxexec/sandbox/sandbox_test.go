@@ -385,3 +385,47 @@ func TestSandboxBadWorkingDir(t *testing.T) {
 		t.Errorf("sandbox.New error = %v; want error containing %q", err, "working directory cannot be empty")
 	}
 }
+
+func TestSandboxHostname(t *testing.T) {
+	ctx := context.Background()
+
+	sb, err := sandbox.New(ctx,
+		sandbox.WithNetworking(false),
+		sandbox.WithHostname("custom-sandbox-host"),
+	)
+	if err != nil {
+		t.Fatalf("failed to start sandbox: %v", err)
+	}
+	defer sb.Close(ctx)
+
+	output, _, err := sb.Exec(ctx, "hostname")
+	if err != nil {
+		t.Fatalf("failed to exec hostname in sandbox: %v", err)
+	}
+
+	if got, want := strings.TrimSpace(output), "custom-sandbox-host"; got != want {
+		t.Errorf("Exec(\"hostname\") = %q, want %q", got, want)
+	}
+}
+
+func TestSandboxCustomProcMount(t *testing.T) {
+	ctx := context.Background()
+
+	sb, err := sandbox.New(ctx,
+		sandbox.WithNetworking(false),
+		sandbox.WithProcMount("/custom_proc"),
+	)
+	if err != nil {
+		t.Fatalf("failed to start sandbox: %v", err)
+	}
+	defer sb.Close(ctx)
+
+	// Double check that it contains process information (e.g. status)
+	output, _, err := sb.Exec(ctx, "cat", "/custom_proc/self/status")
+	if err != nil {
+		t.Fatalf("failed to cat /custom_proc/self/status: %v", err)
+	}
+	if !strings.Contains(output, "Name:") {
+		t.Errorf("output of cat /custom_proc/self/status missing 'Name:', got: %v", output)
+	}
+}
