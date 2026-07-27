@@ -132,6 +132,21 @@ type RunOpts struct {
 	Annotations map[string]string
 }
 
+func ensureShouldRun(logger testutil.Logger) {
+	// Only apply sharding to test loggers (*testing.T / *testing.B) that support Skipf.
+	// Non-test loggers (like testutil.DefaultLogger used by test/runtimes/runner/lib/lib.go)
+	// launch shared containers and manage their own sharding, so they must not be skipped or panicked.
+	s, ok := logger.(interface {
+		Skipf(format string, args ...any)
+	})
+	if !ok {
+		return
+	}
+	if !testutil.ShouldRun(logger.Name()) {
+		s.Skipf("Skipping test %q for shard %d of %d", logger.Name(), testutil.Partition(), testutil.TotalPartitions())
+	}
+}
+
 func makeContainer(ctx context.Context, logger testutil.Logger, runtime string) *Container {
 	// Slashes and pluses are not allowed in container names.
 	name := testutil.RandomID(logger.Name())
@@ -156,12 +171,14 @@ func makeContainer(ctx context.Context, logger testutil.Logger, runtime string) 
 //
 // Containers will check flags for profiling requests.
 func MakeContainer(ctx context.Context, logger testutil.Logger) *Container {
+	ensureShouldRun(logger)
 	return makeContainer(ctx, logger, *runtime)
 }
 
 // MakeContainerWithRuntime is like MakeContainer, but allows for a runtime
 // to be specified by suffix.
 func MakeContainerWithRuntime(ctx context.Context, logger testutil.Logger, suffix string) *Container {
+	ensureShouldRun(logger)
 	return makeContainer(ctx, logger, *runtime+suffix)
 }
 
@@ -171,6 +188,7 @@ func MakeContainerWithRuntime(ctx context.Context, logger testutil.Logger, suffi
 //
 // Native containers aren't profiled.
 func MakeNativeContainer(ctx context.Context, logger testutil.Logger) *Container {
+	ensureShouldRun(logger)
 	unsandboxedRuntime := "runc"
 	if override, found := os.LookupEnv("UNSANDBOXED_RUNTIME"); found {
 		unsandboxedRuntime = override

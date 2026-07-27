@@ -176,6 +176,7 @@ configure = $(call configure_noreload,$(1),$(2)) && $(reload_docker) && $(call w
 
 # Helpers for above. Requires $(RUNTIME_BIN) dependency.
 install_runtime = $(call configure,$(1),$(2) --TESTONLY-test-name-env=RUNSC_TEST_NAME)
+install_runtime_noreload = $(call configure_noreload,$(1),$(2) --TESTONLY-test-name-env=RUNSC_TEST_NAME)
 # Don't use cached results, otherwise multiple runs using different runtimes
 # may be skipped, if all other inputs are the same.
 test_runtime = $(call test,--test_env=RUNTIME=$(1) --nocache_test_results $(PARTITIONS) $(2))
@@ -395,12 +396,12 @@ portforward-tests: load-basic_redis load-basic_nginx $(RUNTIME_BIN)
 INTEGRATION_TARGETS := //test/image:image_test //test/e2e:integration_test
 
 docker-tests: integration-test-images $(RUNTIME_BIN)
-	@$(call install_runtime,$(RUNTIME),) # Clear flags.
-	@$(call install_runtime,$(RUNTIME)-docker,--net-raw --allow-packet-socket-write) # Used by TestDocker*.
-	@$(call install_runtime,$(RUNTIME)-fdlimit,--fdlimit=2000) # Used by TestRlimitNoFile.
-	@$(call install_runtime,$(RUNTIME)-dcache,--fdlimit=2000 --dcache=100) # Used by TestDentryCacheLimit.
-	@$(call install_runtime,$(RUNTIME)-host-uds,--host-uds=all) # Used by TestHostSocketConnect.
-	@$(call install_runtime,$(RUNTIME)-overlay,--overlay2=all:self) # Used by TestOverlay*.
+	@$(call install_runtime_noreload,$(RUNTIME),) # Clear flags.
+	@$(call install_runtime_noreload,$(RUNTIME)-docker,--net-raw --allow-packet-socket-write) # Used by TestDocker*.
+	@$(call install_runtime_noreload,$(RUNTIME)-fdlimit,--fdlimit=2000) # Used by TestRlimitNoFile.
+	@$(call install_runtime_noreload,$(RUNTIME)-dcache,--fdlimit=2000 --dcache=100) # Used by TestDentryCacheLimit.
+	@$(call install_runtime_noreload,$(RUNTIME)-host-uds,--host-uds=all) # Used by TestHostSocketConnect.
+	@$(call install_runtime_noreload,$(RUNTIME)-overlay,--overlay2=all:self) # Used by TestOverlay*.
 	@$(call install_runtime,$(RUNTIME)-cgroupv2,--mount-cgroup-v2) # Used by TestSystemd*.
 	@$(call test_runtime_cached,$(RUNTIME),$(INTEGRATION_TARGETS) --test_env=TEST_SAVE_RESTORE_NETSTACK=true //test/e2e:integration_runtime_test //test/e2e:runtime_in_docker_test)
 .PHONY: docker-tests
@@ -412,13 +413,13 @@ plugin-network-tests: integration-test-images $(RUNTIME_BIN)
 plugin-network-tests: RUNSC_TARGET=--config plugin-tldk //runsc:runsc-plugin-stack
 
 overlay-tests: integration-test-images $(RUNTIME_BIN)
-	@$(call install_runtime,$(RUNTIME)-overlay,--overlay2=all:dir=/tmp)
+	@$(call install_runtime_noreload,$(RUNTIME)-overlay,--overlay2=all:dir=/tmp)
 	@$(call install_runtime,$(RUNTIME)-overlay-docker,--net-raw --allow-packet-socket-write --overlay2=all:dir=/tmp)
 	@$(call test_runtime_cached,$(RUNTIME)-overlay,--test_env=TEST_OVERLAY=true $(INTEGRATION_TARGETS))
 .PHONY: overlay-tests
 
 swgso-tests: integration-test-images $(RUNTIME_BIN)
-	@$(call install_runtime,$(RUNTIME)-swgso,--software-gso=true --gso=false)
+	@$(call install_runtime_noreload,$(RUNTIME)-swgso,--software-gso=true --gso=false)
 	@$(call install_runtime,$(RUNTIME)-swgso-docker,--net-raw --allow-packet-socket-write --software-gso=true --gso=false)
 	@$(call test_runtime_cached,$(RUNTIME)-swgso,$(INTEGRATION_TARGETS))
 .PHONY: swgso-tests
@@ -432,13 +433,13 @@ kvm-tests: integration-test-images $(RUNTIME_BIN)
 	@(lsmod | grep -E '^(kvm_intel|kvm_amd)') || sudo modprobe kvm
 	@if ! test -w /dev/kvm; then sudo chmod a+rw /dev/kvm; fi
 	@$(call test,//pkg/sentry/platform/kvm:kvm_test)
-	@$(call install_runtime,$(RUNTIME)-kvm,--platform=kvm)
+	@$(call install_runtime_noreload,$(RUNTIME)-kvm,--platform=kvm)
 	@$(call install_runtime,$(RUNTIME)-kvm-docker,--net-raw --allow-packet-socket-write --platform=kvm)
 	@$(call test_runtime_cached,$(RUNTIME)-kvm,$(INTEGRATION_TARGETS))
 .PHONY: kvm-tests
 
 systrap-tests: integration-test-images $(RUNTIME_BIN)
-	@$(call install_runtime,$(RUNTIME)-systrap,--platform=systrap)
+	@$(call install_runtime_noreload,$(RUNTIME)-systrap,--platform=systrap)
 	@$(call install_runtime,$(RUNTIME)-systrap-docker,--net-raw --allow-packet-socket-write --platform=systrap)
 	@$(call test_runtime_cached,$(RUNTIME)-systrap,$(INTEGRATION_TARGETS))
 .PHONY: systrap-tests
