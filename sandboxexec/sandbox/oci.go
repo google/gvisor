@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
@@ -33,6 +34,19 @@ type BundleConfig struct {
 	Annotations      map[string]string
 	WorkingDir       string
 	Hostname         string
+	UID              int
+	GID              int
+	UnshareUser      bool
+}
+
+// getEnvInt parses an environment variable as an integer, returning fallback if empty or invalid.
+func getEnvInt(key string, fallback int) int {
+	if s := os.Getenv(key); s != "" {
+		if v, err := strconv.Atoi(s); err == nil {
+			return v
+		}
+	}
+	return fallback
 }
 
 // NewBundle creates a temporary OCI bundle on the fly with the given configuration.
@@ -53,11 +67,24 @@ func NewBundle(cfg BundleConfig) (string, error) {
 		{Type: specs.IPCNamespace},
 	}
 
-	if os.Geteuid() != 0 {
+	requiresUserns := cfg.UnshareUser || os.Geteuid() != 0
+	if requiresUserns {
 		namespaces = append(namespaces, specs.LinuxNamespace{Type: specs.UserNamespace})
 	}
 	if cfg.EnableNetworking {
 		namespaces = append(namespaces, specs.LinuxNamespace{Type: specs.NetworkNamespace})
+	}
+
+	hostUID := os.Getuid()
+	targetUID := hostUID
+	if cfg.UID != -1 {
+		targetUID = cfg.UID
+	}
+
+	hostGID := os.Getgid()
+	targetGID := hostGID
+	if cfg.GID != -1 {
+		targetGID = cfg.GID
 	}
 
 	spec := &specs.Spec{
@@ -69,7 +96,7 @@ func NewBundle(cfg BundleConfig) (string, error) {
 		},
 		Process: &specs.Process{
 			Terminal: false,
-			User:     specs.User{UID: 0, GID: 0},
+			User:     specs.User{UID: uint32(targetUID), GID: uint32(targetGID)},
 			// Keeps the sandbox alive in the background.
 			Args: []string{"sleep", "infinity"},
 			Cwd:  cfg.WorkingDir,
@@ -89,12 +116,24 @@ func NewBundle(cfg BundleConfig) (string, error) {
 	baseEnv := []string{"PATH=/bin:/usr/bin:/usr/local/bin"}
 	spec.Process.Env = append(baseEnv, cfg.Env...)
 
-	if os.Geteuid() != 0 {
+	if requiresUserns {
+		sudoUID := getEnvInt("SUDO_UID", hostUID)
+		sudoGID := getEnvInt("SUDO_GID", hostGID)
+
 		spec.Linux.UIDMappings = []specs.LinuxIDMapping{
-			{ContainerID: 0, HostID: uint32(os.Geteuid()), Size: 1},
+			{ContainerID: uint32(targetUID), HostID: uint32(sudoUID), Size: 1},
 		}
 		spec.Linux.GIDMappings = []specs.LinuxIDMapping{
-			{ContainerID: 0, HostID: uint32(os.Getegid()), Size: 1},
+			{ContainerID: uint32(targetGID), HostID: uint32(sudoGID), Size: 1},
+		}
+
+		if hostUID == 0 {
+			if targetUID != 0 {
+				spec.Linux.UIDMappings = append(spec.Linux.UIDMappings, specs.LinuxIDMapping{ContainerID: 0, HostID: 0, Size: 1})
+			}
+			if targetGID != 0 {
+				spec.Linux.GIDMappings = append(spec.Linux.GIDMappings, specs.LinuxIDMapping{ContainerID: 0, HostID: 0, Size: 1})
+			}
 		}
 	}
 

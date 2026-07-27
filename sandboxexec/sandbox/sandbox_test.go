@@ -16,6 +16,7 @@ package sandbox_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -427,5 +428,85 @@ func TestSandboxCustomProcMount(t *testing.T) {
 	}
 	if !strings.Contains(output, "Name:") {
 		t.Errorf("output of cat /custom_proc/self/status missing 'Name:', got: %v", output)
+	}
+}
+
+func TestUserNamespaceUnshareOnly(t *testing.T) {
+	ctx := context.Background()
+
+	sb, err := sandbox.New(ctx,
+		sandbox.WithNetworking(false),
+		sandbox.WithUserNamespace(-1, -1),
+	)
+	if err != nil {
+		t.Fatalf("failed to start sandbox: %v", err)
+	}
+	defer sb.Close(ctx)
+
+	output, _, err := sb.Exec(ctx, "id", "-u")
+	if err != nil {
+		t.Fatalf("failed to exec id in sandbox: %v", err)
+	}
+
+	expectedUID := fmt.Sprintf("%d", os.Getuid())
+	if got := strings.TrimSpace(output); got != expectedUID {
+		t.Errorf("Exec(\"id -u\") = %q, want %q", got, expectedUID)
+	}
+}
+
+func TestUserNamespaceInvalidParams(t *testing.T) {
+	ctx := context.Background()
+
+	_, err := sandbox.New(ctx,
+		sandbox.WithNetworking(false),
+		sandbox.WithUserNamespace(-5, 1000),
+	)
+	if err == nil {
+		t.Fatalf("sandbox.New succeeded with invalid parameters; want error")
+	}
+	if !strings.Contains(err.Error(), "uid and gid must be >= -1") {
+		t.Errorf("sandbox.New error = %v; want error containing %q", err, "uid and gid must be >= -1")
+	}
+}
+
+func TestUserNamespaceUIDOnly(t *testing.T) {
+	ctx := context.Background()
+
+	sb, err := sandbox.New(ctx,
+		sandbox.WithNetworking(false),
+		sandbox.WithUserNamespace(1234, -1),
+	)
+	if err != nil {
+		t.Fatalf("failed to start sandbox: %v", err)
+	}
+	defer sb.Close(ctx)
+
+	output, _, err := sb.Exec(ctx, "id", "-u")
+	if err != nil {
+		t.Fatalf("failed to exec id in sandbox: %v", err)
+	}
+	if got := strings.TrimSpace(output); got != "1234" {
+		t.Errorf("Exec(\"id -u\") = %q, want %q", got, "1234")
+	}
+}
+
+func TestUserNamespaceGIDOnly(t *testing.T) {
+	ctx := context.Background()
+
+	sb, err := sandbox.New(ctx,
+		sandbox.WithNetworking(false),
+		sandbox.WithUserNamespace(-1, 5678),
+	)
+	if err != nil {
+		t.Fatalf("failed to start sandbox: %v", err)
+	}
+	defer sb.Close(ctx)
+
+	output, _, err := sb.Exec(ctx, "id", "-g")
+	if err != nil {
+		t.Fatalf("failed to exec id in sandbox: %v", err)
+	}
+	if got := strings.TrimSpace(output); got != "5678" {
+		t.Errorf("Exec(\"id -g\") = %q, want %q", got, "5678")
 	}
 }

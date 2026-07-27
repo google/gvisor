@@ -41,6 +41,9 @@ type Options struct {
 	err              error
 	workingDir       string
 	hostname         string
+	uid              int
+	gid              int
+	unshareUser      bool
 }
 
 // Option configures the Options struct.
@@ -126,6 +129,21 @@ func WithHostname(hostname string) Option {
 	}
 }
 
+// WithUserNamespace isolates the user namespace and configures the process's user identity
+// inside the sandbox. Passing -1 for both uid and gid is equivalent to calling
+// purely unshare-user (it isolates the namespace while retaining the host's actual numerical IDs).
+func WithUserNamespace(uid int, gid int) Option {
+	return func(o *Options) {
+		if uid < -1 || gid < -1 {
+			o.err = fmt.Errorf("uid and gid must be >= -1")
+			return
+		}
+		o.unshareUser = true
+		o.uid = uid
+		o.gid = gid
+	}
+}
+
 // WithSnapshot configures the sandbox to restore state from the given snapshot.
 // The sandbox automatically reads the snapshot metadata to determine if it is a
 // full Checkpoint/Restore, Filesystem snapshot, or Rootfs Tar snapshot.
@@ -206,6 +224,8 @@ func New(ctx context.Context, opts ...Option) (*Sandbox, error) {
 	options := Options{
 		enableNetworking: true,
 		workingDir:       "/",
+		uid:              -1,
+		gid:              -1,
 	}
 	for _, o := range opts {
 		o(&options)
@@ -310,6 +330,9 @@ func New(ctx context.Context, opts ...Option) (*Sandbox, error) {
 		Annotations:      annotations,
 		WorkingDir:       options.workingDir,
 		Hostname:         options.hostname,
+		UID:              options.uid,
+		GID:              options.gid,
+		UnshareUser:      options.unshareUser,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OCI bundle: %v", err)
