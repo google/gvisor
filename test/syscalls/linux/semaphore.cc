@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <linux/capability.h>
 #include <signal.h>
 #include <sys/ipc.h>
 #include <sys/sem.h>
@@ -19,17 +20,23 @@
 
 #include <atomic>
 #include <cerrno>
+#include <cstdint>
 #include <ctime>
 #include <memory>
 #include <set>
+#include <utility>
+#include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/base/macros.h"
-#include "absl/memory/memory.h"
 #include "absl/synchronization/mutex.h"
 #include "absl/time/clock.h"
-#include "test/util/capability_util.h"
+#include "absl/time/time.h"
+#include "test/util/linux_capability_util.h"
+#include "test/util/logging.h"
+#include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
@@ -309,35 +316,36 @@ TEST(SemaphoreTest, SemOpRemoveWithWaiter) {
   AutoSem sem(semget(IPC_PRIVATE, 2, 0600 | IPC_CREAT));
   ASSERT_THAT(sem.get(), SyscallSucceeds());
 
-  ScopedThread th([&sem] {
+  int sem_id = sem.release();
+  ScopedThread th([sem_id] {
     absl::SleepFor(absl::Milliseconds(250));
-    ASSERT_THAT(semctl(sem.release(), 0, IPC_RMID), SyscallSucceeds());
+    ASSERT_THAT(semctl(sem_id, 0, IPC_RMID), SyscallSucceeds());
   });
 
   // This must happen before IPC_RMID runs above. Otherwise it fails with EINVAL
   // instead because the semaphore has already been removed.
   struct sembuf buf = {};
   buf.sem_op = -1;
-  ASSERT_THAT(RetryEINTR(semop)(sem.get(), &buf, 1),
-              SyscallFailsWithErrno(EIDRM));
+  ASSERT_THAT(RetryEINTR(semop)(sem_id, &buf, 1), SyscallFailsWithErrno(EIDRM));
 }
 
-// Semaphore isn't fair. It will execute any waiter that can satisfy the
-// request even if it gets in front of other waiters.
+// Semaphore isn't fair. It will execute any request that can currently be
+// satisfied, bypassing older, blocked waiters.
 TEST(SemaphoreTest, SemOpBestFitExecution) {
   AutoSem sem(semget(IPC_PRIVATE, 1, 0600 | IPC_CREAT));
   ASSERT_THAT(sem.get(), SyscallSucceeds());
 
-  ScopedThread th([&sem] {
+  int sem_id = sem.get();
+  ScopedThread th([sem_id] {
     struct sembuf buf = {};
     buf.sem_op = -2;
-    ASSERT_THAT(RetryEINTR(semop)(sem.get(), &buf, 1), SyscallFails());
+    ASSERT_THAT(RetryEINTR(semop)(sem_id, &buf, 1), SyscallFails());
     // Ensure that wait will only unblock when the semaphore is removed. On
     // EINTR retry it may race with deletion and return EINVAL.
     ASSERT_TRUE(errno == EIDRM || errno == EINVAL) << "errno=" << errno;
   });
 
-  // Ensures that '-1' below will unblock even though '-10' above is waiting
+  // Ensures that '-1' below will unblock even though '-2' above is waiting
   // for the same semaphore.
   for (size_t i = 0; i < 10; ++i) {
     struct sembuf buf = {};
@@ -586,7 +594,7 @@ TEST(SemaphoreTest, SemCtlIpcStat) {
   AutoSem sem(semget(IPC_PRIVATE, 10, 0600 | IPC_CREAT));
   ASSERT_THAT(sem.get(), SyscallSucceeds());
 
-  struct semid_ds ds;
+  struct semid_ds ds = {};
   EXPECT_THAT(semctl(sem.get(), 0, IPC_STAT, &ds), SyscallSucceeds());
 
   EXPECT_EQ(ds.sem_perm.__key, IPC_PRIVATE);
@@ -869,7 +877,7 @@ TEST(SemaphoreTest, SemopGetncntOnSignal) {
 TEST(SemaphoreTest, IpcInfo) {
   constexpr int kLoops = 5;
   std::set<int> sem_ids;
-  struct seminfo info;
+  struct seminfo info = {};
   // Drop CAP_IPC_OWNER which allows us to bypass semaphore permissions.
   AutoCapability cap(CAP_IPC_OWNER, false);
   for (int i = 0; i < kLoops; i++) {
@@ -889,12 +897,12 @@ TEST(SemaphoreTest, IpcInfo) {
     int sem_id = semctl(i, 0, SEM_STAT, &ds);
     // Only if index i is used within the registry.
     if (sem_ids.find(sem_id) != sem_ids.end()) {
-      struct semid_ds ipc_stat_ds;
+      struct semid_ds ipc_stat_ds = {};
       ASSERT_THAT(semctl(sem_id, 0, IPC_STAT, &ipc_stat_ds), SyscallSucceeds());
       EXPECT_TRUE(ds == ipc_stat_ds);
 
       // Remove the semaphore set's read permission.
-      struct semid_ds ipc_set_ds;
+      struct semid_ds ipc_set_ds = {};
       ipc_set_ds.sem_perm.uid = getuid();
       ipc_set_ds.sem_perm.gid = getgid();
       // Keep the semaphore set's write permission so that it could be removed.
@@ -939,7 +947,7 @@ TEST(SemaphoreTest, SemInfo) {
   constexpr int kLoops = 5;
   constexpr int kSemSetSize = 3;
   std::set<int> sem_ids;
-  struct seminfo info;
+  struct seminfo info = {};
   // Drop CAP_IPC_OWNER which allows us to bypass semaphore permissions.
   AutoCapability cap(CAP_IPC_OWNER, false);
   for (int i = 0; i < kLoops; i++) {
@@ -971,12 +979,12 @@ TEST(SemaphoreTest, SemInfo) {
     int sem_id = semctl(i, 0, SEM_STAT, &ds);
     // Only if index i is used within the registry.
     if (sem_ids.find(sem_id) != sem_ids.end()) {
-      struct semid_ds ipc_stat_ds;
+      struct semid_ds ipc_stat_ds = {};
       ASSERT_THAT(semctl(sem_id, 0, IPC_STAT, &ipc_stat_ds), SyscallSucceeds());
       EXPECT_TRUE(ds == ipc_stat_ds);
 
       // Remove the semaphore set's read permission.
-      struct semid_ds ipc_set_ds;
+      struct semid_ds ipc_set_ds = {};
       ipc_set_ds.sem_perm.uid = getuid();
       ipc_set_ds.sem_perm.gid = getgid();
       // Keep the semaphore set's write permission so that it could be removed.
@@ -1013,10 +1021,10 @@ TEST(SemaphoreTest, SemInfo) {
   EXPECT_EQ(info.semmsl, kSemMsl);
   EXPECT_EQ(info.semopm, kSemOpm);
   EXPECT_EQ(info.semume, kSemUme);
-  // Apart from semapahores that are not created by the test, we can't determine
+  // Apart from semaphores that are not created by the test, we can't determine
   // the exact number of semaphore sets and semaphores, as a result, semusz and
   // semaem range from 0 to a random number. Since the numbers are always
-  // non-negative, the test will not check the reslts of semusz and semaem.
+  // non-negative, the test will not check the results of semusz and semaem.
   EXPECT_EQ(info.semvmx, kSemVmx);
 }
 

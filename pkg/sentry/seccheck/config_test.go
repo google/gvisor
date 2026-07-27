@@ -188,3 +188,36 @@ func TestFailure(t *testing.T) {
 		})
 	}
 }
+
+func TestExecveHashCacheConfig(t *testing.T) {
+	conf := SessionConfig{
+		Name: "Default",
+		Options: map[string]any{
+			"execve_hash_cache_capacity": 1024,
+		},
+		Points: []PointConfig{
+			{
+				Name:           "sentry/execve",
+				OptionalFields: []string{"binary_sha256"},
+			},
+		},
+		Sinks: []SinkConfig{
+			{Name: "test-sink"},
+		},
+	}
+	if err := Create(&conf, false); err != nil {
+		t.Fatalf("Create(): %v", err)
+	}
+	defer Delete(conf.Name)
+
+	cache := Global.ExecveHashCache()
+	if cache == nil {
+		t.Fatalf("Global.ExecveHashCache() returned nil")
+	}
+	if got, want := cache.Capacity(), 1024; got != want {
+		t.Errorf("cache capacity got %d, want %d", got, want)
+	}
+	if !cache.Opts().SHA256 {
+		t.Errorf("cache SHA256 opt got false, want true")
+	}
+}

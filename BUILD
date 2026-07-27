@@ -1,5 +1,6 @@
 load("@rules_license//rules:license.bzl", "license")
 load("//tools:defs.bzl", "build_test", "gazelle", "go_path")
+load("//tools:release.bzl", "SIDECARS", "release_files")
 load("//tools/nogo:defs.bzl", "nogo_config")
 load("//tools/yamltest:defs.bzl", "yaml_test")
 load("//website:defs.bzl", "doc")
@@ -20,6 +21,15 @@ exports_files([
     "SECURITY.md",
     "GOVERNANCE.md",
 ])
+
+release_files(
+    name = "release",
+    bins = [
+        "//runsc",
+        "//shim:containerd-shim-runsc-v1",
+    ],
+    sidecars = SIDECARS,
+)
 
 nogo_config(
     name = "nogo_config",

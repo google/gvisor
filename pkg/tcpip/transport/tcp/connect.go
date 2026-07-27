@@ -663,14 +663,18 @@ func (h *handshake) transitionToStateEstablishedLocked(s *segment) {
 	// (indicated by a negative send window scale).
 	initSender(h.ep, h.iss, h.ackNum-1, h.sndWnd, h.mss, h.sndWndScale)
 
-	now := h.ep.stack.Clock().NowMonotonic()
+	// Use the final handshake ACK's ingress time (s.rcvdTime) rather than the
+	// current clock to seed the initial RTT/RTO. If the ACK was delayed inside
+	// the stack before processing, the processing-time clock would inflate the
+	// initial RTO, which then persists for several RTTs.
+	rcvd := s.rcvdTime
 
 	var rtt time.Duration
 	if h.ep.SendTSOk && s.parsedOptions.TSEcr != 0 {
-		rtt = h.ep.elapsed(now, s.parsedOptions.TSEcr)
+		rtt = h.ep.elapsed(rcvd, s.parsedOptions.TSEcr)
 	}
 	if !h.sampleRTTWithTSOnly && rtt == 0 {
-		rtt = now.Sub(h.startTime)
+		rtt = rcvd.Sub(h.startTime)
 	}
 
 	if rtt > 0 {

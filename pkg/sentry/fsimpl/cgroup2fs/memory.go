@@ -79,7 +79,7 @@ func (m *memory) attach(ctx context.Context, actx *attachCtx) {
 func (m *memory) interfaceFiles() []interfaceFile {
 	return []interfaceFile{
 		{name: "memory.events", source: &memoryEvents{m: m}, perm: 0444},
-		{name: "memory.current", source: &memoryCurrent{m: m}, perm: 0444},
+		{name: "memory.current", source: &memoryCurrent{m: m}, perm: 0444, showAtRoot: true},
 		{name: "memory.max", source: &memoryMax{m: m}, perm: 0644},
 		{name: "memory.high", source: &memoryHigh{m: m}, perm: 0644},
 	}

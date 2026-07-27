@@ -893,8 +893,22 @@ func TestOptional(t *testing.T) {
 			}},
 			err: "HugepageLimits set but hugetlb cgroup controller not found",
 		},
+		{
+			name:  "blkio",
+			ctrlr: &blockIO{},
+			spec:  &specs.LinuxResources{BlockIO: &specs.LinuxBlockIO{Weight: uint16Ptr(1)}},
+			err:   "blkio controller is missing but limits are set in OCI spec",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			if !tc.ctrlr.optional() {
+				t.Errorf("%s.optional() = false, want true", tc.name)
+			}
+			for _, emptySpec := range []*specs.LinuxResources{nil, {}} {
+				if err := tc.ctrlr.skip(emptySpec); err != nil {
+					t.Errorf("%s.skip(%+v) unexpected error: %v", tc.name, emptySpec, err)
+				}
+			}
 			err := tc.ctrlr.skip(tc.spec)
 			if err == nil {
 				t.Fatalf("ctrlr.skip() didn't fail")

@@ -536,6 +536,14 @@ func (pk *PacketBuffer) ConfigureNAT(portsOrIdents PortOrIdentRange, natAddress 
 	return pk.tuple.conn.ConfigureNAT(portsOrIdents, natAddress, natType, changePort, changeAddress)
 }
 
+// ConfigureMasquerade configures NAT masquerade for the packet.
+func (pk *PacketBuffer) ConfigureMasquerade(portsOrIdents PortOrIdentRange, route *Route, stk *Stack, changePort bool) bool {
+	if !pk.IsConnTrackConfigured() {
+		return false
+	}
+	return pk.tuple.conn.configureMasquerade(pk, route, stk, portsOrIdents, changePort)
+}
+
 // FinalizeConnTrack finalizes the connection tracking state for the packet.
 func (pk *PacketBuffer) FinalizeConnTrack() bool {
 	if pk.tuple == nil || pk.tuple.conn == nil {

@@ -108,7 +108,6 @@ go_library(
         "//test/kubernetes/k8sctx",
         "//test/kubernetes/testcluster",
         "@io_k8s_api//core/v1:go_default_library",
-        "@io_k8s_apimachinery//pkg/api/errors:go_default_library",
         "@io_k8s_apimachinery//pkg/api/resource:go_default_library",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:go_default_library",
         "@io_k8s_apimachinery//pkg/util/intstr:go_default_library",

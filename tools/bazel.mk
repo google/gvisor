@@ -355,7 +355,7 @@ build_paths = \
 
 clean = $(call header,CLEAN) && $(call wrapper,$(BAZEL) clean)
 build = $(call header,BUILD $(1)) && $(call build_paths,$(1),echo {})
-copy  = $(call header,COPY $(1) $(2)) && $(call build_paths,$(1),cp -fa {} $(2))
+copy  = $(call header,COPY $(1) $(2)) && $(call build_paths,$(1),cp -fa {} $(2) && if test -d {}; then chmod -R u+w "$(2)/$$(basename {})"; fi)
 run   = $(call header,RUN $(1) $(2)) && $(call build_paths,$(1),{} $(2))
 sudo  = $(call header,SUDO $(1) $(2)) && $(call build_paths,$(1),sudo -E {} $(2))
 test  = $(call header,TEST $(1)) && $(call wrapper,$(BAZEL) test --strip=never $(BAZEL_OPTIONS) $(TEST_OPTIONS) $(1))

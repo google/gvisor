@@ -65,21 +65,17 @@ package kernel
 // """
 
 import (
-	"crypto/sha256"
-	"io"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
-	"gvisor.dev/gvisor/pkg/log"
-	overlay "gvisor.dev/gvisor/pkg/sentry/fsimpl/overlay"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/overlay"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/loader"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserr"
-	"gvisor.dev/gvisor/pkg/usermem"
 
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 )
@@ -111,7 +107,8 @@ func (t *Task) Execve(argv, envv []string, flags int32, pathname string, executa
 	r := runExecveAfterExecveCredsLock{
 		argv:        argv,
 		envv:        envv,
-		pathname:    pathname,
+		pathname:    pathname, // may be modified during resolution
+		execfn:      pathname, // remains unmodified
 		flags:       flags,
 		executable:  executable,
 		closeOnExec: closeOnExec,
@@ -125,7 +122,8 @@ func (t *Task) Execve(argv, envv []string, flags int32, pathname string, executa
 // +stateify savable
 type runExecveAfterExecveCredsLock struct {
 	argv, envv  []string
-	pathname    string
+	pathname    string // the mapped VFS path of the executable after resolution
+	execfn      string // the immutable original pathname passed to execve(2)
 	flags       int32
 	executable  *vfs.FileDescription
 	closeOnExec bool
@@ -222,7 +220,7 @@ func (r *runExecveAfterExecveCredsLock) execveWithImage(t *Task, newImage *TaskI
 	defer cu.Clean()
 	// We can't clearly hold kernel package locks while stat'ing executable.
 	if seccheck.Global.Enabled(seccheck.PointExecve) {
-		mask, info := getExecveSeccheckInfo(t, r.argv, r.envv, r.executable, r.pathname)
+		mask, info := execveSeccheckInfo(t, r.argv, r.envv, r.executable, r.pathname, r.execfn)
 		if err := seccheck.Global.SentToSinks(func(c seccheck.Sink) error {
 			return c.Execve(t, mask, info)
 		}); err != nil {
@@ -463,12 +461,17 @@ func (t *Task) promoteLocked() {
 	oldLeader.exitNotifyLocked(false)
 }
 
-func getExecveSeccheckInfo(t *Task, argv, env []string, executable *vfs.FileDescription, pathname string) (seccheck.FieldSet, *pb.ExecveInfo) {
+func execveSeccheckInfo(t *Task, argv, env []string, executable *vfs.FileDescription, pathname, execfn string) (seccheck.FieldSet, *pb.ExecveInfo) {
 	fields := seccheck.Global.GetFieldSet(seccheck.PointExecve)
 	info := &pb.ExecveInfo{
-		Argv: argv,
-		Env:  env,
+		Argv:   argv,
+		Env:    env,
+		Execfn: execfn,
 	}
+
+	// executable is nil if opening the binary failed early or if checked before opening.
+	// Only populate file-backed metadata (such as BinaryPath, mode, or SHA-256) when an open
+	// FileDescription is available.
 	if executable != nil {
 		info.BinaryPath = pathname
 		if fields.Local.Contains(seccheck.FieldSentryExecveBinaryInfo) {
@@ -477,8 +480,9 @@ func getExecveSeccheckInfo(t *Task, argv, env []string, executable *vfs.FileDesc
 			// never copied up from a lower layer.
 			info.BinaryOverlayfsUpper = overlay.IsCopiedUp(executable.Dentry())
 			info.BinaryOverlayfsLower = overlay.IsOnLower(executable.Dentry())
+			info.BinaryInMemfd = tmpfs.IsMemfd(executable)
 			statOpts := vfs.StatOptions{
-				Mask: linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | linux.STATX_INO | linux.STATX_CTIME,
+				Mask: linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | linux.STATX_INO | linux.STATX_CTIME | linux.STATX_SIZE | linux.STATX_NLINK,
 			}
 			if stat, err := executable.Stat(t, statOpts); err == nil {
 				if stat.Mask&(linux.STATX_TYPE|linux.STATX_MODE) == (linux.STATX_TYPE | linux.STATX_MODE) {
@@ -499,28 +503,28 @@ func getExecveSeccheckInfo(t *Task, argv, env []string, executable *vfs.FileDesc
 						Nsec: int64(stat.Ctime.Nsec),
 					}
 				}
+				if stat.Mask&linux.STATX_SIZE != 0 {
+					info.BinarySize = int64(stat.Size)
+				}
+				if stat.Mask&linux.STATX_NLINK != 0 {
+					info.BinaryNlink = stat.Nlink
+				}
 			}
 		}
 
-		if fields.Local.Contains(seccheck.FieldSentryExecveBinarySha256) {
-			hash := sha256.New()
-			buf := make([]byte, 1024*1024) // Read 1MB at a time.
-			dest := usermem.BytesIOSequence(buf)
-			offset := int64(0)
-
-			for {
-				if read, err := executable.PRead(t, dest, offset, vfs.ReadOptions{}); err == nil {
-					hash.Write(buf[0:read])
-					offset += read
-
-				} else if err == io.EOF {
-					hash.Write(buf[0:read])
-					info.BinarySha256 = hash.Sum(nil)
-					break
-
-				} else {
-					log.Warningf("Failed to read executable for SHA-256 hash: %v", err)
-					break
+		if fields.Local.Contains(seccheck.FieldSentryExecveBinarySHA256) || fields.Local.Contains(seccheck.FieldSentryExecveBinarySHA1) {
+			// Note: The current implementation only supports a single global ("Default")
+			// seccheck session. This is why we pull the cache directly from seccheck.Global.
+			if cache := seccheck.Global.ExecveHashCache(); cache != nil {
+				opts := cache.Opts()
+				if opts.SHA256 || opts.SHA1 {
+					hashes := resolveBinaryHashes(t, executable, cache)
+					if opts.SHA256 {
+						info.BinarySha256 = hashes.SHA256
+					}
+					if opts.SHA1 {
+						info.BinarySha1 = hashes.SHA1
+					}
 				}
 			}
 		}

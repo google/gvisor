@@ -79,9 +79,14 @@ func newCubicCC(s *sender) *cubicState {
 			C:    0.4,
 			// By this point, the sender has initialized it's initial sequence
 			// number.
-			EndSeq:     s.SndNxt,
-			LastRTT:    effectivelyInfinity,
-			CurrRTT:    effectivelyInfinity,
+			EndSeq:  s.SndNxt,
+			LastRTT: effectivelyInfinity,
+			CurrRTT: effectivelyInfinity,
+			// LastAck/RoundStart are seeded here from processing time, but the
+			// HyStart ACK-train comparator that reads them is gated on
+			// LastRTT < effectivelyInfinity, which only becomes true after the
+			// first beginHyStartRound re-seeds both from an ACK's ingress time.
+			// So this initial processing-time seed is never compared.
 			LastAck:    now,
 			RoundStart: now,
 		},
@@ -122,12 +127,19 @@ func (c *cubicState) enterCongestionAvoidance() {
 // here.
 //
 // +checklocks:c.s.ep.mu
-func (c *cubicState) updateHyStart(rtt time.Duration) {
+func (c *cubicState) updateHyStart(rtt time.Duration, ackTime tcpip.MonotonicTime) {
 	if rtt < 0 {
 		// negative indicates unknown
 		return
 	}
-	now := c.s.ep.stack.Clock().NowMonotonic()
+	// Use the ACK's ingress time (ackTime) rather than the current clock for
+	// HyStart's ACK-train timing. The ACK-train detector compares inter-ACK
+	// spacing against ackDelta (2ms) and the round duration against LastRTT/2;
+	// if ACKs are delayed and processed in a burst inside the stack (e.g.
+	// queued while the application held the endpoint lock during a Write), the
+	// processing clock would make distinct ACKs appear to arrive together,
+	// distorting both comparisons and potentially exiting slow start early.
+	now := ackTime
 	if c.EndSeq.LessThan(c.s.SndUna) {
 		c.beginHyStartRound(now)
 	}
@@ -197,9 +209,9 @@ func (c *cubicState) updateSlowStart(packetsAcked int) int {
 // Refer: https://tools.ietf.org/html/rfc8312#section-4
 //
 // +checklocks:c.s.ep.mu
-func (c *cubicState) Update(packetsAcked int, rtt time.Duration) {
+func (c *cubicState) Update(packetsAcked int, rtt time.Duration, ackTime tcpip.MonotonicTime) {
 	if c.s.Ssthresh == InitialSsthresh && c.s.SndCwnd < c.s.Ssthresh {
-		c.updateHyStart(rtt)
+		c.updateHyStart(rtt, ackTime)
 	}
 	if c.s.SndCwnd < c.s.Ssthresh {
 		packetsAcked = c.updateSlowStart(packetsAcked)

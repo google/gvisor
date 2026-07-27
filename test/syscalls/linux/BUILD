@@ -1110,6 +1110,7 @@ cc_binary(
         "@com_google_absl//absl/container:node_hash_map",
         "@com_google_absl//absl/container:node_hash_set",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
     ],
 )
 
@@ -1643,6 +1644,7 @@ cc_binary(
         "//test/util:file_descriptor",
         "//test/util:fs_util",
         "//test/util:posix_error",
+        "//test/util:save_util",
         "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",
@@ -3929,6 +3931,7 @@ cc_library(
         "//test/util:test_util",
         "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/log",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
     ],
@@ -4746,6 +4749,9 @@ cc_binary(
     malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
+        "//test/util:logging",
+        "//test/util:posix_error",
+        "//test/util:save_util",
         "//test/util:test_main",
         "//test/util:test_util",
         "//test/util:thread_util",
@@ -4762,7 +4768,7 @@ cc_binary(
     srcs = ["shm.cc"],
     linkstatic = 1,
     malloc = "//test/util:errno_safe_allocator",
-    deps = [
+    deps = select_gtest() + [
         "//test/util:multiprocess_util",
         "//test/util:posix_error",
         "//test/util:temp_path",

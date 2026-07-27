@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/syserr"
-	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 // ranged is an operation that checks whether the data in a register is between
@@ -110,7 +109,7 @@ func (op ranged) evaluate(regs *registerSet, evalCtx opEvalCtx) {
 
 	if (bytes.Compare(regBuf, op.low) >= 0 && bytes.Compare(regBuf, op.high) <= 0) != (op.rop == linux.NFT_RANGE_EQ) {
 		// Comparison is false, so break from the rule.
-		regs.verdict = stack.NFVerdict{Code: VC(linux.NFT_BREAK)}
+		regs.verdict = Verdict{Code: VC(linux.NFT_BREAK)}
 	}
 }
 

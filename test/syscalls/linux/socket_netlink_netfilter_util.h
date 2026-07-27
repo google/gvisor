@@ -97,6 +97,7 @@ struct AddDefaultTableOptions {
   const FileDescriptor& fd;
   std::string table_name;
   uint32_t seq;
+  std::string family_name = "inet";
 };
 
 struct AddDefaultBaseChainOptions {
@@ -104,6 +105,9 @@ struct AddDefaultBaseChainOptions {
   std::string table_name;
   std::string chain_name;
   uint32_t seq;
+  std::string chain_type;
+  uint32_t hook_num;
+  std::string family_name = "inet";
 };
 
 // Returns default table name for tests.

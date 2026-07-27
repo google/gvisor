@@ -91,11 +91,11 @@ func validatePayloadBase(base payloadBase) *syserr.AnnotatedError {
 }
 
 func initPayload(tab *Table, exprInfo ExprInfo) (operation, *syserr.AnnotatedError) {
-	attrs, ok := NfParseWithOpts(exprInfo.ExprData, &NfParseOpts{
+	attrs, err := NfParseWithOpts(exprInfo.ExprData, &NfParseOpts{
 		Policy: payloadAttrPolicy,
 	})
-	if !ok {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse payload expression attributes")
+	if err != nil {
+		return nil, err
 	}
 	if _, ok := attrs[linux.NFTA_PAYLOAD_SREG]; ok {
 		if _, ok := attrs[linux.NFTA_PAYLOAD_DREG]; ok {

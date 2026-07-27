@@ -1,0 +1,95 @@
+syntax = "proto3";
+
+package gvisor.task;
+
+option go_package = "gvisor.task.v1.Task";
+
+message Debug {
+  string debug_log = 1;
+  int32 debug_log_fd = 2;
+}
+
+// CheckpointRequest covers both standard and FS checkpoint options used by the
+// agent.
+message CheckpointRequest {
+  string id = 1;
+  string image_path = 2;
+  bool direct = 3;
+  bool leave_running = 4;
+  bool fs_checkpoint =
+      5;  // true for fscheckpoint, false for standard checkpoint
+
+  // Standard checkpoint options
+  string compression = 6;
+  bool exclude_committed_zero_pages = 7;
+  string save_restore_exec_argv = 8;
+  string save_restore_exec_timeout = 9;
+  string cuda_checkpoint_path = 10;
+
+  // Debugging
+  Debug debug = 11;
+
+  // Additional flags from runsc checkpoint
+  bool cuda_checkpoint_sequential = 12;
+  string work_path = 13;
+
+  // Flags from runsc fscheckpoint
+  string fs_path = 14;
+}
+
+message CheckpointResponse {}
+
+// WaitRequest supports waiting for different lifecycle events.
+message WaitRequest {
+  string id = 1;
+  enum WaitType {
+    UNKNOWN = 0;
+    CHECKPOINT = 1;
+    RESTORE = 2;
+    FSCHECKPOINT = 3;
+    FSRESTORE = 4;
+  }
+  WaitType wait_type = 2;
+
+  // Debugging
+  Debug debug = 3;
+
+  // Process waiting flags
+  int32 pid = 4;
+  int32 root_pid = 5;
+}
+
+message WaitResponse {
+  int32 exit_status = 1;
+}
+
+// StateRequest/Response for container status checks.
+message StateRequest {
+  string id = 1;
+
+  // Debugging
+  Debug debug = 2;
+}
+
+message StateResponse {
+  string id = 1;
+  string state = 2;  // e.g., "running", "stopped"
+  int32 pid = 3;
+}
+
+message VersionRequest {}
+
+message VersionResponse {
+  string version = 1;
+}
+
+service TaskService {
+  // Checkpoint triggers a memory or rootfs checkpoint for the container.
+  rpc Checkpoint(CheckpointRequest) returns (CheckpointResponse);
+  // Wait blocks until a lifecycle event (checkpoint, restore, etc.) completes.
+  rpc Wait(WaitRequest) returns (WaitResponse);
+  // State returns the current status of the container.
+  rpc State(StateRequest) returns (StateResponse);
+  // Version returns the version info of the runsc binary.
+  rpc Version(VersionRequest) returns (VersionResponse);
+}

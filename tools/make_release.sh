@@ -44,7 +44,12 @@ install_raw() {
   for binary in "${binaries[@]}"; do
     local arch name
     # Copy the raw file & generate a sha512sum, sorted by architecture.
-    arch=$(file "${binary}" | cut -d',' -f2 | awk '{print $NF}' | tr '-' '_')
+    if echo "${binary}" | grep -qF .tar.bz2; then
+      # Determine arch from the `runsc` within the tarball:
+      arch=$(tar -xjOf "${binary}" runsc | file - | cut -d',' -f2 | awk '{print $NF}' | tr '-' '_')
+    else
+      arch=$(file "${binary}" | cut -d',' -f2 | awk '{print $NF}' | tr '-' '_')
+    fi
     name=$(basename "${binary}")
     mkdir -p "${root}/$1/${arch}"
     cp -f "${binary}" "${root}/$1/${arch}"

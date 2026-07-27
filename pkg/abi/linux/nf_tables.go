@@ -810,3 +810,18 @@ const (
 	IP_CT_DIR_REPLY
 	IP_CT_DIR_MAX
 )
+
+// Nf table masq expression netlink attributes.
+// These correspond to enum values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFTA_MASQ_UNSPEC uint16 = iota
+	NFTA_MASQ_FLAGS
+	NFTA_MASQ_REG_PROTO_MIN
+	NFTA_MASQ_REG_PROTO_MAX
+	__NFTA_MASQ_MAX
+	NFTA_MASQ_MAX = __NFTA_MASQ_MAX - 1
+)
+
+// SizeOfNfConntrackManProto is the size of the nf_conntrack_man_proto in bytes.
+// Ref: include/uapi/linux/netfilter/nf_conntrack_tuple_common.h:nf_conntrack_man_proto.
+const SizeOfNfConntrackManProto = 2

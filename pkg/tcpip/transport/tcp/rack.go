@@ -78,7 +78,15 @@ func (rc *rackControl) init(snd *sender, iss seqnum.Value) {
 // update will update the RACK related fields when an ACK has been received.
 // See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-09#section-6.2
 func (rc *rackControl) update(seg *segment, ackSeg *segment) {
-	rtt := rc.snd.ep.stack.Clock().NowMonotonic().Sub(seg.xmitTime)
+	// Compute the RTT sample against the time the ACK was received at ingress
+	// (ackSeg.rcvdTime), not the current clock. The two differ when the ACK was
+	// delayed inside the stack before being processed (e.g. it sat in the
+	// endpoint's segment queue while the application held the endpoint lock
+	// during a Write that synchronously flushed a window). Using the processing
+	// time would inflate the RTT by that internal delay, corrupting RACK.RTT,
+	// RACK.minRTT and the reorder window, and causing spurious loss detection.
+	// detectLoss already uses ackSeg.rcvdTime; this keeps update consistent.
+	rtt := ackSeg.rcvdTime.Sub(seg.xmitTime)
 
 	// If the ACK is for a retransmitted packet, do not update if it is a
 	// spurious inference which is determined by below checks:
@@ -400,7 +408,17 @@ func (rc *rackControl) reorderTimerExpired() tcpip.Error {
 		return nil
 	}
 
-	numLost := rc.detectLoss(rc.snd.ep.stack.Clock().NowMonotonic())
+	// Evaluate loss as of the time the reorder timer was scheduled to fire (its
+	// target), not the current clock. The timer is armed for the instant a
+	// segment's reorder window elapses, but the timer callback itself can run
+	// arbitrarily late under load (the processor goroutine is busy, or the
+	// endpoint lock is held while a Write flushes a window). Using the
+	// (possibly much later) processing time would make timeRemaining strongly
+	// negative and mark not-yet-lost segments as lost, triggering spurious
+	// retransmits and recovery on a path with little or no real loss
+	// (gvisor#9707/#9778). detectLoss arms the timer from rcvdTime-derived
+	// values, so evaluating it at the timer target keeps the two consistent.
+	numLost := rc.detectLoss(rc.snd.reorderTimer.target)
 	if numLost == 0 {
 		return nil
 	}

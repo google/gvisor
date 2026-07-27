@@ -295,6 +295,7 @@ syscall_test(
 )
 
 syscall_test(
+    add_fusefs = True,
     add_overlay = True,
     shard_count = most_shards,
     test = "//test/syscalls/linux:getdents_test",

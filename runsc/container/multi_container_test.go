@@ -23,6 +23,7 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -2363,10 +2364,13 @@ func TestMultiContainerHomeEnvDir(t *testing.T) {
 }
 
 func TestMultiContainerEvent(t *testing.T) {
-	tests := []string{"enableCgroups", "disableCgroups"}
+	tests := []string{"enableCgroups", "enableCgroupsV2", "disableCgroups"}
 	for _, name := range tests {
-		conf := testutil.TestConfig(t)
 		t.Run(name, func(t *testing.T) {
+			conf := testutil.TestConfig(t)
+			if name == "enableCgroupsV2" {
+				conf.MountCgroupV2 = true
+			}
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {
 				t.Fatalf("error creating root dir: %v", err)
@@ -2379,7 +2383,7 @@ func TestMultiContainerEvent(t *testing.T) {
 			busy := []string{"/bin/bash", "-c", "i=0 ; while true ; do (( i += 1 )) ; done"}
 			quick := []string{"/bin/true"}
 			podSpecs, ids := createSpecs(sleep, busy, quick)
-			if name == "enableCgroups" {
+			if name == "enableCgroups" || name == "enableCgroupsV2" {
 				mnt := specs.Mount{
 					Destination: "/sys/fs/cgroup",
 					Type:        "cgroup",
@@ -2485,6 +2489,74 @@ func TestMultiContainerEvent(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TODO(b/524360347): Query against the container-id cgroup instead of the root cgroup2 node.
+func TestCgroupV2ReadControlFile(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	conf.MountCgroupV2 = true
+
+	rootDir, cleanup, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer cleanup()
+	conf.RootDir = rootDir
+
+	podSpecs, ids := createSpecs(sleepCmd)
+	mnt0 := specs.Mount{
+		Destination: "/sys/fs/cgroup",
+		Type:        "cgroup",
+		Options:     nil,
+	}
+	podSpecs[0].Mounts = append(podSpecs[0].Mounts, mnt0)
+	createSharedMount(mnt0, "test-mount", podSpecs...)
+
+	containers, cleanup, err := startContainers(conf, podSpecs, ids)
+	if err != nil {
+		t.Fatalf("error starting containers: %v", err)
+	}
+	defer cleanup()
+
+	queries := []control.CgroupControlFile{
+		{Controller: "memory", Path: "/", Name: "memory.current"},
+		{Controller: "cpu", Path: "/", Name: "cpu.stat"},
+		{Controller: "cgroup", Path: "/", Name: "cgroup.procs"},
+		{Controller: "cgroup", Path: "/", Name: "cgroup.controllers"},
+	}
+	for _, ctrl := range queries {
+		val, err := containers[0].Sandbox.CgroupsReadControlFile(ctrl)
+		if err != nil {
+			t.Fatalf("error reading root %s: %v", ctrl.Name, err)
+		}
+		if val == "" {
+			t.Fatalf("expected non-empty result for %s", ctrl.Name)
+		}
+		switch ctrl.Name {
+		case "memory.current":
+			// memory.current should be an integer representing bytes.
+			if _, err := strconv.ParseInt(strings.TrimSpace(val), 10, 64); err != nil {
+				t.Fatalf("expected memory.current to be an integer, got %q: %v", val, err)
+			}
+		case "cpu.stat":
+			// cpu.stat should contain usage statistics like user_usec, system_usec.
+			if !strings.Contains(val, "usage_usec") {
+				t.Fatalf("expected cpu.stat to contain 'usage_usec', got %q", val)
+			}
+		case "cgroup.procs":
+			// cgroup.procs should be a list of PIDs, so it should be parseable as integers.
+			for _, pidStr := range strings.Fields(val) {
+				if _, err := strconv.Atoi(pidStr); err != nil {
+					t.Fatalf("expected cgroup.procs to contain integers, got non-integer %q in %q", pidStr, val)
+				}
+			}
+		case "cgroup.controllers":
+			// cgroup.controllers should list available controllers, separated by spaces.
+			if !strings.Contains(val, "cpu") && !strings.Contains(val, "memory") {
+				t.Fatalf("expected cgroup.controllers to contain 'cpu' or 'memory', got %q", val)
+			}
+		}
 	}
 }
 

@@ -17,6 +17,7 @@ package nftables
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
+	"gvisor.dev/gvisor/pkg/syserr"
 )
 
 // MAX_POLICY_RECURSION_DEPTH
@@ -53,14 +54,14 @@ type NlaPolicy struct {
 }
 
 // NlaPolicyValidator is used to validate the data for a netlink attribute.
-type NlaPolicyValidator func(data any) bool
+type NlaPolicyValidator func(data any) *syserr.AnnotatedError
 
-func validateData(policy *NlaPolicy, data nlmsg.BytesView, depth int) bool {
+func validateData(policy *NlaPolicy, data nlmsg.BytesView, depth int) *syserr.AnnotatedError {
 	validator := policy.validator
 	if validator == nil {
 		// No validator is set, still check the data type
 		// through the switch case below.
-		validator = func(data any) bool { return true }
+		validator = func(data any) *syserr.AnnotatedError { return nil }
 	}
 	switch policy.nlaType {
 	case linux.NLA_U8:
@@ -109,7 +110,7 @@ func validateData(policy *NlaPolicy, data nlmsg.BytesView, depth int) bool {
 			data:       nlmsg.AttrsView(data),
 		}
 		return validator(arrayValidatorOpts)
-	// return true for all other valid types.
+	// return nil for all other valid types.
 	case linux.NLA_STRING,
 		linux.NLA_NUL_STRING,
 		linux.NLA_BINARY,
@@ -119,9 +120,9 @@ func validateData(policy *NlaPolicy, data nlmsg.BytesView, depth int) bool {
 		linux.NLA_BITFIELD32,
 		linux.NLA_REJECT:
 
-		return true
+		return nil
 	}
-	return false
+	return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse attribute data")
 }
 
 type integer interface {
@@ -130,28 +131,43 @@ type integer interface {
 
 // AttrMaxValidator checks if the data is less than or equal to the maxValue.
 func AttrMaxValidator[T integer](maxValue T) NlaPolicyValidator {
-	return func(data any) bool {
+	return func(data any) *syserr.AnnotatedError {
 		v, ok := data.(T)
-		return ok && v <= maxValue
+		if !ok {
+			return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "invalid type of attribute")
+		}
+		if v > maxValue {
+			return syserr.NewAnnotatedError(syserr.ErrRange, "value too large")
+		}
+		return nil
 	}
 }
 
 // AttrMaskValidator checks if the data is a subset of the mask.
 func AttrMaskValidator[T integer](mask T) NlaPolicyValidator {
-	return func(data any) bool {
+	return func(data any) *syserr.AnnotatedError {
 		v, ok := data.(T)
-		return ok && ((v & ^mask) == 0)
+		if !ok {
+			return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "attribute of invalid type")
+		}
+		if (v & ^mask) != 0 {
+			return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "attribute masked bit set")
+		}
+		return nil
 	}
 }
 
 // AttrMaxLenValidator checks if the data is less than or equal to the maxLen.
 func AttrMaxLenValidator(maxLen int) NlaPolicyValidator {
-	return func(data any) bool {
+	return func(data any) *syserr.AnnotatedError {
 		v, ok := data.([]byte)
 		if !ok {
-			return false
+			return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "attribute of invalid type")
 		}
-		return len(v) <= maxLen
+		if len(v) > maxLen {
+			return syserr.NewAnnotatedError(syserr.ErrRange, "attribute length too large")
+		}
+		return nil
 	}
 }
 
@@ -162,33 +178,33 @@ type arrayValidatorRuntimeOpts struct {
 
 // AttrArrayValidator validates if each element in the attribute array matches the given policy.
 func AttrArrayValidator(policy []NlaPolicy) NlaPolicyValidator {
-	return func(data any) bool {
+	return func(data any) *syserr.AnnotatedError {
 		v, ok := data.(arrayValidatorRuntimeOpts)
 		if !ok {
-			return false
+			return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "invalid type for validator")
 		}
 		if v.stackDepth > maxPolicyRecursionDepth {
-			return false
+			return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "allowed policy recursion depth exceeded")
 		}
 		attrs := v.data
 		for !attrs.Empty() {
 			_, value, rest, ok := attrs.ParseFirst()
 			if !ok {
-				return false
+				return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse array element")
 			}
 			attrs = rest
 			if len(value) == 0 {
 				continue
 			}
-			_, ok = NfParseWithOpts(nlmsg.AttrsView(value), &NfParseOpts{
+			_, err := NfParseWithOpts(nlmsg.AttrsView(value), &NfParseOpts{
 				Policy:     policy,
 				StackDepth: v.stackDepth + 1,
 			})
-			if !ok {
-				return false
+			if err != nil {
+				return err
 			}
 		}
-		return true
+		return nil
 	}
 }
 
@@ -204,10 +220,10 @@ type NfParseOpts struct {
 // NfParseWithOpts parses the data bytes, clearing the nested attribute bit if present.
 // For nested attributes, Linux supports these attributes having the bit
 // set or unset. It is cleared here for consistency.
-func NfParseWithOpts(data nlmsg.AttrsView, opts *NfParseOpts) (map[uint16]nlmsg.BytesView, bool) {
+func NfParseWithOpts(data nlmsg.AttrsView, opts *NfParseOpts) (map[uint16]nlmsg.BytesView, *syserr.AnnotatedError) {
 	attrs, ok := data.Parse()
 	if !ok {
-		return nil, ok
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse attributes")
 	}
 	var policy []NlaPolicy
 	stackDepth := 0
@@ -225,18 +241,19 @@ func NfParseWithOpts(data nlmsg.AttrsView, opts *NfParseOpts) (map[uint16]nlmsg.
 		unNestedAttr := attr & ^linux.NLA_F_NESTED
 		policyExists := unNestedAttr < policyLen
 		if policyExists {
-			if ok := validateData(&policy[unNestedAttr], attrData, stackDepth); !ok {
-				return nil, false
+			if err := validateData(&policy[unNestedAttr], attrData, stackDepth); err != nil {
+				return nil, err
 			}
 		}
 		newAttrs[unNestedAttr] = attrData
 	}
-	return newAttrs, true
+	return newAttrs, nil
 }
 
 // NfParse parses the data bytes with no validation.
 func NfParse(data nlmsg.AttrsView) (map[uint16]nlmsg.BytesView, bool) {
-	return NfParseWithOpts(data, nil)
+	attrs, err := NfParseWithOpts(data, nil)
+	return attrs, err == nil
 }
 
 // HasAttr returns whether the given attribute key is present in the attribute map.

@@ -12,6 +12,7 @@ go_library(
         "cgroup.go",
         "controllers.go",
         "cpu.go",
+        "cpu_mutex.go",
         "cpuset.go",
         "event.go",
         "filesystem.go",
@@ -21,6 +22,7 @@ go_library(
         "save_restore.go",
         "tasks_mutex.go",
         "tree_mutex.go",
+        "xattr.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
@@ -37,6 +39,7 @@ go_library(
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/usage",
         "//pkg/sentry/vfs",
+        "//pkg/sentry/vfs/memxattr",
         "//pkg/sync",
         "//pkg/sync/locking",
         "//pkg/usermem",
@@ -63,4 +66,11 @@ declare_mutex(
     out = "pids_mutex.go",
     package = "cgroup2fs",
     prefix = "pids",
+)
+
+declare_mutex(
+    name = "cpu_mutex",
+    out = "cpu_mutex.go",
+    package = "cgroup2fs",
+    prefix = "cpu",
 )

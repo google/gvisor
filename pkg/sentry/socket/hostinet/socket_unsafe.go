@@ -204,8 +204,32 @@ func getsockopt(fd int, level, name int, opt []byte) ([]byte, error) {
 	return opt[:optlen32], nil
 }
 
+func bind(fd int, sockaddr []byte) error {
+	_, _, errno := unix.Syscall(unix.SYS_BIND, uintptr(fd), uintptr(firstBytePtr(sockaddr)), uintptr(len(sockaddr)))
+	if errno != 0 {
+		return errno
+	}
+	return nil
+}
+
+func getsockname(fd int) ([]byte, error) {
+	addr := make([]byte, sizeofSockaddr)
+	addrlen := uint32(len(addr))
+	_, _, errno := unix.Syscall(unix.SYS_GETSOCKNAME, uintptr(fd), uintptr(unsafe.Pointer(&addr[0])), uintptr(unsafe.Pointer(&addrlen)))
+	if errno != 0 {
+		return nil, errno
+	}
+	if addrlen > uint32(len(addr)) {
+		addrlen = uint32(len(addr))
+	}
+	return addr[:addrlen], nil
+}
+
 // GetSockName implements socket.Socket.GetSockName.
 func (s *Socket) GetSockName(t *kernel.Task) (linux.SockAddr, uint32, *syserr.Error) {
+	if s.fd < 0 {
+		return nil, 0, syserr.ErrConnectionAborted
+	}
 	addr := make([]byte, sizeofSockaddr)
 	addrlen := uint32(len(addr))
 	_, _, errno := unix.Syscall(unix.SYS_GETSOCKNAME, uintptr(s.fd), uintptr(unsafe.Pointer(&addr[0])), uintptr(unsafe.Pointer(&addrlen)))
@@ -217,6 +241,9 @@ func (s *Socket) GetSockName(t *kernel.Task) (linux.SockAddr, uint32, *syserr.Er
 
 // GetPeerName implements socket.Socket.GetPeerName.
 func (s *Socket) GetPeerName(t *kernel.Task) (linux.SockAddr, uint32, *syserr.Error) {
+	if s.fd < 0 {
+		return nil, 0, syserr.ErrConnectionAborted
+	}
 	addr := make([]byte, sizeofSockaddr)
 	addrlen := uint32(len(addr))
 	_, _, errno := unix.Syscall(unix.SYS_GETPEERNAME, uintptr(s.fd), uintptr(unsafe.Pointer(&addr[0])), uintptr(unsafe.Pointer(&addrlen)))

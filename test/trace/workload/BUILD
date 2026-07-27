@@ -15,11 +15,13 @@ cc_binary(
     deps = [
         "//test/util:eventfd_util",
         "//test/util:file_descriptor",
+        "//test/util:logging",
         "//test/util:memory_util",
         "//test/util:multiprocess_util",
         "//test/util:posix_error",
         "//test/util:signal_util",
         "//test/util:test_util",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",

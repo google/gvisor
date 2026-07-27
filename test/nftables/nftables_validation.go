@@ -36,6 +36,7 @@ var validationTests = []TestCase{
 	&mapTest{},
 	&fibTest{},
 	&ctTest{},
+	&tcpMasq{},
 }
 
 func init() {
@@ -1141,4 +1142,267 @@ func (t *ctTest) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 func (*ctTest) Timeout() time.Duration {
 	// TODO: b/486197011 - Reduce the timeout.
 	return 60 * time.Second
+}
+
+// tcpMasq verifies Masquerade on TCP packets.
+type tcpMasq struct{ containerCase }
+
+var _ TestCase = (*tcpMasq)(nil)
+
+func (t *tcpMasq) setupClientNamespace() (func(), error) {
+	if err := runCmd("ip", "netns", "add", "client_ns"); err != nil {
+		return nil, err
+	}
+	cleanup := func() {
+		runCmd("ip", "netns", "del", "client_ns")
+	}
+
+	cmds := [][]string{
+		{"ip", "link", "add", "veth-router", "type", "veth", "peer", "name", "veth-client"},
+		{"ip", "link", "set", "veth-client", "netns", "client_ns"},
+		{"ip", "addr", "add", "192.168.1.1/24", "dev", "veth-router"},
+		{"ip", "link", "set", "veth-router", "up"},
+		{"ip", "-n", "client_ns", "addr", "add", "192.168.1.2/24", "dev", "veth-client"},
+		{"ip", "-n", "client_ns", "link", "set", "veth-client", "up"},
+		{"ip", "-n", "client_ns", "link", "set", "lo", "up"},
+		{"ip", "-n", "client_ns", "route", "replace", "default", "via", "192.168.1.1", "dev", "veth-client"},
+	}
+
+	for _, cmd := range cmds {
+		if err := runCmd(cmd[0], cmd[1:]...); err != nil {
+			cleanup()
+			return nil, err
+		}
+	}
+
+	return cleanup, nil
+}
+
+// acceptSync listens on the specified port with a timeout,
+// and calls the handle function on the connection.
+func acceptSync(ip net.IP, port string, timeout time.Duration, handle func(net.Conn) error) error {
+	l, err := net.Listen("tcp", net.JoinHostPort(ip.String(), port))
+	if err != nil {
+		return err
+	}
+	defer l.Close()
+
+	errCh := make(chan error, 1)
+	go func() {
+		conn, err := l.Accept()
+		if err != nil {
+			errCh <- err
+			return
+		}
+		defer conn.Close()
+
+		if handle != nil {
+			errCh <- handle(conn)
+		} else {
+			errCh <- nil
+		}
+	}()
+
+	select {
+	case err := <-errCh:
+		return err
+	case <-time.After(timeout):
+		return fmt.Errorf("timeout waiting for sync connection on %s", port)
+	}
+}
+
+// dialSync attempts to connect to the specified IP and port,
+// and calls the handle function on the connection.
+func dialSync(ip net.IP, port string, retries int, handle func(net.Conn) error) error {
+	dialAddr := net.JoinHostPort(ip.String(), port)
+	var lastErr error
+	for i := 0; i < retries; i++ {
+		conn, err := net.DialTimeout("tcp", dialAddr, 2*time.Second)
+		if err == nil {
+			defer conn.Close()
+			if handle != nil {
+				return handle(conn)
+			}
+			return nil
+		}
+		lastErr = err
+		time.Sleep(1 * time.Second)
+	}
+	return fmt.Errorf("failed to connect to %s after %d attempts: %v", dialAddr, retries, lastErr)
+}
+
+func (*tcpMasq) Name() string {
+	return "tcpMasq"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+// Setup a client namespace and NAT masq TCP rules.
+// Enable IP forwarding.
+// Generate traffic from namespace to trigger NAT masq.
+func (t *tcpMasq) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	if ipv6 {
+		log.Warningf("Masq is not supported for IPv6 yet.")
+		return nil
+	}
+
+	targetIface, ok := netutils.GetNonLoopbackInterface()
+	if !ok {
+		return fmt.Errorf("no non-loopback interface found")
+	}
+
+	// Setup namespace and veth pair.
+	// When a packet is sent from the namespace, NAT masq should replace the
+	// source IP address (namespace IP) to the container's IP.
+
+	cleanup, err := t.setupClientNamespace()
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	// Enable IP forwarding.
+	if err := runCmd("sh", "-c", "echo 1 > /proc/sys/net/ipv4/ip_forward"); err != nil {
+		return err
+	}
+
+	// Sync setup with LocalAction and get the target port.
+	// This is to avoid port in use issues.
+	var remotePort int
+
+	if err := acceptSync(net.ParseIP("0.0.0.0"), "8995", 15*time.Second, func(conn net.Conn) error {
+		if _, err := fmt.Fscanf(conn, "%d", &remotePort); err != nil {
+			return fmt.Errorf("failed to read target port: %v", err)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	log.Infof("tcpMasq: Sync with LocalAction successful, got remote port: %d", remotePort)
+
+	// Install NFTable rules.
+	{
+		cmds := [][]string{
+			{"add", "table", "inet", "nat"},
+			// Postrouting hook is required for masquerade.
+			{"add", "chain", "inet", "nat", "postrouting", "{ type nat hook postrouting priority 100; }"},
+			// Masq outgoing TCP traffic to remotePort on the target interface to custom port range.
+			{"add", "rule", "inet", "nat", "postrouting", "meta", "oifname", targetIface.Name, "tcp",
+				"dport", fmt.Sprintf("%d", remotePort), "counter", "masquerade", "to", ":10000-10005"},
+		}
+
+		for _, cmd := range cmds {
+			if err := nftCmd(cmd); err != nil {
+				return fmt.Errorf("nft cmd: %v, failed with error: %v", cmd, err)
+			}
+		}
+		log.Infof("tcpMasq: NFT rules installed successfully")
+	}
+
+	// Generate traffic from namespace to trigger masquerade.
+	{
+		dialAddr := ip.String()
+		log.Infof("tcpMasq: Generating traffic from namespace to %s:%d", dialAddr, remotePort)
+
+		// Wait a bit for forwarding to settle.
+		time.Sleep(1 * time.Second)
+
+		// Send TCP packet through nc inside client_ns.
+		// Ignore safetext/shsprintf linter suggestion.
+		bashCmd := fmt.Sprintf("echo remote_test | nc -v -w 5 %s %d", dialAddr, remotePort)
+		var lastErr error
+		for i := 0; i < 5; i++ {
+			lastErr = runCmd("ip", "netns", "exec", "client_ns", "bash", "-c", bashCmd)
+			if lastErr == nil {
+				break
+			}
+			log.Warningf("tcpMasq: Attempt %d to send traffic failed: %v", i+1, lastErr)
+			time.Sleep(1 * time.Second)
+		}
+
+		if lastErr != nil {
+			return fmt.Errorf("failed to generate traffic from namespace after retries: %v", lastErr)
+		}
+		log.Infof("tcpMasq: Traffic generated successfully")
+	}
+
+	return nil
+}
+
+// LocalAction implements TestCase.LocalAction.
+// Setup a TCP server to listen on dynamic port (to avoid port reuse issues).
+// Share the port with ContainerAction and verify the masq IP.
+func (*tcpMasq) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	if ipv6 {
+		return nil
+	}
+
+	// Listen on dynamic port to accept connections from container.
+	log.Infof("tcpMasq (LocalAction): Listening on dynamic port")
+	l, err := net.Listen("tcp", "0.0.0.0:0")
+	if err != nil {
+		return fmt.Errorf("net.Listen failed: %v", err)
+	}
+	defer l.Close()
+	pickedPort := l.Addr().(*net.TCPAddr).Port
+	log.Infof("tcpMasq (LocalAction): Picked port %d", pickedPort)
+
+	// Sync with ContainerAction setup and share the picked port.
+	{
+		log.Infof("tcpMasq (LocalAction): Waiting for container sync on port 8995...")
+		if err := dialSync(ip, "8995", 10, func(conn net.Conn) error {
+			_, err := fmt.Fprintf(conn, "%d\n", pickedPort)
+			return err
+		}); err != nil {
+			return fmt.Errorf("sync dial failed: %v", err)
+		}
+		log.Infof("tcpMasq (LocalAction): Sync successful")
+	}
+
+	// Verify that the connection is established and
+	// 1. the remote address is the container's main IP
+	// 2. the remote port is in the masq range
+	{
+		errCh := make(chan error, 1)
+		go func() {
+			conn, err := l.Accept()
+			if err != nil {
+				errCh <- err
+				return
+			}
+			defer conn.Close()
+			log.Infof("tcpMasq (LocalAction): Accepted connection from %s", conn.RemoteAddr())
+
+			// Assert that the remote port is in the masq range.
+			remoteAddr := conn.RemoteAddr().(*net.TCPAddr)
+			if remoteAddr.Port < 10000 || remoteAddr.Port > 10005 {
+				errCh <- fmt.Errorf("unexpected remote port: %d, expected range 10000-10005", remoteAddr.Port)
+				return
+			}
+
+			// Assert that the remote IP is the container's IP and not the namespace IP.
+			if remoteAddr.IP.String() != ip.String() {
+				errCh <- fmt.Errorf("unexpected remote IP: %s, expected %s", remoteAddr.IP.String(), ip.String())
+				return
+			}
+			errCh <- nil
+		}()
+
+		// Wait for connection or timeout.
+		select {
+		case err := <-errCh:
+			if err != nil {
+				return err
+			}
+			log.Infof("tcpMasq (LocalAction): Successfully handled connection")
+		case <-time.After(30 * time.Second):
+			return fmt.Errorf("timeout waiting for the client connection")
+		}
+	}
+
+	return nil
+}
+
+// Timeout implements TestCase.Timeout.
+func (*tcpMasq) Timeout() time.Duration {
+	return 30 * time.Second
 }

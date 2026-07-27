@@ -22,6 +22,7 @@ go_binary(
         "//runsc/cli",
         "//runsc/cmd/util",
         "//runsc/flag",
+        "//runsc/gvisorbinaries",
         "@com_github_google_subcommands//:go_default_library",
         "@org_golang_x_oauth2//:go_default_library",
     ],

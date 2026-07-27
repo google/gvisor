@@ -20,6 +20,7 @@ go_library(
     name = "seccheck",
     srcs = [
         "config.go",
+        "execve_hash_cache.go",
         "metadata.go",
         "metadata_amd64.go",
         "metadata_arm64.go",
@@ -51,6 +52,7 @@ go_test(
     size = "small",
     srcs = [
         "config_test.go",
+        "execve_hash_cache_test.go",
         "metadata_test.go",
         "seccheck_test.go",
     ],

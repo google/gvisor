@@ -225,8 +225,8 @@ func (op bitwise) GetExprName() string {
 
 func (op bitwise) Dump() ([]byte, *syserr.AnnotatedError) {
 	m := &nlmsg.Message{}
-	m.PutAttr(linux.NFTA_BITWISE_SREG, nlmsg.PutU32(formatRegIdxForDump(op.sregIdx)))
-	m.PutAttr(linux.NFTA_BITWISE_DREG, nlmsg.PutU32(formatRegIdxForDump(op.dregIdx)))
+	m.PutAttr(linux.NFTA_BITWISE_SREG, formatRegIdxForDump(op.sregIdx))
+	m.PutAttr(linux.NFTA_BITWISE_DREG, formatRegIdxForDump(op.dregIdx))
 	m.PutAttr(linux.NFTA_BITWISE_LEN, nlmsg.PutU32(uint32(op.blen)))
 	m.PutAttr(linux.NFTA_BITWISE_OP, nlmsg.PutU32(uint32(op.bop)))
 
@@ -317,11 +317,11 @@ var bitwiseAttrPolicy = []NlaPolicy{
 // initBitwise initializes a bitwise operation.
 // Ref: net/netfilter/nft_bitwise.c:nft_bitwise_init()
 func initBitwise(tab *Table, exprInfo ExprInfo) (*bitwise, *syserr.AnnotatedError) {
-	attrs, ok := NfParseWithOpts(exprInfo.ExprData, &NfParseOpts{
+	attrs, err := NfParseWithOpts(exprInfo.ExprData, &NfParseOpts{
 		Policy: bitwiseAttrPolicy,
 	})
-	if !ok {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse bitwise expression data")
+	if err != nil {
+		return nil, err
 	}
 
 	blen, ok := AttrNetToHost[uint32](linux.NFTA_BITWISE_LEN, attrs)

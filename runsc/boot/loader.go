@@ -325,6 +325,12 @@ type Loader struct {
 	// fsSaveCheckpointGofer is true if fsSaveFDs contains only one FD, which
 	// is a socket connected to a checkpoint gofer.
 	fsSaveCheckpointGofer bool
+
+	// hostinetNetDevFile is the pre-opened /proc/net/dev file for hostinet restore.
+	hostinetNetDevFile *os.File
+
+	// hostinetNetSNMPFile is the pre-opened /proc/net/snmp file for hostinet restore.
+	hostinetNetSNMPFile *os.File
 }
 
 // execID uniquely identifies a sentry process that is executed in a container.
@@ -825,6 +831,13 @@ func New(args Args) (*Loader, error) {
 
 // ConfigureNetwork implements inet.NetworkArgs.ConfigureNetwork.
 func (l *Loader) ConfigureNetwork(s inet.Stack) error {
+	if h, ok := s.(*hostinet.Stack); ok {
+		h.SetFiles(l.hostinetNetDevFile, l.hostinetNetSNMPFile)
+		l.hostinetNetDevFile = nil
+		l.hostinetNetSNMPFile = nil
+		return nil
+	}
+
 	if l.networkArgs == nil {
 		return nil
 	}

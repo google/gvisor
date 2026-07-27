@@ -536,3 +536,46 @@ func (cn *conn) ConfigureNoopNAT(pkt *PacketBuffer, natType NATType) bool {
 
 	return cn.ConfigureNAT(portsOrIdents, tcpip.Address{}, natType, true /* changePort */, false /* changeAddress */)
 }
+
+// ConfigureMasquerade configures the connection for masquerade.
+func (cn *conn) configureMasquerade(pkt *PacketBuffer, route *Route, stk *Stack, ports PortOrIdentRange, changePort bool) bool {
+	srcAddr := pkt.Network().SourceAddress()
+	if srcAddr == header.IPv4Any || srcAddr == header.IPv6Any {
+		return false
+	}
+	// Masquerade is only supported for postrouting.
+	if route == nil {
+		return false
+	}
+
+	// Get the network endpoint for the outgoing interface to find its primary address.
+	netEP, err := stk.GetNetworkEndpoint(route.NICID(), route.NetProto())
+	if err != nil {
+		return false
+	}
+
+	addressEP, ok := netEP.(AddressableEndpoint)
+	if !ok {
+		return false
+	}
+
+	// Ref: net/netfilter/nf_nat_masquerade.c:nf_nat_masquerade_ipv[4|6]()
+	// Use the next hop address as the destination address if it is set.
+	nh := route.NextHop()
+	if nh.Len() == 0 {
+		nh = pkt.Network().DestinationAddress()
+	}
+
+	// addressEP is expected to be set for the postrouting hook.
+	// Find the outgoing primary address for the destination address.
+	ep := addressEP.AcquireOutgoingPrimaryAddress(nh, tcpip.Address{} /* srcHint */, false /* allowExpired */)
+	if ep == nil {
+		// No address exists that we can use as a source address.
+		return false
+	}
+	address := ep.AddressWithPrefix().Address
+	ep.DecRef()
+
+	// Configure NAT for the packet to change the source address.
+	return cn.ConfigureNAT(ports, address, SNAT, changePort, true /* changeAddress */)
+}

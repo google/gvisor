@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package config providides helper functions to configure trace sessions.
+// Package config provides helper functions to configure trace sessions.
 package config
 
 import (

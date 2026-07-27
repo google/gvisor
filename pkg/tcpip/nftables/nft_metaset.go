@@ -75,7 +75,7 @@ func (op metaSet) GetExprName() string {
 func (op metaSet) Dump() ([]byte, *syserr.AnnotatedError) {
 	m := &nlmsg.Message{}
 	m.PutAttr(linux.NFTA_META_KEY, nlmsg.PutU32(uint32(op.key)))
-	m.PutAttr(linux.NFTA_META_SREG, nlmsg.PutU32(formatRegIdxForDump(op.sregIdx)))
+	m.PutAttr(linux.NFTA_META_SREG, formatRegIdxForDump(op.sregIdx))
 	return m.Buffer(), nil
 }
 

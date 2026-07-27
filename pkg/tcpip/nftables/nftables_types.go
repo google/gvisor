@@ -47,6 +47,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
@@ -758,6 +759,7 @@ var (
 	_ operation = (*fib)(nil)
 	_ operation = (*ctGet)(nil)
 	_ operation = (*ctSet)(nil)
+	_ operation = (*masqOp)(nil)
 )
 
 // OpType represents the type of operation.
@@ -792,6 +794,8 @@ const (
 	OpTypeFIB
 	// OpTypeCT is the conntrack operation type.
 	OpTypeCT
+	// OpTypeMasq is the masquerade operation type.
+	OpTypeMasq
 	// OpTypeUnknown is the unknown operation type.
 	OpTypeUnknown
 )
@@ -811,6 +815,7 @@ var opTypeStrings = []string{
 	OpTypeLookup:     "lookup",
 	OpTypeFIB:        "fib",
 	OpTypeCT:         "ct",
+	OpTypeMasq:       "masq",
 	OpTypeUnknown:    "unknown",
 }
 
@@ -866,7 +871,7 @@ func isRegister(reg uint8) bool {
 // Use registerData.storeData to set data in the registers.
 // Note: Corresponds to nft_regs from include/net/netfilter/nf_tables.h.
 type registerSet struct {
-	verdict stack.NFVerdict         // 16-byte verdict register
+	verdict Verdict                 // 16-byte verdict register
 	data    [registersByteSize]byte // 4 16-byte registers or 16 4-byte registers
 }
 
@@ -874,13 +879,13 @@ type registerSet struct {
 // registers set to 0.
 func newRegisterSet() registerSet {
 	return registerSet{
-		verdict: stack.NFVerdict{Code: VC(linux.NFT_CONTINUE)},
+		verdict: Verdict{Code: VC(linux.NFT_CONTINUE)},
 		data:    [registersByteSize]byte{0},
 	}
 }
 
 // Verdict returns the verdict data.
-func (regs *registerSet) Verdict() stack.NFVerdict {
+func (regs *registerSet) Verdict() Verdict {
 	return regs.verdict
 }
 
@@ -891,7 +896,7 @@ func (regs *registerSet) String() string {
 // NF Verdict Helper Functions
 
 // VerdictString returns a string representation of the verdict.
-func VerdictString(v stack.NFVerdict) string {
+func VerdictString(v Verdict) string {
 	out := VerdictCodeToString(v.Code)
 	if v.ChainName != "" {
 		out += fmt.Sprintf(" -> %s", v.ChainName)
@@ -1033,7 +1038,7 @@ type nftSet struct {
 // dataOrVerdict represents the data or verdict of the set element.
 type dataOrVerdict struct {
 	isVerdict bool
-	verdict   stack.NFVerdict
+	verdict   Verdict
 	data      []byte
 }
 
@@ -1076,8 +1081,8 @@ func AFtoNetlinkAF(af uint8) (stack.AddressFamily, *syserr.Error) {
 }
 
 // parseVerdictAttrs parses and validates the verdict data from the data attributes.
-func parseVerdictAttrs(tab *Table, dataAttrs map[uint16]nlmsg.BytesView) (stack.NFVerdict, *syserr.AnnotatedError) {
-	v := stack.NFVerdict{}
+func parseVerdictAttrs(tab *Table, dataAttrs map[uint16]nlmsg.BytesView) (Verdict, *syserr.AnnotatedError) {
+	v := Verdict{}
 	vBytes, ok := dataAttrs[linux.NFTA_DATA_VERDICT]
 	if !ok {
 		return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: NFTA_DATA_VERDICT attribute is not found")
@@ -1119,7 +1124,7 @@ func dumpDataAttr(data []byte) ([]byte, *syserr.AnnotatedError) {
 }
 
 // dumpVerdictDataAttr dumps the verdict data attribute for the dump operation.
-func dumpVerdictDataAttr(verdict stack.NFVerdict) ([]byte, *syserr.AnnotatedError) {
+func dumpVerdictDataAttr(verdict Verdict) ([]byte, *syserr.AnnotatedError) {
 	nestedAttr := nlmsg.NestedAttr{}
 	nestedAttr.PutAttr(linux.NFTA_VERDICT_CODE, nlmsg.PutU32(uint32(verdict.Code)))
 	if int32(verdict.Code) == linux.NFT_JUMP || int32(verdict.Code) == linux.NFT_GOTO {
@@ -1153,22 +1158,24 @@ func regNumToIdx(reg uint8, dataLenBytes int) (int, *syserr.AnnotatedError) {
 
 // formatRegIdxForDump formats the register index for the dump operation.
 // net/netfilter/nf_tables_api.c:nft_dump_register
-func formatRegIdxForDump(regIdx int) uint32 {
+func formatRegIdxForDump(regIdx int) marshal.Marshallable {
 	if regIdx >= registersByteSize {
-		return 0
+		return nlmsg.PutU32(0)
 	}
 	if regIdx%linux.NFT_REG_SIZE == 0 {
-		return uint32(regIdx/linux.NFT_REG_SIZE) + linux.NFT_REG_1
+		val := uint32(regIdx/linux.NFT_REG_SIZE) + linux.NFT_REG_1
+		return nlmsg.PutU32(val)
 	}
 	if regIdx%linux.NFT_REG32_SIZE != 0 {
-		return 0
+		return nlmsg.PutU32(0)
 	}
-	return uint32(regIdx/linux.NFT_REG32_SIZE) + linux.NFT_REG32_00
+	val := uint32(regIdx/linux.NFT_REG32_SIZE) + linux.NFT_REG32_00
+	return nlmsg.PutU32(val)
 }
 
 // validateVerdictData validates the verdict data bytes and returns the data as a verdict.
-func validateVerdictData(tab *Table, bytes nlmsg.AttrsView) (stack.NFVerdict, *syserr.AnnotatedError) {
-	v := stack.NFVerdict{}
+func validateVerdictData(tab *Table, bytes nlmsg.AttrsView) (Verdict, *syserr.AnnotatedError) {
+	v := Verdict{}
 	verdictAttrs, ok := NfParse(bytes)
 	if !ok {
 		return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse verdict data")
@@ -1445,4 +1452,29 @@ func (nf *NFTables) ReplaceNFTables(nftCopy *NFTables) {
 	nf.ip4InetBaseChains = nftCopy.ip4InetBaseChains
 	nf.ip6InetBaseChains = nftCopy.ip6InetBaseChains
 	nf.genid++
+}
+
+//
+// Verdict Implementation.
+// There are two types of verdicts:
+// 1. Netfilter (External) Verdicts: Drop, Accept, Stolen, Queue, Repeat, Stop
+// 		These are terminal verdicts that are returned to the kernel.
+// 2. Nftable (Internal) Verdicts:, Continue, Break, Jump, Goto, Return
+// 		These are internal verdicts that only exist within the nftables library.
+// Both share the same numeric space (uint32 Verdict Code).
+//
+
+// Verdict represents the result of evaluating a packet against a rule or chain.
+type Verdict struct {
+	// Code is the numeric code that represents the verdict issued.
+	Code uint32
+
+	// ChainName is the name of the chain to continue evaluation if the verdict is
+	// Jump or Goto.
+	// Note: the chain must be in the same table as the current chain.
+	ChainName string
+
+	// Chain is the resolved chain to continue evaluation if the verdict is
+	// Jump or Goto. It allows fast pointer traversal during packet ruleset processing.
+	Chain *Chain
 }

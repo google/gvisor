@@ -1389,7 +1389,29 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 		if err != nil {
 			return nil, nil, nil, nil, fmt.Errorf("opening rootfs image %q: %v", rootfsHint.Mount.Source, err)
 		}
-		return []*os.File{ioFile}, nil, nil, nil, nil
+		ioFiles := []*os.File{ioFile}
+		cu := cleanup.Make(func() {
+			for _, f := range ioFiles {
+				_ = f.Close()
+			}
+		})
+		defer cu.Clean()
+		cfgIdx := 1
+		for _, m := range c.Spec.Mounts {
+			if !specutils.HasMountConfig(m) {
+				continue
+			}
+			if c.GoferMountConfs[cfgIdx].ShouldUseErofs() {
+				f, err := os.Open(m.Source)
+				if err != nil {
+					return nil, nil, nil, nil, fmt.Errorf("opening EROFS image %q: %v", m.Source, err)
+				}
+				ioFiles = append(ioFiles, f)
+			}
+			cfgIdx++
+		}
+		cu.Release()
+		return ioFiles, nil, nil, nil, nil
 	}
 
 	// Ensure we don't leak FDs to the gofer process.
@@ -1558,9 +1580,11 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 	nss := []specs.LinuxNamespace{
 		{Type: specs.IPCNamespace},
 		{Type: specs.MountNamespace},
-		{Type: specs.NetworkNamespace},
 		{Type: specs.PIDNamespace},
 		{Type: specs.UTSNamespace},
+	}
+	if ns, ok := goferNetworkNamespace(conf.GoferNetworkNamespace); ok {
+		nss = append(nss, ns)
 	}
 
 	rootlessEUID := unix.Geteuid() != 0
@@ -1650,6 +1674,20 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 	}
 
 	return sandEnds, goferFilestores, devSandEnd, mountsSand, nil
+}
+
+func goferNetworkNamespace(namespace config.GoferNetworkNamespace) (specs.LinuxNamespace, bool) {
+	switch namespace {
+	case config.GoferNetworkNamespaceNew:
+		return specs.LinuxNamespace{Type: specs.NetworkNamespace}, true
+	case config.GoferNetworkNamespaceHost:
+		return specs.LinuxNamespace{}, false
+	default:
+		return specs.LinuxNamespace{
+			Type: specs.NetworkNamespace,
+			Path: string(namespace),
+		}, true
+	}
 }
 
 // changeStatus transitions from one status to another ensuring that the

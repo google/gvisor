@@ -31,6 +31,7 @@ import (
 	"gvisor.dev/gvisor/runsc/cli"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/flag"
+	"gvisor.dev/gvisor/runsc/gvisorbinaries"
 )
 
 // GCSOptions holds options that configure a checkpoint gofer to access GCS.
@@ -168,7 +169,7 @@ func (cmd *checkpointGoferCmd) runGCS(ctx context.Context, sock *unet.Socket, op
 
 // main is the binary's entry point.
 func main() {
-	cli.Run(map[util.SubCommand]string{
+	cli.Run(&gvisorbinaries.CheckpointGofer, map[util.SubCommand]string{
 		new(checkpointGoferCmd): "",
 	}, nil)
 }

@@ -18,10 +18,12 @@ import glob
 import json
 import os
 import shutil
+import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
-from sandboxexec.sandbox import sandbox
+from gvisor import sandbox
 
 
 def find_runsc() -> str:
@@ -67,7 +69,7 @@ class SandboxTest(unittest.TestCase):
   def test_exec_timeout(self):
     enable_networking = os.geteuid() == 0
     with sandbox.Sandbox(enable_networking=enable_networking) as sb:
-      with self.assertRaises(sandbox.SandboxError) as ctx:
+      with self.assertRaises(sandbox.Error) as ctx:
         sb.exec("sleep", "10", timeout=1)
       self.assertIn("exec timed out", str(ctx.exception))
 
@@ -80,14 +82,13 @@ class SandboxTest(unittest.TestCase):
   def test_exec_invalid_command_or_args(self):
     enable_networking = os.geteuid() == 0
     with sandbox.Sandbox(enable_networking=enable_networking) as sb:
-      with self.assertRaises(sandbox.SandboxError) as ctx:
+      with self.assertRaises(sandbox.Error) as ctx:
         sb.exec("nonexistent_command_xyz123")
       self.assertIn("exec failed", str(ctx.exception))
 
-      with self.assertRaises(sandbox.SandboxError) as ctx:
+      with self.assertRaises(sandbox.Error) as ctx:
         sb.exec("ls", "--invalid-flag-xyz123")
       self.assertIn("exec failed", str(ctx.exception))
-
 
   def test_sandbox_options(self):
     enable_networking = os.geteuid() == 0
@@ -106,16 +107,17 @@ class SandboxTest(unittest.TestCase):
       self.skipTest("this test must be run as non-root")
 
     before_tmp = set(os.listdir(tempfile.gettempdir()))
-    with self.assertRaises(sandbox.SandboxError) as ctx:
+    with self.assertRaises(sandbox.Error) as ctx:
       sandbox.Sandbox(enable_networking=True)
     after_tmp = set(os.listdir(tempfile.gettempdir()))
 
     self.assertIn(
         "enabling networking requires running as root", str(ctx.exception)
     )
-    leaked = [f for f in after_tmp - before_tmp if f.startswith("gvisor-sandbox-")]
+    leaked = [
+        f for f in after_tmp - before_tmp if f.startswith("gvisor-sandbox-")
+    ]
     self.assertEqual(leaked, [])
-
 
   def test_create_bundle(self):
     # Test the internal _create_bundle method to verify config.json
@@ -133,7 +135,7 @@ class SandboxTest(unittest.TestCase):
                 sandbox_id=sandbox_id,
                 enable_networking=enable_networking,
             )
-          except sandbox.SandboxError as e:
+          except sandbox.Error as e:
             self.fail(f"Failed to create sandbox: {e}")
 
           try:
@@ -190,6 +192,78 @@ class SandboxTest(unittest.TestCase):
     sb.close()
     # Repeating close() should be a safe no-op.
     sb.close()
+
+  @mock.patch("tempfile.mkdtemp")
+  def test_runtime_dir_creation_error(self, mock_mkdtemp):
+    mock_mkdtemp.side_effect = OSError("mock disk error")
+    with self.assertRaises(sandbox.Error) as ctx:
+      sandbox.Sandbox(enable_networking=False)
+    self.assertIn("failed to create runtime directory", str(ctx.exception))
+
+  @mock.patch("os.makedirs")
+  def test_state_dir_creation_error(self, mock_makedirs):
+    def side_effect(path, **_kwargs):
+      if path.endswith("state"):
+        raise OSError("mock permission denied")
+
+    mock_makedirs.side_effect = side_effect
+    with tempfile.TemporaryDirectory() as runtime_dir:
+      with self.assertRaises(sandbox.Error) as ctx:
+        sandbox.Sandbox(runtime_dir=runtime_dir, enable_networking=False)
+      self.assertIn(
+          "failed to create sandbox state directory", str(ctx.exception)
+      )
+
+  def test_create_bundle_makedirs_error(self):
+    enable_networking = os.geteuid() == 0
+    with tempfile.TemporaryDirectory() as temp_dir:
+      # Bypass __init__ to test _create_bundle logic
+      sb = sandbox.Sandbox.__new__(sandbox.Sandbox)
+      sb._id = "test-bundle"
+      sb._runtime_dir = temp_dir
+      sb._enable_networking = enable_networking
+      with mock.patch("os.makedirs") as mock_makedirs:
+        mock_makedirs.side_effect = OSError("mock disk error")
+        with self.assertRaises(sandbox.Error) as ctx:
+          sb._create_bundle()
+        self.assertIn("failed to create bundle directories", str(ctx.exception))
+
+  @mock.patch("subprocess.run")
+  def test_sandbox_subprocess_timeout(self, mock_run):
+    def side_effect(*args, **_kwargs):
+      if "run" in args[0]:
+        raise subprocess.TimeoutExpired(cmd=args[0], timeout=30)
+      return mock.Mock(returncode=0)
+
+    mock_run.side_effect = side_effect
+    with self.assertRaises(sandbox.Error) as ctx:
+      sandbox.Sandbox(enable_networking=False)
+    self.assertIn("sandbox creation timed out", str(ctx.exception))
+
+  @mock.patch("subprocess.run")
+  def test_sandbox_subprocess_error(self, mock_run):
+    def side_effect(*args, **_kwargs):
+      if "run" in args[0]:
+        raise subprocess.CalledProcessError(returncode=1, cmd=args[0])
+      return mock.Mock(returncode=0)
+
+    mock_run.side_effect = side_effect
+    with self.assertRaises(sandbox.Error) as ctx:
+      sandbox.Sandbox(enable_networking=False)
+    self.assertIn("failed to create sandbox via subprocess", str(ctx.exception))
+
+  def test_find_runsc_not_found(self):
+    old_runsc_path = os.environ.get("RUNSC_PATH")
+    if "RUNSC_PATH" in os.environ:
+      del os.environ["RUNSC_PATH"]
+
+    with mock.patch("shutil.which", return_value=None):
+      with self.assertRaises(sandbox.Error) as ctx:
+        sandbox.Sandbox(enable_networking=False)
+      self.assertIn("runsc binary is not found", str(ctx.exception))
+
+    if old_runsc_path is not None:
+      os.environ["RUNSC_PATH"] = old_runsc_path
 
 
 if __name__ == "__main__":

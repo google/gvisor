@@ -105,11 +105,26 @@ type CgroupsReadArgs struct {
 	Args []CgroupsReadArg `json:"args"`
 }
 
+// cgroup is an interface implemented by both kernel.Cgroup and kernel.Cgroup2.
+type cgroup interface {
+	ReadControl(ctx context.Context, name string) (string, error)
+	WriteControl(ctx context.Context, name string, val string) error
+}
+
+func (c *Cgroups) resolveCgroup(ctx context.Context, file CgroupControlFile) (cgroup, error) {
+	if c.Kernel.Cgroup2FS().EverMounted() {
+		if cg, err := c.Kernel.Cgroup2FS().FindCgroup(ctx, file.Path); err == nil {
+			return cg, nil
+		}
+	}
+	return c.findCgroup(ctx, file)
+}
+
 // ReadControlFiles is an RPC stub for batch-reading cgroupfs control files.
 func (c *Cgroups) ReadControlFiles(args *CgroupsReadArgs, out *CgroupsResults) error {
 	ctx := c.Kernel.SupervisorContext()
 	for _, arg := range args.Args {
-		cg, err := c.findCgroup(ctx, arg.File)
+		cg, err := c.resolveCgroup(ctx, arg.File)
 		if err != nil {
 			out.appendError(err)
 			continue
@@ -142,7 +157,7 @@ func (c *Cgroups) WriteControlFiles(args *CgroupsWriteArgs, out *CgroupsResults)
 	ctx := c.Kernel.SupervisorContext()
 
 	for _, arg := range args.Args {
-		cg, err := c.findCgroup(ctx, arg.File)
+		cg, err := c.resolveCgroup(ctx, arg.File)
 		if err != nil {
 			out.appendError(err)
 			continue

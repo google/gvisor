@@ -10,6 +10,7 @@ go_binary(
     testonly = 1,
     srcs = [
         "fds.go",
+        "hostinet_sr.go",
         "main.go",
         "zombies.go",
     ],

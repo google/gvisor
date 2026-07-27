@@ -96,8 +96,9 @@ if [[ "${BUILDKITE_PIPELINE_INSTALL_RUNTIME:-}" == "true" ]]; then
     # Used `runsc` from STAGED_BINARIES instead of building it from scratch.
     export BUILDKITE_STAGED_BINARIES_DIRECTORY="$(mktemp -d)"
     gcloud storage cat "$STAGED_BINARIES" \
-      | tar -C "$BUILDKITE_STAGED_BINARIES_DIRECTORY" -zxvf - runsc
-    chmod +x "$BUILDKITE_STAGED_BINARIES_DIRECTORY/runsc"
+      | tar -C "$BUILDKITE_STAGED_BINARIES_DIRECTORY" -zxvf - \
+          ./runsc ./gvisor-bin
+    chmod -R +x "$BUILDKITE_STAGED_BINARIES_DIRECTORY"/runsc "$BUILDKITE_STAGED_BINARIES_DIRECTORY"/gvisor-bin
     sudo "$BUILDKITE_STAGED_BINARIES_DIRECTORY/runsc" install \
       --experimental=true --runtime="${RUNTIME}" \
       -- "${RUNTIME_ARGS:-}"

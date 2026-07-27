@@ -27,7 +27,7 @@ import tempfile
 from typing import Optional, Tuple
 
 
-class SandboxError(Exception):
+class Error(Exception):
   """Base exception for Sandbox operations."""
 
 
@@ -50,7 +50,7 @@ class Sandbox:
       enable_networking: Whether networking is enabled inside the sandbox.
 
     Raises:
-      SandboxError: If sandbox creation fails.
+      Error: If sandbox creation fails.
     """
     self._enable_networking = enable_networking
     self._runtime_dir = ""
@@ -65,7 +65,7 @@ class Sandbox:
       try:
         self._runtime_dir = tempfile.mkdtemp(prefix="gvisor-sandbox-")
       except OSError as e:
-        raise SandboxError(f"failed to create runtime directory: {e}") from e
+        raise Error(f"failed to create runtime directory: {e}") from e
       self._owns_runtime_dir = True
     else:
       self._runtime_dir = runtime_dir
@@ -75,23 +75,22 @@ class Sandbox:
 
     try:
       if os.geteuid() != 0 and self._enable_networking:
-        raise SandboxError("enabling networking requires running as root")
+        raise Error("enabling networking requires running as root")
 
       self._state_dir = os.path.join(self._runtime_dir, "state")
       try:
         os.makedirs(self._state_dir, mode=0o700, exist_ok=True)
       except OSError as e:
-        raise SandboxError(
-            f"failed to create sandbox state directory: {e}"
-        ) from e
+        raise Error(f"failed to create sandbox state directory: {e}") from e
 
-      # Verify permissions (mode might be different if directory already existed).
+      # Verify permissions (mode might be different if directory already
+      # existed).
       try:
         stat_info = os.stat(self._state_dir)
         if (stat_info.st_mode & 0o777) != 0o700:
           os.chmod(self._state_dir, 0o700)
       except OSError as e:
-        raise SandboxError(
+        raise Error(
             "sandbox state directory has incorrect permissions and failed to"
             f" chmod: {e}"
         ) from e
@@ -121,7 +120,7 @@ class Sandbox:
               timeout=30,
           )
       except subprocess.TimeoutExpired as e:
-        raise SandboxError("sandbox creation timed out (runsc run hung)") from e
+        raise Error("sandbox creation timed out (runsc run hung)") from e
       except subprocess.CalledProcessError as e:
         stderr_content = ""
         if os.path.exists(stderr_path):
@@ -130,9 +129,9 @@ class Sandbox:
               stderr_content = f.read()
           except OSError:
             pass
-        raise SandboxError(
-            f"failed to create sandbox via subprocess: exit code {e.returncode},"
-            f" stderr: {stderr_content}"
+        raise Error(
+            "failed to create sandbox via subprocess: exit code"
+            f" {e.returncode}, stderr: {stderr_content}"
         ) from e
     except Exception:
       self.close()
@@ -163,7 +162,7 @@ class Sandbox:
     path = shutil.which("runsc")
     if path is not None:
       return path
-    raise SandboxError("runsc binary is not found")
+    raise Error("runsc binary is not found")
 
   def _create_bundle(self) -> str:
     """Creates the OCI bundle directory and config.json.
@@ -172,14 +171,14 @@ class Sandbox:
       The path to the created bundle directory.
 
     Raises:
-      SandboxError: If bundle creation fails.
+      Error: If bundle creation fails.
     """
     bundle_dir = os.path.join(self._runtime_dir, self._id)
     rootfs_dir = os.path.join(bundle_dir, "rootfs")
     try:
       os.makedirs(rootfs_dir, mode=0o755, exist_ok=True)
     except OSError as e:
-      raise SandboxError(f"failed to create bundle directories: {e}") from e
+      raise Error(f"failed to create bundle directories: {e}") from e
 
     namespaces = [
         {"type": "pid"},
@@ -242,7 +241,7 @@ class Sandbox:
       with open(config_path, "w") as f:
         json.dump(spec, f, indent=2)
     except OSError as e:
-      raise SandboxError(f"failed to create config.json: {e}") from e
+      raise Error(f"failed to create config.json: {e}") from e
 
     return bundle_dir
 
@@ -260,7 +259,7 @@ class Sandbox:
       A tuple of (stdout, stderr) strings.
 
     Raises:
-      SandboxError: If the command execution fails or times out.
+      Error: If the command execution fails or times out.
     """
     runsc_args = ["--root", self._state_dir, "exec", self._id, cmd] + list(args)
     try:
@@ -273,9 +272,9 @@ class Sandbox:
       )
       return result.stdout, result.stderr
     except subprocess.TimeoutExpired as e:
-      raise SandboxError(f"exec timed out after {timeout} seconds") from e
+      raise Error(f"exec timed out after {timeout} seconds") from e
     except subprocess.CalledProcessError as e:
-      raise SandboxError(f"exec failed: {e.stderr}") from e
+      raise Error(f"exec failed: {e.stderr}") from e
 
   def close(self):
     """Kills the sandbox processes and cleans up directories."""

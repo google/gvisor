@@ -16,6 +16,8 @@
 package cgroup2fs
 
 import (
+	"fmt"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
@@ -233,6 +235,25 @@ func (fs *filesystem) ReturnControllerLocked(ctx context.Context, cType kernel.C
 // RootCgroup implements kernel.Cgroup2FS.RootCgroup.
 func (fs *filesystem) RootCgroup() kernel.Cgroup2 {
 	return fs.root.Inode().(*cgroup)
+}
+
+// FindCgroup implements kernel.Cgroup2FS.FindCgroup.
+// It allows reading and writing to a cgroup from outside the sandbox.
+func (fs *filesystem) FindCgroup(ctx context.Context, path string) (kernel.Cgroup2, error) {
+	p := fspath.Parse(path)
+	if !p.Absolute {
+		return nil, fmt.Errorf("path must be absolute")
+	}
+	vfsObj := fs.VFSFilesystem().VirtualFilesystem()
+	d, err := fs.root.WalkDentryTree(ctx, vfsObj, p)
+	if err != nil {
+		return nil, err
+	}
+	cg, ok := d.Inode().(*cgroup)
+	if !ok {
+		return nil, linuxerr.ENOENT
+	}
+	return cg, nil
 }
 
 func (fs *filesystem) newRootInode(ctx context.Context, mode linux.FileMode) kernfs.Inode {
