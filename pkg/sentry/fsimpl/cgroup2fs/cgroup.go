@@ -137,12 +137,14 @@ type cgroup struct {
 
 	// xattrs stores extended attributes on this cgroup directory.
 	xattrs memxattr.SimpleExtendedAttributes
+	
 }
 
 // isFrozenLocked returns whether this cgroup is effectively frozen, i.e. it or
 // any of its ancestors has cgroup.freeze set. parent pointers are immutable, so
 // walking them only requires fs.tasksMu to read each frozen field.
 // +checklocksread:c.fs.tasksMu
+
 func (c *cgroup) isFrozenLocked() bool {
 	for cg := c; cg != nil; cg = cg.parent {
 		// All cgroups in a tree share one filesystem, so cg.fs.tasksMu is the
