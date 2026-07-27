@@ -57,6 +57,27 @@ func (*directoryFD) OnClose(ctx context.Context) error {
 	return nil
 }
 
+// Seek implements vfs.FileDescriptionImpl.Seek.
+func (dir *directoryFD) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
+	switch whence {
+	case linux.SEEK_SET:
+		if offset < 0 {
+			return 0, linuxerr.EINVAL
+		}
+		dir.off.Store(offset)
+		return offset, nil
+	case linux.SEEK_CUR:
+		newOffset := dir.off.Load() + offset
+		if newOffset < 0 {
+			return 0, linuxerr.EINVAL
+		}
+		dir.off.Store(newOffset)
+		return newOffset, nil
+	default:
+		return 0, linuxerr.EINVAL
+	}
+}
+
 // IterDirents implements vfs.FileDescriptionImpl.IterDirents.
 func (dir *directoryFD) IterDirents(ctx context.Context, callback vfs.IterDirentsCallback) error {
 	in := linux.FUSEReadIn{
@@ -73,6 +94,9 @@ func (dir *directoryFD) IterDirents(ctx context.Context, callback vfs.IterDirent
 	}
 
 	for _, fuseDirent := range out.Dirents {
+		if len(fuseDirent.Name) == 0 {
+			return linuxerr.EIO
+		}
 		nextOff := int64(fuseDirent.Meta.Off)
 		dirent := vfs.Dirent{
 			Name:    fuseDirent.Name,

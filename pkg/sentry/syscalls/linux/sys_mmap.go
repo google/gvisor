@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/overlay"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -368,6 +369,11 @@ func traceMmap(t *kernel.Task, file *vfs.FileDescription) error {
 	info := &ppb.MmapInfo{}
 	if file != nil {
 		info.MappedPath = file.MappedName(t)
+		// Note that despite the method name IsCopiedUp, this returns true for any file located on the
+		// upper layer, including files created or downloaded directly on the upper layer that were
+		// never copied up from a lower layer.
+		info.OverlayfsUpper = overlay.IsCopiedUp(file.Dentry())
+		info.OverlayfsLower = overlay.IsOnLower(file.Dentry())
 		statOpts := vfs.StatOptions{
 			Mask: linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | linux.STATX_INO | linux.STATX_CTIME,
 		}

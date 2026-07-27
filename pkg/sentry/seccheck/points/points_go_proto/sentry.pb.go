@@ -114,6 +114,7 @@ type ExecveInfo struct {
 	BinaryCtime          *Timespec              `protobuf:"bytes,11,opt,name=binary_ctime,json=binaryCtime,proto3" json:"binary_ctime,omitempty"`
 	BinarySize           int64                  `protobuf:"varint,18,opt,name=binary_size,json=binarySize,proto3" json:"binary_size,omitempty"`
 	BinaryNlink          uint32                 `protobuf:"varint,19,opt,name=binary_nlink,json=binaryNlink,proto3" json:"binary_nlink,omitempty"`
+	BinaryInMemfd        bool                   `protobuf:"varint,20,opt,name=binary_in_memfd,json=binaryInMemfd,proto3" json:"binary_in_memfd,omitempty"`
 	Stdin                *FdInfo                `protobuf:"bytes,12,opt,name=stdin,proto3" json:"stdin,omitempty"`
 	Stdout               *FdInfo                `protobuf:"bytes,13,opt,name=stdout,proto3" json:"stdout,omitempty"`
 	Stderr               *FdInfo                `protobuf:"bytes,14,opt,name=stderr,proto3" json:"stderr,omitempty"`
@@ -257,6 +258,13 @@ func (x *ExecveInfo) GetBinaryNlink() uint32 {
 	return 0
 }
 
+func (x *ExecveInfo) GetBinaryInMemfd() bool {
+	if x != nil {
+		return x.BinaryInMemfd
+	}
+	return false
+}
+
 func (x *ExecveInfo) GetStdin() *FdInfo {
 	if x != nil {
 		return x.Stdin
@@ -390,17 +398,19 @@ func (x *TaskExit) GetExitStatus() int32 {
 }
 
 type MmapInfo struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ContextData   *ContextData           `protobuf:"bytes,1,opt,name=context_data,json=contextData,proto3" json:"context_data,omitempty"`
-	MappedPath    string                 `protobuf:"bytes,2,opt,name=mapped_path,json=mappedPath,proto3" json:"mapped_path,omitempty"`
-	MappedIno     uint64                 `protobuf:"varint,3,opt,name=mapped_ino,json=mappedIno,proto3" json:"mapped_ino,omitempty"`
-	MappedMode    uint32                 `protobuf:"varint,4,opt,name=mapped_mode,json=mappedMode,proto3" json:"mapped_mode,omitempty"`
-	MappedUid     uint32                 `protobuf:"varint,5,opt,name=mapped_uid,json=mappedUid,proto3" json:"mapped_uid,omitempty"`
-	MappedGid     uint32                 `protobuf:"varint,6,opt,name=mapped_gid,json=mappedGid,proto3" json:"mapped_gid,omitempty"`
-	IsInitialMmap bool                   `protobuf:"varint,7,opt,name=is_initial_mmap,json=isInitialMmap,proto3" json:"is_initial_mmap,omitempty"`
-	MappedCtime   *Timespec              `protobuf:"bytes,8,opt,name=mapped_ctime,json=mappedCtime,proto3" json:"mapped_ctime,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	ContextData    *ContextData           `protobuf:"bytes,1,opt,name=context_data,json=contextData,proto3" json:"context_data,omitempty"`
+	MappedPath     string                 `protobuf:"bytes,2,opt,name=mapped_path,json=mappedPath,proto3" json:"mapped_path,omitempty"`
+	MappedIno      uint64                 `protobuf:"varint,3,opt,name=mapped_ino,json=mappedIno,proto3" json:"mapped_ino,omitempty"`
+	MappedMode     uint32                 `protobuf:"varint,4,opt,name=mapped_mode,json=mappedMode,proto3" json:"mapped_mode,omitempty"`
+	MappedUid      uint32                 `protobuf:"varint,5,opt,name=mapped_uid,json=mappedUid,proto3" json:"mapped_uid,omitempty"`
+	MappedGid      uint32                 `protobuf:"varint,6,opt,name=mapped_gid,json=mappedGid,proto3" json:"mapped_gid,omitempty"`
+	IsInitialMmap  bool                   `protobuf:"varint,7,opt,name=is_initial_mmap,json=isInitialMmap,proto3" json:"is_initial_mmap,omitempty"`
+	MappedCtime    *Timespec              `protobuf:"bytes,8,opt,name=mapped_ctime,json=mappedCtime,proto3" json:"mapped_ctime,omitempty"`
+	OverlayfsUpper bool                   `protobuf:"varint,9,opt,name=overlayfs_upper,json=overlayfsUpper,proto3" json:"overlayfs_upper,omitempty"`
+	OverlayfsLower bool                   `protobuf:"varint,10,opt,name=overlayfs_lower,json=overlayfsLower,proto3" json:"overlayfs_lower,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *MmapInfo) Reset() {
@@ -489,6 +499,20 @@ func (x *MmapInfo) GetMappedCtime() *Timespec {
 	return nil
 }
 
+func (x *MmapInfo) GetOverlayfsUpper() bool {
+	if x != nil {
+		return x.OverlayfsUpper
+	}
+	return false
+}
+
+func (x *MmapInfo) GetOverlayfsLower() bool {
+	if x != nil {
+		return x.OverlayfsLower
+	}
+	return false
+}
+
 var File_pkg_sentry_seccheck_points_sentry_proto protoreflect.FileDescriptor
 
 const file_pkg_sentry_seccheck_points_sentry_proto_rawDesc = "" +
@@ -499,7 +523,7 @@ const file_pkg_sentry_seccheck_points_sentry_proto_rawDesc = "" +
 	"\x11created_thread_id\x18\x03 \x01(\x05R\x0fcreatedThreadId\x125\n" +
 	"\x17created_thread_group_id\x18\x04 \x01(\x05R\x14createdThreadGroupId\x12>\n" +
 	"\x1ccreated_thread_start_time_ns\x18\x05 \x01(\x03R\x18createdThreadStartTimeNs\x12\x14\n" +
-	"\x05flags\x18\x06 \x01(\x04R\x05flags\"\xe5\x05\n" +
+	"\x05flags\x18\x06 \x01(\x04R\x05flags\"\x8d\x06\n" +
 	"\n" +
 	"ExecveInfo\x12=\n" +
 	"\fcontext_data\x18\x01 \x01(\v2\x1a.gvisor.common.ContextDataR\vcontextData\x12\x1f\n" +
@@ -524,7 +548,8 @@ const file_pkg_sentry_seccheck_points_sentry_proto_rawDesc = "" +
 	"\fbinary_ctime\x18\v \x01(\v2\x17.gvisor.common.TimespecR\vbinaryCtime\x12\x1f\n" +
 	"\vbinary_size\x18\x12 \x01(\x03R\n" +
 	"binarySize\x12!\n" +
-	"\fbinary_nlink\x18\x13 \x01(\rR\vbinaryNlink\x12+\n" +
+	"\fbinary_nlink\x18\x13 \x01(\rR\vbinaryNlink\x12&\n" +
+	"\x0fbinary_in_memfd\x18\x14 \x01(\bR\rbinaryInMemfd\x12+\n" +
 	"\x05stdin\x18\f \x01(\v2\x15.gvisor.common.FdInfoR\x05stdin\x12-\n" +
 	"\x06stdout\x18\r \x01(\v2\x15.gvisor.common.FdInfoR\x06stdout\x12-\n" +
 	"\x06stderr\x18\x0e \x01(\v2\x15.gvisor.common.FdInfoR\x06stderr\x12\x16\n" +
@@ -536,7 +561,7 @@ const file_pkg_sentry_seccheck_points_sentry_proto_rawDesc = "" +
 	"\bTaskExit\x12=\n" +
 	"\fcontext_data\x18\x01 \x01(\v2\x1a.gvisor.common.ContextDataR\vcontextData\x12\x1f\n" +
 	"\vexit_status\x18\x02 \x01(\x05R\n" +
-	"exitStatus\"\xcc\x02\n" +
+	"exitStatus\"\x9e\x03\n" +
 	"\bMmapInfo\x12=\n" +
 	"\fcontext_data\x18\x01 \x01(\v2\x1a.gvisor.common.ContextDataR\vcontextData\x12\x1f\n" +
 	"\vmapped_path\x18\x02 \x01(\tR\n" +
@@ -550,7 +575,10 @@ const file_pkg_sentry_seccheck_points_sentry_proto_rawDesc = "" +
 	"\n" +
 	"mapped_gid\x18\x06 \x01(\rR\tmappedGid\x12&\n" +
 	"\x0fis_initial_mmap\x18\a \x01(\bR\risInitialMmap\x12:\n" +
-	"\fmapped_ctime\x18\b \x01(\v2\x17.gvisor.common.TimespecR\vmappedCtimeb\x06proto3"
+	"\fmapped_ctime\x18\b \x01(\v2\x17.gvisor.common.TimespecR\vmappedCtime\x12'\n" +
+	"\x0foverlayfs_upper\x18\t \x01(\bR\x0eoverlayfsUpper\x12'\n" +
+	"\x0foverlayfs_lower\x18\n" +
+	" \x01(\bR\x0eoverlayfsLowerb\x06proto3"
 
 var (
 	file_pkg_sentry_seccheck_points_sentry_proto_rawDescOnce sync.Once

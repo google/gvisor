@@ -101,6 +101,12 @@ func archInit() {
 			Name: "fd_path",
 		},
 	})
+	addSyscallPoint(50, "listen", []FieldDesc{
+		{
+			ID:   FieldSyscallPath,
+			Name: "fd_path",
+		},
+	})
 	addSyscallPoint(53, "socketpair", nil)
 	addSyscallPoint(56, "clone", nil)
 	addSyscallPoint(57, "fork", nil)
@@ -130,6 +136,7 @@ func archInit() {
 			Name: "fd_path",
 		},
 	})
+	addSyscallPoint(101, "ptrace", nil)
 	addSyscallPoint(105, "setuid", nil)
 	addSyscallPoint(106, "setgid", nil)
 	addSyscallPoint(112, "setsid", nil)

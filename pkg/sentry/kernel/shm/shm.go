@@ -551,6 +551,10 @@ func (s *Shm) ConfigureAttach(ctx context.Context, addr hostarch.Addr, opts Atta
 		// in the user namespace that governs its IPC namespace." - man shmat(2)
 		return memmap.MMapOpts{}, linuxerr.EACCES
 	}
+	maxPerms := hostarch.AnyAccess
+	if opts.Readonly {
+		maxPerms.Write = false
+	}
 	return memmap.MMapOpts{
 		Length: s.size,
 		Offset: 0,
@@ -561,7 +565,7 @@ func (s *Shm) ConfigureAttach(ctx context.Context, addr hostarch.Addr, opts Atta
 			Write:   !opts.Readonly,
 			Execute: opts.Execute,
 		},
-		MaxPerms:        hostarch.AnyAccess,
+		MaxPerms:        maxPerms,
 		Mappable:        s,
 		MappingIdentity: s,
 	}, nil

@@ -61,6 +61,8 @@ const (
 	MessageType_MESSAGE_SYSCALL_WRITE             MessageType = 34
 	MessageType_MESSAGE_SENTRY_MMAP               MessageType = 35
 	MessageType_MESSAGE_SYSCALL_MMAP              MessageType = 36
+	MessageType_MESSAGE_SYSCALL_LISTEN            MessageType = 37
+	MessageType_MESSAGE_SYSCALL_PTRACE            MessageType = 38
 )
 
 // Enum value maps for MessageType.
@@ -103,6 +105,8 @@ var (
 		34: "MESSAGE_SYSCALL_WRITE",
 		35: "MESSAGE_SENTRY_MMAP",
 		36: "MESSAGE_SYSCALL_MMAP",
+		37: "MESSAGE_SYSCALL_LISTEN",
+		38: "MESSAGE_SYSCALL_PTRACE",
 	}
 	MessageType_value = map[string]int32{
 		"MESSAGE_UNKNOWN":                   0,
@@ -142,6 +146,8 @@ var (
 		"MESSAGE_SYSCALL_WRITE":             34,
 		"MESSAGE_SENTRY_MMAP":               35,
 		"MESSAGE_SYSCALL_MMAP":              36,
+		"MESSAGE_SYSCALL_LISTEN":            37,
+		"MESSAGE_SYSCALL_PTRACE":            38,
 	}
 )
 
@@ -707,7 +713,7 @@ const file_pkg_sentry_seccheck_points_common_proto_rawDesc = "" +
 	"\x04mode\x18\x01 \x01(\rR\x04mode\x12\x10\n" +
 	"\x03ino\x18\x02 \x01(\x04R\x03ino\x12\x12\n" +
 	"\x04path\x18\x03 \x01(\tR\x04path\x121\n" +
-	"\x06socket\x18\x04 \x01(\v2\x19.gvisor.common.SocketInfoR\x06socket*\xc2\b\n" +
+	"\x06socket\x18\x04 \x01(\v2\x19.gvisor.common.SocketInfoR\x06socket*\xfa\b\n" +
 	"\vMessageType\x12\x13\n" +
 	"\x0fMESSAGE_UNKNOWN\x10\x00\x12\x1b\n" +
 	"\x17MESSAGE_CONTAINER_START\x10\x01\x12\x18\n" +
@@ -746,7 +752,9 @@ const file_pkg_sentry_seccheck_points_common_proto_rawDesc = "" +
 	"\x1aMESSAGE_SYSCALL_SOCKETPAIR\x10!\x12\x19\n" +
 	"\x15MESSAGE_SYSCALL_WRITE\x10\"\x12\x17\n" +
 	"\x13MESSAGE_SENTRY_MMAP\x10#\x12\x18\n" +
-	"\x14MESSAGE_SYSCALL_MMAP\x10$b\x06proto3"
+	"\x14MESSAGE_SYSCALL_MMAP\x10$\x12\x1a\n" +
+	"\x16MESSAGE_SYSCALL_LISTEN\x10%\x12\x1a\n" +
+	"\x16MESSAGE_SYSCALL_PTRACE\x10&b\x06proto3"
 
 var (
 	file_pkg_sentry_seccheck_points_common_proto_rawDescOnce sync.Once

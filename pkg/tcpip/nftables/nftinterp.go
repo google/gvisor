@@ -24,7 +24,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/syserr"
-	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 // SyntaxError is an interpretation error due to incorrect syntax.
@@ -1007,12 +1006,12 @@ func parseRegister(regString string, lnIdx int, tkIdx int) (uint8, *syserr.Annot
 // parseRegisterData parses the register data from the given token and returns
 // the index of the next token to process (can consume multiple tokens).
 // Note: assumes the register index is valid (was checked in parseRegister).
-func parseRegisterData(reg uint8, tokens []string, lnIdx int, tkIdx int) (int, []byte, stack.NFVerdict, *syserr.AnnotatedError) {
+func parseRegisterData(reg uint8, tokens []string, lnIdx int, tkIdx int) (int, []byte, Verdict, *syserr.AnnotatedError) {
 	// Handles verdict data.
 	if isVerdictRegister(reg) {
 		nextIdx, verdict, err := parseVerdict(tokens, lnIdx, tkIdx)
 		if err != nil {
-			return 0, nil, stack.NFVerdict{}, err
+			return 0, nil, Verdict{}, err
 		}
 		return nextIdx, nil, verdict, nil
 	}
@@ -1020,20 +1019,20 @@ func parseRegisterData(reg uint8, tokens []string, lnIdx int, tkIdx int) (int, [
 	if len(tokens[tkIdx]) > 1 && tokens[tkIdx][:2] == "0x" {
 		nextIdx, data, err := parseHexData(tokens, lnIdx, tkIdx)
 		if err != nil {
-			return 0, nil, stack.NFVerdict{}, err
+			return 0, nil, Verdict{}, err
 		}
 		bytesData := data
 		regIdx, err := regNumToIdx(reg, len(data))
 		if err != nil {
-			return 0, nil, stack.NFVerdict{}, err
+			return 0, nil, Verdict{}, err
 		}
 		if err := validateDataRegister(regIdx, len(data)); err != nil {
-			return 0, nil, stack.NFVerdict{}, err
+			return 0, nil, Verdict{}, err
 		}
-		return nextIdx, bytesData, stack.NFVerdict{}, nil
+		return nextIdx, bytesData, Verdict{}, nil
 	}
 	// TODO(b/345684870): cases will be added here as more types are supported.
-	return 0, nil, stack.NFVerdict{}, syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("unsupported register data type for register %d", reg))
+	return 0, nil, Verdict{}, syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("unsupported register data type for register %d", reg))
 }
 
 // verdictCodeFromKeyword is a map of verdict keyword to its corresponding enum value.
@@ -1048,8 +1047,8 @@ var verdictCodeFromKeyword = map[string]int32{
 
 // parseVerdict parses the verdict from the given token and returns
 // the index of the next token to process (can consume multiple tokens).
-func parseVerdict(tokens []string, lnIdx int, tkIdx int) (int, stack.NFVerdict, *syserr.AnnotatedError) {
-	v := stack.NFVerdict{}
+func parseVerdict(tokens []string, lnIdx int, tkIdx int) (int, Verdict, *syserr.AnnotatedError) {
+	v := Verdict{}
 
 	vcString := tokens[tkIdx]
 	vc, ok := verdictCodeFromKeyword[vcString]

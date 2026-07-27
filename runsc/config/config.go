@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -119,6 +120,10 @@ type Config struct {
 	// Network indicates what type of network to use.
 	Network NetworkType `flag:"network"`
 
+	// GoferNetworkNamespace controls the network namespace used by gofer
+	// processes. The default is a new, empty network namespace.
+	GoferNetworkNamespace GoferNetworkNamespace `flag:"gofer-network-namespace"`
+
 	// EnableRaw indicates whether raw sockets should be enabled. Raw
 	// sockets are disabled by stripping CAP_NET_RAW from the list of
 	// capabilities.
@@ -180,6 +185,10 @@ type Config struct {
 	// an indication that the container being created wishes that its metrics should be exported).
 	// The value of this flag must also match across the two command lines.
 	MetricServer string `flag:"metric-server"`
+
+	// SidecarReleaseEnforcementPolicy controls when spawned sidecar binaries
+	// must match `runsc`'s build label.
+	SidecarReleaseEnforcementPolicy SidecarPolicy `flag:"sidecar-release-enforcement-policy"`
 
 	// FinalMetricsLog is the file to which all metric data should be written
 	// upon sandbox termination.
@@ -755,6 +764,45 @@ func (n NetworkType) String() string {
 	panic(fmt.Sprintf("Invalid network type %d", n))
 }
 
+// GoferNetworkNamespace controls the network namespace used by gofer processes.
+type GoferNetworkNamespace string
+
+const (
+	// GoferNetworkNamespaceNew creates an empty network namespace for each gofer.
+	GoferNetworkNamespaceNew GoferNetworkNamespace = "new"
+
+	// GoferNetworkNamespaceHost runs gofers in runsc's current network namespace.
+	GoferNetworkNamespaceHost GoferNetworkNamespace = "host"
+)
+
+func goferNetworkNamespacePtr(v GoferNetworkNamespace) *GoferNetworkNamespace {
+	return &v
+}
+
+// Set implements flag.Value. Set(String()) should be idempotent.
+func (n *GoferNetworkNamespace) Set(v string) error {
+	switch v {
+	case string(GoferNetworkNamespaceHost), string(GoferNetworkNamespaceNew):
+		*n = GoferNetworkNamespace(v)
+	default:
+		if !filepath.IsAbs(v) {
+			return fmt.Errorf("invalid gofer network namespace %q; must be new, host, or an absolute path", v)
+		}
+		*n = GoferNetworkNamespace(v)
+	}
+	return nil
+}
+
+// Get implements flag.Value.
+func (n *GoferNetworkNamespace) Get() any {
+	return *n
+}
+
+// String implements flag.Value.
+func (n GoferNetworkNamespace) String() string {
+	return string(n)
+}
+
 // QueueingDiscipline is used to specify the kind of Queueing Discipline to
 // apply for a give FDBasedLink.
 type QueueingDiscipline int
@@ -1208,6 +1256,57 @@ func (p HostSettingsPolicy) String() string {
 	default:
 		panic(fmt.Sprintf("Invalid host settings policy %d", p))
 	}
+}
+
+// SidecarPolicy controls when a sidecar-related action applies.
+type SidecarPolicy string
+
+// SidecarPolicy values.
+const (
+	SidecarNever          SidecarPolicy = "NEVER"
+	SidecarAlways         SidecarPolicy = "ALWAYS"
+	SidecarIfReleaseBuild SidecarPolicy = "IF_RELEASE_BUILD"
+)
+
+// Set implements flag.Value. Set(String()) should be idempotent.
+func (p *SidecarPolicy) Set(v string) error {
+	sp := SidecarPolicy(strings.ToUpper(v))
+	switch sp {
+	case SidecarNever, SidecarAlways, SidecarIfReleaseBuild:
+		*p = sp
+		return nil
+	}
+	return fmt.Errorf("invalid value %q; must be %s, %s, or %s", v, SidecarNever, SidecarAlways, SidecarIfReleaseBuild)
+}
+
+// Ptr returns a pointer to `p`.
+// Useful in flag declaration line.
+func (p SidecarPolicy) Ptr() *SidecarPolicy {
+	return &p
+}
+
+// Get implements flag.Get.
+func (p *SidecarPolicy) Get() any {
+	return *p
+}
+
+// String implements flag.String.
+func (p SidecarPolicy) String() string {
+	return string(p)
+}
+
+// Applies returns whether the policy is in effect for this runsc build.
+func (p SidecarPolicy) Applies() bool {
+	return p == SidecarAlways || (p == SidecarIfReleaseBuild && IsReleaseVersion(version.Version()))
+}
+
+// releaseVersionRE matches the version strings of production release builds:
+// a `release-` or `g<lowercase>-` prefix, then the release date.
+var releaseVersionRE = regexp.MustCompile(`^(?:release|g[a-z]*)-\d{8}(?:\.\d+)?$`)
+
+// IsReleaseVersion returns whether ver is a tagged-release version string.
+func IsReleaseVersion(ver string) bool {
+	return releaseVersionRE.MatchString(ver)
 }
 
 // RestoreSpecValidationPolicy dictates how spec validation should be handled.

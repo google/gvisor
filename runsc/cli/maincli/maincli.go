@@ -41,7 +41,7 @@ const (
 func Main() {
 	alias.HandleAlias()
 	cmds, helpCmds := commands()
-	cli.Run(cmds, helpCmds)
+	cli.Run(nil, cmds, helpCmds)
 }
 
 func commands() (map[util.SubCommand]string, []subcommands.Command) {

@@ -37,9 +37,9 @@ type Install struct {
 	Experimental     bool
 	Clobber          bool
 	CgroupDriver     string
-	DownloadSidecars sidecarPolicy
+	DownloadSidecars config.SidecarPolicy
 	SidecarURL       string
-	RequireSidecars  sidecarPolicy
+	RequireSidecars  config.SidecarPolicy
 	executablePath   string
 	runtimeArgs      []string
 }
@@ -67,8 +67,8 @@ func (i *Install) SetFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&i.Clobber, "clobber", true, "clobber existing runtime configuration")
 	fs.StringVar(&i.CgroupDriver, "cgroupdriver", "", "docker cgroup driver")
 	// TODO(gvisor.dev/issue/13718): flip defaults to `IF_RELEASE_BUILD`.
-	i.DownloadSidecars = sidecarNever
-	i.RequireSidecars = sidecarNever
+	i.DownloadSidecars = config.SidecarNever
+	i.RequireSidecars = config.SidecarNever
 	fs.Var(&i.DownloadSidecars, "download-sidecars", "when to download missing sidecar binaries into gvisor-bin/ next to runsc: NEVER, ALWAYS, or IF_RELEASE_BUILD. This flag will go away in a few weeks! See gvisor.dev/issue/13718")
 	fs.Var(&i.RequireSidecars, "require-sidecars", "when missing sidecar binaries that cannot be installed are fatal: NEVER, ALWAYS, or IF_RELEASE_BUILD. This flag will go away in a few weeks! See gvisor.dev/issue/13718")
 	fs.StringVar(&i.SidecarURL, "sidecar-url", "", "download sidecar binaries from this gvisor.tar.bz2 URL instead of the release URL derived from the runsc version. This flag will go away in a few weeks! See gvisor.dev/issue/13718")
@@ -117,7 +117,7 @@ func (i *Install) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 	}
 
 	if err := i.installSidecars(); err != nil {
-		if i.RequireSidecars.applies() {
+		if i.RequireSidecars.Applies() {
 			log.Fatalf("Cannot install sidecar binaries: %v", err)
 		}
 		log.Printf("WARNING: cannot install sidecar binaries; sidecar-dependent features (metric server, GCS checkpoints) may be unavailable: %v", err)

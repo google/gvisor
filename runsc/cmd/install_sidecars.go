@@ -27,58 +27,13 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/gvisorbinaries"
 	"gvisor.dev/gvisor/runsc/version"
 )
-
-// sidecarPolicy controls when a sidecar-related action applies.
-// It implements flag.Value.
-type sidecarPolicy string
-
-// Valid sidecarPolicy values.
-const (
-	sidecarNever          sidecarPolicy = "NEVER"
-	sidecarAlways         sidecarPolicy = "ALWAYS"
-	sidecarIfReleaseBuild sidecarPolicy = "IF_RELEASE_BUILD"
-)
-
-// String implements flag.Value.String.
-func (p *sidecarPolicy) String() string {
-	return string(*p)
-}
-
-// Get implements flag.Value.Get.
-func (p *sidecarPolicy) Get() any {
-	return *p
-}
-
-// Set implements flag.Value.Set.
-func (p *sidecarPolicy) Set(s string) error {
-	v := sidecarPolicy(strings.ToUpper(s))
-	switch v {
-	case sidecarNever, sidecarAlways, sidecarIfReleaseBuild:
-		*p = v
-		return nil
-	}
-	return fmt.Errorf("invalid value %q; must be %s, %s, or %s", s, sidecarNever, sidecarAlways, sidecarIfReleaseBuild)
-}
-
-// applies returns whether the policy is in effect for this runsc build.
-func (p sidecarPolicy) applies() bool {
-	return p == sidecarAlways || (p == sidecarIfReleaseBuild && isReleaseBuild())
-}
-
-// releaseVersionRE matches the version string of tagged release builds.
-var releaseVersionRE = regexp.MustCompile(`^release-(\d{8}(?:\.\d+)?)$`)
-
-// isReleaseBuild returns whether this runsc's version is a tagged release.
-func isReleaseBuild() bool {
-	return releaseVersionRE.MatchString(version.Version())
-}
 
 // releaseArches maps GOARCH to the architecture names used in release URLs.
 var releaseArches = map[string]string{
@@ -87,15 +42,16 @@ var releaseArches = map[string]string{
 }
 
 func releaseTarballURL(ver, goarch string) (string, error) {
-	m := releaseVersionRE.FindStringSubmatch(ver)
-	if m == nil {
+	if !config.IsReleaseVersion(ver) {
 		return "", fmt.Errorf("cannot map version %q to a release download URL; please download sidecar binaries manually", ver)
 	}
 	arch, ok := releaseArches[goarch]
 	if !ok {
 		return "", fmt.Errorf("unknown architecture %q", goarch)
 	}
-	return fmt.Sprintf("https://storage.googleapis.com/gvisor/releases/release/%s/%s/gvisor.tar.bz2", m[1], arch), nil
+	// The release date follows the first dash, whichever the prefix.
+	date := ver[strings.IndexByte(ver, '-')+1:]
+	return fmt.Sprintf("https://storage.googleapis.com/gvisor/releases/release/%s/%s/gvisor.tar.bz2", date, arch), nil
 }
 
 // fetch downloads url to dest using curl or wget, whichever exists.
@@ -224,8 +180,8 @@ func (i *Install) installSidecars() error {
 	if err != nil {
 		return err
 	}
-	if !i.DownloadSidecars.applies() {
-		return fmt.Errorf("sidecar binaries %v missing (expected under %q); not downloading them (--download-sidecars=%s, release build: %t)", missing, dir, i.DownloadSidecars, isReleaseBuild())
+	if !i.DownloadSidecars.Applies() {
+		return fmt.Errorf("sidecar binaries %v missing (expected under %q); not downloading them (--download-sidecars=%s, release build: %t)", missing, dir, i.DownloadSidecars, config.IsReleaseVersion(version.Version()))
 	}
 	url := i.SidecarURL
 	if url == "" {

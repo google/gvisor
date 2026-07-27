@@ -179,12 +179,12 @@ func (op *fib) evaluateOIF(regs *registerSet, evalCtx opEvalCtx) {
 	}
 
 	if !fibValidatePktHeader(evalCtx.pkt) {
-		regs.verdict = stack.NFVerdict{Code: VC(linux.NFT_BREAK)}
+		regs.verdict = Verdict{Code: VC(linux.NFT_BREAK)}
 		return
 	}
 	srcAddr, dstAddr, ok := fibGetSrcDstAddr(pkt)
 	if !ok {
-		regs.verdict = stack.NFVerdict{Code: VC(linux.NFT_BREAK)}
+		regs.verdict = Verdict{Code: VC(linux.NFT_BREAK)}
 		return
 	}
 
@@ -276,13 +276,13 @@ func fibIPv6SkipICMP(pkt *stack.PacketBuffer, saddr, daddr tcpip.Address) bool {
 func (op *fib) evaluateAddrType(regs *registerSet, evalCtx opEvalCtx) {
 	pkt := evalCtx.pkt
 	if !fibValidatePktHeader(pkt) {
-		regs.verdict = stack.NFVerdict{Code: VC(linux.NFT_BREAK)}
+		regs.verdict = Verdict{Code: VC(linux.NFT_BREAK)}
 		return
 	}
 
 	srcAddr, dstAddr, ok := fibGetSrcDstAddr(pkt)
 	if !ok {
-		regs.verdict = stack.NFVerdict{Code: VC(linux.NFT_BREAK)}
+		regs.verdict = Verdict{Code: VC(linux.NFT_BREAK)}
 		return
 	}
 
