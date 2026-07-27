@@ -129,12 +129,14 @@ type cgroup struct {
 	// killSeq tracks cgroup.kill invocations.
 	// +checklocks:fs.tasksMu
 	killSeq uint64
-
 	// frozen records whether cgroup.freeze has been set on this cgroup itself.
 	// A cgroup is *effectively* frozen if it or any of its ancestors has frozen
 	// set; see isFrozenLocked.
 	// +checklocks:fs.tasksMu
 	frozen bool
+
+	// xattrs stores extended attributes on this cgroup directory.
+	xattrs memxattr.SimpleExtendedAttributes
 }
 
 // isFrozenLocked returns whether this cgroup is effectively frozen, i.e. it or
@@ -151,10 +153,7 @@ func (c *cgroup) isFrozenLocked() bool {
 		}
 	}
 	return false
-	// xattrs stores extended attributes on this cgroup directory.
-	xattrs memxattr.SimpleExtendedAttributes
 }
-
 // +checklocks:c.fs.treeMu
 func (c *cgroup) initRoot(ctx context.Context) {
 	arr := new(ctrlSet)
