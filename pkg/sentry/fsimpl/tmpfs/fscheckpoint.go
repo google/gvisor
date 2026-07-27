@@ -22,6 +22,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -144,14 +145,20 @@ func (cb *fsckptTarReaderCallbacks) regularFileRead(ctx context.Context, hdr *ta
 
 func (cb *fsckptTarReaderCallbacks) regularFileSetContents(ctx context.Context, hdr *tar.Header, rf *regularFile) error {
 	crf := cb.regularFiles[hdr]
+	if crf == nil {
+		log.Infof("tmpfs.regularFileSetContents: crf is nil for %q", hdr.Name)
+		return nil
+	}
 	rf.inode.mu.Lock()
 	defer rf.inode.mu.Unlock()
 	rf.dataMu.Lock()
 	defer rf.dataMu.Unlock()
 	rf.size.Store(uint64(crf.size))
+	log.Infof("tmpfs.regularFileSetContents: restoring %q, size: %d, segments: %d", hdr.Name, crf.size, len(crf.data))
 	gap := rf.data.FirstGap()
 	n := uint64(0)
-	for _, rfseg := range crf.data {
+	for i, rfseg := range crf.data {
+		log.Infof("  seg[%d]: Start=0x%x, End=0x%x, Value=0x%x", i, rfseg.Start, rfseg.End, rfseg.Value)
 		gap = rf.data.Insert(gap, memmap.MappableRange{rfseg.Start, rfseg.End}, rfseg.Value).NextGap()
 		n += (rfseg.End - rfseg.Start) / hostarch.PageSize
 	}

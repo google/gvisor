@@ -920,6 +920,10 @@ type LoadOpts struct {
 	// ownership of this timeline remains in the hands of the caller of
 	// LoadFrom.
 	Timeline *timing.Timeline
+
+	// If Discard is true, page contents will be read from r (or PagesFile) and
+	// discarded, rather than being loaded into the MemoryFile.
+	Discard bool
 }
 
 // LoadFrom loads MemoryFile state from the given stream.
@@ -939,124 +943,166 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 	if _, err := state.Load(ctx, r, &mfs); err != nil {
 		return fmt.Errorf("failed to load metadata: %w", err)
 	}
-	f.unwasteSmall.MoveFrom(mfs.unwasteSmall)
-	f.unwasteHuge.MoveFrom(mfs.unwasteHuge)
-	f.unfreeSmall.MoveFrom(mfs.unfreeSmall)
-	f.unfreeHuge.MoveFrom(mfs.unfreeHuge)
-	f.subreleased = mfs.subreleased
-	f.memAcct.MoveFrom(mfs.memAcct)
-	chunks := mfs.chunks
-	f.chunks.Store(&chunks)
-	mfTimeline.Reached("metadata loaded")
-	log.Infof("MemoryFile(%p): loaded metadata in %s", f, time.Duration(gohacks.Nanotime()-timeMetadataStart))
-
-	fileSize := uint64(len(chunks)) * chunkSize
-	if err := f.file.Truncate(int64(fileSize)); err != nil {
-		return fmt.Errorf("failed to truncate MemoryFile: %w", err)
-	}
-	// Obtain chunk mappings, then madvise them concurrently with loading data.
 	var (
 		madviseEnd  atomicbitops.Uint64
-		madviseChan = make(chan struct{}, 1)
+		madviseChan chan struct{}
 		madviseWG   sync.WaitGroup
+		amfl        *asyncMemoryFileLoad
 	)
-	if len(chunks) != 0 {
-		m, _, errno := unix.Syscall6(
-			unix.SYS_MMAP,
-			0,
-			uintptr(fileSize),
-			unix.PROT_READ|unix.PROT_WRITE,
-			unix.MAP_SHARED,
-			f.file.Fd(),
-			0)
-		if errno != 0 {
-			return fmt.Errorf("failed to mmap MemoryFile: %w", errno)
+
+	if !opts.Discard {
+		f.unwasteSmall.MoveFrom(mfs.unwasteSmall)
+		f.unwasteHuge.MoveFrom(mfs.unwasteHuge)
+		f.unfreeSmall.MoveFrom(mfs.unfreeSmall)
+		f.unfreeHuge.MoveFrom(mfs.unfreeHuge)
+		f.subreleased = mfs.subreleased
+		f.memAcct.MoveFrom(mfs.memAcct)
+		chunks := mfs.chunks
+		f.chunks.Store(&chunks)
+		mfTimeline.Reached("metadata loaded")
+		log.Infof("MemoryFile(%p): loaded metadata in %s", f, time.Duration(gohacks.Nanotime()-timeMetadataStart))
+		log.Infof("MemoryFile(%p) first load (Checkpoint 2) memAcct segments:", f)
+		for seg := f.memAcct.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
+			log.Infof("  segment: %v, knownCommitted: %v", seg.Range(), seg.ValuePtr().knownCommitted)
 		}
-		mfTimeline.Reached("mmaped chunks")
-		for i := range chunks {
-			chunk := &chunks[i]
-			chunk.mapping = m
-			m += chunkSize
+
+		fileSize := uint64(len(chunks)) * chunkSize
+		if err := f.file.Truncate(int64(fileSize)); err != nil {
+			return fmt.Errorf("failed to truncate MemoryFile: %w", err)
 		}
-		madviseWG.Add(1)
-		go func() {
-			defer madviseWG.Done()
+		// Obtain chunk mappings, then madvise them concurrently with loading data.
+		madviseChan = make(chan struct{}, 1)
+		if len(chunks) != 0 {
+			m, _, errno := unix.Syscall6(
+				unix.SYS_MMAP,
+				0,
+				uintptr(fileSize),
+				unix.PROT_READ|unix.PROT_WRITE,
+				unix.MAP_SHARED,
+				f.file.Fd(),
+				0)
+			if errno != 0 {
+				return fmt.Errorf("failed to mmap MemoryFile: %w", errno)
+			}
+			mfTimeline.Reached("mmaped chunks")
 			for i := range chunks {
 				chunk := &chunks[i]
-				f.madviseChunkMapping(chunk.mapping, chunkSize, chunk.huge)
-				madviseEnd.Add(chunkSize)
-				select {
-				case madviseChan <- struct{}{}:
-				default:
-				}
+				chunk.mapping = m
+				m += chunkSize
 			}
-		}()
-	}
-	defer madviseWG.Wait()
+			madviseWG.Add(1)
+			go func() {
+				defer madviseWG.Done()
+				for i := range chunks {
+					chunk := &chunks[i]
+					f.madviseChunkMapping(chunk.mapping, chunkSize, chunk.huge)
+					madviseEnd.Add(chunkSize)
+					select {
+					case madviseChan <- struct{}{}:
+					default:
+					}
+				}
+			}()
+		}
+		defer madviseWG.Wait()
 
-	// Register this MemoryFile with async page loading if a pages file has
-	// been provided.
-	var amfl *asyncMemoryFileLoad
-	if opts.PagesFile != nil {
-		var df stateio.DestinationFile
-		if opts.PagesFile.ar.NeedRegisterDestinationFD() {
-			var err error
-			df, err = opts.PagesFile.ar.RegisterDestinationFD(int32(f.file.Fd()), fileSize, f.getClientFileRangeSettings(fileSize))
-			if err != nil {
-				return fmt.Errorf("failed to register MemoryFile with pages file: %w", err)
-			}
-		}
-		amfl = &asyncMemoryFileLoad{
-			f:            f,
-			pf:           opts.PagesFile,
-			df:           df,
-			doneCallback: opts.DoneCallback,
-			timeline:     mfTimeline.Transfer(),
-		}
-		amfl.pf.amflsMu.Lock()
-		if err := amfl.pf.err(); err != nil {
-			amfl.pf.amflsMu.Unlock()
-			return err
-		}
-		amfl.pf.amfls.PushBack(amfl)
-		amfl.pf.amflsMu.Unlock()
-		f.asyncPageLoad.Store(amfl)
-		opts.DoneCallback = nil
-		defer func() {
-			amfl.pf.amflsMu.Lock()
-			defer amfl.pf.amflsMu.Unlock()
-			amfl.pf.mu.Lock()
-			defer amfl.pf.mu.Unlock()
-			amfl.lfDone = true
-			if amfl.unloaded.IsEmpty() {
-				// The async page loader goroutine does this when it
-				// transitions amfl.unloaded from non-empty to empty with
-				// amfl.lfDone == true, but since amfl.unloaded is already
-				// empty (async page loading for this MemoryFile finished
-				// before we got here, possibly because the MemoryFile was
-				// empty), we have to do so instead.
-				amfl.minUnloaded.Store(math.MaxUint64)
-				amfl.pf.amfls.Remove(amfl)
-				amfl.f.asyncPageLoad.Store(nil)
-				amfl.timeline.End()
-				if amfl.doneCallback != nil {
-					amfl.doneCallback(nil)
-					amfl.doneCallback = nil
+		// Register this MemoryFile with async page loading if a pages file has
+		// been provided.
+		if opts.PagesFile != nil {
+			var df stateio.DestinationFile
+			if opts.PagesFile.ar.NeedRegisterDestinationFD() {
+				var err error
+				df, err = opts.PagesFile.ar.RegisterDestinationFD(int32(f.file.Fd()), fileSize, f.getClientFileRangeSettings(fileSize))
+				if err != nil {
+					return fmt.Errorf("failed to register MemoryFile with pages file: %w", err)
 				}
 			}
-		}()
+			amfl = &asyncMemoryFileLoad{
+				f:            f,
+				pf:           opts.PagesFile,
+				df:           df,
+				doneCallback: opts.DoneCallback,
+				timeline:     mfTimeline.Transfer(),
+			}
+			amfl.pf.amflsMu.Lock()
+			if err := amfl.pf.err(); err != nil {
+				amfl.pf.amflsMu.Unlock()
+				return err
+			}
+			amfl.pf.amfls.PushBack(amfl)
+			amfl.pf.amflsMu.Unlock()
+			f.asyncPageLoad.Store(amfl)
+			opts.DoneCallback = nil
+			defer func() {
+				amfl.pf.amflsMu.Lock()
+				defer amfl.pf.amflsMu.Unlock()
+				amfl.pf.mu.Lock()
+				defer amfl.pf.mu.Unlock()
+				amfl.lfDone = true
+				if amfl.unloaded.IsEmpty() {
+					// The async page loader goroutine does this when it
+					// transitions amfl.unloaded from non-empty to empty with
+					// amfl.lfDone == true, but since amfl.unloaded is already
+					// empty (async page loading for this MemoryFile finished
+					// before we got here, possibly because the MemoryFile was
+					// empty), we have to do so instead.
+					amfl.minUnloaded.Store(math.MaxUint64)
+					amfl.pf.amfls.Remove(amfl)
+					amfl.f.asyncPageLoad.Store(nil)
+					amfl.timeline.End()
+					if amfl.doneCallback != nil {
+						amfl.doneCallback(nil)
+						amfl.doneCallback = nil
+					}
+				}
+			}()
+		}
+	} else {
+		log.Infof("MemoryFile(%p): discarding metadata and pages", f)
+		log.Infof("MemoryFile(%p) second load (Checkpoint 1, Discard) memAcct segments:", f)
+		for seg := mfs.memAcct.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
+			log.Infof("  segment: %v, knownCommitted: %v", seg.Range(), seg.ValuePtr().knownCommitted)
+		}
 	}
 
 	// Load committed pages and reconstruct memory accounting state.
 	wr := wire.Reader{Reader: r}
 	timePagesStart := gohacks.Nanotime()
 	minUnloadedInit := false
-	for maseg := f.memAcct.FirstSegment(); maseg.Ok(); maseg = maseg.NextSegment() {
+	memAcct := &f.memAcct
+	if opts.Discard {
+		memAcct = mfs.memAcct
+	}
+	for maseg := memAcct.FirstSegment(); maseg.Ok(); maseg = maseg.NextSegment() {
 		if !maseg.ValuePtr().knownCommitted {
 			continue
 		}
 		maFR := maseg.Range()
 		amount := maFR.Length()
+
+		if opts.Discard {
+			if opts.PagesFile != nil {
+				opts.PagesFileOffset += amount
+			} else {
+				// Verify header.
+				length, object, err := state.ReadHeader(&wr)
+				if err != nil {
+					return fmt.Errorf("failed to read header: %w", err)
+				}
+				if object {
+					return fmt.Errorf("unexpected object")
+				}
+				if length != amount {
+					return fmt.Errorf("mismatched segment: expected %d, got %d", amount, length)
+				}
+				// Discard data.
+				if _, err := io.CopyN(io.Discard, r, int64(length)); err != nil {
+					return fmt.Errorf("failed to discard pages: %w", err)
+				}
+			}
+			continue
+		}
+
 		// Wait for all chunks spanned by this segment to be madvised.
 		for madviseEnd.Load() < maFR.End {
 			<-madviseChan
@@ -1463,6 +1509,7 @@ func (apfl *AsyncPagesFileLoad) enqueueCurOp() {
 	}
 
 	apfl.qavail--
+
 	apfl.curOp = nil
 	if len(op.frs) == 1 && len(op.iovecs) == 1 {
 		// Perform a non-vectorized read to save an indirection (and possible

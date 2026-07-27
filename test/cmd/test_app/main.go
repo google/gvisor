@@ -139,7 +139,7 @@ func (c *fsTreeCreator) Execute(ctx context.Context, f *flag.FlagSet, args ...an
 			}
 		}
 		nextDir := filepath.Join(curDir, "dir")
-		if err := os.Mkdir(nextDir, 0777); err != nil {
+		if err := os.Mkdir(nextDir, 0777); err != nil && !os.IsExist(err) {
 			log.Fatalf("error creating directory %q: %v", nextDir, err)
 		}
 		curDir = nextDir

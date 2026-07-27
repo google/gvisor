@@ -480,6 +480,22 @@ func (fsr *fsRestore) memoryFileLoadArgs(id checkpoint.ResourceID, cid string) (
 	}
 	mmf := fsr.mfs[id]
 	if mmf == nil {
+		var match *fscheckpoint.MemoryFile
+		for _, m := range fsr.mfs {
+			if m.ResourceID.Path == id.Path {
+				if match != nil {
+					match = nil
+					break
+				}
+				match = m
+			}
+		}
+		if match != nil {
+			log.Infof("fsRestore: mapped MemoryFile ResourceID %v to %v by path matching", id, match.ResourceID)
+			mmf = match
+		}
+	}
+	if mmf == nil {
 		return nil, 0, func(error) {}, nil
 	}
 	pagesMetadata, err := fsr.getPagesMetadata()
@@ -520,6 +536,22 @@ func (fsr *fsRestore) tmpfsSourceTar(id checkpoint.ResourceID, cid string) (io.R
 		return nil, fsr.manifestErr
 	}
 	mt := fsr.tmpfs[id]
+	if mt == nil {
+		var match *fscheckpoint.Tmpfs
+		for _, m := range fsr.tmpfs {
+			if m.ResourceID.Path == id.Path {
+				if match != nil {
+					match = nil
+					break
+				}
+				match = m
+			}
+		}
+		if match != nil {
+			log.Infof("fsRestore: mapped Tmpfs ResourceID %v to %v by path matching", id, match.ResourceID)
+			mt = match
+		}
+	}
 	if mt == nil {
 		return nil, nil
 	}

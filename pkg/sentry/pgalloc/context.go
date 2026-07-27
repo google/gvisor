@@ -33,6 +33,11 @@ const (
 	// CtxMemoryFileMap is a Context.Value key for mapping
 	// MemoryFileOpts.RestoreID to *MemoryFile. This is used for save/restore.
 	CtxMemoryFileMap
+
+	// CtxVFSWorkloadSwap is a Context.Value key indicating that we are doing
+	// a VFS workload swap, so private MemoryFiles restored from the state file
+	// should be discarded.
+	CtxVFSWorkloadSwap
 )
 
 // MemoryFileFromContext returns the MemoryFile used by ctx, or nil if no such
@@ -60,4 +65,12 @@ func MemoryFileMapFromContext(ctx context.Context) map[checkpoint.ResourceID]*Me
 		return v.(map[checkpoint.ResourceID]*MemoryFile)
 	}
 	return nil
+}
+
+// VFSWorkloadSwapFromContext returns true if we are doing a VFS workload swap.
+func VFSWorkloadSwapFromContext(ctx context.Context) bool {
+	if v := ctx.Value(CtxVFSWorkloadSwap); v != nil {
+		return v.(bool)
+	}
+	return false
 }

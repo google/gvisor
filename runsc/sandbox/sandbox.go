@@ -317,6 +317,7 @@ type Args struct {
 	// open filesystem checkpoint files using O_DIRECT.
 	FSRestoreImagePath string
 	FSRestoreDirect    bool
+	FSRestoreSplit     bool
 }
 
 // New creates the sandbox process. The caller must call Destroy() on the
