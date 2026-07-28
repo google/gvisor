@@ -222,16 +222,20 @@ func loadPrivateMemoryFiles(ctx context.Context, r io.Reader, mfmap map[checkpoi
 	if len(mfmap) != len(meta.owners) {
 		return fmt.Errorf("inconsistent private memory files on restore: savedMFOwners = %v, mfmap = %v", meta.owners, mfmap)
 	}
+	discard := pgalloc.VFSWorkloadSwapFromContext(ctx)
 	// Load all private memory files.
 	for _, fsID := range meta.owners {
 		mf, ok := mfmap[fsID]
 		if !ok {
 			return fmt.Errorf("saved private memory file for %q was not configured on restore", fsID)
 		}
-		err := mf.LoadFrom(ctx, r, opts)
+		privateOpts := *opts
+		privateOpts.Discard = discard
+		err := mf.LoadFrom(ctx, r, &privateOpts)
 		if err != nil {
 			return fmt.Errorf("failed to load MemoryFile %p fsID %q: %w", mf, fsID, err)
 		}
+		opts.PagesFileOffset = privateOpts.PagesFileOffset
 	}
 	return nil
 }

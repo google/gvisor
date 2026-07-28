@@ -16,6 +16,7 @@ package boot
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -1507,7 +1508,7 @@ func (c *containerMounter) makeMountPoint(
 
 // configureRestore returns an updated context.Context including filesystem
 // state used by restore defined by conf.
-func (c *containerMounter) configureRestore(fdmap map[checkpoint.ResourceID]int, mfmap map[checkpoint.ResourceID]*pgalloc.MemoryFile) error {
+func (c *containerMounter) configureRestore(fdmap map[checkpoint.ResourceID]int, mfmap map[checkpoint.ResourceID]*pgalloc.MemoryFile, tarmap map[checkpoint.ResourceID]io.ReadCloser) error {
 	// Compare createMountNamespace(); rootfs always consumes a gofer FD and a
 	// filestore FD is consumed if the rootfs GoferMountConf indicates so.
 	rootKey := checkpoint.ResourceID{ContainerName: c.containerName, Path: "/"}
@@ -1538,6 +1539,16 @@ func (c *containerMounter) configureRestore(fdmap map[checkpoint.ResourceID]int,
 				return fmt.Errorf("failed to create private memory file for mount %q: %w", submount.mount.Destination, err)
 			}
 			mfmap[key] = mf
+
+			if c.l.fsRestore != nil {
+				tarReader, err := c.l.fsRestore.tmpfsSourceTar(key, c.containerID)
+				if err != nil {
+					return fmt.Errorf("failed to get tmpfs source tar for mount %q: %w", submount.mount.Destination, err)
+				}
+				if tarReader != nil {
+					tarmap[key] = tarReader
+				}
+			}
 		}
 	}
 	return nil

@@ -499,6 +499,39 @@ func (d *dentry) releaseChildrenLocked(ctx context.Context) {
 	}
 }
 
+// Precondition: filesystem.mu is held.
+func (d *dentry) wipeChildrenLocked(ctx context.Context) {
+	dir := d.inode.impl.(*directory)
+	for _, child := range dir.childMap {
+		if child.inode.isDir() {
+			child.wipeChildrenLocked(ctx)
+			child.inode.decLinksLocked(ctx) // link for child/.
+			d.inode.decLinksLocked(ctx)     // link for child/..
+		}
+		child.inode.decLinksLocked(ctx) // link for child
+	}
+	dir.childMap = make(map[string]*dentry)
+}
+
+// Precondition: filesystem.mu is held.
+func (d *dentry) clearRegularFilesDataLocked(ctx context.Context) {
+	dir := d.inode.impl.(*directory)
+	for _, child := range dir.childMap {
+		if child.inode.isDir() {
+			child.clearRegularFilesDataLocked(ctx)
+		} else if rf, ok := child.inode.impl.(*regularFile); ok {
+			rf.dataMu.Lock()
+			var pages uint64
+			for seg := rf.data.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
+				pages += uint64(seg.Range().Length()) / hostarch.PageSize
+			}
+			rf.data.RemoveAll()
+			rf.dataMu.Unlock()
+			rf.inode.fs.unaccountPages(pages)
+		}
+	}
+}
+
 func (fs *filesystem) statFS() linux.Statfs {
 	st := linux.Statfs{
 		Type:         linux.TMPFS_MAGIC,

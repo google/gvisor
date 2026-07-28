@@ -16,6 +16,7 @@ package vfs
 
 import (
 	goContext "context"
+	"io"
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
@@ -35,6 +36,11 @@ const (
 	// map[checkpoint.ResourceID]int mapping filesystem unique IDs (cf.
 	// gofer.InternalFilesystemOptions.UniqueID) to host FDs.
 	CtxRestoreFilesystemFDMap
+
+	// CtxRestoreFilesystemTarMap is a Context.Value key for a
+	// map[checkpoint.ResourceID]io.ReadCloser mapping filesystem unique IDs
+	// to their restore tar archives.
+	CtxRestoreFilesystemTarMap
 )
 
 // MountNamespaceFromContext returns the MountNamespace used by ctx. If ctx is
@@ -56,6 +62,16 @@ func RestoreFilesystemFDMapFromContext(ctx goContext.Context) map[checkpoint.Res
 		return nil
 	}
 	return fdmap
+}
+
+// RestoreFilesystemTarMapFromContext returns the RestoreFilesystemTarMap used
+// by ctx. If ctx is not associated with a RestoreFilesystemTarMap, returns nil.
+func RestoreFilesystemTarMapFromContext(ctx goContext.Context) map[checkpoint.ResourceID]io.ReadCloser {
+	tarmap, ok := ctx.Value(CtxRestoreFilesystemTarMap).(map[checkpoint.ResourceID]io.ReadCloser)
+	if !ok {
+		return nil
+	}
+	return tarmap
 }
 
 type mountNamespaceContext struct {

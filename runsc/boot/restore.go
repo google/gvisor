@@ -435,10 +435,11 @@ func (r *restorer) restore(l *Loader) error {
 
 	fdmap := make(map[checkpoint.ResourceID]int)
 	mfmap := make(map[checkpoint.ResourceID]*pgalloc.MemoryFile)
+	tarmap := make(map[checkpoint.ResourceID]io.ReadCloser)
 	for _, cont := range r.containers {
 		// TODO(b/298078576): Need to process hints here probably
 		mntr := l.newContainerMounter(cont)
-		if err = mntr.configureRestore(fdmap, mfmap); err != nil {
+		if err = mntr.configureRestore(fdmap, mfmap, tarmap); err != nil {
 			return fmt.Errorf("configuring filesystem restore: %v", err)
 		}
 
@@ -455,10 +456,13 @@ func (r *restorer) restore(l *Loader) error {
 	log.Debugf("Restore using fdmap: %#v", fdmap)
 	ctx := l.k.SupervisorContext()
 	log.Debugf("Restore using mfmap: %v", mfmap)
+	log.Debugf("Restore using tarmap: %v", tarmap)
 	ctx = context.WithValues(ctx, map[any]any{
 		vfs.CtxRestoreFilesystemFDMap:     fdmap,
 		pgalloc.CtxMemoryFileMap:          mfmap,
+		vfs.CtxRestoreFilesystemTarMap:    tarmap,
 		devutil.CtxDevGoferClientProvider: l.k,
+		pgalloc.CtxVFSWorkloadSwap:        l.fsRestore != nil,
 	})
 
 	if r.asyncMFLoader != nil {

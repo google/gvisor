@@ -593,9 +593,9 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 			cm.onRestoreFailed(fmt.Errorf("Restore failed: %w", retErr))
 		}
 	}()
-	if cm.l.fsRestore != nil {
-		return fmt.Errorf("cannot restore sandbox when filesystem restore is enabled")
-	}
+	// if cm.l.fsRestore != nil {
+	// 	return fmt.Errorf("cannot restore sandbox when filesystem restore is enabled")
+	// }
 	if len(o.Files) == 0 {
 		return fmt.Errorf("at least one file must be passed to Restore")
 	}

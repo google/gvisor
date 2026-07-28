@@ -3978,3 +3978,506 @@ func TestMultiContainerExecSeccomp(t *testing.T) {
 		t.Errorf("uname in container 1 should have succeeded: %v", err)
 	}
 }
+
+func TestMismatchedFSRestore(t *testing.T) {
+	conf := testutil.TestConfig(t)
+
+	rootDir, cleanupRoot, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("Error creating root dir: %v", err)
+	}
+	defer cleanupRoot()
+	conf.RootDir = rootDir
+
+	// Configure overlay.
+	conf.Overlay2.Set("root:self")
+
+	newSpec := func(source string) *specs.Spec {
+		spec := testutil.NewSpecWithArgs("/app", "reaper")
+		spec.Root.Readonly = false
+		spec.Mounts = append(spec.Mounts, specs.Mount{
+			Source:      source,
+			Destination: "/tmpfs-mount",
+			Type:        "bind",
+		})
+		spec.Annotations["dev.gvisor.spec.mount.tmpfs-mount.source"] = source
+		spec.Annotations["dev.gvisor.spec.mount.tmpfs-mount.share"] = "container"
+		spec.Annotations["dev.gvisor.spec.mount.tmpfs-mount.type"] = "bind"
+		return spec
+	}
+
+	appSrc, err := testutil.FindFile("test/cmd/test_app/test_app")
+	if err != nil {
+		t.Fatal("Error finding test_app:", err)
+	}
+
+	setupRoots := func(containerSpecs []*specs.Spec, ids []string) (func(), error) {
+		var cleanupSpecRoots cleanup.Cleanup
+		defer cleanupSpecRoots.Clean()
+		for i, spec := range containerSpecs {
+			contRootPath, err := os.MkdirTemp(testutil.TmpDir(), fmt.Sprintf("%s-root", ids[i]))
+			if err != nil {
+				return nil, fmt.Errorf("error creating root directory for container %d: %v", i, err)
+			}
+			cleanupSpecRoots.Add(func() { os.RemoveAll(contRootPath) })
+			spec.Root.Path = contRootPath
+			appDst := filepath.Join(contRootPath, "app")
+			if err := copyFile(appSrc, appDst); err != nil {
+				return nil, fmt.Errorf("error copying app binary: %v", err)
+			}
+		}
+		return cleanupSpecRoots.Release(), nil
+	}
+
+	// 1. Generate Template Sentry Checkpoint (Container 1)
+	source1, err := os.MkdirTemp(testutil.TmpDir(), "source-1")
+	if err != nil {
+		t.Fatalf("Error creating source 1: %v", err)
+	}
+	defer os.RemoveAll(source1)
+
+	c1Spec := newSpec(source1)
+	c1ID := testutil.RandomContainerID()
+	cleanupRoots1, err := setupRoots([]*specs.Spec{c1Spec}, []string{c1ID})
+	if err != nil {
+		t.Fatalf("Error setting up root 1: %v", err)
+	}
+	defer cleanupRoots1()
+
+	conts1, cleanupConts1, err := startContainers(conf, []*specs.Spec{c1Spec}, []string{c1ID})
+	if err != nil {
+		t.Fatalf("Error starting container 1: %v", err)
+	}
+	c1 := conts1[0]
+
+	argsA := []string{"fsTreeCreate", "--depth=1", "--file-per-level=1", "--file-size=10", "--target-dir=/tmpfs-mount", "--seed=1"}
+	if ws, err := execute(conf, c1, "/app", argsA...); err != nil || ws != 0 {
+		cleanupConts1()
+		t.Fatalf("Error writing template file in c1, ws: %v, err: %v", ws, err)
+	}
+
+	dirA, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-A")
+	if err != nil {
+		cleanupConts1()
+		t.Fatalf("Error creating checkpoint dir A: %v", err)
+	}
+	defer func() {
+		if t.Failed() {
+			t.Logf("Preserving dirA: %s", dirA)
+			copyDirToOutputs(t, dirA, "checkpoint-A")
+		} else {
+			os.RemoveAll(dirA)
+		}
+	}()
+
+	if err := c1.Checkpoint(conf, dirA, sandbox.CheckpointOpts{}); err != nil {
+		cleanupConts1()
+		t.Fatalf("Error checkpointing container 1: %v", err)
+	}
+
+	cleanupConts1()
+
+	// 2. Generate Updated Filesystem Checkpoint (Container 2)
+	source2, err := os.MkdirTemp(testutil.TmpDir(), "source-2")
+	if err != nil {
+		t.Fatalf("Error creating source 2: %v", err)
+	}
+	defer os.RemoveAll(source2)
+
+	c2Spec := newSpec(source2)
+	c2ID := testutil.RandomContainerID()
+	cleanupRoots2, err := setupRoots([]*specs.Spec{c2Spec}, []string{c2ID})
+	if err != nil {
+		t.Fatalf("Error setting up root 2: %v", err)
+	}
+	defer cleanupRoots2()
+
+	conts2, cleanupConts2, err := startContainers(conf, []*specs.Spec{c2Spec}, []string{c2ID})
+	if err != nil {
+		t.Fatalf("Error starting container 2: %v", err)
+	}
+	c2 := conts2[0]
+
+	argsB := []string{"fsTreeCreate", "--depth=1", "--file-per-level=1", "--file-size=10", "--target-dir=/tmpfs-mount", "--seed=2"}
+	if ws, err := execute(conf, c2, "/app", argsB...); err != nil || ws != 0 {
+		cleanupConts2()
+		t.Fatalf("Error writing updated file in c2, ws: %v, err: %v", ws, err)
+	}
+
+	dirB, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-B")
+	if err != nil {
+		cleanupConts2()
+		t.Fatalf("Error creating checkpoint dir B: %v", err)
+	}
+	defer func() {
+		if t.Failed() {
+			t.Logf("Preserving dirB: %s", dirB)
+			copyDirToOutputs(t, dirB, "checkpoint-B")
+		} else {
+			os.RemoveAll(dirB)
+		}
+	}()
+
+	if err := c2.FSSave(conf, dirB, sandbox.FSSaveOpts{
+		ExitAfterSaving: true,
+		Path:            "/tmpfs-mount",
+	}); err != nil {
+		cleanupConts2()
+		t.Fatalf("Error saving filesystem checkpoint: %v", err)
+	}
+
+	cleanupConts2()
+
+	// 3. Mismatched Restore (Container 3)
+	source3, err := os.MkdirTemp(testutil.TmpDir(), "source-3")
+	if err != nil {
+		t.Fatalf("Error creating source 3: %v", err)
+	}
+	defer os.RemoveAll(source3)
+
+	c3Spec := newSpec(source3)
+	c3ID := testutil.RandomContainerID()
+	cleanupRoots3, err := setupRoots([]*specs.Spec{c3Spec}, []string{c3ID})
+	if err != nil {
+		t.Fatalf("Error setting up root 3: %v", err)
+	}
+	defer cleanupRoots3()
+
+	bundleDir3, cleanupBundle3, err := testutil.SetupBundleDir(c3Spec)
+	if err != nil {
+		t.Fatalf("Error setting up bundle dir 3: %v", err)
+	}
+	defer cleanupBundle3()
+
+	printDir := func(dir string) {
+		t.Logf("Contents of %s:", dir)
+		files, err := os.ReadDir(dir)
+		if err != nil {
+			t.Logf("  Failed to read dir: %v", err)
+			return
+		}
+		for _, f := range files {
+			info, _ := f.Info()
+			t.Logf("  %s: %d bytes", f.Name(), info.Size())
+			if f.Name() == "fscheckpoint.json" {
+				data, _ := os.ReadFile(filepath.Join(dir, f.Name()))
+				t.Logf("    manifest: %s", string(data))
+			}
+		}
+	}
+	printDir(dirA)
+	printDir(dirB)
+
+	c3, err := New(conf, Args{
+		ID:                 c3ID,
+		Spec:               c3Spec,
+		BundleDir:          bundleDir3,
+		FSRestoreImagePath: dirB,
+	})
+	if err != nil {
+		t.Fatalf("Error creating container 3: %v", err)
+	}
+	defer c3.Destroy()
+
+	if err := c3.Restore(conf, dirA, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
+		t.Fatalf("Error restoring container 3: %v", err)
+	}
+
+	verifyB := []string{"fsTreeVerify", "--depth=1", "--file-per-level=1", "--file-size=10", "--target-dir=/tmpfs-mount", "--seed=2"}
+	outB, statusB, err := executeCombinedOutputWithStatus(conf, c3, nil, "/app", verifyB...)
+	if err != nil || statusB != 0 {
+		t.Errorf("Mismatch verification failed! Container 3 should have filesystem B (seed 2), status: %v, err: %v, output: %s", statusB, err, string(outB))
+	}
+
+	verifyA := []string{"fsTreeVerify", "--depth=1", "--file-per-level=1", "--file-size=10", "--target-dir=/tmpfs-mount", "--seed=1"}
+	outA, statusA, err := executeCombinedOutputWithStatus(conf, c3, nil, "/app", verifyA...)
+	if err == nil && statusA == 0 {
+		t.Errorf("Container 3 incorrectly has filesystem A (seed 1) contents, expected it to have been swapped")
+	} else if err != nil {
+		t.Logf("verifyA failed with error: %v, output: %s", err, string(outA))
+	} else {
+		t.Logf("verifyA failed as expected with status: %v, output: %s", statusA, string(outA))
+	}
+
+	// 4. Verify write capability (creating new files) on the restored filesystem.
+	writeDir := "/tmpfs-mount/write_test"
+	argsWrite := []string{"fsTreeCreate", "--depth=1", "--file-per-level=1", "--file-size=10", "--target-dir=" + writeDir, "--seed=3"}
+	if ws, err := execute(conf, c3, "/app", argsWrite...); err != nil || ws != 0 {
+		t.Errorf("Writing new files on restored filesystem failed, ws: %v, err: %v", ws, err)
+	}
+
+	verifyWrite := []string{"fsTreeVerify", "--depth=1", "--file-per-level=1", "--file-size=10", "--target-dir=" + writeDir, "--seed=3"}
+	outWrite, statusWrite, err := executeCombinedOutputWithStatus(conf, c3, nil, "/app", verifyWrite...)
+	if err != nil || statusWrite != 0 {
+		t.Errorf("Verification of newly written files failed, status: %v, err: %v, output: %s", statusWrite, err, string(outWrite))
+	}
+
+	// 5. Verify write capability (overwriting existing files) on the restored filesystem.
+	argsOverwrite := []string{"fsTreeCreate", "--depth=1", "--file-per-level=1", "--file-size=10", "--target-dir=/tmpfs-mount", "--seed=4"}
+	if ws, err := execute(conf, c3, "/app", argsOverwrite...); err != nil || ws != 0 {
+		t.Errorf("Overwriting existing files on restored filesystem failed, ws: %v, err: %v", ws, err)
+	}
+
+	verifyOverwrite := []string{"fsTreeVerify", "--depth=1", "--file-per-level=1", "--file-size=10", "--target-dir=/tmpfs-mount", "--seed=4"}
+	outOverwrite, statusOverwrite, err := executeCombinedOutputWithStatus(conf, c3, nil, "/app", verifyOverwrite...)
+	if err != nil || statusOverwrite != 0 {
+		t.Errorf("Verification of overwritten files failed, status: %v, err: %v, output: %s", statusOverwrite, err, string(outOverwrite))
+	}
+
+	// Verify that the old seed 2 data is no longer there.
+	verifyOld := []string{"fsTreeVerify", "--depth=1", "--file-per-level=1", "--file-size=10", "--target-dir=/tmpfs-mount", "--seed=2"}
+	outOld, statusOld, err := executeCombinedOutputWithStatus(conf, c3, nil, "/app", verifyOld...)
+	if err == nil && statusOld == 0 {
+		t.Errorf("Old files still have seed 2 contents after overwrite, expected them to have been overwritten")
+	} else {
+		t.Logf("verifyOld failed as expected: status: %v, err: %v, output: %s", statusOld, err, string(outOld))
+	}
+}
+
+func copyDirToOutputs(t *testing.T, srcDir, destSubDir string) {
+	outputsDir := os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR")
+	if outputsDir == "" {
+		t.Logf("TEST_UNDECLARED_OUTPUTS_DIR is not set, cannot copy %s", srcDir)
+		return
+	}
+	destDir := filepath.Join(outputsDir, destSubDir)
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		t.Logf("Failed to create dest dir %s: %v", destDir, err)
+		return
+	}
+	// Copy files
+	files, err := os.ReadDir(srcDir)
+	if err != nil {
+		t.Logf("Failed to read src dir %s: %v", srcDir, err)
+		return
+	}
+	for _, f := range files {
+		srcFile := filepath.Join(srcDir, f.Name())
+		destFile := filepath.Join(destDir, f.Name())
+		// Simple file copy
+		data, err := os.ReadFile(srcFile)
+		if err != nil {
+			t.Logf("Failed to read file %s: %v", srcFile, err)
+			continue
+		}
+		if err := os.WriteFile(destFile, data, 0644); err != nil {
+			t.Logf("Failed to write file %s: %v", destFile, err)
+		} else {
+			t.Logf("Copied %s to outputs/%s/%s", f.Name(), destSubDir, f.Name())
+		}
+	}
+}
+
+func TestCombinedFSRestore(t *testing.T) {
+	conf := testutil.TestConfig(t)
+
+	rootDir, cleanupRoot, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("Error creating root dir: %v", err)
+	}
+	defer cleanupRoot()
+	conf.RootDir = rootDir
+
+	// Configure overlay.
+	conf.Overlay2.Set("root:self")
+
+	newSpec := func(source string) *specs.Spec {
+		spec := testutil.NewSpecWithArgs("/app", "reaper")
+		spec.Root.Readonly = false
+		spec.Mounts = append(spec.Mounts, specs.Mount{
+			Source:      source,
+			Destination: "/tmpfs-mount",
+			Type:        "bind",
+		})
+		spec.Annotations["dev.gvisor.spec.mount.tmpfs-mount.source"] = source
+		spec.Annotations["dev.gvisor.spec.mount.tmpfs-mount.share"] = "container"
+		spec.Annotations["dev.gvisor.spec.mount.tmpfs-mount.type"] = "bind"
+		return spec
+	}
+
+	appSrc, err := testutil.FindFile("test/cmd/test_app/test_app")
+	if err != nil {
+		t.Fatal("Error finding test_app:", err)
+	}
+
+	setupRoots := func(containerSpecs []*specs.Spec, ids []string) (func(), error) {
+		var cleanupSpecRoots cleanup.Cleanup
+		defer cleanupSpecRoots.Clean()
+		for i, spec := range containerSpecs {
+			contRootPath, err := os.MkdirTemp(testutil.TmpDir(), fmt.Sprintf("%s-root", ids[i]))
+			if err != nil {
+				return nil, fmt.Errorf("error creating root directory for container %d: %v", i, err)
+			}
+			cleanupSpecRoots.Add(func() { os.RemoveAll(contRootPath) })
+			spec.Root.Path = contRootPath
+			appDst := filepath.Join(contRootPath, "app")
+			if err := copyFile(appSrc, appDst); err != nil {
+				return nil, fmt.Errorf("error copying app binary: %v", err)
+			}
+		}
+		return cleanupSpecRoots.Release(), nil
+	}
+
+	// 1. Generate Template Sentry Checkpoint (Container 1)
+	source1, err := os.MkdirTemp(testutil.TmpDir(), "source-1")
+	if err != nil {
+		t.Fatalf("Error creating source 1: %v", err)
+	}
+	defer os.RemoveAll(source1)
+
+	c1Spec := newSpec(source1)
+	c1ID := testutil.RandomContainerID()
+	cleanupRoots1, err := setupRoots([]*specs.Spec{c1Spec}, []string{c1ID})
+	if err != nil {
+		t.Fatalf("Error setting up root 1: %v", err)
+	}
+	defer cleanupRoots1()
+
+	conts1, cleanupConts1, err := startContainers(conf, []*specs.Spec{c1Spec}, []string{c1ID})
+	if err != nil {
+		t.Fatalf("Error starting container 1: %v", err)
+	}
+	c1 := conts1[0]
+
+	argsA := []string{"fsTreeCreate", "--depth=1", "--file-per-level=1", "--file-size=10", "--target-dir=/tmpfs-mount", "--seed=1"}
+	if ws, err := execute(conf, c1, "/app", argsA...); err != nil || ws != 0 {
+		cleanupConts1()
+		t.Fatalf("Error writing template file in c1, ws: %v, err: %v", ws, err)
+	}
+
+	dirA, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-A")
+	if err != nil {
+		cleanupConts1()
+		t.Fatalf("Error creating checkpoint dir A: %v", err)
+	}
+	defer func() {
+		if t.Failed() {
+			t.Logf("Preserving dirA: %s", dirA)
+			copyDirToOutputs(t, dirA, "checkpoint-A")
+		} else {
+			os.RemoveAll(dirA)
+		}
+	}()
+
+	if err := c1.Checkpoint(conf, dirA, sandbox.CheckpointOpts{}); err != nil {
+		cleanupConts1()
+		t.Fatalf("Error checkpointing container 1: %v", err)
+	}
+	cleanupConts1()
+
+	// 2. Restore container 2 from dirA, modify, and save filesystem
+	source2, err := os.MkdirTemp(testutil.TmpDir(), "source-2")
+	if err != nil {
+		t.Fatalf("Error creating source 2: %v", err)
+	}
+	defer os.RemoveAll(source2)
+
+	c2Spec := newSpec(source2)
+	c2ID := testutil.RandomContainerID()
+	cleanupRoots2, err := setupRoots([]*specs.Spec{c2Spec}, []string{c2ID})
+	if err != nil {
+		t.Fatalf("Error setting up root 2: %v", err)
+	}
+	defer cleanupRoots2()
+
+	bundleDir2, cleanupBundle2, err := testutil.SetupBundleDir(c2Spec)
+	if err != nil {
+		t.Fatalf("Error setting up bundle dir 2: %v", err)
+	}
+	defer cleanupBundle2()
+
+	c2, err := New(conf, Args{
+		ID:        c2ID,
+		Spec:      c2Spec,
+		BundleDir: bundleDir2,
+	})
+	if err != nil {
+		t.Fatalf("Error creating container 2: %v", err)
+	}
+
+	if err := c2.Restore(conf, dirA, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
+		c2.Destroy()
+		t.Fatalf("Error restoring container 2: %v", err)
+	}
+
+	argsB := []string{"fsTreeCreate", "--depth=1", "--file-per-level=1", "--file-size=10", "--target-dir=/tmpfs-mount", "--seed=2"}
+	if ws, err := execute(conf, c2, "/app", argsB...); err != nil || ws != 0 {
+		c2.Destroy()
+		t.Fatalf("Error writing updated file in c2, ws: %v, err: %v", ws, err)
+	}
+
+	dirB, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-B")
+	if err != nil {
+		c2.Destroy()
+		t.Fatalf("Error creating checkpoint dir B: %v", err)
+	}
+	defer func() {
+		if t.Failed() {
+			t.Logf("Preserving dirB: %s", dirB)
+			copyDirToOutputs(t, dirB, "checkpoint-B")
+		} else {
+			os.RemoveAll(dirB)
+		}
+	}()
+
+	if err := c2.FSSave(conf, dirB, sandbox.FSSaveOpts{
+		ExitAfterSaving: true,
+		Path:            "/tmpfs-mount",
+	}); err != nil {
+		c2.Destroy()
+		t.Fatalf("Error saving filesystem checkpoint: %v", err)
+	}
+	c2.Destroy()
+
+	// 3. Combined Restore (Container 3)
+	source3, err := os.MkdirTemp(testutil.TmpDir(), "source-3")
+	if err != nil {
+		t.Fatalf("Error creating source 3: %v", err)
+	}
+	defer os.RemoveAll(source3)
+
+	c3Spec := newSpec(source3)
+	c3ID := testutil.RandomContainerID()
+	cleanupRoots3, err := setupRoots([]*specs.Spec{c3Spec}, []string{c3ID})
+	if err != nil {
+		t.Fatalf("Error setting up root 3: %v", err)
+	}
+	defer cleanupRoots3()
+
+	bundleDir3, cleanupBundle3, err := testutil.SetupBundleDir(c3Spec)
+	if err != nil {
+		t.Fatalf("Error setting up bundle dir 3: %v", err)
+	}
+	defer cleanupBundle3()
+
+	c3, err := New(conf, Args{
+		ID:                 c3ID,
+		Spec:               c3Spec,
+		BundleDir:          bundleDir3,
+		FSRestoreImagePath: dirB,
+	})
+	if err != nil {
+		t.Fatalf("Error creating container 3: %v", err)
+	}
+	defer c3.Destroy()
+
+	if err := c3.Restore(conf, dirA, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
+		t.Fatalf("Error restoring container 3: %v", err)
+	}
+
+	verifyB := []string{"fsTreeVerify", "--depth=1", "--file-per-level=1", "--file-size=10", "--target-dir=/tmpfs-mount", "--seed=2"}
+	outB, statusB, err := executeCombinedOutputWithStatus(conf, c3, nil, "/app", verifyB...)
+	if err != nil || statusB != 0 {
+		t.Errorf("Mismatch verification failed! Container 3 should have filesystem B (seed 2), status: %v, err: %v, output: %s", statusB, err, string(outB))
+	}
+
+	verifyA := []string{"fsTreeVerify", "--depth=1", "--file-per-level=1", "--file-size=10", "--target-dir=/tmpfs-mount", "--seed=1"}
+	outA, statusA, err := executeCombinedOutputWithStatus(conf, c3, nil, "/app", verifyA...)
+	if err == nil && statusA == 0 {
+		t.Errorf("Container 3 incorrectly has filesystem A (seed 1) contents, expected it to have been swapped")
+	} else if err != nil {
+		t.Logf("verifyA failed with error: %v, output: %s", err, string(outA))
+	} else {
+		t.Logf("verifyA failed as expected with status: %v, output: %s", statusA, string(outA))
+	}
+}

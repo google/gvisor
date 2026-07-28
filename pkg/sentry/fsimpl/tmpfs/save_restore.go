@@ -15,10 +15,12 @@
 package tmpfs
 
 import (
+	"archive/tar"
 	goContext "context"
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -81,8 +83,36 @@ func (fs *filesystem) PrepareSave(ctx context.Context) error {
 // BeforeResume implements vfs.FilesystemImplSaveRestoreExtension.BeforeResume.
 func (fs *filesystem) BeforeResume(ctx context.Context) {}
 
-// CompleteRestore implements
-// vfs.FilesystemImplSaveRestoreExtension.CompleteRestore.
 func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRestoreOptions) error {
+	log.Infof("tmpfs.CompleteRestore called for filesystem %p (MemoryFile %p, ResourceID %s)", fs, fs.mf, fs.mf.ResourceID())
+	tarmap := vfs.RestoreFilesystemTarMapFromContext(ctx)
+	if tarmap == nil {
+		log.Infof("tmpfs.CompleteRestore: tarmap is nil")
+		return nil
+	}
+	tarReader := tarmap[fs.mf.ResourceID()]
+	if tarReader == nil {
+		log.Infof("tmpfs.CompleteRestore: tarReader is nil for ResourceID %s", fs.mf.ResourceID())
+		return nil
+	}
+
+	log.Infof("tmpfs.CompleteRestore: swapping filesystem %p from tar", fs)
+
+	fs.mu.Lock()
+	if fs.root.inode.isDir() {
+		fs.root.clearRegularFilesDataLocked(ctx)
+		fs.root.wipeChildrenLocked(ctx)
+	}
+	fs.mu.Unlock()
+
+	cb := &fsckptTarReaderCallbacks{
+		fs:           fs,
+		regularFiles: make(map[*tar.Header]*fsckptRegularFile),
+	}
+	if err := fs.tarRead(ctx, tarReader, cb); err != nil {
+		return fmt.Errorf("failed to reload tmpfs from snapshot: %w", err)
+	}
+
+	log.Infof("tmpfs.CompleteRestore: swap completed successfully for filesystem %p", fs)
 	return nil
 }
