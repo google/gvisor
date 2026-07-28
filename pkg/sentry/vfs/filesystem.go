@@ -476,6 +476,33 @@ type FilesystemImpl interface {
 	//	- If name does not exist, ENODATA is returned.
 	RemoveXattrAt(ctx context.Context, rp *ResolvingPath, name string) error
 
+	// GetPosixACLAt fetches the POSIX ACL from the file at rp.
+	//
+	// GetPosixACLAt does not correspond to a Linux syscall. It is used by internal
+	// sentry callers for two reasons:
+	//
+	// (1) to fetch an file's ACL without needing a serialization/deserialization
+	//     round trip through GetXattrAt/ParsePosixACL;
+	// (2) to resolve KUIDs and KGIDs in an ACL without than needing to perform
+	//     userns translation (e.g. when using the caller's userns would not be
+	//     appropriate)
+	//
+	// GetPosixACLAt performs no permission checks.
+	GetPosixACLAt(ctx context.Context, rp *ResolvingPath, t ACLType) (*PosixACL, error)
+
+	// SetPosixACLAt sets the POSIX ACL from the file at rp.
+	// For access ACLs, the ACL and mode are re-computed together, so the resulting
+	// ACL (which may be nil) and mode are returned together.
+	//
+	// SetPosixACLAt does not correspond to a Linux syscall. It is used by internal
+	// sentry callers to set the ACL without worrying about translating KUIDs/KGIDs.
+	//
+	// For access ACLs: if clearSGID is set, the filesystem may clear the setgid bit
+	// of the file depending on rp's creds, as described in chmod(2).
+	//
+	// SetPosixACLAt performs no permission checks.
+	SetPosixACLAt(ctx context.Context, rp *ResolvingPath, t ACLType, acl *PosixACL, clearSGID bool) (*PosixACL, linux.FileMode, error)
+
 	// BoundEndpointAt returns the Unix socket endpoint bound at the path rp.
 	//
 	// Errors:
