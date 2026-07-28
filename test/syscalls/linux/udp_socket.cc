@@ -430,8 +430,16 @@ TEST_P(UdpSocketTest, ConnectSimultaneousWriteToInvalidPort) {
   ASSERT_THAT(close(s.release()), SyscallSucceeds());
 
   // Now connect to the port that we just released.
-  ScopedThread t([&] {
-    ASSERT_THAT(connect(sock_.get(), addr, addrlen_), SyscallSucceeds());
+  //
+  // Duplicate the socket file descriptor to prevent a TSan data race.
+  // TSan flags concurrent socket operations on the identical host FD
+  // (from the concurrent sendto() in the main thread) as a data race,
+  // so use a separate FD pointing to the same underlying socket.
+  int dup_fd = dup(sock_.get());
+  ASSERT_GE(dup_fd, 0);
+  ScopedThread t([&, dup_fd] {
+    ASSERT_THAT(connect(dup_fd, addr, addrlen_), SyscallSucceeds());
+    close(dup_fd);
   });
 
   char buf[512] = {};
