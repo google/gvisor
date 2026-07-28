@@ -43,6 +43,20 @@ func mountInChroot(chroot, src, dst, typ string, flags uint32) error {
 	return nil
 }
 
+// bindMountInChrootReadonly bind-mounts src at dst inside the chroot
+// read-only. mount(2) ignores attribute flags like MS_RDONLY when MS_BIND is
+// set, so the bind must be followed by a remount that applies them. The
+// remount also carries the attribute flags the bind inherited from the host
+// mount (sysfs is nosuid,nodev,noexec), which a remount may not clear.
+func bindMountInChrootReadonly(chroot, src, dst string) error {
+	if err := mountInChroot(chroot, src, dst, "bind", unix.MS_BIND); err != nil {
+		return err
+	}
+	return specutils.SafeMount("", filepath.Join(chroot, dst), "",
+		unix.MS_REMOUNT|unix.MS_BIND|unix.MS_RDONLY|unix.MS_NOSUID|unix.MS_NODEV|unix.MS_NOEXEC,
+		"", "/proc")
+}
+
 // setupMinimalProcfs creates a minimal procfs-like tree at `${chroot}/proc`.
 func setupMinimalProcfs(chroot string) error {
 	// We can't always directly mount procfs because it may be obstructed
@@ -171,7 +185,7 @@ func tpuProxyUpdateChroot(hostRoot, chroot string, spec *specs.Spec, conf *confi
 		}
 		devNum := path.Base(devPath)
 		iommuGroupPath := path.Join("/sys/kernel/iommu_groups", devNum)
-		if err := mountInChroot(chroot, path.Join(hostRoot, iommuGroupPath), iommuGroupPath, "bind", unix.MS_BIND|unix.MS_RDONLY); err != nil {
+		if err := bindMountInChrootReadonly(chroot, path.Join(hostRoot, iommuGroupPath), iommuGroupPath); err != nil {
 			return fmt.Errorf("error mounting %q in chroot: %v", iommuGroupPath, err)
 		}
 		allowedDeviceIDs[tpu.TPUV5pDeviceID] = struct{}{}
@@ -202,7 +216,7 @@ func tpuProxyUpdateChroot(hostRoot, chroot string, spec *specs.Spec, conf *confi
 		if err := filepath.WalkDir(sysDevicesPath, func(path string, d os.DirEntry, err error) error {
 			if d.Type().IsDir() && util.IsPCIDeviceDirTPU(path, allowedDeviceIDs) {
 				chrootPath := strings.Replace(path, hostRoot, "/", 1)
-				if err := mountInChroot(chroot, path, chrootPath, "bind", unix.MS_BIND|unix.MS_RDONLY); err != nil {
+				if err := bindMountInChrootReadonly(chroot, path, chrootPath); err != nil {
 					return fmt.Errorf("error mounting %q in chroot: %v", path, err)
 				}
 			}
