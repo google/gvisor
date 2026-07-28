@@ -40,6 +40,7 @@ type Options struct {
 	env              []string
 	err              error
 	workingDir       string
+	hostname         string
 }
 
 // Option configures the Options struct.
@@ -53,6 +54,8 @@ const (
 	MountTypeBind MountType = iota
 	// MountTypeTmpfs represents an in-memory tmpfs mount.
 	MountTypeTmpfs
+	// MountTypeProc represents a procfs mount.
+	MountTypeProc
 )
 
 // Mount holds settings for a custom host bind directory or in-memory mount.
@@ -103,6 +106,23 @@ func WithTmpfsMount(destination string) Option {
 			Destination: filepath.Clean(destination),
 			Type:        MountTypeTmpfs,
 		})
+	}
+}
+
+// WithProcMount adds a procfs mount at the destination path inside the sandbox.
+func WithProcMount(destination string) Option {
+	return func(o *Options) {
+		o.mounts = append(o.mounts, Mount{
+			Destination: filepath.Clean(destination),
+			Type:        MountTypeProc,
+		})
+	}
+}
+
+// WithHostname sets the hostname for the sandbox.
+func WithHostname(hostname string) Option {
+	return func(o *Options) {
+		o.hostname = hostname
 	}
 }
 
@@ -289,6 +309,7 @@ func New(ctx context.Context, opts ...Option) (*Sandbox, error) {
 		Env:              options.env,
 		Annotations:      annotations,
 		WorkingDir:       options.workingDir,
+		Hostname:         options.hostname,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OCI bundle: %v", err)

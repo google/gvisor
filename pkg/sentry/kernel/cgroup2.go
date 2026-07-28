@@ -67,8 +67,9 @@ type Cgroup2 interface {
 	// Called by exiting tasks.
 	Exit(ctx context.Context, t *Task)
 
-	// Called by clone() to check permissions for CLONE_CGROUP_INTO.
-	CanCloneInto(ctx context.Context, creds *auth.Credentials) error
+	// Called by clone() to check permissions for CLONE_CGROUP_INTO. ns is
+	// the forking task's cgroup namespace.
+	CanCloneInto(ctx context.Context, creds *auth.Credentials, ns *CgroupNamespace) error
 
 	// KillSeq returns the kill sequence number of the cgroup.
 	// It helps prevent fork()s racing with cgroup.kill.

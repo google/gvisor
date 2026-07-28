@@ -36,6 +36,34 @@ func (f *cgroupInterfaceFile) StateLoad(ctx context.Context, stateSourceObject s
 	stateSourceObject.Load(1, &f.c)
 }
 
+func (fd *interfaceFD) StateTypeName() string {
+	return "pkg/sentry/fsimpl/cgroup2fs.interfaceFD"
+}
+
+func (fd *interfaceFD) StateFields() []string {
+	return []string{
+		"DynamicBytesFD",
+		"ns",
+	}
+}
+
+func (fd *interfaceFD) beforeSave() {}
+
+// +checklocksignore
+func (fd *interfaceFD) StateSave(stateSinkObject state.Sink) {
+	fd.beforeSave()
+	stateSinkObject.Save(0, &fd.DynamicBytesFD)
+	stateSinkObject.Save(1, &fd.ns)
+}
+
+func (fd *interfaceFD) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (fd *interfaceFD) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &fd.DynamicBytesFD)
+	stateSourceObject.Load(1, &fd.ns)
+}
+
 func (s *cgroupSourceReadOnly) StateTypeName() string {
 	return "pkg/sentry/fsimpl/cgroup2fs.cgroupSourceReadOnly"
 }
@@ -76,6 +104,7 @@ func (s *cgroupSourceWritable) StateFields() []string {
 		"c",
 		"ctrl",
 		"src",
+		"nsDelegatable",
 	}
 }
 
@@ -87,6 +116,7 @@ func (s *cgroupSourceWritable) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &s.c)
 	stateSinkObject.Save(1, &s.ctrl)
 	stateSinkObject.Save(2, &s.src)
+	stateSinkObject.Save(3, &s.nsDelegatable)
 }
 
 func (s *cgroupSourceWritable) afterLoad(context.Context) {}
@@ -96,6 +126,7 @@ func (s *cgroupSourceWritable) StateLoad(ctx context.Context, stateSourceObject 
 	stateSourceObject.Load(0, &s.c)
 	stateSourceObject.Load(1, &s.ctrl)
 	stateSourceObject.Load(2, &s.src)
+	stateSourceObject.Load(3, &s.nsDelegatable)
 }
 
 func (cf *cgroupProcs) StateTypeName() string {
@@ -679,10 +710,7 @@ func (fd *eventFD) StateTypeName() string {
 
 func (fd *eventFD) StateFields() []string {
 	return []string{
-		"FileDescriptionDefaultImpl",
-		"DynamicBytesFileDescriptionImpl",
-		"NoLockFD",
-		"vfsfd",
+		"DynamicBytesFD",
 		"ep",
 		"lastEventSeq",
 		"data",
@@ -694,26 +722,20 @@ func (fd *eventFD) beforeSave() {}
 // +checklocksignore
 func (fd *eventFD) StateSave(stateSinkObject state.Sink) {
 	fd.beforeSave()
-	stateSinkObject.Save(0, &fd.FileDescriptionDefaultImpl)
-	stateSinkObject.Save(1, &fd.DynamicBytesFileDescriptionImpl)
-	stateSinkObject.Save(2, &fd.NoLockFD)
-	stateSinkObject.Save(3, &fd.vfsfd)
-	stateSinkObject.Save(4, &fd.ep)
-	stateSinkObject.Save(5, &fd.lastEventSeq)
-	stateSinkObject.Save(6, &fd.data)
+	stateSinkObject.Save(0, &fd.DynamicBytesFD)
+	stateSinkObject.Save(1, &fd.ep)
+	stateSinkObject.Save(2, &fd.lastEventSeq)
+	stateSinkObject.Save(3, &fd.data)
 }
 
 func (fd *eventFD) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (fd *eventFD) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &fd.FileDescriptionDefaultImpl)
-	stateSourceObject.Load(1, &fd.DynamicBytesFileDescriptionImpl)
-	stateSourceObject.Load(2, &fd.NoLockFD)
-	stateSourceObject.Load(3, &fd.vfsfd)
-	stateSourceObject.Load(4, &fd.ep)
-	stateSourceObject.Load(5, &fd.lastEventSeq)
-	stateSourceObject.Load(6, &fd.data)
+	stateSourceObject.Load(0, &fd.DynamicBytesFD)
+	stateSourceObject.Load(1, &fd.ep)
+	stateSourceObject.Load(2, &fd.lastEventSeq)
+	stateSourceObject.Load(3, &fd.data)
 }
 
 func (ft *FilesystemType) StateTypeName() string {
@@ -748,6 +770,7 @@ func (fs *filesystem) StateFields() []string {
 		"devMinor",
 		"root",
 		"mounted",
+		"nsDelegate",
 		"nextMemCgroupID",
 	}
 }
@@ -762,7 +785,8 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &fs.devMinor)
 	stateSinkObject.Save(3, &fs.root)
 	stateSinkObject.Save(4, &fs.mounted)
-	stateSinkObject.Save(5, &fs.nextMemCgroupID)
+	stateSinkObject.Save(5, &fs.nsDelegate)
+	stateSinkObject.Save(6, &fs.nextMemCgroupID)
 }
 
 func (fs *filesystem) afterLoad(context.Context) {}
@@ -774,7 +798,8 @@ func (fs *filesystem) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(2, &fs.devMinor)
 	stateSourceObject.Load(3, &fs.root)
 	stateSourceObject.Load(4, &fs.mounted)
-	stateSourceObject.Load(5, &fs.nextMemCgroupID)
+	stateSourceObject.Load(5, &fs.nsDelegate)
+	stateSourceObject.Load(6, &fs.nextMemCgroupID)
 }
 
 func (i *implStatFS) StateTypeName() string {
@@ -1117,6 +1142,7 @@ func (pp *pidsPeak) StateLoad(ctx context.Context, stateSourceObject state.Sourc
 
 func init() {
 	state.Register((*cgroupInterfaceFile)(nil))
+	state.Register((*interfaceFD)(nil))
 	state.Register((*cgroupSourceReadOnly)(nil))
 	state.Register((*cgroupSourceWritable)(nil))
 	state.Register((*cgroupProcs)(nil))
