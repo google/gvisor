@@ -9,7 +9,7 @@ go_library(
     name = "gvisorbinaries",
     srcs = ["gvisorbinaries.go"],
     visibility = [
-        "//runsc:__subpackages__",
+        "//visibility:public",
     ],
     deps = [
         "//pkg/log",
