@@ -180,6 +180,17 @@ doc(
     permalink = "/blog/2026/04/23/scaling-agentic-rl-sandboxes-to-the-millions-with-gvisor-at-tencent/",
 )
 
+doc(
+    name = "rdma_in_gvisor",
+    src = "2026-07-27-rdma-in-gvisor.md",
+    authors = [
+        "atoniolo",
+        "ayushranjan",
+    ],
+    layout = "post",
+    permalink = "/blog/2026/07/27/rdma-in-gvisor/",
+)
+
 docs(
     name = "posts",
     deps = [
