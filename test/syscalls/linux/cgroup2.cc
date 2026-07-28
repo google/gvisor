@@ -1833,6 +1833,23 @@ int WriteFdErrno(int fd, absl::string_view val) {
   return (n < 0 || static_cast<size_t>(n) != val.size()) ? errno : 0;
 }
 
+// Whether the cgroup2 mount at `mountpoint` has the nsdelegate flag applied.
+// Mounting with the option always succeeds, but Linux silently ignores it
+// unless the mounting process is in the init cgroup namespace (see
+// apply_cgroup_root_flags in kernel/cgroup/cgroup.c), so environments that
+// themselves run inside a cgroup namespace (e.g. containerized CI sandboxes)
+// cannot turn it on. Tests of nsdelegate behavior must skip there.
+PosixErrorOr<bool> NsdelegateApplied(absl::string_view mountpoint) {
+  ASSIGN_OR_RETURN_ERRNO(std::vector<ProcMountsEntry> entries,
+                         ProcSelfMountsEntries());
+  for (const ProcMountsEntry& e : entries) {
+    if (e.mount_point == mountpoint && e.fstype == "cgroup2") {
+      return absl::StrContains(e.mount_opts, "nsdelegate");
+    }
+  }
+  return PosixError(ENOENT, absl::StrCat("no cgroup2 mount at ", mountpoint));
+}
+
 // Copies the "root" field (field 4) of the /proc/self/mountinfo entry whose
 // mount point is `mp`, into `out`. Returns false if no such entry exists.
 bool MountInfoRootRaw(absl::string_view mp, char* out, size_t out_len) {
@@ -2347,8 +2364,10 @@ TEST_F(Cgroup2Test, NsdelegateRootWrites) {
   Mounter m2(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
   Cgroup r2 = ASSERT_NO_ERRNO_AND_VALUE(m2.MountCgroup2fs("nsdelegate"));
 
-  EXPECT_THAT(ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/self/mounts")),
-              HasSubstr("nsdelegate"));
+  // Skip if the environment could not actually turn nsdelegate on.
+  const bool nsdelegate_applied =
+      ASSERT_NO_ERRNO_AND_VALUE(NsdelegateApplied(r2.Path()));
+  SKIP_IF(!nsdelegate_applied);
 
   const pid_t pid = fork();
   if (pid == 0) {
@@ -2419,6 +2438,11 @@ TEST_F(Cgroup2Test, NsdelegateMigrationContainment) {
     ASSERT_NO_ERRNO(m3.MountCgroup2fs());
   });
 
+  // Skip if the environment could not actually turn nsdelegate on.
+  const bool nsdelegate_applied =
+      ASSERT_NO_ERRNO_AND_VALUE(NsdelegateApplied(r2.Path()));
+  SKIP_IF(!nsdelegate_applied);
+
   const pid_t pid = fork();
   if (pid == 0) {
     TEST_CHECK(WriteFileErrno(ca_procs.c_str(), "0") == 0);
@@ -2460,6 +2484,11 @@ TEST_F(Cgroup2Test, NsdelegateCloneIntoCgroup) {
     Mounter m3(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
     ASSERT_NO_ERRNO(m3.MountCgroup2fs());
   });
+
+  // Skip if the environment could not actually turn nsdelegate on.
+  const bool nsdelegate_applied =
+      ASSERT_NO_ERRNO_AND_VALUE(NsdelegateApplied(r2.Path()));
+  SKIP_IF(!nsdelegate_applied);
 
   const pid_t pid = fork();
   if (pid == 0) {
@@ -2545,6 +2574,11 @@ TEST_F(Cgroup2Test, NsdelegateWriteUsesOpenTimeNamespaceInitOpener) {
     ASSERT_NO_ERRNO(m3.MountCgroup2fs());
   });
 
+  // Skip if the environment could not actually turn nsdelegate on.
+  const bool nsdelegate_applied =
+      ASSERT_NO_ERRNO_AND_VALUE(NsdelegateApplied(r2.Path()));
+  SKIP_IF(!nsdelegate_applied);
+
   const pid_t pid = fork();
   if (pid == 0) {
     TEST_CHECK(WriteFileErrno(procs.c_str(), "0") == 0);
@@ -2580,6 +2614,11 @@ TEST_F(Cgroup2Test, NsdelegateWriteUsesOpenTimeNamespaceNamespacedOpener) {
     Mounter m3(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
     ASSERT_NO_ERRNO(m3.MountCgroup2fs());
   });
+
+  // Skip if the environment could not actually turn nsdelegate on.
+  const bool nsdelegate_applied =
+      ASSERT_NO_ERRNO_AND_VALUE(NsdelegateApplied(r2.Path()));
+  SKIP_IF(!nsdelegate_applied);
 
   const pid_t pid = fork();
   if (pid == 0) {
