@@ -1,0 +1,6 @@
+{
+    "recommendations": [
+        "bazelbuild.vscode-bazel",
+        "golang.go"
+    ]
+}
