@@ -367,6 +367,7 @@ steps:
     <<: *docker
     <<: *source_test
     label: ":docker: Docker tests (cgroupv1)"
+    parallelism: 8
     command: make docker-tests
     agents:
       <<: *ubuntu_agents
@@ -378,6 +379,7 @@ steps:
     # See above: not truly a source test.
     <<: *source_test
     label: ":docker: Docker tests (cgroupv2)"
+    parallelism: 8
     command: make docker-tests
     agents:
       <<: *ubuntu_agents
@@ -387,6 +389,7 @@ steps:
     <<: *docker
     <<: *source_test
     label: ":docker: Docker tests (ARM64)"
+    parallelism: 8
     command: make docker-tests
     agents:
       <<: *ubuntu_agents
@@ -395,6 +398,7 @@ steps:
   - <<: *common
     <<: *docker
     label: ":goggles: Overlay tests"
+    parallelism: 8
     command: make overlay-tests
     agents:
       <<: *platform_specific_agents
@@ -412,6 +416,7 @@ steps:
   - <<: *common
     <<: *docker
     label: ":safety_pin: Host network tests"
+    parallelism: 8
     command: make hostnet-tests
     agents:
       <<: *platform_specific_agents
@@ -421,6 +426,7 @@ steps:
   - <<: *common
     <<: *docker
     label: ":satellite: gVisor GSO tests"
+    parallelism: 8
     command: make swgso-tests
     agents:
       <<: *platform_specific_agents
@@ -445,6 +451,7 @@ steps:
     <<: *docker
     <<: *source_test
     label: ":person_in_lotus_position: KVM tests"
+    parallelism: 8
     command: make kvm-tests
     agents:
       <<: *kvm_agents
@@ -454,6 +461,7 @@ steps:
     <<: *docker
     <<: *source_test
     label: ":rocket: Systrap tests"
+    parallelism: 8
     command: make systrap-tests
     agents:
       <<: *kvm_agents
@@ -537,6 +545,7 @@ steps:
   - <<: *common
     <<: *source_test
     label: ":table_tennis_paddle_and_ball: IPTables tests"
+    parallelism: 8
     command: make iptables-tests
     agents:
       <<: *ubuntu_agents
