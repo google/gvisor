@@ -22,7 +22,7 @@ RUN apt-get update && apt-get install -y curl gnupg2 git \
 RUN test "$(uname -m)" != x86_64 && exit 0 || apt-get install -y libc6-dev-i386
 #-------------------------------------------------------------------------------
 # The rest of the file is unnecessary for building `runsc`, but are necessary
-# for test targets.
+# for test targets and/or dev containers.
 #-------------------------------------------------------------------------------
 
 # Install Docker client for the website build.
@@ -39,6 +39,11 @@ RUN ARCH="$(uname -m | sed s/aarch64/arm/)" && \
     tar zxf - google-cloud-sdk && \
     google-cloud-sdk/install.sh --quiet && \
     ln -s /google-cloud-sdk/bin/gcloud /usr/bin/gcloud
+
+# Install buildifier.
+RUN ARCH="$(uname -m | sed -e s/aarch64/arm64/ -e s/x86_64/amd64/)" && \
+    curl -fsSL https://github.com/bazelbuild/buildtools/releases/download/v8.5.1/buildifier-linux-${ARCH} -o /usr/local/bin/buildifier && \
+    chmod ugo+x /usr/local/bin/buildifier
 
 # Download the official bazel binary. The APT repository isn't used because there is not packages for arm64.
 COPY bazelversion .
