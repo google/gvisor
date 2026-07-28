@@ -18,6 +18,7 @@
 #include <netinet/ip_icmp.h>
 #include <sched.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <cstdint>
 #include <cstring>
@@ -305,7 +306,7 @@ TEST_P(UdpSocketTest, SendNotConnected) {
   ASSERT_NO_ERRNO(BindLoopback());
 
   // Do send & write, they must fail.
-  char buf[512];
+  char buf[512] = {};
   EXPECT_THAT(send(sock_.get(), buf, sizeof(buf), 0),
               SyscallFailsWithErrno(EDESTADDRREQ));
 
@@ -341,7 +342,7 @@ TEST_P(UdpSocketTest, ConnectBinds) {
 }
 
 TEST_P(UdpSocketTest, ReceiveNotBound) {
-  char buf[512];
+  char buf[512] = {};
   EXPECT_THAT(recv(sock_.get(), buf, sizeof(buf), MSG_DONTWAIT),
               SyscallFailsWithErrno(EWOULDBLOCK));
 }
@@ -392,7 +393,7 @@ TEST_P(UdpSocketTest, ConnectWriteToInvalidPort) {
   // Now free the destination port and then send a packet to it. This should
   // generate an ECONNREFUSED error.
   ASSERT_THAT(close(s.release()), SyscallSucceeds());
-  char buf[512];
+  char buf[512] = {};
   RandomizeBuffer(buf, sizeof(buf));
   // Send from sock_ to an unbound port.
   ASSERT_THAT(sendto(sock_.get(), buf, sizeof(buf), 0, addr, addrlen_),
@@ -433,7 +434,7 @@ TEST_P(UdpSocketTest, ConnectSimultaneousWriteToInvalidPort) {
     ASSERT_THAT(connect(sock_.get(), addr, addrlen_), SyscallSucceeds());
   });
 
-  char buf[512];
+  char buf[512] = {};
   RandomizeBuffer(buf, sizeof(buf));
   // Send from sock_ to an unbound port.
   ASSERT_THAT(sendto(sock_.get(), buf, sizeof(buf), 0, addr, addrlen_),
@@ -446,13 +447,13 @@ TEST_P(UdpSocketTest, ReceiveAfterConnect) {
   ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
 
   // Send from sock_ to bind_
-  char buf[512];
+  char buf[512] = {};
   RandomizeBuffer(buf, sizeof(buf));
   ASSERT_THAT(sendto(sock_.get(), buf, sizeof(buf), 0, bind_addr_, addrlen_),
               SyscallSucceedsWithValue(sizeof(buf)));
 
   // Receive the data.
-  char received[sizeof(buf)];
+  char received[sizeof(buf)] = {};
   EXPECT_THAT(recv(bind_.get(), received, sizeof(received), 0),
               SyscallSucceedsWithValue(sizeof(received)));
   EXPECT_EQ(memcmp(buf, received, sizeof(buf)), 0);
@@ -462,7 +463,7 @@ TEST_P(UdpSocketTest, ReceiveAfterDisconnect) {
   ASSERT_NO_ERRNO(BindLoopback());
 
   for (int i = 0; i < 2; i++) {
-    // Connet sock_ to bound address.
+    // Connect sock_ to bound address.
     ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
 
     struct sockaddr_storage addr;
@@ -472,7 +473,7 @@ TEST_P(UdpSocketTest, ReceiveAfterDisconnect) {
     EXPECT_EQ(addrlen, addrlen_);
 
     // Send from sock to bind_.
-    char buf[512];
+    char buf[512] = {};
     RandomizeBuffer(buf, sizeof(buf));
 
     ASSERT_THAT(
@@ -480,7 +481,7 @@ TEST_P(UdpSocketTest, ReceiveAfterDisconnect) {
         SyscallSucceedsWithValue(sizeof(buf)));
 
     // Receive the data.
-    char received[sizeof(buf)];
+    char received[sizeof(buf)] = {};
     EXPECT_THAT(recv(sock_.get(), received, sizeof(received), 0),
                 SyscallSucceedsWithValue(sizeof(received)));
     EXPECT_EQ(memcmp(buf, received, sizeof(buf)), 0);
@@ -787,7 +788,7 @@ TEST_P(UdpSocketTest, SendToAddressOtherThanConnected) {
   ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
 
   // Send to a different destination than we're connected to.
-  char buf[512];
+  char buf[512] = {};
   EXPECT_THAT(sendto(sock_.get(), buf, sizeof(buf), 0, addr, addrlen_),
               SyscallSucceedsWithValue(sizeof(buf)));
 }
@@ -803,7 +804,7 @@ TEST_P(UdpSocketTest, ConnectAndSendNoReceiver) {
   // doesn't get auto-bound to the same port.
   ASSERT_THAT(close(bind_.release()), SyscallSucceeds());
 
-  char buf[512];
+  char buf[512] = {};
   EXPECT_THAT(send(sock_.get(), buf, sizeof(buf), 0),
               SyscallSucceedsWithValue(sizeof(buf)));
 
@@ -864,7 +865,7 @@ TEST_P(UdpSocketTest, RecvErrorConnRefusedOtherAFSockOpt) {
   ASSERT_THAT(close(bind_.release()), SyscallSucceeds());
 
   // Send to an unbound port which should trigger a port unreachable error.
-  char buf[1];
+  char buf[1] = {};
   EXPECT_THAT(send(sock_.get(), buf, sizeof(buf), 0),
               SyscallSucceedsWithValue(sizeof(buf)));
 
@@ -906,14 +907,14 @@ TEST_P(UdpSocketTest, RecvErrorConnRefused) {
   // by another conncurrently running test. *This is potentially flaky*.
   const int kBufLen = 300;
   ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
-  char buf[kBufLen];
+  char buf[kBufLen] = {};
   RandomizeBuffer(buf, sizeof(buf));
   // Send from sock_ to an unbound port. This should cause ECONNREFUSED.
   EXPECT_THAT(send(sock_.get(), buf, sizeof(buf), 0),
               SyscallSucceedsWithValue(sizeof(buf)));
 
   // Dequeue error using recvmsg(MSG_ERRQUEUE).
-  char got[kBufLen];
+  char got[kBufLen] = {};
   struct iovec iov;
   iov.iov_base = reinterpret_cast<void*>(got);
   iov.iov_len = kBufLen;
@@ -986,7 +987,7 @@ TEST_P(UdpSocketTest, ZerolengthWriteAllowed) {
   // Connect `bind_` to `sock_`.
   ASSERT_THAT(connect(bind_.get(), addr, addrlen_), SyscallSucceeds());
 
-  char buf[3];
+  char buf[3] = {};
   // Send zero length packet from bind_ to sock_.
   ASSERT_THAT(write(bind_.get(), buf, 0), SyscallSucceedsWithValue(0));
 
@@ -995,7 +996,7 @@ TEST_P(UdpSocketTest, ZerolengthWriteAllowed) {
               SyscallSucceedsWithValue(1));
 
   // Receive the packet.
-  char received[3];
+  char received[3] = {};
   EXPECT_THAT(read(sock_.get(), received, sizeof(received)),
               SyscallSucceedsWithValue(0));
 }
@@ -1020,7 +1021,7 @@ TEST_P(UdpSocketTest, ZerolengthWriteAllowedNonBlockRead) {
   ASSERT_THAT(fcntl(sock_.get(), F_SETFL, opts | O_NONBLOCK),
               SyscallSucceeds());
 
-  char buf[3];
+  char buf[3] = {};
   // Send zero length packet from bind_ to sock_.
   ASSERT_THAT(write(bind_.get(), buf, 0), SyscallSucceedsWithValue(0));
 
@@ -1029,7 +1030,7 @@ TEST_P(UdpSocketTest, ZerolengthWriteAllowedNonBlockRead) {
               SyscallSucceedsWithValue(1));
 
   // Receive the packet.
-  char received[3];
+  char received[3] = {};
   EXPECT_THAT(read(sock_.get(), received, sizeof(received)),
               SyscallSucceedsWithValue(0));
   EXPECT_THAT(read(sock_.get(), received, sizeof(received)),
@@ -1040,14 +1041,14 @@ TEST_P(UdpSocketTest, SendAndReceiveNotConnected) {
   ASSERT_NO_ERRNO(BindLoopback());
 
   // Send some data to bind_.
-  char buf[512];
+  char buf[512] = {};
   RandomizeBuffer(buf, sizeof(buf));
 
   ASSERT_THAT(sendto(sock_.get(), buf, sizeof(buf), 0, bind_addr_, addrlen_),
               SyscallSucceedsWithValue(sizeof(buf)));
 
   // Receive the data.
-  char received[sizeof(buf)];
+  char received[sizeof(buf)] = {};
   EXPECT_THAT(recv(bind_.get(), received, sizeof(received), 0),
               SyscallSucceedsWithValue(sizeof(received)));
   EXPECT_EQ(memcmp(buf, received, sizeof(buf)), 0);
@@ -1065,14 +1066,14 @@ TEST_P(UdpSocketTest, SendAndReceiveConnected) {
   ASSERT_THAT(connect(bind_.get(), addr, addrlen_), SyscallSucceeds());
 
   // Send some data from sock to bind_.
-  char buf[512];
+  char buf[512] = {};
   RandomizeBuffer(buf, sizeof(buf));
 
   ASSERT_THAT(sendto(sock_.get(), buf, sizeof(buf), 0, bind_addr_, addrlen_),
               SyscallSucceedsWithValue(sizeof(buf)));
 
   // Receive the data.
-  char received[sizeof(buf)];
+  char received[sizeof(buf)] = {};
   EXPECT_THAT(recv(bind_.get(), received, sizeof(received), 0),
               SyscallSucceedsWithValue(sizeof(received)));
   EXPECT_EQ(memcmp(buf, received, sizeof(buf)), 0);
@@ -1090,7 +1091,7 @@ TEST_P(UdpSocketTest, ReceiveFromNotConnected) {
   ASSERT_THAT(connect(bind_.get(), bind_addr_, addrlen_), SyscallSucceeds());
 
   // Send some data from sock to bind_.
-  char buf[512];
+  char buf[512] = {};
   ASSERT_THAT(sendto(sock_.get(), buf, sizeof(buf), 0, bind_addr_, addrlen_),
               SyscallSucceedsWithValue(sizeof(buf)));
 
@@ -1109,7 +1110,7 @@ TEST_P(UdpSocketTest, ReceiveBeforeConnect) {
   ASSERT_NO_ERRNO(BindSocket(sock_.get(), addr));
 
   // Send some data from sock to bind_.
-  char buf[512];
+  char buf[512] = {};
   RandomizeBuffer(buf, sizeof(buf));
 
   ASSERT_THAT(sendto(sock_.get(), buf, sizeof(buf), 0, bind_addr_, addrlen_),
@@ -1122,7 +1123,7 @@ TEST_P(UdpSocketTest, ReceiveBeforeConnect) {
   ASSERT_THAT(connect(bind_.get(), bind_addr_, addrlen_), SyscallSucceeds());
 
   // Receive the data. It works because it was sent before the connect.
-  char received[sizeof(buf)];
+  char received[sizeof(buf)] = {};
   EXPECT_THAT(
       RecvTimeout(bind_.get(), received, sizeof(received), 1 /*timeout*/),
       IsPosixErrorOkAndHolds(sizeof(received)));
@@ -1148,14 +1149,14 @@ TEST_P(UdpSocketTest, ReceiveFrom) {
   ASSERT_THAT(connect(bind_.get(), addr, addrlen_), SyscallSucceeds());
 
   // Send some data from sock to bind_.
-  char buf[512];
+  char buf[512] = {};
   RandomizeBuffer(buf, sizeof(buf));
 
   ASSERT_THAT(sendto(sock_.get(), buf, sizeof(buf), 0, bind_addr_, addrlen_),
               SyscallSucceedsWithValue(sizeof(buf)));
 
   // Receive the data and sender address.
-  char received[sizeof(buf)];
+  char received[sizeof(buf)] = {};
   struct sockaddr_storage addr2;
   socklen_t addr2len = sizeof(addr2);
   EXPECT_THAT(recvfrom(bind_.get(), received, sizeof(received), 0,
@@ -1193,7 +1194,7 @@ TEST_P(UdpSocketTest, ReadShutdownNonblockPendingData) {
   ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
 
   // Verify that we get EWOULDBLOCK when there is nothing to read.
-  char received[512];
+  char received[512] = {};
   EXPECT_THAT(recv(bind_.get(), received, sizeof(received), MSG_DONTWAIT),
               SyscallFailsWithErrno(EWOULDBLOCK));
 
@@ -1225,7 +1226,7 @@ TEST_P(UdpSocketTest, ReadShutdownNonblockPendingData) {
 // This test is validating that even after a socket is shutdown if it's
 // reconnected it will reset the shutdown state.
 TEST_P(UdpSocketTest, ReadShutdownSameSocketResetsShutdownState) {
-  char received[512];
+  char received[512] = {};
   EXPECT_THAT(recv(bind_.get(), received, sizeof(received), MSG_DONTWAIT),
               SyscallFailsWithErrno(EWOULDBLOCK));
 
@@ -1254,7 +1255,7 @@ TEST_P(UdpSocketTest, ReadShutdown) {
 
   ASSERT_NO_ERRNO(BindLoopback());
 
-  char received[512];
+  char received[512] = {};
   EXPECT_THAT(recv(sock_.get(), received, sizeof(received), MSG_DONTWAIT),
               SyscallFailsWithErrno(EWOULDBLOCK));
 
@@ -1281,7 +1282,7 @@ TEST_P(UdpSocketTest, ReadShutdownDifferentThread) {
   SKIP_IF(IsRunningWithHostinet());
   ASSERT_NO_ERRNO(BindLoopback());
 
-  char received[512];
+  char received[512] = {};
   EXPECT_THAT(recv(sock_.get(), received, sizeof(received), MSG_DONTWAIT),
               SyscallFailsWithErrno(EWOULDBLOCK));
 
@@ -1314,11 +1315,11 @@ TEST_P(UdpSocketTest, SynchronousReceive) {
   ASSERT_NO_ERRNO(BindLoopback());
 
   // Send some data to bind_ from another thread.
-  char buf[512];
+  char buf[512] = {};
   RandomizeBuffer(buf, sizeof(buf));
 
   // Receive the data prior to actually starting the other thread.
-  char received[512];
+  char received[512] = {};
   EXPECT_THAT(
       RetryEINTR(recv)(bind_.get(), received, sizeof(received), MSG_DONTWAIT),
       SyscallFailsWithErrno(EWOULDBLOCK));
@@ -1341,7 +1342,7 @@ TEST_P(UdpSocketTest, BoundaryPreserved_SendRecv) {
 
   // Send 3 packets from sock to bind_.
   constexpr int psize = 100;
-  char buf[3 * psize];
+  char buf[3 * psize] = {};
   RandomizeBuffer(buf, sizeof(buf));
 
   for (int i = 0; i < 3; ++i) {
@@ -1353,7 +1354,7 @@ TEST_P(UdpSocketTest, BoundaryPreserved_SendRecv) {
   // Receive the data as 3 separate packets.
   std::vector<std::string> rcvd_pkts;
   for (int i = 0; i < 3; ++i) {
-    char recv_buf[psize];
+    char recv_buf[psize] = {};
     ASSERT_THAT(recv(bind_.get(), recv_buf, psize, 0),
                 SyscallSucceedsWithValue(psize));
     rcvd_pkts.push_back(std::string(recv_buf, psize));
@@ -1374,7 +1375,7 @@ TEST_P(UdpSocketTest, BoundaryPreserved_WritevReadv) {
   // Send 2 packets from sock to bind_, where each packet's data consists of
   // 2 discontiguous iovecs.
   constexpr size_t kPieceSize = 100;
-  char buf[4 * kPieceSize];
+  char buf[4 * kPieceSize] = {};
   RandomizeBuffer(buf, sizeof(buf));
 
   for (int i = 0; i < 2; i++) {
@@ -1389,7 +1390,7 @@ TEST_P(UdpSocketTest, BoundaryPreserved_WritevReadv) {
   }
 
   // Receive the data as 2 separate packets.
-  char received[6 * kPieceSize];
+  char received[6 * kPieceSize] = {};
   memset(received, 0, sizeof(received));
   for (int i = 0; i < 2; i++) {
     struct iovec iov[3];
@@ -1420,7 +1421,7 @@ TEST_P(UdpSocketTest, BoundaryPreserved_SendMsgRecvMsg) {
   // Send 2 packets from sock to bind_, where each packet's data consists of
   // 2 discontiguous iovecs.
   constexpr size_t kPieceSize = 100;
-  char buf[4 * kPieceSize];
+  char buf[4 * kPieceSize] = {};
   RandomizeBuffer(buf, sizeof(buf));
 
   for (int i = 0; i < 2; i++) {
@@ -1440,7 +1441,7 @@ TEST_P(UdpSocketTest, BoundaryPreserved_SendMsgRecvMsg) {
   }
 
   // Receive the data as 2 separate packets.
-  char received[6 * kPieceSize];
+  char received[6 * kPieceSize] = {};
   memset(received, 0, sizeof(received));
   for (int i = 0; i < 2; i++) {
     struct iovec iov[3];
@@ -1535,7 +1536,7 @@ TEST_P(UdpSocketTest, Fionread) {
 
   // Send 3 packets from sock to bind_.
   constexpr int psize = 100;
-  char buf[3 * psize];
+  char buf[3 * psize] = {};
   RandomizeBuffer(buf, sizeof(buf));
 
   struct pollfd pfd = {bind_.get(), POLLIN, 0};
@@ -1566,7 +1567,7 @@ TEST_P(UdpSocketTest, FIONREADZeroLengthPacket) {
 
   // Send 3 packets from sock to bind_.
   constexpr int psize = 100;
-  char buf[3 * psize];
+  char buf[3 * psize] = {};
   RandomizeBuffer(buf, sizeof(buf));
 
   struct pollfd pfd = {bind_.get(), POLLIN, 0};
@@ -1646,8 +1647,8 @@ TEST_P(UdpSocketTest, SoNoCheck) {
 
 #ifdef __linux__
 TEST_P(UdpSocketTest, ErrorQueue) {
-  char cmsgbuf[CMSG_SPACE(sizeof(sock_extended_err))];
-  msghdr msg;
+  char cmsgbuf[CMSG_SPACE(sizeof(sock_extended_err))] = {};
+  msghdr msg = {};
   memset(&msg, 0, sizeof(msg));
   iovec iov;
   memset(&iov, 0, sizeof(iov));
@@ -1679,7 +1680,7 @@ TEST_P(UdpSocketTest, SoTimestamp) {
   ASSERT_THAT(setsockopt(bind_.get(), SOL_SOCKET, SO_TIMESTAMP, &v, sizeof(v)),
               SyscallSucceeds());
 
-  char buf[3];
+  char buf[3] = {};
   // Send zero length packet from sock to bind_.
   ASSERT_THAT(RetryEINTR(write)(sock_.get(), buf, sizeof(buf)),
               SyscallSucceedsWithValue(sizeof(buf)));
@@ -1688,8 +1689,8 @@ TEST_P(UdpSocketTest, SoTimestamp) {
   ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, /*timeout=*/1000),
               SyscallSucceedsWithValue(1));
 
-  char cmsgbuf[CMSG_SPACE(sizeof(struct timeval))];
-  msghdr msg;
+  char cmsgbuf[CMSG_SPACE(sizeof(struct timeval))] = {};
+  msghdr msg = {};
   memset(&msg, 0, sizeof(msg));
   iovec iov;
   memset(&iov, 0, sizeof(iov));
@@ -1732,7 +1733,7 @@ TEST_P(UdpSocketTest, TimestampIoctl) {
   ASSERT_NO_ERRNO(BindLoopback());
   ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
 
-  char buf[3];
+  char buf[3] = {};
   // Send packet from sock to bind_.
   ASSERT_THAT(RetryEINTR(write)(sock_.get(), buf, sizeof(buf)),
               SyscallSucceedsWithValue(sizeof(buf)));
@@ -1742,7 +1743,7 @@ TEST_P(UdpSocketTest, TimestampIoctl) {
               SyscallSucceedsWithValue(1));
 
   // There should be no control messages.
-  char recv_buf[sizeof(buf)];
+  char recv_buf[sizeof(buf)] = {};
   ASSERT_NO_FATAL_FAILURE(RecvNoCmsg(bind_.get(), recv_buf, sizeof(recv_buf)));
 
   // A nonzero timeval should be available via ioctl.
@@ -1773,7 +1774,7 @@ TEST_P(UdpSocketTest, TimestampIoctlPersistence) {
   ASSERT_NO_ERRNO(BindLoopback());
   ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
 
-  char buf[3];
+  char buf[3] = {};
   // Send packet from sock to bind_.
   ASSERT_THAT(RetryEINTR(write)(sock_.get(), buf, sizeof(buf)),
               SyscallSucceedsWithValue(sizeof(buf)));
@@ -1785,7 +1786,7 @@ TEST_P(UdpSocketTest, TimestampIoctlPersistence) {
               SyscallSucceedsWithValue(1));
 
   // There should be no control messages.
-  char recv_buf[sizeof(buf)];
+  char recv_buf[sizeof(buf)] = {};
   ASSERT_NO_FATAL_FAILURE(RecvNoCmsg(bind_.get(), recv_buf, sizeof(recv_buf)));
 
   // A nonzero timeval should be available via ioctl.
@@ -1804,7 +1805,7 @@ TEST_P(UdpSocketTest, TimestampIoctlPersistence) {
               SyscallSucceedsWithValue(1));
 
   // There should be a message for SO_TIMESTAMP.
-  char cmsgbuf[CMSG_SPACE(sizeof(struct timeval))];
+  char cmsgbuf[CMSG_SPACE(sizeof(struct timeval))] = {};
   msghdr msg = {};
   iovec iov = {};
   msg.msg_iov = &iov;
@@ -1990,7 +1991,7 @@ TEST_P(UdpSocketTest, GetSocketDetachFilter) {
 }
 
 TEST_P(UdpSocketTest, SendToZeroPort) {
-  char buf[8];
+  char buf[8] = {};
   struct sockaddr_storage addr = InetLoopbackAddr();
 
   // Sending to an invalid port should fail.
@@ -2198,7 +2199,7 @@ TEST_P(UdpSocketControlMessagesTest, SetAndReceiveTOSOrTClass) {
   ASSERT_THAT(RetryEINTR(send)(client_.get(), sent_data, sizeof(sent_data), 0),
               SyscallSucceedsWithValue(sizeof(sent_data)));
 
-  char recv_data[sizeof(sent_data) + 1];
+  char recv_data[sizeof(sent_data) + 1] = {};
   size_t recv_data_len = sizeof(recv_data);
 
   if (ClientAddressFamily() == AF_INET) {
@@ -2231,8 +2232,8 @@ TEST_P(UdpSocketControlMessagesTest, SendAndReceiveTOSorTClass) {
 
   constexpr uint8_t kSendCmsgValue = IPTOS_LOWDELAY;
   constexpr size_t kArbitrarySendSize = 1024;
-  char sent_data[kArbitrarySendSize];
-  char recv_data[sizeof(sent_data) + 1];
+  char sent_data[kArbitrarySendSize] = {};
+  char recv_data[sizeof(sent_data) + 1] = {};
   size_t recv_data_len = sizeof(recv_data);
 
   if (ClientAddressFamily() == AF_INET) {
@@ -2282,7 +2283,7 @@ TEST_P(UdpSocketControlMessagesTest, SetAndReceiveTTLOrHopLimit) {
   ASSERT_THAT(RetryEINTR(send)(client_.get(), sent_data, sizeof(sent_data), 0),
               SyscallSucceedsWithValue(sizeof(sent_data)));
 
-  char recv_data[sizeof(sent_data)];
+  char recv_data[sizeof(sent_data)] = {};
   size_t recv_data_len = sizeof(recv_data);
 
   if (ClientAddressFamily() == AF_INET) {
@@ -2312,8 +2313,8 @@ TEST_P(UdpSocketControlMessagesTest, SendAndReceiveTTLOrHopLimit) {
 
   constexpr int kSendCmsgValue = 42;
   constexpr size_t kArbitrarySendSize = 1024;
-  char sent_data[kArbitrarySendSize];
-  char recv_data[sizeof(sent_data) + 1];
+  char sent_data[kArbitrarySendSize] = {};
+  char recv_data[sizeof(sent_data) + 1] = {};
   size_t recv_data_len = sizeof(recv_data);
 
   if (ClientAddressFamily() == AF_INET) {
@@ -2350,7 +2351,7 @@ TEST_P(UdpSocketControlMessagesTest, SetAndReceivePktInfo) {
   ASSERT_THAT(RetryEINTR(send)(client_.get(), sent_data, sizeof(sent_data), 0),
               SyscallSucceedsWithValue(sizeof(sent_data)));
 
-  char recv_data[sizeof(sent_data) + 1];
+  char recv_data[sizeof(sent_data) + 1] = {};
   size_t recv_data_len = sizeof(recv_data);
   switch (GetParam()) {
     case AddressFamily::kIpv4: {
@@ -2387,7 +2388,7 @@ TEST_P(UdpSocketControlMessagesTest, SetAndReceivePktInfo) {
       };
       // Add an extra byte to confirm we only read what we expected.
       char control[CMSG_SPACE(sizeof(in_pktinfo)) +
-                   CMSG_SPACE(sizeof(in6_pktinfo)) + 1];
+                   CMSG_SPACE(sizeof(in6_pktinfo)) + 1] = {};
       msghdr msg = {
           .msg_iov = &iov,
           .msg_iovlen = 1,
@@ -2482,7 +2483,7 @@ TEST_P(UdpSocketTest, SendPacketLargerThanSendBufOnNonBlockingSocket) {
   // We are allowed to send packets as large as we want as long as there is
   // space in the send buffer, even if the new packet will result in more bytes
   // being used than available in the send buffer.
-  char buf[kSendBufSize + 1];
+  char buf[kSendBufSize + 1] = {};
   ASSERT_THAT(
       sendto(sock_.get(), buf, sizeof(buf), 0, AsSockAddr(&addr), sizeof(addr)),
       SyscallSucceedsWithValue(sizeof(buf)));
@@ -2518,7 +2519,7 @@ TEST_P(UdpSocketTest, ReconnectDoesNotClearReadShutdown) {
   ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
   ASSERT_THAT(shutdown(sock_.get(), SHUT_RD), SyscallSucceeds());
 
-  char received[512];
+  char received[512] = {};
   EXPECT_THAT(recv(sock_.get(), received, sizeof(received), 0),
               SyscallSucceedsWithValue(0));
 
@@ -2567,7 +2568,7 @@ TEST(UdpInet6SocketTest, ConnectInet4Sockaddr) {
   ASSERT_EQ(sockname.ss_family, AF_INET6);
   ASSERT_EQ(len, sizeof(sockaddr_in6));
   auto sin6 = reinterpret_cast<struct sockaddr_in6*>(&sockname);
-  char addr_buf[INET6_ADDRSTRLEN];
+  char addr_buf[INET6_ADDRSTRLEN] = {};
   const char* addr;
   ASSERT_NE(addr = inet_ntop(sockname.ss_family, &sockname, addr_buf,
                              sizeof(addr_buf)),
