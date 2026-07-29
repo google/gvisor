@@ -110,6 +110,9 @@ func TestLifeCycle(t *testing.T) {
 }
 
 func TestDisallowRootfsTarAnnotation(t *testing.T) {
+	if !dockerutil.IsAnnotationsSupported() {
+		t.Skip("Docker version does not support annotations (< 25.0).")
+	}
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
