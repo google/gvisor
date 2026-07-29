@@ -101,6 +101,9 @@ func (op *byteorder) deepCopy() operation {
 	return &opCopy
 }
 
+// updateReferences implements operation.updateReferences.
+func (op *byteorder) updateReferences(table *Table, sourceTable *Table, sourceOp operation) {}
+
 // evaluate for byteorder performs the byte order operation on the source
 // register and stores the result in the destination register.
 func (op byteorder) evaluate(regs *registerSet, evalCtx opEvalCtx) {

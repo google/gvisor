@@ -346,6 +346,9 @@ func (op *fib) deepCopy() operation {
 	return opCopy
 }
 
+// updateReferences implements operation.updateReferences.
+func (op *fib) updateReferences(table *Table, sourceTable *Table, sourceOp operation) {}
+
 // checkCompatibility implements operation.checkCompatibility.
 // Ref: net/netfilter/nft_fib.c:nft_fib_validate()
 func (op *fib) checkCompatibility(cCtx *opCompatCtx) *syserr.AnnotatedError {

@@ -1070,7 +1070,7 @@ func parseVerdict(tokens []string, lnIdx int, tkIdx int) (int, Verdict, *syserr.
 		if err := validateIdentifier(tokens[tkIdx], lnIdx, tkIdx); err != nil {
 			return 0, v, err
 		}
-		v.ChainName = tokens[tkIdx]
+		v.Chain = &Chain{name: tokens[tkIdx]}
 		tkIdx++
 	}
 

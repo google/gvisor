@@ -738,6 +738,9 @@ type operation interface {
 
 	// deepCopy returns a deep copy of the operation.
 	deepCopy() operation
+
+	// updateReferences updates any references/pointers to objects in the given table.
+	updateReferences(table *Table, sourceTable *Table, sourceOp operation)
 }
 
 // Ensures all operations implement the Operation interface at compile time.
@@ -898,8 +901,8 @@ func (regs *registerSet) String() string {
 // VerdictString returns a string representation of the verdict.
 func VerdictString(v Verdict) string {
 	out := VerdictCodeToString(v.Code)
-	if v.ChainName != "" {
-		out += fmt.Sprintf(" -> %s", v.ChainName)
+	if v.Chain != nil {
+		out += fmt.Sprintf(" -> %s", v.Chain.GetName())
 	}
 	return out
 }
@@ -1128,7 +1131,11 @@ func dumpVerdictDataAttr(verdict Verdict) ([]byte, *syserr.AnnotatedError) {
 	nestedAttr := nlmsg.NestedAttr{}
 	nestedAttr.PutAttr(linux.NFTA_VERDICT_CODE, nlmsg.PutU32(uint32(verdict.Code)))
 	if int32(verdict.Code) == linux.NFT_JUMP || int32(verdict.Code) == linux.NFT_GOTO {
-		nestedAttr.PutAttrString(linux.NFTA_VERDICT_CHAIN, verdict.ChainName)
+		cn := ""
+		if verdict.Chain != nil {
+			cn = verdict.Chain.GetName()
+		}
+		nestedAttr.PutAttrString(linux.NFTA_VERDICT_CHAIN, cn)
 	}
 	m := &nlmsg.Message{}
 	m.PutNestedAttr(linux.NFTA_DATA_VERDICT, nestedAttr)
@@ -1226,13 +1233,12 @@ func validateVerdictData(tab *Table, bytes nlmsg.AttrsView) (Verdict, *syserr.An
 			return v, syserr.NewAnnotatedError(syserr.ErrTooManyOpenFiles, fmt.Sprintf("Nftables: Chain use exceeds the maximum number of chains that can jump to chain %s", chain.GetName()))
 		}
 
-		v.ChainName = chain.name
+		v.Chain = chain
+		v.Code = verdictCode
+		return v, nil
 	default:
 		return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("Nftables: Unsupported verdict code: %d", verdictCode))
 	}
-
-	// TODO - b/345684870: Potentially modify this to take a pointer to the chain it is jumping to.
-	// Would need to ensure that the chain cannot be removed while it is being pointed to (using use field).
 	v.Code = verdictCode
 	return v, nil
 }
@@ -1302,6 +1308,50 @@ func deepCopySetElement(elem *nftSetElem) *nftSetElem {
 	return elemCopy
 }
 
+// updateReferences updates all ops in the rule.
+func (r *Rule) updateReferences(table *Table, sourceTable *Table, sourceRule *Rule) {
+	for i, op := range r.ops {
+		op.updateReferences(table, sourceTable, sourceRule.ops[i])
+	}
+}
+
+// updateReferences updates all rules in the chain.
+func (c *Chain) updateReferences(table *Table, sourceTable *Table, sourceChain *Chain) {
+	for i, rule := range c.rules {
+		rule.updateReferences(table, sourceTable, sourceChain.rules[i])
+	}
+}
+
+// updateReferences updates the verdict and ops within a set element.
+func (e *nftSetElem) updateReferences(table *Table, sourceTable *Table, sourceElem *nftSetElem) {
+	if e.data.isVerdict && e.data.verdict.Chain != nil {
+		e.data.verdict.Chain = table.chains[sourceElem.data.verdict.Chain.name]
+	}
+	for i, op := range e.ops {
+		op.updateReferences(table, sourceTable, sourceElem.ops[i])
+	}
+}
+
+// updateReferences updates the catchall element and array elements in the set.
+func (s *nftSet) updateReferences(table *Table, sourceTable *Table, sourceSet *nftSet) {
+	if s.catchAllElem != nil {
+		s.catchAllElem.updateReferences(table, sourceTable, sourceSet.catchAllElem)
+	}
+	for i := range s.elements {
+		s.elements[i].updateReferences(table, sourceTable, &sourceSet.elements[i])
+	}
+}
+
+// updateReferences calls updateReferences on all chains and sets in the table, passing the original table.
+func (t *Table) updateReferences(sourceTable *Table) {
+	for _, chain := range t.chains {
+		chain.updateReferences(t, sourceTable, sourceTable.chains[chain.name])
+	}
+	for _, set := range t.sets {
+		set.updateReferences(t, sourceTable, sourceTable.sets[set.name])
+	}
+}
+
 // deepCopySet returns a deep copy of the Set struct.
 func deepCopySet(set *nftSet, copyBindings bool) *nftSet {
 	setCopy := &nftSet{
@@ -1368,17 +1418,6 @@ func deepCopyTable(table *Table, afFilter *addressFamilyFilter) *Table {
 		chainCopy := deepCopyChain(chain, tableCopy)
 		tableCopy.chains[chainName] = chainCopy
 		tableCopy.chainHandles[chainCopy.handle] = chainCopy
-		// Update the set-bindings for lookup operations.
-		for _, ruleCopy := range chainCopy.rules {
-			for _, op := range ruleCopy.ops {
-				lookup, ok := op.(*lookupOp)
-				if !ok {
-					continue
-				}
-				lookup.set = tableCopy.sets[lookup.set.name]
-				lookup.set.bindings = append(lookup.set.bindings, lookup)
-			}
-		}
 	}
 
 	return tableCopy
@@ -1420,6 +1459,10 @@ func (nf *NFTables) DeepCopy() *NFTables {
 			tableCopy := deepCopyTable(table, nftCopy.filters[i])
 			nftCopy.filters[i].tables[tableName] = tableCopy
 			nftCopy.filters[i].tableHandles[tableCopy.handle] = tableCopy
+		}
+
+		for _, tableCopy := range nftCopy.filters[i].tables {
+			tableCopy.updateReferences(filter.tables[tableCopy.name])
 		}
 
 		for hook, hfStack := range filter.hfStacks {
@@ -1468,12 +1511,6 @@ func (nf *NFTables) ReplaceNFTables(nftCopy *NFTables) {
 type Verdict struct {
 	// Code is the numeric code that represents the verdict issued.
 	Code uint32
-
-	// ChainName is the name of the chain to continue evaluation if the verdict is
-	// Jump or Goto.
-	// Note: the chain must be in the same table as the current chain.
-	ChainName string
-
 	// Chain is the resolved chain to continue evaluation if the verdict is
 	// Jump or Goto. It allows fast pointer traversal during packet ruleset processing.
 	Chain *Chain

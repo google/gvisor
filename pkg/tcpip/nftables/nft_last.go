@@ -46,6 +46,9 @@ func (op *last) deepCopy() operation {
 	return opCopy
 }
 
+// updateReferences implements operation.updateReferences.
+func (op *last) updateReferences(table *Table, sourceTable *Table, sourceOp operation) {}
+
 // evaluate for last records the last time the operation was evaluated and flags
 // if this was the first time the operation was evaluated.
 func (op *last) evaluate(regs *registerSet, evalCtx opEvalCtx) {

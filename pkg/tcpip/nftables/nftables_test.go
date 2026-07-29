@@ -468,52 +468,52 @@ func TestEvaluateImmediateVerdict(t *testing.T) {
 		},
 		{
 			tname:    "immediately jump to target chain that accepts",
-			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: arbitraryTargetChain}),
+			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP)}),
 			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_ACCEPT)}),
 			verdict:  Verdict{Code: VC(linux.NF_ACCEPT)},
 		},
 		{
 			tname:    "immediately jump to target chain that drops",
-			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: arbitraryTargetChain}),
+			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP)}),
 			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)}),
 			verdict:  Verdict{Code: VC(linux.NF_DROP)},
 		},
 		{
 			tname:    "immediately jump to target chain that continues with second rule that accepts",
-			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: arbitraryTargetChain}),
+			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP)}),
 			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_CONTINUE)}),
 			baseOp2:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_ACCEPT)}),
 			verdict:  Verdict{Code: VC(linux.NF_ACCEPT)},
 		},
 		{
 			tname:    "immediately jump to target chain that continues with second rule that drops",
-			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: arbitraryTargetChain}),
+			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP)}),
 			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_CONTINUE)}),
 			baseOp2:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)}),
 			verdict:  Verdict{Code: VC(linux.NF_DROP)},
 		},
 		{
 			tname:    "immediately goto to target chain that accepts",
-			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: arbitraryTargetChain}),
+			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO)}),
 			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_ACCEPT)}),
 			verdict:  Verdict{Code: VC(linux.NF_ACCEPT)},
 		},
 		{
 			tname:    "immediately goto to target chain that drops",
-			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: arbitraryTargetChain}),
+			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO)}),
 			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)}),
 			verdict:  Verdict{Code: VC(linux.NF_DROP)},
 		},
 		{
 			tname:    "immediately goto to target chain that continues with second rule that accepts",
-			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: arbitraryTargetChain}),
+			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO)}),
 			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_CONTINUE)}),
 			baseOp2:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_ACCEPT)}),
 			verdict:  Verdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
 		},
 		{
 			tname:    "immediately goto to target chain that continues with second rule that drops",
-			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: arbitraryTargetChain}),
+			baseOp1:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO)}),
 			targetOp: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_CONTINUE)}),
 			baseOp2:  mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)}),
 			verdict:  Verdict{Code: VC(linux.NF_ACCEPT)}, // from base chain policy
@@ -586,6 +586,7 @@ func TestEvaluateImmediateVerdict(t *testing.T) {
 
 			// Adds testing rules and operations.
 			if test.baseOp1 != nil {
+				setVerdictChainIfJumpGoto(test.baseOp1, tc)
 				rule1 := &Rule{}
 				rule1.addOperation(test.baseOp1)
 				if err := bc.RegisterRule(rule1, -1); err != nil {
@@ -593,6 +594,7 @@ func TestEvaluateImmediateVerdict(t *testing.T) {
 				}
 			}
 			if test.baseOp2 != nil {
+				setVerdictChainIfJumpGoto(test.baseOp2, tc)
 				rule2 := &Rule{}
 				rule2.addOperation(test.baseOp2)
 				if err := bc.RegisterRule(rule2, -1); err != nil {
@@ -3104,7 +3106,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "non_existent_chain"})},
+						ops: []operation{mustCreateJump(t, "non_existent_chain")},
 					}},
 				},
 			},
@@ -3116,7 +3118,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: "non_existent_chain"})},
+						ops: []operation{mustCreateGoto(t, "non_existent_chain")},
 					}},
 				},
 			},
@@ -3128,7 +3130,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "base_chain"})},
+						ops: []operation{mustCreateJump(t, "base_chain")},
 					}},
 				},
 			},
@@ -3140,7 +3142,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"})},
+						ops: []operation{mustCreateGoto(t, "base_chain")},
 					}},
 				},
 			},
@@ -3152,12 +3154,12 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})},
+						ops: []operation{mustCreateJump(t, "aux_chain")},
 					}},
 				},
 				"aux_chain": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"})},
+						ops: []operation{mustCreateGoto(t, "base_chain")},
 					}},
 				},
 			},
@@ -3169,17 +3171,17 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})},
+						ops: []operation{mustCreateJump(t, "aux_chain")},
 					}},
 				},
 				"aux_chain": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"})},
+						ops: []operation{mustCreateGoto(t, "aux_chain2")},
 					}},
 				},
 				"aux_chain2": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain"})},
+						ops: []operation{mustCreateGoto(t, "aux_chain")},
 					}},
 				},
 			},
@@ -3191,17 +3193,17 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})},
+						ops: []operation{mustCreateJump(t, "aux_chain")},
 					}},
 				},
 				"aux_chain": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"})},
+						ops: []operation{mustCreateJump(t, "aux_chain2")},
 					}},
 				},
 				"aux_chain2": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"})},
+						ops: []operation{mustCreateGoto(t, "base_chain")},
 					}},
 				},
 			},
@@ -3213,27 +3215,27 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})},
+						ops: []operation{mustCreateJump(t, "aux_chain")},
 					}},
 				},
 				"aux_chain": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"})},
+						ops: []operation{mustCreateGoto(t, "aux_chain2")},
 					}},
 				},
 				"aux_chain2": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"})},
+						ops: []operation{mustCreateJump(t, "aux_chain3")},
 					}},
 				},
 				"aux_chain3": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain4"})},
+						ops: []operation{mustCreateGoto(t, "aux_chain4")},
 					}},
 				},
 				"aux_chain4": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"})},
+						ops: []operation{mustCreateJump(t, "aux_chain2")},
 					}},
 				},
 			},
@@ -3245,22 +3247,22 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})},
+						ops: []operation{mustCreateJump(t, "aux_chain")},
 					}},
 				},
 				"aux_chain": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"})},
+						ops: []operation{mustCreateGoto(t, "aux_chain2")},
 					}},
 				},
 				"aux_chain2": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"})},
+						ops: []operation{mustCreateJump(t, "aux_chain3")},
 					}},
 				},
 				"aux_chain3": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"})},
+						ops: []operation{mustCreateGoto(t, "base_chain")},
 					}},
 				},
 			},
@@ -3272,22 +3274,22 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				"base_chain": {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})},
+						ops: []operation{mustCreateJump(t, "aux_chain")},
 					}},
 				},
 				"aux_chain": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"})},
+						ops: []operation{mustCreateGoto(t, "aux_chain2")},
 					}},
 				},
 				"aux_chain2": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"})},
+						ops: []operation{mustCreateJump(t, "aux_chain3")},
 					}},
 				},
 				"aux_chain3": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: "base_chain"})},
+						ops: []operation{mustCreateGoto(t, "base_chain")},
 					}},
 				},
 			},
@@ -3304,8 +3306,8 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 					baseChainInfo: arbitraryInfoPolicyAccept,
 					rules: []*Rule{{
 						ops: []operation{
-							mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}),
-							mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"}),
+							mustCreateJump(t, "aux_chain"),
+							mustCreateJump(t, "aux_chain2"),
 						},
 					}},
 				},
@@ -3318,14 +3320,14 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 				"aux_chain2": {
 					rules: []*Rule{{
 						ops: []operation{
-							mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}),
-							mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"}),
+							mustCreateJump(t, "aux_chain"),
+							mustCreateJump(t, "aux_chain3"),
 						},
 					}},
 				},
 				"aux_chain3": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"})},
+						ops: []operation{mustCreateGoto(t, "aux_chain2")},
 					}},
 				},
 			},
@@ -3339,20 +3341,20 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 					rules: []*Rule{
 						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_1, []byte{0, 1, 2, 3}, Verdict{})}},
 						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG32_14, []byte{0, 1, 2, 3}, Verdict{})}},
-						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"})}},
+						{ops: []operation{mustCreateJump(t, "aux_chain")}},
 					},
 				},
 				"aux_chain": {
 					rules: []*Rule{{
 						ops: []operation{
 							mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)}),
-							mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain2"}),
+							mustCreateGoto(t, "aux_chain2"),
 						},
 					}},
 				},
 				"aux_chain2": {
 					rules: []*Rule{{
-						ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"})},
+						ops: []operation{mustCreateJump(t, "aux_chain3")},
 					}},
 				},
 				"aux_chain3": {
@@ -3361,7 +3363,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG32_14, []byte{0, 1, 2, 3}, Verdict{})}},
 						{ops: []operation{
 							mustCreateImmediate(t, linux.NFT_REG_4, []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, Verdict{}),
-							mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: "aux_chain"}),
+							mustCreateGoto(t, "aux_chain"),
 							mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)}),
 						}},
 					},
@@ -3377,11 +3379,11 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 					rules: []*Rule{
 						{
 							ops: []operation{
-								mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}),
-								mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"}),
+								mustCreateJump(t, "aux_chain"),
+								mustCreateJump(t, "aux_chain2"),
 							},
 						},
-						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"})}},
+						{ops: []operation{mustCreateJump(t, "aux_chain3")}},
 					},
 				},
 				"aux_chain": {
@@ -3413,11 +3415,11 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 					rules: []*Rule{
 						{
 							ops: []operation{
-								mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}),
-								mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"}),
+								mustCreateJump(t, "aux_chain"),
+								mustCreateJump(t, "aux_chain2"),
 							},
 						},
-						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"})}},
+						{ops: []operation{mustCreateJump(t, "aux_chain3")}},
 					},
 				},
 				"aux_chain": {
@@ -3448,11 +3450,11 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 					rules: []*Rule{
 						{
 							ops: []operation{
-								mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}),
-								mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain2"}),
+								mustCreateJump(t, "aux_chain"),
+								mustCreateJump(t, "aux_chain2"),
 							},
 						},
-						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain3"})}},
+						{ops: []operation{mustCreateJump(t, "aux_chain3")}},
 						{ops: []operation{mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)})}},
 					},
 				},
@@ -3484,8 +3486,8 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 					rules: []*Rule{
 						{
 							ops: []operation{
-								mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}),
-								mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "aux_chain"}),
+								mustCreateJump(t, "aux_chain"),
+								mustCreateJump(t, "aux_chain"),
 							},
 						},
 					},
@@ -3525,6 +3527,16 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 					t.Fatalf("unexpected error for GetChain: %v", err)
 				}
 				for _, rule := range chainInit.rules {
+					for _, op := range rule.ops {
+						if imm, ok := op.(*immediate); ok && (imm.verdict.Code == VC(linux.NFT_JUMP) || imm.verdict.Code == VC(linux.NFT_GOTO)) && imm.verdict.Chain != nil {
+							targetChain, err := nf.GetChain(tab.GetAddressFamily(), tab.GetName(), imm.verdict.Chain.name)
+							if err == nil {
+								imm.verdict.Chain = targetChain
+							} else {
+								imm.verdict.Chain = nil
+							}
+						}
+					}
 					// Note: this is where the loop checking is triggered.
 					if err := chain.RegisterRule(rule, -1); err != nil {
 						if !test.shouldErr {
@@ -3546,9 +3558,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 			pkt := makeArbitraryIPv4Packet()
 			v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt, nil /* route */)
 			if err != nil {
-				if test.verdict.ChainName != "error" {
-					t.Fatalf("unexpected error for EvaluateHook: %v", err)
-				}
+				t.Fatalf("unexpected error for EvaluateHook: %v", err)
 			}
 			if v.Code != test.verdict.Code {
 				t.Fatalf("expected verdict %v, got %v", test.verdict, v)
@@ -3587,7 +3597,8 @@ func TestMaxNestedJumps(t *testing.T) {
 		tname         string
 		useJumpOp     bool
 		numberOfJumps int
-		verdict       Verdict // ChainName is set to "error" if an error is expected
+		verdict       Verdict
+		expectErr     bool
 	}{
 		{
 			tname:         "nested jump limit reached with jumps",
@@ -3605,7 +3616,7 @@ func TestMaxNestedJumps(t *testing.T) {
 			tname:         "nested jump limit exceeded with jumps",
 			useJumpOp:     true,
 			numberOfJumps: nestedJumpLimit + 1,
-			verdict:       Verdict{ChainName: "error"},
+			expectErr:     true,
 		},
 		{
 			tname:         "nested jump limit exceeded with gotos",
@@ -3639,11 +3650,19 @@ func TestMaxNestedJumps(t *testing.T) {
 					err = r.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)}))
 				} else {
 					targetName := fmt.Sprintf("chain %d", i+1)
-					code := VC(linux.NFT_JUMP)
-					if !test.useJumpOp {
-						code = VC(linux.NFT_GOTO)
+					var targetChain *Chain
+					targetChain, err = nf.GetChain(tab.GetAddressFamily(), tab.GetName(), targetName)
+					if err != nil {
+						t.Fatalf("unexpected error getting chain: %v", err)
 					}
-					err = r.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: code, ChainName: targetName}))
+					var op *immediate
+					if test.useJumpOp {
+						op = mustCreateJump(t, targetName)
+					} else {
+						op = mustCreateGoto(t, targetName)
+					}
+					op.verdict.Chain = targetChain
+					err = r.addOperation(op)
 				}
 				if err != nil {
 					t.Fatalf("unexpected error for AddOperation: %v", err)
@@ -3657,7 +3676,7 @@ func TestMaxNestedJumps(t *testing.T) {
 			pkt := makeArbitraryIPv4Packet()
 			v, err := nf.EvaluateHook(getAddrFamilyOrDefault(pkt, arbitraryFamily), arbitraryHook, pkt, nil /* route */)
 			if err != nil {
-				if test.verdict.ChainName != "error" {
+				if !test.expectErr {
 					t.Fatalf("unexpected error for EvaluateHook: %v", err)
 				}
 			}
@@ -3757,6 +3776,18 @@ func newNFTablesStd() *NFTables {
 	return NewNFTables(nil /* stack */, stdClock, fixedRNG)
 }
 
+func setVerdictChainIfJumpGoto(op operation, chain *Chain) {
+	imm, ok := op.(*immediate)
+	if !ok {
+		return
+	}
+	ok, vc := isJumpOrGotoOperation(op)
+	if !ok || vc != nil {
+		return
+	}
+	imm.verdict.Chain = chain
+}
+
 // mustCreateImmediate wraps the newImmediate function for brevity.
 func mustCreateImmediate(t *testing.T, dreg uint8, data []byte, verdict Verdict) *immediate {
 	dataType := immRegToType(uint32(dreg))
@@ -3765,6 +3796,22 @@ func mustCreateImmediate(t *testing.T, dreg uint8, data []byte, verdict Verdict)
 		t.Fatalf("failed to create immediate: %v", err)
 	}
 	return imm
+}
+
+// mustCreateJump wraps the newImmediate function for jump operations in tests.
+func mustCreateJump(t *testing.T, targetChainName string) *immediate {
+	return mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{
+		Code:  VC(linux.NFT_JUMP),
+		Chain: &Chain{name: targetChainName},
+	})
+}
+
+// mustCreateGoto wraps the newImmediate function for goto operations in tests.
+func mustCreateGoto(t *testing.T, targetChainName string) *immediate {
+	return mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{
+		Code:  VC(linux.NFT_GOTO),
+		Chain: &Chain{name: targetChainName},
+	})
 }
 
 // mustCreateComparison wraps the newComparison function for brevity.

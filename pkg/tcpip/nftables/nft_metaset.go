@@ -53,6 +53,9 @@ func (op *metaSet) deepCopy() operation {
 	return &opCopy
 }
 
+// updateReferences implements operation.updateReferences.
+func (op *metaSet) updateReferences(table *Table, sourceTable *Table, sourceOp operation) {}
+
 // evaluate for metaSet sets specific meta data to the value in the source
 // register.
 func (op metaSet) evaluate(regs *registerSet, evalCtx opEvalCtx) {

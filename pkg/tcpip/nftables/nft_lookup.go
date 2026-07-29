@@ -112,6 +112,12 @@ func (op *lookupOp) deepCopy() operation {
 	return opCopy
 }
 
+// updateReferences implements operation.updateReferences.
+func (op *lookupOp) updateReferences(table *Table, sourceTable *Table, sourceOp operation) {
+	op.set = table.sets[sourceOp.(*lookupOp).set.name]
+	op.set.bindings = append(op.set.bindings, op)
+}
+
 // checkCompatibility implements operation.checkCompatibility.
 func (op *lookupOp) checkCompatibility(cCtx *opCompatCtx) *syserr.AnnotatedError {
 	return nil
