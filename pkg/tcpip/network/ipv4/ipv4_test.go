@@ -4387,6 +4387,36 @@ func newTCPPacket(t *testing.T, srcAddr, dstAddr tcpip.Address, ttl uint8, tcpCh
 	return pkt
 }
 
+func newICMPTimestampPacket(t *testing.T, srcAddr, dstAddr tcpip.Address, ttl uint8) *stack.PacketBuffer {
+	t.Helper()
+	const icmpTimestampSize = header.ICMPv4PayloadOffset + 12
+	totalLength := header.IPv4MinimumSize + icmpTimestampSize
+	hdr := prependable.New(totalLength)
+
+	icmpH := header.ICMPv4(hdr.Prepend(icmpTimestampSize))
+	icmpH.SetType(header.ICMPv4Timestamp)
+	icmpH.SetCode(header.ICMPv4UnusedCode)
+	icmpH.SetChecksum(0)
+	icmpH.SetChecksum(^checksum.Checksum(icmpH, 0))
+
+	ipH := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
+	ipH.Encode(&header.IPv4Fields{
+		TotalLength: uint16(totalLength),
+		Protocol:    uint8(header.ICMPv4ProtocolNumber),
+		TTL:         ttl,
+		SrcAddr:     srcAddr,
+		DstAddr:     dstAddr,
+	})
+	ipH.SetChecksum(0)
+	ipH.SetChecksum(^ipH.CalculateChecksum())
+
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Payload: buffer.MakeWithData(hdr.View()),
+	})
+	pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
+	return pkt
+}
+
 func TestForwardingTCPChecksum(t *testing.T) {
 	ctx := newTestContext()
 	defer ctx.cleanup()
@@ -4451,4 +4481,51 @@ func TestForwardingTCPChecksum(t *testing.T) {
 	if !tcpHeader.IsChecksumValid(src, dst, payloadCsum, payloadLength) {
 		t.Errorf("expected valid TCP checksum, but got invalid")
 	}
+}
+
+func TestForwardingICMPv4TimestampChecksumNoPanic(t *testing.T) {
+	ctx := newTestContext()
+	defer ctx.cleanup()
+	s := ctx.s
+
+	endpoints := make(map[tcpip.NICID]*channel.Endpoint)
+	for nicID, addr := range defaultEndpointConfigs {
+		ep := channel.New(1, ipv4.MaxTotalSize, "")
+		defer ep.Close()
+
+		if err := s.CreateNIC(nicID, ep); err != nil {
+			t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
+		}
+		addr := tcpip.ProtocolAddress{Protocol: header.IPv4ProtocolNumber, AddressWithPrefix: addr}
+		if err := s.AddProtocolAddress(nicID, addr, stack.AddressProperties{}); err != nil {
+			t.Fatalf("s.AddProtocolAddress(%d, %+v, {}): %s", nicID, addr, err)
+		}
+		endpoints[nicID] = ep
+	}
+
+	s.SetRouteTable([]tcpip.Route{
+		{
+			Destination: incomingIPv4Addr.Subnet(),
+			NIC:         incomingNICID,
+		},
+		{
+			Destination: outgoingIPv4Addr.Subnet(),
+			NIC:         outgoingNICID,
+		},
+	})
+
+	if err := s.SetForwardingDefaultAndAllNICs(header.IPv4ProtocolNumber, true); err != nil {
+		t.Fatalf("s.SetForwardingDefaultAndAllNICs(%d, true): %s", header.IPv4ProtocolNumber, err)
+	}
+
+	requestPkt := newICMPTimestampPacket(t, remoteIPv4Addr1, remoteIPv4Addr2, 64)
+	defer requestPkt.DecRef()
+
+	endpoints[incomingNICID].InjectInbound(header.IPv4ProtocolNumber, requestPkt)
+
+	reply := endpoints[outgoingNICID].Read()
+	if reply == nil {
+		t.Fatal("Expected forwarded ICMPv4 Timestamp packet through outgoing NIC")
+	}
+	defer reply.DecRef()
 }

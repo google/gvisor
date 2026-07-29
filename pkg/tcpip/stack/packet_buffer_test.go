@@ -734,6 +734,30 @@ func TestGetHeadersUnknownProtocol(t *testing.T) {
 	}
 }
 
+// TestGetHeadersUnsupportedICMPv4Type verifies that packet-controlled ICMPv4
+// types do not cause GetHeaders to panic.
+func TestGetHeadersUnsupportedICMPv4Type(t *testing.T) {
+	pk := NewPacketBuffer(PacketBufferOptions{
+		Payload: buffer.MakeWithData([]byte{
+			byte(header.ICMPv4Timestamp),
+			byte(header.ICMPv4UnusedCode),
+			0, 0, // checksum
+			0, 0, 0, 0, // identifier and sequence/timestamp fields
+		}),
+	})
+	defer pk.DecRef()
+
+	pk.TransportProtocolNumber = header.ICMPv4ProtocolNumber
+	if _, ok := pk.TransportHeader().Consume(header.ICMPv4MinimumSize); !ok {
+		t.Fatal("failed to consume ICMPv4 header")
+	}
+
+	netHdr, transHdr, isICMPError, ok := pk.GetHeaders()
+	if ok {
+		t.Errorf("GetHeaders() = (%v, %v, %v, true); want _, _, _, false", netHdr, transHdr, isICMPError)
+	}
+}
+
 // TestCalculateTransportChecksumUnknownProtocol verifies that
 // CalculateTransportChecksum() does not panic when encountering an unknown
 // transport protocol, even when falling back to parsing the network header.
