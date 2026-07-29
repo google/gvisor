@@ -1,4 +1,10 @@
 {
+    "files.associations": {
+        ".clangd": "yaml"
+    },
+    "clangd.arguments": [
+        "--enable-config"
+    ],
     "go.toolsEnvVars": {
         "GOPACKAGESDRIVER": "${workspaceFolder}/tools/gopackagesdriver.sh"
     },
