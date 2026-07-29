@@ -133,6 +133,8 @@ var _ marshal.Marshallable = (*NfNATIPV4MultiRangeCompat)(nil)
 var _ marshal.Marshallable = (*NfNATIPV4Range)(nil)
 var _ marshal.Marshallable = (*NumaPolicy)(nil)
 var _ marshal.Marshallable = (*PollFD)(nil)
+var _ marshal.Marshallable = (*PosixACLXattr)(nil)
+var _ marshal.Marshallable = (*PosixACLXattrEntry)(nil)
 var _ marshal.Marshallable = (*RSeqCriticalSection)(nil)
 var _ marshal.Marshallable = (*RobustListHead)(nil)
 var _ marshal.Marshallable = (*RouteMessage)(nil)
@@ -23834,6 +23836,124 @@ func (v *VFIORegionInfo) WriteTo(writer io.Writer) (int64, error) {
     // Since we bypassed the compiler's escape analysis, indicate that v
     // must live until the use above.
     runtime.KeepAlive(v) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (a *PosixACLXattr) Packed() bool {
+    // Type PosixACLXattr is dynamic so it might have slice/string headers. Hence, it is not packed.
+    return false
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (a *PosixACLXattr) MarshalUnsafe(dst []byte) []byte {
+    // Type PosixACLXattr doesn't have a packed layout in memory, fallback to MarshalBytes.
+    return a.MarshalBytes(dst)
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (a *PosixACLXattr) UnmarshalUnsafe(src []byte) []byte {
+    // Type PosixACLXattr doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+    return a.UnmarshalBytes(src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (a *PosixACLXattr) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    // Type PosixACLXattr doesn't have a packed layout in memory, fall back to MarshalBytes.
+    buf := cc.CopyScratchBuffer(a.SizeBytes()) // escapes: okay.
+    a.MarshalBytes(buf) // escapes: fallback.
+    return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+func (a *PosixACLXattr) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return a.CopyOutN(cc, addr, a.SizeBytes())
+}
+
+// CopyInN implements marshal.Marshallable.CopyInN.
+//go:nosplit
+func (a *PosixACLXattr) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    // Type PosixACLXattr doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+    buf := cc.CopyScratchBuffer(a.SizeBytes()) // escapes: okay.
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Unmarshal unconditionally. If we had a short copy-in, this results in a
+    // partially unmarshalled struct.
+    a.UnmarshalBytes(buf) // escapes: fallback.
+    return length, err
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+func (a *PosixACLXattr) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return a.CopyInN(cc, addr, a.SizeBytes())
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (a *PosixACLXattr) WriteTo(writer io.Writer) (int64, error) {
+    // Type PosixACLXattr doesn't have a packed layout in memory, fall back to MarshalBytes.
+    buf := make([]byte, a.SizeBytes())
+    a.MarshalBytes(buf)
+    length, err := writer.Write(buf)
+    return int64(length), err
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (a *PosixACLXattrEntry) Packed() bool {
+    // Type PosixACLXattrEntry is dynamic so it might have slice/string headers. Hence, it is not packed.
+    return false
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (a *PosixACLXattrEntry) MarshalUnsafe(dst []byte) []byte {
+    // Type PosixACLXattrEntry doesn't have a packed layout in memory, fallback to MarshalBytes.
+    return a.MarshalBytes(dst)
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (a *PosixACLXattrEntry) UnmarshalUnsafe(src []byte) []byte {
+    // Type PosixACLXattrEntry doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+    return a.UnmarshalBytes(src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (a *PosixACLXattrEntry) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    // Type PosixACLXattrEntry doesn't have a packed layout in memory, fall back to MarshalBytes.
+    buf := cc.CopyScratchBuffer(a.SizeBytes()) // escapes: okay.
+    a.MarshalBytes(buf) // escapes: fallback.
+    return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+func (a *PosixACLXattrEntry) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return a.CopyOutN(cc, addr, a.SizeBytes())
+}
+
+// CopyInN implements marshal.Marshallable.CopyInN.
+//go:nosplit
+func (a *PosixACLXattrEntry) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    // Type PosixACLXattrEntry doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+    buf := cc.CopyScratchBuffer(a.SizeBytes()) // escapes: okay.
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Unmarshal unconditionally. If we had a short copy-in, this results in a
+    // partially unmarshalled struct.
+    a.UnmarshalBytes(buf) // escapes: fallback.
+    return length, err
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+func (a *PosixACLXattrEntry) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return a.CopyInN(cc, addr, a.SizeBytes())
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (a *PosixACLXattrEntry) WriteTo(writer io.Writer) (int64, error) {
+    // Type PosixACLXattrEntry doesn't have a packed layout in memory, fall back to MarshalBytes.
+    buf := make([]byte, a.SizeBytes())
+    a.MarshalBytes(buf)
+    length, err := writer.Write(buf)
     return int64(length), err
 }
 

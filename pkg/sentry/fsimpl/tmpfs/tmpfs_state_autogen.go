@@ -6,6 +6,7 @@ import (
 	"context"
 
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -549,6 +550,8 @@ func (i *inode) StateFields() []string {
 		"refs",
 		"xattrs",
 		"mode",
+		"accessACL",
+		"defaultACL",
 		"nlink",
 		"uid",
 		"gid",
@@ -568,21 +571,27 @@ func (i *inode) beforeSave() {}
 // +checklocksignore
 func (i *inode) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
+	accessACLValue := i.saveAccessACL()
+	_ = (*vfs.PosixACL)(accessACLValue)
+	stateSinkObject.SaveValue(4, accessACLValue)
+	defaultACLValue := i.saveDefaultACL()
+	_ = (*vfs.PosixACL)(defaultACLValue)
+	stateSinkObject.SaveValue(5, defaultACLValue)
 	stateSinkObject.Save(0, &i.fs)
 	stateSinkObject.Save(1, &i.refs)
 	stateSinkObject.Save(2, &i.xattrs)
 	stateSinkObject.Save(3, &i.mode)
-	stateSinkObject.Save(4, &i.nlink)
-	stateSinkObject.Save(5, &i.uid)
-	stateSinkObject.Save(6, &i.gid)
-	stateSinkObject.Save(7, &i.ino)
-	stateSinkObject.Save(8, &i.atime)
-	stateSinkObject.Save(9, &i.btime)
-	stateSinkObject.Save(10, &i.ctime)
-	stateSinkObject.Save(11, &i.mtime)
-	stateSinkObject.Save(12, &i.locks)
-	stateSinkObject.Save(13, &i.watches)
-	stateSinkObject.Save(14, &i.impl)
+	stateSinkObject.Save(6, &i.nlink)
+	stateSinkObject.Save(7, &i.uid)
+	stateSinkObject.Save(8, &i.gid)
+	stateSinkObject.Save(9, &i.ino)
+	stateSinkObject.Save(10, &i.atime)
+	stateSinkObject.Save(11, &i.btime)
+	stateSinkObject.Save(12, &i.ctime)
+	stateSinkObject.Save(13, &i.mtime)
+	stateSinkObject.Save(14, &i.locks)
+	stateSinkObject.Save(15, &i.watches)
+	stateSinkObject.Save(16, &i.impl)
 }
 
 func (i *inode) afterLoad(context.Context) {}
@@ -593,17 +602,19 @@ func (i *inode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &i.refs)
 	stateSourceObject.Load(2, &i.xattrs)
 	stateSourceObject.Load(3, &i.mode)
-	stateSourceObject.Load(4, &i.nlink)
-	stateSourceObject.Load(5, &i.uid)
-	stateSourceObject.Load(6, &i.gid)
-	stateSourceObject.Load(7, &i.ino)
-	stateSourceObject.Load(8, &i.atime)
-	stateSourceObject.Load(9, &i.btime)
-	stateSourceObject.Load(10, &i.ctime)
-	stateSourceObject.Load(11, &i.mtime)
-	stateSourceObject.Load(12, &i.locks)
-	stateSourceObject.Load(13, &i.watches)
-	stateSourceObject.Load(14, &i.impl)
+	stateSourceObject.Load(6, &i.nlink)
+	stateSourceObject.Load(7, &i.uid)
+	stateSourceObject.Load(8, &i.gid)
+	stateSourceObject.Load(9, &i.ino)
+	stateSourceObject.Load(10, &i.atime)
+	stateSourceObject.Load(11, &i.btime)
+	stateSourceObject.Load(12, &i.ctime)
+	stateSourceObject.Load(13, &i.mtime)
+	stateSourceObject.Load(14, &i.locks)
+	stateSourceObject.Load(15, &i.watches)
+	stateSourceObject.Load(16, &i.impl)
+	stateSourceObject.LoadValue(4, new(*vfs.PosixACL), func(y any) { i.loadAccessACL(ctx, y.(*vfs.PosixACL)) })
+	stateSourceObject.LoadValue(5, new(*vfs.PosixACL), func(y any) { i.loadDefaultACL(ctx, y.(*vfs.PosixACL)) })
 }
 
 func (fd *fileDescription) StateTypeName() string {

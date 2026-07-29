@@ -44,6 +44,9 @@ func (op *counter) deepCopy() operation {
 	return newCounter(op.bytes.Load(), op.packets.Load())
 }
 
+// updateReferences implements operation.updateReferences.
+func (op *counter) updateReferences(table *Table, sourceTable *Table, sourceOp operation) {}
+
 // evaluate for counter increments the counter for the packet and bytes.
 func (op *counter) evaluate(regs *registerSet, evalCtx opEvalCtx) {
 	op.bytes.Add(uint64(evalCtx.pkt.Size()))

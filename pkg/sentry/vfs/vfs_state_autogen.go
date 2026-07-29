@@ -1938,6 +1938,96 @@ func (a *AccessTypes) StateFields() []string {
 	return nil
 }
 
+func (a *ACLUser) StateTypeName() string {
+	return "pkg/sentry/vfs.ACLUser"
+}
+
+func (a *ACLUser) StateFields() []string {
+	return []string{
+		"UID",
+		"Perms",
+	}
+}
+
+func (a *ACLUser) beforeSave() {}
+
+// +checklocksignore
+func (a *ACLUser) StateSave(stateSinkObject state.Sink) {
+	a.beforeSave()
+	stateSinkObject.Save(0, &a.UID)
+	stateSinkObject.Save(1, &a.Perms)
+}
+
+func (a *ACLUser) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (a *ACLUser) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &a.UID)
+	stateSourceObject.Load(1, &a.Perms)
+}
+
+func (a *ACLGroup) StateTypeName() string {
+	return "pkg/sentry/vfs.ACLGroup"
+}
+
+func (a *ACLGroup) StateFields() []string {
+	return []string{
+		"GID",
+		"Perms",
+	}
+}
+
+func (a *ACLGroup) beforeSave() {}
+
+// +checklocksignore
+func (a *ACLGroup) StateSave(stateSinkObject state.Sink) {
+	a.beforeSave()
+	stateSinkObject.Save(0, &a.GID)
+	stateSinkObject.Save(1, &a.Perms)
+}
+
+func (a *ACLGroup) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (a *ACLGroup) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &a.GID)
+	stateSourceObject.Load(1, &a.Perms)
+}
+
+func (a *PosixACL) StateTypeName() string {
+	return "pkg/sentry/vfs.PosixACL"
+}
+
+func (a *PosixACL) StateFields() []string {
+	return []string{
+		"UGOPerms",
+		"Mask",
+		"Users",
+		"Groups",
+	}
+}
+
+func (a *PosixACL) beforeSave() {}
+
+// +checklocksignore
+func (a *PosixACL) StateSave(stateSinkObject state.Sink) {
+	a.beforeSave()
+	stateSinkObject.Save(0, &a.UGOPerms)
+	stateSinkObject.Save(1, &a.Mask)
+	stateSinkObject.Save(2, &a.Users)
+	stateSinkObject.Save(3, &a.Groups)
+}
+
+func (a *PosixACL) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (a *PosixACL) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &a.UGOPerms)
+	stateSourceObject.Load(1, &a.Mask)
+	stateSourceObject.Load(2, &a.Users)
+	stateSourceObject.Load(3, &a.Groups)
+}
+
 func (rp *ResolvingPath) StateTypeName() string {
 	return "pkg/sentry/vfs.ResolvingPath"
 }
@@ -2261,6 +2351,9 @@ func init() {
 	state.Register((*UmountOptions)(nil))
 	state.Register((*WriteOptions)(nil))
 	state.Register((*AccessTypes)(nil))
+	state.Register((*ACLUser)(nil))
+	state.Register((*ACLGroup)(nil))
+	state.Register((*PosixACL)(nil))
 	state.Register((*ResolvingPath)(nil))
 	state.Register((*resolveMountRootOrJumpError)(nil))
 	state.Register((*resolveMountPointError)(nil))

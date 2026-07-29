@@ -350,16 +350,16 @@ evalLoop:
 
 		// Continues evaluation at target chains for jump and goto verdicts.
 		jumped := false
-		switch regs.Verdict().Code {
+		v := regs.Verdict()
+		switch v.Code {
 		case VC(linux.NFT_JUMP):
 			jumpDepth++
 			jumped = true
 			fallthrough
 		case VC(linux.NFT_GOTO):
-			// Finds the chain named in the same table as the calling chain.
-			nextChain, exists := c.table.chains[regs.verdict.ChainName]
-			if !exists {
-				return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("chain %s not found in table %s", regs.verdict.ChainName, c.table.name))
+			nextChain := v.Chain
+			if nextChain == nil {
+				return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "chain not found for jump/goto verdict")
 			}
 			if err := nextChain.evaluateFromRule(0, jumpDepth, regs, evalCtx); err != nil {
 				return err
@@ -371,8 +371,11 @@ evalLoop:
 			jumpDepth--
 		}
 
+		// Update verdict after jumps/gotos.
+		v = regs.Verdict()
+
 		// Only continues evaluation for Continue and Break verdicts.
-		switch regs.Verdict().Code {
+		switch v.Code {
 		case VC(linux.NFT_BREAK):
 			// Resets verdict for next rule (after breaking from a single operation).
 			regs.verdict.Code = VC(linux.NFT_CONTINUE)
@@ -1178,13 +1181,12 @@ func (c *Chain) RegisterRule(rule *Rule, index int) *syserr.AnnotatedError {
 		if err := op.checkCompatibility(&opCompatCtx{chain: c}); err != nil {
 			return err
 		}
-		isJumpOrGoto, targetChainName := isJumpOrGotoOperation(op)
+		isJumpOrGoto, nextChain := isJumpOrGotoOperation(op)
 		if !isJumpOrGoto {
 			continue
 		}
-		nextChain, exists := c.table.chains[targetChainName]
-		if !exists {
-			return syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("chain %s not found for table %s", targetChainName, c.table.name))
+		if nextChain == nil {
+			return syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, "jump or goto operation does not have a target chain")
 		}
 		if err := nextChain.checkLoops(c, 0); err != nil {
 			return err
@@ -1282,22 +1284,22 @@ func (c *Chain) RuleCount() int {
 // Loop Checking Helper Functions
 //
 
-// isJumpOrGoto returns whether the operation is an immediate operation that
-// sets the verdict register to a jump or goto verdict, returns the name of
-// the target chain to jump or goto if so and returns the verdict code.
-func isJumpOrGotoOperation(op operation) (bool, string) {
+// isJumpOrGotoOperation returns whether the operation is an
+// immediate operation that sets the verdict register
+// to a jump or goto verdict, returns pointer to the target chain if so.
+func isJumpOrGotoOperation(op operation) (bool, *Chain) {
 	imm, ok := op.(*immediate)
 	if !ok {
-		return false, ""
+		return false, nil
 	}
 	if imm.dataType != linux.NFT_DATA_VERDICT {
-		return false, ""
+		return false, nil
 	}
 	verdict := imm.verdict
 	if verdict.Code != VC(linux.NFT_JUMP) && verdict.Code != VC(linux.NFT_GOTO) {
-		return false, ""
+		return false, nil
 	}
-	return true, verdict.ChainName
+	return true, verdict.Chain
 }
 
 // checkLoops detects if there are any loops via jumps and gotos between chains
@@ -1321,13 +1323,12 @@ func (c *Chain) checkLoops(source *Chain, depth int) *syserr.AnnotatedError {
 
 	for _, rule := range c.rules {
 		for _, op := range rule.ops {
-			isJumpOrGoto, targetChainName := isJumpOrGotoOperation(op)
+			isJumpOrGoto, nextChain := isJumpOrGotoOperation(op)
 			if !isJumpOrGoto {
 				continue
 			}
-			nextChain, exists := c.table.chains[targetChainName]
-			if !exists {
-				return syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("chain %s not found for table %s", targetChainName, c.table.name))
+			if nextChain == nil {
+				return syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, "jump or goto operation does not have a target chain")
 			}
 
 			// Depth is incremented regardless if the verdict is a NFT_JUMP or NFT_GOTO.
