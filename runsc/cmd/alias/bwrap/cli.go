@@ -17,6 +17,7 @@ package bwrap
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -52,6 +53,8 @@ const (
 	flagUnshareCgroup = "unshare-cgroup"
 	flagUnshareAll    = "unshare-all"
 	flagShareNet      = "share-net"
+	flagCapDrop       = "cap-drop"
+	flagCapAdd        = "cap-add"
 )
 
 // Cli implements subcommands.Command for the "bwrap" command.
@@ -76,6 +79,8 @@ type Cli struct {
 	unshareAll    bool
 	hostname      string
 	proc          string
+	capDrop       string
+	capAdd        string
 }
 
 // Name implements subcommands.Command.Name.
@@ -114,6 +119,8 @@ func (c *Cli) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.proc, flagProc, "", "Mount new procfs on DEST")
 	f.BoolVar(&c.unshareCgroup, flagUnshareCgroup, false, "Create new cgroup namespace")
 	f.BoolVar(&c.unshareAll, flagUnshareAll, false, "Unshare every namespace we support by default")
+	f.StringVar(&c.capDrop, flagCapDrop, "", "Drop capabilities when running as privileged user")
+	f.StringVar(&c.capAdd, flagCapAdd, "", "Add capabilities when running as privileged user")
 
 	// Override the default usage function to print the custom usage message.
 	f.Usage = func() {
@@ -132,10 +139,16 @@ func (c *Cli) FetchSpec(_ *config.Config, _ *flag.FlagSet) (string, *specs.Spec,
 
 // parseBwrapArgs parses the bwrap arguments and returns a bwrapConfig struct.
 func parseBwrapArgs(bwrapArgs []string) (*bwrapConfig, error) {
+	// Allocate a random subnet in 192.168.x.2 where x is from 10 to 254 to prevent clashes
+	// when running multiple instances on the host concurrently.
+	randSubnet := 10 + rand.Int31n(245)
+	ip := fmt.Sprintf("192.168.%d.2", randSubnet)
+
 	cfg := &bwrapConfig{
 		Env: os.Environ(),
 		UID: -1,
 		GID: -1,
+		ip:  ip,
 	}
 	var err error
 	for i := 0; i < len(bwrapArgs); {
@@ -191,6 +204,10 @@ func parseBwrapArgs(bwrapArgs []string) (*bwrapConfig, error) {
 			i, err = cfg.parseProc(bwrapArgs, i)
 		case flagUnshareAll:
 			i, err = cfg.parseUnshareAll(bwrapArgs, i)
+		case flagCapDrop:
+			i, err = cfg.parseCapDrop(bwrapArgs, i)
+		case flagCapAdd:
+			i, err = cfg.parseCapAdd(bwrapArgs, i)
 		default:
 			return nil, fmt.Errorf("bwrap: Unknown option: %s", arg)
 		}
@@ -382,14 +399,14 @@ func (c *bwrapConfig) parseUserns(args []string, i int) (int, error) {
 }
 
 // parseNoopZeroArg parses flags that are treated as no-ops.
-// gVisor's Sentry kernel inherently virtualizes and isolates IPC, PID, and UTS
+// gVisor's Sentry kernel inherently virtualizes and isolates IPC, PID, UTS, and Cgroup
 // namespaces by default. These flags are parsed solely for CLI compatibility
 func (c *bwrapConfig) parseNoopZeroArg(args []string, i int) (int, error) {
 	return i + 1, nil
 }
 
 func (c *bwrapConfig) parseShareNet(args []string, i int) (int, error) {
-	c.ShareNet = true
+	c.UnshareNet = false
 	return i + 1, nil
 }
 
@@ -398,4 +415,20 @@ func (c *bwrapConfig) parseUnshareAll(args []string, i int) (int, error) {
 	c.UnshareUser = true
 	c.UnshareNet = true
 	return i + 1, nil
+}
+
+func (c *bwrapConfig) parseCapDrop(args []string, i int) (int, error) {
+	if i+1 >= len(args) {
+		return i, fmt.Errorf("--%s takes 1 argument", flagCapDrop)
+	}
+	c.CapOps = append(c.CapOps, &CapOp{Type: CapOpDrop, Cap: args[i+1]})
+	return i + 2, nil
+}
+
+func (c *bwrapConfig) parseCapAdd(args []string, i int) (int, error) {
+	if i+1 >= len(args) {
+		return i, fmt.Errorf("--%s takes 1 argument", flagCapAdd)
+	}
+	c.CapOps = append(c.CapOps, &CapOp{Type: CapOpAdd, Cap: args[i+1]})
+	return i + 2, nil
 }
