@@ -18,9 +18,13 @@
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 
+#include <cerrno>
+#include <cstdint>
 #include <cstring>
+#include <vector>
 
-#include "gtest/gtest.h"
+#include "gmock/gmock.h"
+#include "absl/strings/str_cat.h"
 #include "absl/synchronization/notification.h"
 #include "benchmark/benchmark.h"
 #include "test/util/file_descriptor.h"
@@ -53,9 +57,7 @@ class Message {
     hdr_.msg_controllen = cmsg_sz;
   }
 
-  struct msghdr* header() {
-    return &hdr_;
-  }
+  struct msghdr* header() { return &hdr_; }
 
  private:
   std::vector<char> buffer_;
@@ -375,7 +377,7 @@ void BM_SendmsgTCP(benchmark::State& state) {
   state.SetBytesProcessed(bytes_sent);
 }
 
-void Args(benchmark::internal::Benchmark* benchmark) {
+void Args(benchmark::Benchmark* benchmark) {
   for (int blocking = 0; blocking < 2; blocking++) {
     for (int buf_size = 1024; buf_size <= 256 << 20; buf_size *= 2) {
       benchmark->Args({blocking, buf_size});
