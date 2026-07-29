@@ -56,16 +56,15 @@ practices around AI tool usage. This policy includes, but is not limited to:
 ### Visual Studio Code
 
 The easiest way to work on gVisor in VSCode is using the
-[Dev Containers](https://code.visualstudio.com/docs/devcontainers/containers)
-extension.
+[Dev Containers][vscode-dev-containers] extension.
 
 Open the gVisor repository in VSCode, and a "Folder contains a Dev Container"
 popup will appear. Press "Reopen in Container". The first load will take a few
-minutes while the dev container is built and the Go packages are loaded.
-Afterwards, Go language server features (hover, autocomplete, reference search,
-format on save, etc) should work "out of the box". VSCode's terminal will open
-in the dev container, where you can run `bazel build`, `bazel test`, and so on
-to work on gVisor.
+minutes while the dev container is built, the Go packages are loaded, and the
+clangd compilation database is generated. Afterwards, language server features
+(hover, autocomplete, reference search, format on save, etc) should work "out of
+the box" for both Go and C++. VSCode's terminal will open in the dev container,
+where you can run `bazel build`, `bazel test`, and so on to work on gVisor.
 
 For example, you can build and run `runsc` in the dev container as follows:
 
@@ -91,10 +90,17 @@ For non-interactive commands, `make run` can be used as a shorthand as follows:
 make run TARGETS=//runsc ARGS="--rootless do echo hello world"
 ```
 
+In addition, for language server support in C++ files (e.g. the syscall tests):
+install [clangd][clangd] on the host, then run `tools/gen_compile_commands.py`
+to generate a `compile_commands.json`. After reloading the editor window,
+clangd should work.
+
 ### Other Editors
 
 For LSP integration in other editors, ensure that the environment variable
 `GOPACKAGESDRIVER=tools/gopackagesdriver.sh` is passed along to `gopls`.
+Also, ensure `--allow-config` is passed to `clangd`, which will allow gVisor's
+`.clangd`  configuration to take effect.
 
 #### Using GOPATH (not recommended)
 
@@ -239,3 +245,5 @@ one above, the
 [gvisor-dev-list]: https://groups.google.com/forum/#!forum/gvisor-dev
 [go]: https://go.dev/doc/install
 [bazelisk]: https://github.com/bazelbuild/bazelisk
+[clangd]: https://clangd.llvm.org/installation
+[vscode-dev-containers]: https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers
