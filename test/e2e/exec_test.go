@@ -27,7 +27,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -61,7 +60,7 @@ func TestExecCapabilities(t *testing.T) {
 	// For the root user.
 	for _, cap := range caps {
 		pattern := fmt.Sprintf("%s:\t([0-9a-f]+)\n", cap)
-		matches, err := d.WaitForOutputSubmatch(ctx, pattern, 5*time.Second)
+		matches, err := d.WaitForOutputSubmatch(ctx, pattern, defaultWait)
 		if err != nil {
 			t.Fatalf("WaitForOutputSubmatch() timeout: %v", err)
 		}
@@ -344,7 +343,7 @@ func TestExecPrivileged(t *testing.T) {
 	}
 
 	// Grab the capabilities from inside container.
-	matches, err := d.WaitForOutputSubmatch(ctx, "CapEff:\t([0-9a-f]+)\n", 5*time.Second)
+	matches, err := d.WaitForOutputSubmatch(ctx, "CapEff:\t([0-9a-f]+)\n", defaultWait)
 	if err != nil {
 		t.Fatalf("WaitForOutputSubmatch() timeout: %v", err)
 	}
@@ -486,16 +485,26 @@ func TestExecJobControl(t *testing.T) {
 		t.Fatalf("docker exec failed: %v", err)
 	}
 
-	if _, err = p.Write(time.Second, []byte("sleep 100 | cat\n")); err != nil {
-		t.Fatalf("error exit: %v", err)
-	}
-	time.Sleep(time.Second)
-
-	if _, err = p.Write(time.Second, []byte{0x03}); err != nil {
+	if _, err = p.Write(defaultWait, []byte("sleep 100 | cat\n")); err != nil {
 		t.Fatalf("error exit: %v", err)
 	}
 
-	if _, err = p.Write(time.Second, []byte("exit $(expr $? + 10)\n")); err != nil {
+	// Wait until a cat is running.
+	if err := testutil.Poll(func() error {
+		out, err := d.Exec(ctx, dockerutil.ExecOpts{}, "sh", "-c", "pgrep -x cat")
+		if err != nil {
+			return fmt.Errorf("sleep|cat pipeline not yet running: %v (output: %s)", err, out)
+		}
+		return nil
+	}, defaultWait); err != nil {
+		t.Fatalf("waiting for the sleep|cat pipeline to start: %v", err)
+	}
+
+	if _, err = p.Write(defaultWait, []byte{0x03}); err != nil {
+		t.Fatalf("error exit: %v", err)
+	}
+
+	if _, err = p.Write(defaultWait, []byte("exit $(expr $? + 10)\n")); err != nil {
 		t.Fatalf("error exit: %v", err)
 	}
 

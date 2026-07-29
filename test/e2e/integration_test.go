@@ -399,10 +399,18 @@ func TestJobControl(t *testing.T) {
 	if err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
-	// Give shell a few seconds to start executing the sleep.
-	time.Sleep(2 * time.Second)
+	// Wait until the pipeline is up and running.
+	if err := testutil.Poll(func() error {
+		out, err := d.Exec(ctx, dockerutil.ExecOpts{}, "sh", "-c", "pgrep -x sleep && pgrep -x cat")
+		if err != nil {
+			return fmt.Errorf("sleep|cat pipeline not yet running: %v (output: %s)", err, out)
+		}
+		return nil
+	}, defaultWait); err != nil {
+		t.Fatalf("waiting for the sleep|cat pipeline to start: %v", err)
+	}
 
-	if _, err := p.Write(time.Second, []byte{0x03}); err != nil {
+	if _, err := p.Write(defaultWait, []byte{0x03}); err != nil {
 		t.Fatalf("error exit: %v", err)
 	}
 	if logs, err := p.Logs(); err != nil {
@@ -411,7 +419,7 @@ func TestJobControl(t *testing.T) {
 		t.Logf("output: %s", logs)
 	}
 
-	if err := d.WaitTimeout(ctx, 10*time.Second); err != nil {
+	if err := d.WaitTimeout(ctx, defaultWait); err != nil {
 		t.Fatalf("WaitTimeout failed: %v", err)
 	}
 
