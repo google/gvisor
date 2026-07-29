@@ -159,11 +159,22 @@ TEST(RlimitTest, RlimitNProc) {
 TEST(RlimitTest, SetRlimitRtPrio) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_RESOURCE)));
 
+  struct rlimit old_rl = {};
+  EXPECT_THAT(getrlimit(RLIMIT_RTPRIO, &old_rl), SyscallSucceeds());
+
   struct rlimit rl = {
       .rlim_cur = 5,
       .rlim_max = 10,
   };
-  EXPECT_THAT(setrlimit(RLIMIT_RTPRIO, &rl), SyscallSucceeds());
+  int const ret = setrlimit(RLIMIT_RTPRIO, &rl);
+  if (ret == -1 && rl.rlim_max > old_rl.rlim_max) {
+    // In a non-init user namespace, raising rlim_max above the current hard
+    // limit fails with EPERM because CAP_SYS_RESOURCE is required in the
+    // initial user namespace.
+    EXPECT_EQ(errno, EPERM);
+    return;
+  }
+  EXPECT_THAT(ret, SyscallSucceeds());
 
   EXPECT_THAT(getrlimit(RLIMIT_RTPRIO, &rl), SyscallSucceeds());
   EXPECT_EQ(rl.rlim_cur, 5);
