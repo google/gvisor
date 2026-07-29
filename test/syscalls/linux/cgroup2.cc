@@ -1549,11 +1549,22 @@ TEST_F(Cgroup2Test, MemoryCurrent) {
 
   // Touch the memory to ensure it's actually allocated (faulted in).
   memset(mem, 1, kMemSize);
-  // Sleep to wait past the sentry's internal 10ms memory usage stats update
+  // Loop to wait past the sentry's internal 10ms memory usage stats update
   // throttle window (f.nextCommitScan in pgalloc.go).
-  absl::SleepFor(absl::Milliseconds(15));
-  const uint64_t usage_after =
-      ASSERT_NO_ERRNO_AND_VALUE(c().ReadIntegerControlFile("memory.current"));
+  uint64_t usage_after = 0;
+  const absl::Time deadline = absl::Now() + absl::Seconds(10);
+  while (true) {
+    absl::SleepFor(absl::Milliseconds(15));
+    usage_after =
+        ASSERT_NO_ERRNO_AND_VALUE(c().ReadIntegerControlFile("memory.current"));
+    if (usage_after >= usage + kMemSize - kMemFloorSlack &&
+        usage_after <= usage + kMemSize + kMemCeilingSlack) {
+      break;
+    }
+    if (absl::Now() >= deadline) {
+      break;
+    }
+  }
   EXPECT_GE(usage_after, usage + kMemSize - kMemFloorSlack);
   EXPECT_LE(usage_after, usage + kMemSize + kMemCeilingSlack);
 }
@@ -1583,13 +1594,24 @@ TEST_F(Cgroup2Test, MemoryIsChargedToNearestAncestorWithController) {
   ASSERT_NE(mem2, MAP_FAILED);
   auto clean_mem2 = Cleanup([&] { munmap(mem2, kMemSize); });
   memset(mem2, 1, kMemSize);
-  // Sleep to wait past the sentry's internal 10ms memory usage stats update
+  // Loop to wait past the sentry's internal 10ms memory usage stats update
   // throttle window (f.nextCommitScan in pgalloc.go).
-  absl::SleepFor(absl::Milliseconds(15));
+  uint64_t usage_child = 0;
+  const absl::Time deadline = absl::Now() + absl::Seconds(10);
+  while (true) {
+    absl::SleepFor(absl::Milliseconds(15));
+    usage_child = ASSERT_NO_ERRNO_AND_VALUE(
+        child.ReadIntegerControlFile("memory.current"));
+    if (usage_child >= base_usage_child + kMemSize - kMemFloorSlack &&
+        usage_child <= base_usage_child + kMemSize + kMemCeilingSlack) {
+      break;
+    }
+    if (absl::Now() >= deadline) {
+      break;
+    }
+  }
 
   // `child` should now reflect base_usage_child + kMemSize approximately.
-  const uint64_t usage_child =
-      ASSERT_NO_ERRNO_AND_VALUE(child.ReadIntegerControlFile("memory.current"));
   EXPECT_GE(usage_child, base_usage_child + kMemSize - kMemFloorSlack);
   EXPECT_LE(usage_child, base_usage_child + kMemSize + kMemCeilingSlack);
 
@@ -2223,6 +2245,22 @@ int64_t ParseCpuUsageUsec(const Cgroup& cg) {
   return -1;
 }
 
+// PollCpuUsageUsecGreaterThan polls until the CPU usage exceeds the given
+// target. This handles test flakiness in gVisor: CPU clocks are not updated
+// perfectly synchronously upon task completion. Instead, a background timer
+// samples running tasks every ~10ms (linux.ClockTick). Tests that race to
+// assert CPU usage immediately after a workload finishes natively via KVM can
+// incorrectly read zero if the tick hasn't fired yet.
+int64_t PollCpuUsageUsecGreaterThan(const Cgroup& cg, int64_t target) {
+  int64_t usage = ParseCpuUsageUsec(cg);
+  absl::Time deadline = absl::Now() + absl::Seconds(10);
+  while (usage <= target && absl::Now() < deadline) {
+    absl::SleepFor(absl::Milliseconds(15));
+    usage = ParseCpuUsageUsec(cg);
+  }
+  return usage;
+}
+
 TEST_F(Cgroup2Test, CpuStat) {
   std::string controllers =
       ASSERT_NO_ERRNO_AND_VALUE(c().ReadControlFile("cgroup.controllers"));
@@ -2261,7 +2299,7 @@ TEST_F(Cgroup2Test, CpuStat) {
   ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceeds());
   EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
 
-  int64_t usage_usec = ParseCpuUsageUsec(child);
+  int64_t usage_usec = PollCpuUsageUsecGreaterThan(child, 0);
   EXPECT_GT(usage_usec, 0);
 }
 
@@ -2323,7 +2361,7 @@ TEST_F(Cgroup2Test, CpuStatMigration) {
   ASSERT_THAT(read(fds_phase1[0], &c, 1), SyscallSucceeds());
   close(fds_phase1[0]);
 
-  int64_t usage_a_before_migration = ParseCpuUsageUsec(cg_a);
+  int64_t usage_a_before_migration = PollCpuUsageUsecGreaterThan(cg_a, 0);
   EXPECT_GT(usage_a_before_migration, 0);
 
   ASSERT_NO_ERRNO(cg_b.Enter(pid));  // Move to cg_b, loop yet to run.
@@ -2343,7 +2381,8 @@ TEST_F(Cgroup2Test, CpuStatMigration) {
   ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceeds());
   EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
 
-  int64_t usage_b_final = ParseCpuUsageUsec(cg_b);
+  int64_t usage_b_final =
+      PollCpuUsageUsecGreaterThan(cg_b, usage_b_post_migration);
   int64_t usage_a_final = ParseCpuUsageUsec(cg_a);
   EXPECT_GT(usage_b_final, usage_b_post_migration);
   EXPECT_EQ(usage_a_final, usage_a_post_migration);
