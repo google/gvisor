@@ -327,7 +327,7 @@ func (i *inode) DecRef(ctx context.Context) {
 }
 
 func (i *inode) checkPermissions(creds *auth.Credentials, ats vfs.AccessTypes) error {
-	return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(i.Mode()), auth.KUID(i.UID()), auth.KGID(i.GID()))
+	return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(i.Mode()), nil, auth.KUID(i.UID()), auth.KGID(i.GID()))
 }
 
 func (i *inode) statTo(stat *linux.Statx) {

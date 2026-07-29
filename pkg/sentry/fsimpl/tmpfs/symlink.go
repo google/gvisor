@@ -26,6 +26,10 @@ type symlink struct {
 	target string // immutable
 }
 
+// newSymlink creates a new symbolic link.
+//
+// If parentDir is not nil, certain fields (such as setgid) will be inherited
+// from parentDir.
 func (fs *filesystem) newSymlink(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, target string, parentDir *directory) (*inode, error) {
 	link := &symlink{
 		target: target,
