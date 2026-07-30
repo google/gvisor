@@ -882,7 +882,17 @@ func (*cpu) set(spec *specs.LinuxResources, path string) error {
 }
 
 type cpuSet struct {
-	mandatory
+}
+
+func (*cpuSet) optional() bool {
+	return true
+}
+
+func (*cpuSet) skip(spec *specs.LinuxResources) error {
+	if spec != nil && spec.CPU != nil && (spec.CPU.Cpus != "" || spec.CPU.Mems != "") {
+		return fmt.Errorf("cpuset controller is missing but limits are set in OCI spec")
+	}
+	return nil
 }
 
 func (*cpuSet) set(spec *specs.LinuxResources, path string) error {
