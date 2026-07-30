@@ -377,7 +377,7 @@ void BM_SendmsgTCP(benchmark::State& state) {
   state.SetBytesProcessed(bytes_sent);
 }
 
-void Args(benchmark::Benchmark* benchmark) {
+void Args(benchmark::internal::Benchmark* benchmark) {
   for (int blocking = 0; blocking < 2; blocking++) {
     for (int buf_size = 1024; buf_size <= 256 << 20; buf_size *= 2) {
       benchmark->Args({blocking, buf_size});
