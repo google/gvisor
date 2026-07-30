@@ -4202,3 +4202,206 @@ func TestFSCheckpointSharedVolume(t *testing.T) {
 		t.Fatalf("Error verifying shared volume from sub-container after restore, ws: %v, err: %v", ws, err)
 	}
 }
+
+// TestMultiContainerSharedVolumeCheckpointRestore tests that checkpoint/restore works
+// with multi-containers sharing an overlay filestore volume.
+func TestMultiContainerSharedVolumeCheckpointRestore(t *testing.T) {
+	compression := statefile.CompressionLevelNone
+
+	conf := testutil.TestConfig(t)
+	// Enable host-backed overlay.
+	tempDir, err := os.MkdirTemp(testutil.TmpDir(), "overlay-filestore")
+	if err != nil {
+		t.Fatalf("MkdirTemp failed: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+	if err := conf.Overlay2.Set("all:dir=" + tempDir); err != nil {
+		t.Fatalf("error setting overlay2: %v", err)
+	}
+
+	rootDir, cleanupRoot, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer cleanupRoot()
+	conf.RootDir = rootDir
+
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-test-shared")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp() failed: %v", err)
+	}
+	defer os.RemoveAll(dir)
+	if err := os.Chmod(dir, 0777); err != nil {
+		t.Fatalf("error chmoding file: %q, %v", dir, err)
+	}
+
+	sharedDir, err := os.MkdirTemp(testutil.TmpDir(), "shared-vol")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp() failed: %v", err)
+	}
+	defer os.RemoveAll(sharedDir)
+	if err := os.Chmod(sharedDir, 0777); err != nil {
+		t.Fatalf("error chmoding file: %q, %v", sharedDir, err)
+	}
+
+	singleSharedDir, err := os.MkdirTemp(testutil.TmpDir(), "single-shared-vol")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp() failed: %v", err)
+	}
+	defer os.RemoveAll(singleSharedDir)
+	if err := os.Chmod(singleSharedDir, 0777); err != nil {
+		t.Fatalf("error chmoding file: %q, %v", singleSharedDir, err)
+	}
+
+	appSrc, err := testutil.FindFile("test/cmd/test_app/test_app")
+	if err != nil {
+		t.Fatal("Error finding test_app:", err)
+	}
+
+	setupSpecRoots := func(containerSpecs []*specs.Spec, ids []string) (func(), error) {
+		var cleanupSpecRoots cleanup.Cleanup
+		defer cleanupSpecRoots.Clean()
+		for i, spec := range containerSpecs {
+			contRootPath, err := os.MkdirTemp(testutil.TmpDir(), fmt.Sprintf("%s-root", ids[i]))
+			if err != nil {
+				return nil, fmt.Errorf("error creating root directory for container %d: %v", i, err)
+			}
+			cleanupSpecRoots.Add(func() { os.RemoveAll(contRootPath) })
+			spec.Root.Path = contRootPath
+			spec.Root.Readonly = false
+			appDst := filepath.Join(contRootPath, "app")
+			if err := copyFile(appSrc, appDst); err != nil {
+				return nil, fmt.Errorf("error copying app binary from %q to %q: %v", appSrc, appDst, err)
+			}
+		}
+		return cleanupSpecRoots.Release(), nil
+	}
+
+	testAppSleepArgv := []string{"/app", "reaper"}
+	testSpecs, ids := createSpecs(
+		testAppSleepArgv,
+		testAppSleepArgv,
+		testAppSleepArgv,
+	)
+
+	testSpecs[0].Annotations["dev.gvisor.spec.mount.shared-vol.share"] = "pod"
+	testSpecs[0].Annotations["dev.gvisor.spec.mount.shared-vol.type"] = "tmpfs"
+	testSpecs[0].Annotations["dev.gvisor.spec.mount.shared-vol.source"] = sharedDir
+
+	sharedMount := specs.Mount{
+		Destination: "/shared",
+		Source:      sharedDir,
+		Type:        "bind",
+	}
+	testSpecs[0].Mounts = append(testSpecs[0].Mounts, sharedMount)
+	testSpecs[1].Mounts = append(testSpecs[1].Mounts, sharedMount)
+	testSpecs[2].Mounts = append(testSpecs[2].Mounts, sharedMount)
+
+	testSpecs[0].Annotations["dev.gvisor.spec.mount.single-shared-vol.share"] = "pod"
+	testSpecs[0].Annotations["dev.gvisor.spec.mount.single-shared-vol.type"] = "tmpfs"
+	testSpecs[0].Annotations["dev.gvisor.spec.mount.single-shared-vol.source"] = singleSharedDir
+
+	singleSharedMount := specs.Mount{
+		Destination: "/single_shared",
+		Source:      singleSharedDir,
+		Type:        "bind",
+	}
+	testSpecs[0].Mounts = append(testSpecs[0].Mounts, singleSharedMount)
+
+	cleanupRoots, err := setupSpecRoots(testSpecs, ids)
+	if err != nil {
+		t.Fatalf("error setting up container roots: %v", err)
+	}
+	defer cleanupRoots()
+
+	conts, cleanupConts, err := startContainers(conf, testSpecs, ids)
+	if err != nil {
+		t.Fatalf("error starting containers: %v", err)
+	}
+	defer cleanupConts()
+
+	// Write file from root-container.
+	if ws, err := execute(conf, conts[0], "/app", "fsTreeCreate", "--depth=1", "--file-per-level=1", "--file-size=10", "--target-dir=/shared", "--seed=123"); err != nil || ws != 0 {
+		t.Fatalf("Error writing to shared volume from root container, ws: %v, err: %v", ws, err)
+	}
+
+	// Write file to single-shared volume from root-container.
+	if ws, err := execute(conf, conts[0], "/app", "fsTreeCreate", "--depth=1", "--file-per-level=1", "--file-size=10", "--target-dir=/single_shared", "--seed=789"); err != nil || ws != 0 {
+		t.Fatalf("Error writing to single shared volume from root container, ws: %v, err: %v", ws, err)
+	}
+
+	// Verify file is visible in sub-container.
+	if ws, err := execute(conf, conts[1], "/app", "fsTreeVerify", "--depth=1", "--file-per-level=1", "--file-size=10", "--target-dir=/shared", "--seed=123"); err != nil || ws != 0 {
+		t.Fatalf("Error verifying shared volume from sub-container before checkpoint, ws: %v, err: %v", ws, err)
+	}
+	if ws, err := execute(conf, conts[2], "/app", "fsTreeVerify", "--depth=1", "--file-per-level=1", "--file-size=10", "--target-dir=/shared", "--seed=123"); err != nil || ws != 0 {
+		t.Fatalf("Error verifying shared volume from sub-container 2 before checkpoint, ws: %v, err: %v", ws, err)
+	}
+
+	// Write file from sub-container.
+	if ws, err := execute(conf, conts[1], "/app", "fsTreeCreate", "--depth=1", "--file-per-level=1", "--file-size=10", "--target-dir=/shared/sub", "--seed=456"); err != nil || ws != 0 {
+		t.Fatalf("Error writing to shared volume from sub container, ws: %v, err: %v", ws, err)
+	}
+
+	// Verify file is visible in root-container.
+	if ws, err := execute(conf, conts[0], "/app", "fsTreeVerify", "--depth=1", "--file-per-level=1", "--file-size=10", "--target-dir=/shared/sub", "--seed=456"); err != nil || ws != 0 {
+		t.Fatalf("Error verifying shared volume from root container before checkpoint, ws: %v, err: %v", ws, err)
+	}
+	if ws, err := execute(conf, conts[2], "/app", "fsTreeVerify", "--depth=1", "--file-per-level=1", "--file-size=10", "--target-dir=/shared/sub", "--seed=456"); err != nil || ws != 0 {
+		t.Fatalf("Error verifying shared volume from sub-container 2 before checkpoint, ws: %v, err: %v", ws, err)
+	}
+
+	if err := conts[0].Checkpoint(conf, dir, sandbox.CheckpointOpts{Compression: compression}); err != nil {
+		t.Fatalf("error checkpointing container: %v", err)
+	}
+
+	newIds := make([]string, 0, len(ids))
+	for range ids {
+		newIds = append(newIds, testutil.RandomContainerID())
+	}
+	for _, spec := range testSpecs[1:] {
+		spec.Annotations[specutils.ContainerdSandboxIDAnnotation] = newIds[0]
+	}
+
+	cleanupRootsNew, err := setupSpecRoots(testSpecs, newIds)
+	if err != nil {
+		t.Fatalf("error setting up container roots: %v", err)
+	}
+	defer cleanupRootsNew()
+
+	newConts, newCleanup, err := restoreContainers(conf, testSpecs, newIds, dir)
+	if err != nil {
+		t.Fatalf("error restoring containers: %v", err)
+	}
+	defer newCleanup()
+
+	// Verify data is restored in all containers.
+	if ws, err := execute(conf, newConts[0], "/app", "fsTreeVerify", "--depth=1", "--file-per-level=1", "--file-size=10", "--target-dir=/shared", "--seed=123"); err != nil || ws != 0 {
+		t.Fatalf("Error verifying shared volume from root container after restore, ws: %v, err: %v", ws, err)
+	}
+	if ws, err := execute(conf, newConts[1], "/app", "fsTreeVerify", "--depth=1", "--file-per-level=1", "--file-size=10", "--target-dir=/shared", "--seed=123"); err != nil || ws != 0 {
+		t.Fatalf("Error verifying shared volume from sub-container after restore, ws: %v, err: %v", ws, err)
+	}
+	if ws, err := execute(conf, newConts[2], "/app", "fsTreeVerify", "--depth=1", "--file-per-level=1", "--file-size=10", "--target-dir=/shared", "--seed=123"); err != nil || ws != 0 {
+		t.Fatalf("Error verifying shared volume from sub-container 2 after restore, ws: %v, err: %v", ws, err)
+	}
+	if ws, err := execute(conf, newConts[0], "/app", "fsTreeVerify", "--depth=1", "--file-per-level=1", "--file-size=10", "--target-dir=/single_shared", "--seed=789"); err != nil || ws != 0 {
+		t.Fatalf("Error verifying single shared volume from root container after restore, ws: %v, err: %v", ws, err)
+	}
+
+	// Verify data from sub-container write.
+	if ws, err := execute(conf, newConts[0], "/app", "fsTreeVerify", "--depth=1", "--file-per-level=1", "--file-size=10", "--target-dir=/shared/sub", "--seed=456"); err != nil || ws != 0 {
+		t.Fatalf("Error verifying shared volume sub-dir from root container after restore, ws: %v, err: %v", ws, err)
+	}
+	if ws, err := execute(conf, newConts[1], "/app", "fsTreeVerify", "--depth=1", "--file-per-level=1", "--file-size=10", "--target-dir=/shared/sub", "--seed=456"); err != nil || ws != 0 {
+		t.Fatalf("Error verifying shared volume sub-dir from sub-container after restore, ws: %v, err: %v", ws, err)
+	}
+	if ws, err := execute(conf, newConts[2], "/app", "fsTreeVerify", "--depth=1", "--file-per-level=1", "--file-size=10", "--target-dir=/shared/sub", "--seed=456"); err != nil || ws != 0 {
+		t.Fatalf("Error verifying shared volume sub-dir from sub-container 2 after restore, ws: %v, err: %v", ws, err)
+	}
+
+	for _, c := range newConts {
+		c.SignalContainer(unix.SIGKILL, false)
+		c.Wait()
+	}
+}

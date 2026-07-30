@@ -1507,18 +1507,18 @@ func (c *containerMounter) makeMountPoint(
 
 // configureRestore returns an updated context.Context including filesystem
 // state used by restore defined by conf.
-func (c *containerMounter) configureRestore(fdmap map[checkpoint.ResourceID]int, mfmap map[checkpoint.ResourceID]*pgalloc.MemoryFile) error {
+func (c *containerMounter) configureRestore(restoreMnts *restoreMounts) error {
 	// Compare createMountNamespace(); rootfs always consumes a gofer FD and a
 	// filestore FD is consumed if the rootfs GoferMountConf indicates so.
 	rootKey := checkpoint.ResourceID{ContainerName: c.containerName, Path: "/"}
-	fdmap[rootKey] = c.goferFDs.remove()
+	restoreMnts.fdmap[rootKey] = c.goferFDs.remove()
 
 	if rootfsConf := c.goferMountConfs[0]; rootfsConf.IsFilestorePresent() {
 		mf, err := createPrivateMemoryFile(c.goferFilestoreFDs.removeAsFD().ReleaseToFile("overlay-filestore"), rootKey, c.containerID, c.l.fsRestore)
 		if err != nil {
 			return fmt.Errorf("failed to create private memory file for mount rootfs: %w", err)
 		}
-		mfmap[rootKey] = mf
+		restoreMnts.mfmap[rootKey] = mf
 	}
 	// prepareMounts() consumes the remaining FDs for submounts.
 	mounts, err := c.prepareMounts()
@@ -1527,9 +1527,26 @@ func (c *containerMounter) configureRestore(fdmap map[checkpoint.ResourceID]int,
 	}
 	for i := range mounts {
 		submount := &mounts[i]
+
+		if submount.hint != nil && submount.hint.ShouldShareMount() {
+			if restoreMnts.sharedMfs[submount.hint.Name] {
+				// This shared mount has already been restored by another container.
+				if submount.goferFD != nil {
+					submount.goferFD.Close()
+					submount.goferFD = nil
+				}
+				if submount.filestoreFD != nil {
+					submount.filestoreFD.Close()
+					submount.filestoreFD = nil
+				}
+				continue
+			}
+			restoreMnts.sharedMfs[submount.hint.Name] = true
+		}
+
 		if submount.goferFD != nil {
 			key := checkpoint.ResourceID{ContainerName: c.containerName, Path: submount.mount.Destination}
-			fdmap[key] = submount.goferFD.Release()
+			restoreMnts.fdmap[key] = submount.goferFD.Release()
 		}
 		if submount.filestoreFD != nil {
 			key := checkpoint.ResourceID{ContainerName: c.containerName, Path: submount.mount.Destination}
@@ -1537,7 +1554,7 @@ func (c *containerMounter) configureRestore(fdmap map[checkpoint.ResourceID]int,
 			if err != nil {
 				return fmt.Errorf("failed to create private memory file for mount %q: %w", submount.mount.Destination, err)
 			}
-			mfmap[key] = mf
+			restoreMnts.mfmap[key] = mf
 		}
 	}
 	return nil
