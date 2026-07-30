@@ -22,6 +22,7 @@ go_library(
         "dir_refs.go",
         "kcov.go",
         "pci.go",
+        "rdma.go",
         "save_restore.go",
         "sys.go",
     ],
@@ -35,6 +36,7 @@ go_library(
         "//pkg/fspath",
         "//pkg/fsutil",
         "//pkg/log",
+        "//pkg/rdma",
         "//pkg/refs",
         "//pkg/sentry/arch",
         "//pkg/sentry/fsimpl/host",
@@ -61,6 +63,7 @@ go_test(
     deps = [
         ":sys",
         "//pkg/abi/linux",
+        "//pkg/rdma",
         "//pkg/sentry/fsimpl/testutil",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",

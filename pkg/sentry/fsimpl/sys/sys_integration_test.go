@@ -22,6 +22,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/rdma"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sys"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/testutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -33,7 +34,7 @@ const (
 	vfioDev = "vfio-dev"
 )
 
-func newTestSystem(t *testing.T, pciTestDir string) *testutil.System {
+func tryNewTestSystem(t *testing.T, idata *sys.InternalData) (*testutil.System, error) {
 	k, err := testutil.Boot()
 	if err != nil {
 		t.Fatalf("Failed to create test kernel: %v", err)
@@ -46,18 +47,30 @@ func newTestSystem(t *testing.T, pciTestDir string) *testutil.System {
 
 	mountOpts := &vfs.MountOptions{
 		GetFilesystemOptions: vfs.GetFilesystemOptions{
-			InternalData: &sys.InternalData{
-				EnableTPUProxyPaths: pciTestDir != "",
-				TestSysfsPathPrefix: pciTestDir,
-			},
+			InternalData: idata,
 		},
 	}
 
 	mns, err := k.VFS().NewMountNamespace(ctx, creds, "", sys.Name, mountOpts, nil)
 	if err != nil {
+		return nil, err
+	}
+	return testutil.NewSystem(ctx, t, k.VFS(), mns), nil
+}
+
+func newTestSystemWithInternalData(t *testing.T, idata *sys.InternalData) *testutil.System {
+	s, err := tryNewTestSystem(t, idata)
+	if err != nil {
 		t.Fatalf("Failed to create new mount namespace: %v", err)
 	}
-	return testutil.NewSystem(ctx, t, k.VFS(), mns)
+	return s
+}
+
+func newTestSystem(t *testing.T, pciTestDir string) *testutil.System {
+	return newTestSystemWithInternalData(t, &sys.InternalData{
+		EnableTPUProxyPaths: pciTestDir != "",
+		TestSysfsPathPrefix: pciTestDir,
+	})
 }
 
 func TestReadCPUFile(t *testing.T) {
@@ -307,5 +320,145 @@ func TestEnableTPUProxyPathsV5(t *testing.T) {
 		s.AssertAllDirentTypes(s.ListDirents(pop), map[string]testutil.DirentType{
 			path.Base(device.pciAddress): linux.DT_LNK,
 		})
+	}
+}
+
+// newRDMATestSnapshot returns a snapshot with a ConnectX NIC behind a bridge
+// on domain 0000 and a GPU on an extended (VMD-style, 5-hex-digit) domain.
+func newRDMATestSnapshot() *rdma.Snapshot {
+	const nicLeaf = "devices/pci0000:07/0000:07:01.0/0000:0c:00.0"
+	return &rdma.Snapshot{
+		VerbsABIVersion: "6\n",
+		PCINodes: []rdma.PCINode{
+			{Path: "devices/pci0000:07"},
+			{Path: "devices/pci0000:07/0000:07:01.0", Attrs: map[string]string{"class": "0x060400\n"}},
+			{Path: nicLeaf, Attrs: map[string]string{"vendor": "0x15b3\n", "uevent": "PCI_SLOT_NAME=0000:0c:00.0\n"}},
+			{Path: "devices/pci10000:e0"},
+			{Path: "devices/pci10000:e0/10000:e0:06.0", Attrs: map[string]string{"class": "0x030200\n", "vendor": "0x10de\n"}},
+		},
+		Devices: []rdma.Device{{
+			Uverbs:     "uverbs0",
+			IBDev:      "mlx5_0",
+			LeafPCI:    nicLeaf,
+			Dev:        "231:192\n",
+			ABIVersion: "1\n",
+			IBAttrs:    map[string]string{"node_guid": "0011:2233:4455:6677\n"},
+			Ports: map[string]rdma.Port{
+				"1": {
+					StaticAttrs:  map[string]string{"link_layer": "Ethernet\n"},
+					LiveAttrs:    []string{"state"},
+					GIDNames:     []string{"0", "1"},
+					CounterNames: []string{"port_rcv_data"},
+				},
+			},
+			NetDevs: []rdma.NetDev{{Name: "eth1", Attrs: map[string]string{"mtu": "9000\n"}}},
+		}},
+		NUMA: &rdma.NUMA{
+			Aggregate: map[string]string{"online": "0\n"},
+			Nodes:     map[string]map[string]string{"node0": {"cpulist": "0-3\n"}},
+		},
+	}
+}
+
+func readTestFile(s *testutil.System, p string) (string, error) {
+	pop := s.PathOpAtRoot(p)
+	fd, err := s.VFS.OpenAt(s.Ctx, s.Creds, pop, &vfs.OpenOptions{})
+	if err != nil {
+		return "", err
+	}
+	defer fd.DecRef(s.Ctx)
+	return s.ReadToEnd(fd)
+}
+
+func TestRDMASysfs(t *testing.T) {
+	s := newTestSystemWithInternalData(t, &sys.InternalData{RDMASysfs: newRDMATestSnapshot()})
+	defer s.Destroy()
+
+	const nicLeaf = "/devices/pci0000:07/0000:07:01.0/0000:0c:00.0"
+	for p, want := range map[string]map[string]testutil.DirentType{
+		"/devices/pci0000:07": {
+			"0000:07:01.0": linux.DT_DIR,
+			"pci_bus":      linux.DT_DIR,
+		},
+		"/devices/pci0000:07/0000:07:01.0": {
+			"0000:0c:00.0": linux.DT_DIR,
+			"pci_bus":      linux.DT_DIR,
+			"subsystem":    linux.DT_LNK,
+			"class":        linux.DT_REG,
+		},
+		nicLeaf: {
+			"infiniband":       linux.DT_DIR,
+			"infiniband_verbs": linux.DT_DIR,
+			"net":              linux.DT_DIR,
+			"subsystem":        linux.DT_LNK,
+			"vendor":           linux.DT_REG,
+			"uevent":           linux.DT_REG,
+		},
+		nicLeaf + "/infiniband/mlx5_0": {
+			"device":    linux.DT_LNK,
+			"node_guid": linux.DT_REG,
+			"ports":     linux.DT_DIR,
+		},
+		nicLeaf + "/infiniband/mlx5_0/ports/1": {
+			"link_layer": linux.DT_REG,
+			"state":      linux.DT_REG,
+			"gids":       linux.DT_DIR,
+			"gid_attrs":  linux.DT_DIR,
+			"counters":   linux.DT_DIR,
+		},
+		nicLeaf + "/infiniband/mlx5_0/ports/1/gids": {
+			"0": linux.DT_REG,
+			"1": linux.DT_REG,
+		},
+		nicLeaf + "/infiniband_verbs/uverbs0": {
+			"ibdev":       linux.DT_REG,
+			"abi_version": linux.DT_REG,
+			"dev":         linux.DT_REG,
+			"device":      linux.DT_LNK,
+		},
+		nicLeaf + "/net/eth1": {
+			"mtu":    linux.DT_REG,
+			"device": linux.DT_LNK,
+		},
+		// Extended-domain (VMD-style) GPU root.
+		"/devices/pci10000:e0": {
+			"10000:e0:06.0": linux.DT_DIR,
+			"pci_bus":       linux.DT_DIR,
+		},
+		"/class/infiniband":       {"mlx5_0": linux.DT_LNK},
+		"/class/infiniband_verbs": {"uverbs0": linux.DT_LNK, "abi_version": linux.DT_REG},
+		"/class/net":              {"eth1": linux.DT_LNK},
+		"/class/pci_bus": {
+			"0000:07":  linux.DT_LNK,
+			"0000:0c":  linux.DT_LNK,
+			"10000:e0": linux.DT_LNK,
+		},
+		"/bus/pci/devices": {
+			"0000:07:01.0":  linux.DT_LNK,
+			"0000:0c:00.0":  linux.DT_LNK,
+			"10000:e0:06.0": linux.DT_LNK,
+		},
+		"/devices/system/node":       {"online": linux.DT_REG, "node0": linux.DT_DIR},
+		"/devices/system/node/node0": {"cpulist": linux.DT_REG},
+	} {
+		pop := s.PathOpAtRoot(p)
+		s.AssertAllDirentTypes(s.ListDirents(pop), want)
+	}
+
+	// Attribute contents, including via a /sys/class symlink (the path
+	// consumers actually resolve).
+	for p, want := range map[string]string{
+		"/class/infiniband/mlx5_0/node_guid":                   "0011:2233:4455:6677\n",
+		"/class/infiniband_verbs/abi_version":                  "6\n",
+		nicLeaf + "/infiniband_verbs/uverbs0/ibdev":            "mlx5_0\n",
+		"/class/infiniband/mlx5_0/ports/1/../../device/vendor": "0x15b3\n",
+	} {
+		got, err := readTestFile(s, p)
+		if err != nil {
+			t.Fatalf("reading %q: %v", p, err)
+		}
+		if got != want {
+			t.Errorf("%q contains %q, want %q", p, got, want)
+		}
 	}
 }
