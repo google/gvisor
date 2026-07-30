@@ -858,9 +858,10 @@ func TestLoadPaths(t *testing.T) {
 
 func TestOptional(t *testing.T) {
 	for _, tc := range []struct {
-		name    string
-		ctrlr   controller
-		invalid []struct {
+		name       string
+		ctrlr      controller
+		extraValid []*specs.LinuxResources
+		invalid    []struct {
 			name string
 			spec *specs.LinuxResources
 			err  string
@@ -947,12 +948,42 @@ func TestOptional(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:  "cpuset",
+			ctrlr: &cpuSet{},
+			extraValid: []*specs.LinuxResources{
+				{CPU: nil},
+				{CPU: &specs.LinuxCPU{}},
+				{CPU: &specs.LinuxCPU{Cpus: "", Mems: ""}},
+			},
+			invalid: []struct {
+				name string
+				spec *specs.LinuxResources
+				err  string
+			}{
+				{
+					name: "cpuset-cpus",
+					spec: &specs.LinuxResources{CPU: &specs.LinuxCPU{Cpus: "0-1"}},
+					err:  "cpuset controller is missing but limits are set in OCI spec",
+				},
+				{
+					name: "cpuset-mems",
+					spec: &specs.LinuxResources{CPU: &specs.LinuxCPU{Mems: "0"}},
+					err:  "cpuset controller is missing but limits are set in OCI spec",
+				},
+				{
+					name: "cpuset-both",
+					spec: &specs.LinuxResources{CPU: &specs.LinuxCPU{Cpus: "0-1", Mems: "0"}},
+					err:  "cpuset controller is missing but limits are set in OCI spec",
+				},
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if !tc.ctrlr.optional() {
 				t.Errorf("%s.optional() = false, want true", tc.name)
 			}
-			for _, emptySpec := range []*specs.LinuxResources{nil, {}} {
+			for _, emptySpec := range append([]*specs.LinuxResources{nil, {}}, tc.extraValid...) {
 				if err := tc.ctrlr.skip(emptySpec); err != nil {
 					t.Errorf("%s.skip(%+v) unexpected error: %v", tc.name, emptySpec, err)
 				}
