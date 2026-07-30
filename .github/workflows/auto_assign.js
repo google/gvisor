@@ -1,10 +1,11 @@
 /**
- * Auto-assigns maintainers from reviewer.json to incoming Pull Requests in a
- * round-robin fashion.
+ * Auto-assigns maintainers from reviewer.json to incoming Pull Requests by
+ * combining GitHub blame suggestions with a randomized roster fallback.
  *
  * This function is executed as a GitHub Action. It parses the active
- * maintainers roster, filters out the PR author and bots, and assigns a
- * reviewer deterministically using a modulo operation on the Pull Request ID.
+ * maintainers roster, filters out the PR author and bots, and assigns up to
+ * two reviewers: prioritizing one suggested domain expert (if available) and
+ * randomly selecting fallback reviewer(s) from the remaining eligible roster.
  *
  * @param {{
  *   github: !Object,
@@ -56,15 +57,72 @@ module.exports = async ({github, context, core}) => {
     return;
   }
 
-  // Basic Round Robin
-  const selectedMatch = eligibleApprovers[prNum % eligibleApprovers.length];
+  // Fetch suggested reviewers via GraphQL
+  let suggestedLogins = [];
+  try {
+    const query = `
+        query($owner: String!, $repo: String!, $prNum: Int!) {
+          repository(owner: $owner, name: $repo) {
+            pullRequest(number: $prNum) {
+              suggestedReviewers {
+                reviewer {
+                  login
+                }
+              }
+            }
+          }
+        }
+      `;
+    const gqlResult = await github.graphql(query, {owner, repo, prNum});
+    suggestedLogins = (gqlResult.repository.pullRequest.suggestedReviewers ||
+                       []).map(s => s.reviewer.login);
+  } catch (error) {
+    core.warning(`Notice: Could not fetch suggested reviewers via GraphQL: ${
+        error.message}`);
+  }
+
+  console.log('Suggested reviewers: ', suggestedLogins);
+
+  // Filter out suggested reviewers that are not in the eligible approvers list
+  const eligibleSuggestions =
+      suggestedLogins.filter(login => eligibleApprovers.includes(login));
+
+  const shuffle = (array) => {
+    const arr = [...array];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  };
+
+  const selectedReviewers = [];
+
+  if (eligibleSuggestions.length > 0) {
+    const shuffledSuggestions = shuffle(eligibleSuggestions);
+    selectedReviewers.push(shuffledSuggestions[0]);
+    console.log(`Selected suggested reviewer: ${shuffledSuggestions[0]}`);
+  }
+
+  // Select from the remaining eligible approvers
+  const remainingEligible =
+      eligibleApprovers.filter(login => !selectedReviewers.includes(login));
+  if (remainingEligible.length > 0 && selectedReviewers.length < 2) {
+    const shuffledRemaining = shuffle(remainingEligible);
+    const needed =
+        Math.min(2 - selectedReviewers.length, shuffledRemaining.length);
+    for (let i = 0; i < needed; i++) {
+      selectedReviewers.push(shuffledRemaining[i]);
+      console.log(`Selected fallback roster reviewer: ${shuffledRemaining[i]}`);
+    }
+  }
 
   // Apply assignment
   try {
     await github.rest.pulls.requestReviewers(
-        {owner, repo, pull_number: prNum, reviewers: [selectedMatch]});
-    console.log(`Successfully requested review from ${
-        selectedMatch} for PR #${prNum}`);
+        {owner, repo, pull_number: prNum, reviewers: selectedReviewers});
+    console.log(`Successfully requested review from [${
+        selectedReviewers.join(', ')}] for PR #${prNum}`);
   } catch (error) {
     core.setFailed(`Failed to apply assignment API calls: ${error.message}`);
     return;
