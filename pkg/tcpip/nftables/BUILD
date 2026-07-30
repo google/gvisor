@@ -73,6 +73,7 @@ go_test(
     library = ":nftables",
     deps = [
         "//pkg/abi/linux",
+        "//pkg/atomicbitops",
         "//pkg/buffer",
         "//pkg/marshal/primitive",
         "//pkg/rand",

@@ -247,6 +247,9 @@ func (op *ctGet) deepCopy() operation {
 // updateReferences implements operation.updateReferences.
 func (op *ctGet) updateReferences(table *Table, sourceTable *Table, sourceOp operation) {}
 
+// destroy implements operation.destroy.
+func (op *ctGet) destroy() {}
+
 // Dump implements operation's Dump interface.
 func (op *ctGet) Dump() ([]byte, *syserr.AnnotatedError) {
 	m := &nlmsg.Message{}
@@ -298,6 +301,9 @@ func (op *ctSet) deepCopy() operation {
 
 // updateReferences implements operation.updateReferences.
 func (op *ctSet) updateReferences(table *Table, sourceTable *Table, sourceOp operation) {}
+
+// destroy implements operation.destroy.
+func (op *ctSet) destroy() {}
 
 // initCTSet initializes a ct set operation.
 func initCTSet(tab *Table, sreg uint8, attrs map[uint16]nlmsg.BytesView) (*ctSet, *syserr.AnnotatedError) {

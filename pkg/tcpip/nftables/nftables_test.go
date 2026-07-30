@@ -26,6 +26,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/rand"
@@ -3651,8 +3652,7 @@ func TestMaxNestedJumps(t *testing.T) {
 				} else {
 					targetName := fmt.Sprintf("chain %d", i+1)
 					var targetChain *Chain
-					targetChain, err = nf.GetChain(tab.GetAddressFamily(), tab.GetName(), targetName)
-					if err != nil {
+					if targetChain, err = nf.GetChain(tab.GetAddressFamily(), tab.GetName(), targetName); err != nil {
 						t.Fatalf("unexpected error getting chain: %v", err)
 					}
 					var op *immediate
@@ -5322,5 +5322,112 @@ func TestGetSetElements(t *testing.T) {
 				t.Errorf("GetSetElements returned unexpected elements diff (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestPruneUnused(t *testing.T) {
+	nft := newNFTablesStd()
+	tab, err := nft.AddTable(arbitraryFamily, "test_table", false)
+	if err != nil {
+		t.Fatalf("unexpected error for AddTable: %v", err)
+	}
+
+	bc, err := nft.AddChainToTable(tab, "base_chain", arbitraryInfoPolicyAccept, "base", false, 0, nil, linux.NF_ACCEPT)
+	if err != nil {
+		t.Fatalf("unexpected error for AddChain: %v", err)
+	}
+
+	// Create an anonymous binding chain.
+	bindingChain, err := nft.AddChainToTable(tab, "anon_chain", nil, "anon", false, linux.NFT_CHAIN_BINDING, nil, 0)
+	if err != nil {
+		t.Fatalf("unexpected error for AddChain binding: %v", err)
+	}
+
+	// Add rule jumping to bindingChain.
+	rule := &Rule{}
+	jumpOp := mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), Chain: bindingChain})
+	if err := rule.addOperation(jumpOp); err != nil {
+		t.Fatalf("unexpected error for addOperation: %v", err)
+	}
+	bindingChain.IncrementChainUse()
+
+	if err := bc.RegisterRule(rule, -1); err != nil {
+		t.Fatalf("unexpected error for RegisterRule: %v", err)
+	}
+
+	if tab.ChainCount() != 2 {
+		t.Fatalf("expected 2 chains in table, got %d", tab.ChainCount())
+	}
+
+	// Delete rule jumping to bindingChain.
+	if err := bc.DeleteRule(rule); err != nil {
+		t.Fatalf("unexpected error for DeleteRule: %v", err)
+	}
+
+	// Sweep unbound binding chains at top level.
+	nft.PruneUnused()
+
+	// Verify that bindingChain was swept from tab.
+	if tab.ChainCount() != 1 {
+		t.Fatalf("expected 1 chain after sweep, got %d", tab.ChainCount())
+	}
+	if _, err := tab.GetChain("anon_chain"); err == nil {
+		t.Fatalf("expected anon_chain to be swept and removed from table")
+	}
+}
+
+func TestDestroyTable(t *testing.T) {
+	nf := newNFTablesStd()
+	tab, err := nf.AddTable(arbitraryFamily, "test_table", false)
+	if err != nil {
+		t.Fatalf("unexpected error for AddTable: %v", err)
+	}
+
+	bc, err := nf.AddChainToTable(tab, "base", arbitraryInfoPolicyAccept, "base", false, 0, nil, linux.NF_ACCEPT)
+	if err != nil {
+		t.Fatalf("unexpected error for AddChain: %v", err)
+	}
+
+	// Add a target chain and rule jumping to it.
+	targetChain, err := nf.AddChainToTable(tab, "target", nil, "target", false, 0, nil, 0)
+	if err != nil {
+		t.Fatalf("unexpected error for AddChain target: %v", err)
+	}
+	rule := &Rule{}
+	op := mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), Chain: targetChain})
+	if err := rule.addOperation(op); err != nil {
+		t.Fatalf("unexpected error for addOperation: %v", err)
+	}
+	targetChain.IncrementChainUse()
+	if err := bc.RegisterRule(rule, -1); err != nil {
+		t.Fatalf("unexpected error for RegisterRule: %v", err)
+	}
+
+	afFilter := tab.afFilter
+
+	tab.destroy()
+
+	// 1. Verify the table was cleanly reset back to an empty shell.
+	if diff := cmp.Diff(&Table{}, tab, cmp.AllowUnexported(Table{}, atomicbitops.Uint64{})); diff != "" {
+		t.Errorf("Table differs from expected after destroy (-want +got):\n%s", diff)
+	}
+
+	if len(afFilter.hfStacks) != 0 {
+		t.Errorf("expected afFilter.hfStacks to be empty after destroy")
+	}
+
+	// 2. Verify the base chain was destroyed.
+	if diff := cmp.Diff(&Chain{}, bc, cmp.AllowUnexported(Chain{})); diff != "" {
+		t.Errorf("Chain differs from expected after destroy (-want +got):\n%s", diff)
+	}
+
+	// 3. Verify the target chain was destroyed and its chainUse decremented to 0.
+	if diff := cmp.Diff(&Chain{}, targetChain, cmp.AllowUnexported(Chain{})); diff != "" {
+		t.Errorf("Target chain differs from expected after destroy (-want +got):\n%s", diff)
+	}
+
+	// 4. Verify the rule was destroyed.
+	if diff := cmp.Diff(&Rule{}, rule, cmp.AllowUnexported(Rule{})); diff != "" {
+		t.Errorf("Rule differs from expected after destroy (-want +got):\n%s", diff)
 	}
 }

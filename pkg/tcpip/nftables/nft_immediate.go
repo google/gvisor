@@ -130,6 +130,17 @@ func (op *immediate) updateReferences(table *Table, sourceTable *Table, sourceOp
 	}
 }
 
+// destroy implements operation.destroy.
+func (op *immediate) destroy() {
+	v := &op.verdict
+	if v.Chain == nil {
+		return
+	}
+	chain := v.Chain
+	chain.DecrementChainUse()
+	v.Chain = nil
+}
+
 // checkCompatibility implements operation.checkCompatibility.
 func (op immediate) checkCompatibility(cCtx *opCompatCtx) *syserr.AnnotatedError {
 	return nil

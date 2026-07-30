@@ -393,15 +393,9 @@ type Chain struct {
 	// by the kernel, but rather userspace applications like nft binary.
 	userData []byte
 
-	// TODO: b/421437663 - Increment the chainUse field when a jump or goto
-	// instruction is encountered.
 	// From net/netfilter/nf_tables_api.c: nft_data_hold
 	// chainUse is the number of jump references to this chain.
 	chainUse uint32
-
-	// bound can only be set if the chain has the NFT_CHAIN_BINDING flag is set.
-	// If bound is true, the chain is being jumped to by a specific chain in the same table.
-	bound bool
 
 	// comment is the optional comment for the table.
 	comment string
@@ -741,6 +735,9 @@ type operation interface {
 
 	// updateReferences updates any references/pointers to objects in the given table.
 	updateReferences(table *Table, sourceTable *Table, sourceOp operation)
+
+	// destroy performs cleanup for the operation.
+	destroy()
 }
 
 // Ensures all operations implement the Operation interface at compile time.
@@ -1268,7 +1265,6 @@ func deepCopyChain(chain *Chain, tableCopy *Table) *Chain {
 		handleToRule: make(map[uint64]*Rule),
 		userData:     slices.Clone(chain.userData),
 		chainUse:     chain.chainUse,
-		bound:        chain.bound,
 		comment:      chain.comment,
 	}
 
