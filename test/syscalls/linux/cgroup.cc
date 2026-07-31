@@ -27,8 +27,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <list>
-#include <memory>
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -42,17 +40,13 @@
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
-#include "absl/synchronization/mutex.h"
 #include "absl/synchronization/notification.h"
-#include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/cgroup_util.h"
-#include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
-#include "test/util/mount_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/save_util.h"
 #include "test/util/temp_path.h"
@@ -64,14 +58,10 @@ namespace testing {
 namespace {
 
 using ::testing::_;
-using ::testing::Contains;
 using ::testing::Each;
 using ::testing::Eq;
 using ::testing::Ge;
 using ::testing::Gt;
-using ::testing::HasSubstr;
-using ::testing::Key;
-using ::testing::Not;
 
 std::vector<std::string> known_controllers = {
     "cpu", "cpuset", "cpuacct", "devices", "job", "memory", "pids",
@@ -1057,7 +1047,7 @@ TEST(DevicesCgroup, AddDeviceRule) {
   EXPECT_THAT(c.ReadControlFile("devices.list"),
               IsPosixErrorOkAndHolds("c 7:* rw\n"));
 
-  // Diasllows all devices.
+  // Disallows all devices.
   ASSERT_NO_ERRNO(c.WriteControlFile("devices.deny", "a"));
   EXPECT_THAT(c.ReadControlFile("devices.list"), IsPosixErrorOkAndHolds(""));
 
