@@ -59,6 +59,7 @@ import (
 	"syscall"
 
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -69,6 +70,7 @@ import (
 const (
 	metricServerName    = "runsc-metric-server"
 	checkpointGoferName = "checkpointgofer"
+	gvisorSentryName    = "gvisor_sentry"
 )
 
 // binDirName is the name of the directory holding sidecar binaries.
@@ -105,9 +107,11 @@ func cutSkip(val, prefix string) (string, bool) {
 // Set from config flag.
 var ReleaseEnforcementPolicy = config.SidecarNever
 
-// withEnforceRelease returns envv with `GVISOR_ENFORCE_RELEASE` set for
-// sidecar processes.
-func withEnforceRelease(envv []string) []string {
+// WithEnforceRelease returns envv with `GVISOR_ENFORCE_RELEASE` set for
+// sidecar processes. Exec and ForkExec apply it automatically
+// Callers that spawn a sidecar through other means (manual `exec.Cmd`)
+// must apply it to the sidecar process's env themselves.
+func WithEnforceRelease(envv []string) []string {
 	val := os.Getenv(enforceReleaseEnv)
 	prefix, want := "", ""
 	if w, ok := cutSkip(val, enforceReleaseTestonlySkip); ok {
@@ -198,10 +202,12 @@ var (
 	MetricServer = Binary{Name: metricServerName}
 	// CheckpointGofer is the checkpoint gofer sidecar binary.
 	CheckpointGofer = Binary{Name: checkpointGoferName}
+	// GvisorSentry is the sentry (kernel) sidecar binary.
+	GvisorSentry = Binary{Name: gvisorSentryName}
 )
 
 // All lists every known sidecar.
-var All = []*Binary{&MetricServer, &CheckpointGofer}
+var All = []*Binary{&MetricServer, &CheckpointGofer, &GvisorSentry}
 
 // Options is the set of options used to execute a sidecar binary.
 type Options struct {
@@ -296,7 +302,7 @@ func (b *Binary) notAvailableError() error {
 // Exec resolves the binary and replaces the current process with it. It only
 // returns if execution could not be started.
 func (b *Binary) Exec(opts Options) error {
-	opts.Envv = withEnforceRelease(opts.Envv)
+	opts.Envv = WithEnforceRelease(opts.Envv)
 	if p, err := b.Path(); err == nil {
 		log.Infof("sidecar %q found: executing %s (%v)", b.Name, p, &opts)
 		return execDisk(p, opts)
@@ -311,7 +317,7 @@ func (b *Binary) Exec(opts Options) error {
 // ForkExec resolves the binary and runs it in a new process, returning the
 // child's PID.
 func (b *Binary) ForkExec(opts Options) (int, error) {
-	opts.Envv = withEnforceRelease(opts.Envv)
+	opts.Envv = WithEnforceRelease(opts.Envv)
 	if p, err := b.Path(); err == nil {
 		log.Infof("sidecar %q: executing %s (%v)", b.Name, p, &opts)
 		return forkExecDisk(p, opts)

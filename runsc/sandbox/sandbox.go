@@ -37,6 +37,7 @@ import (
 	"github.com/moby/sys/capability"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/cleanup"
@@ -943,8 +944,16 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	}
 	lfOpts.Command = "boot" // Revert command to "boot".
 
+	bootBinPath := specutils.ExePath
+	if p, err := gvisorbinaries.GvisorSentry.Path(); err == nil {
+		log.Infof("Sidecar %q found: booting sandbox with %s", gvisorbinaries.GvisorSentry.Name, p)
+		bootBinPath = p
+	} else {
+		log.Infof("Sidecar %q not usable (%v): booting sandbox with runsc itself", gvisorbinaries.GvisorSentry.Name, err)
+	}
+
 	// Relay all the config flags to the sandbox process.
-	cmd := exec.Command(specutils.ExePath, conf.ToFlags()...)
+	cmd := exec.Command(bootBinPath, conf.ToFlags()...)
 	cmd.SysProcAttr = &unix.SysProcAttr{
 		// Detach from this session, otherwise cmd will get SIGHUP and SIGCONT
 		// when re-parented.
@@ -964,10 +973,15 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	// All flags after this must be for the boot command
 	cmd.Args = append(cmd.Args, "boot", "--bundle="+args.BundleDir)
 
-	// Clear environment variables, unless --TESTONLY-unsafe-nonroot is set.
-	if !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
-		// Setting cmd.Env = nil causes cmd to inherit the current process's env.
+	if conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
+		// --TESTONLY-unsafe-nonroot is set, so keep env.
+		cmd.Env = os.Environ()
+	} else {
+		// Clear environment variables, unless --TESTONLY-unsafe-nonroot is set.
 		cmd.Env = []string{}
+	}
+	if bootBinPath != specutils.ExePath {
+		cmd.Env = gvisorbinaries.WithEnforceRelease(cmd.Env)
 	}
 	if config.CgoEnabled {
 		// Platforms that use stub processes are not compatible with

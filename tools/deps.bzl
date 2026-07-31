@@ -28,13 +28,26 @@ _deps_check = aspect(
     attr_aspects = ["deps"],
 )
 
+def _workspace_of(label):
+    # Under bzlmod, external labels have canonical workspace names like
+    # "gazelle++go_deps+org_golang_x_sys".
+    # Strip prefixes so that "@org_golang_x_sys//..." prefixes match.
+    return label.workspace_name.rsplit("+", 1)[-1]
+
+def _parse_prefix(prefix):
+    workspace, pkg = prefix.split("//", 1)
+    if len(workspace) > 0 and workspace[0] == "@":
+        workspace = workspace[1:]
+    return workspace, pkg
+
+def _matches_prefix(label, prefix):
+    workspace, pkg = _parse_prefix(prefix)
+    return _workspace_of(label) == workspace and label.package.startswith(pkg)
+
 def _is_allowed(target, allowlist, prefixes):
     # Check for allowed prefixes.
     for prefix in prefixes:
-        workspace, pfx = prefix.split("//", 1)
-        if len(workspace) > 0 and workspace[0] == "@":
-            workspace = workspace[1:]
-        if target.workspace_name == workspace and target.package.startswith(pfx):
+        if _matches_prefix(target, prefix):
             return True
 
     # Check the allowlist.
@@ -44,7 +57,24 @@ def _is_allowed(target, allowlist, prefixes):
 
     return False
 
+def _check_definitely_not_allowed(ctx):
+    # `deps_test` already rejects any dependency that is not explicitly
+    # allowed, but this rejects additions to the allowlist itself, to make
+    # it obvious at review time that something that should definitely not
+    # be added is still being added. Defense in depth?
+    for denied in ctx.attr.definitely_not_allowed_prefixes:
+        denied_workspace, denied_pkg = _parse_prefix(denied)
+        for allowed in ctx.attr.allowed:
+            if _matches_prefix(allowed.label, denied):
+                fail("allowed entry %s matches definitely_not_allowed_prefixes entry %s" % (allowed.label, denied))
+        for prefix in ctx.attr.allowed_prefixes:
+            workspace, pkg = _parse_prefix(prefix)
+            if workspace == denied_workspace and (pkg.startswith(denied_pkg) or denied_pkg.startswith(pkg)):
+                fail("allowed_prefixes entry %s matches definitely_not_allowed_prefixes entry %s" % (prefix, denied))
+
 def _deps_test_impl(ctx):
+    _check_definitely_not_allowed(ctx)
+
     nodes = {}
     for target in ctx.attr.targets:
         for (node_target, node_deps) in target[DepsInfo].nodes.items():
@@ -113,6 +143,12 @@ deps_test = rule(
         ),
         "allowed_prefixes": attr.string_list(
             doc = "Any packages beginning with these prefixes are allowed.",
+        ),
+        "definitely_not_allowed_prefixes": attr.string_list(
+            doc = "Packages beginning with these prefixes must not be " +
+                  "covered by allowed or allowed_prefixes. Makes " +
+                  "'never add these' possible to be defined explicitly in " +
+                  "the BUILD file.",
         ),
     },
     test = True,

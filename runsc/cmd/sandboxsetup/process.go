@@ -112,6 +112,26 @@ func PrepareArgs(subCmdName string, fSet *flag.FlagSet, override map[string]stri
 	return args
 }
 
+// SyncUsernsForRootless waits on usernsFD to be closed and then sets
+// UID/GID to uid/gid. Note that this function calls runtime.LockOSThread().
+//
+// Postcondition: All callers must re-exec themselves after this returns.
+func SyncUsernsForRootless(fd int, uid uint32, gid uint32) {
+	if err := WaitForFD(fd, "userns sync FD"); err != nil {
+		util.Fatalf("failed to sync on userns FD: %v", err)
+	}
+
+	// SETUID changes UID on the current system thread, so we have
+	// to re-execute current binary.
+	runtime.LockOSThread()
+	if _, _, errno := unix.RawSyscall(unix.SYS_SETUID, uintptr(uid), 0, 0); errno != 0 {
+		util.Fatalf("failed to set UID: %v", errno)
+	}
+	if _, _, errno := unix.RawSyscall(unix.SYS_SETGID, uintptr(gid), 0, 0); errno != 0 {
+		util.Fatalf("failed to set GID: %v", errno)
+	}
+}
+
 // ExecProcUmounter executes a child process that umounts /proc when the
 // returned pipe is closed.
 func ExecProcUmounter() (*exec.Cmd, *os.File) {

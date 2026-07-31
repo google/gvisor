@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package cmd
+// Package sentrycmd holds the subcommands run by the sentry process.
+package sentrycmd
 
 import (
 	"context"
@@ -29,6 +30,7 @@ import (
 	"github.com/moby/sys/capability"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/coretag"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/fd"
@@ -63,9 +65,9 @@ var (
 		"CAP_FSETID",
 	}
 
-	// directfsSandboxLinuxCaps is the minimal set of capabilities needed by the
+	// DirectfsSandboxLinuxCaps is the minimal set of capabilities needed by the
 	// sandbox to operate on files in directfs mode.
-	directfsSandboxLinuxCaps = &specs.LinuxCapabilities{
+	DirectfsSandboxLinuxCaps = &specs.LinuxCapabilities{
 		Bounding:  directfsSandboxCaps,
 		Effective: directfsSandboxCaps,
 		Permitted: directfsSandboxCaps,
@@ -116,7 +118,7 @@ type Boot struct {
 	stdioFDs sandboxsetup.IntFlags
 
 	// passFDs are mappings of user-supplied host to guest file descriptors.
-	passFDs fdMappings
+	passFDs sandboxsetup.FDMappings
 
 	// execFD is the host file descriptor used for program execution.
 	execFD int
@@ -365,7 +367,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	}
 
 	if b.syncUsernsFD >= 0 {
-		syncUsernsForRootless(b.syncUsernsFD, uint32(b.uid), uint32(b.gid))
+		sandboxsetup.SyncUsernsForRootless(b.syncUsernsFD, uint32(b.uid), uint32(b.gid))
 		argOverride["sync-userns-fd"] = "-1"
 	}
 
@@ -457,7 +459,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		}
 
 		if conf.DirectFS {
-			caps = specutils.MergeCapabilities(caps, directfsSandboxLinuxCaps)
+			caps = specutils.MergeCapabilities(caps, DirectfsSandboxLinuxCaps)
 		}
 		if conf.Network == config.NetworkHost {
 			curCaps, err := capability.NewPid2(0)

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package cmd
+package sandboxsetup
 
 import (
 	"fmt"
@@ -22,11 +22,11 @@ import (
 	"gvisor.dev/gvisor/runsc/boot"
 )
 
-// fdMappings can be used with flags that appear multiple times.
-type fdMappings []boot.FDMapping
+// FDMappings can be used with flags that appear multiple times.
+type FDMappings []boot.FDMapping
 
 // String implements flag.Value.
-func (i *fdMappings) String() string {
+func (i *FDMappings) String() string {
 	var mappings []string
 	for _, m := range *i {
 		mappings = append(mappings, fmt.Sprintf("%v:%v", m.Host, m.Guest))
@@ -35,18 +35,18 @@ func (i *fdMappings) String() string {
 }
 
 // Get implements flag.Value.
-func (i *fdMappings) Get() any {
+func (i *FDMappings) Get() any {
 	return i
 }
 
 // GetArray returns an array of mappings.
-func (i *fdMappings) GetArray() []boot.FDMapping {
+func (i *FDMappings) GetArray() []boot.FDMapping {
 	return *i
 }
 
 // Set implements flag.Value and appends a mapping from the command line to the
 // mappings array. Set(String()) should be idempotent.
-func (i *fdMappings) Set(s string) error {
+func (i *FDMappings) Set(s string) error {
 	for _, m := range strings.Split(s, ",") {
 		split := strings.Split(m, ":")
 		if len(split) != 2 {
