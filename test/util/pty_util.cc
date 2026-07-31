@@ -21,6 +21,7 @@
 
 #include <cctype>
 #include <cstring>
+#include <iterator>
 #include <ostream>
 #include <string>
 
@@ -223,13 +224,13 @@ bool operator==(struct kernel_termios const& a,
 
 std::ostream& operator<<(std::ostream& os, struct kernel_termios const& a) {
   os << "{ c_iflag = "
-     << ParseFields(kIflagFields, ABSL_ARRAYSIZE(kIflagFields), a.c_iflag);
+     << ParseFields(kIflagFields, std::size(kIflagFields), a.c_iflag);
   os << ", c_oflag = "
-     << ParseFields(kOflagFields, ABSL_ARRAYSIZE(kOflagFields), a.c_oflag);
+     << ParseFields(kOflagFields, std::size(kOflagFields), a.c_oflag);
   os << ", c_cflag = "
-     << ParseFields(kCflagFields, ABSL_ARRAYSIZE(kCflagFields), a.c_cflag);
+     << ParseFields(kCflagFields, std::size(kCflagFields), a.c_cflag);
   os << ", c_lflag = "
-     << ParseFields(kLflagFields, ABSL_ARRAYSIZE(kLflagFields), a.c_lflag);
+     << ParseFields(kLflagFields, std::size(kLflagFields), a.c_lflag);
   os << ", c_line = " << (int)a.c_line;
   os << ", c_cc = { [VINTR] = '" << FormatCC(a.c_cc[VINTR]);
   os << "', [VQUIT] = '" << FormatCC(a.c_cc[VQUIT]);
