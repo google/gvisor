@@ -262,7 +262,7 @@ func restoreContainers(conf *config.Config, specs []*specs.Spec, ids []string, i
 		cu.Add(func() { cont.Destroy() })
 		containers = append(containers, cont)
 
-		if err := cont.Restore(conf, imagePath, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
+		if err := cont.Restore(conf, imagePath, false /* direct */, false /* background */, false /* splitFSRestore */, nil /* networkArgs */); err != nil {
 			return nil, nil, fmt.Errorf("error restoring container: %v", err)
 		}
 
