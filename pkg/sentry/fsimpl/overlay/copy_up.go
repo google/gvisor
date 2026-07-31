@@ -181,6 +181,13 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 			cleanupUndoCopyUp()
 			return err
 		}
+		acl, newMode, err := newFD.SetPosixACL(ctx, vfs.AccessACL, d.accessACL.Load(), false /* clearSGID */)
+		if err != nil {
+			cleanupUndoCopyUp()
+			return err
+		}
+		d.accessACL.Store(acl)
+		d.mode.Store(uint32(newMode))
 		d.upperVD = newFD.VirtualDentry()
 		d.upperVD.IncRef()
 
@@ -207,6 +214,19 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 			cleanupUndoCopyUp()
 			return err
 		}
+		acl, newMode, err := vfsObj.SetPosixACLAt(ctx, d.fs.creds, &newpop, vfs.AccessACL, d.accessACL.Load(), false /* clearSGID */)
+		if err != nil {
+			cleanupUndoCopyUp()
+			return err
+		}
+		d.accessACL.Store(acl)
+		d.mode.Store(uint32(newMode))
+		defaultACL, _, err := vfsObj.SetPosixACLAt(ctx, d.fs.creds, &newpop, vfs.DefaultACL, d.defaultACL.Load(), false /* clearSGID */)
+		if err != nil {
+			cleanupUndoCopyUp()
+			return err
+		}
+		d.defaultACL.Store(defaultACL)
 		upperVD, err := vfsObj.GetDentryAt(ctx, d.fs.creds, &newpop, &vfs.GetDentryOptions{})
 		if err != nil {
 			cleanupUndoCopyUp()
@@ -236,6 +256,13 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 			cleanupUndoCopyUp()
 			return err
 		}
+		acl, newMode, err := vfsObj.SetPosixACLAt(ctx, d.fs.creds, &newpop, vfs.AccessACL, d.accessACL.Load(), false /* clearSGID */)
+		if err != nil {
+			cleanupUndoCopyUp()
+			return err
+		}
+		d.accessACL.Store(acl)
+		d.mode.Store(uint32(newMode))
 		upperVD, err := vfsObj.GetDentryAt(ctx, d.fs.creds, &newpop, &vfs.GetDentryOptions{})
 		if err != nil {
 			cleanupUndoCopyUp()
@@ -265,6 +292,13 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 			cleanupUndoCopyUp()
 			return err
 		}
+		acl, newMode, err := vfsObj.SetPosixACLAt(ctx, d.fs.creds, &newpop, vfs.AccessACL, d.accessACL.Load(), false /* clearSGID */)
+		if err != nil {
+			cleanupUndoCopyUp()
+			return err
+		}
+		d.accessACL.Store(acl)
+		d.mode.Store(uint32(newMode))
 		upperVD, err := vfsObj.GetDentryAt(ctx, d.fs.creds, &newpop, &vfs.GetDentryOptions{})
 		if err != nil {
 			cleanupUndoCopyUp()
@@ -375,7 +409,7 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 // abort the copy-up. Loosely analogous to Linux's
 // fs/overlayfs/util.c:ovl_must_copy_xattr(). Here are the differences:
 //   - Linux includes "system.posix_acl_access" and "system.posix_acl_default".
-//     As of writing, these are not supported in gVisor and so are excluded.
+//     In gVisor, we handle these separately.
 //   - Linux includes all "security.*" xattrs. gVisor only supports
 //     "security.capability" and so only that is included here.
 func mustCopyXattr(name string) bool {
@@ -404,6 +438,11 @@ func (d *dentry) copyXattrsLocked(ctx context.Context) error {
 	for _, name := range lowerXattrs {
 		// Do not copy up overlay attributes.
 		if d.fs.isOverlayXattr(name) {
+			continue
+		}
+
+		// Skip POSIX ACLs, which are handled separately.
+		if name == linux.XATTR_NAME_POSIX_ACL_ACCESS || name == linux.XATTR_NAME_POSIX_ACL_DEFAULT {
 			continue
 		}
 
