@@ -177,7 +177,7 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 	var cachedKillSeq uint64 // To avoid racing with cgroup.kill.
 
 	if cfg.cloneIntoCgroup {
-		c, err := srcT.getCgroup2NodeFromFD(cfg.cgroupFD)
+		c, err := srcT.GetCgroup2NodeFromFD(cfg.cgroupFD)
 		if err != nil {
 			return nil, err
 		}

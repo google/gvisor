@@ -193,6 +193,11 @@ syscall_test(
 )
 
 syscall_test(
+    mount_cgroup_v2 = True,
+    test = "//test/syscalls/linux:cgroup2_ebpf_test",
+)
+
+syscall_test(
     test = "//test/syscalls/linux:epoll_test",
 )
 
