@@ -20,6 +20,7 @@ import (
 	"os"
 
 	"gvisor.dev/gvisor/pkg/erofs"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
@@ -50,4 +51,11 @@ func (d *dentry) saveParent() *dentry {
 // loadParent is called by stateify.
 func (d *dentry) loadParent(_ context.Context, parent *dentry) {
 	d.parent.Store(parent)
+}
+
+// afterLoad is called by stateify.
+func (d *dentry) afterLoad(context.Context) {
+	if d.refs.Load() != -1 {
+		refs.Register(d)
+	}
 }
