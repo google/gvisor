@@ -22,9 +22,13 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/time/clock.h"
+#include "absl/time/time.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
+#include "test/util/thread_util.h"
 
 namespace gvisor {
 namespace testing {
@@ -249,6 +253,34 @@ TEST_P(UnboundDgramUnixSocketPairTest, PollAfterFullShutdown) {
   struct pollfd peer_poll_fd = {sockets->first_fd(), POLLIN | POLLRDHUP, 0};
   EXPECT_THAT(RetryEINTR(poll)(&peer_poll_fd, 1, /*timeout=*/0),
               SyscallSucceedsWithValue(0));
+}
+
+// A blocked poller interested only in hangup events (events=0; POLLHUP is
+// unmaskable) on a connected datagram sender must be woken by the sender's
+// own concurrent full shutdown: unix_shutdown() wakes all waiters via
+// sk_state_change(), and the poller re-evaluates to POLLHUP.
+TEST_P(UnboundDgramUnixSocketPairTest, ShutdownWakesHangupOnlyPoller) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  ASSERT_THAT(bind(sockets->first_fd(), sockets->first_addr(),
+                   sockets->first_addr_size()),
+              SyscallSucceeds());
+  ASSERT_THAT(connect(sockets->second_fd(), sockets->first_addr(),
+                      sockets->first_addr_size()),
+              SyscallSucceeds());
+
+  const int fd = sockets->second_fd();
+  struct pollfd pfd = {fd, 0, 0};
+  int ret = 0;
+  ScopedThread t([&] { ret = RetryEINTR(poll)(&pfd, 1, 3000); });
+  // Give the poller time to block; if the shutdown still wins the race, the
+  // test degrades to checking poll's entry-time readiness, which is
+  // separately covered by PollAfterFullShutdown.
+  absl::SleepFor(absl::Milliseconds(300));
+  ASSERT_THAT(shutdown(fd, SHUT_RDWR), SyscallSucceeds());
+  t.Join();
+
+  EXPECT_EQ(ret, 1);
+  EXPECT_EQ(pfd.revents, POLLHUP);
 }
 
 INSTANTIATE_TEST_SUITE_P(
