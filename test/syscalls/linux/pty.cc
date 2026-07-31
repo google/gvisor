@@ -32,14 +32,16 @@
 #include <unistd.h>
 
 #include <csignal>
+#include <cstdint>
 #include <ctime>
-#include <iostream>
+#include <functional>
 #include <string>
+#include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/base/macros.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/str_format.h"
 #include "absl/synchronization/notification.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
@@ -52,6 +54,7 @@
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/pty_util.h"
+#include "test/util/save_util.h"
 #include "test/util/signal_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -137,7 +140,7 @@ struct kernel_termios DefaultTermios() {
 // Returns a partial read if some bytes were read.
 //
 // fd must be non-blocking.
-PosixErrorOr<size_t> PollAndReadFd(int fd, void *buf, size_t count,
+PosixErrorOr<size_t> PollAndReadFd(int fd, void* buf, size_t count,
                                    absl::Duration timeout) {
   absl::Time end = absl::Now() + timeout;
 
@@ -156,7 +159,7 @@ PosixErrorOr<size_t> PollAndReadFd(int fd, void *buf, size_t count,
     }
 
     ssize_t n =
-        ReadFd(fd, static_cast<char *>(buf) + completed, count - completed);
+        ReadFd(fd, static_cast<char*>(buf) + completed, count - completed);
     if (n < 0) {
       if (errno == EAGAIN) {
         // Linux sometimes returns EAGAIN from this read, despite the fact that
@@ -251,14 +254,14 @@ PosixErrorOr<int> WaitUntilReceived(int fd, int count) {
 }
 
 // Verifies that there is nothing left to read from fd.
-void ExpectFinished(const FileDescriptor &fd) {
+void ExpectFinished(const FileDescriptor& fd) {
   // Nothing more to read.
   char c;
   EXPECT_THAT(ReadFd(fd.get(), &c, 1), SyscallFailsWithErrno(EAGAIN));
 }
 
 // Verifies that we can read expected bytes from fd into buf.
-void ExpectReadable(const FileDescriptor &fd, int expected, char *buf) {
+void ExpectReadable(const FileDescriptor& fd, int expected, char* buf) {
   size_t n = ASSERT_NO_ERRNO_AND_VALUE(
       PollAndReadFd(fd.get(), buf, expected, kTimeout));
   EXPECT_EQ(expected, n);
@@ -631,9 +634,9 @@ class PtyTest : public ::testing::Test {
 
   // Writes master_input to the master file descriptor and verifies that
   // the replica and the echo output match what is expected.
-  void TestCanonicalIO(const char *master_input,
-                       const char *expected_replica_output,
-                       const char *expected_echo_output) {
+  void TestCanonicalIO(const char* master_input,
+                       const char* expected_replica_output,
+                       const char* expected_echo_output) {
     ASSERT_THAT(WriteFd(master_.get(), master_input, strlen(master_input)),
                 SyscallSucceedsWithValue(strlen(master_input)));
 
@@ -1568,7 +1571,7 @@ TEST_F(PtyTest, SwitchTwiceMultiline) {
   std::string kExpected = "GO\nBLUE\n!";
 
   // Write each line.
-  for (const std::string &input : kInputs) {
+  for (const std::string& input : kInputs) {
     ASSERT_THAT(WriteFd(master_.get(), input.c_str(), input.size()),
                 SyscallSucceedsWithValue(input.size()));
   }
@@ -1608,18 +1611,18 @@ TEST_F(PtyTest, QueueSize) {
 
 TEST_F(PtyTest, PartialBadBuffer) {
   // Allocate 2 pages.
-  void *addr = mmap(nullptr, 2 * kPageSize, PROT_READ | PROT_WRITE,
+  void* addr = mmap(nullptr, 2 * kPageSize, PROT_READ | PROT_WRITE,
                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   ASSERT_NE(addr, MAP_FAILED);
-  char *buf = reinterpret_cast<char *>(addr);
+  char* buf = reinterpret_cast<char*>(addr);
 
   // Guard the 2nd page for our read to run into.
   ASSERT_THAT(
-      mprotect(reinterpret_cast<void *>(buf + kPageSize), kPageSize, PROT_NONE),
+      mprotect(reinterpret_cast<void*>(buf + kPageSize), kPageSize, PROT_NONE),
       SyscallSucceeds());
 
   // Leave only one free byte in the buffer.
-  char *bad_buffer = buf + kPageSize - 1;
+  char* bad_buffer = buf + kPageSize - 1;
 
   // Write to the master.
   constexpr char kBuf[] = "hello\n";
@@ -1635,7 +1638,10 @@ TEST_F(PtyTest, PartialBadBuffer) {
       ReadFd(replica_.get(), bad_buffer, size),
       AnyOf(SyscallFailsWithErrno(EFAULT), SyscallFailsWithErrno(EAGAIN)));
 
-  EXPECT_THAT(munmap(addr, 2 * kPageSize), SyscallSucceeds()) << addr;
+  // Format addr as a string before calling munmap so it can be safely streamed
+  // in diagnostic output on failure without triggering static analysis warnings
+  std::string const addr_str = absl::StrFormat("%p", addr);
+  EXPECT_THAT(munmap(addr, 2 * kPageSize), SyscallSucceeds()) << addr_str;
 }
 
 // Test that writing nothing to the PTY replica's output queue does not return
