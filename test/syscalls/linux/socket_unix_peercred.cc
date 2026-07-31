@@ -14,7 +14,9 @@
 
 #include "test/syscalls/linux/socket_unix_peercred.h"
 
+#include <errno.h>
 #include <sched.h>
+#include <string.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -22,8 +24,14 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <array>
+#include <atomic>
+#include <memory>
+
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "test/util/cleanup.h"
+#include "test/util/file_descriptor.h"
 #include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
 #include "test/util/memory_util.h"
@@ -32,6 +40,7 @@
 #include "test/util/save_util.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
+#include "test/util/thread_util.h"
 
 namespace gvisor {
 namespace testing {
@@ -268,8 +277,8 @@ struct PeerCredNSChildArgs {
 // peerCredNSConnectChild is the entry point of a process cloned into a new PID
 // namespace (so getpid() returns 1). It connects to addr, reports its
 // in-namespace PID, then blocks until the parent closes the connection.
-int peerCredNSConnectChild(void* arg) {
-  auto* a = static_cast<PeerCredNSChildArgs*>(arg);
+int peerCredNSConnectChild(void *arg) {
+  auto *a = static_cast<PeerCredNSChildArgs *>(arg);
   int s = socket(AF_UNIX, SOCK_STREAM, 0);
   TEST_PCHECK_MSG(s >= 0, "child socket failed");
   TEST_PCHECK_MSG(connect(s, AsSockAddr(&a->addr), sizeof(a->addr)) == 0,
@@ -318,7 +327,7 @@ TEST_P(UnixSocketPeerCredTest, PeerCredAcrossPIDNamespace) {
       Mmap(nullptr, kStackSize, PROT_READ | PROT_WRITE,
            MAP_PRIVATE | MAP_ANONYMOUS | MAP_STACK, -1, 0));
   pid_t child_pid = clone(peerCredNSConnectChild,
-                          reinterpret_cast<char*>(stack.ptr()) + stack.len(),
+                          reinterpret_cast<char *>(stack.ptr()) + stack.len(),
                           CLONE_NEWPID | SIGCHLD, &args);
   ASSERT_THAT(child_pid, SyscallSucceeds());
   ASSERT_THAT(close(sync_pipe[1]), SyscallSucceeds());
@@ -350,6 +359,128 @@ TEST_P(UnixSocketPeerCredTest, PeerCredAcrossPIDNamespace) {
               SyscallSucceedsWithValue(child_pid));
   EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
       << "child exited abnormally: status=" << status;
+}
+
+// SendCredsFor sends a message on fd carrying an SCM_CREDENTIALS control
+// message that names pid. It returns 0 on success, or the errno on failure.
+int SendCredsFor(int fd, pid_t pid) {
+  static char data[4096];
+  struct iovec iov = {
+      .iov_base = data,
+      .iov_len = sizeof(data),
+  };
+  char control[CMSG_SPACE(sizeof(struct ucred))] = {};
+  struct msghdr msg = {};
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+  msg.msg_control = control;
+  msg.msg_controllen = sizeof(control);
+
+  struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
+  cmsg->cmsg_level = SOL_SOCKET;
+  cmsg->cmsg_type = SCM_CREDENTIALS;
+  cmsg->cmsg_len = CMSG_LEN(sizeof(struct ucred));
+  struct ucred cred = {
+      .pid = pid,
+      .uid = getuid(),
+      .gid = getgid(),
+  };
+  memcpy(CMSG_DATA(cmsg), &cred, sizeof(cred));
+
+  if (RetryEINTR(sendmsg)(fd, &msg, MSG_DONTWAIT) < 0) {
+    return errno;
+  }
+  return 0;
+}
+
+// Sending SCM_CREDENTIALS naming a PID that is concurrently being reaped must
+// fail cleanly with ESRCH.
+//
+// Regression test for b/540679345.
+TEST(UnixSocketPeerCredRaceTest, SendCredsRacesWithPeerReap) {
+  DisableSave ds;  // Forks a lot across many threads.
+
+  // Naming a PID other than our own in SCM_CREDENTIALS requires CAP_SYS_ADMIN.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  // The number of threads racing sendmsg() against the reap of a forked child.
+  constexpr int kCredRaceSenders = 4;
+
+  // The number of children forked and reaped while the senders race.
+  constexpr int kCredRaceIterations = 5000;
+
+  int fds[2];
+  ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM, 0, fds), SyscallSucceeds());
+  FileDescriptor sender_fd(fds[0]);
+  FileDescriptor receiver_fd(fds[1]);
+
+  // Hands each child's PID to each sender.
+  // Closing the write end causes the sender to exit.
+  int pipe_fds[2];
+  ASSERT_THAT(pipe(pipe_fds), SyscallSucceeds());
+  FileDescriptor pids_r(pipe_fds[0]);
+  FileDescriptor pids_w(pipe_fds[1]);
+
+  // Used by sender threads to signal errors to the main thread
+  std::atomic<int> sender_errno(0);
+
+  std::array<std::unique_ptr<ScopedThread>, kCredRaceSenders> senders;
+
+  // Declared after senders so that it is destroyed before the senders
+  // are joined.
+  Cleanup stop_senders([&] { pids_w.reset(); });
+
+  for (auto &sender : senders) {
+    sender = std::make_unique<ScopedThread>([&] {
+      pid_t pid;
+      while (RetryEINTR(read)(pids_r.get(), &pid, sizeof(pid)) == sizeof(pid)) {
+        int err;
+        do {
+          err = SendCredsFor(sender_fd.get(), pid);
+
+          // ESRCH once the child has been reaped, and EAGAIN once the socket
+          // buffer fills, are both expected. Anything else should fail.
+        } while (err == 0 || err == EAGAIN);
+        if (err != ESRCH) {
+          int expected = 0;
+          sender_errno.compare_exchange_strong(expected, err,
+                                               std::memory_order_relaxed);
+        }
+      }
+    });
+  }
+
+  pid_t batch[kCredRaceSenders];
+  for (int i = 0; i < kCredRaceIterations; i++) {
+    const pid_t child = fork();
+    if (child == 0) {
+      _exit(0);
+    }
+    ASSERT_THAT(child, SyscallSucceeds());
+
+    // Send the child to every sender in one write, then reap it. Doing this
+    // over many iterations will reproduce the race condition, if present.
+    for (int j = 0; j < kCredRaceSenders; j++) {
+      batch[j] = child;
+    }
+    ASSERT_THAT(RetryEINTR(write)(pids_w.get(), batch, sizeof(batch)),
+                SyscallSucceedsWithValue(sizeof(batch)));
+    ASSERT_THAT(RetryEINTR(waitpid)(child, nullptr, 0),
+                SyscallSucceedsWithValue(child));
+
+    if (sender_errno.load(std::memory_order_relaxed) != 0) {
+      break;
+    }
+  }
+
+  stop_senders.Release()();  // Causes sender threads to exit.
+  for (const auto &sender : senders) {
+    sender->Join();
+  }
+
+  const int err = sender_errno.load(std::memory_order_relaxed);
+  EXPECT_EQ(err, 0) << "sendmsg failed with unexpected error: "
+                    << strerror(err);
 }
 
 }  // namespace
