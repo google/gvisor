@@ -73,14 +73,14 @@ Make sure the following dependencies are installed:
 
 ### Building
 
-Build and install `runsc`, the `containerd-shim-runsc-v1` containerd shim, and a
-few sidecar binaries that `runsc` expects to find in a `gvisor-bin/` directory
-next to itself:
+Build a release tarball containing `runsc`, the
+`containerd-shim-runsc-v1` containerd shim, and a few sidecar binaries that
+`runsc` expects to find in a `gvisor-bin/` directory next to itself, then
+extract it to `/usr/local/bin`:
 
 ```sh
-mkdir -p bin
-make copy TARGETS=//:release DESTINATION=bin/
-sudo cp -r --preserve=mode bin/runsc bin/containerd-shim-runsc-v1 bin/gvisor-bin /usr/local/bin/
+make release-tarball DESTINATION=bin/
+sudo tar -C /usr/local/bin -xf bin/gvisor.tar.bz2
 ```
 
 To build specific libraries or binaries, you can specify the target:
@@ -102,7 +102,7 @@ to get started:
 After setting up dependencies, using Bazel is similar to the Makefile:
 
 ```sh
-bazel build //:release
+bazel build -c opt //debian:gvisor-release-tar
 ```
 
 ### Testing

@@ -65,8 +65,8 @@ test: ## Tests the given $(TARGETS) with the given $(OPTIONS). E.g. make test TA
 	@$(call test,$(OPTIONS) -- $(TARGETS))
 .PHONY: test
 
-copy: ## Copies the given $(TARGETS) to the given $(DESTINATION). E.g. make copy TARGETS=runsc DESTINATION=/tmp
-	@$(call copy,$(TARGETS),$(DESTINATION))
+copy: ## Copies the given $(TARGETS), built with the given $(OPTIONS), to the given $(DESTINATION). E.g. make copy TARGETS=runsc DESTINATION=/tmp
+	@$(call copy,$(OPTIONS) -- $(TARGETS),$(DESTINATION))
 .PHONY: copy
 
 run: ## Runs the given $(TARGETS), built with $(OPTIONS), using $(ARGS). E.g. make run TARGETS=runsc ARGS=-version
@@ -824,6 +824,12 @@ release: $(RELEASE_KEY) $(RELEASE_ARTIFACTS)/$(ARCH)
 	@mkdir -p $(RELEASE_ROOT)
 	@NIGHTLY=$(RELEASE_NIGHTLY) tools/make_release.sh $(RELEASE_KEY) $(RELEASE_ROOT) $$(find $(RELEASE_ARTIFACTS) -type f)
 .PHONY: release
+
+release-tarball: DESTINATION ?= .
+release-tarball: ## Builds an optimized release tarball (gvisor.tar.bz2) and copies it to $(DESTINATION). E.g. make release-tarball DESTINATION=bin/
+	@mkdir -p "$(DESTINATION)"
+	@$(call copy,-c opt //debian:gvisor-release-tar,$(DESTINATION))
+.PHONY: release-tarball
 
 staged-binaries-check: ## Verifies STAGED_BINARIES contains all files from the //debian:gvisor-release-tar fileset.
 ifeq (,$(STAGED_BINARIES))
