@@ -257,7 +257,6 @@ type NFTables struct {
 	startTime          time.Time                           // Time NFTables object was created.
 	rng                rand.RNG                            // Random number generator.
 	tableHandleCounter atomicbitops.Uint64                 // Table handle counter.
-	Mu                 nfTablesRWMutex                     // Mutex for tableHandles.
 	genid              uint32                              // Generation ID for nftables.
 	connTrack          *stack.ConnTrack                    // Conntrack object for tracking connections.
 	connTrackReaper    tcpip.Timer                         // Reaper timer for reaping timed out connections.
@@ -1422,15 +1421,13 @@ func deepCopyTable(table *Table, afFilter *addressFamilyFilter) *Table {
 // DeepCopy returns a deep copy of the NFTables struct.
 // Assumes that the caller has already locked the mutex.
 // **********************************************************************
-// TODO: b/436922484: Add a transaction system to avoid deep copying the entire
-// NFTables structure.
-// **********************************************************************
 func (nf *NFTables) DeepCopy() *NFTables {
 	nftCopy := &NFTables{
 		clock:              nf.clock,
 		startTime:          nf.startTime,
 		rng:                nf.rng,
 		tableHandleCounter: atomicbitops.Uint64{},
+		genid:              nf.genid,
 		connTrack:          nf.connTrack,
 		connTrackReaper:    nf.connTrackReaper,
 		natEnabled:         nf.natEnabled,
@@ -1477,20 +1474,6 @@ func (nf *NFTables) DeepCopy() *NFTables {
 		}
 	}
 	return nftCopy
-}
-
-// ReplaceNFTables replaces the tables of the NFTables struct
-// with the tables of the passed in NFTables struct.
-// TODO: b/436922484: The hook function calls (CheckInput, CheckOutput, etc)
-// do not hold a reader lock, fix this.
-func (nf *NFTables) ReplaceNFTables(nftCopy *NFTables) {
-	nf.filters = nftCopy.filters
-	nf.connTrack = nftCopy.connTrack
-	nf.connTrackReaper = nftCopy.connTrackReaper
-	nf.natEnabled = nftCopy.natEnabled
-	nf.ip4InetBaseChains = nftCopy.ip4InetBaseChains
-	nf.ip6InetBaseChains = nftCopy.ip6InetBaseChains
-	nf.genid++
 }
 
 //

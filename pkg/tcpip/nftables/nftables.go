@@ -434,6 +434,11 @@ func (nf *NFTables) GetGenID() uint32 {
 	return nf.genid
 }
 
+// SetGenID sets the generation ID for the NFTables object.
+func (nf *NFTables) SetGenID(genid uint32) {
+	nf.genid = genid
+}
+
 // PruneUnused deletes unused/non-referenced internal objects.
 func (nf *NFTables) PruneUnused() {
 	for _, filter := range nf.filters {

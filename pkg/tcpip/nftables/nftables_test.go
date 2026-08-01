@@ -5431,3 +5431,127 @@ func TestDestroyTable(t *testing.T) {
 		t.Errorf("Rule differs from expected after destroy (-want +got):\n%s", diff)
 	}
 }
+
+// runWriter keeps updating the NFTables ruleset.
+func runWriter(t *testing.T, stk *stack.Stack, writerID, iterations int, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for j := 0; j < iterations; j++ {
+		func() {
+			stk.LockNFTablesUpdate()
+			defer stk.UnlockNFTablesUpdate()
+
+			current := stk.NFTables().(*NFTables)
+			copyNFT := current.DeepCopy()
+
+			copyTab, err := copyNFT.GetTable(stack.IP, "test_table", 0)
+			if err != nil {
+				t.Errorf("writer %d failed to get table: %v", writerID, err)
+				return
+			}
+			copyChain, err := copyTab.GetChain("test_chain")
+			if err != nil {
+				t.Errorf("writer %d failed to get chain: %v", writerID, err)
+				return
+			}
+
+			newRule := &Rule{}
+			newOp := mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_ACCEPT)})
+			if err := newRule.addOperation(newOp); err != nil {
+				t.Errorf("writer %d addOperation failed: %v", writerID, err)
+				return
+			}
+			if err := copyChain.RegisterRule(newRule, -1); err != nil {
+				t.Errorf("writer %d RegisterRule failed: %v", writerID, err)
+				return
+			}
+			stk.SetNFTables(copyNFT)
+		}()
+	}
+}
+
+// runReader repeatedly performs packet evaluations.
+func runReader(t *testing.T, stk *stack.Stack, readIterations int, wg *sync.WaitGroup) {
+	defer wg.Done()
+	pkt := makeArbitraryIPv4Packet()
+	for j := 0; j < readIterations; j++ {
+		activeNFT := stk.NFTables()
+		if activeNFT == nil {
+			t.Errorf("expected non-nil NFTables from stack")
+			return
+		}
+		for jj := 0; jj < 1000; jj++ {
+			// Evaluate NFTables ruleset.
+			if !activeNFT.CheckInput(pkt, nil, stack.IP) {
+				t.Errorf("expected CheckInput to return true (accept)")
+				return
+			}
+		}
+	}
+}
+
+// TestNFTablesConcurrentUpdateAndEvaluate tests the concurrent update and
+// packet processing path.
+func TestNFTablesConcurrentUpdateAndEvaluate(t *testing.T) {
+	// Create a new stack and NFTables.
+	stk := stack.New(stack.Options{})
+	fakeClock := faketime.NewManualClock()
+	fixedRNG := rand.RNGFrom(&fixedReader{})
+	nf := NewNFTables(stk, fakeClock, fixedRNG)
+	tab, err := nf.AddTable(stack.IP, "test_table", false)
+	if err != nil {
+		t.Fatalf("unexpected error for AddTable: %v", err)
+	}
+	bc, err := nf.AddChainToTable(tab, "test_chain", arbitraryInfoPolicyAccept, "test", false, 0, nil, linux.NF_ACCEPT)
+	if err != nil {
+		t.Fatalf("unexpected error for AddChain: %v", err)
+	}
+
+	// Add an initial immediate rule to the chain.
+	rule := &Rule{}
+	op := mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_ACCEPT)})
+	if err := rule.addOperation(op); err != nil {
+		t.Fatalf("unexpected error for addOperation: %v", err)
+	}
+	if err := bc.RegisterRule(rule, -1); err != nil {
+		t.Fatalf("unexpected error for RegisterRule: %v", err)
+	}
+
+	stk.SetNFTables(nf)
+
+	const numWriters = 2
+	const numReaders = 4
+	const iterations = 50
+	const readIterations = iterations * 4
+
+	var wg sync.WaitGroup
+
+	// Writers: serialize updates per-stack using LockNFTablesUpdate().
+	for i := 0; i < numWriters; i++ {
+		wg.Add(1)
+		go runWriter(t, stk, i, iterations, &wg)
+	}
+
+	// Readers: concurrently perform packet evaluations.
+	for i := 0; i < numReaders; i++ {
+		wg.Add(1)
+		go runReader(t, stk, readIterations, &wg)
+	}
+
+	wg.Wait()
+
+	// Verify that all serialized updates were persisted in the active NFTables object.
+	finalNFT := stk.NFTables().(*NFTables)
+	finalTab, err := finalNFT.GetTable(stack.IP, "test_table", 0)
+	if err != nil {
+		t.Fatalf("failed to get table from final NFTables: %v", err)
+	}
+	finalChain, err := finalTab.GetChain("test_chain")
+	if err != nil {
+		t.Fatalf("failed to get chain from final NFTables: %v", err)
+	}
+	// Initial rule (1) + numWriters * iterations rules added.
+	expectedRules := 1 + numWriters*iterations
+	if len(finalChain.GetRules()) != expectedRules {
+		t.Fatalf("expected %d rules in final chain, got %d", expectedRules, len(finalChain.GetRules()))
+	}
+}

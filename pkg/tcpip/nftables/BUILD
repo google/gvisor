@@ -1,16 +1,8 @@
-load("//pkg/sync/locking:locking.bzl", "declare_rwmutex")
 load("//tools:defs.bzl", "go_library", "go_test")
 
 package(
     default_applicable_licenses = ["//:license"],
     licenses = ["notice"],
-)
-
-declare_rwmutex(
-    name = "nftables_mutex",
-    out = "nftables_mutex.go",
-    package = "nftables",
-    prefix = "nfTables",
 )
 
 go_library(
@@ -37,7 +29,6 @@ go_library(
         "nft_route.go",
         "nftables.go",
         "nftables_attrs.go",
-        "nftables_mutex.go",
         "nftables_set.go",
         "nftables_types.go",
         "nftinterp.go",
@@ -53,14 +44,11 @@ go_library(
         "//pkg/marshal/primitive",
         "//pkg/rand",
         "//pkg/sentry/socket/netlink/nlmsg",
-        "//pkg/sync",
-        "//pkg/sync/locking",
         "//pkg/syserr",
         "//pkg/tcpip",
         "//pkg/tcpip/checksum",
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
-        "//pkg/tcpip/transport/tcpconntrack",
     ],
 )
 

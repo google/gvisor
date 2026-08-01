@@ -1070,7 +1070,29 @@ func netlinkMsgPayloadSize(h *linux.NetlinkMessageHeader) int {
 }
 
 // ProcessMessage implements netlink.Protocol.ProcessMessage.
-// TODO: 434785410 - Support batch messages.
+//
+// NFTables Update Architecture:
+// The active NFTables object is stored in stack.Stack as an immutable snapshot
+// managed via atomic.Pointer. Note that the rule
+// telemetry counters may lose minor accuracy across updates;
+// this is an acceptable trade-off to keep the
+// data-plane packet processing path lock-free.
+//
+// Current flow path:
+//
+//  1. Lock-Free Packet Processing: Packet hook evaluations
+//     (CheckInput, CheckOutput, ...)
+//     atomically load the active NFTables pointer and evaluate
+//     rules against that `immutable` NFTables without holding any locks.
+//
+//  2. Serialized Updates: Netlink requests and batch updates are serialized
+//     per-stack using LockNFTablesUpdate(). Mutating batches operate on a private
+//     deep copy (nft.DeepCopy()); upon successful commit, SetNFTables() atomically
+//     publishes the updated pointer.
+//
+//  3. Inflight Packets: Inflight packets finish evaluating against their
+//     loaded NFTables. Once all references to the old NFTables object
+//     are dropped, Go's garbage collector should reclaim it.
 func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *nlmsg.Message, ms *nlmsg.MessageSet) *syserr.Error {
 	hdr := msg.Header()
 
@@ -1083,6 +1105,10 @@ func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *n
 
 	msgType := hdr.NetFilterMsgType()
 	st := inet.StackFromContext(ctx).(*netstack.Stack).Stack
+	// Lock the nftables update mutex to prevent concurrent updates.
+	st.LockNFTablesUpdate()
+	defer st.UnlockNFTablesUpdate()
+
 	nft := (st.NFTables()).(*nftables.NFTables)
 	var nfGenMsg linux.NetFilterGenMsg
 
@@ -1102,8 +1128,6 @@ func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *n
 	// Nftables functions error check the address family value.
 	family, _ := nftables.AFtoNetlinkAF(nfGenMsg.Family)
 
-	nft.Mu.RLock()
-	defer nft.Mu.RUnlock()
 	switch msgType {
 	case linux.NFT_MSG_GETTABLE:
 		if err := p.getTable(nft, attrs, family, hdr.Flags, ms); err != nil {
@@ -1216,17 +1240,20 @@ func (p *Protocol) processBatchMessage(ctx context.Context, buf []byte, ms *nlms
 	}
 
 	st := inet.StackFromContext(ctx).(*netstack.Stack).Stack
+	// Lock the nftables update mutex to prevent concurrent updates.
+	st.LockNFTablesUpdate()
+	defer st.UnlockNFTablesUpdate()
+
 	nft := (st.NFTables()).(*nftables.NFTables)
-
 	// **********************************************************************
-	// TODO: b/436922484 - Add a transaction system to avoid deep copying the
-	// entire NFTables structure.
-	// Change logic to just replace atomic ptrs.
+	// TODO: b/436922484 - Measure if copying the Nftables struct has a major impact on startup latency.
+	// If it does, we can consider:
+	// - Adding a transaction system to avoid deep copying the
+	//     entire NFTables structure.
+	// - Maybe a copy-on-write approach, where we only copy the parts of the
+	//     NFTables structure that are modified.
+	// - Try to keep the packet processing path lock-free (current behavior).
 	// **********************************************************************
-
-	nft.Mu.Lock()
-	defer nft.Mu.Unlock()
-
 	// No need to hold our own lock
 	nftCopy := nft.DeepCopy()
 	for len(buf) >= bits.AlignUp(linux.NetlinkMessageHeaderSize, linux.NLMSG_ALIGNTO) {
@@ -1267,9 +1294,10 @@ func (p *Protocol) processBatchMessage(ctx context.Context, buf []byte, ms *nlms
 				if hdr.Flags&linux.NLM_F_ACK != 0 {
 					netlink.DumpAckMessage(hdr, ms)
 				}
-				// Prune any unused/unreferenced internal objects before replacing.
+				// Garbage collect any deleted objects before replacing.
 				nftCopy.PruneUnused()
-				nft.ReplaceNFTables(nftCopy)
+				// Commit the new nftables instance.
+				commitNftables(st, nftCopy)
 			}
 
 			return nil
@@ -1354,6 +1382,12 @@ func (p *Protocol) processBatchMessage(ctx context.Context, buf []byte, ms *nlms
 	}
 
 	return nil
+}
+
+// commitNftables commits the nftables instance to the stack.
+func commitNftables(st *stack.Stack, nftCopy *nftables.NFTables) {
+	nftCopy.SetGenID(nftCopy.GetGenID() + 1)
+	st.SetNFTables(nftCopy)
 }
 
 // init registers the NETLINK_NETFILTER provider.
