@@ -41,6 +41,7 @@ const (
 	// requiring to be enabled explicitly.
 	CapFabricIMEXManagement // NV_RM_CAP_SYS_FABRIC_IMEX_MGMT
 	CapProfiling            // GPU hardware performance counter access (Nsight Compute/Systems)
+	CapRDMA                 // GPUDirect RDMA: exporting GPU memory to a dma-buf fd
 
 	numValidCaps int = iota
 )
@@ -55,7 +56,7 @@ const (
 
 	// SupportedDriverCaps is the set of driver capabilities that are supported by
 	// nvproxy.
-	SupportedDriverCaps = AllContainerDriverCaps | CapFabricIMEXManagement | CapProfiling
+	SupportedDriverCaps = AllContainerDriverCaps | CapFabricIMEXManagement | CapProfiling | CapRDMA
 
 	// AllContainerDriverCaps is the subset of SupportedDriverCaps that are
 	// enabled when enabling "all" capabilities is requested, which excludes
@@ -91,6 +92,8 @@ func (c DriverCaps) individualString() string {
 		return "fabric-imex-mgmt"
 	case CapProfiling:
 		return "profiling"
+	case CapRDMA:
+		return "rdma"
 	default:
 		panic(fmt.Sprintf("capability has no string mapping: %x", uint16(c)))
 	}
