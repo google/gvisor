@@ -870,12 +870,39 @@ PosixError NetlinkNetfilterBatchRequestAckOrError(const FileDescriptor& fd,
           EXPECT_GE(hdr->nlmsg_len, sizeof(*hdr) + sizeof(struct nlmsgerr));
           const struct nlmsgerr* msg =
               reinterpret_cast<const struct nlmsgerr*>(NLMSG_DATA(hdr));
-          err = -msg->error;
-          if (err != 0) {
+          if (msg->error != 0) {
+            err = -msg->error;
             err_set = true;
+          } else if (!err_set) {
+            err = 0;
           }
         },
         true));
+  }
+
+  // If an error occurred, the kernel may have queued additional messages
+  // (such as deferred ACKs for successfully processed messages).
+  // Drain the socket to prevent these leftover messages from interfering
+  // with subsequent requests (like cleanup).
+  // If an error occurred, the kernel may have queued additional messages
+  // (such as deferred ACKs for successfully processed messages).
+  // Drain the socket to prevent these leftover messages from interfering
+  // with subsequent requests.
+  if (err_set) {
+    char buf[4096];
+    struct iovec iov = {};
+    iov.iov_base = buf;
+    iov.iov_len = sizeof(buf);
+    struct msghdr msg = {};
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+
+    while (true) {
+      int len = recvmsg(fd.get(), &msg, MSG_DONTWAIT);
+      if (len < 0) {
+        break;
+      }
+    }
   }
 
   return PosixError(err);
@@ -896,6 +923,19 @@ PosixError DestroyNetfilterTable(FileDescriptor& fd,
   return NetlinkNetfilterBatchRequestAckOrError(fd, seq_num, seq_num + 2,
                                                 destroy_request_buffer.data(),
                                                 destroy_request_buffer.size());
+}
+
+PosixError NetfilterFlushRuleset(const FileDescriptor& fd) {
+  const uint32_t seq = 10000;
+  std::vector<char> flush_request =
+      NlBatchReq()
+          .SeqStart(seq)
+          .Req(NlReq("deltable req ack unspec").Seq(seq + 1).Build())
+          .SeqEnd(seq + 2)
+          .Build();
+
+  return NetlinkNetfilterBatchRequestAckOrError(
+      fd, seq, seq + 2, flush_request.data(), flush_request.size());
 }
 
 }  // namespace testing

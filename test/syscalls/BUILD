@@ -991,6 +991,10 @@ syscall_test(
 
 syscall_test(
     nftables = True,
+    tags = [
+        "local",
+        "notap",
+    ],
     test = "//test/syscalls/linux:socket_netlink_netfilter_test",
 )
 
