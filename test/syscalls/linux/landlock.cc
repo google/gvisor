@@ -1042,6 +1042,7 @@ TEST(LandlockTest, AddNetPortRuleWithoutHandledNetFails) {
 // non-tty normally fails with ENOTTY; under a ruleset that handles IOCTL_DEV
 // but does not grant it on the device, the ioctl is rejected earlier with
 // EACCES instead.
+// TODO(aaltinay): delete this line.
 TEST(LandlockTest, IoctlDevDeniedWithoutRule) {
   SKIP_IF(IsRunningOnGvisor());
   SKIP_IF(LandlockAbiVersion() < 5);
