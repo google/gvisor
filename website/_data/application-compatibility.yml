@@ -68,3 +68,27 @@ apps:
   - name: "systemd"
     category: "System software"
     verdict: "experimental"
+
+  - name: "Apache Kafka"
+    category: "Messaging & streaming"
+    verdict: "yes"
+    version: "4.3.1"
+    test_source: "test/compatibility/kafka/kafka_test.go"
+
+  - name: "Eclipse Mosquitto"
+    category: "Messaging & streaming"
+    verdict: "yes"
+    version: "2.0.22"
+    test_source: "test/compatibility/mosquitto/mosquitto_test.go"
+
+  - name: "RabbitMQ"
+    category: "Messaging & streaming"
+    verdict: "yes"
+    version: "4.3.2"
+    test_source: "test/compatibility/rabbitmq/rabbitmq_test.go"
+
+  - name: "Keycloak"
+    category: "Secrets & security"
+    verdict: "yes"
+    version: "26.6.4"
+    test_source: "test/compatibility/keycloak/keycloak_test.go"
