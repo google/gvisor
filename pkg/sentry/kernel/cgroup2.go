@@ -18,6 +18,7 @@ import (
 	"math"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/ebpf"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/nsfs"
@@ -40,6 +41,46 @@ const (
 	// Cgroup2NumControllers is the total number of cgroup v2 controllers currently supported.
 	Cgroup2NumControllers
 )
+
+// Cgroup2BPFProgram represents a single cgroup2 eBPF program.
+//
+// +stateify savable
+type Cgroup2BPFProgram struct {
+	// Prog represents the program attached at this slot.
+	Prog *ebpf.Program
+
+	// Flags is the full set of per-program flags.
+	Flags uint32
+}
+
+// Cgroup2BPFAttachmentSlot stores a single slot where programs can be attached.
+// There is one slot per attachment type.
+//
+// +stateify savable
+type Cgroup2BPFAttachmentSlot struct {
+	// Progs represents the programs attached at this slot.
+	//
+	// Linux uses a linked list here, but since BPF_CGROUP_MAX_PROGS=64,
+	// the removal cost shouldn't be too bad.
+	Progs []*Cgroup2BPFProgram
+
+	// Flags stores the slot-wide attachment flags for this attachment slot.
+	Flags uint8
+
+	// Revision stores the current revision for this attachment slot.
+	//
+	// To match Linux, the revision reported to userspace is 1 larger than
+	// the revision stored here.
+	Revision uint64
+}
+
+// Cgroup2BPF stores eBPF programs associated with a cgroup2 node.
+//
+// +stateify savable
+type Cgroup2BPF struct {
+	// Slots stores the programs slot for each cgroup attachment type.
+	Slots [ebpf.MAX_CGROUP_BPF_ATTACH_TYPE]Cgroup2BPFAttachmentSlot
+}
 
 // Cgroup2 is an interface representing a cgroup v2 node.
 type Cgroup2 interface {
@@ -77,6 +118,23 @@ type Cgroup2 interface {
 
 	// Deleted returns true if the cgroup has been deleted.
 	Deleted() bool
+
+	// IfBPF runs f if the cgroup has eBPF filters present.
+	//
+	// f may access the eBPF structure as read-only.
+	IfBPF(f func(*Cgroup2BPF))
+
+	// WriteBPF initializes the cgroup's eBPF filter structure if it
+	// is not present, then runs f.
+	//
+	// f may access the eBPF structure for reading or writing, or its
+	// ancestors' eBPF structures for reading.
+	//
+	// If an eBPF structure was not present, and f returns an error,
+	// the initialization of the eBPF structure is not applied.
+	//
+	// WriteBPF returns the error returned by f.
+	WriteBPF(f func(*Cgroup2BPF, []*Cgroup2BPF) error) error
 }
 
 // Cgroup2FS is the public interface to cgroup2fs.
@@ -126,9 +184,9 @@ func (t *Task) Cgroup2() Cgroup2 {
 	return t.cgroup2
 }
 
-// getCgroup2NodeFromFD returns the cgroup v2 node associated with the cgroupFD.
+// GetCgroup2NodeFromFD returns the cgroup v2 node associated with the cgroupFD.
 // If the cgroupFD is not valid, returns an error.
-func (t *Task) getCgroup2NodeFromFD(cgroupFD uint64) (Cgroup2, error) {
+func (t *Task) GetCgroup2NodeFromFD(cgroupFD uint64) (Cgroup2, error) {
 	if cgroupFD > math.MaxInt32 {
 		return nil, linuxerr.EINVAL
 	}

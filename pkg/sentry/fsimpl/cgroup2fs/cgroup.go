@@ -27,8 +27,9 @@ package cgroup2fs
 // The treeMu is an analogue to the kernel's cgroup_mutex, whereas
 // tasksMu is an analogue to the kernel's css_set_lock. The former
 // governs matters of topology: the basic structure of the tree and
-// the controllers enabled in each node. The latter governs membership:
-// the tasks associated with each cgroup.
+// the controllers enabled in each node. It also governs eBPF programs
+// attached to cgroups. The latter governs membership: the tasks
+// associated with each cgroup.
 
 import (
 	"bytes"
@@ -132,6 +133,10 @@ type cgroup struct {
 
 	// xattrs stores extended attributes on this cgroup directory.
 	xattrs memxattr.SimpleExtendedAttributes
+
+	// bpf contains eBPF programs associated with the cgroup.
+	// +checklocks:fs.treeMu
+	bpf *kernel.Cgroup2BPF
 }
 
 // +checklocks:c.fs.treeMu
@@ -689,6 +694,47 @@ func (c *cgroup) PathFrom(nsRoot kernel.Cgroup2) string {
 // Deleted implements kernel.Cgroup2.Deleted.
 func (c *cgroup) Deleted() bool {
 	return c.deleted.Load()
+}
+
+// IfBPF implements kernel.Cgroup2.IfBPF.
+func (c *cgroup) IfBPF(f func(*kernel.Cgroup2BPF)) {
+	c.fs.treeMu.RLock()
+	defer c.fs.treeMu.RUnlock()
+	if c.bpf != nil {
+		f(c.bpf)
+	}
+}
+
+// WriteBPF implements kernel.Cgroup2.WriteBPF.
+func (c *cgroup) WriteBPF(f func(*kernel.Cgroup2BPF, []*kernel.Cgroup2BPF) error) error {
+	c.fs.treeMu.Lock()
+	defer c.fs.treeMu.Unlock()
+
+	bpf := c.bpf
+	if bpf == nil {
+		bpf = &kernel.Cgroup2BPF{}
+	}
+
+	// Fetch the Cgroup2BPF structures for each ancestor.
+	ancestors := c.getAncestorsBPF()
+
+	err := f(bpf, ancestors)
+	if err == nil {
+		c.bpf = bpf
+	}
+	return err
+}
+
+// getAncestorsBPF returns the eBPF programs of each ancestor of c,
+// starting with its immediate parent.
+//
+// +checklocksread:c.fs.treeMu
+func (c *cgroup) getAncestorsBPF() []*kernel.Cgroup2BPF {
+	parents := make([]*kernel.Cgroup2BPF, 0, c.level)
+	for cur := c.parent; cur != nil; cur = cur.parent {
+		parents = append(parents, cur.bpf) // +checklocksforce: c.fs.treeMu is locked
+	}
+	return parents
 }
 
 // KillSeq implements kernel.Cgroup2.KillSeq.
