@@ -267,3 +267,83 @@ func TestNewBundleWorkingDir(t *testing.T) {
 		t.Errorf("spec.Process.Cwd = %q, want %q", spec.Process.Cwd, customCwd)
 	}
 }
+
+func TestNewBundleUserNamespace(t *testing.T) {
+	tempDir := t.TempDir()
+	sandboxID := "test-sandbox-userns"
+
+	// Mock the SUDO environment variables
+	t.Setenv("SUDO_UID", "2000")
+	t.Setenv("SUDO_GID", "2001")
+
+	bundleDir, err := sandbox.NewBundle(sandbox.BundleConfig{
+		ID:          sandboxID,
+		RuntimeDir:  tempDir,
+		UID:         1000,
+		GID:         1001,
+		UnshareUser: true,
+	})
+	if err != nil {
+		t.Fatalf("NewBundle failed: %v", err)
+	}
+	defer os.RemoveAll(bundleDir)
+
+	configPath := filepath.Join(bundleDir, "config.json")
+	configFile, err := os.Open(configPath)
+	if err != nil {
+		t.Fatalf("failed to open config.json: %v", err)
+	}
+	defer configFile.Close()
+
+	var spec specs.Spec
+	if err := json.NewDecoder(configFile).Decode(&spec); err != nil {
+		t.Fatalf("failed to decode config.json: %v", err)
+	}
+
+	// 1. Verify spec.Process.User matches 1000:1001
+	if spec.Process.User.UID != 1000 || spec.Process.User.GID != 1001 {
+		t.Errorf("spec.Process.User = %d:%d, want 1000:1001", spec.Process.User.UID, spec.Process.User.GID)
+	}
+
+	// 2. Verify UserNamespace is present in spec.Linux.Namespaces
+	foundUserNS := false
+	for _, ns := range spec.Linux.Namespaces {
+		if ns.Type == specs.UserNamespace {
+			foundUserNS = true
+			break
+		}
+	}
+	if !foundUserNS {
+		t.Errorf("expected UserNamespace in spec.Linux.Namespaces, got: %+v", spec.Linux.Namespaces)
+	}
+
+	// 3. Verify spec.Linux.UIDMappings bounds container 1000 -> host 2000
+	if len(spec.Linux.UIDMappings) == 0 {
+		t.Fatalf("expected spec.Linux.UIDMappings to have at least 1 entry")
+	}
+	foundUIDMapping := false
+	for _, m := range spec.Linux.UIDMappings {
+		if m.ContainerID == 1000 && m.HostID == 2000 && m.Size == 1 {
+			foundUIDMapping = true
+			break
+		}
+	}
+	if !foundUIDMapping {
+		t.Errorf("expected UIDMapping {ContainerID: 1000, HostID: 2000, Size: 1}, got: %+v", spec.Linux.UIDMappings)
+	}
+
+	// 4. Verify spec.Linux.GIDMappings bounds container 1001 -> host 2001
+	if len(spec.Linux.GIDMappings) == 0 {
+		t.Fatalf("expected spec.Linux.GIDMappings to have at least 1 entry")
+	}
+	foundGIDMapping := false
+	for _, m := range spec.Linux.GIDMappings {
+		if m.ContainerID == 1001 && m.HostID == 2001 && m.Size == 1 {
+			foundGIDMapping = true
+			break
+		}
+	}
+	if !foundGIDMapping {
+		t.Errorf("expected GIDMapping {ContainerID: 1001, HostID: 2001, Size: 1}, got: %+v", spec.Linux.GIDMappings)
+	}
+}
