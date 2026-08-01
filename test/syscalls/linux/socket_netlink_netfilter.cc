@@ -25,6 +25,7 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <optional>
 #include <string>
 #include <tuple>
 #include <unordered_set>
@@ -1855,18 +1856,94 @@ TEST(NetlinkNetfilterTest, ErrUnsupportedUpdateChain) {
                   fd, kSeq + 4, kSeq + 6, update_chain_request_buffer.data(),
                   update_chain_request_buffer.size()),
               PosixErrorIs(ENOTSUP, _));
-  ASSERT_NO_ERRNO(NetfilterFlushRuleset(fd));
 }
 
-TEST(NetlinkNetfilterTest, AddChainWithNoNameAndChainIdAttributeSet) {
+struct AnonymousChainTestParam {
+  std::string test_name;
+  std::optional<uint32_t> flags;
+  std::optional<uint32_t> id;
+  std::optional<std::string> name;
+  int expected_error;
+};
+
+class NetlinkNetfilterChainTest
+    : public ::testing::TestWithParam<AnonymousChainTestParam> {
+ protected:
+  FileDescriptor fd_;
+  std::string test_table_name_;
+};
+
+// AnonymousChain tests error cases when adding anonymous chains.
+// An anonymous chain is a chain with the NFT_CHAIN_BINDING flag set.
+TEST_P(NetlinkNetfilterChainTest, AnonymousChain) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCaps()));
-  SKIP_IF(!IsRunningOnGvisor());
-  const std::string test_table_name = GetUniqueTestTableName();
-  const uint32_t test_chain_flags = NFT_CHAIN_BINDING;
-  const uint32_t test_chain_id = 2;
-  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
+  fd_ = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
+  test_table_name_ = GetUniqueTestTableName();
+  const AnonymousChainTestParam& param = GetParam();
+
+  auto new_chain_req = NlReq("newchain req ack inet")
+                           .Seq(kSeq + 2)
+                           .StrAttr(NFTA_CHAIN_TABLE, test_table_name_);
+  if (param.flags.has_value()) {
+    new_chain_req.U32Attr(NFTA_CHAIN_FLAGS, param.flags.value());
+  }
+  if (param.id.has_value()) {
+    new_chain_req.U32Attr(NFTA_CHAIN_ID, param.id.value());
+  }
+  if (param.name.has_value()) {
+    new_chain_req.StrAttr(NFTA_CHAIN_NAME, param.name.value());
+  }
 
   std::vector<char> add_request_buffer =
+      NlBatchReq()
+          .SeqStart(kSeq)
+          .Req(NlReq("newtable req ack inet")
+                   .Seq(kSeq + 1)
+                   .StrAttr(NFTA_TABLE_NAME, test_table_name_)
+                   .Build())
+          .Req(new_chain_req.Build())
+          .SeqEnd(kSeq + 3)
+          .Build();
+
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(fd_, kSeq, kSeq + 3,
+                                                     add_request_buffer.data(),
+                                                     add_request_buffer.size()),
+              PosixErrorIs(param.expected_error, _));
+  ASSERT_NO_ERRNO(NetfilterFlushRuleset(fd_));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    AddChainErrorcases, NetlinkNetfilterChainTest,
+    ::testing::Values(
+        AnonymousChainTestParam{.test_name = "AddUnboundBindingChain",
+                                .flags = NFT_CHAIN_BINDING,
+                                .id = 2,
+                                .name = std::nullopt,
+                                .expected_error = EINVAL},
+        AnonymousChainTestParam{.test_name = "AddNamedBindingChain",
+                                .flags = NFT_CHAIN_BINDING,
+                                .id = std::nullopt,
+                                .name = "binding_chain",
+                                .expected_error = EINVAL},
+        AnonymousChainTestParam{.test_name = "AddUnnamedRegularChain",
+                                .flags = std::nullopt,
+                                .id = std::nullopt,
+                                .name = std::nullopt,
+                                .expected_error = EINVAL}),
+    [](const ::testing::TestParamInfo<AnonymousChainTestParam>& info) {
+      return info.param.test_name;
+    });
+
+// ErrUpdateChainByID tests that updating a chain by ID without a name fails.
+TEST(NetlinkNetfilterTest, ErrUpdateChainByID) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCaps()));
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
+  std::string test_table_name = GetUniqueTestTableName();
+
+  const uint32_t test_chain_id = 99;
+  const std::string test_chain_name = "test_chain";
+
+  std::vector<char> request_buffer =
       NlBatchReq()
           .SeqStart(kSeq)
           .Req(NlReq("newtable req ack inet")
@@ -1876,16 +1953,108 @@ TEST(NetlinkNetfilterTest, AddChainWithNoNameAndChainIdAttributeSet) {
           .Req(NlReq("newchain req ack inet")
                    .Seq(kSeq + 2)
                    .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
-                   .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
+                   .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
                    .U32Attr(NFTA_CHAIN_ID, test_chain_id)
                    .Build())
-          .SeqEnd(kSeq + 3)
+          .Req(NlReq("newchain req ack inet")
+                   .Seq(kSeq + 3)
+                   .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+                   .U32Attr(NFTA_CHAIN_ID, test_chain_id)
+                   .Build())
+          .SeqEnd(kSeq + 4)
+          .Build();
+
+  ASSERT_THAT(
+      NetlinkNetfilterBatchRequestAckOrError(
+          fd, kSeq, kSeq + 4, request_buffer.data(), request_buffer.size()),
+      PosixErrorIs(EINVAL, _));
+  ASSERT_NO_ERRNO(NetfilterFlushRuleset(fd));
+}
+
+// ErrDeleteChainByID tests that deleting a chain by ID without a name fails.
+TEST(NetlinkNetfilterTest, ErrDeleteChainByID) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCaps()));
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
+  std::string test_table_name = GetUniqueTestTableName();
+
+  const uint32_t test_chain_id = 99;
+  const std::string test_chain_name = "test_chain";
+
+  std::vector<char> request_buffer =
+      NlBatchReq()
+          .SeqStart(kSeq)
+          .Req(NlReq("newtable req ack inet")
+                   .Seq(kSeq + 1)
+                   .StrAttr(NFTA_TABLE_NAME, test_table_name)
+                   .Build())
+          .Req(NlReq("newchain req ack inet")
+                   .Seq(kSeq + 2)
+                   .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+                   .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+                   .U32Attr(NFTA_CHAIN_ID, test_chain_id)
+                   .Build())
+          .Req(NlReq("delchain req ack inet")
+                   .Seq(kSeq + 3)
+                   .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+                   .U32Attr(NFTA_CHAIN_ID, test_chain_id)
+                   .Build())
+          .SeqEnd(kSeq + 4)
+          .Build();
+
+  ASSERT_THAT(
+      NetlinkNetfilterBatchRequestAckOrError(
+          fd, kSeq, kSeq + 4, request_buffer.data(), request_buffer.size()),
+      PosixErrorIs(EINVAL, _));
+  ASSERT_NO_ERRNO(NetfilterFlushRuleset(fd));
+}
+
+// AddRuleWithAnonymousChainJump tests creating an anonymous binding chain
+// and adding a rule that jumps to it in the same batch.
+TEST(NetlinkNetfilterTest, AddRuleWithAnonymousChainJump) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCaps()));
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
+  std::string test_table_name = GetUniqueTestTableName();
+
+  const uint32_t test_chain_id = 99;
+  const std::string test_base_chain_name = "test_base_chain";
+
+  std::vector<char> rule_expr_data = NlImmExpr()
+                                         .Dreg(NFT_REG_VERDICT)
+                                         .VerdictCode(NFT_JUMP)
+                                         .VerdictChainId(test_chain_id)
+                                         .VerdictBuild();
+  std::vector<char> list_expr_data = NlListAttr().Add(rule_expr_data).Build();
+
+  std::vector<char> request_buffer =
+      NlBatchReq()
+          .SeqStart(kSeq)
+          .Req(NlReq("newtable req ack inet")
+                   .Seq(kSeq + 1)
+                   .StrAttr(NFTA_TABLE_NAME, test_table_name)
+                   .Build())
+          .Req(NlReq("newchain req ack inet")
+                   .Seq(kSeq + 2)
+                   .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+                   .StrAttr(NFTA_CHAIN_NAME, test_base_chain_name)
+                   .Build())
+          .Req(NlReq("newchain req ack inet")
+                   .Seq(kSeq + 3)
+                   .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+                   .U32Attr(NFTA_CHAIN_FLAGS, NFT_CHAIN_BINDING)
+                   .U32Attr(NFTA_CHAIN_ID, test_chain_id)
+                   .Build())
+          .Req(NlReq("newrule req ack create inet")
+                   .Seq(kSeq + 4)
+                   .StrAttr(NFTA_RULE_TABLE, test_table_name)
+                   .StrAttr(NFTA_RULE_CHAIN, test_base_chain_name)
+                   .RawAttr(NFTA_RULE_EXPRESSIONS, list_expr_data.data(),
+                            list_expr_data.size())
+                   .Build())
+          .SeqEnd(kSeq + 5)
           .Build();
 
   ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
-      fd, kSeq, kSeq + 3, add_request_buffer.data(),
-      add_request_buffer.size()));
-  ASSERT_NO_ERRNO(DestroyNetfilterTable(fd, test_table_name, kSeq + 4));
+      fd, kSeq, kSeq + 5, request_buffer.data(), request_buffer.size()));
   ASSERT_NO_ERRNO(NetfilterFlushRuleset(fd));
 }
 

@@ -451,6 +451,23 @@ func (nf *NFTables) PruneUnused() {
 	}
 }
 
+// CanCommitChains checks that all the new bounded chains are valid.
+// Ref: net/netfilter/nf_tables_api.c:nf_tables_commit()
+func (nf *NFTables) CanCommitChains(newChains []*Chain) *syserr.AnnotatedError {
+	for _, chain := range newChains {
+		if !chain.IsAnonymousChain() {
+			continue
+		}
+		if !chain.IsBound() {
+			return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "anonymous chains must have jump/goto reference")
+		}
+		if chain.GetChainUse() > 1 {
+			return syserr.NewAnnotatedError(syserr.ErrBusy, "anonymous chain already in use")
+		}
+	}
+	return nil
+}
+
 // Flush clears all data for all address families or
 // a specific family/table if filtered.
 // It skips tables that are not owned by the given owner.
@@ -963,6 +980,31 @@ func (t *Table) GetChainByHandle(chainHandle uint64) (*Chain, *syserr.AnnotatedE
 	return c, nil
 }
 
+// GetChainByID returns the chain with the specified transaction ID if it exists.
+func (t *Table) GetChainByID(chainID uint32) (*Chain, *syserr.AnnotatedError) {
+	c, exists := t.chainIDs[chainID]
+	if !exists {
+		return nil, syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("chain ID %d not found for table %s", chainID, t.name))
+	}
+	return c, nil
+}
+
+// RegisterChainID registers a temporary batch transaction chain ID.
+func (t *Table) RegisterChainID(chainID uint32, c *Chain) {
+	if t.chainIDs == nil {
+		t.chainIDs = make(map[uint32]*Chain)
+	}
+	// Ref: net/netfilter/nf_tables_api.c:nft_trans_chain_add()
+	// Linux allows overwriting the chain ID.
+	// No need to check for duplicates.
+	t.chainIDs[chainID] = c
+}
+
+// ClearChainIDs clears all temporary transaction chain IDs in the table.
+func (t *Table) ClearChainIDs() {
+	t.chainIDs = nil
+}
+
 // pruneUnused removes unused/unreferenced table objects.
 func (t *Table) pruneUnused() {
 	// Garbage collect unbounded chains.
@@ -982,6 +1024,8 @@ func (t *Table) pruneUnused() {
 			t.deleteChain(c)
 		}
 	}
+	// Clear temporary transaction chain IDs.
+	t.ClearChainIDs()
 }
 
 // GetChains returns a map of all chains for the table.

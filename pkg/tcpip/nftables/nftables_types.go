@@ -304,6 +304,9 @@ type Table struct {
 	// chainHandles is a map of chain handles (ids) to chains for a given table.
 	chainHandles map[uint64]*Chain
 
+	// chainIDs is a map of temporary transaction chain IDs to chains for a given table.
+	chainIDs map[uint32]*Chain
+
 	// flagSet is the set of optional flags for the table.
 	// Note: currently nftables only has the single Dormant flag.
 	flagSet map[TableFlag]struct{}
@@ -1206,9 +1209,10 @@ func validateVerdictData(tab *Table, bytes nlmsg.AttrsView) (Verdict, *syserr.An
 			if chain, err = tab.GetChain(chainNameBytes.String()); err != nil {
 				return v, err
 			}
-		} else if _, ok := verdictAttrs[linux.NFTA_VERDICT_CHAIN_ID]; ok {
-			// TODO - b/434243967: Add support for looking up chains via their transaction id.
-			return v, syserr.NewAnnotatedError(syserr.ErrNotSupported, "Nftables: Looking up chains via their id is not supported")
+		} else if chainID, ok := AttrNetToHost[uint32](linux.NFTA_VERDICT_CHAIN_ID, verdictAttrs); ok {
+			if chain, err = tab.GetChainByID(chainID); err != nil {
+				return v, err
+			}
 		} else {
 			return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Attributes for verdict data must contain a chain name or chain id")
 		}
@@ -1219,10 +1223,6 @@ func validateVerdictData(tab *Table, bytes nlmsg.AttrsView) (Verdict, *syserr.An
 
 		if chain.IsBound() {
 			return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Already Bound chains cannot be jump targets")
-		}
-
-		if chain.GetFlags()&linux.NFT_CHAIN_BINDING != 0 {
-			return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Chain binding must be set for chains to be used as jump targets")
 		}
 
 		if !chain.IncrementChainUse() {

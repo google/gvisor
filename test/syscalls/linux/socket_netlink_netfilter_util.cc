@@ -780,6 +780,12 @@ NlImmExpr& NlImmExpr::Dreg(uint32_t dreg) {
 
 NlImmExpr& NlImmExpr::VerdictCode(uint32_t verdict_code) {
   verdict_code_ = verdict_code;
+  has_verdict_code_ = true;
+  return *this;
+}
+
+NlImmExpr& NlImmExpr::VerdictChainId(uint32_t chain_id) {
+  verdict_chain_id_ = chain_id;
   return *this;
 }
 
@@ -789,8 +795,11 @@ NlImmExpr& NlImmExpr::Value(const std::vector<char>& value) {
 }
 
 std::vector<char> NlImmExpr::VerdictBuild() {
-  std::vector<char> verdict_code_data =
-      NlNestedAttr().U32Attr(NFTA_VERDICT_CODE, verdict_code_).Build();
+  auto verdict_attrs = NlNestedAttr().U32Attr(NFTA_VERDICT_CODE, verdict_code_);
+  if (verdict_chain_id_.has_value()) {
+    verdict_attrs.U32Attr(NFTA_VERDICT_CHAIN_ID, verdict_chain_id_.value());
+  }
+  std::vector<char> verdict_code_data = verdict_attrs.Build();
   std::vector<char> immediate_data =
       NlNestedAttr()
           .RawAttr(NFTA_DATA_VERDICT, verdict_code_data.data(),
