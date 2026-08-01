@@ -412,16 +412,17 @@ func TestProcfsDump(t *testing.T) {
 	}
 
 	wantCgroup := []kernel.TaskCgroupEntry{
-		{HierarchyID: 7, Controllers: "pids", Path: "/"},
-		{HierarchyID: 6, Controllers: "memory", Path: "/"},
-		{HierarchyID: 5, Controllers: "job", Path: "/"},
+		{HierarchyID: 8, Controllers: "pids", Path: "/"},
+		{HierarchyID: 7, Controllers: "memory", Path: "/"},
+		{HierarchyID: 6, Controllers: "job", Path: "/"},
+		{HierarchyID: 5, Controllers: "freezer", Path: "/"},
 		{HierarchyID: 4, Controllers: "devices", Path: "/"},
 		{HierarchyID: 3, Controllers: "cpuset", Path: "/"},
 		{HierarchyID: 2, Controllers: "cpuacct", Path: "/"},
 		{HierarchyID: 1, Controllers: "cpu", Path: "/"},
 	}
 	if len(procfsDump[0].Cgroup) != len(wantCgroup) {
-		t.Errorf("expected 7 cgroup controllers, got %+v", procfsDump[0].Cgroup)
+		t.Errorf("expected %d cgroup controllers, got %+v", len(wantCgroup), procfsDump[0].Cgroup)
 	} else {
 		for i, cgroup := range procfsDump[0].Cgroup {
 			if cgroup != wantCgroup[i] {
