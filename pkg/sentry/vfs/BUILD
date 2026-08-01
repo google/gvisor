@@ -211,6 +211,7 @@ go_test(
     name = "vfs_test",
     size = "small",
     srcs = [
+        "epoll_test.go",
         "file_description_impl_util_test.go",
         "mount_test.go",
         "posix_acl_test.go",
@@ -226,5 +227,6 @@ go_test(
         "//pkg/sentry/kernel/auth",
         "//pkg/sync",
         "//pkg/usermem",
+        "//pkg/waiter",
     ],
 )
