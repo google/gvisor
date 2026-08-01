@@ -142,6 +142,13 @@ func IsRestoreSupported() bool {
 	return major <= 27
 }
 
+// IsAnnotationsSupported returns true if the docker version supports annotations.
+// Docker annotations were introduced in API v1.44 (Docker v25.0).
+func IsAnnotationsSupported() bool {
+	major, _ := getDockerVersion()
+	return major >= 25
+}
+
 // RuntimePath returns the binary path for the current runtime.
 func RuntimePath() (string, error) {
 	rs, err := runtimeMap()
