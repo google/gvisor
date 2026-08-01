@@ -286,7 +286,9 @@ func fillTableInfo(tab *nftables.Table, ms *nlmsg.MessageSet) *syserr.AnnotatedE
 // deleteTable deletes a table for the given family.
 func (p *Protocol) deleteTable(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesView, family stack.AddressFamily, hdr linux.NetlinkMessageHeader, msgType linux.NfTableMsgType, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
 	if family == stack.Unspec || (!nftables.HasAttr(linux.NFTA_TABLE_NAME, attrs) && !nftables.HasAttr(linux.NFTA_TABLE_HANDLE, attrs)) {
-		nft.Flush(attrs, uint32(ms.PortID))
+		if err := nft.Flush(family, attrs, uint32(ms.PortID)); err != nil {
+			return err
+		}
 		return nil
 	}
 
@@ -728,10 +730,8 @@ func (p *Protocol) deleteChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.By
 		return syserr.NewAnnotatedError(syserr.ErrBusy, fmt.Sprintf("Nftables: Non-recursive delete on a chain with use > 0 is not supported. Chain %s has chain use %d", chain.GetName(), chain.GetChainUse()))
 	}
 
-	// TODO: b/434243967 - Support iteratively deleting rules in a chain to then
-	// delete chains. After deleting all the possible rules, if the chain is
-	// still in use, it cannot be deleted.
-	if chain.GetChainUse() != 0 {
+	// Check if the chain is in use by jumps or goto.
+	if chain.GetChainUse() > 0 {
 		return syserr.NewAnnotatedError(syserr.ErrBusy, fmt.Sprintf("Nftables: Deleting a chain with chain use > 0 is not supported. Chain %s has chain use %d", chain.GetName(), chain.GetChainUse()))
 	}
 
@@ -859,10 +859,6 @@ func (p *Protocol) newRule(nft *nftables.NFTables, st *stack.Stack, attrs map[ui
 
 	if chain.GetFlags()&linux.NFT_CHAIN_HW_OFFLOAD != 0 {
 		return syserr.NewAnnotatedError(syserr.ErrNotSupported, "Nftables: Hardware offload chains are not supported.")
-	}
-
-	if !chain.IncrementChainUse() {
-		return syserr.NewAnnotatedError(syserr.ErrTooManyOpenFiles, fmt.Sprintf("Nftables: Chain %s has the maximum chain use value at %d", chain.GetName(), chain.GetChainUse()))
 	}
 
 	// TODO - b/434244017: Support replace operations on rules.
@@ -1074,7 +1070,29 @@ func netlinkMsgPayloadSize(h *linux.NetlinkMessageHeader) int {
 }
 
 // ProcessMessage implements netlink.Protocol.ProcessMessage.
-// TODO: 434785410 - Support batch messages.
+//
+// NFTables Update Architecture:
+// The active NFTables object is stored in stack.Stack as an immutable snapshot
+// managed via atomic.Pointer. Note that the rule
+// telemetry counters may lose minor accuracy across updates;
+// this is an acceptable trade-off to keep the
+// data-plane packet processing path lock-free.
+//
+// Current flow path:
+//
+//  1. Lock-Free Packet Processing: Packet hook evaluations
+//     (CheckInput, CheckOutput, ...)
+//     atomically load the active NFTables pointer and evaluate
+//     rules against that `immutable` NFTables without holding any locks.
+//
+//  2. Serialized Updates: Netlink requests and batch updates are serialized
+//     per-stack using LockNFTablesUpdate(). Mutating batches operate on a private
+//     deep copy (nft.DeepCopy()); upon successful commit, SetNFTables() atomically
+//     publishes the updated pointer.
+//
+//  3. Inflight Packets: Inflight packets finish evaluating against their
+//     loaded NFTables. Once all references to the old NFTables object
+//     are dropped, Go's garbage collector should reclaim it.
 func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *nlmsg.Message, ms *nlmsg.MessageSet) *syserr.Error {
 	hdr := msg.Header()
 
@@ -1087,6 +1105,10 @@ func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *n
 
 	msgType := hdr.NetFilterMsgType()
 	st := inet.StackFromContext(ctx).(*netstack.Stack).Stack
+	// Lock the nftables update mutex to prevent concurrent updates.
+	st.LockNFTablesUpdate()
+	defer st.UnlockNFTablesUpdate()
+
 	nft := (st.NFTables()).(*nftables.NFTables)
 	var nfGenMsg linux.NetFilterGenMsg
 
@@ -1106,8 +1128,6 @@ func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *n
 	// Nftables functions error check the address family value.
 	family, _ := nftables.AFtoNetlinkAF(nfGenMsg.Family)
 
-	nft.Mu.RLock()
-	defer nft.Mu.RUnlock()
 	switch msgType {
 	case linux.NFT_MSG_GETTABLE:
 		if err := p.getTable(nft, attrs, family, hdr.Flags, ms); err != nil {
@@ -1220,17 +1240,20 @@ func (p *Protocol) processBatchMessage(ctx context.Context, buf []byte, ms *nlms
 	}
 
 	st := inet.StackFromContext(ctx).(*netstack.Stack).Stack
+	// Lock the nftables update mutex to prevent concurrent updates.
+	st.LockNFTablesUpdate()
+	defer st.UnlockNFTablesUpdate()
+
 	nft := (st.NFTables()).(*nftables.NFTables)
-
 	// **********************************************************************
-	// TODO: b/436922484 - Add a transaction system to avoid deep copying the
-	// entire NFTables structure.
-	// Change logic to just replace atomic ptrs.
+	// TODO: b/436922484 - Measure if copying the Nftables struct has a major impact on startup latency.
+	// If it does, we can consider:
+	// - Adding a transaction system to avoid deep copying the
+	//     entire NFTables structure.
+	// - Maybe a copy-on-write approach, where we only copy the parts of the
+	//     NFTables structure that are modified.
+	// - Try to keep the packet processing path lock-free (current behavior).
 	// **********************************************************************
-
-	nft.Mu.Lock()
-	defer nft.Mu.Unlock()
-
 	// No need to hold our own lock
 	nftCopy := nft.DeepCopy()
 	for len(buf) >= bits.AlignUp(linux.NetlinkMessageHeaderSize, linux.NLMSG_ALIGNTO) {
@@ -1271,7 +1294,10 @@ func (p *Protocol) processBatchMessage(ctx context.Context, buf []byte, ms *nlms
 				if hdr.Flags&linux.NLM_F_ACK != 0 {
 					netlink.DumpAckMessage(hdr, ms)
 				}
-				nft.ReplaceNFTables(nftCopy)
+				// Garbage collect any deleted objects before replacing.
+				nftCopy.PruneUnused()
+				// Commit the new nftables instance.
+				commitNftables(st, nftCopy)
 			}
 
 			return nil
@@ -1330,12 +1356,13 @@ func (p *Protocol) processBatchMessage(ctx context.Context, buf []byte, ms *nlms
 			subErr = p.deleteChain(nftCopy, attrs, family, hdr.Flags, hdr.NetFilterMsgType(), ms)
 		case linux.NFT_MSG_NEWRULE:
 			subErr = p.newRule(nftCopy, st, attrs, family, hdr.Flags, ms)
+		case linux.NFT_MSG_DELRULE, linux.NFT_MSG_DESTROYRULE:
+			subErr = nftCopy.DeleteRule(attrs, family, hdr.NetFilterMsgType(), ms)
 		case linux.NFT_MSG_NEWSET:
 			subErr = nftCopy.NewSet(attrs, family, hdr.Flags, ms)
 		case linux.NFT_MSG_NEWSETELEM:
 			subErr = nftCopy.NewSetElements(attrs, family, hdr.Flags, ms)
-		case linux.NFT_MSG_DELRULE, linux.NFT_MSG_DESTROYRULE,
-			linux.NFT_MSG_DELSET, linux.NFT_MSG_DESTROYSET,
+		case linux.NFT_MSG_DELSET, linux.NFT_MSG_DESTROYSET,
 			linux.NFT_MSG_DELSETELEM, linux.NFT_MSG_DESTROYSETELEM,
 			linux.NFT_MSG_NEWOBJ, linux.NFT_MSG_DELOBJ, linux.NFT_MSG_DESTROYOBJ,
 			linux.NFT_MSG_NEWFLOWTABLE, linux.NFT_MSG_DELFLOWTABLE,
@@ -1355,6 +1382,12 @@ func (p *Protocol) processBatchMessage(ctx context.Context, buf []byte, ms *nlms
 	}
 
 	return nil
+}
+
+// commitNftables commits the nftables instance to the stack.
+func commitNftables(st *stack.Stack, nftCopy *nftables.NFTables) {
+	nftCopy.SetGenID(nftCopy.GetGenID() + 1)
+	st.SetNFTables(nftCopy)
 }
 
 // init registers the NETLINK_NETFILTER provider.

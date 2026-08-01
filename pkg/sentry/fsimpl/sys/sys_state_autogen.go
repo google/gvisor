@@ -144,6 +144,7 @@ func (i *InternalData) StateFields() []string {
 	return []string{
 		"ProductName",
 		"EnableTPUProxyPaths",
+		"RDMASysfs",
 		"TestSysfsPathPrefix",
 	}
 }
@@ -155,7 +156,8 @@ func (i *InternalData) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.ProductName)
 	stateSinkObject.Save(1, &i.EnableTPUProxyPaths)
-	stateSinkObject.Save(2, &i.TestSysfsPathPrefix)
+	stateSinkObject.Save(2, &i.RDMASysfs)
+	stateSinkObject.Save(3, &i.TestSysfsPathPrefix)
 }
 
 func (i *InternalData) afterLoad(context.Context) {}
@@ -164,7 +166,8 @@ func (i *InternalData) afterLoad(context.Context) {}
 func (i *InternalData) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.ProductName)
 	stateSourceObject.Load(1, &i.EnableTPUProxyPaths)
-	stateSourceObject.Load(2, &i.TestSysfsPathPrefix)
+	stateSourceObject.Load(2, &i.RDMASysfs)
+	stateSourceObject.Load(3, &i.TestSysfsPathPrefix)
 }
 
 func (fs *filesystem) StateTypeName() string {

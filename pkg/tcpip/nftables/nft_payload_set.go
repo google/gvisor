@@ -101,6 +101,9 @@ func (op *payloadSet) deepCopy() operation {
 // updateReferences implements operation.updateReferences.
 func (op *payloadSet) updateReferences(table *Table, sourceTable *Table, sourceOp operation) {}
 
+// destroy implements operation.destroy.
+func (op *payloadSet) destroy() {}
+
 // evaluate for PayloadSet sets data in the packet payload to the value in the
 // source register.
 func (op payloadSet) evaluate(regs *registerSet, evalCtx opEvalCtx) {

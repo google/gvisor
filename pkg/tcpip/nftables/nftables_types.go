@@ -257,7 +257,6 @@ type NFTables struct {
 	startTime          time.Time                           // Time NFTables object was created.
 	rng                rand.RNG                            // Random number generator.
 	tableHandleCounter atomicbitops.Uint64                 // Table handle counter.
-	Mu                 nfTablesRWMutex                     // Mutex for tableHandles.
 	genid              uint32                              // Generation ID for nftables.
 	connTrack          *stack.ConnTrack                    // Conntrack object for tracking connections.
 	connTrackReaper    tcpip.Timer                         // Reaper timer for reaping timed out connections.
@@ -393,15 +392,9 @@ type Chain struct {
 	// by the kernel, but rather userspace applications like nft binary.
 	userData []byte
 
-	// TODO: b/421437663 - Increment the chainUse field when a jump or goto
-	// instruction is encountered.
 	// From net/netfilter/nf_tables_api.c: nft_data_hold
 	// chainUse is the number of jump references to this chain.
 	chainUse uint32
-
-	// bound can only be set if the chain has the NFT_CHAIN_BINDING flag is set.
-	// If bound is true, the chain is being jumped to by a specific chain in the same table.
-	bound bool
 
 	// comment is the optional comment for the table.
 	comment string
@@ -741,6 +734,9 @@ type operation interface {
 
 	// updateReferences updates any references/pointers to objects in the given table.
 	updateReferences(table *Table, sourceTable *Table, sourceOp operation)
+
+	// destroy performs cleanup for the operation.
+	destroy()
 }
 
 // Ensures all operations implement the Operation interface at compile time.
@@ -1268,7 +1264,6 @@ func deepCopyChain(chain *Chain, tableCopy *Table) *Chain {
 		handleToRule: make(map[uint64]*Rule),
 		userData:     slices.Clone(chain.userData),
 		chainUse:     chain.chainUse,
-		bound:        chain.bound,
 		comment:      chain.comment,
 	}
 
@@ -1426,15 +1421,13 @@ func deepCopyTable(table *Table, afFilter *addressFamilyFilter) *Table {
 // DeepCopy returns a deep copy of the NFTables struct.
 // Assumes that the caller has already locked the mutex.
 // **********************************************************************
-// TODO: b/436922484: Add a transaction system to avoid deep copying the entire
-// NFTables structure.
-// **********************************************************************
 func (nf *NFTables) DeepCopy() *NFTables {
 	nftCopy := &NFTables{
 		clock:              nf.clock,
 		startTime:          nf.startTime,
 		rng:                nf.rng,
 		tableHandleCounter: atomicbitops.Uint64{},
+		genid:              nf.genid,
 		connTrack:          nf.connTrack,
 		connTrackReaper:    nf.connTrackReaper,
 		natEnabled:         nf.natEnabled,
@@ -1481,20 +1474,6 @@ func (nf *NFTables) DeepCopy() *NFTables {
 		}
 	}
 	return nftCopy
-}
-
-// ReplaceNFTables replaces the tables of the NFTables struct
-// with the tables of the passed in NFTables struct.
-// TODO: b/436922484: The hook function calls (CheckInput, CheckOutput, etc)
-// do not hold a reader lock, fix this.
-func (nf *NFTables) ReplaceNFTables(nftCopy *NFTables) {
-	nf.filters = nftCopy.filters
-	nf.connTrack = nftCopy.connTrack
-	nf.connTrackReaper = nftCopy.connTrackReaper
-	nf.natEnabled = nftCopy.natEnabled
-	nf.ip4InetBaseChains = nftCopy.ip4InetBaseChains
-	nf.ip6InetBaseChains = nftCopy.ip6InetBaseChains
-	nf.genid++
 }
 
 //

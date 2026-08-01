@@ -114,6 +114,90 @@ func (r *CgroupRegistry) StateLoad(ctx context.Context, stateSourceObject state.
 	stateSourceObject.Load(6, &r.cgroups)
 }
 
+func (c *Cgroup2BPFProgram) StateTypeName() string {
+	return "pkg/sentry/kernel.Cgroup2BPFProgram"
+}
+
+func (c *Cgroup2BPFProgram) StateFields() []string {
+	return []string{
+		"Prog",
+		"Flags",
+	}
+}
+
+func (c *Cgroup2BPFProgram) beforeSave() {}
+
+// +checklocksignore
+func (c *Cgroup2BPFProgram) StateSave(stateSinkObject state.Sink) {
+	c.beforeSave()
+	stateSinkObject.Save(0, &c.Prog)
+	stateSinkObject.Save(1, &c.Flags)
+}
+
+func (c *Cgroup2BPFProgram) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (c *Cgroup2BPFProgram) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &c.Prog)
+	stateSourceObject.Load(1, &c.Flags)
+}
+
+func (c *Cgroup2BPFAttachmentSlot) StateTypeName() string {
+	return "pkg/sentry/kernel.Cgroup2BPFAttachmentSlot"
+}
+
+func (c *Cgroup2BPFAttachmentSlot) StateFields() []string {
+	return []string{
+		"Progs",
+		"Flags",
+		"Revision",
+	}
+}
+
+func (c *Cgroup2BPFAttachmentSlot) beforeSave() {}
+
+// +checklocksignore
+func (c *Cgroup2BPFAttachmentSlot) StateSave(stateSinkObject state.Sink) {
+	c.beforeSave()
+	stateSinkObject.Save(0, &c.Progs)
+	stateSinkObject.Save(1, &c.Flags)
+	stateSinkObject.Save(2, &c.Revision)
+}
+
+func (c *Cgroup2BPFAttachmentSlot) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (c *Cgroup2BPFAttachmentSlot) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &c.Progs)
+	stateSourceObject.Load(1, &c.Flags)
+	stateSourceObject.Load(2, &c.Revision)
+}
+
+func (c *Cgroup2BPF) StateTypeName() string {
+	return "pkg/sentry/kernel.Cgroup2BPF"
+}
+
+func (c *Cgroup2BPF) StateFields() []string {
+	return []string{
+		"Slots",
+	}
+}
+
+func (c *Cgroup2BPF) beforeSave() {}
+
+// +checklocksignore
+func (c *Cgroup2BPF) StateSave(stateSinkObject state.Sink) {
+	c.beforeSave()
+	stateSinkObject.Save(0, &c.Slots)
+}
+
+func (c *Cgroup2BPF) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (c *Cgroup2BPF) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &c.Slots)
+}
+
 func (ns *CgroupNamespace) StateTypeName() string {
 	return "pkg/sentry/kernel.CgroupNamespace"
 }
@@ -2999,6 +3083,9 @@ func init() {
 	state.Register((*Cgroup)(nil))
 	state.Register((*hierarchy)(nil))
 	state.Register((*CgroupRegistry)(nil))
+	state.Register((*Cgroup2BPFProgram)(nil))
+	state.Register((*Cgroup2BPFAttachmentSlot)(nil))
+	state.Register((*Cgroup2BPF)(nil))
 	state.Register((*CgroupNamespace)(nil))
 	state.Register((*FDFlags)(nil))
 	state.Register((*descriptor)(nil))

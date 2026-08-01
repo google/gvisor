@@ -94,6 +94,9 @@ func (op *comparison) deepCopy() operation {
 // updateReferences implements operation.updateReferences.
 func (op *comparison) updateReferences(table *Table, sourceTable *Table, sourceOp operation) {}
 
+// destroy implements operation.destroy.
+func (op *comparison) destroy() {}
+
 // evaluate for comparison compares the data in the source register to the given
 // data and breaks from the rule if the comparison is false.
 func (op comparison) evaluate(regs *registerSet, evalCtx opEvalCtx) {

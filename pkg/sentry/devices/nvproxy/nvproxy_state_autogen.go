@@ -97,6 +97,43 @@ func (fd *frontendFD) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.AfterLoad(func() { fd.afterLoad(ctx) })
 }
 
+func (fd *dmaBufFDWrapper) StateTypeName() string {
+	return "pkg/sentry/devices/nvproxy.dmaBufFDWrapper"
+}
+
+func (fd *dmaBufFDWrapper) StateFields() []string {
+	return []string{
+		"vfsfd",
+		"FileDescriptionDefaultImpl",
+		"DentryMetadataFileDescriptionImpl",
+		"NoLockFD",
+		"hostFD",
+	}
+}
+
+func (fd *dmaBufFDWrapper) beforeSave() {}
+
+// +checklocksignore
+func (fd *dmaBufFDWrapper) StateSave(stateSinkObject state.Sink) {
+	fd.beforeSave()
+	stateSinkObject.Save(0, &fd.vfsfd)
+	stateSinkObject.Save(1, &fd.FileDescriptionDefaultImpl)
+	stateSinkObject.Save(2, &fd.DentryMetadataFileDescriptionImpl)
+	stateSinkObject.Save(3, &fd.NoLockFD)
+	stateSinkObject.Save(4, &fd.hostFD)
+}
+
+func (fd *dmaBufFDWrapper) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (fd *dmaBufFDWrapper) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &fd.vfsfd)
+	stateSourceObject.Load(1, &fd.FileDescriptionDefaultImpl)
+	stateSourceObject.Load(2, &fd.DentryMetadataFileDescriptionImpl)
+	stateSourceObject.Load(3, &fd.NoLockFD)
+	stateSourceObject.Load(4, &fd.hostFD)
+}
+
 func (mf *frontendFDMemmapFile) StateTypeName() string {
 	return "pkg/sentry/devices/nvproxy.frontendFDMemmapFile"
 }
@@ -545,6 +582,7 @@ func (mf *uvmFDMemmapFile) StateLoad(ctx context.Context, stateSourceObject stat
 func init() {
 	state.Register((*frontendDevice)(nil))
 	state.Register((*frontendFD)(nil))
+	state.Register((*dmaBufFDWrapper)(nil))
 	state.Register((*frontendFDMemmapFile)(nil))
 	state.Register((*DeviceInfo)(nil))
 	state.Register((*nvproxy)(nil))

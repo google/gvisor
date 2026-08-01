@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -31,6 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/log"
 	cryptorand "gvisor.dev/gvisor/pkg/rand"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/ports"
@@ -120,7 +122,11 @@ type Stack struct {
 	tables *IPTables `state:"nosave"`
 
 	// nftables is the nftables interface for packet filtering and manipulation rules.
-	nftables NFTablesInterface `state:"nosave"`
+	// Using atomic.Pointer for RCU lock-free reads.
+	nftables atomic.Pointer[NFTablesInterface] `state:"nosave"`
+
+	// nftablesUpdateMu serializes concurrent netlink batch modifications to nftables.
+	nftablesUpdateMu sync.Mutex `state:"nosave"`
 
 	// nftablesConfigured indicates whether NFTables is configured with at
 	// least one rule on a chain at a network hook.
@@ -421,7 +427,6 @@ func New(opts Options) *Stack {
 		stats:                        opts.Stats.FillIn(),
 		handleLocal:                  opts.HandleLocal,
 		tables:                       opts.IPTables,
-		nftables:                     opts.NFTables,
 		icmpRateLimiter:              NewICMPRateLimiter(clock),
 		seed:                         secureRNG.Uint32(),
 		nudConfigs:                   opts.NUDConfigs,
@@ -442,6 +447,7 @@ func New(opts Options) *Stack {
 		tsOffsetSecret:        secureRNG.Uint32(),
 		allowLiveTCPMigration: opts.AllowLiveTCPMigration,
 	}
+	s.SetNFTables(opts.NFTables)
 
 	// Add specified network protocols.
 	for _, netProtoFactory := range opts.NetworkProtocols {
@@ -2112,7 +2118,7 @@ func (s *Stack) ReplaceConfig(st *Stack) {
 
 	// Update iptables and nftables.
 	s.tables = st.IPTables()
-	s.nftables = st.NFTables()
+	s.SetNFTables(st.NFTables())
 	for id, nic := range nics {
 		nic.stack = s
 		s.nics[id] = nic
@@ -2333,12 +2339,30 @@ func (s *Stack) SetIPTables(tables *IPTables) {
 
 // NFTables returns the stack's nftables.
 func (s *Stack) NFTables() NFTablesInterface {
-	return s.nftables
+	val := s.nftables.Load()
+	if val == nil {
+		return nil
+	}
+	return *val
 }
 
 // SetNFTables sets the stack's nftables.
 func (s *Stack) SetNFTables(nft NFTablesInterface) {
-	s.nftables = nft
+	if nft == nil {
+		s.nftables.Store(nil)
+	} else {
+		s.nftables.Store(&nft)
+	}
+}
+
+// LockNFTablesUpdate locks the stack's nftables update mutex for netlink batch modification.
+func (s *Stack) LockNFTablesUpdate() {
+	s.nftablesUpdateMu.Lock()
+}
+
+// UnlockNFTablesUpdate unlocks the stack's nftables update mutex.
+func (s *Stack) UnlockNFTablesUpdate() {
+	s.nftablesUpdateMu.Unlock()
 }
 
 // IsNFTablesConfigured returns true if the stack has nftables configured.

@@ -76,6 +76,40 @@ func (b *BPFInstruction) StateLoad(ctx context.Context, stateSourceObject state.
 	stateSourceObject.Load(3, &b.K)
 }
 
+func (e *EBPFInstruction) StateTypeName() string {
+	return "pkg/abi/linux.EBPFInstruction"
+}
+
+func (e *EBPFInstruction) StateFields() []string {
+	return []string{
+		"Code",
+		"Registers",
+		"Offset",
+		"Immediate",
+	}
+}
+
+func (e *EBPFInstruction) beforeSave() {}
+
+// +checklocksignore
+func (e *EBPFInstruction) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.Code)
+	stateSinkObject.Save(1, &e.Registers)
+	stateSinkObject.Save(2, &e.Offset)
+	stateSinkObject.Save(3, &e.Immediate)
+}
+
+func (e *EBPFInstruction) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (e *EBPFInstruction) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.Code)
+	stateSourceObject.Load(1, &e.Registers)
+	stateSourceObject.Load(2, &e.Offset)
+	stateSourceObject.Load(3, &e.Immediate)
+}
+
 func (f *FUSEHeaderIn) StateTypeName() string {
 	return "pkg/abi/linux.FUSEHeaderIn"
 }
@@ -588,6 +622,7 @@ func (t *KernelTermios) StateLoad(ctx context.Context, stateSourceObject state.S
 func init() {
 	state.Register((*IOEvent)(nil))
 	state.Register((*BPFInstruction)(nil))
+	state.Register((*EBPFInstruction)(nil))
 	state.Register((*FUSEHeaderIn)(nil))
 	state.Register((*FUSEHeaderOut)(nil))
 	state.Register((*IOUringCqe)(nil))
