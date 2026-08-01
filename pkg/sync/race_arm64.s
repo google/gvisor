@@ -21,7 +21,7 @@
 TEXT ·RaceUncheckedAtomicCompareAndSwapUintptr(SB),NOSPLIT,$0-25
 	MOVD ptr+0(FP), R0
 	MOVD old+8(FP), R1
-	MOVD new+16(FP), R1
+	MOVD new+16(FP), R2
 again:
 	LDAXR (R0), R3
 	CMP R1, R3
