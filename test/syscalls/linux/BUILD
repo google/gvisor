@@ -2444,12 +2444,15 @@ cc_binary(
     deps = [
         "//test/util:capability_util",
         "//test/util:cleanup",
+        "//test/util:fs_util",
+        "//test/util:posix_error",
         "//test/util:proc_util",
         "//test/util:test_main",
         "//test/util:test_util",
         "//test/util:thread_util",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
     ],
 )
 

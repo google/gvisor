@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <errno.h>
+#include <linux/capability.h>
 #include <stdlib.h>
 #include <sys/resource.h>
 #include <sys/time.h>
@@ -20,16 +21,15 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include <algorithm>
-#include <climits>
 #include <string>
 #include <vector>
 
 #include "absl/algorithm/container.h"
-#include "absl/strings/numbers.h"
-#include "absl/strings/str_split.h"
+#include "absl/strings/str_format.h"
 #include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
+#include "test/util/fs_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/proc_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -130,11 +130,12 @@ TEST(RlimitTest, RlimitNProc) {
       for (int i = 0; i < kNProc; i++) {
         pid_t pid = fork();
         if (pid == 0) {
-          while (1) {
-            sleep(1);
+          // Child process: Wait passively until the parent terminates us.
+          while (true) {
+            pause();
           }
-          _exit(1);
         }
+        // Parent process: Record the child's PID and continue the test.
         EXPECT_THAT(pid, SyscallSucceeds());
         pids[i] = pid;
       }
