@@ -22,6 +22,7 @@
 #include <cerrno>
 #include <cstdint>
 #include <ctime>
+#include <iterator>
 #include <memory>
 #include <set>
 #include <utility>
@@ -211,7 +212,7 @@ TEST(SemaphoreTest, SemOpMultiNoBlock) {
   bufs[4].sem_op = 2;
   bufs[4].sem_flg = 0;
 
-  ASSERT_THAT(semop(sem.get(), bufs, ABSL_ARRAYSIZE(bufs)), SyscallSucceeds());
+  ASSERT_THAT(semop(sem.get(), bufs, std::size(bufs)), SyscallSucceeds());
 
   ASSERT_THAT(semctl(sem.get(), 0, GETVAL), SyscallSucceedsWithValue(5));
   ASSERT_THAT(semctl(sem.get(), 1, GETVAL), SyscallSucceedsWithValue(2));
@@ -223,7 +224,7 @@ TEST(SemaphoreTest, SemOpMultiNoBlock) {
   }
   // 0 and 3 order must be reversed, otherwise it will block.
   std::swap(bufs[0].sem_op, bufs[3].sem_op);
-  ASSERT_THAT(RetryEINTR(semop)(sem.get(), bufs, ABSL_ARRAYSIZE(bufs)),
+  ASSERT_THAT(RetryEINTR(semop)(sem.get(), bufs, std::size(bufs)),
               SyscallSucceeds());
 
   // All semaphores should be back to 0 now.
@@ -523,7 +524,7 @@ TEST(SemaphoreTest, SemCtlValAll) {
   uint16_t vals[3] = {0, 10, 20};
   EXPECT_THAT(semctl(sem.get(), 1, SETALL, vals), SyscallSucceedsWithValue(0));
   EXPECT_THAT(semctl(sem.get(), 1, GETALL, get), SyscallSucceedsWithValue(0));
-  for (size_t i = 0; i < ABSL_ARRAYSIZE(vals); ++i) {
+  for (size_t i = 0; i < std::size(vals); ++i) {
     EXPECT_EQ(get[i], vals[i]);
   }
 

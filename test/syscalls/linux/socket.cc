@@ -19,6 +19,9 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <cstddef>
+#include <iterator>
+
 #include "gtest/gtest.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/socket_util.h"
@@ -47,7 +50,7 @@ TEST(SocketTest, ProtocolUnix) {
       {AF_UNIX, SOCK_SEQPACKET, PF_UNIX},
       {AF_UNIX, SOCK_DGRAM, PF_UNIX},
   };
-  for (size_t i = 0; i < ABSL_ARRAYSIZE(tests); i++) {
+  for (size_t i = 0; i < std::size(tests); i++) {
     ASSERT_NO_ERRNO_AND_VALUE(
         Socket(tests[i].domain, tests[i].type, tests[i].protocol));
   }
@@ -60,7 +63,7 @@ TEST(SocketTest, ProtocolInet) {
       {AF_INET, SOCK_DGRAM, IPPROTO_UDP},
       {AF_INET, SOCK_STREAM, IPPROTO_TCP},
   };
-  for (size_t i = 0; i < ABSL_ARRAYSIZE(tests); i++) {
+  for (size_t i = 0; i < std::size(tests); i++) {
     ASSERT_NO_ERRNO_AND_VALUE(
         Socket(tests[i].domain, tests[i].type, tests[i].protocol));
   }

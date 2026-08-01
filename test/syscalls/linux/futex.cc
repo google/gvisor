@@ -23,6 +23,8 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstddef>
+#include <iterator>
 #include <memory>
 #include <vector>
 
@@ -668,7 +670,7 @@ TEST_P(PrivateAndSharedFutexTest, PIConcurrency) {
   const bool is_priv = IsPrivate();
 
   std::unique_ptr<ScopedThread> threads[100];
-  for (size_t i = 0; i < ABSL_ARRAYSIZE(threads); ++i) {
+  for (size_t i = 0; i < std::size(threads); ++i) {
     threads[i] = std::make_unique<ScopedThread>([is_priv, &a] {
       for (size_t j = 0; j < 10; ++j) {
         ASSERT_THAT(futex_lock_pi(is_priv, &a), SyscallSucceeds());
@@ -724,7 +726,7 @@ TEST_P(PrivateAndSharedFutexTest, PITryLockConcurrency) {
   const bool is_priv = IsPrivate();
 
   std::unique_ptr<ScopedThread> threads[10];
-  for (size_t i = 0; i < ABSL_ARRAYSIZE(threads); ++i) {
+  for (size_t i = 0; i < std::size(threads); ++i) {
     threads[i] = std::make_unique<ScopedThread>([is_priv, &a] {
       for (size_t j = 0; j < 10;) {
         if (futex_trylock_pi(is_priv, &a) == 0) {

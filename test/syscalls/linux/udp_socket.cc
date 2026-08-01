@@ -23,6 +23,7 @@
 #include <cstdint>
 #include <cstring>
 #include <ctime>
+#include <iterator>
 #include <string>
 #include <utility>
 #include <vector>
@@ -1966,7 +1967,7 @@ TEST_P(UdpSocketTest, SetSocketDetachFilter) {
       {0x6, 0, 0, 0x00040000},   {0x6, 0, 0, 0x00000000},
   };
   struct sock_fprog bpf = {
-      .len = ABSL_ARRAYSIZE(code),
+      .len = std::size(code),
       .filter = code,
   };
   ASSERT_THAT(

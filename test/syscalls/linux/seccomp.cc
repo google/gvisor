@@ -28,6 +28,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <iterator>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -96,7 +97,7 @@ void ApplySeccompFilter(uint32_t sysno, uint32_t filtered_result,
       BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL),
   };
   struct sock_fprog prog;
-  prog.len = ABSL_ARRAYSIZE(filter);
+  prog.len = std::size(filter);
   prog.filter = filter;
   if (flags) {
     TEST_CHECK(syscall(__NR_seccomp, SECCOMP_SET_MODE_FILTER, flags, &prog) ==
@@ -144,7 +145,7 @@ void ApplyUncacheableFilter(uint32_t sysno) {
       BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL),
   };
   struct sock_fprog prog;
-  prog.len = ABSL_ARRAYSIZE(filter);
+  prog.len = std::size(filter);
   prog.filter = filter;
   TEST_PCHECK(prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog, 0, 0) == 0);
   MaybeSave();
@@ -537,7 +538,7 @@ TEST(SeccompTest, ProgramTooLargeIsRejected) {
   filter[kTooLargeFilterSize - 1] =
       BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW);  // Return allow
   struct sock_fprog prog;
-  prog.len = ABSL_ARRAYSIZE(filter);
+  prog.len = std::size(filter);
   prog.filter = filter;
   ASSERT_THAT(syscall(__NR_seccomp, SECCOMP_MODE_FILTER, &prog),
               SyscallFailsWithErrno(EINVAL));
@@ -557,7 +558,7 @@ TEST(SeccompTest, SeccompValidatesAllFilterFlags) {
       BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
   };
   struct sock_fprog prog;
-  prog.len = ABSL_ARRAYSIZE(filter);
+  prog.len = std::size(filter);
   prog.filter = filter;
 
   // 1. TSYNC should SUCCEED (supported)
