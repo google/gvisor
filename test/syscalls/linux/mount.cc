@@ -2751,12 +2751,10 @@ TEST(MountTest, OverlayfsSgidBitIsCopiedUp) {
 // Renaming a directory on an overlay inside a user namespace requires
 // user.overlay.* xattrs to mark the directory opaque.
 TEST(MountTest, OverlayfsDirectoryRenameInUserNamespace) {
+  // Test fails in gVisor running on <6.0 due to fsgofer getting permission
+  // errors on `mknod`.
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(GetHostKernelVersion()).major < 6);
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
-  if (!IsRunningOnGvisor()) {
-    // Flaky on old Linux kernels for yet-undiagnosed reasons.
-    auto version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
-    SKIP_IF(version.major < 6);
-  }
   auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   bool in_overlayfs = ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(base_dir.path()));
 

@@ -36,6 +36,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
+	"gvisor.dev/gvisor/pkg/hostos"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/state/pretty"
@@ -131,6 +132,16 @@ func removeShardAndXMLEnvVars(env []string, tc *gtest.TestCase) []string {
 	return env
 }
 
+// addHostKernelVersionEnv adds the GVISOR_HOST_KERNEL_VERSION environment variable to env.
+func addHostKernelVersionEnv(env []string) []string {
+	if hostVer, err := hostos.KernelVersion(); err == nil {
+		env = append(env, "GVISOR_HOST_KERNEL_VERSION="+hostVer.String())
+	} else {
+		log.Warningf("Failed to get host kernel version: %v", err)
+	}
+	return env
+}
+
 // runTestCaseNative runs the test case directly on the host machine.
 func runTestCaseNative(testBin string, tc *gtest.TestCase, args []string, t *testing.T) {
 	// These tests might be running in parallel, so make sure they have a
@@ -157,6 +168,7 @@ func runTestCaseNative(testBin string, tc *gtest.TestCase, args []string, t *tes
 		env = append(env, newEnvVar)
 	}
 	env = removeShardAndXMLEnvVars(env, tc)
+	env = addHostKernelVersionEnv(env)
 
 	if *addHostUDS {
 		socketDir, cleanup, err := uds.CreateBoundUDSTree("/tmp")
@@ -1000,6 +1012,7 @@ func runTestCaseRunsc(testBin string, tc *gtest.TestCase, args []string, t *test
 		saveVar     = "GVISOR_SAVE_TEST"
 	)
 	env := append(os.Environ(), platformVar+"="+*platform, networkVar+"="+*network, runtimeVar+"=runsc")
+	env = addHostKernelVersionEnv(env)
 	if *platformSupport != "" {
 		env = append(env, fmt.Sprintf("%s=%s", platformSupportEnvVar, *platformSupport))
 	}
