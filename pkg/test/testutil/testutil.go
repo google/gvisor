@@ -309,7 +309,10 @@ func SetupRootDir() (string, func(), error) {
 	if err != nil {
 		return "", nil, fmt.Errorf("error creating root dir: %v", err)
 	}
-	return rootDir, func() { os.RemoveAll(rootDir) }, nil
+	return rootDir, func() {
+		specutils.UnmountNullNetNS(rootDir)
+		os.RemoveAll(rootDir)
+	}, nil
 }
 
 // SetupContainer creates a bundle and root dir for the container, generates a

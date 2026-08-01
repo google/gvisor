@@ -34,8 +34,8 @@ func TestDefault(t *testing.T) {
 	// "--root" is always set to something different than the default. Reset it
 	// to make it easier to test that default values do not generate flags.
 	c.RootDir = ""
-	if c.GoferNetworkNamespace != GoferNetworkNamespaceNew {
-		t.Errorf("GoferNetworkNamespace=%q, want new", c.GoferNetworkNamespace)
+	if c.GoferNetworkNamespace != GoferNetworkNamespaceNull {
+		t.Errorf("GoferNetworkNamespace=%q, want null", c.GoferNetworkNamespace)
 	}
 
 	// All defaults doesn't require setting flags.
