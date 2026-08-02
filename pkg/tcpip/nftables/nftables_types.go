@@ -1089,7 +1089,7 @@ func parseVerdictAttrs(tab *Table, dataAttrs map[uint16]nlmsg.BytesView) (Verdic
 	if !ok {
 		return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: NFTA_DATA_VERDICT attribute is not found")
 	}
-	return validateVerdictData(tab, nlmsg.AttrsView(vBytes))
+	return parseAndValidateVerdictData(tab, nlmsg.AttrsView(vBytes))
 }
 
 func parseDataAttrs(dataAttrs map[uint16]nlmsg.BytesView) ([]byte, *syserr.AnnotatedError) {
@@ -1180,7 +1180,7 @@ func formatRegIdxForDump(regIdx int) marshal.Marshallable {
 }
 
 // validateVerdictData validates the verdict data bytes and returns the data as a verdict.
-func validateVerdictData(tab *Table, bytes nlmsg.AttrsView) (Verdict, *syserr.AnnotatedError) {
+func parseAndValidateVerdictData(tab *Table, bytes nlmsg.AttrsView) (Verdict, *syserr.AnnotatedError) {
 	v := Verdict{}
 	verdictAttrs, ok := NfParse(bytes)
 	if !ok {
