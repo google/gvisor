@@ -709,6 +709,83 @@ func TPUFunctionalityRequested(spec *specs.Spec, conf *config.Config) bool {
 	return false
 }
 
+// SafeCreateMountPoint creates the mount point at dst, along with any missing
+// parent directories. isDir selects whether dst is created as a directory or
+// as an empty regular file.
+//
+// Unlike os.MkdirAll and os.OpenFile, it never traverses a symlink: each path
+// component is created and opened relative to a file descriptor for its
+// parent, using O_NOFOLLOW. dst is expected to be free of symlinks already
+// (see the callers' use of resolveSymlink), and SafeMount rejects any dst that
+// is not, so this cannot reject a destination that would otherwise have been
+// mounted successfully. What it does prevent is creating the directories and
+// the file at a location the caller did not intend, which is observable even
+// when the subsequent SafeMount fails: dst is resolved by pathname, so a
+// symlink swapped into a component after it was resolved redirects the
+// creation outside the intended tree.
+func SafeCreateMountPoint(dst string, isDir bool) error {
+	if isDir {
+		dirFD, err := safeMkdirAll(dst)
+		if err != nil {
+			return fmt.Errorf("mkdir(%q) failed: %v", dst, err)
+		}
+		return unix.Close(dirFD)
+	}
+
+	// Create the parent destination directory, then the destination file
+	// relative to it, so that the parent cannot be exchanged in between.
+	parent := path.Dir(dst)
+	parentFD, err := safeMkdirAll(parent)
+	if err != nil {
+		return fmt.Errorf("mkdir(%q) failed: %v", parent, err)
+	}
+	defer unix.Close(parentFD)
+
+	// Create the destination file if it does not exist.
+	fd, err := unix.Openat(parentFD, path.Base(dst), unix.O_CREAT|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0777)
+	if err != nil {
+		return fmt.Errorf("open(%q) failed: %v", dst, err)
+	}
+	return unix.Close(fd)
+}
+
+// safeMkdirAll creates dir and any missing parents without traversing a
+// symlink, and returns a file descriptor for dir. The caller owns the
+// descriptor and must close it.
+func safeMkdirAll(dir string) (int, error) {
+	if !path.IsAbs(dir) {
+		return -1, fmt.Errorf("path is not absolute")
+	}
+	// O_PATH is used so that components need not be readable, and is safe to
+	// pass as the directory argument of the *at(2) calls below. O_DIRECTORY
+	// rejects a symlink: with O_PATH|O_NOFOLLOW, opening a symlink succeeds and
+	// yields a descriptor for the link itself, which is not a directory.
+	const flags = unix.O_PATH | unix.O_DIRECTORY | unix.O_NOFOLLOW | unix.O_CLOEXEC
+	parentFD, err := unix.Open("/", flags, 0)
+	if err != nil {
+		return -1, fmt.Errorf("open(\"/\") failed: %v", err)
+	}
+	for _, name := range strings.Split(path.Clean(dir), "/") {
+		if name == "" {
+			continue
+		}
+		childFD, err := unix.Openat(parentFD, name, flags, 0)
+		if err == unix.ENOENT {
+			if err := unix.Mkdirat(parentFD, name, 0777); err != nil && err != unix.EEXIST {
+				unix.Close(parentFD)
+				return -1, fmt.Errorf("mkdirat(%q) failed: %v", name, err)
+			}
+			childFD, err = unix.Openat(parentFD, name, flags, 0)
+		}
+		unix.Close(parentFD)
+		if err != nil {
+			return -1, fmt.Errorf("openat(%q) failed: %v", name, err)
+		}
+		parentFD = childFD
+	}
+	return parentFD, nil
+}
+
 // SafeSetupAndMount creates the mount point and calls Mount with the given
 // flags. procPath is the path to procfs. If it is "", procfs is assumed to be
 // mounted at /proc.
@@ -725,23 +802,8 @@ func SafeSetupAndMount(src, dst, typ string, flags uint32, procPath string) erro
 		isDir = fi.IsDir()
 	}
 
-	if isDir {
-		// Create the destination directory.
-		if err := os.MkdirAll(dst, 0777); err != nil {
-			return fmt.Errorf("mkdir(%q) failed: %v", dst, err)
-		}
-	} else {
-		// Create the parent destination directory.
-		parent := path.Dir(dst)
-		if err := os.MkdirAll(parent, 0777); err != nil {
-			return fmt.Errorf("mkdir(%q) failed: %v", parent, err)
-		}
-		// Create the destination file if it does not exist.
-		f, err := os.OpenFile(dst, unix.O_CREAT, 0777)
-		if err != nil {
-			return fmt.Errorf("open(%q) failed: %v", dst, err)
-		}
-		f.Close()
+	if err := SafeCreateMountPoint(dst, isDir); err != nil {
+		return err
 	}
 
 	// Do the mount.
