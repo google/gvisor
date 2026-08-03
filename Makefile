@@ -842,6 +842,11 @@ $(RELEASE_ARTIFACTS)/%:
 	@$(call copy,//debian:debian,$@)
 	@$(call copy,//debian:gvisor-release-tar,$@)
 
+artifacts-python: ## Builds Python SandboxExec wheels into $(RELEASE_ARTIFACTS)/python.
+	@mkdir -p $(RELEASE_ARTIFACTS)/python
+	@tools/make_python_release.sh build $(RELEASE_ARTIFACTS)/python "$(RELEASE_NAME)"
+.PHONY: artifacts-python
+
 release: $(RELEASE_KEY) $(RELEASE_ARTIFACTS)/$(ARCH)
 	@mkdir -p $(RELEASE_ROOT)
 	@NIGHTLY=$(RELEASE_NIGHTLY) tools/make_release.sh $(RELEASE_KEY) $(RELEASE_ROOT) $$(find $(RELEASE_ARTIFACTS) -type f)
