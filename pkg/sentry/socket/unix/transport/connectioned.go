@@ -582,6 +582,15 @@ func (e *connectionedEndpoint) isBoundSocketReadable() bool {
 	return fdnotifier.NonBlockingPoll(e.boundSocketFD.NotificationFD(), waiter.ReadableEvents)&waiter.ReadableEvents != 0
 }
 
+// Shutdown implements Endpoint.Shutdown. On Linux, shutting down the write
+// side closes the peer's read side only for stream and seqpacket sockets;
+// the peer of a datagram (or raw, which Linux treats as datagram)
+// socketpair is unaffected (see unix_shutdown() in net/unix/af_unix.c).
+func (e *connectionedEndpoint) Shutdown(flags tcpip.ShutdownFlags) *syserr.Error {
+	closePeerRead := e.stype == linux.SOCK_STREAM || e.stype == linux.SOCK_SEQPACKET
+	return e.shutdown(flags, closePeerRead)
+}
+
 // Readiness returns the current readiness of the connectionedEndpoint. For
 // example, if waiter.EventIn is set, the connectionedEndpoint is immediately
 // readable.
@@ -600,7 +609,10 @@ func (e *connectionedEndpoint) Readiness(mask waiter.EventMask) waiter.EventMask
 		}
 		if mask&(waiter.EventHUp|waiter.EventRdHUp) != 0 && e.receiver.IsRecvClosed() {
 			ready |= waiter.EventRdHUp
-			if mask&waiter.EventHUp != 0 && e.connected.IsSendClosed() {
+			// A datagram write shutdown is endpoint-local
+			// (writeShutdown) and leaves the shared queue open, so
+			// IsSendClosed alone would miss it.
+			if mask&waiter.EventHUp != 0 && (e.connected.IsSendClosed() || e.writeShutdown) {
 				ready |= waiter.EventHUp
 			}
 		}

@@ -14,9 +14,14 @@
 
 #include "test/syscalls/linux/socket_unix_non_stream.h"
 
+#include <poll.h>
 #include <stdio.h>
+#include <string.h>
 #include <sys/mman.h>
+#include <sys/socket.h>
 #include <sys/un.h>
+
+#include <cerrno>
 
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
@@ -250,6 +255,68 @@ TEST_P(UnixNonStreamSocketPairTest, SendTimeout) {
       break;
     }
   }
+}
+
+// Shutting down writes fails subsequent sends with EPIPE, and must not
+// affect the peer's receive side on datagram sockets: messages sent before
+// the shutdown remain readable, and afterwards the peer sees EAGAIN, not
+// EOF. On seqpacket sockets, the shutdown propagates: once the queue is
+// drained, the peer reads EOF.
+TEST_P(UnixNonStreamSocketPairTest, PeerWriteShutdown) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  int type;
+  socklen_t length = sizeof(type);
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), SOL_SOCKET, SO_TYPE, &type, &length),
+      SyscallSucceeds());
+
+  char sent_data[3] = {'a', 'b', 'c'};
+  ASSERT_THAT(
+      RetryEINTR(send)(sockets->second_fd(), sent_data, sizeof(sent_data), 0),
+      SyscallSucceedsWithValue(sizeof(sent_data)));
+
+  ASSERT_THAT(shutdown(sockets->second_fd(), SHUT_WR), SyscallSucceeds());
+
+  // Sends after the shutdown fail with EPIPE.
+  EXPECT_THAT(RetryEINTR(send)(sockets->second_fd(), sent_data,
+                               sizeof(sent_data), MSG_NOSIGNAL),
+              SyscallFailsWithErrno(EPIPE));
+
+  // The message sent before the shutdown is still readable.
+  char received_data[sizeof(sent_data)] = {};
+  ASSERT_THAT(RetryEINTR(recv)(sockets->first_fd(), received_data,
+                               sizeof(received_data), MSG_DONTWAIT),
+              SyscallSucceedsWithValue(sizeof(sent_data)));
+  EXPECT_EQ(memcmp(sent_data, received_data, sizeof(sent_data)), 0);
+
+  // With the queue drained, seqpacket sockets see the propagated shutdown
+  // (EOF); datagram sockets, which have no connection semantics, do not.
+  if (type == SOCK_SEQPACKET) {
+    EXPECT_THAT(RetryEINTR(recv)(sockets->first_fd(), received_data,
+                                 sizeof(received_data), MSG_DONTWAIT),
+                SyscallSucceedsWithValue(0));
+  } else {
+    EXPECT_THAT(RetryEINTR(recv)(sockets->first_fd(), received_data,
+                                 sizeof(received_data), MSG_DONTWAIT),
+                SyscallFailsWithErrno(EAGAIN));
+  }
+}
+
+// After both directions are shut down, poll reports POLLHUP. Linux sets
+// EPOLLHUP when sk_shutdown == SHUTDOWN_MASK, EPOLLRDHUP|EPOLLIN for the
+// read shutdown, and EPOLLOUT since buffer space is available (see
+// unix_dgram_poll(), which serves both datagram and seqpacket sockets).
+TEST_P(UnixNonStreamSocketPairTest, PollAfterFullShutdown) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  ASSERT_THAT(shutdown(sockets->first_fd(), SHUT_RDWR), SyscallSucceeds());
+
+  struct pollfd poll_fd = {sockets->first_fd(), POLLIN | POLLOUT | POLLRDHUP,
+                           0};
+  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, /*timeout=*/0),
+              SyscallSucceedsWithValue(1));
+  EXPECT_EQ(poll_fd.revents, POLLIN | POLLOUT | POLLRDHUP | POLLHUP);
 }
 
 }  // namespace testing
