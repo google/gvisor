@@ -921,6 +921,9 @@ type NICOptions struct {
 	// EnableExperimentIPOption specifies whether the NIC is responsible for
 	// passing the experiment IP option.
 	EnableExperimentIPOption bool
+
+	// Kind specifies the link kind of the NIC (e.g. "veth", "bridge").
+	Kind string
 }
 
 // GetNICByID return a network device associated with the specified ID.
@@ -1204,6 +1207,9 @@ type NICInfo struct {
 
 	// Primary is the index of the main controlling interface in a bonded setup.
 	Primary tcpip.NICID
+
+	// Kind specifies the link kind of the NIC (e.g. "veth", "bridge").
+	Kind string
 }
 
 // HasNIC returns true if the NICID is defined in the stack.
@@ -1256,6 +1262,7 @@ func (s *Stack) nicInfo(nic *nic, id tcpip.NICID) *NICInfo {
 		ARPHardwareType:     nic.NetworkLinkEndpoint.ARPHardwareType(),
 		Forwarding:          make(map[tcpip.NetworkProtocolNumber]bool),
 		MulticastForwarding: make(map[tcpip.NetworkProtocolNumber]bool),
+		Kind:                nic.kind,
 	}
 
 	for proto := range s.networkProtocols {

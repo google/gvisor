@@ -33,6 +33,7 @@
 #include <functional>
 #include <iostream>
 #include <iterator>
+#include <map>
 #include <sstream>
 #include <string>
 #include <tuple>
@@ -283,6 +284,7 @@ void CheckLinkMsg(const struct nlmsghdr* hdr, const Link& link) {
     std::string address(reinterpret_cast<const char*>(RTA_DATA(rta_address)));
     EXPECT_EQ(address, link.address);
   }
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(LinkKind(hdr, msg)), link.kind);
 }
 
 TEST(NetlinkRouteTest, GetLinkByIndex) {
@@ -1889,6 +1891,33 @@ struct VethRequest GetVethRequest(uint32_t seq, const char* ifname_first,
   return req;
 }
 
+struct BridgeRequest {
+  struct nlmsghdr hdr;
+  struct ifinfomsg ifm;
+  char buf[1024];
+};
+
+struct BridgeRequest GetBridgeRequest(uint32_t seq, const char* ifname) {
+  struct BridgeRequest req = {};
+  req.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(struct ifinfomsg));
+  req.hdr.nlmsg_type = RTM_NEWLINK;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE;
+  req.hdr.nlmsg_seq = seq;
+  req.ifm.ifi_family = AF_UNSPEC;
+  req.ifm.ifi_index = 0;
+
+  addattr(&req.hdr, sizeof(req), IFLA_IFNAME, ifname, strlen(ifname));
+
+  struct rtattr* linkinfo = NLMSG_TAIL(&req.hdr);
+  {
+    addattr(&req.hdr, sizeof(req), IFLA_LINKINFO, nullptr, 0);
+    addattr(&req.hdr, sizeof(req), IFLA_INFO_KIND, "bridge", 6);
+  }
+  linkinfo->rta_len = (uint64_t)NLMSG_TAIL(&req.hdr) - (uint64_t)linkinfo;
+
+  return req;
+}
+
 void DumpInetAddressSequence(std::vector<std::string>* sequence) {
   struct ifaddrs* if_addr_list = nullptr;
   ASSERT_THAT(getifaddrs(&if_addr_list), SyscallSucceeds());
@@ -1962,6 +1991,40 @@ TEST(NetlinkRouteTest, VethAdd) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
   VethRequest req = GetVethRequest(kSeq, "veth1", "veth2");
   EXPECT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len));
+}
+
+TEST(NetlinkRouteTest, LinkInfoKind) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  VethRequest veth_req = GetVethRequest(kSeq, "veth1", "veth2");
+  ASSERT_NO_ERRNO(
+      NetlinkRequestAckOrError(fd, kSeq, &veth_req, veth_req.hdr.nlmsg_len));
+
+  BridgeRequest br_req = GetBridgeRequest(kSeq + 1, "br0");
+  ASSERT_NO_ERRNO(
+      NetlinkRequestAckOrError(fd, kSeq + 1, &br_req, br_req.hdr.nlmsg_len));
+
+  std::vector<Link> links = ASSERT_NO_ERRNO_AND_VALUE(DumpLinks(fd));
+  std::map<std::string, std::string> link_kinds;
+  for (const Link& link : links) {
+    link_kinds[link.name] = link.kind;
+  }
+
+  EXPECT_EQ(link_kinds["veth1"], "veth");
+  EXPECT_EQ(link_kinds["veth2"], "veth");
+  EXPECT_EQ(link_kinds["br0"], "bridge");
+  EXPECT_EQ(link_kinds["lo"], "");
 }
 
 TEST(NetlinkRouteTest, LookupAllAddrOrder) {
