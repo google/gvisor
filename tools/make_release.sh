@@ -47,6 +47,8 @@ install_raw() {
     if echo "${binary}" | grep -qF .tar.bz2; then
       # Determine arch from the `runsc` within the tarball:
       arch=$(tar -xjOf "${binary}" runsc | file - | cut -d',' -f2 | awk '{print $NF}' | tr '-' '_')
+    elif [[ "${binary}" =~ \.whl$ ]] || [[ "${binary}" =~ \.tar\.gz$ ]]; then
+      arch="python"
     else
       arch=$(file "${binary}" | cut -d',' -f2 | awk '{print $NF}' | tr '-' '_')
     fi
@@ -61,6 +63,8 @@ install_raw() {
 install_apt() {
   tools/make_apt.sh "${private_key}" "$1" "${root}" "${pkgs[@]}"
 }
+
+
 
 # If nightly, install only nightly artifacts.
 if [[ "${NIGHTLY:-false}" == "true" ]]; then
@@ -91,6 +95,7 @@ else
       # Install the "point release".
       # https://gvisor.dev/docs/user_guide/install/#point-release
       install_raw "release/${name}"
+      tools/make_python_release.sh upload-wheel "${root}/release/${name}/python"
       # Install the latest release.
       # https://gvisor.dev/docs/user_guide/install/#latest-release
       install_raw "release/latest"
