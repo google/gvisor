@@ -193,6 +193,11 @@ syscall_test(
 )
 
 syscall_test(
+    mount_cgroup_v2 = True,
+    test = "//test/syscalls/linux:cgroup2_ebpf_test",
+)
+
+syscall_test(
     test = "//test/syscalls/linux:epoll_test",
 )
 
@@ -358,6 +363,11 @@ syscall_test(
 
 syscall_test(
     test = "//test/syscalls/linux:kill_test",
+)
+
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:landlock_test",
 )
 
 syscall_test(
@@ -981,6 +991,10 @@ syscall_test(
 
 syscall_test(
     nftables = True,
+    tags = [
+        "local",
+        "notap",
+    ],
     test = "//test/syscalls/linux:socket_netlink_netfilter_test",
 )
 
@@ -1339,4 +1353,8 @@ syscall_test(
     add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:xattr_test",
+)
+
+syscall_test(
+    test = "//test/syscalls/linux:posix_acl_test",
 )

@@ -828,7 +828,7 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 		gid := auth.KGID(d.inode.gid.Load())
 		uid := auth.KUID(d.inode.uid.Load())
 		mode := linux.FileMode(d.inode.mode.Load())
-		if err := vfs.MayLink(rp.Credentials(), mode, uid, gid); err != nil {
+		if err := vfs.MayLink(rp.Credentials(), mode, nil, uid, gid); err != nil {
 			return nil, err
 		}
 		if d.inode.nlink.Load() == 0 {
@@ -1837,6 +1837,29 @@ func (fs *filesystem) RemoveXattrAt(ctx context.Context, rp *vfs.ResolvingPath, 
 
 	d.InotifyWithParent(ctx, linux.IN_ATTRIB, 0, vfs.InodeEvent)
 	return nil
+}
+
+// GetPosixACLAt implements vfs.FilesystemImpl.GetPosixACLAt.
+func (fs *filesystem) GetPosixACLAt(ctx context.Context, rp *vfs.ResolvingPath, t vfs.ACLType) (*vfs.PosixACL, error) {
+	var ds *[]*dentry
+	fs.renameMu.RLock()
+	defer fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
+	// gofer does not currently support POSIX ACLs.
+	_, err := fs.resolveLocked(ctx, rp, &ds)
+	return nil, err
+}
+
+// SetPosixACLAt implements vfs.FilesystemImpl.SetPosixACLAt.
+func (fs *filesystem) SetPosixACLAt(ctx context.Context, rp *vfs.ResolvingPath, t vfs.ACLType, acl *vfs.PosixACL, clearSGID bool) (*vfs.PosixACL, linux.FileMode, error) {
+	var ds *[]*dentry
+	fs.renameMu.RLock()
+	defer fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
+	_, err := fs.resolveLocked(ctx, rp, &ds)
+	if err != nil {
+		return nil, 0, err
+	}
+	// gofer does not currently support POSIX ACLs.
+	return nil, 0, linuxerr.EOPNOTSUPP
 }
 
 // PrependPath implements vfs.FilesystemImpl.PrependPath.

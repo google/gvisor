@@ -18,9 +18,13 @@
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 
+#include <cerrno>
+#include <cstdint>
 #include <cstring>
+#include <vector>
 
-#include "gtest/gtest.h"
+#include "gmock/gmock.h"
+#include "absl/strings/str_cat.h"
 #include "absl/synchronization/notification.h"
 #include "benchmark/benchmark.h"
 #include "test/util/file_descriptor.h"
@@ -53,9 +57,7 @@ class Message {
     hdr_.msg_controllen = cmsg_sz;
   }
 
-  struct msghdr* header() {
-    return &hdr_;
-  }
+  struct msghdr* header() { return &hdr_; }
 
  private:
   std::vector<char> buffer_;

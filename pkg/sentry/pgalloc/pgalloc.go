@@ -158,8 +158,11 @@ type MemoryFile struct {
 	// commitSeq is a sequence counter used to detect races between scans for
 	// committed pages and concurrent decommitment.
 	//
-	// nextCommitScan is the next time at which UpdateUsage() may scan the
+	// nextCommitScan is the next time at which UpdateUsage(nil) may scan the
 	// backing file for commitment information.
+	//
+	// ongoingCommitScan is true while UpdateUsage(nil) is in progress. Writing
+	// to it requires f.mu to be locked, but reading it does not.
 	//
 	// isSaving is true during f.SaveTo() to prevent concurrent calls to
 	// f.UpdateUsage() from marking pages as committed.
@@ -169,6 +172,7 @@ type MemoryFile struct {
 	knownCommittedBytes uint64
 	commitSeq           uint64
 	nextCommitScan      time.Time
+	ongoingCommitScan   atomic.Bool
 	isSaving            bool
 
 	// evictable maps EvictableMemoryUsers to eviction state.
@@ -1554,11 +1558,28 @@ func (f *MemoryFile) ShouldCacheEvictable() bool {
 	return f.opts.DelayedEviction == DelayedEvictionManual || f.opts.UseHostMemcgPressure
 }
 
-// UpdateUsage ensures that the memory usage statistics in
-// usage.MemoryAccounting are up to date. If memCgIDs is nil, all the pages
+// commitScanIntervalRatio is the minimum ratio of the interval between
+// consecutive scans for committed pages to the duration of the preceding
+// scan, limiting scanning to 1/commitScanIntervalRatio of a CPU. It trades
+// scanning cost against how far usage.MemoryAccounting may lag: scans cost
+// tens of milliseconds for tens of GB of memory, but seconds once a sandbox
+// commits hundreds of GB. If the previous scan took 2 seconds, the next scan
+// will be delayed by at least 16 seconds.
+const commitScanIntervalRatio = 8
+
+// UpdateUsage attempts to bring the memory usage statistics in
+// usage.MemoryAccounting up to date. If memCgIDs is nil, all the pages
 // will be scanned. Else only the pages which belong to the memory cgroup ids
 // in memCgIDs will be scanned and the memory usage will be updated.
+//
+// Scanning is throttled, so statistics may lag page commitment by an
+// unbounded amount; only callers that tolerate stale statistics may use
+// UpdateUsage.
 func (f *MemoryFile) UpdateUsage(memCgIDs map[uint32]struct{}) error {
+	if memCgIDs == nil && f.ongoingCommitScan.Load() {
+		return nil
+	}
+
 	// If we already know of every committed page, skip scanning.
 	currentUsage, err := f.TotalUsage()
 	if err != nil {
@@ -1575,24 +1596,35 @@ func (f *MemoryFile) UpdateUsage(memCgIDs map[uint32]struct{}) error {
 		return nil
 	}
 
-	// Linux updates usage values at CONFIG_HZ; throttle our scans to the same
-	// frequency.
+	// Linux updates usage values at CONFIG_HZ, so scanning more frequently is
+	// never useful. Scanning is also far more expensive for us than it is for
+	// Linux: pages are committed by the host kernel without our involvement,
+	// so each scan must ask the host about every page not already known to be
+	// committed, making it O(uncommitted pages). So scanning is throttled
+	// proportional to the previous scan duration to avoid excessive CPU usage.
 	startTime := time.Now()
-	if startTime.Before(f.nextCommitScan) {
-		return nil
-	}
 	if memCgIDs == nil {
-		f.nextCommitScan = startTime.Add(time.Second / linux.CLOCKS_PER_SEC)
+		if startTime.Before(f.nextCommitScan) || f.ongoingCommitScan.Load() {
+			return nil
+		}
+		f.ongoingCommitScan.Store(true)
+	}
+	err = f.updateUsageLocked(memCgIDs)
+	if memCgIDs == nil {
+		f.ongoingCommitScan.Store(false)
+	}
+	scanTime := time.Since(startTime)
+	if memCgIDs == nil {
+		f.nextCommitScan = startTime.Add(max(linux.ClockTick, scanTime*commitScanIntervalRatio))
 	}
 
-	err = f.updateUsageLocked(memCgIDs)
 	if _, ok := err.(updateUsageDuringSaveErr); ok {
 		log.Debugf("pgalloc.MemoryFile.UpdateUsage() inhibited during MemoryFile save")
 		return nil
 	}
 	if log.IsLogging(log.Debug) {
 		log.Debugf("UpdateUsage: took %v, currentUsage=%d knownCommittedBytes=%d",
-			time.Since(startTime), currentUsage, f.knownCommittedBytes)
+			scanTime, currentUsage, f.knownCommittedBytes)
 	}
 	return err
 }

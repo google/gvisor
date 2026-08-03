@@ -100,6 +100,12 @@ func (op *ranged) deepCopy() operation {
 	return &opCopy
 }
 
+// updateReferences implements operation.updateReferences.
+func (op *ranged) updateReferences(table *Table, sourceTable *Table, sourceOp operation) {}
+
+// destroy implements operation.destroy.
+func (op *ranged) destroy() {}
+
 // evaluate for Ranged checks whether the source register data is within the
 // specified inclusive range and breaks from the rule if comparison is false.
 func (op ranged) evaluate(regs *registerSet, evalCtx opEvalCtx) {

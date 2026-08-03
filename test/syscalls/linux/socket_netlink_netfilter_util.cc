@@ -555,7 +555,7 @@ bool NlReq::MsgTypeToken(const std::string& token) {
       {"newchain", NFT_MSG_NEWCHAIN}, {"getchain", NFT_MSG_GETCHAIN},
       {"delchain", NFT_MSG_DELCHAIN}, {"destroychain", NFT_MSG_DESTROYCHAIN},
       {"newrule", NFT_MSG_NEWRULE},   {"getrule", NFT_MSG_GETRULE},
-      {"getgen", NFT_MSG_GETGEN}};
+      {"delrule", NFT_MSG_DELRULE},   {"getgen", NFT_MSG_GETGEN}};
   auto it = token_to_msg_type.find(token);
   if (it != token_to_msg_type.end()) {
     EXPECT_FALSE(msg_type_set_) << "Message type already set: " << msg_type_;
@@ -780,6 +780,12 @@ NlImmExpr& NlImmExpr::Dreg(uint32_t dreg) {
 
 NlImmExpr& NlImmExpr::VerdictCode(uint32_t verdict_code) {
   verdict_code_ = verdict_code;
+  has_verdict_code_ = true;
+  return *this;
+}
+
+NlImmExpr& NlImmExpr::VerdictChainId(uint32_t chain_id) {
+  verdict_chain_id_ = chain_id;
   return *this;
 }
 
@@ -789,8 +795,11 @@ NlImmExpr& NlImmExpr::Value(const std::vector<char>& value) {
 }
 
 std::vector<char> NlImmExpr::VerdictBuild() {
-  std::vector<char> verdict_code_data =
-      NlNestedAttr().U32Attr(NFTA_VERDICT_CODE, verdict_code_).Build();
+  auto verdict_attrs = NlNestedAttr().U32Attr(NFTA_VERDICT_CODE, verdict_code_);
+  if (verdict_chain_id_.has_value()) {
+    verdict_attrs.U32Attr(NFTA_VERDICT_CHAIN_ID, verdict_chain_id_.value());
+  }
+  std::vector<char> verdict_code_data = verdict_attrs.Build();
   std::vector<char> immediate_data =
       NlNestedAttr()
           .RawAttr(NFTA_DATA_VERDICT, verdict_code_data.data(),
@@ -870,12 +879,39 @@ PosixError NetlinkNetfilterBatchRequestAckOrError(const FileDescriptor& fd,
           EXPECT_GE(hdr->nlmsg_len, sizeof(*hdr) + sizeof(struct nlmsgerr));
           const struct nlmsgerr* msg =
               reinterpret_cast<const struct nlmsgerr*>(NLMSG_DATA(hdr));
-          err = -msg->error;
-          if (err != 0) {
+          if (msg->error != 0) {
+            err = -msg->error;
             err_set = true;
+          } else if (!err_set) {
+            err = 0;
           }
         },
         true));
+  }
+
+  // If an error occurred, the kernel may have queued additional messages
+  // (such as deferred ACKs for successfully processed messages).
+  // Drain the socket to prevent these leftover messages from interfering
+  // with subsequent requests (like cleanup).
+  // If an error occurred, the kernel may have queued additional messages
+  // (such as deferred ACKs for successfully processed messages).
+  // Drain the socket to prevent these leftover messages from interfering
+  // with subsequent requests.
+  if (err_set) {
+    char buf[4096];
+    struct iovec iov = {};
+    iov.iov_base = buf;
+    iov.iov_len = sizeof(buf);
+    struct msghdr msg = {};
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+
+    while (true) {
+      int len = recvmsg(fd.get(), &msg, MSG_DONTWAIT);
+      if (len < 0) {
+        break;
+      }
+    }
   }
 
   return PosixError(err);
@@ -896,6 +932,19 @@ PosixError DestroyNetfilterTable(FileDescriptor& fd,
   return NetlinkNetfilterBatchRequestAckOrError(fd, seq_num, seq_num + 2,
                                                 destroy_request_buffer.data(),
                                                 destroy_request_buffer.size());
+}
+
+PosixError NetfilterFlushRuleset(const FileDescriptor& fd) {
+  const uint32_t seq = 10000;
+  std::vector<char> flush_request =
+      NlBatchReq()
+          .SeqStart(seq)
+          .Req(NlReq("deltable req ack unspec").Seq(seq + 1).Build())
+          .SeqEnd(seq + 2)
+          .Build();
+
+  return NetlinkNetfilterBatchRequestAckOrError(
+      fd, seq, seq + 2, flush_request.data(), flush_request.size());
 }
 
 }  // namespace testing

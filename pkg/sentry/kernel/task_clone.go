@@ -920,20 +920,24 @@ func (t *Task) Unshare(flags int32) error {
 	creds := t.Credentials()
 	originalUserNS := creds.UserNamespace
 	var (
-		newFSContext  *FSContext
-		newFDTable    *FDTable
-		newCreds      bool
-		newUserNS     *auth.UserNamespace
-		newChildPIDNS *PIDNamespace
-		newNetNS      *inet.Namespace
-		newUTSNS      *UTSNamespace
-		newIPCNS      *IPCNamespace
-		newCgroupNS   *CgroupNamespace
-		newMountNS    *vfs.MountNamespace
+		newFSContext          *FSContext
+		oldFSContextToDestroy *FSContext
+		newFDTable            *FDTable
+		newCreds              bool
+		newUserNS             *auth.UserNamespace
+		newChildPIDNS         *PIDNamespace
+		newNetNS              *inet.Namespace
+		newUTSNS              *UTSNamespace
+		newIPCNS              *IPCNamespace
+		newCgroupNS           *CgroupNamespace
+		newMountNS            *vfs.MountNamespace
 	)
 	defer func() {
 		if newFSContext != nil {
-			newFSContext.destroy(t)
+			newFSContext.DecRef(t)
+		}
+		if oldFSContextToDestroy != nil {
+			oldFSContextToDestroy.destroy(t)
 		}
 		if newFDTable != nil {
 			newFDTable.DecRef(t)
@@ -1023,13 +1027,14 @@ func (t *Task) Unshare(flags int32) error {
 	}
 	if newFSContext != nil {
 		oldFSContext := t.FSContext()
-		// unshareFromTask() lowers the old fs context's ref count, but its for us to
-		// destroy it if there are no other references.
+		// unshareFromTask() lowers the old fs context's ref count, but it's
+		// for us to destroy it if there are no other references.
 		if oldFSContext.unshareFromTask(t, newFSContext) {
-			newFSContext = oldFSContext
-		} else {
-			newFSContext = nil
+			oldFSContextToDestroy = oldFSContext
 		}
+		// newFSContext is now installed into the task.
+		// Clear it so the deferred cleanup doesn't decref it.
+		newFSContext = nil
 	}
 	if newFDTable != nil {
 		t.fdTable, newFDTable = newFDTable, t.fdTable

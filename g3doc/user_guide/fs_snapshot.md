@@ -55,13 +55,21 @@ behavior can be disabled with the `--leave-running` flag.
 
 By default (`--path=/`), only root filesystem upper layers are saved (across all
 containers in the sandbox). The `--path` flag selects which tmpfs mounts to
-save:
+save. It can be repeated to save multiple paths.
 
-*   `--path=<dir>` saves the tmpfs mounted at `<dir>` (in every container of the
-    sandbox). It must be a disk-backed tmpfs or overlayfs which has a
-    disk-backed tmpfs as the upper layer.
+Format: `--path=[<container_id>:]<path>`
 
-*   `--path=all-tmpfs` saves all disk-backed tmpfs mounts.
+*   If `<container_id>` is omitted, the path is saved for all containers in the
+    sandbox.
+
+*   `--path=<dir>` saves the tmpfs mounted at `<dir>` (in every container). It
+    must be a disk-backed tmpfs or overlayfs which has a disk-backed tmpfs as
+    the upper layer.
+
+*   `--path=all-tmpfs` saves all disk-backed tmpfs mounts in all containers.
+
+*   `--path=container1:/data` saves the tmpfs mounted at `/data` in `container1`
+    only.
 
 To restore a filesystem snapshot, pass the directory containing the snapshot to
 `runsc create` or `runsc run` using the `--fs-restore-image-path` flag:
@@ -103,13 +111,13 @@ container. This is a per-container setting.
 The options normally passed as flags to `runsc fscheckpoint` are instead
 provided as annotations on the root/first container:
 
-Annotation                                        | Description                                                                                                 | Default
-------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | -------
-`dev.gvisor.internal.fscheckpoint.path`           | Directory where filesystem checkpoint files are written. Required to enable.                                | (required)
-`dev.gvisor.internal.fscheckpoint.enable`         | Per-container; creates a writable `/proc/gvisor/fscheckpoint` so the workload can trigger an FS checkpoint. | `false`
-`dev.gvisor.internal.fscheckpoint.resume`         | Keep the sandbox running after the filesystem checkpoint (analogous to `--leave-running`).                  | `false`
-`dev.gvisor.internal.fscheckpoint.direct`         | Use `O_DIRECT` for filesystem checkpoint I/O.                                                               | `false`
-`dev.gvisor.internal.fscheckpoint.container-path` | Path inside the container to snapshot.                                                                      | `/`
+Annotation                                | Description                                                                                                 | Default
+----------------------------------------- | ----------------------------------------------------------------------------------------------------------- | -------
+`dev.gvisor.internal.fscheckpoint.path`   | Directory where filesystem checkpoint files are written. Required to enable.                                | (required)
+`dev.gvisor.internal.fscheckpoint.enable` | Per-container; creates a writable `/proc/gvisor/fscheckpoint` so the workload can trigger an FS checkpoint. | `false`
+`dev.gvisor.internal.fscheckpoint.resume` | Keep the sandbox running after the filesystem checkpoint (analogous to `--leave-running`).                  | `false`
+`dev.gvisor.internal.fscheckpoint.direct` | Use `O_DIRECT` for filesystem checkpoint I/O.                                                               | `false`
+`dev.gvisor.internal.fscheckpoint.paths`  | Comma-separated list of paths inside the containers to snapshot. Format: `[container_id:]path`.             | `/` (all containers)
 
 ### Triggering and waiting via `/proc/gvisor/fscheckpoint`
 

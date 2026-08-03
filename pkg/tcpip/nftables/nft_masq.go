@@ -134,6 +134,12 @@ func (m *masqOp) deepCopy() operation {
 	return &opCopy
 }
 
+// updateReferences implements operation.updateReferences.
+func (m *masqOp) updateReferences(table *Table, sourceTable *Table, sourceOp operation) {}
+
+// destroy implements operation.destroy.
+func (m *masqOp) destroy() {}
+
 // Dump implements operation.Dump.
 func (m *masqOp) Dump() ([]byte, *syserr.AnnotatedError) {
 	msg := &nlmsg.Message{}

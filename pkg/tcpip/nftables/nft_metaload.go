@@ -65,6 +65,12 @@ func (op *metaLoad) deepCopy() operation {
 	return &opCopy
 }
 
+// updateReferences implements operation.updateReferences.
+func (op *metaLoad) updateReferences(table *Table, sourceTable *Table, sourceOp operation) {}
+
+// destroy implements operation.destroy.
+func (op *metaLoad) destroy() {}
+
 // evaluate for MetaLoad loads specific meta data into the destination register.
 func (op metaLoad) evaluate(regs *registerSet, evalCtx opEvalCtx) {
 	var target []byte

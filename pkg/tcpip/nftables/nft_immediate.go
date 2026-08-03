@@ -123,6 +123,24 @@ func (op *immediate) deepCopy() operation {
 	return &opCopy
 }
 
+// updateReferences implements operation.updateReferences.
+func (op *immediate) updateReferences(table *Table, sourceTable *Table, sourceOp operation) {
+	if op.verdict.Chain != nil {
+		op.verdict.Chain = table.chains[sourceOp.(*immediate).verdict.Chain.name]
+	}
+}
+
+// destroy implements operation.destroy.
+func (op *immediate) destroy() {
+	v := &op.verdict
+	if v.Chain == nil {
+		return
+	}
+	chain := v.Chain
+	chain.DecrementChainUse()
+	v.Chain = nil
+}
+
 // checkCompatibility implements operation.checkCompatibility.
 func (op immediate) checkCompatibility(cCtx *opCompatCtx) *syserr.AnnotatedError {
 	return nil

@@ -29,6 +29,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -146,6 +147,9 @@ PosixError NetlinkNetfilterBatchRequestAckOrError(const FileDescriptor& fd,
 // Helper function to delete a table.
 PosixError DestroyNetfilterTable(FileDescriptor& fd,
                                  absl::string_view table_name, int seq_num);
+
+// Helper function to flush all rules.
+PosixError NetfilterFlushRuleset(const FileDescriptor& fd);
 
 class NlBatchReq {
  public:
@@ -279,6 +283,9 @@ class NlImmExpr {
   // Sets the verdict code to place in the register for the immediate data.
   NlImmExpr& VerdictCode(uint32_t verdict_code);
 
+  // Sets the verdict chain ID for jump/goto.
+  NlImmExpr& VerdictChainId(uint32_t chain_id);
+
   // Sets the raw value to place in the register for the immediate data.
   NlImmExpr& Value(const std::vector<char>& value);
 
@@ -298,6 +305,7 @@ class NlImmExpr {
   std::vector<char> value_;
   uint32_t verdict_code_ = 0;
   bool has_verdict_code_ = false;
+  std::optional<uint32_t> verdict_chain_id_;
 };
 
 }  // namespace testing

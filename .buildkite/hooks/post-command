@@ -97,6 +97,13 @@ else
   rm -f "${CONSECUTIVE_FAILURES_FILE}"
 fi
 
+# Track last job completed time and job assignment.
+JOB_ASSIGNED_FILE="/tmp/job_assigned"
+touch "${JOB_ASSIGNED_FILE}"
+LAST_JOB_COMPLETED_FILE="/tmp/last_job_completed_time"
+date +%s > "${LAST_JOB_COMPLETED_FILE}.tmp"
+mv "${LAST_JOB_COMPLETED_FILE}.tmp" "${LAST_JOB_COMPLETED_FILE}"
+
 clear_docker_containers
 
 set -euo pipefail

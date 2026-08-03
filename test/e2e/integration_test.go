@@ -399,10 +399,18 @@ func TestJobControl(t *testing.T) {
 	if err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
-	// Give shell a few seconds to start executing the sleep.
-	time.Sleep(2 * time.Second)
+	// Wait until the pipeline is up and running.
+	if err := testutil.Poll(func() error {
+		out, err := d.Exec(ctx, dockerutil.ExecOpts{}, "sh", "-c", "pgrep -x sleep && pgrep -x cat")
+		if err != nil {
+			return fmt.Errorf("sleep|cat pipeline not yet running: %v (output: %s)", err, out)
+		}
+		return nil
+	}, defaultWait); err != nil {
+		t.Fatalf("waiting for the sleep|cat pipeline to start: %v", err)
+	}
 
-	if _, err := p.Write(time.Second, []byte{0x03}); err != nil {
+	if _, err := p.Write(defaultWait, []byte{0x03}); err != nil {
 		t.Fatalf("error exit: %v", err)
 	}
 	if logs, err := p.Logs(); err != nil {
@@ -411,7 +419,7 @@ func TestJobControl(t *testing.T) {
 		t.Logf("output: %s", logs)
 	}
 
-	if err := d.WaitTimeout(ctx, 10*time.Second); err != nil {
+	if err := d.WaitTimeout(ctx, defaultWait); err != nil {
 		t.Fatalf("WaitTimeout failed: %v", err)
 	}
 
@@ -1006,6 +1014,57 @@ func TestTmpMountWithSize(t *testing.T) {
 	wantErr := "No space left on device"
 	if !strings.Contains(echoOutput, wantErr) {
 		t.Errorf("unexpected echo error:Expected: %v, Got: %v", wantErr, echoOutput)
+	}
+}
+
+func TestLibaclOnTmpMount(t *testing.T) {
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	opts := dockerutil.RunOpts{
+		Image: "basic/libacl",
+		Mounts: []mount.Mount{
+			{
+				Type:   mount.TypeTmpfs,
+				Target: "/mymnt",
+			},
+		},
+	}
+
+	if err := d.Create(ctx, opts, "sleep", "infinity"); err != nil {
+		t.Fatalf("docker create failed: %v", err)
+	}
+	if err := d.Start(ctx); err != nil {
+		t.Fatalf("docker start failed: %v", err)
+	}
+
+	if _, err := d.Exec(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", "mkdir /mymnt/acl_test"); err != nil {
+		t.Fatalf("docker exec failed: %v", err)
+	}
+
+	// Try to add named users/groups to the directory as a default ACL.
+	cmd := "setfacl -d -m u:alice:rwx,g:employees:rwx /mymnt/acl_test"
+	if _, err := d.Exec(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", cmd); err != nil {
+		t.Fatalf("docker exec failed: %v", err)
+	}
+
+	// Create a new file in the directory.
+	if _, err := d.Exec(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", "echo hello > /mymnt/acl_test/file"); err != nil {
+		t.Fatalf("docker exec failed: %v", err)
+	}
+
+	// The default ACL is inherited as the file's access ACL.
+	cmd = "getfacl --access --no-effective --omit-header /mymnt/acl_test/file"
+	out, err := d.Exec(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", cmd)
+	if err != nil {
+		t.Fatalf("docker exec failed: %v", err)
+	}
+	lines := strings.Fields(out)
+	for _, y := range []string{"user:alice:rwx", "group:employees:rwx"} {
+		if !slices.Contains(lines, y) {
+			t.Fatalf("getfacl output: expected %v, not found in: %v", y, lines)
+		}
 	}
 }
 

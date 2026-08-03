@@ -99,6 +99,12 @@ func (n *natOp) deepCopy() operation {
 	return &opCopy
 }
 
+// updateReferences implements operation.updateReferences.
+func (n *natOp) updateReferences(table *Table, sourceTable *Table, sourceOp operation) {}
+
+// destroy implements operation.destroy.
+func (n *natOp) destroy() {}
+
 // nfNatRange is the equivalent of struct nf_nat_range2 in Linux.
 type nfNatRange struct {
 	minAddr  tcpip.Address

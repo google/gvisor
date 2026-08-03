@@ -1,0 +1,39 @@
+{
+    "files.associations": {
+        ".clangd": "yaml"
+    },
+    "clangd.arguments": [
+        "--enable-config"
+    ],
+    "go.toolsEnvVars": {
+        "GOPACKAGESDRIVER": "${workspaceFolder}/tools/gopackagesdriver.sh"
+    },
+    "gopls": {
+        "build.workspaceFiles": [
+            "**/BUILD",
+            "**/*.{bzl,bazel}"
+        ],
+        "build.directoryFilters": [
+            "-bazel-bin",
+            "-bazel-out",
+            "-bazel-testlogs",
+            "-bazel-gvisor"
+        ],
+        "formatting.local": "gvisor.dev/gvisor",
+        "ui.codelenses": {
+            "gc_details": false,
+            "regenerate_cgo": false,
+            "generate": false,
+            "test": false,
+            "tidy": false,
+            "upgrade_dependency": false,
+            "vendor": false
+        }
+    },
+    "go.enableCodeLens": {
+        "runtest": false
+    },
+    "go.useLanguageServer": true,
+    "go.lintOnSave": "off",
+    "go.vetOnSave": "off"
+}

@@ -349,6 +349,16 @@ func (r *restorer) restoreContainerInfo(l *Loader, info *containerInfo) error {
 	return nil
 }
 
+type restoreMounts struct {
+	fdmap     map[checkpoint.ResourceID]int
+	mfmap     map[checkpoint.ResourceID]*pgalloc.MemoryFile
+	sharedMfs map[string]bool
+}
+
+func (r *restoreMounts) String() string {
+	return fmt.Sprintf("fdmap: %#v, mfmap: %v", r.fdmap, r.mfmap)
+}
+
 func (r *restorer) restore(l *Loader) error {
 	log.Infof("Starting to restore %d containers", len(r.containers))
 
@@ -433,38 +443,40 @@ func (r *restorer) restore(l *Loader) error {
 	})
 	defer cu.Clean()
 
-	fdmap := make(map[checkpoint.ResourceID]int)
-	mfmap := make(map[checkpoint.ResourceID]*pgalloc.MemoryFile)
+	restoreMnts := restoreMounts{
+		fdmap:     make(map[checkpoint.ResourceID]int),
+		mfmap:     make(map[checkpoint.ResourceID]*pgalloc.MemoryFile),
+		sharedMfs: make(map[string]bool),
+	}
 	for _, cont := range r.containers {
 		// TODO(b/298078576): Need to process hints here probably
 		mntr := l.newContainerMounter(cont)
-		if err = mntr.configureRestore(fdmap, mfmap); err != nil {
+		if err = mntr.configureRestore(&restoreMnts); err != nil {
 			return fmt.Errorf("configuring filesystem restore: %v", err)
 		}
 
 		for i, fd := range cont.stdioFDs {
 			key := host.MakeResourceID(cont.containerName, i)
-			fdmap[key] = fd.Release()
+			restoreMnts.fdmap[key] = fd.Release()
 		}
 		for _, customFD := range cont.passFDs {
 			key := host.MakeResourceID(cont.containerName, customFD.guest)
-			fdmap[key] = customFD.host.FD()
+			restoreMnts.fdmap[key] = customFD.host.FD()
 		}
 	}
 
-	log.Debugf("Restore using fdmap: %#v", fdmap)
+	log.Debugf("Restore using mounts: %v", &restoreMnts)
 	ctx := l.k.SupervisorContext()
-	log.Debugf("Restore using mfmap: %v", mfmap)
 	ctx = context.WithValues(ctx, map[any]any{
-		vfs.CtxRestoreFilesystemFDMap:     fdmap,
-		pgalloc.CtxMemoryFileMap:          mfmap,
+		vfs.CtxRestoreFilesystemFDMap:     restoreMnts.fdmap,
+		pgalloc.CtxMemoryFileMap:          restoreMnts.mfmap,
 		devutil.CtxDevGoferClientProvider: l.k,
 	})
 
 	if r.asyncMFLoader != nil {
 		// Now that private memory files are known, kick off their loading in the
 		// background goroutine.
-		r.asyncMFLoader.KickoffPrivate(mfmap)
+		r.asyncMFLoader.KickoffPrivate(restoreMnts.mfmap)
 	}
 
 	ctx, err = r.prepareNvproxyRestoreContextLocked(ctx, l)

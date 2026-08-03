@@ -78,6 +78,7 @@ go_test(
         "//pkg/cleanup",
         "//pkg/hostos",
         "//pkg/log",
+        "//pkg/sentry/checkpoint",
         "//pkg/sentry/control",
         "//pkg/sentry/fscheckpoint",
         "//pkg/sentry/fsimpl/erofs",

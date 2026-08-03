@@ -32,6 +32,7 @@ type BundleConfig struct {
 	Env              []string
 	Annotations      map[string]string
 	WorkingDir       string
+	Hostname         string
 }
 
 // NewBundle creates a temporary OCI bundle on the fly with the given configuration.
@@ -82,6 +83,7 @@ func NewBundle(cfg BundleConfig) (string, error) {
 		Linux: &specs.Linux{
 			Namespaces: namespaces,
 		},
+		Hostname: cfg.Hostname,
 	}
 
 	baseEnv := []string{"PATH=/bin:/usr/bin:/usr/local/bin"}
@@ -135,6 +137,12 @@ func NewBundle(cfg BundleConfig) (string, error) {
 				Destination: filepath.Clean(m.Destination),
 				Source:      "tmpfs",
 				Type:        "tmpfs",
+			})
+		case MountTypeProc:
+			spec.Mounts = append(spec.Mounts, specs.Mount{
+				Destination: filepath.Clean(m.Destination),
+				Source:      "proc",
+				Type:        "proc",
 			})
 		}
 	}

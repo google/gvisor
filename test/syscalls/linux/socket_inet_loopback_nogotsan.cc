@@ -15,18 +15,16 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
-#include <string.h>
 
-#include <iostream>
-#include <memory>
+#include <cerrno>
+#include <cstdint>
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/strings/str_cat.h"
-#include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/socket_inet_loopback_test_params.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
@@ -124,6 +122,16 @@ TEST_P(SocketMultiProtocolInetLoopbackTest,
   [[maybe_unused]] const int nports =
       ASSERT_NO_ERRNO_AND_VALUE(MaybeLimitEphemeralPorts());
 
+  // In native hostinet runs, tests often cannot write to
+  // /proc/sys/net/ipv4/ip_local_port_range to reduce the ephemeral ports. If it
+  // defaults to the standard ~28,000 ports (between 32768 and 60999),
+  // attempting to exhaust all of them inside a single test will cause it to hit
+  // EMFILE or exceed test timeout. This is not an issue in non-native runs
+  // (gVisor sandbox) because the sandbox setup has privileges to write to its
+  // own virtual /proc, successfully limiting ports to ~50. We skip native cases
+  // since port exhaust tests are intended for constrained ranges anyway.
+  SKIP_IF(nports > 1000);
+
   // Exhaust all ephemeral ports.
   while (true) {
     // Bind the v4 loopback on a v4 socket.
@@ -169,6 +177,16 @@ TEST_P(SocketMultiProtocolInetLoopbackTest,
   // the test.
   [[maybe_unused]] const int nports =
       ASSERT_NO_ERRNO_AND_VALUE(MaybeLimitEphemeralPorts());
+
+  // In native hostinet runs, tests often cannot write to
+  // /proc/sys/net/ipv4/ip_local_port_range to reduce the ephemeral ports. If it
+  // defaults to the standard ~28,000 ports (between 32768 and 60999),
+  // attempting to exhaust all of them inside a single test will cause it to hit
+  // EMFILE or exceed test timeout. This is not an issue in non-native runs
+  // (gVisor sandbox) because the sandbox setup has privileges to write to its
+  // own virtual /proc, successfully limiting ports to ~50. We skip native cases
+  // since port exhaust tests are intended for constrained ranges anyway.
+  SKIP_IF(nports > 1000);
 
   // Exhaust all ephemeral ports.
   bool duplicate_binding = false;

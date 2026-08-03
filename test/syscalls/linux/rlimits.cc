@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <errno.h>
+#include <linux/capability.h>
 #include <stdlib.h>
 #include <sys/resource.h>
 #include <sys/time.h>
@@ -20,16 +21,15 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include <algorithm>
-#include <climits>
 #include <string>
 #include <vector>
 
 #include "absl/algorithm/container.h"
-#include "absl/strings/numbers.h"
-#include "absl/strings/str_split.h"
+#include "absl/strings/str_format.h"
 #include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
+#include "test/util/fs_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/proc_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -130,11 +130,12 @@ TEST(RlimitTest, RlimitNProc) {
       for (int i = 0; i < kNProc; i++) {
         pid_t pid = fork();
         if (pid == 0) {
-          while (1) {
-            sleep(1);
+          // Child process: Wait passively until the parent terminates us.
+          while (true) {
+            pause();
           }
-          _exit(1);
         }
+        // Parent process: Record the child's PID and continue the test.
         EXPECT_THAT(pid, SyscallSucceeds());
         pids[i] = pid;
       }
@@ -159,11 +160,22 @@ TEST(RlimitTest, RlimitNProc) {
 TEST(RlimitTest, SetRlimitRtPrio) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_RESOURCE)));
 
+  struct rlimit old_rl = {};
+  EXPECT_THAT(getrlimit(RLIMIT_RTPRIO, &old_rl), SyscallSucceeds());
+
   struct rlimit rl = {
       .rlim_cur = 5,
       .rlim_max = 10,
   };
-  EXPECT_THAT(setrlimit(RLIMIT_RTPRIO, &rl), SyscallSucceeds());
+  int const ret = setrlimit(RLIMIT_RTPRIO, &rl);
+  if (ret == -1 && rl.rlim_max > old_rl.rlim_max) {
+    // In a non-init user namespace, raising rlim_max above the current hard
+    // limit fails with EPERM because CAP_SYS_RESOURCE is required in the
+    // initial user namespace.
+    EXPECT_EQ(errno, EPERM);
+    return;
+  }
+  EXPECT_THAT(ret, SyscallSucceeds());
 
   EXPECT_THAT(getrlimit(RLIMIT_RTPRIO, &rl), SyscallSucceeds());
   EXPECT_EQ(rl.rlim_cur, 5);

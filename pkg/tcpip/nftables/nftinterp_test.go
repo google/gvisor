@@ -79,12 +79,12 @@ func TestInterpretImmediateOps(t *testing.T) {
 		{
 			tname:    "verdict register with jump verdict",
 			opStr:    "[ immediate reg 0 jump -> next_chain ]",
-			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), ChainName: "next_chain"}),
+			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_JUMP), Chain: &Chain{name: "next_chain"}}),
 		},
 		{
 			tname:    "verdict register with goto verdict",
 			opStr:    "[ immediate reg 0 goto -> next_chain ]",
-			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), ChainName: "next_chain"}),
+			expected: mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NFT_GOTO), Chain: &Chain{name: "next_chain"}}),
 		},
 		{
 			tname:    "verdict register with 4-byte data",

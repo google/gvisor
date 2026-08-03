@@ -60,6 +60,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
 	"gvisor.dev/gvisor/runsc/version"
@@ -249,9 +250,15 @@ func (b *Binary) DeclareEmbedded(execFn func(Options) error, forkExecFn func(Opt
 	b.embeddedForkExec = forkExecFn
 }
 
-// Dir returns the directory in which sidecar binaries are located.
-// Not guaranteed to exist.
-func Dir() (string, error) {
+// Memoized result of `resolveDir`.
+var (
+	dirOnce sync.Once
+	dirPath string
+	dirErr  error
+)
+
+// resolveDir resolves the directory in which sidecar binaries are located.
+func resolveDir() (string, error) {
 	if dir := os.Getenv(sidecarBinariesDirEnv); dir != "" {
 		return dir, nil
 	}
@@ -260,6 +267,15 @@ func Dir() (string, error) {
 		return "", fmt.Errorf("cannot resolve path to runsc binary %q: %w", specutils.ExePath, err)
 	}
 	return filepath.Join(filepath.Dir(exe), binDirName), nil
+}
+
+// Dir returns the directory in which sidecar binaries are located.
+// Not guaranteed to exist.
+func Dir() (string, error) {
+	dirOnce.Do(func() {
+		dirPath, dirErr = resolveDir()
+	})
+	return dirPath, dirErr
 }
 
 // Path returns the path to a usable on-disk copy of the binary.
@@ -283,14 +299,33 @@ func (b *Binary) Path() (string, error) {
 	return p, nil
 }
 
+// expectedPath returns the path at which the on-disk copy of the binary is
+// expected to exist.
+func (b *Binary) expectedPath() (string, error) {
+	dir, err := Dir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, b.Name), nil
+}
+
 // notAvailableError returns an error for the case where the binary is
 // not available.
 func (b *Binary) notAvailableError() error {
-	dir, err := Dir()
+	p, err := b.expectedPath()
 	if err != nil {
 		return err
 	}
-	return fmt.Errorf("sidecar binary %q not found (expected at %q); install it per https://gvisor.dev/docs/user_guide/install/ instructions", b.Name, filepath.Join(dir, b.Name))
+	return fmt.Errorf("sidecar binary %q not found (expected at %q); install it per https://gvisor.dev/docs/user_guide/install/ instructions", b.Name, p)
+}
+
+// TODO(gvisor.dev/issue/13718): remove along with the embedded fallback.
+func (b *Binary) warnEmbeddedDeprecated(opts *Options) {
+	expected, err := b.expectedPath()
+	if err != nil {
+		expected = filepath.Join(binDirName, b.Name)
+	}
+	log.Warningf("Executing embedded copy of sidecar %q (%v); embedded sidecar binaries are deprecated and will be removed in a future release. Please install it at %q; see https://gvisor.dev/docs/user_guide/install/", b.Name, opts, expected)
 }
 
 // Exec resolves the binary and replaces the current process with it. It only
@@ -302,7 +337,7 @@ func (b *Binary) Exec(opts Options) error {
 		return execDisk(p, opts)
 	}
 	if b.embeddedExec != nil {
-		log.Infof("sidecar %q: using embedded copy (%v)", b.Name, &opts)
+		b.warnEmbeddedDeprecated(&opts)
 		return b.embeddedExec(opts)
 	}
 	return b.notAvailableError()
@@ -317,7 +352,7 @@ func (b *Binary) ForkExec(opts Options) (int, error) {
 		return forkExecDisk(p, opts)
 	}
 	if b.embeddedForkExec != nil {
-		log.Infof("sidecar %q: using embedded copy (%v)", b.Name, &opts)
+		b.warnEmbeddedDeprecated(&opts)
 		return b.embeddedForkExec(opts)
 	}
 	return 0, b.notAvailableError()

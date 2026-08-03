@@ -337,6 +337,9 @@ func (op *fib) Dump() ([]byte, *syserr.AnnotatedError) {
 	return m.Buffer(), nil
 }
 
+// destroy implements operation.destroy.
+func (op *fib) destroy() {}
+
 // deepCopy implements operation's deepCopy interface.
 func (op *fib) deepCopy() operation {
 	opCopy := &fib{}
@@ -345,6 +348,9 @@ func (op *fib) deepCopy() operation {
 	opCopy.dregIdx = op.dregIdx
 	return opCopy
 }
+
+// updateReferences implements operation.updateReferences.
+func (op *fib) updateReferences(table *Table, sourceTable *Table, sourceOp operation) {}
 
 // checkCompatibility implements operation.checkCompatibility.
 // Ref: net/netfilter/nft_fib.c:nft_fib_validate()

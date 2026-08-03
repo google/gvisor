@@ -30,7 +30,9 @@
             "Web servers, proxies & gateways",
             "CI/CD & developer tooling",
             "Applications & platforms",
-            "System software"
+            "System software",
+            "Messaging & streaming",
+            "Secrets & security"
           ]
         },
         "verdict": {

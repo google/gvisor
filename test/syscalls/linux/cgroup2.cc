@@ -1925,11 +1925,22 @@ TEST_F(Cgroup2Test, MemoryCurrent) {
 
   // Touch the memory to ensure it's actually allocated (faulted in).
   memset(mem, 1, kMemSize);
-  // Sleep to wait past the sentry's internal 10ms memory usage stats update
+  // Loop to wait past the sentry's internal 10ms memory usage stats update
   // throttle window (f.nextCommitScan in pgalloc.go).
-  absl::SleepFor(absl::Milliseconds(15));
-  const uint64_t usage_after =
-      ASSERT_NO_ERRNO_AND_VALUE(c().ReadIntegerControlFile("memory.current"));
+  uint64_t usage_after = 0;
+  const absl::Time deadline = absl::Now() + absl::Seconds(10);
+  while (true) {
+    absl::SleepFor(absl::Milliseconds(15));
+    usage_after =
+        ASSERT_NO_ERRNO_AND_VALUE(c().ReadIntegerControlFile("memory.current"));
+    if (usage_after >= usage + kMemSize - kMemFloorSlack &&
+        usage_after <= usage + kMemSize + kMemCeilingSlack) {
+      break;
+    }
+    if (absl::Now() >= deadline) {
+      break;
+    }
+  }
   EXPECT_GE(usage_after, usage + kMemSize - kMemFloorSlack);
   EXPECT_LE(usage_after, usage + kMemSize + kMemCeilingSlack);
 }
@@ -1959,13 +1970,24 @@ TEST_F(Cgroup2Test, MemoryIsChargedToNearestAncestorWithController) {
   ASSERT_NE(mem2, MAP_FAILED);
   auto clean_mem2 = Cleanup([&] { munmap(mem2, kMemSize); });
   memset(mem2, 1, kMemSize);
-  // Sleep to wait past the sentry's internal 10ms memory usage stats update
+  // Loop to wait past the sentry's internal 10ms memory usage stats update
   // throttle window (f.nextCommitScan in pgalloc.go).
-  absl::SleepFor(absl::Milliseconds(15));
+  uint64_t usage_child = 0;
+  const absl::Time deadline = absl::Now() + absl::Seconds(10);
+  while (true) {
+    absl::SleepFor(absl::Milliseconds(15));
+    usage_child = ASSERT_NO_ERRNO_AND_VALUE(
+        child.ReadIntegerControlFile("memory.current"));
+    if (usage_child >= base_usage_child + kMemSize - kMemFloorSlack &&
+        usage_child <= base_usage_child + kMemSize + kMemCeilingSlack) {
+      break;
+    }
+    if (absl::Now() >= deadline) {
+      break;
+    }
+  }
 
   // `child` should now reflect base_usage_child + kMemSize approximately.
-  const uint64_t usage_child =
-      ASSERT_NO_ERRNO_AND_VALUE(child.ReadIntegerControlFile("memory.current"));
   EXPECT_GE(usage_child, base_usage_child + kMemSize - kMemFloorSlack);
   EXPECT_LE(usage_child, base_usage_child + kMemSize + kMemCeilingSlack);
 
@@ -2201,6 +2223,29 @@ int WriteFileErrno(const char* path, absl::string_view val) {
   const int err = (n < 0 || static_cast<size_t>(n) != val.size()) ? errno : 0;
   close(fd);
   return err;
+}
+
+// Async-signal-safe. Returns 0 on success, the write(2) errno otherwise.
+int WriteFdErrno(int fd, absl::string_view val) {
+  const ssize_t n = WriteFd(fd, val.data(), val.size());
+  return (n < 0 || static_cast<size_t>(n) != val.size()) ? errno : 0;
+}
+
+// Whether the cgroup2 mount at `mountpoint` has the nsdelegate flag applied.
+// Mounting with the option always succeeds, but Linux silently ignores it
+// unless the mounting process is in the init cgroup namespace (see
+// apply_cgroup_root_flags in kernel/cgroup/cgroup.c), so environments that
+// themselves run inside a cgroup namespace (e.g. containerized CI sandboxes)
+// cannot turn it on. Tests of nsdelegate behavior must skip there.
+PosixErrorOr<bool> NsdelegateApplied(absl::string_view mountpoint) {
+  ASSIGN_OR_RETURN_ERRNO(std::vector<ProcMountsEntry> entries,
+                         ProcSelfMountsEntries());
+  for (const ProcMountsEntry& e : entries) {
+    if (e.mount_point == mountpoint && e.fstype == "cgroup2") {
+      return absl::StrContains(e.mount_opts, "nsdelegate");
+    }
+  }
+  return PosixError(ENOENT, absl::StrCat("no cgroup2 mount at ", mountpoint));
 }
 
 // Copies the "root" field (field 4) of the /proc/self/mountinfo entry whose
@@ -2576,6 +2621,22 @@ int64_t ParseCpuUsageUsec(const Cgroup& cg) {
   return -1;
 }
 
+// PollCpuUsageUsecGreaterThan polls until the CPU usage exceeds the given
+// target. This handles test flakiness in gVisor: CPU clocks are not updated
+// perfectly synchronously upon task completion. Instead, a background timer
+// samples running tasks every ~10ms (linux.ClockTick). Tests that race to
+// assert CPU usage immediately after a workload finishes natively via KVM can
+// incorrectly read zero if the tick hasn't fired yet.
+int64_t PollCpuUsageUsecGreaterThan(const Cgroup& cg, int64_t target) {
+  int64_t usage = ParseCpuUsageUsec(cg);
+  absl::Time deadline = absl::Now() + absl::Seconds(10);
+  while (usage <= target && absl::Now() < deadline) {
+    absl::SleepFor(absl::Milliseconds(15));
+    usage = ParseCpuUsageUsec(cg);
+  }
+  return usage;
+}
+
 TEST_F(Cgroup2Test, CpuStat) {
   std::string controllers =
       ASSERT_NO_ERRNO_AND_VALUE(c().ReadControlFile("cgroup.controllers"));
@@ -2614,7 +2675,7 @@ TEST_F(Cgroup2Test, CpuStat) {
   ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceeds());
   EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
 
-  int64_t usage_usec = ParseCpuUsageUsec(child);
+  int64_t usage_usec = PollCpuUsageUsecGreaterThan(child, 0);
   EXPECT_GT(usage_usec, 0);
 }
 
@@ -2676,7 +2737,7 @@ TEST_F(Cgroup2Test, CpuStatMigration) {
   ASSERT_THAT(read(fds_phase1[0], &c, 1), SyscallSucceeds());
   close(fds_phase1[0]);
 
-  int64_t usage_a_before_migration = ParseCpuUsageUsec(cg_a);
+  int64_t usage_a_before_migration = PollCpuUsageUsecGreaterThan(cg_a, 0);
   EXPECT_GT(usage_a_before_migration, 0);
 
   ASSERT_NO_ERRNO(cg_b.Enter(pid));  // Move to cg_b, loop yet to run.
@@ -2696,10 +2757,306 @@ TEST_F(Cgroup2Test, CpuStatMigration) {
   ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceeds());
   EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
 
-  int64_t usage_b_final = ParseCpuUsageUsec(cg_b);
+  int64_t usage_b_final =
+      PollCpuUsageUsecGreaterThan(cg_b, usage_b_post_migration);
   int64_t usage_a_final = ParseCpuUsageUsec(cg_a);
   EXPECT_GT(usage_b_final, usage_b_post_migration);
   EXPECT_EQ(usage_a_final, usage_a_post_migration);
+}
+
+// With nsdelegate, cgroup namespace roots are delegation boundaries: only
+// delegatable files on the namespace root remain writable from inside the
+// namespace.
+TEST_F(Cgroup2Test, NsdelegateRootWrites) {
+  Cgroup cg = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("nsd"));
+  Cgroup inner = ASSERT_NO_ERRNO_AND_VALUE(cg.CreateChild("inner"));
+  const std::string procs = cg.Relpath("cgroup.procs");
+  const std::string max_depth = cg.Relpath("cgroup.max.depth");
+  const std::string inner_max_depth = inner.Relpath("cgroup.max.depth");
+
+  // Setting the flag requires a mount from the init cgroup namespace, and is
+  // system wide.
+  Mounter m2(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup r2 = ASSERT_NO_ERRNO_AND_VALUE(m2.MountCgroup2fs("nsdelegate"));
+
+  // Skip if the environment could not actually turn nsdelegate on.
+  const bool nsdelegate_applied =
+      ASSERT_NO_ERRNO_AND_VALUE(NsdelegateApplied(r2.Path()));
+  SKIP_IF(!nsdelegate_applied);
+
+  const pid_t pid = fork();
+  if (pid == 0) {
+    TEST_CHECK(WriteFileErrno(procs.c_str(), "0") == 0);
+    TEST_PCHECK(unshare(CLONE_NEWCGROUP) == 0);
+    // Non-delegatable file on the namespace root: EPERM.
+    TEST_CHECK(WriteFileErrno(max_depth.c_str(), "max") == EPERM);
+    // Delegatable file on the namespace root: allowed.
+    TEST_CHECK(WriteFileErrno(procs.c_str(), "0") == 0);
+    // Non-delegatable file below the namespace root: allowed.
+    TEST_CHECK(WriteFileErrno(inner_max_depth.c_str(), "max") == 0);
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+
+  // Mounting without the option from the init namespace clears the flag;
+  // the same write is then allowed.
+  Mounter m3(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  ASSERT_NO_ERRNO(m3.MountCgroup2fs());
+
+  const pid_t pid2 = fork();
+  if (pid2 == 0) {
+    TEST_CHECK(WriteFileErrno(procs.c_str(), "0") == 0);
+    TEST_PCHECK(unshare(CLONE_NEWCGROUP) == 0);
+    TEST_CHECK(WriteFileErrno(max_depth.c_str(), "max") == 0);
+    _exit(0);
+  }
+  ASSERT_GT(pid2, 0);
+  ASSERT_THAT(waitpid(pid2, &status, 0), SyscallSucceedsWithValue(pid2));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
+// With nsdelegate, processes can't be migrated into or out of the namespace
+// by a process inside it.
+TEST_F(Cgroup2Test, NsdelegateMigrationContainment) {
+  Cgroup ca = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("nsd_a"));
+  Cgroup sub = ASSERT_NO_ERRNO_AND_VALUE(ca.CreateChild("sub"));
+  Cgroup cb = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("nsd_b"));
+  const std::string ca_procs = ca.Relpath("cgroup.procs");
+  const std::string sub_procs = sub.Relpath("cgroup.procs");
+  const std::string cb_procs = cb.Relpath("cgroup.procs");
+
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  FileDescriptor rfd(fds[0]);
+  FileDescriptor wfd(fds[1]);
+
+  // Park a process in nsd_b, outside the namespace created below.
+  const pid_t parked = fork();
+  if (parked == 0) {
+    close(wfd.get());
+    char token;
+    TEST_CHECK(read(rfd.get(), &token, 1) == 0);
+    _exit(0);
+  }
+  ASSERT_GT(parked, 0);
+  ASSERT_NO_ERRNO(cb.Enter(parked));
+  const std::string parked_pid = absl::StrCat(parked);
+
+  Mounter m2(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup r2 = ASSERT_NO_ERRNO_AND_VALUE(m2.MountCgroup2fs("nsdelegate"));
+  auto clean = Cleanup([] {
+    // Clear the system-wide flag.
+    Mounter m3(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+    ASSERT_NO_ERRNO(m3.MountCgroup2fs());
+  });
+
+  // Skip if the environment could not actually turn nsdelegate on.
+  const bool nsdelegate_applied =
+      ASSERT_NO_ERRNO_AND_VALUE(NsdelegateApplied(r2.Path()));
+  SKIP_IF(!nsdelegate_applied);
+
+  const pid_t pid = fork();
+  if (pid == 0) {
+    TEST_CHECK(WriteFileErrno(ca_procs.c_str(), "0") == 0);
+    TEST_PCHECK(unshare(CLONE_NEWCGROUP) == 0);
+    // Destination outside the namespace: ENOENT.
+    TEST_CHECK(WriteFileErrno(cb_procs.c_str(), "0") == ENOENT);
+    // Source outside the namespace: ENOENT.
+    TEST_CHECK(WriteFileErrno(ca_procs.c_str(), parked_pid.c_str()) == ENOENT);
+    // Both inside the namespace: allowed.
+    TEST_CHECK(WriteFileErrno(sub_procs.c_str(), "0") == 0);
+    TEST_CHECK(WriteFileErrno(ca_procs.c_str(), "0") == 0);
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+
+  // Migrations by processes in the init namespace are unrestricted.
+  EXPECT_NO_ERRNO(ca.Enter(parked));
+
+  wfd.reset();  // Release the parked process.
+  ASSERT_THAT(waitpid(parked, &status, 0), SyscallSucceedsWithValue(parked));
+}
+
+// With nsdelegate, CLONE_INTO_CGROUP is subject to the same namespace
+// containment rule as cgroup.procs migrations.
+TEST_F(Cgroup2Test, NsdelegateCloneIntoCgroup) {
+  Cgroup cin = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("nsd_ci"));
+  Cgroup cout = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("nsd_ci_out"));
+  const std::string cin_procs = cin.Relpath("cgroup.procs");
+  const std::string cin_path = cin.Path();
+  const std::string cout_path = cout.Path();
+
+  Mounter m2(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup r2 = ASSERT_NO_ERRNO_AND_VALUE(m2.MountCgroup2fs("nsdelegate"));
+  auto clean = Cleanup([] {
+    // Clear the system-wide flag.
+    Mounter m3(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+    ASSERT_NO_ERRNO(m3.MountCgroup2fs());
+  });
+
+  // Skip if the environment could not actually turn nsdelegate on.
+  const bool nsdelegate_applied =
+      ASSERT_NO_ERRNO_AND_VALUE(NsdelegateApplied(r2.Path()));
+  SKIP_IF(!nsdelegate_applied);
+
+  const pid_t pid = fork();
+  if (pid == 0) {
+    TEST_CHECK(WriteFileErrno(cin_procs.c_str(), "0") == 0);
+    const int inside_fd = open(cin_path.c_str(), O_RDONLY | O_DIRECTORY);
+    TEST_PCHECK(inside_fd >= 0);
+    const int outside_fd = open(cout_path.c_str(), O_RDONLY | O_DIRECTORY);
+    TEST_PCHECK(outside_fd >= 0);
+    TEST_PCHECK(unshare(CLONE_NEWCGROUP) == 0);
+
+    struct clone_args cl_args = {};
+    cl_args.flags = CLONE_INTO_CGROUP;
+    cl_args.exit_signal = SIGCHLD;
+
+    // Destination outside the namespace: ENOENT.
+    cl_args.cgroup = static_cast<uint64_t>(outside_fd);
+    TEST_CHECK(clone3(&cl_args, sizeof(cl_args)) < 0);
+    TEST_CHECK(errno == ENOENT);
+
+    // Destination inside the namespace: allowed.
+    cl_args.cgroup = static_cast<uint64_t>(inside_fd);
+    const pid_t grandchild = clone3(&cl_args, sizeof(cl_args));
+    TEST_PCHECK(grandchild >= 0);
+    if (grandchild == 0) {
+      _exit(0);
+    }
+    int status;
+    TEST_PCHECK(waitpid(grandchild, &status, 0) == grandchild);
+    TEST_CHECK(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
+// The nsdelegate option is ignored on mounts from non-init cgroupns's.
+TEST_F(Cgroup2Test, NsdelegateIgnoredFromNonInitNamespace) {
+  Cgroup cg = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("nsd_noninit"));
+  const std::string procs = cg.Relpath("cgroup.procs");
+  const std::string max_depth = cg.Relpath("cgroup.max.depth");
+
+  // Make sure the flag is off.
+  Mounter m2(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  ASSERT_NO_ERRNO(m2.MountCgroup2fs());
+
+  TempPath mntdir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string dir = mntdir.path();
+
+  const pid_t pid = fork();
+  if (pid == 0) {
+    TEST_CHECK(WriteFileErrno(procs.c_str(), "0") == 0);
+    TEST_PCHECK(unshare(CLONE_NEWCGROUP) == 0);
+    TEST_PCHECK(mount("none", dir.c_str(), "cgroup2", 0, "nsdelegate") == 0);
+    // The flag was not applied: writes to the namespace root are allowed.
+    TEST_CHECK(WriteFileErrno(max_depth.c_str(), "max") == 0);
+    TEST_PCHECK(umount2(dir.c_str(), MNT_DETACH) == 0);
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+  // In case the child died before unmounting.
+  umount2(dir.c_str(), MNT_DETACH);
+}
+
+// The nsdelegate write check uses the cgroup namespace captured at open(2)
+// time, not the writer's namespace at write(2) time: an FD opened in the
+// init namespace remains writable after the writer enters a cgroup
+// namespace rooted at the FD's cgroup.
+TEST_F(Cgroup2Test, NsdelegateWriteUsesOpenTimeNamespaceInitOpener) {
+  Cgroup cg = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("nsd_otn_a"));
+  const std::string procs = cg.Relpath("cgroup.procs");
+  const std::string max_depth = cg.Relpath("cgroup.max.depth");
+
+  Mounter m2(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup r2 = ASSERT_NO_ERRNO_AND_VALUE(m2.MountCgroup2fs("nsdelegate"));
+  auto clean = Cleanup([] {
+    // Clear the system-wide flag.
+    Mounter m3(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+    ASSERT_NO_ERRNO(m3.MountCgroup2fs());
+  });
+
+  // Skip if the environment could not actually turn nsdelegate on.
+  const bool nsdelegate_applied =
+      ASSERT_NO_ERRNO_AND_VALUE(NsdelegateApplied(r2.Path()));
+  SKIP_IF(!nsdelegate_applied);
+
+  const pid_t pid = fork();
+  if (pid == 0) {
+    TEST_CHECK(WriteFileErrno(procs.c_str(), "0") == 0);
+    // Opened before unshare: the FD captures the init cgroup namespace.
+    const int fd = open(max_depth.c_str(), O_WRONLY);
+    TEST_PCHECK(fd >= 0);
+    TEST_PCHECK(unshare(CLONE_NEWCGROUP) == 0);
+    // A write through a freshly opened FD from inside the namespace
+    // is rejected...
+    TEST_CHECK(WriteFileErrno(max_depth.c_str(), "max") == EPERM);
+    // ...but the FD opened from the init namespace writes successfully.
+    TEST_CHECK(WriteFdErrno(fd, "max") == 0);
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
+// The converse: an FD opened inside a cgroup namespace rooted at the FD's
+// cgroup stays subject to the nsdelegate EPERM even when the write comes
+// from a task that has since returned to the init namespace.
+TEST_F(Cgroup2Test, NsdelegateWriteUsesOpenTimeNamespaceNamespacedOpener) {
+  Cgroup cg = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("nsd_otn_b"));
+  const std::string procs = cg.Relpath("cgroup.procs");
+  const std::string max_depth = cg.Relpath("cgroup.max.depth");
+
+  Mounter m2(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup r2 = ASSERT_NO_ERRNO_AND_VALUE(m2.MountCgroup2fs("nsdelegate"));
+  auto clean = Cleanup([] {
+    // Clear the system-wide flag.
+    Mounter m3(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+    ASSERT_NO_ERRNO(m3.MountCgroup2fs());
+  });
+
+  // Skip if the environment could not actually turn nsdelegate on.
+  const bool nsdelegate_applied =
+      ASSERT_NO_ERRNO_AND_VALUE(NsdelegateApplied(r2.Path()));
+  SKIP_IF(!nsdelegate_applied);
+
+  const pid_t pid = fork();
+  if (pid == 0) {
+    const int initns = open("/proc/self/ns/cgroup", O_RDONLY);
+    TEST_PCHECK(initns >= 0);
+    TEST_CHECK(WriteFileErrno(procs.c_str(), "0") == 0);
+    TEST_PCHECK(unshare(CLONE_NEWCGROUP) == 0);
+    // Opened inside the namespace: the FD captures the non-init namespace
+    // whose root is this cgroup.
+    const int fd = open(max_depth.c_str(), O_WRONLY);
+    TEST_PCHECK(fd >= 0);
+    // Return to the init namespace.
+    TEST_PCHECK(setns(initns, CLONE_NEWCGROUP) == 0);
+    // A write using a fresh open from the init namespace is allowed...
+    TEST_CHECK(WriteFileErrno(max_depth.c_str(), "max") == 0);
+    // ...but the FD opened inside the namespace is rejected.
+    TEST_CHECK(WriteFdErrno(fd, "max") == EPERM);
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
 }
 
 TEST_F(Cgroup2Test, Xattr) {
