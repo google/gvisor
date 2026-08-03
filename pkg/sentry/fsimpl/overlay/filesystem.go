@@ -226,12 +226,23 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 			// the topmost layer on which the file exists.
 			mask |= linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | linux.STATX_INO
 		}
-		stat, err := vfsObj.StatAt(ctx, fs.creds, &vfs.PathOperation{
+		childPop := &vfs.PathOperation{
 			Root:  childVD,
 			Start: childVD,
-		}, &vfs.StatOptions{
+		}
+		stat, err := vfsObj.StatAt(ctx, fs.creds, childPop, &vfs.StatOptions{
 			Mask: mask,
 		})
+		if err != nil {
+			lookupErr = err
+			return false
+		}
+		acl, err := vfsObj.GetPosixACLAt(ctx, fs.creds, childPop, vfs.AccessACL)
+		if err != nil {
+			lookupErr = err
+			return false
+		}
+		defaultACL, err := vfsObj.GetPosixACLAt(ctx, fs.creds, childPop, vfs.DefaultACL)
 		if err != nil {
 			lookupErr = err
 			return false
@@ -274,6 +285,8 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 				topLookupLayer = lookupLayerLower
 			}
 			child.mode = atomicbitops.FromUint32(uint32(stat.Mode))
+			child.accessACL.Store(acl)
+			child.defaultACL.Store(defaultACL)
 			child.uid = atomicbitops.FromUint32(stat.UID)
 			child.gid = atomicbitops.FromUint32(stat.GID)
 			child.devMajor = atomicbitops.FromUint32(stat.DevMajor)
@@ -1500,7 +1513,7 @@ func (fs *filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts
 // Precondition: d.fs.renameMu must be held for reading.
 func (d *dentry) setStatLocked(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetStatOptions) error {
 	mode := linux.FileMode(d.mode.Load())
-	if err := vfs.CheckSetStat(ctx, rp.Credentials(), &opts, mode, nil, auth.KUID(d.uid.Load()), auth.KGID(d.gid.Load())); err != nil {
+	if err := vfs.CheckSetStat(ctx, rp.Credentials(), &opts, mode, d.accessACL.Load(), auth.KUID(d.uid.Load()), auth.KGID(d.gid.Load())); err != nil {
 		return err
 	}
 	mnt := rp.Mount()
@@ -1758,6 +1771,13 @@ func (fs *filesystem) GetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 }
 
 func (fs *filesystem) getXattr(ctx context.Context, d *dentry, creds *auth.Credentials, opts *vfs.GetXattrOptions) (string, error) {
+	// Handle POSIX access ACL xattr
+	if strings.HasPrefix(opts.Name, linux.XATTR_SYSTEM_PREFIX) {
+		// Handle POSIX ACL xattrs
+		xattr, err := vfs.ACLGetXattr(creds, opts, linux.FileMode(d.mode.Load()), d.accessACL.Load(), d.defaultACL.Load())
+		return xattr, err
+	}
+
 	if err := d.checkXattrPermissions(creds, opts.Name, vfs.MayRead); err != nil {
 		return "", err
 	}
@@ -1794,8 +1814,20 @@ func (fs *filesystem) SetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 	return nil
 }
 
-// Precondition: fs.renameMu must be locked.
+// Precondition: fs.renameMu must be locked, d.copyMu must be unlocked.
 func (fs *filesystem) setXattrLocked(ctx context.Context, d *dentry, mnt *vfs.Mount, creds *auth.Credentials, opts *vfs.SetXattrOptions) error {
+	// Handle POSIX ACLs separately
+	if strings.HasPrefix(opts.Name, linux.XATTR_SYSTEM_PREFIX) {
+		acl, aclType, err := vfs.ACLSetXattr(creds, opts, linux.FileMode(d.mode.Load()), auth.KUID(d.uid.Load()))
+		if err != nil {
+			return err
+		}
+
+		// Set the appropriate POSIX ACL
+		_, _, err = fs.setPosixACLLocked(ctx, d, creds, mnt, aclType, acl, true /* clearSGID */)
+		return err
+	}
+
 	if err := d.checkXattrPermissions(creds, opts.Name, vfs.MayWrite); err != nil {
 		return err
 	}
@@ -1838,8 +1870,19 @@ func (fs *filesystem) RemoveXattrAt(ctx context.Context, rp *vfs.ResolvingPath, 
 	return nil
 }
 
-// Precondition: fs.renameMu must be locked.
+// Precondition: fs.renameMu must be locked, d.copyMu must be unlocked.
 func (fs *filesystem) removeXattrLocked(ctx context.Context, d *dentry, mnt *vfs.Mount, creds *auth.Credentials, name string) error {
+	if strings.HasPrefix(name, linux.XATTR_SYSTEM_PREFIX) {
+		aclType, err := vfs.ACLRemoveXattr(creds, name, linux.FileMode(d.mode.Load()), auth.KUID(d.uid.Load()))
+		if err != nil {
+			return err
+		}
+
+		// Clear the appropriate POSIX ACL
+		_, _, err = fs.setPosixACLLocked(ctx, d, creds, mnt, aclType, nil, true /* clearSGID */)
+		return err
+	}
+
 	if err := d.checkXattrPermissions(creds, name, vfs.MayWrite); err != nil {
 		return err
 	}
@@ -1867,9 +1910,17 @@ func (fs *filesystem) GetPosixACLAt(ctx context.Context, rp *vfs.ResolvingPath, 
 	var ds *[]*dentry
 	fs.renameMu.RLock()
 	defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
-	// overlayfs does not currently support POSIX ACLs.
-	_, err := fs.resolveLocked(ctx, rp, &ds)
-	return nil, err
+	d, err := fs.resolveLocked(ctx, rp, &ds)
+	if err != nil {
+		return nil, err
+	}
+	switch t {
+	case vfs.AccessACL:
+		return d.accessACL.Load(), nil
+	case vfs.DefaultACL:
+		return d.defaultACL.Load(), nil
+	}
+	return nil, linuxerr.EINVAL
 }
 
 // SetPosixACLAt implements vfs.FilesystemImpl.SetPosixACLAt.
@@ -1877,12 +1928,44 @@ func (fs *filesystem) SetPosixACLAt(ctx context.Context, rp *vfs.ResolvingPath, 
 	var ds *[]*dentry
 	fs.renameMu.RLock()
 	defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
-	_, err := fs.resolveLocked(ctx, rp, &ds)
+	d, err := fs.resolveLocked(ctx, rp, &ds)
 	if err != nil {
 		return nil, 0, err
 	}
-	// overlayfs does not currently support POSIX ACLs.
-	return nil, 0, linuxerr.EOPNOTSUPP
+	newACL, mode, err := fs.setPosixACLLocked(ctx, d, rp.Credentials(), rp.Mount(), t, acl, clearSGID)
+	return newACL, mode, err
+}
+
+// Precondition: fs.renameMu must be locked, d.copyMu must be unlocked.
+func (fs *filesystem) setPosixACLLocked(ctx context.Context, d *dentry, creds *auth.Credentials, mnt *vfs.Mount, t vfs.ACLType, acl *vfs.PosixACL, clearSGID bool) (*vfs.PosixACL, linux.FileMode, error) {
+	if err := mnt.CheckBeginWrite(); err != nil {
+		return nil, 0, err
+	}
+	defer mnt.EndWrite()
+	if err := d.copyUpLocked(ctx); err != nil {
+		return nil, 0, err
+	}
+	vfsObj := d.fs.vfsfs.VirtualFilesystem()
+	upperPop := &vfs.PathOperation{Root: d.upperVD, Start: d.upperVD}
+
+	// First, set the ACL on the underlying filesystem
+	newACL, mode, err := vfsObj.SetPosixACLAt(ctx, creds, upperPop, t, acl, clearSGID)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Next, update the ACL in our dentry
+	d.copyMu.Lock()
+	defer d.copyMu.Unlock()
+	switch t {
+	case vfs.AccessACL:
+		d.accessACL.Store(newACL)
+		d.mode.Store(uint32(mode))
+	case vfs.DefaultACL:
+		d.defaultACL.Store(newACL)
+	}
+
+	return newACL, mode, nil
 }
 
 // PrependPath implements vfs.FilesystemImpl.PrependPath.
