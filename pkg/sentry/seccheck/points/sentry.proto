@@ -110,6 +110,21 @@ message ExecveInfo {
   // AT_EXECFN). Unlike BinaryPath, this preserves the original relative or
   // unresolved path argument before symlink or interpreter script resolution.
   string execfn = 17;
+
+  // PipeProcInfo contains lightweight process information of a sibling process
+  // connected via pipe on stdin/stdout.
+  PipeProcInfo pipe_input_proc = 21;
+  PipeProcInfo pipe_output_proc = 22;
+}
+
+// PipeProcInfo contains lightweight process information of a sibling process
+// connected via pipe.
+//
+// Only ContextData is provided here so that trace consumers can uniquely
+// correlate the sibling process via thread_group_id and
+// thread_group_start_time_ns without passing repetitive strings over the wire.
+message PipeProcInfo {
+  gvisor.common.ContextData context_data = 1;
 }
 
 message ExitNotifyParentInfo {
