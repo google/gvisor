@@ -16,10 +16,12 @@ package runsc
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	task "github.com/containerd/containerd/api/runtime/task/v2"
 	"github.com/containerd/errdefs"
+	runc "github.com/containerd/go-runc"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/shim/v1/utils"
 )
@@ -29,6 +31,30 @@ func TestContainerUpdateNilResources(t *testing.T) {
 	err := c.Update(t.Context(), &task.UpdateTaskRequest{ID: "x", Resources: nil})
 	if !errors.Is(err, errdefs.ErrInvalidArgument) {
 		t.Fatalf("Update(nil Resources): %v, want ErrInvalidArgument", err)
+	}
+}
+
+// TestTaskStatsProtobufTypeURLs checks that v1 and v2 stats marshal to distinct type
+// URLs, matching what containerd expects for cgroup v1 vs unified v2 hosts.
+func TestTaskStatsProtobufTypeURLs(t *testing.T) {
+	c := &Container{ID: "test"}
+	var st runc.Stats
+	v1resp, err := c.getV1Stats(&st)
+	if err != nil {
+		t.Fatalf("getV1Stats: %v", err)
+	}
+	v2resp, err := c.getV2Stats(&st)
+	if err != nil {
+		t.Fatalf("getV2Stats: %v", err)
+	}
+	if v1resp.Stats.TypeUrl == v2resp.Stats.TypeUrl {
+		t.Fatalf("v1 and v2 TypeUrl must differ, both %q", v1resp.Stats.TypeUrl)
+	}
+	if !strings.Contains(v1resp.Stats.TypeUrl, "cgroups.v1") {
+		t.Errorf("v1 TypeUrl = %q, want substring cgroups.v1", v1resp.Stats.TypeUrl)
+	}
+	if !strings.Contains(v2resp.Stats.TypeUrl, "cgroups.v2") {
+		t.Errorf("v2 TypeUrl = %q, want substring cgroups.v2", v2resp.Stats.TypeUrl)
 	}
 }
 
