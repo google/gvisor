@@ -1,4 +1,4 @@
-// Copyright 2022 The gVisor Authors.
+// Copyright 2026 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -29,40 +29,40 @@ import (
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
-// Umount implements subcommands.Command for the "umount" command.
-type Umount struct {
+// HostUmount implements subcommands.Command for the "host-umount" command.
+type HostUmount struct {
 	syncFD int
 }
 
 // Name implements subcommands.Command.Name.
-func (*Umount) Name() string {
-	return "umount"
+func (*HostUmount) Name() string {
+	return "host-umount"
 }
 
 // Synopsis implements subcommands.Command.Synopsis.
-func (*Umount) Synopsis() string {
-	return "umount the specified directory lazily when one byte is read from sync-fd"
+func (*HostUmount) Synopsis() string {
+	return "lazily unmount a host directory when the synchronization file is closed (internal use only)"
 }
 
 // Usage implements subcommands.Command.Usage.
-func (*Umount) Usage() string {
-	return "umount --sync-fd=FD <directory path>\n"
+func (*HostUmount) Usage() string {
+	return `host-umount --sync-fd=FD <directory path>
+`
 }
 
 // SetFlags implements subcommands.Command.SetFlags.
-func (u *Umount) SetFlags(f *flag.FlagSet) {
-	f.IntVar(&u.syncFD, "sync-fd", -1, "")
+func (u *HostUmount) SetFlags(f *flag.FlagSet) {
+	f.IntVar(&u.syncFD, "sync-fd", -1, "file descriptor that has to be closed when the mount isn't needed")
 }
 
 // FetchSpec implements util.SubCommand.FetchSpec.
-func (u *Umount) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error) {
-	// This command does not operate on a single container, so nothing to fetch.
+func (*HostUmount) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error) {
 	return "", nil, nil
 }
 
 // Execute implements subcommands.Command.Execute.
-func (u *Umount) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
-	if f.NArg() == 0 || f.NArg() > 1 {
+func (u *HostUmount) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
+	if f.NArg() != 1 || u.syncFD == -1 {
 		f.Usage()
 		return subcommands.ExitUsageError
 	}

@@ -618,6 +618,26 @@ func (c *Container) Execute(conf *config.Config, args *control.ExecArgs) (int32,
 	return c.Sandbox.Execute(conf, args)
 }
 
+// Mount dynamically mounts a filesystem in the container.
+func (c *Container) Mount(opts *control.MountOpts) error {
+	log.Debugf("Mount in container, cid: %s, opts: %+v", c.ID, opts)
+	if err := c.requireStatus("mount in", Created, Running); err != nil {
+		return err
+	}
+	opts.ContainerID = c.ID
+	return c.Sandbox.DynamicMount(opts)
+}
+
+// Umount dynamically unmounts a filesystem in the container.
+func (c *Container) Umount(opts *control.UmountOpts) error {
+	log.Debugf("Umount in container, cid: %s, opts: %+v", c.ID, opts)
+	if err := c.requireStatus("umount in", Created, Running); err != nil {
+		return err
+	}
+	opts.ContainerID = c.ID
+	return c.Sandbox.DynamicUmount(opts)
+}
+
 // Event returns events for the container.
 func (c *Container) Event() (*boot.EventOut, error) {
 	log.Debugf("Getting events for container, cid: %s", c.ID)
