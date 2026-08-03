@@ -334,27 +334,32 @@ func Bpf(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *k
 		return 0, nil, err
 	}
 
-	switch cmd {
-	case linux.BPF_PROG_LOAD:
-		fd, err := bpfProgLoad(t, attr.(*linux.BPFAttrProgLoad))
+	switch attr := attr.(type) {
+	case *linux.BPFAttrProgLoad:
+		fd, err := bpfProgLoad(t, attr)
 		return fd, nil, err
 
-	case linux.BPF_PROG_QUERY:
-		attr := attr.(*linux.BPFAttrProgQuery)
+	case *linux.BPFAttrProgQuery:
 		size := min(int(size), attr.SizeBytes())
 		ret, err := bpfProgQuery(t, attr, attrAddr, size)
 		return ret, nil, err
 
-	case linux.BPF_PROG_ATTACH:
-		ret, err := bpfProgAttach(t, attr.(*linux.BPFAttrProgAttach))
+	case *linux.BPFAttrProgAttach:
+		ret, err := bpfProgAttach(t, attr)
 		return ret, nil, err
 
 	default:
-		// Unsupported command
+		// Unsupported command.
+		if !t.HasRootCapability(linux.CAP_SYS_ADMIN) {
+			return 0, nil, linuxerr.EPERM
+		}
 		return 0, nil, linuxerr.EINVAL
 	}
 }
 
+// copyInBPFAttr fetches and returns a BPFAttr of the type specified by cmd from userspace.
+//
+// If cmd is invalid or unsupported, the nil BPFAttr is returned (along with no error).
 func copyInBPFAttr(t *kernel.Task, cmd int32, addr hostarch.Addr, size int) (linux.BPFAttr, error) {
 	// Invalid size. Negative size here would indicate overflow
 	if size < 0 || size > hostarch.PageSize {
@@ -370,7 +375,7 @@ func copyInBPFAttr(t *kernel.Task, cmd int32, addr hostarch.Addr, size int) (lin
 	case linux.BPF_PROG_ATTACH:
 		bpfAttr = &linux.BPFAttrProgAttach{}
 	default:
-		return nil, linuxerr.EINVAL
+		return nil, nil
 	}
 
 	// Copy in the valid fields of the BPFAttr structure
