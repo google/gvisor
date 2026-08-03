@@ -50,6 +50,7 @@ go_test(
     ],
     library = ":v1",
     deps = [
+        "//runsc/specutils",
         "@com_github_containerd_containerd_api//runtime/task/v2:go_default_library",
         "@com_github_containerd_containerd_v2//core/events:go_default_library",
         "@com_github_containerd_containerd_v2//pkg/shim:go_default_library",
