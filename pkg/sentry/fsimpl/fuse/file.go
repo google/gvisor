@@ -166,7 +166,7 @@ func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions)
 }
 
 // Sync implements vfs.FileDescriptionImpl.Sync.
-func (fd *fileDescription) Sync(ctx context.Context) error {
+func (fd *fileDescription) Sync(ctx context.Context, opts vfs.SyncOptions) error {
 	inode := fd.inode()
 	inode.attrMu.Lock()
 	defer inode.attrMu.Unlock()
@@ -176,9 +176,14 @@ func (fd *fileDescription) Sync(ctx context.Context) error {
 		return linuxerr.EINVAL
 	}
 
+	var syncFlags uint32
+	if opts.DataOnly {
+		syncFlags |= linux.FUSE_FSYNC_FDATASYNC
+	}
+
 	in := linux.FUSEFsyncIn{
 		Fh:         fd.Fh,
-		FsyncFlags: fd.statusFlags(),
+		FsyncFlags: syncFlags,
 	}
 	// Ignoring errors and FUSE server replies is analogous to Linux's behavior.
 	req := fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), inode.nodeID, linux.FUSE_FSYNC, &in)

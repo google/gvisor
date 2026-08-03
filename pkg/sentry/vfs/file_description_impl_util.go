@@ -133,7 +133,7 @@ func (FileDescriptionDefaultImpl) Seek(ctx context.Context, offset int64, whence
 
 // Sync implements FileDescriptionImpl.Sync analogously to
 // file_operations::fsync == NULL in Linux.
-func (FileDescriptionDefaultImpl) Sync(ctx context.Context) error {
+func (FileDescriptionDefaultImpl) Sync(ctx context.Context, opts SyncOptions) error {
 	return linuxerr.EINVAL
 }
 

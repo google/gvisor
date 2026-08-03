@@ -63,6 +63,7 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 	},
 	unix.SYS_FSTAT:     seccomp.MatchAll{},
 	unix.SYS_FSYNC:     seccomp.MatchAll{},
+	unix.SYS_FDATASYNC: seccomp.MatchAll{},
 	unix.SYS_FTRUNCATE: seccomp.MatchAll{},
 	unix.SYS_FUTEX: seccomp.PerArg{
 		seccomp.AnyValue{},

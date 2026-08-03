@@ -109,7 +109,7 @@ func (fd *opathFD) GetPosixACL(ctx context.Context, t ACLType) (*PosixACL, error
 }
 
 // Sync implements FileDescriptionImpl.Sync.
-func (fd *opathFD) Sync(ctx context.Context) error {
+func (fd *opathFD) Sync(ctx context.Context, opts SyncOptions) error {
 	return linuxerr.EBADF
 }
 
