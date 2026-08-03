@@ -1,4 +1,33 @@
 apps:
+  - name: "Claude Code"
+    category: "AI & agents"
+    verdict: "yes"
+    version: "2.1.220"
+
+  - name: "OpenClaw"
+    category: "AI & agents"
+    verdict: "yes"
+    version: "2026.7.1-2"
+    notes: "See [blog post](https://gvisor.dev/blog/2026/04/15/magi-multi-agent-gvisor-isolation/)."
+
+  - name: "PicoClaw"
+    category: "AI & agents"
+    verdict: "yes"
+    version: "0.2.6"
+    notes: "See [blog post](https://gvisor.dev/blog/2026/04/15/magi-multi-agent-gvisor-isolation/)."
+
+  - name: "Hermes Agent"
+    category: "AI & agents"
+    verdict: "yes"
+    version: "v2026.4.13"
+    notes: "See [blog post](https://gvisor.dev/blog/2026/04/15/magi-multi-agent-gvisor-isolation/)."
+
+  - name: "Ollama"
+    category: "AI & agents"
+    verdict: "yes"
+    version: "0.31.1"
+    test_source: "test/gpu/textgen_test.go"
+
   - name: "PostgreSQL"
     category: "Databases & data stores"
     verdict: "yes"
