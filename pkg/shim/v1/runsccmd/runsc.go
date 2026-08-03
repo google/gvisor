@@ -25,13 +25,18 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	runc "github.com/containerd/go-runc"
 	"github.com/containerd/log"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/control/client"
+	"gvisor.dev/gvisor/runsc/cgroup"
 )
 
 // DefaultCommand is the default command for Runsc.
@@ -79,6 +84,10 @@ type Runsc struct {
 	LogFormat    runc.Format
 	PanicLog     string
 	Config       map[string]string
+	stats        func(context.Context, string, string) (*runc.Stats, error)
+
+	directStatsMu     sync.Mutex
+	directStatsClient *directStatsClient
 }
 
 // List returns all containers created inside the provided runsc root directory.
@@ -497,11 +506,217 @@ func (r *Runsc) Kill(context context.Context, id string, sig int, opts *KillOpts
 
 // Stats return the stats for a container like cpu, memory, and I/O.
 func (r *Runsc) Stats(context context.Context, id string) (*runc.Stats, error) {
+	stats := r.stats
+	if stats == nil {
+		stats = r.directStats
+	}
+	if result, err := stats(context, r.Root, id); err == nil {
+		return result, nil
+	} else {
+		log.L.WithError(err).Debug("Direct runsc stats failed; falling back to the runsc CLI")
+	}
+
+	return r.cliStats(context, id)
+}
+
+type directStatsClient struct {
+	controlSocketPath string
+	cgroup            cgroup.Cgroup
+}
+
+type statsEventOut struct {
+	Event          runc.Event        `json:"event"`
+	ContainerUsage map[string]uint64 `json:"containerUsage"`
+}
+
+type statsContainerState struct {
+	ID      string             `json:"id"`
+	Sandbox *statsSandboxState `json:"sandbox"`
+}
+
+type statsSandboxState struct {
+	ID                string `json:"id"`
+	PID               int    `json:"pid"`
+	ControlSocketPath string `json:"controlSocketPath"`
+}
+
+var containerIDRegexp = regexp.MustCompile(`^[\w+\.-]+$`)
+
+// directStats gets stats from the sandbox control server without starting a
+// runsc subprocess. Metadata that is immutable for the sandbox lifetime is
+// cached after the first successful call.
+func (r *Runsc) directStats(context context.Context, root, id string) (*runc.Stats, error) {
+	r.directStatsMu.Lock()
+	direct := r.directStatsClient
+	if direct == nil {
+		var err error
+		direct, err = loadDirectStatsClient(root, id)
+		if err != nil {
+			r.directStatsMu.Unlock()
+			return nil, err
+		}
+		r.directStatsClient = direct
+	}
+	r.directStatsMu.Unlock()
+
+	stats, err := direct.stats(context, id)
+	if err != nil {
+		r.directStatsMu.Lock()
+		if r.directStatsClient == direct {
+			r.directStatsClient = nil
+		}
+		r.directStatsMu.Unlock()
+		return nil, err
+	}
+	return stats, nil
+}
+
+// loadDirectStatsClient reads the same state file used by runsc commands while
+// holding its advisory lock, then resolves the sandbox socket and host cgroup.
+func loadDirectStatsClient(root, id string) (*directStatsClient, error) {
+	if !containerIDRegexp.MatchString(id) {
+		return nil, fmt.Errorf("invalid container id %q", id)
+	}
+	stateFiles, err := filepath.Glob(filepath.Join(root, id+"_sandbox:*.state"))
+	if err != nil {
+		return nil, fmt.Errorf("finding container state: %w", err)
+	}
+	if len(stateFiles) != 1 {
+		return nil, fmt.Errorf("found %d state files for container %q, want 1", len(stateFiles), id)
+	}
+
+	statePath := stateFiles[0]
+	lockPath := strings.TrimSuffix(statePath, ".state") + ".lock"
+	lockFile, err := os.Open(lockPath)
+	if err != nil {
+		return nil, fmt.Errorf("opening container state lock: %w", err)
+	}
+	defer lockFile.Close()
+	if err := unix.Flock(int(lockFile.Fd()), unix.LOCK_SH); err != nil {
+		return nil, fmt.Errorf("locking container state: %w", err)
+	}
+	defer unix.Flock(int(lockFile.Fd()), unix.LOCK_UN)
+
+	stateJSON, err := os.ReadFile(statePath)
+	if err != nil {
+		return nil, fmt.Errorf("reading container state: %w", err)
+	}
+	var state statsContainerState
+	if err := json.Unmarshal(stateJSON, &state); err != nil {
+		return nil, fmt.Errorf("parsing container state: %w", err)
+	}
+	if state.ID != id {
+		return nil, fmt.Errorf("container state ID is %q, want %q", state.ID, id)
+	}
+	if state.Sandbox == nil || state.Sandbox.PID <= 0 {
+		return nil, fmt.Errorf("container state has no running sandbox")
+	}
+	if !containerIDRegexp.MatchString(state.Sandbox.ID) {
+		return nil, fmt.Errorf("invalid sandbox id %q", state.Sandbox.ID)
+	}
+
+	controlSocketPath := state.Sandbox.ControlSocketPath
+	if unix.Access(controlSocketPath, unix.F_OK) != nil {
+		controlSocketPath = filepath.Join(root, "runsc-"+state.Sandbox.ID+".sock")
+		if err := unix.Access(controlSocketPath, unix.F_OK); err != nil {
+			return nil, fmt.Errorf("finding sandbox control socket: %w", err)
+		}
+	}
+	cg, err := cgroup.NewFromPid(state.Sandbox.PID, false)
+	if err != nil {
+		return nil, fmt.Errorf("loading sandbox cgroup: %w", err)
+	}
+	return &directStatsClient{controlSocketPath: controlSocketPath, cgroup: cg}, nil
+}
+
+// stats calls the same sandbox RPC as "runsc events --stats" and then applies
+// the host-cgroup CPU correction used by runsc's container.Event path.
+func (c *directStatsClient) stats(context context.Context, id string) (*runc.Stats, error) {
+	if err := context.Err(); err != nil {
+		return nil, err
+	}
+	path := c.controlSocketPath
+	var socketFD int = -1
+	if len(path) >= 108 {
+		fd, err := unix.Open(path, unix.O_PATH, 0)
+		if err != nil {
+			return nil, fmt.Errorf("opening sandbox control socket: %w", err)
+		}
+		socketFD = fd
+		defer unix.Close(socketFD)
+		path = filepath.Join("/proc/self/fd", strconv.Itoa(socketFD))
+	}
+	conn, err := client.ConnectTo(path)
+	if err != nil {
+		return nil, fmt.Errorf("connecting to sandbox control socket: %w", err)
+	}
+	defer conn.Close()
+
+	var event statsEventOut
+	callDone := make(chan error, 1)
+	go func() {
+		callDone <- conn.Call("containerManager.Event", &id, &event)
+	}()
+	select {
+	case err := <-callDone:
+		if err != nil {
+			return nil, fmt.Errorf("getting sandbox event: %w", err)
+		}
+	case <-context.Done():
+		_ = conn.Socket.Close()
+		<-callDone
+		return nil, context.Err()
+	}
+
+	if event.Event.Type != "stats" || event.Event.Stats == nil {
+		return nil, fmt.Errorf("sandbox returned event type %q without stats", event.Event.Type)
+	}
+	cgroupUsage, err := c.cgroup.CPUUsage()
+	if err != nil {
+		return nil, fmt.Errorf("getting sandbox cgroup CPU usage: %w", err)
+	}
+	populateStatsCPU(event.Event.Stats, id, event.ContainerUsage, cgroupUsage)
+	return event.Event.Stats, nil
+}
+
+// populateStatsCPU apportions host-cgroup CPU usage using the sandbox's
+// per-container accounting. This mirrors runsc/container.populateStats.
+func populateStatsCPU(stats *runc.Stats, id string, containerUsage map[string]uint64, cgroupUsage uint64) {
+	numContainers := uint64(len(containerUsage))
+	if numContainers == 0 {
+		stats.Cpu.Usage.Total = 0
+		return
+	}
+
+	var selectedUsage uint64
+	var totalUsage uint64
+	for containerID, usage := range containerUsage {
+		totalUsage += usage
+		if containerID == id {
+			selectedUsage = usage
+		}
+	}
+	if cgroupUsage == 0 {
+		stats.Cpu.Usage.Total = selectedUsage
+		return
+	}
+	if totalUsage == 0 {
+		totalUsage = cgroupUsage
+		selectedUsage = cgroupUsage / numContainers
+	}
+	stats.Cpu.Usage.Total = uint64(float64(selectedUsage) * (float64(cgroupUsage) / float64(totalUsage)))
+}
+
+func (r *Runsc) cliStats(context context.Context, id string) (*runc.Stats, error) {
 	cmd := r.command(context, "events", "--stats", id)
 	data, stderr, err := cmdOutput(cmd, false)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", err, stderr)
 	}
+	return parseStats(data)
+}
+
+func parseStats(data []byte) (*runc.Stats, error) {
 	var e runc.Event
 	if err := json.Unmarshal(data, &e); err != nil {
 		log.L.Debugf("Parsing events error: %v", err)
