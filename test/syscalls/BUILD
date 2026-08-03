@@ -991,6 +991,7 @@ syscall_test(
 
 syscall_test(
     nftables = True,
+    save = False,
     tags = [
         "local",
         "notap",

@@ -1092,10 +1092,27 @@ func (t *Table) deleteChain(c *Chain) bool {
 	return true
 }
 
+// deleteSet deletes the specified set from the table returning true if the
+// set was deleted and false if the set doesn't exist.
+func (t *Table) deleteSet(s *nftSet) bool {
+	if _, ok := t.sets[s.name]; !ok {
+		return false
+	}
+	delete(t.sets, s.name)
+	delete(t.setHandles, s.handle)
+	s.destroy()
+	return true
+}
+
 func (t *Table) destroy() {
-	// Destroy all rules in the table first to handle any chain use.
+	// Destroy all rules in the table first to handle any chain and set use.
 	for _, c := range t.chains {
 		c.DeleteAllRules()
+	}
+	// Destroy all sets in the table before chains so that any element-level
+	// operations or verdicts referencing chains release their chainUse count.
+	for _, s := range t.sets {
+		t.deleteSet(s)
 	}
 	// Destroy all chains in the table.
 	for _, c := range t.chains {
@@ -1650,7 +1667,7 @@ func (hfStack *hookFunctionStack) detachBaseChain(c *Chain) *syserr.AnnotatedErr
 //
 
 // ParseExpr parses the expression attributes and returns the expression information.
-func (nf *NFTables) ParseExpr(attrs nlmsg.AttrsView) (*ExprInfo, *syserr.AnnotatedError) {
+func ParseExpr(attrs nlmsg.AttrsView) (*ExprInfo, *syserr.AnnotatedError) {
 	exprAttrs, ok := NfParse(attrs)
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse attributes for expression")
@@ -1676,9 +1693,9 @@ func (nf *NFTables) ParseExpr(attrs nlmsg.AttrsView) (*ExprInfo, *syserr.Annotat
 	}, nil
 }
 
-// ParseNestedExprs parses the rule expressions attributes and adds the
-// operations to the rule.
-func (nf *NFTables) ParseNestedExprs(nestedAttrBytes nlmsg.AttrsView, maxExprs int) ([]ExprInfo, *syserr.AnnotatedError) {
+// ParseNestedExprs parses the nested expression attributes and
+// returns the expression information.
+func ParseNestedExprs(nestedAttrBytes nlmsg.AttrsView, maxExprs int) ([]ExprInfo, *syserr.AnnotatedError) {
 	// Netlink message structure for rule expressions (NFTA_RULE_EXPRESSIONS):
 	//
 	// [ NFTA_RULE_EXPRESSIONS (Outer Array Container) ]
@@ -1706,7 +1723,7 @@ func (nf *NFTables) ParseNestedExprs(nestedAttrBytes nlmsg.AttrsView, maxExprs i
 			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "too many expressions specified for rule")
 		}
 		numExprs++
-		exprInfo, err := nf.ParseExpr(value)
+		exprInfo, err := ParseExpr(value)
 		if err != nil {
 			return nil, err
 		}

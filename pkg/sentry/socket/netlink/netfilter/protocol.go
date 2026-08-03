@@ -851,7 +851,7 @@ func (p *Protocol) newRule(nft *nftables.NFTables, st *stack.Stack, attrs map[ui
 
 	var exprInfos []nftables.ExprInfo
 	if exprBytes, ok := attrs[linux.NFTA_RULE_EXPRESSIONS]; ok {
-		exprInfos, err = nft.ParseNestedExprs(nlmsg.AttrsView(exprBytes), maxExprs)
+		exprInfos, err = nftables.ParseNestedExprs(nlmsg.AttrsView(exprBytes), maxExprs)
 		if err != nil {
 			return err
 		}
@@ -1393,9 +1393,14 @@ func (p *Protocol) processBatchMessage(ctx context.Context, buf []byte, ms *nlms
 		case linux.NFT_MSG_NEWSET:
 			subErr = nftCopy.NewSet(attrs, family, hdr.Flags, ms)
 		case linux.NFT_MSG_NEWSETELEM:
-			subErr = nftCopy.NewSetElements(attrs, family, hdr.Flags, ms)
+			// Pass `atr` instead of `attrs` so that it's easier to apply
+			// Netlink validation policies.
+			subErr = nftCopy.NewSetElements(atr, family, hdr.Flags, ms)
+		case linux.NFT_MSG_DELSETELEM, linux.NFT_MSG_DESTROYSETELEM:
+			// Pass `atr` instead of `attrs` so that it's easier to apply
+			// Netlink validation policies.
+			subErr = nftCopy.DeleteSetElements(atr, family, hdr.Flags, hdr.NetFilterMsgType(), ms)
 		case linux.NFT_MSG_DELSET, linux.NFT_MSG_DESTROYSET,
-			linux.NFT_MSG_DELSETELEM, linux.NFT_MSG_DESTROYSETELEM,
 			linux.NFT_MSG_NEWOBJ, linux.NFT_MSG_DELOBJ, linux.NFT_MSG_DESTROYOBJ,
 			linux.NFT_MSG_NEWFLOWTABLE, linux.NFT_MSG_DELFLOWTABLE,
 			linux.NFT_MSG_DESTROYFLOWTABLE:

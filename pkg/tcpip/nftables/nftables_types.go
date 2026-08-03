@@ -966,8 +966,14 @@ type NftSetBackend interface {
 
 	// Remove removes an element from the set and returns the index of the
 	// removed element.
-	// If the element does not exist, it returns -1.
+	// If the element does not exist, it returns -1 and an error.
 	Remove(e *nftSetElem) (int, *syserr.AnnotatedError)
+
+	// Update updates the index of an element in the set backend.
+	Update(e *nftSetElem, idx int) *syserr.AnnotatedError
+
+	// RemoveAll removes all elements from the set backend.
+	RemoveAll() *syserr.AnnotatedError
 
 	// Clone returns a copy of the set backend.
 	Clone() NftSetBackend
