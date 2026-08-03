@@ -257,6 +257,112 @@ TEST_P(UnixNonStreamSocketPairTest, SendTimeout) {
   }
 }
 
+// All MSG_PEEK/MSG_TRUNC combinations, as exercised by the zero-length
+// receive tests below.
+constexpr int kZeroLengthRecvFlagCombos[] = {0, MSG_PEEK, MSG_TRUNC,
+                                             MSG_PEEK | MSG_TRUNC};
+
+// A zero-length receive on a packet socket with a message pending: the
+// message's payload is truncated away entirely, so msg_flags reports
+// MSG_TRUNC. The message is consumed unless MSG_PEEK is set, and the return
+// value is 0 unless MSG_TRUNC requests the full message length.
+TEST_P(UnixNonStreamSocketPairTest, ZeroLengthRecvPendingMessage) {
+  const struct {
+    int flags;
+    bool ret_is_msg_size;
+    bool consumes;
+  } cases[] = {
+      {0, /*ret_is_msg_size=*/false, /*consumes=*/true},
+      {MSG_PEEK, /*ret_is_msg_size=*/false, /*consumes=*/false},
+      {MSG_TRUNC, /*ret_is_msg_size=*/true, /*consumes=*/true},
+      {MSG_PEEK | MSG_TRUNC, /*ret_is_msg_size=*/true, /*consumes=*/false},
+  };
+  char sent_data[3] = {'a', 'b', 'c'};
+  for (const auto& c : cases) {
+    SCOPED_TRACE(::testing::Message() << "flags=" << c.flags);
+    auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+    ASSERT_THAT(
+        RetryEINTR(send)(sockets->second_fd(), sent_data, sizeof(sent_data), 0),
+        SyscallSucceedsWithValue(sizeof(sent_data)));
+
+    struct msghdr msg = {};
+    const ssize_t want_ret = c.ret_is_msg_size ? sizeof(sent_data) : 0;
+    ASSERT_THAT(RetryEINTR(recvmsg)(sockets->first_fd(), &msg, c.flags),
+                SyscallSucceedsWithValue(want_ret));
+    EXPECT_EQ(msg.msg_flags & MSG_TRUNC, MSG_TRUNC);
+
+    char drain[2 * sizeof(sent_data)] = {};
+    if (c.consumes) {
+      EXPECT_THAT(RetryEINTR(recv)(sockets->first_fd(), drain, sizeof(drain),
+                                   MSG_DONTWAIT),
+                  SyscallFailsWithErrno(EAGAIN));
+    } else {
+      EXPECT_THAT(RetryEINTR(recv)(sockets->first_fd(), drain, sizeof(drain),
+                                   MSG_DONTWAIT),
+                  SyscallSucceedsWithValue(sizeof(sent_data)));
+      EXPECT_EQ(memcmp(sent_data, drain, sizeof(sent_data)), 0);
+    }
+  }
+}
+
+// A zero-length non-blocking receive on an empty packet socket must fail
+// with EAGAIN rather than report an empty message, whatever the combination
+// of MSG_PEEK/MSG_TRUNC and control message space. The zero-length
+// MSG_PEEK|MSG_DONTWAIT receive with control space is how systemd checks its
+// namespace fd storage socket pairs; it treats a 0 return as a malformed
+// message.
+TEST_P(UnixNonStreamSocketPairTest, ZeroLengthRecvEmptyQueue) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  for (int flags : kZeroLengthRecvFlagCombos) {
+    for (bool control_space : {false, true}) {
+      SCOPED_TRACE(::testing::Message()
+                   << "flags=" << flags << " control_space=" << control_space);
+      char control[CMSG_SPACE(sizeof(int))];
+      struct msghdr msg = {};
+      if (control_space) {
+        msg.msg_control = control;
+        msg.msg_controllen = sizeof(control);
+      }
+      EXPECT_THAT(RetryEINTR(recvmsg)(sockets->first_fd(), &msg,
+                                      flags | MSG_DONTWAIT | MSG_CMSG_CLOEXEC),
+                  SyscallFailsWithErrno(EAGAIN));
+    }
+  }
+}
+
+// A zero-length receive on an empty packet socket whose peer has shut down
+// writes: seqpacket sockets are connection-oriented, so the shutdown
+// propagates and the receive returns 0 (EOF). Datagram sockets have no
+// connection semantics, so they still fail with EAGAIN.
+TEST_P(UnixNonStreamSocketPairTest, ZeroLengthRecvPeerShutdown) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  int type;
+  socklen_t length = sizeof(type);
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), SOL_SOCKET, SO_TYPE, &type, &length),
+      SyscallSucceeds());
+
+  ASSERT_THAT(shutdown(sockets->second_fd(), SHUT_WR), SyscallSucceeds());
+
+  for (int flags : kZeroLengthRecvFlagCombos) {
+    SCOPED_TRACE(::testing::Message() << "flags=" << flags);
+    struct msghdr msg = {};
+    if (type == SOCK_SEQPACKET) {
+      EXPECT_THAT(
+          RetryEINTR(recvmsg)(sockets->first_fd(), &msg, flags | MSG_DONTWAIT),
+          SyscallSucceedsWithValue(0));
+      // EOF, not a truncated message.
+      EXPECT_EQ(msg.msg_flags & MSG_TRUNC, 0);
+    } else {
+      EXPECT_THAT(
+          RetryEINTR(recvmsg)(sockets->first_fd(), &msg, flags | MSG_DONTWAIT),
+          SyscallFailsWithErrno(EAGAIN));
+    }
+  }
+}
+
 // Shutting down writes fails subsequent sends with EPIPE, and must not
 // affect the peer's receive side on datagram sockets: messages sent before
 // the shutdown remain readable, and afterwards the peer sees EAGAIN, not

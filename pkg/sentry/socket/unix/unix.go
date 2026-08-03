@@ -804,11 +804,16 @@ func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, have
 		}
 	}()
 
-	// If MSG_TRUNC is set with a zero byte destination then we still need
-	// to read the message and discard it, or in the case where MSG_PEEK is
-	// set, leave it be. In both cases the full message length must be
-	// returned.
-	if trunc && dst.Addrs.NumBytes() == 0 {
+	// A receive with a zero byte destination still interacts with the
+	// message queue. If the queue is empty, it blocks or returns
+	// EWOULDBLOCK as usual. On packet sockets, it dequeues the next
+	// message and returns its control messages; the payload is discarded.
+	// If MSG_PEEK is set, the message is left queued instead. On stream
+	// sockets, no payload is consumed, but the control messages at the
+	// current read position are returned (and consumed, unless peeking).
+	// With MSG_TRUNC, packet sockets return the full message length
+	// instead of 0.
+	if dst.Addrs.NumBytes() == 0 {
 		doRead = func() (int64, error) {
 			err := r.Truncate()
 			// Always return zero for bytes read since the destination size is

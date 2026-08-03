@@ -14,6 +14,8 @@
 
 #include <poll.h>
 #include <stdio.h>
+#include <string.h>
+#include <sys/socket.h>
 #include <sys/un.h>
 
 #include "gtest/gtest.h"
@@ -248,6 +250,79 @@ TEST_P(StreamUnixSocketPairTest, GetAcceptConn) {
       getsockopt(bound.get(), SOL_SOCKET, SO_ACCEPTCONN, &opt, &opt_len),
       SyscallSucceeds());
   ASSERT_EQ(opt, 1);
+}
+
+// All MSG_PEEK/MSG_TRUNC combinations, as exercised by the zero-length
+// receive tests below.
+constexpr int kZeroLengthRecvFlagCombos[] = {0, MSG_PEEK, MSG_TRUNC,
+                                             MSG_PEEK | MSG_TRUNC};
+
+// A zero-length receive on a stream socket with data pending returns 0
+// without consuming any data, whatever the combination of
+// MSG_PEEK/MSG_TRUNC: stream sockets ignore MSG_TRUNC (both as a length
+// probe and in msg_flags), and there is no message boundary to consume.
+TEST_P(StreamUnixSocketPairTest, ZeroLengthRecvPendingData) {
+  char sent_data[3] = {'a', 'b', 'c'};
+  for (int flags : kZeroLengthRecvFlagCombos) {
+    SCOPED_TRACE(::testing::Message() << "flags=" << flags);
+    auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+    ASSERT_THAT(
+        RetryEINTR(send)(sockets->second_fd(), sent_data, sizeof(sent_data), 0),
+        SyscallSucceedsWithValue(sizeof(sent_data)));
+
+    struct msghdr msg = {};
+    ASSERT_THAT(RetryEINTR(recvmsg)(sockets->first_fd(), &msg, flags),
+                SyscallSucceedsWithValue(0));
+    EXPECT_EQ(msg.msg_flags & MSG_TRUNC, 0);
+
+    // The data is still there.
+    char received_data[sizeof(sent_data)] = {};
+    ASSERT_THAT(RetryEINTR(recv)(sockets->first_fd(), received_data,
+                                 sizeof(received_data), MSG_DONTWAIT),
+                SyscallSucceedsWithValue(sizeof(sent_data)));
+    EXPECT_EQ(memcmp(sent_data, received_data, sizeof(sent_data)), 0);
+  }
+}
+
+// A zero-length non-blocking receive on an empty stream socket must fail
+// with EAGAIN rather than return 0, whatever the combination of
+// MSG_PEEK/MSG_TRUNC and control message space. Returning 0 on a zero-length
+// request is a read(2) behavior; recvmsg(2) waits for data.
+TEST_P(StreamUnixSocketPairTest, ZeroLengthRecvEmptyQueue) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  for (int flags : kZeroLengthRecvFlagCombos) {
+    for (bool control_space : {false, true}) {
+      SCOPED_TRACE(::testing::Message()
+                   << "flags=" << flags << " control_space=" << control_space);
+      char control[CMSG_SPACE(sizeof(int))];
+      struct msghdr msg = {};
+      if (control_space) {
+        msg.msg_control = control;
+        msg.msg_controllen = sizeof(control);
+      }
+      EXPECT_THAT(RetryEINTR(recvmsg)(sockets->first_fd(), &msg,
+                                      flags | MSG_DONTWAIT | MSG_CMSG_CLOEXEC),
+                  SyscallFailsWithErrno(EAGAIN));
+    }
+  }
+}
+
+// A zero-length receive on an empty stream socket returns 0, not EAGAIN,
+// once the peer has shut down writes, whatever the combination of
+// MSG_PEEK/MSG_TRUNC.
+TEST_P(StreamUnixSocketPairTest, ZeroLengthRecvPeerShutdown) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  ASSERT_THAT(shutdown(sockets->second_fd(), SHUT_WR), SyscallSucceeds());
+
+  for (int flags : kZeroLengthRecvFlagCombos) {
+    SCOPED_TRACE(::testing::Message() << "flags=" << flags);
+    struct msghdr msg = {};
+    EXPECT_THAT(
+        RetryEINTR(recvmsg)(sockets->first_fd(), &msg, flags | MSG_DONTWAIT),
+        SyscallSucceedsWithValue(0));
+  }
 }
 
 INSTANTIATE_TEST_SUITE_P(
