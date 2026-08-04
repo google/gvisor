@@ -28,8 +28,12 @@ import (
 )
 
 const (
-	systemdBootTimeout = time.Minute
-	daemonPollTimeout  = 30 * time.Second
+	// These timeouts bound polls whose expected wait is a few seconds at
+	// most. They are sized generously because on small, oversubscribed CI
+	// machines a single docker exec round trip has been observed to take
+	// tens of seconds.
+	systemdBootTimeout = 2 * time.Minute
+	daemonPollTimeout  = time.Minute
 )
 
 func pollWithTimeout(ctx context.Context, timeout time.Duration, cb func(ctx context.Context) error) error {
@@ -114,15 +118,21 @@ func stopService(ctx context.Context, t *testing.T, d *dockerutil.Container, uni
 	t.Helper()
 	wantInactiveState := "inactive"
 	execOrFatal(ctx, t, d, "systemctl", "stop", unit)
-	out := execOrFatal(ctx, t, d, "systemctl", "show", "-p", "ActiveState", "--value", unit)
-	if state := strings.TrimSpace(out); state != wantInactiveState {
+	if state := unitState(ctx, t, d, unit); state != wantInactiveState {
 		t.Errorf("After stopping %s, ActiveState is wrong (got %q, want %q)", unit, state, wantInactiveState)
 	}
+}
+
+// unitState returns the ActiveState of the given unit.
+func unitState(ctx context.Context, t *testing.T, d *dockerutil.Container, unit string) string {
+	t.Helper()
+	return strings.TrimSpace(execOrFatal(ctx, t, d, "systemctl", "show", "-p", "ActiveState", "--value", unit))
 }
 
 // TestSystemdBoot verifies that systemd boots to a "running" state and that
 // core services (journald, logind) are active.
 func TestSystemdBoot(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	d := spawnSystemdContainer(ctx, t, "systemd-integ")
 	defer d.CleanUp(ctx)
@@ -143,6 +153,7 @@ func TestSystemdBoot(t *testing.T) {
 // TestSystemdSimpleDaemon verifies that a custom systemd service can be enabled, started,
 // stopped, and restarted by systemd after an out-of-band kill.
 func TestSystemdSimpleDaemon(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	d := spawnSystemdContainer(ctx, t, "systemd-integ")
 	defer d.CleanUp(ctx)
@@ -228,6 +239,7 @@ func TestSystemdSimpleDaemon(t *testing.T) {
 // TestSystemdNginx verifies that nginx serves HTTP as a systemd service and
 // survives a `systemctl reload` (SIGHUP to the master process).
 func TestSystemdNginx(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	d := spawnSystemdContainer(ctx, t, "systemd-services")
 	defer d.CleanUp(ctx)
@@ -253,6 +265,7 @@ func TestSystemdNginx(t *testing.T) {
 
 // TestSystemdApache verifies that Apache httpd serves HTTP as a systemd service.
 func TestSystemdApache(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	d := spawnSystemdContainer(ctx, t, "systemd-services")
 	defer d.CleanUp(ctx)
@@ -274,15 +287,10 @@ func TestSystemdApache(t *testing.T) {
 	stopService(ctx, t, d, "apache2.service")
 }
 
-// TestSystemdSSH verifies that sshd accepts a key-authenticated session as a
-// systemd service. This also exercises PAM and the pam_systemd/logind interaction.
-func TestSystemdSSH(t *testing.T) {
-	ctx := t.Context()
-	d := spawnSystemdContainer(ctx, t, "systemd-services")
-	defer d.CleanUp(ctx)
-
-	// Generate any missing sshd host keys, and a root keypair authorized for
-	// login to self.
+// setupSSHKeys generates any missing sshd host keys, and a root keypair
+// authorized for login to self.
+func setupSSHKeys(ctx context.Context, t *testing.T, d *dockerutil.Container) {
+	t.Helper()
 	execOrFatal(ctx, t, d, "bash", "-c", `
 		ssh-keygen -A &&
 		mkdir -p /root/.ssh &&
@@ -290,11 +298,12 @@ func TestSystemdSSH(t *testing.T) {
 		ssh-keygen -t ed25519 -N '' -f /root/.ssh/id_ed25519 &&
 		cat /root/.ssh/id_ed25519.pub >> /root/.ssh/authorized_keys
 	`)
+}
 
-	startService(ctx, t, d, "ssh.service")
-
-	// Retry the ssh handshake: sshd can take a moment to accept connections
-	// after the unit reports active.
+// waitForSSH retries a key-authenticated ssh round trip to localhost until it
+// succeeds: sshd can take a moment to accept connections.
+func waitForSSH(ctx context.Context, t *testing.T, d *dockerutil.Container) {
+	t.Helper()
 	wantEcho := "ssh-ok"
 	checkSSH := func(ctx context.Context) error {
 		out, err := d.Exec(ctx, dockerutil.ExecOpts{User: "root"},
@@ -308,6 +317,19 @@ func TestSystemdSSH(t *testing.T) {
 	if err := pollWithTimeout(ctx, daemonPollTimeout, checkSSH); err != nil {
 		t.Fatalf("could not ssh to localhost: %v", err)
 	}
+}
+
+// TestSystemdSSH verifies that sshd accepts a key-authenticated session as a
+// systemd service. This also exercises PAM and the pam_systemd/logind interaction.
+func TestSystemdSSH(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	d := spawnSystemdContainer(ctx, t, "systemd-services")
+	defer d.CleanUp(ctx)
+
+	setupSSHKeys(ctx, t, d)
+	startService(ctx, t, d, "ssh.service")
+	waitForSSH(ctx, t, d)
 
 	// Verify the login was registered with logind, i.e. that pam_systemd ran:
 	// from inside the ssh session, the caller's own logind session ("self")
@@ -326,6 +348,7 @@ func TestSystemdSSH(t *testing.T) {
 // TestSystemdPostgreSQL verifies that PostgreSQL runs as a systemd service
 // and can execute a create/insert/select round trip.
 func TestSystemdPostgreSQL(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	d := spawnSystemdContainer(ctx, t, "systemd-services")
 	defer d.CleanUp(ctx)
@@ -360,6 +383,7 @@ func TestSystemdPostgreSQL(t *testing.T) {
 // TestSystemdMariaDB verifies that MariaDB runs as a systemd service and can
 // execute a create/insert/select round trip.
 func TestSystemdMariaDB(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	d := spawnSystemdContainer(ctx, t, "systemd-services")
 	defer d.CleanUp(ctx)
@@ -379,6 +403,7 @@ func TestSystemdMariaDB(t *testing.T) {
 // TestSystemdRedis verifies that Redis runs as a systemd service (Type=notify)
 // and that a background save (which fork()s the server) succeeds.
 func TestSystemdRedis(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	d := spawnSystemdContainer(ctx, t, "systemd-services")
 	defer d.CleanUp(ctx)
@@ -424,6 +449,7 @@ const alpineImageRef = "mirror.gcr.io/library/alpine:3.22"
 // TestSystemdDocker verifies that dockerd runs as a systemd service: the unit
 // becomes active, the daemon answers API requests, and it can pull images.
 func TestSystemdDocker(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	d := spawnSystemdContainer(ctx, t, "systemd-services")
 	defer d.CleanUp(ctx)
@@ -442,4 +468,167 @@ func TestSystemdDocker(t *testing.T) {
 	}
 
 	stopService(ctx, t, d, "docker.service")
+}
+
+// The tests below exercise systemd's event-driven activation mechanisms
+// (timers, D-Bus, sockets) and the sd_notify watchdog protocol.
+
+// TestSystemdTimer verifies that timer units fire repeatedly on both the
+// monotonic clock (OnActiveSec/OnUnitActiveSec) and the realtime clock
+// (OnCalendar).
+func TestSystemdTimer(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	d := spawnSystemdContainer(ctx, t, "systemd-integ")
+	defer d.CleanUp(ctx)
+
+	// Two transient timers, each appending a line to its file on every fire.
+	// The default timer accuracy is 1 minute, so tighten it to keep the test
+	// fast.
+	execOrFatal(ctx, t, d, "systemd-run", "--unit=gv-timer-mono",
+		"--on-active=1", "--on-unit-active=1", "--timer-property=AccuracySec=100ms",
+		"/bin/sh", "-c", "echo fired >> /run/gv-timer-mono")
+	execOrFatal(ctx, t, d, "systemd-run", "--unit=gv-timer-cal",
+		"--on-calendar=*-*-* *:*:*", "--timer-property=AccuracySec=100ms",
+		"/bin/sh", "-c", "echo fired >> /run/gv-timer-cal")
+
+	// Each timer must fire at least twice: this proves both the initial fire
+	// and the rescheduling of a repeating timer.
+	for _, file := range []string{"/run/gv-timer-mono", "/run/gv-timer-cal"} {
+		checkFiredTwice := func(ctx context.Context) error {
+			out, err := d.Exec(ctx, dockerutil.ExecOpts{User: "root"}, "/bin/sh", "-c", "wc -l < "+file)
+			if err != nil {
+				return fmt.Errorf("cannot count timer fires: %v (output: %s)", err, out)
+			}
+			fires, err := strconv.Atoi(strings.TrimSpace(out))
+			if err != nil {
+				return fmt.Errorf("unexpected wc output %q: %v", out, err)
+			}
+			if fires < 2 {
+				return fmt.Errorf("%s timer fired %d times, want at least 2", file, fires)
+			}
+			return nil
+		}
+		if err := pollWithTimeout(ctx, daemonPollTimeout, checkFiredTwice); err != nil {
+			t.Errorf("timer writing to %s did not fire repeatedly: %v", file, err)
+		}
+	}
+}
+
+// TestSystemdDBusActivation verifies that sending a message to a well-known
+// bus name starts the service that owns it. systemd-hostnamed is D-Bus
+// activated: it is started on demand when org.freedesktop.hostname1 is called.
+func TestSystemdDBusActivation(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	d := spawnSystemdContainer(ctx, t, "systemd-integ")
+	defer d.CleanUp(ctx)
+
+	wantInactive := "inactive"
+	if state := unitState(ctx, t, d, "systemd-hostnamed.service"); state != wantInactive {
+		t.Fatalf("Before the bus call, systemd-hostnamed.service ActiveState is %q, want %q", state, wantInactive)
+	}
+
+	hostname := strings.TrimSpace(execOrFatal(ctx, t, d, "hostname"))
+	out := execOrFatal(ctx, t, d, "busctl", "call", "org.freedesktop.hostname1",
+		"/org/freedesktop/hostname1", "org.freedesktop.DBus.Properties", "Get",
+		"ss", "org.freedesktop.hostname1", "Hostname")
+	if wantReply := fmt.Sprintf("%q", hostname); !strings.Contains(out, wantReply) {
+		t.Errorf("bus call reply does not contain the hostname %s:\n%s", wantReply, out)
+	}
+
+	wantActive := "active"
+	if state := unitState(ctx, t, d, "systemd-hostnamed.service"); state != wantActive {
+		t.Errorf("After the bus call, systemd-hostnamed.service ActiveState is %q, want %q", state, wantActive)
+	}
+}
+
+// TestSystemdSocketActivation verifies socket activation: with only
+// ssh.socket started, systemd starts ssh.service upon the first connection,
+// and sshd serves that connection on the inherited listening socket.
+func TestSystemdSocketActivation(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	d := spawnSystemdContainer(ctx, t, "systemd-services")
+	defer d.CleanUp(ctx)
+
+	setupSSHKeys(ctx, t, d)
+	startService(ctx, t, d, "ssh.socket")
+
+	// The socket is listening, but the service must only start upon the
+	// first connection.
+	wantInactive := "inactive"
+	if state := unitState(ctx, t, d, "ssh.service"); state != wantInactive {
+		t.Fatalf("After starting ssh.socket, ssh.service ActiveState is %q, want %q", state, wantInactive)
+	}
+
+	waitForSSH(ctx, t, d)
+
+	wantActive := "active"
+	if state := unitState(ctx, t, d, "ssh.service"); state != wantActive {
+		t.Errorf("After connecting to the socket, ssh.service ActiveState is %q, want %q", state, wantActive)
+	}
+}
+
+// TestSystemdWatchdog verifies the sd_notify watchdog protocol: a service
+// that pings the watchdog stays up, and systemd kills it with Result=watchdog
+// once the pings stop.
+func TestSystemdWatchdog(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	d := spawnSystemdContainer(ctx, t, "systemd-integ")
+	defer d.CleanUp(ctx)
+
+	// A transient notify service with a 5s watchdog: it pings the watchdog
+	// every 0.5s until the stop file appears, then stops pinging while
+	// staying alive.
+	const stopFile = "/run/gv-watchdog-stop"
+	execOrFatal(ctx, t, d, "systemd-run", "--unit=gv-watchdog",
+		"-p", "Type=notify", "-p", "NotifyAccess=all", "-p", "WatchdogSec=5",
+		"/bin/bash", "-c",
+		"systemd-notify --ready; while [ ! -e "+stopFile+" ]; do systemd-notify WATCHDOG=1; sleep 0.5; done; sleep infinity")
+
+	dumpJournal := func() string {
+		journal, _ := d.Exec(ctx, dockerutil.ExecOpts{User: "root"}, "journalctl", "-u", "gv-watchdog.service", "--no-pager")
+		return journal
+	}
+	checkActive := func(ctx context.Context) error {
+		out, err := d.Exec(ctx, dockerutil.ExecOpts{User: "root"}, "systemctl", "is-active", "gv-watchdog.service")
+		if err != nil || strings.TrimSpace(out) != "active" {
+			return fmt.Errorf("gv-watchdog not active: %v (output: %s)", err, out)
+		}
+		return nil
+	}
+	if err := pollWithTimeout(ctx, daemonPollTimeout, checkActive); err != nil {
+		t.Fatalf("gv-watchdog did not start: %v\njournal:\n%s", err, dumpJournal())
+	}
+
+	// Well past WatchdogSec, the service must still be alive: the pings are
+	// keeping the watchdog at bay.
+	time.Sleep(6 * time.Second)
+	if err := pollWithTimeout(ctx, daemonPollTimeout, checkActive); err != nil {
+		t.Fatalf("gv-watchdog died while still pinging the watchdog: %v\njournal:\n%s", err, dumpJournal())
+	}
+
+	// Tell the service to stop pinging. It stays alive (sleep infinity),
+	// so any state change from here on is the watchdog's doing.
+	execOrFatal(ctx, t, d, "touch", stopFile)
+
+	// With the pings stopped, systemd must kill the service and record
+	// the watchdog as the failure reason.
+	wantState := "ActiveState=failed"
+	wantResult := "Result=watchdog"
+	checkWatchdogFired := func(ctx context.Context) error {
+		out, err := d.Exec(ctx, dockerutil.ExecOpts{User: "root"}, "systemctl", "show", "-p", "ActiveState,Result", "gv-watchdog.service")
+		if err != nil {
+			return fmt.Errorf("systemctl show failed: %v (output: %s)", err, out)
+		}
+		if !strings.Contains(out, wantState) || !strings.Contains(out, wantResult) {
+			return fmt.Errorf("gv-watchdog not yet killed by the watchdog (want %s and %s): %s", wantState, wantResult, out)
+		}
+		return nil
+	}
+	if err := pollWithTimeout(ctx, daemonPollTimeout, checkWatchdogFired); err != nil {
+		t.Errorf("systemd did not kill gv-watchdog after pings stopped: %v\njournal:\n%s", err, dumpJournal())
+	}
 }

@@ -190,7 +190,7 @@ func (p *Process) WaitExitStatus(ctx context.Context) (int, error) {
 		for {
 			running, exitcode, err := p.runningExitCode(ctx)
 			if err != nil {
-				errChan <- fmt.Errorf("error waiting process %s: container %v", p.execid, p.container.Name)
+				errChan <- fmt.Errorf("error waiting process %s: container %v: %w", p.execid, p.container.Name, err)
 			}
 			if !running {
 				waitChan <- exitcode
