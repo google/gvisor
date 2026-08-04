@@ -471,6 +471,13 @@ type Config struct {
 	// once their current RPC finishes. Setting this to 0 closes idle clients
 	// immediately.
 	ControlRPCStopTimeout time.Duration `flag:"control-rpc-stop-timeout"`
+
+	// SharedRootDir is the directory used for state shared across sandboxes
+	// regardless of their runtime root directory (e.g. the null gofer network
+	// namespace bind mount). If empty, RootDir is used.
+	// Access to SharedRootDir grants the ability to identify sandboxes, but
+	// not to control them.
+	SharedRootDir string `flag:"shared-root"`
 }
 
 // Validate checks that the Config is in a consistent state, e.g. that no
@@ -569,6 +576,15 @@ func (c *Config) Log() {
 			}
 		}
 	}
+}
+
+// SharedRoot returns the effective directory for state shared across
+// sandboxes: SharedRootDir if set, otherwise RootDir.
+func (c *Config) SharedRoot() string {
+	if c.SharedRootDir != "" {
+		return c.SharedRootDir
+	}
+	return c.RootDir
 }
 
 // GetHostUDS returns the FS gofer communication that is allowed, taking into
@@ -781,9 +797,9 @@ const (
 	GoferNetworkNamespaceHost GoferNetworkNamespace = "host"
 
 	// GoferNetworkNamespaceNull runs gofers in a shared empty network
-	// namespace. The namespace is pinned by a bind mount under the runtime
-	// root directory (same hack as `ip netns add`), and shared by all
-	// gofers using the same root dir.
+	// namespace. The namespace is pinned by a bind mount under the shared
+	// root directory (`--shared-root`, defaulting to `--root`; same hack as
+	// `ip netns add`), and shared by all gofers using the same directory.
 	// This provides the same isolation as `GoferNetworkNamespaceNew`
 	// without the cost of a new nets per gofer.
 	// Falls back to `GoferNetworkNamespaceNew` if the shared namespace cannot

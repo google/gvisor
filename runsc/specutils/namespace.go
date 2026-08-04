@@ -305,20 +305,20 @@ func MaybeRunAsRoot() error {
 	panic("unreachable")
 }
 
-// NullNetNSFilename is the name of the file (relative to `--root`)
-// that the shared empty ("null") gofer network namespace is
-// bind-mounted to.
+// NullNetNSFilename is the name of the file (relative to `--shared-root`,
+// which defaults to `--root`) that the shared empty ("null") gofer network
+// namespace is bind-mounted to.
 const NullNetNSFilename = "null-netns"
 
 // UnmountNullNetNS unmounts null gofer network namespace bind mounts under
-// `rootDir`, if any.
-// Must be called before removing a runtime root directory, which would
-// otherwise fail with `EBUSY`.
-func UnmountNullNetNS(rootDir string) {
+// `sharedRootDir`, if any.
+// Must be called before removing a shared root (or runtime root) directory,
+// which would otherwise fail with `EBUSY`.
+func UnmountNullNetNS(sharedRootDir string) {
 	// Namespace creation isn't serialized across invocations, so concurrent
 	// creations may stack bind mounts on the same path.
 	// So loop until none are left.
-	path := filepath.Join(rootDir, NullNetNSFilename)
+	path := filepath.Join(sharedRootDir, NullNetNSFilename)
 	for unix.Unmount(path, unix.MNT_DETACH) == nil {
 	}
 }
