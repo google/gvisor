@@ -185,6 +185,10 @@ type conn struct {
 	//
 	// +checklocks:stateMu
 	lastUsed tcpip.MonotonicTime
+	// replySeen indicates whether a packet in the reply direction has been seen.
+	//
+	// +checklocks:stateMu
+	replySeen bool
 }
 
 // timedOut returns whether the connection timed out based on its state.
@@ -229,6 +233,9 @@ func (cn *conn) update(pkt *PacketBuffer, reply bool) {
 
 	// Mark the connection as having been used recently so it isn't reaped.
 	cn.lastUsed = cn.ct.clock.NowMonotonic()
+	if reply {
+		cn.replySeen = true
+	}
 
 	if pkt.TransportProtocolNumber != header.TCPProtocolNumber {
 		return
@@ -609,28 +616,56 @@ type ConnTrackInfoOpts struct {
 	FillExpiration bool
 }
 
+// getTCPConnTrackState converts the TCB state to ConnTrackState.
+func (cn *conn) getTCPConnTrackState(useReplyDir bool) ConnTrackState {
+	state := ConnTrackStateInvalid
+	cn.stateMu.RLock()
+	tcbState := cn.tcb.State()
+	cn.stateMu.RUnlock()
+	switch tcbState {
+	case tcpconntrack.ResultConnecting:
+		state = ConnTrackStateNew
+
+	case tcpconntrack.ResultAlive, tcpconntrack.ResultReset,
+		tcpconntrack.ResultClosedByOriginator, tcpconntrack.ResultClosedByResponder:
+
+		if useReplyDir {
+			state = ConnTrackStateEstablishedReply
+		} else {
+			state = ConnTrackStateEstablished
+		}
+	case tcpconntrack.ResultDrop:
+		state = ConnTrackStateInvalid
+	}
+	return state
+}
+
+// getConnTrackState returns the connection tracking state for the connection.
+func (cn *conn) getConnTrackState(useReplyDir bool) ConnTrackState {
+	state := ConnTrackStateInvalid
+	// TCP connections have their own state machine in the TCB.
+	if cn.original.tupleID.transProto == header.TCPProtocolNumber {
+		return cn.getTCPConnTrackState(useReplyDir)
+	}
+	// For non-TCP connections, fill the info based on the reply.
+	cn.stateMu.RLock()
+	replySeen := cn.replySeen
+	cn.stateMu.RUnlock()
+	if useReplyDir {
+		state = ConnTrackStateEstablishedReply
+	} else if replySeen {
+		state = ConnTrackStateEstablished
+	} else {
+		state = ConnTrackStateNew
+	}
+	return state
+}
+
 // FillConnTrackInfo fills connection tracking information for the connection.
 func (cn *conn) FillConnTrackInfo(opts ConnTrackInfoOpts, info *ConnTrackInfo) bool {
 	state := ConnTrackStateInvalid
 	if opts.FillState {
-		cn.stateMu.RLock()
-		tcbState := cn.tcb.State()
-		cn.stateMu.RUnlock()
-		switch tcbState {
-		case tcpconntrack.ResultConnecting:
-			state = ConnTrackStateNew
-
-		case tcpconntrack.ResultAlive, tcpconntrack.ResultReset,
-			tcpconntrack.ResultClosedByOriginator, tcpconntrack.ResultClosedByResponder:
-
-			if opts.UseReplyDir {
-				state = ConnTrackStateEstablishedReply
-			} else {
-				state = ConnTrackStateEstablished
-			}
-		case tcpconntrack.ResultDrop:
-			state = ConnTrackStateInvalid
-		}
+		state = cn.getConnTrackState(opts.UseReplyDir)
 	}
 
 	dir := ConnTrackDirectionOriginal

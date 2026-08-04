@@ -1080,7 +1080,7 @@ func (t *Table) deleteChain(c *Chain) bool {
 		if err := hfStack.detachBaseChain(c); err != nil {
 			panic(fmt.Sprintf("failed to detach base chain %s from hook %v: %v", c.GetName(), c.baseChainInfo.Hook, err))
 		}
-		if len(hfStack.baseChains) == 0 {
+		if len(hfStack.baseChains) == 0 && len(hfStack.natBaseChains) == 0 {
 			delete(t.afFilter.hfStacks, c.baseChainInfo.Hook)
 		}
 	}
