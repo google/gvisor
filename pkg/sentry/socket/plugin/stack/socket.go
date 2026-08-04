@@ -366,20 +366,26 @@ func interfaceIoctl(ctx context.Context, io usermem.IO, cmd uint32, ifr *linux.I
 
 	case syscall.SIOCGIFMAP:
 		// Gets the hardware parameters of the device.
-		hostarch.ByteOrder.PutUint64(ifr.Data[:8], 0)
-		hostarch.ByteOrder.PutUint32(ifr.Data[8:12], 0)
-		ifr.Data[12] = 0
+		clear(ifr.Data[:])
 
 	case syscall.SIOCGIFTXQLEN:
-		hostarch.ByteOrder.PutUint32(ifr.Data[:4], 1024)
+		hostarch.ByteOrder.PutUint32(ifr.Data[:4], 0)
 
 	case syscall.SIOCGIFDSTADDR:
 		// Gets the destination address of a point-to-point device.
-		// TODO: Implement SIOCGIFDSTADDR handler.
+		addr, ok := firstIPv4InterfaceAddr(stack, index)
+		if !ok {
+			return syserr.ErrAddressNotAvailable
+		}
+		copyIPv4SockAddrOut(ifr, addr.Addr)
 
 	case syscall.SIOCGIFBRDADDR:
 		// Gets the broadcast address of a device.
-		// TODO: Implement SIOCGIFBRDADDR handler.
+		addr, ok := firstIPv4InterfaceAddr(stack, index)
+		if !ok {
+			return syserr.ErrAddressNotAvailable
+		}
+		copyBroadcastAddrOut(ifr, iface, addr)
 
 	case syscall.SIOCGIFNETMASK:
 		// Gets the network mask of a device.
