@@ -514,7 +514,7 @@ func (r *Render) Execute(ctx context.Context, fs *flag.FlagSet, args ...any) sub
 }
 
 // goVersionRe matches a `go VERSION` line in go.mod, capturing VERSION.
-var goVersionRe = regexp.MustCompile(`^go\s+(\S+)`)
+var goVersionRe = regexp.MustCompile(`(?m)^go\s+(\S+)`)
 
 // resolveGOVERSION sets flags.GOVERSION from flags.GOVERSIONModFile, if necessary.
 func resolveGOVERSION() error {
