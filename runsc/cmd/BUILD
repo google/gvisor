@@ -138,6 +138,7 @@ go_test(
         "//runsc/container",
         "//runsc/flag",
         "//runsc/mitigate",
+        "//runsc/sandbox",
         "//runsc/specutils",
         "//sandboxexec/proto:sandbox_options_go_proto",
         "@com_github_google_go_cmp//cmp:go_default_library",

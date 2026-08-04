@@ -123,7 +123,11 @@ func createLimitSet(spec *specs.Spec, enableTPUProxy bool) (*limits.LimitSet, er
 	if enableTPUProxy {
 		ls.SetUnchecked(limits.MemoryLocked, limits.Limit{Cur: limits.Infinity, Max: limits.Infinity})
 	}
-	// Then apply overwrites on top of defaults.
+	// Then apply overwrites on top of defaults. A sandbox spec has no process,
+	// and so nothing to overwrite them with.
+	if spec.Process == nil {
+		return ls, nil
+	}
 	for _, rl := range spec.Process.Rlimits {
 		lt, ok := limits.FromLinuxResourceName[rl.Type]
 		if !ok {

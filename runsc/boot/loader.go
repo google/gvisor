@@ -241,6 +241,19 @@ type Loader struct {
 	// sandboxID is the ID for the whole sandbox.
 	sandboxID string
 
+	// noRootContainer indicates that the sandbox has no root container: l.root
+	// carries sandbox-wide settings only, its procArgs is zero, and every
+	// container is a subcontainer. TID 1 is reserved so that none of them
+	// becomes the root PID namespace's init; see PIDNamespace.ReserveInitTID.
+	// Kernel.globalInit is a different notion and still gets set, to whichever
+	// container starts first. See no_root_container.md.
+	noRootContainer bool
+
+	// sandboxExit is closed by stopSandbox to release WaitExit. Unused unless
+	// noRootContainer is true.
+	sandboxExit     chan struct{}
+	sandboxExitOnce sync.Once
+
 	// mountHints provides extra information about mounts for containers that
 	// apply to the entire pod.
 	mountHints *PodMountHints
@@ -475,6 +488,9 @@ type Args struct {
 	// RootfsUpperTarFD is the file descriptor to the tar file containing the rootfs
 	// upper layer changes.
 	RootfsUpperTarFD int
+	// NoRootContainer boots without a root container; Spec then has neither
+	// Process nor Root. See Loader.noRootContainer.
+	NoRootContainer bool
 }
 
 // HostTHP holds host transparent hugepage settings.
@@ -500,15 +516,22 @@ const (
 )
 
 func getRootCredentials(spec *specs.Spec, conf *config.Config, userNs *auth.UserNamespace) *auth.Credentials {
+	// A sandbox spec has no process. An empty one yields root with the default
+	// capabilities, enough for sandbox-wide setup; containers bring their own.
+	process := spec.Process
+	if process == nil {
+		process = &specs.Process{}
+	}
+
 	// Create capabilities.
-	caps, err := specutils.Capabilities(conf.EnableRaw, spec.Process.Capabilities)
+	caps, err := specutils.Capabilities(conf.EnableRaw, process.Capabilities)
 	if err != nil {
 		return nil
 	}
 
 	// Convert the spec's additional GIDs to KGIDs.
-	extraKGIDs := make([]auth.KGID, 0, len(spec.Process.User.AdditionalGids))
-	for _, GID := range spec.Process.User.AdditionalGids {
+	extraKGIDs := make([]auth.KGID, 0, len(process.User.AdditionalGids))
+	for _, GID := range process.User.AdditionalGids {
 		extraKGIDs = append(extraKGIDs, auth.KGID(GID))
 	}
 
@@ -517,8 +540,8 @@ func getRootCredentials(spec *specs.Spec, conf *config.Config, userNs *auth.User
 	}
 	// Create credentials.
 	creds := auth.NewUserCredentials(
-		auth.KUID(spec.Process.User.UID),
-		auth.KGID(spec.Process.User.GID),
+		auth.KUID(process.User.UID),
+		auth.KGID(process.User.GID),
 		extraKGIDs,
 		caps,
 		userNs)
@@ -557,6 +580,8 @@ func New(args Args) (*Loader, error) {
 	eid := execID{cid: args.ID}
 	l := &Loader{
 		sandboxID:             args.ID,
+		noRootContainer:       args.NoRootContainer,
+		sandboxExit:           make(chan struct{}),
 		processes:             map[execID]*execProcess{eid: {}},
 		sharedMounts:          make(map[string]*vfs.Mount),
 		stopProfiling:         stopProfiling,
@@ -790,11 +815,21 @@ func New(args Args) (*Loader, error) {
 	}
 	l.watchdog = watchdog.New(l.k, dogOpts)
 
-	procArgs, err := createProcessArgs(args.ID, args.Spec, args.Conf, creds, l.k, l.k.RootPIDNamespace())
-	if err != nil {
-		return nil, fmt.Errorf("creating init process for root container: %w", err)
+	if !args.NoRootContainer {
+		procArgs, err := createProcessArgs(args.ID, args.Spec, args.Conf, creds, l.k, l.k.RootPIDNamespace())
+		if err != nil {
+			return nil, fmt.Errorf("creating init process for root container: %w", err)
+		}
+		l.root.procArgs = procArgs
+	} else {
+		// The branch above computes the default limit set as a side effect.
+		// Force it here: it needs getrlimit(2), which the seccomp filters deny
+		// once installed, and every container starts after that.
+		if _, err := defaults.get(); err != nil {
+			return nil, fmt.Errorf("getting default limits: %w", err)
+		}
+		l.k.RootPIDNamespace().ReserveInitTID()
 	}
-	l.root.procArgs = procArgs
 
 	if err := initCompatLogs(args.UserLogFD); err != nil {
 		return nil, fmt.Errorf("initializing compat logs: %w", err)
@@ -942,6 +977,7 @@ func createProcessArgs(id string, spec *specs.Spec, conf *config.Config, creds *
 // been closed. For that reason, this should NOT be called in a defer, because
 // a panic in a control server rpc would then hang forever.
 func (l *Loader) Destroy() {
+	l.stopSandbox()
 	if l.stopSignalForwarding != nil {
 		l.stopSignalForwarding()
 	}
@@ -1177,35 +1213,37 @@ func (l *Loader) run() error {
 			return err
 		}
 
-		// Create the root container init task. It will begin running
-		// when the kernel is started.
-		var (
-			tg  *kernel.ThreadGroup
-			err error
-		)
-		tg, ep.tty, err = l.createContainerProcess(&l.root)
-		if err != nil {
-			return err
-		}
+		if !l.noRootContainer {
+			// Create the root container init task. It will begin running
+			// when the kernel is started.
+			var (
+				tg  *kernel.ThreadGroup
+				err error
+			)
+			tg, ep.tty, err = l.createContainerProcess(&l.root)
+			if err != nil {
+				return err
+			}
 
-		if seccheck.Global.Enabled(seccheck.PointContainerStart) {
-			evt := pb.Start{
-				Id:       l.sandboxID,
-				Cwd:      l.root.spec.Process.Cwd,
-				Args:     l.root.spec.Process.Args,
-				Terminal: l.root.spec.Process.Terminal,
+			if seccheck.Global.Enabled(seccheck.PointContainerStart) {
+				evt := pb.Start{
+					Id:       l.sandboxID,
+					Cwd:      l.root.spec.Process.Cwd,
+					Args:     l.root.spec.Process.Args,
+					Terminal: l.root.spec.Process.Terminal,
+				}
+				fields := seccheck.Global.GetFieldSet(seccheck.PointContainerStart)
+				if fields.Local.Contains(seccheck.FieldContainerStartEnv) {
+					evt.Env = l.root.spec.Process.Env
+				}
+				if !fields.Context.Empty() {
+					evt.ContextData = &pb.ContextData{}
+					kernel.LoadSeccheckData(tg.Leader(), fields.Context, evt.ContextData)
+				}
+				_ = seccheck.Global.SentToSinks(func(c seccheck.Sink) error {
+					return c.ContainerStart(context.Background(), fields, &evt)
+				})
 			}
-			fields := seccheck.Global.GetFieldSet(seccheck.PointContainerStart)
-			if fields.Local.Contains(seccheck.FieldContainerStartEnv) {
-				evt.Env = l.root.spec.Process.Env
-			}
-			if !fields.Context.Empty() {
-				evt.ContextData = &pb.ContextData{}
-				kernel.LoadSeccheckData(tg.Leader(), fields.Context, evt.ContextData)
-			}
-			_ = seccheck.Global.SentToSinks(func(c seccheck.Sink) error {
-				return c.ContainerStart(context.Background(), fields, &evt)
-			})
 		}
 	case restoringUnstarted:
 		// If we are restoring, we do not want to create a process.
@@ -1213,7 +1251,9 @@ func (l *Loader) run() error {
 		return fmt.Errorf("Loader.Run() called in unexpected state=%s", l.state)
 	}
 
-	ep.tg = l.k.GlobalInit()
+	if !l.noRootContainer {
+		ep.tg = l.k.GlobalInit()
+	}
 	if ns, ok := specutils.GetNS(specs.PIDNamespace, l.root.spec); ok {
 		ep.pidnsPath = ns.Path
 	}
@@ -1224,6 +1264,13 @@ func (l *Loader) run() error {
 		// Panic signal should cause a panic.
 		if l.root.conf.PanicSignal != -1 && sig == linux.Signal(l.root.conf.PanicSignal) {
 			panic("Signal-induced panic")
+		}
+
+		// Nothing to forward to, and the default disposition would kill the
+		// sentry out from under the containers running in it.
+		if l.noRootContainer {
+			log.Infof("Received external signal %d, ignoring: sandbox has no root container", sig)
+			return
 		}
 
 		// Otherwise forward to root container.
@@ -1297,10 +1344,20 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 	var pidns *kernel.PIDNamespace
 	if ns, ok := specutils.GetNS(specs.PIDNamespace, spec); ok {
 		if ns.Path != "" {
-			for _, p := range l.processes {
-				if ns.Path == p.pidnsPath {
+			for eid, p := range l.processes {
+				if ns.Path != p.pidnsPath {
+					continue
+				}
+				if p.tg != nil {
 					log.Debugf("Joining PID namespace named %q", ns.Path)
 					pidns = p.tg.PIDNamespace()
+					break
+				}
+				// The sandbox's entry never has a thread group, but the
+				// namespace it names is real: the root PID namespace.
+				if l.noRootContainer && eid.cid == l.sandboxID {
+					log.Debugf("Joining sandbox PID namespace named %q", ns.Path)
+					pidns = l.k.RootPIDNamespace()
 					break
 				}
 			}
@@ -1676,6 +1733,13 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 
 // waitContainer waits for the init process of a container to exit.
 func (l *Loader) waitContainer(cid string, waitStatus *uint32) error {
+	if l.noRootContainer && cid == l.sandboxID {
+		// No init to wait on; the only event left is the sandbox going away.
+		<-l.sandboxExit
+		*waitStatus = 0
+		return nil
+	}
+
 	l.mu.Lock()
 	state := l.state
 	if state == restoringUnstarted {
@@ -1792,8 +1856,21 @@ func (l *Loader) WaitForStartSignal() {
 	<-l.ctrl.manager.startChan
 }
 
-// WaitExit waits for the root container to exit, and returns its exit status.
+// stopSandbox releases WaitExit and waitContainer. It is idempotent.
+func (l *Loader) stopSandbox() {
+	l.sandboxExitOnce.Do(func() { close(l.sandboxExit) })
+}
+
+// WaitExit waits for the sandbox to finish and returns the root container's
+// exit status, or zero if there is no root container.
 func (l *Loader) WaitExit() linux.WaitStatus {
+	if l.noRootContainer {
+		// Not k.WaitExited(): it returns as soon as nothing is running, and
+		// sets noNewTasksIfZeroLive, which would block subcontainers forever.
+		<-l.sandboxExit
+		return 0
+	}
+
 	// Wait for container.
 	l.k.WaitExited()
 

@@ -1367,6 +1367,112 @@ func testCheckpointRestore(t *testing.T, conf *config.Config, compression statef
 	cont3.Destroy()
 }
 
+// TestCheckpointRestoreNoRootContainer checks that both halves refuse a sandbox
+// with no root container, so no unrestorable image is written. See
+// Container.checkpointRestoreSupported.
+func TestCheckpointRestoreNoRootContainer(t *testing.T) {
+	const wantErr = "not supported for a sandbox booted without a root container"
+
+	for _, tc := range []struct {
+		name            string
+		noRootContainer bool
+		want            bool
+	}{
+		{name: "no-root-container", noRootContainer: true, want: true},
+		{name: "normal", noRootContainer: false, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &Container{ID: "test-cid", Sandbox: &sandbox.Sandbox{NoRootContainer: tc.noRootContainer}}
+			err := c.checkpointRestoreSupported("checkpoint")
+			if got := err != nil; got != tc.want {
+				t.Errorf("checkpointRestoreSupported() error = %v, want error: %t", err, tc.want)
+			} else if tc.want && !strings.Contains(err.Error(), wantErr) {
+				t.Errorf("checkpointRestoreSupported() error = %v, want it to contain %q", err, wantErr)
+			}
+		})
+	}
+
+	// The guard runs before anything touches the sandbox, so nothing to set up.
+	conf := testutil.TestConfig(t)
+	c := &Container{ID: "test-cid", Sandbox: &sandbox.Sandbox{NoRootContainer: true}}
+	if err := c.Checkpoint(conf, "" /* imagePath */, sandbox.CheckpointOpts{}); err == nil || !strings.Contains(err.Error(), wantErr) {
+		t.Errorf("Checkpoint() error = %v, want it to contain %q", err, wantErr)
+	}
+	if err := c.Restore(conf, "" /* imagePath */, false /* direct */, false /* background */, nil /* networkArgs */); err == nil || !strings.Contains(err.Error(), wantErr) {
+		t.Errorf("Restore() error = %v, want it to contain %q", err, wantErr)
+	}
+}
+
+// TestNoRootContainerRejectsRootArgs checks that Args describing a root
+// container process or its rootfs are refused alongside NoRootContainer rather
+// than dropped. New covers both `runsc create` and `runsc run`.
+func TestNoRootContainerRejectsRootArgs(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		args    Args
+		wantErr string
+	}{
+		{
+			name:    "console socket",
+			args:    Args{ConsoleSocket: "/tmp/console.sock"},
+			wantErr: "ConsoleSocket cannot be set with NoRootContainer",
+		},
+		{
+			name:    "fs restore image path",
+			args:    Args{FSRestoreImagePath: "/tmp/image"},
+			wantErr: "FSRestoreImagePath cannot be set with NoRootContainer",
+		},
+		{
+			name:    "pass files",
+			args:    Args{PassFiles: map[int]*os.File{3: os.Stdin}},
+			wantErr: "PassFiles and ExecFile cannot be set with NoRootContainer",
+		},
+		{
+			name:    "exec file",
+			args:    Args{ExecFile: os.Stdin},
+			wantErr: "PassFiles and ExecFile cannot be set with NoRootContainer",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conf := testutil.TestConfig(t)
+			rootDir, cleanupRoot, err := testutil.SetupRootDir()
+			if err != nil {
+				t.Fatalf("error creating root dir: %v", err)
+			}
+			defer cleanupRoot()
+			conf.RootDir = rootDir
+
+			// A sandbox spec has no process and no rootfs.
+			spec := &specs.Spec{
+				Version: specs.Version,
+				Annotations: map[string]string{
+					specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeSandbox,
+				},
+			}
+			bundleDir, cleanupBundle, err := testutil.SetupBundleDir(spec)
+			if err != nil {
+				t.Fatalf("error setting up bundle: %v", err)
+			}
+			defer cleanupBundle()
+
+			args := tc.args
+			args.ID = testutil.RandomContainerID()
+			args.Spec = spec
+			args.BundleDir = bundleDir
+			args.NoRootContainer = true
+
+			c, err := New(conf, args)
+			if err == nil {
+				c.Destroy()
+				t.Fatalf("New() succeeded, want error containing %q", tc.wantErr)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("New() error = %v, want it to contain %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
 // TestCheckpointRestore does the checkpoint/restore test on each platform.
 func TestCheckpointRestore(t *testing.T) {
 	// Skip overlay because test requires writing to host file.
