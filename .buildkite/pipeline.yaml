@@ -225,7 +225,7 @@ steps:
       - make sudo TARGETS=//tools/gpu:main ARGS="install --latest"
       - make cuda-12-8-tests
     agents:
-      queue: gpu
+      queue: l4-gpu
   - <<: *common
     <<: *gpu_test
     label: ":screwdriver: All GPU Drivers Test"
