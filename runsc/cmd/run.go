@@ -88,7 +88,7 @@ func (r *Run) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Sp
 	if r.bundleDir == "" {
 		r.bundleDir = getwdOrDie()
 	}
-	spec, err := specutils.ReadSpec(r.bundleDir, conf)
+	spec, err := specutils.ReadSpec(r.bundleDir, conf, r.sandboxOnly)
 	if err != nil {
 		return "", nil, fmt.Errorf("reading spec: %w", err)
 	}
@@ -123,8 +123,12 @@ func (r *Run) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomman
 	}
 	specutils.LogSpecDebug(spec, conf.OCISeccomp)
 
-	if err := validateProcessSpec(spec.Process); err != nil {
-		return util.Errorf("invalid process spec: %v", err)
+	// A sandbox-only spec has no process; ValidateSpec has already required its
+	// absence.
+	if !r.sandboxOnly {
+		if err := validateProcessSpec(spec.Process); err != nil {
+			return util.Errorf("invalid process spec: %v", err)
+		}
 	}
 
 	// Create files from file descriptors.
@@ -168,6 +172,7 @@ func (r *Run) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomman
 		ExecFile:           execFile,
 		FSRestoreImagePath: r.fsRestoreImagePath,
 		FSRestoreDirect:    r.fsRestoreDirect,
+		SandboxOnly:        r.sandboxOnly,
 	}
 	ws, err := container.Run(conf, runArgs)
 	if err != nil {

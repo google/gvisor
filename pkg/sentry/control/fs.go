@@ -140,7 +140,10 @@ func (f *fdReader) Read(p []byte) (int, error) {
 func cat(k *kernel.Kernel, path string, output *os.File) error {
 	ctx := k.SupervisorContext()
 	creds := auth.NewRootCredentials(k.RootUserNamespace())
-	mns := k.GlobalInit().Leader().MountNamespace()
+	mns := k.GlobalInitMountNamespace()
+	if mns == nil {
+		return fmt.Errorf("cannot read file %s: sandbox has no root mount namespace", path)
+	}
 	root := mns.Root(ctx)
 	defer root.DecRef(ctx)
 

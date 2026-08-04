@@ -231,7 +231,10 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 
 	if initArgs.MountNamespace == nil {
 		// Set initArgs so that 'ctx' returns the namespace.
-		initArgs.MountNamespace = proc.Kernel.GlobalInit().Leader().MountNamespace()
+		initArgs.MountNamespace = proc.Kernel.GlobalInitMountNamespace()
+		if initArgs.MountNamespace == nil {
+			return nil, 0, nil, fmt.Errorf("cannot exec: sandbox has no root mount namespace")
+		}
 	}
 	// initArgs must hold a reference on MountNamespace, which will
 	// be donated to the new process in CreateProcess.

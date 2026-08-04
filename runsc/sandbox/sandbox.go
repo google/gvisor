@@ -211,6 +211,10 @@ type Sandbox struct {
 	// StartTime is the time the sandbox was started.
 	StartTime time.Time `json:"startTime"`
 
+	// SandboxOnly is true if the sandbox was booted without a root container.
+	// See Args.SandboxOnly.
+	SandboxOnly bool `json:"sandboxOnly"`
+
 	// rootDir is the same as config.Config.RootDir. It represents the runtime
 	// root directory being used by the current runsc invocation. It's not saved
 	// to json, because the RootDir can change across runsc invocations.
@@ -317,6 +321,11 @@ type Args struct {
 	// open filesystem checkpoint files using O_DIRECT.
 	FSRestoreImagePath string
 	FSRestoreDirect    bool
+
+	// SandboxOnly boots the sandbox without a root container. Spec describes
+	// only the sandbox, so no gofer FDs are donated and no root process is
+	// created. See container.Args.SandboxOnly.
+	SandboxOnly bool
 }
 
 // New creates the sandbox process. The caller must call Destroy() on the
@@ -333,6 +342,7 @@ func New(conf *config.Config, args *Args) (*Sandbox, error) {
 		MetricServerAddress: conf.MetricServer,
 		MountHints:          args.MountHints,
 		StartTime:           starttime.Get(),
+		SandboxOnly:         args.SandboxOnly,
 	}
 	if args.Spec != nil && args.Spec.Annotations != nil {
 		s.PodName = args.Spec.Annotations[podNameAnnotation]
@@ -976,6 +986,9 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	//
 	// All flags after this must be for the boot command
 	cmd.Args = append(cmd.Args, "boot", "--bundle="+args.BundleDir)
+	if args.SandboxOnly {
+		cmd.Args = append(cmd.Args, "--sandbox-only")
+	}
 
 	if conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
 		// --TESTONLY-unsafe-nonroot is set, so keep env.
@@ -1013,8 +1026,12 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		return fmt.Errorf("donating rootfs tar file: %w", err)
 	}
 
-	// Pass gofer mount configs.
-	cmd.Args = append(cmd.Args, "--gofer-mount-confs="+args.GoferMountConfs.String())
+	// Pass gofer mount configs. There are none when there is no gofer, e.g. for
+	// a sandbox-only sandbox. Passing the flag with an empty value would fail to
+	// parse, so skip it entirely.
+	if len(args.GoferMountConfs) > 0 {
+		cmd.Args = append(cmd.Args, "--gofer-mount-confs="+args.GoferMountConfs.String())
+	}
 
 	// Create a socket for the control server and donate it to the sandbox.
 	controlSocketPath, sockFD, err := createControlSocket(conf.RootDir, s.ID)
@@ -1239,7 +1256,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 
 	// If the console control socket file is provided, then create a new
 	// pty master/replica pair and set the TTY on the sandbox process.
-	if args.Spec.Process.Terminal && args.ConsoleSocket != "" {
+	if args.Spec.Process != nil && args.Spec.Process.Terminal && args.ConsoleSocket != "" {
 		// console.NewWithSocket will send the master on the given
 		// socket, and return the replica.
 		tty, err := console.NewWithSocket(args.ConsoleSocket)
@@ -1425,6 +1442,11 @@ func SandboxUserGroupIDs(spec *specs.Spec) (uint32, uint32) {
 	uid := uint32(0)
 	gid := uint32(0)
 
+	// A sandbox-only spec has no process, so there is no user to run as.
+	if spec.Process == nil {
+		return uid, gid
+	}
+
 	if !rootMappedInContainer(spec.Linux.UIDMappings) {
 		uid = spec.Process.User.UID
 	}
@@ -1481,6 +1503,13 @@ func (s *Sandbox) Wait(cid string) (unix.WaitStatus, error) {
 		return unix.WaitStatus(0), err
 	}
 	if !s.child {
+		if s.SandboxOnly && s.IsRootContainer(cid) {
+			// A sandbox-only sandbox has no root container process, so the only exit
+			// status it could report is its own -- and since we did not fork it,
+			// Linux will not tell us what that was. The sandbox being gone is what
+			// the caller is really waiting for, so report that as a clean exit.
+			return unix.WaitStatus(0), nil
+		}
 		return unix.WaitStatus(0), fmt.Errorf("sandbox no longer running and its exit status is unavailable")
 	}
 

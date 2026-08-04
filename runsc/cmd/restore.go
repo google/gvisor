@@ -163,7 +163,7 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 
 		// Read the spec from the bundle directory.
 		if r.spec == nil {
-			if r.spec, err = specutils.ReadSpec(bundleDir, conf); err != nil {
+			if r.spec, err = specutils.ReadSpec(bundleDir, conf, false /* sandboxOnly */); err != nil {
 				return util.Errorf("reading spec: %v", err)
 			}
 		}
