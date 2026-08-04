@@ -57,6 +57,10 @@ type cgroupSystemd struct {
 	dbusConn   *systemdDbus.Conn
 }
 
+type systemdManagerPropertyGetter interface {
+	GetManagerProperty(string) (string, error)
+}
+
 func newCgroupV2Systemd(cgv2 *cgroupV2) (*cgroupSystemd, error) {
 	if !isRunningSystemd() {
 		return nil, fmt.Errorf("systemd not running on host")
@@ -261,10 +265,10 @@ func isRunningSystemd() bool {
 	return systemdCheck.cache
 }
 
-func systemdVersion(conn *systemdDbus.Conn) (int, error) {
+func systemdVersion(conn systemdManagerPropertyGetter) (int, error) {
 	vStr, err := conn.GetManagerProperty("Version")
 	if err != nil {
-		return -1, errors.New("unable to get systemd version")
+		return -1, fmt.Errorf("unable to get systemd version: %w", err)
 	}
 	// vStr should be of the form:
 	// "v245.4-1.fc32", "245", "v245-1.fc32", "245-1.fc32" (without quotes).
