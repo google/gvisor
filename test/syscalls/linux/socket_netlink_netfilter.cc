@@ -1834,52 +1834,352 @@ TEST(NetlinkNetfilterTest, ErrChainWithNoNameAndChainBindingFlagNotSet) {
   ASSERT_NO_ERRNO(NetfilterFlushRuleset(fd));
 }
 
-TEST(NetlinkNetfilterTest, ErrUnsupportedUpdateChain) {
-  // TODO: b/434243967 - Remove when updating existing chains are supported.
-  SKIP_IF(!IsRunningOnGvisor());
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCaps()));
-  std::string test_table_name = GetUniqueTestTableName();
-  const char test_chain_name[] = "test_chain_invalid_update";
-  const uint32_t test_chain_flags = 0;
-  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
+class NetlinkNetfilterChainUpdateTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCaps()));
+    fd_ = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
+    test_table_name_ = GetUniqueTestTableName();
+    AddDefaultTable({.fd = fd_, .table_name = test_table_name_, .seq = kSeq});
+  }
 
-  std::vector<char> add_request_buffer =
-      NlBatchReq()
-          .SeqStart(kSeq)
-          .Req(NlReq("newtable req ack inet")
-                   .Seq(kSeq + 1)
-                   .StrAttr(NFTA_TABLE_NAME, test_table_name)
-                   .Build())
-          .Req(NlReq("newchain req ack inet")
-                   .Seq(kSeq + 2)
-                   .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
-                   .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
-                   .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
-                   .Build())
-          .SeqEnd(kSeq + 3)
-          .Build();
+  void TearDown() override {
+    if (fd_.get() >= 0 && !test_table_name_.empty()) {
+      // Clean up table and ruleset automatically regardless of test outcome.
+      EXPECT_NO_ERRNO(DestroyNetfilterTable(fd_, test_table_name_, kSeq + 100));
+      EXPECT_NO_ERRNO(NetfilterFlushRuleset(fd_));
+    }
+  }
 
-  std::vector<char> update_chain_request_buffer =
+  // Helper methods inside the fixture for concise chain creation and checks:
+  void AddBaseChain(absl::string_view chain_name, uint32_t seq,
+                    uint32_t hook_priority = 0,
+                    uint32_t flags = NFT_CHAIN_BASE) {
+    AddDefaultBaseChain({.fd = fd_,
+                         .table_name = test_table_name_,
+                         .chain_name = std::string(chain_name),
+                         .seq = seq,
+                         .chain_type = "filter",
+                         .hook_num = NF_INET_PRE_ROUTING,
+                         .hook_priority = hook_priority,
+                         .flags = flags,
+                         .family_name = "inet"});
+  }
+
+  void AddRegularChain(absl::string_view chain_name, uint32_t seq,
+                       uint32_t flags = 0, uint32_t chain_id = 0) {
+    AddDefaultRegularChain({.fd = fd_,
+                            .table_name = test_table_name_,
+                            .chain_name = std::string(chain_name),
+                            .seq = seq,
+                            .flags = flags,
+                            .chain_id = chain_id,
+                            .family_name = "inet"});
+  }
+
+  uint64_t GetHandle(absl::string_view chain_name, uint32_t seq) {
+    auto res = GetChainHandle(fd_, test_table_name_, chain_name, seq);
+    EXPECT_NO_ERRNO(res);
+    return res.ok() ? res.ValueOrDie() : 0;
+  }
+
+  void VerifyPolicy(absl::string_view chain_name, uint32_t expected_policy,
+                    uint32_t seq) {
+    VerifyChainPolicy(fd_, test_table_name_, chain_name, expected_policy, seq);
+  }
+
+  FileDescriptor fd_;
+  std::string test_table_name_;
+};
+
+TEST_F(NetlinkNetfilterChainUpdateTest, UpdateBaseChainPolicy) {
+  const char test_chain_name[] = "test_base_chain_policy";
+
+  AddBaseChain(test_chain_name, kSeq + 3, /*hook_priority=*/10);
+
+  // 1. Update policy to NF_DROP.
+  std::vector<char> update_drop =
       NlBatchReq()
-          .SeqStart(kSeq + 4)
+          .SeqStart(kSeq + 6)
           .Req(NlReq("newchain req ack inet")
-                   .Seq(kSeq + 5)
-                   .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
-                   .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
+                   .Seq(kSeq + 7)
+                   .StrAttr(NFTA_CHAIN_TABLE, test_table_name_)
                    .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+                   .U32Attr(NFTA_CHAIN_POLICY, NF_DROP)
                    .Build())
-          .SeqEnd(kSeq + 6)
+          .SeqEnd(kSeq + 8)
           .Build();
 
   ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
-      fd, kSeq, kSeq + 3, add_request_buffer.data(),
-      add_request_buffer.size()));
+      fd_, kSeq + 6, kSeq + 8, update_drop.data(), update_drop.size()));
 
-  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
-                  fd, kSeq + 4, kSeq + 6, update_chain_request_buffer.data(),
-                  update_chain_request_buffer.size()),
-              PosixErrorIs(ENOTSUP, _));
+  VerifyPolicy(test_chain_name, NF_DROP, kSeq + 9);
+
+  // 2. Update policy back to NF_ACCEPT.
+  std::vector<char> update_accept =
+      NlBatchReq()
+          .SeqStart(kSeq + 10)
+          .Req(NlReq("newchain req ack inet")
+                   .Seq(kSeq + 11)
+                   .StrAttr(NFTA_CHAIN_TABLE, test_table_name_)
+                   .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+                   .U32Attr(NFTA_CHAIN_POLICY, NF_ACCEPT)
+                   .Build())
+          .SeqEnd(kSeq + 12)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd_, kSeq + 10, kSeq + 12, update_accept.data(), update_accept.size()));
+
+  VerifyPolicy(test_chain_name, NF_ACCEPT, kSeq + 13);
 }
+
+TEST_F(NetlinkNetfilterChainUpdateTest, UpdateChainRename) {
+  const char test_chain_orig[] = "chain_orig";
+  const char test_chain_renamed[] = "chain_renamed";
+
+  AddRegularChain(test_chain_orig, kSeq + 3);
+
+  uint64_t chain_handle = GetHandle(test_chain_orig, kSeq + 6);
+
+  // Rename chain using NFTA_CHAIN_HANDLE and NFTA_CHAIN_NAME.
+  std::vector<char> rename_req =
+      NlBatchReq()
+          .SeqStart(kSeq + 7)
+          .Req(NlReq("newchain req ack inet")
+                   .Seq(kSeq + 8)
+                   .StrAttr(NFTA_CHAIN_TABLE, test_table_name_)
+                   .U64Attr(NFTA_CHAIN_HANDLE, chain_handle)
+                   .StrAttr(NFTA_CHAIN_NAME, test_chain_renamed)
+                   .Build())
+          .SeqEnd(kSeq + 9)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd_, kSeq + 7, kSeq + 9, rename_req.data(), rename_req.size()));
+
+  // Verify chain_renamed exists
+  uint64_t chain_renamed_handle = GetHandle(test_chain_renamed, kSeq + 10);
+  EXPECT_EQ(chain_handle, chain_renamed_handle);
+
+  // Verify chain_orig no longer exists.
+  std::vector<char> get_chain_orig_req =
+      NlReq("getchain req inet")
+          .Seq(kSeq + 12)
+          .StrAttr(NFTA_CHAIN_TABLE, test_table_name_)
+          .StrAttr(NFTA_CHAIN_NAME, test_chain_orig)
+          .Build();
+
+  ASSERT_THAT(
+      NetlinkRequestAckOrError(fd_, kSeq + 12, get_chain_orig_req.data(),
+                               get_chain_orig_req.size()),
+      PosixErrorIs(ENOENT, _));
+}
+
+TEST_F(NetlinkNetfilterChainUpdateTest, UpdateChainPreservesOtherChains) {
+  const char chain_a[] = "chain_a";
+  const char chain_b[] = "chain_b";
+  const char chain_c_orig[] = "chain_c_orig";
+  const char chain_c_renamed[] = "chain_c_renamed";
+
+  AddBaseChain(chain_a, kSeq + 3, /*hook_priority=*/10);
+  AddBaseChain(chain_b, kSeq + 6, /*hook_priority=*/20);
+  AddRegularChain(chain_c_orig, kSeq + 9);
+
+  // 1. Update chain_a policy to NF_DROP.
+  std::vector<char> update_a_req =
+      NlBatchReq()
+          .SeqStart(kSeq + 12)
+          .Req(NlReq("newchain req ack inet")
+                   .Seq(kSeq + 13)
+                   .StrAttr(NFTA_CHAIN_TABLE, test_table_name_)
+                   .StrAttr(NFTA_CHAIN_NAME, chain_a)
+                   .U32Attr(NFTA_CHAIN_POLICY, NF_DROP)
+                   .Build())
+          .SeqEnd(kSeq + 14)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd_, kSeq + 12, kSeq + 14, update_a_req.data(), update_a_req.size()));
+
+  uint64_t chain_c_handle = GetHandle(chain_c_orig, kSeq + 15);
+
+  // 2. Rename chain_c_orig to chain_c_renamed.
+  std::vector<char> rename_c_req =
+      NlBatchReq()
+          .SeqStart(kSeq + 18)
+          .Req(NlReq("newchain req ack inet")
+                   .Seq(kSeq + 19)
+                   .StrAttr(NFTA_CHAIN_TABLE, test_table_name_)
+                   .U64Attr(NFTA_CHAIN_HANDLE, chain_c_handle)
+                   .StrAttr(NFTA_CHAIN_NAME, chain_c_renamed)
+                   .Build())
+          .SeqEnd(kSeq + 20)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd_, kSeq + 18, kSeq + 20, rename_c_req.data(), rename_c_req.size()));
+
+  // Verify that modifying chain_a did not affect chain_b.
+  VerifyPolicy(chain_b, NF_ACCEPT, kSeq + 21);
+
+  // Verify chain_a policy is NF_DROP.
+  VerifyPolicy(chain_a, NF_DROP, kSeq + 22);
+}
+
+struct ChainUpdateErrorParam {
+  std::string test_name;
+  bool is_base_chain;
+  std::function<std::vector<char>(const std::string& table_name,
+                                  const std::string& chain_name, uint32_t seq,
+                                  uint64_t chain_handle)>
+      build_update_req;
+  int expected_error;
+  bool gvisor_only = false;
+};
+
+class NetlinkNetfilterChainUpdateErrorTest
+    : public NetlinkNetfilterChainUpdateTest,
+      public ::testing::WithParamInterface<ChainUpdateErrorParam> {};
+
+TEST_P(NetlinkNetfilterChainUpdateErrorTest, InvalidChainUpdates) {
+  const ChainUpdateErrorParam& param = GetParam();
+  if (param.gvisor_only) {
+    SKIP_IF(!IsRunningOnGvisor());
+  }
+
+  const std::string chain_name = "test_err_chain";
+  if (param.is_base_chain) {
+    AddBaseChain(chain_name, kSeq + 3);
+  } else {
+    AddRegularChain(
+        chain_name, kSeq + 3,
+        param.test_name == "UpdateBindingChain" ? NFT_CHAIN_BINDING : 0,
+        param.test_name == "UpdateBindingChain" ? 10 : 0);
+  }
+
+  uint64_t chain_handle = 0;
+  if (param.test_name == "DuplicateRename") {
+    AddRegularChain("chain_dup_2", kSeq + 6);
+    chain_handle = GetHandle(chain_name, kSeq + 9);
+  }
+
+  std::vector<char> update_req = param.build_update_req(
+      test_table_name_, chain_name, kSeq + 12, chain_handle);
+
+  ASSERT_THAT(
+      NetlinkNetfilterBatchRequestAckOrError(
+          fd_, kSeq + 12, kSeq + 14, update_req.data(), update_req.size()),
+      PosixErrorIs(param.expected_error, _));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    ChainUpdateErrors, NetlinkNetfilterChainUpdateErrorTest,
+    ::testing::Values(
+        ChainUpdateErrorParam{
+            .test_name = "RegularChainPolicyNotSupported",
+            .is_base_chain = false,
+            .build_update_req =
+                [](const std::string& table, const std::string& chain,
+                   uint32_t seq, uint64_t handle) {
+                  return NlBatchReq()
+                      .SeqStart(seq)
+                      .Req(NlReq("newchain req ack inet")
+                               .Seq(seq + 1)
+                               .StrAttr(NFTA_CHAIN_TABLE, table)
+                               .StrAttr(NFTA_CHAIN_NAME, chain)
+                               .U32Attr(NFTA_CHAIN_POLICY, NF_DROP)
+                               .Build())
+                      .SeqEnd(seq + 2)
+                      .Build();
+                },
+            .expected_error = ENOTSUP,
+        },
+        ChainUpdateErrorParam{
+            .test_name = "DuplicateRename",
+            .is_base_chain = false,
+            .build_update_req =
+                [](const std::string& table, const std::string& chain,
+                   uint32_t seq, uint64_t handle) {
+                  return NlBatchReq()
+                      .SeqStart(seq)
+                      .Req(NlReq("newchain req ack inet")
+                               .Seq(seq + 1)
+                               .StrAttr(NFTA_CHAIN_TABLE, table)
+                               .U64Attr(NFTA_CHAIN_HANDLE, handle)
+                               .StrAttr(NFTA_CHAIN_NAME, "chain_dup_2")
+                               .Build())
+                      .SeqEnd(seq + 2)
+                      .Build();
+                },
+            .expected_error = EEXIST,
+        },
+        ChainUpdateErrorParam{
+            .test_name = "RegularChainWithHook",
+            .is_base_chain = false,
+            .build_update_req =
+                [](const std::string& table, const std::string& chain,
+                   uint32_t seq, uint64_t handle) {
+                  std::vector<char> nested_hook_data =
+                      NlNestedAttr()
+                          .U32Attr(NFTA_HOOK_HOOKNUM, NF_INET_PRE_ROUTING)
+                          .U32Attr(NFTA_HOOK_PRIORITY, 0)
+                          .Build();
+                  return NlBatchReq()
+                      .SeqStart(seq)
+                      .Req(NlReq("newchain req ack inet")
+                               .Seq(seq + 1)
+                               .StrAttr(NFTA_CHAIN_TABLE, table)
+                               .StrAttr(NFTA_CHAIN_NAME, chain)
+                               .RawAttr(NFTA_CHAIN_HOOK,
+                                        nested_hook_data.data(),
+                                        nested_hook_data.size())
+                               .Build())
+                      .SeqEnd(seq + 2)
+                      .Build();
+                },
+            .expected_error = EEXIST,
+        },
+        ChainUpdateErrorParam{
+            .test_name = "ChainUpdateExclusiveExists",
+            .is_base_chain = false,
+            .build_update_req =
+                [](const std::string& table, const std::string& chain,
+                   uint32_t seq, uint64_t handle) {
+                  return NlBatchReq()
+                      .SeqStart(seq)
+                      .Req(NlReq("newchain req ack create excl inet")
+                               .Seq(seq + 1)
+                               .StrAttr(NFTA_CHAIN_TABLE, table)
+                               .StrAttr(NFTA_CHAIN_NAME, chain)
+                               .Build())
+                      .SeqEnd(seq + 2)
+                      .Build();
+                },
+            .expected_error = EEXIST,
+        },
+        ChainUpdateErrorParam{
+            .test_name = "ChainUpdateFlagsNotSupported",
+            .is_base_chain = false,
+            .build_update_req =
+                [](const std::string& table, const std::string& chain,
+                   uint32_t seq, uint64_t handle) {
+                  return NlBatchReq()
+                      .SeqStart(seq)
+                      .Req(NlReq("newchain req ack inet")
+                               .Seq(seq + 1)
+                               .StrAttr(NFTA_CHAIN_TABLE, table)
+                               .StrAttr(NFTA_CHAIN_NAME, chain)
+                               .U32Attr(NFTA_CHAIN_FLAGS, NFT_CHAIN_HW_OFFLOAD)
+                               .Build())
+                      .SeqEnd(seq + 2)
+                      .Build();
+                },
+            .expected_error = EOPNOTSUPP,
+        }),
+    [](const ::testing::TestParamInfo<ChainUpdateErrorParam>& info) {
+      return info.param.test_name;
+    });
 
 struct AnonymousChainTestParam {
   std::string test_name;
@@ -5052,6 +5352,230 @@ INSTANTIATE_TEST_SUITE_P(CTRuleTest, AddRuleWithExprTest,
                            return info.param.test_name;
                          });
 }  // namespace
+
+// Restored non-parameterized complex tests
+TEST(NetlinkNetfilterTest, ErrUpdateBaseChainHookMismatch) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCaps()));
+  std::string test_table_name = GetUniqueTestTableName();
+  const char base_chain_name[] = "base_chain_hook";
+  const char reg_chain_name[] = "reg_chain_hook";
+  const uint32_t test_hook_num = NF_INET_PRE_ROUTING;
+  const uint32_t test_hook_priority = 0;
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
+
+  std::vector<char> nested_hook_data =
+      NlNestedAttr()
+          .U32Attr(NFTA_HOOK_HOOKNUM, test_hook_num)
+          .U32Attr(NFTA_HOOK_PRIORITY, test_hook_priority)
+          .Build();
+
+  std::vector<char> add_request_buffer =
+      NlBatchReq()
+          .SeqStart(kSeq)
+          .Req(NlReq("newtable req ack inet")
+                   .Seq(kSeq + 1)
+                   .StrAttr(NFTA_TABLE_NAME, test_table_name)
+                   .Build())
+          .Req(NlReq("newchain req ack inet")
+                   .Seq(kSeq + 2)
+                   .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+                   .StrAttr(NFTA_CHAIN_NAME, base_chain_name)
+                   .U32Attr(NFTA_CHAIN_POLICY, NF_ACCEPT)
+                   .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
+                            nested_hook_data.size())
+                   .StrAttr(NFTA_CHAIN_TYPE, "filter")
+                   .U32Attr(NFTA_CHAIN_FLAGS, NFT_CHAIN_BASE)
+                   .Build())
+          .Req(NlReq("newchain req ack inet")
+                   .Seq(kSeq + 3)
+                   .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+                   .StrAttr(NFTA_CHAIN_NAME, reg_chain_name)
+                   .Build())
+          .SeqEnd(kSeq + 4)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq, kSeq + 4, add_request_buffer.data(),
+      add_request_buffer.size()));
+
+  // 1. Attempt to update base chain with mismatched hook priority
+  // (1 instead of 0).
+  std::vector<char> mismatched_hook_data =
+      NlNestedAttr()
+          .U32Attr(NFTA_HOOK_HOOKNUM, test_hook_num)
+          .U32Attr(NFTA_HOOK_PRIORITY, 1)
+          .Build();
+
+  std::vector<char> update_mismatched_base_req =
+      NlBatchReq()
+          .SeqStart(kSeq + 5)
+          .Req(NlReq("newchain req ack inet")
+                   .Seq(kSeq + 6)
+                   .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+                   .StrAttr(NFTA_CHAIN_NAME, base_chain_name)
+                   .RawAttr(NFTA_CHAIN_HOOK, mismatched_hook_data.data(),
+                            mismatched_hook_data.size())
+                   .Build())
+          .SeqEnd(kSeq + 7)
+          .Build();
+
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
+                  fd, kSeq + 5, kSeq + 7, update_mismatched_base_req.data(),
+                  update_mismatched_base_req.size()),
+              PosixErrorIs(EOPNOTSUPP, _));
+
+  // 2. Attempt to add NFTA_CHAIN_HOOK to non-base chain.
+  std::vector<char> update_reg_with_hook_req =
+      NlBatchReq()
+          .SeqStart(kSeq + 8)
+          .Req(NlReq("newchain req ack inet")
+                   .Seq(kSeq + 9)
+                   .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+                   .StrAttr(NFTA_CHAIN_NAME, reg_chain_name)
+                   .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
+                            nested_hook_data.size())
+                   .Build())
+          .SeqEnd(kSeq + 10)
+          .Build();
+
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
+                  fd, kSeq + 8, kSeq + 10, update_reg_with_hook_req.data(),
+                  update_reg_with_hook_req.size()),
+              PosixErrorIs(EEXIST, _));
+
+  ASSERT_NO_ERRNO(DestroyNetfilterTable(fd, test_table_name, kSeq + 11));
+  ASSERT_NO_ERRNO(NetfilterFlushRuleset(fd));
+}
+
+TEST(NetlinkNetfilterTest, ErrUpdateBindingChain) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCaps()));
+  std::string test_table_name = GetUniqueTestTableName();
+  const uint32_t test_chain_flags = NFT_CHAIN_BINDING;
+  const uint32_t test_chain_id = 10;
+  const std::string test_base_chain_name = "test_base_chain";
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
+
+  std::vector<char> rule_expr_data = NlImmExpr()
+                                         .Dreg(NFT_REG_VERDICT)
+                                         .VerdictCode(NFT_JUMP)
+                                         .VerdictChainId(test_chain_id)
+                                         .VerdictBuild();
+  std::vector<char> list_expr_data = NlListAttr().Add(rule_expr_data).Build();
+
+  std::vector<char> add_request_buffer =
+      NlBatchReq()
+          .SeqStart(kSeq)
+          .Req(NlReq("newtable req ack inet")
+                   .Seq(kSeq + 1)
+                   .StrAttr(NFTA_TABLE_NAME, test_table_name)
+                   .Build())
+          .Req(NlReq("newchain req ack inet")
+                   .Seq(kSeq + 2)
+                   .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+                   .StrAttr(NFTA_CHAIN_NAME, test_base_chain_name)
+                   .Build())
+          .Req(NlReq("newchain req ack inet")
+                   .Seq(kSeq + 3)
+                   .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+                   .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
+                   .U32Attr(NFTA_CHAIN_ID, test_chain_id)
+                   .Build())
+          .Req(NlReq("newrule req ack create inet")
+                   .Seq(kSeq + 4)
+                   .StrAttr(NFTA_RULE_TABLE, test_table_name)
+                   .StrAttr(NFTA_RULE_CHAIN, test_base_chain_name)
+                   .RawAttr(NFTA_RULE_EXPRESSIONS, list_expr_data.data(),
+                            list_expr_data.size())
+                   .Build())
+          .SeqEnd(kSeq + 5)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq, kSeq + 5, add_request_buffer.data(),
+      add_request_buffer.size()));
+
+  // Attempt to update bound chain.
+  std::vector<char> update_req_buffer =
+      NlBatchReq()
+          .SeqStart(kSeq + 6)
+          .Req(NlReq("newchain req ack inet")
+                   .Seq(kSeq + 7)
+                   .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+                   .U32Attr(NFTA_CHAIN_ID, test_chain_id)
+                   .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
+                   .Build())
+          .SeqEnd(kSeq + 8)
+          .Build();
+
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(fd, kSeq + 6, kSeq + 8,
+                                                     update_req_buffer.data(),
+                                                     update_req_buffer.size()),
+              PosixErrorIs(EINVAL, _));
+
+  ASSERT_NO_ERRNO(DestroyNetfilterTable(fd, test_table_name, kSeq + 9));
+  ASSERT_NO_ERRNO(NetfilterFlushRuleset(fd));
+}
+
+TEST(NetlinkNetfilterTest, ErrUpdateChainWithCounters) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCaps()));
+  SKIP_IF(!IsRunningOnGvisor());
+  std::string test_table_name = GetUniqueTestTableName();
+  const char base_chain_name[] = "chain_counters_test";
+  const uint32_t test_hook_num = NF_INET_PRE_ROUTING;
+  const uint32_t test_hook_priority = 0;
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
+
+  std::vector<char> nested_hook_data =
+      NlNestedAttr()
+          .U32Attr(NFTA_HOOK_HOOKNUM, test_hook_num)
+          .U32Attr(NFTA_HOOK_PRIORITY, test_hook_priority)
+          .Build();
+
+  std::vector<char> add_request_buffer =
+      NlBatchReq()
+          .SeqStart(kSeq)
+          .Req(NlReq("newtable req ack inet")
+                   .Seq(kSeq + 1)
+                   .StrAttr(NFTA_TABLE_NAME, test_table_name)
+                   .Build())
+          .Req(NlReq("newchain req ack inet")
+                   .Seq(kSeq + 2)
+                   .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+                   .StrAttr(NFTA_CHAIN_NAME, base_chain_name)
+                   .U32Attr(NFTA_CHAIN_POLICY, NF_ACCEPT)
+                   .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
+                            nested_hook_data.size())
+                   .StrAttr(NFTA_CHAIN_TYPE, "filter")
+                   .U32Attr(NFTA_CHAIN_FLAGS, NFT_CHAIN_BASE)
+                   .Build())
+          .SeqEnd(kSeq + 3)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq, kSeq + 3, add_request_buffer.data(),
+      add_request_buffer.size()));
+
+  // Update base chain passing NFTA_CHAIN_COUNTERS
+  std::vector<char> update_counter_req =
+      NlBatchReq()
+          .SeqStart(kSeq + 4)
+          .Req(NlReq("newchain req ack inet")
+                   .Seq(kSeq + 5)
+                   .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+                   .StrAttr(NFTA_CHAIN_NAME, base_chain_name)
+                   .RawAttr(NFTA_CHAIN_COUNTERS, nullptr, 0)
+                   .Build())
+          .SeqEnd(kSeq + 6)
+          .Build();
+
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(fd, kSeq + 4, kSeq + 6,
+                                                     update_counter_req.data(),
+                                                     update_counter_req.size()),
+              PosixErrorIs(ENOTSUP, _));
+
+  ASSERT_NO_ERRNO(DestroyNetfilterTable(fd, test_table_name, kSeq + 7));
+  ASSERT_NO_ERRNO(NetfilterFlushRuleset(fd));
+}
 
 }  // namespace testing
 }  // namespace gvisor

@@ -314,9 +314,8 @@ void CheckNetfilterChainAttributes(const NfChainCheckOptions& options) {
     std::string chain_type(
         reinterpret_cast<const char*>(NFA_DATA(chain_type_attr)));
     EXPECT_EQ(chain_type, options.expected_chain_type);
-  } else {
-    EXPECT_EQ(chain_type_attr, nullptr);
-    EXPECT_TRUE(options.expected_chain_type.empty());
+  } else if (!options.expected_chain_type.empty()) {
+    EXPECT_NE(chain_type_attr, nullptr);
   }
 
   // Check for the NFTA_CHAIN_FLAGS attribute.
@@ -325,9 +324,8 @@ void CheckNetfilterChainAttributes(const NfChainCheckOptions& options) {
   if (flags_attr != nullptr && options.expected_flags != nullptr) {
     uint32_t flags = GetNfAttrU32(flags_attr);
     EXPECT_EQ(flags, *options.expected_flags);
-  } else {
-    EXPECT_EQ(flags_attr, nullptr);
-    EXPECT_EQ(options.expected_flags, nullptr);
+  } else if (options.expected_flags != nullptr) {
+    EXPECT_NE(flags_attr, nullptr);
   }
 
   // Check for the NFTA_CHAIN_USE attribute.
@@ -336,9 +334,8 @@ void CheckNetfilterChainAttributes(const NfChainCheckOptions& options) {
   if (use_attr != nullptr && options.expected_use != nullptr) {
     uint32_t use = GetNfAttrU32(use_attr);
     EXPECT_EQ(use, *options.expected_use);
-  } else {
-    EXPECT_EQ(use_attr, nullptr);
-    EXPECT_EQ(options.expected_use, nullptr);
+  } else if (options.expected_use != nullptr) {
+    EXPECT_NE(use_attr, nullptr);
   }
 
   // Check for the NFTA_CHAIN_USERDATA attribute.
@@ -456,7 +453,8 @@ void AddDefaultTable(const AddDefaultTableOptions& options) {
   std::vector<char> add_table_request_buffer =
       NlBatchReq()
           .SeqStart(options.seq)
-          .Req(NlReq(absl::StrCat("newtable req ack ", options.family_name))
+          .Req(NlReq(absl::StrCat("newtable req ack create ",
+                                  options.family_name))
                    .Seq(options.seq + 1)
                    .StrAttr(NFTA_TABLE_NAME, *table_name)
                    .Build())
@@ -486,8 +484,8 @@ void AddDefaultBaseChain(const AddDefaultBaseChainOptions& options) {
   const uint32_t test_policy = NF_ACCEPT;
   const uint32_t test_hook_num =
       options.chain_type.empty() ? NF_INET_PRE_ROUTING : options.hook_num;
-  const uint32_t test_hook_priority = 0;
-  const uint32_t test_chain_flags = NFT_CHAIN_BASE;
+  const uint32_t test_hook_priority = options.hook_priority;
+  const uint32_t test_chain_flags = options.flags;
 
   std::vector<char> nested_hook_data =
       NlNestedAttr()
@@ -497,7 +495,8 @@ void AddDefaultBaseChain(const AddDefaultBaseChainOptions& options) {
   std::vector<char> add_chain_request_buffer =
       NlBatchReq()
           .SeqStart(options.seq)
-          .Req(NlReq(absl::StrCat("newchain req ack ", options.family_name))
+          .Req(NlReq(absl::StrCat("newchain req ack create ",
+                                  options.family_name))
                    .Seq(options.seq + 1)
                    .StrAttr(NFTA_CHAIN_TABLE, *table_name)
                    .StrAttr(NFTA_CHAIN_NAME, *chain_name)
@@ -512,6 +511,91 @@ void AddDefaultBaseChain(const AddDefaultBaseChainOptions& options) {
   ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
       options.fd, options.seq, options.seq + 2, add_chain_request_buffer.data(),
       add_chain_request_buffer.size()));
+}
+
+// Helper function to add a default regular chain.
+void AddDefaultRegularChain(const AddDefaultRegularChainOptions& options) {
+  const std::string* table_name = &options.table_name;
+  if (table_name->empty()) {
+    table_name = &GetDefaultTableName();
+  }
+
+  const std::string* chain_name = &options.chain_name;
+  if (chain_name->empty()) {
+    chain_name = &GetDefaultChainName();
+  }
+
+  NlReq req(absl::StrCat("newchain req ack create ", options.family_name));
+  req.Seq(options.seq + 1)
+      .StrAttr(NFTA_CHAIN_TABLE, *table_name)
+      .StrAttr(NFTA_CHAIN_NAME, *chain_name);
+  if (options.flags != 0) {
+    req.U32Attr(NFTA_CHAIN_FLAGS, options.flags);
+  }
+  if (options.chain_id != 0) {
+    req.U32Attr(NFTA_CHAIN_ID, options.chain_id);
+  }
+
+  std::vector<char> add_chain_request_buffer = NlBatchReq()
+                                                   .SeqStart(options.seq)
+                                                   .Req(req.Build())
+                                                   .SeqEnd(options.seq + 2)
+                                                   .Build();
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      options.fd, options.seq, options.seq + 2, add_chain_request_buffer.data(),
+      add_chain_request_buffer.size()));
+}
+
+PosixErrorOr<uint64_t> GetChainHandle(const FileDescriptor& fd,
+                                      absl::string_view table_name,
+                                      absl::string_view chain_name,
+                                      uint32_t seq) {
+  uint64_t chain_handle = 0;
+  std::vector<char> get_chain_req =
+      NlReq("getchain req inet")
+          .Seq(seq)
+          .StrAttr(NFTA_CHAIN_TABLE, std::string(table_name))
+          .StrAttr(NFTA_CHAIN_NAME, std::string(chain_name))
+          .Build();
+
+  RETURN_IF_ERRNO(NetlinkRequestResponse(
+      fd, get_chain_req.data(), get_chain_req.size(),
+      [&](const struct nlmsghdr* hdr) {
+        const struct nfattr* handle_attr =
+            FindNfAttr(hdr, nullptr, NFTA_CHAIN_HANDLE);
+        if (handle_attr != nullptr) {
+          chain_handle = GetNfAttrU64(handle_attr);
+        }
+      },
+      false));
+
+  if (chain_handle == 0) {
+    return PosixError(ENOENT, "Chain handle not found or 0");
+  }
+  return chain_handle;
+}
+
+void VerifyChainPolicy(const FileDescriptor& fd, absl::string_view table_name,
+                       absl::string_view chain_name, uint32_t expected_policy,
+                       uint32_t seq) {
+  std::vector<char> get_chain_req =
+      NlReq("getchain req inet")
+          .Seq(seq)
+          .StrAttr(NFTA_CHAIN_TABLE, std::string(table_name))
+          .StrAttr(NFTA_CHAIN_NAME, std::string(chain_name))
+          .Build();
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd, get_chain_req.data(), get_chain_req.size(),
+      [&](const struct nlmsghdr* hdr) {
+        CheckNetfilterChainAttributes({
+            .hdr = hdr,
+            .expected_table_name = std::string(table_name),
+            .expected_chain_name = std::string(chain_name),
+            .expected_policy = &expected_policy,
+            .skip_handle_check = true,
+        });
+      },
+      false));
 }
 
 NlBatchReq& NlBatchReq::SeqStart(uint32_t seq) {

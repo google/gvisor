@@ -33,7 +33,9 @@
 #include <string>
 #include <vector>
 
+#include "absl/strings/string_view.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/posix_error.h"
 
 namespace gvisor {
 namespace testing {
@@ -118,6 +120,18 @@ struct AddDefaultBaseChainOptions {
   uint32_t seq;
   std::string chain_type;
   uint32_t hook_num;
+  uint32_t hook_priority = 0;
+  uint32_t flags = NFT_CHAIN_BASE;
+  std::string family_name = "inet";
+};
+
+struct AddDefaultRegularChainOptions {
+  const FileDescriptor& fd;
+  std::string table_name;
+  std::string chain_name;
+  uint32_t seq;
+  uint32_t flags = 0;
+  uint32_t chain_id = 0;
   std::string family_name = "inet";
 };
 
@@ -145,8 +159,22 @@ void CheckNetfilterRuleAttributes(const struct NfRuleCheckOptions& options);
 // Helper function to add a default table.
 void AddDefaultTable(const AddDefaultTableOptions& options);
 
-// Helper function to add a default chain.
+// Helper function to add a default base chain.
 void AddDefaultBaseChain(const AddDefaultBaseChainOptions& options);
+
+// Helper function to add a default regular chain.
+void AddDefaultRegularChain(const AddDefaultRegularChainOptions& options);
+
+// Helper function to get chain handle.
+PosixErrorOr<uint64_t> GetChainHandle(const FileDescriptor& fd,
+                                      absl::string_view table_name,
+                                      absl::string_view chain_name,
+                                      uint32_t seq);
+
+// Helper function to verify chain policy.
+void VerifyChainPolicy(const FileDescriptor& fd, absl::string_view table_name,
+                       absl::string_view chain_name, uint32_t expected_policy,
+                       uint32_t seq);
 
 // Helper function to get set elements.
 PosixErrorOr<std::vector<ElementDescriptor>> GetSetElements(
