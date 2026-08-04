@@ -424,6 +424,12 @@ func TransformSystemdPath(path, cid string, rootless bool) (string, error) {
 	}
 	parts := strings.SplitN(path, ":", 4)
 	if len(parts) != 3 {
+		if filepath.IsAbs(path) {
+			return "", fmt.Errorf("--systemd-cgroup requires cgroupsPath to use "+
+				"\"slice:prefix:name\" form, got cgroupfs path %q; leave "+
+				"--systemd-cgroup disabled when the container manager passes "+
+				"cgroupfs paths", path)
+		}
 		return "", fmt.Errorf("invalid systemd path: %q", path)
 	}
 	slice, prefix, name := parts[0], parts[1], parts[2]
