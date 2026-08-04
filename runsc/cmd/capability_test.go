@@ -148,5 +148,6 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "Error running as root: %v", err)
 		os.Exit(123)
 	}
+	ownNetNS = runInOwnNetNS()
 	os.Exit(m.Run())
 }
