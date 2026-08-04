@@ -19,15 +19,23 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
+
+// newRunRootDir returns a runtime root directory, deleted at test cleanup.
+func newRunRootDir(t *testing.T) string {
+	t.Helper()
+	runRootDir := t.TempDir()
+	t.Cleanup(func() { specutils.UnmountNullNetNS(runRootDir) })
+	return runRootDir
+}
 
 func TestEnvVars(t *testing.T) {
 	if err := testutil.ConfigureExePath(); err != nil {
@@ -36,8 +44,6 @@ func TestEnvVars(t *testing.T) {
 
 	stop := testutil.StartReaper()
 	defer stop()
-
-	rootDir := t.TempDir()
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -102,10 +108,7 @@ func TestEnvVars(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			runRootDir := filepath.Join(rootDir, tc.name)
-			if err := os.MkdirAll(runRootDir, 0755); err != nil {
-				t.Fatalf("creating root dir: %v", err)
-			}
+			runRootDir := newRunRootDir(t)
 
 			args := append([]string{
 				"--root", runRootDir,
@@ -142,8 +145,6 @@ func TestUserAndGroup(t *testing.T) {
 
 	stop := testutil.StartReaper()
 	defer stop()
-
-	rootDir := t.TempDir()
 
 	tests := []struct {
 		name      string
@@ -200,10 +201,7 @@ func TestUserAndGroup(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			runRootDir := filepath.Join(rootDir, tc.name)
-			if err := os.MkdirAll(runRootDir, 0755); err != nil {
-				t.Fatalf("creating root dir: %v", err)
-			}
+			runRootDir := newRunRootDir(t)
 
 			args := append([]string{
 				"--root", runRootDir,
@@ -244,8 +242,6 @@ func TestHostname(t *testing.T) {
 	stop := testutil.StartReaper()
 	defer stop()
 
-	rootDir := t.TempDir()
-
 	tests := []struct {
 		name       string
 		bwrapArgs  []string
@@ -265,10 +261,7 @@ func TestHostname(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			runRootDir := filepath.Join(rootDir, tc.name)
-			if err := os.MkdirAll(runRootDir, 0755); err != nil {
-				t.Fatalf("creating root dir: %v", err)
-			}
+			runRootDir := newRunRootDir(t)
 
 			args := append([]string{
 				"--root", runRootDir,
@@ -300,8 +293,6 @@ func TestProc(t *testing.T) {
 	stop := testutil.StartReaper()
 	defer stop()
 
-	rootDir := t.TempDir()
-
 	tests := []struct {
 		name       string
 		bwrapArgs  []string
@@ -322,10 +313,7 @@ func TestProc(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			runRootDir := filepath.Join(rootDir, tc.name)
-			if err := os.MkdirAll(runRootDir, 0755); err != nil {
-				t.Fatalf("creating root dir: %v", err)
-			}
+			runRootDir := newRunRootDir(t)
 
 			args := append([]string{
 				"--root", runRootDir,
