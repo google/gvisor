@@ -110,10 +110,11 @@ func TestWaitForReadyTimeout(t *testing.T) {
 
 func TestSpecInvalid(t *testing.T) {
 	for _, test := range []struct {
-		name  string
-		spec  specs.Spec
-		conf  config.Config
-		error string
+		name        string
+		spec        specs.Spec
+		conf        config.Config
+		sandboxOnly bool
+		error       string
 	}{
 		{
 			name: "valid",
@@ -310,8 +311,65 @@ func TestSpecInvalid(t *testing.T) {
 			},
 			error: "rootfs tar upper path is set but rootfs is readonly",
 		},
+		{
+			// A sandbox-only spec carries no process to run and no rootfs to
+			// serve, only sandbox-wide settings.
+			name: "sandbox-only valid",
+			spec: specs.Spec{
+				Hostname: "pod",
+				Linux: &specs.Linux{
+					CgroupsPath: "/kubepods/pod123",
+					Namespaces: []specs.LinuxNamespace{
+						{Type: specs.NetworkNamespace, Path: "/var/run/netns/cni-1"},
+					},
+				},
+			},
+			sandboxOnly: true,
+			error:       "",
+		},
+		{
+			name: "sandbox-only with process",
+			spec: specs.Spec{
+				Process: &specs.Process{
+					Args: []string{"/bin/true"},
+				},
+			},
+			sandboxOnly: true,
+			error:       "Spec.Process must not be defined",
+		},
+		{
+			name: "sandbox-only with root",
+			spec: specs.Spec{
+				Root: &specs.Root{Path: "/"},
+			},
+			sandboxOnly: true,
+			error:       "Spec.Root must not be defined",
+		},
+		{
+			// Skipping the process and rootfs checks must not skip the checks
+			// that follow them.
+			name: "sandbox-only still validates mounts",
+			spec: specs.Spec{
+				Mounts: []specs.Mount{
+					{
+						Source:      "src",
+						Destination: "dst", // Not absolute.
+					},
+				},
+			},
+			sandboxOnly: true,
+			error:       "Mount.Destination must be an absolute path",
+		},
+		{
+			name: "sandbox-only rejects unsupported fields",
+			spec: specs.Spec{
+				Windows: &specs.Windows{},
+			},
+			sandboxOnly: true,
+			error:       "Spec.Windows is not supported",
+		},
 	} {
-		err := ValidateSpec(&test.spec, &test.conf)
+		err := ValidateSpec(&test.spec, &test.conf, test.sandboxOnly)
 		if len(test.error) == 0 {
 			if err != nil {
 				t.Errorf("ValidateSpec(%q) failed, err: %v", test.name, err)

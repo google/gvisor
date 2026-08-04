@@ -134,19 +134,34 @@ func LogSpecCustomLogger(orig *specs.Spec, logSeccomp bool, logf func(format str
 }
 
 // ValidateSpec validates that the spec is compatible with runsc.
-func ValidateSpec(spec *specs.Spec, conf *config.Config) error {
-	// Mandatory fields.
-	if spec.Process == nil {
-		return fmt.Errorf("Spec.Process must be defined: %+v", spec)
-	}
-	if len(spec.Process.Args) == 0 {
-		return fmt.Errorf("Spec.Process.Arg must be defined: %+v", spec.Process)
-	}
-	if spec.Root == nil {
-		return fmt.Errorf("Spec.Root must be defined: %+v", spec)
-	}
-	if len(spec.Root.Path) == 0 {
-		return fmt.Errorf("Spec.Root.Path must be defined: %+v", spec.Root)
+//
+// sandboxOnly indicates that the spec describes a sandbox that is booted
+// without a root container, in which case it carries no process to run and no
+// rootfs to serve. See Loader.sandboxOnly in runsc/boot/loader.go.
+func ValidateSpec(spec *specs.Spec, conf *config.Config, sandboxOnly bool) error {
+	// Mandatory fields. A sandbox-only spec has neither a process nor a rootfs;
+	// requiring their absence rather than merely tolerating it keeps the spec
+	// honest, since boot.New silently ignores both in that mode.
+	if sandboxOnly {
+		if spec.Process != nil {
+			return fmt.Errorf("Spec.Process must not be defined for a sandbox-only spec: %+v", spec.Process)
+		}
+		if spec.Root != nil {
+			return fmt.Errorf("Spec.Root must not be defined for a sandbox-only spec: %+v", spec.Root)
+		}
+	} else {
+		if spec.Process == nil {
+			return fmt.Errorf("Spec.Process must be defined: %+v", spec)
+		}
+		if len(spec.Process.Args) == 0 {
+			return fmt.Errorf("Spec.Process.Arg must be defined: %+v", spec.Process)
+		}
+		if spec.Root == nil {
+			return fmt.Errorf("Spec.Root must be defined: %+v", spec)
+		}
+		if len(spec.Root.Path) == 0 {
+			return fmt.Errorf("Spec.Root.Path must be defined: %+v", spec.Root)
+		}
 	}
 
 	// Unsupported fields.
@@ -156,13 +171,15 @@ func ValidateSpec(spec *specs.Spec, conf *config.Config) error {
 	if spec.Windows != nil {
 		return fmt.Errorf("Spec.Windows is not supported: %+v", spec)
 	}
-	if len(spec.Process.SelinuxLabel) != 0 {
-		return fmt.Errorf("SELinux is not supported: %s", spec.Process.SelinuxLabel)
-	}
+	if spec.Process != nil {
+		if len(spec.Process.SelinuxLabel) != 0 {
+			return fmt.Errorf("SELinux is not supported: %s", spec.Process.SelinuxLabel)
+		}
 
-	// Docker uses AppArmor by default, so just log that it's being ignored.
-	if spec.Process.ApparmorProfile != "" {
-		log.Warningf("AppArmor profile %q is being ignored", spec.Process.ApparmorProfile)
+		// Docker uses AppArmor by default, so just log that it's being ignored.
+		if spec.Process.ApparmorProfile != "" {
+			log.Warningf("AppArmor profile %q is being ignored", spec.Process.ApparmorProfile)
+		}
 	}
 
 	if spec.Linux != nil && spec.Linux.RootfsPropagation != "" {
@@ -180,6 +197,9 @@ func ValidateSpec(spec *specs.Spec, conf *config.Config) error {
 	if path := RootfsTarUpperPath(spec); path != "" {
 		if !conf.AllowRootfsTarAnnotation {
 			return fmt.Errorf("rootfs tar annotation is disabled, use --allow-rootfs-tar-annotation to enable it")
+		}
+		if spec.Root == nil {
+			return fmt.Errorf("rootfs tar upper path is set but Spec.Root is not defined")
 		}
 		if spec.Root.Readonly {
 			return fmt.Errorf("rootfs tar upper path is set but rootfs is readonly")
@@ -221,13 +241,13 @@ func OpenSpec(bundleDir string) (*os.File, error) {
 // ReadSpec reads an OCI runtime spec from the given bundle directory.
 // ReadSpec also normalizes all potential relative paths into absolute
 // path, e.g. spec.Root.Path, mount.Source.
-func ReadSpec(bundleDir string, conf *config.Config) (*specs.Spec, error) {
+func ReadSpec(bundleDir string, conf *config.Config, sandboxOnly bool) (*specs.Spec, error) {
 	specFile, err := OpenSpec(bundleDir)
 	if err != nil {
 		return nil, fmt.Errorf("error opening spec file %q: %v", filepath.Join(bundleDir, "config.json"), err)
 	}
 	defer specFile.Close()
-	return ReadSpecFromFile(bundleDir, specFile, conf)
+	return ReadSpecFromFile(bundleDir, specFile, conf, sandboxOnly)
 }
 
 // ReadSpecFromFile reads an OCI runtime spec from the given file. It also fixes
@@ -236,7 +256,7 @@ func ReadSpec(bundleDir string, conf *config.Config) (*specs.Spec, error) {
 //     dir to them.
 //  2. Looks for flag overrides and applies them if any.
 //  3. Removes seccomp rules if `RuntimeDefault` was used.
-func ReadSpecFromFile(bundleDir string, specFile *os.File, conf *config.Config) (*specs.Spec, error) {
+func ReadSpecFromFile(bundleDir string, specFile *os.File, conf *config.Config, sandboxOnly bool) (*specs.Spec, error) {
 	if _, err := specFile.Seek(0, io.SeekStart); err != nil {
 		return nil, fmt.Errorf("error seeking to beginning of file %q: %v", specFile.Name(), err)
 	}
@@ -254,7 +274,7 @@ func ReadSpecFromFile(bundleDir string, specFile *os.File, conf *config.Config) 
 			log.Warningf("OCI spec file %q contains fields unknown to `runsc`: %v. Ignoring these fields and continuing anyway.", specFile.Name(), errStrictDecode)
 		}
 	}
-	if err := ValidateSpec(&spec, conf); err != nil {
+	if err := ValidateSpec(&spec, conf, sandboxOnly); err != nil {
 		return nil, err
 	}
 	if err := fixSpec(&spec, bundleDir, conf); err != nil {
@@ -265,7 +285,10 @@ func ReadSpecFromFile(bundleDir string, specFile *os.File, conf *config.Config) 
 
 func fixSpec(spec *specs.Spec, bundleDir string, conf *config.Config) error {
 	// Turn any relative paths in the spec to absolute by prepending the bundleDir.
-	spec.Root.Path = absPath(bundleDir, spec.Root.Path)
+	// A sandbox-only spec has no rootfs.
+	if spec.Root != nil {
+		spec.Root.Path = absPath(bundleDir, spec.Root.Path)
+	}
 	for i := range spec.Mounts {
 		m := &spec.Mounts[i]
 		if m.Source != "" {

@@ -114,6 +114,124 @@ func startContainersWithArgs(conf *config.Config, specs []*specs.Spec, ids []str
 	return containers, cu.Release(), nil
 }
 
+// TestMultiContainerSandboxOnly tests a sandbox booted without a root
+// container. Containers are added to it afterwards as subcontainers, and the
+// sandbox outlives all of them.
+func TestMultiContainerSandboxOnly(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	rootDir, cleanupRoot, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer cleanupRoot()
+	conf.RootDir = rootDir
+
+	sbID := testutil.RandomContainerID()
+
+	// A sandbox-only spec has neither a process to run nor a rootfs to serve.
+	sbSpec := &specs.Spec{
+		Version: specs.Version,
+		Annotations: map[string]string{
+			specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeSandbox,
+		},
+	}
+	sbBundle, cleanupBundle, err := testutil.SetupBundleDir(sbSpec)
+	if err != nil {
+		t.Fatalf("error setting up sandbox bundle: %v", err)
+	}
+	defer cleanupBundle()
+
+	sb, err := New(conf, Args{ID: sbID, Spec: sbSpec, BundleDir: sbBundle, SandboxOnly: true})
+	if err != nil {
+		t.Fatalf("error creating sandbox: %v", err)
+	}
+	t.Cleanup(func() { sb.Destroy() })
+	if err := sb.Start(conf); err != nil {
+		t.Fatalf("error starting sandbox: %v", err)
+	}
+	if !sb.IsSandboxRunning() {
+		t.Fatalf("sandbox is not running after start")
+	}
+
+	// startSub adds a subcontainer running sleepCmd to the sandbox.
+	startSub := func(t *testing.T, name string) *Container {
+		t.Helper()
+		spec := testutil.NewSpecWithArgs(sleepCmd...)
+		spec.Annotations = map[string]string{
+			specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeContainer,
+			specutils.ContainerdSandboxIDAnnotation:     sbID,
+		}
+		bundle, cleanupBundle, err := testutil.SetupBundleDir(spec)
+		if err != nil {
+			t.Fatalf("error setting up bundle for %s: %v", name, err)
+		}
+		t.Cleanup(cleanupBundle)
+
+		cont, err := New(conf, Args{ID: testutil.RandomContainerID(), Spec: spec, BundleDir: bundle})
+		if err != nil {
+			t.Fatalf("error creating %s: %v", name, err)
+		}
+		t.Cleanup(func() { cont.Destroy() })
+		if err := cont.Start(conf); err != nil {
+			t.Fatalf("error starting %s: %v", name, err)
+		}
+		return cont
+	}
+
+	// pidOf returns the in-sandbox PID of the container's only process.
+	pidOf := func(t *testing.T, name string, c *Container) int32 {
+		t.Helper()
+		pl, err := c.Processes()
+		if err != nil {
+			t.Fatalf("error getting processes of %s: %v", name, err)
+		}
+		if len(pl) != 1 {
+			t.Fatalf("got %d processes in %s, want 1: %v", len(pl), name, pl)
+		}
+		return int32(pl[0].PID)
+	}
+
+	// No container may get TID 1. It is reserved so that the PID namespace has
+	// no init and no container's exit can kill the rest of the pod. See
+	// PIDNamespace.ReserveInitTID.
+	c1 := startSub(t, "c1")
+	pid1 := pidOf(t, "c1", c1)
+	c2 := startSub(t, "c2")
+	pid2 := pidOf(t, "c2", c2)
+	if pid1 == 1 || pid2 == 1 {
+		t.Errorf("got PIDs %d and %d, want TID 1 to be reserved", pid1, pid2)
+	}
+	if pid1 == pid2 {
+		t.Errorf("both containers got PID %d, want distinct PIDs", pid1)
+	}
+
+	// Destroying the first container must take down neither the sandbox nor its
+	// peers, even though it is the one that became Kernel.globalInit.
+	if err := c1.Destroy(); err != nil {
+		t.Fatalf("error destroying c1: %v", err)
+	}
+	if !sb.IsSandboxRunning() {
+		t.Fatalf("sandbox stopped running after its first container was destroyed")
+	}
+	if got := pidOf(t, "c2", c2); got != pid2 {
+		t.Errorf("c2 PID changed from %d to %d after c1 was destroyed", pid2, got)
+	}
+
+	// An empty sandbox must still accept new containers. Loader.WaitExit must
+	// not call Kernel.WaitExited, which returns immediately when nothing is
+	// running and sets noNewTasksIfZeroLive.
+	if err := c2.Destroy(); err != nil {
+		t.Fatalf("error destroying c2: %v", err)
+	}
+	if !sb.IsSandboxRunning() {
+		t.Fatalf("sandbox stopped running after the last container was destroyed")
+	}
+	c3 := startSub(t, "c3")
+	if got := pidOf(t, "c3", c3); got == 1 {
+		t.Errorf("c3 got PID 1, want TID 1 to be reserved")
+	}
+}
+
 func TestMultiContainerTarRootfsUpperLayer(t *testing.T) {
 	conf := testutil.TestConfig(t)
 	conf.Overlay2.Set("all:memory")
