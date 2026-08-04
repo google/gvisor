@@ -110,10 +110,11 @@ func TestWaitForReadyTimeout(t *testing.T) {
 
 func TestSpecInvalid(t *testing.T) {
 	for _, test := range []struct {
-		name  string
-		spec  specs.Spec
-		conf  config.Config
-		error string
+		name            string
+		spec            specs.Spec
+		conf            config.Config
+		noRootContainer bool
+		error           string
 	}{
 		{
 			name: "valid",
@@ -310,8 +311,61 @@ func TestSpecInvalid(t *testing.T) {
 			},
 			error: "rootfs tar upper path is set but rootfs is readonly",
 		},
+		{
+			name: "sandbox spec",
+			spec: specs.Spec{
+				Hostname: "pod",
+				Linux: &specs.Linux{
+					CgroupsPath: "/kubepods/pod123",
+					Namespaces: []specs.LinuxNamespace{
+						{Type: specs.NetworkNamespace, Path: "/var/run/netns/cni-1"},
+					},
+				},
+			},
+			noRootContainer: true,
+			error:           "",
+		},
+		{
+			name: "sandbox spec with process",
+			spec: specs.Spec{
+				Process: &specs.Process{
+					Args: []string{"/bin/true"},
+				},
+			},
+			noRootContainer: true,
+			error:           "Spec.Process must not be defined",
+		},
+		{
+			name: "sandbox spec with root",
+			spec: specs.Spec{
+				Root: &specs.Root{Path: "/"},
+			},
+			noRootContainer: true,
+			error:           "Spec.Root must not be defined",
+		},
+		{
+			name: "sandbox spec still validates mounts",
+			spec: specs.Spec{
+				Mounts: []specs.Mount{
+					{
+						Source:      "src",
+						Destination: "dst", // Not absolute.
+					},
+				},
+			},
+			noRootContainer: true,
+			error:           "Mount.Destination must be an absolute path",
+		},
+		{
+			name: "sandbox spec rejects unsupported fields",
+			spec: specs.Spec{
+				Windows: &specs.Windows{},
+			},
+			noRootContainer: true,
+			error:           "Spec.Windows is not supported",
+		},
 	} {
-		err := ValidateSpec(&test.spec, &test.conf)
+		err := ValidateSpec(&test.spec, &test.conf, test.noRootContainer)
 		if len(test.error) == 0 {
 			if err != nil {
 				t.Errorf("ValidateSpec(%q) failed, err: %v", test.name, err)

@@ -132,6 +132,10 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		util.Fatalf("loading container failed: %v", err)
 	}
 
+	if c.Spec.Process == nil {
+		util.Fatalf("cannot exec in %q: it is a sandbox booted without a root container; exec into its containers by their own IDs instead", c.ID)
+	}
+
 	e, err := ex.parseArgs(f, c.Spec.Process, conf.EnableRaw)
 	if err != nil {
 		util.Fatalf("parsing process spec: %v", err)
