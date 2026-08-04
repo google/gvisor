@@ -1,7 +1,7 @@
-FROM ubuntu:jammy as build
+FROM ubuntu:jammy AS build
 
 # Install build dependencies:
-RUN apt-get update && apt-get install -y git build-essential libssl-dev libz-dev
+RUN apt-get update && apt-get install -y --no-install-recommends git build-essential libssl-dev libz-dev ca-certificates && rm -rf /var/lib/apt/lists/*
 
 # Clone repo at the commit ID we expect to patch:
 RUN git clone https://github.com/giltene/wrk2.git /tmp/wrk2 \
@@ -25,7 +25,7 @@ RUN cd /tmp/wrk2 && make
 FROM ubuntu:jammy
 RUN set -x \
         && apt-get update \
-        && apt-get install -y \
-           wget \
+        && apt-get install -y --no-install-recommends \
+           wget ca-certificates \
         && rm -rf /var/lib/apt/lists/*
 COPY --from=build /tmp/wrk2/wrk /bin/wrk2
