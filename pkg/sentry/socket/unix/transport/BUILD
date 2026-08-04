@@ -55,13 +55,13 @@ go_template_instance(
 )
 
 go_template_instance(
-    name = "host_connected_endpoint_refs",
-    out = "host_connected_endpoint_refs.go",
+    name = "host_sender_refs",
+    out = "host_sender_refs.go",
     package = "transport",
-    prefix = "HostConnectedEndpoint",
+    prefix = "HostSender",
     template = "//pkg/refs:refs_template",
     types = {
-        "T": "HostConnectedEndpoint",
+        "T": "HostSender",
     },
 )
 
@@ -74,8 +74,8 @@ go_library(
         "connectionless_state.go",
         "endpoint_mutex.go",
         "host.go",
-        "host_connected_endpoint_refs.go",
         "host_iovec.go",
+        "host_sender_refs.go",
         "host_unsafe.go",
         "queue.go",
         "queue_mutex.go",

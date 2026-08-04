@@ -20,7 +20,7 @@ import (
 )
 
 // afterLoad is invoked by stateify.
-func (c *HostConnectedEndpoint) afterLoad(context.Context) {
+func (c *HostSender) afterLoad(context.Context) {
 	if err := c.initFromOptions(); err != nil {
 		panic(fmt.Sprintf("initFromOptions failed: %v", err))
 	}
