@@ -348,7 +348,7 @@ func (fd *regularFileFD) Seek(ctx context.Context, offset int64, whence int32) (
 }
 
 // Sync implements vfs.FileDescriptionImpl.Sync.
-func (fd *regularFileFD) Sync(ctx context.Context) error {
+func (fd *regularFileFD) Sync(ctx context.Context, opts vfs.SyncOptions) error {
 	fd.mu.Lock()
 	if !fd.dentry().isCopiedUp() {
 		fd.mu.Unlock()
@@ -362,6 +362,9 @@ func (fd *regularFileFD) Sync(ctx context.Context) error {
 	wrappedFD.IncRef()
 	defer wrappedFD.DecRef(ctx)
 	fd.mu.Unlock()
+	if opts.DataOnly {
+		return wrappedFD.SyncData(ctx)
+	}
 	return wrappedFD.Sync(ctx)
 }
 

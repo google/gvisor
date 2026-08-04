@@ -477,6 +477,7 @@ func (e *baseEndpoint) StateFields() []string {
 		"receiver",
 		"connected",
 		"path",
+		"writeShutdown",
 		"ops",
 		"lastError",
 	}
@@ -492,8 +493,9 @@ func (e *baseEndpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &e.receiver)
 	stateSinkObject.Save(3, &e.connected)
 	stateSinkObject.Save(4, &e.path)
-	stateSinkObject.Save(5, &e.ops)
-	stateSinkObject.Save(6, &e.lastError)
+	stateSinkObject.Save(5, &e.writeShutdown)
+	stateSinkObject.Save(6, &e.ops)
+	stateSinkObject.Save(7, &e.lastError)
 }
 
 func (e *baseEndpoint) afterLoad(context.Context) {}
@@ -505,8 +507,9 @@ func (e *baseEndpoint) StateLoad(ctx context.Context, stateSourceObject state.So
 	stateSourceObject.Load(2, &e.receiver)
 	stateSourceObject.Load(3, &e.connected)
 	stateSourceObject.Load(4, &e.path)
-	stateSourceObject.Load(5, &e.ops)
-	stateSourceObject.Load(6, &e.lastError)
+	stateSourceObject.Load(5, &e.writeShutdown)
+	stateSourceObject.Load(6, &e.ops)
+	stateSourceObject.Load(7, &e.lastError)
 }
 
 func init() {

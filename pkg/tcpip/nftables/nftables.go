@@ -1080,7 +1080,7 @@ func (t *Table) deleteChain(c *Chain) bool {
 		if err := hfStack.detachBaseChain(c); err != nil {
 			panic(fmt.Sprintf("failed to detach base chain %s from hook %v: %v", c.GetName(), c.baseChainInfo.Hook, err))
 		}
-		if len(hfStack.baseChains) == 0 {
+		if len(hfStack.baseChains) == 0 && len(hfStack.natBaseChains) == 0 {
 			delete(t.afFilter.hfStacks, c.baseChainInfo.Hook)
 		}
 	}
@@ -1134,6 +1134,27 @@ func (t *Table) destroy() {
 // ChainCount returns the number of chains in the table.
 func (t *Table) ChainCount() int {
 	return len(t.chains)
+}
+
+// RenameChain renames an existing chain in the table.
+// Ref: net/netfilter/nf_tables_api.c:nf_tables_updchain()
+func (t *Table) RenameChain(c *Chain, newName string) *syserr.AnnotatedError {
+	currName := c.name
+	if currName == newName {
+		return nil
+	}
+	// Check for existing chain with a same name.
+	if existingChain, exists := t.chains[newName]; exists {
+		if existingChain != c {
+			return syserr.NewAnnotatedError(syserr.ErrExists, fmt.Sprintf("chain %s already exists for table %s", newName, t.name))
+		}
+		return nil
+	}
+
+	delete(t.chains, currName)
+	c.name = newName
+	t.chains[newName] = c
+	return nil
 }
 
 //
@@ -1231,6 +1252,18 @@ func (c *Chain) IncrementChainUse() bool {
 // Note: Returns nil if the chain is not a base chain.
 func (c *Chain) GetBaseChainInfo() *BaseChainInfo {
 	return c.baseChainInfo
+}
+
+// SetPolicy sets the policy for a base chain.
+func (c *Chain) SetPolicy(policy uint8) *syserr.AnnotatedError {
+	if !c.IsBaseChain() {
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("chain %s is not a base chain", c.name))
+	}
+	if policy != linux.NF_DROP && policy != linux.NF_ACCEPT {
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("invalid policy %d", policy))
+	}
+	c.baseChainInfo.PolicyDrop = (policy == linux.NF_DROP)
+	return nil
 }
 
 // SetBaseChainInfo attaches the specified chain to the netfilter pipeline (and

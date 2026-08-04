@@ -102,6 +102,20 @@ func (h *handle) sync(ctx context.Context) error {
 	return nil
 }
 
+func (h *handle) syncData(ctx context.Context) error {
+	if h.fd >= 0 {
+		ctx.UninterruptibleSleepStart()
+		err := unix.Fdatasync(int(h.fd))
+		ctx.UninterruptibleSleepFinish()
+		return err
+	}
+	if h.fdLisa.Ok() {
+		// Fallback to Sync since lisafs doesn't support SyncData yet.
+		return h.fdLisa.Sync(ctx)
+	}
+	return nil
+}
+
 type handleReadWriter struct {
 	ctx context.Context
 	h   handle

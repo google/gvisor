@@ -40,6 +40,24 @@ const (
 	cgroup2FsName = "cgroup2"
 )
 
+// mountLockFlags records which of a Mount's flags a remount may not clear. It
+// is analogous to the MNT_LOCK_* flags in Linux.
+//
+// +stateify savable
+type mountLockFlags struct {
+	// readOnly is analogous to MNT_LOCK_READONLY.
+	readOnly bool
+
+	// noExec is analogous to MNT_LOCK_NOEXEC.
+	noExec bool
+
+	// noDev is analogous to MNT_LOCK_NODEV.
+	noDev bool
+
+	// noSUID is analogous to MNT_LOCK_NOSUID.
+	noSUID bool
+}
+
 // A Mount is a replacement of a Dentry (Mount.key.point) from one Filesystem
 // (Mount.key.parent.fs) with a Dentry (Mount.root) from another Filesystem
 // (Mount.fs), which applies to path resolution in the context of a particular
@@ -123,6 +141,10 @@ type Mount struct {
 	// namespace. It is analogous to MNT_LOCKED in Linux.
 	locked bool
 
+	// lockedFlags contains the flags that RemountAt may not clear. lockedFlags
+	// is protected by VirtualFilesystem.mountMu.
+	lockedFlags mountLockFlags
+
 	// The lower 63 bits of writers is the number of calls to
 	// Mount.CheckBeginWrite() that have not yet been paired with a call to
 	// Mount.EndWrite(). The MSB of writers is set if MS_RDONLY is in effect.
@@ -160,14 +182,33 @@ func (mnt *Mount) Options() MountOptions {
 	}
 }
 
+// canChangeLockedFlags returns false if applying opts to mnt would clear any
+// of mnt's locked flags.
+//
+// Preconditions:
+//   - `vfs.mountMu` must be locked.
+//   - `opts` is non-nil.
+func (mnt *Mount) canChangeLockedFlags(opts *MountOptions) bool {
+	locked := mnt.lockedFlags
+	switch {
+	case locked.readOnly && !opts.ReadOnly:
+		return false
+	case locked.noExec && !opts.Flags.NoExec:
+		return false
+	case locked.noDev && !opts.Flags.NoDev:
+		return false
+	case locked.noSUID && !opts.Flags.NoSUID:
+		return false
+	}
+	return true
+}
+
 // setMountOptions sets mnt's options to the given opts.
 //
 // Preconditions:
-//   - vfs.mountMu must be locked.
+//   - `vfs.mountMu` must be locked.
+//   - `opts` is non-nil.
 func (mnt *Mount) setMountOptions(opts *MountOptions) error {
-	if opts == nil {
-		return linuxerr.EINVAL
-	}
 	if err := mnt.setReadOnlyLocked(opts.ReadOnly); err != nil {
 		return err
 	}
@@ -370,8 +411,11 @@ func (vfs *VirtualFilesystem) attachTreeLocked(ctx context.Context, mnt *Mount, 
 // +checklocks:vfs.mountMu
 func (vfs *VirtualFilesystem) lockMountTree(mnt *Mount) {
 	for _, m := range mnt.submountsLocked() {
-		// TODO(b/315839347): Add equivalents for MNT_LOCK_ATIME,
-		// MNT_LOCK_READONLY, etc.
+		// TODO(b/315839347): Add equivalents for MNT_LOCK_ATIME.
+		m.lockedFlags.readOnly = m.lockedFlags.readOnly || m.ReadOnlyLocked()
+		m.lockedFlags.noExec = m.lockedFlags.noExec || m.flags.NoExec
+		m.lockedFlags.noDev = m.lockedFlags.noDev || m.flags.NoDev
+		m.lockedFlags.noSUID = m.lockedFlags.noSUID || m.flags.NoSUID
 		m.locked = true
 	}
 }
@@ -617,6 +661,7 @@ func (vfs *VirtualFilesystem) cloneMount(mnt *Mount, root *Dentry, mopts *MountO
 	}
 	clone.isShared = mnt.isShared
 	clone.locked = mnt.locked
+	clone.lockedFlags = mnt.lockedFlags
 	if cloneType&makeFollowerClone != 0 || (cloneType&sharedToFollowerClone != 0 && mnt.isShared) {
 		mnt.followerList.PushFront(clone)
 		clone.leader = mnt
@@ -787,6 +832,12 @@ func (vfs *VirtualFilesystem) RemountAt(ctx context.Context, creds *auth.Credent
 	mnt := vd.Mount()
 	if !vfs.validInMountNS(ctx, mnt) {
 		return linuxerr.EINVAL
+	}
+	if opts == nil {
+		return linuxerr.EINVAL
+	}
+	if !mnt.canChangeLockedFlags(opts) {
+		return linuxerr.EPERM
 	}
 	if err := mnt.setMountOptions(opts); err != nil {
 		return err

@@ -326,6 +326,71 @@ func (p *Protocol) deleteTable(nft *nftables.NFTables, attrs map[uint16]nlmsg.By
 	return err
 }
 
+// updateChain updates an existing chain.
+// Ref: net/netfilter/nf_tables_api.c:nf_tables_updchain()
+func (p *Protocol) updateChain(nft *nftables.NFTables, tab *nftables.Table, chain *nftables.Chain, attrs map[uint16]nlmsg.BytesView, family stack.AddressFamily, flags uint16, policy uint8, updateFlags uint32) *syserr.AnnotatedError {
+	cf := uint32(chain.GetFlags())
+	if cf&linux.NFT_CHAIN_BINDING != 0 {
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "cannot update binding chains")
+	}
+	if flags&linux.NLM_F_EXCL != 0 {
+		return syserr.NewAnnotatedError(syserr.ErrExists, fmt.Sprintf("chain with handle: %d already exists and NLM_F_EXCL is set", chain.GetHandle()))
+	}
+	if flags&linux.NLM_F_REPLACE != 0 {
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("chain with handle: %d already exists and NLM_F_REPLACE is not supported", chain.GetHandle()))
+	}
+	isBaseChain := chain.IsBaseChain()
+	if isBaseChain {
+		updateFlags |= linux.NFT_CHAIN_BASE
+	}
+	if cf^updateFlags != 0 {
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, "updating chain flags is not supported")
+	}
+
+	// Only base chains support the hook attribute.
+	if hookDataBytes, ok := attrs[linux.NFTA_CHAIN_HOOK]; ok {
+		if !isBaseChain {
+			return syserr.NewAnnotatedError(syserr.ErrExists, "hook attribute specified for regular chain")
+		}
+
+		updateBCInfo, err := p.chainParseHook(family, nlmsg.AttrsView(hookDataBytes), attrs)
+		if err != nil {
+			return err
+		}
+
+		bcInfo := chain.GetBaseChainInfo()
+		if bcInfo.LinuxHookNum != updateBCInfo.LinuxHookNum || bcInfo.Priority.GetValue() != updateBCInfo.Priority.GetValue() || bcInfo.BcType != updateBCInfo.BcType {
+			return syserr.NewAnnotatedError(syserr.ErrExists, "updating hook, priority, or type of existing base chain is not supported")
+		}
+	}
+
+	// TODO: b/537802914 - Support chain counters.
+	if _, ok := attrs[linux.NFTA_CHAIN_COUNTERS]; ok {
+		if !chain.IsBaseChain() {
+			return syserr.NewAnnotatedError(syserr.ErrNotSupported, "chain counters attribute specified for non-base chain")
+		}
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, "chain counters attribute is unimplemented")
+	}
+
+	newNameBytes, updateName := attrs[linux.NFTA_CHAIN_NAME]
+	// Chain rename logic.
+	if updateName && nftables.HasAttr(linux.NFTA_CHAIN_HANDLE, attrs) {
+		newName := newNameBytes.String()
+		if err := tab.RenameChain(chain, newName); err != nil {
+			return err
+		}
+	}
+
+	// Update base chain policy.
+	if nftables.HasAttr(linux.NFTA_CHAIN_POLICY, attrs) {
+		if err := chain.SetPolicy(policy); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // newChain creates a new chain for the given family.
 func (p *Protocol) newChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesView, family stack.AddressFamily, flags uint16, ms *nlmsg.MessageSet) (*nftables.Chain, *syserr.AnnotatedError) {
 	tabNameBytes, ok := attrs[linux.NFTA_TABLE_NAME]
@@ -382,6 +447,8 @@ func (p *Protocol) newChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 		}
 		chainFlags = nlmsg.NetToHostU32(flagData)
 	} else if chain != nil {
+		// If NFTA_CHAIN_FLAGS is not provided in a chain update request,
+		// use the existing chain's flags.
 		chainFlags = uint32(chain.GetFlags())
 	}
 
@@ -391,16 +458,22 @@ func (p *Protocol) newChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 
 	// Update the chain if it exists.
 	if chain != nil {
-		if flags&linux.NLM_F_EXCL != 0 {
-			return nil, syserr.NewAnnotatedError(syserr.ErrExists, fmt.Sprintf("Nftables: Chain with handle: %d already exists and NLM_F_EXCL is set", chain.GetHandle()))
+		// Kernel returns different error codes based on when the hooks are parsed.
+		// Ref: net/netfilter/nf_tables_api.c:nft_chain_parse_hook()
+		if hookDataBytes, ok := attrs[linux.NFTA_CHAIN_HOOK]; ok {
+			if !chain.IsBaseChain() {
+				return nil, syserr.NewAnnotatedError(syserr.ErrExists, "hook attribute specified for regular chain")
+			}
+			updateBCInfo, err := p.chainParseHook(family, nlmsg.AttrsView(hookDataBytes), attrs)
+			if err != nil {
+				return nil, err
+			}
+			bcInfo := chain.GetBaseChainInfo()
+			if bcInfo.LinuxHookNum != updateBCInfo.LinuxHookNum || bcInfo.Priority.GetValue() != updateBCInfo.Priority.GetValue() {
+				return nil, syserr.NewAnnotatedError(syserr.ErrNotSupported, "updating hook or priority of existing base chain is not supported")
+			}
 		}
-
-		if flags&linux.NLM_F_REPLACE != 0 {
-			return nil, syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("Nftables: Chain with handle: %d already exists and NLM_F_REPLACE is not supported", chain.GetHandle()))
-		}
-
-		// TODO: b/434243967: Support updating existing chains.
-		return nil, syserr.NewAnnotatedError(syserr.ErrNotSupported, "Nftables: Chain flags attribute is not supported for existing chains")
+		return chain, p.updateChain(nft, tab, chain, attrs, family, flags, policy, chainFlags)
 	}
 
 	return p.addChain(nft, attrs, tab, family, policy, chainFlags)
@@ -445,10 +518,11 @@ func (p *Protocol) addChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 			return nil, syserr.NewAnnotatedError(syserr.ErrNotSupported, "Nftables: Chain binding attribute is not supported for chains with a hook")
 		}
 
-		bcInfo, err = p.chainParseHook(nil, family, nlmsg.AttrsView(hookDataBytes), attrs)
+		bcInfo, err = p.chainParseHook(family, nlmsg.AttrsView(hookDataBytes), attrs)
 		if err != nil {
 			return nil, err
 		}
+		chainFlags |= linux.NFT_CHAIN_BASE
 		// TODO: b/434243967 - support NFTA_CHAIN_COUNTERS (nested attribute)
 		if _, ok := attrs[linux.NFTA_CHAIN_COUNTERS]; ok {
 			return nil, syserr.NewAnnotatedError(syserr.ErrNotSupported, "Nftables: Chain counters attribute is currently not supported")
@@ -469,7 +543,6 @@ func (p *Protocol) addChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 		if chainFlags&linux.NFT_CHAIN_BINDING == 0 {
 			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Chain name attribute is not found and chain binding is not set")
 		}
-
 		name = fmt.Sprintf("__chain%d", chainCounter.Add(1))
 	}
 
@@ -496,17 +569,13 @@ func (p *Protocol) addChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 
 // chainParseHook parses the hook attributes and returns a complete
 // BaseChainInfo.
-func (p *Protocol) chainParseHook(chain *nftables.Chain, family stack.AddressFamily, hdata nlmsg.AttrsView, attrs map[uint16]nlmsg.BytesView) (*nftables.BaseChainInfo, *syserr.AnnotatedError) {
+func (p *Protocol) chainParseHook(family stack.AddressFamily, hdata nlmsg.AttrsView, attrs map[uint16]nlmsg.BytesView) (*nftables.BaseChainInfo, *syserr.AnnotatedError) {
 	hookAttrs, ok := nftables.NfParse(hdata)
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse hook attributes")
 	}
 
 	var hookInfo nftables.HookInfo
-	if chain != nil {
-		// TODO: b/434243967 - Support updating existing chains.
-		return nil, syserr.NewAnnotatedError(syserr.ErrNotSupported, "Nftables: Updating hook attributes are not supported for existing chains")
-	}
 
 	if !nftables.HasAttr(linux.NFTA_HOOK_HOOKNUM, hookAttrs) || !nftables.HasAttr(linux.NFTA_HOOK_PRIORITY, hookAttrs) {
 		return nil, syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, "Nftables: Hook attributes HOOK_HOOKNUM and/or HOOK_PRIORITY are not found")

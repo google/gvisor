@@ -26,6 +26,7 @@ import (
 	"github.com/moby/sys/capability"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/log"
 )
 
@@ -302,6 +303,24 @@ func MaybeRunAsRoot() error {
 	// Child completed with success.
 	os.Exit(0)
 	panic("unreachable")
+}
+
+// NullNetNSFilename is the name of the file (relative to `--root`)
+// that the shared empty ("null") gofer network namespace is
+// bind-mounted to.
+const NullNetNSFilename = "null-netns"
+
+// UnmountNullNetNS unmounts null gofer network namespace bind mounts under
+// `rootDir`, if any.
+// Must be called before removing a runtime root directory, which would
+// otherwise fail with `EBUSY`.
+func UnmountNullNetNS(rootDir string) {
+	// Namespace creation isn't serialized across invocations, so concurrent
+	// creations may stack bind mounts on the same path.
+	// So loop until none are left.
+	path := filepath.Join(rootDir, NullNetNSFilename)
+	for unix.Unmount(path, unix.MNT_DETACH) == nil {
+	}
 }
 
 // KnownNamespaces returns a list of all supported namespace types.

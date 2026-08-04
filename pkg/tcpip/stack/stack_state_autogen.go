@@ -244,6 +244,7 @@ func (cn *conn) StateFields() []string {
 		"destinationManip",
 		"tcb",
 		"lastUsed",
+		"replySeen",
 	}
 }
 
@@ -260,6 +261,7 @@ func (cn *conn) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &cn.destinationManip)
 	stateSinkObject.Save(6, &cn.tcb)
 	stateSinkObject.Save(7, &cn.lastUsed)
+	stateSinkObject.Save(8, &cn.replySeen)
 }
 
 func (cn *conn) afterLoad(context.Context) {}
@@ -274,6 +276,7 @@ func (cn *conn) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(5, &cn.destinationManip)
 	stateSourceObject.Load(6, &cn.tcb)
 	stateSourceObject.Load(7, &cn.lastUsed)
+	stateSourceObject.Load(8, &cn.replySeen)
 }
 
 func (ct *ConnTrack) StateTypeName() string {

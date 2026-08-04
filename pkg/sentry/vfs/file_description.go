@@ -336,6 +336,13 @@ func (fd *FileDescription) Impl() FileDescriptionImpl {
 	return fd.impl
 }
 
+// SyncOptions contains options for FileDescriptionImpl.Sync.
+type SyncOptions struct {
+	// DataOnly indicates that only file data (and necessary metadata to read data)
+	// needs to be synced, equivalent to fdatasync(2).
+	DataOnly bool
+}
+
 // FileDescriptionImpl contains implementation details for an FileDescription.
 // Implementations of FileDescriptionImpl should contain their associated
 // FileDescription by value as their first field.
@@ -465,7 +472,7 @@ type FileDescriptionImpl interface {
 	// Sync requests that cached state associated with the file represented by
 	// the FileDescription is synchronized with persistent storage, and blocks
 	// until this is complete.
-	Sync(ctx context.Context) error
+	Sync(ctx context.Context, opts SyncOptions) error
 
 	// ConfigureMMap mutates opts to implement mmap(2) for the file. Most
 	// implementations that support memory mapping can call
@@ -740,7 +747,12 @@ func (fd *FileDescription) Seek(ctx context.Context, offset int64, whence int32)
 
 // Sync has the semantics of fsync(2).
 func (fd *FileDescription) Sync(ctx context.Context) error {
-	return fd.impl.Sync(ctx)
+	return fd.impl.Sync(ctx, SyncOptions{DataOnly: false})
+}
+
+// SyncData has the semantics of fdatasync(2).
+func (fd *FileDescription) SyncData(ctx context.Context) error {
+	return fd.impl.Sync(ctx, SyncOptions{DataOnly: true})
 }
 
 // ConfigureMMap mutates opts to implement mmap(2) for the file represented by

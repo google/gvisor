@@ -1193,6 +1193,40 @@ func (fl *FileLocks) StateLoad(ctx context.Context, stateSourceObject state.Sour
 	stateSourceObject.Load(1, &fl.posix)
 }
 
+func (m *mountLockFlags) StateTypeName() string {
+	return "pkg/sentry/vfs.mountLockFlags"
+}
+
+func (m *mountLockFlags) StateFields() []string {
+	return []string{
+		"readOnly",
+		"noExec",
+		"noDev",
+		"noSUID",
+	}
+}
+
+func (m *mountLockFlags) beforeSave() {}
+
+// +checklocksignore
+func (m *mountLockFlags) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	stateSinkObject.Save(0, &m.readOnly)
+	stateSinkObject.Save(1, &m.noExec)
+	stateSinkObject.Save(2, &m.noDev)
+	stateSinkObject.Save(3, &m.noSUID)
+}
+
+func (m *mountLockFlags) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (m *mountLockFlags) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.readOnly)
+	stateSourceObject.Load(1, &m.noExec)
+	stateSourceObject.Load(2, &m.noDev)
+	stateSourceObject.Load(3, &m.noSUID)
+}
+
 func (mnt *Mount) StateTypeName() string {
 	return "pkg/sentry/vfs.Mount"
 }
@@ -1216,6 +1250,7 @@ func (mnt *Mount) StateFields() []string {
 		"groupID",
 		"umounted",
 		"locked",
+		"lockedFlags",
 		"writers",
 	}
 }
@@ -1244,7 +1279,8 @@ func (mnt *Mount) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(14, &mnt.groupID)
 	stateSinkObject.Save(15, &mnt.umounted)
 	stateSinkObject.Save(16, &mnt.locked)
-	stateSinkObject.Save(17, &mnt.writers)
+	stateSinkObject.Save(17, &mnt.lockedFlags)
+	stateSinkObject.Save(18, &mnt.writers)
 }
 
 // +checklocksignore
@@ -1265,7 +1301,8 @@ func (mnt *Mount) StateLoad(ctx context.Context, stateSourceObject state.Source)
 	stateSourceObject.Load(14, &mnt.groupID)
 	stateSourceObject.Load(15, &mnt.umounted)
 	stateSourceObject.Load(16, &mnt.locked)
-	stateSourceObject.Load(17, &mnt.writers)
+	stateSourceObject.Load(17, &mnt.lockedFlags)
+	stateSourceObject.Load(18, &mnt.writers)
 	stateSourceObject.LoadValue(5, new(VirtualDentry), func(y any) { mnt.loadKey(ctx, y.(VirtualDentry)) })
 	stateSourceObject.AfterLoad(func() { mnt.afterLoad(ctx) })
 }
@@ -2327,6 +2364,7 @@ func init() {
 	state.Register((*Watch)(nil))
 	state.Register((*Event)(nil))
 	state.Register((*FileLocks)(nil))
+	state.Register((*mountLockFlags)(nil))
 	state.Register((*Mount)(nil))
 	state.Register((*umountRecursiveOptions)(nil))
 	state.Register((*followerList)(nil))

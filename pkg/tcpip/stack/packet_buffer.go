@@ -482,6 +482,7 @@ func (pk *PacketBuffer) DeepCopyForForwarding(reservedHeaderBytes int) *PacketBu
 
 	newPk.tuple = pk.tuple
 	newPk.Mark = pk.Mark
+	newPk.InputNICID = pk.InputNICID
 
 	return newPk
 }

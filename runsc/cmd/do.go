@@ -494,7 +494,10 @@ func startContainerAndWait(spec *specs.Spec, conf *config.Config, cid string, wa
 	if err != nil {
 		return util.Errorf("Error to create tmp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		specutils.UnmountNullNetNS(tmpDir)
+		os.RemoveAll(tmpDir)
+	}()
 
 	log.Infof("Changing configuration RootDir to %q", tmpDir)
 	conf.RootDir = tmpDir
