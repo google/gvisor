@@ -752,8 +752,9 @@ const (
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080perf.h:
 const (
-	NV2080_CTRL_CMD_PERF_BOOST              = 0x2080200a
-	NV2080_CTRL_CMD_PERF_GET_CURRENT_PSTATE = 0x20802068
+	NV2080_CTRL_CMD_PERF_BOOST                              = 0x2080200a
+	NV2080_CTRL_CMD_PERF_GET_CURRENT_PSTATE                 = 0x20802068
+	NV2080_CTRL_CMD_PERF_GET_GPUMON_PERFMON_UTIL_SAMPLES_V2 = 0x20802096
 )
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080rc.h:
