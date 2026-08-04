@@ -15,8 +15,6 @@
 package kernel
 
 import (
-	"fmt"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
@@ -34,7 +32,7 @@ const SignalPanic = linux.SIGUSR2
 //
 // context is used only for debugging to differentiate these cases.
 //
-// Preconditions: Kernel must have an init process.
+// If the kernel has no init process, the signal is dropped.
 //
 // +checklocksexclude:k.tasks.mu
 // +checklocksexclude:k.globalInit.signalHandlers.mu
@@ -55,7 +53,8 @@ func (k *Kernel) sendExternalSignal(info *linux.SignalInfo, context string) {
 	default:
 		log.Infof("Received external signal %d in %s context", info.Signo, context)
 		if k.globalInit == nil {
-			panic(fmt.Sprintf("Received external signal %d before init created", info.Signo))
+			log.Warningf("Dropping external signal %d: sandbox has no init process", info.Signo)
+			return
 		}
 		k.globalInit.SendSignal(info)
 	}

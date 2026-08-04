@@ -57,6 +57,10 @@ type Create struct {
 	fsRestoreImagePath string
 	fsRestoreDirect    bool
 
+	// noRootContainer creates a sandbox with no root container: the spec holds
+	// sandbox-wide settings only and containers are added afterwards.
+	noRootContainer bool
+
 	// spec is the cached OCI spec.
 	spec *specs.Spec
 }
@@ -84,6 +88,7 @@ func (c *Create) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.userLog, "user-log", "", "filename to send user-visible logs to. Empty means no logging.")
 	f.StringVar(&c.fsRestoreImagePath, "fs-restore-image-path", "", "path to filesystem checkpoint to restore")
 	f.BoolVar(&c.fsRestoreDirect, "fs-restore-direct", false, "open files in fs-restore-image-path with O_DIRECT")
+	f.BoolVar(&c.noRootContainer, "no-root-container", false, "create a sandbox with no root container; the bundle spec describes only the sandbox and containers are added later as subcontainers")
 }
 
 // FetchSpec implements util.SubCommand.FetchSpec.
@@ -98,7 +103,7 @@ func (c *Create) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs
 	if c.bundleDir == "" {
 		c.bundleDir = getwdOrDie()
 	}
-	spec, err := specutils.ReadSpec(c.bundleDir, conf)
+	spec, err := specutils.ReadSpec(c.bundleDir, specutils.SpecOpts{Conf: conf, NoRootContainer: c.noRootContainer})
 	if err != nil {
 		return cid, nil, fmt.Errorf("reading spec: %w", err)
 	}
@@ -136,6 +141,7 @@ func (c *Create) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcom
 		UserLog:            c.userLog,
 		FSRestoreImagePath: c.fsRestoreImagePath,
 		FSRestoreDirect:    c.fsRestoreDirect,
+		NoRootContainer:    c.noRootContainer,
 	}
 	if _, err := container.New(conf, contArgs); err != nil {
 		return util.Errorf("creating container: %v", err)
