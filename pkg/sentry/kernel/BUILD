@@ -442,6 +442,7 @@ go_test(
     size = "small",
     srcs = [
         "fd_table_test.go",
+        "ptrace_mode_test.go",
         "table_test.go",
         "task_test.go",
         "timekeeper_test.go",
@@ -449,6 +450,7 @@ go_test(
     library = ":kernel",
     deps = [
         "//pkg/abi",
+        "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/errors/linuxerr",
         "//pkg/hostarch",
