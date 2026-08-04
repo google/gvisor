@@ -93,3 +93,12 @@ const (
 	YAMA_SCOPE_DISABLED   = 0
 	YAMA_SCOPE_RELATIONAL = 1
 )
+
+// ptrace access modes from include/uapi/linux/ptrace.h.
+const (
+	PTRACE_MODE_READ      = 0x01
+	PTRACE_MODE_ATTACH    = 0x02
+	PTRACE_MODE_NOAUDIT   = 0x04
+	PTRACE_MODE_FSCREDS   = 0x08
+	PTRACE_MODE_REALCREDS = 0x10
+)
