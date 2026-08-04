@@ -32,6 +32,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <iterator>
 #include <string>
 #include <utility>
 
@@ -214,31 +215,31 @@ void runReadWrite() {
 
   // Test different flavors of write.
   char msg[] = "hello world";
-  if (WriteFd(fd.get(), msg, ABSL_ARRAYSIZE(msg)) < 0) {
+  if (WriteFd(fd.get(), msg, std::size(msg)) < 0) {
     err(1, "write");
   }
-  if (PwriteFd(fd.get(), msg, ABSL_ARRAYSIZE(msg), 10) < 0) {
+  if (PwriteFd(fd.get(), msg, std::size(msg), 10) < 0) {
     err(1, "pwrite");
   }
 
   struct iovec write_vecs[] = {
       {
           .iov_base = msg,
-          .iov_len = ABSL_ARRAYSIZE(msg),
+          .iov_len = std::size(msg),
       },
       {
           .iov_base = msg,
-          .iov_len = ABSL_ARRAYSIZE(msg) / 2,
+          .iov_len = std::size(msg) / 2,
       },
   };
-  if (writev(fd.get(), write_vecs, ABSL_ARRAYSIZE(write_vecs)) < 0) {
+  if (writev(fd.get(), write_vecs, std::size(write_vecs)) < 0) {
     err(1, "writev");
   }
-  if (pwritev(fd.get(), write_vecs, ABSL_ARRAYSIZE(write_vecs), 10) < 0) {
+  if (pwritev(fd.get(), write_vecs, std::size(write_vecs), 10) < 0) {
     err(1, "pwritev");
   }
-  if (pwritev2(fd.get(), write_vecs, ABSL_ARRAYSIZE(write_vecs), 10,
-               RWF_HIPRI) < 0) {
+  if (pwritev2(fd.get(), write_vecs, std::size(write_vecs), 10, RWF_HIPRI) <
+      0) {
     err(1, "pwritev2");
   }
 
@@ -247,10 +248,10 @@ void runReadWrite() {
     err(1, "seek(0)");
   }
   char buf[1024];
-  if (ReadFd(fd.get(), buf, ABSL_ARRAYSIZE(buf)) < 0) {
+  if (ReadFd(fd.get(), buf, std::size(buf)) < 0) {
     err(1, "read");
   }
-  if (PreadFd(fd.get(), buf, ABSL_ARRAYSIZE(buf), 20) < 0) {
+  if (PreadFd(fd.get(), buf, std::size(buf), 20) < 0) {
     err(1, "read");
   }
 
@@ -258,21 +259,20 @@ void runReadWrite() {
   struct iovec read_vecs[] = {
       {
           .iov_base = buf,
-          .iov_len = ABSL_ARRAYSIZE(msg),
+          .iov_len = std::size(msg),
       },
       {
           .iov_base = buf,
-          .iov_len = ABSL_ARRAYSIZE(msg) / 2,
+          .iov_len = std::size(msg) / 2,
       },
   };
-  if (readv(fd.get(), read_vecs, ABSL_ARRAYSIZE(read_vecs)) < 0) {
+  if (readv(fd.get(), read_vecs, std::size(read_vecs)) < 0) {
     err(1, "writev");
   }
-  if (preadv(fd.get(), read_vecs, ABSL_ARRAYSIZE(read_vecs), 20) < 0) {
+  if (preadv(fd.get(), read_vecs, std::size(read_vecs), 20) < 0) {
     err(1, "pwritev");
   }
-  if (preadv2(fd.get(), read_vecs, ABSL_ARRAYSIZE(read_vecs), 20, RWF_HIPRI) <
-      0) {
+  if (preadv2(fd.get(), read_vecs, std::size(read_vecs), 20, RWF_HIPRI) < 0) {
     err(1, "pwritev2");
   }
 }
