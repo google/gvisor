@@ -18,6 +18,7 @@
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
 #include <netinet/ip_icmp.h>
+#include <netinet/udp.h>
 #include <poll.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -667,8 +668,16 @@ void randomizePacket(char* buf, size_t len, int proto) {
   RandomizeBuffer(buf, len);
   // When testing with TCP sockets, ensure the RST flag is set. This is to
   // prevent the TCP stack from generating RSTs packets for unknown endpoints.
-  if (proto == IPPROTO_TCP && len > TCPHDR_FLAGS_OFF)
+  if (proto == IPPROTO_TCP && len > TCPHDR_FLAGS_OFF) {
     buf[TCPHDR_FLAGS_OFF] |= TCPHDR_RST;
+  }
+  // For UDP packets, ensure the length field in the UDP header
+  // is set to the total length of the UDP packet as the network stack
+  // may trim the packet to the header length.
+  if (proto == IPPROTO_UDP && len >= sizeof(udphdr)) {
+    udphdr* udp = reinterpret_cast<udphdr*>(buf);
+    udp->len = htons(len);
+  }
 }
 
 // Test that receive buffer limits are not enforced when the recv buffer is

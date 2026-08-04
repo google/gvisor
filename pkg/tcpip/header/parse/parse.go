@@ -158,9 +158,19 @@ traverseExtensions:
 //
 // Returns true if the header was successfully parsed.
 func UDP(pkt *stack.PacketBuffer) bool {
-	_, ok := pkt.TransportHeader().Consume(header.UDPMinimumSize)
+	hdr, ok := pkt.TransportHeader().Consume(header.UDPMinimumSize)
+	if !ok {
+		return false
+	}
 	pkt.TransportProtocolNumber = header.UDPProtocolNumber
-	return ok
+	// Validate the UDP payload length.
+	length := int(header.UDP(hdr).Length()) - header.UDPMinimumSize
+	if length < 0 || length > pkt.Data().Size() {
+		return false
+	}
+	// Trim the payload to the length specified in the UDP header.
+	pkt.Data().CapLength(length)
+	return true
 }
 
 // TCP parses a TCP packet found in pkt.Data and populates pkt's transport

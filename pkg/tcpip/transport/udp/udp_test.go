@@ -325,6 +325,36 @@ func TestV4ReadOnV4(t *testing.T) {
 	testRead(c, context.UnicastV4)
 }
 
+// TestV4ReadOnV4WithTrailingPadding tests that IP payload padding is trimmed
+// from UDP packets.
+func TestV4ReadOnV4WithTrailingPadding(t *testing.T) {
+	c := context.New(t, []stack.TransportProtocolFactory{udp.NewProtocol, icmp.NewProtocol6, icmp.NewProtocol4})
+	defer c.Cleanup()
+
+	c.CreateEndpointForFlow(context.UnicastV4, udp.ProtocolNumber)
+
+	// Bind to wildcard.
+	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+		c.T.Fatalf("Bind failed: %s", err)
+	}
+
+	payload := newRandomPayload(arbitraryPayloadSize)
+	pkt := context.BuildUDPPacket(payload, context.UnicastV4, context.Incoming, testTOS, testTTL, false)
+
+	// Append extra padding bytes to the packet.
+	padding := make([]byte, 10)
+	pktWithPadding := append(pkt, padding...)
+
+	// Update IPv4 TotalLength and Checksum so the IP layer doesn't trim the padding.
+	ip := header.IPv4(pktWithPadding)
+	ip.SetTotalLength(uint16(len(pktWithPadding)))
+	ip.SetChecksum(0)
+	ip.SetChecksum(^ip.CalculateChecksum())
+
+	c.InjectPacket(header.IPv4ProtocolNumber, pktWithPadding)
+	c.ReadFromEndpointExpectSuccess(payload, context.UnicastV4)
+}
+
 // TestReadOnBoundToMulticast checks that an endpoint can bind to a multicast
 // address and receive data sent to that address.
 func TestReadOnBoundToMulticast(t *testing.T) {
