@@ -1275,7 +1275,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		Start: oldParent.upperVD,
 		Path:  fspath.Parse(oldName),
 	}
-	if err := vfsObj.RenameAt(ctx, creds, &oldpop, &newpop, &opts); err != nil {
+	if err := vfsObj.RenameAt(ctx, fs.creds, &oldpop, &newpop, &opts); err != nil {
 		vfsObj.AbortRenameDentry(&renamed.vfsd, replacedVFSD)
 		cleanupRecreateWhiteouts()
 		return err
