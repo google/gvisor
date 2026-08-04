@@ -436,6 +436,7 @@ go_test(
     srcs = [
         "fd_table_test.go",
         "pending_signals_test.go",
+        "ptrace_mode_test.go",
         "table_test.go",
         "task_signals_test.go",
         "task_syscall_benchmark_test.go",
