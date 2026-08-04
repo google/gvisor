@@ -21,6 +21,7 @@ go_test(
         "main_test.go",
         "oom_score_adj_test.go",
         "runsc_test.go",
+        "sandboxposture_test.go",
     ],
     data = [
         "//runsc",
@@ -36,6 +37,7 @@ go_test(
         "//pkg/cleanup",
         "//pkg/test/criutil",
         "//pkg/test/dockerutil",
+        "//pkg/test/sandboxposture",
         "//pkg/test/testutil",
         "//runsc/cgroup",
         "//runsc/config",

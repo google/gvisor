@@ -119,6 +119,7 @@ go_test(
     name = "cmd_test",
     size = "small",
     srcs = [
+        "bootposture_test.go",
         "capability_test.go",
         "chroot_test.go",
         "delete_test.go",
@@ -142,6 +143,7 @@ go_test(
         "//pkg/log",
         "//pkg/sentry/control",
         "//pkg/sentry/kernel/auth",
+        "//pkg/test/sandboxposture",
         "//pkg/test/testutil",
         "//runsc/boot",
         "//runsc/cmd/sandboxsetup",
