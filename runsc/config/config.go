@@ -373,6 +373,18 @@ type Config struct {
 	// unsupported driver version.
 	NVProxyAllowUnsupportedDriver bool `flag:"nvproxy-allow-unsupported-driver"`
 
+	// CUDACheckpointPath is the path to the cuda-checkpoint binary inside the
+	// container filesystem. It complements `runsc checkpoint
+	// --cuda-checkpoint-path` and is applied per container. When it is set for
+	// a GPU container (nvproxy enabled) on driver R610+, the container's command
+	// is wrapped in `cuda-checkpoint --launch-job` so that its CUDA processes
+	// share a job and CUDA IPC state (cuIpcGetMemHandle) can be
+	// checkpointed/restored coherently. Processes in a job must also be toggled
+	// sequentially, so this should be paired with `runsc checkpoint
+	// --cuda-checkpoint-sequential`. See
+	// https://github.com/NVIDIA/cuda-checkpoint#610-features.
+	CUDACheckpointPath string `flag:"cuda-checkpoint-path"`
+
 	// TPUProxy enables support for TPUs.
 	TPUProxy bool `flag:"tpuproxy"`
 
