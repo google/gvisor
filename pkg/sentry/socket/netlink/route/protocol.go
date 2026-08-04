@@ -258,6 +258,12 @@ func writeLinkInfo(m *nlmsg.Message, idx int32, i inet.Interface) {
 		m.PutAttr(linux.IFLA_MASTER, primitive.AllocateUint32(i.Master))
 	}
 
+	if i.Kind != "" {
+		var nestedAttrs nlmsg.NestedAttr
+		nestedAttrs.PutAttrString(linux.IFLA_INFO_KIND, i.Kind)
+		m.PutNestedAttr(linux.IFLA_LINKINFO, nestedAttrs)
+	}
+
 	// TODO(gvisor.dev/issue/578): There are many more attributes.
 }
 
