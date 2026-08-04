@@ -2687,6 +2687,49 @@ func TestNICContextPreservation(t *testing.T) {
 	}
 }
 
+// TestNICKindPreservation tests the NIC kind is present in NICInfo.
+func TestNICKindPreservation(t *testing.T) {
+	tests := []struct {
+		name string
+		opts stack.NICOptions
+		want string
+	}{
+		{
+			"veth",
+			stack.NICOptions{Kind: "veth"},
+			"veth",
+		},
+		{
+			"bridge",
+			stack.NICOptions{Kind: "bridge"},
+			"bridge",
+		},
+		{
+			"not_set",
+			stack.NICOptions{},
+			"",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{})
+			id := tcpip.NICID(1)
+			ep := channel.New(0, 0, "\x00\x00\x00\x00\x00\x00")
+			if err := s.CreateNICWithOptions(id, ep, test.opts); err != nil {
+				t.Fatalf("got stack.CreateNICWithOptions(%d, %+v, %+v) = %s, want nil", id, ep, test.opts, err)
+			}
+			nicinfos := s.NICInfo()
+			nicinfo, ok := nicinfos[id]
+			if !ok {
+				t.Fatalf("id: %d not found in NICInfo: %+v", id, nicinfos)
+			}
+			if got, want := nicinfo.Kind, test.want; got != want {
+				t.Fatalf("got nicinfo.Kind = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
 // TestNICAutoGenLinkLocalAddr tests the auto-generation of IPv6 link-local
 // addresses.
 func TestNICAutoGenLinkLocalAddr(t *testing.T) {

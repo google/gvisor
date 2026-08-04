@@ -167,6 +167,9 @@ type Interface struct {
 
 	// Master is the index of the main controlling interface in a bonded setup.
 	Master uint32
+
+	// Kind is the link kind (e.g. "veth", "bridge").
+	Kind string
 }
 
 // InterfaceAddr contains information about a network interface address.

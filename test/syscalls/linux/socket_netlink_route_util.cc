@@ -22,6 +22,9 @@
 #include <cerrno>
 #include <cstdint>
 #include <cstring>
+#include <functional>
+#include <string>
+#include <vector>
 
 #include "test/syscalls/linux/socket_netlink_util.h"
 #include "test/util/file_descriptor.h"
@@ -264,6 +267,27 @@ PosixErrorOr<std::vector<Link>> DumpLinks() {
   return DumpLinks(fd);
 }
 
+PosixErrorOr<std::string> LinkKind(const struct nlmsghdr* hdr,
+                                   const struct ifinfomsg* msg) {
+  if (hdr == nullptr || msg == nullptr) {
+    return PosixError(EINVAL, "null header or msg");
+  }
+  const struct rtattr* rta_linkinfo = FindRtAttr(hdr, msg, IFLA_LINKINFO);
+  if (rta_linkinfo == nullptr) {
+    return std::string("");
+  }
+  int attrlen = RTA_PAYLOAD(rta_linkinfo);
+  const struct rtattr* rta_kind =
+      reinterpret_cast<const struct rtattr*>(RTA_DATA(rta_linkinfo));
+  for (; RTA_OK(rta_kind, attrlen); rta_kind = RTA_NEXT(rta_kind, attrlen)) {
+    if (rta_kind->rta_type == IFLA_INFO_KIND) {
+      const char* kind_data = reinterpret_cast<const char*>(RTA_DATA(rta_kind));
+      return std::string(kind_data, strnlen(kind_data, RTA_PAYLOAD(rta_kind)));
+    }
+  }
+  return std::string("");
+}
+
 PosixErrorOr<std::vector<Link>> DumpLinks(const FileDescriptor& fd) {
   std::vector<Link> links;
   RETURN_IF_ERRNO(DumpLinks(fd, kSeq, [&](const struct nlmsghdr* hdr) {
@@ -294,6 +318,11 @@ PosixErrorOr<std::vector<Link>> DumpLinks(const FileDescriptor& fd) {
             ? ""
             : std::string(reinterpret_cast<const char*>(RTA_DATA(rta_address)));
     links.back().flags = msg->ifi_flags;
+    // Get the interface kind.
+    auto kind_or = LinkKind(hdr, msg);
+    if (kind_or.ok()) {
+      links.back().kind = kind_or.ValueOrDie();
+    }
   }));
   return links;
 }
