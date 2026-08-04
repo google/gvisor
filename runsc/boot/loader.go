@@ -18,8 +18,10 @@ package boot
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	gtime "time"
@@ -34,6 +36,7 @@ import (
 	"gvisor.dev/gvisor/pkg/coverage"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/fd"
+	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/gomaxprocs"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/memutil"
@@ -326,6 +329,13 @@ type Loader struct {
 	//
 	// +checklocks:mu
 	failedToStart map[string]struct{}
+
+	// cudaJobSkipped maps the name of each GPU container that should run in a
+	// cuda-checkpoint job but does not to the reason (see
+	// setupCudaCheckpointJob).
+	//
+	// +checklocks:mu
+	cudaJobSkipped map[string]string
 
 	// portForwardProxies is a list of active port forwarding connections.
 	//
@@ -705,6 +715,7 @@ func New(args Args) (*Loader, error) {
 		containerIDs:          make(map[string]string),
 		containerSpecs:        make(map[string]*specs.Spec),
 		failedToStart:         make(map[string]struct{}),
+		cudaJobSkipped:        make(map[string]string),
 		saveFDs:               args.SaveFDs,
 		saveCheckpointGofer:   args.SaveCheckpointGofer,
 		fsSaveFDs:             args.FSSaveFDs,
@@ -1654,6 +1665,106 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 	return nil
 }
 
+// cudaCheckpointJobMinDriverMajor is the oldest driver release with
+// cuda-checkpoint's job mode (--launch-job).
+const cudaCheckpointJobMinDriverMajor = 610
+
+// cudaCheckpointJobEnabled reports whether conf runs GPU containers in a
+// cuda-checkpoint job on a driver with major version driverMajor.
+func cudaCheckpointJobEnabled(conf *config.Config, driverMajor int) bool {
+	return conf.CUDACheckpointJob == config.CUDACheckpointJobLaunch && conf.CUDACheckpointPath != "" && driverMajor >= cudaCheckpointJobMinDriverMajor
+}
+
+// setupCudaCheckpointJob groups a GPU container's CUDA processes into a
+// cuda-checkpoint job, so that CUDA IPC state (cuIpcGetMemHandle) can be
+// checkpointed/restored coherently, and reports whether it did. Only a
+// container given GPU access is wrapped (not, say, a pod's pause container
+// when nvproxy is enabled for the whole sandbox), and only with
+// --cuda-checkpoint-job=launch on driver R610 or newer.
+//
+// It works by prepending `cuda-checkpoint --launch-job` to the container's
+// command. See https://github.com/NVIDIA/cuda-checkpoint#610-features.
+//
+// A GPU container it cannot wrap still starts, outside a job, and is recorded
+// in l.cudaJobSkipped: checkpoints are refused while it exists, since its
+// processes would be checkpointed outside the job.
+//
+// +checklocks:l.mu
+func (l *Loader) setupCudaCheckpointJob(info *containerInfo) bool {
+	conf := info.conf
+	if conf.CUDACheckpointJob != config.CUDACheckpointJobLaunch || !specutils.GPUFunctionalityRequested(info.spec, conf) {
+		return false
+	}
+	if major := l.k.NvidiaDriverVersion.Major(); !cudaCheckpointJobEnabled(conf, major) {
+		log.Warningf("--cuda-checkpoint-job=launch needs driver R%d or newer, have R%d; not running container %q in a cuda-checkpoint job", cudaCheckpointJobMinDriverMajor, major, info.containerName)
+		return false
+	}
+	skip := func(why string) bool {
+		log.Warningf("Not running container %q in a cuda-checkpoint job: %s. Checkpoints of the sandbox will be refused while the container exists.", info.containerName, why)
+		l.cudaJobSkipped[info.containerName] = why
+		return false
+	}
+	if len(info.procArgs.Argv) == 0 {
+		return skip("it has no command to wrap")
+	}
+	if info.procArgs.File != nil {
+		return skip("its entrypoint is a file descriptor (--exec-fd), which cuda-checkpoint cannot exec")
+	}
+	if ok, err := l.containerFileExists(info, conf.CUDACheckpointPath); !ok {
+		why := fmt.Sprintf("--cuda-checkpoint-path %q is not a file in it", conf.CUDACheckpointPath)
+		if err != nil {
+			why += fmt.Sprintf(" (%v)", err)
+		}
+		return skip(why)
+	}
+	// Exec cuda-checkpoint from the container filesystem; it then execs the
+	// original command.
+	info.procArgs.Filename = ""
+	info.procArgs.Argv = append([]string{conf.CUDACheckpointPath, "--launch-job"}, info.procArgs.Argv...)
+	log.Infof("Wrapped container %q command in a cuda-checkpoint job", info.containerName)
+	return true
+}
+
+// cudaJobSkippedError returns an error naming every GPU container that
+// setupCudaCheckpointJob could not wrap, or nil if there is none.
+//
+// +checklocksexclude:l.mu
+func (l *Loader) cudaJobSkippedError() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(l.cudaJobSkipped) == 0 {
+		return nil
+	}
+	var why []string
+	for _, name := range slices.Sorted(maps.Keys(l.cudaJobSkipped)) {
+		why = append(why, fmt.Sprintf("container %q: %s", name, l.cudaJobSkipped[name]))
+	}
+	return fmt.Errorf("cannot checkpoint: GPU containers that do not run in a cuda-checkpoint job (%s)", strings.Join(why, "; "))
+}
+
+// containerFileExists reports whether p is a regular file in the container's
+// filesystem, following symlinks.
+func (l *Loader) containerFileExists(info *containerInfo, p string) (bool, error) {
+	mntns := info.procArgs.MountNamespace
+	if mntns == nil {
+		return false, fmt.Errorf("container mount namespace is not set up yet")
+	}
+	ctx := info.procArgs.NewContext(l.k)
+	creds := auth.NewRootCredentials(l.k.RootUserNamespace())
+	root := mntns.Root(ctx)
+	defer root.DecRef(ctx)
+	stat, err := root.Mount().Filesystem().VirtualFilesystem().StatAt(ctx, creds, &vfs.PathOperation{
+		Root:               root,
+		Start:              root,
+		Path:               fspath.Parse(p),
+		FollowFinalSymlink: true,
+	}, &vfs.StatOptions{Mask: linux.STATX_TYPE})
+	if err != nil {
+		return false, err
+	}
+	return stat.Mode&linux.S_IFMT == linux.S_IFREG, nil
+}
+
 // +checklocks:l.mu
 func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGroup, *host.TTYFileDescription, error) {
 	// Create the FD map, which will set stdin, stdout, and stderr.
@@ -1740,6 +1851,12 @@ func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGrou
 		return nil, nil, err
 	}
 	info.procArgs.StartupTimeline.Reached("exec user home resolved")
+
+	// If configured, run a GPU container in a cuda-checkpoint job, so that its
+	// CUDA IPC state can be checkpointed. This never stops the container from
+	// starting: one that cannot be wrapped runs outside the job, and
+	// checkpoints are refused (see setupCudaCheckpointJob).
+	l.setupCudaCheckpointJob(info)
 
 	// Create and start the new process.
 	tg, _, err := l.k.CreateProcess(info.procArgs)
@@ -1853,6 +1970,7 @@ func (l *Loader) destroySubcontainer(cid string) error {
 	}
 	// Cleanup the device gofer.
 	l.k.RemoveDevGofer(l.k.ContainerName(cid))
+	delete(l.cudaJobSkipped, l.k.ContainerName(cid))
 
 	if l.root.conf.InSandboxCgroup == config.InSandboxCgroupV2 {
 		l.removeContainerCgroup2(cid)

@@ -392,6 +392,18 @@ type Config struct {
 	// unsupported driver version.
 	NVProxyAllowUnsupportedDriver bool `flag:"nvproxy-allow-unsupported-driver"`
 
+	// CUDACheckpointPath is the path to the cuda-checkpoint binary inside the
+	// container filesystem, which checkpoints use unless given their own.
+	CUDACheckpointPath string `flag:"cuda-checkpoint-path"`
+
+	// CUDACheckpointJob selects whether a GPU container's command is wrapped
+	// in `cuda-checkpoint --launch-job` (CUDACheckpointPath), so that its CUDA
+	// processes share a job, which lets cuda-checkpoint carry their CUDA IPC
+	// (cuIpcGetMemHandle) state. Jobs need driver R610 or newer, and are
+	// checkpointed one process at a time. See
+	// https://github.com/NVIDIA/cuda-checkpoint#610-features.
+	CUDACheckpointJob CUDACheckpointJob `flag:"cuda-checkpoint-job"`
+
 	// TPUProxy enables support for TPUs.
 	TPUProxy bool `flag:"tpuproxy"`
 
@@ -615,6 +627,14 @@ func (c *Config) Validate() error {
 	}
 	if len(c.ProfilingMetrics) > 0 && len(c.ProfilingMetricsLog) == 0 {
 		return fmt.Errorf("profiling-metrics flag requires defining a profiling-metrics-log for output")
+	}
+	if c.CUDACheckpointJob == CUDACheckpointJobLaunch && c.CUDACheckpointPath == "" {
+		return fmt.Errorf("--cuda-checkpoint-job=launch requires --cuda-checkpoint-path")
+	}
+	// The job wrap execs it as a container's argv[0], which must not be
+	// resolved against a working directory.
+	if c.CUDACheckpointPath != "" && !filepath.IsAbs(c.CUDACheckpointPath) {
+		return fmt.Errorf("--cuda-checkpoint-path=%q must be an absolute path", c.CUDACheckpointPath)
 	}
 	allowedCaps, _, err := nvconf.DriverCapsFromString(c.NVProxyAllowedDriverCapabilities)
 	if err != nil {
@@ -1138,6 +1158,52 @@ func (g HostFifo) String() string {
 // AllowOpen returns true if it can consume FIFOs from the host.
 func (g HostFifo) AllowOpen() bool {
 	return g&HostFifoOpen != 0
+}
+
+// CUDACheckpointJob tells whether GPU containers run in a cuda-checkpoint job.
+type CUDACheckpointJob int
+
+const (
+	// CUDACheckpointJobNone runs containers as they are.
+	CUDACheckpointJobNone CUDACheckpointJob = iota
+
+	// CUDACheckpointJobLaunch wraps each GPU container's command in
+	// `cuda-checkpoint --launch-job`.
+	CUDACheckpointJobLaunch
+)
+
+func cudaCheckpointJobPtr(v CUDACheckpointJob) *CUDACheckpointJob {
+	return &v
+}
+
+// Set implements flag.Value. Set(String()) should be idempotent.
+func (j *CUDACheckpointJob) Set(v string) error {
+	switch v {
+	case "", "none":
+		*j = CUDACheckpointJobNone
+	case "launch":
+		*j = CUDACheckpointJobLaunch
+	default:
+		return fmt.Errorf("invalid cuda-checkpoint job mode %q", v)
+	}
+	return nil
+}
+
+// Get implements flag.Value.
+func (j *CUDACheckpointJob) Get() any {
+	return *j
+}
+
+// String implements flag.Value.
+func (j CUDACheckpointJob) String() string {
+	switch j {
+	case CUDACheckpointJobNone:
+		return "none"
+	case CUDACheckpointJobLaunch:
+		return "launch"
+	default:
+		panic(fmt.Sprintf("Invalid cuda-checkpoint job mode %d", j))
+	}
 }
 
 // CharacterDevicePolicy tells how character device files on gofer mounts are

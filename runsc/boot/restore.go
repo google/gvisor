@@ -719,13 +719,32 @@ func (r *restorer) calculateWallTimeSavings(s *Savings) error {
 }
 
 func (l *Loader) save(o *control.SaveOpts) error {
-	saveOpts, err := control.ConvertToStateSaveOpts(o)
-	if err != nil {
+	// The runtime --cuda-checkpoint-path is the default binary. With
+	// --cuda-checkpoint-job=launch the GPU containers run in a cuda-checkpoint
+	// job (see setupCudaCheckpointJob): checkpoint them one process at a
+	// time, as jobs require.
+	conf := l.root.conf
+	fail := func(err error) error {
 		l.k.OnCheckpointAttempt(err)
 		if len(o.SplitFSCheckpointPaths) > 0 {
 			l.k.SignalAllFSSaveWaiters(err)
 		}
 		return err
+	}
+	if o.CudaCheckpointPath == "" {
+		o.CudaCheckpointPath = conf.CUDACheckpointPath
+	}
+	if cudaCheckpointJobEnabled(conf, l.k.NvidiaDriverVersion.Major()) {
+		// A GPU container outside the job would be checkpointed outside it, and
+		// cuda-checkpoint hangs on its legacy CUDA IPC there.
+		if err := l.cudaJobSkippedError(); err != nil {
+			return fail(err)
+		}
+		o.CudaCheckpointSequential = true
+	}
+	saveOpts, err := control.ConvertToStateSaveOpts(o)
+	if err != nil {
+		return fail(err)
 	}
 	defer saveOpts.Close()
 
