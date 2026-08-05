@@ -122,7 +122,7 @@ func ExecProcUmounter() (*exec.Cmd, *os.File) {
 	defer r.Close()
 
 	cmd := exec.Command(specutils.ExePath)
-	cmd.Args = append(cmd.Args, "umount", "--sync-fd=3", "/proc")
+	cmd.Args = append(cmd.Args, "host-umount", "--sync-fd=3", "/proc")
 	cmd.ExtraFiles = append(cmd.ExtraFiles, r)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout

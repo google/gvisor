@@ -68,10 +68,12 @@ func commands() (map[util.SubCommand]string, []subcommands.Command) {
 		// Non-OCI user-facing runsc commands.
 		new(cmd.Do):           userGroup,
 		new(cmd.FSCheckpoint): userGroup,
+		new(cmd.Mount):        userGroup,
 		new(cmd.PortForward):  userGroup,
 		new(cmd.Read):         userGroup,
 		new(cmd.SandboxExec):  userGroup,
 		new(cmd.Tar):          userGroup,
+		new(cmd.Umount):       userGroup,
 
 		// Helpers.
 		new(cmd.Install):     helperGroup,
@@ -94,9 +96,10 @@ func commands() (map[util.SubCommand]string, []subcommands.Command) {
 		new(cmd.MetricServer):   metricGroup,
 
 		// Internal commands.
-		new(cmd.Boot):   internalGroup,
-		new(cmd.Gofer):  internalGroup,
-		new(cmd.Umount): internalGroup,
+		new(cmd.Boot):         internalGroup,
+		new(cmd.DynamicGofer): internalGroup,
+		new(cmd.Gofer):        internalGroup,
+		new(cmd.HostUmount):   internalGroup,
 	}
 
 	// Merge alias commands.

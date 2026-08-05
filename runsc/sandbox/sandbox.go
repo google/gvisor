@@ -690,6 +690,18 @@ func (s *Sandbox) Processes(cid string) ([]*control.Process, error) {
 	return pl, nil
 }
 
+// DynamicMount dynamically mounts a filesystem in the sandbox.
+func (s *Sandbox) DynamicMount(opts *control.MountOpts) error {
+	log.Debugf("Dynamically mounting %s to %s in sandbox %q", opts.Source, opts.Target, s.ID)
+	return s.call("Fs.Mount", opts, nil)
+}
+
+// DynamicUmount dynamically unmounts a filesystem in the sandbox.
+func (s *Sandbox) DynamicUmount(opts *control.UmountOpts) error {
+	log.Debugf("Dynamically unmounting %s in sandbox %q", opts.Target, s.ID)
+	return s.call("Fs.Umount", opts, nil)
+}
+
 // CreateTraceSession creates a new trace session.
 func (s *Sandbox) CreateTraceSession(config *seccheck.SessionConfig, force bool) error {
 	log.Debugf("Creating trace session in sandbox %q", s.ID)
