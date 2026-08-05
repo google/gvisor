@@ -59,6 +59,7 @@ go_library(
         "netfilter_ipv6.go",
         "netlink.go",
         "netlink_netfilter.go",
+        "netlink_rdma.go",
         "netlink_route.go",
         "nf_tables.go",
         "personality.go",
