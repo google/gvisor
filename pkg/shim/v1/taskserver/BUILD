@@ -33,3 +33,8 @@ go_library(
         "@com_github_containerd_ttrpc//:go_default_library",
     ],
 )
+
+alias(
+    name = "server",
+    actual = ":taskserver",
+)

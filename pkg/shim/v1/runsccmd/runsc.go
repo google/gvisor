@@ -79,6 +79,9 @@ type Runsc struct {
 	LogFormat    runc.Format
 	PanicLog     string
 	Config       map[string]string
+	Debug        bool
+	DebugLog     string
+	DebugLogFD   *int
 }
 
 // List returns all containers created inside the provided runsc root directory.
@@ -293,12 +296,20 @@ func (r *Runsc) Restore(context context.Context, id string, cio runc.IO, opts *R
 
 // CheckpointOpts is a set of options to runsc.Checkpoint().
 type CheckpointOpts struct {
-	ImagePath    string
-	LeaveRunning bool
-	Direct       bool
+	ImagePath                 string
+	LeaveRunning              bool
+	Direct                    bool
+	Compression               string
+	ExcludeCommittedZeroPages bool
+	SaveRestoreExecArgv       string
+	SaveRestoreExecTimeout    string
+	CudaCheckpointPath        string
+	CudaCheckpointSequential  bool
+	WorkPath                  string
+	FSPath                    string
 }
 
-func (o *CheckpointOpts) args() []string {
+func (o *CheckpointOpts) checkpointArgs() []string {
 	var out []string
 	if o.ImagePath != "" {
 		out = append(out, fmt.Sprintf("--image-path=%s", o.ImagePath))
@@ -309,6 +320,44 @@ func (o *CheckpointOpts) args() []string {
 	if o.Direct {
 		out = append(out, "--direct")
 	}
+	if o.Compression != "" {
+		out = append(out, fmt.Sprintf("--compression=%s", o.Compression))
+	}
+	if o.ExcludeCommittedZeroPages {
+		out = append(out, "--exclude-committed-zero-pages")
+	}
+	if o.SaveRestoreExecArgv != "" {
+		out = append(out, fmt.Sprintf("--save-restore-exec-argv=%s", o.SaveRestoreExecArgv))
+	}
+	if o.SaveRestoreExecTimeout != "" {
+		out = append(out, fmt.Sprintf("--save-restore-exec-timeout=%s", o.SaveRestoreExecTimeout))
+	}
+	if o.CudaCheckpointPath != "" {
+		out = append(out, fmt.Sprintf("--cuda-checkpoint-path=%s", o.CudaCheckpointPath))
+	}
+	if o.CudaCheckpointSequential {
+		out = append(out, "--cuda-checkpoint-sequential")
+	}
+	if o.WorkPath != "" {
+		out = append(out, fmt.Sprintf("--work-path=%s", o.WorkPath))
+	}
+	return out
+}
+
+func (o *CheckpointOpts) fsCheckpointArgs() []string {
+	var out []string
+	if o.ImagePath != "" {
+		out = append(out, fmt.Sprintf("--image-path=%s", o.ImagePath))
+	}
+	if o.LeaveRunning {
+		out = append(out, "--leave-running")
+	}
+	if o.Direct {
+		out = append(out, "--direct")
+	}
+	if o.FSPath != "" {
+		out = append(out, fmt.Sprintf("--path=%s", o.FSPath))
+	}
 	return out
 }
 
@@ -316,12 +365,57 @@ func (o *CheckpointOpts) args() []string {
 func (r *Runsc) Checkpoint(context context.Context, id string, opts *CheckpointOpts) error {
 	args := []string{"checkpoint"}
 	if opts != nil {
-		args = append(args, opts.args()...)
+		args = append(args, opts.checkpointArgs()...)
 	}
 	if out, _, err := cmdOutput(r.command(context, append(args, id)...), true); err != nil {
 		return fmt.Errorf("unable to checkpoint: %w: %s", err, out)
 	}
 	return nil
+}
+
+// FSCheckpoint will fscheckpoint a container.
+func (r *Runsc) FSCheckpoint(context context.Context, id string, opts *CheckpointOpts) error {
+	args := []string{"fscheckpoint"}
+	if opts != nil {
+		args = append(args, opts.fsCheckpointArgs()...)
+	}
+	if out, _, err := cmdOutput(r.command(context, append(args, id)...), true); err != nil {
+		return fmt.Errorf("unable to fscheckpoint: %w: %s", err, out)
+	}
+	return nil
+}
+
+// WaitOpts specifies options for waiting.
+type WaitOpts struct {
+	Checkpoint   bool
+	Restore      bool
+	FSCheckpoint bool
+	FSRestore    bool
+	PID          int
+	RootPID      int
+}
+
+func (o *WaitOpts) args() []string {
+	var out []string
+	if o.Checkpoint {
+		out = append(out, "--checkpoint")
+	}
+	if o.Restore {
+		out = append(out, "--restore")
+	}
+	if o.FSCheckpoint {
+		out = append(out, "--fscheckpoint")
+	}
+	if o.FSRestore {
+		out = append(out, "--fsrestore")
+	}
+	if o.PID > 0 {
+		out = append(out, "--pid", strconv.Itoa(o.PID))
+	}
+	if o.RootPID > 0 {
+		out = append(out, "--rootpid", strconv.Itoa(o.RootPID))
+	}
+	return out
 }
 
 type waitResult struct {
@@ -334,6 +428,28 @@ func (r *Runsc) Wait(context context.Context, id string) (int, error) {
 	data, stderr, err := cmdOutput(r.command(context, "wait", id), false)
 	if err != nil {
 		return 0, fmt.Errorf("%w: %s", err, stderr)
+	}
+	var res waitResult
+	if err := json.Unmarshal(data, &res); err != nil {
+		return 0, err
+	}
+	return res.ExitStatus, nil
+}
+
+// WaitWithOptions waits for a container with options.
+func (r *Runsc) WaitWithOptions(context context.Context, id string, opts *WaitOpts) (int, error) {
+	args := []string{"wait"}
+	isCustomWait := false
+	if opts != nil {
+		args = append(args, opts.args()...)
+		isCustomWait = opts.Checkpoint || opts.Restore || opts.FSCheckpoint || opts.FSRestore
+	}
+	data, stderr, err := cmdOutput(r.command(context, append(args, id)...), false)
+	if err != nil {
+		return 0, fmt.Errorf("%w: %s", err, stderr)
+	}
+	if isCustomWait {
+		return 0, nil
 	}
 	var res waitResult
 	if err := json.Unmarshal(data, &res); err != nil {
@@ -599,6 +715,15 @@ func (r *Runsc) args() []string {
 	}
 	for k, v := range r.Config {
 		args = append(args, fmt.Sprintf("--%s=%s", k, v))
+	}
+	if r.Debug {
+		args = append(args, "--debug")
+	}
+	if r.DebugLog != "" {
+		args = append(args, fmt.Sprintf("--debug-log=%s", r.DebugLog))
+	}
+	if r.DebugLogFD != nil {
+		args = append(args, fmt.Sprintf("--debug-log-fd=%d", *r.DebugLogFD))
 	}
 	return args
 }

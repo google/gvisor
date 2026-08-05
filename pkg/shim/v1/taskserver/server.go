@@ -21,8 +21,8 @@ import (
 	"net"
 	"os"
 
-	ttrpc "github.com/containerd/ttrpc"
-	pb "gvisor.dev/gvisor/pkg/shim/v1/task_server/task_server_go_proto"
+	"github.com/containerd/ttrpc"
+	pb "gvisor.dev/gvisor/pkg/shim/v1/taskserver/task_server_go_proto"
 )
 
 // GvisorTaskServiceExt is an interface for the gvisor task service.
