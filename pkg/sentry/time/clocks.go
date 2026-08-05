@@ -14,6 +14,21 @@
 
 package time
 
+// UpdateResult holds the timekeeping parameters produced by Clocks.Update.
+//
+// Each *Ok field reports whether the corresponding *Params were successfully
+// calibrated and may be published to the VDSO. MonotonicRaw is only populated
+// by clock sources that track a distinct CLOCK_MONOTONIC_RAW; otherwise
+// MonotonicRawOk is false.
+type UpdateResult struct {
+	Monotonic      Parameters
+	MonotonicOk    bool
+	Realtime       Parameters
+	RealtimeOk     bool
+	MonotonicRaw   Parameters
+	MonotonicRawOk bool
+}
+
 // Clocks represents a clock source that contains both a monotonic and realtime
 // clock.
 type Clocks interface {
@@ -23,7 +38,7 @@ type Clocks interface {
 	// Update should be called at approximately ApproxUpdateInterval.
 	//
 	// parked indicates that the clock was not read for at least ApproxUpdateInterval
-	Update(parked bool) (monotonicParams Parameters, monotonicOk bool, realtimeParam Parameters, realtimeOk bool)
+	Update(parked bool) UpdateResult
 
 	// GetTime returns the current time in nanoseconds for the given clock.
 	//
