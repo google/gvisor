@@ -35,6 +35,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/opencontainers/runtime-spec/specs-go/features"
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -607,6 +608,48 @@ func WaitForReady(pid int, timeout time.Duration, ready func() (bool, error)) er
 		return fmt.Errorf("process %d not running yet", pid)
 	}
 	return backoff.Retry(op, b)
+}
+
+// WaitForNonChildExit waits for the given process to exit, up to `timeout`.
+// As the name implies, `pid` must not be a child of the current process.
+// Returns immediately if the process does not exist.
+func WaitForNonChildExit(pid int, timeout time.Duration) error {
+	if pid <= 0 {
+		return fmt.Errorf("invalid pid: %d", pid)
+	}
+	pidfd, err := unix.PidfdOpen(pid, 0)
+	if err == unix.ESRCH {
+		return nil // Already gone.
+	}
+	if err != nil {
+		// pidfd_open failed (Linux < 5.3). Fall back to polling.
+		b := backoff.WithMaxRetries(backoff.NewConstantBackOff(10*time.Millisecond), uint64(timeout/(10*time.Millisecond)))
+		return backoff.Retry(func() error {
+			if err := unix.Kill(pid, 0); err == nil {
+				return fmt.Errorf("process %d is still running", pid)
+			}
+			return nil
+		}, b)
+	}
+	defer unix.Close(pidfd)
+	deadline := time.Now().Add(timeout)
+	for {
+		timeoutMS := int(time.Until(deadline).Milliseconds())
+		if timeoutMS <= 0 {
+			return fmt.Errorf("process %d is still running after %v", pid, timeout)
+		}
+		pfds := []unix.PollFd{{Fd: int32(pidfd), Events: unix.POLLIN}}
+		n, err := unix.Poll(pfds, timeoutMS)
+		if err == unix.EINTR {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("polling pidfd for process %d: %v", pid, err)
+		}
+		if n > 0 {
+			return nil // The pidfd becomes "readable" when the process exits.
+		}
+	}
 }
 
 // OpenDebugLogFile opens a log file using 'logPattern' as location. If 'logPattern'

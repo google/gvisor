@@ -380,7 +380,6 @@ func (i *InternalData) StateTypeName() string {
 
 func (i *InternalData) StateFields() []string {
 	return []string{
-		"AppDrivenCheckpointEnabled",
 		"SaveTriggerEnabled",
 		"FSCheckpointEnabled",
 		"GVisorMarkerFile",
@@ -394,24 +393,22 @@ func (i *InternalData) beforeSave() {}
 // +checklocksignore
 func (i *InternalData) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
-	stateSinkObject.Save(0, &i.AppDrivenCheckpointEnabled)
-	stateSinkObject.Save(1, &i.SaveTriggerEnabled)
-	stateSinkObject.Save(2, &i.FSCheckpointEnabled)
-	stateSinkObject.Save(3, &i.GVisorMarkerFile)
-	stateSinkObject.Save(4, &i.OverrideProcs)
-	stateSinkObject.Save(5, &i.Cgroups)
+	stateSinkObject.Save(0, &i.SaveTriggerEnabled)
+	stateSinkObject.Save(1, &i.FSCheckpointEnabled)
+	stateSinkObject.Save(2, &i.GVisorMarkerFile)
+	stateSinkObject.Save(3, &i.OverrideProcs)
+	stateSinkObject.Save(4, &i.Cgroups)
 }
 
 func (i *InternalData) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (i *InternalData) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &i.AppDrivenCheckpointEnabled)
-	stateSourceObject.Load(1, &i.SaveTriggerEnabled)
-	stateSourceObject.Load(2, &i.FSCheckpointEnabled)
-	stateSourceObject.Load(3, &i.GVisorMarkerFile)
-	stateSourceObject.Load(4, &i.OverrideProcs)
-	stateSourceObject.Load(5, &i.Cgroups)
+	stateSourceObject.Load(0, &i.SaveTriggerEnabled)
+	stateSourceObject.Load(1, &i.FSCheckpointEnabled)
+	stateSourceObject.Load(2, &i.GVisorMarkerFile)
+	stateSourceObject.Load(3, &i.OverrideProcs)
+	stateSourceObject.Load(4, &i.Cgroups)
 }
 
 func (i *implStatFS) StateTypeName() string {

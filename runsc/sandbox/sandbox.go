@@ -16,7 +16,6 @@
 package sandbox
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -33,10 +32,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/cenkalti/backoff"
 	"github.com/moby/sys/capability"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/cleanup"
@@ -2224,16 +2223,11 @@ func (s *Sandbox) waitForStopped() error {
 		s.Pid.Store(0)
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), waitTimeout)
-	defer cancel()
-	b := backoff.WithContext(backoff.NewConstantBackOff(100*time.Millisecond), ctx)
-	op := func() error {
-		if s.IsRunning() {
-			return fmt.Errorf("sandbox is still running")
-		}
+	pid := s.Pid.Load()
+	if pid == 0 {
 		return nil
 	}
-	return backoff.Retry(op, b)
+	return specutils.WaitForNonChildExit(pid, waitTimeout)
 }
 
 // configureStdios change stdios ownership to give access to the sandbox
