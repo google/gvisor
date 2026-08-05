@@ -367,7 +367,32 @@ syscall_test(
 
 syscall_test(
     add_overlay = True,
-    test = "//test/syscalls/linux:landlock_test",
+    test = "//test/syscalls/linux:landlock_v1_test",
+)
+
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:landlock_v2_test",
+)
+
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:landlock_v3_test",
+)
+
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:landlock_v4_test",
+)
+
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:landlock_v5_test",
+)
+
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:landlock_v6_test",
 )
 
 syscall_test(
