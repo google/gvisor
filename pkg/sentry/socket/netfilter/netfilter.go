@@ -223,6 +223,10 @@ func SetEntries(mapper IDMapper, stk *stack.Stack, optVal []byte, ipv6 bool) *sy
 			table.Underflows[hk] = stack.HookUnset
 			for offset, ruleIdx := range offsets {
 				if offset == replace.HookEntry[hook] {
+					if isUserChainTarget(table.Rules[ruleIdx].Target) || isErrorTarget(table.Rules[ruleIdx].Target) {
+						nflog("builtin hook %d cannot point to ErrorTarget or UserChainTarget: %T", hook, table.Rules[ruleIdx].Target)
+						return syserr.ErrInvalidArgument
+					}
 					table.BuiltinChains[hk] = ruleIdx
 				}
 				if offset == replace.Underflow[hook] {
@@ -246,7 +250,7 @@ func SetEntries(mapper IDMapper, stk *stack.Stack, optVal []byte, ipv6 bool) *sy
 
 	// Check the user chains.
 	for ruleIdx, rule := range table.Rules {
-		if _, ok := rule.Target.(*stack.UserChainTarget); !ok {
+		if !isUserChainTarget(rule.Target) {
 			continue
 		}
 
@@ -276,6 +280,13 @@ func SetEntries(mapper IDMapper, stk *stack.Stack, optVal []byte, ipv6 bool) *sy
 		jumpTo, ok := offsets[jump.Offset]
 		if !ok {
 			nflog("failed to find a rule to jump to")
+			return syserr.ErrInvalidArgument
+		}
+		// jumpTo points to the first rule inside the chain, so to find
+		// out whether target is a UserChain we need to look at the
+		// preceding header.
+		if jumpTo == 0 || !isUserChainTarget(table.Rules[jumpTo-1].Target) {
+			nflog("jump target at rule %d jumps to rule %d which is not preceded by a UserChainTarget", ruleIdx, jumpTo)
 			return syserr.ErrInvalidArgument
 		}
 		jump.RuleNum = jumpTo
@@ -378,6 +389,24 @@ func unmarshalMatcherRevs(mapper IDMapper, match *linux.XTEntryMatch, filter sta
 	}
 
 	return matcher, err
+}
+
+func isUserChainTarget(t stack.Target) bool {
+	switch t.(type) {
+	case *userChainTarget, *stack.UserChainTarget:
+		return true
+	default:
+		return false
+	}
+}
+
+func isErrorTarget(t stack.Target) bool {
+	switch t.(type) {
+	case *errorTarget, *stack.ErrorTarget:
+		return true
+	default:
+		return false
+	}
 }
 
 func validUnderflow(rule stack.Rule, ipv6 bool) bool {

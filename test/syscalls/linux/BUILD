@@ -1217,6 +1217,20 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "iptables_util",
+    testonly = 1,
+    srcs = [
+        "iptables_util.cc",
+    ],
+    hdrs = [
+        "iptables_util.h",
+    ],
+    deps = [
+        ":iptables_types",
+    ],
+)
+
 cc_binary(
     name = "iptables_test",
     testonly = 1,
@@ -1227,6 +1241,7 @@ cc_binary(
     malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":iptables_types",
+        ":iptables_util",
         "//test/util:capability_util",
         "//test/util:file_descriptor",
         "//test/util:logging",
@@ -1250,6 +1265,7 @@ cc_binary(
     malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":iptables_types",
+        ":iptables_util",
         "//test/util:capability_util",
         "//test/util:file_descriptor",
         "//test/util:logging",

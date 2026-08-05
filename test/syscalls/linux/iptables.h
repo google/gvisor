@@ -302,4 +302,17 @@ struct ip6t_get_entries {
   struct ip6t_entry entrytable[0];
 };
 
+// Passed to setsockopt(IP6T_SO_SET_REPLACE).
+struct ip6t_replace {
+  char name[XT_TABLE_MAXNAMELEN];
+  unsigned int valid_hooks;
+  unsigned int num_entries;
+  unsigned int size;
+  unsigned int hook_entry[NF_IP_NUMHOOKS];
+  unsigned int underflow[NF_IP_NUMHOOKS];
+  unsigned int num_counters;
+  struct xt_counters* counters;
+  struct ip6t_entry entries[0];
+};
+
 #endif  // GVISOR_TEST_SYSCALLS_IPTABLES_TYPES_H_
