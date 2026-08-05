@@ -546,6 +546,55 @@ TEST(MountTest, DeviceFileWritableOnReadonlyMount) {
   EXPECT_THAT(write(dev_fd.get(), "x", 1), SyscallSucceedsWithValue(1));
 }
 
+TEST(MountTest, ReadOnlyBindMountAllowsWriteOpenOfCharDevice) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  std::string const nullPath = JoinPath(dir.path(), "null");
+  FileDescriptor create_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(nullPath, O_CREAT | O_RDWR, 0666));
+  create_fd.reset();
+
+  auto const mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("/dev/null", nullPath, "", MS_BIND, "", 0));
+  ASSERT_THAT(mount("/dev/null", nullPath.c_str(), nullptr,
+                    MS_BIND | MS_REMOUNT | MS_RDONLY, nullptr),
+              SyscallSucceeds());
+
+  FileDescriptor wfd = ASSERT_NO_ERRNO_AND_VALUE(Open(nullPath, O_WRONLY));
+  char msg[] = "hello";
+  EXPECT_THAT(write(wfd.get(), msg, sizeof(msg)),
+              SyscallSucceedsWithValue(sizeof(msg)));
+
+  FileDescriptor rwfd = ASSERT_NO_ERRNO_AND_VALUE(Open(nullPath, O_RDWR));
+  EXPECT_THAT(write(rwfd.get(), msg, sizeof(msg)),
+              SyscallSucceedsWithValue(sizeof(msg)));
+}
+
+TEST(MountTest, ReadOnlyBindMountAllowsWriteOpenOfFIFO) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  std::string const fifoPath = JoinPath(dir.path(), "fifo");
+  ASSERT_THAT(mkfifo(fifoPath.c_str(), 0666), SyscallSucceeds());
+
+  auto const bindDir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(dir.path(), bindDir.path(), "", MS_BIND, "", 0));
+  ASSERT_THAT(mount(dir.path().c_str(), bindDir.path().c_str(), nullptr,
+                    MS_BIND | MS_REMOUNT | MS_RDONLY, nullptr),
+              SyscallSucceeds());
+
+  std::string const boundFifoPath = JoinPath(bindDir.path(), "fifo");
+  FileDescriptor rfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(boundFifoPath, O_RDONLY | O_NONBLOCK));
+  FileDescriptor wfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(boundFifoPath, O_WRONLY | O_NONBLOCK));
+  char msg[] = "hello";
+  EXPECT_THAT(write(wfd.get(), msg, sizeof(msg)),
+              SyscallSucceedsWithValue(sizeof(msg)));
+}
+
 // Test that bind mounting a directory onto a regular file fails with ENOTDIR.
 TEST(MountTest, BindMountDirectoryOntoFileFails) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
