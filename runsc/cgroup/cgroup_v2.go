@@ -986,5 +986,14 @@ func RangeToBits(str string) ([]byte, error) {
 		// do not allow empty values
 		return nil, errors.New("empty value")
 	}
+
+	// systemd's AllowedCPUs/AllowedMemoryNodes properties use little-endian byte
+	// ordering: byte 0 describes IDs 0-7, byte 1 describes IDs 8-15, and so on.
+	// big.Int.Bytes returns a minimal big-endian representation, which shifts
+	// multi-byte masks to the wrong CPU/node IDs. Reverse the bytes so the D-Bus
+	// property matches systemd's expected mask layout.
+	for l, r := 0, len(ret)-1; l < r; l, r = l+1, r-1 {
+		ret[l], ret[r] = ret[r], ret[l]
+	}
 	return ret, nil
 }
