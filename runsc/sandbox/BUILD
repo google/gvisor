@@ -58,7 +58,6 @@ go_library(
         "//runsc/specutils",
         "//runsc/starttime",
         "//tools/xdp/cmd",
-        "@com_github_cenkalti_backoff//:go_default_library",
         "@com_github_cilium_ebpf//:go_default_library",
         "@com_github_cilium_ebpf//link:go_default_library",
         "@com_github_moby_sys_capability//:go_default_library",

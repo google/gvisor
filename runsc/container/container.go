@@ -17,7 +17,6 @@ package container
 
 import (
 	"bufio"
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -30,7 +29,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 
@@ -1318,17 +1316,11 @@ func (c *Container) waitForStopped() error {
 		return nil
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	b := backoff.WithContext(backoff.NewConstantBackOff(100*time.Millisecond), ctx)
-	op := func() error {
-		if err := unix.Kill(goferPid, 0); err == nil {
-			return fmt.Errorf("gofer is still running")
-		}
-		c.GoferPid.Store(0)
-		return nil
+	if err := specutils.WaitForNonChildExit(int(goferPid), 5*time.Second); err != nil {
+		return fmt.Errorf("waiting for gofer (PID %d) to exit: %v", goferPid, err)
 	}
-	return backoff.Retry(op, b)
+	c.GoferPid.Store(0)
+	return nil
 }
 
 // shouldCreateDeviceGofer indicates whether a device gofer connection should
