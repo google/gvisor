@@ -28,7 +28,7 @@ import (
 // nullNetNSPath returns the path of the bind mount pinning the shared "null"
 // network namespace.
 func nullNetNSPath(conf *config.Config) string {
-	return filepath.Join(conf.RootDir, specutils.NullNetNSFilename)
+	return filepath.Join(conf.SharedRoot(), specutils.NullNetNSFilename)
 }
 
 // openNullNetNS opens the network namespace bind-mounted at `path`.
@@ -66,7 +66,7 @@ func openNullNetNS(path string) (*os.File, error) {
 // This is OK: all of them pin valid empty network namespaces, and future
 // invocations join whichever one is mounted on top.
 // (Expected to happen very infrequently in practice, as it requires multiple
-// concurrent cold starts using the same root directory.)
+// concurrent cold starts using the same shared root directory.)
 func pinNullNetNS(conf *config.Config, pid int) error {
 	path := nullNetNSPath(conf)
 	f, err := os.OpenFile(path, os.O_RDONLY|os.O_CREATE, 0444)
