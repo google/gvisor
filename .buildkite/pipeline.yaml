@@ -458,6 +458,14 @@ steps:
   - <<: *common
     <<: *docker
     <<: *source_test
+    label: ":lock: Sandbox posture tests"
+    command: make sandbox-posture-tests
+    agents:
+      arch: "amd64"
+      kernel: "modern"
+  - <<: *common
+    <<: *docker
+    <<: *source_test
     label: ":rocket: Systrap tests"
     parallelism: 8
     command: make systrap-tests
