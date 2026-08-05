@@ -17,9 +17,12 @@ package bwrap
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
+	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -97,6 +100,9 @@ func (c *bwrapConfig) runscDo(spec *specs.Spec, workspaceDir string, conf *confi
 	return subcommands.ExitSuccess
 }
 
+// errNoDefaultInterface is returned when no default network interface is found
+var errNoDefaultInterface = errors.New("no default interface found")
+
 // do executes the container.
 func do(c *bwrapConfig, waitStatus *unix.WaitStatus) subcommands.ExitStatus {
 	// Create a temporary directory for the bwrap runtime files.
@@ -107,15 +113,20 @@ func do(c *bwrapConfig, waitStatus *unix.WaitStatus) subcommands.ExitStatus {
 	defer os.RemoveAll(workspaceDir)
 	c.WorkspaceDir = workspaceDir
 
-	// Build the runsc spec from the bwrap config.
+	cid := fmt.Sprintf("runsc-%06d", rand.Int31n(1000000))
 
-	spec, err := c.buildRunscSpec()
+	// Build the runsc spec from the bwrap config.
+	spec, err := c.buildRunscSpec(cid)
 	if err != nil {
 		return util.Errorf("failed to build runsc spec: %v", err)
 	}
 
+	if c.cleanNet != nil {
+		defer c.cleanNet()
+	}
+
 	// Run the container.
-	return c.runscDo(spec, c.WorkspaceDir, c.runscConfig, generateUID(), waitStatus)
+	return c.runscDo(spec, c.WorkspaceDir, c.runscConfig, cid, waitStatus)
 }
 
 // MountOpType represents the type of mount operation.
@@ -165,9 +176,26 @@ func (c *bwrapConfig) newMountOp(src, dst string, mountType MountOpType) (*Mount
 	}, nil
 }
 
+// CapOpType represents the type of capability operation.
+type CapOpType string
+
+const (
+	// CapOpDrop represents a capability drop operation.
+	CapOpDrop CapOpType = "drop"
+	// CapOpAdd represents a capability add operation.
+	CapOpAdd CapOpType = "add"
+)
+
+// CapOp represents a capability operation.
+type CapOp struct {
+	Type CapOpType
+	Cap  string
+}
+
 // bwrapConfig represents the configuration for the bwrap sandbox.
 type bwrapConfig struct {
 	Mounts       []*MountOp
+	CapOps       []*CapOp
 	UnshareNet   bool
 	Args         []string
 	Chdir        string
@@ -179,7 +207,8 @@ type bwrapConfig struct {
 	GID          int
 	UnshareUser  bool
 	Hostname     string
-	ShareNet     bool
+	cleanNet     func()
+	ip           string
 }
 
 // String returns a string representation of the bwrapConfig.
@@ -261,7 +290,7 @@ func (c *bwrapConfig) mapCWD() (string, error) {
 // buildRunscSpec builds the runsc Spec from the bwrapConfig.
 // TODO: b/508701483 - Use the causeway library when it is ready
 // and update this function.
-func (c *bwrapConfig) buildRunscSpec() (*specs.Spec, error) {
+func (c *bwrapConfig) buildRunscSpec(cid string) (*specs.Spec, error) {
 	if c.UID != -1 && !c.UnshareUser {
 		return nil, fmt.Errorf("bwrap: Specifying --uid requires --unshare-user")
 	}
@@ -364,16 +393,44 @@ func (c *bwrapConfig) buildRunscSpec() (*specs.Spec, error) {
 		}
 	}
 
+	for _, capOp := range c.CapOps {
+		normCap, err := normalizeCap(capOp.Cap)
+		if err != nil {
+			return nil, err
+		}
+		switch capOp.Type {
+		case CapOpAdd:
+			addCapability(spec.Process.Capabilities, normCap)
+		case CapOpDrop:
+			dropCapability(spec.Process.Capabilities, normCap)
+		}
+	}
+
 	if c.Hostname != "" {
 		spec.Hostname = c.Hostname
 	}
 
-	// TODO: b/508701483 - Fix support for network args.
 	if c.UnshareNet {
+		if c.runscConfig != nil {
+			c.runscConfig.Network = config.NetworkNone
+		}
 		if spec.Linux == nil {
 			spec.Linux = &specs.Linux{}
 		}
 		spec.Linux.Namespaces = append(spec.Linux.Namespaces, specs.LinuxNamespace{Type: specs.NetworkNamespace})
+	} else {
+		switch clean, err := c.setupNet(cid, spec); err {
+		case errNoDefaultInterface:
+			log.Warningf("Network interface not found, using internal network")
+			if spec.Linux == nil {
+				spec.Linux = &specs.Linux{}
+			}
+			spec.Linux.Namespaces = append(spec.Linux.Namespaces, specs.LinuxNamespace{Type: specs.NetworkNamespace})
+		case nil:
+			c.cleanNet = clean
+		default:
+			return nil, fmt.Errorf("error setting up network: %v", err)
+		}
 	}
 
 	// Set the current working directory.
@@ -466,4 +523,246 @@ func (c *bwrapConfig) resolveEnv() {
 		}
 	}
 	c.Env = env
+}
+
+func normalizeCap(capName string) (string, error) {
+	normCap := strings.ToUpper(strings.TrimSpace(capName))
+	if normCap != "ALL" {
+		if !strings.HasPrefix(normCap, "CAP_") {
+			normCap = "CAP_" + normCap
+		}
+		if !isKnownCapability(normCap) {
+			return "", fmt.Errorf("bwrap: unknown cap: %s", capName)
+		}
+	}
+	return normCap, nil
+}
+
+// isKnownCapability checks if capName is a valid Linux capability known to gVisor.
+func isKnownCapability(capName string) bool {
+	for _, c := range specutils.AllCapabilities().Bounding {
+		if c == capName {
+			return true
+		}
+	}
+	return false
+}
+
+// addCapability adds a single capability to all 5 capability sets.
+func addCapability(caps *specs.LinuxCapabilities, capName string) {
+	addUnique := func(set []string) []string {
+		for _, c := range set {
+			if c == capName {
+				return set
+			}
+		}
+		return append(set, capName)
+	}
+	caps.Bounding = addUnique(caps.Bounding)
+	caps.Effective = addUnique(caps.Effective)
+	caps.Inheritable = addUnique(caps.Inheritable)
+	caps.Permitted = addUnique(caps.Permitted)
+	caps.Ambient = addUnique(caps.Ambient)
+}
+
+func dropCapability(caps *specs.LinuxCapabilities, capName string) {
+	if capName == "ALL" {
+		caps.Bounding = nil
+		caps.Effective = nil
+		caps.Inheritable = nil
+		caps.Permitted = nil
+		caps.Ambient = nil
+		return
+	}
+	specutils.DropCapability(caps, capName)
+}
+
+func defaultDevice() (string, error) {
+	out, err := exec.Command("ip", "route", "list", "default").CombinedOutput()
+	if err != nil {
+		return "", err
+	}
+	parts := strings.Fields(string(out))
+	if len(parts) < 5 {
+		return "", fmt.Errorf("malformed %q output: %q", "ip route list default", string(out))
+	}
+	return parts[4], nil
+}
+
+func deviceMTU(dev string) (int, error) {
+	intf, err := net.InterfaceByName(dev)
+	if err != nil {
+		return 0, err
+	}
+	return intf.MTU, nil
+}
+
+func calculatePeerIP(ip string) (string, error) {
+	parts := strings.Split(ip, ".")
+	if len(parts) != 4 {
+		return "", fmt.Errorf("invalid IP format %q", ip)
+	}
+	n, err := strconv.Atoi(parts[3])
+	if err != nil {
+		return "", fmt.Errorf("invalid IP format %q: %v", ip, err)
+	}
+	n++
+	if n > 255 {
+		n = 1
+	}
+	return fmt.Sprintf("%s.%s.%s.%d", parts[0], parts[1], parts[2], n), nil
+}
+
+func deviceNames(cid string) (string, string) {
+	// Device name is limited to 15 letters.
+	return "ve-" + cid, "vp-" + cid
+}
+
+func makeFile(dest, content string, spec *specs.Spec) (string, error) {
+	tmpFile, err := os.CreateTemp("", filepath.Base(dest))
+	if err != nil {
+		return "", err
+	}
+	defer tmpFile.Close()
+	if _, err := tmpFile.WriteString(content); err != nil {
+		if err := os.Remove(tmpFile.Name()); err != nil {
+			log.Warningf("Failed to remove %q: %v", tmpFile.Name(), err)
+		}
+		return "", err
+	}
+	spec.Mounts = append(spec.Mounts, specs.Mount{
+		Source:      tmpFile.Name(),
+		Destination: dest,
+		Type:        "bind",
+		Options:     []string{"ro"},
+	})
+	return tmpFile.Name(), nil
+}
+
+func tryRemove(path string) {
+	if path == "" {
+		return
+	}
+
+	if err := os.Remove(path); err != nil {
+		log.Warningf("Failed to remove %q: %v", path, err)
+	}
+}
+
+// cleanupNet tries to cleanup the network setup in setupNet.
+//
+// It may be called when setupNet is only partially complete, in which case it
+// will cleanup as much as possible, logging warnings for the rest.
+//
+// Unfortunately none of this can be automatically cleaned up on process exit,
+// we must do so explicitly.
+func (c *bwrapConfig) cleanupNet(cid, dev, resolvPath, hostnamePath, hostsPath string) {
+	_, peer := deviceNames(cid)
+	ip := c.ip
+
+	cmds := []string{
+		fmt.Sprintf("ip link delete %s", peer),
+		fmt.Sprintf("ip netns delete %s", cid),
+		fmt.Sprintf("iptables -t nat -D POSTROUTING -s %s -o %s -m comment --comment runsc-%s -j MASQUERADE", ip, dev, peer),
+		fmt.Sprintf("iptables -D FORWARD -i %s -o %s -j ACCEPT", dev, peer),
+		fmt.Sprintf("iptables -D FORWARD -o %s -i %s -j ACCEPT", dev, peer),
+	}
+
+	for _, cmd := range cmds {
+		log.Debugf("Run %q", cmd)
+		args := strings.Fields(cmd)
+		execCmd := exec.Command(args[0], args[1:]...)
+		if err := execCmd.Run(); err != nil {
+			log.Warningf("Failed to run %q: %v", cmd, err)
+		}
+	}
+
+	tryRemove(resolvPath)
+	tryRemove(hostnamePath)
+	tryRemove(hostsPath)
+}
+
+func addNamespace(spec *specs.Spec, ns specs.LinuxNamespace) {
+	if spec.Linux == nil {
+		spec.Linux = &specs.Linux{}
+	}
+	spec.Linux.Namespaces = append(spec.Linux.Namespaces, ns)
+}
+
+// setupNet setups up the sandbox network, including the creation of a network
+// namespace, and iptable rules to redirect the traffic. Returns a cleanup
+// function to tear down the network. Returns errNoDefaultInterface when there
+// is no network interface available to setup the network.
+func (c *bwrapConfig) setupNet(cid string, spec *specs.Spec) (func(), error) {
+	ip := c.ip
+	dev, err := defaultDevice()
+	if err != nil {
+		return nil, errNoDefaultInterface
+	}
+	mtu, err := deviceMTU(dev)
+	if err != nil {
+		return nil, err
+	}
+	peerIP, err := calculatePeerIP(ip)
+	if err != nil {
+		return nil, err
+	}
+	veth, peer := deviceNames(cid)
+
+	cmds := []string{
+		fmt.Sprintf("ip link add %s mtu %v type veth peer name %s", veth, mtu, peer),
+
+		// Setup device outside the namespace.
+		fmt.Sprintf("ip addr add %s/24 dev %s", peerIP, peer),
+		fmt.Sprintf("ip link set %s up", peer),
+
+		// Setup device inside the namespace.
+		fmt.Sprintf("ip netns add %s", cid),
+		fmt.Sprintf("ip link set %s netns %s", veth, cid),
+		fmt.Sprintf("ip netns exec %s ip addr add %s/24 dev %s", cid, ip, veth),
+		fmt.Sprintf("ip netns exec %s ip link set %s up", cid, veth),
+		fmt.Sprintf("ip netns exec %s ip link set lo up", cid),
+		fmt.Sprintf("ip netns exec %s ip route add default via %s", cid, peerIP),
+
+		// Enable network access.
+		"sysctl -w net.ipv4.ip_forward=1",
+		fmt.Sprintf("iptables -t nat -A POSTROUTING -s %s -o %s -m comment --comment runsc-%s -j MASQUERADE", ip, dev, peer),
+		fmt.Sprintf("iptables -A FORWARD -i %s -o %s -j ACCEPT", dev, peer),
+		fmt.Sprintf("iptables -A FORWARD -o %s -i %s -j ACCEPT", dev, peer),
+	}
+
+	for _, cmd := range cmds {
+		log.Debugf("Run %q", cmd)
+		args := strings.Fields(cmd)
+		execCmd := exec.Command(args[0], args[1:]...)
+		if err := execCmd.Run(); err != nil {
+			c.cleanupNet(cid, dev, "", "", "")
+			return nil, fmt.Errorf("failed to run %q: %v", cmd, err)
+		}
+	}
+
+	resolvPath, err := makeFile("/etc/resolv.conf", "nameserver 8.8.8.8\n", spec)
+	if err != nil {
+		c.cleanupNet(cid, dev, "", "", "")
+		return nil, err
+	}
+	hostnamePath, err := makeFile("/etc/hostname", cid+"\n", spec)
+	if err != nil {
+		c.cleanupNet(cid, dev, resolvPath, "", "")
+		return nil, err
+	}
+	hosts := fmt.Sprintf("127.0.0.1\tlocalhost\n%s\t%s\n", ip, cid)
+	hostsPath, err := makeFile("/etc/hosts", hosts, spec)
+	if err != nil {
+		c.cleanupNet(cid, dev, resolvPath, hostnamePath, "")
+		return nil, err
+	}
+
+	netns := specs.LinuxNamespace{
+		Type: specs.NetworkNamespace,
+		Path: filepath.Join("/var/run/netns", cid),
+	}
+	addNamespace(spec, netns)
+
+	return func() { c.cleanupNet(cid, dev, resolvPath, hostnamePath, hostsPath) }, nil
 }
