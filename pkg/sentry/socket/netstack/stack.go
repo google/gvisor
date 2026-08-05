@@ -80,6 +80,7 @@ func makeInterfaceInfo(ni *stack.NICInfo) inet.Interface {
 		DeviceType: toLinuxARPHardwareType(ni.ARPHardwareType),
 		MTU:        ni.MTU,
 		Master:     uint32(ni.Primary),
+		Kind:       ni.Kind,
 	}
 }
 
@@ -478,6 +479,7 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 	}
 	err := s.Stack.CreateNICWithOptions(id, packetsocket.New(ethernet.New(ep)), stack.NICOptions{
 		Name: ifname,
+		Kind: "veth",
 	})
 	if err != nil {
 		s.unlockSrcAndDst(ctx, dstNs)
@@ -501,6 +503,7 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 
 	err = peerStack.Stack.CreateNICWithOptions(peerID, packetsocket.New(ethernet.New(peerEP)), stack.NICOptions{
 		Name: peerName,
+		Kind: "veth",
 	})
 	if err != nil {
 		peerEP.Close()
@@ -533,6 +536,7 @@ func (s *Stack) newBridge(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesV
 	id := s.Stack.NextNICID()
 	err := s.Stack.CreateNICWithOptions(id, ep, stack.NICOptions{
 		Name: ifname,
+		Kind: "bridge",
 	})
 	if err != nil {
 		return syserr.TranslateNetstackError(err)

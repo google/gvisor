@@ -1172,6 +1172,7 @@ func (n *nic) StateFields() []string {
 		"stack",
 		"id",
 		"name",
+		"kind",
 		"context",
 		"stats",
 		"networkEndpoints",
@@ -1198,20 +1199,21 @@ func (n *nic) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &n.stack)
 	stateSinkObject.Save(2, &n.id)
 	stateSinkObject.Save(3, &n.name)
-	stateSinkObject.Save(4, &n.context)
-	stateSinkObject.Save(5, &n.stats)
-	stateSinkObject.Save(6, &n.networkEndpoints)
-	stateSinkObject.Save(7, &n.linkAddrResolvers)
-	stateSinkObject.Save(8, &n.duplicateAddressDetectors)
-	stateSinkObject.Save(9, &n.enabled)
-	stateSinkObject.Save(10, &n.spoofing)
-	stateSinkObject.Save(11, &n.promiscuous)
-	stateSinkObject.Save(12, &n.linkResQueue)
-	stateSinkObject.Save(13, &n.packetEPs)
-	stateSinkObject.Save(14, &n.qDisc)
-	stateSinkObject.Save(15, &n.deliverLinkPackets)
-	stateSinkObject.Save(16, &n.Primary)
-	stateSinkObject.Save(17, &n.experimentIPOptionEnabled)
+	stateSinkObject.Save(4, &n.kind)
+	stateSinkObject.Save(5, &n.context)
+	stateSinkObject.Save(6, &n.stats)
+	stateSinkObject.Save(7, &n.networkEndpoints)
+	stateSinkObject.Save(8, &n.linkAddrResolvers)
+	stateSinkObject.Save(9, &n.duplicateAddressDetectors)
+	stateSinkObject.Save(10, &n.enabled)
+	stateSinkObject.Save(11, &n.spoofing)
+	stateSinkObject.Save(12, &n.promiscuous)
+	stateSinkObject.Save(13, &n.linkResQueue)
+	stateSinkObject.Save(14, &n.packetEPs)
+	stateSinkObject.Save(15, &n.qDisc)
+	stateSinkObject.Save(16, &n.deliverLinkPackets)
+	stateSinkObject.Save(17, &n.Primary)
+	stateSinkObject.Save(18, &n.experimentIPOptionEnabled)
 }
 
 func (n *nic) afterLoad(context.Context) {}
@@ -1222,20 +1224,21 @@ func (n *nic) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &n.stack)
 	stateSourceObject.Load(2, &n.id)
 	stateSourceObject.Load(3, &n.name)
-	stateSourceObject.Load(4, &n.context)
-	stateSourceObject.Load(5, &n.stats)
-	stateSourceObject.Load(6, &n.networkEndpoints)
-	stateSourceObject.Load(7, &n.linkAddrResolvers)
-	stateSourceObject.Load(8, &n.duplicateAddressDetectors)
-	stateSourceObject.Load(9, &n.enabled)
-	stateSourceObject.Load(10, &n.spoofing)
-	stateSourceObject.Load(11, &n.promiscuous)
-	stateSourceObject.Load(12, &n.linkResQueue)
-	stateSourceObject.Load(13, &n.packetEPs)
-	stateSourceObject.Load(14, &n.qDisc)
-	stateSourceObject.Load(15, &n.deliverLinkPackets)
-	stateSourceObject.Load(16, &n.Primary)
-	stateSourceObject.Load(17, &n.experimentIPOptionEnabled)
+	stateSourceObject.Load(4, &n.kind)
+	stateSourceObject.Load(5, &n.context)
+	stateSourceObject.Load(6, &n.stats)
+	stateSourceObject.Load(7, &n.networkEndpoints)
+	stateSourceObject.Load(8, &n.linkAddrResolvers)
+	stateSourceObject.Load(9, &n.duplicateAddressDetectors)
+	stateSourceObject.Load(10, &n.enabled)
+	stateSourceObject.Load(11, &n.spoofing)
+	stateSourceObject.Load(12, &n.promiscuous)
+	stateSourceObject.Load(13, &n.linkResQueue)
+	stateSourceObject.Load(14, &n.packetEPs)
+	stateSourceObject.Load(15, &n.qDisc)
+	stateSourceObject.Load(16, &n.deliverLinkPackets)
+	stateSourceObject.Load(17, &n.Primary)
+	stateSourceObject.Load(18, &n.experimentIPOptionEnabled)
 }
 
 func (p *packetEndpointList) StateTypeName() string {
