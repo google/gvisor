@@ -1324,6 +1324,43 @@ func testCheckpointRestore(t *testing.T, conf *config.Config, compression statef
 	cont3.Destroy()
 }
 
+// TestCheckpointRestoreSandboxOnly checks that checkpoint and restore are
+// refused for a sandbox booted without a root container, rather than writing an
+// image that cannot be restored. See Container.checkpointRestoreSupported.
+func TestCheckpointRestoreSandboxOnly(t *testing.T) {
+	const wantErr = "not supported for a sandbox booted without a root container"
+
+	for _, tc := range []struct {
+		name        string
+		sandboxOnly bool
+		want        bool
+	}{
+		{name: "sandbox-only", sandboxOnly: true, want: true},
+		{name: "normal", sandboxOnly: false, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &Container{ID: "test-cid", Sandbox: &sandbox.Sandbox{SandboxOnly: tc.sandboxOnly}}
+			err := c.checkpointRestoreSupported("checkpoint")
+			if got := err != nil; got != tc.want {
+				t.Errorf("checkpointRestoreSupported() error = %v, want error: %t", err, tc.want)
+			} else if tc.want && !strings.Contains(err.Error(), wantErr) {
+				t.Errorf("checkpointRestoreSupported() error = %v, want it to contain %q", err, wantErr)
+			}
+		})
+	}
+
+	// Both entry points must consult the guard. These calls return before
+	// touching the sandbox or the state file, so no container is needed.
+	conf := testutil.TestConfig(t)
+	c := &Container{ID: "test-cid", Sandbox: &sandbox.Sandbox{SandboxOnly: true}}
+	if err := c.Checkpoint(conf, "" /* imagePath */, sandbox.CheckpointOpts{}); err == nil || !strings.Contains(err.Error(), wantErr) {
+		t.Errorf("Checkpoint() error = %v, want it to contain %q", err, wantErr)
+	}
+	if err := c.Restore(conf, "" /* imagePath */, false /* direct */, false /* background */, nil /* networkArgs */); err == nil || !strings.Contains(err.Error(), wantErr) {
+		t.Errorf("Restore() error = %v, want it to contain %q", err, wantErr)
+	}
+}
+
 // TestCheckpointRestore does the checkpoint/restore test on each platform.
 func TestCheckpointRestore(t *testing.T) {
 	// Skip overlay because test requires writing to host file.
