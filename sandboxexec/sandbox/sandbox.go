@@ -20,19 +20,28 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
+
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
 // Options holds the configuration for a Sandbox.
 type Options struct {
-	runtimeDir       string
+	runtimeDir string
+	// stateDir is where the sandbox keeps its own state. When empty, New keeps
+	// it inside the runtime directory.
+	stateDir         string
 	id               string
 	enableNetworking bool
 	mounts           []Mount
@@ -41,6 +50,29 @@ type Options struct {
 	err              error
 	workingDir       string
 	hostname         string
+
+	// Process and filesystem layout.
+	rootPath     string
+	rootReadonly bool
+	user         *specs.User
+	capabilities *specs.LinuxCapabilities
+
+	// Namespaces and ID mappings.
+	namespaces            []specs.LinuxNamespace
+	skipDefaultNamespaces bool
+	uidMappings           []specs.LinuxIDMapping
+	gidMappings           []specs.LinuxIDMapping
+
+	// Default-layout opt-outs.
+	skipDefaultMounts    bool
+	skipHostBinaryMounts bool
+	skipBaseEnv          bool
+
+	// Runtime behavior. These describe how the sandbox itself is run, rather
+	// than what runs inside it.
+	platform string
+	debug    bool
+	debugLog string
 }
 
 // Option configures the Options struct.
@@ -56,6 +88,14 @@ const (
 	MountTypeTmpfs
 	// MountTypeProc represents a procfs mount.
 	MountTypeProc
+	// MountTypeSysfs represents a sysfs mount.
+	MountTypeSysfs
+	// MountTypeDevtmpfs represents a devtmpfs mount.
+	MountTypeDevtmpfs
+	// MountTypeDevpts represents a devpts mount.
+	MountTypeDevpts
+	// MountTypeCgroup represents a cgroupfs mount.
+	MountTypeCgroup
 )
 
 // Mount holds settings for a custom host bind directory or in-memory mount.
@@ -64,6 +104,12 @@ type Mount struct {
 	Destination string
 	Type        MountType
 	ReadOnly    bool
+
+	// Options are the OCI mount options. When nil, bind mounts default to
+	// "rbind" plus "ro" or "rw" according to ReadOnly, and other mount types
+	// default to no options. A non-nil value is used verbatim, so an empty
+	// (but non-nil) slice means "no options".
+	Options []string
 }
 
 // WithRuntimeDir sets a custom runtime directory where bundle and state files are written.
@@ -87,35 +133,11 @@ func WithNetworking(enabled bool) Option {
 	}
 }
 
-// WithBindMount adds a custom bind mount from host's source path to the sandbox's destination path.
-func WithBindMount(source, destination string, readOnly bool) Option {
+// WithMount adds mounts with full control over their type and OCI options.
+// Mounts are applied in the order given, after the sandbox's default mounts.
+func WithMount(mounts ...Mount) Option {
 	return func(o *Options) {
-		o.mounts = append(o.mounts, Mount{
-			Source:      filepath.Clean(source),
-			Destination: filepath.Clean(destination),
-			Type:        MountTypeBind,
-			ReadOnly:    readOnly,
-		})
-	}
-}
-
-// WithTmpfsMount adds an in-memory tmpfs filesystem at the destination path inside the sandbox.
-func WithTmpfsMount(destination string) Option {
-	return func(o *Options) {
-		o.mounts = append(o.mounts, Mount{
-			Destination: filepath.Clean(destination),
-			Type:        MountTypeTmpfs,
-		})
-	}
-}
-
-// WithProcMount adds a procfs mount at the destination path inside the sandbox.
-func WithProcMount(destination string) Option {
-	return func(o *Options) {
-		o.mounts = append(o.mounts, Mount{
-			Destination: filepath.Clean(destination),
-			Type:        MountTypeProc,
-		})
+		o.mounts = append(o.mounts, mounts...)
 	}
 }
 
@@ -168,6 +190,105 @@ func WithWorkingDir(cwd string) Option {
 	}
 }
 
+// WithRootfs uses an existing host directory as the sandbox's root filesystem.
+// By default the sandbox is given an empty root directory inside its bundle.
+func WithRootfs(path string, readOnly bool) Option {
+	return func(o *Options) {
+		if path == "" {
+			o.err = fmt.Errorf("rootfs path cannot be empty")
+			return
+		}
+		o.rootPath = filepath.Clean(path)
+		o.rootReadonly = readOnly
+	}
+}
+
+// WithUser sets the UID and GID of the sandbox's init process. Defaults to 0:0.
+func WithUser(uid, gid uint32) Option {
+	return func(o *Options) {
+		o.user = &specs.User{UID: uid, GID: gid}
+	}
+}
+
+// WithCapabilities sets the capability set of the sandbox's init process.
+func WithCapabilities(caps *specs.LinuxCapabilities) Option {
+	return func(o *Options) {
+		o.capabilities = caps
+	}
+}
+
+// WithNamespaces replaces the sandbox's default namespace set with the given
+// namespaces. Passing no namespaces leaves the sandbox with none, which is
+// meaningful because the Sentry isolates PID, IPC and UTS regardless.
+func WithNamespaces(namespaces ...specs.LinuxNamespace) Option {
+	return func(o *Options) {
+		o.skipDefaultNamespaces = true
+		o.namespaces = namespaces
+	}
+}
+
+// WithIDMappings replaces the sandbox's default UID and GID mappings. It is
+// only meaningful alongside a user namespace.
+func WithIDMappings(uidMappings, gidMappings []specs.LinuxIDMapping) Option {
+	return func(o *Options) {
+		o.uidMappings, o.gidMappings = uidMappings, gidMappings
+	}
+}
+
+// WithoutDefaultMounts omits the automatic /proc and /dev mounts, leaving the
+// caller responsible for whatever the sandboxed application needs.
+func WithoutDefaultMounts() Option {
+	return func(o *Options) {
+		o.skipDefaultMounts = true
+	}
+}
+
+// WithoutHostBinaryMounts omits the read-only binds of the host's binary and
+// library directories that are otherwise mapped into the sandbox.
+func WithoutHostBinaryMounts() Option {
+	return func(o *Options) {
+		o.skipHostBinaryMounts = true
+	}
+}
+
+// WithoutBaseEnv omits the default PATH entry that is otherwise prepended to
+// the environment set by WithEnv.
+func WithoutBaseEnv() Option {
+	return func(o *Options) {
+		o.skipBaseEnv = true
+	}
+}
+
+// WithStateDir sets the directory where the sandbox keeps its own state, as
+// opposed to the runtime directory that holds its bundle. It defaults to a
+// "state" directory inside the runtime directory, which Close removes along
+// with the rest of the sandbox. A directory named here belongs to the caller,
+// so Close leaves it in place.
+func WithStateDir(dir string) Option {
+	return func(o *Options) {
+		o.stateDir = dir
+	}
+}
+
+// WithPlatform selects the platform the Sentry uses to intercept the
+// application's system calls, for example "systrap", "ptrace" or "kvm". When
+// unset, the runtime picks its own default.
+func WithPlatform(platform string) Option {
+	return func(o *Options) {
+		o.platform = platform
+	}
+}
+
+// WithDebug turns on the sandbox's debug logging. logPath is where the logs
+// are written, in the format the runtime expects; when empty they go to the
+// sandbox's standard error.
+func WithDebug(logPath string) Option {
+	return func(o *Options) {
+		o.debug = true
+		o.debugLog = logPath
+	}
+}
+
 // Sandbox represents a running gVisor sandbox where applications
 // run inside.
 type Sandbox struct {
@@ -175,6 +296,10 @@ type Sandbox struct {
 	bundleDir string
 	runscPath string
 	rootState string
+
+	// ownStateDir records that rootState was created by New rather than named
+	// by WithStateDir, and so is Close's to remove.
+	ownStateDir bool
 }
 
 // newID returns a unique ID for the sandbox.
@@ -187,32 +312,194 @@ func newID() string {
 	return fmt.Sprintf("%x", b)
 }
 
-// Look for runsc binary from the environment variable RUNSC_PATH,
-// then in system PATH.
-func runscPath() string {
-	if path := os.Getenv("RUNSC_PATH"); path != "" {
-		return path
+// RunscPathEnvVar names the runsc binary the sandbox invokes. When it is
+// unset, the binary is looked up on the system PATH.
+const RunscPathEnvVar = "RUNSC_PATH"
+
+// resolveRunscPath returns the runsc binary to invoke: the one named by
+// RunscPathEnvVar, else a system PATH lookup.
+func resolveRunscPath() (string, error) {
+	if path := os.Getenv(RunscPathEnvVar); path != "" {
+		return path, nil
 	}
 	path, err := exec.LookPath("runsc")
-	if err == nil {
-		return path
+	if err != nil {
+		return "", fmt.Errorf("runsc binary is not found: %w", err)
 	}
-	panic("runsc binary is not found")
+	return path, nil
 }
 
-// New spawns a new sandbox as a subprocess, the sandbox
-// will be started and running in detached mode.
-func New(ctx context.Context, opts ...Option) (*Sandbox, error) {
-	options := Options{
+// newOptions applies opts on top of the sandbox defaults.
+func newOptions(opts ...Option) (*Options, error) {
+	options := &Options{
 		enableNetworking: true,
 		workingDir:       "/",
 	}
 	for _, o := range opts {
-		o(&options)
+		o(options)
 	}
-
 	if options.err != nil {
 		return nil, options.err
+	}
+	if options.id == "" {
+		options.id = newID()
+	}
+	return options, nil
+}
+
+// toBundleConfig converts the resolved options into a bundleConfig.
+func (o *Options) toBundleConfig(annotations map[string]string) bundleConfig {
+	return bundleConfig{
+		ID:               o.id,
+		RuntimeDir:       o.runtimeDir,
+		EnableNetworking: o.enableNetworking,
+		Mounts:           o.mounts,
+		Env:              o.env,
+		Annotations:      annotations,
+		WorkingDir:       o.workingDir,
+		Hostname:         o.hostname,
+
+		RootPath:     o.rootPath,
+		RootReadonly: o.rootReadonly,
+		User:         o.user,
+		Capabilities: o.capabilities,
+
+		Namespaces:            o.namespaces,
+		SkipDefaultNamespaces: o.skipDefaultNamespaces,
+		UIDMappings:           o.uidMappings,
+		GIDMappings:           o.gidMappings,
+
+		SkipDefaultMounts:    o.skipDefaultMounts,
+		SkipHostBinaryMounts: o.skipHostBinaryMounts,
+		SkipBaseEnv:          o.skipBaseEnv,
+	}
+}
+
+// Spec resolves opts into the OCI runtime specification they describe, without
+// creating a sandbox. It is useful for inspecting or testing what a given set
+// of options produces; the result cannot be fed back into this package, which
+// runs sandboxes only through New.
+func Spec(opts ...Option) (*specs.Spec, error) {
+	options, err := newOptions(opts...)
+	if err != nil {
+		return nil, err
+	}
+	return newSpec(options.toBundleConfig(nil))
+}
+
+// runscGlobalArgs translates the options that describe how the sandbox is run
+// into the global runsc flags that express them. Nothing else reaches runsc,
+// so every flag here corresponds to exactly one Option.
+func (o *Options) runscGlobalArgs() []string {
+	var args []string
+	if o.stateDir != "" {
+		args = append(args, "--root", o.stateDir)
+	}
+	if os.Geteuid() != 0 {
+		args = append(args, "--ignore-cgroups")
+	}
+	if !o.enableNetworking {
+		args = append(args, "--network=none")
+	}
+	if o.platform != "" {
+		args = append(args, "--platform="+o.platform)
+	}
+	if o.debug {
+		args = append(args, "--debug")
+		if o.debugLog != "" {
+			args = append(args, "--debug-log="+o.debugLog)
+		}
+	}
+	return args
+}
+
+// readStderrFile returns what a subprocess wrote to f, the file its stderr was
+// redirected to. It returns "" if stderr was not captured or cannot be read.
+func readStderrFile(f *os.File) string {
+	if f == nil {
+		return ""
+	}
+	out, err := os.ReadFile(f.Name())
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// numSignals is the highest signal number Exec relays, matching the constant
+// of the same name in pkg/sighandling.
+const numSignals = 32
+
+// relaySignals forwards the signals this process receives to the command
+// running in the sandbox, and returns a function that stops the relay.
+//
+// Signaling the runsc process attached to the command would not do: runsc only
+// forwards signals into the sandbox when it allocated a terminal. Each signal
+// is instead delivered with "runsc kill" to the sandbox-internal PID that
+// runsc records in pidFile.
+//
+// The set relayed mirrors pkg/sighandling: real-time signals are left to the
+// Go runtime, and the signals below are skipped because they describe the
+// relaying process rather than the sandboxed command. Skipping SIGCHLD also
+// keeps the relay from feeding itself, since every kill it runs is a child
+// whose exit raises one.
+func (s *Sandbox) relaySignals(ctx context.Context, pidFile string) func() {
+	sigs := make([]os.Signal, 0, numSignals)
+	for sig := 1; sig <= numSignals; sig++ {
+		switch syscall.Signal(sig) {
+		case syscall.SIGURG, syscall.SIGPIPE, syscall.SIGCHLD:
+			continue
+		}
+		sigs = append(sigs, syscall.Signal(sig))
+	}
+
+	ch := make(chan os.Signal, len(sigs))
+	signal.Notify(ch, sigs...)
+	done := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case sig := <-ch:
+				unixSig, ok := sig.(syscall.Signal)
+				if !ok {
+					continue
+				}
+				pid, err := readPidFile(pidFile)
+				if err != nil {
+					// The command is not running yet, so the signal is
+					// dropped, just as it is before an attached runsc starts
+					// forwarding.
+					continue
+				}
+				killArgs := []string{"--root", s.rootState, "kill", "--pid", strconv.Itoa(pid), s.id, strconv.Itoa(int(unixSig))}
+				_ = exec.CommandContext(ctx, s.runscPath, killArgs...).Run()
+			case <-done:
+				return
+			}
+		}
+	}()
+	return func() {
+		signal.Stop(ch)
+		close(done)
+	}
+}
+
+// readPidFile returns the PID runsc wrote to path.
+func readPidFile(path string) (int, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(strings.TrimSpace(string(b)))
+}
+
+// New spawns a new sandbox as a subprocess, the sandbox will be started and
+// running in detached mode. Its init process is a placeholder that keeps the
+// sandbox alive; commands run in it with Exec, and Close tears it down.
+func New(ctx context.Context, opts ...Option) (*Sandbox, error) {
+	options, err := newOptions(opts...)
+	if err != nil {
+		return nil, err
 	}
 
 	if options.runtimeDir == "" {
@@ -223,26 +510,31 @@ func New(ctx context.Context, opts ...Option) (*Sandbox, error) {
 		options.runtimeDir = dir
 	}
 
-	if options.id == "" {
-		options.id = newID()
-	}
-
 	if os.Geteuid() != 0 && options.enableNetworking {
 		return nil, fmt.Errorf("enabling networking requires running as root")
 	}
 
-	runDir := options.runtimeDir
-	stateDir := filepath.Join(runDir, "state")
+	// A sandbox has to be able to find its own state again, so it always has a
+	// state directory: the one WithStateDir named, else one inside the runtime
+	// directory.
+	stateDir := options.stateDir
+	ownStateDir := stateDir == ""
+	if ownStateDir {
+		stateDir = filepath.Join(options.runtimeDir, "state")
+	}
 	if err := os.MkdirAll(stateDir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create sandbox state directory: %v", err)
 	}
-	// Verify that the state directory actually has 0700 permissions.
-	fi, err := os.Stat(stateDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to stat sandbox state directory: %v", err)
-	}
-	if fi.Mode().Perm() != 0700 {
-		return nil, fmt.Errorf("sandbox state directory has incorrect permissions: got %v, want %v", fi.Mode().Perm(), os.FileMode(0700))
+	if ownStateDir {
+		// The directory belongs to the sandbox, so verify that nobody else can
+		// reach it. One the caller named is the caller's to protect.
+		fi, err := os.Stat(stateDir)
+		if err != nil {
+			return nil, fmt.Errorf("failed to stat sandbox state directory: %v", err)
+		}
+		if fi.Mode().Perm() != 0700 {
+			return nil, fmt.Errorf("sandbox state directory has incorrect permissions: got %v, want %v", fi.Mode().Perm(), os.FileMode(0700))
+		}
 	}
 
 	var annotations map[string]string
@@ -301,36 +593,26 @@ func New(ctx context.Context, opts ...Option) (*Sandbox, error) {
 			isCheckpointRestore = true
 		}
 	}
-	bundleDir, err := NewBundle(BundleConfig{
-		ID:               options.id,
-		RuntimeDir:       runDir,
-		EnableNetworking: options.enableNetworking,
-		Mounts:           options.mounts,
-		Env:              options.env,
-		Annotations:      annotations,
-		WorkingDir:       options.workingDir,
-		Hostname:         options.hostname,
-	})
+	options.stateDir = stateDir
+	bundleDir, err := newBundle(options.toBundleConfig(annotations))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OCI bundle: %v", err)
 	}
 
+	runscBin, err := resolveRunscPath()
+	if err != nil {
+		return nil, err
+	}
 	sb := &Sandbox{
-		id:        options.id,
-		bundleDir: bundleDir,
-		runscPath: runscPath(),
-		rootState: stateDir,
+		id:          options.id,
+		bundleDir:   bundleDir,
+		runscPath:   runscBin,
+		rootState:   stateDir,
+		ownStateDir: ownStateDir,
 	}
 
 	// Launch the sandbox in detached mode via os/exec.
-	args := []string{"--root", sb.rootState}
-	if os.Geteuid() != 0 {
-		args = append(args, "--ignore-cgroups")
-	}
-	if !options.enableNetworking {
-		args = append(args, "--network=none")
-	}
-	args = append(args, globalFlags...)
+	args := append(options.runscGlobalArgs(), globalFlags...)
 
 	if isCheckpointRestore {
 		args = append(args, "restore", "--image-path", checkpointRestoreDir, "--detach", sb.id)
@@ -340,33 +622,127 @@ func New(ctx context.Context, opts ...Option) (*Sandbox, error) {
 		args = append(args, "--bundle", sb.bundleDir, "--detach", sb.id)
 	}
 	cmd := exec.CommandContext(ctx, sb.runscPath, args...)
+	// Collect runsc's stderr, so that a failure reports why rather than just an
+	// exit status. It has to be a file rather than an in-memory writer: the
+	// latter makes os/exec build a pipe and wait for it to reach EOF, and the
+	// detached sandbox inherits that pipe and holds it open for its lifetime.
+	var errFile *os.File
+	if f, err := os.CreateTemp("", "runsc-stderr-*"); err == nil {
+		errFile = f
+		defer os.Remove(f.Name())
+		defer f.Close()
+		cmd.Stderr = f
+	}
 	if err := cmd.Run(); err != nil {
+		if msg := readStderrFile(errFile); msg != "" {
+			return nil, fmt.Errorf("failed to create sandbox via subprocess: %v: %s", err, msg)
+		}
 		return nil, fmt.Errorf("failed to create sandbox via subprocess: %v", err)
 	}
 
 	return sb, nil
 }
 
-// Exec runs the given command inside the running sandbox and returns the output.
-func (s *Sandbox) Exec(ctx context.Context, cmd string, opts ...string) (stdout string, stderr string, err error) {
-	args := append([]string{"--root", s.rootState, "exec", s.id, cmd}, opts...)
+// ExecOption configures a single command run by Exec.
+type ExecOption func(*execOptions)
 
-	commandContext := exec.CommandContext(ctx, s.runscPath, args...)
-
-	var stdoutBuf, stderrBuf bytes.Buffer
-
-	commandContext.Stdout = io.MultiWriter(&stdoutBuf)
-	commandContext.Stderr = io.MultiWriter(&stderrBuf)
-
-	err = commandContext.Run()
-	if err != nil {
-		return "", stderrBuf.String(), fmt.Errorf("exec failed: %v", err)
-	}
-
-	return stdoutBuf.String(), stderrBuf.String(), err
+// execOptions holds the configuration for one Exec call.
+type execOptions struct {
+	args   []string
+	stdin  io.Reader
+	stdout io.Writer
+	stderr io.Writer
 }
 
-// Close kills the sandbox processes and cleans up the state directory.
+// WithExecArgs sets the argv of the command to run. Exec requires it.
+func WithExecArgs(args ...string) ExecOption {
+	return func(o *execOptions) {
+		o.args = args
+	}
+}
+
+// WithExecStdio connects the command's standard streams to the given ones, so
+// that its input and output flow as they happen rather than being buffered. A
+// nil stream is left to Exec, which reads nothing on standard input and
+// collects the output into the ExecResult.
+func WithExecStdio(stdin io.Reader, stdout, stderr io.Writer) ExecOption {
+	return func(o *execOptions) {
+		o.stdin, o.stdout, o.stderr = stdin, stdout, stderr
+	}
+}
+
+// ExecResult is the outcome of a command run by Exec.
+type ExecResult struct {
+	// ExitCode is the status the command exited with, or 128 plus the signal
+	// number if a signal killed it, the same way a shell reports it.
+	ExitCode int
+
+	// Stdout and Stderr hold what the command wrote to those streams. A stream
+	// that WithExecStdio redirected is not collected here.
+	Stdout string
+	Stderr string
+}
+
+// Exec runs a command inside the sandbox and waits for it to exit. A command
+// that exits with a non-zero status is not an error: the status is reported in
+// the ExecResult, and an error means the command could not be run at all.
+//
+// The command inherits the working directory, environment, user and
+// capabilities the sandbox was created with. Signals received by the calling
+// process are relayed to the command, so that it can handle or die from them
+// as it would outside a sandbox.
+func (s *Sandbox) Exec(ctx context.Context, opts ...ExecOption) (*ExecResult, error) {
+	options := &execOptions{}
+	for _, o := range opts {
+		o(options)
+	}
+	if len(options.args) == 0 {
+		return nil, fmt.Errorf("no command to run: Exec requires WithExecArgs")
+	}
+
+	// The relay needs the command's PID inside the sandbox to signal it, and
+	// runsc reports it here once the command is running.
+	pidFile := filepath.Join(s.bundleDir, "exec-"+newID()+".pid")
+	defer os.Remove(pidFile)
+
+	args := append([]string{"--root", s.rootState, "exec", "--internal-pid-file", pidFile, s.id}, options.args...)
+	cmd := exec.CommandContext(ctx, s.runscPath, args...)
+	cmd.Stdin = options.stdin
+	var stdout, stderr bytes.Buffer
+	if cmd.Stdout = options.stdout; cmd.Stdout == nil {
+		cmd.Stdout = &stdout
+	}
+	if cmd.Stderr = options.stderr; cmd.Stderr == nil {
+		cmd.Stderr = &stderr
+	}
+
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start command in sandbox: %v", err)
+	}
+	stopRelay := s.relaySignals(ctx, pidFile)
+	defer stopRelay()
+
+	res := &ExecResult{}
+	err := cmd.Wait()
+	res.Stdout, res.Stderr = stdout.String(), stderr.String()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) {
+			return nil, fmt.Errorf("failed to run command in sandbox: %v", err)
+		}
+		// runsc exits with the command's own status, including 128 plus the
+		// signal number when a signal killed it. Should runsc itself have been
+		// signaled, ExitCode reports -1, so derive the status from the signal.
+		if ws, ok := exitErr.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
+			res.ExitCode = 128 + int(ws.Signal())
+		} else {
+			res.ExitCode = exitErr.ExitCode()
+		}
+	}
+	return res, nil
+}
+
+// Close kills the sandbox processes and cleans up after it.
 func (s *Sandbox) Close(ctx context.Context) error {
 	killArgs := []string{"--root", s.rootState, "kill", s.id, "SIGKILL"}
 	_ = exec.CommandContext(ctx, s.runscPath, killArgs...).Run()
@@ -380,11 +756,32 @@ func (s *Sandbox) Close(ctx context.Context) error {
 		return fmt.Errorf("failed to clean up sandbox bundle directory: %v", err)
 	}
 
-	if err := os.RemoveAll(s.rootState); err != nil {
-		return fmt.Errorf("failed to clean up sandbox state directory: %v", err)
+	// runsc delete has already removed the container's own state. Only a state
+	// directory this sandbox created is Close's to remove; one the caller named
+	// may well hold other sandboxes.
+	if s.ownStateDir {
+		unmountNullNetNS(s.rootState)
+		if err := os.RemoveAll(s.rootState); err != nil {
+			return fmt.Errorf("failed to clean up sandbox state directory: %v", err)
+		}
 	}
 
 	return nil
+}
+
+// nullNetNSFilename is the name, relative to the state directory, of the empty
+// network namespace runsc bind mounts there to share between gofers. It
+// mirrors specutils.NullNetNSFilename.
+const nullNetNSFilename = "null-netns"
+
+// unmountNullNetNS undoes the bind mounts runsc left in the state directory,
+// which would otherwise keep it busy and undeletable. Namespace creation is
+// not serialized across invocations, so the mounts can be stacked on the same
+// path and have to be unmounted until none are left.
+func unmountNullNetNS(stateDir string) {
+	path := filepath.Join(stateDir, nullNetNSFilename)
+	for syscall.Unmount(path, syscall.MNT_DETACH) == nil {
+	}
 }
 
 // Bundle returns the path to the OCI bundle directory for this sandbox.
