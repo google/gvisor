@@ -93,11 +93,21 @@ go_library(
 go_test(
     name = "control_test",
     size = "small",
-    srcs = ["proc_test.go"],
+    srcs = [
+        "fs_test.go",
+        "proc_test.go",
+    ],
     library = ":control",
     deps = [
+        "//pkg/abi/linux",
+        "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/log",
+        "//pkg/sentry/contexttest",
+        "//pkg/sentry/kernel/auth",
         "//pkg/sentry/ktime",
         "//pkg/sentry/usage",
+        "//pkg/sentry/vfs",
+        "//pkg/usermem",
     ],
 )
