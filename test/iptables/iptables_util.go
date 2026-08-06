@@ -19,6 +19,9 @@ import (
 	"os/exec"
 )
 
+// NFT indicates whether to use iptables-nft instead of iptables-legacy.
+var NFT = false
+
 // filterTable calls `ip{6}tables -t filter` with the given args.
 func filterTable(ipv6 bool, args ...string) error {
 	return tableCmd(ipv6, "filter", args)
@@ -35,9 +38,15 @@ func tableCmd(ipv6 bool, table string, args []string) error {
 	if ipv6 {
 		binary = "ip6tables-legacy"
 	}
+	if NFT {
+		binary = "iptables-nft"
+		if ipv6 {
+			binary = "ip6tables-nft"
+		}
+	}
 	cmd := exec.Command(binary, args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("error running iptables with args %v\nerror: %v\noutput: %s", args, err, string(out))
+		return fmt.Errorf("error running %s with args %v\nerror: %v\noutput: %s", binary, args, err, string(out))
 	}
 	return nil
 }

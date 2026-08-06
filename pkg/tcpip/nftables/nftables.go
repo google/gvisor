@@ -371,11 +371,14 @@ evalLoop:
 			jumpDepth--
 		}
 
-		// Update verdict after jumps/gotos.
+		// Update verdict after jumps.
 		v = regs.Verdict()
 
 		// Only continues evaluation for Continue and Break verdicts.
 		switch v.Code {
+		case VC(linux.NFT_RETURN):
+			regs.verdict.Code = VC(linux.NFT_CONTINUE)
+			return nil
 		case VC(linux.NFT_BREAK):
 			// Resets verdict for next rule (after breaking from a single operation).
 			regs.verdict.Code = VC(linux.NFT_CONTINUE)
@@ -1581,13 +1584,21 @@ func (r *Rule) AddOpFromExprInfo(nf *NFTables, tab *Table, exprInfo ExprInfo) *s
 		if op, err = initMasqOp(tab, exprInfo); err != nil {
 			return err
 		}
+	case OpTypeMatch:
+		if op, err = initMatch(tab, exprInfo); err != nil {
+			return err
+		}
+	case OpTypeTarget:
+		if op, err = initTarget(tab, exprInfo); err != nil {
+			return err
+		}
 
 	default:
 		return syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("unknown expression type not found: %s", exprInfo.ExprName))
 	}
 
-	if exprOpType == OpTypeCT || exprOpType == OpTypeNAT || exprOpType == OpTypeMasq {
-		// NAT and Masq operations require connection tracking.
+	if exprOpType == OpTypeCT || exprOpType == OpTypeNAT || exprOpType == OpTypeMasq || exprOpType == OpTypeMatch || exprOpType == OpTypeTarget {
+		// NAT, Masq, and xtables operations require connection tracking.
 		nf.InitConnTrackOnce()
 	}
 
