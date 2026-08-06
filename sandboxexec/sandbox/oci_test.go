@@ -15,9 +15,7 @@
 package sandbox_test
 
 import (
-	"encoding/json"
 	"os"
-	"path/filepath"
 	"slices"
 	"testing"
 
@@ -25,35 +23,12 @@ import (
 	"gvisor.dev/gvisor/sandboxexec/sandbox"
 )
 
-func TestNewBundle(t *testing.T) {
+func TestSpec(t *testing.T) {
 	for _, netMode := range []sandbox.NetworkMode{sandbox.NetworkModeNone, sandbox.NetworkModeHost, sandbox.NetworkModeSandbox} {
 		t.Run(string(netMode), func(t *testing.T) {
-			tempDir := t.TempDir()
-			sandboxID := "test-sandbox"
-			bundleDir, err := sandbox.NewBundle(sandbox.BundleConfig{
-				ID:         sandboxID,
-				RuntimeDir: tempDir,
-				Network:    netMode,
-			})
+			spec, err := sandbox.DebugSpec(sandbox.WithNetwork(netMode))
 			if err != nil {
-				t.Fatalf("NewBundle(netMode=%v) failed: %v", netMode, err)
-			}
-			defer os.RemoveAll(bundleDir)
-			expectedBundleDir := filepath.Join(tempDir, sandboxID)
-			if bundleDir != expectedBundleDir {
-				t.Fatalf("NewBundle(%v, %v) = %q, want %q", sandboxID, tempDir, bundleDir, expectedBundleDir)
-			}
-
-			configPath := filepath.Join(bundleDir, "config.json")
-			configFile, err := os.Open(configPath)
-			if err != nil {
-				t.Fatalf("failed to open config.json: %v", err)
-			}
-			defer configFile.Close()
-
-			var spec specs.Spec
-			if err := json.NewDecoder(configFile).Decode(&spec); err != nil {
-				t.Fatalf("failed to decode config.json: %v", err)
+				t.Fatalf("DebugSpec(netMode=%v) failed: %v", netMode, err)
 			}
 
 			if spec.Version != "1.0.0" {
@@ -102,42 +77,22 @@ func TestNewBundle(t *testing.T) {
 	}
 }
 
-func TestNewBundleNormalization(t *testing.T) {
-	tempDir := t.TempDir()
-	sandboxID := "test-sandbox"
-
-	mounts := []sandbox.Mount{
-		{
-			Source:      "/tmp/foo/../bar",
-			Destination: "/mnt/foo/./bar",
-			Type:        sandbox.MountTypeBind,
-		},
-		{
-			Destination: "/mnt/baz/..",
-			Type:        sandbox.MountTypeTmpfs,
-		},
-	}
-
-	bundleDir, err := sandbox.NewBundle(sandbox.BundleConfig{
-		ID:         sandboxID,
-		RuntimeDir: tempDir,
-		Mounts:     mounts,
-	})
+func TestSpecMountNormalization(t *testing.T) {
+	spec, err := sandbox.DebugSpec(
+		sandbox.WithMount(
+			sandbox.Mount{
+				Source:      "/tmp/foo/../bar",
+				Destination: "/mnt/foo/./bar",
+				Type:        sandbox.MountTypeBind,
+			},
+			sandbox.Mount{
+				Destination: "/mnt/baz/..",
+				Type:        sandbox.MountTypeTmpfs,
+			},
+		),
+	)
 	if err != nil {
-		t.Fatalf("NewBundle failed: %v", err)
-	}
-	defer os.RemoveAll(bundleDir)
-
-	configPath := filepath.Join(bundleDir, "config.json")
-	configFile, err := os.Open(configPath)
-	if err != nil {
-		t.Fatalf("failed to open config.json: %v", err)
-	}
-	defer configFile.Close()
-
-	var spec specs.Spec
-	if err := json.NewDecoder(configFile).Decode(&spec); err != nil {
-		t.Fatalf("failed to decode config.json: %v", err)
+		t.Fatalf("DebugSpec failed: %v", err)
 	}
 
 	var foundBind, foundTmpfs bool
@@ -161,65 +116,10 @@ func TestNewBundleNormalization(t *testing.T) {
 	}
 }
 
-func TestNewBundleWithAnnotations(t *testing.T) {
-	tempDir := t.TempDir()
-	sandboxID := "test-sandbox-annotations"
-	annotations := map[string]string{
-		"dev.gvisor.tar.rootfs.upper": "/tmp/test.tar",
-	}
-	bundleDir, err := sandbox.NewBundle(sandbox.BundleConfig{
-		ID:          sandboxID,
-		RuntimeDir:  tempDir,
-		Annotations: annotations,
-	})
+func TestSpecEnv(t *testing.T) {
+	spec, err := sandbox.DebugSpec(sandbox.WithEnv("TEST_VAR=A", "TEST_VAR=B"))
 	if err != nil {
-		t.Fatalf("NewBundle failed: %v", err)
-	}
-	defer os.RemoveAll(bundleDir)
-
-	configPath := filepath.Join(bundleDir, "config.json")
-	configFile, err := os.Open(configPath)
-	if err != nil {
-		t.Fatalf("failed to open config.json: %v", err)
-	}
-	defer configFile.Close()
-
-	var spec specs.Spec
-	if err := json.NewDecoder(configFile).Decode(&spec); err != nil {
-		t.Fatalf("failed to decode config.json: %v", err)
-	}
-
-	if val, ok := spec.Annotations["dev.gvisor.tar.rootfs.upper"]; !ok || val != "/tmp/test.tar" {
-		t.Errorf("expected annotation 'dev.gvisor.tar.rootfs.upper' with value '/tmp/test.tar', got spec.Annotations: %+v", spec.Annotations)
-	}
-}
-
-func TestNewBundleEnv(t *testing.T) {
-	tempDir := t.TempDir()
-	sandboxID := "test-sandbox-env"
-
-	env := []string{"TEST_VAR=A", "TEST_VAR=B"}
-
-	bundleDir, err := sandbox.NewBundle(sandbox.BundleConfig{
-		ID:         sandboxID,
-		RuntimeDir: tempDir,
-		Env:        env,
-	})
-	if err != nil {
-		t.Fatalf("NewBundle failed: %v", err)
-	}
-	defer os.RemoveAll(bundleDir)
-
-	configPath := filepath.Join(bundleDir, "config.json")
-	configFile, err := os.Open(configPath)
-	if err != nil {
-		t.Fatalf("failed to open config.json: %v", err)
-	}
-	defer configFile.Close()
-
-	var spec specs.Spec
-	if err := json.NewDecoder(configFile).Decode(&spec); err != nil {
-		t.Fatalf("failed to decode config.json: %v", err)
+		t.Fatalf("DebugSpec failed: %v", err)
 	}
 
 	expectedEnv := []string{
@@ -234,33 +134,12 @@ func TestNewBundleEnv(t *testing.T) {
 	}
 }
 
-func TestNewBundleWorkingDir(t *testing.T) {
-	tempDir := t.TempDir()
-	sandboxID := "test-sandbox-cwd"
-
+func TestSpecWorkingDir(t *testing.T) {
 	customCwd := "/custom/absolute/path"
 
-	bundleDir, err := sandbox.NewBundle(sandbox.BundleConfig{
-		ID:         sandboxID,
-		RuntimeDir: tempDir,
-		WorkingDir: customCwd,
-	})
-
+	spec, err := sandbox.DebugSpec(sandbox.WithWorkingDir(customCwd))
 	if err != nil {
-		t.Fatalf("NewBundle failed: %v", err)
-	}
-	defer os.RemoveAll(bundleDir)
-
-	configPath := filepath.Join(bundleDir, "config.json")
-	configFile, err := os.Open(configPath)
-	if err != nil {
-		t.Fatalf("failed to open config.json: %v", err)
-	}
-	defer configFile.Close()
-
-	var spec specs.Spec
-	if err := json.NewDecoder(configFile).Decode(&spec); err != nil {
-		t.Fatalf("failed to decode config.json: %v", err)
+		t.Fatalf("DebugSpec failed: %v", err)
 	}
 
 	if spec.Process.Cwd != customCwd {
