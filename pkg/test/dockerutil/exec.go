@@ -67,6 +67,7 @@ func (c *Container) Exec(ctx context.Context, opts ExecOpts, args ...string) (st
 	if err != nil {
 		return "", err
 	}
+	defer p.Close()
 	done := make(chan struct{})
 	var (
 		out    string
@@ -155,13 +156,50 @@ func (p *Process) Read() (string, string, error) {
 	return stdout.String(), stderr.String(), nil
 }
 
-// Logs returns combined stdout/stderr from the process.
+// Logs returns combined stdout/stderr from the process. Whatever was read
+// before an error occurred is returned alongside the error.
 func (p *Process) Logs() (string, error) {
 	var out bytes.Buffer
-	if err := p.read(&out, &out); err != nil {
-		return "", err
+	err := p.read(&out, &out)
+	return out.String(), err
+}
+
+// LogsCtx is Logs, but gives up once ctx is done. Logs blocks until the
+// process closes its output stream, which never happens if the process hangs,
+// so callers that already have a bounded context should prefer this.
+func (p *Process) LogsCtx(ctx context.Context) (string, error) {
+	if p.conn.Conn == nil {
+		return p.Logs()
 	}
-	return out.String(), nil
+	// Expiring the read deadline is what unblocks an in-flight read; the
+	// connection itself knows nothing about ctx.
+	stop, watcherDone := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(watcherDone)
+		select {
+		case <-ctx.Done():
+			p.conn.Conn.SetReadDeadline(time.Now())
+		case <-stop:
+		}
+	}()
+
+	out, err := p.Logs()
+	close(stop)
+	<-watcherDone
+
+	if err != nil && ctx.Err() != nil {
+		// Report ctx's error rather than the i/o timeout it caused, so that
+		// callers can tell a hang apart from a genuine read failure.
+		return out, fmt.Errorf("reading process output: %w", ctx.Err())
+	}
+	return out, err
+}
+
+// Close releases the connection to the process. It does not kill the process.
+func (p *Process) Close() {
+	if p.conn.Conn != nil {
+		p.conn.Close()
+	}
 }
 
 func (p *Process) read(stdout, stderr *bytes.Buffer) error {
