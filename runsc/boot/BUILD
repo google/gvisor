@@ -68,6 +68,7 @@ go_library(
         "//pkg/sentry/devices/nvproxy/nvconf",
         "//pkg/sentry/devices/rdmaproxy",
         "//pkg/sentry/devices/rdmaproxy/cxproxy",
+        "//pkg/sentry/devices/rdmaproxy/genericproxy",
         "//pkg/sentry/devices/tpuproxy",
         "//pkg/sentry/devices/tpuproxy/vfio",
         "//pkg/sentry/devices/ttydev",
