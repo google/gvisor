@@ -18,17 +18,120 @@ This module provides a Python API for creating gVisor sandboxes and executing
 commands inside them.
 """
 
+import dataclasses
+import enum
 import json
 import os
+import posixpath
 import random
 import shutil
 import subprocess
 import tempfile
-from typing import Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 
 class Error(Exception):
   """Base exception for Sandbox operations."""
+
+
+class MountType(str, enum.Enum):
+  """Type of mount point inside the sandbox."""
+
+  BIND = "bind"
+  TMPFS = "tmpfs"
+  PROC = "proc"
+
+
+@dataclasses.dataclass(frozen=True)
+class Mount:
+  """Represents a mount configuration inside the sandbox.
+
+  Attributes:
+    destination: Destination path inside the sandbox.
+    source: Source path on the host (for bind mounts) or mount source
+      identifier.
+    type: Mount type ('bind', 'tmpfs', 'proc').
+    readonly: Whether the mount is read-only (applies to bind mounts).
+  """
+
+  destination: str
+  source: Optional[str] = None
+  type: Union[MountType, str] = MountType.BIND
+  readonly: bool = False
+
+  @classmethod
+  def bind(
+      cls, source: str, destination: str, readonly: bool = False
+  ) -> "Mount":
+    """Creates a host bind mount."""
+    return cls(
+        destination=destination,
+        source=source,
+        type=MountType.BIND,
+        readonly=readonly,
+    )
+
+  @classmethod
+  def tmpfs(cls, destination: str) -> "Mount":
+    """Creates an in-memory tmpfs mount."""
+    return cls(
+        destination=destination,
+        source="tmpfs",
+        type=MountType.TMPFS,
+        readonly=False,
+    )
+
+  @classmethod
+  def proc(cls, destination: str) -> "Mount":
+    """Creates an isolated procfs mount."""
+    return cls(
+        destination=destination,
+        source="proc",
+        type=MountType.PROC,
+        readonly=False,
+    )
+
+
+def _normalize_env(
+    env: Optional[Union[List[str], Dict[str, str]]],
+    base_env: Optional[Dict[str, str]] = None,
+) -> List[str]:
+  """Normalizes environment variables into a list of 'KEY=VALUE' strings.
+
+  Args:
+    env: A list of 'KEY=VALUE' strings or a dict mapping keys to values.
+    base_env: Optional default environment dictionary to merge over.
+
+  Returns:
+    A deduplicated list of 'KEY=VALUE' strings.
+
+  Raises:
+    ValueError: If a list entry is missing '=' or a dict key contains '='.
+    TypeError: If env is not a list, tuple, or dict.
+  """
+  merged = dict(base_env) if base_env else {}
+  if not env:
+    return [f"{k}={v}" for k, v in merged.items()]
+
+  if isinstance(env, dict):
+    for k, v in env.items():
+      if "=" in str(k):
+        raise ValueError(f"Environment variable key cannot contain '=': {k!r}")
+      merged[str(k)] = str(v)
+  elif isinstance(env, (list, tuple)):
+    for item in env:
+      if not isinstance(item, str) or "=" not in item:
+        raise ValueError(
+            f"Invalid environment variable format, expected KEY=VALUE: {item!r}"
+        )
+      k, _, v = item.partition("=")
+      merged[k] = v
+  else:
+    raise TypeError(
+        f"env must be a list of 'KEY=VALUE' strings or a dict, got {type(env)}"
+    )
+
+  return [f"{k}={v}" for k, v in merged.items()]
 
 
 class Sandbox:
@@ -40,6 +143,9 @@ class Sandbox:
       sandbox_id: Optional[str] = None,
       enable_networking: bool = True,
       network: Optional[str] = None,
+      env: Optional[Union[List[str], Dict[str, str]]] = None,
+      mounts: Optional[Sequence[Union[Mount, Dict[str, Any]]]] = None,
+      working_dir: str = "/",
   ):
     """Initializes and starts a new sandbox.
 
@@ -51,10 +157,16 @@ class Sandbox:
       enable_networking: Whether networking is enabled inside the sandbox.
       network: The networking mode for runsc (e.g. "none", "sandbox", "host").
         Specifying this overrides enable_networking.
+      env: Optional environment variables for the sandbox container.
+      mounts: Optional sequence of Mount objects or dicts defining mounts.
+      working_dir: The initial working directory inside the sandbox. Defaults to
+        "/".
 
     Raises:
       Error: If sandbox creation fails.
-      ValueError: If an invalid network mode is provided.
+      ValueError: If an invalid network mode, working_dir, mount, or environment
+        variable format is provided.
+      TypeError: If env or mounts has an invalid type.
     """
     if network is not None and network not in ("none", "sandbox", "host"):
       raise ValueError(
@@ -67,6 +179,9 @@ class Sandbox:
     self._is_network_enabled = (
         network != "none" if network is not None else enable_networking
     )
+    self._env = env
+    self._working_dir = self._normalize_working_dir(working_dir)
+    self._mounts = self._normalize_mounts(mounts)
     self._runtime_dir = ""
     self._owns_runtime_dir = False
     self._id = ""
@@ -178,6 +293,135 @@ class Sandbox:
   def _generate_id(self) -> str:
     return f"{random.getrandbits(128):032x}"
 
+  @staticmethod
+  def _normalize_working_dir(working_dir: Optional[str]) -> str:
+    """Normalizes and validates working directory.
+
+    Args:
+      working_dir: The working directory path.
+
+    Returns:
+      The normalized absolute POSIX working directory path.
+
+    Raises:
+      TypeError: If working_dir is not a string.
+      ValueError: If working_dir is empty or whitespace.
+    """
+    if working_dir is None:
+      return "/"
+    if not isinstance(working_dir, str):
+      raise TypeError(f"working_dir must be a str, got {type(working_dir)}")
+    if not working_dir.strip():
+      raise ValueError("working directory cannot be empty")
+    return posixpath.normpath(posixpath.join("/", working_dir))
+
+  @staticmethod
+  def _normalize_mounts(
+      mounts: Optional[Sequence[Union[Mount, Dict[str, Any]]]],
+  ) -> List[Mount]:
+    """Normalizes and validates mount configurations into a list of Mount objects.
+
+    Args:
+      mounts: A sequence of Mount objects or dictionaries specifying mounts.
+
+    Returns:
+      A list of normalized Mount objects.
+
+    Raises:
+      TypeError: If mounts is not a sequence, or an item is neither a Mount nor
+      a
+        dict.
+      ValueError: If destination is empty, bind mount source is empty, or mount
+        type is invalid.
+    """
+    if not mounts:
+      return []
+
+    if not isinstance(mounts, (list, tuple)):
+      raise TypeError(
+          "mounts must be a list or tuple of Mount objects or dicts, got"
+          f" {type(mounts)}"
+      )
+
+    normalized = []
+    for item in mounts:
+      if isinstance(item, Mount):
+        m_dest = item.destination
+        m_source = item.source
+        m_type = item.type
+        m_readonly = item.readonly
+      elif isinstance(item, dict):
+        if "destination" not in item:
+          raise ValueError(f"Mount dictionary missing 'destination': {item!r}")
+        m_dest = item["destination"]
+        m_source = item.get("source")
+        m_type = item.get("type", MountType.BIND)
+        m_readonly = item.get("readonly", False)
+      else:
+        raise TypeError(
+            f"Mount item must be a Mount instance or dict, got {type(item)}"
+        )
+
+      if not isinstance(m_dest, str) or not m_dest.strip():
+        raise ValueError(f"Mount destination cannot be empty: {m_dest!r}")
+
+      clean_dest = posixpath.normpath(posixpath.join("/", m_dest))
+
+      if isinstance(m_type, MountType):
+        type_str = m_type.value
+      elif isinstance(m_type, str):
+        type_str = m_type.lower()
+        if type_str not in (
+            MountType.BIND.value,
+            MountType.TMPFS.value,
+            MountType.PROC.value,
+        ):
+          raise ValueError(
+              f"Invalid mount type '{m_type}'. Valid types are 'bind', 'tmpfs',"
+              " 'proc'."
+          )
+      else:
+        raise TypeError(
+            f"Mount type must be a MountType enum or str, got {type(m_type)}"
+        )
+
+      if type_str == MountType.BIND.value:
+        if (
+            not m_source
+            or not isinstance(m_source, str)
+            or not m_source.strip()
+        ):
+          raise ValueError(f"Bind mount source cannot be empty: {m_source!r}")
+        clean_source = os.path.abspath(m_source)
+        normalized.append(
+            Mount(
+                destination=clean_dest,
+                source=clean_source,
+                type=MountType.BIND,
+                readonly=bool(m_readonly),
+            )
+        )
+      elif type_str == MountType.TMPFS.value:
+        normalized.append(
+            Mount(
+                destination=clean_dest,
+                source="tmpfs",
+                type=MountType.TMPFS,
+                readonly=False,
+            )
+        )
+      elif type_str == MountType.PROC.value:
+        normalized.append(
+            Mount(
+                destination=clean_dest,
+                source="proc",
+                type=MountType.PROC,
+                readonly=False,
+            )
+        )
+
+    return normalized
+
   def _find_runsc(self) -> str:
     if "RUNSC_PATH" in os.environ:
       return os.environ["RUNSC_PATH"]
@@ -230,6 +474,28 @@ class Sandbox:
             "options": opts,
         })
 
+    for m in self._mounts:
+      if m.type == MountType.BIND:
+        opts = ["rbind", "ro" if m.readonly else "rw"]
+        mounts.append({
+            "destination": m.destination,
+            "type": "bind",
+            "source": m.source,
+            "options": opts,
+        })
+      elif m.type == MountType.TMPFS:
+        mounts.append({
+            "destination": m.destination,
+            "type": "tmpfs",
+            "source": "tmpfs",
+        })
+      elif m.type == MountType.PROC:
+        mounts.append({
+            "destination": m.destination,
+            "type": "proc",
+            "source": "proc",
+        })
+
     linux = {
         "namespaces": namespaces,
     }
@@ -241,6 +507,9 @@ class Sandbox:
           {"containerID": 0, "hostID": os.getegid(), "size": 1}
       ]
 
+    base_env = {"PATH": "/bin:/usr/bin:/usr/local/bin"}
+    process_env = _normalize_env(self._env, base_env=base_env)
+
     spec = {
         "ociVersion": "1.0.0",
         "root": {
@@ -251,8 +520,8 @@ class Sandbox:
             "terminal": False,
             "user": {"uid": 0, "gid": 0},
             "args": ["sleep", "infinity"],
-            "cwd": "/",
-            "env": ["PATH=/bin:/usr/bin:/usr/local/bin"],
+            "cwd": self._working_dir,
+            "env": process_env,
         },
         "mounts": mounts,
         "linux": linux,
@@ -268,13 +537,20 @@ class Sandbox:
     return bundle_dir
 
   def exec(
-      self, cmd: str, *args: str, timeout: Optional[float] = None
+      self,
+      cmd: str,
+      *args: str,
+      env: Optional[Union[List[str], Dict[str, str]]] = None,
+      cwd: Optional[str] = None,
+      timeout: Optional[float] = None,
   ) -> Tuple[str, str]:
     """Runs the given command inside the running sandbox.
 
     Args:
       cmd: The command to run.
       *args: Arguments to the command.
+      env: Optional environment variables for this command execution.
+      cwd: Optional working directory for this command execution.
       timeout: Timeout in seconds.
 
     Returns:
@@ -282,8 +558,21 @@ class Sandbox:
 
     Raises:
       Error: If the command execution fails or times out.
+      ValueError: If environment variable formatting or cwd is invalid.
+      TypeError: If env or cwd has an invalid type.
     """
-    runsc_args = ["--root", self._state_dir, "exec", self._id, cmd] + list(args)
+    runsc_args = ["--root", self._state_dir, "exec"]
+    if cwd is not None:
+      if not isinstance(cwd, str):
+        raise TypeError(f"cwd must be a str, got {type(cwd)}")
+      if not cwd.strip():
+        raise ValueError("cwd cannot be empty")
+      clean_cwd = posixpath.normpath(posixpath.join("/", cwd))
+      runsc_args.extend(["--cwd", clean_cwd])
+    if env:
+      for env_str in _normalize_env(env):
+        runsc_args.extend(["--env", env_str])
+    runsc_args.extend([self._id, cmd] + list(args))
     try:
       result = subprocess.run(
           [self._runsc_path] + runsc_args,

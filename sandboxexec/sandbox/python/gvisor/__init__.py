@@ -15,4 +15,6 @@
 """gVisor sandboxexec sandbox package."""
 
 from .sandbox import Error
+from .sandbox import Mount
+from .sandbox import MountType
 from .sandbox import Sandbox
