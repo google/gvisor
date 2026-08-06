@@ -155,8 +155,6 @@ func (cm *containerManager) Event(cid *string, out *EventOut) error {
 	}
 
 	// Memory usage.
-	// TODO(b/524360347): Once per-container submounting is implemented in cgroup2fs,
-	// cgroup v2 subcontainer queries ("/" + *cid) will resolve directly without fallback.
 	memFile := control.CgroupControlFile{
 		Controller: "memory",
 		Path:       "/" + *cid,
@@ -211,10 +209,17 @@ func (cm *containerManager) getCPUUsageFromCgroups() (map[string]uint64, error) 
 	defer cm.l.mu.Unlock()
 
 	isV2 := cm.l.k.Cgroup2FS().EverMounted()
-	for cid := range cm.l.containerIDs {
+	for name, cid := range cm.l.containerIDs {
+		// Before the introduction of cgroup v2, the container name, not the ID, was incorrectly used in
+		// the cgroup path. For avoiding behavior changes when cgroup v1 is in use, we use the container
+		// ID only for cgroup v2.
+		id := name
+		if isV2 {
+			id = cid
+		}
 		file := control.CgroupControlFile{
 			Controller: "cpuacct",
-			Path:       "/" + cid,
+			Path:       "/" + id,
 			Name:       "cpuacct.usage",
 		}
 		if isV2 {
@@ -244,7 +249,7 @@ func (cm *containerManager) getCPUUsageFromCgroups() (map[string]uint64, error) 
 				return nil, err
 			}
 		}
-		usage[cid] = cpuUsage
+		usage[id] = cpuUsage
 	}
 	return usage, nil
 }
