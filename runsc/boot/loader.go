@@ -44,6 +44,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/devices/rdmaproxy/cxproxy"
+	"gvisor.dev/gvisor/pkg/sentry/devices/rdmaproxy/genericproxy"
 	"gvisor.dev/gvisor/pkg/sentry/fdimport"
 	cgroup2fs "gvisor.dev/gvisor/pkg/sentry/fsimpl/cgroup2fs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
@@ -543,6 +544,7 @@ func New(args Args) (*Loader, error) {
 	}
 	if specutils.RDMAEnabled(args.Spec, args.Conf) {
 		cxproxy.Init()
+		genericproxy.Init()
 	}
 
 	// Publish the RDMA sysfs snapshot to the NETLINK_RDMA nldev shim before
