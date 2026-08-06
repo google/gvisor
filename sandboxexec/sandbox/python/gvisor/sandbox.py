@@ -39,6 +39,7 @@ class Sandbox:
       runtime_dir: Optional[str] = None,
       sandbox_id: Optional[str] = None,
       enable_networking: bool = True,
+      network: Optional[str] = None,
   ):
     """Initializes and starts a new sandbox.
 
@@ -48,11 +49,24 @@ class Sandbox:
       sandbox_id: Specific sandbox ID. If not set, a unique ID is generated
         automatically.
       enable_networking: Whether networking is enabled inside the sandbox.
+      network: The networking mode for runsc (e.g. "none", "sandbox", "host").
+        Specifying this overrides enable_networking.
 
     Raises:
       Error: If sandbox creation fails.
+      ValueError: If an invalid network mode is provided.
     """
+    if network is not None and network not in ("none", "sandbox", "host"):
+      raise ValueError(
+          f"Invalid network mode '{network}'. Valid options are 'none',"
+          " 'sandbox', 'host', or None."
+      )
+
     self._enable_networking = enable_networking
+    self._network = network
+    self._is_network_enabled = (
+        network != "none" if network is not None else enable_networking
+    )
     self._runtime_dir = ""
     self._owns_runtime_dir = False
     self._id = ""
@@ -74,7 +88,11 @@ class Sandbox:
     self._id = sandbox_id or self._generate_id()
 
     try:
-      if os.geteuid() != 0 and self._enable_networking:
+      if (
+          os.geteuid() != 0
+          and self._is_network_enabled
+          and self._network != "host"
+      ):
         raise Error("enabling networking requires running as root")
 
       self._state_dir = os.path.join(self._runtime_dir, "state")
@@ -101,8 +119,12 @@ class Sandbox:
       args = ["--root", self._state_dir]
       if os.geteuid() != 0:
         args.append("--ignore-cgroups")
-      if not self._enable_networking:
+
+      if self._network is not None:
+        args.append(f"--network={self._network}")
+      elif not self._enable_networking:
         args.append("--network=none")
+
       args.extend(["run", "--bundle", self._bundle_dir, "--detach", self._id])
 
       # We must use a file for stderr because runsc run with --detach spawns a
@@ -188,7 +210,7 @@ class Sandbox:
     ]
     if os.geteuid() != 0:
       namespaces.append({"type": "user"})
-    if self._enable_networking:
+    if self._is_network_enabled and self._network != "host":
       namespaces.append({"type": "network"})
 
     mounts = [
