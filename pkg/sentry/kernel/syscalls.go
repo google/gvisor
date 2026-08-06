@@ -285,9 +285,6 @@ type SyscallTable struct {
 	// Arch is the architecture that this syscall table targets.
 	Arch arch.Arch
 
-	// The OS version that this syscall table implements.
-	Version Version
-
 	// AuditNumber is a numeric constant that represents the syscall table. If
 	// non-zero, auditNumber must be one of the AUDIT_ARCH_* values defined by
 	// linux/audit.h.
