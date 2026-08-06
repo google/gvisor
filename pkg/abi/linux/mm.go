@@ -48,6 +48,8 @@ const (
 	MAP_NONBLOCK   = 1 << 16
 	MAP_STACK      = 1 << 17
 	MAP_HUGETLB    = 1 << 18
+
+	MAP_FIXED_NOREPLACE = 1 << 20
 )
 
 // Flags for mremap(2).
