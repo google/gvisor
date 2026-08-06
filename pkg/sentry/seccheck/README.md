@@ -1,4 +1,6 @@
-# Introduction
+# gVisor - SecCheck
+
+## Introduction
 
 This package provides a remote interface to observe behavior of the application
 running inside the sandbox. It was built with runtime monitoring in mind, e.g.
@@ -9,7 +11,7 @@ generate alerts when something unexpected occurs, log these actions, etc.
 
 First, let's go over a few concepts before we get into the details.
 
-## Concepts
+### Concepts
 
 -   **Points:** these are discrete places (or points) in the code where
     instrumentation was added. Each point has a unique name and schema. They can
@@ -39,9 +41,9 @@ First, let's go over a few concepts before we get into the details.
 If you're interested in exploring further, there are more details in the
 [design doc](https://docs.google.com/document/d/1RQQKzeFpO-zOoBHZLA-tr5Ed_bvAOLDqgGgKhqUff2A/edit).
 
-# Points
+## Points
 
-Every trance point in the system is identified by a unique name. The naming
+Every trace point in the system is identified by a unique name. The naming
 convention is to scope the point with a main component followed by its name to
 avoid conflicts. Here are a few examples:
 
@@ -94,10 +96,10 @@ The following command lists all trace points available in the system:
 
 ```shell
 $ runsc trace metadata
-POINTS (973)
-Name: container/start, optional fields: [env], context fields: [time|thread_id|task_start_time|group_id|thread_group_start_time|container_id|credentials|cwd|process_name]
-Name: sentry/clone, optional fields: [], context fields: [time|thread_id|task_start_time|group_id|thread_group_start_time|container_id|credentials|cwd|process_name]
-Name: syscall/accept/enter, optional fields: [fd_path], context fields: [time|thread_id|task_start_time|group_id|thread_group_start_time|container_id|credentials|cwd|process_name]
+POINTS (998)
+Name: container/start, optional fields: [env], context fields: [time|thread_id|task_start_time|group_id|thread_group_start_time|container_id|credentials|cwd|process_name|parent_thread_group_id|is_exec_session]
+Name: sentry/clone, optional fields: [], context fields: [time|thread_id|task_start_time|group_id|thread_group_start_time|container_id|credentials|cwd|process_name|parent_thread_group_id|is_exec_session]
+Name: syscall/accept/enter, optional fields: [fd_path], context fields: [time|thread_id|task_start_time|group_id|thread_group_start_time|container_id|credentials|cwd|process_name|parent_thread_group_id|is_exec_session]
 ...
 ```
 
@@ -109,7 +111,7 @@ each trace point. Optional fields schema is part of the trace point proto, like
 points and is defined in
 [gvisor.common.ContextData](https://cs.opensource.google/gvisor/gvisor/+/master:pkg/sentry/seccheck/points/common.proto;bpv=1;bpt=1;l=77?gsn=ContextData&gs=kythe%3A%2F%2Fgithub.com%2Fgoogle%2Fgvisor%3Flang%3Dprotobuf%3Fpath%3Dpkg%2Fsentry%2Fseccheck%2Fpoints%2Fcommon.proto%234.2).
 
-# Sinks
+## Sinks
 
 Sinks receive enabled trace points and do something useful with them. They are
 identified by a unique name. The same `runsc trace metadata` command used above
@@ -162,7 +164,7 @@ points to it.
 
 > Note: It requires more than one trace session to be supported.
 
-# Sessions
+## Sessions
 
 Trace sessions scope a set of trace points with their corresponding
 configuration and a set of sinks that receive the points. Sessions can be
@@ -208,6 +210,16 @@ command. The session definition has 3 main parts:
         remote sink case, for example, it doesn't fail container startup if the
         remote process cannot be reached.
 
+In addition, the session definition supports the following optional fields:
+
+*   `ignore_missing`: boolean indicating whether to skip missing points and
+    optional/context fields not found. This can be used to apply a single
+    configuration file containing newer points/fields with older versions of
+    gVisor which do not have them yet. Note that it does not apply to sinks.
+*   `options`: map of session-level configuration options (for example,
+    `"execve_hash_cache_capacity"` to configure the maximum capacity of the
+    per-session execve hash cache).
+
 The session configuration above can also be used with the `--pod-init-config`
 flag under the `"trace_session"` JSON object. There is a full example
 [here](https://cs.opensource.google/gvisor/gvisor/+/master:examples/seccheck/pod_init.json)
@@ -216,7 +228,7 @@ flag under the `"trace_session"` JSON object. There is a full example
 > `runsc trace create` command. The portions of the Pod init config file that
 > are not related to the session configuration are ignored.
 
-# Full Example
+## Full Example
 
 Here, we're going to explore a how to use runtime monitoring end to end. Under
 the `examples` directory there is an implementation of the monitoring process
