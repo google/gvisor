@@ -516,46 +516,75 @@ func (a Attr) String() string {
 		a.Mode, a.UID, a.GID, a.NLink, a.RDev, a.Size, a.BlockSize, a.Blocks, a.ATimeSeconds, a.ATimeNanoSeconds, a.MTimeSeconds, a.MTimeNanoSeconds, a.CTimeSeconds, a.CTimeNanoSeconds, a.BTimeSeconds, a.BTimeNanoSeconds, a.Gen, a.DataVersion)
 }
 
+// getTimespec normalizes Timespec differences.
+func getTimespec(ts any) (uint64, uint64) {
+	switch t := ts.(type) {
+	case *syscall.Timespec:
+		return uint64(t.Sec), uint64(t.Nsec)
+	case *unix.Timespec:
+		return uint64(t.Sec), uint64(t.Nsec)
+	default:
+		return 0, 0
+	}
+}
+
+func mapAttrFields[TS *syscall.Timespec | *unix.Timespec](
+	attr *Attr,
+	mode uint32, nlink uint64, uid, gid uint32, dev uint64,
+	size int64, blksize uint64, blocks int64,
+	atim, mtim, ctim TS,
+	req AttrMask,
+) {
+	if req.Mode {
+		// p9.FileMode corresponds to Linux mode_t.
+		attr.Mode = FileMode(mode)
+	}
+	if req.NLink {
+		attr.NLink = uint64(nlink)
+	}
+	if req.UID {
+		attr.UID = UID(uid)
+	}
+	if req.GID {
+		attr.GID = GID(gid)
+	}
+	if req.RDev {
+		attr.RDev = dev
+	}
+
+	if req.ATime {
+		sec, nsec := getTimespec(atim)
+		attr.ATimeSeconds, attr.ATimeNanoSeconds = sec, nsec
+	}
+	if req.MTime {
+		sec, nsec := getTimespec(mtim)
+		attr.MTimeSeconds, attr.MTimeNanoSeconds = sec, nsec
+	}
+	if req.CTime {
+		sec, nsec := getTimespec(ctim)
+		attr.CTimeSeconds, attr.CTimeNanoSeconds = sec, nsec
+	}
+	if req.Size {
+		attr.Size = uint64(size)
+	}
+	if req.Blocks {
+		attr.BlockSize = uint64(blksize)
+		attr.Blocks = uint64(blocks)
+	}
+}
+
 // StatToAttr converts a Linux syscall stat structure to an Attr.
-func StatToAttr(s *syscall.Stat_t, req AttrMask) (Attr, AttrMask) {
+func StatToAttr[T *syscall.Stat_t | *unix.Stat_t](s T, req AttrMask) (Attr, AttrMask) {
 	attr := Attr{
 		UID: NoUID,
 		GID: NoGID,
 	}
-	if req.Mode {
-		// p9.FileMode corresponds to Linux mode_t.
-		attr.Mode = FileMode(s.Mode)
-	}
-	if req.NLink {
-		attr.NLink = uint64(s.Nlink)
-	}
-	if req.UID {
-		attr.UID = UID(s.Uid)
-	}
-	if req.GID {
-		attr.GID = GID(s.Gid)
-	}
-	if req.RDev {
-		attr.RDev = s.Dev
-	}
-	if req.ATime {
-		attr.ATimeSeconds = uint64(s.Atim.Sec)
-		attr.ATimeNanoSeconds = uint64(s.Atim.Nsec)
-	}
-	if req.MTime {
-		attr.MTimeSeconds = uint64(s.Mtim.Sec)
-		attr.MTimeNanoSeconds = uint64(s.Mtim.Nsec)
-	}
-	if req.CTime {
-		attr.CTimeSeconds = uint64(s.Ctim.Sec)
-		attr.CTimeNanoSeconds = uint64(s.Ctim.Nsec)
-	}
-	if req.Size {
-		attr.Size = uint64(s.Size)
-	}
-	if req.Blocks {
-		attr.BlockSize = uint64(s.Blksize)
-		attr.Blocks = uint64(s.Blocks)
+
+	switch v := any(s).(type) {
+	case *syscall.Stat_t:
+		mapAttrFields(&attr, v.Mode, uint64(v.Nlink), v.Uid, v.Gid, v.Rdev, v.Size, uint64(v.Blksize), v.Blocks, &v.Atim, &v.Mtim, &v.Ctim, req)
+	case *unix.Stat_t:
+		mapAttrFields(&attr, v.Mode, uint64(v.Nlink), v.Uid, v.Gid, v.Rdev, v.Size, uint64(v.Blksize), v.Blocks, &v.Atim, &v.Mtim, &v.Ctim, req)
 	}
 
 	// Use the req field because we already have it.

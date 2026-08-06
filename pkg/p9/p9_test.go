@@ -16,7 +16,10 @@ package p9
 
 import (
 	"os"
+	"syscall"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
 func TestFileModeHelpers(t *testing.T) {
@@ -131,5 +134,107 @@ func TestAttrMaskContains(t *testing.T) {
 	have.MTime = true
 	if !have.Contains(req) {
 		t.Fatalf("AttrMask %v should be a superset of %v", have, req)
+	}
+}
+
+func TestStatToAttr(t *testing.T) {
+	s := syscall.Stat_t{
+		Mode:    0o644,
+		Nlink:   2,
+		Uid:     100,
+		Gid:     200,
+		Rdev:    10,
+		Size:    1000,
+		Blksize: 4096,
+		Blocks:  8,
+		Atim:    syscall.Timespec{Sec: 1, Nsec: 2},
+		Mtim:    syscall.Timespec{Sec: 3, Nsec: 4},
+		Ctim:    syscall.Timespec{Sec: 5, Nsec: 6},
+	}
+
+	req := AttrMaskAll()
+	attr, mask := StatToAttr(&s, req)
+
+	if attr.Mode != FileMode(s.Mode) {
+		t.Errorf("attr.Mode = %v, want %v", attr.Mode, FileMode(s.Mode))
+	}
+	if attr.NLink != uint64(s.Nlink) {
+		t.Errorf("attr.NLink = %v, want %v", attr.NLink, s.Nlink)
+	}
+	if attr.UID != UID(s.Uid) {
+		t.Errorf("attr.UID = %v, want %v", attr.UID, s.Uid)
+	}
+	if attr.GID != GID(s.Gid) {
+		t.Errorf("attr.GID = %v, want %v", attr.GID, s.Gid)
+	}
+	if attr.RDev != s.Rdev {
+		t.Errorf("attr.RDev = %v, want %v", attr.RDev, s.Rdev)
+	}
+	if attr.Size != uint64(s.Size) {
+		t.Errorf("attr.Size = %v, want %v", attr.Size, s.Size)
+	}
+	if attr.BlockSize != uint64(s.Blksize) {
+		t.Errorf("attr.BlockSize = %v, want %v", attr.BlockSize, s.Blksize)
+	}
+	if attr.Blocks != uint64(s.Blocks) {
+		t.Errorf("attr.Blocks = %v, want %v", attr.Blocks, s.Blocks)
+	}
+	if attr.ATimeSeconds != uint64(s.Atim.Sec) || attr.ATimeNanoSeconds != uint64(s.Atim.Nsec) {
+		t.Errorf("attr.ATime = %v:%v, want %v:%v", attr.ATimeSeconds, attr.ATimeNanoSeconds, s.Atim.Sec, s.Atim.Nsec)
+	}
+	if attr.MTimeSeconds != uint64(s.Mtim.Sec) || attr.MTimeNanoSeconds != uint64(s.Mtim.Nsec) {
+		t.Errorf("attr.MTime = %v:%v, want %v:%v", attr.MTimeSeconds, attr.MTimeNanoSeconds, s.Mtim.Sec, s.Mtim.Nsec)
+	}
+	if attr.CTimeSeconds != uint64(s.Ctim.Sec) || attr.CTimeNanoSeconds != uint64(s.Ctim.Nsec) {
+		t.Errorf("attr.CTime = %v:%v, want %v:%v", attr.CTimeSeconds, attr.CTimeNanoSeconds, s.Ctim.Sec, s.Ctim.Nsec)
+	}
+
+	if mask.BTime || mask.Gen || mask.DataVersion {
+		t.Errorf("mask still contains BTime, Gen or DataVersion: %v", mask)
+	}
+
+	// Test with unix.Stat_t
+	u := unix.Stat_t{
+		Mode:    0o755,
+		Nlink:   3,
+		Uid:     101,
+		Gid:     201,
+		Rdev:    11,
+		Size:    2000,
+		Blksize: 8192,
+		Blocks:  16,
+		Atim:    unix.Timespec{Sec: 10, Nsec: 20},
+		Mtim:    unix.Timespec{Sec: 30, Nsec: 40},
+		Ctim:    unix.Timespec{Sec: 50, Nsec: 60},
+	}
+
+	attr, _ = StatToAttr(&u, req)
+
+	if attr.Mode != FileMode(u.Mode) {
+		t.Errorf("attr.Mode = %v, want %v", attr.Mode, FileMode(u.Mode))
+	}
+	if attr.NLink != uint64(u.Nlink) {
+		t.Errorf("attr.NLink = %v, want %v", attr.NLink, u.Nlink)
+	}
+	if attr.UID != UID(u.Uid) {
+		t.Errorf("attr.UID = %v, want %v", attr.UID, u.Uid)
+	}
+	if attr.GID != GID(u.Gid) {
+		t.Errorf("attr.GID = %v, want %v", attr.GID, u.Gid)
+	}
+	if attr.RDev != u.Rdev {
+		t.Errorf("attr.RDev = %v, want %v", attr.RDev, u.Rdev)
+	}
+	if attr.Size != uint64(u.Size) {
+		t.Errorf("attr.Size = %v, want %v", attr.Size, u.Size)
+	}
+	if attr.BlockSize != uint64(u.Blksize) {
+		t.Errorf("attr.BlockSize = %v, want %v", attr.BlockSize, u.Blksize)
+	}
+	if attr.Blocks != uint64(u.Blocks) {
+		t.Errorf("attr.Blocks = %v, want %v", attr.Blocks, u.Blocks)
+	}
+	if attr.ATimeSeconds != uint64(u.Atim.Sec) || attr.ATimeNanoSeconds != uint64(u.Atim.Nsec) {
+		t.Errorf("attr.ATime = %v:%v, want %v:%v", attr.ATimeSeconds, attr.ATimeNanoSeconds, u.Atim.Sec, u.Atim.Nsec)
 	}
 }
