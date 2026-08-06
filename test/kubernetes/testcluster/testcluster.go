@@ -501,7 +501,7 @@ func (t *TestCluster) HasGVisorTestRuntime(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return testNodePool.runtime == RuntimeTypeGVisor || testNodePool.runtime == RuntimeTypeGVisorCapped || testNodePool.runtime == RuntimeTypeGVisorTPU, nil
+	return testNodePool.runtime.IsGVisor(), nil
 }
 
 // CreatePod is a helper to create a pod.
