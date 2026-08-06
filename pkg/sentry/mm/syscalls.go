@@ -54,7 +54,7 @@ func (mm *MemoryManager) HandleUserFault(ctx context.Context, addr hostarch.Addr
 
 	// Ensure that we have a usable pma.
 	mm.activeMu.Lock()
-	pseg, _, err := mm.getPMAsLocked(ctx, vseg, ar, at, true /* callerIndirectCommit */)
+	pseg, _, err := mm.getPMAsLocked(ctx, vseg, ar, at, true /* callerIndirectCommit */, false /* forPin */)
 	mm.mappingMu.RUnlock()
 	if err != nil {
 		mm.activeMu.Unlock()
@@ -192,7 +192,7 @@ func (mm *MemoryManager) populateVMA(ctx context.Context, vseg vmaIterator, ar h
 	}
 
 	// Ensure that we have usable pmas.
-	pseg, _, err := mm.getPMAsLocked(ctx, vseg, ar, hostarch.NoAccess, platformEffect == memmap.PlatformEffectCommit)
+	pseg, _, err := mm.getPMAsLocked(ctx, vseg, ar, hostarch.NoAccess, platformEffect == memmap.PlatformEffectCommit, false /* forPin */)
 	if err != nil {
 		mm.activeMu.Unlock()
 		return err
@@ -238,7 +238,7 @@ func (mm *MemoryManager) populateVMAAndUnlock(ctx context.Context, vseg vmaItera
 	// mm.mappingMu doesn't need to be write-locked for getPMAsLocked, and it
 	// isn't needed at all for mapASLocked.
 	mm.mappingMu.DowngradeLock()
-	pseg, _, err := mm.getPMAsLocked(ctx, vseg, ar, hostarch.NoAccess, platformEffect == memmap.PlatformEffectCommit)
+	pseg, _, err := mm.getPMAsLocked(ctx, vseg, ar, hostarch.NoAccess, platformEffect == memmap.PlatformEffectCommit, false /* forPin */)
 	mm.mappingMu.RUnlock()
 	if err != nil {
 		// mm/util.c:vm_mmap_pgoff() ignores the error, if any, from
@@ -911,7 +911,7 @@ func (mm *MemoryManager) MLock(ctx context.Context, addr hostarch.Addr, length u
 				mm.mappingMu.RUnlock()
 				return linuxerr.ENOMEM
 			}
-			_, _, err := mm.getPMAsLocked(ctx, vseg, vseg.Range().Intersect(ar), hostarch.NoAccess, true /* callerIndirectCommit */)
+			_, _, err := mm.getPMAsLocked(ctx, vseg, vseg.Range().Intersect(ar), hostarch.NoAccess, true /* callerIndirectCommit */, false /* forPin */)
 			if err != nil {
 				mm.activeMu.Unlock()
 				mm.mappingMu.RUnlock()
@@ -1006,7 +1006,7 @@ func (mm *MemoryManager) MLockAll(ctx context.Context, opts MLockAllOpts) error 
 		mm.mappingMu.DowngradeLock()
 		for vseg := mm.vmas.FirstSegment(); vseg.Ok(); vseg = vseg.NextSegment() {
 			if vseg.ValuePtr().effectivePerms.Any() {
-				mm.getPMAsLocked(ctx, vseg, vseg.Range(), hostarch.NoAccess, true /* callerIndirectCommit */)
+				mm.getPMAsLocked(ctx, vseg, vseg.Range(), hostarch.NoAccess, true /* callerIndirectCommit */, false /* forPin */)
 			}
 		}
 
