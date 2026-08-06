@@ -20,7 +20,10 @@ go_library(
         "native_arm64.go",
         "static_amd64.go",
     ],
-    visibility = ["//:sandbox"],
+    visibility = [
+        "//:sandbox",
+        "//cloud/verticals/edge/monitoring/platform_metrics_agent:__subpackages__",
+    ],
     deps = [
         "//pkg/log",
         "//pkg/sync",
