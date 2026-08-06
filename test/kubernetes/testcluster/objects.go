@@ -373,8 +373,6 @@ const (
 	RuntimeTypeGVisorCapped        = RuntimeType("gvisor-capped")
 	RuntimeTypeUnsandboxed         = RuntimeType("runc")
 	RuntimeTypeUnsandboxedCapped   = RuntimeType("runc-capped")
-	RuntimeTypeGVisorTPU           = RuntimeType("gvisor-tpu")
-	RuntimeTypeUnsandboxedTPU      = RuntimeType("runc-tpu")
 	RuntimeTypeKataQEMU            = RuntimeType("kata-qemu")
 	RuntimeTypeKataCloudHypervisor = RuntimeType("kata-cloudhypervisor")
 	RuntimeTypeKataFirecracker     = RuntimeType("kata-firecracker")
@@ -386,8 +384,6 @@ var AllRuntimes = []RuntimeType{
 	RuntimeTypeGVisorCapped,
 	RuntimeTypeUnsandboxed,
 	RuntimeTypeUnsandboxedCapped,
-	RuntimeTypeGVisorTPU,
-	RuntimeTypeUnsandboxedTPU,
 	RuntimeTypeKataQEMU,
 	RuntimeTypeKataCloudHypervisor,
 	RuntimeTypeKataFirecracker,
@@ -396,7 +392,7 @@ var AllRuntimes = []RuntimeType{
 // IsValid returns true if the runtime type is valid.
 func (t RuntimeType) IsValid() bool {
 	switch t {
-	case RuntimeTypeGVisor, RuntimeTypeGVisorCapped, RuntimeTypeUnsandboxed, RuntimeTypeUnsandboxedCapped, RuntimeTypeGVisorTPU, RuntimeTypeUnsandboxedTPU, RuntimeTypeKataQEMU, RuntimeTypeKataCloudHypervisor, RuntimeTypeKataFirecracker:
+	case RuntimeTypeGVisor, RuntimeTypeGVisorCapped, RuntimeTypeUnsandboxed, RuntimeTypeUnsandboxedCapped, RuntimeTypeKataQEMU, RuntimeTypeKataCloudHypervisor, RuntimeTypeKataFirecracker:
 		return true
 	default:
 		return false
@@ -405,7 +401,7 @@ func (t RuntimeType) IsValid() bool {
 
 // IsGVisor returns true if the runtime is a gVisor-based runtime.
 func (t RuntimeType) IsGVisor() bool {
-	return t == RuntimeTypeGVisor || t == RuntimeTypeGVisorCapped || t == RuntimeTypeGVisorTPU
+	return t == RuntimeTypeGVisor || t == RuntimeTypeGVisorCapped
 }
 
 // IsKata returns true if the runtime is a Kata-based runtime.
@@ -482,16 +478,6 @@ func (t RuntimeType) ApplyNodepool(nodepool *cspb.NodePool) {
 	case RuntimeTypeUnsandboxed, RuntimeTypeUnsandboxedCapped:
 		nodepool.GetConfig().Labels[NodepoolRuntimeKey] = string(t)
 		// Do nothing.
-	case RuntimeTypeGVisorTPU:
-		nodepool.Config.Labels[gvisorNodepoolKey] = gvisorRuntimeClass
-		nodepool.Config.Labels[NodepoolRuntimeKey] = string(RuntimeTypeGVisorTPU)
-		nodepool.Config.Taints = append(nodepool.Config.Taints, &cspb.NodeTaint{
-			Key:    gvisorNodepoolKey,
-			Value:  gvisorRuntimeClass,
-			Effect: cspb.NodeTaint_NO_SCHEDULE,
-		})
-	case RuntimeTypeUnsandboxedTPU:
-		nodepool.Config.Labels[NodepoolRuntimeKey] = string(RuntimeTypeUnsandboxedTPU)
 	case RuntimeTypeKataQEMU:
 		nodepool.Config.Labels[NodepoolRuntimeKey] = string(RuntimeTypeKataQEMU)
 	case RuntimeTypeKataCloudHypervisor:
@@ -552,33 +538,23 @@ func (t RuntimeType) ApplyPodSpec(podSpec *v13.PodSpec) {
 			Key:      "nvidia.com/gpu",
 			Operator: v13.TolerationOpExists,
 		})
+		addToleration(podSpec, v13.Toleration{
+			Key:      "google.com/tpu",
+			Operator: v13.TolerationOpExists,
+		})
 	case RuntimeTypeUnsandboxed, RuntimeTypeUnsandboxedCapped:
 		podSpec.RuntimeClassName = nil
-		podSpec.Tolerations = append(podSpec.Tolerations, v13.Toleration{
+		addToleration(podSpec, v13.Toleration{
 			Key:      "nvidia.com/gpu",
+			Operator: v13.TolerationOpExists,
+		})
+		addToleration(podSpec, v13.Toleration{
+			Key:      "google.com/tpu",
 			Operator: v13.TolerationOpExists,
 		})
 		// Allow the pod to schedule on gVisor nodes as well.
 		// This enables the use of `--test-nodepool-runtime=runc` to run
 		// unsandboxed benchmarks on gVisor test clusters.
-		addToleration(podSpec, v13.Toleration{
-			Effect:   v13.TaintEffectNoSchedule,
-			Key:      gvisorNodepoolKey,
-			Operator: v13.TolerationOpEqual,
-			Value:    gvisorRuntimeClass,
-		})
-	case RuntimeTypeGVisorTPU:
-		podSpec.RuntimeClassName = proto.String(gvisorRuntimeClass)
-		podSpec.NodeSelector[NodepoolRuntimeKey] = string(RuntimeTypeGVisorTPU)
-		addToleration(podSpec, v13.Toleration{
-			Key:      "google.com/tpu",
-			Operator: v13.TolerationOpExists,
-		})
-	case RuntimeTypeUnsandboxedTPU:
-		addToleration(podSpec, v13.Toleration{
-			Key:      "google.com/tpu",
-			Operator: v13.TolerationOpExists,
-		})
 		addToleration(podSpec, v13.Toleration{
 			Effect:   v13.TaintEffectNoSchedule,
 			Key:      gvisorNodepoolKey,
