@@ -52,6 +52,8 @@ const (
 	flagUnshareCgroup = "unshare-cgroup"
 	flagUnshareAll    = "unshare-all"
 	flagShareNet      = "share-net"
+	flagCapDrop       = "cap-drop"
+	flagCapAdd        = "cap-add"
 )
 
 // Cli implements subcommands.Command for the "bwrap" command.
@@ -76,6 +78,8 @@ type Cli struct {
 	unshareAll    bool
 	hostname      string
 	proc          string
+	capDrop       string
+	capAdd        string
 }
 
 // Name implements subcommands.Command.Name.
@@ -114,6 +118,8 @@ func (c *Cli) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.proc, flagProc, "", "Mount new procfs on DEST")
 	f.BoolVar(&c.unshareCgroup, flagUnshareCgroup, false, "Create new cgroup namespace")
 	f.BoolVar(&c.unshareAll, flagUnshareAll, false, "Unshare every namespace we support by default")
+	f.StringVar(&c.capDrop, flagCapDrop, "", "Drop capabilities when running as privileged user")
+	f.StringVar(&c.capAdd, flagCapAdd, "", "Add capabilities when running as privileged user")
 
 	// Override the default usage function to print the custom usage message.
 	f.Usage = func() {
@@ -191,6 +197,10 @@ func parseBwrapArgs(bwrapArgs []string) (*bwrapConfig, error) {
 			i, err = cfg.parseProc(bwrapArgs, i)
 		case flagUnshareAll:
 			i, err = cfg.parseUnshareAll(bwrapArgs, i)
+		case flagCapDrop:
+			i, err = cfg.parseCapDrop(bwrapArgs, i)
+		case flagCapAdd:
+			i, err = cfg.parseCapAdd(bwrapArgs, i)
 		default:
 			return nil, fmt.Errorf("bwrap: Unknown option: %s", arg)
 		}
@@ -398,4 +408,20 @@ func (c *bwrapConfig) parseUnshareAll(args []string, i int) (int, error) {
 	c.UnshareUser = true
 	c.UnshareNet = true
 	return i + 1, nil
+}
+
+func (c *bwrapConfig) parseCapDrop(args []string, i int) (int, error) {
+	if i+1 >= len(args) {
+		return i, fmt.Errorf("--%s takes 1 argument", flagCapDrop)
+	}
+	c.CapOps = append(c.CapOps, &CapOp{Type: CapOpDrop, Cap: args[i+1]})
+	return i + 2, nil
+}
+
+func (c *bwrapConfig) parseCapAdd(args []string, i int) (int, error) {
+	if i+1 >= len(args) {
+		return i, fmt.Errorf("--%s takes 1 argument", flagCapAdd)
+	}
+	c.CapOps = append(c.CapOps, &CapOp{Type: CapOpAdd, Cap: args[i+1]})
+	return i + 2, nil
 }
