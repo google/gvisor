@@ -6118,7 +6118,7 @@ func TestReadFile(t *testing.T) {
 	defer os.Remove(tmpFile1.Name())
 	defer tmpFile1.Close()
 
-	if err := cont.Sandbox.ReadFile(cont.ID, "/proc/version", 0, tmpFile1); err != nil {
+	if err := cont.Sandbox.ReadFile(cont.ID, "/proc/version", 0, 0, tmpFile1); err != nil {
 		t.Fatalf("Failed to read /proc/version: %v", err)
 	}
 	content1, err := os.ReadFile(tmpFile1.Name())
@@ -6137,7 +6137,7 @@ func TestReadFile(t *testing.T) {
 	defer os.Remove(tmpFile2.Name())
 	defer tmpFile2.Close()
 
-	if err := cont.Sandbox.ReadFile(cont.ID, "/proc/version", 5, tmpFile2); err != nil {
+	if err := cont.Sandbox.ReadFile(cont.ID, "/proc/version", 0, 5, tmpFile2); err != nil {
 		t.Fatalf("ReadFile failed: %v", err)
 	}
 	content2, err := os.ReadFile(tmpFile2.Name())
@@ -6146,5 +6146,24 @@ func TestReadFile(t *testing.T) {
 	}
 	if string(content2) != "Linux" {
 		t.Errorf("Got %q (%d bytes), want 'Linux' (5 bytes)", string(content2), len(content2))
+	}
+
+	// Test reading /proc/version with an offset of 1 and size of 4 bytes.
+	tmpFile3, err := os.CreateTemp(testutil.TmpDir(), "readfile-3-*.txt")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile3.Name())
+	defer tmpFile3.Close()
+
+	if err := cont.Sandbox.ReadFile(cont.ID, "/proc/version", 1, 4, tmpFile3); err != nil {
+		t.Fatalf("ReadFile failed: %v", err)
+	}
+	content3, err := os.ReadFile(tmpFile3.Name())
+	if err != nil {
+		t.Fatalf("Failed to read temp file: %v", err)
+	}
+	if string(content3) != "inux" {
+		t.Errorf("Got %q (%d bytes), want 'inux' (4 bytes)", string(content3), len(content3))
 	}
 }

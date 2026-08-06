@@ -2551,12 +2551,13 @@ func (s *Sandbox) TarRootfsUpperLayer(containerID string, outFD *os.File) error 
 	return nil
 }
 
-// ReadFile reads a file of the sandbox from the given container (or root container if containerID is empty) up to the specified size.
-func (s *Sandbox) ReadFile(containerID, path string, size int64, outFD *os.File) error {
-	log.Debugf("ReadFile, sandbox: %q, container: %q, path: %q, size: %d", s.ID, containerID, path, size)
+// ReadFile reads a file of the sandbox from the given container (or root container if containerID is empty) up to the specified size from the specified offset.
+func (s *Sandbox) ReadFile(containerID, path string, offset, size int64, outFD *os.File) error {
+	log.Debugf("ReadFile, sandbox: %q, container: %q, path: %q, offset: %d, size: %d", s.ID, containerID, path, offset, size)
 	opts := control.ReadOpts{
 		ContainerID: containerID,
 		Path:        path,
+		Offset:      offset,
 		Size:        size,
 		FilePayload: urpc.FilePayload{Files: []*os.File{outFD}},
 	}
