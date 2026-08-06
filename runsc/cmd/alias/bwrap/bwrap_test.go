@@ -16,44 +16,68 @@ package bwrap
 
 import (
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/sandboxexec/sandbox"
 )
 
-func appendMounts(mounts ...[]*specs.Mount) []specs.Mount {
-	var result []specs.Mount
-	for _, m := range mounts {
-		for _, mount := range m {
-			result = append(result, *mount)
-		}
+// sudoUID and sudoGID are the host IDs TestSandboxOptions pins SUDO_UID and
+// SUDO_GID to, so that the mappings --unshare-user produces are deterministic.
+const (
+	sudoUID = 4242
+	sudoGID = 4343
+)
+
+// wantIDMappings returns the mappings bwrap is expected to build for an
+// unshared user namespace that runs as containerID.
+func wantIDMappings(containerID, hostID uint32) []specs.LinuxIDMapping {
+	mappings := []specs.LinuxIDMapping{
+		{ContainerID: containerID, HostID: hostID, Size: 1},
 	}
-	return result
+	// Running as root, the gofer needs container 0 mapped to host 0 as well.
+	if os.Getuid() == 0 && containerID != 0 {
+		mappings = append(mappings, specs.LinuxIDMapping{ContainerID: 0, HostID: 0, Size: 1})
+	}
+	return mappings
 }
 
-func TestBuildRunscSpec(t *testing.T) {
-	defaultMounts := []*specs.Mount{
-		{Type: "proc", Destination: "/proc"},
-		{Type: "sysfs", Destination: "/sys"},
-		{Type: "devtmpfs", Destination: "/dev"},
-		{Type: "devpts", Destination: "/dev/pts"},
-		{Type: "cgroupfs", Destination: "/sys/fs/cgroup"},
-		{Type: "tmpfs", Destination: "/tmp"},
+// TestSandboxOptions checks the bubblewrap configuration is translated into
+// the bundle the sandbox bindings will build from it.
+func TestSandboxOptions(t *testing.T) {
+	t.Setenv("SUDO_UID", strconv.Itoa(sudoUID))
+	t.Setenv("SUDO_GID", strconv.Itoa(sudoGID))
+
+	defaultMounts := []sandbox.Mount{
+		{Type: sandbox.MountTypeProc, Destination: "/proc"},
+		{Type: sandbox.MountTypeSysfs, Destination: "/sys"},
+		{Type: sandbox.MountTypeDevtmpfs, Destination: "/dev"},
+		{Type: sandbox.MountTypeDevpts, Destination: "/dev/pts"},
+		{Type: sandbox.MountTypeCgroup, Destination: "/sys/fs/cgroup"},
+		{Type: sandbox.MountTypeTmpfs, Destination: "/tmp"},
+	}
+	appendMounts := func(mounts ...[]sandbox.Mount) []sandbox.Mount {
+		var result []sandbox.Mount
+		for _, m := range mounts {
+			result = append(result, m...)
+		}
+		return result
 	}
 
-	workspaceDir := t.TempDir()
 	cwd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("Failed to get current working directory: %v", err)
 	}
 	tests := []struct {
-		name          string
-		cfg           *bwrapConfig
-		wantRunscSpec *specs.Spec
-		errContains   string
+		name        string
+		cfg         *bwrapConfig
+		wantBundle  sandbox.BundleConfig
+		errContains string
 	}{
 		{
 			name: "WithRootMount",
@@ -61,41 +85,38 @@ func TestBuildRunscSpec(t *testing.T) {
 				Env: os.Environ(),
 				UID: -1,
 				GID: -1,
-				Mounts: []*MountOp{
-					{Type: "bind", Src: "/src1", Dst: "/dst1"},
-					{Type: "ro-bind", Src: "/", Dst: "/"},
-					{Type: "tmpfs", Dst: "/tmp"},
+				Mounts: []sandbox.Mount{
+					{Type: sandbox.MountTypeBind, Source: "/src1", Destination: "/dst1"},
+					{Type: sandbox.MountTypeBind, Source: "/", Destination: "/", ReadOnly: true},
+					{Type: sandbox.MountTypeTmpfs, Destination: "/tmp"},
 				},
 				UnshareNet: true,
 				Args:       []string{"/bin/bash"},
 			},
-			wantRunscSpec: &specs.Spec{
-				Process: &specs.Process{
-					Args: []string{"/bin/bash"},
-					Cwd:  cwd, // As `/` is binded, the cwd is picked as the container CWD.
-				},
+			wantBundle: sandbox.BundleConfig{
+				Args: []string{"/bin/bash"},
+				// As `/` is binded, the cwd is picked as the container CWD.
+				WorkingDir: cwd,
 				Mounts: appendMounts(
 					defaultMounts,
-					[]*specs.Mount{{Type: "bind", Source: "/src1", Destination: "/dst1"}},
-					[]*specs.Mount{
-						{
-							Destination: "/",
-							Type:        "bind",
-							Source:      "/",
-							Options:     []string{"rbind", "rprivate", "nosuid", "nodev", "ro"},
-						},
-					},
-					[]*specs.Mount{{Type: "tmpfs", Destination: "/tmp"}},
+					[]sandbox.Mount{{
+						Type:        sandbox.MountTypeBind,
+						Source:      "/src1",
+						Destination: "/dst1",
+						Options:     []string{},
+					}},
+					[]sandbox.Mount{{
+						Type:        sandbox.MountTypeBind,
+						Source:      "/",
+						Destination: "/",
+						ReadOnly:    true,
+						Options:     []string{"rbind", "rprivate", "nosuid", "nodev", "ro"},
+					}},
+					[]sandbox.Mount{{Type: sandbox.MountTypeTmpfs, Destination: "/tmp"}},
 				),
-				Linux: &specs.Linux{
-					Namespaces: []specs.LinuxNamespace{
-						{Type: specs.NetworkNamespace},
-					},
-				},
-				Root: &specs.Root{
-					Path:     "/",
-					Readonly: true,
-				},
+				Namespaces:   []specs.LinuxNamespace{{Type: specs.NetworkNamespace}},
+				RootPath:     "/",
+				RootReadonly: true,
 			},
 		},
 		{
@@ -106,36 +127,88 @@ func TestBuildRunscSpec(t *testing.T) {
 				GID:  -1,
 				Args: []string{"ls"},
 			},
-			wantRunscSpec: &specs.Spec{
-				Process: &specs.Process{
-					Args: []string{"ls"},
-					Cwd:  "/", // No mounts, so the cwd is set to the /.
-				},
+			wantBundle: sandbox.BundleConfig{
+				Args: []string{"ls"},
+				// No mounts, so the cwd is set to the /.
+				WorkingDir: "/",
 				Mounts: appendMounts(
-					// A tmpfs `/` is created in case no root is passed.
-					[]*specs.Mount{{Type: "tmpfs", Destination: "/"}},
+					// A tmpfs `/` is created in case no root is passed. The
+					// root itself is left to the bindings, which give the
+					// sandbox an empty directory inside its bundle.
+					[]sandbox.Mount{{Type: sandbox.MountTypeTmpfs, Destination: "/"}},
 					defaultMounts,
 				),
-				Root: &specs.Root{
-					Path: workspaceDir,
-				},
 			},
+		},
+		{
+			name: "UnshareUserWithUIDAndGID",
+			cfg: &bwrapConfig{
+				Env:         os.Environ(),
+				UID:         1234,
+				GID:         5678,
+				UnshareUser: true,
+				Args:        []string{"id"},
+			},
+			wantBundle: sandbox.BundleConfig{
+				Args:       []string{"id"},
+				WorkingDir: "/",
+				Mounts: appendMounts(
+					[]sandbox.Mount{{Type: sandbox.MountTypeTmpfs, Destination: "/"}},
+					defaultMounts,
+				),
+				Namespaces:  []specs.LinuxNamespace{{Type: specs.UserNamespace}},
+				User:        &specs.User{UID: 1234, GID: 5678},
+				UIDMappings: wantIDMappings(1234, sudoUID),
+				GIDMappings: wantIDMappings(5678, sudoGID),
+			},
+		},
+		{
+			name: "UIDWithoutUnshareUser",
+			cfg: &bwrapConfig{
+				Env:  os.Environ(),
+				UID:  1000,
+				GID:  -1,
+				Args: []string{"ls"},
+			},
+			errContains: "--uid requires --unshare-user",
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := tc.cfg
-			cfg.WorkspaceDir = workspaceDir
-			gotSpec, err := tc.cfg.buildRunscSpec()
+			tc.cfg.runscConfig = &config.Config{}
+			opts, err := tc.cfg.sandboxOptions()
+			if tc.errContains != "" {
+				if err == nil {
+					t.Fatalf("got nil, want error containing: %v", tc.errContains)
+				}
+				if !strings.Contains(err.Error(), tc.errContains) {
+					t.Fatalf("got error %v, want error containing %v", err, tc.errContains)
+				}
+				return
+			}
 			if err != nil {
-				t.Fatalf("BuildSpec failed: %v", err)
+				t.Fatalf("sandboxOptions failed: %v", err)
+			}
+			got, err := sandbox.Config(opts...)
+			if err != nil {
+				t.Fatalf("sandbox.Config failed: %v", err)
 			}
 
-			wantSpec := tc.wantRunscSpec
-			diff := cmp.Diff(gotSpec, wantSpec,
-				cmpopts.IgnoreFields(specs.Process{}, "Capabilities"),
-				cmpopts.IgnoreFields(specs.Process{}, "Env"),
+			// Every bwrap sandbox opts out of the bindings' defaults and takes
+			// all capabilities; assert that once rather than in every case.
+			if !got.SkipDefaultMounts || !got.SkipHostBinaryMounts || !got.SkipBaseEnv || !got.SkipDefaultNamespaces {
+				t.Errorf("bundle does not opt out of the default layout: %+v", got)
+			}
+			if got.Capabilities == nil {
+				t.Errorf("bundle has no capabilities set")
+			}
+
+			diff := cmp.Diff(got, tc.wantBundle,
+				cmpopts.IgnoreFields(sandbox.BundleConfig{},
+					"ID", "RuntimeDir", "Env", "Capabilities", "EnableNetworking",
+					"SkipDefaultMounts", "SkipHostBinaryMounts", "SkipBaseEnv",
+					"SkipDefaultNamespaces"),
 				cmpopts.SortSlices(func(a, b specs.LinuxNamespace) bool {
 					if a.Type != b.Type {
 						return a.Type < b.Type
@@ -144,7 +217,7 @@ func TestBuildRunscSpec(t *testing.T) {
 				}),
 			)
 			if diff != "" {
-				t.Errorf("Spec mismatch (-got +want):\n%s", diff)
+				t.Errorf("Bundle mismatch (-got +want):\n%s", diff)
 			}
 		})
 	}
@@ -393,8 +466,8 @@ func TestParseFlags(t *testing.T) {
 				UID:  -1,
 				GID:  -1,
 				Args: []string{"bash"},
-				Mounts: []*MountOp{
-					{Type: "proc", Dst: "/proc1"},
+				Mounts: []sandbox.Mount{
+					{Type: sandbox.MountTypeProc, Destination: "/proc1"},
 				},
 			},
 		},
@@ -406,8 +479,8 @@ func TestParseFlags(t *testing.T) {
 				UID:  -1,
 				GID:  -1,
 				Args: []string{"bash"},
-				Mounts: []*MountOp{
-					{Type: "proc", Dst: "/proc1"},
+				Mounts: []sandbox.Mount{
+					{Type: sandbox.MountTypeProc, Destination: "/proc1"},
 				},
 			},
 		},
@@ -419,9 +492,9 @@ func TestParseFlags(t *testing.T) {
 				UID:  -1,
 				GID:  -1,
 				Args: []string{"bash"},
-				Mounts: []*MountOp{
-					{Type: "proc", Dst: "/proc1"},
-					{Type: "proc", Dst: "/proc2"},
+				Mounts: []sandbox.Mount{
+					{Type: sandbox.MountTypeProc, Destination: "/proc1"},
+					{Type: sandbox.MountTypeProc, Destination: "/proc2"},
 				},
 			},
 		},
