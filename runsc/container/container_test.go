@@ -624,12 +624,18 @@ func TestLifecycle(t *testing.T) {
 			}
 
 			// Load the container from disk and check the status.
-			c, err = Load(rootDir, fullID, LoadOpts{Exact: true})
-			if err != nil {
-				t.Fatalf("error loading container: %v", err)
-			}
-			if got, want := c.Status, Stopped; got != want {
-				t.Errorf("container status got %v, want %v", got, want)
+			if err := testutil.Poll(func() error {
+				var err error
+				c, err = Load(rootDir, fullID, LoadOpts{Exact: true})
+				if err != nil {
+					return err
+				}
+				if got, want := c.Status, Stopped; got != want {
+					return fmt.Errorf("container status got %v, want %v", got, want)
+				}
+				return nil
+			}, pollTimeout); err != nil {
+				t.Fatalf("container status check failed: %v", err)
 			}
 
 			// Destroy the container.
