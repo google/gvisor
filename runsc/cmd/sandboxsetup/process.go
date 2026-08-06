@@ -23,6 +23,7 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -156,7 +157,13 @@ func ExecProcUmounter() (*exec.Cmd, *os.File) {
 // UmountProc writes to syncFD signalling the process started by
 // ExecProcUmounter() to umount /proc.
 func UmountProc(syncFD int) {
-	syncFile := os.NewFile(uintptr(syncFD), "procfs umount sync FD")
+	UmountProcFile(os.NewFile(uintptr(syncFD), "procfs umount sync FD"))
+}
+
+// UmountProcFile is like `UmountProc`, but takes the pipe's write end as an
+// `os.File`. This must be used when the caller already holds a `os.File`
+// (e.g. when the boot process continues without re-exec'ing).
+func UmountProcFile(syncFile *os.File) {
 	buf := make([]byte, 1)
 	if w, err := syncFile.Write(buf); err != nil || w != 1 {
 		util.Fatalf("unable to write into the proc umounter descriptor: %v", err)
