@@ -115,12 +115,13 @@ RUNTIME     ?= runsc
 else
 RUNTIME     ?= $(BRANCH_NAME)
 endif
-RUNTIME_DIR     ?= $(shell dirname $(shell mktemp -u))/$(RUNTIME)
-RUNSC_TARGET    ?= //runsc
-RUNTIME_BIN     ?= $(RUNTIME_DIR)/runsc
-RUNTIME_LOG_DIR ?= $(RUNTIME_DIR)/logs
-RUNTIME_LOGS    ?= $(RUNTIME_LOG_DIR)/runsc.log.%TEST%.%TIMESTAMP%.%COMMAND%
-RUNTIME_ARGS    ?=
+RUNTIME_DIR           ?= $(shell dirname $(shell mktemp -u))/$(RUNTIME)
+RUNSC_TARGET          ?= //runsc
+RUNTIME_BIN           ?= $(RUNTIME_DIR)/runsc
+EXTRA_SIDECAR_TARGETS ?= # Extra binaries to install under gvisor-bin/.
+RUNTIME_LOG_DIR       ?= $(RUNTIME_DIR)/logs
+RUNTIME_LOGS          ?= $(RUNTIME_LOG_DIR)/runsc.log.%TEST%.%TIMESTAMP%.%COMMAND%
+RUNTIME_ARGS          ?=
 DOCKER_DAEMON_CONFIG_PATH ?= /etc/docker/daemon.json
 DOCKER_RELOAD_COMMAND ?= sudo systemctl reload docker
 
@@ -139,8 +140,9 @@ ifeq (,$(STAGED_BINARIES))
 	@$(call copy,//debian:gvisor-bin-tar,$(RUNTIME_DIR))
 	@tar -C "$(RUNTIME_DIR)" -xf "$(RUNTIME_DIR)/gvisor-bin-tar.tar"
 	@rm -f "$(RUNTIME_DIR)/gvisor-bin-tar.tar"
+	@$(if $(EXTRA_SIDECAR_TARGETS),$(call copy,$(EXTRA_SIDECAR_TARGETS),$(RUNTIME_DIR)/gvisor-bin))
 else
-	gcloud storage cat "${STAGED_BINARIES}" | \
+	@gcloud storage cat "${STAGED_BINARIES}" | \
 	  tar -C "$(RUNTIME_DIR)" -zxvf - ./runsc ./gvisor-bin && \
 	  chmod -R a+rx "$(RUNTIME_BIN)" "$(RUNTIME_DIR)/gvisor-bin"
 endif
@@ -274,7 +276,7 @@ network-tests: iptables-tests packetdrill-tests packetimpact-tests
 # To run multiple specific syscall tests:
 #   make syscall-tests TARGETS="//test/syscalls:signalfd_test_runsc_systrap_shared //test/syscalls:link_test_runsc_systrap_shared"
 syscall-tests: $(RUNTIME_BIN)
-	@$(call test,$(OPTIONS) --test_env=RUNTIME=$(RUNTIME_BIN) --cxxopt=-Werror $(PARTITIONS) $(if $(TARGETS),-- $(TARGETS),test/syscalls/... test/rtnetlink/...))
+	@$(call test,$(OPTIONS) --test_env=RUNTIME=$(RUNTIME_BIN) --test_env=GVISOR_SIDECAR_BINARIES_DIR=$(RUNTIME_DIR)/gvisor-bin --cxxopt=-Werror $(PARTITIONS) $(if $(TARGETS),-- $(TARGETS),test/syscalls/... test/rtnetlink/...))
 .PHONY: syscall-tests
 
 packetimpact-tests:
@@ -430,6 +432,7 @@ plugin-network-tests: integration-test-images $(RUNTIME_BIN)
 	@$(call test_runtime_cached,$(RUNTIME)-dpdk, --test_arg=-test.run=ConnectToSelf $(INTEGRATION_TARGETS))
 
 plugin-network-tests: RUNSC_TARGET=--config plugin-tldk //runsc:runsc-plugin-stack
+plugin-network-tests: EXTRA_SIDECAR_TARGETS=--config plugin-tldk //runsc/cmd/sentry:gvisor_sentry_plugin_stack
 
 overlay-tests: integration-test-images $(RUNTIME_BIN)
 	@$(call install_runtime_noreload,$(RUNTIME)-overlay,--overlay2=all:dir=/tmp)

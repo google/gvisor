@@ -67,7 +67,7 @@ go_test(
         ],
     }),
     data = [
-        "//runsc",
+        "//:release",
         "//test/cmd/test_app",
     ],
     library = ":container",

@@ -24,7 +24,7 @@ go_test(
         "sandboxposture_test.go",
     ],
     data = [
-        "//runsc",
+        "//:release",
     ],
     library = ":root",
     pure = True,

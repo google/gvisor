@@ -59,6 +59,7 @@ import (
 	"syscall"
 
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/runsc/config"
@@ -68,8 +69,10 @@ import (
 
 // Sidecar binary filenames under the "gvisor-bin/" directory.
 const (
-	metricServerName    = "runsc-metric-server"
-	checkpointGoferName = "checkpointgofer"
+	metricServerName            = "runsc-metric-server"
+	checkpointGoferName         = "checkpointgofer"
+	gvisorSentryName            = "gvisor_sentry"
+	gvisorSentryPluginStackName = "gvisor_sentry_plugin_stack"
 )
 
 // binDirName is the name of the directory holding sidecar binaries.
@@ -93,6 +96,9 @@ const (
 	enforceReleaseTestonlySkip = "TESTONLY_SKIP"
 )
 
+// Special release name used in CI that is also ignored.
+const buildkiteTestVersion = "buildkite-test-branch-dirty"
+
 // cutSkip returns the expected release embedded in `val` (env var).
 func cutSkip(val, prefix string) (string, bool) {
 	if val == prefix {
@@ -106,9 +112,11 @@ func cutSkip(val, prefix string) (string, bool) {
 // Set from config flag.
 var ReleaseEnforcementPolicy = config.SidecarNever
 
-// withEnforceRelease returns envv with `GVISOR_ENFORCE_RELEASE` set for
-// sidecar processes.
-func withEnforceRelease(envv []string) []string {
+// WithEnforceRelease returns envv with `GVISOR_ENFORCE_RELEASE` set for
+// sidecar processes. Exec and ForkExec apply it automatically
+// Callers that spawn a sidecar through other means (manual `exec.Cmd`)
+// must apply it to the sidecar process's env themselves.
+func WithEnforceRelease(envv []string) []string {
 	val := os.Getenv(enforceReleaseEnv)
 	prefix, want := "", ""
 	if w, ok := cutSkip(val, enforceReleaseTestonlySkip); ok {
@@ -171,6 +179,10 @@ func VerifyMatchingRelease(b *Binary) {
 	if b == nil {
 		return
 	}
+	if got == buildkiteTestVersion {
+		log.Infof("Sidecar release match check not enforced%s; this build is %q.", who, got)
+		return
+	}
 	var msg string
 	info := testOnly
 	switch want {
@@ -199,10 +211,16 @@ var (
 	MetricServer = Binary{Name: metricServerName}
 	// CheckpointGofer is the checkpoint gofer sidecar binary.
 	CheckpointGofer = Binary{Name: checkpointGoferName}
+	// GvisorSentry is the sentry (kernel) sidecar binary.
+	GvisorSentry = Binary{Name: gvisorSentryName}
+	// GvisorSentryPluginStack is the sentry sidecar binary with a plugin
+	// network stack linked in.
+	// Only present in plugin-enabled installations, so not part of `All`.
+	GvisorSentryPluginStack = Binary{Name: gvisorSentryPluginStackName}
 )
 
-// All lists every known sidecar.
-var All = []*Binary{&MetricServer, &CheckpointGofer}
+// All lists every sidecar present in a standard installation.
+var All = []*Binary{&MetricServer, &CheckpointGofer, &GvisorSentry}
 
 // Options is the set of options used to execute a sidecar binary.
 type Options struct {
@@ -260,6 +278,10 @@ var (
 // resolveDir resolves the directory in which sidecar binaries are located.
 func resolveDir() (string, error) {
 	if dir := os.Getenv(sidecarBinariesDirEnv); dir != "" {
+		return dir, nil
+	}
+	dir := filepath.Join(filepath.Dir(specutils.ExePath), binDirName)
+	if fi, err := os.Stat(dir); err == nil && fi.IsDir() {
 		return dir, nil
 	}
 	exe, err := filepath.EvalSymlinks(specutils.ExePath)
@@ -331,7 +353,7 @@ func (b *Binary) warnEmbeddedDeprecated(opts *Options) {
 // Exec resolves the binary and replaces the current process with it. It only
 // returns if execution could not be started.
 func (b *Binary) Exec(opts Options) error {
-	opts.Envv = withEnforceRelease(opts.Envv)
+	opts.Envv = WithEnforceRelease(opts.Envv)
 	if p, err := b.Path(); err == nil {
 		log.Infof("sidecar %q found: executing %s (%v)", b.Name, p, &opts)
 		return execDisk(p, opts)
@@ -346,7 +368,7 @@ func (b *Binary) Exec(opts Options) error {
 // ForkExec resolves the binary and runs it in a new process, returning the
 // child's PID.
 func (b *Binary) ForkExec(opts Options) (int, error) {
-	opts.Envv = withEnforceRelease(opts.Envv)
+	opts.Envv = WithEnforceRelease(opts.Envv)
 	if p, err := b.Path(); err == nil {
 		log.Infof("sidecar %q: executing %s (%v)", b.Name, p, &opts)
 		return forkExecDisk(p, opts)

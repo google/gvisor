@@ -9,6 +9,7 @@ go_library(
     name = "sandboxsetup",
     srcs = [
         "caps.go",
+        "fdmappings.go",
         "flags.go",
         "fs.go",
         "gofer_mount.go",
@@ -19,6 +20,7 @@ go_library(
         "//pkg/fd",
         "//pkg/log",
         "//pkg/unet",
+        "//runsc/boot",
         "//runsc/cmd/util",
         "//runsc/config",
         "//runsc/flag",

@@ -177,7 +177,7 @@ type ExpectedOpts struct {
 	// Sandbox config options follow.
 
 	DirectFS             bool
-	HostNetwork          bool
+	NetworkMode          string
 	EnableRaw            bool
 	RequiresCapSysPtrace bool
 	SpecHasUserNamespace bool
@@ -204,11 +204,16 @@ type ExpectedOpts struct {
 	ExtraMounts      []string
 }
 
+// HostNetwork returns true if the sandbox is using hostinet.
+func (e *ExpectedOpts) HostNetwork() bool {
+	return e.NetworkMode == "host"
+}
+
 // Expected returns the posture a sandbox started with the given configuration
 // must have.
 func Expected(opts ExpectedOpts) *Posture {
-	applyCaps := opts.DirectFS || opts.HostNetwork
-	newUserNS := !applyCaps || opts.SpecHasUserNamespace || (opts.DirectFS && !opts.HostNetwork)
+	applyCaps := opts.DirectFS || opts.HostNetwork()
+	newUserNS := !applyCaps || opts.SpecHasUserNamespace || (opts.DirectFS && !opts.HostNetwork())
 	return &Posture{
 		Creds:      expectedCreds(applyCaps),
 		Caps:       expectedCaps(opts, applyCaps),
@@ -242,7 +247,7 @@ func expectedCaps(opts ExpectedOpts, applyCaps bool) Capabilities {
 	if opts.DirectFS {
 		caps = append(caps, directfsCaps...)
 	}
-	if opts.HostNetwork {
+	if opts.HostNetwork() {
 		held := make(map[string]bool, len(opts.Ref.PermittedCaps))
 		for _, c := range opts.Ref.PermittedCaps {
 			held[c] = true
@@ -281,7 +286,7 @@ func expectedNamespaces(opts ExpectedOpts, newUserNS bool) Namespaces {
 	switch {
 	case opts.NetNamespaceTarget != "":
 		ns.Net = NSJoined(opts.NetNamespaceTarget)
-	case opts.HostNetwork:
+	case opts.HostNetwork():
 		ns.Net = NSInherited
 	default:
 		ns.Net = NSNew
@@ -343,7 +348,7 @@ func expectedAttrs(opts ExpectedOpts, applyCaps, newUserNS bool) Attrs {
 	}
 
 	var env []string
-	if opts.CgoEnabled {
+	if opts.NetworkMode == "plugin" {
 		env = append(env, "GLIBC_TUNABLES=glibc.pthread.rseq=0")
 	}
 	if opts.GoDebug != "" {

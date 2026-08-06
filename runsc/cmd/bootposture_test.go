@@ -153,7 +153,7 @@ func testBootPosture(t *testing.T, tc postureCase) {
 	}
 	opts := sandboxposture.ExpectedOpts{
 		DirectFS:             tc.directfs,
-		HostNetwork:          isHostNetwork,
+		NetworkMode:          tc.network.String(),
 		EnableRaw:            conf.EnableRaw,
 		RequiresCapSysPtrace: sandboxposture.PlatformCapSysPtrace[conf.Platform],
 		GoDebug:              sandboxposture.PlatformGoDebug[conf.Platform],

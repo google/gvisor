@@ -14,8 +14,8 @@ go_test(
     data = [
         "latin10k.txt",
         "mysql.sql",
-        # runsc is needed to invalidate the bazel cache in case of any code changes.
-        "//runsc",
+        # Needed to invalidate the bazel cache in case of any code changes.
+        "//:release",
     ],
     library = ":image",
     tags = [

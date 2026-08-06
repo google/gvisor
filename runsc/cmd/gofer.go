@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"runtime/debug"
 
 	"github.com/google/subcommands"
@@ -553,28 +552,8 @@ func (g *goferSyncFDs) syncUsernsForRootless(uid, gid uint32) {
 	if g.usernsFD < 0 {
 		return
 	}
-	syncUsernsForRootless(g.usernsFD, uid, gid)
+	sandboxsetup.SyncUsernsForRootless(g.usernsFD, uid, gid)
 	g.usernsFD = -1
-}
-
-// syncUsernsForRootless waits on usernsFD to be closed and then sets
-// UID/GID to uid/gid. Note that this function calls runtime.LockOSThread().
-//
-// Postcondition: All callers must re-exec themselves after this returns.
-func syncUsernsForRootless(fd int, uid uint32, gid uint32) {
-	if err := sandboxsetup.WaitForFD(fd, "userns sync FD"); err != nil {
-		util.Fatalf("failed to sync on userns FD: %v", err)
-	}
-
-	// SETUID changes UID on the current system thread, so we have
-	// to re-execute current binary.
-	runtime.LockOSThread()
-	if _, _, errno := unix.RawSyscall(unix.SYS_SETUID, uintptr(uid), 0, 0); errno != 0 {
-		util.Fatalf("failed to set UID: %v", errno)
-	}
-	if _, _, errno := unix.RawSyscall(unix.SYS_SETGID, uintptr(gid), 0, 0); errno != 0 {
-		util.Fatalf("failed to set GID: %v", errno)
-	}
 }
 
 // syncChroot waits on chrootFD to be closed.

@@ -63,10 +63,9 @@ _runtime_test = rule(
             executable = True,
             cfg = "target",
         ),
-        # runsc is needed to invalidate the bazel cache in case of any code changes.
+        # Needed to invalidate the bazel cache in case of any code changes.
         "_runsc": attr.label(
-            default = "//runsc:runsc",
-            executable = True,
+            default = "//:release",
             cfg = "target",
         ),
     },

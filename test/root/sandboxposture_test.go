@@ -94,7 +94,7 @@ func TestSandboxPostureDocker(t *testing.T) {
 
 	want := sandboxposture.Expected(sandboxposture.ExpectedOpts{
 		DirectFS:             conf.DirectFS,
-		HostNetwork:          conf.Network == config.NetworkHost,
+		NetworkMode:          conf.Network.String(),
 		EnableRaw:            conf.EnableRaw,
 		RequiresCapSysPtrace: sandboxposture.PlatformCapSysPtrace[conf.Platform],
 		GoDebug:              sandboxposture.PlatformGoDebug[conf.Platform],

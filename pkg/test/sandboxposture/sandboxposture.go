@@ -311,8 +311,8 @@ type Attrs struct {
 	// process. False under shim.
 	ChildOfRef bool
 
-	// Environ is the environment, sorted, with `RUNSC_START_TIME_NANOS`
-	// removed.
+	// Environ is the environment, sorted, with variables like
+	// `RUNSC_START_TIME_NANOS` and `GVISOR_ENFORCE_RELEASE` removed.
 	Environ []string
 
 	// Argv0 is argv[0], which `runsc` should set to "runsc-sandbox".
@@ -1105,8 +1105,8 @@ func parseLimits(s string) (map[string]string, error) {
 	return out, nil
 }
 
-// startTimeEnvRE matches the start-time env variable `runsc` uses.
-var startTimeEnvRE = regexp.MustCompile(`^RUNSC_START_TIME_NANOS=\d+$`)
+// ignoredEnvRegExp matches the start-time env variable `runsc` uses.
+var ignoredEnvRegExp = regexp.MustCompile(`^(RUNSC_START_TIME_NANOS=\d+|GVISOR_ENFORCE_RELEASE=.*)$`)
 
 func collectAttrs(p, ref *proc, status, refStatus map[string]string, userNS string) (Attrs, error) {
 	var a Attrs
@@ -1134,8 +1134,8 @@ func collectAttrs(p, ref *proc, status, refStatus map[string]string, userNS stri
 		return a, fmt.Errorf("reading environ: %w", err)
 	}
 	for _, e := range env {
-		if startTimeEnvRE.MatchString(e) {
-			continue // Skip start time env var
+		if ignoredEnvRegExp.MatchString(e) {
+			continue
 		}
 		a.Environ = append(a.Environ, e)
 	}

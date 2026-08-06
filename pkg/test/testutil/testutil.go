@@ -146,13 +146,21 @@ func ImageByName(name string) string {
 // ConfigureExePath configures the executable for runsc in the test environment.
 func ConfigureExePath() error {
 	if *runscPath == "" {
-		path, err := FindFile("runsc/runsc")
+		path, err := FindFile("release/runsc")
 		if err != nil {
-			return err
+			path, err = FindFile("runsc/runsc")
+			if err != nil {
+				return err
+			}
 		}
 		*runscPath = path
 	}
 	specutils.ExePath = *runscPath
+	if os.Getenv("GVISOR_SIDECAR_BINARIES_DIR") == "" {
+		if dir, err := FindFile("release/gvisor-bin"); err == nil {
+			os.Setenv("GVISOR_SIDECAR_BINARIES_DIR", dir)
+		}
+	}
 	return nil
 }
 
