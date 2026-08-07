@@ -47,6 +47,10 @@ const (
 	cudaCheckpointSequentialKey = "cuda-checkpoint-sequential"
 )
 
+// maxCudaEnumerationPasses bounds the number of CUDA process enumeration
+// passes in preSaveCuda.
+const maxCudaEnumerationPasses = 5
+
 func preSaveCuda(k *kernel.Kernel, o *state.SaveOpts) error {
 	if o.CudaCheckpointPath == "" {
 		return nil
@@ -67,32 +71,93 @@ func preSaveCuda(k *kernel.Kernel, o *state.SaveOpts) error {
 		}
 	}
 	sctx := k.SupervisorContext()
-	cudaProcs := cudaProcs(sctx, k, o.CudaCheckpointPath, k.NvidiaDriverVersion.Major())
-	// FIXME: b/456299722
-	for _, tg := range cudaProcs {
-		tg.SigsegvLock()
+
+	// Enumerating CUDA processes races with tasks that are concurrently
+	// initializing CUDA. This is necessary because a process might initialize
+	// a CUDA session (i.e. call cuInit()) after all other CUDA sessions have
+	// been stopped. This will eventually either cause a checkpoint or snapshot
+	// failure.
+	//
+	// To prevent that from happening, we re-enumerate and suspend until a pass
+	// discovers no new CUDA processes, then verify with the kernel paused
+	// (while no new CUDA initialization can complete) that none appeared
+	// since that pass. This process still allows for processes to initialize
+	// CUDA sessions, but make far less likely given the shortened window
+	// of opportunity.
+	toggledSet := make(map[*kernel.ThreadGroup]struct{})
+	var toggled []*kernel.ThreadGroup
+	var err error
+	for pass := 0; ; pass++ {
+		if pass >= maxCudaEnumerationPasses {
+			err = fmt.Errorf("new CUDA processes continue to appear after %d enumeration passes", pass)
+			break
+		}
+		var newProcs []*kernel.ThreadGroup
+		for _, tg := range cudaProcs(sctx, k, o.CudaCheckpointPath, k.NvidiaDriverVersion.Major()) {
+			if _, ok := toggledSet[tg]; !ok {
+				newProcs = append(newProcs, tg)
+			}
+		}
+		if len(newProcs) == 0 {
+			// Pause kernel and check if there are dangling processes.
+			k.Pause()
+			lateProcs := untoggledCudaThreadProcs(sctx, k, toggledSet)
+			k.Unpause()
+			if len(lateProcs) == 0 {
+				break
+			}
+			for _, tg := range lateProcs {
+				log.Infof("PID %d initialized CUDA after enumeration, re-enumerating CUDA processes", tg.ID())
+			}
+			// Bridge a gap between the two detection methods.
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		if pass > 0 {
+			log.Infof("Found %d new CUDA processes on enumeration pass %d", len(newProcs), pass)
+		}
+		// FIXME: b/456299722
+		for _, tg := range newProcs {
+			tg.SigsegvLock()
+		}
+		if terr := toggleCudaProcs(sctx, k, o.CudaCheckpointPath, newProcs, nil, o.CudaCheckpointSequential); terr != nil {
+			for _, tg := range newProcs {
+				tg.SigsegvUnlock()
+			}
+			err = terr
+			break
+		}
+		for _, tg := range newProcs {
+			toggledSet[tg] = struct{}{}
+			toggled = append(toggled, tg)
+		}
 	}
-	err := toggleCudaProcs(sctx, k, o.CudaCheckpointPath, cudaProcs, nil, o.CudaCheckpointSequential)
 	if wasPaused {
 		k.Pause()
 	}
 	if err != nil {
+		// Resume processes suspended by previous passes to restore the
+		// original state. This is best-effort.
+		if len(toggled) > 0 {
+			if uerr := toggleCudaProcs(sctx, k, o.CudaCheckpointPath, toggled, nil, o.CudaCheckpointSequential); uerr != nil {
+				log.Warningf("Failed to resume CUDA processes after checkpoint failure: %v", uerr)
+			}
+		}
 		// FIXME: b/456299722
-		for _, tg := range cudaProcs {
+		for _, tg := range toggled {
 			tg.SigsegvUnlock()
 		}
 		return err
 	}
 	k.AddStateToCheckpoint(cudaCheckpointPathKey, o.CudaCheckpointPath)
 	k.AddStateToCheckpoint(cudaCheckpointSequentialKey, o.CudaCheckpointSequential)
-	k.AddStateToCheckpoint(cudaProcsKey, cudaProcs)
+	k.AddStateToCheckpoint(cudaProcsKey, toggled)
 	return nil
 }
 
-// cudaProcs returns a list of all CUDA processes in the sandbox. It selects
-// them by collecting processes whose FD table has an open file descriptor to
-// any CUDA device.
-func cudaProcs(sctx context.Context, k *kernel.Kernel, cudaCheckpointPath string, nvidiaDriverVersionMajor int) []*kernel.ThreadGroup {
+// nvproxyFDProcs returns a list of all processes in the sandbox whose FD
+// table has an open file descriptor to any CUDA device.
+func nvproxyFDProcs(sctx context.Context, k *kernel.Kernel) []*kernel.ThreadGroup {
 	var procs []*kernel.ThreadGroup
 	k.TaskSet().ForEachThreadGroup(func(tg *kernel.ThreadGroup, tgLeader *kernel.Task) {
 		found := false
@@ -114,6 +179,29 @@ func cudaProcs(sctx context.Context, k *kernel.Kernel, cudaCheckpointPath string
 			procs = append(procs, tg)
 		}
 	})
+	return procs
+}
+
+// untoggledCudaThreadProcs returns CUDA processes that have not been suspended.
+// Unlike 'cuda-checkpoint --get-state', which must be exec'd by a running
+// task, this only reads task state and so works while the kernel is paused.
+// The thread name check is a heuristic; see cudaProcs.
+func untoggledCudaThreadProcs(sctx context.Context, k *kernel.Kernel, toggledSet map[*kernel.ThreadGroup]struct{}) []*kernel.ThreadGroup {
+	var candidates []*kernel.ThreadGroup
+	for _, tg := range nvproxyFDProcs(sctx, k) {
+		if _, ok := toggledSet[tg]; !ok {
+			candidates = append(candidates, tg)
+		}
+	}
+	return filterCudaProcsUsingThreadName(sctx, candidates)
+}
+
+// cudaProcs returns a list of all CUDA processes in the sandbox. It selects
+// them by collecting processes whose FD table has an open file descriptor to
+// any CUDA device. Thread naming seems to be undocumented driver behavior.
+// This is best-effort.
+func cudaProcs(sctx context.Context, k *kernel.Kernel, cudaCheckpointPath string, nvidiaDriverVersionMajor int) []*kernel.ThreadGroup {
+	procs := nvproxyFDProcs(sctx, k)
 
 	// procs may contain NVML-only processes, which don't use CUDA. As of
 	// writing, calling cuda-checkpoint on them will fail for all tested drivers.
