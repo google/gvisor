@@ -54,7 +54,7 @@ func Install(opt Options) error {
 		log.Infof("Seccomp filter debugging is enabled; seccomp failures will result in a panic stack trace.")
 		seccompOpts.DefaultAction = seccomp.Trap
 	} else {
-		log.Infof("No precompiled program found for config options %v, building seccomp program from scratch. This may slow down container startup.", key)
+		log.Warningf("No precompiled program found for config options %v, building seccomp program from scratch. This slows down sandbox startup.", key)
 		if log.IsLogging(log.Debug) {
 			precompiledKeys := ListPrecompiled()
 			log.Debugf("Precompiled seccomp-bpf program configuration option variants (%d):", len(precompiledKeys))
