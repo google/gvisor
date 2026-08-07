@@ -26,6 +26,7 @@ go_library(
         "//pkg/sentry/arch",
         "//pkg/sentry/hostmm",
         "//pkg/sentry/memmap",
+        "//pkg/timing",
         "//pkg/usermem",
         "@org_golang_x_sys//unix:go_default_library",
     ],

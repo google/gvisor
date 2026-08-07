@@ -22,6 +22,7 @@ go_library(
         "//pkg/bpf",
         "//pkg/log",
         "//pkg/sync",
+        "//pkg/timing",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

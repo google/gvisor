@@ -25,6 +25,7 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/control/server"
@@ -301,6 +302,7 @@ func (cm *containerManager) StartRoot(cid *string, _ *struct{}) error {
 	if state != created {
 		return fmt.Errorf("sandbox is not in created state, cannot start root container: state=%s", state)
 	}
+	cm.l.startupTimer.Reached("start RPC received")
 	// Tell the root container to start and wait for the result.
 	return cm.onStart()
 }
@@ -1253,6 +1255,10 @@ func (cm *containerManager) SetNetworkArgs(args *CreateLinksAndRoutesArgs, _ *st
 		log.Warningf("SetNetworkArgs called after sandbox started (state=%s), ignoring", state)
 		return nil
 	}
+	// Touching the startup timer here is safe: the sandbox has not started
+	// yet, so the boot goroutine is blocked waiting for the start signal and
+	// cannot be accessing the timer concurrently.
+	cm.l.startupTimer.Reached("network args received")
 
 	// Create a new CreateLinksAndRoutesArgs variable to store in the loader
 	// as the FDs associated with the original argument passed to this urpc
