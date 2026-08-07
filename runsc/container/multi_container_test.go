@@ -3221,11 +3221,6 @@ func TestMultiContainerCgroups(t *testing.T) {
 // mount. Also, checks memory usage stats from cgroups work correctly when the
 // memory is increased for one container.
 func TestMultiContainerCgroupsMemoryUsage(t *testing.T) {
-	_, err := testutil.FindFile("test/cmd/test_app/test_app")
-	if err != nil {
-		t.Fatal("error finding test_app:", err)
-	}
-
 	for _, cgroupV2 := range []bool{false, true} {
 		for name, conf := range configs(t, false /* noOverlay */) {
 			if cgroupV2 {
@@ -3240,7 +3235,8 @@ func TestMultiContainerCgroupsMemoryUsage(t *testing.T) {
 				defer cleanup()
 				conf.RootDir = rootDir
 
-				podSpecs, ids := createSpecs(sleepCmd, sleepCmd)
+				memCmd := []string{"sh", "-c", "dd if=/dev/zero of=/tmp/memfile bs=1M count=5 && sleep 1000"}
+				podSpecs, ids := createSpecs(sleepCmd, memCmd)
 				podSpecs[1].Linux = &specs.Linux{
 					Namespaces: []specs.LinuxNamespace{{Type: "pid"}},
 				}
@@ -3250,9 +3246,13 @@ func TestMultiContainerCgroupsMemoryUsage(t *testing.T) {
 					Type:        "cgroup",
 					Options:     nil,
 				}
-				// Append cgroups mount for both containers.
+				mntTmp := specs.Mount{
+					Destination: "/tmp",
+					Type:        "tmpfs",
+				}
+				// Append cgroups mount for both containers, and tmpfs for container 1.
 				podSpecs[0].Mounts = append(podSpecs[0].Mounts, mnt0)
-				podSpecs[1].Mounts = append(podSpecs[1].Mounts, mnt0)
+				podSpecs[1].Mounts = append(podSpecs[1].Mounts, mnt0, mntTmp)
 
 				createSharedMount(mnt0, "test-mount", podSpecs...)
 				containers, cleanup, err := startContainers(conf, podSpecs, ids)
@@ -3294,6 +3294,16 @@ func TestMultiContainerCgroupsMemoryUsage(t *testing.T) {
 					return u
 				}
 
+				// Wait for container1 to allocate memory.
+				if err := testutil.Poll(func() error {
+					if readUsage(ctrl1) > 4*1024*1024 {
+						return nil
+					}
+					return fmt.Errorf("waiting for container 1 memory allocation")
+				}, 5*time.Second); err != nil {
+					t.Fatalf("error waiting for container 1 memory allocation: %v", err)
+				}
+
 				usageTotal := readUsage(ctrlRoot)
 				usage0 := readUsage(ctrl0)
 				usage1 := readUsage(ctrl1)
@@ -3304,17 +3314,25 @@ func TestMultiContainerCgroupsMemoryUsage(t *testing.T) {
 					t.Fatalf("error total usage %d is less than container0 (%d) or container1 (%d)", usageTotal, usage0, usage1)
 				}
 
-				// Kill the second container and check that usage has decreased.
+				// Kill the second container, destroy it, and check that usage has decreased.
 				if err := containers[1].SignalContainer(unix.SIGKILL, true); err != nil {
 					t.Fatalf("error killing container %q: %v", containers[1].ID, err)
 				}
 				if _, err := containers[1].Wait(); err != nil {
 					t.Fatalf("error waiting forcontainer %q: %v", containers[1].ID, err)
 				}
+				if err := containers[1].Destroy(); err != nil {
+					t.Fatalf("error destroying container %q: %v", containers[1].ID, err)
+				}
 
-				newUsageTotal := readUsage(ctrlRoot)
-				if newUsageTotal >= usageTotal {
-					t.Fatalf("error new total usage %v is not less than old total usage %v", newUsageTotal, usageTotal)
+				if err := testutil.Poll(func() error {
+					newUsageTotal := readUsage(ctrlRoot)
+					if newUsageTotal >= usageTotal {
+						return fmt.Errorf("new total usage %v is not less than old total usage %v", newUsageTotal, usageTotal)
+					}
+					return nil
+				}, 5*time.Second); err != nil {
+					t.Fatalf("error waiting for total usage to decrease: %v", err)
 				}
 			})
 		}
