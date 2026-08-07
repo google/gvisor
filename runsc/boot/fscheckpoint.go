@@ -16,7 +16,6 @@ package boot
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -24,6 +23,7 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+	"google.golang.org/protobuf/proto"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -32,6 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/fscheckpoint"
+	fspb "gvisor.dev/gvisor/pkg/sentry/fscheckpoint/fscheckpoint_proto_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/state/checkpointfiles"
@@ -436,16 +437,20 @@ func startFSRestore(opts *fsRestoreOpts) (*fsRestore, error) {
 		fsr.manifestErr = func() error {
 			var manifest fscheckpoint.Manifest
 			timeStart := time.Now()
-			if err := json.NewDecoder(opts.ManifestFile).Decode(&manifest); err != nil {
+			manifestData, err := io.ReadAll(opts.ManifestFile)
+			if err != nil {
 				return fmt.Errorf("failed to read manifest: %w", err)
 			}
+			var pb fspb.Manifest
+			if err := proto.Unmarshal(manifestData, &pb); err != nil {
+				return fmt.Errorf("failed to decode proto manifest: %w", err)
+			}
+			manifest = fscheckpoint.FromProto(&pb)
 			log.Infof("Read filesystem checkpoint manifest in %s", time.Since(timeStart))
-			if manifest.Version != 0 {
+			if manifest.Version > 1 {
 				return fmt.Errorf("unsupported filesystem checkpoint version: %d", manifest.Version)
 			}
-			if manifest.RunscVersion != version.Version() {
-				return fmt.Errorf("filesystem checkpoint runsc version %q does not match current runsc version %q", manifest.RunscVersion, version.Version())
-			}
+			log.Infof("Restoring from proto manifest (version %d) created by runsc version %q", manifest.Version, manifest.RunscVersion)
 			if manifest.PageSize != hostarch.PageSize {
 				return fmt.Errorf("filesystem checkpoint page size %d does not match current page size %d", manifest.PageSize, hostarch.PageSize)
 			}

@@ -15,10 +15,10 @@
 package kernel
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 
+	"google.golang.org/protobuf/proto"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/fscheckpoint"
+	fspb "gvisor.dev/gvisor/pkg/sentry/fscheckpoint/fscheckpoint_proto_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/state/stateio"
@@ -112,7 +113,8 @@ func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) error {
 			PagesFile: apfs,
 		}
 
-		manifest := fscheckpoint.Manifest{
+		manifest := &fspb.Manifest{
+			Version:      1,
 			RunscVersion: opts.RunscVersion,
 			PageSize:     hostarch.PageSize,
 			Endian:       hostarch.EndianString(),
@@ -193,8 +195,8 @@ func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) error {
 			if err := mf.SaveTo(ctx, pagesMetadataWriter, &mfOpts); err != nil {
 				return fmt.Errorf("failed to save MemoryFile with resourceID %s: %w", resourceID, err)
 			}
-			manifest.MemoryFiles = append(manifest.MemoryFiles, fscheckpoint.MemoryFile{
-				ResourceID:         resourceID,
+			manifest.MemoryFiles = append(manifest.MemoryFiles, &fspb.MemoryFile{
+				ResourceId:         toProtoResourceID(resourceID),
 				PagesMetadataStart: prevPagesMetadataOffset,
 				PagesMetadataEnd:   pagesMetadataWriter.count,
 				PagesStart:         prevPagesOffset,
@@ -204,8 +206,8 @@ func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) error {
 			if err := tmpfs.FSCheckpointWrite(ctx, fs, multiTarWriter); err != nil {
 				return fmt.Errorf("failed to write tmpfs with resourceID %s to multi-tar file: %w", resourceID, err)
 			}
-			manifest.Tmpfs = append(manifest.Tmpfs, fscheckpoint.Tmpfs{
-				ResourceID: resourceID,
+			manifest.Tmpfs = append(manifest.Tmpfs, &fspb.Tmpfs{
+				ResourceId: toProtoResourceID(resourceID),
 				TarStart:   prevTarOffset,
 				TarEnd:     multiTarWriter.count,
 			})
@@ -215,7 +217,11 @@ func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) error {
 			return fmt.Errorf("no checkpointable filesystems")
 		}
 		apfs.MemoryFilesDone()
-		if err := json.NewEncoder(opts.ManifestFile).Encode(manifest); err != nil {
+		bytes, err := proto.Marshal(manifest)
+		if err != nil {
+			return fmt.Errorf("failed to marshal manifest: %w", err)
+		}
+		if _, err := opts.ManifestFile.Write(bytes); err != nil {
 			return fmt.Errorf("failed to write manifest file: %w", err)
 		}
 		// Close other writers while MemoryFile saving is in progress to
@@ -274,4 +280,21 @@ func (k *Kernel) WaitForFSSave() error {
 	k.fsSaveWaiters = append(k.fsSaveWaiters, c)
 	k.fsSaveMu.Unlock()
 	return <-c
+}
+
+// SignalAllFSSaveWaiters signals all FS save waiters with err.
+func (k *Kernel) SignalAllFSSaveWaiters(err error) {
+	k.fsSaveMu.Lock()
+	defer k.fsSaveMu.Unlock()
+	for _, c := range k.fsSaveWaiters {
+		c <- err
+	}
+	k.fsSaveWaiters = nil
+}
+
+func toProtoResourceID(id checkpoint.ResourceID) *fspb.ResourceID {
+	return &fspb.ResourceID{
+		ContainerName: id.ContainerName,
+		Path:          id.Path,
+	}
 }
