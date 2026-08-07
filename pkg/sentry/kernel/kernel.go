@@ -2105,7 +2105,7 @@ func (ctx *supervisorContext) Value(key any) any {
 		// The supervisor context can trace anything. (None of
 		// supervisorContext's users are expected to invoke ptrace, but ptrace
 		// permissions are required for certain file accesses.)
-		return func(*Task, bool) bool { return true }
+		return func(*Task, PtraceAccessMode) bool { return true }
 	case CtxKernel:
 		return ctx.Kernel
 	case CtxPIDNamespace:
