@@ -5699,3 +5699,87 @@ func TestNFTablesConcurrentUpdateAndEvaluate(t *testing.T) {
 		t.Fatalf("expected %d rules in final chain, got %d", expectedRules, len(finalChain.GetRules()))
 	}
 }
+
+// Tests compat operation deepCopy functionality.
+func TestCompatOperationDeepCopy(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		op   operation
+		opts cmp.Option
+	}{
+		{
+			name: "noop match",
+			op: &compatNoopMatch{
+				name:     "tcp",
+				revision: 0,
+				infoData: []byte{1, 2, 3, 4},
+			},
+			opts: cmp.AllowUnexported(compatNoopMatch{}),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			copied := tc.op.deepCopy()
+			if diff := cmp.Diff(tc.op, copied, tc.opts); diff != "" {
+				t.Fatalf("unexpected diff after copy (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// Tests compat operation checkCompatibility functionality.
+func TestCompatOpCompatibility(t *testing.T) {
+	noop := &compatNoopMatch{name: "tcp"}
+	const nonBaseChainType = BaseChainType(-1)
+
+	makeCtx := func(bcType BaseChainType, hook stack.NFHook) *opCompatCtx {
+		if bcType == nonBaseChainType {
+			return &opCompatCtx{chain: &Chain{}}
+		}
+		return &opCompatCtx{
+			chain: &Chain{
+				baseChainInfo: &BaseChainInfo{
+					BcType: bcType,
+					Hook:   hook,
+				},
+			},
+		}
+	}
+
+	for _, tc := range []struct {
+		name    string
+		op      operation
+		cCtx    *opCompatCtx
+		wantErr bool
+	}{
+		{
+			name:    "noop match",
+			op:      noop,
+			cCtx:    makeCtx(nonBaseChainType, 0),
+			wantErr: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.op.checkCompatibility(tc.cCtx)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("checkCompatibility() err = %v, wantErr = %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+// Tests that pass-through no-op compat matches (like tcp/udp) return NFT_CONTINUE.
+func TestCompatNoopMatchEvaluation(t *testing.T) {
+	op := &compatNoopMatch{
+		name:     "tcp",
+		revision: 0,
+		infoData: []byte{1, 2, 3, 4},
+	}
+	regs := &registerSet{verdict: Verdict{Code: VC(linux.NF_DROP)}}
+	pkt := makeArbitraryIPv4Packet()
+	defer pkt.DecRef()
+
+	op.evaluate(regs, opEvalCtx{pkt: pkt})
+	if regs.verdict.Code != VC(linux.NFT_CONTINUE) {
+		t.Errorf("evaluate verdict = %d, want %d", regs.verdict.Code, VC(linux.NFT_CONTINUE))
+	}
+}
