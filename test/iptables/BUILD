@@ -46,6 +46,27 @@ go_test(
     ],
 )
 
+go_test(
+    name = "iptables_nft_test",
+    size = "large",
+    srcs = [
+        "iptables_test.go",
+    ],
+    args = ["-iptables-nft=true"],
+    data = ["//test/iptables/runner"],
+    library = ":iptables",
+    tags = [
+        "local",
+        "manual",
+    ],
+    deps = [
+        "//pkg/log",
+        "//pkg/test/dockerutil",
+        "//pkg/test/testutil",
+        "//test/netutils",
+    ],
+)
+
 sh_test(
     name = "nftables_test",
     srcs = ["nftables_test.sh"],
