@@ -570,6 +570,10 @@ type RestoreOpts struct {
 	// RestoreOpts.HavePagesFile is unknown and must be determined by
 	// containerManager.Restore.
 	UseCheckpointGofer bool `json:"use_checkpoint_gofer"`
+
+	// SplitFSRestore indicates if we should restore the filesystem from a
+	// split filesystem checkpoint.
+	SplitFSRestore bool `json:"split_fsrestore"`
 }
 
 // Restore loads a container from a statefile.
@@ -594,9 +598,14 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 			cm.onRestoreFailed(fmt.Errorf("Restore failed: %w", retErr))
 		}
 	}()
-	if cm.l.fsRestore != nil {
-		return fmt.Errorf("cannot restore sandbox when filesystem restore is enabled")
+
+	// If filesystem restore files were donated to the loader during sandbox
+	// creation, we must perform a split filesystem restore. Restoring a split
+	// checkpoint without split-fsrestore enabled is not supported.
+	if (cm.l.fsRestore != nil) != o.SplitFSRestore {
+		return fmt.Errorf("split filesystem restore flag and donated files must be consistent")
 	}
+
 	if len(o.Files) == 0 {
 		return fmt.Errorf("at least one file must be passed to Restore")
 	}

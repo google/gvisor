@@ -57,6 +57,10 @@ type Restore struct {
 	// uncompressed for background to work; if the checkpoint is compressed,
 	// background has no effect.
 	background bool
+
+	// splitFSRestore indicates if we should restore from a checkpoint which
+	// contains separate files for filesystem.
+	splitFSRestore bool
 }
 
 // Name implements subcommands.Command.Name.
@@ -81,6 +85,7 @@ func (r *Restore) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&r.detach, "detach", false, "detach from the container's process")
 	f.BoolVar(&r.direct, "direct", false, "use O_DIRECT for reading checkpoint pages file")
 	f.BoolVar(&r.background, "background", false, "allow image loading to continue after restore exits (requires uncompressed checkpoint)")
+	f.BoolVar(&r.splitFSRestore, "split-fsrestore", false, "restore from a checkpoint where filesystem snapshots are split in different files from sentry state")
 
 	// Unimplemented flags necessary for compatibility with docker.
 
@@ -143,13 +148,17 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 	defer cu.Clean()
 
 	runArgs := container.Args{
-		ID:            id,
-		Spec:          nil,
-		BundleDir:     bundleDir,
-		ConsoleSocket: r.consoleSocket,
-		PIDFile:       r.pidFile,
-		UserLog:       r.userLog,
-		Attached:      !r.detach,
+		ID:                 id,
+		Spec:               nil,
+		BundleDir:          bundleDir,
+		ConsoleSocket:      r.consoleSocket,
+		PIDFile:            r.pidFile,
+		UserLog:            r.userLog,
+		Attached:           !r.detach,
+		FSRestoreImagePath: r.fsRestoreImagePath,
+		FSRestoreDirect:    r.fsRestoreDirect,
+		CheckpointDirPath:  r.imagePath,
+		SplitFSRestore:     r.splitFSRestore,
 	}
 
 	log.Debugf("Restore container, cid: %s, rootDir: %q", id, conf.RootDir)
@@ -184,7 +193,7 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 	}
 
 	log.Debugf("Restore: %v", r.imagePath)
-	err = c.Restore(conf, r.imagePath, r.direct, r.background, nil /* networkArgs */)
+	err = c.Restore(conf, r.imagePath, r.direct, r.background, r.splitFSRestore, nil /* networkArgs */)
 	if err != nil {
 		return util.Errorf("starting container: %v", err)
 	}
