@@ -843,7 +843,9 @@ func (c *cgroup) isDescendantOf(ancestor *cgroup) bool {
 // non-init namespace to non-delegatable interface files of the namespace
 // root cgroup are rejected.
 func (c *cgroup) checkNSDelegateWrite(ctx context.Context, fd *vfs.FileDescription) error {
-	if !c.fs.nsDelegate.Load() {
+	// If fd is nil (e.g. writes from outside the sandbox via WriteControl),
+	// there is no cgroup namespace delegation boundary to enforce.
+	if !c.fs.nsDelegate.Load() || fd == nil {
 		return nil
 	}
 	ifd, ok := fd.Impl().(*interfaceFD)
