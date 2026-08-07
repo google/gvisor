@@ -54,3 +54,8 @@ func (t *thread) setTLS(tls *uint64) error {
 // address space layout is fixed and does not require dynamic
 // configuration, so this is intentionally empty.
 func configureSystrapAddressSpace() {}
+
+// installPACKeys is a no-op on amd64, which has no pointer authentication. // PAC-KEY-CR
+func (t *thread) installPACKeys(keys [10]uint64) error {
+	return nil
+}

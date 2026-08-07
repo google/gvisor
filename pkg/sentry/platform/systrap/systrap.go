@@ -310,7 +310,7 @@ func New(opts platform.Options) (*Systrap, error) {
 
 		// Create the source process for the global pool. This must be
 		// done before initializing any other processes.
-		source, err := newSubprocess(createStub, mf, false)
+		source, err := newSubprocess(createStub, mf, false, [10]uint64{}, false)
 		if err != nil {
 			stubErr = fmt.Errorf("initialize systrap: %w", err)
 			return
@@ -361,7 +361,13 @@ func (*Systrap) MaxUserAddress() hostarch.Addr {
 
 // NewAddressSpace returns a new subprocess.
 func (p *Systrap) NewAddressSpace() (platform.AddressSpace, error) {
-	return newSubprocess(globalPool.source.createStub, p.memoryFile, true)
+	return newSubprocess(globalPool.source.createStub, p.memoryFile, true, [10]uint64{}, false)
+}
+
+// NewAddressSpaceWithPAC creates an address space whose guest threads are seeded with
+// the given sandbox-wide ARM64 PAC keys so PAC survives C/R. // PAC-KEY-CR
+func (p *Systrap) NewAddressSpaceWithPAC(keys [10]uint64) (platform.AddressSpace, error) {
+	return newSubprocess(globalPool.source.createStub, p.memoryFile, true, keys, true)
 }
 
 // NewContext returns an interruptible platformContext.

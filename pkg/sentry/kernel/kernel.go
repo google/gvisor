@@ -168,6 +168,10 @@ type Kernel struct {
 	// Kernel.
 	platform.Platform `state:"nosave"`
 
+	// armPACKeys is the sandbox-wide ARM64 pointer-authentication key set,
+	// generated once at Init and serialized so PAC survives C/R. // PAC-KEY-CR
+	armPACKeys [10]uint64
+
 	// mf provides application memory.
 	mf *pgalloc.MemoryFile `state:"nosave"`
 
@@ -515,6 +519,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	if args.Timekeeper == nil {
 		return fmt.Errorf("args.Timekeeper is nil")
 	}
+	k.generatePACKeys() // PAC-KEY-CR
 	if args.Timekeeper.clocks == nil {
 		return fmt.Errorf("must call Timekeeper.SetClocks() before Kernel.Init()")
 	}
