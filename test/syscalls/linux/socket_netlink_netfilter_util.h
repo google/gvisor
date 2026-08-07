@@ -28,6 +28,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <optional>
 #include <string>
@@ -176,10 +177,53 @@ void VerifyChainPolicy(const FileDescriptor& fd, absl::string_view table_name,
                        absl::string_view chain_name, uint32_t expected_policy,
                        uint32_t seq);
 
+// Reads string from an nfattr.
+std::string GetNfAttrString(const struct nfattr* attr);
+
+// Reads raw bytes from an nfattr safely. Supported types: char, uint8_t.
+template <typename T = char>
+std::vector<T> GetNfAttrBytes(const struct nfattr* attr);
+
 // Helper function to get set elements.
 PosixErrorOr<std::vector<ElementDescriptor>> GetSetElements(
     const FileDescriptor& fd, absl::string_view table_name,
     absl::string_view set_name, uint32_t seq);
+
+// Represents a parsed expression (e.g. payload, cmp, counter, target) within a
+// rule.
+struct ParsedRuleExpr {
+  std::string name;        // Expression type name (e.g. "target", "cmp").
+  std::vector<char> data;  // Nested expression-specific attribute payload.
+};
+
+// Represents a parsed nftables rule from an NFT_MSG_NEWRULE netlink message.
+struct ParsedRule {
+  uint16_t family = 0;
+  std::string table_name;
+  std::string chain_name;
+  uint64_t handle = 0;
+  std::vector<uint8_t> userdata;
+  std::vector<ParsedRuleExpr> expressions;
+
+  // Returns the names of all expressions in this rule in evaluation order.
+  std::vector<std::string> ExpressionNames() const {
+    std::vector<std::string> names;
+    names.reserve(expressions.size());
+    for (const auto& expr : expressions) {
+      names.push_back(expr.name);
+    }
+    return names;
+  }
+};
+
+// Parses a single rule from an NFT_MSG_NEWRULE netlink message.
+PosixErrorOr<ParsedRule> ParseRule(const struct nlmsghdr* hdr);
+
+// Helper function to get rules via an NFT_MSG_GETRULE dump request.
+PosixErrorOr<std::vector<ParsedRule>> GetRules(
+    const FileDescriptor& fd, uint16_t family = NFPROTO_UNSPEC,
+    absl::string_view table_name = "", absl::string_view chain_name = "",
+    uint32_t seq = 12345);
 
 // Helper function to build a netlink set element attribute from a descriptor.
 std::vector<char> BuildNetlinkElement(const ElementDescriptor& desc);
@@ -196,6 +240,16 @@ PosixError DestroyNetfilterTable(FileDescriptor& fd,
 
 // Helper function to flush all rules.
 PosixError NetfilterFlushRuleset(const FileDescriptor& fd);
+
+// Helper function to drain leftover messages from a netlink socket.
+void DrainNetlinkSocket(const FileDescriptor& fd);
+
+// Helper function to send a dump request and process each streamed message.
+// `on_item` is called for each dumped message; returning an error halts the
+// dump.
+PosixError NetlinkDumpRequest(
+    const FileDescriptor& fd, void* req, size_t req_len, uint32_t seq,
+    const std::function<PosixError(const struct nlmsghdr* hdr)>& on_item);
 
 class NlBatchReq {
  public:
