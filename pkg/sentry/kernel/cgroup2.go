@@ -269,6 +269,15 @@ func newCgroupNamespace(root Cgroup2, userns *auth.UserNamespace) *CgroupNamespa
 	}
 }
 
+// NewCgroupNamespace creates a new cgroup namespace rooted at root and owned
+// by userns, along with its backing nsfs inode. The returned namespace holds
+// one reference, owned by the caller.
+func (k *Kernel) NewCgroupNamespace(ctx context.Context, root Cgroup2, userns *auth.UserNamespace) *CgroupNamespace {
+	ns := newCgroupNamespace(root, userns)
+	ns.SetInode(nsfs.NewInode(ctx, k.nsfsMount, ns))
+	return ns
+}
+
 // Root returns the cgroup2 node this namespace is rooted at.
 func (ns *CgroupNamespace) Root() Cgroup2 {
 	return ns.root

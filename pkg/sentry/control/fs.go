@@ -118,13 +118,22 @@ func (f *Fs) Cat(o *CatOpts, _ *struct{}) error {
 
 // fdReader provides an io.Reader interface for a vfs.FileDescription.
 type fdReader struct {
-	ctx context.Context
-	fd  *vfs.FileDescription
+	ctx    context.Context
+	fd     *vfs.FileDescription
+	offset int64
 }
 
 // Read implements io.Reader.Read.
 func (f *fdReader) Read(p []byte) (int, error) {
-	n, err := f.fd.Read(f.ctx, usermem.BytesIOSequence(p), vfs.ReadOptions{})
+	if f.offset == 0 {
+		n, err := f.fd.Read(f.ctx, usermem.BytesIOSequence(p), vfs.ReadOptions{})
+		return int(n), err
+	}
+
+	// PRead reads from the explicit byte offset f.offset without modifying the
+	// file description's internal offset.
+	n, err := f.fd.PRead(f.ctx, usermem.BytesIOSequence(p), f.offset, vfs.ReadOptions{})
+	f.offset += n
 	return int(n), err
 }
 
@@ -158,6 +167,9 @@ type ReadOpts struct {
 
 	// Path is the filesystem path for the file to read.
 	Path string `json:"path"`
+
+	// Offset is the byte offset in the file to read from.
+	Offset int64 `json:"offset"`
 
 	// Size is the maximum number of bytes to read (0 means unlimited).
 	Size int64 `json:"size"`
@@ -196,7 +208,7 @@ func (f *Fs) Read(o *ReadOpts, _ *struct{}) error {
 	}
 	defer fd.DecRef(ctx)
 
-	reader := &fdReader{ctx: ctx, fd: fd}
+	reader := &fdReader{ctx: ctx, fd: fd, offset: o.Offset}
 	if o.Size > 0 {
 		_, err = io.Copy(output, io.LimitReader(reader, o.Size))
 	} else {

@@ -1180,6 +1180,14 @@ type CreateProcessArgs struct {
 	// InitialCgroups are the cgroups the container is initialized to.
 	InitialCgroups map[Cgroup]struct{}
 
+	// InitialCgroupV2 is the cgroup2 node the new process starts in. If nil,
+	// the process starts in the root cgroup.
+	InitialCgroupV2 Cgroup2
+
+	// CgroupNamespace is the cgroup namespace of the new process. If nil, the
+	// root cgroup namespace is used.
+	CgroupNamespace *CgroupNamespace
+
 	// Origin indicates how the task was first created.
 	Origin TaskOrigin
 
@@ -1212,6 +1220,13 @@ func (ctx *createProcessContext) Value(key any) any {
 		return ctx.kernel
 	case CtxPIDNamespace:
 		return ctx.args.PIDNamespace
+	case CtxCgroupNamespace:
+		if ctx.args.CgroupNamespace == nil {
+			return nil
+		}
+		cgroupns := ctx.args.CgroupNamespace
+		cgroupns.IncRef()
+		return cgroupns
 	case CtxUTSNamespace:
 		utsns := ctx.args.UTSNamespace
 		utsns.IncRef()
@@ -1384,6 +1399,11 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 	}
 	args.FDTable.IncRef()
 
+	cgroupns := args.CgroupNamespace
+	if cgroupns == nil {
+		cgroupns = k.rootCgroupNamespace
+	}
+
 	// Create the task.
 	config := &TaskConfig{
 		Kernel:           k,
@@ -1397,10 +1417,11 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		AllowedCPUMask:   sched.NewFullCPUSet(k.applicationCores),
 		UTSNamespace:     args.UTSNamespace,
 		IPCNamespace:     args.IPCNamespace,
-		CgroupNamespace:  k.rootCgroupNamespace,
+		CgroupNamespace:  cgroupns,
 		MountNamespace:   mntns,
 		ContainerID:      args.ContainerID,
 		InitialCgroups:   args.InitialCgroups,
+		InitialCgroupV2:  args.InitialCgroupV2,
 		UserCounters:     k.GetUserCounters(args.Credentials.RealKUID),
 		Origin:           args.Origin,
 		Personality:      linux.PER_LINUX,

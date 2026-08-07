@@ -942,8 +942,22 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	}
 	lfOpts.Command = "boot" // Revert command to "boot".
 
+	sentryBin := &gvisorbinaries.GvisorSentry
+	sentryUsesCgo := false
+	if conf.Network == config.NetworkPlugin {
+		sentryBin = &gvisorbinaries.GvisorSentryPluginStack
+		sentryUsesCgo = true
+	}
+	bootBinPath := specutils.ExePath
+	if p, err := sentryBin.Path(); err == nil {
+		log.Infof("Sidecar %q found: booting sandbox with %s", sentryBin.Name, p)
+		bootBinPath = p
+	} else {
+		log.Warningf("Sidecar %q not usable (%v): booting sandbox with runsc itself", sentryBin.Name, err)
+	}
+
 	// Relay all the config flags to the sandbox process.
-	cmd := exec.Command(specutils.ExePath, conf.ToFlags()...)
+	cmd := exec.Command(bootBinPath, conf.ToFlags()...)
 	cmd.SysProcAttr = &unix.SysProcAttr{
 		// Detach from this session, otherwise cmd will get SIGHUP and SIGCONT
 		// when re-parented.
@@ -963,12 +977,17 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	// All flags after this must be for the boot command
 	cmd.Args = append(cmd.Args, "boot", "--bundle="+args.BundleDir)
 
-	// Clear environment variables, unless --TESTONLY-unsafe-nonroot is set.
-	if !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
-		// Setting cmd.Env = nil causes cmd to inherit the current process's env.
+	if conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
+		// --TESTONLY-unsafe-nonroot is set, so keep env.
+		cmd.Env = os.Environ()
+	} else {
+		// Clear environment variables, unless --TESTONLY-unsafe-nonroot is set.
 		cmd.Env = []string{}
 	}
-	if config.CgoEnabled {
+	if bootBinPath != specutils.ExePath {
+		cmd.Env = gvisorbinaries.WithEnforceRelease(cmd.Env)
+	}
+	if sentryUsesCgo {
 		// Platforms that use stub processes are not compatible with
 		// the glibc rseq, because they unmap everything from a process
 		// address space.
@@ -2532,12 +2551,13 @@ func (s *Sandbox) TarRootfsUpperLayer(containerID string, outFD *os.File) error 
 	return nil
 }
 
-// ReadFile reads a file of the sandbox from the given container (or root container if containerID is empty) up to the specified size.
-func (s *Sandbox) ReadFile(containerID, path string, size int64, outFD *os.File) error {
-	log.Debugf("ReadFile, sandbox: %q, container: %q, path: %q, size: %d", s.ID, containerID, path, size)
+// ReadFile reads a file of the sandbox from the given container (or root container if containerID is empty) up to the specified size from the specified offset.
+func (s *Sandbox) ReadFile(containerID, path string, offset, size int64, outFD *os.File) error {
+	log.Debugf("ReadFile, sandbox: %q, container: %q, path: %q, offset: %d, size: %d", s.ID, containerID, path, offset, size)
 	opts := control.ReadOpts{
 		ContainerID: containerID,
 		Path:        path,
+		Offset:      offset,
 		Size:        size,
 		FilePayload: urpc.FilePayload{Files: []*os.File{outFD}},
 	}
