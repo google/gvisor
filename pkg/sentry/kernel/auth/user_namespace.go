@@ -62,6 +62,15 @@ type UserNamespace struct {
 	// setgroupsAllowed mirrors USERNS_SETGROUPS_ALLOWED in Linux. Protected by mu.
 	setgroupsAllowed bool
 
+	// maxUserNamespaces is this namespace's /proc/sys/user/max_user_namespaces:
+	// the most descendant user namespaces that may be charged to it. Protected
+	// by mu.
+	maxUserNamespaces int32
+
+	// numUserNamespaces is the number of descendant user namespaces currently
+	// charged to this namespace. Protected by mu.
+	numUserNamespaces int32
+
 	// inode is the nsfs inode associated with this namespace. This is stored as
 	// refs.TryRefCounter instead of *nsfs.Inode because nsfs imports auth.
 	inode refs.TryRefCounter
@@ -75,6 +84,7 @@ type UserNamespace struct {
 func NewRootUserNamespace() *UserNamespace {
 	var ns UserNamespace
 	ns.setgroupsAllowed = true
+	ns.maxUserNamespaces = defaultMaxUserNamespaces
 	// """
 	// The initial user namespace has no parent namespace, but, for
 	// consistency, the kernel provides dummy user and group ID mapping files
@@ -109,8 +119,29 @@ func (ns *UserNamespace) Type() string {
 	return "user"
 }
 
-// Destroy implements vfs.Namespace.Destroy.
-func (ns *UserNamespace) Destroy(ctx context.Context) {}
+// Destroy implements vfs.Namespace.Destroy. Called when ns's nsfs inode
+// refcount reaches zero, it releases ns's charge on its ancestors.
+func (ns *UserNamespace) Destroy(ctx context.Context) {
+	for anc := ns.parent; anc != nil; anc = anc.parent {
+		anc.mu.Lock()
+		anc.numUserNamespaces--
+		anc.mu.Unlock()
+	}
+}
+
+// MaxUserNamespaces returns ns's max_user_namespaces limit.
+func (ns *UserNamespace) MaxUserNamespaces() int32 {
+	ns.mu.Lock()
+	defer ns.mu.Unlock()
+	return ns.maxUserNamespaces
+}
+
+// SetMaxUserNamespaces sets ns's max_user_namespaces limit.
+func (ns *UserNamespace) SetMaxUserNamespaces(max int32) {
+	ns.mu.Lock()
+	defer ns.mu.Unlock()
+	ns.maxUserNamespaces = max
+}
 
 // UserNamespace implements vfs.Namespace.UserNamespace.
 func (ns *UserNamespace) UserNamespace() *UserNamespace {
@@ -158,6 +189,10 @@ func (ns *UserNamespace) DecRef(ctx context.Context) {
 // namespaces." - user_namespaces(7)
 const maxUserNamespaceDepth = 32
 
+// defaultMaxUserNamespaces is a new namespace's max_user_namespaces: effectively
+// unlimited until lowered through /proc/sys/user/max_user_namespaces.
+const defaultMaxUserNamespaces = math.MaxInt32
+
 func (ns *UserNamespace) depth() int {
 	var i int
 	for ns != nil {
@@ -190,15 +225,53 @@ func (c *Credentials) NewChildUserNamespace() (*UserNamespace, error) {
 	c.UserNamespace.mu.Lock()
 	parentSetgroupsAllowed := c.UserNamespace.setgroupsAllowed
 	c.UserNamespace.mu.Unlock()
+	// Charge the new namespace to the creating namespace and its ancestors;
+	// ENOSPC if any has hit its max_user_namespaces.
+	if err := c.UserNamespace.chargeChild(); err != nil {
+		return nil, err
+	}
 	return &UserNamespace{
-		parent:           c.UserNamespace,
-		owner:            c.EffectiveKUID,
-		parentHadSetfcap: c.HasSelfCapability(linux.CAP_SETFCAP),
-		setgroupsAllowed: parentSetgroupsAllowed,
+		parent:            c.UserNamespace,
+		owner:             c.EffectiveKUID,
+		parentHadSetfcap:  c.HasSelfCapability(linux.CAP_SETFCAP),
+		setgroupsAllowed:  parentSetgroupsAllowed,
+		maxUserNamespaces: defaultMaxUserNamespaces,
 		// "When a user namespace is created, it starts without a mapping of
 		// user IDs (group IDs) to the parent user namespace." -
 		// user_namespaces(7)
 	}, nil
+}
+
+// chargeChild increments the descendant count of ns and each ancestor for a
+// new child namespace. If any would exceed its max_user_namespaces, it rolls
+// back and returns ENOSPC. Locks each mu alone, descendant-to-ancestor per the
+// lock order on mu.
+func (ns *UserNamespace) chargeChild() error {
+	var charged []*UserNamespace
+	for cur := ns; cur != nil; cur = cur.parent {
+		cur.mu.Lock()
+		// Check before incrementing so the count never exceeds the limit (and
+		// so it cannot overflow, since the limit is at most math.MaxInt32).
+		if cur.numUserNamespaces >= cur.maxUserNamespaces {
+			cur.mu.Unlock()
+			unchargeChain(charged)
+			return linuxerr.ENOSPC
+		}
+		cur.numUserNamespaces++
+		charged = append(charged, cur)
+		cur.mu.Unlock()
+	}
+	return nil
+}
+
+// unchargeChain decrements the descendant count of each namespace in chain. It
+// undoes a partial or complete chargeChild.
+func unchargeChain(chain []*UserNamespace) {
+	for _, ns := range chain {
+		ns.mu.Lock()
+		ns.numUserNamespaces--
+		ns.mu.Unlock()
+	}
 }
 
 // SetgroupsAllowed returns ns's USERNS_SETGROUPS_ALLOWED bit.

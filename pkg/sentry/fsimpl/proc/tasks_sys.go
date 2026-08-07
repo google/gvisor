@@ -88,6 +88,9 @@ func (fs *filesystem) newSysDir(ctx context.Context, root *auth.Credentials, k *
 			"overcommit_memory": fs.newInode(ctx, root, 0444, newStaticFile("0\n")),
 		}),
 		"net": fs.newSysNetDir(ctx, root, k),
+		"user": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
+			"max_user_namespaces": fs.newInode(ctx, root, 0644, &maxUserNamespacesData{}),
+		}),
 	})
 }
 
@@ -241,6 +244,42 @@ func (*uuidData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 // GetDynamicBytesPoller implements vfs.PollableDynamicBytesSource.GetDynamicBytesPoller.
 func (*domainnameData) GetDynamicBytesPoller(ctx context.Context) *vfs.DynamicBytesPoller {
 	return &kernel.KernelFromContext(ctx).DomainNamePoller
+}
+
+// maxUserNamespacesData implements vfs.WritableDynamicBytesSource for
+// /proc/sys/user/max_user_namespaces, the caller's own user namespace limit.
+//
+// +stateify savable
+type maxUserNamespacesData struct {
+	kernfs.DynamicBytesFile
+}
+
+var _ vfs.WritableDynamicBytesSource = (*maxUserNamespacesData)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (*maxUserNamespacesData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	userns := auth.CredentialsFromContext(ctx).UserNamespace
+	_, err := fmt.Fprintf(buf, "%d\n", userns.MaxUserNamespaces())
+	return err
+}
+
+// Write implements vfs.WritableDynamicBytesSource.Write.
+func (*maxUserNamespacesData) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
+	if offset != 0 {
+		// Ignore partial writes.
+		return 0, linuxerr.EINVAL
+	}
+	var buf [1]int32
+	n, err := ParseInt32Vec(ctx, src, buf[:])
+	if err != nil || n == 0 {
+		return 0, err
+	}
+	// The limit is a non-negative count.
+	if buf[0] < 0 {
+		return 0, linuxerr.EINVAL
+	}
+	auth.CredentialsFromContext(ctx).UserNamespace.SetMaxUserNamespaces(buf[0])
+	return n, nil
 }
 
 // tcpSackData implements vfs.WritableDynamicBytesSource for
