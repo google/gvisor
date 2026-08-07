@@ -11,6 +11,7 @@ go_library(
         "snapshot.go",
     ],
     visibility = ["//visibility:public"],
+    deps = ["//pkg/abi/linux"],
 )
 
 go_test(
