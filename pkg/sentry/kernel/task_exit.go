@@ -394,7 +394,13 @@ func (t *Task) exitThreadGroup() bool {
 // Preconditions: The TaskSet mutex must be locked for writing.
 func (t *Task) exitChildrenLocked() {
 	newParent := t.findReparentTargetLocked()
-	if newParent == nil {
+	// findReparentTargetLocked returns nil in several cases besides "t is
+	// init": init exists but is itself exiting, a subreaper walk dead-ends, or
+	// -- new -- the namespace has no init at all, which is how a sandbox booted
+	// without a root container starts out (see PIDNamespace.ReserveInitTID).
+	// Only the last of those must not tear the namespace down, so test for it
+	// directly rather than widening the condition for the others.
+	if newParent == nil && !t.tg.pidns.noInit {
 		// "If the init process of a PID namespace terminates, the kernel
 		// terminates all of the processes in the namespace via a SIGKILL
 		// signal." - pid_namespaces(7)

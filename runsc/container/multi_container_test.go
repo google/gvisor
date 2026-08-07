@@ -114,6 +114,479 @@ func startContainersWithArgs(conf *config.Config, specs []*specs.Spec, ids []str
 	return containers, cu.Release(), nil
 }
 
+// TestMultiContainerSandboxOnly tests a sandbox booted without a root
+// container. Containers are added to it afterwards as subcontainers, and the
+// sandbox outlives all of them.
+func TestMultiContainerSandboxOnly(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	setupSandboxOnlyRootDir(t, conf)
+
+	sbID := testutil.RandomContainerID()
+
+	// A sandbox-only spec has neither a process to run nor a rootfs to serve.
+	sbSpec := &specs.Spec{
+		Version: specs.Version,
+		Annotations: map[string]string{
+			specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeSandbox,
+		},
+	}
+	sbBundle, cleanupBundle, err := testutil.SetupBundleDir(sbSpec)
+	if err != nil {
+		t.Fatalf("error setting up sandbox bundle: %v", err)
+	}
+	t.Cleanup(cleanupBundle)
+
+	sb, err := New(conf, Args{ID: sbID, Spec: sbSpec, BundleDir: sbBundle, SandboxOnly: true})
+	if err != nil {
+		t.Fatalf("error creating sandbox: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := sb.Destroy(); err != nil {
+			t.Errorf("error destroying sandbox: %v", err)
+		}
+	})
+	if err := sb.Start(conf); err != nil {
+		t.Fatalf("error starting sandbox: %v", err)
+	}
+	if !sb.IsSandboxRunning() {
+		t.Fatalf("sandbox is not running after start")
+	}
+
+	// startSub adds a subcontainer running sleepCmd to the sandbox.
+	startSub := func(t *testing.T, name string) *Container {
+		t.Helper()
+		spec := testutil.NewSpecWithArgs(sleepCmd...)
+		spec.Annotations = map[string]string{
+			specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeContainer,
+			specutils.ContainerdSandboxIDAnnotation:     sbID,
+		}
+		bundle, cleanupBundle, err := testutil.SetupBundleDir(spec)
+		if err != nil {
+			t.Fatalf("error setting up bundle for %s: %v", name, err)
+		}
+		t.Cleanup(cleanupBundle)
+
+		cont, err := New(conf, Args{ID: testutil.RandomContainerID(), Spec: spec, BundleDir: bundle})
+		if err != nil {
+			t.Fatalf("error creating %s: %v", name, err)
+		}
+		t.Cleanup(func() { cont.Destroy() })
+		if err := cont.Start(conf); err != nil {
+			t.Fatalf("error starting %s: %v", name, err)
+		}
+		return cont
+	}
+
+	// pidOf returns the in-sandbox PID of the container's only process.
+	pidOf := func(t *testing.T, name string, c *Container) int32 {
+		t.Helper()
+		pl, err := c.Processes()
+		if err != nil {
+			t.Fatalf("error getting processes of %s: %v", name, err)
+		}
+		if len(pl) != 1 {
+			t.Fatalf("got %d processes in %s, want 1: %v", len(pl), name, pl)
+		}
+		return int32(pl[0].PID)
+	}
+
+	// No container may get TID 1. It is reserved so that the PID namespace has
+	// no init and no container's exit can kill the rest of the pod. See
+	// PIDNamespace.ReserveInitTID.
+	c1 := startSub(t, "c1")
+	pid1 := pidOf(t, "c1", c1)
+	c2 := startSub(t, "c2")
+	pid2 := pidOf(t, "c2", c2)
+	if pid1 == 1 || pid2 == 1 {
+		t.Errorf("got PIDs %d and %d, want TID 1 to be reserved", pid1, pid2)
+	}
+	if pid1 == pid2 {
+		t.Errorf("both containers got PID %d, want distinct PIDs", pid1)
+	}
+
+	// Destroying the first container must take down neither the sandbox nor its
+	// peers, even though it is the one that became Kernel.globalInit.
+	if err := c1.Destroy(); err != nil {
+		t.Fatalf("error destroying c1: %v", err)
+	}
+	if !sb.IsSandboxRunning() {
+		t.Fatalf("sandbox stopped running after its first container was destroyed")
+	}
+	if got := pidOf(t, "c2", c2); got != pid2 {
+		t.Errorf("c2 PID changed from %d to %d after c1 was destroyed", pid2, got)
+	}
+
+	// An empty sandbox must still accept new containers. Loader.WaitExit must
+	// not call Kernel.WaitExited, which returns immediately when nothing is
+	// running and sets noNewTasksIfZeroLive.
+	if err := c2.Destroy(); err != nil {
+		t.Fatalf("error destroying c2: %v", err)
+	}
+	if !sb.IsSandboxRunning() {
+		t.Fatalf("sandbox stopped running after the last container was destroyed")
+	}
+	c3 := startSub(t, "c3")
+	if got := pidOf(t, "c3", c3); got == 1 {
+		t.Errorf("c3 got PID 1, want TID 1 to be reserved")
+	}
+}
+
+// TestSandboxOnlyRun tests Run() on a sandbox booted without a root container,
+// which is what `runsc run --sandbox-only` does. Only the detached case is
+// covered: attached blocks by design until the sandbox is destroyed, since
+// there is no root container process whose exit could end the wait.
+func TestSandboxOnlyRun(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	rootDir := setupSandboxOnlyRootDir(t, conf)
+
+	sbID := testutil.RandomContainerID()
+	sbSpec := &specs.Spec{
+		Version: specs.Version,
+		Annotations: map[string]string{
+			specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeSandbox,
+		},
+	}
+	sbBundle, cleanupBundle, err := testutil.SetupBundleDir(sbSpec)
+	if err != nil {
+		t.Fatalf("error setting up sandbox bundle: %v", err)
+	}
+	defer cleanupBundle()
+
+	// Run() is Create + Start + Wait. Detached, so it must return once the
+	// sandbox is up rather than waiting on a root container that does not exist.
+	ws, err := Run(conf, Args{
+		ID:          sbID,
+		Spec:        sbSpec,
+		BundleDir:   sbBundle,
+		SandboxOnly: true,
+		Attached:    false,
+	})
+	if err != nil {
+		t.Fatalf("error running sandbox: %v", err)
+	}
+	if ws != 0 {
+		t.Errorf("got wait status %v, want 0", ws)
+	}
+
+	// Run() does not hand back the container when detached, so load it from the
+	// state file the way `runsc start`/`delete` would.
+	sb, err := Load(rootDir, FullID{ContainerID: sbID}, LoadOpts{})
+	if err != nil {
+		t.Fatalf("error loading sandbox: %v", err)
+	}
+	t.Cleanup(func() { sb.Destroy() })
+	if !sb.IsSandboxRunning() {
+		t.Fatalf("sandbox is not running after Run")
+	}
+
+	// The sandbox must accept a subcontainer, the same as one created with
+	// New()/Start().
+	spec := testutil.NewSpecWithArgs(sleepCmd...)
+	spec.Annotations = map[string]string{
+		specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeContainer,
+		specutils.ContainerdSandboxIDAnnotation:     sbID,
+	}
+	bundle, cleanupContBundle, err := testutil.SetupBundleDir(spec)
+	if err != nil {
+		t.Fatalf("error setting up container bundle: %v", err)
+	}
+	defer cleanupContBundle()
+
+	cont, err := New(conf, Args{ID: testutil.RandomContainerID(), Spec: spec, BundleDir: bundle})
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	t.Cleanup(func() { cont.Destroy() })
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+	if got := cont.Status; got != Running {
+		t.Errorf("got container status %v, want %v", got, Running)
+	}
+}
+
+// TestSandboxOnlyWithoutAnnotations tests a sandbox booted without a root
+// container from a spec that carries no annotations at all, which is what
+// `runsc create/run --sandbox-only` accepts from a hand-written bundle. The
+// container-type annotation is what usually keeps such a sandbox out of the
+// oom_score_adj calculation, which reads Spec.Process of every container in the
+// sandbox.
+func TestSandboxOnlyWithoutAnnotations(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	setupSandboxOnlyRootDir(t, conf)
+
+	sbSpec := &specs.Spec{Version: specs.Version}
+	sbBundle, cleanupBundle, err := testutil.SetupBundleDir(sbSpec)
+	if err != nil {
+		t.Fatalf("error setting up sandbox bundle: %v", err)
+	}
+	defer cleanupBundle()
+
+	sb, err := New(conf, Args{ID: testutil.RandomContainerID(), Spec: sbSpec, BundleDir: sbBundle, SandboxOnly: true})
+	if err != nil {
+		t.Fatalf("error creating sandbox: %v", err)
+	}
+	defer sb.Destroy()
+	if err := sb.Start(conf); err != nil {
+		t.Fatalf("error starting sandbox: %v", err)
+	}
+	if !sb.IsSandboxRunning() {
+		t.Fatalf("sandbox is not running after start")
+	}
+	// Destroy takes the same path with destroy=true.
+	if err := sb.Destroy(); err != nil {
+		t.Fatalf("error destroying sandbox: %v", err)
+	}
+}
+
+// TestSandboxOnlySignal checks that signaling a sandbox booted without a root
+// container is refused with an error saying why, rather than reaching the
+// sentry and failing there on a process that does not exist. The sandbox must
+// survive the attempt: `runsc delete` is what stops it.
+func TestSandboxOnlySignal(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	setupSandboxOnlyRootDir(t, conf)
+
+	sb := startSandboxOnly(t, conf, testutil.RandomContainerID())
+	for _, all := range []bool{false, true} {
+		err := sb.SignalContainer(unix.SIGTERM, all)
+		if err == nil {
+			t.Errorf("SignalContainer(all=%t) succeeded, want error", all)
+		} else if !strings.Contains(err.Error(), "root container process") {
+			t.Errorf("SignalContainer(all=%t) failed with %v, want an error about the missing root container process", all, err)
+		}
+	}
+	if !sb.IsSandboxRunning() {
+		t.Errorf("sandbox is not running after being signaled")
+	}
+}
+
+// setupSandboxOnlyRootDir creates a root dir for a sandbox-only test, points
+// conf at it and registers its removal, returning the dir.
+//
+// The removal is registered with t.Cleanup rather than deferred on purpose.
+// Every t.Cleanup runs after every deferred call, so a deferred removal would
+// take the state files away first, and the Destroy() calls that these tests
+// register with t.Cleanup would then fail to lock them and return without
+// stopping anything. A sandbox leaked that way never exits, having no process
+// inside it whose exit could end it, and it holds the test binary's stdout
+// open until the test framework times out.
+func setupSandboxOnlyRootDir(t *testing.T, conf *config.Config) string {
+	t.Helper()
+
+	rootDir, cleanupRoot, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	t.Cleanup(cleanupRoot)
+	conf.RootDir = rootDir
+	return rootDir
+}
+
+// startSandboxOnly boots a sandbox with no root container and returns it. The
+// caller is responsible for the returned containers' cleanup only through
+// t.Cleanup, which is registered here.
+func startSandboxOnly(t *testing.T, conf *config.Config, sbID string) *Container {
+	t.Helper()
+
+	sbSpec := &specs.Spec{
+		Version: specs.Version,
+		Annotations: map[string]string{
+			specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeSandbox,
+		},
+	}
+	return startSandboxOnlyWithSpec(t, conf, sbID, sbSpec)
+}
+
+// startSandboxOnlyWithSpec is startSandboxOnly with a caller-provided spec.
+func startSandboxOnlyWithSpec(t *testing.T, conf *config.Config, sbID string, sbSpec *specs.Spec) *Container {
+	t.Helper()
+
+	sbBundle, cleanupBundle, err := testutil.SetupBundleDir(sbSpec)
+	if err != nil {
+		t.Fatalf("error setting up sandbox bundle: %v", err)
+	}
+	t.Cleanup(cleanupBundle)
+
+	sb, err := New(conf, Args{ID: sbID, Spec: sbSpec, BundleDir: sbBundle, SandboxOnly: true})
+	if err != nil {
+		t.Fatalf("error creating sandbox: %v", err)
+	}
+	// Report a Destroy() failure rather than swallowing it: a sandbox-only
+	// sandbox that is not destroyed stays up for good.
+	t.Cleanup(func() {
+		if err := sb.Destroy(); err != nil {
+			t.Errorf("error destroying sandbox: %v", err)
+		}
+	})
+	if err := sb.Start(conf); err != nil {
+		t.Fatalf("error starting sandbox: %v", err)
+	}
+	return sb
+}
+
+// startSandboxOnlySub adds a subcontainer running sleepCmd to a sandbox booted
+// without a root container. pidnsPath, when non-nil, becomes the container's
+// PID namespace: the empty string asks for a new namespace, as CRI does for
+// NamespaceMode_CONTAINER.
+func startSandboxOnlySub(t *testing.T, conf *config.Config, sbID string, pidnsPath *string) *Container {
+	t.Helper()
+
+	spec := testutil.NewSpecWithArgs(sleepCmd...)
+	spec.Annotations[specutils.ContainerdContainerTypeAnnotation] = specutils.ContainerdContainerTypeContainer
+	spec.Annotations[specutils.ContainerdSandboxIDAnnotation] = sbID
+	if pidnsPath != nil {
+		spec.Linux = &specs.Linux{
+			Namespaces: []specs.LinuxNamespace{
+				{Type: specs.PIDNamespace, Path: *pidnsPath},
+			},
+		}
+	}
+	bundle, cleanupBundle, err := testutil.SetupBundleDir(spec)
+	if err != nil {
+		t.Fatalf("error setting up container bundle: %v", err)
+	}
+	t.Cleanup(cleanupBundle)
+
+	cont, err := New(conf, Args{ID: testutil.RandomContainerID(), Spec: spec, BundleDir: bundle})
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	t.Cleanup(func() { cont.Destroy() })
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+	return cont
+}
+
+// TestSandboxOnlyPIDNS tests PID namespace sharing between containers of a
+// sandbox booted without a root container, the way CRI asks for it. containerd
+// names the pod's PID namespace after the sandbox process,
+// /proc/<sandbox pid>/ns/pid, whatever the pod's pause container would have
+// been; the sandbox API reports the sentry's PID there just as the pause
+// container flow does, and Sandbox.fixPidns resolves it to the sandbox's root
+// PID namespace. A container asking for NamespaceMode_CONTAINER instead gets an
+// empty path, and must stay in a namespace of its own.
+func TestSandboxOnlyPIDNS(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	setupSandboxOnlyRootDir(t, conf)
+
+	sbID := testutil.RandomContainerID()
+	sb := startSandboxOnly(t, conf, sbID)
+
+	shared := fmt.Sprintf("/proc/%d/ns/pid", sb.SandboxPid())
+	private := ""
+	// Start them one at a time so that their PIDs are predictable. TID 1 is
+	// reserved in a sandbox booted without a root container, so the first
+	// container's process gets TID 2.
+	shared1 := startSandboxOnlySub(t, conf, sbID, &shared)
+	if err := waitForProcessList(shared1, []*control.Process{
+		newProcessBuilder().PID(2).Cmd("sleep").Process(),
+	}); err != nil {
+		t.Fatalf("failed to wait for sleep to start: %v", err)
+	}
+	shared2 := startSandboxOnlySub(t, conf, sbID, &shared)
+	if err := waitForProcessList(shared2, []*control.Process{
+		newProcessBuilder().PID(3).Cmd("sleep").Process(),
+	}); err != nil {
+		t.Fatalf("failed to wait for sleep to start: %v", err)
+	}
+	isolated := startSandboxOnlySub(t, conf, sbID, &private)
+	if err := waitForProcessList(isolated, []*control.Process{
+		newProcessBuilder().PID(4).Cmd("sleep").Process(),
+	}); err != nil {
+		t.Fatalf("failed to wait for sleep to start: %v", err)
+	}
+
+	// The two containers sharing the pod's namespace see each other, which is
+	// the point of the feature. They also see the isolated container, since its
+	// namespace is a child of theirs.
+	expectedPL := []*control.Process{
+		newProcessBuilder().PID(2).Cmd("sleep").Process(),
+		newProcessBuilder().PID(3).Cmd("sleep").Process(),
+		newProcessBuilder().PID(4).Cmd("sleep").Process(),
+		newProcessBuilder().Cmd("ps").Process(),
+	}
+	for _, c := range []*Container{shared1, shared2} {
+		got, err := execPS(conf, c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !procListsEqual(got, expectedPL) {
+			t.Errorf("shared container got process list: %s, want: %s", procListToString(got), procListToString(expectedPL))
+		}
+	}
+
+	// The isolated container sees only itself, and numbers itself from 1.
+	expectedPL = []*control.Process{
+		newProcessBuilder().PID(1).Cmd("sleep").Process(),
+		newProcessBuilder().Cmd("ps").Process(),
+	}
+	got, err := execPS(conf, isolated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !procListsEqual(got, expectedPL) {
+		t.Errorf("isolated container got process list: %s, want: %s", procListToString(got), procListToString(expectedPL))
+	}
+}
+
+// TestSandboxOnlyPIDNSSandboxSpec tests a container joining a PID namespace
+// named by the sandbox's own spec. There is no root container process to take
+// the namespace from, but the namespace the process would have run in exists:
+// it is the sandbox's root PID namespace, and containers naming it must land
+// there rather than in a new namespace of their own.
+func TestSandboxOnlyPIDNSSandboxSpec(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	setupSandboxOnlyRootDir(t, conf)
+
+	// Any path but /proc/<sandbox pid>/ns/pid, which Sandbox.fixPidns strips
+	// from a subcontainer's spec before the loader ever sees it.
+	const pidnsPath = "/proc/1/ns/pid"
+	sbID := testutil.RandomContainerID()
+	sbSpec := &specs.Spec{
+		Version: specs.Version,
+		Annotations: map[string]string{
+			specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeSandbox,
+		},
+		Linux: &specs.Linux{
+			Namespaces: []specs.LinuxNamespace{
+				{Type: specs.PIDNamespace, Path: pidnsPath},
+			},
+		},
+	}
+	startSandboxOnlyWithSpec(t, conf, sbID, sbSpec)
+
+	// The first container runs in the sandbox's root namespace by not asking for
+	// a namespace at all; the second gets there by naming the sandbox's.
+	root := startSandboxOnlySub(t, conf, sbID, nil)
+	if err := waitForProcessList(root, []*control.Process{
+		newProcessBuilder().PID(2).Cmd("sleep").Process(),
+	}); err != nil {
+		t.Fatalf("failed to wait for sleep to start: %v", err)
+	}
+	path := pidnsPath
+	joiner := startSandboxOnlySub(t, conf, sbID, &path)
+	if err := waitForProcessList(joiner, []*control.Process{
+		newProcessBuilder().PID(3).Cmd("sleep").Process(),
+	}); err != nil {
+		t.Fatalf("failed to wait for sleep to start: %v", err)
+	}
+
+	expectedPL := []*control.Process{
+		newProcessBuilder().PID(2).Cmd("sleep").Process(),
+		newProcessBuilder().PID(3).Cmd("sleep").Process(),
+		newProcessBuilder().Cmd("ps").Process(),
+	}
+	got, err := execPS(conf, joiner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !procListsEqual(got, expectedPL) {
+		t.Errorf("container got process list: %s, want: %s", procListToString(got), procListToString(expectedPL))
+	}
+}
+
 func TestMultiContainerTarRootfsUpperLayer(t *testing.T) {
 	conf := testutil.TestConfig(t)
 	conf.Overlay2.Set("all:memory")

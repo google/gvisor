@@ -160,3 +160,11 @@ doc(
     permalink = "/docs/user_guide/rootless/",
     weight = "94",
 )
+
+doc(
+    name = "sandbox_only",
+    src = "sandbox_only.md",
+    category = "User Guide",
+    permalink = "/docs/user_guide/sandbox_only/",
+    weight = "95",
+)

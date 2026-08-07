@@ -197,6 +197,13 @@ type Args struct {
 	// for containers in a new Sandbox process.
 	FSRestoreImagePath string
 	FSRestoreDirect    bool
+
+	// SandboxOnly creates a sandbox with no root container. Spec describes only
+	// the sandbox and carries neither a process to run nor a rootfs, so no gofer
+	// is started. Containers are added afterwards as subcontainers.
+	//
+	// It is only valid for a root container, i.e. one whose ID is the sandbox ID.
+	SandboxOnly bool
 }
 
 // New creates the container in a new Sandbox process, unless the metadata
@@ -225,6 +232,25 @@ func New(conf *config.Config, args Args) (*Container, error) {
 		}
 		if args.FSRestoreImagePath != "" {
 			return nil, fmt.Errorf("cannot set FSRestoreImagePath when creating container in existing sandbox")
+		}
+	}
+
+	if args.SandboxOnly {
+		if !specutils.IsRootContainer(args.Spec) {
+			return nil, fmt.Errorf("SandboxOnly can only be set for the root container")
+		}
+		// These all configure a root container process or its rootfs, and a
+		// sandbox-only sandbox has neither. The code that would consume them is
+		// skipped, so accepting them would mean silently doing nothing -- or, for
+		// FSRestoreImagePath, donating FDs for a restore that cannot happen.
+		if args.ConsoleSocket != "" {
+			return nil, fmt.Errorf("ConsoleSocket cannot be set with SandboxOnly: there is no root container process to give a terminal to")
+		}
+		if args.FSRestoreImagePath != "" {
+			return nil, fmt.Errorf("FSRestoreImagePath cannot be set with SandboxOnly: there is no root container filesystem to restore")
+		}
+		if len(args.PassFiles) > 0 || args.ExecFile != nil {
+			return nil, fmt.Errorf("PassFiles and ExecFile cannot be set with SandboxOnly: there is no root container process to pass them to")
 		}
 	}
 
@@ -367,9 +393,21 @@ func (c *Container) createRoot(conf *config.Config, args Args, sandboxID string)
 		return err
 	}
 	if err := cgroup.RunInCgroup(containerCgroup, func() error {
-		ioFiles, goferFilestores, devIOFile, specFile, err := c.createGoferProcess(conf, mountHints, args.Attached)
-		if err != nil {
-			return fmt.Errorf("cannot create gofer process: %w", err)
+		// A sandbox-only sandbox has no rootfs and no mounts of its own, so there
+		// is nothing for a gofer to serve. Subcontainers get their own gofers when
+		// they are created.
+		var (
+			ioFiles         []*os.File
+			goferFilestores []*os.File
+			devIOFile       *os.File
+			specFile        *os.File
+		)
+		if !args.SandboxOnly {
+			var err error
+			ioFiles, goferFilestores, devIOFile, specFile, err = c.createGoferProcess(conf, mountHints, args.Attached)
+			if err != nil {
+				return fmt.Errorf("cannot create gofer process: %w", err)
+			}
 		}
 
 		// Start a new sandbox for this container. Any errors after this point
@@ -392,6 +430,7 @@ func (c *Container) createRoot(conf *config.Config, args Args, sandboxID string)
 			ExecFile:            args.ExecFile,
 			FSRestoreImagePath:  args.FSRestoreImagePath,
 			FSRestoreDirect:     args.FSRestoreDirect,
+			SandboxOnly:         args.SandboxOnly,
 		}
 		sand, err := sandbox.New(conf, sandArgs)
 		if err != nil {
@@ -443,6 +482,9 @@ func (c *Container) Start(conf *config.Config) error {
 // to restore a container from its state file.
 func (c *Container) Restore(conf *config.Config, imagePath string, direct, background bool, networkArgs *boot.CreateLinksAndRoutesArgs) error {
 	log.Debugf("Restore container, cid: %s", c.ID)
+	if err := c.checkpointRestoreSupported("restore"); err != nil {
+		return err
+	}
 
 	restore := func(conf *config.Config, spec *specs.Spec) error {
 		return c.Sandbox.Restore(conf, spec, c.ID, imagePath, direct, background, networkArgs)
@@ -561,8 +603,9 @@ func Run(conf *config.Config, args Args) (unix.WaitStatus, error) {
 
 	// If we allocate a terminal, forward signals to the sandbox process.
 	// Otherwise, Ctrl+C will terminate this process and its children,
-	// including the terminal.
-	if c.Spec.Process.Terminal {
+	// including the terminal. A sandbox-only sandbox has no process, and so no
+	// terminal.
+	if c.Spec.Process != nil && c.Spec.Process.Terminal {
 		stopForwarding := c.ForwardSignals(0, true /* fgProcess */)
 		defer stopForwarding()
 	}
@@ -775,6 +818,12 @@ func (c *Container) SignalContainer(sig unix.Signal, all bool) error {
 	if !c.IsSandboxRunning() {
 		return fmt.Errorf("sandbox is not running")
 	}
+	if c.Sandbox.SandboxOnly && c.Sandbox.IsRootContainer(c.ID) {
+		// There is no root container process to signal, and the sentry does not
+		// take signals on its behalf. Say so, rather than letting the sentry
+		// report that it cannot find PID 0.
+		return fmt.Errorf("cannot signal sandbox %q: it was booted without a root container process; use `runsc delete` to stop it", c.ID)
+	}
 	return c.Sandbox.SignalContainer(c.ID, sig, all)
 }
 
@@ -824,6 +873,9 @@ func (c *Container) ForwardSignals(pid int32, fgProcess bool) func() {
 // The statefile will be written to f, the file at the specified image-path.
 func (c *Container) Checkpoint(conf *config.Config, imagePath string, opts sandbox.CheckpointOpts) error {
 	log.Debugf("Checkpoint container, cid: %s", c.ID)
+	if err := c.checkpointRestoreSupported("checkpoint"); err != nil {
+		return err
+	}
 	if err := c.requireStatus("checkpoint", Created, Running, Paused); err != nil {
 		return err
 	}
@@ -1777,6 +1829,10 @@ func (c *Container) IsSandboxRunning() bool {
 // HasCapabilityInAnySet returns true if the given capability is in any of the
 // capability sets of the container process.
 func (c *Container) HasCapabilityInAnySet(capability linux.Capability) bool {
+	if c.Spec.Process == nil {
+		// Sandbox-only "containers" have no process.
+		return false
+	}
 	capString := capability.String()
 	for _, set := range [5][]string{
 		c.Spec.Process.Capabilities.Bounding,
@@ -1796,6 +1852,10 @@ func (c *Container) HasCapabilityInAnySet(capability linux.Capability) bool {
 
 // RunsAsUID0 returns true if the container process runs with UID 0 (root).
 func (c *Container) RunsAsUID0() bool {
+	if c.Spec.Process == nil {
+		// Sandbox-only "containers" have no process.
+		return false
+	}
 	return c.Spec.Process.User.UID == 0
 }
 
@@ -1806,6 +1866,33 @@ func (c *Container) requireStatus(action string, statuses ...Status) error {
 		}
 	}
 	return fmt.Errorf("cannot %s container %q in state %s", action, c.ID, c.Status)
+}
+
+// checkpointRestoreSupported returns an error if action cannot be performed
+// because the sandbox was booted without a root container.
+//
+// The kernel state itself round-trips: Kernel.globalInit and
+// PIDNamespace.noInit are both saved. Two things above it do not. `runsc
+// restore` has no way to be told that the spec it reads back describes a
+// sandbox rather than a container, so it rejects the process-less spec via
+// ValidateSpec, and the path that skips that check goes on to dereference the
+// absent Spec.Process. And the loader restores every container it was given,
+// including the sandbox itself, which has no gofer: containerMounter.
+// configureRestore consumes a gofer FD and indexes goferMountConfs[0] for the
+// rootfs, and would panic on both. Refuse the checkpoint rather than write an
+// image that cannot be restored, and refuse the restore for symmetry, since no
+// such image should exist.
+//
+// Lifting this needs the loader to skip the sandbox in that loop, plus a way to
+// plumb sandbox-only-ness into `runsc restore`: c.Sandbox.SandboxOnly covers an
+// already-created container, but restoring from a bare bundle would need a
+// --sandbox-only flag, since the container-type annotation alone does not
+// distinguish this from a legacy pause container.
+func (c *Container) checkpointRestoreSupported(action string) error {
+	if c.Sandbox != nil && c.Sandbox.SandboxOnly {
+		return fmt.Errorf("cannot %s container %q: not supported for a sandbox booted without a root container", action, c.ID)
+	}
+	return nil
 }
 
 // IsSandboxRoot returns true if this container is its sandbox's root container.
@@ -1857,6 +1944,13 @@ func adjustSandboxOOMScoreAdj(s *sandbox.Sandbox, spec *specs.Spec, rootDir stri
 		// We will use OOMScoreAdj in the single-container case where the
 		// containerd container-type annotation is not present.
 		if specutils.SpecContainerType(container.Spec) == specutils.ContainerTypeSandbox {
+			continue
+		}
+
+		// A sandbox booted without a root container has no process, and so no
+		// score to contribute. It is usually skipped above, but the sandbox
+		// annotation is not mandatory.
+		if container.Spec.Process == nil {
 			continue
 		}
 
