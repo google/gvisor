@@ -199,6 +199,38 @@ func waitForProcessCount(cont *Container, want int) error {
 	return testutil.Poll(cb, pollTimeout)
 }
 
+// waitForStableProcessList waits for the container to have exactly want
+// processes and returns them. The same PIDs must be observed in two
+// consecutive poll samples: a single sample can count a transient task in
+// place of a process that has not been forked yet.
+func waitForStableProcessList(cont *Container, want int) ([]*control.Process, error) {
+	var prev []kernel.ThreadID
+	var procs []*control.Process
+	cb := func() error {
+		var err error
+		procs, err = cont.Processes()
+		if err != nil {
+			err = fmt.Errorf("error getting process data from container: %w", err)
+			return &backoff.PermanentError{Err: err}
+		}
+		// Processes() returns the list sorted by PID.
+		pids := make([]kernel.ThreadID, 0, len(procs))
+		for _, p := range procs {
+			pids = append(pids, p.PID)
+		}
+		stable := slices.Equal(pids, prev)
+		prev = pids
+		if len(pids) != want || !stable {
+			return fmt.Errorf("waiting for a stable list of %d processes, got %v", want, pids)
+		}
+		return nil
+	}
+	if err := testutil.Poll(cb, pollTimeout); err != nil {
+		return nil, err
+	}
+	return procs, nil
+}
+
 func blockUntilWaitable(pid int) error {
 	_, _, err := specutils.RetryEintr(func() (uintptr, uintptr, error) {
 		var err error
@@ -1046,17 +1078,17 @@ func TestKillPid(t *testing.T) {
 				t.Fatalf("error starting container: %v", err)
 			}
 
-			// Verify that all processes are running.
-			if err := waitForProcessCount(cont, nProcs); err != nil {
+			// Verify that all processes are running. The PID list must be
+			// stable across poll samples so that transient tasks are not
+			// miscounted as members of the task tree.
+			procs, err := waitForStableProcessList(cont, nProcs)
+			if err != nil {
 				t.Fatalf("timed out waiting for processes to start: %v", err)
 			}
+			t.Logf("current process list:\n%v", control.ProcessListToTable(procs))
 
-			// Kill the child process with the largest PID.
-			procs, err := cont.Processes()
-			if err != nil {
-				t.Fatalf("failed to get process list: %v", err)
-			}
-			t.Logf("current process list: %v", procs)
+			// Kill the child process with the largest PID. Processes are
+			// created in a chain, so this is the deepest child.
 			var pid int32
 			for _, p := range procs {
 				if pid < int32(p.PID) {
@@ -1067,20 +1099,26 @@ func TestKillPid(t *testing.T) {
 				t.Fatalf("failed to signal process %d: %v", pid, err)
 			}
 
-			// Verify that one process is gone.
-			if err := waitForProcessCount(cont, nProcs-1); err != nil {
-				procs, procsErr := cont.Processes()
-				t.Fatalf("error waiting for processes: %v; current processes: %v / %v", err, procs, procsErr)
-			}
-
-			procs, err = cont.Processes()
-			if err != nil {
-				t.Fatalf("failed to get process list: %v", err)
-			}
-			for _, p := range procs {
-				if pid == int32(p.PID) {
-					t.Fatalf("pid %d is still alive, which should be killed", pid)
+			// Verify that the killed process is gone. It stays visible as a
+			// zombie until its parent reaps it, so poll.
+			if err := testutil.Poll(func() error {
+				procs, err := cont.Processes()
+				if err != nil {
+					err = fmt.Errorf("error getting process data from container: %w", err)
+					return &backoff.PermanentError{Err: err}
 				}
+				if got, want := len(procs), nProcs-1; got != want {
+					return fmt.Errorf("wrong process count, got: %d, want: %d", got, want)
+				}
+				for _, p := range procs {
+					if pid == int32(p.PID) {
+						return fmt.Errorf("pid %d is still alive, but should have been killed", pid)
+					}
+				}
+				return nil
+			}, pollTimeout); err != nil {
+				procs, procsErr := cont.Processes()
+				t.Fatalf("error waiting for process %d to be killed: %v; current processes (err: %v):\n%v", pid, err, procsErr, control.ProcessListToTable(procs))
 			}
 		})
 	}
