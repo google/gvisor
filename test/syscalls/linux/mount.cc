@@ -2960,6 +2960,10 @@ TEST(MountTest, OverlayfsDirectoryRenameInUserNamespace) {
 // Test that overlay can be mounted with a gofer upper layer. Runs some basic
 // overlayfs tests to confirm basic functionality.
 TEST(MountTest, OverlayfsOnGoferBehavior) {
+  // Test fails in gVisor running on <6.0 due to fsgofer getting permission
+  // errors on `mknod`.
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(GetHostKernelVersion()).major < 6);
+
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
   auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
