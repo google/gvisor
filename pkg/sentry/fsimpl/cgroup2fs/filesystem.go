@@ -89,7 +89,7 @@ func mountingCgroupNS(ctx context.Context) *kernel.CgroupNamespace {
 	if t := kernel.TaskFromContext(ctx); t != nil {
 		return t.GetCgroupNamespace()
 	}
-	return kernel.CgroupNamespaceFromContext(ctx)
+	return kernel.GetCgroupNamespaceFromContext(ctx)
 }
 
 // mountRoot returns the dentry a new cgroup2 mount should be rooted at, with
