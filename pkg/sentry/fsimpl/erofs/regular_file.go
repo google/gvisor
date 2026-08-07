@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/safemem"
+	"gvisor.dev/gvisor/pkg/sentry/hostfd"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -59,30 +60,45 @@ func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 		return 0, nil
 	}
 
-	data, err := fd.inode().Data()
+	inode := fd.inode()
+	ranges, err := inode.DataRanges()
 	if err != nil {
 		return 0, err
 	}
 	r := &regularFileReader{
-		data: data,
-		off:  uint64(offset),
+		image:  inode.fs.image,
+		ranges: ranges,
+		off:    uint64(offset),
 	}
 	return dst.CopyOutFrom(ctx, r)
 }
 
 type regularFileReader struct {
-	data safemem.BlockSeq
-	off  uint64
+	image  *erofs.Image
+	ranges [2]erofs.FileRange
+	off    uint64
 }
 
 // ReadToBlocks implements safemem.Reader.ReadToBlocks.
+//
+// Reads the data by reading directly from the image file descriptor. This
+// lets the host serve a large read() with a single syscall and readahead,
+// which is much faster than faulting the mapping in page by page.
 func (r *regularFileReader) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
-	if r.off >= r.data.NumBytes() {
-		return 0, io.EOF
+	// Find the range containing the current offset. A read must not span the
+	// discontinuity between ranges in the image, so it is clamped to the end
+	// of the containing range.
+	off := r.off
+	for _, rng := range r.ranges {
+		if off < rng.Size {
+			dsts = dsts.TakeFirst64(rng.Size - off)
+			n, err := hostfd.Preadv2(int32(r.image.FD()), dsts, int64(rng.Off+off), 0 /* flags */)
+			r.off += n
+			return n, err
+		}
+		off -= rng.Size
 	}
-	cp, err := safemem.CopySeq(dsts, r.data.DropFirst(int(r.off)))
-	r.off += cp
-	return cp, err
+	return 0, io.EOF
 }
 
 // Read implements vfs.FileDescriptionImpl.Read.

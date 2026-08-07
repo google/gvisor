@@ -21,7 +21,6 @@ go_library(
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/marshal",
-        "//pkg/safemem",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
