@@ -32,6 +32,20 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+// execOutput runs argv in the sandbox and returns its standard output. It
+// fails the test if the command could not be run or exited non-zero.
+func execOutput(ctx context.Context, t *testing.T, sb *sandbox.Sandbox, argv ...string) string {
+	t.Helper()
+	res, err := sb.Exec(ctx, sandbox.WithExecArgs(argv...))
+	if err != nil {
+		t.Fatalf("failed to execute %v in sandbox: %v", argv, err)
+	}
+	if res.ExitCode != 0 {
+		t.Fatalf("%v exited with %d, stderr: %s", argv, res.ExitCode, res.Stderr)
+	}
+	return res.Stdout
+}
+
 func TestExecDmesg(t *testing.T) {
 	ctx := context.Background()
 
@@ -49,10 +63,7 @@ func TestExecDmesg(t *testing.T) {
 	}()
 
 	// Execute dmesg in the gVisor sandbox.
-	output, _, err := sb.Exec(ctx, "dmesg")
-	if err != nil {
-		t.Fatalf("failed to execute command in sandbox: %v", err)
-	}
+	output := execOutput(ctx, t, sb, "dmesg")
 
 	if !strings.Contains(output, "Starting gVisor") {
 		t.Errorf("Exec(\"dmesg\") =  %v; wanted: %v", output, "Starting gVisor")
@@ -117,7 +128,12 @@ func TestCustomBindMount(t *testing.T) {
 
 	sb, err := sandbox.New(ctx,
 		sandbox.WithNetworking(false),
-		sandbox.WithBindMount(tempHostDir, "/mnt/host_share", true),
+		sandbox.WithMount(sandbox.Mount{
+			Type:        sandbox.MountTypeBind,
+			Source:      tempHostDir,
+			Destination: "/mnt/host_share",
+			ReadOnly:    true,
+		}),
 	)
 	if err != nil {
 		t.Fatalf("failed to start sandbox: %v", err)
@@ -129,10 +145,7 @@ func TestCustomBindMount(t *testing.T) {
 	}()
 
 	// Read witness inside container
-	output, _, err := sb.Exec(ctx, "cat", "/mnt/host_share/witness.txt")
-	if err != nil {
-		t.Fatalf("failed to exec read in sandbox: %v", err)
-	}
+	output := execOutput(ctx, t, sb, "cat", "/mnt/host_share/witness.txt")
 	if strings.TrimSpace(output) != expectedContent {
 		t.Errorf("got %q, want %q", output, expectedContent)
 	}
@@ -143,7 +156,11 @@ func TestCustomTmpfsMount(t *testing.T) {
 
 	sb, err := sandbox.New(ctx,
 		sandbox.WithNetworking(false),
-		sandbox.WithTmpfsMount("/mnt/scratch"),
+		sandbox.WithMount(sandbox.Mount{
+			Type:        sandbox.MountTypeTmpfs,
+			Source:      "tmpfs",
+			Destination: "/mnt/scratch",
+		}),
 	)
 	if err != nil {
 		t.Fatalf("failed to start sandbox: %v", err)
@@ -155,15 +172,9 @@ func TestCustomTmpfsMount(t *testing.T) {
 	}()
 
 	// Write file to scratch space and cat it back
-	_, _, err = sb.Exec(ctx, "sh", "-c", "echo hello-tmpfs > /mnt/scratch/tmp.txt")
-	if err != nil {
-		t.Fatalf("failed to write inside tmpfs: %v", err)
-	}
+	execOutput(ctx, t, sb, "sh", "-c", "echo hello-tmpfs > /mnt/scratch/tmp.txt")
 
-	output, _, err := sb.Exec(ctx, "cat", "/mnt/scratch/tmp.txt")
-	if err != nil {
-		t.Fatalf("failed to read from tmpfs: %v", err)
-	}
+	output := execOutput(ctx, t, sb, "cat", "/mnt/scratch/tmp.txt")
 	if strings.TrimSpace(output) != "hello-tmpfs" {
 		t.Errorf("got %q, want %q", output, "hello-tmpfs")
 	}
@@ -175,7 +186,11 @@ func TestCustomBindMountWrite(t *testing.T) {
 
 	sb, err := sandbox.New(ctx,
 		sandbox.WithNetworking(false),
-		sandbox.WithBindMount(tempHostDir, "/mnt/host_share", false),
+		sandbox.WithMount(sandbox.Mount{
+			Type:        sandbox.MountTypeBind,
+			Source:      tempHostDir,
+			Destination: "/mnt/host_share",
+		}),
 	)
 	if err != nil {
 		t.Fatalf("failed to start sandbox: %v", err)
@@ -187,10 +202,7 @@ func TestCustomBindMountWrite(t *testing.T) {
 	}()
 
 	// Write file inside container
-	_, _, err = sb.Exec(ctx, "sh", "-c", "echo hello-write > /mnt/host_share/file.txt")
-	if err != nil {
-		t.Fatalf("failed to write inside sandbox: %v", err)
-	}
+	execOutput(ctx, t, sb, "sh", "-c", "echo hello-write > /mnt/host_share/file.txt")
 
 	// Verify file was written to the host
 	hostFile := filepath.Join(tempHostDir, "file.txt")
@@ -225,10 +237,7 @@ func TestSandboxEnv(t *testing.T) {
 	}()
 
 	// Read environment in the sandbox
-	output, _, err := sb.Exec(ctx, "env")
-	if err != nil {
-		t.Fatalf("failed to exec env in sandbox: %v", err)
-	}
+	output := execOutput(ctx, t, sb, "env")
 
 	lines := strings.Split(output, "\n")
 	envMap := make(map[string]string)
@@ -297,10 +306,7 @@ func TestRootfsTarSnapshot(t *testing.T) {
 	}
 	defer sbA.Close(ctx)
 
-	_, _, err = sbA.Exec(ctx, "sh", "-c", "echo 'hello' > /test.txt")
-	if err != nil {
-		t.Fatalf("failed to create file in sandbox A: %v", err)
-	}
+	execOutput(ctx, t, sbA, "sh", "-c", "echo 'hello' > /test.txt")
 
 	snapshot, err := sbA.Snapshot(ctx, sandbox.RootfsTarSnapshot, storage)
 	if err != nil {
@@ -318,10 +324,7 @@ func TestRootfsTarSnapshot(t *testing.T) {
 	}
 	defer sbB.Close(ctx)
 
-	outB, _, err := sbB.Exec(ctx, "cat", "/test.txt")
-	if err != nil {
-		t.Fatalf("failed to cat file in sandbox B: %v", err)
-	}
+	outB := execOutput(ctx, t, sbB, "cat", "/test.txt")
 	if strings.TrimSpace(outB) != "hello" {
 		t.Errorf("unexpected content in B: got %q, want %q", outB, "hello")
 	}
@@ -398,10 +401,7 @@ func TestSandboxHostname(t *testing.T) {
 	}
 	defer sb.Close(ctx)
 
-	output, _, err := sb.Exec(ctx, "hostname")
-	if err != nil {
-		t.Fatalf("failed to exec hostname in sandbox: %v", err)
-	}
+	output := execOutput(ctx, t, sb, "hostname")
 
 	if got, want := strings.TrimSpace(output), "custom-sandbox-host"; got != want {
 		t.Errorf("Exec(\"hostname\") = %q, want %q", got, want)
@@ -413,7 +413,11 @@ func TestSandboxCustomProcMount(t *testing.T) {
 
 	sb, err := sandbox.New(ctx,
 		sandbox.WithNetworking(false),
-		sandbox.WithProcMount("/custom_proc"),
+		sandbox.WithMount(sandbox.Mount{
+			Type:        sandbox.MountTypeProc,
+			Source:      "proc",
+			Destination: "/custom_proc",
+		}),
 	)
 	if err != nil {
 		t.Fatalf("failed to start sandbox: %v", err)
@@ -421,10 +425,7 @@ func TestSandboxCustomProcMount(t *testing.T) {
 	defer sb.Close(ctx)
 
 	// Double check that it contains process information (e.g. status)
-	output, _, err := sb.Exec(ctx, "cat", "/custom_proc/self/status")
-	if err != nil {
-		t.Fatalf("failed to cat /custom_proc/self/status: %v", err)
-	}
+	output := execOutput(ctx, t, sb, "cat", "/custom_proc/self/status")
 	if !strings.Contains(output, "Name:") {
 		t.Errorf("output of cat /custom_proc/self/status missing 'Name:', got: %v", output)
 	}
