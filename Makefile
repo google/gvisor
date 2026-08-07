@@ -479,6 +479,14 @@ iptables-tests: load-iptables $(RUNTIME_BIN)
 	@$(call test_runtime,$(RUNTIME)-nftables,--test_env=TEST_NET_RAW=true --test_output=all //test/iptables:nftables_test)
 .PHONY: iptables-tests
 
+# Run iptables tests with iptables-nft client.
+iptables-nft-tests: load-iptables $(RUNTIME_BIN)
+	@sudo modprobe nfnetlink
+	@sudo modprobe nf_tables
+	@$(call install_runtime,$(RUNTIME)-nftables,--net-raw --TESTONLY-nftables)
+	@$(call test_runtime,$(RUNTIME)-nftables,--test_env=TEST_NET_RAW=true //test/iptables:iptables_nft_test)
+.PHONY: iptables-nft-tests
+
 nftables-tests: load-nftables $(RUNTIME_BIN)
 	@sudo modprobe nfnetlink
 	@sudo modprobe nf_tables

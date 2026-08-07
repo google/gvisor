@@ -762,6 +762,12 @@ var (
 	_ operation = (*ctGet)(nil)
 	_ operation = (*ctSet)(nil)
 	_ operation = (*masqOp)(nil)
+	// xtables operations
+	_ operation = (*compatAddrtypeMatch)(nil)
+	_ operation = (*compatCTMatch)(nil)
+	_ operation = (*compatNoopMatch)(nil)
+	_ operation = (*compatNATTarget)(nil)
+	_ operation = (*compatMASQTarget)(nil)
 )
 
 // OpType represents the type of operation.
@@ -798,6 +804,10 @@ const (
 	OpTypeCT
 	// OpTypeMasq is the masquerade operation type.
 	OpTypeMasq
+	// OpTypeMatch is the xtables match operation type.
+	OpTypeMatch
+	// OpTypeTarget is the xtables target operation type.
+	OpTypeTarget
 	// OpTypeUnknown is the unknown operation type.
 	OpTypeUnknown
 )
@@ -818,6 +828,8 @@ var opTypeStrings = []string{
 	OpTypeFIB:        "fib",
 	OpTypeCT:         "ct",
 	OpTypeMasq:       "masq",
+	OpTypeMatch:      "match",
+	OpTypeTarget:     "target",
 	OpTypeUnknown:    "unknown",
 }
 
