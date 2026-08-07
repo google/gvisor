@@ -9,6 +9,7 @@ go_library(
     name = "sandboxsetup",
     srcs = [
         "caps.go",
+        "caps_unsafe.go",
         "fdmappings.go",
         "flags.go",
         "fs.go",
