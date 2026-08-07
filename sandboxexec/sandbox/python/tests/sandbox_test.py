@@ -168,6 +168,96 @@ class SandboxTest(unittest.TestCase):
 
           self.assertFalse(os.path.exists(bundle_dir))
 
+  def test_init_env_list_and_dict(self):
+    enable_networking = os.geteuid() == 0
+    with tempfile.TemporaryDirectory() as temp_dir:
+      sb = sandbox.Sandbox(
+          runtime_dir=temp_dir,
+          enable_networking=enable_networking,
+          env=["FOO=bar", "BAZ=123"],
+      )
+      config_path = os.path.join(sb.bundle_dir, "config.json")
+      with open(config_path, "r") as f:
+        spec = json.load(f)
+      self.assertEqual(
+          spec["process"]["env"],
+          ["PATH=/bin:/usr/bin:/usr/local/bin", "FOO=bar", "BAZ=123"],
+      )
+      sb.close()
+
+      sb_dict = sandbox.Sandbox(
+          runtime_dir=temp_dir,
+          enable_networking=enable_networking,
+          env={"FOO": "bar", "BAZ": "123"},
+      )
+      config_path = os.path.join(sb_dict.bundle_dir, "config.json")
+      with open(config_path, "r") as f:
+        spec = json.load(f)
+      self.assertEqual(
+          spec["process"]["env"],
+          ["PATH=/bin:/usr/bin:/usr/local/bin", "FOO=bar", "BAZ=123"],
+      )
+      sb_dict.close()
+
+  def test_init_env_overrides_path(self):
+    enable_networking = os.geteuid() == 0
+    with tempfile.TemporaryDirectory() as temp_dir:
+      sb = sandbox.Sandbox(
+          runtime_dir=temp_dir,
+          enable_networking=enable_networking,
+          env={"PATH": "/bin:/usr/bin:/custom/path"},
+      )
+      config_path = os.path.join(sb.bundle_dir, "config.json")
+      with open(config_path, "r") as f:
+        spec = json.load(f)
+      self.assertEqual(
+          spec["process"]["env"], ["PATH=/bin:/usr/bin:/custom/path"]
+      )
+      sb.close()
+
+  def test_init_env_malformed_raises_error(self):
+    enable_networking = os.geteuid() == 0
+    with self.assertRaises(ValueError) as ctx:
+      sandbox.Sandbox(enable_networking=enable_networking, env=["NO_EQUALS"])
+    self.assertIn("Invalid environment variable format", str(ctx.exception))
+
+    with self.assertRaises(ValueError) as ctx:
+      sandbox.Sandbox(
+          enable_networking=enable_networking, env={"KEY=FOO": "val"}
+      )
+    self.assertIn(
+        "Environment variable key cannot contain '='", str(ctx.exception)
+    )
+
+    with self.assertRaises(TypeError) as ctx:
+      sandbox.Sandbox(enable_networking=enable_networking, env=123)
+    self.assertIn(
+        "env must be a list of 'KEY=VALUE' strings or a dict",
+        str(ctx.exception),
+    )
+
+  @mock.patch("subprocess.run")
+  def test_exec_env_flags(self, mock_run):
+    mock_run.return_value = mock.Mock(returncode=0)
+    enable_networking = os.geteuid() == 0
+    sb = sandbox.Sandbox(enable_networking=enable_networking)
+    mock_run.reset_mock()
+    sb.exec("/bin/sh", "-c", "echo hi", env={"LOCAL_VAR": "test"})
+    args = mock_run.call_args_list[0][0][0]
+    self.assertIn("--env", args)
+    self.assertIn("LOCAL_VAR=test", args)
+
+    mock_run.reset_mock()
+    sb.exec("/bin/sh", "-c", "echo hi", env=["LOCAL_VAR=test"])
+    args = mock_run.call_args_list[0][0][0]
+    self.assertIn("--env", args)
+    self.assertIn("LOCAL_VAR=test", args)
+
+    with self.assertRaises(ValueError) as ctx:
+      sb.exec("/bin/sh", "-c", "echo hi", env=["NO_EQUALS"])
+    self.assertIn("Invalid environment variable format", str(ctx.exception))
+    sb.close()
+
   def test_runtime_dir_ownership_and_cleanup(self):
     enable_networking = os.geteuid() == 0
 

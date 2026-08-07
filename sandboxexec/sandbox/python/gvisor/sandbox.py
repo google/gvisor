@@ -24,11 +24,53 @@ import random
 import shutil
 import subprocess
 import tempfile
-from typing import Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
 
 class Error(Exception):
   """Base exception for Sandbox operations."""
+
+
+def _normalize_env(
+    env: Optional[Union[List[str], Dict[str, str]]],
+    base_env: Optional[Dict[str, str]] = None,
+) -> List[str]:
+  """Normalizes environment variables into a list of 'KEY=VALUE' strings.
+
+  Args:
+    env: A list of 'KEY=VALUE' strings or a dict mapping keys to values.
+    base_env: Optional default environment dictionary to merge over.
+
+  Returns:
+    A deduplicated list of 'KEY=VALUE' strings.
+
+  Raises:
+    ValueError: If a list entry is missing '=' or a dict key contains '='.
+    TypeError: If env is not a list, tuple, or dict.
+  """
+  merged = dict(base_env) if base_env else {}
+  if not env:
+    return [f"{k}={v}" for k, v in merged.items()]
+
+  if isinstance(env, dict):
+    for k, v in env.items():
+      if "=" in str(k):
+        raise ValueError(f"Environment variable key cannot contain '=': {k!r}")
+      merged[str(k)] = str(v)
+  elif isinstance(env, (list, tuple)):
+    for item in env:
+      if not isinstance(item, str) or "=" not in item:
+        raise ValueError(
+            f"Invalid environment variable format, expected KEY=VALUE: {item!r}"
+        )
+      k, _, v = item.partition("=")
+      merged[k] = v
+  else:
+    raise TypeError(
+        f"env must be a list of 'KEY=VALUE' strings or a dict, got {type(env)}"
+    )
+
+  return [f"{k}={v}" for k, v in merged.items()]
 
 
 class Sandbox:
@@ -40,6 +82,7 @@ class Sandbox:
       sandbox_id: Optional[str] = None,
       enable_networking: bool = True,
       network: Optional[str] = None,
+      env: Optional[Union[List[str], Dict[str, str]]] = None,
   ):
     """Initializes and starts a new sandbox.
 
@@ -51,10 +94,13 @@ class Sandbox:
       enable_networking: Whether networking is enabled inside the sandbox.
       network: The networking mode for runsc (e.g. "none", "sandbox", "host").
         Specifying this overrides enable_networking.
+      env: Optional environment variables for the sandbox container.
 
     Raises:
       Error: If sandbox creation fails.
-      ValueError: If an invalid network mode is provided.
+      ValueError: If an invalid network mode or environment variable format is
+        provided.
+      TypeError: If env is not a list, tuple, or dict.
     """
     if network is not None and network not in ("none", "sandbox", "host"):
       raise ValueError(
@@ -67,6 +113,7 @@ class Sandbox:
     self._is_network_enabled = (
         network != "none" if network is not None else enable_networking
     )
+    self._env = env
     self._runtime_dir = ""
     self._owns_runtime_dir = False
     self._id = ""
@@ -241,6 +288,9 @@ class Sandbox:
           {"containerID": 0, "hostID": os.getegid(), "size": 1}
       ]
 
+    base_env = {"PATH": "/bin:/usr/bin:/usr/local/bin"}
+    process_env = _normalize_env(self._env, base_env=base_env)
+
     spec = {
         "ociVersion": "1.0.0",
         "root": {
@@ -252,7 +302,7 @@ class Sandbox:
             "user": {"uid": 0, "gid": 0},
             "args": ["sleep", "infinity"],
             "cwd": "/",
-            "env": ["PATH=/bin:/usr/bin:/usr/local/bin"],
+            "env": process_env,
         },
         "mounts": mounts,
         "linux": linux,
@@ -268,13 +318,18 @@ class Sandbox:
     return bundle_dir
 
   def exec(
-      self, cmd: str, *args: str, timeout: Optional[float] = None
+      self,
+      cmd: str,
+      *args: str,
+      env: Optional[Union[List[str], Dict[str, str]]] = None,
+      timeout: Optional[float] = None,
   ) -> Tuple[str, str]:
     """Runs the given command inside the running sandbox.
 
     Args:
       cmd: The command to run.
       *args: Arguments to the command.
+      env: Optional environment variables for this command execution.
       timeout: Timeout in seconds.
 
     Returns:
@@ -282,8 +337,14 @@ class Sandbox:
 
     Raises:
       Error: If the command execution fails or times out.
+      ValueError: If environment variable formatting is invalid.
+      TypeError: If env is not a list, tuple, or dict.
     """
-    runsc_args = ["--root", self._state_dir, "exec", self._id, cmd] + list(args)
+    runsc_args = ["--root", self._state_dir, "exec"]
+    if env:
+      for env_str in _normalize_env(env):
+        runsc_args.extend(["--env", env_str])
+    runsc_args.extend([self._id, cmd] + list(args))
     try:
       result = subprocess.run(
           [self._runsc_path] + runsc_args,
