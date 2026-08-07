@@ -18,6 +18,7 @@ import (
 	"context"
 
 	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
 func (d *dentry) afterLoad(context.Context) {
@@ -34,4 +35,24 @@ func (d *dentry) saveParent() *dentry {
 // loadParent is called by stateify.
 func (d *dentry) loadParent(_ context.Context, parent *dentry) {
 	d.parent.Store(parent)
+}
+
+// saveAccessACL is called by stateify.
+func (d *dentry) saveAccessACL() *vfs.PosixACL {
+	return d.accessACL.Load()
+}
+
+// loadAccessACL is called by stateify.
+func (d *dentry) loadAccessACL(_ context.Context, accessACL *vfs.PosixACL) {
+	d.accessACL.Store(accessACL)
+}
+
+// saveDefaultACL is called by stateify.
+func (d *dentry) saveDefaultACL() *vfs.PosixACL {
+	return d.defaultACL.Load()
+}
+
+// loadDefaultACL is called by stateify.
+func (d *dentry) loadDefaultACL(_ context.Context, defaultACL *vfs.PosixACL) {
+	d.defaultACL.Store(defaultACL)
 }
