@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck/scsdk"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck/sinks/remote/test"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/boot"
@@ -460,5 +461,46 @@ func TestProcfsDump(t *testing.T) {
 		if maps[i].Address.Overlaps(maps[i+1].Address) {
 			t.Errorf("overlapped addresses for pid:%v", procfsDump[0].Status.PID)
 		}
+	}
+}
+
+func TestSeccheckRead(t *testing.T) {
+	spec, conf := sleepSpecConf(t)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	path := cont.Sandbox.GetControlSocketPath()
+	if path == "" {
+		t.Fatalf("control socket path is empty")
+	}
+
+	got, err := scsdk.ReadFile(path, scsdk.ReadOptions{
+		ContainerID: cont.ID,
+		Path:        "/proc/version",
+		Offset:      1,
+		Size:        4,
+	})
+	if err != nil {
+		t.Fatalf("scsdk.ReadFile failed: %v", err)
+	}
+	if want := "inux"; string(got) != want {
+		t.Errorf("scsdk.ReadFile got %q, want %q", string(got), want)
 	}
 }

@@ -88,6 +88,7 @@ go_test(
         "//pkg/sentry/platform",
         "//pkg/sentry/seccheck",
         "//pkg/sentry/seccheck/points:points_go_proto",
+        "//pkg/sentry/seccheck/scsdk",
         "//pkg/sentry/seccheck/sinks/remote/test",
         "//pkg/state/statefile",
         "//pkg/sync",
