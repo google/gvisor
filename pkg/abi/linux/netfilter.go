@@ -909,3 +909,50 @@ type IP6TRejectInfo struct {
 
 // SizeOfIP6TRejectInfo is the size of an IP6TRejectInfo.
 const SizeOfIP6TRejectInfo = 4
+
+// Constants for addrtype match.
+// Matches Linux include/uapi/linux/netfilter/xt_addrtype.h
+const (
+	XT_ADDRTYPE_INVERT_SOURCE   = 0x0001
+	XT_ADDRTYPE_INVERT_DEST     = 0x0002
+	XT_ADDRTYPE_LIMIT_IFACE_IN  = 0x0004
+	XT_ADDRTYPE_LIMIT_IFACE_OUT = 0x0008
+)
+
+const (
+	XT_ADDRTYPE_UNSPEC      = 1 << 0
+	XT_ADDRTYPE_UNICAST     = 1 << 1
+	XT_ADDRTYPE_LOCAL       = 1 << 2
+	XT_ADDRTYPE_BROADCAST   = 1 << 3
+	XT_ADDRTYPE_ANYCAST     = 1 << 4
+	XT_ADDRTYPE_MULTICAST   = 1 << 5
+	XT_ADDRTYPE_BLACKHOLE   = 1 << 6
+	XT_ADDRTYPE_UNREACHABLE = 1 << 7
+	XT_ADDRTYPE_PROHIBIT    = 1 << 8
+	XT_ADDRTYPE_THROW       = 1 << 9
+	XT_ADDRTYPE_NAT         = 1 << 10
+	XT_ADDRTYPE_XRESOLVE    = 1 << 11
+)
+
+// XTAddrtypeInfoV1 corresponds to struct xt_addrtype_info_v1 in
+// include/uapi/linux/netfilter/xt_addrtype.h.
+//
+// +marshal
+type XTAddrtypeInfoV1 struct {
+	_      structs.HostLayout
+	Source uint16
+	Dest   uint16
+	Flags  uint32
+}
+
+// XTAddrtypeInfo corresponds to struct xt_addrtype_info in
+// include/uapi/linux/netfilter/xt_addrtype.h.
+//
+// +marshal
+type XTAddrtypeInfo struct {
+	_            structs.HostLayout
+	Source       uint16
+	Dest         uint16
+	InvertSource uint32
+	InvertDest   uint32
+}
