@@ -404,7 +404,7 @@ func (i *inode) setAttr(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 		fattrMask |= linux.FATTR_ATIME_NOW
 	}
 	if opts.Stat.Mask&linux.STATX_MTIME != 0 && opts.Stat.Mtime.Nsec == linux.UTIME_NOW {
-		fattrMask |= linux.FATTR_ATIME_NOW
+		fattrMask |= linux.FATTR_MTIME_NOW
 	}
 	in := linux.FUSESetAttrIn{
 		Valid:     fattrMask,
