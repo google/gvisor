@@ -825,3 +825,36 @@ const (
 // SizeOfNfConntrackManProto is the size of the nf_conntrack_man_proto in bytes.
 // Ref: include/uapi/linux/netfilter/nf_conntrack_tuple_common.h:nf_conntrack_man_proto.
 const SizeOfNfConntrackManProto = 2
+
+// NFTA_MATCH attributes are netfilter attributes for match expressions.
+// These correspond to enum values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFTA_MATCH_UNSPEC = iota
+	NFTA_MATCH_NAME
+	NFTA_MATCH_REV
+	NFTA_MATCH_INFO
+	__NFTA_MATCH_MAX
+	NFTA_MATCH_MAX = __NFTA_MATCH_MAX - 1
+)
+
+// Netlink Netfilter compat attributes.
+// Matches Linux include/uapi/linux/netfilter/nf_tables_compat.h
+const (
+	NFTA_COMPAT_UNSPEC = iota
+	NFTA_COMPAT_NAME
+	NFTA_COMPAT_REV
+	NFTA_COMPAT_TYPE
+	__NFTA_COMPAT_MAX
+	NFTA_COMPAT_MAX = __NFTA_COMPAT_MAX - 1
+)
+
+// NFTA_TARGET attributes are netfilter attributes for target expressions.
+// These correspond to enum values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFTA_TARGET_UNSPEC = iota
+	NFTA_TARGET_NAME
+	NFTA_TARGET_REV
+	NFTA_TARGET_INFO
+	__NFTA_TARGET_MAX
+	NFTA_TARGET_MAX = __NFTA_TARGET_MAX - 1
+)
