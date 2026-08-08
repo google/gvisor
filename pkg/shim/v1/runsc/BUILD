@@ -78,6 +78,7 @@ go_test(
     deps = [
         "//pkg/shim/v1/utils",
         "@com_github_containerd_cgroups_v3//cgroup2:go_default_library",
+        "@com_github_containerd_containerd_api//events:go_default_library",
         "@com_github_containerd_containerd_api//runtime/task/v2:go_default_library",
         "@com_github_containerd_containerd_v2//core/events:go_default_library",
         "@com_github_containerd_containerd_v2//core/runtime:go_default_library",
