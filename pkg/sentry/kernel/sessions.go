@@ -283,7 +283,7 @@ func (tg *ThreadGroup) createSession() (SessionID, error) {
 			return -1, linuxerr.EPERM
 		}
 		for pg := s.processGroups.Front(); pg != nil; pg = pg.Next() {
-			if pg.id == ProcessGroupID(id) {
+			if pgID, ok := tg.pidns.pgids[pg]; ok && pgID == ProcessGroupID(id) {
 				return -1, linuxerr.EPERM
 			}
 		}
@@ -384,7 +384,7 @@ func (tg *ThreadGroup) CreateProcessGroup() error {
 			return linuxerr.EPERM
 		}
 		for pg := s.processGroups.Front(); pg != nil; pg = pg.Next() {
-			if pg.id == ProcessGroupID(id) {
+			if pgID, ok := tg.pidns.pgids[pg]; ok && pgID == ProcessGroupID(id) {
 				return linuxerr.EPERM
 			}
 		}
