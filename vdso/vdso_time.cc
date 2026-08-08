@@ -41,6 +41,16 @@ struct params {
   int64_t realtime_base_cycles;
   int64_t realtime_base_ref;
   uint64_t realtime_frequency;
+
+  // monotonic_raw_enabled, when non-zero, means CLOCK_MONOTONIC_RAW is a
+  // distinct clock (described by the fields below) rather than an alias of
+  // CLOCK_MONOTONIC. monotonic_raw_ready is set only once that clock has been
+  // calibrated; until then we fall back to a syscall. See ClockMonotonicRaw.
+  uint64_t monotonic_raw_enabled;
+  uint64_t monotonic_raw_ready;
+  int64_t monotonic_raw_base_cycles;
+  int64_t monotonic_raw_base_ref;
+  uint64_t monotonic_raw_frequency;
 };
 
 // Returns a pointer to the global parameter page.
@@ -91,6 +101,14 @@ inline uint64_t cycles_to_ns(uint64_t frequency, uint64_t cycles) {
   return ((unsigned __int128)cycles * mult) >> 32;
 }
 
+// compute_time projects a calibrated clock's base to now_cycles.
+inline int64_t compute_time(int64_t base_ref, int64_t base_cycles,
+                            uint64_t frequency, int64_t now_cycles) {
+  int64_t delta_cycles =
+      (now_cycles < base_cycles) ? 0 : now_cycles - base_cycles;
+  return base_ref + cycles_to_ns(frequency, delta_cycles);
+}
+
 // ClockRealtime() is the VDSO implementation of clock_gettime(CLOCK_REALTIME).
 int ClockRealtime(struct timespec* ts) {
   struct params* params = get_params();
@@ -116,10 +134,8 @@ int ClockRealtime(struct timespec* ts) {
     return sys_clock_gettime(CLOCK_REALTIME, ts);
   }
 
-  int64_t delta_cycles =
-      (now_cycles < base_cycles) ? 0 : now_cycles - base_cycles;
-  int64_t now_ns = base_ref + cycles_to_ns(frequency, delta_cycles);
-  *ts = ns_to_timespec(now_ns);
+  *ts = ns_to_timespec(compute_time(base_ref, base_cycles, frequency,
+                                    now_cycles));
   return 0;
 }
 
@@ -149,10 +165,49 @@ int ClockMonotonic(struct timespec* ts) {
     return sys_clock_gettime(CLOCK_MONOTONIC, ts);
   }
 
-  int64_t delta_cycles =
-      (now_cycles < base_cycles) ? 0 : now_cycles - base_cycles;
-  int64_t now_ns = base_ref + cycles_to_ns(frequency, delta_cycles);
-  *ts = ns_to_timespec(now_ns);
+  *ts = ns_to_timespec(compute_time(base_ref, base_cycles, frequency,
+                                    now_cycles));
+  return 0;
+}
+
+// ClockMonotonicRaw() is the VDSO implementation of
+// clock_gettime(CLOCK_MONOTONIC_RAW).
+//
+// When not enabled, it aliases CLOCK_MONOTONIC in the VDSO. When enabled but
+// not yet calibrated, it falls back to a syscall for the brief startup/restore
+// window; otherwise it is computed in the VDSO from the raw params.
+int ClockMonotonicRaw(struct timespec* ts) {
+  struct params* params = get_params();
+  uint64_t seq;
+  uint64_t enabled;
+  uint64_t ready;
+  int64_t base_ref;
+  int64_t base_cycles;
+  uint64_t frequency;
+  int64_t now_cycles;
+
+  do {
+    seq = read_seqcount_begin(&params->seq_count);
+    enabled = params->monotonic_raw_enabled;
+    ready = params->monotonic_raw_ready;
+    base_ref = params->monotonic_raw_base_ref;
+    base_cycles = params->monotonic_raw_base_cycles;
+    frequency = params->monotonic_raw_frequency;
+    now_cycles = cycle_clock();
+  } while (read_seqcount_retry(&params->seq_count, seq));
+
+  if (!enabled) {
+    // CLOCK_MONOTONIC_RAW aliases CLOCK_MONOTONIC, served in the VDSO.
+    return ClockMonotonic(ts);
+  }
+  if (!ready) {
+    // The sandbox kernel ensures that we won't compute a time later than this
+    // once the params are ready.
+    return sys_clock_gettime(CLOCK_MONOTONIC_RAW, ts);
+  }
+
+  *ts = ns_to_timespec(compute_time(base_ref, base_cycles, frequency,
+                                    now_cycles));
   return 0;
 }
 

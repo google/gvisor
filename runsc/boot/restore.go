@@ -478,16 +478,19 @@ func (r *restorer) restore(l *Loader) error {
 		return err
 	}
 
-	// Load the state.
+	// Load the state. The Timekeeper serves a distinct CLOCK_MONOTONIC_RAW
+	// iff the clock source tracks it (see shouldEnableClockMonotonicRaw), so a
+	// restored sandbox follows its current configuration.
+	clocks := time.NewCalibratedClocks(shouldEnableClockMonotonicRaw(l.root.spec, l.root.conf))
 	r.timer.Reached("loading kernel")
 	if r.extractRootFsMode {
-		if err := l.k.ExtractRootfsUpperLayer(ctx, r.stateFile, r.asyncMFLoader, nil, time.NewCalibratedClocks(), r.rootFsOutputTar); err != nil {
+		if err := l.k.ExtractRootfsUpperLayer(ctx, r.stateFile, r.asyncMFLoader, nil, clocks, r.rootFsOutputTar); err != nil {
 			return fmt.Errorf("failed to extract rootfs upper layer: %w", err)
 		}
 		r.timer.Reached("rootfs upper layer extracted")
 		return nil
 	}
-	if err := l.k.LoadFrom(ctx, r.stateFile, r.asyncMFLoader, nil, l, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}, r.timer.Fork("kernel load")); err != nil {
+	if err := l.k.LoadFrom(ctx, r.stateFile, r.asyncMFLoader, nil, l, clocks, &vfs.CompleteRestoreOptions{}, r.timer.Fork("kernel load")); err != nil {
 		return fmt.Errorf("failed to load kernel: %w", err)
 	}
 	r.timer.Reached("kernel loaded")
