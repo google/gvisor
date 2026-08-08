@@ -18,6 +18,11 @@
 #include <netinet/in.h>
 #include <linux/netfilter.h>
 #include <linux/netlink.h>
+#include <linux/netfilter/nf_tables_compat.h>
+#include <linux/netfilter/xt_addrtype.h>
+#include <linux/netfilter/xt_conntrack.h>
+#include <linux/netfilter/nf_nat.h>
+#include <linux/netfilter/xt_tcpudp.h>
 // clang-format on
 
 #include <cerrno>
@@ -4266,30 +4271,17 @@ TEST(NetlinkNetfilterTest, GetRuleDump) {
       fd, kSeq + 6, kSeq + 9, add_rule_request_buffer.data(),
       add_rule_request_buffer.size()));
 
-  int rules_found = 0;
-  ASSERT_NO_ERRNO(NetlinkRequestResponse(
-      fd, get_dump_rule_request_buffer.data(),
-      get_dump_rule_request_buffer.size(),
-      [&](const struct nlmsghdr* hdr) {
-        if (hdr->nlmsg_type == NLMSG_DONE) {
-          return;
-        }
-
-        EXPECT_TRUE(hdr->nlmsg_flags & NLM_F_MULTI);
-        CheckNetfilterRuleAttributes({
-            .hdr = hdr,
-            .expected_table_name = test_table_name,
-            .expected_chain_name = GetDefaultChainName(),
-            .expected_udata = udata,
-            .expected_udata_size = &expected_udata_size,
-            .skip_handle_check = true,
-            .expected_rule_exprs_data = std::vector<std::vector<char>>(
-                {imm_expr_accept_all_data, imm_expr_drop_all_data}),
-        });
-        rules_found++;
-      },
-      false));
-  EXPECT_EQ(rules_found, 2);
+  std::vector<ParsedRule> rules = ASSERT_NO_ERRNO_AND_VALUE(GetRules(
+      fd, NFPROTO_INET, test_table_name, GetDefaultChainName(), kSeq + 10));
+  EXPECT_EQ(rules.size(), 2);
+  for (const auto& rule : rules) {
+    EXPECT_EQ(rule.table_name, test_table_name);
+    EXPECT_EQ(rule.chain_name, GetDefaultChainName());
+    EXPECT_EQ(rule.userdata,
+              std::vector<uint8_t>(udata, udata + expected_udata_size));
+    EXPECT_THAT(rule.ExpressionNames(),
+                ::testing::ElementsAre("immediate", "immediate"));
+  }
   ASSERT_NO_ERRNO(NetfilterFlushRuleset(fd));
 }
 
@@ -4343,63 +4335,25 @@ TEST(NetlinkNetfilterTest, GetRuleDumpTableSpecified) {
           .SeqEnd(kSeq + 7)
           .Build();
 
-  std::vector<char> get_dump_request_inet =
-      NlReq("getrule req dump inet")
-          .Seq(kSeq + 8)
-          .StrAttr(NFTA_RULE_TABLE, test_table_name)
-          .Build();
-
-  std::vector<char> get_dump_request_ipv6 =
-      NlReq("getrule req dump ipv6")
-          .Seq(kSeq + 9)
-          .StrAttr(NFTA_RULE_TABLE, test_table_name)
-          .Build();
-
-  int rules_found = 0;
   ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
       fd, kSeq, kSeq + 7, add_request.data(), add_request.size()));
-  ASSERT_NO_ERRNO(NetlinkRequestResponse(
-      fd, get_dump_request_inet.data(), get_dump_request_inet.size(),
-      [&](const struct nlmsghdr* hdr) {
-        if (hdr->nlmsg_type == NLMSG_DONE) {
-          return;
-        }
 
-        EXPECT_TRUE(hdr->nlmsg_flags & NLM_F_MULTI);
+  std::vector<ParsedRule> inet_rules = ASSERT_NO_ERRNO_AND_VALUE(
+      GetRules(fd, NFPROTO_INET, test_table_name, "", kSeq + 8));
+  ASSERT_EQ(inet_rules.size(), 1);
+  EXPECT_EQ(inet_rules[0].table_name, test_table_name);
+  EXPECT_EQ(inet_rules[0].chain_name, GetDefaultChainName());
+  EXPECT_EQ(inet_rules[0].userdata,
+            std::vector<uint8_t>(udata, udata + expected_udata_size));
 
-        CheckNetfilterRuleAttributes(
-            {.hdr = hdr,
-             .expected_table_name = test_table_name,
-             .expected_chain_name = GetDefaultChainName(),
-             .expected_udata = udata,
-             .expected_udata_size = &expected_udata_size,
-             .skip_handle_check = true});
-        rules_found++;
-      },
-      false));
-  EXPECT_EQ(rules_found, 1);
+  std::vector<ParsedRule> ipv6_rules = ASSERT_NO_ERRNO_AND_VALUE(
+      GetRules(fd, NFPROTO_IPV6, test_table_name, "", kSeq + 9));
+  ASSERT_EQ(ipv6_rules.size(), 1);
+  EXPECT_EQ(ipv6_rules[0].table_name, test_table_name);
+  EXPECT_EQ(ipv6_rules[0].chain_name, GetDefaultChainName());
+  EXPECT_EQ(ipv6_rules[0].userdata,
+            std::vector<uint8_t>(udata, udata + expected_udata_size));
 
-  rules_found = 0;
-  ASSERT_NO_ERRNO(NetlinkRequestResponse(
-      fd, get_dump_request_ipv6.data(), get_dump_request_ipv6.size(),
-      [&](const struct nlmsghdr* hdr) {
-        if (hdr->nlmsg_type == NLMSG_DONE) {
-          return;
-        }
-
-        EXPECT_TRUE(hdr->nlmsg_flags & NLM_F_MULTI);
-
-        CheckNetfilterRuleAttributes(
-            {.hdr = hdr,
-             .expected_table_name = test_table_name,
-             .expected_chain_name = GetDefaultChainName(),
-             .expected_udata = udata,
-             .expected_udata_size = &expected_udata_size,
-             .skip_handle_check = true});
-        rules_found++;
-      },
-      false));
-  EXPECT_EQ(rules_found, 1);
   ASSERT_NO_ERRNO(NetfilterFlushRuleset(fd));
 }
 
@@ -4452,58 +4406,23 @@ TEST(NetlinkNetfilterTest, GetRuleDumpTableChainSpecified) {
           .SeqEnd(kSeq + 6)
           .Build();
 
-  std::vector<char> get_dump_request_inet =
-      NlReq("getrule req dump inet")
-          .Seq(kSeq + 7)
-          .StrAttr(NFTA_RULE_TABLE, test_table_name)
-          .StrAttr(NFTA_RULE_CHAIN, test_chain_name_one)
-          .Build();
-
-  std::vector<char> get_dump_request_inet_two =
-      NlReq("getrule req dump inet")
-          .Seq(kSeq + 8)
-          .StrAttr(NFTA_RULE_TABLE, test_table_name)
-          .StrAttr(NFTA_RULE_CHAIN, test_chain_name_two)
-          .Build();
-
-  int rules_found = 0;
   ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
       fd, kSeq, kSeq + 6, add_request.data(), add_request.size()));
-  ASSERT_NO_ERRNO(NetlinkRequestResponse(
-      fd, get_dump_request_inet.data(), get_dump_request_inet.size(),
-      [&](const struct nlmsghdr* hdr) {
-        if (hdr->nlmsg_type == NLMSG_DONE) {
-          return;
-        }
 
-        EXPECT_TRUE(hdr->nlmsg_flags & NLM_F_MULTI);
+  std::vector<ParsedRule> chain_one_rules = ASSERT_NO_ERRNO_AND_VALUE(GetRules(
+      fd, NFPROTO_INET, test_table_name, test_chain_name_one, kSeq + 7));
+  ASSERT_EQ(chain_one_rules.size(), 2);
+  for (const auto& rule : chain_one_rules) {
+    EXPECT_EQ(rule.table_name, test_table_name);
+    EXPECT_EQ(rule.chain_name, test_chain_name_one);
+    EXPECT_EQ(rule.userdata,
+              std::vector<uint8_t>(udata, udata + expected_udata_size));
+  }
 
-        CheckNetfilterRuleAttributes(
-            {.hdr = hdr,
-             .expected_table_name = test_table_name,
-             .expected_chain_name = test_chain_name_one,
-             .expected_udata = udata,
-             .expected_udata_size = &expected_udata_size,
-             .skip_handle_check = true});
-        rules_found++;
-      },
-      false));
-  EXPECT_EQ(rules_found, 2);
+  std::vector<ParsedRule> chain_two_rules = ASSERT_NO_ERRNO_AND_VALUE(GetRules(
+      fd, NFPROTO_INET, test_table_name, test_chain_name_two, kSeq + 8));
+  EXPECT_EQ(chain_two_rules.size(), 0);
 
-  rules_found = 0;
-  // We expect no rules to be found as they were registered to a different
-  // chain.
-  ASSERT_NO_ERRNO(NetlinkRequestResponse(
-      fd, get_dump_request_inet_two.data(), get_dump_request_inet_two.size(),
-      [&](const struct nlmsghdr* hdr) {
-        if (hdr->nlmsg_type == NLMSG_DONE) {
-          return;
-        }
-
-        rules_found++;
-      },
-      false));
-  EXPECT_EQ(rules_found, 0);
   ASSERT_NO_ERRNO(NetfilterFlushRuleset(fd));
 }
 
@@ -5516,7 +5435,7 @@ TEST(NetlinkNetfilterTest, ErrUpdateBindingChain) {
   ASSERT_NO_ERRNO(NetfilterFlushRuleset(fd));
 }
 
-TEST(NetlinkNetfilterTest, ErrUpdateChainWithCounters) {
+TEST(NetlinkNetfilterTest, UpdateChainWithCounters) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCaps()));
   SKIP_IF(!IsRunningOnGvisor());
   std::string test_table_name = GetUniqueTestTableName();
@@ -5568,14 +5487,1287 @@ TEST(NetlinkNetfilterTest, ErrUpdateChainWithCounters) {
           .SeqEnd(kSeq + 6)
           .Build();
 
-  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(fd, kSeq + 4, kSeq + 6,
-                                                     update_counter_req.data(),
-                                                     update_counter_req.size()),
-              PosixErrorIs(ENOTSUP, _));
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq + 4, kSeq + 6, update_counter_req.data(),
+      update_counter_req.size()));
 
   ASSERT_NO_ERRNO(DestroyNetfilterTable(fd, test_table_name, kSeq + 7));
   ASSERT_NO_ERRNO(NetfilterFlushRuleset(fd));
 }
+
+struct CompatMatchOptions {
+  std::optional<std::string> name;
+  std::optional<uint32_t> rev;
+  std::optional<std::vector<char>> info_data;
+};
+
+static std::vector<char> BuildRawCompatMatchExpr(
+    const CompatMatchOptions& opts) {
+  NlNestedAttr match_attr;
+  if (opts.name.has_value()) {
+    match_attr.StrAttr(NFTA_MATCH_NAME, opts.name.value());
+  }
+  if (opts.rev.has_value()) {
+    match_attr.U32Attr(NFTA_MATCH_REV, opts.rev.value());
+  }
+  if (opts.info_data.has_value() && !opts.info_data->empty()) {
+    match_attr.RawAttr(NFTA_MATCH_INFO, opts.info_data->data(),
+                       opts.info_data->size());
+  }
+  std::vector<char> match_bytes = match_attr.Build();
+
+  return NlNestedAttr()
+      .StrAttr(NFTA_EXPR_NAME, "match")
+      .RawAttr(NFTA_EXPR_DATA, match_bytes.data(), match_bytes.size())
+      .Build();
+}
+
+static std::vector<char> BuildCompatMatchExpr(const CompatMatchOptions& opts) {
+  return NlListAttr().Add(BuildRawCompatMatchExpr(opts)).Build();
+}
+
+template <typename T>
+static std::vector<char> StructToBytes(const T& val) {
+  const char* p = reinterpret_cast<const char*>(&val);
+  return std::vector<char>(p, p + sizeof(T));
+}
+
+struct CompatTargetOptions {
+  std::optional<std::string> name;
+  std::optional<uint32_t> rev;
+  std::optional<std::vector<char>> info_data;
+};
+
+static std::vector<char> BuildRawCompatTargetExpr(
+    const CompatTargetOptions& opts) {
+  NlNestedAttr target_attr;
+  if (opts.name.has_value()) {
+    target_attr.StrAttr(NFTA_TARGET_NAME, opts.name.value());
+  }
+  if (opts.rev.has_value()) {
+    target_attr.U32Attr(NFTA_TARGET_REV, opts.rev.value());
+  }
+  if (opts.info_data.has_value() && !opts.info_data->empty()) {
+    target_attr.RawAttr(NFTA_TARGET_INFO, opts.info_data->data(),
+                        opts.info_data->size());
+  }
+  std::vector<char> target_bytes = target_attr.Build();
+
+  return NlNestedAttr()
+      .StrAttr(NFTA_EXPR_NAME, "target")
+      .RawAttr(NFTA_EXPR_DATA, target_bytes.data(), target_bytes.size())
+      .Build();
+}
+
+static std::vector<char> BuildCompatTargetExpr(
+    const CompatTargetOptions& opts) {
+  return NlListAttr().Add(BuildRawCompatTargetExpr(opts)).Build();
+}
+
+// Parameters defining a single nft_compat test case.
+struct CompatTestParam {
+  std::string test_name;
+  uint16_t family = NFPROTO_IPV4;
+  std::string table_name;
+  std::string chain_name = "compat_test_chain";
+  bool is_base_chain = true;
+  uint32_t hook = NF_INET_PRE_ROUTING;
+  std::string chain_type = "filter";
+  uint32_t compat_proto = 0;
+  std::optional<CompatMatchOptions> match_opts;
+  std::optional<CompatTargetOptions> target_opts;
+  bool gvisor_only = false;
+  int expected_error = 0;
+};
+
+// Parameterized test fixture for nftables compatibility layer (nft_compat)
+// extensions, verifying matches (e.g. addrtype, conntrack) and targets (e.g.
+// SNAT, DNAT, MASQUERADE) across families, revisions, and hook constraints.
+class NetlinkNetfilterCompatTest
+    : public ::testing::TestWithParam<CompatTestParam> {};
+
+// Tests creating a rule containing an nft_compat match or target in a batch
+// transaction.
+TEST_P(NetlinkNetfilterCompatTest, AddCompatRule) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCaps()));
+  const CompatTestParam& param = GetParam();
+  if (param.gvisor_only) {
+    SKIP_IF(!IsRunningOnGvisor());
+  }
+
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
+  std::string test_table_name =
+      param.table_name.empty() ? GetUniqueTestTableName() : param.table_name;
+
+  std::vector<char> list_expr_data;
+  if (param.match_opts.has_value()) {
+    list_expr_data = BuildCompatMatchExpr(param.match_opts.value());
+  } else if (param.target_opts.has_value()) {
+    list_expr_data = BuildCompatTargetExpr(param.target_opts.value());
+  }
+
+  NlReq table_req = NlReq("newtable req ack")
+                        .Seq(kSeq + 1)
+                        .Family(param.family)
+                        .StrAttr(NFTA_TABLE_NAME, test_table_name);
+
+  NlReq chain_req = NlReq("newchain req ack")
+                        .Seq(kSeq + 2)
+                        .Family(param.family)
+                        .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
+                        .StrAttr(NFTA_CHAIN_NAME, param.chain_name);
+
+  if (param.is_base_chain) {
+    std::vector<char> nested_hook_data =
+        NlNestedAttr()
+            .U32Attr(NFTA_HOOK_HOOKNUM, param.hook)
+            .U32Attr(NFTA_HOOK_PRIORITY, 0)
+            .Build();
+    chain_req.U32Attr(NFTA_CHAIN_POLICY, NF_ACCEPT)
+        .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
+                 nested_hook_data.size())
+        .StrAttr(NFTA_CHAIN_TYPE, param.chain_type)
+        .U32Attr(NFTA_CHAIN_FLAGS, NFT_CHAIN_BASE);
+  }
+
+  NlReq rule_req = NlReq("newrule req ack create")
+                       .Seq(kSeq + 3)
+                       .Family(param.family)
+                       .StrAttr(NFTA_RULE_TABLE, test_table_name)
+                       .StrAttr(NFTA_RULE_CHAIN, param.chain_name)
+                       .RawAttr(NFTA_RULE_EXPRESSIONS, list_expr_data.data(),
+                                list_expr_data.size());
+
+  if (param.compat_proto != 0) {
+    std::vector<char> nested_compat_data =
+        NlNestedAttr()
+            .U32Attr(NFTA_RULE_COMPAT_PROTO, param.compat_proto)
+            .U32Attr(NFTA_RULE_COMPAT_FLAGS, 0)
+            .Build();
+    rule_req.RawAttr(NFTA_RULE_COMPAT, nested_compat_data.data(),
+                     nested_compat_data.size());
+  }
+
+  std::vector<char> batch_req = NlBatchReq()
+                                    .SeqStart(kSeq)
+                                    .Req(table_req.Build())
+                                    .Req(chain_req.Build())
+                                    .Req(rule_req.Build())
+                                    .SeqEnd(kSeq + 4)
+                                    .Build();
+
+  if (param.expected_error == 0) {
+    ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+        fd, kSeq, kSeq + 4, batch_req.data(), batch_req.size()));
+  } else {
+    ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
+                    fd, kSeq, kSeq + 4, batch_req.data(), batch_req.size()),
+                PosixErrorIs(param.expected_error, _));
+  }
+
+  ASSERT_NO_ERRNO(DestroyNetfilterTable(fd, test_table_name, kSeq + 5));
+  ASSERT_NO_ERRNO(NetfilterFlushRuleset(fd));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    CompatAddrtypeTests, NetlinkNetfilterCompatTest,
+    ::testing::Values(
+        // Rev 0 tests with struct xt_addrtype_info
+        CompatTestParam{
+            .test_name = "Rev0_SourceMatch",
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 0,
+                    .info_data = StructToBytes(xt_addrtype_info{
+                        .source = XT_ADDRTYPE_LOCAL,
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "Rev0_DestMatchInverted",
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 0,
+                    .info_data = StructToBytes(xt_addrtype_info{
+                        .dest = XT_ADDRTYPE_UNICAST,
+                        .invert_dest = 1,
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "Rev0_SourceAndDestMatch",
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 0,
+                    .info_data = StructToBytes(xt_addrtype_info{
+                        .source = XT_ADDRTYPE_LOCAL,
+                        .dest = XT_ADDRTYPE_MULTICAST,
+                        .invert_source = 1,
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "Rev0_RegularChain",
+            .is_base_chain = false,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 0,
+                    .info_data = StructToBytes(xt_addrtype_info{
+                        .source = XT_ADDRTYPE_LOCAL,
+                    }),
+                },
+        },
+        // Rev 1 tests with struct xt_addrtype_info_v1
+        CompatTestParam{
+            .test_name = "Rev1_SourceMatch",
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 1,
+                    .info_data = StructToBytes(xt_addrtype_info_v1{
+                        .source = XT_ADDRTYPE_LOCAL,
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "Rev1_InvertFlags",
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 1,
+                    .info_data = StructToBytes(xt_addrtype_info_v1{
+                        .source = XT_ADDRTYPE_LOCAL,
+                        .dest = XT_ADDRTYPE_UNICAST,
+                        .flags = XT_ADDRTYPE_INVERT_SOURCE |
+                                 XT_ADDRTYPE_INVERT_DEST,
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "Rev1_LimitIfaceIn_ValidHook",
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 1,
+                    .info_data = StructToBytes(xt_addrtype_info_v1{
+                        .source = XT_ADDRTYPE_LOCAL,
+                        .flags = XT_ADDRTYPE_LIMIT_IFACE_IN,
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "Rev1_LimitIfaceOut_ValidHook",
+            .hook = NF_INET_POST_ROUTING,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 1,
+                    .info_data = StructToBytes(xt_addrtype_info_v1{
+                        .dest = XT_ADDRTYPE_LOCAL,
+                        .flags = XT_ADDRTYPE_LIMIT_IFACE_OUT,
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "Rev1_LimitIfaceIn_RegularChain",
+            .is_base_chain = false,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 1,
+                    .info_data = StructToBytes(xt_addrtype_info_v1{
+                        .source = XT_ADDRTYPE_LOCAL,
+                        .flags = XT_ADDRTYPE_LIMIT_IFACE_IN,
+                    }),
+                },
+        },
+        // Error cases
+        CompatTestParam{
+            .test_name = "Rev0_SizeTooSmall",
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 0,
+                    .info_data = std::vector<char>(sizeof(xt_addrtype_info) - 1,
+                                                   0),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "Rev1_SizeTooSmall",
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 1,
+                    .info_data =
+                        std::vector<char>(sizeof(xt_addrtype_info_v1) - 1, 0),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "UnsupportedRevision",
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 2,
+                    .info_data = StructToBytes(xt_addrtype_info_v1{}),
+                },
+            .expected_error = ENOENT,
+        },
+        CompatTestParam{
+            .test_name = "Rev1_BothIfaceInAndOut",
+            .hook = NF_INET_FORWARD,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 1,
+                    .info_data = StructToBytes(xt_addrtype_info_v1{
+                        .source = XT_ADDRTYPE_LOCAL,
+                        .dest = XT_ADDRTYPE_LOCAL,
+                        .flags = XT_ADDRTYPE_LIMIT_IFACE_IN |
+                                 XT_ADDRTYPE_LIMIT_IFACE_OUT,
+                    }),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "Rev1_LimitIfaceOut_InvalidPrerouting",
+            .hook = NF_INET_PRE_ROUTING,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 1,
+                    .info_data = StructToBytes(xt_addrtype_info_v1{
+                        .dest = XT_ADDRTYPE_LOCAL,
+                        .flags = XT_ADDRTYPE_LIMIT_IFACE_OUT,
+                    }),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "Rev1_LimitIfaceOut_InvalidInput",
+            .hook = NF_INET_LOCAL_IN,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 1,
+                    .info_data = StructToBytes(xt_addrtype_info_v1{
+                        .dest = XT_ADDRTYPE_LOCAL,
+                        .flags = XT_ADDRTYPE_LIMIT_IFACE_OUT,
+                    }),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "Rev1_LimitIfaceIn_InvalidPostrouting",
+            .hook = NF_INET_POST_ROUTING,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 1,
+                    .info_data = StructToBytes(xt_addrtype_info_v1{
+                        .source = XT_ADDRTYPE_LOCAL,
+                        .flags = XT_ADDRTYPE_LIMIT_IFACE_IN,
+                    }),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "Rev1_LimitIfaceIn_InvalidOutput",
+            .hook = NF_INET_LOCAL_OUT,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 1,
+                    .info_data = StructToBytes(xt_addrtype_info_v1{
+                        .source = XT_ADDRTYPE_LOCAL,
+                        .flags = XT_ADDRTYPE_LIMIT_IFACE_IN,
+                    }),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "MissingMatchName",
+            .match_opts =
+                CompatMatchOptions{
+                    .rev = 0,
+                    .info_data = StructToBytes(xt_addrtype_info{}),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "MissingMatchRev",
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .info_data = StructToBytes(xt_addrtype_info{}),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "MissingMatchInfo",
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 0,
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "UnknownMatchName",
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "unknown_match",
+                    .rev = 0,
+                    .info_data = StructToBytes(xt_addrtype_info{}),
+                },
+            .expected_error = ENOENT,
+        }),
+    [](const ::testing::TestParamInfo<CompatTestParam>& info) {
+      return info.param.test_name;
+    });
+
+INSTANTIATE_TEST_SUITE_P(
+    CompatConntrackTests, NetlinkNetfilterCompatTest,
+    ::testing::Values(
+        CompatTestParam{
+            .test_name = "Rev1_StateMatch",
+            .family = NFPROTO_INET,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "conntrack",
+                    .rev = 1,
+                    .info_data = StructToBytes(xt_conntrack_mtinfo1{
+                        .match_flags = XT_CONNTRACK_STATE,
+                        .state_mask = XT_CONNTRACK_STATE_INVALID,
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "Rev1_DirectionMatch",
+            .family = NFPROTO_INET,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "conntrack",
+                    .rev = 1,
+                    .info_data = StructToBytes(xt_conntrack_mtinfo1{
+                        .match_flags = XT_CONNTRACK_DIRECTION,
+                        .invert_flags = XT_CONNTRACK_DIRECTION,
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "Rev2_StateMatch",
+            .family = NFPROTO_INET,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "conntrack",
+                    .rev = 2,
+                    .info_data = StructToBytes(xt_conntrack_mtinfo2{
+                        .match_flags = XT_CONNTRACK_STATE,
+                        .state_mask = XT_CONNTRACK_STATE_INVALID,
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "Rev3_StateMatch",
+            .family = NFPROTO_INET,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "conntrack",
+                    .rev = 3,
+                    .info_data = StructToBytes(xt_conntrack_mtinfo3{
+                        .match_flags = XT_CONNTRACK_STATE,
+                        .state_mask = XT_CONNTRACK_STATE_INVALID,
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "Rev1_SizeTooSmall",
+            .family = NFPROTO_INET,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "conntrack",
+                    .rev = 1,
+                    .info_data =
+                        std::vector<char>(sizeof(xt_conntrack_mtinfo1) - 1, 0),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "Rev2_SizeTooSmall",
+            .family = NFPROTO_INET,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "conntrack",
+                    .rev = 2,
+                    .info_data =
+                        std::vector<char>(sizeof(xt_conntrack_mtinfo2) - 1, 0),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "Rev3_SizeTooSmall",
+            .family = NFPROTO_INET,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "conntrack",
+                    .rev = 3,
+                    .info_data =
+                        std::vector<char>(sizeof(xt_conntrack_mtinfo3) - 1, 0),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "UnsupportedRevision",
+            .family = NFPROTO_INET,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "conntrack",
+                    .rev = 4,
+                    .info_data = StructToBytes(xt_conntrack_mtinfo3{}),
+                },
+            .expected_error = ENOENT,
+        },
+        CompatTestParam{
+            .test_name = "UnsupportedFlags",
+            .family = NFPROTO_INET,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "conntrack",
+                    .rev = 1,
+                    .info_data = StructToBytes(xt_conntrack_mtinfo1{
+                        .match_flags = XT_CONNTRACK_ORIGSRC,
+                    }),
+                },
+            .gvisor_only = true,
+            .expected_error = ENOTSUP,
+        }),
+    [](const ::testing::TestParamInfo<CompatTestParam>& info) {
+      return info.param.test_name;
+    });
+
+INSTANTIATE_TEST_SUITE_P(
+    CompatMasqTests, NetlinkNetfilterCompatTest,
+    ::testing::Values(
+        CompatTestParam{
+            .test_name = "IPv4_NoFlags",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "MASQUERADE",
+                    .rev = 0,
+                    .info_data = StructToBytes(nf_nat_ipv4_multi_range_compat{
+                        .rangesize = 1,
+                        .range = {{.flags = 0}},
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "IPv4_WithPortRange",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "MASQUERADE",
+                    .rev = 0,
+                    .info_data = StructToBytes(nf_nat_ipv4_multi_range_compat{
+                        .rangesize = 1,
+                        .range = {{
+                            .flags = NF_NAT_RANGE_PROTO_SPECIFIED,
+                            .min = {.all = htons(1024)},
+                            .max = {.all = htons(2048)},
+                        }},
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "IPv6_NoFlags",
+            .family = NFPROTO_IPV6,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "MASQUERADE",
+                    .rev = 0,
+                    .info_data = StructToBytes(nf_nat_range{
+                        .flags = 0,
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "IPv6_WithPortRange",
+            .family = NFPROTO_IPV6,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "MASQUERADE",
+                    .rev = 0,
+                    .info_data = StructToBytes(nf_nat_range{
+                        .flags = NF_NAT_RANGE_PROTO_SPECIFIED,
+                        .min_proto = {.all = htons(1024)},
+                        .max_proto = {.all = htons(2048)},
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "IPv4_SizeTooSmall",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "MASQUERADE",
+                    .rev = 0,
+                    .info_data = std::vector<char>(
+                        sizeof(nf_nat_ipv4_multi_range_compat) - 1, 0),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "IPv6_SizeTooSmall",
+            .family = NFPROTO_IPV6,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "MASQUERADE",
+                    .rev = 0,
+                    .info_data = std::vector<char>(sizeof(nf_nat_range) - 1, 0),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "InvalidTable",
+            .family = NFPROTO_IPV4,
+            .table_name = "filter_table",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "MASQUERADE",
+                    .rev = 0,
+                    .info_data = StructToBytes(nf_nat_ipv4_multi_range_compat{
+                        .rangesize = 1,
+                    }),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "UnsupportedRevision",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "MASQUERADE",
+                    .rev = 1,
+                    .info_data = StructToBytes(nf_nat_ipv4_multi_range_compat{
+                        .rangesize = 1,
+                    }),
+                },
+            .expected_error = ENOENT,
+        },
+        CompatTestParam{
+            .test_name = "InvalidRangeSize",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "MASQUERADE",
+                    .rev = 0,
+                    .info_data = StructToBytes(nf_nat_ipv4_multi_range_compat{
+                        .rangesize = 2,
+                    }),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "InvalidHookPrerouting",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_PRE_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "MASQUERADE",
+                    .rev = 0,
+                    .info_data = StructToBytes(nf_nat_ipv4_multi_range_compat{
+                        .rangesize = 1,
+                    }),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "NonNatChainType",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "filter",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "MASQUERADE",
+                    .rev = 0,
+                    .info_data = StructToBytes(nf_nat_ipv4_multi_range_compat{
+                        .rangesize = 1,
+                    }),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "MapIPsNotSupported",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "MASQUERADE",
+                    .rev = 0,
+                    .info_data = StructToBytes(nf_nat_ipv4_multi_range_compat{
+                        .rangesize = 1,
+                        .range = {{.flags = NF_NAT_RANGE_MAP_IPS}},
+                    }),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "ValidPortRangeZero",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "MASQUERADE",
+                    .rev = 0,
+                    .info_data = StructToBytes(nf_nat_ipv4_multi_range_compat{
+                        .rangesize = 1,
+                        .range = {{
+                            .flags = NF_NAT_RANGE_PROTO_SPECIFIED,
+                            .min = {.all = htons(0)},
+                            .max = {.all = htons(100)},
+                        }},
+                    }),
+                },
+        }),
+    [](const ::testing::TestParamInfo<CompatTestParam>& info) {
+      return info.param.test_name;
+    });
+
+INSTANTIATE_TEST_SUITE_P(
+    CompatNATTests, NetlinkNetfilterCompatTest,
+    ::testing::Values(
+        // Rev 0 tests (IPv4 only)
+        CompatTestParam{
+            .test_name = "SNAT_Rev0_Valid",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 0,
+                    .info_data = StructToBytes(nf_nat_ipv4_multi_range_compat{
+                        .rangesize = 1,
+                        .range = {{.flags = NF_NAT_RANGE_MAP_IPS}},
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "DNAT_Rev0_Valid",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_PRE_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "DNAT",
+                    .rev = 0,
+                    .info_data = StructToBytes(nf_nat_ipv4_multi_range_compat{
+                        .rangesize = 1,
+                        .range = {{.flags = NF_NAT_RANGE_MAP_IPS}},
+                    }),
+                },
+        },
+        // Rev 1 tests
+        CompatTestParam{
+            .test_name = "SNAT_Rev1_IPv4_Valid",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 1,
+                    .info_data = StructToBytes(nf_nat_range{
+                        .flags = NF_NAT_RANGE_MAP_IPS,
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "DNAT_Rev1_IPv6_Valid",
+            .family = NFPROTO_IPV6,
+            .table_name = "nat",
+            .hook = NF_INET_PRE_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "DNAT",
+                    .rev = 1,
+                    .info_data = StructToBytes(nf_nat_range{
+                        .flags = NF_NAT_RANGE_MAP_IPS,
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "SNAT_Rev1_IPv6_Valid",
+            .family = NFPROTO_IPV6,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 1,
+                    .info_data = StructToBytes(nf_nat_range{
+                        .flags = NF_NAT_RANGE_MAP_IPS,
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "SNAT_Rev1_WithPorts",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 1,
+                    .info_data = StructToBytes(nf_nat_range{
+                        .flags = NF_NAT_RANGE_PROTO_SPECIFIED,
+                        .min_proto = {.all = htons(1024)},
+                        .max_proto = {.all = htons(2048)},
+                    }),
+                },
+        },
+        // Rev 2 tests: Validate support for NAT revision 2 (nf_nat_range2).
+        // Standard 44-byte struct payload (from UAPI
+        // <linux/netfilter/nf_nat.h>).
+        CompatTestParam{
+            .test_name = "SNAT_Rev2_Valid",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 2,
+                    .info_data = StructToBytes(nf_nat_range2{
+                        .flags = NF_NAT_RANGE_MAP_IPS,
+                    }),
+                },
+        },
+        // 48-byte XT_ALIGN-padded payload produced by userspace iptables-nft.
+        CompatTestParam{
+            .test_name = "SNAT_Rev2_Valid_Padded48",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 2,
+                    .info_data =
+                        []() {
+                          std::vector<char> buf(48, 0);
+                          *reinterpret_cast<uint32_t*>(buf.data()) =
+                              NF_NAT_RANGE_MAP_IPS;
+                          return buf;
+                        }(),
+                },
+        },
+        // IPv6 NAT revision 2 support.
+        CompatTestParam{
+            .test_name = "SNAT_Rev2_IPv6_Valid",
+            .family = NFPROTO_IPV6,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 2,
+                    .info_data = StructToBytes(nf_nat_range2{
+                        .flags = NF_NAT_RANGE_MAP_IPS,
+                    }),
+                },
+        },
+        // Error cases
+        // Rev 0 does not support IPv6 (IPv4-only multi_range).
+        CompatTestParam{
+            .test_name = "Rev0_IPv6NotSupported",
+            .family = NFPROTO_IPV6,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 0,
+                    .info_data = StructToBytes(nf_nat_ipv4_multi_range_compat{
+                        .rangesize = 1,
+                    }),
+                },
+            .expected_error = ENOENT,
+        },
+        // Buffer truncated below sizeof(nf_nat_ipv4_multi_range_compat).
+        CompatTestParam{
+            .test_name = "Rev0_SizeTooSmall",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 0,
+                    .info_data = std::vector<char>(
+                        sizeof(nf_nat_ipv4_multi_range_compat) - 1, 0),
+                },
+            .expected_error = EINVAL,
+        },
+        // Buffer truncated below sizeof(nf_nat_range).
+        CompatTestParam{
+            .test_name = "Rev1_SizeTooSmall",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 1,
+                    .info_data = std::vector<char>(sizeof(nf_nat_range) - 1, 0),
+                },
+            .expected_error = EINVAL,
+        },
+        // Buffer truncated below sizeof(nf_nat_range2) (43 bytes).
+        CompatTestParam{
+            .test_name = "Rev2_SizeTooSmall",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 2,
+                    .info_data = std::vector<char>(sizeof(nf_nat_range2) - 1,
+                                                   0),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "UnsupportedRevision",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 3,
+                    .info_data = StructToBytes(nf_nat_range2{}),
+                },
+            .expected_error = ENOENT,
+        },
+        CompatTestParam{
+            .test_name = "SNAT_InvalidHookPrerouting",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_PRE_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 1,
+                    .info_data = StructToBytes(nf_nat_range{}),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "DNAT_InvalidHookPostrouting",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "DNAT",
+                    .rev = 1,
+                    .info_data = StructToBytes(nf_nat_range{}),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "NonNatChainType",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "filter",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 1,
+                    .info_data = StructToBytes(nf_nat_range{}),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "ValidPortRangeZero",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 1,
+                    .info_data = StructToBytes(nf_nat_range{
+                        .flags = NF_NAT_RANGE_PROTO_SPECIFIED,
+                        .min_proto = {.all = htons(0)},
+                        .max_proto = {.all = htons(100)},
+                    }),
+                },
+        }),
+    [](const ::testing::TestParamInfo<CompatTestParam>& info) {
+      return info.param.test_name;
+    });
+
+INSTANTIATE_TEST_SUITE_P(
+    CompatNoopMatchTests, NetlinkNetfilterCompatTest,
+    ::testing::Values(
+        CompatTestParam{
+            .test_name = "TCPMatch",
+            .compat_proto = IPPROTO_TCP,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "tcp",
+                    .rev = 0,
+                    .info_data = StructToBytes(xt_tcp{}),
+                },
+        },
+        CompatTestParam{
+            .test_name = "UDPMatch",
+            .compat_proto = IPPROTO_UDP,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "udp",
+                    .rev = 0,
+                    .info_data = StructToBytes(xt_udp{}),
+                },
+        }),
+    [](const ::testing::TestParamInfo<CompatTestParam>& info) {
+      return info.param.test_name;
+    });
+
+struct CompatRuleDumpTestParam {
+  std::string test_name;
+  uint16_t family = NFPROTO_IPV4;
+  std::string table_name = "nat";
+  std::string chain_name = "compat_dump_chain";
+  uint32_t hook = NF_INET_POST_ROUTING;
+  std::string chain_type = "nat";
+  uint32_t compat_proto = 0;
+  std::vector<CompatMatchOptions> matches;
+  std::vector<CompatTargetOptions> targets;
+  std::vector<std::string> expected_expr_names;
+};
+
+class NetlinkNetfilterCompatDumpTest
+    : public ::testing::TestWithParam<CompatRuleDumpTestParam> {};
+
+TEST_P(NetlinkNetfilterCompatDumpTest, RuleDump) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCaps()));
+  const CompatRuleDumpTestParam& param = GetParam();
+
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
+
+  NlListAttr expr_list;
+  for (const auto& match_opt : param.matches) {
+    expr_list.Add(BuildRawCompatMatchExpr(match_opt));
+  }
+  for (const auto& target_opt : param.targets) {
+    expr_list.Add(BuildRawCompatTargetExpr(target_opt));
+  }
+  std::vector<char> list_expr_data = expr_list.Build();
+
+  std::vector<char> nested_hook_data =
+      NlNestedAttr()
+          .U32Attr(NFTA_HOOK_HOOKNUM, param.hook)
+          .U32Attr(NFTA_HOOK_PRIORITY, 0)
+          .Build();
+
+  NlReq table_req = NlReq("newtable req ack")
+                        .Seq(kSeq + 1)
+                        .Family(param.family)
+                        .StrAttr(NFTA_TABLE_NAME, param.table_name);
+
+  NlReq chain_req = NlReq("newchain req ack")
+                        .Seq(kSeq + 2)
+                        .Family(param.family)
+                        .StrAttr(NFTA_CHAIN_TABLE, param.table_name)
+                        .StrAttr(NFTA_CHAIN_NAME, param.chain_name)
+                        .U32Attr(NFTA_CHAIN_POLICY, NF_ACCEPT)
+                        .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
+                                 nested_hook_data.size())
+                        .StrAttr(NFTA_CHAIN_TYPE, param.chain_type)
+                        .U32Attr(NFTA_CHAIN_FLAGS, NFT_CHAIN_BASE);
+
+  NlReq rule_req = NlReq("newrule req ack create")
+                       .Seq(kSeq + 3)
+                       .Family(param.family)
+                       .StrAttr(NFTA_RULE_TABLE, param.table_name)
+                       .StrAttr(NFTA_RULE_CHAIN, param.chain_name)
+                       .RawAttr(NFTA_RULE_EXPRESSIONS, list_expr_data.data(),
+                                list_expr_data.size());
+
+  if (param.compat_proto != 0) {
+    std::vector<char> nested_compat_data =
+        NlNestedAttr()
+            .U32Attr(NFTA_RULE_COMPAT_PROTO, param.compat_proto)
+            .U32Attr(NFTA_RULE_COMPAT_FLAGS, 0)
+            .Build();
+    rule_req.RawAttr(NFTA_RULE_COMPAT, nested_compat_data.data(),
+                     nested_compat_data.size());
+  }
+
+  std::vector<char> batch_req = NlBatchReq()
+                                    .SeqStart(kSeq)
+                                    .Req(table_req.Build())
+                                    .Req(chain_req.Build())
+                                    .Req(rule_req.Build())
+                                    .SeqEnd(kSeq + 4)
+                                    .Build();
+
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq, kSeq + 4, batch_req.data(), batch_req.size()));
+
+  std::vector<ParsedRule> rules = ASSERT_NO_ERRNO_AND_VALUE(
+      GetRules(fd, param.family, param.table_name, param.chain_name, kSeq + 5));
+  ASSERT_EQ(rules.size(), 1);
+  EXPECT_THAT(rules[0].ExpressionNames(),
+              ::testing::ElementsAreArray(param.expected_expr_names));
+
+  ASSERT_NO_ERRNO(DestroyNetfilterTable(fd, param.table_name, kSeq + 6));
+  ASSERT_NO_ERRNO(NetfilterFlushRuleset(fd));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    CompatRuleDumpTests, NetlinkNetfilterCompatDumpTest,
+    ::testing::Values(
+        CompatRuleDumpTestParam{
+            .test_name = "NoopTCPMatch",
+            .table_name = "filter",
+            .hook = NF_INET_PRE_ROUTING,
+            .chain_type = "filter",
+            .compat_proto = IPPROTO_TCP,
+            .matches = {CompatMatchOptions{
+                .name = "tcp",
+                .rev = 0,
+                .info_data = StructToBytes(xt_tcp{}),
+            }},
+            .expected_expr_names = {"match"},
+        },
+        CompatRuleDumpTestParam{
+            .test_name = "AddrtypeMatch",
+            .table_name = "filter",
+            .hook = NF_INET_PRE_ROUTING,
+            .chain_type = "filter",
+            .matches = {CompatMatchOptions{
+                .name = "addrtype",
+                .rev = 1,
+                .info_data = StructToBytes(xt_addrtype_info_v1{
+                    .source = XT_ADDRTYPE_LOCAL,
+                    .flags = XT_ADDRTYPE_INVERT_SOURCE,
+                }),
+            }},
+            .expected_expr_names = {"match"},
+        },
+        CompatRuleDumpTestParam{
+            .test_name = "ConntrackMatch",
+            .table_name = "filter",
+            .hook = NF_INET_PRE_ROUTING,
+            .chain_type = "filter",
+            .matches = {CompatMatchOptions{
+                .name = "conntrack",
+                .rev = 1,
+                .info_data = StructToBytes(xt_conntrack_mtinfo1{
+                    .match_flags = XT_CONNTRACK_STATE,
+                    .state_mask = XT_CONNTRACK_STATE_INVALID,
+                }),
+            }},
+            .expected_expr_names = {"match"},
+        },
+        CompatRuleDumpTestParam{
+            .test_name = "MatchAndTarget",
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .matches = {CompatMatchOptions{
+                .name = "conntrack",
+                .rev = 1,
+                .info_data = StructToBytes(xt_conntrack_mtinfo1{
+                    .match_flags = XT_CONNTRACK_STATE,
+                    .state_mask = XT_CONNTRACK_STATE_INVALID,
+                }),
+            }},
+            .targets = {CompatTargetOptions{
+                .name = "MASQUERADE",
+                .rev = 0,
+                .info_data = StructToBytes(nf_nat_ipv4_multi_range_compat{
+                    .rangesize = 1,
+                }),
+            }},
+            .expected_expr_names = {"match", "target"},
+        },
+        CompatRuleDumpTestParam{
+            .test_name = "SNATTarget",
+            .targets = {CompatTargetOptions{
+                .name = "SNAT",
+                .rev = 1,
+                .info_data = StructToBytes(nf_nat_range{
+                    .flags = NF_NAT_RANGE_MAP_IPS,
+                }),
+            }},
+            .expected_expr_names = {"target"},
+        }),
+    [](const ::testing::TestParamInfo<CompatRuleDumpTestParam>& info) {
+      return info.param.test_name;
+    });
 
 }  // namespace testing
 }  // namespace gvisor

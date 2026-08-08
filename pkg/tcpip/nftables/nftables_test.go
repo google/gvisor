@@ -5699,3 +5699,633 @@ func TestNFTablesConcurrentUpdateAndEvaluate(t *testing.T) {
 		t.Fatalf("expected %d rules in final chain, got %d", expectedRules, len(finalChain.GetRules()))
 	}
 }
+
+// Tests compat operation deepCopy functionality.
+func TestCompatOperationDeepCopy(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		op   operation
+		opts cmp.Option
+	}{
+		{
+			name: "conntrack match",
+			op: &compatCTMatch{
+				revision: 1,
+				info: ctMatchInfo{
+					checkState: true,
+					stateMask:  linux.XT_CONNTRACK_STATE_ESTABLISHED,
+				},
+				infoData: []byte{1, 2, 3, 4},
+			},
+			opts: cmp.AllowUnexported(compatCTMatch{}, ctMatchInfo{}),
+		},
+		{
+			name: "addrtype match",
+			op: &compatAddrtypeMatch{
+				revision: 1,
+				infoData: []byte{1, 2, 3, 4},
+				info: addrTypeMatchInfo{
+					checkSrc:       true,
+					checkDst:       true,
+					invertSrcMatch: true,
+					invertDstMatch: true,
+					limitIfaceIn:   true,
+					limitIfaceOut:  true,
+					sourceMask:     linux.XT_ADDRTYPE_LOCAL,
+					destMask:       linux.XT_ADDRTYPE_BROADCAST,
+				},
+			},
+			opts: cmp.AllowUnexported(compatAddrtypeMatch{}, addrTypeMatchInfo{}),
+		},
+		{
+			name: "masquerade target",
+			op: &compatMASQTarget{
+				revision: 0,
+				info: masqTargetInfo{
+					netProto:     header.IPv4ProtocolNumber,
+					hasPortRange: true,
+					portsOrIdents: stack.PortOrIdentRange{
+						Start: 1024,
+						Size:  100,
+					},
+				},
+				infoData: []byte{1, 2, 3},
+			},
+			opts: cmp.AllowUnexported(compatMASQTarget{}, masqTargetInfo{}),
+		},
+		{
+			name: "nat target",
+			op: &compatNATTarget{
+				name:     TargetSNAT,
+				revision: 1,
+				info: natTargetInfo{
+					netProto:      header.IPv4ProtocolNumber,
+					natType:       stack.SNAT,
+					address:       tcpip.AddrFrom4([4]byte{192, 168, 1, 1}),
+					changeAddress: true,
+					changePort:    true,
+					portsOrIdents: stack.PortOrIdentRange{
+						Start: 1024,
+						Size:  100,
+					},
+				},
+				infoData: []byte{1, 2, 3},
+			},
+			opts: cmp.AllowUnexported(compatNATTarget{}, natTargetInfo{}),
+		},
+		{
+			name: "noop match",
+			op: &compatNoopMatch{
+				name:     "tcp",
+				revision: 0,
+				infoData: []byte{1, 2, 3, 4},
+			},
+			opts: cmp.AllowUnexported(compatNoopMatch{}),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			copied := tc.op.deepCopy()
+			if diff := cmp.Diff(tc.op, copied, tc.opts); diff != "" {
+				t.Fatalf("unexpected diff after copy (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// Tests compat operation checkCompatibility functionality.
+func TestCompatOpCompatibility(t *testing.T) {
+	addrtypeIn := &compatAddrtypeMatch{info: addrTypeMatchInfo{limitIfaceIn: true}}
+	addrtypeOut := &compatAddrtypeMatch{info: addrTypeMatchInfo{limitIfaceOut: true}}
+	masq := &compatMASQTarget{}
+	snat := &compatNATTarget{info: natTargetInfo{natType: stack.SNAT}}
+	dnat := &compatNATTarget{info: natTargetInfo{natType: stack.DNAT}}
+	noop := &compatNoopMatch{name: "tcp"}
+	const nonBaseChainType = BaseChainType(-1)
+
+	makeCtx := func(bcType BaseChainType, hook stack.NFHook) *opCompatCtx {
+		if bcType == nonBaseChainType {
+			return &opCompatCtx{chain: &Chain{}}
+		}
+		return &opCompatCtx{
+			chain: &Chain{
+				baseChainInfo: &BaseChainInfo{
+					BcType: bcType,
+					Hook:   hook,
+				},
+			},
+		}
+	}
+
+	for _, tc := range []struct {
+		name    string
+		op      operation
+		cCtx    *opCompatCtx
+		wantErr bool
+	}{
+		// Addrtype limitIfaceIn
+		{
+			name: "addrtype limitIfaceIn valid on PREROUTING",
+			op:   addrtypeIn,
+			cCtx: makeCtx(BaseChainTypeFilter, stack.NFPrerouting),
+		},
+		{
+			name:    "addrtype limitIfaceIn invalid on POSTROUTING",
+			op:      addrtypeIn,
+			cCtx:    makeCtx(BaseChainTypeFilter, stack.NFPostrouting),
+			wantErr: true,
+		},
+
+		// Addrtype limitIfaceOut
+		{
+			name: "addrtype limitIfaceOut valid on POSTROUTING",
+			op:   addrtypeOut,
+			cCtx: makeCtx(BaseChainTypeFilter, stack.NFPostrouting),
+		},
+		{
+			name:    "addrtype limitIfaceOut invalid on PREROUTING",
+			op:      addrtypeOut,
+			cCtx:    makeCtx(BaseChainTypeFilter, stack.NFPrerouting),
+			wantErr: true,
+		},
+
+		// MASQUERADE
+		{
+			name: "MASQUERADE valid on POSTROUTING NAT",
+			op:   masq,
+			cCtx: makeCtx(BaseChainTypeNat, stack.NFPostrouting),
+		},
+		{
+			name:    "MASQUERADE invalid on PREROUTING NAT",
+			op:      masq,
+			cCtx:    makeCtx(BaseChainTypeNat, stack.NFPrerouting),
+			wantErr: true,
+		},
+		{
+			name:    "MASQUERADE invalid on Filter chain",
+			op:      masq,
+			cCtx:    makeCtx(BaseChainTypeFilter, stack.NFPostrouting),
+			wantErr: true,
+		},
+
+		// SNAT
+		{
+			name: "SNAT valid on POSTROUTING NAT",
+			op:   snat,
+			cCtx: makeCtx(BaseChainTypeNat, stack.NFPostrouting),
+		},
+		{
+			name:    "SNAT invalid on PREROUTING NAT",
+			op:      snat,
+			cCtx:    makeCtx(BaseChainTypeNat, stack.NFPrerouting),
+			wantErr: true,
+		},
+		{
+			name:    "SNAT invalid on Filter chain",
+			op:      snat,
+			cCtx:    makeCtx(BaseChainTypeFilter, stack.NFPostrouting),
+			wantErr: true,
+		},
+
+		// DNAT
+		{
+			name: "DNAT valid on PREROUTING NAT",
+			op:   dnat,
+			cCtx: makeCtx(BaseChainTypeNat, stack.NFPrerouting),
+		},
+		{
+			name:    "DNAT invalid on POSTROUTING NAT",
+			op:      dnat,
+			cCtx:    makeCtx(BaseChainTypeNat, stack.NFPostrouting),
+			wantErr: true,
+		},
+		{
+			name:    "DNAT invalid on Filter chain",
+			op:      dnat,
+			cCtx:    makeCtx(BaseChainTypeFilter, stack.NFPrerouting),
+			wantErr: true,
+		},
+		{
+			name:    "noop match",
+			op:      noop,
+			cCtx:    makeCtx(nonBaseChainType, 0),
+			wantErr: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.op.checkCompatibility(tc.cCtx)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("checkCompatibility() err = %v, wantErr = %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func makeUDPv4Packet(srcAddr, dstAddr tcpip.Address, srcPort, dstPort uint16) *stack.PacketBuffer {
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		ReserveHeaderBytes: header.IPv4MinimumSize + header.UDPMinimumSize,
+	})
+	pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
+	pkt.TransportProtocolNumber = header.UDPProtocolNumber
+
+	udpHdr := header.UDP(pkt.TransportHeader().Push(header.UDPMinimumSize))
+	udpHdr.Encode(&header.UDPFields{
+		SrcPort: srcPort,
+		DstPort: dstPort,
+		Length:  header.UDPMinimumSize,
+	})
+
+	ipHdr := header.IPv4(pkt.NetworkHeader().Push(header.IPv4MinimumSize))
+	ipHdr.Encode(&header.IPv4Fields{
+		TotalLength: header.IPv4MinimumSize + header.UDPMinimumSize,
+		Protocol:    uint8(header.UDPProtocolNumber),
+		SrcAddr:     srcAddr,
+		DstAddr:     dstAddr,
+		TTL:         64,
+	})
+	ipHdr.SetChecksum(^ipHdr.CalculateChecksum())
+	return pkt
+}
+
+// TestCompatCTMatchEvaluation tests evaluation of compatCTMatch with tracked and untracked packets.
+func TestCompatCTMatchEvaluation(t *testing.T) {
+	srcAddr := tcpip.AddrFrom4([4]byte{10, 0, 0, 1})
+	dstAddr := tcpip.AddrFrom4([4]byte{10, 0, 0, 2})
+	const srcPort = 1234
+	const dstPort = 5678
+
+	for _, tc := range []struct {
+		name        string
+		matchInfo   ctMatchInfo
+		isReply     bool
+		untracked   bool
+		wantVerdict uint32
+	}{
+		// Untracked packet tests
+		{
+			name: "untracked match INVALID state",
+			matchInfo: ctMatchInfo{
+				checkState: true,
+				stateMask:  linux.XT_CONNTRACK_STATE_INVALID,
+			},
+			untracked:   true,
+			wantVerdict: VC(linux.NFT_CONTINUE),
+		},
+		{
+			name: "untracked match INVALID state inverted fails",
+			matchInfo: ctMatchInfo{
+				checkState:       true,
+				invertStateMatch: true,
+				stateMask:        linux.XT_CONNTRACK_STATE_INVALID,
+			},
+			untracked:   true,
+			wantVerdict: VC(linux.NFT_BREAK),
+		},
+		{
+			name: "untracked fail ESTABLISHED state",
+			matchInfo: ctMatchInfo{
+				checkState: true,
+				stateMask:  linux.XT_CONNTRACK_STATE_ESTABLISHED,
+			},
+			untracked:   true,
+			wantVerdict: VC(linux.NFT_BREAK),
+		},
+		{
+			name: "untracked match inverted ESTABLISHED state",
+			matchInfo: ctMatchInfo{
+				checkState:       true,
+				invertStateMatch: true,
+				stateMask:        linux.XT_CONNTRACK_STATE_ESTABLISHED,
+			},
+			untracked:   true,
+			wantVerdict: VC(linux.NFT_CONTINUE),
+		},
+		{
+			name: "untracked match INVALID state even with checkDirection set",
+			matchInfo: ctMatchInfo{
+				checkState:     true,
+				stateMask:      linux.XT_CONNTRACK_STATE_INVALID,
+				checkDirection: true,
+			},
+			untracked:   true,
+			wantVerdict: VC(linux.NFT_CONTINUE),
+		},
+		{
+			name: "untracked only direction match fails",
+			matchInfo: ctMatchInfo{
+				checkState:     false,
+				checkDirection: true,
+			},
+			untracked:   true,
+			wantVerdict: VC(linux.NFT_BREAK),
+		},
+		{
+			name: "untracked packet fails NEW state",
+			matchInfo: ctMatchInfo{
+				checkState: true,
+				stateMask:  linux.XT_CONNTRACK_STATE_NEW,
+			},
+			untracked:   true,
+			wantVerdict: VC(linux.NFT_BREAK),
+		},
+
+		// Tracked packet tests
+		{
+			name: "original packet matches NEW state",
+			matchInfo: ctMatchInfo{
+				checkState: true,
+				stateMask:  linux.XT_CONNTRACK_STATE_NEW,
+			},
+			isReply:     false,
+			wantVerdict: VC(linux.NFT_CONTINUE),
+		},
+		{
+			name: "original packet fails ESTABLISHED state",
+			matchInfo: ctMatchInfo{
+				checkState: true,
+				stateMask:  linux.XT_CONNTRACK_STATE_ESTABLISHED,
+			},
+			isReply:     false,
+			wantVerdict: VC(linux.NFT_BREAK),
+		},
+		{
+			name: "original packet matches ORIGINAL direction",
+			matchInfo: ctMatchInfo{
+				checkDirection:       true,
+				invertDirectionMatch: false,
+			},
+			isReply:     false,
+			wantVerdict: VC(linux.NFT_CONTINUE),
+		},
+		{
+			name: "original packet fails REPLY direction",
+			matchInfo: ctMatchInfo{
+				checkDirection:       true,
+				invertDirectionMatch: true,
+			},
+			isReply:     false,
+			wantVerdict: VC(linux.NFT_BREAK),
+		},
+		{
+			name: "reply packet matches ESTABLISHED state",
+			matchInfo: ctMatchInfo{
+				checkState: true,
+				stateMask:  linux.XT_CONNTRACK_STATE_ESTABLISHED,
+			},
+			isReply:     true,
+			wantVerdict: VC(linux.NFT_CONTINUE),
+		},
+		{
+			name: "reply packet fails ORIGINAL direction",
+			matchInfo: ctMatchInfo{
+				checkDirection:       true,
+				invertDirectionMatch: false,
+			},
+			isReply:     true,
+			wantVerdict: VC(linux.NFT_BREAK),
+		},
+		{
+			name: "reply packet matches REPLY direction",
+			matchInfo: ctMatchInfo{
+				checkDirection:       true,
+				invertDirectionMatch: true,
+			},
+			isReply:     true,
+			wantVerdict: VC(linux.NFT_CONTINUE),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			op := &compatCTMatch{
+				info: tc.matchInfo,
+			}
+			regs := &registerSet{verdict: Verdict{Code: VC(linux.NFT_CONTINUE)}}
+
+			pkt := makeUDPv4Packet(srcAddr, dstAddr, srcPort, dstPort)
+			defer pkt.DecRef()
+
+			var evalPkt *stack.PacketBuffer
+			if tc.untracked {
+				evalPkt = pkt
+			} else {
+				nf := newNFTablesStd()
+				nf.InitConnTrackOnce()
+				ct := nf.GetConnTrack()
+
+				// Track initial packet (creates NEW conntrack entry in Original direction).
+				ct.GetConnAndUpdatePkt(pkt, false /* skipChecksumValidation */)
+				if !pkt.FinalizeConnTrack() {
+					t.Fatalf("failed to finalize conntrack for packet")
+				}
+
+				evalPkt = pkt
+				if tc.isReply {
+					// Create reply packet with swapped src/dst.
+					replyPkt := makeUDPv4Packet(dstAddr, srcAddr, dstPort, srcPort)
+					defer replyPkt.DecRef()
+					// Track reply packet.
+					ct.GetConnAndUpdatePkt(replyPkt, false)
+					evalPkt = replyPkt
+				}
+			}
+
+			op.evaluate(regs, opEvalCtx{pkt: evalPkt})
+			if regs.verdict.Code != tc.wantVerdict {
+				t.Errorf("evaluate verdict = %d, want %d", regs.verdict.Code, tc.wantVerdict)
+			}
+		})
+	}
+}
+
+// Tests evaluating compat addrtype match operation.
+func TestCompatAddrtypeMatchEvaluation(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		matchInfo   addrTypeMatchInfo
+		srcAddr     tcpip.Address
+		dstAddr     tcpip.Address
+		hasRoute    bool
+		noNetHeader bool
+		wantVerdict uint32
+	}{
+		{
+			name: "source broadcast match",
+			matchInfo: addrTypeMatchInfo{
+				checkSrc:   true,
+				sourceMask: linux.XT_ADDRTYPE_BROADCAST,
+			},
+			srcAddr:     header.IPv4Broadcast,
+			wantVerdict: VC(linux.NFT_CONTINUE),
+		},
+		{
+			name: "inverted source local match",
+			matchInfo: addrTypeMatchInfo{
+				checkSrc:       true,
+				invertSrcMatch: true,
+				sourceMask:     linux.XT_ADDRTYPE_LOCAL,
+			},
+			srcAddr:     header.IPv4Broadcast,
+			wantVerdict: VC(linux.NFT_CONTINUE),
+		},
+		{
+			name: "destination broadcast match",
+			matchInfo: addrTypeMatchInfo{
+				checkDst: true,
+				destMask: linux.XT_ADDRTYPE_BROADCAST,
+			},
+			dstAddr:     header.IPv4Broadcast,
+			wantVerdict: VC(linux.NFT_CONTINUE),
+		},
+		{
+			name: "source multicast match",
+			matchInfo: addrTypeMatchInfo{
+				checkSrc:   true,
+				sourceMask: linux.XT_ADDRTYPE_MULTICAST,
+			},
+			srcAddr:     tcpip.AddrFrom4([4]byte{224, 0, 0, 1}),
+			wantVerdict: VC(linux.NFT_CONTINUE),
+		},
+		{
+			name: "destination multicast match",
+			matchInfo: addrTypeMatchInfo{
+				checkDst: true,
+				destMask: linux.XT_ADDRTYPE_MULTICAST,
+			},
+			dstAddr:     tcpip.AddrFrom4([4]byte{224, 0, 0, 1}),
+			wantVerdict: VC(linux.NFT_CONTINUE),
+		},
+		{
+			name: "source unicast with route",
+			matchInfo: addrTypeMatchInfo{
+				checkSrc:   true,
+				sourceMask: linux.XT_ADDRTYPE_UNICAST,
+			},
+			srcAddr:     tcpip.AddrFrom4([4]byte{10, 0, 0, 1}),
+			hasRoute:    true,
+			wantVerdict: VC(linux.NFT_CONTINUE),
+		},
+		{
+			name: "source unicast without route fails",
+			matchInfo: addrTypeMatchInfo{
+				checkSrc:   true,
+				sourceMask: linux.XT_ADDRTYPE_UNICAST,
+			},
+			srcAddr:     tcpip.AddrFrom4([4]byte{10, 0, 0, 1}),
+			hasRoute:    false,
+			wantVerdict: VC(linux.NFT_BREAK),
+		},
+		{
+			name: "destination mis-match",
+			matchInfo: addrTypeMatchInfo{
+				checkSrc:   true,
+				sourceMask: linux.XT_ADDRTYPE_BROADCAST,
+				checkDst:   true,
+				destMask:   linux.XT_ADDRTYPE_LOCAL,
+			},
+			srcAddr:     header.IPv4Broadcast,
+			dstAddr:     tcpip.AddrFrom4([4]byte{224, 0, 0, 1}),
+			wantVerdict: VC(linux.NFT_BREAK),
+		},
+		{
+			name: "packet without network header breaks",
+			matchInfo: addrTypeMatchInfo{
+				checkSrc:   true,
+				sourceMask: linux.XT_ADDRTYPE_BROADCAST,
+			},
+			noNetHeader: true,
+			wantVerdict: VC(linux.NFT_BREAK),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			op := &compatAddrtypeMatch{
+				info: tc.matchInfo,
+			}
+			regs := &registerSet{verdict: Verdict{Code: VC(linux.NFT_CONTINUE)}}
+			var pkt *stack.PacketBuffer
+			if tc.noNetHeader {
+				pkt = stack.NewPacketBuffer(stack.PacketBufferOptions{})
+			} else {
+				fields := arbitraryIPv4Fields()
+				if tc.srcAddr.Len() > 0 {
+					fields.SrcAddr = tc.srcAddr
+				}
+				if tc.dstAddr.Len() > 0 {
+					fields.DstAddr = tc.dstAddr
+				}
+				pkt = makeIPv4Packet(header.IPv4MinimumSize, fields)
+			}
+			defer pkt.DecRef()
+
+			stk := stack.New(stack.Options{})
+			nf := newNFTablesStd()
+			nf.stack = stk
+			var route *stack.Route
+			if tc.hasRoute {
+				route = &stack.Route{}
+			}
+			op.evaluate(regs, opEvalCtx{
+				pkt:      pkt,
+				route:    route,
+				nftState: nf,
+			})
+			if regs.verdict.Code != tc.wantVerdict {
+				t.Errorf("evaluate verdict = %d, want %d", regs.verdict.Code, tc.wantVerdict)
+			}
+		})
+	}
+}
+
+// TestCompatMASQTargetEvaluation tests evaluation of compatMASQTarget,
+// verifying that packets whose network protocol doesn't match are passed through.
+func TestCompatMASQTargetEvaluation(t *testing.T) {
+	t.Run("protocol mismatch skips masquerade", func(t *testing.T) {
+		op := &compatMASQTarget{
+			info: masqTargetInfo{
+				netProto: header.IPv6ProtocolNumber,
+			},
+		}
+		regs := &registerSet{verdict: Verdict{Code: VC(linux.NFT_CONTINUE)}}
+		pkt := makeArbitraryIPv4Packet()
+		defer pkt.DecRef()
+
+		op.evaluate(regs, opEvalCtx{pkt: pkt})
+		if regs.verdict.Code != VC(linux.NFT_CONTINUE) {
+			t.Errorf("expected verdict to remain NFT_CONTINUE on protocol mismatch, got %d", regs.verdict.Code)
+		}
+	})
+}
+
+// TestCompatNATTargetEvaluation tests evaluation of compatNATTarget.
+func TestCompatNATTargetEvaluation(t *testing.T) {
+	t.Run("protocol mismatch skips NAT", func(t *testing.T) {
+		op := &compatNATTarget{
+			info: natTargetInfo{
+				netProto: header.IPv6ProtocolNumber,
+				natType:  stack.SNAT,
+			},
+		}
+		regs := &registerSet{verdict: Verdict{Code: VC(linux.NFT_CONTINUE)}}
+		pkt := makeArbitraryIPv4Packet()
+		defer pkt.DecRef()
+
+		op.evaluate(regs, opEvalCtx{pkt: pkt})
+		if regs.verdict.Code != VC(linux.NFT_CONTINUE) {
+			t.Errorf("expected verdict to remain NFT_CONTINUE on protocol mismatch, got %d", regs.verdict.Code)
+		}
+	})
+}
+
+// Tests that pass-through no-op compat matches (like tcp/udp) return NFT_CONTINUE.
+func TestCompatNoopMatchEvaluation(t *testing.T) {
+	op := &compatNoopMatch{
+		name:     "tcp",
+		revision: 0,
+		infoData: []byte{1, 2, 3, 4},
+	}
+	regs := &registerSet{verdict: Verdict{Code: VC(linux.NF_DROP)}}
+	pkt := makeArbitraryIPv4Packet()
+	defer pkt.DecRef()
+
+	op.evaluate(regs, opEvalCtx{pkt: pkt})
+	if regs.verdict.Code != VC(linux.NFT_CONTINUE) {
+		t.Errorf("evaluate verdict = %d, want %d", regs.verdict.Code, VC(linux.NFT_CONTINUE))
+	}
+}
