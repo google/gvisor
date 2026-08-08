@@ -147,6 +147,7 @@ func (k *Kernel) LoadTaskImage(ctx context.Context, args loader.LoadArgs) (*Task
 	}
 	defer m.DecUsers(ctx)
 	args.MemoryManager = m
+	args.StartupTimeline.Reached("memory manager created")
 
 	info, creds, secureExec, err := loader.Load(ctx, args, k.extraAuxv, k.vdso)
 	if err != nil {

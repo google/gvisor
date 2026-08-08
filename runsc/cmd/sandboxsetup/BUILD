@@ -20,6 +20,7 @@ go_library(
     deps = [
         "//pkg/fd",
         "//pkg/log",
+        "//pkg/timing",
         "//pkg/unet",
         "//runsc/boot",
         "//runsc/cmd/util",

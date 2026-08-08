@@ -22,6 +22,7 @@ import (
 	"sort"
 
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fd"
@@ -31,6 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/hostmm"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/timing"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -604,6 +606,10 @@ type Options struct {
 	// SandboxID is the sandbox identifier, used by slimvm to pass to the
 	// host kernel module for sandbox identification.
 	SandboxID string
+
+	// StartupTimer is the timer tracking overall sandbox startup.
+	// Platform constructors should record any relevant midpoints on it.
+	StartupTimer *timing.Timer
 }
 
 // Constructor represents a platform type.
