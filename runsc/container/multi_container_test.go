@@ -2382,7 +2382,12 @@ func TestMultiContainerEvent(t *testing.T) {
 			// Setup the containers.
 			sleep := []string{"/bin/sh", "-c", "/bin/sleep 100 | grep 123"}
 			busy := []string{"/bin/bash", "-c", "i=0 ; while true ; do (( i += 1 )) ; done"}
-			quick := []string{"/bin/true"}
+			// quick burns a short burst of CPU and exits. The burn must be
+			// long enough to guarantee that at least one CPU clock tick
+			// (10ms) lands while its task is running: the sentry accounts
+			// task CPU time in whole ticks, so a container as short-lived as
+			// /bin/true can legitimately report zero CPU usage.
+			quick := []string{"/bin/sh", "-c", "i=0; while [ \"$i\" -lt 50000 ]; do i=$((i+1)); done"}
 			podSpecs, ids := createSpecs(sleep, busy, quick)
 			if name == "enableCgroups" || name == "enableCgroupsV2" {
 				mnt := specs.Mount{
