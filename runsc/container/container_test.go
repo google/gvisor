@@ -1156,15 +1156,14 @@ func TestSignalProcessGroup(t *testing.T) {
 				t.Fatalf("error starting container: %v", err)
 			}
 
-			// Wait for all 3 processes: init, child, grandchild.
-			if err := waitForProcessCount(cont, 3); err != nil {
-				t.Fatalf("timed out waiting for processes: %v", err)
-			}
-
-			// Collect PGIDs.
-			procs, err := cont.Processes()
+			// Wait for all 3 processes: init, child, grandchild. The PID
+			// list must be stable across poll samples so that transient
+			// tasks are not miscounted as members of the task tree: a
+			// transient task forked by the child even shares its PGID, which
+			// would make the group signal below miss the grandchild.
+			procs, err := waitForStableProcessList(cont, 3)
 			if err != nil {
-				t.Fatalf("failed to get process list: %v", err)
+				t.Fatalf("timed out waiting for processes: %v", err)
 			}
 			t.Logf("before signal: %s", procListToString(procs))
 
