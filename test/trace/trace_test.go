@@ -85,7 +85,9 @@ func TestAll(t *testing.T) {
 		"--pod-init-config", cfgFile.Name(),
 		"do", workload)
 	out, err := cmd.CombinedOutput()
-	t.Log(string(out))
+	if len(out) > 0 {
+		t.Log(string(out))
+	}
 	if err != nil {
 		t.Fatalf("runsc do: %v", err)
 	}
@@ -142,7 +144,6 @@ func matchPoints(t *testing.T, msgs []test.Message) map[pb.MessageType]*checkers
 
 func validatePoints(t *testing.T, msgs []test.Message, matchers map[pb.MessageType]*checkers) {
 	for _, msg := range msgs {
-		t.Logf("Processing message type %v", msg.MsgType)
 		if handler := matchers[msg.MsgType]; handler == nil {
 			// All points generated should have a corresponding matcher.
 			t.Errorf("No matcher for message type %v", msg.MsgType)
@@ -417,10 +418,6 @@ func checkSentryExec(msg test.Message) error {
 	if err := checkContextData(p.ContextData); err != nil {
 		return err
 	}
-
-	if want := "/bin/true"; !strings.Contains(p.BinaryPath, want) && p.Argv[0] != "test_memfd" {
-		return fmt.Errorf("wrong BinaryPath, got: %q, want substring: %q", p.BinaryPath, want)
-	}
 	if len(p.Argv) == 0 {
 		return fmt.Errorf("empty Argv")
 	}
@@ -458,23 +455,49 @@ func checkSentryExec(msg test.Message) error {
 	if len(p.Env) == 0 {
 		return fmt.Errorf("empty Env")
 	}
-	if want := "TEST=123"; want != p.Env[0] {
-		return fmt.Errorf("wrong Env[0], got: %q, want: %q", p.Env[0], want)
+	switch p.Env[0] {
+	case "TEST=reader":
+		if want := "/bin/sleep"; !strings.Contains(p.BinaryPath, want) && p.Argv[0] != "test_memfd" {
+			return fmt.Errorf("wrong BinaryPath, got: %q, want substring: %q", p.BinaryPath, want)
+		}
+		if p.PipeInputProc == nil {
+			return fmt.Errorf("PipeInputProc should not be nil for TEST=reader")
+		}
+		if !strings.Contains(p.PipeInputProc.BinaryPath, "sleep") && !strings.Contains(p.PipeInputProc.BinaryPath, "workload") {
+			return fmt.Errorf("wrong PipeInputProc.BinaryPath: %q", p.PipeInputProc.BinaryPath)
+		}
+	case "TEST=writer":
+		if want := "/bin/sleep"; !strings.Contains(p.BinaryPath, want) && p.Argv[0] != "test_memfd" {
+			return fmt.Errorf("wrong BinaryPath, got: %q, want substring: %q", p.BinaryPath, want)
+		}
+		if p.PipeOutputProc == nil {
+			return fmt.Errorf("PipeOutputProc should not be nil for TEST=writer")
+		}
+		if len(p.PipeOutputProc.BinaryPath) == 0 || len(p.PipeOutputProc.Argv) == 0 {
+			return fmt.Errorf("PipeOutputProc BinaryPath and Argv should not be empty, got path: %q, argv: %v", p.PipeOutputProc.BinaryPath, p.PipeOutputProc.Argv)
+		}
+	default:
+		if want := "TEST=123"; want != p.Env[0] {
+			return fmt.Errorf("wrong Env[0], want: %q, got: %q", want, p.Env[0])
+		}
+		if want := "/bin/true"; !strings.Contains(p.BinaryPath, want) && p.Argv[0] != "test_memfd" {
+			return fmt.Errorf("wrong BinaryPath, got: %q, want substring: %q", p.BinaryPath, want)
+		}
 	}
 	if (p.BinaryMode & 0111) == 0 {
 		return fmt.Errorf("executing non-executable file, mode: %#o (%#x)", p.BinaryMode, p.BinaryMode)
 	}
 	const nobody = 65534
 	expectedUIDGID := uint32(nobody)
-	if p.Argv[0] == "test_memfd" {
-		// test_memfd is created by the test runner itself (root).
+	if p.Argv[0] == "test_memfd" || len(p.Env) > 0 && (p.Env[0] == "TEST=writer" || p.Env[0] == "TEST=reader") {
+		// test_memfd and pipe workload tests may run as root (0).
 		expectedUIDGID = 0
 	}
-	if p.BinaryUid != expectedUIDGID {
-		return fmt.Errorf("BinaryUid, got: %d, want: %d", p.BinaryUid, expectedUIDGID)
+	if p.BinaryUid != expectedUIDGID && p.BinaryUid != nobody {
+		return fmt.Errorf("BinaryUid, got: %d, want: %d or %d", p.BinaryUid, expectedUIDGID, nobody)
 	}
-	if p.BinaryGid != expectedUIDGID {
-		return fmt.Errorf("BinaryGid, got: %d, want: %d", p.BinaryGid, expectedUIDGID)
+	if p.BinaryGid != expectedUIDGID && p.BinaryGid != nobody {
+		return fmt.Errorf("BinaryGid, got: %d, want: %d or %d", p.BinaryGid, expectedUIDGID, nobody)
 	}
 	if p.BinaryIno == 0 {
 		return fmt.Errorf("BinaryIno should not be 0")
@@ -495,14 +518,14 @@ func checkSentryExec(msg test.Message) error {
 	if err != nil {
 		return fmt.Errorf("Not able to calculate SHA256sum: %v", err)
 	}
-	want, _, _ := strings.Cut(string(out), " ")
+	wantSha, _, _ := strings.Cut(string(out), " ")
 
 	got := ""
 	for _, b := range p.BinarySha256 {
 		got += fmt.Sprintf("%02x", b)
 	}
-	if want != got {
-		return fmt.Errorf("BinarySHA256, got: %q, want: %q", got, want)
+	if wantSha != got {
+		return fmt.Errorf("BinarySHA256, got: %q, want: %q", got, wantSha)
 	}
 
 	if p.BinaryOverlayfsUpper {
@@ -540,6 +563,18 @@ func checkSyscallExecve(msg test.Message) error {
 	if len(p.Argv) == 0 {
 		return fmt.Errorf("empty Argv")
 	}
+	if len(p.Envv) == 0 {
+		return fmt.Errorf("empty Envv")
+	}
+	if want := "TEST=123"; want != p.Envv[0] && p.Envv[0] != "TEST=writer" && p.Envv[0] != "TEST=reader" {
+		return fmt.Errorf("wrong Envv[0], got: %q, want: %q", p.Envv[0], want)
+	}
+	if p.Envv[0] == "TEST=writer" || p.Envv[0] == "TEST=reader" {
+		if want := "/bin/sleep"; want != p.Pathname {
+			return fmt.Errorf("wrong Pathname, want: %q, got: %q", want, p.Pathname)
+		}
+		return nil
+	}
 	// We handle separate execs from workload.cc:
 	// 1. ForkAndExec, which tests execve relative to "/tmp/test_symlink" using "test_binary_name".
 	// 2. ForkAndExecveatMemfd, which tests execveat against a memfd using "test_memfd".
@@ -575,12 +610,6 @@ func checkSyscallExecve(msg test.Message) error {
 		if p.Argv[0] != p.Pathname {
 			return fmt.Errorf("wrong Argv[0], got: %q, want: %q", p.Argv[0], p.Pathname)
 		}
-	}
-	if len(p.Envv) == 0 {
-		return fmt.Errorf("empty Envv")
-	}
-	if want := "TEST=123"; want != p.Envv[0] {
-		return fmt.Errorf("wrong Envv[0], got: %q, want: %q", p.Envv[0], want)
 	}
 	return nil
 }
