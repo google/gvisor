@@ -1389,6 +1389,41 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 	return nil
 }
 
+// setupCudaCheckpointJob groups a GPU container's CUDA processes into a
+// cuda-checkpoint job (when --cuda-checkpoint-path is set, nvproxy is enabled,
+// and the driver is R610+) so that CUDA IPC state (cuIpcGetMemHandle) can be
+// checkpointed/restored coherently.
+//
+// It works by prepending `cuda-checkpoint --launch-job` to the container's
+// command. See https://github.com/NVIDIA/cuda-checkpoint#610-features.
+func (l *Loader) setupCudaCheckpointJob(info *containerInfo) error {
+	if info.conf.CUDACheckpointPath == "" || !specutils.NVProxyEnabled(info.spec, info.conf) {
+		return nil
+	}
+	// `cuda-checkpoint --launch-job` is only recommended (and CUDA IPC job
+	// support only exists) on driver R610+. On older drivers, leave the command
+	// unwrapped; wrapping it would provide no benefit.
+	if major := l.k.NvidiaDriverVersion.Major(); major < 610 {
+		log.Warningf("--cuda-checkpoint-path is set but driver R%d is older than R610; not wrapping container %q in a cuda-checkpoint job", major, info.containerName)
+		return nil
+	}
+	if len(info.procArgs.Argv) == 0 {
+		return fmt.Errorf("container has no command to wrap")
+	}
+	origArgv := info.procArgs.Argv
+	// If the entrypoint was provided as a host FD (the `runsc run` fast path),
+	// drop it so that cuda-checkpoint is resolved from the container rootfs and
+	// the original argv is resolved by cuda-checkpoint's exec.
+	if info.execFD != nil {
+		info.execFD.Close()
+		info.execFD = nil
+	}
+	info.procArgs.Filename = ""
+	info.procArgs.Argv = append([]string{info.conf.CUDACheckpointPath, "--launch-job"}, origArgv...)
+	log.Infof("Wrapped container %q command in a cuda-checkpoint job", info.containerName)
+	return nil
+}
+
 // +checklocks:l.mu
 func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGroup, *host.TTYFileDescription, error) {
 	// Create the FD map, which will set stdin, stdout, and stderr.
@@ -1470,6 +1505,14 @@ func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGrou
 		info.procArgs.Credentials.RealKUID, info.procArgs.Envv)
 	if err != nil {
 		return nil, nil, err
+	}
+
+	// If configured, wrap the container's command in a cuda-checkpoint job so
+	// that its CUDA IPC state can be checkpointed/restored coherently. Failure
+	// is non-fatal: the container still boots, but CUDA IPC checkpoint/restore
+	// may not work.
+	if err := l.setupCudaCheckpointJob(info); err != nil {
+		log.Warningf("Failed to set up cuda-checkpoint job for container %q: %v", info.containerName, err)
 	}
 
 	// Create and start the new process.
