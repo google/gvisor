@@ -24,6 +24,7 @@ package image
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -473,12 +474,36 @@ type dockerBuild struct {
 	Network string `yaml:"network,omitempty"`
 }
 
+// matrixTimeout returns how long a docker-in-gVisor matrix may run for. It
+// stays clear of the test binary's own deadline so that a stuck command is
+// reported as a test failure naming the command, rather than as a panic from
+// the testing package that says nothing about what was stuck.
+func matrixTimeout(t *testing.T) time.Duration {
+	const want = 10 * time.Minute
+	deadline, ok := t.Deadline()
+	if !ok {
+		return want
+	}
+	// Leave room to tear down the container and report failures.
+	if remaining := time.Until(deadline) - time.Minute; remaining < want {
+		return remaining
+	}
+	return want
+}
+
 func testDockerMatrix(t *testing.T, overlay bool) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), matrixTimeout(t))
 	defer cancel()
 
 	d := startDockerdInGvisor(ctx, t, overlay)
-	defer d.CleanUp(ctx)
+	defer func() {
+		// Clean up on a fresh context: ctx is expired in exactly the case
+		// where cleanup matters most, and cleaning up on it leaks the
+		// container and its sandbox.
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cleanupCancel()
+		d.CleanUp(cleanupCtx)
+	}()
 
 	definitions := []struct {
 		name            string
@@ -525,6 +550,12 @@ func testDockerMatrix(t *testing.T, overlay bool) {
 				}
 				name := strings.Join(nameParts, "_")
 				t.Run(name, func(t *testing.T) {
+					if err := ctx.Err(); err != nil {
+						// The dockerd container is shared by the whole matrix,
+						// so once ctx is done nothing else can run. Skip rather
+						// than pile identical failures on top of the real one.
+						t.Skipf("shared docker-in-gVisor context is done: %v", err)
+					}
 					def.testFunc(ctx, t, d, opts)
 				})
 			}
@@ -599,23 +630,50 @@ func writeFileInContainer(ctx context.Context, d *dockerutil.Container, filePath
 	return err
 }
 
+// dinDCommandTimeout bounds a single command run inside the docker-in-gVisor
+// container. Healthy commands finish in seconds, so this is pure headroom;
+// what it buys is that a command which never finishes fails on its own instead
+// of consuming the entire matrix budget and taking every later subtest with
+// it.
+const dinDCommandTimeout = 2 * time.Minute
+
 func dockerInGvisorExecOutput(ctx context.Context, d *dockerutil.Container, cmd []string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, dinDCommandTimeout)
+	defer cancel()
+
 	execProc, err := d.ExecProcess(ctx, dockerutil.ExecOpts{}, cmd...)
 	if err != nil {
-		return "", fmt.Errorf("docker exec failed: %v", err)
+		return "", fmt.Errorf("docker exec failed: %w", err)
 	}
-	output, err := execProc.Logs()
+	defer execProc.Close()
+	// Read the output with LogsCtx, not Logs: Logs waits for the command to
+	// close its output stream and so hangs forever when the command hangs,
+	// regardless of ctx.
+	output, err := execProc.LogsCtx(ctx)
 	if err != nil {
-		return "", fmt.Errorf("docker logs failed: %v", err)
+		return output, fmt.Errorf("docker logs failed: %w", err)
 	}
-	status, err := execProc.ExitCode(ctx)
+	status, err := execProc.WaitExitStatus(ctx)
 	if err != nil {
-		return "", fmt.Errorf("failed to get exit code: %v", err)
+		return output, fmt.Errorf("failed to get exit code: %w", err)
 	}
 	if status != 0 {
 		return output, fmt.Errorf("command %v failed with status %d, output: %q", cmd, status, output)
 	}
 	return output, nil
+}
+
+// dockerInGvisorExecOutputRetry is dockerInGvisorExecOutput, but retries once
+// if the command times out. Commands that reach the internet from a container
+// on the inner bridge network occasionally stall; every command run this way
+// is idempotent, so a retry is cheaper than a flake.
+func dockerInGvisorExecOutputRetry(ctx context.Context, d *dockerutil.Container, cmd []string) (string, error) {
+	output, err := dockerInGvisorExecOutput(ctx, d, cmd)
+	if err == nil || !errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
+		return output, err
+	}
+	log.Printf("command %v timed out, retrying once: %v", cmd, err)
+	return dockerInGvisorExecOutput(ctx, d, cmd)
 }
 
 func testDockerRun(ctx context.Context, t *testing.T, d *dockerutil.Container, opts dockerCommandOptions) {
@@ -629,7 +687,7 @@ func testDockerRun(ctx context.Context, t *testing.T, d *dockerutil.Container, o
 	cmd = append(cmd, testAlpineImage, "sh", "-c", "apk add curl && apk info -d curl")
 
 	expectedOutput := "URL retrival utility and library"
-	output, err := dockerInGvisorExecOutput(ctx, d, cmd)
+	output, err := dockerInGvisorExecOutputRetry(ctx, d, cmd)
 	if err != nil {
 		t.Fatalf("docker exec failed: %v", err)
 	}
@@ -662,7 +720,7 @@ func testDockerBuild(ctx context.Context, t *testing.T, d *dockerutil.Container,
 		cmd = append(cmd, "--network", "host")
 	}
 	cmd = append(cmd, "-t", imageName, tmpDir)
-	if _, err := dockerInGvisorExecOutput(ctx, d, cmd); err != nil {
+	if _, err := dockerInGvisorExecOutputRetry(ctx, d, cmd); err != nil {
 		t.Fatalf("docker exec failed: %v", err)
 	}
 	defer func() {
@@ -771,7 +829,7 @@ func testDockerComposeBuild(ctx context.Context, t *testing.T, d *dockerutil.Con
 	}
 
 	cmd := []string{"docker", "compose", "-f", dockerComposePath, "build"}
-	if _, err := dockerInGvisorExecOutput(ctx, d, cmd); err != nil {
+	if _, err := dockerInGvisorExecOutputRetry(ctx, d, cmd); err != nil {
 		t.Fatalf("docker compose build failed: %v", err)
 	}
 	defer func() {
@@ -825,7 +883,7 @@ func testDockerComposeRun(ctx context.Context, t *testing.T, d *dockerutil.Conta
 	}
 
 	cmd := []string{"docker", "compose", "-f", dockerComposeFilePath, "run", "--rm", dockerComposeAppName, "sh", "-c", "echo hello gVisor"}
-	output, err := dockerInGvisorExecOutput(ctx, d, cmd)
+	output, err := dockerInGvisorExecOutputRetry(ctx, d, cmd)
 	if err != nil {
 		t.Fatalf("docker compose run failed: %v", err)
 	}
