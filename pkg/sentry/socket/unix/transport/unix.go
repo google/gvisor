@@ -890,6 +890,12 @@ type baseEndpoint struct {
 	// or may be used if the endpoint is connected.
 	path string
 
+	// writeShutdown is true if the write side of the endpoint has been
+	// shut down without closing the peer's read side: sends fail with
+	// EPIPE, but the peer is unaffected. This is how shutdown(SHUT_WR)
+	// behaves on datagram sockets. Protected by endpointMutex.
+	writeShutdown bool
+
 	// ops is used to get socket level options.
 	ops tcpip.SocketOptions
 
@@ -983,6 +989,10 @@ func (e *baseEndpoint) SendMsg(ctx context.Context, data [][]byte, c ControlMess
 		e.Unlock()
 		return 0, nil, syserr.ErrAlreadyConnected
 	}
+	if e.writeShutdown {
+		e.Unlock()
+		return 0, nil, syserr.ErrClosedForSend
+	}
 
 	connected := e.connected
 	n, notify, err := connected.Send(ctx, data, c, Address{Addr: e.path})
@@ -1072,6 +1082,15 @@ func (e *baseEndpoint) SocketOptions() *tcpip.SocketOptions {
 // Shutdown closes the read and/or write end of the endpoint connection to its
 // peer.
 func (e *baseEndpoint) Shutdown(flags tcpip.ShutdownFlags) *syserr.Error {
+	closePeerRead := true
+	return e.shutdown(flags, closePeerRead)
+}
+
+// shutdown implements shutdown(2). If closePeerRead is true, shutting down
+// the write side also closes the peer's read side, the way Linux does for
+// stream and seqpacket sockets. Datagram sockets pass false: the peer is
+// unaffected, and only local sends start failing.
+func (e *baseEndpoint) shutdown(flags tcpip.ShutdownFlags, closePeerRead bool) *syserr.Error {
 	e.Lock()
 	if !e.Connected() {
 		e.Unlock()
@@ -1088,7 +1107,10 @@ func (e *baseEndpoint) Shutdown(flags tcpip.ShutdownFlags) *syserr.Error {
 		r.CloseRecv()
 	}
 	if shutdownWrite {
-		c.CloseSend()
+		e.writeShutdown = true
+		if closePeerRead {
+			c.CloseSend()
+		}
 	}
 	e.Unlock()
 
@@ -1097,7 +1119,12 @@ func (e *baseEndpoint) Shutdown(flags tcpip.ShutdownFlags) *syserr.Error {
 		r.CloseNotify()
 	}
 	if shutdownWrite {
-		c.CloseNotify()
+		if closePeerRead {
+			c.CloseNotify()
+		} else {
+			// Wake up any local writers.
+			e.Queue.Notify(waiter.WritableEvents)
+		}
 	}
 
 	return nil

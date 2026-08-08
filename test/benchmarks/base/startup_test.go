@@ -19,8 +19,10 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
+	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/test/benchmarks/base"
 	"gvisor.dev/gvisor/test/benchmarks/harness"
 	"gvisor.dev/gvisor/test/metricsviz"
@@ -138,6 +140,224 @@ func runServerWorkload(ctx context.Context, b *testing.B, args base.ServerArgs) 
 		}
 		harness.DebugLog(b, "Ran iteration: %d", i)
 	}
+}
+
+func skipUnlessCheckpointSupported(b *testing.B) {
+	if !testutil.IsCheckpointSupported() {
+		b.Skip("Checkpoint is not supported on this runtime.")
+	}
+	if os.Getenv("RUNTIME") == "runc" {
+		b.Skip("Skipping runc for Checkpoint latency benchmark.")
+	}
+}
+
+// BenchmarkCheckpointEmpty times checkpoint creation for an empty container.
+func BenchmarkCheckpointEmpty(b *testing.B) {
+	skipUnlessCheckpointSupported(b)
+	client, err := harness.GetMachine()
+	if err != nil {
+		b.Fatalf("failed to get machine: %v", err)
+	}
+	defer client.CleanUp()
+	ctx := context.Background()
+	b.ResetTimer()
+	b.StopTimer()
+
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		func() {
+			container := client.GetContainer(ctx, b)
+			defer container.CleanUp(ctx)
+
+			// Using host network mode to avoid Docker v28+ restore bug where
+			// Moby attempts to bind-mount /proc/0/ns/net on bridge namespaces
+			// (see https://github.com/moby/moby/issues/50750).
+			if err := container.Spawn(ctx, dockerutil.RunOpts{
+				Image:       "benchmarks/alpine",
+				NetworkMode: "host",
+			}, "sleep", "1000"); err != nil {
+				b.Fatalf("failed to spawn container: %v", err)
+			}
+
+			status, err := container.Status(ctx)
+			if err != nil {
+				b.Fatalf("failed to get container status: %v", err)
+			}
+			if !status.Running {
+				b.Fatalf("container is not running")
+			}
+
+			ckptName := fmt.Sprintf("ckpt-empty-%d", i)
+			b.StartTimer()
+			if err := container.Checkpoint(ctx, ckptName); err != nil {
+				b.Fatalf("failed to checkpoint container: %v", err)
+			}
+			b.StopTimer()
+		}()
+	}
+}
+
+// BenchmarkRestoreEmpty times restoring an empty container from a checkpoint.
+func BenchmarkRestoreEmpty(b *testing.B) {
+	skipUnlessCheckpointSupported(b)
+	client, err := harness.GetMachine()
+	if err != nil {
+		b.Fatalf("failed to get machine: %v", err)
+	}
+	defer client.CleanUp()
+	ctx := context.Background()
+	b.ResetTimer()
+	b.StopTimer()
+
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		func() {
+			container := client.GetContainer(ctx, b)
+			defer container.CleanUp(ctx)
+
+			// Using host network mode to avoid Docker v28+ restore bug where
+			// Moby attempts to bind-mount /proc/0/ns/net on bridge namespaces
+			// (see https://github.com/moby/moby/issues/50750).
+			if err := container.Spawn(ctx, dockerutil.RunOpts{
+				Image:       "benchmarks/alpine",
+				NetworkMode: "host",
+			}, "sleep", "1000"); err != nil {
+				b.Fatalf("failed to spawn container: %v", err)
+			}
+
+			ckptName := fmt.Sprintf("ckpt-restore-empty-%d", i)
+			if err := container.Checkpoint(ctx, ckptName); err != nil {
+				b.Fatalf("failed to checkpoint container: %v", err)
+			}
+
+			time.Sleep(2 * time.Second)
+			b.StartTimer()
+			if err := container.Restore(ctx, ckptName); err != nil {
+				b.Fatalf("failed to restore container: %v", err)
+			}
+			b.StopTimer()
+		}()
+	}
+}
+
+func waitUntilHostServing(ctx context.Context, server *dockerutil.Container, port int) error {
+	serverUpChan := make(chan struct{})
+	var upErr error
+	hexPort := fmt.Sprintf(":%04X", port)
+	cmd := "while ! grep -s -E '" + hexPort + "' /proc/net/tcp /proc/net/tcp6; do sleep 0.001; done"
+	go func() {
+		_, upErr = server.Exec(ctx, dockerutil.ExecOpts{}, "sh", "-c", cmd)
+		if upErr == nil {
+			close(serverUpChan)
+		}
+	}()
+
+	select {
+	case <-serverUpChan:
+		return nil
+	case <-time.After(5 * time.Second):
+		return fmt.Errorf("timeout waiting for server on port %d (%s): last err: %v", port, hexPort, upErr)
+	}
+}
+
+func spawnServerWorkloadAndWait(ctx context.Context, b *testing.B, client harness.Machine, name string, port int) *dockerutil.Container {
+	server := client.GetContainer(ctx, b)
+
+	// Using host network mode to avoid Docker v28+ restore bug where
+	// Moby attempts to bind-mount /proc/0/ns/net on bridge namespaces
+	// (see https://github.com/moby/moby/issues/50750).
+	opts := dockerutil.RunOpts{
+		Image:       fmt.Sprintf("benchmarks/%s", name),
+		NetworkMode: "host",
+	}
+
+	var cmd []string
+	if name == "nginx" {
+		cmd = []string{"nginx", "-c", "/etc/nginx/nginx_gofer.conf"}
+	}
+
+	if err := server.Spawn(ctx, opts, cmd...); err != nil {
+		server.CleanUp(ctx)
+		b.Fatalf("failed to spawn %s: %v", name, err)
+	}
+	if err := waitUntilHostServing(ctx, server, port); err != nil {
+		logs, _ := server.Logs(ctx)
+		server.CleanUp(ctx)
+		b.Fatalf("failed to wait for %s serving: %v\nServer logs:\n%s", name, err, logs)
+	}
+	return server
+}
+
+func runCheckpointServerWorkload(b *testing.B, name string, port int) {
+	skipUnlessCheckpointSupported(b)
+	client, err := harness.GetMachine()
+	if err != nil {
+		b.Fatalf("failed to get machine: %v", err)
+	}
+	defer client.CleanUp()
+	ctx := context.Background()
+	b.ResetTimer()
+	b.StopTimer()
+
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		func() {
+			server := spawnServerWorkloadAndWait(ctx, b, client, name, port)
+			defer server.CleanUp(ctx)
+
+			ckptName := fmt.Sprintf("ckpt-%s-%d", name, i)
+			b.StartTimer()
+			if err := server.Checkpoint(ctx, ckptName); err != nil {
+				b.Fatalf("failed to checkpoint %s: %v", name, err)
+			}
+			b.StopTimer()
+		}()
+	}
+}
+
+func runRestoreServerWorkload(b *testing.B, name string, port int) {
+	skipUnlessCheckpointSupported(b)
+	client, err := harness.GetMachine()
+	if err != nil {
+		b.Fatalf("failed to get machine: %v", err)
+	}
+	defer client.CleanUp()
+	ctx := context.Background()
+	b.ResetTimer()
+	b.StopTimer()
+
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		func() {
+			server := spawnServerWorkloadAndWait(ctx, b, client, name, port)
+			defer server.CleanUp(ctx)
+
+			ckptName := fmt.Sprintf("ckpt-restore-%s-%d", name, i)
+			if err := server.Checkpoint(ctx, ckptName); err != nil {
+				b.Fatalf("failed to checkpoint %s: %v", name, err)
+			}
+
+			time.Sleep(2 * time.Second)
+			b.StartTimer()
+			if err := server.Restore(ctx, ckptName); err != nil {
+				b.Fatalf("failed to restore %s: %v", name, err)
+			}
+			if err := waitUntilHostServing(ctx, server, port); err != nil {
+				b.Fatalf("failed to wait for %s serving after restore: %v", name, err)
+			}
+			b.StopTimer()
+		}()
+	}
+}
+
+// BenchmarkCheckpointNginx times checkpoint creation for Nginx.
+func BenchmarkCheckpointNginx(b *testing.B) {
+	runCheckpointServerWorkload(b, "nginx", 80)
+}
+
+// BenchmarkRestoreNginx times restoring Nginx until serving HTTP.
+func BenchmarkRestoreNginx(b *testing.B) {
+	runRestoreServerWorkload(b, "nginx", 80)
 }
 
 // TestMain is the main method for package network.

@@ -171,7 +171,8 @@ type UserChainTarget struct {
 
 // Action implements Target.Action.
 func (*UserChainTarget) Action(*PacketBuffer, Hook, *Route, AddressableEndpoint) (RuleVerdict, int) {
-	panic("UserChainTarget should never be called.")
+	log.BugTracebackOnce(fmt.Errorf("UserChainTarget should never be called"))
+	return RuleDrop, 0
 }
 
 // ReturnTarget returns from the current chain. If the chain is a built-in, the

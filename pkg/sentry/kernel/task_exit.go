@@ -244,8 +244,11 @@ func (*runExitMain) execute(t *Task) taskRunState {
 	t.traceExitEvent()
 
 	if seccheck.Global.Enabled(seccheck.PointTaskExit) {
+		t.tg.signalHandlers.mu.Lock()
+		exitStatus := int32(t.tg.exitStatus)
+		t.tg.signalHandlers.mu.Unlock()
 		info := &pb.TaskExit{
-			ExitStatus: int32(t.tg.exitStatus),
+			ExitStatus: exitStatus,
 		}
 		fields := seccheck.Global.GetFieldSet(seccheck.PointTaskExit)
 		if !fields.Context.Empty() {

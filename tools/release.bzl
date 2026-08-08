@@ -5,6 +5,7 @@
 SIDECARS = {
     "//runsc/checkpointgofer:checkpointgofer_binary": "checkpointgofer",
     "//runsc/cmd/metricserver:runsc-metric-server": "runsc-metric-server",
+    "//runsc/cmd/sentry:gvisor_sentry": "gvisor_sentry",
 }
 
 def _single_file(target):
@@ -15,37 +16,38 @@ def _single_file(target):
 
 def _release_files_impl(ctx):
     outputs = []
+    inputs = []
+    commands = []
 
     # Top-level binaries
     for target in ctx.attr.bins:
         src = _single_file(target)
         out = ctx.actions.declare_file("%s/%s" % (ctx.label.name, src.basename))
-        ctx.actions.run_shell(
-            inputs = [src],
-            outputs = [out],
-            command = 'cp -f "$1" "$2"',
-            arguments = [src.path, out.path],
-            mnemonic = "ReleaseFile",
-        )
+        inputs.append(src)
         outputs.append(out)
+        commands.append('cp -f "%s" "%s"' % (src.path, out.path))
 
     # Sidecar binaries
-    gvisor_bin = ctx.actions.declare_directory("%s/gvisor-bin" % ctx.label.name)
-    sidecar_files = []
-    commands = ['mkdir -p "%s"' % (gvisor_bin.path,)]
     for target, name in ctx.attr.sidecars.items():
         src = _single_file(target)
-        sidecar_files.append(src)
-        commands.append('cp -f "%s" "%s/%s"' % (src.path, gvisor_bin.path, name))
-    ctx.actions.run_shell(
-        inputs = sidecar_files,
-        outputs = [gvisor_bin],
-        command = "\n".join(commands),
-        mnemonic = "ReleaseSidecars",
-    )
-    outputs.append(gvisor_bin)
+        out = ctx.actions.declare_file("%s/gvisor-bin/%s" % (ctx.label.name, name))
+        inputs.append(src)
+        outputs.append(out)
+        commands.append('mkdir -p "$(dirname "%s")" && cp -f "%s" "%s"' % (out.path, src.path, out.path))
 
-    return [DefaultInfo(files = depset(outputs))]
+    ctx.actions.run_shell(
+        inputs = inputs,
+        outputs = outputs,
+        command = "\n".join(commands),
+        mnemonic = "ReleaseFiles",
+    )
+
+    runfiles = ctx.runfiles(files = outputs)
+    return [DefaultInfo(
+        files = depset(outputs),
+        default_runfiles = runfiles,
+        data_runfiles = runfiles,
+    )]
 
 release_files = rule(
     implementation = _release_files_impl,

@@ -19,12 +19,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"runtime/debug"
 
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/unet"
@@ -81,16 +81,22 @@ type goferSyncFDs struct {
 	// the Gofer chroots.
 	// If this is set, this FD is the first that the Gofer waits for.
 	chrootFD int
+
 	// usernsFD is a file descriptor that is used to wait until
 	// user namespace ID mappings are established in the Gofer's userns.
 	// If this is set, this FD is the second that the Gofer waits for.
 	usernsFD int
+
 	// procMountFD is a file descriptor that has to be closed when the
 	// procfs mount isn't needed anymore. It is read by the procfs unmounter
 	// process.
 	// If this is set, this FD is the last that the Gofer interacts with and
 	// closes.
 	procMountFD int
+
+	// procMountFile holds the *os.File for procMountFD when this process
+	// continues without re-exec'ing itself. Keeps the FD alive.
+	procMountFile *os.File
 }
 
 // Gofer implements subcommands.Command for the "gofer" command, which starts a
@@ -176,6 +182,11 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 	// Set traceback level
 	debug.SetTraceback(conf.Traceback)
 
+	// Whether this process will re-execute itself to apply credential and
+	// capability changes, rather than applying capabilities in-process.
+	// Computed before the sync FDs are consumed below.
+	willReexec := g.applyCaps && (config.CgoEnabled || g.syncFDs.usernsFD >= 0)
+
 	specFile := os.NewFile(uintptr(g.specFD), "spec file")
 	defer specFile.Close()
 	spec, err := specutils.ReadSpecFromFile(g.bundleDir, specFile, conf)
@@ -208,8 +219,10 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 			util.Fatalf("Error setting up root FS: %v", err)
 		}
 		if !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
-			cleanupUnmounter := g.syncFDs.spawnProcUnmounter()
-			defer cleanupUnmounter()
+			cleanupUnmounter := g.syncFDs.spawnProcUnmounter(willReexec)
+			if willReexec {
+				defer cleanupUnmounter()
+			}
 		}
 	}
 	extensionPrepare, err := extension.PrepareGofer(extension.GoferPrepareContext{
@@ -221,19 +234,29 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		util.Fatalf("preparing gofer extensions: %v", err)
 	}
 	if g.applyCaps {
-		overrides := g.syncFDs.flags()
-		overrides["apply-caps"] = "false"
-		overrides["setup-root"] = "false"
-		for key, value := range extensionPrepare.FlagOverrides {
-			overrides[key] = value
-		}
-		args := sandboxsetup.PrepareArgs(g.Name(), f, overrides)
 		capsToApply := goferCaps
 		if conf.GetHostUDS().AllowOpen() {
 			capsToApply = specutils.MergeCapabilities(capsToApply, goferUdsOpenCaps)
 		}
-		util.Fatalf("setCapsAndCallSelf(%v, %v): %v", args, capsToApply, sandboxsetup.SetCapsAndCallSelf(args, capsToApply))
-		panic("unreachable")
+		if willReexec {
+			if config.CgoEnabled {
+				log.Warningf("Need to re-exec in order to drop capabilities, due to cgo build. This slows down gVisor startup. Use a pure-Go gVisor build for faster startup.")
+			} else {
+				log.Infof("Re-execing. FYI, this step isn't necessary when running with root. gVisor will start up faster (and is just as secure) when started as root, as it has to do fewer hoops to get to its as-sandboxed-as-possible state.")
+			}
+			overrides := g.syncFDs.flags()
+			overrides["apply-caps"] = "false"
+			overrides["setup-root"] = "false"
+			for key, value := range extensionPrepare.FlagOverrides {
+				overrides[key] = value
+			}
+			args := sandboxsetup.PrepareArgs(g.Name(), f, overrides)
+			util.Fatalf("setCapsAndCallSelf(%v, %v): %v", args, capsToApply, sandboxsetup.SetCapsAndCallSelf(args, capsToApply))
+			panic("unreachable")
+		}
+		if err := sandboxsetup.ApplyCapsAllThreads(capsToApply); err != nil {
+			util.Fatalf("applying caps to all threads: %v", err)
+		}
 	}
 
 	// This can't happen until after setCapsAndCallSelf(), since otherwise the
@@ -511,23 +534,30 @@ func (g *goferSyncFDs) flags() map[string]string {
 // spawnProcMounter executes the /proc unmounter process.
 // It returns a function to wait on the proc unmounter process, which
 // should be called (via defer) in case of errors in order to clean up the
-// unmounter process properly.
+// unmounter process properly, but only when `willReexec` is true; otherwise
+// the unmounter is reaped by `unmountProcfs`.
 // When procfs is no longer needed, `unmountProcfs` should be called.
-func (g *goferSyncFDs) spawnProcUnmounter() func() {
+func (g *goferSyncFDs) spawnProcUnmounter(willReexec bool) func() {
 	if g.procMountFD != -1 {
 		util.Fatalf("procMountFD is set")
 	}
 	// /proc is umounted from a forked process, because the
-	// current one may re-execute itself without capabilities.
+	// current one is going to drop capabilities and won't be
+	// able to umount it.
 	cmd, w := sandboxsetup.ExecProcUmounter()
-	// Clear FD_CLOEXEC. This process may be re-executed. procMountFD
-	// should remain open.
+	// Clear FD_CLOEXEC in case this process re-executes itself.
+	// procMountFD should remain open.
 	if _, _, errno := unix.RawSyscall(unix.SYS_FCNTL, w.Fd(), unix.F_SETFD, 0); errno != 0 {
 		util.Fatalf("error clearing CLOEXEC: %v", errno)
 	}
 	g.procMountFD = int(w.Fd())
+	if !willReexec {
+		// Keep `w` alive until UmountProcFile uses it.
+		g.procMountFile = w
+	}
 	return func() {
 		g.procMountFD = -1
+		g.procMountFile = nil
 		w.Close()
 		cmd.Wait()
 	}
@@ -539,7 +569,12 @@ func (g *goferSyncFDs) unmountProcfs() {
 	if g.procMountFD < 0 {
 		return
 	}
-	sandboxsetup.UmountProc(g.procMountFD)
+	if g.procMountFile != nil {
+		sandboxsetup.UmountProcFile(g.procMountFile)
+		g.procMountFile = nil
+	} else {
+		sandboxsetup.UmountProc(g.procMountFD)
+	}
 	g.procMountFD = -1
 }
 
@@ -553,28 +588,8 @@ func (g *goferSyncFDs) syncUsernsForRootless(uid, gid uint32) {
 	if g.usernsFD < 0 {
 		return
 	}
-	syncUsernsForRootless(g.usernsFD, uid, gid)
+	sandboxsetup.SyncUsernsForRootless(g.usernsFD, uid, gid)
 	g.usernsFD = -1
-}
-
-// syncUsernsForRootless waits on usernsFD to be closed and then sets
-// UID/GID to uid/gid. Note that this function calls runtime.LockOSThread().
-//
-// Postcondition: All callers must re-exec themselves after this returns.
-func syncUsernsForRootless(fd int, uid uint32, gid uint32) {
-	if err := sandboxsetup.WaitForFD(fd, "userns sync FD"); err != nil {
-		util.Fatalf("failed to sync on userns FD: %v", err)
-	}
-
-	// SETUID changes UID on the current system thread, so we have
-	// to re-execute current binary.
-	runtime.LockOSThread()
-	if _, _, errno := unix.RawSyscall(unix.SYS_SETUID, uintptr(uid), 0, 0); errno != 0 {
-		util.Fatalf("failed to set UID: %v", errno)
-	}
-	if _, _, errno := unix.RawSyscall(unix.SYS_SETGID, uintptr(gid), 0, 0); errno != 0 {
-		util.Fatalf("failed to set GID: %v", errno)
-	}
 }
 
 // syncChroot waits on chrootFD to be closed.

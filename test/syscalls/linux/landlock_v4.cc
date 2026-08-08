@@ -1,0 +1,137 @@
+// Copyright 2026 The gVisor Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Landlock syscall tests (ABI v4).
+
+#include <errno.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
+#include "test/syscalls/linux/landlock_util.h"
+#include "test/util/multiprocess_util.h"
+#include "test/util/posix_error.h"
+#include "test/util/test_util.h"
+
+namespace gvisor {
+namespace testing {
+
+namespace {
+
+TEST(LandlockV4Test, BindTcpDisallowedPortDenied) {
+  SKIP_IF(IsRunningOnGvisor());
+  SKIP_IF(LandlockAbiVersion() < 4);
+
+  int status = ASSERT_NO_ERRNO_AND_VALUE(InForkedProcess([] {
+    int fd = CreateRuleset(0, LANDLOCK_ACCESS_NET_BIND_TCP, 0);
+    AddPortRule(fd, LANDLOCK_ACCESS_NET_BIND_TCP, kAllowedPort);
+    EnforceOrDie(fd);
+    int s = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (s < 0) {
+      _exit(kSetup);
+    }
+    struct sockaddr_in addr = LoopbackAddr(kDeniedPort);
+    int rc = bind(s, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr));
+    close(s);
+    _exit(ClassifyFs(rc));
+  }));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == kDenied)
+      << "exit status " << status;
+}
+
+TEST(LandlockV4Test, BindTcpAllowedPortAllowed) {
+  SKIP_IF(IsRunningOnGvisor());
+  SKIP_IF(LandlockAbiVersion() < 4);
+
+  int status = ASSERT_NO_ERRNO_AND_VALUE(InForkedProcess([] {
+    int fd = CreateRuleset(0, LANDLOCK_ACCESS_NET_BIND_TCP, 0);
+    AddPortRule(fd, LANDLOCK_ACCESS_NET_BIND_TCP, kAllowedPort);
+    EnforceOrDie(fd);
+    int s = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (s < 0) {
+      _exit(kSetup);
+    }
+    struct sockaddr_in addr = LoopbackAddr(kAllowedPort);
+    int rc = bind(s, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr));
+    close(s);
+    _exit(ClassifyFs(rc));
+  }));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == kAllowed)
+      << "exit status " << status;
+}
+
+TEST(LandlockV4Test, ConnectTcpDisallowedPortDenied) {
+  SKIP_IF(IsRunningOnGvisor());
+  SKIP_IF(LandlockAbiVersion() < 4);
+
+  int status = ASSERT_NO_ERRNO_AND_VALUE(InForkedProcess([] {
+    int fd = CreateRuleset(0, LANDLOCK_ACCESS_NET_CONNECT_TCP, 0);
+    AddPortRule(fd, LANDLOCK_ACCESS_NET_CONNECT_TCP, kAllowedPort);
+    EnforceOrDie(fd);
+    int s = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (s < 0) {
+      _exit(kSetup);
+    }
+    struct sockaddr_in addr = LoopbackAddr(kDeniedPort);
+    int rc =
+        connect(s, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr));
+    close(s);
+    _exit(ClassifyConnect(rc));
+  }));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == kDenied)
+      << "exit status " << status;
+}
+
+TEST(LandlockV4Test, ConnectTcpAllowedPortAllowed) {
+  SKIP_IF(IsRunningOnGvisor());
+  SKIP_IF(LandlockAbiVersion() < 4);
+
+  int status = ASSERT_NO_ERRNO_AND_VALUE(InForkedProcess([] {
+    int fd = CreateRuleset(0, LANDLOCK_ACCESS_NET_CONNECT_TCP, 0);
+    AddPortRule(fd, LANDLOCK_ACCESS_NET_CONNECT_TCP, kAllowedPort);
+    EnforceOrDie(fd);
+    int s = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (s < 0) {
+      _exit(kSetup);
+    }
+    struct sockaddr_in addr = LoopbackAddr(kAllowedPort);
+    int rc =
+        connect(s, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr));
+    close(s);
+    _exit(ClassifyConnect(rc));
+  }));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == kAllowed)
+      << "exit status " << status;
+}
+
+TEST(LandlockV4Test, AddNetPortRuleWithoutHandledNetFails) {
+  SKIP_IF(IsRunningOnGvisor());
+  SKIP_IF(LandlockAbiVersion() < 4);
+  landlock_ruleset_attr attr = {};
+  attr.handled_access_fs = LANDLOCK_ACCESS_FS_READ_FILE;
+  int fd = landlock_create_ruleset(&attr, sizeof(attr), 0);
+  ASSERT_THAT(fd, SyscallSucceeds());
+  landlock_net_port_attr net_port = {};
+  net_port.allowed_access = LANDLOCK_ACCESS_NET_BIND_TCP;
+  net_port.port = kAllowedPort;
+  EXPECT_THAT(landlock_add_rule(fd, LANDLOCK_RULE_NET_PORT, &net_port, 0),
+              SyscallFailsWithErrno(EINVAL));
+  close(fd);
+}
+
+}  // namespace
+}  // namespace testing
+}  // namespace gvisor

@@ -6,7 +6,7 @@ _templates:
       - exit_status: "*"
         limit: 2
   common: &common
-    timeout_in_minutes: 30
+    timeout_in_minutes: 55
     retry:
       <<: *retry_settings
   source_test: &source_test
@@ -453,6 +453,14 @@ steps:
     command: make kvm-tests
     agents:
       <<: *kvm_agents
+      arch: "amd64"
+      kernel: "modern"
+  - <<: *common
+    <<: *docker
+    <<: *source_test
+    label: ":lock: Sandbox posture tests"
+    command: make sandbox-posture-tests
+    agents:
       arch: "amd64"
       kernel: "modern"
   - <<: *common

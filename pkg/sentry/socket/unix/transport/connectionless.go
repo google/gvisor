@@ -18,6 +18,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/syserr"
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -114,6 +115,10 @@ func (e *connectionlessEndpoint) SendMsg(ctx context.Context, data [][]byte, c C
 	defer connected.Release(ctx)
 
 	e.Lock()
+	if e.writeShutdown {
+		e.Unlock()
+		return 0, nil, syserr.ErrClosedForSend
+	}
 	n, notify, err := connected.Send(ctx, data, c, Address{Addr: e.path})
 	e.Unlock()
 
@@ -145,6 +150,14 @@ func (e *connectionlessEndpoint) Connect(ctx context.Context, server BoundEndpoi
 	e.Unlock()
 
 	return nil
+}
+
+// Shutdown implements Endpoint.Shutdown. The peer of a datagram socket is
+// unaffected by the socket shutting down its write side: only local sends
+// start failing (see unix_shutdown() in net/unix/af_unix.c).
+func (e *connectionlessEndpoint) Shutdown(flags tcpip.ShutdownFlags) *syserr.Error {
+	closePeerRead := false
+	return e.shutdown(flags, closePeerRead)
 }
 
 // Listen starts listening on the connection.
@@ -206,6 +219,17 @@ func (e *connectionlessEndpoint) Readiness(mask waiter.EventMask) waiter.EventMa
 	if e.Connected() {
 		if mask&waiter.WritableEvents != 0 && e.connected.Writable() {
 			ready |= waiter.WritableEvents
+		}
+	}
+
+	// Linux reports EPOLLRDHUP if the read side is shut down, and
+	// additionally EPOLLHUP if the write side is too (see
+	// unix_dgram_poll() in net/unix/af_unix.c). A datagram write shutdown
+	// is endpoint-local (writeShutdown): it never closes a queue.
+	if mask&(waiter.EventHUp|waiter.EventRdHUp) != 0 && e.receiver.IsRecvClosed() {
+		ready |= waiter.EventRdHUp
+		if mask&waiter.EventHUp != 0 && e.writeShutdown {
+			ready |= waiter.EventHUp
 		}
 	}
 

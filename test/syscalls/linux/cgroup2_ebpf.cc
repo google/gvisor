@@ -623,10 +623,25 @@ TEST_F(EbpfTest, QueryRequiresCapability) {
 
 // bpf(2) argument handling
 
-TEST_F(EbpfTest, InvalidCommandFails) {
+TEST_F(EbpfTest, UnimplementedCommandWithCapFails) {
+  SKIP_IF(!IsRunningOnGvisor());
+
+  // Unimplemented cmd with capabilities should give EINVAL.
   BpfAttrProgAttach attr = {};
-  EXPECT_THAT(bpf(0x7fffffff, &attr, sizeof(attr)),
+  EXPECT_THAT(bpf(BPF_MAP_CREATE, &attr, sizeof(attr)),
               SyscallFailsWithErrno(EINVAL));
+}
+
+TEST_F(EbpfTest, UnimplementedCommandWithoutCapFails) {
+  SKIP_IF(!IsRunningOnGvisor());
+
+  AutoCapability cap_sys_admin(CAP_SYS_ADMIN, false);
+  AutoCapability cap_bpf(CAP_BPF, false);
+
+  // Unimplemented cmd without capabilities should give EPERM.
+  BpfAttrProgAttach attr = {};
+  EXPECT_THAT(bpf(BPF_MAP_CREATE, &attr, sizeof(attr)),
+              SyscallFailsWithErrno(EPERM));
 }
 
 TEST_F(EbpfTest, AttrSizeTooLargeFails) {

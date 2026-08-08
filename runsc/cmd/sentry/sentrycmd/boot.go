@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package cmd
+// Package sentrycmd holds the subcommands run by the sentry process.
+package sentrycmd
 
 import (
 	"context"
@@ -29,6 +30,7 @@ import (
 	"github.com/moby/sys/capability"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/coretag"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/fd"
@@ -63,9 +65,9 @@ var (
 		"CAP_FSETID",
 	}
 
-	// directfsSandboxLinuxCaps is the minimal set of capabilities needed by the
+	// DirectfsSandboxLinuxCaps is the minimal set of capabilities needed by the
 	// sandbox to operate on files in directfs mode.
-	directfsSandboxLinuxCaps = &specs.LinuxCapabilities{
+	DirectfsSandboxLinuxCaps = &specs.LinuxCapabilities{
 		Bounding:  directfsSandboxCaps,
 		Effective: directfsSandboxCaps,
 		Permitted: directfsSandboxCaps,
@@ -116,7 +118,7 @@ type Boot struct {
 	stdioFDs sandboxsetup.IntFlags
 
 	// passFDs are mappings of user-supplied host to guest file descriptors.
-	passFDs fdMappings
+	passFDs sandboxsetup.FDMappings
 
 	// execFD is the host file descriptor used for program execution.
 	execFD int
@@ -197,6 +199,11 @@ type Boot struct {
 	// procMountSyncFD is a file descriptor that has to be closed when the
 	// procfs mount isn't needed anymore.
 	procMountSyncFD int
+
+	// procMountSyncFile holds the *os.File for procMountSyncFD when this
+	// process continues without re-exec'ing itself (see
+	// `applyCapsAllThreads`). It keeps the FD alive.
+	procMountSyncFile *os.File
 
 	// syncUsernsFD is the file descriptor that has to be closed when the
 	// boot process should invoke setuid/setgid for root user. This is mainly
@@ -297,6 +304,23 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.Int64Var(&b.nvidiaFabricIMEXManagementDevMinor, "nvidia-fabric-imex-mgmt-minor", -1, "DeviceFileMinor in /proc/driver/nvidia/capabilities/fabric-imex-mgmt on the host")
 }
 
+// willReexec returns true if this boot process will re-execute itself to
+// apply credential/capability changes to all of its threads, rather than
+// applying capabilities to all threads in-process.
+func (b *Boot) willReexec() bool {
+	if config.CgoEnabled {
+		// When cgo is on, we can't control non-Go threads, so need reexec.
+		return true
+	}
+	if !b.applyCaps {
+		return true // No caps to change but will change UID/GID to `nobody`.
+	}
+	if b.syncUsernsFD >= 0 {
+		return true // Rootless mode.
+	}
+	return false
+}
+
 // Execute implements subcommands.Command.Execute.  It starts a sandbox in a
 // waiting state.
 func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
@@ -365,7 +389,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	}
 
 	if b.syncUsernsFD >= 0 {
-		syncUsernsForRootless(b.syncUsernsFD, uint32(b.uid), uint32(b.gid))
+		sandboxsetup.SyncUsernsForRootless(b.syncUsernsFD, uint32(b.uid), uint32(b.gid))
 		argOverride["sync-userns-fd"] = "-1"
 	}
 
@@ -403,19 +427,24 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 
 		if !conf.Rootless {
 			// /proc is umounted from a forked process, because the
-			// current one is going to re-execute itself without
-			// capabilities.
+			// current one is going to drop capabilities and won't be
+			// able to umount it.
 			cmd, w := sandboxsetup.ExecProcUmounter()
-			defer cmd.Wait()
-			defer w.Close()
+			if b.willReexec() {
+				defer cmd.Wait()
+				defer w.Close()
+			} else {
+				// Keep `w` alive until UmountProcFile uses it.
+				b.procMountSyncFile = w
+			}
 			if b.procMountSyncFD != -1 {
 				panic("procMountSyncFD is set")
 			}
 			b.procMountSyncFD = int(w.Fd())
 			argOverride["proc-mount-sync-fd"] = strconv.Itoa(b.procMountSyncFD)
 
-			// Clear FD_CLOEXEC. Regardless of b.applyCaps, this process will be
-			// re-executed. procMountSyncFD should remain open.
+			// Clear FD_CLOEXEC in case this process re-executes itself.
+			// procMountSyncFD should remain open.
 			if _, _, errno := unix.RawSyscall(unix.SYS_FCNTL, w.Fd(), unix.F_SETFD, 0); errno != 0 {
 				util.Fatalf("error clearing CLOEXEC: %v", errno)
 			}
@@ -457,7 +486,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		}
 
 		if conf.DirectFS {
-			caps = specutils.MergeCapabilities(caps, directfsSandboxLinuxCaps)
+			caps = specutils.MergeCapabilities(caps, DirectfsSandboxLinuxCaps)
 		}
 		if conf.Network == config.NetworkHost {
 			curCaps, err := capability.NewPid2(0)
@@ -484,22 +513,42 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 				})
 			}
 		}
-		argOverride["apply-caps"] = "false"
+		if b.willReexec() {
+			if config.CgoEnabled {
+				log.Warningf("Need to re-exec in order to drop capabilities, due to cgo build. This slows down gVisor startup. Use a pure-Go gVisor build for faster startup.")
+			} else {
+				log.Infof("Re-execing. FYI, this step isn't necessary when running with root. gVisor will start up faster (and is just as secure) when started as root, as it has to do fewer hoops to get to its as-sandboxed-as-possible state.")
+			}
+			argOverride["apply-caps"] = "false"
 
-		// Remove the args that have already been done before calling self.
-		args := sandboxsetup.PrepareArgs(b.Name(), f, argOverride)
+			// Remove the args that have already been done before calling self.
+			args := sandboxsetup.PrepareArgs(b.Name(), f, argOverride)
 
-		// Note that we've already read the spec from the spec FD, and
-		// we will read it again after the exec call. This works
-		// because the ReadSpecFromFile function seeks to the beginning
-		// of the file before reading.
-		util.Fatalf("setCapsAndCallSelf(%v, %v): %v", args, caps, sandboxsetup.SetCapsAndCallSelf(args, caps))
+			// Note that we've already read the spec from the spec FD, and
+			// we will read it again after the exec call. This works
+			// because the ReadSpecFromFile function seeks to the beginning
+			// of the file before reading.
+			util.Fatalf("setCapsAndCallSelf(%v, %v): %v", args, caps, sandboxsetup.SetCapsAndCallSelf(args, caps))
 
-		// This prevents the specFile finalizer from running and closed
-		// the specFD, which we have passed to ourselves when
-		// re-execing.
-		runtime.KeepAlive(specFile)
-		panic("unreachable")
+			// This prevents the specFile finalizer from running and closed
+			// the specFD, which we have passed to ourselves when
+			// re-execing.
+			runtime.KeepAlive(specFile)
+			panic("unreachable")
+		}
+
+		if err := sandboxsetup.ApplyCapsAllThreads(caps); err != nil {
+			util.Fatalf("applying caps to all threads: %v", err)
+		}
+		if b.attached {
+			// Re-arm the parent death signal in case the credential change
+			// cleared it. (A pure capability drop should not clear it, but
+			// re-arming is free and preserves the re-exec path's behavior,
+			// which re-arms after the exec.)
+			if err := unix.Prctl(unix.PR_SET_PDEATHSIG, uintptr(unix.SIGKILL), 0, 0, 0); err != nil {
+				util.Fatalf("error setting parent death signal: %v", err)
+			}
+		}
 	}
 
 	if b.syncUsernsFD >= 0 {
@@ -644,7 +693,11 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 			// Call validateOpenFDs() before umounting /proc.
 			validateOpenFDs(bootArgs.PassFDs)
 			// Umount /proc right before installing seccomp filters.
-			sandboxsetup.UmountProc(b.procMountSyncFD)
+			if b.procMountSyncFile != nil {
+				sandboxsetup.UmountProcFile(b.procMountSyncFile)
+			} else {
+				sandboxsetup.UmountProc(b.procMountSyncFD)
+			}
 		}
 	}
 

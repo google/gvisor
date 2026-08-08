@@ -16,6 +16,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
+#include <iterator>
 #include <vector>
 
 #include "gtest/gtest.h"
@@ -157,7 +158,7 @@ TEST_F(ReadTest, PartialReadSIGSEGV) {
       },
   };
   EXPECT_THAT(lseek(fd.get(), 0, SEEK_SET), SyscallSucceeds());
-  EXPECT_THAT(readv(fd.get(), iov, ABSL_ARRAYSIZE(iov)),
+  EXPECT_THAT(readv(fd.get(), iov, std::size(iov)),
               SyscallSucceedsWithValue(size));
 }
 

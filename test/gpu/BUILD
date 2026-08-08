@@ -8,7 +8,7 @@ package(
 go_test(
     name = "smoke_test",
     srcs = ["smoke_test.go"],
-    # runsc is needed to invalidate the bazel cache in case of any code changes.
+    # Needed to invalidate the bazel cache in case of any code changes.
     data = ["//runsc"],
     tags = [
         "manual",
@@ -22,8 +22,8 @@ go_test(
 go_test(
     name = "pytorch_test",
     srcs = ["pytorch_test.go"],
-    # runsc is needed to invalidate the bazel cache in case of any code changes.
-    data = ["//runsc"],
+    # Needed to invalidate the bazel cache in case of any code changes.
+    data = ["//:release"],
     tags = [
         "manual",
         "noguitar",
@@ -36,8 +36,8 @@ go_test(
 go_test(
     name = "textgen_test",
     srcs = ["textgen_test.go"],
-    # runsc is needed to invalidate the bazel cache in case of any code changes.
-    data = ["//runsc"],
+    # Needed to invalidate the bazel cache in case of any code changes.
+    data = ["//:release"],
     embedsrcs = ["gvisor.png"],
     tags = [
         "manual",
@@ -56,7 +56,7 @@ go_test(
     name = "sglang_test",
     srcs = ["sglang_test.go"],
     # runsc is needed to invalidate the bazel cache in case of any code changes.
-    data = ["//runsc"],
+    data = ["//:release"],
     tags = [
         "manual",
         "noguitar",
@@ -73,7 +73,7 @@ go_test(
     name = "sr_test",
     srcs = ["sr_test.go"],
     # runsc is needed to invalidate the bazel cache in case of any code changes.
-    data = ["//runsc"],
+    data = ["//:release"],
     tags = [
         "manual",
         "noguitar",
@@ -92,7 +92,7 @@ go_test(
     timeout = "eternal",  # YES_I_REALLY_NEED_AN_ETERNAL_TEST
     srcs = ["cuda_test.go"],
     # runsc is needed to invalidate the bazel cache in case of any code changes.
-    data = ["//runsc"],
+    data = ["//:release"],
     tags = [
         "manual",
         "noguitar",
@@ -110,7 +110,7 @@ go_test(
     timeout = "eternal",  # YES_I_REALLY_NEED_AN_ETERNAL_TEST
     srcs = ["cuda_12_8_test.go"],
     # runsc is needed to invalidate the bazel cache in case of any code changes.
-    data = ["//runsc"],
+    data = ["//:release"],
     tags = [
         "manual",
         "noguitar",
@@ -127,7 +127,7 @@ go_test(
     name = "ffmpeg_test",
     srcs = ["ffmpeg_test.go"],
     # runsc is needed to invalidate the bazel cache in case of any code changes.
-    data = ["//runsc"],
+    data = ["//:release"],
     tags = [
         "manual",
         "noguitar",
@@ -141,7 +141,7 @@ go_test(
     name = "imagegen_test",
     srcs = ["imagegen_test.go"],
     # runsc is needed to invalidate the bazel cache in case of any code changes.
-    data = ["//runsc"],
+    data = ["//:release"],
     tags = [
         "manual",
         "noguitar",
@@ -179,7 +179,7 @@ go_test(
     name = "triton_test",
     srcs = ["triton_test.go"],
     # runsc is needed to invalidate the bazel cache in case of any code changes.
-    data = ["//runsc"],
+    data = ["//:release"],
     tags = [
         "manual",
         "noguitar",

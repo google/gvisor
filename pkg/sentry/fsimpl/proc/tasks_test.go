@@ -55,6 +55,7 @@ var (
 		"devices":        linux.DT_REG,
 		"filesystems":    linux.DT_REG,
 		"fs":             linux.DT_DIR,
+		"gvisor":         linux.DT_DIR,
 		"irq":            linux.DT_DIR,
 		"loadavg":        linux.DT_REG,
 		"meminfo":        linux.DT_REG,

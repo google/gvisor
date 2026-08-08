@@ -23,11 +23,11 @@ import (
 	"strings"
 	"testing"
 
-	ttrpc "github.com/containerd/ttrpc"
+	"github.com/containerd/ttrpc"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
 	"gvisor.dev/gvisor/pkg/cleanup"
-	pb "gvisor.dev/gvisor/pkg/shim/v1/task_server/task_server_go_proto"
+	pb "gvisor.dev/gvisor/pkg/shim/v1/taskserver/task_server_go_proto"
 )
 
 const (

@@ -12,9 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <endian.h>
 #include <linux/capability.h>
 #include <netinet/in.h>
+#include <sched.h>
 #include <sys/socket.h>
+#include <sys/syscall.h>
 
 #include <cerrno>
 #include <cstdio>
@@ -24,12 +27,14 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "test/syscalls/linux/iptables.h"
+#include "test/syscalls/linux/iptables_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
@@ -441,6 +446,26 @@ INSTANTIATE_TEST_SUITE_P(
         SetSockOptRequiresCapNetAdminTest::ParamType>& info) {
       return info.param.test_name;
     });
+
+// Creates an ip6tables replace payload for the "filter" table where a built-in
+// hook entry point (LOCAL_IN) points directly to a user-defined chain header
+// (an XT_ERROR_TARGET whose errorname is a custom chain name, "my_chain").
+std::vector<char> MakeUserChainTargetReplacePayload() {
+  return MakeUserChainTargetReplacePayload6();
+}
+
+TEST(IP6TablesTest, UserChainTargetCrash) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+
+  FileDescriptor sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_RAW, IPPROTO_RAW));
+  std::vector<char> replace = MakeUserChainTargetReplacePayload();
+  EXPECT_THAT(
+      setsockopt(sock.get(), SOL_IPV6, IP6T_SO_SET_REPLACE, replace.data(),
+                 replace.size()),
+      AnyOf(SyscallFailsWithErrno(EINVAL), SyscallFailsWithErrno(ENOPROTOOPT)));
+}
 
 }  // namespace
 

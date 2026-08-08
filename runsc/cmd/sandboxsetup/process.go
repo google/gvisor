@@ -23,6 +23,7 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -112,6 +113,26 @@ func PrepareArgs(subCmdName string, fSet *flag.FlagSet, override map[string]stri
 	return args
 }
 
+// SyncUsernsForRootless waits on usernsFD to be closed and then sets
+// UID/GID to uid/gid. Note that this function calls runtime.LockOSThread().
+//
+// Postcondition: All callers must re-exec themselves after this returns.
+func SyncUsernsForRootless(fd int, uid uint32, gid uint32) {
+	if err := WaitForFD(fd, "userns sync FD"); err != nil {
+		util.Fatalf("failed to sync on userns FD: %v", err)
+	}
+
+	// SETUID changes UID on the current system thread, so we have
+	// to re-execute current binary.
+	runtime.LockOSThread()
+	if _, _, errno := unix.RawSyscall(unix.SYS_SETUID, uintptr(uid), 0, 0); errno != 0 {
+		util.Fatalf("failed to set UID: %v", errno)
+	}
+	if _, _, errno := unix.RawSyscall(unix.SYS_SETGID, uintptr(gid), 0, 0); errno != 0 {
+		util.Fatalf("failed to set GID: %v", errno)
+	}
+}
+
 // ExecProcUmounter executes a child process that umounts /proc when the
 // returned pipe is closed.
 func ExecProcUmounter() (*exec.Cmd, *os.File) {
@@ -136,7 +157,13 @@ func ExecProcUmounter() (*exec.Cmd, *os.File) {
 // UmountProc writes to syncFD signalling the process started by
 // ExecProcUmounter() to umount /proc.
 func UmountProc(syncFD int) {
-	syncFile := os.NewFile(uintptr(syncFD), "procfs umount sync FD")
+	UmountProcFile(os.NewFile(uintptr(syncFD), "procfs umount sync FD"))
+}
+
+// UmountProcFile is like `UmountProc`, but takes the pipe's write end as an
+// `os.File`. This must be used when the caller already holds a `os.File`
+// (e.g. when the boot process continues without re-exec'ing).
+func UmountProcFile(syncFile *os.File) {
 	buf := make([]byte, 1)
 	if w, err := syncFile.Write(buf); err != nil || w != 1 {
 		util.Fatalf("unable to write into the proc umounter descriptor: %v", err)

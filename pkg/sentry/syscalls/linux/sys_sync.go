@@ -58,8 +58,15 @@ func Fsync(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 
 // Fdatasync implements Linux syscall fdatasync(2).
 func Fdatasync(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	// TODO(gvisor.dev/issue/1897): Avoid writeback of unnecessary metadata.
-	return Fsync(t, sysno, args)
+	fd := args[0].Int()
+
+	file := t.GetFile(fd)
+	if file == nil {
+		return 0, nil, linuxerr.EBADF
+	}
+	defer file.DecRef(t)
+
+	return 0, nil, file.SyncData(t)
 }
 
 // SyncFileRange implements Linux syscall sync_file_range(2).

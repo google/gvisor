@@ -554,7 +554,7 @@ func (fd *fileDescription) RemoveXattr(ctx context.Context, name string) error {
 }
 
 // Sync implements vfs.FileDescriptionImpl.Sync.
-func (*fileDescription) Sync(context.Context) error {
+func (*fileDescription) Sync(context.Context, vfs.SyncOptions) error {
 	return nil
 }
 

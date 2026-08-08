@@ -199,6 +199,38 @@ func waitForProcessCount(cont *Container, want int) error {
 	return testutil.Poll(cb, pollTimeout)
 }
 
+// waitForStableProcessList waits for the container to have exactly want
+// processes and returns them. The same PIDs must be observed in two
+// consecutive poll samples: a single sample can count a transient task in
+// place of a process that has not been forked yet.
+func waitForStableProcessList(cont *Container, want int) ([]*control.Process, error) {
+	var prev []kernel.ThreadID
+	var procs []*control.Process
+	cb := func() error {
+		var err error
+		procs, err = cont.Processes()
+		if err != nil {
+			err = fmt.Errorf("error getting process data from container: %w", err)
+			return &backoff.PermanentError{Err: err}
+		}
+		// Processes() returns the list sorted by PID.
+		pids := make([]kernel.ThreadID, 0, len(procs))
+		for _, p := range procs {
+			pids = append(pids, p.PID)
+		}
+		stable := slices.Equal(pids, prev)
+		prev = pids
+		if len(pids) != want || !stable {
+			return fmt.Errorf("waiting for a stable list of %d processes, got %v", want, pids)
+		}
+		return nil
+	}
+	if err := testutil.Poll(cb, pollTimeout); err != nil {
+		return nil, err
+	}
+	return procs, nil
+}
+
 func blockUntilWaitable(pid int) error {
 	_, _, err := specutils.RetryEintr(func() (uintptr, uintptr, error) {
 		var err error
@@ -624,12 +656,18 @@ func TestLifecycle(t *testing.T) {
 			}
 
 			// Load the container from disk and check the status.
-			c, err = Load(rootDir, fullID, LoadOpts{Exact: true})
-			if err != nil {
-				t.Fatalf("error loading container: %v", err)
-			}
-			if got, want := c.Status, Stopped; got != want {
-				t.Errorf("container status got %v, want %v", got, want)
+			if err := testutil.Poll(func() error {
+				var err error
+				c, err = Load(rootDir, fullID, LoadOpts{Exact: true})
+				if err != nil {
+					return err
+				}
+				if got, want := c.Status, Stopped; got != want {
+					return fmt.Errorf("container status got %v, want %v", got, want)
+				}
+				return nil
+			}, pollTimeout); err != nil {
+				t.Fatalf("container status check failed: %v", err)
 			}
 
 			// Destroy the container.
@@ -1040,17 +1078,17 @@ func TestKillPid(t *testing.T) {
 				t.Fatalf("error starting container: %v", err)
 			}
 
-			// Verify that all processes are running.
-			if err := waitForProcessCount(cont, nProcs); err != nil {
+			// Verify that all processes are running. The PID list must be
+			// stable across poll samples so that transient tasks are not
+			// miscounted as members of the task tree.
+			procs, err := waitForStableProcessList(cont, nProcs)
+			if err != nil {
 				t.Fatalf("timed out waiting for processes to start: %v", err)
 			}
+			t.Logf("current process list:\n%v", control.ProcessListToTable(procs))
 
-			// Kill the child process with the largest PID.
-			procs, err := cont.Processes()
-			if err != nil {
-				t.Fatalf("failed to get process list: %v", err)
-			}
-			t.Logf("current process list: %v", procs)
+			// Kill the child process with the largest PID. Processes are
+			// created in a chain, so this is the deepest child.
 			var pid int32
 			for _, p := range procs {
 				if pid < int32(p.PID) {
@@ -1061,20 +1099,26 @@ func TestKillPid(t *testing.T) {
 				t.Fatalf("failed to signal process %d: %v", pid, err)
 			}
 
-			// Verify that one process is gone.
-			if err := waitForProcessCount(cont, nProcs-1); err != nil {
-				procs, procsErr := cont.Processes()
-				t.Fatalf("error waiting for processes: %v; current processes: %v / %v", err, procs, procsErr)
-			}
-
-			procs, err = cont.Processes()
-			if err != nil {
-				t.Fatalf("failed to get process list: %v", err)
-			}
-			for _, p := range procs {
-				if pid == int32(p.PID) {
-					t.Fatalf("pid %d is still alive, which should be killed", pid)
+			// Verify that the killed process is gone. It stays visible as a
+			// zombie until its parent reaps it, so poll.
+			if err := testutil.Poll(func() error {
+				procs, err := cont.Processes()
+				if err != nil {
+					err = fmt.Errorf("error getting process data from container: %w", err)
+					return &backoff.PermanentError{Err: err}
 				}
+				if got, want := len(procs), nProcs-1; got != want {
+					return fmt.Errorf("wrong process count, got: %d, want: %d", got, want)
+				}
+				for _, p := range procs {
+					if pid == int32(p.PID) {
+						return fmt.Errorf("pid %d is still alive, but should have been killed", pid)
+					}
+				}
+				return nil
+			}, pollTimeout); err != nil {
+				procs, procsErr := cont.Processes()
+				t.Fatalf("error waiting for process %d to be killed: %v; current processes (err: %v):\n%v", pid, err, procsErr, control.ProcessListToTable(procs))
 			}
 		})
 	}
@@ -1112,15 +1156,14 @@ func TestSignalProcessGroup(t *testing.T) {
 				t.Fatalf("error starting container: %v", err)
 			}
 
-			// Wait for all 3 processes: init, child, grandchild.
-			if err := waitForProcessCount(cont, 3); err != nil {
-				t.Fatalf("timed out waiting for processes: %v", err)
-			}
-
-			// Collect PGIDs.
-			procs, err := cont.Processes()
+			// Wait for all 3 processes: init, child, grandchild. The PID
+			// list must be stable across poll samples so that transient
+			// tasks are not miscounted as members of the task tree: a
+			// transient task forked by the child even shares its PGID, which
+			// would make the group signal below miss the grandchild.
+			procs, err := waitForStableProcessList(cont, 3)
 			if err != nil {
-				t.Fatalf("failed to get process list: %v", err)
+				t.Fatalf("timed out waiting for processes: %v", err)
 			}
 			t.Logf("before signal: %s", procListToString(procs))
 
@@ -6118,7 +6161,7 @@ func TestReadFile(t *testing.T) {
 	defer os.Remove(tmpFile1.Name())
 	defer tmpFile1.Close()
 
-	if err := cont.Sandbox.ReadFile(cont.ID, "/proc/version", 0, tmpFile1); err != nil {
+	if err := cont.Sandbox.ReadFile(cont.ID, "/proc/version", 0, 0, tmpFile1); err != nil {
 		t.Fatalf("Failed to read /proc/version: %v", err)
 	}
 	content1, err := os.ReadFile(tmpFile1.Name())
@@ -6137,7 +6180,7 @@ func TestReadFile(t *testing.T) {
 	defer os.Remove(tmpFile2.Name())
 	defer tmpFile2.Close()
 
-	if err := cont.Sandbox.ReadFile(cont.ID, "/proc/version", 5, tmpFile2); err != nil {
+	if err := cont.Sandbox.ReadFile(cont.ID, "/proc/version", 0, 5, tmpFile2); err != nil {
 		t.Fatalf("ReadFile failed: %v", err)
 	}
 	content2, err := os.ReadFile(tmpFile2.Name())
@@ -6146,5 +6189,24 @@ func TestReadFile(t *testing.T) {
 	}
 	if string(content2) != "Linux" {
 		t.Errorf("Got %q (%d bytes), want 'Linux' (5 bytes)", string(content2), len(content2))
+	}
+
+	// Test reading /proc/version with an offset of 1 and size of 4 bytes.
+	tmpFile3, err := os.CreateTemp(testutil.TmpDir(), "readfile-3-*.txt")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile3.Name())
+	defer tmpFile3.Close()
+
+	if err := cont.Sandbox.ReadFile(cont.ID, "/proc/version", 1, 4, tmpFile3); err != nil {
+		t.Fatalf("ReadFile failed: %v", err)
+	}
+	content3, err := os.ReadFile(tmpFile3.Name())
+	if err != nil {
+		t.Fatalf("Failed to read temp file: %v", err)
+	}
+	if string(content3) != "inux" {
+		t.Errorf("Got %q (%d bytes), want 'inux' (4 bytes)", string(content3), len(content3))
 	}
 }

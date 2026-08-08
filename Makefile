@@ -115,12 +115,13 @@ RUNTIME     ?= runsc
 else
 RUNTIME     ?= $(BRANCH_NAME)
 endif
-RUNTIME_DIR     ?= $(shell dirname $(shell mktemp -u))/$(RUNTIME)
-RUNSC_TARGET    ?= //runsc
-RUNTIME_BIN     ?= $(RUNTIME_DIR)/runsc
-RUNTIME_LOG_DIR ?= $(RUNTIME_DIR)/logs
-RUNTIME_LOGS    ?= $(RUNTIME_LOG_DIR)/runsc.log.%TEST%.%TIMESTAMP%.%COMMAND%
-RUNTIME_ARGS    ?=
+RUNTIME_DIR           ?= $(shell dirname $(shell mktemp -u))/$(RUNTIME)
+RUNSC_TARGET          ?= //runsc
+RUNTIME_BIN           ?= $(RUNTIME_DIR)/runsc
+EXTRA_SIDECAR_TARGETS ?= # Extra binaries to install under gvisor-bin/.
+RUNTIME_LOG_DIR       ?= $(RUNTIME_DIR)/logs
+RUNTIME_LOGS          ?= $(RUNTIME_LOG_DIR)/runsc.log.%TEST%.%TIMESTAMP%.%COMMAND%
+RUNTIME_ARGS          ?=
 DOCKER_DAEMON_CONFIG_PATH ?= /etc/docker/daemon.json
 DOCKER_RELOAD_COMMAND ?= sudo systemctl reload docker
 
@@ -139,8 +140,9 @@ ifeq (,$(STAGED_BINARIES))
 	@$(call copy,//debian:gvisor-bin-tar,$(RUNTIME_DIR))
 	@tar -C "$(RUNTIME_DIR)" -xf "$(RUNTIME_DIR)/gvisor-bin-tar.tar"
 	@rm -f "$(RUNTIME_DIR)/gvisor-bin-tar.tar"
+	@$(if $(EXTRA_SIDECAR_TARGETS),$(call copy,$(EXTRA_SIDECAR_TARGETS),$(RUNTIME_DIR)/gvisor-bin))
 else
-	gcloud storage cat "${STAGED_BINARIES}" | \
+	@gcloud storage cat "${STAGED_BINARIES}" | \
 	  tar -C "$(RUNTIME_DIR)" -zxvf - ./runsc ./gvisor-bin && \
 	  chmod -R a+rx "$(RUNTIME_BIN)" "$(RUNTIME_DIR)/gvisor-bin"
 endif
@@ -192,6 +194,8 @@ dev: $(RUNTIME_BIN) ## Installs a set of local runtimes. Requires sudo.
 	@$(call configure_noreload,$(RUNTIME)-cgroup-d,--net-raw --debug --strace --log-packets --cgroupfs)
 	@$(call configure_noreload,$(RUNTIME)-systemd-d,--net-raw --debug --strace --log-packets --systemd-cgroup)
 	@$(call configure_noreload,$(RUNTIME)-gpu,--nvproxy)
+	@# Docker In Gvisor(ding) version.
+	@$(call configure_noreload,$(RUNTIME)-ding,--TESTONLY-nftables --allow-packet-socket-write=true --net-raw)
 	@$(call reload_docker)
 .PHONY: dev
 
@@ -254,6 +258,7 @@ tests: unit-tests nogo-tests container-tests syscall-tests
 integration-tests: ## Run all standard integration tests.
 integration-tests: docker-tests overlay-tests hostnet-tests swgso-tests
 integration-tests: do-tests kvm-tests containerd-tests-min
+integration-tests: sandbox-posture-tests
 .PHONY: integration-tests
 
 integration-test-images: load-image-test load-basic load-systemd-integ load-systemd-services
@@ -271,7 +276,7 @@ network-tests: iptables-tests packetdrill-tests packetimpact-tests
 # To run multiple specific syscall tests:
 #   make syscall-tests TARGETS="//test/syscalls:signalfd_test_runsc_systrap_shared //test/syscalls:link_test_runsc_systrap_shared"
 syscall-tests: $(RUNTIME_BIN)
-	@$(call test,$(OPTIONS) --test_env=RUNTIME=$(RUNTIME_BIN) --cxxopt=-Werror $(PARTITIONS) $(if $(TARGETS),-- $(TARGETS),test/syscalls/... test/rtnetlink/...))
+	@$(call test,$(OPTIONS) --test_env=RUNTIME=$(RUNTIME_BIN) --test_env=GVISOR_SIDECAR_BINARIES_DIR=$(RUNTIME_DIR)/gvisor-bin --cxxopt=-Werror $(PARTITIONS) $(if $(TARGETS),-- $(TARGETS),test/syscalls/... test/rtnetlink/...))
 .PHONY: syscall-tests
 
 packetimpact-tests:
@@ -392,6 +397,22 @@ portforward-tests: load-basic_redis load-basic_nginx $(RUNTIME_BIN)
 	@$(call sudo,test/root:portforward_test,--runtime=$(RUNTIME) -test.v $(ARGS))
 .PHONY: portforward-test
 
+POSTURE_TEST_ARGS := -test.run=TestSandboxPosture -test.v
+sandbox-posture-tests: load-basic_alpine $(RUNTIME_BIN)
+	@$(call install_runtime,$(RUNTIME)-posture,) # Clear flags.
+	@$(call sudo,test/root:root_test,--runtime=$(RUNTIME)-posture $(POSTURE_TEST_ARGS) $(ARGS))
+	@$(call install_runtime,$(RUNTIME)-posture-hostnet,--network=host)
+	@$(call sudo,test/root:root_test,--runtime=$(RUNTIME)-posture-hostnet --network=host $(POSTURE_TEST_ARGS) $(ARGS))
+	@$(call install_runtime,$(RUNTIME)-posture-hostnet-raw,--network=host --net-raw)
+	@$(call sudo,test/root:root_test,--runtime=$(RUNTIME)-posture-hostnet-raw --network=host --net-raw $(POSTURE_TEST_ARGS) $(ARGS))
+	@$(call install_runtime,$(RUNTIME)-posture-nodirectfs,--directfs=false)
+	@$(call sudo,test/root:root_test,--runtime=$(RUNTIME)-posture-nodirectfs --directfs=false $(POSTURE_TEST_ARGS) $(ARGS))
+	@$(call install_runtime,$(RUNTIME)-posture-nodirectfs-hostnet,--directfs=false --network=host)
+	@$(call sudo,test/root:root_test,--runtime=$(RUNTIME)-posture-nodirectfs-hostnet --directfs=false --network=host $(POSTURE_TEST_ARGS) $(ARGS))
+	@$(call install_runtime,$(RUNTIME)-posture-kvm,--platform=kvm)
+	@$(call sudo,test/root:root_test,--runtime=$(RUNTIME)-posture-kvm --platform=kvm $(POSTURE_TEST_ARGS) $(ARGS))
+.PHONY: sandbox-posture-tests
+
 # Standard integration targets.
 INTEGRATION_TARGETS := //test/image:image_test //test/e2e:integration_test
 
@@ -402,7 +423,7 @@ docker-tests: integration-test-images $(RUNTIME_BIN)
 	@$(call install_runtime_noreload,$(RUNTIME)-dcache,--fdlimit=2000 --dcache=100) # Used by TestDentryCacheLimit.
 	@$(call install_runtime_noreload,$(RUNTIME)-host-uds,--host-uds=all) # Used by TestHostSocketConnect.
 	@$(call install_runtime_noreload,$(RUNTIME)-overlay,--overlay2=all:self) # Used by TestOverlay*.
-	@$(call install_runtime,$(RUNTIME)-cgroupv2,--mount-cgroup-v2) # Used by TestSystemd*.
+	@$(call install_runtime,$(RUNTIME)-cgroupv2,--mount-cgroup-v2) # Used by TestSystemd* and TestPIDFDSelftests.
 	@$(call test_runtime_cached,$(RUNTIME),$(INTEGRATION_TARGETS) --test_env=TEST_SAVE_RESTORE_NETSTACK=true //test/e2e:integration_runtime_test //test/e2e:runtime_in_docker_test)
 .PHONY: docker-tests
 
@@ -411,6 +432,7 @@ plugin-network-tests: integration-test-images $(RUNTIME_BIN)
 	@$(call test_runtime_cached,$(RUNTIME)-dpdk, --test_arg=-test.run=ConnectToSelf $(INTEGRATION_TARGETS))
 
 plugin-network-tests: RUNSC_TARGET=--config plugin-tldk //runsc:runsc-plugin-stack
+plugin-network-tests: EXTRA_SIDECAR_TARGETS=--config plugin-tldk //runsc/cmd/sentry:gvisor_sentry_plugin_stack
 
 overlay-tests: integration-test-images $(RUNTIME_BIN)
 	@$(call install_runtime_noreload,$(RUNTIME)-overlay,--overlay2=all:dir=/tmp)

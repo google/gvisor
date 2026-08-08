@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/cmd/sandboxsetup"
+	"gvisor.dev/gvisor/runsc/cmd/sentry/sentrycmd"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -131,7 +132,7 @@ func testCapabilities(t *testing.T, directfs bool) {
 	}
 	if directfs {
 		// With directfs, the sandbox has additional capabilities.
-		wantSandboxCaps = specutils.MergeCapabilities(wantSandboxCaps, directfsSandboxLinuxCaps)
+		wantSandboxCaps = specutils.MergeCapabilities(wantSandboxCaps, sentrycmd.DirectfsSandboxLinuxCaps)
 	}
 	// Check that sandbox and gofer have the proper capabilities.
 	if err := checkProcessCaps(c.Sandbox.Getpid(), wantSandboxCaps); err != nil {
@@ -148,5 +149,6 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "Error running as root: %v", err)
 		os.Exit(123)
 	}
+	ownNetNS = runInOwnNetNS()
 	os.Exit(m.Run())
 }

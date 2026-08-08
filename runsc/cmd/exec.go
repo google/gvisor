@@ -31,6 +31,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/runsc/cmd/sandboxsetup"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/console"
@@ -60,7 +61,7 @@ type Exec struct {
 
 	// passFDs are user-supplied FDs from the host to be exposed to the
 	// sandboxed app.
-	passFDs fdMappings
+	passFDs sandboxsetup.FDMappings
 
 	// execFD is the host file descriptor used for program execution.
 	execFD int

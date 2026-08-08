@@ -2202,25 +2202,33 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 	return nil
 }
 
-func (d *dentry) syncRemoteFile(ctx context.Context) error {
+func (d *dentry) syncRemoteFile(ctx context.Context, dataOnly bool) error {
 	d.inode.handleMu.RLock()
 	defer d.inode.handleMu.RUnlock()
-	return d.syncRemoteFileLocked(ctx)
+	return d.syncRemoteFileLocked(ctx, dataOnly)
 }
 
 // Preconditions: d.inode.handleMu must be locked.
-func (d *dentry) syncRemoteFileLocked(ctx context.Context) error {
+func (d *dentry) syncRemoteFileLocked(ctx context.Context, dataOnly bool) error {
 	// Prefer syncing write handles over read handles, since some remote
 	// filesystem implementations may not sync changes made through write
 	// handles otherwise.
 	wh := d.inode.writeHandle()
-	wh.sync(ctx)
+	if dataOnly {
+		wh.syncData(ctx)
+	} else {
+		wh.sync(ctx)
+	}
 	rh := d.inode.readHandle()
-	rh.sync(ctx)
+	if dataOnly {
+		rh.syncData(ctx)
+	} else {
+		rh.sync(ctx)
+	}
 	return nil
 }
 
-func (d *dentry) syncCachedFile(ctx context.Context, forFilesystemSync bool) error {
+func (d *dentry) syncCachedFile(ctx context.Context, forFilesystemSync bool, dataOnly bool) error {
 	d.inode.handleMu.RLock()
 	defer d.inode.handleMu.RUnlock()
 	if d.inode.isWriteHandleOk() {
@@ -2233,7 +2241,7 @@ func (d *dentry) syncCachedFile(ctx context.Context, forFilesystemSync bool) err
 			return err
 		}
 	}
-	if err := d.syncRemoteFileLocked(ctx); err != nil {
+	if err := d.syncRemoteFileLocked(ctx, dataOnly); err != nil {
 		if !forFilesystemSync {
 			return err
 		}

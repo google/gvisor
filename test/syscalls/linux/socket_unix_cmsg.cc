@@ -1707,6 +1707,77 @@ TEST_P(UnixSocketPairCmsgTest, FDPassAfterSoPassCredWithoutCredHeaderSpace) {
   EXPECT_EQ(msg.msg_controllen, 0);
 }
 
+// A zero-length receive still delivers a pending SCM_RIGHTS fd without
+// consuming data on stream sockets, and consuming data (with MSG_TRUNC)
+// on packet sockets.
+TEST_P(UnixSocketPairCmsgTest, ZeroLengthRecvReceivesFD) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  char sent_data = 'a';
+  char sent_control[CMSG_SPACE(sizeof(int))] = {};
+  struct iovec sent_iov = {};
+  sent_iov.iov_base = &sent_data;
+  sent_iov.iov_len = sizeof(sent_data);
+  struct msghdr sent_msg = {};
+  sent_msg.msg_iov = &sent_iov;
+  sent_msg.msg_iovlen = 1;
+  sent_msg.msg_control = sent_control;
+  sent_msg.msg_controllen = sizeof(sent_control);
+  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&sent_msg);
+  cmsg->cmsg_level = SOL_SOCKET;
+  cmsg->cmsg_type = SCM_RIGHTS;
+  cmsg->cmsg_len = CMSG_LEN(sizeof(int));
+  const int fd_to_send = sockets->second_fd();
+  memcpy(CMSG_DATA(cmsg), &fd_to_send, sizeof(int));
+  ASSERT_THAT(RetryEINTR(sendmsg)(sockets->second_fd(), &sent_msg, 0),
+              SyscallSucceedsWithValue(sizeof(sent_data)));
+
+  char recv_control[CMSG_SPACE(sizeof(int))] = {};
+  struct msghdr recv_msg = {};
+  recv_msg.msg_control = recv_control;
+  recv_msg.msg_controllen = sizeof(recv_control);
+  ASSERT_THAT(RetryEINTR(recvmsg)(sockets->first_fd(), &recv_msg, 0),
+              SyscallSucceedsWithValue(0));
+
+  const bool is_stream =
+      (GetParam().type & ~(SOCK_NONBLOCK | SOCK_CLOEXEC)) == SOCK_STREAM;
+  if (is_stream) {
+    // Stream sockets never report MSG_TRUNC.
+    EXPECT_EQ(recv_msg.msg_flags & MSG_TRUNC, 0);
+  } else {
+    EXPECT_EQ(recv_msg.msg_flags & MSG_TRUNC, MSG_TRUNC);
+  }
+
+  cmsg = CMSG_FIRSTHDR(&recv_msg);
+  ASSERT_NE(cmsg, nullptr);
+  EXPECT_EQ(cmsg->cmsg_level, SOL_SOCKET);
+  EXPECT_EQ(cmsg->cmsg_type, SCM_RIGHTS);
+  ASSERT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(int)));
+  int received_fd = -1;
+  memcpy(&received_fd, CMSG_DATA(cmsg), sizeof(int));
+  EXPECT_GE(received_fd, 0);
+  EXPECT_THAT(close(received_fd), SyscallSucceeds());
+
+  if (is_stream) {
+    // On stream sockets, the data byte is still there and the fd does
+    // not come again.
+    char received_data = 0;
+    char recv_control2[CMSG_SPACE(sizeof(int))] = {};
+    struct iovec recv_iov = {};
+    recv_iov.iov_base = &received_data;
+    recv_iov.iov_len = sizeof(received_data);
+    struct msghdr recv_msg2 = {};
+    recv_msg2.msg_iov = &recv_iov;
+    recv_msg2.msg_iovlen = 1;
+    recv_msg2.msg_control = recv_control2;
+    recv_msg2.msg_controllen = sizeof(recv_control2);
+    ASSERT_THAT(RetryEINTR(recvmsg)(sockets->first_fd(), &recv_msg2, 0),
+                SyscallSucceedsWithValue(sizeof(received_data)));
+    EXPECT_EQ(received_data, sent_data);
+    EXPECT_EQ(CMSG_FIRSTHDR(&recv_msg2), nullptr);
+  }
+}
+
 }  // namespace
 
 }  // namespace testing

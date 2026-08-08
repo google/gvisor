@@ -76,10 +76,6 @@ const (
 // https://docs.cloud.google.com/kubernetes-engine/docs/how-to/flexible-pod-cidr#max_pods_default
 var maxPodsTarget = flag.Int("openclaw-benchmark-max-pods", 256, "Target number of pods for MaxPods benchmark (acts as a cap)")
 
-// Number of pods to provision and verify concurrently in each scaling iteration.
-// Batching significantly speeds up execution on high-capacity clusters.
-var batchSize = flag.Int("openclaw-benchmark-batch-size", 1, "Number of target pods to launch in each batch")
-
 // Resource requirements for the target pods. Parameterizing these values allows
 // dynamically testing node capacity under different VM sizing bounds and CPU/Memory constraints.
 var targetCPURequest = flag.String("openclaw-target-cpu-request", "250m", "CPU request for target openclaw pods (e.g. 250m, 1)")
@@ -293,6 +289,37 @@ wait
 	return clientPod, nil
 }
 
+// nextAdaptiveBatchSize calculates the next batch size for adaptive scaling based on
+// available host memory headroom and current per-pod memory usage.
+// Returns the next batch size and whether adaptive step increases should remain enabled.
+func nextAdaptiveBatchSize(currentBatchSize, currentPods, maxPods int, memAvail, memTotal, totalMarginalMem int64, canIncreaseStep bool) (int, bool) {
+	if !canIncreaseStep || memTotal <= 0 {
+		return 1, false
+	}
+
+	avgMemPerPod := 1.5 * 1024 * 1024 * 1024 // 1.5 GiB default estimate
+	if currentPods > 0 && totalMarginalMem > 0 {
+		avgMemPerPod = float64(totalMarginalMem) / float64(currentPods)
+	}
+
+	hasRoom := func(n int) bool {
+		if n < 1 || (currentPods+n) > maxPods {
+			return false
+		}
+		// Check if available memory can accommodate n pods (leaving 5% of host memory as safety margin).
+		return (float64(n) * avgMemPerPod) <= float64(memAvail)-float64(memTotal)*0.05
+	}
+
+	if hasRoom(currentBatchSize * 2) {
+		return currentBatchSize * 2, true
+	} else if hasRoom(currentBatchSize) {
+		return currentBatchSize, true
+	} else if currentBatchSize >= 2 && hasRoom(currentBatchSize/2) {
+		return currentBatchSize / 2, true
+	}
+	return 1, false
+}
+
 // launchAndVerifyTestPods runs the sequential launch loop, checking for scheduling issues
 // and ensuring previously started pods remain responsive.
 //
@@ -303,18 +330,16 @@ wait
 func launchAndVerifyTestPods(ctx context.Context, t *testing.T, cluster *testcluster.TestCluster, ns *testcluster.Namespace, podNames []string, clientPod *v13.Pod, memMonitor *v13.Pod, startSec int64) (successCount int, pods []*v13.Pod, stopReason string, lastGoodMem int64) {
 	cap := len(podNames)
 	stopReason = "reached-cap"
-	bSize := *batchSize
-	if bSize < 1 {
-		bSize = 1
-	}
+	bSize := 1
+	canIncreaseStep := true
 
-	for i := 0; i < cap; i += bSize {
+	for i := 0; i < cap; {
 		batchEnd := i + bSize
 		if batchEnd > cap {
 			batchEnd = cap
 		}
 
-		t.Logf("Launching batch of pods from %d to %d...", i, batchEnd-1)
+		t.Logf("Launching batch of pods from %d to %d (batch size: %d)...", i, batchEnd-1, batchEnd-i)
 		createdAt := time.Now()
 
 		// Launch pods in this batch
@@ -372,7 +397,7 @@ func launchAndVerifyTestPods(ctx context.Context, t *testing.T, cluster *testclu
 
 		// Measure memory progress while the node is healthy
 		nowSec := time.Now().Unix()
-		mem, err := getMarginalMemory(ctx, cluster, memMonitor, startSec, nowSec)
+		mem, memAvail, memTotal, err := getMarginalMemory(ctx, cluster, memMonitor, startSec, nowSec)
 		if err == nil {
 			lastGoodMem = mem
 			t.Logf("Marginal memory at density %d: %d bytes (%.3f GiB)", successCount, mem, float64(mem)/(1024*1024*1024))
@@ -380,8 +405,24 @@ func launchAndVerifyTestPods(ctx context.Context, t *testing.T, cluster *testclu
 			t.Logf("Warning: Failed to get memory progress at density %d: %v", successCount, err)
 		}
 
+		// Advance index i by the number of pods attempted in this batch
+		i += bSize
+
 		// Settle time
 		time.Sleep(1 * time.Second)
+
+		// Adaptive step size calculation based on remaining host memory room.
+		if err == nil && memTotal > 0 {
+			memUsedPercent := (float64(memTotal-memAvail) / float64(memTotal)) * 100.0
+			t.Logf("Host memory used: %.1f%% (%d MiB available / %d MiB total)", memUsedPercent, memAvail/(1024*1024), memTotal/(1024*1024))
+		}
+		newBSize, stillCanIncrease := nextAdaptiveBatchSize(bSize, i, cap, memAvail, memTotal, lastGoodMem, canIncreaseStep)
+		if canIncreaseStep && !stillCanIncrease {
+			t.Logf("Memory headroom low; reverting to step size 1 for remaining pods (adaptive increase disabled)")
+		}
+		bSize = newBSize
+		canIncreaseStep = stillCanIncrease
+		t.Logf("Adaptive step size for next batch: %d", bSize)
 	}
 
 	return successCount, pods, stopReason, lastGoodMem
@@ -825,14 +866,15 @@ func startMemoryMonitor(ctx context.Context, cluster *testcluster.TestCluster, n
 }
 
 // getMarginalMemory reads the logs of the background monitor pod, extracts the
-// MemAvailable values at startSec and endSec, and calculates the delta in bytes.
-func getMarginalMemory(ctx context.Context, cluster *testcluster.TestCluster, monitorPod *v13.Pod, startSec, endSec int64) (int64, error) {
+// MemAvailable values at startSec and endSec, and calculates the delta in bytes,
+// along with current available and total host memory in bytes.
+func getMarginalMemory(ctx context.Context, cluster *testcluster.TestCluster, monitorPod *v13.Pod, startSec, endSec int64) (int64, int64, int64, error) {
 	logs, err := cluster.ReadPodLogs(ctx, monitorPod)
 	if err != nil {
-		return 0, err
+		return 0, 0, 0, err
 	}
 
-	var startAvail, endAvail int64
+	var startAvail, endAvail, endTotal int64
 	var startFound, endFound bool
 
 	// Parse log lines: "timestamp:total:available"
@@ -842,6 +884,10 @@ func getMarginalMemory(ctx context.Context, cluster *testcluster.TestCluster, mo
 			continue
 		}
 		ts, err := strconv.ParseInt(parts[0], 10, 64)
+		if err != nil {
+			continue
+		}
+		total, err := strconv.ParseInt(parts[1], 10, 64)
 		if err != nil {
 			continue
 		}
@@ -858,20 +904,21 @@ func getMarginalMemory(ctx context.Context, cluster *testcluster.TestCluster, mo
 		// Capture the last available sample at or before endSec
 		if ts <= endSec {
 			endAvail = avail
+			endTotal = total
 			endFound = true
 		}
 	}
 
 	if !startFound || !endFound {
-		return 0, fmt.Errorf("failed to find start or end memory samples in monitor logs")
+		return 0, 0, 0, fmt.Errorf("failed to find start or end memory samples in monitor logs")
 	}
 
-	// Return the delta in bytes (meminfo values are in KB)
+	// Return values in bytes (meminfo values are in KB)
 	usedKb := startAvail - endAvail
 	if usedKb < 0 {
 		usedKb = 0 // Guard against noise
 	}
-	return usedKb * 1024, nil
+	return usedKb * 1024, endAvail * 1024, endTotal * 1024, nil
 }
 
 func newOpenClawPod(namespace *testcluster.Namespace, name, image, hostname, subdomain string) *v13.Pod {

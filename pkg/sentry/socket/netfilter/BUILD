@@ -60,11 +60,15 @@ go_test(
 
 go_test(
     name = "netfilter_test",
-    srcs = ["mark_matcher_test.go"],
+    srcs = [
+        "mark_matcher_test.go",
+        "netfilter_test.go",
+    ],
     library = ":netfilter",
     deps = [
         "//pkg/abi/linux",
         "//pkg/marshal",
+        "//pkg/syserr",
         "//pkg/tcpip/stack",
     ],
 )

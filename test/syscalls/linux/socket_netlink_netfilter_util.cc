@@ -15,6 +15,7 @@
 #include "test/syscalls/linux/socket_netlink_netfilter_util.h"
 
 #include <endian.h>
+#include <errno.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -113,6 +114,71 @@ uint64_t GetNfAttrU64(const struct nfattr* attr) {
   const uint8_t* source_ptr = reinterpret_cast<const uint8_t*>(NFA_DATA(attr));
   memcpy(&aligned_value, source_ptr, sizeof(uint64_t));
   return be64toh(aligned_value);
+}
+
+// Reads a data value from a nested nfattr.
+PosixErrorOr<std::vector<uint8_t>> GetNestedDataValue(
+    const struct nfattr* parent_attr) {
+  size_t len = static_cast<size_t>(NFA_PAYLOAD(parent_attr));
+  if (len < sizeof(struct nfattr)) {
+    return PosixError(EINVAL, "Nested attribute too short");
+  }
+  const struct nfattr* attr =
+      reinterpret_cast<const struct nfattr*>(NFA_DATA(parent_attr));
+
+  if (attr->nfa_type == NFTA_DATA_VALUE ||
+      attr->nfa_type == NFTA_DATA_VERDICT) {
+    const uint8_t* p = reinterpret_cast<const uint8_t*>(NFA_DATA(attr));
+    return std::vector<uint8_t>(p, p + NFA_PAYLOAD(attr));
+  }
+
+  return PosixError(EINVAL, "Unexpected nested data attribute type");
+}
+
+// Helper function to parse a single set element from its nested attribute
+// representation.
+PosixErrorOr<ElementDescriptor> ParseElement(const struct nfattr* nested_attr) {
+  int elem_len = NFA_PAYLOAD(nested_attr);
+  const struct nfattr* elem_data =
+      reinterpret_cast<const struct nfattr*>(NFA_DATA(nested_attr));
+
+  ElementDescriptor current_elem;
+
+  for (; NFA_OK(elem_data, elem_len);
+       elem_data = NFA_NEXT(elem_data, elem_len)) {
+    if (elem_data->nfa_type == NFTA_SET_ELEM_KEY) {
+      ASSIGN_OR_RETURN_ERRNO(current_elem.key, GetNestedDataValue(elem_data));
+    } else if (elem_data->nfa_type == NFTA_SET_ELEM_DATA) {
+      ASSIGN_OR_RETURN_ERRNO(current_elem.data, GetNestedDataValue(elem_data));
+    } else if (elem_data->nfa_type == NFTA_SET_ELEM_FLAGS) {
+      current_elem.flags = GetNfAttrU32(elem_data);
+    }
+  }
+  return current_elem;
+}
+
+// Builds a netlink element with the given descriptor.
+std::vector<char> BuildNetlinkElement(const ElementDescriptor& desc) {
+  NlNestedAttr attr;
+  if (desc.flags != 0) {
+    attr.U32Attr(NFTA_SET_ELEM_FLAGS, desc.flags);
+  }
+  if (!desc.key.empty()) {
+    std::vector<char> key_data_attr =
+        NlNestedAttr()
+            .RawAttr(NFTA_DATA_VALUE, desc.key.data(), desc.key.size())
+            .Build();
+    attr.RawAttr(NFTA_SET_ELEM_KEY, key_data_attr.data(), key_data_attr.size());
+  }
+  if (!desc.data.empty()) {
+    std::vector<char> val_data_attr =
+        NlNestedAttr()
+            .RawAttr(NFTA_DATA_VALUE, desc.data.data(), desc.data.size())
+            .Build();
+    attr.RawAttr(NFTA_SET_ELEM_DATA, val_data_attr.data(),
+                 val_data_attr.size());
+  }
+  return attr.Build();
 }
 
 // Helper function to check the netfilter table attributes.
@@ -248,9 +314,8 @@ void CheckNetfilterChainAttributes(const NfChainCheckOptions& options) {
     std::string chain_type(
         reinterpret_cast<const char*>(NFA_DATA(chain_type_attr)));
     EXPECT_EQ(chain_type, options.expected_chain_type);
-  } else {
-    EXPECT_EQ(chain_type_attr, nullptr);
-    EXPECT_TRUE(options.expected_chain_type.empty());
+  } else if (!options.expected_chain_type.empty()) {
+    EXPECT_NE(chain_type_attr, nullptr);
   }
 
   // Check for the NFTA_CHAIN_FLAGS attribute.
@@ -259,9 +324,8 @@ void CheckNetfilterChainAttributes(const NfChainCheckOptions& options) {
   if (flags_attr != nullptr && options.expected_flags != nullptr) {
     uint32_t flags = GetNfAttrU32(flags_attr);
     EXPECT_EQ(flags, *options.expected_flags);
-  } else {
-    EXPECT_EQ(flags_attr, nullptr);
-    EXPECT_EQ(options.expected_flags, nullptr);
+  } else if (options.expected_flags != nullptr) {
+    EXPECT_NE(flags_attr, nullptr);
   }
 
   // Check for the NFTA_CHAIN_USE attribute.
@@ -270,9 +334,8 @@ void CheckNetfilterChainAttributes(const NfChainCheckOptions& options) {
   if (use_attr != nullptr && options.expected_use != nullptr) {
     uint32_t use = GetNfAttrU32(use_attr);
     EXPECT_EQ(use, *options.expected_use);
-  } else {
-    EXPECT_EQ(use_attr, nullptr);
-    EXPECT_EQ(options.expected_use, nullptr);
+  } else if (options.expected_use != nullptr) {
+    EXPECT_NE(use_attr, nullptr);
   }
 
   // Check for the NFTA_CHAIN_USERDATA attribute.
@@ -390,7 +453,8 @@ void AddDefaultTable(const AddDefaultTableOptions& options) {
   std::vector<char> add_table_request_buffer =
       NlBatchReq()
           .SeqStart(options.seq)
-          .Req(NlReq(absl::StrCat("newtable req ack ", options.family_name))
+          .Req(NlReq(absl::StrCat("newtable req ack create ",
+                                  options.family_name))
                    .Seq(options.seq + 1)
                    .StrAttr(NFTA_TABLE_NAME, *table_name)
                    .Build())
@@ -420,8 +484,8 @@ void AddDefaultBaseChain(const AddDefaultBaseChainOptions& options) {
   const uint32_t test_policy = NF_ACCEPT;
   const uint32_t test_hook_num =
       options.chain_type.empty() ? NF_INET_PRE_ROUTING : options.hook_num;
-  const uint32_t test_hook_priority = 0;
-  const uint32_t test_chain_flags = NFT_CHAIN_BASE;
+  const uint32_t test_hook_priority = options.hook_priority;
+  const uint32_t test_chain_flags = options.flags;
 
   std::vector<char> nested_hook_data =
       NlNestedAttr()
@@ -431,7 +495,8 @@ void AddDefaultBaseChain(const AddDefaultBaseChainOptions& options) {
   std::vector<char> add_chain_request_buffer =
       NlBatchReq()
           .SeqStart(options.seq)
-          .Req(NlReq(absl::StrCat("newchain req ack ", options.family_name))
+          .Req(NlReq(absl::StrCat("newchain req ack create ",
+                                  options.family_name))
                    .Seq(options.seq + 1)
                    .StrAttr(NFTA_CHAIN_TABLE, *table_name)
                    .StrAttr(NFTA_CHAIN_NAME, *chain_name)
@@ -446,6 +511,91 @@ void AddDefaultBaseChain(const AddDefaultBaseChainOptions& options) {
   ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
       options.fd, options.seq, options.seq + 2, add_chain_request_buffer.data(),
       add_chain_request_buffer.size()));
+}
+
+// Helper function to add a default regular chain.
+void AddDefaultRegularChain(const AddDefaultRegularChainOptions& options) {
+  const std::string* table_name = &options.table_name;
+  if (table_name->empty()) {
+    table_name = &GetDefaultTableName();
+  }
+
+  const std::string* chain_name = &options.chain_name;
+  if (chain_name->empty()) {
+    chain_name = &GetDefaultChainName();
+  }
+
+  NlReq req(absl::StrCat("newchain req ack create ", options.family_name));
+  req.Seq(options.seq + 1)
+      .StrAttr(NFTA_CHAIN_TABLE, *table_name)
+      .StrAttr(NFTA_CHAIN_NAME, *chain_name);
+  if (options.flags != 0) {
+    req.U32Attr(NFTA_CHAIN_FLAGS, options.flags);
+  }
+  if (options.chain_id != 0) {
+    req.U32Attr(NFTA_CHAIN_ID, options.chain_id);
+  }
+
+  std::vector<char> add_chain_request_buffer = NlBatchReq()
+                                                   .SeqStart(options.seq)
+                                                   .Req(req.Build())
+                                                   .SeqEnd(options.seq + 2)
+                                                   .Build();
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      options.fd, options.seq, options.seq + 2, add_chain_request_buffer.data(),
+      add_chain_request_buffer.size()));
+}
+
+PosixErrorOr<uint64_t> GetChainHandle(const FileDescriptor& fd,
+                                      absl::string_view table_name,
+                                      absl::string_view chain_name,
+                                      uint32_t seq) {
+  uint64_t chain_handle = 0;
+  std::vector<char> get_chain_req =
+      NlReq("getchain req inet")
+          .Seq(seq)
+          .StrAttr(NFTA_CHAIN_TABLE, std::string(table_name))
+          .StrAttr(NFTA_CHAIN_NAME, std::string(chain_name))
+          .Build();
+
+  RETURN_IF_ERRNO(NetlinkRequestResponse(
+      fd, get_chain_req.data(), get_chain_req.size(),
+      [&](const struct nlmsghdr* hdr) {
+        const struct nfattr* handle_attr =
+            FindNfAttr(hdr, nullptr, NFTA_CHAIN_HANDLE);
+        if (handle_attr != nullptr) {
+          chain_handle = GetNfAttrU64(handle_attr);
+        }
+      },
+      false));
+
+  if (chain_handle == 0) {
+    return PosixError(ENOENT, "Chain handle not found or 0");
+  }
+  return chain_handle;
+}
+
+void VerifyChainPolicy(const FileDescriptor& fd, absl::string_view table_name,
+                       absl::string_view chain_name, uint32_t expected_policy,
+                       uint32_t seq) {
+  std::vector<char> get_chain_req =
+      NlReq("getchain req inet")
+          .Seq(seq)
+          .StrAttr(NFTA_CHAIN_TABLE, std::string(table_name))
+          .StrAttr(NFTA_CHAIN_NAME, std::string(chain_name))
+          .Build();
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd, get_chain_req.data(), get_chain_req.size(),
+      [&](const struct nlmsghdr* hdr) {
+        CheckNetfilterChainAttributes({
+            .hdr = hdr,
+            .expected_table_name = std::string(table_name),
+            .expected_chain_name = std::string(chain_name),
+            .expected_policy = &expected_policy,
+            .skip_handle_check = true,
+        });
+      },
+      false));
 }
 
 NlBatchReq& NlBatchReq::SeqStart(uint32_t seq) {
@@ -780,6 +930,12 @@ NlImmExpr& NlImmExpr::Dreg(uint32_t dreg) {
 
 NlImmExpr& NlImmExpr::VerdictCode(uint32_t verdict_code) {
   verdict_code_ = verdict_code;
+  has_verdict_code_ = true;
+  return *this;
+}
+
+NlImmExpr& NlImmExpr::VerdictChainId(uint32_t chain_id) {
+  verdict_chain_id_ = chain_id;
   return *this;
 }
 
@@ -789,8 +945,11 @@ NlImmExpr& NlImmExpr::Value(const std::vector<char>& value) {
 }
 
 std::vector<char> NlImmExpr::VerdictBuild() {
-  std::vector<char> verdict_code_data =
-      NlNestedAttr().U32Attr(NFTA_VERDICT_CODE, verdict_code_).Build();
+  auto verdict_attrs = NlNestedAttr().U32Attr(NFTA_VERDICT_CODE, verdict_code_);
+  if (verdict_chain_id_.has_value()) {
+    verdict_attrs.U32Attr(NFTA_VERDICT_CHAIN_ID, verdict_chain_id_.value());
+  }
+  std::vector<char> verdict_code_data = verdict_attrs.Build();
   std::vector<char> immediate_data =
       NlNestedAttr()
           .RawAttr(NFTA_DATA_VERDICT, verdict_code_data.data(),
@@ -936,6 +1095,71 @@ PosixError NetfilterFlushRuleset(const FileDescriptor& fd) {
 
   return NetlinkNetfilterBatchRequestAckOrError(
       fd, seq, seq + 2, flush_request.data(), flush_request.size());
+}
+
+// GetSetElements returns the elements of a set by
+// parsing the response of a netlink set dump request.
+PosixErrorOr<std::vector<ElementDescriptor>> GetSetElements(
+    const FileDescriptor& fd, absl::string_view table_name,
+    absl::string_view set_name, uint32_t seq) {
+  std::vector<ElementDescriptor> actual_elements;
+  PosixError parse_err;
+
+  // Setup set elements dump request: NFT_MSG_GETSETELEM
+  std::vector<char> get_dump_request_buffer =
+      NlReq()
+          .MsgType(NFT_MSG_GETSETELEM)
+          .Flags(NLM_F_REQUEST | NLM_F_DUMP)
+          .Family(NFPROTO_INET)
+          .Seq(seq)
+          .StrAttr(NFTA_SET_ELEM_LIST_TABLE, std::string(table_name))
+          .StrAttr(NFTA_SET_ELEM_LIST_SET, std::string(set_name))
+          .Build();
+
+  // Process the dumped msgs.
+  PosixError err = NetlinkRequestResponse(
+      fd, get_dump_request_buffer.data(), get_dump_request_buffer.size(),
+      [&](const struct nlmsghdr* hdr) {
+        if (!parse_err.ok()) {
+          return;
+        }
+        if (hdr->nlmsg_type == NLMSG_DONE) {
+          return;
+        }
+        // Output stream MUST chunk successfully.
+        EXPECT_TRUE(hdr->nlmsg_flags & NLM_F_MULTI);
+
+        const struct nfattr* elements_attr =
+            FindNfAttr(hdr, nullptr, NFTA_SET_ELEM_LIST_ELEMENTS);
+        // Element chunk list block absent from this subset message string.
+        if (!elements_attr) {
+          return;
+        }
+
+        int nested_len = NFA_PAYLOAD(elements_attr);
+        const struct nfattr* nested_attr =
+            reinterpret_cast<const struct nfattr*>(NFA_DATA(elements_attr));
+
+        // Process each extracted list container recursively.
+        for (; NFA_OK(nested_attr, nested_len);
+             nested_attr = NFA_NEXT(nested_attr, nested_len)) {
+          auto parsed = ParseElement(nested_attr);
+          if (!parsed.ok()) {
+            parse_err = parsed.error();
+            return;
+          }
+          actual_elements.push_back(parsed.ValueOrDie());
+        }
+      },
+      false);
+
+  if (!parse_err.ok()) {
+    return parse_err;
+  }
+  if (!err.ok()) {
+    return err;
+  }
+  return actual_elements;
 }
 
 }  // namespace testing

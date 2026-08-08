@@ -64,7 +64,7 @@ func (fs *filesystem) Sync(ctx context.Context) error {
 
 	// Sync syncable dentries.
 	for _, d := range ds {
-		if err := d.syncCachedFile(ctx, true /* forFilesystemSync */); err != nil {
+		if err := d.syncCachedFile(ctx, true /* forFilesystemSync */, false /* dataOnly */); err != nil {
 			ctx.Infof("gofer.filesystem.Sync: dentry.syncCachedFile failed: %v", err)
 			if retErr == nil {
 				retErr = err
@@ -75,7 +75,7 @@ func (fs *filesystem) Sync(ctx context.Context) error {
 	// Sync special files, which may be writable but do not use dentry shared
 	// handles (so they won't be synced by the above).
 	for _, sffd := range sffds {
-		if err := sffd.sync(ctx, true /* forFilesystemSync */); err != nil {
+		if err := sffd.sync(ctx, true /* forFilesystemSync */, false /* dataOnly */); err != nil {
 			ctx.Infof("gofer.filesystem.Sync: specialFileFD.sync failed: %v", err)
 			if retErr == nil {
 				retErr = err

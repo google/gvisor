@@ -546,6 +546,55 @@ TEST(MountTest, DeviceFileWritableOnReadonlyMount) {
   EXPECT_THAT(write(dev_fd.get(), "x", 1), SyscallSucceedsWithValue(1));
 }
 
+TEST(MountTest, ReadOnlyBindMountAllowsWriteOpenOfCharDevice) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  std::string const nullPath = JoinPath(dir.path(), "null");
+  FileDescriptor create_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(nullPath, O_CREAT | O_RDWR, 0666));
+  create_fd.reset();
+
+  auto const mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("/dev/null", nullPath, "", MS_BIND, "", 0));
+  ASSERT_THAT(mount("/dev/null", nullPath.c_str(), nullptr,
+                    MS_BIND | MS_REMOUNT | MS_RDONLY, nullptr),
+              SyscallSucceeds());
+
+  FileDescriptor wfd = ASSERT_NO_ERRNO_AND_VALUE(Open(nullPath, O_WRONLY));
+  char msg[] = "hello";
+  EXPECT_THAT(write(wfd.get(), msg, sizeof(msg)),
+              SyscallSucceedsWithValue(sizeof(msg)));
+
+  FileDescriptor rwfd = ASSERT_NO_ERRNO_AND_VALUE(Open(nullPath, O_RDWR));
+  EXPECT_THAT(write(rwfd.get(), msg, sizeof(msg)),
+              SyscallSucceedsWithValue(sizeof(msg)));
+}
+
+TEST(MountTest, ReadOnlyBindMountAllowsWriteOpenOfFIFO) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  std::string const fifoPath = JoinPath(dir.path(), "fifo");
+  ASSERT_THAT(mkfifo(fifoPath.c_str(), 0666), SyscallSucceeds());
+
+  auto const bindDir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(dir.path(), bindDir.path(), "", MS_BIND, "", 0));
+  ASSERT_THAT(mount(dir.path().c_str(), bindDir.path().c_str(), nullptr,
+                    MS_BIND | MS_REMOUNT | MS_RDONLY, nullptr),
+              SyscallSucceeds());
+
+  std::string const boundFifoPath = JoinPath(bindDir.path(), "fifo");
+  FileDescriptor rfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(boundFifoPath, O_RDONLY | O_NONBLOCK));
+  FileDescriptor wfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(boundFifoPath, O_WRONLY | O_NONBLOCK));
+  char msg[] = "hello";
+  EXPECT_THAT(write(wfd.get(), msg, sizeof(msg)),
+              SyscallSucceedsWithValue(sizeof(msg)));
+}
+
 // Test that bind mounting a directory onto a regular file fails with ENOTDIR.
 TEST(MountTest, BindMountDirectoryOntoFileFails) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
@@ -2608,6 +2657,85 @@ TEST(MountTest, ChangeMountFlags) {
   ASSERT_EQ(st.f_flags & flag, 0);
 }
 
+constexpr int kLockableFlags = MS_RDONLY | MS_NOEXEC | MS_NODEV | MS_NOSUID;
+
+// Sets kLockableFlags on the mount at `path`.
+void SetLockableFlags(const std::string& path) {
+  ASSERT_THAT(mount("", path.c_str(), nullptr,
+                    MS_REMOUNT | MS_BIND | kLockableFlags, ""),
+              SyscallSucceeds());
+}
+
+TEST(MountTest, ChangeMountFlagsOfLockedMount) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const Cleanup mount_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir.path(), kTmpfs, 0, "", 0));
+  ASSERT_NO_FATAL_FAILURE(SetLockableFlags(dir.path()));
+  const std::string path = dir.path();
+  const std::string file_path = JoinPath(path, "foo");
+
+  const std::function<void()> child = [&] {
+    // The mount was copied into a new user namespace, so none of its flags may
+    // be cleared.
+    for (const int flag : {MS_RDONLY, MS_NOEXEC, MS_NODEV, MS_NOSUID}) {
+      TEST_CHECK_ERRNO(
+          mount("", path.c_str(), nullptr,
+                MS_REMOUNT | MS_BIND | (kLockableFlags & ~flag), ""),
+          EPERM);
+    }
+    TEST_CHECK_ERRNO(mount("", path.c_str(), nullptr, MS_REMOUNT | MS_BIND, ""),
+                     EPERM);
+    // The mount is still read-only.
+    TEST_CHECK_ERRNO(open(file_path.c_str(), O_CREAT | O_RDWR, 0666), EROFS);
+    // A remount that keeps all of the locked flags set is allowed.
+    TEST_CHECK_SUCCESS(mount("", path.c_str(), nullptr,
+                             MS_REMOUNT | MS_BIND | kLockableFlags, ""));
+  };
+  EXPECT_THAT(InForkedUserMountNamespace([] {}, child),
+              IsPosixErrorOkAndHolds(0));
+
+  // The flags are not locked in the namespace that owns the mount.
+  EXPECT_THAT(mount("", path.c_str(), nullptr, MS_REMOUNT | MS_BIND, ""),
+              SyscallSucceeds());
+  struct statfs st;
+  ASSERT_THAT(statfs(path.c_str(), &st), SyscallSucceeds());
+  EXPECT_EQ(st.f_flags & kLockableFlags, 0);
+}
+
+TEST(MountTest, LockedMountFlagsAreInheritedByBind) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const Cleanup mount_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir.path(), kTmpfs, 0, "", 0));
+  ASSERT_NO_FATAL_FAILURE(SetLockableFlags(dir.path()));
+  const TempPath target = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string path = dir.path();
+  const std::string target_path = target.path();
+
+  const std::function<void()> child = [&] {
+    // Binding the locked mount elsewhere must not result in a mount for which
+    // flags can be cleared.
+    TEST_CHECK_SUCCESS(
+        mount(path.c_str(), target_path.c_str(), "", MS_BIND, ""));
+    for (const int flag : {MS_RDONLY, MS_NOEXEC, MS_NODEV, MS_NOSUID}) {
+      TEST_CHECK_ERRNO(
+          mount("", target_path.c_str(), nullptr,
+                MS_REMOUNT | MS_BIND | (kLockableFlags & ~flag), ""),
+          EPERM);
+    }
+    TEST_CHECK_SUCCESS(mount("", target_path.c_str(), nullptr,
+                             MS_REMOUNT | MS_BIND | kLockableFlags, ""));
+    // The bind mount itself was created in this namespace, so unlike the mount
+    // it was cloned from, it can be unmounted.
+    TEST_CHECK_SUCCESS(umount2(target_path.c_str(), MNT_DETACH));
+  };
+  EXPECT_THAT(InForkedUserMountNamespace([] {}, child),
+              IsPosixErrorOkAndHolds(0));
+}
+
 TEST(MountTest, RemountUnmounted) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
@@ -2832,6 +2960,10 @@ TEST(MountTest, OverlayfsDirectoryRenameInUserNamespace) {
 // Test that overlay can be mounted with a gofer upper layer. Runs some basic
 // overlayfs tests to confirm basic functionality.
 TEST(MountTest, OverlayfsOnGoferBehavior) {
+  // Test fails in gVisor running on <6.0 due to fsgofer getting permission
+  // errors on `mknod`.
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(GetHostKernelVersion()).major < 6);
+
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
   auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());

@@ -25,10 +25,13 @@ func TestReadFlags(t *testing.T) {
 	f := flag.NewFlagSet("read", flag.ContinueOnError)
 	r.SetFlags(f)
 
-	if err := f.Parse([]string{"--size", "4096"}); err != nil {
+	if err := f.Parse([]string{"--size", "4096", "--offset", "100"}); err != nil {
 		t.Fatalf("Failed to parse flags: %v", err)
 	}
 	if r.size != 4096 {
 		t.Errorf("Got size %d, want 4096", r.size)
+	}
+	if r.offset != 100 {
+		t.Errorf("Got offset %d, want 100", r.offset)
 	}
 }

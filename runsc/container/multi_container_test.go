@@ -2382,7 +2382,12 @@ func TestMultiContainerEvent(t *testing.T) {
 			// Setup the containers.
 			sleep := []string{"/bin/sh", "-c", "/bin/sleep 100 | grep 123"}
 			busy := []string{"/bin/bash", "-c", "i=0 ; while true ; do (( i += 1 )) ; done"}
-			quick := []string{"/bin/true"}
+			// quick burns a short burst of CPU and exits. The burn must be
+			// long enough to guarantee that at least one CPU clock tick
+			// (10ms) lands while its task is running: the sentry accounts
+			// task CPU time in whole ticks, so a container as short-lived as
+			// /bin/true can legitimately report zero CPU usage.
+			quick := []string{"/bin/sh", "-c", "i=0; while [ \"$i\" -lt 50000 ]; do i=$((i+1)); done"}
 			podSpecs, ids := createSpecs(sleep, busy, quick)
 			if name == "enableCgroups" || name == "enableCgroupsV2" {
 				mnt := specs.Mount{
@@ -2440,8 +2445,8 @@ func TestMultiContainerEvent(t *testing.T) {
 
 				switch i {
 				case 0:
-					if name != "enableCgroups" && evt.Data.Memory.Usage.Usage != uint64(0) {
-						t.Errorf("root container should report 0 memory usage, got: %v", evt.Data.Memory.Usage.Usage)
+					if name == "disableCgroups" && evt.Data.Memory.Usage.Usage != uint64(0) {
+						t.Errorf("root container should report 0 memory usage when cgroups disabled, got: %v", evt.Data.Memory.Usage.Usage)
 					}
 				case 1:
 					if evt.Data.Memory.Usage.Usage == uint64(0) {
@@ -2449,9 +2454,16 @@ func TestMultiContainerEvent(t *testing.T) {
 					}
 				}
 
-				// The exited container should always have a usage of zero.
-				if exited := ret.ContainerUsage[containers[2].ID]; exited != 0 {
-					t.Errorf("Exited container should report 0 CPU usage, got: %d", exited)
+				if name == "enableCgroupsV2" {
+					// In cgroup v2, cpu.stat accumulates CPU usage even after tasks exit.
+					if exited := ret.ContainerUsage[containers[2].ID]; exited == 0 {
+						t.Errorf("Exited container in cgroup v2 should report non-zero CPU usage, got: %d", exited)
+					}
+				} else {
+					// Without cgroup v2, sentry accounting only counts live thread groups.
+					if exited := ret.ContainerUsage[containers[2].ID]; exited != 0 {
+						t.Errorf("Exited container should report 0 CPU usage, got: %d", exited)
+					}
 				}
 			}
 
@@ -2493,7 +2505,6 @@ func TestMultiContainerEvent(t *testing.T) {
 	}
 }
 
-// TODO(b/524360347): Query against the container-id cgroup instead of the root cgroup2 node.
 func TestCgroupV2ReadControlFile(t *testing.T) {
 	conf := testutil.TestConfig(t)
 	conf.MountCgroupV2 = true
@@ -2520,16 +2531,17 @@ func TestCgroupV2ReadControlFile(t *testing.T) {
 	}
 	defer cleanup()
 
+	cgPath := path.Join("/", containers[0].ID)
 	queries := []control.CgroupControlFile{
-		{Controller: "memory", Path: "/", Name: "memory.current"},
-		{Controller: "cpu", Path: "/", Name: "cpu.stat"},
-		{Controller: "cgroup", Path: "/", Name: "cgroup.procs"},
-		{Controller: "cgroup", Path: "/", Name: "cgroup.controllers"},
+		{Controller: "memory", Path: cgPath, Name: "memory.current"},
+		{Controller: "cpu", Path: cgPath, Name: "cpu.stat"},
+		{Controller: "cgroup", Path: cgPath, Name: "cgroup.procs"},
+		{Controller: "cgroup", Path: cgPath, Name: "cgroup.controllers"},
 	}
 	for _, ctrl := range queries {
 		val, err := containers[0].Sandbox.CgroupsReadControlFile(ctrl)
 		if err != nil {
-			t.Fatalf("error reading root %s: %v", ctrl.Name, err)
+			t.Fatalf("error reading %s in %q: %v", ctrl.Name, ctrl.Path, err)
 		}
 		if val == "" {
 			t.Fatalf("expected non-empty result for %s", ctrl.Name)
@@ -2558,6 +2570,76 @@ func TestCgroupV2ReadControlFile(t *testing.T) {
 				t.Fatalf("expected cgroup.controllers to contain 'cpu' or 'memory', got %q", val)
 			}
 		}
+	}
+}
+
+// Tests that destroying a container removes its cgroup2 node, including
+// sub-cgroups the container created, and that a container without a cgroup
+// mount in its spec is never given a cgroup2 node.
+func TestMultiContainerCgroupV2Destroy(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	conf.MountCgroupV2 = true
+
+	rootDir, cleanup, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer cleanup()
+	conf.RootDir = rootDir
+
+	// The subcontainer creates a nested cgroup under its namespaced
+	// /sys/fs/cgroup view, then sleeps. The root container has no cgroup
+	// mount in its spec, and hence gets no cgroup.
+	podSpecs, ids := createSpecs(sleepCmd,
+		[]string{"/bin/sh", "-c", "mkdir /sys/fs/cgroup/nested && sleep 1000"})
+	mnt0 := specs.Mount{
+		Destination: "/sys/fs/cgroup",
+		Type:        "cgroup",
+		Options:     nil,
+	}
+	podSpecs[1].Mounts = append(podSpecs[1].Mounts, mnt0)
+	podSpecs[1].Linux = &specs.Linux{
+		Namespaces: []specs.LinuxNamespace{{Type: "pid"}, {Type: "cgroup"}},
+	}
+	createSharedMount(mnt0, "test-mount", podSpecs...)
+
+	containers, cleanup, err := startContainers(conf, podSpecs, ids)
+	if err != nil {
+		t.Fatalf("error starting containers: %v", err)
+	}
+	defer cleanup()
+
+	readCtrl := func(cgPath string) error {
+		_, err := containers[0].Sandbox.CgroupsReadControlFile(control.CgroupControlFile{
+			Controller: "cgroup",
+			Path:       cgPath,
+			Name:       "cgroup.controllers",
+		})
+		return err
+	}
+
+	// The root container has no cgroup mount in its spec: no cgroup.
+	if err := readCtrl(path.Join("/", containers[0].ID)); err == nil {
+		t.Errorf("root container has a cgroup even though its spec has no cgroup mount")
+	}
+
+	// Wait until the subcontainer has created its nested cgroup.
+	cg1Path := path.Join("/", containers[1].ID)
+	nestedPath := path.Join(cg1Path, "nested")
+	if err := testutil.Poll(func() error { return readCtrl(nestedPath) }, 10*time.Second); err != nil {
+		t.Fatalf("nested cgroup was not created: %v", err)
+	}
+
+	// Destroying the subcontainer must remove its cgroup subtree, nested
+	// cgroup included.
+	if err := containers[1].Destroy(); err != nil {
+		t.Fatalf("error destroying container: %v", err)
+	}
+	if err := readCtrl(cg1Path); err == nil {
+		t.Errorf("container cgroup %q still present after destroy", cg1Path)
+	}
+	if err := readCtrl(nestedPath); err == nil {
+		t.Errorf("nested cgroup %q still present after destroy", nestedPath)
 	}
 }
 
@@ -3144,89 +3226,121 @@ func TestMultiContainerCgroups(t *testing.T) {
 // mount. Also, checks memory usage stats from cgroups work correctly when the
 // memory is increased for one container.
 func TestMultiContainerCgroupsMemoryUsage(t *testing.T) {
-	_, err := testutil.FindFile("test/cmd/test_app/test_app")
-	if err != nil {
-		t.Fatal("error finding test_app:", err)
-	}
+	for _, cgroupV2 := range []bool{false, true} {
+		for name, conf := range configs(t, false /* noOverlay */) {
+			if cgroupV2 {
+				name += "-cgroupV2"
+				conf.MountCgroupV2 = true
+			}
+			t.Run(name, func(t *testing.T) {
+				rootDir, cleanup, err := testutil.SetupRootDir()
+				if err != nil {
+					t.Fatalf("error creating root dir: %v", err)
+				}
+				defer cleanup()
+				conf.RootDir = rootDir
 
-	for name, conf := range configs(t, false /* noOverlay */) {
-		t.Run(name, func(t *testing.T) {
-			rootDir, cleanup, err := testutil.SetupRootDir()
-			if err != nil {
-				t.Fatalf("error creating root dir: %v", err)
-			}
-			defer cleanup()
-			conf.RootDir = rootDir
+				memCmd := []string{"sh", "-c", "dd if=/dev/zero of=/tmp/memfile bs=1M count=5 && sleep 1000"}
+				podSpecs, ids := createSpecs(sleepCmd, memCmd)
+				podSpecs[1].Linux = &specs.Linux{
+					Namespaces: []specs.LinuxNamespace{{Type: "pid"}},
+				}
 
-			podSpecs, ids := createSpecs(sleepCmd, sleepCmd)
-			podSpecs[1].Linux = &specs.Linux{
-				Namespaces: []specs.LinuxNamespace{{Type: "pid"}},
-			}
+				mnt0 := specs.Mount{
+					Destination: "/sys/fs/cgroup",
+					Type:        "cgroup",
+					Options:     nil,
+				}
+				mntTmp := specs.Mount{
+					Destination: "/tmp",
+					Type:        "tmpfs",
+				}
+				// Append cgroups mount for both containers, and tmpfs for container 1.
+				podSpecs[0].Mounts = append(podSpecs[0].Mounts, mnt0)
+				podSpecs[1].Mounts = append(podSpecs[1].Mounts, mnt0, mntTmp)
 
-			mnt0 := specs.Mount{
-				Destination: "/sys/fs/cgroup",
-				Type:        "cgroup",
-				Options:     nil,
-			}
-			// Append cgroups mount for both containers.
-			podSpecs[0].Mounts = append(podSpecs[0].Mounts, mnt0)
-			podSpecs[1].Mounts = append(podSpecs[1].Mounts, mnt0)
+				createSharedMount(mnt0, "test-mount", podSpecs...)
+				containers, cleanup, err := startContainers(conf, podSpecs, ids)
+				if err != nil {
+					t.Fatalf("error starting containers: %v", err)
+				}
+				defer cleanup()
 
-			createSharedMount(mnt0, "test-mount", podSpecs...)
-			containers, cleanup, err := startContainers(conf, podSpecs, ids)
-			if err != nil {
-				t.Fatalf("error starting containers: %v", err)
-			}
-			defer cleanup()
+				usageFile := "memory.usage_in_bytes"
+				if cgroupV2 {
+					usageFile = "memory.current"
+				}
 
-			ctrlRoot := control.CgroupControlFile{
-				Controller: "memory",
-				Path:       "/",
-				Name:       "memory.usage_in_bytes",
-			}
-			ctrl0 := control.CgroupControlFile{
-				Controller: "memory",
-				Path:       "/" + containers[0].ID,
-				Name:       "memory.usage_in_bytes",
-			}
-			ctrl1 := control.CgroupControlFile{
-				Controller: "memory",
-				Path:       "/" + containers[1].ID,
-				Name:       "memory.usage_in_bytes",
-			}
+				ctrlRoot := control.CgroupControlFile{
+					Controller: "memory",
+					Path:       "/",
+					Name:       usageFile,
+				}
+				ctrl0 := control.CgroupControlFile{
+					Controller: "memory",
+					Path:       path.Join("/", containers[0].ID),
+					Name:       usageFile,
+				}
+				ctrl1 := control.CgroupControlFile{
+					Controller: "memory",
+					Path:       path.Join("/", containers[1].ID),
+					Name:       usageFile,
+				}
 
-			usageTotal, err := containers[0].Sandbox.CgroupsReadControlFile(ctrlRoot)
-			if err != nil {
-				t.Fatalf("error getting total usage %v", err)
-			}
-			usage0, err := containers[0].Sandbox.CgroupsReadControlFile(ctrl0)
-			if err != nil {
-				t.Fatalf("error getting container0 usage %v", err)
-			}
-			usage1, err := containers[1].Sandbox.CgroupsReadControlFile(ctrl1)
-			if err != nil {
-				t.Fatalf("error getting container1 usage %v", err)
-			}
-			if usageTotal < (usage0 + usage1) {
-				t.Fatalf("error total usage is less total %v container0_usage %v container1_usage %v", usageTotal, usage0, usage1)
-			}
+				readUsage := func(ctrl control.CgroupControlFile) uint64 {
+					val, err := containers[0].Sandbox.CgroupsReadControlFile(ctrl)
+					if err != nil {
+						t.Fatalf("error reading control file %s in %s: %v", ctrl.Name, ctrl.Path, err)
+					}
+					u, err := strconv.ParseUint(strings.TrimSpace(val), 10, 64)
+					if err != nil {
+						t.Fatalf("error parsing control file %s value %q: %v", ctrl.Name, val, err)
+					}
+					return u
+				}
 
-			// Kill the second container and check that usage has decreased.
-			if err := containers[1].SignalContainer(unix.SIGKILL, true); err != nil {
-				t.Fatalf("error killing container %q: %v", containers[1].ID, err)
-			}
-			if _, err := containers[1].Wait(); err != nil {
-				t.Fatalf("error waiting forcontainer %q: %v", containers[1].ID, err)
-			}
+				// Wait for container1 to allocate memory.
+				if err := testutil.Poll(func() error {
+					if readUsage(ctrl1) > 4*1024*1024 {
+						return nil
+					}
+					return fmt.Errorf("waiting for container 1 memory allocation")
+				}, 5*time.Second); err != nil {
+					t.Fatalf("error waiting for container 1 memory allocation: %v", err)
+				}
 
-			newUsageTotal, err := containers[0].Sandbox.CgroupsReadControlFile(ctrlRoot)
-			if err != nil {
-				t.Fatalf("error getting total usage %v", err)
-			}
-			if newUsageTotal >= usageTotal {
-				t.Fatalf("error new total usage %v is not less than old total usage %v", newUsageTotal, usageTotal)
-			}
-		})
+				usageTotal := readUsage(ctrlRoot)
+				usage0 := readUsage(ctrl0)
+				usage1 := readUsage(ctrl1)
+				if usage0 == 0 || usage1 == 0 || usageTotal == 0 {
+					t.Fatalf("expected non-zero usages, got total %d, container0 %d, container1 %d", usageTotal, usage0, usage1)
+				}
+				if usageTotal < usage0 || usageTotal < usage1 {
+					t.Fatalf("error total usage %d is less than container0 (%d) or container1 (%d)", usageTotal, usage0, usage1)
+				}
+
+				// Kill the second container, destroy it, and check that usage has decreased.
+				if err := containers[1].SignalContainer(unix.SIGKILL, true); err != nil {
+					t.Fatalf("error killing container %q: %v", containers[1].ID, err)
+				}
+				if _, err := containers[1].Wait(); err != nil {
+					t.Fatalf("error waiting forcontainer %q: %v", containers[1].ID, err)
+				}
+				if err := containers[1].Destroy(); err != nil {
+					t.Fatalf("error destroying container %q: %v", containers[1].ID, err)
+				}
+
+				if err := testutil.Poll(func() error {
+					newUsageTotal := readUsage(ctrlRoot)
+					if newUsageTotal >= usageTotal {
+						return fmt.Errorf("new total usage %v is not less than old total usage %v", newUsageTotal, usageTotal)
+					}
+					return nil
+				}, 5*time.Second); err != nil {
+					t.Fatalf("error waiting for total usage to decrease: %v", err)
+				}
+			})
+		}
 	}
 }
 

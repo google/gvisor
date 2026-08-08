@@ -29,6 +29,7 @@ release_files(
         "//shim:containerd-shim-runsc-v1",
     ],
     sidecars = SIDECARS,
+    visibility = ["//visibility:public"],
 )
 
 nogo_config(

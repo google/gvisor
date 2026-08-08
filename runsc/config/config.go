@@ -121,7 +121,7 @@ type Config struct {
 	Network NetworkType `flag:"network"`
 
 	// GoferNetworkNamespace controls the network namespace used by gofer
-	// processes. The default is a new, empty network namespace.
+	// processes. The default is the shared empty "null" network namespace.
 	GoferNetworkNamespace GoferNetworkNamespace `flag:"gofer-network-namespace"`
 
 	// EnableRaw indicates whether raw sockets should be enabled. Raw
@@ -471,6 +471,13 @@ type Config struct {
 	// once their current RPC finishes. Setting this to 0 closes idle clients
 	// immediately.
 	ControlRPCStopTimeout time.Duration `flag:"control-rpc-stop-timeout"`
+
+	// SharedRootDir is the directory used for state shared across sandboxes
+	// regardless of their runtime root directory (e.g. the null gofer network
+	// namespace bind mount). If empty, RootDir is used.
+	// Access to SharedRootDir grants the ability to identify sandboxes, but
+	// not to control them.
+	SharedRootDir string `flag:"shared-root"`
 }
 
 // Validate checks that the Config is in a consistent state, e.g. that no
@@ -569,6 +576,15 @@ func (c *Config) Log() {
 			}
 		}
 	}
+}
+
+// SharedRoot returns the effective directory for state shared across
+// sandboxes: SharedRootDir if set, otherwise RootDir.
+func (c *Config) SharedRoot() string {
+	if c.SharedRootDir != "" {
+		return c.SharedRootDir
+	}
+	return c.RootDir
 }
 
 // GetHostUDS returns the FS gofer communication that is allowed, taking into
@@ -779,6 +795,16 @@ const (
 
 	// GoferNetworkNamespaceHost runs gofers in runsc's current network namespace.
 	GoferNetworkNamespaceHost GoferNetworkNamespace = "host"
+
+	// GoferNetworkNamespaceNull runs gofers in a shared empty network
+	// namespace. The namespace is pinned by a bind mount under the shared
+	// root directory (`--shared-root`, defaulting to `--root`; same hack as
+	// `ip netns add`), and shared by all gofers using the same directory.
+	// This provides the same isolation as `GoferNetworkNamespaceNew`
+	// without the cost of a new nets per gofer.
+	// Falls back to `GoferNetworkNamespaceNew` if the shared namespace cannot
+	// be set up (e.g. rootless).
+	GoferNetworkNamespaceNull GoferNetworkNamespace = "null"
 )
 
 func goferNetworkNamespacePtr(v GoferNetworkNamespace) *GoferNetworkNamespace {
@@ -788,11 +814,11 @@ func goferNetworkNamespacePtr(v GoferNetworkNamespace) *GoferNetworkNamespace {
 // Set implements flag.Value. Set(String()) should be idempotent.
 func (n *GoferNetworkNamespace) Set(v string) error {
 	switch v {
-	case string(GoferNetworkNamespaceHost), string(GoferNetworkNamespaceNew):
+	case string(GoferNetworkNamespaceHost), string(GoferNetworkNamespaceNew), string(GoferNetworkNamespaceNull):
 		*n = GoferNetworkNamespace(v)
 	default:
 		if !filepath.IsAbs(v) {
-			return fmt.Errorf("invalid gofer network namespace %q; must be new, host, or an absolute path", v)
+			return fmt.Errorf("invalid gofer network namespace %q; must be new, host, null, or an absolute path", v)
 		}
 		*n = GoferNetworkNamespace(v)
 	}

@@ -1417,8 +1417,8 @@ func (*deletionTest) Name() string {
 
 // ContainerAction implements TestCase.ContainerAction.
 // Sets up drop rules in multiple chains and tables.
-// Verifies that Flush Chain, Flush Table, and Flush Ruleset
-// clear the rules correctly and restore flow.
+// Verifies that Flush Chain, Flush Table, Flush Ruleset
+// and Delete Set Element clear the rules/set correctly and restore flow.
 func (*deletionTest) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	tableName := "FLUSH_TEST_TABLE"
 	chainName1 := "CHAIN1"
@@ -1524,8 +1524,11 @@ func (*deletionTest) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) 
 		{"add", "table", "inet", tableName},
 		// Create chain 1 with accept policy in the inet table.
 		{"add", "chain", "inet", tableName, chainName1, "{ type filter hook input priority 0; policy accept; }"},
-		// Add rule to chain 1 to drop packets on port 1.
-		{"add", "rule", "inet", tableName, chainName1, "tcp", "dport", fmt.Sprintf("%d", port1), "drop"},
+		// Create a map for ports and later delete elements from it.
+		{"add", "map", "inet", tableName, "drop_ports", "{ type inet_service : verdict; }"},
+		{"add", "element", "inet", tableName, "drop_ports", fmt.Sprintf("{ %d : drop, %d : drop }", port1, port2)},
+		// Add rule to chain 1 to drop packets on ports in the map.
+		{"add", "rule", "inet", tableName, chainName1, "tcp", "dport", "vmap", "@drop_ports"},
 		// Create a table in the specified family (ip or ip6).
 		{"add", "table", family, "FLUSH_RULESET_IP"},
 		// Create an input chain in the new table.
@@ -1540,21 +1543,43 @@ func (*deletionTest) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) 
 		}
 	}
 
-	// Verify port1 and port3 drop.
+	// Verify port1, port2, and port3 drop.
 	if err := verifyDrop(port1); err != nil {
 		return fmt.Errorf("port1 before ruleset flush: %v", err)
 	}
+	if err := verifyDrop(port2); err != nil {
+		return fmt.Errorf("port2 before ruleset flush: %v", err)
+	}
 	if err := verifyDrop(port3); err != nil {
 		return fmt.Errorf("port3 before ruleset flush: %v", err)
+	}
+
+	// Delete port1 from set to test DeleteSetElements.
+	if err := nftCmd([]string{"delete", "element", "inet", tableName, "drop_ports", fmt.Sprintf("{ %d }", port1)}); err != nil {
+		return fmt.Errorf("failed to delete set element: %v", err)
+	}
+
+	// Verify port1 accepts, port2 and port3 still drop.
+	if err := verifyAccept(port1); err != nil {
+		return fmt.Errorf("port1 after set element deletion: %v", err)
+	}
+	if err := verifyDrop(port2); err != nil {
+		return fmt.Errorf("port2 after set element deletion: %v", err)
+	}
+	if err := verifyDrop(port3); err != nil {
+		return fmt.Errorf("port3 after set element deletion: %v", err)
 	}
 
 	if err := nftCmd([]string{"flush", "ruleset"}); err != nil {
 		return fmt.Errorf("failed to flush ruleset: %v", err)
 	}
 
-	// Verify both accept.
+	// Verify all accept.
 	if err := verifyAccept(port1); err != nil {
 		return fmt.Errorf("port1 after ruleset flush: %v", err)
+	}
+	if err := verifyAccept(port2); err != nil {
+		return fmt.Errorf("port2 after ruleset flush: %v", err)
 	}
 	if err := verifyAccept(port3); err != nil {
 		return fmt.Errorf("port3 after ruleset flush: %v", err)

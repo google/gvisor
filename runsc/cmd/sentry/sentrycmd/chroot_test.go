@@ -12,9 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package cmd
+package sentrycmd
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"path"
@@ -23,7 +24,17 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/runsc/specutils"
 )
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+	if err := specutils.MaybeRunAsRoot(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error running as root: %v", err)
+		os.Exit(123)
+	}
+	os.Exit(m.Run())
+}
 
 func setup(t *testing.T) (string, string) {
 	t.Helper()

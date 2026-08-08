@@ -2,7 +2,7 @@ FROM ubuntu:jammy
 
 RUN set -x \
         && apt-get update \
-        && apt-get install -y \
+        && apt-get install -y --no-install-recommends \
             autoconf \
             build-essential \
             clang \
@@ -12,12 +12,13 @@ RUN set -x \
             git \
             unzip \
             wget \
+            ca-certificates \
         && rm -rf /var/lib/apt/lists/*
 
-
-RUN wget https://github.com/bazelbuild/bazel/releases/download/4.2.1/bazel-4.2.1-installer-linux-x86_64.sh
-RUN chmod +x bazel-4.2.1-installer-linux-x86_64.sh
-RUN ./bazel-4.2.1-installer-linux-x86_64.sh
+RUN wget -q https://github.com/bazelbuild/bazel/releases/download/4.2.1/bazel-4.2.1-installer-linux-x86_64.sh && \
+    chmod +x bazel-4.2.1-installer-linux-x86_64.sh && \
+    ./bazel-4.2.1-installer-linux-x86_64.sh && \
+    rm -f bazel-4.2.1-installer-linux-x86_64.sh
 
 RUN mkdir grpc && cd grpc \
    && git init && git remote add origin https://github.com/grpc/grpc.git \

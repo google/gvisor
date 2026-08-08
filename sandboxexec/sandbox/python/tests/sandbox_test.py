@@ -168,6 +168,96 @@ class SandboxTest(unittest.TestCase):
 
           self.assertFalse(os.path.exists(bundle_dir))
 
+  def test_init_env_list_and_dict(self):
+    enable_networking = os.geteuid() == 0
+    with tempfile.TemporaryDirectory() as temp_dir:
+      sb = sandbox.Sandbox(
+          runtime_dir=temp_dir,
+          enable_networking=enable_networking,
+          env=["FOO=bar", "BAZ=123"],
+      )
+      config_path = os.path.join(sb.bundle_dir, "config.json")
+      with open(config_path, "r") as f:
+        spec = json.load(f)
+      self.assertEqual(
+          spec["process"]["env"],
+          ["PATH=/bin:/usr/bin:/usr/local/bin", "FOO=bar", "BAZ=123"],
+      )
+      sb.close()
+
+      sb_dict = sandbox.Sandbox(
+          runtime_dir=temp_dir,
+          enable_networking=enable_networking,
+          env={"FOO": "bar", "BAZ": "123"},
+      )
+      config_path = os.path.join(sb_dict.bundle_dir, "config.json")
+      with open(config_path, "r") as f:
+        spec = json.load(f)
+      self.assertEqual(
+          spec["process"]["env"],
+          ["PATH=/bin:/usr/bin:/usr/local/bin", "FOO=bar", "BAZ=123"],
+      )
+      sb_dict.close()
+
+  def test_init_env_overrides_path(self):
+    enable_networking = os.geteuid() == 0
+    with tempfile.TemporaryDirectory() as temp_dir:
+      sb = sandbox.Sandbox(
+          runtime_dir=temp_dir,
+          enable_networking=enable_networking,
+          env={"PATH": "/bin:/usr/bin:/custom/path"},
+      )
+      config_path = os.path.join(sb.bundle_dir, "config.json")
+      with open(config_path, "r") as f:
+        spec = json.load(f)
+      self.assertEqual(
+          spec["process"]["env"], ["PATH=/bin:/usr/bin:/custom/path"]
+      )
+      sb.close()
+
+  def test_init_env_malformed_raises_error(self):
+    enable_networking = os.geteuid() == 0
+    with self.assertRaises(ValueError) as ctx:
+      sandbox.Sandbox(enable_networking=enable_networking, env=["NO_EQUALS"])
+    self.assertIn("Invalid environment variable format", str(ctx.exception))
+
+    with self.assertRaises(ValueError) as ctx:
+      sandbox.Sandbox(
+          enable_networking=enable_networking, env={"KEY=FOO": "val"}
+      )
+    self.assertIn(
+        "Environment variable key cannot contain '='", str(ctx.exception)
+    )
+
+    with self.assertRaises(TypeError) as ctx:
+      sandbox.Sandbox(enable_networking=enable_networking, env=123)
+    self.assertIn(
+        "env must be a list of 'KEY=VALUE' strings or a dict",
+        str(ctx.exception),
+    )
+
+  @mock.patch("subprocess.run")
+  def test_exec_env_flags(self, mock_run):
+    mock_run.return_value = mock.Mock(returncode=0)
+    enable_networking = os.geteuid() == 0
+    sb = sandbox.Sandbox(enable_networking=enable_networking)
+    mock_run.reset_mock()
+    sb.exec("/bin/sh", "-c", "echo hi", env={"LOCAL_VAR": "test"})
+    args = mock_run.call_args_list[0][0][0]
+    self.assertIn("--env", args)
+    self.assertIn("LOCAL_VAR=test", args)
+
+    mock_run.reset_mock()
+    sb.exec("/bin/sh", "-c", "echo hi", env=["LOCAL_VAR=test"])
+    args = mock_run.call_args_list[0][0][0]
+    self.assertIn("--env", args)
+    self.assertIn("LOCAL_VAR=test", args)
+
+    with self.assertRaises(ValueError) as ctx:
+      sb.exec("/bin/sh", "-c", "echo hi", env=["NO_EQUALS"])
+    self.assertIn("Invalid environment variable format", str(ctx.exception))
+    sb.close()
+
   def test_runtime_dir_ownership_and_cleanup(self):
     enable_networking = os.geteuid() == 0
 
@@ -251,6 +341,80 @@ class SandboxTest(unittest.TestCase):
     with self.assertRaises(sandbox.Error) as ctx:
       sandbox.Sandbox(enable_networking=False)
     self.assertIn("failed to create sandbox via subprocess", str(ctx.exception))
+
+  def test_invalid_networking_mode(self):  # pylint: disable=unused-argument
+    with self.assertRaises(ValueError) as ctx:
+      sandbox.Sandbox(network="invalid-net")
+    self.assertIn(
+        "Invalid network mode 'invalid-net'. Valid options are 'none',"
+        " 'sandbox', 'host', or None.",
+        str(ctx.exception),
+    )
+
+  @mock.patch("os.geteuid", return_value=0)
+  @mock.patch("subprocess.run")
+  def test_network_modes(self, mock_run, mock_geteuid):  # pylint: disable=unused-argument
+    mock_run.return_value = mock.Mock(returncode=0)
+    for net in ["none", "sandbox", "host"]:
+      mock_run.reset_mock()
+      sb = sandbox.Sandbox(network=net)
+      args = mock_run.call_args_list[0][0][0]
+      if net != "none":
+        self.assertIn(f"--network={net}", args)
+      else:
+        self.assertIn("--network=none", args)
+      sb.close()
+
+  @mock.patch("os.geteuid", return_value=0)
+  @mock.patch("subprocess.run")
+  def test_network_none_overrides_enable_networking_true(
+      self, mock_run, mock_geteuid
+  ):  # pylint: disable=unused-argument
+    mock_run.return_value = mock.Mock(returncode=0)
+    sb = sandbox.Sandbox(enable_networking=True, network="none")
+    args = mock_run.call_args_list[0][0][0]
+    self.assertIn("--network=none", args)
+    config_path = os.path.join(sb.bundle_dir, "config.json")
+    with open(config_path, "r") as f:
+      spec = json.load(f)
+    namespaces = spec.get("linux", {}).get("namespaces", [])
+    namespace_types = {ns.get("type") for ns in namespaces}
+    self.assertNotIn("network", namespace_types)
+    sb.close()
+
+  @mock.patch("os.geteuid", return_value=1000)
+  def test_network_sandbox_nonroot_raises_error(
+      self, mock_geteuid
+  ):  # pylint: disable=unused-argument
+    with self.assertRaises(sandbox.Error) as ctx:
+      sandbox.Sandbox(network="sandbox")
+    self.assertIn(
+        "enabling networking requires running as root", str(ctx.exception)
+    )
+
+  def test_network_mode_none_real_sandbox(self):
+    """Verifies starting a real sandbox with network='none' without mocks."""
+    with sandbox.Sandbox(network="none") as sb:
+      stdout, _ = sb.exec("echo", "hello network none")
+      self.assertEqual(stdout.strip(), "hello network none")
+      config_path = os.path.join(sb.bundle_dir, "config.json")
+      with open(config_path, "r") as f:
+        spec = json.load(f)
+      namespaces = spec.get("linux", {}).get("namespaces", [])
+      namespace_types = {ns.get("type") for ns in namespaces}
+      self.assertNotIn("network", namespace_types)
+
+  def test_network_mode_host_real_sandbox(self):
+    """Verifies starting a real sandbox with network='host' without mocks."""
+    with sandbox.Sandbox(network="host") as sb:
+      stdout, _ = sb.exec("echo", "hello network host")
+      self.assertEqual(stdout.strip(), "hello network host")
+      config_path = os.path.join(sb.bundle_dir, "config.json")
+      with open(config_path, "r") as f:
+        spec = json.load(f)
+      namespaces = spec.get("linux", {}).get("namespaces", [])
+      namespace_types = {ns.get("type") for ns in namespaces}
+      self.assertNotIn("network", namespace_types)
 
   def test_find_runsc_not_found(self):
     old_runsc_path = os.environ.get("RUNSC_PATH")

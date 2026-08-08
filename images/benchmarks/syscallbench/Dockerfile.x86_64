@@ -1,10 +1,11 @@
-FROM ubuntu:jammy
-
+FROM ubuntu:jammy AS build
 RUN set -x \
         && apt-get update \
-        && apt-get install -y \
-            gcc \
+        && apt-get install -y --no-install-recommends \
+            gcc libc6-dev ca-certificates \
         && rm -rf /var/lib/apt/lists/*
-
 COPY ./syscallbench.c /
-RUN gcc /syscallbench.c -o /usr/bin/syscallbench
+RUN gcc -O2 /syscallbench.c -o /usr/bin/syscallbench
+
+FROM ubuntu:jammy
+COPY --from=build /usr/bin/syscallbench /usr/bin/syscallbench

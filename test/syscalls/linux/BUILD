@@ -1217,6 +1217,20 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "iptables_util",
+    testonly = 1,
+    srcs = [
+        "iptables_util.cc",
+    ],
+    hdrs = [
+        "iptables_util.h",
+    ],
+    deps = [
+        ":iptables_types",
+    ],
+)
+
 cc_binary(
     name = "iptables_test",
     testonly = 1,
@@ -1227,6 +1241,7 @@ cc_binary(
     malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":iptables_types",
+        ":iptables_util",
         "//test/util:capability_util",
         "//test/util:file_descriptor",
         "//test/util:logging",
@@ -1250,6 +1265,7 @@ cc_binary(
     malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":iptables_types",
+        ":iptables_util",
         "//test/util:capability_util",
         "//test/util:file_descriptor",
         "//test/util:logging",
@@ -1336,13 +1352,100 @@ cc_binary(
     ],
 )
 
-cc_binary(
-    name = "landlock_test",
+cc_library(
+    name = "landlock_util",
     testonly = 1,
-    srcs = ["landlock.cc"],
+    hdrs = ["landlock_util.h"],
+)
+
+cc_binary(
+    name = "landlock_v1_test",
+    testonly = 1,
+    srcs = ["landlock_v1.cc"],
     linkstatic = 1,
     malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
+        ":landlock_util",
+        "//test/util:fs_util",
+        "//test/util:multiprocess_util",
+        "//test/util:posix_error",
+        "//test/util:temp_path",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
+    name = "landlock_v2_test",
+    testonly = 1,
+    srcs = ["landlock_v2.cc"],
+    linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
+    deps = select_gtest() + [
+        ":landlock_util",
+        "//test/util:fs_util",
+        "//test/util:multiprocess_util",
+        "//test/util:posix_error",
+        "//test/util:temp_path",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
+    name = "landlock_v3_test",
+    testonly = 1,
+    srcs = ["landlock_v3.cc"],
+    linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
+    deps = select_gtest() + [
+        ":landlock_util",
+        "//test/util:multiprocess_util",
+        "//test/util:posix_error",
+        "//test/util:temp_path",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
+    name = "landlock_v4_test",
+    testonly = 1,
+    srcs = ["landlock_v4.cc"],
+    linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
+    deps = select_gtest() + [
+        ":landlock_util",
+        "//test/util:multiprocess_util",
+        "//test/util:posix_error",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
+    name = "landlock_v5_test",
+    testonly = 1,
+    srcs = ["landlock_v5.cc"],
+    linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
+    deps = select_gtest() + [
+        ":landlock_util",
+        "//test/util:multiprocess_util",
+        "//test/util:posix_error",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
+    name = "landlock_v6_test",
+    testonly = 1,
+    srcs = ["landlock_v6.cc"],
+    linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
+    deps = select_gtest() + [
+        ":landlock_util",
         "//test/util:fs_util",
         "//test/util:multiprocess_util",
         "//test/util:posix_error",
@@ -2863,6 +2966,7 @@ cc_library(
     hdrs = ["socket_unix_dgram.h"],
     deps = select_gtest() + [
         ":unix_domain_socket_test_util",
+        "//test/util:posix_error",
         "//test/util:socket_util",
         "//test/util:test_util",
         "@com_google_absl//absl/time",

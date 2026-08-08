@@ -739,6 +739,13 @@ TEST_F(PosixACLTest, RemoveACLClearsSGID) {
 }
 
 TEST_F(PosixACLTest, SetACLEmpty) {
+  if (!IsRunningOnGvisor()) {
+    // Setting an empty string "" xattr for a POSIX ACL only clears the ACL on
+    // kernel >=6.2. Older kernels give EINVAL.
+    KernelVersion version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
+    SKIP_IF(version.major < 6 || (version.major == 6 && version.minor < 2));
+  }
+
   // Set an ACL on the file
   std::string acl = BuildACL({
       Ent(kUserObj, kR | kW, kUndef),

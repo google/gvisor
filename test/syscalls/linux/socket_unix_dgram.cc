@@ -14,13 +14,18 @@
 
 #include "test/syscalls/linux/socket_unix_dgram.h"
 
+#include <poll.h>
 #include <stdio.h>
 #include <sys/un.h>
 
+#include <cerrno>
+#include <vector>
+
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
-#include "test/syscalls/linux/unix_domain_socket_test_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
@@ -72,6 +77,57 @@ TEST_P(DgramUnixSocketPairTest, IncreasedSocketSendBufUnblocksWrites) {
   // The send should succeed again.
   ASSERT_THAT(RetryEINTR(send)(sock, buf.data(), buf.size(), 0),
               SyscallSucceeds());
+}
+
+// POLLOUT on a datagram socket is capacity-based and unaffected by a write
+// shutdown: unix_writable() in Linux does not consult SEND_SHUTDOWN. A
+// socket with a full send buffer does not become "writable" just because
+// sends now fail with EPIPE, and draining the peer restores POLLOUT even
+// after the shutdown.
+TEST_P(DgramUnixSocketPairTest, PollOutAfterWriteShutdownIsCapacityBased) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  // Fill the send direction until it reports EAGAIN.
+  std::vector<char> buf(4096, 'x');
+  int ret;
+  for (int sent = 0;; sent++) {
+    ASSERT_LT(sent, 1 << 16);
+    ASSERT_THAT(
+        ret = RetryEINTR(send)(sockets->first_fd(), buf.data(), buf.size(),
+                               MSG_DONTWAIT),
+        ::testing::AnyOf(SyscallSucceeds(), SyscallFailsWithErrno(EAGAIN)));
+    if (ret == -1) {
+      break;
+    }
+  }
+
+  struct pollfd poll_fd = {sockets->first_fd(), POLLOUT, 0};
+  EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, /*timeout=*/0),
+              SyscallSucceedsWithValue(0));
+
+  ASSERT_THAT(shutdown(sockets->first_fd(), SHUT_WR), SyscallSucceeds());
+
+  // Still not writable: the full queue, not the shutdown, governs POLLOUT.
+  poll_fd.revents = 0;
+  EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, /*timeout=*/0),
+              SyscallSucceedsWithValue(0));
+
+  // Drain the peer: capacity, and with it POLLOUT, comes back despite the
+  // shutdown.
+  for (;;) {
+    ASSERT_THAT(
+        ret = RetryEINTR(recv)(sockets->second_fd(), buf.data(), buf.size(),
+                               MSG_DONTWAIT),
+        ::testing::AnyOf(SyscallSucceeds(), SyscallFailsWithErrno(EAGAIN)));
+    if (ret <= 0) {
+      break;
+    }
+  }
+
+  poll_fd.revents = 0;
+  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, /*timeout=*/0),
+              SyscallSucceedsWithValue(1));
+  EXPECT_EQ(poll_fd.revents, POLLOUT);
 }
 
 }  // namespace

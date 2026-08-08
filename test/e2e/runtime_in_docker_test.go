@@ -132,9 +132,12 @@ func (test testVariant) failureCases() []testVariant {
 // https://gvisor.dev/blog/2024/09/23/safe-ride-into-the-dangerzone/
 func TestGVisorInDocker(t *testing.T) {
 	ctx := context.Background()
-	runscPath, err := testutil.FindFile("runsc/runsc")
+	runscPath, err := testutil.FindFile("release/runsc")
 	if err != nil {
-		t.Fatalf("Cannot locate runsc binary: %v", err)
+		runscPath, err = testutil.FindFile("runsc/runsc")
+		if err != nil {
+			t.Fatalf("Cannot locate runsc binary: %v", err)
+		}
 	}
 	for _, test := range []testVariant{
 		{

@@ -29,10 +29,13 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
+#include "absl/strings/string_view.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/posix_error.h"
 
 namespace gvisor {
 namespace testing {
@@ -55,6 +58,16 @@ namespace testing {
 
 #define TABLE_NAME_SIZE 32
 #define VALID_USERDATA_SIZE 128
+
+struct ElementDescriptor {
+  std::vector<uint8_t> key;
+  std::vector<uint8_t> data;
+  uint32_t flags = 0;
+
+  bool operator==(const ElementDescriptor& other) const {
+    return key == other.key && data == other.data && flags == other.flags;
+  }
+};
 
 struct NfTableCheckOptions {
   const struct nlmsghdr* hdr;
@@ -107,6 +120,18 @@ struct AddDefaultBaseChainOptions {
   uint32_t seq;
   std::string chain_type;
   uint32_t hook_num;
+  uint32_t hook_priority = 0;
+  uint32_t flags = NFT_CHAIN_BASE;
+  std::string family_name = "inet";
+};
+
+struct AddDefaultRegularChainOptions {
+  const FileDescriptor& fd;
+  std::string table_name;
+  std::string chain_name;
+  uint32_t seq;
+  uint32_t flags = 0;
+  uint32_t chain_id = 0;
   std::string family_name = "inet";
 };
 
@@ -134,8 +159,30 @@ void CheckNetfilterRuleAttributes(const struct NfRuleCheckOptions& options);
 // Helper function to add a default table.
 void AddDefaultTable(const AddDefaultTableOptions& options);
 
-// Helper function to add a default chain.
+// Helper function to add a default base chain.
 void AddDefaultBaseChain(const AddDefaultBaseChainOptions& options);
+
+// Helper function to add a default regular chain.
+void AddDefaultRegularChain(const AddDefaultRegularChainOptions& options);
+
+// Helper function to get chain handle.
+PosixErrorOr<uint64_t> GetChainHandle(const FileDescriptor& fd,
+                                      absl::string_view table_name,
+                                      absl::string_view chain_name,
+                                      uint32_t seq);
+
+// Helper function to verify chain policy.
+void VerifyChainPolicy(const FileDescriptor& fd, absl::string_view table_name,
+                       absl::string_view chain_name, uint32_t expected_policy,
+                       uint32_t seq);
+
+// Helper function to get set elements.
+PosixErrorOr<std::vector<ElementDescriptor>> GetSetElements(
+    const FileDescriptor& fd, absl::string_view table_name,
+    absl::string_view set_name, uint32_t seq);
+
+// Helper function to build a netlink set element attribute from a descriptor.
+std::vector<char> BuildNetlinkElement(const ElementDescriptor& desc);
 
 // Helper function to generate a batch netfilter request.
 PosixError NetlinkNetfilterBatchRequestAckOrError(const FileDescriptor& fd,
@@ -282,6 +329,9 @@ class NlImmExpr {
   // Sets the verdict code to place in the register for the immediate data.
   NlImmExpr& VerdictCode(uint32_t verdict_code);
 
+  // Sets the verdict chain ID for jump/goto.
+  NlImmExpr& VerdictChainId(uint32_t chain_id);
+
   // Sets the raw value to place in the register for the immediate data.
   NlImmExpr& Value(const std::vector<char>& value);
 
@@ -301,6 +351,7 @@ class NlImmExpr {
   std::vector<char> value_;
   uint32_t verdict_code_ = 0;
   bool has_verdict_code_ = false;
+  std::optional<uint32_t> verdict_chain_id_;
 };
 
 }  // namespace testing

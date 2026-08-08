@@ -2,8 +2,8 @@ FROM ubuntu:jammy
 
 RUN set -x \
         && apt-get update \
-        && apt-get install -y \
-            apache2 \
+        && apt-get install -y --no-install-recommends \
+            apache2 ca-certificates \
         && rm -rf /var/lib/apt/lists/*
 
 # Generate a bunch of relevant files.

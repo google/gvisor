@@ -304,6 +304,9 @@ type Table struct {
 	// chainHandles is a map of chain handles (ids) to chains for a given table.
 	chainHandles map[uint64]*Chain
 
+	// chainIDs is a map of temporary transaction chain IDs to chains for a given table.
+	chainIDs map[uint32]*Chain
+
 	// flagSet is the set of optional flags for the table.
 	// Note: currently nftables only has the single Dormant flag.
 	flagSet map[TableFlag]struct{}
@@ -963,8 +966,14 @@ type NftSetBackend interface {
 
 	// Remove removes an element from the set and returns the index of the
 	// removed element.
-	// If the element does not exist, it returns -1.
+	// If the element does not exist, it returns -1 and an error.
 	Remove(e *nftSetElem) (int, *syserr.AnnotatedError)
+
+	// Update updates the index of an element in the set backend.
+	Update(e *nftSetElem, idx int) *syserr.AnnotatedError
+
+	// RemoveAll removes all elements from the set backend.
+	RemoveAll() *syserr.AnnotatedError
 
 	// Clone returns a copy of the set backend.
 	Clone() NftSetBackend
@@ -1086,7 +1095,7 @@ func parseVerdictAttrs(tab *Table, dataAttrs map[uint16]nlmsg.BytesView) (Verdic
 	if !ok {
 		return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: NFTA_DATA_VERDICT attribute is not found")
 	}
-	return validateVerdictData(tab, nlmsg.AttrsView(vBytes))
+	return parseAndValidateVerdictData(tab, nlmsg.AttrsView(vBytes))
 }
 
 func parseDataAttrs(dataAttrs map[uint16]nlmsg.BytesView) ([]byte, *syserr.AnnotatedError) {
@@ -1177,7 +1186,7 @@ func formatRegIdxForDump(regIdx int) marshal.Marshallable {
 }
 
 // validateVerdictData validates the verdict data bytes and returns the data as a verdict.
-func validateVerdictData(tab *Table, bytes nlmsg.AttrsView) (Verdict, *syserr.AnnotatedError) {
+func parseAndValidateVerdictData(tab *Table, bytes nlmsg.AttrsView) (Verdict, *syserr.AnnotatedError) {
 	v := Verdict{}
 	verdictAttrs, ok := NfParse(bytes)
 	if !ok {
@@ -1206,9 +1215,10 @@ func validateVerdictData(tab *Table, bytes nlmsg.AttrsView) (Verdict, *syserr.An
 			if chain, err = tab.GetChain(chainNameBytes.String()); err != nil {
 				return v, err
 			}
-		} else if _, ok := verdictAttrs[linux.NFTA_VERDICT_CHAIN_ID]; ok {
-			// TODO - b/434243967: Add support for looking up chains via their transaction id.
-			return v, syserr.NewAnnotatedError(syserr.ErrNotSupported, "Nftables: Looking up chains via their id is not supported")
+		} else if chainID, ok := AttrNetToHost[uint32](linux.NFTA_VERDICT_CHAIN_ID, verdictAttrs); ok {
+			if chain, err = tab.GetChainByID(chainID); err != nil {
+				return v, err
+			}
 		} else {
 			return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Attributes for verdict data must contain a chain name or chain id")
 		}
@@ -1219,10 +1229,6 @@ func validateVerdictData(tab *Table, bytes nlmsg.AttrsView) (Verdict, *syserr.An
 
 		if chain.IsBound() {
 			return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Already Bound chains cannot be jump targets")
-		}
-
-		if chain.GetFlags()&linux.NFT_CHAIN_BINDING != 0 {
-			return v, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Chain binding must be set for chains to be used as jump targets")
 		}
 
 		if !chain.IncrementChainUse() {

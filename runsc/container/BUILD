@@ -10,6 +10,7 @@ go_library(
     srcs = [
         "container.go",
         "gofer_to_host_rpc.go",
+        "null_netns.go",
         "state_file.go",
         "status.go",
     ],
@@ -38,7 +39,6 @@ go_library(
         "//runsc/sandbox",
         "//runsc/specutils",
         "//runsc/starttime",
-        "@com_github_cenkalti_backoff//:go_default_library",
         "@com_github_gofrs_flock//:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
@@ -67,7 +67,7 @@ go_test(
         ],
     }),
     data = [
-        "//runsc",
+        "//:release",
         "//test/cmd/test_app",
     ],
     library = ":container",
@@ -88,6 +88,7 @@ go_test(
         "//pkg/sentry/platform",
         "//pkg/sentry/seccheck",
         "//pkg/sentry/seccheck/points:points_go_proto",
+        "//pkg/sentry/seccheck/scsdk",
         "//pkg/sentry/seccheck/sinks/remote/test",
         "//pkg/state/statefile",
         "//pkg/sync",

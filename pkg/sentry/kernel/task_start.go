@@ -106,6 +106,11 @@ type TaskConfig struct {
 	// InitialCgroups are the cgroups the container is initialised to.
 	InitialCgroups map[Cgroup]struct{}
 
+	// InitialCgroupV2 is the cgroup2 node the new task starts in. Only
+	// consulted when the task is created from a non-task context (i.e.
+	// CreateProcess); if nil, the root cgroup is used.
+	InitialCgroupV2 Cgroup2
+
 	// UserCounters is user resource counters.
 	UserCounters *UserCounters
 
@@ -302,6 +307,9 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 	if !cfg.cloneIntoCgroup {
 		if srcT != nil {
 			cgroup2 = srcT.Cgroup2()
+		} else if cfg.InitialCgroupV2 != nil {
+			// Container start or exec into an existing container.
+			cgroup2 = cfg.InitialCgroupV2
 		} else {
 			// Direct exec into the sandbox.
 			cgroup2 = cfg.Kernel.Cgroup2FS().RootCgroup()

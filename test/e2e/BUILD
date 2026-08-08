@@ -13,8 +13,8 @@ go_test(
         "integration_test.go",
     ],
 
-    # runsc is needed to invalidate the bazel cache in case of any code changes.
-    data = ["//runsc"],
+    # Needed to invalidate the bazel cache in case of any code changes.
+    data = ["//:release"],
     library = ":integration",
     tags = [
         # Requires docker and runsc to be configured before the test runs.
@@ -40,8 +40,8 @@ go_test(
         "integration_runtime_test.go",
         "systemd_test.go",
     ],
-    # runsc is needed to invalidate the bazel cache in case of any code changes.
-    data = ["//runsc"],
+    # Needed to invalidate the bazel cache in case of any code changes.
+    data = ["//:release"],
     library = ":integration",
     tags = [
         # Requires docker and runsc to be configured before the test runs.
@@ -65,8 +65,8 @@ go_test(
     srcs = [
         "runtime_in_docker_test.go",
     ],
-    # runsc is needed to invalidate the bazel cache in case of any code changes.
-    data = ["//runsc"],
+    # Needed to invalidate the bazel cache in case of any code changes.
+    data = ["//:release"],
     library = ":integration",
     tags = [
         # Requires docker and runsc to be configured before the test runs.

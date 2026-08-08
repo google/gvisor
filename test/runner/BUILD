@@ -10,7 +10,7 @@ go_binary(
     testonly = 1,
     srcs = ["main.go"],
     data = [
-        "//runsc",
+        "//:release",
         "//test/runner/fuse",
         "//test/runner/setup_container",
     ],

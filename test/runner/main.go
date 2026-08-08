@@ -26,6 +26,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -753,6 +754,9 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 	return err
 }
 
+// Regex matching some performance-related warnings that are safe to ignore in tests.
+var performanceWarningRegexp = regexp.MustCompile(`(?i).*(slows?|slowing).*startup.*`)
+
 func isWarning(line string) bool {
 	if len(line) >= 5 && line[:5] == "panic" {
 		return true
@@ -823,6 +827,9 @@ func isWarning(line string) bool {
 	// TODO(gvisor.dev/issue/11649): Systrap needs to roll back created
 	// patches for traced procs.
 	case strings.Contains(line, "LIKELY ERROR: Attached tracer to process with patched syscalls"):
+
+	// Performance-related warnings.
+	case performanceWarningRegexp.MatchString(line):
 
 	case *save:
 		// Ignore these warnings for S/R tests as we try to delete the sandbox

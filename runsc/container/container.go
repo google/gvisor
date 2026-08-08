@@ -17,7 +17,6 @@ package container
 
 import (
 	"bufio"
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -30,9 +29,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
@@ -1317,23 +1316,17 @@ func (c *Container) waitForStopped() error {
 		return nil
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	b := backoff.WithContext(backoff.NewConstantBackOff(100*time.Millisecond), ctx)
-	op := func() error {
-		if err := unix.Kill(goferPid, 0); err == nil {
-			return fmt.Errorf("gofer is still running")
-		}
-		c.GoferPid.Store(0)
-		return nil
+	if err := specutils.WaitForNonChildExit(int(goferPid), 5*time.Second); err != nil {
+		return fmt.Errorf("waiting for gofer (PID %d) to exit: %v", goferPid, err)
 	}
-	return backoff.Retry(op, b)
+	c.GoferPid.Store(0)
+	return nil
 }
 
 // shouldCreateDeviceGofer indicates whether a device gofer connection should
 // be created.
 func shouldCreateDeviceGofer(spec *specs.Spec, conf *config.Config) bool {
-	return specutils.GPUFunctionalityRequested(spec, conf) || specutils.TPUFunctionalityRequested(spec, conf)
+	return specutils.GPUFunctionalityRequested(spec, conf) || specutils.TPUFunctionalityRequested(spec, conf) || specutils.RDMAEnabled(spec, conf)
 }
 
 // shouldSpawnGofer indicates whether the gofer process should be spawned.
@@ -1583,8 +1576,13 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 		{Type: specs.PIDNamespace},
 		{Type: specs.UTSNamespace},
 	}
-	if ns, ok := goferNetworkNamespace(conf.GoferNetworkNamespace); ok {
-		nss = append(nss, ns)
+	goferNetNS, goferNetNSFile, pinGoferNetNS := goferNetworkNamespace(conf)
+	if goferNetNSFile != nil {
+		// goferNetNS.Path must remain open until the gofer has started.
+		defer goferNetNSFile.Close()
+	}
+	if goferNetNS != nil {
+		nss = append(nss, *goferNetNS)
 	}
 
 	rootlessEUID := unix.Geteuid() != 0
@@ -1653,6 +1651,16 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 	c.goferIsChild = true
 	rpcPidCh <- cmd.Process.Pid
 
+	if pinGoferNetNS {
+		// The gofer was started in a new empty network namespace.
+		// Pin it, future gofers will join it instead of creating a new one.
+		if err := pinNullNetNS(conf, cmd.Process.Pid); err != nil {
+			log.Warningf("Unable to pin the gofer's network namespace at %q (%v); future gofers will create new network namespaces. This slows down gVisor startup.", nullNetNSPath(conf), err)
+		} else {
+			log.Infof("Pinned null network namespace at %q", nullNetNSPath(conf))
+		}
+	}
+
 	// Set up and synchronize rootless mode userns mappings.
 	if setUserMappings {
 		if err := sandbox.SetUserMappings(c.Spec, cmd.Process.Pid); err != nil {
@@ -1676,17 +1684,47 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 	return sandEnds, goferFilestores, devSandEnd, mountsSand, nil
 }
 
-func goferNetworkNamespace(namespace config.GoferNetworkNamespace) (specs.LinuxNamespace, bool) {
-	switch namespace {
+// goferNetworkNamespace returns the network namespace that the gofer process
+// should be started in.
+// A nil namespace means to stay in the current network namespace.
+// The returned `os.File` keeps the namespace referred to by the returned
+// namespace's Path alive, so it must be kept open until gofer start.
+// If `pinNetNS` is true, the gofer should be started in a new network
+// namespace, which should then be pinned as the shared "null" network
+// namespace (see `pinNullNetNS`) once the gofer starts.
+func goferNetworkNamespace(conf *config.Config) (ns *specs.LinuxNamespace, nsFile *os.File, pinNetNS bool) {
+	switch conf.GoferNetworkNamespace {
 	case config.GoferNetworkNamespaceNew:
-		return specs.LinuxNamespace{Type: specs.NetworkNamespace}, true
+		return &specs.LinuxNamespace{Type: specs.NetworkNamespace}, nil, false
 	case config.GoferNetworkNamespaceHost:
-		return specs.LinuxNamespace{}, false
-	default:
-		return specs.LinuxNamespace{
+		return nil, nil, false
+	case config.GoferNetworkNamespaceNull:
+		nsFile, err := openNullNetNS(nullNetNSPath(conf))
+		if err != nil {
+			if !os.IsNotExist(err) {
+				// Unexpected error.
+				log.Warningf("No usable null network namespace at %q (%v); creating a new one. This issue is slowing down your sandboxes' startup.", nullNetNSPath(conf), err)
+			} else if conf.SharedRootDir == "" && conf.RootDir != config.DefaultRootDir() {
+				// User has customized `--root` but not `--shared-root`, so they are likely missing out on
+				// the performance benefits of a shared root directory.
+				log.Warningf("gVisor startup is slower if `--root` (or `--shared-root`) is not reused across multiple sandboxes. You can speed up sandbox startup by setting `--shared-root` to a shared system-wide directory so that the null gofer network namespace is reused across sandboxes.")
+			} else {
+				// Informational-only as this is expected on first sandbox creation.
+				log.Infof("No usable null network namespace at %q (%v); creating a new one. This is expected if this sandbox is the first sandbox to start with this `--shared-root` directory (%v). If this is not the first sandbox, this issue is slowing down your sandboxes' startup.", nullNetNSPath(conf), err, conf.SharedRoot())
+			}
+			return &specs.LinuxNamespace{Type: specs.NetworkNamespace}, nil, true
+		}
+		return &specs.LinuxNamespace{
 			Type: specs.NetworkNamespace,
-			Path: string(namespace),
-		}, true
+			// Refer to the namespace through our own open FD so that
+			// it stays valid even if racing with an unmount.
+			Path: fmt.Sprintf("/proc/self/fd/%d", nsFile.Fd()),
+		}, nsFile, false
+	default:
+		return &specs.LinuxNamespace{
+			Type: specs.NetworkNamespace,
+			Path: string(conf.GoferNetworkNamespace),
+		}, nil, false
 	}
 }
 

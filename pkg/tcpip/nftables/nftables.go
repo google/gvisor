@@ -451,6 +451,23 @@ func (nf *NFTables) PruneUnused() {
 	}
 }
 
+// CanCommitChains checks that all the new bounded chains are valid.
+// Ref: net/netfilter/nf_tables_api.c:nf_tables_commit()
+func (nf *NFTables) CanCommitChains(newChains []*Chain) *syserr.AnnotatedError {
+	for _, chain := range newChains {
+		if !chain.IsAnonymousChain() {
+			continue
+		}
+		if !chain.IsBound() {
+			return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "anonymous chains must have jump/goto reference")
+		}
+		if chain.GetChainUse() > 1 {
+			return syserr.NewAnnotatedError(syserr.ErrBusy, "anonymous chain already in use")
+		}
+	}
+	return nil
+}
+
 // Flush clears all data for all address families or
 // a specific family/table if filtered.
 // It skips tables that are not owned by the given owner.
@@ -963,6 +980,31 @@ func (t *Table) GetChainByHandle(chainHandle uint64) (*Chain, *syserr.AnnotatedE
 	return c, nil
 }
 
+// GetChainByID returns the chain with the specified transaction ID if it exists.
+func (t *Table) GetChainByID(chainID uint32) (*Chain, *syserr.AnnotatedError) {
+	c, exists := t.chainIDs[chainID]
+	if !exists {
+		return nil, syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("chain ID %d not found for table %s", chainID, t.name))
+	}
+	return c, nil
+}
+
+// RegisterChainID registers a temporary batch transaction chain ID.
+func (t *Table) RegisterChainID(chainID uint32, c *Chain) {
+	if t.chainIDs == nil {
+		t.chainIDs = make(map[uint32]*Chain)
+	}
+	// Ref: net/netfilter/nf_tables_api.c:nft_trans_chain_add()
+	// Linux allows overwriting the chain ID.
+	// No need to check for duplicates.
+	t.chainIDs[chainID] = c
+}
+
+// ClearChainIDs clears all temporary transaction chain IDs in the table.
+func (t *Table) ClearChainIDs() {
+	t.chainIDs = nil
+}
+
 // pruneUnused removes unused/unreferenced table objects.
 func (t *Table) pruneUnused() {
 	// Garbage collect unbounded chains.
@@ -982,6 +1024,8 @@ func (t *Table) pruneUnused() {
 			t.deleteChain(c)
 		}
 	}
+	// Clear temporary transaction chain IDs.
+	t.ClearChainIDs()
 }
 
 // GetChains returns a map of all chains for the table.
@@ -1036,7 +1080,7 @@ func (t *Table) deleteChain(c *Chain) bool {
 		if err := hfStack.detachBaseChain(c); err != nil {
 			panic(fmt.Sprintf("failed to detach base chain %s from hook %v: %v", c.GetName(), c.baseChainInfo.Hook, err))
 		}
-		if len(hfStack.baseChains) == 0 {
+		if len(hfStack.baseChains) == 0 && len(hfStack.natBaseChains) == 0 {
 			delete(t.afFilter.hfStacks, c.baseChainInfo.Hook)
 		}
 	}
@@ -1048,10 +1092,27 @@ func (t *Table) deleteChain(c *Chain) bool {
 	return true
 }
 
+// deleteSet deletes the specified set from the table returning true if the
+// set was deleted and false if the set doesn't exist.
+func (t *Table) deleteSet(s *nftSet) bool {
+	if _, ok := t.sets[s.name]; !ok {
+		return false
+	}
+	delete(t.sets, s.name)
+	delete(t.setHandles, s.handle)
+	s.destroy()
+	return true
+}
+
 func (t *Table) destroy() {
-	// Destroy all rules in the table first to handle any chain use.
+	// Destroy all rules in the table first to handle any chain and set use.
 	for _, c := range t.chains {
 		c.DeleteAllRules()
+	}
+	// Destroy all sets in the table before chains so that any element-level
+	// operations or verdicts referencing chains release their chainUse count.
+	for _, s := range t.sets {
+		t.deleteSet(s)
 	}
 	// Destroy all chains in the table.
 	for _, c := range t.chains {
@@ -1073,6 +1134,27 @@ func (t *Table) destroy() {
 // ChainCount returns the number of chains in the table.
 func (t *Table) ChainCount() int {
 	return len(t.chains)
+}
+
+// RenameChain renames an existing chain in the table.
+// Ref: net/netfilter/nf_tables_api.c:nf_tables_updchain()
+func (t *Table) RenameChain(c *Chain, newName string) *syserr.AnnotatedError {
+	currName := c.name
+	if currName == newName {
+		return nil
+	}
+	// Check for existing chain with a same name.
+	if existingChain, exists := t.chains[newName]; exists {
+		if existingChain != c {
+			return syserr.NewAnnotatedError(syserr.ErrExists, fmt.Sprintf("chain %s already exists for table %s", newName, t.name))
+		}
+		return nil
+	}
+
+	delete(t.chains, currName)
+	c.name = newName
+	t.chains[newName] = c
+	return nil
 }
 
 //
@@ -1170,6 +1252,18 @@ func (c *Chain) IncrementChainUse() bool {
 // Note: Returns nil if the chain is not a base chain.
 func (c *Chain) GetBaseChainInfo() *BaseChainInfo {
 	return c.baseChainInfo
+}
+
+// SetPolicy sets the policy for a base chain.
+func (c *Chain) SetPolicy(policy uint8) *syserr.AnnotatedError {
+	if !c.IsBaseChain() {
+		return syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("chain %s is not a base chain", c.name))
+	}
+	if policy != linux.NF_DROP && policy != linux.NF_ACCEPT {
+		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("invalid policy %d", policy))
+	}
+	c.baseChainInfo.PolicyDrop = (policy == linux.NF_DROP)
+	return nil
 }
 
 // SetBaseChainInfo attaches the specified chain to the netfilter pipeline (and
@@ -1606,7 +1700,7 @@ func (hfStack *hookFunctionStack) detachBaseChain(c *Chain) *syserr.AnnotatedErr
 //
 
 // ParseExpr parses the expression attributes and returns the expression information.
-func (nf *NFTables) ParseExpr(attrs nlmsg.AttrsView) (*ExprInfo, *syserr.AnnotatedError) {
+func ParseExpr(attrs nlmsg.AttrsView) (*ExprInfo, *syserr.AnnotatedError) {
 	exprAttrs, ok := NfParse(attrs)
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "failed to parse attributes for expression")
@@ -1632,9 +1726,9 @@ func (nf *NFTables) ParseExpr(attrs nlmsg.AttrsView) (*ExprInfo, *syserr.Annotat
 	}, nil
 }
 
-// ParseNestedExprs parses the rule expressions attributes and adds the
-// operations to the rule.
-func (nf *NFTables) ParseNestedExprs(nestedAttrBytes nlmsg.AttrsView, maxExprs int) ([]ExprInfo, *syserr.AnnotatedError) {
+// ParseNestedExprs parses the nested expression attributes and
+// returns the expression information.
+func ParseNestedExprs(nestedAttrBytes nlmsg.AttrsView, maxExprs int) ([]ExprInfo, *syserr.AnnotatedError) {
 	// Netlink message structure for rule expressions (NFTA_RULE_EXPRESSIONS):
 	//
 	// [ NFTA_RULE_EXPRESSIONS (Outer Array Container) ]
@@ -1662,7 +1756,7 @@ func (nf *NFTables) ParseNestedExprs(nestedAttrBytes nlmsg.AttrsView, maxExprs i
 			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "too many expressions specified for rule")
 		}
 		numExprs++
-		exprInfo, err := nf.ParseExpr(value)
+		exprInfo, err := ParseExpr(value)
 		if err != nil {
 			return nil, err
 		}
