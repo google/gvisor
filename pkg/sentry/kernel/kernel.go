@@ -435,6 +435,10 @@ type Kernel struct {
 	// IOUringEnabled determines if io_uring is enabled.
 	IOUringEnabled bool
 
+	// RestrictBindToLoopback, when true, causes bind(2) to return EACCES for
+	// any non-loopback address (including INADDR_ANY / IN6ADDR_ANY).
+	RestrictBindToLoopback bool
+
 	// MaxKeySetSize is the maximum number of keys in a key set.
 	MaxKeySetSize atomicbitops.Int32
 
