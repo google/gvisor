@@ -106,6 +106,17 @@ func (k *Kernel) IncCheckpointGenOnRestore() {
 	k.CheckpointWait.signal(k.checkpointGen, nil)
 }
 
+// BeginCheckpoint marks the start of a checkpoint attempt. While an attempt
+// is in flight, SignalAllCheckpointWaiters does not signal waiters; the
+// attempt's completion will signal them with its actual result. Each call
+// must be paired with a subsequent call to OnCheckpointAttempt.
+func (k *Kernel) BeginCheckpoint() {
+	k.checkpointMu.Lock()
+	defer k.checkpointMu.Unlock()
+
+	k.checkpointInFlight++
+}
+
 // OnCheckpointAttempt is called when a checkpoint attempt is completed. err is
 // any checkpoint errors that may have occurred.
 func (k *Kernel) OnCheckpointAttempt(err error) {
@@ -117,6 +128,10 @@ func (k *Kernel) OnCheckpointAttempt(err error) {
 
 	k.checkpointMu.Lock()
 	defer k.checkpointMu.Unlock()
+
+	if k.checkpointInFlight > 0 {
+		k.checkpointInFlight--
+	}
 
 	k.checkpointGen.Count++
 	k.checkpointGen.Restore = false
@@ -135,8 +150,21 @@ func (k *Kernel) WaitForCheckpoint() error {
 	return <-ch
 }
 
-// SignalAllCheckpointWaiters signals all checkpoint waiters with err.
+// SignalAllCheckpointWaiters signals all checkpoint waiters with err, so that
+// they don't block a sandbox that is exiting without a checkpoint completion
+// to signal them. It does nothing if a checkpoint attempt is in flight: the
+// attempt's completion is then guaranteed to signal the waiters with the
+// attempt's actual result. In particular, a checkpoint without resume kills
+// the kernel before the checkpoint's success has been published to waiters,
+// and the resulting sandbox exit must not overwrite the pending result.
 func (k *Kernel) SignalAllCheckpointWaiters(err error) {
+	k.checkpointMu.Lock()
+	defer k.checkpointMu.Unlock()
+
+	if k.checkpointInFlight > 0 {
+		log.Infof("Not signaling checkpoint waiters with %v: %d checkpoint attempt(s) in flight", err, k.checkpointInFlight)
+		return
+	}
 	k.CheckpointWait.signal(CheckpointGeneration{Count: math.MaxUint32}, err)
 }
 
@@ -165,6 +193,11 @@ type CheckpointWaitable struct {
 // Register registers a callback that is notified when the checkpoint generation count is higher
 // than the desired count.
 func (w *CheckpointWaitable) Register(cb func(CheckpointGeneration, error), count uint32) any {
+	// Acquire checkpointMu before w.mu, consistently with OnCheckpointAttempt
+	// and SignalAllCheckpointWaiters (which hold checkpointMu while calling
+	// signal()); taking them in the opposite order here could deadlock.
+	w.k.checkpointMu.Lock()
+	defer w.k.checkpointMu.Unlock()
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -177,7 +210,7 @@ func (w *CheckpointWaitable) Register(cb func(CheckpointGeneration, error), coun
 	}
 	w.waiters[waiter] = struct{}{}
 
-	if gen := w.k.CheckpointGen(); count <= gen.Count {
+	if gen := w.k.checkpointGen; count <= gen.Count {
 		// The checkpoint has already occurred. Signal immediately.
 		waiter.callback(gen, nil)
 		waiter.callback = nil
