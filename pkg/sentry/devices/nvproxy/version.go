@@ -959,6 +959,7 @@ func Init() {
 			abi.controlCmd[nvgpu.NV_SEMAPHORE_SURFACE_CTRL_CMD_UNBIND_CHANNEL] = ctrlHandler(rmControlSimple, nvconf.CapGraphics)
 			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_NVLINK_GET_PLATFORM_INFO] = ctrlHandler(rmControlSimple, nvconf.CapFabricIMEXManagement)
 			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_BUS_GET_PCIE_CPL_ATOMICS_CAPS] = ctrlHandler(rmControlSimple, nvconf.CapGraphics)
+			abi.controlCmd[nvgpu.NVB0CC_CTRL_CMD_GET_CHIPLET_HS_CREDIT_POOL] = ctrlHandler(rmControlSimple, nvconf.CapProfiling)
 			prevGetInfo := abi.getInfo
 			abi.getInfo = func() *DriverABIInfo {
 				info := prevGetInfo()
@@ -973,6 +974,7 @@ func Init() {
 				info.ControlInfos[nvgpu.NV_SEMAPHORE_SURFACE_CTRL_CMD_UNBIND_CHANNEL] = simpleIoctlInfo("NV_SEMAPHORE_SURFACE_CTRL_CMD_UNBIND_CHANNEL", "NV_SEMAPHORE_SURFACE_CTRL_UNBIND_CHANNEL_PARAMS")
 				info.ControlInfos[nvgpu.NV2080_CTRL_CMD_NVLINK_GET_PLATFORM_INFO] = simpleIoctlInfo("NV2080_CTRL_CMD_NVLINK_GET_PLATFORM_INFO", "NV2080_CTRL_NVLINK_GET_PLATFORM_INFO_PARAMS")
 				info.ControlInfos[nvgpu.NV2080_CTRL_CMD_BUS_GET_PCIE_CPL_ATOMICS_CAPS] = simpleIoctlInfo("NV2080_CTRL_CMD_BUS_GET_PCIE_CPL_ATOMICS_CAPS", "NV2080_CTRL_CMD_BUS_GET_PCIE_CPL_ATOMICS_CAPS_PARAMS")
+				info.ControlInfos[nvgpu.NVB0CC_CTRL_CMD_GET_CHIPLET_HS_CREDIT_POOL] = simpleIoctlInfo("NVB0CC_CTRL_CMD_GET_CHIPLET_HS_CREDIT_POOL", "NVB0CC_CTRL_GET_CHIPLET_HS_CREDIT_POOL")
 				return info
 			}
 			return abi

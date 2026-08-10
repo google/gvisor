@@ -351,3 +351,60 @@ func TestFilterCapabilities(t *testing.T) {
 		})
 	}
 }
+
+// controlCmdDefined reports whether cmd has a non-nil handler on version's ABI.
+func controlCmdDefined(version nvconf.DriverVersion, cmd uint32) bool {
+	entry, ok := abis[version]
+	if !ok {
+		return false
+	}
+	handler, ok := entry.cons().controlCmd[cmd]
+	return ok && handler.handler != nil
+}
+
+// TestChipletHSCreditPoolAvailableFromDriver560 locks the version gate for
+// NVB0CC_CTRL_CMD_GET_CHIPLET_HS_CREDIT_POOL: the command exists in the NVIDIA
+// headers starting at 560.28.03, so nvproxy must expose it on that node and
+// every descendant, and must not expose it on the parent 555 ABI.
+func TestChipletHSCreditPoolAvailableFromDriver560(t *testing.T) {
+	Init()
+	cmd := uint32(nvgpu.NVB0CC_CTRL_CMD_GET_CHIPLET_HS_CREDIT_POOL)
+	before := nvconf.NewDriverVersion(555, 42, 2)
+	intro := nvconf.NewDriverVersion(560, 28, 3)
+	if controlCmdDefined(before, cmd) {
+		t.Errorf("control command %#x unexpectedly defined on %s", cmd, before)
+	}
+	if !controlCmdDefined(intro, cmd) {
+		t.Errorf("control command %#x not defined on %s where NVIDIA headers introduce it", cmd, intro)
+	}
+	// A later supported driver on the main-line inheritance path must keep it.
+	later := nvconf.NewDriverVersion(580, 65, 6)
+	if !controlCmdDefined(later, cmd) {
+		t.Errorf("control command %#x not inherited on %s", cmd, later)
+	}
+}
+
+// TestChipletHSCreditPoolRequiresProfilingCap checks that the chiplet HS credit
+// pool control is gated on CapProfiling, matching other B0CC profiler commands.
+func TestChipletHSCreditPoolRequiresProfilingCap(t *testing.T) {
+	Init()
+	abi := abis[nvconf.NewDriverVersion(560, 28, 3)].cons()
+	handler := abi.controlCmd[nvgpu.NVB0CC_CTRL_CMD_GET_CHIPLET_HS_CREDIT_POOL]
+	params := &nvgpu.NVOS54_PARAMETERS{}
+
+	utilityOnly := &frontendIoctlState{
+		fd: &frontendFD{dev: &frontendDevice{nvp: &nvproxy{capsEnabled: nvconf.CapUtility}}},
+	}
+	if _, err := handler.handle(utilityOnly, params); err != &errMissingCapability {
+		t.Errorf("without CapProfiling: got err=%v, want errMissingCapability", err)
+	}
+
+	profiling := &frontendIoctlState{
+		fd: &frontendFD{dev: &frontendDevice{nvp: &nvproxy{capsEnabled: nvconf.CapProfiling}}},
+	}
+	// With CapProfiling the capability check passes; rmControlSimple then fails
+	// because there is no host FD. That failure is outside this gate.
+	if _, err := handler.handle(profiling, params); err == &errMissingCapability || err == &errUndefinedHandler {
+		t.Errorf("with CapProfiling: got err=%v, want capability check to pass", err)
+	}
+}
