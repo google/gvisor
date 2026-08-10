@@ -351,3 +351,54 @@ func TestFilterCapabilities(t *testing.T) {
 		})
 	}
 }
+
+// controlCmdDefined reports whether cmd has a non-nil handler on version's ABI.
+func controlCmdDefined(version nvconf.DriverVersion, cmd uint32) bool {
+	entry, ok := abis[version]
+	if !ok {
+		return false
+	}
+	handler, ok := entry.cons().controlCmd[cmd]
+	return ok && handler.handler != nil
+}
+
+// TestSMIssueThrottleCtrlAvailableFromDriver580 locks the version gate for
+// NV2080_CTRL_CMD_GR_GET_SM_ISSUE_THROTTLE_CTRL: NVIDIA headers introduce it
+// at 580.65.06, so it must be absent on the parent 575 ABI and present from
+// the 580 node onward.
+func TestSMIssueThrottleCtrlAvailableFromDriver580(t *testing.T) {
+	Init()
+	cmd := uint32(nvgpu.NV2080_CTRL_CMD_GR_GET_SM_ISSUE_THROTTLE_CTRL)
+	before := nvconf.NewDriverVersion(575, 51, 2)
+	intro := nvconf.NewDriverVersion(580, 65, 6)
+	if controlCmdDefined(before, cmd) {
+		t.Errorf("control command %#x unexpectedly defined on %s", cmd, before)
+	}
+	if !controlCmdDefined(intro, cmd) {
+		t.Errorf("control command %#x not defined on %s where NVIDIA headers introduce it", cmd, intro)
+	}
+}
+
+// TestSMIssueThrottleCtrlRequiresComputeOrUtilityCap checks that the throttle
+// control follows the SM issue-rate modifier family and is available under
+// compute/utility capabilities (compUtil).
+func TestSMIssueThrottleCtrlRequiresComputeOrUtilityCap(t *testing.T) {
+	Init()
+	abi := abis[nvconf.NewDriverVersion(580, 65, 6)].cons()
+	handler := abi.controlCmd[nvgpu.NV2080_CTRL_CMD_GR_GET_SM_ISSUE_THROTTLE_CTRL]
+	params := &nvgpu.NVOS54_PARAMETERS{}
+
+	graphicsOnly := &frontendIoctlState{
+		fd: &frontendFD{dev: &frontendDevice{nvp: &nvproxy{capsEnabled: nvconf.CapGraphics}}},
+	}
+	if _, err := handler.handle(graphicsOnly, params); err != &errMissingCapability {
+		t.Errorf("with CapGraphics only: got err=%v, want errMissingCapability", err)
+	}
+
+	utility := &frontendIoctlState{
+		fd: &frontendFD{dev: &frontendDevice{nvp: &nvproxy{capsEnabled: nvconf.CapUtility}}},
+	}
+	if _, err := handler.handle(utility, params); err == &errMissingCapability || err == &errUndefinedHandler {
+		t.Errorf("with CapUtility: got err=%v, want capability check to pass", err)
+	}
+}
