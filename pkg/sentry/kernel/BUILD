@@ -385,6 +385,7 @@ go_library(
         "//pkg/sentry/devices/nvproxy/nvconf",
         "//pkg/sentry/fdcollector",
         "//pkg/sentry/fscheckpoint",
+        "//pkg/sentry/fscheckpoint:fscheckpoint_proto_go_proto",
         "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/fsimpl/lock",
         "//pkg/sentry/fsimpl/mqfs",
