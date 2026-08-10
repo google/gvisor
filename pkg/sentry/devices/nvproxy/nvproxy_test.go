@@ -352,16 +352,6 @@ func TestFilterCapabilities(t *testing.T) {
 	}
 }
 
-// controlCmdDefined reports whether cmd has a non-nil handler on version's ABI.
-func controlCmdDefined(version nvconf.DriverVersion, cmd uint32) bool {
-	entry, ok := abis[version]
-	if !ok {
-		return false
-	}
-	handler, ok := entry.cons().controlCmd[cmd]
-	return ok && handler.handler != nil
-}
-
 // TestSMIssueThrottleCtrlAvailableFromDriver580 locks the version gate for
 // NV2080_CTRL_CMD_GR_GET_SM_ISSUE_THROTTLE_CTRL: NVIDIA headers introduce it
 // at 580.65.06, so it must be absent on the parent 575 ABI and present from
@@ -371,10 +361,20 @@ func TestSMIssueThrottleCtrlAvailableFromDriver580(t *testing.T) {
 	cmd := uint32(nvgpu.NV2080_CTRL_CMD_GR_GET_SM_ISSUE_THROTTLE_CTRL)
 	before := nvconf.NewDriverVersion(575, 51, 2)
 	intro := nvconf.NewDriverVersion(580, 65, 6)
-	if controlCmdDefined(before, cmd) {
+
+	_, _, beforeCmds, _, ok := SupportedIoctlsNumbers(before)
+	if !ok {
+		t.Fatalf("SupportedIoctlsNumbers(%s) returned ok=false", before)
+	}
+	if _, defined := beforeCmds[cmd]; defined {
 		t.Errorf("control command %#x unexpectedly defined on %s", cmd, before)
 	}
-	if !controlCmdDefined(intro, cmd) {
+
+	_, _, introCmds, _, ok := SupportedIoctlsNumbers(intro)
+	if !ok {
+		t.Fatalf("SupportedIoctlsNumbers(%s) returned ok=false", intro)
+	}
+	if _, defined := introCmds[cmd]; !defined {
 		t.Errorf("control command %#x not defined on %s where NVIDIA headers introduce it", cmd, intro)
 	}
 }
