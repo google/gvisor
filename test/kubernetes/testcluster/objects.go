@@ -552,10 +552,18 @@ func (t RuntimeType) ApplyPodSpec(podSpec *v13.PodSpec) {
 			Key:      "nvidia.com/gpu",
 			Operator: v13.TolerationOpExists,
 		})
+		addToleration(podSpec, v13.Toleration{
+			Key:      "google.com/tpu",
+			Operator: v13.TolerationOpExists,
+		})
 	case RuntimeTypeUnsandboxed, RuntimeTypeUnsandboxedCapped:
 		podSpec.RuntimeClassName = nil
 		podSpec.Tolerations = append(podSpec.Tolerations, v13.Toleration{
 			Key:      "nvidia.com/gpu",
+			Operator: v13.TolerationOpExists,
+		})
+		addToleration(podSpec, v13.Toleration{
+			Key:      "google.com/tpu",
 			Operator: v13.TolerationOpExists,
 		})
 		// Allow the pod to schedule on gVisor nodes as well.
