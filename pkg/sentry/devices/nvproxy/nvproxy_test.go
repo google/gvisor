@@ -352,16 +352,6 @@ func TestFilterCapabilities(t *testing.T) {
 	}
 }
 
-// controlCmdDefined reports whether cmd has a non-nil handler on version's ABI.
-func controlCmdDefined(version nvconf.DriverVersion, cmd uint32) bool {
-	entry, ok := abis[version]
-	if !ok {
-		return false
-	}
-	handler, ok := entry.cons().controlCmd[cmd]
-	return ok && handler.handler != nil
-}
-
 // TestChipletHSCreditPoolAvailableFromDriver560 locks the version gate for
 // NVB0CC_CTRL_CMD_GET_CHIPLET_HS_CREDIT_POOL: the command exists in the NVIDIA
 // headers starting at 560.28.03, so nvproxy must expose it on that node and
@@ -371,15 +361,29 @@ func TestChipletHSCreditPoolAvailableFromDriver560(t *testing.T) {
 	cmd := uint32(nvgpu.NVB0CC_CTRL_CMD_GET_CHIPLET_HS_CREDIT_POOL)
 	before := nvconf.NewDriverVersion(555, 42, 2)
 	intro := nvconf.NewDriverVersion(560, 28, 3)
-	if controlCmdDefined(before, cmd) {
+	later := nvconf.NewDriverVersion(580, 65, 6)
+
+	_, _, beforeCmds, _, ok := SupportedIoctlsNumbers(before)
+	if !ok {
+		t.Fatalf("SupportedIoctlsNumbers(%s) returned ok=false", before)
+	}
+	if _, defined := beforeCmds[cmd]; defined {
 		t.Errorf("control command %#x unexpectedly defined on %s", cmd, before)
 	}
-	if !controlCmdDefined(intro, cmd) {
+
+	_, _, introCmds, _, ok := SupportedIoctlsNumbers(intro)
+	if !ok {
+		t.Fatalf("SupportedIoctlsNumbers(%s) returned ok=false", intro)
+	}
+	if _, defined := introCmds[cmd]; !defined {
 		t.Errorf("control command %#x not defined on %s where NVIDIA headers introduce it", cmd, intro)
 	}
-	// A later supported driver on the main-line inheritance path must keep it.
-	later := nvconf.NewDriverVersion(580, 65, 6)
-	if !controlCmdDefined(later, cmd) {
+
+	_, _, laterCmds, _, ok := SupportedIoctlsNumbers(later)
+	if !ok {
+		t.Fatalf("SupportedIoctlsNumbers(%s) returned ok=false", later)
+	}
+	if _, defined := laterCmds[cmd]; !defined {
 		t.Errorf("control command %#x not inherited on %s", cmd, later)
 	}
 }
