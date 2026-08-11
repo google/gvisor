@@ -351,3 +351,52 @@ func TestFilterCapabilities(t *testing.T) {
 		})
 	}
 }
+
+// TestPerfRatedTDPControlCmdsRegistered locks that Nsight Compute clock-lock
+// controls are registered. Without these handlers, runsc returns
+// NV_ERR_NOT_SUPPORTED for 0x2080206f and ncu fails with
+// "Failed to lock GPU clock frequencies".
+func TestPerfRatedTDPControlCmdsRegistered(t *testing.T) {
+	Init()
+	cmds := []uint32{
+		nvgpu.NV2080_CTRL_CMD_PERF_RATED_TDP_GET_CONTROL,
+		nvgpu.NV2080_CTRL_CMD_PERF_RATED_TDP_SET_CONTROL,
+	}
+	for _, ver := range []nvconf.DriverVersion{
+		nvconf.NewDriverVersion(535, 104, 5),
+		nvconf.NewDriverVersion(580, 95, 5),
+	} {
+		_, _, controlCmds, _, ok := SupportedIoctlsNumbers(ver)
+		if !ok {
+			t.Fatalf("SupportedIoctlsNumbers(%s) returned ok=false", ver)
+		}
+		for _, cmd := range cmds {
+			if _, defined := controlCmds[cmd]; !defined {
+				t.Errorf("control cmd %#x not defined on %s", cmd, ver)
+			}
+		}
+	}
+}
+
+// TestPerfRatedTDPSetControlRequiresProfilingCap checks CapProfiling gating
+// for RATED_TDP clock lock controls used by ncu --clock-control base.
+func TestPerfRatedTDPSetControlRequiresProfilingCap(t *testing.T) {
+	Init()
+	abi := abis[nvconf.NewDriverVersion(580, 95, 5)].cons()
+	handler := abi.controlCmd[nvgpu.NV2080_CTRL_CMD_PERF_RATED_TDP_SET_CONTROL]
+	params := &nvgpu.NVOS54_PARAMETERS{}
+
+	utilityOnly := &frontendIoctlState{
+		fd: &frontendFD{dev: &frontendDevice{nvp: &nvproxy{capsEnabled: nvconf.CapUtility}}},
+	}
+	if _, err := handler.handle(utilityOnly, params); err != &errMissingCapability {
+		t.Errorf("without CapProfiling: got err=%v, want errMissingCapability", err)
+	}
+
+	profiling := &frontendIoctlState{
+		fd: &frontendFD{dev: &frontendDevice{nvp: &nvproxy{capsEnabled: nvconf.CapProfiling}}},
+	}
+	if _, err := handler.handle(profiling, params); err == &errMissingCapability || err == &errUndefinedHandler {
+		t.Errorf("with CapProfiling: got err=%v, want capability check to pass", err)
+	}
+}
