@@ -429,3 +429,96 @@ func (a PosixACL) String() string {
 
 	return fmt.Sprintf("PosixACL { UGOPerms: %O, Mask: %s, Users: %v, Groups: %v }", a.UGOPerms, mask, a.Users, a.Groups)
 }
+
+// ACLGetXattr implements getxattr(2) for POSIX ACLs, including permission checks.
+func ACLGetXattr(creds *auth.Credentials, opts *GetXattrOptions, mode linux.FileMode, accessACL *PosixACL, defaultACL *PosixACL) (string, error) {
+	var acl *PosixACL
+	switch opts.Name {
+	case linux.XATTR_NAME_POSIX_ACL_ACCESS:
+		acl = accessACL
+	case linux.XATTR_NAME_POSIX_ACL_DEFAULT:
+		acl = defaultACL
+	default:
+		return "", linuxerr.EOPNOTSUPP
+	}
+
+	if mode.FileType() == linux.ModeSymlink {
+		return "", linuxerr.EOPNOTSUPP
+	}
+
+	if acl == nil {
+		return "", linuxerr.ENODATA
+	}
+
+	// Serialize the access ACL for userspace
+	return string(acl.Serialize(creds.UserNamespace)), nil
+}
+
+// ACLSetXattr performs permission checking and returns the ACL type and parsed ACL
+// that should be set for setxattr(2).
+func ACLSetXattr(creds *auth.Credentials, opts *SetXattrOptions, mode linux.FileMode, kuid auth.KUID) (*PosixACL, ACLType, error) {
+	var aclType ACLType
+	switch opts.Name {
+	case linux.XATTR_NAME_POSIX_ACL_ACCESS:
+		aclType = AccessACL
+	case linux.XATTR_NAME_POSIX_ACL_DEFAULT:
+		aclType = DefaultACL
+	default:
+		return nil, 0, linuxerr.EOPNOTSUPP
+	}
+
+	if mode.FileType() == linux.ModeSymlink {
+		// ACLs cannot be set on symlinks
+		return nil, 0, linuxerr.EOPNOTSUPP
+	}
+
+	// Parse the ACL from userspace
+	acl, err := ParsePosixACL([]byte(opts.Value), creds.UserNamespace)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if aclType == DefaultACL && !mode.IsDir() {
+		if acl != nil {
+			// Default ACL can only be set on directories
+			return nil, 0, linuxerr.EACCES
+		}
+		return nil, aclType, nil
+	}
+
+	if !CanActAsOwner(creds, kuid) {
+		return nil, 0, linuxerr.EPERM
+	}
+
+	return acl, aclType, nil
+}
+
+// ACLRemoveXattr performs permission checking and returns the type of the ACL
+// that should be removed by removexattr(2).
+func ACLRemoveXattr(creds *auth.Credentials, name string, mode linux.FileMode, kuid auth.KUID) (ACLType, error) {
+	var aclType ACLType
+	switch name {
+	case linux.XATTR_NAME_POSIX_ACL_ACCESS:
+		aclType = AccessACL
+	case linux.XATTR_NAME_POSIX_ACL_DEFAULT:
+		aclType = DefaultACL
+	default:
+		return 0, linuxerr.EOPNOTSUPP
+	}
+
+	if mode.FileType() == linux.ModeSymlink {
+		return 0, linuxerr.EOPNOTSUPP
+	}
+
+	if aclType == DefaultACL && mode.FileType() != linux.ModeDirectory {
+		// Anyone can clear a default ACL on a non-directory, since this is a no-op.
+		// See fs/posix_acl.c:set_posix_acl() in Linux.
+		return aclType, nil
+	}
+
+	if !CanActAsOwner(creds, kuid) {
+		return 0, linuxerr.EPERM
+	}
+
+	return aclType, nil
+}

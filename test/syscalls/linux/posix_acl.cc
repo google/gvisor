@@ -17,8 +17,10 @@
 #include <linux/capability.h>
 #include <stdint.h>
 #include <string.h>
+#include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
+#include <sys/sysmacros.h>
 #include <sys/types.h>
 #include <sys/xattr.h>
 #include <time.h>
@@ -36,6 +38,7 @@
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/linux_capability_util.h"
+#include "test/util/mount_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -133,33 +136,120 @@ bool ListContainsName(const char* list, int len, const char* name) {
   return false;
 }
 
-class PosixACLTest : public ::testing::Test {
+// Backend selects the filesystem the ACL tests run against.
+//
+// When support for POSIX ACLs is added to a new filesystem, it should be added
+// here.
+enum class Backend {
+  kTmpfs,         // plain tmpfs
+  kOverlayUpper,  // an overlay whose object is created in the upper layer
+  kOverlayLower,  // an overlay whose object starts in the lower layer and is
+                  // copied up on the first modifying operation
+};
+
+class PosixACLTest : public ::testing::TestWithParam<Backend> {
  protected:
   void SetUp() override {
-    // Use /dev/shm to allow the native tests to run without privilege
-    dir_ = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn("/dev/shm"));
-    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(IsTmpfs(dir_.path())));
+    // Use /dev/shm to allow tmpfs tests to run without privilege.
+    base_ = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn("/dev/shm"));
+    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(IsTmpfs(base_.path())));
+
+    const auto param = GetParam();
+    switch (param) {
+      case Backend::kTmpfs:
+        dir_ = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_.path()));
+        break;
+      case Backend::kOverlayUpper:
+      case Backend::kOverlayLower:
+        MountOverlay(param);
+        SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(dir_.path())));
+    }
 
     file_ = JoinPath(dir_.path(), "posix_acl_test_file");
-    ASSERT_NO_ERRNO_AND_VALUE(Open(file_, O_CREAT | O_RDWR, 0644));
-    ASSERT_THAT(chmod(file_.c_str(), 0644), SyscallSucceeds());
-
     subdir_ = JoinPath(dir_.path(), "subdir");
-    ASSERT_THAT(mkdir(subdir_.c_str(), 0755), SyscallSucceeds());
+    sub_subdir_ = JoinPath(subdir_, "subsubdir");
+
+    // For the lower-layer case the objects were already seeded in the lower
+    // directory by MountOverlay(); the first modifying syscall in each test
+    // will copy them up. Otherwise create them now: directly on tmpfs, or
+    // through the merged mount (landing in the upper layer).
+    if (GetParam() != Backend::kOverlayLower) {
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file_, O_CREAT | O_RDWR, 0644));
+      ASSERT_THAT(chmod(file_.c_str(), 0644), SyscallSucceeds());
+      ASSERT_THAT(mkdir(subdir_.c_str(), 0755), SyscallSucceeds());
+      ASSERT_THAT(mkdir(sub_subdir_.c_str(), 0755), SyscallSucceeds());
+    }
 
     uid_ = getuid();
     gid_ = getgid();
   }
 
+  // MountOverlay mounts an overlay at dir_.
+  void MountOverlay(const ParamType param) {
+    // Mounting an overlay requires CAP_SYS_ADMIN
+    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+    // gVisor doesn't accept /dev/shm as an overlayfs layer. We need
+    // CAP_SYS_ADMIN for this case anyways, so just mount a separate tmpfs.
+    layers_ = JoinPath(base_.path(), "layers");
+    ASSERT_THAT(mkdir(layers_.c_str(), 0755), SyscallSucceeds());
+    ASSERT_THAT(mount("tmpfs", layers_.c_str(), "tmpfs", 0, "mode=0755"),
+                SyscallSucceeds());
+    tmpfs_mounted_ = true;
+
+    const std::string lower = JoinPath(layers_, "lower");
+    const std::string upper = JoinPath(layers_, "upper");
+    const std::string work = JoinPath(layers_, "work");
+    for (const std::string& d : {lower, upper, work}) {
+      ASSERT_THAT(mkdir(d.c_str(), 0755), SyscallSucceeds());
+    }
+
+    // dir_ is the merged mount point.
+    dir_ = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_.path()));
+
+    if (param == Backend::kOverlayLower) {
+      const std::string lfile = JoinPath(lower, "posix_acl_test_file");
+      ASSERT_NO_ERRNO_AND_VALUE(Open(lfile, O_CREAT | O_RDWR, 0644));
+      ASSERT_THAT(chmod(lfile.c_str(), 0644), SyscallSucceeds());
+      ASSERT_THAT(mkdir(JoinPath(lower, "subdir").c_str(), 0755),
+                  SyscallSucceeds());
+      ASSERT_THAT(mkdir(JoinPath(lower, "subdir/subsubdir").c_str(), 0755),
+                  SyscallSucceeds());
+    }
+
+    const std::string opts =
+        "lowerdir=" + lower + ",upperdir=" + upper + ",workdir=" + work;
+    ASSERT_THAT(
+        mount("overlay", dir_.path().c_str(), "overlay", 0, opts.c_str()),
+        SyscallSucceeds());
+    overlay_mounted_ = true;
+  }
+
+  void TearDown() override {
+    // Unmount inner-to-outer, before the TempPath destructors remove the (now
+    // empty) mount points.
+    if (overlay_mounted_) {
+      EXPECT_THAT(umount2(dir_.path().c_str(), MNT_DETACH), SyscallSucceeds());
+    }
+    if (tmpfs_mounted_) {
+      EXPECT_THAT(umount2(layers_.c_str(), MNT_DETACH), SyscallSucceeds());
+    }
+  }
+
+  TempPath base_;
   TempPath dir_;
+  std::string layers_;
+  bool tmpfs_mounted_ = false;
+  bool overlay_mounted_ = false;
   std::string file_;
   std::string subdir_;
+  std::string sub_subdir_;
   uid_t uid_;
   gid_t gid_;
 };
 
 // Setting an access ACL and reading it back returns an identical blob.
-TEST_F(PosixACLTest, SetGetAccessACL) {
+TEST_P(PosixACLTest, SetGetAccessACL) {
   const std::string acl = BuildACL({
       Ent(kUserObj, kR | kW, kUndef),
       Ent(kUser, kR, uid_),
@@ -177,7 +267,7 @@ TEST_F(PosixACLTest, SetGetAccessACL) {
 }
 
 // getxattr reports the size when passed a zero-length buffer.
-TEST_F(PosixACLTest, GetAccessACLSize) {
+TEST_P(PosixACLTest, GetAccessACLSize) {
   const std::string acl = BuildACL({
       Ent(kUserObj, kR | kW, kUndef),
       Ent(kUser, kR, uid_),
@@ -192,14 +282,14 @@ TEST_F(PosixACLTest, GetAccessACLSize) {
 }
 
 // getxattr on a file with no ACL returns ENODATA.
-TEST_F(PosixACLTest, GetAccessACLNoData) {
+TEST_P(PosixACLTest, GetAccessACLNoData) {
   EXPECT_THAT(getxattr(file_.c_str(), kAccessACL, nullptr, 0),
               SyscallFailsWithErrno(ENODATA));
 }
 
 // Setting an extended access ACL updates the file mode: the owner/other bits
 // come from USER_OBJ/OTHER, and the group bits reflect the mask.
-TEST_F(PosixACLTest, AccessACLUpdatesMode) {
+TEST_P(PosixACLTest, AccessACLUpdatesMode) {
   const std::string acl = BuildACL({
       Ent(kUserObj, kR | kW, kUndef),    // owner rw-
       Ent(kUser, kR, uid_),              //
@@ -217,7 +307,7 @@ TEST_F(PosixACLTest, AccessACLUpdatesMode) {
 
 // A minimal ACL (only the three base entries, no mask/named entries) is
 // equivalent to a mode: it is folded into the mode and not stored.
-TEST_F(PosixACLTest, MinimalAccessACLFoldsToMode) {
+TEST_P(PosixACLTest, MinimalAccessACLFoldsToMode) {
   const std::string acl = BuildACL({
       Ent(kUserObj, kR | kW | kX, kUndef),
       Ent(kGroupObj, kR | kX, kUndef),
@@ -236,7 +326,7 @@ TEST_F(PosixACLTest, MinimalAccessACLFoldsToMode) {
 }
 
 // An extended access ACL appears in listxattr; removing it makes it disappear.
-TEST_F(PosixACLTest, ListAndRemoveAccessACL) {
+TEST_P(PosixACLTest, ListAndRemoveAccessACL) {
   const std::string acl = BuildACL({
       Ent(kUserObj, kR | kW, kUndef),
       Ent(kUser, kR, uid_),
@@ -262,7 +352,7 @@ TEST_F(PosixACLTest, ListAndRemoveAccessACL) {
 }
 
 // A default ACL cannot be set on a non-directory.
-TEST_F(PosixACLTest, DefaultACLOnFileFails) {
+TEST_P(PosixACLTest, DefaultACLOnFileFails) {
   const std::string acl = BuildACL({
       Ent(kUserObj, kR | kW, kUndef),
       Ent(kGroupObj, kR, kUndef),
@@ -274,7 +364,7 @@ TEST_F(PosixACLTest, DefaultACLOnFileFails) {
 
 // A default ACL can be set on and read back from a directory, and appears in
 // listxattr.
-TEST_F(PosixACLTest, SetGetDefaultACLOnDir) {
+TEST_P(PosixACLTest, SetGetDefaultACLOnDir) {
   const std::string acl = BuildACL({
       Ent(kUserObj, kR | kW | kX, kUndef),
       Ent(kUser, kR | kX, uid_),
@@ -297,7 +387,7 @@ TEST_F(PosixACLTest, SetGetDefaultACLOnDir) {
 
 // A file created in a directory with a default ACL inherits an access ACL
 // derived from that default ACL. A subdirectory also inherits the default ACL.
-TEST_F(PosixACLTest, DefaultACLInheritance) {
+TEST_P(PosixACLTest, DefaultACLInheritance) {
   const std::string dacl = BuildACL({
       Ent(kUserObj, kR | kW | kX, kUndef),
       Ent(kUser, kR | kX, uid_),
@@ -331,9 +421,128 @@ TEST_F(PosixACLTest, DefaultACLInheritance) {
   EXPECT_EQ(cdacl, dacl);
 }
 
+// When a directory in lower with no default ACL, but whose parent has since
+// been given a default ACL in upper, is copied up, it should *not* inherit
+// the upper parent's default ACL.
+//
+// As a result, children created in the directory should not inherit the
+// parent's default ACL.
+TEST_P(PosixACLTest, CopyUpDirectoryDoesNotInheritDefaultACL) {
+  // Only valid for overlayfs-lower.
+  SKIP_IF(GetParam() != Backend::kOverlayLower);
+
+  // First, copy-up the dir's parent with a default ACL.
+  const std::string dacl = BuildACL({
+      Ent(kUserObj, kR | kW | kX, kUndef),
+      Ent(kUser, kR | kX, uid_),
+      Ent(kGroupObj, kR | kX, kUndef),
+      Ent(kMask, kR | kW | kX, kUndef),
+      Ent(kOther, kR | kX, kUndef),
+  });
+  ASSERT_THAT(
+      setxattr(subdir_.c_str(), kDefaultACL, dacl.data(), dacl.size(), 0),
+      SyscallSucceeds());
+
+  // Trigger copy-up of the directory by creating a file in it.
+  const std::string child_file = JoinPath(sub_subdir_, "child_file");
+  ASSERT_NO_ERRNO_AND_VALUE(Open(child_file, O_CREAT | O_RDWR, 0666));
+
+  // The directory should not get an ACL in upper after copy-up.
+  EXPECT_THAT(getxattr(sub_subdir_.c_str(), kAccessACL, nullptr, 0),
+              SyscallFailsWithErrno(ENODATA));
+  EXPECT_THAT(getxattr(sub_subdir_.c_str(), kDefaultACL, nullptr, 0),
+              SyscallFailsWithErrno(ENODATA));
+
+  // Existing file children should not get a spurious access ACL.
+  EXPECT_THAT(getxattr(child_file.c_str(), kAccessACL, nullptr, 0),
+              SyscallFailsWithErrno(ENODATA));
+
+  // A new subdirectory should not get a spurious ACL (access or default).
+  const std::string child_dir = JoinPath(sub_subdir_, "child_dir");
+  ASSERT_THAT(mkdir(child_dir.c_str(), 0777), SyscallSucceeds());
+  EXPECT_THAT(getxattr(child_dir.c_str(), kAccessACL, nullptr, 0),
+              SyscallFailsWithErrno(ENODATA));
+  EXPECT_THAT(getxattr(child_dir.c_str(), kDefaultACL, nullptr, 0),
+              SyscallFailsWithErrno(ENODATA));
+}
+
+// Removing a POSIX ACL on an overlay-lower file that has not been copied-up
+// and has no POSIX ACL should not result in the file being copied up; instead,
+// it should return ENODATA.
+TEST_P(PosixACLTest, RemoveACLOnFileNotCopiedUp) {
+  // Only valid for overlayfs-lower.
+  SKIP_IF(GetParam() != Backend::kOverlayLower);
+
+  KernelVersion version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
+  if (version.major > 6 || (version.major == 6 && version.minor >= 2)) {
+    // Setting an empty string "" xattr for a POSIX ACL only clears the ACL on
+    // kernel >=6.2. Older kernels give EINVAL.
+    EXPECT_THAT(setxattr(file_.c_str(), kAccessACL, "", 0, 0),
+                SyscallFailsWithErrno(ENODATA));
+  }
+  EXPECT_THAT(removexattr(file_.c_str(), kAccessACL),
+              SyscallFailsWithErrno(ENODATA));
+
+  // Removing a *default* ACL should succeed (but still skip copy-up)
+  EXPECT_THAT(removexattr(file_.c_str(), kDefaultACL), SyscallSucceeds());
+  EXPECT_THAT(removexattr(file_.c_str(), kAccessACL),
+              SyscallFailsWithErrno(ENODATA));
+}
+
+// Regression test for overlayfs not setting the mode on copy-up.
+//
+// Lower has dir D (0755, no ACLs) containing char device N (0666, no ACL).
+// Through the overlay, set a default ACL on D with a restrictive mask. Upper D
+// now carries that default ACL.
+//
+// If N is copied-up for any reason, the default ACL should *not* affect its
+// mode in the upper.
+TEST_P(PosixACLTest, DeviceFileModeUnaffectedByPostCopyUpParentDefaultACL) {
+  // Only valid for overlayfs-lower.
+  SKIP_IF(GetParam() != Backend::kOverlayLower);
+
+  // CAP_MKNOD necessary to make a device file
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_MKNOD)));
+
+  const auto dirLower = JoinPath(layers_, "lower", "subdir");
+  ASSERT_THAT(chmod(dirLower.c_str(), 0755), SyscallSucceeds());
+
+  // Make a null S_IFCHR device file
+  const auto pathLower = JoinPath(dirLower, "null");
+  const dev_t dev = makedev(1, 3);
+  ASSERT_THAT(mknod(pathLower.c_str(), S_IFCHR | 0666, dev), SyscallSucceeds());
+  ASSERT_THAT(chmod(pathLower.c_str(), 0666),
+              SyscallSucceeds());  // adjust for possible umask
+
+  // Sanity check that the resulting device file mode was indeed 0666
+  const auto path = JoinPath(subdir_, "null");
+  struct stat st = {};
+  ASSERT_THAT(stat(path.c_str(), &st), SyscallSucceeds());
+  ASSERT_EQ(st.st_mode & 0777, 0666);
+
+  // Set a default ACL with a restrictive mask on dir, through the overlay
+  // (triggering copy-up)
+  const std::string acl = BuildACL({
+      Ent(kUserObj, kR | kW, kUndef),
+      Ent(kUser, kR | kW, uid_),
+      Ent(kGroupObj, 0, kUndef),
+      Ent(kMask, 0, kUndef),
+      Ent(kOther, kR, kUndef),
+  });
+  ASSERT_THAT(setxattr(subdir_.c_str(), kDefaultACL, acl.data(), acl.size(), 0),
+              SyscallSucceeds());
+
+  // Trigger a copy-up of the device file
+  ASSERT_THAT(chown(path.c_str(), kNobody, kNobody), SyscallSucceeds());
+
+  // The device file's mode should be unchanged
+  ASSERT_THAT(stat(path.c_str(), &st), SyscallSucceeds());
+  ASSERT_EQ(st.st_mode & 0777, 0666);
+}
+
 // chmod on a file with an extended ACL updates USER_OBJ, the mask, and OTHER
 // (not the GROUP_OBJ entry).
-TEST_F(PosixACLTest, ChmodUpdate) {
+TEST_P(PosixACLTest, ChmodUpdate) {
   const std::string acl = BuildACL({
       Ent(kUserObj, kR | kW, kUndef),
       Ent(kUser, kR | kW, uid_),
@@ -364,7 +573,7 @@ TEST_F(PosixACLTest, ChmodUpdate) {
 
 // A named-user ACL entry grants access that the mode bits alone would deny, and
 // the mask caps that access.
-TEST_F(PosixACLTest, NamedUserEnforcement) {
+TEST_P(PosixACLTest, NamedUserEnforcement) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
 
   // Without an ACL granting access, "nobody" cannot read a 0600 file.
@@ -402,7 +611,7 @@ TEST_F(PosixACLTest, NamedUserEnforcement) {
 
 // A named-group ACL entry grants access to a process in that group that the
 // mode bits alone would deny, capped by the mask.
-TEST_F(PosixACLTest, NamedGroupEnforcement) {
+TEST_P(PosixACLTest, NamedGroupEnforcement) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETGID)));
 
@@ -436,7 +645,7 @@ TEST_F(PosixACLTest, NamedGroupEnforcement) {
 
 // A restrictive USER_OBJ locks the user out of their own file, even
 // if group/other would otherwise grant the access.
-TEST_F(PosixACLTest, UserObjLocksSelfOutEnforcement) {
+TEST_P(PosixACLTest, UserObjLocksSelfOutEnforcement) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETGID)));
 
@@ -466,7 +675,7 @@ TEST_F(PosixACLTest, UserObjLocksSelfOutEnforcement) {
 
 // A restrictive named USER locks the user out of their own file, even
 // if group/other would otherwise grant the access.
-TEST_F(PosixACLTest, NamedUserLocksSelfOutEnforcement) {
+TEST_P(PosixACLTest, NamedUserLocksSelfOutEnforcement) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETGID)));
 
@@ -499,7 +708,7 @@ TEST_F(PosixACLTest, NamedUserLocksSelfOutEnforcement) {
 
 // Only the file owner (or a suitably privileged process) may set an ACL, even
 // with write permission on the file.
-TEST_F(PosixACLTest, SetACLRequiresOwnership) {
+TEST_P(PosixACLTest, SetACLRequiresOwnership) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
 
   // World-writable file owned by the (root) test process.
@@ -519,8 +728,23 @@ TEST_F(PosixACLTest, SetACLRequiresOwnership) {
   });
 }
 
+// An exception to the above case: default ACLs on non-directories can be
+// "cleared" by anyone.
+TEST_P(PosixACLTest, ClearDefaultACLNonOwner) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+
+  // File owned by the test process with no permissions granted to
+  // anyone else.
+  ASSERT_THAT(chmod(file_.c_str(), 0600), SyscallSucceeds());
+
+  ScopedThread([&] {
+    EXPECT_THAT(syscall(SYS_setuid, kNobody), SyscallSucceeds());
+    EXPECT_THAT(removexattr(file_.c_str(), kDefaultACL), SyscallSucceeds());
+  });
+}
+
 // POSIX access ACLs should work properly with symlinks.
-TEST_F(PosixACLTest, SetAccessACLSymlink) {
+TEST_P(PosixACLTest, SetAccessACLSymlink) {
   // Create a symlink to a file
   auto sym = JoinPath(dir_.path(), "posix_acl_test_symlink");
   ASSERT_THAT(symlink(file_.c_str(), sym.c_str()), SyscallSucceeds());
@@ -557,7 +781,7 @@ TEST_F(PosixACLTest, SetAccessACLSymlink) {
 }
 
 // POSIX default ACLs should work properly with symlinks.
-TEST_F(PosixACLTest, SetDefaultACLSymlink) {
+TEST_P(PosixACLTest, SetDefaultACLSymlink) {
   // Create a symlink to a directory
   auto sym = JoinPath(dir_.path(), "posix_acl_test_symlink");
   ASSERT_THAT(symlink(dir_.path().c_str(), sym.c_str()), SyscallSucceeds());
@@ -604,7 +828,7 @@ static bool IsTimespecLater(struct timespec a, struct timespec b) {
   return false;
 }
 
-TEST_F(PosixACLTest, SetACLUpdatesCTime) {
+TEST_P(PosixACLTest, SetACLUpdatesCTime) {
   // Fetch the original ctime
   struct stat st = {};
   ASSERT_THAT(stat(file_.c_str(), &st), SyscallSucceeds());
@@ -627,7 +851,7 @@ TEST_F(PosixACLTest, SetACLUpdatesCTime) {
   EXPECT_TRUE(IsTimespecLater(st.st_ctim, old_ctime));
 }
 
-TEST_F(PosixACLTest, RemoveACLUpdatesCTime) {
+TEST_P(PosixACLTest, RemoveACLUpdatesCTime) {
   // Set an ACL on the file.
   const std::string acl = BuildACL({
       Ent(kUserObj, kR | kW, kUndef),
@@ -653,7 +877,7 @@ TEST_F(PosixACLTest, RemoveACLUpdatesCTime) {
   EXPECT_TRUE(IsTimespecLater(st.st_ctim, old_ctime));
 }
 
-TEST_F(PosixACLTest, SetACLClearsSGID) {
+TEST_P(PosixACLTest, SetACLClearsSGID) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_FSETID)));
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_CHOWN)));
 
@@ -701,7 +925,7 @@ TEST_F(PosixACLTest, SetACLClearsSGID) {
   ASSERT_FALSE(st.st_mode & S_ISGID);
 }
 
-TEST_F(PosixACLTest, RemoveACLClearsSGID) {
+TEST_P(PosixACLTest, RemoveACLClearsSGID) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_FSETID)));
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_CHOWN)));
 
@@ -738,7 +962,7 @@ TEST_F(PosixACLTest, RemoveACLClearsSGID) {
   ASSERT_FALSE(st.st_mode & S_ISGID);
 }
 
-TEST_F(PosixACLTest, SetACLEmpty) {
+TEST_P(PosixACLTest, SetACLEmpty) {
   if (!IsRunningOnGvisor()) {
     // Setting an empty string "" xattr for a POSIX ACL only clears the ACL on
     // kernel >=6.2. Older kernels give EINVAL.
@@ -784,7 +1008,7 @@ TEST_F(PosixACLTest, SetACLEmpty) {
               SyscallSucceeds());
 }
 
-TEST_F(PosixACLTest, SetACLEmptyHeaderOnly) {
+TEST_P(PosixACLTest, SetACLEmptyHeaderOnly) {
   std::string emptyACL = BuildACL({});
 
   // Set an ACL on the file
@@ -829,14 +1053,14 @@ TEST_F(PosixACLTest, SetACLEmptyHeaderOnly) {
       SyscallSucceeds());
 }
 
-TEST_F(PosixACLTest, SetACLIncompleteHeader) {
+TEST_P(PosixACLTest, SetACLIncompleteHeader) {
   // Set an ACL on the file
   char xattr[1] = {};
   EXPECT_THAT(setxattr(file_.c_str(), kAccessACL, xattr, 1, 0),
               SyscallFailsWithErrno(EINVAL));
 }
 
-TEST_F(PosixACLTest, SetACLWrongVersion) {
+TEST_P(PosixACLTest, SetACLWrongVersion) {
   std::string acl = BuildACL({
       Ent(kUserObj, kR | kW, kUndef),
       Ent(kUser, kR, uid_),
@@ -852,7 +1076,7 @@ TEST_F(PosixACLTest, SetACLWrongVersion) {
               SyscallFailsWithErrno(EOPNOTSUPP));
 }
 
-TEST_F(PosixACLTest, SetACLNonWholeNumberEntries) {
+TEST_P(PosixACLTest, SetACLNonWholeNumberEntries) {
   const std::string acl = BuildACL({
       Ent(kUserObj, kR | kW, kUndef),
       Ent(kUser, kR, uid_),
@@ -867,7 +1091,7 @@ TEST_F(PosixACLTest, SetACLNonWholeNumberEntries) {
       SyscallFailsWithErrno(EINVAL));
 }
 
-TEST_F(PosixACLTest, SetACLInvalidPermissionBits) {
+TEST_P(PosixACLTest, SetACLInvalidPermissionBits) {
   const std::string acl = BuildACL({
       Ent(kUserObj, kR | kW, kUndef),
       Ent(kUser, 10, uid_),
@@ -881,7 +1105,7 @@ TEST_F(PosixACLTest, SetACLInvalidPermissionBits) {
               SyscallFailsWithErrno(EINVAL));
 }
 
-TEST_F(PosixACLTest, SetACLMultipleObj) {
+TEST_P(PosixACLTest, SetACLMultipleObj) {
   std::string acl = BuildACL({
       Ent(kUserObj, kR | kW, kUndef),
       Ent(kUserObj, kR | kW, kUndef),
@@ -935,7 +1159,7 @@ TEST_F(PosixACLTest, SetACLMultipleObj) {
               SyscallFailsWithErrno(EINVAL));
 }
 
-TEST_F(PosixACLTest, SetACLNonUniqueID) {
+TEST_P(PosixACLTest, SetACLNonUniqueID) {
   // acl(5) documents this as causing an ACL to be invalid, however
   // Linux does not enforce this. So we won't either.
 
@@ -964,7 +1188,7 @@ TEST_F(PosixACLTest, SetACLNonUniqueID) {
               SyscallSucceeds());
 }
 
-TEST_F(PosixACLTest, SetACLNoObj) {
+TEST_P(PosixACLTest, SetACLNoObj) {
   const std::string acl = BuildACL({
       Ent(kUser, kR, uid_),
       Ent(kUser, kR, uid_),
@@ -977,7 +1201,7 @@ TEST_F(PosixACLTest, SetACLNoObj) {
               SyscallFailsWithErrno(EINVAL));
 }
 
-TEST_F(PosixACLTest, SetACLNoMask) {
+TEST_P(PosixACLTest, SetACLNoMask) {
   const std::string acl = BuildACL({
       Ent(kUserObj, kR | kW, kUndef),
       Ent(kUser, kR, uid_),
@@ -990,6 +1214,104 @@ TEST_F(PosixACLTest, SetACLNoMask) {
   EXPECT_THAT(setxattr(file_.c_str(), kAccessACL, acl.data(), acl.size(), 0),
               SyscallFailsWithErrno(EINVAL));
 }
+
+// Test reading a POSIX ACL from a lower overlayfs mount point through a stacked
+// overlay.
+TEST_P(PosixACLTest, GetACLThroughStackedOverlay) {
+  // TODO(gvisor.dev/issues/14066): fix nested-overlayfs locks
+  if (IsRunningOnGvisor()) {
+    GTEST_SKIP() << "Skipped due to #14066";
+  }
+
+  SKIP_IF(GetParam() != Backend::kOverlayLower);
+
+  // Need CAP_SYS_ADMIN to mount overlayfs.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  const std::string acl = BuildACL({
+      Ent(kUserObj, kR | kW, kUndef),
+      Ent(kUser, kR | kW, uid_),
+      Ent(kGroupObj, 0, kUndef),
+      Ent(kMask, 0, kUndef),
+      Ent(kOther, kR, kUndef),
+  });
+  ASSERT_THAT(setxattr(file_.c_str(), kAccessACL, acl.data(), acl.size(), 0),
+              SyscallSucceeds());
+
+  const auto upper2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(layers_));
+  const auto work2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(layers_));
+  const auto stacked_dir =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_.path()));
+  const std::string opts = "lowerdir=" + dir_.path() +
+                           ",upperdir=" + upper2.path() +
+                           ",workdir=" + work2.path();
+  const auto mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("overlay", stacked_dir.path(), "overlay", 0, opts, 0));
+
+  const auto stacked_file = JoinPath(stacked_dir.path(), "posix_acl_test_file");
+  const std::string got =
+      ASSERT_NO_ERRNO_AND_VALUE(GetXattrString(stacked_file, kAccessACL));
+  EXPECT_EQ(got, acl);
+}
+
+// Test setting a POSIX ACL on a file accessed through a stacked overlay.
+TEST_P(PosixACLTest, SetACLThroughStackedOverlay) {
+  // TODO(gvisor.dev/issues/14066): fix nested-overlayfs locks
+  if (IsRunningOnGvisor()) {
+    GTEST_SKIP() << "Skipped due to #14066";
+  }
+
+  SKIP_IF(GetParam() != Backend::kOverlayLower);
+
+  // Need CAP_SYS_ADMIN to mount overlayfs.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  const std::string acl = BuildACL({
+      Ent(kUserObj, kR | kW, kUndef),
+      Ent(kUser, kR, uid_),
+      Ent(kGroupObj, kR, kUndef),
+      Ent(kGroup, kR | kW, gid_),
+      Ent(kMask, kR | kW, kUndef),
+      Ent(kOther, kR, kUndef),
+  });
+  ASSERT_THAT(setxattr(file_.c_str(), kAccessACL, acl.data(), acl.size(), 0),
+              SyscallSucceeds());
+
+  const auto upper2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(layers_));
+  const auto work2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(layers_));
+  const auto stacked_dir =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_.path()));
+  const std::string opts = "lowerdir=" + dir_.path() +
+                           ",upperdir=" + upper2.path() +
+                           ",workdir=" + work2.path();
+  const auto mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("overlay", stacked_dir.path(), "overlay", 0, opts, 0));
+
+  // Trigger a copy-up (mode 664 matches u/mask/o from the ACL, so this chmod
+  // should not affect the ACL).
+  const auto stacked_file = JoinPath(stacked_dir.path(), "posix_acl_test_file");
+  ASSERT_THAT(chmod(stacked_file.c_str(), 0664), SyscallSucceeds());
+
+  const std::string got =
+      ASSERT_NO_ERRNO_AND_VALUE(GetXattrString(stacked_file, kAccessACL));
+  EXPECT_EQ(got, acl);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    All, PosixACLTest,
+    ::testing::Values(Backend::kTmpfs, Backend::kOverlayUpper,
+                      Backend::kOverlayLower),
+    [](const ::testing::TestParamInfo<Backend>& info) -> std::string {
+      switch (info.param) {
+        case Backend::kTmpfs:
+          return "Tmpfs";
+        case Backend::kOverlayUpper:
+          return "OverlayUpper";
+        case Backend::kOverlayLower:
+          return "OverlayLower";
+      }
+      return "Unknown";
+    });
 
 }  // namespace
 
