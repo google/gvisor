@@ -204,7 +204,7 @@ func (mfd *masterFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysn
 		return 0, t.ThreadGroup().SetControllingTTY(ctx, mfd.t.masterKTTY, steal, mfd.vfsfd.IsReadable())
 	case linux.TIOCNOTTY:
 		// Release this process's controlling terminal.
-		return 0, t.ThreadGroup().ReleaseControllingTTY(mfd.t.masterKTTY)
+		return 0, t.ThreadGroup().ReleaseControllingTTY(ctx, mfd.t.masterKTTY)
 	case linux.TIOCGPGRP:
 		// Get the foreground process group id.
 		pgid, err := t.ThreadGroup().ForegroundProcessGroupID(mfd.t.masterKTTY)
