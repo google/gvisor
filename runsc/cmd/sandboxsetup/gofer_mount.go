@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/opencontainers/selinux/go-selinux/label"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/unet"
@@ -134,6 +135,11 @@ func SetupRootFS(spec *specs.Spec, conf *config.Config, mountConfs []specutils.G
 		}
 	}
 
+	var mountLabel string
+	if spec.Linux != nil {
+		mountLabel = spec.Linux.MountLabel
+	}
+
 	// Convert all shared mounts into slaves to be sure that nothing will be
 	// propagated outside of our namespace.
 	procPath := "/proc"
@@ -152,7 +158,7 @@ func SetupRootFS(spec *specs.Spec, conf *config.Config, mountConfs []specutils.G
 		// We need a directory to construct a new root and we know that
 		// runsc can't start without /proc, so we can use it for this.
 		flags := uintptr(unix.MS_NOSUID | unix.MS_NODEV | unix.MS_NOEXEC)
-		if err := specutils.SafeMount("runsc-root", "/proc/fs", "tmpfs", flags, "", procPath); err != nil {
+		if err := specutils.SafeMount("runsc-root", "/proc/fs", "tmpfs", flags, label.FormatMountLabel("", mountLabel), procPath); err != nil {
 			util.Fatalf("error mounting tmpfs: %v", err)
 		}
 		if err := unix.Mount("", "/proc/fs", "", unix.MS_UNBINDABLE, ""); err != nil {

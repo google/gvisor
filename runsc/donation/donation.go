@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
@@ -76,11 +77,11 @@ func (f *Agency) DonateLogFile(flag, logPattern string, flags int, opts log.File
 // DonateDebugLogFile is similar to DonateAndClose but handles the opening of
 // the file using specutils.OpenDebugLogFile() for convenience. It's a noop, if
 // path is empty.
-func (f *Agency) DonateDebugLogFile(flag, logPattern string, opts log.FileOpts) error {
+func (f *Agency) DonateDebugLogFile(flag, logPattern string, spec *specs.Spec, opts log.FileOpts) error {
 	if len(logPattern) == 0 {
 		return nil
 	}
-	file, err := specutils.OpenDebugLogFile(logPattern, opts)
+	file, err := specutils.OpenDebugLogFile(logPattern, opts, spec)
 	if err != nil {
 		return err
 	}

@@ -12,3 +12,5 @@
 # clangd compilation database
 /.cache/clangd
 /compile_commands.json
+# Generated SELinux policy.
+selinux/*.pp
