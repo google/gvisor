@@ -384,7 +384,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			Value: "0",
 		})
 		if err != nil {
-			ctx.Warningf("overlay.FilesystemType.GetFilesystem: failed to set xattr on upper")
+			ctx.Debugf("overlay.FilesystemType.GetFilesystem: failed to set xattr on upper")
 			fs.noxattr = true
 			fs.xattrPrefix = linux.XATTR_USER_PREFIX + "overlay."
 			fs.xattrOpaque = fs.xattrPrefix + "opaque"

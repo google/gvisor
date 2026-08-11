@@ -1141,6 +1141,14 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 				return err
 			}
 		}
+		// In noxattr mode, renaming merge/lower directories requires
+		// redirect_dir (ovl_set_redirect), which gVisor does not support.
+		// Return EXDEV so userspace falls back to copy + delete.
+		// With userxattr, noxattr is false so this does not trigger.
+		// See fs/overlayfs/dir.c:ovl_can_move(), ovl_set_redirect().
+		if fs.noxattr && len(renamed.lowerVDs) > 0 {
+			return linuxerr.EXDEV
+		}
 	} else {
 		if opts.MustBeDir || rp.MustBeDir() {
 			return linuxerr.ENOTDIR
@@ -1298,12 +1306,11 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		Path:  fspath.Parse(oldName),
 	}
 
-	// Set the opaque xattr on the directory at its old location *before* the
-	// rename, as Linux does in ovl_rename(). This way, if xattr setting fails
-	// (e.g. EPERM in a user namespace), we can cleanly return an error without
-	// leaving the filesystem in an inconsistent state. Linux returns EXDEV in
-	// the noxattr case via ovl_set_opaque_xerr(-EXDEV).
-	if renamed.isDir() {
+	// Set the opaque xattr on a pure upper directory *before* the rename,
+	// as Linux does in fs/overlayfs/dir.c:ovl_rename_upper().
+	// If xattr setting fails (e.g. noxattr mode), return EXDEV so userspace
+	// falls back to copy + delete.
+	if renamed.isDir() && len(newParent.lowerVDs) > 0 {
 		if err := fs.checkSetXattr(ctx, vfsObj, &oldpop, &vfs.SetXattrOptions{
 			Name:  fs.xattrOpaque,
 			Value: "y",

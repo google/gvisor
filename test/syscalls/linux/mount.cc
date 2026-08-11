@@ -2876,9 +2876,14 @@ TEST(MountTest, OverlayfsSgidBitIsCopiedUp) {
   }
 }
 
-// Renaming a directory on an overlay inside a user namespace requires
-// user.overlay.* xattrs to mark the directory opaque.
-TEST(MountTest, OverlayfsDirectoryRenameInUserNamespace) {
+// Sets up an overlay filesystem inside a user namespace. If userxattr is
+// true, mounts with the userxattr option (user.overlay.* xattrs); otherwise
+// mounts without it (trusted.overlay.* xattrs)
+void OverlayDirRenameInUserNS(
+    bool userxattr,
+    std::function<void(const std::string& merged, const std::string& lower)>
+        test_fn) {
+
   // Test fails in gVisor running on <6.0 due to fsgofer getting permission
   // errors on `mknod`.
   SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(GetHostKernelVersion()).major < 6);
@@ -2887,7 +2892,7 @@ TEST(MountTest, OverlayfsDirectoryRenameInUserNamespace) {
   bool in_overlayfs = ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(base_dir.path()));
 
   const std::function<void()> parent = [] {};
-  const std::function<void()> child = [&base_dir, &in_overlayfs] {
+  const std::function<void()> child = [&] {
     // Overlayfs can not be used as upper layer for another overlayfs mount. If
     // running in overlayfs, create a tmpfs mount to use as the upper layer.
     if (in_overlayfs) {
@@ -2909,52 +2914,95 @@ TEST(MountTest, OverlayfsDirectoryRenameInUserNamespace) {
     TEST_CHECK_SUCCESS(mkdir(work.c_str(), 0755));
     TEST_CHECK_SUCCESS(mkdir(merged.c_str(), 0755));
 
-    // 1. Create the DESTINATION directory in lower.
-    // (It must be empty so standard POSIX rename allows overwriting it).
-    {
-      auto lower_renamed = JoinPath(lower, "renamed");
-      TEST_CHECK_SUCCESS(mkdir(lower_renamed.c_str(), 0755));
+    std::string opts =
+        "lowerdir=" + lower + ",upperdir=" + upper + ",workdir=" + work;
+    if (userxattr) {
+      opts += ",userxattr";
     }
-
-    std::string opts = "lowerdir=" + lower + ",upperdir=" + upper +
-                       ",workdir=" + work + ",userxattr";
     TEST_CHECK_SUCCESS(
         mount("overlay", merged.c_str(), "overlay", 0, opts.c_str()));
     auto overlayfs_cleanup =
         Cleanup([&merged] { TEST_CHECK_SUCCESS(umount2(merged.c_str(), 0)); });
 
-    // 2. Create the SOURCE directory directly in merged.
-    // Because it doesn't exist in lower, it is a "pure upper" directory.
-    auto mydir = JoinPath(merged, "mydir");
-    TEST_CHECK_SUCCESS(mkdir(mydir.c_str(), 0755));
-
-    int fd =
-        open(JoinPath(mydir, "file.txt").c_str(), O_WRONLY | O_CREAT, 0644);
-    TEST_CHECK(fd >= 0);
-    TEST_CHECK_SUCCESS(close(fd));
-
-    // 3. Rename the pure upper directory over the existing lower directory.
-    // - This avoids EXDEV on Linux because 'mydir' is pure upper.
-    // - This forces the kernel to apply user.overlay.opaque="y" to 'renamed'
-    //   so that 'lower/renamed' is hidden.
-    auto renamed = JoinPath(merged, "renamed");
-    TEST_CHECK_SUCCESS(rename(mydir.c_str(), renamed.c_str()));
-
-    // 4. Verify the rename succeeded and contents are correct
-    struct stat st;
-    TEST_CHECK_SUCCESS(stat(renamed.c_str(), &st));
-    TEST_CHECK(S_ISDIR(st.st_mode));
-
-    // Original directory should be gone
-    TEST_CHECK(stat(mydir.c_str(), &st) == -1 && errno == ENOENT);
-
-    // File inside should have moved with the directory
-    TEST_CHECK_SUCCESS(stat(JoinPath(renamed, "file.txt").c_str(), &st));
-    TEST_CHECK(S_ISREG(st.st_mode));
+    test_fn(merged, lower);
   };
 
   EXPECT_THAT(InForkedUserMountNamespace(parent, child),
               IsPosixErrorOkAndHolds(0));
+}
+
+// Renaming a directory on an overlay inside a user namespace requires
+// user.overlay.* xattrs to mark the directory opaque.
+TEST(MountTest, OverlayfsDirectoryRenameInUserNamespace) {
+  OverlayDirRenameInUserNS(
+      true, [](const std::string& merged,
+                              const std::string& lower) {
+        // 1. Create the DESTINATION directory in lower.
+        // (It must be empty so standard POSIX rename allows overwriting it).
+        {
+          auto lower_renamed = JoinPath(lower, "renamed");
+          TEST_CHECK_SUCCESS(mkdir(lower_renamed.c_str(), 0755));
+        }
+
+        // 2. Create the SOURCE directory directly in merged.
+        // Because it doesn't exist in lower, it is a "pure upper" directory.
+        auto mydir = JoinPath(merged, "mydir");
+        TEST_CHECK_SUCCESS(mkdir(mydir.c_str(), 0755));
+
+        int fd =
+            open(JoinPath(mydir, "file.txt").c_str(), O_WRONLY | O_CREAT, 0644);
+        TEST_CHECK(fd >= 0);
+        TEST_CHECK_SUCCESS(close(fd));
+
+        // 3. Rename the pure upper directory over the existing lower directory.
+        // - This avoids EXDEV on Linux because 'mydir' is pure upper.
+        // - This forces the kernel to apply user.overlay.opaque="y" to 'renamed'
+        //   so that 'lower/renamed' is hidden.
+        auto renamed = JoinPath(merged, "renamed");
+        TEST_CHECK_SUCCESS(rename(mydir.c_str(), renamed.c_str()));
+
+        // 4. Verify the rename succeeded and contents are correct.
+        struct stat st;
+        TEST_CHECK_SUCCESS(stat(renamed.c_str(), &st));
+        TEST_CHECK(S_ISDIR(st.st_mode));
+
+        // Original directory should be gone.
+        TEST_CHECK(stat(mydir.c_str(), &st) == -1 && errno == ENOENT);
+
+        // File inside should have moved with the directory.
+        TEST_CHECK_SUCCESS(stat(JoinPath(renamed, "file.txt").c_str(), &st));
+        TEST_CHECK(S_ISREG(st.st_mode));
+      });
+}
+
+// Renaming a directory on an overlay mounted without userxattr inside a user
+// namespace triggers noxattr mode (trusted.overlay.* xattrs are not available).
+// In noxattr mode, directory renames that require setting the opaque xattr
+// return EXDEV, mirroring Linux kernel behavior.
+TEST(MountTest, OverlayfsDirectoryRenameInUserNamespaceNoxattrFallback) {
+  OverlayDirRenameInUserNS(
+      false, [](const std::string& merged,
+                               const std::string& lower) {
+
+        // Native Linux allows plain rename() even in noxattr mode,
+        // whereas gVisor returns EXDEV for directory renames in noxattr mode
+        // since redirect_dir is not supported.
+        SKIP_IF(!IsRunningOnGvisor());
+
+        // Create a directory in lower so that renaming over it requires the
+        // overlay to set the opaque xattr on the destination.
+        auto lower_dst = JoinPath(lower, "dst");
+        TEST_CHECK_SUCCESS(mkdir(lower_dst.c_str(), 0755));
+
+        // Create a source directory in merged (pure upper).
+        auto src = JoinPath(merged, "src");
+        TEST_CHECK_SUCCESS(mkdir(src.c_str(), 0755));
+
+        // Rename the directory over the lower directory. This requires setting
+        // the opaque xattr, which fails in noxattr mode, returning EXDEV.
+        auto dst = JoinPath(merged, "dst");
+        TEST_CHECK(rename(src.c_str(), dst.c_str()) == -1 && errno == EXDEV);
+      });
 }
 
 // Test that overlay can be mounted with a gofer upper layer. Runs some basic
