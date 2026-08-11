@@ -1297,6 +1297,23 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		Start: oldParent.upperVD,
 		Path:  fspath.Parse(oldName),
 	}
+
+	// Set the opaque xattr on the directory at its old location *before* the
+	// rename, as Linux does in ovl_rename(). This way, if xattr setting fails
+	// (e.g. EPERM in a user namespace), we can cleanly return an error without
+	// leaving the filesystem in an inconsistent state. Linux returns EXDEV in
+	// the noxattr case via ovl_set_opaque_xerr(-EXDEV).
+	if renamed.isDir() {
+		if err := fs.checkSetXattr(ctx, vfsObj, &oldpop, &vfs.SetXattrOptions{
+			Name:  fs.xattrOpaque,
+			Value: "y",
+		}, linuxerr.EXDEV); err != nil {
+			vfsObj.AbortRenameDentry(&renamed.vfsd, replacedVFSD)
+			cleanupRecreateWhiteouts()
+			return err
+		}
+	}
+
 	if err := vfsObj.RenameAt(ctx, creds, &oldpop, &newpop, &opts); err != nil {
 		vfsObj.AbortRenameDentry(&renamed.vfsd, replacedVFSD)
 		cleanupRecreateWhiteouts()
@@ -1334,14 +1351,6 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 
 	if err := CreateWhiteout(ctx, vfsObj, fs.creds, &oldpop); err != nil {
 		panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to create whiteout at origin after RenameAt: %v", err))
-	}
-	if renamed.isDir() {
-		if err := vfsObj.SetXattrAt(ctx, fs.creds, &newpop, &vfs.SetXattrOptions{
-			Name:  fs.xattrOpaque,
-			Value: "y",
-		}); err != nil {
-			panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to make renamed directory opaque: %v", err))
-		}
 	}
 
 	vfs.InotifyRename(ctx, &renamed.watches, &oldParent.watches, &newParent.watches, oldName, newName, renamed.isDir())
@@ -1999,6 +2008,26 @@ func (fs *filesystem) setPosixACLLocked(ctx context.Context, d *dentry, creds *a
 	}
 
 	return newACL, mode, nil
+}
+
+// checkSetXattr mirrors Linux's fs/overlayfs/dir.c:ovl_check_setxattr().
+// If the filesystem is already known to not support xattrs (noxattr), it
+// returns xerr immediately. Otherwise it attempts the SetXattr and updates
+// noxattr if EOPNOTSUPP is received.
+func (fs *filesystem) checkSetXattr(ctx context.Context, vfsObj *vfs.VirtualFilesystem, pop *vfs.PathOperation, opts *vfs.SetXattrOptions, xerr error) error {
+	if fs.noxattr {
+		return xerr
+	}
+	err := vfsObj.SetXattrAt(ctx, fs.creds, pop, opts)
+	if err == nil {
+		return nil
+	}
+	if linuxerr.Equals(linuxerr.EOPNOTSUPP, err) {
+		log.Warningf("cannot set %s xattr on upper", opts.Name)
+		fs.noxattr = true
+		return xerr
+	}
+	return err
 }
 
 // PrependPath implements vfs.FilesystemImpl.PrependPath.

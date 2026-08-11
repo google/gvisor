@@ -145,6 +145,12 @@ type filesystem struct {
 	// is protected by dirInoCacheMu.
 	lastDirIno uint64
 
+	// noxattr is true if the upper filesystem does not support trusted xattrs.
+	// In this case, user xattrs ("user.overlay.*") are used instead. This is
+	// detected at mount time by probing xattr support on the upper layer root.
+	// This mirrors Linux's ofs->noxattr detection in fs/overlayfs/super.c.
+	noxattr bool
+
 	// MaxFilenameLen is the maximum filename length allowed by the overlayfs.
 	maxFilenameLen uint64
 }
@@ -364,6 +370,32 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	for _, lowerRoot := range fsopts.LowerRoots {
 		if err := fs.updateMaxNameLen(ctx, creds, vfsObj, lowerRoot); err != nil {
 			ctx.Debugf("overlay.FilesystemType.GetFilesystem: failed to StatFSAt on lower layer root: %v", err)
+		}
+	}
+
+	// Probe (trusted|user).overlay.* xattr support on the upper layer.
+	// Similar to what Linux does in fs/overlayfs/super.c:ovl_make_workdir().
+	if fsopts.UpperRoot.Ok() && !userXattr {
+		err := vfsObj.SetXattrAt(ctx, creds, &vfs.PathOperation{
+			Root:  fsopts.UpperRoot,
+			Start: fsopts.UpperRoot,
+		}, &vfs.SetXattrOptions{
+			Name:  xattrPrefix + "opaque",
+			Value: "0",
+		})
+		if err != nil {
+			ctx.Warningf("overlay.FilesystemType.GetFilesystem: failed to set xattr on upper")
+			fs.noxattr = true
+			fs.xattrPrefix = linux.XATTR_USER_PREFIX + "overlay."
+			fs.xattrOpaque = fs.xattrPrefix + "opaque"
+			if linuxerr.Equals(linuxerr.EPERM, err) {
+				ctx.Infof("overlay.FilesystemType.GetFilesystem: try mounting with 'userxattr' option")
+			}
+		} else {
+			_ = vfsObj.RemoveXattrAt(ctx, creds, &vfs.PathOperation{
+				Root:  fsopts.UpperRoot,
+				Start: fsopts.UpperRoot,
+			}, xattrPrefix+"opaque")
 		}
 	}
 
