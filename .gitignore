@@ -12,7 +12,3 @@
 # clangd compilation database
 /.cache/clangd
 /compile_commands.json
-# Jetbrains Goland config
-/.idea
-# Jetbrains Bazel plugin
-/.bazelbsp
