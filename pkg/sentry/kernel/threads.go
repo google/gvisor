@@ -172,6 +172,11 @@ type PIDNamespace struct {
 	// last is the last ThreadID to be allocated in this namespace.
 	last ThreadID
 
+	// noInit indicates that initTID is reserved and will never be allocated,
+	// so this namespace has no init process and never will. See
+	// ReserveInitTID.
+	noInit bool
+
 	// tasks is a mapping from ThreadIDs in this namespace to tasks visible in
 	// the namespace.
 	tasks map[ThreadID]*Task
@@ -277,6 +282,23 @@ func (ns *PIDNamespace) NewChild(ctx context.Context, k *Kernel, userns *auth.Us
 	pidns := newPIDNamespace(ns.owner, ns, userns)
 	pidns.InitInode(ctx, k)
 	return pidns
+}
+
+// ReserveInitTID marks initTID as used in ns without assigning it to a task,
+// so that ns never gets an init process. It must be called before any task is
+// added to ns.
+//
+// Init's exit kills the rest of the namespace and blocks new processes (see
+// pid_namespaces(7)). A sandbox outlives its containers, so it reserves the TID
+// instead of letting the first container claim it.
+func (ns *PIDNamespace) ReserveInitTID() {
+	ns.owner.mu.Lock()
+	defer ns.owner.mu.Unlock()
+	if ns.last >= initTID {
+		panic("ReserveInitTID called after a task was added to the PID namespace")
+	}
+	ns.last = initTID
+	ns.noInit = true
 }
 
 // TaskWithID returns the task with thread ID tid in PID namespace ns. If no

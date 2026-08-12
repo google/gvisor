@@ -102,11 +102,35 @@ func (d *Delete) execute(f *flag.FlagSet, conf *config.Config) error {
 			return fmt.Errorf("loading container %q: %v", id, err)
 		}
 		if !d.force && c.Status != container.Created && c.Status != container.Stopped {
-			return fmt.Errorf("cannot delete container that is not stopped without --force flag")
+			if err := requireForce(conf, c); err != nil {
+				return err
+			}
 		}
 		if err := c.Destroy(); err != nil {
 			return fmt.Errorf("destroying container: %v", err)
 		}
+	}
+	return nil
+}
+
+// requireForce returns an error saying that --force is needed to delete a
+// running container, unless the container is an empty sandbox.
+//
+// A sandbox with no root container has nothing in it that could make it stop,
+// so it is Running until deleted and --force would be mandatory forever.
+// Deleting it empty destroys nothing; deleting it full takes the containers
+// down too, which is what --force asks for.
+func requireForce(conf *config.Config, c *container.Container) error {
+	if c.Sandbox == nil || !c.Sandbox.NoRootContainer || !c.Sandbox.IsRootContainer(c.ID) {
+		return fmt.Errorf("cannot delete container that is not stopped without --force flag")
+	}
+	containers, err := container.LoadSandbox(conf.RootDir, c.Sandbox.ID, container.LoadOpts{})
+	if err != nil {
+		return fmt.Errorf("loading containers of sandbox %q: %w", c.Sandbox.ID, err)
+	}
+	// LoadSandbox counts the sandbox itself.
+	if n := len(containers) - 1; n > 0 {
+		return fmt.Errorf("cannot delete sandbox %q while it still holds %d container(s) without --force flag", c.Sandbox.ID, n)
 	}
 	return nil
 }
