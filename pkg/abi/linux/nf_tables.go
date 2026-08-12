@@ -554,6 +554,17 @@ const (
 	NFTA_NAT_MAX = __NFTA_NAT_MAX - 1
 )
 
+// NfTableRedirAttributes represents the netfilter redir expression attributes.
+// These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
+const (
+	NFTA_REDIR_UNSPEC uint16 = iota
+	NFTA_REDIR_REG_PROTO_MIN
+	NFTA_REDIR_REG_PROTO_MAX
+	NFTA_REDIR_FLAGS
+	__NFTA_REDIR_MAX
+	NFTA_REDIR_MAX = __NFTA_REDIR_MAX - 1
+)
+
 // NfTableSetFlags represents the netfilter set flags.
 // These correspond to values in include/uapi/linux/netfilter/nf_tables.h.
 const (
