@@ -205,7 +205,7 @@ func (n *natOp) evaluate(regs *registerSet, evalCtx opEvalCtx) {
 	if n.sregAddrMinIdx >= 0 {
 		changeAddress = true
 		minAddr, maxAddr = n.getAddrRange(regs)
-		if (n.flags & linux.NF_NAT_RANGE_MAP_IPS) != 0 {
+		if (n.flags & linux.NF_NAT_RANGE_NETMAP) != 0 {
 			n.setupNetmap(pkt, &minAddr, &maxAddr)
 		}
 	}

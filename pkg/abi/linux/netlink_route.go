@@ -261,7 +261,7 @@ const (
 
 	// RTN_ANYCAST represents a anycast route (Traffic is accepted locally as
 	// broadcast but sent as unicast).
-	RTN_ANYCAST = 6
+	RTN_ANYCAST = 4
 
 	// RTN_MULTICAST represents a multicast route.
 	RTN_MULTICAST = 5
