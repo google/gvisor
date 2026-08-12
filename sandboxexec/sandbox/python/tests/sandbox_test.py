@@ -429,6 +429,98 @@ class SandboxTest(unittest.TestCase):
     if old_runsc_path is not None:
       os.environ["RUNSC_PATH"] = old_runsc_path
 
+  def test_container_default_working_dir(self):
+    enable_networking = os.geteuid() == 0
+    with sandbox.Sandbox(enable_networking=enable_networking) as sb:
+      stdout, _ = sb.exec("pwd")
+      self.assertEqual(stdout.strip(), "/")
+
+      config_path = os.path.join(sb.bundle_dir, "config.json")
+      with open(config_path, "r") as f:
+        spec = json.load(f)
+      self.assertEqual(spec["process"]["cwd"], "/")
+
+    with sandbox.Sandbox(
+        enable_networking=enable_networking, working_dir=None
+    ) as sb:
+      stdout, _ = sb.exec("pwd")
+      self.assertEqual(stdout.strip(), "/")
+
+      config_path = os.path.join(sb.bundle_dir, "config.json")
+      with open(config_path, "r") as f:
+        spec = json.load(f)
+      self.assertEqual(spec["process"]["cwd"], "/")
+
+  def test_container_working_dir(self):
+    enable_networking = os.geteuid() == 0
+    with sandbox.Sandbox(
+        enable_networking=enable_networking,
+        working_dir="/tmp",
+    ) as sb:
+      stdout, _ = sb.exec("pwd")
+      self.assertEqual(stdout.strip(), "/tmp")
+
+      config_path = os.path.join(sb.bundle_dir, "config.json")
+      with open(config_path, "r") as f:
+        spec = json.load(f)
+      self.assertEqual(spec["process"]["cwd"], "/tmp")
+
+  def test_container_working_dir_relative(self):
+    enable_networking = os.geteuid() == 0
+    with sandbox.Sandbox(
+        enable_networking=enable_networking,
+        working_dir="tmp/custom",
+    ) as sb:
+      stdout, _ = sb.exec("pwd")
+      self.assertEqual(stdout.strip(), "/tmp/custom")
+
+      config_path = os.path.join(sb.bundle_dir, "config.json")
+      with open(config_path, "r") as f:
+        spec = json.load(f)
+      self.assertEqual(spec["process"]["cwd"], "/tmp/custom")
+
+  def test_bad_working_dir(self):
+    enable_networking = os.geteuid() == 0
+    with self.assertRaises(ValueError) as ctx:
+      sandbox.Sandbox(
+          enable_networking=enable_networking,
+          working_dir="",
+      )
+    self.assertIn("working directory cannot be empty", str(ctx.exception))
+
+    with self.assertRaises(TypeError) as ctx:
+      sandbox.Sandbox(
+          enable_networking=enable_networking,
+          working_dir=123,
+      )
+    self.assertIn("working_dir must be a str", str(ctx.exception))
+
+  def test_exec_cwd_override(self):
+    enable_networking = os.geteuid() == 0
+    with sandbox.Sandbox(
+        enable_networking=enable_networking,
+        working_dir="/",
+    ) as sb:
+      stdout, _ = sb.exec("pwd")
+      self.assertEqual(stdout.strip(), "/")
+
+      stdout_custom, _ = sb.exec("pwd", cwd="/tmp")
+      self.assertEqual(stdout_custom.strip(), "/tmp")
+
+      stdout_rel, _ = sb.exec("pwd", cwd="bin")
+      self.assertEqual(stdout_rel.strip(), "/bin")
+
+  def test_exec_bad_cwd(self):
+    enable_networking = os.geteuid() == 0
+    with sandbox.Sandbox(enable_networking=enable_networking) as sb:
+      with self.assertRaises(ValueError) as ctx:
+        sb.exec("pwd", cwd="")
+      self.assertIn("cwd cannot be empty", str(ctx.exception))
+
+      with self.assertRaises(TypeError) as ctx:
+        sb.exec("pwd", cwd=123)
+      self.assertIn("cwd must be a str", str(ctx.exception))
+
 
 if __name__ == "__main__":
   unittest.main()

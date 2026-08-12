@@ -20,6 +20,7 @@ commands inside them.
 
 import json
 import os
+import posixpath
 import random
 import shutil
 import subprocess
@@ -73,6 +74,39 @@ def _normalize_env(
   return [f"{k}={v}" for k, v in merged.items()]
 
 
+def _normalize_working_dir(
+    working_dir: Optional[str], param_name: str = "working_dir"
+) -> str:
+  """Normalizes and validates working directory into an absolute POSIX path.
+
+  Relative paths are resolved and normalized relative to the container root
+  ('/').
+
+  Args:
+    working_dir: The working directory path.
+    param_name: Parameter name for error messages (e.g. 'working_dir' or 'cwd').
+
+  Returns:
+    The normalized absolute POSIX working directory path.
+
+  Raises:
+    TypeError: If working_dir is not a string.
+    ValueError: If working_dir is empty or whitespace.
+  """
+  if working_dir is None:
+    return "/"
+  if not isinstance(working_dir, str):
+    raise TypeError(f"{param_name} must be a str, got {type(working_dir)}")
+  if not working_dir.strip():
+    err_msg = (
+        "working directory cannot be empty"
+        if param_name == "working_dir"
+        else f"{param_name} cannot be empty"
+    )
+    raise ValueError(err_msg)
+  return posixpath.normpath(posixpath.join("/", working_dir))
+
+
 class Sandbox:
   """Represents a running gVisor sandbox."""
 
@@ -83,6 +117,7 @@ class Sandbox:
       enable_networking: bool = True,
       network: Optional[str] = None,
       env: Optional[Union[List[str], Dict[str, str]]] = None,
+      working_dir: str = "/",
   ):
     """Initializes and starts a new sandbox.
 
@@ -95,12 +130,14 @@ class Sandbox:
       network: The networking mode for runsc (e.g. "none", "sandbox", "host").
         Specifying this overrides enable_networking.
       env: Optional environment variables for the sandbox container.
+      working_dir: The initial working directory inside the sandbox. Relative
+        paths are normalized relative to container root ('/'). Defaults to "/".
 
     Raises:
       Error: If sandbox creation fails.
-      ValueError: If an invalid network mode or environment variable format is
-        provided.
-      TypeError: If env is not a list, tuple, or dict.
+      ValueError: If an invalid network mode, working_dir, or environment
+        variable format is provided.
+      TypeError: If env or working_dir has an invalid type.
     """
     if network is not None and network not in ("none", "sandbox", "host"):
       raise ValueError(
@@ -114,6 +151,7 @@ class Sandbox:
         network != "none" if network is not None else enable_networking
     )
     self._env = env
+    self._working_dir = _normalize_working_dir(working_dir)
     self._runtime_dir = ""
     self._owns_runtime_dir = False
     self._id = ""
@@ -301,7 +339,7 @@ class Sandbox:
             "terminal": False,
             "user": {"uid": 0, "gid": 0},
             "args": ["sleep", "infinity"],
-            "cwd": "/",
+            "cwd": self._working_dir,
             "env": process_env,
         },
         "mounts": mounts,
@@ -322,6 +360,7 @@ class Sandbox:
       cmd: str,
       *args: str,
       env: Optional[Union[List[str], Dict[str, str]]] = None,
+      cwd: Optional[str] = None,
       timeout: Optional[float] = None,
   ) -> Tuple[str, str]:
     """Runs the given command inside the running sandbox.
@@ -330,6 +369,8 @@ class Sandbox:
       cmd: The command to run.
       *args: Arguments to the command.
       env: Optional environment variables for this command execution.
+      cwd: Optional working directory for this command execution. Relative paths
+        are normalized relative to container root ('/').
       timeout: Timeout in seconds.
 
     Returns:
@@ -337,10 +378,13 @@ class Sandbox:
 
     Raises:
       Error: If the command execution fails or times out.
-      ValueError: If environment variable formatting is invalid.
-      TypeError: If env is not a list, tuple, or dict.
+      ValueError: If environment variable formatting or cwd is invalid.
+      TypeError: If env or cwd has an invalid type.
     """
     runsc_args = ["--root", self._state_dir, "exec"]
+    if cwd is not None:
+      clean_cwd = _normalize_working_dir(cwd, param_name="cwd")
+      runsc_args.extend(["--cwd", clean_cwd])
     if env:
       for env_str in _normalize_env(env):
         runsc_args.extend(["--env", env_str])
