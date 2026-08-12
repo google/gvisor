@@ -191,7 +191,7 @@ func (rfd *replicaFileDescription) Ioctl(ctx context.Context, io usermem.IO, sys
 		return 0, t.ThreadGroup().SetControllingTTY(ctx, rfd.inode.t.replicaKTTY, steal, rfd.vfsfd.IsReadable())
 	case linux.TIOCNOTTY:
 		// Release this process's controlling terminal.
-		return 0, t.ThreadGroup().ReleaseControllingTTY(rfd.inode.t.replicaKTTY)
+		return 0, t.ThreadGroup().ReleaseControllingTTY(ctx, rfd.inode.t.replicaKTTY)
 	case linux.TIOCGPGRP:
 		// Get the foreground process group id.
 		pgid, err := t.ThreadGroup().ForegroundProcessGroupID(rfd.inode.t.replicaKTTY)

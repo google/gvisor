@@ -74,6 +74,7 @@ go_library(
         "//pkg/sentry/devices/tundev",
         "//pkg/sentry/fdimport",
         "//pkg/sentry/fscheckpoint",
+        "//pkg/sentry/fscheckpoint:fscheckpoint_proto_go_proto",
         "//pkg/sentry/fsimpl/cgroup2fs",
         "//pkg/sentry/fsimpl/cgroupfs",
         "//pkg/sentry/fsimpl/dev",

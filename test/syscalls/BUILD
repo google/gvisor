@@ -1382,5 +1382,6 @@ syscall_test(
 )
 
 syscall_test(
+    size = "large",
     test = "//test/syscalls/linux:posix_acl_test",
 )

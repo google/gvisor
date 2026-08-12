@@ -181,6 +181,18 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 			cleanupUndoCopyUp()
 			return err
 		}
+		acl := d.accessACL.Load()
+		newACL, newMode, err := newFD.SetPosixACL(ctx, vfs.AccessACL, acl, false /* clearSGID */)
+		if err == nil {
+			d.accessACL.Store(newACL)
+			d.mode.Store(uint32(newMode))
+		} else if acl == nil && linuxerr.Equals(linuxerr.EOPNOTSUPP, err) {
+			// Tolerate EOPNOTSUPP for nil ACLs since if the upper filesystem
+			// doesn't support ACLs, all files have an implicit nil ACL
+		} else {
+			cleanupUndoCopyUp()
+			return err
+		}
 		d.upperVD = newFD.VirtualDentry()
 		d.upperVD.IncRef()
 
@@ -204,6 +216,29 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 				Mode: uint16(d.mode.RacyLoad() &^ linux.S_IFMT),
 			},
 		}); err != nil {
+			cleanupUndoCopyUp()
+			return err
+		}
+		acl := d.accessACL.Load()
+		newACL, newMode, err := vfsObj.SetPosixACLAt(ctx, d.fs.creds, &newpop, vfs.AccessACL, acl, false /* clearSGID */)
+		if err == nil {
+			d.accessACL.Store(newACL)
+			d.mode.Store(uint32(newMode))
+		} else if acl == nil && linuxerr.Equals(linuxerr.EOPNOTSUPP, err) {
+			// Tolerate EOPNOTSUPP for nil ACLs since if the upper filesystem
+			// doesn't support ACLs, all files have an implicit nil ACL
+		} else {
+			cleanupUndoCopyUp()
+			return err
+		}
+		defaultACL := d.defaultACL.Load()
+		newDefaultACL, _, err := vfsObj.SetPosixACLAt(ctx, d.fs.creds, &newpop, vfs.DefaultACL, defaultACL, false /* clearSGID */)
+		if err == nil {
+			d.defaultACL.Store(newDefaultACL)
+		} else if defaultACL == nil && linuxerr.Equals(linuxerr.EOPNOTSUPP, err) {
+			// Tolerate EOPNOTSUPP for nil ACLs since if the upper filesystem
+			// doesn't support ACLs, all files have an implicit nil ACL
+		} else {
 			cleanupUndoCopyUp()
 			return err
 		}
@@ -236,6 +271,7 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 			cleanupUndoCopyUp()
 			return err
 		}
+		// Skip POSIX ACLs since symlinks cannot have them.
 		upperVD, err := vfsObj.GetDentryAt(ctx, d.fs.creds, &newpop, &vfs.GetDentryOptions{})
 		if err != nil {
 			cleanupUndoCopyUp()
@@ -254,14 +290,27 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 		}
 		if err := vfsObj.SetStatAt(ctx, d.fs.creds, &newpop, &vfs.SetStatOptions{
 			Stat: linux.Statx{
-				Mask: linux.STATX_UID | linux.STATX_GID | oldStat.Mask&timestampsMask,
+				Mask: linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | oldStat.Mask&timestampsMask,
 				// d.uid and d.gid can be read because d.copyMu is locked.
+				Mode:  uint16(d.mode.RacyLoad()),
 				UID:   d.uid.RacyLoad(),
 				GID:   d.gid.RacyLoad(),
 				Atime: oldStat.Atime,
 				Mtime: oldStat.Mtime,
 			},
 		}); err != nil {
+			cleanupUndoCopyUp()
+			return err
+		}
+		acl := d.accessACL.Load()
+		newACL, newMode, err := vfsObj.SetPosixACLAt(ctx, d.fs.creds, &newpop, vfs.AccessACL, acl, false /* clearSGID */)
+		if err == nil {
+			d.accessACL.Store(newACL)
+			d.mode.Store(uint32(newMode))
+		} else if acl == nil && linuxerr.Equals(linuxerr.EOPNOTSUPP, err) {
+			// Tolerate EOPNOTSUPP for nil ACLs since if the upper filesystem
+			// doesn't support ACLs, all files have an implicit nil ACL
+		} else {
 			cleanupUndoCopyUp()
 			return err
 		}
@@ -375,7 +424,7 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 // abort the copy-up. Loosely analogous to Linux's
 // fs/overlayfs/util.c:ovl_must_copy_xattr(). Here are the differences:
 //   - Linux includes "system.posix_acl_access" and "system.posix_acl_default".
-//     As of writing, these are not supported in gVisor and so are excluded.
+//     In gVisor, we handle these separately.
 //   - Linux includes all "security.*" xattrs. gVisor only supports
 //     "security.capability" and so only that is included here.
 func mustCopyXattr(name string) bool {
@@ -404,6 +453,11 @@ func (d *dentry) copyXattrsLocked(ctx context.Context) error {
 	for _, name := range lowerXattrs {
 		// Do not copy up overlay attributes.
 		if d.fs.isOverlayXattr(name) {
+			continue
+		}
+
+		// Skip POSIX ACLs, which are handled separately.
+		if name == linux.XATTR_NAME_POSIX_ACL_ACCESS || name == linux.XATTR_NAME_POSIX_ACL_DEFAULT {
 			continue
 		}
 

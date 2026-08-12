@@ -28,6 +28,12 @@ import (
 type TTYOperations interface {
 	// OpenTTY opens the tty.
 	OpenTTY(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error)
+
+	// IncRef increments the reference count.
+	IncRef()
+
+	// DecRef decrements the reference count taken by IncRef.
+	DecRef(ctx context.Context)
 }
 
 // TTY defines the relationship between a thread group and its controlling
@@ -175,5 +181,5 @@ func (tty *TTY) Hangup(ctx context.Context) {
 
 	// Reuse the existing ReleaseControllingTTY logic which handles
 	// sending SIGHUP/SIGCONT and clearing the controlling terminal.
-	_ = tg.ReleaseControllingTTY(tty)
+	_ = tg.ReleaseControllingTTY(ctx, tty)
 }
