@@ -42,6 +42,14 @@ pkg_tar(
     ],
 )
 
+genrule(
+    name = "changelog",
+    srcs = ["//tools/bazeldefs:version"],
+    outs = ["changelog"],
+    cmd = "VERSION=$$(cat $(location //tools/bazeldefs:version)); printf 'runsc (%s) unstable; urgency=medium\\n\\n  * See https://gvisor.dev/docs/ for release details.\\n\\n -- The gVisor Authors <gvisor-dev@googlegroups.com>  %s\\n' \"$$VERSION\" \"$$(date -R)\" > \"$@\"",
+    stamp = 1,
+)
+
 pkg_deb(
     name = "debian",
     architecture = select_arch(
@@ -52,6 +60,7 @@ pkg_deb(
         "/etc/containerd/runsc.toml",
     ],
     data = ":debian-data",
+    changelog = ":changelog",
     # Note that the description_file will be flatten (all newlines removed),
     # and therefore it is kept to a simple one-line description. The expected
     # format for debian packages is "short summary\nLonger explanation of
