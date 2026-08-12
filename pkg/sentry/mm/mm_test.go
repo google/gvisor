@@ -146,6 +146,47 @@ func TestBrkDataLimitUpdates(t *testing.T) {
 	}
 }
 
+func TestBrkDataLimitIncludesPrivateData(t *testing.T) {
+	// Set RLIMIT_DATA to 2 pages.
+	limitSet := limits.NewLimitSet()
+	limitSet.Set(limits.Data, limits.Limit{Cur: 2 * uint64(hostarch.PageSize), Max: limits.Infinity}, true /* privileged */)
+
+	ctx := contexttest.WithLimitSet(contexttest.Context(t), limitSet)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+
+	// Set up a valid, page-aligned heap start address above MinUserAddress.
+	mm.BrkSetup(ctx, 0x10000)
+
+	// Map a private, writable segment of 1 page (simulating .data/.bss).
+	_, err := mm.MMap(ctx, memmap.MMapOpts{
+		Length:   hostarch.PageSize,
+		Private:  true,
+		Perms:    hostarch.ReadWrite,
+		MaxPerms: hostarch.AnyAccess,
+	})
+	if err != nil {
+		t.Fatalf("MMap failed: %v", err)
+	}
+
+	oldBrk, _ := mm.Brk(ctx, 0)
+	if oldBrk != 0x10000 {
+		t.Fatalf("unexpected initial brk: got %#x, want 0x10000", oldBrk)
+	}
+
+	// Extending brk by 2 pages would bring total data to 3 pages (> RLIMIT_DATA of 2 pages),
+	// which must fail.
+	if newBrk, _ := mm.Brk(ctx, oldBrk+2*hostarch.PageSize); newBrk != oldBrk {
+		t.Errorf("brk() increased total data segment above RLIMIT_DATA (old brk = %#x, new brk = %#x)", oldBrk, newBrk)
+	}
+
+	// Extending brk by 1 page brings total data to 2 pages (<= RLIMIT_DATA of 2 pages),
+	// which must succeed.
+	if newBrk, _ := mm.Brk(ctx, oldBrk+hostarch.PageSize); newBrk != oldBrk+hostarch.PageSize {
+		t.Errorf("brk() failed to increase data segment within RLIMIT_DATA (old brk = %#x, wanted brk = %#x, got brk = %#x)", oldBrk, oldBrk+hostarch.PageSize, newBrk)
+	}
+}
+
 // TestIOAfterUnmap ensures that IO fails after unmap.
 func TestIOAfterUnmap(t *testing.T) {
 	ctx := contexttest.Context(t)
