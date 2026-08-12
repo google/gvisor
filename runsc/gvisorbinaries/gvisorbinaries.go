@@ -73,6 +73,7 @@ const (
 	checkpointGoferName         = "checkpointgofer"
 	gvisorSentryName            = "gvisor_sentry"
 	gvisorSentryPluginStackName = "gvisor_sentry_plugin_stack"
+	prewarmerName               = "gvisor-sentry-prewarmer"
 )
 
 // binDirName is the name of the directory holding sidecar binaries.
@@ -217,10 +218,12 @@ var (
 	// network stack linked in.
 	// Only present in plugin-enabled installations, so not part of `All`.
 	GvisorSentryPluginStack = Binary{Name: gvisorSentryPluginStackName}
+	// GvisorSentryPrewarmer is the C binary that runs ahead of `GvisorSentry`.
+	GvisorSentryPrewarmer = Binary{Name: prewarmerName}
 )
 
 // All lists every sidecar present in a standard installation.
-var All = []*Binary{&MetricServer, &CheckpointGofer, &GvisorSentry}
+var All = []*Binary{&MetricServer, &CheckpointGofer, &GvisorSentry, &GvisorSentryPrewarmer}
 
 // Options is the set of options used to execute a sidecar binary.
 type Options struct {

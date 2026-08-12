@@ -964,9 +964,18 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		Setsid: true,
 	}
 
-	// Set Args[0] to make easier to spot the sandbox process. Otherwise it's
-	// shown as `exe`.
+	// Set Args[0] to make easier to spot the sandbox process.
 	cmd.Args[0] = "runsc-sandbox"
+
+	// If the prewarmer sidecar is available, exec it ahead of the boot binary.
+	// Its argv is `gvisor-prewarmer <binary> <argv[0]> [argv[1:]...]`.
+	if p, err := gvisorbinaries.GvisorSentryPrewarmer.Path(); err == nil {
+		log.Infof("Sidecar %q found: prepending Sentry boot command with %s", gvisorbinaries.GvisorSentryPrewarmer.Name, p)
+		cmd.Args = append([]string{p, cmd.Path}, cmd.Args[0:]...)
+		cmd.Path = p
+	} else {
+		log.Warningf("Sidecar %q not found or usable (%v). This slows down gVisor startup significantly.", gvisorbinaries.GvisorSentryPrewarmer.Name, err)
+	}
 
 	// Transfer FDs that need to be present before the "boot" command.
 	// Start at 3 because 0, 1, and 2 are taken by stdin/out/err.
