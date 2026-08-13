@@ -80,7 +80,7 @@ func (ev Eventfd) Write(val uint64) error {
 	var buf [sizeofUint64]byte
 	hostarch.ByteOrder.PutUint64(buf[:], val)
 	if ev.mmioAddr != 0 && ev.mmioCtrl.Enabled() {
-		if _, err := safecopy.CopyOut(ev.mmioPtr(), buf[:]); err == nil {
+		if err := safecopy.StoreUint64(ev.mmioPtr(), val); err == nil {
 			return nil
 		}
 		// Fall back to using a syscall.
@@ -101,16 +101,13 @@ func (ev Eventfd) Write(val uint64) error {
 // implemented by writing to the address set by EnableMMIO. This is primarily
 // useful for testing.
 func (ev Eventfd) MMIOWrite(val uint64) error {
-	var buf [sizeofUint64]byte
-	hostarch.ByteOrder.PutUint64(buf[:], val)
 	if ev.mmioAddr == 0 {
 		return fmt.Errorf("no MMIO address set")
 	}
 	if !ev.mmioCtrl.Enabled() {
 		return fmt.Errorf("MMIO is temporarily disabled")
 	}
-	_, err := safecopy.CopyOut(ev.mmioPtr(), buf[:])
-	return err
+	return safecopy.StoreUint64(ev.mmioPtr(), val)
 }
 
 // Wait blocks until eventfd is non-zero (i.e. someone calls Notify or Write).
