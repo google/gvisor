@@ -47,6 +47,7 @@ func Mmap(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *
 	flags := args[3].Int()
 	fd := args[4].Int()
 	fixed := flags&linux.MAP_FIXED != 0
+	noReplace := flags&linux.MAP_FIXED_NOREPLACE != 0
 	private := flags&linux.MAP_PRIVATE != 0
 	shared := flags&linux.MAP_SHARED != 0
 	anon := flags&linux.MAP_ANONYMOUS != 0
@@ -58,13 +59,14 @@ func Mmap(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *
 	}
 
 	opts := memmap.MMapOpts{
-		Length:   args[1].Uint64(),
-		Offset:   args[5].Uint64(),
-		Addr:     args[0].Pointer(),
-		Fixed:    fixed,
-		Unmap:    fixed,
-		Map32Bit: map32bit,
-		Private:  private,
+		Length:    args[1].Uint64(),
+		Offset:    args[5].Uint64(),
+		Addr:      args[0].Pointer(),
+		Fixed:     fixed || noReplace,
+		Unmap:     fixed && !noReplace,
+		NoReplace: noReplace,
+		Map32Bit:  map32bit,
+		Private:   private,
 		Perms: hostarch.AccessType{
 			Read:    linux.PROT_READ&prot != 0,
 			Write:   linux.PROT_WRITE&prot != 0,
