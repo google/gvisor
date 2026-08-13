@@ -1171,6 +1171,45 @@ func (f *MemoryFile) HasUniqueRef(fr memmap.FileRange) bool {
 	return hasUniqueRef
 }
 
+// FirstSharedRange returns the first subrange of fr on which more than one
+// reference is held, and true if such a subrange exists. As for HasUniqueRef,
+// if the caller holds a reference on the given range and is preventing other
+// goroutines from copying it, then subranges reported as unshared (i.e. not
+// contained in the returned range) are not racy.
+//
+// Preconditions: At least one reference must be held on all pages in fr.
+func (f *MemoryFile) FirstSharedRange(fr memmap.FileRange) (memmap.FileRange, bool) {
+	var sr memmap.FileRange
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.forEachChunk(fr, func(chunk *chunkInfo, chunkFR memmap.FileRange) bool {
+		unfree := &f.unfreeSmall
+		if chunk.huge {
+			unfree = &f.unfreeHuge
+		}
+		cont := true
+		unfree.VisitFullRange(chunkFR, func(ufseg unfreeIterator) bool {
+			if ufseg.ValuePtr().refs > 1 {
+				r := ufseg.Range().Intersect(chunkFR)
+				if sr.Length() == 0 {
+					sr = r
+				} else if sr.End == r.Start {
+					sr.End = r.End
+				} else {
+					cont = false
+				}
+			} else if sr.Length() != 0 {
+				cont = false
+			}
+			return cont
+		})
+		// Continue to the next chunk only if no shared range has been found,
+		// or if the one found may extend into the next chunk.
+		return cont && (sr.Length() == 0 || sr.End == chunkFR.End)
+	})
+	return sr, sr.Length() != 0
+}
+
 // IncRef implements memmap.File.IncRef.
 func (f *MemoryFile) IncRef(fr memmap.FileRange, memCgID uint32) {
 	if !fr.WellFormed() || fr.Length() == 0 || !hostarch.IsPageAligned(fr.Start) || !hostarch.IsPageAligned(fr.End) {

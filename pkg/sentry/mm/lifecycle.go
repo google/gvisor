@@ -19,12 +19,16 @@ import (
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/safecopy"
+	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sentry/usage"
 )
 
 // NewMemoryManager returns a new MemoryManager with no mappings and 1 user.
@@ -151,12 +155,17 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 	defer mm.activeMu.Unlock()
 	mm2.activeMu.NestedLock(activeLockForked)
 	defer mm2.activeMu.NestedUnlock(activeLockForked)
-	if dontforks {
+	if dontforks || mm.hasPinned {
 		defer mm.pmas.MergeInsideRange(mm.applicationAddrRange())
 	}
 	srcvseg := mm.vmas.FirstSegment()
 	dstpgap := mm2.pmas.FirstGap()
 	var unmapAR hostarch.AddrRange
+	defer func() {
+		if unmapAR.Length() != 0 {
+			mm.unmapASLocked(unmapAR)
+		}
+	}()
 	memCgID := pgalloc.MemoryCgroupIDFromContext(ctx)
 	for srcpseg := mm.pmas.FirstSegment(); srcpseg.Ok(); srcpseg = srcpseg.NextSegment() {
 		pma := srcpseg.ValuePtr()
@@ -182,6 +191,55 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 				continue
 			}
 			pma = srcpseg.ValuePtr()
+		}
+
+		if mm.hasPinned && !pma.needCOW {
+			// Pinned pages must not be made copy-on-write: breaking
+			// copy-on-write moves the writing process to a new copy of the
+			// page, while any DMA registered against the original page
+			// continues to target it, causing the two to diverge. Instead,
+			// give the child a copy of possibly-pinned pages immediately,
+			// leaving the parent's mappings unchanged; compare Linux's
+			// mm/memory.c:copy_present_ptes() => folio_needs_cow_for_dma().
+			// Since Pin() breaks copy-on-write on the pinned range,
+			// possibly-pinned pages are exactly those in private
+			// non-copy-on-write pmas with more than one reference.
+			if sfr, ok := mm.mf.FirstSharedRange(srcpseg.fileRange()); ok {
+				sar := hostarch.AddrRange{
+					Start: srcpseg.Start() + hostarch.Addr(sfr.Start-pma.off),
+					End:   srcpseg.Start() + hostarch.Addr(sfr.End-pma.off),
+				}
+				if sar.Start > srcpseg.Start() {
+					// Isolate the pages preceding sar and fall through to
+					// make only those copy-on-write; the remainder of the
+					// pma is revisited on the next iteration.
+					srcpseg = mm.pmas.Isolate(
+						srcpseg,
+						hostarch.AddrRange{
+							Start: srcpseg.Start(),
+							End:   sar.Start},
+					)
+					pma = srcpseg.ValuePtr()
+				} else {
+					// Copy the possibly-pinned pages for the child now.
+					srcpseg = mm.pmas.Isolate(srcpseg, sar)
+					var err error
+					dstpgap, err = mm.forkCopyPMALocked(mm2, srcpseg, dstpgap, memCgID)
+					if err != nil {
+						// Fork fails, as when Linux's copy_page_range()
+						// fails. Release the references and mappings already
+						// established for mm2.
+						for pseg := mm2.pmas.FirstSegment(); pseg.Ok(); pseg = pseg.NextSegment() {
+							pseg.ValuePtr().file.DecRef(pseg.fileRange())
+						}
+						mm2.pmas.RemoveAll()
+						_, droppedIDs = mm2.removeVMAsLocked(ctx, mm2.applicationAddrRange(), droppedIDs)
+						as.Release()
+						return nil, err
+					}
+					continue
+				}
+			}
 		}
 
 		if !pma.needCOW {
@@ -211,9 +269,6 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 		addrRange := srcpseg.Range()
 		mm2.addRSSLocked(addrRange)
 		dstpgap = mm2.pmas.Insert(dstpgap, addrRange, *pma).NextGap()
-	}
-	if unmapAR.Length() != 0 {
-		mm.unmapASLocked(unmapAR)
 	}
 
 	// Between when we call memmap.Mappable.AddMapping while copying vmas and
@@ -246,6 +301,50 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 		mm2.executable.IncRef()
 	}
 	return mm2, nil
+}
+
+// forkCopyPMALocked copies the contents of the private pma represented by
+// srcpseg in mm into newly-allocated memory, and inserts a pma mapping that
+// memory into mm2 at the same address range, as Fork requires for pages that
+// may be pinned for DMA. It returns the gap after the inserted pma.
+//
+// Preconditions:
+//   - mm.activeMu must be locked for writing.
+//   - mm2.activeMu must be locked for writing.
+//   - srcpseg.ValuePtr().private == true.
+//   - dstpgap must be the gap in mm2.pmas at which the new pma should be
+//     inserted.
+func (mm *MemoryManager) forkCopyPMALocked(mm2 *MemoryManager, srcpseg pmaIterator, dstpgap pmaGapIterator, memCgID uint32) (pmaGapIterator, error) {
+	if err := srcpseg.getInternalMappingsLocked(); err != nil {
+		return dstpgap, err
+	}
+	copyAR := srcpseg.Range()
+	reader := safemem.BlockSeqReader{Blocks: mm.internalMappingsLocked(srcpseg, copyAR)}
+	huge := mm.mf.HugepagesEnabled() && copyAR.IsHugePageAligned()
+	fr, err := mm.mf.Allocate(uint64(copyAR.Length()), pgalloc.AllocOpts{
+		Kind:       usage.Anonymous,
+		MemCgID:    memCgID,
+		Mode:       pgalloc.AllocateAndWritePopulate,
+		Huge:       huge,
+		ReaderFunc: reader.ReadToBlocks,
+	})
+	if err != nil {
+		if _, ok := err.(safecopy.BusError); ok {
+			// Compare Linux's mm/memory.c:copy_present_page() =>
+			// copy_mc_user_highpage().
+			err = linuxerr.EHWPOISON
+		}
+		if fr.Length() != 0 {
+			mm.mf.DecRef(fr)
+		}
+		return dstpgap, err
+	}
+	newpma := srcpseg.Value()
+	newpma.off = fr.Start
+	newpma.huge = huge
+	newpma.internalMappings = safemem.BlockSeq{}
+	mm2.addRSSLocked(copyAR)
+	return mm2.pmas.Insert(dstpgap, copyAR, newpma).NextGap(), nil
 }
 
 // IncUsers increments mm's user count and returns true. If the user count is
