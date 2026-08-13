@@ -5708,6 +5708,18 @@ func TestCompatOperationDeepCopy(t *testing.T) {
 		opts cmp.Option
 	}{
 		{
+			name: "conntrack match",
+			op: &compatCTMatch{
+				revision: 1,
+				info: ctMatchInfo{
+					checkState: true,
+					stateMask:  linux.XT_CONNTRACK_STATE_ESTABLISHED,
+				},
+				infoData: []byte{1, 2, 3, 4},
+			},
+			opts: cmp.AllowUnexported(compatCTMatch{}, ctMatchInfo{}),
+		},
+		{
 			name: "addrtype match",
 			op: &compatAddrtypeMatch{
 				revision: 1,
@@ -5807,6 +5819,221 @@ func TestCompatOpCompatibility(t *testing.T) {
 			err := tc.op.checkCompatibility(tc.cCtx)
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("checkCompatibility() err = %v, wantErr = %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func makeUDPv4Packet(srcAddr, dstAddr tcpip.Address, srcPort, dstPort uint16) *stack.PacketBuffer {
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		ReserveHeaderBytes: header.IPv4MinimumSize + header.UDPMinimumSize,
+	})
+	pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
+	pkt.TransportProtocolNumber = header.UDPProtocolNumber
+
+	udpHdr := header.UDP(pkt.TransportHeader().Push(header.UDPMinimumSize))
+	udpHdr.Encode(&header.UDPFields{
+		SrcPort: srcPort,
+		DstPort: dstPort,
+		Length:  header.UDPMinimumSize,
+	})
+
+	ipHdr := header.IPv4(pkt.NetworkHeader().Push(header.IPv4MinimumSize))
+	ipHdr.Encode(&header.IPv4Fields{
+		TotalLength: header.IPv4MinimumSize + header.UDPMinimumSize,
+		Protocol:    uint8(header.UDPProtocolNumber),
+		SrcAddr:     srcAddr,
+		DstAddr:     dstAddr,
+		TTL:         64,
+	})
+	ipHdr.SetChecksum(^ipHdr.CalculateChecksum())
+	return pkt
+}
+
+// TestCompatCTMatchEvaluation tests evaluation of compatCTMatch with tracked and untracked packets.
+func TestCompatCTMatchEvaluation(t *testing.T) {
+	srcAddr := tcpip.AddrFrom4([4]byte{10, 0, 0, 1})
+	dstAddr := tcpip.AddrFrom4([4]byte{10, 0, 0, 2})
+	const srcPort = 1234
+	const dstPort = 5678
+
+	for _, tc := range []struct {
+		name        string
+		matchInfo   ctMatchInfo
+		isReply     bool
+		untracked   bool
+		wantVerdict uint32
+	}{
+		// Untracked packet tests
+		{
+			name: "untracked match INVALID state",
+			matchInfo: ctMatchInfo{
+				checkState: true,
+				stateMask:  linux.XT_CONNTRACK_STATE_INVALID,
+			},
+			untracked:   true,
+			wantVerdict: VC(linux.NFT_CONTINUE),
+		},
+		{
+			name: "untracked match INVALID state inverted fails",
+			matchInfo: ctMatchInfo{
+				checkState:       true,
+				invertStateMatch: true,
+				stateMask:        linux.XT_CONNTRACK_STATE_INVALID,
+			},
+			untracked:   true,
+			wantVerdict: VC(linux.NFT_BREAK),
+		},
+		{
+			name: "untracked fail ESTABLISHED state",
+			matchInfo: ctMatchInfo{
+				checkState: true,
+				stateMask:  linux.XT_CONNTRACK_STATE_ESTABLISHED,
+			},
+			untracked:   true,
+			wantVerdict: VC(linux.NFT_BREAK),
+		},
+		{
+			name: "untracked match inverted ESTABLISHED state",
+			matchInfo: ctMatchInfo{
+				checkState:       true,
+				invertStateMatch: true,
+				stateMask:        linux.XT_CONNTRACK_STATE_ESTABLISHED,
+			},
+			untracked:   true,
+			wantVerdict: VC(linux.NFT_CONTINUE),
+		},
+		{
+			name: "untracked match INVALID state even with checkDirection set",
+			matchInfo: ctMatchInfo{
+				checkState:     true,
+				stateMask:      linux.XT_CONNTRACK_STATE_INVALID,
+				checkDirection: true,
+			},
+			untracked:   true,
+			wantVerdict: VC(linux.NFT_CONTINUE),
+		},
+		{
+			name: "untracked only direction match fails",
+			matchInfo: ctMatchInfo{
+				checkState:     false,
+				checkDirection: true,
+			},
+			untracked:   true,
+			wantVerdict: VC(linux.NFT_BREAK),
+		},
+		{
+			name: "untracked packet fails NEW state",
+			matchInfo: ctMatchInfo{
+				checkState: true,
+				stateMask:  linux.XT_CONNTRACK_STATE_NEW,
+			},
+			untracked:   true,
+			wantVerdict: VC(linux.NFT_BREAK),
+		},
+
+		// Tracked packet tests
+		{
+			name: "original packet matches NEW state",
+			matchInfo: ctMatchInfo{
+				checkState: true,
+				stateMask:  linux.XT_CONNTRACK_STATE_NEW,
+			},
+			isReply:     false,
+			wantVerdict: VC(linux.NFT_CONTINUE),
+		},
+		{
+			name: "original packet fails ESTABLISHED state",
+			matchInfo: ctMatchInfo{
+				checkState: true,
+				stateMask:  linux.XT_CONNTRACK_STATE_ESTABLISHED,
+			},
+			isReply:     false,
+			wantVerdict: VC(linux.NFT_BREAK),
+		},
+		{
+			name: "original packet matches ORIGINAL direction",
+			matchInfo: ctMatchInfo{
+				checkDirection:       true,
+				invertDirectionMatch: false,
+			},
+			isReply:     false,
+			wantVerdict: VC(linux.NFT_CONTINUE),
+		},
+		{
+			name: "original packet fails REPLY direction",
+			matchInfo: ctMatchInfo{
+				checkDirection:       true,
+				invertDirectionMatch: true,
+			},
+			isReply:     false,
+			wantVerdict: VC(linux.NFT_BREAK),
+		},
+		{
+			name: "reply packet matches ESTABLISHED state",
+			matchInfo: ctMatchInfo{
+				checkState: true,
+				stateMask:  linux.XT_CONNTRACK_STATE_ESTABLISHED,
+			},
+			isReply:     true,
+			wantVerdict: VC(linux.NFT_CONTINUE),
+		},
+		{
+			name: "reply packet fails ORIGINAL direction",
+			matchInfo: ctMatchInfo{
+				checkDirection:       true,
+				invertDirectionMatch: false,
+			},
+			isReply:     true,
+			wantVerdict: VC(linux.NFT_BREAK),
+		},
+		{
+			name: "reply packet matches REPLY direction",
+			matchInfo: ctMatchInfo{
+				checkDirection:       true,
+				invertDirectionMatch: true,
+			},
+			isReply:     true,
+			wantVerdict: VC(linux.NFT_CONTINUE),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			op := &compatCTMatch{
+				info: tc.matchInfo,
+			}
+			regs := &registerSet{verdict: Verdict{Code: VC(linux.NFT_CONTINUE)}}
+
+			pkt := makeUDPv4Packet(srcAddr, dstAddr, srcPort, dstPort)
+			defer pkt.DecRef()
+
+			var evalPkt *stack.PacketBuffer
+			if tc.untracked {
+				evalPkt = pkt
+			} else {
+				nf := newNFTablesStd()
+				nf.InitConnTrackOnce()
+				ct := nf.GetConnTrack()
+
+				// Track initial packet (creates NEW conntrack entry in Original direction).
+				ct.GetConnAndUpdatePkt(pkt, false /* skipChecksumValidation */)
+				if !pkt.FinalizeConnTrack() {
+					t.Fatalf("failed to finalize conntrack for packet")
+				}
+
+				evalPkt = pkt
+				if tc.isReply {
+					// Create reply packet with swapped src/dst.
+					replyPkt := makeUDPv4Packet(dstAddr, srcAddr, dstPort, srcPort)
+					defer replyPkt.DecRef()
+					// Track reply packet.
+					ct.GetConnAndUpdatePkt(replyPkt, false)
+					evalPkt = replyPkt
+				}
+			}
+
+			op.evaluate(regs, opEvalCtx{pkt: evalPkt})
+			if regs.verdict.Code != tc.wantVerdict {
+				t.Errorf("evaluate verdict = %d, want %d", regs.verdict.Code, tc.wantVerdict)
 			}
 		})
 	}

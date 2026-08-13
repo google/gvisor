@@ -28,6 +28,7 @@ go_library(
         "nft_ranged.go",
         "nft_route.go",
         "nft_xt_addrtype.go",
+        "nft_xt_conntrack.go",
         "nft_xt_match.go",
         "nft_xt_target.go",
         "nftables.go",

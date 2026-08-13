@@ -5932,6 +5932,126 @@ INSTANTIATE_TEST_SUITE_P(
     });
 
 INSTANTIATE_TEST_SUITE_P(
+    CompatConntrackTests, NetlinkNetfilterCompatTest,
+    ::testing::Values(
+        CompatTestParam{
+            .test_name = "Rev1_StateMatch",
+            .family = NFPROTO_INET,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "conntrack",
+                    .rev = 1,
+                    .info_data = StructToBytes(xt_conntrack_mtinfo1{
+                        .match_flags = XT_CONNTRACK_STATE,
+                        .state_mask = XT_CONNTRACK_STATE_INVALID,
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "Rev1_DirectionMatch",
+            .family = NFPROTO_INET,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "conntrack",
+                    .rev = 1,
+                    .info_data = StructToBytes(xt_conntrack_mtinfo1{
+                        .match_flags = XT_CONNTRACK_DIRECTION,
+                        .invert_flags = XT_CONNTRACK_DIRECTION,
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "Rev2_StateMatch",
+            .family = NFPROTO_INET,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "conntrack",
+                    .rev = 2,
+                    .info_data = StructToBytes(xt_conntrack_mtinfo2{
+                        .match_flags = XT_CONNTRACK_STATE,
+                        .state_mask = XT_CONNTRACK_STATE_INVALID,
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "Rev3_StateMatch",
+            .family = NFPROTO_INET,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "conntrack",
+                    .rev = 3,
+                    .info_data = StructToBytes(xt_conntrack_mtinfo3{
+                        .match_flags = XT_CONNTRACK_STATE,
+                        .state_mask = XT_CONNTRACK_STATE_INVALID,
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "Rev1_SizeTooSmall",
+            .family = NFPROTO_INET,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "conntrack",
+                    .rev = 1,
+                    .info_data =
+                        std::vector<char>(sizeof(xt_conntrack_mtinfo1) - 1, 0),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "Rev2_SizeTooSmall",
+            .family = NFPROTO_INET,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "conntrack",
+                    .rev = 2,
+                    .info_data =
+                        std::vector<char>(sizeof(xt_conntrack_mtinfo2) - 1, 0),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "Rev3_SizeTooSmall",
+            .family = NFPROTO_INET,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "conntrack",
+                    .rev = 3,
+                    .info_data =
+                        std::vector<char>(sizeof(xt_conntrack_mtinfo3) - 1, 0),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "UnsupportedRevision",
+            .family = NFPROTO_INET,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "conntrack",
+                    .rev = 4,
+                    .info_data = StructToBytes(xt_conntrack_mtinfo3{}),
+                },
+            .expected_error = ENOENT,
+        },
+        CompatTestParam{
+            .test_name = "UnsupportedFlags",
+            .family = NFPROTO_INET,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "conntrack",
+                    .rev = 1,
+                    .info_data = StructToBytes(xt_conntrack_mtinfo1{
+                        .match_flags = XT_CONNTRACK_ORIGSRC,
+                    }),
+                },
+            .gvisor_only = true,
+            .expected_error = ENOTSUP,
+        }),
+    [](const ::testing::TestParamInfo<CompatTestParam>& info) {
+      return info.param.test_name;
+    });
+
+INSTANTIATE_TEST_SUITE_P(
     CompatNoopMatchTests, NetlinkNetfilterCompatTest,
     ::testing::Values(
         CompatTestParam{

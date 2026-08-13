@@ -764,6 +764,7 @@ var (
 	_ operation = (*masqOp)(nil)
 	// xtables operations
 	_ operation = (*compatAddrtypeMatch)(nil)
+	_ operation = (*compatCTMatch)(nil)
 	_ operation = (*compatNoopMatch)(nil)
 )
 
