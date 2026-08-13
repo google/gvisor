@@ -61,7 +61,11 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 			seccomp.EqualTo(unix.F_GETFD),
 		},
 	},
-	unix.SYS_FSTAT:     seccomp.MatchAll{},
+	unix.SYS_FSTAT: seccomp.MatchAll{},
+	unix.SYS_FSTATFS: seccomp.PerArg{
+		seccomp.NonNegativeFD{},
+		seccomp.AnyValue{},
+	},
 	unix.SYS_FSYNC:     seccomp.MatchAll{},
 	unix.SYS_FDATASYNC: seccomp.MatchAll{},
 	unix.SYS_FTRUNCATE: seccomp.MatchAll{},
@@ -427,10 +431,6 @@ func hostFilesystemFilters() seccomp.SyscallRules {
 		},
 		unix.SYS_SYMLINKAT: seccomp.PerArg{
 			seccomp.AnyValue{},
-			seccomp.NonNegativeFD{},
-			seccomp.AnyValue{},
-		},
-		unix.SYS_FSTATFS: seccomp.PerArg{
 			seccomp.NonNegativeFD{},
 			seccomp.AnyValue{},
 		},

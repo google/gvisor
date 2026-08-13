@@ -97,6 +97,7 @@ func (fs *filesystem) StateFields() []string {
 		"root",
 		"image",
 		"mf",
+		"useReadForIO",
 		"inodeBuckets",
 	}
 }
@@ -113,7 +114,8 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &fs.root)
 	stateSinkObject.Save(5, &fs.image)
 	stateSinkObject.Save(6, &fs.mf)
-	stateSinkObject.Save(7, &fs.inodeBuckets)
+	stateSinkObject.Save(7, &fs.useReadForIO)
+	stateSinkObject.Save(8, &fs.inodeBuckets)
 }
 
 // +checklocksignore
@@ -125,7 +127,8 @@ func (fs *filesystem) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(4, &fs.root)
 	stateSourceObject.Load(5, &fs.image)
 	stateSourceObject.Load(6, &fs.mf)
-	stateSourceObject.Load(7, &fs.inodeBuckets)
+	stateSourceObject.Load(7, &fs.useReadForIO)
+	stateSourceObject.Load(8, &fs.inodeBuckets)
 	stateSourceObject.AfterLoad(func() { fs.afterLoad(ctx) })
 }
 
