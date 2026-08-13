@@ -113,8 +113,10 @@ func (e *execProcess) Delete(ctx context.Context) error {
 	return e.execState.Delete(ctx)
 }
 
-func (e *execProcess) delete() {
-	e.wg.Wait()
+func (e *execProcess) delete(ctx context.Context) {
+	if err := waitTimeout(ctx, &e.wg, 10*time.Second); err != nil {
+		log.G(ctx).WithError(err).Errorf("failed to drain exec process %s io", e.id)
+	}
 	if e.io != nil {
 		for _, c := range e.closers {
 			c.Close()

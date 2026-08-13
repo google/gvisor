@@ -75,6 +75,14 @@ func (s *createdState) transition(transition stateTransition) {
 	case running:
 		s.p.initState = &runningState{p: s.p}
 	case stopped:
+		// The container never ran, so it has no output to lose: release the stdio
+		// now. The shim holds the write ends of a sub-container's pipes itself,
+		// so leaving them open means copyPipes never sees EOF and Init.delete's
+		// drain can never complete. Not done from "running", which may still
+		// have output in flight.
+		if s.p.io != nil {
+			s.p.io.Close()
+		}
 		s.p.initState = &stoppedState{process: s.p}
 	case deleted:
 		s.p.initState = &deletedState{}
@@ -92,7 +100,7 @@ func (s *createdState) Start(ctx context.Context, restoreConf *extension.Restore
 		// To work around that, we treat non-root container in start/restore
 		// failure state as stopped.
 		if !s.p.Sandbox {
-			s.p.io.Close()
+			// Note: the transition to "stopped" closes s.p.io.
 			s.p.setExited(internalErrorCode)
 			s.transition(stopped)
 		}
