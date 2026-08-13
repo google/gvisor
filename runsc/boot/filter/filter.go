@@ -21,6 +21,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/seccomp"
+	"gvisor.dev/gvisor/pkg/timing"
 	"gvisor.dev/gvisor/runsc/boot/filter/config"
 )
 
@@ -34,7 +35,10 @@ const debugFilter = false
 type Options = config.Options
 
 // Install seccomp filters based on the given platform.
-func Install(opt Options) error {
+//
+// timer, if non-nil, is used to record the duration of the individual steps
+// of filter installation. It may be nil.
+func Install(opt Options, timer *timing.Timer) error {
 	for _, warning := range config.Warnings(opt) {
 		log.Warningf("*** SECCOMP WARNING: %s", warning)
 	}
@@ -47,6 +51,7 @@ func Install(opt Options) error {
 		if err != nil {
 			return fmt.Errorf("cannot render precompiled program for options %v / vars %v: %w", key, vars, err)
 		}
+		timer.Reached("precompiled seccomp program rendered")
 		return seccomp.SetFilter(insns)
 	}
 	seccompOpts := config.SeccompOptions(opt)
@@ -64,6 +69,7 @@ func Install(opt Options) error {
 		}
 	}
 	rules, denyRules := config.Rules(opt)
+	timer.Reached("seccomp rules computed")
 	program := &seccomp.Program{
 		RuleSets: []seccomp.RuleSet{
 			{
@@ -76,5 +82,5 @@ func Install(opt Options) error {
 		},
 		Options: seccompOpts,
 	}
-	return program.Install()
+	return program.Install(timer)
 }

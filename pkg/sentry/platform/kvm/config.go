@@ -17,6 +17,10 @@
 
 package kvm
 
+import (
+	"gvisor.dev/gvisor/pkg/timing"
+)
+
 // Config sets configuration options for each platform instance.
 type Config struct {
 	// ApplicationCores is the same parameter passed into
@@ -27,6 +31,9 @@ type Config struct {
 	// UseCPUNums use KVM vCPU numbers as CPU numbers in the sentry.
 	// This is necessary to support features like RSEQ and CPU preemption detection.
 	UseCPUNums bool
+
+	// StartupTimer is used to track KVM initialization milestones.
+	StartupTimer *timing.Timer
 }
 
 func (*machine) applyConfig(config *Config) error { return nil }

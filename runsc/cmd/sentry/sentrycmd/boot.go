@@ -52,6 +52,7 @@ import (
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/profile"
 	"gvisor.dev/gvisor/runsc/specutils"
+	"gvisor.dev/gvisor/runsc/starttime"
 )
 
 // Note that directfsSandboxCaps is the same as caps defined in gofer.go
@@ -331,6 +332,10 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 
 	conf := args[0].(*config.Config)
 
+	timer := starttime.Timer("runsc boot")
+	timer.ReachedAt("Go code running", starttime.GoStartTime())
+	timer.Reached("boot subcommand dispatched")
+
 	if hostPageSize := unix.Getpagesize(); hostPageSize != hostarch.PageSize {
 		util.Fatalf("host page size (%d) does not match compiled page size (%d)", hostPageSize, hostarch.PageSize)
 	}
@@ -340,9 +345,11 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 
 	// Initialize CPUID information.
 	cpuid.Initialize()
+	timer.Reached("CPUID initialized")
 
 	// Initialize ring0 library.
 	ring0.InitDefault()
+	timer.Reached("ring0 initialized")
 
 	argOverride := make(map[string]string)
 
@@ -378,6 +385,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 			}
 		}
 	}
+	timer.Reached("host info read")
 
 	if b.attached {
 		// Ensure this process is killed after parent process terminates when
@@ -401,6 +409,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	if err != nil {
 		util.Fatalf("reading spec: %v", err)
 	}
+	timer.Reached("spec read")
 
 	if specutils.NVProxyEnabled(spec, conf) && b.procDriverNvidiaParams == "" {
 		driverCaps, driverCapsErr := specutils.NVProxyDriverCapsAllowed(conf)
@@ -420,9 +429,10 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	}
 
 	if b.setUpRoot {
-		if err := setUpChroot(spec, conf); err != nil {
+		if err := setUpChroot(spec, conf, timer); err != nil {
 			util.Fatalf("error setting up chroot: %v", err)
 		}
+		timer.Reached("chroot set up")
 		argOverride["setup-root"] = "false"
 
 		if !conf.Rootless {
@@ -537,9 +547,11 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 			panic("unreachable")
 		}
 
-		if err := sandboxsetup.ApplyCapsAllThreads(caps); err != nil {
+		timer.Reached("sandbox capabilities computed")
+		if err := sandboxsetup.ApplyCapsAllThreads(caps, timer); err != nil {
 			util.Fatalf("applying caps to all threads: %v", err)
 		}
+		timer.Reached("capabilities applied")
 		if b.attached {
 			// Re-arm the parent death signal in case the credential change
 			// cleared it. (A pure capability drop should not clear it, but
@@ -577,6 +589,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		default:
 			util.Fatalf("Failed to set RLIMIT_NOFILE: %v", err)
 		}
+		timer.Reached("FD limit applied")
 	}
 
 	// When mountsFD is not provided, there is no cleaning required.
@@ -590,6 +603,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		}
 		mountsFile.Close()
 		spec.Mounts = cleanMounts
+		timer.Reached("resolved mounts read")
 	}
 
 	if conf.DirectFS {
@@ -614,6 +628,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 			util.Fatalf("Not all child threads were core tagged the same. Tags=%v", coreTags)
 		}
 		log.Infof("Core tag enabled (core tag=%d)", coreTags[0])
+		timer.Reached("core tags enabled")
 	}
 
 	// NFtables is only supported for netstack.
@@ -638,6 +653,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		if rdmaSnap, err = rdma.Load(rdma.Path); err != nil {
 			util.Fatalf("loading RDMA sysfs snapshot: %v", err)
 		}
+		timer.Reached("RDMA snapshot loaded")
 	}
 
 	// Create the loader.
@@ -679,11 +695,13 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		FSRestoreFDs:             b.fsRestoreFDs.GetFDs(),
 		FSRestoreCheckpointGofer: b.fsRestoreCheckpointGofer,
 		RootfsUpperTarFD:         b.rootfsUpperTarFD,
+		StartupTimer:             timer,
 	}
 	l, err := boot.New(bootArgs)
 	if err != nil {
 		util.Fatalf("creating loader: %v", err)
 	}
+	timer.Reached("loader created")
 
 	// Fatalf exits the process and doesn't run defers.
 	// 'l' must be destroyed explicitly after this point!
@@ -692,6 +710,9 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		l.PreSeccompCallback = func() {
 			// Call validateOpenFDs() before umounting /proc.
 			validateOpenFDs(bootArgs.PassFDs)
+			// This callback runs on the same goroutine as the rest of sandbox
+			// startup (for now at least...), so safe to record here.
+			timer.Reached("open FDs validated")
 			// Umount /proc right before installing seccomp filters.
 			if b.procMountSyncFile != nil {
 				sandboxsetup.UmountProcFile(b.procMountSyncFile)
@@ -706,6 +727,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	// but before the start-sync file is notified, as the parent process needs to query for
 	// registered metrics prior to sending the start signal.
 	metric.Initialize()
+	timer.Reached("metrics initialized")
 	var finalMetricsFile *os.File
 	if b.finalMetricsFD != -1 {
 		finalMetricsFile = os.NewFile(uintptr(b.finalMetricsFD), "final metrics file")
@@ -725,6 +747,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 
 	// Notify the parent process the sandbox has booted (and that the controller
 	// is up).
+	timer.Reached("notifying parent")
 	startSyncFile := os.NewFile(uintptr(b.startSyncFD), "start-sync file")
 	buf := make([]byte, 1)
 	if w, err := startSyncFile.Write(buf); err != nil || w != 1 {
@@ -736,12 +759,15 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 
 	// Wait for the start signal from runsc.
 	l.WaitForStartSignal()
+	timer.Reached("start signal received")
 
 	// Run the application and wait for it to finish.
 	if err := l.Run(); err != nil {
 		l.Destroy()
 		util.Fatalf("running sandbox: %v", err)
 	}
+
+	timer.Log()
 
 	ws := l.WaitExit()
 	log.Infof("application exiting with %+v", ws)

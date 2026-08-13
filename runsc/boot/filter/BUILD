@@ -31,6 +31,7 @@ go_library(
         "//pkg/seccomp",
         "//pkg/seccomp/precompiledseccomp",
         "//pkg/sync",
+        "//pkg/timing",
         "//runsc/boot/filter/config",
     ],
 )

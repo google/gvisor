@@ -316,6 +316,7 @@ func newMachine(vm int, config *Config) (*machine, error) {
 	m.upperSharedPageTables.Allocator.(*allocator).base.Drain()
 	m.upperSharedPageTables.MarkReadOnlyShared()
 	m.kernel.PageTables = pagetables.NewWithUpper(newAllocator(), m.upperSharedPageTables, ring0.KernelStartAddress)
+	config.StartupTimer.Reached("kvm page tables created")
 
 	// On x86_64, we prefer not to map the entire sentry address space into
 	// the VM due to memory overhead. It is about 3MB for a 40-bit address
@@ -339,6 +340,7 @@ func newMachine(vm int, config *Config) (*machine, error) {
 		// be handled by seccompMmapHandler.
 		seccompMmapRules(m)
 	}
+	config.StartupTimer.Reached("kvm seccomp mmap rules installed")
 
 	// Apply the physical mappings. Note that these mappings may point to
 	// guest physical addresses that are not actually available. These
@@ -353,6 +355,7 @@ func newMachine(vm int, config *Config) (*machine, error) {
 
 		return true // Keep iterating.
 	})
+	config.StartupTimer.Reached("kvm physical regions mapped")
 
 	// Ensure that the currently mapped virtual regions are actually
 	// available in the VM. Note that this doesn't guarantee no future
@@ -412,11 +415,14 @@ func newMachine(vm int, config *Config) (*machine, error) {
 		}
 	}
 	enableAsyncPreemption()
+	config.StartupTimer.Reached("kvm virtual regions mapped")
+
 	// Initialize architecture state.
 	if err := m.initArchState(); err != nil {
 		m.Destroy()
 		return nil, err
 	}
+	config.StartupTimer.Reached("kvm arch state initialized")
 
 	// Ensure the machine is cleaned up properly.
 	runtime.SetFinalizer(m, (*machine).Destroy)
