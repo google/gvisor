@@ -113,7 +113,7 @@ func (f *MmapPreciseFile) IncRef(fr memmap.FileRange, memCgID uint32) {
 			}
 			*refs = newRefs
 		} else if gap.Ok() {
-			seg = f.refs.Insert(gap, fr.Intersect(gap.Range()), 1)
+			seg = f.refs.InsertWithoutMerging(gap, fr.Intersect(gap.Range()), 1)
 		}
 		if seg.End() >= fr.End {
 			break
