@@ -5670,6 +5670,268 @@ TEST_P(NetlinkNetfilterCompatTest, AddCompatRule) {
 }
 
 INSTANTIATE_TEST_SUITE_P(
+    CompatAddrtypeTests, NetlinkNetfilterCompatTest,
+    ::testing::Values(
+        // Rev 0 tests with struct xt_addrtype_info
+        CompatTestParam{
+            .test_name = "Rev0_SourceMatch",
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 0,
+                    .info_data = StructToBytes(xt_addrtype_info{
+                        .source = XT_ADDRTYPE_LOCAL,
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "Rev0_DestMatchInverted",
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 0,
+                    .info_data = StructToBytes(xt_addrtype_info{
+                        .dest = XT_ADDRTYPE_UNICAST,
+                        .invert_dest = 1,
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "Rev0_SourceAndDestMatch",
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 0,
+                    .info_data = StructToBytes(xt_addrtype_info{
+                        .source = XT_ADDRTYPE_LOCAL,
+                        .dest = XT_ADDRTYPE_MULTICAST,
+                        .invert_source = 1,
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "Rev0_RegularChain",
+            .is_base_chain = false,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 0,
+                    .info_data = StructToBytes(xt_addrtype_info{
+                        .source = XT_ADDRTYPE_LOCAL,
+                    }),
+                },
+        },
+        // Rev 1 tests with struct xt_addrtype_info_v1
+        CompatTestParam{
+            .test_name = "Rev1_SourceMatch",
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 1,
+                    .info_data = StructToBytes(xt_addrtype_info_v1{
+                        .source = XT_ADDRTYPE_LOCAL,
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "Rev1_InvertFlags",
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 1,
+                    .info_data = StructToBytes(xt_addrtype_info_v1{
+                        .source = XT_ADDRTYPE_LOCAL,
+                        .dest = XT_ADDRTYPE_UNICAST,
+                        .flags = XT_ADDRTYPE_INVERT_SOURCE |
+                                 XT_ADDRTYPE_INVERT_DEST,
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "Rev1_LimitIfaceIn_ValidHook",
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 1,
+                    .info_data = StructToBytes(xt_addrtype_info_v1{
+                        .source = XT_ADDRTYPE_LOCAL,
+                        .flags = XT_ADDRTYPE_LIMIT_IFACE_IN,
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "Rev1_LimitIfaceOut_ValidHook",
+            .hook = NF_INET_POST_ROUTING,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 1,
+                    .info_data = StructToBytes(xt_addrtype_info_v1{
+                        .dest = XT_ADDRTYPE_LOCAL,
+                        .flags = XT_ADDRTYPE_LIMIT_IFACE_OUT,
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "Rev1_LimitIfaceIn_RegularChain",
+            .is_base_chain = false,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 1,
+                    .info_data = StructToBytes(xt_addrtype_info_v1{
+                        .source = XT_ADDRTYPE_LOCAL,
+                        .flags = XT_ADDRTYPE_LIMIT_IFACE_IN,
+                    }),
+                },
+        },
+        // Error cases
+        CompatTestParam{
+            .test_name = "Rev0_SizeTooSmall",
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 0,
+                    .info_data = std::vector<char>(sizeof(xt_addrtype_info) - 1,
+                                                   0),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "Rev1_SizeTooSmall",
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 1,
+                    .info_data =
+                        std::vector<char>(sizeof(xt_addrtype_info_v1) - 1, 0),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "UnsupportedRevision",
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 2,
+                    .info_data = StructToBytes(xt_addrtype_info_v1{}),
+                },
+            .expected_error = ENOENT,
+        },
+        CompatTestParam{
+            .test_name = "Rev1_BothIfaceInAndOut",
+            .hook = NF_INET_FORWARD,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 1,
+                    .info_data = StructToBytes(xt_addrtype_info_v1{
+                        .source = XT_ADDRTYPE_LOCAL,
+                        .dest = XT_ADDRTYPE_LOCAL,
+                        .flags = XT_ADDRTYPE_LIMIT_IFACE_IN |
+                                 XT_ADDRTYPE_LIMIT_IFACE_OUT,
+                    }),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "Rev1_LimitIfaceOut_InvalidPrerouting",
+            .hook = NF_INET_PRE_ROUTING,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 1,
+                    .info_data = StructToBytes(xt_addrtype_info_v1{
+                        .dest = XT_ADDRTYPE_LOCAL,
+                        .flags = XT_ADDRTYPE_LIMIT_IFACE_OUT,
+                    }),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "Rev1_LimitIfaceOut_InvalidInput",
+            .hook = NF_INET_LOCAL_IN,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 1,
+                    .info_data = StructToBytes(xt_addrtype_info_v1{
+                        .dest = XT_ADDRTYPE_LOCAL,
+                        .flags = XT_ADDRTYPE_LIMIT_IFACE_OUT,
+                    }),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "Rev1_LimitIfaceIn_InvalidPostrouting",
+            .hook = NF_INET_POST_ROUTING,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 1,
+                    .info_data = StructToBytes(xt_addrtype_info_v1{
+                        .source = XT_ADDRTYPE_LOCAL,
+                        .flags = XT_ADDRTYPE_LIMIT_IFACE_IN,
+                    }),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "Rev1_LimitIfaceIn_InvalidOutput",
+            .hook = NF_INET_LOCAL_OUT,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 1,
+                    .info_data = StructToBytes(xt_addrtype_info_v1{
+                        .source = XT_ADDRTYPE_LOCAL,
+                        .flags = XT_ADDRTYPE_LIMIT_IFACE_IN,
+                    }),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "MissingMatchName",
+            .match_opts =
+                CompatMatchOptions{
+                    .rev = 0,
+                    .info_data = StructToBytes(xt_addrtype_info{}),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "MissingMatchRev",
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .info_data = StructToBytes(xt_addrtype_info{}),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "MissingMatchInfo",
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "addrtype",
+                    .rev = 0,
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "UnknownMatchName",
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "unknown_match",
+                    .rev = 0,
+                    .info_data = StructToBytes(xt_addrtype_info{}),
+                },
+            .expected_error = ENOENT,
+        }),
+    [](const ::testing::TestParamInfo<CompatTestParam>& info) {
+      return info.param.test_name;
+    });
+
+INSTANTIATE_TEST_SUITE_P(
     CompatNoopMatchTests, NetlinkNetfilterCompatTest,
     ::testing::Values(
         CompatTestParam{
@@ -5790,16 +6052,32 @@ TEST_P(NetlinkNetfilterCompatDumpTest, RuleDump) {
 
 INSTANTIATE_TEST_SUITE_P(
     CompatRuleDumpTests, NetlinkNetfilterCompatDumpTest,
-    ::testing::Values(CompatRuleDumpTestParam{
-        .test_name = "NoopTCPMatch",
-        .compat_proto = IPPROTO_TCP,
-        .matches = {CompatMatchOptions{
-            .name = "tcp",
-            .rev = 0,
-            .info_data = StructToBytes(xt_tcp{}),
-        }},
-        .expected_expr_names = {"match"},
-    }),
+    ::testing::Values(
+        CompatRuleDumpTestParam{
+            .test_name = "NoopTCPMatch",
+            .compat_proto = IPPROTO_TCP,
+            .matches = {CompatMatchOptions{
+                .name = "tcp",
+                .rev = 0,
+                .info_data = StructToBytes(xt_tcp{}),
+            }},
+            .expected_expr_names = {"match"},
+        },
+        CompatRuleDumpTestParam{
+            .test_name = "AddrtypeMatch",
+            .table_name = "filter",
+            .hook = NF_INET_PRE_ROUTING,
+            .chain_type = "filter",
+            .matches = {CompatMatchOptions{
+                .name = "addrtype",
+                .rev = 1,
+                .info_data = StructToBytes(xt_addrtype_info_v1{
+                    .source = XT_ADDRTYPE_LOCAL,
+                    .flags = XT_ADDRTYPE_INVERT_SOURCE,
+                }),
+            }},
+            .expected_expr_names = {"match"},
+        }),
     [](const ::testing::TestParamInfo<CompatRuleDumpTestParam>& info) {
       return info.param.test_name;
     });

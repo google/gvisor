@@ -5708,6 +5708,24 @@ func TestCompatOperationDeepCopy(t *testing.T) {
 		opts cmp.Option
 	}{
 		{
+			name: "addrtype match",
+			op: &compatAddrtypeMatch{
+				revision: 1,
+				infoData: []byte{1, 2, 3, 4},
+				info: addrTypeMatchInfo{
+					checkSrc:       true,
+					checkDst:       true,
+					invertSrcMatch: true,
+					invertDstMatch: true,
+					limitIfaceIn:   true,
+					limitIfaceOut:  true,
+					sourceMask:     linux.XT_ADDRTYPE_LOCAL,
+					destMask:       linux.XT_ADDRTYPE_BROADCAST,
+				},
+			},
+			opts: cmp.AllowUnexported(compatAddrtypeMatch{}, addrTypeMatchInfo{}),
+		},
+		{
 			name: "noop match",
 			op: &compatNoopMatch{
 				name:     "tcp",
@@ -5728,6 +5746,8 @@ func TestCompatOperationDeepCopy(t *testing.T) {
 
 // Tests compat operation checkCompatibility functionality.
 func TestCompatOpCompatibility(t *testing.T) {
+	addrtypeIn := &compatAddrtypeMatch{info: addrTypeMatchInfo{limitIfaceIn: true}}
+	addrtypeOut := &compatAddrtypeMatch{info: addrTypeMatchInfo{limitIfaceOut: true}}
 	noop := &compatNoopMatch{name: "tcp"}
 	const nonBaseChainType = BaseChainType(-1)
 
@@ -5751,6 +5771,31 @@ func TestCompatOpCompatibility(t *testing.T) {
 		cCtx    *opCompatCtx
 		wantErr bool
 	}{
+		// Addrtype limitIfaceIn
+		{
+			name: "addrtype limitIfaceIn valid on PREROUTING",
+			op:   addrtypeIn,
+			cCtx: makeCtx(BaseChainTypeFilter, stack.NFPrerouting),
+		},
+		{
+			name:    "addrtype limitIfaceIn invalid on POSTROUTING",
+			op:      addrtypeIn,
+			cCtx:    makeCtx(BaseChainTypeFilter, stack.NFPostrouting),
+			wantErr: true,
+		},
+
+		// Addrtype limitIfaceOut
+		{
+			name: "addrtype limitIfaceOut valid on POSTROUTING",
+			op:   addrtypeOut,
+			cCtx: makeCtx(BaseChainTypeFilter, stack.NFPostrouting),
+		},
+		{
+			name:    "addrtype limitIfaceOut invalid on PREROUTING",
+			op:      addrtypeOut,
+			cCtx:    makeCtx(BaseChainTypeFilter, stack.NFPrerouting),
+			wantErr: true,
+		},
 		{
 			name:    "noop match",
 			op:      noop,
@@ -5762,6 +5807,144 @@ func TestCompatOpCompatibility(t *testing.T) {
 			err := tc.op.checkCompatibility(tc.cCtx)
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("checkCompatibility() err = %v, wantErr = %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+// Tests evaluating compat addrtype match operation.
+func TestCompatAddrtypeMatchEvaluation(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		matchInfo   addrTypeMatchInfo
+		srcAddr     tcpip.Address
+		dstAddr     tcpip.Address
+		hasRoute    bool
+		noNetHeader bool
+		wantVerdict uint32
+	}{
+		{
+			name: "source broadcast match",
+			matchInfo: addrTypeMatchInfo{
+				checkSrc:   true,
+				sourceMask: linux.XT_ADDRTYPE_BROADCAST,
+			},
+			srcAddr:     header.IPv4Broadcast,
+			wantVerdict: VC(linux.NFT_CONTINUE),
+		},
+		{
+			name: "inverted source local match",
+			matchInfo: addrTypeMatchInfo{
+				checkSrc:       true,
+				invertSrcMatch: true,
+				sourceMask:     linux.XT_ADDRTYPE_LOCAL,
+			},
+			srcAddr:     header.IPv4Broadcast,
+			wantVerdict: VC(linux.NFT_CONTINUE),
+		},
+		{
+			name: "destination broadcast match",
+			matchInfo: addrTypeMatchInfo{
+				checkDst: true,
+				destMask: linux.XT_ADDRTYPE_BROADCAST,
+			},
+			dstAddr:     header.IPv4Broadcast,
+			wantVerdict: VC(linux.NFT_CONTINUE),
+		},
+		{
+			name: "source multicast match",
+			matchInfo: addrTypeMatchInfo{
+				checkSrc:   true,
+				sourceMask: linux.XT_ADDRTYPE_MULTICAST,
+			},
+			srcAddr:     tcpip.AddrFrom4([4]byte{224, 0, 0, 1}),
+			wantVerdict: VC(linux.NFT_CONTINUE),
+		},
+		{
+			name: "destination multicast match",
+			matchInfo: addrTypeMatchInfo{
+				checkDst: true,
+				destMask: linux.XT_ADDRTYPE_MULTICAST,
+			},
+			dstAddr:     tcpip.AddrFrom4([4]byte{224, 0, 0, 1}),
+			wantVerdict: VC(linux.NFT_CONTINUE),
+		},
+		{
+			name: "source unicast with route",
+			matchInfo: addrTypeMatchInfo{
+				checkSrc:   true,
+				sourceMask: linux.XT_ADDRTYPE_UNICAST,
+			},
+			srcAddr:     tcpip.AddrFrom4([4]byte{10, 0, 0, 1}),
+			hasRoute:    true,
+			wantVerdict: VC(linux.NFT_CONTINUE),
+		},
+		{
+			name: "source unicast without route fails",
+			matchInfo: addrTypeMatchInfo{
+				checkSrc:   true,
+				sourceMask: linux.XT_ADDRTYPE_UNICAST,
+			},
+			srcAddr:     tcpip.AddrFrom4([4]byte{10, 0, 0, 1}),
+			hasRoute:    false,
+			wantVerdict: VC(linux.NFT_BREAK),
+		},
+		{
+			name: "destination mis-match",
+			matchInfo: addrTypeMatchInfo{
+				checkSrc:   true,
+				sourceMask: linux.XT_ADDRTYPE_BROADCAST,
+				checkDst:   true,
+				destMask:   linux.XT_ADDRTYPE_LOCAL,
+			},
+			srcAddr:     header.IPv4Broadcast,
+			dstAddr:     tcpip.AddrFrom4([4]byte{224, 0, 0, 1}),
+			wantVerdict: VC(linux.NFT_BREAK),
+		},
+		{
+			name: "packet without network header breaks",
+			matchInfo: addrTypeMatchInfo{
+				checkSrc:   true,
+				sourceMask: linux.XT_ADDRTYPE_BROADCAST,
+			},
+			noNetHeader: true,
+			wantVerdict: VC(linux.NFT_BREAK),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			op := &compatAddrtypeMatch{
+				info: tc.matchInfo,
+			}
+			regs := &registerSet{verdict: Verdict{Code: VC(linux.NFT_CONTINUE)}}
+			var pkt *stack.PacketBuffer
+			if tc.noNetHeader {
+				pkt = stack.NewPacketBuffer(stack.PacketBufferOptions{})
+			} else {
+				fields := arbitraryIPv4Fields()
+				if tc.srcAddr.Len() > 0 {
+					fields.SrcAddr = tc.srcAddr
+				}
+				if tc.dstAddr.Len() > 0 {
+					fields.DstAddr = tc.dstAddr
+				}
+				pkt = makeIPv4Packet(header.IPv4MinimumSize, fields)
+			}
+			defer pkt.DecRef()
+
+			stk := stack.New(stack.Options{})
+			nf := newNFTablesStd()
+			nf.stack = stk
+			var route *stack.Route
+			if tc.hasRoute {
+				route = &stack.Route{}
+			}
+			op.evaluate(regs, opEvalCtx{
+				pkt:      pkt,
+				route:    route,
+				nftState: nf,
+			})
+			if regs.verdict.Code != tc.wantVerdict {
+				t.Errorf("evaluate verdict = %d, want %d", regs.verdict.Code, tc.wantVerdict)
 			}
 		})
 	}

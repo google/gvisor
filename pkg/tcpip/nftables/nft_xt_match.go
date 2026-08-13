@@ -51,6 +51,8 @@ func lookupTCPUDPRevision(name string, rev uint32, family stack.AddressFamily) (
 // Ref: net/netfilter/nft_compat.c:nfnl_compat_get_rcu, net/netfilter/x_tables.c:xt_find_revision
 func lookupCompatMatchRevision(name string, rev uint32, family stack.AddressFamily) (uint32, *syserr.AnnotatedError) {
 	switch name {
+	case MatchAddrtype:
+		return lookupAddrtypeRevision(rev, family)
 	case MatchTCP, MatchUDP:
 		return lookupTCPUDPRevision(name, rev, family)
 	default:
@@ -145,6 +147,12 @@ func initMatch(tab *Table, exprInfo ExprInfo) (operation, *syserr.AnnotatedError
 	infoData := []byte(infoAttr)
 
 	switch name {
+	case MatchAddrtype:
+		addr, err := parseAddrtypeMatch(tab, rev, infoData)
+		if err != nil {
+			return nil, err
+		}
+		return &compatAddrtypeMatch{revision: rev, infoData: infoData, info: *addr}, nil
 	case MatchTCP, MatchUDP:
 		if tab.GetAddressFamily() != stack.IP && tab.GetAddressFamily() != stack.IP6 {
 			return nil, syserr.NewAnnotatedError(syserr.ErrNoSuchFile, fmt.Sprintf("%s match not supported for address family: %v", name, tab.GetAddressFamily()))
