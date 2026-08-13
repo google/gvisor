@@ -65,9 +65,9 @@ func OpenDevice(devicePath string) (*fd.FD, error) {
 }
 
 // New returns a new SlimVM-based implementation of the platform interface.
-func New(deviceFile *fd.FD, sandboxID string, applicationCores int) (*SlimVM, error) {
+func New(opts platform.Options) (*SlimVM, error) {
 	mbCh := hostmm.Probe(true)
-	slimvmFile = deviceFile
+	slimvmFile = opts.DeviceFile
 	slimvmFD = uintptr(slimvmFile.FD())
 	// Ensure global initialization is done.
 	globalOnce.Do(func() {
@@ -76,18 +76,24 @@ func New(deviceFile *fd.FD, sandboxID string, applicationCores int) (*SlimVM, er
 	if globalErr != nil {
 		return nil, globalErr
 	}
+	opts.StartupTimer.Reached("slimvm global state initialized")
 
 	// Parse sandbox ID for the host kernel module.
-	sid, _ := strconv.ParseInt(sandboxID[:min(8, len(sandboxID))], 16, 64)
+	sid, _ := strconv.ParseInt(opts.SandboxID[:min(8, len(opts.SandboxID))], 16, 64)
 
 	// Create a VM context.
-	machine, err := newMachine(sid, applicationCores)
+	machine, err := newMachine(sid, opts.ApplicationCores, opts.StartupTimer)
 	if err != nil {
 		return nil, err
 	}
+	opts.StartupTimer.Reached("slimvm machine created")
+
+	opts.StartupTimer.Reached("waiting for membarrier")
+	memBarrier := <-mbCh
+	opts.StartupTimer.Reached("host membarrier probed")
 
 	return &SlimVM{
-		UseHostProcessMemoryBarrier: platform.UseHostProcessMemoryBarrier{MemBarrier: <-mbCh},
+		UseHostProcessMemoryBarrier: platform.UseHostProcessMemoryBarrier{MemBarrier: memBarrier},
 		machine:                     machine,
 	}, nil
 }
@@ -156,7 +162,7 @@ func (k *SlimVM) HealthCheck() {
 type constructor struct{}
 
 func (*constructor) New(opts platform.Options) (platform.Platform, error) {
-	return New(opts.DeviceFile, opts.SandboxID, opts.ApplicationCores)
+	return New(opts)
 }
 
 func (*constructor) OpenDevice(devicePath string) (*fd.FD, error) {

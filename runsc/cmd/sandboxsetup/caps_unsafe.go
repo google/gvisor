@@ -25,6 +25,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/timing"
 )
 
 // capHeader mirrors `struct __user_cap_header_struct`.
@@ -66,7 +67,7 @@ func allThreadsPrctl(option, arg2, arg3 uintptr) error {
 
 // ApplyCapsAllThreads applies the capabilities in the spec to every thread of
 // the current process. Fails with ENOTSUP in cgo builds.
-func ApplyCapsAllThreads(caps *specs.LinuxCapabilities) error {
+func ApplyCapsAllThreads(caps *specs.LinuxCapabilities, timer *timing.Timer) error {
 	curCaps, err := capability.NewPid2(0)
 	if err != nil {
 		return err
@@ -74,6 +75,7 @@ func ApplyCapsAllThreads(caps *specs.LinuxCapabilities) error {
 	if err := curCaps.Load(); err != nil {
 		return err
 	}
+	timer.Reached("current capabilities read")
 	var bounding, effective, permitted, inheritable, ambient uint64
 	for i, mask := range [5]*uint64{&bounding, &effective, &permitted, &inheritable, &ambient} {
 		set, err := TrimCaps(GetCaps(AllCapTypes[i], caps), curCaps)
@@ -102,6 +104,7 @@ func ApplyCapsAllThreads(caps *specs.LinuxCapabilities) error {
 			}
 		}
 	}
+	timer.Reached("bounding set trimmed on all threads")
 
 	// 2. Apply effective/permitted/inheritable via `capset(2)` on all threads.
 	capsetHdr = capHeader{
@@ -120,6 +123,7 @@ func ApplyCapsAllThreads(caps *specs.LinuxCapabilities) error {
 	if _, _, errno := syscall.AllThreadsSyscall6(unix.SYS_CAPSET, uintptr(unsafe.Pointer(&capsetHdr)), uintptr(unsafe.Pointer(&capsetData[0])), 0, 0, 0, 0); errno != 0 {
 		return fmt.Errorf("capset on all threads: %w", errno)
 	}
+	timer.Reached("capset applied on all threads")
 
 	// 3. Ambient set: clear everything, then raise the requested caps.
 	if err := allThreadsPrctl(unix.PR_CAP_AMBIENT, unix.PR_CAP_AMBIENT_CLEAR_ALL, 0); err != nil {

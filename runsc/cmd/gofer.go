@@ -254,7 +254,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 			util.Fatalf("setCapsAndCallSelf(%v, %v): %v", args, capsToApply, sandboxsetup.SetCapsAndCallSelf(args, capsToApply))
 			panic("unreachable")
 		}
-		if err := sandboxsetup.ApplyCapsAllThreads(capsToApply); err != nil {
+		if err := sandboxsetup.ApplyCapsAllThreads(capsToApply, nil); err != nil {
 			util.Fatalf("applying caps to all threads: %v", err)
 		}
 	}
