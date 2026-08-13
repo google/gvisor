@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path"
@@ -477,6 +478,18 @@ func (c *Container) logs(ctx context.Context, stdout, stderr *bytes.Buffer) erro
 	defer writer.Close()
 	_, err = stdcopy.StdCopy(stdout, stderr, writer)
 
+	return err
+}
+
+// StreamLogs streams the container's combined stdout and stderr to the given writer.
+func (c *Container) StreamLogs(ctx context.Context, w io.Writer) error {
+	opts := container.LogsOptions{ShowStdout: true, ShowStderr: true, Follow: true}
+	reader, err := c.client.ContainerLogs(ctx, c.id, opts)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+	_, err = stdcopy.StdCopy(w, w, reader)
 	return err
 }
 
