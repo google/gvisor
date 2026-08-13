@@ -199,6 +199,9 @@ var _ marshal.Marshallable = (*Winsize)(nil)
 var _ marshal.Marshallable = (*XTAddrtypeInfo)(nil)
 var _ marshal.Marshallable = (*XTAddrtypeInfoV1)(nil)
 var _ marshal.Marshallable = (*XTCTTargetInfoV0)(nil)
+var _ marshal.Marshallable = (*XTConntrackMtinfo)(nil)
+var _ marshal.Marshallable = (*XTConntrackMtinfo2)(nil)
+var _ marshal.Marshallable = (*XTConntrackMtinfo3)(nil)
 var _ marshal.Marshallable = (*XTCounters)(nil)
 var _ marshal.Marshallable = (*XTEntryMatch)(nil)
 var _ marshal.Marshallable = (*XTEntryTarget)(nil)
@@ -12942,6 +12945,659 @@ func (x *XTCTTargetInfoV0) WriteTo(writer io.Writer) (int64, error) {
         return int64(length), err
     }
 
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(x)))
+    hdr.Len = x.SizeBytes()
+    hdr.Cap = x.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that x
+    // must live until the use above.
+    runtime.KeepAlive(x) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (x *XTConntrackMtinfo) SizeBytes() int {
+    return 24 +
+        1*16 +
+        1*16 +
+        1*16 +
+        1*16 +
+        1*16 +
+        1*16 +
+        1*16 +
+        1*16
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (x *XTConntrackMtinfo) MarshalBytes(dst []byte) []byte {
+    for idx := 0; idx < 16; idx++ {
+        dst[0] = byte(x.OrigSrcAddr[idx])
+        dst = dst[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        dst[0] = byte(x.OrigSrcMask[idx])
+        dst = dst[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        dst[0] = byte(x.OrigDstAddr[idx])
+        dst = dst[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        dst[0] = byte(x.OrigDstMask[idx])
+        dst = dst[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        dst[0] = byte(x.ReplSrcAddr[idx])
+        dst = dst[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        dst[0] = byte(x.ReplSrcMask[idx])
+        dst = dst[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        dst[0] = byte(x.ReplDstAddr[idx])
+        dst = dst[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        dst[0] = byte(x.ReplDstMask[idx])
+        dst = dst[1:]
+    }
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(x.ExpiresMin))
+    dst = dst[4:]
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(x.ExpiresMax))
+    dst = dst[4:]
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(x.L4Proto))
+    dst = dst[2:]
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(x.OrigSrcPort))
+    dst = dst[2:]
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(x.OrigDstPort))
+    dst = dst[2:]
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(x.ReplSrcPort))
+    dst = dst[2:]
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(x.ReplDstPort))
+    dst = dst[2:]
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(x.MatchFlags))
+    dst = dst[2:]
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(x.InvertFlags))
+    dst = dst[2:]
+    dst[0] = byte(x.StateMask)
+    dst = dst[1:]
+    dst[0] = byte(x.StatusMask)
+    dst = dst[1:]
+    return dst
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (x *XTConntrackMtinfo) UnmarshalBytes(src []byte) []byte {
+    for idx := 0; idx < 16; idx++ {
+        x.OrigSrcAddr[idx] = src[0]
+        src = src[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        x.OrigSrcMask[idx] = src[0]
+        src = src[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        x.OrigDstAddr[idx] = src[0]
+        src = src[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        x.OrigDstMask[idx] = src[0]
+        src = src[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        x.ReplSrcAddr[idx] = src[0]
+        src = src[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        x.ReplSrcMask[idx] = src[0]
+        src = src[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        x.ReplDstAddr[idx] = src[0]
+        src = src[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        x.ReplDstMask[idx] = src[0]
+        src = src[1:]
+    }
+    x.ExpiresMin = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    x.ExpiresMax = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    x.L4Proto = uint16(hostarch.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    x.OrigSrcPort = uint16(hostarch.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    x.OrigDstPort = uint16(hostarch.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    x.ReplSrcPort = uint16(hostarch.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    x.ReplDstPort = uint16(hostarch.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    x.MatchFlags = uint16(hostarch.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    x.InvertFlags = uint16(hostarch.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    x.StateMask = uint8(src[0])
+    src = src[1:]
+    x.StatusMask = uint8(src[0])
+    src = src[1:]
+    return src
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (x *XTConntrackMtinfo) Packed() bool {
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (x *XTConntrackMtinfo) MarshalUnsafe(dst []byte) []byte {
+    size := x.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(x), uintptr(size))
+    return dst[size:]
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (x *XTConntrackMtinfo) UnmarshalUnsafe(src []byte) []byte {
+    size := x.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(x), unsafe.Pointer(&src[0]), uintptr(size))
+    return src[size:]
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+func (x *XTConntrackMtinfo) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(x)))
+    hdr.Len = x.SizeBytes()
+    hdr.Cap = x.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that x
+    // must live until the use above.
+    runtime.KeepAlive(x) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+func (x *XTConntrackMtinfo) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return x.CopyOutN(cc, addr, x.SizeBytes())
+}
+
+// CopyInN implements marshal.Marshallable.CopyInN.
+func (x *XTConntrackMtinfo) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(x)))
+    hdr.Len = x.SizeBytes()
+    hdr.Cap = x.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that x
+    // must live until the use above.
+    runtime.KeepAlive(x) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+func (x *XTConntrackMtinfo) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return x.CopyInN(cc, addr, x.SizeBytes())
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (x *XTConntrackMtinfo) WriteTo(writer io.Writer) (int64, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(x)))
+    hdr.Len = x.SizeBytes()
+    hdr.Cap = x.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that x
+    // must live until the use above.
+    runtime.KeepAlive(x) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (x *XTConntrackMtinfo2) SizeBytes() int {
+    return 26 +
+        1*16 +
+        1*16 +
+        1*16 +
+        1*16 +
+        1*16 +
+        1*16 +
+        1*16 +
+        1*16 +
+        1*2
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (x *XTConntrackMtinfo2) MarshalBytes(dst []byte) []byte {
+    for idx := 0; idx < 16; idx++ {
+        dst[0] = byte(x.OrigSrcAddr[idx])
+        dst = dst[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        dst[0] = byte(x.OrigSrcMask[idx])
+        dst = dst[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        dst[0] = byte(x.OrigDstAddr[idx])
+        dst = dst[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        dst[0] = byte(x.OrigDstMask[idx])
+        dst = dst[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        dst[0] = byte(x.ReplSrcAddr[idx])
+        dst = dst[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        dst[0] = byte(x.ReplSrcMask[idx])
+        dst = dst[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        dst[0] = byte(x.ReplDstAddr[idx])
+        dst = dst[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        dst[0] = byte(x.ReplDstMask[idx])
+        dst = dst[1:]
+    }
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(x.ExpiresMin))
+    dst = dst[4:]
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(x.ExpiresMax))
+    dst = dst[4:]
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(x.L4Proto))
+    dst = dst[2:]
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(x.OrigSrcPort))
+    dst = dst[2:]
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(x.OrigDstPort))
+    dst = dst[2:]
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(x.ReplSrcPort))
+    dst = dst[2:]
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(x.ReplDstPort))
+    dst = dst[2:]
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(x.MatchFlags))
+    dst = dst[2:]
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(x.InvertFlags))
+    dst = dst[2:]
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(x.StateMask))
+    dst = dst[2:]
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(x.StatusMask))
+    dst = dst[2:]
+    // Padding: dst[:sizeof(byte)*2] ~= [2]byte{0}
+    dst = dst[1*(2):]
+    return dst
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (x *XTConntrackMtinfo2) UnmarshalBytes(src []byte) []byte {
+    for idx := 0; idx < 16; idx++ {
+        x.OrigSrcAddr[idx] = src[0]
+        src = src[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        x.OrigSrcMask[idx] = src[0]
+        src = src[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        x.OrigDstAddr[idx] = src[0]
+        src = src[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        x.OrigDstMask[idx] = src[0]
+        src = src[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        x.ReplSrcAddr[idx] = src[0]
+        src = src[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        x.ReplSrcMask[idx] = src[0]
+        src = src[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        x.ReplDstAddr[idx] = src[0]
+        src = src[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        x.ReplDstMask[idx] = src[0]
+        src = src[1:]
+    }
+    x.ExpiresMin = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    x.ExpiresMax = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    x.L4Proto = uint16(hostarch.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    x.OrigSrcPort = uint16(hostarch.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    x.OrigDstPort = uint16(hostarch.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    x.ReplSrcPort = uint16(hostarch.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    x.ReplDstPort = uint16(hostarch.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    x.MatchFlags = uint16(hostarch.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    x.InvertFlags = uint16(hostarch.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    x.StateMask = uint16(hostarch.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    x.StatusMask = uint16(hostarch.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    // Padding: ~ copy([2]byte(x._), src[:sizeof(byte)*2])
+    src = src[1*(2):]
+    return src
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (x *XTConntrackMtinfo2) Packed() bool {
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (x *XTConntrackMtinfo2) MarshalUnsafe(dst []byte) []byte {
+    size := x.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(x), uintptr(size))
+    return dst[size:]
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (x *XTConntrackMtinfo2) UnmarshalUnsafe(src []byte) []byte {
+    size := x.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(x), unsafe.Pointer(&src[0]), uintptr(size))
+    return src[size:]
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+func (x *XTConntrackMtinfo2) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(x)))
+    hdr.Len = x.SizeBytes()
+    hdr.Cap = x.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that x
+    // must live until the use above.
+    runtime.KeepAlive(x) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+func (x *XTConntrackMtinfo2) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return x.CopyOutN(cc, addr, x.SizeBytes())
+}
+
+// CopyInN implements marshal.Marshallable.CopyInN.
+func (x *XTConntrackMtinfo2) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(x)))
+    hdr.Len = x.SizeBytes()
+    hdr.Cap = x.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that x
+    // must live until the use above.
+    runtime.KeepAlive(x) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+func (x *XTConntrackMtinfo2) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return x.CopyInN(cc, addr, x.SizeBytes())
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (x *XTConntrackMtinfo2) WriteTo(writer io.Writer) (int64, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(x)))
+    hdr.Len = x.SizeBytes()
+    hdr.Cap = x.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that x
+    // must live until the use above.
+    runtime.KeepAlive(x) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (x *XTConntrackMtinfo3) SizeBytes() int {
+    return 34 +
+        1*16 +
+        1*16 +
+        1*16 +
+        1*16 +
+        1*16 +
+        1*16 +
+        1*16 +
+        1*16 +
+        1*2
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (x *XTConntrackMtinfo3) MarshalBytes(dst []byte) []byte {
+    for idx := 0; idx < 16; idx++ {
+        dst[0] = byte(x.OrigSrcAddr[idx])
+        dst = dst[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        dst[0] = byte(x.OrigSrcMask[idx])
+        dst = dst[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        dst[0] = byte(x.OrigDstAddr[idx])
+        dst = dst[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        dst[0] = byte(x.OrigDstMask[idx])
+        dst = dst[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        dst[0] = byte(x.ReplSrcAddr[idx])
+        dst = dst[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        dst[0] = byte(x.ReplSrcMask[idx])
+        dst = dst[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        dst[0] = byte(x.ReplDstAddr[idx])
+        dst = dst[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        dst[0] = byte(x.ReplDstMask[idx])
+        dst = dst[1:]
+    }
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(x.ExpiresMin))
+    dst = dst[4:]
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(x.ExpiresMax))
+    dst = dst[4:]
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(x.L4Proto))
+    dst = dst[2:]
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(x.OrigSrcPort))
+    dst = dst[2:]
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(x.OrigDstPort))
+    dst = dst[2:]
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(x.ReplSrcPort))
+    dst = dst[2:]
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(x.ReplDstPort))
+    dst = dst[2:]
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(x.MatchFlags))
+    dst = dst[2:]
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(x.InvertFlags))
+    dst = dst[2:]
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(x.StateMask))
+    dst = dst[2:]
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(x.StatusMask))
+    dst = dst[2:]
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(x.OrigSrcPortHigh))
+    dst = dst[2:]
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(x.OrigDstPortHigh))
+    dst = dst[2:]
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(x.ReplSrcPortHigh))
+    dst = dst[2:]
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(x.ReplDstPortHigh))
+    dst = dst[2:]
+    // Padding: dst[:sizeof(byte)*2] ~= [2]byte{0}
+    dst = dst[1*(2):]
+    return dst
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (x *XTConntrackMtinfo3) UnmarshalBytes(src []byte) []byte {
+    for idx := 0; idx < 16; idx++ {
+        x.OrigSrcAddr[idx] = src[0]
+        src = src[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        x.OrigSrcMask[idx] = src[0]
+        src = src[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        x.OrigDstAddr[idx] = src[0]
+        src = src[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        x.OrigDstMask[idx] = src[0]
+        src = src[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        x.ReplSrcAddr[idx] = src[0]
+        src = src[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        x.ReplSrcMask[idx] = src[0]
+        src = src[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        x.ReplDstAddr[idx] = src[0]
+        src = src[1:]
+    }
+    for idx := 0; idx < 16; idx++ {
+        x.ReplDstMask[idx] = src[0]
+        src = src[1:]
+    }
+    x.ExpiresMin = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    x.ExpiresMax = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    x.L4Proto = uint16(hostarch.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    x.OrigSrcPort = uint16(hostarch.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    x.OrigDstPort = uint16(hostarch.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    x.ReplSrcPort = uint16(hostarch.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    x.ReplDstPort = uint16(hostarch.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    x.MatchFlags = uint16(hostarch.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    x.InvertFlags = uint16(hostarch.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    x.StateMask = uint16(hostarch.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    x.StatusMask = uint16(hostarch.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    x.OrigSrcPortHigh = uint16(hostarch.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    x.OrigDstPortHigh = uint16(hostarch.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    x.ReplSrcPortHigh = uint16(hostarch.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    x.ReplDstPortHigh = uint16(hostarch.ByteOrder.Uint16(src[:2]))
+    src = src[2:]
+    // Padding: ~ copy([2]byte(x._), src[:sizeof(byte)*2])
+    src = src[1*(2):]
+    return src
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (x *XTConntrackMtinfo3) Packed() bool {
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (x *XTConntrackMtinfo3) MarshalUnsafe(dst []byte) []byte {
+    size := x.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(x), uintptr(size))
+    return dst[size:]
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (x *XTConntrackMtinfo3) UnmarshalUnsafe(src []byte) []byte {
+    size := x.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(x), unsafe.Pointer(&src[0]), uintptr(size))
+    return src[size:]
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+func (x *XTConntrackMtinfo3) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(x)))
+    hdr.Len = x.SizeBytes()
+    hdr.Cap = x.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that x
+    // must live until the use above.
+    runtime.KeepAlive(x) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+func (x *XTConntrackMtinfo3) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return x.CopyOutN(cc, addr, x.SizeBytes())
+}
+
+// CopyInN implements marshal.Marshallable.CopyInN.
+func (x *XTConntrackMtinfo3) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(x)))
+    hdr.Len = x.SizeBytes()
+    hdr.Cap = x.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that x
+    // must live until the use above.
+    runtime.KeepAlive(x) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+func (x *XTConntrackMtinfo3) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return x.CopyInN(cc, addr, x.SizeBytes())
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (x *XTConntrackMtinfo3) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))

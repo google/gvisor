@@ -845,6 +845,124 @@ const SizeOfXTMultiport = 2 + (XT_MULTI_PORTS * 2)
 // SizeOfXTMultiportV1 is the size of XTMultiportV1 (in bytes).
 const SizeOfXTMultiportV1 = SizeOfXTMultiport + XT_MULTI_PORTS + 1
 
+// XT_CONNTRACK flags indicate which fields of the connection tracking state to match.
+const (
+	XT_CONNTRACK_STATE        = 1 << 0
+	XT_CONNTRACK_PROTO        = 1 << 1
+	XT_CONNTRACK_ORIGSRC      = 1 << 2
+	XT_CONNTRACK_ORIGDST      = 1 << 3
+	XT_CONNTRACK_REPLSRC      = 1 << 4
+	XT_CONNTRACK_REPLDST      = 1 << 5
+	XT_CONNTRACK_STATUS       = 1 << 6
+	XT_CONNTRACK_EXPIRES      = 1 << 7
+	XT_CONNTRACK_ORIGSRC_PORT = 1 << 8
+	XT_CONNTRACK_ORIGDST_PORT = 1 << 9
+	XT_CONNTRACK_REPLSRC_PORT = 1 << 10
+	XT_CONNTRACK_REPLDST_PORT = 1 << 11
+	XT_CONNTRACK_DIRECTION    = 1 << 12
+	XT_CONNTRACK_STATE_ALIAS  = 1 << 13
+)
+
+const (
+	XT_CONNTRACK_STATE_INVALID = 1 << 0
+	// The following constants use a modulo operation that matches the Linux kernel
+	// macro XT_CONNTRACK_STATE_BIT(ctinfo) (1 << ((ctinfo)%IP_CT_IS_REPLY+1))
+	// in include/uapi/linux/netfilter/xt_conntrack.h.
+	XT_CONNTRACK_STATE_ESTABLISHED = 1 << (IP_CT_ESTABLISHED%IP_CT_IS_REPLY + 1)
+	XT_CONNTRACK_STATE_RELATED     = 1 << (IP_CT_RELATED%IP_CT_IS_REPLY + 1)
+	XT_CONNTRACK_STATE_NEW         = 1 << (IP_CT_NEW%IP_CT_IS_REPLY + 1)
+	XT_CONNTRACK_STATE_SNAT        = 1 << (IP_CT_NUMBER + 1)
+	XT_CONNTRACK_STATE_DNAT        = 1 << (IP_CT_NUMBER + 2)
+	XT_CONNTRACK_STATE_UNTRACKED   = 1 << (IP_CT_NUMBER + 3)
+)
+
+// XTConntrackMtinfo corresponds to struct xt_conntrack_mtinfo1 in
+// include/uapi/linux/netfilter/xt_conntrack.h.
+//
+// +marshal
+type XTConntrackMtinfo struct {
+	_           structs.HostLayout
+	OrigSrcAddr [16]byte
+	OrigSrcMask [16]byte
+	OrigDstAddr [16]byte
+	OrigDstMask [16]byte
+	ReplSrcAddr [16]byte
+	ReplSrcMask [16]byte
+	ReplDstAddr [16]byte
+	ReplDstMask [16]byte
+	ExpiresMin  uint32
+	ExpiresMax  uint32
+	L4Proto     uint16
+	OrigSrcPort uint16
+	OrigDstPort uint16
+	ReplSrcPort uint16
+	ReplDstPort uint16
+	MatchFlags  uint16
+	InvertFlags uint16
+	StateMask   uint8
+	StatusMask  uint8
+}
+
+// XTConntrackMtinfo2 corresponds to struct xt_conntrack_mtinfo2 in
+// include/uapi/linux/netfilter/xt_conntrack.h.
+//
+// +marshal
+type XTConntrackMtinfo2 struct {
+	_           structs.HostLayout
+	OrigSrcAddr [16]byte
+	OrigSrcMask [16]byte
+	OrigDstAddr [16]byte
+	OrigDstMask [16]byte
+	ReplSrcAddr [16]byte
+	ReplSrcMask [16]byte
+	ReplDstAddr [16]byte
+	ReplDstMask [16]byte
+	ExpiresMin  uint32
+	ExpiresMax  uint32
+	L4Proto     uint16
+	OrigSrcPort uint16
+	OrigDstPort uint16
+	ReplSrcPort uint16
+	ReplDstPort uint16
+	MatchFlags  uint16
+	InvertFlags uint16
+	StateMask   uint16
+	StatusMask  uint16
+	_           [2]byte
+}
+
+// XTConntrackMtinfo3 corresponds to struct xt_conntrack_mtinfo3 in
+// include/uapi/linux/netfilter/xt_conntrack.h.
+//
+// +marshal
+type XTConntrackMtinfo3 struct {
+	_               structs.HostLayout
+	OrigSrcAddr     [16]byte
+	OrigSrcMask     [16]byte
+	OrigDstAddr     [16]byte
+	OrigDstMask     [16]byte
+	ReplSrcAddr     [16]byte
+	ReplSrcMask     [16]byte
+	ReplDstAddr     [16]byte
+	ReplDstMask     [16]byte
+	ExpiresMin      uint32
+	ExpiresMax      uint32
+	L4Proto         uint16
+	OrigSrcPort     uint16
+	OrigDstPort     uint16
+	ReplSrcPort     uint16
+	ReplDstPort     uint16
+	MatchFlags      uint16
+	InvertFlags     uint16
+	StateMask       uint16
+	StatusMask      uint16
+	OrigSrcPortHigh uint16
+	OrigDstPortHigh uint16
+	ReplSrcPortHigh uint16
+	ReplDstPortHigh uint16
+	_               [2]byte
+}
+
 // XTMarkMtinfo1 holds data for matching packets against a mark.
 // It corresponds to struct xt_mark_mtinfo1 in include/uapi/linux/netfilter/xt_mark.h.
 //
