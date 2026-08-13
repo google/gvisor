@@ -75,8 +75,6 @@ const (
 	SegOverheadFactor = 2
 )
 
-const maxQueuedTransportErrors = 128
-
 type connDirectionState uint32
 
 // Connection direction states used for directionState checks in endpoint struct
@@ -181,99 +179,81 @@ func (s EndpointState) String() string {
 	}
 }
 
-type queuedTransportError struct {
+type pendingTransportError struct {
+	mu       sync.Mutex `state:"nosave"`
 	transErr stack.TransportError
 	pkt      *stack.PacketBuffer
 }
 
-// transportErrorQueue is a bounded, thread-safe queue of transport errors.
-type transportErrorQueue struct {
-	mu     sync.Mutex `state:"nosave"`
-	errors []queuedTransportError
-}
-
-// emptyLocked determines if the queue is empty.
+// emptyLocked determines if there is no pending transport error.
 //
-// Preconditions: q.mu must be held.
-func (q *transportErrorQueue) emptyLocked() bool {
-	return len(q.errors) == 0
+// Preconditions: p.mu must be held.
+func (p *pendingTransportError) emptyLocked() bool {
+	return p.pkt == nil
 }
 
-// empty determines if the queue is empty.
-func (q *transportErrorQueue) empty() bool {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	return q.emptyLocked()
+// empty determines if there is no pending transport error.
+func (p *pendingTransportError) empty() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.emptyLocked()
 }
 
-// enqueue adds the given transport error to the queue.
-//
-// Returns true when the error is successfully added to the queue, in which case
-// ownership of pkt is transferred to the queue. Returns false if the queue is
-// full, in which case ownership is retained by the caller.
-func (q *transportErrorQueue) enqueue(transErr stack.TransportError, pkt *stack.PacketBuffer) bool {
-	q.mu.Lock()
-	defer q.mu.Unlock()
+// store replaces the pending transport error. Ownership of pkt is transferred
+// to p.
+func (p *pendingTransportError) store(transErr stack.TransportError, pkt *stack.PacketBuffer) {
+	p.mu.Lock()
+	oldPkt := p.pkt
+	p.transErr = transErr
+	p.pkt = pkt
+	p.mu.Unlock()
 
-	if len(q.errors) >= maxQueuedTransportErrors {
-		return false
+	if oldPkt != nil {
+		oldPkt.DecRef()
+	}
+}
+
+// take returns and clears the pending transport error. Ownership of the packet
+// buffer is transferred to the caller.
+func (p *pendingTransportError) take() (stack.TransportError, *stack.PacketBuffer, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.pkt == nil {
+		return nil, nil, false
 	}
 
-	q.errors = append(q.errors, queuedTransportError{
-		transErr: transErr,
-		pkt:      pkt,
-	})
-	return true
+	transErr := p.transErr
+	pkt := p.pkt
+	p.transErr = nil
+	p.pkt = nil
+	return transErr, pkt, true
 }
 
-// dequeue removes and returns the next transport error from queue, if one
-// exists. Ownership of the packet buffer is transferred to the caller.
-func (q *transportErrorQueue) dequeue() (queuedTransportError, bool) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	if len(q.errors) == 0 {
-		return queuedTransportError{}, false
-	}
-
-	err := q.errors[0]
-	copy(q.errors, q.errors[1:])
-	q.errors[len(q.errors)-1] = queuedTransportError{}
-	q.errors = q.errors[:len(q.errors)-1]
-	return err, true
-}
-
-func (e *Endpoint) enqueueTransportError(transErr stack.TransportError, pkt *stack.PacketBuffer) {
-	pkt = pkt.Clone()
-	if !e.transportErrorQueue.enqueue(transErr, pkt) {
-		pkt.DecRef()
-		e.stack.Stats().DroppedPackets.Increment()
-		return
-	}
+func (e *Endpoint) storeTransportError(transErr stack.TransportError, pkt *stack.PacketBuffer) {
+	e.pendingTransportError.store(transErr, pkt.Clone())
 
 	if !e.isOwnedByUser() {
 		e.protocol.dispatcher.selectProcessor(e.ID).queueEndpoint(e)
 	}
 }
 
-func (e *Endpoint) handleQueuedTransportErrors() {
-	for {
-		if e.isOwnedByUser() {
-			return
-		}
-
-		err, ok := e.transportErrorQueue.dequeue()
-		if !ok {
-			return
-		}
-
-		e.HandleError(err.transErr, err.pkt)
-		err.pkt.DecRef()
+func (e *Endpoint) handlePendingTransportError() {
+	if e.isOwnedByUser() {
+		return
 	}
+
+	transErr, pkt, ok := e.pendingTransportError.take()
+	if !ok {
+		return
+	}
+
+	e.HandleError(transErr, pkt)
+	pkt.DecRef()
 }
 
 func (e *Endpoint) hasQueuedWork() bool {
-	return !e.segmentQueue.empty() || !e.transportErrorQueue.empty()
+	return !e.segmentQueue.empty() || !e.pendingTransportError.empty()
 }
 
 // SACKInfo holds TCP SACK related information for a given endpoint.
@@ -572,9 +552,10 @@ type Endpoint struct {
 	// and dropped when it is.
 	segmentQueue segmentQueue `state:"wait"`
 
-	// transportErrorQueue is used to hand transport errors received while the
-	// endpoint is owned by a user goroutine to the protocol goroutine.
-	transportErrorQueue transportErrorQueue `state:"nosave"`
+	// pendingTransportError is used to hand the most recent transport error
+	// received while the endpoint is owned by a user goroutine to the protocol
+	// goroutine.
+	pendingTransportError pendingTransportError `state:"nosave"`
 
 	// userMSS if non-zero is the MSS value explicitly set by the user
 	// for this endpoint using the TCP_MAXSEG setsockopt.
@@ -806,7 +787,7 @@ func (e *Endpoint) LockUser() {
 // UnlockUser will check if there is any work already queued for processing and
 // wake up a processor goroutine to process it before unlocking e.mu. This is
 // required because when packets or transport errors arrive and endpoint lock is
-// already held then such work is queued up to be processed.
+// already held then such work is recorded to be processed.
 //
 // Precondition: e.LockUser() must have been called before calling e.UnlockUser()
 // +checklocksrelease:e.mu
@@ -815,21 +796,21 @@ func (e *Endpoint) UnlockUser() {
 	// segments can be queued between the time we check if queue is empty
 	// and actually unlock the endpoint mutex.
 	e.segmentQueue.mu.Lock()
-	e.transportErrorQueue.mu.Lock()
-	if e.segmentQueue.emptyLocked() && e.transportErrorQueue.emptyLocked() {
+	e.pendingTransportError.mu.Lock()
+	if e.segmentQueue.emptyLocked() && e.pendingTransportError.emptyLocked() {
 		if e.ownedByUser.Swap(0) != 1 {
 			panic("e.UnlockUser() called without calling e.LockUser()")
 		}
 		e.mu.Unlock()
-		e.transportErrorQueue.mu.Unlock()
+		e.pendingTransportError.mu.Unlock()
 		e.segmentQueue.mu.Unlock()
 		return
 	}
-	e.transportErrorQueue.mu.Unlock()
+	e.pendingTransportError.mu.Unlock()
 	e.segmentQueue.mu.Unlock()
 
 	// Since we are waking the processor goroutine here just unlock
-	// and let it process the queued segments.
+	// and let it process the queued work.
 	if e.ownedByUser.Swap(0) != 1 {
 		panic("e.UnlockUser() called without calling e.LockUser()")
 	}
@@ -3063,7 +3044,7 @@ func (e *Endpoint) onICMPError(err tcpip.Error, transErr stack.TransportError, p
 // HandleError implements stack.TransportEndpoint.
 func (e *Endpoint) HandleError(transErr stack.TransportError, pkt *stack.PacketBuffer) {
 	if e.isOwnedByUser() {
-		e.enqueueTransportError(transErr, pkt)
+		e.storeTransportError(transErr, pkt)
 		return
 	}
 

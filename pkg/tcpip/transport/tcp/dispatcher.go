@@ -316,7 +316,7 @@ func (p *processor) start(wg *sync.WaitGroup) {
 				if !ep.hasQueuedWork() {
 					continue
 				}
-				ep.handleQueuedTransportErrors()
+				ep.handlePendingTransportError()
 				if ep.segmentQueue.empty() {
 					continue
 				}
