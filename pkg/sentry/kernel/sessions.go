@@ -16,6 +16,7 @@ package kernel
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 )
 
@@ -255,18 +256,24 @@ func (pg *ProcessGroup) SendSignal(info *linux.SignalInfo) error {
 //
 // EPERM may be returned if either the given ThreadGroup is already a Session
 // leader, or a ProcessGroup already exists for the ThreadGroup's ID.
-func (tg *ThreadGroup) CreateSession() (SessionID, error) {
+func (tg *ThreadGroup) CreateSession(ctx context.Context) (SessionID, error) {
 	tg.pidns.owner.mu.Lock()
-	defer tg.pidns.owner.mu.Unlock()
 	tg.signalHandlers.mu.Lock()
-	defer tg.signalHandlers.mu.Unlock()
-	return tg.createSession()
+	sid, oldTTY, err := tg.createSession()
+	tg.signalHandlers.mu.Unlock()
+	tg.pidns.owner.mu.Unlock()
+	if oldTTY != nil {
+		oldTTY.DecRef(ctx)
+	}
+	return sid, err
 }
 
-// createSession creates a new session for a threadgroup.
+// createSession creates a new session for a threadgroup. If the thread group
+// had a controlling terminal, it is returned so that the caller can drop the
+// bond reference outside of the locks.
 //
 // Precondition: callers must hold TaskSet.mu and the signal mutex for writing.
-func (tg *ThreadGroup) createSession() (SessionID, error) {
+func (tg *ThreadGroup) createSession() (SessionID, *TTY, error) {
 	// Get the ID for this thread in the current namespace.
 	id := tg.pidns.tgids[tg]
 
@@ -277,14 +284,14 @@ func (tg *ThreadGroup) createSession() (SessionID, error) {
 			continue
 		}
 		if s.leader == tg {
-			return -1, linuxerr.EPERM
+			return -1, nil, linuxerr.EPERM
 		}
 		if s.id == SessionID(id) {
-			return -1, linuxerr.EPERM
+			return -1, nil, linuxerr.EPERM
 		}
 		for pg := s.processGroups.Front(); pg != nil; pg = pg.Next() {
 			if pg.id == ProcessGroupID(id) {
-				return -1, linuxerr.EPERM
+				return -1, nil, linuxerr.EPERM
 			}
 		}
 	}
@@ -353,10 +360,12 @@ func (tg *ThreadGroup) createSession() (SessionID, error) {
 		ns.processGroups[ProcessGroupID(local)] = pg
 	}
 
-	// Disconnect from the controlling terminal.
+	// Disconnect from the controlling terminal, handing the bond reference to
+	// the caller to drop outside of the locks.
+	oldTTY := tg.tty
 	tg.tty = nil
 
-	return sid, nil
+	return sid, oldTTY, nil
 }
 
 // CreateProcessGroup creates a new process group.

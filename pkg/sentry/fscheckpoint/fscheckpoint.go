@@ -43,6 +43,7 @@ package fscheckpoint
 
 import (
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
+	fspb "gvisor.dev/gvisor/pkg/sentry/fscheckpoint/fscheckpoint_proto_go_proto"
 )
 
 // AllTmpfsPath is a sentinel value for the Path option of a filesystem
@@ -54,18 +55,10 @@ const AllTmpfsPath = "all-tmpfs"
 // Manifest is the type of the JSON object stored in the manifest file.
 type Manifest struct {
 	// Version is the checkpoint format version.
-	//
-	// While Version is 0, filesystem checkpoint compatibility is not
-	// guaranteed between differing runsc binary versions, so RunscVersion is
-	// used to check compatibility. Version should not be incremented to 1
-	// until filesystem checkpoint compatibility is established.
 	Version uint64 `json:"version,omitzero"`
 
 	// RunscVersion is the version of the runsc binary that produced this
 	// checkpoint.
-	//
-	// TODO: NOLINT - Currently this must match during restore. Removing this
-	// requirement involves at least stabilizing pgalloc's checkpoint format.
 	RunscVersion string `json:"runsc_version,omitzero"`
 
 	// PageSize is hostarch.PageSize for the sandbox that produced this
@@ -83,7 +76,7 @@ type Manifest struct {
 	//
 	// TODO: NOLINT - Currently this must match during restore. Removing this
 	// requirement requires fixing an endianness for
-	// tmpfs.fsckptRegularFileSegment, and for pgalloc checkpoints.
+	// tmpfs.fsckptRegularFileSegment.
 	Endian string `json:"endian"`
 
 	// MemoryFiles contains information about pgalloc.MemoryFiles stored in the
@@ -125,4 +118,46 @@ type Tmpfs struct {
 	// tar archive for this filesystem begin and end respectively.
 	TarStart uint64 `json:"tar_start"`
 	TarEnd   uint64 `json:"tar_end"`
+}
+
+// FromProto converts a proto Manifest to a Manifest struct.
+func FromProto(pb *fspb.Manifest) Manifest {
+	m := Manifest{
+		Version:      pb.Version,
+		RunscVersion: pb.RunscVersion,
+		PageSize:     pb.PageSize,
+		Endian:       pb.Endian,
+	}
+	if len(pb.MemoryFiles) > 0 {
+		m.MemoryFiles = make([]MemoryFile, len(pb.MemoryFiles))
+		for i, mf := range pb.MemoryFiles {
+			m.MemoryFiles[i] = MemoryFile{
+				ResourceID:         fromProtoResourceID(mf.ResourceId),
+				PagesMetadataStart: mf.PagesMetadataStart,
+				PagesMetadataEnd:   mf.PagesMetadataEnd,
+				PagesStart:         mf.PagesStart,
+			}
+		}
+	}
+	if len(pb.Tmpfs) > 0 {
+		m.Tmpfs = make([]Tmpfs, len(pb.Tmpfs))
+		for i, t := range pb.Tmpfs {
+			m.Tmpfs[i] = Tmpfs{
+				ResourceID: fromProtoResourceID(t.ResourceId),
+				TarStart:   t.TarStart,
+				TarEnd:     t.TarEnd,
+			}
+		}
+	}
+	return m
+}
+
+func fromProtoResourceID(pb *fspb.ResourceID) checkpoint.ResourceID {
+	if pb == nil {
+		return checkpoint.ResourceID{}
+	}
+	return checkpoint.ResourceID{
+		ContainerName: pb.ContainerName,
+		Path:          pb.Path,
+	}
 }

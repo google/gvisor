@@ -175,6 +175,16 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 	tg := cfg.ThreadGroup
 	image := cfg.TaskImage
 
+	// inhTTY is the controlling terminal a new thread group inherits.
+	// Register the defer early so that DecRef is called after all locks are
+	// released.
+	var inhTTY *TTY
+	defer func() {
+		if inhTTY != nil {
+			inhTTY.DecRef(ctx)
+		}
+	}()
+
 	var cu cleanup.Cleanup
 	defer cu.Clean()
 
@@ -299,6 +309,21 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 
+	// GetTTY takes the bond reference under srcT's signal mutex, so
+	// the IncRef cannot race with a final DecRef.
+	//
+	// It must be called after ts.mu.Lock: hangup/setsid/TIOCNOTTY all take
+	// TaskSet.mu, so the tty cannot be disassociated before the child
+	// commits; and before tg.signalHandlers.mu is locked below, since it
+	// acquires srcT's signal mutex, which must not nest with the child's.
+	//
+	// From srcT, not t.parent: Linux's copy_process() inherits
+	// current->signal->tty, which differs from the parent's under
+	// CLONE_PARENT.
+	if srcT != nil {
+		inhTTY = srcT.tg.GetTTY() // Takes a ref, balanced in defer, or transfered to tg.tty.
+	}
+
 	// For the standard, non-cloneIntoCgroup fork case, we have to do this
 	// after acquiring the TaskSet mutex to guard against a racing cgroup.procs
 	// write that might migrate the parent to a different cgroup. Note that
@@ -391,7 +416,8 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 			// Inherit the process group and terminal.
 			parentPG.incRefWithParent(parentPG)
 			tg.processGroup = parentPG
-			tg.tty = t.parent.tg.tty
+			tg.tty = inhTTY
+			inhTTY = nil // Neuter the deferred DecRef, ref transferred to tg.tty.
 		}
 
 		// If our parent is a child subreaper, or if it has a child

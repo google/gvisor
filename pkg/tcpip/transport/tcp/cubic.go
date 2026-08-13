@@ -260,6 +260,11 @@ func (c *cubicState) getCwnd(packetsAcked, sndCwnd int, srtt time.Duration) int 
 	// As per 4.3 for each received ACK cwnd must be incremented
 	// by (w_cubic(t+RTT) - cwnd/cwnd.
 	cwnd := float64(sndCwnd)
+	// RFC 9438 section 4.2 bounds the target at cwnd so an ACK does not
+	// reduce the congestion window.
+	if wtRtt < cwnd {
+		wtRtt = cwnd
+	}
 	for i := 0; i < packetsAcked; i++ {
 		// Concave/Convex regions of cubic have the same formulas.
 		// See: https://tools.ietf.org/html/rfc8312#section-4.3

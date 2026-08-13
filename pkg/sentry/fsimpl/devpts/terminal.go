@@ -48,6 +48,15 @@ type Terminal struct {
 
 var _ kernel.TTYOperations = (*Terminal)(nil)
 
+// IncRef implements kernel.TTYOperations.IncRef.
+//
+// A devpts Terminal is kept alive by its master file description and the
+// rootInode.replicas map rather than by a reference count.
+func (t *Terminal) IncRef() {}
+
+// DecRef implements kernel.TTYOperations.DecRef.
+func (t *Terminal) DecRef(context.Context) {}
+
 // OpenTTY implements kernel.TTYOperations.OpenTTY.
 func (t *Terminal) OpenTTY(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	tsk := kernel.TaskFromContext(ctx)

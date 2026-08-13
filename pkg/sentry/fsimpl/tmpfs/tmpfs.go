@@ -1085,28 +1085,10 @@ func (i *inode) getXattr(creds *auth.Credentials, opts *vfs.GetXattrOptions) (st
 	kuid := auth.KUID(i.uid.Load())
 	kgid := auth.KGID(i.gid.Load())
 
-	// Handle POSIX ACL xattrs
 	if strings.HasPrefix(opts.Name, linux.XATTR_SYSTEM_PREFIX) {
-		var acl *vfs.PosixACL
-		switch opts.Name {
-		case linux.XATTR_NAME_POSIX_ACL_ACCESS:
-			acl = i.accessACL.Load()
-		case linux.XATTR_NAME_POSIX_ACL_DEFAULT:
-			acl = i.defaultACL.Load()
-		default:
-			return "", linuxerr.EOPNOTSUPP
-		}
-
-		if mode.FileType() == linux.ModeSymlink {
-			return "", linuxerr.EOPNOTSUPP
-		}
-
-		if acl == nil {
-			return "", linuxerr.ENODATA
-		}
-
-		// Serialize the access ACL for userspace
-		return string(acl.Serialize(creds.UserNamespace)), nil
+		// Handle POSIX ACL xattrs
+		xattr, err := vfs.ACLGetXattr(creds, opts, mode, i.accessACL.Load(), i.defaultACL.Load())
+		return xattr, err
 	}
 
 	acl := i.accessACL.Load()
@@ -1122,44 +1104,15 @@ func (i *inode) setXattr(creds *auth.Credentials, opts *vfs.SetXattrOptions) err
 		return err
 	}
 	mode := linux.FileMode(i.mode.Load())
-	acl := i.accessACL.Load()
 	kuid := auth.KUID(i.uid.Load())
 	kgid := auth.KGID(i.gid.Load())
 
 	if strings.HasPrefix(opts.Name, linux.XATTR_SYSTEM_PREFIX) {
 		// Handle POSIX ACLs
 
-		var aclType vfs.ACLType
-		switch opts.Name {
-		case linux.XATTR_NAME_POSIX_ACL_ACCESS:
-			aclType = vfs.AccessACL
-		case linux.XATTR_NAME_POSIX_ACL_DEFAULT:
-			aclType = vfs.DefaultACL
-		default:
-			return linuxerr.EOPNOTSUPP
-		}
-
-		if mode.FileType() == linux.ModeSymlink {
-			// ACLs cannot be set on symlinks
-			return linuxerr.EOPNOTSUPP
-		}
-
-		// Parse the ACL from userspace
-		acl, err := vfs.ParsePosixACL([]byte(opts.Value), creds.UserNamespace)
+		acl, aclType, err := vfs.ACLSetXattr(creds, opts, mode, kuid)
 		if err != nil {
 			return err
-		}
-
-		if aclType == vfs.DefaultACL && !mode.IsDir() {
-			if acl != nil {
-				// Default ACL can only be set on directories
-				return linuxerr.EACCES
-			}
-			return nil
-		}
-
-		if !vfs.CanActAsOwner(creds, kuid) {
-			return linuxerr.EPERM
 		}
 
 		// Set the ACL
@@ -1167,6 +1120,7 @@ func (i *inode) setXattr(creds *auth.Credentials, opts *vfs.SetXattrOptions) err
 		return err
 	}
 
+	acl := i.accessACL.Load()
 	if err := vfs.GenericCheckPermissions(creds, vfs.MayWrite, mode, acl, kuid, kgid); err != nil {
 		return err
 	}
@@ -1183,26 +1137,13 @@ func (i *inode) removeXattr(creds *auth.Credentials, name string) error {
 	kgid := auth.KGID(i.gid.Load())
 
 	if strings.HasPrefix(name, linux.XATTR_SYSTEM_PREFIX) {
-		var aclType vfs.ACLType
-		switch name {
-		case linux.XATTR_NAME_POSIX_ACL_ACCESS:
-			aclType = vfs.AccessACL
-		case linux.XATTR_NAME_POSIX_ACL_DEFAULT:
-			aclType = vfs.DefaultACL
-		default:
-			return linuxerr.EOPNOTSUPP
-		}
-
-		if mode.FileType() == linux.ModeSymlink {
-			return linuxerr.EOPNOTSUPP
-		}
-
-		if !vfs.CanActAsOwner(creds, kuid) {
-			return linuxerr.EPERM
+		aclType, err := vfs.ACLRemoveXattr(creds, name, mode, kuid)
+		if err != nil {
+			return err
 		}
 
 		// Clear the ACL
-		_, _, err := i.setPosixACL(creds, aclType, nil /* acl */, true /* clearSGID */)
+		_, _, err = i.setPosixACL(creds, aclType, nil /* acl */, true /* clearSGID */)
 		return err
 	}
 
@@ -1216,10 +1157,15 @@ func (i *inode) removeXattr(creds *auth.Credentials, name string) error {
 func (i *inode) setPosixACL(creds *auth.Credentials, t vfs.ACLType, acl *vfs.PosixACL, clearSGID bool) (*vfs.PosixACL, linux.FileMode, error) {
 	kuid := auth.KUID(i.uid.Load())
 	kgid := auth.KGID(i.gid.Load())
+	mode := linux.FileMode(i.mode.Load())
 
 	// Update ctime
-	now := i.fs.clock.Now().Nanoseconds()
-	i.ctime.Store(now)
+	if t != vfs.DefaultACL || mode.IsDir() {
+		// Skip ctime update for clearing default ACLs on non-directories,
+		// since this does not change anything
+		now := i.fs.clock.Now().Nanoseconds()
+		i.ctime.Store(now)
+	}
 
 	switch t {
 	case vfs.AccessACL:
@@ -1318,6 +1264,23 @@ func (fd *fileDescription) SetXattr(ctx context.Context, opts vfs.SetXattrOption
 // RemoveXattr implements vfs.FileDescriptionImpl.RemoveXattr.
 func (fd *fileDescription) RemoveXattr(ctx context.Context, name string) error {
 	return fd.dentry().inode.removeXattr(auth.CredentialsFromContext(ctx), name)
+}
+
+// GetPosixACL implements vfs.FileDescriptionImpl.GetPosixACL.
+func (fd *fileDescription) GetPosixACL(ctx context.Context, t vfs.ACLType) (*vfs.PosixACL, error) {
+	switch t {
+	case vfs.AccessACL:
+		return fd.dentry().inode.accessACL.Load(), nil
+	case vfs.DefaultACL:
+		return fd.dentry().inode.defaultACL.Load(), nil
+	default:
+		return nil, linuxerr.EOPNOTSUPP
+	}
+}
+
+// SetPosixACL implements vfs.FileDescriptionImpl.SetPosixACL.
+func (fd *fileDescription) SetPosixACL(ctx context.Context, t vfs.ACLType, acl *vfs.PosixACL, clearSGID bool) (*vfs.PosixACL, linux.FileMode, error) {
+	return fd.dentry().inode.setPosixACL(auth.CredentialsFromContext(ctx), t, acl, clearSGID)
 }
 
 // Sync implements vfs.FileDescriptionImpl.Sync. It does nothing because all

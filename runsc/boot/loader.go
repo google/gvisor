@@ -27,6 +27,7 @@ import (
 	"github.com/moby/sys/capability"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
@@ -492,7 +493,14 @@ const (
 	// startingStdioFD is the starting stdioFD number used during sandbox
 	// start and restore. This makes sure the stdioFDs are always the same
 	// on initial start and on restore.
-	startingStdioFD = 256
+	// It must be above the highest FD number that donation can assign at boot
+	// (donated FDs are numbered densely from 3, and should ideally be such
+	// that adding 2 to it (i.e. index stderr gets) does *not* cross a
+	// power of 2. See `//runsc/prewarmer/prewarmer.c` for some fun Linux
+	// kernel lore that explains why.
+	// LINT.IfChange
+	startingStdioFD = 253
+	// LINT.ThenChange(../prewarmer/prewarmer.c)
 
 	// containerSpecsKey is the key used to add and pop the container specs to the
 	// kernel during save/restore.
@@ -610,6 +618,7 @@ func New(args Args) (*Loader, error) {
 	// used.
 	newfd := startingStdioFD
 
+	remapStart := gtime.Now()
 	for _, stdioFD := range args.StdioFDs {
 		// Check that newfd is unused to avoid clobbering over it.
 		if _, err := unix.FcntlInt(uintptr(newfd), unix.F_GETFD, 0); !errors.Is(err, unix.EBADF) {
@@ -627,6 +636,7 @@ func New(args Args) (*Loader, error) {
 		_ = unix.Close(stdioFD)
 		newfd++
 	}
+	log.Infof("Remapped stdio FDs to [%d, %d] in %v", startingStdioFD, newfd-1, gtime.Since(remapStart)) // Load-bearing log message! See `//runsc/prewarmer/prewarmer_speedup_test.go` which parses this log line.
 	for _, goferFD := range args.GoferFDs {
 		l.root.goferFDs = append(l.root.goferFDs, fd.New(goferFD))
 	}
@@ -961,6 +971,7 @@ func (l *Loader) Destroy() {
 	// Wake up all checkpoint waiters. This must be done before the controller
 	// is stopped, since its stop sequence requires all pending RPCs to complete.
 	l.k.SignalAllCheckpointWaiters(fmt.Errorf("Loader destroyed"))
+	l.k.SignalAllFSSaveWaiters(fmt.Errorf("Loader destroyed"))
 
 	// Stop the control server. This will indirectly stop any
 	// long-running control operations that are in flight, e.g.

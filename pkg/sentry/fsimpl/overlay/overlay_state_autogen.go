@@ -5,6 +5,7 @@ package overlay
 import (
 	"context"
 
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -243,6 +244,8 @@ func (d *dentry) StateFields() []string {
 		"refs",
 		"fs",
 		"mode",
+		"accessACL",
+		"defaultACL",
 		"uid",
 		"gid",
 		"copiedUp",
@@ -270,31 +273,37 @@ func (d *dentry) beforeSave() {}
 // +checklocksignore
 func (d *dentry) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
+	accessACLValue := d.saveAccessACL()
+	_ = (*vfs.PosixACL)(accessACLValue)
+	stateSinkObject.SaveValue(4, accessACLValue)
+	defaultACLValue := d.saveDefaultACL()
+	_ = (*vfs.PosixACL)(defaultACLValue)
+	stateSinkObject.SaveValue(5, defaultACLValue)
 	parentValue := d.saveParent()
 	_ = (*dentry)(parentValue)
-	stateSinkObject.SaveValue(7, parentValue)
+	stateSinkObject.SaveValue(9, parentValue)
 	stateSinkObject.Save(0, &d.vfsd)
 	stateSinkObject.Save(1, &d.refs)
 	stateSinkObject.Save(2, &d.fs)
 	stateSinkObject.Save(3, &d.mode)
-	stateSinkObject.Save(4, &d.uid)
-	stateSinkObject.Save(5, &d.gid)
-	stateSinkObject.Save(6, &d.copiedUp)
-	stateSinkObject.Save(8, &d.name)
-	stateSinkObject.Save(9, &d.children)
-	stateSinkObject.Save(10, &d.dirents)
-	stateSinkObject.Save(11, &d.upperVD)
-	stateSinkObject.Save(12, &d.lowerVDs)
-	stateSinkObject.Save(13, &d.inlineLowerVDs)
-	stateSinkObject.Save(14, &d.devMajor)
-	stateSinkObject.Save(15, &d.devMinor)
-	stateSinkObject.Save(16, &d.ino)
-	stateSinkObject.Save(17, &d.lowerMappings)
-	stateSinkObject.Save(18, &d.wrappedMappable)
-	stateSinkObject.Save(19, &d.isMappable)
-	stateSinkObject.Save(20, &d.locks)
-	stateSinkObject.Save(21, &d.watches)
-	stateSinkObject.Save(22, &d.dirInoHash)
+	stateSinkObject.Save(6, &d.uid)
+	stateSinkObject.Save(7, &d.gid)
+	stateSinkObject.Save(8, &d.copiedUp)
+	stateSinkObject.Save(10, &d.name)
+	stateSinkObject.Save(11, &d.children)
+	stateSinkObject.Save(12, &d.dirents)
+	stateSinkObject.Save(13, &d.upperVD)
+	stateSinkObject.Save(14, &d.lowerVDs)
+	stateSinkObject.Save(15, &d.inlineLowerVDs)
+	stateSinkObject.Save(16, &d.devMajor)
+	stateSinkObject.Save(17, &d.devMinor)
+	stateSinkObject.Save(18, &d.ino)
+	stateSinkObject.Save(19, &d.lowerMappings)
+	stateSinkObject.Save(20, &d.wrappedMappable)
+	stateSinkObject.Save(21, &d.isMappable)
+	stateSinkObject.Save(22, &d.locks)
+	stateSinkObject.Save(23, &d.watches)
+	stateSinkObject.Save(24, &d.dirInoHash)
 }
 
 // +checklocksignore
@@ -303,25 +312,27 @@ func (d *dentry) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.Load(1, &d.refs)
 	stateSourceObject.Load(2, &d.fs)
 	stateSourceObject.Load(3, &d.mode)
-	stateSourceObject.Load(4, &d.uid)
-	stateSourceObject.Load(5, &d.gid)
-	stateSourceObject.Load(6, &d.copiedUp)
-	stateSourceObject.Load(8, &d.name)
-	stateSourceObject.Load(9, &d.children)
-	stateSourceObject.Load(10, &d.dirents)
-	stateSourceObject.Load(11, &d.upperVD)
-	stateSourceObject.Load(12, &d.lowerVDs)
-	stateSourceObject.Load(13, &d.inlineLowerVDs)
-	stateSourceObject.Load(14, &d.devMajor)
-	stateSourceObject.Load(15, &d.devMinor)
-	stateSourceObject.Load(16, &d.ino)
-	stateSourceObject.Load(17, &d.lowerMappings)
-	stateSourceObject.Load(18, &d.wrappedMappable)
-	stateSourceObject.Load(19, &d.isMappable)
-	stateSourceObject.Load(20, &d.locks)
-	stateSourceObject.Load(21, &d.watches)
-	stateSourceObject.Load(22, &d.dirInoHash)
-	stateSourceObject.LoadValue(7, new(*dentry), func(y any) { d.loadParent(ctx, y.(*dentry)) })
+	stateSourceObject.Load(6, &d.uid)
+	stateSourceObject.Load(7, &d.gid)
+	stateSourceObject.Load(8, &d.copiedUp)
+	stateSourceObject.Load(10, &d.name)
+	stateSourceObject.Load(11, &d.children)
+	stateSourceObject.Load(12, &d.dirents)
+	stateSourceObject.Load(13, &d.upperVD)
+	stateSourceObject.Load(14, &d.lowerVDs)
+	stateSourceObject.Load(15, &d.inlineLowerVDs)
+	stateSourceObject.Load(16, &d.devMajor)
+	stateSourceObject.Load(17, &d.devMinor)
+	stateSourceObject.Load(18, &d.ino)
+	stateSourceObject.Load(19, &d.lowerMappings)
+	stateSourceObject.Load(20, &d.wrappedMappable)
+	stateSourceObject.Load(21, &d.isMappable)
+	stateSourceObject.Load(22, &d.locks)
+	stateSourceObject.Load(23, &d.watches)
+	stateSourceObject.Load(24, &d.dirInoHash)
+	stateSourceObject.LoadValue(4, new(*vfs.PosixACL), func(y any) { d.loadAccessACL(ctx, y.(*vfs.PosixACL)) })
+	stateSourceObject.LoadValue(5, new(*vfs.PosixACL), func(y any) { d.loadDefaultACL(ctx, y.(*vfs.PosixACL)) })
+	stateSourceObject.LoadValue(9, new(*dentry), func(y any) { d.loadParent(ctx, y.(*dentry)) })
 	stateSourceObject.AfterLoad(func() { d.afterLoad(ctx) })
 }
 
