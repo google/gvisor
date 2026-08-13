@@ -464,5 +464,6 @@ go_test(
         "//pkg/sentry/usage",
         "//pkg/sentry/vfs",
         "//pkg/sync",
+        "//pkg/tcpip",
     ],
 )

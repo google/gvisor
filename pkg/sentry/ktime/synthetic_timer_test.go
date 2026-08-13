@@ -114,3 +114,35 @@ func TestSyntheticTimer(t *testing.T) {
 	checkRecordAt(t, &c, &r, FromSeconds(14), []int{0, 1, 2, 3, 4, 1, 5, 1})
 	checkRecordAt(t, &c, &r, FromSeconds(15), []int{0, 1, 2, 3, 4, 1, 5, 1})
 }
+
+func TestSyntheticClockNextExpiration(t *testing.T) {
+	var c SyntheticClock
+	if exp, ok := c.NextExpiration(); ok {
+		t.Errorf("empty SyntheticClock: NextExpiration() = (%v, %v), want (_, false)", exp, ok)
+	}
+
+	var r testRecorder
+	timer1 := newTestRecorderTimer(&c, &r, 1, FromSeconds(5), 0)
+	defer timer1.Destroy()
+
+	if exp, ok := c.NextExpiration(); !ok || exp != FromSeconds(5) {
+		t.Errorf("after adding timer1: NextExpiration() = (%v, %v), want (%v, true)", exp, ok, FromSeconds(5))
+	}
+
+	timer2 := newTestRecorderTimer(&c, &r, 2, FromSeconds(2), 0)
+	defer timer2.Destroy()
+
+	if exp, ok := c.NextExpiration(); !ok || exp != FromSeconds(2) {
+		t.Errorf("after adding timer2: NextExpiration() = (%v, %v), want (%v, true)", exp, ok, FromSeconds(2))
+	}
+
+	timer2.Destroy()
+	if exp, ok := c.NextExpiration(); !ok || exp != FromSeconds(5) {
+		t.Errorf("after destroying timer2: NextExpiration() = (%v, %v), want (%v, true)", exp, ok, FromSeconds(5))
+	}
+
+	timer1.Destroy()
+	if exp, ok := c.NextExpiration(); ok {
+		t.Errorf("after destroying all timers: NextExpiration() = (%v, %v), want (_, false)", exp, ok)
+	}
+}

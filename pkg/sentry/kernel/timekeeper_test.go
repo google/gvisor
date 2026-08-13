@@ -16,6 +16,7 @@ package kernel
 
 import (
 	"testing"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -23,11 +24,14 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	sentrytime "gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
+	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
 // mockClocks is a sentrytime.Clocks that simply returns the times in the
 // struct.
 type mockClocks struct {
+	mu        sync.Mutex
 	monotonic int64
 	realtime  int64
 }
@@ -39,6 +43,8 @@ func (*mockClocks) Update(parked bool) (monotonicParams sentrytime.Parameters, m
 
 // GetTime implements sentrytime.Clocks.GetTime.
 func (c *mockClocks) GetTime(id sentrytime.ClockID) (int64, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	switch id {
 	case sentrytime.Monotonic:
 		return c.monotonic, nil
@@ -86,7 +92,9 @@ func TestTimekeeperMonotonicZero(t *testing.T) {
 		t.Errorf("GetTime got %d want 0", now)
 	}
 
+	c.mu.Lock()
 	c.monotonic += 10
+	c.mu.Unlock()
 
 	now, err = tk.GetTime(sentrytime.Monotonic)
 	if err != nil {
@@ -151,5 +159,200 @@ func TestTimekeeperMonotonicJumpBackwards(t *testing.T) {
 	}
 	if now != 100000 {
 		t.Errorf("GetTime got %d want 100000", now)
+	}
+}
+
+// TestTimekeeperTimerLifecycle tests timer creation, firing,
+// and cancellation.
+func TestTimekeeperTimerLifecycle(t *testing.T) {
+	type actionFn func(tk *Timekeeper, timer tcpip.Timer, params *VDSOParamPage)
+
+	type step struct {
+		desc       string
+		clockTime  time.Duration
+		action     actionFn
+		expectFire bool
+	}
+
+	stopTimer := func(_ *Timekeeper, timer tcpip.Timer, _ *VDSOParamPage) {
+		if !timer.Stop() {
+			t.Fatalf("Stop() on active timer got false, want true")
+		}
+	}
+	resetTimer := func(d time.Duration) actionFn {
+		return func(_ *Timekeeper, timer tcpip.Timer, _ *VDSOParamPage) {
+			timer.Reset(d)
+		}
+	}
+	pauseTK := func(tk *Timekeeper, _ tcpip.Timer, _ *VDSOParamPage) {
+		tk.Pause()
+	}
+	resumeTK := func(tk *Timekeeper, _ tcpip.Timer, params *VDSOParamPage) {
+		tk.Resume(params)
+	}
+
+	testCases := []struct {
+		name              string
+		afterFuncDuration time.Duration
+		steps             []step
+	}{
+		{
+			name:              "BasicAfterFunc",
+			afterFuncDuration: 50 * time.Millisecond,
+			steps: []step{
+				{
+					desc:       "advance clock to T=50ms past 50ms deadline",
+					clockTime:  50 * time.Millisecond,
+					expectFire: true,
+				},
+			},
+		},
+		{
+			name:              "StopAndResetLiveMonotonicTime",
+			afterFuncDuration: 50 * time.Millisecond,
+			steps: []step{
+				{
+					desc:      "stop timer at T=30ms before 50ms deadline",
+					clockTime: 30 * time.Millisecond,
+					action:    stopTimer,
+				},
+				{
+					desc:      "advance to T=100ms: stopped timer must not fire",
+					clockTime: 100 * time.Millisecond,
+				},
+				{
+					desc:      "advance to T=200ms while scheduler is idle",
+					clockTime: 200 * time.Millisecond,
+				},
+				{
+					desc:      "re-arm timer with Reset(50ms) at T=200ms (deadline = 250ms)",
+					clockTime: 200 * time.Millisecond,
+					action:    resetTimer(50 * time.Millisecond),
+				},
+				{
+					desc:      "advance to T=230ms (before true 250ms deadline): must not fire",
+					clockTime: 230 * time.Millisecond,
+				},
+				{
+					desc:       "advance to T=300ms (past 250ms deadline): must fire",
+					clockTime:  300 * time.Millisecond,
+					expectFire: true,
+				},
+				{
+					desc:      "stop on expired timer must return false",
+					clockTime: 300 * time.Millisecond,
+					action: func(_ *Timekeeper, timer tcpip.Timer, _ *VDSOParamPage) {
+						if timer.Stop() {
+							t.Fatalf("Stop() on expired timer got true, want false")
+						}
+					},
+				},
+			},
+		},
+		{
+			name:              "PauseAndResumeOverdue",
+			afterFuncDuration: 50 * time.Millisecond,
+			steps: []step{
+				{
+					desc:      "pause timekeeper at T=0",
+					clockTime: 0,
+					action:    pauseTK,
+				},
+				{
+					desc:      "advance to T=100ms while paused: must not fire",
+					clockTime: 100 * time.Millisecond,
+				},
+				{
+					desc:       "resume timekeeper at T=100ms: overdue timer fires immediately",
+					clockTime:  100 * time.Millisecond,
+					action:     resumeTK,
+					expectFire: true,
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &mockClocks{}
+			tk, params := stateTestClocklessTimekeeper(t)
+			tk.SetClocks(c, params)
+			defer tk.Destroy()
+
+			fired := make(chan struct{}, 10)
+			timer := tk.AfterFunc(tc.afterFuncDuration, func() {
+				fired <- struct{}{}
+			})
+			defer timer.Stop()
+
+			for _, s := range tc.steps {
+				// Advance the mock monotonic clock to the step timestamp.
+				c.mu.Lock()
+				c.monotonic = s.clockTime.Nanoseconds()
+				c.mu.Unlock()
+
+				// Execute step action (e.g., Stop, Reset, Pause, Resume).
+				if s.action != nil {
+					s.action(tk, timer, params)
+				}
+
+				// Wait up to 2s when expecting a callback, or 20ms to verify silence.
+				timeout := 20 * time.Millisecond
+				if s.expectFire {
+					timeout = 2 * time.Second
+				}
+
+				var gotFired bool
+				select {
+				case <-fired:
+					gotFired = true
+				case <-time.After(timeout):
+					gotFired = false
+				}
+
+				if gotFired != s.expectFire {
+					t.Fatalf("[%s] step %q: gotFired = %v, want %v", tc.name, s.desc, gotFired, s.expectFire)
+				}
+			}
+		})
+	}
+}
+
+// TestTimekeeperPauseWaitsForInFlightAfterFunc tests that Pause() blocks until
+// any already-running AfterFunc callback goroutine finishes.
+func TestTimekeeperPauseWaitsForInFlightAfterFunc(t *testing.T) {
+	c := &mockClocks{}
+	tk, params := stateTestClocklessTimekeeper(t)
+	tk.SetClocks(c, params)
+	defer tk.Destroy()
+
+	started := make(chan struct{})
+	done := make(chan struct{})
+	tk.AfterFunc(10*time.Millisecond, func() {
+		close(started)
+		time.Sleep(50 * time.Millisecond)
+		close(done)
+	})
+
+	// Trigger the callback.
+	c.mu.Lock()
+	c.monotonic += (20 * time.Millisecond).Nanoseconds()
+	c.mu.Unlock()
+
+	// Wait until the callback has actually started executing in its goroutine.
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("AfterFunc callback never started")
+	}
+
+	tk.Pause()
+
+	// Pause() must have blocked until the callback finished.
+	select {
+	case <-done:
+		// Success.
+	default:
+		t.Fatal("Pause() returned while AfterFunc was still running")
 	}
 }
