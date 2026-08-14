@@ -340,9 +340,10 @@ func (r *restorer) restoreContainerInfo(l *Loader, info *containerInfo) error {
 }
 
 type restoreMounts struct {
-	fdmap     map[checkpoint.ResourceID]int
-	mfmap     map[checkpoint.ResourceID]*pgalloc.MemoryFile
-	sharedMfs map[string]bool
+	fdmap             map[checkpoint.ResourceID]int
+	mfmap             map[checkpoint.ResourceID]*pgalloc.MemoryFile
+	sharedMfs         map[string]bool
+	fsCheckpointedMfs map[checkpoint.ResourceID]struct{}
 }
 
 func (r *restoreMounts) String() string {
@@ -434,9 +435,10 @@ func (r *restorer) restore(l *Loader) error {
 	defer cu.Clean()
 
 	restoreMnts := restoreMounts{
-		fdmap:     make(map[checkpoint.ResourceID]int),
-		mfmap:     make(map[checkpoint.ResourceID]*pgalloc.MemoryFile),
-		sharedMfs: make(map[string]bool),
+		fdmap:             make(map[checkpoint.ResourceID]int),
+		mfmap:             make(map[checkpoint.ResourceID]*pgalloc.MemoryFile),
+		sharedMfs:         make(map[string]bool),
+		fsCheckpointedMfs: make(map[checkpoint.ResourceID]struct{}),
 	}
 	for _, cont := range r.containers {
 		// TODO(b/298078576): Need to process hints here probably
@@ -458,11 +460,12 @@ func (r *restorer) restore(l *Loader) error {
 	log.Debugf("Restore using mounts: %v", &restoreMnts)
 	ctx := l.k.SupervisorContext()
 	ctx = context.WithValues(ctx, map[any]any{
-		vfs.CtxRestoreFilesystemFDMap:     restoreMnts.fdmap,
-		pgalloc.CtxMemoryFileMap:          restoreMnts.mfmap,
-		devutil.CtxDevGoferClientProvider: l.k,
-		kernel.CtxFSRestore:               l.fsRestore != nil,
-		vfs.CtxFSTarProvider:              l.fsRestore,
+		vfs.CtxRestoreFilesystemFDMap:        restoreMnts.fdmap,
+		pgalloc.CtxMemoryFileMap:             restoreMnts.mfmap,
+		pgalloc.CtxFSCheckpointedMemoryFiles: restoreMnts.fsCheckpointedMfs,
+		devutil.CtxDevGoferClientProvider:    l.k,
+		kernel.CtxFSRestore:                  l.fsRestore != nil,
+		vfs.CtxFSTarProvider:                 l.fsRestore,
 	})
 
 	if r.asyncMFLoader != nil {
