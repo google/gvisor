@@ -38,6 +38,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/state/checkpointfiles"
 	"gvisor.dev/gvisor/pkg/sentry/state/stateio"
 	"gvisor.dev/gvisor/pkg/sentry/state/stateipc"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/pkg/urpc"
@@ -97,7 +98,7 @@ func (l *Loader) FSSave() error {
 	if len(fsSaveFDs) == 0 {
 		return linuxerr.ENXIO
 	}
-	paths, err := parseFSCheckpointPaths(l.root.spec.Annotations[annotationFSCheckpointPaths])
+	paths, err := ParseFSCheckpointPaths(l.root.spec.Annotations[annotationFSCheckpointPaths])
 	if err != nil {
 		return err
 	}
@@ -108,8 +109,9 @@ func (l *Loader) FSSave() error {
 	args.FilePayload.Files = fd.ReleaseToFiles(fsSaveFDs, "fs-checkpoint")
 	args.UseCheckpointGofer = useCheckpointGofer
 	opts := kernel.FSSaveOpts{
-		RunscVersion: version.Version(),
-		Paths:        paths,
+		RunscVersion:      version.Version(),
+		Paths:             paths,
+		SplitFSCheckpoint: false,
 	}
 	if err := setKernelFSSaveOptsFiles(&args, &opts); err != nil {
 		return err
@@ -117,7 +119,9 @@ func (l *Loader) FSSave() error {
 	return l.k.FSSave(context.Background(), &opts)
 }
 
-func parseFSCheckpointPaths(val string) ([]checkpoint.ResourceID, error) {
+// ParseFSCheckpointPaths parses a comma-separated list of container:path
+// checkpoint targets.
+func ParseFSCheckpointPaths(val string) ([]checkpoint.ResourceID, error) {
 	if val == "" {
 		return nil, nil
 	}
@@ -148,9 +152,10 @@ func parseFSCheckpointPaths(val string) ([]checkpoint.ResourceID, error) {
 
 func convertToKernelFSSaveOpts(args *FSSaveArgs) (kernel.FSSaveOpts, error) {
 	opts := kernel.FSSaveOpts{
-		RunscVersion:    version.Version(),
-		ExitAfterSaving: args.ExitAfterSaving,
-		Paths:           args.Paths,
+		RunscVersion:      version.Version(),
+		ExitAfterSaving:   args.ExitAfterSaving,
+		Paths:             args.Paths,
+		SplitFSCheckpoint: true,
 	}
 	if err := setKernelFSSaveOptsFiles(args, &opts); err != nil {
 		return kernel.FSSaveOpts{}, err
@@ -399,6 +404,9 @@ func startFSRestore(opts *fsRestoreOpts) (*fsRestore, error) {
 	// adding a stateio.AsyncReader method to get file size.
 	//
 	// All of the above also applies to the multi-tar file.
+	//
+	// TODO(b/541219576): Instead of reading the full tar file, read using
+	// offsets in the multi-tar file using TarStart and TarEnd from manifest.
 	readOnce := func(desc string, optsR *io.ReadCloser) func() ([]byte, error) {
 		r := *optsR
 		*optsR = nil
@@ -602,4 +610,29 @@ func (fsr *fsRestore) wait(cid string) error {
 		}
 		c.cond.Wait()
 	}
+}
+
+var _ vfs.FSTarProvider = (*fsRestore)(nil)
+
+// GetTar implements vfs.FSTarProvider.GetTar.
+func (fsr *fsRestore) GetTar(id checkpoint.ResourceID) (io.ReadCloser, error) {
+	if fsr == nil {
+		return nil, nil
+	}
+	fsr.wg.Wait()
+	if fsr.manifestErr != nil {
+		return nil, fsr.manifestErr
+	}
+	mt := fsr.tmpfs[id]
+	if mt == nil {
+		return nil, nil
+	}
+	multiTar, err := fsr.getMultiTar()
+	if err != nil {
+		return nil, err
+	}
+	if mt.TarEnd <= uint64(len(multiTar)) {
+		return io.NopCloser(bytes.NewReader(multiTar[mt.TarStart:mt.TarEnd])), nil
+	}
+	return nil, fmt.Errorf("tmpfs %q has tar range [%d, %d) beyond multi-tar file size %d", mt.ResourceID, mt.TarStart, mt.TarEnd, len(multiTar))
 }

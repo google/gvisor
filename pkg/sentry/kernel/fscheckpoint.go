@@ -51,8 +51,13 @@ type FSSaveOpts struct {
 	ExitAfterSaving bool
 
 	// Paths is the list of paths inside the containers to save.
-	// If empty, defaults to a single path "/" for all containers.
+	// If empty:
+	// - for fscheckpoint, defaults to a single path "/" for all containers.
+	// - for split checkpoint, defaults to all-tmpfs.
 	Paths []checkpoint.ResourceID
+
+	// SplitFSCheckpoint indicates if this is a split filesystem checkpoint.
+	SplitFSCheckpoint bool
 }
 
 // FSSave collects a filesystem checkpoint as specified by the fscheckpoint
@@ -76,14 +81,6 @@ func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) error {
 			opts.PagesFile = nil
 		}
 	}()
-	paths := opts.Paths
-	if len(paths) == 0 {
-		paths = []checkpoint.ResourceID{{Path: "/"}}
-	}
-	pathsMap := make(map[checkpoint.ResourceID]struct{}, len(paths))
-	for _, p := range paths {
-		pathsMap[p] = struct{}{}
-	}
 
 	k.Pause()
 	defer k.Unpause()
@@ -91,170 +88,177 @@ func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) error {
 		defer k.Kill(linux.WaitStatusExit(0)) // consistent with sentry/state.SaveOpts.Save
 	}
 	err := k.quiescePausedAnd(ctx, func() error {
-		var (
-			asyncPageSaveWg  sync.WaitGroup
-			asyncPageSaveErr error
-		)
-		asyncPageSaveWg.Add(1)
-		apfs, err := pgalloc.StartAsyncPagesFileSave(opts.PagesFile /* transfers ownership */, func(err error) {
-			defer asyncPageSaveWg.Done()
-			asyncPageSaveErr = err
-		})
-		opts.PagesFile = nil
-		if err != nil {
-			return fmt.Errorf("failed to start async page saving: %w", err)
-		}
-		asyncPageSaveCleanup := cleanup.Make(func() {
-			apfs.MemoryFilesDone()
-			asyncPageSaveWg.Wait()
-		})
-		defer asyncPageSaveCleanup.Clean()
-		mfOpts := pgalloc.SaveOpts{
-			PagesFile: apfs,
-		}
-
-		manifest := &fspb.Manifest{
-			Version:      1,
-			RunscVersion: opts.RunscVersion,
-			PageSize:     hostarch.PageSize,
-			Endian:       hostarch.EndianString(),
-		}
-		type tmpfsAndPrivateMemoryFile struct {
-			fs *vfs.Filesystem
-			mf *pgalloc.MemoryFile
-		}
-		resourceIDs := make(map[checkpoint.ResourceID]tmpfsAndPrivateMemoryFile)
-		multiTarWriter := &countingWriter{w: opts.MultiTarFile}
-		pagesMetadataWriter := &countingWriter{w: opts.PagesMetadataFile}
-		prevTarOffset := uint64(0)
-		prevPagesMetadataOffset := uint64(0)
-		prevPagesOffset := uint64(0)
-		fss := k.vfs.GetFilesystems()
-		defer func() {
-			for _, fs := range fss {
-				fs.DecRef(ctx)
-			}
-		}()
-		// TODO: NOLINT - fss is obtained by iterating a map, so its order -
-		// and thus the order in which filesystems will be saved - is
-		// effectively random. pgalloc.MemoryFile async page loading biases
-		// toward MemoryFiles stored at lower offsets in the pages file. We
-		// should save both filesystems and MemoryFiles in the order that they
-		// were created, which is most likely to be the order in which they are
-		// created after restore; in particular, this will be the case when the
-		// same Kubernetes Pod spec is reused after restore.
-		for _, fs := range fss {
-			mf := tmpfs.MemoryFileOf(fs)
-			if mf == nil {
-				continue
-			}
-			resourceID := mf.ResourceID()
-			// Exclude tmpfs filesystems backed by the main MemoryFile (which
-			// have no ResourceID) since we currently have no way to save only
-			// the contents of the main MemoryFile owned by a checkpointed
-			// filesystem, and don't want to save all application memory.
-			//
-			// TODO: NOLINT - Support checkpointing tmpfs filesystems backed
-			// by the main MemoryFile by implementing the ability to save a
-			// subset of a pgalloc.MemoryFile, and using it to save only the
-			// subset of each MemoryFile used by any checkpointed tmpfs
-			// filesystem. This would also avoid saving MemoryFile pages that
-			// are referenced by e.g. a previous MM.Pin() but no longer owned
-			// by a regularFile; in such cases, the holder of the extra
-			// reference won't be restored by filesystem checkpointing,
-			// causing the referenced pages to be leaked. (As of this
-			// writing, this leak is unlikely to be an issue in practice,
-			// since the primary user of MM.Pin() is nvproxy, and the Nvidia
-			// driver appears to reject pinning mappings of disk-backed
-			// files.)
-			if !resourceID.Ok() {
-				continue
-			}
-
-			matched := false
-			if _, ok := pathsMap[resourceID]; ok {
-				matched = true
-			} else if _, ok := pathsMap[checkpoint.ResourceID{Path: resourceID.Path}]; ok {
-				matched = true
-			} else if _, ok := pathsMap[checkpoint.ResourceID{ContainerName: resourceID.ContainerName, Path: fscheckpoint.AllTmpfsPath}]; ok {
-				matched = true
-			} else if _, ok := pathsMap[checkpoint.ResourceID{Path: fscheckpoint.AllTmpfsPath}]; ok {
-				matched = true
-			}
-
-			if !matched {
-				continue
-			}
-			if old, ok := resourceIDs[resourceID]; ok {
-				return fmt.Errorf("pgalloc.MemoryFile restore ID %q is used by both tmpfs filesystem %p (MemoryFile %p) and tmpfs filesystem %p (MemoryFile %p)", resourceID, old.fs, old.mf, fs, mf)
-			}
-			resourceIDs[resourceID] = tmpfsAndPrivateMemoryFile{fs, mf}
-			if log.IsLogging(log.Debug) {
-				log.Debugf("Filesystem checkpoint saving tmpfs with resourceID %s", resourceID)
-			}
-			if err := mf.SaveTo(ctx, pagesMetadataWriter, &mfOpts); err != nil {
-				return fmt.Errorf("failed to save MemoryFile with resourceID %s: %w", resourceID, err)
-			}
-			manifest.MemoryFiles = append(manifest.MemoryFiles, &fspb.MemoryFile{
-				ResourceId:         toProtoResourceID(resourceID),
-				PagesMetadataStart: prevPagesMetadataOffset,
-				PagesMetadataEnd:   pagesMetadataWriter.count,
-				PagesStart:         prevPagesOffset,
-			})
-			prevPagesMetadataOffset = pagesMetadataWriter.count
-			prevPagesOffset = apfs.PagesFileOffset()
-			if err := tmpfs.FSCheckpointWrite(ctx, fs, multiTarWriter); err != nil {
-				return fmt.Errorf("failed to write tmpfs with resourceID %s to multi-tar file: %w", resourceID, err)
-			}
-			manifest.Tmpfs = append(manifest.Tmpfs, &fspb.Tmpfs{
-				ResourceId: toProtoResourceID(resourceID),
-				TarStart:   prevTarOffset,
-				TarEnd:     multiTarWriter.count,
-			})
-			prevTarOffset = multiTarWriter.count
-		}
-		if len(resourceIDs) == 0 {
-			return fmt.Errorf("no checkpointable filesystems")
-		}
-		apfs.MemoryFilesDone()
-		bytes, err := proto.Marshal(manifest)
-		if err != nil {
-			return fmt.Errorf("failed to marshal manifest: %w", err)
-		}
-		if _, err := opts.ManifestFile.Write(bytes); err != nil {
-			return fmt.Errorf("failed to write manifest file: %w", err)
-		}
-		// Close other writers while MemoryFile saving is in progress to
-		// overlap their latencies.
-		err = opts.ManifestFile.Close()
-		opts.ManifestFile = nil
-		if err != nil {
-			return fmt.Errorf("failed to close manifest file: %w", err)
-		}
-		err = opts.MultiTarFile.Close()
-		opts.MultiTarFile = nil
-		if err != nil {
-			return fmt.Errorf("failed to close multi-tar file: %w", err)
-		}
-		err = opts.PagesMetadataFile.Close()
-		opts.PagesMetadataFile = nil
-		if err != nil {
-			return fmt.Errorf("failed to close pages metadata file: %w", err)
-		}
-		// Finally wait for MemoryFile saving to complete.
-		asyncPageSaveCleanup.Release()()
-		if asyncPageSaveErr != nil {
-			return fmt.Errorf("failed to save MemoryFile pages: %w", asyncPageSaveErr)
-		}
-		return nil
+		return k.fsSaveLocked(ctx, opts)
 	})
-	k.fsSaveMu.Lock()
-	defer k.fsSaveMu.Unlock()
-	for _, c := range k.fsSaveWaiters {
-		c <- err
-	}
-	k.fsSaveWaiters = nil
+	k.SignalAllFSSaveWaiters(err)
 	return err
+}
+
+// fsSaveLocked collects a filesystem checkpoint.
+//
+// Preconditions: The kernel must be paused and quiesced.
+func (k *Kernel) fsSaveLocked(ctx context.Context, opts *FSSaveOpts) error {
+	paths := opts.Paths
+	if len(paths) == 0 {
+		if opts.SplitFSCheckpoint {
+			paths = []checkpoint.ResourceID{{Path: fscheckpoint.AllTmpfsPath}}
+		} else {
+			paths = []checkpoint.ResourceID{{Path: "/"}}
+		}
+	}
+	pathsMap := make(map[checkpoint.ResourceID]struct{}, len(paths))
+	for _, p := range paths {
+		pathsMap[p] = struct{}{}
+	}
+
+	var (
+		asyncPageSaveWg  sync.WaitGroup
+		asyncPageSaveErr error
+	)
+	asyncPageSaveWg.Add(1)
+	apfs, err := pgalloc.StartAsyncPagesFileSave(opts.PagesFile /* transfers ownership */, func(err error) {
+		defer asyncPageSaveWg.Done()
+		asyncPageSaveErr = err
+	})
+	opts.PagesFile = nil
+	if err != nil {
+		return fmt.Errorf("failed to start async page saving: %w", err)
+	}
+	asyncPageSaveCleanup := cleanup.Make(func() {
+		apfs.MemoryFilesDone()
+		asyncPageSaveWg.Wait()
+	})
+	defer asyncPageSaveCleanup.Clean()
+	mfOpts := pgalloc.SaveOpts{
+		PagesFile: apfs,
+	}
+
+	manifest := &fspb.Manifest{
+		Version:      1,
+		RunscVersion: opts.RunscVersion,
+		PageSize:     hostarch.PageSize,
+		Endian:       hostarch.EndianString(),
+	}
+	type tmpfsAndPrivateMemoryFile struct {
+		fs *vfs.Filesystem
+		mf *pgalloc.MemoryFile
+	}
+	resourceIDs := make(map[checkpoint.ResourceID]tmpfsAndPrivateMemoryFile)
+	multiTarWriter := &countingWriter{w: opts.MultiTarFile}
+	pagesMetadataWriter := &countingWriter{w: opts.PagesMetadataFile}
+	prevTarOffset := uint64(0)
+	prevPagesMetadataOffset := uint64(0)
+	prevPagesOffset := uint64(0)
+	fss := k.vfs.GetFilesystems()
+	defer func() {
+		for _, fs := range fss {
+			fs.DecRef(ctx)
+		}
+	}()
+	// TODO: NOLINT - fss is obtained by iterating a map, so its order -
+	// and thus the order in which filesystems will be saved - is
+	// effectively random. pgalloc.MemoryFile async page loading biases
+	// toward MemoryFiles stored at lower offsets in the pages file. We
+	// should save both filesystems and MemoryFiles in the order that they
+	// were created, which is most likely to be the order in which they are
+	// created after restore; in particular, this will be the case when the
+	// same Kubernetes Pod spec is reused after restore.
+	for _, fs := range fss {
+		log.Infof("fsSaveLocked: checking fs %T", fs.Impl())
+		mf := tmpfs.MemoryFileOf(fs)
+		if mf == nil {
+			log.Infof("fsSaveLocked: fs %T has no MemoryFile", fs.Impl())
+			continue
+		}
+		resourceID := mf.ResourceID()
+		log.Infof("fsSaveLocked: fs %T has MemoryFile with ResourceID %+v", fs.Impl(), resourceID)
+		// Exclude tmpfs filesystems backed by the main MemoryFile (which
+		// have no ResourceID) since we currently have no way to save only
+		// the contents of the main MemoryFile owned by a checkpointed
+		// filesystem, and don't want to save all application memory.
+		//
+		// TODO: NOLINT - Support checkpointing tmpfs filesystems backed
+		// by the main MemoryFile by implementing the ability to save a
+		// subset of a pgalloc.MemoryFile, and using it to save only the
+		// subset of each MemoryFile used by any checkpointed tmpfs
+		// filesystem. This would also avoid saving MemoryFile pages that
+		// are referenced by e.g. a previous MM.Pin() but no longer owned
+		// by a regularFile; in such cases, the holder of the extra
+		// reference won't be restored by filesystem checkpointing,
+		// causing the referenced pages to be leaked. (As of this
+		// writing, this leak is unlikely to be an issue in practice,
+		// since the primary user of MM.Pin() is nvproxy, and the Nvidia
+		// driver appears to reject pinning mappings of disk-backed
+		// files.)
+		if !resourceID.Ok() {
+			continue
+		}
+		matched := matchesPaths(resourceID, pathsMap)
+		if !matched {
+			continue
+		}
+		if old, ok := resourceIDs[resourceID]; ok {
+			return fmt.Errorf("pgalloc.MemoryFile restore ID %q is used by both tmpfs filesystem %p (MemoryFile %p) and tmpfs filesystem %p (MemoryFile %p)", resourceID, old.fs, old.mf, fs, mf)
+		}
+		resourceIDs[resourceID] = tmpfsAndPrivateMemoryFile{fs, mf}
+		if log.IsLogging(log.Debug) {
+			log.Debugf("Filesystem checkpoint saving tmpfs with resourceID %s", resourceID)
+		}
+		if err := mf.SaveTo(ctx, pagesMetadataWriter, &mfOpts); err != nil {
+			return fmt.Errorf("failed to save MemoryFile with resourceID %s: %w", resourceID, err)
+		}
+		manifest.MemoryFiles = append(manifest.MemoryFiles, &fspb.MemoryFile{
+			ResourceId:         toProtoResourceID(resourceID),
+			PagesMetadataStart: prevPagesMetadataOffset,
+			PagesMetadataEnd:   pagesMetadataWriter.count,
+			PagesStart:         prevPagesOffset,
+		})
+		prevPagesMetadataOffset = pagesMetadataWriter.count
+		prevPagesOffset = apfs.PagesFileOffset()
+		if err := tmpfs.FSCheckpointWrite(ctx, fs, multiTarWriter); err != nil {
+			return fmt.Errorf("failed to write tmpfs with resourceID %s to multi-tar file: %w", resourceID, err)
+		}
+		manifest.Tmpfs = append(manifest.Tmpfs, &fspb.Tmpfs{
+			ResourceId: toProtoResourceID(resourceID),
+			TarStart:   prevTarOffset,
+			TarEnd:     multiTarWriter.count,
+		})
+		prevTarOffset = multiTarWriter.count
+	}
+	if len(resourceIDs) == 0 {
+		return fmt.Errorf("no checkpointable filesystems")
+	}
+	apfs.MemoryFilesDone()
+	bytes, err := proto.Marshal(manifest)
+	if err != nil {
+		return fmt.Errorf("failed to marshal manifest: %w", err)
+	}
+	if _, err := opts.ManifestFile.Write(bytes); err != nil {
+		return fmt.Errorf("failed to write manifest file: %w", err)
+	}
+	// Close other writers while MemoryFile saving is in progress to
+	// overlap their latencies.
+	err = opts.ManifestFile.Close()
+	opts.ManifestFile = nil
+	if err != nil {
+		return fmt.Errorf("failed to close manifest file: %w", err)
+	}
+	err = opts.MultiTarFile.Close()
+	opts.MultiTarFile = nil
+	if err != nil {
+		return fmt.Errorf("failed to close multi-tar file: %w", err)
+	}
+	err = opts.PagesMetadataFile.Close()
+	opts.PagesMetadataFile = nil
+	if err != nil {
+		return fmt.Errorf("failed to close pages metadata file: %w", err)
+	}
+	// Finally wait for MemoryFile saving to complete.
+	asyncPageSaveCleanup.Release()()
+	if asyncPageSaveErr != nil {
+		return fmt.Errorf("failed to save MemoryFile pages: %w", asyncPageSaveErr)
+	}
+	return nil
 }
 
 type countingWriter struct {
@@ -297,4 +301,20 @@ func toProtoResourceID(id checkpoint.ResourceID) *fspb.ResourceID {
 		ContainerName: id.ContainerName,
 		Path:          id.Path,
 	}
+}
+
+func matchesPaths(resourceID checkpoint.ResourceID, pathsMap map[checkpoint.ResourceID]struct{}) bool {
+	if _, ok := pathsMap[resourceID]; ok {
+		return true
+	}
+	if _, ok := pathsMap[checkpoint.ResourceID{Path: resourceID.Path}]; ok {
+		return true
+	}
+	if _, ok := pathsMap[checkpoint.ResourceID{ContainerName: resourceID.ContainerName, Path: fscheckpoint.AllTmpfsPath}]; ok {
+		return true
+	}
+	if _, ok := pathsMap[checkpoint.ResourceID{Path: fscheckpoint.AllTmpfsPath}]; ok {
+		return true
+	}
+	return false
 }
