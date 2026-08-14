@@ -181,13 +181,31 @@ func (pc *passContext) checkAtomicCall(inst ssa.Instruction, obj types.Object, a
 }
 
 func resolveStruct(typ types.Type) (*types.Struct, bool) {
-	switch typ := typ.Underlying().(type) {
-	case *types.Struct:
-		return typ, true
-	case *types.Pointer:
-		return resolveStruct(typ.Elem())
+	if typ == nil {
+		return nil, false
 	}
-	return nil, false
+	// Most pointer chains are very short (<= 2).
+	// Use a small fixed array on stack to avoid allocation.
+	var buf [4]types.Type
+	visited := buf[:0]
+
+	for {
+		for _, v := range visited {
+			if v == typ {
+				return nil, false
+			}
+		}
+		visited = append(visited, typ)
+
+		switch u := typ.Underlying().(type) {
+		case *types.Struct:
+			return u, true
+		case *types.Pointer:
+			typ = u.Elem()
+		default:
+			return nil, false
+		}
+	}
 }
 
 func (pc *passContext) applyTypeAliases(ls *lockState, v ssa.Value) {
