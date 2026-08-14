@@ -59,6 +59,12 @@ type Timekeeper struct {
 	// monotonicClock is a ktime.Clock based on timekeeper's Monotonic.
 	monotonicClock *timekeeperClock
 
+	// monotonicRawClock is a ktime.Clock based on timekeeper's MonotonicRaw.
+	// It is non-nil only when the clock source tracks a distinct
+	// CLOCK_MONOTONIC_RAW; otherwise CLOCK_MONOTONIC_RAW aliases
+	// CLOCK_MONOTONIC. It is derived by SetClocks, anew on restore.
+	monotonicRawClock *timekeeperClock `state:"nosave"`
+
 	// bootTime is the realtime when the system "booted". i.e., when
 	// SetClocks was called in the initial (not restored) run.
 	bootTime ktime.Time
@@ -158,6 +164,14 @@ func (t *Timekeeper) SetClocks(c sentrytime.Clocks, params *VDSOParamPage) {
 
 	t.clocks = c
 
+	// Serve CLOCK_MONOTONIC_RAW as a distinct clock iff the clock source
+	// tracks it (see NewCalibratedClocks). Deriving this from the source keeps
+	// boot and restore coherent: a restored sandbox follows its current
+	// configuration, not the checkpointed one.
+	if c.MonotonicRawEnabled() {
+		t.monotonicRawClock = &timekeeperClock{tk: t, c: sentrytime.MonotonicRaw}
+	}
+
 	// Compute the offset of the monotonic clock from the base Clocks.
 	//
 	// In a fresh (not restored) sentry, monotonic time starts at zero.
@@ -213,20 +227,30 @@ func (t *Timekeeper) update(parked bool) {
 	// Call Update within a Write block to prevent the VDSO from using the old
 	// params between Update and Write.
 	if err := t.params.Write(func() vdsoParams {
-		monotonicParams, monotonicOk, realtimeParams, realtimeOk := t.clocks.Update(parked)
+		res := t.clocks.Update(parked)
 
 		var p vdsoParams
-		if monotonicOk {
+		if res.MonotonicOk {
 			p.monotonicReady = 1
-			p.monotonicBaseCycles = int64(monotonicParams.BaseCycles)
-			p.monotonicBaseRef = int64(monotonicParams.BaseRef) + t.monotonicOffset
-			p.monotonicFrequency = monotonicParams.Frequency
+			p.monotonicBaseCycles = int64(res.Monotonic.BaseCycles)
+			p.monotonicBaseRef = int64(res.Monotonic.BaseRef) + t.monotonicOffset
+			p.monotonicFrequency = res.Monotonic.Frequency
 		}
-		if realtimeOk {
+		if res.RealtimeOk {
 			p.realtimeReady = 1
-			p.realtimeBaseCycles = int64(realtimeParams.BaseCycles)
-			p.realtimeBaseRef = int64(realtimeParams.BaseRef)
-			p.realtimeFrequency = realtimeParams.Frequency
+			p.realtimeBaseCycles = int64(res.Realtime.BaseCycles)
+			p.realtimeBaseRef = int64(res.Realtime.BaseRef)
+			p.realtimeFrequency = res.Realtime.Frequency
+		}
+		if t.monotonicRawClock == nil {
+			p.monotonicRawAlias = 1
+		} else if res.MonotonicRawOk {
+			// Raw tracks absolute host CLOCK_MONOTONIC_RAW, so unlike
+			// monotonic its base ref is published without monotonicOffset.
+			p.monotonicRawReady = 1
+			p.monotonicRawBaseCycles = int64(res.MonotonicRaw.BaseCycles)
+			p.monotonicRawBaseRef = int64(res.MonotonicRaw.BaseRef)
+			p.monotonicRawFrequency = res.MonotonicRaw.Frequency
 		}
 		return p
 	}); err != nil {
@@ -396,6 +420,9 @@ func (t *Timekeeper) GetTime(c sentrytime.ClockID) (int64, error) {
 			panic("Timekeeper used before initialized with SetClocks")
 		}
 		<-t.restored
+	}
+	if c == sentrytime.MonotonicRaw && t.monotonicRawClock == nil {
+		c = sentrytime.Monotonic
 	}
 
 	// update the calibration if needed and keep the timekeeper calibrated

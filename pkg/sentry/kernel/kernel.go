@@ -1936,6 +1936,15 @@ func (k *Kernel) MonotonicClock() ktime.SampledClock {
 	return k.timekeeper.monotonicClock
 }
 
+// MonotonicRawClock returns the system CLOCK_MONOTONIC_RAW clock. When it is
+// not enabled as a distinct clock this is the same as MonotonicClock.
+func (k *Kernel) MonotonicRawClock() ktime.SampledClock {
+	if k.timekeeper.monotonicRawClock != nil {
+		return k.timekeeper.monotonicRawClock
+	}
+	return k.timekeeper.monotonicClock
+}
+
 // Syslog returns the syslog.
 func (k *Kernel) Syslog() *syslog {
 	return &k.syslog
