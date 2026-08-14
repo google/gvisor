@@ -29,6 +29,7 @@ import (
 	systemdDbus "github.com/coreos/go-systemd/v22/dbus"
 	dbus "github.com/godbus/dbus/v5"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
 )
@@ -143,6 +144,13 @@ func (c *cgroupSystemd) MakePath(string) string {
 	fullSlicePath := expandSlice(c.Parent)
 	path := filepath.Join(c.Mountpoint, fullSlicePath, c.unitName())
 	return path
+}
+
+// CloneIntoCgroup implements Cgroup.CloneIntoCgroup.
+func (c *cgroupSystemd) CloneIntoCgroup() (*os.File, error) {
+	// Can't use CLONE_INTO_CGROUP here because systemd is the thing doing the
+	// process migration, not us.
+	return nil, fmt.Errorf("CLONE_INTO_CGROUP cannot be used with systemd cgroup %q", c.unitName())
 }
 
 // Join implements Cgroup.Join.
