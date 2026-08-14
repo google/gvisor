@@ -71,6 +71,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/overlay"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
 	"gvisor.dev/gvisor/pkg/sentry/loader"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
@@ -536,6 +537,70 @@ func execveSeccheckInfo(t *Task, argv, env []string, executable *vfs.FileDescrip
 		info.Stderr = execveFdInfo(t, 2)
 	}
 
+	if fields.Local.Contains(seccheck.FieldSentryExecvePipeProcInfo) {
+		// Check whether standard input (fd 0) or standard output (fd 1)
+		// is connected to a pipe by extracting the underlying Pipe object.
+		var pipeIn, pipeOut *pipe.Pipe
+		if fileIn := t.GetFile(0); fileIn != nil {
+			if pfd, ok := fileIn.Impl().(*pipe.VFSPipeFD); ok {
+				pipeIn = pfd.Pipe()
+			}
+			fileIn.DecRef(t)
+		}
+		if fileOut := t.GetFile(1); fileOut != nil {
+			if pfd, ok := fileOut.Impl().(*pipe.VFSPipeFD); ok {
+				pipeOut = pfd.Pipe()
+			}
+			fileOut.DecRef(t)
+		}
+
+		// Inspect sibling tasks under the same parent to find processes connected to the
+		// opposite end of stdin (pipeIn) or stdout (pipeOut).
+		if pipeIn != nil || pipeOut != nil {
+			// Only inspect the parent if pipeIn or pipeOut are present. Calling
+			// t.Parent() grabs a read lock on the PID namespace owner, which we want to avoid
+			// on the fast path if no pipes are connected.
+			if parent := t.Parent(); parent != nil {
+				for child := range parent.Children() {
+					if child == t {
+						continue
+					}
+					// Early termination: stop scanning siblings as soon as all applicable
+					// pipe peers (stdin and/or stdout) have been found or are not pipes.
+					if (pipeIn == nil || info.PipeInputProc != nil) && (pipeOut == nil || info.PipeOutputProc != nil) {
+						break
+					}
+
+					fdt := child.FDTable()
+					if fdt == nil {
+						continue
+					}
+
+					// Check if the sibling writes to t's stdin pipe via stdout (fd 1).
+					if pipeIn != nil && info.PipeInputProc == nil {
+						if childOut, _ := fdt.Get(1); childOut != nil {
+							pfd, ok := childOut.Impl().(*pipe.VFSPipeFD)
+							if ok && pfd.Pipe() == pipeIn {
+								info.PipeInputProc = pipeProcInfo(child, fields.Context)
+							}
+							childOut.DecRef(t)
+						}
+					}
+					// Check if the sibling reads from t's stdout pipe via stdin (fd 0).
+					if pipeOut != nil && info.PipeOutputProc == nil {
+						if childIn, _ := fdt.Get(0); childIn != nil {
+							pfd, ok := childIn.Impl().(*pipe.VFSPipeFD)
+							if ok && pfd.Pipe() == pipeOut {
+								info.PipeOutputProc = pipeProcInfo(child, fields.Context)
+							}
+							childIn.DecRef(t)
+						}
+					}
+				}
+			}
+		}
+	}
+
 	if !fields.Context.Empty() {
 		info.ContextData = &pb.ContextData{}
 		LoadSeccheckData(t, fields.Context, info.ContextData)
@@ -718,4 +783,19 @@ func (t *Task) shouldStopPrivGainDueToPtracerLocked() bool {
 func (t *Task) releaseExecveCredsLocks() {
 	t.execveCredsMutexUnlock()
 	t.FSContext().allowSharing()
+}
+
+// pipeProcInfo collects Seccheck process information for a sibling task connected via a pipe.
+//
+// To avoid returning heavy strings (like argv or binary path) on every execve trace point, we only
+// populate the lightweight ContextData. A stateful seccheck client library can
+// correlate the sibling's thread_group_id and thread_group_start_time_ns with prior Execve/Clone
+// events to enrich the trace with full binary_path and argv without kernel overhead.
+func pipeProcInfo(child *Task, contextMask seccheck.FieldMask) *pb.PipeProcInfo {
+	res := &pb.PipeProcInfo{}
+	if !contextMask.Empty() {
+		res.ContextData = &pb.ContextData{}
+		LoadSeccheckData(child, contextMask, res.ContextData)
+	}
+	return res
 }
