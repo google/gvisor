@@ -176,11 +176,13 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 	}
 
 	p := e.rcvList.Front()
-	if !opts.Peek {
+	if opts.Peek {
+		p.data.IncRef()
+	} else {
 		e.rcvList.Remove(p)
-		defer p.data.DecRef()
 		e.rcvBufSize -= p.data.Data().Size()
 	}
+	defer p.data.DecRef()
 
 	e.rcvMu.Unlock()
 
