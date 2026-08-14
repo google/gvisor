@@ -309,7 +309,13 @@ func (p *Protocol) dumpAddrs(ctx context.Context, s *netlink.Socket, msg *nlmsg.
 	}
 
 	ifAddrs := stack.InterfaceAddrs()
+	interfaces := stack.Interfaces()
 	for _, id := range stack.InterfaceIDs() {
+		iface := interfaces[id]
+		scope := linux.RT_SCOPE_UNIVERSE
+		if (iface.Flags & linux.IFF_LOOPBACK) != 0 {
+			scope = linux.RT_SCOPE_HOST
+		}
 		for _, a := range ifAddrs[id] {
 			m := ms.AddMessage(linux.NetlinkMessageHeader{
 				Type: linux.RTM_NEWADDR,
@@ -318,12 +324,16 @@ func (p *Protocol) dumpAddrs(ctx context.Context, s *netlink.Socket, msg *nlmsg.
 			m.Put(&linux.InterfaceAddrMessage{
 				Family:    a.Family,
 				PrefixLen: a.PrefixLen,
+				Scope:     uint8(scope),
 				Index:     uint32(id),
 			})
 
 			addr := primitive.ByteSlice([]byte(a.Addr))
 			m.PutAttr(linux.IFA_LOCAL, &addr)
 			m.PutAttr(linux.IFA_ADDRESS, &addr)
+			if iface.Name != "" {
+				m.PutAttrString(linux.IFA_LABEL, iface.Name)
+			}
 
 			// TODO(gvisor.dev/issue/578): There are many more attributes.
 		}
@@ -392,7 +402,7 @@ func fillRoute(routes []inet.Route, addr []byte) (inet.Route, *syserr.Error) {
 		idx = idxDef
 	}
 	if idx == -1 {
-		return inet.Route{}, syserr.ErrHostUnreachable
+		return inet.Route{}, syserr.ErrNetworkUnreachable
 	}
 
 	route := routes[idx]
@@ -413,16 +423,16 @@ func parseForDestination(msg *nlmsg.Message) ([]byte, *syserr.Error) {
 	if !ok {
 		return nil, syserr.ErrInvalidArgument
 	}
-	// iproute2 added the RTM_F_LOOKUP_TABLE flag in version v4.4.0. See
-	// commit bc234301af12. Note we don't check this flag for backward
-	// compatibility.
-	if rtMsg.Flags != 0 && rtMsg.Flags != linux.RTM_F_LOOKUP_TABLE {
-		return nil, syserr.ErrNotSupported
-	}
 
-	// Expect first attribute is RTA_DST.
-	if hdr, value, _, ok := attrs.ParseFirst(); ok && hdr.Type == linux.RTA_DST {
-		return value, nil
+	for !attrs.Empty() {
+		hdr, value, rest, ok := attrs.ParseFirst()
+		if !ok {
+			break
+		}
+		attrs = rest
+		if hdr.Type == linux.RTA_DST {
+			return value, nil
+		}
 	}
 	return nil, syserr.ErrInvalidArgument
 }
@@ -468,20 +478,19 @@ func (p *Protocol) dumpRoutes(ctx context.Context, s *netlink.Socket, msg *nlmsg
 	hdr := msg.Header()
 	routeTables := stack.RouteTable()
 
-	if hdr.Flags == linux.NLM_F_REQUEST {
+	if hdr.Flags&(linux.NLM_F_DUMP|linux.NLM_F_ROOT) != 0 {
+		// We always send back an NLMSG_DONE.
+		ms.Multi = true
+	} else if hdr.Flags&linux.NLM_F_REQUEST != 0 {
 		dst, err := parseForDestination(msg)
 		if err != nil {
 			return err
 		}
 		route, err := fillRoute(routeTables, dst)
 		if err != nil {
-			// TODO(gvisor.dev/issue/1237): return NLMSG_ERROR with ENETUNREACH.
-			return syserr.ErrNotSupported
+			return err
 		}
 		routeTables = append([]inet.Route{}, route)
-	} else if hdr.Flags&linux.NLM_F_DUMP == linux.NLM_F_DUMP {
-		// We always send back an NLMSG_DONE.
-		ms.Multi = true
 	} else {
 		// TODO(b/68878065): Only above cases are supported.
 		return syserr.ErrNotSupported
@@ -508,7 +517,6 @@ func (p *Protocol) dumpRoutes(ctx context.Context, s *netlink.Socket, msg *nlmsg
 			Flags: rt.Flags,
 		})
 
-		m.PutAttr(254, primitive.AsByteSlice([]byte{123}))
 		if rt.DstLen > 0 {
 			m.PutAttr(linux.RTA_DST, primitive.AsByteSlice(rt.DstAddr))
 		}
@@ -517,6 +525,14 @@ func (p *Protocol) dumpRoutes(ctx context.Context, s *netlink.Socket, msg *nlmsg
 		}
 		if rt.OutputInterface != 0 {
 			m.PutAttr(linux.RTA_OIF, primitive.AllocateInt32(rt.OutputInterface))
+			if !ms.Multi || (rt.Flags&linux.RTM_F_CLONED) != 0 {
+				for _, a := range stack.InterfaceAddrs()[rt.OutputInterface] {
+					if a.Family == rt.Family {
+						m.PutAttr(linux.RTA_PREFSRC, primitive.AsByteSlice(a.Addr))
+						break
+					}
+				}
+			}
 		}
 		if len(rt.GatewayAddr) > 0 {
 			m.PutAttr(linux.RTA_GATEWAY, primitive.AsByteSlice(rt.GatewayAddr))
@@ -648,7 +664,7 @@ func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *n
 		}
 	}
 
-	if hdr.Flags&linux.NLM_F_DUMP == linux.NLM_F_DUMP {
+	if typeKind(hdr.Type) == kindGet && hdr.Flags&(linux.NLM_F_DUMP|linux.NLM_F_ROOT) != 0 {
 		// TODO(b/68878065): Only the dump variant of the types below are
 		// supported.
 		switch hdr.Type {
@@ -661,7 +677,7 @@ func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *n
 		default:
 			return syserr.ErrNotSupported
 		}
-	} else if hdr.Flags&linux.NLM_F_REQUEST == linux.NLM_F_REQUEST {
+	} else if hdr.Flags&linux.NLM_F_REQUEST != 0 {
 		switch hdr.Type {
 		case linux.RTM_NEWLINK:
 			return p.newLink(ctx, s, msg, ms)
@@ -678,6 +694,8 @@ func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *n
 			return p.dumpRoutes(ctx, s, msg, ms)
 		case linux.RTM_DELROUTE:
 			return p.deleteRoute(ctx, s, msg, ms)
+		case linux.RTM_GETADDR:
+			return p.dumpAddrs(ctx, s, msg, ms)
 		case linux.RTM_NEWADDR:
 			return p.newAddr(ctx, s, msg, ms)
 		case linux.RTM_DELADDR:
