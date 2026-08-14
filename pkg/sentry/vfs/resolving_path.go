@@ -60,12 +60,26 @@ type ResolvingPath struct {
 	// ResolvingPath tracks relative paths, which is updated whenever a relative
 	// symlink is encountered.
 	parts [1 + linux.MaxSymlinkTraversals]fspath.Iterator
+
+	// mountSeq stores the vfs.mounts.seq sequence number at the beginning of
+	// the walk if flags contains rpflagsBeneath.
+	//
+	// It is used to fail RESOLVE_BENEATH traversals that race against a mount
+	// tree change.
+	mountSeq sync.SeqCountEpoch
+
+	// renameSeq stores the vfs.renameSeq sequence number at the beginning of
+	// the walk if flags contains rpflagsBeneath.
+	//
+	// It is used to fail RESOLVE_BENEATH traversals that race against a rename.
+	renameSeq uint64
 }
 
 const (
 	rpflagsHaveMountRef       = 1 << iota // do we hold a reference on mount?
 	rpflagsHaveStartRef                   // do we hold a reference on start?
 	rpflagsFollowFinalSymlink             // same as PathOperation.FollowFinalSymlink
+	rpflagsBeneath                        // same as RESOLVE_BENEATH
 )
 
 func init() {
@@ -115,6 +129,14 @@ var resolvingPathPool = sync.Pool{
 // getResolvingPath gets a new ResolvingPath from the pool. Caller must call
 // ResolvingPath.Release() when done.
 func (vfs *VirtualFilesystem) getResolvingPath(creds *auth.Credentials, pop *PathOperation) *ResolvingPath {
+	resolveBeneath := pop.ResolveFlags&linux.RESOLVE_BENEATH != 0
+	if checkInvariants && resolveBeneath {
+		// Check invariants for RESOLVE_BENEATH
+		if pop.Path.Absolute {
+			panic("VirtualFilesystem.getResolvingPath() called with RESOLVE_BENEATH and absolute pop.Path")
+		}
+	}
+
 	rp := resolvingPathPool.Get().(*ResolvingPath)
 	rp.vfs = vfs
 	rp.root = pop.Root
@@ -124,6 +146,12 @@ func (vfs *VirtualFilesystem) getResolvingPath(creds *auth.Credentials, pop *Pat
 	rp.flags = 0
 	if pop.FollowFinalSymlink {
 		rp.flags |= rpflagsFollowFinalSymlink
+	}
+	if resolveBeneath {
+		rp.flags |= rpflagsBeneath
+		rp.root = pop.Start
+		rp.mountSeq = vfs.mounts.seq.BeginRead()
+		rp.renameSeq = vfs.renameSeq.Load()
 	}
 	rp.mustBeDir = pop.Path.Dir
 	rp.symlinks = 0
@@ -284,8 +312,20 @@ func (rp *ResolvingPath) GetComponents(excludeLast bool, emit func(string) bool)
 // resolution should resolve d's parent normally, and CheckRoot returns (false,
 // nil).
 func (rp *ResolvingPath) CheckRoot(ctx context.Context, d *Dentry) (bool, error) {
+	beneath := rp.flags&rpflagsBeneath != 0
+	if beneath && (!rp.vfs.mounts.seq.ReadOk(rp.mountSeq) || rp.vfs.renameSeq.Load() != rp.renameSeq) {
+		// If a mount or rename raced with a RESOLVE_BENEATH traversal,
+		// we cannot ensure correctness. Fail.
+		return false, linuxerr.EAGAIN
+	}
+
 	if d == rp.root.dentry && rp.mount == rp.root.mount {
 		// At contextual VFS root (due to e.g. chroot(2)).
+		if beneath {
+			// For RESOLVE_BENEATH, trying to traverse above the root
+			// (which in this case is set from dirfd) should fail.
+			return false, linuxerr.EXDEV
+		}
 		return true, nil
 	} else if d == rp.mount.root {
 		// At mount root ...
@@ -297,6 +337,9 @@ func (rp *ResolvingPath) CheckRoot(ctx context.Context, d *Dentry) (bool, error)
 			return false, resolveMountRootOrJumpError{}
 		}
 		// ... of root mount.
+		if beneath {
+			return false, linuxerr.EXDEV
+		}
 		return true, nil
 	}
 	return false, nil
@@ -360,6 +403,10 @@ func (rp *ResolvingPath) HandleSymlink(target string) (bool, error) {
 	rp.symlinks++
 	targetPath := fspath.Parse(target)
 	if targetPath.Absolute {
+		if rp.flags&rpflagsBeneath != 0 {
+			// RESOLVE_BENEATH traversals reject absolute symlinks
+			return true, linuxerr.EXDEV
+		}
 		rp.absSymlinkTarget = targetPath
 		return true, resolveAbsSymlinkError{}
 	}
@@ -405,6 +452,10 @@ func (rp *ResolvingPath) relpathPrepend(path fspath.Path) {
 func (rp *ResolvingPath) HandleJump(target VirtualDentry) (bool, error) {
 	if rp.symlinks >= linux.MaxSymlinkTraversals {
 		return false, linuxerr.ELOOP
+	}
+	if rp.flags&rpflagsBeneath != 0 {
+		// Linux currently rejects magic links for RESOLVE_BENEATH traversals.
+		return false, linuxerr.EXDEV
 	}
 	rp.symlinks++
 	// Consume the path component that represented the magic link.
@@ -486,4 +537,29 @@ func (rp *ResolvingPath) canHandleError(err error) bool {
 // MustBeDir returns true if the file traversed by rp must be a directory.
 func (rp *ResolvingPath) MustBeDir() bool {
 	return rp.mustBeDir
+}
+
+// finalizeBeneath must be called by a VFS method that supports RESOLVE_BENEATH once a
+// resolving path has been fully resolved into a dentry.
+//
+// It performs a final check that the resolved path is underneath the scope specified
+// by dirfd. It is analogous to the LOOKUP_IS_SCOPED branch in Linux's fs/namei.c.
+//
+// The extra check is necessary at the end for two reasons:
+//   - as an extra check in case a bug in the path traversal allows a RESOLVE_BENEATH
+//     traversal to escape, and
+//   - because the mountSeq sequence number used to detect races with mount operations is
+//     only 32 bits, if some crazy person manages to pull off an exactly 2^32-mount overflow
+//     during the path traversal window, this check would catch that.
+func (rp *ResolvingPath) finalizeBeneath(ctx context.Context, resolvedVD VirtualDentry) error {
+	if rp.flags&rpflagsBeneath != 0 {
+		rp.vfs.lockMounts()
+		ok := rp.vfs.isPathReachable(ctx, rp.root, resolvedVD)
+		rp.vfs.unlockMounts(ctx)
+		if !ok {
+			return linuxerr.EXDEV
+		}
+	}
+
+	return nil
 }

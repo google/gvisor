@@ -515,6 +515,11 @@ syscall_test(
 )
 
 syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:openat2_test",
+)
+
+syscall_test(
     add_hostinet = True,
     netstack_sr = True,
     test = "//test/syscalls/linux:packet_socket_dgram_test",
