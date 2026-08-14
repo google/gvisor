@@ -461,12 +461,14 @@ func (r *restorer) restore(l *Loader) error {
 		vfs.CtxRestoreFilesystemFDMap:     restoreMnts.fdmap,
 		pgalloc.CtxMemoryFileMap:          restoreMnts.mfmap,
 		devutil.CtxDevGoferClientProvider: l.k,
+		kernel.CtxFSRestore:               l.fsRestore != nil,
+		vfs.CtxFSTarProvider:              l.fsRestore,
 	})
 
 	if r.asyncMFLoader != nil {
 		// Now that private memory files are known, kick off their loading in the
 		// background goroutine.
-		r.asyncMFLoader.KickoffPrivate(restoreMnts.mfmap)
+		r.asyncMFLoader.KickoffPrivate(ctx, restoreMnts.mfmap)
 	}
 
 	ctx, err = r.prepareNvproxyRestoreContextLocked(ctx, l)
@@ -684,6 +686,10 @@ func (l *Loader) save(o *control.SaveOpts) (err error) {
 		return err
 	}
 	defer saveOpts.Close()
+
+	if saveOpts.FSSaveOpts != nil {
+		saveOpts.FSSaveOpts.RunscVersion = version.Version()
+	}
 
 	return l.saveWithOpts(saveOpts, &o.ExecOpts)
 }
