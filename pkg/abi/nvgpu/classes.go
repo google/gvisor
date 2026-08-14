@@ -78,6 +78,8 @@ const (
 	GF100_ZBC_CLEAR                  = 0x00009096
 	GF100_SUBDEVICE_INFOROM          = 0x000090e7
 	GF100_PROFILER                   = 0x000090cc
+	NV_EVENT_BUFFER                  = 0x000090cd
+	NV01_MEMORY_DEVICELESS           = 0x000090ce
 	MAXWELL_PROFILER_DEVICE          = 0x0000b2cc
 	NV_COUNTER_COLLECTION_UNIT       = 0x0000cbca
 	GF100_SUBDEVICE_MASTER           = 0x000090e6
@@ -296,6 +298,28 @@ type NV_MEMORY_ALLOCATION_PARAMS_V545 struct {
 	NV_MEMORY_ALLOCATION_PARAMS
 	NumaNode int32
 	_        uint32
+}
+
+// NV_EVENT_BUFFER_ALLOC_PARAMETERS is the alloc params type for NV_EVENT_BUFFER,
+// from src/common/sdk/nvidia/inc/class/cl90cd.h.
+//
+// +marshal
+type NV_EVENT_BUFFER_ALLOC_PARAMETERS struct {
+	_                    structs.HostLayout
+	BufferHeader         P64
+	RecordBuffer         P64
+	RecordSize           uint32
+	RecordCount          uint32
+	VardataBuffer        P64
+	VardataBufferSize    uint32
+	RecordsFreeThreshold uint32
+	NotificationHandle   uint64
+	VardataFreeThreshold uint32
+	HSubDevice           Handle
+	Flags                uint32
+	HBufferHeader        Handle
+	HRecordBuffer        Handle
+	HVardataBuffer       Handle
 }
 
 // NV503B_BAR1_P2P_DMA_INFO from src/common/sdk/nvidia/inc/class/cl503b.h.
