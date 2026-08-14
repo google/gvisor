@@ -15,6 +15,7 @@
 package rdmaproxy
 
 import (
+	"slices"
 	"sync"
 
 	"gvisor.dev/gvisor/pkg/log"
@@ -88,12 +89,36 @@ func RegisterDriver(drv Driver) {
 	log.Infof("rdmaproxy: registered driver name=%s", name)
 }
 
-// LookupDriver returns the driver registered under name, or nil if none.
+// GenericDriverName is the registry name of the no-op generic plug-in
+// (pkg/sentry/devices/rdmaproxy/genericproxy). LookupDriver falls back to it
+// for host driver names in genericDriverAllowList.
+const GenericDriverName = "generic"
+
+// genericDriverAllowList is the explicit allow-list of host PCI driver names
+// the generic no-op plug-in may serve, matched against the DRIVER= field of
+// the uverbs device's leaf PCI uevent (see runsc's rdmaproxyRegisterDevices).
+//
+// For iRDMA devices, we actually don't need a proxy to translate guest VAs in
+// driver payloads for CQ/QPs because iRDMA implements them as MRs, which are
+// already handled correctly by rdmaproxy core.
+var genericDriverAllowList = []string{"ice", "i40e", "idpf", "irdma"}
+
+// LookupDriver returns the driver serving host driver name. The driver
+// registered under exactly that name wins, so a vendor-specific plug-in takes
+// priority; otherwise, if name is in genericDriverAllowList, the generic
+// no-op plug-in is returned (if registered). Returns nil if no driver
+// matches.
 func LookupDriver(name string) Driver {
 	reg := driverReg()
 	reg.mu.RLock()
 	defer reg.mu.RUnlock()
-	return reg.drivers[name]
+	if drv, ok := reg.drivers[name]; ok {
+		return drv
+	}
+	if slices.Contains(genericDriverAllowList, name) {
+		return reg.drivers[GenericDriverName]
+	}
+	return nil
 }
 
 // rangeDrivers calls f for each registered driver.

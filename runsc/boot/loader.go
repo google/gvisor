@@ -45,6 +45,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/devices/rdmaproxy/cxproxy"
+	"gvisor.dev/gvisor/pkg/sentry/devices/rdmaproxy/genericproxy"
 	"gvisor.dev/gvisor/pkg/sentry/fdimport"
 	cgroup2fs "gvisor.dev/gvisor/pkg/sentry/fsimpl/cgroup2fs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
@@ -96,6 +97,7 @@ import (
 	// Include other supported socket providers.
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink"
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink/netfilter"
+	rdmanetlink "gvisor.dev/gvisor/pkg/sentry/socket/netlink/rdma"
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink/route"
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink/uevent"
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/unix"
@@ -574,7 +576,18 @@ func New(args Args) (*Loader, error) {
 	}
 	if specutils.RDMAEnabled(args.Spec, args.Conf) {
 		cxproxy.Init()
+		genericproxy.Init()
 		args.StartupTimer.Reached("RDMA proxy initialized")
+	}
+
+	// Publish the RDMA sysfs snapshot to the NETLINK_RDMA nldev shim before
+	// any application socket can exist. rdma-core discovers devices and binds
+	// userspace providers through nldev (RDMA_NLDEV_ATTR_UVERBS_DRIVER_ID);
+	// providers without a PCI-ID match table (e.g. libirdma) are unusable
+	// without it. A nil snapshot leaves the protocol unregistered-equivalent:
+	// socket(AF_NETLINK, ..., NETLINK_RDMA) fails as on a host without RDMA.
+	if args.RDMASysfs != nil {
+		rdmanetlink.Init(args.RDMASysfs)
 	}
 
 	eid := execID{cid: args.ID}
