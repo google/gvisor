@@ -384,3 +384,42 @@ func verifyResource(t *testing.T, list v23.ResourceList, name v23.ResourceName, 
 		t.Errorf("expected resource %q to be %v, got %v", name, expected, qty)
 	}
 }
+
+func TestRuntimeTypeMicroVM(t *testing.T) {
+	rt := RuntimeTypeMicroVM
+	if !rt.IsValid() {
+		t.Errorf("RuntimeTypeMicroVM.IsValid() = false, want true")
+	}
+	if !rt.IsMicroVM() {
+		t.Errorf("RuntimeTypeMicroVM.IsMicroVM() = false, want true")
+	}
+	if rt.IsGVisor() {
+		t.Errorf("RuntimeTypeMicroVM.IsGVisor() = true, want false")
+	}
+	if rt.IsKata() {
+		t.Errorf("RuntimeTypeMicroVM.IsKata() = true, want false")
+	}
+	if !rt.RequiresExplicitResourceLimits() {
+		t.Errorf("RuntimeTypeMicroVM.RequiresExplicitResourceLimits() = false, want true")
+	}
+
+	// Test ApplyPodSpec
+	podSpec := &v23.PodSpec{}
+	rt.ApplyPodSpec(podSpec)
+	if podSpec.RuntimeClassName == nil || *podSpec.RuntimeClassName != "microvm" {
+		t.Errorf("RuntimeClassName = %v, want 'microvm'", podSpec.RuntimeClassName)
+	}
+	if podSpec.NodeSelector[NodepoolRuntimeKey] != "microvm" {
+		t.Errorf("NodeSelector[%s] = %q, want 'microvm'", NodepoolRuntimeKey, podSpec.NodeSelector[NodepoolRuntimeKey])
+	}
+	hasToleration := false
+	for _, tol := range podSpec.Tolerations {
+		if tol.Key == "sandbox.gke.io/runtime" && tol.Value == "microvm" && tol.Effect == v23.TaintEffectNoSchedule {
+			hasToleration = true
+			break
+		}
+	}
+	if !hasToleration {
+		t.Errorf("expected podSpec to have sandbox.gke.io/runtime=microvm toleration, got %v", podSpec.Tolerations)
+	}
+}
