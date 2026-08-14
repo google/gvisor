@@ -366,8 +366,8 @@ func (c *Container) createRoot(conf *config.Config, args Args, sandboxID string)
 	if err := nvProxyPreGoferHostSetup(args.Spec, conf); err != nil {
 		return err
 	}
-	if err := cgroup.RunInCgroup(containerCgroup, func() error {
-		ioFiles, goferFilestores, devIOFile, specFile, err := c.createGoferProcess(conf, mountHints, args.Attached)
+	if err := cgroup.RunInCgroup(containerCgroup, func(cloneIntoCgroupFD *os.File) error {
+		ioFiles, goferFilestores, devIOFile, specFile, err := c.createGoferProcess(conf, mountHints, args.Attached, cloneIntoCgroupFD)
 		if err != nil {
 			return fmt.Errorf("cannot create gofer process: %w", err)
 		}
@@ -384,6 +384,7 @@ func (c *Container) createRoot(conf *config.Config, args Args, sandboxID string)
 			DevIOFile:           devIOFile,
 			MountsFile:          specFile,
 			Cgroup:              containerCgroup,
+			CloneIntoCgroupFD:   cloneIntoCgroupFD,
 			Attached:            args.Attached,
 			GoferFilestoreFiles: goferFilestores,
 			GoferMountConfs:     c.GoferMountConfs,
@@ -474,9 +475,9 @@ func (c *Container) startImpl(conf *config.Config, action string, startRoot func
 	} else {
 		// Join cgroup to start gofer process to ensure it's part of the cgroup from
 		// the start (and all their children processes).
-		if err := cgroup.RunInCgroup(c.Sandbox.CgroupJSON.Cgroup, func() error {
+		if err := cgroup.RunInCgroup(c.Sandbox.CgroupJSON.Cgroup, func(cloneIntoCgroupFD *os.File) error {
 			// Create the gofer process.
-			goferFiles, goferFilestores, devIOFile, mountsFile, err := c.createGoferProcess(conf, c.Sandbox.MountHints, false /* attached */)
+			goferFiles, goferFilestores, devIOFile, mountsFile, err := c.createGoferProcess(conf, c.Sandbox.MountHints, false /* attached */, cloneIntoCgroupFD)
 			if err != nil {
 				return err
 			}
@@ -1360,7 +1361,7 @@ func createLisafsSocketPair(sandEnds *[]*os.File, donations *donation.Agency) er
 // a gofer endpoint for the mount points using Gofers. The mounts file is the
 // file to read list of mounts after they have been resolved (direct paths,
 // no symlinks), and will be nil if there is no cleaning required for mounts.
-func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.PodMountHints, attached bool) ([]*os.File, []*os.File, *os.File, *os.File, error) {
+func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.PodMountHints, attached bool, cloneIntoCgroupFD *os.File) ([]*os.File, []*os.File, *os.File, *os.File, error) {
 	rootfsHint, err := boot.NewRootfsHint(c.Spec)
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("error creating rootfs hint: %w", err)
@@ -1453,6 +1454,10 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 		// Detach from session. Otherwise, signals sent to the foreground process
 		// will also be forwarded by this process, resulting in duplicate signals.
 		Setsid: true,
+	}
+	if cloneIntoCgroupFD != nil {
+		cmd.SysProcAttr.UseCgroupFD = true
+		cmd.SysProcAttr.CgroupFD = int(cloneIntoCgroupFD.Fd())
 	}
 
 	// Set Args[0] to make easier to spot the gofer process. Otherwise it's

@@ -297,6 +297,10 @@ type Args struct {
 	// Gcgroup is the cgroup that the sandbox is part of.
 	Cgroup cgroup.Cgroup
 
+	// CloneIntoCgroupFD, when non-nil, is an FD to `Cgroup`'s directory. The
+	// sandbox process is created inside the cgroup via `CLONE_INTO_CGROUP`.
+	CloneIntoCgroupFD *os.File
+
 	// Attached indicates that the sandbox lifecycle is attached with the caller.
 	// If the caller exits, the sandbox should exit too.
 	Attached bool
@@ -962,6 +966,10 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		// Detach from this session, otherwise cmd will get SIGHUP and SIGCONT
 		// when re-parented.
 		Setsid: true,
+	}
+	if args.CloneIntoCgroupFD != nil {
+		cmd.SysProcAttr.UseCgroupFD = true
+		cmd.SysProcAttr.CgroupFD = int(args.CloneIntoCgroupFD.Fd())
 	}
 
 	// Set Args[0] to make easier to spot the sandbox process.
@@ -1923,7 +1931,7 @@ func (s *Sandbox) maybeStartCheckpointGoferAndGetSocket(conf *config.Config, cg 
 	}
 	defer unix.Close(socketFDs[1])
 	clientSockFile := os.NewFile(uintptr(socketFDs[0]), "checkpointgofer-socket")
-	err = cgroup.RunInCgroup(cg, func() error {
+	err = cgroup.RunInCgroup(cg, func(cloneIntoCgroupFD *os.File) error {
 		argv := append([]string{"runsc-checkpointgofer"}, conf.ToFlags()...)
 		extraFiles := []uintptr{devNullFile.Fd(), devNullFile.Fd(), devNullFile.Fd(), uintptr(socketFDs[1]), gcsOptsFile.Fd()}
 
@@ -1959,15 +1967,20 @@ func (s *Sandbox) maybeStartCheckpointGoferAndGetSocket(conf *config.Config, cg 
 		// particular, containerd-shim-runsc-v1 passes GOMAXPROCS=2 in
 		// v1.service.newCommand()).
 		env := slices.DeleteFunc(os.Environ(), func(env string) bool { return strings.HasPrefix(env, "GOMAXPROCS=") })
+		sysProcAttr := &unix.SysProcAttr{
+			// Detach from this session, otherwise the subprocess will get
+			// SIGHUP and SIGCONT when re-parented.
+			Setsid: true,
+		}
+		if cloneIntoCgroupFD != nil {
+			sysProcAttr.UseCgroupFD = true
+			sysProcAttr.CgroupFD = int(cloneIntoCgroupFD.Fd())
+		}
 		_, err := gvisorbinaries.CheckpointGofer.ForkExec(gvisorbinaries.Options{
-			Argv:  argv,
-			Envv:  env,
-			Files: extraFiles,
-			SysProcAttr: &unix.SysProcAttr{
-				// Detach from this session, otherwise the subprocess will get
-				// SIGHUP and SIGCONT when re-parented.
-				Setsid: true,
-			},
+			Argv:        argv,
+			Envv:        env,
+			Files:       extraFiles,
+			SysProcAttr: sysProcAttr,
 		})
 		return err
 	})
