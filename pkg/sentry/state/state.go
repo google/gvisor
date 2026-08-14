@@ -81,12 +81,8 @@ type SaveOpts struct {
 	// sequentially (rather than in parallel).
 	CudaCheckpointSequential bool
 
-	// SplitFSCheckpoint indicates if we should split filesystem to separate
-	// pages from the full checkpoint.
-	SplitFSCheckpoint bool
-
-	// FSSaveOpts contains options for filesystem checkpoint if SplitFSCheckpoint
-	// is true.
+	// FSSaveOpts contains options for filesystem checkpoint. If non-nil, we
+	// should split filesystem to separate pages from the full checkpoint.
 	FSSaveOpts *kernel.FSSaveOpts
 }
 

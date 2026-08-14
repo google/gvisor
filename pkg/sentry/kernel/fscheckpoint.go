@@ -51,13 +51,8 @@ type FSSaveOpts struct {
 	ExitAfterSaving bool
 
 	// Paths is the list of paths inside the containers to save.
-	// If empty:
-	// - for fscheckpoint, defaults to a single path "/" for all containers.
-	// - for split checkpoint, defaults to all-tmpfs.
+	// If empty, defaults to a single path "/" for all containers.
 	Paths []checkpoint.ResourceID
-
-	// SplitFSCheckpoint indicates if this is a split filesystem checkpoint.
-	SplitFSCheckpoint bool
 }
 
 // FSSave collects a filesystem checkpoint as specified by the fscheckpoint
@@ -100,11 +95,7 @@ func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) error {
 func (k *Kernel) fsSaveLocked(ctx context.Context, opts *FSSaveOpts) error {
 	paths := opts.Paths
 	if len(paths) == 0 {
-		if opts.SplitFSCheckpoint {
-			paths = []checkpoint.ResourceID{{Path: fscheckpoint.AllTmpfsPath}}
-		} else {
-			paths = []checkpoint.ResourceID{{Path: "/"}}
-		}
+		paths = []checkpoint.ResourceID{{Path: "/"}}
 	}
 	pathsMap := make(map[checkpoint.ResourceID]struct{}, len(paths))
 	for _, p := range paths {

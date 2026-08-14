@@ -43,6 +43,7 @@ import (
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/hostos"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -6287,7 +6288,7 @@ func TestSplitFSCheckpointRestore(t *testing.T) {
 
 	// Checkpoint running container with SplitFSCheckpoint: true.
 	checkpointOpts := sandbox.CheckpointOpts{
-		SplitFSCheckpoint: true,
+		SplitFSCheckpointPaths: []checkpoint.ResourceID{{Path: "all-tmpfs"}},
 	}
 	if err := cont.Checkpoint(conf, dir, checkpointOpts); err != nil {
 		t.Fatalf("error checkpointing container: %v", err)
@@ -6462,7 +6463,7 @@ func TestSplitFSCheckpointRestoreTmpfs(t *testing.T) {
 
 	// Checkpoint running container with SplitFSCheckpoint: true.
 	checkpointOpts := sandbox.CheckpointOpts{
-		SplitFSCheckpoint: true,
+		SplitFSCheckpointPaths: []checkpoint.ResourceID{{Path: "all-tmpfs"}},
 	}
 	if err := cont.Checkpoint(conf, dir, checkpointOpts); err != nil {
 		t.Fatalf("error checkpointing container: %v", err)
