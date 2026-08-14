@@ -34,6 +34,7 @@ import (
 	"github.com/coreos/go-systemd/v22/dbus"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
 )
@@ -275,6 +276,14 @@ func (c *cgroupV2) Join() (func(), error) {
 	}
 
 	return cu.Release(), nil
+}
+
+// CloneIntoCgroup implements Cgroup.CloneIntoCgroup.
+func (c *cgroupV2) CloneIntoCgroup() (*os.File, error) {
+	if reason := cannotCloneIntoCgroupReason(); reason != "" {
+		return nil, fmt.Errorf("clone3(CLONE_INTO_CGROUP) is unavailable: %s", reason)
+	}
+	return os.OpenFile(c.MakePath(""), unix.O_DIRECTORY|os.O_RDONLY, 0)
 }
 
 // readCPUQuotaAndPeriod reads and parses cpu.max from the given path.

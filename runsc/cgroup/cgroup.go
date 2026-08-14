@@ -34,6 +34,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
 )
@@ -366,6 +367,7 @@ type Cgroup interface {
 	Update(res *specs.LinuxResources) error
 	Uninstall() error
 	Join() (func(), error)
+	CloneIntoCgroup() (*os.File, error)
 	CPUQuota() (int64, error)
 	CPUPeriod() (int64, error)
 	CPUUsage() (uint64, error)
@@ -729,6 +731,11 @@ func (c *cgroupV1) Join() (func(), error) {
 	return cu.Release(), nil
 }
 
+// CloneIntoCgroup implements Cgroup.CloneIntoCgroup.
+func (c *cgroupV1) CloneIntoCgroup() (*os.File, error) {
+	return nil, errors.New("cgroup v2 required to use CLONE_INTO_CGROUP")
+}
+
 // CPUQuota returns the raw CFS CPU quota in microseconds.
 // A value of -1 means unlimited.
 func (c *cgroupV1) CPUQuota() (int64, error) {
@@ -1071,16 +1078,31 @@ func (*hugeTLB) set(spec *specs.LinuxResources, path string) error {
 	return nil
 }
 
-// RunInCgroup executes fn inside the specified cgroup. If cg is nil, execute
-// it in the current context.
-func RunInCgroup(cg Cgroup, fn func() error) error {
+// RunInCgroup executes `fn` such that every subprocess `fn` creates ends up
+// inside `cg`.
+// `fn` is called with `cloneIntoCgroupFD` that may be nil.
+// If `cloneIntoCgroupFD` is non-nil, `fn` has to use it for
+// `SysProcAttr.CgroupFD` (and set `SysProcAttr.UseCgroupFD = true`).
+// This will use `clone3(CLONE_INTO_CGROUP)` which is fast.
+// If `cloneIntoCgroupFD` is nil, `fn` doesn't need to touch these fields and
+// can simply create a subprocess as normal. It will be created in the correct
+// cgroup by virtue of `RunInCgroup` switching into this cgroup before calling
+// `fn`.
+// If `cg` is nil, `fn` simply runs in the current context.
+func RunInCgroup(cg Cgroup, fn func(cloneIntoCgroupFD *os.File) error) error {
 	if cg == nil {
-		return fn()
+		return fn(nil)
 	}
+	cgroupFD, err := cg.CloneIntoCgroup()
+	if err == nil {
+		defer cgroupFD.Close()
+		return fn(cgroupFD)
+	}
+	log.Warningf("Cannot clone children directly into cgroup %q: %v. Joining it instead. This slows down gVisor startup and checkpoint/restore.", cg.MakePath(""), err)
 	restore, err := cg.Join()
 	if err != nil {
 		return err
 	}
 	defer restore()
-	return fn()
+	return fn(nil)
 }

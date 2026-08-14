@@ -10,10 +10,12 @@ go_library(
     srcs = [
         "cgroup.go",
         "cgroup_v2.go",
+        "cgroup_v2_unsafe.go",
         "systemd.go",
     ],
     visibility = ["//:sandbox"],
     deps = [
+        "//pkg/abi/linux",
         "//pkg/cleanup",
         "//pkg/log",
         "@com_github_cenkalti_backoff//:go_default_library",
