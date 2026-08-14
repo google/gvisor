@@ -30,6 +30,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <cstdint>
 #include <limits>
 #include <vector>
 
@@ -50,6 +51,10 @@
 using ::testing::AnyOf;
 using ::testing::Eq;
 using ::testing::Gt;
+
+#ifndef MAP_FIXED_NOREPLACE
+#define MAP_FIXED_NOREPLACE 0x100000
+#endif
 
 namespace gvisor {
 namespace testing {
@@ -384,6 +389,89 @@ TEST_F(MMapTest, MapFixed64) {
               SyscallSucceedsWithValue(0x300000000000));
 }
 #endif
+
+// Kernels predating Linux 4.17 silently ignore MAP_FIXED_NOREPLACE, treating
+// addr as a hint; partially overlapping requests return EEXIST only from 4.19
+// (Linux commit 7aa867dd8952 "mm/mmap.c: don't clobber partially overlapping
+// mappings with MAP_FIXED_NOREPLACE").
+#define SKIP_IF_NO_MAP_FIXED_NOREPLACE()                            \
+  do {                                                              \
+    if (!IsRunningOnGvisor()) {                                     \
+      auto version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion()); \
+      SKIP_IF(version.major < 4 ||                                  \
+              (version.major == 4 && version.minor < 19));          \
+    }                                                               \
+  } while (0)
+
+// MAP_FIXED_NOREPLACE gives us exactly the requested address when the range
+// is free.
+TEST_F(MMapTest, MapFixedNoReplaceEmpty) {
+  SKIP_IF_NO_MAP_FIXED_NOREPLACE();
+  EXPECT_THAT(Map(0x30000000, kPageSize, PROT_NONE,
+                  MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0),
+              SyscallSucceedsWithValue(0x30000000));
+}
+
+// MAP_FIXED_NOREPLACE fails with EEXIST if any mapping already exists in the
+// requested range; it must not fall back to a different address or clobber
+// the existing mapping.
+TEST_F(MMapTest, MapFixedNoReplaceExisting) {
+  SKIP_IF_NO_MAP_FIXED_NOREPLACE();
+  // Establish a writable mapping and store a sentinel value in it.
+  ASSERT_THAT(Map(0x30000000, kPageSize, PROT_READ | PROT_WRITE,
+                  MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0),
+              SyscallSucceedsWithValue(0x30000000));
+  constexpr uint32_t kSentinel = 0xdeadbeef;
+  auto* val = reinterpret_cast<volatile uint32_t*>(addr_);
+  *val = kSentinel;
+
+  // MAP_FIXED_NOREPLACE over the occupied range must fail with EEXIST, without
+  // relocating to a different address.
+  EXPECT_THAT(reinterpret_cast<uintptr_t>(mmap(
+                  reinterpret_cast<void*>(0x30000000), kPageSize, PROT_NONE,
+                  MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0)),
+              SyscallFailsWithErrno(EEXIST));
+
+  // The existing mapping must be untouched: the sentinel is still there.
+  EXPECT_EQ(*val, kSentinel);
+}
+
+// MAP_FIXED_NOREPLACE fails with EEXIST even if the requested range only
+// partially overlaps an existing mapping. Compare Linux commit 7aa867dd8952
+// ("mm/mmap.c: don't clobber partially overlapping mappings with
+// MAP_FIXED_NOREPLACE").
+TEST_F(MMapTest, MapFixedNoReplacePartialOverlap) {
+  SKIP_IF_NO_MAP_FIXED_NOREPLACE();
+  ASSERT_THAT(Map(0x30001000, kPageSize, PROT_NONE,
+                  MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0),
+              SyscallSucceedsWithValue(0x30001000));
+  EXPECT_THAT(reinterpret_cast<uintptr_t>(mmap(
+                  reinterpret_cast<void*>(0x30000000), 2 * kPageSize, PROT_NONE,
+                  MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0)),
+              SyscallFailsWithErrno(EEXIST));
+}
+
+// MAP_FIXED_NOREPLACE takes precedence over MAP_FIXED: existing mappings are
+// not clobbered.
+TEST_F(MMapTest, MapFixedNoReplaceWithMapFixed) {
+  SKIP_IF_NO_MAP_FIXED_NOREPLACE();
+  ASSERT_THAT(Map(0x30000000, kPageSize, PROT_NONE,
+                  MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0),
+              SyscallSucceedsWithValue(0x30000000));
+  EXPECT_THAT(reinterpret_cast<uintptr_t>(mmap(
+                  reinterpret_cast<void*>(0x30000000), kPageSize, PROT_NONE,
+                  MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED | MAP_FIXED_NOREPLACE,
+                  -1, 0)),
+              SyscallFailsWithErrno(EEXIST));
+}
+
+// Like MAP_FIXED, MAP_FIXED_NOREPLACE requires a page-aligned address.
+TEST_F(MMapTest, MapFixedNoReplaceAlignment) {
+  SKIP_IF_NO_MAP_FIXED_NOREPLACE();
+  EXPECT_THAT(Map(0x30000001, kPageSize, PROT_NONE,
+                  MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0),
+              SyscallFailsWithErrno(EINVAL));
+}
 
 // MAP_STACK allowed.
 // There isn't a good way to verify it did anything.
