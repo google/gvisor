@@ -38,6 +38,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/memutil"
 	"gvisor.dev/gvisor/pkg/metric"
+	"gvisor.dev/gvisor/pkg/pinring"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/rdma"
 	"gvisor.dev/gvisor/pkg/refs"
@@ -340,6 +341,10 @@ type Loader struct {
 	// host network namespace during sandbox creation.
 	networkArgs *CreateLinksAndRoutesArgs
 
+	// pinRing accumulates host FDs to pin before seccomp filters are
+	// installed.
+	pinRing pinring.PinRing
+
 	// fsSaveFDs are FDs used for user-triggered filesystem checkpoint saving.
 	fsSaveFDs []*fd.FD
 
@@ -406,6 +411,10 @@ type Args struct {
 	// ControllerFD is the FD to the URPC controller. The Loader takes ownership
 	// of this FD and may close it at any time.
 	ControllerFD int
+	// PinRingFD is the FD of the donated pin ring where the sentry registers
+	// its expensive-to-release files into. See `//pkg/pinring`.
+	// -1 if there is no ring.
+	PinRingFD int
 	// Device is an optional argument that is passed to the platform. The Loader
 	// takes ownership of this file and may close it at any time.
 	Device *fd.FD
@@ -696,7 +705,8 @@ func New(args Args) (*Loader, error) {
 	}
 
 	// Create kernel and platform.
-	p, err := createPlatform(args.Conf, args.NumCPU, args.Device, args.ID, args.StartupTimer)
+	l.pinRing.FD = args.PinRingFD
+	p, err := createPlatform(args.Conf, args.NumCPU, args.Device, args.ID, args.StartupTimer, &l.pinRing)
 	if err != nil {
 		return nil, fmt.Errorf("creating platform: %w", err)
 	}
@@ -1052,7 +1062,7 @@ func (l *Loader) Destroy() {
 	refs.OnExit()
 }
 
-func createPlatform(conf *config.Config, numCPU int, deviceFile *fd.FD, sandboxID string, startupTimer *timing.Timer) (platform.Platform, error) {
+func createPlatform(conf *config.Config, numCPU int, deviceFile *fd.FD, sandboxID string, startupTimer *timing.Timer, pinRing *pinring.PinRing) (platform.Platform, error) {
 	platformName := conf.Platform
 	p, err := platform.Lookup(conf.Platform)
 	if err != nil {
@@ -1068,6 +1078,7 @@ func createPlatform(conf *config.Config, numCPU int, deviceFile *fd.FD, sandboxI
 		UseCPUNums:             platformName == "kvm" && conf.UseCPUNums,
 		SandboxID:              sandboxID,
 		StartupTimer:           startupTimer,
+		PinRing:                pinRing,
 	})
 }
 
@@ -1227,6 +1238,10 @@ func (l *Loader) run() error {
 				return err
 			}
 			l.startupTimer.Reached("network configured")
+		}
+
+		if err := l.pinRing.Finalize(); err != nil {
+			log.Warningf("Cannot pin files to the pin ring: %v. This slows down gVisor sandbox teardown.", err)
 		}
 
 		// Finally done with all configuration. Setup filters before user code

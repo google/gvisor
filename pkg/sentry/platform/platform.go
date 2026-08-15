@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/pinring"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -610,6 +611,11 @@ type Options struct {
 	// StartupTimer is the timer tracking overall sandbox startup.
 	// Platform constructors should record any relevant midpoints on it.
 	StartupTimer *timing.Timer
+
+	// PinRing is as an accumulator for host FDs that are expensive to release.
+	// It allows releasing them asynchronously.
+	// See `//pkg/pinring`.
+	PinRing *pinring.PinRing
 }
 
 // Constructor represents a platform type.

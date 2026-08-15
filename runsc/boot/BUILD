@@ -56,6 +56,7 @@ go_library(
         "//pkg/log",
         "//pkg/memutil",
         "//pkg/metric",
+        "//pkg/pinring",
         "//pkg/rand",
         "//pkg/rdma",
         "//pkg/refs",
