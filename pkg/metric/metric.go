@@ -779,7 +779,7 @@ func NewExponentialBucketer(numFiniteBuckets int, width uint64, scale, growth fl
 	if numFiniteBuckets < exponentialMinBuckets || numFiniteBuckets > exponentialMaxBuckets {
 		panic(fmt.Sprintf("number of finite buckets must be in [%d, %d]", exponentialMinBuckets, exponentialMaxBuckets))
 	}
-	if scale < 0 || growth < 0 {
+	if scale < 0 || growth < 0 || math.IsNaN(scale) || math.IsNaN(growth) {
 		panic(fmt.Sprintf("scale and growth for exponential buckets must be >0, got scale=%f and growth=%f", scale, growth))
 	}
 	b := &ExponentialBucketer{
