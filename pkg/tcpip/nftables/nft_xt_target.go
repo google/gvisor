@@ -32,6 +32,8 @@ import (
 // and returns the best revision.
 func lookupCompatTargetRevision(name string, rev uint32, family stack.AddressFamily) (uint32, *syserr.AnnotatedError) {
 	switch name {
+	case TargetMASQUERADE:
+		return lookupMasqRevision(rev, family)
 	default:
 		return 0, syserr.NewAnnotatedError(syserr.ErrNoSuchFile, fmt.Sprintf("target extension %s not supported", name))
 	}
@@ -71,10 +73,15 @@ func initTarget(tab *Table, exprInfo ExprInfo) (operation, *syserr.AnnotatedErro
 	if !ok {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "NFTA_TARGET_INFO attribute is not found")
 	}
-	_ = rev
-	_ = infoAttr
+	infoData := []byte(infoAttr)
 
 	switch name {
+	case TargetMASQUERADE:
+		info, err := parseMasqTarget(tab, rev, infoData)
+		if err != nil {
+			return nil, err
+		}
+		return &compatMASQTarget{revision: rev, infoData: infoData, info: *info}, nil
 	default:
 		return nil, syserr.NewAnnotatedError(syserr.ErrNoSuchFile, fmt.Sprintf("target extension %s not supported", name))
 	}

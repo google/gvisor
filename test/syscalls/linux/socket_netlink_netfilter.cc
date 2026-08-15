@@ -6052,6 +6052,227 @@ INSTANTIATE_TEST_SUITE_P(
     });
 
 INSTANTIATE_TEST_SUITE_P(
+    CompatMasqTests, NetlinkNetfilterCompatTest,
+    ::testing::Values(
+        CompatTestParam{
+            .test_name = "IPv4_NoFlags",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "MASQUERADE",
+                    .rev = 0,
+                    .info_data = StructToBytes(nf_nat_ipv4_multi_range_compat{
+                        .rangesize = 1,
+                        .range = {{.flags = 0}},
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "IPv4_WithPortRange",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "MASQUERADE",
+                    .rev = 0,
+                    .info_data = StructToBytes(nf_nat_ipv4_multi_range_compat{
+                        .rangesize = 1,
+                        .range = {{
+                            .flags = NF_NAT_RANGE_PROTO_SPECIFIED,
+                            .min = {.all = htons(1024)},
+                            .max = {.all = htons(2048)},
+                        }},
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "IPv6_NoFlags",
+            .family = NFPROTO_IPV6,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "MASQUERADE",
+                    .rev = 0,
+                    .info_data = StructToBytes(nf_nat_range{
+                        .flags = 0,
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "IPv6_WithPortRange",
+            .family = NFPROTO_IPV6,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "MASQUERADE",
+                    .rev = 0,
+                    .info_data = StructToBytes(nf_nat_range{
+                        .flags = NF_NAT_RANGE_PROTO_SPECIFIED,
+                        .min_proto = {.all = htons(1024)},
+                        .max_proto = {.all = htons(2048)},
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "IPv4_SizeTooSmall",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "MASQUERADE",
+                    .rev = 0,
+                    .info_data = std::vector<char>(
+                        sizeof(nf_nat_ipv4_multi_range_compat) - 1, 0),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "IPv6_SizeTooSmall",
+            .family = NFPROTO_IPV6,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "MASQUERADE",
+                    .rev = 0,
+                    .info_data = std::vector<char>(sizeof(nf_nat_range) - 1, 0),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "InvalidTable",
+            .family = NFPROTO_IPV4,
+            .table_name = "filter_table",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "MASQUERADE",
+                    .rev = 0,
+                    .info_data = StructToBytes(nf_nat_ipv4_multi_range_compat{
+                        .rangesize = 1,
+                    }),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "UnsupportedRevision",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "MASQUERADE",
+                    .rev = 1,
+                    .info_data = StructToBytes(nf_nat_ipv4_multi_range_compat{
+                        .rangesize = 1,
+                    }),
+                },
+            .expected_error = ENOENT,
+        },
+        CompatTestParam{
+            .test_name = "InvalidRangeSize",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "MASQUERADE",
+                    .rev = 0,
+                    .info_data = StructToBytes(nf_nat_ipv4_multi_range_compat{
+                        .rangesize = 2,
+                    }),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "InvalidHookPrerouting",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_PRE_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "MASQUERADE",
+                    .rev = 0,
+                    .info_data = StructToBytes(nf_nat_ipv4_multi_range_compat{
+                        .rangesize = 1,
+                    }),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "NonNatChainType",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "filter",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "MASQUERADE",
+                    .rev = 0,
+                    .info_data = StructToBytes(nf_nat_ipv4_multi_range_compat{
+                        .rangesize = 1,
+                    }),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "MapIPsNotSupported",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "MASQUERADE",
+                    .rev = 0,
+                    .info_data = StructToBytes(nf_nat_ipv4_multi_range_compat{
+                        .rangesize = 1,
+                        .range = {{.flags = NF_NAT_RANGE_MAP_IPS}},
+                    }),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "ValidPortRangeZero",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "MASQUERADE",
+                    .rev = 0,
+                    .info_data = StructToBytes(nf_nat_ipv4_multi_range_compat{
+                        .rangesize = 1,
+                        .range = {{
+                            .flags = NF_NAT_RANGE_PROTO_SPECIFIED,
+                            .min = {.all = htons(0)},
+                            .max = {.all = htons(100)},
+                        }},
+                    }),
+                },
+        }),
+    [](const ::testing::TestParamInfo<CompatTestParam>& info) {
+      return info.param.test_name;
+    });
+
+INSTANTIATE_TEST_SUITE_P(
     CompatNoopMatchTests, NetlinkNetfilterCompatTest,
     ::testing::Values(
         CompatTestParam{
@@ -6197,6 +6418,43 @@ INSTANTIATE_TEST_SUITE_P(
                 }),
             }},
             .expected_expr_names = {"match"},
+        },
+        CompatRuleDumpTestParam{
+            .test_name = "ConntrackMatch",
+            .table_name = "filter",
+            .hook = NF_INET_PRE_ROUTING,
+            .chain_type = "filter",
+            .matches = {CompatMatchOptions{
+                .name = "conntrack",
+                .rev = 1,
+                .info_data = StructToBytes(xt_conntrack_mtinfo1{
+                    .match_flags = XT_CONNTRACK_STATE,
+                    .state_mask = XT_CONNTRACK_STATE_INVALID,
+                }),
+            }},
+            .expected_expr_names = {"match"},
+        },
+        CompatRuleDumpTestParam{
+            .test_name = "MatchAndTarget",
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .matches = {CompatMatchOptions{
+                .name = "conntrack",
+                .rev = 1,
+                .info_data = StructToBytes(xt_conntrack_mtinfo1{
+                    .match_flags = XT_CONNTRACK_STATE,
+                    .state_mask = XT_CONNTRACK_STATE_INVALID,
+                }),
+            }},
+            .targets = {CompatTargetOptions{
+                .name = "MASQUERADE",
+                .rev = 0,
+                .info_data = StructToBytes(nf_nat_ipv4_multi_range_compat{
+                    .rangesize = 1,
+                }),
+            }},
+            .expected_expr_names = {"match", "target"},
         }),
     [](const ::testing::TestParamInfo<CompatRuleDumpTestParam>& info) {
       return info.param.test_name;

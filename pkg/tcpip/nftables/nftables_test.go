@@ -5738,6 +5738,22 @@ func TestCompatOperationDeepCopy(t *testing.T) {
 			opts: cmp.AllowUnexported(compatAddrtypeMatch{}, addrTypeMatchInfo{}),
 		},
 		{
+			name: "masquerade target",
+			op: &compatMASQTarget{
+				revision: 0,
+				info: masqTargetInfo{
+					netProto:     header.IPv4ProtocolNumber,
+					hasPortRange: true,
+					portsOrIdents: stack.PortOrIdentRange{
+						Start: 1024,
+						Size:  100,
+					},
+				},
+				infoData: []byte{1, 2, 3},
+			},
+			opts: cmp.AllowUnexported(compatMASQTarget{}, masqTargetInfo{}),
+		},
+		{
 			name: "noop match",
 			op: &compatNoopMatch{
 				name:     "tcp",
@@ -5760,6 +5776,7 @@ func TestCompatOperationDeepCopy(t *testing.T) {
 func TestCompatOpCompatibility(t *testing.T) {
 	addrtypeIn := &compatAddrtypeMatch{info: addrTypeMatchInfo{limitIfaceIn: true}}
 	addrtypeOut := &compatAddrtypeMatch{info: addrTypeMatchInfo{limitIfaceOut: true}}
+	masq := &compatMASQTarget{}
 	noop := &compatNoopMatch{name: "tcp"}
 	const nonBaseChainType = BaseChainType(-1)
 
@@ -5806,6 +5823,25 @@ func TestCompatOpCompatibility(t *testing.T) {
 			name:    "addrtype limitIfaceOut invalid on PREROUTING",
 			op:      addrtypeOut,
 			cCtx:    makeCtx(BaseChainTypeFilter, stack.NFPrerouting),
+			wantErr: true,
+		},
+
+		// MASQUERADE
+		{
+			name: "MASQUERADE valid on POSTROUTING NAT",
+			op:   masq,
+			cCtx: makeCtx(BaseChainTypeNat, stack.NFPostrouting),
+		},
+		{
+			name:    "MASQUERADE invalid on PREROUTING NAT",
+			op:      masq,
+			cCtx:    makeCtx(BaseChainTypeNat, stack.NFPrerouting),
+			wantErr: true,
+		},
+		{
+			name:    "MASQUERADE invalid on Filter chain",
+			op:      masq,
+			cCtx:    makeCtx(BaseChainTypeFilter, stack.NFPostrouting),
 			wantErr: true,
 		},
 		{
@@ -6175,6 +6211,26 @@ func TestCompatAddrtypeMatchEvaluation(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestCompatMASQTargetEvaluation tests evaluation of compatMASQTarget,
+// verifying that packets whose network protocol doesn't match are passed through.
+func TestCompatMASQTargetEvaluation(t *testing.T) {
+	t.Run("protocol mismatch skips masquerade", func(t *testing.T) {
+		op := &compatMASQTarget{
+			info: masqTargetInfo{
+				netProto: header.IPv6ProtocolNumber,
+			},
+		}
+		regs := &registerSet{verdict: Verdict{Code: VC(linux.NFT_CONTINUE)}}
+		pkt := makeArbitraryIPv4Packet()
+		defer pkt.DecRef()
+
+		op.evaluate(regs, opEvalCtx{pkt: pkt})
+		if regs.verdict.Code != VC(linux.NFT_CONTINUE) {
+			t.Errorf("expected verdict to remain NFT_CONTINUE on protocol mismatch, got %d", regs.verdict.Code)
+		}
+	})
 }
 
 // Tests that pass-through no-op compat matches (like tcp/udp) return NFT_CONTINUE.
