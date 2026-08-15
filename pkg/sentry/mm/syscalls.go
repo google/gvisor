@@ -110,6 +110,9 @@ func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (hostar
 	if opts.Unmap && !opts.Fixed {
 		return 0, linuxerr.EINVAL
 	}
+	if opts.NoReplace && (!opts.Fixed || opts.Unmap) {
+		return 0, linuxerr.EINVAL
+	}
 	if opts.GrowsDown && opts.Mappable != nil {
 		return 0, linuxerr.EINVAL
 	}

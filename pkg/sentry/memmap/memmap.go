@@ -333,6 +333,12 @@ type MMapOpts struct {
 	// be replaced. If Unmap is true, Fixed must be true.
 	Unmap bool
 
+	// NoReplace is true if MAP_FIXED_NOREPLACE semantics apply: the mapping
+	// must be located at Addr, and EEXIST (rather than ENOMEM) is returned if
+	// any mapping already exists in the range. If NoReplace is true, Fixed
+	// must be true and Unmap must be false.
+	NoReplace bool
+
 	// If Map32Bit is true, all addresses in the created mapping must fit in a
 	// 32-bit integer. (Note that the "end address" of the mapping, i.e. the
 	// address of the first byte *after* the mapping, need not fit in a 32-bit
