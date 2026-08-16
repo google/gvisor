@@ -1263,6 +1263,28 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			}
 		}
 	}
+	oldpop := vfs.PathOperation{
+		Root:  oldParent.upperVD,
+		Start: oldParent.upperVD,
+		Path:  fspath.Parse(oldName),
+	}
+	// Set the opaque xattr on a pure upper directory before the rename,
+	// as Linux does in fs/overlayfs/dir.c:ovl_rename_upper(). Merge
+	// directories are handled after the rename below, since setting this on
+	// the source before RenameAt would leave it opaque if RenameAt fails.
+	// If xattr setting fails (e.g. noxattr mode), return EXDEV so
+	// userspace falls back to copy + delete.
+	if renamed.isDir() && len(renamed.lowerVDs) == 0 && len(newParent.lowerVDs) > 0 {
+		if err := fs.checkSetXattr(ctx, vfsObj, &oldpop, &vfs.SetXattrOptions{
+			Name:  fs.xattrOpaque,
+			Value: "y",
+		}, linuxerr.EXDEV); err != nil {
+			vfsObj.AbortRenameDentry(&renamed.vfsd, replacedVFSD)
+			cleanupRecreateWhiteouts()
+			return err
+		}
+	}
+
 	if renamed.isDir() {
 		if replacedLayer == lookupLayerUpper {
 			// Remove whiteouts from the directory being replaced.
@@ -1300,31 +1322,22 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	// RENAME_WHITEOUT, this isn't atomic with respect to other users of the
 	// upper filesystem, but this is already the case for virtually all other
 	// overlay filesystem operations too.
-	oldpop := vfs.PathOperation{
-		Root:  oldParent.upperVD,
-		Start: oldParent.upperVD,
-		Path:  fspath.Parse(oldName),
-	}
-
-	// Set the opaque xattr on a pure upper directory *before* the rename,
-	// as Linux does in fs/overlayfs/dir.c:ovl_rename_upper().
-	// If xattr setting fails (e.g. noxattr mode), return EXDEV so userspace
-	// falls back to copy + delete.
-	if renamed.isDir() && len(newParent.lowerVDs) > 0 {
-		if err := fs.checkSetXattr(ctx, vfsObj, &oldpop, &vfs.SetXattrOptions{
-			Name:  fs.xattrOpaque,
-			Value: "y",
-		}, linuxerr.EXDEV); err != nil {
-			vfsObj.AbortRenameDentry(&renamed.vfsd, replacedVFSD)
-			cleanupRecreateWhiteouts()
-			return err
-		}
-	}
-
 	if err := vfsObj.RenameAt(ctx, creds, &oldpop, &newpop, &opts); err != nil {
 		vfsObj.AbortRenameDentry(&renamed.vfsd, replacedVFSD)
 		cleanupRecreateWhiteouts()
 		return err
+	}
+	if renamed.isDir() && len(renamed.lowerVDs) > 0 && len(newParent.lowerVDs) > 0 {
+		// gVisor does not support redirect_dir, so merge directories must be
+		// made opaque after they are moved to prevent lower layers from being
+		// merged into the destination. RenameAt has already succeeded, so a
+		// failure here is an unrecoverable overlay inconsistency.
+		if err := vfsObj.SetXattrAt(ctx, fs.creds, &newpop, &vfs.SetXattrOptions{
+			Name:  fs.xattrOpaque,
+			Value: "y",
+		}); err != nil {
+			panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to set opaque xattr after RenameAt: %v", err))
+		}
 	}
 
 	// Below this point, the renamed dentry is now at newpop, and anything we

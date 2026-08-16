@@ -375,7 +375,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 	// Probe (trusted|user).overlay.* xattr support on the upper layer.
 	// Similar to what Linux does in fs/overlayfs/super.c:ovl_make_workdir().
-	if fsopts.UpperRoot.Ok() && !userXattr {
+	if fsopts.UpperRoot.Ok() {
 		err := vfsObj.SetXattrAt(ctx, creds, &vfs.PathOperation{
 			Root:  fsopts.UpperRoot,
 			Start: fsopts.UpperRoot,
@@ -384,11 +384,9 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			Value: "0",
 		})
 		if err != nil {
-			ctx.Debugf("overlay.FilesystemType.GetFilesystem: failed to set xattr on upper")
+			ctx.Debugf("overlay.FilesystemType.GetFilesystem: failed to set xattr on upper layer root: %v", err)
 			fs.noxattr = true
-			fs.xattrPrefix = linux.XATTR_USER_PREFIX + "overlay."
-			fs.xattrOpaque = fs.xattrPrefix + "opaque"
-			if linuxerr.Equals(linuxerr.EPERM, err) {
+			if linuxerr.Equals(linuxerr.EPERM, err) && !userXattr {
 				ctx.Infof("overlay.FilesystemType.GetFilesystem: try mounting with 'userxattr' option")
 			}
 		} else {
