@@ -359,6 +359,103 @@ func TestBindNICID(t *testing.T) {
 	}
 }
 
+func TestPMTUDiscovery(t *testing.T) {
+	tests := []struct {
+		name     string
+		strategy tcpip.PMTUDStrategy
+		wantDF   bool
+	}{
+		{
+			name:     "Want",
+			strategy: tcpip.PMTUDiscoveryWant,
+			wantDF:   false,
+		},
+		{
+			name:     "Dont",
+			strategy: tcpip.PMTUDiscoveryDont,
+			wantDF:   false,
+		},
+		{
+			name:     "Do",
+			strategy: tcpip.PMTUDiscoveryDo,
+			wantDF:   true,
+		},
+		{
+			name:     "Probe",
+			strategy: tcpip.PMTUDiscoveryProbe,
+			wantDF:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
+				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
+				Clock:              &faketime.NullClock{},
+			})
+			defer s.Destroy()
+
+			linkEP := channel.New(1, 1500, "")
+			if err := s.CreateNIC(1, linkEP); err != nil {
+				t.Fatalf("CreateNIC: %s", err)
+			}
+			protocolAddr := tcpip.ProtocolAddress{
+				Protocol:          ipv4.ProtocolNumber,
+				AddressWithPrefix: ipv4NICAddr.WithPrefix(),
+			}
+			if err := s.AddProtocolAddress(1, protocolAddr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress: %s", err)
+			}
+			s.SetRouteTable([]tcpip.Route{
+				{Destination: header.IPv4EmptySubnet, NIC: 1},
+			})
+
+			var ops tcpip.SocketOptions
+			var ep network.Endpoint
+			var wq waiter.Queue
+			ep.Init(s, ipv4.ProtocolNumber, udp.ProtocolNumber, &ops, &wq)
+			defer ep.Close()
+
+			if err := ep.SetSockOptInt(tcpip.MTUDiscoverOption, int(tt.strategy)); err != nil {
+				t.Fatalf("SetSockOptInt: %s", err)
+			}
+
+			writeCtx, err := ep.AcquireContextForWrite(tcpip.WriteOptions{
+				To: &tcpip.FullAddress{Addr: ipv4RemoteAddr},
+			})
+			if err != nil {
+				t.Fatalf("AcquireContextForWrite: %s", err)
+			}
+			defer writeCtx.Release()
+
+			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+				ReserveHeaderBytes: int(writeCtx.PacketInfo().MaxHeaderLength),
+				Payload:            buffer.MakeWithData([]byte{1, 2, 3, 4}),
+			})
+			defer pkt.DecRef()
+
+			if err := writeCtx.WritePacket(pkt, false /* headerIncluded */); err != nil {
+				t.Fatalf("WritePacket: %s", err)
+			}
+
+			sentPkt := linkEP.Read()
+			if sentPkt == nil {
+				t.Fatal("expected packet on link, got nil")
+			}
+			defer sentPkt.DecRef()
+
+			v := stack.PayloadSince(sentPkt.NetworkHeader())
+			defer v.Release()
+			h := header.IPv4(v.AsSlice())
+			hasDF := h.Flags()&header.IPv4FlagDontFragment != 0
+			if hasDF != tt.wantDF {
+				t.Errorf("got DF = %v, want %v", hasDF, tt.wantDF)
+			}
+		})
+	}
+}
+
 func TestMain(m *testing.M) {
 	refs.SetLeakMode(refs.LeaksPanic)
 	code := m.Run()
