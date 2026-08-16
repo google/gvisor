@@ -304,6 +304,12 @@ type Config struct {
 	// E.g. 0.2 CPU quota will result in 1, and 1.9 in 2.
 	CPUNumFromQuota bool `flag:"cpu-num-from-quota"`
 
+	// CPUNumFixed, when > 0, exposes exactly this many CPUs to the sandbox,
+	// independent of the cgroup quota and host CPU count, so it can boot with
+	// headroom for a later in-place quota increase. May exceed the host count;
+	// the quota still bounds real CPU. Takes precedence over CPUNumFromQuota.
+	CPUNumFixed int `flag:"cpu-num-fixed"`
+
 	// Allows overriding of flags in OCI annotations.
 	AllowFlagOverride bool `flag:"allow-flag-override"`
 
@@ -494,6 +500,9 @@ func (c *Config) Validate() error {
 	}
 	if c.NumNetworkChannels <= 0 {
 		return fmt.Errorf("num_network_channels must be > 0, got: %d", c.NumNetworkChannels)
+	}
+	if c.CPUNumFixed < 0 {
+		return fmt.Errorf("cpu-num-fixed must be >= 0, got: %d", c.CPUNumFixed)
 	}
 	if c.PauseExternalNetworking && c.Network != NetworkSandbox {
 		return fmt.Errorf("pause-external-networking flag is only supported with sandbox networking")

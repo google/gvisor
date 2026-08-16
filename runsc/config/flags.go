@@ -113,6 +113,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("rootless", false, "it allows the sandbox to be started with a user that is not root. Sandbox and Gofer processes may run with same privileges as current user.")
 	flagSet.Var(leakModePtr(refs.NoLeakChecking), "ref-leak-mode", "sets reference leak check mode: disabled (default), log-names, log-traces.")
 	flagSet.Bool("cpu-num-from-quota", true, "set cpu number to cpu quota (least integer greater or equal to quota value, but not less than 2)")
+	flagSet.Int("cpu-num-fixed", 0, "if > 0, expose exactly this many CPUs to the sandbox regardless of cgroup quota and host CPU count; takes precedence over --cpu-num-from-quota.")
 	flagSet.Bool(flagOCISeccomp, false, "Enables loading OCI seccomp filters inside the sandbox.")
 	flagSet.Bool("enable-core-tags", false, "enables core tagging. Requires host linux kernel >= 5.14.")
 	flagSet.String("pod-init-config", "", "path to configuration file with additional steps to take during pod creation.")

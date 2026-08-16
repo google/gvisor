@@ -879,6 +879,30 @@ func (s *Sandbox) connError(err error) error {
 	return fmt.Errorf("connecting to control server at PID %d: %v", s.Pid.Load(), err)
 }
 
+// cpuNumForSandbox returns the CPU count to expose to the sandbox, or 0 to use
+// boot's host default. CPUNumFixed pins it independent of the quota and host
+// count (may exceed the host; the quota still caps real CPU); otherwise
+// CPUNumFromQuota lowers cpuNum to the quota rounded up, min two.
+func cpuNumForSandbox(conf *config.Config, cpuNum int, cpuQuota, cpuPeriod int64) int {
+	if conf.CPUNumFixed > 0 {
+		return conf.CPUNumFixed
+	}
+	if conf.CPUNumFromQuota && cpuQuota > 0 && cpuPeriod > 0 {
+		const minCPUs = 2
+		quota := float64(cpuQuota) / float64(cpuPeriod)
+		if n := int(math.Ceil(quota)); n > 0 {
+			if n < minCPUs {
+				n = minCPUs
+			}
+			if n < cpuNum {
+				// Only lower the cpu number.
+				cpuNum = n
+			}
+		}
+	}
+	return cpuNum
+}
+
 // createSandboxProcess starts the sandbox as a subprocess by running the "boot"
 // command, passing in the bundle dir.
 func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyncFile *os.File) error {
@@ -1330,37 +1354,23 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	cmd.Args = append(cmd.Args, "--total-host-memory", strconv.FormatUint(totalSysMem, 10))
 
 	mem := totalSysMem
+	// cgroupCPUNum is 0 when no host cgroup is present (sentry-managed cgroups):
+	// cpuNumForSandbox then honors CPUNumFixed and otherwise returns 0, which
+	// leaves the count to boot's host default. The quota derivation only runs
+	// when the cgroup (kubelet- or sentry-managed) provides quota and period.
+	cgroupCPUNum := 0
+	var cpuQuota, cpuPeriod int64
 	if s.CgroupJSON.Cgroup != nil {
-		cpuNum, err := s.CgroupJSON.Cgroup.NumCPU()
-		if err != nil {
+		var err error
+		if cgroupCPUNum, err = s.CgroupJSON.Cgroup.NumCPU(); err != nil {
 			return fmt.Errorf("getting cpu count from cgroups: %v", err)
 		}
-		cpuQuota, err := s.CgroupJSON.Cgroup.CPUQuota()
-		if err != nil {
+		if cpuQuota, err = s.CgroupJSON.Cgroup.CPUQuota(); err != nil {
 			return fmt.Errorf("getting raw cpu quota from cgroups: %v", err)
 		}
-		cpuPeriod, err := s.CgroupJSON.Cgroup.CPUPeriod()
-		if err != nil {
+		if cpuPeriod, err = s.CgroupJSON.Cgroup.CPUPeriod(); err != nil {
 			return fmt.Errorf("getting raw cpu period from cgroups: %v", err)
 		}
-		if conf.CPUNumFromQuota && cpuQuota > 0 && cpuPeriod > 0 {
-			// Dropping below 2 CPUs can trigger application to disable
-			// locks that can lead do hard to debug errors, so just
-			// leaving two cores as reasonable default.
-			const minCPUs = 2
-
-			quota := float64(cpuQuota) / float64(cpuPeriod)
-			if n := int(math.Ceil(quota)); n > 0 {
-				if n < minCPUs {
-					n = minCPUs
-				}
-				if n < cpuNum {
-					// Only lower the cpu number.
-					cpuNum = n
-				}
-			}
-		}
-		cmd.Args = append(cmd.Args, "--cpu-num", strconv.Itoa(cpuNum))
 		if cpuQuota > 0 {
 			cmd.Args = append(cmd.Args, "--cpu-quota", strconv.FormatInt(cpuQuota, 10))
 		}
@@ -1375,6 +1385,9 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		if memLimit < mem {
 			mem = memLimit
 		}
+	}
+	if cpuNum := cpuNumForSandbox(conf, cgroupCPUNum, cpuQuota, cpuPeriod); cpuNum > 0 {
+		cmd.Args = append(cmd.Args, "--cpu-num", strconv.Itoa(cpuNum))
 	}
 	cmd.Args = append(cmd.Args, "--total-memory", strconv.FormatUint(mem, 10))
 

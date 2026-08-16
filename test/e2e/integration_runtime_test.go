@@ -91,6 +91,35 @@ func TestRlimitNoFile(t *testing.T) {
 	}
 }
 
+// cpuNumFixed is the value the -cpunumfixed runtime is installed with in the
+// Makefile (--cpu-num-fixed). Keep the two in sync.
+const cpuNumFixed = 8
+
+// TestNumCPUFixed checks that --cpu-num-fixed pins the number of CPUs the
+// sandbox sees, independent of the cgroup cpuset and quota.
+func TestNumCPUFixed(t *testing.T) {
+	ctx := context.Background()
+	d := dockerutil.MakeContainerWithRuntime(ctx, t, "-cpunumfixed")
+	defer d.CleanUp(ctx)
+
+	// Pin the container to a single host CPU; the sandbox must still report the
+	// fixed count rather than one.
+	out, err := d.Run(ctx, dockerutil.RunOpts{
+		Image:      "basic/alpine",
+		CpusetCpus: "0",
+	}, "sh", "-c", "cat /proc/cpuinfo | grep 'processor.*:' | wc -l")
+	if err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	got, err := strconv.Atoi(strings.TrimSpace(out))
+	if err != nil {
+		t.Fatalf("failed to parse %q: %v", out, err)
+	}
+	if got != cpuNumFixed {
+		t.Errorf("NumCPU got: %d, want: %d", got, cpuNumFixed)
+	}
+}
+
 func TestDentryCacheLimit(t *testing.T) {
 	ctx := context.Background()
 	d := dockerutil.MakeContainerWithRuntime(ctx, t, "-dcache")

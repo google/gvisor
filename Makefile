@@ -421,6 +421,7 @@ docker-tests: integration-test-images $(RUNTIME_BIN)
 	@$(call install_runtime_noreload,$(RUNTIME)-docker,--net-raw --allow-packet-socket-write) # Used by TestDocker*.
 	@$(call install_runtime_noreload,$(RUNTIME)-fdlimit,--fdlimit=2000) # Used by TestRlimitNoFile.
 	@$(call install_runtime_noreload,$(RUNTIME)-dcache,--fdlimit=2000 --dcache=100) # Used by TestDentryCacheLimit.
+	@$(call install_runtime_noreload,$(RUNTIME)-cpunumfixed,--cpu-num-fixed=8) # Used by TestNumCPUFixed.
 	@$(call install_runtime_noreload,$(RUNTIME)-host-uds,--host-uds=all) # Used by TestHostSocketConnect.
 	@$(call install_runtime_noreload,$(RUNTIME)-overlay,--overlay2=all:self) # Used by TestOverlay*.
 	@$(call install_runtime,$(RUNTIME)-cgroupv2,--mount-cgroup-v2) # Used by TestSystemd* and TestPIDFDSelftests.
