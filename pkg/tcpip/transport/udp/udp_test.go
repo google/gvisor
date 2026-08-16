@@ -2421,6 +2421,544 @@ func TestSetExperimentOptionIPv6(t *testing.T) {
 	checker.IPv6WithExtHdr(t, v, checker.IPv6ExtHdr(checker.IPv6ExperimentHeader(expval)))
 }
 
+func TestPMTUDiscovery(t *testing.T) {
+	const mtu = 1500
+	const payloadSize = 2000
+
+	tests := []struct {
+		name          string
+		strategy      tcpip.PMTUDStrategy
+		v4RecvErr     bool
+		v6RecvErr     bool
+		wantWriteErr  tcpip.Error
+		wantQueuedErr bool
+		wantPackets   int // number of fragment packets expected on LinkEP
+	}{
+		{
+			name:          "DefaultWantFragments",
+			strategy:      tcpip.PMTUDiscoveryWant,
+			wantWriteErr:  nil,
+			wantQueuedErr: false,
+			wantPackets:   2,
+		},
+		{
+			name:          "DontFragments",
+			strategy:      tcpip.PMTUDiscoveryDont,
+			wantWriteErr:  nil,
+			wantQueuedErr: false,
+			wantPackets:   2,
+		},
+		{
+			name:          "DoFailsAndQueuesErrorWithIPv4RecvError",
+			strategy:      tcpip.PMTUDiscoveryDo,
+			v4RecvErr:     true,
+			wantWriteErr:  &tcpip.ErrMessageTooLong{},
+			wantQueuedErr: true,
+			wantPackets:   0,
+		},
+		{
+			name:          "DoFailsWithoutQueueingWhenRecvErrorDisabled",
+			strategy:      tcpip.PMTUDiscoveryDo,
+			v4RecvErr:     false,
+			wantWriteErr:  &tcpip.ErrMessageTooLong{},
+			wantQueuedErr: false,
+			wantPackets:   0,
+		},
+		{
+			name:          "DoFailsWithoutQueueingWhenOnlyIPv6RecvErrorEnabledOnIPv4",
+			strategy:      tcpip.PMTUDiscoveryDo,
+			v4RecvErr:     false,
+			v6RecvErr:     true,
+			wantWriteErr:  &tcpip.ErrMessageTooLong{},
+			wantQueuedErr: false,
+			wantPackets:   0,
+		},
+		{
+			name:          "ProbeFailsAndQueuesErrorWithIPv4RecvError",
+			strategy:      tcpip.PMTUDiscoveryProbe,
+			v4RecvErr:     true,
+			wantWriteErr:  &tcpip.ErrMessageTooLong{},
+			wantQueuedErr: true,
+			wantPackets:   0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := context.Options{
+				MTU:         mtu,
+				HandleLocal: true,
+			}
+			c := context.NewWithOptions(t, []stack.TransportProtocolFactory{udp.NewProtocol}, opts)
+			defer c.Cleanup()
+
+			c.CreateEndpoint(ipv4.ProtocolNumber, udp.ProtocolNumber)
+
+			target := tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort}
+			if err := c.EP.Connect(target); err != nil {
+				t.Fatalf("Connect failed: %s", err)
+			}
+
+			if err := c.EP.SetSockOptInt(tcpip.MTUDiscoverOption, int(tt.strategy)); err != nil {
+				t.Fatalf("SetSockOptInt(MTUDiscoverOption, %d) failed: %s", tt.strategy, err)
+			}
+
+			c.EP.SocketOptions().SetIPv4RecvError(tt.v4RecvErr)
+			c.EP.SocketOptions().SetIPv6RecvError(tt.v6RecvErr)
+
+			payload := newRandomPayload(payloadSize)
+			var r bytes.Reader
+			r.Reset(payload)
+			n, err := c.EP.Write(&r, tcpip.WriteOptions{})
+			if (err == nil && tt.wantWriteErr != nil) || (err != nil && tt.wantWriteErr == nil) || (err != nil && tt.wantWriteErr != nil && err != tt.wantWriteErr) {
+				t.Fatalf("Write got error %v, want %v", err, tt.wantWriteErr)
+			}
+			if tt.wantWriteErr == nil && n != int64(payloadSize) {
+				t.Fatalf("got Write bytes = %d, want = %d", n, payloadSize)
+			}
+
+			if tt.wantQueuedErr {
+				sockErr := c.EP.SocketOptions().DequeueErr()
+				if sockErr == nil {
+					t.Fatal("expected queued error, got nil")
+				}
+				if _, ok := sockErr.Err.(*tcpip.ErrMessageTooLong); !ok {
+					t.Errorf("unexpected sockErr.Err: got %v, want ErrMessageTooLong", sockErr.Err)
+				}
+				if sockErr.NetProto != header.IPv4ProtocolNumber {
+					t.Errorf("got sockErr.NetProto = %d, want %d", sockErr.NetProto, header.IPv4ProtocolNumber)
+				}
+				if sockErr.Dst != target {
+					t.Errorf("got sockErr.Dst = %+v, want %+v", sockErr.Dst, target)
+				}
+				wantMTU := uint32(mtu - header.IPv4MinimumSize)
+				if sockErr.Cause == nil || sockErr.Cause.Info() != wantMTU {
+					t.Errorf("got sockErr.Cause.Info() = %v, want %d", sockErr.Cause, wantMTU)
+				}
+			} else {
+				if sockErr := c.EP.SocketOptions().DequeueErr(); sockErr != nil {
+					t.Fatalf("unexpected queued error: %+v", sockErr)
+				}
+			}
+
+			var pktsRead int
+			for {
+				pkt := c.LinkEP.Read()
+				if pkt == nil {
+					break
+				}
+				pkt.DecRef()
+				pktsRead++
+			}
+			if pktsRead != tt.wantPackets {
+				t.Errorf("got %d packets on LinkEP, want %d", pktsRead, tt.wantPackets)
+			}
+		})
+	}
+}
+
+func TestPMTUDiscoveryMTUBoundaries(t *testing.T) {
+	const mtu = 1500
+	// 1500 MTU - 20 (IPv4 header) - 8 (UDP header) = 1472 bytes max unfragmented payload.
+	const exactMTUPayload = 1472
+	const overMTUPayload = 1473
+	const smallPayload = 1
+
+	tests := []struct {
+		name         string
+		strategy     tcpip.PMTUDStrategy
+		payloadSize  int
+		wantWriteErr tcpip.Error
+		wantPackets  int
+		wantDF       bool
+	}{
+		{
+			name:         "ExactMTU_Want",
+			strategy:     tcpip.PMTUDiscoveryWant,
+			payloadSize:  exactMTUPayload,
+			wantWriteErr: nil,
+			wantPackets:  1,
+			wantDF:       false,
+		},
+		{
+			name:         "ExactMTU_Do",
+			strategy:     tcpip.PMTUDiscoveryDo,
+			payloadSize:  exactMTUPayload,
+			wantWriteErr: nil,
+			wantPackets:  1,
+			wantDF:       true,
+		},
+		{
+			name:         "ExactMTU_Dont",
+			strategy:     tcpip.PMTUDiscoveryDont,
+			payloadSize:  exactMTUPayload,
+			wantWriteErr: nil,
+			wantPackets:  1,
+			wantDF:       false,
+		},
+		{
+			name:         "OverMTU_Want",
+			strategy:     tcpip.PMTUDiscoveryWant,
+			payloadSize:  overMTUPayload,
+			wantWriteErr: nil,
+			wantPackets:  2,
+			wantDF:       false,
+		},
+		{
+			name:         "OverMTU_Dont",
+			strategy:     tcpip.PMTUDiscoveryDont,
+			payloadSize:  overMTUPayload,
+			wantWriteErr: nil,
+			wantPackets:  2,
+			wantDF:       false,
+		},
+		{
+			name:         "OverMTU_Do",
+			strategy:     tcpip.PMTUDiscoveryDo,
+			payloadSize:  overMTUPayload,
+			wantWriteErr: &tcpip.ErrMessageTooLong{},
+			wantPackets:  0,
+		},
+		{
+			name:         "OverMTU_Probe",
+			strategy:     tcpip.PMTUDiscoveryProbe,
+			payloadSize:  overMTUPayload,
+			wantWriteErr: &tcpip.ErrMessageTooLong{},
+			wantPackets:  0,
+		},
+		{
+			name:         "Small_Do",
+			strategy:     tcpip.PMTUDiscoveryDo,
+			payloadSize:  smallPayload,
+			wantWriteErr: nil,
+			wantPackets:  1,
+			wantDF:       true,
+		},
+		{
+			name:         "Small_Want",
+			strategy:     tcpip.PMTUDiscoveryWant,
+			payloadSize:  smallPayload,
+			wantWriteErr: nil,
+			wantPackets:  1,
+			wantDF:       false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := context.Options{
+				MTU:         mtu,
+				HandleLocal: true,
+			}
+			c := context.NewWithOptions(t, []stack.TransportProtocolFactory{udp.NewProtocol}, opts)
+			defer c.Cleanup()
+
+			c.CreateEndpoint(ipv4.ProtocolNumber, udp.ProtocolNumber)
+
+			target := tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort}
+			if err := c.EP.Connect(target); err != nil {
+				t.Fatalf("Connect failed: %s", err)
+			}
+
+			if err := c.EP.SetSockOptInt(tcpip.MTUDiscoverOption, int(tt.strategy)); err != nil {
+				t.Fatalf("SetSockOptInt(MTUDiscoverOption, %d) failed: %s", tt.strategy, err)
+			}
+
+			payload := newRandomPayload(tt.payloadSize)
+			var r bytes.Reader
+			r.Reset(payload)
+			n, err := c.EP.Write(&r, tcpip.WriteOptions{})
+			if (err == nil && tt.wantWriteErr != nil) || (err != nil && tt.wantWriteErr == nil) || (err != nil && tt.wantWriteErr != nil && err != tt.wantWriteErr) {
+				t.Fatalf("Write got error %v, want %v", err, tt.wantWriteErr)
+			}
+			if tt.wantWriteErr == nil && n != int64(tt.payloadSize) {
+				t.Fatalf("got Write bytes = %d, want = %d", n, tt.payloadSize)
+			}
+
+			var pktsRead int
+			for {
+				pkt := c.LinkEP.Read()
+				if pkt == nil {
+					break
+				}
+				defer pkt.DecRef()
+				pktsRead++
+
+				if tt.wantPackets == 1 {
+					v := stack.PayloadSince(pkt.NetworkHeader())
+					defer v.Release()
+					h := header.IPv4(v.AsSlice())
+					hasDF := h.Flags()&header.IPv4FlagDontFragment != 0
+					if hasDF != tt.wantDF {
+						t.Errorf("got DF flag = %v, want %v", hasDF, tt.wantDF)
+					}
+				}
+			}
+			if pktsRead != tt.wantPackets {
+				t.Errorf("got %d packets on LinkEP, want %d", pktsRead, tt.wantPackets)
+			}
+		})
+	}
+}
+
+func TestPMTUDiscoveryDynamicStrategyChange(t *testing.T) {
+	const mtu = 1500
+	const largePayload = 2000
+	const smallPayload = 500
+
+	opts := context.Options{
+		MTU:         mtu,
+		HandleLocal: true,
+	}
+	c := context.NewWithOptions(t, []stack.TransportProtocolFactory{udp.NewProtocol}, opts)
+	defer c.Cleanup()
+
+	c.CreateEndpoint(ipv4.ProtocolNumber, udp.ProtocolNumber)
+
+	target := tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort}
+	if err := c.EP.Connect(target); err != nil {
+		t.Fatalf("Connect failed: %s", err)
+	}
+
+	drainPackets := func() int {
+		var count int
+		for {
+			pkt := c.LinkEP.Read()
+			if pkt == nil {
+				break
+			}
+			pkt.DecRef()
+			count++
+		}
+		return count
+	}
+
+	// 1. Initial state is PMTUDiscoveryWant: large write should succeed and fragment.
+	var r bytes.Reader
+	r.Reset(newRandomPayload(largePayload))
+	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
+		t.Fatalf("Step 1 (Want): Write failed unexpectedly: %s", err)
+	}
+	if pkts := drainPackets(); pkts != 2 {
+		t.Fatalf("Step 1 (Want): expected 2 fragment packets, got %d", pkts)
+	}
+
+	// 2. Switch to PMTUDiscoveryDo: large write should fail with ErrMessageTooLong.
+	if err := c.EP.SetSockOptInt(tcpip.MTUDiscoverOption, int(tcpip.PMTUDiscoveryDo)); err != nil {
+		t.Fatalf("SetSockOptInt(PMTUDiscoveryDo) failed: %s", err)
+	}
+	r.Reset(newRandomPayload(largePayload))
+	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err == nil {
+		t.Fatal("Step 2 (Do): Write expected error, got nil")
+	} else if _, ok := err.(*tcpip.ErrMessageTooLong); !ok {
+		t.Fatalf("Step 2 (Do): Write got %v, want ErrMessageTooLong", err)
+	}
+	if pkts := drainPackets(); pkts != 0 {
+		t.Fatalf("Step 2 (Do): expected 0 packets, got %d", pkts)
+	}
+
+	// 3. Under PMTUDiscoveryDo, small write within MTU should succeed with DF=1.
+	r.Reset(newRandomPayload(smallPayload))
+	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
+		t.Fatalf("Step 3 (Do small): Write failed: %s", err)
+	}
+	pkt := c.LinkEP.Read()
+	if pkt == nil {
+		t.Fatal("Step 3 (Do small): expected 1 packet, got nil")
+	}
+	v := stack.PayloadSince(pkt.NetworkHeader())
+	h := header.IPv4(v.AsSlice())
+	if h.Flags()&header.IPv4FlagDontFragment == 0 {
+		t.Errorf("Step 3 (Do small): expected DF bit set, got %v", h.Flags())
+	}
+	v.Release()
+	pkt.DecRef()
+
+	// 4. Switch to PMTUDiscoveryDont: large write should succeed and fragment with DF=0.
+	if err := c.EP.SetSockOptInt(tcpip.MTUDiscoverOption, int(tcpip.PMTUDiscoveryDont)); err != nil {
+		t.Fatalf("SetSockOptInt(PMTUDiscoveryDont) failed: %s", err)
+	}
+	r.Reset(newRandomPayload(largePayload))
+	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
+		t.Fatalf("Step 4 (Dont): Write failed: %s", err)
+	}
+	if pkts := drainPackets(); pkts != 2 {
+		t.Fatalf("Step 4 (Dont): expected 2 fragment packets, got %d", pkts)
+	}
+
+	// 5. Switch to PMTUDiscoveryProbe: large write should fail with ErrMessageTooLong.
+	if err := c.EP.SetSockOptInt(tcpip.MTUDiscoverOption, int(tcpip.PMTUDiscoveryProbe)); err != nil {
+		t.Fatalf("SetSockOptInt(PMTUDiscoveryProbe) failed: %s", err)
+	}
+	r.Reset(newRandomPayload(largePayload))
+	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err == nil {
+		t.Fatal("Step 5 (Probe): Write expected error, got nil")
+	} else if _, ok := err.(*tcpip.ErrMessageTooLong); !ok {
+		t.Fatalf("Step 5 (Probe): Write got %v, want ErrMessageTooLong", err)
+	}
+	if pkts := drainPackets(); pkts != 0 {
+		t.Fatalf("Step 5 (Probe): expected 0 packets, got %d", pkts)
+	}
+}
+
+func TestPMTUDiscoveryFragmentInspection(t *testing.T) {
+	const mtu = 1500
+	const payloadSize = 2500
+
+	opts := context.Options{
+		MTU:         mtu,
+		HandleLocal: true,
+	}
+	c := context.NewWithOptions(t, []stack.TransportProtocolFactory{udp.NewProtocol}, opts)
+	defer c.Cleanup()
+
+	c.CreateEndpoint(ipv4.ProtocolNumber, udp.ProtocolNumber)
+
+	target := tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort}
+	if err := c.EP.Connect(target); err != nil {
+		t.Fatalf("Connect failed: %s", err)
+	}
+
+	payload := newRandomPayload(payloadSize)
+	var r bytes.Reader
+	r.Reset(payload)
+	n, err := c.EP.Write(&r, tcpip.WriteOptions{})
+	if err != nil {
+		t.Fatalf("Write failed: %s", err)
+	}
+	if n != int64(payloadSize) {
+		t.Fatalf("Write returned %d bytes, want %d", n, payloadSize)
+	}
+
+	// Read Fragment 1.
+	pkt1 := c.LinkEP.Read()
+	if pkt1 == nil {
+		t.Fatal("expected fragment 1, got nil")
+	}
+	defer pkt1.DecRef()
+
+	v1 := stack.PayloadSince(pkt1.NetworkHeader())
+	defer v1.Release()
+	h1 := header.IPv4(v1.AsSlice())
+	if h1.Flags()&header.IPv4FlagMoreFragments == 0 {
+		t.Error("fragment 1: expected MoreFragments bit set")
+	}
+	if h1.Flags()&header.IPv4FlagDontFragment != 0 {
+		t.Error("fragment 1: expected DontFragment bit cleared")
+	}
+	if h1.FragmentOffset() != 0 {
+		t.Errorf("fragment 1: got FragmentOffset = %d, want 0", h1.FragmentOffset())
+	}
+	if h1.TotalLength() != mtu {
+		t.Errorf("fragment 1: got TotalLength = %d, want %d", h1.TotalLength(), mtu)
+	}
+
+	// Read Fragment 2.
+	pkt2 := c.LinkEP.Read()
+	if pkt2 == nil {
+		t.Fatal("expected fragment 2, got nil")
+	}
+	defer pkt2.DecRef()
+
+	v2 := stack.PayloadSince(pkt2.NetworkHeader())
+	defer v2.Release()
+	h2 := header.IPv4(v2.AsSlice())
+	if h2.Flags()&header.IPv4FlagMoreFragments != 0 {
+		t.Error("fragment 2: expected MoreFragments bit cleared")
+	}
+	if h2.Flags()&header.IPv4FlagDontFragment != 0 {
+		t.Error("fragment 2: expected DontFragment bit cleared")
+	}
+	const expectedOffset = mtu - header.IPv4MinimumSize
+	if h2.FragmentOffset() != expectedOffset {
+		t.Errorf("fragment 2: got FragmentOffset = %d, want %d", h2.FragmentOffset(), expectedOffset)
+	}
+	if h2.ID() != h1.ID() {
+		t.Errorf("fragment IDs mismatch: fragment 1 ID = %d, fragment 2 ID = %d", h1.ID(), h2.ID())
+	}
+}
+
+func TestPMTUDiscoveryEndToEndReassembly(t *testing.T) {
+	const mtu = 1500
+	const payloadSize = 3000
+
+	opts := context.Options{
+		MTU:         mtu,
+		HandleLocal: true,
+	}
+	c := context.NewWithOptions(t, []stack.TransportProtocolFactory{udp.NewProtocol}, opts)
+	defer c.Cleanup()
+
+	// Server endpoint bound to context.StackAddr:context.TestPort.
+	serverEP, err := c.Stack.NewEndpoint(udp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
+	if err != nil {
+		t.Fatalf("NewEndpoint(server) failed: %s", err)
+	}
+	defer serverEP.Close()
+	if err := serverEP.Bind(tcpip.FullAddress{Addr: context.StackAddr, Port: context.TestPort}); err != nil {
+		t.Fatalf("server Bind failed: %s", err)
+	}
+
+	// Client endpoint.
+	c.CreateEndpoint(ipv4.ProtocolNumber, udp.ProtocolNumber)
+	if err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort}); err != nil {
+		t.Fatalf("client Connect failed: %s", err)
+	}
+
+	payload := newRandomPayload(payloadSize)
+	var r bytes.Reader
+	r.Reset(payload)
+	n, err := c.EP.Write(&r, tcpip.WriteOptions{})
+	if err != nil {
+		t.Fatalf("client Write failed: %s", err)
+	}
+	if n != int64(payloadSize) {
+		t.Fatalf("client Write returned %d bytes, want %d", n, payloadSize)
+	}
+
+	// Inject all produced fragments back into the stack link layer to simulate reception.
+	var fragments []*stack.PacketBuffer
+	for {
+		pkt := c.LinkEP.Read()
+		if pkt == nil {
+			break
+		}
+		fragments = append(fragments, pkt)
+	}
+	if len(fragments) < 2 {
+		t.Fatalf("expected at least 2 fragments, got %d", len(fragments))
+	}
+
+	for _, frag := range fragments {
+		v := stack.PayloadSince(frag.NetworkHeader())
+		slice := append([]byte(nil), v.AsSlice()...)
+		v.Release()
+		frag.DecRef()
+
+		// Swap src and dst addresses so the incoming packet is addressed to Server (StackAddr).
+		h := header.IPv4(slice)
+		h.SetSourceAddress(context.TestAddr)
+		h.SetDestinationAddress(context.StackAddr)
+		h.SetChecksum(0)
+		h.SetChecksum(^h.CalculateChecksum())
+
+		c.InjectPacket(ipv4.ProtocolNumber, slice)
+	}
+
+	// Read from server endpoint and verify complete reassembled payload.
+	var buf bytes.Buffer
+	res, err := serverEP.Read(&buf, tcpip.ReadOptions{NeedRemoteAddr: true})
+	if err != nil {
+		t.Fatalf("server Read failed: %s", err)
+	}
+	if res.Count != payloadSize {
+		t.Fatalf("server Read count = %d, want %d", res.Count, payloadSize)
+	}
+	if !bytes.Equal(buf.Bytes(), payload) {
+		t.Fatal("server Read payload content does not match sent payload")
+	}
+}
+
 func TestMain(m *testing.M) {
 	refs.SetLeakMode(refs.LeaksPanic)
 	code := m.Run()
