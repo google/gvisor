@@ -99,6 +99,11 @@ func (mm *MemoryManager) existingVecPMAsLocked(ars hostarch.AddrRangeSeq, at hos
 // commit all pages in ar without using the caller's page tables, in the same
 // sense as pgalloc.AllocateCallerIndirectCommit.
 //
+// If forPin is true, the caller is Pin, and copy-on-write pmas will be broken
+// even if at.Write is false, so that pinned pages remain coherent with the
+// application's mappings; compare Linux's
+// mm/internal.h:gup_must_unshare(FOLL_PIN|FOLL_LONGTERM).
+//
 // Preconditions:
 //   - mm.mappingMu must be locked.
 //   - mm.activeMu must be locked for writing.
@@ -106,7 +111,7 @@ func (mm *MemoryManager) existingVecPMAsLocked(ars hostarch.AddrRangeSeq, at hos
 //   - vseg.Range().Contains(ar.Start).
 //   - vmas must exist for all addresses in ar, and support accesses of type at
 //     (i.e. permission checks must have been performed against vmas).
-func (mm *MemoryManager) getPMAsLocked(ctx context.Context, vseg vmaIterator, ar hostarch.AddrRange, at hostarch.AccessType, callerIndirectCommit bool) (pmaIterator, pmaGapIterator, error) {
+func (mm *MemoryManager) getPMAsLocked(ctx context.Context, vseg vmaIterator, ar hostarch.AddrRange, at hostarch.AccessType, callerIndirectCommit, forPin bool) (pmaIterator, pmaGapIterator, error) {
 	if checkInvariants {
 		if !ar.WellFormed() || ar.Length() == 0 {
 			panic(fmt.Sprintf("invalid ar: %v", ar))
@@ -128,7 +133,7 @@ func (mm *MemoryManager) getPMAsLocked(ctx context.Context, vseg vmaIterator, ar
 	}
 	ar = hostarch.AddrRange{ar.Start.RoundDown(), end}
 
-	pstart, pend, perr := mm.getPMAsInternalLocked(ctx, vseg, ar, at, callerIndirectCommit)
+	pstart, pend, perr := mm.getPMAsInternalLocked(ctx, vseg, ar, at, callerIndirectCommit, forPin)
 	if pend.Start() <= ar.Start {
 		return pmaIterator{}, pend, perr
 	}
@@ -174,7 +179,7 @@ func (mm *MemoryManager) getVecPMAsLocked(ctx context.Context, ars hostarch.Addr
 		}
 		ar = hostarch.AddrRange{ar.Start.RoundDown(), end}
 
-		_, pend, perr := mm.getPMAsInternalLocked(ctx, mm.vmas.FindSegment(ar.Start), ar, at, callerIndirectCommit)
+		_, pend, perr := mm.getPMAsInternalLocked(ctx, mm.vmas.FindSegment(ar.Start), ar, at, callerIndirectCommit, false /* forPin */)
 		if perr != nil {
 			return truncatedAddrRangeSeq(ars, arsit, pend.Start()), perr
 		}
@@ -225,7 +230,7 @@ func (mm *MemoryManager) getAllocationDirection(ar hostarch.AddrRange, vma *vma)
 //   - getPMAsInternalLocked additionally requires that ar is page-aligned.
 //     getPMAsInternalLocked is an implementation helper for getPMAsLocked and
 //     getVecPMAsLocked; other clients should call one of those instead.
-func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIterator, ar hostarch.AddrRange, at hostarch.AccessType, callerIndirectCommit bool) (pmaIterator, pmaGapIterator, error) {
+func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIterator, ar hostarch.AddrRange, at hostarch.AccessType, callerIndirectCommit, forPin bool) (pmaIterator, pmaGapIterator, error) {
 	if checkInvariants {
 		if !ar.WellFormed() || ar.Length() == 0 || !ar.IsPageAligned() {
 			panic(fmt.Sprintf("invalid ar: %v", ar))
@@ -412,7 +417,7 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 
 			case pseg.Ok() && pseg.Start() < vsegAR.End:
 				oldpma := pseg.ValuePtr()
-				if at.Write && mm.isPMACopyOnWriteLocked(vseg, pseg) {
+				if (at.Write || forPin) && mm.isPMACopyOnWriteLocked(vseg, pseg) {
 					// Break copy-on-write by copying.
 					if checkInvariants {
 						if !oldpma.maxPerms.Read {
@@ -731,8 +736,11 @@ func (mm *MemoryManager) invalidateLocked(ar hostarch.AddrRange, invalidatePriva
 // PinnedRanges and a non-nil error.
 //
 // Pin does not prevent mapped ranges from changing, making it unsuitable for
-// most I/O. It should only be used in contexts that would use get_user_pages()
-// in the Linux kernel.
+// most I/O. It should only be used in contexts that would use
+// pin_user_pages(FOLL_LONGTERM) in the Linux kernel. Like Linux, Pin breaks
+// copy-on-write on the pinned range (even if at.Write is false). This also
+// yields the invariant that pinned pages in private mappings live in non-CoW
+// pmas with >1 reference.
 //
 // Preconditions:
 //   - ar.Length() != 0.
@@ -757,7 +765,8 @@ func (mm *MemoryManager) Pin(ctx context.Context, ar hostarch.AddrRange, at host
 
 	// Ensure that we have usable pmas.
 	mm.activeMu.Lock()
-	pseg, pend, perr := mm.getPMAsLocked(ctx, vseg, ar, at, false /* callerIndirectCommit */)
+	mm.hasPinned = true
+	pseg, pend, perr := mm.getPMAsLocked(ctx, vseg, ar, at, false /* callerIndirectCommit */, true /* forPin */)
 	mm.mappingMu.RUnlock()
 	if pendaddr := pend.Start(); pendaddr < ar.End {
 		if pendaddr <= ar.Start {

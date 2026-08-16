@@ -429,6 +429,255 @@ class SandboxTest(unittest.TestCase):
     if old_runsc_path is not None:
       os.environ["RUNSC_PATH"] = old_runsc_path
 
+  def test_custom_bind_mount_readonly(self):
+    enable_networking = os.geteuid() == 0
+    with tempfile.TemporaryDirectory() as temp_host_dir:
+      witness_file = os.path.join(temp_host_dir, "witness.txt")
+      with open(witness_file, "w") as f:
+        f.write("hello-mount")
+
+      with sandbox.Sandbox(
+          enable_networking=enable_networking,
+          mounts=[
+              sandbox.Mount.bind(
+                  source=temp_host_dir,
+                  destination="/mnt/host_share",
+                  readonly=True,
+              ),
+          ],
+      ) as sb:
+        stdout, _ = sb.exec("cat", "/mnt/host_share/witness.txt")
+        self.assertEqual(stdout.strip(), "hello-mount")
+
+        with self.assertRaises(sandbox.Error) as ctx:
+          sb.exec("sh", "-c", "echo test > /mnt/host_share/test.txt")
+        self.assertIn("exec failed", str(ctx.exception))
+
+  def test_custom_bind_mount_readwrite(self):
+    enable_networking = os.geteuid() == 0
+    with tempfile.TemporaryDirectory() as temp_host_dir:
+      with sandbox.Sandbox(
+          enable_networking=enable_networking,
+          mounts=[
+              sandbox.Mount.bind(
+                  source=temp_host_dir,
+                  destination="/mnt/host_share",
+                  readonly=False,
+              ),
+          ],
+      ) as sb:
+        sb.exec(
+            "sh",
+            "-c",
+            "echo hello-write > /mnt/host_share/file.txt",
+        )
+
+      host_file = os.path.join(temp_host_dir, "file.txt")
+      self.assertTrue(os.path.exists(host_file))
+      with open(host_file, "r") as f:
+        self.assertEqual(f.read().strip(), "hello-write")
+
+  def test_custom_tmpfs_mount(self):
+    enable_networking = os.geteuid() == 0
+    with sandbox.Sandbox(
+        enable_networking=enable_networking,
+        mounts=[sandbox.Mount.tmpfs("/mnt/scratch")],
+    ) as sb:
+      sb.exec("sh", "-c", "echo hello-tmpfs > /mnt/scratch/tmp.txt")
+      stdout, _ = sb.exec("cat", "/mnt/scratch/tmp.txt")
+      self.assertEqual(stdout.strip(), "hello-tmpfs")
+
+  def test_custom_proc_mount(self):
+    enable_networking = os.geteuid() == 0
+    with sandbox.Sandbox(
+        enable_networking=enable_networking,
+        mounts=[sandbox.Mount.proc("/custom_proc")],
+    ) as sb:
+      stdout, _ = sb.exec("cat", "/custom_proc/self/status")
+      self.assertIn("Name:", stdout)
+
+  def test_dict_mount_configuration(self):
+    enable_networking = os.geteuid() == 0
+    with tempfile.TemporaryDirectory() as temp_host_dir:
+      witness_file = os.path.join(temp_host_dir, "witness.txt")
+      with open(witness_file, "w") as f:
+        f.write("hello-dict-mount")
+
+      with sandbox.Sandbox(
+          enable_networking=enable_networking,
+          mounts=[
+              {
+                  "source": temp_host_dir,
+                  "destination": "/mnt/dict_share",
+                  "type": "bind",
+                  "readonly": True,
+              },
+          ],
+      ) as sb:
+        stdout, _ = sb.exec("cat", "/mnt/dict_share/witness.txt")
+        self.assertEqual(stdout.strip(), "hello-dict-mount")
+
+  def test_mount_validation_errors(self):
+    enable_networking = os.geteuid() == 0
+    with self.assertRaises(ValueError) as ctx:
+      sandbox.Sandbox(
+          enable_networking=enable_networking,
+          mounts=[sandbox.Mount(destination="")],
+      )
+    self.assertIn("Mount destination cannot be empty", str(ctx.exception))
+
+    with self.assertRaises(ValueError) as ctx:
+      sandbox.Sandbox(
+          enable_networking=enable_networking,
+          mounts=[sandbox.Mount.bind(source="", destination="/mnt")],
+      )
+    self.assertIn("Bind mount source cannot be empty", str(ctx.exception))
+
+    with self.assertRaises(ValueError) as ctx:
+      sandbox.Sandbox(
+          enable_networking=enable_networking,
+          mounts=[{"destination": "/mnt", "type": "invalid_type"}],
+      )
+    self.assertIn("Invalid mount type", str(ctx.exception))
+
+    with self.assertRaises(ValueError) as ctx:
+      sandbox.Sandbox(
+          enable_networking=enable_networking,
+          mounts=[{"destination": "/mnt", "extra_key": "val"}],
+      )
+    self.assertIn("Unrecognized keys in mount dict", str(ctx.exception))
+    self.assertIn("extra_key", str(ctx.exception))
+
+    with self.assertRaises(ValueError) as ctx:
+      sandbox.Sandbox(
+          enable_networking=enable_networking,
+          mounts=[{"source": "/host/path"}],
+      )
+    self.assertIn("Mount dictionary missing 'destination'", str(ctx.exception))
+
+    with self.assertRaises(TypeError) as ctx:
+      sandbox.Sandbox(
+          enable_networking=enable_networking,
+          mounts="invalid_string_not_list",
+      )
+    self.assertIn("mounts must be a list or tuple", str(ctx.exception))
+
+    with self.assertRaises(TypeError) as ctx:
+      sandbox.Sandbox(
+          enable_networking=enable_networking,
+          mounts=[123],
+      )
+    self.assertIn(
+        "Mount item must be a Mount instance or dict", str(ctx.exception)
+    )
+
+  def test_container_default_working_dir(self):
+    enable_networking = os.geteuid() == 0
+    with sandbox.Sandbox(enable_networking=enable_networking) as sb:
+      stdout, _ = sb.exec("pwd")
+      self.assertEqual(stdout.strip(), "/")
+
+      config_path = os.path.join(sb.bundle_dir, "config.json")
+      with open(config_path, "r") as f:
+        spec = json.load(f)
+      self.assertEqual(spec["process"]["cwd"], "/")
+
+    with sandbox.Sandbox(
+        enable_networking=enable_networking, working_dir=None
+    ) as sb:
+      stdout, _ = sb.exec("pwd")
+      self.assertEqual(stdout.strip(), "/")
+
+      config_path = os.path.join(sb.bundle_dir, "config.json")
+      with open(config_path, "r") as f:
+        spec = json.load(f)
+      self.assertEqual(spec["process"]["cwd"], "/")
+
+  def test_container_working_dir(self):
+    enable_networking = os.geteuid() == 0
+    with sandbox.Sandbox(
+        enable_networking=enable_networking,
+        working_dir="/tmp",
+    ) as sb:
+      stdout, _ = sb.exec("pwd")
+      self.assertEqual(stdout.strip(), "/tmp")
+
+      config_path = os.path.join(sb.bundle_dir, "config.json")
+      with open(config_path, "r") as f:
+        spec = json.load(f)
+      self.assertEqual(spec["process"]["cwd"], "/tmp")
+
+  def test_container_working_dir_relative(self):
+    enable_networking = os.geteuid() == 0
+    with sandbox.Sandbox(
+        enable_networking=enable_networking,
+        working_dir="tmp/custom",
+    ) as sb:
+      stdout, _ = sb.exec("pwd")
+      self.assertEqual(stdout.strip(), "/tmp/custom")
+
+      config_path = os.path.join(sb.bundle_dir, "config.json")
+      with open(config_path, "r") as f:
+        spec = json.load(f)
+      self.assertEqual(spec["process"]["cwd"], "/tmp/custom")
+
+  def test_bad_working_dir(self):
+    enable_networking = os.geteuid() == 0
+    with self.assertRaises(ValueError) as ctx:
+      sandbox.Sandbox(
+          enable_networking=enable_networking,
+          working_dir="",
+      )
+    self.assertIn("working directory cannot be empty", str(ctx.exception))
+
+    with self.assertRaises(TypeError) as ctx:
+      sandbox.Sandbox(
+          enable_networking=enable_networking,
+          working_dir=123,
+      )
+    self.assertIn("working_dir must be a str", str(ctx.exception))
+
+  def test_exec_cwd_override(self):
+    enable_networking = os.geteuid() == 0
+    with sandbox.Sandbox(
+        enable_networking=enable_networking,
+        working_dir="/",
+    ) as sb:
+      stdout, _ = sb.exec("pwd")
+      self.assertEqual(stdout.strip(), "/")
+
+      stdout_custom, _ = sb.exec("pwd", cwd="/tmp")
+      self.assertEqual(stdout_custom.strip(), "/tmp")
+
+      stdout_rel, _ = sb.exec("pwd", cwd="bin")
+      self.assertEqual(stdout_rel.strip(), "/bin")
+
+  def test_exec_bad_cwd(self):
+    enable_networking = os.geteuid() == 0
+    with sandbox.Sandbox(enable_networking=enable_networking) as sb:
+      with self.assertRaises(ValueError) as ctx:
+        sb.exec("pwd", cwd="")
+      self.assertIn("cwd cannot be empty", str(ctx.exception))
+
+      with self.assertRaises(TypeError) as ctx:
+        sb.exec("pwd", cwd=123)
+      self.assertIn("cwd must be a str", str(ctx.exception))
+
+  def test_mount_factory_methods(self):
+    b = sandbox.Mount.bind("/host", "/dest", readonly=True)
+    self.assertEqual(b.destination, "/dest")
+    self.assertEqual(b.source, "/host")
+    self.assertEqual(b.type, sandbox.MountType.BIND)
+    self.assertTrue(b.readonly)
+
+    t = sandbox.Mount.tmpfs("/tmpfs_dest")
+    self.assertEqual(t.destination, "/tmpfs_dest")
+    self.assertEqual(t.type, sandbox.MountType.TMPFS)
+
+    p = sandbox.Mount.proc("/proc_dest")
+    self.assertEqual(p.destination, "/proc_dest")
+    self.assertEqual(p.type, sandbox.MountType.PROC)
+
 
 if __name__ == "__main__":
   unittest.main()

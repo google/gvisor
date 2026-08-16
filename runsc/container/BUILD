@@ -49,6 +49,7 @@ go_test(
     name = "container_test",
     size = "large",
     srcs = [
+        "combined_restore_test.go",
         "console_test.go",
         "container_test.go",
         "metric_server_test.go",
@@ -78,6 +79,7 @@ go_test(
         "//pkg/cleanup",
         "//pkg/hostos",
         "//pkg/log",
+        "//pkg/seccheck/scsdk",
         "//pkg/sentry/checkpoint",
         "//pkg/sentry/control",
         "//pkg/sentry/fscheckpoint",
@@ -89,7 +91,6 @@ go_test(
         "//pkg/sentry/platform",
         "//pkg/sentry/seccheck",
         "//pkg/sentry/seccheck/points:points_go_proto",
-        "//pkg/sentry/seccheck/scsdk",
         "//pkg/sentry/seccheck/sinks/remote/test",
         "//pkg/sentry/state/checkpointfiles",
         "//pkg/state/statefile",

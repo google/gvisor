@@ -27,6 +27,7 @@ import (
 	"github.com/moby/sys/capability"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
@@ -44,6 +45,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/devices/rdmaproxy/cxproxy"
+	"gvisor.dev/gvisor/pkg/sentry/devices/rdmaproxy/genericproxy"
 	"gvisor.dev/gvisor/pkg/sentry/fdimport"
 	cgroup2fs "gvisor.dev/gvisor/pkg/sentry/fsimpl/cgroup2fs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
@@ -80,6 +82,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/raw"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
+	"gvisor.dev/gvisor/pkg/timing"
 	"gvisor.dev/gvisor/runsc/boot/filter"
 	pf "gvisor.dev/gvisor/runsc/boot/portforward"
 	"gvisor.dev/gvisor/runsc/boot/pprof"
@@ -94,6 +97,7 @@ import (
 	// Include other supported socket providers.
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink"
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink/netfilter"
+	rdmanetlink "gvisor.dev/gvisor/pkg/sentry/socket/netlink/rdma"
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink/route"
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink/uevent"
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/unix"
@@ -229,6 +233,10 @@ type Loader struct {
 	// stopProfiling stops profiling started at container creation. It
 	// should be called when a sandbox is destroyed.
 	stopProfiling func()
+
+	// startupTimertracks overall sandbox startup.
+	// It is *not* owned by the Loader. See `Args.StartupTimer`.
+	startupTimer *timing.Timer
 
 	// PreSeccompCallback is called right before installing seccomp filters.
 	PreSeccompCallback func()
@@ -475,6 +483,11 @@ type Args struct {
 	// RootfsUpperTarFD is the file descriptor to the tar file containing the rootfs
 	// upper layer changes.
 	RootfsUpperTarFD int
+
+	// StartupTimer tracks overall sandbox startup.
+	// The `Loader` records midpoints on it as it goes through loader creation
+	// and sandbox startup. The `Loader` does not take ownership of it.
+	StartupTimer *timing.Timer
 }
 
 // HostTHP holds host transparent hugepage settings.
@@ -492,7 +505,14 @@ const (
 	// startingStdioFD is the starting stdioFD number used during sandbox
 	// start and restore. This makes sure the stdioFDs are always the same
 	// on initial start and on restore.
-	startingStdioFD = 256
+	// It must be above the highest FD number that donation can assign at boot
+	// (donated FDs are numbered densely from 3, and should ideally be such
+	// that adding 2 to it (i.e. index stderr gets) does *not* cross a
+	// power of 2. See `//runsc/prewarmer/prewarmer.c` for some fun Linux
+	// kernel lore that explains why.
+	// LINT.IfChange
+	startingStdioFD = 253
+	// LINT.ThenChange(../prewarmer/prewarmer.c)
 
 	// containerSpecsKey is the key used to add and pop the container specs to the
 	// kernel during save/restore.
@@ -536,22 +556,38 @@ func New(args Args) (*Loader, error) {
 
 	// Initialize seccheck points.
 	seccheck.Initialize()
+	args.StartupTimer.Reached("seccheck initialized")
 
 	// We initialize the rand package now to make sure /dev/urandom is pre-opened
 	// on kernels that do not support getrandom(2).
 	if err := rand.Init(); err != nil {
 		return nil, fmt.Errorf("setting up rand: %w", err)
 	}
+	args.StartupTimer.Reached("RNG initialized")
 
 	if err := usage.Init(); err != nil {
 		return nil, fmt.Errorf("setting up memory usage: %w", err)
 	}
+	args.StartupTimer.Reached("memory usage initialized")
 
 	if specutils.NVProxyEnabled(args.Spec, args.Conf) {
 		nvproxy.Init()
+		args.StartupTimer.Reached("nvproxy initialized")
 	}
 	if specutils.RDMAEnabled(args.Spec, args.Conf) {
 		cxproxy.Init()
+		genericproxy.Init()
+		args.StartupTimer.Reached("RDMA proxy initialized")
+	}
+
+	// Publish the RDMA sysfs snapshot to the NETLINK_RDMA nldev shim before
+	// any application socket can exist. rdma-core discovers devices and binds
+	// userspace providers through nldev (RDMA_NLDEV_ATTR_UVERBS_DRIVER_ID);
+	// providers without a PCI-ID match table (e.g. libirdma) are unusable
+	// without it. A nil snapshot leaves the protocol unregistered-equivalent:
+	// socket(AF_NETLINK, ..., NETLINK_RDMA) fails as on a host without RDMA.
+	if args.RDMASysfs != nil {
+		rdmanetlink.Init(args.RDMASysfs)
 	}
 
 	eid := execID{cid: args.ID}
@@ -560,6 +596,7 @@ func New(args Args) (*Loader, error) {
 		processes:             map[execID]*execProcess{eid: {}},
 		sharedMounts:          make(map[string]*vfs.Mount),
 		stopProfiling:         stopProfiling,
+		startupTimer:          args.StartupTimer,
 		productName:           args.ProductName,
 		rdmaSysfs:             args.RDMASysfs,
 		cpuQuota:              args.CPUQuota,
@@ -579,6 +616,7 @@ func New(args Args) (*Loader, error) {
 	}
 	log.Infof("CPUs: %d", args.NumCPU)
 	gomaxprocs.SetBase(args.NumCPU)
+	args.StartupTimer.Reached("GOMAXPROCS set")
 
 	// Start filesystem checkpoint restore as soon as possible to maximize
 	// parallel loading.
@@ -610,6 +648,7 @@ func New(args Args) (*Loader, error) {
 	// used.
 	newfd := startingStdioFD
 
+	remapStart := gtime.Now()
 	for _, stdioFD := range args.StdioFDs {
 		// Check that newfd is unused to avoid clobbering over it.
 		if _, err := unix.FcntlInt(uintptr(newfd), unix.F_GETFD, 0); !errors.Is(err, unix.EBADF) {
@@ -627,6 +666,7 @@ func New(args Args) (*Loader, error) {
 		_ = unix.Close(stdioFD)
 		newfd++
 	}
+	log.Infof("Remapped stdio FDs to [%d, %d] in %v", startingStdioFD, newfd-1, gtime.Since(remapStart)) // Load-bearing log message! See `//runsc/prewarmer/prewarmer_speedup_test.go` which parses this log line.
 	for _, goferFD := range args.GoferFDs {
 		l.root.goferFDs = append(l.root.goferFDs, fd.New(goferFD))
 	}
@@ -646,6 +686,7 @@ func New(args Args) (*Loader, error) {
 			guest: customFD.Guest,
 		})
 	}
+	args.StartupTimer.Reached("donated FDs ingested")
 
 	if args.RootfsUpperTarFD >= 0 {
 		if l.fsRestore != nil {
@@ -655,10 +696,11 @@ func New(args Args) (*Loader, error) {
 	}
 
 	// Create kernel and platform.
-	p, err := createPlatform(args.Conf, args.NumCPU, args.Device, args.ID)
+	p, err := createPlatform(args.Conf, args.NumCPU, args.Device, args.ID, args.StartupTimer)
 	if err != nil {
 		return nil, fmt.Errorf("creating platform: %w", err)
 	}
+	args.StartupTimer.Reached("platform created")
 	if args.Conf.Platform == "kvm" && specutils.NVProxyEnabled(args.Spec, args.Conf) {
 		if caps, err := specutils.NVProxyDriverCapsAllowed(args.Conf); err == nil && caps&nvconf.CapCompute != 0 {
 			log.Warningf("Application cudaMallocManaged() is flaky on -platform=kvm, see gvisor.dev/docs/user_guide/gpu/#platforms")
@@ -677,6 +719,7 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("creating memory file: %w", err)
 	}
 	l.k.SetMemoryFile(mf)
+	args.StartupTimer.Reached("memory file created")
 
 	// Create VDSO.
 	//
@@ -685,11 +728,13 @@ func New(args Args) (*Loader, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating vdso: %w", err)
 	}
+	args.StartupTimer.Reached("VDSO prepared")
 
 	// Create timekeeper.
 	tk := kernel.NewTimekeeper()
 	params := kernel.NewVDSOParamPage(l.k.MemoryFile(), vdso.ParamPage.FileRange())
 	tk.SetClocks(time.NewCalibratedClocks(), params)
+	args.StartupTimer.Reached("timekeeper configured")
 
 	if err := enableStrace(args.Conf); err != nil {
 		return nil, fmt.Errorf("enabling strace: %w", err)
@@ -704,6 +749,7 @@ func New(args Args) (*Loader, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating network: %w", err)
 	}
+	args.StartupTimer.Reached("network stack created")
 
 	if args.TotalHostMem > 0 {
 		// tmpfs needs to know the amount of total physical RAM to calculate size limits.
@@ -769,10 +815,12 @@ func New(args Args) (*Loader, error) {
 	}); err != nil {
 		return nil, fmt.Errorf("initializing kernel: %w", err)
 	}
+	args.StartupTimer.Reached("kernel initialized")
 
 	if err := registerFilesystems(l.k, &l.root, l.rdmaSysfs); err != nil {
 		return nil, fmt.Errorf("registering filesystems: %w", err)
 	}
+	args.StartupTimer.Reached("filesystems registered")
 
 	// Turn on packet logging if enabled.
 	if args.Conf.LogPackets {
@@ -795,15 +843,18 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("creating init process for root container: %w", err)
 	}
 	l.root.procArgs = procArgs
+	args.StartupTimer.Reached("process args created")
 
 	if err := initCompatLogs(args.UserLogFD); err != nil {
 		return nil, fmt.Errorf("initializing compat logs: %w", err)
 	}
+	args.StartupTimer.Reached("compat logs initialized")
 
 	l.mountHints, err = NewPodMountHints(args.Spec)
 	if err != nil {
 		return nil, fmt.Errorf("creating pod mount hints: %w", err)
 	}
+	args.StartupTimer.Reached("mount hints parsed")
 
 	// Set up host mount that will be used for imported fds.
 	hostFilesystem, err := host.NewFilesystem(l.k.VFS())
@@ -812,6 +863,7 @@ func New(args Args) (*Loader, error) {
 	}
 	defer hostFilesystem.DecRef(l.k.SupervisorContext())
 	l.k.SetHostMount(l.k.VFS().NewDisconnectedMount(hostFilesystem, nil, &vfs.MountOptions{}))
+	args.StartupTimer.Reached("host FS mount created")
 
 	if args.PodInitConfigFD >= 0 {
 		if err := setupSeccheck(args.PodInitConfigFD, args.SinkFDs); err != nil {
@@ -849,6 +901,7 @@ func New(args Args) (*Loader, error) {
 	if err := ctrl.srv.StartServing(); err != nil {
 		return nil, fmt.Errorf("starting control server: %w", err)
 	}
+	args.StartupTimer.Reached("control server started")
 
 	return l, nil
 }
@@ -999,7 +1052,7 @@ func (l *Loader) Destroy() {
 	refs.OnExit()
 }
 
-func createPlatform(conf *config.Config, numCPU int, deviceFile *fd.FD, sandboxID string) (platform.Platform, error) {
+func createPlatform(conf *config.Config, numCPU int, deviceFile *fd.FD, sandboxID string, startupTimer *timing.Timer) (platform.Platform, error) {
 	platformName := conf.Platform
 	p, err := platform.Lookup(conf.Platform)
 	if err != nil {
@@ -1014,6 +1067,7 @@ func createPlatform(conf *config.Config, numCPU int, deviceFile *fd.FD, sandboxI
 		ApplicationCores:       numCPU,
 		UseCPUNums:             platformName == "kvm" && conf.UseCPUNums,
 		SandboxID:              sandboxID,
+		StartupTimer:           startupTimer,
 	})
 }
 
@@ -1085,6 +1139,7 @@ func createMemoryFile(appHugePages bool, hostTHP HostTHP) (*pgalloc.MemoryFile, 
 func (l *Loader) installSeccompFilters() error {
 	if l.PreSeccompCallback != nil {
 		l.PreSeccompCallback()
+		l.startupTimer.Reached("pre-seccomp callback done")
 	}
 	if l.root.conf.DisableSeccomp {
 		log.Warningf("*** SECCOMP WARNING: syscall filter is DISABLED. Running in less secure mode.")
@@ -1118,7 +1173,7 @@ func (l *Loader) installSeccompFilters() error {
 			CgoEnabled:            config.CgoEnabled,
 			PluginNetwork:         l.root.conf.Network == config.NetworkPlugin,
 		}
-		if err := filter.Install(opts); err != nil {
+		if err := filter.Install(opts, l.startupTimer); err != nil {
 			return fmt.Errorf("installing seccomp filters: %w", err)
 		}
 	}
@@ -1149,6 +1204,7 @@ func (l *Loader) run() error {
 		if err := s.Configure(l.root.conf.EnableRaw); err != nil {
 			return err
 		}
+		l.startupTimer.Reached("host network configured")
 	}
 
 	l.mu.Lock()
@@ -1170,6 +1226,7 @@ func (l *Loader) run() error {
 			if err := l.ConfigureNetwork(l.k.RootNetworkNamespace().Stack()); err != nil {
 				return err
 			}
+			l.startupTimer.Reached("network configured")
 		}
 
 		// Finally done with all configuration. Setup filters before user code
@@ -1177,9 +1234,11 @@ func (l *Loader) run() error {
 		if err := l.installSeccompFilters(); err != nil {
 			return err
 		}
+		l.startupTimer.Reached("seccomp filters installed")
 
 		// Create the root container init task. It will begin running
 		// when the kernel is started.
+		l.root.procArgs.StartupTimeline = l.startupTimer.Fork("root container")
 		var (
 			tg  *kernel.ThreadGroup
 			err error
@@ -1188,6 +1247,7 @@ func (l *Loader) run() error {
 		if err != nil {
 			return err
 		}
+		l.startupTimer.Reached("root container created")
 
 		if seccheck.Global.Enabled(seccheck.PointContainerStart) {
 			evt := pb.Start{
@@ -1240,12 +1300,16 @@ func (l *Loader) run() error {
 			log.Warningf("error sending signal %d to container %q: %s", sig, l.sandboxID, err)
 		}
 	})
+	l.startupTimer.Reached("signal forwarding started")
 
 	log.Infof("Process should have started...")
 	l.watchdog.Start()
 	if err := l.k.Start(); err != nil {
 		return err
 	}
+	l.startupTimer.Reached("kernel started")
+	l.root.procArgs.StartupTimeline.End()
+	l.root.procArgs.StartupTimeline = nil
 	switch l.state {
 	case created:
 		l.state = started
@@ -1398,6 +1462,7 @@ func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGrou
 	if err != nil {
 		return nil, nil, fmt.Errorf("importing fds: %w", err)
 	}
+	info.procArgs.StartupTimeline.Reached("FD table created")
 	// CreateProcess takes a reference on fdTable if successful. We won't need
 	// ours either way.
 	info.procArgs.FDTable = fdTable
@@ -1454,6 +1519,8 @@ func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGrou
 		}
 		defer cgCleanup()
 	}
+	info.procArgs.StartupTimeline.Reached("cgroups mounted")
+
 	// We can share l.sharedMounts with containerMounter since l.mu is locked.
 	// Hence, mntr must only be used within this function (while l.mu is locked).
 	mntr := l.newContainerMounter(info)
@@ -1472,6 +1539,7 @@ func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGrou
 	if err != nil {
 		return nil, nil, err
 	}
+	info.procArgs.StartupTimeline.Reached("exec user home resolved")
 
 	// Create and start the new process.
 	tg, _, err := l.k.CreateProcess(info.procArgs)
@@ -1492,6 +1560,7 @@ func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGrou
 		if err := task.AppendSyscallFilter(*program, true); err != nil {
 			return nil, nil, fmt.Errorf("appending seccomp filters: %w", err)
 		}
+		info.procArgs.StartupTimeline.Reached("OCI seccomp filters applied")
 	}
 
 	return tg, ttyFile, nil

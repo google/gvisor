@@ -21,6 +21,8 @@ import (
 	"strconv"
 	"sync/atomic"
 
+	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
@@ -68,6 +70,11 @@ type filesystem struct {
 
 	// mf implements memmap.File for this image.
 	mf imageMemmapFile
+
+	// useReadForIO indicates that file I/O should be driven by read syscalls
+	// from the image file descriptor instead of the image mapping.
+	// useReadForIO is immutable.
+	useReadForIO bool
 
 	// inodeBuckets contains the inodes in use. Multiple buckets are used to
 	// reduce the lock contention. Bucket is chosen based on the hash calculation
@@ -122,17 +129,23 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		return nil, nil, linuxerr.EINVAL
 	}
 
+	useReadForIO, err := shouldUseReadForIO(ctx, fd)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	devMinor, err := vfsObj.GetAnonBlockDevMinor()
 	if err != nil {
 		return nil, nil, err
 	}
 
 	fs := &filesystem{
-		mopts:    opts.Data,
-		iopts:    iopts,
-		image:    image,
-		devMinor: devMinor,
-		mf:       imageMemmapFile{image: image},
+		mopts:        opts.Data,
+		iopts:        iopts,
+		image:        image,
+		devMinor:     devMinor,
+		useReadForIO: useReadForIO,
+		mf:           imageMemmapFile{image: image},
 	}
 	fs.vfsfs.Init(vfsObj, &fstype, fs)
 	cu.Add(func() { fs.vfsfs.DecRef(ctx) })
@@ -171,6 +184,19 @@ func getFDFromMountOptionsMap(ctx context.Context, mopts map[string]string) (int
 	}
 
 	return ifd, nil
+}
+
+func shouldUseReadForIO(ctx context.Context, imageFD int) (bool, error) {
+	var st unix.Statfs_t
+	if err := unix.Fstatfs(imageFD, &st); err != nil {
+		// Detection is best-effort; fall back to reading via the mapping.
+		ctx.Warningf("erofs.shouldUseReadForIO: fstatfs failed, defaulting to using mmap for reads: %v", err)
+		return false, nil
+	}
+	// Use read syscalls when the EROFS image file lives on FUSE filesystem.
+	// This avoids faulting the mapping in page by page and turning a large
+	// read into many small, largely serialized requests to the FUSE server.
+	return st.Type == linux.FUSE_SUPER_MAGIC, nil
 }
 
 // Release implements vfs.FilesystemImpl.Release.

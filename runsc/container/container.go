@@ -197,6 +197,13 @@ type Args struct {
 	// for containers in a new Sandbox process.
 	FSRestoreImagePath string
 	FSRestoreDirect    bool
+
+	// CheckpointDirPath is the path to the sentry checkpoint directory.
+	// Used to default FSRestoreImagePath if it is empty and SplitFSRestore is true.
+	CheckpointDirPath string
+
+	// SplitFSRestore indicates that we are restoring from a split filesystem checkpoint.
+	SplitFSRestore bool
 }
 
 // New creates the container in a new Sandbox process, unless the metadata
@@ -204,6 +211,21 @@ type Args struct {
 // Destroy() on the container.
 func New(conf *config.Config, args Args) (*Container, error) {
 	log.Debugf("Create container, cid: %s, rootDir: %q", args.ID, conf.RootDir)
+
+	if args.FSRestoreImagePath == "" && args.SplitFSRestore {
+		if args.CheckpointDirPath == "" {
+			return nil, errors.New("checkpoint directory path must be provided for split FS restore")
+		}
+		defaultFSDir := path.Join(args.CheckpointDirPath, "fs")
+		if _, err := os.Stat(defaultFSDir); err != nil {
+			if os.IsNotExist(err) {
+				return nil, fmt.Errorf("split FS restore requested, but default FS checkpoint directory %q does not exist. Please specify FSRestoreImagePath", defaultFSDir)
+			}
+			return nil, fmt.Errorf("checking default FS checkpoint directory: %w", err)
+		}
+		args.FSRestoreImagePath = defaultFSDir
+	}
+
 	if err := validateID(args.ID); err != nil {
 		return nil, err
 	}
@@ -366,8 +388,8 @@ func (c *Container) createRoot(conf *config.Config, args Args, sandboxID string)
 	if err := nvProxyPreGoferHostSetup(args.Spec, conf); err != nil {
 		return err
 	}
-	if err := cgroup.RunInCgroup(containerCgroup, func() error {
-		ioFiles, goferFilestores, devIOFile, specFile, err := c.createGoferProcess(conf, mountHints, args.Attached)
+	if err := cgroup.RunInCgroup(containerCgroup, func(cloneIntoCgroupFD *os.File) error {
+		ioFiles, goferFilestores, devIOFile, specFile, err := c.createGoferProcess(conf, mountHints, args.Attached, cloneIntoCgroupFD)
 		if err != nil {
 			return fmt.Errorf("cannot create gofer process: %w", err)
 		}
@@ -384,6 +406,7 @@ func (c *Container) createRoot(conf *config.Config, args Args, sandboxID string)
 			DevIOFile:           devIOFile,
 			MountsFile:          specFile,
 			Cgroup:              containerCgroup,
+			CloneIntoCgroupFD:   cloneIntoCgroupFD,
 			Attached:            args.Attached,
 			GoferFilestoreFiles: goferFilestores,
 			GoferMountConfs:     c.GoferMountConfs,
@@ -441,11 +464,11 @@ func (c *Container) Start(conf *config.Config) error {
 
 // Restore takes a container and replaces its kernel and file system
 // to restore a container from its state file.
-func (c *Container) Restore(conf *config.Config, imagePath string, direct, background bool, networkArgs *boot.CreateLinksAndRoutesArgs) error {
+func (c *Container) Restore(conf *config.Config, imagePath string, direct, background, splitFSRestore bool, networkArgs *boot.CreateLinksAndRoutesArgs) error {
 	log.Debugf("Restore container, cid: %s", c.ID)
 
 	restore := func(conf *config.Config, spec *specs.Spec) error {
-		return c.Sandbox.Restore(conf, spec, c.ID, imagePath, direct, background, networkArgs)
+		return c.Sandbox.Restore(conf, spec, c.ID, imagePath, direct, background, splitFSRestore, networkArgs)
 	}
 	return c.startImpl(conf, "restore", restore, c.Sandbox.RestoreSubcontainer)
 }
@@ -474,9 +497,9 @@ func (c *Container) startImpl(conf *config.Config, action string, startRoot func
 	} else {
 		// Join cgroup to start gofer process to ensure it's part of the cgroup from
 		// the start (and all their children processes).
-		if err := cgroup.RunInCgroup(c.Sandbox.CgroupJSON.Cgroup, func() error {
+		if err := cgroup.RunInCgroup(c.Sandbox.CgroupJSON.Cgroup, func(cloneIntoCgroupFD *os.File) error {
 			// Create the gofer process.
-			goferFiles, goferFilestores, devIOFile, mountsFile, err := c.createGoferProcess(conf, c.Sandbox.MountHints, false /* attached */)
+			goferFiles, goferFilestores, devIOFile, mountsFile, err := c.createGoferProcess(conf, c.Sandbox.MountHints, false /* attached */, cloneIntoCgroupFD)
 			if err != nil {
 				return err
 			}
@@ -1360,7 +1383,7 @@ func createLisafsSocketPair(sandEnds *[]*os.File, donations *donation.Agency) er
 // a gofer endpoint for the mount points using Gofers. The mounts file is the
 // file to read list of mounts after they have been resolved (direct paths,
 // no symlinks), and will be nil if there is no cleaning required for mounts.
-func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.PodMountHints, attached bool) ([]*os.File, []*os.File, *os.File, *os.File, error) {
+func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.PodMountHints, attached bool, cloneIntoCgroupFD *os.File) ([]*os.File, []*os.File, *os.File, *os.File, error) {
 	rootfsHint, err := boot.NewRootfsHint(c.Spec)
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("error creating rootfs hint: %w", err)
@@ -1453,6 +1476,10 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 		// Detach from session. Otherwise, signals sent to the foreground process
 		// will also be forwarded by this process, resulting in duplicate signals.
 		Setsid: true,
+	}
+	if cloneIntoCgroupFD != nil {
+		cmd.SysProcAttr.UseCgroupFD = true
+		cmd.SysProcAttr.CgroupFD = int(cloneIntoCgroupFD.Fd())
 	}
 
 	// Set Args[0] to make easier to spot the gofer process. Otherwise it's

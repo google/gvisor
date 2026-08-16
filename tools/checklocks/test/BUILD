@@ -15,6 +15,7 @@ go_library(
         "basics.go",
         "branches.go",
         "closures.go",
+        "cyclic.go",
         "defer.go",
         "generics.go",
         "globals.go",

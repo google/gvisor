@@ -63,6 +63,7 @@ func main() {
 	subcommands.Register(new(fsCheckpoint), "")
 	subcommands.Register(new(setXattr), "")
 	subcommands.Register(new(getXattr), "")
+	subcommands.Register(new(mmapHelper), "")
 
 	flag.Parse()
 
@@ -141,7 +142,7 @@ func (c *fsTreeCreator) Execute(ctx context.Context, f *flag.FlagSet, args ...an
 			}
 		}
 		nextDir := filepath.Join(curDir, "dir")
-		if err := os.Mkdir(nextDir, 0777); err != nil {
+		if err := os.Mkdir(nextDir, 0777); err != nil && !os.IsExist(err) {
 			log.Fatalf("error creating directory %q: %v", nextDir, err)
 		}
 		curDir = nextDir

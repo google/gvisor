@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/hosttid"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
+	"gvisor.dev/gvisor/pkg/timing"
 )
 
 // machine contains state associated with the VM as a whole.
@@ -218,7 +219,7 @@ func (m *machine) freeVCPUID(id int) {
 }
 
 // newMachine returns a new VM context.
-func newMachine(sandboxID int64, applicationCores int) (*machine, error) {
+func newMachine(sandboxID int64, applicationCores int, timer *timing.Timer) (*machine, error) {
 	// Create the machine.
 	m := &machine{
 		vCPUs:            make(map[uint64]*vCPU),
@@ -240,6 +241,7 @@ func newMachine(sandboxID int64, applicationCores int) (*machine, error) {
 	m.upperSharedPageTables.Allocator.(allocator).base.Drain()
 	m.upperSharedPageTables.MarkReadOnlyShared()
 	m.kernel.PageTables = pagetables.NewWithUpper(newAllocator(), m.upperSharedPageTables, ring0.KernelStartAddress)
+	timer.Reached("slimvm page tables created")
 
 	// Apply the physical mappings. Note that these mappings may point to
 	// guest physical addresses that are not actually available. These
@@ -256,12 +258,14 @@ func newMachine(sandboxID int64, applicationCores int) (*machine, error) {
 
 		return true // Keep iterating.
 	})
+	timer.Reached("slimvm physical regions mapped")
 
 	// Initialize architecture state.
 	if err := m.initArchState(); err != nil {
 		m.Destroy()
 		return nil, err
 	}
+	timer.Reached("slimvm arch state initialized")
 
 	// Ensure the machine is cleaned up properly.
 	runtime.SetFinalizer(m, (*machine).Destroy)

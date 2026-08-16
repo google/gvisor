@@ -81,6 +81,27 @@ go_test(
     ],
 )
 
+go_test(
+    name = "podman_test",
+    size = "large",
+    srcs = [
+        "podman_test.go",
+    ],
+    # runsc is needed to invalidate the bazel cache in case of any code changes.
+    data = ["//runsc"],
+    library = ":integration",
+    tags = [
+        # Requires docker and runsc to be configured before the test runs.
+        "local",
+        "manual",
+    ],
+    visibility = ["//:sandbox"],
+    deps = [
+        "//pkg/test/dockerutil",
+        "//pkg/test/testutil",
+    ],
+)
+
 go_library(
     name = "integration",
     srcs = ["integration.go"],

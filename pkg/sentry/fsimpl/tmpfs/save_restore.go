@@ -103,6 +103,29 @@ func (fs *filesystem) BeforeResume(ctx context.Context) {}
 
 // CompleteRestore implements
 // vfs.FilesystemImplSaveRestoreExtension.CompleteRestore.
+//
+// This will only perform the restore if a split filesystem checkpoint
+// restore was initiated (indicated by the presence of FSTarProvider in the
+// context and a valid tar for this filesystem). Otherwise, it is a no-op.
 func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRestoreOptions) error {
-	return nil
+	tarProvider := vfs.FSTarProviderFromContext(ctx)
+	if tarProvider == nil {
+		return nil
+	}
+	if fs.mf == nil {
+		return nil
+	}
+	resourceID := fs.mf.ResourceID()
+	if !resourceID.Ok() {
+		return nil
+	}
+	tarReader, err := tarProvider.GetTar(resourceID)
+	if err != nil {
+		return err
+	}
+	if tarReader == nil {
+		return nil
+	}
+	defer tarReader.Close()
+	return fs.tarRestore(ctx, tarReader)
 }

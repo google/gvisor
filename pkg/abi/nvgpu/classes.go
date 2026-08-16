@@ -133,10 +133,20 @@ const (
 	NVCDD1_VIDEO_NVJPG               = 0x0000cdd1
 	NVCDFA_VIDEO_OFA                 = 0x0000cdfa
 	BLACKWELL_B                      = 0x0000ce97
+	NVCEB0_VIDEO_DECODER             = 0x0000ceb0
 	NVCEB7_VIDEO_ENCODER             = 0x0000ceb7
 	BLACKWELL_COMPUTE_B              = 0x0000cec0
+	NVCEFA_VIDEO_OFA                 = 0x0000cefa
+	NVCFB0_VIDEO_DECODER             = 0x0000cfb0
 	NVCFB7_VIDEO_ENCODER             = 0x0000cfb7
+	NVCFD1_VIDEO_NVJPG               = 0x0000cfd1
+	NVCFFA_VIDEO_OFA                 = 0x0000cffa
+	NVD1B0_VIDEO_DECODER             = 0x0000d1b0
 	NVD1B7_VIDEO_ENCODER             = 0x0000d1b7
+	NVD1FA_VIDEO_OFA                 = 0x0000d1fa
+	NVD2B0_VIDEO_DECODER             = 0x0000d2b0
+	NVD2D1_VIDEO_NVJPG               = 0x0000d2d1
+	NVD2FA_VIDEO_OFA                 = 0x0000d2fa
 )
 
 // From src/common/sdk/nvidia/inc/class/cl0000.h:

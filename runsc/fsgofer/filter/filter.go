@@ -77,7 +77,7 @@ func Rules(opt Options) seccomp.SyscallRules {
 // Install installs seccomp filters.
 func Install(opt Options) error {
 	s := Rules(opt)
-	program := &seccomp.Program{
+	program := seccomp.Program{
 		RuleSets: []seccomp.RuleSet{
 			{
 				Rules: seccomp.DenyNewExecMappings,
@@ -88,8 +88,7 @@ func Install(opt Options) error {
 			},
 		},
 	}
-
-	return program.Install()
+	return program.Install(nil /* timer */)
 }
 
 // report writes a warning message to the log.

@@ -68,6 +68,7 @@ import (
 	"gvisor.dev/gvisor/runsc/profile"
 	"gvisor.dev/gvisor/runsc/specutils"
 	"gvisor.dev/gvisor/runsc/starttime"
+	"gvisor.dev/gvisor/runsc/version"
 
 	metricpb "gvisor.dev/gvisor/pkg/metric/metric_go_proto"
 )
@@ -296,6 +297,10 @@ type Args struct {
 
 	// Gcgroup is the cgroup that the sandbox is part of.
 	Cgroup cgroup.Cgroup
+
+	// CloneIntoCgroupFD, when non-nil, is an FD to `Cgroup`'s directory. The
+	// sandbox process is created inside the cgroup via `CLONE_INTO_CGROUP`.
+	CloneIntoCgroupFD *os.File
 
 	// Attached indicates that the sandbox lifecycle is attached with the caller.
 	// If the caller exits, the sandbox should exit too.
@@ -532,7 +537,7 @@ func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid s
 }
 
 // Restore sends the restore call for a container in the sandbox.
-func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, imagePath string, direct, background bool, networkArgs *boot.CreateLinksAndRoutesArgs) error {
+func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, imagePath string, direct, background, splitFSRestore bool, networkArgs *boot.CreateLinksAndRoutesArgs) error {
 	if err := hostsettings.Handle(conf); err != nil {
 		return fmt.Errorf("host settings: %w (use --host-settings=ignore to bypass)", err)
 	}
@@ -540,7 +545,8 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 	log.Debugf("Restore sandbox %q from path %q", s.ID, imagePath)
 
 	opt := boot.RestoreOpts{
-		Background: background,
+		Background:     background,
+		SplitFSRestore: splitFSRestore,
 	}
 	defer func() {
 		for _, f := range opt.FilePayload.Files {
@@ -963,10 +969,23 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		// when re-parented.
 		Setsid: true,
 	}
+	if args.CloneIntoCgroupFD != nil {
+		cmd.SysProcAttr.UseCgroupFD = true
+		cmd.SysProcAttr.CgroupFD = int(args.CloneIntoCgroupFD.Fd())
+	}
 
-	// Set Args[0] to make easier to spot the sandbox process. Otherwise it's
-	// shown as `exe`.
+	// Set Args[0] to make easier to spot the sandbox process.
 	cmd.Args[0] = "runsc-sandbox"
+
+	// If the prewarmer sidecar is available, exec it ahead of the boot binary.
+	// Its argv is `gvisor-prewarmer <binary> <argv[0]> [argv[1:]...]`.
+	if p, err := gvisorbinaries.GvisorSentryPrewarmer.Path(); err == nil {
+		log.Infof("Sidecar %q found: prepending Sentry boot command with %s", gvisorbinaries.GvisorSentryPrewarmer.Name, p)
+		cmd.Args = append([]string{p, cmd.Path}, cmd.Args[0:]...)
+		cmd.Path = p
+	} else {
+		log.Warningf("Sidecar %q not found or usable (%v). This slows down gVisor startup significantly.", gvisorbinaries.GvisorSentryPrewarmer.Name, err)
+	}
 
 	// Transfer FDs that need to be present before the "boot" command.
 	// Start at 3 because 0, 1, and 2 are taken by stdin/out/err.
@@ -1634,6 +1653,7 @@ type CheckpointOpts struct {
 	ExcludeCommittedZeroPages bool
 	CudaCheckpointPath        string
 	CudaCheckpointSequential  bool
+	SplitFSCheckpointPaths    []checkpoint.ResourceID
 
 	// Save/restore exec options.
 	SaveRestoreExecArgv        string
@@ -1646,12 +1666,22 @@ type CheckpointOpts struct {
 func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, opts CheckpointOpts) error {
 	log.Debugf("Checkpoint sandbox %q, imagePath %q, opts %+v", s.ID, imagePath, opts)
 
+	if len(opts.SplitFSCheckpointPaths) > 0 {
+		// Verify we are not using GCS/gofer.
+		gcsOptsPath := path.Join(imagePath, checkpointGCSOptsFileName)
+		if _, err := os.Stat(gcsOptsPath); err == nil {
+			return fmt.Errorf("split filesystem checkpoint is not supported with GCS/gofer")
+		}
+	}
+
 	opt := control.SaveOpts{
 		Metadata:                       opts.Compression.ToMetadata(),
 		AppMFExcludeCommittedZeroPages: opts.ExcludeCommittedZeroPages,
 		Resume:                         opts.Resume,
 		CudaCheckpointPath:             opts.CudaCheckpointPath,
 		CudaCheckpointSequential:       opts.CudaCheckpointSequential,
+		SplitFSCheckpointPaths:         opts.SplitFSCheckpointPaths,
+		RunscVersion:                   version.Version(),
 		ExecOpts: control.SaveRestoreExecOpts{
 			Argv:        opts.SaveRestoreExecArgv,
 			Timeout:     opts.SaveRestoreExecTimeout,
@@ -1696,6 +1726,21 @@ func setCheckpointOptsFilesForLocalCheckpoint(conf *config.Config, imagePath str
 	}
 	opt.FilePayload.Files = files
 	opt.HavePagesFile = len(files) > 1
+
+	if len(opts.SplitFSCheckpointPaths) > 0 {
+		fsImagePath := filepath.Join(imagePath, "fs")
+		if err := os.MkdirAll(fsImagePath, 0755); err != nil {
+			return fmt.Errorf("creating fs checkpoint directory: %w", err)
+		}
+		fsFiles, err := openFSCheckpointLocalFiles(fsImagePath, os.O_CREATE|os.O_EXCL|os.O_RDWR, opts.Direct)
+		if err != nil {
+			for _, f := range files {
+				_ = f.Close()
+			}
+			return fmt.Errorf("creating fs checkpoint files: %w", err)
+		}
+		opt.FilePayload.Files = append(opt.FilePayload.Files, fsFiles...)
+	}
 	return nil
 }
 
@@ -1914,7 +1959,7 @@ func (s *Sandbox) maybeStartCheckpointGoferAndGetSocket(conf *config.Config, cg 
 	}
 	defer unix.Close(socketFDs[1])
 	clientSockFile := os.NewFile(uintptr(socketFDs[0]), "checkpointgofer-socket")
-	err = cgroup.RunInCgroup(cg, func() error {
+	err = cgroup.RunInCgroup(cg, func(cloneIntoCgroupFD *os.File) error {
 		argv := append([]string{"runsc-checkpointgofer"}, conf.ToFlags()...)
 		extraFiles := []uintptr{devNullFile.Fd(), devNullFile.Fd(), devNullFile.Fd(), uintptr(socketFDs[1]), gcsOptsFile.Fd()}
 
@@ -1950,15 +1995,20 @@ func (s *Sandbox) maybeStartCheckpointGoferAndGetSocket(conf *config.Config, cg 
 		// particular, containerd-shim-runsc-v1 passes GOMAXPROCS=2 in
 		// v1.service.newCommand()).
 		env := slices.DeleteFunc(os.Environ(), func(env string) bool { return strings.HasPrefix(env, "GOMAXPROCS=") })
+		sysProcAttr := &unix.SysProcAttr{
+			// Detach from this session, otherwise the subprocess will get
+			// SIGHUP and SIGCONT when re-parented.
+			Setsid: true,
+		}
+		if cloneIntoCgroupFD != nil {
+			sysProcAttr.UseCgroupFD = true
+			sysProcAttr.CgroupFD = int(cloneIntoCgroupFD.Fd())
+		}
 		_, err := gvisorbinaries.CheckpointGofer.ForkExec(gvisorbinaries.Options{
-			Argv:  argv,
-			Envv:  env,
-			Files: extraFiles,
-			SysProcAttr: &unix.SysProcAttr{
-				// Detach from this session, otherwise the subprocess will get
-				// SIGHUP and SIGCONT when re-parented.
-				Setsid: true,
-			},
+			Argv:        argv,
+			Envv:        env,
+			Files:       extraFiles,
+			SysProcAttr: sysProcAttr,
 		})
 		return err
 	})

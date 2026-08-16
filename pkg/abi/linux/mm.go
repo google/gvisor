@@ -33,21 +33,22 @@ const (
 
 // Flags for mmap(2).
 const (
-	MAP_SHARED     = 1 << 0
-	MAP_PRIVATE    = 1 << 1
-	MAP_DROPPABLE  = 1 << 3
-	MAP_FIXED      = 1 << 4
-	MAP_ANONYMOUS  = 1 << 5
-	MAP_32BIT      = 1 << 6 // arch/x86/include/uapi/asm/mman.h
-	MAP_GROWSDOWN  = 1 << 8
-	MAP_DENYWRITE  = 1 << 11
-	MAP_EXECUTABLE = 1 << 12
-	MAP_LOCKED     = 1 << 13
-	MAP_NORESERVE  = 1 << 14
-	MAP_POPULATE   = 1 << 15
-	MAP_NONBLOCK   = 1 << 16
-	MAP_STACK      = 1 << 17
-	MAP_HUGETLB    = 1 << 18
+	MAP_SHARED          = 1 << 0
+	MAP_PRIVATE         = 1 << 1
+	MAP_DROPPABLE       = 1 << 3
+	MAP_FIXED           = 1 << 4
+	MAP_ANONYMOUS       = 1 << 5
+	MAP_32BIT           = 1 << 6 // arch/x86/include/uapi/asm/mman.h
+	MAP_GROWSDOWN       = 1 << 8
+	MAP_DENYWRITE       = 1 << 11
+	MAP_EXECUTABLE      = 1 << 12
+	MAP_LOCKED          = 1 << 13
+	MAP_NORESERVE       = 1 << 14
+	MAP_POPULATE        = 1 << 15
+	MAP_NONBLOCK        = 1 << 16
+	MAP_STACK           = 1 << 17
+	MAP_HUGETLB         = 1 << 18
+	MAP_FIXED_NOREPLACE = 1 << 20
 )
 
 // Flags for mremap(2).

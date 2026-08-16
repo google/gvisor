@@ -75,6 +75,10 @@ type Device struct {
 	// Dev is the host "major:minor" of the uverbs char device.
 	Dev        string `json:"dev"`
 	ABIVersion string `json:"abi_version"`
+	// DriverID is the kernel's enum rdma_driver_id value (RDMA_DRIVER_*)
+	// for the device, inferred at collection time from the DRIVER= field of
+	// the leaf PCI function's uevent.
+	DriverID uint32 `json:"driver_id"`
 	// IBAttrs are the static identity attributes of
 	// /sys/class/infiniband/<ibdev>/ (node_guid, fw_ver, ...).
 	IBAttrs map[string]string `json:"ib_attrs"`

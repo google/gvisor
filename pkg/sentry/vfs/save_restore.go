@@ -17,10 +17,12 @@ package vfs
 import (
 	goContext "context"
 	"fmt"
+	"io"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -124,6 +126,27 @@ type CompleteRestoreOptions struct {
 	// implementations backed by remote filesystems should validate that file
 	// mtimes have not changed between checkpoint and restore.
 	ValidateFileModificationTimestamps bool
+}
+
+// FSTarProvider provides access to filesystem checkpoint tar archives.
+type FSTarProvider interface {
+	// GetTar returns a reader for the tar archive of the filesystem with the
+	// given ResourceID. It returns (nil, nil) if no tar archive is available.
+	GetTar(id checkpoint.ResourceID) (io.ReadCloser, error)
+}
+
+type ctxFSTarProviderKey struct{}
+
+// CtxFSTarProvider is a Context.Value key for FSTarProvider.
+var CtxFSTarProvider ctxFSTarProviderKey
+
+// FSTarProviderFromContext returns the FSTarProvider associated with ctx, if
+// one exists.
+func FSTarProviderFromContext(ctx context.Context) FSTarProvider {
+	if v := ctx.Value(CtxFSTarProvider); v != nil {
+		return v.(FSTarProvider)
+	}
+	return nil
 }
 
 // saveMounts is called by stateify.

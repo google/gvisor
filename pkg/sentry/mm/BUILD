@@ -188,6 +188,7 @@ go_test(
         "//pkg/context",
         "//pkg/errors/linuxerr",
         "//pkg/hostarch",
+        "//pkg/safemem",
         "//pkg/sentry/arch",
         "//pkg/sentry/contexttest",
         "//pkg/sentry/limits",

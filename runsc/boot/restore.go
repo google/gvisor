@@ -340,9 +340,10 @@ func (r *restorer) restoreContainerInfo(l *Loader, info *containerInfo) error {
 }
 
 type restoreMounts struct {
-	fdmap     map[checkpoint.ResourceID]int
-	mfmap     map[checkpoint.ResourceID]*pgalloc.MemoryFile
-	sharedMfs map[string]bool
+	fdmap             map[checkpoint.ResourceID]int
+	mfmap             map[checkpoint.ResourceID]*pgalloc.MemoryFile
+	sharedMfs         map[string]bool
+	fsCheckpointedMfs map[checkpoint.ResourceID]struct{}
 }
 
 func (r *restoreMounts) String() string {
@@ -371,7 +372,7 @@ func (r *restorer) restore(l *Loader) error {
 	}
 	r.timer.Reached("specs validated")
 
-	p, err := createPlatform(l.root.conf, l.root.applicationCores, r.deviceFile, l.sandboxID)
+	p, err := createPlatform(l.root.conf, l.root.applicationCores, r.deviceFile, l.sandboxID, r.timer)
 	if err != nil {
 		return fmt.Errorf("creating platform: %v", err)
 	}
@@ -434,9 +435,10 @@ func (r *restorer) restore(l *Loader) error {
 	defer cu.Clean()
 
 	restoreMnts := restoreMounts{
-		fdmap:     make(map[checkpoint.ResourceID]int),
-		mfmap:     make(map[checkpoint.ResourceID]*pgalloc.MemoryFile),
-		sharedMfs: make(map[string]bool),
+		fdmap:             make(map[checkpoint.ResourceID]int),
+		mfmap:             make(map[checkpoint.ResourceID]*pgalloc.MemoryFile),
+		sharedMfs:         make(map[string]bool),
+		fsCheckpointedMfs: make(map[checkpoint.ResourceID]struct{}),
 	}
 	for _, cont := range r.containers {
 		// TODO(b/298078576): Need to process hints here probably
@@ -458,15 +460,18 @@ func (r *restorer) restore(l *Loader) error {
 	log.Debugf("Restore using mounts: %v", &restoreMnts)
 	ctx := l.k.SupervisorContext()
 	ctx = context.WithValues(ctx, map[any]any{
-		vfs.CtxRestoreFilesystemFDMap:     restoreMnts.fdmap,
-		pgalloc.CtxMemoryFileMap:          restoreMnts.mfmap,
-		devutil.CtxDevGoferClientProvider: l.k,
+		vfs.CtxRestoreFilesystemFDMap:        restoreMnts.fdmap,
+		pgalloc.CtxMemoryFileMap:             restoreMnts.mfmap,
+		pgalloc.CtxFSCheckpointedMemoryFiles: restoreMnts.fsCheckpointedMfs,
+		devutil.CtxDevGoferClientProvider:    l.k,
+		kernel.CtxFSRestore:                  l.fsRestore != nil,
+		vfs.CtxFSTarProvider:                 l.fsRestore,
 	})
 
 	if r.asyncMFLoader != nil {
 		// Now that private memory files are known, kick off their loading in the
 		// background goroutine.
-		r.asyncMFLoader.KickoffPrivate(restoreMnts.mfmap)
+		r.asyncMFLoader.KickoffPrivate(ctx, restoreMnts.mfmap)
 	}
 
 	ctx, err = r.prepareNvproxyRestoreContextLocked(ctx, l)
@@ -684,6 +689,10 @@ func (l *Loader) save(o *control.SaveOpts) (err error) {
 		return err
 	}
 	defer saveOpts.Close()
+
+	if saveOpts.FSSaveOpts != nil {
+		saveOpts.FSSaveOpts.RunscVersion = version.Version()
+	}
 
 	return l.saveWithOpts(saveOpts, &o.ExecOpts)
 }

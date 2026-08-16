@@ -478,7 +478,16 @@ func testDockerMatrix(t *testing.T, overlay bool) {
 	defer cancel()
 
 	d := startDockerdInGvisor(ctx, t, overlay)
-	defer d.CleanUp(ctx)
+	defer func() {
+		if t.Failed() {
+			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cleanupCancel()
+			t.Logf("Dockerd daemon container logs:\n%s", dockerLogs(cleanupCtx, d))
+		}
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cleanupCancel()
+		d.CleanUp(cleanupCtx)
+	}()
 
 	definitions := []struct {
 		name            string
@@ -525,6 +534,14 @@ func testDockerMatrix(t *testing.T, overlay bool) {
 				}
 				name := strings.Join(nameParts, "_")
 				t.Run(name, func(t *testing.T) {
+					t.Cleanup(func() {
+						if t.Failed() {
+							cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
+							defer cleanupCancel()
+							t.Logf("Dockerd daemon logs for %s:\n%s", name, dockerLogs(cleanupCtx, d))
+							logNetworkInterfaces(cleanupCtx, t, d)
+						}
+					})
 					def.testFunc(ctx, t, d, opts)
 				})
 			}
@@ -566,6 +583,20 @@ func startDockerdInGvisor(ctx context.Context, t *testing.T, overlay bool) *dock
 		t.Fatalf("docker run failed: %v", err)
 	}
 
+	// Stream dockerd logs into a file in TEST_UNDECLARED_OUTPUTS_DIR (test artifacts).
+	if dir, ok := os.LookupEnv("TEST_UNDECLARED_OUTPUTS_DIR"); ok {
+		logFilePath := path.Join(dir, fmt.Sprintf("dockerd_%s.log", t.Name()))
+		logFile, err := os.Create(logFilePath)
+		if err != nil {
+			t.Logf("failed to create dockerd log file: %v", err)
+		} else {
+			t.Cleanup(func() { _ = logFile.Close() })
+			go func() {
+				_ = d.StreamLogs(context.Background(), logFile)
+			}()
+		}
+	}
+
 	// Wait for the docker daemon.
 	cb := backoff.NewConstantBackOff(1 * time.Second)
 	if err := backoff.Retry(func() error {
@@ -574,7 +605,26 @@ func startDockerdInGvisor(ctx context.Context, t *testing.T, overlay bool) *dock
 	}, backoff.WithMaxRetries(cb, 30)); err != nil {
 		t.Fatalf("docker daemon failed to start: %v", err)
 	}
+
+	logNetworkInterfaces(ctx, t, d)
 	return d
+}
+
+// logNetworkInterfaces logs network interfaces, routing tables, and iptables in the container.
+func logNetworkInterfaces(ctx context.Context, t *testing.T, d *dockerutil.Container) {
+	if out, err := d.Exec(ctx, dockerutil.ExecOpts{}, "ip", "-o", "addr", "show"); err == nil {
+		t.Logf("Dockerd container network interfaces:\n%s", strings.TrimSpace(out))
+	} else {
+		t.Logf("Failed to query network interfaces: %v", err)
+	}
+
+	if out, err := d.Exec(ctx, dockerutil.ExecOpts{}, "ip", "route", "show"); err == nil {
+		t.Logf("Dockerd container routing table:\n%s", strings.TrimSpace(out))
+	}
+
+	if out, err := d.Exec(ctx, dockerutil.ExecOpts{}, "iptables", "-t", "nat", "-L", "POSTROUTING", "-n", "-v"); err == nil {
+		t.Logf("Dockerd container NAT POSTROUTING rules:\n%s", strings.TrimSpace(out))
+	}
 }
 
 // checkDockerImage list available images and checks if the given image is
