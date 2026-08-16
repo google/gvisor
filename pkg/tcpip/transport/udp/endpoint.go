@@ -520,6 +520,25 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 	}
 	if err := udpInfo.ctx.WritePacket(pkt, false /* headerIncluded */); err != nil {
 		e.stack.Stats().UDP.PacketSendErrors.Increment()
+		if _, ok := err.(*tcpip.ErrMessageTooLong); ok {
+			// When IP_MTU_DISCOVER is set to IP_PMTUDISC_DO or IP_PMTUDISC_PROBE
+			// and the packet exceeds the path MTU, Linux queues an EMSGSIZE error
+			// on the socket's error queue (MSG_ERRQUEUE) if IP_RECVERR is enabled.
+			// See net/ipv4/udp.c:udp_send_skb().
+			so := e.SocketOptions()
+			if so.GetIPv4RecvError() || so.GetIPv6RecvError() {
+				so.QueueLocalErr(
+					err,
+					udpInfo.ctx.PacketInfo().NetProto,
+					udpInfo.ctx.MTU(),
+					tcpip.FullAddress{
+						Addr: udpInfo.ctx.PacketInfo().RemoteAddress,
+						Port: udpInfo.remotePort,
+					},
+					nil,
+				)
+			}
+		}
 		return 0, err
 	}
 
