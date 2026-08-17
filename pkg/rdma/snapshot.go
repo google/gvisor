@@ -40,6 +40,11 @@ type PCINode struct {
 	// Attrs maps attribute file name to contents (verbatim, including any
 	// trailing newline).
 	Attrs map[string]string `json:"attrs"`
+	// Config is the raw PCI config space ("config" file), or nil if absent.
+	// hwloc (used by aws-ofi-nccl for NCCL topology) reads it to recover the
+	// PCI-bridge bus-number registers and PCIe link attributes; without it
+	// hwloc cannot reconstruct the bridge hierarchy.
+	Config []byte `json:"config,omitempty"`
 }
 
 // Port is the per-IB-port state. Attributes split into static (immutable
