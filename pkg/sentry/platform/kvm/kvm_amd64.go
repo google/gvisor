@@ -220,6 +220,9 @@ func (c *cpuidEntries) Set(in cpuid.In, out cpuid.Out) {
 
 var hasFSGSBASE bool
 
+// vmType is the machine type passed to KVM_CREATE_VM.
+var vmType uintptr = 0
+
 // updateGlobalOnce does global initialization. It has to be called only once.
 func updateGlobalOnce(fd int) error {
 	hasFSGSBASE = cpuid.HostFeatureSet().UseFSGSBASE()

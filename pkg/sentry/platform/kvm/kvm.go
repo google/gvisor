@@ -113,7 +113,7 @@ func New(deviceFile *fd.FD, config Config) (*KVM, error) {
 		errno unix.Errno
 	)
 	for {
-		vm, _, errno = unix.Syscall(unix.SYS_IOCTL, uintptr(fd), KVM_CREATE_VM, 0)
+		vm, _, errno = unix.Syscall(unix.SYS_IOCTL, uintptr(fd), KVM_CREATE_VM, vmType)
 		if errno == unix.EINTR {
 			continue
 		}

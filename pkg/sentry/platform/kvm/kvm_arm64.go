@@ -65,6 +65,9 @@ type kvmVcpuEvents struct {
 	rsvd [12]uint32
 }
 
+// vmType is the machine type passed to KVM_CREATE_VM.
+var vmType uintptr
+
 // updateGlobalOnce does global initialization. It has to be called only once.
 func updateGlobalOnce(fd int) error {
 	err := updateSystemValues(int(fd))
@@ -77,6 +80,7 @@ func updateGlobalOnce(fd int) error {
 			ring0.PhysicalAddressBits = 40
 		}
 	}
+	vmType = ring0.PhysicalAddressBits
 
 	ring0.Init()
 	initFaultBlocks()
