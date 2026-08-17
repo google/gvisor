@@ -245,7 +245,7 @@ func loadExecutable(ctx context.Context, args LoadArgs) (loadedELF, *arch.Contex
 			*args.RemainingTraversals = linux.MaxSymlinkTraversals
 
 		default:
-			ctx.Infof("Unknown magic: %v", hdr)
+			ctx.Infof("Unknown magic for %s: %v", args.Filename, hdr)
 			return loadedELF{}, nil, nil, nil, linuxerr.ENOEXEC
 		}
 		// Set to nil in case we loop on a Interpreter Script.

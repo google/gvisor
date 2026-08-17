@@ -158,6 +158,12 @@ func (fs *filesystem) newSysNetDir(ctx context.Context, root *auth.Credentials, 
 				"wmem_default":  fs.newInode(ctx, root, 0444, newStaticFile("212992")),
 				"wmem_max":      fs.newInode(ctx, root, 0444, newStaticFile("212992")),
 			}),
+			"ipv6": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
+				"bindv6only":       fs.newInode(ctx, root, 0444, newStaticFile("0")),
+				"ip6frag_time":     fs.newInode(ctx, root, 0444, newStaticFile("60")),
+				"ip_nonlocal_bind": fs.newInode(ctx, root, 0444, newStaticFile("0")),
+				"auto_flowlabels":  fs.newInode(ctx, root, 0444, newStaticFile("1")),
+			}),
 		}
 	}
 
