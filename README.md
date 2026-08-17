@@ -142,6 +142,13 @@ convenience. This is useful for external packages and libraries that depend on
 gVisor subpackages (e.g. userspace networking via Netstack) to import gVisor Go
 code into their Go projects.
 
+Select this branch explicitly with the `go` branch query. `@latest` resolves
+`master`, which requires Bazel and is not compatible with standard Go tooling:
+
+```sh
+go get gvisor.dev/gvisor/pkg/tcpip/transport/tcp@go
+```
+
 **NOTE**: **`runsc` builds from this branch are not supported**. gVisor and
 `runsc` require several binaries (some of which are not even written in Go) in
 order to function. The `go` branch is supported in a best effort capacity, and
