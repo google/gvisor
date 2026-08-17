@@ -801,6 +801,118 @@ func TestFragmentForwarding(t *testing.T) {
 	}
 }
 
+func TestForwardingGSOTCPPacket(t *testing.T) {
+	const (
+		mtu        = 1000
+		tcpMSS     = mtu - header.IPv4MinimumSize - header.TCPMinimumSize
+		payloadLen = 2*tcpMSS + 1
+		packetTTL  = 2
+	)
+
+	ctx := newTestContext()
+	defer ctx.cleanup()
+	s := ctx.s
+
+	endpoints := make(map[tcpip.NICID]*channel.Endpoint)
+	for nicID, addr := range defaultEndpointConfigs {
+		ep := channel.New(1, mtu, "")
+		defer ep.Close()
+		if nicID == outgoingNICID {
+			ep.LinkEPCapabilities = stack.CapabilityTXChecksumOffload
+			ep.SupportedGSOKind = stack.HostGSOSupported
+		}
+
+		if err := s.CreateNIC(nicID, ep); err != nil {
+			t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
+		}
+		addr := tcpip.ProtocolAddress{Protocol: header.IPv4ProtocolNumber, AddressWithPrefix: addr}
+		if err := s.AddProtocolAddress(nicID, addr, stack.AddressProperties{}); err != nil {
+			t.Fatalf("s.AddProtocolAddress(%d, %+v, {}): %s", nicID, addr, err)
+		}
+		endpoints[nicID] = ep
+	}
+
+	s.SetRouteTable([]tcpip.Route{
+		{
+			Destination: incomingIPv4Addr.Subnet(),
+			NIC:         incomingNICID,
+		},
+		{
+			Destination: outgoingIPv4Addr.Subnet(),
+			NIC:         outgoingNICID,
+		},
+	})
+
+	if err := s.SetForwardingDefaultAndAllNICs(header.IPv4ProtocolNumber, true); err != nil {
+		t.Fatalf("s.SetForwardingDefaultAndAllNICs(%d, true): %s", header.IPv4ProtocolNumber, err)
+	}
+
+	hdr := prependable.New(header.IPv4MinimumSize + header.TCPMinimumSize + payloadLen)
+	payload := hdr.Prepend(payloadLen)
+	for i := range payload {
+		payload[i] = byte(i)
+	}
+	tcpHdr := header.TCP(hdr.Prepend(header.TCPMinimumSize))
+	tcpHdr.Encode(&header.TCPFields{
+		SrcPort:    1234,
+		DstPort:    4321,
+		SeqNum:     1,
+		AckNum:     1,
+		DataOffset: header.TCPMinimumSize,
+		Flags:      header.TCPFlagAck,
+		WindowSize: 30000,
+	})
+	ipHdr := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
+	ipHdr.Encode(&header.IPv4Fields{
+		TotalLength: uint16(len(hdr.View())),
+		Flags:       header.IPv4FlagDontFragment,
+		TTL:         packetTTL,
+		Protocol:    uint8(header.TCPProtocolNumber),
+		SrcAddr:     remoteIPv4Addr1,
+		DstAddr:     remoteIPv4Addr2,
+	})
+	ipHdr.SetChecksum(^ipHdr.CalculateChecksum())
+
+	wantGSO := stack.GSO{
+		Type:       stack.GSOTCPv4,
+		NeedsCsum:  true,
+		CsumOffset: header.TCPChecksumOffset,
+		MSS:        tcpMSS,
+		L3HdrLen:   header.IPv4MinimumSize,
+		MaxSize:    1 << 15,
+	}
+	requestPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Payload: buffer.MakeWithData(hdr.View()),
+	})
+	defer requestPkt.DecRef()
+	requestPkt.GSOOptions = wantGSO
+	requestPkt.RXChecksumValidated = true
+
+	endpoints[incomingNICID].InjectInbound(header.IPv4ProtocolNumber, requestPkt)
+	forwarded := endpoints[outgoingNICID].Read()
+	if forwarded == nil {
+		t.Fatalf("expected GSO TCP packet through outgoing NIC; PacketTooBig = %d", s.Stats().IP.Forwarding.PacketTooBig.Value())
+	}
+	defer forwarded.DecRef()
+
+	if got := forwarded.Size(); got <= mtu {
+		t.Errorf("forwarded.Size() = %d, want > %d", got, mtu)
+	}
+	if diff := cmp.Diff(wantGSO, forwarded.GSOOptions); diff != "" {
+		t.Errorf("forwarded.GSOOptions mismatch (-want +got):\n%s", diff)
+	}
+	segmentSize := int(forwarded.GSOOptions.L3HdrLen) + header.TCPMinimumSize + int(forwarded.GSOOptions.MSS)
+	if segmentSize != mtu {
+		t.Errorf("GSO segment size = %d, want = %d", segmentSize, mtu)
+	}
+	if got := header.IPv4(forwarded.NetworkHeader().Slice()).TTL(); got != packetTTL-1 {
+		t.Errorf("forwarded TTL = %d, want = %d", got, packetTTL-1)
+	}
+	if got := s.Stats().IP.Forwarding.PacketTooBig.Value(); got != 0 {
+		t.Errorf("s.Stats().IP.Forwarding.PacketTooBig.Value() = %d, want = 0", got)
+	}
+}
+
 func TestMulticastFragmentForwarding(t *testing.T) {
 	const (
 		defaultMTU           = 1000
