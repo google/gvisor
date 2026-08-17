@@ -82,6 +82,12 @@ apps:
     version: "29.6.1"
     notes: "Supported with caveats; see [Docker in gVisor](/docs/tutorials/docker-in-gvisor/)."
 
+  - name: "Podman in gVisor"
+    category: "CI/CD & developer tooling"
+    verdict: "partial"
+    version: "4.9.3"
+    notes: "Rootless mode is supported with caveats; tracking progress in [#13944](https://github.com/google/gvisor/issues/13944)."
+
   - name: "WordPress"
     category: "Applications & platforms"
     verdict: "yes"
