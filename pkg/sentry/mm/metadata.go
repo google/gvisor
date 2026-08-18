@@ -156,11 +156,14 @@ func (mm *MemoryManager) SetExecutable(ctx context.Context, fd *vfs.FileDescript
 
 	mm.metadataMu.Unlock()
 
+	denyExecutableWrite(fd)
+
 	// Release the old reference.
 	//
 	// Do this without holding the lock, since it may wind up doing some
 	// I/O to sync the dirent, etc.
 	if orig != nil {
+		allowExecutableWrite(orig)
 		orig.DecRef(ctx)
 	}
 }
@@ -177,4 +180,15 @@ func (mm *MemoryManager) SetVDSOSigReturn(addr uint64) {
 	mm.metadataMu.Lock()
 	defer mm.metadataMu.Unlock()
 	mm.vdsoSigReturnAddr = addr
+}
+
+// denyExecutableWrite denies writes to the file backing fd, which is being
+// executed.
+func denyExecutableWrite(fd *vfs.FileDescription) {
+	fd.Mount().Filesystem().VirtualFilesystem().DenyWriteAccess(fd.Dentry())
+}
+
+// allowExecutableWrite undoes a previous call to denyExecutableWrite.
+func allowExecutableWrite(fd *vfs.FileDescription) {
+	fd.Mount().Filesystem().VirtualFilesystem().AllowWriteAccess(fd.Dentry())
 }

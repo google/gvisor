@@ -118,6 +118,14 @@ type VirtualFilesystem struct {
 	dynCharDevMajorMu   sync.Mutex `state:"nosave"`
 	dynCharDevMajorUsed map[uint32]struct{}
 
+	// execDentries maps Dentries that are currently being executed to the
+	// number of MemoryManagers executing them. Such files may not be opened
+	// for writing or truncated. execDentries is protected by execDentriesMu.
+	//
+	// execDentries is analogous to a negative Linux inode.i_writecount.
+	execDentriesMu sync.RWMutex `state:"nosave"`
+	execDentries   map[*Dentry]uint32
+
 	// anonBlockDevMinor contains all allocated anonymous block device minor
 	// numbers. anonBlockDevMinorNext is a lower bound for the smallest
 	// unallocated anonymous block device number. anonBlockDevMinorNext and
@@ -158,6 +166,7 @@ func (vfs *VirtualFilesystem) Init(ctx context.Context) error {
 	vfs.mountpoints = make(map[*Dentry]map[*Mount]struct{})
 	vfs.devices = make(map[devTuple]*registeredDevice)
 	vfs.dynCharDevMajorUsed = make(map[uint32]struct{})
+	vfs.execDentries = make(map[*Dentry]uint32)
 	vfs.anonBlockDevMinorNext = 1
 	vfs.anonBlockDevMinor = make(map[uint32]struct{})
 	vfs.fsTypes = make(map[string]*registeredFilesystemType)

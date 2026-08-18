@@ -1238,6 +1238,11 @@ func (fd *fileDescription) Stat(ctx context.Context, opts vfs.StatOptions) (linu
 
 // SetStat implements vfs.FileDescriptionImpl.SetStat.
 func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions) error {
+	if opts.Stat.Mask&linux.STATX_SIZE != 0 {
+		if err := fd.vfsfd.CheckWriteAccess(); err != nil {
+			return err
+		}
+	}
 	return fd.dentry().inode.setStat(ctx, auth.CredentialsFromContext(ctx), &opts)
 }
 

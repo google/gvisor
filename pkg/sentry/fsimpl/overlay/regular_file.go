@@ -170,6 +170,11 @@ func (fd *regularFileFD) SetStat(ctx context.Context, opts vfs.SetStatOptions) e
 	if err := vfs.CheckSetStat(ctx, auth.CredentialsFromContext(ctx), &opts, mode, d.accessACL.Load(), auth.KUID(d.uid.Load()), auth.KGID(d.gid.Load())); err != nil {
 		return err
 	}
+	if opts.Stat.Mask&linux.STATX_SIZE != 0 {
+		if err := fd.vfsfd.CheckWriteAccess(); err != nil {
+			return err
+		}
+	}
 	mnt := fd.vfsfd.Mount()
 	if err := mnt.CheckBeginWrite(); err != nil {
 		return err

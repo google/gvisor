@@ -359,3 +359,38 @@ func ClearSUIDAndSGID(mode uint32) uint32 {
 	}
 	return mode
 }
+
+// DenyWriteAccess marks d as being executed, causing subsequent attempts to
+// open it for writing or truncate it to fail with ETXTBSY.
+func (vfs *VirtualFilesystem) DenyWriteAccess(d *Dentry) {
+	vfs.execDentriesMu.Lock()
+	defer vfs.execDentriesMu.Unlock()
+	vfs.execDentries[d]++
+}
+
+// AllowWriteAccess undoes a previous call to DenyWriteAccess.
+func (vfs *VirtualFilesystem) AllowWriteAccess(d *Dentry) {
+	vfs.execDentriesMu.Lock()
+	defer vfs.execDentriesMu.Unlock()
+	if n := vfs.execDentries[d]; n > 1 {
+		vfs.execDentries[d] = n - 1
+	} else {
+		delete(vfs.execDentries, d)
+	}
+}
+
+// CheckWriteAccess returns ETXTBSY if d is currently being executed.
+func (vfs *VirtualFilesystem) CheckWriteAccess(d *Dentry) error {
+	vfs.execDentriesMu.RLock()
+	defer vfs.execDentriesMu.RUnlock()
+	if _, ok := vfs.execDentries[d]; ok {
+		return linuxerr.ETXTBSY
+	}
+	return nil
+}
+
+// CheckWriteAccess returns ETXTBSY if the file described by fd is currently
+// being executed.
+func (fd *FileDescription) CheckWriteAccess() error {
+	return fd.Mount().Filesystem().VirtualFilesystem().CheckWriteAccess(fd.Dentry())
+}

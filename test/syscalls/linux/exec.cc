@@ -86,6 +86,7 @@ constexpr char kExecWithThread[] = "--exec_exec_with_thread";
 constexpr char kExecFromThread[] = "--exec_exec_from_thread";
 constexpr char kExecInParent[] = "--exec_exec_in_parent";
 constexpr char kWriteAndWaitForPid[] = "--exec_write_and_wait_for_pid";
+constexpr char kSignalAndPause[] = "--exec_signal_and_pause";
 
 // Runs file specified by dirfd and pathname with argv and checks that the exit
 // status is expect_status and that stderr contains expect_stderr.
@@ -1155,6 +1156,49 @@ TEST(ExecTest, ReadProcMemAfterExecFromChild) {
             W_EXITCODE(42, 0), "");
 }
 
+// Signals readiness on pipe_fd, then blocks so that the caller can operate on
+// this process' executable while it is still running.
+void signalAndPause(int pipe_fd) {
+  char c = 'x';
+  TEST_PCHECK(WriteFd(pipe_fd, &c, 1) == 1);
+  TEST_PCHECK(close(pipe_fd) == 0);
+  pause();
+  _exit(1);
+}
+
+TEST(ExecTest, WriteExecutedBinaryFails) {
+  // Execute a writable copy of this binary, so that write permission does not
+  // mask ETXTBSY.
+  const std::string exe = ASSERT_NO_ERRNO_AND_VALUE(ProcessExePath(getpid()));
+  const std::string contents = ASSERT_NO_ERRNO_AND_VALUE(GetContents(exe));
+  const TempPath binary = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(GetShortTestTmpdir(), contents, 0755));
+
+  int pipe_fds[2];
+  ASSERT_THAT(pipe(pipe_fds), SyscallSucceeds());
+  FileDescriptor read_fd(pipe_fds[0]);
+  FileDescriptor write_fd(pipe_fds[1]);
+
+  pid_t child;
+  int execve_errno;
+  const Cleanup kill = ASSERT_NO_ERRNO_AND_VALUE(ForkAndExec(
+      binary.path(),
+      {binary.path(), kSignalAndPause, absl::StrCat(pipe_fds[1])}, {}, &child,
+      &execve_errno));
+  ASSERT_EQ(0, execve_errno);
+  write_fd.reset();
+
+  char c;
+  ASSERT_THAT(ReadFd(read_fd.get(), &c, 1), SyscallSucceedsWithValue(1));
+
+  EXPECT_THAT(open(binary.path().c_str(), O_WRONLY),
+              SyscallFailsWithErrno(ETXTBSY));
+  EXPECT_THAT(open(binary.path().c_str(), O_RDONLY | O_TRUNC),
+              SyscallFailsWithErrno(ETXTBSY));
+  EXPECT_THAT(truncate(binary.path().c_str(), 0),
+              SyscallFailsWithErrno(ETXTBSY));
+}
+
 /*
 This function, along with writeAndWaitForPid, sets up the test case to verify
 that a /proc/self/mem file descriptor is not leaked across an execve similar to
@@ -1343,6 +1387,14 @@ int main(int argc, char** argv) {
     }
     if (arg == gvisor::testing::kExecInParent) {
       gvisor::testing::execInParent();
+      return 1;
+    }
+    if (arg == gvisor::testing::kSignalAndPause) {
+      int fd;
+      if (!absl::SimpleAtoi(argv[i + 1], &fd)) {
+        return 1;
+      }
+      gvisor::testing::signalAndPause(fd);
       return 1;
     }
     if (arg == gvisor::testing::kWriteAndWaitForPid) {

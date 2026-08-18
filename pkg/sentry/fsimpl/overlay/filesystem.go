@@ -935,6 +935,12 @@ func (d *dentry) ensureOpenableLocked(ctx context.Context, rp *vfs.ResolvingPath
 func (d *dentry) openCopiedUp(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
 	mnt := rp.Mount()
 
+	if vfs.AccessTypesForOpenFlags(opts).MayWrite() {
+		if err := rp.VirtualFilesystem().CheckWriteAccess(&d.vfsd); err != nil {
+			return nil, err
+		}
+	}
+
 	// Directory FDs open FDs from each layer when directory entries are read,
 	// so they don't require opening an FD from d.topLayer() up front.
 	ftype := d.mode.Load() & linux.S_IFMT
@@ -1524,6 +1530,11 @@ func (d *dentry) setStatLocked(ctx context.Context, rp *vfs.ResolvingPath, opts 
 	mode := linux.FileMode(d.mode.Load())
 	if err := vfs.CheckSetStat(ctx, rp.Credentials(), &opts, mode, d.accessACL.Load(), auth.KUID(d.uid.Load()), auth.KGID(d.gid.Load())); err != nil {
 		return err
+	}
+	if opts.Stat.Mask&linux.STATX_SIZE != 0 {
+		if err := rp.VirtualFilesystem().CheckWriteAccess(&d.vfsd); err != nil {
+			return err
+		}
 	}
 	mnt := rp.Mount()
 	if err := mnt.CheckBeginWrite(); err != nil {

@@ -1295,6 +1295,11 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs
 	if err := vfs.CheckSetStat(ctx, creds, opts, mode, nil, auth.KUID(d.inode.uid.Load()), auth.KGID(d.inode.gid.Load())); err != nil {
 		return err
 	}
+	if stat.Mask&linux.STATX_SIZE != 0 {
+		if err := mnt.Filesystem().VirtualFilesystem().CheckWriteAccess(&d.vfsd); err != nil {
+			return err
+		}
+	}
 	if err := mnt.CheckBeginWrite(); err != nil {
 		return err
 	}

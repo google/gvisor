@@ -467,6 +467,11 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 		if err := d.inode.checkPermissions(rp.Credentials(), ats); err != nil {
 			return nil, err
 		}
+		if ats.MayWrite() {
+			if err := rp.VirtualFilesystem().CheckWriteAccess(&d.vfsd); err != nil {
+				return nil, err
+			}
+		}
 	}
 	switch impl := d.inode.impl.(type) {
 	case *regularFile:
@@ -772,6 +777,12 @@ func (fs *filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts
 	if err != nil {
 		fs.mu.RUnlock()
 		return err
+	}
+	if opts.Stat.Mask&linux.STATX_SIZE != 0 {
+		if err := rp.VirtualFilesystem().CheckWriteAccess(&d.vfsd); err != nil {
+			fs.mu.RUnlock()
+			return err
+		}
 	}
 	err = d.inode.setStat(ctx, rp.Credentials(), &opts)
 	fs.mu.RUnlock()
