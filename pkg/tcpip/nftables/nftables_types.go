@@ -765,9 +765,9 @@ var (
 	// xtables operations
 	_ operation = (*compatAddrtypeMatch)(nil)
 	_ operation = (*compatCTMatch)(nil)
-	_ operation = (*compatMASQTarget)(nil)
-	_ operation = (*compatNATTarget)(nil)
 	_ operation = (*compatNoopMatch)(nil)
+	_ operation = (*compatNATTarget)(nil)
+	_ operation = (*compatMASQTarget)(nil)
 )
 
 // OpType represents the type of operation.
