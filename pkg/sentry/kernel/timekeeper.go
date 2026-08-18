@@ -16,6 +16,7 @@ package kernel
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -121,6 +122,21 @@ type Timekeeper struct {
 
 	// vDSO parameter page kept updated by the Timekeeper mechanism
 	params *VDSOParamPage `state:"nosave"`
+
+	// pausableClock for AfterFunc callbacks.
+	pausableClock *ktime.SyntheticClock `state:"nosave"`
+
+	// afterFuncSchedulerWakeCh wakes the AfterFunc scheduler when
+	// new timers are added.
+	afterFuncSchedulerWakeCh chan struct{} `state:"nosave"`
+
+	// afterFuncSchedulerCancel stops the AfterFunc scheduler and
+	// waits for the callbacks to exit.
+	// +checklocks:mu
+	afterFuncSchedulerCancel func() `state:"nosave"`
+
+	// activeAfterFuncs tracks running AfterFunc callbacks.
+	activeAfterFuncs sync.WaitGroup `state:"nosave"`
 }
 
 // NewTimekeeper returns a Timekeeper that is automatically kept up-to-date.
@@ -129,6 +145,8 @@ type Timekeeper struct {
 // SetClocks must be called on the returned Timekeeper before it is usable.
 func NewTimekeeper() *Timekeeper {
 	t := Timekeeper{}
+	t.pausableClock = &ktime.SyntheticClock{}
+	t.afterFuncSchedulerWakeCh = make(chan struct{}, 1)
 	t.realtimeClock = &timekeeperClock{tk: &t, c: sentrytime.Realtime}
 	t.monotonicClock = &timekeeperClock{tk: &t, c: sentrytime.Monotonic}
 	return &t
@@ -154,6 +172,13 @@ func (t *Timekeeper) SetClocks(c sentrytime.Clocks, params *VDSOParamPage) {
 
 	if t.clocks != nil {
 		panic("SetClocks called on previously-initialized Timekeeper")
+	}
+
+	if t.pausableClock == nil {
+		t.pausableClock = &ktime.SyntheticClock{}
+	}
+	if t.afterFuncSchedulerWakeCh == nil {
+		t.afterFuncSchedulerWakeCh = make(chan struct{}, 1)
 	}
 
 	t.clocks = c
@@ -199,6 +224,15 @@ func (t *Timekeeper) SetClocks(c sentrytime.Clocks, params *VDSOParamPage) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.startUpdater(params)
+
+	// Initialize the pausable clock with the current monotonic time and
+	// start the background AfterFunc scheduler goroutine.
+	nsec, err := t.GetTime(sentrytime.Monotonic)
+	if err != nil {
+		panic("Unable to get current monotonic time: " + err.Error())
+	}
+	t.pausableClock.Store(ktime.FromNanoseconds(nsec))
+	t.startAfterFuncSchedulerLocked()
 
 	if t.restored != nil {
 		close(t.restored)
@@ -368,25 +402,39 @@ func (t *Timekeeper) stopUpdater() {
 // Destroy destroys the Timekeeper, freeing all associated resources.
 func (t *Timekeeper) Destroy() {
 	t.mu.Lock()
-	defer t.mu.Unlock()
-
 	t.stopUpdater()
+	t.stopAfterFuncSchedulerLocked()
+	t.mu.Unlock()
+
+	t.activeAfterFuncs.Wait()
 }
 
-// PauseUpdates stops clock parameter updates. This should only be used when
+// Pause stops both clock updates and the AfterFunc scheduler.
 // Tasks are not running and thus cannot access the clock and when
-// GetTime is not being called internally
-func (t *Timekeeper) PauseUpdates() {
+// GetTime is not being called internally.
+func (t *Timekeeper) Pause() {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	t.stopUpdater()
+	t.stopAfterFuncSchedulerLocked()
+	t.mu.Unlock()
+
+	t.activeAfterFuncs.Wait()
 }
 
-// ResumeUpdates restarts clock parameter updates stopped by PauseUpdates.
-func (t *Timekeeper) ResumeUpdates(params *VDSOParamPage) {
+// Resume restarts clock parameter updates and the AfterFunc scheduler.
+func (t *Timekeeper) Resume(params *VDSOParamPage) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+
 	t.startUpdater(params)
+	// Resynchronize the pausable clock with the current monotonic time and
+	// restart the background AfterFunc scheduler goroutine.
+	nsec, err := t.GetTime(sentrytime.Monotonic)
+	if err != nil {
+		panic(fmt.Sprintf("timekeeper.GetTime(sentrytime.Monotonic): %v", err))
+	}
+	t.pausableClock.Store(ktime.FromNanoseconds(nsec))
+	t.startAfterFuncSchedulerLocked()
 }
 
 // GetTime returns the current time in nanoseconds.
@@ -481,20 +529,153 @@ func (t *Timekeeper) NowMonotonic() tcpip.MonotonicTime {
 	return mt.Add(time.Duration(nsec) * time.Nanosecond)
 }
 
+// startAfterFuncSchedulerLocked starts the scheduler.
+//
+// +checklocks:t.mu
+func (t *Timekeeper) startAfterFuncSchedulerLocked() {
+	if t.afterFuncSchedulerCancel != nil {
+		return
+	}
+
+	// stop signals the scheduler to exit.
+	stop := make(chan struct{})
+	// done is closed when the scheduler exits.
+	done := make(chan struct{})
+	t.afterFuncSchedulerCancel = func() {
+		close(stop)
+		<-done
+	}
+	go func() {
+		defer close(done)
+		t.runAfterFuncScheduler(stop)
+	}()
+}
+
+// runAfterFuncScheduler updates pausableClock to trigger timers that have expired.
+func (t *Timekeeper) runAfterFuncScheduler(stop <-chan struct{}) {
+	// Initialize event timer.
+	eventTimer := time.NewTimer(math.MaxInt64)
+	eventTimer.Stop()
+	defer eventTimer.Stop()
+
+	for {
+		// Set the current time of the pausable clock.
+		nsec, err := t.GetTime(sentrytime.Monotonic)
+		if err != nil {
+			panic(fmt.Sprintf("timekeeper.GetTime(sentrytime.Monotonic), err: %v", err))
+		}
+		t.pausableClock.Store(ktime.FromNanoseconds(nsec))
+
+		// Find the next timer expiration and set the event timer.
+		var eventChan <-chan time.Time
+		if nextExp, ok := t.pausableClock.NextExpiration(); ok {
+			now := ktime.FromNanoseconds(nsec)
+			var wait time.Duration
+			if nextExp.After(now) {
+				wait = nextExp.Sub(now)
+			}
+			eventTimer.Reset(wait)
+			eventChan = eventTimer.C
+		}
+
+		// Wait for the next timer expiration or a stop signal.
+		select {
+		case <-stop:
+			return
+		case <-eventChan:
+		case <-t.afterFuncSchedulerWakeCh:
+			// Cancel the host timer if it was set.
+			if eventChan != nil && !eventTimer.Stop() {
+				// Drain the timer channel to avoid stale timers.
+				select {
+				case <-eventTimer.C:
+				default:
+				}
+			}
+		}
+	}
+}
+
+// stopAfterFuncSchedulerLocked stops the AfterFunc scheduler goroutine and waits for it to exit.
+//
+// +checklocks:t.mu
+func (t *Timekeeper) stopAfterFuncSchedulerLocked() {
+	if t.afterFuncSchedulerCancel != nil {
+		t.afterFuncSchedulerCancel()
+		t.afterFuncSchedulerCancel = nil
+	}
+}
+
 // AfterFunc implements tcpip.Clock.
 func (t *Timekeeper) AfterFunc(d time.Duration, f func()) tcpip.Timer {
-	timer := &timekeeperTcpipTimer{
-		clock: t.monotonicClock,
-		fn:    f,
+	listener := &timekeeperListener{
+		tk: t,
+		fn: f,
 	}
+	timer := &timekeeperTimer{
+		tk: t,
+	}
+	timer.Init(t.pausableClock, listener)
 	timer.Reset(d)
 	return timer
+}
+
+// timekeeperListener implements ktime.Listener to execute timer callbacks.
+type timekeeperListener struct {
+	tk *Timekeeper
+	fn func()
+}
+
+// NotifyTimer implements ktime.Listener.NotifyTimer.
+func (l *timekeeperListener) NotifyTimer(exp uint64) {
+	// Track the running AfterFuncs.
+	// Without tracking, a data race can occur during Pause/Save when
+	// serialization accesses netstack objects while an in-flight callback is
+	// still mutating them.
+	l.tk.activeAfterFuncs.Add(1)
+	go func() {
+		defer l.tk.activeAfterFuncs.Done()
+		l.fn()
+	}()
+}
+
+// timekeeperTimer implements tcpip.Timer to manage timer state.
+type timekeeperTimer struct {
+	ktime.SyntheticTimer
+	tk *Timekeeper
+}
+
+// Stop implements tcpip.Timer.Stop.
+// It cancels the timer and returns true if the timer was active.
+func (timer *timekeeperTimer) Stop() bool {
+	_, lastSetting := timer.Set(ktime.Setting{}, nil)
+	return lastSetting.Enabled
+}
+
+// Reset implements tcpip.Timer.Reset.
+func (timer *timekeeperTimer) Reset(d time.Duration) {
+	nsec, err := timer.tk.GetTime(sentrytime.Monotonic)
+	if err != nil {
+		panic(fmt.Sprintf("timekeeperTimer.Reset: GetTime(Monotonic): %v", err))
+	}
+	timer.Set(ktime.Setting{
+		Enabled: true,
+		Next:    ktime.FromNanoseconds(nsec).Add(d),
+	}, nil)
+	// Non-blocking signal to the AfterFunc scheduler to
+	// re-evaluate the next expiration.
+	select {
+	case timer.tk.afterFuncSchedulerWakeCh <- struct{}{}:
+	default:
+	}
 }
 
 // timekeeperTcpipTimer implements tcpip.Timer by wrapping a ktime.SampledTimer.
 // tcpip.Timer does not define a Destroy method, so each timer expiration and
 // each call to Timer.Stop() must release all resources by calling
-// ktime.SampledTimer.Destroy().
+// ktime.SampledTimer.Destroy()
+//
+// Deprecated: Use timekeeperTimer instead.
 type timekeeperTcpipTimer struct {
 	// immutable
 	clock *timekeeperClock
@@ -507,6 +688,7 @@ type timekeeperTcpipTimer struct {
 	// called since Timer cannot be restarted once it has been Destroyed by Stop.
 	//
 	// This field is nil iff Stop has been called.
+	// +checklocks:mu
 	t *ktime.SampledTimer
 
 	// resets is the number of times Reset has been called. resets is written
