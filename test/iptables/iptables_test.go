@@ -17,6 +17,7 @@ package iptables
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"net"
 	"slices"
@@ -28,6 +29,90 @@ import (
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/test/netutils"
 )
+
+var iptablesNFT = flag.Bool("iptables-nft", false, "run tests using iptables-nft instead of iptables-legacy")
+
+func isNFTMode() bool {
+	return *iptablesNFT
+}
+
+// TODO: b/542649081 - Fix and remove skipIfNFTMode.
+func skipIfNFTMode(test TestCase, ipv6 bool) (reason string, skip bool) {
+	if ipv6 {
+		return "IPv6 is not tested in nftables currently", true
+	}
+	switch test.Name() {
+	case
+		// REJECT tests
+		"FilterInputRejectDefault",
+		"FilterInputRejectDefaultUnmatched",
+		"FilterInputRejectTCPReset",
+		"FilterInputRejectTCPResetUnmatched":
+
+		return "REJECT target is not supported in nftables compat yet", true
+
+	case
+		// REDIRECT tests
+		"NATPreRedirectUDPPort",
+		"NATPreRedirectTCPPort",
+		"NATPreRedirectTCPOutgoing",
+		"NATOutRedirectTCPIncoming",
+		"NATOutRedirectUDPPort",
+		"NATOutRedirectTCPPort",
+		"NATDropUDP",
+		"NATPreRedirectIP",
+		"NATPreDontRedirectIP",
+		"NATPreRedirectInvert",
+		"NATOutRedirectIP",
+		"NATOutDontRedirectIP",
+		"NATOutRedirectInvert",
+		"NATRedirectRequiresProtocol",
+		"NATLoopbackSkipsPrerouting",
+		"NATPreOriginalDst",
+		"NATOutOriginalDst",
+		"NATPreRECVORIGDSTADDR",
+		"NATOutRECVORIGDSTADDR":
+
+		return "REDIRECT target is not supported in nftables compat yet", true
+
+	case
+		// Range Operation tests
+		"FilterInputDropTCPSrcPort",
+		"FilterInputDropTCPDestPort",
+		"FilterOutputDropTCPDestPort":
+
+		return "Range Operation not supported in nftables yet", true
+
+	case
+		// Multiport Match tests
+		"FilterInputDropAllSrcPorts",
+		"FilterInputDropAllExceptOneDstPort",
+		"FilterOutputAcceptInvertSrcPorts",
+		"FilterOutputDropSrcPorts",
+		"FilterOutputAcceptInvertPorts":
+
+		return "multiport match is not supported in nftables compat yet", true
+
+	case
+		// Owner Match tests
+		"FilterOutputAcceptTCPOwner",
+		"FilterOutputDropTCPOwner",
+		"FilterOutputAcceptUDPOwner",
+		"FilterOutputDropUDPOwner",
+		"FilterOutputOwnerFail",
+		"FilterOutputAcceptGIDOwner",
+		"FilterOutputDropGIDOwner",
+		"FilterOutputInvertGIDOwner",
+		"FilterOutputInvertUIDOwner",
+		"FilterOutputInvertUIDAndGIDOwner",
+		"FilterOutputOwnerNilAccept":
+
+		return "owner match is not supported in nftables compat yet", true
+
+	default:
+		return "", false
+	}
+}
 
 // singleTest runs a TestCase. Each test follows a pattern:
 //   - Create a container.
@@ -45,6 +130,12 @@ func singleTest(t *testing.T, test TestCase) {
 			subtest = "IPv6"
 		}
 		t.Run(subtest, func(t *testing.T) {
+			if isNFTMode() {
+				reason, skip := skipIfNFTMode(test, tc)
+				if skip {
+					t.Skip(reason)
+				}
+			}
 			iptablesTest(t, test, tc)
 		})
 	}
@@ -84,6 +175,9 @@ func iptablesTest(t *testing.T, test TestCase, ipv6 bool) {
 	args := []string{"/runner/runner", "-name", test.Name()}
 	if ipv6 {
 		args = append(args, "-ipv6")
+	}
+	if isNFTMode() {
+		args = append(args, "-nft")
 	}
 	if err := d.Spawn(ctx, opts, args...); err != nil {
 		log.Infof("docker run failed: %v", err)
