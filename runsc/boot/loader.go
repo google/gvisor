@@ -1358,6 +1358,13 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	if conf.FilestoreAdoptDir != "" {
+		// The donated filestore FDs are adopted host files whose contents are
+		// only valid for a state checkpoint restore. A fresh start would
+		// truncate and overwrite them.
+		return fmt.Errorf("cannot start container %q with filestore adoption enabled; filestore-adopt-dir requires state checkpoint restore", cid)
+	}
+
 	cu := cleanup.Make(func() {
 		l.failedToStart[cid] = struct{}{} // +checklocksignore: l.mu is locked above
 	})

@@ -104,6 +104,13 @@ type Config struct {
 	// DO NOT call it directly, use GetOverlay2() instead.
 	Overlay2 Overlay2 `flag:"overlay2"`
 
+	// FilestoreAdoptDir is the directory containing host filestore files to
+	// adopt as the sandbox's writable-layer backing files, instead of creating
+	// new anonymous ones. It is used together with state checkpoint restore of
+	// a checkpoint saved with --skip-filestore-pages: the adopted files provide
+	// the private MemoryFile contents that the checkpoint does not carry.
+	FilestoreAdoptDir string `flag:"filestore-adopt-dir"`
+
 	// FSGoferHostUDS is deprecated: use host-uds=all.
 	FSGoferHostUDS bool `flag:"fsgofer-host-uds"`
 

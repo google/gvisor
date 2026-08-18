@@ -65,6 +65,12 @@ type SaveOpts struct {
 	// file.
 	AppMFExcludeCommittedZeroPages bool
 
+	// PrivateMFExternalContent is the value of
+	// pgalloc.SaveOpts.ExternalContent for private (disk-backed) MemoryFiles.
+	// If true, their page contents are not saved; the backing host files must
+	// be captured out-of-band and adopted on restore.
+	PrivateMFExternalContent bool
+
 	// Resume indicates if the statefile is used for save-resume.
 	Resume bool
 
@@ -157,7 +163,7 @@ func (opts *SaveOpts) Save(ctx context.Context, k *kernel.Kernel, w *watchdog.Wa
 	} else {
 		opts.Destination = nil
 		// Save the kernel.
-		err = k.SaveTo(ctx, wc, opts.PagesMetadata, opts.PagesFile, opts.AppMFExcludeCommittedZeroPages, opts.Resume) // transfers ownership of wc, opts.PagesMetadata, opts.PagesFile
+		err = k.SaveTo(ctx, wc, opts.PagesMetadata, opts.PagesFile, opts.AppMFExcludeCommittedZeroPages, opts.PrivateMFExternalContent, opts.Resume) // transfers ownership of wc, opts.PagesMetadata, opts.PagesFile
 		opts.PagesMetadata = nil
 		opts.PagesFile = nil
 	}

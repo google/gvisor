@@ -41,6 +41,7 @@ const (
 	flagReproduceNFTables       = "reproduce-nftables"
 	flagOCISeccomp              = "oci-seccomp"
 	flagOverlay2                = "overlay2"
+	flagFilestoreAdoptDir       = "filestore-adopt-dir"
 	flagAllowFlagOverride       = "allow-flag-override"
 	flagPauseExternalNetworking = "pause-external-networking"
 	flagAllowConnectedOnSave    = "allow-connected-on-save"
@@ -142,6 +143,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 		"    'medium' can be 'memory', 'self' or 'dir=/abs/dir/path' in which filestore will be created\n"+
 		"    'size' optional parameter overrides default overlay upper layer size\n")
 	flagSet.Var(hostUDSPtr(HostUDSNone), flagHostUDS, "controls permission to access host Unix-domain sockets. Values: none|open|create|all, default: none")
+	flagSet.String(flagFilestoreAdoptDir, "", "directory containing host filestore files to adopt as the sandbox's writable-layer backing files, instead of creating new anonymous ones. Files are named 'filestore-<n>' in mount order (root first). Requires restoring a state checkpoint saved with --skip-filestore-pages (experimental)")
 	flagSet.Var(hostFifoPtr(HostFifoNone), "host-fifo", "controls permission to access host FIFOs (or named pipes). Values: none|open, default: none")
 	flagSet.Var(charDevicePolicyPtr(CharDevEmulatedOnly), "character-device-policy", "controls how character device files on gofer mounts (rootfs and bind mounts) are handled. 'emulated-only' serves devices implemented by the sentry and fails opens of other devices with ENXIO (default and more secure); 'prefer-emulated' serves sentry-implemented devices from the sentry and opens the rest through the host; 'passthrough' opens all of them through the host. Values: emulated-only|prefer-emulated|passthrough, default: emulated-only")
 	flagSet.Bool("gvisor-marker-file", false, "enable the presence of the /proc/gvisor/kernel_is_gvisor file that can be used by applications to detect that gVisor is in use")
