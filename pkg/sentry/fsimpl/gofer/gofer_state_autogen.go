@@ -282,6 +282,7 @@ func (f *filesystemOptions) StateFields() []string {
 		"overlayfsStaleRead",
 		"regularFilesUseSpecialFileFD",
 		"disableFifoOpen",
+		"charDevicePolicy",
 		"directfs",
 	}
 }
@@ -302,7 +303,8 @@ func (f *filesystemOptions) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(8, &f.overlayfsStaleRead)
 	stateSinkObject.Save(9, &f.regularFilesUseSpecialFileFD)
 	stateSinkObject.Save(10, &f.disableFifoOpen)
-	stateSinkObject.Save(11, &f.directfs)
+	stateSinkObject.Save(11, &f.charDevicePolicy)
+	stateSinkObject.Save(12, &f.directfs)
 }
 
 func (f *filesystemOptions) afterLoad(context.Context) {}
@@ -320,7 +322,16 @@ func (f *filesystemOptions) StateLoad(ctx context.Context, stateSourceObject sta
 	stateSourceObject.Load(8, &f.overlayfsStaleRead)
 	stateSourceObject.Load(9, &f.regularFilesUseSpecialFileFD)
 	stateSourceObject.Load(10, &f.disableFifoOpen)
-	stateSourceObject.Load(11, &f.directfs)
+	stateSourceObject.Load(11, &f.charDevicePolicy)
+	stateSourceObject.Load(12, &f.directfs)
+}
+
+func (c *charDevicePolicy) StateTypeName() string {
+	return "pkg/sentry/fsimpl/gofer.charDevicePolicy"
+}
+
+func (c *charDevicePolicy) StateFields() []string {
+	return nil
 }
 
 func (d *directfsOpts) StateTypeName() string {
@@ -426,6 +437,8 @@ func (i *inode) StateFields() []string {
 	return []string{
 		"fs",
 		"inoKey",
+		"rdevMajor",
+		"rdevMinor",
 		"ino",
 		"mode",
 		"uid",
@@ -463,66 +476,70 @@ func (i *inode) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.fs)
 	stateSinkObject.Save(1, &i.inoKey)
-	stateSinkObject.Save(2, &i.ino)
-	stateSinkObject.Save(3, &i.mode)
-	stateSinkObject.Save(4, &i.uid)
-	stateSinkObject.Save(5, &i.gid)
-	stateSinkObject.Save(6, &i.blockSize)
-	stateSinkObject.Save(7, &i.atime)
-	stateSinkObject.Save(8, &i.mtime)
-	stateSinkObject.Save(9, &i.ctime)
-	stateSinkObject.Save(10, &i.btime)
-	stateSinkObject.Save(11, &i.btimeValid)
-	stateSinkObject.Save(12, &i.size)
-	stateSinkObject.Save(13, &i.atimeDirty)
-	stateSinkObject.Save(14, &i.mtimeDirty)
-	stateSinkObject.Save(15, &i.nlink)
-	stateSinkObject.Save(16, &i.mappings)
-	stateSinkObject.Save(17, &i.cache)
-	stateSinkObject.Save(18, &i.dirty)
-	stateSinkObject.Save(19, &i.savedDeletedData)
-	stateSinkObject.Save(20, &i.mmapFile)
-	stateSinkObject.Save(21, &i.haveTarget)
-	stateSinkObject.Save(22, &i.target)
-	stateSinkObject.Save(23, &i.endpoint)
-	stateSinkObject.Save(24, &i.pipe)
-	stateSinkObject.Save(25, &i.locks)
-	stateSinkObject.Save(26, &i.watches)
-	stateSinkObject.Save(27, &i.refs)
-	stateSinkObject.Save(28, &i.impl)
+	stateSinkObject.Save(2, &i.rdevMajor)
+	stateSinkObject.Save(3, &i.rdevMinor)
+	stateSinkObject.Save(4, &i.ino)
+	stateSinkObject.Save(5, &i.mode)
+	stateSinkObject.Save(6, &i.uid)
+	stateSinkObject.Save(7, &i.gid)
+	stateSinkObject.Save(8, &i.blockSize)
+	stateSinkObject.Save(9, &i.atime)
+	stateSinkObject.Save(10, &i.mtime)
+	stateSinkObject.Save(11, &i.ctime)
+	stateSinkObject.Save(12, &i.btime)
+	stateSinkObject.Save(13, &i.btimeValid)
+	stateSinkObject.Save(14, &i.size)
+	stateSinkObject.Save(15, &i.atimeDirty)
+	stateSinkObject.Save(16, &i.mtimeDirty)
+	stateSinkObject.Save(17, &i.nlink)
+	stateSinkObject.Save(18, &i.mappings)
+	stateSinkObject.Save(19, &i.cache)
+	stateSinkObject.Save(20, &i.dirty)
+	stateSinkObject.Save(21, &i.savedDeletedData)
+	stateSinkObject.Save(22, &i.mmapFile)
+	stateSinkObject.Save(23, &i.haveTarget)
+	stateSinkObject.Save(24, &i.target)
+	stateSinkObject.Save(25, &i.endpoint)
+	stateSinkObject.Save(26, &i.pipe)
+	stateSinkObject.Save(27, &i.locks)
+	stateSinkObject.Save(28, &i.watches)
+	stateSinkObject.Save(29, &i.refs)
+	stateSinkObject.Save(30, &i.impl)
 }
 
 // +checklocksignore
 func (i *inode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.fs)
 	stateSourceObject.Load(1, &i.inoKey)
-	stateSourceObject.Load(2, &i.ino)
-	stateSourceObject.Load(3, &i.mode)
-	stateSourceObject.Load(4, &i.uid)
-	stateSourceObject.Load(5, &i.gid)
-	stateSourceObject.Load(6, &i.blockSize)
-	stateSourceObject.Load(7, &i.atime)
-	stateSourceObject.Load(8, &i.mtime)
-	stateSourceObject.Load(9, &i.ctime)
-	stateSourceObject.Load(10, &i.btime)
-	stateSourceObject.Load(11, &i.btimeValid)
-	stateSourceObject.Load(12, &i.size)
-	stateSourceObject.Load(13, &i.atimeDirty)
-	stateSourceObject.Load(14, &i.mtimeDirty)
-	stateSourceObject.Load(15, &i.nlink)
-	stateSourceObject.Load(16, &i.mappings)
-	stateSourceObject.Load(17, &i.cache)
-	stateSourceObject.Load(18, &i.dirty)
-	stateSourceObject.Load(19, &i.savedDeletedData)
-	stateSourceObject.Load(20, &i.mmapFile)
-	stateSourceObject.Load(21, &i.haveTarget)
-	stateSourceObject.Load(22, &i.target)
-	stateSourceObject.Load(23, &i.endpoint)
-	stateSourceObject.Load(24, &i.pipe)
-	stateSourceObject.Load(25, &i.locks)
-	stateSourceObject.Load(26, &i.watches)
-	stateSourceObject.Load(27, &i.refs)
-	stateSourceObject.Load(28, &i.impl)
+	stateSourceObject.Load(2, &i.rdevMajor)
+	stateSourceObject.Load(3, &i.rdevMinor)
+	stateSourceObject.Load(4, &i.ino)
+	stateSourceObject.Load(5, &i.mode)
+	stateSourceObject.Load(6, &i.uid)
+	stateSourceObject.Load(7, &i.gid)
+	stateSourceObject.Load(8, &i.blockSize)
+	stateSourceObject.Load(9, &i.atime)
+	stateSourceObject.Load(10, &i.mtime)
+	stateSourceObject.Load(11, &i.ctime)
+	stateSourceObject.Load(12, &i.btime)
+	stateSourceObject.Load(13, &i.btimeValid)
+	stateSourceObject.Load(14, &i.size)
+	stateSourceObject.Load(15, &i.atimeDirty)
+	stateSourceObject.Load(16, &i.mtimeDirty)
+	stateSourceObject.Load(17, &i.nlink)
+	stateSourceObject.Load(18, &i.mappings)
+	stateSourceObject.Load(19, &i.cache)
+	stateSourceObject.Load(20, &i.dirty)
+	stateSourceObject.Load(21, &i.savedDeletedData)
+	stateSourceObject.Load(22, &i.mmapFile)
+	stateSourceObject.Load(23, &i.haveTarget)
+	stateSourceObject.Load(24, &i.target)
+	stateSourceObject.Load(25, &i.endpoint)
+	stateSourceObject.Load(26, &i.pipe)
+	stateSourceObject.Load(27, &i.locks)
+	stateSourceObject.Load(28, &i.watches)
+	stateSourceObject.Load(29, &i.refs)
+	stateSourceObject.Load(30, &i.impl)
 	stateSourceObject.AfterLoad(func() { i.afterLoad(ctx) })
 }
 
@@ -973,6 +990,7 @@ func init() {
 	state.Register((*FilesystemType)(nil))
 	state.Register((*filesystem)(nil))
 	state.Register((*filesystemOptions)(nil))
+	state.Register((*charDevicePolicy)(nil))
 	state.Register((*directfsOpts)(nil))
 	state.Register((*InteropMode)(nil))
 	state.Register((*InternalFilesystemOptions)(nil))

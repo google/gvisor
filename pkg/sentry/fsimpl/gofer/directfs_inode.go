@@ -155,6 +155,8 @@ func (fs *filesystem) newDirectfsDentry(controlFD int) (*dentry, error) {
 					fs:        fs,
 					inoKey:    inoKey,
 					ino:       fs.inoFromKey(inoKey),
+					rdevMajor: stat.Rdev_major,
+					rdevMinor: stat.Rdev_minor,
 					mode:      atomicbitops.FromUint32(uint32(stat.Mode)),
 					uid:       atomicbitops.FromUint32(uint32(fs.opts.dfltuid)),
 					gid:       atomicbitops.FromUint32(uint32(fs.opts.dfltgid)),
