@@ -90,9 +90,17 @@ const (
 	moptOverlayfsStaleRead       = "overlayfs_stale_read"
 	moptDisableFileHandleSharing = "disable_file_handle_sharing"
 	moptDisableFifoOpen          = "disable_fifo_open"
+	moptCharDevicePolicy         = "char_device_policy"
 
 	// Directfs options.
 	moptDirectfs = "directfs"
+)
+
+// Valid values for the "char_device_policy" mount option.
+const (
+	charDevPolicyEmulatedOnly   = "emulated-only"
+	charDevPolicyPreferEmulated = "prefer-emulated"
+	charDevPolicyPassthrough    = "passthrough"
 )
 
 // Valid values for the "cache" mount option.
@@ -335,9 +343,36 @@ type filesystemOptions struct {
 	// are disallowed.
 	disableFifoOpen bool
 
+	// charDevicePolicy controls whether opens of character device files are
+	// dispatched to the sentry's device registry, passed through to the host
+	// via the gofer, or a combination of both.
+	charDevicePolicy charDevicePolicy
+
 	// directfs holds options for directfs mode.
 	directfs directfsOpts
 }
+
+// charDevicePolicy tells how opens of character device files are handled.
+// It is set by the "char_device_policy" mount option.
+//
+// +stateify savable
+type charDevicePolicy int
+
+const (
+	// charDevEmulatedOnly dispatches all character device opens to the
+	// sentry's device registry. Opens of devices the sentry does not
+	// implement fail with ENXIO. This is the default.
+	charDevEmulatedOnly charDevicePolicy = iota
+
+	// charDevPreferEmulated dispatches opens of sentry-implemented devices
+	// to the sentry's device registry, and opens the rest through the gofer,
+	// exposing the corresponding host devices.
+	charDevPreferEmulated
+
+	// charDevPassthrough opens all character devices through the gofer,
+	// exposing the corresponding host devices.
+	charDevPassthrough
+)
 
 // +stateify savable
 type directfsOpts struct {
@@ -539,6 +574,20 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	if _, ok := mopts[moptDisableFifoOpen]; ok {
 		delete(mopts, moptDisableFifoOpen)
 		fsopts.disableFifoOpen = true
+	}
+	if policy, ok := mopts[moptCharDevicePolicy]; ok {
+		delete(mopts, moptCharDevicePolicy)
+		switch policy {
+		case charDevPolicyEmulatedOnly:
+			fsopts.charDevicePolicy = charDevEmulatedOnly
+		case charDevPolicyPreferEmulated:
+			fsopts.charDevicePolicy = charDevPreferEmulated
+		case charDevPolicyPassthrough:
+			fsopts.charDevicePolicy = charDevPassthrough
+		default:
+			ctx.Warningf("gofer.FilesystemType.GetFilesystem: invalid character device policy: %s=%s", moptCharDevicePolicy, policy)
+			return nil, nil, linuxerr.EINVAL
+		}
 	}
 	if _, ok := mopts[moptForcePageCache]; ok {
 		delete(mopts, moptForcePageCache)
@@ -849,6 +898,12 @@ type inode struct {
 
 	// inoKey is used to identify this inode.
 	inoKey inoKey
+
+	// rdevMajor and rdevMinor are the device numbers reported by the
+	// filesystem for device special files. They are only used to dispatch
+	// opens of device special files to the sentry's device registry. Immutable.
+	rdevMajor uint32
+	rdevMinor uint32
 
 	// Cached metadata; protected by metadataMu.
 	// To access:
@@ -1280,6 +1335,8 @@ func (d *dentry) statTo(stat *linux.Statx) {
 	stat.Mtime = linux.NsecToStatxTimestamp(d.inode.mtime.Load())
 	stat.DevMajor = linux.UNNAMED_MAJOR
 	stat.DevMinor = d.inode.fs.devMinor
+	stat.RdevMajor = d.inode.rdevMajor
+	stat.RdevMinor = d.inode.rdevMinor
 }
 
 // Precondition: fs.renameMu is locked.

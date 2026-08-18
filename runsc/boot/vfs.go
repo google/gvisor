@@ -425,6 +425,9 @@ func goferMountData(fd int, fa config.FileAccessType, conf *config.Config, suppr
 	if !conf.HostFifo.AllowOpen() {
 		opts = append(opts, "disable_fifo_open")
 	}
+	if conf.CharacterDevicePolicy.AllowsPassthrough() {
+		opts = append(opts, "char_device_policy="+conf.CharacterDevicePolicy.String())
+	}
 	return opts
 }
 

@@ -137,6 +137,8 @@ func (fs *filesystem) newLisafsDentry(ctx context.Context, ino *lisafs.Inode) (*
 					fs:        fs,
 					inoKey:    inoKey,
 					ino:       fs.inoFromKey(inoKey),
+					rdevMajor: ino.Stat.RdevMajor,
+					rdevMinor: ino.Stat.RdevMinor,
 					mode:      atomicbitops.FromUint32(uint32(ino.Stat.Mode)),
 					uid:       atomicbitops.FromUint32(uint32(fs.opts.dfltuid)),
 					gid:       atomicbitops.FromUint32(uint32(fs.opts.dfltgid)),

@@ -363,6 +363,11 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
 		mountPath string
 		readonly  bool
 		mount     *specs.Mount
+		// devGofer is true only for the dev gofer connection, which serves
+		// host device files to the sentry's device proxies (e.g. nvproxy). A
+		// container mount whose destination happens to be "/dev" is not a dev
+		// gofer connection.
+		devGofer bool
 	}
 	cfgs := make([]connectionConfig, 0, len(spec.Mounts)+1)
 
@@ -417,6 +422,7 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
 		cfgs = append(cfgs, connectionConfig{
 			sock:      sandboxsetup.NewSocket(g.devIoFD),
 			mountPath: "/dev",
+			devGofer:  true,
 		})
 		log.Infof("Serving /dev mapped on FD %d (ro: false)", g.devIoFD)
 	}
@@ -425,12 +431,21 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
 	fsgoferConf := &fsgofer.Config{
 		HostUDS:            conf.GetHostUDS(),
 		HostFifo:           conf.HostFifo,
+		CharDevicePolicy:   conf.CharacterDevicePolicy,
 		DonateMountPointFD: conf.DirectFS,
 		RUID:               ruid,
 		EUID:               euid,
 		RGID:               rgid,
 		EGID:               egid,
 	}
+	// The dev gofer connection exists to open host device files on behalf of
+	// the sentry's device proxies (e.g. nvproxy), which mediate all
+	// application I/O on the resulting FDs. --character-device-policy governs
+	// devices that the sandboxed application could open directly through a
+	// gofer mount, not this connection, so character device opens are always
+	// allowed here.
+	devGoferConf := *fsgoferConf
+	devGoferConf.CharDevicePolicy = config.CharDevPassthrough
 
 	// Create the server and start connections.
 	server := lisafs.NewServer()
@@ -453,7 +468,11 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
 			}
 		}
 		if connImpl == nil {
-			connImpl = fsgofer.NewConnectionImpl(fsgoferConf)
+			connConf := fsgoferConf
+			if cfg.devGofer {
+				connConf = &devGoferConf
+			}
+			connImpl = fsgofer.NewConnectionImpl(connConf)
 			connOpts = fsgofer.ConnectionOpts(cfg.readonly)
 		}
 		conn, err := server.CreateConnection(cfg.sock, cfg.mountPath, connOpts, connImpl)
