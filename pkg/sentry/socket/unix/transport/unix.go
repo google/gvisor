@@ -422,6 +422,12 @@ type Receiver interface {
 	Release(ctx context.Context)
 }
 
+// A HostReadiness is an optional interface implemented by endpoints backed by a
+// host file descriptor.
+type HostReadiness interface {
+	HostReadiness(mask waiter.EventMask) waiter.EventMask
+}
+
 // Address is a unix socket address.
 //
 // +stateify savable
@@ -472,8 +478,15 @@ func (q *queueReceiver) RecvNotify() {
 
 // CloseNotify implements Receiver.CloseNotify.
 func (q *queueReceiver) CloseNotify() {
-	q.readQueue.ReaderQueue.Notify(waiter.ReadableEvents)
-	q.readQueue.WriterQueue.Notify(waiter.WritableEvents)
+	// Include the hangup events: this closure may newly satisfy
+	// EventRdHUp/EventHUp for pollers that requested no data events, and
+	// notifications are filtered against the waiter's mask, so data
+	// events alone would never wake them. Over-notifying is harmless
+	// (woken waiters re-check readiness and sleep again if unready) and
+	// is what Linux does: sk_state_change() wakes all waiters on every
+	// shutdown or close.
+	q.readQueue.ReaderQueue.Notify(waiter.ReadableEvents | waiter.EventRdHUp | waiter.EventHUp)
+	q.readQueue.WriterQueue.Notify(waiter.WritableEvents | waiter.EventHUp)
 }
 
 // CloseRecv implements Receiver.CloseRecv.
@@ -811,8 +824,10 @@ func (e *connectedEndpoint) SendNotify() {
 
 // CloseNotify implements ConnectedEndpoint.CloseNotify.
 func (e *connectedEndpoint) CloseNotify() {
-	e.writeQueue.ReaderQueue.Notify(waiter.ReadableEvents)
-	e.writeQueue.WriterQueue.Notify(waiter.WritableEvents)
+	// Include the hangup events for hangup-only pollers; over-notifying
+	// is harmless (see queueReceiver.CloseNotify).
+	e.writeQueue.ReaderQueue.Notify(waiter.ReadableEvents | waiter.EventRdHUp | waiter.EventHUp)
+	e.writeQueue.WriterQueue.Notify(waiter.WritableEvents | waiter.EventHUp)
 }
 
 // CloseSend implements ConnectedEndpoint.CloseSend.
@@ -1108,7 +1123,9 @@ func (e *baseEndpoint) shutdown(flags tcpip.ShutdownFlags, closePeerRead bool) *
 	}
 	if shutdownWrite {
 		e.writeShutdown = true
-		if closePeerRead {
+		// Host-backed endpoints have no shared queue to protect; mirror
+		// SHUT_WR onto the host fd.
+		if _, isHost := c.(HostReadiness); isHost || closePeerRead {
 			c.CloseSend()
 		}
 	}
@@ -1122,8 +1139,11 @@ func (e *baseEndpoint) shutdown(flags tcpip.ShutdownFlags, closePeerRead bool) *
 		if closePeerRead {
 			c.CloseNotify()
 		} else {
-			// Wake up any local writers.
-			e.Queue.Notify(waiter.WritableEvents)
+			// Wake up any local writers, and hangup-only pollers in
+			// case this write shutdown completed EventHUp;
+			// over-notifying is harmless (see
+			// queueReceiver.CloseNotify).
+			e.Queue.Notify(waiter.WritableEvents | waiter.EventHUp)
 		}
 	}
 

@@ -359,6 +359,16 @@ func (c *HostConnectedEndpoint) IsRecvClosed() bool {
 	return c.rdShutdown.Load()
 }
 
+// HostReadiness implements HostReadiness.HostReadiness.
+func (c *HostConnectedEndpoint) HostReadiness(mask waiter.EventMask) waiter.EventMask {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.fd < 0 {
+		return 0
+	}
+	return fdnotifier.NonBlockingPoll(int32(c.fd), mask)
+}
+
 // Readable implements Receiver.Readable.
 func (c *HostConnectedEndpoint) Readable() bool {
 	c.mu.RLock()
