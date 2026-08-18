@@ -40,8 +40,8 @@ var (
 
 // NewConnectionless creates a new unbound dgram endpoint.
 func NewConnectionless(ctx context.Context) Endpoint {
-	ep := &connectionlessEndpoint{baseEndpoint: baseEndpoint{Queue: &waiter.Queue{}}}
-	q := queue{ReaderQueue: ep.Queue, WriterQueue: &waiter.Queue{}, limit: defaultBufferSize}
+	ep := &connectionlessEndpoint{baseEndpoint: baseEndpoint{WaitQueue: &waiter.Queue{}}}
+	q := queue{readerWaiters: ep.WaitQueue, writerWaiters: &waiter.Queue{}, limit: defaultBufferSize}
 	q.InitRefs()
 	ep.receiver = &queueReceiver{readQueue: &q}
 	ep.ops.InitHandler(ep, &stackHandler{}, getSendBufferLimits, getReceiveBufferLimits)
@@ -59,8 +59,8 @@ func (e *connectionlessEndpoint) isBound() bool {
 // with it.
 func (e *connectionlessEndpoint) Close(ctx context.Context) {
 	e.Lock()
-	connected := e.connected
-	e.connected = nil
+	peer := e.peer
+	e.peer = nil
 
 	if e.isBound() {
 		e.path = ""
@@ -71,20 +71,20 @@ func (e *connectionlessEndpoint) Close(ctx context.Context) {
 	e.receiver = nil
 	e.Unlock()
 
-	if connected != nil {
-		connected.Release(ctx)
+	if peer != nil {
+		peer.Release(ctx)
 	}
-	r.CloseNotify()
+	r.NotifyStateChange()
 	r.Release(ctx)
 }
 
 // BidirectionalConnect implements BoundEndpoint.BidirectionalConnect.
-func (e *connectionlessEndpoint) BidirectionalConnect(ctx context.Context, ce ConnectingEndpoint, returnConnect func(Receiver, ConnectedEndpoint)) *syserr.Error {
+func (e *connectionlessEndpoint) BidirectionalConnect(ctx context.Context, ce ConnectingEndpoint, returnConnect func(Receiver, Sender)) *syserr.Error {
 	return syserr.ErrConnectionRefused
 }
 
 // UnidirectionalConnect implements BoundEndpoint.UnidirectionalConnect.
-func (e *connectionlessEndpoint) UnidirectionalConnect(ctx context.Context) (ConnectedEndpoint, *syserr.Error) {
+func (e *connectionlessEndpoint) UnidirectionalConnect(ctx context.Context) (Sender, *syserr.Error) {
 	e.Lock()
 	r := e.receiver
 	e.Unlock()
@@ -95,7 +95,7 @@ func (e *connectionlessEndpoint) UnidirectionalConnect(ctx context.Context) (Con
 	if !q.TryIncRef() {
 		return nil, syserr.ErrConnectionRefused
 	}
-	return &connectedEndpoint{
+	return &queueSender{
 		endpoint:   e,
 		writeQueue: q,
 	}, nil
@@ -108,23 +108,23 @@ func (e *connectionlessEndpoint) SendMsg(ctx context.Context, data [][]byte, c C
 		return e.baseEndpoint.SendMsg(ctx, data, c, nil)
 	}
 
-	connected, err := to.UnidirectionalConnect(ctx)
+	peer, err := to.UnidirectionalConnect(ctx)
 	if err != nil {
 		return 0, nil, syserr.ErrInvalidEndpointState
 	}
-	defer connected.Release(ctx)
+	defer peer.Release(ctx)
 
 	e.Lock()
-	if e.writeShutdown {
+	if e.sendShutdown {
 		e.Unlock()
 		return 0, nil, syserr.ErrClosedForSend
 	}
-	n, notify, err := connected.Send(ctx, data, c, Address{Addr: e.path})
+	n, notify, err := peer.Send(ctx, data, c, Address{Addr: e.path})
 	e.Unlock()
 
 	var notifyFn func()
 	if notify {
-		notifyFn = connected.SendNotify
+		notifyFn = peer.NotifyDataReady
 	}
 
 	return n, notifyFn, err
@@ -137,16 +137,16 @@ func (e *connectionlessEndpoint) Type() linux.SockType {
 
 // Connect attempts to connect directly to server.
 func (e *connectionlessEndpoint) Connect(ctx context.Context, server BoundEndpoint) *syserr.Error {
-	connected, err := server.UnidirectionalConnect(ctx)
+	peer, err := server.UnidirectionalConnect(ctx)
 	if err != nil {
 		return err
 	}
 
 	e.Lock()
-	if e.connected != nil {
-		e.connected.Release(ctx)
+	if e.peer != nil {
+		e.peer.Release(ctx)
 	}
-	e.connected = connected
+	e.peer = peer
 	e.Unlock()
 
 	return nil
@@ -217,7 +217,7 @@ func (e *connectionlessEndpoint) Readiness(mask waiter.EventMask) waiter.EventMa
 	}
 
 	if e.Connected() {
-		if mask&waiter.WritableEvents != 0 && e.connected.Writable() {
+		if mask&waiter.WritableEvents != 0 && e.peer.Writable() {
 			ready |= waiter.WritableEvents
 		}
 	}
@@ -225,10 +225,10 @@ func (e *connectionlessEndpoint) Readiness(mask waiter.EventMask) waiter.EventMa
 	// Linux reports EPOLLRDHUP if the read side is shut down, and
 	// additionally EPOLLHUP if the write side is too (see
 	// unix_dgram_poll() in net/unix/af_unix.c). A datagram write shutdown
-	// is endpoint-local (writeShutdown): it never closes a queue.
+	// is endpoint-local (sendShutdown): it never closes a queue.
 	if mask&(waiter.EventHUp|waiter.EventRdHUp) != 0 && e.receiver.IsRecvClosed() {
 		ready |= waiter.EventRdHUp
-		if mask&waiter.EventHUp != 0 && e.writeShutdown {
+		if mask&waiter.EventHUp != 0 && e.sendShutdown {
 			ready |= waiter.EventHUp
 		}
 	}
@@ -256,7 +256,7 @@ func (e *connectionlessEndpoint) OnSetSendBufferSize(v int64) (newSz int64) {
 	e.Lock()
 	defer e.Unlock()
 	if e.Connected() {
-		return e.baseEndpoint.connected.SetSendBufferSize(v)
+		return e.baseEndpoint.peer.SetSendBufferSize(v)
 	}
 	return v
 }

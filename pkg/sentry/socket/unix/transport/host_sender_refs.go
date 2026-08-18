@@ -12,11 +12,11 @@ import (
 // stack traces). This is false by default and should only be set to true for
 // debugging purposes, as it can generate an extremely large amount of output
 // and drastically degrade performance.
-const HostConnectedEndpointenableLogging = false
+const HostSenderenableLogging = false
 
 // obj is used to customize logging. Note that we use a pointer to T so that
 // we do not copy the entire object when passed as a format parameter.
-var HostConnectedEndpointobj *HostConnectedEndpoint
+var HostSenderobj *HostSender
 
 // Refs implements refs.RefCounter. It keeps a reference count using atomic
 // operations and calls the destructor when the count reaches zero.
@@ -30,7 +30,7 @@ var HostConnectedEndpointobj *HostConnectedEndpoint
 // interfaces manually.
 //
 // +stateify savable
-type HostConnectedEndpointRefs struct {
+type HostSenderRefs struct {
 	// refCount is composed of two fields:
 	//
 	//	[32-bit speculative references]:[32-bit real references]
@@ -43,39 +43,39 @@ type HostConnectedEndpointRefs struct {
 
 // InitRefs initializes r with one reference and, if enabled, activates leak
 // checking.
-func (r *HostConnectedEndpointRefs) InitRefs() {
+func (r *HostSenderRefs) InitRefs() {
 
 	r.refCount.RacyStore(1)
 	refs.Register(r)
 }
 
 // RefType implements refs.CheckedObject.RefType.
-func (r *HostConnectedEndpointRefs) RefType() string {
-	return fmt.Sprintf("%T", HostConnectedEndpointobj)[1:]
+func (r *HostSenderRefs) RefType() string {
+	return fmt.Sprintf("%T", HostSenderobj)[1:]
 }
 
 // LeakMessage implements refs.CheckedObject.LeakMessage.
-func (r *HostConnectedEndpointRefs) LeakMessage() string {
+func (r *HostSenderRefs) LeakMessage() string {
 	return fmt.Sprintf("[%s %p] reference count of %d instead of 0", r.RefType(), r, r.ReadRefs())
 }
 
 // LogRefs implements refs.CheckedObject.LogRefs.
-func (r *HostConnectedEndpointRefs) LogRefs() bool {
-	return HostConnectedEndpointenableLogging
+func (r *HostSenderRefs) LogRefs() bool {
+	return HostSenderenableLogging
 }
 
 // ReadRefs returns the current number of references. The returned count is
 // inherently racy and is unsafe to use without external synchronization.
-func (r *HostConnectedEndpointRefs) ReadRefs() int64 {
+func (r *HostSenderRefs) ReadRefs() int64 {
 	return r.refCount.Load()
 }
 
 // IncRef implements refs.RefCounter.IncRef.
 //
 //go:nosplit
-func (r *HostConnectedEndpointRefs) IncRef() {
+func (r *HostSenderRefs) IncRef() {
 	v := r.refCount.Add(1)
-	if HostConnectedEndpointenableLogging {
+	if HostSenderenableLogging {
 		refs.LogIncRef(r, v)
 	}
 	if v <= 1 {
@@ -90,7 +90,7 @@ func (r *HostConnectedEndpointRefs) IncRef() {
 // other TryIncRef calls from genuine references held.
 //
 //go:nosplit
-func (r *HostConnectedEndpointRefs) TryIncRef() bool {
+func (r *HostSenderRefs) TryIncRef() bool {
 	const speculativeRef = 1 << 32
 	if v := r.refCount.Add(speculativeRef); int32(v) == 0 {
 
@@ -99,7 +99,7 @@ func (r *HostConnectedEndpointRefs) TryIncRef() bool {
 	}
 
 	v := r.refCount.Add(-speculativeRef + 1)
-	if HostConnectedEndpointenableLogging {
+	if HostSenderenableLogging {
 		refs.LogTryIncRef(r, v)
 	}
 	return true
@@ -117,9 +117,9 @@ func (r *HostConnectedEndpointRefs) TryIncRef() bool {
 //	A: TryIncRef [transform speculative to real]
 //
 //go:nosplit
-func (r *HostConnectedEndpointRefs) DecRef(destroy func()) {
+func (r *HostSenderRefs) DecRef(destroy func()) {
 	v := r.refCount.Add(-1)
-	if HostConnectedEndpointenableLogging {
+	if HostSenderenableLogging {
 		refs.LogDecRef(r, v)
 	}
 	switch {
@@ -135,7 +135,7 @@ func (r *HostConnectedEndpointRefs) DecRef(destroy func()) {
 	}
 }
 
-func (r *HostConnectedEndpointRefs) afterLoad(context.Context) {
+func (r *HostSenderRefs) afterLoad(context.Context) {
 	if r.ReadRefs() > 0 {
 		refs.Register(r)
 	}

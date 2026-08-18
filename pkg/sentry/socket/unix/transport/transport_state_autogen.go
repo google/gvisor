@@ -74,94 +74,94 @@ func (e *connectionlessEndpoint) StateLoad(ctx context.Context, stateSourceObjec
 	stateSourceObject.AfterLoad(func() { e.afterLoad(ctx) })
 }
 
-func (c *HostConnectedEndpoint) StateTypeName() string {
-	return "pkg/sentry/socket/unix/transport.HostConnectedEndpoint"
+func (c *HostSender) StateTypeName() string {
+	return "pkg/sentry/socket/unix/transport.HostSender"
 }
 
-func (c *HostConnectedEndpoint) StateFields() []string {
+func (c *HostSender) StateFields() []string {
 	return []string{
-		"HostConnectedEndpointRefs",
+		"HostSenderRefs",
 		"fd",
 		"addr",
 		"stype",
-		"rdShutdown",
-		"wrShutdown",
+		"recvShutdown",
+		"sendShutdown",
 		"passcred",
 	}
 }
 
-func (c *HostConnectedEndpoint) beforeSave() {}
+func (c *HostSender) beforeSave() {}
 
 // +checklocksignore
-func (c *HostConnectedEndpoint) StateSave(stateSinkObject state.Sink) {
+func (c *HostSender) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
-	stateSinkObject.Save(0, &c.HostConnectedEndpointRefs)
+	stateSinkObject.Save(0, &c.HostSenderRefs)
 	stateSinkObject.Save(1, &c.fd)
 	stateSinkObject.Save(2, &c.addr)
 	stateSinkObject.Save(3, &c.stype)
-	stateSinkObject.Save(4, &c.rdShutdown)
-	stateSinkObject.Save(5, &c.wrShutdown)
+	stateSinkObject.Save(4, &c.recvShutdown)
+	stateSinkObject.Save(5, &c.sendShutdown)
 	stateSinkObject.Save(6, &c.passcred)
 }
 
 // +checklocksignore
-func (c *HostConnectedEndpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &c.HostConnectedEndpointRefs)
+func (c *HostSender) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &c.HostSenderRefs)
 	stateSourceObject.Load(1, &c.fd)
 	stateSourceObject.Load(2, &c.addr)
 	stateSourceObject.Load(3, &c.stype)
-	stateSourceObject.Load(4, &c.rdShutdown)
-	stateSourceObject.Load(5, &c.wrShutdown)
+	stateSourceObject.Load(4, &c.recvShutdown)
+	stateSourceObject.Load(5, &c.sendShutdown)
 	stateSourceObject.Load(6, &c.passcred)
 	stateSourceObject.AfterLoad(func() { c.afterLoad(ctx) })
 }
 
-func (e *SCMConnectedEndpoint) StateTypeName() string {
-	return "pkg/sentry/socket/unix/transport.SCMConnectedEndpoint"
+func (e *SCMSender) StateTypeName() string {
+	return "pkg/sentry/socket/unix/transport.SCMSender"
 }
 
-func (e *SCMConnectedEndpoint) StateFields() []string {
+func (e *SCMSender) StateFields() []string {
 	return []string{
-		"HostConnectedEndpoint",
+		"HostSender",
 		"queue",
 	}
 }
 
 // +checklocksignore
-func (e *SCMConnectedEndpoint) StateSave(stateSinkObject state.Sink) {
+func (e *SCMSender) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
-	stateSinkObject.Save(0, &e.HostConnectedEndpoint)
+	stateSinkObject.Save(0, &e.HostSender)
 	stateSinkObject.Save(1, &e.queue)
 }
 
-func (e *SCMConnectedEndpoint) afterLoad(context.Context) {}
+func (e *SCMSender) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (e *SCMConnectedEndpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &e.HostConnectedEndpoint)
+func (e *SCMSender) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.HostSender)
 	stateSourceObject.Load(1, &e.queue)
 }
 
-func (r *HostConnectedEndpointRefs) StateTypeName() string {
-	return "pkg/sentry/socket/unix/transport.HostConnectedEndpointRefs"
+func (r *HostSenderRefs) StateTypeName() string {
+	return "pkg/sentry/socket/unix/transport.HostSenderRefs"
 }
 
-func (r *HostConnectedEndpointRefs) StateFields() []string {
+func (r *HostSenderRefs) StateFields() []string {
 	return []string{
 		"refCount",
 	}
 }
 
-func (r *HostConnectedEndpointRefs) beforeSave() {}
+func (r *HostSenderRefs) beforeSave() {}
 
 // +checklocksignore
-func (r *HostConnectedEndpointRefs) StateSave(stateSinkObject state.Sink) {
+func (r *HostSenderRefs) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.refCount)
 }
 
 // +checklocksignore
-func (r *HostConnectedEndpointRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+func (r *HostSenderRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
 	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
 }
@@ -173,8 +173,8 @@ func (q *queue) StateTypeName() string {
 func (q *queue) StateFields() []string {
 	return []string{
 		"queueRefs",
-		"ReaderQueue",
-		"WriterQueue",
+		"readerWaiters",
+		"writerWaiters",
 		"closed",
 		"unread",
 		"used",
@@ -189,8 +189,8 @@ func (q *queue) beforeSave() {}
 func (q *queue) StateSave(stateSinkObject state.Sink) {
 	q.beforeSave()
 	stateSinkObject.Save(0, &q.queueRefs)
-	stateSinkObject.Save(1, &q.ReaderQueue)
-	stateSinkObject.Save(2, &q.WriterQueue)
+	stateSinkObject.Save(1, &q.readerWaiters)
+	stateSinkObject.Save(2, &q.writerWaiters)
 	stateSinkObject.Save(3, &q.closed)
 	stateSinkObject.Save(4, &q.unread)
 	stateSinkObject.Save(5, &q.used)
@@ -203,8 +203,8 @@ func (q *queue) afterLoad(context.Context) {}
 // +checklocksignore
 func (q *queue) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &q.queueRefs)
-	stateSourceObject.Load(1, &q.ReaderQueue)
-	stateSourceObject.Load(2, &q.WriterQueue)
+	stateSourceObject.Load(1, &q.readerWaiters)
+	stateSourceObject.Load(2, &q.writerWaiters)
 	stateSourceObject.Load(3, &q.closed)
 	stateSourceObject.Load(4, &q.unread)
 	stateSourceObject.Load(5, &q.used)
@@ -438,30 +438,30 @@ func (q *streamQueueReceiver) StateLoad(ctx context.Context, stateSourceObject s
 	stateSourceObject.Load(3, &q.addr)
 }
 
-func (e *connectedEndpoint) StateTypeName() string {
-	return "pkg/sentry/socket/unix/transport.connectedEndpoint"
+func (e *queueSender) StateTypeName() string {
+	return "pkg/sentry/socket/unix/transport.queueSender"
 }
 
-func (e *connectedEndpoint) StateFields() []string {
+func (e *queueSender) StateFields() []string {
 	return []string{
 		"endpoint",
 		"writeQueue",
 	}
 }
 
-func (e *connectedEndpoint) beforeSave() {}
+func (e *queueSender) beforeSave() {}
 
 // +checklocksignore
-func (e *connectedEndpoint) StateSave(stateSinkObject state.Sink) {
+func (e *queueSender) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.endpoint)
 	stateSinkObject.Save(1, &e.writeQueue)
 }
 
-func (e *connectedEndpoint) afterLoad(context.Context) {}
+func (e *queueSender) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (e *connectedEndpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+func (e *queueSender) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.endpoint)
 	stateSourceObject.Load(1, &e.writeQueue)
 }
@@ -472,12 +472,12 @@ func (e *baseEndpoint) StateTypeName() string {
 
 func (e *baseEndpoint) StateFields() []string {
 	return []string{
-		"Queue",
+		"WaitQueue",
 		"DefaultSocketOptionsHandler",
 		"receiver",
-		"connected",
+		"peer",
 		"path",
-		"writeShutdown",
+		"sendShutdown",
 		"ops",
 		"lastError",
 	}
@@ -488,12 +488,12 @@ func (e *baseEndpoint) beforeSave() {}
 // +checklocksignore
 func (e *baseEndpoint) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
-	stateSinkObject.Save(0, &e.Queue)
+	stateSinkObject.Save(0, &e.WaitQueue)
 	stateSinkObject.Save(1, &e.DefaultSocketOptionsHandler)
 	stateSinkObject.Save(2, &e.receiver)
-	stateSinkObject.Save(3, &e.connected)
+	stateSinkObject.Save(3, &e.peer)
 	stateSinkObject.Save(4, &e.path)
-	stateSinkObject.Save(5, &e.writeShutdown)
+	stateSinkObject.Save(5, &e.sendShutdown)
 	stateSinkObject.Save(6, &e.ops)
 	stateSinkObject.Save(7, &e.lastError)
 }
@@ -502,12 +502,12 @@ func (e *baseEndpoint) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (e *baseEndpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &e.Queue)
+	stateSourceObject.Load(0, &e.WaitQueue)
 	stateSourceObject.Load(1, &e.DefaultSocketOptionsHandler)
 	stateSourceObject.Load(2, &e.receiver)
-	stateSourceObject.Load(3, &e.connected)
+	stateSourceObject.Load(3, &e.peer)
 	stateSourceObject.Load(4, &e.path)
-	stateSourceObject.Load(5, &e.writeShutdown)
+	stateSourceObject.Load(5, &e.sendShutdown)
 	stateSourceObject.Load(6, &e.ops)
 	stateSourceObject.Load(7, &e.lastError)
 }
@@ -515,9 +515,9 @@ func (e *baseEndpoint) StateLoad(ctx context.Context, stateSourceObject state.So
 func init() {
 	state.Register((*connectionedEndpoint)(nil))
 	state.Register((*connectionlessEndpoint)(nil))
-	state.Register((*HostConnectedEndpoint)(nil))
-	state.Register((*SCMConnectedEndpoint)(nil))
-	state.Register((*HostConnectedEndpointRefs)(nil))
+	state.Register((*HostSender)(nil))
+	state.Register((*SCMSender)(nil))
+	state.Register((*HostSenderRefs)(nil))
 	state.Register((*queue)(nil))
 	state.Register((*queueRefs)(nil))
 	state.Register((*messageList)(nil))
@@ -527,6 +527,6 @@ func init() {
 	state.Register((*Address)(nil))
 	state.Register((*queueReceiver)(nil))
 	state.Register((*streamQueueReceiver)(nil))
-	state.Register((*connectedEndpoint)(nil))
+	state.Register((*queueSender)(nil))
 	state.Register((*baseEndpoint)(nil))
 }
