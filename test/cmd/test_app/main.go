@@ -27,6 +27,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -37,9 +38,34 @@ import (
 	"github.com/creack/pty"
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/pkg/gvisordetect"
-	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/flag"
 )
+
+func startReaper() func() {
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, sys.SIGCHLD)
+	done := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-ch:
+				for {
+					var ws sys.WaitStatus
+					pid, err := sys.Wait4(-1, &ws, sys.WNOHANG, nil)
+					if pid <= 0 || err != nil {
+						break
+					}
+				}
+			case <-done:
+				return
+			}
+		}
+	}()
+	return func() {
+		signal.Stop(ch)
+		close(done)
+	}
+}
 
 func main() {
 	subcommands.Register(subcommands.HelpCommand(), "")
@@ -64,6 +90,8 @@ func main() {
 	subcommands.Register(new(fsCheckpoint), "")
 	subcommands.Register(new(setXattr), "")
 	subcommands.Register(new(getXattr), "")
+	subcommands.Register(new(mmapHelper), "")
+	subcommands.Register(new(fileOp), "")
 
 	flag.Parse()
 
@@ -142,7 +170,7 @@ func (c *fsTreeCreator) Execute(ctx context.Context, f *flag.FlagSet, args ...an
 			}
 		}
 		nextDir := filepath.Join(curDir, "dir")
-		if err := os.Mkdir(nextDir, 0777); err != nil {
+		if err := os.Mkdir(nextDir, 0777); err != nil && !os.IsExist(err) {
 			log.Fatalf("error creating directory %q: %v", nextDir, err)
 		}
 		curDir = nextDir
@@ -345,7 +373,7 @@ func (c *taskTree) Execute(ctx context.Context, f *flag.FlagSet, args ...any) su
 
 	log.Printf("Parent %d creating %d children, PID: %d\n", c.depth, c.width, os.Getpid())
 
-	stop := testutil.StartReaper()
+	stop := startReaper()
 	defer stop()
 
 	var cmds []*exec.Cmd
@@ -406,7 +434,7 @@ func (c *taskTreePGID) SetFlags(f *flag.FlagSet) {
 func (c *taskTreePGID) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	switch c.level {
 	case 0:
-		stop := testutil.StartReaper()
+		stop := startReaper()
 		defer stop()
 		cmd := exec.Command("/proc/self/exe", "task-tree-pgid", "--level=1")
 		cmd.Stdout = os.Stdout
@@ -536,7 +564,7 @@ func (*reaper) SetFlags(*flag.FlagSet) {}
 
 // Execute implements subcommands.Command.
 func (c *reaper) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
-	stop := testutil.StartReaper()
+	stop := startReaper()
 	defer stop()
 	select {}
 }
@@ -791,6 +819,70 @@ func (*fsCheckpoint) Execute(ctx context.Context, f *flag.FlagSet, args ...any) 
 	}
 	if !bytes.HasPrefix(res, []byte("resume")) {
 		log.Fatalf("Unexpected read from %s: got %q, want \"resume\"", path, string(res))
+	}
+	return subcommands.ExitSuccess
+}
+
+type fileOp struct {
+	op      string
+	path    string
+	content string
+}
+
+func (*fileOp) Name() string {
+	return "fileOp"
+}
+
+func (*fileOp) Synopsis() string {
+	return "performs file operations (write, read, delete, truncate, exists)"
+}
+
+func (*fileOp) Usage() string {
+	return "fileOp --op=<write|read|delete|truncate|exists> --path=<path> [--content=<str>]\n"
+}
+
+func (c *fileOp) SetFlags(f *flag.FlagSet) {
+	f.StringVar(&c.op, "op", "read", "operation to perform: write, read, delete, truncate, exists")
+	f.StringVar(&c.path, "path", "", "path to file")
+	f.StringVar(&c.content, "content", "", "content to write")
+}
+
+func (c *fileOp) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
+	if c.path == "" {
+		log.Fatalf("missing --path")
+	}
+	switch c.op {
+	case "write":
+		dir := filepath.Dir(c.path)
+		if err := os.MkdirAll(dir, 0777); err != nil {
+			log.Fatalf("mkdir %q failed: %v", dir, err)
+		}
+		if err := os.WriteFile(c.path, []byte(c.content), 0666); err != nil {
+			log.Fatalf("writeFile %q failed: %v", c.path, err)
+		}
+	case "read":
+		data, err := os.ReadFile(c.path)
+		if err != nil {
+			log.Fatalf("readFile %q failed: %v", c.path, err)
+		}
+		fmt.Print(string(data))
+	case "delete":
+		if err := os.Remove(c.path); err != nil && !os.IsNotExist(err) {
+			log.Fatalf("remove %q failed: %v", c.path, err)
+		}
+	case "truncate":
+		if err := os.Truncate(c.path, 0); err != nil {
+			log.Fatalf("truncate %q failed: %v", c.path, err)
+		}
+	case "exists":
+		if _, err := os.Stat(c.path); err != nil {
+			if os.IsNotExist(err) {
+				return subcommands.ExitFailure
+			}
+			log.Fatalf("stat %q failed: %v", c.path, err)
+		}
+	default:
+		log.Fatalf("unknown op %q", c.op)
 	}
 	return subcommands.ExitSuccess
 }

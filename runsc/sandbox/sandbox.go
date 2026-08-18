@@ -1653,7 +1653,7 @@ type CheckpointOpts struct {
 	ExcludeCommittedZeroPages bool
 	CudaCheckpointPath        string
 	CudaCheckpointSequential  bool
-	SplitFSCheckpoint         bool
+	SplitFSCheckpointPaths    []checkpoint.ResourceID
 
 	// Save/restore exec options.
 	SaveRestoreExecArgv        string
@@ -1666,7 +1666,7 @@ type CheckpointOpts struct {
 func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, opts CheckpointOpts) error {
 	log.Debugf("Checkpoint sandbox %q, imagePath %q, opts %+v", s.ID, imagePath, opts)
 
-	if opts.SplitFSCheckpoint {
+	if len(opts.SplitFSCheckpointPaths) > 0 {
 		// Verify we are not using GCS/gofer.
 		gcsOptsPath := path.Join(imagePath, checkpointGCSOptsFileName)
 		if _, err := os.Stat(gcsOptsPath); err == nil {
@@ -1680,7 +1680,7 @@ func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, 
 		Resume:                         opts.Resume,
 		CudaCheckpointPath:             opts.CudaCheckpointPath,
 		CudaCheckpointSequential:       opts.CudaCheckpointSequential,
-		SplitFSCheckpoint:              opts.SplitFSCheckpoint,
+		SplitFSCheckpointPaths:         opts.SplitFSCheckpointPaths,
 		RunscVersion:                   version.Version(),
 		ExecOpts: control.SaveRestoreExecOpts{
 			Argv:        opts.SaveRestoreExecArgv,
@@ -1727,7 +1727,7 @@ func setCheckpointOptsFilesForLocalCheckpoint(conf *config.Config, imagePath str
 	opt.FilePayload.Files = files
 	opt.HavePagesFile = len(files) > 1
 
-	if opts.SplitFSCheckpoint {
+	if len(opts.SplitFSCheckpointPaths) > 0 {
 		fsImagePath := filepath.Join(imagePath, "fs")
 		if err := os.MkdirAll(fsImagePath, 0755); err != nil {
 			return fmt.Errorf("creating fs checkpoint directory: %w", err)

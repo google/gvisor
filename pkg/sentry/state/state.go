@@ -81,45 +81,38 @@ type SaveOpts struct {
 	// sequentially (rather than in parallel).
 	CudaCheckpointSequential bool
 
-	// SplitFSCheckpoint indicates if we should split filesystem to separate
-	// pages from the full checkpoint.
-	SplitFSCheckpoint bool
-
-	// FSSaveOpts contains options for filesystem checkpoint if SplitFSCheckpoint
-	// is true.
+	// FSSaveOpts contains options for filesystem checkpoint. If non-nil, we
+	// should split filesystem to separate pages from the full checkpoint.
 	FSSaveOpts *kernel.FSSaveOpts
 }
 
 // Close releases resources owned by opts.
 func (opts *SaveOpts) Close() error {
-	var dstErr, pmErr, pfErr error
+	var err error
 	if c, ok := opts.Destination.(io.Closer); ok {
-		dstErr = c.Close()
+		err = errors.Join(err, c.Close())
 	}
 	if opts.PagesMetadata != nil {
-		pmErr = opts.PagesMetadata.Close()
+		err = errors.Join(err, opts.PagesMetadata.Close())
 	}
 	if opts.PagesFile != nil {
-		pfErr = opts.PagesFile.Close()
+		err = errors.Join(err, opts.PagesFile.Close())
 	}
-	var fsErr error
 	if opts.FSSaveOpts != nil {
-		var mErr, mtErr, pmfErr, pfErr error
 		if opts.FSSaveOpts.ManifestFile != nil {
-			mErr = opts.FSSaveOpts.ManifestFile.Close()
+			err = errors.Join(err, opts.FSSaveOpts.ManifestFile.Close())
 		}
 		if opts.FSSaveOpts.MultiTarFile != nil {
-			mtErr = opts.FSSaveOpts.MultiTarFile.Close()
+			err = errors.Join(err, opts.FSSaveOpts.MultiTarFile.Close())
 		}
 		if opts.FSSaveOpts.PagesMetadataFile != nil {
-			pmfErr = opts.FSSaveOpts.PagesMetadataFile.Close()
+			err = errors.Join(err, opts.FSSaveOpts.PagesMetadataFile.Close())
 		}
 		if opts.FSSaveOpts.PagesFile != nil {
-			pfErr = opts.FSSaveOpts.PagesFile.Close()
+			err = errors.Join(err, opts.FSSaveOpts.PagesFile.Close())
 		}
-		fsErr = errors.Join(mErr, mtErr, pmfErr, pfErr)
 	}
-	return errors.Join(dstErr, pmErr, pfErr, fsErr)
+	return err
 }
 
 // Save saves the system state.
