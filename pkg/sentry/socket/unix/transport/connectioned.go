@@ -601,6 +601,21 @@ func (e *connectionedEndpoint) Readiness(mask waiter.EventMask) waiter.EventMask
 	ready := waiter.EventMask(0)
 	switch {
 	case e.Connected():
+		// Check for error condition (SO_ERROR is set).
+		if mask&waiter.EventErr != 0 {
+			e.lastErrorMu.Lock()
+			hasError := e.lastError != nil
+			e.lastErrorMu.Unlock()
+			if hasError {
+				ready |= waiter.EventErr
+			}
+		}
+
+		if hr, ok := e.receiver.(HostReadiness); ok {
+			ready |= hr.HostReadiness(mask)
+			break
+		}
+
 		if mask&waiter.ReadableEvents != 0 && e.receiver.Readable() {
 			ready |= waiter.ReadableEvents
 		}
@@ -614,15 +629,6 @@ func (e *connectionedEndpoint) Readiness(mask waiter.EventMask) waiter.EventMask
 			// IsSendClosed alone would miss it.
 			if mask&waiter.EventHUp != 0 && (e.connected.IsSendClosed() || e.writeShutdown) {
 				ready |= waiter.EventHUp
-			}
-		}
-		// Check for error condition (SO_ERROR is set).
-		if mask&waiter.EventErr != 0 {
-			e.lastErrorMu.Lock()
-			hasError := e.lastError != nil
-			e.lastErrorMu.Unlock()
-			if hasError {
-				ready |= waiter.EventErr
 			}
 		}
 	case e.ListeningLocked():

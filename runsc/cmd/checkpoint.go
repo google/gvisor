@@ -22,10 +22,8 @@ import (
 
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/state/statefile"
-	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
@@ -42,9 +40,9 @@ type Checkpoint struct {
 	excludeCommittedZeroPages bool
 	cudaCheckpointPath        string
 	cudaCheckpointSequential  bool
-	splitFSCheckpointPaths    string
 	saveRestoreExecArgv       string
 	saveRestoreExecTimeout    time.Duration
+	splitFSCheckpoint         bool
 
 	// direct indicates whether O_DIRECT should be used for writing the
 	// checkpoint pages file. It bypasses the kernel page cache. It is beneficial
@@ -80,7 +78,7 @@ func (c *Checkpoint) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&c.cudaCheckpointSequential, "cuda-checkpoint-sequential", false, "run cuda-checkpoint sequentially in the container")
 	f.StringVar(&c.saveRestoreExecArgv, "save-restore-exec-argv", "", "argv (split by spaces) for a save/restore binary that's automatically executed in the sandbox before saving and after restoring. If the execution fails, the save/restore process will fail.")
 	f.DurationVar(&c.saveRestoreExecTimeout, "save-restore-exec-timeout", control.DefaultSaveRestoreExecTimeout, "timeout for the binary pointed to by save-restore-exec-argv.")
-	f.StringVar(&c.splitFSCheckpointPaths, "fs-checkpoint-paths", "", "comma-separated list of container:path targets to include in the filesystem checkpoint. For capturing all of tmpfs, the value should be \"all-tmpfs\".")
+	f.BoolVar(&c.splitFSCheckpoint, "split-fscheckpoint", false, "split filesystem checkpoint into a separate tar-like format")
 
 	// Unimplemented flags necessary for compatibility with docker.
 	var wp string
@@ -118,15 +116,6 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...any) su
 		util.Fatalf("making directories at path provided: %v", err)
 	}
 
-	var paths []checkpoint.ResourceID
-	if c.splitFSCheckpointPaths != "" {
-		var err error
-		paths, err = boot.ParseFSCheckpointPaths(c.splitFSCheckpointPaths)
-		if err != nil {
-			util.Fatalf("parsing fs-checkpoint-paths: %v", err)
-		}
-	}
-
 	opts := sandbox.CheckpointOpts{
 		Compression:                c.compression.Level(),
 		Resume:                     c.leaveRunning,
@@ -134,10 +123,10 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...any) su
 		ExcludeCommittedZeroPages:  c.excludeCommittedZeroPages,
 		CudaCheckpointPath:         c.cudaCheckpointPath,
 		CudaCheckpointSequential:   c.cudaCheckpointSequential,
-		SplitFSCheckpointPaths:     paths,
 		SaveRestoreExecArgv:        c.saveRestoreExecArgv,
 		SaveRestoreExecTimeout:     c.saveRestoreExecTimeout,
 		SaveRestoreExecContainerID: cont.ID,
+		SplitFSCheckpoint:          c.splitFSCheckpoint,
 	}
 
 	if err := cont.Checkpoint(conf, c.imagePath, opts); err != nil {

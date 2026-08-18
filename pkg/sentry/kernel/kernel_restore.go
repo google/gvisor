@@ -221,38 +221,8 @@ func loadPrivateMemoryFiles(ctx context.Context, r io.Reader, mfmap map[checkpoi
 	// Ensure that it is consistent with mfmap, unless we are restoring from
 	// split filesystem checkpoint.
 	if FSRestoreFromContext(ctx) {
-		fsCheckpointed := pgalloc.FSCheckpointedMemoryFilesFromContext(ctx)
-		ownersMap := make(map[checkpoint.ResourceID]struct{}, len(meta.owners))
-		// Check for duplicates (should not be in both).
-		for _, fsID := range meta.owners {
-			if _, ok := fsCheckpointed[fsID]; ok {
-				return fmt.Errorf("private memory file %q is in both FS checkpoint and Sentry checkpoint", fsID)
-			}
-			ownersMap[fsID] = struct{}{}
-		}
-
-		// Check that all expected are loaded.
-		for fsID := range mfmap {
-			inFS := false
-			if fsCheckpointed != nil {
-				_, inFS = fsCheckpointed[fsID]
-			}
-			_, inSentry := ownersMap[fsID]
-			if !inFS && !inSentry {
-				return fmt.Errorf("private memory file %q was neither in FS checkpoint nor in Sentry checkpoint", fsID)
-			}
-		}
-
-		// Load only the ones from sentry checkpoint.
-		for _, fsID := range meta.owners {
-			mf, ok := mfmap[fsID]
-			if !ok {
-				return fmt.Errorf("saved private memory file for %q was not configured on restore", fsID)
-			}
-			err := mf.LoadFrom(ctx, r, opts)
-			if err != nil {
-				return fmt.Errorf("failed to load MemoryFile %p fsID %q from Sentry state: %w", mf, fsID, err)
-			}
+		if len(meta.owners) != 0 {
+			return fmt.Errorf("inconsistent private memory files on restore (split fs restore active): savedMFOwners = %v", meta.owners)
 		}
 		return nil
 	}

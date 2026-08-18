@@ -790,7 +790,7 @@ func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCl
 				defer mfSaveWg.Done()
 				mfsToSaveActual := mfsToSave
 				if splitFS {
-					mfsToSaveActual = filterMFsToSave(mfsToSave, fsOpts)
+					mfsToSaveActual = nil
 				}
 				mfSaveErr = k.saveMemoryFiles(ctx, nil, pagesMetadata, pagesFile, mfsToSaveActual, appMFExcludeCommittedZeroPages) // transfers ownership
 			}()
@@ -857,7 +857,7 @@ func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCl
 		} else {
 			mfsToSaveActual := mfsToSave
 			if splitFS {
-				mfsToSaveActual = filterMFsToSave(mfsToSave, fsOpts)
+				mfsToSaveActual = nil
 			}
 			mfSaveErr = k.saveMemoryFiles(ctx, stateFile, nil, nil, mfsToSaveActual, appMFExcludeCommittedZeroPages)
 			if mfSaveErr != nil {
@@ -1060,31 +1060,6 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 		}
 		s.Restore()
 		timeline.Reached("Network stack restored")
-	}
-
-	if FSRestoreFromContext(ctx) {
-		if fsCheckpointed := pgalloc.FSCheckpointedMemoryFilesFromContext(ctx); fsCheckpointed != nil {
-			if mfmapVal := ctx.Value(pgalloc.CtxMemoryFileMap); mfmapVal != nil {
-				mfmap := mfmapVal.(map[checkpoint.ResourceID]*pgalloc.MemoryFile)
-				log.Infof("Discarding PMAs for FS-checkpointed private MemoryFiles: %v", fsCheckpointed)
-				k.tasks.mu.RLock()
-				mms := make(map[*mm.MemoryManager]struct{})
-				k.tasks.forEachTaskLocked(func(t *Task) {
-					if mm := t.MemoryManager(); mm != nil {
-						mms[mm] = struct{}{}
-					}
-				})
-				k.tasks.mu.RUnlock()
-
-				for mm := range mms {
-					for id := range fsCheckpointed {
-						if privateMF, ok := mfmap[id]; ok {
-							mm.DiscardPMAsForFile(privateMF)
-						}
-					}
-				}
-			}
-		}
 	}
 
 	if err := k.vfs.CompleteRestore(ctx, vfsOpts); err != nil {
@@ -2535,25 +2510,4 @@ func (k *Kernel) ContainerName(cid string) string {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
 	return k.containerNames[cid]
-}
-
-func filterMFsToSave(mfsToSave map[checkpoint.ResourceID]*pgalloc.MemoryFile, fsOpts *FSSaveOpts) map[checkpoint.ResourceID]*pgalloc.MemoryFile {
-	paths := fsOpts.Paths
-	if len(paths) == 0 {
-		paths = []checkpoint.ResourceID{{Path: "/"}}
-	}
-	pathsMap := make(map[checkpoint.ResourceID]struct{}, len(paths))
-	for _, p := range paths {
-		pathsMap[p] = struct{}{}
-	}
-	mfsToSaveActual := make(map[checkpoint.ResourceID]*pgalloc.MemoryFile)
-	for id, mf := range mfsToSave {
-		if !matchesPaths(id, pathsMap) {
-			mfsToSaveActual[id] = mf
-		}
-	}
-	if len(mfsToSaveActual) == 0 {
-		return nil
-	}
-	return mfsToSaveActual
 }
