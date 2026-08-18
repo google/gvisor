@@ -79,6 +79,13 @@ type SaveOpts struct {
 	// file.
 	AppMFExcludeCommittedZeroPages bool `json:"app_mf_exclude_committed_zero_pages"`
 
+	// PrivateMFExternalContent is the value of
+	// pgalloc.SaveOpts.ExternalContent for private (disk-backed) MemoryFiles.
+	// If true, their page contents are not saved into the checkpoint; the
+	// backing host files (gofer filestore files) must be captured out-of-band
+	// and provided for adoption on restore.
+	PrivateMFExternalContent bool `json:"private_mf_external_content"`
+
 	// HavePagesFile indicates whether the pages file and its corresponding
 	// metadata file is provided.
 	HavePagesFile bool `json:"have_pages_file"`
@@ -131,6 +138,7 @@ func ConvertToStateSaveOpts(o *SaveOpts) (*state.SaveOpts, error) {
 		Key:                            o.Key,
 		Metadata:                       o.Metadata,
 		AppMFExcludeCommittedZeroPages: o.AppMFExcludeCommittedZeroPages,
+		PrivateMFExternalContent:       o.PrivateMFExternalContent,
 		Resume:                         o.Resume,
 		CudaCheckpointPath:             o.CudaCheckpointPath,
 		CudaCheckpointSequential:       o.CudaCheckpointSequential,

@@ -48,4 +48,11 @@ message MemoryFileMetadataProto {
   repeated FileRangeProto unwaste_small = 6;
   repeated FileRangeProto unwaste_huge = 7;
   map<uint64, uint64> subreleased = 8;
+
+  // ContentExternal is true if page contents were not saved to the
+  // checkpoint. LoadFrom() requires the backing file to already contain the
+  // correct contents at the offsets described by the saved segment table
+  // (i.e. the MemoryFile must adopt the host file that the original
+  // MemoryFile was backed by when it was saved).
+  bool content_external = 9;
 }

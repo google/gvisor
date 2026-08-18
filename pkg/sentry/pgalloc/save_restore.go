@@ -182,6 +182,15 @@ type SaveOpts struct {
 	// but may instead improve SaveTo() and LoadFrom() time, and checkpoint
 	// size, if the application has many committed zero pages.
 	ExcludeCommittedZeroPages bool
+
+	// If ExternalContent is true, SaveTo() will not scan for zero pages and
+	// will not save page contents; it only saves segment metadata, marked
+	// with ContentExternal so that LoadFrom() expects contents to be provided
+	// externally by the backing file itself. This is appropriate for private
+	// (disk-backed) MemoryFiles whose host file contents are captured
+	// out-of-band (e.g. by snapshotting the host file) instead of being
+	// serialized into the checkpoint.
+	ExternalContent bool
 }
 
 // SaveTo writes f's state to the given stream.
@@ -202,6 +211,31 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) er
 	// Ensure that there are no pending evictions.
 	if len(f.evictable) != 0 {
 		panic(fmt.Sprintf("evictions still pending for %d users; call StartEvictions and WaitForEvictions before SaveTo", len(f.evictable)))
+	}
+
+	if opts.ExternalContent {
+		// Only save segment metadata; page contents are expected to be
+		// captured out-of-band (the backing host file is preserved or
+		// snapshotted separately). Skip async page file registration, zero
+		// page scanning (which would otherwise decommit pages, mutating the
+		// backing file), and page serialization entirely.
+		timeMetadataStart := gohacks.Nanotime()
+		pb := f.exportMetadataProto()
+		pb.ContentExternal = true
+		data, err := proto.Marshal(pb)
+		if err != nil {
+			return fmt.Errorf("failed to marshal metadata: %w", err)
+		}
+		var lengthBuf [8]byte
+		binary.LittleEndian.PutUint64(lengthBuf[:], uint64(len(data)))
+		if _, err := w.Write(lengthBuf[:]); err != nil {
+			return fmt.Errorf("failed to write metadata length: %w", err)
+		}
+		if _, err := w.Write(data); err != nil {
+			return fmt.Errorf("failed to write metadata: %w", err)
+		}
+		log.Infof("MemoryFile(%p): saved external-content metadata in %s", f, time.Duration(gohacks.Nanotime()-timeMetadataStart))
+		return nil
 	}
 
 	// Register this MemoryFile with async page saving if a pages file has been
@@ -1047,6 +1081,23 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 	log.Infof("MemoryFile(%p): loaded metadata in %s", f, time.Duration(gohacks.Nanotime()-timeMetadataStart))
 
 	fileSize := uint64(len(chunks)) * chunkSize
+	if pb.ContentExternal {
+		// Contents are expected to already be present in the backing file.
+		// Require that the MemoryFile adopted an existing host file (i.e.
+		// was not created empty) and that the file is at least as large as
+		// the saved chunk table requires; otherwise restore would silently
+		// produce zero-filled holes instead of the original contents.
+		if !f.opts.AdoptExistingFile {
+			return fmt.Errorf("cannot restore externally-contented MemoryFile: backing file was not adopted")
+		}
+		fi, err := f.file.Stat()
+		if err != nil {
+			return fmt.Errorf("failed to stat adopted MemoryFile file: %w", err)
+		}
+		if uint64(fi.Size()) < fileSize {
+			return fmt.Errorf("adopted MemoryFile file size %d is smaller than required %d (state checkpoint and filestore artifact mismatch?)", fi.Size(), fileSize)
+		}
+	}
 	if err := f.file.Truncate(int64(fileSize)); err != nil {
 		return fmt.Errorf("failed to truncate MemoryFile: %w", err)
 	}
@@ -1091,9 +1142,10 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 	defer madviseWG.Wait()
 
 	// Register this MemoryFile with async page loading if a pages file has
-	// been provided.
+	// been provided. This is skipped for externally-contented MemoryFiles:
+	// no pages are read from the pages file, so there is nothing to load.
 	var amfl *asyncMemoryFileLoad
-	if opts.PagesFile != nil {
+	if opts.PagesFile != nil && !pb.ContentExternal {
 		var df stateio.DestinationFile
 		if opts.PagesFile.ar.NeedRegisterDestinationFD() {
 			var err error
@@ -1153,9 +1205,11 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 		}
 		maFR := maseg.Range()
 		amount := maFR.Length()
-		// Wait for all chunks spanned by this segment to be madvised.
-		for madviseEnd.Load() < maFR.End {
-			<-madviseChan
+		if !pb.ContentExternal {
+			// Wait for all chunks spanned by this segment to be madvised.
+			for madviseEnd.Load() < maFR.End {
+				<-madviseChan
+			}
 		}
 		if amfl != nil {
 			// Record where to read data.
@@ -1170,7 +1224,7 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 			amfl.pf.mu.Unlock()
 			opts.PagesFileOffset += amount
 			amfl.pf.lfStatus.Notify(aplLFPending)
-		} else {
+		} else if !pb.ContentExternal {
 			// Verify header.
 			length, object, err := state.ReadHeader(&wr)
 			if err != nil {

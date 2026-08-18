@@ -1148,7 +1148,7 @@ func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *boot.Pod
 // tmpfs/overlayfs mounts that will overlay some gofer mounts.
 //
 // Precondition: gofer process must be running.
-func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *boot.PodMountHints) ([]*os.File, error) {
+func (c *Container) createGoferFilestores(conf *config.Config, ovlConf config.Overlay2, mountHints *boot.PodMountHints) ([]*os.File, error) {
 	var goferFilestores []*os.File
 	// NOTE(gvisor.dev/issue/9834): Create the filestores in the gofer mount
 	// namespace, so that they don't prevent the host mount points from being
@@ -1156,9 +1156,15 @@ func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *b
 	// to access gofer's mount namespace. See proc_pid_root(5).
 	goferRootfs := fmt.Sprintf("/proc/%d/root", c.GoferPid.Load())
 
+	// If set, adopt pre-existing host files (from a checkpoint artifact) as
+	// the filestores instead of creating new anonymous ones, in mount order
+	// (root first).
+	adoptDir := conf.FilestoreAdoptDir
+	adoptIdx := 0
+
 	// Handle rootfs first.
 	rootfsConf := c.GoferMountConfs[0]
-	filestore, err := c.createGoferFilestore(goferRootfs, ovlConf, rootfsConf, c.Spec.Root.Path, mountHints)
+	filestore, err := c.createGoferFilestore(goferRootfs, ovlConf, rootfsConf, c.Spec.Root.Path, mountHints, adoptDir, &adoptIdx)
 	if err != nil {
 		return nil, err
 	}
@@ -1174,7 +1180,7 @@ func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *b
 		}
 		mountConf := c.GoferMountConfs[mountIdx]
 		mountIdx++
-		filestore, err := c.createGoferFilestore(goferRootfs, ovlConf, mountConf, m.Source, mountHints)
+		filestore, err := c.createGoferFilestore(goferRootfs, ovlConf, mountConf, m.Source, mountHints, adoptDir, &adoptIdx)
 		if err != nil {
 			return nil, err
 		}
@@ -1190,7 +1196,7 @@ func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *b
 	return goferFilestores, nil
 }
 
-func (c *Container) createGoferFilestore(goferRootfs string, ovlConf config.Overlay2, goferConf specutils.GoferMountConf, mountSrc string, mountHints *boot.PodMountHints) (*os.File, error) {
+func (c *Container) createGoferFilestore(goferRootfs string, ovlConf config.Overlay2, goferConf specutils.GoferMountConf, mountSrc string, mountHints *boot.PodMountHints, adoptDir string, adoptIdx *int) (*os.File, error) {
 	if !goferConf.IsFilestorePresent() {
 		return nil, nil
 	}
@@ -1198,6 +1204,14 @@ func (c *Container) createGoferFilestore(goferRootfs string, ovlConf config.Over
 	case specutils.SelfOverlay:
 		return c.createGoferFilestoreInSelf(goferRootfs, mountSrc, mountHints)
 	case specutils.AnonOverlay:
+		if adoptDir != "" {
+			filestore, err := c.adoptGoferFilestoreInDir(adoptDir, *adoptIdx)
+			if err != nil {
+				return nil, err
+			}
+			*adoptIdx++
+			return filestore, nil
+		}
 		return c.createGoferFilestoreInDir(goferRootfs, ovlConf.Medium().HostFileDir())
 	default:
 		return nil, fmt.Errorf("unexpected upper layer with filestore %s", goferConf)
@@ -1254,6 +1268,34 @@ func (c *Container) createGoferFilestoreInDir(goferRootfs string, filestoreDir s
 		return nil, fmt.Errorf("failed to unlink temporary file %q: %v", filestoreFile.Name(), err)
 	}
 	log.Debugf("Created an unnamed filestore file at %q", filestoreDir)
+	return filestoreFile, nil
+}
+
+// adoptGoferFilestoreInDir opens a pre-existing host file from a checkpoint
+// artifact directory to adopt as a filestore, instead of creating a new
+// anonymous one. The file is NOT unlinked and NOT truncated here: its
+// contents must remain intact for the sandbox's private MemoryFile to adopt
+// during state checkpoint restore.
+func (c *Container) adoptGoferFilestoreInDir(adoptDir string, idx int) (*os.File, error) {
+	if !path.IsAbs(adoptDir) {
+		return nil, fmt.Errorf("filestore adopt directory %q must be an absolute path", adoptDir)
+	}
+	filestorePath := path.Join(adoptDir, fmt.Sprintf("filestore-%d", idx))
+	fileInfo, err := os.Stat(filestorePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat filestore artifact %q: %v", filestorePath, err)
+	}
+	if !fileInfo.Mode().IsRegular() {
+		return nil, fmt.Errorf("filestore artifact %q is not a regular file", filestorePath)
+	}
+	if fileInfo.Size() == 0 {
+		return nil, fmt.Errorf("filestore artifact %q is empty; it must contain the adopted writable-layer contents", filestorePath)
+	}
+	filestoreFile, err := os.OpenFile(filestorePath, unix.O_RDWR|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open filestore artifact %q: %v", filestorePath, err)
+	}
+	log.Debugf("Adopting filestore file at %q", filestorePath)
 	return filestoreFile, nil
 }
 
@@ -1717,7 +1759,7 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 
 	// Create gofer filestore files with the Gofer's mount namespaces while
 	// chrootSyncSandEnd is still open.
-	goferFilestores, err := c.createGoferFilestores(conf.GetOverlay2(), mountHints)
+	goferFilestores, err := c.createGoferFilestores(conf, conf.GetOverlay2(), mountHints)
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("creating gofer filestore files: %w", err)
 	}

@@ -710,11 +710,30 @@ func savePrivateMFs(ctx context.Context, w io.Writer, mfsToSave map[checkpoint.R
 	return nil
 }
 
+// SaveOpts contains options for Kernel.SaveTo().
+type SaveOpts struct {
+	// AppMFExcludeCommittedZeroPages is the value of
+	// pgalloc.SaveOpts.ExcludeCommittedZeroPages for the application
+	// MemoryFile. It is expected to reflect application memory usage
+	// behavior, but not necessarily usage of private MemoryFiles.
+	AppMFExcludeCommittedZeroPages bool
+
+	// PrivateMFExternalContent is the value of
+	// pgalloc.SaveOpts.ExternalContent for private (disk-backed) MemoryFiles.
+	// If true, they only save segment metadata; their contents are expected
+	// to be captured out-of-band (the backing host files are preserved or
+	// snapshotted separately) and adopted on restore.
+	PrivateMFExternalContent bool
+
+	// Resume indicates if the statefile is used for save-resume.
+	Resume bool
+}
+
 // SaveTo saves the state of k to stateFile. It takes ownership of stateFile,
 // pagesMetadata, and pagesFile, even if it returns a non-nil error.
 //
 // Preconditions: The kernel must be paused throughout the call to SaveTo.
-func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCloser, pagesFile stateio.AsyncWriter, appMFExcludeCommittedZeroPages, resume bool) error {
+func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCloser, pagesFile stateio.AsyncWriter, opts *SaveOpts) error {
 	if hostarch.PageSize != 4096 {
 		return fmt.Errorf("save is not supported with %dK page size", hostarch.PageSize/1024)
 	}
@@ -763,7 +782,7 @@ func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCl
 			mfSaveWg.Add(1)
 			go func() {
 				defer mfSaveWg.Done()
-				mfSaveErr = k.saveMemoryFiles(ctx, nil, pagesMetadata, pagesFile, mfsToSave, appMFExcludeCommittedZeroPages) // transfers ownership
+				mfSaveErr = k.saveMemoryFiles(ctx, nil, pagesMetadata, pagesFile, mfsToSave, opts) // transfers ownership
 			}()
 			pagesCleanup.Release()
 			// Defer a Wait() so we wait for k.saveMemoryFiles() to complete even if we
@@ -788,7 +807,7 @@ func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCl
 			// Pause the network stack.
 			netstackPauseStart := time.Now()
 			// Stack.removeConf should be true when resume=false and vice versa.
-			k.rootNetworkNamespace.Stack().SetRemoveConf(!resume)
+			k.rootNetworkNamespace.Stack().SetRemoveConf(!opts.Resume)
 			log.Infof("Pausing root network namespace")
 			k.rootNetworkNamespace.Stack().Pause()
 			defer k.rootNetworkNamespace.Stack().Resume()
@@ -817,7 +836,7 @@ func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCl
 				return mfSaveErr
 			}
 		} else {
-			mfSaveErr = k.saveMemoryFiles(ctx, stateFile, nil, nil, mfsToSave, appMFExcludeCommittedZeroPages)
+			mfSaveErr = k.saveMemoryFiles(ctx, stateFile, nil, nil, mfsToSave, opts)
 			if mfSaveErr != nil {
 				return mfSaveErr
 			}
@@ -846,7 +865,7 @@ func (k *Kernel) BeforeResume(ctx context.Context) {
 // pagesFile must be non-nil, saveMemoryFiles takes ownership of both
 // pagesMetadata and pagesFile (even if it returns a non-nil error), and
 // MemoryFile state will be saved to pagesMetadata and pagesFile.
-func (k *Kernel) saveMemoryFiles(ctx context.Context, w io.Writer, pagesMetadata io.WriteCloser, pagesFile stateio.AsyncWriter, mfsToSave map[checkpoint.ResourceID]*pgalloc.MemoryFile, appMFExcludeCommittedZeroPages bool) error {
+func (k *Kernel) saveMemoryFiles(ctx context.Context, w io.Writer, pagesMetadata io.WriteCloser, pagesFile stateio.AsyncWriter, mfsToSave map[checkpoint.ResourceID]*pgalloc.MemoryFile, opts *SaveOpts) error {
 	memoryStart := time.Now()
 
 	pmw := w
@@ -858,7 +877,7 @@ func (k *Kernel) saveMemoryFiles(ctx context.Context, w io.Writer, pagesMetadata
 	defer pmwCleanup.Clean()
 
 	mfOpts := pgalloc.SaveOpts{
-		ExcludeCommittedZeroPages: appMFExcludeCommittedZeroPages,
+		ExcludeCommittedZeroPages: opts.AppMFExcludeCommittedZeroPages,
 	}
 	var (
 		asyncPageSaveWg      sync.WaitGroup
@@ -885,9 +904,13 @@ func (k *Kernel) saveMemoryFiles(ctx context.Context, w io.Writer, pagesMetadata
 	if err := k.mf.SaveTo(ctx, pmw, &mfOpts); err != nil {
 		return err
 	}
-	// appMFExcludeCommittedZeroPages is expected to reflect application memory
+	// AppMFExcludeCommittedZeroPages is expected to reflect application memory
 	// usage behavior, but not necessarily usage of private MemoryFiles.
 	mfOpts.ExcludeCommittedZeroPages = false
+	// If PrivateMFExternalContent is set, private MemoryFiles only save
+	// segment metadata; their contents are expected to be captured out-of-band
+	// (the backing host files are preserved or snapshotted separately).
+	mfOpts.ExternalContent = opts.PrivateMFExternalContent
 	if err := savePrivateMFs(ctx, pmw, mfsToSave, &mfOpts); err != nil {
 		return err
 	}

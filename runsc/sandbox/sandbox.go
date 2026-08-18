@@ -1657,6 +1657,11 @@ type CheckpointOpts struct {
 	CudaCheckpointPath        string
 	CudaCheckpointSequential  bool
 
+	// SkipFilestorePages causes private (disk-backed) MemoryFiles to save
+	// only segment metadata; their backing host files (gofer filestore files)
+	// must be captured out-of-band and adopted on restore.
+	SkipFilestorePages bool
+
 	// Save/restore exec options.
 	SaveRestoreExecArgv        string
 	SaveRestoreExecTimeout     time.Duration
@@ -1671,6 +1676,7 @@ func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, 
 	opt := control.SaveOpts{
 		Metadata:                       opts.Compression.ToMetadata(),
 		AppMFExcludeCommittedZeroPages: opts.ExcludeCommittedZeroPages,
+		PrivateMFExternalContent:       opts.SkipFilestorePages,
 		Resume:                         opts.Resume,
 		CudaCheckpointPath:             opts.CudaCheckpointPath,
 		CudaCheckpointSequential:       opts.CudaCheckpointSequential,
