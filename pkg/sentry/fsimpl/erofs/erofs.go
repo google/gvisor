@@ -20,7 +20,7 @@
 //	  dentry.dirMu
 //	    inode.dirMu
 //	    inodeBucket.mu
-//	    filesystem.cacheMu
+//	    dentryCache.mu
 package erofs
 
 import (
@@ -38,6 +38,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/erofs"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -53,7 +54,10 @@ const Name = "erofs"
 // Mount option names for EROFS.
 const (
 	moptImageFD = "ifd"
+	moptDcache  = "dcache"
 )
+
+var SupportedMountOptions = []string{moptDcache}
 
 // FilesystemType implements vfs.FilesystemType.
 //
@@ -61,6 +65,28 @@ const (
 type FilesystemType struct{}
 
 const defaultMaxCachedDentries = 1000
+
+// +stateify savable
+type dentryCache struct {
+	maxCachedDentries uint64
+	mu                sync.Mutex `state:"nosave"`
+	dentries          dentryList
+	dentriesLen       uint64
+}
+
+// SetDentryCacheSize sets the size of the global EROFS dentry cache.
+func SetDentryCacheSize(size int) {
+	if size < 0 {
+		return
+	}
+	if globalDentryCache != nil {
+		log.Warningf("Global EROFS dentry cache has already been initialized. Ignoring subsequent attempt.")
+		return
+	}
+	globalDentryCache = &dentryCache{maxCachedDentries: uint64(size)}
+}
+
+var globalDentryCache *dentryCache
 
 // filesystem implements vfs.FilesystemImpl.
 //
@@ -97,13 +123,7 @@ type filesystem struct {
 	// ancestryMu is required by genericfstree.
 	ancestryMu sync.RWMutex `state:"nosave"`
 
-	// cacheMu protects the dentry cache LRU list.
-	cacheMu sync.Mutex `state:"nosave"`
-	// +checklocks:cacheMu
-	cachedDentries dentryList
-	// +checklocks:cacheMu
-	cachedDentriesLen uint64
-	maxCachedDentries uint64
+	dentryCache *dentryCache
 
 	// released is nonzero once filesystem.Release has been called.
 	released atomicbitops.Uint32
@@ -147,6 +167,19 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	}
 	cu.Add(func() { image.Close() })
 
+	maxCachedDentries := uint64(defaultMaxCachedDentries)
+	if dcacheStr, ok := mopts[moptDcache]; ok {
+		delete(mopts, moptDcache)
+		dcache, err := strconv.ParseInt(dcacheStr, 10, 64)
+		if err != nil {
+			ctx.Warningf("erofs.FilesystemType.GetFilesystem: invalid dcache: %s=%s", moptDcache, dcacheStr)
+			return nil, nil, linuxerr.EINVAL
+		}
+		if dcache >= 0 {
+			maxCachedDentries = uint64(dcache)
+		}
+	}
+
 	iopts, ok := opts.InternalData.(InternalFilesystemOptions)
 	if opts.InternalData != nil && !ok {
 		ctx.Warningf("erofs.FilesystemType.GetFilesystem: GetFilesystemOptions.InternalData has type %T, wanted erofs.InternalFilesystemOptions", opts.InternalData)
@@ -164,16 +197,21 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	}
 
 	fs := &filesystem{
-		mopts:             opts.Data,
-		iopts:             iopts,
-		image:             image,
-		devMinor:          devMinor,
-		useReadForIO:      useReadForIO,
-		mf:                imageMemmapFile{image: image},
-		maxCachedDentries: defaultMaxCachedDentries,
+		mopts:        opts.Data,
+		iopts:        iopts,
+		image:        image,
+		devMinor:     devMinor,
+		useReadForIO: useReadForIO,
+		mf:           imageMemmapFile{image: image},
 	}
 	fs.vfsfs.Init(vfsObj, &fstype, fs)
 	cu.Add(func() { fs.vfsfs.DecRef(ctx) })
+
+	if globalDentryCache != nil {
+		fs.dentryCache = globalDentryCache
+	} else {
+		fs.dentryCache = &dentryCache{maxCachedDentries: maxCachedDentries}
+	}
 
 	fs.inodeBuckets = make([]inodeBucket, runtime.GOMAXPROCS(0))
 	for i := range fs.inodeBuckets {
@@ -456,7 +494,7 @@ type dentry struct {
 	// cachingMu serializes this dentry's caching and eviction decisions.
 	cachingMu sync.Mutex `state:"nosave"`
 
-	// cached indicates whether this dentry is on fs.cachedDentries. It is
+	// cached indicates whether this dentry is on fs.dentryCache. It is
 	// protected by cachingMu.
 	cached bool
 
@@ -547,7 +585,7 @@ func (d *dentry) LogRefs() bool { return false }
 // Safe to call after either a DecRef or an IncRef; the latter is a hygiene
 // pass that yanks revived dentries off the LRU.
 //
-// Preconditions: the caller holds neither d.cachingMu nor fs.cacheMu.
+// Preconditions: the caller holds neither d.cachingMu nor fs.dentryCache.mu.
 func (d *dentry) checkCaching(ctx context.Context) {
 	d.cachingMu.Lock()
 
@@ -590,51 +628,60 @@ func (d *dentry) checkCaching(ctx context.Context) {
 		return
 	}
 
+	cache := fs.dentryCache
 	if d.cached {
 		// If d is already cached, just move it to the front of the LRU.
-		fs.cacheMu.Lock()
-		fs.cachedDentries.Remove(d)
-		fs.cachedDentries.PushFront(d)
-		fs.cacheMu.Unlock()
+		cache.mu.Lock()
+		cache.dentries.Remove(d)
+		cache.dentries.PushFront(d)
+		cache.mu.Unlock()
 		d.cachingMu.Unlock()
 		return
 	}
 	// Cache the dentry, then evict the least recently used cached dentry if
 	// the cache becomes over-full.
-	fs.cacheMu.Lock()
-	fs.cachedDentries.PushFront(d)
-	fs.cachedDentriesLen++
-	shouldEvict := fs.cachedDentriesLen > fs.maxCachedDentries
-	fs.cacheMu.Unlock()
+	cache.mu.Lock()
+	cache.dentries.PushFront(d)
+	cache.dentriesLen++
+	shouldEvict := cache.dentriesLen > cache.maxCachedDentries
+	cache.mu.Unlock()
 	d.cached = true
 	d.cachingMu.Unlock()
 
 	if shouldEvict {
-		fs.evictCachedDentry(ctx)
+		fs.evictCachedDentry(ctx, false /* ownFilesystemOnly */)
 	}
 }
 
-// removeFromCache ensures d is not on fs.cachedDentries. It is idempotent.
+// removeFromCache removes d from the dentry cache. It is idempotent.
 //
 // +checklocks:d.cachingMu
 func (d *dentry) removeFromCache() {
 	if !d.cached {
 		return
 	}
-	d.inode.fs.cacheMu.Lock()
-	d.inode.fs.cachedDentries.Remove(d)
-	d.inode.fs.cachedDentriesLen--
-	d.inode.fs.cacheMu.Unlock()
+	cache := d.inode.fs.dentryCache
+	cache.mu.Lock()
+	cache.dentries.Remove(d)
+	cache.dentriesLen--
+	cache.mu.Unlock()
 	d.cached = false
 }
 
-// evictCachedDentry removes the least-recently-used dentry from cachedDentries
-// and evicts it. Returns true if a dentry was evicted.
-func (fs *filesystem) evictCachedDentry(ctx context.Context) bool {
+// evictCachedDentry evicts the LRU dentry, optionally considering only
+// dentries belonging to fs. Returns true if a dentry was evicted.
+func (fs *filesystem) evictCachedDentry(ctx context.Context, ownFilesystemOnly bool) bool {
+	cache := fs.dentryCache
 	for {
-		fs.cacheMu.Lock()
-		victim := fs.cachedDentries.Back()
-		fs.cacheMu.Unlock()
+		cache.mu.Lock()
+		var victim *dentry
+		for d := cache.dentries.Back(); d != nil; d = d.Prev() {
+			if !ownFilesystemOnly || d.inode.fs == fs {
+				victim = d
+				break
+			}
+		}
+		cache.mu.Unlock()
 		if victim == nil {
 			return false
 		}
@@ -650,10 +697,9 @@ func (fs *filesystem) evictCachedDentry(ctx context.Context) bool {
 	}
 }
 
-// evictAllCachedDentries drains the LRU. Used during filesystem release;
-// the fs.released flag ensures the cascade doesn't re-populate the LRU.
+// evictAllCachedDentries drains fs's dentries during filesystem release.
 func (fs *filesystem) evictAllCachedDentries(ctx context.Context) {
-	for fs.evictCachedDentry(ctx) {
+	for fs.evictCachedDentry(ctx, true /* ownFilesystemOnly */) {
 	}
 }
 
