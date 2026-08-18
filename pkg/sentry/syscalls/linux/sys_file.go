@@ -1591,6 +1591,22 @@ func renameat(t *kernel.Task, olddirfd int32, oldpathAddr hostarch.Addr, newdirf
 	}
 	defer oldtpop.Release(t)
 
+	// Prevent renaming the currently executing executable.
+	// This implements partial ETXTBSY behavior as requested in #1005.
+	exe := t.MemoryManager().Executable()
+	if exe != nil {
+		// Check if the source file is the current executable.
+		oldVD, err := t.Kernel().VFS().FindFileDescription(t, oldtpop.pop)
+		if err == nil && oldVD != nil {
+			oldVD.DecRef(t)
+			// Simple check: prevent modification of the executable file itself
+			// This is a basic implementation of ETXTBSY behavior.
+			if oldVD == exe {
+				return linuxerr.ETXTBSY
+			}
+		}
+	}
+
 	newpath, err := copyInPath(t, newpathAddr)
 	if err != nil {
 		return err
