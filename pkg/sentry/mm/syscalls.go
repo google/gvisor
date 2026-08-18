@@ -764,12 +764,10 @@ func (mm *MemoryManager) Brk(ctx context.Context, addr hostarch.Addr) (hostarch.
 		return addr, linuxerr.EINVAL
 	}
 
-	// TODO(gvisor.dev/issue/156): This enforces RLIMIT_DATA, but is
-	// slightly more permissive than the usual data limit. In particular,
-	// this only limits the size of the heap; a true RLIMIT_DATA limits the
-	// size of heap + data + bss. The segment sizes need to be plumbed from
-	// the loader package to fully enforce RLIMIT_DATA.
-	if uint64(addr-mm.brk.Start) > limits.FromContext(ctx).Get(limits.Data).Cur {
+	// Enforce RLIMIT_DATA which limits the size of heap + data + bss.
+	// mm.dataAS tracks the size of private data segments (including .data and .bss).
+	dataLimit := limits.FromContext(ctx).Get(limits.Data).Cur
+	if uint64(addr-mm.brk.Start)+mm.dataAS > dataLimit {
 		addr = mm.brk.End
 		mm.mappingMu.Unlock()
 		return addr, linuxerr.ENOMEM
