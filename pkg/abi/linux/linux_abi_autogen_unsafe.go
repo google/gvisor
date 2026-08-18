@@ -14873,13 +14873,16 @@ func (x *XTNATTargetV1) WriteTo(writer io.Writer) (int64, error) {
 func (x *XTNATTargetV2) SizeBytes() int {
     return 0 +
         (*XTEntryTarget)(nil).SizeBytes() +
-        (*NFNATRange2)(nil).SizeBytes()
+        (*NFNATRange2)(nil).SizeBytes() +
+        1*4
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (x *XTNATTargetV2) MarshalBytes(dst []byte) []byte {
     dst = x.Target.MarshalUnsafe(dst)
     dst = x.Range.MarshalUnsafe(dst)
+    // Padding: dst[:sizeof(byte)*4] ~= [4]byte{0}
+    dst = dst[1*(4):]
     return dst
 }
 
@@ -14887,6 +14890,8 @@ func (x *XTNATTargetV2) MarshalBytes(dst []byte) []byte {
 func (x *XTNATTargetV2) UnmarshalBytes(src []byte) []byte {
     src = x.Target.UnmarshalUnsafe(src)
     src = x.Range.UnmarshalUnsafe(src)
+    // Padding: ~ copy([4]byte(x._), src[:sizeof(byte)*4])
+    src = src[1*(4):]
     return src
 }
 
@@ -16422,7 +16427,7 @@ func (n *NFNATRange2) SizeBytes() int {
     return 10 +
         (*Inet6Addr)(nil).SizeBytes() +
         (*Inet6Addr)(nil).SizeBytes() +
-        1*6
+        1*2
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
@@ -16437,8 +16442,8 @@ func (n *NFNATRange2) MarshalBytes(dst []byte) []byte {
     dst = dst[2:]
     hostarch.ByteOrder.PutUint16(dst[:2], uint16(n.BaseProto))
     dst = dst[2:]
-    // Padding: dst[:sizeof(byte)*6] ~= [6]byte{0}
-    dst = dst[1*(6):]
+    // Padding: dst[:sizeof(byte)*2] ~= [2]byte{0}
+    dst = dst[1*(2):]
     return dst
 }
 
@@ -16454,8 +16459,8 @@ func (n *NFNATRange2) UnmarshalBytes(src []byte) []byte {
     src = src[2:]
     n.BaseProto = uint16(hostarch.ByteOrder.Uint16(src[:2]))
     src = src[2:]
-    // Padding: ~ copy([6]byte(n._), src[:sizeof(byte)*6])
-    src = src[1*(6):]
+    // Padding: ~ copy([2]byte(n._), src[:sizeof(byte)*2])
+    src = src[1*(2):]
     return src
 }
 
