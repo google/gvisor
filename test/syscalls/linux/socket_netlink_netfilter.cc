@@ -6273,6 +6273,301 @@ INSTANTIATE_TEST_SUITE_P(
     });
 
 INSTANTIATE_TEST_SUITE_P(
+    CompatNATTests, NetlinkNetfilterCompatTest,
+    ::testing::Values(
+        // Rev 0 tests (IPv4 only)
+        CompatTestParam{
+            .test_name = "SNAT_Rev0_Valid",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 0,
+                    .info_data = StructToBytes(nf_nat_ipv4_multi_range_compat{
+                        .rangesize = 1,
+                        .range = {{.flags = NF_NAT_RANGE_MAP_IPS}},
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "DNAT_Rev0_Valid",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_PRE_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "DNAT",
+                    .rev = 0,
+                    .info_data = StructToBytes(nf_nat_ipv4_multi_range_compat{
+                        .rangesize = 1,
+                        .range = {{.flags = NF_NAT_RANGE_MAP_IPS}},
+                    }),
+                },
+        },
+        // Rev 1 tests
+        CompatTestParam{
+            .test_name = "SNAT_Rev1_IPv4_Valid",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 1,
+                    .info_data = StructToBytes(nf_nat_range{
+                        .flags = NF_NAT_RANGE_MAP_IPS,
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "DNAT_Rev1_IPv6_Valid",
+            .family = NFPROTO_IPV6,
+            .table_name = "nat",
+            .hook = NF_INET_PRE_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "DNAT",
+                    .rev = 1,
+                    .info_data = StructToBytes(nf_nat_range{
+                        .flags = NF_NAT_RANGE_MAP_IPS,
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "SNAT_Rev1_IPv6_Valid",
+            .family = NFPROTO_IPV6,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 1,
+                    .info_data = StructToBytes(nf_nat_range{
+                        .flags = NF_NAT_RANGE_MAP_IPS,
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "SNAT_Rev1_WithPorts",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 1,
+                    .info_data = StructToBytes(nf_nat_range{
+                        .flags = NF_NAT_RANGE_PROTO_SPECIFIED,
+                        .min_proto = {.all = htons(1024)},
+                        .max_proto = {.all = htons(2048)},
+                    }),
+                },
+        },
+        // Rev 2 tests: Validate support for NAT revision 2 (nf_nat_range2).
+        // Standard 44-byte struct payload (from UAPI
+        // <linux/netfilter/nf_nat.h>).
+        CompatTestParam{
+            .test_name = "SNAT_Rev2_Valid",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 2,
+                    .info_data = StructToBytes(nf_nat_range2{
+                        .flags = NF_NAT_RANGE_MAP_IPS,
+                    }),
+                },
+        },
+        // 48-byte XT_ALIGN-padded payload produced by userspace iptables-nft.
+        CompatTestParam{
+            .test_name = "SNAT_Rev2_Valid_Padded48",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 2,
+                    .info_data =
+                        []() {
+                          std::vector<char> buf(48, 0);
+                          *reinterpret_cast<uint32_t*>(buf.data()) =
+                              NF_NAT_RANGE_MAP_IPS;
+                          return buf;
+                        }(),
+                },
+        },
+        // IPv6 NAT revision 2 support.
+        CompatTestParam{
+            .test_name = "SNAT_Rev2_IPv6_Valid",
+            .family = NFPROTO_IPV6,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 2,
+                    .info_data = StructToBytes(nf_nat_range2{
+                        .flags = NF_NAT_RANGE_MAP_IPS,
+                    }),
+                },
+        },
+        // Error cases
+        // Rev 0 does not support IPv6 (IPv4-only multi_range).
+        CompatTestParam{
+            .test_name = "Rev0_IPv6NotSupported",
+            .family = NFPROTO_IPV6,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 0,
+                    .info_data = StructToBytes(nf_nat_ipv4_multi_range_compat{
+                        .rangesize = 1,
+                    }),
+                },
+            .expected_error = ENOENT,
+        },
+        // Buffer truncated below sizeof(nf_nat_ipv4_multi_range_compat).
+        CompatTestParam{
+            .test_name = "Rev0_SizeTooSmall",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 0,
+                    .info_data = std::vector<char>(
+                        sizeof(nf_nat_ipv4_multi_range_compat) - 1, 0),
+                },
+            .expected_error = EINVAL,
+        },
+        // Buffer truncated below sizeof(nf_nat_range).
+        CompatTestParam{
+            .test_name = "Rev1_SizeTooSmall",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 1,
+                    .info_data = std::vector<char>(sizeof(nf_nat_range) - 1, 0),
+                },
+            .expected_error = EINVAL,
+        },
+        // Buffer truncated below sizeof(nf_nat_range2) (43 bytes).
+        CompatTestParam{
+            .test_name = "Rev2_SizeTooSmall",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 2,
+                    .info_data = std::vector<char>(sizeof(nf_nat_range2) - 1,
+                                                   0),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "UnsupportedRevision",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 3,
+                    .info_data = StructToBytes(nf_nat_range2{}),
+                },
+            .expected_error = ENOENT,
+        },
+        CompatTestParam{
+            .test_name = "SNAT_InvalidHookPrerouting",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_PRE_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 1,
+                    .info_data = StructToBytes(nf_nat_range{}),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "DNAT_InvalidHookPostrouting",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "DNAT",
+                    .rev = 1,
+                    .info_data = StructToBytes(nf_nat_range{}),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "NonNatChainType",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "filter",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 1,
+                    .info_data = StructToBytes(nf_nat_range{}),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "ValidPortRangeZero",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 1,
+                    .info_data = StructToBytes(nf_nat_range{
+                        .flags = NF_NAT_RANGE_PROTO_SPECIFIED,
+                        .min_proto = {.all = htons(0)},
+                        .max_proto = {.all = htons(100)},
+                    }),
+                },
+        }),
+    [](const ::testing::TestParamInfo<CompatTestParam>& info) {
+      return info.param.test_name;
+    });
+
+INSTANTIATE_TEST_SUITE_P(
     CompatNoopMatchTests, NetlinkNetfilterCompatTest,
     ::testing::Values(
         CompatTestParam{
@@ -6302,10 +6597,10 @@ INSTANTIATE_TEST_SUITE_P(
 struct CompatRuleDumpTestParam {
   std::string test_name;
   uint16_t family = NFPROTO_IPV4;
-  std::string table_name = "filter";
+  std::string table_name = "nat";
   std::string chain_name = "compat_dump_chain";
-  uint32_t hook = NF_INET_PRE_ROUTING;
-  std::string chain_type = "filter";
+  uint32_t hook = NF_INET_POST_ROUTING;
+  std::string chain_type = "nat";
   uint32_t compat_proto = 0;
   std::vector<CompatMatchOptions> matches;
   std::vector<CompatTargetOptions> targets;
@@ -6396,6 +6691,9 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Values(
         CompatRuleDumpTestParam{
             .test_name = "NoopTCPMatch",
+            .table_name = "filter",
+            .hook = NF_INET_PRE_ROUTING,
+            .chain_type = "filter",
             .compat_proto = IPPROTO_TCP,
             .matches = {CompatMatchOptions{
                 .name = "tcp",
@@ -6455,6 +6753,17 @@ INSTANTIATE_TEST_SUITE_P(
                 }),
             }},
             .expected_expr_names = {"match", "target"},
+        },
+        CompatRuleDumpTestParam{
+            .test_name = "SNATTarget",
+            .targets = {CompatTargetOptions{
+                .name = "SNAT",
+                .rev = 1,
+                .info_data = StructToBytes(nf_nat_range{
+                    .flags = NF_NAT_RANGE_MAP_IPS,
+                }),
+            }},
+            .expected_expr_names = {"target"},
         }),
     [](const ::testing::TestParamInfo<CompatRuleDumpTestParam>& info) {
       return info.param.test_name;

@@ -315,6 +315,9 @@ func (cn *conn) ConfigureNAT(portsOrIdents PortOrIdentRange, natAddress tcpip.Ad
 	}
 
 	// Everything below here is port-fiddling.
+	// TODO: b/486197011 - Handle reply tuple collisions when changePort
+	// is false. Check for tuple uniqueness or find a unique tuple.
+	// Ref: net/netfilter/nf_nat_core.c:nf_nat_l4proto_unique_tuple.
 	if !changePort {
 		return true
 	}
