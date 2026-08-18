@@ -1254,7 +1254,7 @@ func TestSignalProcessGroup(t *testing.T) {
 // recorded. Then, it is restored in two new containers and the first number
 // printed from these containers is checked. Both should be the next consecutive
 // number after the last number from the checkpointed container.
-func testCheckpointRestore(t *testing.T, conf *config.Config, compression statefile.CompressionLevel, newSpecWithScript func(string) *specs.Spec) {
+func testCheckpointRestore(t *testing.T, conf *config.Config, compression statefile.CompressionLevel, newSpecWithScript func(string) *specs.Spec, afterRestore func(*Container)) {
 	dir, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-test")
 	if err != nil {
 		t.Fatalf("os.MkdirTemp failed: %v", err)
@@ -1359,6 +1359,9 @@ func testCheckpointRestore(t *testing.T, conf *config.Config, compression statef
 	if lastNum+1 != firstNum {
 		t.Errorf("error numbers not in order, previous: %d, next: %d", lastNum, firstNum)
 	}
+	if afterRestore != nil {
+		afterRestore(cont2)
+	}
 	cont2.Destroy()
 	cont2 = nil
 
@@ -1418,7 +1421,7 @@ func TestCheckpointRestore(t *testing.T) {
 				t.Run(string(compression), func(t *testing.T) {
 					testCheckpointRestore(t, conf, compression, func(script string) *specs.Spec {
 						return testutil.NewSpecWithArgs("bash", "-c", script)
-					})
+					}, nil)
 				})
 			}
 		})
@@ -5121,6 +5124,16 @@ func TestRootfsEROFS(t *testing.T) {
 // TestCheckpointRestoreEROFS does the checkpoint/restore test on each platform using
 // an EROFS image as the rootfs.
 func TestCheckpointRestoreEROFS(t *testing.T) {
+	testCheckpointRestoreEROFS(t, -1)
+}
+
+// TestCheckpointRestoreEROFSDCache checks EROFS checkpoint/restore with a
+// global dentry cache.
+func TestCheckpointRestoreEROFSDCache(t *testing.T) {
+	testCheckpointRestoreEROFS(t, 1)
+}
+
+func testCheckpointRestoreEROFS(t *testing.T, dcache int) {
 	// Skip this test if mkfs.erofs or busybox are not available.
 	skipIfNotAvailable(t, "mkfs.erofs", "busybox")
 
@@ -5138,6 +5151,19 @@ func TestCheckpointRestoreEROFS(t *testing.T) {
 	// Skip overlay because test requires writing to host file.
 	for name, conf := range configs(t, true /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
+			conf.DCache = dcache
+			var afterRestore func(*Container)
+			if dcache >= 0 {
+				// Add a live EROFS mount after restore to cover global cache reuse.
+				afterRestore = func(c *Container) {
+					if err := c.Sandbox.Mount(c.ID, erofs.Name, rootfsImage, "/data"); err != nil {
+						t.Fatalf("error mounting EROFS image after restore: %v", err)
+					}
+					if out, err := executeCombinedOutput(conf, c, nil, "/busybox", "test", "-f", "/data/busybox"); err != nil {
+						t.Fatalf("failed to access live EROFS mount: %v, output: %s", err, out)
+					}
+				}
+			}
 			testCheckpointRestore(t, conf, statefile.CompressionLevelDefault, func(script string) *specs.Spec {
 				spec := testutil.NewSpecWithArgs("/busybox", "sh", "-c", script)
 				spec.Root = &specs.Root{
@@ -5155,7 +5181,7 @@ func TestCheckpointRestoreEROFS(t *testing.T) {
 				// between host and test container.
 				spec.Annotations[boot.RootfsPrefix+"overlay"] = config.MemoryOverlay.String()
 				return spec
-			})
+			}, afterRestore)
 		})
 	}
 }
