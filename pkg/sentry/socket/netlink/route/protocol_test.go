@@ -125,10 +125,17 @@ func TestCommonPrefixLen(t *testing.T) {
 }
 
 func TestFillRoute(t *testing.T) {
+	origFallback := FallbackNonHostRoutes
+	FallbackNonHostRoutes = true
+	defer func() {
+		FallbackNonHostRoutes = origFallback
+	}()
+
 	v4Dst := net.ParseIP("192.168.1.100").To4()
 	v4Net1 := net.ParseIP("192.168.1.0").To4()
 	v4Net2 := net.ParseIP("192.168.0.0").To4()
 	v4Gw := net.ParseIP("10.0.0.1").To4()
+	v4Other := net.ParseIP("8.8.8.8").To4()
 
 	routes := []inet.Route{
 		{
@@ -154,77 +161,274 @@ func TestFillRoute(t *testing.T) {
 		},
 	}
 
-	// 1. Longest prefix match selects the /24 route over /16 and default.
-	rt, err := fillRoute(routes, v4Dst)
-	if err != nil {
-		t.Fatalf("fillRoute failed: %v", err)
-	}
-	if rt.OutputInterface != 2 {
-		t.Errorf("got OutputInterface = %d, want 2", rt.OutputInterface)
-	}
-	if rt.DstLen != 32 {
-		t.Errorf("got DstLen = %d, want 32", rt.DstLen)
-	}
-	if !bytes.Equal(rt.DstAddr, v4Dst) {
-		t.Errorf("got DstAddr = %v, want %v", rt.DstAddr, v4Dst)
-	}
-	if (rt.Flags & linux.RTM_F_CLONED) == 0 {
-		t.Errorf("expected RTM_F_CLONED flag to be set")
-	}
+	t.Run("longest_prefix_match", func(t *testing.T) {
+		rt, err := fillRoute(routes, v4Dst)
+		if err != nil {
+			t.Fatalf("fillRoute(%v) unexpected error: %v", v4Dst, err)
+		}
+		if rt.OutputInterface != 2 {
+			t.Errorf("got OutputInterface = %d, want 2", rt.OutputInterface)
+		}
+		if rt.DstLen != 32 {
+			t.Errorf("got DstLen = %d, want 32", rt.DstLen)
+		}
+		if !bytes.Equal(rt.DstAddr, v4Dst) {
+			t.Errorf("got DstAddr = %v, want %v", rt.DstAddr, v4Dst)
+		}
+		if (rt.Flags & linux.RTM_F_CLONED) == 0 {
+			t.Errorf("expected RTM_F_CLONED flag to be set, got %x", rt.Flags)
+		}
+	})
 
-	// 2. Destination matching only default route.
-	v4Other := net.ParseIP("8.8.8.8").To4()
-	rt, err = fillRoute(routes, v4Other)
-	if err != nil {
-		t.Fatalf("fillRoute failed: %v", err)
-	}
-	if rt.OutputInterface != 3 {
-		t.Errorf("got OutputInterface = %d, want 3 (default gateway)", rt.OutputInterface)
-	}
+	t.Run("default_route_match", func(t *testing.T) {
+		rt, err := fillRoute(routes, v4Other)
+		if err != nil {
+			t.Fatalf("fillRoute(%v) unexpected error: %v", v4Other, err)
+		}
+		if rt.OutputInterface != 3 {
+			t.Errorf("got OutputInterface = %d, want 3 (default gateway)", rt.OutputInterface)
+		}
+		if rt.DstLen != 32 {
+			t.Errorf("got DstLen = %d, want 32", rt.DstLen)
+		}
+		if !bytes.Equal(rt.DstAddr, v4Other) {
+			t.Errorf("got DstAddr = %v, want %v", rt.DstAddr, v4Other)
+		}
+		if (rt.Flags & linux.RTM_F_CLONED) == 0 {
+			t.Errorf("expected RTM_F_CLONED flag to be set, got %x", rt.Flags)
+		}
+	})
 
-	// 3. No match and no default route -> ErrNetworkUnreachable.
-	routesNoDefault := []inet.Route{
-		{
-			Family:          linux.AF_INET,
-			DstAddr:         net.ParseIP("10.0.0.0").To4(),
-			DstLen:          8,
-			OutputInterface: 5,
-			Scope:           linux.RT_SCOPE_UNIVERSE,
-		},
-	}
-	_, err = fillRoute(routesNoDefault, v4Other)
-	if err != syserr.ErrNetworkUnreachable {
-		t.Errorf("got err = %v, want ErrNetworkUnreachable", err)
-	}
+	t.Run("fallback_non_host_route", func(t *testing.T) {
+		routesNoDefault := []inet.Route{
+			{
+				Family:          linux.AF_INET,
+				DstAddr:         net.ParseIP("10.0.0.0").To4(),
+				DstLen:          8,
+				OutputInterface: 5,
+				Scope:           linux.RT_SCOPE_UNIVERSE,
+			},
+		}
+		rt, err := fillRoute(routesNoDefault, v4Other)
+		if err != nil {
+			t.Fatalf("fillRoute(%v) unexpected error: %v", v4Other, err)
+		}
+		if rt.OutputInterface != 5 {
+			t.Errorf("got OutputInterface = %d, want 5", rt.OutputInterface)
+		}
+		if rt.DstLen != 32 {
+			t.Errorf("got DstLen = %d, want 32", rt.DstLen)
+		}
+		if !bytes.Equal(rt.DstAddr, v4Other) {
+			t.Errorf("got DstAddr = %v, want %v", rt.DstAddr, v4Other)
+		}
+		if (rt.Flags & linux.RTM_F_CLONED) == 0 {
+			t.Errorf("expected RTM_F_CLONED flag to be set, got %x", rt.Flags)
+		}
+	})
 
-	// 4. Empty routes slice -> ErrNetworkUnreachable.
-	_, err = fillRoute(nil, v4Dst)
-	if err != syserr.ErrNetworkUnreachable {
-		t.Errorf("got err = %v, want ErrNetworkUnreachable", err)
-	}
+	t.Run("fallback_prefers_non_host_over_host_route", func(t *testing.T) {
+		mixedRoutes := []inet.Route{
+			{
+				Family:          linux.AF_INET,
+				DstAddr:         net.ParseIP("127.0.0.1").To4(),
+				DstLen:          32,
+				OutputInterface: 1,
+				Scope:           linux.RT_SCOPE_HOST,
+			},
+			{
+				Family:          linux.AF_INET,
+				DstAddr:         net.ParseIP("10.0.0.0").To4(),
+				DstLen:          8,
+				OutputInterface: 2,
+				Scope:           linux.RT_SCOPE_UNIVERSE,
+			},
+		}
+		rt, err := fillRoute(mixedRoutes, v4Other)
+		if err != nil {
+			t.Fatalf("fillRoute(%v) unexpected error: %v", v4Other, err)
+		}
+		if rt.OutputInterface != 2 {
+			t.Errorf("got OutputInterface = %d, want 2 (non-host route preferred)", rt.OutputInterface)
+		}
+		if rt.DstLen != 32 {
+			t.Errorf("got DstLen = %d, want 32", rt.DstLen)
+		}
+		if !bytes.Equal(rt.DstAddr, v4Other) {
+			t.Errorf("got DstAddr = %v, want %v", rt.DstAddr, v4Other)
+		}
+		if (rt.Flags & linux.RTM_F_CLONED) == 0 {
+			t.Errorf("expected RTM_F_CLONED flag to be set, got %x", rt.Flags)
+		}
+	})
 
-	// 6. IPv6 route matching.
-	v6Dst := net.ParseIP("2001:db8::1")
-	v6Net := net.ParseIP("2001:db8::")
-	v6Routes := []inet.Route{
-		{
-			Family:          linux.AF_INET6,
-			DstAddr:         v6Net,
-			DstLen:          64,
-			OutputInterface: 4,
-			Scope:           linux.RT_SCOPE_UNIVERSE,
-		},
-	}
-	rt, err = fillRoute(v6Routes, v6Dst)
-	if err != nil {
-		t.Fatalf("fillRoute IPv6 failed: %v", err)
-	}
-	if rt.OutputInterface != 4 {
-		t.Errorf("got OutputInterface = %d, want 4", rt.OutputInterface)
-	}
-	if rt.DstLen != 128 {
-		t.Errorf("got DstLen = %d, want 128", rt.DstLen)
-	}
+	t.Run("fallback_all_host_routes_selects_first", func(t *testing.T) {
+		hostOnlyRoutes := []inet.Route{
+			{
+				Family:          linux.AF_INET,
+				DstAddr:         net.ParseIP("127.0.0.1").To4(),
+				DstLen:          32,
+				OutputInterface: 10,
+				Scope:           linux.RT_SCOPE_HOST,
+			},
+			{
+				Family:          linux.AF_INET,
+				DstAddr:         net.ParseIP("127.0.0.2").To4(),
+				DstLen:          32,
+				OutputInterface: 20,
+				Scope:           linux.RT_SCOPE_HOST,
+			},
+		}
+		rt, err := fillRoute(hostOnlyRoutes, v4Other)
+		if err != nil {
+			t.Fatalf("fillRoute(%v) unexpected error: %v", v4Other, err)
+		}
+		if rt.OutputInterface != 10 {
+			t.Errorf("got OutputInterface = %d, want 10 (first available route)", rt.OutputInterface)
+		}
+		if rt.DstLen != 32 {
+			t.Errorf("got DstLen = %d, want 32", rt.DstLen)
+		}
+		if !bytes.Equal(rt.DstAddr, v4Other) {
+			t.Errorf("got DstAddr = %v, want %v", rt.DstAddr, v4Other)
+		}
+		if (rt.Flags & linux.RTM_F_CLONED) == 0 {
+			t.Errorf("expected RTM_F_CLONED flag to be set, got %x", rt.Flags)
+		}
+	})
+
+	t.Run("fallback_mismatched_family_selects_first", func(t *testing.T) {
+		v6OnlyRoutes := []inet.Route{
+			{
+				Family:          linux.AF_INET6,
+				DstAddr:         net.ParseIP("2001:db8::").To16(),
+				DstLen:          64,
+				OutputInterface: 77,
+				Scope:           linux.RT_SCOPE_UNIVERSE,
+			},
+		}
+		rt, err := fillRoute(v6OnlyRoutes, v4Other)
+		if err != nil {
+			t.Fatalf("fillRoute(%v) unexpected error: %v", v4Other, err)
+		}
+		if rt.OutputInterface != 77 {
+			t.Errorf("got OutputInterface = %d, want 77 (first route when len > 0)", rt.OutputInterface)
+		}
+		if rt.DstLen != 32 {
+			t.Errorf("got DstLen = %d, want 32", rt.DstLen)
+		}
+		if !bytes.Equal(rt.DstAddr, v4Other) {
+			t.Errorf("got DstAddr = %v, want %v", rt.DstAddr, v4Other)
+		}
+		if (rt.Flags & linux.RTM_F_CLONED) == 0 {
+			t.Errorf("expected RTM_F_CLONED flag to be set, got %x", rt.Flags)
+		}
+	})
+
+	t.Run("empty_routes_returns_err_host_unreachable", func(t *testing.T) {
+		tests := []struct {
+			name   string
+			routes []inet.Route
+		}{
+			{name: "nil_routes", routes: nil},
+			{name: "empty_slice", routes: []inet.Route{}},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				_, err := fillRoute(tc.routes, v4Dst)
+				if err != syserr.ErrHostUnreachable {
+					t.Errorf("fillRoute(%v, %v) = %v, want %v", tc.routes, v4Dst, err, syserr.ErrHostUnreachable)
+				}
+			})
+		}
+	})
+
+	t.Run("ipv6_longest_prefix_match", func(t *testing.T) {
+		v6Dst := net.ParseIP("2001:db8::1")
+		v6Net := net.ParseIP("2001:db8::")
+		v6Routes := []inet.Route{
+			{
+				Family:          linux.AF_INET6,
+				DstAddr:         v6Net,
+				DstLen:          64,
+				OutputInterface: 4,
+				Scope:           linux.RT_SCOPE_UNIVERSE,
+			},
+		}
+		rt, err := fillRoute(v6Routes, v6Dst)
+		if err != nil {
+			t.Fatalf("fillRoute(%v) unexpected error: %v", v6Dst, err)
+		}
+		if rt.OutputInterface != 4 {
+			t.Errorf("got OutputInterface = %d, want 4", rt.OutputInterface)
+		}
+		if rt.DstLen != 128 {
+			t.Errorf("got DstLen = %d, want 128", rt.DstLen)
+		}
+		if !bytes.Equal(rt.DstAddr, v6Dst) {
+			t.Errorf("got DstAddr = %v, want %v", rt.DstAddr, v6Dst)
+		}
+		if (rt.Flags & linux.RTM_F_CLONED) == 0 {
+			t.Errorf("expected RTM_F_CLONED flag to be set, got %x", rt.Flags)
+		}
+	})
+
+	t.Run("ipv6_fallback_non_host_route", func(t *testing.T) {
+		v6Other := net.ParseIP("2001:db8:beef::1")
+		v6RoutesNoDefault := []inet.Route{
+			{
+				Family:          linux.AF_INET6,
+				DstAddr:         net.ParseIP("fe80::"),
+				DstLen:          64,
+				OutputInterface: 8,
+				Scope:           linux.RT_SCOPE_UNIVERSE,
+			},
+		}
+		rt, err := fillRoute(v6RoutesNoDefault, v6Other)
+		if err != nil {
+			t.Fatalf("fillRoute(%v) unexpected error: %v", v6Other, err)
+		}
+		if rt.OutputInterface != 8 {
+			t.Errorf("got OutputInterface = %d, want 8", rt.OutputInterface)
+		}
+		if rt.DstLen != 128 {
+			t.Errorf("got DstLen = %d, want 128", rt.DstLen)
+		}
+		if !bytes.Equal(rt.DstAddr, v6Other) {
+			t.Errorf("got DstAddr = %v, want %v", rt.DstAddr, v6Other)
+		}
+		if (rt.Flags & linux.RTM_F_CLONED) == 0 {
+			t.Errorf("expected RTM_F_CLONED flag to be set, got %x", rt.Flags)
+		}
+	})
+
+	t.Run("ipv6_empty_routes_returns_err_host_unreachable", func(t *testing.T) {
+		v6Dst := net.ParseIP("2001:db8::1")
+		_, err := fillRoute(nil, v6Dst)
+		if err != syserr.ErrHostUnreachable {
+			t.Errorf("fillRoute(nil, %v) = %v, want %v", v6Dst, err, syserr.ErrHostUnreachable)
+		}
+	})
+
+	t.Run("fallback_disabled_unmatched_route_returns_err_net_unreachable", func(t *testing.T) {
+		orig := FallbackNonHostRoutes
+		FallbackNonHostRoutes = false
+		defer func() { FallbackNonHostRoutes = orig }()
+
+		routesNoDefault := []inet.Route{
+			{
+				Family:          linux.AF_INET,
+				DstAddr:         net.ParseIP("10.0.0.0").To4(),
+				DstLen:          8,
+				OutputInterface: 5,
+				Scope:           linux.RT_SCOPE_UNIVERSE,
+			},
+		}
+		_, err := fillRoute(routesNoDefault, v4Other)
+		if err != syserr.ErrNetworkUnreachable {
+			t.Errorf("fillRoute(%v, %v) with fallback disabled = %v, want %v", routesNoDefault, v4Other, err, syserr.ErrNetworkUnreachable)
+		}
+	})
 }
 
 func TestParseForDestination(t *testing.T) {
