@@ -209,6 +209,7 @@ go_test(
     srcs = [
         "pgalloc_64k_test.go",
         "pgalloc_test.go",
+        "save_restore_external_bench_test.go",
         "save_restore_external_test.go",
     ],
     library = ":pgalloc",
@@ -217,6 +218,7 @@ go_test(
         "//pkg/safemem",
         "//pkg/sentry/memmap",
         "//pkg/sentry/usage",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 
