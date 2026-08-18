@@ -68,7 +68,7 @@ dependencies are wrapped in a build container. It is possible to use
 
 Make sure the following dependencies are installed:
 
-*   Linux 4.14.77+ ([older linux][old-linux])
+*   Linux 5.6+
 *   [Docker version 17.09.0 or greater][docker]
 
 ### Building
@@ -171,6 +171,5 @@ See [Contributing.md](CONTRIBUTING.md).
 [gvisor-dev-list]: https://groups.google.com/forum/#!forum/gvisor-dev
 [linux]: https://en.wikipedia.org/wiki/Linux_kernel_interfaces
 [oci]: https://www.opencontainers.org
-[old-linux]: https://gvisor.dev/docs/user_guide/networking/#gso
 [sandbox]: https://en.wikipedia.org/wiki/Sandbox_(computer_security)
 [bazelisk]: https://github.com/bazelbuild/bazelisk

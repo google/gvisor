@@ -276,7 +276,12 @@ func (fd *controlFDLisa) getParentFD() (int, string, error) {
 		log.Warningf("getParentFD() call on the root")
 		return -1, "", unix.EINVAL
 	}
-	parent, err := unix.Open(path.Dir(filePath), openFlags|unix.O_PATH, 0)
+	// As a defense-in-depth measure, do not follow symlinks in the parent's path
+	// to prevent attackers from redirecting the parent to a different location.
+	parent, err := unix.Openat2(unix.AT_FDCWD, path.Dir(filePath), &unix.OpenHow{
+		Flags:   uint64(openFlags | unix.O_PATH),
+		Resolve: unix.RESOLVE_NO_SYMLINKS,
+	})
 	return parent, path.Base(filePath), err
 }
 
