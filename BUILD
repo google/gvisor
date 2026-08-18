@@ -153,6 +153,7 @@ go_path(
         "//shim/v1/cli",
         "//webhook/pkg/cli",
         "//tools/checklocks",
+        "//tools/checkescape",
 
         # Packages that are not dependencies of the above.
         "//pkg/sentry/kernel/memevent",
