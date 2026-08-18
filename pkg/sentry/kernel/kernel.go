@@ -758,7 +758,7 @@ func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCl
 
 	splitFS := fsOpts != nil
 
-	return k.quiescePausedAnd(ctx, func() error {
+	err := k.quiescePausedAnd(ctx, func() error {
 		// Discard unsavable mappings, such as those for host file descriptors.
 		if err := k.invalidateUnsavableMappings(ctx); err != nil {
 			return fmt.Errorf("failed to invalidate unsavable mappings: %v", err)
@@ -790,7 +790,7 @@ func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCl
 				defer mfSaveWg.Done()
 				mfsToSaveActual := mfsToSave
 				if splitFS {
-					mfsToSaveActual = nil
+					mfsToSaveActual = k.filterMFsToSave(mfsToSave, fsOpts)
 				}
 				mfSaveErr = k.saveMemoryFiles(ctx, nil, pagesMetadata, pagesFile, mfsToSaveActual, appMFExcludeCommittedZeroPages) // transfers ownership
 			}()
@@ -835,7 +835,7 @@ func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCl
 
 		if fsOpts != nil {
 			fsSaveStart := time.Now()
-			if err := k.fsSaveLocked(ctx, fsOpts); err != nil {
+			if err := k.fsSaveLocked(ctx, fsOpts, mfsToSave); err != nil {
 				return fmt.Errorf("failed to save split filesystem: %w", err)
 			}
 			log.Infof("Split filesystem save took [%s].", time.Since(fsSaveStart))
@@ -857,7 +857,7 @@ func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCl
 		} else {
 			mfsToSaveActual := mfsToSave
 			if splitFS {
-				mfsToSaveActual = nil
+				mfsToSaveActual = k.filterMFsToSave(mfsToSave, fsOpts)
 			}
 			mfSaveErr = k.saveMemoryFiles(ctx, stateFile, nil, nil, mfsToSaveActual, appMFExcludeCommittedZeroPages)
 			if mfSaveErr != nil {
@@ -875,6 +875,10 @@ func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCl
 		log.Infof("Overall save took [%s].", time.Since(saveStart))
 		return nil
 	})
+	if fsOpts != nil {
+		k.SignalAllFSSaveWaiters(err)
+	}
+	return err
 }
 
 // BeforeResume is called before the kernel is resumed after save.
@@ -2510,4 +2514,38 @@ func (k *Kernel) ContainerName(cid string) string {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
 	return k.containerNames[cid]
+}
+
+func (k *Kernel) filterMFsToSave(mfsToSave map[checkpoint.ResourceID]*pgalloc.MemoryFile, fsOpts *FSSaveOpts) map[checkpoint.ResourceID]*pgalloc.MemoryFile {
+	paths := fsOpts.Paths
+	if len(paths) == 0 {
+		paths = []checkpoint.ResourceID{{Path: "/"}}
+	}
+	pathsMap := make(map[checkpoint.ResourceID]struct{}, len(paths))
+	for _, p := range paths {
+		pathsMap[p] = struct{}{}
+	}
+	tmpfsResourceIDs := make(map[checkpoint.ResourceID]struct{})
+	fss := k.VFS().GetFilesystems()
+	for _, fs := range fss {
+		if mf := tmpfs.MemoryFileOf(fs); mf != nil {
+			rid := mf.ResourceID()
+			if rid.Ok() {
+				tmpfsResourceIDs[rid] = struct{}{}
+			}
+		}
+		fs.DecRef(context.Background())
+	}
+
+	mfsToSaveActual := make(map[checkpoint.ResourceID]*pgalloc.MemoryFile)
+	for id, mf := range mfsToSave {
+		_, isTmpfs := tmpfsResourceIDs[id]
+		if !matchesPaths(id, pathsMap, isTmpfs) {
+			mfsToSaveActual[id] = mf
+		}
+	}
+	if len(mfsToSaveActual) == 0 {
+		return nil
+	}
+	return mfsToSaveActual
 }

@@ -131,6 +131,28 @@ type filesystem struct {
 
 	// ovlWhiteout is the shared overlay whiteout device. It is protected by mu.
 	ovlWhiteout *deviceFile
+
+	// regularFilesMu protects regularFiles.
+	regularFilesMu sync.Mutex `state:"nosave"`
+
+	// regularFiles tracks all regular files in this filesystem, including
+	// unlinked-but-open files.
+	regularFiles map[*regularFile]struct{} `state:"nosave"`
+}
+
+func (fs *filesystem) registerRegularFile(rf *regularFile) {
+	fs.regularFilesMu.Lock()
+	if fs.regularFiles == nil {
+		fs.regularFiles = make(map[*regularFile]struct{})
+	}
+	fs.regularFiles[rf] = struct{}{}
+	fs.regularFilesMu.Unlock()
+}
+
+func (fs *filesystem) unregisterRegularFile(rf *regularFile) {
+	fs.regularFilesMu.Lock()
+	delete(fs.regularFiles, rf)
+	fs.regularFilesMu.Unlock()
 }
 
 // Name implements vfs.FilesystemType.Name.
@@ -501,6 +523,28 @@ func (d *dentry) releaseChildrenLocked(ctx context.Context) {
 	}
 }
 
+// Precondition: filesystem.mu is held.
+func (d *dentry) wipeChildrenLocked(ctx context.Context) {
+	dir := d.inode.impl.(*directory)
+	for _, child := range dir.childMap {
+		if child.inode.isDir() {
+			child.wipeChildrenLocked(ctx)
+			child.inode.decLinksLocked(ctx) // link for child/.
+			dir.inode.decLinksLocked(ctx)   // link for child/..
+		}
+		child.inode.decLinksLocked(ctx) // link for child
+	}
+	dir.childMap = make(map[string]*dentry)
+	dir.iterMu.Lock()
+	for elem := dir.childList.Front(); elem != nil; {
+		next := elem.Next()
+		dir.childList.Remove(elem)
+		elem = next
+	}
+	dir.numChildren.Store(0)
+	dir.iterMu.Unlock()
+}
+
 func (fs *filesystem) statFS() linux.Statfs {
 	st := linux.Statfs{
 		Type:         linux.TMPFS_MAGIC,
@@ -778,6 +822,7 @@ func (i *inode) decRef(ctx context.Context) {
 				impl.inode.fs.unaccountPages(1)
 			}
 		case *regularFile:
+			i.fs.unregisterRegularFile(impl)
 			// Release memory used by regFile to store data. Since regFile is
 			// no longer usable, we don't need to grab any locks or update any
 			// metadata.

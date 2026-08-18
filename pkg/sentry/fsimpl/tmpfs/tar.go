@@ -151,21 +151,19 @@ func (i *inode) setXattrsFromPAXRecords(hdr *tar.Header) {
 	}
 }
 
-// populateInodeFromHeader populates the inode metadata (uid, gid, mtime, xattrs, and optionally ACLs)
+// populateInodeFromHeader populates the inode metadata (uid, gid, mtime, xattrs, and ACLs)
 // from the provided tar header.
-func (fs *filesystem) populateInodeFromHeader(hdr *tar.Header, ino *inode, setACLs bool) error {
+func (fs *filesystem) populateInodeFromHeader(hdr *tar.Header, ino *inode) error {
 	ino.uid.Store(uint32(hdr.Uid))
 	ino.gid.Store(uint32(hdr.Gid))
 	ino.mtime.Store(hdr.ModTime.UnixNano())
 	ino.setXattrsFromPAXRecords(hdr)
-	if setACLs {
-		acl, defaultACL, err := getACLsFromHeader(hdr)
-		if err != nil {
-			return err
-		}
-		ino.accessACL.Store(acl)
-		ino.defaultACL.Store(defaultACL)
+	acl, defaultACL, err := getACLsFromHeader(hdr)
+	if err != nil {
+		return err
 	}
+	ino.accessACL.Store(acl)
+	ino.defaultACL.Store(defaultACL)
 	return nil
 }
 
@@ -178,7 +176,7 @@ func (fs *filesystem) mkdirFromTar(hdr *tar.Header, pathToInode map[string]*inod
 	}
 	if hdr.Name == "./" {
 		ino := fs.root.inode
-		if err := fs.populateInodeFromHeader(hdr, ino, true); err != nil {
+		if err := fs.populateInodeFromHeader(hdr, ino); err != nil {
 			return nil, err
 		}
 		ino.mode.Store(uint32(hdr.Mode) | linux.S_IFDIR)
@@ -209,7 +207,7 @@ func (fs *filesystem) mkdirFromTar(hdr *tar.Header, pathToInode map[string]*inod
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new directory inode: %v", err)
 	}
-	if err := fs.populateInodeFromHeader(hdr, &childDir.inode, true); err != nil {
+	if err := fs.populateInodeFromHeader(hdr, &childDir.inode); err != nil {
 		return nil, err
 	}
 	parentDir.inode.incLinksLocked() // from child's ".."
@@ -219,7 +217,7 @@ func (fs *filesystem) mkdirFromTar(hdr *tar.Header, pathToInode map[string]*inod
 	return childDir.dentry.inode, nil
 }
 
-// mknodFromTar creates a regular file,FIFO, block device, or character device file using
+// mknodFromTar creates a regular file, FIFO, block device, or character device file using
 // the provided header. It also writes the file content to the corresponding regular file if it
 // exists.
 func (fs *filesystem) mknodFromTar(ctx context.Context, hdr *tar.Header, pathToInode map[string]*inode, cb tarReaderCallbacks) error {
@@ -249,7 +247,7 @@ func (fs *filesystem) mknodFromTar(ctx context.Context, hdr *tar.Header, pathToI
 	if err != nil {
 		return err
 	}
-	if err := fs.populateInodeFromHeader(hdr, childInode, true); err != nil {
+	if err := fs.populateInodeFromHeader(hdr, childInode); err != nil {
 		return err
 	}
 	child := fs.newDentry(childInode)
@@ -317,7 +315,7 @@ func (fs *filesystem) symlinkFromTar(hdr *tar.Header, pathToInode map[string]*in
 		return fmt.Errorf("failed to create inode from tar: %v", err)
 	}
 	child := fs.newDentry(childInode)
-	if err := fs.populateInodeFromHeader(hdr, child.inode, true); err != nil {
+	if err := fs.populateInodeFromHeader(hdr, child.inode); err != nil {
 		return err
 	}
 	parentDir.insertChildLocked(child, name)
@@ -610,278 +608,4 @@ func getACLsFromHeader(hdr *tar.Header) (*vfs.PosixACL, *vfs.PosixACL, error) {
 	}
 
 	return acl, defaultACL, nil
-}
-
-// TODO(b/541219576): Refactor mergeFromTar and readFromTar helper functions
-// (mkdir, mknod, symlink, link) to share common creation and initialization
-// logic and reduce code duplication.
-
-// mergeFromTar merges the contents from the given tar reader into the
-// filesystem. It resolves conflicts if files already exist.
-//
-// Preconditions:
-//   - filesystem.mu must be locked.
-func (fs *filesystem) mergeFromTar(ctx context.Context, tr *tar.Reader, cb tarReaderCallbacks) error {
-	index, err := indexTar(ctx, tr, cb)
-	if err != nil {
-		return err
-	}
-	pathToInode := map[string]*inode{}
-	// Merge all directories.
-	for path, hdr := range index.directories {
-		if _, err := fs.mkdirMergeFromTar(hdr, pathToInode, index.directories); err != nil {
-			return fmt.Errorf("failed to merge directory %v: %w", path, err)
-		}
-	}
-	// Merge all regular files, FIFOs, block devices, and character devices.
-	for path, hdr := range index.files {
-		if err := fs.mknodMergeFromTar(ctx, hdr, pathToInode, cb); err != nil {
-			return fmt.Errorf("failed to merge file %v: %w", path, err)
-		}
-	}
-	// Merge all symlinks.
-	for path, hdr := range index.symlinks {
-		if err := fs.symlinkMergeFromTar(hdr, pathToInode); err != nil {
-			return fmt.Errorf("failed to merge symlink %v: %w", path, err)
-		}
-	}
-	// Merge all hard links.
-	for path, hdr := range index.links {
-		if err := fs.linkMergeFromTar(hdr, pathToInode); err != nil {
-			return fmt.Errorf("failed to merge hard link %v: %w", path, err)
-		}
-	}
-	return nil
-}
-
-// mkdirMergeFromTar recursively merges a directory and its parent directories.
-// If the directory already exists, it updates its metadata.
-func (fs *filesystem) mkdirMergeFromTar(hdr *tar.Header, pathToInode map[string]*inode, pathToHeader map[string]*tar.Header) (*inode, error) {
-	path := hdr.Name
-	if ino, ok := pathToInode[hdr.Name]; ok {
-		return ino, nil
-	}
-	if hdr.Name == "./" {
-		ino := fs.root.inode
-		if err := fs.populateInodeFromHeader(hdr, ino, true); err != nil {
-			return nil, err
-		}
-		ino.mode.Store(uint32(hdr.Mode) | linux.S_IFDIR)
-		pathToInode[hdr.Name] = ino
-		return ino, nil
-	}
-	dir, name := filepath.Split(strings.TrimSuffix(path, "/"))
-	parentInode, ok := pathToInode[dir]
-	if !ok {
-		parentHdr, ok := pathToHeader[dir]
-		if !ok {
-			return nil, fmt.Errorf("failed to find header for %v", dir)
-		}
-		var err error
-		if parentInode, err = fs.mkdirMergeFromTar(parentHdr, pathToInode, pathToHeader); err != nil {
-			return nil, err
-		}
-	}
-	parentDir, ok := parentInode.impl.(*directory)
-	if !ok {
-		return nil, fmt.Errorf("parent inode at %v is not a directory", dir)
-	}
-
-	var childDentry *dentry
-	if parentDir.childMap != nil {
-		childDentry = parentDir.childMap[name]
-	}
-
-	if childDentry != nil {
-		if _, isDir := childDentry.inode.impl.(*directory); !isDir {
-			return nil, fmt.Errorf("%v exists but is not a directory", path)
-		}
-		if err := fs.populateInodeFromHeader(hdr, childDentry.inode, true); err != nil {
-			return nil, err
-		}
-		childDentry.inode.mode.Store(uint32(hdr.Mode) | linux.S_IFDIR)
-		pathToInode[path] = childDentry.inode
-		return childDentry.inode, nil
-	}
-
-	if parentInode.nlink.Load() == maxLinks {
-		return nil, fmt.Errorf("maximum number of links reached for %v", dir)
-	}
-	childDir, err := fs.newDirectory(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), linux.FileMode(hdr.Mode), parentDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create new directory inode: %v", err)
-	}
-	if err := fs.populateInodeFromHeader(hdr, &childDir.inode, true); err != nil {
-		return nil, err
-	}
-	parentDir.inode.incLinksLocked() // from child's ".."
-	parentDir.inode.incRef()         // child directory holds a reference to parent
-	parentDir.insertChildLocked(&childDir.dentry, name)
-	pathToInode[path] = childDir.dentry.inode
-	return childDir.dentry.inode, nil
-}
-
-// mknodMergeFromTar merges a regular file, FIFO, block device, or character
-// device. If a regular file already exists, it overrides its contents.
-// Updating other existing file types is not supported.
-func (fs *filesystem) mknodMergeFromTar(ctx context.Context, hdr *tar.Header, pathToInode map[string]*inode, cb tarReaderCallbacks) error {
-	dir, name := filepath.Split(hdr.Name)
-	parentInode, ok := pathToInode[dir]
-	if !ok {
-		return fmt.Errorf("parent directory %v does not exist", dir)
-	}
-	parentDir, ok := parentInode.impl.(*directory)
-	if !ok {
-		return fmt.Errorf("%v is not a directory", dir)
-	}
-
-	var childDentry *dentry
-	if parentDir.childMap != nil {
-		childDentry = parentDir.childMap[name]
-	}
-
-	if childDentry != nil {
-		switch hdr.Typeflag {
-		case tar.TypeReg:
-			rf, ok := childDentry.inode.impl.(*regularFile)
-			if !ok {
-				return fmt.Errorf("%v exists but is not a regular file", hdr.Name)
-			}
-			if err := fs.populateInodeFromHeader(hdr, childDentry.inode, true); err != nil {
-				return err
-			}
-			childDentry.inode.mode.Store(uint32(hdr.Mode) | linux.S_IFREG)
-			if err := cb.regularFileSetContents(ctx, hdr, rf); err != nil {
-				return err
-			}
-			pathToInode[hdr.Name] = childDentry.inode
-			return nil
-		default:
-			return fmt.Errorf("updating non-regular file %v is not supported", hdr.Name)
-		}
-	}
-
-	var childInode *inode
-	var err error
-	switch hdr.Typeflag {
-	case tar.TypeReg:
-		childInode, err = fs.newRegularFile(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), linux.FileMode(hdr.Mode), parentDir)
-	case tar.TypeFifo:
-		childInode, err = fs.newNamedPipe(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), linux.FileMode(hdr.Mode), parentDir)
-	case tar.TypeBlock:
-		childInode, err = fs.newDeviceFileLocked(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), linux.FileMode(hdr.Mode|linux.S_IFBLK), uint32(hdr.Devmajor), uint32(hdr.Devminor), parentDir)
-	case tar.TypeChar:
-		childInode, err = fs.newDeviceFileLocked(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), linux.FileMode(hdr.Mode|linux.S_IFCHR), uint32(hdr.Devmajor), uint32(hdr.Devminor), parentDir)
-	default:
-		return fmt.Errorf("mknod unsupported file type %v for %v", hdr.Typeflag, hdr.Name)
-	}
-	if err != nil {
-		return err
-	}
-	if err := fs.populateInodeFromHeader(hdr, childInode, true); err != nil {
-		return err
-	}
-	child := fs.newDentry(childInode)
-	parentDir.insertChildLocked(child, name)
-	pathToInode[hdr.Name] = childInode
-
-	if rf, _ := childInode.impl.(*regularFile); rf != nil {
-		if err := cb.regularFileSetContents(ctx, hdr, rf); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// symlinkMergeFromTar merges a symlink. If the symlink already exists and
-// points to the same target, it updates its metadata. Changing target is
-// not supported.
-func (fs *filesystem) symlinkMergeFromTar(hdr *tar.Header, pathToInode map[string]*inode) error {
-	dir, name := filepath.Split(hdr.Name)
-	parentInode, ok := pathToInode[dir]
-	if !ok {
-		return fmt.Errorf("parent directory %v does not exist", dir)
-	}
-	parentDir, ok := parentInode.impl.(*directory)
-	if !ok {
-		return fmt.Errorf("%v is not a directory", dir)
-	}
-
-	var childDentry *dentry
-	if parentDir.childMap != nil {
-		childDentry = parentDir.childMap[name]
-	}
-
-	if childDentry != nil {
-		s, ok := childDentry.inode.impl.(*symlink)
-		if !ok {
-			return fmt.Errorf("%v exists but is not a symlink", hdr.Name)
-		}
-		if s.target != hdr.Linkname {
-			return fmt.Errorf("updating symlink target for %v is not supported (was %q, now %q)", hdr.Name, s.target, hdr.Linkname)
-		}
-		if err := fs.populateInodeFromHeader(hdr, childDentry.inode, true); err != nil {
-			return err
-		}
-		pathToInode[hdr.Name] = childDentry.inode
-		return nil
-	}
-
-	if len(hdr.Linkname) >= shortSymlinkLen {
-		if !fs.accountPages(1) {
-			return fmt.Errorf("tmpfs: insufficient space to account for symlink target %q", hdr.Name)
-		}
-	}
-	childInode, err := fs.newSymlink(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), 0777, hdr.Linkname, parentDir)
-	if err != nil {
-		return fmt.Errorf("failed to create inode from tar: %v", err)
-	}
-	child := fs.newDentry(childInode)
-	if err := fs.populateInodeFromHeader(hdr, child.inode, true); err != nil {
-		return err
-	}
-	parentDir.insertChildLocked(child, name)
-	pathToInode[hdr.Name] = child.inode
-	return nil
-}
-
-// linkMergeFromTar merges a hard link. If the hard link already exists and
-// points to the same target, it is a no-op. Changing target is not supported.
-func (fs *filesystem) linkMergeFromTar(hdr *tar.Header, pathToInode map[string]*inode) error {
-	dir, name := filepath.Split(hdr.Name)
-	parentInode, ok := pathToInode[dir]
-	if !ok {
-		return fmt.Errorf("parent directory %v does not exist", dir)
-	}
-	parentDir, ok := parentInode.impl.(*directory)
-	if !ok {
-		return fmt.Errorf("%v is not a directory", dir)
-	}
-	childInode, ok := pathToInode[hdr.Linkname]
-	if !ok {
-		return fmt.Errorf("child inode %v does not exist", hdr.Linkname)
-	}
-
-	var childDentry *dentry
-	if parentDir.childMap != nil {
-		childDentry = parentDir.childMap[name]
-	}
-
-	if childDentry != nil {
-		if childDentry.inode != childInode {
-			return fmt.Errorf("updating hard link target for %v is not supported", hdr.Name)
-		}
-		pathToInode[hdr.Name] = childDentry.inode
-		return nil
-	}
-
-	if childInode.nlink.Load() == maxLinks {
-		return fmt.Errorf("maximum number of links reached for %s", hdr.Linkname)
-	}
-	childInode.incLinksLocked()
-	child := fs.newDentry(childInode)
-	parentDir.insertChildLocked(child, name)
-	pathToInode[hdr.Name] = child.inode
-	return nil
 }

@@ -151,6 +151,7 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 	var cu cleanup.Cleanup
 	defer cu.Clean()
 
+	splitFSRestore := r.splitFSRestore || r.fsRestoreImagePath != ""
 	runArgs := container.Args{
 		ID:                 id,
 		Spec:               nil,
@@ -162,7 +163,7 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 		FSRestoreImagePath: r.fsRestoreImagePath,
 		FSRestoreDirect:    r.fsRestoreDirect,
 		CheckpointDirPath:  r.imagePath,
-		SplitFSRestore:     r.splitFSRestore,
+		SplitFSRestore:     splitFSRestore,
 	}
 
 	log.Debugf("Restore container, cid: %s, rootDir: %q", id, conf.RootDir)
@@ -197,7 +198,7 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 	}
 
 	log.Debugf("Restore: %v", r.imagePath)
-	err = c.Restore(conf, r.imagePath, r.direct, r.background, r.splitFSRestore, nil /* networkArgs */)
+	err = c.Restore(conf, r.imagePath, r.direct, r.background, splitFSRestore, nil /* networkArgs */)
 	if err != nil {
 		return util.Errorf("starting container: %v", err)
 	}

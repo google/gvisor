@@ -1011,6 +1011,10 @@ type LoadOpts struct {
 	// ownership of this timeline remains in the hands of the caller of
 	// LoadFrom.
 	Timeline *timing.Timeline
+
+	// If Discard is true, page contents will be read from r (or PagesFile) and
+	// discarded, rather than being loaded into the MemoryFile.
+	Discard bool
 }
 
 // LoadFrom loads MemoryFile state from the given stream.
@@ -1038,6 +1042,34 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 	var pb pgallocpb.MemoryFileMetadataProto
 	if err := proto.Unmarshal(data, &pb); err != nil {
 		return fmt.Errorf("failed to unmarshal metadata: %w", err)
+	}
+	if opts.Discard {
+		log.Infof("MemoryFile(%p): discarding metadata and pages", f)
+		wr := wire.Reader{Reader: r}
+		for _, ma := range pb.MemAcct {
+			if !ma.KnownCommitted {
+				continue
+			}
+			amount := ma.End - ma.Start
+			if opts.PagesFile != nil {
+				opts.PagesFileOffset += amount
+			} else {
+				length, object, err := state.ReadHeader(&wr)
+				if err != nil {
+					return fmt.Errorf("failed to read header: %w", err)
+				}
+				if object {
+					return fmt.Errorf("unexpected object")
+				}
+				if length != amount {
+					return fmt.Errorf("mismatched segment: expected %d, got %d", amount, length)
+				}
+				if _, err := io.CopyN(io.Discard, r, int64(length)); err != nil {
+					return fmt.Errorf("failed to discard pages: %w", err)
+				}
+			}
+		}
+		return nil
 	}
 	if err := f.importMetadataProto(&pb); err != nil {
 		return fmt.Errorf("failed to import metadata: %w", err)
