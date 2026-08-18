@@ -457,13 +457,16 @@ func (r *restorer) restore(l *Loader) error {
 
 	log.Debugf("Restore using mounts: %v", &restoreMnts)
 	ctx := l.k.SupervisorContext()
-	ctx = context.WithValues(ctx, map[any]any{
+	ctxValues := map[any]any{
 		vfs.CtxRestoreFilesystemFDMap:     restoreMnts.fdmap,
 		pgalloc.CtxMemoryFileMap:          restoreMnts.mfmap,
 		devutil.CtxDevGoferClientProvider: l.k,
 		kernel.CtxFSRestore:               l.fsRestore != nil,
-		vfs.CtxFSTarProvider:              l.fsRestore,
-	})
+	}
+	if l.fsRestore != nil {
+		ctxValues[vfs.CtxFSTarProvider] = l.fsRestore
+	}
+	ctx = context.WithValues(ctx, ctxValues)
 
 	if r.asyncMFLoader != nil {
 		// Now that private memory files are known, kick off their loading in the

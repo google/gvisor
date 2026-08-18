@@ -152,30 +152,6 @@ func (cb *fsckptTarReaderCallbacks) regularFileSetContents(ctx context.Context, 
 	defer rf.dataMu.Unlock()
 	rf.size.Store(uint64(crf.size))
 
-	// The regularFile object was restored from the sentry state file, which
-	// might contain outdated page mappings (in a mixed restore scenario
-	// where filesystem state is restored from a different/newer checkpoint
-	// than the sentry state). We must discard these old mappings to avoid
-	// overlap panics and data corruption (multiple files mapping to the
-	// same MemoryFile page) when we apply the new mappings from the
-	// filesystem tar.
-	//
-	// This unaccounting is a no-op when mixed restore is not done, as the
-	// restored mappings will already match the tar. If split checkpoint
-	// restore is not specified at all, CompleteRestore returns early, and
-	// this function is not called.
-	//
-	// Unaccount the pages used by the old mappings first.
-	oldPages := uint64(0)
-	for seg := rf.data.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
-		oldPages += seg.Range().Length() / hostarch.PageSize
-	}
-	cb.fs.unaccountPages(oldPages)
-
-	// Clear the old mappings. The new mappings from the filesystem tar will
-	// be applied below.
-	rf.data = fsutil.FileRangeSet{}
-
 	gap := rf.data.FirstGap()
 	n := uint64(0)
 	for _, rfseg := range crf.data {

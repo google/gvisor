@@ -405,8 +405,10 @@ func startFSRestore(opts *fsRestoreOpts) (*fsRestore, error) {
 	//
 	// All of the above also applies to the multi-tar file.
 	//
-	// TODO(b/541219576): Instead of reading the full tar file, read using
-	// offsets in the multi-tar file using TarStart and TarEnd from manifest.
+	// TODO(b/541219576): Instead of reading the full tar file into memory and
+	// retaining it via readOnce for the lifetime of the sandbox, read using
+	// offsets in the multi-tar file using TarStart and TarEnd from manifest,
+	// or release the cached multiTar slice once restore completes.
 	readOnce := func(desc string, optsR *io.ReadCloser) func() ([]byte, error) {
 		r := *optsR
 		*optsR = nil
