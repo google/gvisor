@@ -109,8 +109,9 @@ func (l *Loader) FSSave() error {
 	args.FilePayload.Files = fd.ReleaseToFiles(fsSaveFDs, "fs-checkpoint")
 	args.UseCheckpointGofer = useCheckpointGofer
 	opts := kernel.FSSaveOpts{
-		RunscVersion: version.Version(),
-		Paths:        paths,
+		RunscVersion:      version.Version(),
+		Paths:             paths,
+		SplitFSCheckpoint: false,
 	}
 	if err := setKernelFSSaveOptsFiles(&args, &opts); err != nil {
 		return err
@@ -151,9 +152,10 @@ func ParseFSCheckpointPaths(val string) ([]checkpoint.ResourceID, error) {
 
 func convertToKernelFSSaveOpts(args *FSSaveArgs) (kernel.FSSaveOpts, error) {
 	opts := kernel.FSSaveOpts{
-		RunscVersion:    version.Version(),
-		ExitAfterSaving: args.ExitAfterSaving,
-		Paths:           args.Paths,
+		RunscVersion:      version.Version(),
+		ExitAfterSaving:   args.ExitAfterSaving,
+		Paths:             args.Paths,
+		SplitFSCheckpoint: true,
 	}
 	if err := setKernelFSSaveOptsFiles(args, &opts); err != nil {
 		return kernel.FSSaveOpts{}, err

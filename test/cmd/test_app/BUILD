@@ -13,7 +13,6 @@ go_binary(
         "fds.go",
         "hostinet_sr.go",
         "main.go",
-        "mmap_helper.go",
         "xattr.go",
         "zombies.go",
     ],

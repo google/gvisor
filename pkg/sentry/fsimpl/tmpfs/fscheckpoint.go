@@ -224,16 +224,6 @@ func (fs *filesystem) tarRestore(ctx context.Context, src io.Reader) error {
 //     checkpoint, its mappings will remain empty (size 0). This prevents
 //     sentry from referencing unallocated or reallocated pages in the new
 //     MemoryFile, which would otherwise cause panics during cleanup or exit.
-//
-// Note: This function only clears mappings and resets file sizes to 0. During
-// combined restore, it does not delete inodes/dentries from the directory
-// structure if they are missing from the new FS checkpoint. Consequently, files
-// and directories that were deleted in the newer FS checkpoint will still exist
-// in the restored VFS (files will appear as empty, size 0). This is a known
-// fallback behavior to avoid breaking open FDs in restored processes.
-//
-// TODO(b/541219576): Investigate if this be done only for the files that have
-// open FD (rare), instead of all (a lot more common).
 func (fs *filesystem) clearAllFileMappingsLocked(ctx context.Context) {
 	log.Debugf("clearAllFileMappingsLocked start, fs.pagesUsed = %d", fs.pagesUsed.Load())
 	if fs.root == nil {

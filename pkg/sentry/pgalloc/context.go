@@ -33,10 +33,6 @@ const (
 	// CtxMemoryFileMap is a Context.Value key for mapping
 	// MemoryFileOpts.RestoreID to *MemoryFile. This is used for save/restore.
 	CtxMemoryFileMap
-
-	// CtxFSCheckpointedMemoryFiles is a Context.Value key for the set of
-	// ResourceIDs of MemoryFiles that were restored from FS checkpoint.
-	CtxFSCheckpointedMemoryFiles
 )
 
 // MemoryFileFromContext returns the MemoryFile used by ctx, or nil if no such
@@ -62,15 +58,6 @@ func MemoryCgroupIDFromContext(ctx context.Context) uint32 {
 func MemoryFileMapFromContext(ctx context.Context) map[checkpoint.ResourceID]*MemoryFile {
 	if v := ctx.Value(CtxMemoryFileMap); v != nil {
 		return v.(map[checkpoint.ResourceID]*MemoryFile)
-	}
-	return nil
-}
-
-// FSCheckpointedMemoryFilesFromContext returns the set of FS-checkpointed
-// MemoryFiles used by ctx, or nil if no such set exists.
-func FSCheckpointedMemoryFilesFromContext(ctx context.Context) map[checkpoint.ResourceID]struct{} {
-	if v := ctx.Value(CtxFSCheckpointedMemoryFiles); v != nil {
-		return v.(map[checkpoint.ResourceID]struct{})
 	}
 	return nil
 }
