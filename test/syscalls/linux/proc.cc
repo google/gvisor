@@ -1937,6 +1937,31 @@ TEST(ProcPidStatusTest, HasBasicFields) {
   });
 }
 
+TEST(ProcPidStatusTest, NoNewPrivs) {
+  // no_new_privs is per-thread and cannot be cleared once set, so exercise it
+  // on a scratch thread to avoid contaminating the main thread.
+  ScopedThread([] {
+    const pid_t tid = syscall(SYS_gettid);
+
+    // The NoNewPrivs line must reflect prctl(PR_GET_NO_NEW_PRIVS).
+    int nnp;
+    ASSERT_THAT(nnp = prctl(PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0),
+                SyscallSucceeds());
+    std::string status_str = ASSERT_NO_ERRNO_AND_VALUE(
+        GetContents(absl::StrCat("/proc/", tid, "/status")));
+    EXPECT_THAT(ParseProcStatus(status_str),
+                IsPosixErrorOkAndHolds(
+                    Contains(Pair("NoNewPrivs", absl::StrCat(nnp)))));
+
+    // Setting the bit must be reflected in this thread's status file.
+    ASSERT_THAT(prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0), SyscallSucceeds());
+    status_str = ASSERT_NO_ERRNO_AND_VALUE(
+        GetContents(absl::StrCat("/proc/", tid, "/status")));
+    EXPECT_THAT(ParseProcStatus(status_str),
+                IsPosixErrorOkAndHolds(Contains(Pair("NoNewPrivs", "1"))));
+  });
+}
+
 TEST(ProcPidStatusTest, StateRunning) {
   // Task must be running when reading the file.
   const pid_t tid = syscall(SYS_gettid);

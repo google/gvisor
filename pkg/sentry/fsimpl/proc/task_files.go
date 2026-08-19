@@ -1046,6 +1046,11 @@ func (s *statusFD) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	fmt.Fprintf(buf, "CapEff:\t%016x\n", creds.EffectiveCaps)
 	fmt.Fprintf(buf, "CapBnd:\t%016x\n", creds.BoundingCaps)
 	fmt.Fprintf(buf, "CapAmb:\t%016x\n", creds.AmbientCaps)
+	nnp := 0
+	if s.task.GetNoNewPrivs() {
+		nnp = 1
+	}
+	fmt.Fprintf(buf, "NoNewPrivs:\t%d\n", nnp)
 	fmt.Fprintf(buf, "Seccomp:\t%d\n", s.task.SeccompMode())
 	// We unconditionally report a single NUMA node. See
 	// pkg/sentry/syscalls/linux/sys_mempolicy.go.
