@@ -164,14 +164,14 @@ func (k *Kernel) fsSaveLocked(ctx context.Context, opts *FSSaveOpts) error {
 	// created after restore; in particular, this will be the case when the
 	// same Kubernetes Pod spec is reused after restore.
 	for _, fs := range fss {
-		log.Infof("fsSaveLocked: checking fs %T", fs.Impl())
+		log.Debugf("fsSaveLocked: checking fs %T", fs.Impl())
 		mf := tmpfs.MemoryFileOf(fs)
 		if mf == nil {
-			log.Infof("fsSaveLocked: fs %T has no MemoryFile", fs.Impl())
+			log.Debugf("fsSaveLocked: fs %T has no MemoryFile", fs.Impl())
 			continue
 		}
 		resourceID := mf.ResourceID()
-		log.Infof("fsSaveLocked: fs %T has MemoryFile with ResourceID %+v", fs.Impl(), resourceID)
+		log.Debugf("fsSaveLocked: fs %T has MemoryFile with ResourceID %+v", fs.Impl(), resourceID)
 		// Exclude tmpfs filesystems backed by the main MemoryFile (which
 		// have no ResourceID) since we currently have no way to save only
 		// the contents of the main MemoryFile owned by a checkpointed

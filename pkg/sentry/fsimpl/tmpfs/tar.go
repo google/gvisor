@@ -151,21 +151,19 @@ func (i *inode) setXattrsFromPAXRecords(hdr *tar.Header) {
 	}
 }
 
-// populateInodeFromHeader populates the inode metadata (uid, gid, mtime, xattrs, and optionally ACLs)
+// populateInodeFromHeader populates the inode metadata (uid, gid, mtime, xattrs, and ACLs)
 // from the provided tar header.
-func (fs *filesystem) populateInodeFromHeader(hdr *tar.Header, ino *inode, setACLs bool) error {
+func (fs *filesystem) populateInodeFromHeader(hdr *tar.Header, ino *inode) error {
 	ino.uid.Store(uint32(hdr.Uid))
 	ino.gid.Store(uint32(hdr.Gid))
 	ino.mtime.Store(hdr.ModTime.UnixNano())
 	ino.setXattrsFromPAXRecords(hdr)
-	if setACLs {
-		acl, defaultACL, err := getACLsFromHeader(hdr)
-		if err != nil {
-			return err
-		}
-		ino.accessACL.Store(acl)
-		ino.defaultACL.Store(defaultACL)
+	acl, defaultACL, err := getACLsFromHeader(hdr)
+	if err != nil {
+		return err
 	}
+	ino.accessACL.Store(acl)
+	ino.defaultACL.Store(defaultACL)
 	return nil
 }
 
@@ -178,7 +176,7 @@ func (fs *filesystem) mkdirFromTar(hdr *tar.Header, pathToInode map[string]*inod
 	}
 	if hdr.Name == "./" {
 		ino := fs.root.inode
-		if err := fs.populateInodeFromHeader(hdr, ino, true); err != nil {
+		if err := fs.populateInodeFromHeader(hdr, ino); err != nil {
 			return nil, err
 		}
 		ino.mode.Store(uint32(hdr.Mode) | linux.S_IFDIR)
@@ -209,7 +207,7 @@ func (fs *filesystem) mkdirFromTar(hdr *tar.Header, pathToInode map[string]*inod
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new directory inode: %v", err)
 	}
-	if err := fs.populateInodeFromHeader(hdr, &childDir.inode, true); err != nil {
+	if err := fs.populateInodeFromHeader(hdr, &childDir.inode); err != nil {
 		return nil, err
 	}
 	parentDir.inode.incLinksLocked() // from child's ".."
@@ -249,7 +247,7 @@ func (fs *filesystem) mknodFromTar(ctx context.Context, hdr *tar.Header, pathToI
 	if err != nil {
 		return err
 	}
-	if err := fs.populateInodeFromHeader(hdr, childInode, true); err != nil {
+	if err := fs.populateInodeFromHeader(hdr, childInode); err != nil {
 		return err
 	}
 	child := fs.newDentry(childInode)
@@ -317,7 +315,7 @@ func (fs *filesystem) symlinkFromTar(hdr *tar.Header, pathToInode map[string]*in
 		return fmt.Errorf("failed to create inode from tar: %v", err)
 	}
 	child := fs.newDentry(childInode)
-	if err := fs.populateInodeFromHeader(hdr, child.inode, true); err != nil {
+	if err := fs.populateInodeFromHeader(hdr, child.inode); err != nil {
 		return err
 	}
 	parentDir.insertChildLocked(child, name)
@@ -663,7 +661,7 @@ func (fs *filesystem) mkdirMergeFromTar(hdr *tar.Header, pathToInode map[string]
 	}
 	if hdr.Name == "./" {
 		ino := fs.root.inode
-		if err := fs.populateInodeFromHeader(hdr, ino, true); err != nil {
+		if err := fs.populateInodeFromHeader(hdr, ino); err != nil {
 			return nil, err
 		}
 		ino.mode.Store(uint32(hdr.Mode) | linux.S_IFDIR)
@@ -696,7 +694,7 @@ func (fs *filesystem) mkdirMergeFromTar(hdr *tar.Header, pathToInode map[string]
 		if _, isDir := childDentry.inode.impl.(*directory); !isDir {
 			return nil, fmt.Errorf("%v exists but is not a directory", path)
 		}
-		if err := fs.populateInodeFromHeader(hdr, childDentry.inode, true); err != nil {
+		if err := fs.populateInodeFromHeader(hdr, childDentry.inode); err != nil {
 			return nil, err
 		}
 		childDentry.inode.mode.Store(uint32(hdr.Mode) | linux.S_IFDIR)
@@ -711,7 +709,7 @@ func (fs *filesystem) mkdirMergeFromTar(hdr *tar.Header, pathToInode map[string]
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new directory inode: %v", err)
 	}
-	if err := fs.populateInodeFromHeader(hdr, &childDir.inode, true); err != nil {
+	if err := fs.populateInodeFromHeader(hdr, &childDir.inode); err != nil {
 		return nil, err
 	}
 	parentDir.inode.incLinksLocked() // from child's ".."
@@ -747,7 +745,7 @@ func (fs *filesystem) mknodMergeFromTar(ctx context.Context, hdr *tar.Header, pa
 			if !ok {
 				return fmt.Errorf("%v exists but is not a regular file", hdr.Name)
 			}
-			if err := fs.populateInodeFromHeader(hdr, childDentry.inode, true); err != nil {
+			if err := fs.populateInodeFromHeader(hdr, childDentry.inode); err != nil {
 				return err
 			}
 			childDentry.inode.mode.Store(uint32(hdr.Mode) | linux.S_IFREG)
@@ -778,7 +776,7 @@ func (fs *filesystem) mknodMergeFromTar(ctx context.Context, hdr *tar.Header, pa
 	if err != nil {
 		return err
 	}
-	if err := fs.populateInodeFromHeader(hdr, childInode, true); err != nil {
+	if err := fs.populateInodeFromHeader(hdr, childInode); err != nil {
 		return err
 	}
 	child := fs.newDentry(childInode)
@@ -821,7 +819,7 @@ func (fs *filesystem) symlinkMergeFromTar(hdr *tar.Header, pathToInode map[strin
 		if s.target != hdr.Linkname {
 			return fmt.Errorf("updating symlink target for %v is not supported (was %q, now %q)", hdr.Name, s.target, hdr.Linkname)
 		}
-		if err := fs.populateInodeFromHeader(hdr, childDentry.inode, true); err != nil {
+		if err := fs.populateInodeFromHeader(hdr, childDentry.inode); err != nil {
 			return err
 		}
 		pathToInode[hdr.Name] = childDentry.inode
@@ -838,7 +836,7 @@ func (fs *filesystem) symlinkMergeFromTar(hdr *tar.Header, pathToInode map[strin
 		return fmt.Errorf("failed to create inode from tar: %v", err)
 	}
 	child := fs.newDentry(childInode)
-	if err := fs.populateInodeFromHeader(hdr, child.inode, true); err != nil {
+	if err := fs.populateInodeFromHeader(hdr, child.inode); err != nil {
 		return err
 	}
 	parentDir.insertChildLocked(child, name)
