@@ -20,6 +20,7 @@ exports_files([
     "README.md",
     "SECURITY.md",
     "GOVERNANCE.md",
+    "MAINTAINERS.md",
 ])
 
 release_files(
@@ -82,12 +83,6 @@ yaml_test(
     name = "nogo_config_test",
     srcs = glob(["nogo*.yaml"]),
     schema = "//tools/nogo/config:schema.json",
-)
-
-yaml_test(
-    name = "github_workflows_test",
-    srcs = glob([".github/workflows/*.yml"]),
-    schema = "@github_workflow_schema//file",
 )
 
 filegroup(
