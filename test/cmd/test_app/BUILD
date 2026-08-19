@@ -13,6 +13,7 @@ go_binary(
         "fds.go",
         "hostinet_sr.go",
         "main.go",
+        "mmap_helper.go",
         "xattr.go",
         "zombies.go",
     ],
@@ -23,7 +24,6 @@ go_binary(
     ],
     deps = [
         "//pkg/gvisordetect",
-        "//pkg/test/testutil",
         "//pkg/unet",
         "//runsc/flag",
         "@com_github_creack_pty//:go_default_library",

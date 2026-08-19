@@ -221,8 +221,43 @@ func loadPrivateMemoryFiles(ctx context.Context, r io.Reader, mfmap map[checkpoi
 	// Ensure that it is consistent with mfmap, unless we are restoring from
 	// split filesystem checkpoint.
 	if FSRestoreFromContext(ctx) {
-		if len(meta.owners) != 0 {
-			return fmt.Errorf("inconsistent private memory files on restore (split fs restore active): savedMFOwners = %v", meta.owners)
+		fsCheckpointed := pgalloc.FSCheckpointedMemoryFilesFromContext(ctx)
+		ownersMap := make(map[checkpoint.ResourceID]struct{}, len(meta.owners))
+		for _, fsID := range meta.owners {
+			ownersMap[fsID] = struct{}{}
+		}
+
+		// Check that all expected are loaded.
+		for fsID := range mfmap {
+			inFS := false
+			if fsCheckpointed != nil {
+				_, inFS = fsCheckpointed[fsID]
+			}
+			_, inSentry := ownersMap[fsID]
+			if !inFS && !inSentry {
+				return fmt.Errorf("private memory file %q was neither in FS checkpoint nor in Sentry checkpoint", fsID)
+			}
+		}
+
+		// Load from sentry checkpoint, or discard if already loaded from FS checkpoint.
+		for _, fsID := range meta.owners {
+			mf, ok := mfmap[fsID]
+			if !ok {
+				return fmt.Errorf("saved private memory file for %q was not configured on restore", fsID)
+			}
+			if _, inFS := fsCheckpointed[fsID]; inFS {
+				discardOpts := *opts
+				discardOpts.Discard = true
+				if err := mf.LoadFrom(ctx, r, &discardOpts); err != nil {
+					return fmt.Errorf("failed to discard MemoryFile %p fsID %q: %w", mf, fsID, err)
+				}
+				opts.PagesFileOffset = discardOpts.PagesFileOffset
+				continue
+			}
+			err := mf.LoadFrom(ctx, r, opts)
+			if err != nil {
+				return fmt.Errorf("failed to load MemoryFile %p fsID %q from Sentry state: %w", mf, fsID, err)
+			}
 		}
 		return nil
 	}

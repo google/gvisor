@@ -394,7 +394,15 @@ func SetupMounts(conf *config.Config, mounts []specs.Mount, root, procPath strin
 		if specutils.IsIDMappedMount(m) {
 			err = safeSetupAndMoveMount(int(srcFile.Fd()), src, dst, procPath)
 		} else {
-			err = specutils.SafeSetupAndMount(src, dst, m.Type, flags, procPath)
+			// For bind mounts, do not pass attribute flags (like MS_RDONLY) during
+			// the initial mount creation, because doing so can lock the mount tree as
+			// read-only before nested mountpoints can be created. The deferred
+			// remount below will apply all requested mount flags.
+			bindFlags := flags
+			if m.Type == "bind" || flags&unix.MS_BIND != 0 {
+				bindFlags = unix.MS_BIND | (flags & unix.MS_REC)
+			}
+			err = specutils.SafeSetupAndMount(src, dst, m.Type, bindFlags, procPath)
 		}
 		if srcFile != nil {
 			srcFile.Close()

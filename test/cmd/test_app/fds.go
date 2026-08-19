@@ -22,10 +22,23 @@ import (
 	"time"
 
 	"github.com/google/subcommands"
-	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/runsc/flag"
 )
+
+func poll(f func() error, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		err := f()
+		if err == nil {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return err
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
 
 const fileContents = "foobarbaz"
 
@@ -77,7 +90,7 @@ func (fds *fdSender) Execute(ctx context.Context, f *flag.FlagSet, args ...any) 
 
 	// Receiver may not be started yet, so try connecting in a poll loop.
 	var s *unet.Socket
-	if err := testutil.Poll(func() error {
+	if err := poll(func() error {
 		var err error
 		s, err = unet.Connect(fds.socketPath, true /* SEQPACKET, so we can send empty message with FD */)
 		return err
