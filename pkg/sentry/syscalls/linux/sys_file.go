@@ -1596,10 +1596,13 @@ func renameat(t *kernel.Task, olddirfd int32, oldpathAddr hostarch.Addr, newdirf
 	exe := t.MemoryManager().Executable()
 	if exe != nil {
 		// Check if the source file is the current executable.
-		oldVD, err := t.Kernel().VFS().FindFileDescription(t, oldtpop.pop)
+		// Open the file to get its FileDescription and compare with the executable.
+		oldVD, err := t.Kernel().VFS().OpenAt(t, t.Credentials(), &oldtpop.pop, &vfs.OpenOptions{
+			Flags: linux.O_RDONLY,
+		})
 		if err == nil && oldVD != nil {
-			oldVD.DecRef(t)
-			// Simple check: prevent modification of the executable file itself
+			defer oldVD.DecRef(t)
+			// Compare file descriptions by checking if they represent the same file.
 			// This is a basic implementation of ETXTBSY behavior.
 			if oldVD == exe {
 				return linuxerr.ETXTBSY
