@@ -970,7 +970,17 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 	// over floating point state restore errors that may occur on load on
 	// an incompatible machine.
 	if err := k.featureSet.CheckHostCompatible(); err != nil {
-		return err
+		// Experimental escape hatch for cross-node restore: the saved
+		// FeatureSet may contain features absent on the restore host
+		// (e.g. vmx/hle/rtm recorded on the park host). The sandbox is
+		// userspace (sentry never uses vmx); enabling this is only
+		// unsafe if the restored app actually executes instructions
+		// gated on a missing feature. Default stays strict (upstream).
+		if os.Getenv("RUNSC_ALLOW_CPUID_MISMATCH") != "" {
+			log.Warningf("CPU FeatureSet incompatible with host, continuing (RUNSC_ALLOW_CPUID_MISMATCH): %v", err)
+		} else {
+			return err
+		}
 	}
 	timeline.Reached("CPUID checked")
 

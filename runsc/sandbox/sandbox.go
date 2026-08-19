@@ -1010,6 +1010,12 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		// address space.
 		cmd.Env = append(cmd.Env, "GLIBC_TUNABLES=glibc.pthread.rseq=0")
 	}
+	// Forward the experimental cross-node restore escape hatch (see
+	// kernel.LoadFrom): the sandbox process is where the saved CPUID
+	// FeatureSet is checked against the host.
+	if v := os.Getenv("RUNSC_ALLOW_CPUID_MISMATCH"); v != "" {
+		cmd.Env = append(cmd.Env, "RUNSC_ALLOW_CPUID_MISMATCH="+v)
+	}
 
 	// If there is a gofer, sends all socket ends to the sandbox.
 	donations.DonateAndClose("io-fds", args.IOFiles...)
