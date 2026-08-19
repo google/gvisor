@@ -234,22 +234,41 @@ type CalibratedClocks struct {
 
 	// realtime is the realtime equivalent of monotonic.
 	realtime *CalibratedClock
+
+	// monotonicRaw tracks the host CLOCK_MONOTONIC_RAW clock. It is nil unless
+	// enabled via NewCalibratedClocks.
+	monotonicRaw *CalibratedClock
 }
 
-// NewCalibratedClocks creates a CalibratedClocks.
-func NewCalibratedClocks() *CalibratedClocks {
-	return &CalibratedClocks{
+// NewCalibratedClocks creates a CalibratedClocks. If monotonicRawEnabled is
+// true, host CLOCK_MONOTONIC_RAW is additionally tracked as a distinct clock
+// (addressable as MonotonicRaw).
+func NewCalibratedClocks(monotonicRawEnabled bool) *CalibratedClocks {
+	c := &CalibratedClocks{
 		monotonic: NewCalibratedClock(Monotonic),
 		realtime:  NewCalibratedClock(Realtime),
 	}
+	if monotonicRawEnabled {
+		c.monotonicRaw = NewCalibratedClock(MonotonicRaw)
+	}
+	return c
 }
 
 // Update implements Clocks.Update.
-func (c *CalibratedClocks) Update(parked bool) (Parameters, bool, Parameters, bool) {
-	monotonicParams, monotonicOk := c.monotonic.Update(parked)
-	realtimeParams, realtimeOk := c.realtime.Update(parked)
+func (c *CalibratedClocks) Update(parked bool) UpdateResult {
+	var res UpdateResult
+	res.Monotonic, res.MonotonicOk = c.monotonic.Update(parked)
+	res.Realtime, res.RealtimeOk = c.realtime.Update(parked)
+	if c.monotonicRaw != nil {
+		res.MonotonicRaw, res.MonotonicRawOk = c.monotonicRaw.Update(parked)
+	}
 
-	return monotonicParams, monotonicOk, realtimeParams, realtimeOk
+	return res
+}
+
+// MonotonicRawEnabled implements Clocks.MonotonicRawEnabled.
+func (c *CalibratedClocks) MonotonicRawEnabled() bool {
+	return c.monotonicRaw != nil
 }
 
 // GetTime implements Clocks.GetTime.
@@ -259,6 +278,11 @@ func (c *CalibratedClocks) GetTime(id ClockID) (int64, error) {
 		return c.monotonic.GetTime()
 	case Realtime:
 		return c.realtime.GetTime()
+	case MonotonicRaw:
+		if c.monotonicRaw != nil {
+			return c.monotonicRaw.GetTime()
+		}
+		return 0, linuxerr.EINVAL
 	default:
 		return 0, linuxerr.EINVAL
 	}

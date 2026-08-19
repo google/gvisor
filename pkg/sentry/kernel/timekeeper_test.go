@@ -28,13 +28,20 @@ import (
 // mockClocks is a sentrytime.Clocks that simply returns the times in the
 // struct.
 type mockClocks struct {
-	monotonic int64
-	realtime  int64
+	monotonic           int64
+	realtime            int64
+	monotonicRaw        int64
+	monotonicRawEnabled bool
 }
 
 // Update implements sentrytime.Clocks.Update. It does nothing.
-func (*mockClocks) Update(parked bool) (monotonicParams sentrytime.Parameters, monotonicOk bool, realtimeParam sentrytime.Parameters, realtimeOk bool) {
-	return
+func (*mockClocks) Update(parked bool) sentrytime.UpdateResult {
+	return sentrytime.UpdateResult{}
+}
+
+// MonotonicRawEnabled implements sentrytime.Clocks.MonotonicRawEnabled.
+func (c *mockClocks) MonotonicRawEnabled() bool {
+	return c.monotonicRawEnabled
 }
 
 // GetTime implements sentrytime.Clocks.GetTime.
@@ -44,6 +51,11 @@ func (c *mockClocks) GetTime(id sentrytime.ClockID) (int64, error) {
 		return c.monotonic, nil
 	case sentrytime.Realtime:
 		return c.realtime, nil
+	case sentrytime.MonotonicRaw:
+		if c.monotonicRawEnabled {
+			return c.monotonicRaw, nil
+		}
+		return 0, linuxerr.EINVAL
 	default:
 		return 0, linuxerr.EINVAL
 	}
@@ -64,7 +76,7 @@ func stateTestClocklessTimekeeper(tb testing.TB) (*Timekeeper, *VDSOParamPage) {
 
 func stateTestTimekeeper(tb testing.TB) *Timekeeper {
 	t, params := stateTestClocklessTimekeeper(tb)
-	t.SetClocks(sentrytime.NewCalibratedClocks(), params)
+	t.SetClocks(sentrytime.NewCalibratedClocks(false), params)
 	return t
 }
 
@@ -151,5 +163,46 @@ func TestTimekeeperMonotonicJumpBackwards(t *testing.T) {
 	}
 	if now != 100000 {
 		t.Errorf("GetTime got %d want 100000", now)
+	}
+}
+
+// TestTimekeeperMonotonicRawEnabled tests that when the clock source tracks a
+// distinct CLOCK_MONOTONIC_RAW, GetTime exposes it directly (absolute, not
+// starting at zero), while CLOCK_MONOTONIC is unaffected.
+func TestTimekeeperMonotonicRawEnabled(t *testing.T) {
+	c := &mockClocks{
+		monotonic:           100000,
+		monotonicRaw:        999999,
+		monotonicRawEnabled: true,
+	}
+
+	tk, params := stateTestClocklessTimekeeper(t)
+	tk.SetClocks(c, params)
+	defer tk.Destroy()
+
+	// Monotonic is unaffected: still starts at zero.
+	if now, err := tk.GetTime(sentrytime.Monotonic); err != nil || now != 0 {
+		t.Errorf("GetTime(Monotonic) got (%d, %v) want (0, nil)", now, err)
+	}
+	// MonotonicRaw exposes the raw source's absolute value.
+	if now, err := tk.GetTime(sentrytime.MonotonicRaw); err != nil || now != 999999 {
+		t.Errorf("GetTime(MonotonicRaw) got (%d, %v) want (999999, nil)", now, err)
+	}
+}
+
+// TestTimekeeperMonotonicRawDisabled tests that when the clock source does not
+// track CLOCK_MONOTONIC_RAW, it aliases CLOCK_MONOTONIC.
+func TestTimekeeperMonotonicRawDisabled(t *testing.T) {
+	c := &mockClocks{
+		monotonic: 100000,
+	}
+
+	tk, params := stateTestClocklessTimekeeper(t)
+	tk.SetClocks(c, params)
+	defer tk.Destroy()
+
+	// MonotonicRaw aliases Monotonic: both start at zero.
+	if now, err := tk.GetTime(sentrytime.MonotonicRaw); err != nil || now != 0 {
+		t.Errorf("GetTime(MonotonicRaw) got (%d, %v) want (0, nil)", now, err)
 	}
 }
