@@ -844,6 +844,9 @@ func TestBucketerPanics(t *testing.T) {
 		"NewDurationBucketer @ 80": func() {
 			NewDurationBucketer(80, time.Microsecond, 50*time.Microsecond)
 		},
+		"NewDurationBucketer @ insufficient range": func() {
+			NewDurationBucketer(80, time.Microsecond, 10*time.Microsecond)
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			var recovered any

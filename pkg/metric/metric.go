@@ -1115,7 +1115,18 @@ func NewDurationBucketer(numFiniteBuckets int, minDuration, maxDuration time.Dur
 		panic(fmt.Sprintf("duration bucketer must have at least %d buckets, got %d", durationMinBuckets, numFiniteBuckets))
 	}
 	minNs := minDuration.Nanoseconds()
-	exponentCoversNs := float64(maxDuration.Nanoseconds()-int64(numFiniteBuckets-durationMinBuckets)*minNs) / float64(minNs)
+	maxNs := maxDuration.Nanoseconds()
+	if maxNs <= minNs {
+		panic(fmt.Sprintf("maxDuration must be greater than minDuration, got max=%d, min=%d", maxNs, minNs))
+	}
+	// Ensure the range is large enough to accommodate the buckets.
+	// With (numFiniteBuckets - durationMinBuckets) steps of at least minNs,
+	// we need maxNs to be at least (numFiniteBuckets - durationMinBuckets + 1) * minNs.
+	requiredMinNs := int64(numFiniteBuckets-durationMinBuckets+1) * minNs
+	if maxNs < requiredMinNs {
+		panic(fmt.Sprintf("maxDuration is too small for the number of buckets, need at least %d ns, got %d", requiredMinNs, maxNs))
+	}
+	exponentCoversNs := float64(maxNs-int64(numFiniteBuckets-durationMinBuckets)*minNs) / float64(minNs)
 	exponent := math.Log(exponentCoversNs) / math.Log(float64(numFiniteBuckets-durationMinBuckets))
 	minNs = int64(float64(minNs) / exponent)
 	return NewExponentialBucketer(numFiniteBuckets, uint64(minNs), float64(minNs), exponent)
