@@ -219,6 +219,7 @@ type Boot struct {
 	// particular is uint32 and there is no flag.Uint32Var().
 	procDriverNvidiaParams             string
 	nvidiaFabricIMEXManagementDevMinor int64
+	nvidiaTraceDeviceDevMinor          int64
 
 	// uid and gid are the user and group IDs to switch to after setting up the
 	// user namespace.
@@ -303,6 +304,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&b.nvidiaDriverVersion, "nvidia-driver-version", "", "Nvidia driver version on the host")
 	f.StringVar(&b.procDriverNvidiaParams, "nvidia-host-params", "", "value of /proc/driver/nvidia/params on the host")
 	f.Int64Var(&b.nvidiaFabricIMEXManagementDevMinor, "nvidia-fabric-imex-mgmt-minor", -1, "DeviceFileMinor in /proc/driver/nvidia/capabilities/fabric-imex-mgmt on the host")
+	f.Int64Var(&b.nvidiaTraceDeviceDevMinor, "nvidia-trace-device-minor", -1, "DeviceFileMinor in /proc/driver/nvidia/capabilities/trace-device on the host")
 }
 
 // willReexec returns true if this boot process will re-execute itself to
@@ -415,6 +417,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		driverCaps, driverCapsErr := specutils.NVProxyDriverCapsAllowed(conf)
 		nvhs, err := nvconf.GetHostSettings(nvconf.HostSettingsOptions{
 			WantFabricIMEXManagement: driverCapsErr == nil && driverCaps&nvconf.CapFabricIMEXManagement != 0,
+			WantTraceDevice:          driverCapsErr == nil && driverCaps&nvconf.CapProfiling != 0,
 		})
 		if err != nil {
 			log.Warningf("Failed to get nvconf.HostSettings: %v", err)
@@ -424,6 +427,10 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 			if nvhs.HaveFabricIMEXManagement {
 				b.nvidiaFabricIMEXManagementDevMinor = int64(nvhs.FabricIMEXManagementDevMinor)
 				argOverride["nvidia-fabric-imex-mgmt-minor"] = strconv.FormatUint(uint64(nvhs.FabricIMEXManagementDevMinor), 10)
+			}
+			if nvhs.HaveTraceDevice {
+				b.nvidiaTraceDeviceDevMinor = int64(nvhs.TraceDeviceDevMinor)
+				argOverride["nvidia-trace-device-minor"] = strconv.FormatUint(uint64(nvhs.TraceDeviceDevMinor), 10)
 			}
 		}
 	}
@@ -686,6 +693,8 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 			ProcDriverNvidiaParams:       b.procDriverNvidiaParams,
 			HaveFabricIMEXManagement:     b.nvidiaFabricIMEXManagementDevMinor >= 0,
 			FabricIMEXManagementDevMinor: uint32(b.nvidiaFabricIMEXManagementDevMinor),
+			HaveTraceDevice:              b.nvidiaTraceDeviceDevMinor >= 0,
+			TraceDeviceDevMinor:          uint32(b.nvidiaTraceDeviceDevMinor),
 		},
 		HostTHP:                  b.hostTHP,
 		SaveFDs:                  b.saveFDs.GetFDs(),

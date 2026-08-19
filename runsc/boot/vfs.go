@@ -1879,8 +1879,10 @@ func createDeviceFiles(ctx context.Context, creds *auth.Credentials, info *conta
 			{Path: "/dev/nvidiactl", Type: "c", Major: nvgpu.NV_MAJOR_DEVICE_NUMBER, Minor: nvgpu.NV_MINOR_DEVICE_NUMBER_CONTROL_DEVICE},
 			{Path: "/dev/nvidia-uvm", Type: "c", Major: int64(info.nvproxyDevInfo.UVMDevMajor), Minor: nvgpu.NVIDIA_UVM_PRIMARY_MINOR_NUMBER},
 		}
-		// There is no nvidia-container-cli flag to enable fabric-imex-mgmt, so
-		// we never create a /dev/nvidia-caps/nvidia-cap# file for it here.
+		// There is no nvidia-container-cli flag to enable fabric-imex-mgmt or
+		// trace-device, so we never create a /dev/nvidia-caps/nvidia-cap# file
+		// for either of them here. Workloads that need one must have the device
+		// injected via the OCI spec or a CDI spec instead.
 		devClient := devutil.GoferClientFromContext(ctx)
 		if devClient == nil {
 			return fmt.Errorf("dev gofer client not found in context")
