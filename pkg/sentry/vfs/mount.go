@@ -1646,14 +1646,17 @@ func (vfs *VirtualFilesystem) GenerateProcMounts(ctx context.Context, taskRootDi
 		if mntOpts.ReadOnly {
 			opts = "ro"
 		}
-		if mntOpts.Flags.NoATime {
-			opts = ",noatime"
+		if mntOpts.Flags.NoSUID {
+			opts += ",nosuid"
+		}
+		if mntOpts.Flags.NoDev {
+			opts += ",nodev"
 		}
 		if mntOpts.Flags.NoExec {
 			opts += ",noexec"
 		}
-		if mntOpts.Flags.NoSUID {
-			opts += ",nosuid"
+		if mntOpts.Flags.NoATime {
+			opts += ",noatime"
 		}
 		if mopts := mnt.fs.Impl().MountOptions(); mopts != "" {
 			opts += "," + mopts
@@ -1786,14 +1789,17 @@ func (vfs *VirtualFilesystem) GenerateProcMountInfo(ctx context.Context, taskRoo
 		if mnt.ReadOnly() {
 			opts = "ro"
 		}
-		if mnt.flags.NoATime {
-			opts += ",noatime"
+		if mnt.flags.NoSUID {
+			opts += ",nosuid"
+		}
+		if mnt.flags.NoDev {
+			opts += ",nodev"
 		}
 		if mnt.flags.NoExec {
 			opts += ",noexec"
 		}
-		if mnt.flags.NoSUID {
-			opts += ",nosuid"
+		if mnt.flags.NoATime {
+			opts += ",noatime"
 		}
 		fmt.Fprintf(buf, "%s ", opts)
 
