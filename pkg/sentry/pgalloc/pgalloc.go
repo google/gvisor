@@ -194,6 +194,15 @@ type MemoryFile struct {
 	// release all MemoryFile resources and exit. destroyed is protected by mu.
 	destroyed bool
 
+	// contentExternal is set when SaveTo() has been called with
+	// ExternalContent, i.e. page contents were intentionally left in the
+	// backing host file (captured out-of-band) instead of being serialized
+	// into the checkpoint. Destroy must not decommit such a file: an external
+	// holder (e.g. a fd-holding orchestrator or a host-side snapshot) may
+	// still reference the same inode and the checkpoint is unusable without
+	// its contents. contentExternal is protected by mu.
+	contentExternal bool
+
 	// stopNotifyPressure stops memory cgroup pressure level
 	// notifications used to drive eviction. stopNotifyPressure is
 	// immutable.
@@ -545,7 +554,7 @@ func (f *MemoryFile) releaserDestroyLocked() {
 		panic("destroyed is no longer set")
 	}
 
-	if f.opts.DecommitOnDestroy {
+	if f.opts.DecommitOnDestroy && !f.contentExternal {
 		if chunks := f.chunksLoad(); len(chunks) != 0 {
 			if err := f.decommitFile(memmap.FileRange{0, uint64(len(chunks)) * chunkSize}); err != nil {
 				panic(fmt.Sprintf("failed to decommit entire memory file during destruction: %v", err))
