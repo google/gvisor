@@ -34,6 +34,7 @@ import (
 	"gvisor.dev/gvisor/pkg/coretag"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/fd"
+	"gvisor.dev/gvisor/pkg/garbage"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/metric"
@@ -325,16 +326,25 @@ func (b *Boot) willReexec() bool {
 // Execute implements subcommands.Command.Execute.  It starts a sandbox in a
 // waiting state.
 func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
+	timer := starttime.Timer("runsc boot")
+	timer.ReachedAt("Go code running", starttime.GoStartTime())
+	timer.Reached("boot subcommand dispatched")
+
+	// LINT.IfChange
+	// Garbage collection is not worth its cost until the container is up.
+	// Go forces every GC every ~doubling of memory (from 4MiB onwards).
+	// But during Sentry startup, we will allocate more than that, and there
+	// will essentially be no garbage to clean. So all of these GC runs will
+	// be futile. Suspend GC until startup finishes.
+	garbage.Suspend()
+	// LINT.ThenChange(../../../boot/loader.go)
+
 	if b.specFD == -1 || b.controllerFD == -1 || b.startSyncFD == -1 || f.NArg() != 1 {
 		f.Usage()
 		return subcommands.ExitUsageError
 	}
 
 	conf := args[0].(*config.Config)
-
-	timer := starttime.Timer("runsc boot")
-	timer.ReachedAt("Go code running", starttime.GoStartTime())
-	timer.Reached("boot subcommand dispatched")
 
 	if hostPageSize := unix.Getpagesize(); hostPageSize != hostarch.PageSize {
 		util.Fatalf("host page size (%d) does not match compiled page size (%d)", hostPageSize, hostarch.PageSize)

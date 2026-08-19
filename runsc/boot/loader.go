@@ -34,6 +34,7 @@ import (
 	"gvisor.dev/gvisor/pkg/coverage"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/fd"
+	"gvisor.dev/gvisor/pkg/garbage"
 	"gvisor.dev/gvisor/pkg/gomaxprocs"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/memutil"
@@ -1310,6 +1311,12 @@ func (l *Loader) run() error {
 	l.startupTimer.Reached("kernel started")
 	l.root.procArgs.StartupTimeline.End()
 	l.root.procArgs.StartupTimeline = nil
+
+	// LINT.IfChange
+	// Resume garbage collection now that process has started.
+	garbage.Resume()
+	// LINT.ThenChange(../cmd/sentry/sentrycmd/boot.go)
+
 	switch l.state {
 	case created:
 		l.state = started
