@@ -59,7 +59,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to find posix_server binary: %s", err)
 	}
-	runscPath, err := testutil.FindFile("runsc/runsc")
+	runscPath, err := testutil.FindRunsc()
 	if err != nil {
 		log.Fatalf("failed to find runsc binary: %s", err)
 	}

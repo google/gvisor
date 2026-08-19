@@ -249,6 +249,16 @@ func TestInvalidFlags(t *testing.T) {
 			value: "root:memory,sz=sdg",
 			error: "expected format is --overlay2",
 		},
+		{
+			name:  "sidecar-usage-policy",
+			value: "invalid",
+			error: "invalid value \"invalid\"; must be DEFAULT, STRICT, or LEGACY_DEPRECATED_SLOW_EMBEDDED_FALLBACK",
+		},
+		{
+			name:  "sidecar-release-enforcement-policy",
+			value: "invalid",
+			error: "invalid value \"invalid\"; must be NEVER, ALWAYS, or IF_RELEASE_BUILD",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
