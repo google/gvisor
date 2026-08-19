@@ -51,13 +51,8 @@ type FSSaveOpts struct {
 	ExitAfterSaving bool
 
 	// Paths is the list of paths inside the containers to save.
-	// If empty:
-	// - for fscheckpoint, defaults to a single path "/" for all containers.
-	// - for split checkpoint, defaults to all-tmpfs.
+	// If empty, defaults to a single path "/" for all containers.
 	Paths []checkpoint.ResourceID
-
-	// SplitFSCheckpoint indicates if this is a split filesystem checkpoint.
-	SplitFSCheckpoint bool
 }
 
 // FSSave collects a filesystem checkpoint as specified by the fscheckpoint
@@ -88,7 +83,7 @@ func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) error {
 		defer k.Kill(linux.WaitStatusExit(0)) // consistent with sentry/state.SaveOpts.Save
 	}
 	err := k.quiescePausedAnd(ctx, func() error {
-		return k.fsSaveLocked(ctx, opts)
+		return k.fsSaveLocked(ctx, opts, nil /* mfsToSave */)
 	})
 	k.SignalAllFSSaveWaiters(err)
 	return err
@@ -97,14 +92,10 @@ func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) error {
 // fsSaveLocked collects a filesystem checkpoint.
 //
 // Preconditions: The kernel must be paused and quiesced.
-func (k *Kernel) fsSaveLocked(ctx context.Context, opts *FSSaveOpts) error {
+func (k *Kernel) fsSaveLocked(ctx context.Context, opts *FSSaveOpts, mfsToSave map[checkpoint.ResourceID]*pgalloc.MemoryFile) error {
 	paths := opts.Paths
 	if len(paths) == 0 {
-		if opts.SplitFSCheckpoint {
-			paths = []checkpoint.ResourceID{{Path: fscheckpoint.AllTmpfsPath}}
-		} else {
-			paths = []checkpoint.ResourceID{{Path: "/"}}
-		}
+		paths = []checkpoint.ResourceID{{Path: "/"}}
 	}
 	pathsMap := make(map[checkpoint.ResourceID]struct{}, len(paths))
 	for _, p := range paths {
@@ -117,15 +108,13 @@ func (k *Kernel) fsSaveLocked(ctx context.Context, opts *FSSaveOpts) error {
 	)
 	asyncPageSaveWg.Add(1)
 	apfs, err := pgalloc.StartAsyncPagesFileSave(opts.PagesFile /* transfers ownership */, func(err error) {
-		defer asyncPageSaveWg.Done()
 		asyncPageSaveErr = err
+		asyncPageSaveWg.Done()
 	})
-	opts.PagesFile = nil
 	if err != nil {
-		return fmt.Errorf("failed to start async page saving: %w", err)
+		return fmt.Errorf("failed to save MemoryFile pages: %w", err)
 	}
 	asyncPageSaveCleanup := cleanup.Make(func() {
-		apfs.MemoryFilesDone()
 		asyncPageSaveWg.Wait()
 	})
 	defer asyncPageSaveCleanup.Clean()
@@ -163,15 +152,16 @@ func (k *Kernel) fsSaveLocked(ctx context.Context, opts *FSSaveOpts) error {
 	// were created, which is most likely to be the order in which they are
 	// created after restore; in particular, this will be the case when the
 	// same Kubernetes Pod spec is reused after restore.
+	tmpfsResourceIDs := make(map[checkpoint.ResourceID]struct{})
 	for _, fs := range fss {
-		log.Infof("fsSaveLocked: checking fs %T", fs.Impl())
+		log.Debugf("fsSaveLocked: checking fs %T", fs.Impl())
 		mf := tmpfs.MemoryFileOf(fs)
 		if mf == nil {
-			log.Infof("fsSaveLocked: fs %T has no MemoryFile", fs.Impl())
+			log.Debugf("fsSaveLocked: fs %T has no MemoryFile", fs.Impl())
 			continue
 		}
 		resourceID := mf.ResourceID()
-		log.Infof("fsSaveLocked: fs %T has MemoryFile with ResourceID %+v", fs.Impl(), resourceID)
+		log.Debugf("fsSaveLocked: fs %T has MemoryFile with ResourceID %+v", fs.Impl(), resourceID)
 		// Exclude tmpfs filesystems backed by the main MemoryFile (which
 		// have no ResourceID) since we currently have no way to save only
 		// the contents of the main MemoryFile owned by a checkpointed
@@ -193,7 +183,8 @@ func (k *Kernel) fsSaveLocked(ctx context.Context, opts *FSSaveOpts) error {
 		if !resourceID.Ok() {
 			continue
 		}
-		matched := matchesPaths(resourceID, pathsMap)
+		tmpfsResourceIDs[resourceID] = struct{}{}
+		matched := matchesPaths(resourceID, pathsMap, true /* isTmpfs */)
 		if !matched {
 			continue
 		}
@@ -215,6 +206,7 @@ func (k *Kernel) fsSaveLocked(ctx context.Context, opts *FSSaveOpts) error {
 		})
 		prevPagesMetadataOffset = pagesMetadataWriter.count
 		prevPagesOffset = apfs.PagesFileOffset()
+
 		if err := tmpfs.FSCheckpointWrite(ctx, fs, multiTarWriter); err != nil {
 			return fmt.Errorf("failed to write tmpfs with resourceID %s to multi-tar file: %w", resourceID, err)
 		}
@@ -225,24 +217,34 @@ func (k *Kernel) fsSaveLocked(ctx context.Context, opts *FSSaveOpts) error {
 		})
 		prevTarOffset = multiTarWriter.count
 	}
-	if len(resourceIDs) == 0 {
-		return fmt.Errorf("no checkpointable filesystems")
-	}
 	apfs.MemoryFilesDone()
-	bytes, err := proto.Marshal(manifest)
+
+	// Verify that all private MemoryFiles excluded from the Sentry checkpoint
+	// were actually saved in this filesystem checkpoint.
+	for id := range mfsToSave {
+		_, isTmpfs := tmpfsResourceIDs[id]
+		if matchesPaths(id, pathsMap, isTmpfs) {
+			if _, ok := resourceIDs[id]; !ok {
+				return fmt.Errorf("private MemoryFile %q was excluded from sentry checkpoint but not saved in filesystem checkpoint", id)
+			}
+		}
+	}
+
+	// Serialize manifest.
+	manifestBytes, err := proto.Marshal(manifest)
 	if err != nil {
 		return fmt.Errorf("failed to marshal manifest: %w", err)
 	}
-	if _, err := opts.ManifestFile.Write(bytes); err != nil {
-		return fmt.Errorf("failed to write manifest file: %w", err)
+	if _, err := opts.ManifestFile.Write(manifestBytes); err != nil {
+		return fmt.Errorf("failed to write manifest: %w", err)
 	}
-	// Close other writers while MemoryFile saving is in progress to
-	// overlap their latencies.
 	err = opts.ManifestFile.Close()
 	opts.ManifestFile = nil
 	if err != nil {
 		return fmt.Errorf("failed to close manifest file: %w", err)
 	}
+	// Close other writers while MemoryFile saving is in progress to
+	// overlap their latencies.
 	err = opts.MultiTarFile.Close()
 	opts.MultiTarFile = nil
 	if err != nil {
@@ -303,7 +305,10 @@ func toProtoResourceID(id checkpoint.ResourceID) *fspb.ResourceID {
 	}
 }
 
-func matchesPaths(resourceID checkpoint.ResourceID, pathsMap map[checkpoint.ResourceID]struct{}) bool {
+func matchesPaths(resourceID checkpoint.ResourceID, pathsMap map[checkpoint.ResourceID]struct{}, isTmpfs bool) bool {
+	if !isTmpfs {
+		return false
+	}
 	if _, ok := pathsMap[resourceID]; ok {
 		return true
 	}

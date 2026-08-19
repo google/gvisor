@@ -81,12 +81,8 @@ type SaveOpts struct {
 	// sequentially (rather than in parallel).
 	CudaCheckpointSequential bool
 
-	// SplitFSCheckpoint indicates if we should split filesystem to separate
-	// pages from the full checkpoint.
-	SplitFSCheckpoint bool
-
-	// FSSaveOpts contains options for filesystem checkpoint if SplitFSCheckpoint
-	// is true.
+	// FSSaveOpts contains options for filesystem checkpoint. If non-nil, we
+	// should split filesystem to separate pages from the full checkpoint.
 	FSSaveOpts *kernel.FSSaveOpts
 }
 
@@ -104,7 +100,7 @@ func (opts *SaveOpts) Close() error {
 	}
 	var fsErr error
 	if opts.FSSaveOpts != nil {
-		var mErr, mtErr, pmfErr, pfErr error
+		var mErr, mtErr, pmfErr, fspfErr error
 		if opts.FSSaveOpts.ManifestFile != nil {
 			mErr = opts.FSSaveOpts.ManifestFile.Close()
 		}
@@ -115,9 +111,9 @@ func (opts *SaveOpts) Close() error {
 			pmfErr = opts.FSSaveOpts.PagesMetadataFile.Close()
 		}
 		if opts.FSSaveOpts.PagesFile != nil {
-			pfErr = opts.FSSaveOpts.PagesFile.Close()
+			fspfErr = opts.FSSaveOpts.PagesFile.Close()
 		}
-		fsErr = errors.Join(mErr, mtErr, pmfErr, pfErr)
+		fsErr = errors.Join(mErr, mtErr, pmfErr, fspfErr)
 	}
 	return errors.Join(dstErr, pmErr, pfErr, fsErr)
 }

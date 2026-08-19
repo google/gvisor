@@ -170,6 +170,7 @@ go_test(
     size = "small",
     srcs = [
         "compat_test.go",
+        "fscheckpoint_test.go",
         "loader_test.go",
         "mount_hints_test.go",
         "vfs_test.go",
@@ -182,6 +183,7 @@ go_test(
         "//pkg/fspath",
         "//pkg/lisafs",
         "//pkg/log",
+        "//pkg/sentry/checkpoint",
         "//pkg/sentry/fsimpl/erofs",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/seccheck",

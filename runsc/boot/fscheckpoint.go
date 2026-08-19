@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"path"
 	"strings"
 	"time"
 
@@ -109,9 +110,8 @@ func (l *Loader) FSSave() error {
 	args.FilePayload.Files = fd.ReleaseToFiles(fsSaveFDs, "fs-checkpoint")
 	args.UseCheckpointGofer = useCheckpointGofer
 	opts := kernel.FSSaveOpts{
-		RunscVersion:      version.Version(),
-		Paths:             paths,
-		SplitFSCheckpoint: false,
+		RunscVersion: version.Version(),
+		Paths:        paths,
 	}
 	if err := setKernelFSSaveOptsFiles(&args, &opts); err != nil {
 		return err
@@ -137,14 +137,14 @@ func ParseFSCheckpointPaths(val string) ([]checkpoint.ResourceID, error) {
 			if p == "" {
 				return nil, fmt.Errorf("empty path in fscheckpoint paths: %q", val)
 			}
-			paths = append(paths, checkpoint.ResourceID{Path: p})
+			paths = append(paths, checkpoint.ResourceID{Path: path.Clean(p)})
 		} else {
 			c := strings.TrimSpace(subparts[0])
 			p := strings.TrimSpace(subparts[1])
 			if p == "" {
 				return nil, fmt.Errorf("empty path in fscheckpoint paths: %q", val)
 			}
-			paths = append(paths, checkpoint.ResourceID{ContainerName: c, Path: p})
+			paths = append(paths, checkpoint.ResourceID{ContainerName: c, Path: path.Clean(p)})
 		}
 	}
 	return paths, nil
@@ -152,10 +152,9 @@ func ParseFSCheckpointPaths(val string) ([]checkpoint.ResourceID, error) {
 
 func convertToKernelFSSaveOpts(args *FSSaveArgs) (kernel.FSSaveOpts, error) {
 	opts := kernel.FSSaveOpts{
-		RunscVersion:      version.Version(),
-		ExitAfterSaving:   args.ExitAfterSaving,
-		Paths:             args.Paths,
-		SplitFSCheckpoint: true,
+		RunscVersion:    version.Version(),
+		ExitAfterSaving: args.ExitAfterSaving,
+		Paths:           args.Paths,
 	}
 	if err := setKernelFSSaveOptsFiles(args, &opts); err != nil {
 		return kernel.FSSaveOpts{}, err
@@ -405,8 +404,10 @@ func startFSRestore(opts *fsRestoreOpts) (*fsRestore, error) {
 	//
 	// All of the above also applies to the multi-tar file.
 	//
-	// TODO(b/541219576): Instead of reading the full tar file, read using
-	// offsets in the multi-tar file using TarStart and TarEnd from manifest.
+	// TODO(b/541219576): Instead of reading the full tar file into memory and
+	// retaining it via readOnce for the lifetime of the sandbox, read using
+	// offsets in the multi-tar file using TarStart and TarEnd from manifest,
+	// or release the cached multiTar slice once restore completes.
 	readOnce := func(desc string, optsR *io.ReadCloser) func() ([]byte, error) {
 		r := *optsR
 		*optsR = nil
@@ -516,6 +517,39 @@ func (c *fsRestoreContainer) setError(err error) error {
 	return err
 }
 
+// findByResourceID looks up a resource by exact ResourceID (ContainerName + Path).
+// If exact match fails, it attempts to match by Path alone as a fallback when
+// either the requested ID or the checkpointed entry has an empty ContainerName
+// (e.g. single-container vs multi-container checkpoint compatibility). Conflicting
+// non-empty container names are never matched across containers.
+func findByResourceID[T any](m map[checkpoint.ResourceID]T, id checkpoint.ResourceID, getResourceID func(T) checkpoint.ResourceID, typeName string) (T, bool) {
+	if val, ok := m[id]; ok {
+		return val, true
+	}
+	var (
+		match T
+		found bool
+	)
+	for _, val := range m {
+		valID := getResourceID(val)
+		if valID.Path == id.Path && (id.ContainerName == "" || valID.ContainerName == "") {
+			if found {
+				// Ambiguous match across multiple entries; do not guess.
+				var zero T
+				return zero, false
+			}
+			match = val
+			found = true
+		}
+	}
+	if found {
+		log.Infof("fsRestore: mapped %s ResourceID %v to %v by path matching", typeName, id, getResourceID(match))
+		return match, true
+	}
+	var zero T
+	return zero, false
+}
+
 func (fsr *fsRestore) memoryFileLoadArgs(id checkpoint.ResourceID, cid string) (io.Reader, uint64, func(error), error) {
 	if fsr == nil {
 		return nil, 0, func(error) {}, nil
@@ -525,8 +559,10 @@ func (fsr *fsRestore) memoryFileLoadArgs(id checkpoint.ResourceID, cid string) (
 	if fsr.manifestErr != nil {
 		return nil, 0, nil, fsr.manifestErr
 	}
-	mmf := fsr.mfs[id]
-	if mmf == nil {
+	mmf, ok := findByResourceID(fsr.mfs, id, func(m *fscheckpoint.MemoryFile) checkpoint.ResourceID {
+		return m.ResourceID
+	}, "MemoryFile")
+	if !ok {
 		return nil, 0, func(error) {}, nil
 	}
 	pagesMetadata, err := fsr.getPagesMetadata()
@@ -566,8 +602,10 @@ func (fsr *fsRestore) tmpfsSourceTar(id checkpoint.ResourceID, cid string) (io.R
 	if fsr.manifestErr != nil {
 		return nil, fsr.manifestErr
 	}
-	mt := fsr.tmpfs[id]
-	if mt == nil {
+	mt, ok := findByResourceID(fsr.tmpfs, id, func(t *fscheckpoint.Tmpfs) checkpoint.ResourceID {
+		return t.ResourceID
+	}, "Tmpfs")
+	if !ok {
 		return nil, nil
 	}
 	multiTar, err := fsr.getMultiTar()
@@ -615,6 +653,14 @@ func (fsr *fsRestore) wait(cid string) error {
 var _ vfs.FSTarProvider = (*fsRestore)(nil)
 
 // GetTar implements vfs.FSTarProvider.GetTar.
+//
+// Returns:
+//   - (reader, nil): A valid tar reader for filesystems included in the FS checkpoint.
+//   - (nil, nil): If the filesystem was not included in this FS checkpoint (e.g. in
+//     a partial split checkpoint). CompleteRestore treats this as a no-op, preserving
+//     the filesystem state restored from the Sentry checkpoint.
+//   - (nil, err): If manifest loading failed or the tar slice range is invalid,
+//     failing the restore.
 func (fsr *fsRestore) GetTar(id checkpoint.ResourceID) (io.ReadCloser, error) {
 	if fsr == nil {
 		return nil, nil
@@ -623,7 +669,9 @@ func (fsr *fsRestore) GetTar(id checkpoint.ResourceID) (io.ReadCloser, error) {
 	if fsr.manifestErr != nil {
 		return nil, fsr.manifestErr
 	}
-	mt := fsr.tmpfs[id]
+	mt, _ := findByResourceID(fsr.tmpfs, id, func(t *fscheckpoint.Tmpfs) checkpoint.ResourceID {
+		return t.ResourceID
+	}, "Tmpfs")
 	if mt == nil {
 		return nil, nil
 	}
