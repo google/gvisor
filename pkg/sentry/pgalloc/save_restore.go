@@ -219,6 +219,12 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) er
 		// snapshotted separately). Skip async page file registration, zero
 		// page scanning (which would otherwise decommit pages, mutating the
 		// backing file), and page serialization entirely.
+		//
+		// Also arm contentExternal so that Destroy does not decommit the
+		// file: the checkpoint is only usable together with the backing
+		// file's contents, which may outlive this MemoryFile via an
+		// externally-held fd referencing the same inode.
+		f.contentExternal = true
 		timeMetadataStart := gohacks.Nanotime()
 		pb := f.exportMetadataProto()
 		pb.ContentExternal = true

@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -197,5 +198,109 @@ func TestExternalContentRejectsUndersizedAdoption(t *testing.T) {
 	adopted := newTestMemoryFile(t, path, true)
 	if err := adopted.LoadFrom(context.Background(), bytes.NewReader(metadataImage), &LoadOpts{}); err == nil {
 		t.Fatal("LoadFrom(ContentExternal) with undersized adopted file unexpectedly succeeded")
+	}
+}
+
+// newTestMemoryFileDecommit is newTestMemoryFile with a DecommitOnDestroy
+// override, mimicking runsc's createPrivateMemoryFile (upstream default:
+// DecommitOnDestroy true for disk-backed private memory files).
+func newTestMemoryFileDecommit(t *testing.T, path string, decommit bool) *MemoryFile {
+	t.Helper()
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0600)
+	if err != nil {
+		t.Fatalf("opening %q: %v", path, err)
+	}
+	mf, err := NewMemoryFile(f, MemoryFileOpts{
+		DelayedEviction:         DelayedEvictionManual,
+		DisableIMAWorkAround:    true,
+		DisableMemoryAccounting: true,
+		DecommitOnDestroy:       decommit,
+	})
+	if err != nil {
+		t.Fatalf("NewMemoryFile(%q): %v", path, err)
+	}
+	return mf
+}
+
+func hostFilePatternOk(t *testing.T, path string, fill byte, length uint64) bool {
+	t.Helper()
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading host file %q: %v", path, err)
+	}
+	if uint64(len(got)) < length {
+		t.Fatalf("host file %q is %d bytes, want >= %d", path, len(got), length)
+	}
+	for i := uint64(0); i < length; i++ {
+		if got[i] != fill {
+			return false
+		}
+	}
+	return true
+}
+
+// TestExternalContentSurvivesDestroy verifies the fd-hold invariant: after
+// SaveTo(ExternalContent), destroying the MemoryFile must NOT decommit the
+// backing host file - an external fd holder or snapshot references the same
+// inode, and the checkpoint is useless without the file's contents.
+func TestExternalContentSurvivesDestroy(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "filestore")
+	const size = 1 << 20
+	const fill = 0x5a
+
+	mf := newTestMemoryFileDecommit(t, path, true /* decommit */)
+	fr, err := mf.Allocate(size, AllocOpts{Kind: usage.Anonymous})
+	if err != nil {
+		t.Fatalf("Allocate: %v", err)
+	}
+	writeTestRange(t, mf, fr, fill)
+	if err := mf.SaveTo(context.Background(), &bytes.Buffer{}, &SaveOpts{ExternalContent: true}); err != nil {
+		t.Fatalf("SaveTo(ExternalContent): %v", err)
+	}
+	mf.Destroy()
+
+	// Destroy is asynchronous (releaser goroutine). Poll: the contents must
+	// remain intact; the pre-fix behavior would punch holes (read as zeros).
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if !hostFilePatternOk(t, path, fill, size) {
+			t.Fatalf("host file contents were destroyed despite ExternalContent save (decommitted on destroy)")
+		}
+		if time.Now().After(deadline) {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// TestDefaultSaveStillDecommitsOnDestroy is the control for the above: the
+// default save path does not arm contentExternal, so DecommitOnDestroy must
+// still release the host file's disk space.
+func TestDefaultSaveStillDecommitsOnDestroy(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "filestore")
+	const size = 1 << 20
+	const fill = 0xa5
+
+	mf := newTestMemoryFileDecommit(t, path, true /* decommit */)
+	fr, err := mf.Allocate(size, AllocOpts{Kind: usage.Anonymous})
+	if err != nil {
+		t.Fatalf("Allocate: %v", err)
+	}
+	writeTestRange(t, mf, fr, fill)
+	if err := mf.SaveTo(context.Background(), &bytes.Buffer{}, &SaveOpts{}); err != nil {
+		t.Fatalf("SaveTo: %v", err)
+	}
+	mf.Destroy()
+
+	// Poll until the releaser decommits (contents become holes/zeros).
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if !hostFilePatternOk(t, path, fill, size) {
+			return // decommitted as expected
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("host file contents survived Destroy after a default (non-external) save; DecommitOnDestroy regression")
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }
