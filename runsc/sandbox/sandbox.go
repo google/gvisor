@@ -68,7 +68,6 @@ import (
 	"gvisor.dev/gvisor/runsc/profile"
 	"gvisor.dev/gvisor/runsc/specutils"
 	"gvisor.dev/gvisor/runsc/starttime"
-	"gvisor.dev/gvisor/runsc/version"
 
 	metricpb "gvisor.dev/gvisor/pkg/metric/metric_go_proto"
 )
@@ -537,7 +536,7 @@ func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid s
 }
 
 // Restore sends the restore call for a container in the sandbox.
-func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, imagePath string, direct, background, splitFSRestore bool, networkArgs *boot.CreateLinksAndRoutesArgs) error {
+func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, imagePath string, direct, background bool, networkArgs *boot.CreateLinksAndRoutesArgs) error {
 	if err := hostsettings.Handle(conf); err != nil {
 		return fmt.Errorf("host settings: %w (use --host-settings=ignore to bypass)", err)
 	}
@@ -545,8 +544,7 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 	log.Debugf("Restore sandbox %q from path %q", s.ID, imagePath)
 
 	opt := boot.RestoreOpts{
-		Background:     background,
-		SplitFSRestore: splitFSRestore,
+		Background: background,
 	}
 	defer func() {
 		for _, f := range opt.FilePayload.Files {
@@ -1653,7 +1651,6 @@ type CheckpointOpts struct {
 	ExcludeCommittedZeroPages bool
 	CudaCheckpointPath        string
 	CudaCheckpointSequential  bool
-	SplitFSCheckpoint         bool
 
 	// Save/restore exec options.
 	SaveRestoreExecArgv        string
@@ -1666,22 +1663,12 @@ type CheckpointOpts struct {
 func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, opts CheckpointOpts) error {
 	log.Debugf("Checkpoint sandbox %q, imagePath %q, opts %+v", s.ID, imagePath, opts)
 
-	if opts.SplitFSCheckpoint {
-		// Verify we are not using GCS/gofer.
-		gcsOptsPath := path.Join(imagePath, checkpointGCSOptsFileName)
-		if _, err := os.Stat(gcsOptsPath); err == nil {
-			return fmt.Errorf("split filesystem checkpoint is not supported with GCS/gofer")
-		}
-	}
-
 	opt := control.SaveOpts{
 		Metadata:                       opts.Compression.ToMetadata(),
 		AppMFExcludeCommittedZeroPages: opts.ExcludeCommittedZeroPages,
 		Resume:                         opts.Resume,
 		CudaCheckpointPath:             opts.CudaCheckpointPath,
 		CudaCheckpointSequential:       opts.CudaCheckpointSequential,
-		SplitFSCheckpoint:              opts.SplitFSCheckpoint,
-		RunscVersion:                   version.Version(),
 		ExecOpts: control.SaveRestoreExecOpts{
 			Argv:        opts.SaveRestoreExecArgv,
 			Timeout:     opts.SaveRestoreExecTimeout,
@@ -1726,21 +1713,6 @@ func setCheckpointOptsFilesForLocalCheckpoint(conf *config.Config, imagePath str
 	}
 	opt.FilePayload.Files = files
 	opt.HavePagesFile = len(files) > 1
-
-	if opts.SplitFSCheckpoint {
-		fsImagePath := filepath.Join(imagePath, "fs")
-		if err := os.MkdirAll(fsImagePath, 0755); err != nil {
-			return fmt.Errorf("creating fs checkpoint directory: %w", err)
-		}
-		fsFiles, err := openFSCheckpointLocalFiles(fsImagePath, os.O_CREATE|os.O_EXCL|os.O_RDWR, opts.Direct)
-		if err != nil {
-			for _, f := range files {
-				_ = f.Close()
-			}
-			return fmt.Errorf("creating fs checkpoint files: %w", err)
-		}
-		opt.FilePayload.Files = append(opt.FilePayload.Files, fsFiles...)
-	}
 	return nil
 }
 

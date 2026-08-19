@@ -80,14 +80,6 @@ type SaveOpts struct {
 	// CudaCheckpointSequential indicates whether cuda-checkpoint should be run
 	// sequentially (rather than in parallel).
 	CudaCheckpointSequential bool
-
-	// SplitFSCheckpoint indicates if we should split filesystem to separate
-	// pages from the full checkpoint.
-	SplitFSCheckpoint bool
-
-	// FSSaveOpts contains options for filesystem checkpoint if SplitFSCheckpoint
-	// is true.
-	FSSaveOpts *kernel.FSSaveOpts
 }
 
 // Close releases resources owned by opts.
@@ -102,24 +94,7 @@ func (opts *SaveOpts) Close() error {
 	if opts.PagesFile != nil {
 		pfErr = opts.PagesFile.Close()
 	}
-	var fsErr error
-	if opts.FSSaveOpts != nil {
-		var mErr, mtErr, pmfErr, pfErr error
-		if opts.FSSaveOpts.ManifestFile != nil {
-			mErr = opts.FSSaveOpts.ManifestFile.Close()
-		}
-		if opts.FSSaveOpts.MultiTarFile != nil {
-			mtErr = opts.FSSaveOpts.MultiTarFile.Close()
-		}
-		if opts.FSSaveOpts.PagesMetadataFile != nil {
-			pmfErr = opts.FSSaveOpts.PagesMetadataFile.Close()
-		}
-		if opts.FSSaveOpts.PagesFile != nil {
-			pfErr = opts.FSSaveOpts.PagesFile.Close()
-		}
-		fsErr = errors.Join(mErr, mtErr, pmfErr, pfErr)
-	}
-	return errors.Join(dstErr, pmErr, pfErr, fsErr)
+	return errors.Join(dstErr, pmErr, pfErr)
 }
 
 // Save saves the system state.
@@ -182,10 +157,9 @@ func (opts *SaveOpts) Save(ctx context.Context, k *kernel.Kernel, w *watchdog.Wa
 	} else {
 		opts.Destination = nil
 		// Save the kernel.
-		err = k.SaveTo(ctx, wc, opts.PagesMetadata, opts.PagesFile, opts.AppMFExcludeCommittedZeroPages, opts.Resume, opts.FSSaveOpts) // transfers ownership of wc, opts.PagesMetadata, opts.PagesFile, opts.FSSaveOpts
+		err = k.SaveTo(ctx, wc, opts.PagesMetadata, opts.PagesFile, opts.AppMFExcludeCommittedZeroPages, opts.Resume) // transfers ownership of wc, opts.PagesMetadata, opts.PagesFile
 		opts.PagesMetadata = nil
 		opts.PagesFile = nil
-		opts.FSSaveOpts = nil
 	}
 
 	t1, _ := CPUTime()

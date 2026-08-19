@@ -42,7 +42,6 @@ type Checkpoint struct {
 	cudaCheckpointSequential  bool
 	saveRestoreExecArgv       string
 	saveRestoreExecTimeout    time.Duration
-	splitFSCheckpoint         bool
 
 	// direct indicates whether O_DIRECT should be used for writing the
 	// checkpoint pages file. It bypasses the kernel page cache. It is beneficial
@@ -78,7 +77,6 @@ func (c *Checkpoint) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&c.cudaCheckpointSequential, "cuda-checkpoint-sequential", false, "run cuda-checkpoint sequentially in the container")
 	f.StringVar(&c.saveRestoreExecArgv, "save-restore-exec-argv", "", "argv (split by spaces) for a save/restore binary that's automatically executed in the sandbox before saving and after restoring. If the execution fails, the save/restore process will fail.")
 	f.DurationVar(&c.saveRestoreExecTimeout, "save-restore-exec-timeout", control.DefaultSaveRestoreExecTimeout, "timeout for the binary pointed to by save-restore-exec-argv.")
-	f.BoolVar(&c.splitFSCheckpoint, "split-fscheckpoint", false, "split filesystem checkpoint into a separate tar-like format")
 
 	// Unimplemented flags necessary for compatibility with docker.
 	var wp string
@@ -126,7 +124,6 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...any) su
 		SaveRestoreExecArgv:        c.saveRestoreExecArgv,
 		SaveRestoreExecTimeout:     c.saveRestoreExecTimeout,
 		SaveRestoreExecContainerID: cont.ID,
-		SplitFSCheckpoint:          c.splitFSCheckpoint,
 	}
 
 	if err := cont.Checkpoint(conf, c.imagePath, opts); err != nil {
