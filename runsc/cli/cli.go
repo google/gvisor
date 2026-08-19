@@ -286,6 +286,7 @@ func Run(sidecar *gvisorbinaries.Binary, commands map[util.SubCommand]string, he
 	}
 	log.Infof(delimString)
 	gvisorbinaries.ReleaseEnforcementPolicy = conf.SidecarReleaseEnforcementPolicy
+	gvisorbinaries.UsagePolicy = conf.SidecarUsagePolicy
 	gvisorbinaries.VerifyMatchingRelease(sidecar)
 
 	if *coverageFD >= 0 {
