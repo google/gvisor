@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -534,19 +535,17 @@ func (tarDefaultWriterCallbacks) regularFileWrite(ctx context.Context, rf *regul
 	// it is safe to lock here to ensure no concurrent writes occur.
 	rf.inode.mu.Lock()
 	defer rf.inode.mu.Unlock()
-	data := make([]byte, rf.size.RacyLoad())
-	dst := usermem.BytesIOSequence(data)
+	size := int64(rf.size.RacyLoad())
 	rw := getRegularFileReadWriter(rf, 0, 0)
-	n, err := dst.CopyOutFrom(ctx, rw)
-	putRegularFileReadWriter(rw)
-	if err != nil && err != io.EOF {
-		return fmt.Errorf("failed to read file content: %w", err)
-	}
-	if n != int64(len(data)) {
-		return fmt.Errorf("failed to read all file content, got %d bytes, want %d", n, len(data))
-	}
-	if _, err := tw.Write(data); err != nil {
+	defer putRegularFileReadWriter(rw)
+	// Copy rather than read the file into one buffer, so that the copy does not
+	// allocate in proportion to the size of the file.
+	n, err := io.Copy(tw, io.LimitReader(safemem.ToIOReader{Reader: rw}, size))
+	if err != nil {
 		return fmt.Errorf("failed to write file content to tar: %w", err)
+	}
+	if n != size {
+		return fmt.Errorf("failed to read all file content, got %d bytes, want %d", n, size)
 	}
 	return nil
 }
