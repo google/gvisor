@@ -170,6 +170,47 @@ func TestTasksEmpty(t *testing.T) {
 	s.AssertDirentOffsets(collector, tasksStaticFilesNextOffs)
 }
 
+// TestManyProcMounts tests that many procfs instances can exist concurrently.
+// Regression test for the case where each instance permanently consumed one of
+// the ~149 available dynamic character device major numbers for
+// /proc/gvisor/checkpoint, so that the 150th mount failed.
+func TestManyProcMounts(t *testing.T) {
+	s := setup(t)
+	defer s.Destroy()
+
+	statOpts := &vfs.StatOptions{Mask: linux.STATX_ALL}
+	stat, err := s.VFS.StatAt(s.Ctx, s.Creds, s.PathOpAtRoot("/proc/gvisor/checkpoint"), statOpts)
+	if err != nil {
+		t.Fatalf("Stat(/proc/gvisor/checkpoint): %v", err)
+	}
+
+	// Stack additional procfs mounts on /proc. Each is a distinct procfs
+	// instance, and all of them are alive simultaneously.
+	const numMounts = 2000
+	pop := s.PathOpAtRoot("/proc")
+	mntOpts := &vfs.MountOptions{
+		GetFilesystemOptions: vfs.GetFilesystemOptions{
+			InternalData: &InternalData{},
+		},
+	}
+	for i := 0; i < numMounts; i++ {
+		if _, err := s.VFS.MountAt(s.Ctx, s.Creds, "", pop, Name, mntOpts); err != nil {
+			t.Fatalf("MountAt(/proc) failed after %d additional mounts: %v", i, err)
+		}
+	}
+
+	// All procfs instances should report the same device number for
+	// /proc/gvisor/checkpoint, as Linux character device major numbers are
+	// global rather than per-superblock.
+	newStat, err := s.VFS.StatAt(s.Ctx, s.Creds, s.PathOpAtRoot("/proc/gvisor/checkpoint"), statOpts)
+	if err != nil {
+		t.Fatalf("Stat(/proc/gvisor/checkpoint): %v", err)
+	}
+	if newStat.RdevMajor != stat.RdevMajor {
+		t.Errorf("/proc/gvisor/checkpoint rdev major = %d, want %d", newStat.RdevMajor, stat.RdevMajor)
+	}
+}
+
 func TestTasksWithOverrideProc(t *testing.T) {
 	s := setupWithData(t, &InternalData{
 		Cgroups: map[string]string{
