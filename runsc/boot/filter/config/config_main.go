@@ -124,6 +124,14 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 			seccomp.EqualTo(linux.FIONREAD),
 			seccomp.AnyValue{}, /* int* */
 		},
+		// Needed to take reflink snapshots of the writable-layer filestore
+		// backing files inside the checkpoint's freeze window
+		// (--filestore-snapshot-dir).
+		seccomp.PerArg{
+			seccomp.NonNegativeFD{},         /* fd (snapshot destination) */
+			seccomp.EqualTo(linux.FICLONE),
+			seccomp.NonNegativeFD{}, /* fd (filestore source) */
+		},
 		// These commands are needed for terminal support, but we only allow
 		// setting/getting termios and winsize.
 		seccomp.PerArg{
