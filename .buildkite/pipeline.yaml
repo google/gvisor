@@ -112,6 +112,7 @@ steps:
       - "make build OPTIONS='--build_tag_filters=-network_plugins' TARGETS='//runsc/...'"
     agents:
       arch: "arm64"
+      queue: "arm64"
 
   # Build everything (continuous only).
   - <<: *common
@@ -182,7 +183,7 @@ steps:
       - make gpu-smoke-tests
       - make sudo TARGETS=//tools/gpu:main ARGS="validate_checksum"
     agents:
-      queue: gpu
+      queue: "ubuntu-gpu"
   - <<: *common
     <<: *source_test_continuous
     label: ":bun: COS Latest Driver Compatibility Test"
@@ -197,7 +198,7 @@ steps:
       - make sudo TARGETS=//tools/gpu:main ARGS="install --latest"
       - make gpu-all-tests
     agents:
-      queue: gpu
+      queue: "ubuntu-gpu"
   - <<: *common
     <<: *gpu_test_continuous
     label: ":nuget: L4 GPU Tests"
@@ -205,7 +206,7 @@ steps:
       - make sudo TARGETS=//tools/gpu:main ARGS="install --latest"
       - make l4-gpu-tests
     agents:
-      queue: l4-gpu
+      queue: "ubuntu-l4-gpu"
   - <<: *common
     <<: *gpu_test
     label: ":female_supervillain: COS GPU Tests"
@@ -225,7 +226,7 @@ steps:
       - make sudo TARGETS=//tools/gpu:main ARGS="install --latest"
       - make cuda-12-8-tests
     agents:
-      queue: gpu
+      queue: "ubuntu-gpu"
   - <<: *common
     <<: *gpu_test
     label: ":screwdriver: All GPU Drivers Test"
@@ -233,7 +234,7 @@ steps:
     commands:
       - tools/gpu/all_drivers_test.sh
     agents:
-      queue: gpu
+      queue: "ubuntu-gpu"
 
   # Release workflow test.
   - <<: *common

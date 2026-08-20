@@ -28,6 +28,7 @@ steps:
       - make ARCH=x86_64 REMOTE_IMAGE_PREFIX=gcr.io/gvisor-presubmit DOCKER_PUSH_AS_LATEST=true push-all-images
     agents:
       arch: "amd64"
+      queue: "release"
   - <<: *common
     label: ":ship: Push all images (aarch64)"
     if: build.branch == "master" && build.tag == null
@@ -36,6 +37,7 @@ steps:
       - make ARCH=aarch64 REMOTE_IMAGE_PREFIX=gcr.io/gvisor-presubmit DOCKER_PUSH_AS_LATEST=true push-all-images
     agents:
       arch: "arm64"
+      queue: "release-arm64"
   - <<: *common
     label: ":slot_machine: Syzkaller smoke test"
     if: build.branch == "master" && build.tag == null
@@ -43,6 +45,7 @@ steps:
       - make syzkaller-smoke-test
     agents:
       arch: "amd64"
+      queue: "release"
   - <<: *common
     label: ":ship: Release"
     if: build.branch == "master" || build.tag != null
@@ -51,6 +54,8 @@ steps:
       - "make BAZEL_OPTIONS='--config=aarch64 --compilation_mode=opt' artifacts/aarch64"
       - make release RELEASE_NIGHTLY=$$RELEASE_NIGHTLY
       - cd repo && gcloud storage cp --recursive . gs://gvisor/releases/
+    agents:
+      queue: "release"
   - <<: *common
     label: ":ship: Website Deploy"
     if: build.branch == "master" && build.tag == null
@@ -59,23 +64,26 @@ steps:
       - make BAZEL_OPTIONS=--config=x86_64 website-deploy
     agents:
       arch: "amd64"
+      queue: "release"
   - <<: *common
     label: ":bun: COS Latest Driver Compatibility Test"
     commands:
       - tools/gpu/cos_drivers_test.sh
+    agents:
+      queue: "cos"
   - <<: *common
     label: ":female_supervillain: COS GPU Tests"
     commands:
       - make cos-gpu-all-tests
     agents:
-      queue: cos-canary-gpu
+      queue: "cos-canary-gpu"
   - <<: *common
     label: ":screwdriver: GPU Tests"
     commands:
       - make sudo TARGETS=//tools/gpu:main ARGS="install --latest"
       - make gpu-all-tests
     agents:
-      queue: gpu
+      queue: "ubuntu-gpu"
   - label: ":batfish: CUDA 12.8 tests"
     # This is its own test rather than being part of the GPU tests,
     # because it takes around 30 minutes to run.
@@ -87,11 +95,11 @@ steps:
       - make sudo TARGETS=//tools/gpu:main ARGS="install --latest"
       - make cuda-12-8-tests
     agents:
-      queue: gpu
+      queue: "ubuntu-gpu"
   - <<: *common
     label: ":screwdriver: All GPU Drivers Test"
     parallelism: 8
     commands:
       - tools/gpu/all_drivers_test.sh
     agents:
-      queue: gpu
+      queue: "ubuntu-gpu"
