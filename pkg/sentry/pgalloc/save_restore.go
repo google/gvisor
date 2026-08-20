@@ -17,10 +17,13 @@ package pgalloc
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"math"
+	"os"
 	"runtime"
 	"sync/atomic"
 	"time"
@@ -193,6 +196,128 @@ type SaveOpts struct {
 	ExternalContent bool
 }
 
+// fingerprintChunkSize is the amount of data sampled from each end of a file
+// for ContentExternalFingerprint.
+const fingerprintChunkSize = 4096
+
+// fingerprintFile returns an O(1)-cost sampled fingerprint of file: the hex
+// SHA-256 of the first and last fingerprintChunkSize bytes of the file. It is
+// used to detect "same size, different contents" mistakes when adopting a
+// host file as a MemoryFile's externally-saved content.
+func fingerprintFile(file *os.File) (string, error) {
+	fi, err := file.Stat()
+	if err != nil {
+		return "", err
+	}
+	h := sha256.New()
+	size := fi.Size()
+	var buf [fingerprintChunkSize]byte
+	readAt := func(off int64) error {
+		n, err := file.ReadAt(buf[:], off)
+		if err != nil && err != io.EOF {
+			return err
+		}
+		h.Write(buf[:n])
+		return nil
+	}
+	if size > 0 {
+		if err := readAt(0); err != nil {
+			return "", err
+		}
+		if size > fingerprintChunkSize {
+			if err := readAt(size - fingerprintChunkSize); err != nil {
+				return "", err
+			}
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// externalContentInfoLocked returns the exact size and sampled fingerprint to
+// record for an ExternalContent save. If SnapshotToFd() captured an in-window
+// snapshot during the current save, the snapshot's values are used (reflink
+// guarantees they stay stable even if the original file diverges after the
+// window, e.g. with leave-running); otherwise the backing file's current
+// values are sampled (valid because the kernel is paused throughout the save).
+//
+// Precondition: f.mu is locked.
+func (f *MemoryFile) externalContentInfoLocked() (uint64, string, error) {
+	if f.externalSavedFingerprint != "" {
+		return f.externalSavedSize, f.externalSavedFingerprint, nil
+	}
+	if f.file == nil {
+		return 0, "", fmt.Errorf("MemoryFile %p has no backing file to fingerprint", f)
+	}
+	fi, err := f.file.Stat()
+	if err != nil {
+		return 0, "", fmt.Errorf("failed to stat backing file: %w", err)
+	}
+	fp, err := fingerprintFile(f.file)
+	if err != nil {
+		return 0, "", fmt.Errorf("failed to fingerprint backing file: %w", err)
+	}
+	return uint64(fi.Size()), fp, nil
+}
+
+// BeginSaveWindow clears the snapshot credentials stashed by a previous
+// window's SnapshotToFd(). It must be called at the start of every save
+// window, before any SnapshotToFd()/SaveTo(ExternalContent) calls: without
+// it, a later ExternalContent save on the same live MemoryFile (e.g. a
+// plain --skip-filestore-pages checkpoint following a
+// --filestore-snapshot-dir one) would embed the stale size and fingerprint
+// of the old snapshot instead of describing the backing file's current
+// contents.
+func (f *MemoryFile) BeginSaveWindow() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.externalSavedSize = 0
+	f.externalSavedFingerprint = ""
+}
+
+// SnapshotToFd reflink-clones (FICLONE) the backing file's current contents to
+// dst, and records the snapshot's size and sampled fingerprint for the ongoing
+// save, so that SaveTo(ExternalContent) embeds values describing the snapshot
+// rather than the original (which may diverge after the save window).
+//
+// It is used to internalize the filestore snapshot into the checkpoint's
+// freeze window (runsc checkpoint --filestore-snapshot-dir), making the
+// snapshot and the saved memory-state metadata describe the same instant.
+//
+// Precondition: the kernel is paused (no writers to the backing file), and
+// SaveTo(ExternalContent) is called on the same MemoryFile afterwards. Both
+// the backing file and dst must be on a filesystem supporting reflink
+// (e.g. XFS/btrfs); otherwise this fails loudly (EOPNOTSUPP/EXDEV).
+func (f *MemoryFile) SnapshotToFd(dst *os.File) (size uint64, fingerprint string, err error) {
+	if f.file == nil {
+		return 0, "", fmt.Errorf("MemoryFile %p has no backing file to snapshot", f)
+	}
+	if _, _, errno := unix.Syscall(unix.SYS_IOCTL, dst.Fd(), unix.FICLONE, f.file.Fd()); errno != 0 {
+		return 0, "", fmt.Errorf("FICLONE of filestore backing file to snapshot failed (%w); --filestore-snapshot-dir requires a reflink-capable filesystem (e.g. XFS) for both the backing filestore and the snapshot directory", errno)
+	}
+	if err := dst.Sync(); err != nil {
+		return 0, "", fmt.Errorf("failed to fsync filestore snapshot: %w", err)
+	}
+	fi, err := dst.Stat()
+	if err != nil {
+		return 0, "", fmt.Errorf("failed to stat filestore snapshot: %w", err)
+	}
+	fp, err := fingerprintFile(dst)
+	if err != nil {
+		return 0, "", fmt.Errorf("failed to fingerprint filestore snapshot: %w", err)
+	}
+	f.externalSavedSize = uint64(fi.Size())
+	f.externalSavedFingerprint = fp
+	return f.externalSavedSize, f.externalSavedFingerprint, nil
+}
+
+// ChunkCount returns the number of chunks currently tracked by f. It is used
+// by in-checkpoint snapshotting to record artifact chunk counts.
+func (f *MemoryFile) ChunkCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.chunksLoad())
+}
+
 // SaveTo writes f's state to the given stream.
 func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) error {
 	if err := f.AwaitLoadAll(); err != nil {
@@ -225,9 +350,21 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) er
 		// file's contents, which may outlive this MemoryFile via an
 		// externally-held fd referencing the same inode.
 		f.contentExternal = true
+		// Record the exact size and a sampled fingerprint of the content
+		// source so that LoadFrom() can reject a wrong or diverged adopted
+		// file. If an in-checkpoint snapshot (SnapshotToFd) already captured
+		// the contents during this save window, its recorded values are used:
+		// the snapshot file is reflink-stable while the original may diverge
+		// after the window (leave-running).
+		extSize, extFP, err := f.externalContentInfoLocked()
+		if err != nil {
+			return err
+		}
 		timeMetadataStart := gohacks.Nanotime()
 		pb := f.exportMetadataProto()
 		pb.ContentExternal = true
+		pb.ContentExternalFileSize = extSize
+		pb.ContentExternalFingerprint = extFP
 		data, err := proto.Marshal(pb)
 		if err != nil {
 			return fmt.Errorf("failed to marshal metadata: %w", err)
@@ -1100,8 +1237,25 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 		if err != nil {
 			return fmt.Errorf("failed to stat adopted MemoryFile file: %w", err)
 		}
-		if uint64(fi.Size()) < fileSize {
+		if pb.ContentExternalFileSize != 0 {
+			// Exact size match: an artifact with a different size cannot be
+			// the file that was checkpointed, even if it is large enough.
+			if uint64(fi.Size()) != pb.ContentExternalFileSize {
+				return fmt.Errorf("adopted MemoryFile file size %d != checkpointed filestore size %d (wrong or diverged filestore artifact)", fi.Size(), pb.ContentExternalFileSize)
+			}
+		} else if uint64(fi.Size()) < fileSize {
+			// Legacy checkpoint (saved before size/fingerprint recording):
+			// keep the weaker lower-bound check.
 			return fmt.Errorf("adopted MemoryFile file size %d is smaller than required %d (state checkpoint and filestore artifact mismatch?)", fi.Size(), fileSize)
+		}
+		if pb.ContentExternalFingerprint != "" {
+			fp, err := fingerprintFile(f.file)
+			if err != nil {
+				return fmt.Errorf("failed to fingerprint adopted MemoryFile file: %w", err)
+			}
+			if fp != pb.ContentExternalFingerprint {
+				return fmt.Errorf("adopted MemoryFile file fingerprint mismatch: got %s, checkpoint expects %s (artifact contents differ from the checkpointed filestore, e.g. the original filestore diverged after a leave-running checkpoint)", fp[:16], pb.ContentExternalFingerprint[:16])
+			}
 		}
 	}
 	if err := f.file.Truncate(int64(fileSize)); err != nil {
