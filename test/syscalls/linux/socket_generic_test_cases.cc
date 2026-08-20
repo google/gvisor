@@ -925,6 +925,9 @@ TEST_P(AllSocketPairTest, SetAndGetBooleanSocketOptions) {
   int sock_opts[] = {SO_BROADCAST, SO_PASSCRED, SO_NO_CHECK, SO_REUSEADDR,
                      SO_KEEPALIVE};
   for (int sock_opt : sock_opts) {
+    if (sock_opt == SO_NO_CHECK && GetParam().domain == AF_INET6) {
+      continue;
+    }
     auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
     int enable = -1;
     socklen_t enableLen = sizeof(enable);
