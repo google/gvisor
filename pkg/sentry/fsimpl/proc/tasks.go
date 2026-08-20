@@ -88,6 +88,7 @@ func (fs *filesystem) newTasksInode(ctx context.Context, k *kernel.Kernel, pidns
 		"fs":             fs.newStaticDir(ctx, root, map[string]kernfs.Inode{}),
 		"irq":            fs.newStaticDir(ctx, root, map[string]kernfs.Inode{}),
 		"meminfo":        fs.newInode(ctx, root, 0444, &meminfoData{}),
+		"modules":        fs.newInode(ctx, root, 0444, newStaticFile("")),
 		"mounts":         kernfs.NewStaticSymlink(ctx, root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), "self/mounts"),
 		"net":            kernfs.NewStaticSymlink(ctx, root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), "self/net"),
 		"sentry-meminfo": fs.newInode(ctx, root, 0444, &sentryMeminfoData{}),
