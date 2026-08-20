@@ -9,6 +9,7 @@ go_library(
     name = "container",
     srcs = [
         "container.go",
+        "filestore_snapshot.go",
         "gofer_to_host_rpc.go",
         "null_netns.go",
         "state_file.go",
@@ -22,6 +23,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/cleanup",
         "//pkg/log",
+        "//pkg/sentry/checkpoint",
         "//pkg/sentry/control",
         "//pkg/sentry/fsimpl/erofs",
         "//pkg/sentry/fsimpl/tmpfs",
