@@ -94,6 +94,16 @@ steps:
     agents:
       arch: "amd64"
 
+  # Build and Push Python SandboxExec Wheel (presubmits only).
+  - <<: *common
+    <<: *source_test_presubmit
+    label: ":python: Build and Push Python SandboxExec Wheel"
+    commands:
+      - make artifacts-python
+      - tools/make_python_release.sh upload-wheel artifacts/python
+    agents:
+      arch: "amd64"
+
   # Build runsc and pkg (presubmits only).
   - <<: *common
     <<: *source_test_presubmit
