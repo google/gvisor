@@ -714,7 +714,7 @@ func savePrivateMFs(ctx context.Context, w io.Writer, mfsToSave map[checkpoint.R
 // pagesMetadata, and pagesFile, even if it returns a non-nil error.
 //
 // Preconditions: The kernel must be paused throughout the call to SaveTo.
-func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCloser, pagesFile stateio.AsyncWriter, appMFExcludeCommittedZeroPages, privateMFExternalContent, resume bool) error {
+func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCloser, pagesFile stateio.AsyncWriter, appMFExcludeCommittedZeroPages, privateMFExternalContent, resume bool, fsSnapshots []checkpoint.FilestoreSnapshot, fsSidecar io.Writer) error {
 	if hostarch.PageSize != 4096 {
 		return fmt.Errorf("save is not supported with %dK page size", hostarch.PageSize/1024)
 	}
@@ -752,6 +752,34 @@ func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCl
 		k.mf.MarkSavable()
 		for _, mf := range mfsToSave {
 			mf.MarkSavable()
+		}
+
+		// Start a fresh save window on every private MemoryFile: snapshot
+		// credentials stashed by a previous window's SnapshotToFd() must not
+		// leak into this save's ExternalContent metadata (a plain
+		// --skip-filestore-pages save following a --filestore-snapshot-dir
+		// one must describe the backing file's current contents).
+		for _, mf := range mfsToSave {
+			mf.BeginSaveWindow()
+		}
+
+		// Take in-window filestore snapshots (--filestore-snapshot-dir): the
+		// kernel is paused, so there are no writers to the backing files; the
+		// snapshot therefore describes exactly the instant the metadata
+		// below will describe. Snapshots are recorded (size + sampled
+		// fingerprint) on the MemoryFiles so that their ExternalContent save
+		// embeds values describing the snapshot rather than the original
+		// file, which may diverge after the window (leave-running).
+		if len(fsSnapshots) > 0 {
+			entries, err := k.snapshotFilestores(mfsToSave, fsSnapshots)
+			if err != nil {
+				return err
+			}
+			if fsSidecar != nil {
+				if err := writeFilestoreSidecar(fsSidecar, entries); err != nil {
+					return fmt.Errorf("failed to write filestores.json sidecar: %w", err)
+				}
+			}
 		}
 
 		var (

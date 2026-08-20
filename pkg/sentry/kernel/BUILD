@@ -272,6 +272,7 @@ go_library(
         "fs_context_mutex.go",
         "fs_context_refs.go",
         "fs_save_mutex.go",
+        "filestore_snapshot.go",
         "fscheckpoint.go",
         "ipc_namespace.go",
         "kcov.go",
