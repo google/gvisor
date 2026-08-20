@@ -59,6 +59,7 @@ var (
 		"irq":            linux.DT_DIR,
 		"loadavg":        linux.DT_REG,
 		"meminfo":        linux.DT_REG,
+		"modules":        linux.DT_REG,
 		"mounts":         linux.DT_LNK,
 		"net":            linux.DT_LNK,
 		"self":           linux.DT_LNK,
