@@ -814,6 +814,7 @@ func (vfs *VirtualFilesystem) BindAt(ctx context.Context, creds *auth.Credential
 	vfs.delayDecRef(clone)
 	clone.locked = false
 	if err := vfs.attachTreeLocked(ctx, clone, mp, false); err != nil {
+		vfs.setPropagation(clone, linux.MS_PRIVATE)
 		vfs.abortUncomittedChildren(ctx, clone)
 		return err
 	}
