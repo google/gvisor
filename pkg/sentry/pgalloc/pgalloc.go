@@ -203,6 +203,14 @@ type MemoryFile struct {
 	// its contents. contentExternal is protected by mu.
 	contentExternal bool
 
+	// externalSavedSize/externalSavedFingerprint record the exact size and
+	// sampled fingerprint of the snapshot taken by SnapshotToFd() during the
+	// current save window (empty fingerprint = no snapshot taken; the backing
+	// file itself is then fingerprinted by SaveTo inside the window). They
+	// are only written and read while the kernel is paused during a save.
+	externalSavedSize        uint64
+	externalSavedFingerprint string
+
 	// stopNotifyPressure stops memory cgroup pressure level
 	// notifications used to drive eviction. stopNotifyPressure is
 	// immutable.

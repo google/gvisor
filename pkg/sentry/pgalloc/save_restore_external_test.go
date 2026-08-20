@@ -201,6 +201,89 @@ func TestExternalContentRejectsUndersizedAdoption(t *testing.T) {
 	}
 }
 
+// TestExternalContentRejectsSizeMismatch verifies that adopting a file whose
+// size differs from the checkpointed filestore size fails exactly (a larger
+// artifact is no longer accepted either).
+func TestExternalContentRejectsSizeMismatch(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "filestore")
+
+	orig := newTestMemoryFile(t, path, false)
+	fr, err := orig.Allocate(hostarch.PageSize, AllocOpts{Kind: usage.Anonymous})
+	if err != nil {
+		t.Fatalf("Allocate: %v", err)
+	}
+	writeTestRange(t, orig, fr, 0x33)
+
+	var buf bytes.Buffer
+	if err := orig.SaveTo(context.Background(), &buf, &SaveOpts{ExternalContent: true}); err != nil {
+		t.Fatalf("SaveTo(ExternalContent): %v", err)
+	}
+	metadataImage := buf.Bytes()
+
+	// Grow the host file beyond the saved size: large enough per the legacy
+	// lower-bound check, but not the exact recorded size.
+	if err := os.Truncate(path, 4*hostarch.PageSize); err != nil {
+		t.Fatalf("truncate: %v", err)
+	}
+
+	adopted := newTestMemoryFile(t, path, true)
+	if err := adopted.LoadFrom(context.Background(), bytes.NewReader(metadataImage), &LoadOpts{}); err == nil {
+		t.Fatal("LoadFrom(ContentExternal) with oversized adopted file unexpectedly succeeded")
+	}
+}
+
+// TestExternalContentRejectsDivergedContents verifies the sampled
+// fingerprint: an adopted file with the SAME size but DIFFERENT contents
+// (e.g. the original filestore kept running after a leave-running
+// checkpoint) must be rejected instead of silently restoring foreign data.
+func TestExternalContentRejectsDivergedContents(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "filestore")
+
+	orig := newTestMemoryFile(t, path, false)
+	// Ensure the file is larger than the 4KiB fingerprint sampling chunk so
+	// the mutation lands inside a sampled region (first chunk).
+	const nPages = 3
+	var frs []memmap.FileRange
+	for i := 0; i < nPages; i++ {
+		fr, err := orig.Allocate(hostarch.PageSize, AllocOpts{Kind: usage.Anonymous})
+		if err != nil {
+			t.Fatalf("Allocate: %v", err)
+		}
+		writeTestRange(t, orig, fr, 0x44)
+		frs = append(frs, fr)
+	}
+
+	var buf bytes.Buffer
+	if err := orig.SaveTo(context.Background(), &buf, &SaveOpts{ExternalContent: true}); err != nil {
+		t.Fatalf("SaveTo(ExternalContent): %v", err)
+	}
+	metadataImage := buf.Bytes()
+
+	// Diverge the contents at the same size (post-leave-running divergence).
+	func() {
+		f, err := os.OpenFile(path, os.O_RDWR, 0)
+		if err != nil {
+			t.Fatalf("open for mutation: %v", err)
+		}
+		defer f.Close()
+		mutation := make([]byte, hostarch.PageSize)
+		for i := range mutation {
+			mutation[i] = 0x99
+		}
+		if _, err := f.WriteAt(mutation, 0); err != nil {
+			t.Fatalf("WriteAt: %v", err)
+		}
+	}()
+
+	adopted := newTestMemoryFile(t, path, true)
+	if err := adopted.LoadFrom(context.Background(), bytes.NewReader(metadataImage), &LoadOpts{}); err == nil {
+		t.Fatal("LoadFrom(ContentExternal) with diverged same-size contents unexpectedly succeeded")
+	}
+	_ = frs
+}
+
 // newTestMemoryFileDecommit is newTestMemoryFile with a DecommitOnDestroy
 // override, mimicking runsc's createPrivateMemoryFile (upstream default:
 // DecommitOnDestroy true for disk-backed private memory files).
@@ -302,5 +385,83 @@ func TestDefaultSaveStillDecommitsOnDestroy(t *testing.T) {
 			t.Fatalf("host file contents survived Destroy after a default (non-external) save; DecommitOnDestroy regression")
 		}
 		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// TestExternalContentSnapshotCredentialsResetPerSaveWindow verifies that the
+// snapshot credentials stashed by SnapshotToFd() during one save window do
+// not leak into a subsequent window's ExternalContent metadata. Simulates a
+// --filestore-snapshot-dir checkpoint followed (on the same live MemoryFile)
+// by a plain --skip-filestore-pages checkpoint after the original diverged:
+// the second save must describe the backing file's current contents.
+func TestExternalContentSnapshotCredentialsResetPerSaveWindow(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "filestore")
+	stalePath := filepath.Join(dir, "filestore-stale-snapshot")
+
+	orig := newTestMemoryFile(t, path, false)
+	const nPages = 3
+	for i := 0; i < nPages; i++ {
+		fr, err := orig.Allocate(hostarch.PageSize, AllocOpts{Kind: usage.Anonymous})
+		if err != nil {
+			t.Fatalf("Allocate: %v", err)
+		}
+		writeTestRange(t, orig, fr, 0x44)
+	}
+
+	// The "stale snapshot artifact": same size, different contents in the
+	// fingerprint-sampled region (what the file looked like at window 1).
+	staleData := make([]byte, nPages*hostarch.PageSize)
+	for i := range staleData {
+		staleData[i] = 0x77
+	}
+	if err := os.WriteFile(stalePath, staleData, 0600); err != nil {
+		t.Fatalf("WriteFile(stale): %v", err)
+	}
+
+	// Emulate the state left behind by a completed window-1 SnapshotToFd()
+	// (FICLONE is not available on all test filesystems, so stash the
+	// credentials the snapshot would have recorded directly).
+	func() {
+		sf, err := os.Open(stalePath)
+		if err != nil {
+			t.Fatalf("open stale: %v", err)
+		}
+		defer sf.Close()
+		fp, err := fingerprintFile(sf)
+		if err != nil {
+			t.Fatalf("fingerprintFile(stale): %v", err)
+		}
+		fi, err := sf.Stat()
+		if err != nil {
+			t.Fatalf("stat stale: %v", err)
+		}
+		orig.mu.Lock()
+		defer orig.mu.Unlock()
+		orig.externalSavedSize = uint64(fi.Size())
+		orig.externalSavedFingerprint = fp
+	}()
+
+	// Window 2 (plain ExternalContent save): BeginSaveWindow must discard
+	// the stale credentials so the metadata describes the current file.
+	orig.BeginSaveWindow()
+	var buf bytes.Buffer
+	if err := orig.SaveTo(context.Background(), &buf, &SaveOpts{ExternalContent: true}); err != nil {
+		t.Fatalf("SaveTo(ExternalContent): %v", err)
+	}
+	metadataImage := buf.Bytes()
+
+	// Adopting the CURRENT backing file must succeed; without the reset it
+	// would be rejected against the stale window-1 fingerprint.
+	adopted := newTestMemoryFile(t, path, true)
+	if err := adopted.LoadFrom(context.Background(), bytes.NewReader(metadataImage), &LoadOpts{}); err != nil {
+		t.Fatalf("LoadFrom(ContentExternal) against current file failed (stale window-1 credentials leaked): %v", err)
+	}
+
+	// Adopting the stale snapshot artifact for window-2 metadata must fail:
+	// it no longer describes the backing file's contents.
+	staleAdopted := newTestMemoryFile(t, stalePath, true)
+	if err := staleAdopted.LoadFrom(context.Background(), bytes.NewReader(metadataImage), &LoadOpts{}); err == nil {
+		t.Fatal("LoadFrom(ContentExternal) against stale snapshot artifact unexpectedly succeeded")
 	}
 }
