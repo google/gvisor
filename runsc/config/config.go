@@ -111,6 +111,15 @@ type Config struct {
 	// the private MemoryFile contents that the checkpoint does not carry.
 	FilestoreAdoptDir string `flag:"filestore-adopt-dir"`
 
+	// FilestoreCloneOnAdopt makes restore adopt a reflink (FICLONE) private
+	// copy of each filestore artifact instead of the artifact itself. This
+	// keeps the artifact an immutable template: multiple restores from the
+	// same directory get write-isolated copies at O(1) cost, and the restored
+	// sandbox's truncation/mutation never touches the template. It requires a
+	// reflink-capable filesystem; set it to false for a consuming restore that
+	// mutates the artifacts in place (e.g. fd-hold fallbacks on ext4).
+	FilestoreCloneOnAdopt bool `flag:"filestore-clone-on-adopt"`
+
 	// FSGoferHostUDS is deprecated: use host-uds=all.
 	FSGoferHostUDS bool `flag:"fsgofer-host-uds"`
 

@@ -851,6 +851,15 @@ func (c *Container) Checkpoint(conf *config.Config, imagePath string, opts sandb
 	if err := c.requireStatus("checkpoint", Created, Running, Paused); err != nil {
 		return err
 	}
+	if opts.FilestoreSnapshotDir != "" {
+		targets, destFiles, sidecar, err := c.prepareFilestoreSnapshot(opts.FilestoreSnapshotDir)
+		if err != nil {
+			return err
+		}
+		opts.FilestoreSnapshotTargets = targets
+		opts.FilestoreSnapshotFiles = destFiles
+		opts.FilestoreSidecarFile = sidecar
+	}
 	return c.Sandbox.Checkpoint(conf, c.ID, imagePath, opts)
 }
 
@@ -1158,13 +1167,21 @@ func (c *Container) createGoferFilestores(conf *config.Config, ovlConf config.Ov
 
 	// If set, adopt pre-existing host files (from a checkpoint artifact) as
 	// the filestores instead of creating new anonymous ones, in mount order
-	// (root first).
-	adoptDir := conf.FilestoreAdoptDir
-	adoptIdx := 0
+	// (root first). Artifacts are selected by sidecar resource identity when
+	// a runsc-issued filestores.json is present, and reflink-cloned when
+	// --filestore-clone-on-adopt is enabled (default).
+	var adopter *filestoreAdopter
+	if conf.FilestoreAdoptDir != "" {
+		var aerr error
+		adopter, aerr = newFilestoreAdopter(conf, c)
+		if aerr != nil {
+			return nil, aerr
+		}
+	}
 
 	// Handle rootfs first.
 	rootfsConf := c.GoferMountConfs[0]
-	filestore, err := c.createGoferFilestore(goferRootfs, ovlConf, rootfsConf, c.Spec.Root.Path, mountHints, adoptDir, &adoptIdx)
+	filestore, err := c.createGoferFilestore(goferRootfs, ovlConf, rootfsConf, c.Spec.Root.Path, "/", mountHints, adopter)
 	if err != nil {
 		return nil, err
 	}
@@ -1180,7 +1197,7 @@ func (c *Container) createGoferFilestores(conf *config.Config, ovlConf config.Ov
 		}
 		mountConf := c.GoferMountConfs[mountIdx]
 		mountIdx++
-		filestore, err := c.createGoferFilestore(goferRootfs, ovlConf, mountConf, m.Source, mountHints, adoptDir, &adoptIdx)
+		filestore, err := c.createGoferFilestore(goferRootfs, ovlConf, mountConf, m.Source, m.Destination, mountHints, adopter)
 		if err != nil {
 			return nil, err
 		}
@@ -1196,21 +1213,23 @@ func (c *Container) createGoferFilestores(conf *config.Config, ovlConf config.Ov
 	return goferFilestores, nil
 }
 
-func (c *Container) createGoferFilestore(goferRootfs string, ovlConf config.Overlay2, goferConf specutils.GoferMountConf, mountSrc string, mountHints *boot.PodMountHints, adoptDir string, adoptIdx *int) (*os.File, error) {
+func (c *Container) createGoferFilestore(goferRootfs string, ovlConf config.Overlay2, goferConf specutils.GoferMountConf, mountSrc string, mountDest string, mountHints *boot.PodMountHints, adopter *filestoreAdopter) (*os.File, error) {
 	if !goferConf.IsFilestorePresent() {
 		return nil, nil
+	}
+	if adopter != nil && goferConf.Upper == specutils.SelfOverlay {
+		// Adoption only supports anonymous filestores (overlay2 dir= medium).
+		// A self-overlay filestore is a named file inside the mount source;
+		// adopting it would make two restores (e.g. fan-out from the same
+		// checkpoint) silently share one writable file. Fail loudly instead.
+		return nil, fmt.Errorf("--filestore-adopt-dir supports anonymous filestores only (overlay2 'dir=' medium); mount %q uses the self overlay medium and its named filestore cannot be adopted", mountSrc)
 	}
 	switch goferConf.Upper {
 	case specutils.SelfOverlay:
 		return c.createGoferFilestoreInSelf(goferRootfs, mountSrc, mountHints)
 	case specutils.AnonOverlay:
-		if adoptDir != "" {
-			filestore, err := c.adoptGoferFilestoreInDir(adoptDir, *adoptIdx)
-			if err != nil {
-				return nil, err
-			}
-			*adoptIdx++
-			return filestore, nil
+		if adopter != nil {
+			return adopter.adopt(c, mountDest)
 		}
 		return c.createGoferFilestoreInDir(goferRootfs, ovlConf.Medium().HostFileDir())
 	default:
@@ -1268,34 +1287,6 @@ func (c *Container) createGoferFilestoreInDir(goferRootfs string, filestoreDir s
 		return nil, fmt.Errorf("failed to unlink temporary file %q: %v", filestoreFile.Name(), err)
 	}
 	log.Debugf("Created an unnamed filestore file at %q", filestoreDir)
-	return filestoreFile, nil
-}
-
-// adoptGoferFilestoreInDir opens a pre-existing host file from a checkpoint
-// artifact directory to adopt as a filestore, instead of creating a new
-// anonymous one. The file is NOT unlinked and NOT truncated here: its
-// contents must remain intact for the sandbox's private MemoryFile to adopt
-// during state checkpoint restore.
-func (c *Container) adoptGoferFilestoreInDir(adoptDir string, idx int) (*os.File, error) {
-	if !path.IsAbs(adoptDir) {
-		return nil, fmt.Errorf("filestore adopt directory %q must be an absolute path", adoptDir)
-	}
-	filestorePath := path.Join(adoptDir, fmt.Sprintf("filestore-%d", idx))
-	fileInfo, err := os.Stat(filestorePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to stat filestore artifact %q: %v", filestorePath, err)
-	}
-	if !fileInfo.Mode().IsRegular() {
-		return nil, fmt.Errorf("filestore artifact %q is not a regular file", filestorePath)
-	}
-	if fileInfo.Size() == 0 {
-		return nil, fmt.Errorf("filestore artifact %q is empty; it must contain the adopted writable-layer contents", filestorePath)
-	}
-	filestoreFile, err := os.OpenFile(filestorePath, unix.O_RDWR|unix.O_CLOEXEC, 0)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open filestore artifact %q: %v", filestorePath, err)
-	}
-	log.Debugf("Adopting filestore file at %q", filestorePath)
 	return filestoreFile, nil
 }
 
