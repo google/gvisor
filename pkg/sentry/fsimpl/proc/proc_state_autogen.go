@@ -16,8 +16,7 @@ func (f *checkpointInode) StateFields() []string {
 	return []string{
 		"InodeAttrs",
 		"InodeNoStatFS",
-		"fdInfoDirInodeRefs",
-		"InodeTemporary",
+		"InodeNoopRefCount",
 		"InodeNotAnonymous",
 		"InodeNotDirectory",
 		"InodeNotSymlink",
@@ -37,17 +36,16 @@ func (f *checkpointInode) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 	stateSinkObject.Save(0, &f.InodeAttrs)
 	stateSinkObject.Save(1, &f.InodeNoStatFS)
-	stateSinkObject.Save(2, &f.fdInfoDirInodeRefs)
-	stateSinkObject.Save(3, &f.InodeTemporary)
-	stateSinkObject.Save(4, &f.InodeNotAnonymous)
-	stateSinkObject.Save(5, &f.InodeNotDirectory)
-	stateSinkObject.Save(6, &f.InodeNotSymlink)
-	stateSinkObject.Save(7, &f.InodeWatches)
-	stateSinkObject.Save(8, &f.InodeFSOwned)
-	stateSinkObject.Save(9, &f.locks)
-	stateSinkObject.Save(10, &f.k)
-	stateSinkObject.Save(11, &f.rdevMajor)
-	stateSinkObject.Save(12, &f.saveTriggerEnabled)
+	stateSinkObject.Save(2, &f.InodeNoopRefCount)
+	stateSinkObject.Save(3, &f.InodeNotAnonymous)
+	stateSinkObject.Save(4, &f.InodeNotDirectory)
+	stateSinkObject.Save(5, &f.InodeNotSymlink)
+	stateSinkObject.Save(6, &f.InodeWatches)
+	stateSinkObject.Save(7, &f.InodeFSOwned)
+	stateSinkObject.Save(8, &f.locks)
+	stateSinkObject.Save(9, &f.k)
+	stateSinkObject.Save(10, &f.rdevMajor)
+	stateSinkObject.Save(11, &f.saveTriggerEnabled)
 }
 
 func (f *checkpointInode) afterLoad(context.Context) {}
@@ -56,17 +54,16 @@ func (f *checkpointInode) afterLoad(context.Context) {}
 func (f *checkpointInode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.InodeAttrs)
 	stateSourceObject.Load(1, &f.InodeNoStatFS)
-	stateSourceObject.Load(2, &f.fdInfoDirInodeRefs)
-	stateSourceObject.Load(3, &f.InodeTemporary)
-	stateSourceObject.Load(4, &f.InodeNotAnonymous)
-	stateSourceObject.Load(5, &f.InodeNotDirectory)
-	stateSourceObject.Load(6, &f.InodeNotSymlink)
-	stateSourceObject.Load(7, &f.InodeWatches)
-	stateSourceObject.Load(8, &f.InodeFSOwned)
-	stateSourceObject.Load(9, &f.locks)
-	stateSourceObject.Load(10, &f.k)
-	stateSourceObject.Load(11, &f.rdevMajor)
-	stateSourceObject.Load(12, &f.saveTriggerEnabled)
+	stateSourceObject.Load(2, &f.InodeNoopRefCount)
+	stateSourceObject.Load(3, &f.InodeNotAnonymous)
+	stateSourceObject.Load(4, &f.InodeNotDirectory)
+	stateSourceObject.Load(5, &f.InodeNotSymlink)
+	stateSourceObject.Load(6, &f.InodeWatches)
+	stateSourceObject.Load(7, &f.InodeFSOwned)
+	stateSourceObject.Load(8, &f.locks)
+	stateSourceObject.Load(9, &f.k)
+	stateSourceObject.Load(10, &f.rdevMajor)
+	stateSourceObject.Load(11, &f.saveTriggerEnabled)
 }
 
 func (fd *checkpointFD) StateTypeName() string {
@@ -153,8 +150,7 @@ func (i *fsCheckpointInode) StateFields() []string {
 	return []string{
 		"InodeAttrs",
 		"InodeNoStatFS",
-		"fdInfoDirInodeRefs",
-		"InodeTemporary",
+		"InodeNoopRefCount",
 		"InodeNotAnonymous",
 		"InodeNotDirectory",
 		"InodeNotSymlink",
@@ -173,16 +169,15 @@ func (i *fsCheckpointInode) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.InodeAttrs)
 	stateSinkObject.Save(1, &i.InodeNoStatFS)
-	stateSinkObject.Save(2, &i.fdInfoDirInodeRefs)
-	stateSinkObject.Save(3, &i.InodeTemporary)
-	stateSinkObject.Save(4, &i.InodeNotAnonymous)
-	stateSinkObject.Save(5, &i.InodeNotDirectory)
-	stateSinkObject.Save(6, &i.InodeNotSymlink)
-	stateSinkObject.Save(7, &i.InodeWatches)
-	stateSinkObject.Save(8, &i.InodeFSOwned)
-	stateSinkObject.Save(9, &i.locks)
-	stateSinkObject.Save(10, &i.k)
-	stateSinkObject.Save(11, &i.rdevMajor)
+	stateSinkObject.Save(2, &i.InodeNoopRefCount)
+	stateSinkObject.Save(3, &i.InodeNotAnonymous)
+	stateSinkObject.Save(4, &i.InodeNotDirectory)
+	stateSinkObject.Save(5, &i.InodeNotSymlink)
+	stateSinkObject.Save(6, &i.InodeWatches)
+	stateSinkObject.Save(7, &i.InodeFSOwned)
+	stateSinkObject.Save(8, &i.locks)
+	stateSinkObject.Save(9, &i.k)
+	stateSinkObject.Save(10, &i.rdevMajor)
 }
 
 func (i *fsCheckpointInode) afterLoad(context.Context) {}
@@ -191,16 +186,15 @@ func (i *fsCheckpointInode) afterLoad(context.Context) {}
 func (i *fsCheckpointInode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.InodeAttrs)
 	stateSourceObject.Load(1, &i.InodeNoStatFS)
-	stateSourceObject.Load(2, &i.fdInfoDirInodeRefs)
-	stateSourceObject.Load(3, &i.InodeTemporary)
-	stateSourceObject.Load(4, &i.InodeNotAnonymous)
-	stateSourceObject.Load(5, &i.InodeNotDirectory)
-	stateSourceObject.Load(6, &i.InodeNotSymlink)
-	stateSourceObject.Load(7, &i.InodeWatches)
-	stateSourceObject.Load(8, &i.InodeFSOwned)
-	stateSourceObject.Load(9, &i.locks)
-	stateSourceObject.Load(10, &i.k)
-	stateSourceObject.Load(11, &i.rdevMajor)
+	stateSourceObject.Load(2, &i.InodeNoopRefCount)
+	stateSourceObject.Load(3, &i.InodeNotAnonymous)
+	stateSourceObject.Load(4, &i.InodeNotDirectory)
+	stateSourceObject.Load(5, &i.InodeNotSymlink)
+	stateSourceObject.Load(6, &i.InodeWatches)
+	stateSourceObject.Load(7, &i.InodeFSOwned)
+	stateSourceObject.Load(8, &i.locks)
+	stateSourceObject.Load(9, &i.k)
+	stateSourceObject.Load(10, &i.rdevMajor)
 }
 
 func (f *fsCheckpointFile) StateTypeName() string {

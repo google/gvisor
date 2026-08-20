@@ -220,6 +220,14 @@ func (r *RegisterDeviceOptions) StateLoad(ctx context.Context, stateSourceObject
 	stateSourceObject.Load(2, &r.FilePerms)
 }
 
+func (s *SharedDynamicCharDevMajorKey) StateTypeName() string {
+	return "pkg/sentry/vfs.SharedDynamicCharDevMajorKey"
+}
+
+func (s *SharedDynamicCharDevMajorKey) StateFields() []string {
+	return nil
+}
+
 func (ep *EpollInstance) StateTypeName() string {
 	return "pkg/sentry/vfs.EpollInstance"
 }
@@ -2205,6 +2213,7 @@ func (vfs *VirtualFilesystem) StateFields() []string {
 		"anonMount",
 		"devices",
 		"dynCharDevMajorUsed",
+		"dynCharDevMajorShared",
 		"anonBlockDevMinorNext",
 		"anonBlockDevMinor",
 		"fsTypes",
@@ -2225,22 +2234,21 @@ func (vfs *VirtualFilesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.SaveValue(0, mountsValue)
 	mountPromisesValue := vfs.saveMountPromises()
 	_ = (map[VirtualDentry]*mountPromise)(mountPromisesValue)
-	stateSinkObject.SaveValue(12, mountPromisesValue)
+	stateSinkObject.SaveValue(13, mountPromisesValue)
 	stateSinkObject.Save(1, &vfs.mountpoints)
 	stateSinkObject.Save(2, &vfs.lastMountID)
 	stateSinkObject.Save(3, &vfs.lastMountNamespaceID)
 	stateSinkObject.Save(4, &vfs.anonMount)
 	stateSinkObject.Save(5, &vfs.devices)
 	stateSinkObject.Save(6, &vfs.dynCharDevMajorUsed)
-	stateSinkObject.Save(7, &vfs.anonBlockDevMinorNext)
-	stateSinkObject.Save(8, &vfs.anonBlockDevMinor)
-	stateSinkObject.Save(9, &vfs.fsTypes)
-	stateSinkObject.Save(10, &vfs.filesystems)
-	stateSinkObject.Save(11, &vfs.groupIDBitmap)
-	stateSinkObject.Save(13, &vfs.toDecRef)
+	stateSinkObject.Save(7, &vfs.dynCharDevMajorShared)
+	stateSinkObject.Save(8, &vfs.anonBlockDevMinorNext)
+	stateSinkObject.Save(9, &vfs.anonBlockDevMinor)
+	stateSinkObject.Save(10, &vfs.fsTypes)
+	stateSinkObject.Save(11, &vfs.filesystems)
+	stateSinkObject.Save(12, &vfs.groupIDBitmap)
+	stateSinkObject.Save(14, &vfs.toDecRef)
 }
-
-func (vfs *VirtualFilesystem) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (vfs *VirtualFilesystem) StateLoad(ctx context.Context, stateSourceObject state.Source) {
@@ -2250,14 +2258,16 @@ func (vfs *VirtualFilesystem) StateLoad(ctx context.Context, stateSourceObject s
 	stateSourceObject.Load(4, &vfs.anonMount)
 	stateSourceObject.Load(5, &vfs.devices)
 	stateSourceObject.Load(6, &vfs.dynCharDevMajorUsed)
-	stateSourceObject.Load(7, &vfs.anonBlockDevMinorNext)
-	stateSourceObject.Load(8, &vfs.anonBlockDevMinor)
-	stateSourceObject.Load(9, &vfs.fsTypes)
-	stateSourceObject.Load(10, &vfs.filesystems)
-	stateSourceObject.Load(11, &vfs.groupIDBitmap)
-	stateSourceObject.Load(13, &vfs.toDecRef)
+	stateSourceObject.Load(7, &vfs.dynCharDevMajorShared)
+	stateSourceObject.Load(8, &vfs.anonBlockDevMinorNext)
+	stateSourceObject.Load(9, &vfs.anonBlockDevMinor)
+	stateSourceObject.Load(10, &vfs.fsTypes)
+	stateSourceObject.Load(11, &vfs.filesystems)
+	stateSourceObject.Load(12, &vfs.groupIDBitmap)
+	stateSourceObject.Load(14, &vfs.toDecRef)
 	stateSourceObject.LoadValue(0, new([]*Mount), func(y any) { vfs.loadMounts(ctx, y.([]*Mount)) })
-	stateSourceObject.LoadValue(12, new(map[VirtualDentry]*mountPromise), func(y any) { vfs.loadMountPromises(ctx, y.(map[VirtualDentry]*mountPromise)) })
+	stateSourceObject.LoadValue(13, new(map[VirtualDentry]*mountPromise), func(y any) { vfs.loadMountPromises(ctx, y.(map[VirtualDentry]*mountPromise)) })
+	stateSourceObject.AfterLoad(func() { vfs.afterLoad(ctx) })
 }
 
 func (p *PathOperation) StateTypeName() string {
@@ -2331,6 +2341,7 @@ func init() {
 	state.Register((*devTuple)(nil))
 	state.Register((*registeredDevice)(nil))
 	state.Register((*RegisterDeviceOptions)(nil))
+	state.Register((*SharedDynamicCharDevMajorKey)(nil))
 	state.Register((*EpollInstance)(nil))
 	state.Register((*epollInterestKey)(nil))
 	state.Register((*epollInterest)(nil))

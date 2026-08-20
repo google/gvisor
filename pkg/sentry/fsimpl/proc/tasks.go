@@ -66,7 +66,7 @@ type tasksInode struct {
 
 var _ kernfs.Inode = (*tasksInode)(nil)
 
-func (fs *filesystem) newTasksInode(ctx context.Context, k *kernel.Kernel, pidns *kernel.PIDNamespace, internalData *InternalData) *tasksInode {
+func (fs *filesystem) newTasksInode(ctx context.Context, k *kernel.Kernel, pidns *kernel.PIDNamespace, internalData *InternalData) (*tasksInode, error) {
 	root := auth.NewRootCredentials(pidns.UserNamespace())
 
 	// /proc is expected to have inode number
@@ -107,7 +107,11 @@ func (fs *filesystem) newTasksInode(ctx context.Context, k *kernel.Kernel, pidns
 	for _, name := range internalData.OverrideProcs {
 		contents[name] = fs.newInode(ctx, root, 0444, newStaticFile(""))
 	}
-	if gvisorDir := fs.newGvisorInode(ctx, root, internalData, k); gvisorDir != nil {
+	gvisorDir, err := fs.newGvisorInode(ctx, root, internalData, k)
+	if err != nil {
+		return nil, err
+	}
+	if gvisorDir != nil {
 		contents["gvisor"] = gvisorDir
 	}
 
@@ -123,7 +127,7 @@ func (fs *filesystem) newTasksInode(ctx context.Context, k *kernel.Kernel, pidns
 	links := inode.OrderedChildren.Populate(contents)
 	inode.IncLinks(links)
 
-	return inode
+	return inode, nil
 }
 
 // Lookup implements kernfs.inodeDirectory.Lookup.
