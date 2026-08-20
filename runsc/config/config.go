@@ -317,8 +317,8 @@ type Config struct {
 	// Don't configure cgroups.
 	IgnoreCgroups bool `flag:"ignore-cgroups"`
 
-	// Mount cgroup v2 instead of cgroup v1 inside the sandbox.
-	MountCgroupV2 bool `flag:"mount-cgroup-v2"`
+	// InSandboxCgroup indicates the cgroup setup inside the sandbox.
+	InSandboxCgroup InSandboxCgroupType `flag:"in-sandbox-cgroup"`
 
 	// Use systemd to configure cgroups.
 	SystemdCgroup bool `flag:"systemd-cgroup"`
@@ -837,6 +837,50 @@ func (n *GoferNetworkNamespace) Get() any {
 // String implements flag.Value.
 func (n GoferNetworkNamespace) String() string {
 	return string(n)
+}
+
+// InSandboxCgroupType tells which cgroup setup to use inside the sandbox.
+type InSandboxCgroupType int
+
+const (
+	// InSandboxCgroupV1 mounts cgroup v1 inside the sandbox.
+	InSandboxCgroupV1 InSandboxCgroupType = iota
+
+	// InSandboxCgroupV2 mounts cgroup v2 inside the sandbox.
+	InSandboxCgroupV2
+)
+
+func inSandboxCgroupTypePtr(v InSandboxCgroupType) *InSandboxCgroupType {
+	return &v
+}
+
+// Set implements flag.Value. Set(String()) should be idempotent.
+func (c *InSandboxCgroupType) Set(v string) error {
+	switch v {
+	case "v1":
+		*c = InSandboxCgroupV1
+	case "v2":
+		*c = InSandboxCgroupV2
+	default:
+		return fmt.Errorf("invalid in-sandbox-cgroup %q", v)
+	}
+	return nil
+}
+
+// Get implements flag.Value.
+func (c *InSandboxCgroupType) Get() any {
+	return *c
+}
+
+// String implements flag.Value.
+func (c InSandboxCgroupType) String() string {
+	switch c {
+	case InSandboxCgroupV1:
+		return "v1"
+	case InSandboxCgroupV2:
+		return "v2"
+	}
+	panic(fmt.Sprintf("Invalid in-sandbox cgroup type %d", c))
 }
 
 // QueueingDiscipline is used to specify the kind of Queueing Discipline to

@@ -104,7 +104,7 @@ apps:
     category: "System software"
     verdict: "experimental"
     version: "259.5"
-    notes: "Requires the experimental `--mount-cgroup-v2` runsc flag."
+    notes: "Requires the `--in-sandbox-cgroup=v2` runsc flag."
     test_source: "test/e2e/systemd_test.go"
 
   - name: "Apache Kafka"
