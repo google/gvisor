@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"golang.org/x/sync/errgroup"
+
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
@@ -73,16 +74,27 @@ func optionsToPrecompile() ([]Options, error) {
 			return newOpts, nil
 		},
 
-		// Only precompile options with host networking disabled.
+		// Precompile various networking options.
 		func(opt Options) ([]Options, error) {
-			opt.HostNetwork = false
-			return []Options{opt}, nil
+			netstack := opt
+			netstack.HostNetwork = false
+			netstack.HostNetworkRawSockets = false
+			hostNet := opt
+			hostNet.HostNetwork = true
+			hostNet.HostNetworkRawSockets = false
+			hostNetRaw := opt
+			hostNetRaw.HostNetwork = true
+			hostNetRaw.HostNetworkRawSockets = true
+			return []Options{netstack, hostNet, hostNetRaw}, nil
 		},
 
-		// Only precompile options with DirectFS enabled.
+		// Precompile options with DirectFS enabled & disabled.
 		func(opt Options) ([]Options, error) {
-			opt.HostFilesystem = true
-			return []Options{opt}, nil
+			directfs := opt
+			directfs.HostFilesystem = true
+			noDirectfs := opt
+			noDirectfs.HostFilesystem = false
+			return []Options{directfs, noDirectfs}, nil
 		},
 
 		// Expand NVProxy and its possible configurations.
