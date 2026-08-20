@@ -590,7 +590,6 @@ steps:
     agents:
       <<: *platform_specific_agents
       arch: "amd64"
-      kernel: "modern"
   - <<: *common
     <<: *docker
     label: ":golang: Go runtime tests"
@@ -607,7 +606,6 @@ steps:
     agents:
       <<: *platform_specific_agents
       arch: "amd64"
-      kernel: "modern"
   - <<: *common
     <<: *docker
     label: ":python: Python runtime tests"
