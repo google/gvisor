@@ -303,6 +303,9 @@ type BoundEndpoint interface {
 	// successful connect. The callback should only be called on a successful
 	// connect.
 	//
+	// returnConnect is invoked synchronously while the ConnectingEndpoint's
+	// lock is held. The callback must not acquire that lock.
+	//
 	// For a connection attempt to be successful, the ConnectingEndpoint must
 	// be unconnected and not listening and the BoundEndpoint whose
 	// BidirectionalConnect method is being called must be listening.
@@ -551,10 +554,17 @@ func (q *queueReceiver) Release(ctx context.Context) {
 type streamQueueReceiver struct {
 	queueReceiver
 
-	mu      streamQueueReceiverMutex `state:"nosave"`
-	buffer  []byte
+	mu streamQueueReceiverMutex `state:"nosave"`
+
+	// +checklocks:mu
+	buffer []byte
+
+	// control is protected by mu while the receiver is in use. Release accesses
+	// it without mu after the owner has stopped using the receiver.
 	control ControlMessages
-	addr    Address
+
+	// +checklocks:mu
+	addr Address
 }
 
 func vecCopy(data [][]byte, buf []byte) (int64, [][]byte, []byte) {
@@ -724,6 +734,8 @@ func (q *streamQueueReceiver) Recv(ctx context.Context, data [][]byte, args Recv
 }
 
 // Release implements Receiver.Release.
+//
+// Preconditions: no other operation may use q during or after Release.
 func (q *streamQueueReceiver) Release(ctx context.Context) {
 	q.queueReceiver.Release(ctx)
 	q.control.Release(ctx)
@@ -923,37 +935,48 @@ type baseEndpoint struct {
 
 	tcpip.DefaultSocketOptionsHandler
 
-	// Mutex protects the below fields.
-	//
 	// See the lock ordering comment in package kernel/epoll regarding when
 	// this lock can safely be held.
 	endpointMutex `state:"nosave"`
 
 	// receiver allows Messages to be received.
+	//
+	// receiver and peer are initialized before publication and subsequently
+	// accessed under endpointMutex. Connect installs them in the synchronous
+	// returnConnect callback, which BidirectionalConnect invokes with the
+	// connecting endpoint locked. Checklocks cannot propagate that lock context
+	// through the callback parameter or track private constructor results.
 	receiver Receiver
 
 	// peer is the Sender through which this endpoint's sends reach its
 	// peer socket; it also exposes the send-side state (writability,
 	// shutdown) of that connection.
+	// See receiver for synchronization.
 	peer Sender
 
 	// path is not empty if the endpoint has been bound,
 	// or may be used if the endpoint is connected.
+	//
+	// +checklocks:endpointMutex
 	path string
 
 	// sendShutdown is true if the write side of the endpoint has been
 	// shut down without closing the peer's read side: sends fail with
 	// EPIPE, but the peer is unaffected. This is how shutdown(SHUT_WR)
-	// behaves on datagram sockets. Protected by endpointMutex.
+	// behaves on datagram sockets.
+	//
+	// +checklocks:endpointMutex
 	sendShutdown bool
 
 	// ops is used to get socket level options.
 	ops tcpip.SocketOptions
 
-	// lastError is the last error returned by getsockopt(SO_ERROR).
-	// This field is protected by lastErrorMu.
 	lastErrorMu sync.Mutex `state:"nosave"`
-	lastError   tcpip.Error
+
+	// lastError is the last error returned by getsockopt(SO_ERROR).
+	//
+	// +checklocks:lastErrorMu
+	lastError tcpip.Error
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
@@ -995,7 +1018,7 @@ func (e *baseEndpoint) ConnectedPasscred() bool {
 
 // Connected implements ConnectingEndpoint.Connected.
 //
-// Preconditions: e.mu must be held.
+// +checklocks:e.endpointMutex
 func (e *baseEndpoint) Connected() bool {
 	return e.receiver != nil && e.peer != nil
 }
