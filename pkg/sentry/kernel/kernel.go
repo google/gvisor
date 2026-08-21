@@ -421,6 +421,11 @@ type Kernel struct {
 	// when checkpoint/restore are done. It's protected by checkpointMu.
 	checkpointGen CheckpointGeneration
 
+	// checkpointInFlight is the number of checkpoint attempts that have begun
+	// (BeginCheckpoint) but not yet completed (OnCheckpointAttempt). It's
+	// protected by checkpointMu.
+	checkpointInFlight int `state:"nosave"`
+
 	// SaveRestoreExecConfig stores configuration options for the save/restore
 	// exec binary.
 	SaveRestoreExecConfig *SaveRestoreExecConfig
