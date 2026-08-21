@@ -374,6 +374,42 @@ void CheckNetfilterChainAttributes(const NfChainCheckOptions& options) {
     EXPECT_EQ(user_data_attr, nullptr);
     EXPECT_EQ(options.expected_udata_size, nullptr);
   }
+
+  // Check for the NFTA_CHAIN_COUNTERS attribute.
+  const struct nfattr* counters_attr =
+      FindNfAttr(options.hdr, nullptr, NFTA_CHAIN_COUNTERS);
+  if (counters_attr != nullptr && (options.expected_packets != nullptr ||
+                                   options.expected_bytes != nullptr)) {
+    size_t payload_len = NFA_PAYLOAD(counters_attr);
+    const char* payload_ptr =
+        reinterpret_cast<const char*>(NFA_DATA(counters_attr));
+    std::vector<const struct nfattr*> nested_attrs =
+        ParseNfAttrs(absl::MakeSpan(payload_ptr, payload_len));
+    const struct nfattr* packets_attr = nullptr;
+    const struct nfattr* bytes_attr = nullptr;
+    for (const struct nfattr* sub_attr : nested_attrs) {
+      if (sub_attr->nfa_type == NFTA_COUNTER_PACKETS) {
+        packets_attr = sub_attr;
+      } else if (sub_attr->nfa_type == NFTA_COUNTER_BYTES) {
+        bytes_attr = sub_attr;
+      }
+    }
+    if (options.expected_packets != nullptr) {
+      ASSERT_NE(packets_attr, nullptr);
+      uint64_t packets = GetNfAttrU64(packets_attr);
+      EXPECT_EQ(packets, *options.expected_packets);
+    }
+    if (options.expected_bytes != nullptr) {
+      ASSERT_NE(bytes_attr, nullptr);
+      uint64_t bytes = GetNfAttrU64(bytes_attr);
+      EXPECT_EQ(bytes, *options.expected_bytes);
+    }
+  } else if (options.expected_packets != nullptr ||
+             options.expected_bytes != nullptr) {
+    EXPECT_NE(counters_attr, nullptr);
+  } else {
+    EXPECT_EQ(counters_attr, nullptr);
+  }
 }
 
 void CheckNetfilterRuleExprAttributes(

@@ -43,6 +43,7 @@ package nftables
 import (
 	"fmt"
 	"slices"
+	"sync/atomic"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -401,6 +402,34 @@ type Chain struct {
 
 	// comment is the optional comment for the table.
 	comment string
+
+	// counter is the counter for base chains with NFTA_CHAIN_COUNTERS attached.
+	counter *ChainCounter
+}
+
+// ChainCounter maintains thread-safe packet and byte counters for base chains.
+type ChainCounter struct {
+	bytes   atomic.Uint64
+	packets atomic.Uint64
+}
+
+// newChainCounter creates a new counter with initial byte and packet counts.
+func newChainCounter(startBytes, startPackets uint64) *ChainCounter {
+	c := &ChainCounter{}
+	c.bytes.Store(startBytes)
+	c.packets.Store(startPackets)
+	return c
+}
+
+// Value returns the current packet and byte value.
+func (c *ChainCounter) Value() (bytes, packets uint64) {
+	return c.bytes.Load(), c.packets.Load()
+}
+
+// Add increments the values.
+func (c *ChainCounter) Add(pkts, bytes uint64) {
+	c.packets.Add(pkts)
+	c.bytes.Add(bytes)
 }
 
 // TODO(b/345684870): BaseChainInfo Implementation. Encode how bcType affects
@@ -1283,6 +1312,11 @@ func deepCopyChain(chain *Chain, tableCopy *Table) *Chain {
 		userData:     slices.Clone(chain.userData),
 		chainUse:     chain.chainUse,
 		comment:      chain.comment,
+	}
+
+	if chain.counter != nil {
+		pktBytes, pkts := chain.counter.Value()
+		chainCopy.counter = newChainCounter(pktBytes, pkts)
 	}
 
 	// LINT.IfChange(base_chain_info_copy)
