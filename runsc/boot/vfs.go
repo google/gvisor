@@ -130,7 +130,7 @@ func registerFilesystems(k *kernel.Kernel, info *containerInfo, rdmaSnapshot *rd
 		AllowUserMount: true,
 		AllowUserList:  true,
 	})
-	if info.conf.MountCgroupV2 {
+	if info.conf.InSandboxCgroup == config.InSandboxCgroupV2 {
 		vfsObj.MustRegisterFilesystemType(cgroup2fs.Name, &cgroup2fs.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
 			AllowUserMount: true,
 			AllowUserList:  true,
@@ -284,7 +284,7 @@ func setupContainerVFS(ctx context.Context, info *containerInfo, mntr *container
 
 	// If cgroups are mounted, then only check for the cgroup mounts per
 	// container. Otherwise the root cgroups will be enabled.
-	if mntr.cgroupsMounted && !info.conf.MountCgroupV2 {
+	if mntr.cgroupsMounted && info.conf.InSandboxCgroup != config.InSandboxCgroupV2 {
 		cgroupRegistry := mntr.l.k.CgroupRegistry()
 		for _, ctrl := range kernel.CgroupCtrls {
 			cg, err := cgroupRegistry.FindCgroup(ctx, ctrl, "/"+mntr.containerID)
@@ -339,7 +339,7 @@ func compileMounts(spec *specs.Spec, conf *config.Config, containerID string) []
 
 	// Mount all submounts from the spec.
 	for _, m := range spec.Mounts {
-		if conf.MountCgroupV2 {
+		if conf.InSandboxCgroup == config.InSandboxCgroupV2 {
 			// Under this flag, we only want a single unified mount at
 			// /sys/fs/cgroup. Skip any legacy v1 controller sub-mounts
 			// (e.g., /sys/fs/cgroup/cpu) requested by the OCI spec.
@@ -885,9 +885,9 @@ func (c *containerMounter) mountSubmounts(ctx context.Context, spec *specs.Spec,
 				return fmt.Errorf("mount shared mount %q to %q: %v", submount.hint.Name, submount.mount.Destination, err)
 			}
 		} else if submount.mount.Type == cgroupfs.Name || submount.mount.Type == cgroup2fs.Name {
-			if conf.MountCgroupV2 {
+			if conf.InSandboxCgroup == config.InSandboxCgroupV2 {
 				// There is no "type: cgroup2" defined in the OCI spec.
-				// So, when the runsc flag MountCgroupV2 is set, we honor the
+				// So, when the runsc flag InSandboxCgroup is set to v2, we honor the
 				// OCI request for "type: cgroupfs" by a v2 mount.
 				if submount.mount.Type == cgroupfs.Name {
 					submount.mount.Type = cgroup2fs.Name

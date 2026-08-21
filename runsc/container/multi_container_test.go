@@ -2373,7 +2373,7 @@ func TestMultiContainerEvent(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			conf := testutil.TestConfig(t)
 			if name == "enableCgroupsV2" {
-				conf.MountCgroupV2 = true
+				conf.InSandboxCgroup = config.InSandboxCgroupV2
 			}
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {
@@ -2510,7 +2510,7 @@ func TestMultiContainerEvent(t *testing.T) {
 
 func TestCgroupV2ReadControlFile(t *testing.T) {
 	conf := testutil.TestConfig(t)
-	conf.MountCgroupV2 = true
+	conf.InSandboxCgroup = config.InSandboxCgroupV2
 
 	rootDir, cleanup, err := testutil.SetupRootDir()
 	if err != nil {
@@ -2581,7 +2581,7 @@ func TestCgroupV2ReadControlFile(t *testing.T) {
 // mount in its spec is never given a cgroup2 node.
 func TestMultiContainerCgroupV2Destroy(t *testing.T) {
 	conf := testutil.TestConfig(t)
-	conf.MountCgroupV2 = true
+	conf.InSandboxCgroup = config.InSandboxCgroupV2
 
 	rootDir, cleanup, err := testutil.SetupRootDir()
 	if err != nil {
@@ -3233,7 +3233,7 @@ func TestMultiContainerCgroupsMemoryUsage(t *testing.T) {
 		for name, conf := range configs(t, false /* noOverlay */) {
 			if cgroupV2 {
 				name += "-cgroupV2"
-				conf.MountCgroupV2 = true
+				conf.InSandboxCgroup = config.InSandboxCgroupV2
 			}
 			t.Run(name, func(t *testing.T) {
 				rootDir, cleanup, err := testutil.SetupRootDir()

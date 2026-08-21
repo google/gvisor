@@ -281,8 +281,8 @@ type Loader struct {
 	sharedMounts map[string]*vfs.Mount
 
 	// cgroup2Mount is an internal mount of the cgroup2fs singleton used to
-	// manage per-container cgroups. It is only set when MountCgroupV2 is
-	// enabled.
+	// manage per-container cgroups. It is only set when InSandboxCgroup is
+	// InSandboxCgroupV2.
 	//
 	// +checklocks:mu
 	cgroup2Mount *vfs.Mount
@@ -1515,7 +1515,7 @@ func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGrou
 	l.startGoferMonitor(info)
 
 	if l.root.cid == l.sandboxID {
-		if l.root.conf.MountCgroupV2 {
+		if l.root.conf.InSandboxCgroup == config.InSandboxCgroupV2 {
 			if err := l.setupCgroup2(); err != nil {
 				return nil, nil, err
 			}
@@ -1526,7 +1526,7 @@ func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGrou
 			}
 		}
 	}
-	if l.root.conf.MountCgroupV2 {
+	if l.root.conf.InSandboxCgroup == config.InSandboxCgroupV2 {
 		// Create the container's cgroup and resolve its cgroup namespace
 		// before the container's mounts are set up, so that its
 		// /sys/fs/cgroup mount is rooted per the namespace.
@@ -1671,7 +1671,7 @@ func (l *Loader) destroySubcontainer(cid string) error {
 	// Cleanup the device gofer.
 	l.k.RemoveDevGofer(l.k.ContainerName(cid))
 
-	if l.root.conf.MountCgroupV2 {
+	if l.root.conf.InSandboxCgroup == config.InSandboxCgroupV2 {
 		l.removeContainerCgroup2(cid)
 	}
 
@@ -1718,7 +1718,7 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 	}
 	args.PIDNamespace = tg.PIDNamespace()
 
-	if l.root.conf.MountCgroupV2 {
+	if l.root.conf.InSandboxCgroup == config.InSandboxCgroupV2 {
 		// Join the container's cgroup and cgroup namespace, like Linux's
 		// runc exec does.
 		leader := tg.Leader()
