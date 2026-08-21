@@ -47,6 +47,10 @@
 #define SYS_SECCOMP 1
 #endif
 
+#ifndef SECCOMP_RET_KILL_PROCESS
+#define SECCOMP_RET_KILL_PROCESS 0x80000000U
+#endif
+
 namespace gvisor {
 namespace testing {
 
@@ -215,6 +219,42 @@ TEST(SeccompTest, RetKillOnlyKillsOneThread) {
   int status;
   ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
   EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << "status " << status;
+}
+
+TEST(SeccompTest, RetKillProcessKillsWholeThreadGroup) {
+  Mapping stack = ASSERT_NO_ERRNO_AND_VALUE(
+      MmapAnon(2 * kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE));
+
+  pid_t const pid = fork();
+  if (pid == 0) {
+    // Register a signal handler for SIGSYS that we don't expect to be invoked.
+    RegisterSignalHandler(SIGSYS, +[](int, siginfo_t*, void*) { _exit(1); });
+    ApplySeccompFilter(kFilteredSyscall, SECCOMP_RET_KILL_PROCESS);
+    // Pass CLONE_VFORK to block the original thread in the child process until
+    // the clone thread exits. Unlike SECCOMP_RET_KILL, which only kills the
+    // offending thread, SECCOMP_RET_KILL_PROCESS must terminate the whole
+    // thread group, so the CLONE_VFORK-blocked original thread dies too.
+    //
+    // N.B. clone(2) is not officially async-signal-safe, but at minimum glibc's
+    // x86_64 implementation is safe. See glibc
+    // sysdeps/unix/sysv/linux/x86_64/clone.S.
+    clone(
+        +[](void* arg) {
+          syscall(kFilteredSyscall);  // should kill the whole thread group
+          _exit(1);                   // should be unreachable
+          return 2;  // should be very unreachable, shut up the compiler
+        },
+        stack.endptr(),
+        CLONE_FILES | CLONE_FS | CLONE_SIGHAND | CLONE_THREAD | CLONE_VM |
+            CLONE_VFORK,
+        nullptr);
+    _exit(0);  // Should be unreachable: the group exit killed this thread.
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGSYS)
       << "status " << status;
 }
 
