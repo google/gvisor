@@ -52,6 +52,8 @@ type EventFileDescription struct {
 	mu sync.Mutex `state:"nosave"`
 
 	// val is the current value of the event counter.
+	//
+	// +checklocks:mu
 	val uint64
 
 	// semMode specifies whether the event is in "semaphore" mode.
@@ -174,7 +176,7 @@ func (efd *EventFileDescription) Write(ctx context.Context, src usermem.IOSequen
 	return 8, nil
 }
 
-// Preconditions: Must be called with efd.mu locked.
+// +checklocks:efd.mu
 func (efd *EventFileDescription) hostReadLocked(ctx context.Context, dst usermem.IOSequence) error {
 	var buf [8]byte
 	if _, err := unix.Read(efd.hostfd, buf[:]); err != nil {
@@ -224,7 +226,7 @@ func (efd *EventFileDescription) read(ctx context.Context, dst usermem.IOSequenc
 	return err
 }
 
-// Preconditions: Must be called with efd.mu locked.
+// +checklocks:efd.mu
 func (efd *EventFileDescription) hostWriteLocked(val uint64) error {
 	var buf [8]byte
 	hostarch.ByteOrder.PutUint64(buf[:], val)
