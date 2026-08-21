@@ -113,14 +113,19 @@ type VirtualFilesystem struct {
 	devicesMu sync.RWMutex `state:"nosave"`
 	devices   map[devTuple]*registeredDevice
 
+	dynCharDevMajorMu sync.Mutex `state:"nosave"`
+
 	// dynCharDevMajorUsed contains all allocated dynamic character device
-	// major numbers. dynCharDevMajor is protected by dynCharDevMajorMu.
+	// major numbers.
 	//
+	// +checklocks:dynCharDevMajorMu
+	dynCharDevMajorUsed map[uint32]struct{}
+
 	// dynCharDevMajorShared maps keys passed to
 	// GetSharedDynamicCharDevMajor() to the major number allocated for that
-	// key. dynCharDevMajorShared is protected by dynCharDevMajorMu.
-	dynCharDevMajorMu     sync.Mutex `state:"nosave"`
-	dynCharDevMajorUsed   map[uint32]struct{}
+	// key.
+	//
+	// +checklocks:dynCharDevMajorMu
 	dynCharDevMajorShared map[SharedDynamicCharDevMajorKey]uint32
 
 	// anonBlockDevMinor contains all allocated anonymous block device minor
@@ -162,8 +167,10 @@ func (vfs *VirtualFilesystem) Init(ctx context.Context) error {
 	}
 	vfs.mountpoints = make(map[*Dentry]map[*Mount]struct{})
 	vfs.devices = make(map[devTuple]*registeredDevice)
+	vfs.dynCharDevMajorMu.Lock()
 	vfs.dynCharDevMajorUsed = make(map[uint32]struct{})
 	vfs.dynCharDevMajorShared = make(map[SharedDynamicCharDevMajorKey]uint32)
+	vfs.dynCharDevMajorMu.Unlock()
 	vfs.anonBlockDevMinorNext = 1
 	vfs.anonBlockDevMinor = make(map[uint32]struct{})
 	vfs.fsTypes = make(map[string]*registeredFilesystemType)
