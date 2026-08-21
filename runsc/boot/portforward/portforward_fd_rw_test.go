@@ -146,12 +146,22 @@ type waiterRW struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.NoLockFD
 	vfs.DentryMetadataFileDescriptionImpl
-	buf        bytes.Buffer
-	waitMu     sync.Mutex
-	entries    []*waiter.Entry
+
+	// +checklocks:waitMu
+	buf bytes.Buffer
+
+	waitMu sync.Mutex
+
+	// +checklocks:waitMu
+	entries []*waiter.Entry
+
+	// +checklocks:waitMu
 	shouldWait bool
-	quit       chan bool
-	closed     bool
+
+	quit chan bool
+
+	// +checklocks:waitMu
+	closed bool
 }
 
 var _ vfs.FileDescriptionImpl = (*waiterRW)(nil)
@@ -225,6 +235,8 @@ func (w *waiterRW) EventRegister(we *waiter.Entry) error {
 
 // EventUnregister implements vfs.FileDescriptionImpl.Unregister details for the parent mockFileDescription.
 func (w *waiterRW) EventUnregister(we *waiter.Entry) {
+	w.waitMu.Lock()
+	defer w.waitMu.Unlock()
 	for i, e := range w.entries {
 		if e == we {
 			w.entries = append(w.entries[:i], w.entries[i+1:]...)
@@ -334,10 +346,14 @@ func TestReaderWriter(t *testing.T) {
 }
 
 type blockingConn struct {
-	name                 string
-	inRead               chan struct{}
-	mu                   sync.Mutex
-	readExited           bool
+	name   string
+	inRead chan struct{}
+	mu     sync.Mutex
+
+	// +checklocks:mu
+	readExited bool
+
+	// +checklocks:mu
 	closedBeforeReadExit bool
 }
 
