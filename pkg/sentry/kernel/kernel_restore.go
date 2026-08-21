@@ -41,8 +41,8 @@ type Saver interface {
 //
 // +stateify savable
 type CheckpointGeneration struct {
-	// Count is incremented every time a checkpoint is triggered, even if the
-	// checkpoint failed.
+	// Count is incremented after each checkpoint attempt, including failures,
+	// and on restore.
 	Count uint32
 	// Restore indicates if the current instance resumed after the checkpoint or
 	// it was restored from a checkpoint.
@@ -50,6 +50,9 @@ type CheckpointGeneration struct {
 }
 
 // AddStateToCheckpoint adds a key-value pair to be additionally checkpointed.
+//
+// +checklocksexclude:k.checkpointMu
+// +checklocksexclude:k.CheckpointWait.mu
 func (k *Kernel) AddStateToCheckpoint(key, v any) {
 	k.checkpointMu.Lock()
 	defer k.checkpointMu.Unlock()
@@ -61,6 +64,9 @@ func (k *Kernel) AddStateToCheckpoint(key, v any) {
 
 // PopCheckpointState pops a key-value pair from the additional checkpoint
 // state. If the key doesn't exist, nil is returned.
+//
+// +checklocksexclude:k.checkpointMu
+// +checklocksexclude:k.CheckpointWait.mu
 func (k *Kernel) PopCheckpointState(key any) any {
 	k.checkpointMu.Lock()
 	defer k.checkpointMu.Unlock()
@@ -73,6 +79,9 @@ func (k *Kernel) PopCheckpointState(key any) any {
 
 // SetSaver sets the kernel's Saver.
 // Thread-compatible.
+//
+// +checklocksexclude:k.checkpointMu
+// +checklocksexclude:k.CheckpointWait.mu
 func (k *Kernel) SetSaver(s Saver) {
 	k.checkpointMu.Lock()
 	defer k.checkpointMu.Unlock()
@@ -81,6 +90,9 @@ func (k *Kernel) SetSaver(s Saver) {
 
 // Saver returns the kernel's Saver.
 // Thread-compatible.
+//
+// +checklocksexclude:k.checkpointMu
+// +checklocksexclude:k.CheckpointWait.mu
 func (k *Kernel) Saver() Saver {
 	k.checkpointMu.Lock()
 	defer k.checkpointMu.Unlock()
@@ -88,6 +100,9 @@ func (k *Kernel) Saver() Saver {
 }
 
 // CheckpointGen returns the current checkpoint generation.
+//
+// +checklocksexclude:k.checkpointMu
+// +checklocksexclude:k.CheckpointWait.mu
 func (k *Kernel) CheckpointGen() CheckpointGeneration {
 	k.checkpointMu.Lock()
 	defer k.checkpointMu.Unlock()
@@ -96,6 +111,9 @@ func (k *Kernel) CheckpointGen() CheckpointGeneration {
 }
 
 // IncCheckpointGenOnRestore increments the checkpoint generation upon restore.
+//
+// +checklocksexclude:k.checkpointMu
+// +checklocksexclude:k.CheckpointWait.mu
 func (k *Kernel) IncCheckpointGenOnRestore() {
 	k.checkpointMu.Lock()
 	defer k.checkpointMu.Unlock()
@@ -108,6 +126,9 @@ func (k *Kernel) IncCheckpointGenOnRestore() {
 
 // OnCheckpointAttempt is called when a checkpoint attempt is completed. err is
 // any checkpoint errors that may have occurred.
+//
+// +checklocksexclude:k.checkpointMu
+// +checklocksexclude:k.CheckpointWait.mu
 func (k *Kernel) OnCheckpointAttempt(err error) {
 	if err == nil {
 		log.Infof("Checkpoint completed successfully.")
@@ -124,7 +145,11 @@ func (k *Kernel) OnCheckpointAttempt(err error) {
 	k.CheckpointWait.signal(k.checkpointGen, err)
 }
 
-// WaitForCheckpoint waits for the Kernel to have been successfully checkpointed.
+// WaitForCheckpoint waits for the next checkpoint generation or an error
+// notification, and returns the reported error.
+//
+// +checklocksexclude:k.checkpointMu
+// +checklocksexclude:k.CheckpointWait.mu
 func (k *Kernel) WaitForCheckpoint() error {
 	// Send checkpoint result to a channel and wait on it.
 	ch := make(chan error, 1)
@@ -136,6 +161,8 @@ func (k *Kernel) WaitForCheckpoint() error {
 }
 
 // SignalAllCheckpointWaiters signals all checkpoint waiters with err.
+//
+// +checklocksexclude:k.CheckpointWait.mu
 func (k *Kernel) SignalAllCheckpointWaiters(err error) {
 	k.CheckpointWait.signal(CheckpointGeneration{Count: math.MaxUint32}, err)
 }
@@ -145,6 +172,9 @@ type checkpointWaiter struct {
 	count uint32
 	// callback is the function that will be called when the checkpoint generation
 	// reaches the desired count. It is set to nil after the callback is called.
+	//
+	// It is protected by the owning CheckpointWaitable's mu. The waiter has
+	// no reference to that owner, so checklocks cannot name the mutex here.
 	callback func(CheckpointGeneration, error)
 }
 
@@ -153,21 +183,29 @@ type checkpointWaiter struct {
 //
 // +stateify savable
 type CheckpointWaitable struct {
+	// k is set before the waitable is used and remains unchanged.
 	k *Kernel
 
 	mu sync.Mutex `state:"nosave"`
 
 	// Don't save the waiters, because they are repopulated after restore. It also
 	// allows for external entities to wait for the checkpoint.
+	//
+	// +checklocks:mu
 	waiters map[*checkpointWaiter]struct{} `state:"nosave"`
 }
 
-// Register registers a callback that is notified when the checkpoint generation count is higher
-// than the desired count.
+// Register registers a callback that is notified when the checkpoint generation
+// reaches the desired count.
+//
+// cb runs with mu held and may also run with the kernel's checkpoint mutex
+// held. It must not call methods that acquire either mutex. checklocks cannot
+// attach these owner-lock requirements to the supplied function value.
+//
+// +checklocksexclude:w.mu
+// +checklocksexclude:w.k.checkpointMu
 func (w *CheckpointWaitable) Register(cb func(CheckpointGeneration, error), count uint32) any {
 	w.mu.Lock()
-	defer w.mu.Unlock()
-
 	waiter := &checkpointWaiter{
 		count:    count,
 		callback: cb,
@@ -176,8 +214,17 @@ func (w *CheckpointWaitable) Register(cb func(CheckpointGeneration, error), coun
 		w.waiters = make(map[*checkpointWaiter]struct{})
 	}
 	w.waiters[waiter] = struct{}{}
+	w.mu.Unlock()
 
-	if gen := w.k.CheckpointGen(); count <= gen.Count {
+	// Publish the waiter before reading the generation to avoid missing a
+	// checkpoint. Do not hold mu while acquiring checkpointMu: notification
+	// holds checkpointMu while acquiring mu.
+	gen := w.k.CheckpointGen()
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	// Notification may have already delivered the checkpoint's error.
+	if waiter.callback != nil && count <= gen.Count {
 		// The checkpoint has already occurred. Signal immediately.
 		waiter.callback(gen, nil)
 		waiter.callback = nil
@@ -185,8 +232,10 @@ func (w *CheckpointWaitable) Register(cb func(CheckpointGeneration, error), coun
 	return waiter
 }
 
-// Unregister unregisters a waiter. It must be called even if the channel
-// was signalled.
+// Unregister unregisters a waiter. It must be called even if the callback
+// has already run.
+//
+// +checklocksexclude:w.mu
 func (w *CheckpointWaitable) Unregister(key any) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -197,6 +246,9 @@ func (w *CheckpointWaitable) Unregister(key any) {
 	}
 }
 
+// signal notifies waiters whose desired generation has been reached.
+//
+// +checklocksexclude:w.mu
 func (w *CheckpointWaitable) signal(gen CheckpointGeneration, err error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()

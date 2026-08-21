@@ -444,6 +444,7 @@ go_test(
     size = "small",
     srcs = [
         "fd_table_test.go",
+        "kernel_restore_test.go",
         "table_test.go",
         "task_test.go",
         "timekeeper_test.go",
