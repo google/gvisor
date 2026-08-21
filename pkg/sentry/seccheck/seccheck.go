@@ -119,6 +119,7 @@ type Sink interface {
 }
 
 // SinkStatus represents stats about each Sink instance.
+// +stateify savable
 type SinkStatus struct {
 	// DroppedCount is the number of trace points dropped.
 	DroppedCount uint64

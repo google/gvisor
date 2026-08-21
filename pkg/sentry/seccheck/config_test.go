@@ -15,8 +15,14 @@
 package seccheck
 
 import (
+	"bytes"
+	"context"
+	"reflect"
 	"strings"
 	"testing"
+
+	"gvisor.dev/gvisor/pkg/fd"
+	"gvisor.dev/gvisor/pkg/state"
 )
 
 func TestLifecycle(t *testing.T) {
@@ -219,5 +225,51 @@ func TestExecveHashCacheConfig(t *testing.T) {
 	}
 	if !cache.Opts().SHA256 {
 		t.Errorf("cache SHA256 opt got false, want true")
+	}
+}
+
+func TestSessionConfigSaveRestore(t *testing.T) {
+	orig := &SessionConfig{
+		Name: "test-session",
+		Points: []PointConfig{
+			{
+				Name:           "syscall/sysno/1/enter",
+				OptionalFields: []string{"fd_path"},
+				ContextFields:  []string{"time"},
+			},
+		},
+		IgnoreMissing: true,
+		Sinks: []SinkConfig{
+			{
+				Name: "test-sink",
+				Config: map[string]any{
+					"endpoint": "/foo/bar",
+				},
+				Status: SinkStatus{
+					DroppedCount: 42,
+				},
+				FD: fd.New(1),
+			},
+		},
+		Options: map[string]any{
+			"some_opt": 123,
+		},
+	}
+
+	var buf bytes.Buffer
+	if _, err := state.Save(context.Background(), &buf, orig); err != nil {
+		t.Fatalf("state.Save() failed: %v", err)
+	}
+
+	loaded := &SessionConfig{}
+	if _, err := state.Load(context.Background(), &buf, loaded); err != nil {
+		t.Fatalf("state.Load() failed: %v", err)
+	}
+
+	// FD is marked state:"nosave", so it will be nil upon load.
+	orig.Sinks[0].FD = nil
+
+	if !reflect.DeepEqual(orig, loaded) {
+		t.Errorf("Save/Restore mismatch.\nGot:  %#v\nWant: %#v", loaded, orig)
 	}
 }

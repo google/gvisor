@@ -61,5 +61,6 @@ go_test(
         "//pkg/context",
         "//pkg/fd",
         "//pkg/sentry/seccheck/points:points_go_proto",
+        "//pkg/state",
     ],
 )
