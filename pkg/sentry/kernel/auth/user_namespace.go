@@ -59,7 +59,9 @@ type UserNamespace struct {
 	// user_namespace.parent_could_setfcap in Linux.
 	parentHadSetfcap bool
 
-	// setgroupsAllowed mirrors USERNS_SETGROUPS_ALLOWED in Linux. Protected by mu.
+	// setgroupsAllowed mirrors USERNS_SETGROUPS_ALLOWED in Linux.
+	//
+	// +checklocks:mu
 	setgroupsAllowed bool
 
 	// inode is the nsfs inode associated with this namespace. This is stored as
