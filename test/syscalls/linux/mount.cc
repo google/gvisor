@@ -1833,6 +1833,101 @@ TEST(MountTest, MakeSlave) {
   ASSERT_NE(optionals[dir2.path()][0].master, 0);
 }
 
+// Regression test: a bind mount that fails midway through attachment (e.g.
+// because the mount namespace is at its mount limit) must not leave its
+// half-constructed clone linked into the source's peer group. If it does, the
+// dead clone can later be selected as a slave's master, silently breaking
+// mount propagation to that slave.
+TEST(MountTest, FailedBindDoesNotBreakPropagation) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  // Mount A: a shared tmpfs.
+  auto const dir_a = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mnt_a = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir_a.path(), kTmpfs, 0, "", MNT_DETACH));
+  ASSERT_THAT(mount("", dir_a.path().c_str(), "", MS_SHARED, 0),
+              SyscallSucceeds());
+  // Create the future mountpoint inside A so that it exists in all of A's
+  // peers.
+  std::string const sub_a = JoinPath(dir_a.path(), "sub");
+  ASSERT_THAT(mkdir(sub_a.c_str(), 0755), SyscallSucceeds());
+
+  // Mount B: a bind of A, and its peer.
+  auto const dir_b = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mnt_b = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(dir_a.path(), dir_b.path(), "", MS_BIND, "", MNT_DETACH));
+
+  // On Linux the mount limit (fs.mount-max) defaults to 100000, which makes
+  // filling the mount namespace below slow; temporarily lower the limit when
+  // possible. gVisor does not expose this sysctl and enforces a hard limit of
+  // 10000 mounts.
+  constexpr char kMountMax[] = "/proc/sys/fs/mount-max";
+  Cleanup restore_mount_max;
+  if (access(kMountMax, W_OK) == 0) {
+    std::string const old_max =
+        ASSERT_NO_ERRNO_AND_VALUE(GetContents(kMountMax));
+    ASSERT_NO_ERRNO(SetContents(kMountMax, "10000"));
+    restore_mount_max = Cleanup([old_max, &kMountMax]() {
+      EXPECT_NO_ERRNO(SetContents(kMountMax, old_max));
+    });
+  }
+
+  // Fill the mount namespace up to its mount limit with private bind mounts,
+  // each on its own directory in the outer tmpfs. All of them are children of
+  // the outer mount, so detaching outer releases all of them with a single
+  // umount2() call.
+  auto const outer = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  ASSERT_THAT(mount("", outer.path().c_str(), kTmpfs, 0, 0), SyscallSucceeds());
+  auto outer_cleanup = Cleanup([&outer]() {
+    EXPECT_THAT(umount2(outer.path().c_str(), MNT_DETACH), SyscallSucceeds());
+  });
+  bool full = false;
+  // Linux's default fs.mount-max is 100000; gVisor's limit is 10000.
+  for (int i = 0; i < 300000; i++) {
+    std::string const d = absl::StrCat(outer.path(), "/d", i);
+    ASSERT_THAT(mkdir(d.c_str(), 0755), SyscallSucceeds());
+    if (mount(d.c_str(), d.c_str(), nullptr, MS_BIND, nullptr) != 0) {
+      const int err = errno;
+      ASSERT_EQ(err, ENOSPC) << strerror(err);
+      full = true;
+      break;
+    }
+  }
+  if (!full) {
+    GTEST_SKIP() << "could not reach the mount limit";
+  }
+
+  // Binding A while the namespace is at its mount limit must fail, and must
+  // not leave any trace of the aborted mount in A's peer group.
+  auto const dir_c = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  ASSERT_THAT(mount(dir_a.path().c_str(), dir_c.path().c_str(), nullptr,
+                    MS_BIND, nullptr),
+              SyscallFailsWithErrno(ENOSPC));
+
+  // Release the mount budget again.
+  outer_cleanup.Release()();
+
+  // Make A a slave. Its new master must be B, its only remaining peer.
+  ASSERT_THAT(mount("", dir_a.path().c_str(), 0, MS_SLAVE, 0),
+              SyscallSucceeds());
+
+  // A mount under the shared peer B must propagate to the slave A.
+  std::string const sub_b = JoinPath(dir_b.path(), "sub");
+  ASSERT_THAT(mount("", sub_b.c_str(), kTmpfs, 0, 0), SyscallSucceeds());
+  auto sub_cleanup = Cleanup([&sub_b, &sub_a]() {
+    EXPECT_THAT(umount2(sub_b.c_str(), MNT_DETACH), SyscallSucceeds());
+    // The umount of sub_b may or may not have propagated to sub_a depending
+    // on whether the mount propagated there in the first place.
+    umount2(sub_a.c_str(), MNT_DETACH);
+  });
+
+  struct stat st_a, st_b;
+  ASSERT_THAT(stat(sub_b.c_str(), &st_b), SyscallSucceeds());
+  ASSERT_THAT(stat(sub_a.c_str(), &st_a), SyscallSucceeds());
+  EXPECT_EQ(st_a.st_dev, st_b.st_dev)
+      << "mount under shared peer B did not propagate to slave A";
+}
+
 TEST(MountTest, MakeSharedSlave) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
