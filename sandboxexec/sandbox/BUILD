@@ -23,7 +23,7 @@ go_test(
         "sandbox_test.go",
         "storage_test.go",
     ],
-    data = ["//runsc"],
+    data = ["//:release"],
     tags = ["nogotsan"],
     deps = [
         ":sandbox",

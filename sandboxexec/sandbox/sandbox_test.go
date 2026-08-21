@@ -26,7 +26,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	if path, err := testutil.FindFile("runsc/runsc"); err == nil {
+	if path, err := testutil.FindRunsc(); err == nil {
 		os.Setenv("RUNSC_PATH", path)
 	}
 	os.Exit(m.Run())
