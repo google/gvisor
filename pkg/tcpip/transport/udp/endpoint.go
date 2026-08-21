@@ -67,13 +67,19 @@ type endpoint struct {
 	stats       tcpip.TransportEndpointStats
 	ops         tcpip.SocketOptions
 
-	// The following fields are used to manage the receive queue, and are
-	// protected by rcvMu.
-	rcvMu      sync.Mutex `state:"nosave"`
-	rcvReady   bool
-	rcvList    udpPacketList
+	// The following fields are used to manage the receive queue.
+	rcvMu sync.Mutex `state:"nosave"`
+	// +checklocks:rcvMu
+	rcvReady bool
+	// +checklocks:rcvMu
+	rcvList udpPacketList
+	// +checklocks:rcvMu
 	rcvBufSize int
-	rcvClosed  bool
+	// +checklocks:rcvMu
+	rcvClosed bool
+	// frozen prevents packet delivery during save/restore.
+	// +checklocks:rcvMu
+	frozen bool
 
 	lastErrorMu sync.Mutex `state:"nosave"`
 	lastError   tcpip.Error
@@ -96,10 +102,6 @@ type endpoint struct {
 	// IPv4 when IPv6 endpoint is bound or connected to an IPv4 mapped
 	// address).
 	effectiveNetProtos []tcpip.NetworkProtocolNumber
-
-	// frozen indicates if the packets should be delivered to the endpoint
-	// during restore.
-	frozen bool
 
 	localPort  uint16
 	remotePort uint16
@@ -1090,15 +1092,15 @@ func (e *endpoint) SocketOptions() *tcpip.SocketOptions {
 
 // freeze prevents any more packets from being delivered to the endpoint.
 func (e *endpoint) freeze() {
-	e.mu.Lock()
+	e.rcvMu.Lock()
 	e.frozen = true
-	e.mu.Unlock()
+	e.rcvMu.Unlock()
 }
 
 // thaw unfreezes a previously frozen endpoint using endpoint.freeze() allows
 // new packets to be delivered again.
 func (e *endpoint) thaw() {
-	e.mu.Lock()
+	e.rcvMu.Lock()
 	e.frozen = false
-	e.mu.Unlock()
+	e.rcvMu.Unlock()
 }

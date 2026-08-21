@@ -55,8 +55,7 @@ func (e *endpoint) Restore(s *stack.Stack) {
 		return
 	}
 
-	// Unfreeze the endpoint to handle packets.
-	e.frozen = false
+	e.thaw()
 	e.ops.InitHandler(e, e.stack, tcpip.GetStackSendBufferLimits, tcpip.GetStackReceiveBufferLimits)
 }
 
