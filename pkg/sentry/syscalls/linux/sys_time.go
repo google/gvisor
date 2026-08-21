@@ -123,9 +123,10 @@ func getClock(t *kernel.Task, clockID int32) (ktime.Clock, error) {
 	switch clockID {
 	case linux.CLOCK_REALTIME, linux.CLOCK_REALTIME_COARSE:
 		return t.Kernel().RealtimeClock(), nil
+	case linux.CLOCK_MONOTONIC_RAW:
+		return t.Kernel().MonotonicRawClock(), nil
 	case linux.CLOCK_MONOTONIC, linux.CLOCK_MONOTONIC_COARSE,
-		linux.CLOCK_MONOTONIC_RAW, linux.CLOCK_BOOTTIME:
-		// CLOCK_MONOTONIC approximates CLOCK_MONOTONIC_RAW.
+		linux.CLOCK_BOOTTIME:
 		// CLOCK_BOOTTIME is internally mapped to CLOCK_MONOTONIC, as:
 		//	- CLOCK_BOOTTIME should behave as CLOCK_MONOTONIC while also
 		//		including suspend time.

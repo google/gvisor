@@ -115,7 +115,7 @@ func (tid *ThreadID) WriteTo(writer io.Writer) (int64, error) {
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (v *vdsoParams) SizeBytes() int {
-    return 64
+    return 104
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
@@ -135,6 +135,16 @@ func (v *vdsoParams) MarshalBytes(dst []byte) []byte {
     hostarch.ByteOrder.PutUint64(dst[:8], uint64(v.realtimeBaseRef))
     dst = dst[8:]
     hostarch.ByteOrder.PutUint64(dst[:8], uint64(v.realtimeFrequency))
+    dst = dst[8:]
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(v.monotonicRawAlias))
+    dst = dst[8:]
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(v.monotonicRawReady))
+    dst = dst[8:]
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(v.monotonicRawBaseCycles))
+    dst = dst[8:]
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(v.monotonicRawBaseRef))
+    dst = dst[8:]
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(v.monotonicRawFrequency))
     dst = dst[8:]
     return dst
 }
@@ -156,6 +166,16 @@ func (v *vdsoParams) UnmarshalBytes(src []byte) []byte {
     v.realtimeBaseRef = int64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
     v.realtimeFrequency = uint64(hostarch.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    v.monotonicRawAlias = uint64(hostarch.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    v.monotonicRawReady = uint64(hostarch.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    v.monotonicRawBaseCycles = int64(hostarch.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    v.monotonicRawBaseRef = int64(hostarch.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    v.monotonicRawFrequency = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
     return src
 }
