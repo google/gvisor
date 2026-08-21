@@ -4,15 +4,6 @@ source .buildkite/hooks/libhook
 
 clear_docker_containers
 
-# Track job assignment and initialize completion time if this is the first job.
-JOB_ASSIGNED_FILE="/tmp/job_assigned"
-touch "${JOB_ASSIGNED_FILE}"
-LAST_JOB_COMPLETED_FILE="/tmp/last_job_completed_time"
-if [[ ! -f "${LAST_JOB_COMPLETED_FILE}" ]]; then
-  date +%s > "${LAST_JOB_COMPLETED_FILE}.tmp"
-  mv "${LAST_JOB_COMPLETED_FILE}.tmp" "${LAST_JOB_COMPLETED_FILE}"
-fi
-
 # Use a per-day bazel remote cache. As the cache object's TTL expires, they are
 # deleted on an ongoing basis. Such partial deletion can break the cache state.
 # Using per day cache will ensure that builds triggered on a certain day have
