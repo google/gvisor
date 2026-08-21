@@ -209,19 +209,23 @@ func (w *worker) work(compress bool, level int) {
 }
 
 type hashPool struct {
-	// mu protects the hash list.
 	mu sync.Mutex
 
-	// key is the key used to create hash objects.
+	// key is the key used to create hash objects. It is set during
+	// construction; the pool does not modify its backing array.
 	key []byte
 
 	// hashes is the hash object free list. Note that this cannot be
 	// globally shared across readers or writers, as it is key-specific.
+	//
+	// +checklocks:mu
 	hashes []hash.Hash
 }
 
 // getHash gets a hash object for the pool. It should only be called when the
 // pool key is non-nil.
+//
+// +checklocksexclude:p.mu
 func (p *hashPool) getHash() hash.Hash {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -235,6 +239,9 @@ func (p *hashPool) getHash() hash.Hash {
 	return h
 }
 
+// putHash resets h and returns it to the free list.
+//
+// +checklocksexclude:p.mu
 func (p *hashPool) putHash(h hash.Hash) {
 	h.Reset()
 
@@ -247,38 +254,53 @@ func (p *hashPool) putHash(h hash.Hash) {
 // pool is common functionality for reader/writers.
 type pool struct {
 	// workers are the compression/decompression workers.
+	//
+	// +checklocks:mu
 	workers []worker
 
 	// chunkSize is the chunk size. This is the first four bytes in the
-	// stream and is shared across both the reader and writer.
+	// stream and is shared across both the reader and writer. It is immutable
+	// after construction.
 	chunkSize uint32
 
-	// mu protects below; it is generally the responsibility of users to
-	// acquire this mutex before calling any methods on the pool.
+	// mu serializes construction, Reader.Read, Writer.Write, Writer.Close,
+	// and finalizer cleanup, including synchronous completion callbacks.
 	mu sync.Mutex
 
 	// nextInput is the next worker for input (scheduling).
+	//
+	// +checklocks:mu
 	nextInput int
 
 	// nextOutput is the next worker for output (result).
+	//
+	// +checklocks:mu
 	nextOutput int
 
 	// buf is the current active buffer; the exact semantics of this buffer
-	// depending on whether this is a reader or a writer.
+	// depend on whether this is a reader or a writer.
+	//
+	// +checklocks:mu
 	buf *bytes.Buffer
 
-	// lasSum records the hash of the last chunk processed.
+	// lastSum records the hash of the last chunk processed.
+	//
+	// +checklocks:mu
 	lastSum []byte
 
 	// hashPool is the hash object pool. It cannot be embedded into pool
 	// itself as worker refers to it and that would stop pool from being
 	// GCed.
+	//
+	// +checklocks:mu
 	hashPool *hashPool
 }
 
 // init initializes the worker pool.
 //
 // This should only be called once.
+//
+// +checklocks:p.mu
 func (p *pool) init(key []byte, workers int, compress bool, level int) {
 	if len(key) > 0 {
 		p.hashPool = &hashPool{key: key}
@@ -292,15 +314,21 @@ func (p *pool) init(key []byte, workers int, compress bool, level int) {
 		}
 		go p.workers[i].work(compress, level) // S/R-SAFE: In save path only.
 	}
-	runtime.SetFinalizer(p, (*pool).stop)
+	runtime.SetFinalizer(p, func(p *pool) {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		p.stop()
+	})
 }
 
 // stop stops all workers.
+//
+// +checklocks:p.mu
 func (p *pool) stop() {
 	for i := 0; i < len(p.workers); i++ {
 		close(p.workers[i].input)
 	}
-	// Wait for all workers to finish since p.schedule(c=nil) may have returned
+	// Drain outstanding results since p.schedule(c=nil) may have returned
 	// early if any worker emitted an error.
 	if len(p.workers) != 0 {
 		for p.nextOutput < p.nextInput {
@@ -334,6 +362,10 @@ func handleResult(r result, callback func(*chunk) error) error {
 //
 // If no callback function is provided, then the output channel will be
 // ignored.  You must be sure that the input is schedulable in this case.
+//
+// callback is invoked synchronously with p.mu held.
+//
+// +checklocks:p.mu
 func (p *pool) schedule(c *chunk, callback func(*chunk) error) error {
 	for {
 		var (
@@ -372,6 +404,8 @@ type Reader struct {
 
 	// scratch is a temporary buffer used for marshalling. This is declared
 	// unfront here to avoid reallocation.
+	//
+	// +checklocks:mu
 	scratch [4]byte
 }
 
@@ -385,6 +419,10 @@ func NewReader(in io.ReadCloser, key []byte) (*Reader, error) {
 	r := &Reader{
 		in: in,
 	}
+	// init registers a finalizer. Order subsequent initialization before
+	// finalizer cleanup, including when a header read fails.
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
 	// Use double buffering for read.
 	r.init(key, 2*runtime.GOMAXPROCS(0), false, 0)
@@ -422,6 +460,8 @@ var errNewBuffer = errors.New("buffer ready")
 var ErrHashMismatch = errors.New("hash mismatch")
 
 // Read implements io.Reader.Read.
+//
+// +checklocksexclude:r.mu
 func (r *Reader) Read(p []byte) (int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -450,11 +490,13 @@ func (r *Reader) Read(p []byte) (int, error) {
 		// return errNewBuffer to ensure that we aren't called a second
 		// time. This error code is handled specially below.
 		//
-		// c.buf will be freed and return to the pool when it is done.
+		// Read returns c.uncompressed to bufPool after consuming it.
 		if pendingPre > 0 {
 			pendingPre--
 		}
-		r.buf = c.uncompressed
+		// schedule invokes this callback with r.mu held, but checklocks does
+		// not propagate the lock state through the callback parameter.
+		r.buf = c.uncompressed // +checklocksignore
 		return errNewBuffer
 	}
 
@@ -563,8 +605,8 @@ func (r *Reader) Read(p []byte) (int, error) {
 				return err
 			}
 			// The nil case means that an inline buffer has
-			// completed. The callback will have already removed
-			// the inline buffer from the map, so we just return an
+			// completed. The callback has already decremented
+			// pendingInline, so we just return an
 			// error to check the top of the loop again.
 			return errNewBuffer
 		}); err != errNewBuffer {
@@ -591,10 +633,14 @@ type Writer struct {
 	out io.Writer
 
 	// closed indicates whether the file has been closed.
+	//
+	// +checklocks:mu
 	closed bool
 
 	// scratch is a temporary buffer used for marshalling. This is declared
 	// unfront here to avoid reallocation.
+	//
+	// +checklocks:mu
 	scratch [4]byte
 }
 
@@ -615,6 +661,10 @@ func NewWriter(out io.Writer, key []byte, chunkSize uint32, level int) (*Writer,
 		},
 		out: out,
 	}
+	// init registers a finalizer. Order subsequent initialization before
+	// finalizer cleanup, including when a header write fails.
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	w.init(key, 1+runtime.GOMAXPROCS(0), true, level)
 
 	binary.BigEndian.PutUint32(w.scratch[:], chunkSize)
@@ -637,6 +687,8 @@ func NewWriter(out io.Writer, key []byte, chunkSize uint32, level int) (*Writer,
 }
 
 // flush writes a single buffer.
+//
+// +checklocks:w.mu
 func (w *Writer) flush(c *chunk) error {
 	// Prefix each chunk with a length; this allows the reader to safely
 	// limit reads while buffering.
@@ -667,6 +719,8 @@ func (w *Writer) flush(c *chunk) error {
 }
 
 // Write implements io.Writer.Write.
+//
+// +checklocksexclude:w.mu
 func (w *Writer) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -682,16 +736,18 @@ func (w *Writer) Write(p []byte) (int, error) {
 		pendingInline = 0
 	)
 	callback := func(c *chunk) error {
+		// schedule invokes this callback with w.mu held, but checklocks does
+		// not propagate the lock state through the callback parameter.
 		if pendingPre > 0 {
 			pendingPre--
-			err := w.flush(c)
+			err := w.flush(c) // +checklocksignore
 			c.uncompressed.Reset()
 			bufPool.Put(c.uncompressed)
 			return err
 		}
 		if pendingInline > 0 {
 			pendingInline--
-			return w.flush(c)
+			return w.flush(c) // +checklocksignore
 		}
 		panic("both pendingPre and pendingInline exhausted")
 	}
@@ -758,6 +814,8 @@ func (w *Writer) Write(p []byte) (int, error) {
 }
 
 // Close implements io.Closer.Close.
+//
+// +checklocksexclude:w.mu
 func (w *Writer) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
