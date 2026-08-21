@@ -15,6 +15,7 @@
 package platform
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -25,6 +26,10 @@ import (
 
 // systemMMapMinAddrSource is the source file.
 const systemMMapMinAddrSource = "/proc/sys/vm/mmap_min_addr"
+
+// defaultMMapMinAddr is used when the system file cannot be read.
+// 65536 (64KB) is the most common default on modern Linux systems.
+const defaultMMapMinAddr = 65536
 
 // systemMMapMinAddr is the system's minimum map address.
 var systemMMapMinAddr uint64
@@ -49,6 +54,12 @@ func init() {
 	// Open the source file.
 	b, err := os.ReadFile(systemMMapMinAddrSource)
 	if err != nil {
+		// If the file is inaccessible (e.g., permission denied in restricted
+		// environments like Termux/Android), use a sensible default.
+		if errors.Is(err, os.ErrPermission) || errors.Is(err, os.ErrNotExist) {
+			systemMMapMinAddr = defaultMMapMinAddr
+			return
+		}
 		panic(fmt.Sprintf("couldn't open %s: %v", systemMMapMinAddrSource, err))
 	}
 
