@@ -582,6 +582,7 @@ steps:
     agents:
       <<: *platform_specific_agents
       arch: "amd64"
+      kernel: "modern"
   - <<: *common
     <<: *docker
     label: ":java: Java runtime tests"
@@ -599,6 +600,7 @@ steps:
     agents:
       <<: *platform_specific_agents
       arch: "amd64"
+      kernel: "modern"
   - <<: *common
     <<: *docker
     label: ":node: NodeJS runtime tests"
@@ -616,6 +618,7 @@ steps:
     agents:
       <<: *platform_specific_agents
       arch: "amd64"
+      kernel: "modern"
 
   # Bwrap tests.
   - <<: *common
