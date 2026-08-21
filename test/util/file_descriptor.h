@@ -16,20 +16,33 @@
 #define GVISOR_TEST_UTIL_FILE_DESCRIPTOR_H_
 
 #include <fcntl.h>
+#include <linux/openat2.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
 
 #include <algorithm>
 #include <cerrno>
+#include <cstdint>
 #include <string>
 
-#include "gmock/gmock.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
+#include "gmock/gmock.h"
 #include "test/util/logging.h"
 #include "test/util/posix_error.h"
 #include "test/util/save_util.h"
+
+#ifndef SYS_openat2
+#if defined(__x86_64__)
+#define SYS_openat2 437
+#elif defined(__aarch64__)
+#define SYS_openat2 437
+#else
+#error "Unknown architecture"
+#endif
+#endif
 
 namespace gvisor {
 namespace testing {
@@ -136,6 +149,25 @@ inline PosixErrorOr<FileDescriptor> OpenAt(int dirfd, std::string const& path,
   if (fd < 0) {
     return PosixError(errno, absl::StrFormat("openat(%d, %s, %#x, %#o)", dirfd,
                                              path, flags, mode));
+  }
+  MaybeSave();
+  return FileDescriptor(fd);
+}
+
+// Wrapper around openat2(2) that returns a FileDescriptor.
+inline PosixErrorOr<FileDescriptor> OpenAt2(int dirfd, std::string const& path,
+                                            uint64_t flags, mode_t mode = 0,
+                                            uint64_t resolve = 0) {
+  struct open_how how = {
+      .flags = static_cast<__u64>(flags),
+      .mode = static_cast<__u64>(mode),
+      .resolve = resolve,
+  };
+  int fd = syscall(SYS_openat2, dirfd, path.c_str(), &how, sizeof(how));
+  if (fd < 0) {
+    return PosixError(
+        errno, absl::StrFormat("openat2(%d, %s, %#x, %#o, %#x)", dirfd, path,
+                               flags, mode, resolve));
   }
   MaybeSave();
   return FileDescriptor(fd);
