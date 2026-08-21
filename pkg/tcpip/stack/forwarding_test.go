@@ -58,6 +58,8 @@ type fwdTestNetworkEndpoint struct {
 
 	mu struct {
 		sync.RWMutex
+
+		// +checklocks:RWMutex
 		forwarding bool
 	}
 }
