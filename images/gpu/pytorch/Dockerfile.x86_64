@@ -1,7 +1,12 @@
-FROM nvidia/cuda:12.4.0-devel-ubuntu22.04
+FROM nvidia/cuda:12.8.1-devel-ubuntu22.04
 
 # Used for determining the correct pip index URL below.
-ENV CUDA_VERSION=12.4
+# 12.8 is the floor for Blackwell: the cu128 wheels are the first PyTorch
+# builds (torch 2.7.0 onwards) to ship sm_100/sm_120 kernels. Below this the
+# image installs a torch that fails on Blackwell with "no kernel image is
+# available for execution on the device". CUDA_VERSION also selects the pip
+# index URL below, so both move together.
+ENV CUDA_VERSION=12.8
 
 ENV PYTORCH_DATASETS_DIR=/pytorch-data
 ENV TORCH_HOME=/pytorch-home
