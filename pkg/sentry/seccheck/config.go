@@ -41,6 +41,7 @@ var sessionCounter = metric.MustCreateNewUint64Metric("/trace/sessions_created",
 
 // SessionConfig describes a new session configuration. A session consists of a
 // set of points to be enabled and sinks where the points are sent to.
+// +stateify savable
 type SessionConfig struct {
 	// Name is the unique session name.
 	Name string `json:"name,omitempty"`
@@ -60,6 +61,7 @@ type SessionConfig struct {
 }
 
 // PointConfig describes a point to be enabled in a given session.
+// +stateify savable
 type PointConfig struct {
 	// Name is the point to be enabled. The point must exist in the system.
 	Name string `json:"name,omitempty"`
@@ -71,6 +73,7 @@ type PointConfig struct {
 
 // SinkConfig describes the sink that will process the points in a given
 // session.
+// +stateify savable
 type SinkConfig struct {
 	// Name is the sink to be created. The sink must exist in the system.
 	Name string `json:"name,omitempty"`
@@ -82,7 +85,9 @@ type SinkConfig struct {
 	// Status is the runtime status for the sink.
 	Status SinkStatus `json:"status,omitempty"`
 	// FD is the endpoint returned from Setup. It may be nil.
-	FD *fd.FD `json:"-"`
+	// FDs are host-specific resources that cannot be natively serialized. They must be re-acquired
+	// on restore.
+	FD *fd.FD `json:"-" state:"nosave"`
 }
 
 // Create reads the session configuration and applies it to the system.
