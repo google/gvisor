@@ -49,6 +49,9 @@ func testClosureInline(tc *oneGuardStruct) {
 	tc.mu.Lock()
 	func() {
 		tc.guardedField = 1
+		func() {
+			tc.guardedField = 2
+		}()
 	}()
 	tc.mu.Unlock()
 }
