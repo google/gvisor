@@ -18,14 +18,17 @@ package tcp
 //
 // +stateify savable
 type segmentQueue struct {
-	mu     segmentQueueMutex `state:"nosave"`
-	list   segmentList       `state:"wait"`
-	ep     *Endpoint
+	mu segmentQueueMutex `state:"nosave"`
+	// +checklocks:mu
+	list segmentList `state:"wait"`
+	ep   *Endpoint
+	// +checklocks:mu
 	frozen bool
 }
 
-// emptyLocked determines if the queue is empty.
-// Preconditions: q.mu must be held.
+// emptyLocked is equivalent to empty with q.mu already held.
+//
+// +checklocks:q.mu
 func (q *segmentQueue) emptyLocked() bool {
 	return q.list.Empty()
 }
