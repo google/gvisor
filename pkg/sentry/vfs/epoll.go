@@ -270,12 +270,14 @@ func (ep *EpollInstance) AddInterest(file *FileDescription, num int32, event lin
 		mask:     mask,
 		userData: event.Data,
 	}
-	ep.interest[key] = epi
 	wmask := waiter.EventMaskFromLinux(mask)
 	epi.waiter.Init(epi, wmask)
 	if err := file.EventRegister(&epi.waiter); err != nil {
 		return err
 	}
+	// Add epi to ep.interest only after EventRegister succeeds, so a failed
+	// registration does not leave an orphaned interest behind.
+	ep.interest[key] = epi
 
 	// Check if the file is already ready.
 	if m := file.Readiness(wmask) & wmask; m != 0 {
