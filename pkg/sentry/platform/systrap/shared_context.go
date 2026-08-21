@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
+	"gvisor.dev/gvisor/pkg/sighandling"
 	"gvisor.dev/gvisor/pkg/syncevent"
 )
 
@@ -121,8 +122,7 @@ func (sc *sharedContext) isActiveInSubprocess(s *subprocess) bool {
 	return sc.subprocess == s
 }
 
-// NotifyInterrupt implements interrupt.Receiver.NotifyInterrupt.
-func (sc *sharedContext) NotifyInterrupt() {
+func (sc *sharedContext) interruptStub() (*thread, unix.Errno) {
 	// If this context is not being worked on right now we need to mark it as
 	// interrupted so the next executor does not start working on it.
 	atomic.StoreUint32(&sc.shared.Interrupt, 1)
@@ -130,7 +130,7 @@ func (sc *sharedContext) NotifyInterrupt() {
 	// shared memory between reads.
 	threadID := atomic.LoadUint32(&sc.shared.ThreadID)
 	if threadID == invalidThreadID {
-		return
+		return nil, 0
 	}
 	s := sc.subprocess
 	s.sysmsgThreadsMu.RLock()
@@ -139,24 +139,34 @@ func (sc *sharedContext) NotifyInterrupt() {
 	if !ok {
 		// This is either an invalidThreadID or another garbage value; either way we
 		// don't know which thread to interrupt; best we can do is mark the context.
-		return
+		return nil, 0
 	}
 
 	t := sysmsgThread.thread
-	if e := hostsyscall.RawSyscallErrno(unix.SYS_TGKILL, uintptr(t.tgid), uintptr(t.tid), uintptr(platform.SignalInterrupt)); e != 0 {
-		if e == unix.ESRCH { // Stub thread already killed?
-			s.dead.Store(true)
-			if !sc.shared.State.CompareAndSwap(sysmsg.ContextStateNone, sysmsg.ContextStateUnexpectedDeath) {
-				s.syscallThread.thread.Warningf("failed to set context state to ContextStateUnexpectedDeath; context state was %v", sc.state())
-			}
-			s.syscallThreadMu.Lock()
-			defer s.syscallThreadMu.Unlock()
-			s.syscallThread.thread.Warningf("Cannot interrupt stub thread %sas it no longer exists; killing syscall thread.", *t.loadLogPrefix())
-			s.syscallThread.thread.kill()
-		} else {
-			panic(fmt.Sprintf("failed to interrupt the child process %d: %v", t.tid, e))
-		}
+	errno := hostsyscall.RawSyscallErrno(unix.SYS_TGKILL, uintptr(t.tgid), uintptr(t.tid), uintptr(platform.SignalInterrupt))
+	return t, errno
+}
+
+// NotifyInterrupt implements interrupt.Receiver.NotifyInterrupt.
+func (sc *sharedContext) NotifyInterrupt() {
+	t, errno := sc.interruptStub()
+	if errno == 0 {
+		return
 	}
+	if errno != unix.ESRCH {
+		panic(fmt.Sprintf("failed to interrupt the child process %d: %v", t.tid, errno))
+	}
+
+	// Stub thread already killed.
+	s := sc.subprocess
+	s.dead.Store(true)
+	if !sc.shared.State.CompareAndSwap(sysmsg.ContextStateNone, sysmsg.ContextStateUnexpectedDeath) {
+		s.syscallThread.thread.Warningf("failed to set context state to ContextStateUnexpectedDeath; context state was %v", sc.state())
+	}
+	s.syscallThreadMu.Lock()
+	defer s.syscallThreadMu.Unlock()
+	s.syscallThread.thread.Warningf("Cannot interrupt stub thread %sas it no longer exists; killing syscall thread.", *t.loadLogPrefix())
+	s.syscallThread.thread.kill()
 }
 
 func (sc *sharedContext) state() sysmsg.ContextState {
@@ -233,32 +243,43 @@ func (sc *sharedContext) resetLatencyMeasures() {
 }
 
 const (
-	contextPreemptTimeoutNsec = 10 * 1000 * 1000 // 10ms
-	contextCheckupTimeoutSec  = 5
-	stuckContextTimeout       = 30 * time.Second
+	contextPreemptTimeout = 10 * time.Millisecond
+	contextCheckupTimeout = 5 * time.Second
+	stuckContextTimeout   = 30 * time.Second
 )
 
 var errDeadSubprocess = fmt.Errorf("subprocess died")
 
 func (sc *sharedContext) sleepOnState(state sysmsg.ContextState) error {
-	timeout := unix.Timespec{
-		Sec:  0,
-		Nsec: contextPreemptTimeoutNsec,
-	}
+	return sc.sleepOnStateWithTimeout(state, stuckContextTimeout, contextCheckupTimeout, sighandling.KillItself)
+}
+
+func (sc *sharedContext) sleepOnStateWithTimeout(state sysmsg.ContextState, stuckTimeout, checkupTimeout time.Duration, killSentry func() error) error {
+	timeout := unix.NsecToTimespec(contextPreemptTimeout.Nanoseconds())
 	sentInterruptOnce := false
-	deadline := time.Now().Add(stuckContextTimeout)
+	deadline := time.Now().Add(stuckTimeout)
+	failStop := func() error {
+		if err := killSentry(); err != nil {
+			panic(fmt.Sprintf("failed to kill sentry with stuck systrap context: %v", err))
+		}
+		// KillItself doesn't return on success. This return keeps the path testable.
+		return errDeadSubprocess
+	}
 	for sc.state() == state {
 		errno := sc.shared.SleepOnState(state, &timeout)
-		if errno == 0 {
-			continue
-		}
-		if errno != unix.ETIMEDOUT {
+		if errno != 0 && errno != unix.ETIMEDOUT {
 			panic(fmt.Sprintf("error waiting for state: %v", errno))
+		}
+		if sc.state() != state {
+			return nil
 		}
 		if !sc.subprocess.alive() {
 			return errDeadSubprocess
 		}
 		if time.Now().After(deadline) {
+			if sentInterruptOnce {
+				return failStop()
+			}
 			log.Warningf("Systrap task goroutine has been waiting on ThreadContext.State futex too long. ThreadContext: %v", sc)
 		}
 		if sentInterruptOnce {
@@ -269,10 +290,20 @@ func (sc *sharedContext) sleepOnState(state sysmsg.ContextState) error {
 		if !sc.isAcked() || sc.subprocess.contextQueue.isEmpty() {
 			continue
 		}
-		sc.NotifyInterrupt()
+		_, errno = sc.interruptStub()
+		if errno == unix.ESRCH {
+			return failStop()
+		}
+		if errno != 0 {
+			panic(fmt.Sprintf("failed to interrupt systrap stub: %v", errno))
+		}
 		sentInterruptOnce = true
-		timeout.Sec = contextCheckupTimeoutSec
-		timeout.Nsec = 0
+		// Keep the overall stuck-context deadline, but guarantee a full checkup
+		// interval if the interrupt was sent close to it.
+		if checkupDeadline := time.Now().Add(checkupTimeout); checkupDeadline.After(deadline) {
+			deadline = checkupDeadline
+		}
+		timeout = unix.NsecToTimespec(checkupTimeout.Nanoseconds())
 	}
 	return nil
 }
