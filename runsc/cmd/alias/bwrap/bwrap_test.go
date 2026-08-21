@@ -425,6 +425,43 @@ func TestParseFlags(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "CapDrop",
+			args: []string{"--cap-drop", "all", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:  os.Environ(),
+				UID:  -1,
+				GID:  -1,
+				Args: []string{"bash"},
+				CapOps: []*CapOp{
+					{Type: CapOpDrop, Cap: "all"},
+				},
+			},
+		},
+		{
+			name: "CapAddAndDrop",
+			args: []string{"--cap-drop", "all", "--cap-add", "net_admin", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:  os.Environ(),
+				UID:  -1,
+				GID:  -1,
+				Args: []string{"bash"},
+				CapOps: []*CapOp{
+					{Type: CapOpDrop, Cap: "all"},
+					{Type: CapOpAdd, Cap: "net_admin"},
+				},
+			},
+		},
+		{
+			name:        "MissingCapAddArg",
+			args:        []string{"--cap-add"},
+			errContains: "--cap-add takes 1 argument",
+		},
+		{
+			name:        "MissingCapDropArg",
+			args:        []string{"--cap-drop"},
+			errContains: "--cap-drop takes 1 argument",
+		},
 	}
 
 	for _, tc := range tests {
