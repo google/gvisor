@@ -714,7 +714,7 @@ func savePrivateMFs(ctx context.Context, w io.Writer, mfsToSave map[checkpoint.R
 // pagesMetadata, and pagesFile, even if it returns a non-nil error.
 //
 // Preconditions: The kernel must be paused throughout the call to SaveTo.
-func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCloser, pagesFile stateio.AsyncWriter, appMFExcludeCommittedZeroPages, resume bool) error {
+func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCloser, pagesFile stateio.AsyncWriter, appMFExcludeCommittedZeroPages, privateMFExternalContent, resume bool, fsSnapshots []checkpoint.FilestoreSnapshot, fsSidecar io.Writer) error {
 	if hostarch.PageSize != 4096 {
 		return fmt.Errorf("save is not supported with %dK page size", hostarch.PageSize/1024)
 	}
@@ -754,6 +754,34 @@ func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCl
 			mf.MarkSavable()
 		}
 
+		// Start a fresh save window on every private MemoryFile: snapshot
+		// credentials stashed by a previous window's SnapshotToFd() must not
+		// leak into this save's ExternalContent metadata (a plain
+		// --skip-filestore-pages save following a --filestore-snapshot-dir
+		// one must describe the backing file's current contents).
+		for _, mf := range mfsToSave {
+			mf.BeginSaveWindow()
+		}
+
+		// Take in-window filestore snapshots (--filestore-snapshot-dir): the
+		// kernel is paused, so there are no writers to the backing files; the
+		// snapshot therefore describes exactly the instant the metadata
+		// below will describe. Snapshots are recorded (size + sampled
+		// fingerprint) on the MemoryFiles so that their ExternalContent save
+		// embeds values describing the snapshot rather than the original
+		// file, which may diverge after the window (leave-running).
+		if len(fsSnapshots) > 0 {
+			entries, err := k.snapshotFilestores(mfsToSave, fsSnapshots)
+			if err != nil {
+				return err
+			}
+			if fsSidecar != nil {
+				if err := writeFilestoreSidecar(fsSidecar, entries); err != nil {
+					return fmt.Errorf("failed to write filestores.json sidecar: %w", err)
+				}
+			}
+		}
+
 		var (
 			mfSaveWg  sync.WaitGroup
 			mfSaveErr error
@@ -763,7 +791,7 @@ func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCl
 			mfSaveWg.Add(1)
 			go func() {
 				defer mfSaveWg.Done()
-				mfSaveErr = k.saveMemoryFiles(ctx, nil, pagesMetadata, pagesFile, mfsToSave, appMFExcludeCommittedZeroPages) // transfers ownership
+				mfSaveErr = k.saveMemoryFiles(ctx, nil, pagesMetadata, pagesFile, mfsToSave, appMFExcludeCommittedZeroPages, privateMFExternalContent) // transfers ownership
 			}()
 			pagesCleanup.Release()
 			// Defer a Wait() so we wait for k.saveMemoryFiles() to complete even if we
@@ -817,7 +845,7 @@ func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCl
 				return mfSaveErr
 			}
 		} else {
-			mfSaveErr = k.saveMemoryFiles(ctx, stateFile, nil, nil, mfsToSave, appMFExcludeCommittedZeroPages)
+			mfSaveErr = k.saveMemoryFiles(ctx, stateFile, nil, nil, mfsToSave, appMFExcludeCommittedZeroPages, privateMFExternalContent)
 			if mfSaveErr != nil {
 				return mfSaveErr
 			}
@@ -846,7 +874,7 @@ func (k *Kernel) BeforeResume(ctx context.Context) {
 // pagesFile must be non-nil, saveMemoryFiles takes ownership of both
 // pagesMetadata and pagesFile (even if it returns a non-nil error), and
 // MemoryFile state will be saved to pagesMetadata and pagesFile.
-func (k *Kernel) saveMemoryFiles(ctx context.Context, w io.Writer, pagesMetadata io.WriteCloser, pagesFile stateio.AsyncWriter, mfsToSave map[checkpoint.ResourceID]*pgalloc.MemoryFile, appMFExcludeCommittedZeroPages bool) error {
+func (k *Kernel) saveMemoryFiles(ctx context.Context, w io.Writer, pagesMetadata io.WriteCloser, pagesFile stateio.AsyncWriter, mfsToSave map[checkpoint.ResourceID]*pgalloc.MemoryFile, appMFExcludeCommittedZeroPages, privateMFExternalContent bool) error {
 	memoryStart := time.Now()
 
 	pmw := w
@@ -888,6 +916,10 @@ func (k *Kernel) saveMemoryFiles(ctx context.Context, w io.Writer, pagesMetadata
 	// appMFExcludeCommittedZeroPages is expected to reflect application memory
 	// usage behavior, but not necessarily usage of private MemoryFiles.
 	mfOpts.ExcludeCommittedZeroPages = false
+	// If privateMFExternalContent is set, private MemoryFiles only save
+	// segment metadata; their contents are expected to be captured out-of-band
+	// (the backing host files are preserved or snapshotted separately).
+	mfOpts.ExternalContent = privateMFExternalContent
 	if err := savePrivateMFs(ctx, pmw, mfsToSave, &mfOpts); err != nil {
 		return err
 	}
@@ -966,7 +998,17 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 	// over floating point state restore errors that may occur on load on
 	// an incompatible machine.
 	if err := k.featureSet.CheckHostCompatible(); err != nil {
-		return err
+		// Experimental escape hatch for cross-node restore: the saved
+		// FeatureSet may contain features absent on the restore host
+		// (e.g. vmx/hle/rtm recorded on the park host). The sandbox is
+		// userspace (sentry never uses vmx); enabling this is only
+		// unsafe if the restored app actually executes instructions
+		// gated on a missing feature. Default stays strict (upstream).
+		if os.Getenv("RUNSC_ALLOW_CPUID_MISMATCH") != "" {
+			log.Warningf("CPU FeatureSet incompatible with host, continuing (RUNSC_ALLOW_CPUID_MISMATCH): %v", err)
+		} else {
+			return err
+		}
 	}
 	timeline.Reached("CPUID checked")
 
