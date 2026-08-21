@@ -279,6 +279,7 @@ func (vfs *VirtualFilesystem) PrepareRenameDentry(mntns *MountNamespace, from, t
 		to.mu.Lock()
 	}
 	from.mu.Lock()
+	vfs.renameSeq.Add(1)
 	// Return with from.mu and to.mu locked, which will be unlocked by
 	// AbortRenameDentry, CommitRenameReplaceDentry, or
 	// CommitRenameExchangeDentry.
