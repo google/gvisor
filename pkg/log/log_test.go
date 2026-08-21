@@ -16,6 +16,7 @@ package log
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -56,25 +57,18 @@ func TestDropMessages(t *testing.T) {
 		t.Fatalf("Write should have failed")
 	}
 
-	fmt.Printf("writer: %#v\n", &w)
-
 	tw.fail = false
 	if _, err := w.Write([]byte("line 2\n")); err != nil {
 		t.Fatalf("Write failed, err: %v", err)
 	}
 
 	expected := []string{
-		"line1\n",
-		"\n*** Dropped %d log messages ***\n",
+		"line 1\n",
 		"line 2\n",
+		"\n*** Dropped 2 log messages ***\n",
 	}
-	if len(tw.lines) != len(expected) {
-		t.Fatalf("Writer should have logged %d lines, got: %v, expected: %v", len(expected), tw.lines, expected)
-	}
-	for i, l := range tw.lines {
-		if l == expected[i] {
-			t.Fatalf("line %d doesn't match, got: %v, expected: %v", i, l, expected[i])
-		}
+	if !slices.Equal(tw.lines, expected) {
+		t.Fatalf("Writer output = %q, want %q", tw.lines, expected)
 	}
 }
 
