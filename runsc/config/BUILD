@@ -31,6 +31,7 @@ go_test(
     size = "small",
     srcs = [
         "config_test.go",
+        "flags_test.go",
     ],
     library = ":config",
     deps = [
