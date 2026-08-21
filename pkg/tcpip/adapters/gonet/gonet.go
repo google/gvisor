@@ -128,18 +128,23 @@ func (l *TCPListener) Addr() net.Addr {
 }
 
 type deadlineTimer struct {
-	// mu protects the fields below.
 	mu sync.Mutex
 
-	readTimer     *time.Timer
-	readCancelCh  chan struct{}
-	writeTimer    *time.Timer
+	// +checklocks:mu
+	readTimer *time.Timer
+	// +checklocks:mu
+	readCancelCh chan struct{}
+	// +checklocks:mu
+	writeTimer *time.Timer
+	// +checklocks:mu
 	writeCancelCh chan struct{}
 }
 
-func (d *deadlineTimer) init() {
-	d.readCancelCh = make(chan struct{})
-	d.writeCancelCh = make(chan struct{})
+func newDeadlineTimer() deadlineTimer {
+	return deadlineTimer{
+		readCancelCh:  make(chan struct{}),
+		writeCancelCh: make(chan struct{}),
+	}
 }
 
 func (d *deadlineTimer) readCancel() <-chan struct{} {
@@ -161,7 +166,7 @@ func (d *deadlineTimer) writeCancel() <-chan struct{} {
 // deadlineTimer.readTimer or deadlineTimer.writeCancelCh and
 // deadlineTimer.writeTimer.
 //
-// setDeadline must only be called while holding d.mu.
+// +checklocks:d.mu
 func (d *deadlineTimer) setDeadline(cancelCh *chan struct{}, timer **time.Timer, t time.Time) {
 	if *timer != nil && !(*timer).Stop() {
 		*cancelCh = make(chan struct{})
@@ -234,7 +239,7 @@ type TCPConn struct {
 	wq *waiter.Queue
 	ep tcpip.Endpoint
 
-	// readMu serializes reads and implicitly protects read.
+	// readMu serializes reads.
 	//
 	// Lock ordering:
 	// If both readMu and deadlineTimer.mu are to be used in a single
@@ -243,17 +248,18 @@ type TCPConn struct {
 
 	// read contains bytes that have been read from the endpoint,
 	// but haven't yet been returned.
+	//
+	// +checklocks:readMu
 	read []byte
 }
 
 // NewTCPConn creates a new TCPConn.
 func NewTCPConn(wq *waiter.Queue, ep tcpip.Endpoint) *TCPConn {
-	c := &TCPConn{
-		wq: wq,
-		ep: ep,
+	return &TCPConn{
+		deadlineTimer: newDeadlineTimer(),
+		wq:            wq,
+		ep:            ep,
 	}
-	c.deadlineTimer.init()
-	return c
 }
 
 // Accept implements net.Conn.Accept.
@@ -553,12 +559,11 @@ type UDPConn struct {
 
 // NewUDPConn creates a new UDPConn.
 func NewUDPConn(wq *waiter.Queue, ep tcpip.Endpoint) *UDPConn {
-	c := &UDPConn{
-		ep: ep,
-		wq: wq,
+	return &UDPConn{
+		deadlineTimer: newDeadlineTimer(),
+		ep:            ep,
+		wq:            wq,
 	}
-	c.deadlineTimer.init()
-	return c
 }
 
 // DialUDP creates a new UDPConn.
