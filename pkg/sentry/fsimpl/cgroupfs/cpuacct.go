@@ -49,13 +49,15 @@ type cpuacctController struct {
 	mu sync.Mutex `state:"nosave"`
 
 	// taskCommittedCharges tracks charges for a task already attributed to this
-	// cgroup. This is used to avoid double counting usage for live
-	// tasks. Protected by mu.
+	// cgroup. This is used to avoid double counting usage for live tasks.
+	//
+	// +checklocks:mu
 	taskCommittedCharges map[*kernel.Task]usage.CPUStats
 
 	// usage is the cumulative CPU time used by past tasks in this cgroup. Note
-	// that this doesn't include usage by live tasks currently in the
-	// cgroup. Protected by mu.
+	// that this doesn't include usage by live tasks currently in the cgroup.
+	//
+	// +checklocks:mu
 	usage usage.CPUStats
 }
 
