@@ -55,6 +55,31 @@ func (t *Task) EnterInitialV1Cgroups(parent *Task, initCgroups map[Cgroup]struct
 	}
 }
 
+// SetCgroupFrozen relays the effective cgroup v2 freeze state (computed by
+// cgroup2fs under the cgroup tree locks) into the task and reconciles its stop
+// state. It mirrors groupStop: on freeze it records the state and interrupts
+// the task, which enters frozenStop itself in runInterrupt (a task can only
+// stop its own goroutine); on thaw it authoritatively ends the stop, since a
+// task parked in an internal stop cannot wake itself.
+//
+// Lock ordering: callers hold fs.tasksMu (the cgroup tree walk in freeze());
+// SetCgroupFrozen then takes signalHandlers.mu, preserving the established
+// fs.tasksMu -> signalHandlers.mu order (the same order as cgroup2fs
+// kill() -> Task.SendSignal). Nothing here takes a cgroup lock.
+func (t *Task) SetCgroupFrozen(frozen bool) {
+	t.tg.signalHandlers.mu.Lock()
+	defer t.tg.signalHandlers.mu.Unlock()
+	t.frozen = frozen
+	if frozen {
+		// Self-service enter: the task parks in frozenStop from runInterrupt.
+		t.interrupt()
+	} else if _, ok := t.stop.(*frozenStop); ok {
+		// Authoritative end (mirror of endGroupStopLocked on SIGCONT): a task
+		// parked in frozenStop cannot leave the stop on its own goroutine.
+		t.endInternalStopLocked()
+	}
+}
+
 // SetMemCgID sets the given memory cgroup id to the task.
 func (t *Task) SetMemCgID(memCgID uint32) {
 	t.memCgID.Store(memCgID)
