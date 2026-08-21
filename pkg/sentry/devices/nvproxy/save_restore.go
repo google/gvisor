@@ -185,6 +185,54 @@ func (nvp *nvproxy) beforeSave() {
 	}
 }
 
+// checkFrontendFDsRemappable panics if dr does not describe every device that
+// an open frontendFD refers to, which would mean that the checkpoint's list of
+// devices is inconsistent with the FDs saved alongside it.
+func (nvp *nvproxy) checkFrontendFDsRemappable(dr *DeviceRemapping) {
+	nvp.fdsMu.Lock()
+	defer nvp.fdsMu.Unlock()
+	for fd := range nvp.frontendFDs {
+		if fd.dev.minor > nvgpu.NV_MINOR_DEVICE_NUMBER_REGULAR_MAX {
+			continue
+		}
+		// dr identifies devices by the minor numbers recorded in the
+		// checkpoint, which are host minor numbers; see
+		// runsc/boot/nvproxy.go:getNvproxyDeviceRemapIDs().
+		if hostMinor := fd.dev.hostMinor(); dr.OldDeviceByMinor[hostMinor] == nil {
+			panic(fmt.Sprintf("nvproxy: remapping does not contain a saved device with minor number %d: %+v", hostMinor, dr))
+		}
+	}
+}
+
+// setHostMinorsForRestore records the sandbox-visible-minor => host-minor
+// translation implied by dr, so that both the frontendFDs reopened by this
+// restore and any device file opened later reach the GPUs this sandbox is now
+// entitled to.
+//
+// Sandbox-visible minor numbers deliberately do not change: the application's
+// device namespace must look the same as it did before the checkpoint, since
+// device numbers are baked into the restored VFS and into whatever the
+// application has already opened by name.
+func (nvp *nvproxy) setHostMinorsForRestore(dr *DeviceRemapping) {
+	minorByHostMinor := make(map[uint32]uint32, len(nvp.hostMinorByMinor))
+	for minor, hostMinor := range nvp.hostMinorByMinor {
+		minorByHostMinor[hostMinor] = minor
+	}
+	hostMinorByMinor := make(map[uint32]uint32, len(dr.NewDeviceByOld))
+	for oldID, newID := range dr.NewDeviceByOld {
+		// Devices absent from minorByHostMinor were never remapped, so their
+		// sandbox-visible and host minor numbers are still the same.
+		minor, ok := minorByHostMinor[oldID.Minor]
+		if !ok {
+			minor = oldID.Minor
+		}
+		if minor != newID.Minor {
+			hostMinorByMinor[minor] = newID.Minor
+		}
+	}
+	nvp.hostMinorByMinor = hostMinorByMinor
+}
+
 // afterLoad is invoked by stateify.
 func (nvp *nvproxy) afterLoad(ctx goContext.Context) {
 	Init()
@@ -194,27 +242,10 @@ func (nvp *nvproxy) afterLoad(ctx goContext.Context) {
 	}
 	nvp.abi = abiEntry.cons()
 	if dr := DeviceRemappingFromContext(ctx); dr != nil {
-		// Remap frontendFDs to their new frontendDevices.
-		// frontendFD.vfsfd.VirtualDentry() will still point to the original
-		// dentry, so e.g. /proc/[pid]/fd/ will be incorrect, but we don't have
-		// a way to get the correct dentry, which may not even exist
-		// (frontendFDs might have been opened from application-created device
-		// special files in any filesystem not mounted nodev).
-		func() {
-			nvp.fdsMu.Lock()
-			defer nvp.fdsMu.Unlock()
-			for fd := range nvp.frontendFDs {
-				oldMinor := fd.dev.minor
-				if oldMinor > nvgpu.NV_MINOR_DEVICE_NUMBER_REGULAR_MAX {
-					continue
-				}
-				oldDev, ok := dr.OldDeviceByMinor[oldMinor]
-				if !ok {
-					panic(fmt.Sprintf("nvproxy: remapping does not contain a saved device with minor number %d: %+v", oldMinor, dr))
-				}
-				fd.dev = nvp.regularDevs[dr.NewDeviceByOld[oldDev].Minor]
-			}
-		}()
+		// Remap devices before frontendFD.load() below reopens host device
+		// files, since it names them after the devices its FDs point to.
+		nvp.checkFrontendFDsRemappable(dr)
+		nvp.setHostMinorsForRestore(dr)
 		// Remap objects to their new devices.
 		// Calls to CheckDevicesRemappable() already checked that all subdevice
 		// instances are 0, so we don't need to update any NV20_SUBDEVICE_0
@@ -302,6 +333,12 @@ func (nvp *nvproxy) afterLoad(ctx goContext.Context) {
 }
 
 func (fd *frontendFD) load(ctx goContext.Context) {
+	// basename() resolves to the remapped GPU's host device file, using the
+	// translation that nvproxy.afterLoad() -- this function's only caller --
+	// records before calling this. This is important in order for new
+	// frontendFDs to be opened with the correct host device file.
+	//
+	// Preconditions: fd.dev.nvp.fdsMu must be locked.
 	basename := fd.dev.basename()
 	fd.hostFD = openHostDevFileForRestore(ctx, basename, fd.dev.nvp.useDevGofer, fd.containerName, fd.vfsfd.StatusFlags())
 	if err := fdnotifier.AddFD(fd.hostFD, &fd.internalQueue); err != nil {

@@ -214,6 +214,8 @@ type nvproxy struct {
 	devInfo                DeviceInfo
 	regularDevs            [nvgpu.NV_MINOR_DEVICE_NUMBER_REGULAR_MAX + 1]*frontendDevice
 
+	hostMinorByMinor map[uint32]uint32
+
 	fdsMu       fdsMutex `state:"nosave"`
 	frontendFDs map[*frontendFD]struct{}
 

@@ -54,7 +54,14 @@ func (dev *frontendDevice) basename() string {
 	if dev.isCtlDevice() {
 		return "nvidiactl"
 	}
-	return fmt.Sprintf("nvidia%d", dev.minor)
+	return fmt.Sprintf("nvidia%d", dev.hostMinor())
+}
+
+func (dev *frontendDevice) hostMinor() uint32 {
+	if hostMinor, ok := dev.nvp.hostMinorByMinor[dev.minor]; ok {
+		return hostMinor
+	}
+	return dev.minor
 }
 
 // Open implements vfs.Device.Open.
