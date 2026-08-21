@@ -32,6 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/seccheck/sinks/remote/test"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/sandbox"
 )
 
 func remoteSinkConfig(endpoint string) seccheck.SinkConfig {
@@ -502,5 +503,107 @@ func TestSeccheckRead(t *testing.T) {
 	}
 	if want := "inux"; string(got) != want {
 		t.Errorf("scsdk.ReadFile got %q, want %q", string(got), want)
+	}
+}
+
+// TestTraceCheckpointRestore tests that a trace session should survive a checkpoint / restore.
+func TestTraceCheckpointRestore(t *testing.T) {
+	// TODO(b/549990354): Enable this test once seccheck is integrated with the
+	// checkpoint/restore (+stateify) lifecycle and host-side sink FD re-hydration is implemented.
+	// Currently, dynamically created trace sessions and their sink FDs are completely lost across
+	// pause/restore.
+	t.Skip("seccheck dynamically created sessions are broken across checkpoint/restore")
+
+	spec, conf := sleepSpecConf(t)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	// Create and start the container.
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	// Create a new trace session on the fly.
+	server, err := test.NewServer()
+	if err != nil {
+		t.Fatalf("newServer(): %v", err)
+	}
+	defer server.Close()
+
+	session := seccheck.SessionConfig{
+		Name: "Default",
+		Points: []seccheck.PointConfig{
+			{
+				Name:          "sentry/task_exit",
+				ContextFields: []string{"container_id"},
+			},
+		},
+		Sinks: []seccheck.SinkConfig{remoteSinkConfig(server.Endpoint)},
+	}
+	if err := cont.Sandbox.CreateTraceSession(&session, false); err != nil {
+		t.Fatalf("CreateTraceSession(): %v", err)
+	}
+
+	// Trigger the configured point and want to receive it in the server.
+	if ws, err := execute(conf, cont, "/bin/true"); err != nil || ws != 0 {
+		t.Fatalf("exec: true, ws: %v, err: %v", ws, err)
+	}
+	server.WaitForCount(1)
+	pt := server.GetPoints()[0]
+	if want := pb.MessageType_MESSAGE_SENTRY_TASK_EXIT; pt.MsgType != want {
+		t.Errorf("wrong message type, got: %v, want: %v", pt.MsgType, want)
+	}
+
+	// Checkpoint the container
+	imagePath, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint")
+	if err != nil {
+		t.Fatalf("tmpdir: %v", err)
+	}
+	defer os.RemoveAll(imagePath)
+	if err := cont.Checkpoint(conf, imagePath, sandbox.CheckpointOpts{}); err != nil {
+		t.Fatalf("Checkpoint(): %v", err)
+	}
+
+	cont.Destroy()
+
+	// Wait for any delayed points from Destroy to flush, then reset
+	time.Sleep(500 * time.Millisecond)
+	server.Reset()
+
+	// Now Restore the container
+	cont, err = New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container for restore: %v", err)
+	}
+	defer cont.Destroy()
+
+	if err := cont.Restore(conf, imagePath, false, false, nil); err != nil {
+		t.Fatalf("Restore(): %v", err)
+	}
+
+	// Trigger the point again
+	if ws, err := execute(conf, cont, "/bin/true"); err != nil || ws != 0 {
+		t.Fatalf("exec: true, ws: %v, err: %v", ws, err)
+	}
+	time.Sleep(time.Second) // give some time to receive the point.
+
+	// The checkpoint/restore bug is characterized by the dynamically created session being lost.
+	// Therefore, no points are received currently. However, we assert the correct behavior (1 point)
+	// so that this test fails now and will pass once the bug is fixed.
+	if count := server.Count(); count != 1 {
+		t.Errorf("wrong task_exit point count after restore, got: %d, want: 1 (seccheck pause/restore is broken!)", count)
 	}
 }
