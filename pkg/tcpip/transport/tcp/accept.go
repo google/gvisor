@@ -86,9 +86,11 @@ type listenContext struct {
 	// this context. Can be nil if the context is created by the forwarder.
 	listenEP *Endpoint
 
-	// hasherMu protects hasher.
 	hasherMu hasherMutex
+
 	// hasher is the hash function used to generate a SYN cookie.
+	//
+	// +checklocks:hasherMu
 	hasher hash.Hash
 
 	// v6Only is true if listenEP is a dual stack socket and has the

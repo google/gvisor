@@ -981,6 +981,8 @@ func sendTCP(r *stack.Route, tf tcpFields, pkt *stack.PacketBuffer, gso stack.GS
 }
 
 // makeOptions makes an options slice.
+//
+// +checklocks:e.mu
 func (e *Endpoint) makeOptions(sackBlocks []header.SACKBlock) []byte {
 	options := getOptions()
 	offset := 0
