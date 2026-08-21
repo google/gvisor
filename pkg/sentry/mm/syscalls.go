@@ -1132,9 +1132,10 @@ func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
 	//	- If at least one byte in ar is not covered by a vma, decommit the rest
 	//	but return ENOMEM.
 	//
-	//	- If we would invalidate only part of a huge page that we own (is not
-	//	copy-on-write), use MemoryFile.Decommit() instead to keep the allocated
-	//	huge page intact for future use.
+	//	- If we would invalidate only part of a huge page backing a private
+	//	anonymous mapping that we own (is not copy-on-write), use
+	//	MemoryFile.Decommit() instead to keep the allocated huge page intact for
+	//	future use.
 	didUnmapAS := false
 	pseg := mm.pmas.LowerBoundSegment(ar.Start)
 	vseg := mm.vmas.LowerBoundSegment(ar.Start)
@@ -1157,7 +1158,7 @@ func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
 		}
 		for pseg.Ok() && pseg.Start() < vsegAR.End {
 			pma := pseg.ValuePtr()
-			if pma.huge && !mm.isPMACopyOnWriteLocked(vseg, pseg) {
+			if vma.mappable == nil && pma.huge && !mm.isPMACopyOnWriteLocked(vseg, pseg) {
 				psegAR := pseg.Range().Intersect(vsegAR)
 				if !psegAR.IsHugePageAligned() {
 					firstHugeStart := psegAR.Start.HugeRoundDown()
