@@ -19,4 +19,5 @@ go_test(
     size = "small",
     srcs = ["interrupt_test.go"],
     library = ":interrupt",
+    deps = ["//pkg/sync"],
 )
