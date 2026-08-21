@@ -95,6 +95,7 @@ import (
 type UserCounters struct {
 	uid auth.KUID
 
+	// +checkatomic
 	rlimitNProc atomicbitops.Uint64
 }
 
@@ -160,6 +161,8 @@ type Kernel struct {
 
 	// started is true if Start has been called. Unless otherwise specified,
 	// all Kernel fields become immutable once started becomes true.
+	//
+	// +checklocks:extMu
 	started bool `state:"nosave"`
 
 	// All of the following fields are immutable unless otherwise specified.
@@ -196,8 +199,14 @@ type Kernel struct {
 	// after all tasks in the thread group have exited, such that ID 1 is no
 	// longer mapped.
 	//
-	// globalInit is mutable until it is assigned by the first successful call
-	// to CreateProcess, and is protected by extMu.
+	// globalInit is assigned by the first successful call to CreateProcess
+	// under extMu. The pointer is immutable afterwards. Task and signal paths
+	// read the published pointer without extMu; taking extMu while holding
+	// TaskSet.mu would reverse the lock order.
+	//
+	// Before publication, readers rely on serialized process creation or the
+	// SupervisorContext caller contract. checklocks cannot express this
+	// publication rule or carry that contract into a Value callback.
 	globalInit *ThreadGroup
 
 	// syslog is the kernel log.
@@ -209,16 +218,20 @@ type Kernel struct {
 	// TaskGoroutineRunningSys or TaskGoroutineRunningApp. i.e., they are
 	// not blocked or stopped.
 	//
-	// runningTasks must be accessed atomically. Increments from 0 to 1 are
-	// further protected by runningTasksMu (see incRunningTasks).
+	// Increments from 0 to 1 also require runningTasksMu (see
+	// incRunningTasks).
+	//
+	// +checkatomic
 	runningTasks atomicbitops.Int64
 
 	// blockedTasks is the total count of tasks currently in
 	// TaskGoroutineBlockedUninterruptible, i.e. uninterruptible sleep. It is
 	// used to implement procs_blocked in /proc/stat.
 	//
-	// blockedTasks must be accessed atomically. It is not saved; on restore it
-	// is repopulated as tasks re-enter uninterruptible sleep.
+	// It is not saved; on restore it is repopulated as tasks re-enter
+	// uninterruptible sleep.
+	//
+	// +checkatomic
 	blockedTasks atomicbitops.Int64 `state:"nosave"`
 
 	// runningTasksCond is signaled when runningTasks is incremented from 0 to 1.
@@ -234,7 +247,9 @@ type Kernel struct {
 	// 0->1 transition, since a waiter may have parked during the slack tick in
 	// which runningTasks is 0 but cpuClockTickerRunning is still true.
 	//
-	// activeNotifyCh is protected by runningTasksMu.
+	// Initialized during Init or restore, before the ticker and waiters start.
+	//
+	// +checklocks:runningTasksMu
 	taskActivityCh chan struct{} `state:"nosave"`
 
 	// cpuClockTickTimer drives increments of cpuClock.
@@ -244,7 +259,7 @@ type Kernel struct {
 	// running, and false if it is blocked in runningTasksCond.Wait() or if it
 	// never started.
 	//
-	// cpuClockTickerRunning is protected by runningTasksMu.
+	// +checklocks:runningTasksMu
 	cpuClockTickerRunning bool
 
 	// cpuClockTickerWakeCh is sent to to wake the goroutine that increments
@@ -262,6 +277,8 @@ type Kernel struct {
 	// strictly slower due to CPU clock ticker goroutine wakeup latency). This
 	// does not use ktime.SyntheticClock since this clock currently does not
 	// need to support timers.
+	//
+	// +checkatomic
 	cpuClock atomicbitops.Int64
 
 	// userCPUClock and userSysCPUClock are kernel-wide cumulative CPU time
@@ -274,19 +291,21 @@ type Kernel struct {
 	// the CPU time of exited tasks. They are used to implement the aggregate
 	// CPU line in /proc/stat (see Kernel.CPUStats).
 	//
-	// userCPUClock and userSysCPUClock must be accessed atomically.
-	userCPUClock    atomicbitops.Int64
+	// +checkatomic
+	userCPUClock atomicbitops.Int64
+
+	// +checkatomic
 	userSysCPUClock atomicbitops.Int64
 
 	// uniqueID is used to generate unique identifiers.
 	//
-	// uniqueID is mutable, and is accessed using atomic memory operations.
+	// +checkatomic
 	uniqueID atomicbitops.Uint64
 
 	// nextInotifyCookie is a monotonically increasing counter used for
 	// generating unique inotify event cookies.
 	//
-	// nextInotifyCookie is mutable.
+	// +checkatomic
 	nextInotifyCookie atomicbitops.Uint32
 
 	// netlinkPorts manages allocation of netlink socket port IDs.
@@ -295,17 +314,21 @@ type Kernel struct {
 	// saveStatus is nil if the sandbox has not been saved, errSaved or
 	// errAutoSaved if it has been saved successfully, or the error causing the
 	// sandbox to exit during save.
-	// It is protected by extMu.
+	//
+	// +checklocks:extMu
 	saveStatus error `state:"nosave"`
 
 	// danglingEndpoints is used to save / restore tcpip.DanglingEndpoints.
 	danglingEndpoints struct{} `state:".([]tcpip.Endpoint)"`
 
-	// sockets records all network sockets in the system. Protected by extMu.
+	// sockets records all network sockets in the system.
+	//
+	// +checklocks:extMu
 	sockets map[*vfs.FileDescription]*SocketRecord
 
-	// nextSocketRecord is the next entry number to use in sockets. Protected
-	// by extMu.
+	// nextSocketRecord is the next entry number to use in sockets.
+	//
+	// +checklocks:extMu
 	nextSocketRecord uint64
 
 	// unimplementedSyscallEmitterOnce is used in the initialization of
@@ -369,6 +392,12 @@ type Kernel struct {
 	ptraceExceptions map[*Task]*Task
 
 	// YAMAPtraceScope is the current level of YAMA ptrace restrictions.
+	// After initialization, accesses are atomic, including through the
+	// pointer shared with the proc filesystem.
+	//
+	// proc.yamaPtraceScope.level stores this field's address. checklocks
+	// rejects that stored pointer rather than following later atomic
+	// accesses through it, so the atomic contract remains in prose.
 	YAMAPtraceScope atomicbitops.Int32
 
 	// cgroupRegistry contains the set of active cgroup controllers on the
@@ -380,18 +409,30 @@ type Kernel struct {
 	// created for the root container. These mounts are then bind mounted
 	// for other application containers by creating their own container
 	// directories.
+	//
+	// +checklocks:cgroupMountsMapMu
 	cgroupMountsMap   map[string]*CgroupMount
 	cgroupMountsMapMu cgroupMountsMutex `state:"nosave"`
 
 	// userCountersMap maps auth.KUID into a set of user counters.
+	// Each counter is independently synchronized.
+	//
+	// +checklocks:userCountersMapMu
 	userCountersMap   map[auth.KUID]*UserCounters
 	userCountersMapMu userCountersMutex `state:"nosave"`
 
 	// MaxFDLimit specifies the maximum file descriptor number that can be
-	// used by processes.
+	// used by processes. It is accessed atomically, including through the
+	// pointer shared with the proc filesystem.
+	//
+	// proc.atomicInt32File.val stores this field's address. checklocks
+	// rejects that stored pointer rather than following later atomic
+	// accesses through it, so the atomic contract remains in prose.
 	MaxFDLimit atomicbitops.Int32
 
 	// devGofers maps containers (using its name) to its device gofer client.
+	//
+	// +checklocks:devGofersMu
 	devGofers   map[string]*devutil.GoferClient `state:"nosave"`
 	devGofersMu sync.Mutex                      `state:"nosave"`
 
@@ -399,7 +440,8 @@ type Kernel struct {
 	// Names are preserved between save/restore session, while IDs can change.
 	//
 	// Mapping: cid -> name.
-	// It's protected by extMu.
+	//
+	// +checklocks:extMu
 	containerNames map[string]string
 
 	// checkpointMu is used to protect the checkpointing related fields below.
@@ -436,6 +478,12 @@ type Kernel struct {
 	IOUringEnabled bool
 
 	// MaxKeySetSize is the maximum number of keys in a key set.
+	// After initialization, accesses are atomic, including through the
+	// pointer shared with the proc filesystem.
+	//
+	// proc.maxKeySize.maxKeys stores this field's address. checklocks
+	// rejects that stored pointer rather than following later atomic
+	// accesses through it, so the atomic contract remains in prose.
 	MaxKeySetSize atomicbitops.Int32
 
 	// fsSaveWaiters holds waiters for Kernel.WaitForFSSave. fsSaveWaiters is
@@ -507,10 +555,12 @@ type InitKernelArgs struct {
 	Cgroup2FSInit func(ctx context.Context, k *Kernel, vfsObj *vfs.VirtualFilesystem) (*vfs.Filesystem, error)
 }
 
-// Init initialize the Kernel with no tasks.
+// Init initializes the Kernel with no tasks.
 //
 // Callers must manually set Kernel.Platform and call Kernel.SetMemoryFile
 // before calling Init.
+//
+// Preconditions: k has not been initialized and is not in use.
 func (k *Kernel) Init(args InitKernelArgs) error {
 	if args.Timekeeper == nil {
 		return fmt.Errorf("args.Timekeeper is nil")
@@ -535,10 +585,12 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	if k.rootNetworkNamespace == nil {
 		k.rootNetworkNamespace = inet.NewRootNamespace(nil, nil, args.RootUserNamespace)
 	}
+	k.runningTasksMu.Lock()
 	k.runningTasksCond.L = &k.runningTasksMu
 	k.cpuClockTickerWakeCh = make(chan struct{}, 1)
 	k.cpuClockTickerStopCond.L = &k.runningTasksMu
 	k.taskActivityCh = make(chan struct{})
+	k.runningTasksMu.Unlock()
 	k.applicationCores = args.ApplicationCores
 	if args.UseHostCores && k.HasCPUNumbers() {
 		args.UseHostCores = false
@@ -574,12 +626,16 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	k.netlinkPorts = port.New()
 	k.ptraceExceptions = make(map[*Task]*Task)
 	k.YAMAPtraceScope = atomicbitops.FromInt32(linux.YAMA_SCOPE_RELATIONAL)
+	k.userCountersMapMu.Lock()
 	k.userCountersMap = make(map[auth.KUID]*UserCounters)
+	k.userCountersMapMu.Unlock()
 	if args.MaxFDLimit == 0 {
 		args.MaxFDLimit = MaxFdLimit
 	}
 	k.MaxFDLimit.Store(args.MaxFDLimit)
+	k.extMu.Lock()
 	k.containerNames = make(map[string]string)
+	k.extMu.Unlock()
 	k.CheckpointWait.k = k
 
 	ctx := k.SupervisorContext()
@@ -643,7 +699,9 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	}
 	k.sysVShmDevID = linux.MakeDeviceID(linux.UNNAMED_MAJOR, sysVShmDevMinor)
 
+	k.extMu.Lock()
 	k.sockets = make(map[*vfs.FileDescription]*SocketRecord)
+	k.extMu.Unlock()
 
 	k.cgroupRegistry = newCgroupRegistry()
 
@@ -935,7 +993,9 @@ func (k *Kernel) invalidateUnsavableMappings(ctx context.Context) error {
 	return nil
 }
 
-// LoadFrom returns a new Kernel loaded from args.
+// LoadFrom restores k from r.
+//
+// Preconditions: k is not in use.
 func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *AsyncMFLoader, timeReady chan struct{}, networkArgs inet.NetworkArgs, clocks sentrytime.Clocks, vfsOpts *vfs.CompleteRestoreOptions, timeline *timing.Timeline) error {
 	defer timeline.End()
 	if hostarch.PageSize != 4096 {
@@ -943,10 +1003,12 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 	}
 	loadStart := time.Now()
 
+	k.runningTasksMu.Lock()
 	k.runningTasksCond.L = &k.runningTasksMu
 	k.cpuClockTickerWakeCh = make(chan struct{}, 1)
 	k.cpuClockTickerStopCond.L = &k.runningTasksMu
 	k.taskActivityCh = make(chan struct{})
+	k.runningTasksMu.Unlock()
 
 	initAppCores := k.applicationCores
 
@@ -1042,16 +1104,20 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 
 // ExtractRootfsUpperLayer partially restores the kernel state and extracts the
 // rootfs upper layer to the provided file.
+//
+// Preconditions: k is not in use.
 func (k *Kernel) ExtractRootfsUpperLayer(ctx context.Context, r io.Reader, asyncMFLoader *AsyncMFLoader, timeReady chan struct{}, clocks sentrytime.Clocks, outFD *os.File) error {
 	if hostarch.PageSize != 4096 {
 		return fmt.Errorf("restore is not supported with %dK page size", hostarch.PageSize/1024)
 	}
 	loadStart := time.Now()
 
+	k.runningTasksMu.Lock()
 	k.runningTasksCond.L = &k.runningTasksMu
 	k.cpuClockTickerWakeCh = make(chan struct{}, 1)
 	k.cpuClockTickerStopCond.L = &k.runningTasksMu
 	k.taskActivityCh = make(chan struct{})
+	k.runningTasksMu.Unlock()
 
 	// Load the pre-saved CPUID FeatureSet.
 	cpuidStart := time.Now()
@@ -1201,7 +1267,7 @@ type CreateProcessArgs struct {
 }
 
 // NewContext returns a context.Context that represents the task that will be
-// created by args.NewContext(k).
+// created by Kernel.CreateProcess with args.
 func (args *CreateProcessArgs) NewContext(k *Kernel) context.Context {
 	return &createProcessContext{
 		Context: context.Background(),
@@ -1511,9 +1577,9 @@ func (k *Kernel) Start() error {
 
 // pauseTimeLocked pauses all Timers and Timekeeper updates.
 //
-// Preconditions:
-//   - Any task goroutines running in k must be stopped.
-//   - k.extMu must be locked.
+// Preconditions: Any task goroutines running in k must be stopped.
+//
+// +checklocks:k.extMu
 func (k *Kernel) pauseTimeLocked(ctx context.Context) {
 	// Since all task goroutines have been stopped by precondition, the CPU clock
 	// ticker should stop on its own; wait for it to do so, waking it up from
@@ -1558,9 +1624,9 @@ func (k *Kernel) pauseTimeLocked(ctx context.Context) {
 // pauseTimeLocked has not been previously called, resumeTimeLocked has no
 // effect.
 //
-// Preconditions:
-//   - Any task goroutines running in k must be stopped.
-//   - k.extMu must be locked.
+// Preconditions: Any task goroutines running in k must be stopped.
+//
+// +checklocks:k.extMu
 func (k *Kernel) resumeTimeLocked(ctx context.Context) {
 	// The CPU clock ticker will automatically resume as task goroutines resume
 	// execution.
@@ -1916,6 +1982,8 @@ func (k *Kernel) GlobalInit() *ThreadGroup {
 }
 
 // TestOnlySetGlobalInit sets the thread group with ID 1 in the root PID namespace.
+//
+// Preconditions: k is exclusively owned by the caller during test setup.
 func (k *Kernel) TestOnlySetGlobalInit(tg *ThreadGroup) {
 	k.globalInit = tg
 }
