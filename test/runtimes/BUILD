@@ -42,6 +42,13 @@ runtime_test(
     shard_count = more_shards,
 )
 
+runtime_test(
+    name = "moby",
+    lang = "moby",
+    privileged = True,
+    shard_count = 1,
+)
+
 bzl_library(
     name = "defs_bzl",
     srcs = ["defs.bzl"],
