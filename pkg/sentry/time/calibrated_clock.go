@@ -31,22 +31,30 @@ import (
 // to ensure that the clock does not drift significantly from the reference
 // clock.
 type CalibratedClock struct {
-	// mu protects the fields below.
+	// mu protects ref's mutable sampling state.
 	// TODO(mpratt): consider a sequence counter for read locking.
 	mu sync.RWMutex
 
-	// ref sample the reference clock that this clock is calibrated
-	// against.
+	// ref samples the reference clock that this clock is calibrated against.
+	// The pointer is immutable; its samples and overhead are protected by mu.
+	// The sampler has no link back to this clock, so checklocks cannot name
+	// the owning mutex for the sampler's fields and methods.
 	ref *sampler
 
 	// ready indicates that the fields below are ready for use calculating
 	// time.
+	//
+	// +checklocks:mu
 	ready bool
 
 	// params are the current timekeeping parameters.
+	//
+	// +checklocks:mu
 	params Parameters
 
 	// errorNS is the estimated clock error in nanoseconds.
+	//
+	// +checklocks:mu
 	errorNS ReferenceNS
 }
 
@@ -86,6 +94,8 @@ func (c *CalibratedClock) Warningf(format string, v ...any) {
 
 // reset forces the clock to restart the calibration process, logging the
 // passed message.
+//
+// +checklocksexclude:c.mu
 func (c *CalibratedClock) reset(str string, v ...any) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -93,6 +103,8 @@ func (c *CalibratedClock) reset(str string, v ...any) {
 }
 
 // resetLocked is equivalent to reset with c.mu already held for writing.
+//
+// +checklocks:c.mu
 func (c *CalibratedClock) resetLocked(str string, v ...any) {
 	c.Warningf(str+" Resetting clock; time may jump.", v...)
 	c.ready = false
@@ -106,7 +118,7 @@ func (c *CalibratedClock) resetLocked(str string, v ...any) {
 // actual is the actual estimated timekeeping parameters. The stored parameters
 // may need to be adjusted slightly from these values to compensate for error.
 //
-// Preconditions: c.mu must be held for writing.
+// +checklocks:c.mu
 func (c *CalibratedClock) updateParams(actual Parameters, parked bool) {
 	if !c.ready || parked {
 		// when parked nothing has read the time for a whole interval, so
@@ -154,6 +166,8 @@ func (c *CalibratedClock) updateParams(actual Parameters, parked bool) {
 //
 // The returned timekeeping parameters are invalidated on the next call to
 // Update.
+//
+// +checklocksexclude:c.mu
 func (c *CalibratedClock) Update(parked bool) (Parameters, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -198,6 +212,8 @@ func (c *CalibratedClock) Update(parked bool) (Parameters, bool) {
 }
 
 // GetTime returns the current time based on the clock calibration.
+//
+// +checklocksexclude:c.mu
 func (c *CalibratedClock) GetTime() (int64, error) {
 	c.mu.RLock()
 
@@ -213,9 +229,15 @@ func (c *CalibratedClock) GetTime() (int64, error) {
 	if !ok {
 		// Something is seriously wrong with the clock. Try
 		// again with syscalls.
-		c.resetLocked("Time computation overflowed. params = %+v, now = %v.", c.params, now)
-		now, err := c.ref.Syscall()
+		params := c.params
 		c.mu.RUnlock()
+		c.mu.Lock()
+		// Do not reset a newer calibration installed while the lock was dropped.
+		if c.ready && c.params == params {
+			c.resetLocked("Time computation overflowed. params = %+v, now = %v.", params, now)
+		}
+		now, err := c.ref.Syscall()
+		c.mu.Unlock()
 		return int64(now), err
 	}
 
