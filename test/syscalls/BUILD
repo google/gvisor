@@ -176,6 +176,11 @@ syscall_test(
 )
 
 syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:copy_file_range_test",
+)
+
+syscall_test(
     add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:creat_test",
