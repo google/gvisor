@@ -227,10 +227,13 @@ type PortManager struct {
 	// be reused.
 	allocatedPorts map[portDescriptor]addrToDevice
 
-	// ephemeralMu protects firstEphemeral and numEphemeral.
-	ephemeralMu    sync.RWMutex `state:"nosave"`
+	ephemeralMu sync.RWMutex `state:"nosave"`
+
+	// +checklocks:ephemeralMu
 	firstEphemeral uint16
-	numEphemeral   uint16
+
+	// +checklocks:ephemeralMu
+	numEphemeral uint16
 }
 
 // NewPortManager creates new PortManager.
@@ -251,6 +254,9 @@ type PortTester func(port uint16) (good bool, err tcpip.Error)
 // possible ephemeral ports, allowing the caller to decide whether a given port
 // is suitable for its needs, and stopping when a port is found or an error
 // occurs.
+//
+// testPort is called synchronously without ephemeralMu held. Locks held by
+// the caller remain held during the callback.
 func (pm *PortManager) PickEphemeralPort(rng rand.RNG, testPort PortTester) (port uint16, err tcpip.Error) {
 	pm.ephemeralMu.RLock()
 	firstEphemeral := pm.firstEphemeral
@@ -289,6 +295,9 @@ func pickEphemeralPort(offset uint32, first, count uint16, testPort PortTester) 
 // An optional PortTester can be passed in which if provided will be used to
 // test if the picked port can be used. The function should return true if the
 // port is safe to use, false otherwise.
+//
+// testPort is called synchronously with pm.mu held and must not call methods
+// that acquire the same pm.mu.
 func (pm *PortManager) ReservePort(rng rand.RNG, res Reservation, testPort PortTester) (reservedPort uint16, err tcpip.Error) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
@@ -313,7 +322,8 @@ func (pm *PortManager) ReservePort(rng rand.RNG, res Reservation, testPort PortT
 		return res.Port, nil
 	}
 
-	// A port wasn't specified, so try to find one.
+	// A port wasn't specified, so try to find one. The callback retains pm.mu,
+	// which checklocks cannot currently track through PickEphemeralPort.
 	return pm.PickEphemeralPort(rng, func(p uint16) (bool, tcpip.Error) {
 		res.Port = p
 		if !pm.reserveSpecificPortLocked(res, false /* portSpecified */) {
@@ -336,6 +346,8 @@ func (pm *PortManager) ReservePort(rng rand.RNG, res Reservation, testPort PortT
 
 // reserveSpecificPortLocked tries to reserve the given port on all given
 // protocols.
+//
+// Preconditions: pm.mu must be locked for writing.
 func (pm *PortManager) reserveSpecificPortLocked(res Reservation, portSpecified bool) bool {
 	// Make sure the port is available.
 	for _, network := range res.Networks {
@@ -435,6 +447,9 @@ func (pm *PortManager) ReleasePort(res Reservation) {
 	pm.releasePortLocked(res)
 }
 
+// releasePortLocked releases a reservation without dropping the caller's lock.
+//
+// Preconditions: pm.mu must be locked for writing.
 func (pm *PortManager) releasePortLocked(res Reservation) {
 	dst := res.dst()
 	for _, network := range res.Networks {
