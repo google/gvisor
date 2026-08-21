@@ -293,6 +293,12 @@ func (l *lockState) valueAndObject(v ssa.Value) (string, types.Object) {
 		// scope where all the variables are bound.
 		v, ok := l.stored[x]
 		if ok {
+			// Nested closures capture the enclosing FreeVar. Follow that
+			// binding before dereferencing the captured location. A Store
+			// can instead place an address here, with a different type.
+			if fv, ok := v.(*ssa.FreeVar); ok && types.Identical(fv.Type(), x.Type()) {
+				return l.valueAndObject(fv)
+			}
 			// The FreeVar is typically bound to a location, so we
 			// check what's been stored there. Note that the second
 			// may map to the same FreeVar, which we can check.
