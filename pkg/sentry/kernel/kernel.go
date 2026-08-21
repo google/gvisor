@@ -1229,9 +1229,7 @@ func (ctx *createProcessContext) Value(key any) any {
 		if ctx.args.CgroupNamespace == nil {
 			return nil
 		}
-		cgroupns := ctx.args.CgroupNamespace
-		cgroupns.IncRef()
-		return cgroupns
+		return ctx.args.CgroupNamespace
 	case CtxUTSNamespace:
 		utsns := ctx.args.UTSNamespace
 		utsns.IncRef()
