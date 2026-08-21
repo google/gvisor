@@ -61,6 +61,7 @@ type notificationChannels struct {
 	mu struct {
 		sync.Mutex
 
+		// +checklocks:Mutex
 		ch []<-chan struct{}
 	}
 }
@@ -96,12 +97,18 @@ type manualClockMutex struct {
 	sync.RWMutex
 
 	// now is the current (fake) time of the clock.
+	//
+	// +checklocks:RWMutex
 	now time.Time
 
 	// times is min-heap of times.
+	//
+	// +checklocks:RWMutex
 	times timeHeap
 
 	// timers holds the timers scheduled for each time.
+	//
+	// +checklocks:RWMutex
 	timers map[time.Time]map[*manualTimer]struct{}
 }
 
@@ -167,7 +174,8 @@ func (mc *ManualClock) AfterFunc(d time.Duration, f func()) tcpip.Timer {
 
 // resetTimerLocked schedules a timer to be fired after the given duration.
 //
-// Precondition: mc.mu and mt.mu must be locked.
+// +checklocks:mc.mu.RWMutex
+// +checklocks:mt.mu.Mutex
 func (mc *ManualClock) resetTimerLocked(mt *manualTimer, d time.Duration) {
 	if !mt.mu.firesAt.IsZero() {
 		panic("tried to reset an active timer")
@@ -207,7 +215,8 @@ func (mc *ManualClock) resetTimerLocked(mt *manualTimer, d time.Duration) {
 
 // stopTimerLocked stops a timer from firing.
 //
-// Precondition: mc.mu and mt.mu must be locked.
+// +checklocks:mc.mu.RWMutex
+// +checklocks:mt.mu.Mutex
 func (mc *ManualClock) stopTimerLocked(mt *manualTimer) {
 	t := mt.mu.firesAt
 	mt.mu.firesAt = time.Time{}
@@ -335,6 +344,8 @@ type manualTimerMu struct {
 	// firesAt is the time when the timer will fire.
 	//
 	// Zero only when the timer is not active.
+	//
+	// +checklocks:Mutex
 	firesAt time.Time
 }
 

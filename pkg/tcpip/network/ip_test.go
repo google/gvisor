@@ -328,6 +328,8 @@ type testInterface struct {
 
 	mu struct {
 		sync.RWMutex
+
+		// +checklocks:RWMutex
 		disabled bool
 	}
 }

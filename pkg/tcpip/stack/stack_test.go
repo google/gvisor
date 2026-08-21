@@ -84,8 +84,13 @@ type fakeNetworkEndpoint struct {
 	mu struct {
 		sync.RWMutex
 
-		enabled             bool
-		forwarding          bool
+		// +checklocks:RWMutex
+		enabled bool
+
+		// +checklocks:RWMutex
+		forwarding bool
+
+		// +checklocks:RWMutex
 		multicastForwarding bool
 	}
 

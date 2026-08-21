@@ -121,6 +121,8 @@ func (e testEntryEventInfo) String() string {
 type testNUDDispatcher struct {
 	mu struct {
 		sync.Mutex
+
+		// +checklocks:Mutex
 		events []testEntryEventInfo
 	}
 }
@@ -160,6 +162,8 @@ func (d *testNUDDispatcher) OnNeighborRemoved(nicID tcpip.NICID, entry NeighborE
 type entryTestLinkResolver struct {
 	mu struct {
 		sync.Mutex
+
+		// +checklocks:Mutex
 		probes []entryTestProbeInfo
 	}
 }
