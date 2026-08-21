@@ -27,8 +27,9 @@ RDMA, allowing the NIC to transfer data directly to and from GPU memory.
 
 RDMA support is under active development. The following limitations apply:
 
-*   **Mellanox NICs only.** Only Mellanox ConnectX (`mlx5`) adapters are
-    currently supported. Support for additional vendors is planned.
+*   **Mellanox and AWS EFA NICs only.** Only Mellanox ConnectX (`mlx5`) adapters
+    and AWS Elastic Fabric Adapters (`efa`) are currently supported. Support for
+    additional vendors is planned.
 
 *   **Host kernel 5.12 or newer.** `rdmaproxy` proxies the modern
     `RDMA_VERBS_IOCTL` interface only; the legacy `write(2)` command interface
@@ -38,6 +39,11 @@ RDMA support is under active development. The following limitations apply:
 *   **GPUDirect uses dma-buf only.** GPU memory is registered with the NIC
     through the dma-buf mechanism, which is the modern default. The legacy
     `nvidia-peermem` kernel-module path is not supported.
+
+*   **EFA needs a dma-buf-capable NCCL plugin.** Because GPUDirect works only
+    through dma-buf (above), AWS EFA requires `aws-ofi-nccl` v1.19.2 or newer:
+    earlier releases hard-disable dma-buf on EFA device generations 1-3 and
+    register GPU memory by virtual address instead, which is not supported.
 
 *   **Single-container sandboxes only.** The RDMA devices must be declared in
     the OCI spec of the sandbox's root container. Deployments where the devices

@@ -137,6 +137,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	productName := ""
 	busSub := make(map[string]kernfs.Inode)     // /sys/bus
 	pciDevices := make(map[string]kernfs.Inode) // /sys/bus/pci/devices
+	pciDrivers := make(map[string]kernfs.Inode) // /sys/bus/pci/drivers
 	kernelSub := kernelDir(ctx, fs, creds)      // /sys/kernel
 	if opts.InternalData != nil {
 		idata := opts.InternalData.(*InternalData)
@@ -204,15 +205,23 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			for name, sub := range rdmaDirs.busPCIDevices {
 				pciDevices[name] = sub
 			}
+			for name, sub := range rdmaDirs.busPCIDrivers {
+				pciDrivers[name] = sub
+			}
 			if rdmaDirs.node != nil {
 				systemSub["node"] = rdmaDirs.node
 			}
 		}
 	}
-	if len(pciDevices) > 0 {
-		busSub["pci"] = fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
-			"devices": fs.newDir(ctx, creds, defaultSysDirMode, pciDevices),
-		})
+	if len(pciDevices) > 0 || len(pciDrivers) > 0 {
+		pciSub := map[string]kernfs.Inode{}
+		if len(pciDevices) > 0 {
+			pciSub["devices"] = fs.newDir(ctx, creds, defaultSysDirMode, pciDevices)
+		}
+		if len(pciDrivers) > 0 {
+			pciSub["drivers"] = fs.newDir(ctx, creds, defaultSysDirMode, pciDrivers)
+		}
+		busSub["pci"] = fs.newDir(ctx, creds, defaultSysDirMode, pciSub)
 	}
 	devicesSub["system"] = fs.newDir(ctx, creds, defaultSysDirMode, systemSub)
 
