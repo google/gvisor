@@ -20,6 +20,8 @@ exports_files([
     "README.md",
     "SECURITY.md",
     "GOVERNANCE.md",
+    "MAINTAINERS.md",
+    ".github/reviewer.json",
 ])
 
 release_files(
