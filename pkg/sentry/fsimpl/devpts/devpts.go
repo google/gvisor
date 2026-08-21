@@ -237,13 +237,14 @@ type rootInode struct {
 	// master is the master pty inode. Immutable.
 	master *masterInode
 
-	// mu protects the fields below.
 	mu sync.Mutex `state:"nosave"`
 
 	// replicas maps pty ids to replica inodes.
+	// +checklocks:mu
 	replicas map[uint32]*replicaInode
 
-	// nextIdx is the next pty index to use. Must be accessed atomically.
+	// nextIdx is the next pty index to use.
+	// +checklocks:mu
 	nextIdx uint32
 }
 
