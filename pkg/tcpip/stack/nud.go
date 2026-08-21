@@ -412,8 +412,6 @@ func (s *NUDState) ReachableTime() time.Duration {
 //	changes.  In such cases, an implementation SHOULD ensure that a new
 //	random value gets re-computed at least once every few hours.
 //
-// s.mu MUST be locked for writing.
-//
 // +checklocks:s.mu.RWMutex
 func (s *NUDState) recomputeReachableTimeLocked() {
 	s.mu.prevBaseReachableTime = s.mu.config.BaseReachableTime
