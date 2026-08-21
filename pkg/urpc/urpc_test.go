@@ -17,12 +17,21 @@ package urpc
 import (
 	"errors"
 	"os"
+	"sync"
 	"testing"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/unet"
 )
 
 type test struct {
+	stop func()
+}
+
+func (t test) Stop() {
+	if t.stop != nil {
+		t.stop()
+	}
 }
 
 type testArg struct {
@@ -168,6 +177,51 @@ func TestRecvFile(t *testing.T) {
 	if r.Files == nil {
 		t.Errorf("expected file, got nil")
 	}
+}
+
+func TestStop(t *testing.T) {
+	_ = t.Run("callback reentry", func(t *testing.T) {
+		s := NewServer()
+		calls := 0
+		s.Register(test{stop: func() {
+			if _, ok := s.lookup("test.Func"); !ok {
+				t.Error("registered method not found during Stop callback")
+			}
+			calls++
+		}})
+		done := make(chan struct{})
+		go func() {
+			s.Stop(0)
+			close(done)
+		}()
+		// Keep a real-time watchdog: a callback blocked on s.mu is not
+		// durably blocked in synctest, so its clock would not advance.
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Fatal("Stop callback could not reenter the server")
+		}
+		if calls != 1 {
+			t.Fatalf("Stop called callback %d times, want 1", calls)
+		}
+	})
+	_ = t.Run("concurrent registration", func(t *testing.T) {
+		s := NewServer()
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		wg.Go(func() {
+			<-start
+			s.Register(test{})
+		})
+		wg.Go(func() {
+			<-start
+			// Without clients, Stop returns immediately. A nonzero timeout
+			// keeps its drain worker from synchronizing with Register.
+			s.Stop(time.Hour)
+		})
+		close(start)
+		wg.Wait()
+	})
 }
 
 func TestShutdown(t *testing.T) {

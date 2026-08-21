@@ -165,22 +165,28 @@ const (
 
 // Server is an RPC server.
 type Server struct {
-	// mu protects all fields, except wg.
 	mu sync.Mutex
 
 	// methods is the set of server methods.
+	//
+	// +checklocks:mu
 	methods map[string]registeredMethod
 
 	// stoppers are all registered stoppers.
+	//
+	// +checklocks:mu
 	stoppers []Stopper
 
 	// clients is a map of clients.
+	//
+	// +checklocks:mu
 	clients map[*unet.Socket]clientState
 
 	// wg is a wait group for all outstanding clients.
 	wg sync.WaitGroup
 
-	// afterRPCCallback is called after each RPC is successfully completed.
+	// afterRPCCallback is called after handling each unmarshalled RPC.
+	// It is immutable after initialization.
 	afterRPCCallback func()
 }
 
@@ -486,8 +492,12 @@ func (s *Server) StartHandling(client *unet.Socket) {
 // complete) and closed. Any new RPCs will not be processed. Note that ongoing
 // RPCs are *not* interrupted or cancelled.
 func (s *Server) Stop(timeout time.Duration) {
-	// Call any Stop callbacks.
-	for _, stopper := range s.stoppers {
+	// Snapshot the append-only list. Existing entries never change, so
+	// callbacks can run without mu while registration continues.
+	s.mu.Lock()
+	stoppers := s.stoppers
+	s.mu.Unlock()
+	for _, stopper := range stoppers {
 		stopper.Stop()
 	}
 
@@ -526,15 +536,13 @@ func (s *Server) Stop(timeout time.Duration) {
 
 // Client is a urpc client.
 type Client struct {
-	// mu protects all members.
-	//
-	// It also enforces single-call semantics.
+	// mu serializes Call and Close, enforcing single-call semantics.
 	mu sync.Mutex
 
 	// Socket is the underlying socket for this client.
 	//
-	// This _must_ be provided and must be closed manually by calling
-	// Close.
+	// The pointer must be set at initialization and must not be replaced.
+	// The socket must be closed manually by calling Close.
 	Socket *unet.Socket
 }
 
