@@ -690,6 +690,9 @@ func (d *dentry) IncRef() {
 	if d.LogRefs() {
 		refs.LogIncRef(d, r)
 	}
+	if r <= 0 {
+		panic(fmt.Sprintf("Incrementing negative count %d on overlay.dentry", r))
+	}
 }
 
 // TryIncRef implements vfs.DentryImpl.TryIncRef.
