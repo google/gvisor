@@ -83,6 +83,7 @@ namespace {
 
 using ::testing::AnyOf;
 using ::testing::Contains;
+using ::testing::IsSupersetOf;
 using ::testing::Pair;
 
 constexpr char kTmpfs[] = "tmpfs";
@@ -820,6 +821,44 @@ TEST(MountTest, MountInfo) {
                                Contains(Pair("mode", "123"))));
     }
   }
+}
+
+TEST(MountTest, MountFlagsShownInProcMounts) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir.path(), kTmpfs,
+            MS_NOSUID | MS_NODEV | MS_NOEXEC | MS_NOATIME, "", 0));
+
+  // The per-mount flags must be reflected in both /proc/self/mounts and
+  // /proc/self/mountinfo: userspace (e.g. systemd) reads them back to
+  // preserve locked flags across bind-remounts in user namespaces.
+  bool found_mounts = false;
+  const std::vector<ProcMountsEntry> mounts =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountsEntries());
+  for (const auto& e : mounts) {
+    if (e.mount_point != dir.path()) continue;
+    found_mounts = true;
+    auto mopts = ParseMountOptions(e.mount_opts);
+    EXPECT_THAT(mopts, IsSupersetOf({Pair("nosuid", ""), Pair("nodev", ""),
+                                     Pair("noexec", ""), Pair("noatime", "")}))
+        << "/proc/self/mounts options: " << e.mount_opts;
+  }
+  EXPECT_TRUE(found_mounts);
+
+  bool found_mountinfo = false;
+  const std::vector<ProcMountInfoEntry> mountinfo =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
+  for (auto const& e : mountinfo) {
+    if (e.mount_point != dir.path()) continue;
+    found_mountinfo = true;
+    auto mopts = ParseMountOptions(e.mount_opts);
+    EXPECT_THAT(mopts, IsSupersetOf({Pair("nosuid", ""), Pair("nodev", ""),
+                                     Pair("noexec", ""), Pair("noatime", "")}))
+        << "/proc/self/mountinfo options: " << e.mount_opts;
+  }
+  EXPECT_TRUE(found_mountinfo);
 }
 
 TEST(MountTest, TmpfsSizeRoundUpSinglePageSize) {
