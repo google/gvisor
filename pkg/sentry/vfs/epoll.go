@@ -61,7 +61,11 @@ type EpollInstance struct {
 	// process fails to notice that additional file descriptors are ready
 	// because it focuses on a set of file descriptors that are already known
 	// to be ready." - epoll_wait(2)
-	ready epollInterestList
+	//
+	// ready is not saved: readyMu does not participate in the save, so a
+	// notification that is not quiesced for it can tear the list mid-encode.
+	// It is rebuilt on restore by epollInterest.afterLoad.
+	ready epollInterestList `state:"nosave"`
 
 	// readySeq is used to detect calls to epollInterest.NotifyEvent() while
 	// Readiness() or ReadEvents() are running with readyMu unlocked. readySeq
@@ -104,9 +108,10 @@ type epollInterest struct {
 	// ready is true if epollInterestEntry is linked into epoll.ready. readySeq
 	// is the value of epoll.readySeq when NotifyEvent() was last called.
 	// ready, epollInterestEntry, and readySeq are protected by epoll.readyMu.
-	ready bool
-	epollInterestEntry
-	readySeq uint32
+	// None of them are saved, for the reason on EpollInstance.ready.
+	ready              bool `state:"nosave"`
+	epollInterestEntry `state:"nosave"`
+	readySeq           uint32 `state:"nosave"`
 
 	// userData is the struct epoll_event::data associated with this
 	// epollInterest. userData is protected by epoll.interestMu.
