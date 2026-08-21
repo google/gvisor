@@ -45,10 +45,16 @@ var zeroMAC [6]byte
 type Device struct {
 	waiter.Queue
 
-	mu           deviceRWMutex `state:"nosave"`
-	endpoint     *tunEndpoint
+	mu deviceRWMutex `state:"nosave"`
+	// +checklocks:mu
+	endpoint *tunEndpoint
+	// +checklocks:mu
 	notifyHandle *channel.NotificationHandle
-	flags        Flags
+
+	// flags is set by SetIff under mu and immutable for that association.
+	// After capturing a non-nil endpoint under mu, file operations may read
+	// flags without mu. File lifetime excludes final Release from these operations.
+	flags Flags
 }
 
 // Flags set properties of a Device
@@ -371,10 +377,13 @@ type tunEndpoint struct {
 	name  string
 	isTap bool
 
-	mu            endpointMutex `state:"nosave"`
-	onCloseAction func()        `state:"nosave"`
-	persistent    bool
-	closed        bool
+	mu endpointMutex `state:"nosave"`
+	// +checklocks:mu
+	onCloseAction func() `state:"nosave"`
+	// +checklocks:mu
+	persistent bool
+	// +checklocks:mu
+	closed bool
 }
 
 func (e *tunEndpoint) setPersistent(v bool) {
