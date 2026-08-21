@@ -107,6 +107,7 @@ type internedStringMap map[string]*string
 
 // Intern returns the interned version of the given string.
 // If it is not already interned in the map, this function interns it.
+// Callers must provide exclusive access to m.
 func (m internedStringMap) Intern(s string) string {
 	if existing, found := m[s]; found {
 		return *existing
@@ -119,8 +120,10 @@ func (m internedStringMap) Intern(s string) string {
 // verifiers, such as metric names and field names, but not field values or combinations of field
 // values.
 var (
-	globalInternMu  sync.Mutex
-	verifierCount   uint64
+	globalInternMu sync.Mutex
+	// +checklocks:globalInternMu
+	verifierCount uint64
+	// +checklocks:globalInternMu
 	globalInternMap = make(internedStringMap)
 )
 
@@ -151,6 +154,8 @@ func globalInternVerifierReleased() {
 
 // numberPacker holds packedNumber data. It is useful to store large amounts of Number structs in a
 // small memory footprint.
+// Verifier builds each packer privately; after publication as lastPacker its
+// data is immutable.
 type numberPacker struct {
 	// `data` *must* be pre-allocated if there is any number to be stored in it.
 	// Attempts to pack a number that cannot fit into the existing space
@@ -378,6 +383,7 @@ func (p *numberPacker) portTo(other *numberPacker, n packedNumber) packedNumber 
 
 // distributionSnapshot contains the data for a single field combination of a
 // distribution ("histogram") metric.
+// Its fields are protected by the owning Verifier's mutex.
 type distributionSnapshot struct {
 	// sum is the sum of all samples across all buckets.
 	sum packedNumber
@@ -403,7 +409,11 @@ type distributionSnapshot struct {
 }
 
 // verifiableMetric verifies a single metric within a Verifier.
+// checklocks cannot infer that entries in Verifier.knownMetrics point back to
+// that Verifier. Shared verifier.mu requirements are documented below.
 type verifiableMetric struct {
+	// Definition fields and the verifier pointer are not reassigned after
+	// construction.
 	metadata              *pb.MetricMetadata
 	wantMetric            Metric
 	numFields             uint32
@@ -412,7 +422,7 @@ type verifiableMetric struct {
 	wantBucketUpperBounds []Number
 
 	// The following fields are used to verify that values are actually increasing monotonically.
-	// They are only read and modified when the parent Verifier.mu is held.
+	// They are only read and modified when verifier.mu is held.
 	// They are mapped by their combination of field values.
 
 	// lastCounterValue is used for counter metrics.
@@ -515,7 +525,7 @@ func (v *verifiableMetric) numFieldCombinations() int {
 // `dataToFieldsSeen` is passed across calls to `verify` and other methods of `verifiableMetric`.
 // It is used to store the canonical representation of the field values seen for each *Data.
 //
-// Precondition: `Verifier.mu` is held.
+// Preconditions: v.verifier.mu is held.
 func (v *verifiableMetric) verify(data *Data, metricFieldsSeen map[string]struct{}, dataToFieldsSeen map[*Data]string) error {
 	if *data.Metric != v.wantMetric {
 		return fmt.Errorf("invalid metric definition: got %+v want %+v", data.Metric, v.wantMetric)
@@ -596,7 +606,9 @@ func (v *verifiableMetric) verify(data *Data, metricFieldsSeen map[string]struct
 
 // verifyIncrement verifies that incremental metrics are monotonically increasing.
 //
-// Preconditions: `verify` has succeeded on the given `data`, and `Verifier.mu` is held.
+// Preconditions:
+//   - verify has succeeded on the given data.
+//   - v.verifier.mu is held.
 func (v *verifiableMetric) verifyIncrement(data *Data, fieldValues string, packer *numberPacker) error {
 	switch v.wantMetric.Type {
 	case TypeCounter:
@@ -679,6 +691,8 @@ func (v *verifiableMetric) packerCapacityNeededForData(data *Data, fieldValues s
 // packerCapacityNeededForLast returns the `numberPacker` capacity needed to
 // store the last snapshot's data that was not seen in the current snapshot
 // (aka not in metricFieldsSeen).
+//
+// Preconditions: v.verifier.mu is held.
 func (v *verifiableMetric) packerCapacityNeededForLast(metricFieldsSeen map[string]struct{}) uint64 {
 	var capacity uint64
 	switch v.wantMetric.Type {
@@ -709,8 +723,10 @@ func (v *verifiableMetric) packerCapacityNeededForLast(metricFieldsSeen map[stri
 
 // update updates incremental metrics' "last seen" data.
 //
-// Preconditions: `verifyIncrement` has succeeded on the given `data`, `Verifier.mu` is held,
-// and `packer` is guaranteed to have enough room to store all numbers.
+// Preconditions:
+//   - verifyIncrement has succeeded on the given data.
+//   - v.verifier.mu is held.
+//   - packer has enough room to store all numbers.
 func (v *verifiableMetric) update(data *Data, fieldValues string, packer *numberPacker) {
 	switch v.wantMetric.Type {
 	case TypeCounter:
@@ -736,8 +752,10 @@ func (v *verifiableMetric) update(data *Data, fieldValues string, packer *number
 // This function should carry over all numbers typically packed in `v.update` but for all metric
 // field combinations that are not in `metricFieldsSeen`.
 //
-// Preconditions: `verifyIncrement` has succeeded on the given `data`,
-// and `newPacker` is guaranteed to have enough room to store all numbers.
+// Preconditions:
+//   - All current-snapshot data has passed verifyIncrement.
+//   - v.verifier.mu is held.
+//   - newPacker has enough room for the retained numbers.
 func (v *verifiableMetric) repackUnseen(metricFieldsSeen map[string]struct{}, oldPacker, newPacker *numberPacker) {
 	switch v.wantMetric.Type {
 	case TypeCounter:
@@ -770,20 +788,26 @@ func (v *verifiableMetric) repackUnseen(metricFieldsSeen map[string]struct{}, ol
 // A single Verifier should be used per sandbox. It is expected to be reused across exports such
 // that it can enforce the export snapshot timestamp is strictly monotonically increasing.
 type Verifier struct {
+	// knownMetrics is populated at construction and not modified afterward.
+	// Per-metric verification history is protected by mu.
 	knownMetrics map[string]*verifiableMetric
 
-	// mu protects the fields below.
 	mu sync.Mutex
 
 	// internMap is used to intern strings relevant to this verifier only.
 	// Globally-relevant strings should be interned in globalInternMap.
+	// Protected by mu, including access through verifiableMetric.verifier.
 	internMap internedStringMap
 
 	// lastPacker is a reference to the numberPacker used to pack numbers in the last successful
 	// verification round.
+	//
+	// +checklocks:mu
 	lastPacker *numberPacker
 
 	// lastTimestamp is the snapshot timestamp of the last successfully-verified snapshot.
+	//
+	// +checklocks:mu
 	lastTimestamp time.Time
 }
 
