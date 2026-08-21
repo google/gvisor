@@ -370,14 +370,15 @@ func (mntns *MountNamespace) Root(ctx context.Context) VirtualDentry {
 }
 
 func (mntns *MountNamespace) checkMountCount(ctx context.Context, mnt *Mount) error {
-	if mntns.mounts > MountMax {
+	mountMax := uint32(mnt.vfs.MountMax.Load())
+	if mntns.mounts > mountMax {
 		return linuxerr.ENOSPC
 	}
-	if mntns.mounts+mntns.pending > MountMax {
+	if mntns.mounts+mntns.pending > mountMax {
 		return linuxerr.ENOSPC
 	}
 	mnts := mnt.countSubmountsLocked()
-	if mntns.mounts+mntns.pending+mnts > MountMax {
+	if mntns.mounts+mntns.pending+mnts > mountMax {
 		return linuxerr.ENOSPC
 	}
 	mntns.pending += mnts

@@ -100,6 +100,10 @@ type VirtualFilesystem struct {
 	// lastMountNamespaceID is accessed using atomic memory operations.
 	lastMountNamespaceID atomicbitops.Uint64
 
+	// MountMax is the maximum number of mounts allowed in a mount namespace.
+	// Configurable by userspace via /proc/sys/fs/mount-max.
+	MountMax atomicbitops.Int32
+
 	// anonMount is a Mount, not included in mounts or mountpoints,
 	// representing an anonFilesystem. anonMount is used to back
 	// VirtualDentries returned by VirtualFilesystem.NewAnonVirtualDentry().
@@ -170,6 +174,7 @@ func (vfs *VirtualFilesystem) Init(ctx context.Context) error {
 	vfs.filesystems = make(map[*Filesystem]struct{})
 	vfs.mounts.Init()
 	vfs.groupIDBitmap = bitmap.New(1024)
+	vfs.MountMax.Store(DefaultMountMax)
 	vfs.mountMu.Lock()
 	vfs.toDecRef = make(map[refs.RefCounter]int)
 	vfs.mountMu.Unlock()
