@@ -371,7 +371,7 @@ var AMD64 = &kernel.SyscallTable{
 
 		// Syscalls implemented after 325 are "backports" from versions
 		// of Linux after 4.4.
-		326: syscalls.ErrorWithEvent("copy_file_range", linuxerr.ENOSYS, "", nil),
+		326: syscalls.Supported("copy_file_range", CopyFileRange),
 		327: syscalls.PartiallySupportedPoint("preadv2", Preadv2, PointPreadv2, "RWF flags are not supported.", []string{"gvisor.dev/issue/2601"}),
 		328: syscalls.PartiallySupportedPoint("pwritev2", Pwritev2, PointPwritev2, "RWF flags are not supported.", []string{"gvisor.dev/issue/2601"}),
 		329: syscalls.ErrorWithEvent("pkey_mprotect", linuxerr.ENOSYS, "", nil),
@@ -693,7 +693,7 @@ var ARM64 = &kernel.SyscallTable{
 		284: syscalls.PartiallySupported("mlock2", Mlock2, "Stub implementation. The sandbox lacks appropriate permissions.", nil),
 
 		// Syscalls after 284 are "backports" from versions of Linux after 4.4.
-		285: syscalls.ErrorWithEvent("copy_file_range", linuxerr.ENOSYS, "", nil),
+		285: syscalls.Supported("copy_file_range", CopyFileRange),
 		286: syscalls.PartiallySupportedPoint("preadv2", Preadv2, PointPreadv2, "RWF flags are not supported.", []string{"gvisor.dev/issue/2601"}),
 		287: syscalls.PartiallySupportedPoint("pwritev2", Pwritev2, PointPwritev2, "RWF flags are not supported.", []string{"gvisor.dev/issue/2601"}),
 		288: syscalls.ErrorWithEvent("pkey_mprotect", linuxerr.ENOSYS, "", nil),

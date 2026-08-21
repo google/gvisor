@@ -475,6 +475,243 @@ func Sendfile(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintpt
 	return uintptr(total), nil, HandleIOError(t, total != 0, err, linuxerr.ERESTARTSYS, "sendfile", inFile)
 }
 
+var copyFileRangeBufPool = sync.Pool{
+	New: func() any {
+		b := make([]byte, pipe.MaximumPipeSize)
+		return &b
+	},
+}
+
+// copyFileRangeStat returns the stat of fd for copy_file_range, rejecting
+// directories with EISDIR and non-regular files with EINVAL.
+func copyFileRangeStat(t *kernel.Task, fd *vfs.FileDescription) (linux.Statx, error) {
+	stat, err := fd.Stat(t, vfs.StatOptions{Mask: linux.STATX_TYPE | linux.STATX_INO | linux.STATX_SIZE})
+	if err != nil {
+		return stat, err
+	}
+	if stat.Mask&linux.STATX_TYPE == 0 {
+		return stat, linuxerr.EINVAL
+	}
+	switch stat.Mode & linux.S_IFMT {
+	case linux.S_IFREG:
+		return stat, nil
+	case linux.S_IFDIR:
+		return stat, linuxerr.EISDIR
+	default:
+		return stat, linuxerr.EINVAL
+	}
+}
+
+// CopyFileRange implements Linux syscall copy_file_range(2).
+//
+// Uses a bounded sentry buffer to perform a generic copy across any backing
+// filesystem. Check ordering mirrors Linux fs/read_write.c.
+func CopyFileRange(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	inFD := args[0].Int()
+	inOffsetAddr := args[1].Pointer()
+	outFD := args[2].Int()
+	outOffsetAddr := args[3].Pointer()
+	// count is treated as unsigned.
+	count := uint64(args[4].SizeT())
+	flags := args[5].Uint()
+
+	// Look up FDs first so bad FDs take precedence over invalid flags.
+	inFile := t.GetFile(inFD)
+	if inFile == nil {
+		return 0, nil, linuxerr.EBADF
+	}
+	defer inFile.DecRef(t)
+
+	outFile := t.GetFile(outFD)
+	if outFile == nil {
+		return 0, nil, linuxerr.EBADF
+	}
+	defer outFile.DecRef(t)
+
+	// The flags argument must be zero.
+	if flags != 0 {
+		return 0, nil, linuxerr.EINVAL
+	}
+
+	// Both descriptors must refer to regular files (directories return EISDIR).
+	inStat, err := copyFileRangeStat(t, inFile)
+	if err != nil {
+		return 0, nil, err
+	}
+	outStat, err := copyFileRangeStat(t, outFile)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	if !inFile.IsReadable() || !outFile.IsWritable() {
+		return 0, nil, linuxerr.EBADF
+	}
+	// Append-only output returns EBADF.
+	if outFile.StatusFlags()&linux.O_APPEND != 0 {
+		return 0, nil, linuxerr.EBADF
+	}
+
+	// Copy in offsets if provided; negative offsets overflow later.
+	inOffset := int64(-1)
+	haveInOffset := inOffsetAddr != 0
+	if haveInOffset {
+		if inFile.Options().DenyPRead {
+			return 0, nil, linuxerr.ESPIPE
+		}
+		var offsetP primitive.Int64
+		if _, err := offsetP.CopyIn(t, inOffsetAddr); err != nil {
+			return 0, nil, err
+		}
+		inOffset = int64(offsetP)
+	}
+	outOffset := int64(-1)
+	haveOutOffset := outOffsetAddr != 0
+	if haveOutOffset {
+		if outFile.Options().DenyPWrite {
+			return 0, nil, linuxerr.ESPIPE
+		}
+		var offsetP primitive.Int64
+		if _, err := offsetP.CopyIn(t, outOffsetAddr); err != nil {
+			return 0, nil, err
+		}
+		outOffset = int64(offsetP)
+	}
+
+	// Determine starting offsets.
+	startIn, startOut := inOffset, outOffset
+	if !haveInOffset {
+		if startIn, err = inFile.Seek(t, 0, linux.SEEK_CUR); err != nil {
+			return 0, nil, err
+		}
+	}
+	if !haveOutOffset {
+		if startOut, err = outFile.Seek(t, 0, linux.SEEK_CUR); err != nil {
+			return 0, nil, err
+		}
+	}
+
+	// Ensure ranges do not wrap.
+	if uint64(startIn)+count < uint64(startIn) || uint64(startOut)+count < uint64(startOut) {
+		return 0, nil, linuxerr.EOVERFLOW
+	}
+	// A zero count cannot wrap, so reject negative positions here.
+	if startIn < 0 || startOut < 0 {
+		return 0, nil, linuxerr.EINVAL
+	}
+
+	// Clamp count to remaining bytes before checking overlap.
+	if inStat.Mask&linux.STATX_SIZE != 0 {
+		if size := int64(inStat.Size); startIn >= size {
+			count = 0
+		} else if remaining := uint64(size - startIn); count > remaining {
+			count = remaining
+		}
+	}
+	if count > uint64(linux.MAX_RW_COUNT) {
+		count = uint64(linux.MAX_RW_COUNT)
+	}
+
+	// Overlapping ranges within the same file are not permitted.
+	if inStat.Mask&outStat.Mask&linux.STATX_INO != 0 &&
+		inStat.Ino == outStat.Ino &&
+		inStat.DevMajor == outStat.DevMajor &&
+		inStat.DevMinor == outStat.DevMinor &&
+		uint64(startOut)+count > uint64(startIn) && startOut < startIn+int64(count) {
+		return 0, nil, linuxerr.EINVAL
+	}
+
+	if count == 0 {
+		return 0, nil, nil
+	}
+	limit := int64(count)
+
+	// Regular files do not block; no dualWaiter needed.
+	var (
+		total  int64
+		cprErr error
+	)
+	bufPtr := copyFileRangeBufPool.Get().(*[]byte)
+	defer copyFileRangeBufPool.Put(bufPtr)
+	for total < limit {
+		buf := (*bufPtr)[:min(limit-total, pipe.MaximumPipeSize)]
+
+		var readN int64
+		if haveInOffset {
+			readN, cprErr = inFile.PRead(t, usermem.BytesIOSequence(buf), inOffset, vfs.ReadOptions{})
+		} else {
+			readN, cprErr = inFile.Read(t, usermem.BytesIOSequence(buf), vfs.ReadOptions{})
+		}
+		if readN == 0 {
+			// EOF or no progress.
+			break
+		}
+
+		// Write all read bytes.
+		var written int64
+		for written < readN {
+			var writeN int64
+			if haveOutOffset {
+				writeN, cprErr = outFile.PWrite(t, usermem.BytesIOSequence(buf[written:readN]), outOffset+written, vfs.WriteOptions{})
+			} else {
+				writeN, cprErr = outFile.Write(t, usermem.BytesIOSequence(buf[written:readN]), vfs.WriteOptions{})
+			}
+			written += writeN
+			if cprErr != nil {
+				break
+			}
+		}
+
+		if notWritten := readN - written; notWritten > 0 && !haveInOffset {
+			// Rewind unwritten bytes from the input file offset.
+			if _, seekErr := inFile.Seek(t, -notWritten, linux.SEEK_CUR); seekErr != nil {
+				log.Warningf("copy_file_range failed to roll back input file offset: %v", seekErr)
+			}
+		}
+		if haveInOffset {
+			inOffset += written
+		}
+		if haveOutOffset {
+			outOffset += written
+		}
+		total += written
+
+		if written < readN {
+			break
+		}
+		if cprErr == nil && t.Interrupted() {
+			cprErr = linuxerr.ErrInterrupted
+			break
+		}
+		if cprErr != nil {
+			break
+		}
+	}
+
+	// Copy out the updated offsets.
+	if haveInOffset {
+		offsetP := primitive.Int64(inOffset)
+		if _, err := offsetP.CopyOut(t, inOffsetAddr); err != nil {
+			return 0, nil, err
+		}
+	}
+	if haveOutOffset {
+		offsetP := primitive.Int64(outOffset)
+		if _, err := offsetP.CopyOut(t, outOffsetAddr); err != nil {
+			return 0, nil, err
+		}
+	}
+
+	if total != 0 && cprErr != nil && cprErr != io.EOF && !linuxerr.Equals(linuxerr.ErrWouldBlock, cprErr) {
+		// A partial copy succeeded, so report it rather than the error.
+		log.Debugf("copy_file_range completed a partial copy with error: %v", cprErr)
+		cprErr = nil
+	}
+
+	// We can only pass a single file to HandleIOError, so pick inFile
+	// arbitrarily. This is used only for debugging purposes.
+	return uintptr(total), nil, HandleIOError(t, total != 0, cprErr, linuxerr.ERESTARTSYS, "copy_file_range", inFile)
+}
+
 // dualWaiter is used to wait on one or both vfs.FileDescriptions. It is not
 // thread-safe, and does not take a reference on the vfs.FileDescriptions.
 //
