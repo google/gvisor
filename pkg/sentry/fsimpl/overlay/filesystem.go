@@ -1090,9 +1090,13 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		return err
 	}
 
-	if opts.Flags&^linux.RENAME_NOREPLACE != 0 {
+	if opts.Flags&^(linux.RENAME_NOREPLACE|linux.RENAME_EXCHANGE) != 0 {
 		return linuxerr.EINVAL
 	}
+	if opts.Flags&(linux.RENAME_NOREPLACE|linux.RENAME_EXCHANGE) == linux.RENAME_NOREPLACE|linux.RENAME_EXCHANGE {
+		return linuxerr.EINVAL
+	}
+	exchange := opts.Flags&linux.RENAME_EXCHANGE != 0
 
 	newName := rp.Component()
 	if newName == "." || newName == ".." {
@@ -1142,7 +1146,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			}
 		}
 	} else {
-		if opts.MustBeDir || rp.MustBeDir() {
+		if !exchange && (opts.MustBeDir || rp.MustBeDir()) {
 			return linuxerr.ENOTDIR
 		}
 	}
@@ -1175,7 +1179,26 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			return err
 		}
 		replacedVFSD = &replaced.vfsd
-		if replaced.isDir() {
+		if exchange {
+			// The exchanged files may differ in type, and a directory being
+			// exchanged may be non-empty; but exchanging a file with an
+			// ancestor directory would disconnect the latter from the tree.
+			if genericIsAncestorDentry(fs, replaced, renamed) {
+				return linuxerr.EINVAL
+			}
+			if rp.MustBeDir() && !replaced.isDir() {
+				return linuxerr.ENOTDIR
+			}
+			if opts.MustBeDir && !renamed.isDir() {
+				return linuxerr.ENOTDIR
+			}
+			if oldParent != newParent && replaced.isDir() {
+				// Writability is needed to change replaced's "..".
+				if err := replaced.checkPermissions(creds, vfs.MayWrite); err != nil {
+					return err
+				}
+			}
+		} else if replaced.isDir() {
 			if !renamed.isDir() {
 				return linuxerr.EISDIR
 			}
@@ -1193,6 +1216,9 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 				return linuxerr.ENOTDIR
 			}
 		}
+	} else if exchange {
+		// RENAME_EXCHANGE requires that the target file exist.
+		return linuxerr.ENOENT
 	}
 
 	if oldParent == newParent && oldName == newName {
@@ -1216,10 +1242,24 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	if err := newParent.copyUpLocked(ctx); err != nil {
 		return err
 	}
-	// If replaced exists, it doesn't need to be copied-up, but we do need to
-	// serialize with copy-up. Holding renameMu for writing should be
-	// sufficient, but out of an abundance of caution...
-	if replaced != nil {
+	if exchange {
+		// replaced is also renamed on the upper layer, so it (and all of its
+		// descendants if it's a directory) must be copied-up too.
+		if err := replaced.copyUpLocked(ctx); err != nil {
+			return err
+		}
+		if replaced.isDir() {
+			replaced.dirMu.NestedLock(dirLockReplaced)
+			err := replaced.copyUpDescendantsLocked(ctx, &ds)
+			replaced.dirMu.NestedUnlock(dirLockReplaced)
+			if err != nil {
+				return err
+			}
+		}
+	} else if replaced != nil {
+		// replaced doesn't need to be copied-up, but we do need to serialize
+		// with copy-up. Holding renameMu for writing should be sufficient, but
+		// out of an abundance of caution...
 		replaced.copyMu.RLock()
 		defer replaced.copyMu.RUnlock()
 	}
@@ -1255,7 +1295,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			}
 		}
 	}
-	if renamed.isDir() {
+	if !exchange && renamed.isDir() {
 		if replacedLayer == lookupLayerUpper {
 			// Remove whiteouts from the directory being replaced.
 			needRecreateWhiteouts = true
@@ -1301,6 +1341,44 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		vfsObj.AbortRenameDentry(&renamed.vfsd, replacedVFSD)
 		cleanupRecreateWhiteouts()
 		return err
+	}
+
+	if exchange {
+		// Below this point, renamed is at newpop and replaced is at oldpop.
+		// Commit the exchange, update the overlay filesystem tree, and abandon
+		// attempts to recover from errors.
+		vfsObj.CommitRenameExchangeDentry(&renamed.vfsd, &replaced.vfsd)
+		genericSetParentAndName(fs, renamed, newParent, newName)
+		genericSetParentAndName(fs, replaced, oldParent, oldName)
+		// References held by renamed and replaced on their parents are
+		// exchanged as well; the counts on each parent are unchanged.
+		oldParent.children[oldName] = replaced
+		newParent.children[newName] = renamed
+		oldParent.dirents = nil
+		newParent.dirents = nil
+
+		// An exchanged directory's contents can no longer be merged with
+		// lower layer directories at its new location.
+		if renamed.isDir() {
+			if err := vfsObj.SetXattrAt(ctx, fs.creds, &newpop, &vfs.SetXattrOptions{
+				Name:  fs.xattrOpaque,
+				Value: "y",
+			}); err != nil {
+				panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to make exchanged directory opaque: %v", err))
+			}
+		}
+		if replaced.isDir() {
+			if err := vfsObj.SetXattrAt(ctx, fs.creds, &oldpop, &vfs.SetXattrOptions{
+				Name:  fs.xattrOpaque,
+				Value: "y",
+			}); err != nil {
+				panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to make exchanged directory opaque: %v", err))
+			}
+		}
+
+		vfs.InotifyRename(ctx, &renamed.watches, &oldParent.watches, &newParent.watches, oldName, newName, renamed.isDir())
+		vfs.InotifyRename(ctx, &replaced.watches, &newParent.watches, &oldParent.watches, newName, oldName, replaced.isDir())
+		return nil
 	}
 
 	// Below this point, the renamed dentry is now at newpop, and anything we
