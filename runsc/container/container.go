@@ -517,11 +517,12 @@ func (c *Container) startImpl(conf *config.Config, action string, startRoot func
 		}
 	}
 
-	// "If any poststart hook fails, the runtime MUST log a warning, but
-	// the remaining hooks and lifecycle continue as if the hook had
-	// succeeded" -OCI spec.
+	// "If any poststart hook fails, the runtime MUST generate an error,
+	// stop the container, and continue the lifecycle at step 12" - OCI spec.
 	if c.Spec.Hooks != nil {
-		specutils.ExecuteHooksBestEffort(c.Spec.Hooks.Poststart, c.State())
+		if err := specutils.ExecuteHooks(c.Spec.Hooks.Poststart, c.State()); err != nil {
+			return err
+		}
 	}
 
 	c.changeStatus(Running)

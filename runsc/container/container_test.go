@@ -512,6 +512,44 @@ func sleepSpecConf(t *testing.T) (*specs.Spec, *config.Config) {
 	return testutil.NewSpecWithArgs("sleep", "1000"), testutil.TestConfig(t)
 }
 
+func TestPostStartHookFailure(t *testing.T) {
+	for name, conf := range configs(t, false /* noOverlay */) {
+		t.Run(name, func(t *testing.T) {
+			spec, _ := sleepSpecConf(t)
+			spec.Hooks = &specs.Hooks{
+				Poststart: []specs.Hook{{
+					Path: "/bin/sh",
+					Args: []string{"/bin/sh", "-c", "exit 1"},
+				}},
+			}
+			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer cleanup()
+
+			args := Args{
+				ID:        testutil.RandomContainerID(),
+				Spec:      spec,
+				BundleDir: bundleDir,
+			}
+			c, err := New(conf, args)
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			defer func() {
+				if c != nil {
+					_ = c.Destroy()
+				}
+			}()
+
+			if err := c.Start(conf); err == nil {
+				t.Fatal("container start succeeded with a failing poststart hook")
+			}
+		})
+	}
+}
+
 func TestGetNetworkConfig(t *testing.T) {
 	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
