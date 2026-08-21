@@ -39,12 +39,16 @@ type packetsPendingLinkResolutionMu struct {
 	// The packets to send once the resolver completes.
 	//
 	// The link resolution channel is used as the key for this map.
+	//
+	// +checklocks:packetsPendingLinkResolutionMutex
 	packets map[<-chan struct{}][]pendingPacket
 
 	// FIFO of channels used to cancel the oldest goroutine waiting for
 	// link-address resolution.
 	//
 	// cancelChans holds the same channels that are used as keys to packets.
+	//
+	// +checklocks:packetsPendingLinkResolutionMutex
 	cancelChans []<-chan struct{}
 }
 
@@ -183,6 +187,8 @@ func (f *packetsPendingLinkResolution) enqueue(r *Route, pkt *PacketBuffer) tcpi
 // newCancelChannelLocked appends the link resolution channel to a FIFO. If the
 // maximum number of pending resolutions is reached, the oldest channel will be
 // removed and its associated pending packets will be returned.
+//
+// +checklocks:f.mu.packetsPendingLinkResolutionMutex
 func (f *packetsPendingLinkResolution) newCancelChannelLocked(newCH <-chan struct{}) []pendingPacket {
 	f.mu.cancelChans = append(f.mu.cancelChans, newCH)
 	if len(f.mu.cancelChans) <= maxPendingResolutions {
