@@ -189,10 +189,13 @@ type inode struct {
 	//
 	// This pointer is initialized at creation time and is immutable.
 	tty *kernel.TTY
-	// If the inode corresponds to a TTY, termios is the cached termios
-	// struct. It is protected by termiosMu.
+
 	termiosMu sync.Mutex `state:"nosave"`
-	termios   linux.KernelTermios
+
+	// If the inode corresponds to a TTY, termios is the cached termios struct.
+	//
+	// +checklocks:termiosMu
+	termios linux.KernelTermios
 }
 
 func newInode(ctx context.Context, fs *filesystem, hostFD int, savable bool, restoreKey checkpoint.ResourceID, fileType linux.FileMode, isTTY bool, readonly bool) (*inode, error) {
