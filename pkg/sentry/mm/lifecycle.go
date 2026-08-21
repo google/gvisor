@@ -129,7 +129,10 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 		// Inform the Mappable, if any, of the new mapping.
 		if vma.mappable != nil {
 			if err := vma.mappable.AddMapping(ctx, mm2, vmaAR, vma.off, vma.canWriteMappableLocked()); err != nil {
-				_, droppedIDs = mm2.removeVMAsLocked(ctx, mm2.applicationAddrRange(), droppedIDs)
+				// Fork still exclusively owns mm2's VMA and mapping-accounting
+				// state. AddMapping only exposes its activeMu-protected
+				// invalidation state.
+				_, droppedIDs = mm2.removeVMAsLocked(ctx, mm2.applicationAddrRange(), droppedIDs) // +checklocksignore
 				as.Release()
 				return nil, err
 			}
@@ -233,7 +236,10 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 							pseg.ValuePtr().file.DecRef(pseg.fileRange())
 						}
 						mm2.pmas.RemoveAll()
-						_, droppedIDs = mm2.removeVMAsLocked(ctx, mm2.applicationAddrRange(), droppedIDs)
+						// Fork still exclusively owns mm2's VMA and mapping-accounting
+						// state. AddMapping only exposes its activeMu-protected
+						// invalidation state.
+						_, droppedIDs = mm2.removeVMAsLocked(ctx, mm2.applicationAddrRange(), droppedIDs) // +checklocksignore
 						as.Release()
 						return nil, err
 					}
@@ -309,11 +315,12 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 // may be pinned for DMA. It returns the gap after the inserted pma.
 //
 // Preconditions:
-//   - mm.activeMu must be locked for writing.
-//   - mm2.activeMu must be locked for writing.
 //   - srcpseg.ValuePtr().private == true.
 //   - dstpgap must be the gap in mm2.pmas at which the new pma should be
 //     inserted.
+//
+// +checklocks:mm.activeMu
+// +checklocks:mm2.activeMu
 func (mm *MemoryManager) forkCopyPMALocked(mm2 *MemoryManager, srcpseg pmaIterator, dstpgap pmaGapIterator, memCgID uint32) (pmaGapIterator, error) {
 	if err := srcpseg.getInternalMappingsLocked(); err != nil {
 		return dstpgap, err

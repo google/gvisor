@@ -59,7 +59,11 @@ func (mm *MemoryManager) DebugString(ctx context.Context) string {
 	return b.String()
 }
 
-// Preconditions: mm.activeMu must be locked.
+// debugStringEntryLocked formats pseg for DebugString. The generated iterator
+// has no MemoryManager reference, so checklocks cannot name the owning mutex.
+//
+// Preconditions: the owning MemoryManager's activeMu is held at least for
+// reading.
 func (pseg pmaIterator) debugStringEntryLocked() []byte {
 	var b bytes.Buffer
 

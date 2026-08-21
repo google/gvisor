@@ -52,6 +52,8 @@ func testMemoryManager(ctx context.Context, t *testing.T) *MemoryManager {
 }
 
 func (mm *MemoryManager) realUsageAS() uint64 {
+	mm.mappingMu.RLock()
+	defer mm.mappingMu.RUnlock()
 	return uint64(mm.vmas.Span())
 }
 
@@ -68,18 +70,20 @@ func TestUsageASUpdates(t *testing.T) {
 		t.Fatalf("MMap got err %v want nil", err)
 	}
 	realUsage := mm.realUsageAS()
-	if mm.usageAS != realUsage {
-		t.Fatalf("usageAS believes %v bytes are mapped; %v bytes are actually mapped", mm.usageAS, realUsage)
+	if got := mm.VirtualMemorySize(); got != realUsage {
+		t.Fatalf("usageAS believes %v bytes are mapped; %v bytes are actually mapped", got, realUsage)
 	}
 
 	mm.MUnmap(ctx, addr, hostarch.PageSize)
 	realUsage = mm.realUsageAS()
-	if mm.usageAS != realUsage {
-		t.Fatalf("usageAS believes %v bytes are mapped; %v bytes are actually mapped", mm.usageAS, realUsage)
+	if got := mm.VirtualMemorySize(); got != realUsage {
+		t.Fatalf("usageAS believes %v bytes are mapped; %v bytes are actually mapped", got, realUsage)
 	}
 }
 
 func (mm *MemoryManager) realDataAS() uint64 {
+	mm.mappingMu.RLock()
+	defer mm.mappingMu.RUnlock()
 	var sz uint64
 	for seg := mm.vmas.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
 		vma := seg.ValuePtr()
@@ -104,32 +108,32 @@ func TestDataASUpdates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MMap got err %v want nil", err)
 	}
-	if mm.dataAS == 0 {
+	if mm.VirtualDataSize() == 0 {
 		t.Fatalf("dataAS is 0, wanted not 0")
 	}
 	realDataAS := mm.realDataAS()
-	if mm.dataAS != realDataAS {
-		t.Fatalf("dataAS believes %v bytes are mapped; %v bytes are actually mapped", mm.dataAS, realDataAS)
+	if got := mm.VirtualDataSize(); got != realDataAS {
+		t.Fatalf("dataAS believes %v bytes are mapped; %v bytes are actually mapped", got, realDataAS)
 	}
 
 	mm.MUnmap(ctx, addr, hostarch.PageSize)
 	realDataAS = mm.realDataAS()
-	if mm.dataAS != realDataAS {
-		t.Fatalf("dataAS believes %v bytes are mapped; %v bytes are actually mapped", mm.dataAS, realDataAS)
+	if got := mm.VirtualDataSize(); got != realDataAS {
+		t.Fatalf("dataAS believes %v bytes are mapped; %v bytes are actually mapped", got, realDataAS)
 	}
 
 	mm.MProtect(addr+hostarch.PageSize, hostarch.PageSize, hostarch.Read, false)
 	realDataAS = mm.realDataAS()
-	if mm.dataAS != realDataAS {
-		t.Fatalf("dataAS believes %v bytes are mapped; %v bytes are actually mapped", mm.dataAS, realDataAS)
+	if got := mm.VirtualDataSize(); got != realDataAS {
+		t.Fatalf("dataAS believes %v bytes are mapped; %v bytes are actually mapped", got, realDataAS)
 	}
 
 	mm.MRemap(ctx, addr+2*hostarch.PageSize, hostarch.PageSize, 2*hostarch.PageSize, MRemapOpts{
 		Move: MRemapMayMove,
 	})
 	realDataAS = mm.realDataAS()
-	if mm.dataAS != realDataAS {
-		t.Fatalf("dataAS believes %v bytes are mapped; %v bytes are actually mapped", mm.dataAS, realDataAS)
+	if got := mm.VirtualDataSize(); got != realDataAS {
+		t.Fatalf("dataAS believes %v bytes are mapped; %v bytes are actually mapped", got, realDataAS)
 	}
 }
 
