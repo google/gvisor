@@ -108,10 +108,10 @@ type epollInterest struct {
 	// ready is true if epollInterestEntry is linked into epoll.ready. readySeq
 	// is the value of epoll.readySeq when NotifyEvent() was last called.
 	// ready, epollInterestEntry, and readySeq are protected by epoll.readyMu.
-	// ready and the link are not saved, for the reason on EpollInstance.ready.
+	// None of them are saved, for the reason on EpollInstance.ready.
 	ready              bool `state:"nosave"`
 	epollInterestEntry `state:"nosave"`
-	readySeq           uint32
+	readySeq           uint32 `state:"nosave"`
 
 	// userData is the struct epoll_event::data associated with this
 	// epollInterest. userData is protected by epoll.interestMu.
