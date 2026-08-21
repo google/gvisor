@@ -230,9 +230,12 @@ type SocketOptions struct {
 	// passing is enabled for IPv6.
 	ipv6RecvErrEnabled atomicbitops.Uint32
 
-	// errQueue is the per-socket error queue. It is protected by errQueueMu.
 	errQueueMu sync.Mutex `state:"nosave"`
-	errQueue   sockErrorList
+
+	// errQueue is the per-socket error queue.
+	//
+	// +checklocks:errQueueMu
+	errQueue sockErrorList
 
 	// bindToDevice determines the device to which the socket is bound.
 	bindToDevice atomicbitops.Int32
@@ -264,11 +267,12 @@ type SocketOptions struct {
 	// mark is the mark value set for the socket.
 	mark atomicbitops.Uint32
 
-	// mu protects the access to the below fields.
 	mu sync.Mutex `state:"nosave"`
 
 	// linger determines the amount of time the socket should linger before
 	// close. We currently implement this option for TCP socket only.
+	//
+	// +checklocks:mu
 	linger LingerOption
 }
 
