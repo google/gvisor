@@ -27,7 +27,7 @@ if POSIXLY_CORRECT=true df --local --output=pcent,ipcent,target | grep -vE '/sna
   echo "Try your luck again." >&2
   sudo df -h --local | sed -r 's/^/[df] /' >&2
   sleep 10
-  killall buildkite-agent
+  killall -r '^buildkite-agent'
   exit 1
 fi
 
