@@ -750,9 +750,9 @@ type addressState struct {
 	//   addressState.mu
 	mu   addressStateRWMutex
 	refs addressStateRefs
-	// checklocks:mu
+	// +checklocks:mu
 	kind AddressKind
-	// checklocks:mu
+	// +checklocks:mu
 	configType AddressConfigType
 	// lifetimes holds this address' lifetimes.
 	//
@@ -760,12 +760,12 @@ type addressState struct {
 	// must be the zero value. Note that the converse does not need to be
 	// upheld!
 	//
-	// checklocks:mu
+	// +checklocks:mu
 	lifetimes AddressLifetimes
 	// The enclosing mutex must be write-locked before calling methods on the
 	// dispatcher.
 	//
-	// checklocks:mu
+	// +checklocks:mu
 	disp AddressDispatcher
 }
 
