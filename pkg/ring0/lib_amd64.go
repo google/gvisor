@@ -101,6 +101,9 @@ var (
 func Init(fs cpuid.FeatureSet) {
 	// Initialize all sizes.
 	VirtualAddressBits = uintptr(fs.VirtualAddressBits())
+	if !fs.HasFeature(cpuid.X86FeatureLA57) && VirtualAddressBits > 48 {
+		VirtualAddressBits = 48
+	}
 	if PhysicalAddressBits == 0 {
 		PhysicalAddressBits = uintptr(fs.PhysicalAddressBits())
 	}
