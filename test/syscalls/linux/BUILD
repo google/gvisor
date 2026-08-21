@@ -1815,6 +1815,24 @@ cc_binary(
 )
 
 cc_binary(
+    name = "openat2_test",
+    testonly = 1,
+    srcs = ["openat2.cc"],
+    linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
+    deps = select_gtest() + [
+        "//test/util:capability_util",
+        "//test/util:file_descriptor",
+        "//test/util:fs_util",
+        "//test/util:mount_util",
+        "//test/util:posix_error",
+        "//test/util:temp_path",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
     name = "packet_socket_dgram_test",
     testonly = 1,
     srcs = ["packet_socket_dgram.cc"],

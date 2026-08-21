@@ -54,7 +54,7 @@ func mknodat(t *kernel.Task, dirfd int32, addr hostarch.Addr, mode linux.FileMod
 	if err != nil {
 		return err
 	}
-	tpop, err := getTaskPathOperation(t, dirfd, path, disallowEmptyPath, nofollowFinalSymlink)
+	tpop, err := getTaskPathOperation(t, dirfd, path, disallowEmptyPath, nofollowFinalSymlink, 0)
 	if err != nil {
 		return err
 	}
@@ -86,7 +86,7 @@ func Open(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *
 	addr := args[0].Pointer()
 	flags := args[1].Uint()
 	mode := args[2].ModeT()
-	return openat(t, linux.AT_FDCWD, addr, flags, mode)
+	return openat(t, linux.AT_FDCWD, addr, flags, mode, 0)
 }
 
 // Openat implements Linux syscall openat(2).
@@ -95,22 +95,116 @@ func Openat(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr,
 	addr := args[1].Pointer()
 	flags := args[2].Uint()
 	mode := args[3].ModeT()
-	return openat(t, dirfd, addr, flags, mode)
+	return openat(t, dirfd, addr, flags, mode, 0)
+}
+
+// Openat2 implements Linux syscall openat2(2).
+func Openat2(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	dirfd := args[0].Int()
+	pathAddr := args[1].Pointer()
+	howAddr := args[2].Pointer()
+	size := args[3].SizeT()
+
+	how, err := copyInOpenHow(t, howAddr, size)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	flags := how.Flags
+	mode := how.Mode
+	resolveFlags := how.Resolve
+
+	// Note: On Linux, RESOLVE_CACHED causes path traversals that involve
+	// components that are not cached to fail with EAGAIN, which could
+	// allow some optimizations in userspace.
+	//
+	// In gVisor, RESOLVE_CACHED is accepted but ignored.
+
+	// openat2(2), unlike openat(2), performs the following validation of the
+	// flags and mode:
+	if resolveFlags&^(linux.RESOLVE_BENEATH|linux.RESOLVE_IN_ROOT|linux.RESOLVE_CACHED|linux.RESOLVE_NO_MAGICLINKS|linux.RESOLVE_NO_SYMLINKS|linux.RESOLVE_NO_XDEV) != 0 {
+		// reject unsupported resolution flags.
+		return 0, nil, linuxerr.EINVAL
+	}
+	if (resolveFlags&linux.RESOLVE_BENEATH != 0) && (resolveFlags&linux.RESOLVE_IN_ROOT != 0) {
+		// reject RESOLVE_BENEATH and RESOLVE_IN_ROOT specified together
+		// (they are mutually exclusive).
+		return 0, nil, linuxerr.EINVAL
+	}
+	if (resolveFlags&linux.RESOLVE_CACHED != 0) && (flags&(linux.O_TRUNC|linux.O_CREAT|linux.O_TMPFILE) != 0) {
+		// reject RESOLVE_CACHED with file creation-related flags
+		return 0, nil, linuxerr.EAGAIN
+	}
+	if flags&^linux.ValidOpenFlags != 0 {
+		// reject unknown open flags.
+		return 0, nil, linuxerr.EINVAL
+	}
+	if flags&(linux.O_DIRECTORY|linux.O_CREAT) == (linux.O_DIRECTORY | linux.O_CREAT) {
+		// reject O_DIRECTORY | O_CREAT.
+		return 0, nil, linuxerr.EINVAL
+	}
+	if (flags&linux.O_PATH == linux.O_PATH) && (flags&^linux.ValidOPathFlags != 0) {
+		// reject O_PATH with invalid flag combinations.
+		return 0, nil, linuxerr.EINVAL
+	}
+
+	if (flags&(linux.O_CREAT|linux.O_TMPFILE) == 0) && mode != 0 {
+		// reject non-zero mode unless O_CREAT or O_TMPFILE is set.
+		return 0, nil, linuxerr.EINVAL
+	}
+	if mode&^0o7777 != 0 {
+		// reject invalid bits in mode.
+		return 0, nil, linuxerr.EINVAL
+	}
+
+	return openat(t, dirfd, pathAddr, uint32(flags), uint(mode), resolveFlags)
+}
+
+func copyInOpenHow(t *kernel.Task, addr hostarch.Addr, size uint) (linux.OpenHow, error) {
+	var how linux.OpenHow
+
+	if size < linux.OPEN_HOW_SIZE_VER0 {
+		return linux.OpenHow{}, linuxerr.EINVAL
+	}
+	if size > hostarch.PageSize {
+		return linux.OpenHow{}, linuxerr.E2BIG
+	}
+
+	if _, err := how.CopyInN(t, addr, min(int(size), linux.OPEN_HOW_SIZE_LATEST)); err != nil {
+		return linux.OpenHow{}, err
+	}
+
+	if size > linux.OPEN_HOW_SIZE_LATEST {
+		// Userspace has a newer struct version. Check that the fields we don't
+		// know about are zeroed out.
+		buf := make([]byte, size-linux.OPEN_HOW_SIZE_LATEST)
+		if _, err := t.CopyInBytes(addr+linux.OPEN_HOW_SIZE_LATEST, buf); err != nil {
+			return linux.OpenHow{}, err
+		}
+
+		for _, b := range buf {
+			if b != 0 {
+				return linux.OpenHow{}, linuxerr.E2BIG
+			}
+		}
+	}
+
+	return how, nil
 }
 
 // Creat implements Linux syscall creat(2).
 func Creat(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 	mode := args[1].ModeT()
-	return openat(t, linux.AT_FDCWD, addr, linux.O_WRONLY|linux.O_CREAT|linux.O_TRUNC, mode)
+	return openat(t, linux.AT_FDCWD, addr, linux.O_WRONLY|linux.O_CREAT|linux.O_TRUNC, mode, 0)
 }
 
-func openat(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr, flags uint32, mode uint) (uintptr, *kernel.SyscallControl, error) {
+func openat(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr, flags uint32, mode uint, resolveFlags uint64) (uintptr, *kernel.SyscallControl, error) {
 	path, err := copyInPath(t, pathAddr)
 	if err != nil {
 		return 0, nil, err
 	}
-	tpop, err := getTaskPathOperation(t, dirfd, path, disallowEmptyPath, shouldFollowFinalSymlink(flags&linux.O_NOFOLLOW == 0))
+	tpop, err := getTaskPathOperation(t, dirfd, path, disallowEmptyPath, shouldFollowFinalSymlink(flags&linux.O_NOFOLLOW == 0), resolveFlags)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -177,7 +271,7 @@ func accessAt(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr, mode uint32, 
 	if err != nil {
 		return err
 	}
-	tpop, err := getTaskPathOperation(t, dirfd, path, shouldAllowEmptyPath(flags&linux.AT_EMPTY_PATH != 0), shouldFollowFinalSymlink(flags&linux.AT_SYMLINK_NOFOLLOW == 0))
+	tpop, err := getTaskPathOperation(t, dirfd, path, shouldAllowEmptyPath(flags&linux.AT_EMPTY_PATH != 0), shouldFollowFinalSymlink(flags&linux.AT_SYMLINK_NOFOLLOW == 0), 0)
 	if err != nil {
 		return err
 	}
@@ -333,7 +427,7 @@ func Chdir(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 	if err != nil {
 		return 0, nil, err
 	}
-	tpop, err := getTaskPathOperation(t, linux.AT_FDCWD, path, disallowEmptyPath, followFinalSymlink)
+	tpop, err := getTaskPathOperation(t, linux.AT_FDCWD, path, disallowEmptyPath, followFinalSymlink, 0)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -354,7 +448,7 @@ func Chdir(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 func Fchdir(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 
-	tpop, err := getTaskPathOperation(t, fd, fspath.Path{}, allowEmptyPath, nofollowFinalSymlink)
+	tpop, err := getTaskPathOperation(t, fd, fspath.Path{}, allowEmptyPath, nofollowFinalSymlink, 0)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -383,7 +477,7 @@ func Chroot(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr,
 	if err != nil {
 		return 0, nil, err
 	}
-	tpop, err := getTaskPathOperation(t, linux.AT_FDCWD, path, disallowEmptyPath, followFinalSymlink)
+	tpop, err := getTaskPathOperation(t, linux.AT_FDCWD, path, disallowEmptyPath, followFinalSymlink, 0)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -413,7 +507,7 @@ func PivotRoot(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintp
 	if err != nil {
 		return 0, nil, err
 	}
-	newRootTpop, err := getTaskPathOperation(t, linux.AT_FDCWD, newRootPath, disallowEmptyPath, followFinalSymlink)
+	newRootTpop, err := getTaskPathOperation(t, linux.AT_FDCWD, newRootPath, disallowEmptyPath, followFinalSymlink, 0)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -422,7 +516,7 @@ func PivotRoot(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintp
 	if err != nil {
 		return 0, nil, err
 	}
-	putOldTpop, err := getTaskPathOperation(t, linux.AT_FDCWD, putOldPath, disallowEmptyPath, followFinalSymlink)
+	putOldTpop, err := getTaskPathOperation(t, linux.AT_FDCWD, putOldPath, disallowEmptyPath, followFinalSymlink, 0)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -954,7 +1048,7 @@ func mkdirat(t *kernel.Task, dirfd int32, addr hostarch.Addr, mode uint) error {
 	if err != nil {
 		return err
 	}
-	tpop, err := getTaskPathOperation(t, dirfd, path, disallowEmptyPath, nofollowFinalSymlink)
+	tpop, err := getTaskPathOperation(t, dirfd, path, disallowEmptyPath, nofollowFinalSymlink, 0)
 	if err != nil {
 		return err
 	}
@@ -975,7 +1069,7 @@ func rmdirat(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr) error {
 	if err != nil {
 		return err
 	}
-	tpop, err := getTaskPathOperation(t, dirfd, path, disallowEmptyPath, nofollowFinalSymlink)
+	tpop, err := getTaskPathOperation(t, dirfd, path, disallowEmptyPath, nofollowFinalSymlink, 0)
 	if err != nil {
 		return err
 	}
@@ -1010,7 +1104,7 @@ func symlinkat(t *kernel.Task, targetAddr hostarch.Addr, newdirfd int32, linkpat
 	if err != nil {
 		return err
 	}
-	tpop, err := getTaskPathOperation(t, newdirfd, linkpath, disallowEmptyPath, nofollowFinalSymlink)
+	tpop, err := getTaskPathOperation(t, newdirfd, linkpath, disallowEmptyPath, nofollowFinalSymlink, 0)
 	if err != nil {
 		return err
 	}
@@ -1049,7 +1143,7 @@ func linkat(t *kernel.Task, olddirfd int32, oldpathAddr hostarch.Addr, newdirfd 
 	if flags&linux.AT_EMPTY_PATH != 0 {
 		emptyPathCheck = allowEmptyPathWithCredsCheck
 	}
-	oldtpop, err := getTaskPathOperation(t, olddirfd, oldpath, emptyPathCheck, shouldFollowFinalSymlink(flags&linux.AT_SYMLINK_FOLLOW != 0))
+	oldtpop, err := getTaskPathOperation(t, olddirfd, oldpath, emptyPathCheck, shouldFollowFinalSymlink(flags&linux.AT_SYMLINK_FOLLOW != 0), 0)
 	if err != nil {
 		return err
 	}
@@ -1059,7 +1153,7 @@ func linkat(t *kernel.Task, olddirfd int32, oldpathAddr hostarch.Addr, newdirfd 
 	if err != nil {
 		return err
 	}
-	newtpop, err := getTaskPathOperation(t, newdirfd, newpath, disallowEmptyPath, nofollowFinalSymlink)
+	newtpop, err := getTaskPathOperation(t, newdirfd, newpath, disallowEmptyPath, nofollowFinalSymlink, 0)
 	if err != nil {
 		return err
 	}
@@ -1097,7 +1191,7 @@ func readlinkat(t *kernel.Task, dirfd int32, pathAddr, bufAddr hostarch.Addr, si
 	// "Since Linux 2.6.39, pathname can be an empty string, in which case the
 	// call operates on the symbolic link referred to by dirfd ..." -
 	// readlinkat(2)
-	tpop, err := getTaskPathOperation(t, dirfd, path, allowEmptyPath, nofollowFinalSymlink)
+	tpop, err := getTaskPathOperation(t, dirfd, path, allowEmptyPath, nofollowFinalSymlink, 0)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -1129,7 +1223,7 @@ func unlinkat(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr) error {
 	if err != nil {
 		return err
 	}
-	tpop, err := getTaskPathOperation(t, dirfd, path, disallowEmptyPath, nofollowFinalSymlink)
+	tpop, err := getTaskPathOperation(t, dirfd, path, disallowEmptyPath, nofollowFinalSymlink, 0)
 	if err != nil {
 		return err
 	}
@@ -1585,7 +1679,7 @@ func renameat(t *kernel.Task, olddirfd int32, oldpathAddr hostarch.Addr, newdirf
 		return err
 	}
 	// "If oldpath refers to a symbolic link, the link is renamed" - rename(2)
-	oldtpop, err := getTaskPathOperation(t, olddirfd, oldpath, disallowEmptyPath, nofollowFinalSymlink)
+	oldtpop, err := getTaskPathOperation(t, olddirfd, oldpath, disallowEmptyPath, nofollowFinalSymlink, 0)
 	if err != nil {
 		return err
 	}
@@ -1595,7 +1689,7 @@ func renameat(t *kernel.Task, olddirfd int32, oldpathAddr hostarch.Addr, newdirf
 	if err != nil {
 		return err
 	}
-	newtpop, err := getTaskPathOperation(t, newdirfd, newpath, disallowEmptyPath, nofollowFinalSymlink)
+	newtpop, err := getTaskPathOperation(t, newdirfd, newpath, disallowEmptyPath, nofollowFinalSymlink, 0)
 	if err != nil {
 		return err
 	}

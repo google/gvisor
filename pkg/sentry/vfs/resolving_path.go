@@ -60,12 +60,29 @@ type ResolvingPath struct {
 	// ResolvingPath tracks relative paths, which is updated whenever a relative
 	// symlink is encountered.
 	parts [1 + linux.MaxSymlinkTraversals]fspath.Iterator
+
+	// mountSeq stores the vfs.mounts.seq sequence number at the beginning of
+	// the walk if flags contains rpflagsBeneath or rpflagsInRoot.
+	//
+	// It is used to fail scoped traversals that race against a mount tree change.
+	mountSeq sync.SeqCountEpoch
+
+	// renameSeq stores the vfs.renameSeq sequence number at the beginning of
+	// the walk if flags contains rpflagsBeneath.
+	//
+	// It is used to fail scoped traversals that race against a rename.
+	renameSeq uint64
 }
 
 const (
 	rpflagsHaveMountRef       = 1 << iota // do we hold a reference on mount?
 	rpflagsHaveStartRef                   // do we hold a reference on start?
 	rpflagsFollowFinalSymlink             // same as PathOperation.FollowFinalSymlink
+	rpflagsBeneath                        // same as RESOLVE_BENEATH
+	rpflagsInRoot                         // same as RESOLVE_IN_ROOT
+	rpflagsNoMagicLinks                   // same as RESOLVE_NO_MAGICLINKS
+	rpflagsNoSymlinks                     // same as RESOLVE_NO_SYMLINKS
+	rpflagsNoXDev                         // same as RESOLVE_NO_XDEV
 )
 
 func init() {
@@ -112,9 +129,25 @@ var resolvingPathPool = sync.Pool{
 	},
 }
 
+// scoped indicates whether rp represents a scoped traversal.
+func (rp *ResolvingPath) scoped() bool {
+	return rp.flags&(rpflagsBeneath|rpflagsInRoot) != 0
+}
+
 // getResolvingPath gets a new ResolvingPath from the pool. Caller must call
 // ResolvingPath.Release() when done.
 func (vfs *VirtualFilesystem) getResolvingPath(creds *auth.Credentials, pop *PathOperation) *ResolvingPath {
+	resolveBeneath := pop.ResolveFlags&linux.RESOLVE_BENEATH != 0
+	resolveInRoot := pop.ResolveFlags&linux.RESOLVE_IN_ROOT != 0
+	scoped := resolveBeneath || resolveInRoot
+
+	if checkInvariants && resolveBeneath {
+		// Check invariants for RESOLVE_BENEATH
+		if pop.Path.Absolute {
+			panic("VirtualFilesystem.getResolvingPath() called with RESOLVE_BENEATH and absolute pop.Path")
+		}
+	}
+
 	rp := resolvingPathPool.Get().(*ResolvingPath)
 	rp.vfs = vfs
 	rp.root = pop.Root
@@ -124,6 +157,26 @@ func (vfs *VirtualFilesystem) getResolvingPath(creds *auth.Credentials, pop *Pat
 	rp.flags = 0
 	if pop.FollowFinalSymlink {
 		rp.flags |= rpflagsFollowFinalSymlink
+	}
+	if resolveBeneath {
+		rp.flags |= rpflagsBeneath
+	}
+	if resolveInRoot {
+		rp.flags |= rpflagsInRoot
+	}
+	if scoped {
+		rp.root = pop.Start
+		rp.mountSeq = vfs.mounts.seq.BeginRead()
+		rp.renameSeq = vfs.renameSeq.Load()
+	}
+	if pop.ResolveFlags&linux.RESOLVE_NO_MAGICLINKS != 0 {
+		rp.flags |= rpflagsNoMagicLinks
+	}
+	if pop.ResolveFlags&linux.RESOLVE_NO_SYMLINKS != 0 {
+		rp.flags |= rpflagsNoSymlinks
+	}
+	if pop.ResolveFlags&linux.RESOLVE_NO_XDEV != 0 {
+		rp.flags |= rpflagsNoXDev
 	}
 	rp.mustBeDir = pop.Path.Dir
 	rp.symlinks = 0
@@ -284,19 +337,39 @@ func (rp *ResolvingPath) GetComponents(excludeLast bool, emit func(string) bool)
 // resolution should resolve d's parent normally, and CheckRoot returns (false,
 // nil).
 func (rp *ResolvingPath) CheckRoot(ctx context.Context, d *Dentry) (bool, error) {
+	if rp.scoped() && (!rp.vfs.mounts.seq.ReadOk(rp.mountSeq) || rp.vfs.renameSeq.Load() != rp.renameSeq) {
+		// If a mount or rename raced with a scoped traversal,
+		// we cannot ensure correctness. Fail.
+		return false, linuxerr.EAGAIN
+	}
+
+	beneath := rp.flags&rpflagsBeneath != 0
 	if d == rp.root.dentry && rp.mount == rp.root.mount {
 		// At contextual VFS root (due to e.g. chroot(2)).
+		if beneath {
+			// For RESOLVE_BENEATH, trying to traverse above the root
+			// (which in this case is set from dirfd) should fail.
+			return false, linuxerr.EXDEV
+		}
 		return true, nil
 	} else if d == rp.mount.root {
 		// At mount root ...
 		vd := rp.vfs.getMountpointAt(ctx, rp.mount, rp.root)
 		if vd.Ok() {
 			// ... of non-root mount.
+			if rp.flags&rpflagsNoXDev != 0 {
+				// Disallow climbing up into a new mount for RESOLVE_NO_XDEV traversals
+				vd.DecRef(ctx)
+				return false, linuxerr.EXDEV
+			}
 			rp.nextMount = vd.mount
 			rp.nextStart = vd.dentry
 			return false, resolveMountRootOrJumpError{}
 		}
 		// ... of root mount.
+		if beneath {
+			return false, linuxerr.EXDEV
+		}
 		return true, nil
 	}
 	return false, nil
@@ -311,6 +384,12 @@ func (rp *ResolvingPath) CheckMount(ctx context.Context, d *Dentry) error {
 		return nil
 	}
 	if mnt := rp.vfs.getMountAt(ctx, rp.mount, d); mnt != nil {
+		if rp.flags&rpflagsNoXDev != 0 {
+			// Don't cross a mount point for RESOLVE_NO_XDEV traversals
+			mnt.DecRef(ctx)
+			return linuxerr.EXDEV
+		}
+
 		rp.nextMount = mnt
 		return resolveMountPointError{}
 	}
@@ -351,7 +430,7 @@ func (rp *ResolvingPath) ShouldFollowSymlink() bool {
 //
 // Postconditions: If HandleSymlink returns a nil error, then !rp.Done().
 func (rp *ResolvingPath) HandleSymlink(target string) (bool, error) {
-	if rp.symlinks >= linux.MaxSymlinkTraversals {
+	if rp.symlinks >= linux.MaxSymlinkTraversals || rp.flags&rpflagsNoSymlinks != 0 {
 		return false, linuxerr.ELOOP
 	}
 	if len(target) == 0 {
@@ -360,6 +439,36 @@ func (rp *ResolvingPath) HandleSymlink(target string) (bool, error) {
 	rp.symlinks++
 	targetPath := fspath.Parse(target)
 	if targetPath.Absolute {
+		if rp.flags&rpflagsBeneath != 0 {
+			// RESOLVE_BENEATH traversals reject absolute symlinks
+			return true, linuxerr.EXDEV
+		}
+		if rp.flags&rpflagsNoXDev != 0 && rp.mount != rp.root.mount {
+			// Absolute symlinks restart traversal at rp.root, so RESOLVE_NO_XDEV
+			// traversals should only allow them if the root mount is the same one
+			// we're currently on.
+			//
+			// Technically, Linux has an extra requirement: nd->root (equivalent to
+			// rp.root) must have *been set*. It's initialized lazily, only in three
+			// cases: .., absolute paths, and absolute symlinks. However, in the latter
+			// case, the initialization occurs *after* the NO_XDEV check, so the NO_XDEV
+			// check can occur with a null traversal root.
+			//
+			// This leads to strange situations. For example, on a system with a
+			// *single* mount, on which one would expect NO_XDEV to have no effect,
+			// the following call fails:
+			//   openat2(dirfd /, "absolute-link", RESOLVE_NO_XDEV) -> EXDEV
+			// whereas the following call succeeds, since .. causes nd->root to be set:
+			//   openat2(dirfd /, "subdir/../absolute-link", RESOLVE_NO_XDEV) -> success
+			//
+			// This is apparently a Linux bug. In gVisor, rp.root is always set, so both
+			// of the above calls would succeed. There's no harm in being a little more
+			// permissive than Linux here (the traversal will still never cross a mount
+			// boundary).
+			return true, linuxerr.EXDEV
+		}
+		// For RESOLVE_IN_ROOT traversals, traversal will be restarted at rp.root
+		// which in this case is bounded by the dirfd
 		rp.absSymlinkTarget = targetPath
 		return true, resolveAbsSymlinkError{}
 	}
@@ -405,6 +514,18 @@ func (rp *ResolvingPath) relpathPrepend(path fspath.Path) {
 func (rp *ResolvingPath) HandleJump(target VirtualDentry) (bool, error) {
 	if rp.symlinks >= linux.MaxSymlinkTraversals {
 		return false, linuxerr.ELOOP
+	}
+	if rp.flags&rpflagsNoMagicLinks != 0 || rp.flags&rpflagsNoSymlinks != 0 {
+		// Reject magic links for RESOLVE_NO_SYMLINKS or RESOLVE_NO_MAGICLINKS traversals.
+		return false, linuxerr.ELOOP
+	}
+	if rp.flags&rpflagsNoXDev != 0 && target.mount != rp.mount {
+		// Reject magic links across mounts when RESOLVE_NOXDEV is set.
+		return false, linuxerr.EXDEV
+	}
+	if rp.scoped() {
+		// Linux currently rejects magic links for all scoped traversals.
+		return false, linuxerr.EXDEV
 	}
 	rp.symlinks++
 	// Consume the path component that represented the magic link.
@@ -486,4 +607,30 @@ func (rp *ResolvingPath) canHandleError(err error) bool {
 // MustBeDir returns true if the file traversed by rp must be a directory.
 func (rp *ResolvingPath) MustBeDir() bool {
 	return rp.mustBeDir
+}
+
+// finalizeScoped must be called by a VFS method that supports scoped traversals
+// (RESOLVE_BENEATH and/or RESOLVE_IN_ROOT) once a resolving path has been fully
+// resolved into a dentry.
+//
+// It performs a final check that the resolved path is underneath the scope specified
+// by dirfd. It is analogous to the LOOKUP_IS_SCOPED branch in Linux's fs/namei.c.
+//
+// The extra check is necessary at the end for two reasons:
+//   - as an extra check in case a bug in the path traversal allows a scoped
+//     traversal to escape, and
+//   - because the mountSeq sequence number used to detect races with mount operations is
+//     only 32 bits, if some crazy person manages to pull off an exactly 2^32-mount overflow
+//     during the path traversal window, this check would catch that.
+func (rp *ResolvingPath) finalizeScoped(ctx context.Context, resolvedVD VirtualDentry) error {
+	if rp.scoped() {
+		rp.vfs.lockMounts()
+		ok := rp.vfs.isPathReachable(ctx, rp.root, resolvedVD)
+		rp.vfs.unlockMounts(ctx)
+		if !ok {
+			return linuxerr.EXDEV
+		}
+	}
+
+	return nil
 }
