@@ -1,0 +1,18 @@
+{
+  "trace_session": {
+    "name": "Default",
+    "points": [
+      {
+        "name": "syscall/execve/enter"
+      }
+    ],
+    "sinks": [
+      {
+        "name": "remote",
+        "config": {
+          "endpoint": "/tmp/seccheck.sock"
+        }
+      }
+    ]
+  }
+}
