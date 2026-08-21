@@ -867,25 +867,30 @@ func setupHostUDSTree(spec *specs.Spec) (cleanup func(), err error) {
 		Type:        "bind",
 	})
 
-	// Individual attach points for each socket to test mounts that attach
-	// directly to the sockets.
-	for _, protocol := range []string{"stream", "seqpacket"} {
-		for _, name := range []string{"echo", "nonlistening"} {
-			spec.Mounts = append(spec.Mounts, specs.Mount{
-				Destination: filepath.Join("/tmp/sockets-attach", protocol, name),
-				Source:      filepath.Join(socketDir, protocol, name),
-				Type:        "bind",
-			})
+	// Individual attach points mount a socket directly as the mount root. Such a
+	// mount cannot itself be wrapped in an overlay, so omit these mounts for
+	// overlay variants. The directory tree above can still be overlaid and
+	// exposes its sockets as lower-layer dentries.
+	if !*overlay {
+		for _, protocol := range []string{"stream", "seqpacket"} {
+			for _, name := range []string{"echo", "nonlistening"} {
+				spec.Mounts = append(spec.Mounts, specs.Mount{
+					Destination: filepath.Join("/tmp/sockets-attach", protocol, name),
+					Source:      filepath.Join(socketDir, protocol, name),
+					Type:        "bind",
+				})
+			}
 		}
+		spec.Mounts = append(spec.Mounts, specs.Mount{
+			Destination: "/tmp/sockets-attach/dgram/null",
+			Source:      filepath.Join(socketDir, "dgram/null"),
+			Type:        "bind",
+		})
+		spec.Process.Env = append(
+			spec.Process.Env, "TEST_UDS_ATTACH_TREE=/tmp/sockets-attach")
 	}
-	spec.Mounts = append(spec.Mounts, specs.Mount{
-		Destination: "/tmp/sockets-attach/dgram/null",
-		Source:      filepath.Join(socketDir, "dgram/null"),
-		Type:        "bind",
-	})
 
 	spec.Process.Env = append(spec.Process.Env, "TEST_UDS_TREE=/tmp/sockets")
-	spec.Process.Env = append(spec.Process.Env, "TEST_UDS_ATTACH_TREE=/tmp/sockets-attach")
 
 	return cleanup, nil
 }
@@ -925,18 +930,22 @@ func setupHostFifoTree(spec *specs.Spec) (cleanup func(), err error) {
 		Type:        "bind",
 	})
 
-	// Individual attach points for each pipe to test mounts that attach
-	// directly to the pipe.
-	for _, name := range []string{"in", "out"} {
-		spec.Mounts = append(spec.Mounts, specs.Mount{
-			Destination: filepath.Join("/tmp/pipes-attach", name),
-			Source:      filepath.Join(fifoDir, name),
-			Type:        "bind",
-		})
+	// Individual attach points mount a FIFO directly as the mount root. Such a
+	// mount cannot itself be wrapped in an overlay, so omit these mounts for
+	// overlay variants. The directory tree above can still be overlaid and exposes
+	// its FIFOs as lower-layer dentries.
+	if !*overlay {
+		for _, name := range []string{"in", "out"} {
+			spec.Mounts = append(spec.Mounts, specs.Mount{
+				Destination: filepath.Join("/tmp/pipes-attach", name),
+				Source:      filepath.Join(fifoDir, name),
+				Type:        "bind",
+			})
+		}
+		spec.Process.Env = append(spec.Process.Env, "TEST_FIFO_ATTACH_TREE=/tmp/pipes-attach")
 	}
 
 	spec.Process.Env = append(spec.Process.Env, "TEST_FIFO_TREE=/tmp/pipes")
-	spec.Process.Env = append(spec.Process.Env, "TEST_FIFO_ATTACH_TREE=/tmp/pipes-attach")
 
 	return cleanup, nil
 }
