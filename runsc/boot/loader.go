@@ -338,9 +338,13 @@ type Loader struct {
 
 	// networkArgs contains the routes and links which were scraped from the
 	// host network namespace during sandbox creation.
+	//
+	// +checklocks:mu
 	networkArgs *CreateLinksAndRoutesArgs
 
 	// fsSaveFDs are FDs used for user-triggered filesystem checkpoint saving.
+	//
+	// +checklocks:mu
 	fsSaveFDs []*fd.FD
 
 	// fsSaveCheckpointGofer is true if fsSaveFDs contains only one FD, which
@@ -924,6 +928,10 @@ func New(args Args) (*Loader, error) {
 }
 
 // ConfigureNetwork implements inet.NetworkArgs.ConfigureNetwork.
+// Restore calls this synchronously through Kernel.LoadFrom while retaining
+// l.mu. That interface call cannot convey this concrete lock contract.
+//
+// +checklocks:l.mu
 func (l *Loader) ConfigureNetwork(s inet.Stack) error {
 	if h, ok := s.(*hostinet.Stack); ok {
 		h.SetFiles(l.hostinetNetDevFile, l.hostinetNetSNMPFile)
