@@ -53,9 +53,163 @@ type cgroupSystemd struct {
 	Parent string
 	// ScopePrefix is the prefix for the scope name.
 	ScopePrefix string
+	// Rootless indicates that the unit is managed by the per-user systemd
+	// instance rather than the system instance.
+	Rootless bool
+	// ManagerCG is the cgroup of the systemd instance that manages this unit.
+	// Unit cgroups are nested under it. It is empty for the system instance,
+	// which manages units at the root of the hierarchy.
+	ManagerCG string
 
 	properties []systemdDbus.Property
-	dbusConn   *systemdDbus.Conn
+	// propControllers are the controllers for which properties were generated,
+	// i.e. those the runtime spec actually requests limits for.
+	propControllers []string
+	dbusConn        *systemdDbus.Conn
+}
+
+// checkControllers returns an error if a limit was requested for a controller
+// that is not available in the cgroup. systemd accepts properties for
+// controllers it was not delegated and silently drops them, so looking
+// afterwards is the only way to know whether a limit took effect.
+//
+// Preconditions: The cgroup must have been created.
+func (c *cgroupSystemd) checkControllers() error {
+	if len(c.propControllers) == 0 {
+		return nil
+	}
+	path := c.MakePath("")
+	data, err := os.ReadFile(filepath.Join(path, controllersFile))
+	if err != nil {
+		return fmt.Errorf("reading cgroup controllers for %q: %w", path, err)
+	}
+	available := make(map[string]struct{})
+	for _, name := range strings.Fields(string(data)) {
+		available[name] = struct{}{}
+	}
+	var missing []string
+	for _, name := range c.propControllers {
+		if _, ok := available[name]; !ok {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("resource limits were requested for cgroup controllers %s, but they are not available in %q; they may not be delegated to this systemd instance", strings.Join(missing, ","), path)
+	}
+	return nil
+}
+
+// translateUID translates uid through the user namespace ID map in mapPath.
+// See user_namespaces(7) for the format.
+func translateUID(uid int, mapPath string) int {
+	data, err := os.ReadFile(mapPath)
+	if err != nil {
+		log.Debugf("Unable to read %q, using UID %d as-is: %v", mapPath, uid, err)
+		return uid
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 3 {
+			continue
+		}
+		inside, err1 := strconv.ParseUint(fields[0], 10, 32)
+		outside, err2 := strconv.ParseUint(fields[1], 10, 32)
+		length, err3 := strconv.ParseUint(fields[2], 10, 32)
+		if err1 != nil || err2 != nil || err3 != nil {
+			continue
+		}
+		if u := uint64(uid); u >= inside && u < inside+length {
+			return int(outside + (u - inside))
+		}
+	}
+	log.Debugf("UID %d is not mapped in %q, using it as-is", uid, mapPath)
+	return uid
+}
+
+// hostUID returns the caller's effective UID as seen outside of any user
+// namespace it may be running in.
+func hostUID() int {
+	return translateUID(os.Geteuid(), "/proc/self/uid_map")
+}
+
+// useUserSystemd reports whether cgroup operations should be directed at the
+// per-user systemd instance rather than the system instance. Unprivileged users
+// cannot create system-wide transient units, but they can create per-user ones.
+//
+// Note that geteuid() alone is not sufficient: container runtimes may run runsc
+// inside a user namespace in which the unprivileged caller is mapped to UID 0.
+func useUserSystemd() bool {
+	return hostUID() != 0
+}
+
+// userBusAddress returns the address of the caller's session bus, which is
+// where the per-user systemd instance can be reached.
+func userBusAddress() (string, error) {
+	if addr := os.Getenv("DBUS_SESSION_BUS_ADDRESS"); addr != "" {
+		return addr, nil
+	}
+	// Container runtimes do not always propagate DBUS_SESSION_BUS_ADDRESS. The
+	// session bus lives at a well-known path under XDG_RUNTIME_DIR, so fall back
+	// to that when the socket is present.
+	if dir := os.Getenv("XDG_RUNTIME_DIR"); dir != "" {
+		busPath := filepath.Join(dir, "bus")
+		if _, err := os.Stat(busPath); err == nil {
+			return "unix:path=" + dbus.EscapeBusAddressValue(busPath), nil
+		}
+	}
+	return "", errors.New("no session bus: DBUS_SESSION_BUS_ADDRESS unset and $XDG_RUNTIME_DIR/bus missing")
+}
+
+// newDBusConn connects to the systemd instance that manages this cgroup.
+func (c *cgroupSystemd) newDBusConn(ctx context.Context) (*systemdDbus.Conn, error) {
+	if !c.Rootless {
+		return systemdDbus.NewWithContext(ctx)
+	}
+	addr, err := userBusAddress()
+	if err != nil {
+		return nil, err
+	}
+	// systemdDbus.NewUserConnectionContext is not usable here: it authenticates
+	// as geteuid(), which is 0 inside the user namespace a rootless runtime puts
+	// us in, and it falls back to spawning dbus-launch(1) when it cannot find an
+	// existing bus.
+	//
+	// Note that systemdDbus.NewConnection calls this function more than once and
+	// requires each call to return an independent connection.
+	uid := hostUID()
+	return systemdDbus.NewConnection(func() (*dbus.Conn, error) {
+		conn, err := dbus.Dial(addr, dbus.WithContext(ctx))
+		if err != nil {
+			return nil, fmt.Errorf("dialing %q: %w", addr, err)
+		}
+		// The bus resolves peer credentials in its own user namespace, so it must
+		// be given the UID from that namespace rather than the one we see.
+		if err := conn.Auth([]dbus.Auth{dbus.AuthExternal(strconv.Itoa(uid))}); err != nil {
+			_ = conn.Close()
+			return nil, fmt.Errorf("authenticating to %q as UID %d: %w", addr, uid, err)
+		}
+		if err := conn.Hello(); err != nil {
+			_ = conn.Close()
+			return nil, fmt.Errorf("sending Hello to %q: %w", addr, err)
+		}
+		return conn, nil
+	})
+}
+
+// managerControlGroup returns the cgroup of the systemd instance that conn is
+// connected to. Units it manages are nested under it.
+func managerControlGroup(conn *systemdDbus.Conn) (string, error) {
+	// GetManagerProperty returns the property's dbus.Variant rendering, which
+	// quotes strings.
+	quoted, err := conn.GetManagerProperty("ControlGroup")
+	if err != nil {
+		return "", fmt.Errorf("getting systemd ControlGroup property: %w", err)
+	}
+	cg, err := strconv.Unquote(quoted)
+	if err != nil {
+		return "", fmt.Errorf("parsing systemd ControlGroup property %q: %w", quoted, err)
+	}
+	return cg, nil
 }
 
 func newCgroupV2Systemd(cgv2 *cgroupV2) (*cgroupSystemd, error) {
@@ -76,9 +230,8 @@ func newCgroupV2Systemd(cgv2 *cgroupV2) (*cgroupSystemd, error) {
 	if err := validSlice(cg.Parent); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidGroupPath, err)
 	}
-	// Rewrite Path so that it is compatible with cgroupv2 methods.
-	cg.Path = filepath.Join(expandSlice(cg.Parent), cg.unitName())
-	conn, err := systemdDbus.NewWithContext(ctx)
+	cg.Rootless = useUserSystemd()
+	conn, err := cg.newDBusConn(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -89,6 +242,13 @@ func newCgroupV2Systemd(cgv2 *cgroupV2) (*cgroupSystemd, error) {
 	if version < 244 {
 		return nil, fmt.Errorf("systemd version %d not supported, please upgrade to at least 244", version)
 	}
+	if cg.Rootless {
+		if cg.ManagerCG, err = managerControlGroup(conn); err != nil {
+			return nil, err
+		}
+	}
+	// Rewrite Path so that it is compatible with cgroupv2 methods.
+	cg.Path = filepath.Join(cg.ManagerCG, expandSlice(cg.Parent), cg.unitName())
 	cg.dbusConn = conn
 	return cg, err
 }
@@ -97,6 +257,8 @@ func newCgroupV2Systemd(cgv2 *cgroupV2) (*cgroupSystemd, error) {
 // unit.
 func (c *cgroupSystemd) Install(res *specs.LinuxResources) error {
 	log.Debugf("Installing systemd cgroup resource controller under %v", c.Parent)
+	// The slice is named relative to the systemd instance that manages it, so it
+	// must not be prefixed with ManagerCG even though the cgroup path is.
 	c.properties = append(c.properties, systemdDbus.PropSlice(c.Parent))
 	c.properties = append(c.properties, systemdDbus.PropDescription("Secure container "+c.Name))
 	pid := os.Getpid()
@@ -123,7 +285,7 @@ func (c *cgroupSystemd) Update(res *specs.LinuxResources) error {
 	}
 
 	ctx := context.Background()
-	conn, err := systemdDbus.NewWithContext(ctx)
+	conn, err := c.newDBusConn(ctx)
 	if err != nil {
 		return err
 	}
@@ -142,7 +304,7 @@ func (c *cgroupSystemd) unitName() string {
 // MakePath builds a path to the given controller.
 func (c *cgroupSystemd) MakePath(string) string {
 	fullSlicePath := expandSlice(c.Parent)
-	path := filepath.Join(c.Mountpoint, fullSlicePath, c.unitName())
+	path := filepath.Join(c.Mountpoint, c.ManagerCG, fullSlicePath, c.unitName())
 	return path
 }
 
@@ -163,7 +325,7 @@ func (c *cgroupSystemd) Join() (func(), error) {
 	clean := cleanup.Make(func() { _ = c.Uninstall() })
 	defer clean.Clean()
 
-	conn, err := systemdDbus.NewWithContext(ctx)
+	conn, err := c.newDBusConn(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -191,9 +353,14 @@ func (c *cgroupSystemd) Join() (func(), error) {
 		}
 		return clean.Release(), nil
 	} else {
-		return nil, fmt.Errorf("systemd error: %v", err)
+		return nil, fmt.Errorf("systemd error: %w", err)
 	}
 	if _, err = c.createCgroupPaths(); err != nil {
+		return nil, err
+	}
+	// The scope is a transient unit, so systemd releases it once this process
+	// exits; returning an error here does not leak it.
+	if err := c.checkControllers(); err != nil {
 		return nil, err
 	}
 	return clean.Release(), nil
@@ -314,6 +481,8 @@ func newProp(name string, units any) systemdDbus.Property {
 }
 
 func (c *cgroupSystemd) updateControllersProps(res *specs.LinuxResources) error {
+	// Update() may be called more than once.
+	c.propControllers = nil
 	for controllerName, ctrlr := range controllers2 {
 		// First check if our controller is found in the system.
 		found := false
@@ -327,6 +496,9 @@ func (c *cgroupSystemd) updateControllersProps(res *specs.LinuxResources) error 
 			props, err := ctrlr.generateProperties(res)
 			if err != nil {
 				return err
+			}
+			if len(props) > 0 {
+				c.propControllers = append(c.propControllers, controllerName)
 			}
 			c.properties = append(c.properties, props...)
 			continue
