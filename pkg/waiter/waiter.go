@@ -142,7 +142,10 @@ type Entry struct {
 	// eventListener receives the notification.
 	eventListener EventListener
 
-	// mask should be immutable once queued.
+	// mask is initialized before registration. While queued, SetQueuedMask
+	// updates it under the owning queue's mu. Calls to Mask or NotifyEvent
+	// must not race with mask updates. The queue is not stored in Entry, so
+	// its lock cannot be named by a field annotation.
 	mask EventMask
 }
 
@@ -225,6 +228,7 @@ func (NoopListener) NotifyEvent(mask EventMask) {}
 //
 // +stateify savable
 type Queue struct {
+	// +checklocks:mu
 	list waiterList
 	mu   sync.RWMutex `state:"nosave"`
 }
