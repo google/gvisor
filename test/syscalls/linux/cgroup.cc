@@ -19,10 +19,13 @@
 #include <linux/magic.h>
 #include <poll.h>
 #include <sys/inotify.h>
+#include <sys/mman.h>
 #include <sys/mount.h>
 #include <sys/statfs.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
@@ -74,7 +77,7 @@ using ::testing::Key;
 using ::testing::Not;
 
 std::vector<std::string> known_controllers = {
-    "cpu", "cpuset", "cpuacct", "devices", "job", "memory", "pids",
+    "cpu", "cpuset", "cpuacct", "devices", "freezer", "job", "memory", "pids",
 };
 
 bool CgroupsAvailable() {
@@ -828,7 +831,7 @@ TEST(ProcCgroups, ProcCgroupsEntries) {
   Cgroup mem = Cgroup::RootCgroup("/sys/fs/cgroup/memory");
   absl::flat_hash_map<std::string, CgroupsEntry> entries =
       ASSERT_NO_ERRNO_AND_VALUE(ProcCgroupsEntries());
-  EXPECT_EQ(entries.size(), 7);
+  EXPECT_EQ(entries.size(), known_controllers.size());
   ASSERT_TRUE(entries.contains("memory"));
   CgroupsEntry mem_e = entries["memory"];
   EXPECT_EQ(mem_e.subsys_name, "memory");
@@ -842,7 +845,7 @@ TEST(ProcCgroups, ProcCgroupsEntries) {
 
   Cgroup cpu = Cgroup::RootCgroup("/sys/fs/cgroup/cpu");
   entries = ASSERT_NO_ERRNO_AND_VALUE(ProcCgroupsEntries());
-  EXPECT_EQ(entries.size(), 7);
+  EXPECT_EQ(entries.size(), known_controllers.size());
   EXPECT_TRUE(entries.contains("memory"));  // Still have memory entry.
   ASSERT_TRUE(entries.contains("cpu"));
   CgroupsEntry cpu_e = entries["cpu"];
@@ -862,7 +865,7 @@ TEST(ProcPIDCgroup, Entries) {
   absl::flat_hash_map<std::string, PIDCgroupEntry> entries =
       ASSERT_NO_ERRNO_AND_VALUE(ProcPIDCgroupEntries(getpid()));
   // All controllers are mounted.
-  EXPECT_EQ(entries.size(), 7);
+  EXPECT_EQ(entries.size(), known_controllers.size());
   PIDCgroupEntry mem_e = entries["memory"];
   EXPECT_GE(mem_e.hierarchy, 1);
   EXPECT_EQ(mem_e.controllers, "memory");
@@ -872,7 +875,7 @@ TEST(ProcPIDCgroup, Entries) {
   Cgroup c1 = Cgroup::RootCgroup("/sys/fs/cgroup/cpu");
   entries = ASSERT_NO_ERRNO_AND_VALUE(ProcPIDCgroupEntries(getpid()));
   // All controllers are mounted.
-  EXPECT_EQ(entries.size(), 7);
+  EXPECT_EQ(entries.size(), known_controllers.size());
   EXPECT_TRUE(entries.contains("memory"));  // Still have memory entry.
   PIDCgroupEntry cpu_e = entries["cpu"];
   EXPECT_GE(cpu_e.hierarchy, 1);
@@ -1115,6 +1118,123 @@ TEST(Cgroup, ProcSelfCgroupNoV2LineIfUnmounted) {
   // mounted at least once. Since cgroup v2 has not been mounted in this test
   // environment, the string "0::" should not appear in /proc/self/cgroup.
   EXPECT_FALSE(absl::StrContains(content, "0::"));
+}
+
+TEST(FreezerCgroup, FreezerState) {
+  SKIP_IF(!CgroupsAvailable());
+
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup top = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("freezer"));
+  EXPECT_THAT(top.ReadControlFile("freezer.state"),
+              IsPosixErrorOkAndHolds("THAWED\n"));
+  EXPECT_THAT(top.ReadControlFile("freezer.self_freezing"),
+              IsPosixErrorOkAndHolds("0\n"));
+  EXPECT_THAT(top.ReadControlFile("freezer.parent_freezing"),
+              IsPosixErrorOkAndHolds("0\n"));
+
+  Cgroup parent = ASSERT_NO_ERRNO_AND_VALUE(top.CreateChild("parent"));
+  EXPECT_THAT(parent.ReadControlFile("freezer.state"),
+              IsPosixErrorOkAndHolds("THAWED\n"));
+  EXPECT_THAT(parent.ReadControlFile("freezer.self_freezing"),
+              IsPosixErrorOkAndHolds("0\n"));
+  EXPECT_THAT(parent.ReadControlFile("freezer.parent_freezing"),
+              IsPosixErrorOkAndHolds("0\n"));
+
+  ASSERT_NO_ERRNO(parent.WriteControlFile("freezer.state", "FROZEN"));
+  EXPECT_THAT(parent.ReadControlFile("freezer.state"),
+              IsPosixErrorOkAndHolds("FROZEN\n"));
+  EXPECT_THAT(parent.ReadControlFile("freezer.self_freezing"),
+              IsPosixErrorOkAndHolds("1\n"));
+
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(parent.CreateChild("child"));
+  EXPECT_THAT(child.ReadControlFile("freezer.state"),
+              IsPosixErrorOkAndHolds("FROZEN\n"));
+  EXPECT_THAT(child.ReadControlFile("freezer.self_freezing"),
+              IsPosixErrorOkAndHolds("0\n"));
+  EXPECT_THAT(child.ReadControlFile("freezer.parent_freezing"),
+              IsPosixErrorOkAndHolds("1\n"));
+
+  ASSERT_NO_ERRNO(parent.WriteControlFile("freezer.state", "THAWED"));
+  EXPECT_THAT(parent.ReadControlFile("freezer.state"),
+              IsPosixErrorOkAndHolds("THAWED\n"));
+  EXPECT_THAT(parent.ReadControlFile("freezer.self_freezing"),
+              IsPosixErrorOkAndHolds("0\n"));
+  EXPECT_THAT(child.ReadControlFile("freezer.parent_freezing"),
+              IsPosixErrorOkAndHolds("0\n"));
+  EXPECT_THAT(child.ReadControlFile("freezer.state"),
+              IsPosixErrorOkAndHolds("THAWED\n"));
+
+  EXPECT_THAT(parent.WriteControlFile("freezer.state", "INVALID"),
+              PosixErrorIs(EINVAL, _));
+}
+
+TEST(FreezerCgroup, FreezeProcess) {
+  SKIP_IF(!CgroupsAvailable());
+
+  const DisableSave ds;  // Timing-sensitive test.
+
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup top = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("freezer"));
+  Cgroup parent =
+      ASSERT_NO_ERRNO_AND_VALUE(top.CreateChild("freeze_proc_test"));
+
+  struct SharedData {
+    std::atomic<uint64_t> counter;
+    std::atomic<bool> done;
+  };
+
+  int memfd = memfd_create("cgroup_freeze_shared", 0);
+  ASSERT_GE(memfd, 0);
+  ASSERT_THAT(ftruncate(memfd, sizeof(SharedData)), SyscallSucceeds());
+
+  auto* shared = reinterpret_cast<SharedData*>(mmap(nullptr, sizeof(SharedData),
+                                                    PROT_READ | PROT_WRITE,
+                                                    MAP_SHARED, memfd, 0));
+  ASSERT_NE(shared, MAP_FAILED);
+  shared->counter.store(0);
+  shared->done.store(false);
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    while (!shared->done.load()) {
+      shared->counter.fetch_add(1);
+      absl::SleepFor(absl::Milliseconds(1));
+    }
+    _exit(0);
+  }
+
+  ASSERT_GT(pid, 0);
+  ASSERT_NO_ERRNO(parent.WriteIntegerControlFile("cgroup.procs", pid));
+
+  while (shared->counter.load() < 5) {
+    absl::SleepFor(absl::Milliseconds(1));
+  }
+
+  ASSERT_NO_ERRNO(parent.WriteControlFile("freezer.state", "FROZEN"));
+  EXPECT_THAT(parent.ReadControlFile("freezer.state"),
+              IsPosixErrorOkAndHolds("FROZEN\n"));
+
+  uint64_t val1 = shared->counter.load();
+  absl::SleepFor(absl::Milliseconds(50));
+  uint64_t val2 = shared->counter.load();
+  EXPECT_EQ(val1, val2);
+
+  ASSERT_NO_ERRNO(parent.WriteControlFile("freezer.state", "THAWED"));
+  EXPECT_THAT(parent.ReadControlFile("freezer.state"),
+              IsPosixErrorOkAndHolds("THAWED\n"));
+
+  while (shared->counter.load() <= val2 + 5) {
+    absl::SleepFor(absl::Milliseconds(1));
+  }
+
+  shared->done.store(true);
+  int status;
+  EXPECT_EQ(waitpid(pid, &status, 0), pid);
+  EXPECT_TRUE(WIFEXITED(status));
+  EXPECT_EQ(WEXITSTATUS(status), 0);
+
+  munmap(shared, sizeof(SharedData));
+  close(memfd);
 }
 
 }  // namespace
