@@ -199,6 +199,17 @@ dev: $(RUNTIME_BIN) ## Installs a set of local runtimes. Requires sudo.
 	@$(call reload_docker)
 .PHONY: dev
 
+governance-regen: ## Regenerates the files derived from governance/maintainers.yaml and governance/areas.yaml.
+	@$(call run,//governance/tools/maintainers:maintainers_gen,-input governance/maintainers.yaml -areas governance/areas.yaml -format reviewer.json -output .github/reviewer.json)
+	@$(call run,//governance/tools/maintainers:maintainers_gen,-input governance/maintainers.yaml -areas governance/areas.yaml -format MAINTAINERS.md -output MAINTAINERS.md)
+	@$(call run,//governance/tools/maintainers:maintainers_gen,-input governance/maintainers.yaml -areas governance/areas.yaml -format CODEOWNERS -output CODEOWNERS)
+.PHONY: governance-regen
+
+governance-check: governance-regen ## Checks that the files derived from governance/*.yaml are in sync. Can't be a bazel test because it requires visibility across the whole codebase to check for subdirectories' existence.
+	@git diff --exit-code -- CODEOWNERS MAINTAINERS.md .github/reviewer.json || \
+		(echo "Generated governance files are out of sync. Please run \`make governance-regen\`." >&2; exit 1)
+.PHONY: governance-check
+
 ##
 ## Canonical build and test targets.
 ##

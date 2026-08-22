@@ -1,0 +1,173 @@
+# gVisor specialization areas.
+#
+# Each area maps a name to the set of repository paths that it covers.
+#
+# Area fields:
+#   name:   Area name. Areas must be sorted by name.
+#   paths:  Repo-root-relative directories (each starting with a slash, no
+#           trailing slash) covered by the area.
+areas:
+  - name: benchmarks
+    paths:
+      - /images/benchmarks
+      - /runsc/profile
+      - /test/benchmarks
+      - /test/perf
+      - /tools/bigquery
+      - /tools/parsers
+      - /tools/profiletool
+  - name: checklocks
+    paths:
+      - /tools/checklocks
+  - name: checkpointing
+    paths:
+      - /pkg/aio
+      - /pkg/compressio
+      - /pkg/sentry/checkpoint
+      - /pkg/sentry/fscheckpoint
+      - /pkg/sentry/state
+      - /pkg/state
+      - /runsc/checkpointgofer
+      - /tools/go_stateify
+  - name: erofs
+    paths:
+      - /pkg/erofs
+      - /pkg/sentry/fsimpl/erofs
+  - name: fuse
+    paths:
+      - /images/fuse
+      - /pkg/sentry/fsimpl/fuse
+      - /test/fuse_host
+  - name: gpu
+    paths:
+      - /images/gpu
+      - /pkg/sentry/devices/nvproxy
+      - /test/gpu
+      - /tools/gpu
+      - /tools/ioctl_sniffer
+      - /tools/nvidia_driver_differ
+  - name: kubernetes
+    paths:
+      - /test/kubernetes
+      - /tools/gvisor_k8s_tool
+      - /webhook
+  - name: metrics
+    paths:
+      - /pkg/metric
+      - /pkg/prometheus
+      - /runsc/cmd/metricserver
+      - /runsc/metricserver
+      - /test/metricclient
+      - /test/metricsviz
+  - name: mm
+    paths:
+      - /pkg/memutil
+      - /pkg/safecopy
+      - /pkg/safemem
+      - /pkg/sentry/hostmm
+      - /pkg/sentry/memmap
+      - /pkg/sentry/mm
+      - /pkg/sentry/pgalloc
+      - /pkg/sentry/usage
+      - /pkg/usermem
+  - name: networking
+    paths:
+      - /images/iptables
+      - /images/nftables
+      - /images/packetdrill
+      - /pkg/ebpf
+      - /pkg/rawfile
+      - /pkg/sentry/inet
+      - /pkg/sentry/socket
+      - /pkg/tcpip
+      - /pkg/xdp
+      - /test/iptables
+      - /test/netutils
+      - /test/nftables
+      - /test/packetdrill
+      - /test/packetimpact
+      - /test/rtnetlink
+      - /tools/gvisor2pcap
+      - /tools/xdp
+  - name: oci
+    paths:
+      - /pkg/shim
+      - /runsc/container
+      - /runsc/specutils
+      - /shim
+  - name: platform_kvm
+    paths:
+      - /pkg/sentry/platform/kvm
+  - name: platform_ptrace
+    paths:
+      - /pkg/sentry/platform/ptrace
+  - name: platform_slimvm
+    paths:
+      - /pkg/sentry/platform/slimvm
+  - name: platform_systrap
+    paths:
+      - /pkg/sentry/platform/systrap
+  - name: platforms
+    paths:
+      - /pkg/ring0
+      - /pkg/sentry/platform
+      - /pkg/sigframe
+  - name: rdma
+    paths:
+      - /pkg/rdma
+      - /pkg/sentry/devices/rdmaproxy
+  - name: release_pipeline
+    paths:
+      - /.buildkite
+      - /.github
+      - /debian
+      - /images/agent
+      - /tools/github
+  - name: runsc
+    paths:
+      - /runsc
+  - name: runtime_monitoring
+    paths:
+      - /examples/seccheck
+      - /pkg/eventchannel
+      - /pkg/seccheck
+      - /pkg/sentry/seccheck
+      - /test/trace
+      - /tools/tracereplay
+  - name: sandboxexec
+    paths:
+      - /examples/sandboxexec
+      - /sandboxexec
+  - name: seccomp
+    paths:
+      - /pkg/bpf
+      - /pkg/seccomp
+      - /runsc/boot/filter
+      - /runsc/fsgofer/filter
+      - /test/secbench
+      - /test/secfuzz
+  - name: sentry
+    paths:
+      - /pkg/sentry
+      - /vdso
+  - name: tpu
+    paths:
+      - /images/tpu
+      - /pkg/sentry/devices/tpuproxy
+      - /test/tpu
+      - /tools/tpu
+  - name: vfs
+    paths:
+      - /pkg/fspath
+      - /pkg/lisafs
+      - /pkg/p9
+      - /pkg/sentry/fsimpl
+      - /pkg/sentry/fsutil
+      - /pkg/sentry/vfs
+      - /runsc/fsgofer
+      - /test/fsstress
+  - name: website
+    paths:
+      - /g3doc
+      - /images/jekyll
+      - /website
