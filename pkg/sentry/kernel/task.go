@@ -81,15 +81,17 @@ type Task struct {
 
 	// taskWorkCount represents the current size of the task work queue. It is
 	// used to avoid acquiring taskWorkMu when the queue is empty.
+	//
+	// +checkatomic
+	// +checklocks:taskWorkMu
 	taskWorkCount atomicbitops.Int32
 
-	// taskWorkMu protects taskWork.
 	taskWorkMu taskWorkMutex `state:"nosave"`
 
 	// taskWork is a queue of work to be executed before resuming user execution.
 	// It is similar to the task_work mechanism in Linux.
 	//
-	// taskWork is exclusive to the task goroutine.
+	// +checklocks:taskWorkMu
 	taskWork []TaskWorker
 
 	// haveSyscallReturn is true if image.Arch().Return() represents a value
