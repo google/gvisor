@@ -117,18 +117,25 @@ type Pipe struct {
 	isNamed bool
 
 	// The number of active readers for this pipe.
+	//
+	// +checkatomic
 	readers atomicbitops.Int32
 
 	// The total number of readers for this pipe.
+	//
+	// +checkatomic
 	totalReaders atomicbitops.Int32
 
 	// The number of active writers for this pipe.
+	//
+	// +checkatomic
 	writers atomicbitops.Int32
 
 	// The total number of writers for this pipe.
+	//
+	// +checkatomic
 	totalWriters atomicbitops.Int32
 
-	// mu protects all pipe internal state below.
 	mu pipeMutex `state:"nosave"`
 
 	// buf holds the pipe's data. buf is a circular buffer; the first valid
@@ -137,7 +144,10 @@ type Pipe struct {
 	// avoids needing to heap-allocate a new safemem.Block slice when buf is
 	// resized. bufBlockSeq is a safemem.BlockSeq representing bufBlocks.
 	//
-	// These fields are protected by mu.
+	// These fields are protected by mu during normal use; afterLoad rebuilds
+	// the buffer views before publication. peekLocked and consumeLocked are
+	// also called through spliceOrTee's callback, whose held pipe lock is not
+	// visible to checklocks.
 	buf         []byte
 	bufBlocks   [2]safemem.Block `state:"nosave"`
 	bufBlockSeq safemem.BlockSeq `state:"nosave"`
@@ -147,7 +157,7 @@ type Pipe struct {
 	// max is the maximum size of the pipe in bytes. When this max has been
 	// reached, writers will get EWOULDBLOCK.
 	//
-	// This is protected by mu.
+	// +checklocks:mu
 	max int64
 
 	// hadWriter indicates if this pipe ever had a writer. Note that this
@@ -155,7 +165,7 @@ type Pipe struct {
 	// that there has been a writer at some point since the pipe was
 	// created.
 	//
-	// This is protected by mu.
+	// +checklocks:mu
 	hadWriter bool
 }
 
@@ -163,20 +173,15 @@ type Pipe struct {
 //
 // N.B. The size will be bounded.
 func NewPipe(isNamed bool, sizeBytes int64) *Pipe {
-	var p Pipe
-	initPipe(&p, isNamed, sizeBytes)
+	p := newPipe(isNamed, sizeBytes)
 	return &p
 }
 
-func initPipe(pipe *Pipe, isNamed bool, sizeBytes int64) {
-	if sizeBytes < MinimumPipeSize {
-		sizeBytes = MinimumPipeSize
+func newPipe(isNamed bool, sizeBytes int64) Pipe {
+	return Pipe{
+		isNamed: isNamed,
+		max:     min(max(sizeBytes, MinimumPipeSize), MaximumPipeSize),
 	}
-	if sizeBytes > MaximumPipeSize {
-		sizeBytes = MaximumPipeSize
-	}
-	pipe.isNamed = isNamed
-	pipe.max = sizeBytes
 }
 
 // peekLocked passes the first count bytes in the pipe, starting at offset off,
@@ -247,8 +252,7 @@ func (p *Pipe) consumeLocked(n int64) {
 // accordingly. Callers are still responsible for calling
 // p.queue.Notify(waiter.ReadableEvents) with p.mu unlocked.
 //
-// Preconditions:
-//   - p.mu must be locked.
+// +checklocks:p.mu
 func (p *Pipe) writeLocked(count int64, f func(safemem.BlockSeq) (uint64, error)) (int64, error) {
 	// Can't write to a pipe with no readers.
 	if !p.HasReaders() {
@@ -367,7 +371,7 @@ func (p *Pipe) HasWriters() bool {
 
 // rReadinessLocked calculates the read readiness.
 //
-// Precondition: mu must be held.
+// +checklocks:p.mu
 func (p *Pipe) rReadinessLocked() waiter.EventMask {
 	ready := waiter.EventMask(0)
 	if p.HasReaders() && p.size != 0 {
@@ -393,7 +397,7 @@ func (p *Pipe) rReadiness() waiter.EventMask {
 
 // wReadinessLocked calculates the write readiness.
 //
-// Precondition: mu must be held.
+// +checklocks:p.mu
 func (p *Pipe) wReadinessLocked() waiter.EventMask {
 	ready := waiter.EventMask(0)
 	if p.HasWriters() && p.size < p.max {
@@ -439,6 +443,7 @@ func (p *Pipe) queued() int64 {
 	return p.queuedLocked()
 }
 
+// +checklocks:p.mu
 func (p *Pipe) queuedLocked() int64 {
 	return p.size
 }

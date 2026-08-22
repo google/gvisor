@@ -30,7 +30,11 @@ import (
 )
 
 type fdInfo struct {
-	queue   *waiter.Queue
+	// queue is immutable after registration. Its entries have their own lock.
+	queue *waiter.Queue
+
+	// waiting is protected by the owning notifier's mu. fdInfo does not retain
+	// a pointer to that owner for a checklocks annotation.
 	waiting bool
 }
 
@@ -42,13 +46,15 @@ type notifier struct {
 	epFD int
 
 	// pauseMu synchronizes notifications with save/restore.
+	// It precedes mu in lock order.
 	pauseMu sync.Mutex
 
-	// mu protects fdMap.
 	mu sync.Mutex
 
 	// fdMap maps file descriptors to their notification queues and waiting
 	// status.
+	//
+	// +checklocks:mu
 	fdMap map[int32]*fdInfo
 }
 
@@ -69,7 +75,9 @@ func newNotifier() (*notifier, error) {
 	return w, nil
 }
 
-// waitFD waits on mask for fd. The fdMap mutex must be hold.
+// waitFD waits on mask for fd.
+//
+// +checklocks:n.mu
 func (n *notifier) waitFD(fd int32, fi *fdInfo, mask waiter.EventMask) error {
 	if !fi.waiting && mask == 0 {
 		return nil
@@ -184,11 +192,15 @@ func (n *notifier) waitAndNotify() error {
 }
 
 // pause suspends notifications until resume is called.
+//
+// +checklocksacquire:n.pauseMu
 func (n *notifier) pause() {
 	n.pauseMu.Lock()
 }
 
 // resume ends the effect of a previous call to pause.
+//
+// +checklocksrelease:n.pauseMu
 func (n *notifier) resume() {
 	n.pauseMu.Unlock()
 }
@@ -233,12 +245,16 @@ func HasFD(fd int32) bool {
 }
 
 // Pause suspends notifications until Resume is called.
+//
+// +checklocksacquire:shared.notifier.pauseMu
 func Pause() {
 	ensureSharedNotifier()
 	shared.notifier.pause()
 }
 
 // Resume ends the effect of a previous call to Pause.
+//
+// +checklocksrelease:shared.notifier.pauseMu
 func Resume() {
 	shared.notifier.resume()
 }
