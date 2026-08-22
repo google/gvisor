@@ -5798,6 +5798,14 @@ func TestTCPEndpointProbe(t *testing.T) {
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
 	port = c.Port // c.Port is set during CreateConnected.
 
+	// The socket option callback can run concurrently with the probe without
+	// holding the endpoint or send queue mutex.
+	var wg sync.WaitGroup
+	defer wg.Wait()
+	wg.Go(func() {
+		_ = c.EP.(*tcp.Endpoint).OnSetSendBufferSize(4096)
+	})
+
 	data := []byte{1, 2, 3}
 	iss := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
 	c.SendPacket(data, &context.Headers{

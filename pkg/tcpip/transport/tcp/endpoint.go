@@ -289,14 +289,16 @@ type sndQueueInfo struct {
 	TCPSndBufState
 }
 
-// CloneState clones sq into other. It is not thread safe
+// CloneState clones sq into other, which must be exclusively owned by the caller.
+//
+// +checklocks:sq.sndQueueMu
 func (sq *sndQueueInfo) CloneState(other *TCPSndBufState) {
 	other.SndBufSize = sq.SndBufSize
 	other.SndBufUsed = sq.SndBufUsed
 	other.SndClosed = sq.SndClosed
 	other.PacketTooBigCount = sq.PacketTooBigCount
 	other.SndMTU = sq.SndMTU
-	other.AutoTuneSndBufDisabled = atomicbitops.FromUint32(sq.AutoTuneSndBufDisabled.RacyLoad())
+	other.AutoTuneSndBufDisabled.Store(sq.AutoTuneSndBufDisabled.Load())
 }
 
 // Endpoint represents a TCP endpoint. This struct serves as the interface
@@ -409,8 +411,9 @@ type Endpoint struct {
 	// methods.
 	state atomicbitops.Uint32 `state:".(EndpointState)"`
 
-	// connectionDirectionState holds current state of send and receive,
-	// accessed atomically
+	// connectionDirectionState records whether sending and receiving are closed.
+	//
+	// +checkatomic
 	connectionDirectionState atomicbitops.Uint32
 
 	// origEndpointState is only used during a restore phase to save the
@@ -3095,14 +3098,15 @@ func (e *Endpoint) maxReceiveBufferSize() int {
 	return rs.Max
 }
 
-// directionState returns the close state of send and receive part of the endpoint
+// connDirectionState returns the send and receive close state of the endpoint.
 func (e *Endpoint) connDirectionState() connDirectionState {
 	return connDirectionState(e.connectionDirectionState.Load())
 }
 
-// updateDirectionState updates the close state of send and receive part of the endpoint
-func (e *Endpoint) updateConnDirectionState(state connDirectionState) connDirectionState {
-	return connDirectionState(e.connectionDirectionState.Swap(uint32(e.connDirectionState() | state)))
+// updateConnDirectionState adds closed directions to the endpoint's state.
+// Passing connDirectionStateOpen leaves the state unchanged.
+func (e *Endpoint) updateConnDirectionState(state connDirectionState) {
+	atomicbitops.OrUint32(&e.connectionDirectionState, uint32(state))
 }
 
 // rcvWndScaleForHandshake computes the receive window scale to offer to the
