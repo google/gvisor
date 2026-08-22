@@ -16,7 +16,10 @@ package specutils
 
 import (
 	"fmt"
+	"net"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -840,4 +843,93 @@ func TestTPUProxyEnabled(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestCreateMountPoint verifies that mount points are created for every source
+// file type. The unix-socket case is a regression test: open(2) on an existing
+// socket returns ENXIO, which used to make createMountPoint fail for
+// nvidia-container-toolkit's bind mount of /run/nvidia-persistenced/socket and
+// take down the whole sandbox with an unrelated-looking error.
+func TestCreateMountPoint(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		makeSrc func(t *testing.T, path string)
+		makeDst func(t *testing.T, path string)
+		wantDir bool
+	}{
+		{
+			name:    "regular file, destination absent",
+			makeSrc: func(t *testing.T, p string) { mustWriteFile(t, p) },
+		},
+		{
+			name:    "directory, destination absent",
+			makeSrc: func(t *testing.T, p string) { mustMkdir(t, p) },
+			wantDir: true,
+		},
+		{
+			name:    "regular file, destination already exists",
+			makeSrc: func(t *testing.T, p string) { mustWriteFile(t, p) },
+			makeDst: func(t *testing.T, p string) { mustWriteFile(t, p) },
+		},
+		{
+			name:    "unix socket source, destination absent",
+			makeSrc: func(t *testing.T, p string) { mustMakeSocket(t, p) },
+		},
+		{
+			name:    "unix socket source, destination is a socket",
+			makeSrc: func(t *testing.T, p string) { mustMakeSocket(t, p) },
+			makeDst: func(t *testing.T, p string) { mustMakeSocket(t, p) },
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			src := filepath.Join(dir, "src")
+			// Nested, so parent-directory creation is exercised too.
+			dst := filepath.Join(dir, "sub", "dst")
+			test.makeSrc(t, src)
+			if test.makeDst != nil {
+				if err := os.MkdirAll(filepath.Dir(dst), 0777); err != nil {
+					t.Fatalf("MkdirAll: %v", err)
+				}
+				test.makeDst(t, dst)
+			}
+
+			if err := createMountPoint(src, dst, "bind"); err != nil {
+				t.Fatalf("createMountPoint(%q, %q) = %v, want nil", src, dst, err)
+			}
+
+			fi, err := os.Lstat(dst)
+			if err != nil {
+				t.Fatalf("mount point was not created: %v", err)
+			}
+			if got := fi.IsDir(); got != test.wantDir {
+				t.Errorf("mount point IsDir() = %t, want %t", got, test.wantDir)
+			}
+		})
+	}
+}
+
+func mustWriteFile(t *testing.T, path string) {
+	t.Helper()
+	if err := os.WriteFile(path, nil, 0666); err != nil {
+		t.Fatalf("WriteFile(%q): %v", path, err)
+	}
+}
+
+func mustMkdir(t *testing.T, path string) {
+	t.Helper()
+	if err := os.Mkdir(path, 0777); err != nil {
+		t.Fatalf("Mkdir(%q): %v", path, err)
+	}
+}
+
+func mustMakeSocket(t *testing.T, path string) {
+	t.Helper()
+	l, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatalf("listen(unix, %q): %v", path, err)
+	}
+	// Close the listener but keep the socket file: the file, not the
+	// listener, is what createMountPoint has to cope with.
+	t.Cleanup(func() { l.Close() })
 }

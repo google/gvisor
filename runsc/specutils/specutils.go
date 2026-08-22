@@ -756,8 +756,21 @@ func TPUFunctionalityRequested(spec *specs.Spec, conf *config.Config) bool {
 // flags. procPath is the path to procfs. If it is "", procfs is assumed to be
 // mounted at /proc.
 func SafeSetupAndMount(src, dst, typ string, flags uint32, procPath string) error {
-	// Create the mount point inside. The type must be the same as the source
-	// (file or directory).
+	if err := createMountPoint(src, dst, typ); err != nil {
+		return err
+	}
+
+	// Do the mount.
+	if err := SafeMount(src, dst, typ, uintptr(flags), "", procPath); err != nil {
+		return fmt.Errorf("mount(%q, %q, %d) failed: %v", src, dst, flags, err)
+	}
+	return nil
+}
+
+// createMountPoint creates dst as a suitable mount point for src, creating
+// parent directories as needed. The mount point must agree with the source on
+// directory-ness; any other file type is acceptable.
+func createMountPoint(src, dst, typ string) error {
 	var isDir bool
 	if typ == "proc" {
 		// Special case, as there is no source directory for proc mounts.
@@ -780,16 +793,26 @@ func SafeSetupAndMount(src, dst, typ string, flags uint32, procPath string) erro
 			return fmt.Errorf("mkdir(%q) failed: %v", parent, err)
 		}
 		// Create the destination file if it does not exist.
-		f, err := os.OpenFile(dst, unix.O_CREAT, 0777)
-		if err != nil {
-			return fmt.Errorf("open(%q) failed: %v", dst, err)
+		//
+		// Check for existence with lstat(2) rather than relying on O_CREAT
+		// being a no-op: open(2) on an existing special file fails for some
+		// file types even when the file is a perfectly good mount point. In
+		// particular it returns ENXIO for a unix socket, which is how
+		// nvidia-container-toolkit's bind mount of
+		// /run/nvidia-persistenced/socket used to abort sandbox startup with
+		// an opaque "cannot read client sync file" error. A bind mount only
+		// requires the mount point to agree on directory-ness, not on file
+		// type, so an existing entry of any type is fine here.
+		if _, err := os.Lstat(dst); err != nil {
+			if !os.IsNotExist(err) {
+				return fmt.Errorf("lstat(%q) failed: %v", dst, err)
+			}
+			f, err := os.OpenFile(dst, unix.O_CREAT|unix.O_WRONLY, 0777)
+			if err != nil {
+				return fmt.Errorf("open(%q) failed: %v", dst, err)
+			}
+			f.Close()
 		}
-		f.Close()
-	}
-
-	// Do the mount.
-	if err := SafeMount(src, dst, typ, uintptr(flags), "", procPath); err != nil {
-		return fmt.Errorf("mount(%q, %q, %d) failed: %v", src, dst, flags, err)
 	}
 	return nil
 }
