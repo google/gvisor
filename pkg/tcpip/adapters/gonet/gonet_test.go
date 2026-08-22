@@ -1011,8 +1011,7 @@ func TestNetTest(t *testing.T) {
 
 // NOTE(gvisor.dev/issue/9885): Regression test.
 func TestDeadlineTimerAfterZeroValue(t *testing.T) {
-	timer := &deadlineTimer{}
-	timer.init()
+	timer := newDeadlineTimer()
 
 	wg := sync.WaitGroup{}
 	ch := timer.readCancel()
