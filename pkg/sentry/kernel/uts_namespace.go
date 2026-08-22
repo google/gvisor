@@ -26,11 +26,15 @@ import (
 //
 // +stateify savable
 type UTSNamespace struct {
-	// mu protects all fields below.
-	mu                sync.Mutex `state:"nosave"`
-	hostName          string
-	hostNameChanged   bool
-	domainName        string
+	mu sync.Mutex `state:"nosave"`
+
+	// +checklocks:mu
+	hostName string
+	// +checklocks:mu
+	hostNameChanged bool
+	// +checklocks:mu
+	domainName string
+	// +checklocks:mu
 	domainNameChanged bool
 
 	// userns is the user namespace associated with the UTSNamespace.
@@ -40,6 +44,7 @@ type UTSNamespace struct {
 	// userns is immutable.
 	userns *auth.UserNamespace
 
+	// +checklocks:mu
 	inode *nsfs.Inode
 }
 
