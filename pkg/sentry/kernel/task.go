@@ -494,7 +494,7 @@ type Task struct {
 
 	// parentDeathSignal is sent to this task's thread group when its parent exits.
 	//
-	// parentDeathSignal is protected by mu.
+	// +checklocks:mu
 	parentDeathSignal linux.Signal
 
 	// seccomp contains all seccomp-bpf syscall filters applicable to the task.
