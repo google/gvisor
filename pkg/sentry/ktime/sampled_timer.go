@@ -37,9 +37,11 @@ type SampledTimer struct {
 	// mu protects the following mutable fields.
 	mu sync.Mutex `state:"nosave"`
 
-	// setting is the timer setting. setting is protected by mu.
+	// setting is the timer setting.
+	// +checklocks:mu
 	setting Setting
 
+	// +checklocks:mu
 	pauseState timerPauseState
 
 	// kicker is used to wake the SampledTimer goroutine. The kicker pointer is
@@ -267,7 +269,7 @@ func (t *SampledTimer) tick() {
 	t.resetKickerLocked(now)
 }
 
-// Preconditions: t.mu must be locked.
+// +checklocks:t.mu
 func (t *SampledTimer) resetKickerLocked(now Time) {
 	if t.setting.Enabled {
 		// Clock.WallTimeUntil may return a negative value. This is fine;

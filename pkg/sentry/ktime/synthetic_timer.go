@@ -37,7 +37,7 @@ type SyntheticTimer struct {
 
 	// syntheticTimerEntry links the SyntheticTimer into
 	// syntheticTimerQueue.timers when setting.Enabled == true.
-	// syntheticTimerEntry is protected by mu.
+	// syntheticTimerEntry is protected by clock.mu.
 	syntheticTimerEntry
 }
 
@@ -48,12 +48,15 @@ type SyntheticTimer struct {
 type SyntheticClock struct {
 	mu sync.Mutex `state:"nosave"`
 
-	// now is the Clock's current time. Writes to now require that mu is
-	// locked.
+	// now is the Clock's current time.
+	//
+	// +checkatomic
+	// +checklocks:mu
 	now atomicbitops.Int64
 
 	// timers maps each timer expiration time to a list of all enabled timers
-	// with that expiration time. timers is protected by mu.
+	// with that expiration time.
+	// +checklocks:mu
 	timers syntheticTimerSet
 }
 
@@ -61,6 +64,8 @@ type SyntheticClock struct {
 //
 // +stateify savable
 type syntheticTimerQueue struct {
+	// timers is protected by the owning SyntheticClock's mu. Every member's
+	// clock pointer identifies that same SyntheticClock.
 	timers syntheticTimerList
 }
 
@@ -146,7 +151,7 @@ func (c *SyntheticClock) Now() Time {
 	return FromNanoseconds(c.now.Load())
 }
 
-// Preconditions: c.mu must be locked.
+// +checklocks:c.mu
 func (c *SyntheticClock) nowLocked() Time {
 	return FromNanoseconds(c.now.RacyLoad())
 }
@@ -180,7 +185,7 @@ func (c *SyntheticClock) Add(delta time.Duration) {
 	c.setTimeLocked(c.now.RacyLoad() + delta.Nanoseconds())
 }
 
-// Preconditions: c.mu must be locked.
+// +checklocks:c.mu
 func (c *SyntheticClock) setTimeLocked(nowNS int64) {
 	if nowNS < 0 {
 		panic(fmt.Sprintf("invalid time %d", nowNS))
@@ -214,7 +219,7 @@ func (c *SyntheticClock) setTimeLocked(nowNS int64) {
 	}
 }
 
-// Preconditions: c.mu must be locked.
+// +checklocks:c.mu
 func (c *SyntheticClock) addTimerLocked(t *SyntheticTimer) {
 	nextNS := uint64(t.setting.Next.Nanoseconds())
 	seg, gap := c.timers.Find(nextNS)
@@ -224,7 +229,7 @@ func (c *SyntheticClock) addTimerLocked(t *SyntheticTimer) {
 	seg.ValuePtr().timers.PushBack(t)
 }
 
-// Preconditions: c.mu must be locked.
+// +checklocks:c.mu
 func (c *SyntheticClock) delTimerLocked(t *SyntheticTimer) {
 	nextNS := uint64(t.setting.Next.Nanoseconds())
 	seg := c.timers.FindSegment(nextNS)
