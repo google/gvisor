@@ -40,27 +40,37 @@ const waitBufMaxBytes = 131072
 //
 // +stateify savable
 type queue struct {
-	// mu protects everything in queue.
 	mu sync.Mutex `state:"nosave"`
 
 	// readBuf is buffer of data ready to be read when readable is true.
 	// This data has been processed.
+	//
+	// +checklocks:mu
 	readBuf []byte
 
 	// waitBuf contains data that can't fit into readBuf. It is put here
 	// until it can be loaded into the read buffer. waitBuf contains data
 	// that hasn't been processed.
-	waitBuf    [][]byte
+	//
+	// +checklocks:mu
+	waitBuf [][]byte
+
+	// waitBufLen is the number of bytes in waitBuf.
+	//
+	// +checklocks:mu
 	waitBufLen uint64
 
 	// readable indicates whether the read buffer can be read from.  In
 	// canonical mode, there can be an unterminated line in the read buffer,
 	// so readable must be checked.
+	//
+	// +checklocks:mu
 	readable bool
 
-	// transform is the queue's function for transforming bytes
-	// entering the queue. For example, transform might convert all '\r's
-	// entering the queue to '\n's.
+	// transformer processes bytes entering the queue. For example, its
+	// transform method might convert '\r' to '\n'.
+	//
+	// It is immutable after initialization.
 	transformer
 }
 
@@ -100,11 +110,10 @@ func (q *queue) readableSize(t *kernel.Task, io usermem.IO, args arch.SyscallArg
 
 // read reads from q to userspace. It returns:
 //   - The number of bytes read
-//   - Whether the read caused more readable data to become available (whether
-//     data was pushed from the wait buffer to the read buffer).
-//   - Whether any data was echoed back (need to notify readers).
+//   - Whether any bytes were processed from the wait buffer.
+//   - Whether to notify master readers of possible echo output.
 //
-// Preconditions: l.termiosMu must be held for reading.
+// +checklocksread:l.termiosMu
 func (q *queue) read(ctx context.Context, dst usermem.IOSequence, l *lineDiscipline, packet bool) (int64, bool, bool, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -133,16 +142,18 @@ func (q *queue) read(ctx context.Context, dst usermem.IOSequence, l *lineDiscipl
 	}
 
 	n, err := dst.CopyOutFrom(ctx, safemem.ReaderFunc(func(dst safemem.BlockSeq) (uint64, error) {
-		src := safemem.BlockSeqOf(safemem.BlockFromSafeSlice(q.readBuf))
+		// CopyOutFrom invokes this callback synchronously with q.mu held.
+		// checklocks does not propagate that lock state into a passed callback.
+		src := safemem.BlockSeqOf(safemem.BlockFromSafeSlice(q.readBuf)) // +checklocksignore
 		n, err := safemem.CopySeq(dst, src)
 		if err != nil {
 			return 0, err
 		}
-		q.readBuf = q.readBuf[n:]
+		q.readBuf = q.readBuf[n:] // +checklocksignore
 
 		// If we read everything, this queue is no longer readable.
-		if len(q.readBuf) == 0 {
-			q.readable = false
+		if len(q.readBuf) == 0 { // +checklocksignore
+			q.readable = false // +checklocksignore
 		}
 
 		return n, nil
@@ -158,17 +169,21 @@ func (q *queue) read(ctx context.Context, dst usermem.IOSequence, l *lineDiscipl
 }
 
 // write writes to q from userspace.
-// The returned boolean indicates whether any data was echoed back.
 //
-// Preconditions: l.termiosMu must be held for reading.
+// The returned boolean indicates whether to notify master readers of possible
+// echo output.
+//
+// +checklocksread:l.termiosMu
 func (q *queue) write(ctx context.Context, src usermem.IOSequence, l *lineDiscipline) (int64, bool, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
 	// Copy data into the wait buffer.
 	n, err := src.CopyInTo(ctx, safemem.WriterFunc(func(src safemem.BlockSeq) (uint64, error) {
+		// CopyInTo invokes this callback synchronously with q.mu held.
+		// checklocks does not propagate that lock state into a passed callback.
 		copyLen := src.NumBytes()
-		room := waitBufMaxBytes - q.waitBufLen
+		room := waitBufMaxBytes - q.waitBufLen // +checklocksignore
 		// If out of room, return EAGAIN.
 		if room == 0 && copyLen > 0 {
 			return 0, linuxerr.ErrWouldBlock
@@ -186,7 +201,7 @@ func (q *queue) write(ctx context.Context, src usermem.IOSequence, l *lineDiscip
 		if err != nil {
 			return 0, err
 		}
-		q.waitBufAppend(buf)
+		q.waitBufAppend(buf) // +checklocksignore
 
 		return n, nil
 	}))
@@ -201,9 +216,11 @@ func (q *queue) write(ctx context.Context, src usermem.IOSequence, l *lineDiscip
 }
 
 // writeBytes writes to q from b.
-// The returned boolean indicates whether any data was echoed back.
 //
-// Preconditions: l.termiosMu must be held for reading.
+// The returned boolean indicates whether to notify master readers of possible
+// echo output.
+//
+// +checklocksread:l.termiosMu
 func (q *queue) writeBytes(b []byte, l *lineDiscipline) bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -216,11 +233,12 @@ func (q *queue) writeBytes(b []byte, l *lineDiscipline) bool {
 
 // pushWaitBufLocked fills the queue's read buffer with data from the wait
 // buffer.
-// The returned boolean indicates whether any data was echoed back.
 //
-// Preconditions:
-//   - l.termiosMu must be held for reading.
-//   - q.mu must be locked.
+// The returned boolean indicates whether to notify master readers of possible
+// echo output.
+//
+// +checklocksread:l.termiosMu
+// +checklocks:q.mu
 func (q *queue) pushWaitBufLocked(l *lineDiscipline) (int, bool) {
 	if q.waitBufLen == 0 {
 		return 0, false
@@ -249,7 +267,9 @@ func (q *queue) pushWaitBufLocked(l *lineDiscipline) (int, bool) {
 	return total, notifyEcho
 }
 
-// Precondition: q.mu must be locked.
+// waitBufAppend appends unprocessed data to the wait buffer.
+//
+// +checklocks:q.mu
 func (q *queue) waitBufAppend(b []byte) {
 	q.waitBuf = append(q.waitBuf, b)
 	q.waitBufLen += uint64(len(b))
