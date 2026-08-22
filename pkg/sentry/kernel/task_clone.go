@@ -1061,10 +1061,12 @@ func (t *Task) Unshare(flags int32) error {
 	return nil
 }
 
-// UnshareFdTable unshares the FdTable that task t shares with other tasks, upto
-// the maxFd.
+// UnshareFdTable gives t an independent FDTable, cloning descriptors below
+// maxFd (non-inclusive).
 //
 // Preconditions: The caller must be running on the task goroutine.
+//
+// +checklocksexclude:t.mu
 func (t *Task) UnshareFdTable(maxFd int32) {
 	t.mu.Lock()
 	oldFDTable := t.fdTable
