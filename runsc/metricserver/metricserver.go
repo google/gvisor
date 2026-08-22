@@ -62,28 +62,34 @@ const (
 type servedSandbox struct {
 	rootContainerID container.FullID
 	server          *metricServer
-	extraLabels     map[string]string
 
-	// mu protects the fields below.
 	mu sync.Mutex
 
 	// sandbox is the sandbox being monitored.
 	// Once set, it is immutable.
+	//
+	// +checklocks:mu
 	sandbox *sandbox.Sandbox
+
+	// extraLabels is initialized by load along with sandbox and is immutable
+	// thereafter. Metrics readers synchronize initialization by calling load.
+	extraLabels map[string]string
 
 	// createdAt stores the time the sandbox was created.
 	// It is loaded from the container state file.
-	// Once set, it is immutable.
+	// Like extraLabels, it is immutable after initialization by load.
 	createdAt time.Time
 
 	// capabilities is the union of the capability set of the containers within `sandbox`.
 	// It is used to export a per-sandbox metric representing which capabilities are in use.
 	// For monitoring purposes, a capability added in a container means it is considered
 	// added for the whole sandbox.
+	// Like extraLabels, it is immutable after initialization by load.
 	capabilities []linux.Capability
 
 	// specMetadataLabels is the set of label exported as part of the
 	// `spec_metadata` metric.
+	// Like extraLabels, it is immutable after initialization by load.
 	specMetadataLabels map[string]string
 
 	// verifier allows verifying the data integrity of the metrics we get from this sandbox.
@@ -95,9 +101,13 @@ type servedSandbox struct {
 	// data, then metrics were not requested for this sandbox, and this servedSandbox should
 	// be deleted from the server.
 	// Once set, it is immutable.
+	//
+	// +checklocks:mu
 	verifier *prometheus.Verifier
 
 	// cleanupVerifier holds a reference to the cleanup function of the verifier.
+	//
+	// +checklocks:mu
 	cleanupVerifier func()
 
 	// extra contains additional per-sandbox data.
@@ -257,13 +267,14 @@ type metricServer struct {
 
 	// Size of the map of written metrics during the last /metrics export. Initially zero.
 	// Used to efficiently reallocate a map of the right size during the next export.
+	//
+	// +checkatomic
 	lastMetricsWrittenSize atomicbitops.Uint32
 
 	// Pool of `prometheus.ReusableWriter`s. Used to avoid large buffer allocations for
 	// successive snapshots.
 	promWriterPool sync.Pool
 
-	// mu protects the fields below.
 	mu sync.Mutex
 
 	// udsPath is a path to a Unix Domain Socket file on which the server is bound and which it owns.
@@ -274,11 +285,15 @@ type metricServer struct {
 	udsPath string
 
 	// sandboxes is the list of sandboxes we serve metrics for.
+	//
+	// +checklocks:mu
 	sandboxes map[container.FullID]*servedSandbox
 
 	// lastStateFileStat maps container full IDs to the last observed stat() of their state file.
 	// This is used to monitor for sandboxes in the background. If a sandbox's state file matches this
 	// info, we can assume that the last background scan already looked at it.
+	//
+	// +checklocks:mu
 	lastStateFileStat map[container.FullID]os.FileInfo
 
 	// lastValidMetricFilter stores the last value of the "runsc-sandbox-metrics-filter" parameter for
@@ -286,6 +301,8 @@ type metricServer struct {
 	// It represents the last-known compilable regular expression that was passed to /metrics.
 	// It is used to avoid re-verifying this parameter in the common case where a single scraper
 	// is consistently passing in the same value for this parameter in each successive request.
+	//
+	// +checklocks:mu
 	lastValidMetricFilter string
 
 	// lastValidCapabilityFilterStr stores the last value of the "runsc-capability-filter" parameter
@@ -293,10 +310,14 @@ type metricServer struct {
 	// It represents the last-known compilable regular expression that was passed to /metrics.
 	// It is used to avoid re-verifying this parameter in the common case where a single scraper
 	// is consistently passing in the same value for this parameter in each successive request.
+	//
+	// +checklocks:mu
 	lastValidCapabilityFilterStr string
 
 	// lastValidCapabilityFilterReg is the compiled regular expression corresponding to
 	// lastValidCapabilityFilterStr.
+	//
+	// +checklocks:mu
 	lastValidCapabilityFilterReg *regexp.Regexp
 
 	// numSandboxes counts the number of sandboxes that have ever been registered on this server.
@@ -305,6 +326,8 @@ type metricServer struct {
 	// done a good job serving sandbox metrics and it's time for it to gracefully die as there are no
 	// more sandboxes to serve.
 	// Also exported as a metric of total number of sandboxes started.
+	//
+	// +checklocks:mu
 	numSandboxes int64
 
 	// shuttingDown is flipped to true when the server shutdown process has started.
@@ -347,7 +370,8 @@ func sufficientlyEqualStats(s1, s2 os.FileInfo) bool {
 
 // refreshSandboxesLocked removes sandboxes that are no longer running from m.sandboxes, and
 // adds sandboxes found in the root directory that do request instrumentation.
-// Preconditions: m.mu is locked.
+//
+// +checklocks:m.mu
 func (m *metricServer) refreshSandboxesLocked() {
 	if m.shuttingDown {
 		// Do nothing to avoid log spam.
@@ -374,13 +398,18 @@ func (m *metricServer) refreshSandboxesLocked() {
 			delete(m.sandboxes, sandboxID)
 			continue
 		}
-		if _, _, err := sandbox.load(); err != nil && err != container.ErrStateFileLocked {
+		sand, _, err := sandbox.load()
+		if err == container.ErrStateFileLocked {
+			// Keep the sandbox registered and retry on the next refresh.
+			continue
+		}
+		if err != nil {
 			log.Warningf("Sandbox %s cannot be loaded, deleting it: %v", sandboxID, err)
 			sandbox.cleanup()
 			delete(m.sandboxes, sandboxID)
 			continue
 		}
-		if !sandbox.sandbox.IsRunning() {
+		if !sand.IsRunning() {
 			log.Infof("Sandbox %s is no longer running, deleting it.", sandboxID)
 			sandbox.cleanup()
 			delete(m.sandboxes, sandboxID)
@@ -493,6 +522,8 @@ type sandboxLoadResult struct {
 // loadSandboxesLocked loads the state file data from all known sandboxes.
 // It does so in parallel, and avoids reloading sandboxes for which we have
 // already loaded data.
+//
+// +checklocks:m.mu
 func (m *metricServer) loadSandboxesLocked(ctx context.Context) []sandboxLoadResult {
 	m.refreshSandboxesLocked()
 
