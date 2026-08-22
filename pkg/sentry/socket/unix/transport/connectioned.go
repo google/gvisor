@@ -112,6 +112,10 @@ type connectionedEndpoint struct {
 	// will store the peer's credentials. The use of this option is possible
 	// only for connected `AF_UNIX` stream sockets and for `AF_UNIX` stream and
 	// datagram socket pairs created using socketpair(2)
+	//
+	// Protected by endpointMutex. During connection setup, the accepted
+	// endpoint's credentials are initialized under the listener's lock,
+	// which prevents Accept from returning it.
 	peerCreds CredentialsControlMessage
 
 	// acceptedChan is per the TCP endpoint implementation. Note that the
@@ -119,12 +123,14 @@ type connectionedEndpoint struct {
 	// have another associated connectionedEndpoint.
 	//
 	// If nil, then no listen call has been made.
+	//
+	// Protected by endpointMutex except during quiescent save/restore.
 	acceptedChan chan *connectionedEndpoint `state:".([]*connectionedEndpoint)"`
 
 	// boundSocketFD corresponds to a bound socket on the host filesystem
 	// that may listen and accept incoming connections.
 	//
-	// boundSocketFD is protected by baseEndpoint.mu.
+	// Protected by endpointMutex except for the quiescent beforeSave check.
 	boundSocketFD BoundSocketFD
 }
 
@@ -216,6 +222,8 @@ func (e *connectionedEndpoint) WaiterQueue() *waiter.Queue {
 
 // isBound returns true iff the connectionedEndpoint is bound (but not
 // listening).
+//
+// +checklocks:e.endpointMutex
 func (e *connectionedEndpoint) isBound() bool {
 	return e.path != "" && e.acceptedChan == nil
 }
@@ -227,6 +235,9 @@ func (e *connectionedEndpoint) Listening() bool {
 	return e.ListeningLocked()
 }
 
+// ListeningLocked implements ConnectingEndpoint.ListeningLocked.
+//
+// +checklocks:e.endpointMutex
 func (e *connectionedEndpoint) ListeningLocked() bool {
 	return e.acceptedChan != nil
 }
@@ -297,6 +308,12 @@ func (e *connectionedEndpoint) Close(ctx context.Context) {
 	}
 }
 
+// swapPeerCredsLocked exchanges credentials while the listener's lock prevents
+// Accept from returning ne.
+//
+// Preconditions: cend must be locked and ne must be a pending endpoint of e.
+//
+// +checklocks:e.endpointMutex
 func (e *connectionedEndpoint) swapPeerCredsLocked(ctx context.Context, cend ConnectingEndpoint, ne *connectionedEndpoint) *syserr.Error {
 	ce, ok := cend.(*connectionedEndpoint)
 	if !ok {
@@ -504,9 +521,11 @@ func (e *connectionedEndpoint) Accept(ctx context.Context, peerAddr *Address) (E
 	return ne, nil
 }
 
-// Preconditions:
-//   - e.Listening()
-//   - e is locked.
+// getAcceptedEndpointLocked accepts a connection with the endpoint locked.
+//
+// Preconditions: the endpoint must be listening.
+//
+// +checklocks:e.endpointMutex
 func (e *connectionedEndpoint) getAcceptedEndpointLocked(ctx context.Context) (*connectionedEndpoint, *syserr.Error) {
 	// Accept connections from within the sentry first, since this avoids
 	// an RPC to the gofer on the common path.
@@ -575,6 +594,7 @@ func (e *connectionedEndpoint) SendMsg(ctx context.Context, data [][]byte, c Con
 	return e.baseEndpoint.SendMsg(ctx, data, c, to)
 }
 
+// +checklocks:e.endpointMutex
 func (e *connectionedEndpoint) isBoundSocketReadable() bool {
 	if e.boundSocketFD == nil {
 		return false

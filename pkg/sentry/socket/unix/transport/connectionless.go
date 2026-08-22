@@ -51,6 +51,8 @@ func NewConnectionless(ctx context.Context) Endpoint {
 }
 
 // isBound returns true iff the endpoint is bound.
+//
+// +checklocks:e.endpointMutex
 func (e *connectionlessEndpoint) isBound() bool {
 	return e.path != ""
 }
