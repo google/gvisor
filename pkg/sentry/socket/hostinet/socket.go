@@ -119,8 +119,6 @@ type Socket struct {
 
 	// If persistentEventMask is non-zero, persistentEntry is a no-op waiter
 	// that is registered in queue for all events in persistentEventMask.
-	// Mutations to persistentEventMask and persistentEntry are serialized by
-	// persistentEventMu.
 	//
 	// Bits in persistentEventMask are set by EventRegister(), and never unset.
 	// This ensures that queue.Events() does not change (necessitating calls to
@@ -129,9 +127,14 @@ type Socket struct {
 	// masks, as when e.g. applications repeatedly call poll() with the same
 	// event mask, or blocking accept() / read() / write() / recvmsg() /
 	// sendmsg() / etc., on the same socket.
-	persistentEventMu   sync.Mutex `state:"nosave"`
+	persistentEventMu sync.Mutex `state:"nosave"`
+
+	// +checklocks:persistentEventMu
+	// +checkatomic
 	persistentEventMask atomicbitops.Uint64
-	persistentEntry     waiter.Entry
+
+	// +checklocks:persistentEventMu
+	persistentEntry waiter.Entry
 
 	// fd is the host socket fd. It must have O_NONBLOCK, so that operations
 	// will return EWOULDBLOCK instead of blocking on the host. This allows us to
@@ -140,9 +143,13 @@ type Socket struct {
 
 	// recvClosed indicates that the socket has been shutdown for reading
 	// (SHUT_RD or SHUT_RDWR).
+	//
+	// +checkatomic
 	recvClosed atomicbitops.Bool
 
 	// listenBacklog is the backlog passed to the most recent listen(2).
+	//
+	// +checkatomic
 	listenBacklog atomicbitops.Int32
 
 	// savedListener is set by beforeSave if this socket is listening.
