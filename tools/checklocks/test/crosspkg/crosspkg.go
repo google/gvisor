@@ -25,6 +25,11 @@ var (
 	FooMu sync.Mutex
 )
 
+// StandaloneFoo is a guarded global declared outside a var block.
+//
+// +checklocks:FooMu
+var StandaloneFoo int
+
 // GenericGuard is a generic type with a guarded field. This is used to verify
 // that facts exported by this package are correctly imported when another
 // package instantiates GenericGuard[T].

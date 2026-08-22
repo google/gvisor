@@ -25,6 +25,24 @@ var (
 	globalRWMu sync.RWMutex
 )
 
+// +checklocks:globalMu
+var standaloneGlobal int
+
+// +checkatomic
+var standaloneAtomicGlobal int32
+
+var (
+	// +checklocks:globalMu
+	firstGlobal, _, secondGlobal int
+)
+
+// A var block's header does not annotate its entries, even with one spec.
+//
+// +checklocks:globalMu
+var (
+	blockHeaderGlobal int
+)
+
 var globalStruct struct {
 	mu sync.Mutex
 	// +checklocks:mu
@@ -41,7 +59,12 @@ var otherStruct struct {
 }
 
 func testGlobalValid() {
+	blockHeaderGlobal = 1
+
 	globalMu.Lock()
+	standaloneGlobal = 1
+	firstGlobal = 1
+	secondGlobal = 1
 	otherStruct.guardedField1 = 1
 	globalMu.Unlock()
 
@@ -94,6 +117,10 @@ func testGlobalExcludeInvalid() {
 }
 
 func testGlobalInvalid() {
+	standaloneGlobal = 1          // +checklocksfail
+	firstGlobal = 1               // +checklocksfail
+	secondGlobal = 1              // +checklocksfail
+	standaloneAtomicGlobal = 1    // +checklocksfail=non-atomic write
 	globalStruct.guardedField = 1 // +checklocksfail
 	otherStruct.guardedField1 = 1 // +checklocksfail
 	otherStruct.guardedField2 = 1 // +checklocksfail
@@ -103,9 +130,11 @@ func testGlobalInvalid() {
 func testCrosspkgGlobalValid() {
 	crosspkg.FooMu.Lock()
 	crosspkg.Foo = 1
+	crosspkg.StandaloneFoo = 1
 	crosspkg.FooMu.Unlock()
 }
 
 func testCrosspkgGlobalInvalid() {
-	crosspkg.Foo = 1 // +checklocksfail
+	crosspkg.Foo = 1           // +checklocksfail
+	crosspkg.StandaloneFoo = 1 // +checklocksfail
 }
