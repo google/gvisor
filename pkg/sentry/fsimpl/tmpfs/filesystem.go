@@ -561,10 +561,14 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		return err
 	}
 
-	if opts.Flags&^linux.RENAME_NOREPLACE != 0 {
-		// TODO(b/145974740): Support other renameat2 flags.
+	if opts.Flags&^(linux.RENAME_NOREPLACE|linux.RENAME_EXCHANGE) != 0 {
+		// TODO(b/145974740): Support RENAME_WHITEOUT.
 		return linuxerr.EINVAL
 	}
+	if opts.Flags&(linux.RENAME_NOREPLACE|linux.RENAME_EXCHANGE) == linux.RENAME_NOREPLACE|linux.RENAME_EXCHANGE {
+		return linuxerr.EINVAL
+	}
+	exchange := opts.Flags&linux.RENAME_EXCHANGE != 0
 
 	newName := rp.Component()
 	if newName == "." || newName == ".." {
@@ -610,7 +614,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			}
 		}
 	} else {
-		if opts.MustBeDir || rp.MustBeDir() {
+		if !exchange && (opts.MustBeDir || rp.MustBeDir()) {
 			return linuxerr.ENOTDIR
 		}
 	}
@@ -626,8 +630,33 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		if err := newParentDir.mayDelete(rp.Credentials(), replaced); err != nil {
 			return err
 		}
-		replacedDir, ok := replaced.inode.impl.(*directory)
-		if ok {
+		if exchange {
+			// The exchanged files may differ in type, and a directory being
+			// exchanged may be non-empty; but exchanging a file with an
+			// ancestor directory would disconnect the latter from the tree.
+			if genericIsAncestorDentry(fs, replaced, renamed) {
+				return linuxerr.EINVAL
+			}
+			if rp.MustBeDir() && !replaced.inode.isDir() {
+				return linuxerr.ENOTDIR
+			}
+			if opts.MustBeDir && !renamed.inode.isDir() {
+				return linuxerr.ENOTDIR
+			}
+			if oldParentDir != newParentDir {
+				if replaced.inode.isDir() {
+					// Writability is needed to change replaced's "..".
+					if err := replaced.inode.checkPermissions(rp.Credentials(), vfs.MayWrite); err != nil {
+						return err
+					}
+					if !renamed.inode.isDir() && oldParentDir.inode.nlink.Load() == maxLinks {
+						return linuxerr.EMLINK
+					}
+				} else if renamed.inode.isDir() && newParentDir.inode.nlink.Load() == maxLinks {
+					return linuxerr.EMLINK
+				}
+			}
+		} else if replacedDir, ok := replaced.inode.impl.(*directory); ok {
 			if !renamed.inode.isDir() {
 				return linuxerr.EISDIR
 			}
@@ -643,6 +672,10 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			}
 		}
 	} else {
+		if exchange {
+			// RENAME_EXCHANGE requires that the target file exist.
+			return linuxerr.ENOENT
+		}
 		if renamed.inode.isDir() && newParentDir.inode.nlink.Load() == maxLinks {
 			return linuxerr.EMLINK
 		}
@@ -669,6 +702,36 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	}
 	if err := vfsObj.PrepareRenameDentry(mntns, &renamed.vfsd, replacedVFSD); err != nil {
 		return err
+	}
+	if exchange {
+		oldParentDir.removeChildLocked(renamed)
+		newParentDir.removeChildLocked(replaced)
+		newParentDir.insertChildLocked(renamed, newName)
+		oldParentDir.insertChildLocked(replaced, oldName)
+		vfsObj.CommitRenameExchangeDentry(&renamed.vfsd, &replaced.vfsd)
+		if oldParentDir != newParentDir {
+			// If exactly one of the exchanged files is a directory, its ".."
+			// entry (and the reference that it holds on its parent, see
+			// MkdirAt) moves from one parent directory to the other.
+			if renamed.inode.isDir() && !replaced.inode.isDir() {
+				oldParentDir.inode.decLinksLocked(ctx)
+				newParentDir.inode.incLinksLocked()
+				oldParentDir.inode.decRef(ctx)
+				newParentDir.inode.incRef()
+			} else if !renamed.inode.isDir() && replaced.inode.isDir() {
+				newParentDir.inode.decLinksLocked(ctx)
+				oldParentDir.inode.incLinksLocked()
+				newParentDir.inode.decRef(ctx)
+				oldParentDir.inode.incRef()
+			}
+			newParentDir.inode.touchCMtime()
+		}
+		oldParentDir.inode.touchCMtime()
+		renamed.inode.touchCtime()
+		replaced.inode.touchCtime()
+		vfs.InotifyRename(ctx, &renamed.inode.watches, &oldParentDir.inode.watches, &newParentDir.inode.watches, oldName, newName, renamed.inode.isDir())
+		vfs.InotifyRename(ctx, &replaced.inode.watches, &newParentDir.inode.watches, &oldParentDir.inode.watches, newName, oldName, replaced.inode.isDir())
+		return nil
 	}
 	if replaced != nil {
 		newParentDir.removeChildLocked(replaced)
