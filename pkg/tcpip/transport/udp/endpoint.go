@@ -76,9 +76,13 @@ type endpoint struct {
 	rcvClosed  bool
 
 	lastErrorMu sync.Mutex `state:"nosave"`
-	lastError   tcpip.Error
+
+	// +checklocks:lastErrorMu
+	lastError tcpip.Error
 
 	// The following fields are protected by the mu mutex.
+	// Port and registration fields are also accessed from synchronous network
+	// endpoint callbacks, whose captured lock state checklocks cannot follow.
 	mu        sync.RWMutex `state:"nosave"`
 	portFlags ports.Flags
 
@@ -87,6 +91,7 @@ type endpoint struct {
 	boundBindToDevice tcpip.NICID
 	boundPortFlags    ports.Flags
 
+	// +checklocks:mu
 	readShutdown bool
 
 	// effectiveNetProtos contains the network protocols actually in use. In
@@ -445,11 +450,12 @@ func (e *endpoint) prepareForWrite(p tcpip.Payloader, opts tcpip.WriteOptions) (
 	}, nil
 }
 
+// +checklocksexclude:e.mu
 func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcpip.Error) {
 	// Do not hold lock when sending as loopback is synchronous and if the UDP
 	// datagram ends up generating an ICMP response then it can result in a
 	// deadlock where the ICMP response handling ends up acquiring this endpoint's
-	// mutex using e.mu.RLock() in endpoint.HandleControlPacket which can cause a
+	// mutex using e.mu.RLock() in endpoint.onICMPError which can cause a
 	// deadlock if another caller is trying to acquire e.mu in exclusive mode w/
 	// e.mu.Lock(). Since e.mu.Lock() prevents any new read locks to ensure the
 	// lock can be eventually acquired.
@@ -754,6 +760,8 @@ func (*endpoint) Accept(*tcpip.FullAddress) (tcpip.Endpoint, *waiter.Queue, tcpi
 	return nil, nil, &tcpip.ErrNotSupported{}
 }
 
+// registerWithStack reserves and registers id while the caller holds e.mu.
+// It is called from synchronous network endpoint callbacks.
 func (e *endpoint) registerWithStack(netProtos []tcpip.NetworkProtocolNumber, id stack.TransportEndpointID) (stack.TransportEndpointID, tcpip.NICID, tcpip.Error) {
 	bindToDevice := tcpip.NICID(e.ops.GetBindToDevice())
 	if e.localPort == 0 {
@@ -791,6 +799,9 @@ func (e *endpoint) registerWithStack(netProtos []tcpip.NetworkProtocolNumber, id
 	return id, bindToDevice, err
 }
 
+// bindLocked binds an initial endpoint while retaining e.mu for the caller.
+//
+// +checklocks:e.mu
 func (e *endpoint) bindLocked(addr tcpip.FullAddress) tcpip.Error {
 	// Don't allow binding once endpoint is not in the initial state
 	// anymore.
