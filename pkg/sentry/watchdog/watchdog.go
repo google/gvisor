@@ -137,23 +137,29 @@ type Watchdog struct {
 	done chan struct{}
 
 	// offenders map contains all tasks that are currently stuck.
+	// It is owned by the monitoring loop after initialization.
 	offenders map[*kernel.Task]*offender
 
 	// lastStackDump tracks the last time a stack dump was generated to prevent
 	// spamming the log.
+	// It is accessed by the loop or by waitForStart before the first Start.
+	// waitForStart holds mu and checks startCalled, excluding overlap with a loop.
 	lastStackDump time.Time
 
 	// lastRun is set to the last time the watchdog executed a monitoring loop.
+	// Start initializes it before launching the loop, which then owns it.
+	// Stop joins the loop while holding mu, excluding overlap with a later Start.
 	lastRun ktime.Time
 
-	// mu protects the fields below.
 	mu sync.Mutex
 
 	// running is true if the watchdog is running.
+	// +checklocks:mu
 	running bool
 
 	// startCalled is true if Start has ever been called. It remains true
 	// even if Stop is called.
+	// +checklocks:mu
 	startCalled bool
 }
 
