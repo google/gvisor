@@ -78,6 +78,7 @@ const (
 	GF100_ZBC_CLEAR                  = 0x00009096
 	GF100_SUBDEVICE_INFOROM          = 0x000090e7
 	GF100_PROFILER                   = 0x000090cc
+	MAXWELL_PROFILER_CONTEXT         = 0x0000b1cc
 	MAXWELL_PROFILER_DEVICE          = 0x0000b2cc
 	NV_COUNTER_COLLECTION_UNIT       = 0x0000cbca
 	GF100_SUBDEVICE_MASTER           = 0x000090e6
@@ -853,6 +854,15 @@ type NV_OFA_ALLOCATION_PARAMETERS_V545 struct {
 	_ structs.HostLayout
 	NV_OFA_ALLOCATION_PARAMETERS
 	EngineInstance uint32
+}
+
+// NVB1CC_ALLOC_PARAMETERS is the alloc params type for MAXWELL_PROFILER_CONTEXT,
+// from src/common/sdk/nvidia/inc/class/clb1cc.h.
+//
+// +marshal
+type NVB1CC_ALLOC_PARAMETERS struct {
+	_          structs.HostLayout
+	HSubDevice Handle
 }
 
 // NVB2CC_ALLOC_PARAMETERS is the alloc params type for MAXWELL_PROFILER_DEVICE,
