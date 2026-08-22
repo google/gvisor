@@ -21,7 +21,10 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck"
+	_ "gvisor.dev/gvisor/pkg/sentry/seccheck/sinks/null"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 )
@@ -207,6 +210,76 @@ func TestDescriptorFlags(t *testing.T) {
 
 		if !flags.CloseOnExec {
 			t.Fatalf("new File flags %v don't match original %d\n", flags, 0)
+		}
+	})
+}
+
+func TestExecvePipeProcInfoConcurrentUnshare(t *testing.T) {
+	runTest(t, func(ctx context.Context, fdTable *FDTable, fd *vfs.FileDescription, _ *limits.LimitSet) {
+		defer fdTable.DecRef(ctx)
+		k := fdTable.k
+		pidns := NewRootPIDNamespace(auth.CredentialsFromContext(ctx).UserNamespace)
+		k.tasks = newTaskSet(pidns)
+		parent := &Task{}
+		reader := &Task{k: k, fdTable: fdTable}
+		oldTable := k.NewFDTable()
+		defer oldTable.DecRef(ctx)
+		oldTable.IncRef() // The sibling owns a separate reference.
+		sibling := &Task{k: k, fdTable: oldTable}
+		defer func() { sibling.fdTable.DecRef(ctx) }()
+		for _, task := range []*Task{parent, reader, sibling} {
+			task.tg = &ThreadGroup{threadGroupNode: threadGroupNode{pidns: pidns}}
+		}
+		reader.parent = parent
+		sibling.parent = parent
+		parent.children = map[*Task]struct{}{reader: {}, sibling: {}}
+
+		r, w, err := pipe.NewVFSPipe(false, pipe.DefaultPipeSize).ReaderWriterPair(ctx, fd.Mount(), fd.Dentry(), 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer r.DecRef(ctx)
+		defer w.DecRef(ctx)
+		if _, err := fdTable.NewFDAt(ctx, 0, r, FDFlags{}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := oldTable.NewFDAt(ctx, 1, w, FDFlags{}); err != nil {
+			t.Fatal(err)
+		}
+
+		seccheck.Initialize()
+		conf := seccheck.SessionConfig{
+			Name: seccheck.DefaultSessionName,
+			Points: []seccheck.PointConfig{{
+				Name:           "sentry/execve",
+				OptionalFields: []string{"pipe_proc_info"},
+			}},
+			Sinks: []seccheck.SinkConfig{{Name: "null"}},
+		}
+		if err := seccheck.Create(&conf, false); err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			if err := seccheck.Delete(seccheck.DefaultSessionName); err != nil {
+				t.Error(err)
+			}
+		}()
+		_, info := execveSeccheckInfo(reader, nil, nil, nil, "", "")
+		if info.PipeInputProc == nil {
+			t.Fatal("stdin pipe peer not found before unshare")
+		}
+
+		// Fork(0) copies no file references, and retaining oldTable keeps its
+		// destruction from ordering the lookup after the pointer replacement.
+		// Join only after the conflicting accesses, before any cleanup.
+		var wg sync.WaitGroup
+		defer wg.Wait()
+		wg.Go(func() { sibling.UnshareFdTable(0) })
+		_, _ = execveSeccheckInfo(reader, nil, nil, nil, "", "")
+		wg.Wait()
+		_, info = execveSeccheckInfo(reader, nil, nil, nil, "", "")
+		if info.PipeInputProc != nil {
+			t.Fatal("stdin pipe peer found after unsharing an empty table")
 		}
 	})
 }

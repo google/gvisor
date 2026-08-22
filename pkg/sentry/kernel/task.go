@@ -297,7 +297,9 @@ type Task struct {
 
 	// fdTable is the task's file descriptor table.
 	//
-	// fdTable is protected by mu, and is owned by the task goroutine.
+	// fdTable is owned by the task goroutine. Writes, and reads from other
+	// goroutines, require mu. checklocks cannot express task-goroutine
+	// ownership as an alternative to holding mu.
 	fdTable *FDTable
 
 	// userDumpable caches the dumpability state of the task's MemoryManager
@@ -819,8 +821,7 @@ func (t *Task) FSContext() *FSContext {
 	return t.fsContext.Load()
 }
 
-// FDTable returns t's FDTable. FDMTable does not take an additional reference
-// on the returned FDMap.
+// FDTable returns t's FDTable without taking an additional reference.
 //
 // Precondition: The caller must be running on the task goroutine, or t.mu must
 // be locked.
@@ -830,7 +831,7 @@ func (t *Task) FDTable() *FDTable {
 
 // GetFile is a convenience wrapper for t.FDTable().Get.
 //
-// Precondition: same as FDTable.Get.
+// Precondition: same as Task.FDTable.
 func (t *Task) GetFile(fd int32) *vfs.FileDescription {
 	f, _ := t.fdTable.Get(fd)
 	return f
@@ -840,7 +841,7 @@ func (t *Task) GetFile(fd int32) *vfs.FileDescription {
 //
 // This automatically passes the task as the context.
 //
-// Precondition: same as FDTable.
+// Precondition: same as Task.FDTable.
 func (t *Task) NewFDs(fd int32, files []*vfs.FileDescription, flags FDFlags) ([]int32, error) {
 	return t.fdTable.NewFDs(t, fd, files, flags)
 }
@@ -849,7 +850,7 @@ func (t *Task) NewFDs(fd int32, files []*vfs.FileDescription, flags FDFlags) ([]
 //
 // This automatically passes the task as the context.
 //
-// Precondition: same as FDTable.Get.
+// Precondition: same as Task.FDTable.
 func (t *Task) NewFDFrom(minFD int32, file *vfs.FileDescription, flags FDFlags) (int32, error) {
 	return t.fdTable.NewFD(t, minFD, file, flags)
 }
@@ -858,7 +859,7 @@ func (t *Task) NewFDFrom(minFD int32, file *vfs.FileDescription, flags FDFlags) 
 //
 // This automatically passes the task as the context.
 //
-// Precondition: same as FDTable.
+// Precondition: same as Task.FDTable.
 func (t *Task) NewFDAt(fd int32, file *vfs.FileDescription, flags FDFlags) (*vfs.FileDescription, error) {
 	return t.fdTable.NewFDAt(t, fd, file, flags)
 }
