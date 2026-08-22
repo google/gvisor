@@ -341,7 +341,6 @@ go_library(
         "user_counters_mutex.go",
         "uts_namespace.go",
         "vdso.go",
-        "version.go",
     ],
     imports = [
         "gvisor.dev/gvisor/pkg/bpf",

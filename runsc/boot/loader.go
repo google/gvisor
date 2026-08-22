@@ -46,6 +46,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/devices/rdmaproxy/cxproxy"
+	"gvisor.dev/gvisor/pkg/sentry/devices/rdmaproxy/efaproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/rdmaproxy/genericproxy"
 	"gvisor.dev/gvisor/pkg/sentry/fdimport"
 	cgroup2fs "gvisor.dev/gvisor/pkg/sentry/fsimpl/cgroup2fs"
@@ -55,6 +56,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/version"
 	"gvisor.dev/gvisor/pkg/sentry/loader"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
@@ -602,7 +604,9 @@ func New(args Args) (*Loader, error) {
 	}
 	if specutils.RDMAEnabled(args.Spec, args.Conf) {
 		cxproxy.Init()
+		efaproxy.Init()
 		genericproxy.Init()
+		version.UseRDMARelease()
 		args.StartupTimer.Reached("RDMA proxy initialized")
 	}
 
