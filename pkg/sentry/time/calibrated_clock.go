@@ -32,7 +32,6 @@ import (
 // clock.
 type CalibratedClock struct {
 	// mu protects the fields below.
-	// TODO(mpratt): consider a sequence counter for read locking.
 	mu sync.RWMutex
 
 	// ref sample the reference clock that this clock is calibrated
@@ -210,16 +209,16 @@ func (c *CalibratedClock) GetTime() (int64, error) {
 
 	now := c.ref.Cycles()
 	v, ok := c.params.ComputeTime(now)
+	c.mu.RUnlock()
+
 	if !ok {
 		// Something is seriously wrong with the clock. Try
 		// again with syscalls.
-		c.resetLocked("Time computation overflowed. params = %+v, now = %v.", c.params, now)
+		c.reset("Time computation overflowed. params = %+v, now = %v.", c.params, now)
 		now, err := c.ref.Syscall()
-		c.mu.RUnlock()
 		return int64(now), err
 	}
 
-	c.mu.RUnlock()
 	return v, nil
 }
 
