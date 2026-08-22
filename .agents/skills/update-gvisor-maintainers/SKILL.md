@@ -1,20 +1,23 @@
 ---
 name: update-gvisor-maintainers
 description: >
-  Update the gVisor maintainer roster in governance/maintainers.yaml and regenerate
-  the files derived from it (.github/reviewer.json and MAINTAINERS.md).
+  Update the gVisor maintainer roster in governance/maintainers.yaml or the
+  specialization areas in governance/areas.yaml, and regenerate the files derived
+  from them (.github/reviewer.json, MAINTAINERS.md and CODEOWNERS).
   Use when a maintainer goes on hiatus, returns from hiatus, is added, steps down to
-  emeritus, changes employer, or when MAINTAINERS.md / reviewer.json are out of sync.
+  emeritus, changes employer or specialization, or when MAINTAINERS.md /
+  reviewer.json / CODEOWNERS are out of sync.
 ---
 
 # Update the gVisor maintainer roster
 
-`governance/maintainers.yaml` is the single source of truth.
-`.github/reviewer.json` and `MAINTAINERS.md` are generated from it by
-`//governance/tools/maintainers:maintainers_gen`, and `maintainers_test`
-byte-compares both against the checked-in copies. So: edit the YAML, regenerate,
-run the test. Never hand-edit the two generated files; the test will catch you,
-and rightly so.
+`governance/maintainers.yaml` (the roster) and `governance/areas.yaml`
+(specialization areas, each mapping a name to repository paths) are the single
+source of truth. `.github/reviewer.json`, `MAINTAINERS.md` and `CODEOWNERS`
+are generated from them by `//governance/tools/maintainers:maintainers_gen`,
+and the `make governance-check` CI step byte-compares all three against the
+checked-in copies. So: edit the YAML, regenerate, run the check. Never
+hand-edit the generated files; the check will catch you, and rightly so.
 
 ## Schema
 
@@ -29,6 +32,9 @@ Each entry under `maintainers:`:
         until: 2025-03-01
     started: 2018-05-08         # First contribution. The list is sorted by this.
     status: HIATUS_SINCE:2026-07-17
+    codeowner: true             # Required. Owns / in CODEOWNERS. false for emeritus.
+    areas: [gpu, networking]    # Optional. Sorted area names from areas.yaml;
+                                # grants CODEOWNERS ownership of the areas' paths.
 ```
 
 `status` is one of three, and it drives everything downstream:
@@ -72,21 +78,15 @@ After any change, regenerate.
 ## Regenerate
 
 ```bash
-make run TARGETS=//governance/tools/maintainers:maintainers_gen \
-  ARGS="-input governance/maintainers.yaml -format reviewer.json -output .github/reviewer.json"
-
-make run TARGETS=//governance/tools/maintainers:maintainers_gen \
-  ARGS="-input governance/maintainers.yaml -format MAINTAINERS.md -output MAINTAINERS.md"
+make governance-regen
 ```
 
-`-format` takes the name of the file being generated, `reviewer.json` or
-`MAINTAINERS.md`. Leave off `-output` to dump to stdout instead, which is handy
-for eyeballing a change before writing it.
+This regenerates all three files in place.
 
 Then:
 
 ```bash
-make test TARGETS=//governance/tools/maintainers/...
+make governance-check
 ```
 
 This fails if the YAML changed and you forgot to regenerate, or if someone
@@ -94,9 +94,9 @@ edited a generated file by hand.
 
 ## Before handing back
 
-Show the user the diff across all three files (`governance/maintainers.yaml`,
-`.github/reviewer.json`, `MAINTAINERS.md`) and let them confirm the roster reads
-the way they meant it to.
+Show the user the diff across all changed files (`governance/maintainers.yaml`,
+`governance/areas.yaml`, `.github/reviewer.json`, `MAINTAINERS.md`,
+`CODEOWNERS`) and let them confirm the roster reads the way they meant it to.
 
 If a generated file contains something the generator does not emit, that content
 is drift, and regenerating is what removes it. Do not teach the generator to

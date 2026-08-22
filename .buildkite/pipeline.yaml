@@ -271,6 +271,13 @@ steps:
     agents:
       arch: "arm64"
 
+  - <<: *common
+    <<: *source_test
+    label: ":scroll: Governance file sync check"
+    command: make governance-check
+    agents:
+      arch: "amd64"
+
   # Basic unit tests.
   - <<: *common
     <<: *source_test
