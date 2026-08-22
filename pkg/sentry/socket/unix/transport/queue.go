@@ -27,8 +27,14 @@ import (
 type queue struct {
 	queueRefs
 
-	ReaderQueue *waiter.Queue
-	WriterQueue *waiter.Queue
+	// readerWaiters and writerWaiters route this queue's wakeups; nothing
+	// registers here directly. They alias the WaitQueues of the endpoints
+	// this queue affects: gaining data or closing wakes readerWaiters (the
+	// endpoint that reads from this queue), freeing space wakes
+	// writerWaiters (the endpoint that writes into it — or an unwatched
+	// placeholder on connectionless sockets, which have no fixed writer).
+	readerWaiters *waiter.Queue
+	writerWaiters *waiter.Queue
 
 	mu       queueMutex `state:"nosave"`
 	closed   atomicbitops.Bool
@@ -42,8 +48,8 @@ type queue struct {
 // will become unreadable when no more data is pending.
 //
 // Both the read and write queues must be notified after closing:
-// q.ReaderQueue.Notify(waiter.ReadableEvents)
-// q.WriterQueue.Notify(waiter.WritableEvents)
+// q.readerWaiters.Notify(waiter.ReadableEvents)
+// q.writerWaiters.Notify(waiter.WritableEvents)
 func (q *queue) Close() {
 	q.mu.Lock()
 	q.closed.Store(true)
@@ -57,8 +63,8 @@ func (q *queue) isClosed() bool {
 // Reset empties the queue and Releases all of the Entries.
 //
 // Both the read and write queues must be notified after resetting:
-// q.ReaderQueue.Notify(waiter.ReadableEvents)
-// q.WriterQueue.Notify(waiter.WritableEvents)
+// q.readerWaiters.Notify(waiter.ReadableEvents)
+// q.writerWaiters.Notify(waiter.WritableEvents)
 func (q *queue) Reset(ctx context.Context) {
 	q.mu.Lock()
 	dataList := q.dataList
@@ -122,8 +128,8 @@ func (q *queue) IsWritable() bool {
 // instead bails out early with an error and l == 0, the caller retains
 // ownership of c.Rights and remains responsible for releasing them.
 //
-// If notify is true, ReaderQueue.Notify must be called:
-// q.ReaderQueue.Notify(waiter.ReadableEvents)
+// If notify is true, readerWaiters.Notify must be called:
+// q.readerWaiters.Notify(waiter.ReadableEvents)
 func (q *queue) Enqueue(ctx context.Context, data [][]byte, c ControlMessages, from Address, discardEmpty bool, truncate bool) (l int64, notify bool, err *syserr.Error) {
 	q.mu.Lock()
 
@@ -199,8 +205,8 @@ func (q *queue) Enqueue(ctx context.Context, data [][]byte, c ControlMessages, f
 
 // Dequeue removes the first entry in the data queue, if one exists.
 //
-// If notify is true, WriterQueue.Notify must be called:
-// q.WriterQueue.Notify(waiter.WritableEvents)
+// If notify is true, writerWaiters.Notify must be called:
+// q.writerWaiters.Notify(waiter.WritableEvents)
 func (q *queue) Dequeue() (e *message, notify bool, err *syserr.Error) {
 	q.mu.Lock()
 

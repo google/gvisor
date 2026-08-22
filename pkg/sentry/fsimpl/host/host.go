@@ -765,7 +765,7 @@ func (i *inode) OpenTTY(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, opts
 func newEndpoint(ctx context.Context, hostFD int, queue *waiter.Queue) (transport.Endpoint, error) {
 	// Set up an external transport.Endpoint using the host fd.
 	addr := fmt.Sprintf("hostfd:[%d]", hostFD)
-	e, err := transport.NewHostConnectedEndpoint(hostFD, addr)
+	e, err := transport.NewHostSender(hostFD, addr)
 	if err != nil {
 		return nil, err.ToError()
 	}

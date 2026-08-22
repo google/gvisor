@@ -26,17 +26,17 @@ import (
 )
 
 func TestNewBundle(t *testing.T) {
-	for _, enableNetworking := range []bool{false, true} {
-		t.Run(t.Name(), func(t *testing.T) {
+	for _, netMode := range []sandbox.NetworkMode{sandbox.NetworkModeNone, sandbox.NetworkModeHost, sandbox.NetworkModeSandbox} {
+		t.Run(string(netMode), func(t *testing.T) {
 			tempDir := t.TempDir()
 			sandboxID := "test-sandbox"
 			bundleDir, err := sandbox.NewBundle(sandbox.BundleConfig{
-				ID:               sandboxID,
-				RuntimeDir:       tempDir,
-				EnableNetworking: enableNetworking,
+				ID:         sandboxID,
+				RuntimeDir: tempDir,
+				Network:    netMode,
 			})
 			if err != nil {
-				t.Fatalf("NewBundle(enableNet=%v) failed: %v", enableNetworking, err)
+				t.Fatalf("NewBundle(netMode=%v) failed: %v", netMode, err)
 			}
 			defer os.RemoveAll(bundleDir)
 			expectedBundleDir := filepath.Join(tempDir, sandboxID)
@@ -71,7 +71,7 @@ func TestNewBundle(t *testing.T) {
 
 			var expectedNamespaces []specs.LinuxNamespace
 			expectedNamespaces = append(expectedNamespaces, specs.LinuxNamespace{Type: specs.PIDNamespace})
-			if enableNetworking {
+			if netMode == sandbox.NetworkModeSandbox {
 				expectedNamespaces = append(expectedNamespaces, specs.LinuxNamespace{Type: specs.NetworkNamespace})
 			}
 			expectedNamespaces = append(expectedNamespaces, specs.LinuxNamespace{Type: specs.MountNamespace})
@@ -82,7 +82,7 @@ func TestNewBundle(t *testing.T) {
 			}
 
 			if len(spec.Linux.Namespaces) != len(expectedNamespaces) {
-				t.Errorf("enableNetworking=%v: Namespaces length = %d, want %d. Got: %+v, Want: %+v", enableNetworking, len(spec.Linux.Namespaces), len(expectedNamespaces), spec.Linux.Namespaces, expectedNamespaces)
+				t.Errorf("netMode=%v: Namespaces length = %d, want %d. Got: %+v, Want: %+v", netMode, len(spec.Linux.Namespaces), len(expectedNamespaces), spec.Linux.Namespaces, expectedNamespaces)
 			}
 			namespaceComparator := func(a, b specs.LinuxNamespace) int {
 				if a.Type == b.Type && a.Path == b.Path {
@@ -96,7 +96,7 @@ func TestNewBundle(t *testing.T) {
 			slices.SortFunc(spec.Linux.Namespaces, namespaceComparator)
 			slices.SortFunc(expectedNamespaces, namespaceComparator)
 			if !slices.Equal(spec.Linux.Namespaces, expectedNamespaces) {
-				t.Errorf("enableNetworking=%v: spec.Linux.Namespaces=%+v, want: %+v", enableNetworking, spec.Linux.Namespaces, expectedNamespaces)
+				t.Errorf("netMode=%v: spec.Linux.Namespaces=%+v, want: %+v", netMode, spec.Linux.Namespaces, expectedNamespaces)
 			}
 		})
 	}

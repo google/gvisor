@@ -1080,6 +1080,9 @@ afterTrailingSymlink:
 // Used to log a rejected fifo open, once.
 var logRejectedFifoOpenOnce sync.Once
 
+// Used to log an open of an unimplemented character device, once.
+var logUnimplementedCharDevOpenOnce sync.Once
+
 // Preconditions: The caller must hold no locks (since opening pipes may block
 // indefinitely).
 func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
@@ -1172,6 +1175,35 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 				log.Warningf("Rejecting attempt to open fifo/pipe from host filesystem: %q. If you want to allow this, set flag --host-fifo=open", d.name)
 			})
 			return nil, linuxerr.EPERM
+		}
+	case linux.S_IFCHR:
+		emulate := false
+		switch d.inode.fs.opts.charDevicePolicy {
+		case charDevEmulatedOnly:
+			if !rp.VirtualFilesystem().IsDeviceRegistered(vfs.CharDevice, d.inode.rdevMajor, d.inode.rdevMinor) {
+				logUnimplementedCharDevOpenOnce.Do(func() {
+					log.Warningf("Opening character device %d:%d (%q), which the sentry does not implement; the open will fail with ENXIO. If you want to allow this device to be opened on the host instead, set flag --character-device-policy=prefer-emulated", d.inode.rdevMajor, d.inode.rdevMinor, d.name)
+				})
+			}
+			emulate = true
+		case charDevPreferEmulated:
+			emulate = rp.VirtualFilesystem().IsDeviceRegistered(vfs.CharDevice, d.inode.rdevMajor, d.inode.rdevMinor)
+		}
+		if emulate {
+			// Dispatch to the sentry's device registry with renameMu dropped (so
+			// that it may block and lock in peace).
+			//
+			// It is safe because renameMu guards the dentry tree (parents, names,
+			// children); this dispatch consults none of it. It passes only mnt,
+			// &d.vfsd, and the immutable device numbers, and d stays alive across
+			// the window because the caller holds a reference on it (see the
+			// child.IncRef in the open path). A concurrent rename may relink d
+			// while we are unlocked, but we read no tree state afterwards: we
+			// re-acquire only to satisfy the deferred RUnlock and return at once.
+			d.inode.fs.renameMu.RUnlock()
+			fd, err := rp.VirtualFilesystem().OpenDeviceSpecialFile(ctx, mnt, &d.vfsd, vfs.CharDevice, d.inode.rdevMajor, d.inode.rdevMinor, opts)
+			d.inode.fs.renameMu.RLock()
+			return fd, err
 		}
 	}
 

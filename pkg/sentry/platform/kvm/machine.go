@@ -396,9 +396,9 @@ func newMachine(vm int, config *Config) (*machine, error) {
 	// called while we hold the slot spinlock.
 	disableAsyncPreemption()
 
-	applyVirtualRegions(func(vr virtualRegion) {
+	applyVirtualRegions(func(vr virtualRegion) bool {
 		if excludeVirtualRegion(vr) {
-			return // skip region.
+			return false // skip region.
 		}
 		// Take into account that the stack can grow down.
 		if vr.filename == "[stack]" {
@@ -407,7 +407,7 @@ func newMachine(vm int, config *Config) (*machine, error) {
 		}
 
 		mapRegion(vr, 0)
-
+		return false
 	})
 	if mapEntireAddressSpace {
 		for _, r := range physicalRegions {

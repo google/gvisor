@@ -86,6 +86,7 @@ go_library(
         "//pkg/hosttid",
         "//pkg/log",
         "//pkg/metric",
+        "//pkg/pinring",
         "//pkg/ring0",
         "//pkg/ring0/pagetables",
         "//pkg/seccomp",

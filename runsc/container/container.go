@@ -35,6 +35,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/pinring"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
@@ -153,6 +154,16 @@ type Container struct {
 	// This field isn't saved to json, because only a creator of a gofer
 	// process will have it as a child process.
 	goferIsChild bool `nojson:"true"`
+
+	// sentryExitSock is the creator's end of the root gofer's
+	// `--sync-sentry-exit-fd` socket,
+	// A pidfd of the sandbox process is sent over it once the sandbox has been
+	// spawned, and then it is closed.
+	sentryExitSock *os.File `nojson:"true"`
+
+	// pinRingFile is the pin ring (see `//pkg/pinring`)
+	// It is held between the gofer and the boot process's spawn.
+	pinRingFile *os.File `nojson:"true"`
 }
 
 // Args is used to configure a new container.
@@ -197,13 +208,6 @@ type Args struct {
 	// for containers in a new Sandbox process.
 	FSRestoreImagePath string
 	FSRestoreDirect    bool
-
-	// CheckpointDirPath is the path to the sentry checkpoint directory.
-	// Used to default FSRestoreImagePath if it is empty and SplitFSRestore is true.
-	CheckpointDirPath string
-
-	// SplitFSRestore indicates that we are restoring from a split filesystem checkpoint.
-	SplitFSRestore bool
 }
 
 // New creates the container in a new Sandbox process, unless the metadata
@@ -211,21 +215,6 @@ type Args struct {
 // Destroy() on the container.
 func New(conf *config.Config, args Args) (*Container, error) {
 	log.Debugf("Create container, cid: %s, rootDir: %q", args.ID, conf.RootDir)
-
-	if args.FSRestoreImagePath == "" && args.SplitFSRestore {
-		if args.CheckpointDirPath == "" {
-			return nil, errors.New("checkpoint directory path must be provided for split FS restore")
-		}
-		defaultFSDir := path.Join(args.CheckpointDirPath, "fs")
-		if _, err := os.Stat(defaultFSDir); err != nil {
-			if os.IsNotExist(err) {
-				return nil, fmt.Errorf("split FS restore requested, but default FS checkpoint directory %q does not exist. Please specify FSRestoreImagePath", defaultFSDir)
-			}
-			return nil, fmt.Errorf("checking default FS checkpoint directory: %w", err)
-		}
-		args.FSRestoreImagePath = defaultFSDir
-	}
-
 	if err := validateID(args.ID); err != nil {
 		return nil, err
 	}
@@ -415,12 +404,23 @@ func (c *Container) createRoot(conf *config.Config, args Args, sandboxID string)
 			ExecFile:            args.ExecFile,
 			FSRestoreImagePath:  args.FSRestoreImagePath,
 			FSRestoreDirect:     args.FSRestoreDirect,
+			PinRingFile:         c.pinRingFile,
 		}
 		sand, err := sandbox.New(conf, sandArgs)
 		if err != nil {
 			return fmt.Errorf("cannot create sandbox: %w", err)
 		}
 		c.Sandbox = sand
+		c.pinRingFile = nil // Now owned by the sandbox's donation agency.
+		if c.sentryExitSock != nil {
+			// The gofer waits on this pidfd before exiting, so it is
+			// always the last holder of the pin ring.
+			if err := pinring.SendPidfd(c.sentryExitSock, sand.Pid.Load()); err != nil {
+				log.Warningf("Cannot send the sandbox's pidfd to the gofer (gofer exit may race the sandbox's): %v", err)
+			}
+			c.sentryExitSock.Close()
+			c.sentryExitSock = nil
+		}
 		return nil
 
 	}); err != nil {
@@ -464,11 +464,11 @@ func (c *Container) Start(conf *config.Config) error {
 
 // Restore takes a container and replaces its kernel and file system
 // to restore a container from its state file.
-func (c *Container) Restore(conf *config.Config, imagePath string, direct, background, splitFSRestore bool, networkArgs *boot.CreateLinksAndRoutesArgs) error {
+func (c *Container) Restore(conf *config.Config, imagePath string, direct, background bool, networkArgs *boot.CreateLinksAndRoutesArgs) error {
 	log.Debugf("Restore container, cid: %s", c.ID)
 
 	restore := func(conf *config.Config, spec *specs.Spec) error {
-		return c.Sandbox.Restore(conf, spec, c.ID, imagePath, direct, background, splitFSRestore, networkArgs)
+		return c.Sandbox.Restore(conf, spec, c.ID, imagePath, direct, background, networkArgs)
 	}
 	return c.startImpl(conf, "restore", restore, c.Sandbox.RestoreSubcontainer)
 }
@@ -539,11 +539,12 @@ func (c *Container) startImpl(conf *config.Config, action string, startRoot func
 		}
 	}
 
-	// "If any poststart hook fails, the runtime MUST log a warning, but
-	// the remaining hooks and lifecycle continue as if the hook had
-	// succeeded" -OCI spec.
+	// "If any poststart hook fails, the runtime MUST generate an error,
+	// stop the container, and continue the lifecycle at step 12" - OCI spec.
 	if c.Spec.Hooks != nil {
-		specutils.ExecuteHooksBestEffort(c.Spec.Hooks.Poststart, c.State())
+		if err := specutils.ExecuteHooks(c.Spec.Hooks.Poststart, c.State()); err != nil {
+			return err
+		}
 	}
 
 	c.changeStatus(Running)
@@ -1531,6 +1532,19 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 		s.Register(&goferToHostRPC{goferPID: pid})
 		s.StartHandling(rpcServ)
 	}()
+
+	if ring, err := pinring.NewDisabledIOURing(); err != nil {
+		log.Warningf("Cannot create disabled io_uring ring: %v. This slows down gVisor sandbox teardown.", err)
+	} else {
+		donations.Donate("pin-ring-fd", ring)
+		c.pinRingFile = ring
+		fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_SEQPACKET|unix.SOCK_CLOEXEC, 0)
+		if err != nil {
+			return nil, nil, nil, nil, err
+		}
+		donations.DonateAndClose("sync-sentry-exit-fd", os.NewFile(uintptr(fds[1]), "sentry exit sync gofer FD"))
+		c.sentryExitSock = os.NewFile(uintptr(fds[0]), "sentry exit sync runsc FD")
+	}
 
 	// Count the number of mounts that needs an IO file.
 	ioFileCount := 0

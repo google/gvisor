@@ -102,7 +102,11 @@ func (ft FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualF
 		internalData = opts.InternalData.(*InternalData)
 	}
 
-	inode := procfs.newTasksInode(ctx, k, pidns, internalData)
+	inode, err := procfs.newTasksInode(ctx, k, pidns, internalData)
+	if err != nil {
+		procfs.VFSFilesystem().DecRef(ctx)
+		return nil, nil, err
+	}
 	var dentry kernfs.Dentry
 	dentry.InitRoot(&procfs.Filesystem, inode)
 	return procfs.VFSFilesystem(), dentry.VFSDentry(), nil

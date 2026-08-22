@@ -116,7 +116,7 @@ func (n *netstackConn) Read(ctx context.Context, buf []byte, cancel <-chan struc
 		}
 		res, tcpErr = n.ep.Read(b, tcpip.ReadOptions{})
 	}
-	if tcpErr != nil {
+	if tcpErr != nil || res.Total == 0 {
 		return 0, io.EOF
 	}
 	return res.Total, nil

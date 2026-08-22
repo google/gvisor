@@ -93,6 +93,8 @@ struct NfChainCheckOptions {
   uint32_t* expected_use;
   uint8_t* expected_udata;
   size_t* expected_udata_size;
+  const uint64_t* expected_packets;
+  const uint64_t* expected_bytes;
   bool skip_handle_check;
 };
 

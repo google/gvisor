@@ -42,6 +42,14 @@ class MountType(str, enum.Enum):
   PROC = "proc"
 
 
+class NetworkMode(str, enum.Enum):
+  """Network isolation mode for the sandbox."""
+
+  NONE = "none"
+  HOST = "host"
+  SANDBOX = "sandbox"
+
+
 @dataclasses.dataclass(frozen=True)
 class Mount:
   """Represents a mount configuration inside the sandbox.
@@ -282,8 +290,7 @@ class Sandbox:
       self,
       runtime_dir: Optional[str] = None,
       sandbox_id: Optional[str] = None,
-      enable_networking: bool = True,
-      network: Optional[str] = None,
+      network: Union[NetworkMode, str] = NetworkMode.NONE,
       env: Optional[Union[List[str], Dict[str, str]]] = None,
       mounts: Optional[Sequence[Union[Mount, Dict[str, Any]]]] = None,
       working_dir: str = "/",
@@ -295,9 +302,8 @@ class Sandbox:
         written. If not set, a temporary directory is created.
       sandbox_id: Specific sandbox ID. If not set, a unique ID is generated
         automatically.
-      enable_networking: Whether networking is enabled inside the sandbox.
-      network: The networking mode for runsc (e.g. "none", "sandbox", "host").
-        Specifying this overrides enable_networking.
+      network: The networking mode for runsc ('none', 'sandbox', 'host', or
+        NetworkMode enum). Defaults to NetworkMode.NONE ('none').
       env: Optional environment variables for the sandbox container.
       mounts: Optional sequence of Mount objects or dicts defining mounts.
       working_dir: The initial working directory inside the sandbox. Relative
@@ -307,19 +313,27 @@ class Sandbox:
       Error: If sandbox creation fails.
       ValueError: If an invalid network mode, working_dir, mount, or environment
         variable format is provided.
-      TypeError: If env or mounts has an invalid type.
+      TypeError: If env, mounts, or network has an invalid type.
     """
-    if network is not None and network not in ("none", "sandbox", "host"):
-      raise ValueError(
-          f"Invalid network mode '{network}'. Valid options are 'none',"
-          " 'sandbox', 'host', or None."
+    if isinstance(network, NetworkMode):
+      self._network = network.value
+    elif isinstance(network, str):
+      mode_lower = network.lower()
+      if mode_lower not in (
+          NetworkMode.NONE.value,
+          NetworkMode.HOST.value,
+          NetworkMode.SANDBOX.value,
+      ):
+        raise ValueError(
+            f"Invalid network mode '{network}'. Valid options are 'none',"
+            " 'host', 'sandbox'."
+        )
+      self._network = mode_lower
+    else:
+      raise TypeError(
+          f"network must be a NetworkMode or str, got {type(network)}"
       )
 
-    self._enable_networking = enable_networking
-    self._network = network
-    self._is_network_enabled = (
-        network != "none" if network is not None else enable_networking
-    )
     self._env = env
     self._working_dir = _normalize_working_dir(working_dir)
     self._mounts = _normalize_mounts(mounts)
@@ -344,12 +358,8 @@ class Sandbox:
     self._id = sandbox_id or self._generate_id()
 
     try:
-      if (
-          os.geteuid() != 0
-          and self._is_network_enabled
-          and self._network != "host"
-      ):
-        raise Error("enabling networking requires running as root")
+      if os.geteuid() != 0 and self._network == NetworkMode.SANDBOX.value:
+        raise Error("sandbox networking requires running as root")
 
       self._state_dir = os.path.join(self._runtime_dir, "state")
       try:
@@ -376,10 +386,7 @@ class Sandbox:
       if os.geteuid() != 0:
         args.append("--ignore-cgroups")
 
-      if self._network is not None:
-        args.append(f"--network={self._network}")
-      elif not self._enable_networking:
-        args.append("--network=none")
+      args.append(f"--network={self._network}")
 
       args.extend(["run", "--bundle", self._bundle_dir, "--detach", self._id])
 
@@ -466,7 +473,7 @@ class Sandbox:
     ]
     if os.geteuid() != 0:
       namespaces.append({"type": "user"})
-    if self._is_network_enabled and self._network != "host":
+    if self._network == NetworkMode.SANDBOX.value:
       namespaces.append({"type": "network"})
 
     mounts = [

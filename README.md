@@ -68,7 +68,7 @@ dependencies are wrapped in a build container. It is possible to use
 
 Make sure the following dependencies are installed:
 
-*   Linux 4.14.77+ ([older linux][old-linux])
+*   Linux 5.6+
 *   [Docker version 17.09.0 or greater][docker]
 
 ### Building
@@ -142,6 +142,13 @@ convenience. This is useful for external packages and libraries that depend on
 gVisor subpackages (e.g. userspace networking via Netstack) to import gVisor Go
 code into their Go projects.
 
+Select this branch explicitly with the `go` branch query. `@latest` resolves
+`master`, which requires Bazel and is not compatible with standard Go tooling:
+
+```sh
+go get gvisor.dev/gvisor/pkg/tcpip/transport/tcp@go
+```
+
 **NOTE**: **`runsc` builds from this branch are not supported**. gVisor and
 `runsc` require several binaries (some of which are not even written in Go) in
 order to function. The `go` branch is supported in a best effort capacity, and
@@ -171,6 +178,5 @@ See [Contributing.md](CONTRIBUTING.md).
 [gvisor-dev-list]: https://groups.google.com/forum/#!forum/gvisor-dev
 [linux]: https://en.wikipedia.org/wiki/Linux_kernel_interfaces
 [oci]: https://www.opencontainers.org
-[old-linux]: https://gvisor.dev/docs/user_guide/networking/#gso
 [sandbox]: https://en.wikipedia.org/wiki/Sandbox_(computer_security)
 [bazelisk]: https://github.com/bazelbuild/bazelisk

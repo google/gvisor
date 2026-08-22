@@ -78,13 +78,13 @@ type ConnectingEndpoint interface {
 //
 // This implementation includes STREAM and SEQPACKET Unix sockets created with
 // socket(2), accept(2) or socketpair(2) and dgram unix sockets created with
-// socketpair(2). See unix_connectionless.go for the implementation of DGRAM
+// socketpair(2). See connectionless.go for the implementation of DGRAM
 // Unix sockets created with socket(2).
 //
 // The state is much simpler than a TCP endpoint, so it is not encoded
 // explicitly. Instead we enforce the following invariants:
 //
-// receiver != nil, connected != nil => connected.
+// receiver != nil, peer != nil => connected.
 // path != "" && acceptedChan == nil => bound, not listening.
 // path != "" && acceptedChan != nil => bound and listening.
 //
@@ -140,7 +140,7 @@ func NewConnectioned(ctx context.Context, stype linux.SockType, uid uniqueid.Pro
 
 func newConnectioned(ctx context.Context, stype linux.SockType, uid uniqueid.Provider) *connectionedEndpoint {
 	ep := &connectionedEndpoint{
-		baseEndpoint: baseEndpoint{Queue: &waiter.Queue{}},
+		baseEndpoint: baseEndpoint{WaitQueue: &waiter.Queue{}},
 		id:           uid.UniqueID(),
 		idGenerator:  uid,
 		stype:        stype,
@@ -157,9 +157,9 @@ func NewPair(ctx context.Context, stype linux.SockType, uid uniqueid.Provider) (
 	a := newConnectioned(ctx, stype, uid)
 	b := newConnectioned(ctx, stype, uid)
 
-	q1 := &queue{ReaderQueue: a.Queue, WriterQueue: b.Queue, limit: defaultBufferSize}
+	q1 := &queue{readerWaiters: a.WaitQueue, writerWaiters: b.WaitQueue, limit: defaultBufferSize}
 	q1.InitRefs()
-	q2 := &queue{ReaderQueue: b.Queue, WriterQueue: a.Queue, limit: defaultBufferSize}
+	q2 := &queue{readerWaiters: b.WaitQueue, writerWaiters: a.WaitQueue, limit: defaultBufferSize}
 	q2.InitRefs()
 
 	if stype == linux.SOCK_STREAM {
@@ -171,12 +171,12 @@ func NewPair(ctx context.Context, stype linux.SockType, uid uniqueid.Provider) (
 	}
 
 	q2.IncRef()
-	a.connected = &connectedEndpoint{
+	a.peer = &queueSender{
 		endpoint:   b,
 		writeQueue: q2,
 	}
 	q1.IncRef()
-	b.connected = &connectedEndpoint{
+	b.peer = &queueSender{
 		endpoint:   a,
 		writeQueue: q1,
 	}
@@ -186,15 +186,15 @@ func NewPair(ctx context.Context, stype linux.SockType, uid uniqueid.Provider) (
 
 // NewExternal creates a new externally backed Endpoint. It behaves like a
 // socketpair.
-func NewExternal(stype linux.SockType, uid uniqueid.Provider, queue *waiter.Queue, receiver Receiver, connected ConnectedEndpoint) Endpoint {
+func NewExternal(stype linux.SockType, uid uniqueid.Provider, wq *waiter.Queue, receiver Receiver, peer Sender) Endpoint {
 	ep := &connectionedEndpoint{
-		baseEndpoint: baseEndpoint{Queue: queue, receiver: receiver, connected: connected},
+		baseEndpoint: baseEndpoint{WaitQueue: wq, receiver: receiver, peer: peer},
 		id:           uid.UniqueID(),
 		idGenerator:  uid,
 		stype:        stype,
 	}
 	ep.ops.InitHandler(ep, &stackHandler{}, getSendBufferLimits, getReceiveBufferLimits)
-	ep.ops.SetSendBufferSize(connected.SendMaxQueueSize(), false /* notify */)
+	ep.ops.SetSendBufferSize(peer.SendMaxQueueSize(), false /* notify */)
 	ep.ops.SetReceiveBufferSize(defaultBufferSize, false /* notify */)
 	return ep
 }
@@ -211,7 +211,7 @@ func (e *connectionedEndpoint) Type() linux.SockType {
 
 // WaiterQueue implements ConnectingEndpoint.WaiterQueue.
 func (e *connectionedEndpoint) WaiterQueue() *waiter.Queue {
-	return e.Queue
+	return e.WaitQueue
 }
 
 // isBound returns true iff the connectionedEndpoint is bound (but not
@@ -241,21 +241,21 @@ func (e *connectionedEndpoint) Close(ctx context.Context) {
 	var acceptedChan chan *connectionedEndpoint
 	e.Lock()
 	var (
-		c ConnectedEndpoint
+		c Sender
 		r Receiver
 	)
 	switch {
 	case e.Connected():
-		e.connected.CloseSend()
+		e.peer.CloseSend()
 		e.receiver.CloseRecv()
 		// Still have unread data? If yes, we set this into the write
 		// end so that the peer can get ECONNRESET) when it does read.
 		if e.receiver.RecvQueuedSize() > 0 {
-			e.connected.CloseUnread()
+			e.peer.CloseUnread()
 		}
-		c = e.connected
+		c = e.peer
 		r = e.receiver
-		e.connected = nil
+		e.peer = nil
 		e.receiver = nil
 	case e.isBound():
 		e.path = ""
@@ -271,14 +271,14 @@ func (e *connectionedEndpoint) Close(ctx context.Context) {
 			// When listener is closed, pending connections should receive
 			// ECONNRESET instead of EOF to match Linux behavior.
 			n.Lock()
-			if n.connected != nil {
+			if n.peer != nil {
 				// Try to set SO_ERROR on the client endpoint so that
 				// getsockopt(SO_ERROR) or read() returns ECONNRESET.
-				if ce, ok := n.connected.(*connectedEndpoint); ok {
+				if ce, ok := n.peer.(*queueSender); ok {
 					if clientEP, ok := ce.endpoint.(*connectionedEndpoint); ok {
 						clientEP.SocketOptions().SetLastError(&tcpip.ErrConnectionReset{})
 						// Notify waiter queue about error events so epoll detects EPOLLERR.
-						clientEP.Queue.Notify(waiter.EventErr)
+						clientEP.WaitQueue.Notify(waiter.EventErr)
 					}
 				}
 			}
@@ -287,12 +287,12 @@ func (e *connectionedEndpoint) Close(ctx context.Context) {
 		}
 	}
 	if c != nil {
-		c.CloseNotify()
+		c.NotifyStateChange()
 		c.Release(ctx)
 	}
 	e.ResetBoundSocketFD(ctx)
 	if r != nil {
-		r.CloseNotify()
+		r.NotifyStateChange()
 		r.Release(ctx)
 	}
 }
@@ -308,7 +308,7 @@ func (e *connectionedEndpoint) swapPeerCredsLocked(ctx context.Context, cend Con
 }
 
 // BidirectionalConnect implements BoundEndpoint.BidirectionalConnect.
-func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce ConnectingEndpoint, returnConnect func(Receiver, ConnectedEndpoint)) *syserr.Error {
+func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce ConnectingEndpoint, returnConnect func(Receiver, Sender)) *syserr.Error {
 	if ce.Type() != e.stype {
 		return syserr.ErrWrongProtocolForSocket
 	}
@@ -349,8 +349,8 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 	// Create a newly bound connectionedEndpoint.
 	ne := &connectionedEndpoint{
 		baseEndpoint: baseEndpoint{
-			path:  e.path,
-			Queue: &waiter.Queue{},
+			path:      e.path,
+			WaitQueue: &waiter.Queue{},
 		},
 		id:          e.idGenerator.UniqueID(),
 		idGenerator: e.idGenerator,
@@ -362,15 +362,15 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 	ne.SocketOptions().SetPassCred(e.SocketOptions().GetPassCred())
 	ne.peerCreds = e.peerCreds
 
-	readQueue := &queue{ReaderQueue: ce.WaiterQueue(), WriterQueue: ne.Queue, limit: defaultBufferSize}
+	readQueue := &queue{readerWaiters: ce.WaiterQueue(), writerWaiters: ne.WaitQueue, limit: defaultBufferSize}
 	readQueue.InitRefs()
-	ne.connected = &connectedEndpoint{
+	ne.peer = &queueSender{
 		endpoint:   ce,
 		writeQueue: readQueue,
 	}
 
 	// Make sure the accepted endpoint inherits this listening socket's SO_SNDBUF.
-	writeQueue := &queue{ReaderQueue: ne.Queue, WriterQueue: ce.WaiterQueue(), limit: e.ops.GetSendBufferSize()}
+	writeQueue := &queue{readerWaiters: ne.WaitQueue, writerWaiters: ce.WaiterQueue(), limit: e.ops.GetSendBufferSize()}
 	writeQueue.InitRefs()
 	if e.stype == linux.SOCK_STREAM {
 		ne.receiver = &streamQueueReceiver{queueReceiver: queueReceiver{readQueue: writeQueue}}
@@ -382,7 +382,7 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 	case e.acceptedChan <- ne:
 		// Commit state.
 		writeQueue.IncRef()
-		connected := &connectedEndpoint{
+		peer := &queueSender{
 			endpoint:   ne,
 			writeQueue: writeQueue,
 		}
@@ -391,9 +391,9 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 			if err := e.swapPeerCredsLocked(ctx, ce, ne); err != nil {
 				return err
 			}
-			returnConnect(&streamQueueReceiver{queueReceiver: queueReceiver{readQueue: readQueue}}, connected)
+			returnConnect(&streamQueueReceiver{queueReceiver: queueReceiver{readQueue: readQueue}}, peer)
 		} else {
-			returnConnect(&queueReceiver{readQueue: readQueue}, connected)
+			returnConnect(&queueReceiver{readQueue: readQueue}, peer)
 		}
 
 		// Notify can deadlock if we are holding these locks.
@@ -401,7 +401,7 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 		ce.Unlock()
 
 		// Notify on both ends.
-		e.Notify(waiter.ReadableEvents)
+		e.WaitQueue.Notify(waiter.ReadableEvents)
 		ce.WaiterQueue().Notify(waiter.WritableEvents)
 
 		return nil
@@ -415,19 +415,19 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 }
 
 // UnidirectionalConnect implements BoundEndpoint.UnidirectionalConnect.
-func (e *connectionedEndpoint) UnidirectionalConnect(ctx context.Context) (ConnectedEndpoint, *syserr.Error) {
+func (e *connectionedEndpoint) UnidirectionalConnect(ctx context.Context) (Sender, *syserr.Error) {
 	return nil, syserr.ErrConnectionRefused
 }
 
 // Connect attempts to directly connect to another Endpoint.
 // Implements Endpoint.Connect.
 func (e *connectionedEndpoint) Connect(ctx context.Context, server BoundEndpoint) *syserr.Error {
-	returnConnect := func(r Receiver, ce ConnectedEndpoint) {
+	returnConnect := func(r Receiver, ce Sender) {
 		e.receiver = r
-		e.connected = ce
+		e.peer = ce
 		// Make sure the newly created connected endpoint's write queue is updated
 		// to reflect this endpoint's send buffer size.
-		if bufSz := e.connected.SetSendBufferSize(e.ops.GetSendBufferSize()); bufSz != e.ops.GetSendBufferSize() {
+		if bufSz := e.peer.SetSendBufferSize(e.ops.GetSendBufferSize()); bufSz != e.ops.GetSendBufferSize() {
 			e.ops.SetSendBufferSize(bufSz, false /* notify */)
 			e.ops.SetReceiveBufferSize(bufSz, false /* notify */)
 		}
@@ -491,7 +491,7 @@ func (e *connectionedEndpoint) Accept(ctx context.Context, peerAddr *Address) (E
 
 	if peerAddr != nil {
 		ne.Lock()
-		c := ne.connected
+		c := ne.peer
 		ne.Unlock()
 		if c != nil {
 			addr, err := c.GetLocalAddress()
@@ -530,7 +530,7 @@ func (e *connectionedEndpoint) getAcceptedEndpointLocked(ctx context.Context) (*
 		return nil, syserr.FromError(err)
 	}
 	q := &waiter.Queue{}
-	scme, serr := NewSCMEndpoint(nfd, q, e.path)
+	scme, serr := NewSCMSender(nfd, q, e.path)
 	if serr != nil {
 		unix.Close(nfd)
 		return nil, serr
@@ -601,21 +601,6 @@ func (e *connectionedEndpoint) Readiness(mask waiter.EventMask) waiter.EventMask
 	ready := waiter.EventMask(0)
 	switch {
 	case e.Connected():
-		if mask&waiter.ReadableEvents != 0 && e.receiver.Readable() {
-			ready |= waiter.ReadableEvents
-		}
-		if mask&waiter.WritableEvents != 0 && e.connected.Writable() {
-			ready |= waiter.WritableEvents
-		}
-		if mask&(waiter.EventHUp|waiter.EventRdHUp) != 0 && e.receiver.IsRecvClosed() {
-			ready |= waiter.EventRdHUp
-			// A datagram write shutdown is endpoint-local
-			// (writeShutdown) and leaves the shared queue open, so
-			// IsSendClosed alone would miss it.
-			if mask&waiter.EventHUp != 0 && (e.connected.IsSendClosed() || e.writeShutdown) {
-				ready |= waiter.EventHUp
-			}
-		}
 		// Check for error condition (SO_ERROR is set).
 		if mask&waiter.EventErr != 0 {
 			e.lastErrorMu.Lock()
@@ -623,6 +608,27 @@ func (e *connectionedEndpoint) Readiness(mask waiter.EventMask) waiter.EventMask
 			e.lastErrorMu.Unlock()
 			if hasError {
 				ready |= waiter.EventErr
+			}
+		}
+
+		if hr, ok := e.receiver.(HostReadiness); ok {
+			ready |= hr.HostReadiness(mask)
+			break
+		}
+
+		if mask&waiter.ReadableEvents != 0 && e.receiver.Readable() {
+			ready |= waiter.ReadableEvents
+		}
+		if mask&waiter.WritableEvents != 0 && e.peer.Writable() {
+			ready |= waiter.WritableEvents
+		}
+		if mask&(waiter.EventHUp|waiter.EventRdHUp) != 0 && e.receiver.IsRecvClosed() {
+			ready |= waiter.EventRdHUp
+			// A datagram write shutdown is endpoint-local
+			// (sendShutdown) and leaves the shared queue open, so
+			// IsSendClosed alone would miss it.
+			if mask&waiter.EventHUp != 0 && (e.peer.IsSendClosed() || e.sendShutdown) {
+				ready |= waiter.EventHUp
 			}
 		}
 	case e.ListeningLocked():
@@ -650,7 +656,7 @@ func (e *connectionedEndpoint) OnSetSendBufferSize(v int64) (newSz int64) {
 	e.Lock()
 	defer e.Unlock()
 	if e.Connected() {
-		return e.baseEndpoint.connected.SetSendBufferSize(v)
+		return e.baseEndpoint.peer.SetSendBufferSize(v)
 	}
 	return v
 }
@@ -667,7 +673,7 @@ func (e *connectionedEndpoint) SetBoundSocketFD(ctx context.Context, bsFD BoundS
 		return syserr.ErrAlreadyBound.ToError()
 	}
 	e.boundSocketFD = bsFD
-	fdnotifier.AddFD(bsFD.NotificationFD(), e.Queue)
+	fdnotifier.AddFD(bsFD.NotificationFD(), e.WaitQueue)
 	return nil
 }
 

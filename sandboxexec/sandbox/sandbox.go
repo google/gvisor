@@ -30,17 +30,33 @@ import (
 	"time"
 )
 
+// NetworkMode defines the network isolation mode for the sandbox.
+type NetworkMode string
+
+const (
+	// NetworkModeNone disables networking completely inside the sandbox.
+	NetworkModeNone NetworkMode = "none"
+
+	// NetworkModeHost shares the host network namespace with the sandbox.
+	// This mode is supported for rootless execution.
+	NetworkModeHost NetworkMode = "host"
+
+	// NetworkModeSandbox enables a dedicated network namespace using gVisor netstack.
+	// This mode requires host root privileges (UID 0).
+	NetworkModeSandbox NetworkMode = "sandbox"
+)
+
 // Options holds the configuration for a Sandbox.
 type Options struct {
-	runtimeDir       string
-	id               string
-	enableNetworking bool
-	mounts           []Mount
-	snapshot         *Snapshot
-	env              []string
-	err              error
-	workingDir       string
-	hostname         string
+	runtimeDir string
+	id         string
+	network    NetworkMode
+	mounts     []Mount
+	snapshot   *Snapshot
+	env        []string
+	err        error
+	workingDir string
+	hostname   string
 }
 
 // Option configures the Options struct.
@@ -80,10 +96,16 @@ func WithID(id string) Option {
 	}
 }
 
-// WithNetworking configures whether networking is enabled inside the sandbox.
-func WithNetworking(enabled bool) Option {
+// WithNetwork sets the network mode for the sandbox.
+// Supported modes: NetworkModeNone ("none"), NetworkModeHost ("host"), NetworkModeSandbox ("sandbox").
+func WithNetwork(mode NetworkMode) Option {
 	return func(o *Options) {
-		o.enableNetworking = enabled
+		switch mode {
+		case NetworkModeNone, NetworkModeHost, NetworkModeSandbox:
+			o.network = mode
+		default:
+			o.err = fmt.Errorf("invalid network mode %q: must be one of none, host, sandbox", mode)
+		}
 	}
 }
 
@@ -204,8 +226,8 @@ func runscPath() string {
 // will be started and running in detached mode.
 func New(ctx context.Context, opts ...Option) (*Sandbox, error) {
 	options := Options{
-		enableNetworking: true,
-		workingDir:       "/",
+		network:    NetworkModeNone,
+		workingDir: "/",
 	}
 	for _, o := range opts {
 		o(&options)
@@ -227,8 +249,8 @@ func New(ctx context.Context, opts ...Option) (*Sandbox, error) {
 		options.id = newID()
 	}
 
-	if os.Geteuid() != 0 && options.enableNetworking {
-		return nil, fmt.Errorf("enabling networking requires running as root")
+	if os.Geteuid() != 0 && options.network == NetworkModeSandbox {
+		return nil, fmt.Errorf("sandbox networking requires running as root")
 	}
 
 	runDir := options.runtimeDir
@@ -302,14 +324,14 @@ func New(ctx context.Context, opts ...Option) (*Sandbox, error) {
 		}
 	}
 	bundleDir, err := NewBundle(BundleConfig{
-		ID:               options.id,
-		RuntimeDir:       runDir,
-		EnableNetworking: options.enableNetworking,
-		Mounts:           options.mounts,
-		Env:              options.env,
-		Annotations:      annotations,
-		WorkingDir:       options.workingDir,
-		Hostname:         options.hostname,
+		ID:          options.id,
+		RuntimeDir:  runDir,
+		Network:     options.network,
+		Mounts:      options.mounts,
+		Env:         options.env,
+		Annotations: annotations,
+		WorkingDir:  options.workingDir,
+		Hostname:    options.hostname,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OCI bundle: %v", err)
@@ -327,8 +349,13 @@ func New(ctx context.Context, opts ...Option) (*Sandbox, error) {
 	if os.Geteuid() != 0 {
 		args = append(args, "--ignore-cgroups")
 	}
-	if !options.enableNetworking {
+	switch options.network {
+	case NetworkModeHost:
+		args = append(args, "--network=host")
+	case NetworkModeNone, "":
 		args = append(args, "--network=none")
+	case NetworkModeSandbox:
+		args = append(args, "--network=sandbox")
 	}
 	args = append(args, globalFlags...)
 

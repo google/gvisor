@@ -35,9 +35,8 @@ func TestMain(m *testing.M) {
 func TestExecDmesg(t *testing.T) {
 	ctx := context.Background()
 
-	enableNetworking := os.Geteuid() == 0
-	// Create the background sandbox via subprocess
-	sb, err := sandbox.New(ctx, sandbox.WithNetworking(enableNetworking))
+	// Default network mode is NetworkModeNone which works in both root and rootless.
+	sb, err := sandbox.New(ctx)
 	if err != nil {
 		t.Fatalf("failed to create sandbox: %v", err)
 	}
@@ -63,12 +62,11 @@ func TestSandboxOptions(t *testing.T) {
 	ctx := context.Background()
 	runtimeDir := t.TempDir()
 	id := "iwillbeasandbox"
-	enableNetworking := os.Geteuid() == 0
 
 	opts := []sandbox.Option{
 		sandbox.WithID(id),
 		sandbox.WithRuntimeDir(runtimeDir),
-		sandbox.WithNetworking(enableNetworking),
+		sandbox.WithNetwork(sandbox.NetworkModeHost),
 	}
 
 	sb, err := sandbox.New(ctx, opts...)
@@ -93,12 +91,24 @@ func TestNonRootNetworkingError(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	_, err := sandbox.New(ctx, sandbox.WithNetworking(true))
+	_, err := sandbox.New(ctx, sandbox.WithNetwork(sandbox.NetworkModeSandbox))
 	if err == nil {
-		t.Fatalf("sandbox.New succeeded as non-root with networking enabled; want error")
+		t.Fatalf("sandbox.New succeeded as non-root with sandbox network mode; want error")
 	}
 
-	expectedErr := "enabling networking requires running as root"
+	expectedErr := "sandbox networking requires running as root"
+	if !strings.Contains(err.Error(), expectedErr) {
+		t.Errorf("sandbox.New error = %v; want error containing %q", err, expectedErr)
+	}
+}
+
+func TestInvalidNetworkMode(t *testing.T) {
+	ctx := context.Background()
+	_, err := sandbox.New(ctx, sandbox.WithNetwork("invalid-mode"))
+	if err == nil {
+		t.Fatalf("sandbox.New succeeded with invalid network mode; want error")
+	}
+	expectedErr := "invalid network mode"
 	if !strings.Contains(err.Error(), expectedErr) {
 		t.Errorf("sandbox.New error = %v; want error containing %q", err, expectedErr)
 	}
@@ -116,7 +126,7 @@ func TestCustomBindMount(t *testing.T) {
 	}
 
 	sb, err := sandbox.New(ctx,
-		sandbox.WithNetworking(false),
+		sandbox.WithNetwork(sandbox.NetworkModeNone),
 		sandbox.WithBindMount(tempHostDir, "/mnt/host_share", true),
 	)
 	if err != nil {
@@ -142,7 +152,7 @@ func TestCustomTmpfsMount(t *testing.T) {
 	ctx := context.Background()
 
 	sb, err := sandbox.New(ctx,
-		sandbox.WithNetworking(false),
+		sandbox.WithNetwork(sandbox.NetworkModeNone),
 		sandbox.WithTmpfsMount("/mnt/scratch"),
 	)
 	if err != nil {
@@ -174,7 +184,7 @@ func TestCustomBindMountWrite(t *testing.T) {
 	tempHostDir := t.TempDir()
 
 	sb, err := sandbox.New(ctx,
-		sandbox.WithNetworking(false),
+		sandbox.WithNetwork(sandbox.NetworkModeNone),
 		sandbox.WithBindMount(tempHostDir, "/mnt/host_share", false),
 	)
 	if err != nil {
@@ -208,7 +218,7 @@ func TestSandboxEnv(t *testing.T) {
 	ctx := context.Background()
 
 	sb, err := sandbox.New(ctx,
-		sandbox.WithNetworking(false),
+		sandbox.WithNetwork(sandbox.NetworkModeNone),
 		sandbox.WithEnv(
 			"TEST_VAR=value1",
 			"TEST_VAR=value2", // Duplicate var to test append behavior
@@ -262,7 +272,7 @@ func TestSandboxInvalidEnvFormat(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := sandbox.New(ctx,
-		sandbox.WithNetworking(false),
+		sandbox.WithNetwork(sandbox.NetworkModeNone),
 		sandbox.WithEnv("MALFORMED_INPUT_NO_EQUALS"),
 	)
 	if err == nil {
@@ -287,10 +297,9 @@ func TestRootfsTarSnapshot(t *testing.T) {
 	}
 
 	runtimeDirA := filepath.Join(tempDir, "runtime-a")
-	enableNetworking := os.Geteuid() == 0
 	sbA, err := sandbox.New(ctx,
 		sandbox.WithRuntimeDir(runtimeDirA),
-		sandbox.WithNetworking(enableNetworking),
+		sandbox.WithNetwork(sandbox.NetworkModeNone),
 	)
 	if err != nil {
 		t.Fatalf("failed to start sandbox A: %v", err)
@@ -310,7 +319,7 @@ func TestRootfsTarSnapshot(t *testing.T) {
 	runtimeDirB := filepath.Join(tempDir, "runtime-b")
 	sbB, err := sandbox.New(ctx,
 		sandbox.WithRuntimeDir(runtimeDirB),
-		sandbox.WithNetworking(enableNetworking),
+		sandbox.WithNetwork(sandbox.NetworkModeNone),
 		sandbox.WithSnapshot(snapshot),
 	)
 	if err != nil {
@@ -332,10 +341,9 @@ func TestNoSnapshotStorageError(t *testing.T) {
 	tempDir := t.TempDir()
 
 	runtimeDir := filepath.Join(tempDir, "runtime")
-	enableNetworking := os.Geteuid() == 0
 	_, err := sandbox.New(ctx,
 		sandbox.WithRuntimeDir(runtimeDir),
-		sandbox.WithNetworking(enableNetworking),
+		sandbox.WithNetwork(sandbox.NetworkModeNone),
 		sandbox.WithSnapshot(&sandbox.Snapshot{ID: "some-snapshot-id"}),
 	)
 	if err == nil {
@@ -351,7 +359,7 @@ func TestSandboxWorkingDir(t *testing.T) {
 	ctx := context.Background()
 
 	sb, err := sandbox.New(ctx,
-		sandbox.WithNetworking(false),
+		sandbox.WithNetwork(sandbox.NetworkModeNone),
 		sandbox.WithWorkingDir("tmp/custom"),
 	)
 	if err != nil {
@@ -375,7 +383,7 @@ func TestSandboxBadWorkingDir(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := sandbox.New(ctx,
-		sandbox.WithNetworking(false),
+		sandbox.WithNetwork(sandbox.NetworkModeNone),
 		sandbox.WithWorkingDir(""),
 	)
 	if err == nil {
@@ -390,7 +398,7 @@ func TestSandboxHostname(t *testing.T) {
 	ctx := context.Background()
 
 	sb, err := sandbox.New(ctx,
-		sandbox.WithNetworking(false),
+		sandbox.WithNetwork(sandbox.NetworkModeNone),
 		sandbox.WithHostname("custom-sandbox-host"),
 	)
 	if err != nil {
@@ -412,7 +420,7 @@ func TestSandboxCustomProcMount(t *testing.T) {
 	ctx := context.Background()
 
 	sb, err := sandbox.New(ctx,
-		sandbox.WithNetworking(false),
+		sandbox.WithNetwork(sandbox.NetworkModeNone),
 		sandbox.WithProcMount("/custom_proc"),
 	)
 	if err != nil {

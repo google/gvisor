@@ -332,3 +332,66 @@ func TestReaderWriter(t *testing.T) {
 		})
 	}
 }
+
+type blockingConn struct {
+	name                 string
+	inRead               chan struct{}
+	mu                   sync.Mutex
+	readExited           bool
+	closedBeforeReadExit bool
+}
+
+func (b *blockingConn) Name() string { return b.name }
+
+func (b *blockingConn) Read(ctx context.Context, buf []byte, cancel <-chan struct{}) (int, error) {
+	select {
+	case b.inRead <- struct{}{}:
+	default:
+	}
+	<-cancel
+	time.Sleep(10 * time.Millisecond)
+	b.mu.Lock()
+	b.readExited = true
+	b.mu.Unlock()
+	return 0, io.EOF
+}
+
+func (b *blockingConn) Write(ctx context.Context, buf []byte, cancel <-chan struct{}) (int, error) {
+	<-cancel
+	return 0, io.EOF
+}
+
+func (b *blockingConn) Close(ctx context.Context) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !b.readExited {
+		b.closedBeforeReadExit = true
+	}
+}
+
+func TestProxyCloseOrdersCancellationBeforeCleanup(t *testing.T) {
+	ctx := contexttest.Context(t)
+	to := &blockingConn{name: "to", inRead: make(chan struct{}, 1)}
+	from := &blockingConn{name: "from", inRead: make(chan struct{}, 1)}
+
+	proxy := NewProxy(ProxyPair{To: to, From: from}, "test-cid")
+	proxy.Start(ctx)
+
+	// Wait until both proxy goroutines have entered Read.
+	<-to.inRead
+	<-from.inRead
+
+	proxy.Close()
+
+	to.mu.Lock()
+	defer to.mu.Unlock()
+	if to.closedBeforeReadExit {
+		t.Errorf("Proxy.Close invoked to.Close() before to.Read() exited")
+	}
+
+	from.mu.Lock()
+	defer from.mu.Unlock()
+	if from.closedBeforeReadExit {
+		t.Errorf("Proxy.Close invoked from.Close() before from.Read() exited")
+	}
+}

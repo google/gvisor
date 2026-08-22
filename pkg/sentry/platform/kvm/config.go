@@ -18,6 +18,7 @@
 package kvm
 
 import (
+	"gvisor.dev/gvisor/pkg/pinring"
 	"gvisor.dev/gvisor/pkg/timing"
 )
 
@@ -34,6 +35,9 @@ type Config struct {
 
 	// StartupTimer is used to track KVM initialization milestones.
 	StartupTimer *timing.Timer
+
+	// PinRing is used to pin the VM FD and to release it asynchronously.
+	PinRing *pinring.PinRing
 }
 
 func (*machine) applyConfig(config *Config) error { return nil }

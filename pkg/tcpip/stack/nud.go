@@ -320,17 +320,24 @@ func calcMaxRandomFactor(minRandomFactor float32) float32 {
 type nudStateMu struct {
 	sync.RWMutex `state:"nosave"`
 
+	// +checklocks:RWMutex
 	config NUDConfigurations
 
 	// reachableTime is the duration to wait for a REACHABLE entry to
 	// transition into STALE after inactivity. This value is calculated with
 	// the algorithm defined in RFC 4861 section 6.3.2.
+	//
+	// +checklocks:RWMutex
 	reachableTime time.Duration
 
-	expiration            tcpip.MonotonicTime
+	// +checklocks:RWMutex
+	expiration tcpip.MonotonicTime
+	// +checklocks:RWMutex
 	prevBaseReachableTime time.Duration
-	prevMinRandomFactor   float32
-	prevMaxRandomFactor   float32
+	// +checklocks:RWMutex
+	prevMinRandomFactor float32
+	// +checklocks:RWMutex
+	prevMaxRandomFactor float32
 }
 
 // NUDState stores states needed for calculating reachable time.
@@ -405,7 +412,7 @@ func (s *NUDState) ReachableTime() time.Duration {
 //	changes.  In such cases, an implementation SHOULD ensure that a new
 //	random value gets re-computed at least once every few hours.
 //
-// s.mu MUST be locked for writing.
+// +checklocks:s.mu.RWMutex
 func (s *NUDState) recomputeReachableTimeLocked() {
 	s.mu.prevBaseReachableTime = s.mu.config.BaseReachableTime
 	s.mu.prevMinRandomFactor = s.mu.config.MinRandomFactor

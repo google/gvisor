@@ -9,10 +9,10 @@ go_binary(
     name = "test_app",
     testonly = 1,
     srcs = [
+        "chardev.go",
         "fds.go",
         "hostinet_sr.go",
         "main.go",
-        "mmap_helper.go",
         "xattr.go",
         "zombies.go",
     ],

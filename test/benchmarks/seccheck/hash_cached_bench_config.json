@@ -1,0 +1,21 @@
+{
+  "trace_session": {
+    "name": "Default",
+    "options": {
+      "execve_hash_cache_capacity": 512
+    },
+    "points": [
+      {
+        "name": "syscall/execve/enter",
+        "optional_fields": [
+          "binary_sha256"
+        ]
+      }
+    ],
+    "sinks": [
+      {
+        "name": "null"
+      }
+    ]
+  }
+}

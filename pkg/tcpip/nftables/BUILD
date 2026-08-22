@@ -31,6 +31,7 @@ go_library(
         "nft_xt_conntrack.go",
         "nft_xt_masq.go",
         "nft_xt_match.go",
+        "nft_xt_nat.go",
         "nft_xt_target.go",
         "nftables.go",
         "nftables_attrs.go",

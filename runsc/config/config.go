@@ -114,6 +114,10 @@ type Config struct {
 	// HostFifo controls permission to access host FIFO (or named pipes).
 	HostFifo HostFifo `flag:"host-fifo"`
 
+	// CharacterDevicePolicy controls how character device files on gofer
+	// mounts (the rootfs and bind mounts) are handled.
+	CharacterDevicePolicy CharacterDevicePolicy `flag:"character-device-policy"`
+
 	// HostSettings controls how host settings are handled.
 	HostSettings HostSettingsPolicy `flag:"host-settings"`
 
@@ -1009,6 +1013,72 @@ func (g HostFifo) String() string {
 // AllowOpen returns true if it can consume FIFOs from the host.
 func (g HostFifo) AllowOpen() bool {
 	return g&HostFifoOpen != 0
+}
+
+// CharacterDevicePolicy tells how character device files on gofer mounts are
+// handled. It does not affect device files on sentry-internal filesystems
+// like devtmpfs, which are always dispatched to the sentry's device registry.
+type CharacterDevicePolicy int
+
+const (
+	// CharDevEmulatedOnly dispatches opens of character device files to the
+	// sentry's device registry: a device implemented by the sentry is served
+	// by the sentry, and opening an unimplemented device fails with ENXIO.
+	// Host character devices are never opened on the container's behalf.
+	CharDevEmulatedOnly CharacterDevicePolicy = iota
+
+	// CharDevPreferEmulated behaves like CharDevEmulatedOnly for devices the
+	// sentry implements, but falls back to opening the host device through
+	// the gofer for device numbers the sentry has no implementation for.
+	CharDevPreferEmulated
+
+	// CharDevPassthrough opens all character device files through the gofer,
+	// exposing the host device to the container.
+	CharDevPassthrough
+)
+
+func charDevicePolicyPtr(v CharacterDevicePolicy) *CharacterDevicePolicy {
+	return &v
+}
+
+// Set implements flag.Value. Set(String()) should be idempotent.
+func (p *CharacterDevicePolicy) Set(v string) error {
+	switch v {
+	case "", "emulated-only":
+		*p = CharDevEmulatedOnly
+	case "prefer-emulated":
+		*p = CharDevPreferEmulated
+	case "passthrough":
+		*p = CharDevPassthrough
+	default:
+		return fmt.Errorf("invalid character device policy %q", v)
+	}
+	return nil
+}
+
+// Get implements flag.Value.
+func (p *CharacterDevicePolicy) Get() any {
+	return *p
+}
+
+// String implements flag.Value.
+func (p CharacterDevicePolicy) String() string {
+	switch p {
+	case CharDevEmulatedOnly:
+		return "emulated-only"
+	case CharDevPreferEmulated:
+		return "prefer-emulated"
+	case CharDevPassthrough:
+		return "passthrough"
+	default:
+		panic(fmt.Sprintf("Invalid character device policy %d", p))
+	}
+}
+
+// AllowsPassthrough returns true if the policy permits opening host character
+// devices through the gofer.
+func (p CharacterDevicePolicy) AllowsPassthrough() bool {
+	return p != CharDevEmulatedOnly
 }
 
 // OverlayMedium describes how overlay medium is configured.

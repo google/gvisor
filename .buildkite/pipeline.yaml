@@ -45,6 +45,7 @@ _templates:
       <<: *kvm_agents
       <<: *platform_specific_agents
       arch: "amd64"
+      queue: "default"
   netstack_test: &netstack_test
     env:
       PACKAGES: >
@@ -75,24 +76,29 @@ steps:
     command: make smoke-tests
     agents:
       arch: "amd64"
+      queue: "default"
   - <<: *common
     <<: *source_test
     label: ":fire: Smoke tests (ARM64)"
     command: make smoke-tests
     agents:
       arch: "arm64"
+      queue: "arm64"
   - <<: *common
     <<: *source_test
     env:
       GLIBC_TUNABLES: glibc.pthread.rseq=0
     label: ":fire: Smoke race tests"
     command: make smoke-race-tests
+    agents:
+      queue: "default"
   - <<: *common
     <<: *source_test
     label: ":speedboat: Compile runsc-plugin-stack (AMD64)"
     command: make runsc-plugin-stack
     agents:
       arch: "amd64"
+      queue: "default"
 
   # Build runsc and pkg (presubmits only).
   - <<: *common
@@ -103,6 +109,7 @@ steps:
       - "make build OPTIONS='--build_tag_filters=-network_plugins' TARGETS='//runsc/...'"
     agents:
       arch: "amd64"
+      queue: "default"
 
   - <<: *common
     <<: *source_test_presubmit
@@ -112,6 +119,7 @@ steps:
       - "make build OPTIONS='--build_tag_filters=-network_plugins' TARGETS='//runsc/...'"
     agents:
       arch: "arm64"
+      queue: "arm64"
 
   # Build everything (continuous only).
   - <<: *common
@@ -119,6 +127,8 @@ steps:
     label: ":world_map: Build everything"
     commands:
       - "make build OPTIONS='--build_tag_filters=-network_plugins' TARGETS='//...'"
+    agents:
+      queue: "default"
 
   # Check that the Go branch builds. This is not technically required, as this build is maintained
   # as a GitHub action in order to preserve this maintaince across forks. However, providing the
@@ -130,6 +140,8 @@ steps:
       - tools/go_branch.sh
       - git checkout go && git clean -xf .
       - go build ./...
+    agents:
+      queue: "default"
 
   # Check that commonly used netstack packages build on various platforms.
   - <<: *common
@@ -140,6 +152,8 @@ steps:
       - tools/go_branch.sh
       - git checkout go && git clean -xf .
       - GOOS=darwin GOARCH=arm64 go build $$PACKAGES
+    agents:
+      queue: "default"
   - <<: *common
     <<: *source_test
     <<: *netstack_test
@@ -148,6 +162,8 @@ steps:
       - tools/go_branch.sh
       - git checkout go && git clean -xf .
       - GOOS=windows GOARCH=amd64 go build $$PACKAGES
+    agents:
+      queue: "default"
   - <<: *common
     <<: *source_test
     <<: *netstack_test
@@ -156,6 +172,8 @@ steps:
       - tools/go_branch.sh
       - git checkout go && git clean -xf .
       - GOOS=freebsd GOARCH=amd64 go build $$PACKAGES
+    agents:
+      queue: "default"
   - <<: *common
     <<: *source_test
     <<: *netstack_test
@@ -164,6 +182,8 @@ steps:
       - tools/go_branch.sh
       - git checkout go && git clean -xf .
       - GOOS=openbsd GOARCH=amd64 go build $$PACKAGES
+    agents:
+      queue: "default"
   - <<: *common
     <<: *source_test
     <<: *netstack_test
@@ -172,6 +192,8 @@ steps:
       - tools/go_branch.sh
       - git checkout go && git clean -xf .
       - GOOS=linux GOARCH=mips go build $$PACKAGES
+    agents:
+      queue: "default"
 
   # GPU workflow.
   - <<: *common
@@ -182,12 +204,14 @@ steps:
       - make gpu-smoke-tests
       - make sudo TARGETS=//tools/gpu:main ARGS="validate_checksum"
     agents:
-      queue: gpu
+      queue: "ubuntu-gpu"
   - <<: *common
     <<: *source_test_continuous
     label: ":bun: COS Latest Driver Compatibility Test"
     commands:
       - tools/gpu/cos_drivers_test.sh
+    agents:
+      queue: "cos"
   - <<: *gpu_test
     timeout_in_minutes: 90
     retry:
@@ -197,7 +221,7 @@ steps:
       - make sudo TARGETS=//tools/gpu:main ARGS="install --latest"
       - make gpu-all-tests
     agents:
-      queue: gpu
+      queue: "ubuntu-gpu"
   - <<: *common
     <<: *gpu_test_continuous
     label: ":nuget: L4 GPU Tests"
@@ -205,14 +229,14 @@ steps:
       - make sudo TARGETS=//tools/gpu:main ARGS="install --latest"
       - make l4-gpu-tests
     agents:
-      queue: l4-gpu
+      queue: "ubuntu-l4-gpu"
   - <<: *common
     <<: *gpu_test
     label: ":female_supervillain: COS GPU Tests"
     commands:
       - make cos-gpu-all-tests
     agents:
-      queue: cos-canary-gpu
+      queue: "cos-canary-gpu"
   - <<: *gpu_test
     label: ":fish: CUDA tests"
     # This is its own test rather than being part of the GPU tests,
@@ -225,7 +249,7 @@ steps:
       - make sudo TARGETS=//tools/gpu:main ARGS="install --latest"
       - make cuda-12-8-tests
     agents:
-      queue: gpu
+      queue: "ubuntu-gpu"
   - <<: *common
     <<: *gpu_test
     label: ":screwdriver: All GPU Drivers Test"
@@ -233,7 +257,7 @@ steps:
     commands:
       - tools/gpu/all_drivers_test.sh
     agents:
-      queue: gpu
+      queue: "ubuntu-gpu"
 
   # Release workflow test.
   - <<: *common
@@ -245,6 +269,7 @@ steps:
       - make release
     agents:
       arch: "amd64"
+      queue: "default"
 
   # Verify STAGED_BINARIES contents match the release tarball fileset.
   # Runs only when `STAGED_BINARIES` is set (so cannot use `*source_test`).
@@ -255,6 +280,7 @@ steps:
       - make staged-binaries-check
     agents:
       arch: "amd64"
+      queue: "default"
 
   # Images tests.
   - <<: *common
@@ -263,18 +289,22 @@ steps:
     command: make ARCH=x86_64 test-all-test-images
     agents:
       arch: "amd64"
+      queue: "default"
   - <<: *common
     label: ":docker: Images (aarch64)"
     if: build.env("SKIP_LOADING_IMAGES") == null && build.env("STAGED_BINARIES") == null
     command: make ARCH=aarch64 test-all-test-images
     agents:
       arch: "arm64"
+      queue: "arm64"
 
   # Basic unit tests.
   - <<: *common
     <<: *source_test
     label: ":golang: Nogo tests"
     command: make nogo-tests
+    agents:
+      queue: "default"
   - <<: *common
     <<: *source_test
     label: ":test_tube: Unit tests (cgroupv1)"
@@ -282,6 +312,7 @@ steps:
     agents:
       cgroup: "v1"
       arch: "amd64"
+      queue: "cgroupv1"
   - <<: *common
     <<: *source_test
     label: ":test_tube: Unit tests (cgroupv2)"
@@ -289,12 +320,14 @@ steps:
     agents:
       cgroup: "v2"
       arch: "amd64"
+      queue: "default"
   - <<: *common
     <<: *source_test
     label: ":test_tube: Unit tests (ARM64)"
     command: make unit-tests
     agents:
       arch: "arm64"
+      queue: "arm64"
   - <<: *common
     <<: *source_test
     <<: *docker
@@ -304,6 +337,7 @@ steps:
       <<: *kvm_agents
       cgroup: "v1"
       arch: "amd64"
+      queue: "cgroupv1"
   - <<: *common
     <<: *docker
     # This variant is not really a source test, but we annotate it as such to
@@ -316,6 +350,7 @@ steps:
       <<: *kvm_agents
       cgroup: "v2"
       arch: "amd64"
+      queue: "default"
 
   # All system call tests.
   - <<: *common
@@ -326,6 +361,7 @@ steps:
       <<: *platform_specific_agents
       <<: *kvm_agents
       arch: "amd64"
+      queue: "default"
   - <<: *common
     <<: *source_test
     label: ":muscle: System call tests (ARM64)"
@@ -333,6 +369,7 @@ steps:
     parallelism: 10
     agents:
       arch: "arm64"
+      queue: "arm64"
   # With Save Restore on AMD64.
   - <<: *common
     <<: *source_test_continuous
@@ -341,6 +378,7 @@ steps:
     parallelism: 20
     agents:
       arch: "amd64"
+      queue: "default"
   # With Save Resume on ARM64.
   - <<: *common
     <<: *source_test_continuous
@@ -349,6 +387,7 @@ steps:
     parallelism: 10
     agents:
       arch: "arm64"
+      queue: "arm64"
 
   # Integration tests.
   - <<: *common
@@ -361,6 +400,7 @@ steps:
       <<: *kvm_agents
       arch: "amd64"
       cgroup: "v2"
+      queue: "default"
   - <<: *common
     <<: *docker
     <<: *source_test
@@ -372,6 +412,7 @@ steps:
       arch: "amd64"
       cgroup: "v1"
       kernel: "modern"
+      queue: "cgroupv1"
   - <<: *common
     <<: *docker
     # See above: not truly a source test.
@@ -383,6 +424,7 @@ steps:
       <<: *ubuntu_agents
       arch: "amd64"
       cgroup: "v2"
+      queue: "default"
   - <<: *common
     <<: *docker
     <<: *source_test
@@ -393,6 +435,7 @@ steps:
       <<: *ubuntu_agents
       arch: "arm64"
       cgroup: "v2"
+      queue: "arm64"
   - <<: *common
     <<: *docker
     label: ":goggles: Overlay tests"
@@ -403,6 +446,7 @@ steps:
       <<: *ubuntu_agents
       arch: "amd64"
       kernel: "modern"
+      queue: "default"
   - <<: *common
     <<: *source_test
     <<: *docker
@@ -411,6 +455,7 @@ steps:
     agents:
       <<: *ubuntu_agents
       arch: "amd64"
+      queue: "default"
   - <<: *common
     <<: *docker
     label: ":safety_pin: Host network tests"
@@ -421,6 +466,7 @@ steps:
       <<: *ubuntu_agents
       arch: "amd64"
       kernel: "modern"
+      queue: "default"
   - <<: *common
     <<: *docker
     label: ":satellite: gVisor GSO tests"
@@ -431,6 +477,7 @@ steps:
       <<: *ubuntu_agents
       arch: "amd64"
       kernel: "modern"
+      queue: "default"
   - <<: *common
     <<: *docker
     <<: *source_test
@@ -439,12 +486,14 @@ steps:
     agents:
       <<: *kvm_agents
       arch: "amd64"
+      queue: "default"
   - <<: *common
     <<: *source_test
     label: ":coffee: Do tests"
     command: make do-tests
     agents:
       arch: "amd64"
+      queue: "default"
   - <<: *common
     <<: *docker
     <<: *source_test
@@ -455,6 +504,7 @@ steps:
       <<: *kvm_agents
       arch: "amd64"
       kernel: "modern"
+      queue: "default"
   - <<: *common
     <<: *docker
     <<: *source_test
@@ -463,6 +513,7 @@ steps:
     agents:
       arch: "amd64"
       kernel: "modern"
+      queue: "default"
   - <<: *common
     <<: *docker
     <<: *source_test
@@ -473,6 +524,7 @@ steps:
       <<: *kvm_agents
       arch: "amd64"
       kernel: "modern"
+      queue: "default"
   - <<: *common
     <<: *docker
     label: ":weight_lifter: Fsstress test"
@@ -482,6 +534,7 @@ steps:
       <<: *ubuntu_agents
       arch: "amd64"
       kernel: "modern"
+      queue: "default"
   - <<: *common
     <<: *docker
     <<: *source_test
@@ -490,6 +543,7 @@ steps:
     agents:
       <<: *ubuntu_agents
       <<: *containerd_agents
+      queue: "default"
   - <<: *common
     <<: *docker
     <<: *source_test
@@ -498,6 +552,7 @@ steps:
     agents:
       <<: *ubuntu_agents
       <<: *containerd_agents
+      queue: "default"
   - <<: *common
     <<: *docker
     <<: *source_test
@@ -506,6 +561,7 @@ steps:
     agents:
       <<: *ubuntu_agents
       <<: *containerd_agents
+      queue: "default"
   - <<: *common
     <<: *docker
     <<: *source_test
@@ -514,6 +570,7 @@ steps:
     agents:
       <<: *ubuntu_agents
       <<: *containerd_agents
+      queue: "default"
   - <<: *common
     <<: *source_test
     label: ":podman: Podman"
@@ -523,6 +580,7 @@ steps:
     agents:
       <<: *ubuntu_agents
       cgroup: "v2"
+      queue: "default"
 
   # Check the website builds.
   - <<: *common
@@ -532,6 +590,7 @@ steps:
     agents:
       arch: "amd64"
       kernel: "modern"
+      queue: "default"
 
   # Networking tests.
   - <<: *common
@@ -541,6 +600,7 @@ steps:
     agents:
       <<: *ubuntu_agents
       cgroup: "v2"
+      queue: "default"
   - <<: *common
     <<: *source_test
     label: ":fire: :tetris: Nftables native syscall tests"
@@ -548,6 +608,7 @@ steps:
     agents:
       <<: *ubuntu_agents
       cgroup: "v2"
+      queue: "default"
   - <<: *common
     <<: *source_test
     label: ":table_tennis_paddle_and_ball: IPTables tests"
@@ -556,6 +617,7 @@ steps:
     agents:
       <<: *ubuntu_agents
       cgroup: "v2"
+      queue: "default"
   - <<: *common
     <<: *source_test
     label: ":construction_worker: Packetdrill tests"
@@ -563,6 +625,7 @@ steps:
     agents:
       <<: *ubuntu_agents
       kernel: "modern"
+      queue: "default"
   - <<: *common
     <<: *source_test
     label: ":hammer: Packetimpact tests"
@@ -572,6 +635,7 @@ steps:
       # This test is flaky on old agents.
       cgroup: "v2"
       kernel: "modern"
+      queue: "default"
   # Runtime tests.
   - <<: *common
     <<: *docker
@@ -581,6 +645,7 @@ steps:
     agents:
       <<: *platform_specific_agents
       arch: "amd64"
+      queue: "default"
   - <<: *common
     <<: *docker
     label: ":java: Java runtime tests"
@@ -590,6 +655,7 @@ steps:
       <<: *platform_specific_agents
       arch: "amd64"
       kernel: "modern"
+      queue: "default"
   - <<: *common
     <<: *docker
     label: ":golang: Go runtime tests"
@@ -598,6 +664,7 @@ steps:
     agents:
       <<: *platform_specific_agents
       arch: "amd64"
+      queue: "default"
   - <<: *common
     <<: *docker
     label: ":node: NodeJS runtime tests"
@@ -607,6 +674,7 @@ steps:
       <<: *platform_specific_agents
       arch: "amd64"
       kernel: "modern"
+      queue: "default"
   - <<: *common
     <<: *docker
     label: ":python: Python runtime tests"
@@ -615,6 +683,7 @@ steps:
     agents:
       <<: *platform_specific_agents
       arch: "amd64"
+      queue: "default"
 
   # Bwrap tests.
   - <<: *common
@@ -624,6 +693,7 @@ steps:
     command: make bwrap-tests
     agents:
       arch: "amd64"
+      queue: "default"
   - <<: *common
     <<: *docker
     <<: *source_test
@@ -631,6 +701,7 @@ steps:
     command: make bwrap-tests
     agents:
       arch: "arm64"
+      queue: "arm64"
 
   # Runtime tests (goferfs). Continuous only.
   - <<: *common
@@ -642,6 +713,7 @@ steps:
     agents:
       <<: *platform_specific_agents
       arch: "amd64"
+      queue: "default"
   - <<: *common
     <<: *docker
     label: ":java: Java runtime tests (goferfs)"
@@ -651,6 +723,7 @@ steps:
     agents:
       <<: *platform_specific_agents
       arch: "amd64"
+      queue: "default"
   - <<: *common
     <<: *docker
     label: ":golang: Go runtime tests (goferfs)"
@@ -660,6 +733,7 @@ steps:
     agents:
       <<: *platform_specific_agents
       arch: "amd64"
+      queue: "default"
   - <<: *common
     <<: *docker
     label: ":node: NodeJS runtime tests (goferfs)"
@@ -669,6 +743,7 @@ steps:
     agents:
       <<: *platform_specific_agents
       arch: "amd64"
+      queue: "default"
   - <<: *common
     <<: *docker
     label: ":python: Python runtime tests (goferfs)"
@@ -678,6 +753,7 @@ steps:
     agents:
       <<: *platform_specific_agents
       arch: "amd64"
+      queue: "default"
   - <<: *common
     <<: *source_test_continuous
     label: ":slot_machine: Syzkaller smoke test"
@@ -685,6 +761,7 @@ steps:
       - make syzkaller-smoke-test
     agents:
       arch: "amd64"
+      queue: "default"
 
   # Run basic benchmarks smoke tests (no upload).
   - <<: *common
@@ -697,6 +774,7 @@ steps:
       <<: *platform_specific_agents
       <<: *kvm_agents
       arch: "amd64"
+      queue: "default"
 
   # Run all benchmarks.
   - <<: *benchmarks

@@ -1,0 +1,166 @@
+# gVisor maintainer roster.
+#
+# Maintainer fields:
+#   name:             Full name or nickname.
+#   github:           GitHub username.
+#   affiliation:      Current employer or "Independent".
+#   past_affiliation: Optional list of { affiliation: "...", until: "YYYY-MM-DD" } objects.
+#   started:          When the maintainer started contributing (YYYY-MM-DD). Sort by this.
+#   status:           One of:
+#                       - "ACTIVE" (does reviews, has merge permissions)
+#                       - "HIATUS_SINCE:YYYY-MM-DD" (doesn't do reviews, has permissions)
+#                       - "EMERITUS_SINCE:YYYY-MM-DD" (doesn't do reviews, no permissions)
+maintainers:
+  - name: Adin Scannell
+    github: amscanne
+    affiliation: Google
+    started: 2018-04-28
+    status: EMERITUS_SINCE:2023-03-03
+  - name: Fabricio Voznika
+    github: fvoznika
+    affiliation: Google
+    started: 2018-04-28
+    status: ACTIVE
+  - name: Nicolas Lacasse
+    github: nlacasse
+    affiliation: Google
+    started: 2018-04-28
+    status: EMERITUS_SINCE:2025-06-27
+  - name: Bhasker Hariharan
+    github: hbhasker
+    affiliation: Google
+    started: 2018-05-01
+    status: EMERITUS_SINCE:2022-09-16
+  - name: Ian Gudger
+    github: iangudger
+    affiliation: Google
+    started: 2018-05-01
+    status: EMERITUS_SINCE:2020-06-26
+  - name: Michael Pratt
+    github: prattmic
+    affiliation: Google
+    started: 2018-05-01
+    status: EMERITUS_SINCE:2020-04-02
+  - name: Kevin Krakauer
+    github: kevinGC
+    affiliation: Google
+    started: 2018-05-04
+    status: EMERITUS_SINCE:2025-01-28
+  - name: Jamie Liu
+    github: nixprime
+    affiliation: Google
+    started: 2018-05-08
+    status: HIATUS_SINCE:2026-07-17
+  - name: Rahat Mahmood
+    github: mrahatm
+    affiliation: Google
+    started: 2018-05-17
+    status: EMERITUS_SINCE:2023-01-19
+  - name: Andrei Vagin
+    github: avagin
+    affiliation: Google
+    started: 2018-07-31
+    status: EMERITUS_SINCE:2026-02-12
+  - name: Tamir Duberstein
+    github: tamird
+    affiliation: Google
+    started: 2018-08-25
+    status: EMERITUS_SINCE:2022-07-12
+  - name: Ian Lewis
+    github: ianlewis
+    affiliation: Google
+    started: 2018-10-12
+    status: EMERITUS_SINCE:2023-07-17
+  - name: Zach Koopmans
+    github: zkoopmans
+    affiliation: Google
+    started: 2018-11-26
+    status: ACTIVE
+  - name: Ayush Ranjan
+    github: ayushr2
+    affiliation: Modal
+    past_affiliation:
+      - affiliation: Google
+        until: 2026-07-04
+    started: 2019-05-23
+    status: EMERITUS_SINCE:2026-06-24
+  - name: Ghanan Gowripalan
+    github: ghananigans
+    affiliation: Google
+    started: 2019-09-03
+    status: EMERITUS_SINCE:2023-10-16
+  - name: Nayana Bidari
+    github: nybidari
+    affiliation: Google
+    started: 2020-01-09
+    status: ACTIVE
+  - name: Etienne Perot
+    github: etienneperot
+    affiliation: Google
+    started: 2020-11-18
+    status: ACTIVE
+  - name: Lucas Manning
+    github: manninglucas
+    affiliation: Google
+    started: 2021-06-29
+    status: HIATUS_SINCE:2026-07-17
+  - name: Jing Chen
+    github: milantracy
+    affiliation: Google
+    started: 2021-10-20
+    status: ACTIVE
+  - name: Konstantin Bogomolov
+    github: konstantin-s-bogom
+    affiliation: Google
+    started: 2022-02-28
+    status: ACTIVE
+  - name: Shambhavi Srivastava
+    github: sshambhavi-252
+    affiliation: Google
+    started: 2022-04-01
+    status: EMERITUS_SINCE:2023-10-10
+  - name: Jimmy Tran
+    github: trantoji
+    affiliation: Google
+    started: 2025-02-07
+    status: ACTIVE
+  - name: Anil Altinay
+    github: aaltinaydev
+    affiliation: Google
+    started: 2025-08-05
+    status: ACTIVE
+  - name: Shailend Chand
+    github: shailend-g
+    affiliation: Google
+    started: 2025-08-12
+    status: ACTIVE
+  - name: Parth Sarthi
+    github: parth-opensrc
+    affiliation: Google
+    started: 2025-11-06
+    status: ACTIVE
+  - name: Ryan El Kochta
+    github: relkochta
+    affiliation: Google
+    started: 2026-05-04
+    status: ACTIVE
+  - name: Rex Ren
+    github: rexren-gif
+    affiliation: Google
+    started: 2026-05-07
+    status: ACTIVE
+  - name: Xin Zhong
+    github: xinzhong
+    affiliation: Google
+    started: 2026-05-22
+    status: ACTIVE
+  - name: Caroline Zhu
+    github: carzh
+    affiliation: Google
+    started: 2026-06-29
+    status: ACTIVE
+  - name: Alexander Cueva
+    github: kerumeto
+    affiliation: Google
+    started: 2026-08-17
+    status: ACTIVE

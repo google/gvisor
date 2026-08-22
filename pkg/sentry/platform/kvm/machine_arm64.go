@@ -73,15 +73,16 @@ func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
 // physical regions form them.
 func archPhysicalRegions(physicalRegions []physicalRegion) []physicalRegion {
 	rdRegions := []virtualRegion{}
-	if err := applyVirtualRegions(func(vr virtualRegion) {
+	if err := applyVirtualRegions(func(vr virtualRegion) bool {
 		if excludeVirtualRegion(vr) {
-			return // skip region.
+			return false // skip region.
 		}
 		// Skip PROT_NONE mappings. Go-runtime uses them as place
 		// holders for future read-write mappings.
 		if !vr.accessType.Write && vr.accessType.Read {
 			rdRegions = append(rdRegions, vr)
 		}
+		return false
 	}); err != nil {
 		panic(fmt.Sprintf("error parsing /proc/self/maps: %v", err))
 	}

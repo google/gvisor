@@ -55,7 +55,6 @@ go_library(
         "//pkg/metric",
         "//pkg/metric:metric_go_proto",
         "//pkg/prometheus",
-        "//pkg/sentry/checkpoint",
         "//pkg/sentry/devices/memdev",
         "//pkg/sentry/devices/nvproxy",
         "//pkg/sentry/devices/tpuproxy/vfio",

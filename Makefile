@@ -472,19 +472,27 @@ iptables-tests: load-iptables $(RUNTIME_BIN)
 	@sudo modprobe iptable_nat
 	@sudo modprobe ip6table_nat
 	@# FIXME(b/218923513): Need to fix permissions issues.
-	@#$(call test,--test_env=RUNTIME=runc //test/iptables:iptables_test)
+	@#$(call test,--test_env=RUNTIME=runc -- //test/iptables:iptables_test)
 	@$(call install_runtime,$(RUNTIME),--net-raw)
-	@$(call test_runtime,$(RUNTIME),--test_env=TEST_NET_RAW=true //test/iptables:iptables_test)
+	@$(call test_runtime,$(RUNTIME),--test_env=TEST_NET_RAW=true -- //test/iptables:iptables_test)
 	@$(call install_runtime,$(RUNTIME)-nftables,--net-raw --reproduce-nftables)
-	@$(call test_runtime,$(RUNTIME)-nftables,--test_env=TEST_NET_RAW=true --test_output=all //test/iptables:nftables_test)
+	@$(call test_runtime,$(RUNTIME)-nftables,--test_env=TEST_NET_RAW=true --test_output=all -- //test/iptables:nftables_test)
 .PHONY: iptables-tests
+
+# Run iptables tests with iptables-nft client.
+iptables-nft-tests: load-iptables $(RUNTIME_BIN)
+	@sudo modprobe nfnetlink
+	@sudo modprobe nf_tables
+	@$(call install_runtime,$(RUNTIME)-nftables,--net-raw --TESTONLY-nftables)
+	@$(call test_runtime,$(RUNTIME)-nftables,--test_env=TEST_NET_RAW=true -- //test/iptables:iptables_nft_test)
+.PHONY: iptables-nft-tests
 
 nftables-tests: load-nftables $(RUNTIME_BIN)
 	@sudo modprobe nfnetlink
 	@sudo modprobe nf_tables
-	@$(call test,--test_env=RUNTIME=runc //test/nftables:nftables_test) # run with runc
+	@$(call test,--test_env=RUNTIME=runc -- //test/nftables:nftables_test) # run with runc
 	@$(call install_runtime,$(RUNTIME),--net-raw --TESTONLY-nftables)
-	@$(call test_runtime,$(RUNTIME),--test_env=TEST_NET_RAW=true //test/nftables:nftables_test) # run with runsc
+	@$(call test_runtime,$(RUNTIME),--test_env=TEST_NET_RAW=true -- //test/nftables:nftables_test) # run with runsc
 .PHONY: nftables-tests
 
 # Runs the socket_netlink_netfilter_test with runc as root user in a docker
@@ -628,6 +636,21 @@ benchmark-platforms: load-benchmarks $(RUNTIME_BIN) ## Runs benchmarks for runc 
 run-benchmark: load-benchmarks ## Runs single benchmark and optionally sends data to BigQuery.
 	@$(call run_benchmark,$(RUNTIME))
 .PHONY: run-benchmark
+
+# For benchmarking seccheck, use setup-seccheck and run-benchmark-seccheck.
+# Default seccheck benchmark config.
+SECCHECK_BENCH_CONFIG ?= $(CURDIR)/test/benchmarks/seccheck/null_bench_config.json
+
+# Installs seccheck instrumented runtime for benchmarking.
+setup-seccheck: $(RUNTIME_BIN)
+	@cp -f "$(SECCHECK_BENCH_CONFIG)" /tmp/seccheck_bench_config.json
+	@$(call configure,$(RUNTIME)-seccheck,--net-raw --pod-init-config="/tmp/seccheck_bench_config.json")
+.PHONY: setup-seccheck
+
+# Runs single benchmark using the seccheck instrumented runtime.
+run-benchmark-seccheck: load-benchmarks
+	@$(call run_benchmark,$(RUNTIME)-seccheck)
+.PHONY: run-benchmark-seccheck
 
 # The arguments passed to benchmarks when run for PGO profile collection.
 # This should *not* include the `-profile` or `-profile-cpu` arguments, as

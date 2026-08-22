@@ -25,14 +25,14 @@ import (
 
 // BundleConfig holds configuration for creating an OCI bundle.
 type BundleConfig struct {
-	ID               string
-	RuntimeDir       string
-	EnableNetworking bool
-	Mounts           []Mount
-	Env              []string
-	Annotations      map[string]string
-	WorkingDir       string
-	Hostname         string
+	ID          string
+	RuntimeDir  string
+	Network     NetworkMode
+	Mounts      []Mount
+	Env         []string
+	Annotations map[string]string
+	WorkingDir  string
+	Hostname    string
 }
 
 // NewBundle creates a temporary OCI bundle on the fly with the given configuration.
@@ -56,7 +56,7 @@ func NewBundle(cfg BundleConfig) (string, error) {
 	if os.Geteuid() != 0 {
 		namespaces = append(namespaces, specs.LinuxNamespace{Type: specs.UserNamespace})
 	}
-	if cfg.EnableNetworking {
+	if cfg.Network == NetworkModeSandbox {
 		namespaces = append(namespaces, specs.LinuxNamespace{Type: specs.NetworkNamespace})
 	}
 

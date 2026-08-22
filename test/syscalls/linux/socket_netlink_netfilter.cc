@@ -1700,52 +1700,310 @@ TEST(NetlinkNetfilterTest, ErrUnsupportedNewInetBaseChainAtIngress) {
   ASSERT_NO_ERRNO(NetfilterFlushRuleset(fd));
 }
 
-TEST(NetlinkNetfilterTest, ErrUnsupportedNewBaseChainWithChainCounters) {
-  // TODO: b/434243967 - Remove when chain counters are supported.
-  SKIP_IF(!IsRunningOnGvisor());
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCaps()));
-  std::string test_table_name = GetUniqueTestTableName();
-  const char test_chain_name[] = "test_chain_bad_policy";
-  const char test_chain_type_name[] = "filter";
-  const uint32_t test_policy = NF_ACCEPT;
-  const uint32_t test_hook_num = NF_INET_INGRESS;
-  const uint32_t test_hook_priority = 10;
-  const uint32_t test_chain_flags = NFT_CHAIN_BASE;
-  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
+class NetlinkNetfilterChainCountersTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCaps()));
+    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+    fd_ = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
+    test_table_name_ = GetUniqueTestTableName();
+    AddDefaultTable({.fd = fd_, .table_name = test_table_name_, .seq = kSeq});
+  }
+
+  void TearDown() override {
+    if (fd_.get() >= 0 && !test_table_name_.empty()) {
+      EXPECT_NO_ERRNO(DestroyNetfilterTable(fd_, test_table_name_, kSeq + 100));
+      EXPECT_NO_ERRNO(NetfilterFlushRuleset(fd_));
+    }
+  }
+
+  static std::vector<char> BuildCounterPayload(uint64_t packets,
+                                               uint64_t bytes) {
+    return NlNestedAttr()
+        .U64Attr(NFTA_COUNTER_PACKETS, packets)
+        .U64Attr(NFTA_COUNTER_BYTES, bytes)
+        .Build();
+  }
+
+  void AddBaseChain(absl::string_view chain_name, uint32_t seq,
+                    const std::vector<char>& counter_data = {},
+                    uint32_t policy = NF_ACCEPT) {
+    std::vector<char> nested_hook_data =
+        NlNestedAttr()
+            .U32Attr(NFTA_HOOK_HOOKNUM, NF_INET_PRE_ROUTING)
+            .U32Attr(NFTA_HOOK_PRIORITY, 0)
+            .Build();
+
+    auto req = NlReq("newchain req ack inet")
+                   .Seq(seq + 1)
+                   .StrAttr(NFTA_CHAIN_TABLE, test_table_name_)
+                   .StrAttr(NFTA_CHAIN_NAME, std::string(chain_name))
+                   .U32Attr(NFTA_CHAIN_POLICY, policy)
+                   .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
+                            nested_hook_data.size())
+                   .StrAttr(NFTA_CHAIN_TYPE, "filter")
+                   .U32Attr(NFTA_CHAIN_FLAGS, NFT_CHAIN_BASE);
+    if (!counter_data.empty()) {
+      req.RawAttr(NFTA_CHAIN_COUNTERS, counter_data.data(),
+                  counter_data.size());
+    }
+
+    std::vector<char> add_req =
+        NlBatchReq().SeqStart(seq).Req(req.Build()).SeqEnd(seq + 2).Build();
+    ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+        fd_, seq, seq + 2, add_req.data(), add_req.size()));
+  }
+
+  void AddRegularChain(absl::string_view chain_name, uint32_t seq,
+                       const std::vector<char>& counter_data = {}) {
+    auto req = NlReq("newchain req ack inet")
+                   .Seq(seq + 1)
+                   .StrAttr(NFTA_CHAIN_TABLE, test_table_name_)
+                   .StrAttr(NFTA_CHAIN_NAME, std::string(chain_name));
+    if (!counter_data.empty()) {
+      req.RawAttr(NFTA_CHAIN_COUNTERS, counter_data.data(),
+                  counter_data.size());
+    }
+
+    std::vector<char> add_req =
+        NlBatchReq().SeqStart(seq).Req(req.Build()).SeqEnd(seq + 2).Build();
+    ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+        fd_, seq, seq + 2, add_req.data(), add_req.size()));
+  }
+
+  void VerifyChainCounters(absl::string_view chain_name,
+                           uint64_t expected_packets, uint64_t expected_bytes,
+                           uint32_t expected_policy, uint32_t seq) {
+    std::vector<char> get_chain_req =
+        NlReq("getchain req inet")
+            .Seq(seq)
+            .StrAttr(NFTA_CHAIN_TABLE, test_table_name_)
+            .StrAttr(NFTA_CHAIN_NAME, std::string(chain_name))
+            .Build();
+
+    bool found_chain = false;
+    ASSERT_NO_ERRNO(NetlinkRequestResponse(
+        fd_, get_chain_req.data(), get_chain_req.size(),
+        [&](const struct nlmsghdr* hdr) {
+          uint32_t expected_flags = NFT_CHAIN_BASE;
+          CheckNetfilterChainAttributes({
+              .hdr = hdr,
+              .expected_table_name = test_table_name_,
+              .expected_chain_name = std::string(chain_name),
+              .expected_policy = &expected_policy,
+              .expected_chain_type = "filter",
+              .expected_flags = &expected_flags,
+              .expected_packets = &expected_packets,
+              .expected_bytes = &expected_bytes,
+              .skip_handle_check = true,
+          });
+          found_chain = true;
+        },
+        false));
+    EXPECT_TRUE(found_chain);
+  }
+
+  FileDescriptor fd_;
+  std::string test_table_name_;
+};
+
+TEST_F(NetlinkNetfilterChainCountersTest, AddBaseChainWithCountersAndRetrieve) {
+  const char test_chain_name[] = "chain_counters_test";
+  const uint64_t initial_packets = 5;
+  const uint64_t initial_bytes = 500;
+
+  AddBaseChain(test_chain_name, kSeq + 3,
+               BuildCounterPayload(initial_packets, initial_bytes));
+  VerifyChainCounters(test_chain_name, initial_packets, initial_bytes,
+                      NF_ACCEPT, kSeq + 6);
+}
+
+TEST_F(NetlinkNetfilterChainCountersTest, UpdateBaseChainCounters) {
+  const char test_chain_name[] = "chain_counters_upd";
+  const uint64_t initial_packets = 5;
+  const uint64_t initial_bytes = 500;
+  const uint64_t updated_packets = 10;
+  const uint64_t updated_bytes = 1000;
+
+  AddBaseChain(test_chain_name, kSeq + 3,
+               BuildCounterPayload(initial_packets, initial_bytes));
+
+  std::vector<char> counter_payload =
+      BuildCounterPayload(updated_packets, updated_bytes);
+  std::vector<char> update_counter_req =
+      NlBatchReq()
+          .SeqStart(kSeq + 6)
+          .Req(NlReq("newchain req ack inet")
+                   .Seq(kSeq + 7)
+                   .StrAttr(NFTA_CHAIN_TABLE, test_table_name_)
+                   .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+                   .RawAttr(NFTA_CHAIN_COUNTERS, counter_payload.data(),
+                            counter_payload.size())
+                   .Build())
+          .SeqEnd(kSeq + 8)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd_, kSeq + 6, kSeq + 8, update_counter_req.data(),
+      update_counter_req.size()));
+
+  VerifyChainCounters(test_chain_name, updated_packets, updated_bytes,
+                      NF_ACCEPT, kSeq + 9);
+}
+
+TEST_F(NetlinkNetfilterChainCountersTest, UpdateBaseChainAttachCounters) {
+  const char test_chain_name[] = "chain_counters_attach";
+  const uint64_t initial_packets = 10;
+  const uint64_t initial_bytes = 1000;
+
+  AddBaseChain(test_chain_name, kSeq + 3);
+
+  std::vector<char> counter_payload =
+      BuildCounterPayload(initial_packets, initial_bytes);
+  std::vector<char> update_counter_req =
+      NlBatchReq()
+          .SeqStart(kSeq + 6)
+          .Req(NlReq("newchain req ack inet")
+                   .Seq(kSeq + 7)
+                   .StrAttr(NFTA_CHAIN_TABLE, test_table_name_)
+                   .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+                   .RawAttr(NFTA_CHAIN_COUNTERS, counter_payload.data(),
+                            counter_payload.size())
+                   .Build())
+          .SeqEnd(kSeq + 8)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd_, kSeq + 6, kSeq + 8, update_counter_req.data(),
+      update_counter_req.size()));
+
+  VerifyChainCounters(test_chain_name, initial_packets, initial_bytes,
+                      NF_ACCEPT, kSeq + 9);
+}
+
+TEST_F(NetlinkNetfilterChainCountersTest, UpdateBaseChainOmitCounters) {
+  const char test_chain_name[] = "chain_counters_omit";
+  const uint64_t initial_packets = 42;
+  const uint64_t initial_bytes = 4200;
+
+  AddBaseChain(test_chain_name, kSeq + 3,
+               BuildCounterPayload(initial_packets, initial_bytes));
+
+  std::vector<char> update_req =
+      NlBatchReq()
+          .SeqStart(kSeq + 6)
+          .Req(NlReq("newchain req ack inet")
+                   .Seq(kSeq + 7)
+                   .StrAttr(NFTA_CHAIN_TABLE, test_table_name_)
+                   .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
+                   .U32Attr(NFTA_CHAIN_POLICY, NF_DROP)
+                   .Build())
+          .SeqEnd(kSeq + 8)
+          .Build();
+
+  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
+      fd_, kSeq + 6, kSeq + 8, update_req.data(), update_req.size()));
+
+  VerifyChainCounters(test_chain_name, initial_packets, initial_bytes, NF_DROP,
+                      kSeq + 9);
+}
+
+TEST_F(NetlinkNetfilterChainCountersTest, AddRegularChainWithCounters) {
+  const char test_chain_name[] = "regular_chain_counters";
+  AddRegularChain(test_chain_name, kSeq + 3, BuildCounterPayload(10, 1000));
+}
+
+TEST_F(NetlinkNetfilterChainCountersTest, ErrUpdateRegularChainWithCounters) {
+  const char reg_chain_name[] = "regular_chain_upd";
+  AddRegularChain(reg_chain_name, kSeq + 3);
+
+  std::vector<char> counter_payload = BuildCounterPayload(10, 1000);
+  std::vector<char> update_req =
+      NlBatchReq()
+          .SeqStart(kSeq + 6)
+          .Req(NlReq("newchain req ack inet")
+                   .Seq(kSeq + 7)
+                   .StrAttr(NFTA_CHAIN_TABLE, test_table_name_)
+                   .StrAttr(NFTA_CHAIN_NAME, reg_chain_name)
+                   .RawAttr(NFTA_CHAIN_COUNTERS, counter_payload.data(),
+                            counter_payload.size())
+                   .Build())
+          .SeqEnd(kSeq + 8)
+          .Build();
+
+  ASSERT_THAT(
+      NetlinkNetfilterBatchRequestAckOrError(
+          fd_, kSeq + 6, kSeq + 8, update_req.data(), update_req.size()),
+      PosixErrorIs(EOPNOTSUPP, _));
+}
+
+struct MissingCounterSubAttrParam {
+  std::string test_name;
+  std::function<std::vector<char>()> build_counter_payload;
+};
+
+class NetlinkNetfilterMissingCounterSubAttrTest
+    : public NetlinkNetfilterChainCountersTest,
+      public ::testing::WithParamInterface<MissingCounterSubAttrParam> {};
+
+TEST_P(NetlinkNetfilterMissingCounterSubAttrTest, MissingCounterSubAttributes) {
+  const MissingCounterSubAttrParam& param = GetParam();
+  std::vector<char> counter_data = param.build_counter_payload();
 
   std::vector<char> nested_hook_data =
       NlNestedAttr()
-          .U32Attr(NFTA_HOOK_HOOKNUM, test_hook_num)
-          .U32Attr(NFTA_HOOK_PRIORITY, test_hook_priority)
+          .U32Attr(NFTA_HOOK_HOOKNUM, NF_INET_PRE_ROUTING)
+          .U32Attr(NFTA_HOOK_PRIORITY, 0)
           .Build();
 
-  std::vector<char> add_request_buffer =
-      NlBatchReq()
-          .SeqStart(kSeq)
-          .Req(NlReq("newtable req ack inet")
-                   .Seq(kSeq + 1)
-                   .StrAttr(NFTA_TABLE_NAME, test_table_name)
-                   .Build())
-          .Req(NlReq("newchain req ack inet")
-                   .Seq(kSeq + 2)
-                   .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
-                   .StrAttr(NFTA_CHAIN_NAME, test_chain_name)
-                   .U32Attr(NFTA_CHAIN_POLICY, test_policy)
-                   .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
-                            nested_hook_data.size())
-                   .StrAttr(NFTA_CHAIN_TYPE, test_chain_type_name)
-                   .U32Attr(NFTA_CHAIN_FLAGS, test_chain_flags)
-                   .RawAttr(NFTA_CHAIN_COUNTERS, nullptr, 0)
-                   .Build())
-          .SeqEnd(kSeq + 3)
-          .Build();
+  auto req = NlReq("newchain req ack inet")
+                 .Seq(kSeq + 4)
+                 .StrAttr(NFTA_CHAIN_TABLE, test_table_name_)
+                 .StrAttr(NFTA_CHAIN_NAME, "chain_missing_subattr")
+                 .U32Attr(NFTA_CHAIN_POLICY, NF_ACCEPT)
+                 .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
+                          nested_hook_data.size())
+                 .StrAttr(NFTA_CHAIN_TYPE, "filter")
+                 .U32Attr(NFTA_CHAIN_FLAGS, NFT_CHAIN_BASE)
+                 .RawAttr(NFTA_CHAIN_COUNTERS, counter_data.data(),
+                          counter_data.size());
 
-  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(fd, kSeq, kSeq + 3,
-                                                     add_request_buffer.data(),
-                                                     add_request_buffer.size()),
-              PosixErrorIs(ENOTSUP, _));
-  ASSERT_NO_ERRNO(NetfilterFlushRuleset(fd));
+  std::vector<char> add_req =
+      NlBatchReq().SeqStart(kSeq + 3).Req(req.Build()).SeqEnd(kSeq + 5).Build();
+
+  ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
+                  fd_, kSeq + 3, kSeq + 5, add_req.data(), add_req.size()),
+              PosixErrorIs(EINVAL, _));
 }
+
+INSTANTIATE_TEST_SUITE_P(
+    MissingCounterSubAttributes, NetlinkNetfilterMissingCounterSubAttrTest,
+    ::testing::Values(
+        MissingCounterSubAttrParam{
+            .test_name = "MissingPackets",
+            .build_counter_payload =
+                []() {
+                  return NlNestedAttr()
+                      .U64Attr(NFTA_COUNTER_BYTES, 100)
+                      .Build();
+                },
+        },
+        MissingCounterSubAttrParam{
+            .test_name = "MissingBytes",
+            .build_counter_payload =
+                []() {
+                  return NlNestedAttr()
+                      .U64Attr(NFTA_COUNTER_PACKETS, 10)
+                      .Build();
+                },
+        },
+        MissingCounterSubAttrParam{
+            .test_name = "EmptyCountersAttribute",
+            .build_counter_payload = []() { return std::vector<char>{}; },
+        }),
+    [](const ::testing::TestParamInfo<MissingCounterSubAttrParam>& info) {
+      return info.param.test_name;
+    });
 
 TEST(NetlinkNetfilterTest, ErrChainWithBaseChainFlagSet) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCaps()));
@@ -5435,66 +5693,6 @@ TEST(NetlinkNetfilterTest, ErrUpdateBindingChain) {
   ASSERT_NO_ERRNO(NetfilterFlushRuleset(fd));
 }
 
-TEST(NetlinkNetfilterTest, UpdateChainWithCounters) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCaps()));
-  SKIP_IF(!IsRunningOnGvisor());
-  std::string test_table_name = GetUniqueTestTableName();
-  const char base_chain_name[] = "chain_counters_test";
-  const uint32_t test_hook_num = NF_INET_PRE_ROUTING;
-  const uint32_t test_hook_priority = 0;
-  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
-
-  std::vector<char> nested_hook_data =
-      NlNestedAttr()
-          .U32Attr(NFTA_HOOK_HOOKNUM, test_hook_num)
-          .U32Attr(NFTA_HOOK_PRIORITY, test_hook_priority)
-          .Build();
-
-  std::vector<char> add_request_buffer =
-      NlBatchReq()
-          .SeqStart(kSeq)
-          .Req(NlReq("newtable req ack inet")
-                   .Seq(kSeq + 1)
-                   .StrAttr(NFTA_TABLE_NAME, test_table_name)
-                   .Build())
-          .Req(NlReq("newchain req ack inet")
-                   .Seq(kSeq + 2)
-                   .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
-                   .StrAttr(NFTA_CHAIN_NAME, base_chain_name)
-                   .U32Attr(NFTA_CHAIN_POLICY, NF_ACCEPT)
-                   .RawAttr(NFTA_CHAIN_HOOK, nested_hook_data.data(),
-                            nested_hook_data.size())
-                   .StrAttr(NFTA_CHAIN_TYPE, "filter")
-                   .U32Attr(NFTA_CHAIN_FLAGS, NFT_CHAIN_BASE)
-                   .Build())
-          .SeqEnd(kSeq + 3)
-          .Build();
-
-  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
-      fd, kSeq, kSeq + 3, add_request_buffer.data(),
-      add_request_buffer.size()));
-
-  // Update base chain passing NFTA_CHAIN_COUNTERS
-  std::vector<char> update_counter_req =
-      NlBatchReq()
-          .SeqStart(kSeq + 4)
-          .Req(NlReq("newchain req ack inet")
-                   .Seq(kSeq + 5)
-                   .StrAttr(NFTA_CHAIN_TABLE, test_table_name)
-                   .StrAttr(NFTA_CHAIN_NAME, base_chain_name)
-                   .RawAttr(NFTA_CHAIN_COUNTERS, nullptr, 0)
-                   .Build())
-          .SeqEnd(kSeq + 6)
-          .Build();
-
-  ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
-      fd, kSeq + 4, kSeq + 6, update_counter_req.data(),
-      update_counter_req.size()));
-
-  ASSERT_NO_ERRNO(DestroyNetfilterTable(fd, test_table_name, kSeq + 7));
-  ASSERT_NO_ERRNO(NetfilterFlushRuleset(fd));
-}
-
 struct CompatMatchOptions {
   std::optional<std::string> name;
   std::optional<uint32_t> rev;
@@ -6273,6 +6471,301 @@ INSTANTIATE_TEST_SUITE_P(
     });
 
 INSTANTIATE_TEST_SUITE_P(
+    CompatNATTests, NetlinkNetfilterCompatTest,
+    ::testing::Values(
+        // Rev 0 tests (IPv4 only)
+        CompatTestParam{
+            .test_name = "SNAT_Rev0_Valid",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 0,
+                    .info_data = StructToBytes(nf_nat_ipv4_multi_range_compat{
+                        .rangesize = 1,
+                        .range = {{.flags = NF_NAT_RANGE_MAP_IPS}},
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "DNAT_Rev0_Valid",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_PRE_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "DNAT",
+                    .rev = 0,
+                    .info_data = StructToBytes(nf_nat_ipv4_multi_range_compat{
+                        .rangesize = 1,
+                        .range = {{.flags = NF_NAT_RANGE_MAP_IPS}},
+                    }),
+                },
+        },
+        // Rev 1 tests
+        CompatTestParam{
+            .test_name = "SNAT_Rev1_IPv4_Valid",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 1,
+                    .info_data = StructToBytes(nf_nat_range{
+                        .flags = NF_NAT_RANGE_MAP_IPS,
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "DNAT_Rev1_IPv6_Valid",
+            .family = NFPROTO_IPV6,
+            .table_name = "nat",
+            .hook = NF_INET_PRE_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "DNAT",
+                    .rev = 1,
+                    .info_data = StructToBytes(nf_nat_range{
+                        .flags = NF_NAT_RANGE_MAP_IPS,
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "SNAT_Rev1_IPv6_Valid",
+            .family = NFPROTO_IPV6,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 1,
+                    .info_data = StructToBytes(nf_nat_range{
+                        .flags = NF_NAT_RANGE_MAP_IPS,
+                    }),
+                },
+        },
+        CompatTestParam{
+            .test_name = "SNAT_Rev1_WithPorts",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 1,
+                    .info_data = StructToBytes(nf_nat_range{
+                        .flags = NF_NAT_RANGE_PROTO_SPECIFIED,
+                        .min_proto = {.all = htons(1024)},
+                        .max_proto = {.all = htons(2048)},
+                    }),
+                },
+        },
+        // Rev 2 tests: Validate support for NAT revision 2 (nf_nat_range2).
+        // Standard 44-byte struct payload (from UAPI
+        // <linux/netfilter/nf_nat.h>).
+        CompatTestParam{
+            .test_name = "SNAT_Rev2_Valid",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 2,
+                    .info_data = StructToBytes(nf_nat_range2{
+                        .flags = NF_NAT_RANGE_MAP_IPS,
+                    }),
+                },
+        },
+        // 48-byte XT_ALIGN-padded payload produced by userspace iptables-nft.
+        CompatTestParam{
+            .test_name = "SNAT_Rev2_Valid_Padded48",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 2,
+                    .info_data =
+                        []() {
+                          std::vector<char> buf(48, 0);
+                          *reinterpret_cast<uint32_t*>(buf.data()) =
+                              NF_NAT_RANGE_MAP_IPS;
+                          return buf;
+                        }(),
+                },
+        },
+        // IPv6 NAT revision 2 support.
+        CompatTestParam{
+            .test_name = "SNAT_Rev2_IPv6_Valid",
+            .family = NFPROTO_IPV6,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 2,
+                    .info_data = StructToBytes(nf_nat_range2{
+                        .flags = NF_NAT_RANGE_MAP_IPS,
+                    }),
+                },
+        },
+        // Error cases
+        // Rev 0 does not support IPv6 (IPv4-only multi_range).
+        CompatTestParam{
+            .test_name = "Rev0_IPv6NotSupported",
+            .family = NFPROTO_IPV6,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 0,
+                    .info_data = StructToBytes(nf_nat_ipv4_multi_range_compat{
+                        .rangesize = 1,
+                    }),
+                },
+            .expected_error = ENOENT,
+        },
+        // Buffer truncated below sizeof(nf_nat_ipv4_multi_range_compat).
+        CompatTestParam{
+            .test_name = "Rev0_SizeTooSmall",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 0,
+                    .info_data = std::vector<char>(
+                        sizeof(nf_nat_ipv4_multi_range_compat) - 1, 0),
+                },
+            .expected_error = EINVAL,
+        },
+        // Buffer truncated below sizeof(nf_nat_range).
+        CompatTestParam{
+            .test_name = "Rev1_SizeTooSmall",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 1,
+                    .info_data = std::vector<char>(sizeof(nf_nat_range) - 1, 0),
+                },
+            .expected_error = EINVAL,
+        },
+        // Buffer truncated below sizeof(nf_nat_range2) (43 bytes).
+        CompatTestParam{
+            .test_name = "Rev2_SizeTooSmall",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 2,
+                    .info_data = std::vector<char>(sizeof(nf_nat_range2) - 1,
+                                                   0),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "UnsupportedRevision",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 3,
+                    .info_data = StructToBytes(nf_nat_range2{}),
+                },
+            .expected_error = ENOENT,
+        },
+        CompatTestParam{
+            .test_name = "SNAT_InvalidHookPrerouting",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_PRE_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 1,
+                    .info_data = StructToBytes(nf_nat_range{}),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "DNAT_InvalidHookPostrouting",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "DNAT",
+                    .rev = 1,
+                    .info_data = StructToBytes(nf_nat_range{}),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "NonNatChainType",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "filter",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 1,
+                    .info_data = StructToBytes(nf_nat_range{}),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "ValidPortRangeZero",
+            .family = NFPROTO_IPV4,
+            .table_name = "nat",
+            .hook = NF_INET_POST_ROUTING,
+            .chain_type = "nat",
+            .target_opts =
+                CompatTargetOptions{
+                    .name = "SNAT",
+                    .rev = 1,
+                    .info_data = StructToBytes(nf_nat_range{
+                        .flags = NF_NAT_RANGE_PROTO_SPECIFIED,
+                        .min_proto = {.all = htons(0)},
+                        .max_proto = {.all = htons(100)},
+                    }),
+                },
+        }),
+    [](const ::testing::TestParamInfo<CompatTestParam>& info) {
+      return info.param.test_name;
+    });
+
+INSTANTIATE_TEST_SUITE_P(
     CompatNoopMatchTests, NetlinkNetfilterCompatTest,
     ::testing::Values(
         CompatTestParam{
@@ -6302,10 +6795,10 @@ INSTANTIATE_TEST_SUITE_P(
 struct CompatRuleDumpTestParam {
   std::string test_name;
   uint16_t family = NFPROTO_IPV4;
-  std::string table_name = "filter";
+  std::string table_name = "nat";
   std::string chain_name = "compat_dump_chain";
-  uint32_t hook = NF_INET_PRE_ROUTING;
-  std::string chain_type = "filter";
+  uint32_t hook = NF_INET_POST_ROUTING;
+  std::string chain_type = "nat";
   uint32_t compat_proto = 0;
   std::vector<CompatMatchOptions> matches;
   std::vector<CompatTargetOptions> targets;
@@ -6396,6 +6889,9 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Values(
         CompatRuleDumpTestParam{
             .test_name = "NoopTCPMatch",
+            .table_name = "filter",
+            .hook = NF_INET_PRE_ROUTING,
+            .chain_type = "filter",
             .compat_proto = IPPROTO_TCP,
             .matches = {CompatMatchOptions{
                 .name = "tcp",
@@ -6455,6 +6951,17 @@ INSTANTIATE_TEST_SUITE_P(
                 }),
             }},
             .expected_expr_names = {"match", "target"},
+        },
+        CompatRuleDumpTestParam{
+            .test_name = "SNATTarget",
+            .targets = {CompatTargetOptions{
+                .name = "SNAT",
+                .rev = 1,
+                .info_data = StructToBytes(nf_nat_range{
+                    .flags = NF_NAT_RANGE_MAP_IPS,
+                }),
+            }},
+            .expected_expr_names = {"target"},
         }),
     [](const ::testing::TestParamInfo<CompatRuleDumpTestParam>& info) {
       return info.param.test_name;

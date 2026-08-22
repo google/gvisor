@@ -33,7 +33,10 @@ type mockDADProtocol struct {
 	mu struct {
 		sync.Mutex
 
-		dad        ip.DAD
+		// +checklocks:Mutex
+		dad ip.DAD
+
+		// +checklocks:Mutex
 		sentNonces map[tcpip.Address][][]byte
 	}
 }
@@ -48,6 +51,7 @@ func (m *mockDADProtocol) init(t *testing.T, c stack.DADConfigurations, opts ip.
 	m.initLocked()
 }
 
+// +checklocks:m.mu.Mutex
 func (m *mockDADProtocol) initLocked() {
 	m.mu.sentNonces = make(map[tcpip.Address][][]byte)
 }

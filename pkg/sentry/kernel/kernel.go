@@ -714,7 +714,7 @@ func savePrivateMFs(ctx context.Context, w io.Writer, mfsToSave map[checkpoint.R
 // pagesMetadata, and pagesFile, even if it returns a non-nil error.
 //
 // Preconditions: The kernel must be paused throughout the call to SaveTo.
-func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCloser, pagesFile stateio.AsyncWriter, appMFExcludeCommittedZeroPages, resume bool, fsOpts *FSSaveOpts) error {
+func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCloser, pagesFile stateio.AsyncWriter, appMFExcludeCommittedZeroPages, resume bool) error {
 	if hostarch.PageSize != 4096 {
 		return fmt.Errorf("save is not supported with %dK page size", hostarch.PageSize/1024)
 	}
@@ -732,31 +732,6 @@ func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCl
 		})
 	}
 	defer pagesCleanup.Clean()
-
-	var fsCleanup cleanup.Cleanup
-	if fsOpts != nil {
-		fsCleanup.Add(func() {
-			if fsOpts.ManifestFile != nil {
-				fsOpts.ManifestFile.Close()
-				fsOpts.ManifestFile = nil
-			}
-			if fsOpts.MultiTarFile != nil {
-				fsOpts.MultiTarFile.Close()
-				fsOpts.MultiTarFile = nil
-			}
-			if fsOpts.PagesMetadataFile != nil {
-				fsOpts.PagesMetadataFile.Close()
-				fsOpts.PagesMetadataFile = nil
-			}
-			if fsOpts.PagesFile != nil {
-				fsOpts.PagesFile.Close()
-				fsOpts.PagesFile = nil
-			}
-		})
-	}
-	defer fsCleanup.Clean()
-
-	splitFS := fsOpts != nil
 
 	return k.quiescePausedAnd(ctx, func() error {
 		// Discard unsavable mappings, such as those for host file descriptors.
@@ -788,11 +763,7 @@ func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCl
 			mfSaveWg.Add(1)
 			go func() {
 				defer mfSaveWg.Done()
-				mfsToSaveActual := mfsToSave
-				if splitFS {
-					mfsToSaveActual = filterMFsToSave(mfsToSave, fsOpts)
-				}
-				mfSaveErr = k.saveMemoryFiles(ctx, nil, pagesMetadata, pagesFile, mfsToSaveActual, appMFExcludeCommittedZeroPages) // transfers ownership
+				mfSaveErr = k.saveMemoryFiles(ctx, nil, pagesMetadata, pagesFile, mfsToSave, appMFExcludeCommittedZeroPages) // transfers ownership
 			}()
 			pagesCleanup.Release()
 			// Defer a Wait() so we wait for k.saveMemoryFiles() to complete even if we
@@ -833,15 +804,6 @@ func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCl
 		log.Infof("Kernel save stats: %s", stats.String())
 		log.Infof("Kernel save took [%s].", time.Since(kernelStart))
 
-		if fsOpts != nil {
-			fsSaveStart := time.Now()
-			if err := k.fsSaveLocked(ctx, fsOpts); err != nil {
-				return fmt.Errorf("failed to save split filesystem: %w", err)
-			}
-			log.Infof("Split filesystem save took [%s].", time.Since(fsSaveStart))
-			fsCleanup.Release()
-		}
-
 		if parallelMFSave {
 			// Close stateFile while MemoryFile saving is in progress to overlap
 			// their latencies.
@@ -855,11 +817,7 @@ func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCl
 				return mfSaveErr
 			}
 		} else {
-			mfsToSaveActual := mfsToSave
-			if splitFS {
-				mfsToSaveActual = filterMFsToSave(mfsToSave, fsOpts)
-			}
-			mfSaveErr = k.saveMemoryFiles(ctx, stateFile, nil, nil, mfsToSaveActual, appMFExcludeCommittedZeroPages)
+			mfSaveErr = k.saveMemoryFiles(ctx, stateFile, nil, nil, mfsToSave, appMFExcludeCommittedZeroPages)
 			if mfSaveErr != nil {
 				return mfSaveErr
 			}
@@ -1060,31 +1018,6 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 		}
 		s.Restore()
 		timeline.Reached("Network stack restored")
-	}
-
-	if FSRestoreFromContext(ctx) {
-		if fsCheckpointed := pgalloc.FSCheckpointedMemoryFilesFromContext(ctx); fsCheckpointed != nil {
-			if mfmapVal := ctx.Value(pgalloc.CtxMemoryFileMap); mfmapVal != nil {
-				mfmap := mfmapVal.(map[checkpoint.ResourceID]*pgalloc.MemoryFile)
-				log.Infof("Discarding PMAs for FS-checkpointed private MemoryFiles: %v", fsCheckpointed)
-				k.tasks.mu.RLock()
-				mms := make(map[*mm.MemoryManager]struct{})
-				k.tasks.forEachTaskLocked(func(t *Task) {
-					if mm := t.MemoryManager(); mm != nil {
-						mms[mm] = struct{}{}
-					}
-				})
-				k.tasks.mu.RUnlock()
-
-				for mm := range mms {
-					for id := range fsCheckpointed {
-						if privateMF, ok := mfmap[id]; ok {
-							mm.DiscardPMAsForFile(privateMF)
-						}
-					}
-				}
-			}
-		}
 	}
 
 	if err := k.vfs.CompleteRestore(ctx, vfsOpts); err != nil {
@@ -2003,6 +1936,15 @@ func (k *Kernel) MonotonicClock() ktime.SampledClock {
 	return k.timekeeper.monotonicClock
 }
 
+// MonotonicRawClock returns the system CLOCK_MONOTONIC_RAW clock. When it is
+// not enabled as a distinct clock this is the same as MonotonicClock.
+func (k *Kernel) MonotonicRawClock() ktime.SampledClock {
+	if k.timekeeper.monotonicRawClock != nil {
+		return k.timekeeper.monotonicRawClock
+	}
+	return k.timekeeper.monotonicClock
+}
+
 // Syslog returns the syslog.
 func (k *Kernel) Syslog() *syslog {
 	return &k.syslog
@@ -2535,25 +2477,4 @@ func (k *Kernel) ContainerName(cid string) string {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
 	return k.containerNames[cid]
-}
-
-func filterMFsToSave(mfsToSave map[checkpoint.ResourceID]*pgalloc.MemoryFile, fsOpts *FSSaveOpts) map[checkpoint.ResourceID]*pgalloc.MemoryFile {
-	paths := fsOpts.Paths
-	if len(paths) == 0 {
-		paths = []checkpoint.ResourceID{{Path: "/"}}
-	}
-	pathsMap := make(map[checkpoint.ResourceID]struct{}, len(paths))
-	for _, p := range paths {
-		pathsMap[p] = struct{}{}
-	}
-	mfsToSaveActual := make(map[checkpoint.ResourceID]*pgalloc.MemoryFile)
-	for id, mf := range mfsToSave {
-		if !matchesPaths(id, pathsMap) {
-			mfsToSaveActual[id] = mf
-		}
-	}
-	if len(mfsToSaveActual) == 0 {
-		return nil
-	}
-	return mfsToSaveActual
 }

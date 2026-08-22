@@ -17,12 +17,10 @@ package vfs
 import (
 	goContext "context"
 	"fmt"
-	"io"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/refs"
-	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -128,27 +126,6 @@ type CompleteRestoreOptions struct {
 	ValidateFileModificationTimestamps bool
 }
 
-// FSTarProvider provides access to filesystem checkpoint tar archives.
-type FSTarProvider interface {
-	// GetTar returns a reader for the tar archive of the filesystem with the
-	// given ResourceID. It returns (nil, nil) if no tar archive is available.
-	GetTar(id checkpoint.ResourceID) (io.ReadCloser, error)
-}
-
-type ctxFSTarProviderKey struct{}
-
-// CtxFSTarProvider is a Context.Value key for FSTarProvider.
-var CtxFSTarProvider ctxFSTarProviderKey
-
-// FSTarProviderFromContext returns the FSTarProvider associated with ctx, if
-// one exists.
-func FSTarProviderFromContext(ctx context.Context) FSTarProvider {
-	if v := ctx.Value(CtxFSTarProvider); v != nil {
-		return v.(FSTarProvider)
-	}
-	return nil
-}
-
 // saveMounts is called by stateify.
 func (vfs *VirtualFilesystem) saveMounts() []*Mount {
 	if atomic.LoadPointer(&vfs.mounts.slots) == nil {
@@ -216,4 +193,11 @@ func (epi *epollInterest) afterLoad(goContext.Context) {
 		return
 	}
 	epi.waiter.NotifyEvent(wmask)
+}
+
+// afterLoad is called by stateify.
+func (vfs *VirtualFilesystem) afterLoad(goContext.Context) {
+	if vfs.dynCharDevMajorShared == nil {
+		vfs.dynCharDevMajorShared = make(map[SharedDynamicCharDevMajorKey]uint32)
+	}
 }

@@ -179,6 +179,7 @@ docs(
         "//g3doc/user_guide:tpu",
         "//g3doc/user_guide/containerd:configuration",
         "//g3doc/user_guide/containerd:containerd_11",
+        "//g3doc/user_guide/containerd:crio",
         "//g3doc/user_guide/containerd:quick_start",
         "//g3doc/user_guide/quick_start:docker",
         "//g3doc/user_guide/quick_start:kubernetes",
