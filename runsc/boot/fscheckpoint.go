@@ -266,7 +266,8 @@ type fsRestore struct {
 	mfs         map[checkpoint.ResourceID]*fscheckpoint.MemoryFile
 	tmpfs       map[checkpoint.ResourceID]*fscheckpoint.Tmpfs
 
-	waitMu  sync.Mutex
+	waitMu sync.Mutex
+	// +checklocks:waitMu
 	waitMap map[string]*fsRestoreContainer // key is container ID
 }
 
