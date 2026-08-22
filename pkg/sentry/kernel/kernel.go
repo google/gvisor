@@ -178,8 +178,9 @@ type Kernel struct {
 	rootUserNamespace    *auth.UserNamespace
 	rootNetworkNamespace *inet.Namespace
 	// applicationCores is mutable via SetApplicationCores; accessed
-	// atomically since task goroutines read it without a lock.
-	applicationCores    atomicbitops.Uint32
+	// atomically since task goroutines read it without a lock. Saved as a
+	// plain uint to keep the statefile encoding unchanged.
+	applicationCores    atomicbitops.Uint32 `state:".(uint)"`
 	useHostCores        bool
 	extraAuxv           []arch.AuxEntry
 	vdso                *loader.VDSO
