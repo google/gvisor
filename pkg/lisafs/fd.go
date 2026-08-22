@@ -61,10 +61,13 @@ type ControlFD struct {
 	// node is the filesystem node this FD is immutably associated with.
 	node *Node
 
+	openFDsMu sync.RWMutex
+
 	// openFDs is a linked list of all FDs opened on this FD. As per reference
 	// model, all open FDs hold a ref on this FD.
-	openFDsMu sync.RWMutex
-	openFDs   openFDList
+	//
+	// +checklocks:openFDsMu
+	openFDs openFDList
 
 	// All the following fields are immutable.
 
@@ -171,10 +174,10 @@ func (fd *ControlFD) Node() *Node {
 
 // RemoveFromConn removes this control FD from its owning connection.
 //
-// Preconditions:
-//   - fd should not have been returned to the client. Otherwise the client can
-//     still refer to it.
-//   - server's rename mutex must at least be read locked.
+// Precondition: fd must not have been returned to the client. Otherwise the
+// client can still refer to it.
+//
+// +checklocksread:fd.conn.server.renameMu
 func (fd *ControlFD) RemoveFromConn() {
 	fd.conn.removeControlFDLocked(fd.id)
 }
