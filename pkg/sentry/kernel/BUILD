@@ -447,6 +447,7 @@ go_test(
         "fd_table_test.go",
         "kernel_test.go",
         "table_test.go",
+        "task_sched_test.go",
         "task_test.go",
         "timekeeper_test.go",
     ],

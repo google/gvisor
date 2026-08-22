@@ -1934,15 +1934,10 @@ func (k *Kernel) ApplicationCores() uint {
 // RPC and there's no vCPU pool size to naturally cap it against.
 const maxApplicationCores = 4096
 
-// SetApplicationCores raises the CPU count visible to applications to n
-// without a restart. Grow-only: shrinking would leave existing tasks'
-// AllowedCPUMask, sized off the old count, referencing invalid CPUs. Fails
-// on HasCPUNumbers() platforms (e.g. KVM), whose vCPU pool is fixed at boot.
-// Also updates GOMAXPROCS for the sentry's own host-side goroutines.
-//
-// Uses a CompareAndSwap loop rather than swap-then-maybe-revert, so a
-// rejected shrink is never even transiently observable by concurrent
-// lock-free readers (e.g. CreateProcess's AllowedCPUMask).
+// SetApplicationCores raises the CPU count visible to applications (and
+// GOMAXPROCS) to n without a restart. Grow-only — shrinking could leave a
+// task's AllowedCPUMask referencing now-invalid CPUs — and rejected on
+// HasCPUNumbers() platforms (e.g. KVM), whose vCPU pool is fixed at boot.
 func (k *Kernel) SetApplicationCores(n uint) error {
 	if n == 0 || n > maxApplicationCores {
 		return fmt.Errorf("SetApplicationCores called with invalid n == %d", n)
