@@ -47,7 +47,8 @@ func (r *reader) Read(p []byte) (int, error) {
 // bufferedReader implements a threadsafe buffered io.Reader.
 type bufferedReader struct {
 	mu sync.Mutex
-	r  *bufio.Reader
+	// +checklocks:mu
+	r *bufio.Reader
 }
 
 // Read implements io.Reader.Read.
