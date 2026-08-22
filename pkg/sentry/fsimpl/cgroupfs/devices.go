@@ -132,12 +132,15 @@ type devicesController struct {
 	controllerStateless
 	controllerNoResource
 
-	// mu protects the fields below.
 	mu sync.Mutex `state:"nosave"`
 
 	// Allow or deny the device rules below.
+	//
+	// +checklocks:mu
 	defaultAllow bool
-	deviceRules  map[deviceID]permission
+
+	// +checklocks:mu
+	deviceRules map[deviceID]permission
 }
 
 // +stateify savable
@@ -182,12 +185,14 @@ func (d *controlledDevicesData) Generate(ctx context.Context, buf *bytes.Buffer)
 	return d.c.generate(ctx, buf)
 }
 
+// +checklocks:c.mu
 func (c *devicesController) addRule(id deviceID, newPermission permission) error {
 	existingPermission := c.deviceRules[id]
 	c.deviceRules[id] = existingPermission.union(newPermission)
 	return nil
 }
 
+// +checklocks:c.mu
 func (c *devicesController) removeRule(id deviceID, p permission) error {
 	// cgroupv1 ignores silently requests to remove a partially-matching wildcard rule,
 	// which are {majorDevice:wildcardDevice}, {wildcardDevice:minorDevice}, and {wildcardDevice:wildcardDevice}
@@ -214,6 +219,7 @@ func (c *devicesController) removeRule(id deviceID, p permission) error {
 	return nil
 }
 
+// +checklocks:c.mu
 func (c *devicesController) applyRule(id deviceID, p permission, allow bool) error {
 	if !id.controllerType.valid() {
 		return linuxerr.EINVAL
