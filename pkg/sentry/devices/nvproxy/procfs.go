@@ -43,6 +43,9 @@ func ProcfsInfoFromVFS(vfsObj *vfs.VirtualFilesystem) *ProcfsInfo {
 	if nvp.devInfo.HaveFabricIMEXManagement {
 		procfsInfo.StaticFiles["capabilities/fabric-imex-mgmt"] = procfsCapability(nvp.devInfo.FabricIMEXManagementDevMinor, 0o400)
 	}
+	if nvp.devInfo.HaveTraceDevice {
+		procfsInfo.StaticFiles["capabilities/trace-device"] = procfsCapability(nvp.devInfo.TraceDeviceDevMinor, 0o400)
+	}
 	return procfsInfo
 }
 
