@@ -292,6 +292,8 @@ type KeySet struct {
 	// keys maps key IDs to the underlying Key struct.
 	// It is initially nil to save on heap space.
 	// It is only initialized when doing mutable transactions on it using `Do`.
+	//
+	// +checklocks:mu
 	keys map[KeySerial]*Key
 }
 
@@ -310,9 +312,9 @@ func (s *KeySet) Do(fn func(*LockedKeySet) error) error {
 	defer s.txnMu.Unlock()
 	ls := &LockedKeySet{s}
 	ls.mu.Lock()
-	if s.keys == nil {
+	if ls.keys == nil {
 		// Initialize the map from its zero value, if it hasn't been done yet.
-		s.keys = make(map[KeySerial]*Key)
+		ls.keys = make(map[KeySerial]*Key)
 	}
 	ls.mu.Unlock()
 	return fn(ls)
