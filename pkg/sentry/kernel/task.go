@@ -469,7 +469,7 @@ type Task struct {
 
 	// noNewPrivs determines whether the task is allowed to gain new privileges.
 	//
-	// noNewPrivs is protected by mu.
+	// +checklocks:mu
 	noNewPrivs bool
 
 	// utsns is the task's UTS namespace.
@@ -515,20 +515,23 @@ type Task struct {
 	// don't really control the affinity.
 	//
 	// Invariant: allowedCPUMask.Size() ==
-	// sched.CPUMaskSize(Kernel.applicationCores).
+	// sched.CPUSetSize(Kernel.applicationCores).
 	//
-	// allowedCPUMask is protected by mu.
+	// +checklocks:mu
 	allowedCPUMask sched.CPUSet
 
 	// cpu is the fake cpu number returned by getcpu(2). cpu is ignored
 	// entirely if Kernel.useHostCores is true.
+	//
+	// +checkatomic
+	// +checklocks:mu
 	cpu atomicbitops.Int32
 
 	// This is used to keep track of the scheduling policy for this task.
 	// It has no effect and is only used to provide a reasonable return value for
 	// sched_getattr() and similar.
 	//
-	// scheduler is protected by mu.
+	// +checklocks:mu
 	scheduler uint
 
 	// This is used to keep track of changes made to a process' priority/niceness.
@@ -538,13 +541,13 @@ type Task struct {
 	// NOTE: This represents the userspace view of priority (nice).
 	// This means that the value should be in the range [-20, 19].
 	//
-	// niceness is protected by mu.
+	// +checklocks:mu
 	niceness int
 
 	// This is used to keep track of a process's IO class and priority.
 	// It is only used to provide a reasonable return value for ioprio_get().
 	//
-	// ioprio is protected by mu.
+	// +checklocks:mu
 	ioprio int
 
 	// This is used to track the numa policy for the current thread. This can be
@@ -556,8 +559,10 @@ type Task struct {
 	// always report a single node so never need to save more than a single
 	// bit.
 	//
-	// numaPolicy and numaNodeMask are protected by mu.
-	numaPolicy   linux.NumaPolicy
+	// +checklocks:mu
+	numaPolicy linux.NumaPolicy
+
+	// +checklocks:mu
 	numaNodeMask uint64
 
 	// netns is the task's network namespace. It has to be changed under mu
@@ -632,7 +637,8 @@ type Task struct {
 	// startTime is the real time at which the task started. It is set when
 	// a Task is created or invokes execve(2).
 	//
-	// startTime is protected by mu.
+	// Writes require both mu and the TaskSet mutex. Reads require either mu or
+	// the TaskSet mutex held at least for reading.
 	startTime ktime.Time
 
 	// kcov is the kcov instance providing code coverage owned by this task.
@@ -676,7 +682,10 @@ type Task struct {
 	Origin TaskOrigin
 
 	// onDestroyAction is a set of callbacks that are executed when the
-	// task is destroyed.
+	// task is destroyed. The map is detached under mu before callbacks run
+	// asynchronously without mu.
+	//
+	// +checklocks:mu
 	onDestroyAction map[TaskDestroyAction]struct{}
 
 	// Helps serializes an execve(2) with a PTRACE_ATTACH and seccomp tsync. See the comment for

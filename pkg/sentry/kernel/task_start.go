@@ -435,7 +435,7 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 	t.stopCount = atomicbitops.FromInt32(ts.stopCount)
 
 	t.mu.Lock()
-	t.cpu = atomicbitops.FromInt32(assignCPU(t.allowedCPUMask, ts.Root.tids[t]))
+	t.cpu.Store(assignCPU(t.allowedCPUMask, ts.Root.tids[t]))
 
 	t.startTime = t.k.RealtimeClock().Now()
 
