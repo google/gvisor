@@ -107,15 +107,28 @@ const (
 func (pc *passContext) checkAtomicCall(inst ssa.Instruction, obj types.Object, ar atomicRules) {
 	allowNonAtomicRead := ar == mixedAtomic || ar == readOnlyMixedAtomic
 	switch x := inst.(type) {
-	case *ssa.Call:
-		if x.Common().IsInvoke() {
+	case *ssa.Call, *ssa.Defer:
+		if _, deferred := x.(*ssa.Defer); deferred {
+			// Pure atomic access does not depend on lock state. Guarded
+			// deferred accesses would need their locks checked at execution,
+			// not registration, so keep rejecting those conservatively.
+			if ar != readWriteAtomic {
+				break
+			}
+			// Deferred uses previously reached the force-aware fallback.
+			if _, ok := pc.forced[pc.positionKey(inst.Pos())]; ok {
+				return
+			}
+		}
+		call := x.(ssa.CallInstruction).Common()
+		if call.IsInvoke() {
 			if ar != nonAtomic {
 				// This is an illegal interface dispatch.
 				pc.maybeFail(inst.Pos(), "dynamic dispatch with atomic-only field")
 			}
 			return
 		}
-		fn, ok := x.Common().Value.(*ssa.Function)
+		fn, ok := call.Value.(*ssa.Function)
 		if !ok {
 			if ar != nonAtomic {
 				// This is an illegal call to a non-static function.

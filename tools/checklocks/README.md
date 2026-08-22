@@ -260,6 +260,10 @@ The non-atomic `atomicbitops.RacyLoad` method follows the mixed read rule above.
 the lock held, because other readers may access the field atomically without
 locking. The exceptions for newly allocated objects still apply.
 
+Deferred atomic calls are supported for pure atomic fields and globals. Deferred
+calls on values with both atomic and mutex requirements remain unsupported: their
+locks would need to be checked when the calls execute, not when they are deferred.
+
 ## Ignoring and Forcing
 
 From time to time, it may be necessary to ignore results produced by the

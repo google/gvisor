@@ -49,6 +49,9 @@ func testAtomicAccess(tc *atomicStruct, v chan int32) {
 	v <- atomic.LoadInt32(&tc.accessedAtomically)
 	_ = tc.pointer.Load()
 	tc.pointer.Store(nil)
+	defer tc.pointer.Store(nil)
+	defer atomic.StoreInt32(&tc.accessedAtomically, 1)
+	go tc.pointer.Store(nil) // +checklocksfail=illegal use
 }
 
 func testAtomicAccessInvalid(tc *atomicStruct, v chan int32) {
@@ -56,9 +59,10 @@ func testAtomicAccessInvalid(tc *atomicStruct, v chan int32) {
 }
 
 func testNormalAccessInvalid(tc *atomicStruct, v chan int32, p chan *int32) {
-	v <- tc.accessedAtomically              // +checklocksfail
-	p <- &tc.accessedAtomically             // +checklocksfail
-	_ = genericLoad(&tc.accessedAtomically) // +checklocksfail=non-atomic function
+	v <- tc.accessedAtomically                // +checklocksfail
+	p <- &tc.accessedAtomically               // +checklocksfail
+	_ = genericLoad(&tc.accessedAtomically)   // +checklocksfail=non-atomic function
+	defer genericLoad(&tc.accessedAtomically) // +checklocksforce
 }
 
 func genericLoad[T any](p *T) T {
@@ -112,6 +116,7 @@ func testAtomicMixedValidLockedWrite(tc *atomicMixedStruct, v chan int32, p chan
 
 func testAtomicMixedReadLocked(tc *atomicMixedStruct) {
 	tc.mu.RLock()
+	defer tc.pointer.Store(nil) // +checklocksfail=illegal use
 	_ = atomic.LoadInt32(&tc.accessedMixed)
 	_ = tc.accessedMixed
 	_ = tc.wrapper.Load()
@@ -123,6 +128,18 @@ func testAtomicMixedReadLocked(tc *atomicMixedStruct) {
 	tc.bitops.RacyStore(1)                  // +checklocksfail=operation RacyStore
 	tc.pointer.Store(nil)                   // +checklocksfail=write function
 	tc.mu.RUnlock()
+}
+
+// Mixed deferred accesses are unsupported even when the execution order is safe.
+func testAtomicMixedDeferred(tc *atomicMixedStruct, unlockFirst bool) {
+	tc.mu.Lock()
+	if unlockFirst {
+		defer tc.pointer.Store(nil) // +checklocksfail=illegal use
+		defer tc.mu.Unlock()
+	} else {
+		defer tc.mu.Unlock()
+		defer tc.pointer.Store(nil) // +checklocksfail=illegal use
+	}
 }
 
 func testAtomicMixedInvalidLockedWrite(tc *atomicMixedStruct, v chan int32, p chan *int32) {
@@ -152,6 +169,8 @@ func testAtomicWrapper(tc *atomicStruct, v chan int32) {
 }
 
 func testAtomicBitops(tc *atomicStruct) {
+	defer tc.atomicBitops.RacyLoad()   // +checklocksfail=non-atomic operation
+	defer tc.atomicBitops.RacyStore(1) // +checklocksfail=non-atomic operation
 	_ = tc.atomicBitops.Load()
 	tc.atomicBitops.Store(1)
 	_ = tc.atomicBitops.Add(1)

@@ -155,6 +155,7 @@ func testCrosspkgGlobalInvalid() {
 }
 
 func testAtomicGlobal() {
+	defer atomicGlobal.Store(1)
 	_ = atomicGlobal.Load()
 	atomicGlobal.Store(1)
 	_ = atomicGlobal.RacyLoad() // +checklocksfail=non-atomic operation
