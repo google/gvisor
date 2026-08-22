@@ -576,7 +576,7 @@ func Run(conf *config.Config, args Args) (unix.WaitStatus, error) {
 }
 
 // Update sets the resources of a running container as configured.
-func (c *Container) Update(res *specs.LinuxResources) error {
+func (c *Container) Update(conf *config.Config, res *specs.LinuxResources) error {
 	log.Debugf("Set resources for container, cid: %s", c.ID)
 	if err := c.requireStatus("set resources for", Created, Running); err != nil {
 		return err
@@ -598,6 +598,13 @@ func (c *Container) Update(res *specs.LinuxResources) error {
 			}
 			return err
 		}
+	}
+
+	// Push the re-derived CPU count into the sentry. Also for subcontainers:
+	// under Kubernetes the kubelet updates the pod cgroup and only the
+	// subcontainer gets this call. Best-effort; the cgroup is already set.
+	if err := c.Sandbox.SetCPUCount(conf); err != nil {
+		log.Warningf("Setting sandbox CPU count for container %q: %v", c.ID, err)
 	}
 
 	c.Spec.Linux.Resources = res

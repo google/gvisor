@@ -877,6 +877,43 @@ func (s *Sandbox) connError(err error) error {
 	return fmt.Errorf("connecting to control server at PID %d: %v", s.Pid.Load(), err)
 }
 
+// cpuNumForCgroup derives the sandbox CPU count from cg's cpuset and, if
+// conf.CPUNumFromQuota is set, its CPU quota/period. Also returns the raw
+// quota/period, so callers that need them (boot args) don't re-read cg.
+// Used at boot and again on a live cgroup CPU update.
+func cpuNumForCgroup(cg cgroup.Cgroup, conf *config.Config) (cpuNum int, cpuQuota, cpuPeriod int64, err error) {
+	cpuNum, err = cg.NumCPU()
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("getting cpu count from cgroups: %v", err)
+	}
+	cpuQuota, err = cg.CPUQuota()
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("getting raw cpu quota from cgroups: %v", err)
+	}
+	cpuPeriod, err = cg.CPUPeriod()
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("getting raw cpu period from cgroups: %v", err)
+	}
+	if !conf.CPUNumFromQuota || cpuQuota <= 0 || cpuPeriod <= 0 {
+		return cpuNum, cpuQuota, cpuPeriod, nil
+	}
+	// Below 2 CPUs, some apps disable locking in ways that are hard to debug.
+	const minCPUs = 2
+	quota := float64(cpuQuota) / float64(cpuPeriod)
+	n := int(math.Ceil(quota))
+	if n <= 0 {
+		return cpuNum, cpuQuota, cpuPeriod, nil
+	}
+	if n < minCPUs {
+		n = minCPUs
+	}
+	if n < cpuNum {
+		// Only lower the cpu number.
+		cpuNum = n
+	}
+	return cpuNum, cpuQuota, cpuPeriod, nil
+}
+
 // createSandboxProcess starts the sandbox as a subprocess by running the "boot"
 // command, passing in the bundle dir.
 func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyncFile *os.File) error {
@@ -1329,34 +1366,9 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 
 	mem := totalSysMem
 	if s.CgroupJSON.Cgroup != nil {
-		cpuNum, err := s.CgroupJSON.Cgroup.NumCPU()
+		cpuNum, cpuQuota, cpuPeriod, err := cpuNumForCgroup(s.CgroupJSON.Cgroup, conf)
 		if err != nil {
-			return fmt.Errorf("getting cpu count from cgroups: %v", err)
-		}
-		cpuQuota, err := s.CgroupJSON.Cgroup.CPUQuota()
-		if err != nil {
-			return fmt.Errorf("getting raw cpu quota from cgroups: %v", err)
-		}
-		cpuPeriod, err := s.CgroupJSON.Cgroup.CPUPeriod()
-		if err != nil {
-			return fmt.Errorf("getting raw cpu period from cgroups: %v", err)
-		}
-		if conf.CPUNumFromQuota && cpuQuota > 0 && cpuPeriod > 0 {
-			// Dropping below 2 CPUs can trigger application to disable
-			// locks that can lead do hard to debug errors, so just
-			// leaving two cores as reasonable default.
-			const minCPUs = 2
-
-			quota := float64(cpuQuota) / float64(cpuPeriod)
-			if n := int(math.Ceil(quota)); n > 0 {
-				if n < minCPUs {
-					n = minCPUs
-				}
-				if n < cpuNum {
-					// Only lower the cpu number.
-					cpuNum = n
-				}
-			}
+			return err
 		}
 		cmd.Args = append(cmd.Args, "--cpu-num", strconv.Itoa(cpuNum))
 		if cpuQuota > 0 {
@@ -2065,6 +2077,24 @@ func (s *Sandbox) Resume(cid string) error {
 	log.Debugf("Resume sandbox %q", s.ID)
 	if err := s.call(boot.ContMgrResume, nil, nil); err != nil {
 		return fmt.Errorf("resuming container %q: %w", cid, err)
+	}
+	return nil
+}
+
+// SetCPUCount recomputes the CPU count from the already-updated cgroup and
+// pushes it into the running sentry, avoiding a sandbox restart.
+func (s *Sandbox) SetCPUCount(conf *config.Config) error {
+	if s.CgroupJSON.Cgroup == nil {
+		return nil
+	}
+	cpuNum, _, _, err := cpuNumForCgroup(s.CgroupJSON.Cgroup, conf)
+	if err != nil {
+		return err
+	}
+	log.Debugf("Sandbox %q: setting cpu count to %d", s.ID, cpuNum)
+	args := &boot.SetCPUCountArgs{NumCPU: int32(cpuNum)}
+	if err := s.call(boot.ContMgrSetCPUCount, args, nil); err != nil {
+		return fmt.Errorf("setting cpu count: %w", err)
 	}
 	return nil
 }
