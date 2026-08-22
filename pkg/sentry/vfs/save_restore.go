@@ -183,11 +183,16 @@ func (mnt *Mount) afterLoad(goContext.Context) {
 
 // afterLoad is called by stateify.
 func (epi *epollInterest) afterLoad(goContext.Context) {
-	// Mark all epollInterests as ready after restore so that the next call to
-	// EpollInstance.ReadEvents() rechecks their readiness.
-	if epi.mask != 0 {
-		epi.waiter.NotifyEvent(waiter.EventMaskFromLinux(epi.mask))
+	if epi.mask == 0 {
+		return
 	}
+	wmask := waiter.EventMaskFromLinux(epi.mask)
+	epi.key.file.EventUnregister(&epi.waiter)
+	epi.waiter.Init(epi, wmask)
+	if err := epi.key.file.EventRegister(&epi.waiter); err != nil {
+		return
+	}
+	epi.waiter.NotifyEvent(wmask)
 }
 
 // afterLoad is called by stateify.
