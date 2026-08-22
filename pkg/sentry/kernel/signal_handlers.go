@@ -27,7 +27,9 @@ type SignalHandlers struct {
 	// ThreadGroup.signalHandlers.)
 	mu signalHandlersMutex `state:"nosave"`
 
-	// actions is the action to be taken upon receiving each signal.
+	// actions is the action to be taken upon receiving each signal. It is
+	// protected by mu after initialization; copy operations populate new,
+	// unpublished maps without locking their new SignalHandlers.
 	actions map[linux.Signal]linux.SigAction
 }
 
@@ -68,10 +70,10 @@ func (sh *SignalHandlers) Reset() *SignalHandlers {
 	return sh2
 }
 
-// copyForExecLocked returns a copy of sh for a thread group that is undergoing
-// an execve. (See comments in Task.finishExec.)
+// copyForExecLocked returns a copy of sh for a thread group undergoing execve.
+// Only ignored signals are retained, with all other action fields cleared.
 //
-// Preconditions: sh.mu must be locked.
+// +checklocks:sh.mu
 func (sh *SignalHandlers) copyForExecLocked() *SignalHandlers {
 	sh2 := NewSignalHandlers()
 	for sig, act := range sh.actions {
@@ -92,9 +94,10 @@ func (sh *SignalHandlers) IsIgnored(sig linux.Signal) bool {
 	return ok && sa.Handler == linux.SIG_IGN
 }
 
-// dequeueActionLocked returns the SignalAct that should be used to handle sig.
+// dequeueAction returns the action for sig, resetting it to the default for
+// subsequent signals if SA_RESETHAND is set.
 //
-// Preconditions: sh.mu must be locked.
+// +checklocks:sh.mu
 func (sh *SignalHandlers) dequeueAction(sig linux.Signal) linux.SigAction {
 	act := sh.actions[sig]
 	if act.Flags&linux.SA_RESETHAND != 0 {
