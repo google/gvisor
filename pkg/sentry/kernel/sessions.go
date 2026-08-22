@@ -149,7 +149,11 @@ func (pg *ProcessGroup) incRefWithParent(parentPG *ProcessGroup) {
 //
 // parentPG is per incRefWithParent.
 //
-// Precondition: callers must hold TaskSet.mu for writing.
+// Preconditions: pg.originator.pidns.owner.mu is held for writing.
+//
+// Callers hold this TaskSet through a task or PID namespace. checklocks
+// cannot relate that owner to pg's originator, and child-group callbacks
+// also lose the caller's held-lock state.
 func (pg *ProcessGroup) decRefWithParent(parentPG *ProcessGroup) {
 	// See incRefWithParent regarding parent == nil.
 	if pg != parentPG && (parentPG == nil || pg.session == parentPG.session) {
@@ -190,7 +194,10 @@ func (tg *ThreadGroup) parentPG() *ProcessGroup {
 // stopped jobs. If yes, then appropriate signals are delivered to each thread
 // group within the process group.
 //
-// Precondition: callers must hold TaskSet.mu for writing.
+// Preconditions: pg.originator.pidns.owner.mu is held for writing.
+//
+// This uses the same TaskSet ownership as decRefWithParent; checklocks
+// cannot establish that owner through its callers' task/group aliases.
 func (pg *ProcessGroup) handleOrphan() {
 	// Check if this process is an orphan.
 	if pg.ancestors != 0 {
