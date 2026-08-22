@@ -791,7 +791,7 @@ func (t *Task) exitNotifyLocked(fromPtraceDetach bool) {
 			}
 		} else if tc == 0 {
 			t.tg.pidWithinNS.Store(0)
-			t.tg.processGroup.decRefWithParent(t.tg.parentPG())
+			t.tg.processGroup.decRefWithParent(t.tg.parentPG(), nil)
 			t.notifyPIDFDsOnDeathLocked()
 		}
 		if t.parent != nil {
