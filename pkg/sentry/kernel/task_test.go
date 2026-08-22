@@ -15,10 +15,55 @@
 package kernel
 
 import (
+	"sync"
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/sched"
+	"gvisor.dev/gvisor/pkg/sentry/mm"
 )
+
+func TestParentDeathSignalClearedOnCredentialChange(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		change func(*Task)
+	}{
+		{
+			name: "uid",
+			change: func(task *Task) {
+				task.setKUIDsUnchecked(0, 1, 0)
+			},
+		},
+		{
+			name: "gid",
+			change: func(task *Task) {
+				task.setKGIDsUnchecked(0, 1, 0)
+			},
+		},
+	} {
+		_ = t.Run(test.name, func(t *testing.T) {
+			task := &Task{
+				image: TaskImage{MemoryManager: new(mm.MemoryManager)},
+			}
+			task.creds.Store(auth.NewRootCredentials(auth.NewRootUserNamespace()))
+			task.SetParentDeathSignal(linux.SIGUSR1)
+
+			var wg sync.WaitGroup
+			wg.Go(func() { test.change(task) })
+			// Read before Wait so the reset and read are not ordered by the
+			// wait group. Under -race, this checks that the reset takes Task.mu.
+			observed := task.ParentDeathSignal()
+			wg.Wait()
+			if observed != 0 && observed != linux.SIGUSR1 {
+				t.Errorf("concurrent ParentDeathSignal() = %d, want 0 or %d", observed, linux.SIGUSR1)
+			}
+			if got := task.ParentDeathSignal(); got != 0 {
+				t.Errorf("ParentDeathSignal() after credential change = %d, want 0", got)
+			}
+		})
+	}
+}
 
 func TestTaskCPU(t *testing.T) {
 	for _, test := range []struct {
