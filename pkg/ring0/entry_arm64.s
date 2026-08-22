@@ -16,20 +16,20 @@
 #include "textflag.h"
 
 #define CPU_SELF             0   // +checkoffset . CPU.self
-#define CPU_REGISTERS        224 // +checkoffset . CPU.registers
+#define CPU_REGISTERS        272 // +checkoffset . CPU.registers
 #define CPU_ARCH_STATE       16  // +checkoffset . CPU.CPUArchState
-#define CPU_STACK_BOTTOM     CPU_ARCH_STATE+0     // +checkoffset . CPUArchState.stack
-#define CPU_STACK_TOP        CPU_STACK_BOTTOM+128 // +checksize . CPUArchState.stack
-#define CPU_ERROR_CODE       CPU_ARCH_STATE+128   // +checkoffset . CPUArchState.errorCode
-#define CPU_ERROR_TYPE       CPU_ARCH_STATE+136   // +checkoffset . CPUArchState.errorType
-#define CPU_FAULT_ADDR       CPU_ARCH_STATE+144   // +checkoffset . CPUArchState.faultAddr
-#define CPU_FPSTATE_EL0      CPU_ARCH_STATE+152   // +checkoffset . CPUArchState.el0Fp
-#define CPU_TTBR0_KVM        CPU_ARCH_STATE+160   // +checkoffset . CPUArchState.ttbr0Kvm
-#define CPU_TTBR0_APP        CPU_ARCH_STATE+168   // +checkoffset . CPUArchState.ttbr0App
-#define CPU_VECTOR_CODE      CPU_ARCH_STATE+176   // +checkoffset . CPUArchState.vecCode
-#define CPU_APP_ADDR         CPU_ARCH_STATE+184   // +checkoffset . CPUArchState.appAddr
-#define CPU_LAZY_VFP         CPU_ARCH_STATE+192   // +checkoffset . CPUArchState.lazyVFP
-#define CPU_APP_ASID         CPU_ARCH_STATE+200   // +checkoffset . CPUArchState.appASID
+#define CPU_STACK_BOTTOM     CPU_ARCH_STATE+0                   // +checkoffset . CPUArchState.stack
+#define CPU_STACK_TOP        CPU_STACK_BOTTOM+176               // +checksize . CPUArchState.stack
+#define CPU_ERROR_CODE       CPU_STACK_TOP+0                    // +checkoffset . CPUArchRegisters.errorCode
+#define CPU_ERROR_TYPE       CPU_STACK_TOP+8                    // +checkoffset . CPUArchRegisters.errorType
+#define CPU_FAULT_ADDR       CPU_STACK_TOP+16                   // +checkoffset . CPUArchRegisters.faultAddr
+#define CPU_FPSTATE_EL0      CPU_STACK_TOP+24                   // +checkoffset . CPUArchRegisters.el0Fp
+#define CPU_TTBR0_KVM        CPU_STACK_TOP+32                   // +checkoffset . CPUArchRegisters.ttbr0Kvm
+#define CPU_TTBR0_APP        CPU_STACK_TOP+40                   // +checkoffset . CPUArchRegisters.ttbr0App
+#define CPU_VECTOR_CODE      CPU_STACK_TOP+48                   // +checkoffset . CPUArchRegisters.vecCode
+#define CPU_APP_ADDR         CPU_STACK_TOP+56                   // +checkoffset . CPUArchRegisters.appAddr
+#define CPU_LAZY_VFP         CPU_STACK_TOP+64                   // +checkoffset . CPUArchRegisters.lazyVFP
+#define CPU_APP_ASID         CPU_STACK_TOP+72                   // +checkoffset . CPUArchRegisters.appASID
 
 // Bits.
 #define _KERNEL_FLAGS 965 // +checkconst . KernelFlagsSet
@@ -397,10 +397,18 @@ TEXT ·FPSIMDEnableTrap(SB),NOSPLIT,$0
 	MOVD R3, PTRACE_SP(R20);
 
 // KERNEL_ENTRY_FROM_EL1 is the entry code of the vcpu from el1 to el1.
+//
+// Match KERNEL_ENTRY_FROM_EL0: r18 must be saved as well because EL1 exceptions
+// can also interrupt the host vdso executing in guest mode, and the vdso C code
+// that may freely use r18 as a temporary.
 #define KERNEL_ENTRY_FROM_EL1 \
+	SUB $16, RSP, RSP; \		// save r18, r19 into the stack.
+	STP (RSV_REG, RSV_REG_APP), 16*0(RSP); \
 	WORD $0xd538d092; \   //MRS   TPIDR_EL1, R18
-	REGISTERS_SAVE(RSV_REG, CPU_REGISTERS); \	// Save sentry context.
-	MOVD RSV_REG_APP, CPU_REGISTERS+PTRACE_R19(RSV_REG); \
+	REGISTERS_SAVE(RSV_REG, CPU_REGISTERS); \	// save sentry context (except r18, r19).
+	LDP 16*0(RSP), (R4, R5); \	// load the original r18, r19.
+	ADD $16, RSP, RSP; \
+	STP (R4, R5), CPU_REGISTERS+PTRACE_R18(RSV_REG); \	// save the original r18, r19.
 	MRS TPIDR_EL0, R4; \
 	MOVD R4, CPU_REGISTERS+PTRACE_TLS(RSV_REG); \
 	WORD $0xd5384004; \    //    MRS SPSR_EL1, R4
@@ -426,6 +434,7 @@ TEXT ·FPSIMDEnableTrap(SB),NOSPLIT,$0
 
 // EXCEPTION_EL1 is a common el1 exception handler function.
 #define EXCEPTION_EL1(vector) \
+	SUB $16, RSP, RSP; \	// Reserve for HaltEl1ExceptionAndResume
 	MOVD $vector, R3; \
 	MOVD R3, 8(RSP); \
 	B ·HaltEl1ExceptionAndResume(SB);
@@ -483,10 +492,10 @@ TEXT ·HaltEl1SvcAndResume(SB),NOSPLIT,$0
 // HaltEl1ExceptionAndResume calls Hooks.KernelException and resume.
 TEXT ·HaltEl1ExceptionAndResume(SB),NOSPLIT,$0
 	WORD $0xd538d092            // MRS TPIDR_EL1, R18
-	MOVD CPU_SELF(RSV_REG), R3  // Load vCPU.
-	MOVD R3, 8(RSP)             // First argument (vCPU).
 	MOVD vector+0(FP), R3
 	MOVD R3, 16(RSP)            // Second argument (vector).
+	MOVD CPU_SELF(RSV_REG), R3  // Load vCPU.
+	MOVD R3, 8(RSP)             // First argument (vCPU).
 	CALL ·kernelException(SB)   // Call the trampoline.
 	B ·kernelExitToEl1(SB)      // Resume.
 
@@ -585,6 +594,7 @@ TEXT ·kernelExitToEl1(SB),NOSPLIT,$0
 	MRS TPIDR_EL1, RSV_REG
 
 	MOVD CPU_REGISTERS+PTRACE_R19(RSV_REG), RSV_REG_APP
+	MOVD CPU_REGISTERS+PTRACE_R18(RSV_REG), RSV_REG
 
 	ERET()
 

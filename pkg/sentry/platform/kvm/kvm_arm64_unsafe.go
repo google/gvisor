@@ -19,9 +19,12 @@ package kvm
 
 import (
 	"fmt"
+	"unsafe"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/hostos"
 	"gvisor.dev/gvisor/pkg/hostsyscall"
+	"gvisor.dev/gvisor/pkg/log"
 )
 
 var (
@@ -41,4 +44,44 @@ func updateSystemValues(fd int) error {
 
 	// Success.
 	return nil
+}
+
+// vvarMemslotUnusable checks if mapping vvar into a memslot is liable to being
+// blocked by the host. This can happen due to kernel commits 2a8dfab and
+// 0c67288.
+func vvarMemslotUnusable(kvmFd int) bool {
+	version, err := hostos.KernelVersion()
+	// Problematic kernel version range:
+	if err == nil && (version.LessThan(6, 17) || version.AtLeast(7, 1)) {
+		return false
+	}
+
+	vvar, err := findRegionStartingWith("[vvar")
+	if err != nil {
+		// Very unexpected...
+		log.Warningf("%v", err)
+		// Let's just try our luck
+		// or: we didn't find vvar once, we can't find it a second time.
+		return false
+	}
+	if vvar.length == 0 {
+		return false
+	}
+
+	vmFd, errno := hostsyscall.RawSyscall(unix.SYS_IOCTL, uintptr(kvmFd), KVM_CREATE_VM, 0)
+	if errno != 0 {
+		// We will re-fail on the actual VM creation.
+		return false
+	}
+	defer hostsyscall.RawSyscall(unix.SYS_CLOSE, vmFd, 0, 0)
+
+	userRegion := userMemoryRegion{
+		slot:          0,
+		flags:         _KVM_MEM_READONLY,
+		guestPhysAddr: 0,
+		memorySize:    uint64(vvar.length),
+		userspaceAddr: uint64(uintptr(vvar.virtual)),
+	}
+	_, errno = hostsyscall.RawSyscall(unix.SYS_IOCTL, vmFd, KVM_SET_USER_MEMORY_REGION, uintptr(unsafe.Pointer(&userRegion)))
+	return errno != 0
 }
