@@ -710,20 +710,22 @@ func (pc *passContext) checkInstruction(inst ssa.Instruction, lff *lockFunctionF
 				nonCalls int
 			)
 			for _, ref := range *refs {
-				switch ref.(type) {
-				case *ssa.Call, *ssa.Defer:
-					// Analysis will be done on the call
-					// itself subsequently, including the
-					// lock state at the time of the call.
-					calls++
-				default:
-					// We need to analyze separately. Per
-					// below, this means that we'll analyze
-					// at closure construction time no zero
-					// assumptions about when it will be
-					// called.
-					nonCalls++
+				// Only direct calls are analyzed later with the lock
+				// state at invocation. Passing the closure as an argument
+				// gives no guarantee about when it will be called.
+				switch ref := ref.(type) {
+				case *ssa.Call:
+					if ref.Common().Value == x {
+						calls++
+						continue
+					}
+				case *ssa.Defer:
+					if ref.Common().Value == x {
+						calls++
+						continue
+					}
 				}
+				nonCalls++
 			}
 			if calls > 0 && nonCalls == 0 {
 				return nil, nil

@@ -72,10 +72,47 @@ func runTest(t testing.TB, fn func(ctx context.Context, fdTable *FDTable, fd *vf
 	fdTable := new(FDTable)
 	fdTable.k = &Kernel{}
 	fdTable.k.MaxFDLimit.Store(MaxFdLimit)
-	fdTable.init()
+	// This newly allocated table has not been passed to the test yet.
+	fdTable.init() // +checklocksignore
 
 	// Run the test.
 	fn(ctx, fdTable, fd, limitSet)
+}
+
+func TestFDTableForEachConcurrentMutation(t *testing.T) {
+	runTest(t, func(ctx context.Context, fdTable *FDTable, fd *vfs.FileDescription, _ *limits.LimitSet) {
+		defer fdTable.DecRef(ctx)
+		if _, err := fdTable.NewFDAt(ctx, 0, fd, FDFlags{}); err != nil {
+			t.Fatalf("NewFDAt(0): %v", err)
+		}
+		// FDs 0 and 1 share a bitmap word and an existing descriptor bucket.
+		// Use a distinct file so its reference count does not synchronize
+		// mutations of FD 1 with callbacks examining FD 0.
+		other := newTestFD(ctx, fd.Mount().Filesystem().VirtualFilesystem())
+		defer other.DecRef(ctx)
+
+		var wg sync.WaitGroup
+		// Join after the conflicting accesses, before releasing either file.
+		defer wg.Wait()
+		wg.Go(func() {
+			if _, err := fdTable.NewFDAt(ctx, 1, other, FDFlags{}); err != nil {
+				t.Errorf("NewFDAt(1): %v", err)
+				return
+			}
+			fdTable.Remove(ctx, 1).DecRef(ctx)
+		})
+		calls := 0
+		fdTable.ForEach(ctx, func(n int32, file *vfs.FileDescription, _ FDFlags) bool {
+			calls++
+			if n != 0 || file != fd {
+				t.Errorf("ForEach visited (%d, %p), want (0, %p)", n, file, fd)
+			}
+			return false
+		})
+		if calls != 1 {
+			t.Fatalf("ForEach made %d callbacks, want 1", calls)
+		}
+	})
 }
 
 // TestFDTableMany allocates maxFD FDs, i.e. maxes out the FDTable, until there
@@ -273,7 +310,8 @@ func BenchmarkCreateWithMaxFD(b *testing.B) {
 
 		for i := 0; i < b.N; i++ {
 			fdTable := new(FDTable)
-			fdTable.init()
+			// This iteration exclusively owns the new table.
+			fdTable.init() // +checklocksignore
 			_, err := fdTable.NewFDAt(ctx, maxLimit-1, fd, FDFlags{})
 			if err != nil {
 				b.Fatalf("fdTable.NewFDs: got %v, wanted nil", err)
