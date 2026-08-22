@@ -437,23 +437,31 @@ type sock struct {
 	// +checklocks:mu
 	readWriter usermem.IOSequenceReadWriter `state:"nosave"`
 
-	// readMu protects access to the below fields.
 	readMu sync.Mutex `state:"nosave"`
 
 	// sockOptTimestamp corresponds to SO_TIMESTAMP. When true, timestamps
 	// of returned messages can be returned via control messages. When
 	// false, the same timestamp is instead stored and can be read via the
-	// SIOCGSTAMP ioctl. It is protected by readMu. See socket(7).
+	// SIOCGSTAMP ioctl. See socket(7).
+	//
+	// +checklocks:readMu
 	sockOptTimestamp bool
-	// timestampValid indicates whether timestamp for SIOCGSTAMP has been
-	// set. It is protected by readMu.
+
+	// timestampValid indicates whether timestamp for SIOCGSTAMP has been set.
+	//
+	// +checklocks:readMu
 	timestampValid bool
-	// timestamp holds the timestamp to use with SIOCTSTAMP. It is only
-	// valid when timestampValid is true. It is protected by readMu.
+
+	// timestamp holds the timestamp to use with SIOCGSTAMP. It is only
+	// valid when timestampValid is true.
+	//
+	// +checklocks:readMu
 	timestamp time.Time `state:".(int64)"`
 
 	// TODO(b/153685824): Move this to SocketOptions.
 	// sockOptInq corresponds to TCP_INQ.
+	//
+	// +checklocks:readMu
 	sockOptInq bool
 }
 
@@ -3079,6 +3087,7 @@ func (s *sock) GetPeerCreds(*kernel.Task) (marshal.Marshallable, *syserr.Error) 
 	return nil, syserr.ErrNotSupported
 }
 
+// +checklocks:s.readMu
 func (s *sock) fillCmsgInq(cmsg *socket.ControlMessages) {
 	if !s.sockOptInq {
 		return
@@ -3211,6 +3220,7 @@ func (s *sock) nonBlockingRead(ctx context.Context, dst usermem.IOSequence, peek
 	return res.Count, 0, nil, 0, cmsg, syserr.TranslateNetstackError(err)
 }
 
+// +checklocks:s.readMu
 func (s *sock) netstackToLinuxControlMessages(cm tcpip.ReceivableControlMessages) socket.ControlMessages {
 	readCM := socket.NewIPControlMessages(s.family, cm)
 	return socket.ControlMessages{
@@ -3249,7 +3259,7 @@ func (s *sock) linuxToNetstackControlMessages(cm socket.ControlMessages) tcpip.S
 // updateTimestamp sets the timestamp for SIOCGSTAMP. It should be called after
 // successfully writing packet data out to userspace.
 //
-// Precondition: s.readMu must be locked.
+// +checklocks:s.readMu
 func (s *sock) updateTimestamp(cm tcpip.ReceivableControlMessages) {
 	// Save the SIOCGSTAMP timestamp only if SO_TIMESTAMP is disabled.
 	if !s.sockOptTimestamp {
