@@ -263,24 +263,21 @@ func (s *socketOperations) EventUnregister(e *waiter.Entry) {
 
 // Readiness implements socket.Socket.Readiness.
 func (s *socketOperations) Readiness(mask waiter.EventMask) waiter.EventMask {
-	var events waiter.EventMask
-
-	evInfo := &s.eventInfo
-	iomask := mask & (waiter.EventIn | waiter.EventOut)
-
-	// Fast path condition:
-	// 1. The event needed has been reported by plugin stack io-thread; or
-	// 2. POLLIN or POLLOUT event has been reported by io-thread.
-	// Directly report current event without invoking cgo Readiness again.
-	if evInfo.Ready&iomask == iomask {
-		events = evInfo.Ready & mask
-		// Clear plugin stack eventInfo record after consuming IN/OUT event.
-		evInfo.Ready &= ^iomask
-	} else {
-		events = waiter.EventMask(cgo.Readiness(s.fd, uint64(mask)))
+	iomask := uint64(mask & (waiter.EventIn | waiter.EventOut))
+	// Notification callbacks can check readiness while holding the notifier
+	// mutex, so accessing the cache must not acquire that mutex.
+	for {
+		ready := s.eventInfo.Ready.Load()
+		// Use the cache only if all requested IN/OUT events are present.
+		if ready&iomask != iomask {
+			return waiter.EventMask(cgo.Readiness(s.fd, uint64(mask)))
+		}
+		// Consume only the requested I/O bits without overwriting concurrent
+		// updates. A failed CAS must recheck whether the cache still suffices.
+		if iomask == 0 || s.eventInfo.Ready.CompareAndSwap(ready, ready&^iomask) {
+			return waiter.EventMask(ready) & mask
+		}
 	}
-
-	return events
 }
 
 // Epollable implements socket.Socket.Epollable.
