@@ -72,10 +72,10 @@ type GenericDirectoryFD struct {
 	vfsfd    vfs.FileDescription
 	children *OrderedChildren
 
-	// mu protects the fields below.
 	mu sync.Mutex `state:"nosave"`
 
-	// off is the current directory offset. Protected by "mu".
+	// off is the current directory offset.
+	// +checklocks:mu
 	off int64
 }
 
@@ -153,7 +153,7 @@ func (fd *GenericDirectoryFD) inode() Inode {
 }
 
 // IterDirents implements vfs.FileDescriptionImpl.IterDirents. IterDirents holds
-// o.mu when calling cb.
+// fd.mu when calling cb.
 func (fd *GenericDirectoryFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback) error {
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
