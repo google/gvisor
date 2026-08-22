@@ -30,6 +30,7 @@ import (
 	v1proto "github.com/golang/protobuf/proto"
 	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -1518,7 +1519,8 @@ func TestSnapshotToPrometheus(t *testing.T) {
 				t.Fatalf("cannot write snapshot: %v", err)
 			}
 			gotMetricsRaw := buf.String()
-			gotMetrics, err := (&expfmt.TextParser{}).TextToMetricFamilies(&buf)
+			gotMetricsParser := expfmt.NewTextParser(model.LegacyValidation)
+			gotMetrics, err := gotMetricsParser.TextToMetricFamilies(&buf)
 			if err != nil {
 				if test.WantFail {
 					return
@@ -1557,7 +1559,8 @@ func TestSnapshotToPrometheus(t *testing.T) {
 
 			// Parse reference data.
 			wantData := strings.ReplaceAll(test.WantData, "{TIMESTAMP}", fmt.Sprintf("%d", testStart.UnixMilli()))
-			wantMetrics, err := (&expfmt.TextParser{}).TextToMetricFamilies(strings.NewReader(wantData))
+			wantMetricsParser := expfmt.NewTextParser(model.LegacyValidation)
+			wantMetrics, err := wantMetricsParser.TextToMetricFamilies(strings.NewReader(wantData))
 			if err != nil {
 				t.Fatalf("cannot parse reference data: %v", err)
 			}
@@ -1633,7 +1636,8 @@ func TestWriteMultipleSnapshots(t *testing.T) {
 		snapshot2: {ExporterPrefix: "export_"},
 	})
 	fooIntName := "export_" + fooInt.PB.GetPrometheusName()
-	gotData, err := (&expfmt.TextParser{}).TextToMetricFamilies(&buf)
+	gotDataParser := expfmt.NewTextParser(model.LegacyValidation)
+	gotData, err := gotDataParser.TextToMetricFamilies(&buf)
 	if err != nil {
 		t.Fatalf("cannot parse data written from snapshots: %v", err)
 	}
@@ -1651,7 +1655,8 @@ func TestWriteMultipleSnapshots(t *testing.T) {
 		export_foo_int 3 %d
 		export_foo_int 5 %d
 	`, testStart.UnixMilli(), testStart.Add(3*time.Minute).UnixMilli()))
-	wantData, err := (&expfmt.TextParser{}).TextToMetricFamilies(&wantBuf)
+	wantDataParser := expfmt.NewTextParser(model.LegacyValidation)
+	wantData, err := wantDataParser.TextToMetricFamilies(&wantBuf)
 	if err != nil {
 		t.Fatalf("cannot parse reference data: %v", err)
 	}
@@ -1703,7 +1708,8 @@ func TestGroupSameNameMetrics(t *testing.T) {
 
 	// Make sure the data written does parse.
 	// We don't use this result here because the Prometheus library is more permissive than this test.
-	if _, err := (&expfmt.TextParser{}).TextToMetricFamilies(&buf); err != nil {
+	checkParser := expfmt.NewTextParser(model.LegacyValidation)
+	if _, err := checkParser.TextToMetricFamilies(&buf); err != nil {
 		t.Fatalf("cannot parse data written from snapshots: %v\nraw data:\n%s\n(end of raw data)", err, rawData)
 	}
 
