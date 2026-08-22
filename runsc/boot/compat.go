@@ -38,14 +38,21 @@ func initCompatLogs(fd int) error {
 }
 
 type compatEmitter struct {
-	sink    *log.BasicLogger
+	// sink is set during construction and cleared by Close.
+	//
+	// While registered, eventchannel.DefaultEmitter's private mutex serializes
+	// Emit and Close. compatEmitter cannot name that mutex in a checklocks
+	// annotation.
+	sink *log.BasicLogger
+
+	// nameMap is fixed at construction.
 	nameMap strace.SyscallMap
 
-	// mu protects the fields below.
 	mu sync.Mutex
 
 	// trackers map syscall number to the respective tracker instance.
-	// Protected by 'mu'.
+	//
+	// +checklocks:mu
 	trackers map[uint64]syscallTracker
 }
 
@@ -135,8 +142,13 @@ func (c *compatEmitter) Close() error {
 
 // syscallTracker interface allows filters to apply differently depending on
 // the syscall and arguments.
+//
+// emitUnimplementedSyscall holds compatEmitter.mu across shouldReport and
+// onReported, protecting onceTracker.reported and argsTracker.reported/count.
+// Neither tracker stores its owning compatEmitter, so checklocks cannot name
+// that external mutex in a field annotation.
 type syscallTracker interface {
-	// shouldReport returns true is the syscall should be reported.
+	// shouldReport returns true if the syscall should be reported.
 	shouldReport(regs *rpb.Registers) bool
 
 	// onReported marks the syscall as reported.
