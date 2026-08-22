@@ -152,15 +152,17 @@ func (t *Task) PrepareExit(ws linux.WaitStatus) {
 // ptrace.)
 //
 // Preconditions: The caller must be running on the task goroutine.
+//
+// +checklocksexclude:t.tg.signalHandlers.mu
 func (t *Task) PrepareGroupExit(ws linux.WaitStatus) {
 	t.tg.signalHandlers.mu.Lock()
 	defer t.tg.signalHandlers.mu.Unlock()
 	t.prepareGroupExitLocked(ws)
 }
 
-// Preconditions:
-//   - The caller must be running on the task goroutine.
-//   - The signal mutex must be locked.
+// Preconditions: The caller must be running on the task goroutine.
+//
+// +checklocks:t.tg.signalHandlers.mu
 func (t *Task) prepareGroupExitLocked(ws linux.WaitStatus) {
 	if t.tg.exiting || t.tg.execing != nil {
 		// Note that if t.tg.exiting is false but t.tg.execing is not nil, i.e.
