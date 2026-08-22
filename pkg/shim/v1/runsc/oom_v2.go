@@ -46,11 +46,16 @@ type watcherV2 struct {
 	itemCh    chan itemV2
 	publisher shim.Publisher
 
-	mu      sync.Mutex
+	mu sync.Mutex
+
+	// +checklocks:mu
 	cgroups map[string]*cgroupsv2.Manager
+
 	// lastOOM tracks the last published OOM kill count per container.
 	// Shared between the async (EventChan) and sync (isOOM) paths to
 	// prevent duplicate TaskOOM events.
+	//
+	// +checklocks:mu
 	lastOOM map[string]uint64
 }
 
