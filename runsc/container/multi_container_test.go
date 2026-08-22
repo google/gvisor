@@ -4552,3 +4552,83 @@ func TestMultiContainerSharedVolumeCheckpointRestore(t *testing.T) {
 		c.Wait()
 	}
 }
+
+// TestMultiContainerJoinPIDNSOwnerWithoutProcess tests that starting a
+// container which joins a PID namespace whose owning container failed to start
+// does not panic the sandbox.
+//
+// Regression test: a container records ep.pidnsPath early in
+// Loader.startSubcontainer, but its ThreadGroup is only assigned much later
+// (after several error returns). A container whose start fails in between is
+// left registered with pidnsPath set and tg == nil. A second container joining
+// the same path then dereferenced that nil ThreadGroup, panicking the sentry
+// and killing every container in the sandbox.
+func TestMultiContainerJoinPIDNSOwnerWithoutProcess(t *testing.T) {
+	rootDir, cleanup, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer cleanup()
+
+	conf := testutil.TestConfig(t)
+	conf.RootDir = rootDir
+
+	const pidnsPath = "/proc/1/ns/pid"
+
+	// specs[0] is the sandbox; specs[1] and specs[2] both join the same PID
+	// namespace path.
+	testSpecs, ids := createSpecs(sleepCmd, sleepCmd, sleepCmd)
+	for _, i := range []int{1, 2} {
+		testSpecs[i].Linux = &specs.Linux{
+			Namespaces: []specs.LinuxNamespace{
+				{Type: "pid", Path: pidnsPath},
+			},
+		}
+	}
+	// Make container 1 fail to start *after* it records pidnsPath but *before*
+	// its ThreadGroup exists: a terminal is requested but no console socket is
+	// provided, so startSubcontainer returns early.
+	testSpecs[1].Process.Terminal = true
+
+	var containers []*Container
+	for i, spec := range testSpecs {
+		bundleDir, cleanupBundle, err := testutil.SetupBundleDir(spec)
+		if err != nil {
+			t.Fatalf("error setting up container %d: %v", i, err)
+		}
+		defer cleanupBundle()
+
+		cont, err := New(conf, Args{ID: ids[i], Spec: spec, BundleDir: bundleDir})
+		if err != nil {
+			t.Fatalf("error creating container %d: %v", i, err)
+		}
+		defer cont.Destroy()
+		containers = append(containers, cont)
+
+		err = cont.Start(conf)
+		switch i {
+		case 1:
+			// Expected to fail; this is what leaves tg == nil.
+			if err == nil {
+				t.Fatalf("container 1 started unexpectedly; the test needs its start to fail so that it is left registered without a process")
+			}
+			t.Logf("container 1 failed to start as intended: %v", err)
+		default:
+			if err != nil {
+				t.Fatalf("error starting container %d: %v", i, err)
+			}
+		}
+	}
+
+	// The sandbox must still be alive: before the fix, starting container 2
+	// panicked the sentry here.
+	expectedPL := []*control.Process{
+		newProcessBuilder().Cmd("sleep").Process(),
+	}
+	if err := waitForProcessList(containers[2], expectedPL); err != nil {
+		t.Errorf("failed to wait for sleep to start in container 2: %v", err)
+	}
+	if err := waitForProcessList(containers[0], expectedPL); err != nil {
+		t.Errorf("sandbox did not survive: root container unusable: %v", err)
+	}
+}
