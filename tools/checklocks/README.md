@@ -84,6 +84,26 @@ lock must refer to one of:
 
 Like atomic access enforcement, checks may be elided on newly allocated objects.
 
+### Global Variable Annotations
+
+Global variables also support lock and atomic annotations. Put annotations above
+a standalone declaration or above an individual entry in a `var` block:
+
+```go
+var globalMu sync.Mutex
+
+// +checklocks:globalMu
+var first int
+
+var (
+    // +checklocks:globalMu
+    second, third int
+)
+```
+
+Annotations apply to every named variable in that declaration or block entry.
+Comments above an entire `var` block do not annotate its entries.
+
 ### Function Annotations
 
 The `+checklocks` annotation may apply to functions. For example:
