@@ -1562,8 +1562,15 @@ func (fs *filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		}
 	}
 
+	mode := linux.FileMode(d.mode.Load())
+
 	var stat linux.Statx
-	if layerMask := opts.Mask &^ statInternalMask; layerMask != 0 {
+	layerMask := opts.Mask &^ statInternalMask
+	if mode.FileType() == linux.S_IFCHR || mode.FileType() == linux.S_IFBLK {
+		// For block/character devices, make sure we fetch the device ID.
+		layerMask |= linux.STATX_TYPE
+	}
+	if layerMask != 0 {
 		layerVD := d.topLayer()
 		var err error
 		stat, err = fs.vfsfs.VirtualFilesystem().StatAt(ctx, fs.creds, &vfs.PathOperation{
