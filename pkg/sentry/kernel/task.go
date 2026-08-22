@@ -156,11 +156,12 @@ type Task struct {
 	// goroutine.
 	signalMask atomicbitops.Uint64
 
-	// If the task goroutine is currently executing Task.sigtimedwait,
+	// If the task goroutine is currently executing Task.Sigtimedwait,
 	// realSignalMask is the previous value of signalMask, which has temporarily
-	// been replaced by Task.sigtimedwait. Otherwise, realSignalMask is 0.
+	// been replaced by Task.Sigtimedwait. Otherwise, realSignalMask is 0.
 	//
-	// realSignalMask is exclusive to the task goroutine.
+	// realSignalMask is protected by the signal mutex and is owned by the task
+	// goroutine.
 	realSignalMask linux.SignalSet
 
 	// If haveSavedSignalMask is true, savedSignalMask is the signal mask that

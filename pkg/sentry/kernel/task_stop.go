@@ -107,8 +107,9 @@ func (t *Task) beginInternalStop(s TaskStop) {
 	t.beginInternalStopLocked(s)
 }
 
-// Preconditions: Same as beginInternalStop, plus:
-//   - The signal mutex must be locked.
+// Preconditions: Same as beginInternalStop.
+//
+// +checklocks:t.tg.signalHandlers.mu
 func (t *Task) beginInternalStopLocked(s TaskStop) {
 	if t.stop != nil {
 		panic(fmt.Sprintf("Attempting to enter internal stop %#v when already in internal stop %#v", s, t.stop))
