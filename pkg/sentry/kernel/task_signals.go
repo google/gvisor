@@ -1048,7 +1048,8 @@ func (*runInterrupt) execute(t *Task) taskRunState {
 	// Are there signals pending?
 	if info := t.dequeueSignalLocked(linux.SignalSet(t.signalMask.RacyLoad())); info != nil {
 		if err := t.p.PullFullState(t.MemoryManager().AddressSpace(), t.Arch()); err != nil {
-			t.PrepareGroupExit(linux.WaitStatusTerminationSignal(linux.SIGILL))
+			t.prepareGroupExitLocked(linux.WaitStatusTerminationSignal(linux.SIGILL))
+			t.tg.signalHandlers.mu.Unlock()
 			return (*runExit)(nil)
 		}
 

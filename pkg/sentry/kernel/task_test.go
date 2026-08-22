@@ -17,7 +17,14 @@ package kernel
 import (
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/sched"
+	"gvisor.dev/gvisor/pkg/sentry/mm"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
+	"gvisor.dev/gvisor/pkg/sentry/platform"
 )
 
 func TestTaskCPU(t *testing.T) {
@@ -72,4 +79,58 @@ func TestTaskCPU(t *testing.T) {
 		}
 	}
 
+}
+
+type pullFullStateErrorContext struct {
+	platform.Context
+}
+
+func (*pullFullStateErrorContext) PullFullState(platform.AddressSpace, *arch.Context64) error {
+	return linuxerr.EIO
+}
+
+func TestRunInterruptPullFullStateError(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mf := pgalloc.MemoryFileFromContext(ctx)
+	defer mf.Destroy()
+	memoryManager, err := mm.NewMemoryManager(platform.FromContext(ctx), mf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer memoryManager.DecUsers(ctx)
+
+	tg := &ThreadGroup{signalHandlers: NewSignalHandlers()}
+	task := &Task{
+		taskNode: taskNode{tg: tg},
+		image: TaskImage{
+			Arch:          new(arch.Context64),
+			MemoryManager: memoryManager,
+		},
+		p: &pullFullStateErrorContext{},
+	}
+	tg.tasks.PushBack(task)
+	tg.signalHandlers.mu.Lock()
+	queued := task.pendingSignals.enqueue(SignalInfoPriv(linux.SIGUSR1), nil)
+	tg.signalHandlers.mu.Unlock()
+	if !queued {
+		t.Fatal("failed to enqueue signal")
+	}
+
+	if next := (*runInterrupt)(nil).execute(task); next != (*runExit)(nil) {
+		t.Fatalf("runInterrupt returned %T, want *runExit", next)
+	}
+
+	// The error path must release the signal mutex before entering runExit.
+	tg.signalHandlers.mu.Lock()
+	defer tg.signalHandlers.mu.Unlock()
+	if !tg.exiting {
+		t.Error("thread group is not exiting")
+	}
+	wantStatus := linux.WaitStatusTerminationSignal(linux.SIGILL)
+	if got := tg.exitStatus; got != wantStatus {
+		t.Errorf("thread group exit status = %v, want %v", got, wantStatus)
+	}
+	if got := task.exitStatus; got != wantStatus {
+		t.Errorf("task exit status = %v, want %v", got, wantStatus)
+	}
 }
