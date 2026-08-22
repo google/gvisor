@@ -62,6 +62,7 @@ go_library(
         "//pkg/lisafs",
         "//pkg/log",
         "//pkg/metric",
+        "//pkg/pinring",
         "//pkg/prometheus",
         "//pkg/sentry/checkpoint",
         "//pkg/sentry/control",

@@ -32,10 +32,16 @@ func LogDonations(cmd *exec.Cmd) {
 	}
 }
 
+const multipleFDTransferred = -42
+
 // Agency keeps track of files that need to be donated to a child process.
 type Agency struct {
 	donations    []donation
 	closePending []*os.File
+	// transferred maps flag names to FD numbers.
+	// The special value `multipleFDTransferred` means this flag was used
+	// multiple times, so it cannot be mapped to a single FD.
+	transferred map[string]int
 }
 
 type donation struct {
@@ -100,11 +106,28 @@ func (f *Agency) Transfer(cmd *exec.Cmd, nextFD int) int {
 				nextFD++
 			}
 			cmd.Args = append(cmd.Args, fmt.Sprintf("--%s=%d", d.flag, fd))
+			if f.transferred == nil {
+				f.transferred = make(map[string]int)
+			}
+			if _, alreadyExist := f.transferred[d.flag]; alreadyExist {
+				f.transferred[d.flag] = multipleFDTransferred
+			} else {
+				f.transferred[d.flag] = fd
+			}
 		}
 	}
 	// Reset donations made so far in case more transfers are needed.
 	f.donations = nil
 	return nextFD
+}
+
+// TransferredFD returns the FD number that the file donated under flag was
+// given in the child, or -1 if nothing or multiple FDs were donated with it.
+func (f *Agency) TransferredFD(flag string) int {
+	if fd, ok := f.transferred[flag]; ok && fd != multipleFDTransferred {
+		return fd
+	}
+	return -1
 }
 
 // DonateAndTransferCustomFiles sets up the flags for passing file descriptors from the

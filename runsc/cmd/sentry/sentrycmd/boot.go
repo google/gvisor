@@ -99,6 +99,10 @@ type Boot struct {
 	// deviceFD is the file descriptor for the platform device file.
 	deviceFD int
 
+	// pinRingFD is the file descriptor of the donated pin ring.
+	// See `//pkg/pinring`.
+	pinRingFD int
+
 	// ioFDs is the list of FDs used to connect to FS gofers.
 	ioFDs sandboxsetup.IntFlags
 
@@ -273,6 +277,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&b.specFD, "spec-fd", -1, "required fd with the container spec")
 	f.IntVar(&b.controllerFD, "controller-fd", -1, "required FD of a stream socket for the control server that must be donated to this process")
 	f.IntVar(&b.deviceFD, "device-fd", -1, "FD for the platform device file")
+	f.IntVar(&b.pinRingFD, "pin-ring-fd", -1, "FD of a disabled io_uring in which the sentry pins its expensive-to-release files")
 	f.Var(&b.ioFDs, "io-fds", "list of image FDs and/or socket FDs to connect gofer clients. They must follow this order: root first, then mounts as defined in the spec")
 	f.IntVar(&b.devIoFD, "dev-io-fd", -1, "FD to connect dev gofer client")
 	f.Var(&b.stdioFDs, "stdio-fds", "list of FDs containing sandbox stdin, stdout, and stderr in that order")
@@ -663,6 +668,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		Conf:                conf,
 		ControllerFD:        b.controllerFD,
 		Device:              fd.New(b.deviceFD),
+		PinRingFD:           b.pinRingFD,
 		GoferFDs:            b.ioFDs.GetArray(),
 		DevGoferFD:          b.devIoFD,
 		StdioFDs:            b.stdioFDs.GetArray(),

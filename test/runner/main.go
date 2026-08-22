@@ -755,7 +755,7 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 }
 
 // Regex matching some performance-related warnings that are safe to ignore in tests.
-var performanceWarningRegexp = regexp.MustCompile(`(?i).*(slows?|slowing).*startup.*`)
+var performanceWarningRegexp = regexp.MustCompile(`(?i).*(slows?|slowing).*(startup|teardown).*`)
 
 func isWarning(line string) bool {
 	if len(line) >= 5 && line[:5] == "panic" {
