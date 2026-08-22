@@ -149,8 +149,14 @@ func (pg *ProcessGroup) incRefWithParent(parentPG *ProcessGroup) {
 //
 // parentPG is per incRefWithParent.
 //
+// heldSH, if non-nil, is a *SignalHandlers instance that the caller already
+// holds locked. handleOrphan must not (Nested)Lock it again, because a thread
+// group in an orphaned process group may share that same instance (e.g. a
+// process created via clone(CLONE_SIGHAND) without CLONE_THREAD). Locking an
+// already-held signal mutex would self-deadlock the goroutine.
+//
 // Precondition: callers must hold TaskSet.mu for writing.
-func (pg *ProcessGroup) decRefWithParent(parentPG *ProcessGroup) {
+func (pg *ProcessGroup) decRefWithParent(parentPG *ProcessGroup, heldSH *SignalHandlers) {
 	// See incRefWithParent regarding parent == nil.
 	if pg != parentPG && (parentPG == nil || pg.session == parentPG.session) {
 		pg.ancestors--
@@ -172,7 +178,7 @@ func (pg *ProcessGroup) decRefWithParent(parentPG *ProcessGroup) {
 		pg.session.DecRef()
 	})
 	if alive {
-		pg.handleOrphan()
+		pg.handleOrphan(heldSH)
 	}
 }
 
@@ -190,8 +196,12 @@ func (tg *ThreadGroup) parentPG() *ProcessGroup {
 // stopped jobs. If yes, then appropriate signals are delivered to each thread
 // group within the process group.
 //
+// heldSH, if non-nil, is a *SignalHandlers instance that the caller already
+// holds locked; thread groups sharing it are operated on without re-locking
+// (see decRefWithParent).
+//
 // Precondition: callers must hold TaskSet.mu for writing.
-func (pg *ProcessGroup) handleOrphan() {
+func (pg *ProcessGroup) handleOrphan(heldSH *SignalHandlers) {
 	// Check if this process is an orphan.
 	if pg.ancestors != 0 {
 		return
@@ -203,11 +213,18 @@ func (pg *ProcessGroup) handleOrphan() {
 		if tg.processGroup != pg {
 			return
 		}
-		tg.signalHandlers.mu.NestedLock(signalHandlersLockTg)
+		// tg.signalHandlers may be the same instance the caller already holds
+		// locked; NestedLock on an already-held mutex would deadlock.
+		lock := tg.signalHandlers != heldSH
+		if lock {
+			tg.signalHandlers.mu.NestedLock(signalHandlersLockTg)
+		}
 		if tg.groupStopComplete {
 			hasStopped = true
 		}
-		tg.signalHandlers.mu.NestedUnlock(signalHandlersLockTg)
+		if lock {
+			tg.signalHandlers.mu.NestedUnlock(signalHandlersLockTg)
+		}
 	})
 	if !hasStopped {
 		return
@@ -218,10 +235,15 @@ func (pg *ProcessGroup) handleOrphan() {
 		if tg.processGroup != pg {
 			return
 		}
-		tg.signalHandlers.mu.NestedLock(signalHandlersLockTg)
+		lock := tg.signalHandlers != heldSH
+		if lock {
+			tg.signalHandlers.mu.NestedLock(signalHandlersLockTg)
+		}
 		tgLeader.sendSignalLocked(SignalInfoPriv(linux.SIGHUP), true /* group */)
 		tgLeader.sendSignalLocked(SignalInfoPriv(linux.SIGCONT), true /* group */)
-		tg.signalHandlers.mu.NestedUnlock(signalHandlersLockTg)
+		if lock {
+			tg.signalHandlers.mu.NestedUnlock(signalHandlersLockTg)
+		}
 	})
 
 }
@@ -327,7 +349,7 @@ func (tg *ThreadGroup) createSession() (SessionID, *TTY, error) {
 		oldParentPG := tg.parentPG()
 		tg.forEachChildThreadGroupLocked(func(childTG *ThreadGroup) {
 			childTG.processGroup.incRefWithParent(pg)
-			childTG.processGroup.decRefWithParent(oldParentPG)
+			childTG.processGroup.decRefWithParent(oldParentPG, tg.signalHandlers)
 		})
 		// If tg.processGroup is an orphan, decRefWithParent will lock
 		// the signal mutex of each thread group in tg.processGroup.
@@ -336,7 +358,7 @@ func (tg *ThreadGroup) createSession() (SessionID, *TTY, error) {
 		// decRefWithParent to avoid locking tg's signal mutex twice.
 		oldPG := tg.processGroup
 		tg.processGroup = pg
-		oldPG.decRefWithParent(oldParentPG)
+		oldPG.decRefWithParent(oldParentPG, tg.signalHandlers)
 	} else {
 		// The current process group may be nil only in the case of an
 		// unparented thread group (i.e. the init process). This would
@@ -419,9 +441,9 @@ func (tg *ThreadGroup) CreateProcessGroup() error {
 	oldParentPG := tg.parentPG()
 	tg.forEachChildThreadGroupLocked(func(childTG *ThreadGroup) {
 		childTG.processGroup.incRefWithParent(&pg)
-		childTG.processGroup.decRefWithParent(oldParentPG)
+		childTG.processGroup.decRefWithParent(oldParentPG, nil)
 	})
-	tg.processGroup.decRefWithParent(oldParentPG)
+	tg.processGroup.decRefWithParent(oldParentPG, nil)
 	tg.processGroup = &pg
 
 	// Add the new process group to the session.
@@ -466,9 +488,9 @@ func (tg *ThreadGroup) JoinProcessGroup(pidns *PIDNamespace, pgid ProcessGroupID
 	pg.incRefWithParent(parentPG)
 	tg.forEachChildThreadGroupLocked(func(childTG *ThreadGroup) {
 		childTG.processGroup.incRefWithParent(pg)
-		childTG.processGroup.decRefWithParent(tg.processGroup)
+		childTG.processGroup.decRefWithParent(tg.processGroup, nil)
 	})
-	tg.processGroup.decRefWithParent(parentPG)
+	tg.processGroup.decRefWithParent(parentPG, nil)
 	tg.processGroup = pg
 
 	return nil
