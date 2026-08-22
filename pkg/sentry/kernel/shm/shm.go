@@ -66,24 +66,27 @@ type Registry struct {
 
 	// reg defines basic fields and operations needed for all SysV registries.
 	//
-	// Within reg, there are two maps, Objects and KeysToIDs.
+	// Within reg, there are two maps, objects and keysToIDs.
 	//
 	// reg.objects holds all referenced segments, which are removed on the last
 	// DecRef. Thus, it cannot itself hold a reference on the Shm.
 	//
 	// Since removal only occurs after the last (unlocked) DecRef, there
-	// exists a short window during which a Shm still exists in Shm, but is
-	// unreferenced. Users must use TryIncRef to determine if the Shm is
-	// still valid.
+	// exists a short window during which a Shm is still in reg.objects but is
+	// unreferenced. Users must use TryIncRef to determine if the Shm is valid.
 	//
 	// keysToIDs maps segment keys to IDs.
 	//
 	// Shms in keysToIDs are guaranteed to be referenced, as they are
-	// removed by disassociateKey before the last DecRef.
+	// removed by dissociateKey before the last DecRef.
+	//
+	// +checklocks:mu
 	reg *ipc.Registry
 
 	// Sum of the sizes of all existing segments rounded up to page size, in
 	// units of page size.
+	//
+	// +checklocks:mu
 	totalPages uint64
 }
 
@@ -116,10 +119,9 @@ func (r *Registry) FindByID(id ipc.ID) *Shm {
 }
 
 // dissociateKey removes the association between a segment and its key,
-// preventing it from being discovered in the registry. This doesn't necessarily
-// mean the segment is about to be destroyed. This is analogous to unlinking a
-// file; the segment can still be used by a process already referencing it, but
-// cannot be discovered by a new process.
+// preventing it from being found by key. This doesn't necessarily mean the
+// segment is about to be destroyed: it remains accessible by ID while
+// references remain.
 func (r *Registry) dissociateKey(s *Shm) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -200,7 +202,7 @@ func (r *Registry) FindOrCreate(ctx context.Context, pid int32, key ipc.Key, siz
 
 // newShmLocked creates a new segment in the registry.
 //
-// Precondition: Caller must hold r.mu.
+// +checklocks:r.mu
 func (r *Registry) newShmLocked(ctx context.Context, pid int32, key ipc.Key, creator *auth.Credentials, mode linux.FileMode, size uint64) (*Shm, error) {
 	mf := pgalloc.MemoryFileFromContext(ctx)
 	if mf == nil {
@@ -332,6 +334,8 @@ type Shm struct {
 	// via MappingIdentity.
 	ShmRefs
 
+	// mf is initialized during construction or afterLoad, then immutable while
+	// the segment is in use.
 	mf *pgalloc.MemoryFile `state:"nosave"`
 
 	// registry points to the shm registry containing this segment. Immutable.
@@ -350,33 +354,48 @@ type Shm struct {
 	// Invariant: effectiveSize must be a multiple of hostarch.PageSize.
 	effectiveSize uint64
 
-	// fr is the offset into mfp.MemoryFile() that backs this contents of this
-	// segment. Immutable.
+	// fr is the range in mf that backs the contents of this segment. Immutable.
 	fr memmap.FileRange
 
-	// mu protects all fields below.
+	// mu protects mutable state below, including the mutable fields of obj.
 	mu sync.Mutex `state:"nosave"`
 
+	// obj points to common IPC metadata. The pointer is immutable; the ID is
+	// assigned during registration, then immutable. The key, owner IDs, and mode
+	// require mu after initialization.
 	obj *ipc.Object
 
 	// attachTime is updated on every successful shmat.
+	//
+	// +checklocks:mu
 	attachTime ktime.Time
+
 	// detachTime is updated on every successful shmdt.
+	//
+	// +checklocks:mu
 	detachTime ktime.Time
+
 	// changeTime is updated on every successful changes to the segment via
 	// shmctl(IPC_SET).
+	//
+	// +checklocks:mu
 	changeTime ktime.Time
 
-	// creatorPID is the PID of the process that created the segment.
+	// creatorPID is the PID of the process that created the segment. Immutable.
 	creatorPID int32
+
 	// lastAttachDetachPID is the pid of the process that issued the last shmat
 	// or shmdt syscall.
+	//
+	// +checklocks:mu
 	lastAttachDetachPID int32
 
 	// pendingDestruction indicates the segment was marked as destroyed through
-	// shmctl(IPC_RMID). When marked as destroyed, the segment will not be found
-	// in the registry and can no longer be attached. When the last user
-	// detaches from the segment, it is destroyed.
+	// shmctl(IPC_RMID). Its key is dissociated from the registry, but the segment
+	// remains accessible by ID while references remain. It is destroyed when
+	// the last reference is dropped.
+	//
+	// +checklocks:mu
 	pendingDestruction bool
 }
 
@@ -401,18 +420,20 @@ func (s *Shm) Destroy() {
 }
 
 // Lock implements ipc.Mechanism.Lock.
+//
+// +checklocksacquire:s.mu
 func (s *Shm) Lock() {
 	s.mu.Lock()
 }
 
-// Unlock implements ipc.mechanism.Unlock.
+// Unlock implements ipc.Mechanism.Unlock.
 //
-// +checklocksignore
+// +checklocksrelease:s.mu
 func (s *Shm) Unlock() {
 	s.mu.Unlock()
 }
 
-// Precondition: Caller must hold s.mu.
+// +checklocks:s.mu
 func (s *Shm) debugLocked() string {
 	return fmt.Sprintf("Shm{id: %d, key: %d, size: %d bytes, refs: %d, destroyed: %v}",
 		s.obj.ID, s.obj.Key, s.size, s.ReadRefs(), s.pendingDestruction)
@@ -437,9 +458,11 @@ func (s *Shm) InodeID() uint64 {
 	return uint64(s.obj.ID)
 }
 
-// DecRef drops a reference on s.
+// DecRef drops a reference on s. The final reference drop acquires the registry
+// and segment mutexes to remove the segment.
 //
-// Precondition: Caller must not hold s.mu.
+// +checklocksexclude:s.mu
+// +checklocksexclude:s.registry.mu
 func (s *Shm) DecRef(ctx context.Context) {
 	s.ShmRefs.DecRef(func() {
 		s.mf.DecRef(s.fr)

@@ -49,6 +49,8 @@ type Registry struct {
 	mu sync.Mutex `state:"nosave"`
 
 	// reg defines basic fields and operations needed for all SysV registries.
+	//
+	// +checklocks:mu
 	reg *ipc.Registry
 }
 
@@ -66,56 +68,82 @@ type Queue struct {
 	// registry is the registry owning this queue. Immutable.
 	registry *Registry
 
-	// mu protects all the fields below.
+	// mu protects queue state and the mutable fields of obj.
 	mu sync.Mutex `state:"nosave"`
 
 	// dead is set to true when a queue is removed from the registry and should
 	// not be used. Operations on the queue should check dead, and return
 	// EIDRM if set to true.
+	//
+	// +checklocks:mu
 	dead bool
 
 	// obj defines basic fields that should be included in all SysV IPC objects.
+	// The pointer is immutable; mutable fields of the object require mu.
 	obj *ipc.Object
 
 	// senders holds a queue of blocked message senders. Senders are notified
 	// when enough space is available in the queue to insert their message.
+	// It is internally synchronized.
 	senders waiter.Queue
 
 	// receivers holds a queue of blocked receivers. Receivers are notified
 	// when a new message is inserted into the queue and can be received.
+	// It is internally synchronized.
 	receivers waiter.Queue
 
 	// messages is a list of sent messages.
+	//
+	// +checklocks:mu
 	messages msgList
 
 	// sendTime is the last time a msgsnd was performed.
+	//
+	// +checklocks:mu
 	sendTime ktime.Time
 
 	// receiveTime is the last time a msgrcv was performed.
+	//
+	// +checklocks:mu
 	receiveTime ktime.Time
 
 	// changeTime is the last time the queue was modified using msgctl.
+	//
+	// +checklocks:mu
 	changeTime ktime.Time
 
 	// byteCount is the current number of message bytes in the queue.
+	//
+	// +checklocks:mu
 	byteCount uint64
 
 	// messageCount is the current number of messages in the queue.
+	//
+	// +checklocks:mu
 	messageCount uint64
 
 	// maxBytes is the maximum allowed number of bytes in the queue, and is also
 	// used as a limit for the number of total possible messages.
+	//
+	// +checklocks:mu
 	maxBytes uint64
 
 	// sendPID is the PID of the process that performed the last msgsnd.
+	//
+	// +checklocks:mu
 	sendPID int32
 
 	// receivePID is the PID of the process that performed the last msgrcv.
+	//
+	// +checklocks:mu
 	receivePID int32
 }
 
 // Message represents a message exchanged through a Queue via msgsnd(2) and
 // msgrcv(2).
+//
+// The containing Queue.mu protects the list links while queued. Type and Text
+// must remain unchanged while queued, including when returned by MSG_COPY.
 //
 // +stateify savable
 type Message struct {
@@ -165,7 +193,7 @@ func (r *Registry) FindOrCreate(ctx context.Context, key ipc.Key, mode linux.Fil
 // newQueueLocked creates a new queue using the given fields. An error is
 // returned if there're no more available identifiers.
 //
-// Precondition: r.mu must be held.
+// +checklocks:r.mu
 func (r *Registry) newQueueLocked(ctx context.Context, key ipc.Key, creds *auth.Credentials, mode linux.FileMode) (*Queue, error) {
 	q := &Queue{
 		registry:    r,
@@ -452,7 +480,7 @@ func (q *Queue) pop(ctx context.Context, creds *auth.Credentials, mType int64, m
 // message is found. If except is true, the first message of a type not equal
 // to mType will be returned.
 //
-// Precondition: caller must hold q.mu.
+// +checklocks:q.mu
 func (q *Queue) msgOfType(mType int64, except bool) *Message {
 	if except {
 		for msg := q.messages.Front(); msg != nil; msg = msg.Next() {
@@ -474,7 +502,7 @@ func (q *Queue) msgOfType(mType int64, except bool) *Message {
 // msgOfTypeLessThan return the first message with the lowest type less
 // than or equal to mType, nil if no such message exists.
 //
-// Precondition: caller must hold q.mu.
+// +checklocks:q.mu
 func (q *Queue) msgOfTypeLessThan(mType int64) (m *Message) {
 	min := mType
 	for msg := q.messages.Front(); msg != nil; msg = msg.Next() {
@@ -488,7 +516,7 @@ func (q *Queue) msgOfTypeLessThan(mType int64) (m *Message) {
 
 // msgAtIndex returns a pointer to a message at given index, nil if non exits.
 //
-// Precondition: caller must hold q.mu.
+// +checklocks:q.mu
 func (q *Queue) msgAtIndex(mType int64) *Message {
 	msg := q.messages.Front()
 	for ; mType != 0 && msg != nil; mType-- {
@@ -565,13 +593,15 @@ func (q *Queue) stat(ctx context.Context, ats vfs.AccessTypes) (*linux.MsqidDS, 
 }
 
 // Lock implements ipc.Mechanism.Lock.
+//
+// +checklocksacquire:q.mu
 func (q *Queue) Lock() {
 	q.mu.Lock()
 }
 
-// Unlock implements ipc.mechanism.Unlock.
+// Unlock implements ipc.Mechanism.Unlock.
 //
-// +checklocksignore
+// +checklocksrelease:q.mu
 func (q *Queue) Unlock() {
 	q.mu.Unlock()
 }
@@ -582,6 +612,8 @@ func (q *Queue) Object() *ipc.Object {
 }
 
 // Destroy implements ipc.Mechanism.Destroy.
+//
+// +checklocks:q.mu
 func (q *Queue) Destroy() {
 	q.dead = true
 
