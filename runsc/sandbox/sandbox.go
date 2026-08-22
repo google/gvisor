@@ -321,6 +321,10 @@ type Args struct {
 	// open filesystem checkpoint files using O_DIRECT.
 	FSRestoreImagePath string
 	FSRestoreDirect    bool
+
+	// PinRingFile, if non-nil, is the pin ring to donate to the boot
+	// process (see `//pkg/pinring`).
+	PinRingFile *os.File
 }
 
 // New creates the sandbox process. The caller must call Destroy() on the
@@ -1017,6 +1021,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	donations.DonateAndClose("gofer-filestore-fds", args.GoferFilestoreFiles...)
 	donations.DonateAndClose("mounts-fd", args.MountsFile)
 	donations.Donate("start-sync-fd", startSyncFile)
+	donations.DonateAndClose("pin-ring-fd", args.PinRingFile)
 	if err := donations.DonateLogFile("user-log-fd", args.UserLog, os.O_CREATE|os.O_WRONLY|os.O_APPEND, lfOpts); err != nil {
 		return err
 	}

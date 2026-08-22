@@ -1283,6 +1283,7 @@ func (cm *containerManager) SetNetworkArgs(args *CreateLinksAndRoutesArgs, _ *st
 			}
 			f := dupedFDs[fdIdx]
 			fdIdx++
+			cm.l.pinRing.Add(f.FD())
 
 			isSocket, err := fdbased.IsSocketFD(f.FD())
 			if err != nil {
