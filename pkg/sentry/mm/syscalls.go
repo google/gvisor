@@ -402,6 +402,14 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 		return 0, linuxerr.EFAULT
 	}
 
+	if vma := vseg.ValuePtr(); newSize > oldSize && vma.mappable != nil {
+		// Check that offset+length does not overflow.
+		offset := vseg.mappableOffsetAt(oldAddr)
+		if offset+newSize < offset {
+			return 0, linuxerr.EINVAL
+		}
+	}
+
 	// Behavior matrix:
 	//
 	// Move     | oldSize = 0 | oldSize < newSize | oldSize = newSize | oldSize > newSize
@@ -551,10 +559,6 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 	}
 
 	if vma := vseg.ValuePtr(); vma.mappable != nil {
-		// Check that offset+length does not overflow.
-		if vma.off+uint64(newAR.Length()) < vma.off {
-			return 0, linuxerr.EINVAL
-		}
 		// Inform the Mappable, if any, of the new mapping.
 		if err := vma.mappable.CopyMapping(ctx, mm, oldAR, newAR, vseg.mappableOffsetAt(oldAR.Start), vma.canWriteMappableLocked()); err != nil {
 			return 0, err
