@@ -55,13 +55,19 @@ type virtualOwner struct {
 	// This field is initialized at creation time and is immutable.
 	enabled bool
 
-	// mu protects the fields below and they can be accessed using atomic memory
-	// operations.
-	mu  sync.Mutex `state:"nosave"`
+	// mu serializes ownership updates and their permission checks. SetStat
+	// acquires it only for requested virtual-owner changes. Readers access the
+	// fields below atomically without holding mu.
+	mu sync.Mutex `state:"nosave"`
+
+	// +checkatomic
 	uid atomicbitops.Uint32
+	// +checkatomic
 	gid atomicbitops.Uint32
 	// mode is also stored, otherwise setting the host file to `0000` could remove
 	// access to the file.
+	//
+	// +checkatomic
 	mode atomicbitops.Uint32
 }
 
@@ -327,10 +333,12 @@ func NewFD(ctx context.Context, mnt *vfs.Mount, hostFD int, opts *NewFDOptions) 
 		return nil, err
 	}
 	if opts.VirtualOwner {
-		i.virtualOwner.enabled = true
-		i.virtualOwner.uid = atomicbitops.FromUint32(uint32(opts.UID))
-		i.virtualOwner.gid = atomicbitops.FromUint32(uint32(opts.GID))
-		i.virtualOwner.mode = atomicbitops.FromUint32(stat.Mode)
+		i.virtualOwner = virtualOwner{
+			enabled: true,
+			uid:     atomicbitops.FromUint32(uint32(opts.UID)),
+			gid:     atomicbitops.FromUint32(uint32(opts.GID)),
+			mode:    atomicbitops.FromUint32(stat.Mode),
+		}
 	}
 	i.restorable = opts.Restorable
 
@@ -576,8 +584,6 @@ func (i *inode) stat(stat *unix.Stat_t) error {
 }
 
 // SetStat implements kernfs.Inode.SetStat.
-//
-// +checklocksignore
 func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions) error {
 	if i.readonly {
 		return linuxerr.EPERM
@@ -614,7 +620,7 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 	if m&linux.STATX_MODE != 0 {
 		if i.virtualOwner.enabled {
 			// We hold i.virtualOwner.mu.
-			i.virtualOwner.mode = atomicbitops.FromUint32(uint32(opts.Stat.Mode))
+			i.virtualOwner.mode.Store(uint32(opts.Stat.Mode))
 		} else {
 			log.Warningf("sentry seccomp filters don't allow making fchmod(2) syscall")
 			return unix.EPERM
@@ -655,11 +661,11 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 	if i.virtualOwner.enabled {
 		if m&linux.STATX_UID != 0 {
 			// We hold i.virtualOwner.mu.
-			i.virtualOwner.uid = atomicbitops.FromUint32(opts.Stat.UID)
+			i.virtualOwner.uid.Store(opts.Stat.UID)
 		}
 		if m&linux.STATX_GID != 0 {
 			// We hold i.virtualOwner.mu.
-			i.virtualOwner.gid = atomicbitops.FromUint32(opts.Stat.GID)
+			i.virtualOwner.gid.Store(opts.Stat.GID)
 		}
 	}
 	return nil

@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(default_applicable_licenses = ["//:license"])
@@ -64,5 +64,19 @@ go_library(
         "//pkg/usermem",
         "//pkg/waiter",
         "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+go_test(
+    name = "host_test",
+    size = "small",
+    srcs = ["host_test.go"],
+    library = ":host",
+    deps = [
+        "//pkg/abi/linux",
+        "//pkg/fd",
+        "//pkg/memutil",
+        "//pkg/sentry/contexttest",
+        "//pkg/sentry/vfs",
     ],
 )
