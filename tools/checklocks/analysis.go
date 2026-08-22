@@ -90,7 +90,7 @@ func (pc *passContext) checkTypeAlignment(pkg *types.Package, typ *types.Named) 
 	}
 }
 
-// atomicRules specify read constraints.
+// atomicRules specifies permitted access modes.
 type atomicRules int
 
 const (
@@ -98,28 +98,47 @@ const (
 	readWriteAtomic
 	readOnlyAtomic
 	mixedAtomic
+	readOnlyMixedAtomic
 )
 
 // checkAtomicCall checks for an atomic access.
 //
 // inst is the instruction analyzed, obj is used only for maybeFail.
 func (pc *passContext) checkAtomicCall(inst ssa.Instruction, obj types.Object, ar atomicRules) {
+	allowNonAtomicRead := ar == mixedAtomic || ar == readOnlyMixedAtomic
 	switch x := inst.(type) {
-	case *ssa.Call:
-		if x.Common().IsInvoke() {
+	case *ssa.Call, *ssa.Defer:
+		if _, deferred := x.(*ssa.Defer); deferred {
+			// Pure atomic access does not depend on lock state. Guarded
+			// deferred accesses would need their locks checked at execution,
+			// not registration, so keep rejecting those conservatively.
+			if ar != readWriteAtomic {
+				break
+			}
+			// Deferred uses previously reached the force-aware fallback.
+			if _, ok := pc.forced[pc.positionKey(inst.Pos())]; ok {
+				return
+			}
+		}
+		call := x.(ssa.CallInstruction).Common()
+		if call.IsInvoke() {
 			if ar != nonAtomic {
 				// This is an illegal interface dispatch.
 				pc.maybeFail(inst.Pos(), "dynamic dispatch with atomic-only field")
 			}
 			return
 		}
-		fn, ok := x.Common().Value.(*ssa.Function)
+		fn, ok := call.Value.(*ssa.Function)
 		if !ok {
 			if ar != nonAtomic {
 				// This is an illegal call to a non-static function.
 				pc.maybeFail(inst.Pos(), "dispatch to non-static function with atomic-only field")
 			}
 			return
+		}
+		// Generic instantiation wrappers may have no package of their own.
+		if origin := fn.Origin(); origin != nil {
+			fn = origin
 		}
 		pkg := fn.Package()
 		if pkg == nil {
@@ -151,8 +170,20 @@ func (pc *passContext) checkAtomicCall(inst ssa.Instruction, obj types.Object, a
 				pc.maybeFail(inst.Pos(), "unexpected call to atomic function")
 			}
 		}
-		if !strings.HasPrefix(fn.Name(), "Load") && ar == readOnlyAtomic {
-			// We are not allowing any reads in this context.
+		if pkg.Pkg.Name() == "atomicbitops" && strings.HasPrefix(fn.Name(), "Racy") {
+			// Racy methods are non-atomic. Mixed access permits non-atomic
+			// reads under the lock, but writes must remain atomic for
+			// concurrent lock-free readers.
+			if ar != nonAtomic && (!allowNonAtomicRead || fn.Name() != "RacyLoad") {
+				if _, ok := pc.forced[pc.positionKey(inst.Pos())]; !ok {
+					pc.maybeFail(inst.Pos(), "non-atomic operation %s on atomic-only field", fn.Name())
+				}
+			}
+			return
+		}
+		if (ar == readOnlyAtomic || ar == readOnlyMixedAtomic) &&
+			!strings.HasPrefix(fn.Name(), "Load") {
+			// We are not allowing any writes in this context.
 			if _, ok := pc.forced[pc.positionKey(inst.Pos())]; !ok {
 				pc.maybeFail(inst.Pos(), "unexpected call to atomic write function, is a lock missing?")
 			}
@@ -166,7 +197,7 @@ func (pc *passContext) checkAtomicCall(inst ssa.Instruction, obj types.Object, a
 			return
 		}
 	case *ssa.UnOp:
-		if x.Op == token.MUL && ar == mixedAtomic {
+		if x.Op == token.MUL && allowNonAtomicRead {
 			// This is allowed; this is a strict reading.
 			return
 		}
@@ -257,7 +288,8 @@ func (pc *passContext) checkGuards(inst almostInst, from ssa.Value, accessObj ty
 	var (
 		lgf         lockGuardFacts
 		guardsFound int
-		guardsHeld  = make(map[string]struct{}) // Keyed by resolved string.
+		// guardsHeld maps resolved names to exclusive (true) or shared (false).
+		guardsHeld = make(map[string]bool)
 	)
 
 	// Load the facts for the object accessed.
@@ -275,14 +307,15 @@ func (pc *passContext) checkGuards(inst almostInst, from ssa.Value, accessObj ty
 		}
 		s, ok := ls.isHeld(r, isWrite)
 		if ok {
-			guardsHeld[s] = struct{}{}
+			_, exclusive := ls.isHeld(r, true)
+			guardsHeld[s] = exclusive
 			continue
 		}
 		if _, ok := pc.forced[pc.positionKey(inst.Pos())]; ok {
 			// Mark this as locked, since it has been forced. All
 			// forces are treated as an exclusive lock.
 			s, _ := ls.lockField(r, true /* exclusive */)
-			guardsHeld[s] = struct{}{}
+			guardsHeld[s] = true
 			continue
 		}
 		// Note that we may allow this if the disposition is atomic,
@@ -307,6 +340,12 @@ func (pc *passContext) checkGuards(inst almostInst, from ssa.Value, accessObj ty
 				ar = readOnlyAtomic
 			} else {
 				ar = mixedAtomic
+				for _, exclusive := range guardsHeld {
+					if !exclusive {
+						ar = readOnlyMixedAtomic
+						break
+					}
+				}
 			}
 		}
 		if refs := inst.Referrers(); refs != nil {
@@ -378,17 +417,30 @@ func (pc *passContext) checkFieldAccess(inst almostInst, structObj ssa.Value, fi
 	pc.checkGuards(inst, structObj, fieldObj, ls, isWrite)
 }
 
-// noReferrers wraps an instruction as an almostInst.
-type noReferrers struct {
+// globalAccess exposes a global's consuming instruction to atomic checks.
+type globalAccess struct {
 	ssa.Instruction
+	checkAtomic bool
 }
 
 // Referrers implements almostInst.Referrers.
-func (noReferrers) Referrers() *[]ssa.Instruction { return nil }
+func (a globalAccess) Referrers() *[]ssa.Instruction {
+	if !a.checkAtomic {
+		return nil
+	}
+	return &[]ssa.Instruction{a.Instruction}
+}
 
 // checkGlobalAccess checks the validity of a global access.
 func (pc *passContext) checkGlobalAccess(inst ssa.Instruction, g *ssa.Global, ls *lockState, isWrite bool) {
-	pc.checkGuards(noReferrers{inst}, g, g.Object(), ls, isWrite)
+	var lgf lockGuardFacts
+	pc.importLockGuardFacts(g.Object(), &lgf)
+	pc.checkGuards(globalAccess{
+		Instruction: inst,
+		// Only explicitly annotated globals opt into atomic-use checking.
+		// Direct writes are diagnosed separately by checkGuards.
+		checkAtomic: !isWrite && lgf.AtomicDisposition == atomicRequired,
+	}, g, g.Object(), ls, isWrite)
 }
 
 func (pc *passContext) checkCall(call callCommon, lff *lockFunctionFacts, ls *lockState) {
@@ -495,10 +547,10 @@ func exclusiveStr(exclusive bool) string {
 }
 
 // checkFunctionCall checks preconditions for function calls, and tracks the
-// lock state by recording relevant calls to sync functions. Note that calls to
-// atomic functions are tracked by checkFieldAccess by looking directly at the
-// referrers (because ordering doesn't matter there, so we need not scan in
-// instruction order).
+// lock state by recording relevant calls to sync functions. Atomic field
+// referrers are checked by checkFieldAccess using the lock state at the field
+// access, not at a later use of a retained field address. Direct global atomic
+// operations are checked at their consuming instructions.
 func (pc *passContext) checkFunctionCall(call callCommon, fn *types.Func, lff *lockFunctionFacts, ls *lockState) {
 	// Extract the "receiver" properly.
 	var args []ssa.Value
@@ -658,9 +710,8 @@ type callCommon interface {
 // checkInstruction checks the legality the single instruction based on the
 // current lockState.
 func (pc *passContext) checkInstruction(inst ssa.Instruction, lff *lockFunctionFacts, ls *lockState) (*ssa.Return, *lockState) {
-	// Record any observed globals, and check for violations. The global
-	// value is not itself an instruction, but we check all referrers to
-	// see where they are consumed.
+	// Globals are values, not instructions. Check each use with the current
+	// instruction's lock state.
 	var stackLocal [16]*ssa.Value
 	ops := inst.Operands(stackLocal[:])
 	for _, v := range ops {
@@ -668,10 +719,11 @@ func (pc *passContext) checkInstruction(inst ssa.Instruction, lff *lockFunctionF
 			continue
 		}
 		g, ok := (*v).(*ssa.Global)
-		if !ok {
+		if !ok || lff.Ignore {
 			continue
 		}
-		_, isWrite := inst.(*ssa.Store)
+		store, ok := inst.(*ssa.Store)
+		isWrite := ok && store.Addr == g
 		pc.checkGlobalAccess(inst, g, ls, isWrite)
 	}
 
