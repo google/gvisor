@@ -24,9 +24,13 @@ type Pool struct {
 	mu sync.Mutex
 
 	// cache is the set of returned values.
+	//
+	// +checklocks:mu
 	cache []uint64
 
 	// Start is the starting value (if needed).
+	//
+	// +checklocks:mu
 	Start uint64
 
 	// max is the current maximum issued.
