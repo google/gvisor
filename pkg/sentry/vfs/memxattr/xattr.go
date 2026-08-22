@@ -35,8 +35,9 @@ import (
 //
 // +stateify savable
 type SimpleExtendedAttributes struct {
-	// mu protects the below fields.
-	mu     sync.RWMutex `state:"nosave"`
+	mu sync.RWMutex `state:"nosave"`
+
+	// +checklocks:mu
 	xattrs map[string]string
 }
 
@@ -156,6 +157,9 @@ func (x *SimpleExtendedAttributes) RawXattrs() map[string]string {
 
 // SetRawXattrs sets the underlying xattr map from deserialized data.
 // No permission checks are performed.
+//
+// SetRawXattrs takes ownership of xattrs; the caller must not access the map
+// afterward. checklocks cannot track ownership through retained map aliases.
 func (x *SimpleExtendedAttributes) SetRawXattrs(xattrs map[string]string) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
