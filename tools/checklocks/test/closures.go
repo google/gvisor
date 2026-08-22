@@ -60,6 +60,14 @@ func testClosureIgnore(tc *oneGuardStruct) {
 		tc.guardedField = 1
 	}
 	x()
+
+	// Passing a closure as an argument is not an inline invocation.
+	callClosure(func() {
+		callPreconditions(tc)
+	})
+	defer callClosure(func() {
+		callPreconditions(tc)
+	})
 }
 
 func testAnonymousInvalid(tc *oneGuardStruct) {

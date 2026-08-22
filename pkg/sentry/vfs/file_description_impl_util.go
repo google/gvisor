@@ -264,7 +264,9 @@ type DynamicBytesPoller struct {
 	queue waiter.Queue
 
 	// seq is a counter that increases monotonically when
-	// the dynamic bytes file data is updated
+	// the dynamic bytes file data is updated.
+	//
+	// +checkatomic
 	seq atomicbitops.Uint64
 }
 
@@ -343,20 +345,41 @@ type WritableDynamicBytesSource interface {
 //
 // +stateify savable
 type DynamicBytesFileDescriptionImpl struct {
-	vfsfd    *FileDescription   // immutable
-	data     DynamicBytesSource // immutable
-	mu       sync.Mutex         `state:"nosave"` // protects the following fields
-	buf      bytes.Buffer       `state:".([]byte)"`
-	off      atomicbitops.Int64
-	lastRead int64 // offset at which the last Read, PRead, or Seek ended
+	vfsfd *FileDescription   // immutable
+	data  DynamicBytesSource // immutable
+	mu    sync.Mutex         `state:"nosave"`
+
+	// buf caches the generated data.
+	//
+	// +checklocks:mu
+	buf bytes.Buffer `state:".([]byte)"`
+
+	// off is the current file offset. Offset reads it without locking to avoid
+	// taking file-description locks from DynamicBytesSource.Generate callbacks.
+	//
+	// +checkatomic
+	// +checklocks:mu
+	off atomicbitops.Int64
+
+	// lastRead is the offset at which the last Read, PRead, or Seek ended.
+	//
+	// +checklocks:mu
+	lastRead int64
 }
 
+// saveBuf returns the buffer for stateify. The caller must prevent changes
+// to the buffer until serialization of the returned slice completes.
+//
+// +checklocks:fd.mu
 func (fd *DynamicBytesFileDescriptionImpl) saveBuf() []byte {
 	return fd.buf.Bytes()
 }
 
+// loadBuf restores the buffer for stateify before the file is in use.
+//
+// +checklocks:fd.mu
 func (fd *DynamicBytesFileDescriptionImpl) loadBuf(_ goContext.Context, p []byte) {
-	fd.buf.Write(p)
+	_, _ = fd.buf.Write(p)
 }
 
 // Init must be called before first use.
@@ -365,7 +388,7 @@ func (fd *DynamicBytesFileDescriptionImpl) Init(vfsfd *FileDescription, data Dyn
 	fd.data = data
 }
 
-// Preconditions: fd.mu must be locked.
+// +checklocks:fd.mu
 func (fd *DynamicBytesFileDescriptionImpl) preadLocked(ctx context.Context, dst usermem.IOSequence, offset int64, opts *ReadOptions) (int64, error) {
 	// Regenerate the buffer if it's empty, or before pread() at a new offset.
 	// Compare fs/seq_file.c:seq_read() => traverse().
@@ -439,7 +462,7 @@ func (fd *DynamicBytesFileDescriptionImpl) Seek(ctx context.Context, offset int6
 	return offset, nil
 }
 
-// Preconditions: fd.mu must be locked.
+// +checklocks:fd.mu
 func (fd *DynamicBytesFileDescriptionImpl) pwriteLocked(ctx context.Context, src usermem.IOSequence, offset int64, opts WriteOptions) (int64, error) {
 	if opts.Flags&^(linux.RWF_HIPRI|linux.RWF_DSYNC|linux.RWF_SYNC) != 0 {
 		return 0, linuxerr.EOPNOTSUPP
