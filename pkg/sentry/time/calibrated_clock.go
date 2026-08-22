@@ -17,6 +17,7 @@
 package time
 
 import (
+	"sync/atomic"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -32,12 +33,16 @@ import (
 // clock.
 type CalibratedClock struct {
 	// mu protects the fields below.
-	// TODO(mpratt): consider a sequence counter for read locking.
 	mu sync.RWMutex
 
 	// ref sample the reference clock that this clock is calibrated
 	// against.
 	ref *sampler
+
+	// seq is the sequence counter for seqlock pattern.
+	// It is incremented before and after modifications to allow
+	// lock-free reads. Odd values indicate a write is in progress.
+	seq uint32
 
 	// ready indicates that the fields below are ready for use calculating
 	// time.
@@ -95,9 +100,11 @@ func (c *CalibratedClock) reset(str string, v ...any) {
 // resetLocked is equivalent to reset with c.mu already held for writing.
 func (c *CalibratedClock) resetLocked(str string, v ...any) {
 	c.Warningf(str+" Resetting clock; time may jump.", v...)
+	atomic.AddUint32(&c.seq, 1)
 	c.ready = false
 	c.ref.Reset()
 	metric.WeirdnessMetric.Increment(&metric.WeirdnessTypeTimeFallback)
+	atomic.AddUint32(&c.seq, 1)
 }
 
 // updateParams updates the timekeeping parameters based on the passed
@@ -108,6 +115,9 @@ func (c *CalibratedClock) resetLocked(str string, v ...any) {
 //
 // Preconditions: c.mu must be held for writing.
 func (c *CalibratedClock) updateParams(actual Parameters, parked bool) {
+	// Increment sequence counter to indicate write in progress.
+	atomic.AddUint32(&c.seq, 1)
+
 	if !c.ready || parked {
 		// when parked nothing has read the time for a whole interval, so
 		// assume errors have been compensated and recalibrate from scratch
@@ -116,6 +126,7 @@ func (c *CalibratedClock) updateParams(actual Parameters, parked bool) {
 			c.ready = true
 			c.Infof("ready")
 		}
+		atomic.AddUint32(&c.seq, 1)
 		return
 	}
 
@@ -140,6 +151,9 @@ func (c *CalibratedClock) updateParams(actual Parameters, parked bool) {
 
 	c.params = newParams
 	c.errorNS = errorNS
+
+	// Increment sequence counter to indicate write complete.
+	atomic.AddUint32(&c.seq, 1)
 }
 
 // Update runs the update step of the clock, updating its synchronization with
@@ -199,6 +213,40 @@ func (c *CalibratedClock) Update(parked bool) (Parameters, bool) {
 
 // GetTime returns the current time based on the clock calibration.
 func (c *CalibratedClock) GetTime() (int64, error) {
+	// Try lock-free read using seqlock pattern.
+	// Retry up to a few times before falling back to read lock.
+	for i := 0; i < 3; i++ {
+		seq1 := atomic.LoadUint32(&c.seq)
+
+		// If sequence is odd, a write is in progress. Retry.
+		if seq1&1 != 0 {
+			continue
+		}
+
+		// Read the timekeeping parameters.
+		params := c.params
+		now := c.ref.Cycles()
+		v, ok := params.ComputeTime(now)
+
+		// Read sequence counter again to detect concurrent writes.
+		seq2 := atomic.LoadUint32(&c.seq)
+
+		// If sequence didn't change and wasn't odd, data is consistent.
+		if seq1 == seq2 && (seq1&1) == 0 {
+			if !ok {
+				// Something is seriously wrong with the clock. Try
+				// again with syscalls.
+				c.reset("Time computation overflowed. params = %+v, now = %v.", params, now)
+				now, err := c.ref.Syscall()
+				return int64(now), err
+			}
+			return v, nil
+		}
+
+		// Sequence changed, retry.
+	}
+
+	// Fall back to read lock if seqlock failed after retries.
 	c.mu.RLock()
 
 	if !c.ready {
@@ -210,16 +258,16 @@ func (c *CalibratedClock) GetTime() (int64, error) {
 
 	now := c.ref.Cycles()
 	v, ok := c.params.ComputeTime(now)
+	c.mu.RUnlock()
+
 	if !ok {
 		// Something is seriously wrong with the clock. Try
 		// again with syscalls.
-		c.resetLocked("Time computation overflowed. params = %+v, now = %v.", c.params, now)
+		c.reset("Time computation overflowed. params = %+v, now = %v.", c.params, now)
 		now, err := c.ref.Syscall()
-		c.mu.RUnlock()
 		return int64(now), err
 	}
 
-	c.mu.RUnlock()
 	return v, nil
 }
 
