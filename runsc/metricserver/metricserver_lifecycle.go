@@ -82,7 +82,9 @@ func (m *metricServer) startVerifyLoop(ctx context.Context) error {
 	return nil
 }
 
-// shutdownLocked shuts down the server. It assumes mu is held.
+// shutdownLocked shuts down the server with m.mu held.
+//
+// +checklocks:m.mu
 func (m *metricServer) shutdownLocked(ctx context.Context) {
 	log.Infof("Server shutting down.")
 	m.shuttingDown = true

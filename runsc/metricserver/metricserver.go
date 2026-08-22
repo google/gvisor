@@ -247,7 +247,6 @@ func querySandboxMetrics(ctx context.Context, sand *sandbox.Sandbox, verifier *p
 type metricServer struct {
 	rootDir                string
 	pid                    int
-	pidFile                string
 	allowUnknownRoot       bool
 	exposeProfileEndpoints bool
 	address                string
@@ -263,14 +262,22 @@ type metricServer struct {
 	// successive snapshots.
 	promWriterPool sync.Pool
 
-	// mu protects the fields below.
+	// mu protects mutable registry, request-filter, and shutdown state.
 	mu sync.Mutex
+
+	// pidFile is the path to the PID file to remove on shutdown. It is cleared
+	// after successful removal.
+	//
+	// +checklocks:mu
+	pidFile string
 
 	// udsPath is a path to a Unix Domain Socket file on which the server is bound and which it owns.
 	// This socket file will be deleted on server shutdown.
 	// This field is not set if binding to a network port, or when the UDS already existed prior to
 	// being bound by us (i.e. its ownership isn't ours), such that it isn't deleted in this case.
 	// The field is unset once the file is successfully removed.
+	//
+	// +checklocks:mu
 	udsPath string
 
 	// sandboxes is the list of sandboxes we serve metrics for.
@@ -310,9 +317,12 @@ type metricServer struct {
 	// shuttingDown is flipped to true when the server shutdown process has started.
 	// Used to deal with race conditions where a sandbox is trying to register after the server has
 	// already started to go to sleep.
+	//
+	// +checklocks:mu
 	shuttingDown bool
 
 	// shutdownCh is written to when receiving the signal to shut down gracefully.
+	// It is initialized before startVerifyLoop and is never reassigned.
 	shutdownCh chan os.Signal
 
 	// extraData contains additional server-wide data.
@@ -347,7 +357,8 @@ func sufficientlyEqualStats(s1, s2 os.FileInfo) bool {
 
 // refreshSandboxesLocked removes sandboxes that are no longer running from m.sandboxes, and
 // adds sandboxes found in the root directory that do request instrumentation.
-// Preconditions: m.mu is locked.
+//
+// +checklocks:m.mu
 func (m *metricServer) refreshSandboxesLocked() {
 	if m.shuttingDown {
 		// Do nothing to avoid log spam.
@@ -493,6 +504,8 @@ type sandboxLoadResult struct {
 // loadSandboxesLocked loads the state file data from all known sandboxes.
 // It does so in parallel, and avoids reloading sandboxes for which we have
 // already loaded data.
+//
+// +checklocks:m.mu
 func (m *metricServer) loadSandboxesLocked(ctx context.Context) []sandboxLoadResult {
 	m.refreshSandboxesLocked()
 
@@ -960,15 +973,17 @@ func (s *Server) Run(ctx context.Context) error {
 	m.srv.Handler = mux
 	m.srv.ReadTimeout = httpTimeout
 	m.srv.WriteTimeout = httpTimeout
-	if err := m.startVerifyLoop(ctx); err != nil {
-		return fmt.Errorf("cannot start background loop: %w", err)
-	}
 	if m.pidFile != "" {
 		if err := os.WriteFile(m.pidFile, []byte(fmt.Sprintf("%d", m.pid)), 0644); err != nil {
 			return fmt.Errorf("cannot write PID to file %q: %w", m.pidFile, err)
 		}
 		defer os.Remove(m.pidFile)
 		log.Infof("Wrote PID %d to file %v.", m.pid, m.pidFile)
+	}
+	// Finish setting up the PID file before shutdown can remove it and clear
+	// m.pidFile in the background.
+	if err := m.startVerifyLoop(ctx); err != nil {
+		return fmt.Errorf("cannot start background loop: %w", err)
 	}
 
 	// If not modified by the user from the environment, set the Go GC percentage lower than default.
