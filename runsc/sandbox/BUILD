@@ -71,6 +71,7 @@ go_test(
     name = "sandbox_test",
     size = "small",
     srcs = [
+        "env_test.go",
         "network_test.go",
     ],
     library = ":sandbox",
