@@ -998,10 +998,12 @@ func Init() {
 		v565_57_01 := addUnsupportedDriverABI(565, 57, 01, func() *driverABI {
 			abi := v560_28_03()
 			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_GPU_GET_RECOVERY_ACTION] = ctrlHandler(rmControlSimple, nvconf.CapGraphics)
+			abi.allocationClass[nvgpu.MAXWELL_PROFILER_CONTEXT] = allocHandler(rmAllocSimple[nvgpu.NVB1CC_ALLOC_PARAMETERS], nvconf.CapProfiling)
 			prevGetInfo := abi.getInfo
 			abi.getInfo = func() *DriverABIInfo {
 				info := prevGetInfo()
 				info.ControlInfos[nvgpu.NV2080_CTRL_CMD_GPU_GET_RECOVERY_ACTION] = simpleIoctlInfo("NV2080_CTRL_CMD_GPU_GET_RECOVERY_ACTION", "NV2080_CTRL_GPU_GET_RECOVERY_ACTION_PARAMS")
+				info.AllocationInfos[nvgpu.MAXWELL_PROFILER_CONTEXT] = ioctlInfo("MAXWELL_PROFILER_CONTEXT", nvgpu.NVB1CC_ALLOC_PARAMETERS{})
 				return info
 			}
 			return abi
