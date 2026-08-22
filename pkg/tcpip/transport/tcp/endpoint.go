@@ -2361,9 +2361,12 @@ func (e *Endpoint) registerEndpoint(addr tcpip.FullAddress, netProto tcpip.Netwo
 				}
 			}
 
-			id := e.TransportEndpointInfo.ID
-			id.LocalPort = p
-			if err := e.stack.RegisterTransportEndpoint(netProtos, ProtocolNumber, id, e, e.portFlags, bindToDevice); err != nil {
+			// Initialize the ID before publishing the endpoint: ICMP error
+			// delivery reads it without acquiring e.mu.
+			oldID := e.TransportEndpointInfo.ID
+			e.TransportEndpointInfo.ID.LocalPort = p
+			if err := e.stack.RegisterTransportEndpoint(netProtos, ProtocolNumber, e.TransportEndpointInfo.ID, e, e.portFlags, bindToDevice); err != nil {
+				e.TransportEndpointInfo.ID = oldID
 				portRes := ports.Reservation{
 					Networks:     netProtos,
 					Transport:    ProtocolNumber,
@@ -2382,7 +2385,6 @@ func (e *Endpoint) registerEndpoint(addr tcpip.FullAddress, netProto tcpip.Netwo
 
 			// Port picking successful. Save the details of
 			// the selected port.
-			e.TransportEndpointInfo.ID = id
 			e.isPortReserved = true
 			e.boundBindToDevice = bindToDevice
 			e.boundPortFlags = e.portFlags
