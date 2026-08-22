@@ -17,10 +17,13 @@ package kernel
 import (
 	"runtime"
 	"runtime/trace"
+	"syscall"
 	"time"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/ktime"
+	"gvisor.dev/gvisor/pkg/sighandling"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -266,6 +269,13 @@ func (t *Task) unsetInterrupted() {
 func (t *Task) interrupt() {
 	t.interruptSelf()
 	t.p.Interrupt()
+	if sighandling.EnableFuseInterrupts {
+		if tid := t.hostTID.Load(); tid != 0 {
+			if err := unix.Tgkill(unix.Getpid(), int(tid), syscall.SIGUSR1); err != nil {
+				t.Infof("interrupt: tgkill failed: %v", err)
+			}
+		}
+	}
 }
 
 // interruptSelf is like Interrupt, but can only be called by the task

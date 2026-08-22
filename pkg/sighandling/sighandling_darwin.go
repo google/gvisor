@@ -35,6 +35,12 @@ func IgnoreChildStop() error {
 // use of signal.Notify is not appropriate.
 //
 // It stores the value of the previously set handler in previous.
+// func ReplaceSignalHandler(sig unix.Signal, handler uintptr, previous *uintptr) error {
 func ReplaceSignalHandler(sig unix.Signal, handler uintptr, previous *uintptr) error {
 	return errors.New("ReplaceSignalHandler not supported on Darwin")
+}
+
+// ClearSaRestart clears the SA_RESTART flag for the given signal handler.
+func ClearSaRestart(sig unix.Signal) error {
+	return errors.New("ClearSaRestart not supported on Darwin")
 }
