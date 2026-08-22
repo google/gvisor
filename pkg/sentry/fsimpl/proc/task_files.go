@@ -502,10 +502,9 @@ func (f *memInode) init(ctx context.Context, creds *auth.Credentials, devMajor, 
 func (f *memInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	m := getMM(f.task)
 	for {
-		// TODO(gvisor.dev/issue/260): Add check for PTRACE_MODE_ATTACH_FSCREDS
-		// Permission to read this file is governed by PTRACE_MODE_ATTACH_FSCREDS
-		// Since we dont implement setfsuid/setfsgid we can just use PTRACE_MODE_ATTACH
-		if !kernel.ContextCanTrace(ctx, f.task, true) {
+		// Permission to read this file is governed by
+		// PTRACE_MODE_ATTACH_FSCREDS; see fs/proc/base.c:mem_open().
+		if !kernel.ContextCanTraceMode(ctx, f.task, kernel.PtraceAccessModeAttach|kernel.PtraceAccessModeFsCreds) {
 			return nil, linuxerr.EACCES
 		}
 		// Check that the task still has the same mm (hasn't called execve).
@@ -729,7 +728,10 @@ func (f *mmFile) Init(ctx context.Context, creds *auth.Credentials, devMajor, de
 func (f *mmFile) DataSource(ctx context.Context) (vfs.DynamicBytesSource, error) {
 	m := getMM(f.task)
 	for {
-		if !kernel.ContextCanTrace(ctx, f.task, false) {
+		// Permission to read these files is governed by
+		// PTRACE_MODE_READ_FSCREDS; see fs/proc/base.c:maps_open() (and the
+		// similar open functions for smaps, environ, and auxv).
+		if !kernel.ContextCanTraceMode(ctx, f.task, kernel.PtraceAccessModeRead|kernel.PtraceAccessModeFsCreds) {
 			return nil, linuxerr.EACCES
 		}
 		// Check that the task still has the same mm (hasn't called execve).
@@ -1186,7 +1188,9 @@ func (s *exeSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error)
 
 // Getlink implements kernfs.Inode.Getlink.
 func (s *exeSymlink) Getlink(ctx context.Context, _ *vfs.Mount) (vfs.VirtualDentry, string, error) {
-	if !kernel.ContextCanTrace(ctx, s.task, false) {
+	// Permission to read this symlink is governed by PTRACE_MODE_READ_FSCREDS;
+	// see fs/proc/base.c:proc_exe_link().
+	if !kernel.ContextCanTraceMode(ctx, s.task, kernel.PtraceAccessModeRead|kernel.PtraceAccessModeFsCreds) {
 		return vfs.VirtualDentry{}, "", linuxerr.EACCES
 	}
 	if err := checkTaskState(s.task); err != nil {
@@ -1260,7 +1264,9 @@ func (s *cwdSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error)
 
 // Getlink implements kernfs.Inode.Getlink.
 func (s *cwdSymlink) Getlink(ctx context.Context, _ *vfs.Mount) (vfs.VirtualDentry, string, error) {
-	if !kernel.ContextCanTrace(ctx, s.task, false) {
+	// Permission to read this symlink is governed by PTRACE_MODE_READ_FSCREDS;
+	// see fs/proc/base.c:proc_cwd_link().
+	if !kernel.ContextCanTraceMode(ctx, s.task, kernel.PtraceAccessModeRead|kernel.PtraceAccessModeFsCreds) {
 		return vfs.VirtualDentry{}, "", linuxerr.EACCES
 	}
 	if err := checkTaskState(s.task); err != nil {
@@ -1323,7 +1329,9 @@ func (s *rootSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error
 
 // Getlink implements kernfs.Inode.Getlink.
 func (s *rootSymlink) Getlink(ctx context.Context, _ *vfs.Mount) (vfs.VirtualDentry, string, error) {
-	if !kernel.ContextCanTrace(ctx, s.task, false) {
+	// Permission to read this symlink is governed by PTRACE_MODE_READ_FSCREDS;
+	// see fs/proc/base.c:proc_root_link().
+	if !kernel.ContextCanTraceMode(ctx, s.task, kernel.PtraceAccessModeRead|kernel.PtraceAccessModeFsCreds) {
 		return vfs.VirtualDentry{}, "", linuxerr.EACCES
 	}
 	if err := checkTaskState(s.task); err != nil {
