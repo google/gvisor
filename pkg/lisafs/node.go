@@ -66,8 +66,10 @@ type Node struct {
 	// used to deny operations on FDs on this Node after deletion because it is
 	// not safe for FD implementations to do host walks up to this position
 	// anymore. This node may have been replaced with something hazardous.
-	// deleted is protected by opMu. deleted must only be accessed/mutated using
-	// atomics; see markDeletedRecursive for more details.
+	// Accesses must be atomic because markDeletedRecursive also marks
+	// descendants without holding their opMu.
+	//
+	// +checkatomic
 	deleted atomicbitops.Uint32
 
 	// name is the name of the file represented by this Node in parent. If this
@@ -79,12 +81,15 @@ type Node struct {
 	// protected by the backing server's rename mutex.
 	parent *Node
 
+	controlFDsMu sync.Mutex
+
 	// controlFDs is a linked list of all the ControlFDs opened on this node.
 	// Prefer this over a slice to avoid additional allocations. Each ControlFD
 	// is an implicit linked list node so there are no additional allocations
 	// needed to maintain the linked list.
-	controlFDsMu sync.Mutex
-	controlFDs   controlFDList
+	//
+	// +checklocks:controlFDsMu
+	controlFDs controlFDList
 
 	// Here is a performance hack. Past experience has shown that map allocations
 	// on each node for tracking children costs a lot of memory. More small
@@ -125,9 +130,9 @@ func (n *Node) DecRef(context.Context) {
 	}
 }
 
-// InitLocked must be called before first use of fd.
+// InitLocked must be called before first use of n.
 //
-// Precondition: parent.childrenMu is locked.
+// Precondition: parent.childrenMu is locked if parent is non-nil.
 //
 // Postconditions: A ref on n is transferred to the caller.
 func (n *Node) InitLocked(name string, parent *Node) {

@@ -41,11 +41,15 @@ type Client struct {
 	sockMu   sync.Mutex
 	sockComm *sockCommunicator
 
-	// channelsMu protects channels and availableChannels.
 	channelsMu sync.Mutex
+
 	// channels tracks all the channels.
+	//
+	// +checklocks:channelsMu
 	channels []*channel
 	// availableChannels is a LIFO (stack) of channels available to be used.
+	//
+	// +checklocks:channelsMu
 	availableChannels []*channel
 	// activeWg represents active channels.
 	activeWg sync.WaitGroup
@@ -61,10 +65,13 @@ type Client struct {
 	// It is initialized on Mount and is immutable.
 	maxMessageSize uint32
 
+	fdsMu sync.Mutex
+
 	// fdsToClose tracks the FDs to close. It caches the FDs no longer being used
 	// by the client and closes them in one shot. It is not preserved across
 	// checkpoint/restore as FDIDs are not preserved.
-	fdsMu      sync.Mutex
+	//
+	// +checklocks:fdsMu
 	fdsToClose []FDID
 }
 
