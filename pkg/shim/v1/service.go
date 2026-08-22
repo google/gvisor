@@ -118,14 +118,14 @@ type shimRedirector struct {
 	// main is the extension.TaskServiceExt that is used for all calls to the
 	// container's shim, except for the cases where `ext` is set.
 	//
-	// Protected by mu.
+	// +checklocks:mu
 	main extension.TaskServiceExt
 
 	// ext may intercept calls to the container's shim. During the call to create
 	// container, the extension may be created and the shim will start using it
 	// for all calls to the container's shim.
 	//
-	// Protected by mu.
+	// +checklocks:mu
 	ext extension.TaskServiceExt
 
 	// grouping indicates if shim grouping is enabled.
@@ -137,8 +137,7 @@ type shimRedirector struct {
 
 var _ extension.TaskServiceExt = (*shimRedirector)(nil)
 
-// Preconditions:
-//   - s.mu must be locked
+// +checklocks:s.mu
 func (s *shimRedirector) getLocked() extension.TaskServiceExt {
 	if s.ext == nil {
 		return s.main

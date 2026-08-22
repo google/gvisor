@@ -46,7 +46,9 @@ type epoller struct {
 
 	fd        int
 	publisher events.Publisher
-	set       map[uintptr]*item
+
+	// +checklocks:mu
+	set map[uintptr]*item
 }
 
 type item struct {
