@@ -33,7 +33,8 @@ var _ stack.LinkWriter = (*countWriter)(nil)
 
 // countWriter implements LinkWriter.
 type countWriter struct {
-	mu             sync.Mutex
+	mu sync.Mutex
+	// +checklocks:mu
 	packetsWritten int
 	packetsWanted  int
 	done           chan struct{}
@@ -109,7 +110,10 @@ func TestWriteMorePacketsThanBatchSize(t *testing.T) {
 		select {
 		case <-done:
 		case <-time.After(1 * time.Second):
-			t.Fatalf("expected %d packets, but got only %d", want, lower.packetsWritten)
+			lower.mu.Lock()
+			packetsWritten := lower.packetsWritten
+			lower.mu.Unlock()
+			t.Fatalf("expected %d packets, but got only %d", want, packetsWritten)
 		}
 		linkEp.Close()
 	}
