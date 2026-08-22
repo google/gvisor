@@ -58,6 +58,7 @@ func testClosureIgnore(tc *oneGuardStruct) {
 	// Inherit the checklocksignore.
 	x := func() {
 		tc.guardedField = 1
+		atomicGlobal.RacyStore(1)
 	}
 	x()
 }

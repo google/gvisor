@@ -16,13 +16,28 @@ package test
 
 import (
 	"sync"
+	"sync/atomic"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/tools/checklocks/test/crosspkg"
 )
 
 var (
 	globalMu   sync.Mutex
 	globalRWMu sync.RWMutex
+
+	// +checkatomic
+	atomicGlobal = atomicbitops.FromInt32(1)
+
+	// +checkatomic
+	// +checklocks:globalRWMu
+	mixedAtomicGlobal atomicbitops.Int32
+
+	unannotatedAtomicGlobal atomicbitops.Int32
+	unannotatedRawGlobal    int32
+
+	// +checklocks:globalRWMu
+	guardedRawGlobal int32
 )
 
 var globalStruct struct {
@@ -108,4 +123,47 @@ func testCrosspkgGlobalValid() {
 
 func testCrosspkgGlobalInvalid() {
 	crosspkg.Foo = 1 // +checklocksfail
+}
+
+func testAtomicGlobal() {
+	_ = atomicGlobal.Load()
+	atomicGlobal.Store(1)
+	_ = atomicGlobal.RacyLoad() // +checklocksfail=non-atomic operation
+	atomicGlobal.RacyStore(1)   // +checklocksfail=non-atomic operation
+
+	atomicGlobal = atomicbitops.FromInt32(0) // +checklocksfail=non-atomic write
+}
+
+func testMixedAtomicGlobal() {
+	_ = mixedAtomicGlobal.Load()
+	mixedAtomicGlobal.Store(1)       // +checklocksfail=atomic write function
+	_ = mixedAtomicGlobal.RacyLoad() // +checklocksfail=non-atomic operation
+
+	globalRWMu.Lock()
+	mixedAtomicGlobal.Store(1)
+	_ = mixedAtomicGlobal.RacyLoad()
+	mixedAtomicGlobal.RacyStore(1) // +checklocksfail=non-atomic operation
+	globalRWMu.Unlock()
+
+	globalRWMu.RLock()
+	_ = mixedAtomicGlobal.RacyLoad()
+	mixedAtomicGlobal.Store(1) // +checklocksfail=atomic write function
+	globalRWMu.RUnlock()
+}
+
+func testUnannotatedGlobalAtomics(out **int32) {
+	_ = unannotatedAtomicGlobal.RacyLoad()
+	unannotatedAtomicGlobal.RacyStore(1)
+	_ = atomic.LoadInt32(&unannotatedRawGlobal)
+
+	globalRWMu.RLock()
+	_ = atomic.LoadInt32(&guardedRawGlobal)
+	*out = &guardedRawGlobal
+	globalRWMu.RUnlock()
+}
+
+// +checklocksignore
+func testAtomicGlobalIgnore() {
+	atomicGlobal.RacyStore(1)
+	atomicGlobal = atomicbitops.FromInt32(0)
 }
