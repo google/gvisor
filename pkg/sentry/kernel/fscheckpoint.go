@@ -202,7 +202,10 @@ func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) error {
 				PagesStart:         prevPagesOffset,
 			})
 			prevPagesMetadataOffset = pagesMetadataWriter.count
-			prevPagesOffset = apfs.PagesFileOffset()
+			// This callback owns apfs and calls SaveTo serially; the saver
+			// goroutine does not change saveOff. checklocks cannot prove
+			// that no SaveTo call overlaps this read.
+			prevPagesOffset = apfs.PagesFileOffset() // +checklocksignore
 			if err := tmpfs.FSCheckpointWrite(ctx, fs, multiTarWriter); err != nil {
 				return fmt.Errorf("failed to write tmpfs with resourceID %s to multi-tar file: %w", resourceID, err)
 			}

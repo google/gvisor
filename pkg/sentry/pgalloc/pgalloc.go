@@ -201,6 +201,8 @@ type MemoryFile struct {
 
 	// If asyncPageLoad is non-nil, it tracks the state of in-progress or
 	// failed async page loading.
+	//
+	// +checkatomic
 	asyncPageLoad atomic.Pointer[asyncMemoryFileLoad]
 
 	// file is the backing file. The file pointer is immutable.
@@ -212,7 +214,16 @@ type MemoryFile struct {
 	// quiet cache line, since MapInternal() is by far the hottest path through
 	// pgalloc.
 	//
-	// chunks is protected by mu. chunks slices are immutable.
+	// Construction and restore initialize chunks before use. Later replacements
+	// publish growth under mu in extendChunksLocked. checklocks cannot express
+	// this phase-dependent mutex requirement; it checks atomic pointer access
+	// and the live-writer helper's lock contract separately.
+	//
+	// Published slice headers are immutable. Chunk mappings are populated during
+	// restore and cleared during destruction. The annotation governs the pointer,
+	// not its elements.
+	//
+	// +checkatomic
 	chunks atomic.Pointer[[]chunkInfo]
 }
 
@@ -229,7 +240,8 @@ const (
 type chunkInfo struct {
 	// mapping is the start address of a mapping of the chunk.
 	//
-	// mapping is immutable.
+	// mapping is initialized during allocation or restore and cleared during
+	// destruction; it does not change while the chunk is in use.
 	mapping uintptr `state:"nosave"`
 
 	// huge is true if this chunk is expected to be hugepage-backed and false if
@@ -245,7 +257,7 @@ func (f *MemoryFile) chunksLoad() []chunkInfo {
 
 // forEachChunk invokes fn on a sequence of chunks that collectively span all
 // bytes in fr. In each call, chunkFR is the subset of fr that falls within
-// chunk. If any call to f returns false, forEachChunk stops iteration and
+// chunk. If any call to fn returns false, forEachChunk stops iteration and
 // returns.
 func (f *MemoryFile) forEachChunk(fr memmap.FileRange, fn func(chunk *chunkInfo, chunkFR memmap.FileRange) bool) {
 	chunks := f.chunksLoad()
@@ -469,6 +481,9 @@ func NewMemoryFile(file *os.File, opts MemoryFileOpts) (*MemoryFile, error) {
 	return f, nil
 }
 
+// initFields initializes f's bookkeeping before publication.
+//
+// Preconditions: f has not been initialized or shared with other goroutines.
 func (f *MemoryFile) initFields() {
 	// Initially, all pages are void.
 	fullFR := memmap.FileRange{0, math.MaxUint64}
@@ -530,7 +545,9 @@ func (f *MemoryFile) Destroy() {
 	f.releaseCond.Signal()
 }
 
-// Preconditions: f.mu must be locked.
+// releaserDestroyLocked releases the backing file and chunk mappings.
+//
+// +checklocks:f.mu
 func (f *MemoryFile) releaserDestroyLocked() {
 	if !f.destroyed {
 		panic("destroyed is no longer set")
@@ -889,7 +906,9 @@ retryFree:
 	return
 }
 
-// Preconditions: f.mu must be locked.
+// extendChunksLocked grows the backing file and publishes its new chunks.
+//
+// +checklocks:f.mu
 func (f *MemoryFile) extendChunksLocked(alloc *allocState) error {
 	unfree := &f.unfreeSmall
 	if alloc.huge {
@@ -1221,7 +1240,9 @@ func (f *MemoryFile) IncRef(fr memmap.FileRange, memCgID uint32) {
 	f.incRefLocked(fr)
 }
 
-// Preconditions: f.mu must be locked.
+// incRefLocked increments reference counts for pages in fr with f.mu held.
+//
+// +checklocks:f.mu
 func (f *MemoryFile) incRefLocked(fr memmap.FileRange) {
 	f.forEachChunk(fr, func(chunk *chunkInfo, chunkFR memmap.FileRange) bool {
 		unfree := &f.unfreeSmall
@@ -1281,7 +1302,10 @@ func (f *MemoryFile) DecRef(fr memmap.FileRange) {
 				})
 				// Cancel any pending async load on waste pages.
 				if apl := f.asyncPageLoad.Load(); apl != nil {
-					apl.cancelWasteLoad(wasteFR)
+					// DecRef holds f.mu across both synchronous callbacks;
+					// apl came from f.asyncPageLoad, so apl.f is f. checklocks
+					// loses that lock state and owner identity in this callback.
+					apl.cancelWasteLoad(wasteFR) // +checklocksignore
 				}
 			}
 			return true
