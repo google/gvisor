@@ -150,6 +150,10 @@ const (
 	// ContMgrGetNetworkConfig returns the network interfaces and routes applied
 	// during the creation of root container.
 	ContMgrGetNetworkConfig = "containerManager.GetNetworkConfig"
+
+	// ContMgrSetCPUCount updates the number of CPUs visible inside the
+	// sandbox, without a restart.
+	ContMgrSetCPUCount = "containerManager.SetCPUCount"
 )
 
 const (
@@ -908,6 +912,22 @@ func (cm *containerManager) Pause(_, _ *struct{}) error {
 func (cm *containerManager) Resume(_, _ *struct{}) error {
 	cm.l.k.Unpause()
 	return control.PostResume(cm.l.k, nil)
+}
+
+// SetCPUCountArgs are arguments to the SetCPUCount method.
+type SetCPUCountArgs struct {
+	// NumCPU is the new number of CPUs to expose to the application.
+	NumCPU int32
+}
+
+// SetCPUCount pushes a live cgroup CPU quota change into the running
+// sentry, without restarting the sandbox.
+func (cm *containerManager) SetCPUCount(args *SetCPUCountArgs, _ *struct{}) error {
+	log.Debugf("containerManager.SetCPUCount: %d", args.NumCPU)
+	if args.NumCPU <= 0 {
+		return fmt.Errorf("SetCPUCount: invalid NumCPU %d", args.NumCPU)
+	}
+	return cm.l.k.SetApplicationCores(uint(args.NumCPU))
 }
 
 // Wait waits for the init process in the given container.

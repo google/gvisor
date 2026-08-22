@@ -53,6 +53,7 @@ import (
 	"gvisor.dev/gvisor/pkg/eventchannel"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/gomaxprocs"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
@@ -177,14 +178,17 @@ type Kernel struct {
 	tasks                *TaskSet
 	rootUserNamespace    *auth.UserNamespace
 	rootNetworkNamespace *inet.Namespace
-	applicationCores     uint
-	useHostCores         bool
-	extraAuxv            []arch.AuxEntry
-	vdso                 *loader.VDSO
-	vdsoParams           *VDSOParamPage
-	rootUTSNamespace     *UTSNamespace
-	rootIPCNamespace     *IPCNamespace
-	rootCgroupNamespace  *CgroupNamespace
+	// applicationCores is mutable via SetApplicationCores; accessed
+	// atomically since task goroutines read it without a lock. Saved as a
+	// plain uint to keep the statefile encoding unchanged.
+	applicationCores    atomicbitops.Uint32 `state:".(uint)"`
+	useHostCores        bool
+	extraAuxv           []arch.AuxEntry
+	vdso                *loader.VDSO
+	vdsoParams          *VDSOParamPage
+	rootUTSNamespace    *UTSNamespace
+	rootIPCNamespace    *IPCNamespace
+	rootCgroupNamespace *CgroupNamespace
 
 	// futexes is the "root" futex.Manager, from which all others are forked.
 	// This is necessary to ensure that shared futexes are coherent across all
@@ -539,7 +543,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	k.cpuClockTickerWakeCh = make(chan struct{}, 1)
 	k.cpuClockTickerStopCond.L = &k.runningTasksMu
 	k.taskActivityCh = make(chan struct{})
-	k.applicationCores = args.ApplicationCores
+	appCores := args.ApplicationCores
 	if args.UseHostCores && k.HasCPUNumbers() {
 		args.UseHostCores = false
 		log.Infof("UseHostCores enabled but the platform implements HasCPUNumbers(): setting UseHostCores to false")
@@ -552,20 +556,21 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 			return fmt.Errorf("failed to get maximum CPU number: %v", err)
 		}
 		minAppCores := uint(maxCPU) + 1
-		if k.applicationCores < minAppCores {
-			log.Infof("UseHostCores enabled: increasing ApplicationCores from %d to %d", k.applicationCores, minAppCores)
-			k.applicationCores = minAppCores
+		if appCores < minAppCores {
+			log.Infof("UseHostCores enabled: increasing ApplicationCores from %d to %d", appCores, minAppCores)
+			appCores = minAppCores
 		}
 	}
 
 	if k.HasCPUNumbers() {
 		numCPUs := uint(k.NumCPUs())
-		if k.applicationCores < numCPUs {
-			log.Infof("ApplicationCores is less than NumCPUs: %d < %d", k.applicationCores, numCPUs)
+		if appCores < numCPUs {
+			log.Infof("ApplicationCores is less than NumCPUs: %d < %d", appCores, numCPUs)
 			log.Infof("Setting applicationCores to NumCPUs: %d", numCPUs)
-			k.applicationCores = numCPUs
+			appCores = numCPUs
 		}
 	}
+	k.applicationCores.Store(uint32(appCores))
 
 	k.extraAuxv = args.ExtraAuxv
 	k.vdso = args.Vdso
@@ -948,7 +953,7 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 	k.cpuClockTickerStopCond.L = &k.runningTasksMu
 	k.taskActivityCh = make(chan struct{})
 
-	initAppCores := k.applicationCores
+	initAppCores := k.applicationCores.Load()
 
 	// Load the pre-saved CPUID FeatureSet.
 	//
@@ -1033,8 +1038,8 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 	// assignments, we can't tolerate an increase in the number of host CPUs,
 	// which could result in getcpu(2) returning CPUs that applications expect
 	// not to exist.
-	if k.useHostCores && initAppCores > k.applicationCores {
-		return fmt.Errorf("UseHostCores enabled: can't increase ApplicationCores from %d to %d after restore", k.applicationCores, initAppCores)
+	if restoredAppCores := k.applicationCores.Load(); k.useHostCores && initAppCores > restoredAppCores {
+		return fmt.Errorf("UseHostCores enabled: can't increase ApplicationCores from %d to %d after restore", restoredAppCores, initAppCores)
 	}
 
 	return nil
@@ -1422,7 +1427,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		Credentials:      newCreds,
 		NoNewPrivs:       args.NoNewPrivs,
 		NetworkNamespace: k.RootNetworkNamespace(),
-		AllowedCPUMask:   sched.NewFullCPUSet(k.applicationCores),
+		AllowedCPUMask:   sched.NewFullCPUSet(uint(k.applicationCores.Load())),
 		UTSNamespace:     args.UTSNamespace,
 		IPCNamespace:     args.IPCNamespace,
 		CgroupNamespace:  cgroupns,
@@ -1923,7 +1928,38 @@ func (k *Kernel) TestOnlySetGlobalInit(tg *ThreadGroup) {
 // ApplicationCores returns the number of CPUs visible to sandboxed
 // applications.
 func (k *Kernel) ApplicationCores() uint {
-	return k.applicationCores
+	return uint(k.applicationCores.Load())
+}
+
+// maxApplicationCores bounds SetApplicationCores' n, since it comes from an
+// RPC and there's no vCPU pool size to naturally cap it against.
+const maxApplicationCores = 4096
+
+// SetApplicationCores raises the CPU count visible to applications (and
+// GOMAXPROCS) to n without a restart. Grow-only — shrinking could leave a
+// task's AllowedCPUMask referencing now-invalid CPUs — and rejected on
+// HasCPUNumbers() platforms (e.g. KVM), whose vCPU pool is fixed at boot.
+func (k *Kernel) SetApplicationCores(n uint) error {
+	if n == 0 || n > maxApplicationCores {
+		return fmt.Errorf("SetApplicationCores called with invalid n == %d", n)
+	}
+	if k.HasCPUNumbers() {
+		return fmt.Errorf("SetApplicationCores is not supported on platforms that assign fixed CPU numbers (e.g. KVM): vCPU pool is sized at boot")
+	}
+	for {
+		old := k.applicationCores.Load()
+		if uint32(n) == old {
+			return nil
+		}
+		if uint32(n) < old {
+			return fmt.Errorf("SetApplicationCores(%d) would shrink ApplicationCores from %d: not yet supported", n, old)
+		}
+		if k.applicationCores.CompareAndSwap(old, uint32(n)) {
+			log.Infof("ApplicationCores changed from %d to %d", old, n)
+			gomaxprocs.SetBase(int(n))
+			return nil
+		}
+	}
 }
 
 // RealtimeClock returns the application CLOCK_REALTIME clock.
