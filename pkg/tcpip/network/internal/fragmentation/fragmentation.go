@@ -277,18 +277,20 @@ func (f *Fragmentation) release(r *reassembler, timedOut bool) {
 
 	delete(f.reassemblers, r.id)
 	f.rList.Remove(r)
-	f.memSize -= r.memSize // +checklocksignore
+	memSize := r.memSize // +checklocksignore
+	f.memSize -= memSize
 	if f.memSize < 0 {
 		log.Warningf("memory counter < 0 (%d), this is an accounting bug that requires investigation", f.memSize)
 		f.memSize = 0
 	}
 
+	pkt := r.pkt // +checklocksignore
 	if h := f.timeoutHandler; timedOut && h != nil {
-		h.OnReassemblyTimeout(r.pkt) // +checklocksignore
+		h.OnReassemblyTimeout(pkt)
 	}
-	if r.pkt != nil { // +checklocksignore
-		r.pkt.DecRef() // +checklocksignore
-		r.pkt = nil    // +checklocksignore
+	if pkt != nil {
+		pkt.DecRef()
+		r.pkt = nil // +checklocksignore
 	}
 	for _, h := range r.holes { // +checklocksignore
 		if h.pkt != nil {
