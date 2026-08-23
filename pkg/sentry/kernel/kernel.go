@@ -1845,6 +1845,10 @@ func (k *Kernel) Unpause() {
 // context is used only for debugging to describe how the signal was received.
 //
 // Preconditions: Kernel must have an init process.
+//
+// +checklocksexclude:k.extMu
+// +checklocksexclude:k.tasks.mu
+// +checklocksexclude:k.globalInit.signalHandlers.mu
 func (k *Kernel) SendExternalSignal(info *linux.SignalInfo, context string) {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
@@ -1854,6 +1858,10 @@ func (k *Kernel) SendExternalSignal(info *linux.SignalInfo, context string) {
 // SendExternalSignalThreadGroup injects a signal into an specific ThreadGroup.
 //
 // This function doesn't skip signals like SendExternalSignal does.
+//
+// +checklocksexclude:k.extMu
+// +checklocksexclude:tg.pidns.owner.mu
+// +checklocksexclude:tg.signalHandlers.mu
 func (k *Kernel) SendExternalSignalThreadGroup(tg *ThreadGroup, info *linux.SignalInfo) error {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
@@ -1864,6 +1872,12 @@ func (k *Kernel) SendExternalSignalThreadGroup(tg *ThreadGroup, info *linux.Sign
 // given process group.
 //
 // This function doesn't skip signals like SendExternalSignal does.
+//
+// Callers must not hold a signal mutex for any target thread group.
+// checklocks cannot express this dynamically selected lock set.
+//
+// +checklocksexclude:k.extMu
+// +checklocksexclude:k.tasks.mu
 func (k *Kernel) SendExternalSignalProcessGroup(pg *ProcessGroup, info *linux.SignalInfo) error {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()

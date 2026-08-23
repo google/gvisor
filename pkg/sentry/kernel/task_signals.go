@@ -391,6 +391,9 @@ func (t *Task) SendGroupSignal(info *linux.SignalInfo) error {
 
 // SendSignal sends the given signal to tg, using tg's leader to determine if
 // the signal is blocked.
+//
+// +checklocksexclude:tg.pidns.owner.mu
+// +checklocksexclude:tg.signalHandlers.mu
 func (tg *ThreadGroup) SendSignal(info *linux.SignalInfo) error {
 	tg.pidns.owner.mu.RLock()
 	defer tg.pidns.owner.mu.RUnlock()
