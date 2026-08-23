@@ -56,15 +56,20 @@ type genericFD interface {
 //   - Each control FD holds a ref on its Node for its entire lifetime.
 type ControlFD struct {
 	controlFDRefs
+	// These generated links use the associated node.controlFDsMu. Their
+	// generic accessors cannot express the enclosing ControlFD's node owner.
 	controlFDEntry
 
 	// node is the filesystem node this FD is immutably associated with.
 	node *Node
 
+	openFDsMu sync.RWMutex
+
 	// openFDs is a linked list of all FDs opened on this FD. As per reference
 	// model, all open FDs hold a ref on this FD.
-	openFDsMu sync.RWMutex
-	openFDs   openFDList
+	//
+	// +checklocks:openFDsMu
+	openFDs openFDList
 
 	// All the following fields are immutable.
 
@@ -87,6 +92,8 @@ var _ genericFD = (*ControlFD)(nil)
 // DecRef implements refs.RefCounter.DecRef. Note that the context
 // parameter should never be used. It exists solely to comply with the
 // refs.RefCounter interface.
+//
+// +checklocksexclude:fd.conn.server.renameMu
 func (fd *ControlFD) DecRef(context.Context) {
 	fd.controlFDRefs.DecRef(func() {
 		fd.conn.server.renameMu.RLock()
@@ -95,16 +102,21 @@ func (fd *ControlFD) DecRef(context.Context) {
 	})
 }
 
-// decRefLocked is the same as DecRef except the added precondition.
+// decRefLocked drops a reference with the server's rename mutex already held
+// at least for reading, avoiding DecRef's acquisition of that mutex.
 //
-// Precondition: server's rename mutex must be at least read locked.
+// +checklocksread:fd.conn.server.renameMu
 func (fd *ControlFD) decRefLocked() {
 	fd.controlFDRefs.DecRef(func() {
-		fd.destroyLocked()
+		// The destructor runs synchronously with the required rename lock held;
+		// checklocks does not propagate that lock into the callback.
+		fd.destroyLocked() // +checklocksignore
 	})
 }
 
-// Precondition: server's rename mutex must be at least read locked.
+// destroyLocked releases fd's node and implementation under the rename mutex.
+//
+// +checklocksread:fd.conn.server.renameMu
 func (fd *ControlFD) destroyLocked() {
 	// Update node's control FD list.
 	fd.node.removeFD(fd)
@@ -119,9 +131,10 @@ func (fd *ControlFD) destroyLocked() {
 // Init must be called before first use of fd. It inserts fd into the
 // filesystem tree.
 //
-// Preconditions:
-//   - server's rename mutex must be at least read locked.
-//   - The caller must take a ref on node which is transferred to fd.
+// Precondition: The caller must take a ref on node which is transferred to fd.
+//
+// +checklocksread:c.server.renameMu
+// +checklocksexclude:c.fdsMu
 func (fd *ControlFD) Init(c *Connection, node *Node, mode linux.FileMode, impl ControlFDImpl) {
 	fd.conn = c
 	fd.node = node
@@ -171,16 +184,20 @@ func (fd *ControlFD) Node() *Node {
 
 // RemoveFromConn removes this control FD from its owning connection.
 //
-// Preconditions:
-//   - fd should not have been returned to the client. Otherwise the client can
-//     still refer to it.
-//   - server's rename mutex must at least be read locked.
+// Precondition: fd must not have been returned to the client. Otherwise the
+// client can still refer to it.
+//
+// +checklocksread:fd.conn.server.renameMu
+// +checklocksexclude:fd.conn.fdsMu
 func (fd *ControlFD) RemoveFromConn() {
 	fd.conn.removeControlFDLocked(fd.id)
 }
 
 // safelyRead executes the given operation with the local path node locked.
-// This guarantees that fd's path will not change. fn may not any change paths.
+// This guarantees that fd's path will not change. fn must not change paths.
+//
+// +checklocksexclude:fd.conn.server.renameMu
+// +checklocksexclude:fd.node.opMu
 func (fd *ControlFD) safelyRead(fn func() error) error {
 	fd.conn.server.renameMu.RLock()
 	defer fd.conn.server.renameMu.RUnlock()
@@ -192,6 +209,9 @@ func (fd *ControlFD) safelyRead(fn func() error) error {
 // safelyWrite executes the given operation with the local path node locked in
 // a writable fashion. This guarantees that no other operation is executing on
 // this path node. fn may change paths inside fd.node.
+//
+// +checklocksexclude:fd.conn.server.renameMu
+// +checklocksexclude:fd.node.opMu
 func (fd *ControlFD) safelyWrite(fn func() error) error {
 	fd.conn.server.renameMu.RLock()
 	defer fd.conn.server.renameMu.RUnlock()
@@ -203,13 +223,21 @@ func (fd *ControlFD) safelyWrite(fn func() error) error {
 // safelyGlobal executes the given operation with the global path lock held.
 // This guarantees that no other operations is executing concurrently on this
 // server. fn may change any path.
+//
+// +checklocksexclude:fd.conn.server.renameMu
 func (fd *ControlFD) safelyGlobal(fn func() error) (err error) {
 	fd.conn.server.renameMu.Lock()
 	defer fd.conn.server.renameMu.Unlock()
 	return fn()
 }
 
-// forEachOpenFD executes fn on each FD opened on fd.
+// forEachOpenFD executes fn synchronously on each FD opened on fd while holding
+// fd.openFDsMu for reading. No reference is transferred to fn. It must not add
+// or remove open FDs, or drop an open FD's last reference; those operations
+// acquire the same mutex for writing. checklocks does not propagate the held
+// lock through fn.
+//
+// +checklocksexclude:fd.openFDsMu
 func (fd *ControlFD) forEachOpenFD(fn func(ofd *OpenFD)) {
 	fd.openFDsMu.RLock()
 	defer fd.openFDsMu.RUnlock()
@@ -227,6 +255,8 @@ func (fd *ControlFD) forEachOpenFD(fn func(ofd *OpenFD)) {
 //   - An OpenFD takes a reference on the control FD it was opened on.
 type OpenFD struct {
 	openFDRefs
+	// These generated links use controlFD.openFDsMu. Entry accessors have
+	// no back-reference to the enclosing OpenFD to name that owner lock.
 	openFDEntry
 
 	// All the following fields are immutable.
@@ -257,6 +287,9 @@ func (fd *OpenFD) ControlFD() ControlFDImpl {
 // DecRef implements refs.RefCounter.DecRef. Note that the context
 // parameter should never be used. It exists solely to comply with the
 // refs.RefCounter interface.
+//
+// +checklocksexclude:fd.controlFD.openFDsMu
+// +checklocksexclude:fd.controlFD.conn.server.renameMu
 func (fd *OpenFD) DecRef(context.Context) {
 	fd.openFDRefs.DecRef(func() {
 		fd.controlFD.openFDsMu.Lock()
@@ -268,6 +301,9 @@ func (fd *OpenFD) DecRef(context.Context) {
 }
 
 // Init must be called before first use of fd.
+//
+// +checklocksexclude:cfd.conn.fdsMu
+// +checklocksexclude:cfd.openFDsMu
 func (fd *OpenFD) Init(cfd *ControlFD, flags uint32, impl OpenFDImpl) {
 	// Initialize fd with 1 ref which is transferred to c via c.insertFD().
 	fd.openFDRefs.InitRefs()
@@ -314,6 +350,8 @@ func (fd *BoundSocketFD) ControlFD() ControlFDImpl {
 // DecRef implements refs.RefCounter.DecRef. Note that the context
 // parameter should never be used. It exists solely to comply with the
 // refs.RefCounter interface.
+//
+// +checklocksexclude:fd.controlFD.conn.server.renameMu
 func (fd *BoundSocketFD) DecRef(context.Context) {
 	fd.boundSocketFDRefs.DecRef(func() {
 		fd.controlFD.DecRef(nil) // Drop the ref on the control FD.
@@ -322,6 +360,8 @@ func (fd *BoundSocketFD) DecRef(context.Context) {
 }
 
 // Init must be called before first use of fd.
+//
+// +checklocksexclude:cfd.conn.fdsMu
 func (fd *BoundSocketFD) Init(cfd *ControlFD, impl BoundSocketFDImpl) {
 	// Initialize fd with 1 ref which is transferred to c via c.insertFD().
 	fd.boundSocketFDRefs.InitRefs()
@@ -349,6 +389,13 @@ func (fd *BoundSocketFD) Init(cfd *ControlFD, impl BoundSocketFDImpl) {
 //
 // global: The method is guaranteed to be exclusive of any read, write or
 // global operation.
+//
+// Read and write operations run synchronously with the associated ControlFD's
+// server.renameMu held for reading and node.opMu held for reading or writing,
+// respectively. Global operations hold server.renameMu for writing. These
+// guarantees also apply through the associated ControlFD of an OpenFD or
+// BoundSocketFD. checklocks does not transfer concrete method contracts
+// through interface dispatch. Per-method exceptions are described below.
 
 // ControlFDImpl contains implementation details for a ControlFD.
 // Implementations of ControlFDImpl should contain their associated ControlFD

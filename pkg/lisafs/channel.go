@@ -98,6 +98,8 @@ func (ch *channel) destroy() {
 
 // createChannel creates a server side channel. It returns a packet window
 // descriptor (for the data channel) and an open socket for the FD channel.
+//
+// +checklocksexclude:c.channelsMu
 func (c *Connection) createChannel(maxMessageSize uint32) (*channel, flipcall.PacketWindowDescriptor, int, error) {
 	c.channelsMu.Lock()
 	defer c.channelsMu.Unlock()
