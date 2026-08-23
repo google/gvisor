@@ -212,7 +212,11 @@ type MemoryFile struct {
 	// quiet cache line, since MapInternal() is by far the hottest path through
 	// pgalloc.
 	//
-	// chunks is protected by mu. chunks slices are immutable.
+	// After construction, stores to chunks require mu. Published slice headers
+	// and membership are immutable; chunk mappings follow the lifecycle below.
+	//
+	// The current checker cannot validate this field's generic atomic.Pointer
+	// operations.
 	chunks atomic.Pointer[[]chunkInfo]
 }
 
@@ -229,7 +233,13 @@ const (
 type chunkInfo struct {
 	// mapping is the start address of a mapping of the chunk.
 	//
-	// mapping is immutable.
+	// mapping is initialized before a new chunk is published. LoadFrom
+	// initializes restored mappings and destruction clears them with the
+	// owning MemoryFile.mu held. Commitment scans read mapping under that
+	// mutex. Other readers are ordered after initialization and exclude
+	// destruction through page references or MemoryFile lifecycle ownership.
+	//
+	// chunkInfo has no pointer to its MemoryFile for checklocks to use.
 	mapping uintptr `state:"nosave"`
 
 	// huge is true if this chunk is expected to be hugepage-backed and false if
@@ -1677,7 +1687,9 @@ func (f *MemoryFile) updateUsageLocked(memCgIDs map[uint32]struct{}) error {
 	// Track if anything changed to elide the merge.
 	changedAny := false
 	defer func() {
-		if changedAny {
+		// SaveTo may have started while mincore released f.mu, and may
+		// retain accounting iterators across its own unlocks.
+		if changedAny && !f.isSaving {
 			f.memAcct.MergeAll()
 		}
 	}()

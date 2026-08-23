@@ -17,10 +17,21 @@
 package pgalloc
 
 import (
+	"bytes"
+	"encoding/binary"
+	"os"
+	"runtime"
+	"sync"
 	"testing"
+	"time"
 
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/memutil"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/sentry/usage"
+	"gvisor.dev/gvisor/pkg/state"
+	"gvisor.dev/gvisor/pkg/state/wire"
 )
 
 const (
@@ -583,5 +594,154 @@ func TestFindAllocatable(t *testing.T) {
 				t.Errorf("findAllocatableAndMarkUsed(%+v): got: end=%#x, want: %#x\n%v", alloc, fr.End, wantEnd, f)
 			}
 		})
+	}
+}
+
+// readFunc lets the restore test intervene after a page reaches its mapping.
+type readFunc func([]byte) (int, error)
+
+// Read implements io.Reader.
+func (f readFunc) Read(p []byte) (int, error) {
+	return f(p)
+}
+
+func TestLoadFromWithUpdateUsage(t *testing.T) {
+	newMemoryFile := func() *MemoryFile {
+		t.Helper()
+		memfd, err := memutil.CreateMemFD("pgalloc-test", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		file := os.NewFile(uintptr(memfd), "pgalloc-test")
+		f, err := NewMemoryFile(file, MemoryFileOpts{
+			DisableMemoryAccounting: true,
+		})
+		if err != nil {
+			_ = file.Close()
+			t.Fatal(err)
+		}
+		t.Cleanup(f.Destroy)
+		return f
+	}
+
+	ctx := context.Background()
+	src := newMemoryFile()
+	fr, err := src.Allocate(3*page, AllocOpts{Kind: usage.Anonymous})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { src.DecRef(fr) })
+
+	want := make([]byte, 3*page)
+	want[0], want[2*page] = 1, 2
+	// The first three-page allocation fits in one chunk.
+	src.forEachMappingSlice(fr, func(bs []byte) {
+		bs[0], bs[2*page] = want[0], want[2*page]
+	})
+	var saved bytes.Buffer
+	if err := src.SaveTo(ctx, &saved, &SaveOpts{
+		ExcludeCommittedZeroPages: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	data := saved.Bytes()
+	metadataEnd := 8 + int(binary.LittleEndian.Uint64(data[:8]))
+	probe := bytes.NewReader(data[metadataEnd:])
+	length, object, err := state.ReadHeader(&wire.Reader{Reader: probe})
+	if err != nil || object || length != page {
+		t.Fatalf("first page header: length=%d object=%t err=%v",
+			length, object, err)
+	}
+	firstPayloadEnd := len(data) - probe.Len() + int(length)
+
+	dst := newMemoryFile()
+	t.Cleanup(func() {
+		// LoadFrom may fail before or after importing this reference.
+		dst.mu.Lock()
+		seg := dst.unfreeSmall.FindSegment(fr.Start)
+		hasRef := seg.Ok() && seg.Value().refs != 0
+		dst.mu.Unlock()
+		if hasRef {
+			dst.DecRef(fr)
+		}
+	})
+
+	stop := make(chan struct{})
+	scanned := make(chan error, 1)
+	var scanWG sync.WaitGroup
+	scanWG.Go(func() {
+		// Observe host commitment without synchronizing with LoadFrom. A
+		// signal from the reader would hide missing mapping publication.
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			committed, err := dst.TotalUsage()
+			if err != nil {
+				scanned <- err
+				return
+			}
+			if committed >= 2*page {
+				scanned <- dst.UpdateUsage(nil)
+				return
+			}
+			runtime.Gosched()
+		}
+	})
+	t.Cleanup(func() {
+		close(stop)
+		scanWG.Wait()
+	})
+
+	input := bytes.NewReader(data)
+	updated := false
+	reader := readFunc(func(p []byte) (int, error) {
+		n, err := input.Read(p)
+		if !updated && len(data)-input.Len() >= firstPayloadEnd {
+			updated = true
+			// Model neighboring-page commitment without requiring THP.
+			// This preserves the omitted page's zero contents.
+			dst.forEachMappingSlice(memmap.FileRange{
+				Start: fr.Start + page,
+				End:   fr.Start + 2*page,
+			}, func(bs []byte) {
+				clear(bs)
+			})
+			select {
+			case err := <-scanned:
+				if err != nil {
+					t.Fatalf("UpdateUsage during restore: %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("usage scan did not complete during restore")
+			}
+		}
+		return n, err
+	})
+	if err := dst.LoadFrom(ctx, reader, &LoadOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	if !updated {
+		t.Fatal("restore never reached the accounting update")
+	}
+	dst.forEachMappingSlice(fr, func(bs []byte) {
+		if !bytes.Equal(bs, want) {
+			t.Error("restored pages differ from saved pages")
+		}
+	})
+	if input.Len() != 0 {
+		t.Errorf("restore left %d bytes unread", input.Len())
+	}
+
+	// Count both restored pages and the zero page committed during loading.
+	dst.mu.Lock()
+	committed := dst.knownCommittedBytes
+	dst.mu.Unlock()
+	if committed != 3*page {
+		t.Errorf("committed bytes after restore: got %d, want %d",
+			committed, 3*page)
 	}
 }

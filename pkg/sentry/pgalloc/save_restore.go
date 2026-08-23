@@ -122,7 +122,16 @@ func (f *MemoryFile) exportMetadataProto() *pgallocpb.MemoryFileMetadataProto {
 	return pb
 }
 
+// importMetadataProto restores f's bookkeeping before its mappings are loaded.
+//
+// Preconditions: f is newly created and has not been used for allocations or
+// registered with async page loading.
+//
+// +checklocksexclude:f.mu
 func (f *MemoryFile) importMetadataProto(pb *pgallocpb.MemoryFileMetadataProto) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	if pb.Version != 1 {
 		return fmt.Errorf("unsupported MemoryFileMetadataProto version %d", pb.Version)
 	}
@@ -1014,6 +1023,14 @@ type LoadOpts struct {
 }
 
 // LoadFrom loads MemoryFile state from the given stream.
+//
+// Preconditions: f is newly created and has not been used for allocations.
+// UpdateUsage may run concurrently, but the caller must exclude operations
+// that allocate, release, or save memory and other calls to LoadFrom until it
+// returns. Asynchronous page loading started by LoadFrom may proceed
+// concurrently and may continue after it returns.
+//
+// +checklocksexclude:f.mu
 func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) (err error) {
 	mfTimeline := opts.Timeline.Fork(fmt.Sprintf("mf:%p", f)).Lease()
 	defer mfTimeline.End()
@@ -1069,11 +1086,14 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 			return fmt.Errorf("failed to mmap MemoryFile: %w", errno)
 		}
 		mfTimeline.Reached("mmaped chunks")
+		// Publish mappings to commitment scans before loading page contents.
+		f.mu.Lock()
 		for i := range chunks {
 			chunk := &chunks[i]
 			chunk.mapping = m
 			m += chunkSize
 		}
+		f.mu.Unlock()
 		madviseWG.Add(1)
 		go func() {
 			defer madviseWG.Done()
@@ -1147,11 +1167,13 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 	wr := wire.Reader{Reader: r}
 	timePagesStart := gohacks.Nanotime()
 	minUnloadedInit := false
-	for maseg := f.memAcct.FirstSegment(); maseg.Ok(); maseg = maseg.NextSegment() {
-		if !maseg.ValuePtr().knownCommitted {
+	// Saved ranges define the stream layout. Live accounting may merge ranges
+	// during import or while UpdateUsage observes restored pages.
+	for _, ma := range pb.MemAcct {
+		if !ma.KnownCommitted {
 			continue
 		}
-		maFR := maseg.Range()
+		maFR := memmap.FileRange{Start: ma.Start, End: ma.End}
 		amount := maFR.Length()
 		// Wait for all chunks spanned by this segment to be madvised.
 		for madviseEnd.Load() < maFR.End {
@@ -1200,16 +1222,21 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 		// Update accounting for restored pages. We need to do this here since
 		// these segments are marked as "known committed", and will be skipped
 		// over on accounting scans.
+		f.mu.Lock()
 		f.knownCommittedBytes += amount
 		if !f.opts.DisableMemoryAccounting {
-			usage.MemoryAccounting.Inc(amount, maseg.ValuePtr().kind, maseg.ValuePtr().memCgID)
+			usage.MemoryAccounting.Inc(amount, usage.MemoryKind(ma.Kind), ma.MemCgId)
 		}
+		f.mu.Unlock()
 	}
 	durPages := time.Duration(gohacks.Nanotime() - timePagesStart)
+	f.mu.Lock()
+	knownCommittedBytes := f.knownCommittedBytes
+	f.mu.Unlock()
 	if amfl != nil {
-		log.Infof("MemoryFile(%p): loaded page file offsets in %s; async loading %d bytes", f, durPages, f.knownCommittedBytes)
+		log.Infof("MemoryFile(%p): loaded page file offsets in %s; async loading %d bytes", f, durPages, knownCommittedBytes)
 	} else {
-		log.Infof("MemoryFile(%p): loaded pages in %s (%d bytes, %.3f MB/s)", f, durPages, f.knownCommittedBytes, float64(f.knownCommittedBytes)*1e-6/durPages.Seconds())
+		log.Infof("MemoryFile(%p): loaded pages in %s (%d bytes, %.3f MB/s)", f, durPages, knownCommittedBytes, float64(knownCommittedBytes)*1e-6/durPages.Seconds())
 	}
 
 	return nil
