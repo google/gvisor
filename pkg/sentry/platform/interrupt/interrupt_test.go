@@ -16,6 +16,8 @@ package interrupt
 
 import (
 	"testing"
+
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 type countingReceiver struct {
@@ -96,4 +98,26 @@ func TestMultipleInterruptsAfterEnable(t *testing.T) {
 	if r.interrupts != 2 {
 		t.Errorf("interrupts: got %d, wanted 2", r.interrupts)
 	}
+}
+
+func TestEnableAlreadyForwarding(t *testing.T) {
+	var f Forwarder
+	var r countingReceiver
+	if !f.Enable(&r) {
+		t.Fatal("initial Enable failed")
+	}
+	defer f.Disable()
+
+	// A receiver's fields can change while forwarding is enabled. The
+	// Forwarder's mutex does not protect that receiver-owned state.
+	var wg sync.WaitGroup
+	wg.Go(func() { r.interrupts++ })
+	// Join only after Enable so this write remains unordered with its panic.
+	defer wg.Wait()
+	defer func() {
+		if recover() == nil {
+			t.Error("duplicate Enable did not panic")
+		}
+	}()
+	_ = f.Enable(&r)
 }

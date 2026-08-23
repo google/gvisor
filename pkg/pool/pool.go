@@ -24,19 +24,22 @@ type Pool struct {
 	mu sync.Mutex
 
 	// cache is the set of returned values.
+	//
+	// +checklocks:mu
 	cache []uint64
 
-	// Start is the starting value (if needed).
+	// Start is the next fresh value. Initialize it before publishing the pool.
+	//
+	// +checklocks:mu
 	Start uint64
 
-	// max is the current maximum issued.
-	max uint64
-
-	// Limit is the upper limit.
+	// Limit is the exclusive upper limit, fixed before publishing the pool.
 	Limit uint64
 }
 
 // Get gets a value from the pool.
+//
+// +checklocksexclude:p.mu
 func (p *Pool) Get() (uint64, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -60,6 +63,8 @@ func (p *Pool) Get() (uint64, bool) {
 }
 
 // Put returns a value to the pool.
+//
+// +checklocksexclude:p.mu
 func (p *Pool) Put(v uint64) {
 	p.mu.Lock()
 	p.cache = append(p.cache, v)
