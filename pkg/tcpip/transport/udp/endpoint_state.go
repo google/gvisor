@@ -49,6 +49,7 @@ func (e *endpoint) beforeSave() {
 // Restore implements stack.RestoredEndpoint.Restore.
 //
 // +checklocksexclude:e.rcvMu
+// +checklocksexclude:e.mu
 func (e *endpoint) Restore(s *stack.Stack) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
