@@ -289,14 +289,18 @@ type sndQueueInfo struct {
 	TCPSndBufState
 }
 
-// CloneState clones sq into other. It is not thread safe
+// CloneState clones sq into other. The caller must exclusively own other.
+// other is a standalone snapshot without an owning mutex; the source-lock
+// contract does not establish the caller's exclusive ownership of other.
+//
+// +checklocks:sq.sndQueueMu
 func (sq *sndQueueInfo) CloneState(other *TCPSndBufState) {
 	other.SndBufSize = sq.SndBufSize
 	other.SndBufUsed = sq.SndBufUsed
 	other.SndClosed = sq.SndClosed
 	other.PacketTooBigCount = sq.PacketTooBigCount
 	other.SndMTU = sq.SndMTU
-	other.AutoTuneSndBufDisabled = atomicbitops.FromUint32(sq.AutoTuneSndBufDisabled.RacyLoad())
+	other.AutoTuneSndBufDisabled.Store(sq.AutoTuneSndBufDisabled.Load())
 }
 
 // Endpoint represents a TCP endpoint. This struct serves as the interface
