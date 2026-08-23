@@ -16,9 +16,12 @@ package kernel
 
 import (
 	"bytes"
+	"errors"
 	"io"
+	"runtime"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/sentry/state/stateio"
 )
@@ -43,4 +46,67 @@ func TestAsyncMFLoaderStartupError(t *testing.T) {
 			t.Errorf("Wait() = %v, want %v", err, startErr)
 		}
 	})
+}
+
+func TestCheckpointRegistrationDuringNotification(t *testing.T) {
+	var k Kernel
+	w := &k.CheckpointWait
+	w.k = &k
+	gen := CheckpointGeneration{Count: 1}
+	wantErr := errors.New("checkpoint failed")
+	type result struct {
+		gen CheckpointGeneration
+		err error
+	}
+	results := make(chan result, 2)
+	registered := make(chan any, 1)
+	notified := make(chan struct{})
+
+	// Hold the generation lock as a checkpoint producer does. Registration
+	// must not hold the waiters lock while waiting to read this generation.
+	k.checkpointMu.Lock()
+	k.checkpointGen = gen
+	go func() {
+		registered <- w.Register(func(gen CheckpointGeneration, err error) {
+			results <- result{gen, err}
+		}, gen.Count)
+	}()
+	go func() {
+		for {
+			w.mu.Lock()
+			pending := len(w.waiters) != 0
+			w.mu.Unlock()
+			if pending {
+				break
+			}
+			runtime.Gosched()
+		}
+		w.signal(gen, wantErr)
+		close(notified)
+	}()
+
+	// Mutex contention is not durably blocking in synctest, so its clock
+	// cannot advance a watchdog when the original lock inversion occurs.
+	// Use a real-time deadline to release both goroutines on that failure.
+	var blocked bool
+	select {
+	case <-notified:
+	case <-time.After(5 * time.Second):
+		blocked = true
+	}
+	// Release the generation lock even on failure, so the original lock
+	// inversion cannot strand either goroutine during test cleanup.
+	k.checkpointMu.Unlock()
+	key := <-registered
+	<-notified
+	w.Unregister(key)
+	if blocked {
+		t.Fatal("checkpoint notification blocked on registration")
+	}
+	if len(results) != 1 {
+		t.Fatalf("got %d callbacks, want 1", len(results))
+	}
+	if got := <-results; got.gen != gen || got.err != wantErr {
+		t.Fatalf("callback = (%+v, %v), want (%+v, %v)", got.gen, got.err, gen, wantErr)
+	}
 }

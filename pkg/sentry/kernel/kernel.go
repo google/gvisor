@@ -146,6 +146,7 @@ type SaveRestoreExecConfig struct {
 // Init() or LoadFrom().
 //
 // +stateify savable
+// +checklocksalias:CheckpointWait.k.checkpointMu=checkpointMu
 type Kernel struct {
 	// extMu serializes external changes to the Kernel with calls to
 	// Kernel.SaveTo. (Kernel.SaveTo requires that the state of the Kernel
@@ -401,23 +402,28 @@ type Kernel struct {
 	// It's protected by extMu.
 	containerNames map[string]string
 
-	// checkpointMu is used to protect the checkpointing related fields below.
+	// Lock order: checkpointMu precedes CheckpointWait.mu.
 	checkpointMu sync.Mutex `state:"nosave"`
 
 	// additionalCheckpointState stores additional state that needs
-	// to be checkpointed. It's protected by checkpointMu.
+	// to be checkpointed.
+	//
+	// +checklocks:checkpointMu
 	additionalCheckpointState map[any]any
 
 	// saver implements the Saver interface, which (as of writing) supports
-	// asynchronous checkpointing. It's protected by checkpointMu.
+	// asynchronous checkpointing.
+	//
+	// +checklocks:checkpointMu
 	saver Saver `state:"nosave"`
 
 	// CheckpointWait is used to wait for a checkpoint to complete.
 	CheckpointWait CheckpointWaitable
 
-	// checkpointGen aims to track the number of times the kernel has been
-	// successfully checkpointed. Callers of checkpoint must notify the kernel
-	// when checkpoint/restore are done. It's protected by checkpointMu.
+	// checkpointGen describes the latest checkpoint attempt or restore.
+	// Callers must notify the kernel when checkpoint/restore are done.
+	//
+	// +checklocks:checkpointMu
 	checkpointGen CheckpointGeneration
 
 	// SaveRestoreExecConfig stores configuration options for the save/restore
