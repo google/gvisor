@@ -15,12 +15,92 @@
 package metricserver
 
 import (
+	"context"
 	"io/fs"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
 )
+
+func TestShutdownWithActivePIDRequest(t *testing.T) {
+	// Channels control the interleaving. Real HTTP I/O and mutex waits are
+	// not synctest-durable, so this deadline only bounds failure and cleanup.
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	m := &metricServer{shutdownDone: make(chan struct{})}
+	handlerStarted := make(chan struct{})
+	allowHandler := make(chan struct{})
+	handlerDone := make(chan struct{})
+	allowReturn := make(chan struct{})
+	shutdownStarted := make(chan struct{})
+	m.srv.RegisterOnShutdown(func() { close(shutdownStarted) })
+	m.srv.Handler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		close(handlerStarted)
+		select {
+		case <-allowHandler:
+		case <-ctx.Done():
+			return
+		}
+		logRequest(m.servePID)(w, req)
+		close(handlerDone)
+		select {
+		case <-allowReturn:
+		case <-ctx.Done():
+		}
+	})
+	ts := httptest.NewUnstartedServer(nil)
+	ts.Config = &m.srv
+	ts.Start()
+	var wg sync.WaitGroup
+	defer func() {
+		cancel()
+		wg.Wait()
+		ts.Close()
+	}()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL+"/runsc-metrics/pid", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wg.Go(func() {
+		resp, err := ts.Client().Do(req)
+		if err != nil {
+			t.Errorf("PID request: %v", err)
+			return
+		}
+		if resp.StatusCode != http.StatusServiceUnavailable {
+			t.Errorf("PID status = %d, want %d", resp.StatusCode, http.StatusServiceUnavailable)
+		}
+		_ = resp.Body.Close()
+	})
+	wait := func(what string, ch <-chan struct{}) {
+		t.Helper()
+		select {
+		case <-ch:
+		case <-ctx.Done():
+			t.Fatalf("waiting for %s: %v", what, ctx.Err())
+		}
+	}
+	wait("request handler", handlerStarted)
+	wg.Go(func() { m.shutdown(ctx) })
+	wait("HTTP shutdown", shutdownStarted)
+	close(allowHandler)
+	wait("PID handler", handlerDone)
+	select {
+	case <-m.shutdownDone:
+		t.Fatal("shutdown returned while the request handler was still active")
+	default:
+	}
+	close(allowReturn)
+	wait("shutdown completion", m.shutdownDone)
+	wg.Wait()
+	if err := ctx.Err(); err != nil {
+		t.Fatalf("shutdown required deadline cancellation: %v", err)
+	}
+}
 
 type fakeFileInfo struct {
 	fs.FileInfo

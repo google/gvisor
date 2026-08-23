@@ -247,7 +247,6 @@ func querySandboxMetrics(ctx context.Context, sand *sandbox.Sandbox, verifier *p
 type metricServer struct {
 	rootDir                string
 	pid                    int
-	pidFile                string
 	allowUnknownRoot       bool
 	exposeProfileEndpoints bool
 	address                string
@@ -266,11 +265,19 @@ type metricServer struct {
 	// mu protects the fields below.
 	mu sync.Mutex
 
+	// pidFile is the path to the PID file to remove on shutdown. It is cleared
+	// after successful removal.
+	//
+	// +checklocks:mu
+	pidFile string
+
 	// udsPath is a path to a Unix Domain Socket file on which the server is bound and which it owns.
 	// This socket file will be deleted on server shutdown.
 	// This field is not set if binding to a network port, or when the UDS already existed prior to
 	// being bound by us (i.e. its ownership isn't ours), such that it isn't deleted in this case.
 	// The field is unset once the file is successfully removed.
+	//
+	// +checklocks:mu
 	udsPath string
 
 	// sandboxes is the list of sandboxes we serve metrics for.
@@ -307,13 +314,20 @@ type metricServer struct {
 	// Also exported as a metric of total number of sandboxes started.
 	numSandboxes int64
 
-	// shuttingDown is flipped to true when the server shutdown process has started.
-	// Used to deal with race conditions where a sandbox is trying to register after the server has
-	// already started to go to sleep.
+	// shuttingDown is set when shutdown starts. It prevents discovery from
+	// adding new sandboxes and lets handlers reject requests.
+	//
+	// +checklocks:mu
 	shuttingDown bool
 
 	// shutdownCh is written to when receiving the signal to shut down gracefully.
+	// It is initialized before startVerifyLoop and is never reassigned.
 	shutdownCh chan os.Signal
+
+	// shutdownDone is closed when the shutdown attempt returns, including on
+	// cancellation or error. It is initialized before startVerifyLoop and is
+	// never reassigned.
+	shutdownDone chan struct{}
 
 	// extraData contains additional server-wide data.
 	extra serverData
@@ -347,7 +361,8 @@ func sufficientlyEqualStats(s1, s2 os.FileInfo) bool {
 
 // refreshSandboxesLocked removes sandboxes that are no longer running from m.sandboxes, and
 // adds sandboxes found in the root directory that do request instrumentation.
-// Preconditions: m.mu is locked.
+//
+// +checklocks:m.mu
 func (m *metricServer) refreshSandboxesLocked() {
 	if m.shuttingDown {
 		// Do nothing to avoid log spam.
@@ -493,6 +508,8 @@ type sandboxLoadResult struct {
 // loadSandboxesLocked loads the state file data from all known sandboxes.
 // It does so in parallel, and avoids reloading sandboxes for which we have
 // already loaded data.
+//
+// +checklocks:m.mu
 func (m *metricServer) loadSandboxesLocked(ctx context.Context) []sandboxLoadResult {
 	m.refreshSandboxesLocked()
 
@@ -630,6 +647,8 @@ func queryMultiSandboxMetrics(ctx context.Context, loadedSandboxes []sandboxLoad
 }
 
 // serveMetrics serves metrics requests.
+//
+// +checklocksexclude:m.mu
 func (m *metricServer) serveMetrics(w *httpResponseWriter, req *http.Request) httpResult {
 	ctx, ctxCancel := context.WithTimeout(req.Context(), metricsExportTimeout)
 	defer ctxCancel()
@@ -803,6 +822,8 @@ func (m *metricServer) serveMetrics(w *httpResponseWriter, req *http.Request) ht
 // Returns a response prefixed by "runsc-metrics:OK" on success.
 // Clients can use this to assert that they are talking to the metrics server, as opposed to some
 // other random HTTP server.
+//
+// +checklocksexclude:m.mu
 func (m *metricServer) serveHealthCheck(w *httpResponseWriter, req *http.Request) httpResult {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -822,6 +843,8 @@ func (m *metricServer) serveHealthCheck(w *httpResponseWriter, req *http.Request
 }
 
 // servePID serves the PID of the metric server process.
+//
+// +checklocksexclude:m.mu
 func (m *metricServer) servePID(w *httpResponseWriter, req *http.Request) httpResult {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -865,6 +888,7 @@ func (s *Server) Run(ctx context.Context) error {
 		pidFile:                s.PIDFile,
 		exposeProfileEndpoints: s.ExposeProfileEndpoints,
 		allowUnknownRoot:       s.AllowUnknownRoot,
+		shutdownDone:           make(chan struct{}),
 		promWriterPool: sync.Pool{
 			New: func() any {
 				return &prometheus.ReusableWriter[*httpResponseWriter]{}
@@ -960,15 +984,17 @@ func (s *Server) Run(ctx context.Context) error {
 	m.srv.Handler = mux
 	m.srv.ReadTimeout = httpTimeout
 	m.srv.WriteTimeout = httpTimeout
-	if err := m.startVerifyLoop(ctx); err != nil {
-		return fmt.Errorf("cannot start background loop: %w", err)
-	}
 	if m.pidFile != "" {
 		if err := os.WriteFile(m.pidFile, []byte(fmt.Sprintf("%d", m.pid)), 0644); err != nil {
 			return fmt.Errorf("cannot write PID to file %q: %w", m.pidFile, err)
 		}
 		defer os.Remove(m.pidFile)
 		log.Infof("Wrote PID %d to file %v.", m.pid, m.pidFile)
+	}
+	// Finish setting up the PID file before shutdown can remove it and clear
+	// m.pidFile in the background.
+	if err := m.startVerifyLoop(ctx); err != nil {
+		return fmt.Errorf("cannot start background loop: %w", err)
 	}
 
 	// If not modified by the user from the environment, set the Go GC percentage lower than default.
@@ -985,10 +1011,10 @@ func (s *Server) Run(ctx context.Context) error {
 	log.Infof("Server serving on %s for root directory %s.", conf.MetricServer, conf.RootDir)
 	serveErr := m.srv.Serve(listener)
 	log.Infof("Server has stopped accepting requests.")
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	if serveErr != nil {
 		if serveErr == http.ErrServerClosed {
+			// Serve returns before Shutdown finishes waiting for active handlers.
+			<-m.shutdownDone
 			return nil
 		}
 		return fmt.Errorf("cannot serve on address %s: %w", conf.MetricServer, serveErr)
