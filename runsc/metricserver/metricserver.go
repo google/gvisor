@@ -603,8 +603,9 @@ func queryMultiSandboxMetrics(ctx context.Context, loadedSandboxes []sandboxLoad
 					isRunning = s.sandbox.IsRunning()
 					isCheckpointed = s.sandbox.Checkpointed
 					isRestored = s.sandbox.Restored
-					cpuTimeSavedMS = s.sandbox.CPUTimeSaved.Milliseconds()
-					wallTimeSavedMS = s.sandbox.WallTimeSaved.Milliseconds()
+					cpuTimeSaved, wallTimeSaved := s.sandbox.TimeSaved()
+					cpuTimeSavedMS = cpuTimeSaved.Milliseconds()
+					wallTimeSavedMS = wallTimeSaved.Milliseconds()
 				}
 				processSandbox(sandboxMetricsResult{
 					sandboxLoadResult: s,
