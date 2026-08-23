@@ -64,16 +64,22 @@ type Dentry struct {
 
 	// dead is true if the file represented by this Dentry has been deleted (by
 	// CommitDeleteDentry or CommitRenameReplaceDentry) or invalidated (by
-	// InvalidateDentry). dead is protected by mu.
+	// InvalidateDentry).
+	//
+	// +checklocks:mu
 	dead bool
 
 	// evictable is set by the VFS layer or filesystems like overlayfs as a hint
 	// that this dentry will not be accessed hence forth. So filesystems that
 	// cache dentries locally can use this hint to release the dentry when all
-	// references are dropped. evictable is protected by mu.
+	// references are dropped.
+	//
+	// +checklocks:mu
 	evictable bool
 
 	// mounts is the number of Mounts for which this Dentry is Mount.point.
+	//
+	// +checkatomic
 	mounts atomicbitops.Uint32
 
 	// impl is the DentryImpl associated with this Dentry. impl is immutable.

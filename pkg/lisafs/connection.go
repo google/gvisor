@@ -69,9 +69,11 @@ type Connection struct {
 	// sockComm is the main socket by which this connections is established.
 	sockComm *sockCommunicator
 
-	// channelsMu protects channels.
 	channelsMu sync.Mutex
+
 	// channels keeps track of all open channels.
+	//
+	// +checklocks:channelsMu
 	channels []*channel
 
 	// activeWg represents active channels.
@@ -84,9 +86,14 @@ type Connection struct {
 	channelAlloc *flipcall.PacketWindowAllocator
 
 	fdsMu sync.RWMutex
-	// fds keeps tracks of open FDs on this server. It is protected by fdsMu.
+
+	// fds tracks this connection's open FDs.
+	//
+	// +checklocks:fdsMu
 	fds map[FDID]genericFD
-	// nextFDID is the next available FDID. It is protected by fdsMu.
+	// nextFDID is the next available FDID.
+	//
+	// +checklocks:fdsMu
 	nextFDID FDID
 }
 
@@ -369,11 +376,13 @@ func (c *Connection) removeFD(id FDID) {
 	}
 }
 
-// removeControlFDLocked is the same as removeFD with added preconditions.
+// removeControlFDLocked removes a control FD with the server's rename mutex
+// already held at least for reading, avoiding its reacquisition during
+// destruction.
 //
-// Preconditions:
-//   - server's rename mutex must at least be read locked.
-//   - id must be pointing to a control FD.
+// Precondition: id must point to a control FD.
+//
+// +checklocksread:c.server.renameMu
 func (c *Connection) removeControlFDLocked(id FDID) {
 	c.fdsMu.Lock()
 	fd := c.stopTrackingFD(id)
@@ -381,14 +390,16 @@ func (c *Connection) removeControlFDLocked(id FDID) {
 	if fd != nil {
 		// Drop the ref held by c. This can take arbitrarily long. So do not hold
 		// c.fdsMu while calling it.
-		fd.(*ControlFD).decRefLocked()
+		// The removed FD belongs to c, whose server.renameMu is held.
+		// checklocks cannot recover its owner through the connection map.
+		fd.(*ControlFD).decRefLocked() // +checklocksignore
 	}
 }
 
 // stopTrackingFD makes c stop tracking the passed FDID. Note that the caller
 // must drop ref on the returned fd (preferably without holding c.fdsMu).
 //
-// Precondition: c.fdsMu is locked.
+// +checklocks:c.fdsMu
 func (c *Connection) stopTrackingFD(id FDID) genericFD {
 	fd := c.fds[id]
 	if fd == nil {

@@ -48,22 +48,32 @@ type EventFileDescription struct {
 	// becomes readable or writable.
 	queue waiter.Queue
 
-	// mu protects the fields below.
 	mu sync.Mutex `state:"nosave"`
 
 	// val is the current value of the event counter.
+	//
+	// +checklocks:mu
 	val uint64
 
-	// semMode specifies whether the event is in "semaphore" mode.
+	// semMode specifies whether the event is in "semaphore" mode and is
+	// immutable after construction.
 	semMode bool
 
-	// hostfd indicates whether this eventfd is passed through to the host.
+	// hostfd is the backing host eventfd, or -1 if none is installed.
+	//
+	// +checklocks:mu
 	hostfd int
 
-	// sentryOwnedHostfd indicates whether the sentry owns the hostfd.
+	// sentryOwnedHostfd indicates that HostFD created hostfd rather than
+	// NewFromHost importing it. Only sentry-created host FDs support
+	// save/restore.
+	//
+	// +checklocks:mu
 	sentryOwnedHostfd bool
 
-	// hostfdState is the state of the hostfd during save/restore.
+	// hostfdState contains the counter bytes captured by beforeSave and
+	// consumed by afterLoad while ordinary Sentry execution is excluded.
+	// checklocks cannot express this checkpoint-owned lifecycle phase.
 	hostfdState [8]byte
 }
 
@@ -101,14 +111,18 @@ func NewFromHost(ctx context.Context, vfsObj *vfs.VirtualFilesystem, hostfd int,
 		return nil, err
 	}
 	efd := fd.Impl().(*EventFileDescription)
-	efd.hostfd = hostfd
+	// New returned an unshared file. checklocks cannot recover that private
+	// ownership through the returned FileDescription and its Impl accessor.
+	efd.hostfd = hostfd // +checklocksignore
 	if err := fdnotifier.AddFD(int32(hostfd), &efd.queue); err != nil {
 		return nil, err
 	}
 	return fd, nil
 }
 
-// HostFD returns the host eventfd associated with this event.
+// HostFD returns the host eventfd associated with this event. The descriptor
+// is borrowed, not duplicated; callers must retain a reference to the
+// associated vfs.FileDescription while using it.
 func (efd *EventFileDescription) HostFD() (int, error) {
 	efd.mu.Lock()
 	defer efd.mu.Unlock()
@@ -174,7 +188,7 @@ func (efd *EventFileDescription) Write(ctx context.Context, src usermem.IOSequen
 	return 8, nil
 }
 
-// Preconditions: Must be called with efd.mu locked.
+// +checklocks:efd.mu
 func (efd *EventFileDescription) hostReadLocked(ctx context.Context, dst usermem.IOSequence) error {
 	var buf [8]byte
 	if _, err := unix.Read(efd.hostfd, buf[:]); err != nil {
@@ -224,7 +238,7 @@ func (efd *EventFileDescription) read(ctx context.Context, dst usermem.IOSequenc
 	return err
 }
 
-// Preconditions: Must be called with efd.mu locked.
+// +checklocks:efd.mu
 func (efd *EventFileDescription) hostWriteLocked(val uint64) error {
 	var buf [8]byte
 	hostarch.ByteOrder.PutUint64(buf[:], val)

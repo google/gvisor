@@ -21,7 +21,10 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck"
+	_ "gvisor.dev/gvisor/pkg/sentry/seccheck/sinks/null"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 )
@@ -72,10 +75,47 @@ func runTest(t testing.TB, fn func(ctx context.Context, fdTable *FDTable, fd *vf
 	fdTable := new(FDTable)
 	fdTable.k = &Kernel{}
 	fdTable.k.MaxFDLimit.Store(MaxFdLimit)
-	fdTable.init()
+	// This newly allocated table has not been passed to the test yet.
+	fdTable.init() // +checklocksignore
 
 	// Run the test.
 	fn(ctx, fdTable, fd, limitSet)
+}
+
+func TestFDTableForEachConcurrentMutation(t *testing.T) {
+	runTest(t, func(ctx context.Context, fdTable *FDTable, fd *vfs.FileDescription, _ *limits.LimitSet) {
+		defer fdTable.DecRef(ctx)
+		if _, err := fdTable.NewFDAt(ctx, 0, fd, FDFlags{}); err != nil {
+			t.Fatalf("NewFDAt(0): %v", err)
+		}
+		// FDs 0 and 1 share a bitmap word and an existing descriptor bucket.
+		// Use a distinct file so its reference count does not synchronize
+		// mutations of FD 1 with callbacks examining FD 0.
+		other := newTestFD(ctx, fd.Mount().Filesystem().VirtualFilesystem())
+		defer other.DecRef(ctx)
+
+		var wg sync.WaitGroup
+		// Join after the conflicting accesses, before releasing either file.
+		defer wg.Wait()
+		wg.Go(func() {
+			if _, err := fdTable.NewFDAt(ctx, 1, other, FDFlags{}); err != nil {
+				t.Errorf("NewFDAt(1): %v", err)
+				return
+			}
+			fdTable.Remove(ctx, 1).DecRef(ctx)
+		})
+		calls := 0
+		fdTable.ForEach(ctx, func(n int32, file *vfs.FileDescription, _ FDFlags) bool {
+			calls++
+			if n != 0 || file != fd {
+				t.Errorf("ForEach visited (%d, %p), want (0, %p)", n, file, fd)
+			}
+			return false
+		})
+		if calls != 1 {
+			t.Fatalf("ForEach made %d callbacks, want 1", calls)
+		}
+	})
 }
 
 // TestFDTableMany allocates maxFD FDs, i.e. maxes out the FDTable, until there
@@ -211,6 +251,76 @@ func TestDescriptorFlags(t *testing.T) {
 	})
 }
 
+func TestExecvePipeProcInfoConcurrentUnshare(t *testing.T) {
+	runTest(t, func(ctx context.Context, fdTable *FDTable, fd *vfs.FileDescription, _ *limits.LimitSet) {
+		defer fdTable.DecRef(ctx)
+		k := fdTable.k
+		pidns := NewRootPIDNamespace(auth.CredentialsFromContext(ctx).UserNamespace)
+		k.tasks = newTaskSet(pidns)
+		parent := &Task{}
+		reader := &Task{k: k, fdTable: fdTable}
+		oldTable := k.NewFDTable()
+		defer oldTable.DecRef(ctx)
+		oldTable.IncRef() // The sibling owns a separate reference.
+		sibling := &Task{k: k, fdTable: oldTable}
+		defer func() { sibling.fdTable.DecRef(ctx) }()
+		for _, task := range []*Task{parent, reader, sibling} {
+			task.tg = &ThreadGroup{threadGroupNode: threadGroupNode{pidns: pidns}}
+		}
+		reader.parent = parent
+		sibling.parent = parent
+		parent.children = map[*Task]struct{}{reader: {}, sibling: {}}
+
+		r, w, err := pipe.NewVFSPipe(false, pipe.DefaultPipeSize).ReaderWriterPair(ctx, fd.Mount(), fd.Dentry(), 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer r.DecRef(ctx)
+		defer w.DecRef(ctx)
+		if _, err := fdTable.NewFDAt(ctx, 0, r, FDFlags{}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := oldTable.NewFDAt(ctx, 1, w, FDFlags{}); err != nil {
+			t.Fatal(err)
+		}
+
+		seccheck.Initialize()
+		conf := seccheck.SessionConfig{
+			Name: seccheck.DefaultSessionName,
+			Points: []seccheck.PointConfig{{
+				Name:           "sentry/execve",
+				OptionalFields: []string{"pipe_proc_info"},
+			}},
+			Sinks: []seccheck.SinkConfig{{Name: "null"}},
+		}
+		if err := seccheck.Create(&conf, false); err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			if err := seccheck.Delete(seccheck.DefaultSessionName); err != nil {
+				t.Error(err)
+			}
+		}()
+		_, info := execveSeccheckInfo(reader, nil, nil, nil, "", "")
+		if info.PipeInputProc == nil {
+			t.Fatal("stdin pipe peer not found before unshare")
+		}
+
+		// Fork(0) copies no file references, and retaining oldTable keeps its
+		// destruction from ordering the lookup after the pointer replacement.
+		// Join only after the conflicting accesses, before any cleanup.
+		var wg sync.WaitGroup
+		defer wg.Wait()
+		wg.Go(func() { sibling.UnshareFdTable(0) })
+		_, _ = execveSeccheckInfo(reader, nil, nil, nil, "", "")
+		wg.Wait()
+		_, info = execveSeccheckInfo(reader, nil, nil, nil, "", "")
+		if info.PipeInputProc != nil {
+			t.Fatal("stdin pipe peer found after unsharing an empty table")
+		}
+	})
+}
+
 func BenchmarkFDLookupAndDecRef(b *testing.B) {
 	b.StopTimer() // Setup.
 
@@ -273,7 +383,8 @@ func BenchmarkCreateWithMaxFD(b *testing.B) {
 
 		for i := 0; i < b.N; i++ {
 			fdTable := new(FDTable)
-			fdTable.init()
+			// This iteration exclusively owns the new table.
+			fdTable.init() // +checklocksignore
 			_, err := fdTable.NewFDAt(ctx, maxLimit-1, fd, FDFlags{})
 			if err != nil {
 				b.Fatalf("fdTable.NewFDs: got %v, wanted nil", err)

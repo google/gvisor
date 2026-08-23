@@ -49,10 +49,10 @@ func (fs *filesystem) Sync(ctx context.Context) error {
 //
 // stepLocked is loosely analogous to fs/namei.c:walk_component().
 //
-// Preconditions:
-//   - filesystem.mu must be locked.
-//   - !rp.Done().
-func stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry) (*dentry, bool, error) {
+// Preconditions: !rp.Done(), and d belongs to fs.
+//
+// +checklocksread:fs.mu
+func (fs *filesystem) stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry) (*dentry, bool, error) {
 	dir, ok := d.inode.impl.(*directory)
 	if !ok {
 		return nil, false, linuxerr.ENOTDIR
@@ -78,7 +78,7 @@ func stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry) (*dentry,
 		rp.Advance()
 		return d.parent.Load(), false, nil
 	}
-	if len(name) > d.inode.fs.maxFilenameLen {
+	if len(name) > fs.maxFilenameLen {
 		return nil, false, linuxerr.ENAMETOOLONG
 	}
 	child, ok := dir.childMap[name]
@@ -106,12 +106,12 @@ func stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry) (*dentry,
 // walkParentDirLocked is loosely analogous to Linux's
 // fs/namei.c:path_parentat().
 //
-// Preconditions:
-//   - filesystem.mu must be locked.
-//   - !rp.Done().
-func walkParentDirLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry) (*directory, error) {
+// Preconditions: !rp.Done(), and d belongs to fs.
+//
+// +checklocksread:fs.mu
+func (fs *filesystem) walkParentDirLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry) (*directory, error) {
 	for !rp.Final() {
-		next, _, err := stepLocked(ctx, rp, d)
+		next, _, err := fs.stepLocked(ctx, rp, d)
 		if err != nil {
 			return nil, err
 		}
@@ -128,8 +128,10 @@ func walkParentDirLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry) 
 //
 // resolveLocked is loosely analogous to Linux's fs/namei.c:path_lookupat().
 //
-// Preconditions: filesystem.mu must be locked.
-func resolveLocked(ctx context.Context, rp *vfs.ResolvingPath) (*dentry, error) {
+// Preconditions: rp.Start() belongs to fs.
+//
+// +checklocksread:fs.mu
+func (fs *filesystem) resolveLocked(ctx context.Context, rp *vfs.ResolvingPath) (*dentry, error) {
 	d := rp.Start().Impl().(*dentry)
 
 	if symlink, ok := d.inode.impl.(*symlink); rp.Done() && ok && rp.ShouldFollowSymlink() {
@@ -144,7 +146,7 @@ func resolveLocked(ctx context.Context, rp *vfs.ResolvingPath) (*dentry, error) 
 	} else {
 		// Path with multiple components, walk and resolve as required.
 		for !rp.Done() {
-			next, _, err := stepLocked(ctx, rp, d)
+			next, _, err := fs.stepLocked(ctx, rp, d)
 			if err != nil {
 				return nil, err
 			}
@@ -170,7 +172,7 @@ func resolveLocked(ctx context.Context, rp *vfs.ResolvingPath) (*dentry, error) 
 func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir bool, create func(parentDir *directory, name string) error) error {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
-	parentDir, err := walkParentDirLocked(ctx, rp, rp.Start().Impl().(*dentry))
+	parentDir, err := fs.walkParentDirLocked(ctx, rp, rp.Start().Impl().(*dentry))
 	if err != nil {
 		return err
 	}
@@ -224,7 +226,7 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 func (fs *filesystem) AccessAt(ctx context.Context, rp *vfs.ResolvingPath, creds *auth.Credentials, ats vfs.AccessTypes) error {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
-	d, err := resolveLocked(ctx, rp)
+	d, err := fs.resolveLocked(ctx, rp)
 	if err != nil {
 		return err
 	}
@@ -241,7 +243,7 @@ func (fs *filesystem) AccessAt(ctx context.Context, rp *vfs.ResolvingPath, creds
 func (fs *filesystem) GetDentryAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.GetDentryOptions) (*vfs.Dentry, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
-	d, err := resolveLocked(ctx, rp)
+	d, err := fs.resolveLocked(ctx, rp)
 	if err != nil {
 		return nil, err
 	}
@@ -261,7 +263,7 @@ func (fs *filesystem) GetDentryAt(ctx context.Context, rp *vfs.ResolvingPath, op
 func (fs *filesystem) GetParentDentryAt(ctx context.Context, rp *vfs.ResolvingPath) (*vfs.Dentry, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
-	dir, err := walkParentDirLocked(ctx, rp, rp.Start().Impl().(*dentry))
+	dir, err := fs.walkParentDirLocked(ctx, rp, rp.Start().Impl().(*dentry))
 	if err != nil {
 		return nil, err
 	}
@@ -289,7 +291,9 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 		if i.nlink.Load() == maxLinks {
 			return linuxerr.EMLINK
 		}
-		i.incLinksLocked()
+		// doCreateAt holds fs.mu here, and the mount check identifies i.fs
+		// as fs. checklocks cannot track the callback lock or inode alias.
+		i.incLinksLocked() // +checklocksignore
 		i.watches.Notify(ctx, "", linux.IN_ATTRIB, 0, vfs.InodeEvent, false /* unlinked */)
 		parentDir.insertChildLocked(fs.newDentry(i), name)
 		return nil
@@ -307,7 +311,9 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		if err != nil {
 			return err
 		}
-		parentDir.inode.incLinksLocked() // from child's ".."
+		// Add the child's ".." link under the fs.mu held by doCreateAt.
+		// checklocks cannot track the callback lock or parentDir's fs alias.
+		parentDir.inode.incLinksLocked() // +checklocksignore
 		parentDir.inode.incRef()         // child directory holds a reference to parent
 		parentDir.insertChildLocked(&childDir.dentry, name)
 		return nil
@@ -326,7 +332,12 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		case linux.S_IFIFO:
 			childInode, err = fs.newNamedPipe(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, parentDir)
 		case linux.S_IFBLK, linux.S_IFCHR:
-			childInode, err = fs.newDeviceFileLocked(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, opts.DevMajor, opts.DevMinor, parentDir)
+			// doCreateAt holds fs.mu across this synchronous callback;
+			// checklocks cannot propagate the lock into it.
+			childInode, err = fs.newDeviceFileLocked( // +checklocksignore
+				creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode,
+				opts.DevMajor, opts.DevMinor, parentDir,
+			)
 		case linux.S_IFSOCK:
 			childInode, err = fs.newSocketFile(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, opts.Endpoint, parentDir)
 		default:
@@ -352,7 +363,7 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 	// don't need fs.mu for writing.
 	if opts.Flags&linux.O_CREAT == 0 {
 		fs.mu.RLock()
-		d, err := resolveLocked(ctx, rp)
+		d, err := fs.resolveLocked(ctx, rp)
 		if err != nil {
 			fs.mu.RUnlock()
 			return nil, err
@@ -388,7 +399,7 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		return start.open(ctx, rp, &opts, false /* afterCreate */)
 	}
 afterTrailingSymlink:
-	parentDir, err := walkParentDirLocked(ctx, rp, start)
+	parentDir, err := fs.walkParentDirLocked(ctx, rp, start)
 	if err != nil {
 		return nil, err
 	}
@@ -401,7 +412,7 @@ afterTrailingSymlink:
 		return nil, linuxerr.EISDIR
 	}
 	name := rp.Component()
-	child, followedSymlink, err := stepLocked(ctx, rp, &parentDir.dentry)
+	child, followedSymlink, err := fs.stepLocked(ctx, rp, &parentDir.dentry)
 	if followedSymlink {
 		if mustCreate {
 			// EEXIST must be returned if an existing symlink is opened with O_EXCL.
@@ -531,7 +542,7 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 func (fs *filesystem) ReadlinkAt(ctx context.Context, rp *vfs.ResolvingPath) (string, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
-	d, err := resolveLocked(ctx, rp)
+	d, err := fs.resolveLocked(ctx, rp)
 	if err != nil {
 		return "", err
 	}
@@ -556,7 +567,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		}
 	}()
 	defer fs.mu.Unlock()
-	newParentDir, err := walkParentDirLocked(ctx, rp, rp.Start().Impl().(*dentry))
+	newParentDir, err := fs.walkParentDirLocked(ctx, rp, rp.Start().Impl().(*dentry))
 	if err != nil {
 		return err
 	}
@@ -671,13 +682,15 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		return err
 	}
 	if replaced != nil {
+		// The mount check puts replaced and both parents in fs, whose mu
+		// remains held. checklocks cannot follow their inode-owner aliases.
 		newParentDir.removeChildLocked(replaced)
 		if replaced.inode.isDir() {
 			// Remove links for replaced/. and replaced/..
-			replaced.inode.decLinksLocked(ctx)
-			newParentDir.inode.decLinksLocked(ctx)
+			replaced.inode.decLinksLocked(ctx)     // +checklocksignore
+			newParentDir.inode.decLinksLocked(ctx) // +checklocksignore
 		}
-		replaced.inode.decLinksLocked(ctx)
+		replaced.inode.decLinksLocked(ctx) // +checklocksignore
 	}
 	oldParentDir.removeChildLocked(renamed)
 	newParentDir.insertChildLocked(renamed, newName)
@@ -685,9 +698,10 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	oldParentDir.inode.touchCMtime()
 	if oldParentDir != newParentDir {
 		if renamed.inode.isDir() {
-			// Move link for renamed's ".." entry
-			oldParentDir.inode.decLinksLocked(ctx)
-			newParentDir.inode.incLinksLocked()
+			// Move renamed's ".." link. Both parents belong to fs;
+			// checklocks cannot relate their owners to the held fs.mu.
+			oldParentDir.inode.decLinksLocked(ctx) // +checklocksignore
+			newParentDir.inode.incLinksLocked()    // +checklocksignore
 			// Move renamed's reference to parent.
 			oldParentDir.inode.decRef(ctx)
 			newParentDir.inode.incRef()
@@ -712,7 +726,7 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 		}
 	}()
 	defer fs.mu.Unlock()
-	parentDir, err := walkParentDirLocked(ctx, rp, rp.Start().Impl().(*dentry))
+	parentDir, err := fs.walkParentDirLocked(ctx, rp, rp.Start().Impl().(*dentry))
 	if err != nil {
 		return err
 	}
@@ -756,9 +770,12 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	// defers the child's IN_DELETE_SELF/IN_IGNORED until the last ref is
 	// dropped. decLinksLocked() may emit the child notifications
 	// immediately when no extra refs remain, so notify the parent after it.
-	child.inode.decLinksLocked(ctx)     // link for child/.
-	child.inode.decLinksLocked(ctx)     // link for child
-	parentDir.inode.decLinksLocked(ctx) // link for child/..
+	//
+	// Drop child/., child, and child/.. links. Both inodes belong to fs;
+	// checklocks cannot relate their owners to the held fs.mu.
+	child.inode.decLinksLocked(ctx)     // +checklocksignore
+	child.inode.decLinksLocked(ctx)     // +checklocksignore
+	parentDir.inode.decLinksLocked(ctx) // +checklocksignore
 	parentDir.inode.watches.Notify(ctx, name, linux.IN_DELETE|linux.IN_ISDIR, 0, vfs.InodeEvent, true /* unlinked */)
 	toDecRef = vfsObj.CommitDeleteDentry(ctx, &child.vfsd)
 	parentDir.inode.touchCMtime()
@@ -768,7 +785,7 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 // SetStatAt implements vfs.FilesystemImpl.SetStatAt.
 func (fs *filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetStatOptions) error {
 	fs.mu.RLock()
-	d, err := resolveLocked(ctx, rp)
+	d, err := fs.resolveLocked(ctx, rp)
 	if err != nil {
 		fs.mu.RUnlock()
 		return err
@@ -794,7 +811,7 @@ func (fs *filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		fs.mu.RLock()
 		defer fs.mu.RUnlock()
 		var err error
-		d, err = resolveLocked(ctx, rp)
+		d, err = fs.resolveLocked(ctx, rp)
 		if err != nil {
 			return linux.Statx{}, err
 		}
@@ -808,7 +825,7 @@ func (fs *filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 func (fs *filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linux.Statfs, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
-	if _, err := resolveLocked(ctx, rp); err != nil {
+	if _, err := fs.resolveLocked(ctx, rp); err != nil {
 		return linux.Statfs{}, err
 	}
 	return fs.statFS(), nil
@@ -848,7 +865,7 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 		}
 	}()
 	defer fs.mu.Unlock()
-	parentDir, err := walkParentDirLocked(ctx, rp, rp.Start().Impl().(*dentry))
+	parentDir, err := fs.walkParentDirLocked(ctx, rp, rp.Start().Impl().(*dentry))
 	if err != nil {
 		return err
 	}
@@ -888,7 +905,9 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	// before these events are added.
 	vfs.InotifyRemoveChild(ctx, &child.inode.watches, &parentDir.inode.watches, name)
 	parentDir.removeChildLocked(child)
-	child.inode.decLinksLocked(ctx)
+	// child came from this fs's parentDir, and fs.mu remains held.
+	// checklocks cannot relate the child inode's owner to fs.
+	child.inode.decLinksLocked(ctx) // +checklocksignore
 	toDecRef = vfsObj.CommitDeleteDentry(ctx, &child.vfsd)
 	parentDir.inode.touchCMtime()
 	return nil
@@ -898,7 +917,7 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 func (fs *filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.BoundEndpointOptions) (transport.BoundEndpoint, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
-	d, err := resolveLocked(ctx, rp)
+	d, err := fs.resolveLocked(ctx, rp)
 	if err != nil {
 		return nil, err
 	}
@@ -920,7 +939,7 @@ func (fs *filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath
 func (fs *filesystem) ListXattrAt(ctx context.Context, rp *vfs.ResolvingPath, size uint64) ([]string, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
-	d, err := resolveLocked(ctx, rp)
+	d, err := fs.resolveLocked(ctx, rp)
 	if err != nil {
 		return nil, err
 	}
@@ -931,7 +950,7 @@ func (fs *filesystem) ListXattrAt(ctx context.Context, rp *vfs.ResolvingPath, si
 func (fs *filesystem) GetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.GetXattrOptions) (string, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
-	d, err := resolveLocked(ctx, rp)
+	d, err := fs.resolveLocked(ctx, rp)
 	if err != nil {
 		return "", err
 	}
@@ -941,7 +960,7 @@ func (fs *filesystem) GetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 // SetXattrAt implements vfs.FilesystemImpl.SetXattrAt.
 func (fs *filesystem) SetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetXattrOptions) error {
 	fs.mu.RLock()
-	d, err := resolveLocked(ctx, rp)
+	d, err := fs.resolveLocked(ctx, rp)
 	if err != nil {
 		fs.mu.RUnlock()
 		return err
@@ -959,7 +978,7 @@ func (fs *filesystem) SetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 // RemoveXattrAt implements vfs.FilesystemImpl.RemoveXattrAt.
 func (fs *filesystem) RemoveXattrAt(ctx context.Context, rp *vfs.ResolvingPath, name string) error {
 	fs.mu.RLock()
-	d, err := resolveLocked(ctx, rp)
+	d, err := fs.resolveLocked(ctx, rp)
 	if err != nil {
 		fs.mu.RUnlock()
 		return err
@@ -978,7 +997,7 @@ func (fs *filesystem) RemoveXattrAt(ctx context.Context, rp *vfs.ResolvingPath, 
 func (fs *filesystem) GetPosixACLAt(ctx context.Context, rp *vfs.ResolvingPath, t vfs.ACLType) (*vfs.PosixACL, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
-	d, err := resolveLocked(ctx, rp)
+	d, err := fs.resolveLocked(ctx, rp)
 	if err != nil {
 		return nil, err
 	}
@@ -997,7 +1016,7 @@ func (fs *filesystem) GetPosixACLAt(ctx context.Context, rp *vfs.ResolvingPath, 
 func (fs *filesystem) SetPosixACLAt(ctx context.Context, rp *vfs.ResolvingPath, t vfs.ACLType, acl *vfs.PosixACL, clearSGID bool) (*vfs.PosixACL, linux.FileMode, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
-	d, err := resolveLocked(ctx, rp)
+	d, err := fs.resolveLocked(ctx, rp)
 	if err != nil {
 		return nil, 0, err
 	}

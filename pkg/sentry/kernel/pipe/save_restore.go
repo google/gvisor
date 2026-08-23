@@ -20,7 +20,10 @@ import (
 	"gvisor.dev/gvisor/pkg/safemem"
 )
 
-// afterLoad is called by stateify.
+// afterLoad rebuilds the buffer views before the pipe is published. The
+// generated stateify caller supplies exclusive restore ownership.
+//
+// +checklocks:p.mu
 func (p *Pipe) afterLoad(context.Context) {
 	p.bufBlocks[0] = safemem.BlockFromSafeSlice(p.buf)
 	p.bufBlocks[1] = p.bufBlocks[0]

@@ -48,8 +48,7 @@ func (fs *filesystem) tarRead(ctx context.Context, src io.Reader, cb tarReaderCa
 // readFromTar creates the corresponding dentry and its children from the given
 // tar reader.
 //
-// Preconditions:
-//   - filesystem.mu must be locked.
+// +checklocks:fs.mu
 func (fs *filesystem) readFromTar(ctx context.Context, tr *tar.Reader, cb tarReaderCallbacks) error {
 	pathToInode := map[string]*inode{}
 	directoryToHeader := map[string]*tar.Header{}
@@ -134,6 +133,8 @@ func (i *inode) setXattrsFromPAXRecords(hdr *tar.Header) {
 
 // mkdirFromTar recursively creates a directory and its parent directories
 // using the provided headers.
+//
+// +checklocks:fs.mu
 func (fs *filesystem) mkdirFromTar(hdr *tar.Header, pathToInode map[string]*inode, pathToHeader map[string]*tar.Header) (*inode, error) {
 	path := hdr.Name
 	if ino, ok := pathToInode[hdr.Name]; ok {
@@ -185,7 +186,9 @@ func (fs *filesystem) mkdirFromTar(hdr *tar.Header, pathToInode map[string]*inod
 	}
 	childDir.inode.accessACL.Store(acl)
 	childDir.inode.defaultACL.Store(defaultACL)
-	parentDir.inode.incLinksLocked() // from child's ".."
+	// Add the child's ".." link. The parent came from this fs's tar map;
+	// checklocks cannot relate its owner to the held fs.mu.
+	parentDir.inode.incLinksLocked() // +checklocksignore
 	parentDir.inode.incRef()         // child directory holds a reference to parent
 	childDir.inode.mtime.Store(hdr.ModTime.UnixNano())
 	childDir.inode.setXattrsFromPAXRecords(hdr)
@@ -194,9 +197,10 @@ func (fs *filesystem) mkdirFromTar(hdr *tar.Header, pathToInode map[string]*inod
 	return childDir.dentry.inode, nil
 }
 
-// mknodFromTar creates a regular file,FIFO, block device, or character device file using
-// the provided header. It also writes the file content to the corresponding regular file if it
-// exists.
+// mknodFromTar creates a regular file, FIFO, block device, or character device
+// using the provided header. It also writes the content of regular files.
+//
+// +checklocks:fs.mu
 func (fs *filesystem) mknodFromTar(ctx context.Context, hdr *tar.Header, pathToInode map[string]*inode, cb tarReaderCallbacks) error {
 	dir, name := filepath.Split(hdr.Name)
 	parentInode, ok := pathToInode[dir]
@@ -247,6 +251,8 @@ func (fs *filesystem) mknodFromTar(ctx context.Context, hdr *tar.Header, pathToI
 }
 
 // linkFromTar creates a hard link from the given tar header.
+//
+// +checklocks:fs.mu
 func (fs *filesystem) linkFromTar(hdr *tar.Header, pathToInode map[string]*inode) error {
 	dir, name := filepath.Split(hdr.Name)
 	parentInode, ok := pathToInode[dir]
@@ -264,7 +270,9 @@ func (fs *filesystem) linkFromTar(hdr *tar.Header, pathToInode map[string]*inode
 	if childInode.nlink.Load() == maxLinks {
 		return fmt.Errorf("maximum number of links reached for %s", hdr.Linkname)
 	}
-	childInode.incLinksLocked()
+	// pathToInode contains this fs's inodes, but checklocks cannot relate
+	// their owners to the held fs.mu.
+	childInode.incLinksLocked() // +checklocksignore
 	child := fs.newDentry(childInode)
 	parentDir.insertChildLocked(child, name)
 	pathToInode[hdr.Name] = child.inode
@@ -385,6 +393,8 @@ func (fs *filesystem) tarWrite(ctx context.Context, dst io.Writer, cb tarWriterC
 }
 
 // writeToTar recursively writes a dentry and its children to the tar archive.
+//
+// +checklocksread:d.inode.fs.mu
 func (d *dentry) writeToTar(ctx context.Context, tw *tar.Writer, baseDir string, inoToPath map[uint64]string, cb tarWriterCallbacks) error {
 	path := baseDir
 	if d.name != "" {
@@ -410,7 +420,9 @@ func (d *dentry) writeToTar(ctx context.Context, tw *tar.Writer, baseDir string,
 	switch impl := d.inode.impl.(type) {
 	case *directory:
 		for _, child := range impl.childMap {
-			if err := child.writeToTar(ctx, tw, path, inoToPath, cb); err != nil {
+			// child belongs to d's filesystem, whose mutex remains held.
+			// checklocks cannot follow the map-entry owner alias.
+			if err := child.writeToTar(ctx, tw, path, inoToPath, cb); err != nil { // +checklocksignore
 				return err
 			}
 		}
@@ -424,6 +436,8 @@ func (d *dentry) writeToTar(ctx context.Context, tw *tar.Writer, baseDir string,
 }
 
 // createTarHeader creates a tar header for the given dentry.
+//
+// +checklocksread:d.inode.fs.mu
 func (d *dentry) createTarHeader(path string, inoToPath map[uint64]string, cb tarWriterCallbacks) (*tar.Header, error) {
 	if d.isSelfFilestoreWhiteout() {
 		// Skip the self filestore whiteout.
