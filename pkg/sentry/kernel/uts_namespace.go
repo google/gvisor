@@ -26,11 +26,15 @@ import (
 //
 // +stateify savable
 type UTSNamespace struct {
-	// mu protects all fields below.
-	mu                sync.Mutex `state:"nosave"`
-	hostName          string
-	hostNameChanged   bool
-	domainName        string
+	mu sync.Mutex `state:"nosave"`
+
+	// +checklocks:mu
+	hostName string
+	// +checklocks:mu
+	hostNameChanged bool
+	// +checklocks:mu
+	domainName string
+	// +checklocks:mu
 	domainNameChanged bool
 
 	// userns is the user namespace associated with the UTSNamespace.
@@ -40,6 +44,7 @@ type UTSNamespace struct {
 	// userns is immutable.
 	userns *auth.UserNamespace
 
+	// +checklocks:mu
 	inode *nsfs.Inode
 }
 
@@ -53,6 +58,8 @@ func NewUTSNamespace(hostName, domainName string, userns *auth.UserNamespace) *U
 }
 
 // UTSNamespace returns the task's UTS namespace.
+//
+// +checklocksexclude:t.mu
 func (t *Task) UTSNamespace() *UTSNamespace {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -61,6 +68,8 @@ func (t *Task) UTSNamespace() *UTSNamespace {
 
 // GetUTSNamespace takes a reference on the task UTS namespace and
 // returns it. It will return nil if the task isn't alive.
+//
+// +checklocksexclude:t.mu
 func (t *Task) GetUTSNamespace() *UTSNamespace {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -71,6 +80,8 @@ func (t *Task) GetUTSNamespace() *UTSNamespace {
 }
 
 // HostName returns the host name of this UTS namespace.
+//
+// +checklocksexclude:u.mu
 func (u *UTSNamespace) HostName() string {
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -78,6 +89,8 @@ func (u *UTSNamespace) HostName() string {
 }
 
 // SetHostName sets the host name of this UTS namespace.
+//
+// +checklocksexclude:u.mu
 func (u *UTSNamespace) SetHostName(ctx context.Context, host string) {
 	u.mu.Lock()
 	u.hostName = host
@@ -88,6 +101,8 @@ func (u *UTSNamespace) SetHostName(ctx context.Context, host string) {
 }
 
 // DomainName returns the domain name of this UTS namespace.
+//
+// +checklocksexclude:u.mu
 func (u *UTSNamespace) DomainName() string {
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -95,6 +110,8 @@ func (u *UTSNamespace) DomainName() string {
 }
 
 // SetDomainName sets the domain name of this UTS namespace.
+//
+// +checklocksexclude:u.mu
 func (u *UTSNamespace) SetDomainName(ctx context.Context, domain string) {
 	u.mu.Lock()
 	u.domainName = domain
@@ -105,6 +122,8 @@ func (u *UTSNamespace) SetDomainName(ctx context.Context, domain string) {
 }
 
 // UserNamespace returns the user namespace associated with this UTS namespace.
+//
+// +checklocksexclude:u.mu
 func (u *UTSNamespace) UserNamespace() *auth.UserNamespace {
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -120,6 +139,8 @@ func (u *UTSNamespace) Type() string {
 func (u *UTSNamespace) Destroy(ctx context.Context) {}
 
 // SetInode sets the nsfs `inode` to the UTS namespace.
+//
+// +checklocksexclude:u.mu
 func (u *UTSNamespace) SetInode(inode *nsfs.Inode) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -127,6 +148,8 @@ func (u *UTSNamespace) SetInode(inode *nsfs.Inode) {
 }
 
 // GetInode returns the nsfs inode associated with the UTS  namespace.
+//
+// +checklocksexclude:u.mu
 func (u *UTSNamespace) GetInode() *nsfs.Inode {
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -134,6 +157,8 @@ func (u *UTSNamespace) GetInode() *nsfs.Inode {
 }
 
 // IncRef increments the Namespace's refcount.
+//
+// +checklocksexclude:u.mu
 func (u *UTSNamespace) IncRef() {
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -141,6 +166,8 @@ func (u *UTSNamespace) IncRef() {
 }
 
 // DecRef decrements the namespace's refcount.
+//
+// +checklocksexclude:u.mu
 func (u *UTSNamespace) DecRef(ctx context.Context) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -149,6 +176,8 @@ func (u *UTSNamespace) DecRef(ctx context.Context) {
 
 // Clone makes a copy of this UTS namespace, associating the given user
 // namespace.
+//
+// +checklocksexclude:u.mu
 func (u *UTSNamespace) Clone(userns *auth.UserNamespace) *UTSNamespace {
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -163,6 +192,8 @@ func (u *UTSNamespace) Clone(userns *auth.UserNamespace) *UTSNamespace {
 
 // RestoreSpecValues updates the hostname and domainname if they haven't been
 // explicitly set by the user.
+//
+// +checklocksexclude:u.mu
 func (u *UTSNamespace) RestoreSpecValues(hostName, domainName string) {
 	u.mu.Lock()
 	defer u.mu.Unlock()

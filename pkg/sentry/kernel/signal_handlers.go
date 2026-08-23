@@ -40,6 +40,8 @@ func NewSignalHandlers() *SignalHandlers {
 }
 
 // Fork returns a copy of sh for a new thread group.
+//
+// +checklocksexclude:sh.mu
 func (sh *SignalHandlers) Fork() *SignalHandlers {
 	sh2 := NewSignalHandlers()
 	sh.mu.Lock()
@@ -50,8 +52,10 @@ func (sh *SignalHandlers) Fork() *SignalHandlers {
 	return sh2
 }
 
-// Reset returns a copy of sh where all non-ignored signal handlers are removed.
-// Used for CLONE_CLEAR_SIGHAND.
+// Reset returns a copy of sh with non-ignored handlers reset to SIG_DFL
+// and all other action fields cleared. Used for CLONE_CLEAR_SIGHAND.
+//
+// +checklocksexclude:sh.mu
 func (sh *SignalHandlers) Reset() *SignalHandlers {
 	sh2 := NewSignalHandlers()
 	sh.mu.Lock()
@@ -68,10 +72,10 @@ func (sh *SignalHandlers) Reset() *SignalHandlers {
 	return sh2
 }
 
-// copyForExecLocked returns a copy of sh for a thread group that is undergoing
-// an execve. (See comments in Task.finishExec.)
+// copyForExecLocked returns a copy of sh for a thread group undergoing execve.
+// Only ignored signals are retained, with all other action fields cleared.
 //
-// Preconditions: sh.mu must be locked.
+// +checklocks:sh.mu
 func (sh *SignalHandlers) copyForExecLocked() *SignalHandlers {
 	sh2 := NewSignalHandlers()
 	for sig, act := range sh.actions {
@@ -85,6 +89,8 @@ func (sh *SignalHandlers) copyForExecLocked() *SignalHandlers {
 }
 
 // IsIgnored returns true if the signal is ignored.
+//
+// +checklocksexclude:sh.mu
 func (sh *SignalHandlers) IsIgnored(sig linux.Signal) bool {
 	sh.mu.Lock()
 	defer sh.mu.Unlock()
@@ -92,9 +98,10 @@ func (sh *SignalHandlers) IsIgnored(sig linux.Signal) bool {
 	return ok && sa.Handler == linux.SIG_IGN
 }
 
-// dequeueActionLocked returns the SignalAct that should be used to handle sig.
+// dequeueAction returns the action for sig, resetting it to the default for
+// subsequent signals if SA_RESETHAND is set.
 //
-// Preconditions: sh.mu must be locked.
+// +checklocks:sh.mu
 func (sh *SignalHandlers) dequeueAction(sig linux.Signal) linux.SigAction {
 	act := sh.actions[sig]
 	if act.Flags&linux.SA_RESETHAND != 0 {

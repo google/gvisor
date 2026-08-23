@@ -95,6 +95,7 @@ import (
 type UserCounters struct {
 	uid auth.KUID
 
+	// +checkatomic
 	rlimitNProc atomicbitops.Uint64
 }
 
@@ -160,6 +161,8 @@ type Kernel struct {
 
 	// started is true if Start has been called. Unless otherwise specified,
 	// all Kernel fields become immutable once started becomes true.
+	//
+	// +checklocks:extMu
 	started bool `state:"nosave"`
 
 	// All of the following fields are immutable unless otherwise specified.
@@ -196,8 +199,14 @@ type Kernel struct {
 	// after all tasks in the thread group have exited, such that ID 1 is no
 	// longer mapped.
 	//
-	// globalInit is mutable until it is assigned by the first successful call
-	// to CreateProcess, and is protected by extMu.
+	// globalInit is assigned by the first successful call to CreateProcess
+	// under extMu. The pointer is immutable afterwards. Task and signal paths
+	// read the published pointer without extMu; taking extMu while holding
+	// TaskSet.mu would reverse the lock order.
+	//
+	// Before publication, readers rely on serialized process creation or the
+	// SupervisorContext caller contract. checklocks cannot express this
+	// publication rule or carry that contract into a Value callback.
 	globalInit *ThreadGroup
 
 	// syslog is the kernel log.
@@ -209,16 +218,20 @@ type Kernel struct {
 	// TaskGoroutineRunningSys or TaskGoroutineRunningApp. i.e., they are
 	// not blocked or stopped.
 	//
-	// runningTasks must be accessed atomically. Increments from 0 to 1 are
-	// further protected by runningTasksMu (see incRunningTasks).
+	// Increments from 0 to 1 also require runningTasksMu (see
+	// incRunningTasks).
+	//
+	// +checkatomic
 	runningTasks atomicbitops.Int64
 
 	// blockedTasks is the total count of tasks currently in
 	// TaskGoroutineBlockedUninterruptible, i.e. uninterruptible sleep. It is
 	// used to implement procs_blocked in /proc/stat.
 	//
-	// blockedTasks must be accessed atomically. It is not saved; on restore it
-	// is repopulated as tasks re-enter uninterruptible sleep.
+	// It is not saved; on restore it is repopulated as tasks re-enter
+	// uninterruptible sleep.
+	//
+	// +checkatomic
 	blockedTasks atomicbitops.Int64 `state:"nosave"`
 
 	// runningTasksCond is signaled when runningTasks is incremented from 0 to 1.
@@ -244,7 +257,7 @@ type Kernel struct {
 	// running, and false if it is blocked in runningTasksCond.Wait() or if it
 	// never started.
 	//
-	// cpuClockTickerRunning is protected by runningTasksMu.
+	// +checklocks:runningTasksMu
 	cpuClockTickerRunning bool
 
 	// cpuClockTickerWakeCh is sent to to wake the goroutine that increments
@@ -262,6 +275,8 @@ type Kernel struct {
 	// strictly slower due to CPU clock ticker goroutine wakeup latency). This
 	// does not use ktime.SyntheticClock since this clock currently does not
 	// need to support timers.
+	//
+	// +checkatomic
 	cpuClock atomicbitops.Int64
 
 	// userCPUClock and userSysCPUClock are kernel-wide cumulative CPU time
@@ -274,19 +289,21 @@ type Kernel struct {
 	// the CPU time of exited tasks. They are used to implement the aggregate
 	// CPU line in /proc/stat (see Kernel.CPUStats).
 	//
-	// userCPUClock and userSysCPUClock must be accessed atomically.
-	userCPUClock    atomicbitops.Int64
+	// +checkatomic
+	userCPUClock atomicbitops.Int64
+
+	// +checkatomic
 	userSysCPUClock atomicbitops.Int64
 
 	// uniqueID is used to generate unique identifiers.
 	//
-	// uniqueID is mutable, and is accessed using atomic memory operations.
+	// +checkatomic
 	uniqueID atomicbitops.Uint64
 
 	// nextInotifyCookie is a monotonically increasing counter used for
 	// generating unique inotify event cookies.
 	//
-	// nextInotifyCookie is mutable.
+	// +checkatomic
 	nextInotifyCookie atomicbitops.Uint32
 
 	// netlinkPorts manages allocation of netlink socket port IDs.
@@ -295,7 +312,8 @@ type Kernel struct {
 	// saveStatus is nil if the sandbox has not been saved, errSaved or
 	// errAutoSaved if it has been saved successfully, or the error causing the
 	// sandbox to exit during save.
-	// It is protected by extMu.
+	//
+	// +checklocks:extMu
 	saveStatus error `state:"nosave"`
 
 	// danglingEndpoints is used to save / restore tcpip.DanglingEndpoints.
@@ -304,8 +322,9 @@ type Kernel struct {
 	// sockets records all network sockets in the system. Protected by extMu.
 	sockets map[*vfs.FileDescription]*SocketRecord
 
-	// nextSocketRecord is the next entry number to use in sockets. Protected
-	// by extMu.
+	// nextSocketRecord is the next entry number to use in sockets.
+	//
+	// +checklocks:extMu
 	nextSocketRecord uint64
 
 	// unimplementedSyscallEmitterOnce is used in the initialization of
@@ -380,6 +399,8 @@ type Kernel struct {
 	// created for the root container. These mounts are then bind mounted
 	// for other application containers by creating their own container
 	// directories.
+	//
+	// +checklocks:cgroupMountsMapMu
 	cgroupMountsMap   map[string]*CgroupMount
 	cgroupMountsMapMu cgroupMountsMutex `state:"nosave"`
 
@@ -392,6 +413,8 @@ type Kernel struct {
 	MaxFDLimit atomicbitops.Int32
 
 	// devGofers maps containers (using its name) to its device gofer client.
+	//
+	// +checklocks:devGofersMu
 	devGofers   map[string]*devutil.GoferClient `state:"nosave"`
 	devGofersMu sync.Mutex                      `state:"nosave"`
 
@@ -507,10 +530,12 @@ type InitKernelArgs struct {
 	Cgroup2FSInit func(ctx context.Context, k *Kernel, vfsObj *vfs.VirtualFilesystem) (*vfs.Filesystem, error)
 }
 
-// Init initialize the Kernel with no tasks.
+// Init initializes the Kernel with no tasks.
 //
 // Callers must manually set Kernel.Platform and call Kernel.SetMemoryFile
 // before calling Init.
+//
+// Preconditions: k has not been initialized and is not in use.
 func (k *Kernel) Init(args InitKernelArgs) error {
 	if args.Timekeeper == nil {
 		return fmt.Errorf("args.Timekeeper is nil")
@@ -666,6 +691,14 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	return nil
 }
 
+// quiescePausedAnd runs f with kernel timers and CPU-clock updates paused.
+// f runs synchronously with k.extMu held and must not release or reacquire it.
+//
+// Preconditions: The kernel must be paused throughout the call.
+//
+// +checklocksexclude:k.extMu
+// +checklocksexclude:k.runningTasksMu
+// +checklocksexclude:k.tasks.mu
 func (k *Kernel) quiescePausedAnd(ctx context.Context, f func() error) error {
 	// Do not allow other Kernel methods to affect it while it's being saved.
 	k.extMu.Lock()
@@ -714,6 +747,10 @@ func savePrivateMFs(ctx context.Context, w io.Writer, mfsToSave map[checkpoint.R
 // pagesMetadata, and pagesFile, even if it returns a non-nil error.
 //
 // Preconditions: The kernel must be paused throughout the call to SaveTo.
+//
+// +checklocksexclude:k.extMu
+// +checklocksexclude:k.runningTasksMu
+// +checklocksexclude:k.tasks.mu
 func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCloser, pagesFile stateio.AsyncWriter, appMFExcludeCommittedZeroPages, resume bool) error {
 	if hostarch.PageSize != 4096 {
 		return fmt.Errorf("save is not supported with %dK page size", hostarch.PageSize/1024)
@@ -935,7 +972,9 @@ func (k *Kernel) invalidateUnsavableMappings(ctx context.Context) error {
 	return nil
 }
 
-// LoadFrom returns a new Kernel loaded from args.
+// LoadFrom restores k from r.
+//
+// Preconditions: k is not in use.
 func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *AsyncMFLoader, timeReady chan struct{}, networkArgs inet.NetworkArgs, clocks sentrytime.Clocks, vfsOpts *vfs.CompleteRestoreOptions, timeline *timing.Timeline) error {
 	defer timeline.End()
 	if hostarch.PageSize != 4096 {
@@ -1042,6 +1081,8 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 
 // ExtractRootfsUpperLayer partially restores the kernel state and extracts the
 // rootfs upper layer to the provided file.
+//
+// Preconditions: k is not in use.
 func (k *Kernel) ExtractRootfsUpperLayer(ctx context.Context, r io.Reader, asyncMFLoader *AsyncMFLoader, timeReady chan struct{}, clocks sentrytime.Clocks, outFD *os.File) error {
 	if hostarch.PageSize != 4096 {
 		return fmt.Errorf("restore is not supported with %dK page size", hostarch.PageSize/1024)
@@ -1201,7 +1242,7 @@ type CreateProcessArgs struct {
 }
 
 // NewContext returns a context.Context that represents the task that will be
-// created by args.NewContext(k).
+// created by Kernel.CreateProcess with args.
 func (args *CreateProcessArgs) NewContext(k *Kernel) context.Context {
 	return &createProcessContext{
 		Context: context.Background(),
@@ -1475,6 +1516,10 @@ func (k *Kernel) StartProcess(tg *ThreadGroup) {
 // Start starts execution of all tasks in k.
 //
 // Preconditions: Start may be called exactly once.
+//
+// +checklocksexclude:k.extMu
+// +checklocksexclude:k.runningTasksMu
+// +checklocksexclude:k.tasks.mu
 func (k *Kernel) Start() error {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
@@ -1511,9 +1556,11 @@ func (k *Kernel) Start() error {
 
 // pauseTimeLocked pauses all Timers and Timekeeper updates.
 //
-// Preconditions:
-//   - Any task goroutines running in k must be stopped.
-//   - k.extMu must be locked.
+// Preconditions: Any task goroutines running in k must be stopped.
+//
+// +checklocks:k.extMu
+// +checklocksexclude:k.runningTasksMu
+// +checklocksexclude:k.tasks.mu
 func (k *Kernel) pauseTimeLocked(ctx context.Context) {
 	// Since all task goroutines have been stopped by precondition, the CPU clock
 	// ticker should stop on its own; wait for it to do so, waking it up from
@@ -1558,9 +1605,9 @@ func (k *Kernel) pauseTimeLocked(ctx context.Context) {
 // pauseTimeLocked has not been previously called, resumeTimeLocked has no
 // effect.
 //
-// Preconditions:
-//   - Any task goroutines running in k must be stopped.
-//   - k.extMu must be locked.
+// Preconditions: Any task goroutines running in k must be stopped.
+//
+// +checklocks:k.extMu
 func (k *Kernel) resumeTimeLocked(ctx context.Context) {
 	// The CPU clock ticker will automatically resume as task goroutines resume
 	// execution.
@@ -1584,6 +1631,7 @@ func (k *Kernel) resumeTimeLocked(ctx context.Context) {
 	}
 }
 
+// +checklocksexclude:k.runningTasksMu
 func (k *Kernel) incRunningTasks() {
 	for {
 		tasks := k.runningTasks.Load()
@@ -1701,6 +1749,8 @@ func (k *Kernel) BlockedTasks() int64 {
 // runningTasks is 0, no task can be in TaskGoroutineRunningSys (such a task
 // counts as running), and the CPU clock is frozen, so a sentry-activity monitor
 // like the watchdog has nothing to observe until a task becomes runnable again.
+//
+// +checklocksexclude:k.runningTasksMu
 func (k *Kernel) WaitForTaskActivity(stop <-chan struct{}) bool {
 	k.runningTasksMu.Lock()
 	if k.runningTasks.Load() != 0 {
@@ -1916,6 +1966,8 @@ func (k *Kernel) GlobalInit() *ThreadGroup {
 }
 
 // TestOnlySetGlobalInit sets the thread group with ID 1 in the root PID namespace.
+//
+// Preconditions: k is exclusively owned by the caller during test setup.
 func (k *Kernel) TestOnlySetGlobalInit(tg *ThreadGroup) {
 	k.globalInit = tg
 }
@@ -1978,6 +2030,8 @@ var (
 // autosaved indicates whether save was triggered by autosave. If it was not
 // saved successfully, err indicates the sandbox error that caused the kernel to
 // exit during save.
+//
+// +checklocksexclude:k.extMu
 func (k *Kernel) SaveStatus() (saved, autosaved bool, err error) {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
@@ -1995,6 +2049,8 @@ func (k *Kernel) SaveStatus() (saved, autosaved bool, err error) {
 
 // SetSaveSuccess sets the flag indicating that save completed successfully, if
 // no status was already set.
+//
+// +checklocksexclude:k.extMu
 func (k *Kernel) SetSaveSuccess(autosave bool) {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
@@ -2009,6 +2065,8 @@ func (k *Kernel) SetSaveSuccess(autosave bool) {
 
 // SetSaveError sets the sandbox error that caused the kernel to exit during
 // save, if one is not already set.
+//
+// +checklocksexclude:k.extMu
 func (k *Kernel) SetSaveError(err error) {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
@@ -2057,6 +2115,8 @@ type SocketRecord struct {
 //
 // Note that the socket table will not hold a reference on the
 // vfs.FileDescription.
+//
+// +checklocksexclude:k.extMu
 func (k *Kernel) RecordSocket(sock *vfs.FileDescription) {
 	k.extMu.Lock()
 	if _, ok := k.sockets[sock]; ok {
@@ -2245,6 +2305,8 @@ func (k *Kernel) CgroupRegistry() *CgroupRegistry {
 // AddCgroupMount adds the cgroup mounts to the cgroupMountsMap. These cgroup
 // mounts are created during the creation of root container process and the
 // reference ownership is transferred to the kernel.
+//
+// +checklocksexclude:k.cgroupMountsMapMu
 func (k *Kernel) AddCgroupMount(ctl string, mnt *CgroupMount) {
 	k.cgroupMountsMapMu.Lock()
 	defer k.cgroupMountsMapMu.Unlock()
@@ -2256,6 +2318,8 @@ func (k *Kernel) AddCgroupMount(ctl string, mnt *CgroupMount) {
 }
 
 // GetCgroupMount returns the cgroup mount for the given cgroup controller.
+//
+// +checklocksexclude:k.cgroupMountsMapMu
 func (k *Kernel) GetCgroupMount(ctl string) *CgroupMount {
 	k.cgroupMountsMapMu.Lock()
 	defer k.cgroupMountsMapMu.Unlock()
@@ -2264,6 +2328,8 @@ func (k *Kernel) GetCgroupMount(ctl string) *CgroupMount {
 }
 
 // releaseCgroupMounts releases the cgroup mounts.
+//
+// +checklocksexclude:k.cgroupMountsMapMu
 func (k *Kernel) releaseCgroupMounts(ctx context.Context) {
 	k.cgroupMountsMapMu.Lock()
 	defer k.cgroupMountsMapMu.Unlock()
@@ -2279,6 +2345,9 @@ func (k *Kernel) releaseCgroupMounts(ctx context.Context) {
 //
 // Precondition: This should only be called after the kernel is fully
 // initialized, e.g. after k.Start() has been called.
+//
+// +checklocksexclude:k.cgroupMountsMapMu
+// +checklocksexclude:k.devGofersMu
 func (k *Kernel) Release() {
 	ctx := k.SupervisorContext()
 	k.releaseCgroupMounts(ctx)
@@ -2406,6 +2475,8 @@ func (k *Kernel) GetUserCounters(uid auth.KUID) *UserCounters {
 
 // AddDevGofer initializes the dev gofer connection and starts tracking it.
 // It takes ownership of goferFD.
+//
+// +checklocksexclude:k.devGofersMu
 func (k *Kernel) AddDevGofer(contName string, goferFD int) error {
 	client, err := devutil.NewGoferClient(k.SupervisorContext(), contName, goferFD)
 	if err != nil {
@@ -2423,6 +2494,8 @@ func (k *Kernel) AddDevGofer(contName string, goferFD int) error {
 
 // RemoveDevGofer closes the dev gofer connection, if one exists, and stops
 // tracking it.
+//
+// +checklocksexclude:k.devGofersMu
 func (k *Kernel) RemoveDevGofer(contName string) {
 	k.devGofersMu.Lock()
 	defer k.devGofersMu.Unlock()
@@ -2436,12 +2509,15 @@ func (k *Kernel) RemoveDevGofer(contName string) {
 
 // GetDevGoferClient implements
 // devutil.GoferClientProviderFromContext.GetDevGoferClient.
+//
+// +checklocksexclude:k.devGofersMu
 func (k *Kernel) GetDevGoferClient(contName string) *devutil.GoferClient {
 	k.devGofersMu.Lock()
 	defer k.devGofersMu.Unlock()
 	return k.devGofers[contName]
 }
 
+// +checklocksexclude:k.devGofersMu
 func (k *Kernel) cleaupDevGofers() {
 	k.devGofersMu.Lock()
 	defer k.devGofersMu.Unlock()
