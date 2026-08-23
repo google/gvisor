@@ -1389,6 +1389,8 @@ func renameAtCommon(c *Connection, comm Communicator, payloadLen uint32, oldDirF
 	})
 }
 
+// +checklocksexclude:n.controlFDsMu
+// +checklocksexclude:n.childrenMu
 func notifyRenameRecursive(n *Node) {
 	n.forEachFD(func(cfd *ControlFD) {
 		cfd.impl.Renamed()
