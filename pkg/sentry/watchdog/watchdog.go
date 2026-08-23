@@ -369,7 +369,7 @@ func (w *Watchdog) reportStuckWatchdog() {
 	buf.WriteString("Watchdog goroutine is stuck")
 	var stuckTasks map[int64]struct{}
 	forceStackDump := false
-	w.doAction(w.StartupTimeoutAction, forceStackDump, stuckTasks, &buf)
+	w.doAction(w.TaskTimeoutAction, forceStackDump, stuckTasks, &buf)
 }
 
 // doAction will take the given action. If the action is LogWarning, the stack
