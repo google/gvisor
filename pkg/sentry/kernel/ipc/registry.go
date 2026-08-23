@@ -23,9 +23,12 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
-// Registry is similar to Object, but for registries. It represent an abstract
-// SysV IPC registry with fields common to all SysV registries. Registry is not
-// thread-safe, and should be protected using a mutex.
+// Registry contains fields common to all SysV IPC registries.
+//
+// The containing msgqueue.Registry.mu, semaphore.Registry.mu, or
+// shm.Registry.mu protects mutable fields after initialization. Registry has
+// no pointer to its containing registry, so checklocks cannot resolve that
+// mutex for accesses through an escaped *Registry.
 //
 // +stateify savable
 type Registry struct {
@@ -35,7 +38,7 @@ type Registry struct {
 	// objects is a map of IDs to IPC mechanisms.
 	objects map[ID]Mechanism
 
-	// KeysToIDs maps a lookup key to an ID.
+	// keysToIDs maps a lookup key to an ID.
 	keysToIDs map[Key]ID
 
 	// lastIDUsed is used to find the next available ID for object creation.
@@ -86,8 +89,8 @@ func (r *Registry) Find(ctx context.Context, key Key, mode linux.FileMode, creat
 	return nil, nil
 }
 
-// Register adds the given object into Registry.Objects, and assigns it a new
-// ID. It returns an error if all IDs are exhausted.
+// Register adds m to r.objects, assigns it a new ID, and associates its key
+// with that ID in r.keysToIDs. It returns an error if all IDs are exhausted.
 func (r *Registry) Register(m Mechanism) error {
 	id, err := r.newID()
 	if err != nil {
@@ -167,10 +170,9 @@ func (r *Registry) FindByID(id ID) Mechanism {
 	return r.objects[id]
 }
 
-// DissociateKey removes the association between a mechanism and its key
-// (deletes it from r.keysToIDs), preventing it from being discovered by any new
-// process, but not necessarily destroying it. If the given key doesn't exist,
-// nothing is changed.
+// DissociateKey removes the association between a mechanism and its key from
+// r.keysToIDs. Lookup by ID is unaffected, and the mechanism is not destroyed.
+// If the given key doesn't exist, nothing is changed.
 func (r *Registry) DissociateKey(key Key) {
 	delete(r.keysToIDs, key)
 }

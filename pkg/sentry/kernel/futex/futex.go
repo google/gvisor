@@ -18,6 +18,8 @@
 package futex
 
 import (
+	"sync/atomic"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -196,29 +198,34 @@ func atomicOp(t Target, addr hostarch.Addr, opIn uint32) (bool, error) {
 
 // Waiter is the struct which gets enqueued into buckets for wake up routines
 // and requeue routines to scan and notify. Once a Waiter has been enqueued by
-// WaitPrepare(), callers may listen on C for wake up events.
+// WaitPrepare() or LockPI(), callers may listen on C for wake up events.
 type Waiter struct {
 	// Synchronization:
 	//
-	//	- A Waiter that is not enqueued in a bucket is exclusively owned (no
-	//		synchronization applies).
+	//	- A newly created Waiter, or one for which WaitComplete has returned,
+	//		is exclusively owned by its caller.
 	//
-	//	- A Waiter is enqueued in a bucket by calling WaitPrepare(). After this,
+	//	- A Waiter can be enqueued by calling WaitPrepare() or LockPI(). Then
 	//		waiterEntry, bucket, and key are protected by the bucket.mu ("bucket
-	//		lock") of the containing bucket, and bitmask is immutable. Note that
-	//		since bucket is mutated using atomic memory operations, bucket.Load()
+	//		lock") of the containing bucket. bitmask and tid are immutable.
+	//		Since bucket is mutated using atomic memory operations, bucket.Load()
 	//		may be called without holding the bucket lock, although it may change
 	//		racily. See WaitComplete().
 	//
-	//	- A Waiter is only guaranteed to be no longer queued after calling
-	//		WaitComplete().
+	//	- Once enqueued, a Waiter may not be reused until WaitComplete returns.
+	//
+	// Requeue changes which bucket mutex protects waiterEntry and key.
+	// checklocks cannot express a guard obtained from an atomic pointer that
+	// may change; WaitComplete locks and revalidates that pointer explicitly.
 
 	// waiterEntry links Waiter into bucket.waiters.
 	waiterEntry
 
 	// bucket is the bucket this waiter is queued in. If bucket is nil, the
 	// waiter is not waiting and is not in any bucket.
-	bucket AtomicPtrBucket
+	//
+	// +checkatomic
+	bucket atomic.Pointer[bucket]
 
 	// C is sent to when the Waiter is woken.
 	C chan struct{}
@@ -241,7 +248,8 @@ func NewWaiter() *Waiter {
 	}
 }
 
-// woken returns true if w has been woken since the last call to WaitPrepare.
+// woken returns true if w has been woken since the last WaitPrepare or LockPI
+// call.
 func (w *Waiter) woken() bool {
 	return len(w.C) != 0
 }
@@ -253,13 +261,14 @@ type bucket struct {
 	// mu protects waiters and contained Waiter state. See comment in Waiter.
 	mu futexBucketMutex `state:"nosave"`
 
+	// +checklocks:mu
 	waiters waiterList `state:"zerovalue"`
 }
 
 // wakeLocked wakes up to n waiters matching the bitmask at the addr for this
 // bucket and returns the number of waiters woken.
 //
-// Preconditions: b.mu must be locked.
+// +checklocks:b.mu
 func (b *bucket) wakeLocked(key *Key, bitmask uint32, n int) int {
 	done := 0
 	for w := b.waiters.Front(); done < n && w != nil; {
@@ -278,26 +287,28 @@ func (b *bucket) wakeLocked(key *Key, bitmask uint32, n int) int {
 	return done
 }
 
+// wakeWaiterLocked removes w from b and wakes it.
+//
+// Preconditions: w must be queued in b.
+//
+// +checklocks:b.mu
 func (b *bucket) wakeWaiterLocked(w *Waiter) {
-	// Remove from the bucket and wake the waiter.
 	b.waiters.Remove(w)
 	w.C <- struct{}{}
 
-	// NOTE: The above channel write establishes a write barrier according
-	// to the memory model, so nothing may be ordered around it. Since
-	// we've dequeued w and will never touch it again, we can safely
-	// store nil to w.bucket here and allow the WaitComplete() to
-	// short-circuit grabbing the bucket lock. If they somehow miss the
-	// store, we are still holding the lock, so we can know that they won't
-	// dequeue w, assume it's free and have the below operation
-	// afterwards.
+	// After notification, bucket is the only part of w this path still
+	// accesses. The atomic nil store lets WaitComplete skip the bucket lock.
+	// If WaitComplete sees the old bucket, it must acquire b.mu and recheck,
+	// so it cannot finish and allow w to be reused before this store.
 	w.bucket.Store(nil)
 }
 
-// requeueLocked takes n waiters from the bucket and moves them to naddr on the
-// bucket "to".
+// requeueLocked requeues up to n waiters matching key from b to to using nkey.
 //
-// Preconditions: b and to must be locked.
+// b and to may be the same bucket, in which case its mutex is held only once.
+//
+// +checklocks:b.mu
+// +checklocks:to.mu
 func (b *bucket) requeueLocked(t Target, to *bucket, key, nkey *Key, n int) int {
 	done := 0
 	for w := b.waiters.Front(); done < n && w != nil; {
@@ -397,6 +408,7 @@ func (m *Manager) Fork() *Manager {
 }
 
 // lockBucket returns a locked bucket for the given key.
+//
 // +checklocksacquire:b.mu
 func (m *Manager) lockBucket(k *Key) (b *bucket) {
 	if k.Kind == KindSharedMappable {
@@ -408,9 +420,15 @@ func (m *Manager) lockBucket(k *Key) (b *bucket) {
 	return b
 }
 
-// lockBuckets returns locked buckets for the given keys.
-// It returns which bucket was locked first and second. They may be nil in case the buckets are
-// identical or they did not need locking.
+// lockBuckets returns the buckets for k1 and k2 with their mutexes held.
+// If both keys map to the same bucket, its mutex is locked only once.
+//
+// lockedFirst and lockedSecond identify the buckets in lock order.
+// lockedFirst is always non-nil. lockedSecond is nil if and only if b1 == b2.
+// Pass these ordered values to unlockBuckets to release the locks.
+//
+// checklocks cannot express the aliases between b1/b2 and the ordered return
+// values.
 //
 // +checklocksacquire:lockedFirst.mu
 // +checklocksacquire:lockedSecond.mu
@@ -458,7 +476,12 @@ func (m *Manager) lockBuckets(k1, k2 *Key) (b1, b2, lockedFirst, lockedSecond *b
 	return b1, b2, b1, nil // +checklocksforce
 }
 
-// unlockBuckets unlocks two buckets.
+// unlockBuckets releases the locks acquired by lockBuckets in reverse order.
+//
+// Preconditions: lockedFirst and lockedSecond must be the ordered return
+// values from the same call to lockBuckets, and the caller must still hold
+// those locks.
+//
 // +checklocksrelease:lockedFirst.mu
 // +checklocksrelease:lockedSecond.mu
 func (m *Manager) unlockBuckets(lockedFirst, lockedSecond *bucket) {
@@ -506,11 +529,13 @@ func (m *Manager) doRequeue(t Target, addr, naddr hostarch.Addr, private bool, c
 		}
 	}
 
-	// Wake the number required.
-	done := b1.wakeLocked(&k1, ^uint32(0), nwake)
+	// Wake the number required. lockBuckets holds b1.mu and b2.mu through
+	// the ordered handles until unlockBuckets; checklocks cannot relate
+	// those handles to the logical buckets.
+	done := b1.wakeLocked(&k1, ^uint32(0), nwake) // +checklocksignore
 
 	// Requeue the number required.
-	b1.requeueLocked(t, b2, &k1, &k2, nreq)
+	_ = b1.requeueLocked(t, b2, &k1, &k2, nreq) // +checklocksignore
 
 	return done, nil
 }
@@ -553,13 +578,15 @@ func (m *Manager) WakeOp(t Target, addr1, addr2 hostarch.Addr, private bool, nwa
 		return 0, err
 	}
 
-	// Wake up up to nwake1 entries from the first bucket.
-	done = b1.wakeLocked(&k1, ^uint32(0), nwake1)
+	// Wake up to nwake1 entries from the first bucket. lockBuckets holds
+	// both logical buckets through the ordered handles until unlockBuckets;
+	// checklocks cannot relate those handles to b1 and b2.
+	done = b1.wakeLocked(&k1, ^uint32(0), nwake1) // +checklocksignore
 
 	// Wake up up to nwake2 entries from the second bucket if the
 	// operation yielded true.
 	if cond {
-		done += b2.wakeLocked(&k2, ^uint32(0), nwake2)
+		done += b2.wakeLocked(&k2, ^uint32(0), nwake2) // +checklocksignore
 	}
 
 	return done, nil
@@ -602,8 +629,8 @@ func (m *Manager) WaitPrepare(w *Waiter, t Target, addr hostarch.Addr, private b
 	return nil
 }
 
-// WaitComplete must be called when a Waiter previously added by WaitPrepare is
-// no longer eligible to be woken.
+// WaitComplete must be called when a Waiter previously added by WaitPrepare or
+// LockPI is no longer eligible to be woken.
 func (m *Manager) WaitComplete(w *Waiter, t Target) {
 	// Remove w from the bucket it's in.
 	for {
@@ -679,6 +706,7 @@ func (m *Manager) LockPI(w *Waiter, t Target, addr hostarch.Addr, tid uint32, pr
 	return success, nil
 }
 
+// +checklocks:b.mu
 func (m *Manager) lockPILocked(w *Waiter, t Target, addr hostarch.Addr, tid uint32, b *bucket, try bool) (bool, error) {
 	for {
 		cur, err := t.LoadUint32(addr)
@@ -754,6 +782,7 @@ func (m *Manager) UnlockPI(t Target, addr hostarch.Addr, tid uint32, private boo
 	return err
 }
 
+// +checklocks:b.mu
 func (m *Manager) unlockPILocked(t Target, addr hostarch.Addr, tid uint32, b *bucket, key *Key) error {
 	cur, err := t.LoadUint32(addr)
 	if err != nil {

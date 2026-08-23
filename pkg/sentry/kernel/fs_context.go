@@ -29,21 +29,28 @@ import (
 type FSContext struct {
 	FSContextRefs
 
-	// mu protects below.
 	mu fsContextMutex `state:"nosave"`
 
 	// root is the filesystem root.
+	//
+	// +checklocks:mu
 	root vfs.VirtualDentry
 
 	// cwd is the current working directory.
+	//
+	// +checklocks:mu
 	cwd vfs.VirtualDentry
 
 	// umask is the current file mode creation mask. When a thread using this
 	// context invokes a syscall that creates a file, bits set in umask are
 	// removed from the permissions that the file is created with.
+	//
+	// +checklocks:mu
 	umask uint
 
 	// preventSharing is true for the duration of an associated Task's execve
+	//
+	// +checklocks:mu
 	preventSharing bool
 }
 
@@ -245,12 +252,14 @@ func (f *FSContext) share() bool {
 
 // unshareFromTask removes the FSContext f from the given Task t and replaces it with newF.
 // It returns a bool indicating whether f needs to be destroyed.
-
+//
 // This func operates without compromising a concurrent checkAndPreventSharingOutsideTG(): t's
 // association with f is severed atomically by holding f.mu, allowing the concurrent func to
 // correctly ascribe extra ref counts to tasks outside of t's thread group.
 //
-// Preconditions: The caller must be on the task goroutine and must hold t.mu.
+// Preconditions: The caller must be on the task goroutine.
+//
+// +checklocks:t.mu
 func (f *FSContext) unshareFromTask(t *Task, newF *FSContext) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()

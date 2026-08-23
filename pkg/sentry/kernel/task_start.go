@@ -140,6 +140,9 @@ type TaskConfig struct {
 //
 // If successful, NewTask transfers references held by cfg to the new task.
 // Otherwise, NewTask releases them.
+//
+// Preconditions: cfg.Kernel.tasks must be ts. cfg.ThreadGroup and any
+// non-nil cfg.Parent or cfg.InheritParent must belong to ts.
 func (ts *TaskSet) NewTask(ctx context.Context, cfg *TaskConfig) (*Task, error) {
 	var err error
 	cleanup := func() {
@@ -170,6 +173,8 @@ func (ts *TaskSet) NewTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 
 // newTask is a helper for TaskSet.NewTask that only takes ownership of parts
 // of cfg if it succeeds.
+//
+// Preconditions: As for NewTask.
 func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) {
 	srcT := TaskFromContext(ctx)
 	tg := cfg.ThreadGroup
@@ -410,11 +415,17 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 	if isFirstTask = tg.leader == nil; isFirstTask {
 		// New thread group.
 		tg.leader = t
-		if parentPG := tg.parentPG(); parentPG == nil {
-			tg.createSession()
+		// cfg.ThreadGroup belongs to the locked ts by precondition;
+		// checklocks cannot relate the two owner paths.
+		if parentPG := tg.parentPG(); parentPG == nil { // +checklocksignore
+			// allocateTID excluded existing session/process-group IDs,
+			// and this new thread group has no controlling terminal.
+			_, _, _ = tg.createSession() // +checklocksignore
 		} else {
 			// Inherit the process group and terminal.
-			parentPG.incRefWithParent(parentPG)
+			// The inherited group also belongs to ts; checklocks cannot
+			// follow that ownership through parentPG's returned value.
+			parentPG.incRefWithParent(parentPG) // +checklocksignore
 			tg.processGroup = parentPG
 			tg.tty = inhTTY
 			inhTTY = nil // Neuter the deferred DecRef, ref transferred to tg.tty.
@@ -435,9 +446,12 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 	t.stopCount = atomicbitops.FromInt32(ts.stopCount)
 
 	t.mu.Lock()
-	t.cpu = atomicbitops.FromInt32(assignCPU(t.allowedCPUMask, ts.Root.tids[t]))
+	t.cpu.Store(assignCPU(t.allowedCPUMask, ts.Root.tids[t]))
 
-	t.startTime = t.k.RealtimeClock().Now()
+	startTime := t.k.RealtimeClock().Now()
+	// cfg.Kernel's TaskSet is ts, whose mutex is held along with t.mu;
+	// checklocks cannot relate the new task's owner back to ts.
+	t.startTime = startTime // +checklocksignore
 
 	// As a final step, initialize the platform context. This may require
 	// other pieces to be initialized as the task is used the context.

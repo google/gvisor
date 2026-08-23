@@ -39,7 +39,7 @@ type UserNamespace struct {
 	// Keys is the set of keys in this namespace.
 	Keys KeySet
 
-	// mu protects the following fields.
+	// mu protects the ID maps, setgroupsAllowed, and inode.
 	//
 	// If mu will be locked in multiple UserNamespaces, it must be locked in
 	// descendant namespaces before ancestors.
@@ -49,21 +49,33 @@ type UserNamespace struct {
 	//
 	// All ID maps, once set, cannot be changed. This means that successful
 	// UID/GID translations cannot be racy.
+	//
+	// +checklocks:mu
 	uidMapFromParent idMapSet
-	uidMapToParent   idMapSet
-	gidMapFromParent idMapSet
-	gidMapToParent   idMapSet
 
-	// parentHadSetfcap is true if the parent namespace had the CAP_SETFCAP
-	// capability when this namespace was created. Similar to
+	// +checklocks:mu
+	uidMapToParent idMapSet
+
+	// +checklocks:mu
+	gidMapFromParent idMapSet
+
+	// +checklocks:mu
+	gidMapToParent idMapSet
+
+	// parentHadSetfcap is true if the creator had CAP_SETFCAP in the parent
+	// namespace when this namespace was created. It is immutable, like
 	// user_namespace.parent_could_setfcap in Linux.
 	parentHadSetfcap bool
 
-	// setgroupsAllowed mirrors USERNS_SETGROUPS_ALLOWED in Linux. Protected by mu.
+	// setgroupsAllowed mirrors USERNS_SETGROUPS_ALLOWED in Linux.
+	//
+	// +checklocks:mu
 	setgroupsAllowed bool
 
 	// inode is the nsfs inode associated with this namespace. This is stored as
 	// refs.TryRefCounter instead of *nsfs.Inode because nsfs imports auth.
+	//
+	// +checklocks:mu
 	inode refs.TryRefCounter
 }
 

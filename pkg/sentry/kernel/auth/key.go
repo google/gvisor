@@ -15,10 +15,12 @@
 package auth
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"strings"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/rand"
 )
@@ -93,16 +95,34 @@ type Key struct {
 	Description string
 
 	// kuid is the owner of the key in the root namespace.
-	// kuid is only mutable in KeySet transactions.
+	// It is immutable.
 	kuid KUID
 
 	// kgid is the group of the key in the root namespace.
-	// kgid is only mutable in KeySet transactions.
+	// It is immutable.
 	kgid KGID
 
 	// perms is a bitfield of key permissions.
-	// perms is only mutable in KeySet transactions.
-	perms KeyPermissions
+	//
+	// After initialization or restore, writes occur only in KeySet
+	// transactions. Readers may access shared keys outside a transaction.
+	//
+	// A task can retain a session key across a user-namespace switch and
+	// update it through the new namespace's KeySet. Writers therefore need
+	// not hold the same transaction mutex.
+	//
+	// +checkatomic
+	perms atomicbitops.Uint64 `state:".(KeyPermissions)"`
+}
+
+// savePerms is invoked by stateify.
+func (k *Key) savePerms() KeyPermissions {
+	return k.Permissions()
+}
+
+// loadPerms is invoked by stateify.
+func (k *Key) loadPerms(_ context.Context, perms KeyPermissions) {
+	k.perms.Store(uint64(perms))
 }
 
 // Type returns the type of this key.
@@ -117,13 +137,13 @@ func (k *Key) KUID() KUID { return k.kuid }
 func (k *Key) KGID() KGID { return k.kgid }
 
 // Permissions returns the permission bits of the key.
-func (k *Key) Permissions() KeyPermissions { return k.perms }
+func (k *Key) Permissions() KeyPermissions { return KeyPermissions(k.perms.Load()) }
 
 // String is a human-friendly representation of the key.
 // Notably, this is *not* the string returned to userspace when requested
 // using `KEYCTL_DESCRIBE`.
 func (k *Key) String() string {
-	return fmt.Sprintf("id=%d,perms=0x%x,desc=%q", k.ID, k.perms, k.Description)
+	return fmt.Sprintf("id=%d,perms=0x%x,desc=%q", k.ID, k.Permissions(), k.Description)
 }
 
 // Bitmasks for permission checks.
@@ -232,7 +252,7 @@ func (c *Credentials) PossessedKeys(sessionKeyring, processKeyring, threadKeyrin
 			continue
 		}
 		// The possessor still needs "search" permission in order to actually possess anything.
-		if ((k.perms&keyPossessorPermissionsMask)>>keyPossessorPermissionsShift)&keyPermissionSearch != 0 {
+		if ((k.Permissions()&keyPossessorPermissionsMask)>>keyPossessorPermissionsShift)&keyPermissionSearch != 0 {
 			possessed.possessed[k.ID] = struct{}{}
 		}
 	}
@@ -247,15 +267,16 @@ func (c *Credentials) PossessedKeys(sessionKeyring, processKeyring, threadKeyrin
 //
 //go:nosplit
 func (c *Credentials) HasKeyPermission(k *Key, possessed *PossessedKeys, permission KeyPermission) bool {
-	perms := k.perms & keyOtherPermissionsMask
+	keyPerms := k.Permissions()
+	perms := keyPerms & keyOtherPermissionsMask
 	if _, ok := possessed.possessed[k.ID]; ok {
-		perms |= (k.perms & keyPossessorPermissionsMask) >> keyPossessorPermissionsShift
+		perms |= (keyPerms & keyPossessorPermissionsMask) >> keyPossessorPermissionsShift
 	}
 	if c.EffectiveKUID == k.kuid {
-		perms |= (k.perms & keyOwnerPermissionsMask) >> keyOwnerPermissionsShift
+		perms |= (keyPerms & keyOwnerPermissionsMask) >> keyOwnerPermissionsShift
 	}
 	if c.EffectiveKGID == k.kgid {
-		perms |= (k.perms & keyGroupPermissionsMask) >> keyGroupPermissionsShift
+		perms |= (keyPerms & keyGroupPermissionsMask) >> keyGroupPermissionsShift
 	}
 	switch permission {
 	case KeyView:
@@ -279,9 +300,8 @@ func (c *Credentials) HasKeyPermission(k *Key, possessed *PossessedKeys, permiss
 //
 // +stateify savable
 type KeySet struct {
-	// txnMu is used for transactionality of key changes.
-	// This blocks multiple tasks for concurrently changing the keyset or the
-	// permissions of any keys.
+	// txnMu serializes transactions on this KeySet. A transaction may update
+	// a key retained from another namespace.
 	txnMu keysetTransactionMutex `state:"nosave"`
 
 	// mu protects the fields below.
@@ -292,11 +312,19 @@ type KeySet struct {
 	// keys maps key IDs to the underlying Key struct.
 	// It is initially nil to save on heap space.
 	// It is only initialized when doing mutable transactions on it using `Do`.
+	//
+	// +checklocks:mu
 	keys map[KeySerial]*Key
 }
 
 // LockedKeySet is a KeySet in a transaction.
 // It exposes functions that can mutate the KeySet or its keys.
+//
+// KeySet.Do holds the transaction mutex while its callback runs. A
+// LockedKeySet must not be retained after the callback returns.
+//
+// checklocks cannot propagate Do's held txnMu through its callback argument.
+// Calls to the guarded methods inside these callbacks carry local exceptions.
 type LockedKeySet struct {
 	*KeySet
 }
@@ -310,9 +338,9 @@ func (s *KeySet) Do(fn func(*LockedKeySet) error) error {
 	defer s.txnMu.Unlock()
 	ls := &LockedKeySet{s}
 	ls.mu.Lock()
-	if s.keys == nil {
+	if ls.keys == nil {
 		// Initialize the map from its zero value, if it hasn't been done yet.
-		s.keys = make(map[KeySerial]*Key)
+		ls.keys = make(map[KeySerial]*Key)
 	}
 	ls.mu.Unlock()
 	return fn(ls)
@@ -361,6 +389,8 @@ func getNewID() (KeySerial, error) {
 }
 
 // Add adds a new Key to the KeySet.
+//
+// +checklocks:s.txnMu
 func (s *LockedKeySet) Add(description string, creds *Credentials, perms KeyPermissions, keySizeLimit int) (*Key, error) {
 	if len(description) >= MaxKeyDescSize {
 		return nil, linuxerr.EINVAL
@@ -385,7 +415,7 @@ func (s *LockedKeySet) Add(description string, creds *Credentials, perms KeyPerm
 		Description: description,
 		kuid:        creds.EffectiveKUID,
 		kgid:        creds.EffectiveKGID,
-		perms:       perms,
+		perms:       atomicbitops.FromUint64(uint64(perms)),
 	}
 	s.keys[newID] = k
 	return k, nil
@@ -393,6 +423,8 @@ func (s *LockedKeySet) Add(description string, creds *Credentials, perms KeyPerm
 
 // SetPerms sets the permissions on a given key.
 // The caller must have SetAttr permission on the key.
+//
+// +checklocks:s.txnMu
 func (s *LockedKeySet) SetPerms(key *Key, newPerms KeyPermissions) {
-	key.perms = newPerms
+	key.perms.Store(uint64(newPerms))
 }

@@ -50,10 +50,14 @@ type Registry struct {
 	mu sync.Mutex `state:"nosave"`
 
 	// reg defines basic fields and operations needed for all SysV registries.
+	//
+	// +checklocks:mu
 	reg *ipc.Registry
 
 	// indexes maintains a mapping between a set's index in virtual array and
 	// its identifier.
+	//
+	// +checklocks:mu
 	indexes map[int32]ipc.ID
 }
 
@@ -64,24 +68,34 @@ type Set struct {
 	// registry owning this sem set. Immutable.
 	registry *Registry
 
-	// mu protects all fields below.
+	// mu protects mutable state below, including the mutable fields of obj.
 	mu sync.Mutex `state:"nosave"`
 
+	// obj points to common IPC metadata. The pointer is immutable; mutable
+	// fields of the object require mu.
 	obj *ipc.Object
 
-	opTime     ktime.Time
+	// +checklocks:mu
+	opTime ktime.Time
+
+	// +checklocks:mu
 	changeTime ktime.Time
 
-	// sems holds all semaphores in the set. The slice itself is immutable after
-	// it's been set, however each 'sem' object in the slice requires 'mu' lock.
+	// sems holds all semaphores in the set. Its slice header is immutable after
+	// initialization; access to mutable fields of its elements requires mu.
 	sems []sem
 
 	// dead is set to true when the set is removed and can't be reached anymore.
 	// All waiters must wake up and fail when set is dead.
+	//
+	// +checklocks:mu
 	dead bool
 }
 
 // sem represents a single semaphore from a set.
+//
+// Its fields are protected by the owning Set.mu. sem has no pointer to its
+// Set, so checklocks cannot infer that mutex from membership in Set.sems.
 //
 // +stateify savable
 type sem struct {
@@ -95,12 +109,17 @@ type sem struct {
 //
 // +stateify savable
 type waiter struct {
+	// waiterEntry is protected by the owning Set.mu while queued.
+	// waiter has no Set pointer, so checklocks cannot recover that owner
+	// through list membership.
 	waiterEntry
 
 	// value represents how much resource the waiter needs to wake up.
-	// The value is either 0 or negative.
+	// The value is either 0 or negative. Immutable.
 	value int16
-	ch    chan struct{}
+
+	// ch is notified when the waiter can retry. The channel handle is immutable.
+	ch chan struct{}
 }
 
 // NewRegistry creates a new semaphore set registry.
@@ -217,9 +236,10 @@ func (r *Registry) Remove(id ipc.ID, creds *auth.Credentials) error {
 	if !found {
 		return linuxerr.EINVAL
 	}
+	if err := r.reg.Remove(id, creds); err != nil {
+		return err
+	}
 	delete(r.indexes, index)
-
-	r.reg.Remove(id, creds)
 
 	return nil
 }
@@ -227,7 +247,7 @@ func (r *Registry) Remove(id ipc.ID, creds *auth.Credentials) error {
 // newSetLocked creates a new Set using given fields. An error is returned if there
 // are no more available identifiers.
 //
-// Precondition: r.mu must be held.
+// +checklocks:r.mu
 func (r *Registry) newSetLocked(ctx context.Context, key ipc.Key, creator *auth.Credentials, mode linux.FileMode, nsems int32) (*Set, error) {
 	set := &Set{
 		registry:   r,
@@ -274,6 +294,7 @@ func (r *Registry) FindByIndex(index int32) *Set {
 	return r.reg.FindByID(id).(*Set)
 }
 
+// +checklocks:r.mu
 func (r *Registry) findIndexByID(id ipc.ID) (int32, bool) {
 	for k, v := range r.indexes {
 		if v == id {
@@ -283,6 +304,7 @@ func (r *Registry) findIndexByID(id ipc.ID) (int32, bool) {
 	return 0, false
 }
 
+// +checklocks:r.mu
 func (r *Registry) findFirstAvailableIndex() (int32, bool) {
 	for index := int32(0); index < setsMax; index++ {
 		if _, present := r.indexes[index]; !present {
@@ -292,6 +314,7 @@ func (r *Registry) findFirstAvailableIndex() (int32, bool) {
 	return 0, false
 }
 
+// +checklocks:r.mu
 func (r *Registry) totalSems() int {
 	totalSems := 0
 	r.reg.ForAllObjects(
@@ -313,17 +336,22 @@ func (s *Set) Object() *ipc.Object {
 }
 
 // Lock implements ipc.Mechanism.Lock.
+//
+// +checklocksacquire:s.mu
 func (s *Set) Lock() {
 	s.mu.Lock()
 }
 
-// Unlock implements ipc.mechanism.Unlock.
+// Unlock implements ipc.Mechanism.Unlock.
 //
-// +checklocksignore
+// +checklocksrelease:s.mu
 func (s *Set) Unlock() {
 	s.mu.Unlock()
 }
 
+// findSem returns the semaphore at num, or nil if num is out of range.
+// It reads only the immutable slice header. Access to the returned semaphore's
+// mutable fields requires s.mu; sem has no link back to s for checklocks.
 func (s *Set) findSem(num int32) *sem {
 	if num < 0 || int(num) >= s.Size() {
 		return nil
@@ -331,7 +359,8 @@ func (s *Set) findSem(num int32) *sem {
 	return &s.sems[num]
 }
 
-// Size returns the number of semaphores in the set. Size is immutable.
+// Size returns the number of semaphores in the set. The slice header is
+// immutable, so Size does not require s.mu.
 func (s *Set) Size() int {
 	return len(s.sems)
 }
@@ -573,6 +602,7 @@ func (s *Set) ExecuteOps(ctx context.Context, ops []linux.Sembuf, creds *auth.Cr
 	return ch, num, nil
 }
 
+// +checklocks:s.mu
 func (s *Set) executeOps(ctx context.Context, ops []linux.Sembuf, pid int32) (chan struct{}, int32, error) {
 	// Changes to semaphores go to this slice temporarily until they all succeed.
 	tmpVals := make([]int16, len(s.sems))
@@ -650,7 +680,7 @@ func (s *Set) AbortWait(num int32, ch chan struct{}) {
 
 // Destroy implements ipc.Mechanism.Destroy.
 //
-// Preconditions: Caller must hold 's.mu'.
+// +checklocks:s.mu
 func (s *Set) Destroy() {
 	// Notify all waiters. They will fail on the next attempt to execute
 	// operations and return error.
@@ -671,6 +701,8 @@ func abs(val int16) int16 {
 }
 
 // wakeWaiters goes over all waiters and checks which of them can be notified.
+//
+// Preconditions: The owning Set.mu must be held.
 func (s *sem) wakeWaiters() {
 	// Note that this will release all waiters waiting for 0 too.
 	for w := s.waiters.Front(); w != nil; {
