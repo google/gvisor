@@ -26,6 +26,9 @@ go_test(
     ],
     library = ":watchdog",
     deps = [
+        "//pkg/sentry/fsimpl/host",
+        "//pkg/sentry/fsimpl/testutil",
+        "//pkg/sentry/vfs",
         "@com_github_google_go_cmp//cmp:go_default_library",
     ],
 )

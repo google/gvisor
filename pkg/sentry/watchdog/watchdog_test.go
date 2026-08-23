@@ -17,9 +17,61 @@ package watchdog
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/testutil"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
+
+func TestStartUsesCPUClock(t *testing.T) {
+	k, err := testutil.Boot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Boot leaves the host mount to its caller. Complete the loader's setup so
+	// Kernel.Release can release all kernel resources.
+	hostFilesystem, err := host.NewFilesystem(k.VFS())
+	if err != nil {
+		t.Fatal(err)
+	}
+	k.SetHostMount(k.VFS().NewDisconnectedMount(hostFilesystem, nil, &vfs.MountOptions{}))
+	hostFilesystem.DecRef(k.SupervisorContext())
+	t.Cleanup(func() {
+		// Boot's empty init thread group has no task exit path to release it.
+		k.GlobalInit().Release(k.SupervisorContext())
+		k.Release()
+	})
+	// With no running tasks, the CPU clock stays frozen while the application
+	// monotonic clock advances. The monitoring loop stays idle, so it cannot
+	// overwrite the timestamp initialized by Start.
+	want := k.CPUClockNow()
+	if k.MonotonicClock().Now() == want {
+		t.Fatal("test requires distinct application and CPU clock times")
+	}
+	w := New(k, Opts{TaskTimeout: time.Minute})
+	t.Cleanup(w.Stop)
+	w.Start()
+	w.Stop()
+	if w.lastRun != want {
+		t.Errorf("lastRun = %v, want CPU clock time %v", w.lastRun, want)
+	}
+}
+
+func TestStuckWatchdogUsesTaskAction(t *testing.T) {
+	w := &Watchdog{
+		Opts: Opts{
+			TaskTimeoutAction:    LogWarning,
+			StartupTimeoutAction: Panic,
+		},
+		// Avoid an unrelated stack dump on the logging path.
+		lastStackDump: time.Now(),
+	}
+	// Reporting a stalled monitoring loop must use the task-timeout policy,
+	// not the unrelated policy for failing to start the watchdog.
+	w.reportStuckWatchdog()
+}
 
 func TestStuckGoroutineStacks(t *testing.T) {
 	innocent0 := `goroutine 124 [select, 1 minutes]:

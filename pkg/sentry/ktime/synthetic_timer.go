@@ -31,13 +31,15 @@ type SyntheticTimer struct {
 	clock    *SyntheticClock
 	listener Listener
 
-	// setting is the timer's current setting. setting is protected by
-	// clock.mu.
+	// setting is the timer's current setting.
+	//
+	// +checklocks:clock.mu
 	setting Setting
 
 	// syntheticTimerEntry links the SyntheticTimer into
 	// syntheticTimerQueue.timers when setting.Enabled == true.
-	// syntheticTimerEntry is protected by mu.
+	// Its links are protected by clock.mu, but the generated entry accessors
+	// have no link back to this timer from which to name that lock.
 	syntheticTimerEntry
 }
 
@@ -48,12 +50,16 @@ type SyntheticTimer struct {
 type SyntheticClock struct {
 	mu sync.Mutex `state:"nosave"`
 
-	// now is the Clock's current time. Writes to now require that mu is
-	// locked.
+	// now is the Clock's current time.
+	//
+	// +checkatomic
+	// +checklocks:mu
 	now atomicbitops.Int64
 
 	// timers maps each timer expiration time to a list of all enabled timers
-	// with that expiration time. timers is protected by mu.
+	// with that expiration time.
+	//
+	// +checklocks:mu
 	timers syntheticTimerSet
 }
 
@@ -61,6 +67,10 @@ type SyntheticClock struct {
 //
 // +stateify savable
 type syntheticTimerQueue struct {
+	// timers is protected by the owning SyntheticClock's mu. Every member's
+	// clock pointer identifies that same SyntheticClock, but this queue has
+	// no clock pointer and checklocks cannot recover the owner through
+	// generated set/list traversal.
 	timers syntheticTimerList
 }
 
@@ -146,7 +156,7 @@ func (c *SyntheticClock) Now() Time {
 	return FromNanoseconds(c.now.Load())
 }
 
-// Preconditions: c.mu must be locked.
+// +checklocks:c.mu
 func (c *SyntheticClock) nowLocked() Time {
 	return FromNanoseconds(c.now.RacyLoad())
 }
@@ -180,7 +190,7 @@ func (c *SyntheticClock) Add(delta time.Duration) {
 	c.setTimeLocked(c.now.RacyLoad() + delta.Nanoseconds())
 }
 
-// Preconditions: c.mu must be locked.
+// +checklocks:c.mu
 func (c *SyntheticClock) setTimeLocked(nowNS int64) {
 	if nowNS < 0 {
 		panic(fmt.Sprintf("invalid time %d", nowNS))
@@ -201,20 +211,27 @@ func (c *SyntheticClock) setTimeLocked(nowNS int64) {
 		for !timers.Empty() {
 			t := timers.Front()
 			timers.Remove(t)
-			s, exp := t.setting.At(now)
+			// Every member of c.timers has t.clock == c. checklocks cannot
+			// recover that owner identity from generated list traversal.
+			s, exp := t.setting.At(now) // +checklocksignore
 			if exp == 0 {
-				panic(fmt.Sprintf("ktime.SyntheticClock (time=%d) contains enqueued timer %p for time=%d with unexpired setting %+v", nowNS, t, seg.Start(), t.setting))
+				panic(fmt.Sprintf("ktime.SyntheticClock (time=%d) contains enqueued timer %p for time=%d with unexpired setting %+v", nowNS, t, seg.Start(), t.setting)) // +checklocksignore
 			}
-			t.setting = s
+			t.setting = s // +checklocksignore
 			t.listener.NotifyTimer(exp)
-			if t.setting.Enabled {
-				c.addTimerLocked(t)
+			if t.setting.Enabled { // +checklocksignore
+				c.addTimerLocked(t) // +checklocksignore
 			}
 		}
 	}
 }
 
-// Preconditions: c.mu must be locked.
+// addTimerLocked inserts enabled t into c's timer index.
+//
+// Preconditions: t.clock == c.
+//
+// +checklocks:c.mu
+// +checklocks:t.clock.mu
 func (c *SyntheticClock) addTimerLocked(t *SyntheticTimer) {
 	nextNS := uint64(t.setting.Next.Nanoseconds())
 	seg, gap := c.timers.Find(nextNS)
@@ -224,7 +241,12 @@ func (c *SyntheticClock) addTimerLocked(t *SyntheticTimer) {
 	seg.ValuePtr().timers.PushBack(t)
 }
 
-// Preconditions: c.mu must be locked.
+// delTimerLocked removes t from c's timer index.
+//
+// Preconditions: t.clock == c, and t is enqueued.
+//
+// +checklocks:c.mu
+// +checklocks:t.clock.mu
 func (c *SyntheticClock) delTimerLocked(t *SyntheticTimer) {
 	nextNS := uint64(t.setting.Next.Nanoseconds())
 	seg := c.timers.FindSegment(nextNS)
