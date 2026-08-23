@@ -286,6 +286,8 @@ func (*Stats) IsEndpointStats() {}
 // +stateify savable
 type sndQueueInfo struct {
 	sndQueueMu sndQueueMutex `state:"nosave"`
+
+	// +checklocks:sndQueueMu
 	TCPSndBufState
 }
 
@@ -1896,7 +1898,10 @@ func (e *Endpoint) OnSetReceiveBufferSize(rcvBufSz, oldSz int64) (newSz int64, p
 
 // OnSetSendBufferSize implements tcpip.SocketOptionsHandler.OnSetSendBufferSize.
 func (e *Endpoint) OnSetSendBufferSize(sz int64) int64 {
-	e.sndQueueInfo.TCPSndBufState.AutoTuneSndBufDisabled.Store(1)
+	// Only this atomic flag is accessed without sndQueueMu; checklocks
+	// cannot express that leaf exception to the enclosing state guard.
+	disabled := &e.sndQueueInfo.TCPSndBufState.AutoTuneSndBufDisabled // +checklocksignore
+	disabled.Store(1)
 	return sz
 }
 
@@ -3443,7 +3448,10 @@ func (e *Endpoint) computeTCPSendBufferSize() int64 {
 
 	// Auto tuning is disabled when the user explicitly sets the send
 	// buffer size with SO_SNDBUF option.
-	if disabled := e.sndQueueInfo.TCPSndBufState.AutoTuneSndBufDisabled.Load(); disabled == 1 {
+	// Only this atomic flag is accessed without sndQueueMu; checklocks
+	// cannot express that leaf exception to the enclosing state guard.
+	disabled := &e.sndQueueInfo.TCPSndBufState.AutoTuneSndBufDisabled // +checklocksignore
+	if disabled.Load() == 1 {
 		return curSndBufSz
 	}
 
