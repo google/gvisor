@@ -437,23 +437,32 @@ type sock struct {
 	// +checklocks:mu
 	readWriter usermem.IOSequenceReadWriter `state:"nosave"`
 
-	// readMu protects access to the below fields.
+	// readMu serializes receive metadata and control-message generation.
 	readMu sync.Mutex `state:"nosave"`
 
 	// sockOptTimestamp corresponds to SO_TIMESTAMP. When true, timestamps
 	// of returned messages can be returned via control messages. When
 	// false, the same timestamp is instead stored and can be read via the
-	// SIOCGSTAMP ioctl. It is protected by readMu. See socket(7).
+	// SIOCGSTAMP ioctl. See socket(7).
+	//
+	// +checklocks:readMu
 	sockOptTimestamp bool
-	// timestampValid indicates whether timestamp for SIOCGSTAMP has been
-	// set. It is protected by readMu.
+
+	// timestampValid indicates whether timestamp for SIOCGSTAMP has been set.
+	//
+	// +checklocks:readMu
 	timestampValid bool
-	// timestamp holds the timestamp to use with SIOCTSTAMP. It is only
-	// valid when timestampValid is true. It is protected by readMu.
+
+	// timestamp holds the timestamp to use with SIOCGSTAMP. It is only
+	// valid when timestampValid is true.
+	//
+	// +checklocks:readMu
 	timestamp time.Time `state:".(int64)"`
 
 	// TODO(b/153685824): Move this to SocketOptions.
 	// sockOptInq corresponds to TCP_INQ.
+	//
+	// +checklocks:readMu
 	sockOptInq bool
 }
 
@@ -523,6 +532,9 @@ func (s *sock) Epollable() bool {
 }
 
 // Read implements vfs.FileDescriptionImpl.
+//
+// +checklocksexclude:s.readMu
+// +checklocksexclude:s.mu
 func (s *sock) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
 	// All flags other than RWF_NOWAIT should be ignored.
 	// TODO(gvisor.dev/issue/2601): Support RWF_NOWAIT.
@@ -544,6 +556,8 @@ func (s *sock) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOp
 }
 
 // Write implements vfs.FileDescriptionImpl.
+//
+// +checklocksexclude:s.mu
 func (s *sock) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
 	// All flags other than RWF_NOWAIT should be ignored.
 	// TODO(gvisor.dev/issue/2601): Support RWF_NOWAIT.
@@ -625,6 +639,8 @@ func (s *sock) Accept(t *kernel.Task, peerRequested bool, flags int, blocking bo
 
 // GetSockOpt implements the linux syscall getsockopt(2) for sockets backed by
 // tcpip.Endpoint.
+//
+// +checklocksexclude:s.readMu
 func (s *sock) GetSockOpt(t *kernel.Task, level, name int, outPtr hostarch.Addr, outLen int) (marshal.Marshallable, *syserr.Error) {
 	// TODO(b/78348848): Unlike other socket options, SO_TIMESTAMP is
 	// implemented specifically for netstack.Socket rather than
@@ -684,6 +700,8 @@ func (s *sock) GetSockOpt(t *kernel.Task, level, name int, outPtr hostarch.Addr,
 
 // SetSockOpt implements the linux syscall setsockopt(2) for sockets backed by
 // tcpip.Endpoint.
+//
+// +checklocksexclude:s.readMu
 func (s *sock) SetSockOpt(t *kernel.Task, level int, name int, optVal []byte) *syserr.Error {
 	// TODO(b/78348848): Unlike other socket options, SO_TIMESTAMP is
 	// implemented specifically for netstack.Socket rather than
@@ -3079,6 +3097,7 @@ func (s *sock) GetPeerCreds(*kernel.Task) (marshal.Marshallable, *syserr.Error) 
 	return nil, syserr.ErrNotSupported
 }
 
+// +checklocks:s.readMu
 func (s *sock) fillCmsgInq(cmsg *socket.ControlMessages) {
 	if !s.sockOptInq {
 		return
@@ -3111,6 +3130,9 @@ func toLinuxPacketType(pktType tcpip.PacketType) uint8 {
 // nonBlockingRead issues a non-blocking read.
 //
 // TODO(b/78348848): Support timestamps for stream sockets.
+//
+// +checklocksexclude:s.readMu
+// +checklocksexclude:s.mu
 func (s *sock) nonBlockingRead(ctx context.Context, dst usermem.IOSequence, peek, trunc, senderRequested bool) (int, int, linux.SockAddr, uint32, socket.ControlMessages, *syserr.Error) {
 	isPacket := s.isPacketBased()
 
@@ -3211,6 +3233,7 @@ func (s *sock) nonBlockingRead(ctx context.Context, dst usermem.IOSequence, peek
 	return res.Count, 0, nil, 0, cmsg, syserr.TranslateNetstackError(err)
 }
 
+// +checklocks:s.readMu
 func (s *sock) netstackToLinuxControlMessages(cm tcpip.ReceivableControlMessages) socket.ControlMessages {
 	readCM := socket.NewIPControlMessages(s.family, cm)
 	return socket.ControlMessages{
@@ -3249,7 +3272,7 @@ func (s *sock) linuxToNetstackControlMessages(cm socket.ControlMessages) tcpip.S
 // updateTimestamp sets the timestamp for SIOCGSTAMP. It should be called after
 // successfully writing packet data out to userspace.
 //
-// Precondition: s.readMu must be locked.
+// +checklocks:s.readMu
 func (s *sock) updateTimestamp(cm tcpip.ReceivableControlMessages) {
 	// Save the SIOCGSTAMP timestamp only if SO_TIMESTAMP is disabled.
 	if !s.sockOptTimestamp {
@@ -3316,6 +3339,9 @@ func (s *sock) recvErr(t *kernel.Task, dst usermem.IOSequence) (int, int, linux.
 
 // RecvMsg implements the linux syscall recvmsg(2) for sockets backed by
 // tcpip.Endpoint.
+//
+// +checklocksexclude:s.readMu
+// +checklocksexclude:s.mu
 func (s *sock) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, _ uint64) (n int, msgFlags int, senderAddr linux.SockAddr, senderAddrLen uint32, controlMessages socket.ControlMessages, err *syserr.Error) {
 	if flags&linux.MSG_ERRQUEUE != 0 {
 		return s.recvErr(t, dst)
@@ -3461,6 +3487,8 @@ func (s *sock) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags 
 }
 
 // Ioctl implements vfs.FileDescriptionImpl.
+//
+// +checklocksexclude:s.readMu
 func (s *sock) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
 	t := kernel.TaskFromContext(ctx)
 	if t == nil {

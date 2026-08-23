@@ -209,6 +209,7 @@ func (c *cubicState) updateSlowStart(packetsAcked int) int {
 // Refer: https://tools.ietf.org/html/rfc8312#section-4
 //
 // +checklocks:c.s.ep.mu
+// +checklocksexclude:c.s.rtt.rttMutex
 func (c *cubicState) Update(packetsAcked int, rtt time.Duration, ackTime tcpip.MonotonicTime) {
 	if c.s.Ssthresh == InitialSsthresh && c.s.SndCwnd < c.s.Ssthresh {
 		c.updateHyStart(rtt, ackTime)

@@ -29,13 +29,25 @@ var _ stack.GSOEndpoint = (*Endpoint)(nil)
 
 // +stateify savable
 type veth struct {
-	mu           vethRWMutex `state:"nosave"`
-	closed       bool
+	mu vethRWMutex `state:"nosave"`
+
+	// +checklocks:mu
+	closed bool
+
 	backlogQueue chan vethPacket `state:"nosave"`
-	mtu          uint32
-	endpoints    [2]Endpoint
+
+	// +checklocks:mu
+	mtu uint32
+
+	endpoints [2]Endpoint
 }
 
+// close shuts down both endpoints, invoking close callbacks after unlocking.
+//
+// The caller must not hold either endpoint's mutex. checklocks cannot name
+// those mutexes through the endpoints array.
+//
+// +checklocksexclude:v.mu
 func (v *veth) close() {
 	v.mu.Lock()
 	closed := v.closed
@@ -116,12 +128,18 @@ func NewPair(mtu, backlogQueueSize uint32) (*Endpoint, *Endpoint) {
 
 // Close closes e. Further packet injections will return an error, and all pending
 // packets are discarded. Close may be called concurrently with WritePackets.
+//
+// +checklocksexclude:e.veth.mu
+// +checklocksexclude:e.mu
+// +checklocksexclude:e.peer.mu
 func (e *Endpoint) Close() {
 	e.veth.close()
 }
 
 // InjectInbound injects an inbound packet. If the endpoint is not attached, the
 // packet is not delivered.
+//
+// +checklocksexclude:e.mu
 func (e *Endpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	e.mu.RLock()
 	d := e.dispatcher
@@ -133,6 +151,8 @@ func (e *Endpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt *stac
 
 // Attach saves the stack network-layer dispatcher for use later when packets
 // are injected.
+//
+// +checklocksexclude:e.mu
 func (e *Endpoint) Attach(dispatcher stack.NetworkDispatcher) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -140,6 +160,8 @@ func (e *Endpoint) Attach(dispatcher stack.NetworkDispatcher) {
 }
 
 // IsAttached implements stack.LinkEndpoint.IsAttached.
+//
+// +checklocksexclude:e.mu
 func (e *Endpoint) IsAttached() bool {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
@@ -147,6 +169,8 @@ func (e *Endpoint) IsAttached() bool {
 }
 
 // MTU implements stack.LinkEndpoint.MTU.
+//
+// +checklocksexclude:e.veth.mu
 func (e *Endpoint) MTU() uint32 {
 	e.veth.mu.RLock()
 	defer e.veth.mu.RUnlock()
@@ -154,6 +178,8 @@ func (e *Endpoint) MTU() uint32 {
 }
 
 // SetMTU implements stack.LinkEndpoint.SetMTU.
+//
+// +checklocksexclude:e.veth.mu
 func (e *Endpoint) SetMTU(mtu uint32) {
 	e.veth.mu.Lock()
 	defer e.veth.mu.Unlock()
@@ -182,6 +208,8 @@ func (*Endpoint) MaxHeaderLength() uint16 {
 }
 
 // LinkAddress returns the link address of this endpoint.
+//
+// +checklocksexclude:e.mu
 func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
@@ -189,6 +217,8 @@ func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
 }
 
 // SetLinkAddress implements stack.LinkEndpoint.SetLinkAddress.
+//
+// +checklocksexclude:e.mu
 func (e *Endpoint) SetLinkAddress(addr tcpip.LinkAddress) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -197,6 +227,8 @@ func (e *Endpoint) SetLinkAddress(addr tcpip.LinkAddress) {
 
 // WritePackets stores outbound packets into the channel.
 // Multiple concurrent calls are permitted.
+//
+// +checklocksexclude:e.veth.mu
 func (e *Endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
 	e.veth.mu.RLock()
 	defer e.veth.mu.RUnlock()
@@ -249,6 +281,8 @@ func (e *Endpoint) AddHeader(pkt *stack.PacketBuffer) {}
 func (e *Endpoint) ParseHeader(pkt *stack.PacketBuffer) bool { return true }
 
 // SetOnCloseAction implements stack.LinkEndpoint.
+//
+// +checklocksexclude:e.mu
 func (e *Endpoint) SetOnCloseAction(action func()) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
