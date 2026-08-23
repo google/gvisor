@@ -227,6 +227,11 @@ func testCrosspkgGlobalNameCollision() {
 	FooMu.Unlock()
 }
 
+func testIndirectGlobalGuards(v *crosspkg.IndirectValues) {
+	v.RequirePrivate() // +checklocksfail=must hold
+	v.ExcludePrivate()
+}
+
 type invalidGlobalMutex = sync.Mutex
 
 // +checklocks:invalidGlobalMutex

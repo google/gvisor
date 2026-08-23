@@ -110,3 +110,6 @@ func RequirePrivate() {}
 // +checklocksexclude:globalMu
 // +checklocksexclude:globalStruct.mu
 func ExcludePrivate() {}
+
+// IndirectValues exposes methods without importing their defining package.
+type IndirectValues = atomicfields.Values

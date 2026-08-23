@@ -43,3 +43,15 @@ type Values struct {
 type WrappedAtomic struct {
 	atomicbitops.Uint64
 }
+
+var globalMu sync.Mutex
+
+// RequirePrivate requires a lock in this indirectly imported package.
+//
+// +checklocks:globalMu
+func (*Values) RequirePrivate() {}
+
+// ExcludePrivate excludes a lock in this indirectly imported package.
+//
+// +checklocksexclude:globalMu
+func (*Values) ExcludePrivate() {}
