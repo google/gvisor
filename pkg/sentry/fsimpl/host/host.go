@@ -55,14 +55,44 @@ type virtualOwner struct {
 	// This field is initialized at creation time and is immutable.
 	enabled bool
 
-	// mu protects the fields below and they can be accessed using atomic memory
-	// operations.
-	mu  sync.Mutex `state:"nosave"`
+	// mu serializes virtual-owner updates and their permission checks.
+	// Readers access the fields below atomically without holding mu.
+	mu sync.Mutex `state:"nosave"`
+
+	// +checkatomic
+	// +checklocks:mu
 	uid atomicbitops.Uint32
+
+	// +checkatomic
+	// +checklocks:mu
 	gid atomicbitops.Uint32
+
 	// mode is also stored, otherwise setting the host file to `0000` could remove
 	// access to the file.
+	//
+	// +checkatomic
+	// +checklocks:mu
 	mode atomicbitops.Uint32
+}
+
+// setModeLocked changes permissions without changing the file type.
+//
+// +checklocks:v.mu
+func (v *virtualOwner) setModeLocked(mode uint16) {
+	newMode := v.mode.Load()&linux.S_IFMT | uint32(mode)&^linux.S_IFMT
+	v.mode.Store(newMode)
+}
+
+// setIDsLocked updates the IDs selected by mask.
+//
+// +checklocks:v.mu
+func (v *virtualOwner) setIDsLocked(mask, uid, gid uint32) {
+	if mask&linux.STATX_UID != 0 {
+		v.uid.Store(uid)
+	}
+	if mask&linux.STATX_GID != 0 {
+		v.gid.Store(gid)
+	}
 }
 
 func (v *virtualOwner) atomicUID() uint32 {
@@ -327,10 +357,12 @@ func NewFD(ctx context.Context, mnt *vfs.Mount, hostFD int, opts *NewFDOptions) 
 		return nil, err
 	}
 	if opts.VirtualOwner {
-		i.virtualOwner.enabled = true
-		i.virtualOwner.uid = atomicbitops.FromUint32(uint32(opts.UID))
-		i.virtualOwner.gid = atomicbitops.FromUint32(uint32(opts.GID))
-		i.virtualOwner.mode = atomicbitops.FromUint32(stat.Mode)
+		i.virtualOwner = virtualOwner{
+			enabled: true,
+			uid:     atomicbitops.FromUint32(uint32(opts.UID)),
+			gid:     atomicbitops.FromUint32(uint32(opts.GID)),
+			mode:    atomicbitops.FromUint32(stat.Mode),
+		}
 	}
 	i.restorable = opts.Restorable
 
@@ -577,7 +609,9 @@ func (i *inode) stat(stat *unix.Stat_t) error {
 
 // SetStat implements kernfs.Inode.SetStat.
 //
-// +checklocksignore
+// +checklocksexclude:i.virtualOwner.mu
+// +checklocksexclude:i.mapsMu
+// +checklocksexclude:creds.UserNamespace.mu
 func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions) error {
 	if i.readonly {
 		return linuxerr.EPERM
@@ -613,8 +647,9 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 
 	if m&linux.STATX_MODE != 0 {
 		if i.virtualOwner.enabled {
-			// We hold i.virtualOwner.mu.
-			i.virtualOwner.mode = atomicbitops.FromUint32(uint32(opts.Stat.Mode))
+			// MODE implies the earlier virtualOwnerModes test acquired mu.
+			// checklocks cannot correlate these repeated mask tests.
+			i.virtualOwner.setModeLocked(opts.Stat.Mode) // +checklocksignore
 		} else {
 			log.Warningf("sentry seccomp filters don't allow making fchmod(2) syscall")
 			return unix.EPERM
@@ -652,15 +687,10 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 			return err
 		}
 	}
-	if i.virtualOwner.enabled {
-		if m&linux.STATX_UID != 0 {
-			// We hold i.virtualOwner.mu.
-			i.virtualOwner.uid = atomicbitops.FromUint32(opts.Stat.UID)
-		}
-		if m&linux.STATX_GID != 0 {
-			// We hold i.virtualOwner.mu.
-			i.virtualOwner.gid = atomicbitops.FromUint32(opts.Stat.GID)
-		}
+	if i.virtualOwner.enabled && m&(linux.STATX_UID|linux.STATX_GID) != 0 {
+		// UID or GID implies the earlier virtualOwnerModes test acquired mu.
+		// checklocks cannot correlate these repeated mask tests.
+		i.virtualOwner.setIDsLocked(m, opts.Stat.UID, opts.Stat.GID) // +checklocksignore
 	}
 	return nil
 }
@@ -798,6 +828,12 @@ type fileDescription struct {
 }
 
 // SetStat implements vfs.FileDescriptionImpl.SetStat.
+//
+// Callers must not hold the user-namespace mutex for credentials in ctx.
+// checklocks cannot follow CredentialsFromContext to that mutex.
+//
+// +checklocksexclude:f.inode.virtualOwner.mu
+// +checklocksexclude:f.inode.mapsMu
 func (f *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions) error {
 	creds := auth.CredentialsFromContext(ctx)
 	return f.inode.SetStat(ctx, f.vfsfd.Mount().Filesystem(), creds, opts)
