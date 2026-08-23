@@ -24,10 +24,11 @@ import (
 // Writer is an io.Writer which buffers input, flushing
 // individual lines through an emitter function.
 type Writer struct {
-	// the mutex locks buf.
 	sync.Mutex
 
 	// buf holds the data we haven't emitted yet.
+	//
+	// +checklocks:Mutex
 	buf bytes.Buffer
 
 	// emit is used to flush individual lines.

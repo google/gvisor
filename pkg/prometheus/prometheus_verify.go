@@ -107,6 +107,11 @@ type internedStringMap map[string]*string
 
 // Intern returns the interned version of the given string.
 // If it is not already interned in the map, this function interns it.
+//
+// Callers must provide exclusive access to m: globalInternMu protects the
+// global map, and Verifier.mu protects each verifier's map. Private maps need
+// no lock. A map receiver has no owner reference, so checklocks cannot express
+// the applicable lock precondition.
 func (m internedStringMap) Intern(s string) string {
 	if existing, found := m[s]; found {
 		return *existing
@@ -119,8 +124,12 @@ func (m internedStringMap) Intern(s string) string {
 // verifiers, such as metric names and field names, but not field values or combinations of field
 // values.
 var (
-	globalInternMu  sync.Mutex
-	verifierCount   uint64
+	globalInternMu sync.Mutex
+
+	// +checklocks:globalInternMu
+	verifierCount uint64
+
+	// +checklocks:globalInternMu
 	globalInternMap = make(internedStringMap)
 )
 
@@ -151,11 +160,14 @@ func globalInternVerifierReleased() {
 
 // numberPacker holds packedNumber data. It is useful to store large amounts of Number structs in a
 // small memory footprint.
+//
+// Verifier builds each packer privately; after publication as lastPacker its
+// data is immutable.
 type numberPacker struct {
 	// `data` *must* be pre-allocated if there is any number to be stored in it.
 	// Attempts to pack a number that cannot fit into the existing space
 	// allocated for this slice will cause a panic.
-	// Callers may use `needsIndirection` to determine whether a number needs
+	// Callers may use `needsPackerStorage` to determine whether a number needs
 	// space in this slice or not ahead of packing it.
 	data []uint64
 }
@@ -362,7 +374,7 @@ func (p *numberPacker) mustUnpackFloat(n packedNumber) float64 {
 }
 
 // portTo ports over a packedNumber from this numberPacker to a new one.
-// It is equivalent to `p.pack(other.unpack(n))` but avoids
+// It is equivalent to `other.pack(p.unpack(n))` but avoids
 // allocations in the overwhelmingly-common case where the number is direct.
 func (p *numberPacker) portTo(other *numberPacker, n packedNumber) packedNumber {
 	if uint32(n)&storageField == storageFieldDirect {
@@ -378,6 +390,10 @@ func (p *numberPacker) portTo(other *numberPacker, n packedNumber) packedNumber 
 
 // distributionSnapshot contains the data for a single field combination of a
 // distribution ("histogram") metric.
+//
+// A snapshot in verifiableMetric.lastDistributionSnapshot is protected by
+// the owning Verifier's mutex. The snapshot has no owner backpointer from
+// which checklocks could name that lock.
 type distributionSnapshot struct {
 	// sum is the sum of all samples across all buckets.
 	sum packedNumber
@@ -404,6 +420,8 @@ type distributionSnapshot struct {
 
 // verifiableMetric verifies a single metric within a Verifier.
 type verifiableMetric struct {
+	// Definition fields and the verifier pointer are not reassigned after
+	// construction.
 	metadata              *pb.MetricMetadata
 	wantMetric            Metric
 	numFields             uint32
@@ -412,13 +430,16 @@ type verifiableMetric struct {
 	wantBucketUpperBounds []Number
 
 	// The following fields are used to verify that values are actually increasing monotonically.
-	// They are only read and modified when the parent Verifier.mu is held.
 	// They are mapped by their combination of field values.
 
 	// lastCounterValue is used for counter metrics.
+	//
+	// +checklocks:verifier.mu
 	lastCounterValue map[string]packedNumber
 
 	// lastDistributionSnapshot is used for distribution ("histogram") metrics.
+	//
+	// +checklocks:verifier.mu
 	lastDistributionSnapshot map[string]*distributionSnapshot
 }
 
@@ -515,7 +536,7 @@ func (v *verifiableMetric) numFieldCombinations() int {
 // `dataToFieldsSeen` is passed across calls to `verify` and other methods of `verifiableMetric`.
 // It is used to store the canonical representation of the field values seen for each *Data.
 //
-// Precondition: `Verifier.mu` is held.
+// +checklocks:v.verifier.mu
 func (v *verifiableMetric) verify(data *Data, metricFieldsSeen map[string]struct{}, dataToFieldsSeen map[*Data]string) error {
 	if *data.Metric != v.wantMetric {
 		return fmt.Errorf("invalid metric definition: got %+v want %+v", data.Metric, v.wantMetric)
@@ -537,9 +558,9 @@ func (v *verifiableMetric) verify(data *Data, metricFieldsSeen map[string]struct
 			return fmt.Errorf("value %q is not allowed for field %s", value, fieldName)
 		}
 		if !firstField {
-			fieldValues.WriteRune(',')
+			_, _ = fieldValues.WriteRune(',')
 		}
-		fieldValues.WriteString(value)
+		_, _ = fieldValues.WriteString(value)
 		firstField = false
 	}
 	fieldValuesStr := fieldValues.String()
@@ -596,7 +617,10 @@ func (v *verifiableMetric) verify(data *Data, metricFieldsSeen map[string]struct
 
 // verifyIncrement verifies that incremental metrics are monotonically increasing.
 //
-// Preconditions: `verify` has succeeded on the given `data`, and `Verifier.mu` is held.
+// Preconditions:
+//   - verify has succeeded on the given data.
+//
+// +checklocks:v.verifier.mu
 func (v *verifiableMetric) verifyIncrement(data *Data, fieldValues string, packer *numberPacker) error {
 	switch v.wantMetric.Type {
 	case TypeCounter:
@@ -650,7 +674,8 @@ func (v *verifiableMetric) verifyIncrement(data *Data, fieldValues string, packe
 	return nil
 }
 
-// packerCapacityNeeded returns the `numberPacker` capacity to store `Data`.
+// packerCapacityNeededForData returns the numberPacker capacity needed to store
+// data.
 func (v *verifiableMetric) packerCapacityNeededForData(data *Data, fieldValues string) uint64 {
 	switch v.wantMetric.Type {
 	case TypeCounter:
@@ -679,6 +704,8 @@ func (v *verifiableMetric) packerCapacityNeededForData(data *Data, fieldValues s
 // packerCapacityNeededForLast returns the `numberPacker` capacity needed to
 // store the last snapshot's data that was not seen in the current snapshot
 // (aka not in metricFieldsSeen).
+//
+// +checklocks:v.verifier.mu
 func (v *verifiableMetric) packerCapacityNeededForLast(metricFieldsSeen map[string]struct{}) uint64 {
 	var capacity uint64
 	switch v.wantMetric.Type {
@@ -709,8 +736,11 @@ func (v *verifiableMetric) packerCapacityNeededForLast(metricFieldsSeen map[stri
 
 // update updates incremental metrics' "last seen" data.
 //
-// Preconditions: `verifyIncrement` has succeeded on the given `data`, `Verifier.mu` is held,
-// and `packer` is guaranteed to have enough room to store all numbers.
+// Preconditions:
+//   - verifyIncrement has succeeded on the given data.
+//   - packer has enough room to store all numbers.
+//
+// +checklocks:v.verifier.mu
 func (v *verifiableMetric) update(data *Data, fieldValues string, packer *numberPacker) {
 	switch v.wantMetric.Type {
 	case TypeCounter:
@@ -736,8 +766,11 @@ func (v *verifiableMetric) update(data *Data, fieldValues string, packer *number
 // This function should carry over all numbers typically packed in `v.update` but for all metric
 // field combinations that are not in `metricFieldsSeen`.
 //
-// Preconditions: `verifyIncrement` has succeeded on the given `data`,
-// and `newPacker` is guaranteed to have enough room to store all numbers.
+// Preconditions:
+//   - All current-snapshot data has passed verifyIncrement.
+//   - newPacker has enough room for the retained numbers.
+//
+// +checklocks:v.verifier.mu
 func (v *verifiableMetric) repackUnseen(metricFieldsSeen map[string]struct{}, oldPacker, newPacker *numberPacker) {
 	switch v.wantMetric.Type {
 	case TypeCounter:
@@ -770,20 +803,27 @@ func (v *verifiableMetric) repackUnseen(metricFieldsSeen map[string]struct{}, ol
 // A single Verifier should be used per sandbox. It is expected to be reused across exports such
 // that it can enforce the export snapshot timestamp is strictly monotonically increasing.
 type Verifier struct {
+	// knownMetrics is populated at construction and not modified afterward.
+	// Per-metric verification history is protected by mu.
 	knownMetrics map[string]*verifiableMetric
 
-	// mu protects the fields below.
 	mu sync.Mutex
 
 	// internMap is used to intern strings relevant to this verifier only.
 	// Globally-relevant strings should be interned in globalInternMap.
+	//
+	// +checklocks:mu
 	internMap internedStringMap
 
 	// lastPacker is a reference to the numberPacker used to pack numbers in the last successful
 	// verification round.
+	//
+	// +checklocks:mu
 	lastPacker *numberPacker
 
 	// lastTimestamp is the snapshot timestamp of the last successfully-verified snapshot.
+	//
+	// +checklocks:mu
 	lastTimestamp time.Time
 }
 
@@ -830,6 +870,10 @@ func (v *Verifier) Verify(snapshot *Snapshot) error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 
+	// Entries in knownMetrics retain v as their verifier. checklocks cannot
+	// recover that owner identity through map lookups or iteration, so the
+	// calls below need exceptions despite v.mu being held.
+	//
 	// Metrics checks.
 	fieldsSeen := make(map[string]map[string]struct{}, len(v.knownMetrics))
 	dataToFieldsSeen := make(map[*Data]string, len(snapshot.Data))
@@ -845,7 +889,7 @@ func (v *Verifier) Verify(snapshot *Snapshot) error {
 			metricFieldsSeen = make(map[string]struct{}, verifiableM.numFieldCombinations())
 			fieldsSeen[metricName] = metricFieldsSeen
 		}
-		if err = verifiableM.verify(data, metricFieldsSeen, dataToFieldsSeen); err != nil {
+		if err = verifiableM.verify(data, metricFieldsSeen, dataToFieldsSeen); err != nil { // +checklocksignore
 			return fmt.Errorf("metric %q: %v", metricName, err)
 		}
 	}
@@ -854,8 +898,9 @@ func (v *Verifier) Verify(snapshot *Snapshot) error {
 		return fmt.Errorf("consecutive snapshots are not chronologically ordered: last verified snapshot was exported at %v, this one is from %v", v.lastTimestamp, snapshot.When)
 	}
 
+	lastPacker := v.lastPacker
 	for _, data := range snapshot.Data {
-		if err := v.knownMetrics[data.Metric.Name].verifyIncrement(data, dataToFieldsSeen[data], v.lastPacker); err != nil {
+		if err := v.knownMetrics[data.Metric.Name].verifyIncrement(data, dataToFieldsSeen[data], lastPacker); err != nil { // +checklocksignore
 			return fmt.Errorf("metric %q: %v", data.Metric.Name, err)
 		}
 	}
@@ -864,7 +909,7 @@ func (v *Verifier) Verify(snapshot *Snapshot) error {
 		neededPackerCapacity += v.knownMetrics[data.Metric.Name].packerCapacityNeededForData(data, dataToFieldsSeen[data])
 	}
 	for name, metric := range v.knownMetrics {
-		neededPackerCapacity += metric.packerCapacityNeededForLast(fieldsSeen[name])
+		neededPackerCapacity += metric.packerCapacityNeededForLast(fieldsSeen[name]) // +checklocksignore
 	}
 	if neededPackerCapacity > uint64(valueField) {
 		return fmt.Errorf("snapshot contains too many large numbers to fit into packer memory (%d numbers needing indirection)", neededPackerCapacity)
@@ -878,11 +923,13 @@ func (v *Verifier) Verify(snapshot *Snapshot) error {
 	}
 	v.lastTimestamp = snapshot.When
 	for _, data := range snapshot.Data {
-		v.knownMetrics[globalIntern(data.Metric.Name)].update(data, v.internMap.Intern(dataToFieldsSeen[data]), newPacker)
+		metric := v.knownMetrics[globalIntern(data.Metric.Name)]
+		fieldValues := v.internMap.Intern(dataToFieldsSeen[data])
+		metric.update(data, fieldValues, newPacker) // +checklocksignore
 	}
 	if uint64(len(newPacker.data)) != neededPackerCapacity {
 		for name, metric := range v.knownMetrics {
-			metric.repackUnseen(fieldsSeen[name], v.lastPacker, newPacker)
+			metric.repackUnseen(fieldsSeen[name], lastPacker, newPacker) // +checklocksignore
 		}
 	}
 	if uint64(len(newPacker.data)) != neededPackerCapacity {

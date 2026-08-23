@@ -154,8 +154,11 @@ type Uint64Metric struct {
 }
 
 var (
-	// initialized indicates that all metrics are registered. allMetrics is
-	// immutable once initialized is true.
+	// initialized indicates that metric registration is complete. Once true,
+	// allMetrics' registration and metric maps are immutable; metric values
+	// and stage timing state continue to change.
+	//
+	// +checkatomic
 	initialized atomicbitops.Bool
 
 	// allMetrics are the registered metrics.
@@ -1223,14 +1226,18 @@ type metricSet struct {
 	// Map of distribution metrics.
 	distributionMetrics map[string]*DistributionMetric
 
-	// mu protects the fields below.
 	mu sync.RWMutex
 
-	// Information about the stages reached by the Sentry. Only appended to, so
-	// reading a shallow copy of the slice header concurrently is safe.
+	// finished records completed Sentry initialization stages. Its slice header
+	// is copied under mu; existing elements are immutable, so the copied prefix
+	// can be read after releasing mu.
+	//
+	// +checklocks:mu
 	finished []stageTiming
 
 	// The current stage in progress.
+	//
+	// +checklocks:mu
 	currentStage stageTiming
 }
 
@@ -1348,12 +1355,13 @@ type metricValues struct {
 }
 
 var (
-	// emitMu protects metricsAtLastEmit and ensures that all emitted
-	// metrics are strongly ordered (older metrics are never emitted after
-	// newer metrics).
+	// emitMu ensures that all emitted metrics are strongly ordered (older
+	// metrics are never emitted after newer metrics).
 	emitMu sync.Mutex
 
 	// metricsAtLastEmit contains the state of the metrics at the last emit event.
+	//
+	// +checklocks:emitMu
 	metricsAtLastEmit metricValues
 )
 
@@ -1649,7 +1657,7 @@ func StartStage(stage InitStage) func() {
 	allMetrics.mu.Lock()
 	defer allMetrics.mu.Unlock()
 	if allMetrics.currentStage.inProgress() {
-		endStage(now)
+		allMetrics.endStage(now)
 	}
 	allMetrics.currentStage.stage = stage
 	allMetrics.currentStage.started = now
@@ -1660,15 +1668,17 @@ func StartStage(stage InitStage) func() {
 		// The current stage may have been ended by another call to StartStage, so
 		// double-check prior to clearing the current stage.
 		if allMetrics.currentStage.inProgress() && allMetrics.currentStage.stage == stage {
-			endStage(now)
+			allMetrics.endStage(now)
 		}
 	}
 }
 
-// endStage marks allMetrics.currentStage as ended, adding it to the list of
-// finished stages. It assumes allMetrics.mu is locked.
-func endStage(when time.Time) {
-	allMetrics.currentStage.ended = when
-	allMetrics.finished = append(allMetrics.finished, allMetrics.currentStage)
-	allMetrics.currentStage = stageTiming{}
+// endStage marks m.currentStage as ended, adding it to the list of
+// finished stages.
+//
+// +checklocks:m.mu
+func (m *metricSet) endStage(when time.Time) {
+	m.currentStage.ended = when
+	m.finished = append(m.finished, m.currentStage)
+	m.currentStage = stageTiming{}
 }

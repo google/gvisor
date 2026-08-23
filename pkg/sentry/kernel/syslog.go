@@ -27,10 +27,11 @@ import (
 //
 // +stateify savable
 type syslog struct {
-	// mu protects the below.
 	mu sync.Mutex `state:"nosave"`
 
 	// msg is the syslog message buffer. It is lazily initialized.
+	//
+	// +checklocks:mu
 	msg []byte
 }
 

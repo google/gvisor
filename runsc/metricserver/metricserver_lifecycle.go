@@ -47,15 +47,15 @@ type serverData struct{}
 // failed to register for whatever reason.
 func (m *metricServer) verify(ctx context.Context) {
 	_, err := container.ListSandboxes(m.rootDir)
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	if err != nil {
 		if !m.allowUnknownRoot {
 			log.Warningf("Cannot list sandboxes in root directory %s, it has likely gone away: %v. Server shutting down.", m.rootDir, err)
-			m.shutdownLocked(ctx)
+			m.shutdown(ctx)
 		}
 		return
 	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.refreshSandboxesLocked()
 }
 
@@ -70,9 +70,7 @@ func (m *metricServer) startVerifyLoop(ctx context.Context) error {
 				return
 			case <-m.shutdownCh:
 				log.Infof("Received interrupt signal, shutting down server.")
-				m.mu.Lock()
-				m.shutdownLocked(ctx)
-				m.mu.Unlock()
+				m.shutdown(ctx)
 				return
 			case <-ticker.C:
 				m.verify(ctx)
@@ -82,8 +80,15 @@ func (m *metricServer) startVerifyLoop(ctx context.Context) error {
 	return nil
 }
 
-// shutdownLocked shuts down the server. It assumes mu is held.
-func (m *metricServer) shutdownLocked(ctx context.Context) {
+// shutdown starts shutdown once and signals when the attempt returns.
+//
+// +checklocksexclude:m.mu
+func (m *metricServer) shutdown(ctx context.Context) {
+	m.mu.Lock()
+	if m.shuttingDown {
+		m.mu.Unlock()
+		return
+	}
 	log.Infof("Server shutting down.")
 	m.shuttingDown = true
 	if m.udsPath != "" {
@@ -100,5 +105,8 @@ func (m *metricServer) shutdownLocked(ctx context.Context) {
 			m.pidFile = ""
 		}
 	}
-	m.srv.Shutdown(ctx)
+	// Active handlers may need mu before they can finish.
+	m.mu.Unlock()
+	defer close(m.shutdownDone)
+	_ = m.srv.Shutdown(ctx)
 }

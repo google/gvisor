@@ -29,9 +29,15 @@ func TestWarnOn(t *testing.T) {
 		Emitter: e,
 		Level:   Debug,
 	}
+	logMu.Lock()
 	old := Log()
 	log.Store(bl)
-	defer log.Store(old)
+	logMu.Unlock()
+	t.Cleanup(func() {
+		logMu.Lock()
+		log.Store(old)
+		logMu.Unlock()
+	})
 
 	testCases := map[string]func(t *testing.T){
 		"testConditionControlsPrint": func(t *testing.T) {

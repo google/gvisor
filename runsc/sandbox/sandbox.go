@@ -149,8 +149,10 @@ func (p *Pid) MarshalJSON() ([]byte, error) {
 // gofers), as well as for running and manipulating containers inside a running
 // sandbox.
 //
-// Note: Sandbox must be immutable because a copy of it is saved for each
-// container and changes would not be synchronized to all of them.
+// A copy is saved for each container; configuration changes are not
+// synchronized across copies. Mutable caches such as restore-time savings
+// are synchronized within each instance. Saving or loading an instance
+// requires exclusive access to its serialized fields.
 type Sandbox struct {
 	// ID is the id of the sandbox (immutable). By convention, this is the same
 	// ID as the first container run in the sandbox.
@@ -238,10 +240,17 @@ type Sandbox struct {
 	// Restored will be true when the sandbox has been restored.
 	Restored bool `json:"restored"`
 
+	// savingsMu protects the cached time saved by restoration.
+	savingsMu sync.Mutex `nojson:"true"`
+
 	// CPUTimeSaved contains the CPU time saved when the sandbox has been restored.
+	//
+	// +checklocks:savingsMu
 	CPUTimeSaved time.Duration `json:"cpuTimeSaved"`
 
 	// WallTimeSaved contains the wall time saved when the sandbox has been restored.
+	//
+	// +checklocks:savingsMu
 	WallTimeSaved time.Duration `json:"wallTimeSaved"`
 }
 
@@ -2112,20 +2121,40 @@ func (s *Sandbox) GetRegisteredMetrics() (*metricpb.MetricRegistration, error) {
 	return s.RegisteredMetrics, nil
 }
 
+// TimeSaved returns the cached CPU and wall time saved by restoration.
+//
+// +checklocksexclude:s.savingsMu
+func (s *Sandbox) TimeSaved() (cpu, wall time.Duration) {
+	s.savingsMu.Lock()
+	defer s.savingsMu.Unlock()
+	return s.CPUTimeSaved, s.WallTimeSaved
+}
+
 // ExportMetrics returns a snapshot of metric values from the sandbox in Prometheus format.
+//
+// +checklocksexclude:s.savingsMu
 func (s *Sandbox) ExportMetrics(opts control.MetricsExportOpts) (*prometheus.Snapshot, error) {
 	log.Debugf("Metrics export sandbox %q", s.ID)
 
 	// Update time saved metrics before exporting, if not exported already for
 	// restored sandboxes.
-	if s.Restored && s.CPUTimeSaved == 0 && s.WallTimeSaved == 0 {
-		var savings boot.Savings
-		err := s.call(boot.ContMgrGetSavings, nil, &savings)
-		if err != nil {
-			log.Warningf("Failed to get time saved metrics")
-		} else {
-			s.CPUTimeSaved = savings.CPUTimeSaved
-			s.WallTimeSaved = savings.WallTimeSaved
+	if s.Restored {
+		cpu, wall := s.TimeSaved()
+		if cpu == 0 && wall == 0 {
+			var savings boot.Savings
+			if err := s.call(boot.ContMgrGetSavings, nil, &savings); err != nil {
+				log.Warningf("Failed to get time saved metrics")
+			} else {
+				// Do not hold savingsMu across the RPC: another export may
+				// time out and still need to read the cached pair. Publish
+				// only if a concurrent export has not already populated it.
+				s.savingsMu.Lock()
+				if s.CPUTimeSaved == 0 && s.WallTimeSaved == 0 {
+					s.CPUTimeSaved = savings.CPUTimeSaved
+					s.WallTimeSaved = savings.WallTimeSaved
+				}
+				s.savingsMu.Unlock()
+			}
 		}
 	}
 

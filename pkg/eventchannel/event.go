@@ -80,9 +80,11 @@ func HaveEmitters() bool {
 
 // multiEmitter is an Emitter that forwards messages to multiple Emitters.
 type multiEmitter struct {
-	// mu protects emitters.
 	mu sync.Mutex
+
 	// emitters is initialized lazily in AddEmitter.
+	//
+	// +checklocks:mu
 	emitters map[Emitter]struct{}
 }
 
