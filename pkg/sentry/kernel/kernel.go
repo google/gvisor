@@ -402,23 +402,28 @@ type Kernel struct {
 	// It's protected by extMu.
 	containerNames map[string]string
 
-	// checkpointMu is used to protect the checkpointing related fields below.
+	// Lock order: checkpointMu precedes CheckpointWait.mu.
 	checkpointMu sync.Mutex `state:"nosave"`
 
 	// additionalCheckpointState stores additional state that needs
-	// to be checkpointed. It's protected by checkpointMu.
+	// to be checkpointed.
+	//
+	// +checklocks:checkpointMu
 	additionalCheckpointState map[any]any
 
 	// saver implements the Saver interface, which (as of writing) supports
-	// asynchronous checkpointing. It's protected by checkpointMu.
+	// asynchronous checkpointing.
+	//
+	// +checklocks:checkpointMu
 	saver Saver `state:"nosave"`
 
 	// CheckpointWait is used to wait for a checkpoint to complete.
 	CheckpointWait CheckpointWaitable
 
-	// checkpointGen aims to track the number of times the kernel has been
-	// successfully checkpointed. Callers of checkpoint must notify the kernel
-	// when checkpoint/restore are done. It's protected by checkpointMu.
+	// checkpointGen describes the latest checkpoint attempt or restore.
+	// Callers must notify the kernel when checkpoint/restore are done.
+	//
+	// +checklocks:checkpointMu
 	checkpointGen CheckpointGeneration
 
 	// SaveRestoreExecConfig stores configuration options for the save/restore
@@ -438,9 +443,11 @@ type Kernel struct {
 	// MaxKeySetSize is the maximum number of keys in a key set.
 	MaxKeySetSize atomicbitops.Int32
 
-	// fsSaveWaiters holds waiters for Kernel.WaitForFSSave. fsSaveWaiters is
-	// protected by fsSaveMu.
-	fsSaveMu      fsSaveMutex  `state:"nosave"`
+	fsSaveMu fsSaveMutex `state:"nosave"`
+
+	// fsSaveWaiters holds waiters for Kernel.WaitForFSSave.
+	//
+	// +checklocks:fsSaveMu
 	fsSaveWaiters []chan error `state:"nosave"`
 
 	// HostNamePoller is notified when the system hostname changes in *any*

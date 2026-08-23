@@ -339,6 +339,8 @@ type Loader struct {
 
 	// networkArgs contains the routes and links which were scraped from the
 	// host network namespace during sandbox creation.
+	//
+	// +checklocks:mu
 	networkArgs *CreateLinksAndRoutesArgs
 
 	// pinRing accumulates host FDs to pin before seccomp filters are
@@ -346,6 +348,8 @@ type Loader struct {
 	pinRing pinring.PinRing
 
 	// fsSaveFDs are FDs used for user-triggered filesystem checkpoint saving.
+	//
+	// +checklocks:mu
 	fsSaveFDs []*fd.FD
 
 	// fsSaveCheckpointGofer is true if fsSaveFDs contains only one FD, which
@@ -934,6 +938,13 @@ func New(args Args) (*Loader, error) {
 }
 
 // ConfigureNetwork implements inet.NetworkArgs.ConfigureNetwork.
+//
+// Startup calls this directly before installing seccomp filters. Restore
+// calls it synchronously through Kernel.LoadFrom after installing filters.
+// Both callers hold l.mu, but the restore interface call cannot convey this
+// concrete lock contract to checklocks.
+//
+// +checklocks:l.mu
 func (l *Loader) ConfigureNetwork(s inet.Stack) error {
 	if h, ok := s.(*hostinet.Stack); ok {
 		h.SetFiles(l.hostinetNetDevFile, l.hostinetNetSNMPFile)
