@@ -20,6 +20,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -153,9 +154,34 @@ func TestGiveUpConnect(t *testing.T) {
 	}
 }
 
+type handshakeClock struct {
+	tcpip.Clock
+	arm    <-chan struct{}
+	resume <-chan struct{}
+}
+
+func (c *handshakeClock) NowMonotonic() tcpip.MonotonicTime {
+	select {
+	case <-c.arm:
+		<-c.resume
+	default:
+	}
+	return c.Clock.NowMonotonic()
+}
+
 // Test for ICMP error handling without completing handshake.
 func TestConnectICMPError(t *testing.T) {
-	c := context.New(t, e2e.DefaultMTU)
+	arm, resume := make(chan struct{}), make(chan struct{})
+	c := context.NewWithOpts(t, context.Options{
+		EnableV4: true,
+		EnableV6: true,
+		MTU:      e2e.DefaultMTU,
+		Clock: &handshakeClock{
+			Clock:  faketime.NewManualClock(),
+			arm:    arm,
+			resume: resume,
+		},
+	})
 	defer c.Cleanup()
 
 	var wq waiter.Queue
@@ -163,16 +189,79 @@ func TestConnectICMPError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEndpoint failed: %s", err)
 	}
+	c.EP = ep
+	ep.SocketOptions().SetIPv4RecvError(true)
+	if err := c.Stack().SetPortRange(context.StackPort, context.StackPort); err != nil {
+		t.Fatalf("SetPortRange failed: %s", err)
+	}
 
 	waitEntry, notifyCh := waiter.NewChannelEntry(waiter.EventHUp)
 	wq.EventRegister(&waitEntry)
 	defer wq.EventUnregister(&waitEntry)
 
-	{
+	quoted := c.BuildSegmentWithAddrs(nil, &context.Headers{
+		SrcPort: context.StackPort,
+		DstPort: context.TestPort,
+		Flags:   header.TCPFlagSyn,
+	}, context.StackAddr, context.TestAddr)
+	defer quoted.Release()
+	quote := buffer.NewViewWithData(quoted.Flatten())
+	defer quote.Release()
+
+	var wg sync.WaitGroup
+	resumeHandshake := sync.OnceFunc(func() { close(resume) })
+	defer func() {
+		resumeHandshake()
+		wg.Wait()
+		for err := ep.SocketOptions().DequeueErr(); err != nil; err = ep.SocketOptions().DequeueErr() {
+			err.Payload.Release()
+		}
+	}()
+
+	// Pause the first handshake clock read, after registration but before SYN
+	// allocation and route cleanup can synchronize with ICMP delivery. Observe
+	// only the registry, not a signal from Connect after its ID assignment.
+	close(arm)
+	wg.Go(func() {
 		err := ep.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort})
 		if d := cmp.Diff(&tcpip.ErrConnectStarted{}, err); d != "" {
-			t.Fatalf("ep.Connect(...) mismatch (-want +got):\n%s", d)
+			t.Errorf("ep.Connect(...) mismatch (-want +got):\n%s", d)
 		}
+	})
+	waitFor := func(what string, ready func() bool) {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for !ready() {
+			if time.Now().After(deadline) {
+				t.Fatalf("timed out waiting for %s", what)
+			}
+			runtime.Gosched()
+		}
+	}
+	id := stack.TransportEndpointID{
+		LocalAddress:  context.StackAddr,
+		LocalPort:     context.StackPort,
+		RemoteAddress: context.TestAddr,
+		RemotePort:    context.TestPort,
+	}
+	waitFor("endpoint registration", func() bool {
+		return c.Stack().FindTransportEndpoint(ipv4.ProtocolNumber, tcp.ProtocolNumber, id, 1) != nil
+	})
+	wg.Go(func() {
+		c.SendICMPPacket(header.ICMPv4DstUnreachable, header.ICMPv4HostUnreachable, nil, quote, e2e.DefaultMTU)
+	})
+	waitFor("queued ICMP error", func() bool { return ep.SocketOptions().PeekErr() != nil })
+	resumeHandshake()
+	wg.Wait()
+	sockErr := ep.SocketOptions().DequeueErr()
+	defer sockErr.Payload.Release()
+	if got, want := sockErr.Offender.Port, uint16(context.StackPort); got != want {
+		t.Errorf("ICMP error local port = %d, want %d", got, want)
+	}
+	// GetPacket may call FailNow before returning ownership of its allocated
+	// view. Avoid entering it after a failure that would bypass our Release.
+	if t.Failed() {
+		return
 	}
 
 	syn := c.GetPacket()
@@ -183,19 +272,15 @@ func TestConnectICMPError(t *testing.T) {
 		LastErrorLocked() tcpip.Error
 	})
 
-	c.SendICMPPacket(header.ICMPv4DstUnreachable, header.ICMPv4HostUnreachable, nil, syn, e2e.DefaultMTU)
-
-	for {
-		if err := wep.LastErrorLocked(); err != nil {
-			if d := cmp.Diff(&tcpip.ErrHostUnreachable{}, err); d != "" {
-				t.Errorf("ep.LastErrorLocked() mismatch (-want +got):\n%s", d)
-			}
-			break
-		}
-		time.Sleep(time.Millisecond)
+	if d := cmp.Diff(&tcpip.ErrHostUnreachable{}, wep.LastErrorLocked()); d != "" {
+		t.Errorf("ep.LastErrorLocked() mismatch (-want +got):\n%s", d)
 	}
 
-	<-notifyCh
+	select {
+	case <-notifyCh:
+	default:
+		t.Fatal("ICMP error did not notify the endpoint")
+	}
 
 	// The stack would have unregistered the endpoint because of the ICMP error.
 	// Expect a RST for any subsequent packets sent to the endpoint.
