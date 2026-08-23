@@ -1008,7 +1008,7 @@ func (fd *controlFDLisa) BindAt(name string, sockType uint32, mode linux.FileMod
 	}
 	cu.Release()
 
-	socketControlFD := newControlFDLisa(sockFD, fd, name, linux.ModeSocket)
+	socketControlFD := newControlFDLisa(sockFileFD, fd, name, linux.ModeSocket)
 	boundSocketFD := &boundSocketFDLisa{
 		sock: os.NewFile(uintptr(sockFD), socketPath),
 	}
