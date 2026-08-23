@@ -33,7 +33,7 @@ type deviceFile struct {
 	minor uint32
 }
 
-// Precondition: fs.mu must be locked for at least reading.
+// +checklocksread:d.inode.fs.mu
 func (d *dentry) isSelfFilestoreWhiteout() bool {
 	if !strings.HasPrefix(d.name, fsutil.SelfFilestorePrefix) {
 		return false
@@ -53,10 +53,10 @@ func isOvlWhiteoutDev(mode linux.FileMode, major, minor uint32) bool {
 
 // newDeviceFileLocked creates a new device file.
 //
-// If parentDir is not nil, certain fields (such as setgid and default ACL) will be inherited
-// from parentDir.
+// If parentDir is not nil, certain fields (such as setgid and default ACL)
+// will be inherited from parentDir.
 //
-// Precondition: fs.mu must be locked for writing.
+// +checklocks:fs.mu
 func (fs *filesystem) newDeviceFileLocked(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, major, minor uint32, parentDir *directory) (*inode, error) {
 	ovlWhiteout := isOvlWhiteoutDev(mode, major, minor)
 	if ovlWhiteout && fs.ovlWhiteout != nil {
@@ -84,7 +84,8 @@ func (fs *filesystem) newDeviceFileLocked(kuid auth.KUID, kgid auth.KGID, mode l
 	if ovlWhiteout {
 		fs.ovlWhiteout = file
 		// An extra link is held by fs, so nlink doesn't fall to 0.
-		file.inode.incLinksLocked()
+		// inode.init set file.inode.fs to fs; checklocks cannot track that write.
+		file.inode.incLinksLocked() // +checklocksignore
 	}
 	return &file.inode, nil
 }

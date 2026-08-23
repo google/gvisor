@@ -235,7 +235,9 @@ func newControlFDLisa(hostFD int, parent *controlFDLisa, name string, mode linux
 		parentNode = parent.Node()
 	)
 	parentNode.WithChildrenMu(func() {
-		childNode = parentNode.LookupChildLocked(name)
+		// WithChildrenMu runs this callback synchronously under childrenMu;
+		// checklocks cannot propagate that lock through the callback.
+		childNode = parentNode.LookupChildLocked(name) // +checklocksignore
 		if childNode == nil {
 			// Common case. Performance hack which is used to allocate the node and
 			// its control FD together in the heap. For a well-behaving client, there
@@ -248,7 +250,7 @@ func newControlFDLisa(hostFD int, parent *controlFDLisa, name string, mode linux
 			}{}
 			childFD = &temp.fd
 			childNode = &temp.node
-			childNode.InitLocked(name, parentNode)
+			childNode.InitLocked(name, parentNode) // +checklocksignore
 		} else {
 			childNode.IncRef()
 			childFD = &controlFDLisa{}

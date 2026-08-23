@@ -28,7 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-// Test that we can write some data to a file and read it back.`
+// Test that we can write some data to a file and read it back.
 func TestSimpleWriteRead(t *testing.T) {
 	ctx := contexttest.Context(t)
 	fd, cleanup, err := newFileFD(ctx, 0644)
@@ -46,16 +46,17 @@ func TestSimpleWriteRead(t *testing.T) {
 	if n != int64(len(data)) {
 		t.Errorf("fd.Write got short write length %d, want %d", n, len(data))
 	}
-	if got, want := fd.Impl().(*regularFileFD).off, int64(len(data)); got != want {
+	if got, err := fd.Seek(ctx, 0, linux.SEEK_CUR); err != nil {
+		t.Fatalf("fd.Seek failed: %v", err)
+	} else if want := int64(len(data)); got != want {
 		t.Errorf("fd.Write left offset at %d, want %d", got, want)
 	}
 
 	// Seek back to beginning.
-	if _, err := fd.Seek(ctx, 0, linux.SEEK_SET); err != nil {
+	if got, err := fd.Seek(ctx, 0, linux.SEEK_SET); err != nil {
 		t.Fatalf("fd.Seek failed: %v", err)
-	}
-	if got, want := fd.Impl().(*regularFileFD).off, int64(0); got != want {
-		t.Errorf("fd.Seek(0) left offset at %d, want %d", got, want)
+	} else if got != 0 {
+		t.Errorf("fd.Seek(0) left offset at %d, want 0", got)
 	}
 
 	// Read.
@@ -70,8 +71,10 @@ func TestSimpleWriteRead(t *testing.T) {
 	if got, want := string(buf), string(data); got != want {
 		t.Errorf("Read got %q want %s", got, want)
 	}
-	if got, want := fd.Impl().(*regularFileFD).off, int64(len(data)); got != want {
-		t.Errorf("fd.Write left offset at %d, want %d", got, want)
+	if got, err := fd.Seek(ctx, 0, linux.SEEK_CUR); err != nil {
+		t.Fatalf("fd.Seek failed: %v", err)
+	} else if want := int64(len(data)); got != want {
+		t.Errorf("fd.Read left offset at %d, want %d", got, want)
 	}
 }
 

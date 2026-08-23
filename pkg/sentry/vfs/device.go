@@ -156,7 +156,10 @@ func (vfs *VirtualFilesystem) GetDynamicCharDevMajor() (uint32, error) {
 	return vfs.getDynamicCharDevMajorLocked()
 }
 
-// Preconditions: vfs.dynCharDevMajorMu must be locked.
+// getDynamicCharDevMajorLocked is equivalent to GetDynamicCharDevMajor with
+// vfs.dynCharDevMajorMu already held.
+//
+// +checklocks:vfs.dynCharDevMajorMu
 func (vfs *VirtualFilesystem) getDynamicCharDevMajorLocked() (uint32, error) {
 	// Compare Linux's fs/char_dev.c:find_dynamic_major().
 	for major := uint32(254); major >= 234; major-- {

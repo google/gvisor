@@ -26,6 +26,7 @@ import (
 // The caller should unlock the second pipe first.
 //
 // Preconditions: x != y.
+//
 // +checklocksacquire:x.mu
 // +checklocksacquire:y.mu
 func lockTwoPipes(x, y *Pipe) (*Pipe, *Pipe) {

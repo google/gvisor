@@ -345,9 +345,7 @@ func (r *runExecveAfterSiblingExitStop) execute(t *Task) taskRunState {
 	t.tg.oldRSeqCritical.Store(&OldRSeqCriticalRegion{})
 	t.tg.pidns.owner.mu.Unlock()
 
-	oldFDTable := t.fdTable
-	t.fdTable = t.fdTable.Fork(t, int32(t.fdTable.CurrentMaxFDs()))
-	oldFDTable.DecRef(t)
+	t.UnshareFdTable(int32(t.fdTable.CurrentMaxFDs()))
 
 	// Remove FDs with the CloseOnExec flag set.
 	t.fdTable.RemoveIf(t, func(_ *vfs.FileDescription, flags FDFlags) bool {
@@ -462,6 +460,12 @@ func (t *Task) promoteLocked() {
 	oldLeader.exitNotifyLocked(false)
 }
 
+// execveSeccheckInfo collects the enabled execve fields, including pipe peers.
+//
+// Preconditions: The caller must be running on t's task goroutine.
+//
+// +checklocksexclude:t.mu
+// +checklocksexclude:t.tg.pidns.owner.mu
 func execveSeccheckInfo(t *Task, argv, env []string, executable *vfs.FileDescription, pathname, execfn string) (seccheck.FieldSet, *pb.ExecveInfo) {
 	fields := seccheck.Global.GetFieldSet(seccheck.PointExecve)
 	info := &pb.ExecveInfo{
@@ -571,30 +575,37 @@ func execveSeccheckInfo(t *Task, argv, env []string, executable *vfs.FileDescrip
 						break
 					}
 
-					fdt := child.FDTable()
-					if fdt == nil {
-						continue
+					// Acquire file references while the sibling's table pointer
+					// is stable. Exit can drop the table's last reference without
+					// clearing the pointer, so do not acquire a table reference.
+					//
+					// Metadata collection and file release may take task locks,
+					// so perform them after unlocking.
+					var childIn, childOut *vfs.FileDescription
+					child.mu.Lock()
+					if fdt := child.FDTable(); fdt != nil {
+						if pipeIn != nil && info.PipeInputProc == nil {
+							childOut, _ = fdt.Get(1)
+						}
+						if pipeOut != nil && info.PipeOutputProc == nil {
+							childIn, _ = fdt.Get(0)
+						}
 					}
+					child.mu.Unlock()
 
 					// Check if the sibling writes to t's stdin pipe via stdout (fd 1).
-					if pipeIn != nil && info.PipeInputProc == nil {
-						if childOut, _ := fdt.Get(1); childOut != nil {
-							pfd, ok := childOut.Impl().(*pipe.VFSPipeFD)
-							if ok && pfd.Pipe() == pipeIn {
-								info.PipeInputProc = pipeProcInfo(child, fields.Context)
-							}
-							childOut.DecRef(t)
+					if childOut != nil {
+						if pfd, ok := childOut.Impl().(*pipe.VFSPipeFD); ok && pfd.Pipe() == pipeIn {
+							info.PipeInputProc = pipeProcInfo(child, fields.Context)
 						}
+						childOut.DecRef(t)
 					}
 					// Check if the sibling reads from t's stdout pipe via stdin (fd 0).
-					if pipeOut != nil && info.PipeOutputProc == nil {
-						if childIn, _ := fdt.Get(0); childIn != nil {
-							pfd, ok := childIn.Impl().(*pipe.VFSPipeFD)
-							if ok && pfd.Pipe() == pipeOut {
-								info.PipeOutputProc = pipeProcInfo(child, fields.Context)
-							}
-							childIn.DecRef(t)
+					if childIn != nil {
+						if pfd, ok := childIn.Impl().(*pipe.VFSPipeFD); ok && pfd.Pipe() == pipeOut {
+							info.PipeOutputProc = pipeProcInfo(child, fields.Context)
 						}
+						childIn.DecRef(t)
 					}
 				}
 			}

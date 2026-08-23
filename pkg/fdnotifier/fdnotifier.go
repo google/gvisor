@@ -205,11 +205,15 @@ func (n *notifier) waitAndNotify() error {
 }
 
 // pause suspends notifications until resume is called.
+//
+// +checklocksacquire:n.pauseMu
 func (n *notifier) pause() {
 	n.pauseMu.Lock()
 }
 
 // resume ends the effect of a previous call to pause.
+//
+// +checklocksrelease:n.pauseMu
 func (n *notifier) resume() {
 	n.pauseMu.Unlock()
 }
@@ -263,12 +267,16 @@ func HasFD(fd int32) bool {
 }
 
 // Pause suspends notifications until Resume is called.
+//
+// +checklocksacquire:shared.notifier.pauseMu
 func Pause() {
 	ensureSharedNotifier()
 	shared.notifier.pause()
 }
 
 // Resume ends the effect of a previous call to Pause.
+//
+// +checklocksrelease:shared.notifier.pauseMu
 func Resume() {
 	shared.notifier.resume()
 }
