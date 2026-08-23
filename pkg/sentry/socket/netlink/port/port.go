@@ -36,10 +36,11 @@ const maxPorts = 10000
 //
 // +stateify savable
 type Manager struct {
-	// mu protects the fields below.
 	mu sync.Mutex `state:"nosave"`
 
 	// ports contains a map of allocated ports for each protocol.
+	//
+	// +checklocks:mu
 	ports map[int]map[int32]struct{}
 }
 

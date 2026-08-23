@@ -21,6 +21,7 @@ import (
 	"syscall"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sentry/socket/plugin"
 	"gvisor.dev/gvisor/pkg/sentry/socket/plugin/cgo"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -29,14 +30,16 @@ import (
 // Notifier holds all the state necessary to issue notifications when
 // IO events occur on the observed FDs in plugin stack.
 type Notifier struct {
-	// the epoll FD used to register for io notifications.
+	// epFD is the epoll FD used for event registration. It is initialized by
+	// waitAndNotify before signaling ioInit and is immutable afterward.
 	epFD int32
 
-	// mu protects eventMap.
 	mu sync.Mutex
 
 	// eventMap maps file descriptors to their notification queues
 	// and waiting status.
+	//
+	// +checklocks:mu
 	eventMap map[uint32]*plugin.EventInfo
 }
 
@@ -64,7 +67,7 @@ func NewNotifier() *Notifier {
 	return n
 }
 
-// AddFD implements plugin.PluginNotifier.AddFD.
+// AddFD adds fd and its event notification state to n.eventMap.
 func (n *Notifier) AddFD(fd uint32, eventInfo *plugin.EventInfo) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -78,14 +81,15 @@ func (n *Notifier) AddFD(fd uint32, eventInfo *plugin.EventInfo) {
 	n.eventMap[fd] = eventInfo
 }
 
-// RemoveFD implements plugin.PluginNotifier.RemoveFD.
+// RemoveFD removes fd's event notification state from n.eventMap.
 func (n *Notifier) RemoveFD(fd uint32) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	delete(n.eventMap, fd)
 }
 
-// UpdateFD implements plugin.PluginNotifier.UpdateFD.
+// UpdateFD updates fd's event registration in the plugin stack's epoll
+// instance.
 func (n *Notifier) UpdateFD(fd uint32) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -131,7 +135,7 @@ func (n *Notifier) waitAndNotify(ioInit chan int32) error {
 			}
 
 			ev := waiter.EventMask(events[i].Events)
-			eventInfo.Ready |= ev & (eventInfo.Mask | waiter.EventErr | waiter.EventHUp)
+			atomicbitops.OrUint64(&eventInfo.Ready, uint64(ev&(eventInfo.Mask|waiter.EventErr|waiter.EventHUp)))
 			// When an error occurred, invoke all events
 			if ev&(waiter.EventErr|waiter.EventHUp) != 0 {
 				ev |= waiter.EventIn | waiter.EventOut
@@ -142,6 +146,7 @@ func (n *Notifier) waitAndNotify(ioInit chan int32) error {
 	}
 }
 
+// +checklocks:n.mu
 func (n *Notifier) waitFD(fd uint32, eventInfo *plugin.EventInfo) {
 	mask := eventInfo.Wq.Events()
 
@@ -156,10 +161,10 @@ func (n *Notifier) waitFD(fd uint32, eventInfo *plugin.EventInfo) {
 		eventInfo.Waiting = true
 	case eventInfo.Waiting && mask == 0:
 		cgo.EpollCtl(n.epFD, syscall.EPOLL_CTL_DEL, fd, uint32(mask))
-		eventInfo.Ready = 0
+		eventInfo.Ready.Store(0)
 		eventInfo.Waiting = false
 	case eventInfo.Waiting && mask != 0:
 		cgo.EpollCtl(n.epFD, syscall.EPOLL_CTL_MOD, fd, uint32(mask))
-		eventInfo.Ready &= mask
+		atomicbitops.AndUint64(&eventInfo.Ready, uint64(mask))
 	}
 }

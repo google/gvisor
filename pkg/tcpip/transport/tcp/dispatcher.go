@@ -35,7 +35,9 @@ import (
 //
 // +stateify savable
 type epQueue struct {
-	mu   epQueueMutex `state:"nosave"`
+	mu epQueueMutex `state:"nosave"`
+
+	// +checklocks:mu
 	list endpointList `state:"nosave"`
 }
 

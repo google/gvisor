@@ -247,6 +247,7 @@ func (wl *protectedWriteList) InsertAfter(before, seg *segment) {
 type rtt struct {
 	rttMutex `state:"nosave"`
 
+	// +checklocks:rttMutex
 	TCPRTTState
 }
 
@@ -346,6 +347,8 @@ func (s *sender) initCongestionControl(congestionControlName tcpip.CongestionCon
 }
 
 // initLossRecovery initiates the loss recovery algorithm for the sender.
+//
+// +checklocks:s.ep.mu
 func (s *sender) initLossRecovery() lossRecovery {
 	if s.ep.SACKPermitted {
 		return newSACKRecovery(s)
@@ -1430,6 +1433,7 @@ func checkDSACK(rcvdSeg *segment) bool {
 	return false
 }
 
+// +checklocks:s.ep.mu
 func (s *sender) recordRetransmitTS() {
 	// See: https://datatracker.ietf.org/doc/html/rfc3522#section-3.2
 	//

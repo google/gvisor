@@ -2857,10 +2857,11 @@ type ProtocolAddress struct {
 }
 
 var (
-	// danglingEndpointsMu protects access to danglingEndpoints.
 	danglingEndpointsMu sync.Mutex
 
 	// danglingEndpoints tracks all dangling endpoints no longer owned by the app.
+	//
+	// +checklocks:danglingEndpointsMu
 	danglingEndpoints = make(map[Endpoint]struct{})
 )
 

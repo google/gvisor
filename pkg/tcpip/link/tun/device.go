@@ -41,14 +41,23 @@ var zeroMAC [6]byte
 
 // Device is an opened /dev/net/tun device.
 //
+// File lifetime must exclude final Release from concurrent file operations.
+// Capturing the endpoint under mu does not take an additional reference.
+//
 // +stateify savable
 type Device struct {
 	waiter.Queue
 
-	mu           deviceRWMutex `state:"nosave"`
-	endpoint     *tunEndpoint
+	mu deviceRWMutex `state:"nosave"`
+	// +checklocks:mu
+	endpoint *tunEndpoint
+	// +checklocks:mu
 	notifyHandle *channel.NotificationHandle
-	flags        Flags
+
+	// flags is set by SetIff and immutable for that association.
+	//
+	// +checklocks:mu
+	flags Flags
 }
 
 // Flags set properties of a Device
@@ -209,6 +218,7 @@ func (d *Device) MTU() (uint32, error) {
 func (d *Device) Write(data *buffer.View) (int64, error) {
 	d.mu.RLock()
 	endpoint := d.endpoint
+	flags := d.flags
 	d.mu.RUnlock()
 	if endpoint == nil {
 		return 0, linuxerr.EBADFD
@@ -221,7 +231,7 @@ func (d *Device) Write(data *buffer.View) (int64, error) {
 
 	// Packet information.
 	var pktInfoHdr PacketInfoHeader
-	if !d.flags.NoPacketInfo {
+	if !flags.NoPacketInfo {
 		if dataLen < PacketInfoHeaderSize {
 			// Ignore bad packet.
 			return dataLen, nil
@@ -235,7 +245,7 @@ func (d *Device) Write(data *buffer.View) (int64, error) {
 
 	// Ethernet header (TAP only).
 	var ethHdr header.Ethernet
-	if d.flags.TAP {
+	if flags.TAP {
 		if data.Size() < header.EthernetMinimumSize {
 			// Ignore bad packet.
 			return dataLen, nil
@@ -254,7 +264,7 @@ func (d *Device) Write(data *buffer.View) (int64, error) {
 		protocol = pktInfoHdr.Protocol()
 	case ethHdr != nil:
 		protocol = ethHdr.Type()
-	case d.flags.TUN:
+	case flags.TUN:
 		// TUN interface with IFF_NO_PI enabled, thus
 		// we need to determine protocol from version field
 		if data.Size() == 0 {
@@ -284,6 +294,7 @@ func (d *Device) Write(data *buffer.View) (int64, error) {
 func (d *Device) Read() (*buffer.View, error) {
 	d.mu.RLock()
 	endpoint := d.endpoint
+	noPacketInfo := d.flags.NoPacketInfo
 	d.mu.RUnlock()
 	if endpoint == nil {
 		return nil, linuxerr.EBADFD
@@ -293,17 +304,17 @@ func (d *Device) Read() (*buffer.View, error) {
 	if pkt == nil {
 		return nil, linuxerr.ErrWouldBlock
 	}
-	v := d.encodePkt(pkt)
+	v := encodePkt(pkt, noPacketInfo)
 	pkt.DecRef()
 	return v, nil
 }
 
 // encodePkt encodes packet for fd side.
-func (d *Device) encodePkt(pkt *stack.PacketBuffer) *buffer.View {
+func encodePkt(pkt *stack.PacketBuffer, noPacketInfo bool) *buffer.View {
 	var view *buffer.View
 
 	// Packet information.
-	if !d.flags.NoPacketInfo {
+	if !noPacketInfo {
 		view = buffer.NewView(PacketInfoHeaderSize + pkt.Size())
 		view.Grow(PacketInfoHeaderSize)
 		hdr := PacketInfoHeader(view.AsSlice())
@@ -371,10 +382,13 @@ type tunEndpoint struct {
 	name  string
 	isTap bool
 
-	mu            endpointMutex `state:"nosave"`
-	onCloseAction func()        `state:"nosave"`
-	persistent    bool
-	closed        bool
+	mu endpointMutex `state:"nosave"`
+	// +checklocks:mu
+	onCloseAction func() `state:"nosave"`
+	// +checklocks:mu
+	persistent bool
+	// +checklocks:mu
+	closed bool
 }
 
 func (e *tunEndpoint) setPersistent(v bool) {

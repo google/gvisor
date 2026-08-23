@@ -23,6 +23,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -109,8 +110,55 @@ func TestNetStatDataRowsHaveMatchingFields(t *testing.T) {
 	}
 }
 
-// TestIPForwarding tests the implementation of
-// /proc/sys/net/ipv4/ip_forwarding
+type readOnlySACKTestStack struct {
+	*inet.TestStack
+}
+
+func (*readOnlySACKTestStack) SetTCPSACKEnabled(bool) error {
+	return linuxerr.EACCES
+}
+
+func TestTCPSACKReadback(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		writeErr error
+		want     string
+	}{
+		{name: "shared stack", want: "1\n"},
+		{name: "rejected write", writeErr: linuxerr.EACCES, want: "0\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := contexttest.Context(t)
+			s := inet.NewTestStack()
+			s.TCPSACKFlag = false
+			reader := &tcpSackData{stack: s}
+			writer := &tcpSackData{stack: s}
+			if tc.writeErr != nil {
+				writer = &tcpSackData{stack: &readOnlySACKTestStack{TestStack: s}}
+				reader = writer
+			}
+			var buf bytes.Buffer
+			if err := reader.Generate(ctx, &buf); err != nil {
+				t.Fatal(err)
+			}
+
+			const value = "1\n"
+			if n, err := writer.Write(ctx, nil, usermem.BytesIOSequence([]byte(value)), 0); n != int64(len(value)) || err != tc.writeErr {
+				t.Fatalf("Write() = (%d, %v), want (%d, %v)", n, err, len(value), tc.writeErr)
+			}
+			buf.Reset()
+			if err := reader.Generate(ctx, &buf); err != nil {
+				t.Fatal(err)
+			}
+			if got := buf.String(); got != tc.want {
+				t.Errorf("Generate() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestConfigureIPForwarding tests the implementation of
+// /proc/sys/net/ipv4/ip_forward.
 func TestConfigureIPForwarding(t *testing.T) {
 	ctx := context.Background()
 	s := inet.NewTestStack()
@@ -175,6 +223,43 @@ func TestConfigureIPForwarding(t *testing.T) {
 				t.Errorf("s.IPForwarding incorrect; got: %v, want: %v", got, want)
 			}
 		})
+	}
+}
+
+type portRangeTestStack struct {
+	*inet.TestStack
+	start, end uint16
+}
+
+func (s *portRangeTestStack) PortRange() (uint16, uint16) {
+	return s.start, s.end
+}
+
+func (s *portRangeTestStack) SetPortRange(start, end uint16) error {
+	s.start, s.end = start, end
+	return nil
+}
+
+func TestPortRangeSharedStack(t *testing.T) {
+	ctx := contexttest.Context(t)
+	s := &portRangeTestStack{TestStack: inet.NewTestStack(), start: 32768, end: 60999}
+	reader := &portRange{stack: s}
+	writer := &portRange{stack: s}
+	var buf bytes.Buffer
+	if err := reader.Generate(ctx, &buf); err != nil {
+		t.Fatal(err)
+	}
+
+	const updated = "40000 50000\n"
+	if n, err := writer.Write(ctx, nil, usermem.BytesIOSequence([]byte(updated)), 0); n != int64(len(updated)) || err != nil {
+		t.Fatalf("Write() = (%d, %v), want (%d, nil)", n, err, len(updated))
+	}
+	buf.Reset()
+	if err := reader.Generate(ctx, &buf); err != nil {
+		t.Fatal(err)
+	}
+	if got := buf.String(); got != updated {
+		t.Errorf("Generate() = %q, want %q", got, updated)
 	}
 }
 

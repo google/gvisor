@@ -49,7 +49,9 @@ type listenerState struct {
 }
 
 var restoredListeners struct {
-	mu      sync.Mutex
+	mu sync.Mutex
+
+	// +checklocks:mu
 	sockets []*Socket
 }
 

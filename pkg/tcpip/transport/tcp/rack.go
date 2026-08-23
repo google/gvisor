@@ -77,6 +77,8 @@ func (rc *rackControl) init(snd *sender, iss seqnum.Value) {
 
 // update will update the RACK related fields when an ACK has been received.
 // See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-09#section-6.2
+//
+// +checklocks:rc.snd.ep.mu
 func (rc *rackControl) update(seg *segment, ackSeg *segment) {
 	// Compute the RTT sample against the time the ACK was received at ingress
 	// (ackSeg.rcvdTime), not the current clock. The two differ when the ACK was
@@ -156,6 +158,8 @@ func (rc *rackControl) setDSACKSeen(dsackSeen bool) {
 
 // shouldSchedulePTO dictates whether we should schedule a PTO or not.
 // See https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.5.1.
+//
+// +checklocks:s.ep.mu
 func (s *sender) shouldSchedulePTO() bool {
 	// Schedule PTO only if RACK loss detection is enabled.
 	return s.ep.tcpRecovery&tcpip.TCPRACKLossDetection != 0 &&

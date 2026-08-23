@@ -39,6 +39,11 @@ func TestForwarderSendMSSLessThanMTU(t *testing.T) {
 	s := c.Stack()
 	ch := make(chan tcpip.Error, 1)
 	f := tcp.NewForwarder(s, 65536, 10, func(r *tcp.ForwarderRequest) {
+		if id := r.ID(); id.LocalAddress != context.StackAddr || id.LocalPort != context.StackPort ||
+			id.RemoteAddress != context.TestAddr || id.RemotePort != context.TestPort {
+			t.Errorf("ID() = %+v, want local %v:%d, remote %v:%d",
+				id, context.StackAddr, context.StackPort, context.TestAddr, context.TestPort)
+		}
 		var err tcpip.Error
 		c.EP, err = r.CreateEndpoint(&c.WQ)
 		ch <- err

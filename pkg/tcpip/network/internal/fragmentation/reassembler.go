@@ -15,14 +15,21 @@
 package fragmentation
 
 import (
+	"cmp"
 	"math"
-	"sort"
+	"slices"
 
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
+// hole describes a missing or received range in a reassembler.
+//
+// Published fields follow the owning reassembler's mutex or its exclusive
+// cleanup ownership. A hole has no owner pointer, so checklocks cannot resolve
+// that mutex for aliases to its fields.
+//
 // +stateify savable
 type hole struct {
 	first  uint16
@@ -34,18 +41,42 @@ type hole struct {
 	pkt *stack.PacketBuffer
 }
 
+// reassembler holds a packet's fragments until reassembly or release.
+//
+// Fragmentation.release claims exclusive ownership of memSize, holes, and pkt
+// by marking reassembly done under mu. Those cleanup accesses need exceptions
+// because checklocks cannot model the ownership transfer.
+//
 // +stateify savable
 type reassembler struct {
+	// reassemblerEntry is protected by the owning Fragmentation.mu. There is
+	// no reference back to that Fragmentation, so checklocks cannot name its
+	// mutex here.
 	reassemblerEntry
-	id        FragmentID
-	memSize   int
-	proto     uint8
-	mu        sync.Mutex `state:"nosave"`
-	holes     []hole
-	filled    int
-	done      bool
+	id FragmentID
+
+	// mu follows the owning Fragmentation.mu in lock order.
+	mu sync.Mutex `state:"nosave"`
+
+	// +checklocks:mu
+	memSize int
+
+	// +checklocks:mu
+	proto uint8
+
+	// +checklocks:mu
+	holes []hole
+
+	// +checklocks:mu
+	filled int
+
+	// +checklocks:mu
+	done bool
+
 	createdAt tcpip.MonotonicTime
-	pkt       *stack.PacketBuffer
+
+	// +checklocks:mu
+	pkt *stack.PacketBuffer
 }
 
 func newReassembler(id FragmentID, clock tcpip.Clock) *reassembler {
@@ -62,6 +93,7 @@ func newReassembler(id FragmentID, clock tcpip.Clock) *reassembler {
 	return r
 }
 
+// +checklocksexclude:r.mu
 func (r *reassembler) process(first, last uint16, more bool, proto uint8, pkt *stack.PacketBuffer) (*stack.PacketBuffer, uint8, bool, int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -178,8 +210,8 @@ func (r *reassembler) process(first, last uint16, more bool, proto uint8, pkt *s
 		return nil, 0, false, memConsumed, nil
 	}
 
-	sort.Slice(r.holes, func(i, j int) bool {
-		return r.holes[i].first < r.holes[j].first
+	slices.SortFunc(r.holes, func(a, b hole) int {
+		return cmp.Compare(a.first, b.first)
 	})
 
 	resPkt := r.holes[0].pkt.Clone()
@@ -189,6 +221,7 @@ func (r *reassembler) process(first, last uint16, more bool, proto uint8, pkt *s
 	return resPkt, r.proto, true /* done */, memConsumed, nil
 }
 
+// +checklocksexclude:r.mu
 func (r *reassembler) checkDoneOrMark() bool {
 	r.mu.Lock()
 	prev := r.done
