@@ -1785,20 +1785,21 @@ func (vfs *VirtualFilesystem) GenerateProcMountInfo(ctx context.Context, taskRoo
 		fmt.Fprintf(buf, "%s ", manglePath(pathFromRoot))
 
 		// (6) Mount options.
+		mntOpts := mnt.Options()
 		opts := "rw"
-		if mnt.ReadOnly() {
+		if mntOpts.ReadOnly {
 			opts = "ro"
 		}
-		if mnt.flags.NoSUID {
+		if mntOpts.Flags.NoSUID {
 			opts += ",nosuid"
 		}
-		if mnt.flags.NoDev {
+		if mntOpts.Flags.NoDev {
 			opts += ",nodev"
 		}
-		if mnt.flags.NoExec {
+		if mntOpts.Flags.NoExec {
 			opts += ",noexec"
 		}
-		if mnt.flags.NoATime {
+		if mntOpts.Flags.NoATime {
 			opts += ",noatime"
 		}
 		fmt.Fprintf(buf, "%s ", opts)
