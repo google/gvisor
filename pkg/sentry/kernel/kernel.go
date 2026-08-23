@@ -443,9 +443,11 @@ type Kernel struct {
 	// MaxKeySetSize is the maximum number of keys in a key set.
 	MaxKeySetSize atomicbitops.Int32
 
-	// fsSaveWaiters holds waiters for Kernel.WaitForFSSave. fsSaveWaiters is
-	// protected by fsSaveMu.
-	fsSaveMu      fsSaveMutex  `state:"nosave"`
+	fsSaveMu fsSaveMutex `state:"nosave"`
+
+	// fsSaveWaiters holds waiters for Kernel.WaitForFSSave.
+	//
+	// +checklocks:fsSaveMu
 	fsSaveWaiters []chan error `state:"nosave"`
 
 	// HostNamePoller is notified when the system hostname changes in *any*

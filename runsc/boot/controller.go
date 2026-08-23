@@ -294,6 +294,9 @@ type containerManager struct {
 }
 
 // StartRoot will start the root container process.
+//
+// +checklocksexclude:cm.l.fsRestore.apfl.amflsMu
+// +checklocksexclude:cm.l.fsRestore.apfl.mu
 func (cm *containerManager) StartRoot(cid *string, _ *struct{}) error {
 	log.Debugf("containerManager.StartRoot, cid: %s", *cid)
 	cm.l.mu.Lock()
@@ -306,7 +309,11 @@ func (cm *containerManager) StartRoot(cid *string, _ *struct{}) error {
 	return cm.onStart()
 }
 
-// onStart notifies that sandbox is ready to start and wait for the result.
+// onStart tells Loader.Run to start the sandbox and waits for its result.
+// Loader.Run may acquire the filesystem-restore loader's locks.
+//
+// +checklocksexclude:cm.l.fsRestore.apfl.amflsMu
+// +checklocksexclude:cm.l.fsRestore.apfl.mu
 func (cm *containerManager) onStart() error {
 	cm.startChan <- struct{}{}
 	if err := <-cm.startResultChan; err != nil {
@@ -383,6 +390,9 @@ type StartArgs struct {
 }
 
 // StartSubcontainer runs a created container within a sandbox.
+//
+// +checklocksexclude:cm.l.fsRestore.apfl.amflsMu
+// +checklocksexclude:cm.l.fsRestore.apfl.mu
 func (cm *containerManager) StartSubcontainer(args *StartArgs, _ *struct{}) error {
 	// Validate arguments.
 	if args == nil {
@@ -950,6 +960,7 @@ func (cm *containerManager) WaitRestore(*struct{}, *struct{}) error {
 	return err
 }
 
+// +checklocksexclude:cm.l.k.fsSaveMu
 func (cm *containerManager) WaitFSCheckpoint(*struct{}, *struct{}) error {
 	log.Debugf("containerManager.WaitFSCheckpoint")
 	err := cm.l.k.WaitForFSSave()
@@ -1212,6 +1223,8 @@ type FSSaveArgs struct {
 }
 
 // FSSave collects a filesystem checkpoint.
+//
+// +checklocksexclude:cm.l.k.fsSaveMu
 func (cm *containerManager) FSSave(args *FSSaveArgs, _ *struct{}) error {
 	log.Debugf("containerManager.FSSave")
 	kopts, err := convertToKernelFSSaveOpts(args)

@@ -266,6 +266,9 @@ func (w *CheckpointWaitable) signal(gen CheckpointGeneration, err error) {
 // loadPrivateMemoryFiles loads the private MemoryFiles from mfmap and it reads
 // private MemoryFile metadata from `r`. This consumes bytes from `r`, so this
 // must be called only once.
+//
+// +checklocksexclude:opts.PagesFile.amflsMu
+// +checklocksexclude:opts.PagesFile.mu
 func loadPrivateMemoryFiles(ctx context.Context, r io.Reader, mfmap map[checkpoint.ResourceID]*pgalloc.MemoryFile, opts *pgalloc.LoadOpts) error {
 	// Load the metadata.
 	var meta privateMemoryFileMetadata
