@@ -46,11 +46,17 @@ type watcherV2 struct {
 	itemCh    chan itemV2
 	publisher shim.Publisher
 
-	mu      sync.Mutex
+	mu sync.Mutex
+
+	// +checklocks:mu
 	cgroups map[string]*cgroupsv2.Manager
-	// lastOOM tracks the last published OOM kill count per container.
-	// Shared between the async (EventChan) and sync (isOOM) paths to
-	// prevent duplicate TaskOOM events.
+
+	// lastOOM tracks the last claimed OOM kill count per container.
+	// The async (EventChan) and sync (isOOM) paths claim counts before
+	// publishing to prevent duplicate TaskOOM events. A claim does not
+	// imply that publication has finished.
+	//
+	// +checklocks:mu
 	lastOOM map[string]uint64
 }
 
@@ -124,7 +130,7 @@ func (w *watcherV2) isOOM(id string) bool {
 		return false
 	}
 	// Claim the publish right under the lock. If the async path already
-	// published for this OOM count, skip to avoid duplicate events.
+	// claimed this OOM count, skip to avoid duplicate events.
 	w.mu.Lock()
 	lastOOM := w.lastOOM[id]
 	shouldPublish := stats.MemoryEvents.OomKill > lastOOM

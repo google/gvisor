@@ -77,10 +77,17 @@ type mockApplicationFDImpl struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.NoLockFD
 	vfs.DentryMetadataFileDescriptionImpl
-	mu         sync.Mutex
-	readBuf    bytes.Buffer
-	writeBuf   bytes.Buffer
-	released   bool
+	mu sync.Mutex
+
+	// +checklocks:mu
+	readBuf bytes.Buffer
+
+	// +checklocks:mu
+	writeBuf bytes.Buffer
+
+	// +checklocks:mu
+	released bool
+
 	queue      waiter.Queue
 	notifyStop chan struct{}
 }
@@ -93,7 +100,7 @@ func newMockApplicationFDImpl() *mockApplicationFDImpl {
 	return app
 }
 
-// Read implements vfs.FileDescriptionImpl.Read details for the parent mockFileDescription.
+// Read implements vfs.FileDescriptionImpl.Read.
 func (s *mockApplicationFDImpl) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -108,7 +115,7 @@ func (s *mockApplicationFDImpl) Read(ctx context.Context, dst usermem.IOSequence
 	return int64(n), err
 }
 
-// Write implements vfs.FileDescriptionImpl.Write details for the parent mockFileDescription.
+// Write implements vfs.FileDescriptionImpl.Write.
 func (s *mockApplicationFDImpl) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -143,8 +150,8 @@ func (s *mockApplicationFDImpl) read(n int) ([]byte, error) {
 	if s.writeBuf.Len() == 0 {
 		return nil, linuxerr.ErrWouldBlock
 	}
-	ret := s.writeBuf.Next(n)
-	return ret, nil
+	// The caller consumes the data after mu is released.
+	return bytes.Clone(s.writeBuf.Next(n)), nil
 }
 
 func (s *mockApplicationFDImpl) doNotify() {
@@ -174,7 +181,7 @@ func (s *mockApplicationFDImpl) IsWritable() bool {
 	return !s.released
 }
 
-// EventRegister implements vfs.FileDescriptionImpl.EventRegister details for the parent mockFileDescription.
+// EventRegister implements vfs.FileDescriptionImpl.EventRegister.
 func (s *mockApplicationFDImpl) EventRegister(we *waiter.Entry) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -182,14 +189,14 @@ func (s *mockApplicationFDImpl) EventRegister(we *waiter.Entry) error {
 	return nil
 }
 
-// EventUnregister implements vfs.FileDescriptionImpl.Unregister details for the parent mockFileDescription.
+// EventUnregister implements vfs.FileDescriptionImpl.EventUnregister.
 func (s *mockApplicationFDImpl) EventUnregister(we *waiter.Entry) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.queue.EventUnregister(we)
 }
 
-// Release implements vfs.FileDescriptionImpl.Release details for the parent mockFileDescription.
+// Release implements vfs.FileDescriptionImpl.Release.
 func (s *mockApplicationFDImpl) Release(context.Context) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

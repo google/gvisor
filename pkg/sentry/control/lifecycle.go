@@ -43,17 +43,22 @@ type Lifecycle struct {
 	// Kernel is the kernel where the tasks belong to.
 	Kernel *kernel.Kernel
 
-	// mu protects the fields below.
 	mu sync.RWMutex
 
 	// ShutdownCh is the channel used to signal the sentry to shutdown
 	// the sentry/sandbox.
+	//
+	// +checklocks:mu
 	ShutdownCh chan struct{}
 
 	// ContainerNamespacesMap maps container IDs to namespaces.
+	//
+	// +checklocks:mu
 	ContainerNamespacesMap map[string]ContainerNamespaces
 
 	// containerMap is a map of the container id and the container.
+	//
+	// +checklocks:mu
 	containerMap map[string]*Container
 }
 
@@ -88,6 +93,10 @@ type Container struct {
 	tg *kernel.ThreadGroup
 
 	// state is the current state of the container.
+	//
+	// It is initialized before publication in Lifecycle.containerMap and then
+	// protected by that Lifecycle's mu. Container does not store its owning
+	// Lifecycle, so checklocks cannot recover the mutex from map membership.
 	state containerState
 }
 

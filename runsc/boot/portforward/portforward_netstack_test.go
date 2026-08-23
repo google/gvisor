@@ -22,17 +22,22 @@ import (
 
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 type baseTCPEndpointImpl struct {
-	closed   bool
-	readBuf  bytes.Buffer
+	mu sync.Mutex
+
+	// +checklocks:mu
+	closed bool
+
+	// +checklocks:mu
+	readBuf bytes.Buffer
+
+	// +checklocks:mu
 	writeBuf bytes.Buffer
-	mu       sync.Mutex
 }
 
 // read reads data from the buffer that "Write" writes to.
@@ -42,8 +47,8 @@ func (b *baseTCPEndpointImpl) read(n int) ([]byte, error) {
 	if b.closed {
 		return nil, io.EOF
 	}
-	ret := b.writeBuf.Next(n)
-	return ret, nil
+	// The caller consumes the data after mu is released.
+	return bytes.Clone(b.writeBuf.Next(n)), nil
 }
 
 // write writes data to the read buffer that "Read" reads from.
@@ -143,12 +148,9 @@ func TestNetstackProxy(t *testing.T) {
 }
 
 func doNetstackTest(t *testing.T, name string, responses map[string]string) {
-	ctx := contexttest.Context(t)
+	ctx := context.Background()
 	appEndpoint := newMockApplicationFDImpl()
-	fd, err := newMockFileDescription(ctx, appEndpoint)
-	if err != nil {
-		t.Fatalf("newMockFileDescription: %v", err)
-	}
+	fd := newMockFileDescriptionConn(t, ctx, appEndpoint)
 
 	wq := &waiter.Queue{}
 	impl := &baseTCPEndpointImpl{}
@@ -158,7 +160,7 @@ func doNetstackTest(t *testing.T, name string, responses map[string]string) {
 		wq: wq,
 	}
 
-	proxy := NewProxy(ProxyPair{To: sock, From: &fileDescriptionConn{file: fd}}, name)
+	proxy := NewProxy(ProxyPair{To: sock, From: fd}, name)
 	proxy.Start(ctx)
 	defer proxy.Close()
 
@@ -198,8 +200,12 @@ func doNetstackTest(t *testing.T, name string, responses map[string]string) {
 
 // tcpErrImpl blocks on the first Read/Write and then throws an error afterwards.
 type tcpErrImpl struct {
-	mu     sync.Mutex
-	reads  bool
+	mu sync.Mutex
+
+	// +checklocks:mu
+	reads bool
+
+	// +checklocks:mu
 	writes bool
 }
 
@@ -236,7 +242,7 @@ func (e *tcpErrImpl) Close() {}
 // TestNTestNestackReadsWrites checks that reads/writes check errors from the underlying endpoint
 // multiple times.
 func TestNestackReadsWrites(t *testing.T) {
-	ctx := contexttest.Context(t)
+	ctx := context.Background()
 	wq := &waiter.Queue{}
 	ep := newMockTCPEndpoint(&tcpErrImpl{}, wq)
 	cancel := make(chan struct{})
@@ -266,6 +272,7 @@ func (p *packetReadImpl) Read(w io.Writer, _ tcpip.ReadOptions) (tcpip.ReadResul
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Payload: buffer.MakeWithData(payload),
 	})
+	defer pkt.DecRef()
 	n, err := pkt.Data().ReadTo(w, false)
 	if err != nil && n == 0 {
 		return tcpip.ReadResult{}, &tcpip.ErrBadBuffer{}
@@ -288,7 +295,7 @@ func TestNetstackConnReadHandlesShortWrite(t *testing.T) {
 	const bufLen = 1024
 	const payloadLen = bufLen + 512
 
-	ctx := contexttest.Context(t)
+	ctx := context.Background()
 	wq := &waiter.Queue{}
 	ep := newMockTCPEndpoint(&packetReadImpl{payloadSize: payloadLen}, wq)
 	conn := netstackConn{ep: ep, wq: wq}
@@ -306,7 +313,9 @@ func TestNetstackConnReadHandlesShortWrite(t *testing.T) {
 }
 
 type chunkedPacketReadImpl struct {
-	mu   sync.Mutex
+	mu sync.Mutex
+
+	// +checklocks:mu
 	data []byte
 }
 
@@ -321,6 +330,7 @@ func (c *chunkedPacketReadImpl) Read(w io.Writer, _ tcpip.ReadOptions) (tcpip.Re
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Payload: buffer.MakeWithData(c.data),
 	})
+	defer pkt.DecRef()
 	n, err := pkt.Data().ReadTo(w, false)
 	if err != nil && n == 0 {
 		return tcpip.ReadResult{}, &tcpip.ErrBadBuffer{}
@@ -343,7 +353,9 @@ func (c *chunkedPacketReadImpl) Shutdown(tcpip.ShutdownFlags) tcpip.Error {
 type bufferConn struct {
 	name string
 	mu   sync.Mutex
-	buf  bytes.Buffer
+
+	// +checklocks:mu
+	buf bytes.Buffer
 }
 
 func (b *bufferConn) Name() string {
@@ -367,7 +379,7 @@ func TestDoCopyDrainsLargeRead(t *testing.T) {
 	payloadLen := bufLen*3 + 123
 	payload := bytes.Repeat([]byte{'v'}, payloadLen)
 
-	ctx := contexttest.Context(t)
+	ctx := context.Background()
 	wq := &waiter.Queue{}
 	ep := newMockTCPEndpoint(&chunkedPacketReadImpl{data: payload}, wq)
 	src := &netstackConn{ep: ep, wq: wq}
@@ -384,7 +396,7 @@ func TestDoCopyDrainsLargeRead(t *testing.T) {
 	}
 
 	dst.mu.Lock()
-	got := append([]byte(nil), dst.buf.Bytes()...)
+	got := bytes.Clone(dst.buf.Bytes())
 	dst.mu.Unlock()
 	if len(got) != payloadLen {
 		t.Fatalf("copied %d bytes, want %d", len(got), payloadLen)

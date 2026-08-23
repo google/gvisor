@@ -81,12 +81,11 @@ type oomPoller interface {
 	add(id string, cg any) error
 	// run monitors oom event and notifies the shim about them
 	run(ctx context.Context)
-	// isOOM synchronously checks if the container was OOM-killed by reading
-	// the cgroup's memory events. This is used at container exit time to
-	// ensure the TaskOOM event is published before TaskExit, even if the
-	// async notification has not yet arrived. This is a one-shot operation:
-	// the cgroup reference is consumed on the first call, and subsequent
-	// calls for the same id return false.
+	// isOOM reports whether the caller should publish TaskOOM before TaskExit.
+	// In cgroups v2 it checks memory.events and claims the count, but does not
+	// wait for an event already claimed by the async path to be published.
+	// The cgroup reference is consumed on the first call, so subsequent calls
+	// for the same id return false.
 	isOOM(id string) bool
 }
 
@@ -117,12 +116,18 @@ type runscService struct {
 	oomPoller oomPoller
 
 	// containers maps container id to a container.
+	//
+	// +checklocks:mu
 	containers map[string]*Container
 
 	// root is the runsc root directory.
+	//
+	// +checklocks:mu
 	root string
 
 	// runtime is runsc runtime configured for sandbox.
+	//
+	// +checklocks:mu
 	runtime *runsccmd.Runsc
 
 	shutdown shutdown.Service
@@ -921,10 +926,13 @@ func (g *GvisorTaskServer) State(ctx context.Context, req *pb.StateRequest) (*pb
 
 // Version implements taskServer.GvisorTaskServiceExt.
 func (g *GvisorTaskServer) Version(ctx context.Context, req *pb.VersionRequest) (*pb.VersionResponse, error) {
-	cmd := exec.Command("runsc", "-version")
-	if g.s.runtime.Command != "" {
-		cmd = exec.Command(g.s.runtime.Command, "-version")
+	g.s.mu.Lock()
+	command := g.s.runtime.Command
+	g.s.mu.Unlock()
+	if command == "" {
+		command = runsccmd.DefaultCommand
 	}
+	cmd := exec.Command(command, "-version")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get runsc version: %w, output: %s", err, string(out))
