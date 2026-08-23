@@ -32,6 +32,9 @@ import (
 // application thread's stack pointer.
 //
 // Preconditions: mm.as != nil.
+//
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) HandleUserFault(ctx context.Context, addr hostarch.Addr, at hostarch.AccessType, sp hostarch.Addr) error {
 	addr = hostarch.UntaggedUserAddr(addr)
 	ar, ok := addr.RoundDown().ToRange(hostarch.PageSize)
@@ -72,6 +75,9 @@ func (mm *MemoryManager) HandleUserFault(ctx context.Context, addr hostarch.Addr
 }
 
 // MMap establishes a memory mapping.
+//
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (hostarch.Addr, error) {
 	if opts.Length == 0 {
 		return 0, linuxerr.EINVAL
@@ -174,9 +180,10 @@ func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (hostar
 // populateVMA obtains pmas for addresses in ar in the given vma, and maps them
 // into mm.as if it is active.
 //
-// Preconditions:
-//   - mm.mappingMu must be locked.
-//   - vseg.Range().IsSupersetOf(ar).
+// Preconditions: vseg.Range().IsSupersetOf(ar).
+//
+// +checklocksread:mm.mappingMu
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) populateVMA(ctx context.Context, vseg vmaIterator, ar hostarch.AddrRange, platformEffect memmap.MMapPlatformEffect) error {
 	if !vseg.ValuePtr().effectivePerms.Any() {
 		// mm.mapASLocked() will no-op due to platform.AddressSpace.MapFile()
@@ -221,6 +228,7 @@ func (mm *MemoryManager) populateVMA(ctx context.Context, vseg vmaIterator, ar h
 //
 // Postconditions: mm.mappingMu will be unlocked.
 // +checklocksrelease:mm.mappingMu
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) populateVMAAndUnlock(ctx context.Context, vseg vmaIterator, ar hostarch.AddrRange, platformEffect memmap.MMapPlatformEffect) {
 	if !vseg.ValuePtr().effectivePerms.Any() {
 		// Linux doesn't populate inaccessible pages. See
@@ -258,6 +266,9 @@ func (mm *MemoryManager) populateVMAAndUnlock(ctx context.Context, vseg vmaItera
 }
 
 // MapStack allocates the initial process stack.
+//
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) MapStack(ctx context.Context) (hostarch.AddrRange, error) {
 	// maxStackSize is the maximum supported process stack size in bytes.
 	//
@@ -307,6 +318,9 @@ func (mm *MemoryManager) MapStack(ctx context.Context) (hostarch.AddrRange, erro
 }
 
 // MUnmap implements the semantics of Linux's munmap(2).
+//
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) MUnmap(ctx context.Context, addr hostarch.Addr, length uint64) error {
 	addr = hostarch.UntaggedUserAddr(addr)
 	if addr != addr.RoundDown() {
@@ -362,6 +376,9 @@ const (
 )
 
 // MRemap implements the semantics of Linux's mremap(2).
+//
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldSize uint64, newSize uint64, opts MRemapOpts) (hostarch.Addr, error) {
 	oldAddr = hostarch.UntaggedUserAddr(oldAddr)
 
@@ -633,6 +650,9 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 }
 
 // MProtect implements the semantics of Linux's mprotect(2).
+//
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) MProtect(addr hostarch.Addr, length uint64, realPerms hostarch.AccessType, growsDown bool) error {
 	addr = hostarch.UntaggedUserAddr(addr)
 	if addr.RoundDown() != addr {
@@ -738,6 +758,8 @@ func (mm *MemoryManager) MProtect(addr hostarch.Addr, length uint64, realPerms h
 }
 
 // BrkSetup sets mm's brk address to addr and its brk size to 0.
+//
+// +checklocksexclude:mm.mappingMu
 func (mm *MemoryManager) BrkSetup(ctx context.Context, addr hostarch.Addr) {
 	var droppedIDs []memmap.MappingIdentity
 	mm.mappingMu.Lock()
@@ -754,6 +776,9 @@ func (mm *MemoryManager) BrkSetup(ctx context.Context, addr hostarch.Addr) {
 
 // Brk implements the semantics of Linux's brk(2), except that it returns an
 // error on failure.
+//
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) Brk(ctx context.Context, addr hostarch.Addr) (hostarch.Addr, error) {
 	mm.mappingMu.Lock()
 	// Can't defer mm.mappingMu.Unlock(); see below.
@@ -838,6 +863,9 @@ func (mm *MemoryManager) Brk(ctx context.Context, addr hostarch.Addr) (hostarch.
 
 // MLock implements the semantics of Linux's mlock()/mlock2()/munlock(),
 // depending on mode.
+//
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) MLock(ctx context.Context, addr hostarch.Addr, length uint64, mode memmap.MLockMode) error {
 	addr = hostarch.UntaggedUserAddr(addr)
 	// Linux allows this to overflow.
@@ -960,6 +988,9 @@ type MLockAllOpts struct {
 
 // MLockAll implements the semantics of Linux's mlockall()/munlockall(),
 // depending on opts.
+//
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) MLockAll(ctx context.Context, opts MLockAllOpts) error {
 	if !opts.Current && !opts.Future {
 		return linuxerr.EINVAL
@@ -1029,6 +1060,8 @@ func (mm *MemoryManager) MLockAll(ctx context.Context, opts MLockAllOpts) error 
 }
 
 // NumaPolicy implements the semantics of Linux's get_mempolicy(MPOL_F_ADDR).
+//
+// +checklocksexclude:mm.mappingMu
 func (mm *MemoryManager) NumaPolicy(addr hostarch.Addr) (linux.NumaPolicy, uint64, error) {
 	mm.mappingMu.RLock()
 	defer mm.mappingMu.RUnlock()
@@ -1041,6 +1074,8 @@ func (mm *MemoryManager) NumaPolicy(addr hostarch.Addr) (linux.NumaPolicy, uint6
 }
 
 // SetNumaPolicy implements the semantics of Linux's mbind().
+//
+// +checklocksexclude:mm.mappingMu
 func (mm *MemoryManager) SetNumaPolicy(addr hostarch.Addr, length uint64, policy linux.NumaPolicy, nodemask uint64) error {
 	if !addr.IsPageAligned() {
 		return linuxerr.EINVAL
@@ -1109,6 +1144,9 @@ func madviseAddrRange(addr hostarch.Addr, length uint64) (hostarch.AddrRange, er
 }
 
 // Decommit implements the semantics of Linux's madvise(MADV_DONTNEED).
+//
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
 	addr = hostarch.UntaggedUserAddr(addr)
 	ar, err := madviseAddrRange(addr, length)
@@ -1255,6 +1293,12 @@ func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
 // address range that are not mapped, the Linux version of madvise() ignores
 // them and applies the call to the rest (but returns ENOMEM from the system
 // call, as it should)."
+//
+// f runs synchronously under mappingMu. It must preserve the iterator's
+// validity and must not reacquire mappingMu. checklocks cannot carry the
+// held lock state or iterator ownership through the function value.
+//
+// +checklocksexclude:mm.mappingMu
 func (mm *MemoryManager) madviseMutateVMAs(addr hostarch.Addr, length uint64, f func(vseg vmaIterator) error) error {
 	ar, err := madviseAddrRange(addr, length)
 	if err != nil {
@@ -1302,6 +1346,8 @@ func (mm *MemoryManager) madviseMutateVMAs(addr hostarch.Addr, length uint64, f 
 // SetDontFork implements the semantics of madvise MADV_DONTFORK.
 //
 // Preconditions: addr and length are page-aligned.
+//
+// +checklocksexclude:mm.mappingMu
 func (mm *MemoryManager) SetDontFork(addr hostarch.Addr, length uint64, dontfork bool) error {
 	addr = hostarch.UntaggedUserAddr(addr)
 	return mm.madviseMutateVMAs(addr, length, func(vseg vmaIterator) error {
@@ -1312,6 +1358,8 @@ func (mm *MemoryManager) SetDontFork(addr hostarch.Addr, length uint64, dontfork
 
 // SetVMAAnonName implements the semantics of Linux's
 // prctl(PR_SET_VMA, PR_SET_VMA_ANON_NAME).
+//
+// +checklocksexclude:mm.mappingMu
 func (mm *MemoryManager) SetVMAAnonName(addr hostarch.Addr, length uint64, name string, nameIsNil bool) error {
 	// Check that name contains only valid characters; compare Linux
 	// kernel/sys.c:is_valid_name_char(). `for ... := range string`
@@ -1354,6 +1402,8 @@ type MSyncOpts struct {
 }
 
 // MSync implements the semantics of Linux's msync().
+//
+// +checklocksexclude:mm.mappingMu
 func (mm *MemoryManager) MSync(ctx context.Context, addr hostarch.Addr, length uint64, opts MSyncOpts) error {
 	addr = hostarch.UntaggedUserAddr(addr)
 	if addr != addr.RoundDown() {
@@ -1431,6 +1481,8 @@ func (mm *MemoryManager) MSync(ctx context.Context, addr hostarch.Addr, length u
 }
 
 // GetSharedFutexKey is used by kernel.Task.GetSharedKey.
+//
+// +checklocksexclude:mm.mappingMu
 func (mm *MemoryManager) GetSharedFutexKey(ctx context.Context, addr hostarch.Addr) (futex.Key, error) {
 	ar, ok := addr.ToRange(4) // sizeof(int32).
 	if !ok {
@@ -1465,6 +1517,8 @@ func (mm *MemoryManager) GetSharedFutexKey(ctx context.Context, addr hostarch.Ad
 
 // VirtualMemorySize returns the combined length in bytes of all mappings in
 // mm.
+//
+// +checklocksexclude:mm.mappingMu
 func (mm *MemoryManager) VirtualMemorySize() uint64 {
 	mm.mappingMu.RLock()
 	defer mm.mappingMu.RUnlock()
@@ -1473,6 +1527,8 @@ func (mm *MemoryManager) VirtualMemorySize() uint64 {
 
 // VirtualMemorySizeRange returns the combined length in bytes of all mappings
 // in ar in mm.
+//
+// +checklocksexclude:mm.mappingMu
 func (mm *MemoryManager) VirtualMemorySizeRange(ar hostarch.AddrRange) uint64 {
 	mm.mappingMu.RLock()
 	defer mm.mappingMu.RUnlock()
@@ -1480,6 +1536,8 @@ func (mm *MemoryManager) VirtualMemorySizeRange(ar hostarch.AddrRange) uint64 {
 }
 
 // ResidentSetSize returns the value advertised as mm's RSS in bytes.
+//
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) ResidentSetSize() uint64 {
 	mm.activeMu.RLock()
 	defer mm.activeMu.RUnlock()
@@ -1487,6 +1545,8 @@ func (mm *MemoryManager) ResidentSetSize() uint64 {
 }
 
 // MaxResidentSetSize returns the value advertised as mm's max RSS in bytes.
+//
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) MaxResidentSetSize() uint64 {
 	mm.activeMu.RLock()
 	defer mm.activeMu.RUnlock()
@@ -1494,6 +1554,8 @@ func (mm *MemoryManager) MaxResidentSetSize() uint64 {
 }
 
 // VirtualDataSize returns the size of private data segments in mm.
+//
+// +checklocksexclude:mm.mappingMu
 func (mm *MemoryManager) VirtualDataSize() uint64 {
 	mm.mappingMu.RLock()
 	defer mm.mappingMu.RUnlock()
@@ -1525,6 +1587,8 @@ func (mm *MemoryManager) IsMembarrierRSeqEnabled() bool {
 }
 
 // FindVMAByName finds a vma with the specified name and returns its start address and offset.
+//
+// +checklocksexclude:mm.mappingMu
 func (mm *MemoryManager) FindVMAByName(ar hostarch.AddrRange, name string) (hostarch.Addr, uint64, error) {
 	mm.mappingMu.RLock()
 	defer mm.mappingMu.RUnlock()
@@ -1547,6 +1611,8 @@ func (mm *MemoryManager) FindVMAByName(ar hostarch.AddrRange, name string) (host
 // error if addr is not mapped. The RDMA proxy uses it to bound a
 // driver-private DMA buffer (work queue / doorbell) whose backing region the
 // guest describes by start address only, with no explicit length.
+//
+// +checklocksexclude:mm.mappingMu
 func (mm *MemoryManager) FindVMARange(addr hostarch.Addr) (hostarch.AddrRange, error) {
 	mm.mappingMu.RLock()
 	defer mm.mappingMu.RUnlock()

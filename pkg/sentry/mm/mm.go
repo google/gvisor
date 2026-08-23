@@ -31,8 +31,8 @@
 //						mm.AIOContext.mu
 //
 // Only mm.MemoryManager.Fork is permitted to lock mm.MemoryManager.activeMu in
-// multiple mm.MemoryManagers, as it does so in a well-defined order (forked
-// child first).
+// multiple mm.MemoryManagers, as it does so in a well-defined order (parent
+// first, then the new child).
 package mm
 
 import (
@@ -79,6 +79,8 @@ type MemoryManager struct {
 	// users is the number of dependencies on the mappings in the MemoryManager.
 	// When the number of references in users reaches zero, all mappings are
 	// unmapped.
+	//
+	// +checkatomic
 	users atomicbitops.Int32
 
 	// mappingMu is analogous to Linux's struct mm_struct::mmap_sem.
@@ -90,37 +92,37 @@ type MemoryManager struct {
 	//
 	// Invariants: vmas are always page-aligned.
 	//
-	// vmas is protected by mappingMu.
+	// +checklocks:mappingMu
 	vmas vmaSet
 
 	// brk is the mm's brk, which is manipulated using the brk(2) system call.
 	// The brk is initially set up by the loader which maps an executable
 	// binary into the mm.
 	//
-	// brk is protected by mappingMu.
+	// +checklocks:mappingMu
 	brk hostarch.AddrRange
 
 	// usageAS is vmas.Span(), cached to accelerate RLIMIT_AS checks.
 	//
-	// usageAS is protected by mappingMu.
+	// +checklocks:mappingMu
 	usageAS uint64
 
 	// lockedAS is the combined size in bytes of all vmas with vma.mlockMode !=
 	// memmap.MLockNone.
 	//
-	// lockedAS is protected by mappingMu.
+	// +checklocks:mappingMu
 	lockedAS uint64
 
 	// dataAS is the size of private data segments, like mm_struct->data_vm.
 	// It means the vma which is private, writable, not stack.
 	//
-	// dataAS is protected by mappingMu.
+	// +checklocks:mappingMu
 	dataAS uint64
 
 	// New VMAs created by MMap use whichever of memmap.MMapOpts.MLockMode or
 	// defMLockMode is greater.
 	//
-	// defMLockMode is protected by mappingMu.
+	// +checklocks:mappingMu
 	defMLockMode memmap.MLockMode
 
 	// activeMu is loosely analogous to Linux's struct
@@ -133,40 +135,43 @@ type MemoryManager struct {
 	// a copy.
 	//
 	// Inserting or removing segments from pmas should happen along with a
-	// call to mm.insertRSS or mm.removeRSS.
+	// call to mm.addRSSLocked or mm.removeRSSLocked.
 	//
 	// Invariants: pmas are always page-aligned. If a pma exists for a given
 	// address, a vma must also exist for that address.
 	//
-	// pmas is protected by activeMu.
+	// +checklocks:activeMu
 	pmas pmaSet
 
 	// curRSS is pmas.Span(), cached to accelerate updates to maxRSS. It is
 	// reported as the MemoryManager's RSS.
 	//
-	// maxRSS should be modified only via insertRSS and removeRSS, not
+	// curRSS should be modified only via addRSSLocked and removeRSSLocked, not
 	// directly.
 	//
-	// maxRSS is protected by activeMu.
+	// +checklocks:activeMu
 	curRSS uint64
 
 	// maxRSS is the maximum resident set size in bytes of a MemoryManager.
 	// It is tracked as the application adds and removes mappings to pmas.
 	//
-	// maxRSS should be modified only via insertRSS, not directly.
+	// maxRSS should be modified only via addRSSLocked, not directly.
 	//
-	// maxRSS is protected by activeMu.
+	// +checklocks:activeMu
 	maxRSS uint64
 
 	// hasPinned is true if pages in this MemoryManager have ever been pinned
 	// by Pin. It is never cleared, even if all pinned pages are unpinned;
 	// compare Linux's MMF_HAS_PINNED.
 	//
-	// hasPinned is protected by activeMu.
+	// +checklocks:activeMu
 	hasPinned bool
 
 	// as is the platform.AddressSpace that pmas are mapped into. as is immutable
-	// until users becomes 0, at which point as becomes nil.
+	// until users becomes 0, at which point as becomes nil. Reads with a live
+	// user reference need no lock. activeMu serializes teardown and invalidation
+	// after the last user; checklocks cannot express this lifetime-dependent
+	// locking.
 	as platform.AddressSpace `state:"nosave"`
 
 	// If captureInvalidations is true, calls to MM.Invalidate() are recorded
@@ -174,15 +179,20 @@ type MemoryManager struct {
 	// This is to avoid a race condition in MM.Fork(); see that function for
 	// details.
 	//
-	// Both captureInvalidations and capturedInvalidations are protected by
-	// activeMu. Neither need to be saved since captureInvalidations is only
+	// Neither field needs to be saved since captureInvalidations is only
 	// enabled during MM.Fork(), during which saving can't occur.
-	captureInvalidations  bool             `state:"zerovalue"`
+	//
+	// +checklocks:activeMu
+	captureInvalidations bool `state:"zerovalue"`
+
+	// +checklocks:activeMu
 	capturedInvalidations []invalidateArgs `state:"nosave"`
 
 	// dumpability describes if and how this MemoryManager may be dumped to
 	// userspace. This is read under kernel.TaskSet.mu, so it can't be protected
 	// by metadataMu.
+	//
+	// +checkatomic
 	dumpability atomicbitops.Int32
 
 	metadataMu metadataMutex `state:"nosave"`
@@ -191,25 +201,25 @@ type MemoryManager struct {
 	// modified by prctl(PR_SET_MM_ARG_START/PR_SET_MM_ARG_END). No
 	// requirements apply to argv; we do not require that argv.WellFormed().
 	//
-	// argv is protected by metadataMu.
+	// +checklocks:metadataMu
 	argv hostarch.AddrRange
 
 	// envv is the application envv. This is set up by the loader and may be
 	// modified by prctl(PR_SET_MM_ENV_START/PR_SET_MM_ENV_END). No
 	// requirements apply to envv; we do not require that envv.WellFormed().
 	//
-	// envv is protected by metadataMu.
+	// +checklocks:metadataMu
 	envv hostarch.AddrRange
 
 	// auxv is the ELF's auxiliary vector.
 	//
-	// auxv is protected by metadataMu.
+	// +checklocks:metadataMu
 	auxv arch.Auxv
 
 	// executable is the executable for this MemoryManager. If executable
-	// is not nil, it holds a reference on the Dirent.
+	// is not nil, it holds a reference on the FileDescription.
 	//
-	// executable is protected by metadataMu.
+	// +checklocks:metadataMu
 	executable *vfs.FileDescription
 
 	// aioManager keeps track of AIOContexts used for async IOs. AIOManager
@@ -217,22 +227,34 @@ type MemoryManager struct {
 	aioManager aioManager
 
 	// vdsoSigReturnAddr is the address of 'vdso_sigreturn'.
+	//
+	// +checklocks:metadataMu
 	vdsoSigReturnAddr uint64
 
 	// membarrierPrivateEnabled is non-zero if EnableMembarrierPrivate has
 	// previously been called. Since, as of this writing,
 	// MEMBARRIER_CMD_PRIVATE_EXPEDITED is implemented as a global memory
 	// barrier, membarrierPrivateEnabled has no other effect.
+	//
+	// +checkatomic
 	membarrierPrivateEnabled atomicbitops.Uint32
 
 	// membarrierRSeqEnabled is non-zero if EnableMembarrierRSeq has previously
 	// been called.
+	//
+	// +checkatomic
 	membarrierRSeqEnabled atomicbitops.Uint32
 }
 
 // vma represents a virtual memory area.
 //
-// Note: new fields added to this struct must be added to vma.Copy and
+// After MemoryManager construction, fields in stored VMAs are protected by its
+// mappingMu, except as noted below. Detached copies are exclusively owned.
+//
+// Neither vma nor its generated iterators have a MemoryManager backpointer,
+// so checklocks cannot name the owner mutex for their fields and methods.
+//
+// Note: new fields added to this struct must be added to vma.copy and
 // vmaSetFunctions.Merge.
 //
 // +stateify savable
@@ -304,8 +326,12 @@ type vma struct {
 	// lastFault records the last address that was paged faulted. It hints at
 	// which direction addresses in this vma are being accessed.
 	//
-	// This field can be read atomically, and written with mm.activeMu locked for
-	// writing and mm.mapping locked.
+	// Accesses to this field in stored VMAs are atomic. Fault updates hold
+	// mappingMu at least for reading and activeMu for writing. After
+	// construction, VMA-set mutations hold mappingMu for writing, excluding
+	// fault updates. Detached copies may use ordinary reads and writes.
+	//
+	// +checkatomic
 	lastFault uintptr
 }
 
@@ -331,6 +357,11 @@ func (v *vma) copy() vma {
 }
 
 // pma represents a platform mapping area.
+//
+// Stored PMA metadata is protected by the owning MemoryManager.activeMu.
+// Detached copies of the metadata can be used under exclusive ownership.
+// Neither pma nor its generated iterators have a MemoryManager backpointer,
+// so checklocks cannot name the owner mutex for their fields and methods.
 //
 // +stateify savable
 type pma struct {

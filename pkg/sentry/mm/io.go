@@ -109,6 +109,9 @@ func translateIOError(ctx context.Context, err error) error {
 }
 
 // CopyOut implements usermem.IO.CopyOut.
+//
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) CopyOut(ctx context.Context, addr hostarch.Addr, src []byte, opts usermem.IOOpts) (int, error) {
 	ar, ok := mm.CheckIORange(addr, int64(len(src)))
 	if !ok {
@@ -133,6 +136,8 @@ func (mm *MemoryManager) CopyOut(ctx context.Context, addr hostarch.Addr, src []
 	return mm.imCopyOut(ctx, ar, src, opts)
 }
 
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) asCopyOut(ctx context.Context, ar hostarch.AddrRange, src []byte, opts usermem.IOOpts) (int, error) {
 	var done int
 	for {
@@ -155,6 +160,8 @@ func (mm *MemoryManager) asCopyOut(ctx context.Context, ar hostarch.AddrRange, s
 	}
 }
 
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) imCopyOut(ctx context.Context, ar hostarch.AddrRange, src []byte, opts usermem.IOOpts) (int, error) {
 	n64, err := mm.withInternalMappings(ctx, ar, hostarch.Write, opts.IgnorePermissions, func(ims safemem.BlockSeq) (uint64, error) {
 		n, err := safemem.CopySeq(ims, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(src)))
@@ -164,6 +171,9 @@ func (mm *MemoryManager) imCopyOut(ctx context.Context, ar hostarch.AddrRange, s
 }
 
 // CopyIn implements usermem.IO.CopyIn.
+//
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) CopyIn(ctx context.Context, addr hostarch.Addr, dst []byte, opts usermem.IOOpts) (int, error) {
 	ar, ok := mm.CheckIORange(addr, int64(len(dst)))
 	if !ok {
@@ -188,6 +198,8 @@ func (mm *MemoryManager) CopyIn(ctx context.Context, addr hostarch.Addr, dst []b
 	return mm.imCopyIn(ctx, ar, dst, opts)
 }
 
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) asCopyIn(ctx context.Context, ar hostarch.AddrRange, dst []byte, opts usermem.IOOpts) (int, error) {
 	var done int
 	for {
@@ -210,6 +222,8 @@ func (mm *MemoryManager) asCopyIn(ctx context.Context, ar hostarch.AddrRange, ds
 	}
 }
 
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) imCopyIn(ctx context.Context, ar hostarch.AddrRange, dst []byte, opts usermem.IOOpts) (int, error) {
 	n64, err := mm.withInternalMappings(ctx, ar, hostarch.Read, opts.IgnorePermissions, func(ims safemem.BlockSeq) (uint64, error) {
 		n, err := safemem.CopySeq(safemem.BlockSeqOf(safemem.BlockFromSafeSlice(dst)), ims)
@@ -219,6 +233,9 @@ func (mm *MemoryManager) imCopyIn(ctx context.Context, ar hostarch.AddrRange, ds
 }
 
 // ZeroOut implements usermem.IO.ZeroOut.
+//
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) ZeroOut(ctx context.Context, addr hostarch.Addr, toZero int64, opts usermem.IOOpts) (int64, error) {
 	ar, ok := mm.CheckIORange(addr, toZero)
 	if !ok {
@@ -238,6 +255,8 @@ func (mm *MemoryManager) ZeroOut(ctx context.Context, addr hostarch.Addr, toZero
 	return mm.imZeroOut(ctx, ar, opts)
 }
 
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) asZeroOut(ctx context.Context, ar hostarch.AddrRange, opts usermem.IOOpts) (int64, error) {
 	var done int64
 	for {
@@ -260,6 +279,8 @@ func (mm *MemoryManager) asZeroOut(ctx context.Context, ar hostarch.AddrRange, o
 	}
 }
 
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) imZeroOut(ctx context.Context, ar hostarch.AddrRange, opts usermem.IOOpts) (int64, error) {
 	return mm.withInternalMappings(ctx, ar, hostarch.Write, opts.IgnorePermissions, func(dsts safemem.BlockSeq) (uint64, error) {
 		n, err := safemem.ZeroSeq(dsts)
@@ -268,6 +289,9 @@ func (mm *MemoryManager) imZeroOut(ctx context.Context, ar hostarch.AddrRange, o
 }
 
 // CopyOutFrom implements usermem.IO.CopyOutFrom.
+//
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) CopyOutFrom(ctx context.Context, ars hostarch.AddrRangeSeq, src safemem.Reader, opts usermem.IOOpts) (int64, error) {
 	var ok bool
 	ars, ok = mm.checkIOVec(ars)
@@ -315,6 +339,9 @@ func (mm *MemoryManager) CopyOutFrom(ctx context.Context, ars hostarch.AddrRange
 }
 
 // CopyInTo implements usermem.IO.CopyInTo.
+//
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) CopyInTo(ctx context.Context, ars hostarch.AddrRangeSeq, dst safemem.Writer, opts usermem.IOOpts) (int64, error) {
 	var ok bool
 	ars, ok = mm.checkIOVec(ars)
@@ -360,6 +387,9 @@ func (mm *MemoryManager) CopyInTo(ctx context.Context, ars hostarch.AddrRangeSeq
 // requested length. It returns the length to which it was able to either
 // initialize PMAs for, or ascertain that PMAs exist for. If this length is
 // smaller than the requested length it returns an error explaining why.
+//
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) EnsurePMAsExist(ctx context.Context, addr hostarch.Addr, length int64, opts usermem.IOOpts) (int64, error) {
 	ar, ok := mm.CheckIORange(addr, length)
 	if !ok {
@@ -372,6 +402,9 @@ func (mm *MemoryManager) EnsurePMAsExist(ctx context.Context, addr hostarch.Addr
 }
 
 // SwapUint32 implements usermem.IO.SwapUint32.
+//
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) SwapUint32(ctx context.Context, addr hostarch.Addr, new uint32, opts usermem.IOOpts) (uint32, error) {
 	ar, ok := mm.CheckIORange(addr, 4)
 	if !ok {
@@ -419,6 +452,9 @@ func (mm *MemoryManager) SwapUint32(ctx context.Context, addr hostarch.Addr, new
 }
 
 // CompareAndSwapUint32 implements usermem.IO.CompareAndSwapUint32.
+//
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) CompareAndSwapUint32(ctx context.Context, addr hostarch.Addr, old, new uint32, opts usermem.IOOpts) (uint32, error) {
 	ar, ok := mm.CheckIORange(addr, 4)
 	if !ok {
@@ -466,6 +502,9 @@ func (mm *MemoryManager) CompareAndSwapUint32(ctx context.Context, addr hostarch
 }
 
 // LoadUint32 implements usermem.IO.LoadUint32.
+//
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) LoadUint32(ctx context.Context, addr hostarch.Addr, opts usermem.IOOpts) (uint32, error) {
 	ar, ok := mm.CheckIORange(addr, 4)
 	if !ok {
@@ -519,6 +558,9 @@ func (mm *MemoryManager) LoadUint32(ctx context.Context, addr hostarch.Addr, opt
 //   - mm.as != nil.
 //   - ioar.Length() != 0.
 //   - ioar.Contains(addr).
+//
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) handleASIOFault(ctx context.Context, addr hostarch.Addr, ioar hostarch.AddrRange, at hostarch.AccessType) error {
 	// Try to map all remaining pages in the I/O operation. This RoundUp can't
 	// overflow because otherwise it would have been caught by CheckIORange.
@@ -571,7 +613,14 @@ func (mm *MemoryManager) handleASIOFault(ctx context.Context, addr hostarch.Addr
 // functions have this property, but returns an int64 since this is usually
 // more useful for usermem.IO methods.
 //
+// f runs synchronously and must not retain the mappings after returning,
+// reacquire activeMu, or acquire a mutex preceding it, including mappingMu.
+// checklocks does not carry the held lock state through the function value.
+//
 // Preconditions: 0 < ar.Length() <= math.MaxInt64.
+//
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) withInternalMappings(ctx context.Context, ar hostarch.AddrRange, at hostarch.AccessType, ignorePermissions bool, f func(safemem.BlockSeq) (uint64, error)) (int64, error) {
 	// If pmas are already available, we can do IO without touching mm.vmas or
 	// mm.mappingMu.
@@ -641,7 +690,13 @@ func (mm *MemoryManager) withInternalMappings(ctx context.Context, ar hostarch.A
 // cached. It then calls f with mm.activeMu locked for reading, passing
 // internal mappings for the subset of ars for which this property holds.
 //
+// f has the same mapping-lifetime and lock-order requirements as in
+// withInternalMappings.
+//
 // Preconditions: !ars.IsEmpty().
+//
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) withVecInternalMappings(ctx context.Context, ars hostarch.AddrRangeSeq, at hostarch.AccessType, ignorePermissions bool, f func(safemem.BlockSeq) (uint64, error)) (int64, error) {
 	// withInternalMappings is faster than withVecInternalMappings because of
 	// iterator plumbing (this isn't generally practical in the vector case due
@@ -715,12 +770,13 @@ func (mm *MemoryManager) withVecInternalMappings(ctx context.Context, ars hostar
 // called.
 //
 // Preconditions:
-//   - mm.activeMu must be locked for writing.
 //   - pseg.Range().Contains(ar.Start).
 //   - pmas must exist for all addresses in ar.
 //   - ar.Length() != 0.
 //
 // Postconditions: getIOMappingsLocked does not invalidate iterators into mm.pmas.
+//
+// +checklocks:mm.activeMu
 func (mm *MemoryManager) getIOMappingsLocked(pseg pmaIterator, ar hostarch.AddrRange, at hostarch.AccessType) (safemem.BlockSeq, *ioBufTracker, error) {
 	if checkInvariants {
 		if !ar.WellFormed() || ar.Length() == 0 {
@@ -759,12 +815,12 @@ slowPath:
 // are valid until either mm.activeMu is unlocked or ioBufTracker.flush() is
 // called.
 //
-// Preconditions:
-//   - mm.activeMu must be locked for writing.
-//   - pmas must exist for all addresses in ar.
+// Preconditions: pmas must exist for all addresses in ars.
 //
 // Postconditions: getVecIOMappingsLocked does not invalidate iterators into
 // mm.pmas
+//
+// +checklocks:mm.activeMu
 func (mm *MemoryManager) getVecIOMappingsLocked(ars hostarch.AddrRangeSeq, at hostarch.AccessType) (safemem.BlockSeq, *ioBufTracker, error) {
 	if ars.NumRanges() == 1 {
 		ar := ars.Head()
@@ -807,13 +863,14 @@ func (mm *MemoryManager) getVecIOMappingsLocked(ars hostarch.AddrRangeSeq, at ho
 // ioBufTracker.flush() is called.
 //
 // Preconditions:
-//   - mm.activeMu must be locked for writing.
 //   - pseg.Range().Contains(ar.Start).
 //   - pmas must exist for all addresses in ar.
 //   - ar.Length() != 0.
 //
 // Postconditions: getIOMappingsTrackedLocked does not invalidate iterators
 // into mm.pmas.
+//
+// +checklocks:mm.activeMu
 func (mm *MemoryManager) getIOMappingsTrackedLocked(pseg pmaIterator, ar hostarch.AddrRange, at hostarch.AccessType, ims []safemem.Block, t *ioBufTracker, unbufBytes uint64) ([]safemem.Block, *ioBufTracker, uint64, error) {
 	for {
 		pmaAR := ar.Intersect(pseg.Range())
