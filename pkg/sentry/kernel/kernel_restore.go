@@ -262,6 +262,10 @@ type AsyncMFLoader struct {
 	// MemoryFiles, once they are known. This channel is written to exactly once.
 	privateMFsChan chan map[checkpoint.ResourceID]*pgalloc.MemoryFile
 
+	// Error fields are published by WaitGroup completion rather than a mutex:
+	// mainMFStartWg publishes mainMetadataErr, metadataWg publishes metadataErr,
+	// and loadWg publishes loadErr. Readers wait for the corresponding group.
+	// checklocks cannot express these completion-based publication boundaries.
 	mainMFStartWg   sync.WaitGroup
 	mainMetadataErr error
 
@@ -306,6 +310,9 @@ func (mfl *AsyncMFLoader) backgroundGoroutine(pagesMetadata io.ReadCloser, pages
 	}, timeline) // transfers ownership of pagesFile
 	if err != nil {
 		mfl.loadWg.Done()
+		mfl.mainMetadataErr = err
+		mfl.metadataErr = err
+		mfl.mainMFStartWg.Done()
 		log.Warningf("Failed to start async page loading: %v", err)
 		return
 	}
