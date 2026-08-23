@@ -30,7 +30,10 @@ import (
 )
 
 func (fs *filesystem) newMaxKeySizeFile(ctx context.Context, k *kernel.Kernel, creds *auth.Credentials) kernfs.Inode {
-	s := &maxKeySize{maxKeys: &k.MaxKeySetSize}
+	// maxKeySize retains this pointer and only uses atomic methods.
+	// checklocks cannot follow atomic-field aliases stored in an object.
+	s := &maxKeySize{}
+	s.maxKeys = &k.MaxKeySetSize // +checklocksignore
 	s.Init(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), s, 0644)
 	return s
 }

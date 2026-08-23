@@ -197,37 +197,46 @@ type PointReq struct {
 // Global is the method receiver of all seccheck functions.
 var Global State
 
-// State is the type of global, and is separated out for testing.
+// State is the type of Global, and is separated out for testing.
 type State struct {
 	// registrationMu serializes all changes to the set of registered Sinks
 	// for all checkpoints.
 	registrationMu sync.RWMutex
 
 	// enabledPoints is a bitmask of checkpoints for which at least one Sink
-	// is registered.
+	// is registered. Words are accessed atomically except for reads under
+	// registrationMu.
 	//
-	// Mutation of enabledPoints is serialized by registrationMu.
+	// +checklocks:registrationMu
 	enabledPoints [numPointBitmaskUint32s]atomicbitops.Uint32
 
-	// registrationSeq supports store-free atomic reads of registeredSinks.
+	// registrationSeq supports store-free atomic reads of the sinks slice header.
+	//
+	// +checklocks:registrationMu
 	registrationSeq sync.SeqCount
 
 	// sinks is the set of all registered Sinks in order of execution.
 	//
-	// sinks is accessed using instantiations of SeqAtomic functions.
-	// Mutation of sinks is serialized by registrationMu.
+	// getSinks reads the slice header using SeqAtomicLoadSinkSlice.
+	// Existing slice elements are not changed after publication.
+	//
+	// +checklocks:registrationMu
 	sinks []Sink
 
 	// syscallFlagListeners is the set of registered SyscallFlagListeners.
 	//
 	// They are notified when the enablement of a syscall point changes.
-	// Mutation of syscallFlagListeners is serialized by registrationMu.
+	//
+	// +checklocks:registrationMu
 	syscallFlagListeners []SyscallFlagListener
 
+	// +checklocks:registrationMu
 	pointFields map[Point]FieldSet
 
 	// execveHashCache holds an atomic pointer to the active ExecveHashCache.
 	// Nil indicates that execve binary hash caching/computation is unregistered.
+	//
+	// +checkatomic
 	execveHashCache atomic.Pointer[ExecveHashCache]
 }
 
@@ -334,14 +343,20 @@ func (s *State) Enabled(p Point) bool {
 	if int(word) >= len(s.enabledPoints) {
 		return false
 	}
-	return s.enabledPoints[word].Load()&(uint32(1)<<bit) != 0
+	// checklocks cannot follow atomic accesses through array indexing. This
+	// word is read atomically without registrationMu.
+	return s.enabledPoints[word].Load()&(uint32(1)<<bit) != 0 // +checklocksignore
 }
 
+// getSinks returns a read-only slice of published sinks. It copies the slice
+// header, not the backing array or Sink objects.
 func (s *State) getSinks() []Sink {
-	return SeqAtomicLoadSinkSlice(&s.registrationSeq, &s.sinks)
+	// SeqAtomicLoadSinkSlice validates the header copy against registrationSeq.
+	// checklocks cannot model this lock-free reader protocol.
+	return SeqAtomicLoadSinkSlice(&s.registrationSeq, &s.sinks) // +checklocksignore
 }
 
-// Preconditions: s.registrationMu must be locked.
+// +checklocks:s.registrationMu
 func (s *State) appendSinkLocked(c Sink) {
 	s.registrationSeq.BeginWrite()
 	s.sinks = append(s.sinks, c)

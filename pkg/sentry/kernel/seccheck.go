@@ -55,7 +55,7 @@ func LoadSeccheckData(t *Task, mask seccheck.FieldMask, info *pb.ContextData) {
 
 // LoadSeccheckDataLocked sets info from the task based on mask.
 //
-// Preconditions: The TaskSet mutex must be locked.
+// +checklocksread:t.k.tasks.mu
 func LoadSeccheckDataLocked(t *Task, mask seccheck.FieldMask, info *pb.ContextData, cwd string) {
 	if mask.Contains(seccheck.FieldCtxtTime) {
 		info.TimeNs = t.k.RealtimeClock().Now().Nanoseconds()

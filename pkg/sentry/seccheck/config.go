@@ -30,7 +30,9 @@ const DefaultSessionName = "Default"
 
 var (
 	sessionsMu = sync.Mutex{}
-	sessions   = make(map[string]*State)
+
+	// +checklocks:sessionsMu
+	sessions = make(map[string]*State)
 )
 
 var sessionCounter = metric.MustCreateNewUint64Metric("/trace/sessions_created",

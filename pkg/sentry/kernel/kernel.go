@@ -250,7 +250,9 @@ type Kernel struct {
 	// 0->1 transition, since a waiter may have parked during the slack tick in
 	// which runningTasks is 0 but cpuClockTickerRunning is still true.
 	//
-	// activeNotifyCh is protected by runningTasksMu.
+	// Initialized during Init or restore, before the ticker and waiters start.
+	//
+	// +checklocks:runningTasksMu
 	taskActivityCh chan struct{} `state:"nosave"`
 
 	// cpuClockTickTimer drives increments of cpuClock.
@@ -322,7 +324,9 @@ type Kernel struct {
 	// danglingEndpoints is used to save / restore tcpip.DanglingEndpoints.
 	danglingEndpoints struct{} `state:".([]tcpip.Endpoint)"`
 
-	// sockets records all network sockets in the system. Protected by extMu.
+	// sockets records all network sockets in the system.
+	//
+	// +checklocks:extMu
 	sockets map[*vfs.FileDescription]*SocketRecord
 
 	// nextSocketRecord is the next entry number to use in sockets.
@@ -391,6 +395,8 @@ type Kernel struct {
 	ptraceExceptions map[*Task]*Task
 
 	// YAMAPtraceScope is the current level of YAMA ptrace restrictions.
+	//
+	// +checkatomic
 	YAMAPtraceScope atomicbitops.Int32
 
 	// cgroupRegistry contains the set of active cgroup controllers on the
@@ -408,11 +414,16 @@ type Kernel struct {
 	cgroupMountsMapMu cgroupMountsMutex `state:"nosave"`
 
 	// userCountersMap maps auth.KUID into a set of user counters.
+	// Each counter is independently synchronized.
+	//
+	// +checklocks:userCountersMapMu
 	userCountersMap   map[auth.KUID]*UserCounters
 	userCountersMapMu userCountersMutex `state:"nosave"`
 
 	// MaxFDLimit specifies the maximum file descriptor number that can be
 	// used by processes.
+	//
+	// +checkatomic
 	MaxFDLimit atomicbitops.Int32
 
 	// devGofers maps containers (using its name) to its device gofer client.
@@ -425,7 +436,8 @@ type Kernel struct {
 	// Names are preserved between save/restore session, while IDs can change.
 	//
 	// Mapping: cid -> name.
-	// It's protected by extMu.
+	//
+	// +checklocks:extMu
 	containerNames map[string]string
 
 	// checkpointMu is used to protect the checkpointing related fields below.
@@ -462,6 +474,8 @@ type Kernel struct {
 	IOUringEnabled bool
 
 	// MaxKeySetSize is the maximum number of keys in a key set.
+	//
+	// +checkatomic
 	MaxKeySetSize atomicbitops.Int32
 
 	// fsSaveWaiters holds waiters for Kernel.WaitForFSSave. fsSaveWaiters is
@@ -585,10 +599,12 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	if k.rootNetworkNamespace == nil {
 		k.rootNetworkNamespace = inet.NewRootNamespace(nil, nil, args.RootUserNamespace)
 	}
+	k.runningTasksMu.Lock()
 	k.runningTasksCond.L = &k.runningTasksMu
 	k.cpuClockTickerWakeCh = make(chan struct{}, 1)
 	k.cpuClockTickerStopCond.L = &k.runningTasksMu
 	k.taskActivityCh = make(chan struct{})
+	k.runningTasksMu.Unlock()
 	k.applicationCores = args.ApplicationCores
 	if args.UseHostCores && k.HasCPUNumbers() {
 		args.UseHostCores = false
@@ -623,13 +639,17 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	k.futexes = futex.NewManager()
 	k.netlinkPorts = port.New()
 	k.ptraceExceptions = make(map[*Task]*Task)
-	k.YAMAPtraceScope = atomicbitops.FromInt32(linux.YAMA_SCOPE_RELATIONAL)
+	k.YAMAPtraceScope.Store(linux.YAMA_SCOPE_RELATIONAL)
+	k.userCountersMapMu.Lock()
 	k.userCountersMap = make(map[auth.KUID]*UserCounters)
+	k.userCountersMapMu.Unlock()
 	if args.MaxFDLimit == 0 {
 		args.MaxFDLimit = MaxFdLimit
 	}
 	k.MaxFDLimit.Store(args.MaxFDLimit)
+	k.extMu.Lock()
 	k.containerNames = make(map[string]string)
+	k.extMu.Unlock()
 	k.CheckpointWait.k = k
 
 	ctx := k.SupervisorContext()
@@ -693,7 +713,9 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	}
 	k.sysVShmDevID = linux.MakeDeviceID(linux.UNNAMED_MAJOR, sysVShmDevMinor)
 
+	k.extMu.Lock()
 	k.sockets = make(map[*vfs.FileDescription]*SocketRecord)
+	k.extMu.Unlock()
 
 	k.cgroupRegistry = newCgroupRegistry()
 
@@ -712,7 +734,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	k.rootCgroupNamespace = newCgroupNamespace(k.Cgroup2FS().RootCgroup(), k.rootUserNamespace)
 	k.rootCgroupNamespace.SetInode(nsfs.NewInode(ctx, k.nsfsMount, k.rootCgroupNamespace))
 
-	k.MaxKeySetSize = atomicbitops.FromInt32(auth.MaxSetSize)
+	k.MaxKeySetSize.Store(auth.MaxSetSize)
 	return nil
 }
 
@@ -1040,10 +1062,12 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 	}
 	loadStart := time.Now()
 
+	k.runningTasksMu.Lock()
 	k.runningTasksCond.L = &k.runningTasksMu
 	k.cpuClockTickerWakeCh = make(chan struct{}, 1)
 	k.cpuClockTickerStopCond.L = &k.runningTasksMu
 	k.taskActivityCh = make(chan struct{})
+	k.runningTasksMu.Unlock()
 
 	initAppCores := k.applicationCores
 
@@ -1147,10 +1171,12 @@ func (k *Kernel) ExtractRootfsUpperLayer(ctx context.Context, r io.Reader, async
 	}
 	loadStart := time.Now()
 
+	k.runningTasksMu.Lock()
 	k.runningTasksCond.L = &k.runningTasksMu
 	k.cpuClockTickerWakeCh = make(chan struct{}, 1)
 	k.cpuClockTickerStopCond.L = &k.runningTasksMu
 	k.taskActivityCh = make(chan struct{})
+	k.runningTasksMu.Unlock()
 
 	// Load the pre-saved CPUID FeatureSet.
 	cpuidStart := time.Now()
@@ -1976,7 +2002,8 @@ func (k *Kernel) SendContainerSignal(cid string, info *linux.SignalInfo) error {
 		if tg.leader.ContainerID() == cid {
 			tg.signalHandlers.mu.Lock()
 			infoCopy := *k.maybeForceInitSignal(tg, info)
-			if err := tg.leader.sendSignalLocked(&infoCopy, true /*group*/); err != nil {
+			leader := tg.leader
+			if err := leader.sendSignalLocked(&infoCopy, true /*group*/); err != nil {
 				lastErr = err
 			}
 			tg.signalHandlers.mu.Unlock()
