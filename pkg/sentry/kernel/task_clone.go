@@ -62,6 +62,10 @@ func failCloneAfterTaskCreation(nt *Task) {
 //
 // Preconditions: The caller must be running Task.doSyscallInvoke on the task
 // goroutine.
+//
+// +checklocksexclude:t.mu
+// +checklocksexclude:t.tg.pidns.owner.mu
+// +checklocksexclude:t.tg.signalHandlers.mu
 func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	if args.Flags&^SupportedCloneFlags != 0 {
 		return 0, nil, linuxerr.EINVAL

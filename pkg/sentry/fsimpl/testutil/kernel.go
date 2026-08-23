@@ -130,6 +130,11 @@ func Boot() (*kernel.Kernel, error) {
 }
 
 // CreateTask creates a new bare bones task for tests.
+//
+// Preconditions: tc must belong to the Kernel in ctx.
+//
+// +checklocksexclude:tc.pidns.owner.mu
+// +checklocksexclude:tc.signalHandlers.mu
 func CreateTask(ctx context.Context, name string, tc *kernel.ThreadGroup, mntns *vfs.MountNamespace, root, cwd vfs.VirtualDentry) (*kernel.Task, error) {
 	k := kernel.KernelFromContext(ctx)
 	if k == nil {

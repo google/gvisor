@@ -1335,7 +1335,7 @@ func (ctx *createProcessContext) getMemoryCgroupID() uint32 {
 }
 
 // CreateProcess creates a new task in a new thread group with the given
-// options. The new task has no parent and is in the root PID namespace.
+// options. The new task has no parent and is in args.PIDNamespace.
 //
 // If k.Start() has already been called, then the created process must be
 // started by calling kernel.StartProcess(tg).
@@ -1348,6 +1348,11 @@ func (ctx *createProcessContext) getMemoryCgroupID() uint32 {
 //
 // Precondition: Caller must take a ref on args.MountNamespace, which is
 // transferred to CreateProcess.
+//
+// args.PIDNamespace must be non-nil and belong to k.
+//
+// +checklocksexclude:k.extMu
+// +checklocksexclude:k.tasks.mu
 func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, error) {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
@@ -1774,6 +1779,8 @@ func (k *Kernel) WaitForTaskActivity(stop <-chan struct{}) bool {
 
 // WaitExited blocks until all tasks in k have exited. No tasks can be created
 // after WaitExited returns.
+//
+// +checklocksexclude:k.tasks.mu
 func (k *Kernel) WaitExited() {
 	k.tasks.mu.Lock()
 	defer k.tasks.mu.Unlock()
@@ -1795,6 +1802,9 @@ func (k *Kernel) Kill(ws linux.WaitStatus) {
 // until all tasks and asynchronous I/O operations in k have stopped. Multiple
 // calls to Pause nest and require an equal number of calls to Unpause to
 // resume execution.
+//
+// +checklocksexclude:k.extMu
+// +checklocksexclude:k.tasks.mu
 func (k *Kernel) Pause() {
 	k.extMu.Lock()
 	k.tasks.BeginExternalStop()
@@ -1804,6 +1814,8 @@ func (k *Kernel) Pause() {
 }
 
 // IsPaused returns true if the kernel is currently paused.
+//
+// +checklocksexclude:k.tasks.mu
 func (k *Kernel) IsPaused() bool {
 	return k.tasks.isExternallyStopped()
 }
@@ -1819,6 +1831,9 @@ func (k *Kernel) ReceiveTaskStates() {
 
 // Unpause ends the effect of a previous call to Pause. If Unpause is called
 // without a matching preceding call to Pause, Unpause may panic.
+//
+// +checklocksexclude:k.extMu
+// +checklocksexclude:k.tasks.mu
 func (k *Kernel) Unpause() {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
@@ -1893,6 +1908,9 @@ func (k *Kernel) SendContainerSignal(cid string, info *linux.SignalInfo) error {
 // Unfortunately, if these are built while tracing is not enabled, then we will
 // not have meaningful trace data. Rebuilding here ensures that we can do so
 // after tracing has been enabled.
+//
+// +checklocksexclude:k.extMu
+// +checklocksexclude:k.tasks.mu
 func (k *Kernel) RebuildTraceContexts() {
 	// We need to pause all task goroutines because Task.rebuildTraceContext()
 	// replaces Task.traceContext and Task.traceTask, which are

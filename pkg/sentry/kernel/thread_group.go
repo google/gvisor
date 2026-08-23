@@ -306,6 +306,8 @@ type ThreadGroup struct {
 // thread group leader will send its parent terminationSignal when it exits.
 // The new thread group isn't visible to the system until a task has been
 // created inside of it by a successful call to TaskSet.NewTask.
+//
+// Preconditions: pidns must be non-nil and belong to k.
 func (k *Kernel) NewThreadGroup(pidns *PIDNamespace, sh *SignalHandlers, terminationSignal linux.Signal, limits *limits.LimitSet) *ThreadGroup {
 	pidns.IncRef()
 	tg := &ThreadGroup{

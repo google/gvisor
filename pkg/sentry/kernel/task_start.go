@@ -140,6 +140,12 @@ type TaskConfig struct {
 //
 // If successful, NewTask transfers references held by cfg to the new task.
 // Otherwise, NewTask releases them.
+//
+// Preconditions: cfg.Kernel.tasks must be ts. cfg.ThreadGroup and any
+// non-nil cfg.Parent or cfg.InheritParent must belong to ts.
+//
+// +checklocksexclude:ts.mu
+// +checklocksexclude:cfg.ThreadGroup.signalHandlers.mu
 func (ts *TaskSet) NewTask(ctx context.Context, cfg *TaskConfig) (*Task, error) {
 	var err error
 	cleanup := func() {
@@ -170,6 +176,11 @@ func (ts *TaskSet) NewTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 
 // newTask is a helper for TaskSet.NewTask that only takes ownership of parts
 // of cfg if it succeeds.
+//
+// Preconditions: As for NewTask.
+//
+// +checklocksexclude:ts.mu
+// +checklocksexclude:cfg.ThreadGroup.signalHandlers.mu
 func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) {
 	srcT := TaskFromContext(ctx)
 	tg := cfg.ThreadGroup
