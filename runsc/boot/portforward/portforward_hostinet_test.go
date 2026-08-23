@@ -26,11 +26,10 @@ import (
 	"golang.org/x/sync/errgroup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
-	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 )
 
 func TestLocalHostSocket(t *testing.T) {
-	ctx := contexttest.Context(t)
+	ctx := context.Background()
 	clientData := append(
 		[]byte("do what must be done\n"),
 		[]byte("do not hesitate\n")...,
@@ -84,6 +83,7 @@ func TestLocalHostSocket(t *testing.T) {
 		if err != nil {
 			t.Fatalf("could not create local host socket: %v", err)
 		}
+		defer sock.Close(ctx)
 		for i := 0; i < len(clientData); {
 			n, err := sock.Write(ctx, clientData[i:], nil)
 			if err != nil {
@@ -119,6 +119,8 @@ type netConnMockEndpoint struct {
 }
 
 // read implements portforwarderTestHarness.read.
+//
+// +checklocksexclude:nc.mu
 func (nc *netConnMockEndpoint) read(n int) ([]byte, error) {
 	nc.mu.Lock()
 	defer nc.mu.Unlock()
@@ -133,6 +135,8 @@ func (nc *netConnMockEndpoint) read(n int) ([]byte, error) {
 }
 
 // write implements portforwarderTestHarness write.
+//
+// +checklocksexclude:nc.mu
 func (nc *netConnMockEndpoint) write(buf []byte) (int, error) {
 	nc.mu.Lock()
 	defer nc.mu.Unlock()
@@ -186,10 +190,7 @@ func TestHostInetProxy(t *testing.T) {
 func doHostinetTest(t *testing.T, name string, requests map[string]string) {
 	ctx := context.Background()
 	appEndpoint := newMockApplicationFDImpl()
-	client, err := newMockFileDescription(ctx, appEndpoint)
-	if err != nil {
-		t.Fatalf("newMockFileDescription: %v", err)
-	}
+	client := newMockFileDescriptionConn(t, ctx, appEndpoint)
 
 	l, err := net.Listen("tcp", ":0")
 	if err != nil {
@@ -202,9 +203,10 @@ func doHostinetTest(t *testing.T, name string, requests map[string]string) {
 		t.Fatalf("could not create local host socket: %v", err)
 	}
 
-	proxy := NewProxy(ProxyPair{To: sock, From: &fileDescriptionConn{file: client}}, name)
+	proxy := NewProxy(ProxyPair{To: sock, From: client}, name)
 
 	proxy.Start(ctx)
+	defer proxy.Close()
 
 	shim, err := l.Accept()
 	if err != nil {
