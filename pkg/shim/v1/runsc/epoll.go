@@ -46,7 +46,9 @@ type epoller struct {
 
 	fd        int
 	publisher events.Publisher
-	set       map[uintptr]*item
+
+	// +checklocks:mu
+	set map[uintptr]*item
 }
 
 type item struct {
@@ -81,6 +83,7 @@ func (e *epoller) run(ctx context.Context) {
 	}
 }
 
+// +checklocksexclude:e.mu
 func (e *epoller) add(id string, cgx any) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -110,6 +113,7 @@ func (e *epoller) isOOM(id string) bool {
 	return false
 }
 
+// +checklocksexclude:e.mu
 func (e *epoller) process(ctx context.Context, fd uintptr) {
 	flush(fd)
 	e.mu.Lock()
