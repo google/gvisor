@@ -17,7 +17,9 @@
 #include <string.h>
 #include <sys/ipc.h>
 #include <sys/msg.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
+#include <unistd.h>
 
 #include <cstdint>
 #include <map>
@@ -841,6 +843,33 @@ TEST(MsgqueueTest, MsgCtlIpcStatWriteOnly) {
   struct msqid_ds ds;
   ASSERT_THAT(msgctl(queue.get(), IPC_STAT, &ds),
               SyscallFailsWithErrno(EACCES));
+}
+
+TEST(MsgqueueTest, MsgCtlIpcRmid) {
+  Queue queue = ASSERT_NO_ERRNO_AND_VALUE(Msgget(IPC_PRIVATE, 0600));
+  const int id = queue.get();
+  ASSERT_THAT(msgctl(id, IPC_RMID, nullptr), SyscallSucceeds());
+  queue.release();
+  EXPECT_THAT(msgctl(id, IPC_RMID, nullptr), SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(MsgqueueTest, MsgCtlIpcRmidPermission) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+
+  Queue queue = ASSERT_NO_ERRNO_AND_VALUE(Msgget(IPC_PRIVATE, 0600));
+  const uid_t other_uid = geteuid() == 0 ? 1 : 0;
+  ScopedThread([&] {
+    // Change only this thread's credentials, leaving the owner able to remove
+    // the queue after the denied attempt.
+    ASSERT_THAT(syscall(SYS_setresuid, -1, other_uid, -1), SyscallSucceeds());
+    ASSERT_NO_ERRNO(SetCapability(CAP_SYS_ADMIN, false));
+    EXPECT_THAT(msgctl(queue.get(), IPC_RMID, nullptr),
+                SyscallFailsWithErrno(EPERM));
+  });
+
+  struct msqid_ds ds = {};
+  EXPECT_THAT(msgctl(queue.get(), IPC_STAT, &ds), SyscallSucceeds());
+  // Queue's destructor checks that removal by the owner still succeeds.
 }
 
 // Test msgctl with IPC_SET option.
