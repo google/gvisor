@@ -201,3 +201,243 @@ func TestCgroupNoUpdate(t *testing.T) {
 		})
 	}
 }
+
+// TestApplyPodResourcesFromAnnotations exercises the translation of the CRI
+// io.kubernetes.cri.sandbox-* annotations into spec.Linux.Resources.
+// See google/gvisor#13777.
+func TestApplyPodResourcesFromAnnotations(t *testing.T) {
+	i64 := func(v int64) *int64 { return &v }
+	u64 := func(v uint64) *uint64 { return &v }
+
+	for _, tc := range []struct {
+		name        string
+		spec        *specs.Spec
+		wantUpdated bool
+		wantQuota   *int64
+		wantPeriod  *uint64
+		wantShares  *uint64
+		wantMemLim  *int64
+		// wantNoLinux asserts spec.Linux stays nil (used for the non-sandbox case).
+		wantNoLinux bool
+		// wantNoResources asserts spec.Linux.Resources stays nil.
+		wantNoResources bool
+	}{
+		{
+			name: "nil-spec",
+			spec: nil,
+		},
+		{
+			name: "no-annotations",
+			spec: &specs.Spec{},
+		},
+		{
+			name: "container-untouched",
+			spec: &specs.Spec{
+				Annotations: map[string]string{
+					utils.ContainerTypeAnnotation:    utils.ContainerTypeContainer,
+					utils.SandboxCPUQuotaAnnotation:  "85800",
+					utils.SandboxCPUPeriodAnnotation: "100000",
+					utils.SandboxMemoryAnnotation:    "2304770048",
+				},
+			},
+			wantNoLinux: true,
+		},
+		{
+			name: "sandbox-no-relevant-annotations",
+			spec: &specs.Spec{
+				Annotations: map[string]string{"foo": "bar"},
+			},
+		},
+		{
+			name: "sandbox-full-limits-overwrite-pause-shares",
+			spec: &specs.Spec{
+				Linux: &specs.Linux{
+					Resources: &specs.LinuxResources{
+						CPU: &specs.LinuxCPU{Shares: u64(2)}, // pause container's default shares
+					},
+				},
+				Annotations: map[string]string{
+					utils.SandboxCPUQuotaAnnotation:  "85800",
+					utils.SandboxCPUPeriodAnnotation: "100000",
+					utils.SandboxCPUSharesAnnotation: "684",
+					utils.SandboxMemoryAnnotation:    "2304770048",
+				},
+			},
+			wantUpdated: true,
+			wantQuota:   i64(85800),
+			wantPeriod:  u64(100000),
+			// Shares=2 is containerd's pause-container default, not pod-level shares.
+			wantShares: u64(684),
+			wantMemLim: i64(2304770048),
+		},
+		{
+			name: "sandbox-memory-only",
+			spec: &specs.Spec{
+				Annotations: map[string]string{
+					utils.SandboxMemoryAnnotation: "1073741824",
+				},
+			},
+			wantUpdated: true,
+			wantMemLim:  i64(1073741824),
+		},
+		{
+			name: "sandbox-unparsable-cpu-quota-skipped",
+			spec: &specs.Spec{
+				Annotations: map[string]string{
+					utils.SandboxCPUQuotaAnnotation: "not-an-int",
+					utils.SandboxMemoryAnnotation:   "1073741824",
+				},
+			},
+			// mem still applied, so still updated
+			wantUpdated: true,
+			wantQuota:   nil,
+			wantMemLim:  i64(1073741824),
+		},
+		{
+			name: "sandbox-zero-annotations-skipped",
+			spec: &specs.Spec{
+				Annotations: map[string]string{
+					utils.SandboxCPUQuotaAnnotation:  "0",
+					utils.SandboxCPUPeriodAnnotation: "0",
+					utils.SandboxCPUSharesAnnotation: "0",
+					utils.SandboxMemoryAnnotation:    "0",
+				},
+			},
+			wantNoResources: true,
+		},
+		{
+			name: "sandbox-negative-quota-and-memory-skipped",
+			spec: &specs.Spec{
+				Annotations: map[string]string{
+					utils.SandboxCPUQuotaAnnotation:  "-1",
+					utils.SandboxCPUPeriodAnnotation: "100000",
+					utils.SandboxMemoryAnnotation:    "-1",
+				},
+			},
+			wantUpdated: true,
+			wantPeriod:  u64(100000),
+		},
+		{
+			name: "sandbox-preexisting-non-default-shares-preserved",
+			spec: &specs.Spec{
+				Linux: &specs.Linux{
+					Resources: &specs.LinuxResources{
+						CPU: &specs.LinuxCPU{Shares: u64(1024)},
+					},
+				},
+				Annotations: map[string]string{
+					utils.SandboxCPUSharesAnnotation: "684",
+				},
+			},
+			wantUpdated: false,
+			wantShares:  u64(1024),
+		},
+		{
+			name: "containerd-sandbox-spec-fixture",
+			// Mirrors a real fixture captured from eks-verdent-ag: a gVisor
+			// sandbox pod with requests/limits cpu=2,memory=4Gi had pod-level
+			// annotations shares=2048/quota=200000/period=100000/memory=4294967296,
+			// while linux.resources.cpu.shares still carried the pause default 2.
+			spec: &specs.Spec{
+				Linux: &specs.Linux{
+					CgroupsPath: "kubepods-podfixture.slice:cri-containerd:sandbox",
+					Resources: &specs.LinuxResources{
+						Memory: &specs.LinuxMemory{Limit: i64(4294967296)},
+						CPU: &specs.LinuxCPU{
+							Shares: u64(2),
+							Quota:  i64(200000),
+							Period: u64(100000),
+						},
+					},
+				},
+				Annotations: map[string]string{
+					utils.ContainerTypeAnnotation:    "sandbox",
+					utils.SandboxCPUPeriodAnnotation: "100000",
+					utils.SandboxCPUQuotaAnnotation:  "200000",
+					utils.SandboxCPUSharesAnnotation: "2048",
+					utils.SandboxMemoryAnnotation:    "4294967296",
+				},
+			},
+			wantUpdated: true,
+			wantQuota:   i64(200000),
+			wantPeriod:  u64(100000),
+			wantShares:  u64(2048),
+			wantMemLim:  i64(4294967296),
+		},
+		{
+			name: "sandbox-preexisting-quota-preserved",
+			spec: &specs.Spec{
+				Linux: &specs.Linux{
+					Resources: &specs.LinuxResources{
+						CPU: &specs.LinuxCPU{Quota: i64(50000)},
+					},
+				},
+				Annotations: map[string]string{
+					utils.SandboxCPUQuotaAnnotation: "85800",
+				},
+			},
+			wantUpdated: false,
+			// Preexisting quota must be preserved.
+			wantQuota: i64(50000),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			updated := applyPodResourcesFromAnnotations(tc.spec)
+			if updated != tc.wantUpdated {
+				t.Errorf("applyPodResourcesFromAnnotations updated = %v, want %v",
+					updated, tc.wantUpdated)
+			}
+			if tc.spec == nil {
+				return
+			}
+			if tc.wantNoLinux {
+				if tc.spec.Linux != nil {
+					t.Errorf("expected Linux to remain nil for non-sandbox container")
+				}
+				return
+			}
+			if tc.wantNoResources {
+				if tc.spec.Linux != nil && tc.spec.Linux.Resources != nil {
+					t.Errorf("expected Linux.Resources to remain nil, got %+v", tc.spec.Linux.Resources)
+				}
+				return
+			}
+			// Extract actual values, tolerating nil chains.
+			var gotQuota *int64
+			var gotPeriod, gotShares *uint64
+			var gotMemLim *int64
+			if tc.spec.Linux != nil && tc.spec.Linux.Resources != nil {
+				if c := tc.spec.Linux.Resources.CPU; c != nil {
+					gotQuota, gotPeriod, gotShares = c.Quota, c.Period, c.Shares
+				}
+				if m := tc.spec.Linux.Resources.Memory; m != nil {
+					gotMemLim = m.Limit
+				}
+			}
+			eqI := func(t *testing.T, name string, got, want *int64) {
+				t.Helper()
+				switch {
+				case got == nil && want == nil:
+				case got == nil || want == nil:
+					t.Errorf("%s got=%v want=%v", name, got, want)
+				case *got != *want:
+					t.Errorf("%s got=%d want=%d", name, *got, *want)
+				}
+			}
+			eqU := func(t *testing.T, name string, got, want *uint64) {
+				t.Helper()
+				switch {
+				case got == nil && want == nil:
+				case got == nil || want == nil:
+					t.Errorf("%s got=%v want=%v", name, got, want)
+				case *got != *want:
+					t.Errorf("%s got=%d want=%d", name, *got, *want)
+				}
+			}
+			eqI(t, "cpu.quota", gotQuota, tc.wantQuota)
+			eqU(t, "cpu.period", gotPeriod, tc.wantPeriod)
+			eqU(t, "cpu.shares", gotShares, tc.wantShares)
+			eqI(t, "mem.limit", gotMemLim, tc.wantMemLim)
+		})
+	}
+}
