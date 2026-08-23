@@ -30,13 +30,18 @@ import (
 
 // +stateify savable
 type cpuset struct {
-	c        *cgroup
-	parent   *cpuset
+	c      *cgroup
+	parent *cpuset
+
+	// +checkatomic
 	detached atomicbitops.Bool
 
 	mu cpusetMutex `state:"nosave"`
 
+	// +checklocks:mu
 	cpus *bitmap.Bitmap
+
+	// +checklocks:mu
 	mems *bitmap.Bitmap
 }
 

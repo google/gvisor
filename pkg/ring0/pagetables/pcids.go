@@ -19,17 +19,17 @@ import (
 )
 
 // PCIDs is a simple PCID database.
-//
-// This is not protected by locks and is thus suitable for use only with a
-// single CPU at a time.
 type PCIDs struct {
-	// mu protects below.
 	mu sync.Mutex
 
 	// cache are the assigned page tables.
+	//
+	// +checklocks:mu
 	cache map[*PageTables]uint16
 
 	// avail are available PCIDs.
+	//
+	// +checklocks:mu
 	avail []uint16
 }
 

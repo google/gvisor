@@ -76,10 +76,14 @@ const (
 	Mapped
 )
 
-// memoryStats tracks application memory usage in bytes. All fields correspond to the
-// memory category with the same name. This object is thread-safe if accessed
-// through the provided methods. The public fields may be safely accessed
-// directly on a copy of the object obtained from Memory.Copy().
+// memoryStats tracks application memory usage in bytes by category.
+//
+// Its methods require the owning MemoryLocked.mu, both for aggregate counters
+// and for entries in MemCgIDToMemStats. This also makes multi-category totals
+// and copies consistent. memoryStats has no link back to its owner, so
+// checklocks cannot name that mutex for these helpers or counter aliases.
+//
+// MemoryLocked.Copy and CopyPerCg return detached MemoryStats scalar values.
 type memoryStats struct {
 	System    atomicbitops.Uint64
 	Anonymous atomicbitops.Uint64
@@ -91,7 +95,7 @@ type memoryStats struct {
 
 // incLocked adds a usage of 'val' bytes from memory category 'kind'.
 //
-// Precondition: must be called when locked.
+// Preconditions: the owning MemoryLocked.mu is held.
 func (ms *memoryStats) incLocked(val uint64, kind MemoryKind) {
 	switch kind {
 	case System:
@@ -113,7 +117,7 @@ func (ms *memoryStats) incLocked(val uint64, kind MemoryKind) {
 
 // decLocked removes a usage of 'val' bytes from memory category 'kind'.
 //
-// Precondition: must be called when locked.
+// Preconditions: the owning MemoryLocked.mu is held.
 func (ms *memoryStats) decLocked(val uint64, kind MemoryKind) {
 	switch kind {
 	case System:
@@ -135,7 +139,7 @@ func (ms *memoryStats) decLocked(val uint64, kind MemoryKind) {
 
 // totalLocked returns a total usage.
 //
-// Precondition: must be called when locked.
+// Preconditions: the owning MemoryLocked.mu is held.
 func (ms *memoryStats) totalLocked() (total uint64) {
 	total += ms.System.RacyLoad()
 	total += ms.Anonymous.RacyLoad()
@@ -146,9 +150,9 @@ func (ms *memoryStats) totalLocked() (total uint64) {
 	return
 }
 
-// copyLocked returns a copy of the structure.
+// copyLocked returns a detached scalar snapshot of the counters.
 //
-// Precondition: must be called when locked.
+// Preconditions: the owning MemoryLocked.mu is held.
 func (ms *memoryStats) copyLocked() MemoryStats {
 	return MemoryStats{
 		System:    ms.System.RacyLoad(),
@@ -180,10 +184,14 @@ var DirtyMemoryAccounting = &DirtyMemoryStats{}
 type DirtyMemoryStats struct {
 	// Dirty is the total bytes of memory that have been modified but not yet
 	// written back to the underlying storage.
+	//
+	// +checkatomic
 	Dirty atomicbitops.Uint64
 
 	// Writeback is the total bytes of memory currently being written back
 	// to the underlying storage.
+	//
+	// +checkatomic
 	Writeback atomicbitops.Uint64
 }
 
@@ -224,20 +232,29 @@ func (d *DirtyMemoryStats) Copy() (dirty, writeback uint64) {
 // initially zeroed. Any added field will be ignored by an older API and will be
 // zero if read by a newer API.
 type RTMemoryStats struct {
+	// +checkatomic
 	RTMapped atomicbitops.Uint64
 }
 
-// MemoryLocked is Memory with access methods.
+// MemoryLocked serializes aggregate and per-cgroup memory accounting.
 type MemoryLocked struct {
 	mu memoryMutex
-	// memoryStats records the memory stats.
+
+	// memoryStats records the aggregate memory stats.
+	//
+	// +checklocks:mu
 	memoryStats
+
 	// RTMemoryStats records the memory stats that need to be exposed through
 	// shared page.
 	*RTMemoryStats
+
 	// File is the backing file storing the memory stats.
 	File *os.File
+
 	// MemCgIDToMemStats is the map of cgroup ids to memory stats.
+	//
+	// +checklocks:mu
 	MemCgIDToMemStats map[uint32]*memoryStats
 }
 
@@ -286,6 +303,7 @@ func Init() error {
 // resident.
 var MemoryAccounting *MemoryLocked
 
+// +checklocks:m.mu
 func (m *MemoryLocked) incLockedPerCg(val uint64, kind MemoryKind, memCgID uint32) {
 	if _, ok := m.MemCgIDToMemStats[memCgID]; !ok {
 		m.MemCgIDToMemStats[memCgID] = &memoryStats{}
@@ -314,6 +332,7 @@ func (m *MemoryLocked) Inc(val uint64, kind MemoryKind, memCgID uint32) {
 	}
 }
 
+// +checklocks:m.mu
 func (m *MemoryLocked) decLockedPerCg(val uint64, kind MemoryKind, memCgID uint32) {
 	if _, ok := m.MemCgIDToMemStats[memCgID]; !ok {
 		panic(fmt.Sprintf("invalid memory cgroup id: %v", memCgID))
