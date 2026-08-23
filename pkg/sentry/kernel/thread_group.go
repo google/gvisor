@@ -34,6 +34,9 @@ import (
 //
 // ThreadGroup is a superset of Linux's struct signal_struct.
 //
+// A nonnil leader always belongs to this thread group.
+//
+// +checklocksalias:leader.tg.signalHandlers.mu=signalHandlers.mu
 // +stateify savable
 type ThreadGroup struct {
 	threadGroupNode

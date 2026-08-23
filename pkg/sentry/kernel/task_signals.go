@@ -375,14 +375,18 @@ func (t *Task) Sigtimedwait(set linux.SignalSet, timeout time.Duration) (*linux.
 func (t *Task) SendSignal(info *linux.SignalInfo) error {
 	sh := t.tg.signalLock()
 	defer sh.mu.Unlock()
-	return t.sendSignalLocked(info, false /* group */)
+	// signalLock returned t.tg's current handler with sh.mu held;
+	// checklocks does not relate that result to the thread-group field.
+	return t.sendSignalLocked(info, false /* group */) // +checklocksignore
 }
 
 // SendGroupSignal sends the given signal to t's thread group.
 func (t *Task) SendGroupSignal(info *linux.SignalInfo) error {
 	sh := t.tg.signalLock()
 	defer sh.mu.Unlock()
-	return t.sendSignalLocked(info, true /* group */)
+	// signalLock returned t.tg's current handler with sh.mu held;
+	// checklocks does not relate that result to the thread-group field.
+	return t.sendSignalLocked(info, true /* group */) // +checklocksignore
 }
 
 // SendSignal sends the given signal to tg, using tg's leader to determine if
@@ -395,12 +399,12 @@ func (tg *ThreadGroup) SendSignal(info *linux.SignalInfo) error {
 	return tg.leader.sendSignalLocked(info, true /* group */)
 }
 
-// Preconditions: The signal mutex must be locked.
+// +checklocks:t.tg.signalHandlers.mu
 func (t *Task) sendSignalLocked(info *linux.SignalInfo, group bool) error {
 	return t.sendSignalTimerLocked(info, group, nil)
 }
 
-// Preconditions: The signal mutex must be locked.
+// +checklocks:t.tg.signalHandlers.mu
 func (t *Task) sendSignalTimerLocked(info *linux.SignalInfo, group bool, timer *IntervalTimer) error {
 	if t.ExitState() == TaskExitDead {
 		return linuxerr.ESRCH
@@ -567,7 +571,7 @@ func (t *Task) forceSignal(sig linux.Signal, unconditional bool) {
 	t.forceSignalLocked(sig, unconditional)
 }
 
-// Preconditions: The signal mutex must be locked.
+// +checklocks:t.tg.signalHandlers.mu
 func (t *Task) forceSignalLocked(sig linux.Signal, unconditional bool) {
 	blocked := linux.SignalSetOf(sig)&linux.SignalSet(t.signalMask.RacyLoad()) != 0
 	act := t.tg.signalHandlers.actions[sig]

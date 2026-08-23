@@ -15,6 +15,8 @@
 package kernel
 
 import (
+	"maps"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
@@ -22,12 +24,14 @@ import (
 //
 // +stateify savable
 type SignalHandlers struct {
-	// mu protects actions, as well as the signal state of all tasks and thread
+	// mu also protects the signal state of all tasks and thread
 	// groups using this SignalHandlers object. (See comment on
 	// ThreadGroup.signalHandlers.)
 	mu signalHandlersMutex `state:"nosave"`
 
 	// actions is the action to be taken upon receiving each signal.
+	//
+	// +checklocks:mu
 	actions map[linux.Signal]linux.SigAction
 }
 
@@ -43,13 +47,12 @@ func NewSignalHandlers() *SignalHandlers {
 //
 // +checklocksexclude:sh.mu
 func (sh *SignalHandlers) Fork() *SignalHandlers {
-	sh2 := NewSignalHandlers()
 	sh.mu.Lock()
 	defer sh.mu.Unlock()
-	for sig, act := range sh.actions {
-		sh2.actions[sig] = act
-	}
-	return sh2
+	// Keep the copy writable even if the source map is nil.
+	actions := make(map[linux.Signal]linux.SigAction, len(sh.actions))
+	maps.Copy(actions, sh.actions)
+	return &SignalHandlers{actions: actions}
 }
 
 // Reset returns a copy of sh with non-ignored handlers reset to SIG_DFL
@@ -57,19 +60,19 @@ func (sh *SignalHandlers) Fork() *SignalHandlers {
 //
 // +checklocksexclude:sh.mu
 func (sh *SignalHandlers) Reset() *SignalHandlers {
-	sh2 := NewSignalHandlers()
 	sh.mu.Lock()
 	defer sh.mu.Unlock()
+	actions := make(map[linux.Signal]linux.SigAction)
 	for sig, act := range sh.actions {
 		newHandler := uint64(linux.SIG_DFL)
 		if act.Handler == linux.SIG_IGN {
 			newHandler = linux.SIG_IGN
 		}
-		sh2.actions[sig] = linux.SigAction{
+		actions[sig] = linux.SigAction{
 			Handler: newHandler,
 		}
 	}
-	return sh2
+	return &SignalHandlers{actions: actions}
 }
 
 // copyForExecLocked returns a copy of sh for a thread group undergoing execve.
@@ -77,15 +80,15 @@ func (sh *SignalHandlers) Reset() *SignalHandlers {
 //
 // +checklocks:sh.mu
 func (sh *SignalHandlers) copyForExecLocked() *SignalHandlers {
-	sh2 := NewSignalHandlers()
+	actions := make(map[linux.Signal]linux.SigAction)
 	for sig, act := range sh.actions {
 		if act.Handler == linux.SIG_IGN {
-			sh2.actions[sig] = linux.SigAction{
+			actions[sig] = linux.SigAction{
 				Handler: linux.SIG_IGN,
 			}
 		}
 	}
-	return sh2
+	return &SignalHandlers{actions: actions}
 }
 
 // IsIgnored returns true if the signal is ignored.
