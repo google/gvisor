@@ -2432,6 +2432,8 @@ func (k *Kernel) ReleaseCgroupHierarchy(hid uint32) {
 
 // ReplaceFSContextRoots updates root and cwd to `newRoot` in the FSContext
 // across all tasks whose old root or cwd were `oldRoot`.
+//
+// +checklocksexclude:k.tasks.mu
 func (k *Kernel) ReplaceFSContextRoots(ctx context.Context, oldRoot vfs.VirtualDentry, newRoot vfs.VirtualDentry) {
 	k.tasks.mu.RLock()
 	oldRootDecRefs := 0

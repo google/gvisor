@@ -29,13 +29,16 @@ import (
 type FSContext struct {
 	FSContextRefs
 
-	// mu protects below.
 	mu fsContextMutex `state:"nosave"`
 
 	// root is the filesystem root.
+	//
+	// +checklocks:mu
 	root vfs.VirtualDentry
 
 	// cwd is the current working directory.
+	//
+	// +checklocks:mu
 	cwd vfs.VirtualDentry
 
 	// umask is the current file mode creation mask. When a thread using this
