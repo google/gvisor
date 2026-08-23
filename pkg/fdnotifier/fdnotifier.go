@@ -30,7 +30,12 @@ import (
 )
 
 type fdInfo struct {
-	queue   *waiter.Queue
+	// queue is immutable after registration. waiter.Queue.mu protects entry
+	// membership and queued event masks.
+	queue *waiter.Queue
+
+	// waiting is protected by the owning notifier's mu. fdInfo does not retain
+	// a pointer to that owner for a checklocks annotation.
 	waiting bool
 }
 
@@ -42,13 +47,15 @@ type notifier struct {
 	epFD int
 
 	// pauseMu synchronizes notifications with save/restore.
+	// It precedes mu in lock order.
 	pauseMu sync.Mutex
 
-	// mu protects fdMap.
 	mu sync.Mutex
 
 	// fdMap maps file descriptors to their notification queues and waiting
 	// status.
+	//
+	// +checklocks:mu
 	fdMap map[int32]*fdInfo
 }
 
@@ -69,7 +76,9 @@ func newNotifier() (*notifier, error) {
 	return w, nil
 }
 
-// waitFD waits on mask for fd. The fdMap mutex must be hold.
+// waitFD waits on mask for fd.
+//
+// +checklocks:n.mu
 func (n *notifier) waitFD(fd int32, fi *fdInfo, mask waiter.EventMask) error {
 	if !fi.waiting && mask == 0 {
 		return nil
@@ -99,6 +108,9 @@ func (n *notifier) waitFD(fd int32, fi *fdInfo, mask waiter.EventMask) error {
 }
 
 // addFD adds an FD to the list of FDs observed by n.
+//
+// +checklocksexclude:n.mu
+// +checklocksexclude:queue.mu
 func (n *notifier) addFD(fd int32, queue *waiter.Queue) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -119,6 +131,11 @@ func (n *notifier) addFD(fd int32, queue *waiter.Queue) error {
 }
 
 // updateFD updates the set of events the fd needs to be notified on.
+//
+// The caller must not hold the registered waiter's queue mutex. checklocks
+// cannot name that queue through the FD's entry in fdMap.
+//
+// +checklocksexclude:n.mu
 func (n *notifier) updateFD(fd int32) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -131,6 +148,8 @@ func (n *notifier) updateFD(fd int32) error {
 }
 
 // RemoveFD removes an FD from the list of FDs observed by n.
+//
+// +checklocksexclude:n.mu
 func (n *notifier) removeFD(fd int32) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -141,6 +160,8 @@ func (n *notifier) removeFD(fd int32) {
 }
 
 // hasFD returns true if the fd is in the list of observed FDs.
+//
+// +checklocksexclude:n.mu
 func (n *notifier) hasFD(fd int32) bool {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -193,6 +214,13 @@ func (n *notifier) resume() {
 	n.pauseMu.Unlock()
 }
 
+// once publishes notifier and initErr; checklocks does not model sync.Once
+// publication. Public FD helpers acquire notifier.mu themselves, but their
+// exclusions cannot be exported reliably through this private package global.
+// Pause/Resume have the same private-global limitation for their lock effects.
+//
+// Notifications call waiter callbacks with pauseMu and mu held. Callbacks must
+// not reenter the FD helpers or Pause/Resume on the same notifier.
 var shared struct {
 	notifier *notifier
 	once     sync.Once
@@ -206,6 +234,8 @@ func ensureSharedNotifier() {
 }
 
 // AddFD adds an FD to the list of observed FDs.
+//
+// +checklocksexclude:queue.mu
 func AddFD(fd int32, queue *waiter.Queue) error {
 	ensureSharedNotifier()
 	if shared.initErr != nil {
