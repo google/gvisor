@@ -10,72 +10,95 @@
 #                       - "ACTIVE" (does reviews, has merge permissions)
 #                       - "HIATUS_SINCE:YYYY-MM-DD" (doesn't do reviews, has permissions)
 #                       - "EMERITUS_SINCE:YYYY-MM-DD" (doesn't do reviews, no permissions)
+#   codeowner:        Whether the maintainer owns the repository root (/) in
+#                     CODEOWNERS. Required; must be false for emeritus
+#                     maintainers.
+#   areas:            Optional sorted list of area names from areas.yaml that
+#                     the maintainer has specialization in; grants CODEOWNERS
+#                     ownership of each area's paths. Emeritus maintainers may
+#                     not have areas.
 maintainers:
   - name: Adin Scannell
     github: amscanne
     affiliation: Google
     started: 2018-04-28
     status: EMERITUS_SINCE:2023-03-03
+    codeowner: false
   - name: Fabricio Voznika
     github: fvoznika
     affiliation: Google
     started: 2018-04-28
     status: ACTIVE
+    codeowner: true
+    areas: [oci, runsc, runtime_monitoring, seccomp]
   - name: Nicolas Lacasse
     github: nlacasse
     affiliation: Google
     started: 2018-04-28
     status: EMERITUS_SINCE:2025-06-27
+    codeowner: false
   - name: Bhasker Hariharan
     github: hbhasker
     affiliation: Google
     started: 2018-05-01
     status: EMERITUS_SINCE:2022-09-16
+    codeowner: false
   - name: Ian Gudger
     github: iangudger
     affiliation: Google
     started: 2018-05-01
     status: EMERITUS_SINCE:2020-06-26
+    codeowner: false
   - name: Michael Pratt
     github: prattmic
     affiliation: Google
     started: 2018-05-01
     status: EMERITUS_SINCE:2020-04-02
+    codeowner: false
   - name: Kevin Krakauer
     github: kevinGC
     affiliation: Google
     started: 2018-05-04
     status: EMERITUS_SINCE:2025-01-28
+    codeowner: false
   - name: Jamie Liu
     github: nixprime
     affiliation: Google
     started: 2018-05-08
     status: HIATUS_SINCE:2026-07-17
+    codeowner: true
+    areas: [checkpointing, mm, platform_kvm, platform_ptrace, platform_systrap, platforms, sentry, vfs]
   - name: Rahat Mahmood
     github: mrahatm
     affiliation: Google
     started: 2018-05-17
     status: EMERITUS_SINCE:2023-01-19
+    codeowner: false
   - name: Andrei Vagin
     github: avagin
     affiliation: Google
     started: 2018-07-31
     status: EMERITUS_SINCE:2026-02-12
+    codeowner: false
   - name: Tamir Duberstein
     github: tamird
     affiliation: Google
     started: 2018-08-25
     status: EMERITUS_SINCE:2022-07-12
+    codeowner: false
   - name: Ian Lewis
     github: ianlewis
     affiliation: Google
     started: 2018-10-12
     status: EMERITUS_SINCE:2023-07-17
+    codeowner: false
   - name: Zach Koopmans
     github: zkoopmans
     affiliation: Google
     started: 2018-11-26
     status: ACTIVE
+    codeowner: true
+    areas: [benchmarks, kubernetes]
   - name: Ayush Ranjan
     github: ayushr2
     affiliation: Modal
@@ -84,83 +107,110 @@ maintainers:
         until: 2026-07-04
     started: 2019-05-23
     status: EMERITUS_SINCE:2026-06-24
+    codeowner: false
+    # areas: [checkpointing, erofs, gpu, mm, rdma, runsc, sentry, vfs]
   - name: Ghanan Gowripalan
     github: ghananigans
     affiliation: Google
     started: 2019-09-03
     status: EMERITUS_SINCE:2023-10-16
+    codeowner: false
   - name: Nayana Bidari
     github: nybidari
     affiliation: Google
     started: 2020-01-09
     status: ACTIVE
+    codeowner: true
+    areas: [networking]
   - name: Etienne Perot
     github: etienneperot
     affiliation: Google
     started: 2020-11-18
     status: ACTIVE
+    codeowner: true
+    areas: [benchmarks, kubernetes, metrics, oci, release_pipeline, runsc, seccomp, website]
   - name: Lucas Manning
     github: manninglucas
     affiliation: Google
     started: 2021-06-29
     status: HIATUS_SINCE:2026-07-17
+    codeowner: true
+    areas: [fuse, networking, sandboxexec, tpu, vfs]
   - name: Jing Chen
     github: milantracy
     affiliation: Google
     started: 2021-10-20
     status: ACTIVE
+    codeowner: true
+    areas: [sandboxexec, tpu]
   - name: Konstantin Bogomolov
     github: konstantin-s-bogom
     affiliation: Google
     started: 2022-02-28
     status: ACTIVE
+    codeowner: true
+    areas: [platform_kvm, platform_ptrace, platform_systrap, platforms]
   - name: Shambhavi Srivastava
     github: sshambhavi-252
     affiliation: Google
     started: 2022-04-01
     status: EMERITUS_SINCE:2023-10-10
+    codeowner: false
   - name: Jimmy Tran
     github: trantoji
     affiliation: Google
     started: 2025-02-07
     status: ACTIVE
+    codeowner: true
   - name: Anil Altinay
     github: aaltinaydev
     affiliation: Google
     started: 2025-08-05
     status: ACTIVE
+    codeowner: true
   - name: Shailend Chand
     github: shailend-g
     affiliation: Google
     started: 2025-08-12
     status: ACTIVE
+    codeowner: true
   - name: Parth Sarthi
     github: parth-opensrc
     affiliation: Google
     started: 2025-11-06
     status: ACTIVE
+    codeowner: true
+    areas: [gpu]
   - name: Ryan El Kochta
     github: relkochta
     affiliation: Google
     started: 2026-05-04
     status: ACTIVE
+    codeowner: true
+    areas: [release_pipeline]
   - name: Rex Ren
     github: rexren-gif
     affiliation: Google
     started: 2026-05-07
     status: ACTIVE
+    codeowner: true
   - name: Xin Zhong
     github: xinzhong
     affiliation: Google
     started: 2026-05-22
     status: ACTIVE
+    codeowner: true
+    areas: [runtime_monitoring]
   - name: Caroline Zhu
     github: carzh
     affiliation: Google
     started: 2026-06-29
     status: ACTIVE
+    codeowner: true
+    areas: [sandboxexec]
   - name: Alexander Cueva
     github: kerumeto
     affiliation: Google
     started: 2026-08-17
     status: ACTIVE
+    codeowner: true

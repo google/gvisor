@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Command maintainers_gen generates the contents of .github/reviewer.json and
-// MAINTAINERS.md from the maintainer roster in governance/maintainers.yaml.
+// Command maintainers_gen generates the contents of .github/reviewer.json,
+// MAINTAINERS.md and CODEOWNERS.
 package main
 
 import (
@@ -21,7 +21,10 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"maps"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -29,9 +32,10 @@ import (
 )
 
 var (
-	input  = flag.String("input", "", "path to maintainers.yaml")
-	format = flag.String("format", "reviewer.json", `output format: "reviewer.json" or "MAINTAINERS.md"`)
-	output = flag.String("output", "", "path to write to; defaults to stdout")
+	input     = flag.String("input", "", "path to maintainers.yaml")
+	areasPath = flag.String("areas", "", "path to areas.yaml")
+	format    = flag.String("format", "reviewer.json", `output format: "reviewer.json", "MAINTAINERS.md" or "CODEOWNERS"`)
+	output    = flag.String("output", "", "path to write to; defaults to stdout")
 )
 
 // pastAffiliation is a past employer of a maintainer.
@@ -48,11 +52,58 @@ type maintainer struct {
 	PastAffiliations []pastAffiliation `yaml:"past_affiliation"`
 	Started          string            `yaml:"started"`
 	Status           string            `yaml:"status"`
+	Codeowner        *bool             `yaml:"codeowner"`
+	Areas            []string          `yaml:"areas"`
 }
 
 // roster is the schema of maintainers.yaml.
 type roster struct {
 	Maintainers []maintainer `yaml:"maintainers"`
+}
+
+// area is a single entry of areas.yaml.
+type area struct {
+	Name  string   `yaml:"name"`
+	Paths []string `yaml:"paths"`
+}
+
+// areaList is the schema of areas.yaml.
+type areaList struct {
+	Areas []area `yaml:"areas"`
+}
+
+// parseAreas parses and validates areas.yaml contents, returning a map of
+// area name to the paths it covers.
+func parseAreas(yamlData []byte) (map[string][]string, error) {
+	dec := yaml.NewDecoder(bytes.NewReader(yamlData))
+	dec.KnownFields(true)
+	var al areaList
+	if err := dec.Decode(&al); err != nil {
+		return nil, fmt.Errorf("cannot parse areas: %w", err)
+	}
+	byName := make(map[string][]string, len(al.Areas))
+	pathArea := make(map[string]string)
+	var prev area
+	for _, a := range al.Areas {
+		if a.Name == "" || len(a.Paths) == 0 {
+			return nil, fmt.Errorf("area %+v: name and paths are required", a)
+		}
+		if a.Name <= prev.Name {
+			return nil, fmt.Errorf("areas must be sorted by name and unique: %q comes after %q", a.Name, prev.Name)
+		}
+		prev = a
+		for _, p := range a.Paths {
+			if !strings.HasPrefix(p, "/") || strings.HasSuffix(p, "/") {
+				return nil, fmt.Errorf("area %q: path %q must start with a slash and not end with one", a.Name, p)
+			}
+			if other, ok := pathArea[p]; ok {
+				return nil, fmt.Errorf("area %q: path %q already appears in area %q", a.Name, p, other)
+			}
+			pathArea[p] = a.Name
+		}
+		byName[a.Name] = a.Paths
+	}
+	return byName, nil
 }
 
 // parseStatus splits a status into its kind ("ACTIVE", "HIATUS_SINCE" or
@@ -75,7 +126,7 @@ func parseStatus(status string) (string, string, error) {
 }
 
 // parseRoster parses and validates maintainers.yaml contents.
-func parseRoster(yamlData []byte) (*roster, error) {
+func parseRoster(yamlData []byte, areasByName map[string][]string) (*roster, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(yamlData))
 	dec.KnownFields(true)
 	var r roster
@@ -85,8 +136,8 @@ func parseRoster(yamlData []byte) (*roster, error) {
 	seen := make(map[string]bool, len(r.Maintainers))
 	var prev maintainer
 	for _, m := range r.Maintainers {
-		if m.Name == "" || m.GitHub == "" || m.Affiliation == "" || m.Started == "" || m.Status == "" {
-			return nil, fmt.Errorf("maintainer %+v: name, github, affiliation, started and status are required", m)
+		if m.Name == "" || m.GitHub == "" || m.Affiliation == "" || m.Started == "" || m.Status == "" || m.Codeowner == nil {
+			return nil, fmt.Errorf("maintainer %+v: name, github, affiliation, started, status and codeowner are required", m)
 		}
 		if _, err := time.Parse("2006-01-02", m.Started); err != nil {
 			return nil, fmt.Errorf("maintainer %q: invalid started date %q", m.GitHub, m.Started)
@@ -99,8 +150,20 @@ func parseRoster(yamlData []byte) (*roster, error) {
 				return nil, fmt.Errorf("maintainer %q: invalid until date %q in past_affiliation", m.GitHub, p.Until)
 			}
 		}
-		if _, _, err := parseStatus(m.Status); err != nil {
+		kind, _, err := parseStatus(m.Status)
+		if err != nil {
 			return nil, fmt.Errorf("maintainer %q: %w", m.GitHub, err)
+		}
+		for i, a := range m.Areas {
+			if _, ok := areasByName[a]; !ok {
+				return nil, fmt.Errorf("maintainer %q: unknown area %q", m.GitHub, a)
+			}
+			if i > 0 && a <= m.Areas[i-1] {
+				return nil, fmt.Errorf("maintainer %q: areas must be sorted and unique: %q comes after %q", m.GitHub, a, m.Areas[i-1])
+			}
+		}
+		if kind == "EMERITUS_SINCE" && (*m.Codeowner || len(m.Areas) > 0) {
+			return nil, fmt.Errorf("maintainer %q: emeritus maintainers may not own any path", m.GitHub)
 		}
 		if m.Started < prev.Started {
 			return nil, fmt.Errorf("maintainers are not sorted by started date: %q (%s) comes after %q (%s)", m.Name, m.Started, prev.Name, prev.Started)
@@ -129,6 +192,48 @@ func generateReviewerJSON(r *roster) ([]byte, error) {
 		return nil, fmt.Errorf("cannot marshal reviewers: %w", err)
 	}
 	return append(jsonData, '\n'), nil
+}
+
+// generateCODEOWNERS renders `CODEOWNERS` contents. All area paths must
+// exist as directories under the repository root.
+func generateCODEOWNERS(r *roster, areasByName map[string][]string, root string) ([]byte, error) {
+	for _, name := range slices.Sorted(maps.Keys(areasByName)) {
+		for _, p := range areasByName[name] {
+			if st, err := os.Stat(filepath.Join(root, p)); err != nil || !st.IsDir() {
+				return nil, fmt.Errorf("area %q: path %q is not a directory under %q", name, p, root)
+			}
+		}
+	}
+	// gvisor-bot is not a maintainer but always owns the repository root.
+	rootOwners := []string{"@gvisor-bot"}
+	ownersByArea := make(map[string][]string)
+	for _, m := range r.Maintainers {
+		if *m.Codeowner {
+			rootOwners = append(rootOwners, "@"+m.GitHub)
+		}
+		for _, a := range m.Areas {
+			ownersByArea[a] = append(ownersByArea[a], "@"+m.GitHub)
+		}
+	}
+	sortOwners := func(owners []string) {
+		slices.SortFunc(owners, func(a, b string) int {
+			return strings.Compare(strings.ToLower(a), strings.ToLower(b))
+		})
+	}
+	var b bytes.Buffer
+	b.WriteString("# Generated from governance/maintainers.yaml and governance/areas.yaml by\n")
+	b.WriteString("# //governance/tools/maintainers:maintainers_gen; do not edit directly.\n")
+	sortOwners(rootOwners)
+	fmt.Fprintf(&b, "* %s\n", strings.Join(rootOwners, " "))
+	for _, a := range slices.Sorted(maps.Keys(ownersByArea)) {
+		owners := ownersByArea[a]
+		sortOwners(owners)
+		fmt.Fprintf(&b, "\n# Area: %s\n", a)
+		for _, p := range slices.Sorted(slices.Values(areasByName[a])) {
+			fmt.Fprintf(&b, "%s/ %s\n", p, strings.Join(owners, " "))
+		}
+	}
+	return b.Bytes(), nil
 }
 
 // formatTable renders a markdown table with columns formatted.
@@ -234,8 +339,18 @@ maintainer nomination process.
 
 func main() {
 	flag.Parse()
-	if *input == "" {
-		fmt.Fprintln(os.Stderr, "must specify -input")
+	if *input == "" || *areasPath == "" {
+		fmt.Fprintln(os.Stderr, "must specify -input and -areas")
+		os.Exit(1)
+	}
+	areasData, err := os.ReadFile(*areasPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cannot read areas: %v\n", err)
+		os.Exit(1)
+	}
+	areasByName, err := parseAreas(areasData)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cannot parse %s: %v\n", *areasPath, err)
 		os.Exit(1)
 	}
 	yamlData, err := os.ReadFile(*input)
@@ -243,7 +358,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "cannot read roster: %v\n", err)
 		os.Exit(1)
 	}
-	r, err := parseRoster(yamlData)
+	r, err := parseRoster(yamlData, areasByName)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cannot parse %s: %v\n", *input, err)
 		os.Exit(1)
@@ -254,6 +369,10 @@ func main() {
 		outData, err = generateReviewerJSON(r)
 	case "MAINTAINERS.md":
 		outData, err = generateMaintainersMD(r)
+	case "CODEOWNERS":
+		// areas.yaml lives at <repo root>/governance/areas.yaml; area paths
+		// are checked for existence relative to that root.
+		outData, err = generateCODEOWNERS(r, areasByName, filepath.Dir(filepath.Dir(*areasPath)))
 	default:
 		err = fmt.Errorf("invalid format %q", *format)
 	}

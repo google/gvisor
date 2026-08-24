@@ -1,0 +1,153 @@
+# Generated from governance/maintainers.yaml and governance/areas.yaml by
+# //governance/tools/maintainers:maintainers_gen; do not edit directly.
+* @aaltinaydev @carzh @etienneperot @fvoznika @gvisor-bot @kerumeto @konstantin-s-bogom @manninglucas @milantracy @nixprime @nybidari @parth-opensrc @relkochta @rexren-gif @shailend-g @trantoji @xinzhong @zkoopmans
+
+# Area: benchmarks
+/images/benchmarks/ @etienneperot @zkoopmans
+/runsc/profile/ @etienneperot @zkoopmans
+/test/benchmarks/ @etienneperot @zkoopmans
+/test/perf/ @etienneperot @zkoopmans
+/tools/bigquery/ @etienneperot @zkoopmans
+/tools/parsers/ @etienneperot @zkoopmans
+/tools/profiletool/ @etienneperot @zkoopmans
+
+# Area: checkpointing
+/pkg/aio/ @nixprime
+/pkg/compressio/ @nixprime
+/pkg/sentry/checkpoint/ @nixprime
+/pkg/sentry/fscheckpoint/ @nixprime
+/pkg/sentry/state/ @nixprime
+/pkg/state/ @nixprime
+/runsc/checkpointgofer/ @nixprime
+/tools/go_stateify/ @nixprime
+
+# Area: fuse
+/images/fuse/ @manninglucas
+/pkg/sentry/fsimpl/fuse/ @manninglucas
+/test/fuse_host/ @manninglucas
+
+# Area: gpu
+/images/gpu/ @parth-opensrc
+/pkg/sentry/devices/nvproxy/ @parth-opensrc
+/test/gpu/ @parth-opensrc
+/tools/gpu/ @parth-opensrc
+/tools/ioctl_sniffer/ @parth-opensrc
+/tools/nvidia_driver_differ/ @parth-opensrc
+
+# Area: kubernetes
+/test/kubernetes/ @etienneperot @zkoopmans
+/tools/gvisor_k8s_tool/ @etienneperot @zkoopmans
+/webhook/ @etienneperot @zkoopmans
+
+# Area: metrics
+/pkg/metric/ @etienneperot
+/pkg/prometheus/ @etienneperot
+/runsc/cmd/metricserver/ @etienneperot
+/runsc/metricserver/ @etienneperot
+/test/metricclient/ @etienneperot
+/test/metricsviz/ @etienneperot
+
+# Area: mm
+/pkg/memutil/ @nixprime
+/pkg/safecopy/ @nixprime
+/pkg/safemem/ @nixprime
+/pkg/sentry/hostmm/ @nixprime
+/pkg/sentry/memmap/ @nixprime
+/pkg/sentry/mm/ @nixprime
+/pkg/sentry/pgalloc/ @nixprime
+/pkg/sentry/usage/ @nixprime
+/pkg/usermem/ @nixprime
+
+# Area: networking
+/images/iptables/ @manninglucas @nybidari
+/images/nftables/ @manninglucas @nybidari
+/images/packetdrill/ @manninglucas @nybidari
+/pkg/ebpf/ @manninglucas @nybidari
+/pkg/rawfile/ @manninglucas @nybidari
+/pkg/sentry/inet/ @manninglucas @nybidari
+/pkg/sentry/socket/ @manninglucas @nybidari
+/pkg/tcpip/ @manninglucas @nybidari
+/pkg/xdp/ @manninglucas @nybidari
+/test/iptables/ @manninglucas @nybidari
+/test/netutils/ @manninglucas @nybidari
+/test/nftables/ @manninglucas @nybidari
+/test/packetdrill/ @manninglucas @nybidari
+/test/packetimpact/ @manninglucas @nybidari
+/test/rtnetlink/ @manninglucas @nybidari
+/tools/gvisor2pcap/ @manninglucas @nybidari
+/tools/xdp/ @manninglucas @nybidari
+
+# Area: oci
+/pkg/shim/ @etienneperot @fvoznika
+/runsc/container/ @etienneperot @fvoznika
+/runsc/specutils/ @etienneperot @fvoznika
+/shim/ @etienneperot @fvoznika
+
+# Area: platform_kvm
+/pkg/sentry/platform/kvm/ @konstantin-s-bogom @nixprime
+
+# Area: platform_ptrace
+/pkg/sentry/platform/ptrace/ @konstantin-s-bogom @nixprime
+
+# Area: platform_systrap
+/pkg/sentry/platform/systrap/ @konstantin-s-bogom @nixprime
+
+# Area: platforms
+/pkg/ring0/ @konstantin-s-bogom @nixprime
+/pkg/sentry/platform/ @konstantin-s-bogom @nixprime
+/pkg/sigframe/ @konstantin-s-bogom @nixprime
+
+# Area: release_pipeline
+/.buildkite/ @etienneperot @relkochta
+/.github/ @etienneperot @relkochta
+/debian/ @etienneperot @relkochta
+/images/agent/ @etienneperot @relkochta
+/tools/github/ @etienneperot @relkochta
+
+# Area: runsc
+/runsc/ @etienneperot @fvoznika
+
+# Area: runtime_monitoring
+/examples/seccheck/ @fvoznika @xinzhong
+/pkg/eventchannel/ @fvoznika @xinzhong
+/pkg/seccheck/ @fvoznika @xinzhong
+/pkg/sentry/seccheck/ @fvoznika @xinzhong
+/test/trace/ @fvoznika @xinzhong
+/tools/tracereplay/ @fvoznika @xinzhong
+
+# Area: sandboxexec
+/examples/sandboxexec/ @carzh @manninglucas @milantracy
+/sandboxexec/ @carzh @manninglucas @milantracy
+
+# Area: seccomp
+/pkg/bpf/ @etienneperot @fvoznika
+/pkg/seccomp/ @etienneperot @fvoznika
+/runsc/boot/filter/ @etienneperot @fvoznika
+/runsc/fsgofer/filter/ @etienneperot @fvoznika
+/test/secbench/ @etienneperot @fvoznika
+/test/secfuzz/ @etienneperot @fvoznika
+
+# Area: sentry
+/pkg/sentry/ @nixprime
+/vdso/ @nixprime
+
+# Area: tpu
+/images/tpu/ @manninglucas @milantracy
+/pkg/sentry/devices/tpuproxy/ @manninglucas @milantracy
+/test/tpu/ @manninglucas @milantracy
+/tools/tpu/ @manninglucas @milantracy
+
+# Area: vfs
+/pkg/fspath/ @manninglucas @nixprime
+/pkg/lisafs/ @manninglucas @nixprime
+/pkg/p9/ @manninglucas @nixprime
+/pkg/sentry/fsimpl/ @manninglucas @nixprime
+/pkg/sentry/fsutil/ @manninglucas @nixprime
+/pkg/sentry/vfs/ @manninglucas @nixprime
+/runsc/fsgofer/ @manninglucas @nixprime
+/test/fsstress/ @manninglucas @nixprime
+
+# Area: website
+/g3doc/ @etienneperot
+/images/jekyll/ @etienneperot
+/website/ @etienneperot
