@@ -824,6 +824,9 @@ func isWarning(line string) bool {
 	// Caused by properties of the host that runsc doesn't necessarily control.
 	case strings.Contains(line, "Host limit is lower than recommended"):
 
+	// Teardown latency warning when sandbox process takes longer than 500ms to exit.
+	case strings.Contains(line, "Sandbox still running 500ms after its gofer connections closed"):
+
 	// TODO(gvisor.dev/issue/11649): Systrap needs to roll back created
 	// patches for traced procs.
 	case strings.Contains(line, "LIKELY ERROR: Attached tracer to process with patched syscalls"):
