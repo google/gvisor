@@ -513,7 +513,7 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
 	log.Infof("All lisafs servers exited.")
 	if g.sentryExitSyncFD >= 0 {
 		if !pinring.WaitExit(g.sentryExitSyncFD, 500*time.Millisecond) {
-			log.Warningf("Sandbox still running 500ms after its gofer connections closed; something is making sandbox teardown slower than necessary. Exiting anyway.")
+			log.Warningf("Sandbox still running 500ms after its gofer connections closed; something is slowing down sandbox teardown more than necessary. Exiting anyway.")
 		}
 	}
 	if g.stopProfiling != nil {
