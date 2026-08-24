@@ -57,6 +57,9 @@ message TestRangeSpec {
 
   // project service account to use to create clusters.
   string gke_service_account = 7;
+
+  // endpoint is the GKE API endpoint override to use.
+  string endpoint = 11;
 }
 
 // NodePool represents a set of Kubernetes nodes.
@@ -70,6 +73,10 @@ message NodePool {
 // phase and an input for the test phase.
 message TestRange {
   repeated Cluster clusters = 1;
+
+  // endpoint is the GKE API endpoint override used for the clusters in this
+  // test range.
+  string endpoint = 2;
 }
 
 // Cluster holds the created cluster and its credential file.
@@ -94,4 +101,9 @@ message Cluster {
   // Optional; only used for cluster management tasks (e.g. deletion).
   // Leave empty for non-GCP clusters.
   string gcp_location = 5;
+
+  // The GKE API endpoint override used for the cluster.
+  // Optional; only used for cluster management tasks (e.g. deletion).
+  // Leave empty for non-GCP clusters or default endpoint.
+  string gcp_endpoint = 6;
 }
