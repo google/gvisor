@@ -5,7 +5,7 @@ ENV container=docker
 
 # Install systemd and some utils.
 RUN apt-get update && \
-    apt-get install -y systemd systemd-sysv dbus dbus-user-session libpam-systemd sudo vim jq && \
+    apt-get install -y systemd systemd-sysv systemd-container dbus dbus-user-session libpam-systemd sudo vim jq acl gnupg && \
     apt-get clean
 
 # Mask services that do not work in gVisor.
