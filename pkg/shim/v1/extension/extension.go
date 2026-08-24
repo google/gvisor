@@ -45,6 +45,7 @@ type RestoreConfig struct {
 	ImagePath  string
 	Direct     bool
 	Background bool
+	IPRemap    map[string]string
 }
 
 // Process is the interface representing a process inside the container.

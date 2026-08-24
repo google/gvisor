@@ -974,6 +974,9 @@ func (l *Loader) ConfigureNetwork(s inet.Stack) error {
 	if !ok {
 		return nil
 	}
+	if l.root.conf != nil {
+		eps.Stack.SetAllowLiveTCPMigration(l.root.conf.AllowLiveTCPMigration)
+	}
 	if eps.Stack.IPTables() == nil {
 		eps.Stack.SetIPTables(netfilter.DefaultLinuxTables(eps.Stack.Clock(), eps.Stack.InsecureRNG()))
 	}

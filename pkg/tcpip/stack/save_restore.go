@@ -22,6 +22,14 @@ import (
 	cryptorand "gvisor.dev/gvisor/pkg/rand"
 )
 
+type restoreContextKey int
+
+const (
+	// CtxRestoreIPRemap is a Context.Value key for mapping old IPs to new IPs
+	// from the Checkpoint/Restore event.
+	CtxRestoreIPRemap restoreContextKey = iota
+)
+
 // beforeSave is invoked by stateify.
 func (s *Stack) beforeSave() {
 	// removeConf will be set only in case of save/restore.
