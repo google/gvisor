@@ -92,6 +92,9 @@ func preSaveCuda(k *kernel.Kernel, o *state.SaveOpts) error {
 // cudaProcs returns a list of all CUDA processes in the sandbox. It selects
 // them by collecting processes whose FD table has an open file descriptor to
 // any CUDA device.
+//
+// Callers must not hold any thread-group leader's Task.mu in k.
+// checklocks cannot name the leader mutexes selected by ForEachThreadGroup.
 func cudaProcs(sctx context.Context, k *kernel.Kernel, cudaCheckpointPath string, nvidiaDriverVersionMajor int) []*kernel.ThreadGroup {
 	var procs []*kernel.ThreadGroup
 	k.TaskSet().ForEachThreadGroup(func(tg *kernel.ThreadGroup, tgLeader *kernel.Task) {

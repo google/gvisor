@@ -1071,6 +1071,10 @@ func (cm *containerManager) ListTraceSessions(_ *struct{}, out *[]seccheck.Sessi
 }
 
 // ProcfsDump dumps procfs state of the sandbox.
+//
+// Callers must not hold any thread-group leader's Task.mu in the sandbox.
+// checklocks cannot name the leader mutexes in the slice returned by
+// PIDNamespace.ThreadGroups.
 func (cm *containerManager) ProcfsDump(_ *struct{}, out *[]procfs.ProcessProcfsDump) error {
 	log.Debugf("containerManager.ProcfsDump")
 	ts := cm.l.k.TaskSet()

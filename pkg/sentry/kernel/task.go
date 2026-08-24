@@ -872,7 +872,9 @@ func (t *Task) NewFDAt(fd int32, file *vfs.FileDescription, flags FDFlags) (*vfs
 	return t.fdTable.NewFDAt(t, fd, file, flags)
 }
 
-// WithMuLocked executes f with t.mu locked.
+// WithMuLocked acquires t.mu, calls f synchronously, and releases t.mu.
+//
+// +checklocksexclude:t.mu
 func (t *Task) WithMuLocked(f func(*Task)) {
 	t.mu.Lock()
 	f(t)

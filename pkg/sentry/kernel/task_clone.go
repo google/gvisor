@@ -601,6 +601,7 @@ func (nss *namespaceSet) release(t *Task) {
 	}
 }
 
+// +checklocksexclude:target.mu
 func (nss *namespaceSet) initFromTask(t *Task, target *Task, flags int32) error {
 	supported := uint32(linux.CLONE_NEWPID | linux.CLONE_NEWNET | linux.CLONE_NEWUTS | linux.CLONE_NEWIPC | linux.CLONE_NEWNS | linux.CLONE_NEWUSER)
 	if target.k.Cgroup2FS().EverMounted() {
@@ -736,6 +737,9 @@ func (nss *namespaceSet) initFromNS(ns vfs.Namespace, flags int32) error {
 }
 
 // Setns reassociates task t with the specified namespace(s).
+//
+// If fd is a pidfd, callers must not hold the referenced task's mutex.
+// checklocks cannot name that task through fd.
 func (t *Task) Setns(fd *vfs.FileDescription, flags int32) error {
 	if !t.k.Cgroup2FS().EverMounted() && flags&linux.CLONE_NEWCGROUP != 0 {
 		return linuxerr.EINVAL
