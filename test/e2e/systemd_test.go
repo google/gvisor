@@ -168,6 +168,24 @@ func TestSystemdBoot(t *testing.T) {
 	}
 }
 
+// TestSystemdUBI10Init boots Red Hat's UBI 10 init image: a second systemd
+// lineage (RHEL 10, systemd v257, which mandates cgroup v2).
+func TestSystemdUBI10Init(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	d := spawnSystemdContainer(ctx, t, "ubi10-init")
+	defer d.CleanUp(ctx)
+
+	if out := strings.TrimSpace(execOrFatal(ctx, t, d, "systemctl", "--failed", "--no-legend", "--plain")); out != "" {
+		t.Errorf("failed units after boot (want none):\n%s", out)
+	}
+	wantEcho := "gv-ubi10-ok"
+	out, err := transientRun(ctx, d, nil, "/bin/echo", wantEcho)
+	if err != nil || !strings.Contains(out, wantEcho) {
+		t.Errorf("transient unit failed: %v (output does not contain %q): %s", err, wantEcho, out)
+	}
+}
+
 // TestSystemdSimpleDaemon verifies that a custom systemd service can be enabled, started,
 // stopped, and restarted by systemd after an out-of-band kill.
 func TestSystemdSimpleDaemon(t *testing.T) {
