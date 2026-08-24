@@ -240,7 +240,6 @@ func (ep *EpollInstance) StateFields() []string {
 		"NoLockFD",
 		"q",
 		"interest",
-		"ready",
 		"readySeq",
 	}
 }
@@ -256,8 +255,7 @@ func (ep *EpollInstance) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &ep.NoLockFD)
 	stateSinkObject.Save(4, &ep.q)
 	stateSinkObject.Save(5, &ep.interest)
-	stateSinkObject.Save(6, &ep.ready)
-	stateSinkObject.Save(7, &ep.readySeq)
+	stateSinkObject.Save(6, &ep.readySeq)
 }
 
 func (ep *EpollInstance) afterLoad(context.Context) {}
@@ -270,8 +268,7 @@ func (ep *EpollInstance) StateLoad(ctx context.Context, stateSourceObject state.
 	stateSourceObject.Load(3, &ep.NoLockFD)
 	stateSourceObject.Load(4, &ep.q)
 	stateSourceObject.Load(5, &ep.interest)
-	stateSourceObject.Load(6, &ep.ready)
-	stateSourceObject.Load(7, &ep.readySeq)
+	stateSourceObject.Load(6, &ep.readySeq)
 }
 
 func (e *epollInterestKey) StateTypeName() string {
@@ -312,9 +309,6 @@ func (epi *epollInterest) StateFields() []string {
 		"key",
 		"waiter",
 		"mask",
-		"ready",
-		"epollInterestEntry",
-		"readySeq",
 		"userData",
 	}
 }
@@ -328,10 +322,7 @@ func (epi *epollInterest) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &epi.key)
 	stateSinkObject.Save(2, &epi.waiter)
 	stateSinkObject.Save(3, &epi.mask)
-	stateSinkObject.Save(4, &epi.ready)
-	stateSinkObject.Save(5, &epi.epollInterestEntry)
-	stateSinkObject.Save(6, &epi.readySeq)
-	stateSinkObject.Save(7, &epi.userData)
+	stateSinkObject.Save(4, &epi.userData)
 }
 
 // +checklocksignore
@@ -340,10 +331,7 @@ func (epi *epollInterest) StateLoad(ctx context.Context, stateSourceObject state
 	stateSourceObject.Load(1, &epi.key)
 	stateSourceObject.Load(2, &epi.waiter)
 	stateSourceObject.Load(3, &epi.mask)
-	stateSourceObject.Load(4, &epi.ready)
-	stateSourceObject.Load(5, &epi.epollInterestEntry)
-	stateSourceObject.Load(6, &epi.readySeq)
-	stateSourceObject.Load(7, &epi.userData)
+	stateSourceObject.Load(4, &epi.userData)
 	stateSourceObject.AfterLoad(func() { epi.afterLoad(ctx) })
 }
 
