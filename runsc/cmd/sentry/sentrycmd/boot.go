@@ -175,6 +175,7 @@ type Boot struct {
 
 	fsRestoreFDs             sandboxsetup.IntFlags
 	fsRestoreCheckpointGofer bool
+	fsRestoreReflink         bool
 
 	// attached is set to true to kill the sandbox process when the parent process
 	// terminates. This flag is set when the command execve's itself because
@@ -296,6 +297,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&b.fsSaveCheckpointGofer, "fs-save-checkpoint-gofer", false, "if true, -fs-save-fds is a socket connected to checkpoint gofer")
 	f.Var(&b.fsRestoreFDs, "fs-restore-fds", "ordered list of file descriptors for filesystem checkpoint restore")
 	f.BoolVar(&b.fsRestoreCheckpointGofer, "fs-restore-checkpoint-gofer", false, "if true, -fs-restore-fds is a socket connected to checkpoint gofer")
+	f.BoolVar(&b.fsRestoreReflink, "fs-restore-reflink", false, "if true, -fs-restore-fds is a reflink filesystem checkpoint: manifest, multi-tar, and pages metadata files followed by cloned filestore files")
 	f.IntVar(&b.rootfsUpperTarFD, "rootfs-upper-tar-fd", -1, "file descriptor to the tar file containing the rootfs upper layer changes.")
 
 	// Profiling flags.
@@ -700,6 +702,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		FSSaveCheckpointGofer:    b.fsSaveCheckpointGofer,
 		FSRestoreFDs:             b.fsRestoreFDs.GetFDs(),
 		FSRestoreCheckpointGofer: b.fsRestoreCheckpointGofer,
+		FSRestoreReflink:         b.fsRestoreReflink,
 		RootfsUpperTarFD:         b.rootfsUpperTarFD,
 		StartupTimer:             timer,
 	}

@@ -182,6 +182,16 @@ type SaveOpts struct {
 	// but may instead improve SaveTo() and LoadFrom() time, and checkpoint
 	// size, if the application has many committed zero pages.
 	ExcludeCommittedZeroPages bool
+
+	// If PagesInBackingFile is true, page contents are not written at all;
+	// callers are responsible for separately preserving the MemoryFile's
+	// backing file (e.g. by cloning it with FICLONE), and restoring with
+	// LoadOpts.PagesInBackingFile. SaveTo() writes only metadata to w, and
+	// skips the zero-page scan since page contents are preserved verbatim.
+	//
+	// PagesInBackingFile is mutually exclusive with PagesFile and
+	// ExcludeCommittedZeroPages.
+	PagesInBackingFile bool
 }
 
 // SaveTo writes f's state to the given stream.
@@ -202,6 +212,17 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) er
 	// Ensure that there are no pending evictions.
 	if len(f.evictable) != 0 {
 		panic(fmt.Sprintf("evictions still pending for %d users; call StartEvictions and WaitForEvictions before SaveTo", len(f.evictable)))
+	}
+
+	if opts.PagesInBackingFile {
+		if opts.PagesFile != nil {
+			return fmt.Errorf("SaveOpts.PagesInBackingFile is mutually exclusive with SaveOpts.PagesFile")
+		}
+		// Page contents are preserved in the backing file by the caller, so
+		// only metadata needs to be written. Skip the zero-page scan; it only
+		// serves to reduce the volume of explicitly-saved pages, and no pages
+		// are explicitly saved in this mode.
+		return f.saveMetadataTo(w)
 	}
 
 	// Register this MemoryFile with async page saving if a pages file has been
@@ -474,21 +495,9 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) er
 		opts.ExcludeCommittedZeroPages)
 
 	// Save metadata.
-	timeMetadataStart := gohacks.Nanotime()
-	pb := f.exportMetadataProto()
-	data, err := proto.Marshal(pb)
-	if err != nil {
-		return fmt.Errorf("failed to marshal metadata: %w", err)
+	if err := f.saveMetadataTo(w); err != nil {
+		return err
 	}
-	var lengthBuf [8]byte
-	binary.LittleEndian.PutUint64(lengthBuf[:], uint64(len(data)))
-	if _, err := w.Write(lengthBuf[:]); err != nil {
-		return fmt.Errorf("failed to write metadata length: %w", err)
-	}
-	if _, err := w.Write(data); err != nil {
-		return fmt.Errorf("failed to write metadata: %w", err)
-	}
-	log.Infof("MemoryFile(%p): saved metadata in %s", f, time.Duration(gohacks.Nanotime()-timeMetadataStart))
 
 	if amfs == nil {
 		// Save committed pages.
@@ -989,6 +998,28 @@ func (apfs *AsyncPagesFileSave) main() {
 	}
 }
 
+// saveMetadataTo writes f's metadata proto to w, preceded by its length.
+//
+// Preconditions: f.mu must be locked.
+func (f *MemoryFile) saveMetadataTo(w io.Writer) error {
+	timeMetadataStart := gohacks.Nanotime()
+	pb := f.exportMetadataProto()
+	data, err := proto.Marshal(pb)
+	if err != nil {
+		return fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+	var lengthBuf [8]byte
+	binary.LittleEndian.PutUint64(lengthBuf[:], uint64(len(data)))
+	if _, err := w.Write(lengthBuf[:]); err != nil {
+		return fmt.Errorf("failed to write metadata length: %w", err)
+	}
+	if _, err := w.Write(data); err != nil {
+		return fmt.Errorf("failed to write metadata: %w", err)
+	}
+	log.Infof("MemoryFile(%p): saved metadata in %s", f, time.Duration(gohacks.Nanotime()-timeMetadataStart))
+	return nil
+}
+
 // LoadOpts provides options to MemoryFile.LoadFrom().
 type LoadOpts struct {
 	// If PagesFile is not nil, then page contents will be read from PagesFile,
@@ -1005,6 +1036,14 @@ type LoadOpts struct {
 	PagesFile       *AsyncPagesFileLoad
 	PagesFileOffset uint64
 	DoneCallback    func(error)
+
+	// If PagesInBackingFile is true, the MemoryFile's backing file already
+	// contains all page contents (e.g. it was cloned from a checkpoint taken
+	// with SaveOpts.PagesInBackingFile), so no page contents are read from r
+	// or PagesFile; only metadata is read from r.
+	//
+	// PagesInBackingFile is mutually exclusive with PagesFile.
+	PagesInBackingFile bool
 
 	// Optional timeline for the restore process.
 	// If async page loading is enabled, a forked timeline will be created, so
@@ -1093,6 +1132,9 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 	// Register this MemoryFile with async page loading if a pages file has
 	// been provided.
 	var amfl *asyncMemoryFileLoad
+	if opts.PagesInBackingFile && opts.PagesFile != nil {
+		return fmt.Errorf("LoadOpts.PagesInBackingFile is mutually exclusive with LoadOpts.PagesFile")
+	}
 	if opts.PagesFile != nil {
 		var df stateio.DestinationFile
 		if opts.PagesFile.ar.NeedRegisterDestinationFD() {
@@ -1157,7 +1199,10 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 		for madviseEnd.Load() < maFR.End {
 			<-madviseChan
 		}
-		if amfl != nil {
+		if opts.PagesInBackingFile {
+			// Page contents are already present in the backing file; only
+			// accounting (below) is needed.
+		} else if amfl != nil {
 			// Record where to read data.
 			if !minUnloadedInit {
 				minUnloadedInit = true

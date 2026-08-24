@@ -36,6 +36,7 @@ type FSCheckpoint struct {
 	imagePath    string
 	leaveRunning bool
 	direct       bool
+	reflink      bool
 	paths        pathVar
 }
 
@@ -101,6 +102,7 @@ func (c *FSCheckpoint) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.imagePath, "image-path", "", "directory path to saved filesystem checkpoint")
 	f.BoolVar(&c.leaveRunning, "leave-running", false, "if true, resume containers after checkpointing; if false, containers exit with status 0 after checkpointing")
 	f.BoolVar(&c.direct, "direct", false, "use O_DIRECT for writing checkpoint files")
+	f.BoolVar(&c.reflink, "reflink", false, "capture page contents by cloning tmpfs filestore files with FICLONE instead of copying them. Requires -image-path to be on the same reflink-capable host filesystem (e.g. XFS with reflink=1, Btrfs) as the filestore files. Incompatible with -direct.")
 	f.Var(&c.paths, "path", `path inside the container to save to the checkpoint (can be repeated). Format: [container_id:]path. The special path value "all-tmpfs" saves all tmpfs mounts from the OCI spec that are disk-backed. Defaults to "/" if not specified.`)
 }
 
@@ -140,8 +142,13 @@ func (c *FSCheckpoint) Execute(_ context.Context, f *flag.FlagSet, args ...any) 
 		paths = []checkpoint.ResourceID{{Path: "/"}}
 	}
 
+	if c.direct && c.reflink {
+		util.Fatalf("-direct and -reflink are mutually exclusive")
+	}
+
 	if err := cont.FSSave(conf, c.imagePath, sandbox.FSSaveOpts{
 		Direct:          c.direct,
+		Reflink:         c.reflink,
 		ExitAfterSaving: !c.leaveRunning,
 		Paths:           paths,
 	}); err != nil {

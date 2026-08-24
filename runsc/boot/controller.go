@@ -74,6 +74,10 @@ const (
 	// ContMgrFSSave saves a filesystem checkpoint.
 	ContMgrFSSave = "containerManager.FSSave"
 
+	// ContMgrFSCheckpointResources returns the filesystems that a filesystem
+	// checkpoint with the given paths would include.
+	ContMgrFSCheckpointResources = "containerManager.FSCheckpointResources"
+
 	// ContMgrGetSavings gets the savings for restored sandboxes.
 	ContMgrGetSavings = "containerManager.GetSavings"
 
@@ -1196,7 +1200,8 @@ type FSSaveArgs struct {
 	// 1. manifest file
 	// 2. multi-tar file
 	// 3. pages metadata file
-	// 4. pages file
+	// 4. pages file if Reflink is false; otherwise one filestore clone
+	//    destination file per checkpointed filesystem
 	urpc.FilePayload
 
 	// Paths are the paths inside the containers to save to the checkpoint.
@@ -1204,6 +1209,7 @@ type FSSaveArgs struct {
 
 	// Equivalent to kernel.FSSaveOpts fields.
 	ExitAfterSaving bool `json:"exit_after_saving"`
+	Reflink         bool `json:"reflink"`
 
 	// If UseCheckpointGofer is true, FSSaveArgs.FilePayload should contain
 	// exactly one FD, which is a Unix domain socket connected to a URPC server
@@ -1219,6 +1225,28 @@ func (cm *containerManager) FSSave(args *FSSaveArgs, _ *struct{}) error {
 		return err
 	}
 	return cm.l.k.FSSave(cm.l.k.SupervisorContext(), &kopts)
+}
+
+// FSCheckpointResourcesArgs holds arguments to FSCheckpointResources.
+type FSCheckpointResourcesArgs struct {
+	// Paths are the paths inside the containers that would be saved to the
+	// checkpoint.
+	Paths []checkpoint.ResourceID `json:"paths"`
+}
+
+// FSCheckpointResourcesResp is the response from FSCheckpointResources.
+type FSCheckpointResourcesResp struct {
+	// ResourceIDs identify the filesystems that a filesystem checkpoint with
+	// the given paths would include, in unspecified order.
+	ResourceIDs []checkpoint.ResourceID `json:"resource_ids"`
+}
+
+// FSCheckpointResources returns the filesystems that a filesystem checkpoint
+// with the given paths would include.
+func (cm *containerManager) FSCheckpointResources(args *FSCheckpointResourcesArgs, resp *FSCheckpointResourcesResp) error {
+	log.Debugf("containerManager.FSCheckpointResources")
+	resp.ResourceIDs = cm.l.k.FSCheckpointResources(cm.l.k.SupervisorContext(), args.Paths)
+	return nil
 }
 
 // Savings holds the savings with restore.

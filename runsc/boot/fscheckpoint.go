@@ -159,10 +159,46 @@ func convertToKernelFSSaveOpts(args *FSSaveArgs) (kernel.FSSaveOpts, error) {
 }
 
 func setKernelFSSaveOptsFiles(args *FSSaveArgs, opts *kernel.FSSaveOpts) error {
+	if args.Reflink {
+		if args.UseCheckpointGofer {
+			return fmt.Errorf("reflink filesystem checkpoints are not supported with the checkpoint gofer")
+		}
+		return setKernelFSSaveOptsFilesForReflink(args, opts)
+	}
 	if args.UseCheckpointGofer {
 		return setKernelFSSaveOptsFilesForCheckpointGofer(args, opts)
 	}
 	return setKernelFSSaveOptsFilesForLocalCheckpoint(args, opts)
+}
+
+func setKernelFSSaveOptsFilesForReflink(args *FSSaveArgs, opts *kernel.FSSaveOpts) error {
+	if len(args.FilePayload.Files) < 4 {
+		return fmt.Errorf("got %d files, want at least 4 (manifest, multi-tar, pages metadata, and one filestore per checkpointed filesystem)", len(args.FilePayload.Files))
+	}
+	manifestFile, err := args.ReleaseFD(0)
+	if err != nil {
+		return err
+	}
+	multiTarFile, err := args.ReleaseFD(1)
+	if err != nil {
+		return err
+	}
+	pagesMetadataFile, err := args.ReleaseFD(2)
+	if err != nil {
+		return err
+	}
+	opts.ManifestFile = stateio.NewBufioWriteCloser(manifestFile)
+	opts.MultiTarFile = stateio.NewBufioWriteCloser(multiTarFile)
+	opts.PagesMetadataFile = stateio.NewBufioWriteCloser(pagesMetadataFile)
+	opts.Reflink = true
+	for i := 3; i < len(args.FilePayload.Files); i++ {
+		filestoreFile, err := args.ReleaseFD(i)
+		if err != nil {
+			return err
+		}
+		opts.FilestoreFiles = append(opts.FilestoreFiles, filestoreFile)
+	}
+	return nil
 }
 
 func setKernelFSSaveOptsFilesForLocalCheckpoint(args *FSSaveArgs, opts *kernel.FSSaveOpts) error {
@@ -259,12 +295,18 @@ type fsRestore struct {
 	// immutable
 	getPagesMetadata func() ([]byte, error)
 	getMultiTar      func() ([]byte, error)
+	reflink          bool
 
 	// immutable after wg.Wait()
 	manifestErr error
 	apfl        *pgalloc.AsyncPagesFileLoad
 	mfs         map[checkpoint.ResourceID]*fscheckpoint.MemoryFile
 	tmpfs       map[checkpoint.ResourceID]*fscheckpoint.Tmpfs
+	// filestores maps each MemoryFile's ResourceID to its cloned backing file
+	// in a reflink checkpoint. Files are retained for the lifetime of the
+	// sandbox so that restarted containers can restore their filesystems
+	// again.
+	filestores map[checkpoint.ResourceID]*fd.FD
 
 	waitMu  sync.Mutex
 	waitMap map[string]*fsRestoreContainer // key is container ID
@@ -279,19 +321,45 @@ type fsRestoreContainer struct {
 
 // fsRestoreOpts holds options to startFSRestore.
 type fsRestoreOpts struct {
-	// These correspond to files specified by the fscheckpoint package, and are
-	// all required.
+	// These correspond to files specified by the fscheckpoint package.
+	// ManifestFile, MultiTarFile, and PagesMetadataFile are always required.
+	// PagesFile is required iff Reflink is false.
 	ManifestFile      io.ReadCloser
 	MultiTarFile      io.ReadCloser
 	PagesMetadataFile io.ReadCloser
 	PagesFile         stateio.AsyncReader
+
+	// If Reflink is true, the checkpoint was taken with FSSaveArgs.Reflink,
+	// and FilestoreFiles contains the cloned backing files of checkpointed
+	// filesystems, in manifest order.
+	Reflink        bool
+	FilestoreFiles []*fd.FD
 }
 
 func makeFSRestoreOpts(args *Args) (fsRestoreOpts, error) {
+	if args.FSRestoreReflink {
+		if args.FSRestoreCheckpointGofer {
+			return fsRestoreOpts{}, fmt.Errorf("reflink filesystem checkpoints are not supported with the checkpoint gofer")
+		}
+		return makeFSRestoreOptsForReflink(args)
+	}
 	if args.FSRestoreCheckpointGofer {
 		return makeFSRestoreOptsForCheckpointGofer(args)
 	}
 	return makeFSRestoreOptsForLocalCheckpoint(args)
+}
+
+func makeFSRestoreOptsForReflink(args *Args) (fsRestoreOpts, error) {
+	if len(args.FSRestoreFDs) < 4 {
+		return fsRestoreOpts{}, fmt.Errorf("got %d files in -fs-restore-fds, want at least 4 (manifest, multi-tar, pages metadata, and one filestore per checkpointed filesystem)", len(args.FSRestoreFDs))
+	}
+	return fsRestoreOpts{
+		ManifestFile:      stateio.NewBufioReadCloser(args.FSRestoreFDs[0].ReleaseToFile(checkpointfiles.FSCheckpointManifestFileName)),
+		MultiTarFile:      stateio.NewBufioReadCloser(args.FSRestoreFDs[1].ReleaseToFile(checkpointfiles.FSCheckpointMultiTarFileName)),
+		PagesMetadataFile: stateio.NewBufioReadCloser(args.FSRestoreFDs[2].ReleaseToFile(checkpointfiles.PagesMetadataFileName)),
+		Reflink:           true,
+		FilestoreFiles:    args.FSRestoreFDs[3:],
+	}, nil
 }
 
 func makeFSRestoreOptsForLocalCheckpoint(args *Args) (fsRestoreOpts, error) {
@@ -370,10 +438,14 @@ func makeFSRestoreOptsForCheckpointGofer(args *Args) (fsRestoreOpts, error) {
 // startFSRestore takes ownership of resources in opts.
 func startFSRestore(opts *fsRestoreOpts) (*fsRestore, error) {
 	fsr := &fsRestore{
-		mfs:     make(map[checkpoint.ResourceID]*fscheckpoint.MemoryFile),
-		tmpfs:   make(map[checkpoint.ResourceID]*fscheckpoint.Tmpfs),
-		waitMap: make(map[string]*fsRestoreContainer),
+		reflink:    opts.Reflink,
+		mfs:        make(map[checkpoint.ResourceID]*fscheckpoint.MemoryFile),
+		tmpfs:      make(map[checkpoint.ResourceID]*fscheckpoint.Tmpfs),
+		filestores: make(map[checkpoint.ResourceID]*fd.FD),
+		waitMap:    make(map[string]*fsRestoreContainer),
 	}
+	filestoreFiles := opts.FilestoreFiles
+	opts.FilestoreFiles = nil
 
 	// TODO: NOLINT - Currently we read the whole pages metadata file into a
 	// []byte, then pass pieces of that []byte to MemoryFile construction. This
@@ -447,8 +519,11 @@ func startFSRestore(opts *fsRestoreOpts) (*fsRestore, error) {
 			}
 			manifest = fscheckpoint.FromProto(&pb)
 			log.Infof("Read filesystem checkpoint manifest in %s", time.Since(timeStart))
-			if manifest.Version > 1 {
+			if manifest.Version > 2 {
 				return fmt.Errorf("unsupported filesystem checkpoint version: %d", manifest.Version)
+			}
+			if reflinkManifest := manifest.Version == 2; reflinkManifest != fsr.reflink {
+				return fmt.Errorf("filesystem checkpoint manifest version %d does not match restore mode (reflink=%t)", manifest.Version, fsr.reflink)
 			}
 			log.Infof("Restoring from proto manifest (version %d) created by runsc version %q", manifest.Version, manifest.RunscVersion)
 			if manifest.PageSize != hostarch.PageSize {
@@ -458,18 +533,27 @@ func startFSRestore(opts *fsRestoreOpts) (*fsRestore, error) {
 				return fmt.Errorf("filesystem checkpoint endianness %q does not match current endianness %q", manifest.Endian, endian)
 			}
 
-			apfl, err := pgalloc.StartAsyncPagesFileLoad(opts.PagesFile /* transfers ownership */, func(err error) {
-				if err != nil {
-					log.Warningf("Failed to load filesystem checkpoint pages: %v", err)
-				} else if log.IsLogging(log.Debug) {
-					log.Debugf("Finished loading filesystem checkpoint pages")
+			if fsr.reflink {
+				if len(filestoreFiles) != len(manifest.MemoryFiles) {
+					return fmt.Errorf("filesystem checkpoint manifest has %d MemoryFiles, but %d filestore files were provided", len(manifest.MemoryFiles), len(filestoreFiles))
 				}
-			}, nil)
-			opts.PagesFile = nil
-			if err != nil {
-				return fmt.Errorf("failed to start async page loading: %w", err)
+				for i := range manifest.MemoryFiles {
+					fsr.filestores[manifest.MemoryFiles[i].ResourceID] = filestoreFiles[i]
+				}
+			} else {
+				apfl, err := pgalloc.StartAsyncPagesFileLoad(opts.PagesFile /* transfers ownership */, func(err error) {
+					if err != nil {
+						log.Warningf("Failed to load filesystem checkpoint pages: %v", err)
+					} else if log.IsLogging(log.Debug) {
+						log.Debugf("Finished loading filesystem checkpoint pages")
+					}
+				}, nil)
+				opts.PagesFile = nil
+				if err != nil {
+					return fmt.Errorf("failed to start async page loading: %w", err)
+				}
+				fsr.apfl = apfl
 			}
-			fsr.apfl = apfl
 			for i := range manifest.MemoryFiles {
 				mmf := &manifest.MemoryFiles[i]
 				fsr.mfs[mmf.ResourceID] = mmf
@@ -508,18 +592,22 @@ func (c *fsRestoreContainer) setError(err error) error {
 	return err
 }
 
-func (fsr *fsRestore) memoryFileLoadArgs(id checkpoint.ResourceID, cid string) (io.Reader, uint64, func(error), error) {
+// memoryFileLoadArgs returns the pages metadata reader, pages file offset,
+// cloned backing file (non-nil iff the checkpoint is a reflink checkpoint),
+// and load-completion callback for restoring the MemoryFile with the given
+// ResourceID.
+func (fsr *fsRestore) memoryFileLoadArgs(id checkpoint.ResourceID, cid string) (io.Reader, uint64, *fd.FD, func(error), error) {
 	if fsr == nil {
-		return nil, 0, func(error) {}, nil
+		return nil, 0, nil, func(error) {}, nil
 	}
 
 	fsr.wg.Wait()
 	if fsr.manifestErr != nil {
-		return nil, 0, nil, fsr.manifestErr
+		return nil, 0, nil, nil, fsr.manifestErr
 	}
 	mmf := fsr.mfs[id]
 	if mmf == nil {
-		return nil, 0, func(error) {}, nil
+		return nil, 0, nil, func(error) {}, nil
 	}
 	pagesMetadata, err := fsr.getPagesMetadata()
 
@@ -528,12 +616,19 @@ func (fsr *fsRestore) memoryFileLoadArgs(id checkpoint.ResourceID, cid string) (
 	c := fsr.ensureContainer(cid)
 	if mmf.PagesMetadataEnd > uint64(len(pagesMetadata)) {
 		if err != nil {
-			return nil, 0, nil, c.setError(fmt.Errorf("failed to read pages metadata: %w", err))
+			return nil, 0, nil, nil, c.setError(fmt.Errorf("failed to read pages metadata: %w", err))
 		}
-		return nil, 0, nil, c.setError(fmt.Errorf("MemoryFile %q has pages metadata range [%d, %d) beyond pages metadata file size %d", mmf.ResourceID, mmf.PagesMetadataStart, mmf.PagesMetadataEnd, len(pagesMetadata)))
+		return nil, 0, nil, nil, c.setError(fmt.Errorf("MemoryFile %q has pages metadata range [%d, %d) beyond pages metadata file size %d", mmf.ResourceID, mmf.PagesMetadataStart, mmf.PagesMetadataEnd, len(pagesMetadata)))
+	}
+	var filestoreFile *fd.FD
+	if fsr.reflink {
+		filestoreFile = fsr.filestores[id]
+		if filestoreFile == nil {
+			return nil, 0, nil, nil, c.setError(fmt.Errorf("MemoryFile %q has no filestore file in the filesystem checkpoint", mmf.ResourceID))
+		}
 	}
 	c.asyncLoads++
-	return bytes.NewReader(pagesMetadata[mmf.PagesMetadataStart:mmf.PagesMetadataEnd]), mmf.PagesStart, func(err error) {
+	return bytes.NewReader(pagesMetadata[mmf.PagesMetadataStart:mmf.PagesMetadataEnd]), mmf.PagesStart, filestoreFile, func(err error) {
 		fsr.waitMu.Lock()
 		defer fsr.waitMu.Unlock()
 		c.asyncLoads--

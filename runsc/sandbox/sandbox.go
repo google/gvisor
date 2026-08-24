@@ -35,6 +35,7 @@ import (
 	"github.com/moby/sys/capability"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+	"google.golang.org/protobuf/proto"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -50,6 +51,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
+	fspb "gvisor.dev/gvisor/pkg/sentry/fscheckpoint/fscheckpoint_proto_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
@@ -1767,21 +1769,52 @@ func (s *Sandbox) openFSRestoreFiles(conf *config.Config, imagePath string, dire
 		return nil, err
 	}
 	if clientSockFile == nil {
-		return openFSRestoreFilesForLocalCheckpoint(imagePath, direct)
+		return openFSRestoreFilesForLocalCheckpoint(imagePath, direct, cmd)
 	}
 	cmd.Args = append(cmd.Args, "-fs-restore-checkpoint-gofer")
 	log.Infof("Restoring filesystem checkpoint from GCS via checkpoint gofer")
 	return []*os.File{clientSockFile}, nil
 }
 
-func openFSRestoreFilesForLocalCheckpoint(imagePath string, direct bool) ([]*os.File, error) {
-	return openFSCheckpointLocalFiles(imagePath, os.O_RDONLY, direct)
+func openFSRestoreFilesForLocalCheckpoint(imagePath string, direct bool, cmd *exec.Cmd) ([]*os.File, error) {
+	manifest, err := readFSCheckpointManifest(imagePath)
+	if err != nil {
+		return nil, err
+	}
+	if manifest.Version < 2 {
+		return openFSCheckpointLocalFiles(imagePath, os.O_RDONLY, direct)
+	}
+	log.Infof("Restoring reflink filesystem checkpoint with %d filestore files", len(manifest.MemoryFiles))
+	cmd.Args = append(cmd.Args, "-fs-restore-reflink")
+	return openFSCheckpointReflinkFiles(imagePath, len(manifest.MemoryFiles), os.O_RDONLY)
+}
+
+// readFSCheckpointManifest reads and decodes the filesystem checkpoint
+// manifest in imagePath.
+func readFSCheckpointManifest(imagePath string) (*fspb.Manifest, error) {
+	manifestPath := filepath.Join(imagePath, checkpointfiles.FSCheckpointManifestFileName)
+	manifestData, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return nil, fmt.Errorf("reading filesystem checkpoint manifest %q: %w", manifestPath, err)
+	}
+	var manifest fspb.Manifest
+	if err := proto.Unmarshal(manifestData, &manifest); err != nil {
+		return nil, fmt.Errorf("decoding filesystem checkpoint manifest %q: %w", manifestPath, err)
+	}
+	return &manifest, nil
 }
 
 // FSSaveOpts holds options to FSSave.
 type FSSaveOpts struct {
 	// If Direct is true, open checkpoint files with O_DIRECT where possible.
 	Direct bool
+
+	// If Reflink is true, capture page contents by cloning tmpfs filestore
+	// files with FICLONE instead of copying them, producing a manifest
+	// version 2 checkpoint. Requires the image path to be on the same
+	// reflink-capable host filesystem as the filestore files. Mutually
+	// exclusive with Direct and with the checkpoint gofer.
+	Reflink bool
 
 	// If ExitAfterSaving is true, all sandboxed processes immediately exit
 	// with status 0 after filesystem checkpoint saving, whether or not saving
@@ -1806,7 +1839,7 @@ func (s *Sandbox) FSSave(conf *config.Config, cid string, imagePath string, opts
 			_ = f.Close()
 		}
 	}()
-	if err := s.setFSSaveArgs(conf, imagePath, opts.Direct, &args); err != nil {
+	if err := s.setFSSaveArgs(conf, imagePath, opts, &args); err != nil {
 		return err
 	}
 
@@ -1816,18 +1849,77 @@ func (s *Sandbox) FSSave(conf *config.Config, cid string, imagePath string, opts
 	return nil
 }
 
-func (s *Sandbox) setFSSaveArgs(conf *config.Config, imagePath string, direct bool, args *boot.FSSaveArgs) error {
+func (s *Sandbox) setFSSaveArgs(conf *config.Config, imagePath string, opts FSSaveOpts, args *boot.FSSaveArgs) error {
+	if opts.Reflink {
+		if opts.Direct {
+			return fmt.Errorf("direct is not supported with reflink filesystem checkpoints")
+		}
+		if _, err := os.Stat(filepath.Join(imagePath, checkpointGCSOptsFileName)); err == nil {
+			return fmt.Errorf("reflink filesystem checkpoints are not supported with the checkpoint gofer")
+		}
+		return s.setFSSaveArgsForReflink(imagePath, args)
+	}
 	clientSockFile, err := s.maybeStartCheckpointGoferAndGetSocket(conf, s.CgroupJSON.Cgroup, imagePath, "-allow-fscheckpoint-writes")
 	if err != nil {
 		return err
 	}
 	if clientSockFile == nil {
-		return setFSSaveArgsForLocalCheckpointFiles(conf, imagePath, direct, args)
+		return setFSSaveArgsForLocalCheckpointFiles(conf, imagePath, opts.Direct, args)
 	}
 	log.Infof("Saving filesystem checkpoint to GCS via checkpoint gofer")
 	args.FilePayload.Files = append(args.FilePayload.Files, clientSockFile)
 	args.UseCheckpointGofer = true
 	return nil
+}
+
+func (s *Sandbox) setFSSaveArgsForReflink(imagePath string, args *boot.FSSaveArgs) error {
+	resourcesArgs := boot.FSCheckpointResourcesArgs{Paths: args.Paths}
+	var resourcesResp boot.FSCheckpointResourcesResp
+	if err := s.call(boot.ContMgrFSCheckpointResources, &resourcesArgs, &resourcesResp); err != nil {
+		return fmt.Errorf("querying checkpointable filesystems: %w", err)
+	}
+	if len(resourcesResp.ResourceIDs) == 0 {
+		return fmt.Errorf("no checkpointable filesystems")
+	}
+	files, err := openFSCheckpointReflinkFiles(imagePath, len(resourcesResp.ResourceIDs), os.O_CREATE|os.O_EXCL|os.O_RDWR)
+	if err != nil {
+		return err
+	}
+	args.FilePayload.Files = files
+	args.Reflink = true
+	return nil
+}
+
+// openFSCheckpointReflinkFiles opens the files of a reflink (manifest version
+// 2) filesystem checkpoint: the manifest, multi-tar, and pages metadata files
+// followed by numFilestores cloned filestore files.
+func openFSCheckpointReflinkFiles(imagePath string, numFilestores int, openFlags int) ([]*os.File, error) {
+	var files []*os.File
+	closeCleanup := cleanup.Make(func() {
+		for _, f := range files {
+			f.Close()
+		}
+	})
+	defer closeCleanup.Clean()
+
+	names := []string{
+		checkpointfiles.FSCheckpointManifestFileName,
+		checkpointfiles.FSCheckpointMultiTarFileName,
+		checkpointfiles.PagesMetadataFileName,
+	}
+	for i := 0; i < numFilestores; i++ {
+		names = append(names, checkpointfiles.FSCheckpointFilestoreFileName(i))
+	}
+	for _, name := range names {
+		filePath := filepath.Join(imagePath, name)
+		f, err := os.OpenFile(filePath, openFlags, 0644)
+		if err != nil {
+			return nil, fmt.Errorf("opening %q: %w", filePath, err)
+		}
+		files = append(files, f)
+	}
+	closeCleanup.Release()
+	return files, nil
 }
 
 func setFSSaveArgsForLocalCheckpointFiles(conf *config.Config, imagePath string, direct bool, args *boot.FSSaveArgs) error {

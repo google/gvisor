@@ -124,6 +124,12 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 			seccomp.EqualTo(linux.FIONREAD),
 			seccomp.AnyValue{}, /* int* */
 		},
+		// FICLONE is needed for reflink filesystem checkpoints.
+		seccomp.PerArg{
+			seccomp.NonNegativeFD{}, /* dest fd */
+			seccomp.EqualTo(linux.FICLONE),
+			seccomp.NonNegativeFD{}, /* src fd */
+		},
 		// These commands are needed for terminal support, but we only allow
 		// setting/getting termios and winsize.
 		seccomp.PerArg{

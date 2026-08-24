@@ -16,6 +16,8 @@
 // checkpointed to multiple files in a directory rather than to an opaque FD.
 package checkpointfiles
 
+import "fmt"
+
 // Files common to both full and filesystem checkpoints:
 const (
 	// PagesMetadataFileName is the file in an image-path directory containing
@@ -40,3 +42,11 @@ const (
 	FSCheckpointManifestFileName = "fscheckpoint.pb"
 	FSCheckpointMultiTarFileName = "multitar.img"
 )
+
+// FSCheckpointFilestoreFileName returns the name of the file in an image-path
+// directory containing the cloned backing file of the i-th checkpointed
+// filesystem, in manifest order, of a reflink filesystem checkpoint (manifest
+// version 2).
+func FSCheckpointFilestoreFileName(i int) string {
+	return fmt.Sprintf("filestore.%d.img", i)
+}

@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/ib"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
@@ -1216,7 +1217,7 @@ func parseKeyValue(s string) (string, string, bool) {
 }
 
 func createPrivateMemoryFile(file *os.File, resourceID checkpoint.ResourceID, cid string, fsr *fsRestore) (*pgalloc.MemoryFile, error) {
-	pagesMetadataReader, pagesFileOffset, onLoadEnd, err := fsr.memoryFileLoadArgs(resourceID, cid)
+	pagesMetadataReader, pagesFileOffset, filestoreFile, onLoadEnd, err := fsr.memoryFileLoadArgs(resourceID, cid)
 	if err != nil {
 		return nil, err
 	}
@@ -1240,11 +1241,25 @@ func createPrivateMemoryFile(file *os.File, resourceID checkpoint.ResourceID, ci
 	}
 	if pagesMetadataReader != nil {
 		log.Infof("Loading filesystem checkpoint data for %q", resourceID)
-		if err := mf.LoadFrom(context.Background(), pagesMetadataReader, &pgalloc.LoadOpts{
+		loadOpts := pgalloc.LoadOpts{
 			PagesFile:       fsr.apfl,
 			PagesFileOffset: pagesFileOffset,
 			DoneCallback:    onLoadEnd,
-		}); err != nil {
+		}
+		if filestoreFile != nil {
+			// Clone the checkpointed backing file into the new filestore
+			// (NewMemoryFile truncated it to 0 above), so that page contents
+			// don't need to be loaded at all.
+			if err := unix.IoctlFileClone(int(file.Fd()), filestoreFile.FD()); err != nil {
+				err = fmt.Errorf("failed to clone checkpointed backing file for %q: %w (reflink filesystem checkpoints require that the checkpoint is on the same reflink-capable host filesystem as tmpfs filestore files)", resourceID, err)
+				onLoadEnd(err)
+				mf.Destroy()
+				return nil, err
+			}
+			loadOpts.PagesFile = nil
+			loadOpts.PagesInBackingFile = true
+		}
+		if err := mf.LoadFrom(context.Background(), pagesMetadataReader, &loadOpts); err != nil {
 			mf.Destroy()
 			return nil, err
 		}

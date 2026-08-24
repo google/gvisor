@@ -18,10 +18,12 @@ import (
 	"fmt"
 	"io"
 
+	"golang.org/x/sys/unix"
 	"google.golang.org/protobuf/proto"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
@@ -36,12 +38,24 @@ import (
 
 // FSSaveOpts holds options to Kernel.FSSave.
 type FSSaveOpts struct {
-	// These correspond to files specified by the fscheckpoint package, and are
-	// all required.
+	// These correspond to files specified by the fscheckpoint package.
+	// ManifestFile, MultiTarFile, and PagesMetadataFile are always required.
+	// PagesFile is required iff Reflink is false.
 	ManifestFile      io.WriteCloser
 	MultiTarFile      io.WriteCloser
 	PagesMetadataFile io.WriteCloser
 	PagesFile         stateio.AsyncWriter
+
+	// If Reflink is true, page contents are captured by cloning each
+	// checkpointed filesystem's backing file into the corresponding entry of
+	// FilestoreFiles with ioctl(FICLONE), rather than by copying them to
+	// PagesFile. The i-th checkpointed filesystem in manifest order is cloned
+	// into FilestoreFiles[i], and len(FilestoreFiles) must equal the number
+	// of checkpointed filesystems. Cloning requires each destination file to
+	// be on the same reflink-capable host filesystem as the corresponding
+	// backing file.
+	Reflink        bool
+	FilestoreFiles []*fd.FD
 
 	// RunscVersion is the runsc binary version.
 	RunscVersion string
@@ -75,15 +89,12 @@ func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) error {
 			opts.PagesFile.Close()
 			opts.PagesFile = nil
 		}
+		for _, f := range opts.FilestoreFiles {
+			f.Close()
+		}
+		opts.FilestoreFiles = nil
 	}()
-	paths := opts.Paths
-	if len(paths) == 0 {
-		paths = []checkpoint.ResourceID{{Path: "/"}}
-	}
-	pathsMap := make(map[checkpoint.ResourceID]struct{}, len(paths))
-	for _, p := range paths {
-		pathsMap[p] = struct{}{}
-	}
+	pathsMap := fsCheckpointPathsMap(opts.Paths)
 
 	k.Pause()
 	defer k.Unpause()
@@ -94,27 +105,35 @@ func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) error {
 		var (
 			asyncPageSaveWg  sync.WaitGroup
 			asyncPageSaveErr error
+			apfs             *pgalloc.AsyncPagesFileSave
+			mfOpts           pgalloc.SaveOpts
 		)
-		asyncPageSaveWg.Add(1)
-		apfs, err := pgalloc.StartAsyncPagesFileSave(opts.PagesFile /* transfers ownership */, func(err error) {
-			defer asyncPageSaveWg.Done()
-			asyncPageSaveErr = err
-		})
-		opts.PagesFile = nil
-		if err != nil {
-			return fmt.Errorf("failed to start async page saving: %w", err)
-		}
-		asyncPageSaveCleanup := cleanup.Make(func() {
-			apfs.MemoryFilesDone()
-			asyncPageSaveWg.Wait()
-		})
+		asyncPageSaveCleanup := cleanup.Make(func() {})
 		defer asyncPageSaveCleanup.Clean()
-		mfOpts := pgalloc.SaveOpts{
-			PagesFile: apfs,
+		manifestVersion := uint64(1)
+		if opts.Reflink {
+			mfOpts.PagesInBackingFile = true
+			manifestVersion = 2
+		} else {
+			asyncPageSaveWg.Add(1)
+			var err error
+			apfs, err = pgalloc.StartAsyncPagesFileSave(opts.PagesFile /* transfers ownership */, func(err error) {
+				defer asyncPageSaveWg.Done()
+				asyncPageSaveErr = err
+			})
+			opts.PagesFile = nil
+			if err != nil {
+				return fmt.Errorf("failed to start async page saving: %w", err)
+			}
+			asyncPageSaveCleanup = cleanup.Make(func() {
+				apfs.MemoryFilesDone()
+				asyncPageSaveWg.Wait()
+			})
+			mfOpts.PagesFile = apfs
 		}
 
 		manifest := &fspb.Manifest{
-			Version:      1,
+			Version:      manifestVersion,
 			RunscVersion: opts.RunscVersion,
 			PageSize:     hostarch.PageSize,
 			Endian:       hostarch.EndianString(),
@@ -171,18 +190,7 @@ func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) error {
 				continue
 			}
 
-			matched := false
-			if _, ok := pathsMap[resourceID]; ok {
-				matched = true
-			} else if _, ok := pathsMap[checkpoint.ResourceID{Path: resourceID.Path}]; ok {
-				matched = true
-			} else if _, ok := pathsMap[checkpoint.ResourceID{ContainerName: resourceID.ContainerName, Path: fscheckpoint.AllTmpfsPath}]; ok {
-				matched = true
-			} else if _, ok := pathsMap[checkpoint.ResourceID{Path: fscheckpoint.AllTmpfsPath}]; ok {
-				matched = true
-			}
-
-			if !matched {
+			if !fsCheckpointPathsMatch(pathsMap, resourceID) {
 				continue
 			}
 			if old, ok := resourceIDs[resourceID]; ok {
@@ -195,6 +203,15 @@ func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) error {
 			if err := mf.SaveTo(ctx, pagesMetadataWriter, &mfOpts); err != nil {
 				return fmt.Errorf("failed to save MemoryFile with resourceID %s: %w", resourceID, err)
 			}
+			if opts.Reflink {
+				idx := len(manifest.MemoryFiles)
+				if idx >= len(opts.FilestoreFiles) {
+					return fmt.Errorf("checkpoint has more than %d filesystems, but only %d filestore files were provided; filesystems may have been created concurrently with the checkpoint", len(opts.FilestoreFiles), len(opts.FilestoreFiles))
+				}
+				if err := unix.IoctlFileClone(opts.FilestoreFiles[idx].FD(), mf.FD()); err != nil {
+					return fmt.Errorf("failed to clone backing file for %s: %w (reflink filesystem checkpoints require that the image path is on the same reflink-capable host filesystem as tmpfs filestore files)", resourceID, err)
+				}
+			}
 			manifest.MemoryFiles = append(manifest.MemoryFiles, &fspb.MemoryFile{
 				ResourceId:         toProtoResourceID(resourceID),
 				PagesMetadataStart: prevPagesMetadataOffset,
@@ -202,7 +219,9 @@ func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) error {
 				PagesStart:         prevPagesOffset,
 			})
 			prevPagesMetadataOffset = pagesMetadataWriter.count
-			prevPagesOffset = apfs.PagesFileOffset()
+			if apfs != nil {
+				prevPagesOffset = apfs.PagesFileOffset()
+			}
 			if err := tmpfs.FSCheckpointWrite(ctx, fs, multiTarWriter); err != nil {
 				return fmt.Errorf("failed to write tmpfs with resourceID %s to multi-tar file: %w", resourceID, err)
 			}
@@ -216,7 +235,12 @@ func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) error {
 		if len(resourceIDs) == 0 {
 			return fmt.Errorf("no checkpointable filesystems")
 		}
-		apfs.MemoryFilesDone()
+		if opts.Reflink && len(resourceIDs) != len(opts.FilestoreFiles) {
+			return fmt.Errorf("checkpointed %d filesystems, but %d filestore files were provided; filesystems may have been removed concurrently with the checkpoint", len(resourceIDs), len(opts.FilestoreFiles))
+		}
+		if apfs != nil {
+			apfs.MemoryFilesDone()
+		}
 		bytes, err := proto.Marshal(manifest)
 		if err != nil {
 			return fmt.Errorf("failed to marshal manifest: %w", err)
@@ -255,6 +279,67 @@ func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) error {
 	}
 	k.fsSaveWaiters = nil
 	return err
+}
+
+// fsCheckpointPathsMap converts a list of requested checkpoint paths to a set,
+// applying the default of "/" in all containers.
+func fsCheckpointPathsMap(paths []checkpoint.ResourceID) map[checkpoint.ResourceID]struct{} {
+	if len(paths) == 0 {
+		paths = []checkpoint.ResourceID{{Path: "/"}}
+	}
+	pathsMap := make(map[checkpoint.ResourceID]struct{}, len(paths))
+	for _, p := range paths {
+		pathsMap[p] = struct{}{}
+	}
+	return pathsMap
+}
+
+// fsCheckpointPathsMatch returns true if the filesystem with the given
+// ResourceID is selected by the requested checkpoint paths.
+func fsCheckpointPathsMatch(pathsMap map[checkpoint.ResourceID]struct{}, resourceID checkpoint.ResourceID) bool {
+	if _, ok := pathsMap[resourceID]; ok {
+		return true
+	}
+	if _, ok := pathsMap[checkpoint.ResourceID{Path: resourceID.Path}]; ok {
+		return true
+	}
+	if _, ok := pathsMap[checkpoint.ResourceID{ContainerName: resourceID.ContainerName, Path: fscheckpoint.AllTmpfsPath}]; ok {
+		return true
+	}
+	if _, ok := pathsMap[checkpoint.ResourceID{Path: fscheckpoint.AllTmpfsPath}]; ok {
+		return true
+	}
+	return false
+}
+
+// FSCheckpointResources returns the ResourceIDs of the filesystems that would
+// be included in a filesystem checkpoint with the given paths. The result's
+// order is unspecified and may differ from checkpoint order; in particular,
+// filesystem creation or destruction concurrent with a subsequent FSSave may
+// change the set of checkpointed filesystems.
+func (k *Kernel) FSCheckpointResources(ctx context.Context, paths []checkpoint.ResourceID) []checkpoint.ResourceID {
+	pathsMap := fsCheckpointPathsMap(paths)
+	fss := k.vfs.GetFilesystems()
+	defer func() {
+		for _, fs := range fss {
+			fs.DecRef(ctx)
+		}
+	}()
+	var ids []checkpoint.ResourceID
+	for _, fs := range fss {
+		mf := tmpfs.MemoryFileOf(fs)
+		if mf == nil {
+			continue
+		}
+		resourceID := mf.ResourceID()
+		if !resourceID.Ok() {
+			continue
+		}
+		if fsCheckpointPathsMatch(pathsMap, resourceID) {
+			ids = append(ids, resourceID)
+		}
+	}
+	return ids
 }
 
 type countingWriter struct {

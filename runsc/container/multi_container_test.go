@@ -3347,6 +3347,26 @@ func TestMultiContainerCgroupsMemoryUsage(t *testing.T) {
 	}
 }
 
+// reflinkSupported returns true if files in dir can be cloned with FICLONE.
+func reflinkSupported(dir string) bool {
+	src, err := os.CreateTemp(dir, "reflink-probe-src-")
+	if err != nil {
+		return false
+	}
+	defer os.Remove(src.Name())
+	defer src.Close()
+	if _, err := src.WriteString("probe"); err != nil {
+		return false
+	}
+	dst, err := os.CreateTemp(dir, "reflink-probe-dst-")
+	if err != nil {
+		return false
+	}
+	defer os.Remove(dst.Name())
+	defer dst.Close()
+	return unix.IoctlFileClone(int(dst.Fd()), int(src.Fd())) == nil
+}
+
 // TestFSCheckpointCommand tests filesystem checkpoint and restore functionality
 // triggered from outside the sandbox (equivalent to 'runsc fscheckpoint' CLI command).
 //
@@ -3361,12 +3381,15 @@ func TestFSCheckpointCommand(t *testing.T) {
 		lostPath       string
 		all            bool
 		multipaths     bool
+		reflink        bool
 		modifyManifest func(t *testing.T, imagePath string)
 	}{
 		{name: "root", savePath: "/", lostPath: "/homedir"},
 		{name: "all", savePath: "/", lostPath: "/homedir", all: true},
 		{name: "homedir", savePath: "/homedir", lostPath: "/lost-dir"},
 		{name: "multipath", multipaths: true},
+		{name: "reflink", savePath: "/", lostPath: "/homedir", reflink: true},
+		{name: "reflink_all", savePath: "/", lostPath: "/homedir", all: true, reflink: true},
 		{
 			name:     "phony_runsc_version",
 			savePath: "/",
@@ -3394,6 +3417,10 @@ func TestFSCheckpointCommand(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.reflink && !reflinkSupported(testutil.TmpDir()) {
+				t.Skipf("Test requires FICLONE support on %q (e.g. XFS with reflink enabled, or Btrfs)", testutil.TmpDir())
+			}
+
 			conf := testutil.TestConfig(t)
 
 			rootDir, cleanupRoot, err := testutil.SetupRootDir()
@@ -3569,6 +3596,7 @@ func TestFSCheckpointCommand(t *testing.T) {
 			}
 			if err := conts[0].FSSave(conf, imagePath, sandbox.FSSaveOpts{
 				ExitAfterSaving: true,
+				Reflink:         tc.reflink,
 				Paths:           paths,
 			}); err != nil {
 				t.Fatalf("Error saving filesystem checkpoint: %v", err)
