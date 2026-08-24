@@ -39,12 +39,16 @@ func (e *endpoint) afterLoad(ctx context.Context) {
 }
 
 // beforeSave is invoked by stateify.
+//
+// +checklocksexclude:e.rcvMu
 func (e *endpoint) beforeSave() {
 	e.freeze()
 	e.stack.RegisterResumableEndpoint(e)
 }
 
-// Restore implements tcpip.RestoredEndpoint.Restore.
+// Restore implements stack.RestoredEndpoint.Restore.
+//
+// +checklocksexclude:e.rcvMu
 func (e *endpoint) Restore(s *stack.Stack) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -55,12 +59,13 @@ func (e *endpoint) Restore(s *stack.Stack) {
 		return
 	}
 
-	// Unfreeze the endpoint to handle packets.
-	e.frozen = false
+	e.thaw()
 	e.ops.InitHandler(e, e.stack, tcpip.GetStackSendBufferLimits, tcpip.GetStackReceiveBufferLimits)
 }
 
-// Resume implements tcpip.ResumableEndpoint.Resume.
+// Resume implements stack.ResumableEndpoint.Resume.
+//
+// +checklocksexclude:e.rcvMu
 func (e *endpoint) Resume() {
 	e.thaw()
 }

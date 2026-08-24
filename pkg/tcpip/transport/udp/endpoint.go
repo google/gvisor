@@ -67,18 +67,22 @@ type endpoint struct {
 	stats       tcpip.TransportEndpointStats
 	ops         tcpip.SocketOptions
 
-	// The following fields are used to manage the receive queue, and are
-	// protected by rcvMu.
-	rcvMu      sync.Mutex `state:"nosave"`
-	rcvReady   bool
-	rcvList    udpPacketList
+	// The following fields are used to manage the receive queue.
+	rcvMu sync.Mutex `state:"nosave"`
+
+	// +checklocks:rcvMu
+	rcvReady bool
+	// +checklocks:rcvMu
+	rcvList udpPacketList
+	// +checklocks:rcvMu
 	rcvBufSize int
-	rcvClosed  bool
+	// +checklocks:rcvMu
+	rcvClosed bool
 
 	lastErrorMu sync.Mutex `state:"nosave"`
 	lastError   tcpip.Error
 
-	// The following fields are protected by the mu mutex.
+	// mu protects the endpoint's port and binding state and readShutdown.
 	mu        sync.RWMutex `state:"nosave"`
 	portFlags ports.Flags
 
@@ -97,8 +101,9 @@ type endpoint struct {
 	// address).
 	effectiveNetProtos []tcpip.NetworkProtocolNumber
 
-	// frozen indicates if the packets should be delivered to the endpoint
-	// during restore.
+	// frozen prevents packet delivery during save/restore.
+	//
+	// +checklocks:rcvMu
 	frozen bool
 
 	localPort  uint16
@@ -152,20 +157,26 @@ func (e *endpoint) UpdateLastError(err tcpip.Error) {
 }
 
 // Abort implements stack.TransportEndpoint.
+//
+// +checklocksexclude:e.rcvMu
 func (e *endpoint) Abort() {
 	e.Close()
 }
 
 // Close puts the endpoint in a closed state and frees all resources
 // associated with it.
+//
+// +checklocksexclude:e.rcvMu
 func (e *endpoint) Close() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.closeLocked()
 }
 
-// Preconditions: e.mu is locked.
+// closeLocked closes the endpoint while retaining e.mu for the caller.
+//
 // +checklocks:e.mu
+// +checklocksexclude:e.rcvMu
 func (e *endpoint) closeLocked() {
 	switch state := e.net.State(); state {
 	case transport.DatagramEndpointStateInitial:
@@ -214,6 +225,8 @@ func (e *endpoint) closeLocked() {
 func (*endpoint) ModerateRecvBuf(int) {}
 
 // Read implements tcpip.Endpoint.
+//
+// +checklocksexclude:e.rcvMu
 func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult, tcpip.Error) {
 	if err := e.LastError(); err != nil {
 		return tcpip.ReadResult{}, err
@@ -315,6 +328,7 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 //
 // Returns true for retry if preparation should be retried.
 // +checklocksread:e.mu
+// +checklocksexclude:e.rcvMu
 func (e *endpoint) prepareForWriteInner(to *tcpip.FullAddress) (retry bool, err tcpip.Error) {
 	switch e.net.State() {
 	case transport.DatagramEndpointStateInitial:
@@ -350,9 +364,11 @@ func (e *endpoint) prepareForWriteInner(to *tcpip.FullAddress) (retry bool, err 
 
 var _ tcpip.EndpointWithPreflight = (*endpoint)(nil)
 
-// Validates the passed WriteOptions and prepares the endpoint for writes
+// Preflight validates the passed WriteOptions and prepares the endpoint for writes
 // using those options. If the endpoint is unbound and the `To` address
 // is specified, binds the endpoint to that address.
+//
+// +checklocksexclude:e.rcvMu
 func (e *endpoint) Preflight(opts tcpip.WriteOptions) tcpip.Error {
 	var r bytes.Reader
 	udpInfo, err := e.prepareForWrite(&r, opts)
@@ -364,6 +380,8 @@ func (e *endpoint) Preflight(opts tcpip.WriteOptions) tcpip.Error {
 
 // Write writes data to the endpoint's peer. This method does not block
 // if the data cannot be written.
+//
+// +checklocksexclude:e.rcvMu
 func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcpip.Error) {
 	n, err := e.write(p, opts)
 	switch err.(type) {
@@ -385,6 +403,7 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 	return n, err
 }
 
+// +checklocksexclude:e.rcvMu
 func (e *endpoint) prepareForWrite(p tcpip.Payloader, opts tcpip.WriteOptions) (udpPacketInfo, tcpip.Error) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
@@ -445,6 +464,7 @@ func (e *endpoint) prepareForWrite(p tcpip.Payloader, opts tcpip.WriteOptions) (
 	}, nil
 }
 
+// +checklocksexclude:e.rcvMu
 func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcpip.Error) {
 	// Do not hold lock when sending as loopback is synchronous and if the UDP
 	// datagram ends up generating an ICMP response then it can result in a
@@ -562,6 +582,8 @@ func (e *endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 }
 
 // GetSockOptInt implements tcpip.Endpoint.
+//
+// +checklocksexclude:e.rcvMu
 func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 	switch opt {
 	case tcpip.ReceiveQueueSizeOption:
@@ -651,6 +673,8 @@ func (e *endpoint) Disconnect() tcpip.Error {
 }
 
 // Connect connects the endpoint to its peer. Specifying a NIC is optional.
+//
+// +checklocksexclude:e.rcvMu
 func (e *endpoint) Connect(addr tcpip.FullAddress) tcpip.Error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -707,6 +731,8 @@ func (*endpoint) ConnectEndpoint(tcpip.Endpoint) tcpip.Error {
 
 // Shutdown closes the read and/or write end of the endpoint connection
 // to its peer.
+//
+// +checklocksexclude:e.rcvMu
 func (e *endpoint) Shutdown(flags tcpip.ShutdownFlags) tcpip.Error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -791,6 +817,10 @@ func (e *endpoint) registerWithStack(netProtos []tcpip.NetworkProtocolNumber, id
 	return id, bindToDevice, err
 }
 
+// bindLocked binds an initial endpoint while retaining e.mu for the caller.
+//
+// +checklocks:e.mu
+// +checklocksexclude:e.rcvMu
 func (e *endpoint) bindLocked(addr tcpip.FullAddress) tcpip.Error {
 	// Don't allow binding once endpoint is not in the initial state
 	// anymore.
@@ -836,6 +866,8 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) tcpip.Error {
 
 // Bind binds the endpoint to a specific local address and port.
 // Specifying a NIC is optional.
+//
+// +checklocksexclude:e.rcvMu
 func (e *endpoint) Bind(addr tcpip.FullAddress) tcpip.Error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -874,6 +906,8 @@ func (e *endpoint) GetRemoteAddress() (tcpip.FullAddress, tcpip.Error) {
 
 // Readiness returns the current readiness of the endpoint. For example, if
 // waiter.EventIn is set, the endpoint is immediately readable.
+//
+// +checklocksexclude:e.rcvMu
 func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 	var result waiter.EventMask
 
@@ -901,6 +935,8 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 
 // HandlePacket is called by the stack when new packets arrive to this transport
 // endpoint.
+//
+// +checklocksexclude:e.rcvMu
 func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
 	// Get the header then trim it from the view.
 	hdr := header.UDP(pkt.TransportHeader().Slice())
@@ -1089,16 +1125,19 @@ func (e *endpoint) SocketOptions() *tcpip.SocketOptions {
 }
 
 // freeze prevents any more packets from being delivered to the endpoint.
+//
+// +checklocksexclude:e.rcvMu
 func (e *endpoint) freeze() {
-	e.mu.Lock()
+	e.rcvMu.Lock()
 	e.frozen = true
-	e.mu.Unlock()
+	e.rcvMu.Unlock()
 }
 
-// thaw unfreezes a previously frozen endpoint using endpoint.freeze() allows
-// new packets to be delivered again.
+// thaw allows packet delivery again after freeze.
+//
+// +checklocksexclude:e.rcvMu
 func (e *endpoint) thaw() {
-	e.mu.Lock()
+	e.rcvMu.Lock()
 	e.frozen = false
-	e.mu.Unlock()
+	e.rcvMu.Unlock()
 }
