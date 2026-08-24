@@ -40,9 +40,13 @@ type fakeEndpoint struct {
 	gsoMaxSize      uint32
 	supportedGSO    stack.SupportedGSO
 
-	mu             sync.Mutex
-	batchSizes     []int
-	bytesWritten   int
+	mu sync.Mutex
+
+	// +checklocks:mu
+	batchSizes []int
+	// +checklocks:mu
+	bytesWritten int
+	// +checklocks:mu
 	packetsWritten int
 	packetsWanted  int // 0 disables the done signal
 	done           chan struct{}

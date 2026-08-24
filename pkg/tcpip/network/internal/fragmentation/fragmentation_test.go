@@ -49,6 +49,38 @@ func pkt(size int, pieces ...string) *stack.PacketBuffer {
 	})
 }
 
+func TestProcessAfterRelease(t *testing.T) {
+	f := NewFragmentation(minBlockSize, HighFragThreshold, LowFragThreshold, reassembleTimeout, &faketime.NullClock{}, nil)
+	f.Release()
+
+	done := make(chan error, 1)
+	go func() {
+		p := pkt(1, "x")
+		out, _, _, err := f.Process(FragmentID{}, 0, 0, false, 0, p)
+		p.DecRef()
+		if out != nil {
+			out.DecRef()
+		}
+		if err == nil {
+			done <- errors.New("Process succeeded after Release")
+			return
+		}
+		f.Release()
+		done <- nil
+	}()
+
+	// Keep a real-time watchdog: the regression blocks on f.mu, and mutex
+	// waits are not durably blocked in synctest, so its clock would not advance.
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Process after Release or subsequent Release blocked")
+	}
+}
+
 type processInput struct {
 	id    FragmentID
 	first uint16
@@ -137,6 +169,7 @@ func TestFragmentationProcess(t *testing.T) {
 						t.Errorf("got Process(%+v, %d, %d, %t, %d, _) = (_, %d, _, _), want = (_, %d, _, _)",
 							in.id, in.first, in.last, in.more, in.proto, proto, firstFragmentProto)
 					}
+					f.mu.Lock()
 					if _, ok := f.reassemblers[in.id]; ok {
 						t.Errorf("Process(%d) did not remove buffer from reassemblers", i)
 					}
@@ -145,6 +178,7 @@ func TestFragmentationProcess(t *testing.T) {
 							t.Errorf("Process(%d) did not remove buffer from rList", i)
 						}
 					}
+					f.mu.Unlock()
 				}
 			}
 		})
@@ -277,7 +311,10 @@ func TestReassemblingTimeout(t *testing.T) {
 						t.Fatalf("%s: got done = %t, want = %t", event.name, done, event.expectDone)
 					}
 				}
-				if got, want := f.memSize, event.memSizeAfterEvent; got != want {
+				f.mu.Lock()
+				gotMemSize := f.memSize
+				f.mu.Unlock()
+				if got, want := gotMemSize, event.memSizeAfterEvent; got != want {
 					t.Errorf("%s: got f.memSize = %d, want = %d", event.name, got, want)
 				}
 			}
@@ -324,6 +361,7 @@ func TestMemoryLimits(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	f.mu.Lock()
 	if _, ok := f.reassemblers[FragmentID{ID: 0}]; ok {
 		t.Errorf("Memory limits are not respected: id=0 has not been evicted.")
 	}
@@ -333,6 +371,7 @@ func TestMemoryLimits(t *testing.T) {
 	if _, ok := f.reassemblers[FragmentID{ID: 3}]; !ok {
 		t.Errorf("Implementation of memory limits is wrong: id=3 is not present.")
 	}
+	f.mu.Unlock()
 }
 
 func TestMemoryLimitsIgnoresDuplicates(t *testing.T) {
@@ -355,7 +394,10 @@ func TestMemoryLimitsIgnoresDuplicates(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if got, want := f.memSize, memSize; got != want {
+	f.mu.Lock()
+	gotMemSize := f.memSize
+	f.mu.Unlock()
+	if got, want := gotMemSize, memSize; got != want {
 		t.Errorf("Wrong size, duplicates are not handled correctly: got=%d, want=%d.", got, want)
 	}
 }
@@ -693,11 +735,15 @@ func TestTimeoutHandler(t *testing.T) {
 				}
 			}
 			if !test.wantError {
+				f.mu.Lock()
 				r, ok := f.reassemblers[id]
+				if ok {
+					f.release(r, true)
+				}
+				f.mu.Unlock()
 				if !ok {
 					t.Fatal("Reassembler not found")
 				}
-				f.release(r, true)
 			}
 			switch {
 			case handler.pkt != nil && test.wantPkt == nil:

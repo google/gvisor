@@ -34,9 +34,12 @@ type Forwarder struct {
 	maxInFlight int
 	handler     func(*ForwarderRequest)
 
-	mu       forwarderMutex
+	mu forwarderMutex
+
+	// +checklocks:mu
 	inFlight map[stack.TransportEndpointID]struct{}
-	listen   *listenContext
+
+	listen *listenContext
 }
 
 // NewForwarder allocates and initializes a new forwarder with the given
@@ -107,8 +110,12 @@ func (f *Forwarder) HandlePacket(id stack.TransportEndpointID, pkt *stack.Packet
 // and passed to the client. Clients must eventually call Complete() on it, and
 // may optionally create an endpoint to represent it via CreateEndpoint.
 type ForwarderRequest struct {
-	mu         forwarderRequestMutex
-	forwarder  *Forwarder
+	mu forwarderRequestMutex
+
+	// +checklocks:mu
+	forwarder *Forwarder
+
+	// +checklocks:mu
 	segment    *segment
 	synOptions header.TCPSynOptions
 }
@@ -116,6 +123,8 @@ type ForwarderRequest struct {
 // ID returns the 4-tuple (src address, src port, dst address, dst port) that
 // represents the connection request.
 func (r *ForwarderRequest) ID() stack.TransportEndpointID {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	return r.segment.id
 }
 
@@ -135,7 +144,7 @@ func (r *ForwarderRequest) Complete(sendReset bool) {
 	r.forwarder.mu.Unlock()
 
 	if sendReset {
-		replyWithReset(r.forwarder.stack, r.segment, stack.DefaultTOS, tcpip.UseDefaultIPv4TTL, tcpip.UseDefaultIPv6HopLimit)
+		_ = replyWithReset(r.forwarder.stack, r.segment, stack.DefaultTOS, tcpip.UseDefaultIPv4TTL, tcpip.UseDefaultIPv6HopLimit)
 	}
 
 	// Release all resources.
@@ -155,7 +164,10 @@ func (r *ForwarderRequest) CreateEndpoint(queue *waiter.Queue) (tcpip.Endpoint, 
 	}
 
 	f := r.forwarder
-	ep, err := f.listen.performHandshake(r.segment, header.TCPSynOptions{
+	// NewForwarder creates f.listen with no listener endpoint, so there is
+	// no listener mutex to hold. checklocks cannot express that conditional
+	// lock requirement.
+	ep, err := f.listen.performHandshake(r.segment, header.TCPSynOptions{ // +checklocksignore
 		MSS:           r.synOptions.MSS,
 		WS:            r.synOptions.WS,
 		TS:            r.synOptions.TS,

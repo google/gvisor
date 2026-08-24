@@ -177,6 +177,7 @@ func (e *Endpoint) closeEndpointAtRestore() {
 
 // Restore implements tcpip.RestoredEndpoint.Restore.
 func (e *Endpoint) Restore(s *stack.Stack) {
+	e.mu.Lock()
 	if !e.EndpointState().closed() {
 		e.keepalive.timer.init(s.Clock(), timerHandler(e, e.keepaliveTimerExpired))
 	}
@@ -189,7 +190,6 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 	e.ops.InitHandler(e, e.stack, GetTCPSendBufferLimits, GetTCPReceiveBufferLimits)
 	e.segmentQueue.thaw()
 
-	e.mu.Lock()
 	id := e.ID
 	terminateAtRestore := e.terminateAtRestore
 	e.mu.Unlock()
@@ -229,10 +229,13 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 				log.Infof("Cannot find the route %+v", e.TransportEndpointInfo.ID)
 				return
 			}
+			e.mu.Lock()
 			e.boundNICID = r.NICID()
+			e.mu.Unlock()
 			r.Release()
 		}
 		bind()
+		e.mu.Lock()
 		if e.connectingAddress.BitLen() == 0 {
 			e.connectingAddress = e.TransportEndpointInfo.ID.RemoteAddress
 			// This endpoint is accepted by netstack but not yet by
@@ -251,7 +254,6 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 		e.scoreboard.Reset()
 		// Unregister the endpoint before registering again during Connect.
 		e.stack.UnregisterTransportEndpoint(e.effectiveNetProtos, header.TCPProtocolNumber, e.TransportEndpointInfo.ID, e, e.boundPortFlags, e.boundBindToDevice)
-		e.mu.Lock()
 		err := e.connect(tcpip.FullAddress{NIC: e.boundNICID, Addr: e.connectingAddress, Port: e.TransportEndpointInfo.ID.RemotePort}, false /* handshake */)
 		if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
 			log.Warningf("TCP endpoint connect failed for connected endpoint with ID: %+v err: %v", id, err)
@@ -302,7 +304,10 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 			connectedLoading.Wait()
 			listenLoading.Wait()
 			bind()
-			err := e.Connect(tcpip.FullAddress{NIC: e.boundNICID, Addr: e.connectingAddress, Port: e.TransportEndpointInfo.ID.RemotePort})
+			e.mu.Lock()
+			addr := tcpip.FullAddress{NIC: e.boundNICID, Addr: e.connectingAddress, Port: e.TransportEndpointInfo.ID.RemotePort}
+			e.mu.Unlock()
+			err := e.Connect(addr)
 			if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
 				log.Warningf("TCP endpoint connect failed for connecting endpoint with ID: %+v err: %v", id, err)
 				e.Close()
@@ -351,8 +356,10 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 			tcpip.AsyncLoading.Done()
 		}()
 	case epState == StateClose:
+		e.mu.Lock()
 		e.isPortReserved = false
 		e.state.Store(uint32(StateClose))
+		e.mu.Unlock()
 		e.stack.CompleteTransportEndpointCleanup(e)
 		tcpip.DeleteDanglingEndpoint(e)
 	case epState == StateError:

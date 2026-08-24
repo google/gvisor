@@ -86,9 +86,11 @@ type listenContext struct {
 	// this context. Can be nil if the context is created by the forwarder.
 	listenEP *Endpoint
 
-	// hasherMu protects hasher.
 	hasherMu hasherMutex
+
 	// hasher is the hash function used to generate a SYN cookie.
+	//
+	// +checklocks:hasherMu
 	hasher hash.Hash
 
 	// v6Only is true if listenEP is a dual stack socket and has the
@@ -231,7 +233,10 @@ func (l *listenContext) createConnectingEndpoint(s *segment, rcvdSynOpts header.
 // NOTE: h.ep.mu is not held and must be acquired if any state needs to be
 // modified.
 //
-// Precondition: if l.listenEP != nil, l.listenEP.mu must be locked.
+// If l.listenEP is nil, no listener mutex exists; callers must establish
+// that case. checklocks cannot express this conditional lock requirement.
+//
+// +checklocks:l.listenEP.mu
 func (l *listenContext) startHandshake(s *segment, opts header.TCPSynOptions, queue *waiter.Queue, owner tcpip.PacketOwner) (h *handshake, _ tcpip.Error) {
 	// Create new endpoint.
 	irs := s.sequenceNumber
@@ -258,7 +263,7 @@ func (l *listenContext) startHandshake(s *segment, opts header.TCPSynOptions, qu
 
 		// Propagate any inheritable options from the listening endpoint
 		// to the newly created endpoint.
-		l.listenEP.propagateInheritableOptionsLocked(ep) // +checklocksforce:ep.mu
+		l.listenEP.propagateInheritableOptionsLocked(ep)
 
 		if !ep.reserveTupleLocked() {
 			ep.mu.Unlock()
@@ -300,7 +305,10 @@ func (l *listenContext) startHandshake(s *segment, opts header.TCPSynOptions, qu
 // performHandshake performs a TCP 3-way handshake. On success, the new
 // established endpoint is returned.
 //
-// Precondition: if l.listenEP != nil, l.listenEP.mu must be locked.
+// If l.listenEP is nil, no listener mutex exists; callers must establish
+// that case. checklocks cannot express this conditional lock requirement.
+//
+// +checklocks:l.listenEP.mu
 func (l *listenContext) performHandshake(s *segment, opts header.TCPSynOptions, queue *waiter.Queue, owner tcpip.PacketOwner) (*Endpoint, tcpip.Error) {
 	waitEntry, notifyCh := waiter.NewChannelEntry(waiter.WritableEvents)
 	queue.EventRegister(&waitEntry)
@@ -433,7 +441,10 @@ func (a *acceptQueue) isFull() bool {
 // handleListenSegment is called when a listening endpoint receives a segment
 // and needs to handle it.
 //
+// Preconditions: ctx.listenEP == e.
+//
 // +checklocks:e.mu
+// +checklocks:ctx.listenEP.mu
 func (e *Endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Error {
 	e.rcvQueueMu.Lock()
 	rcvClosed := e.RcvClosed

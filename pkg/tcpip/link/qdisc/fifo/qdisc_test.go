@@ -33,7 +33,9 @@ var _ stack.LinkWriter = (*countWriter)(nil)
 
 // countWriter implements LinkWriter.
 type countWriter struct {
-	mu             sync.Mutex
+	mu sync.Mutex
+
+	// +checklocks:mu
 	packetsWritten int
 	packetsWanted  int
 	done           chan struct{}
@@ -99,6 +101,9 @@ func TestWriteMorePacketsThanBatchSize(t *testing.T) {
 		done := make(chan struct{})
 		lower := &countWriter{done: done, packetsWanted: want}
 		linkEp := fifo.New(lower, 1, 1000)
+		// Close each iteration promptly below; this idempotent fallback
+		// also joins the dispatcher if the test fails first.
+		t.Cleanup(linkEp.Close)
 		for i := 0; i < want; i++ {
 			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 				Payload: buffer.MakeWithData(v),
@@ -109,7 +114,10 @@ func TestWriteMorePacketsThanBatchSize(t *testing.T) {
 		select {
 		case <-done:
 		case <-time.After(1 * time.Second):
-			t.Fatalf("expected %d packets, but got only %d", want, lower.packetsWritten)
+			lower.mu.Lock()
+			packetsWritten := lower.packetsWritten
+			lower.mu.Unlock()
+			t.Fatalf("expected %d packets, but got only %d", want, packetsWritten)
 		}
 		linkEp.Close()
 	}

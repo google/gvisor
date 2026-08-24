@@ -34,8 +34,9 @@ type Endpoint struct {
 	child    stack.LinkEndpoint
 	embedder stack.NetworkDispatcher
 
-	// mu protects dispatcher.
-	mu         sync.RWMutex `state:"nosave"`
+	mu sync.RWMutex `state:"nosave"`
+
+	// +checklocks:mu
 	dispatcher stack.NetworkDispatcher
 }
 

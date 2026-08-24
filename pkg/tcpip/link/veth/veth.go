@@ -29,11 +29,17 @@ var _ stack.GSOEndpoint = (*Endpoint)(nil)
 
 // +stateify savable
 type veth struct {
-	mu           vethRWMutex `state:"nosave"`
-	closed       bool
+	mu vethRWMutex `state:"nosave"`
+
+	// +checklocks:mu
+	closed bool
+
 	backlogQueue chan vethPacket `state:"nosave"`
-	mtu          uint32
-	endpoints    [2]Endpoint
+
+	// +checklocks:mu
+	mtu uint32
+
+	endpoints [2]Endpoint
 }
 
 func (v *veth) close() {

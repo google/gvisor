@@ -83,12 +83,19 @@ type FragmentID struct {
 //
 // +stateify savable
 type Fragmentation struct {
-	mu             sync.Mutex `state:"nosave"`
-	highLimit      int
-	lowLimit       int
-	reassemblers   map[FragmentID]*reassembler
-	rList          reassemblerList
-	memSize        int
+	mu        sync.Mutex `state:"nosave"`
+	highLimit int
+	lowLimit  int
+
+	// +checklocks:mu
+	reassemblers map[FragmentID]*reassembler
+
+	// +checklocks:mu
+	rList reassemblerList
+
+	// +checklocks:mu
+	memSize int
+
 	timeout        time.Duration
 	blockSize      uint16
 	clock          tcpip.Clock
@@ -101,6 +108,12 @@ type TimeoutHandler interface {
 	// OnReassemblyTimeout will be called with the first fragment (or nil, if the
 	// first fragment has not been received) of a packet whose reassembly has
 	// timed out.
+	//
+	// The call is synchronous with the owning Fragmentation's mutex held. The
+	// handler must not reenter that Fragmentation's Process or Release methods.
+	//
+	// checklocks cannot name that mutex because TimeoutHandler does not expose
+	// the owning Fragmentation.
 	OnReassemblyTimeout(pkt *stack.PacketBuffer)
 }
 
@@ -158,6 +171,8 @@ func NewFragmentation(blockSize uint16, highMemoryLimit, lowMemoryLimit int, rea
 // proto is the protocol number marked in the fragment being processed. It has
 // to be given here outside of the FragmentID struct because IPv6 should not use
 // the protocol to identify a fragment.
+//
+// +checklocksexclude:f.mu
 func (f *Fragmentation) Process(
 	id FragmentID, first, last uint16, more bool, proto uint8, pkt *stack.PacketBuffer) (
 	*stack.PacketBuffer, uint8, bool, error) {
@@ -180,6 +195,7 @@ func (f *Fragmentation) Process(
 
 	f.mu.Lock()
 	if f.reassemblers == nil {
+		f.mu.Unlock()
 		return nil, 0, false, fmt.Errorf("Release() called before fragmentation processing could finish")
 	}
 
@@ -228,6 +244,8 @@ func (f *Fragmentation) Process(
 }
 
 // Release releases all underlying resources.
+//
+// +checklocksexclude:f.mu
 func (f *Fragmentation) Release() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -237,40 +255,51 @@ func (f *Fragmentation) Release() {
 	f.reassemblers = nil
 }
 
+// +checklocks:f.mu
+// +checklocksexclude:r.mu
 func (f *Fragmentation) release(r *reassembler, timedOut bool) {
 	// Before releasing a fragment we need to check if r is already marked as done.
 	// Otherwise, we would delete it twice.
 	if r.checkDoneOrMark() {
 		return
 	}
+	// checkDoneOrMark waited for active processing under r.mu. Since it
+	// returned false, this call marked r done, so subsequent process calls
+	// return before accessing r.memSize, r.pkt, or r.holes. This call now owns
+	// those fields exclusively without r.mu. checklocks cannot model this
+	// ownership transfer.
 
 	delete(f.reassemblers, r.id)
 	f.rList.Remove(r)
-	f.memSize -= r.memSize
+	memSize := r.memSize // +checklocksignore
+	f.memSize -= memSize
 	if f.memSize < 0 {
 		log.Warningf("memory counter < 0 (%d), this is an accounting bug that requires investigation", f.memSize)
 		f.memSize = 0
 	}
 
+	pkt := r.pkt // +checklocksignore
 	if h := f.timeoutHandler; timedOut && h != nil {
-		h.OnReassemblyTimeout(r.pkt)
+		h.OnReassemblyTimeout(pkt)
 	}
-	if r.pkt != nil {
-		r.pkt.DecRef()
-		r.pkt = nil
+	if pkt != nil {
+		pkt.DecRef()
+		r.pkt = nil // +checklocksignore
 	}
-	for _, h := range r.holes {
+	for _, h := range r.holes { // +checklocksignore
 		if h.pkt != nil {
 			h.pkt.DecRef()
 			h.pkt = nil
 		}
 	}
-	r.holes = nil
+	r.holes = nil // +checklocksignore
 }
 
 // releaseReassemblersLocked releases already-expired reassemblers, then
 // schedules the job to call back itself for the remaining reassemblers if
-// any. This function must be called with f.mu locked.
+// any.
+//
+// +checklocks:f.mu
 func (f *Fragmentation) releaseReassemblersLocked() {
 	now := f.clock.NowMonotonic()
 	for {

@@ -67,26 +67,40 @@ type endpoint struct {
 	stats       tcpip.TransportEndpointStats
 	ops         tcpip.SocketOptions
 
-	// The following fields are used to manage the receive queue, and are
-	// protected by rcvMu.
-	rcvMu      sync.Mutex `state:"nosave"`
-	rcvReady   bool
-	rcvList    udpPacketList
+	// The following fields are used to manage the receive queue.
+	rcvMu sync.Mutex `state:"nosave"`
+	// +checklocks:rcvMu
+	rcvReady bool
+	// +checklocks:rcvMu
+	rcvList udpPacketList
+	// +checklocks:rcvMu
 	rcvBufSize int
-	rcvClosed  bool
+	// +checklocks:rcvMu
+	rcvClosed bool
+	// frozen prevents packet delivery during save/restore.
+	//
+	// +checklocks:rcvMu
+	frozen bool
 
 	lastErrorMu sync.Mutex `state:"nosave"`
-	lastError   tcpip.Error
 
-	// The following fields are protected by the mu mutex.
-	mu        sync.RWMutex `state:"nosave"`
+	// +checklocks:lastErrorMu
+	lastError tcpip.Error
+
+	mu sync.RWMutex `state:"nosave"`
+
+	// +checklocks:mu
 	portFlags ports.Flags
 
-	// Values used to reserve a port or register a transport endpoint.
-	// (which ever happens first).
+	// Values used to reserve a port or register a transport endpoint,
+	// whichever happens first.
+	//
+	// +checklocks:mu
 	boundBindToDevice tcpip.NICID
-	boundPortFlags    ports.Flags
+	// +checklocks:mu
+	boundPortFlags ports.Flags
 
+	// +checklocks:mu
 	readShutdown bool
 
 	// effectiveNetProtos contains the network protocols actually in use. In
@@ -95,13 +109,13 @@ type endpoint struct {
 	// protocols (e.g., IPv6 and IPv4) or a single different protocol (e.g.,
 	// IPv4 when IPv6 endpoint is bound or connected to an IPv4 mapped
 	// address).
+	//
+	// +checklocks:mu
 	effectiveNetProtos []tcpip.NetworkProtocolNumber
 
-	// frozen indicates if the packets should be delivered to the endpoint
-	// during restore.
-	frozen bool
-
-	localPort  uint16
+	// +checklocks:mu
+	localPort uint16
+	// +checklocks:mu
 	remotePort uint16
 }
 
@@ -445,11 +459,12 @@ func (e *endpoint) prepareForWrite(p tcpip.Payloader, opts tcpip.WriteOptions) (
 	}, nil
 }
 
+// +checklocksexclude:e.mu
 func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcpip.Error) {
 	// Do not hold lock when sending as loopback is synchronous and if the UDP
 	// datagram ends up generating an ICMP response then it can result in a
 	// deadlock where the ICMP response handling ends up acquiring this endpoint's
-	// mutex using e.mu.RLock() in endpoint.HandleControlPacket which can cause a
+	// mutex using e.mu.RLock() in endpoint.onICMPError which can cause a
 	// deadlock if another caller is trying to acquire e.mu in exclusive mode w/
 	// e.mu.Lock(). Since e.mu.Lock() prevents any new read locks to ensure the
 	// lock can be eventually acquired.
@@ -656,39 +671,9 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) tcpip.Error {
 	defer e.mu.Unlock()
 
 	err := e.net.ConnectAndThen(addr, func(netProto tcpip.NetworkProtocolNumber, previousID, nextID stack.TransportEndpointID) tcpip.Error {
-		nextID.LocalPort = e.localPort
-		nextID.RemotePort = addr.Port
-
-		// Even if we're connected, this endpoint can still be used to send
-		// packets on a different network protocol, so we register both even if
-		// v6only is set to false and this is an ipv6 endpoint.
-		netProtos := []tcpip.NetworkProtocolNumber{netProto}
-		if netProto == header.IPv6ProtocolNumber && !e.ops.GetV6Only() && e.stack.CheckNetworkProtocol(header.IPv4ProtocolNumber) {
-			netProtos = []tcpip.NetworkProtocolNumber{
-				header.IPv4ProtocolNumber,
-				header.IPv6ProtocolNumber,
-			}
-		}
-
-		oldPortFlags := e.boundPortFlags
-
-		// Remove the old registration.
-		if e.localPort != 0 {
-			previousID.LocalPort = e.localPort
-			previousID.RemotePort = e.remotePort
-			e.stack.UnregisterTransportEndpoint(e.effectiveNetProtos, ProtocolNumber, previousID, e, oldPortFlags, e.boundBindToDevice)
-		}
-
-		nextID, btd, err := e.registerWithStack(netProtos, nextID)
-		if err != nil {
-			return err
-		}
-
-		e.localPort = nextID.LocalPort
-		e.remotePort = nextID.RemotePort
-		e.boundBindToDevice = btd
-		e.effectiveNetProtos = netProtos
-		return nil
+		// ConnectAndThen invokes this synchronously while Connect retains e.mu.
+		// checklocks cannot propagate that captured lock into the callback.
+		return e.registerConnectedEndpointLocked(netProto, previousID, nextID, addr.Port) // +checklocksignore
 	})
 	if err != nil {
 		return err
@@ -697,6 +682,46 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) tcpip.Error {
 	e.rcvMu.Lock()
 	e.rcvReady = true
 	e.rcvMu.Unlock()
+	return nil
+}
+
+// registerConnectedEndpointLocked registers the connection selected by
+// network.Endpoint.ConnectAndThen.
+//
+// +checklocks:e.mu
+func (e *endpoint) registerConnectedEndpointLocked(netProto tcpip.NetworkProtocolNumber, previousID, nextID stack.TransportEndpointID, remotePort uint16) tcpip.Error {
+	nextID.LocalPort = e.localPort
+	nextID.RemotePort = remotePort
+
+	// Even if we're connected, this endpoint can still be used to send
+	// packets on a different network protocol, so we register both even if
+	// v6only is set to false and this is an ipv6 endpoint.
+	netProtos := []tcpip.NetworkProtocolNumber{netProto}
+	if netProto == header.IPv6ProtocolNumber && !e.ops.GetV6Only() && e.stack.CheckNetworkProtocol(header.IPv4ProtocolNumber) {
+		netProtos = []tcpip.NetworkProtocolNumber{
+			header.IPv4ProtocolNumber,
+			header.IPv6ProtocolNumber,
+		}
+	}
+
+	oldPortFlags := e.boundPortFlags
+
+	// Remove the old registration.
+	if e.localPort != 0 {
+		previousID.LocalPort = e.localPort
+		previousID.RemotePort = e.remotePort
+		e.stack.UnregisterTransportEndpoint(e.effectiveNetProtos, ProtocolNumber, previousID, e, oldPortFlags, e.boundBindToDevice)
+	}
+
+	nextID, btd, err := e.registerWithStack(netProtos, nextID)
+	if err != nil {
+		return err
+	}
+
+	e.localPort = nextID.LocalPort
+	e.remotePort = nextID.RemotePort
+	e.boundBindToDevice = btd
+	e.effectiveNetProtos = netProtos
 	return nil
 }
 
@@ -754,6 +779,9 @@ func (*endpoint) Accept(*tcpip.FullAddress) (tcpip.Endpoint, *waiter.Queue, tcpi
 	return nil, nil, &tcpip.ErrNotSupported{}
 }
 
+// registerWithStack reserves and registers id.
+//
+// +checklocks:e.mu
 func (e *endpoint) registerWithStack(netProtos []tcpip.NetworkProtocolNumber, id stack.TransportEndpointID) (stack.TransportEndpointID, tcpip.NICID, tcpip.Error) {
 	bindToDevice := tcpip.NICID(e.ops.GetBindToDevice())
 	if e.localPort == 0 {
@@ -791,6 +819,9 @@ func (e *endpoint) registerWithStack(netProtos []tcpip.NetworkProtocolNumber, id
 	return id, bindToDevice, err
 }
 
+// bindLocked binds an initial endpoint while retaining e.mu for the caller.
+//
+// +checklocks:e.mu
 func (e *endpoint) bindLocked(addr tcpip.FullAddress) tcpip.Error {
 	// Don't allow binding once endpoint is not in the initial state
 	// anymore.
@@ -799,30 +830,9 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) tcpip.Error {
 	}
 
 	err := e.net.BindAndThen(addr, func(boundNetProto tcpip.NetworkProtocolNumber, boundAddr tcpip.Address) tcpip.Error {
-		// Expand netProtos to include v4 and v6 if the caller is binding to a
-		// wildcard (empty) address, and this is an IPv6 endpoint with v6only
-		// set to false.
-		netProtos := []tcpip.NetworkProtocolNumber{boundNetProto}
-		if boundNetProto == header.IPv6ProtocolNumber && !e.ops.GetV6Only() && boundAddr == (tcpip.Address{}) && e.stack.CheckNetworkProtocol(header.IPv4ProtocolNumber) {
-			netProtos = []tcpip.NetworkProtocolNumber{
-				header.IPv6ProtocolNumber,
-				header.IPv4ProtocolNumber,
-			}
-		}
-
-		id := stack.TransportEndpointID{
-			LocalPort:    addr.Port,
-			LocalAddress: boundAddr,
-		}
-		id, btd, err := e.registerWithStack(netProtos, id)
-		if err != nil {
-			return err
-		}
-
-		e.localPort = id.LocalPort
-		e.boundBindToDevice = btd
-		e.effectiveNetProtos = netProtos
-		return nil
+		// BindAndThen invokes this synchronously while bindLocked retains e.mu.
+		// checklocks cannot propagate that captured lock into the callback.
+		return e.registerBoundEndpointLocked(boundNetProto, boundAddr, addr.Port) // +checklocksignore
 	})
 	if err != nil {
 		return err
@@ -831,6 +841,37 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) tcpip.Error {
 	e.rcvMu.Lock()
 	e.rcvReady = true
 	e.rcvMu.Unlock()
+	return nil
+}
+
+// registerBoundEndpointLocked registers the local address selected by
+// network.Endpoint.BindAndThen.
+//
+// +checklocks:e.mu
+func (e *endpoint) registerBoundEndpointLocked(boundNetProto tcpip.NetworkProtocolNumber, boundAddr tcpip.Address, port uint16) tcpip.Error {
+	// Expand netProtos to include v4 and v6 if the caller is binding to a
+	// wildcard (empty) address, and this is an IPv6 endpoint with v6only
+	// set to false.
+	netProtos := []tcpip.NetworkProtocolNumber{boundNetProto}
+	if boundNetProto == header.IPv6ProtocolNumber && !e.ops.GetV6Only() && boundAddr == (tcpip.Address{}) && e.stack.CheckNetworkProtocol(header.IPv4ProtocolNumber) {
+		netProtos = []tcpip.NetworkProtocolNumber{
+			header.IPv6ProtocolNumber,
+			header.IPv4ProtocolNumber,
+		}
+	}
+
+	id := stack.TransportEndpointID{
+		LocalPort:    port,
+		LocalAddress: boundAddr,
+	}
+	id, btd, err := e.registerWithStack(netProtos, id)
+	if err != nil {
+		return err
+	}
+
+	e.localPort = id.LocalPort
+	e.boundBindToDevice = btd
+	e.effectiveNetProtos = netProtos
 	return nil
 }
 
@@ -1090,15 +1131,14 @@ func (e *endpoint) SocketOptions() *tcpip.SocketOptions {
 
 // freeze prevents any more packets from being delivered to the endpoint.
 func (e *endpoint) freeze() {
-	e.mu.Lock()
+	e.rcvMu.Lock()
 	e.frozen = true
-	e.mu.Unlock()
+	e.rcvMu.Unlock()
 }
 
-// thaw unfreezes a previously frozen endpoint using endpoint.freeze() allows
-// new packets to be delivered again.
+// thaw allows packet delivery again after freeze.
 func (e *endpoint) thaw() {
-	e.mu.Lock()
+	e.rcvMu.Lock()
 	e.frozen = false
-	e.mu.Unlock()
+	e.rcvMu.Unlock()
 }
