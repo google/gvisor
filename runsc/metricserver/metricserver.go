@@ -62,28 +62,36 @@ const (
 type servedSandbox struct {
 	rootContainerID container.FullID
 	server          *metricServer
-	extraLabels     map[string]string
 
-	// mu protects the fields below.
+	// extraLabels is initialized by load along with sandbox and is immutable
+	// thereafter. Metrics readers synchronize initialization by calling load.
+	// checklocks cannot express ownership that changes from mu during
+	// initialization to immutable access after a successful load.
+	extraLabels map[string]string
+
 	mu sync.Mutex
 
 	// sandbox is the sandbox being monitored.
-	// Once set, it is immutable.
+	// Once set, the pointer is not reassigned.
+	//
+	// +checklocks:mu
 	sandbox *sandbox.Sandbox
 
 	// createdAt stores the time the sandbox was created.
 	// It is loaded from the container state file.
-	// Once set, it is immutable.
+	// Like extraLabels, it is immutable after initialization by load.
 	createdAt time.Time
 
 	// capabilities is the union of the capability set of the containers within `sandbox`.
 	// It is used to export a per-sandbox metric representing which capabilities are in use.
 	// For monitoring purposes, a capability added in a container means it is considered
 	// added for the whole sandbox.
+	// Like extraLabels, it is immutable after initialization by load.
 	capabilities []linux.Capability
 
 	// specMetadataLabels is the set of label exported as part of the
 	// `spec_metadata` metric.
+	// Like extraLabels, it is immutable after initialization by load.
 	specMetadataLabels map[string]string
 
 	// verifier allows verifying the data integrity of the metrics we get from this sandbox.
@@ -94,10 +102,14 @@ type servedSandbox struct {
 	// served to HTTP clients. If there is no metric registration data within the Container
 	// data, then metrics were not requested for this sandbox, and this servedSandbox should
 	// be deleted from the server.
-	// Once set, it is immutable.
+	// Once set, the pointer is not reassigned.
+	//
+	// +checklocks:mu
 	verifier *prometheus.Verifier
 
 	// cleanupVerifier holds a reference to the cleanup function of the verifier.
+	//
+	// +checklocks:mu
 	cleanupVerifier func()
 
 	// extra contains additional per-sandbox data.
@@ -105,10 +117,11 @@ type servedSandbox struct {
 }
 
 // load loads the sandbox being monitored and initializes its metric verifier.
-// If it returns an error other than container.ErrStateFileLocked, the sandbox is either
-// non-existent, or has not requested instrumentation to be enabled, or does not have
-// valid metric registration data. In any of these cases, the sandbox should be removed
-// from this metrics server.
+// An error matching container.ErrStateFileLocked indicates temporary state-file
+// contention; callers should retry without discarding the sandbox.
+// Other errors mean the sandbox should be removed from this metrics server.
+//
+// +checklocksexclude:s.mu
 func (s *servedSandbox) load() (*sandbox.Sandbox, *prometheus.Verifier, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -117,7 +130,7 @@ func (s *servedSandbox) load() (*sandbox.Sandbox, *prometheus.Verifier, error) {
 			TryLock: container.TryAcquire,
 		})
 		if err != nil {
-			return nil, nil, fmt.Errorf("cannot load sandbox %q: %v", s.rootContainerID.SandboxID, err)
+			return nil, nil, fmt.Errorf("cannot load sandbox %q: %w", s.rootContainerID.SandboxID, err)
 		}
 		var rootContainer *container.Container
 		for _, cont := range allContainers {
@@ -198,6 +211,7 @@ func (s *servedSandbox) load() (*sandbox.Sandbox, *prometheus.Verifier, error) {
 	return s.sandbox, s.verifier, nil
 }
 
+// +checklocksexclude:s.mu
 func (s *servedSandbox) cleanup() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -256,13 +270,15 @@ type metricServer struct {
 
 	// Size of the map of written metrics during the last /metrics export. Initially zero.
 	// Used to efficiently reallocate a map of the right size during the next export.
+	//
+	// +checkatomic
 	lastMetricsWrittenSize atomicbitops.Uint32
 
 	// Pool of `prometheus.ReusableWriter`s. Used to avoid large buffer allocations for
 	// successive snapshots.
 	promWriterPool sync.Pool
 
-	// mu protects the fields below.
+	// mu protects mutable registry, request-filter, and shutdown state.
 	mu sync.Mutex
 
 	// pidFile is the path to the PID file to remove on shutdown. It is cleared
@@ -281,11 +297,15 @@ type metricServer struct {
 	udsPath string
 
 	// sandboxes is the list of sandboxes we serve metrics for.
+	//
+	// +checklocks:mu
 	sandboxes map[container.FullID]*servedSandbox
 
 	// lastStateFileStat maps container full IDs to the last observed stat() of their state file.
 	// This is used to monitor for sandboxes in the background. If a sandbox's state file matches this
 	// info, we can assume that the last background scan already looked at it.
+	//
+	// +checklocks:mu
 	lastStateFileStat map[container.FullID]os.FileInfo
 
 	// lastValidMetricFilter stores the last value of the "runsc-sandbox-metrics-filter" parameter for
@@ -293,6 +313,8 @@ type metricServer struct {
 	// It represents the last-known compilable regular expression that was passed to /metrics.
 	// It is used to avoid re-verifying this parameter in the common case where a single scraper
 	// is consistently passing in the same value for this parameter in each successive request.
+	//
+	// +checklocks:mu
 	lastValidMetricFilter string
 
 	// lastValidCapabilityFilterStr stores the last value of the "runsc-capability-filter" parameter
@@ -300,10 +322,14 @@ type metricServer struct {
 	// It represents the last-known compilable regular expression that was passed to /metrics.
 	// It is used to avoid re-verifying this parameter in the common case where a single scraper
 	// is consistently passing in the same value for this parameter in each successive request.
+	//
+	// +checklocks:mu
 	lastValidCapabilityFilterStr string
 
 	// lastValidCapabilityFilterReg is the compiled regular expression corresponding to
 	// lastValidCapabilityFilterStr.
+	//
+	// +checklocks:mu
 	lastValidCapabilityFilterReg *regexp.Regexp
 
 	// numSandboxes counts the number of sandboxes that have ever been registered on this server.
@@ -312,6 +338,8 @@ type metricServer struct {
 	// done a good job serving sandbox metrics and it's time for it to gracefully die as there are no
 	// more sandboxes to serve.
 	// Also exported as a metric of total number of sandboxes started.
+	//
+	// +checklocks:mu
 	numSandboxes int64
 
 	// shuttingDown is set when shutdown starts. It prevents discovery from
@@ -389,13 +417,18 @@ func (m *metricServer) refreshSandboxesLocked() {
 			delete(m.sandboxes, sandboxID)
 			continue
 		}
-		if _, _, err := sandbox.load(); err != nil && err != container.ErrStateFileLocked {
+		sand, _, err := sandbox.load()
+		if err != nil {
+			if errors.Is(err, container.ErrStateFileLocked) {
+				// Keep the unloaded entry for a later scan.
+				continue
+			}
 			log.Warningf("Sandbox %s cannot be loaded, deleting it: %v", sandboxID, err)
 			sandbox.cleanup()
 			delete(m.sandboxes, sandboxID)
 			continue
 		}
-		if !sandbox.sandbox.IsRunning() {
+		if !sand.IsRunning() {
 			log.Infof("Sandbox %s is no longer running, deleting it.", sandboxID)
 			sandbox.cleanup()
 			delete(m.sandboxes, sandboxID)
@@ -445,7 +478,7 @@ func (m *metricServer) refreshSandboxesLocked() {
 			RootContainer: true,
 		})
 		if err != nil {
-			if err == container.ErrStateFileLocked {
+			if errors.Is(err, container.ErrStateFileLocked) {
 				// This error is OK and shouldn't generate log spam. The sandbox is probably in the middle
 				// of being created.
 				continue
@@ -479,11 +512,9 @@ func (m *metricServer) refreshSandboxesLocked() {
 				prometheus.SandboxIDLabel: sid.SandboxID,
 			},
 		}
-		// Best-effort attempt to load the state file instantly.
-		// This may legitimately fail if it is locked, e.g. during sandbox startup.
-		// If it fails for any other reason, then the sandbox went away between the time we listed the
-		// sandboxes and now, so just delete it.
-		if _, _, err := served.load(); err != nil && err != container.ErrStateFileLocked {
+		// Try to load all containers now. A locked state file is temporary; keep
+		// the unloaded entry for a later scan without negative-caching its state.
+		if _, _, err := served.load(); err != nil && !errors.Is(err, container.ErrStateFileLocked) {
 			log.Warningf("Sandbox %q cannot be loaded, ignoring it: %v", sid, err)
 			m.lastStateFileStat[sid] = stat
 			served.cleanup()
@@ -698,8 +729,11 @@ func (m *metricServer) serveMetrics(w *httpResponseWriter, req *http.Request) ht
 		numCheckpointedSandboxes int64
 		numRestoredSandboxes     int64
 	}
-	meta := metaMetrics{}                   // Protected by metricsMu.
-	selfMetrics := prometheus.NewSnapshot() // Protected by metricsMu.
+	// queryMultiSandboxMetrics callbacks update these under metricsMu, then
+	// join before the final aggregation below. checklocks cannot associate
+	// local variables with a separate mutex captured by a callback.
+	meta := metaMetrics{}
+	selfMetrics := prometheus.NewSnapshot()
 
 	type snapshotAndOptions struct {
 		snapshot *prometheus.Snapshot
