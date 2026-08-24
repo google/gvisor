@@ -69,8 +69,9 @@ func NewServer() *Server {
 	var s Server
 	s.handlers = handlers[:]
 	s.root = &Node{}
-	// s owns the ref on s.root.
-	s.root.InitLocked("", nil)
+	// s owns this new root. With no parent, there is no childrenMu to hold;
+	// checklocks cannot express InitLocked's conditional parent requirement.
+	s.root.InitLocked("", nil) // +checklocksignore
 	return &s
 }
 
@@ -82,6 +83,8 @@ func (s *Server) SetHandlers(handlers []RPCHandler) {
 
 // withRenameReadLock invokes fn with the server's rename mutex locked for
 // reading. This ensures that no rename operations occur concurrently.
+//
+// +checklocksexclude:s.renameMu
 func (s *Server) withRenameReadLock(fn func() error) error {
 	s.renameMu.RLock()
 	defer s.renameMu.RUnlock()

@@ -399,7 +399,7 @@ func (d *tcpMemData) Write(ctx context.Context, _ *vfs.FileDescription, src user
 	return n, nil
 }
 
-// Precondition: d.mu must be locked.
+// +checklocks:d.mu
 func (d *tcpMemData) readSizeLocked() (inet.TCPBufferSize, error) {
 	switch d.dir {
 	case tcpRMem:
@@ -411,7 +411,7 @@ func (d *tcpMemData) readSizeLocked() (inet.TCPBufferSize, error) {
 	}
 }
 
-// Precondition: d.mu must be locked.
+// +checklocks:d.mu
 func (d *tcpMemData) writeSizeLocked(size inet.TCPBufferSize) error {
 	switch d.dir {
 	case tcpRMem:

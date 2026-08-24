@@ -48,6 +48,8 @@ type taskInode struct {
 
 	dentriesMu dentriesRWMutex `state:"nosave"`
 	// dentries is a list of dentries to be invalidated when the task is destroyed.
+	//
+	// +checklocks:dentriesMu
 	dentries map[*kernfs.Dentry]struct{}
 }
 

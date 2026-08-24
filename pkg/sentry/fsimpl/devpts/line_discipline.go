@@ -85,10 +85,11 @@ const (
 //
 // +stateify savable
 type lineDiscipline struct {
-	// sizeMu protects size.
 	sizeMu sync.Mutex `state:"nosave"`
 
 	// size is the terminal size (width and height).
+	//
+	// +checklocks:sizeMu
 	size linux.Winsize
 
 	// inQueue is the input queue of the terminal.
@@ -101,13 +102,19 @@ type lineDiscipline struct {
 	termiosMu sync.RWMutex `state:"nosave"`
 
 	// termios is the terminal configuration used by the lineDiscipline.
+	//
+	// +checklocks:termiosMu
 	termios linux.KernelTermios
 
 	// column is the location in a row of the cursor. This is important for
 	// handling certain special characters like backspace.
+	//
+	// +checklocks:outQueue.mu
 	column int
 
 	// numReplicas is the number of replica file descriptors.
+	//
+	// +checklocks:termiosMu
 	numReplicas int
 
 	// masterWaiter is used to wait on the master end of the TTY.
@@ -120,6 +127,8 @@ type lineDiscipline struct {
 	terminal *Terminal
 
 	// packet indicates the master is in packet mode.
+	//
+	// +checklocks:termiosMu
 	packet bool
 
 	// packetStatus contains pending TIOCPKT_* status bits for the next master
@@ -127,6 +136,8 @@ type lineDiscipline struct {
 	//
 	// Currently only TIOCPKT_FLUSHREAD and TIOCPKT_FLUSHWRITE are emitted
 	// through packetStatus.
+	//
+	// +checklocks:termiosMu
 	packetStatus uint8
 }
 
@@ -375,8 +386,12 @@ func (l *lineDiscipline) replicaClose() {
 
 // transformer is a helper interface to make it easier to stateify queue.
 type transformer interface {
-	// transform functions require queue's mutex to be held.
-	// The boolean indicates whether there was any echoed bytes.
+	// transform requires the line discipline's termiosMu to be held for reading
+	// and the queue's mu to be held. checklocks does not propagate these lock
+	// contracts through this interface.
+	//
+	// The boolean indicates whether to notify master readers of possible echo
+	// output.
 	transform(*lineDiscipline, *queue, []byte) (int, bool)
 }
 
@@ -389,9 +404,12 @@ type outputQueueTransformer struct{}
 // transform does output processing for one end of the pty. See
 // drivers/tty/n_tty.c:do_output_char for an analogous kernel function.
 //
-// Preconditions:
-//   - l.termiosMu must be held for reading.
-//   - q.mu must be held.
+// q must be &l.outQueue. checklocks does not infer that identity from the
+// queue's transformer, so both mutex paths are annotated below.
+//
+// +checklocksread:l.termiosMu
+// +checklocks:q.mu
+// +checklocks:l.outQueue.mu
 func (*outputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte) (int, bool) {
 	// transformOutput is effectively always in noncanonical mode, as the
 	// master termios never has ICANON set.
@@ -486,12 +504,12 @@ type inputQueueTransformer struct{}
 // transformed according to flags set in the termios struct. See
 // drivers/tty/n_tty.c:n_tty_receive_char_special for an analogous kernel
 // function.
-// It returns an extra boolean indicating whether any characters need to be
-// echoed, in which case we need to notify readers.
 //
-// Preconditions:
-//   - l.termiosMu must be held for reading.
-//   - q.mu must be held.
+// It returns an extra boolean indicating whether to notify master readers of
+// possible echo output.
+//
+// +checklocksread:l.termiosMu
+// +checklocks:q.mu
 func (*inputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte) (int, bool) {
 	// If there's a line waiting to be read in canonical mode, don't write
 	// anything else to the read buffer.
@@ -685,15 +703,16 @@ func (*inputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte)
 // too many bytes are enqueued, we keep reading input and discarding it until
 // we find a terminating character. Signal/echo processing still occurs.
 //
-// Precondition:
-//   - l.termiosMu must be held for reading.
-//   - q.mu must be held.
+// +checklocksread:l.termiosMu
+// +checklocks:q.mu
 func (l *lineDiscipline) shouldDiscard(q *queue, cBytes []byte) bool {
 	return l.termios.LEnabled(linux.ICANON) && len(q.readBuf)+len(cBytes) >= canonMaxBytes && !l.termios.IsTerminating(cBytes)
 }
 
 // peek returns the size in bytes of the next character to process. As long as
 // b isn't empty, peek returns a value of at least 1.
+//
+// +checklocksread:l.termiosMu
 func (l *lineDiscipline) peek(b []byte) int {
 	size := 1
 	// If UTF-8 support is enabled, runes might be multiple bytes.

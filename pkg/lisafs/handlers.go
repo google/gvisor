@@ -318,7 +318,9 @@ func WalkHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, e
 			var curIno Inode
 			for i := 0; i < int(numInodes); i++ {
 				buf = curIno.UnmarshalBytes(buf)
-				c.removeControlFDLocked(curIno.ControlFD)
+				// Cleanup runs before withRenameReadLock releases the mutex;
+				// checklocks cannot propagate it into these passed callbacks.
+				c.removeControlFDLocked(curIno.ControlFD) // +checklocksignore
 			}
 		})
 		defer cu.Clean()
@@ -444,7 +446,9 @@ func WalkStatHandler(c *Connection, comm Communicator, payloadLen uint32) (uint3
 		parent := startDir
 		closeParent := func() {
 			if parent != startDir {
-				c.removeControlFDLocked(parent.id)
+				// Both direct and deferred cleanup run inside withRenameReadLock;
+				// checklocks does not retain that callback's lock state.
+				c.removeControlFDLocked(parent.id) // +checklocksignore
 			}
 		}
 		defer closeParent()

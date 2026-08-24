@@ -55,13 +55,23 @@ type virtualOwner struct {
 	// This field is initialized at creation time and is immutable.
 	enabled bool
 
-	// mu protects the fields below and they can be accessed using atomic memory
-	// operations.
-	mu  sync.Mutex `state:"nosave"`
+	// mu serializes virtual-owner updates and their permission checks.
+	// Readers access the fields below atomically without holding mu.
+	mu sync.Mutex `state:"nosave"`
+
+	// +checkatomic
+	// +checklocks:mu
 	uid atomicbitops.Uint32
+
+	// +checkatomic
+	// +checklocks:mu
 	gid atomicbitops.Uint32
+
 	// mode is also stored, otherwise setting the host file to `0000` could remove
 	// access to the file.
+	//
+	// +checkatomic
+	// +checklocks:mu
 	mode atomicbitops.Uint32
 }
 
@@ -166,33 +176,43 @@ type inode struct {
 	queue waiter.Queue
 
 	// virtualOwner caches ownership and permission information to override the
-	// underlying file owner and permission. This is used to allow the unstrusted
+	// underlying file owner and permission. This is used to allow the untrusted
 	// application to change these fields without affecting the host.
 	virtualOwner virtualOwner
 
-	// maps holds application memory mappings of the inode. maps is protected
-	// by mapsMu.
-	mapsMu   sync.Mutex `state:"nosave"`
+	mapsMu sync.Mutex `state:"nosave"`
+
+	// mappings holds application memory mappings of the inode.
+	//
+	// +checklocks:mapsMu
 	mappings memmap.MappingSet
 
 	// mmapFile implements memmap.File for hostFD.
 	mmapFile fsutil.MmapCachedFile
 
+	bufMu sync.Mutex `state:"nosave"`
+
 	// If haveBuf is non-zero, hostFD represents a pipe, and buf contains data
-	// read from the pipe from previous calls to inode.beforeSave(). haveBuf
-	// and buf are protected by bufMu.
-	bufMu   sync.Mutex `state:"nosave"`
+	// read from the pipe from previous calls to inode.beforeSave().
+	//
+	// +checklocks:bufMu
+	// +checkatomic
 	haveBuf atomicbitops.Uint32
-	buf     []byte
+
+	// +checklocks:bufMu
+	buf []byte
 
 	// If the inode corresponds to a TTY, tty is the kernel.TTY.
 	//
 	// This pointer is initialized at creation time and is immutable.
 	tty *kernel.TTY
-	// If the inode corresponds to a TTY, termios is the cached termios
-	// struct. It is protected by termiosMu.
+
 	termiosMu sync.Mutex `state:"nosave"`
-	termios   linux.KernelTermios
+
+	// If the inode corresponds to a TTY, termios is the cached termios struct.
+	//
+	// +checklocks:termiosMu
+	termios linux.KernelTermios
 }
 
 func newInode(ctx context.Context, fs *filesystem, hostFD int, savable bool, restoreKey checkpoint.ResourceID, fileType linux.FileMode, isTTY bool, readonly bool) (*inode, error) {
@@ -327,10 +347,12 @@ func NewFD(ctx context.Context, mnt *vfs.Mount, hostFD int, opts *NewFDOptions) 
 		return nil, err
 	}
 	if opts.VirtualOwner {
-		i.virtualOwner.enabled = true
-		i.virtualOwner.uid = atomicbitops.FromUint32(uint32(opts.UID))
-		i.virtualOwner.gid = atomicbitops.FromUint32(uint32(opts.GID))
-		i.virtualOwner.mode = atomicbitops.FromUint32(stat.Mode)
+		i.virtualOwner = virtualOwner{
+			enabled: true,
+			uid:     atomicbitops.FromUint32(uint32(opts.UID)),
+			gid:     atomicbitops.FromUint32(uint32(opts.GID)),
+			mode:    atomicbitops.FromUint32(stat.Mode),
+		}
 	}
 	i.restorable = opts.Restorable
 
@@ -576,8 +598,6 @@ func (i *inode) stat(stat *unix.Stat_t) error {
 }
 
 // SetStat implements kernfs.Inode.SetStat.
-//
-// +checklocksignore
 func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions) error {
 	if i.readonly {
 		return linuxerr.EPERM
@@ -613,8 +633,10 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 
 	if m&linux.STATX_MODE != 0 {
 		if i.virtualOwner.enabled {
-			// We hold i.virtualOwner.mu.
-			i.virtualOwner.mode = atomicbitops.FromUint32(uint32(opts.Stat.Mode))
+			mode := hostStat.Mode&linux.S_IFMT | uint32(opts.Stat.Mode)&^linux.S_IFMT
+			// The MODE bit caused mu to be locked above. checklocks cannot
+			// correlate the two mask tests.
+			i.virtualOwner.mode.Store(mode) // +checklocksignore
 		} else {
 			log.Warningf("sentry seccomp filters don't allow making fchmod(2) syscall")
 			return unix.EPERM
@@ -654,12 +676,14 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 	}
 	if i.virtualOwner.enabled {
 		if m&linux.STATX_UID != 0 {
-			// We hold i.virtualOwner.mu.
-			i.virtualOwner.uid = atomicbitops.FromUint32(opts.Stat.UID)
+			// The UID bit caused mu to be locked above. checklocks cannot
+			// correlate the two mask tests.
+			i.virtualOwner.uid.Store(opts.Stat.UID) // +checklocksignore
 		}
 		if m&linux.STATX_GID != 0 {
-			// We hold i.virtualOwner.mu.
-			i.virtualOwner.gid = atomicbitops.FromUint32(opts.Stat.GID)
+			// The GID bit caused mu to be locked above. checklocks cannot
+			// correlate the two mask tests.
+			i.virtualOwner.gid.Store(opts.Stat.GID) // +checklocksignore
 		}
 	}
 	return nil
@@ -789,11 +813,12 @@ type fileDescription struct {
 	// inode is immutable after fileDescription creation.
 	inode *inode
 
-	// offsetMu protects offset.
 	offsetMu sync.Mutex `state:"nosave"`
 
 	// offset specifies the current file offset. It is only meaningful when
 	// inode.seekable is true.
+	//
+	// +checklocks:offsetMu
 	offset int64
 }
 

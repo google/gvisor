@@ -215,6 +215,7 @@ go_test(
         "file_description_impl_util_test.go",
         "mount_test.go",
         "posix_acl_test.go",
+        "vfs_test.go",
     ],
     library = ":vfs",
     deps = [

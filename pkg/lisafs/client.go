@@ -41,12 +41,18 @@ type Client struct {
 	sockMu   sync.Mutex
 	sockComm *sockCommunicator
 
-	// channelsMu protects channels and availableChannels.
 	channelsMu sync.Mutex
+
 	// channels tracks all the channels.
+	//
+	// +checklocks:channelsMu
 	channels []*channel
+
 	// availableChannels is a LIFO (stack) of channels available to be used.
+	//
+	// +checklocks:channelsMu
 	availableChannels []*channel
+
 	// activeWg represents active channels.
 	activeWg sync.WaitGroup
 
@@ -61,10 +67,13 @@ type Client struct {
 	// It is initialized on Mount and is immutable.
 	maxMessageSize uint32
 
+	fdsMu sync.Mutex
+
 	// fdsToClose tracks the FDs to close. It caches the FDs no longer being used
 	// by the client and closes them in one shot. It is not preserved across
 	// checkpoint/restore as FDIDs are not preserved.
-	fdsMu      sync.Mutex
+	//
+	// +checklocks:fdsMu
 	fdsToClose []FDID
 }
 
@@ -396,7 +405,11 @@ func debugf(action string, comm Communicator, debugMsg debugStringer) {
 	}
 }
 
-// Postcondition: releaseCommunicator() must be called on the returned value.
+// acquireCommunicator borrows a channel or locks the main socket. It holds
+// sockMu on return only for a *sockCommunicator; checklocks cannot express
+// a lock effect conditional on the returned interface's dynamic type.
+//
+// Postcondition: c.releaseCommunicator must be called on the returned value.
 func (c *Client) acquireCommunicator() Communicator {
 	// Prefer using channel over socket because:
 	//	- Channel uses a shared memory region for passing messages. IO from shared
@@ -411,7 +424,10 @@ func (c *Client) acquireCommunicator() Communicator {
 	return c.sockComm
 }
 
-// Precondition: comm must have been acquired via acquireCommunicator().
+// releaseCommunicator ends a use begun by c.acquireCommunicator.
+//
+// Precondition: comm was returned by this c's acquireCommunicator and has
+// not yet been released. For a *sockCommunicator, c.sockMu is still held.
 func (c *Client) releaseCommunicator(comm Communicator) {
 	switch t := comm.(type) {
 	case *sockCommunicator:
@@ -439,8 +455,8 @@ func (c *Client) getChannel() *channel {
 	return ch
 }
 
-// releaseChannel pushes the passed channel onto the available channel stack if
-// reinsert is true.
+// releaseChannel ends a channel use and makes the channel available again
+// unless the channel is dead or the client is shutting down.
 func (c *Client) releaseChannel(ch *channel) {
 	c.channelsMu.Lock()
 	defer c.channelsMu.Unlock()

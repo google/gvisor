@@ -116,6 +116,8 @@ type connectionImpl struct {
 var _ lisafs.ConnectionImpl = (*connectionImpl)(nil)
 
 // Mount implements lisafs.ConnectionImpl.Mount.
+//
+// +checklocksread:c.server.renameMu
 func (i *connectionImpl) Mount(c *lisafs.Connection, mountNode *lisafs.Node) (*lisafs.ControlFD, lisafs.Statx, int, error) {
 	mountPath := mountNode.FilePath()
 	rootHostFD, err := tryOpen(func(flags int) (int, error) {
@@ -221,6 +223,9 @@ type controlFDLisa struct {
 
 var _ lisafs.ControlFDImpl = (*controlFDLisa)(nil)
 
+// newControlFDLisa creates a child FD while its server excludes renames.
+//
+// +checklocksread:parent.ControlFD.conn.server.renameMu
 func newControlFDLisa(hostFD int, parent *controlFDLisa, name string, mode linux.FileMode) *controlFDLisa {
 	var (
 		childFD    *controlFDLisa
@@ -228,7 +233,9 @@ func newControlFDLisa(hostFD int, parent *controlFDLisa, name string, mode linux
 		parentNode = parent.Node()
 	)
 	parentNode.WithChildrenMu(func() {
-		childNode = parentNode.LookupChildLocked(name)
+		// WithChildrenMu runs this callback synchronously under childrenMu;
+		// checklocks cannot propagate that lock through the callback.
+		childNode = parentNode.LookupChildLocked(name) // +checklocksignore
 		if childNode == nil {
 			// Common case. Performance hack which is used to allocate the node and
 			// its control FD together in the heap. For a well-behaving client, there
@@ -241,7 +248,7 @@ func newControlFDLisa(hostFD int, parent *controlFDLisa, name string, mode linux
 			}{}
 			childFD = &temp.fd
 			childNode = &temp.node
-			childNode.InitLocked(name, parentNode)
+			childNode.InitLocked(name, parentNode) // +checklocksignore
 		} else {
 			childNode.IncRef()
 			childFD = &controlFDLisa{}
@@ -249,7 +256,9 @@ func newControlFDLisa(hostFD int, parent *controlFDLisa, name string, mode linux
 	})
 	childFD.hostFD = hostFD
 	childFD.writableHostFD = atomicbitops.FromInt32(-1)
-	childFD.ControlFD.Init(parent.Conn(), childNode, mode, childFD)
+	// Conn returns parent.ControlFD.conn, whose server rename lock is required
+	// on entry. checklocks does not retain that identity across the accessor.
+	childFD.ControlFD.Init(parent.Conn(), childNode, mode, childFD) // +checklocksignore
 	return childFD
 }
 
@@ -270,6 +279,9 @@ func (fd *controlFDLisa) getWritableFD() (int, error) {
 	return writableFD, nil
 }
 
+// getParentFD opens the parent directory while the server excludes renames.
+//
+// +checklocksread:fd.ControlFD.conn.server.renameMu
 func (fd *controlFDLisa) getParentFD() (int, string, error) {
 	filePath := fd.Node().FilePath()
 	if filePath == "/" {
@@ -312,6 +324,8 @@ func (fd *controlFDLisa) Stat() (lisafs.Statx, error) {
 }
 
 // SetStat implements lisafs.ControlFDImpl.SetStat.
+//
+// +checklocksread:fd.ControlFD.conn.server.renameMu
 func (fd *controlFDLisa) SetStat(stat lisafs.SetStatReq) (failureMask uint32, failureErr error) {
 	if stat.Mask&unix.STATX_MODE != 0 {
 		switch fd.FileType() {
@@ -426,6 +440,8 @@ func (fd *controlFDLisa) SetStat(stat lisafs.SetStatReq) (failureMask uint32, fa
 }
 
 // Walk implements lisafs.ControlFDImpl.Walk.
+//
+// +checklocksread:fd.ControlFD.conn.server.renameMu
 func (fd *controlFDLisa) Walk(name string) (*lisafs.ControlFD, lisafs.Statx, error) {
 	childHostFD, err := tryOpen(func(flags int) (int, error) {
 		return unix.Openat(fd.hostFD, name, flags, 0)
@@ -580,6 +596,8 @@ func (fd *controlFDLisa) Open(flags uint32) (*lisafs.OpenFD, int, error) {
 }
 
 // OpenCreate implements lisafs.ControlFDImpl.OpenCreate.
+//
+// +checklocksread:fd.ControlFD.conn.server.renameMu
 func (fd *controlFDLisa) OpenCreate(mode linux.FileMode, uid lisafs.UID, gid lisafs.GID, name string, flags uint32) (*lisafs.ControlFD, lisafs.Statx, *lisafs.OpenFD, int, error) {
 	createFlags := unix.O_CREAT | unix.O_EXCL | unix.O_RDONLY | unix.O_NONBLOCK | openFlags
 	childHostFD, err := unix.Openat(fd.hostFD, name, createFlags, uint32(mode&^linux.FileTypeMask))
@@ -631,6 +649,8 @@ func (fd *controlFDLisa) OpenCreate(mode linux.FileMode, uid lisafs.UID, gid lis
 }
 
 // Mkdir implements lisafs.ControlFDImpl.Mkdir.
+//
+// +checklocksread:fd.ControlFD.conn.server.renameMu
 func (fd *controlFDLisa) Mkdir(mode linux.FileMode, uid lisafs.UID, gid lisafs.GID, name string) (*lisafs.ControlFD, lisafs.Statx, error) {
 	if err := unix.Mkdirat(fd.hostFD, name, uint32(mode&^linux.FileTypeMask)); err != nil {
 		return nil, lisafs.Statx{}, err
@@ -667,6 +687,8 @@ func (fd *controlFDLisa) Mkdir(mode linux.FileMode, uid lisafs.UID, gid lisafs.G
 }
 
 // Mknod implements lisafs.ControlFDImpl.Mknod.
+//
+// +checklocksread:fd.ControlFD.conn.server.renameMu
 func (fd *controlFDLisa) Mknod(mode linux.FileMode, uid lisafs.UID, gid lisafs.GID, name string, minor uint32, major uint32) (*lisafs.ControlFD, lisafs.Statx, error) {
 	// Only allow creating regular files or overlayfs whiteouts. Linux's
 	// vfs_mknod() exempts whiteouts from the CAP_MKNOD check, so we do not need
@@ -720,6 +742,8 @@ func (fd *controlFDLisa) Mknod(mode linux.FileMode, uid lisafs.UID, gid lisafs.G
 }
 
 // Symlink implements lisafs.ControlFDImpl.Symlink.
+//
+// +checklocksread:fd.ControlFD.conn.server.renameMu
 func (fd *controlFDLisa) Symlink(name string, target string, uid lisafs.UID, gid lisafs.GID) (*lisafs.ControlFD, lisafs.Statx, error) {
 	if err := unix.Symlinkat(target, fd.hostFD, name); err != nil {
 		return nil, lisafs.Statx{}, err
@@ -752,6 +776,8 @@ func (fd *controlFDLisa) Symlink(name string, target string, uid lisafs.UID, gid
 }
 
 // Link implements lisafs.ControlFDImpl.Link.
+//
+// +checklocksread:fd.ControlFD.conn.server.renameMu
 func (fd *controlFDLisa) Link(dir lisafs.ControlFDImpl, name string) (*lisafs.ControlFD, lisafs.Statx, error) {
 	// Using linkat(targetFD, "", newdirfd, name, AT_EMPTY_PATH) requires
 	// CAP_DAC_READ_SEARCH in the *root* userns. The gofer process has
@@ -786,7 +812,11 @@ func (fd *controlFDLisa) Link(dir lisafs.ControlFDImpl, name string) (*lisafs.Co
 		return nil, lisafs.Statx{}, err
 	}
 	cu.Release()
-	return newControlFDLisa(linkFD, dirFD, name, linux.FileMode(linkStat.Mode)).FD(), linkStat, nil
+	// LinkAtHandler obtains source and destination from the same connection.
+	// Its rename lock is held; checklocks loses the destination owner through
+	// the ControlFDImpl interface and this type assertion.
+	linked := newControlFDLisa(linkFD, dirFD, name, linux.FileMode(linkStat.Mode)) // +checklocksignore
+	return linked.FD(), linkStat, nil
 }
 
 // StatFS implements lisafs.ControlFDImpl.StatFS.
@@ -931,6 +961,8 @@ func (fd *controlFDLisa) ConnectWithCreds(sockType uint32, uid lisafs.UID, gid l
 }
 
 // BindAt implements lisafs.ControlFDImpl.BindAt.
+//
+// +checklocksread:fd.ControlFD.conn.server.renameMu
 func (fd *controlFDLisa) BindAt(name string, sockType uint32, mode linux.FileMode, uid lisafs.UID, gid lisafs.GID) (*lisafs.ControlFD, lisafs.Statx, *lisafs.BoundSocketFD, int, error) {
 	if !fd.Conn().Impl().(*connectionImpl).config.HostUDS.AllowCreate() {
 		logRejectedUdsCreateOnce.Do(func() {

@@ -1529,7 +1529,7 @@ func (k *Kernel) pauseTimeLocked(ctx context.Context) {
 	k.runningTasksMu.Unlock()
 
 	// By precondition, nothing else can be interacting with PIDNamespace.tids
-	// or FDTable.files, so we can iterate them without synchronization. (We
+	// or the FD tables, so we can iterate them without synchronization. (We
 	// can't hold the TaskSet mutex when pausing thread group timers because
 	// thread group timers call ThreadGroup.SendSignal, which takes the TaskSet
 	// mutex, while holding the Timer mutex.)
@@ -1543,7 +1543,9 @@ func (k *Kernel) pauseTimeLocked(ctx context.Context) {
 		// This means we'll iterate FDTables shared by multiple tasks repeatedly,
 		// but ktime.Timer.Pause is idempotent so this is harmless.
 		if t.fdTable != nil {
-			t.fdTable.ForEach(ctx, func(_ int32, fd *vfs.FileDescription, _ FDFlags) bool {
+			// Stopped task goroutines exclude table mutation; checklocks
+			// cannot infer this quiescence from pauseTimeLocked's precondition.
+			t.fdTable.forEachUpTo(ctx, MaxFdLimit, func(_ int32, fd *vfs.FileDescription, _ FDFlags) bool { // +checklocksignore
 				if tfd, ok := fd.Impl().(*timerfd.TimerFileDescription); ok {
 					tfd.PauseTimer()
 				}
@@ -1574,7 +1576,9 @@ func (k *Kernel) resumeTimeLocked(ctx context.Context) {
 			}
 		}
 		if t.fdTable != nil {
-			t.fdTable.ForEach(ctx, func(_ int32, fd *vfs.FileDescription, _ FDFlags) bool {
+			// Task goroutines remain stopped until timers are resumed;
+			// checklocks does not model this exclusion of table mutation.
+			t.fdTable.forEachUpTo(ctx, MaxFdLimit, func(_ int32, fd *vfs.FileDescription, _ FDFlags) bool { // +checklocksignore
 				if tfd, ok := fd.Impl().(*timerfd.TimerFileDescription); ok {
 					tfd.ResumeTimer()
 				}

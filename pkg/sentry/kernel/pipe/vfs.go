@@ -42,9 +42,7 @@ type VFSPipe struct {
 
 // NewVFSPipe returns an initialized VFSPipe.
 func NewVFSPipe(isNamed bool, sizeBytes int64) *VFSPipe {
-	var vp VFSPipe
-	initPipe(&vp.pipe, isNamed, sizeBytes)
-	return &vp
+	return &VFSPipe{pipe: newPipe(isNamed, sizeBytes)}
 }
 
 // Pipe returns the underlying Pipe object.
@@ -144,7 +142,6 @@ func (vp *VFSPipe) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, s
 	return fd, nil
 }
 
-// Preconditions: vp.mu must be held.
 func (vp *VFSPipe) newFD(mnt *vfs.Mount, vfsd *vfs.Dentry, statusFlags uint32, locks *vfs.FileLocks, creds *auth.Credentials) (*vfs.FileDescription, error) {
 	fd := &VFSPipeFD{
 		pipe: &vp.pipe,
@@ -176,7 +173,9 @@ type VFSPipeFD struct {
 	pipe *Pipe
 
 	// lastAddr is the last hostarch.Addr at which a call to a
-	// VFSPipeFD.(usermem.IO) method ended. lastAddr is protected by pipe.mu.
+	// VFSPipeFD.(usermem.IO) method ended.
+	//
+	// +checklocks:pipe.mu
 	lastAddr hostarch.Addr
 }
 
@@ -341,10 +340,10 @@ func (fd *VFSPipeFD) SpliceFromNonPipe(ctx context.Context, in *vfs.FileDescript
 }
 
 // CopyIn implements usermem.IO.CopyIn. Note that it is the caller's
-// responsibility to call fd.pipe.Notify(waiter.WritableEvents) after the read
-// is completed.
+// responsibility to call fd.pipe.queue.Notify(waiter.WritableEvents) after
+// the read is completed.
 //
-// Preconditions: fd.pipe.mu must be locked.
+// +checklocks:fd.pipe.mu
 func (fd *VFSPipeFD) CopyIn(ctx context.Context, addr hostarch.Addr, dst []byte, opts usermem.IOOpts) (int, error) {
 	if addr != fd.lastAddr {
 		log.Traceback("Non-sequential VFSPipeFD.CopyIn: lastAddr=%#x addr=%#x", fd.lastAddr, addr)
@@ -361,7 +360,7 @@ func (fd *VFSPipeFD) CopyIn(ctx context.Context, addr hostarch.Addr, dst []byte,
 // responsibility to call fd.pipe.queue.Notify(waiter.ReadableEvents) after the
 // write is completed.
 //
-// Preconditions: fd.pipe.mu must be locked.
+// +checklocks:fd.pipe.mu
 func (fd *VFSPipeFD) CopyOut(ctx context.Context, addr hostarch.Addr, src []byte, opts usermem.IOOpts) (int, error) {
 	if addr != fd.lastAddr {
 		log.Traceback("Non-sequential VFSPipeFD.CopyOut: lastAddr=%#x addr=%#x", fd.lastAddr, addr)
@@ -376,7 +375,7 @@ func (fd *VFSPipeFD) CopyOut(ctx context.Context, addr hostarch.Addr, src []byte
 
 // ZeroOut implements usermem.IO.ZeroOut.
 //
-// Preconditions: fd.pipe.mu must be locked.
+// +checklocks:fd.pipe.mu
 func (fd *VFSPipeFD) ZeroOut(ctx context.Context, addr hostarch.Addr, toZero int64, opts usermem.IOOpts) (int64, error) {
 	if addr != fd.lastAddr {
 		log.Traceback("Non-sequential VFSPipeFD.ZeroOut: lastAddr=%#x addr=%#x", fd.lastAddr, addr)
@@ -393,7 +392,7 @@ func (fd *VFSPipeFD) ZeroOut(ctx context.Context, addr hostarch.Addr, toZero int
 // responsibility to call fd.pipe.consumeLocked() and
 // fd.pipe.queue.Notify(waiter.WritableEvents) after the read is completed.
 //
-// Preconditions: fd.pipe.mu must be locked.
+// +checklocks:fd.pipe.mu
 func (fd *VFSPipeFD) CopyInTo(ctx context.Context, ars hostarch.AddrRangeSeq, dst safemem.Writer, opts usermem.IOOpts) (int64, error) {
 	total := int64(0)
 	for !ars.IsEmpty() {
@@ -419,7 +418,7 @@ func (fd *VFSPipeFD) CopyInTo(ctx context.Context, ars hostarch.AddrRangeSeq, ds
 // responsibility to call fd.pipe.queue.Notify(waiter.ReadableEvents) after the
 // write is completed.
 //
-// Preconditions: fd.pipe.mu must be locked.
+// +checklocks:fd.pipe.mu
 func (fd *VFSPipeFD) CopyOutFrom(ctx context.Context, ars hostarch.AddrRangeSeq, src safemem.Reader, opts usermem.IOOpts) (int64, error) {
 	total := int64(0)
 	for !ars.IsEmpty() {
@@ -481,11 +480,13 @@ func spliceOrTee(ctx context.Context, dst, src *VFSPipeFD, count int64, removeFr
 
 	firstLocked, secondLocked := lockTwoPipes(dst.pipe, src.pipe)
 	n, err := dst.pipe.writeLocked(count, func(dsts safemem.BlockSeq) (uint64, error) {
-		n, err := src.pipe.peekLocked(0, int64(dsts.NumBytes()), func(srcs safemem.BlockSeq) (uint64, error) {
+		// writeLocked invokes this callback synchronously with both pipe locks
+		// still held. checklocks does not carry their state into passed callbacks.
+		n, err := src.pipe.peekLocked(0, int64(dsts.NumBytes()), func(srcs safemem.BlockSeq) (uint64, error) { // +checklocksignore
 			return safemem.CopySeq(dsts, srcs)
 		})
 		if n > 0 && removeFromSrc {
-			src.pipe.consumeLocked(n)
+			src.pipe.consumeLocked(n) // +checklocksignore
 		}
 		return uint64(n), err
 	})

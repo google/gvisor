@@ -35,8 +35,8 @@ func (f FooNew) GetBar(name string) Q {
 
 func foobarNew() {
 	a := BazNew{}
-	a.Q = 0
+	a.Q = 0 // should not be renamed, this is a limitation
 
 	b := otherpkg.UnrelatedType{}
-	b.Q = 0
+	b.Q = 0 // should not be renamed, this is a limitation
 }

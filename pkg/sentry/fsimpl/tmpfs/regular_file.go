@@ -44,15 +44,14 @@ type regularFile struct {
 	inode inode
 
 	// memoryUsageKind is the memory accounting category under which pages backing
-	// this regularFile's contents are accounted.
+	// this regularFile's contents are accounted. Immutable after construction.
 	memoryUsageKind usage.MemoryKind
 
-	// mapsMu protects mappings.
 	mapsMu sync.Mutex `state:"nosave"`
 
 	// mappings tracks mappings of the file into memmap.MappingSpaces.
 	//
-	// Protected by mapsMu.
+	// +checklocks:mapsMu
 	mappings memmap.MappingSet
 
 	// writableMappingPages tracks how many pages of virtual memory are mapped
@@ -63,21 +62,20 @@ type regularFile struct {
 	// mappings from many VMAs. We count pages rather than bytes to slightly
 	// mitigate this.
 	//
-	// Protected by mapsMu.
+	// +checklocks:mapsMu
 	writableMappingPages uint64
 
-	// dataMu protects the fields below.
 	dataMu sync.RWMutex `state:"nosave"`
 
 	// data maps offsets into the file to offsets into memFile that store
 	// the file's data.
 	//
-	// Protected by dataMu.
+	// +checklocks:dataMu
 	data fsutil.FileRangeSet
 
 	// seals represents file seals on this inode.
 	//
-	// Protected by dataMu.
+	// +checklocks:dataMu
 	seals uint32
 
 	// Note on struct alignment: seals (4 bytes) leaves 4 bytes of padding
@@ -100,15 +98,18 @@ type regularFile struct {
 	memfd bool
 
 	// huge is true if pages in this file may be hugepage-backed.
-	// Fits in padding.
+	// Immutable after construction; fits in padding.
 	huge bool
 
 	// size is the size of data.
 	//
-	// Protected by both dataMu and inode.mu; reading it requires holding
-	// either mutex, while writing requires holding both AND using atomics.
 	// Readers that do not require consistency (like Stat) may read the
 	// value atomically without holding either lock.
+	//
+	// +checklocks:dataMu
+	// +checklocks:inode.mu
+	// +checklocksreadany
+	// +checkatomic
 	size atomicbitops.Uint64
 }
 
@@ -175,7 +176,9 @@ func NewZeroFile(ctx context.Context, creds *auth.Credentials, mount *vfs.Mount,
 	rf := fd.inode().impl.(*regularFile)
 	rf.memoryUsageKind = usage.Anonymous
 	rf.huge = true
-	rf.size.Store(size)
+	// The unlinked file and its FD are still private to this caller;
+	// checklocks cannot infer ownership of the returned allocation.
+	rf.size.Store(size) // +checklocksignore
 	return &fd.vfsfd, err
 }
 
@@ -191,7 +194,9 @@ func NewMemfd(ctx context.Context, creds *auth.Credentials, mount *vfs.Mount, al
 	rf := fd.inode().impl.(*regularFile)
 	rf.memfd = true
 	if allowSeals {
-		rf.seals = 0
+		// This new unlinked file is still private to this caller;
+		// checklocks cannot infer ownership of the returned allocation.
+		rf.seals = 0 // +checklocksignore
 	}
 	return &fd.vfsfd, nil
 }
@@ -208,10 +213,12 @@ func (rf *regularFile) truncate(newSize uint64) error {
 	return nil
 }
 
-// Preconditions:
-//   - rf.inode.mu must be held.
-//   - rf.dataMu must be locked for writing.
-//   - newSize > rf.size.
+// growLocked grows the file while holding both metadata and data locks.
+//
+// Preconditions: newSize > rf.size.
+//
+// +checklocks:rf.inode.mu
+// +checklocks:rf.dataMu
 func (rf *regularFile) growLocked(newSize uint64) error {
 	// Can we grow the file?
 	if rf.seals&linux.F_SEAL_GROW != 0 {
@@ -224,7 +231,7 @@ func (rf *regularFile) growLocked(newSize uint64) error {
 // truncateNoTimeUpdateLocked grows or shrinks the file to the given size.
 // Callers are responsible for updating timestamps.
 //
-// Preconditions: rf.inode.mu must be held.
+// +checklocks:rf.inode.mu
 func (rf *regularFile) truncateNoTimeUpdateLocked(newSize uint64) error {
 	oldSize := rf.size.RacyLoad()
 	if newSize == oldSize {
@@ -438,9 +445,11 @@ func (*regularFile) InvalidateUnsavable(context.Context) error {
 type regularFileFD struct {
 	fileDescription
 
-	// off is the file offset. off is accessed using atomic memory operations.
-	// offMu serializes operations that may mutate off.
-	off   int64
+	// off is the current file offset.
+	//
+	// +checklocks:offMu
+	off int64
+
 	offMu sync.Mutex `state:"nosave"`
 }
 
@@ -491,10 +500,13 @@ func (fd *regularFileFD) Allocate(ctx context.Context, mode, offset, length uint
 	return nil
 }
 
+// allocateLocked allocates file data while holding the inode lock.
+//
 // Preconditions:
-// - rf.inode.mu is locked.
-// - required must be page-aligned.
-// - required.Start < newSize <= required.End.
+//   - required must be page-aligned.
+//   - required.Start < newSize <= required.End.
+//
+// +checklocks:rf.inode.mu
 func (rf *regularFile) allocateLocked(ctx context.Context, mode, newSize uint64, required memmap.MappableRange, memCgID uint32) error {
 	rf.dataMu.Lock()
 	defer rf.dataMu.Unlock()
@@ -786,7 +798,11 @@ func (rw *regularFileReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, er
 
 // WriteFromBlocks implements safemem.Writer.WriteFromBlocks.
 //
-// Preconditions: rw.file.inode.mu must be held.
+// The safemem.Writer interface cannot express this receiver-specific lock
+// requirement; pwrite and tar restore hold it across synchronous CopyInTo
+// calls.
+//
+// +checklocks:rw.file.inode.mu
 func (rw *regularFileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error) {
 	if srcs.IsEmpty() {
 		return 0, nil

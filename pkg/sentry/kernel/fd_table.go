@@ -79,10 +79,15 @@ type FDTable struct {
 
 	k *Kernel
 
-	// mu protects below.
+	// mu serializes table mutations.
 	mu fdTableMutex `state:"nosave"`
 
 	// fdBitmap shows which fds are already in use.
+	//
+	// Construction and restore initialize it before the table is shared.
+	// Stopped-task iteration reads it only when concurrent mutation is excluded.
+	//
+	// +checklocks:mu
 	fdBitmap bitmap.Bitmap `state:"nosave"`
 
 	// descriptorTable holds descriptors.
@@ -93,7 +98,7 @@ func (f *FDTable) saveDescriptorTable() map[int32]descriptor {
 	m := make(map[int32]descriptor)
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.ForEach(context.Background(), func(fd int32, file *vfs.FileDescription, flags FDFlags) bool {
+	f.forEachLocked(context.Background(), func(fd int32, file *vfs.FileDescription, flags FDFlags) bool {
 		m[fd] = descriptor{
 			file:  file,
 			flags: flags,
@@ -103,6 +108,10 @@ func (f *FDTable) saveDescriptorTable() map[int32]descriptor {
 	return m
 }
 
+// loadDescriptorTable is invoked by stateify while restoring an unshared table.
+// The generated StateLoad caller exempts this call from the lock requirement.
+//
+// +checklocks:f.mu
 func (f *FDTable) loadDescriptorTable(_ goContext.Context, m map[int32]descriptor) {
 	ctx := context.Background()
 	f.initNoLeakCheck() // Initialize table.
@@ -138,7 +147,8 @@ func (f *FDTable) fileUnlock(ctx context.Context, file *vfs.FileDescription) {
 // NewFDTable allocates a new FDTable that may be used by tasks in k.
 func (k *Kernel) NewFDTable() *FDTable {
 	f := &FDTable{k: k}
-	f.init()
+	// f is private here; checklocks does not exempt calls on fresh allocations.
+	f.init() // +checklocksignore
 	return f
 }
 
@@ -153,9 +163,13 @@ func (f *FDTable) DecRef(ctx context.Context) {
 	})
 }
 
-// forEachUpTo iterates over all non-nil files upto maxFds (non-inclusive) in sorted order.
+// forEachUpTo iterates over all non-nil files up to maxFd (non-inclusive) in
+// descriptor order.
 //
-// It is the caller's responsibility to acquire an appropriate lock.
+// Stopped-task timer scans may omit f.mu. Their call sites override the guard
+// because checklocks does not model stopped task goroutines.
+//
+// +checklocks:f.mu
 func (f *FDTable) forEachUpTo(ctx context.Context, maxFd int32, fn func(fd int32, file *vfs.FileDescription, flags FDFlags) bool) {
 	// Iterate through the fdBitmap.
 	f.fdBitmap.ForEach(0, uint32(maxFd), func(ufd uint32) bool {
@@ -172,11 +186,25 @@ func (f *FDTable) forEachUpTo(ctx context.Context, maxFd int32, fn func(fd int32
 	})
 }
 
-// ForEach iterates over all non-nil files upto maxFd in sorted order.
+// forEachLocked is equivalent to ForEach with f.mu already held.
 //
-// It is the caller's responsibility to acquire an appropriate lock.
-func (f *FDTable) ForEach(ctx context.Context, fn func(fd int32, file *vfs.FileDescription, flags FDFlags) bool) {
+// +checklocks:f.mu
+func (f *FDTable) forEachLocked(ctx context.Context, fn func(fd int32, file *vfs.FileDescription, flags FDFlags) bool) {
 	f.forEachUpTo(ctx, MaxFdLimit, fn)
+}
+
+// ForEach calls fn for each non-nil file in descriptor order. It stops if fn
+// returns false.
+//
+// fn runs with f.mu held and must not call methods that acquire f.mu. The file
+// reference passed to fn is valid for the duration of the call; fn must take
+// its own reference if it retains the file.
+//
+// +checklocksexclude:f.mu
+func (f *FDTable) ForEach(ctx context.Context, fn func(fd int32, file *vfs.FileDescription, flags FDFlags) bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.forEachLocked(ctx, fn)
 }
 
 // String is a stringer for FDTable.
@@ -187,7 +215,7 @@ func (f *FDTable) String() string {
 	f.mu.Lock()
 	// Can't release f.mu from defer, because vfsObj.PathnameWithDeleted
 	// should not be called under the fdtable mutex.
-	f.ForEach(ctx, func(fd int32, file *vfs.FileDescription, flags FDFlags) bool {
+	f.forEachLocked(ctx, func(fd int32, file *vfs.FileDescription, flags FDFlags) bool {
 		if file != nil {
 			file.IncRef()
 			files[fd] = file
@@ -427,7 +455,7 @@ func (f *FDTable) GetFDs(ctx context.Context) []int32 {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	fds := make([]int32, 0, int(f.fdBitmap.GetNumOnes()))
-	f.ForEach(ctx, func(fd int32, _ *vfs.FileDescription, _ FDFlags) bool {
+	f.forEachLocked(ctx, func(fd int32, _ *vfs.FileDescription, _ FDFlags) bool {
 		fds = append(fds, fd)
 		return true
 	})
@@ -451,12 +479,13 @@ func (f *FDTable) Fork(ctx context.Context, maxFd int32) *FDTable {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.forEachUpTo(ctx, maxFd, func(fd int32, file *vfs.FileDescription, flags FDFlags) bool {
-		// The set function here will acquire an appropriate table
-		// reference for the clone. We don't need anything else.
-		if df := clone.set(fd, file, flags); df != nil {
+		// set takes the clone's file reference. clone remains private until
+		// Fork returns, but checklocks cannot prove ownership through the
+		// NewFDTable return value and this passed callback.
+		if df := clone.set(fd, file, flags); df != nil { // +checklocksignore
 			panic("file set")
 		}
-		clone.fdBitmap.Add(uint32(fd))
+		clone.fdBitmap.Add(uint32(fd)) // +checklocksignore
 		return true
 	})
 	return clone
@@ -489,11 +518,12 @@ func (f *FDTable) RemoveIf(ctx context.Context, cond func(*vfs.FileDescription, 
 	var files []*vfs.FileDescription
 
 	f.mu.Lock()
-	f.ForEach(ctx, func(fd int32, file *vfs.FileDescription, flags FDFlags) bool {
+	f.forEachLocked(ctx, func(fd int32, file *vfs.FileDescription, flags FDFlags) bool {
 		if cond(file, flags) {
-			// Clear from table.
-			if df := f.set(fd, nil, FDFlags{}); df != nil {
-				f.fdBitmap.Remove(uint32(fd))
+			// forEachLocked calls this synchronously under f.mu, but
+			// checklocks does not propagate locks into passed callbacks.
+			if df := f.set(fd, nil, FDFlags{}); df != nil { // +checklocksignore
+				f.fdBitmap.Remove(uint32(fd)) // +checklocksignore
 				files = append(files, df)
 			}
 		}

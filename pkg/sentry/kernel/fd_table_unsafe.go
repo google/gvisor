@@ -29,7 +29,12 @@ type descriptorBucketSlice []descriptorBucketAtomicPtr
 //
 // All objects are updated atomically.
 type descriptorTable struct {
-	// Changes to the slice itself requiring holding FDTable.mu.
+	// slice is loaded and stored atomically. Changes to the slice also require
+	// FDTable.mu once the table is shared.
+	//
+	// checklocks only recognizes atomic methods in atomic and atomicbitops,
+	// not the pointer methods generated in package kernel. descriptorTable
+	// also has no path back to the enclosing FDTable.mu for a writer guard.
 	slice descriptorBucketSliceAtomicPtr `state:".(map[int32]*descriptor)"`
 }
 
@@ -37,12 +42,18 @@ type descriptorTable struct {
 //
 // This is used when loading an FDTable after S/R, during which the ref count
 // object itself will enable leak checking if necessary.
+//
+// +checklocks:f.mu
 func (f *FDTable) initNoLeakCheck() {
 	var slice descriptorBucketSlice // Empty slice.
 	f.slice.Store(&slice)
 }
 
 // init initializes the table with leak checking.
+//
+// Preconditions: f must not have been initialized before.
+//
+// +checklocks:f.mu
 func (f *FDTable) init() {
 	f.initNoLeakCheck()
 	f.InitRefs()
@@ -90,9 +101,12 @@ func (f *FDTable) CurrentMaxFDs() int {
 // f takes a reference on it. If file is nil, the file entry at fd is cleared.
 // If set replaces an existing file description that is different from `file`,
 // it returns it with the FDTable's reference transferred to the caller, which
-// must call f.drop on the returned file after unlocking f.mu.
+// must release the transferred reference after unlocking f.mu.
 //
-// Precondition: mu must be held.
+// Private construction and restore may omit f.mu. Their call sites document
+// the exclusive ownership that checklocks cannot prove.
+//
+// +checklocks:f.mu
 func (f *FDTable) set(fd int32, file *vfs.FileDescription, flags FDFlags) *vfs.FileDescription {
 	slicePtr := f.slice.Load()
 

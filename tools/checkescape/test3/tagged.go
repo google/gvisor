@@ -1,4 +1,4 @@
-// Copyright 2020 The gVisor Authors.
+// Copyright 2026 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,20 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package pipe
+//go:build checkescape_binary
 
-import (
-	"context"
+package main
 
-	"gvisor.dev/gvisor/pkg/safemem"
-)
+const taggedValue = true
 
-// afterLoad rebuilds the buffer views before the pipe is published. The
-// generated stateify caller supplies exclusive restore ownership.
+// unusedAllocation remains in the Go archive but is removed by the linker.
+// The stack check rejects checkescape's conservative fallback if objdump fails.
 //
-// +checklocks:p.mu
-func (p *Pipe) afterLoad(context.Context) {
-	p.bufBlocks[0] = safemem.BlockFromSafeSlice(p.buf)
-	p.bufBlocks[1] = p.bufBlocks[0]
-	p.bufBlockSeq = safemem.BlockSeqFromSlice(p.bufBlocks[:])
+// +mustescape:local,heap
+// +checkescape:stack
+//
+//go:noinline
+//go:nosplit
+func unusedAllocation() *int {
+	return new(int)
 }
