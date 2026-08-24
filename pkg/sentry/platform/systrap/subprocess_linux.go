@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/platform/pac"
 )
 
 const syscallEvent unix.Signal = 0x80
@@ -230,6 +231,18 @@ func forkStub(flags uintptr, instrs []bpf.Instruction) (*thread, error) {
 	if errno := unmaskAllSignals(); errno != 0 {
 		hostsyscall.RawSyscall(unix.SYS_EXIT, uintptr(errno), 0, 0)
 	}
+
+	// Disable ARM64 pointer authentication for this thread (no-op on
+	// other architectures and on hosts without PAC support). This stub
+	// will go on to run the sandboxed application's code, including code
+	// restored from a checkpoint taken in a different process with
+	// different (kernel-randomized, per-process) PAC keys; without this,
+	// a PAC-signed pointer from before checkpoint can fail authentication
+	// after restore and raise SIGILL. See pac.DisableHostPAC for the full
+	// rationale. This must run before the seccomp filter below is
+	// installed, since the filter does not allow the prctl(2) call this
+	// performs.
+	pac.DisableHostPAC()
 
 	// Set an aggressive BPF filter for the stub and all it's children. See
 	// the description of the BPF program built above.
