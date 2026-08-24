@@ -17,9 +17,7 @@ package pgalloc
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"math"
@@ -196,43 +194,6 @@ type SaveOpts struct {
 	ExternalContent bool
 }
 
-// fingerprintChunkSize is the amount of data sampled from each end of a file
-// for ContentExternalFingerprint.
-const fingerprintChunkSize = 4096
-
-// fingerprintFile returns an O(1)-cost sampled fingerprint of file: the hex
-// SHA-256 of the first and last fingerprintChunkSize bytes of the file. It is
-// used to detect "same size, different contents" mistakes when adopting a
-// host file as a MemoryFile's externally-saved content.
-func fingerprintFile(file *os.File) (string, error) {
-	fi, err := file.Stat()
-	if err != nil {
-		return "", err
-	}
-	h := sha256.New()
-	size := fi.Size()
-	var buf [fingerprintChunkSize]byte
-	readAt := func(off int64) error {
-		n, err := file.ReadAt(buf[:], off)
-		if err != nil && err != io.EOF {
-			return err
-		}
-		h.Write(buf[:n])
-		return nil
-	}
-	if size > 0 {
-		if err := readAt(0); err != nil {
-			return "", err
-		}
-		if size > fingerprintChunkSize {
-			if err := readAt(size - fingerprintChunkSize); err != nil {
-				return "", err
-			}
-		}
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
-}
-
 // externalContentInfoLocked returns the exact size and sampled fingerprint to
 // record for an ExternalContent save. If SnapshotToFd() captured an in-window
 // snapshot during the current save, the snapshot's values are used (reflink
@@ -252,7 +213,7 @@ func (f *MemoryFile) externalContentInfoLocked() (uint64, string, error) {
 	if err != nil {
 		return 0, "", fmt.Errorf("failed to stat backing file: %w", err)
 	}
-	fp, err := fingerprintFile(f.file)
+	fp, err := checkpoint.FingerprintFile(f.file)
 	if err != nil {
 		return 0, "", fmt.Errorf("failed to fingerprint backing file: %w", err)
 	}
@@ -301,7 +262,7 @@ func (f *MemoryFile) SnapshotToFd(dst *os.File) (size uint64, fingerprint string
 	if err != nil {
 		return 0, "", fmt.Errorf("failed to stat filestore snapshot: %w", err)
 	}
-	fp, err := fingerprintFile(dst)
+	fp, err := checkpoint.FingerprintFile(dst)
 	if err != nil {
 		return 0, "", fmt.Errorf("failed to fingerprint filestore snapshot: %w", err)
 	}
@@ -1249,7 +1210,7 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 			return fmt.Errorf("adopted MemoryFile file size %d is smaller than required %d (state checkpoint and filestore artifact mismatch?)", fi.Size(), fileSize)
 		}
 		if pb.ContentExternalFingerprint != "" {
-			fp, err := fingerprintFile(f.file)
+			fp, err := checkpoint.FingerprintFile(f.file)
 			if err != nil {
 				return fmt.Errorf("failed to fingerprint adopted MemoryFile file: %w", err)
 			}

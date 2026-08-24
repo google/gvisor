@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 )
@@ -245,14 +246,12 @@ func TestExternalContentRejectsDivergedContents(t *testing.T) {
 	// Ensure the file is larger than the 4KiB fingerprint sampling chunk so
 	// the mutation lands inside a sampled region (first chunk).
 	const nPages = 3
-	var frs []memmap.FileRange
 	for i := 0; i < nPages; i++ {
 		fr, err := orig.Allocate(hostarch.PageSize, AllocOpts{Kind: usage.Anonymous})
 		if err != nil {
 			t.Fatalf("Allocate: %v", err)
 		}
 		writeTestRange(t, orig, fr, 0x44)
-		frs = append(frs, fr)
 	}
 
 	var buf bytes.Buffer
@@ -281,7 +280,6 @@ func TestExternalContentRejectsDivergedContents(t *testing.T) {
 	if err := adopted.LoadFrom(context.Background(), bytes.NewReader(metadataImage), &LoadOpts{}); err == nil {
 		t.Fatal("LoadFrom(ContentExternal) with diverged same-size contents unexpectedly succeeded")
 	}
-	_ = frs
 }
 
 // newTestMemoryFileDecommit is newTestMemoryFile with a DecommitOnDestroy
@@ -428,9 +426,9 @@ func TestExternalContentSnapshotCredentialsResetPerSaveWindow(t *testing.T) {
 			t.Fatalf("open stale: %v", err)
 		}
 		defer sf.Close()
-		fp, err := fingerprintFile(sf)
+		fp, err := checkpoint.FingerprintFile(sf)
 		if err != nil {
-			t.Fatalf("fingerprintFile(stale): %v", err)
+			t.Fatalf("checkpoint.FingerprintFile(stale): %v", err)
 		}
 		fi, err := sf.Stat()
 		if err != nil {

@@ -725,6 +725,19 @@ type SaveOpts struct {
 	// snapshotted separately) and adopted on restore.
 	PrivateMFExternalContent bool
 
+	// FilestoreSnapshots, if non-empty, requests in-freeze-window snapshots
+	// of the private MemoryFiles: after the kernel pauses and before
+	// memory-file metadata is serialized, each MemoryFile identified by ID
+	// has its backing file FICLONE'd (reflink-cloned) to Dest, so the
+	// snapshot and the saved metadata describe the same instant (valid with
+	// Resume/leave-running).
+	FilestoreSnapshots []checkpoint.FilestoreSnapshot
+
+	// FilestoreSidecar, if non-nil, receives a JSON manifest describing the
+	// FilestoreSnapshots artifacts (names, resource IDs, sizes, sampled
+	// fingerprints) written during the freeze window.
+	FilestoreSidecar io.Writer
+
 	// Resume indicates if the statefile is used for save-resume.
 	Resume bool
 }
@@ -771,6 +784,34 @@ func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCl
 		k.mf.MarkSavable()
 		for _, mf := range mfsToSave {
 			mf.MarkSavable()
+		}
+
+		// Start a fresh save window on every private MemoryFile: snapshot
+		// credentials stashed by a previous window's SnapshotToFd() must not
+		// leak into this save's ExternalContent metadata (a plain
+		// --skip-filestore-pages save following a --filestore-snapshot-dir
+		// one must describe the backing file's current contents).
+		for _, mf := range mfsToSave {
+			mf.BeginSaveWindow()
+		}
+
+		// Take in-window filestore snapshots (--filestore-snapshot-dir): the
+		// kernel is paused, so there are no writers to the backing files; the
+		// snapshot therefore describes exactly the instant the metadata
+		// below will describe. Snapshots are recorded (size + sampled
+		// fingerprint) on the MemoryFiles so that their ExternalContent save
+		// embeds values describing the snapshot rather than the original
+		// file, which may diverge after the window (leave-running).
+		if len(opts.FilestoreSnapshots) > 0 {
+			entries, err := k.snapshotFilestores(mfsToSave, opts.FilestoreSnapshots)
+			if err != nil {
+				return err
+			}
+			if opts.FilestoreSidecar != nil {
+				if err := checkpoint.WriteFilestoreSidecar(opts.FilestoreSidecar, entries); err != nil {
+					return fmt.Errorf("failed to write filestores.json sidecar: %w", err)
+				}
+			}
 		}
 
 		var (

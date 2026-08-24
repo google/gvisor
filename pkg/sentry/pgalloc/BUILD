@@ -214,6 +214,7 @@ go_test(
     library = ":pgalloc",
     deps = [
         "//pkg/hostarch",
+        "//pkg/sentry/checkpoint",
         "//pkg/sentry/memmap",
         "//pkg/sentry/usage",
     ],
