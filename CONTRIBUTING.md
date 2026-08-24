@@ -40,7 +40,7 @@ process.
 content.** This should be done in the pull request description, commit message,
 or any standard authorship area, for example, by adding
 
-`Assisted-by: Gemini CLI`
+`Assisted-by: <name of the AI tool used>`
 
 to your commit message.
 
