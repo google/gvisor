@@ -467,6 +467,15 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 		if err := d.inode.checkPermissions(rp.Credentials(), ats); err != nil {
 			return nil, err
 		}
+		if ats.MayWrite() {
+			// Reject writes to a file that is currently being executed, as
+			// Linux does in fs/namei.c:may_open() and
+			// fs/open.c:handle_truncate(). This covers O_TRUNC, which
+			// AccessTypesForOpenFlags folds into MayWrite.
+			if err := d.inode.writeCount.CheckWrite(); err != nil {
+				return nil, err
+			}
+		}
 	}
 	switch impl := d.inode.impl.(type) {
 	case *regularFile:
