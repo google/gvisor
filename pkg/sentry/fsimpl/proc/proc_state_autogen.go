@@ -2907,7 +2907,6 @@ func (d *tcpSackData) StateFields() []string {
 	return []string{
 		"DynamicBytesFile",
 		"stack",
-		"enabled",
 	}
 }
 
@@ -2918,7 +2917,6 @@ func (d *tcpSackData) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
 	stateSinkObject.Save(0, &d.DynamicBytesFile)
 	stateSinkObject.Save(1, &d.stack)
-	stateSinkObject.Save(2, &d.enabled)
 }
 
 func (d *tcpSackData) afterLoad(context.Context) {}
@@ -2927,7 +2925,6 @@ func (d *tcpSackData) afterLoad(context.Context) {}
 func (d *tcpSackData) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.DynamicBytesFile)
 	stateSourceObject.LoadWait(1, &d.stack)
-	stateSourceObject.Load(2, &d.enabled)
 }
 
 func (d *tcpRecoveryData) StateTypeName() string {
@@ -3028,8 +3025,6 @@ func (pr *portRange) StateFields() []string {
 	return []string{
 		"DynamicBytesFile",
 		"stack",
-		"start",
-		"end",
 	}
 }
 
@@ -3040,8 +3035,6 @@ func (pr *portRange) StateSave(stateSinkObject state.Sink) {
 	pr.beforeSave()
 	stateSinkObject.Save(0, &pr.DynamicBytesFile)
 	stateSinkObject.Save(1, &pr.stack)
-	stateSinkObject.Save(2, &pr.start)
-	stateSinkObject.Save(3, &pr.end)
 }
 
 func (pr *portRange) afterLoad(context.Context) {}
@@ -3050,8 +3043,6 @@ func (pr *portRange) afterLoad(context.Context) {}
 func (pr *portRange) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &pr.DynamicBytesFile)
 	stateSourceObject.LoadWait(1, &pr.stack)
-	stateSourceObject.Load(2, &pr.start)
-	stateSourceObject.Load(3, &pr.end)
 }
 
 func (f *atomicInt32File) StateTypeName() string {

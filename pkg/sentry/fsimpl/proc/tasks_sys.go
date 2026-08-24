@@ -250,36 +250,32 @@ func (*domainnameData) GetDynamicBytesPoller(ctx context.Context) *vfs.DynamicBy
 }
 
 // tcpSackData implements vfs.WritableDynamicBytesSource for
-// /proc/sys/net/tcp_sack.
+// /proc/sys/net/ipv4/tcp_sack.
 //
 // +stateify savable
 type tcpSackData struct {
 	kernfs.DynamicBytesFile
 
-	stack   inet.Stack `state:"wait"`
-	enabled *bool
+	stack inet.Stack `state:"wait"`
 }
 
 var _ vfs.WritableDynamicBytesSource = (*tcpSackData)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (d *tcpSackData) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	if d.enabled == nil {
-		sack, err := d.stack.TCPSACKEnabled()
-		if err != nil {
-			return err
-		}
-		d.enabled = &sack
+	enabled, err := d.stack.TCPSACKEnabled()
+	if err != nil {
+		return err
 	}
 
 	val := "0\n"
-	if *d.enabled {
+	if enabled {
 		// Technically, this is not quite compatible with Linux. Linux stores these
 		// as an integer, so if you write "2" into tcp_sack, you should get 2 back.
 		// Tough luck.
 		val = "1\n"
 	}
-	_, err := buf.WriteString(val)
+	_, err = buf.WriteString(val)
 	return err
 }
 
@@ -294,11 +290,7 @@ func (d *tcpSackData) Write(ctx context.Context, _ *vfs.FileDescription, src use
 	if err != nil || n == 0 {
 		return 0, err
 	}
-	if d.enabled == nil {
-		d.enabled = new(bool)
-	}
-	*d.enabled = buf[0] != 0
-	return n, d.stack.SetTCPSACKEnabled(*d.enabled)
+	return n, d.stack.SetTCPSACKEnabled(buf[0] != 0)
 }
 
 // tcpRecoveryData implements vfs.WritableDynamicBytesSource for
@@ -351,14 +343,15 @@ type tcpMemData struct {
 	dir   tcpMemDir
 	stack inet.Stack `state:"wait"`
 
-	// mu protects against concurrent reads/writes to FDs based on the dentry
-	// backing this byte source.
+	// mu serializes reads and read-modify-write updates through this byte source.
 	mu sync.Mutex `state:"nosave"`
 }
 
 var _ vfs.WritableDynamicBytesSource = (*tcpMemData)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
+//
+// +checklocksexclude:d.mu
 func (d *tcpMemData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -372,6 +365,8 @@ func (d *tcpMemData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 }
 
 // Write implements vfs.WritableDynamicBytesSource.Write.
+//
+// +checklocksexclude:d.mu
 func (d *tcpMemData) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
 	if offset != 0 {
 		// No need to handle partial writes thus far.
@@ -399,7 +394,9 @@ func (d *tcpMemData) Write(ctx context.Context, _ *vfs.FileDescription, src user
 	return n, nil
 }
 
-// Precondition: d.mu must be locked.
+// readSizeLocked returns the stack's configured TCP buffer sizes.
+//
+// +checklocks:d.mu
 func (d *tcpMemData) readSizeLocked() (inet.TCPBufferSize, error) {
 	switch d.dir {
 	case tcpRMem:
@@ -411,7 +408,9 @@ func (d *tcpMemData) readSizeLocked() (inet.TCPBufferSize, error) {
 	}
 }
 
-// Precondition: d.mu must be locked.
+// writeSizeLocked updates the stack's configured TCP buffer sizes.
+//
+// +checklocks:d.mu
 func (d *tcpMemData) writeSizeLocked(size inet.TCPBufferSize) error {
 	switch d.dir {
 	case tcpRMem:
@@ -430,27 +429,39 @@ func (d *tcpMemData) writeSizeLocked(size inet.TCPBufferSize) error {
 type ipForwarding struct {
 	kernfs.DynamicBytesFile
 
-	stack   inet.Stack `state:"wait"`
+	stack inet.Stack `state:"wait"`
+	mu    sync.Mutex `state:"nosave"`
+
+	// enabled is the last value successfully written here, which may differ
+	// from the forwarding state of individual interfaces.
+	//
+	// +checklocks:mu
 	enabled bool
 }
 
 var _ vfs.WritableDynamicBytesSource = (*ipForwarding)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
+//
+// +checklocksexclude:ipf.mu
 func (ipf *ipForwarding) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	ipf.mu.Lock()
+	enabled := ipf.enabled
+	ipf.mu.Unlock()
+
 	val := "0\n"
-	if ipf.enabled {
-		// Technically, this is not quite compatible with Linux. Linux stores these
-		// as an integer, so if you write "2" into tcp_sack, you should get 2 back.
-		// Tough luck.
+	if enabled {
+		// Linux preserves the written integer; this file reports a boolean,
+		// so a nonzero value such as "2" is read back as "1".
 		val = "1\n"
 	}
-	buf.WriteString(val)
-
-	return nil
+	_, err := buf.WriteString(val)
+	return err
 }
 
 // Write implements vfs.WritableDynamicBytesSource.Write.
+//
+// +checklocksexclude:ipf.mu
 func (ipf *ipForwarding) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
 	if offset != 0 {
 		// No need to handle partial writes thus far.
@@ -461,10 +472,13 @@ func (ipf *ipForwarding) Write(ctx context.Context, _ *vfs.FileDescription, src 
 	if err != nil || n == 0 {
 		return 0, err
 	}
-	ipf.enabled = buf[0] != 0
-	if err := ipf.stack.SetForwarding(ipv4.ProtocolNumber, ipf.enabled); err != nil {
+	enabled := buf[0] != 0
+	ipf.mu.Lock()
+	defer ipf.mu.Unlock()
+	if err := ipf.stack.SetForwarding(ipv4.ProtocolNumber, enabled); err != nil {
 		return 0, err
 	}
+	ipf.enabled = enabled
 	return n, nil
 }
 
@@ -476,23 +490,14 @@ type portRange struct {
 	kernfs.DynamicBytesFile
 
 	stack inet.Stack `state:"wait"`
-
-	// start and end store the port range. We must save/restore this here,
-	// since a netstack instance is created on restore.
-	start *uint16
-	end   *uint16
 }
 
 var _ vfs.WritableDynamicBytesSource = (*portRange)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (pr *portRange) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	if pr.start == nil {
-		start, end := pr.stack.PortRange()
-		pr.start = &start
-		pr.end = &end
-	}
-	_, err := fmt.Fprintf(buf, "%d %d\n", *pr.start, *pr.end)
+	start, end := pr.stack.PortRange()
+	_, err := fmt.Fprintf(buf, "%d %d\n", start, end)
 	return err
 }
 
@@ -517,12 +522,6 @@ func (pr *portRange) Write(ctx context.Context, _ *vfs.FileDescription, src user
 	if err := pr.stack.SetPortRange(uint16(ports[0]), uint16(ports[1])); err != nil {
 		return 0, err
 	}
-	if pr.start == nil {
-		pr.start = new(uint16)
-		pr.end = new(uint16)
-	}
-	*pr.start = uint16(ports[0])
-	*pr.end = uint16(ports[1])
 	return n, nil
 }
 
