@@ -24,6 +24,8 @@ header = echo --- $(1) >&2
 EMPTY :=
 SPACE := $(EMPTY) $(EMPTY)
 SHELL = /bin/bash
+
+unexport BUILDKITE_AGENT_ACCESS_TOKEN BUILDKITE_AGENT_TOKEN
 REPO_DIR := $(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
 COMMA := ,
 
