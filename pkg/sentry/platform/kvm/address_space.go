@@ -16,6 +16,7 @@ package kvm
 
 import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -247,3 +248,8 @@ func (as *addressSpace) PreFork() {}
 
 // PostFork implements platform.AddressSpace.PostFork.
 func (as *addressSpace) PostFork() {}
+
+// UserModifiedGS implements platform.AddressSpace.UserModifiedGS.
+func (as *addressSpace) UserModifiedGS(ctx context.Context, mm platform.MemoryManager) error {
+	return nil
+}

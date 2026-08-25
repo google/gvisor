@@ -246,6 +246,16 @@ func (c *Context64) SetTLS(value uintptr) bool {
 	return true
 }
 
+// GS returns the current GS pointer.
+func (c *Context64) GS() uintptr {
+	return 0
+}
+
+// SetGS sets the current GS pointer. Returns false if value is invalid.
+func (c *Context64) SetGS(value uintptr) bool {
+	return false
+}
+
 // SetOldRSeqInterruptedIP implements Context.SetOldRSeqInterruptedIP.
 func (c *Context64) SetOldRSeqInterruptedIP(value uintptr) {
 	c.Regs.Regs[3] = uint64(value)
