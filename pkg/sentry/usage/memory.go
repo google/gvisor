@@ -21,6 +21,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/bits"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/memutil"
 	"gvisor.dev/gvisor/pkg/sync"
 )
@@ -417,16 +418,52 @@ func (m *MemoryLocked) CopyPerCg(memCgID uint32) (MemoryStats, uint64) {
 }
 
 // These options control how much total memory the is reported to the
-// application. They may only be set before the application starts executing,
-// and must not be modified.
+// application. They are set at boot and may afterwards only be raised, through
+// SetTotalMemoryBytes; they are atomic because the application reads them
+// concurrently via /proc/meminfo and sysinfo(2).
 var (
 	// MinimumTotalMemoryBytes is the minimum reported total system memory.
-	MinimumTotalMemoryBytes uint64 = 2 << 30 // 2 GB
+	MinimumTotalMemoryBytes = atomicbitops.FromUint64(2 << 30) // 2 GB
 
 	// MaximumTotalMemoryBytes is the maximum reported total system memory.
 	// The 0 value indicates no maximum.
-	MaximumTotalMemoryBytes uint64
+	MaximumTotalMemoryBytes atomicbitops.Uint64
 )
+
+// totalMemoryMu serializes SetTotalMemoryBytes so that the two bounds are
+// always raised as a pair. Readers stay lock-free on the atomics.
+var totalMemoryMu sync.Mutex
+
+// SetTotalMemoryBytes raises the total system memory reported to the
+// application to n, without a restart. Grow-only: shrinking would make MemFree
+// meaningless against memory already allocated. Requires a boot-time maximum,
+// without which the reported total tracks host memory and has nothing to raise.
+func SetTotalMemoryBytes(n uint64) error {
+	if n == 0 {
+		return fmt.Errorf("SetTotalMemoryBytes called with invalid n == 0")
+	}
+	totalMemoryMu.Lock()
+	defer totalMemoryMu.Unlock()
+
+	old := MaximumTotalMemoryBytes.Load()
+	if old == 0 {
+		return fmt.Errorf("SetTotalMemoryBytes(%d): no boot-time total memory was set, nothing to raise", n)
+	}
+	if n == old {
+		return nil
+	}
+	if n < old {
+		return fmt.Errorf("SetTotalMemoryBytes(%d) would shrink the reported total memory from %d: not yet supported", n, old)
+	}
+	// Raise the ceiling before the floor so a concurrent reader never sees a
+	// minimum above the maximum. The minimum has to move too: it is what pins
+	// the reported total to the limit, and left at the boot value MemTotal
+	// would instead creep up with the MemoryFile as the application allocates.
+	MaximumTotalMemoryBytes.Store(n)
+	MinimumTotalMemoryBytes.Store(n)
+	log.Infof("Total memory changed from %d to %d bytes", old, n)
+	return nil
+}
 
 // TotalMemory returns the "total usable memory" available.
 //
@@ -437,8 +474,8 @@ var (
 // memSize should be the platform.Memory size reported by platform.Memory.TotalSize()
 // used is the total memory reported by MemoryLocked.Total()
 func TotalMemory(memSize, used uint64) uint64 {
-	if memSize < MinimumTotalMemoryBytes {
-		memSize = MinimumTotalMemoryBytes
+	if minTotal := MinimumTotalMemoryBytes.Load(); memSize < minTotal {
+		memSize = minTotal
 	}
 	if memSize < used {
 		memSize = used
@@ -448,8 +485,8 @@ func TotalMemory(memSize, used uint64) uint64 {
 			memSize = uint64(1) << (uint(msb) + 1)
 		}
 	}
-	if MaximumTotalMemoryBytes > 0 && memSize > MaximumTotalMemoryBytes {
-		memSize = MaximumTotalMemoryBytes
+	if maxTotal := MaximumTotalMemoryBytes.Load(); maxTotal > 0 && memSize > maxTotal {
+		memSize = maxTotal
 	}
 	return memSize
 }
