@@ -788,8 +788,17 @@ func cmdOutput(cmd *exec.Cmd, combined bool) ([]byte, []byte, error) {
 	if err == nil && status != 0 {
 		err = fmt.Errorf("%q did not terminate successfully", cmd.Args[0])
 	}
+	// The buffers go back to the pool on return, so copy their contents out.
 	if stderr == nil {
-		return stdout.Bytes(), nil, err
+		return cloneBuf(stdout), nil, err
 	}
-	return stdout.Bytes(), stderr.Bytes(), err
+	return cloneBuf(stdout), cloneBuf(stderr), err
+}
+
+// cloneBuf returns a copy of b's contents that does not alias b.
+func cloneBuf(b *bytes.Buffer) []byte {
+	if b == nil {
+		return nil
+	}
+	return append([]byte(nil), b.Bytes()...)
 }

@@ -92,7 +92,10 @@ func (s *createdState) Start(ctx context.Context, restoreConf *extension.Restore
 		// To work around that, we treat non-root container in start/restore
 		// failure state as stopped.
 		if !s.p.Sandbox {
-			s.p.io.Close()
+			// p.io is nil when the process was created with a terminal.
+			if s.p.io != nil {
+				s.p.io.Close()
+			}
 			s.p.setExited(internalErrorCode)
 			s.transition(stopped)
 		}
