@@ -3273,6 +3273,109 @@ TEST(MountTest, MountInfoAfterUnshare) {
   }
 }
 
+// Test that recursive bind mount skips unmounted (detached) child mounts,
+// preventing use-after-free or resurrecting destroyed dentries.
+TEST(MountTest, BindMountRecursiveSkipsUnmounted) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dirA = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const dirC = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  ASSERT_THAT(mount("tmpfs", dirA.path().c_str(), "tmpfs", 0, nullptr),
+              SyscallSucceeds());
+  auto cleanupA =
+      Cleanup([&dirA] { umount2(dirA.path().c_str(), MNT_DETACH); });
+
+  std::string const dirB = JoinPath(dirA.path(), "B");
+  ASSERT_THAT(mkdir(dirB.c_str(), 0777), SyscallSucceeds());
+
+  ASSERT_THAT(mount("tmpfs", dirB.c_str(), "tmpfs", 0, nullptr),
+              SyscallSucceeds());
+  auto cleanupB = Cleanup([&dirB] { umount2(dirB.c_str(), MNT_DETACH); });
+
+  std::string const fileB = JoinPath(dirB, "test.txt");
+  FileDescriptor fileFd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(fileB, O_CREAT | O_RDWR, 0666));
+
+  // Unmount B (MNT_DETACH). It remains in A's children pending deferred cleanup
+  // because fileFd holds an open reference.
+  ASSERT_THAT(umount2(dirB.c_str(), MNT_DETACH), SyscallSucceeds());
+  cleanupB.Release();
+
+  // Recursively bind mount A to C.
+  ASSERT_THAT(mount(dirA.path().c_str(), dirC.path().c_str(), nullptr,
+                    MS_BIND | MS_REC, nullptr),
+              SyscallSucceeds());
+  auto cleanupC =
+      Cleanup([&dirC] { umount2(dirC.path().c_str(), MNT_DETACH); });
+
+  // Verify that C/B is NOT a separate mount containing test.txt.
+  std::string const fileCB = JoinPath(dirC.path(), "B/test.txt");
+  struct stat st;
+  EXPECT_THAT(stat(fileCB.c_str(), &st), SyscallFailsWithErrno(ENOENT));
+}
+
+TEST(MountTest, BindMountRecursiveSkipsUnmountedOverlay) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  bool in_overlayfs = ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(base_dir.path()));
+  if (in_overlayfs) {
+    ASSERT_THAT(
+        mount("tmpfs", base_dir.path().c_str(), "tmpfs", 0, "mode=1777"),
+        SyscallSucceeds());
+  }
+  auto tmpfs_cleanup = Cleanup([&base_dir, &in_overlayfs] {
+    if (in_overlayfs) {
+      ASSERT_THAT(umount2(base_dir.path().c_str(), MNT_DETACH),
+                  SyscallSucceeds());
+    }
+  });
+
+  auto dirA = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto dirC = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+
+  ASSERT_THAT(mount("tmpfs", dirA.path().c_str(), "tmpfs", 0, nullptr),
+              SyscallSucceeds());
+  auto cleanupA =
+      Cleanup([&dirA] { umount2(dirA.path().c_str(), MNT_DETACH); });
+
+  std::string dirB = JoinPath(dirA.path(), "B");
+  ASSERT_THAT(mkdir(dirB.c_str(), 0777), SyscallSucceeds());
+
+  auto lower =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto upper =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto work = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  std::string opts = absl::StrFormat("lowerdir=%s,upperdir=%s,workdir=%s",
+                                     lower.path(), upper.path(), work.path());
+  int mount_res = mount("overlay", dirB.c_str(), "overlay", 0, opts.c_str());
+  if (mount_res < 0 && (errno == ENODEV || errno == EINVAL || errno == EPERM)) {
+    // Overlayfs not supported in this environment.
+    return;
+  }
+  ASSERT_THAT(mount_res, SyscallSucceeds());
+  auto cleanupB = Cleanup([&dirB] { umount2(dirB.c_str(), MNT_DETACH); });
+
+  std::string fileB = JoinPath(dirB, "test.txt");
+  FileDescriptor fileFd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(fileB, O_CREAT | O_RDWR, 0666));
+
+  ASSERT_THAT(umount2(dirB.c_str(), MNT_DETACH), SyscallSucceeds());
+  cleanupB.Release();
+
+  ASSERT_THAT(mount(dirA.path().c_str(), dirC.path().c_str(), nullptr,
+                    MS_BIND | MS_REC, nullptr),
+              SyscallSucceeds());
+  auto cleanupC =
+      Cleanup([&dirC] { umount2(dirC.path().c_str(), MNT_DETACH); });
+
+  std::string fileCB = JoinPath(dirC.path(), "B/test.txt");
+  struct stat st;
+  EXPECT_THAT(stat(fileCB.c_str(), &st), SyscallFailsWithErrno(ENOENT));
+}
+
 }  // namespace
 
 }  // namespace testing

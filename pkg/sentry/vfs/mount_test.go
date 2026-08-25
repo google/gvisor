@@ -19,6 +19,7 @@ import (
 	"runtime"
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -464,5 +465,43 @@ func BenchmarkMountSyncMapRemove(b *testing.B) {
 	for i := range mounts {
 		mount := mounts[i]
 		ms.Delete(mount.saveKey())
+	}
+}
+
+// TestCloneMountTreeSkipsUmountedChild tests that cloneMountTree ignores child
+// mounts marked as umounted (umounted == true) when traversing parent.children.
+//
+// A mount may remain linked in parent.children after it has been unmounted
+// (e.g., pending deferred cleanup, forgetDeadMountpoint, or across user mount
+// namespace boundaries). If cloneMountTree does not skip umounted children, it
+// will attempt to clone destroyed mounts and dentries, resurrecting them and
+// causing potential use-after-free or refcounting panics.
+func TestCloneMountTreeSkipsUmountedChild(t *testing.T) {
+	ctx := contexttest.Context(t)
+	var vfsObj VirtualFilesystem
+	if err := vfsObj.Init(ctx); err != nil {
+		t.Fatalf("vfsObj.Init: %v", err)
+	}
+
+	parent := vfsObj.NewDisconnectedMount(vfsObj.anonMount.fs, vfsObj.anonMount.root, &MountOptions{})
+	child := vfsObj.NewDisconnectedMount(vfsObj.anonMount.fs, vfsObj.anonMount.root, &MountOptions{})
+
+	child.setKey(VirtualDentry{mount: parent, dentry: vfsObj.anonMount.root})
+	child.umounted = true
+
+	parent.children = map[*Mount]struct{}{
+		child: {},
+	}
+
+	vfsObj.lockMounts()
+	defer vfsObj.unlockMounts(ctx)
+
+	clone, err := vfsObj.cloneMountTree(ctx, parent, vfsObj.anonMount.root, 0, nil)
+	if err != nil {
+		t.Fatalf("cloneMountTree failed: %v", err)
+	}
+
+	if len(clone.children) != 0 {
+		t.Errorf("cloneMountTree cloned umounted child: got %d children, wanted 0", len(clone.children))
 	}
 }

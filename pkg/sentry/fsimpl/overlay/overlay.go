@@ -685,7 +685,9 @@ func (fs *filesystem) newDentry() *dentry {
 // IncRef implements vfs.DentryImpl.IncRef.
 func (d *dentry) IncRef() {
 	// d.refs may be 0 if d.fs.renameMu is locked, which serializes against
-	// d.checkDropLocked().
+	// d.checkDropLocked(). A negative reference count, however, means that
+	// the layer VirtualDentries have already been released and this object
+	// must never be resurrected.
 	r := d.refs.Add(1)
 	if d.LogRefs() {
 		refs.LogIncRef(d, r)
