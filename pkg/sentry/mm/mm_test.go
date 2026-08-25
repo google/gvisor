@@ -542,3 +542,43 @@ func TestUnpinnedPagesCopyOnWriteAfterFork(t *testing.T) {
 		t.Errorf("pma is not copy-on-write after fork of unpinned page")
 	}
 }
+
+func TestMRemapMappableOffsetOverflow(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+
+	mf := pgalloc.MemoryFileFromContext(ctx)
+	fr, err := mf.Allocate(3*hostarch.PageSize, pgalloc.AllocOpts{})
+	if err != nil {
+		t.Fatalf("failed to allocate memory file range: %v", err)
+	}
+	mappable := NewSpecialMappable("test_mappable", mf, fr)
+	defer mappable.DecRef(ctx)
+
+	// Map a page at a high offset (2^64 - 2*PageSize).
+	// This mapping itself is valid because offset + length (2^64 - PageSize) does not overflow.
+	addr, err := mm.MMap(ctx, memmap.MMapOpts{
+		Length:          hostarch.PageSize,
+		MappingIdentity: mappable,
+		Mappable:        mappable,
+		Offset:          ^uint64(0) - 2*hostarch.PageSize + 1,
+		Private:         true,
+		MaxPerms:        hostarch.AnyAccess,
+	})
+	if err != nil {
+		t.Fatalf("MMap got err %v want nil", err)
+	}
+
+	// 1. A shrink should succeed, even if offset+newSize overflows.
+	// We remap with oldSize = 3*PageSize, newSize = 2*PageSize.
+	if _, err := mm.MRemap(ctx, addr, 3*hostarch.PageSize, 2*hostarch.PageSize, MRemapOpts{}); err != nil {
+		t.Errorf("MRemap shrink got err %v want nil", err)
+	}
+
+	// 2. A grow should fail if offset+newSize overflows.
+	// We remap with oldSize = PageSize, newSize = 3*PageSize.
+	if _, err := mm.MRemap(ctx, addr, hostarch.PageSize, 3*hostarch.PageSize, MRemapOpts{}); !linuxerr.Equals(linuxerr.EINVAL, err) {
+		t.Errorf("MRemap grow got err %v want EINVAL", err)
+	}
+}
