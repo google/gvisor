@@ -195,8 +195,13 @@ sudo add-apt-repository "deb [arch=amd64,arm64] https://storage.googleapis.com/g
 ### Point release
 
 Point releases correspond to
-[releases](https://github.com/google/gvisor/releases) tagged in the Github
-repository. A given point release is available at the following URL:
+[releases](https://github.com/google/gvisor/releases) tagged in the GitHub
+repository. Each release on GitHub includes release notes/changelogs and
+downloadable release tarballs for each architecture (`gvisor-x86_64.tar.bz2`,
+`gvisor-aarch64.tar.bz2`) alongside checksums (`SHA256SUMS`, `SHA512SUMS`).
+
+Point releases are also available directly from the release bucket at the
+following URL:
 
 `https://storage.googleapis.com/gvisor/releases/release/${yyyymmdd}.${rc}/${ARCH}`
 
