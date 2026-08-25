@@ -22,24 +22,14 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/version"
 	"gvisor.dev/gvisor/pkg/sentry/syscalls"
 )
 
 // AMD64 is a table of Linux amd64 syscall API with the corresponding syscall
 // numbers from Linux 4.4.
 var AMD64 = &kernel.SyscallTable{
-	OS:   abi.Linux,
-	Arch: arch.AMD64,
-	Version: kernel.Version{
-		// Version 4.4 is chosen as a stable, longterm version of Linux, which
-		// guides the interface provided by this syscall table. The build
-		// version is that for a clean build with default kernel config, at 5
-		// minutes after v4.4 was tagged.
-		Sysname: version.LinuxSysname,
-		Release: version.LinuxRelease,
-		Version: version.LinuxVersion,
-	},
+	OS:          abi.Linux,
+	Arch:        arch.AMD64,
 	AuditNumber: linux.AUDIT_ARCH_X86_64,
 	Table: map[uintptr]kernel.Syscall{
 		0:   syscalls.SupportedPoint("read", Read, PointRead),
@@ -413,13 +403,8 @@ var AMD64 = &kernel.SyscallTable{
 // ARM64 is a table of Linux arm64 syscall API with the corresponding syscall
 // numbers from Linux 4.4.
 var ARM64 = &kernel.SyscallTable{
-	OS:   abi.Linux,
-	Arch: arch.ARM64,
-	Version: kernel.Version{
-		Sysname: version.LinuxSysname,
-		Release: version.LinuxRelease,
-		Version: version.LinuxVersion,
-	},
+	OS:          abi.Linux,
+	Arch:        arch.ARM64,
 	AuditNumber: linux.AUDIT_ARCH_AARCH64,
 	Table: map[uintptr]kernel.Syscall{
 		0:   syscalls.PartiallySupported("io_setup", IoSetup, "Generally supported with exceptions. User ring optimizations are not implemented.", []string{"gvisor.dev/issue/204"}),

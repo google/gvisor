@@ -200,6 +200,13 @@ func buildSchemas() map[uint32]*MethodSchema {
 				ib.UVERBS_ATTR_DESTROY_PD_HANDLE: AttrIdr,
 			},
 		},
+		// AH creation rides the legacy write path (DmaInvokeWrite); only
+		// destroy has a modern object method.
+		SchemaKey(ib.UVERBS_OBJECT_AH, ib.UVERBS_METHOD_AH_DESTROY): {
+			Attrs: map[uint16]AttrType{
+				ib.UVERBS_ATTR_DESTROY_AH_HANDLE: AttrIdr,
+			},
+		},
 		SchemaKey(ib.UVERBS_OBJECT_MR, ib.UVERBS_METHOD_REG_MR): {
 			Dma: DmaMRReg, HandleAttr: ib.UVERBS_ATTR_REG_MR_HANDLE,
 			Attrs: map[uint16]AttrType{
