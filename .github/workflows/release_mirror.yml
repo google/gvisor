@@ -190,7 +190,8 @@ jobs:
 
           # Only mark the newest release tag as "latest", so that backfilling an
           # older tag by hand does not move the pointer backwards.
-          newest="$(git tag --list 'release-*' --sort=-v:refname | head -n1)"
+          newest="$(git for-each-ref --count=1 --sort=-v:refname \
+            --format='%(refname:short)' 'refs/tags/release-*')"
           if [[ "${TAG}" == "${newest}" ]]; then is_latest=true; else is_latest=false; fi
 
           # The Buildkite release step retries automatically, so this has to be
