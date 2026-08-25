@@ -115,6 +115,32 @@ TEST(MadviseDontneedTest, CleansPrivateFilePage) {
   ExpectAllMappingBytes(m, 4);
 }
 
+TEST(MadviseDontneedTest, CleansPrivateFileHugePageSubrange) {
+  constexpr char kFileValue = 4;
+  constexpr char kPrivateValue = 5;
+  TempPath f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+      /* parent = */ GetAbsoluteTestTmpdir(),
+      /* content = */ std::string(kHugePageSize, kFileValue),
+      TempPath::kDefaultFileMode));
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(f.path(), O_RDWR));
+
+  Mapping m = ASSERT_NO_ERRNO_AND_VALUE(Mmap(nullptr, kHugePageSize,
+                                             PROT_READ | PROT_WRITE,
+                                             MAP_PRIVATE, fd.get(), 0));
+  memset(m.ptr(), kPrivateValue, m.len());
+  ExpectAllMappingBytes(m, kPrivateValue);
+
+  char* const advised = static_cast<char*>(m.ptr()) + kPageSize;
+  ASSERT_THAT(madvise(advised, kPageSize, MADV_DONTNEED), SyscallSucceeds());
+
+  auto const v = m.view();
+  for (size_t i = 0; i < v.size(); ++i) {
+    EXPECT_EQ(v[i],
+              i >= kPageSize && i < 2 * kPageSize ? kFileValue : kPrivateValue)
+        << "at offset " << i;
+  }
+}
+
 TEST(MadviseDontneedTest, DoesNotModifySharedFilePage) {
   TempPath f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
       /* parent = */ GetAbsoluteTestTmpdir(),
