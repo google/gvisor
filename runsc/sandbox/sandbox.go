@@ -881,6 +881,17 @@ func (s *Sandbox) connError(err error) error {
 	return fmt.Errorf("connecting to control server at PID %d: %v", s.Pid.Load(), err)
 }
 
+// totalMemForLimit returns the total memory to report inside the sandbox for a
+// cgroup memory limit of memLimit bytes. An unlimited cgroup reports a value
+// far above host memory, so cap at totalSysMem. Used at boot and again on a
+// live cgroup memory update.
+func totalMemForLimit(memLimit, totalSysMem uint64) uint64 {
+	if memLimit < totalSysMem {
+		return memLimit
+	}
+	return totalSysMem
+}
+
 // createSandboxProcess starts the sandbox as a subprocess by running the "boot"
 // command, passing in the bundle dir.
 func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyncFile *os.File) error {
@@ -1379,9 +1390,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		if err != nil {
 			return fmt.Errorf("getting memory limit from cgroups: %v", err)
 		}
-		if memLimit < mem {
-			mem = memLimit
-		}
+		mem = totalMemForLimit(memLimit, totalSysMem)
 	}
 	cmd.Args = append(cmd.Args, "--total-memory", strconv.FormatUint(mem, 10))
 
@@ -2074,6 +2083,24 @@ func (s *Sandbox) Resume(cid string) error {
 	log.Debugf("Resume sandbox %q", s.ID)
 	if err := s.call(boot.ContMgrResume, nil, nil); err != nil {
 		return fmt.Errorf("resuming container %q: %w", cid, err)
+	}
+	return nil
+}
+
+// SetTotalMemory pushes memLimit, a container's new memory limit in bytes,
+// into the running sentry so /proc/meminfo tracks it without a sandbox
+// restart. memLimit is the requested limit rather than a re-read of the
+// sandbox cgroup, which runsc updates only for the root container.
+func (s *Sandbox) SetTotalMemory(memLimit uint64) error {
+	totalSysMem, err := hostos.TotalSystemMemory()
+	if err != nil {
+		return fmt.Errorf("getting total system memory: %w", err)
+	}
+	mem := totalMemForLimit(memLimit, totalSysMem)
+	log.Debugf("Sandbox %q: setting total memory to %d", s.ID, mem)
+	args := &boot.SetTotalMemoryArgs{TotalMem: mem}
+	if err := s.call(boot.ContMgrSetTotalMemory, args, nil); err != nil {
+		return fmt.Errorf("setting total memory: %w", err)
 	}
 	return nil
 }

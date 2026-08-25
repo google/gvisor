@@ -43,6 +43,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/state/checkpointfiles"
 	"gvisor.dev/gvisor/pkg/sentry/state/stateio"
 	"gvisor.dev/gvisor/pkg/sentry/state/stateipc"
+	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/tcpip/link/fdbased"
 	"gvisor.dev/gvisor/pkg/unet"
@@ -150,6 +151,10 @@ const (
 	// ContMgrGetNetworkConfig returns the network interfaces and routes applied
 	// during the creation of root container.
 	ContMgrGetNetworkConfig = "containerManager.GetNetworkConfig"
+
+	// ContMgrSetTotalMemory updates the total memory reported inside the
+	// sandbox, without a restart.
+	ContMgrSetTotalMemory = "containerManager.SetTotalMemory"
 )
 
 const (
@@ -908,6 +913,19 @@ func (cm *containerManager) Pause(_, _ *struct{}) error {
 func (cm *containerManager) Resume(_, _ *struct{}) error {
 	cm.l.k.Unpause()
 	return control.PostResume(cm.l.k, nil)
+}
+
+// SetTotalMemoryArgs are arguments to the SetTotalMemory method.
+type SetTotalMemoryArgs struct {
+	// TotalMem is the new total memory, in bytes, to report to applications.
+	TotalMem uint64
+}
+
+// SetTotalMemory pushes a live cgroup memory limit change into the running
+// sentry, without restarting the sandbox.
+func (cm *containerManager) SetTotalMemory(args *SetTotalMemoryArgs, _ *struct{}) error {
+	log.Debugf("containerManager.SetTotalMemory: %d", args.TotalMem)
+	return usage.SetTotalMemoryBytes(args.TotalMem)
 }
 
 // Wait waits for the init process in the given container.
