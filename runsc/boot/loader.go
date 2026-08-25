@@ -363,6 +363,19 @@ type execProcess struct {
 	// pidnsPath is the pid namespace path in spec
 	pidnsPath string
 
+	// pidns is the PID namespace that pidnsPath refers to. It is set together
+	// with pidnsPath, before the container's process is created, and holds a
+	// reference that is released when this execProcess is removed from
+	// Loader.processes (or by Loader.Destroy).
+	//
+	// Containers joining a PID namespace look this up instead of deriving it
+	// from tg, which is nil until the container actually starts. Keeping the
+	// namespace here means the mapping stays valid even if the container that
+	// created it never starts, and that the namespace is not leaked.
+	//
+	// Invariant: pidns is non-nil whenever pidnsPath has been set.
+	pidns *kernel.PIDNamespace
+
 	// cgroupnsPath is the cgroup namespace path in spec
 	cgroupnsPath string
 
@@ -370,6 +383,14 @@ type execProcess struct {
 	// TTY file is passed during container create and must be saved until
 	// container start.
 	hostTTY *fd.FD
+}
+
+// releasePIDNamespace drops the PID namespace reference held by ep, if any.
+func (ep *execProcess) releasePIDNamespace(ctx context.Context) {
+	if ep.pidns != nil {
+		ep.pidns.DecRef(ctx)
+		ep.pidns = nil
+	}
 }
 
 // fdMapping maps guest to host file descriptors. Guest file descriptors are
@@ -952,6 +973,11 @@ func (l *Loader) Destroy() {
 	for _, m := range l.sharedMounts {
 		m.DecRef(ctx)
 	}
+	// Release PID namespaces held by containers that were never destroyed
+	// individually, e.g. the root container.
+	for _, ep := range l.processes {
+		ep.releasePIDNamespace(ctx)
+	}
 	if l.cgroup2Mount != nil {
 		l.cgroup2Mount.DecRef(ctx)
 		l.cgroup2Mount = nil
@@ -1215,7 +1241,12 @@ func (l *Loader) run() error {
 
 	ep.tg = l.k.GlobalInit()
 	if ns, ok := specutils.GetNS(specs.PIDNamespace, l.root.spec); ok {
+		// The root container's process always runs in the root PID namespace.
+		// Record it alongside the path so that a subcontainer naming the same
+		// path joins it.
 		ep.pidnsPath = ns.Path
+		ep.pidns = l.k.RootPIDNamespace()
+		ep.pidns.IncRef()
 	}
 
 	// Handle signals by forwarding them to the root container process
@@ -1299,12 +1330,9 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 		if ns.Path != "" {
 			for _, p := range l.processes {
 				if ns.Path == p.pidnsPath {
-					if p.tg == nil {
-						log.Warningf("PID namespace %q owner has no process, ignoring", ns.Path)
-						continue
-					}
 					log.Debugf("Joining PID namespace named %q", ns.Path)
-					pidns = p.tg.PIDNamespace()
+					pidns = p.pidns
+					pidns.IncRef()
 					break
 				}
 			}
@@ -1313,7 +1341,10 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 			log.Warningf("PID namespace %q not found, running in new PID namespace", ns.Path)
 			pidns = l.k.RootPIDNamespace().NewChild(l.k.SupervisorContext(), l.k, l.k.RootUserNamespace())
 		}
+		// Publish the namespace, not just the path, so that containers joining it
+		// do not depend on this container ever starting.
 		ep.pidnsPath = ns.Path
+		ep.pidns = pidns
 	} else {
 		pidns = l.k.RootPIDNamespace()
 	}
@@ -1580,8 +1611,9 @@ func (l *Loader) destroySubcontainer(cid string) error {
 	// No more failure from this point on.
 
 	// Remove all container thread groups from the map.
-	for key := range l.processes {
+	for key, ep := range l.processes {
 		if key.cid == cid {
+			ep.releasePIDNamespace(l.k.SupervisorContext())
 			delete(l.processes, key)
 		}
 	}
