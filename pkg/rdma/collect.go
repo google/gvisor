@@ -57,7 +57,7 @@ var ibAttrNames = []string{
 // table repopulates when netdevs move namespaces and acquire addresses;
 // link state and rate can change on retrain).
 var portLiveAttrNames = []string{
-	"state", "phys_state", "rate", "lid", "sm_lid", "sm_sl",
+	"state", "phys_state", "rate", "lid", "lid_mask_count", "sm_lid", "sm_sl",
 }
 
 // Per-port attributes that are fixed for the sandbox lifetime.
@@ -199,13 +199,18 @@ func Collect(sysRoot string, uverbs []UverbsSpec) (*Snapshot, error) {
 		}
 	}
 
-	// Materialize every PCI node with its static attributes.
+	// Materialize every PCI node with its static attributes and config space.
 	for p := range pciPaths {
 		attrs, err := readAttrs(path.Join(sysRoot, p), pciAttrNames)
 		if err != nil {
 			return nil, fmt.Errorf("PCI node %q: %w", p, err)
 		}
-		s.PCINodes = append(s.PCINodes, PCINode{Path: p, Attrs: attrs})
+		// config is best-effort: root complexes and some bridges lack it.
+		config, err := os.ReadFile(path.Join(sysRoot, p, "config"))
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("reading PCI config of %q: %w", p, err)
+		}
+		s.PCINodes = append(s.PCINodes, PCINode{Path: p, Attrs: attrs, Config: config})
 	}
 	sort.Slice(s.PCINodes, func(i, j int) bool { return s.PCINodes[i].Path < s.PCINodes[j].Path })
 

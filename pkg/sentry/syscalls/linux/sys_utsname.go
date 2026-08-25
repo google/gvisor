@@ -19,20 +19,19 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/version"
 )
 
 // Uname implements linux syscall uname.
 func Uname(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	version := t.SyscallTable().Version
-
 	uts := t.UTSNamespace()
 
 	// Fill in structure fields.
 	var u linux.UtsName
-	copy(u.Sysname[:], version.Sysname)
+	copy(u.Sysname[:], version.LinuxSysname)
 	copy(u.Nodename[:], uts.HostName())
-	copy(u.Release[:], version.Release)
-	copy(u.Version[:], version.Version)
+	copy(u.Release[:], version.LinuxRelease())
+	copy(u.Version[:], version.LinuxVersion)
 	// build tag above.
 	switch t.SyscallTable().Arch {
 	case arch.AMD64:
