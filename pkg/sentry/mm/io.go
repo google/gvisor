@@ -715,12 +715,13 @@ func (mm *MemoryManager) withVecInternalMappings(ctx context.Context, ars hostar
 // called.
 //
 // Preconditions:
-//   - mm.activeMu must be locked for writing.
 //   - pseg.Range().Contains(ar.Start).
 //   - pmas must exist for all addresses in ar.
 //   - ar.Length() != 0.
 //
 // Postconditions: getIOMappingsLocked does not invalidate iterators into mm.pmas.
+//
+// +checklocks:mm.activeMu
 func (mm *MemoryManager) getIOMappingsLocked(pseg pmaIterator, ar hostarch.AddrRange, at hostarch.AccessType) (safemem.BlockSeq, *ioBufTracker, error) {
 	if checkInvariants {
 		if !ar.WellFormed() || ar.Length() == 0 {
@@ -759,12 +760,12 @@ slowPath:
 // are valid until either mm.activeMu is unlocked or ioBufTracker.flush() is
 // called.
 //
-// Preconditions:
-//   - mm.activeMu must be locked for writing.
-//   - pmas must exist for all addresses in ar.
+// Preconditions: pmas must exist for all addresses in ars.
 //
 // Postconditions: getVecIOMappingsLocked does not invalidate iterators into
 // mm.pmas
+//
+// +checklocks:mm.activeMu
 func (mm *MemoryManager) getVecIOMappingsLocked(ars hostarch.AddrRangeSeq, at hostarch.AccessType) (safemem.BlockSeq, *ioBufTracker, error) {
 	if ars.NumRanges() == 1 {
 		ar := ars.Head()
@@ -807,13 +808,14 @@ func (mm *MemoryManager) getVecIOMappingsLocked(ars hostarch.AddrRangeSeq, at ho
 // ioBufTracker.flush() is called.
 //
 // Preconditions:
-//   - mm.activeMu must be locked for writing.
 //   - pseg.Range().Contains(ar.Start).
 //   - pmas must exist for all addresses in ar.
 //   - ar.Length() != 0.
 //
 // Postconditions: getIOMappingsTrackedLocked does not invalidate iterators
 // into mm.pmas.
+//
+// +checklocks:mm.activeMu
 func (mm *MemoryManager) getIOMappingsTrackedLocked(pseg pmaIterator, ar hostarch.AddrRange, at hostarch.AccessType, ims []safemem.Block, t *ioBufTracker, unbufBytes uint64) ([]safemem.Block, *ioBufTracker, uint64, error) {
 	for {
 		pmaAR := ar.Intersect(pseg.Range())

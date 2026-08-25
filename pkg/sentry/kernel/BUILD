@@ -442,7 +442,9 @@ go_test(
     name = "kernel_test",
     size = "small",
     srcs = [
+        "async_loader_test.go",
         "fd_table_test.go",
+        "kernel_restore_test.go",
         "table_test.go",
         "task_test.go",
         "timekeeper_test.go",
@@ -459,6 +461,7 @@ go_test(
         "//pkg/sentry/kernel/sched",
         "//pkg/sentry/limits",
         "//pkg/sentry/pgalloc",
+        "//pkg/sentry/state/stateio",
         "//pkg/sentry/time",
         "//pkg/sentry/usage",
         "//pkg/sentry/vfs",

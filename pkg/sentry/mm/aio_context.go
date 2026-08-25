@@ -29,10 +29,11 @@ import (
 //
 // +stateify savable
 type aioManager struct {
-	// mu protects below.
 	mu aioManagerMutex `state:"nosave"`
 
-	// aioContexts is the set of asynchronous I/O contexts.
+	// contexts is the set of asynchronous I/O contexts.
+	//
+	// +checklocks:mu
 	contexts map[uint64]*AIOContext
 }
 
@@ -69,7 +70,7 @@ func (a *aioManager) newAIOContext(events uint32, id uint64) bool {
 //
 // Nil is returned if the context does not exist.
 //
-// Precondition: mm.aioManager.mu is locked.
+// +checklocks:mm.aioManager.mu
 func (mm *MemoryManager) destroyAIOContextLocked(ctx context.Context, id uint64) *AIOContext {
 	aioCtx, ok := mm.aioManager.contexts[id]
 	if !ok {
@@ -104,12 +105,15 @@ type ioResult struct {
 // +stateify savable
 type AIOContext struct {
 	// requestReady is the notification channel used for all requests.
+	//
+	// +checklocks:mu
 	requestReady chan struct{} `state:"nosave"`
 
-	// mu protects below.
 	mu aioContextMutex `state:"nosave"`
 
 	// results is the set of completed requests.
+	//
+	// +checklocks:mu
 	results ioList
 
 	// maxOutstanding is the maximum number of outstanding entries; this value
@@ -119,9 +123,13 @@ type AIOContext struct {
 	// outstanding is the number of requests outstanding; this will effectively
 	// be the number of entries in the result list or that are expected to be
 	// added to the result list.
+	//
+	// +checklocks:mu
 	outstanding uint32
 
 	// dead is set when the context is destroyed.
+	//
+	// +checklocks:mu
 	dead bool `state:"zerovalue"`
 }
 
@@ -133,7 +141,7 @@ func (aio *AIOContext) destroy() {
 	aio.checkForDone()
 }
 
-// Preconditions: ctx.mu must be held by caller.
+// +checklocks:aio.mu
 func (aio *AIOContext) checkForDone() {
 	if aio.dead && aio.outstanding == 0 {
 		close(aio.requestReady)

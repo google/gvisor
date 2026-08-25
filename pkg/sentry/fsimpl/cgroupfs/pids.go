@@ -59,7 +59,6 @@ type pidsController struct {
 	// since cgroupfs doesn't allow cross directory renames.
 	isRoot bool
 
-	// mu protects the fields below.
 	mu pidsControllerMutex `state:"nosave"`
 
 	// pendingTotal and pendingPool tracks the charge for processes starting
@@ -71,15 +70,21 @@ type pidsController struct {
 	// We also track which task owns the pending charge so we can cancel the
 	// charge if a task creation fails after the Charge call.
 	//
-	// pendingTotal and pendingPool are both protected by mu.
+	// +checklocks:mu
 	pendingTotal int64
-	pendingPool  map[*kernel.Task]int64
+
+	// +checklocks:mu
+	pendingPool map[*kernel.Task]int64
 
 	// committed represent charges for tasks that have already started and
-	// called Enter. Protected by mu.
+	// called Enter.
+	//
+	// +checklocks:mu
 	committed int64
 
-	// max is the PID limit for this cgroup. Protected by mu.
+	// max is the PID limit for this cgroup.
+	//
+	// +checklocks:mu
 	max int64
 }
 
