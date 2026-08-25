@@ -451,6 +451,11 @@ func TestOverrideError(t *testing.T) {
 			value: "invalid",
 			error: "invalid file access type",
 		},
+		{
+			name:  "in-sandbox-cgroup",
+			value: "invalid",
+			error: "invalid in-sandbox-cgroup",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if err := c.Override(testFlags, tc.name, tc.value, false); err == nil || !strings.Contains(err.Error(), tc.error) {
@@ -483,12 +488,12 @@ func TestOverrideAllowlist(t *testing.T) {
 			error: "error setting flag",
 		},
 		{
-			flag:  "mount-cgroup-v2",
-			value: "true",
+			flag:  "in-sandbox-cgroup",
+			value: "v1",
 		},
 		{
-			flag:  "mount-cgroup-v2",
-			value: "false",
+			flag:  "in-sandbox-cgroup",
+			value: "v2",
 		},
 		{
 			flag:  "oci-seccomp",

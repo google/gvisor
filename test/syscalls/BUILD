@@ -77,7 +77,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
-    mount_cgroup_v2 = True,
+    in_sandbox_cgroup = "v2",
     shard_count = more_shards,
     test = "//test/syscalls/linux:cgroup2_test",
 )
@@ -193,7 +193,7 @@ syscall_test(
 )
 
 syscall_test(
-    mount_cgroup_v2 = True,
+    in_sandbox_cgroup = "v2",
     test = "//test/syscalls/linux:cgroup2_ebpf_test",
 )
 
