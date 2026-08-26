@@ -146,7 +146,6 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 	unix.SYS_MPROTECT:  seccomp.MatchAll{},
 	unix.SYS_MUNMAP:    seccomp.MatchAll{},
 	unix.SYS_NANOSLEEP: seccomp.MatchAll{},
-	unix.SYS_OPENAT:    seccomp.MatchAll{},
 	unix.SYS_OPENAT2:   seccomp.MatchAll{},
 	unix.SYS_PPOLL:     seccomp.MatchAll{},
 	unix.SYS_PRCTL: seccomp.PerArg{
