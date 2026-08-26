@@ -119,6 +119,56 @@ TEST(Processes, SetPGIDOfZombie) {
   EXPECT_EQ(status, 0);
 }
 
+// Stack and pipe fd for the CLONE_VM child below. The child shares our address
+// space, so these are visible to it; it must otherwise use only raw syscalls.
+static char sharedSighandChildStack[65536] __attribute__((aligned(16)));
+static int sharedSighandPipeWriteFd;
+
+int sharedSighandChild(void* arg) {
+  syscall(SYS_setpgid, 0, 0);  // Move into our own process group.
+  char c = 1;
+  syscall(SYS_write, sharedSighandPipeWriteFd, &c, 1);
+  for (;;) {
+    syscall(SYS_ppoll, 0, 0, 0, 0, 0);  // Block until killed.
+  }
+  return 0;
+}
+
+// Regression test for a sentry self-deadlock in setsid()/CreateSession: when the
+// calling thread group shares its signal handlers with another thread group in
+// an about-to-be-orphaned process group, orphan handling tried to re-lock the
+// signal mutex the caller already held (a non-recursive nested lock). A
+// regression deadlocks setsid() forever, so this test hangs until it times out.
+TEST(Processes, SetsidWithSharedSignalHandlers) {
+  const DisableSave ds;  // The helper child blocks until killed.
+
+  // Run in a child so the process calling setsid() is not a session leader.
+  pid_t t = fork();
+  if (t == 0) {
+    int p[2];
+    TEST_PCHECK(pipe(p) == 0);
+    sharedSighandPipeWriteFd = p[1];
+    // A separate thread group (no CLONE_THREAD) that shares our signal handlers
+    // (CLONE_SIGHAND, which requires CLONE_VM).
+    pid_t c = clone(sharedSighandChild,
+                    sharedSighandChildStack + sizeof(sharedSighandChildStack),
+                    CLONE_VM | CLONE_SIGHAND | SIGCHLD, nullptr);
+    TEST_PCHECK(c > 0);
+    char b;
+    TEST_PCHECK(ReadFd(p[0], &b, sizeof(b)) == sizeof(b));
+    // The child is in its own process group; leaving our session orphans it,
+    // driving the orphan handling that used to deadlock.
+    TEST_PCHECK(setsid() >= 0);
+    TEST_PCHECK(kill(c, SIGKILL) == 0);
+    _exit(0);
+  }
+  ASSERT_THAT(t, SyscallSucceeds());
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(t, &status, 0), SyscallSucceedsWithValue(t));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << "setsid() child exited abnormally, status=" << status;
+}
+
 void WritePIDToPipe(int* pipe_fds) {
   pid_t child_pid;
   TEST_PCHECK(child_pid = getpid());
