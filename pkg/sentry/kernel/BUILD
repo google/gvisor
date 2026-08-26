@@ -273,6 +273,7 @@ go_library(
         "kernel_opts.go",
         "kernel_restore.go",
         "kernel_state.go",
+        "oom.go",
         "pending_signals.go",
         "pending_signals_list.go",
         "pending_signals_state.go",
@@ -435,6 +436,7 @@ go_test(
     size = "small",
     srcs = [
         "fd_table_test.go",
+        "oom_test.go",
         "table_test.go",
         "task_test.go",
         "timekeeper_test.go",

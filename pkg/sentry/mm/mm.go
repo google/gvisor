@@ -144,11 +144,10 @@ type MemoryManager struct {
 	// curRSS is pmas.Span(), cached to accelerate updates to maxRSS. It is
 	// reported as the MemoryManager's RSS.
 	//
-	// maxRSS should be modified only via insertRSS and removeRSS, not
-	// directly.
-	//
-	// maxRSS is protected by activeMu.
-	curRSS uint64
+	// curRSS is modified only via addRSSLocked and removeRSSLocked (both under
+	// activeMu), but is stored atomically so it can be read locklessly, e.g. by
+	// the guest OOM killer's victim snapshot (see Kernel.oomSnapshot).
+	curRSS atomicbitops.Uint64
 
 	// maxRSS is the maximum resident set size in bytes of a MemoryManager.
 	// It is tracked as the application adds and removes mappings to pmas.

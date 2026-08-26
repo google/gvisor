@@ -359,6 +359,15 @@ type Config struct {
 	// AppHugePages enables support for application huge pages.
 	AppHugePages bool `flag:"app-huge-pages"`
 
+	// GuestOOMKiller enables the in-sentry guest OOM killer, which kills the
+	// most memory-hungry guest process when the sandbox memory limit is
+	// exhausted, instead of letting the host OOM-kill the whole sandbox.
+	GuestOOMKiller bool `flag:"guest-oom-killer"`
+
+	// GuestOOMWatermarkPercent is the percentage of the sandbox memory limit
+	// at which the guest OOM killer begins terminating processes.
+	GuestOOMWatermarkPercent int `flag:"guest-oom-watermark-percent"`
+
 	// NVProxy enables support for Nvidia GPUs.
 	NVProxy bool `flag:"nvproxy"`
 

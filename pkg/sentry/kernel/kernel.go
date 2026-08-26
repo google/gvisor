@@ -170,6 +170,21 @@ type Kernel struct {
 	// mf provides application memory.
 	mf *pgalloc.MemoryFile `state:"nosave"`
 
+	// oom is the in-sentry guest OOM killer. It is nil unless enabled via
+	// SetOOMKillerConfig before Start.
+	oom *oomManager `state:"nosave"`
+
+	// oomKillerEnabled and oomWatermarkPercent configure the guest OOM killer.
+	// They are set by SetOOMKillerConfig before Start.
+	oomKillerEnabled    bool `state:"nosave"`
+	oomWatermarkPercent int  `state:"nosave"`
+
+	// oomKillsByMemCg counts guest OOM kills per memory cgroup id so that
+	// cgroupfs's memory.events can report a real oom_kill count. It is a
+	// runtime-only statistic (reset on restore).
+	oomKillsByMemCgMu sync.Mutex        `state:"nosave"`
+	oomKillsByMemCg   map[uint32]uint64 `state:"nosave"`
+
 	// See InitKernelArgs for the meaning of these fields.
 	featureSet           cpuid.FeatureSet
 	timekeeper           *Timekeeper
@@ -1488,6 +1503,7 @@ func (k *Kernel) Start() error {
 	k.cpuClockTickerRunning = true
 	k.runningTasksMu.Unlock()
 	go k.runCPUClockTicker()
+	k.maybeStartOOMKiller()
 	// If k was created by LoadKernelFrom, timers were stopped during
 	// Kernel.SaveTo and need to be resumed. If k was created by NewKernel,
 	// this is a no-op.

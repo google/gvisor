@@ -826,6 +826,11 @@ func isWarning(line string) bool {
 	// patches for traced procs.
 	case strings.Contains(line, "LIKELY ERROR: Attached tracer to process with patched syscalls"):
 
+	// The guest OOM killer intentionally logs a warning when it SIGKILLs a task
+	// that exceeds its sandbox-wide or per-cgroup memory limit. This is expected
+	// behavior exercised by guest_oom_cgroup.cc and the OOM syscall tests.
+	case strings.Contains(line, "gVisor OOM:"):
+
 	// Performance-related warnings.
 	case performanceWarningRegexp.MatchString(line):
 

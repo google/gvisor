@@ -945,9 +945,9 @@ func (mm *MemoryManager) vecInternalMappingsLocked(ars hostarch.AddrRangeSeq) sa
 //
 // Preconditions: mm.activeMu must be locked for writing.
 func (mm *MemoryManager) addRSSLocked(ar hostarch.AddrRange) {
-	mm.curRSS += uint64(ar.Length())
-	if mm.curRSS > mm.maxRSS {
-		mm.maxRSS = mm.curRSS
+	newRSS := mm.curRSS.Add(uint64(ar.Length()))
+	if newRSS > mm.maxRSS {
+		mm.maxRSS = newRSS
 	}
 }
 
@@ -956,7 +956,9 @@ func (mm *MemoryManager) addRSSLocked(ar hostarch.AddrRange) {
 //
 // Preconditions: mm.activeMu must be locked for writing.
 func (mm *MemoryManager) removeRSSLocked(ar hostarch.AddrRange) {
-	mm.curRSS -= uint64(ar.Length())
+	// Atomic subtraction via two's-complement negation (there is no atomic
+	// Sub); safe under activeMu, but stored atomically for lockless reads.
+	mm.curRSS.Add(^(uint64(ar.Length()) - 1))
 }
 
 // pmaSetFunctions implements segment.Functions for pmaSet.

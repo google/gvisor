@@ -60,6 +60,11 @@ func (t *Task) SetMemCgID(memCgID uint32) {
 	t.memCgID.Store(memCgID)
 }
 
+// MemCgID returns the task's memory cgroup id.
+func (t *Task) MemCgID() uint32 {
+	return t.memCgID.Load()
+}
+
 // SetMemCgIDFromCgroup sets the id of the given memory cgroup to the task.
 func (t *Task) SetMemCgIDFromCgroup(cg Cgroup) {
 	for _, ctl := range cg.Controllers() {

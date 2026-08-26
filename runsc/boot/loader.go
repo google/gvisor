@@ -795,6 +795,11 @@ func New(args Args) (*Loader, error) {
 		log.Infof("Setting total memory to %.2f GB", float64(args.TotalMem)/(1<<30))
 	}
 
+	// Enable the in-sentry guest OOM killer so that a single memory-hungry guest
+	// process is killed instead of the entire sandbox being OOM-killed by the
+	// host when the sandbox memory limit is exhausted (see gVisor issue #2533).
+	l.k.SetOOMKillerConfig(args.Conf.GuestOOMKiller, args.Conf.GuestOOMWatermarkPercent)
+
 	cpufs := cpuid.HostFeatureSet()
 	if value, ok := args.Spec.Annotations[specutils.AnnotationCPUFeatures]; ok {
 		allowedFeatures := make(map[cpuid.Feature]struct{})

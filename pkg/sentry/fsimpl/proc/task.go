@@ -89,7 +89,7 @@ func (fs *filesystem) newTaskInode(ctx context.Context, task *kernel.Task, pidns
 		"mounts":          fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &mountsData{fs: fs, task: task}),
 		"net":             fs.newTaskNetDir(ctx, task),
 		"ns":              fs.newTaskOwnedDir(ctx, task, fs.NextIno(), 0511, nsEntries),
-		"oom_score":       fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, newStaticFile("0\n")),
+		"oom_score":       fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &oomScore{task: task}),
 		"oom_score_adj":   fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0644, &oomScoreAdj{task: task}),
 		"root":            fs.newRootSymlink(ctx, task, fs.NextIno()),
 		"setgroups":       fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0644, &setgroupsData{task: task}),
