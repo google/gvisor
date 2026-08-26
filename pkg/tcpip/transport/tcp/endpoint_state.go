@@ -146,15 +146,12 @@ func (e *Endpoint) closeEndpointAtRestore() {
 	defer e.mu.Unlock()
 
 	epState := EndpointState(e.origEndpointState)
-	if !epState.connected() && !epState.handshake() {
+	if !epState.connected() && !epState.connecting() {
 		log.Debugf("endpoint was marked to terminate at restore in a wrong state, ID: %+v state: %v", e.ID, epState)
 		return
 	}
 
-	if epState.handshake() {
-		connectedLoading.Wait()
-		listenLoading.Wait()
-	}
+	log.Debugf("terminating TCP connection during restore, ID: %+v state: %v", e.ID, epState)
 
 	// Put the endpoint in the error state and do cleanup. Do not
 	// attempt to send RST as route will be nil.
@@ -170,7 +167,7 @@ func (e *Endpoint) closeEndpointAtRestore() {
 
 	if epState.connected() {
 		connectedLoading.Done()
-	} else {
+	} else if epState.connecting() {
 		connectingLoading.Done()
 	}
 }

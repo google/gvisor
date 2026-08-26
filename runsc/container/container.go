@@ -1206,31 +1206,56 @@ func (c *Container) createGoferFilestore(goferRootfs string, ovlConf config.Over
 
 func (c *Container) createGoferFilestoreInSelf(goferRootfs string, mountSrc string, mountHints *boot.PodMountHints) (*os.File, error) {
 	// Create the self filestore file.
-	createFlags := unix.O_RDWR | unix.O_CREAT | unix.O_CLOEXEC
+	createFlags := unix.O_RDWR | unix.O_CREAT | unix.O_CLOEXEC | unix.O_NOFOLLOW | unix.O_NONBLOCK
 	if hint := mountHints.FindMount(mountSrc); hint == nil || !hint.ShouldShareMount() {
 		// Allow shared mounts to reuse existing filestore. A previous shared user
 		// may have already set up the filestore.
 		createFlags |= unix.O_EXCL
 	}
-	filestorePath := path.Join(goferRootfs, boot.SelfFilestorePath(mountSrc, c.sandboxID()))
-	filestoreFD, err := unix.Open(filestorePath, createFlags, 0666)
+	dirPath := path.Join(goferRootfs, mountSrc)
+	fileName := boot.SelfFilestoreName(c.sandboxID())
+
+	dirFD, err := unix.Open(dirPath, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open directory %q: %v", dirPath, err)
+	}
+	defer unix.Close(dirFD)
+
+	filestoreFD, err := unix.Openat2(dirFD, fileName, &unix.OpenHow{
+		Flags:   uint64(createFlags),
+		Mode:    0666,
+		Resolve: unix.RESOLVE_BENEATH | unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_NO_MAGICLINKS | unix.RESOLVE_NO_XDEV,
+	})
 	if err != nil {
 		if err == unix.EEXIST {
 			// Note that if the same submount is mounted multiple times within the
 			// same sandbox, and is not shared, then the overlay option doesn't work
 			// correctly. Because each overlay mount is independent and changes to
 			// one are not visible to the other.
-			return nil, fmt.Errorf("%q mount source already has a filestore file at %q; repeated submounts are not supported with overlay optimizations", mountSrc, filestorePath)
+			return nil, fmt.Errorf("%q mount source already has a filestore file %q; repeated submounts are not supported with overlay optimizations", mountSrc, fileName)
 		}
-		return nil, fmt.Errorf("failed to create filestore file inside %q: %v", mountSrc, err)
+		return nil, fmt.Errorf("failed to create filestore file %q inside %q: %v", fileName, mountSrc, err)
 	}
-	log.Debugf("Created filestore file at %q for mount source %q", filestorePath, mountSrc)
+	var stat unix.Stat_t
+	if err := unix.Fstat(filestoreFD, &stat); err != nil {
+		_ = unix.Close(filestoreFD)
+		return nil, fmt.Errorf("failed to stat filestore file %q inside %q: %v", fileName, mountSrc, err)
+	}
+	if (stat.Mode & unix.S_IFMT) != unix.S_IFREG {
+		_ = unix.Close(filestoreFD)
+		return nil, fmt.Errorf("filestore file %q inside %q is not a regular file (mode: %o)", fileName, mountSrc, stat.Mode)
+	}
+	if stat.Nlink != 1 {
+		_ = unix.Close(filestoreFD)
+		return nil, fmt.Errorf("filestore file %q inside %q has unexpected link count: %d", fileName, mountSrc, stat.Nlink)
+	}
+	log.Debugf("Created filestore file %q for mount source %q", fileName, mountSrc)
 	// Filestore in self should be a named path because it needs to be
 	// discoverable via path traversal so that k8s can scan the filesystem
 	// and apply any limits appropriately (like local ephemeral storage
 	// limits). So don't delete it. These files will be unlinked when the
 	// container is destroyed. This makes self medium appropriate for k8s.
-	return os.NewFile(uintptr(filestoreFD), filestorePath), nil
+	return os.NewFile(uintptr(filestoreFD), fileName), nil
 }
 
 func (c *Container) createGoferFilestoreInDir(goferRootfs string, filestoreDir string) (*os.File, error) {

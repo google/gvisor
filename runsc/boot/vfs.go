@@ -89,6 +89,11 @@ func SelfFilestorePath(mountSrc, sandboxID string) string {
 	return path.Join(mountSrc, selfFilestoreName(sandboxID))
 }
 
+// SelfFilestoreName returns the name of the self filestore file for a given sandbox.
+func SelfFilestoreName(sandboxID string) string {
+	return selfFilestoreName(sandboxID)
+}
+
 func selfFilestoreName(sandboxID string) string {
 	return fsutil.SelfFilestorePrefix + sandboxID
 }
