@@ -465,16 +465,25 @@ func checkSentryExec(msg test.Message) error {
 		return fmt.Errorf("executing non-executable file, mode: %#o (%#x)", p.BinaryMode, p.BinaryMode)
 	}
 	const nobody = 65534
-	expectedUIDGID := uint32(nobody)
 	if p.Argv[0] == "test_memfd" {
 		// test_memfd is created by the test runner itself (root).
-		expectedUIDGID = 0
-	}
-	if p.BinaryUid != expectedUIDGID {
-		return fmt.Errorf("BinaryUid, got: %d, want: %d", p.BinaryUid, expectedUIDGID)
-	}
-	if p.BinaryGid != expectedUIDGID {
-		return fmt.Errorf("BinaryGid, got: %d, want: %d", p.BinaryGid, expectedUIDGID)
+		if p.BinaryUid != 0 {
+			return fmt.Errorf("BinaryUid for memfd, got: %d, want: 0", p.BinaryUid)
+		}
+		if p.BinaryGid != 0 {
+			return fmt.Errorf("BinaryGid for memfd, got: %d, want: 0", p.BinaryGid)
+		}
+	} else {
+		// For host binaries (like /bin/true, normally 0:0 on the host), rootless user
+		// namespaces map the unmapped host root onto nobody (65534). Depending on the
+		// test environment's topology (e.g., CI nodes running as root natively), it
+		// will be captured as either 0 or 65534.
+		if p.BinaryUid != 0 && p.BinaryUid != nobody {
+			return fmt.Errorf("BinaryUid, got: %d, want: 0 or %d", p.BinaryUid, nobody)
+		}
+		if p.BinaryGid != 0 && p.BinaryGid != nobody {
+			return fmt.Errorf("BinaryGid, got: %d, want: 0 or %d", p.BinaryGid, nobody)
+		}
 	}
 	if p.BinaryIno == 0 {
 		return fmt.Errorf("BinaryIno should not be 0")
