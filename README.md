@@ -159,6 +159,9 @@ the `master` branch, which is then reflected into the `go` branch.
 
 See [GOVERNANCE.md](GOVERNANCE.md) for project governance information.
 
+See [ADOPTERS.md](ADOPTERS.md) for a list of known production users and
+adopters.
+
 The [gvisor-users mailing list][gvisor-users-list] and
 [gvisor-dev mailing list][gvisor-dev-list] are good starting points for
 questions and discussion.

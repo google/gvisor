@@ -21,6 +21,7 @@ exports_files([
     "SECURITY.md",
     "GOVERNANCE.md",
     "MAINTAINERS.md",
+    "ADOPTERS.md",
 ])
 
 release_files(
@@ -67,6 +68,16 @@ doc(
     subcategory = "Community",
     visibility = ["//website:__pkg__"],
     weight = "20",
+)
+
+doc(
+    name = "adopters",
+    src = "ADOPTERS.md",
+    category = "Project",
+    permalink = "/users/",
+    subcategory = "Community",
+    visibility = ["//website:__pkg__"],
+    weight = "25",
 )
 
 doc(
