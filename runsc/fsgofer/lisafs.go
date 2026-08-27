@@ -83,7 +83,9 @@ var procSelfFD *rwfd.FD
 // OpenProcSelfFD opens the /proc/self/fd directory, which will be used to
 // reopen file descriptors.
 func OpenProcSelfFD(path string) error {
-	d, err := unix.Open(path, unix.O_RDONLY|unix.O_DIRECTORY, 0)
+	d, err := unix.Openat2(unix.AT_FDCWD, path, &unix.OpenHow{
+		Flags: unix.O_RDONLY | unix.O_DIRECTORY | unix.O_CLOEXEC,
+	})
 	if err != nil {
 		return fmt.Errorf("error opening /proc/self/fd: %v", err)
 	}
@@ -119,7 +121,9 @@ var _ lisafs.ConnectionImpl = (*connectionImpl)(nil)
 func (i *connectionImpl) Mount(c *lisafs.Connection, mountNode *lisafs.Node) (*lisafs.ControlFD, lisafs.Statx, int, error) {
 	mountPath := mountNode.FilePath()
 	rootHostFD, err := tryOpen(func(flags int) (int, error) {
-		return unix.Open(mountPath, flags, 0)
+		return unix.Openat2(unix.AT_FDCWD, mountPath, &unix.OpenHow{
+			Flags: uint64(flags),
+		})
 	})
 	if err != nil {
 		return nil, lisafs.Statx{}, -1, err
@@ -258,7 +262,9 @@ func (fd *controlFDLisa) getWritableFD() (int, error) {
 		return int(writableFD), nil
 	}
 
-	writableFD, err := unix.Openat(int(procSelfFD.FD()), strconv.Itoa(fd.hostFD), (unix.O_WRONLY|openFlags)&^unix.O_NOFOLLOW, 0)
+	writableFD, err := unix.Openat2(int(procSelfFD.FD()), strconv.Itoa(fd.hostFD), &unix.OpenHow{
+		Flags: uint64((unix.O_WRONLY | openFlags) &^ unix.O_NOFOLLOW),
+	})
 	if err != nil {
 		return -1, err
 	}
@@ -428,7 +434,9 @@ func (fd *controlFDLisa) SetStat(stat lisafs.SetStatReq) (failureMask uint32, fa
 // Walk implements lisafs.ControlFDImpl.Walk.
 func (fd *controlFDLisa) Walk(name string) (*lisafs.ControlFD, lisafs.Statx, error) {
 	childHostFD, err := tryOpen(func(flags int) (int, error) {
-		return unix.Openat(fd.hostFD, name, flags, 0)
+		return unix.Openat2(fd.hostFD, name, &unix.OpenHow{
+			Flags: uint64(flags),
+		})
 	})
 	if err != nil {
 		return nil, lisafs.Statx{}, err
@@ -478,7 +486,9 @@ func (fd *controlFDLisa) WalkStat(path lisafs.StringArray, recordStat func(lisaf
 		return nil
 	}
 	for _, name := range path {
-		curFD, err := unix.Openat(curDirFD, name, unix.O_PATH|openFlags, 0)
+		curFD, err := unix.Openat2(curDirFD, name, &unix.OpenHow{
+			Flags: uint64(unix.O_PATH | openFlags),
+		})
 		if err == unix.ENOENT {
 			// No more path components exist on the filesystem. Return the partial
 			// walk to the client.
@@ -547,7 +557,9 @@ func (fd *controlFDLisa) Open(flags uint32) (*lisafs.OpenFD, int, error) {
 		}
 	}
 	flags |= openFlags
-	openHostFD, err := unix.Openat(int(procSelfFD.FD()), strconv.Itoa(fd.hostFD), int(flags)&^unix.O_NOFOLLOW, 0)
+	openHostFD, err := unix.Openat2(int(procSelfFD.FD()), strconv.Itoa(fd.hostFD), &unix.OpenHow{
+		Flags: uint64(int(flags) &^ unix.O_NOFOLLOW),
+	})
 	if err != nil {
 		return nil, -1, err
 	}
@@ -582,7 +594,10 @@ func (fd *controlFDLisa) Open(flags uint32) (*lisafs.OpenFD, int, error) {
 // OpenCreate implements lisafs.ControlFDImpl.OpenCreate.
 func (fd *controlFDLisa) OpenCreate(mode linux.FileMode, uid lisafs.UID, gid lisafs.GID, name string, flags uint32) (*lisafs.ControlFD, lisafs.Statx, *lisafs.OpenFD, int, error) {
 	createFlags := unix.O_CREAT | unix.O_EXCL | unix.O_RDONLY | unix.O_NONBLOCK | openFlags
-	childHostFD, err := unix.Openat(fd.hostFD, name, createFlags, uint32(mode&^linux.FileTypeMask))
+	childHostFD, err := unix.Openat2(fd.hostFD, name, &unix.OpenHow{
+		Flags: uint64(createFlags),
+		Mode:  uint64(mode &^ linux.FileTypeMask),
+	})
 	if err != nil {
 		return nil, lisafs.Statx{}, nil, -1, err
 	}
@@ -609,7 +624,9 @@ func (fd *controlFDLisa) OpenCreate(mode linux.FileMode, uid lisafs.UID, gid lis
 
 	// Now open an FD to the newly created file with the flags requested by the client.
 	flags |= openFlags
-	newHostFD, err := unix.Openat(int(procSelfFD.FD()), strconv.Itoa(childHostFD), int(flags)&^unix.O_NOFOLLOW, 0)
+	newHostFD, err := unix.Openat2(int(procSelfFD.FD()), strconv.Itoa(childHostFD), &unix.OpenHow{
+		Flags: uint64(int(flags) &^ unix.O_NOFOLLOW),
+	})
 	if err != nil {
 		return nil, lisafs.Statx{}, nil, -1, err
 	}
@@ -645,7 +662,9 @@ func (fd *controlFDLisa) Mkdir(mode linux.FileMode, uid lisafs.UID, gid lisafs.G
 
 	// Open directory to change ownership.
 	childDirFd, err := tryOpen(func(flags int) (int, error) {
-		return unix.Openat(fd.hostFD, name, flags|unix.O_DIRECTORY, 0)
+		return unix.Openat2(fd.hostFD, name, &unix.OpenHow{
+			Flags: uint64(flags | unix.O_DIRECTORY),
+		})
 	})
 	if err != nil {
 		return nil, lisafs.Statx{}, err
@@ -698,7 +717,9 @@ func (fd *controlFDLisa) Mknod(mode linux.FileMode, uid lisafs.UID, gid lisafs.G
 
 	// Open file to change ownership.
 	childFD, err := tryOpen(func(flags int) (int, error) {
-		return unix.Openat(fd.hostFD, name, flags, 0)
+		return unix.Openat2(fd.hostFD, name, &unix.OpenHow{
+			Flags: uint64(flags),
+		})
 	})
 	if err != nil {
 		return nil, lisafs.Statx{}, err
@@ -733,7 +754,9 @@ func (fd *controlFDLisa) Symlink(name string, target string, uid lisafs.UID, gid
 	defer cu.Clean()
 
 	// Open symlink to change ownership.
-	symlinkFD, err := unix.Openat(fd.hostFD, name, unix.O_PATH|openFlags, 0)
+	symlinkFD, err := unix.Openat2(fd.hostFD, name, &unix.OpenHow{
+		Flags: uint64(unix.O_PATH | openFlags),
+	})
 	if err != nil {
 		return nil, lisafs.Statx{}, err
 	}
@@ -775,7 +798,9 @@ func (fd *controlFDLisa) Link(dir lisafs.ControlFDImpl, name string) (*lisafs.Co
 	defer cu.Clean()
 
 	linkFD, err := tryOpen(func(flags int) (int, error) {
-		return unix.Openat(dirFD.hostFD, name, flags, 0)
+		return unix.Openat2(dirFD.hostFD, name, &unix.OpenHow{
+			Flags: uint64(flags),
+		})
 	})
 	if err != nil {
 		return nil, lisafs.Statx{}, err
@@ -982,7 +1007,9 @@ func (fd *controlFDLisa) BindAt(name string, sockType uint32, mode linux.FileMod
 	})
 
 	sockFileFD, err := tryOpen(func(flags int) (int, error) {
-		return unix.Openat(fd.hostFD, name, flags, 0)
+		return unix.Openat2(fd.hostFD, name, &unix.OpenHow{
+			Flags: uint64(flags),
+		})
 	})
 	if err != nil {
 		return nil, lisafs.Statx{}, nil, -1, err
