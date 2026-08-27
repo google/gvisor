@@ -183,19 +183,37 @@ func collectContainerNvidiaRegularDevices(ctx context.Context, spec *specs.Spec,
 	return gotAny, nil
 }
 
-func (l *Loader) createRemappedNvproxyDeviceFiles(ctx context.Context) {
+// remapNvproxyDeviceFiles rewrites the Nvidia device special files in every
+// dev filesystem mount to match the GPUs the sandbox owns after restore,
+// creating /dev/nvidia# for newly present device minors and removing it for
+// minors that are no longer present.
+//
+// Applications derive the /dev/nvidia# paths they open from identity the
+// driver reports and nvproxy passes through (most directly
+// nv_ioctl_card_info_t::minor_number from NV_ESC_CARD_INFO), so /dev must
+// agree with the driver: a stale file resolves to a GPU this sandbox no
+// longer owns -- possibly another sandbox's -- with no error anywhere.
+// Removing it turns that into ENOENT.
+func (l *Loader) remapNvproxyDeviceFiles(ctx context.Context) {
 	dr := nvproxy.DeviceRemappingFromContext(ctx)
 	if dr == nil {
 		return
 	}
-	newMinors := make(map[uint32]struct{})
+	newMinors := make(map[uint32]struct{}, len(dr.NewDeviceByOld))
 	for _, newID := range dr.NewDeviceByOld {
 		newMinors[newID.Minor] = struct{}{}
 	}
+	// If the restored device minors are the same set as the saved ones, every
+	// /dev/nvidia# file is still valid, even if devices were permuted within
+	// the set.
+	sameMinors := true
 	for oldMinor := range dr.OldDeviceByMinor {
-		delete(newMinors, oldMinor)
+		if _, ok := newMinors[oldMinor]; !ok {
+			sameMinors = false
+			break
+		}
 	}
-	if len(newMinors) == 0 {
+	if sameMinors {
 		return
 	}
 	vfsObj := l.k.VFS()
@@ -227,24 +245,42 @@ func (l *Loader) createRemappedNvproxyDeviceFiles(ctx context.Context) {
 				continue
 			}
 			if ftype := stat.Mode & linux.S_IFMT; ftype != linux.S_IFCHR || stat.RdevMajor != nvgpu.NV_MAJOR_DEVICE_NUMBER || stat.RdevMinor != oldMinor {
-				log.Infof("Not creating remapped device file for %s, which has type %v and rdev numbers (%d, %d)", oldBasename, ftype, stat.RdevMajor, stat.RdevMinor)
+				log.Infof("Not remapping device file %s, which has type %v and rdev numbers (%d, %d)", oldBasename, ftype, stat.RdevMajor, stat.RdevMinor)
 				continue
 			}
 			newID := dr.NewDeviceByOld[oldID]
-			newBasename := fmt.Sprintf("nvidia%d", newID.Minor)
-			if err := vfsObj.MknodAt(ctx, creds, &vfs.PathOperation{
-				Root:  rootVD,
-				Start: rootVD,
-				Path:  fspath.Parse(newBasename),
-			}, &vfs.MknodOptions{
-				Mode:     linux.FileMode(linux.S_IFCHR | 0o666),
-				DevMajor: nvgpu.NV_MAJOR_DEVICE_NUMBER,
-				DevMinor: newID.Minor,
-			}); err != nil {
-				if err == linuxerr.EEXIST {
-					log.Debugf("Remapped device file %s already exists", newBasename)
+			if newID.Minor != oldMinor {
+				newBasename := fmt.Sprintf("nvidia%d", newID.Minor)
+				if err := vfsObj.MknodAt(ctx, creds, &vfs.PathOperation{
+					Root:  rootVD,
+					Start: rootVD,
+					Path:  fspath.Parse(newBasename),
+				}, &vfs.MknodOptions{
+					Mode:     linux.FileMode(linux.S_IFCHR | 0o666),
+					DevMajor: nvgpu.NV_MAJOR_DEVICE_NUMBER,
+					DevMinor: newID.Minor,
+				}); err != nil {
+					if err == linuxerr.EEXIST {
+						log.Debugf("Remapped device file %s already exists", newBasename)
+					} else {
+						log.Warningf("Failed to create remapped device file %s: %v", newBasename, err)
+					}
+				}
+			}
+			// The stat above established that oldBasename is the saved device's
+			// file (character device with rdev (NV_MAJOR, oldMinor)), so this
+			// cannot delete an unrelated file sharing the name. It runs even if
+			// the mknod above failed: ENOENT is strictly better than resolving
+			// to a GPU this sandbox does not own.
+			if _, stillPresent := newMinors[oldMinor]; !stillPresent {
+				if err := vfsObj.UnlinkAt(ctx, creds, &vfs.PathOperation{
+					Root:  rootVD,
+					Start: rootVD,
+					Path:  fspath.Parse(oldBasename),
+				}); err != nil {
+					log.Warningf("Failed to remove stale device file %s: %v", oldBasename, err)
 				} else {
-					log.Warningf("Failed to create remapped device file %s: %v", newBasename, err)
+					log.Infof("Removed stale device file %s: GPU not owned by this sandbox after restore", oldBasename)
 				}
 			}
 		}
