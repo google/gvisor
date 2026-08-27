@@ -1,6 +1,5 @@
 # Generated from governance/maintainers.yaml and governance/areas.yaml by
 # //governance/tools/maintainers:maintainers_gen; do not edit directly.
-* @aaltinaydev @carzh @etienneperot @fvoznika @gvisor-bot @kerumeto @konstantin-s-bogom @manninglucas @milantracy @nixprime @nybidari @parth-opensrc @relkochta @rexren-gif @shailend-g @trantoji @xinzhong @zkoopmans
 
 # Area: benchmarks
 /images/benchmarks/ @etienneperot @zkoopmans

@@ -205,11 +205,10 @@ func generateCODEOWNERS(r *roster, areasByName map[string][]string, root string)
 		}
 	}
 	// gvisor-bot is not a maintainer but always owns the repository root.
-	rootOwners := []string{"@gvisor-bot"}
 	ownersByArea := make(map[string][]string)
 	for _, m := range r.Maintainers {
-		if *m.Codeowner {
-			rootOwners = append(rootOwners, "@"+m.GitHub)
+		if !*m.Codeowner {
+			continue
 		}
 		for _, a := range m.Areas {
 			ownersByArea[a] = append(ownersByArea[a], "@"+m.GitHub)
@@ -223,8 +222,6 @@ func generateCODEOWNERS(r *roster, areasByName map[string][]string, root string)
 	var b bytes.Buffer
 	b.WriteString("# Generated from governance/maintainers.yaml and governance/areas.yaml by\n")
 	b.WriteString("# //governance/tools/maintainers:maintainers_gen; do not edit directly.\n")
-	sortOwners(rootOwners)
-	fmt.Fprintf(&b, "* %s\n", strings.Join(rootOwners, " "))
 	for _, a := range slices.Sorted(maps.Keys(ownersByArea)) {
 		owners := ownersByArea[a]
 		sortOwners(owners)

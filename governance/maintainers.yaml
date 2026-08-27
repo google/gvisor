@@ -10,9 +10,8 @@
 #                       - "ACTIVE" (does reviews, has merge permissions)
 #                       - "HIATUS_SINCE:YYYY-MM-DD" (doesn't do reviews, has permissions)
 #                       - "EMERITUS_SINCE:YYYY-MM-DD" (doesn't do reviews, no permissions)
-#   codeowner:        Whether the maintainer owns the repository root (/) in
-#                     CODEOWNERS. Required; must be false for emeritus
-#                     maintainers.
+#   codeowner:        Whether the maintainer appears in CODEOWNERS.
+#                     Required; must be false for emeritus maintainers.
 #   areas:            Optional sorted list of area names from areas.yaml that
 #                     the maintainer has specialization in; grants CODEOWNERS
 #                     ownership of each area's paths. Emeritus maintainers may
