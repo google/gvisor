@@ -42,14 +42,15 @@ they may remove them at their discretion.
 
 ### Repositories requiring synchronization
 
-For some projects initiated by Google, the infrastructure which synchronizes and
-merges internal and external changes requires that merges are performed by a
-Google employee. In such cases, Google will initiate a rotation to merge changes
-once they pass tests and are approved by a maintainer. This does not preclude
-non-Google contributors from becoming maintainers, in which case the maintainer
-holds approval rights and the merge is an automated process. In some cases,
-Google-internal tests may fail and have to be fixed: the Google employee will
-work with the submitter to achieve this.
+Some projects synchronize changes with a downstream repository operated by an
+organization that participates in the project. Where such synchronization
+exists, merges are performed by an automated process once a change passes tests
+and is approved by a maintainer. Any maintainer may approve a change,
+regardless of their affiliation.
+
+Downstream tests that are not visible in the public repository may occasionally
+fail and block a merge; when that happens, a maintainer will report the failure
+and work with the submitter to resolve it.
 
 ### Becoming a maintainer
 
