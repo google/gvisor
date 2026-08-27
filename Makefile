@@ -77,6 +77,10 @@ query: ## Runs a bazel query. E.g. make query TARGETS=//test/...
 	@$(call query,$(OPTIONS) $(TARGETS))
 .PHONY: query
 
+mod: ## Runs a bazel mod command. E.g. make mod TARGETS="deps --output json"
+	@$(call mod,$(OPTIONS) $(TARGETS))
+.PHONY: mod
+
 sudo: ## Runs the given $(TARGETS) as per run, but using "sudo -E". E.g. make sudo TARGETS=test/root:root_test ARGS=-test.v
 	@$(call sudo,$(TARGETS),$(ARGS))
 .PHONY: sudo
@@ -205,6 +209,10 @@ governance-check: governance-regen ## Checks that the files derived from governa
 	@git diff --exit-code -- CODEOWNERS MAINTAINERS.md || \
 		(echo "Generated governance files are out of sync. Please run \`make governance-regen\`." >&2; exit 1)
 .PHONY: governance-check
+
+license-check: ## Checks that tools/licensecheck/dependencies.yaml has an entry for every dependency.
+	@$(call run,//tools/licensecheck/main:licensecheck,--mode=verify)
+.PHONY: license-check
 
 ##
 ## Canonical build and test targets.

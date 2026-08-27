@@ -1,0 +1,54 @@
+# Dependency licensing policy, enforced by tools/licensecheck's tests against
+# tools/licensecheck/dependencies.yaml.
+#
+# allowed_licenses lists the license identifiers that dependencies may use.
+# exceptions lists dependencies that are allowed to use other licenses; each
+# entry must match the dependency's current licenses exactly (string for one
+# license, sorted list for several, as in dependencies.yaml) so that license
+# changes resurface for review, and must explain why the exception is
+# acceptable.
+allowed_licenses:
+  - Apache-2.0
+  - 0BSD
+  - BSD-2-Clause
+  - BSD-2-Clause-FreeBSD
+  - BSD-3-Clause
+  - MIT
+  - MIT-0
+  - ISC
+  - OpenSSL
+  - OpenSSL-standalone
+  - PSF-2.0
+  - Python-2.0
+  - Python-2.0.1
+  - PostgreSQL
+  - SSLeay-standalone
+  - UPL-1.0
+  - X11
+  - Zlib
+  - Google patent license for Golang
+exceptions:
+  - dependency: google_root_pem
+    license: NOASSERTION
+    exception_rationale: >-
+      Not software: a bundle of CA root certificates from https://pki.goog,
+      installed as trust anchors in test images only and never part of
+      released gVisor binaries.
+  - dependency: grpc
+    license:
+      - Apache-2.0
+      - BSD-3-Clause
+      - MPL-2.0
+    exception_rationale: >-
+      gRPC is Apache-2.0; its LICENSE file additionally embeds notices for
+      bundled components, including the MPL-2.0 text covering Mozilla's CA
+      certificate data (etc/roots.pem). Used by Bazel build and test tooling
+      only; released gVisor binaries use the pure-Go google.golang.org/grpc.
+  - dependency: llvm-raw
+    license:
+      - Apache-2.0 WITH LLVM-exception
+      - MIT
+    exception_rationale: >-
+      LLVM is part of the benchmark toolchain only and is not distributed with
+      gVisor. The LLVM exception only relaxes Apache-2.0's requirements, and
+      the MIT match comes from third-party notices embedded in LICENSE.TXT.
