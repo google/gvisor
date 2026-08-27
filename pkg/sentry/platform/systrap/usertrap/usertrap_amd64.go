@@ -20,8 +20,10 @@ package usertrap
 import (
 	"encoding/binary"
 	"fmt"
+	"time"
 
 	"golang.org/x/sys/unix"
+	"golang.org/x/time/rate"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
@@ -48,6 +50,11 @@ var (
 	// faultInstOffset is the offset of the syscall instruction.
 	faultInstOffset = uintptr(5)
 )
+
+// tracerWarnLimiter limits how often the warning about attaching a tracer to a
+// process with patched syscalls is logged. Without it, the warning is emitted
+// on every syscall the traced process makes.
+var tracerWarnLimiter = rate.NewLimiter(rate.Every(time.Minute), 1)
 
 type memoryManager interface {
 	usermem.IO
@@ -205,7 +212,7 @@ func (s *State) PatchSyscall(ctx context.Context, ac *arch.Context64, mm memoryM
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if task.Tracer() != nil {
-		if s.nextTrap > 0 {
+		if s.nextTrap > 0 && tracerWarnLimiter.Allow() {
 			ctx.Warningf("LIKELY ERROR: Attached tracer to process with patched syscalls (traps %d)! Systrap is not fully compatible with ptrace/debuggers, program may die unexpectedly soon! Use `--systrap-disable-syscall-patching` as a workaround.", s.nextTrap)
 		}
 		return nil
