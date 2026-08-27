@@ -2374,9 +2374,9 @@ func (l *Loader) containerCount() int {
 
 func (l *Loader) pidsCount(cid string) (int, error) {
 	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	if _, err := l.tryThreadGroupFromIDLocked(execID{cid: cid}); err != nil {
+	_, err := l.tryThreadGroupFromIDLocked(execID{cid: cid})
+	l.mu.Unlock()
+	if err != nil {
 		// Container doesn't exist.
 		return 0, err
 	}
