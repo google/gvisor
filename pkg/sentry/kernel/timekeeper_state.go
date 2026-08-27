@@ -17,6 +17,7 @@ package kernel
 import (
 	"context"
 
+	"gvisor.dev/gvisor/pkg/sentry/ktime"
 	"gvisor.dev/gvisor/pkg/sentry/time"
 )
 
@@ -45,4 +46,6 @@ func (t *Timekeeper) beforeSave() {
 // afterLoad is invoked by stateify.
 func (t *Timekeeper) afterLoad(context.Context) {
 	t.restored = make(chan struct{})
+	t.pausableClock = &ktime.SyntheticClock{}
+	t.afterFuncSchedulerWakeCh = make(chan struct{}, 1)
 }

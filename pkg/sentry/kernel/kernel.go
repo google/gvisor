@@ -20,7 +20,6 @@
 //
 //	Kernel.extMu
 //	  TTY.mu
-//	  timekeeperTcpipTimer.mu
 //	  ThreadGroup.timerMu
 //	    Locks acquired by ktime.Timer methods
 //	      TaskSet.mu
@@ -1551,7 +1550,7 @@ func (k *Kernel) pauseTimeLocked(ctx context.Context) {
 			})
 		}
 	}
-	k.timekeeper.PauseUpdates()
+	k.timekeeper.Pause()
 }
 
 // resumeTimeLocked resumes all Timers and Timekeeper updates. If
@@ -1565,7 +1564,7 @@ func (k *Kernel) resumeTimeLocked(ctx context.Context) {
 	// The CPU clock ticker will automatically resume as task goroutines resume
 	// execution.
 
-	k.timekeeper.ResumeUpdates(k.vdsoParams)
+	k.timekeeper.Resume(k.vdsoParams)
 	for t := range k.tasks.Root.tids {
 		if t == t.tg.leader {
 			t.tg.itimerRealTimer.Resume()

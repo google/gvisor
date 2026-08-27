@@ -114,3 +114,131 @@ func TestSyntheticTimer(t *testing.T) {
 	checkRecordAt(t, &c, &r, FromSeconds(14), []int{0, 1, 2, 3, 4, 1, 5, 1})
 	checkRecordAt(t, &c, &r, FromSeconds(15), []int{0, 1, 2, 3, 4, 1, 5, 1})
 }
+
+func TestSyntheticClockNextExpiration(t *testing.T) {
+	var c SyntheticClock
+	if exp, ok := c.NextExpiration(); ok {
+		t.Errorf("empty SyntheticClock: NextExpiration() = (%v, %v), want (_, false)", exp, ok)
+	}
+
+	var r testRecorder
+	timer1 := newTestRecorderTimer(&c, &r, 1, FromSeconds(5), 0)
+	defer timer1.Destroy()
+
+	if exp, ok := c.NextExpiration(); !ok || exp != FromSeconds(5) {
+		t.Errorf("after adding timer1: NextExpiration() = (%v, %v), want (%v, true)", exp, ok, FromSeconds(5))
+	}
+
+	timer2 := newTestRecorderTimer(&c, &r, 2, FromSeconds(2), 0)
+	defer timer2.Destroy()
+
+	if exp, ok := c.NextExpiration(); !ok || exp != FromSeconds(2) {
+		t.Errorf("after adding timer2: NextExpiration() = (%v, %v), want (%v, true)", exp, ok, FromSeconds(2))
+	}
+
+	timer2.Destroy()
+	if exp, ok := c.NextExpiration(); !ok || exp != FromSeconds(5) {
+		t.Errorf("after destroying timer2: NextExpiration() = (%v, %v), want (%v, true)", exp, ok, FromSeconds(5))
+	}
+
+	timer1.Destroy()
+	if exp, ok := c.NextExpiration(); ok {
+		t.Errorf("after destroying all timers: NextExpiration() = (%v, %v), want (_, false)", exp, ok)
+	}
+}
+
+func TestSyntheticTimerSetBehavior(t *testing.T) {
+	testCases := []struct {
+		name         string
+		clockTime    Time
+		initialState Setting
+		newSetting   Setting
+		wantFired    bool
+	}{
+		{
+			name:      "SetFutureDeadlineDoesNotFire",
+			clockTime: FromSeconds(10),
+			newSetting: Setting{
+				Enabled: true,
+				Next:    FromSeconds(15),
+			},
+			wantFired: false,
+		},
+		{
+			name:      "StopActiveTimerDoesNotFire",
+			clockTime: FromSeconds(10),
+			initialState: Setting{
+				Enabled: true,
+				Next:    FromSeconds(15),
+			},
+			newSetting: Setting{
+				Enabled: false,
+			},
+			wantFired: false,
+		},
+		{
+			name:      "StopInactiveTimerDoesNotFire",
+			clockTime: FromSeconds(10),
+			newSetting: Setting{
+				Enabled: false,
+			},
+			wantFired: false,
+		},
+		{
+			name:      "SetDeadlineToCurrentTimeFiresImmediately",
+			clockTime: FromSeconds(10),
+			newSetting: Setting{
+				Enabled: true,
+				Next:    FromSeconds(10),
+			},
+			wantFired: true,
+		},
+		{
+			name:      "SetDeadlineToPastTimeFiresImmediately",
+			clockTime: FromSeconds(10),
+			newSetting: Setting{
+				Enabled: true,
+				Next:    FromSeconds(5),
+			},
+			wantFired: true,
+		},
+		{
+			name:      "StopExpiredTimerDoesNotFire",
+			clockTime: FromSeconds(10),
+			initialState: Setting{
+				Enabled: true,
+				Next:    FromSeconds(10), // expires immediately upon init
+			},
+			newSetting: Setting{
+				Enabled: false,
+			},
+			wantFired: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var (
+				c SyntheticClock
+				r testRecorder
+			)
+			c.Store(tc.clockTime)
+			timer := c.NewTimer(&testRecorderListener{
+				r:   &r,
+				val: 1,
+			})
+			defer timer.Destroy()
+
+			if tc.initialState.Enabled {
+				timer.Set(tc.initialState, nil)
+				r.vals = nil // reset recorded firings before applying newSetting
+			}
+
+			timer.Set(tc.newSetting, nil)
+			gotFired := len(r.vals) > 0
+			if gotFired != tc.wantFired {
+				t.Errorf("got fired = %v, want %v", gotFired, tc.wantFired)
+			}
+		})
+	}
+}
