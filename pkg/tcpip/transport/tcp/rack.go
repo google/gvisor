@@ -426,6 +426,11 @@ func (rc *rackControl) detectLoss(rcvTime tcpip.MonotonicTime) int {
 			timeRemaining := seg.xmitTime.Sub(rcvTime) + rc.RTT + rc.ReoWnd + clockResolution
 			if timeRemaining < 0 || (timeRemaining == 0 && clockResolution == 0) {
 				seg.lost = true
+				if rc.snd.inRecovery() && rc.snd.spuriousRecovery {
+					// Eifel judged the earlier retransmission. It cannot undo
+					// the congestion response for this newly detected loss.
+					rc.snd.pipePrev = 0
+				}
 				numLost++
 			} else {
 				// Arm the timer through the uncertainty boundary, so that a timer
@@ -476,6 +481,7 @@ func (rc *rackControl) reorderTimerExpired() tcpip.Error {
 
 	fastRetransmit := false
 	if !rc.snd.FastRecovery.Active {
+		rc.snd.capturePipePrev()
 		rc.snd.cc.HandleLossDetected()
 		rc.snd.enterRecovery()
 		fastRetransmit = true
