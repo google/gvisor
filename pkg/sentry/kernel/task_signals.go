@@ -463,6 +463,9 @@ func (t *Task) sendSignalTimerLocked(info *linux.SignalInfo, group bool, timer *
 
 	// Signal side effects apply even if the signal is ultimately discarded.
 	t.tg.applySignalSideEffectsLocked(sig)
+	if t.k.Cgroup2FS().EverMounted() {
+		t.tg.wakeFrozenTasksForFatalSignalLocked(sig)
+	}
 
 	// Unmasked, ignored signals are discarded without being queued, unless
 	// they will be visible to a tracer. Even for group signals, it's the
@@ -544,6 +547,26 @@ func (tg *ThreadGroup) applySignalSideEffectsLocked(sig linux.Signal) {
 		}
 		for t := tg.tasks.Front(); t != nil; t = t.Next() {
 			t.killLocked()
+		}
+	}
+}
+
+// wakeFrozenTasksForFatalSignalLocked un-parks tasks in frozenStop when a
+// fatal-by-default signal arrives, so they reach dequeue-time delivery and die.
+// Delivery/termination itself is unchanged -- this only ends the stop.
+// Callers should skip calling this unless cgroup2 is in use (see
+// sendSignalTimerLocked): checking tg.leader.Kernel() here would race
+// without the taskset mutex, which this function's callers don't hold.
+//
+// Preconditions: the signal mutex must be locked.
+func (tg *ThreadGroup) wakeFrozenTasksForFatalSignalLocked(sig linux.Signal) {
+	act := tg.signalHandlers.actions[sig]
+	if computeAction(sig, act) != SignalActionTerm {
+		return // handled, ignored, stop, or core-dump: stays frozen until thaw
+	}
+	for t := tg.tasks.Front(); t != nil; t = t.Next() {
+		if _, ok := t.stop.(*frozenStop); ok {
+			t.endInternalStopLocked()
 		}
 	}
 }
@@ -793,6 +816,16 @@ type groupStop struct{}
 // Killable implements TaskStop.Killable.
 func (*groupStop) Killable() bool { return true }
 
+// frozenStop is a TaskStop placed on tasks frozen via cgroup v2's
+// cgroup.freeze. Like groupStop it is killable, so a frozen task remains
+// SIGKILL-able (a frozen task must never be un-killable).
+//
+// +stateify savable
+type frozenStop struct{}
+
+// Killable implements TaskStop.Killable.
+func (*frozenStop) Killable() bool { return true }
+
 // initiateGroupStop attempts to initiate a group stop based on a
 // previously-dequeued stop signal.
 //
@@ -872,6 +905,11 @@ func (tg *ThreadGroup) endGroupStopLocked(broadcast bool) {
 		} else {
 			if _, ok := t.stop.(*groupStop); ok {
 				t.endInternalStopLocked()
+				// t may still be effectively frozen but couldn't enter
+				// frozenStop while parked (single t.stop slot); nudge it to recheck.
+				if t.freezeOrdered {
+					t.interrupt()
+				}
 			}
 		}
 	}
@@ -1063,11 +1101,22 @@ func (*runInterrupt) execute(t *Task) taskRunState {
 				}
 			}
 		} else {
+			delta := FreezeCreditNone
+			var creditCg Cgroup2
 			if !t.killedLocked() {
 				t.beginInternalStopLocked((*groupStop)(nil))
+				// t is now quiescent the same way a parked *frozenStop
+				// task is (Linux counts a group-stopped task as already
+				// frozen): resolve any outstanding credit now, since
+				// t.stop being occupied means t will never reach the
+				// *frozenStop park path above.
+				delta, creditCg = t.resolveFreezeCreditSigLocked()
 			}
 			// Drop the signal mutex so we can take the TaskSet mutex.
 			t.tg.signalHandlers.mu.Unlock()
+			if creditCg != nil {
+				creditCg.ApplyFreezeCreditDelta(t, delta)
+			}
 			t.tg.pidns.owner.mu.RLock()
 			if t.tg.leader.parent == nil {
 				notifyParent = false
@@ -1082,29 +1131,58 @@ func (*runInterrupt) execute(t *Task) taskRunState {
 		return (*runInterrupt)(nil)
 	}
 
-	// Are there signals pending?
-	if info := t.dequeueSignalLocked(linux.SignalSet(t.signalMask.RacyLoad())); info != nil {
-		if err := t.p.PullFullState(t.MemoryManager().AddressSpace(), t.Arch()); err != nil {
-			t.PrepareGroupExit(linux.WaitStatusTerminationSignal(linux.SIGILL))
-			return (*runExit)(nil)
-		}
+	// A frozen task may only dequeue a fatal signal; others wait for thaw
+	// (matches Linux). anyFatalPending scans every pending signal, not
+	// just the lowest, so a non-fatal one can't hide a fatal one.
+	mask := linux.SignalSet(t.signalMask.RacyLoad())
+	canDeliver := true
+	if t.freezeOrdered {
+		actions := t.tg.signalHandlers.actions
+		canDeliver = anyFatalPending(t.pendingSignals.pendingSet.RacyLoad(), mask, actions) ||
+			anyFatalPending(t.tg.pendingSignals.pendingSet.RacyLoad(), mask, actions)
+	}
+	if canDeliver {
+		if info := t.dequeueSignalLocked(mask); info != nil {
+			if err := t.p.PullFullState(t.MemoryManager().AddressSpace(), t.Arch()); err != nil {
+				t.PrepareGroupExit(linux.WaitStatusTerminationSignal(linux.SIGILL))
+				return (*runExit)(nil)
+			}
 
-		if linux.SignalSetOf(linux.Signal(info.Signo))&StopSignals != 0 {
-			// Indicate that we've dequeued a stop signal before unlocking the
-			// signal mutex; initiateGroupStop will check for races with
-			// endGroupStopLocked after relocking it.
-			t.tg.groupStopDequeued = true
-		}
-		if t.ptraceSignalLocked(info) {
-			// Dequeueing the signal action must wait until after the
-			// signal-delivery-stop ends since the tracer can change or
-			// suppress the signal.
+			if linux.SignalSetOf(linux.Signal(info.Signo))&StopSignals != 0 {
+				// Indicate that we've dequeued a stop signal before unlocking the
+				// signal mutex; initiateGroupStop will check for races with
+				// endGroupStopLocked after relocking it.
+				t.tg.groupStopDequeued = true
+			}
+			if t.ptraceSignalLocked(info) {
+				// Dequeueing the signal action must wait until after the
+				// signal-delivery-stop ends since the tracer can change or
+				// suppress the signal.
+				t.tg.signalHandlers.mu.Unlock()
+				return (*runInterruptAfterSignalDeliveryStop)(nil)
+			}
+			act := t.tg.signalHandlers.dequeueAction(linux.Signal(info.Signo))
 			t.tg.signalHandlers.mu.Unlock()
-			return (*runInterruptAfterSignalDeliveryStop)(nil)
+			return t.deliverSignal(info, act)
 		}
-		act := t.tg.signalHandlers.dequeueAction(linux.Signal(info.Signo))
+	}
+
+	// Reconcile freeze state: enter is self-service, thaw ends it
+	// authoritatively in ApplyFreezeTasksLocked. No cgroup lock is taken
+	// here (avoids inverting fs.tasksMu -> signalHandlers.mu).
+	// !killedLocked() matches groupStop: a dying task is never parked.
+	if t.freezeOrdered && t.stop == nil && !t.killedLocked() {
+		t.beginInternalStopLocked((*frozenStop)(nil))
+		// Resolve the credit atomically with t.stop becoming *frozenStop
+		// (so a racing thaw/exit/migration sees it already done), but
+		// apply it after unlocking: taking fs.tasksMu here would invert
+		// fs.tasksMu -> signalHandlers.mu.
+		delta, creditCg := t.resolveFreezeCreditSigLocked()
 		t.tg.signalHandlers.mu.Unlock()
-		return t.deliverSignal(info, act)
+		if creditCg != nil {
+			creditCg.ApplyFreezeCreditDelta(t, delta)
+		}
+		return (*runInterrupt)(nil)
 	}
 
 	t.unsetInterrupted()
