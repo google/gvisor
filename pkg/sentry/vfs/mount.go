@@ -708,6 +708,9 @@ func (vfs *VirtualFilesystem) cloneMountTree(ctx context.Context, mnt *Mount, ro
 		p := queue[len(queue)-1]
 		queue = queue[:len(queue)-1]
 		for c := range p.prevMount.children {
+			if c.umounted {
+				continue
+			}
 			if mp := c.getKey(); p.prevMount == mnt && !mp.mount.fs.Impl().IsDescendant(VirtualDentry{mnt, root}, mp) {
 				continue
 			}
@@ -788,9 +791,14 @@ func (vfs *VirtualFilesystem) BindAt(ctx context.Context, creds *auth.Credential
 		vfs.delayDecRef(mp) // +checklocksforce
 	})
 	defer cleanup.Clean()
-	// Namespace mounts can be binded to other mount points.
+	// sourceVd.mount must not be umounted, regardless of the filesystem type
+	if sourceVd.mount.umounted {
+		return linuxerr.EINVAL
+	}
+	// nsfs, cgroupfs, and cgroup2fs are exempt from the requirement that the source
+	// mount must be in a mount namespace, but *only* for non-recursive binds.
 	fsName := sourceVd.mount.Filesystem().FilesystemType().Name()
-	if !vfs.validInMountNS(ctx, sourceVd.mount) && fsName != nsfsName && fsName != cgroupFsName && fsName != cgroup2FsName {
+	if !vfs.validInMountNS(ctx, sourceVd.mount) && (recursive || (fsName != nsfsName && fsName != cgroupFsName && fsName != cgroup2FsName)) {
 		return linuxerr.EINVAL
 	}
 	if !vfs.validInMountNS(ctx, mp.mount) {
