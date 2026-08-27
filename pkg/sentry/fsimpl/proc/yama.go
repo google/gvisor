@@ -30,7 +30,10 @@ import (
 )
 
 func (fs *filesystem) newYAMAPtraceScopeFile(ctx context.Context, k *kernel.Kernel, creds *auth.Credentials) kernfs.Inode {
-	s := &yamaPtraceScope{level: &k.YAMAPtraceScope}
+	// yamaPtraceScope retains this pointer and only uses atomic methods.
+	// checklocks cannot follow atomic-field aliases stored in an object.
+	s := &yamaPtraceScope{}
+	s.level = &k.YAMAPtraceScope // +checklocksignore
 	s.Init(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), s, 0644)
 	return s
 }

@@ -34,6 +34,13 @@ import (
 //
 // ThreadGroup is a superset of Linux's struct signal_struct.
 //
+// A nonnil leader always belongs to this thread group.
+// A nonnil processGroup belongs to the same TaskSet, including after
+// reassignment.
+//
+// +checklocksalias:leader.tg.signalHandlers.mu=signalHandlers.mu
+// +checklocksalias:leader.tg.pidns.owner.mu=pidns.owner.mu
+// +checklocksalias:processGroup.originator.pidns.owner.mu=pidns.owner.mu
 // +stateify savable
 type ThreadGroup struct {
 	threadGroupNode
@@ -70,7 +77,10 @@ type ThreadGroup struct {
 	// pendingSignals is the set of pending signals that may be handled by any
 	// task in this thread group.
 	//
-	// pendingSignals is protected by the signal mutex.
+	// Queue access requires the signal mutex. Task.PendingSignals only loads
+	// the atomic pendingSet bitmap without it.
+	//
+	// +checklocks:signalHandlers.mu
 	pendingSignals pendingSignals
 
 	// If groupStopDequeued is true, a task in the thread group has dequeued a
@@ -78,12 +88,12 @@ type ThreadGroup struct {
 	//
 	// groupStopDequeued is analogous to Linux's JOBCTL_STOP_DEQUEUED.
 	//
-	// groupStopDequeued is protected by the signal mutex.
+	// +checklocks:signalHandlers.mu
 	groupStopDequeued bool
 
 	// groupStopSignal is the signal that caused a group stop to be initiated.
 	//
-	// groupStopSignal is protected by the signal mutex.
+	// +checklocks:signalHandlers.mu
 	groupStopSignal linux.Signal
 
 	// groupStopPendingCount is the number of active tasks in the thread group
@@ -92,7 +102,7 @@ type ThreadGroup struct {
 	// groupStopPendingCount is analogous to Linux's
 	// signal_struct::group_stop_count.
 	//
-	// groupStopPendingCount is protected by the signal mutex.
+	// +checklocks:signalHandlers.mu
 	groupStopPendingCount int
 
 	// If groupStopComplete is true, groupStopPendingCount transitioned from
@@ -100,7 +110,7 @@ type ThreadGroup struct {
 	//
 	// groupStopComplete is analogous to Linux's SIGNAL_STOP_STOPPED.
 	//
-	// groupStopComplete is protected by the signal mutex.
+	// +checklocks:signalHandlers.mu
 	groupStopComplete bool
 
 	// If groupStopWaitable is true, the thread group is indicating a waitable
@@ -109,7 +119,7 @@ type ThreadGroup struct {
 	// Linux represents the analogous state as SIGNAL_STOP_STOPPED being set
 	// and group_exit_code being non-zero.
 	//
-	// groupStopWaitable is protected by the signal mutex.
+	// +checklocks:signalHandlers.mu
 	groupStopWaitable bool
 
 	// If groupContNotify is true, then a SIGCONT has recently ended a group
@@ -128,9 +138,10 @@ type ThreadGroup struct {
 	//
 	//	- !groupContNotify is represented by neither flag being set.
 	//
-	// groupContNotify and groupContInterrupted are protected by the signal
-	// mutex.
-	groupContNotify      bool
+	// +checklocks:signalHandlers.mu
+	groupContNotify bool
+
+	// +checklocks:signalHandlers.mu
 	groupContInterrupted bool
 
 	// If groupContWaitable is true, the thread group is indicating a waitable
@@ -138,26 +149,28 @@ type ThreadGroup struct {
 	//
 	// groupContWaitable is analogous to Linux's SIGNAL_STOP_CONTINUED.
 	//
-	// groupContWaitable is protected by the signal mutex.
+	// +checklocks:signalHandlers.mu
 	groupContWaitable bool
 
 	// exiting is true if all tasks in the ThreadGroup should exit. exiting is
 	// analogous to Linux's SIGNAL_GROUP_EXIT.
 	//
-	// exiting is protected by the signal mutex. exiting can only transition
-	// from false to true.
+	// exiting can only transition from false to true.
+	//
+	// +checklocks:signalHandlers.mu
 	exiting bool
 
 	// exitStatus is the thread group's exit status.
 	//
-	// While exiting is false, exitStatus is protected by the signal mutex.
 	// When exiting becomes true, exitStatus becomes immutable.
+	//
+	// +checklocks:signalHandlers.mu
 	exitStatus linux.WaitStatus
 
 	// terminationSignal is the signal that this thread group's leader will
 	// send to its parent when it exits.
 	//
-	// terminationSignal is protected by the TaskSet mutex.
+	// +checklocks:pidns.owner.mu
 	terminationSignal linux.Signal
 
 	// liveGoroutines is the number of non-exited task goroutines in the thread
@@ -389,9 +402,10 @@ func (tg *ThreadGroup) Release(ctx context.Context) {
 	tg.pidns.DecRef(ctx)
 }
 
-// forEachChildThreadGroupLocked indicates over all child ThreadGroups.
+// forEachChildThreadGroupLocked visits each immediate child ThreadGroup.
+// The callback runs synchronously and must not release the TaskSet mutex.
 //
-// Precondition: TaskSet.mu must be held.
+// +checklocksread:tg.pidns.owner.mu
 func (tg *ThreadGroup) forEachChildThreadGroupLocked(fn func(*ThreadGroup)) {
 	tg.walkDescendantThreadGroupsLocked(func(child *ThreadGroup) bool {
 		fn(child)
@@ -407,7 +421,9 @@ func (tg *ThreadGroup) forEachChildThreadGroupLocked(fn func(*ThreadGroup)) {
 //
 // This corresponds to Linux's walk_process_tree.
 //
-// Precondition: TaskSet.mu must be held.
+// The visitor runs synchronously and must not release the TaskSet mutex.
+//
+// +checklocksread:tg.pidns.owner.mu
 func (tg *ThreadGroup) walkDescendantThreadGroupsLocked(visitor func(*ThreadGroup) bool) {
 	for t := tg.tasks.Front(); t != nil; t = t.Next() {
 		for child := range t.children {
@@ -416,7 +432,9 @@ func (tg *ThreadGroup) walkDescendantThreadGroupsLocked(visitor func(*ThreadGrou
 					// Don't recurse below child.
 					continue
 				}
-				child.tg.walkDescendantThreadGroupsLocked(visitor)
+				// Members' children share tg's locked TaskSet; checklocks
+				// cannot infer that relationship from the children map.
+				child.tg.walkDescendantThreadGroupsLocked(visitor) // +checklocksignore
 			}
 		}
 	}
@@ -582,10 +600,11 @@ func (tg *ThreadGroup) ReleaseControllingTTY(ctx context.Context, tty *TTY) erro
 			}
 			othertg.tty = nil
 			if othertg.processGroup == tg.processGroup.session.foreground {
-				if err := othertg.leader.sendSignalLocked(&linux.SignalInfo{Signo: int32(linux.SIGHUP)}, true /* group */); err != nil {
+				leader := othertg.leader
+				if err := leader.sendSignalLocked(&linux.SignalInfo{Signo: int32(linux.SIGHUP)}, true /* group */); err != nil {
 					lastErr = err
 				}
-				if err := othertg.leader.sendSignalLocked(&linux.SignalInfo{Signo: int32(linux.SIGCONT)}, true /* group */); err != nil {
+				if err := leader.sendSignalLocked(&linux.SignalInfo{Signo: int32(linux.SIGCONT)}, true /* group */); err != nil {
 					lastErr = err
 				}
 			}
@@ -684,9 +703,8 @@ func (tg *ThreadGroup) SetForegroundProcessGroupID(ctx context.Context, tty *TTY
 // ThreadGroup with isChildSubreaper bit set, or a ThreadGroup with PID=1
 // inside a PID namespace.
 func (tg *ThreadGroup) SetChildSubreaper(isSubreaper bool) {
-	ts := tg.TaskSet()
-	ts.mu.Lock()
-	defer ts.mu.Unlock()
+	tg.pidns.owner.mu.Lock()
+	defer tg.pidns.owner.mu.Unlock()
 	tg.isChildSubreaper = isSubreaper
 	tg.walkDescendantThreadGroupsLocked(func(child *ThreadGroup) bool {
 		// Is this child PID 1 in its PID namespace, or already a
@@ -749,7 +767,9 @@ func (tg *ThreadGroup) SigsegvUnlock() {
 		for t := tg.tasks.Front(); t != nil; t = t.Next() {
 			if _, ok := t.stop.(*sigsegvLockStop); ok {
 				t.Infof("Resuming execution due to SigsegvUnlock")
-				t.endInternalStopLocked()
+				// signalLock holds tg's current signal mutex, and t is
+				// in tg; checklocks cannot infer either owner identity.
+				t.endInternalStopLocked() // +checklocksignore
 			}
 		}
 	} else if count < 0 {

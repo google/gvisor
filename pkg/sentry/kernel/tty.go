@@ -49,7 +49,7 @@ type TTY struct {
 
 	mu sync.Mutex `state:"nosave"`
 
-	// tg is protected by mu.
+	// +checklocks:mu
 	tg *ThreadGroup
 }
 

@@ -71,19 +71,24 @@ type TaskSet struct {
 
 	// stopCount is the number of active external stops applicable to all tasks
 	// in the TaskSet (calls to TaskSet.BeginExternalStop that have not been
-	// paired with a call to TaskSet.EndExternalStop). stopCount is protected
-	// by mu.
+	// paired with a call to TaskSet.EndExternalStop).
 	//
 	// stopCount is not saved for the same reason as Task.stopCount; it is
 	// always reset to zero after restore.
+	//
+	// +checklocks:mu
 	stopCount int32 `state:"nosave"`
 
 	// liveTasks is the number of tasks in the TaskSet whose goroutines have
-	// not exited. liveTasks is protected by mu.
+	// not exited.
+	//
+	// +checklocks:mu
 	liveTasks uint32
 
 	// If noNewTasksIfZeroLive is true and liveTasks is zero, calls to
-	// Kernel.NewTask() will fail. noNewTasksIfZeroLive is protected by mu.
+	// TaskSet.newTask will fail.
+	//
+	// +checklocks:mu
 	noNewTasksIfZeroLive bool
 
 	// zeroLiveTasksCond is broadcast when liveTasks transitions from non-zero
@@ -123,7 +128,9 @@ func (ts *TaskSet) ForEachThreadGroup(f func(tg *ThreadGroup, tgLeader *Task)) {
 
 // forEachThreadGroupLocked applies f to each thread group in ts.
 //
-// Preconditions: ts.mu must be locked (for reading or writing).
+// f runs with ts.mu held and must not release or reacquire it.
+//
+// +checklocksread:ts.mu
 func (ts *TaskSet) forEachThreadGroupLocked(f func(tg *ThreadGroup, tgLeader *Task)) {
 	for tg := range ts.Root.tgids {
 		f(tg, tg.leader)
@@ -132,7 +139,7 @@ func (ts *TaskSet) forEachThreadGroupLocked(f func(tg *ThreadGroup, tgLeader *Ta
 
 // forEachTaskLocked applies f to each Task in ts.
 //
-// Preconditions: ts.mu must be locked (for reading or writing).
+// +checklocksread:ts.mu
 func (ts *TaskSet) forEachTaskLocked(f func(t *Task)) {
 	for t := range ts.Root.tids {
 		f(t)

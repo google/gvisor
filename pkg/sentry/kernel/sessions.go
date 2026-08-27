@@ -106,7 +106,7 @@ type ProcessGroup struct {
 	// The name is derived from the fact that process groups where
 	// ancestors is zero are considered "orphans".
 	//
-	// ancestors is protected by TaskSet.mu.
+	// +checklocks:originator.pidns.owner.mu
 	ancestors uint32
 
 	// processGroupEntry is the embedded entry for Sessions.groups. This is
@@ -121,9 +121,8 @@ func (pg *ProcessGroup) Originator() *ThreadGroup {
 
 // IsOrphan returns true if this process group is an orphan.
 func (pg *ProcessGroup) IsOrphan() bool {
-	ts := pg.originator.TaskSet()
-	ts.mu.RLock()
-	defer ts.mu.RUnlock()
+	pg.originator.pidns.owner.mu.RLock()
+	defer pg.originator.pidns.owner.mu.RUnlock()
 	return pg.ancestors == 0
 }
 
@@ -133,7 +132,7 @@ func (pg *ProcessGroup) IsOrphan() bool {
 // new ThreadGroup, tg. parentPG is the ProcessGroup of tg's parent
 // ThreadGroup. If tg is init, then parentPG may be nil.
 //
-// Precondition: callers must hold TaskSet.mu for writing.
+// +checklocks:pg.originator.pidns.owner.mu
 func (pg *ProcessGroup) incRefWithParent(parentPG *ProcessGroup) {
 	// We acquire an "ancestor" reference in the case of a nil parent.
 	// This is because the process being associated is init, and init can
@@ -149,7 +148,7 @@ func (pg *ProcessGroup) incRefWithParent(parentPG *ProcessGroup) {
 //
 // parentPG is per incRefWithParent.
 //
-// Precondition: callers must hold TaskSet.mu for writing.
+// +checklocks:pg.originator.pidns.owner.mu
 func (pg *ProcessGroup) decRefWithParent(parentPG *ProcessGroup) {
 	// See incRefWithParent regarding parent == nil.
 	if pg != parentPG && (parentPG == nil || pg.session == parentPG.session) {
@@ -178,7 +177,7 @@ func (pg *ProcessGroup) decRefWithParent(parentPG *ProcessGroup) {
 
 // parentPG returns the parent process group.
 //
-// Precondition: callers must hold TaskSet.mu.
+// +checklocksread:tg.pidns.owner.mu
 func (tg *ThreadGroup) parentPG() *ProcessGroup {
 	if tg.leader.parent != nil {
 		return tg.leader.parent.tg.processGroup
@@ -190,7 +189,7 @@ func (tg *ThreadGroup) parentPG() *ProcessGroup {
 // stopped jobs. If yes, then appropriate signals are delivered to each thread
 // group within the process group.
 //
-// Precondition: callers must hold TaskSet.mu for writing.
+// +checklocks:pg.originator.pidns.owner.mu
 func (pg *ProcessGroup) handleOrphan() {
 	// Check if this process is an orphan.
 	if pg.ancestors != 0 {
@@ -214,13 +213,14 @@ func (pg *ProcessGroup) handleOrphan() {
 	}
 
 	// Deliver appropriate signals to all thread groups.
-	pg.originator.pidns.owner.forEachThreadGroupLocked(func(tg *ThreadGroup, tgLeader *Task) {
+	pg.originator.pidns.owner.forEachThreadGroupLocked(func(tg *ThreadGroup, _ *Task) {
 		if tg.processGroup != pg {
 			return
 		}
 		tg.signalHandlers.mu.NestedLock(signalHandlersLockTg)
-		tgLeader.sendSignalLocked(SignalInfoPriv(linux.SIGHUP), true /* group */)
-		tgLeader.sendSignalLocked(SignalInfoPriv(linux.SIGCONT), true /* group */)
+		leader := tg.leader
+		_ = leader.sendSignalLocked(SignalInfoPriv(linux.SIGHUP), true /* group */)
+		_ = leader.sendSignalLocked(SignalInfoPriv(linux.SIGCONT), true /* group */)
 		tg.signalHandlers.mu.NestedUnlock(signalHandlersLockTg)
 	})
 
@@ -272,7 +272,8 @@ func (tg *ThreadGroup) CreateSession(ctx context.Context) (SessionID, error) {
 // had a controlling terminal, it is returned so that the caller can drop the
 // bond reference outside of the locks.
 //
-// Precondition: callers must hold TaskSet.mu and the signal mutex for writing.
+// +checklocks:tg.pidns.owner.mu
+// +checklocks:tg.signalHandlers.mu
 func (tg *ThreadGroup) createSession() (SessionID, *TTY, error) {
 	// Get the ID for this thread in the current namespace.
 	id := tg.pidns.tgids[tg]
@@ -326,8 +327,10 @@ func (tg *ThreadGroup) createSession() (SessionID, *TTY, error) {
 	if tg.processGroup != nil {
 		oldParentPG := tg.parentPG()
 		tg.forEachChildThreadGroupLocked(func(childTG *ThreadGroup) {
-			childTG.processGroup.incRefWithParent(pg)
-			childTG.processGroup.decRefWithParent(oldParentPG)
+			// The synchronous callback visits children in tg's locked
+			// TaskSet; checklocks cannot carry this ownership into it.
+			childTG.processGroup.incRefWithParent(pg)          // +checklocksignore
+			childTG.processGroup.decRefWithParent(oldParentPG) // +checklocksignore
 		})
 		// If tg.processGroup is an orphan, decRefWithParent will lock
 		// the signal mutex of each thread group in tg.processGroup.
@@ -418,8 +421,10 @@ func (tg *ThreadGroup) CreateProcessGroup() error {
 	// Assign the new process group; adjust children.
 	oldParentPG := tg.parentPG()
 	tg.forEachChildThreadGroupLocked(func(childTG *ThreadGroup) {
-		childTG.processGroup.incRefWithParent(&pg)
-		childTG.processGroup.decRefWithParent(oldParentPG)
+		// The synchronous callback visits children in tg's locked
+		// TaskSet; checklocks cannot carry this ownership into it.
+		childTG.processGroup.incRefWithParent(&pg)         // +checklocksignore
+		childTG.processGroup.decRefWithParent(oldParentPG) // +checklocksignore
 	})
 	tg.processGroup.decRefWithParent(oldParentPG)
 	tg.processGroup = &pg
@@ -462,13 +467,17 @@ func (tg *ThreadGroup) JoinProcessGroup(pidns *PIDNamespace, pgid ProcessGroupID
 	}
 
 	// Join the group; adjust children.
-	parentPG := tg.parentPG()
-	pg.incRefWithParent(parentPG)
-	tg.forEachChildThreadGroupLocked(func(childTG *ThreadGroup) {
-		childTG.processGroup.incRefWithParent(pg)
-		childTG.processGroup.decRefWithParent(tg.processGroup)
+	// The lookups above place tg and pg in pidns's locked TaskSet;
+	// checklocks cannot infer ownership from map membership.
+	parentPG := tg.parentPG()                                     // +checklocksignore
+	pg.incRefWithParent(parentPG)                                 // +checklocksignore
+	tg.forEachChildThreadGroupLocked(func(childTG *ThreadGroup) { // +checklocksignore
+		// The synchronous callback visits children in pidns's locked
+		// TaskSet; checklocks cannot carry this ownership into it.
+		childTG.processGroup.incRefWithParent(pg)              // +checklocksignore
+		childTG.processGroup.decRefWithParent(tg.processGroup) // +checklocksignore
 	})
-	tg.processGroup.decRefWithParent(parentPG)
+	tg.processGroup.decRefWithParent(parentPG) // +checklocksignore
 	tg.processGroup = pg
 
 	return nil

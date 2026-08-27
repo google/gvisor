@@ -64,6 +64,9 @@ const (
 // by the task goroutine while it is running. The task goroutine does not
 // require synchronization to read or write these fields.
 //
+// A task's Kernel and ThreadGroup belong to the same TaskSet.
+//
+// +checklocksalias:tg.pidns.owner.mu=k.tasks.mu
 // +stateify savable
 type Task struct {
 	taskNode
@@ -81,15 +84,17 @@ type Task struct {
 
 	// taskWorkCount represents the current size of the task work queue. It is
 	// used to avoid acquiring taskWorkMu when the queue is empty.
+	//
+	// +checkatomic
+	// +checklocks:taskWorkMu
 	taskWorkCount atomicbitops.Int32
 
-	// taskWorkMu protects taskWork.
 	taskWorkMu taskWorkMutex `state:"nosave"`
 
 	// taskWork is a queue of work to be executed before resuming user execution.
 	// It is similar to the task_work mechanism in Linux.
 	//
-	// taskWork is exclusive to the task goroutine.
+	// +checklocks:taskWorkMu
 	taskWork []TaskWorker
 
 	// haveSyscallReturn is true if image.Arch().Return() represents a value
@@ -149,18 +154,19 @@ type Task struct {
 
 	// signalMask is the set of signals whose delivery is currently blocked.
 	//
-	// signalMask is accessed using atomic memory operations, and is protected
-	// by the signal mutex (such that reading signalMask is safe if either the
-	// signal mutex is locked or if atomic memory operations are used, while
-	// writing signalMask requires both). signalMask is owned by the task
-	// goroutine.
+	// signalMask is owned by the task goroutine.
+	//
+	// +checkatomic
+	// +checklocks:tg.signalHandlers.mu
 	signalMask atomicbitops.Uint64
 
-	// If the task goroutine is currently executing Task.sigtimedwait,
+	// If the task goroutine is currently executing Task.Sigtimedwait,
 	// realSignalMask is the previous value of signalMask, which has temporarily
-	// been replaced by Task.sigtimedwait. Otherwise, realSignalMask is 0.
+	// been replaced by Task.Sigtimedwait. Otherwise, realSignalMask is 0.
 	//
-	// realSignalMask is exclusive to the task goroutine.
+	// realSignalMask is owned by the task goroutine.
+	//
+	// +checklocks:tg.signalHandlers.mu
 	realSignalMask linux.SignalSet
 
 	// If haveSavedSignalMask is true, savedSignalMask is the signal mask that
@@ -258,7 +264,9 @@ type Task struct {
 
 	// exitStatus is the task's exit status.
 	//
-	// exitStatus is protected by the signal mutex.
+	// The task goroutine writes exitStatus under the signal mutex. After
+	// TaskExitZombie it is immutable and may be read with only TaskSet.mu.
+	// checklocks cannot express this lifecycle-dependent locking rule.
 	exitStatus linux.WaitStatus
 
 	// syscallRestartBlock represents a custom restart function to run in
@@ -469,7 +477,7 @@ type Task struct {
 
 	// noNewPrivs determines whether the task is allowed to gain new privileges.
 	//
-	// noNewPrivs is protected by mu.
+	// +checklocks:mu
 	noNewPrivs bool
 
 	// utsns is the task's UTS namespace.
@@ -494,7 +502,7 @@ type Task struct {
 
 	// parentDeathSignal is sent to this task's thread group when its parent exits.
 	//
-	// parentDeathSignal is protected by mu.
+	// +checklocks:mu
 	parentDeathSignal linux.Signal
 
 	// seccomp contains all seccomp-bpf syscall filters applicable to the task.
@@ -515,20 +523,23 @@ type Task struct {
 	// don't really control the affinity.
 	//
 	// Invariant: allowedCPUMask.Size() ==
-	// sched.CPUMaskSize(Kernel.applicationCores).
+	// sched.CPUSetSize(Kernel.applicationCores).
 	//
-	// allowedCPUMask is protected by mu.
+	// +checklocks:mu
 	allowedCPUMask sched.CPUSet
 
 	// cpu is the fake cpu number returned by getcpu(2). cpu is ignored
 	// entirely if Kernel.useHostCores is true.
+	//
+	// +checkatomic
+	// +checklocks:mu
 	cpu atomicbitops.Int32
 
 	// This is used to keep track of the scheduling policy for this task.
 	// It has no effect and is only used to provide a reasonable return value for
 	// sched_getattr() and similar.
 	//
-	// scheduler is protected by mu.
+	// +checklocks:mu
 	scheduler uint
 
 	// This is used to keep track of changes made to a process' priority/niceness.
@@ -538,13 +549,13 @@ type Task struct {
 	// NOTE: This represents the userspace view of priority (nice).
 	// This means that the value should be in the range [-20, 19].
 	//
-	// niceness is protected by mu.
+	// +checklocks:mu
 	niceness int
 
 	// This is used to keep track of a process's IO class and priority.
 	// It is only used to provide a reasonable return value for ioprio_get().
 	//
-	// ioprio is protected by mu.
+	// +checklocks:mu
 	ioprio int
 
 	// This is used to track the numa policy for the current thread. This can be
@@ -556,8 +567,10 @@ type Task struct {
 	// always report a single node so never need to save more than a single
 	// bit.
 	//
-	// numaPolicy and numaNodeMask are protected by mu.
-	numaPolicy   linux.NumaPolicy
+	// +checklocks:mu
+	numaPolicy linux.NumaPolicy
+
+	// +checklocks:mu
 	numaNodeMask uint64
 
 	// netns is the task's network namespace. It has to be changed under mu
@@ -632,7 +645,9 @@ type Task struct {
 	// startTime is the real time at which the task started. It is set when
 	// a Task is created or invokes execve(2).
 	//
-	// startTime is protected by mu.
+	// +checklocks:mu
+	// +checklocks:k.tasks.mu
+	// +checklocksreadany
 	startTime ktime.Time
 
 	// kcov is the kcov instance providing code coverage owned by this task.
@@ -676,7 +691,10 @@ type Task struct {
 	Origin TaskOrigin
 
 	// onDestroyAction is a set of callbacks that are executed when the
-	// task is destroyed.
+	// task is destroyed. The map is detached under mu before callbacks run
+	// asynchronously without mu.
+	//
+	// +checklocks:mu
 	onDestroyAction map[TaskDestroyAction]struct{}
 
 	// Helps serializes an execve(2) with a PTRACE_ATTACH and seccomp tsync. See the comment for

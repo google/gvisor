@@ -252,8 +252,12 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 
 	mntns := t.mountNamespace
 	if args.Flags&linux.CLONE_NEWNS != 0 {
+		// CLONE_NEWNS forced a private Fork above. checklocks cannot infer
+		// ownership of the returned context before the child is created.
+		root := &fsContext.root // +checklocksignore
+		cwd := &fsContext.cwd   // +checklocksignore
 		var err error
-		mntns, err = t.k.vfs.CloneMountNamespace(t, userns, mntns, &fsContext.root, &fsContext.cwd, t.k)
+		mntns, err = t.k.vfs.CloneMountNamespace(t, userns, mntns, root, cwd, t.k)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -469,10 +473,13 @@ func getCloneSeccheckInfo(t, nt *Task, flags uint64) (seccheck.FieldSet, *pb.Clo
 	}
 	t.k.tasks.mu.RLock()
 	defer t.k.tasks.mu.RUnlock()
+	// The new child belongs to t's Kernel and TaskSet. checklocks cannot
+	// relate their TaskSet mutexes across the two arguments.
+	startTime := nt.startTime // +checklocksignore
 	info := &pb.CloneInfo{
 		CreatedThreadId:          int32(nt.k.tasks.Root.tids[nt]),
 		CreatedThreadGroupId:     int32(nt.k.tasks.Root.tgids[nt.tg]),
-		CreatedThreadStartTimeNs: nt.startTime.Nanoseconds(),
+		CreatedThreadStartTimeNs: startTime.Nanoseconds(),
 		Flags:                    flags,
 	}
 
@@ -834,12 +841,16 @@ func (t *Task) Setns(fd *vfs.FileDescription, flags int32) error {
 			return linuxerr.EINVAL
 		}
 		nss.fsContext = oldFSContext.Fork()
-		nss.fsContext.root.DecRef(t)
-		nss.fsContext.cwd.DecRef(t)
+		// This Fork remains private until the namespace swap below.
+		// checklocks cannot infer ownership of the returned context.
+		oldRoot := nss.fsContext.root // +checklocksignore
+		oldCwd := nss.fsContext.cwd   // +checklocksignore
+		oldRoot.DecRef(t)
+		oldCwd.DecRef(t)
 		vd := nss.mountNS.Root(t)
-		nss.fsContext.root = vd
+		nss.fsContext.root = vd // +checklocksignore
 		vd.IncRef()
-		nss.fsContext.cwd = vd
+		nss.fsContext.cwd = vd // +checklocksignore
 	}
 
 	// Swap to new namespaces.
@@ -1006,12 +1017,12 @@ func (t *Task) Unshare(flags int32) error {
 		newCgroupNS.SetInode(nsfs.NewInode(t, t.k.nsfsMount, newCgroupNS))
 	}
 	if flags&linux.CLONE_NEWNS != 0 {
-		fsContext := newFSContext
-		if fsContext == nil {
-			fsContext = t.FSContext()
-		}
+		// CLONE_NEWNS forced a private Fork above, not published until
+		// unshareFromTask below. checklocks cannot infer that ownership.
+		root := &newFSContext.root // +checklocksignore
+		cwd := &newFSContext.cwd   // +checklocksignore
 		var err error
-		newMountNS, err = t.k.vfs.CloneMountNamespace(t, creds.UserNamespace, t.mountNamespace, &fsContext.root, &fsContext.cwd, t.k)
+		newMountNS, err = t.k.vfs.CloneMountNamespace(t, creds.UserNamespace, t.mountNamespace, root, cwd, t.k)
 		if err != nil {
 			return err
 		}

@@ -44,6 +44,20 @@ type foo struct {
 This will ensure that all accesses to bar are atomic, with the exception of
 operations on newly allocated objects (when detectable).
 
+An atomic call must use the annotated address as its receiver or atomic
+location. Storing that address as the payload of another atomic value does not
+make accesses through the stored pointer atomic.
+
+For global variables, atomic-use checking applies only when `+checkatomic` is
+present, for example:
+
+```go
+var (
+  // +checkatomic
+  globalValue atomicbitops.Int32
+)
+```
+
 ## Lock Enforcement
 
 Individual struct members may be protected by annotations that indicate locking
@@ -73,6 +87,8 @@ These semantics are enforceable on `sync.Mutex`, `sync.RWMutex` and
 `sync.Locker` fields. Semantics with respect to reading and writing are
 automatically detected and enforced. If an access is read-only, then the lock
 need only be held as a read lock, in the case of an `sync.RWMutex`.
+Annotations on a field declaration with multiple names apply to every named
+field in that declaration.
 
 The locks must be resolvable within the scope of the declaration. This means the
 lock must refer to one of:
@@ -82,7 +98,57 @@ lock must refer to one of:
 *   A global lock (e.g. globalMu).
 *   A lock resolvable from a global struct (e.g. globalX.mu).
 
+A field with multiple guards can additionally use `+checklocksreadany` when
+reads require **any one** guard, but writes require **all** guards exclusively:
+
+```go
+type example struct {
+    mu sync.Mutex
+    otherMu sync.RWMutex
+
+    // +checklocks:mu
+    // +checklocks:otherMu
+    // +checklocksreadany
+    value int
+}
+```
+
+A reader may hold `mu`, or hold `otherMu` for reading or writing. A writer must
+hold both mutexes for writing, so it excludes readers using either guard.
+The modifier applies only to fields, requires at least one `+checklocks` guard,
+and takes no arguments. Only value reads and immediately following loads
+qualify. Retaining an address or passing it to a function requires all guards
+exclusively, as with other guarded address uses; the modifier does not add
+alias lifetime tracking.
+With `+checkatomic`, atomic reads remain allowed without any guard. Holding
+any guard additionally permits an immediate non-atomic load, including a direct
+`atomicbitops.RacyLoad` call. This permission requires the field address's sole
+use to immediately follow it in the same basic block; retained addresses,
+casts, and deferred calls do not qualify. Atomic writes still require all
+guards exclusively, and non-atomic writes remain forbidden even with all
+guards held. The modifier cannot be combined with a field's `+checklocksignore`.
+
 Like atomic access enforcement, checks may be elided on newly allocated objects.
+
+### Global Variable Annotations
+
+Global variables also support lock and atomic annotations. Put annotations above
+a standalone declaration or above an individual entry in a `var` block:
+
+```go
+var globalMu sync.Mutex
+
+// +checklocks:globalMu
+var first int
+
+var (
+    // +checklocks:globalMu
+    second, third int
+)
+```
+
+Annotations apply to every named variable in that declaration or block entry.
+Comments above an entire `var` block do not annotate its entries.
 
 ### Function Annotations
 
@@ -195,13 +261,16 @@ by a mutex. Generally, this imposes the following requirements:
 
 For a read, one of the following must be true:
 
-1.  A lock held be held.
+1.  All guards must be held.
 1.  The access is atomic.
 
 For a write, both of the following must be true:
 
-1.  The lock must be held.
+1.  All guards must be held exclusively.
 1.  The write must be atomic.
+
+Shared RWMutex locks satisfy the lock-held read condition, but not the write
+condition.
 
 In order to annotate a relevant field, simply apply *both* annotations from
 above. For example:
@@ -217,10 +286,19 @@ type foo struct {
 
 This enforces that the preconditions above are upheld.
 
-This also applies to atomic wrapper types (for example, atomic.Int32). In the
-mixed case, lock-free access is limited to read-only atomic operations such as
-Load. Any atomic write operation (for example, Store, Swap, or Add) requires the
-lock to be held.
+This also applies to atomic wrapper types such as `atomic.Int32` and
+`atomic.Pointer[T]`. In the mixed case, lock-free access is limited to read-only
+atomic operations such as Load. Any atomic write operation (for example, Store,
+Swap, or Add) requires the lock to be held exclusively.
+
+The non-atomic `atomicbitops.RacyLoad` method follows the mixed read rule above.
+`RacyStore` and `RacyAdd` do not satisfy the atomic-write requirement, even with
+the lock held, because other readers may access the field atomically without
+locking. The exceptions for newly allocated objects still apply.
+
+Deferred atomic calls are supported for pure atomic fields and globals. Deferred
+calls on values with both atomic and mutex requirements remain unsupported: their
+locks would need to be checked when the calls execute, not when they are deferred.
 
 ## Ignoring and Forcing
 

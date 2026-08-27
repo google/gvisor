@@ -23,10 +23,13 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/ipc"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 )
 
 func executeOps(ctx context.Context, t *testing.T, set *Set, ops []linux.Sembuf, block bool) chan struct{} {
+	set.mu.Lock()
 	ch, _, err := set.executeOps(ctx, ops, 123)
+	set.mu.Unlock()
 	if err != nil {
 		t.Fatalf("ExecuteOps(ops) failed, err: %v, ops: %+v", err, ops)
 	}
@@ -124,6 +127,8 @@ func TestNoWait(t *testing.T) {
 
 	ops[0].SemOp = -2
 	ops[0].SemFlg = linux.IPC_NOWAIT
+	set.mu.Lock()
+	defer set.mu.Unlock()
 	if _, _, err := set.executeOps(ctx, ops, 123); err != linuxerr.ErrWouldBlock {
 		t.Fatalf("ExecuteOps(ops) wrong result, got: %v, expected: %v", err, linuxerr.ErrWouldBlock)
 	}
@@ -137,15 +142,18 @@ func TestNoWait(t *testing.T) {
 
 func TestUnregister(t *testing.T) {
 	ctx := contexttest.Context(t)
-	r := NewRegistry(auth.NewRootUserNamespace())
-	set, err := r.FindOrCreate(ctx, 123, 2, linux.FileMode(0x600), true, true, true)
+	defer pgalloc.MemoryFileFromContext(ctx).Destroy()
+	creds := auth.CredentialsFromContext(ctx)
+	r := NewRegistry(creds.UserNamespace)
+	set, err := r.FindOrCreate(ctx, 123, 2, 0600, true, true, true)
 
 	if err != nil {
 		t.Fatalf("FindOrCreate() failed, err: %v", err)
 	}
-	if got := r.FindByID(set.obj.ID); got.obj.ID != set.obj.ID {
+	if got := r.FindByID(set.obj.ID); got != set {
 		t.Fatalf("FindById(%d) failed, got: %+v, expected: %+v", set.obj.ID, got, set)
 	}
+	index := r.HighestIndex()
 
 	ops := []linux.Sembuf{
 		{SemOp: -1},
@@ -156,11 +164,34 @@ func TestUnregister(t *testing.T) {
 		chs = append(chs, ch)
 	}
 
-	creds := auth.CredentialsFromContext(ctx)
+	// contexttest supplies UID 65534. UID 1 is not the owner and has no
+	// effective capabilities.
+	other := auth.NewUserCredentials(1, 1, nil, nil, creds.UserNamespace)
+	if err := r.Remove(set.obj.ID, other); err != linuxerr.EPERM {
+		t.Errorf("Remove by non-owner = %v, want EPERM", err)
+	}
+	if got := r.FindByID(set.obj.ID); got != set {
+		t.Fatalf("FindByID after denied removal = %p, want %p", got, set)
+	}
+	if got := r.FindByIndex(index); got != set {
+		t.Errorf("FindByIndex after denied removal = %p, want %p", got, set)
+	}
+	if ch, _, err := set.ExecuteOps(ctx, []linux.Sembuf{{SemOp: 0}}, creds, 123); err != nil || ch != nil {
+		t.Fatalf("ExecuteOps after denied removal = (%v, %v), want (nil, nil)", ch, err)
+	}
+	for i, ch := range chs {
+		if signalled(ch) {
+			t.Errorf("channel %d was signalled after denied removal", i)
+		}
+	}
+
 	if err := r.Remove(set.obj.ID, creds); err != nil {
 		t.Fatalf("Remove(%d) failed, err: %v", set.obj.ID, err)
 	}
-	if !set.dead {
+	set.mu.Lock()
+	dead := set.dead
+	set.mu.Unlock()
+	if !dead {
 		t.Fatalf("set is not dead: %+v", set)
 	}
 	if got := r.FindByID(set.obj.ID); got != nil {

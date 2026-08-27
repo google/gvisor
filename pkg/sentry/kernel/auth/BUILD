@@ -94,6 +94,7 @@ go_library(
     ],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/atomicbitops",
         "//pkg/bits",
         "//pkg/context",
         "//pkg/errors/linuxerr",
@@ -109,7 +110,10 @@ go_library(
 
 go_test(
     name = "auth_test",
-    srcs = ["capability_set_test.go"],
+    srcs = [
+        "capability_set_test.go",
+        "key_test.go",
+    ],
     library = ":auth",
     deps = [
         "//pkg/abi/linux",

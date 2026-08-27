@@ -44,30 +44,38 @@ type Kcov struct {
 	// mf stores application memory. It is immutable after creation.
 	mf *pgalloc.MemoryFile
 
-	// mu protects all of the fields below.
 	mu sync.RWMutex
 
 	// mode is the current kcov mode.
+	//
+	// +checklocks:mu
 	mode uint8
 
 	// size is the size of the mapping through which the kernel conveys coverage
 	// information to userspace.
+	//
+	// +checklocks:mu
 	size uint64
 
 	// owningTask is the task that currently owns coverage data on the system. The
 	// interface for kcov essentially requires that coverage is only going to a
 	// single task. Note that kcov should only generate coverage data for the
 	// owning task, but we currently generate global coverage.
+	//
+	// +checklocks:mu
 	owningTask *Task
 
 	// count is a locally cached version of the first uint64 in the kcov data,
 	// which is the number of subsequent entries representing PCs.
 	//
-	// It is used with kcovInode.countBlock(), to copy in/out the first element of
+	// It is used with Kcov.countBlock(), to copy in/out the first element of
 	// the actual data in an efficient manner, avoid boilerplate, and prevent
 	// accidental garbage escapes by the temporary counts.
+	//
+	// +checklocks:mu
 	count uint64
 
+	// +checklocks:mu
 	mappable *mm.SpecialMappable
 }
 

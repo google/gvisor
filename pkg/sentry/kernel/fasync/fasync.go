@@ -51,7 +51,10 @@ func New(fd int) func() vfs.FileAsync {
 //
 // +stateify savable
 type FileAsync struct {
-	// e is immutable after first use (which is protected by mu below).
+	// e is reinitialized for each registration. The waitable synchronizes
+	// accesses through its retained reference.
+	//
+	// +checklocks:regMu
 	e waiter.Entry
 
 	// fd is the file descriptor to notify about.
@@ -68,21 +71,29 @@ type FileAsync struct {
 	// Lock ordering: regMu, mu.
 	regMu regMutex `state:"nosave"`
 
-	// mu protects all following fields.
-	//
-	// Lock ordering: e.mu, mu.
-	mu         fileMutex `state:"nosave"`
-	requester  *auth.Credentials
+	// Wait queue locks precede mu because notification callbacks acquire mu.
+	// Register and Unregister must release mu before calling the waitable.
+	mu fileMutex `state:"nosave"`
+
+	// +checklocks:mu
+	requester *auth.Credentials
+	// +checklocks:mu
 	registered bool
 	// signal is the signal to deliver upon I/O being available.
 	// The default value ("zero signal") means the default SIGIO signal will be
 	// delivered.
+	//
+	// +checklocks:mu
 	signal linux.Signal
 
 	// Only one of the following is allowed to be non-nil.
+	//
+	// +checklocks:mu
 	recipientPG *kernel.ProcessGroup
+	// +checklocks:mu
 	recipientTG *kernel.ThreadGroup
-	recipientT  *kernel.Task
+	// +checklocks:mu
+	recipientT *kernel.Task
 }
 
 // NotifyEvent implements waiter.EventListener.NotifyEvent.
