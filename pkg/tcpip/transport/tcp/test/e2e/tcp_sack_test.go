@@ -716,6 +716,36 @@ func verifySpuriousRecoveryMetric(t *testing.T, c *context.Context, numSpuriousR
 	}
 }
 
+// verifyRecoveryUndo verifies that on exit from a loss recovery that was
+// detected spurious (RFC3522), the RFC4015 response restored the congestion
+// control state instead of leaving the loss-based reduction in place:
+// Ssthresh back at the pre-recovery congestion window and SndCwnd at
+// FlightSize + min(bytes_acked, IW), which is wantCwnd when the exit ACK
+// leaves nothing in flight.
+func verifyRecoveryUndo(t *testing.T, c *context.Context, wantCwnd int) {
+	t.Helper()
+
+	pollFn := func() error {
+		info := tcpip.TCPInfoOption{}
+		if err := c.EP.GetSockOpt(&info); err != nil {
+			return fmt.Errorf("c.EP.GetSockOpt(&%T) = %s", info, err)
+		}
+		if got, want := info.CcState, tcpip.Open; got != want {
+			return fmt.Errorf("got info.CcState = %v, want = %v", got, want)
+		}
+		if got, want := info.SndSsthresh, uint32(tcp.InitialCwnd); got != want {
+			return fmt.Errorf("Ssthresh was not restored on spurious recovery exit: got info.SndSsthresh = %d, want = %d", got, want)
+		}
+		if got, want := info.SndCwnd, uint32(wantCwnd); got != want {
+			return fmt.Errorf("SndCwnd was not reset on spurious recovery exit: got info.SndCwnd = %d, want = %d", got, want)
+		}
+		return nil
+	}
+	if err := testutil.Poll(pollFn, 1*time.Second); err != nil {
+		t.Error(err)
+	}
+}
+
 func checkReceivedPacket(t *testing.T, c *context.Context, tcpHdr header.TCP, bytesRead uint32, b *buffer.View, data []byte) {
 	payloadLen := uint32(len(tcpHdr.Payload()))
 	checker.IPv4(t, b,
@@ -742,6 +772,13 @@ func buildTSOptionFromHeader(tcpHdr header.TCP) []byte {
 func TestDetectSpuriousRecoveryWithRTO(t *testing.T) {
 	probeDone := make(chan struct{})
 	probe := func(s *tcp.TCPEndpointState) {
+		select {
+		case <-probeDone:
+			// The ACK that exits recovery arrives after detection
+			// has already been verified.
+			return
+		default:
+		}
 		if s.Sender.RetransmitTS == 0 {
 			t.Fatalf("RetransmitTS did not get updated, got: 0 want > 0")
 		}
@@ -818,12 +855,24 @@ func TestDetectSpuriousRecoveryWithRTO(t *testing.T) {
 	<-probeDone
 
 	verifySpuriousRecoveryMetric(t, c, 1 /* numSpuriousRecovery */, 1 /* numSpuriousRTO */)
+
+	// Acknowledge all outstanding data to exit RTO recovery and verify
+	// that the RFC4015 response restored the congestion control state.
+	c.SendAck(seq, numPackets*maxPayload)
+	verifyRecoveryUndo(t, c, numPackets-1)
 }
 
 func TestSACKDetectSpuriousRecoveryWithDupACK(t *testing.T) {
 	numAck := 0
 	probeDone := make(chan struct{})
 	probe := func(s *tcp.TCPEndpointState) {
+		select {
+		case <-probeDone:
+			// The ACK that exits recovery arrives after detection
+			// has already been verified.
+			return
+		default:
+		}
 		if numAck < 3 {
 			numAck++
 			return
@@ -913,6 +962,12 @@ func TestSACKDetectSpuriousRecoveryWithDupACK(t *testing.T) {
 	<-probeDone
 
 	verifySpuriousRecoveryMetric(t, c, 1 /* numSpuriousRecovery */, 0 /* numSpuriousRTO */)
+
+	// Acknowledge all outstanding data to exit SACK recovery and verify
+	// that the RFC4015 response restored the congestion control state.
+	// Two of the covered packets were already SACKed and out of flight.
+	c.SendAck(seq, numPackets*maxPayload)
+	verifyRecoveryUndo(t, c, numPackets-1-2)
 }
 
 func TestNoSpuriousRecoveryWithDSACK(t *testing.T) {
