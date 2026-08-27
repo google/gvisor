@@ -70,20 +70,20 @@ steps:
     commands:
       - tools/gpu/cos_drivers_test.sh
     agents:
-      queue: "cos"
+      queue: "release-cos"
   - <<: *common
     label: ":female_supervillain: COS GPU Tests"
     commands:
       - make cos-gpu-all-tests
     agents:
-      queue: "cos-canary-gpu"
+      queue: "release-cos-canary-gpu"
   - <<: *common
     label: ":screwdriver: GPU Tests"
     commands:
       - make sudo TARGETS=//tools/gpu:main ARGS="install --latest"
       - make gpu-all-tests
     agents:
-      queue: "ubuntu-gpu"
+      queue: "release-ubuntu-gpu"
   - label: ":batfish: CUDA 12.8 tests"
     # This is its own test rather than being part of the GPU tests,
     # because it takes around 30 minutes to run.
@@ -95,11 +95,11 @@ steps:
       - make sudo TARGETS=//tools/gpu:main ARGS="install --latest"
       - make cuda-12-8-tests
     agents:
-      queue: "ubuntu-gpu"
+      queue: "release-ubuntu-gpu"
   - <<: *common
     label: ":screwdriver: All GPU Drivers Test"
     parallelism: 8
     commands:
       - tools/gpu/all_drivers_test.sh
     agents:
-      queue: "ubuntu-gpu"
+      queue: "release-ubuntu-gpu"
