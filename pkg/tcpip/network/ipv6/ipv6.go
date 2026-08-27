@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/header/parse"
 	"gvisor.dev/gvisor/pkg/tcpip/network/internal/fragmentation"
@@ -827,6 +828,64 @@ func (e *endpoint) handleFragments(r *stack.Route, networkMTU uint32, pkt *stack
 	}
 }
 
+// recalculateChecksum recalculates the checksum of a TCP or UDP packet.
+func recalculateChecksum(pkt *stack.PacketBuffer, r *stack.Route) tcpip.Error {
+	// RXChecksumValidated indicates that checksum verification may be
+	// safely skipped.
+	if pkt.RXChecksumValidated {
+		return nil
+	}
+	// NeedsCsum is set if the checksum offload is enabled, so no need to
+	// calculate the checksum.
+	if pkt.GSOOptions.Type != stack.GSONone && pkt.GSOOptions.NeedsCsum {
+		return nil
+	}
+	transportHeader := pkt.TransportHeader().Slice()
+	payload := len(transportHeader) + pkt.Data().Size()
+	if payload > math.MaxUint16 {
+		return &tcpip.ErrMessageTooLong{}
+	}
+	payloadLength := uint16(payload)
+	switch pkt.TransportProtocolNumber {
+	case header.TCPProtocolNumber:
+		if len(transportHeader) < header.TCPMinimumSize {
+			return &tcpip.ErrMalformedHeader{}
+		}
+		tcp := header.TCP(transportHeader)
+		xsum := r.PseudoHeaderChecksum(header.TCPProtocolNumber, payloadLength)
+		xsum = checksum.Combine(xsum, pkt.Data().Checksum())
+		tcp.SetChecksum(0)
+		tcp.SetChecksum(^tcp.CalculateChecksum(xsum))
+	case header.UDPProtocolNumber:
+		if len(transportHeader) < header.UDPMinimumSize {
+			return &tcpip.ErrMalformedHeader{}
+		}
+		udp := header.UDP(transportHeader)
+		xsum := r.PseudoHeaderChecksum(header.UDPProtocolNumber, payloadLength)
+		xsum = checksum.Combine(xsum, pkt.Data().Checksum())
+		udp.SetChecksum(0)
+		csum := ^udp.CalculateChecksum(xsum)
+		// RFC 768: If the computed checksum is zero, it is transmitted as all ones.
+		if csum == 0 {
+			csum = 0xFFFF
+		}
+		udp.SetChecksum(csum)
+	case header.ICMPv6ProtocolNumber:
+		if len(transportHeader) < header.ICMPv6MinimumSize {
+			return &tcpip.ErrMalformedHeader{}
+		}
+		icmp := header.ICMPv6(transportHeader)
+		icmp.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+			Header:      icmp,
+			Src:         r.LocalAddress(),
+			Dst:         r.RemoteAddress(),
+			PayloadCsum: pkt.Data().Checksum(),
+			PayloadLen:  pkt.Data().Size(),
+		}))
+	}
+	return nil
+}
+
 // WritePacket writes a packet to the given destination address and protocol.
 func (e *endpoint) WritePacket(r *stack.Route, params stack.NetworkHeaderParams, pkt *stack.PacketBuffer) tcpip.Error {
 	dstAddr := r.RemoteAddress()
@@ -844,7 +903,6 @@ func (e *endpoint) WritePacket(r *stack.Route, params stack.NetworkHeaderParams,
 	}
 
 	if nft := stk.NFTables(); nft != nil && stk.IsNFTablesConfigured() {
-		// TODO: b/486197011 - Add support for NAT re-routing in IPv6.
 		if !nft.CheckOutput(pkt, r, stack.IP6) {
 			// nftables is telling us to drop the packet.
 			return nil
@@ -859,12 +917,46 @@ func (e *endpoint) WritePacket(r *stack.Route, params stack.NetworkHeaderParams,
 	// removing this check short circuits broadcasts before they are sent out to
 	// other hosts.
 	if netHeader := header.IPv6(pkt.NetworkHeader().Slice()); dstAddr != netHeader.DestinationAddress() {
-		if ep := e.protocol.findEndpointWithAddress(netHeader.DestinationAddress()); ep != nil {
+		newDstAddr := netHeader.DestinationAddress()
+		if ep := e.protocol.findEndpointWithAddress(newDstAddr); ep != nil {
 			// Since we rewrote the packet but it is being routed back to us, we
 			// can safely assume the checksum is valid.
 			ep.handleLocalPacket(pkt, true /* canSkipRXChecksum */)
 			return nil
 		}
+
+		// Similar to the `ip_route_me_harder` in the kernel,
+		// we need to find a new route for the packet.
+		// Implementation is similar to the func forwardUnicastPacket.
+		newRoute, err := stk.FindRoute(0 /* nic id */, netHeader.SourceAddress(), newDstAddr, ProtocolNumber, false /* multicastLoop */)
+		if err != nil {
+			e.stats.ip.OutgoingPacketErrors.Increment()
+			return err // Drop the packet
+		}
+		// Release the new route on exit.
+		defer newRoute.Release()
+
+		// Check if we need to recalculate the checksum.
+		// If the original route did not require a checksum but the new one does,
+		// we must calculate the full checksum; otherwise, NAT should have already
+		// done it.
+		if !r.RequiresTXTransportChecksum() && newRoute.RequiresTXTransportChecksum() {
+			if err := recalculateChecksum(pkt, newRoute); err != nil {
+				e.stats.ip.OutgoingPacketErrors.Increment()
+				return err // Drop the packet
+			}
+		}
+
+		// Update the route to the new route.
+		r = newRoute
+
+		// Use the new endpoint to write the packet.
+		forwardToEp, ok := e.protocol.getEndpointForNIC(r.NICID())
+		if !ok {
+			e.stats.ip.OutgoingPacketErrors.Increment()
+			return &tcpip.ErrUnknownNICID{}
+		}
+		return forwardToEp.writePacket(r, pkt, params.Protocol, true /* headerIncluded */)
 	}
 
 	return e.writePacket(r, pkt, params.Protocol, false /* headerIncluded */)
@@ -1185,8 +1277,10 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 			}
 		}
 
+		nicID := e.nic.ID()
 		// Loopback traffic skips the prerouting chain.
-		inNicName := stk.FindNICNameFromID(e.nic.ID())
+		inNicName := stk.FindNICNameFromID(nicID)
+		pkt.InputNICID = nicID
 		if ok := stk.IPTables().CheckPrerouting(pkt, e, inNicName); !ok {
 			// iptables is telling us to drop the packet.
 			stats.IPTablesPreroutingDropped.Increment()
