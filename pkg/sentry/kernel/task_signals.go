@@ -508,6 +508,29 @@ func (tg *ThreadGroup) applySignalSideEffectsLocked(sig linux.Signal) {
 		for t := tg.tasks.Front(); t != nil; t = t.Next() {
 			t.killLocked()
 		}
+	default:
+		// A fatal-by-default signal wakes a frozen task now, mirroring
+		// Linux's complete_signal() for non-stopped/traced tasks -- it'd
+		// never dequeue on its own. Group-stopped/ptrace-stopped tasks are
+		// left alone (Linux wakes those only via SIGKILL). The signal
+		// itself still goes through Task.deliverSignal normally, not
+		// forced here, so exit status/core dump reflect what was sent.
+		act := tg.signalHandlers.actions[sig]
+		switch computeAction(sig, act) {
+		case SignalActionTerm:
+			// Excludes SignalActionCore: Linux defers core-dump signals
+			// (SIGQUIT etc.) until thaw too (complete_signal()'s
+			// !sig_kernel_coredump(sig) gate). Handler check below is
+			// unreachable today, kept for explicitness.
+			if act.Handler != linux.SIG_DFL {
+				break
+			}
+			for t := tg.tasks.Front(); t != nil; t = t.Next() {
+				if _, ok := t.stop.(*frozenStop); ok {
+					t.endInternalStopLocked()
+				}
+			}
+		}
 	}
 }
 
@@ -756,6 +779,16 @@ type groupStop struct{}
 // Killable implements TaskStop.Killable.
 func (*groupStop) Killable() bool { return true }
 
+// frozenStop is a TaskStop placed on tasks frozen via cgroup v2's
+// cgroup.freeze. Like groupStop it is killable, so a frozen task remains
+// SIGKILL-able (a frozen task must never be un-killable).
+//
+// +stateify savable
+type frozenStop struct{}
+
+// Killable implements TaskStop.Killable.
+func (*frozenStop) Killable() bool { return true }
+
 // initiateGroupStop attempts to initiate a group stop based on a
 // previously-dequeued stop signal.
 //
@@ -835,6 +868,13 @@ func (tg *ThreadGroup) endGroupStopLocked(broadcast bool) {
 		} else {
 			if _, ok := t.stop.(*groupStop); ok {
 				t.endInternalStopLocked()
+				// The task may still be effectively frozen (cgroup.freeze). It
+				// could not enter frozenStop while parked in the group stop
+				// (a single t.stop slot), so nudge it to re-check and re-enter
+				// frozenStop in runInterrupt now that the group stop has ended.
+				if t.frozen {
+					t.interrupt()
+				}
 			}
 		}
 	}
@@ -1045,29 +1085,67 @@ func (*runInterrupt) execute(t *Task) taskRunState {
 		return (*runInterrupt)(nil)
 	}
 
-	// Are there signals pending?
-	if info := t.dequeueSignalLocked(linux.SignalSet(t.signalMask.RacyLoad())); info != nil {
-		if err := t.p.PullFullState(t.MemoryManager().AddressSpace(), t.Arch()); err != nil {
-			t.PrepareGroupExit(linux.WaitStatusTerminationSignal(linux.SIGILL))
-			return (*runExit)(nil)
-		}
+	// A frozen task (cgroup.freeze) may only dequeue and deliver a fatal
+	// signal; its other pending signals wait for thaw, matching Linux.
+	// anyFatalPending scans every pending signal in both queues, not just
+	// the lowest-numbered one, so a non-fatal signal can't hide a fatal one
+	// behind it. This mirrors the wake condition in
+	// ThreadGroup.applySignalSideEffectsLocked's default case.
+	mask := linux.SignalSet(t.signalMask.RacyLoad())
+	canDeliver := true
+	if t.frozen {
+		actions := t.tg.signalHandlers.actions
+		canDeliver = anyFatalPending(t.pendingSignals.pendingSet.RacyLoad(), mask, actions) ||
+			anyFatalPending(t.tg.pendingSignals.pendingSet.RacyLoad(), mask, actions)
+	}
+	if canDeliver {
+		if info := t.dequeueSignalLocked(mask); info != nil {
+			if err := t.p.PullFullState(t.MemoryManager().AddressSpace(), t.Arch()); err != nil {
+				t.PrepareGroupExit(linux.WaitStatusTerminationSignal(linux.SIGILL))
+				return (*runExit)(nil)
+			}
 
-		if linux.SignalSetOf(linux.Signal(info.Signo))&StopSignals != 0 {
-			// Indicate that we've dequeued a stop signal before unlocking the
-			// signal mutex; initiateGroupStop will check for races with
-			// endGroupStopLocked after relocking it.
-			t.tg.groupStopDequeued = true
-		}
-		if t.ptraceSignalLocked(info) {
-			// Dequeueing the signal action must wait until after the
-			// signal-delivery-stop ends since the tracer can change or
-			// suppress the signal.
+			if linux.SignalSetOf(linux.Signal(info.Signo))&StopSignals != 0 {
+				// Indicate that we've dequeued a stop signal before unlocking the
+				// signal mutex; initiateGroupStop will check for races with
+				// endGroupStopLocked after relocking it.
+				t.tg.groupStopDequeued = true
+			}
+			if t.ptraceSignalLocked(info) {
+				// Dequeueing the signal action must wait until after the
+				// signal-delivery-stop ends since the tracer can change or
+				// suppress the signal.
+				t.tg.signalHandlers.mu.Unlock()
+				return (*runInterruptAfterSignalDeliveryStop)(nil)
+			}
+			act := t.tg.signalHandlers.dequeueAction(linux.Signal(info.Signo))
 			t.tg.signalHandlers.mu.Unlock()
-			return (*runInterruptAfterSignalDeliveryStop)(nil)
+			return t.deliverSignal(info, act)
 		}
-		act := t.tg.signalHandlers.dequeueAction(linux.Signal(info.Signo))
+	}
+
+	// Reconcile cgroup v2 freeze state: enter is self-service, thaw ends
+	// it authoritatively in SetCgroupFrozen (mirrors groupStop). t.frozen
+	// is relayed under this same signal mutex, so no cgroup lock is taken
+	// (avoids inverting fs.tasksMu -> signalHandlers.mu). !killedLocked()
+	// matches groupStop: a dying task is never parked. Placed after signal
+	// handling so a resumed group-stop re-enters frozenStop here.
+	if t.frozen && t.stop == nil && !t.killedLocked() {
+		t.beginInternalStopLocked((*frozenStop)(nil))
+		// Resolve any outstanding credit now, atomically with t.stop
+		// becoming *frozenStop: any thaw/exit/migration racing in after we
+		// unlock below must see the resolution as already done (t.stop is
+		// *frozenStop, pendingFreezeCredit false) and do nothing further.
+		//
+		// Deferred until after unlocking: applying it needs fs.tasksMu,
+		// and taking that here would invert the established
+		// fs.tasksMu -> signalHandlers.mu order.
+		delta, creditCg := t.resolveFreezeCreditLocked()
 		t.tg.signalHandlers.mu.Unlock()
-		return t.deliverSignal(info, act)
+		if creditCg != nil {
+			creditCg.ApplyFreezeCreditDelta(t, delta)
+		}
+		return (*runInterrupt)(nil)
 	}
 
 	t.unsetInterrupted()

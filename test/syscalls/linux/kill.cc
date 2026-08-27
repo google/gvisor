@@ -26,6 +26,7 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/capability_util.h"
+#include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/logging.h"
 #include "test/util/signal_util.h"
@@ -381,6 +382,47 @@ TEST(KillTest, CanSIGCONTSameSession) {
               SyscallSucceedsWithValue(other_child));
   EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
       << "status " << status;
+}
+
+// SIGTERMDoesNotEndGroupStop verifies that a fatal-by-default signal other
+// than SIGKILL does not end a group-stop (SIGSTOP): it stays queued until
+// SIGCONT, matching Linux's task_is_stopped_or_traced() gate in
+// kernel/signal.c:wants_signal() -- only SIGKILL wakes a stopped task.
+TEST(KillTest, SIGTERMDoesNotEndGroupStop) {
+  pid_t pid = fork();
+  if (pid == 0) {
+    raise(SIGSTOP);
+    _exit(0);
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+  auto cleanup = Cleanup([&] {
+    kill(pid, SIGKILL);
+    waitpid(pid, nullptr, 0);
+  });
+
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(pid, &status, WUNTRACED),
+              SyscallSucceedsWithValue(pid));
+  ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP)
+      << "status = " << status;
+
+  ASSERT_THAT(kill(pid, SIGTERM), SyscallSucceeds());
+
+  // The stopped child must not die on the queued SIGTERM; give the bug a
+  // full second to manifest before concluding it stayed stopped.
+  const absl::Time deadline = absl::Now() + absl::Seconds(1);
+  while (absl::Now() < deadline) {
+    ASSERT_THAT(waitpid(pid, &status, WNOHANG), SyscallSucceedsWithValue(0))
+        << "SIGTERM ended the group-stop early, status = " << status;
+    absl::SleepFor(absl::Milliseconds(50));
+  }
+
+  // Resuming the group must let the queued SIGTERM kill it.
+  ASSERT_THAT(kill(pid, SIGCONT), SyscallSucceeds());
+  ASSERT_THAT(RetryEINTR(waitpid)(pid, &status, 0),
+              SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGTERM)
+      << "status = " << status;
 }
 
 }  // namespace
