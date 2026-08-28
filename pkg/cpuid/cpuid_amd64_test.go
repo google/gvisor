@@ -150,3 +150,17 @@ func TestRemove(t *testing.T) {
 		t.Errorf("Remove failed, got %q want %q", testFeatures.FlagString(), justFPU.FlagString())
 	}
 }
+
+func TestUnsetFSGSBASE(t *testing.T) {
+	hostFeatures := HostFeatureSet()
+	guestFeatures := hostFeatures.UnsetFSGSBASE()
+
+	if guestFeatures.HasFeature(X86FeatureFSGSBase) {
+		t.Errorf("UnsetFSGSBASE failed: X86FeatureFSGSBase should be disabled")
+	}
+
+	out := guestFeatures.Query(In{Eax: 7, Ecx: 0})
+	if out.Ebx&1 != 0 {
+		t.Errorf("UnsetFSGSBASE failed: CPUID.(EAX=7, ECX=0).EBX bit 0 (FSGSBASE) should be 0, got %x", out.Ebx)
+	}
+}

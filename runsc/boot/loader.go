@@ -836,6 +836,12 @@ func New(args Args) (*Loader, error) {
 		}
 		cpufs = afs
 	}
+	// Systrap uses the GS base register for syscall patching, and must be informed
+	// via a arch_prctl(SET_GS, ...) call to safely give control of it
+	// back to the guest.
+	if args.Conf.Platform == "systrap" {
+		cpufs = cpufs.UnsetFSGSBASE()
+	}
 
 	maxFDLimit := kernel.MaxFdLimit
 	if args.Spec.Linux != nil && args.Spec.Linux.Sysctl != nil {
