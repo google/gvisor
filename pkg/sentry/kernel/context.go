@@ -16,6 +16,7 @@ package kernel
 
 import (
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/ipc"
 )
 
@@ -41,6 +42,9 @@ const (
 
 	// CtxCgroupNamespace is a Context.Value key for a CgroupNamespace.
 	CtxCgroupNamespace
+
+	// CtxFSRestore is a Context.Value key for mapping of FS-checkpointed MemoryFiles.
+	CtxFSRestore
 )
 
 // ContextCanTrace returns true if ctx is permitted to trace t, in the same sense
@@ -108,6 +112,29 @@ func GetCgroupNamespaceFromContext(ctx context.Context) *CgroupNamespace {
 func TaskFromContext(ctx context.Context) *Task {
 	if v := ctx.Value(CtxTask); v != nil {
 		return v.(*Task)
+	}
+	return nil
+}
+
+// WithFSRestore returns a copy of ctx containing the filesystem-checkpointed
+// MemoryFile resource IDs.
+func WithFSRestore(ctx context.Context, mfs map[checkpoint.ResourceID]struct{}) context.Context {
+	return context.WithValue(ctx, CtxFSRestore, mfs)
+}
+
+// FSRestoreFromContext returns true if ctx is configured for filesystem restore.
+func FSRestoreFromContext(ctx context.Context) bool {
+	return FSCheckpointedMemoryFilesFromContext(ctx) != nil
+}
+
+// FSCheckpointedMemoryFilesFromContext returns the set of MemoryFiles restored
+// from the filesystem checkpoint, or nil if split filesystem restore is not active.
+func FSCheckpointedMemoryFilesFromContext(ctx context.Context) map[checkpoint.ResourceID]struct{} {
+	if ctx == nil {
+		return nil
+	}
+	if v := ctx.Value(CtxFSRestore); v != nil {
+		return v.(map[checkpoint.ResourceID]struct{})
 	}
 	return nil
 }

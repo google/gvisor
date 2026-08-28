@@ -184,6 +184,7 @@ go_test(
         "//pkg/fspath",
         "//pkg/lisafs",
         "//pkg/log",
+        "//pkg/sentry/checkpoint",
         "//pkg/sentry/fsimpl/erofs",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
