@@ -38,6 +38,7 @@
 #include "absl/status/statusor.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
 #include "test/util/socket_util.h"
@@ -2297,14 +2298,38 @@ TEST_P(SimpleTcpSocketTest, SetSocketAttachDetachFilter) {
       .len = std::size(code),
       .filter = code,
   };
-  ASSERT_THAT(
-      setsockopt(s.get(), SOL_SOCKET, SO_ATTACH_FILTER, &bpf, sizeof(bpf)),
-      SyscallSucceeds());
+  int ret = setsockopt(s.get(), SOL_SOCKET, SO_ATTACH_FILTER, &bpf, sizeof(bpf));
+  if (ret < 0 && errno == EPERM) {
+    // Linux 5d39580f68e6 ("tcp: restrict SO_ATTACH_FILTER to priv users")
+    // requires CAP_NET_ADMIN over the socket's network namespace.
+    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  }
+  ASSERT_THAT(ret, SyscallSucceeds());
 
   constexpr int val = 0;
   ASSERT_THAT(
       setsockopt(s.get(), SOL_SOCKET, SO_DETACH_FILTER, &val, sizeof(val)),
       SyscallSucceeds());
+}
+
+TEST_P(SimpleTcpSocketTest, SetSocketAttachFilterWithoutNetAdmin) {
+  FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+  struct sock_filter code[] = {{0x6, 0, 0, 0x00040000}};  // ret 0x40000
+  struct sock_fprog bpf = {
+      .len = std::size(code),
+      .filter = code,
+  };
+  AutoCapability cap(CAP_NET_ADMIN, false);
+  int ret =
+      setsockopt(s.get(), SOL_SOCKET, SO_ATTACH_FILTER, &bpf, sizeof(bpf));
+  if (!IsRunningOnGvisor() || IsRunningWithHostinet()) {
+    // Only Linux 5d39580f68e6 ("tcp: restrict SO_ATTACH_FILTER to priv
+    // users") and later requires CAP_NET_ADMIN, so this can succeed on
+    // old kernels (including with hostinet on an old kernel).
+    SKIP_IF(ret == 0);
+  }
+  EXPECT_THAT(ret, SyscallFailsWithErrno(EPERM));
 }
 
 #endif  // __linux__

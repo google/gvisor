@@ -36,6 +36,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"google.golang.org/protobuf/proto"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/abi/linux/errno"
 	"gvisor.dev/gvisor/pkg/context"
@@ -2151,6 +2152,14 @@ func SetSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 		})
 		return nil
 
+	case linux.SO_ATTACH_FILTER:
+		if socket.IsTCP(s) &&
+			!t.HasCapabilityIn(linux.CAP_NET_ADMIN, t.NetworkNamespace().UserNamespace()) {
+			return syserr.ErrNotPermitted
+		}
+		incrementBadSetSocketOptionMetric(t, &socketLevelSocketFieldValue, name)
+		return nil
+
 	case linux.SO_DETACH_FILTER:
 		// optval is ignored.
 		var v tcpip.SocketDetachFilterOption
@@ -2188,7 +2197,6 @@ func SetSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 		linux.SO_BSDCOMPAT,
 		linux.SO_PEERCRED,
 		linux.SO_SNDLOWAT,
-		linux.SO_ATTACH_FILTER,
 		linux.SO_PEERNAME,
 		linux.SO_TIMESTAMP,
 		linux.SO_ACCEPTCONN,
