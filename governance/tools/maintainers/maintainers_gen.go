@@ -52,7 +52,6 @@ type maintainer struct {
 	PastAffiliations []pastAffiliation `yaml:"past_affiliation"`
 	Started          string            `yaml:"started"`
 	Status           string            `yaml:"status"`
-	Codeowner        *bool             `yaml:"codeowner"`
 	Areas            []string          `yaml:"areas"`
 }
 
@@ -63,8 +62,9 @@ type roster struct {
 
 // area is a single entry of areas.yaml.
 type area struct {
-	Name  string   `yaml:"name"`
-	Paths []string `yaml:"paths"`
+	Name           string   `yaml:"name"`
+	EnforcedReview *bool    `yaml:"enforced_review"`
+	Paths          []string `yaml:"paths"`
 }
 
 // areaList is the schema of areas.yaml.
@@ -73,20 +73,20 @@ type areaList struct {
 }
 
 // parseAreas parses and validates areas.yaml contents, returning a map of
-// area name to the paths it covers.
-func parseAreas(yamlData []byte) (map[string][]string, error) {
+// area name to the area.
+func parseAreas(yamlData []byte) (map[string]area, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(yamlData))
 	dec.KnownFields(true)
 	var al areaList
 	if err := dec.Decode(&al); err != nil {
 		return nil, fmt.Errorf("cannot parse areas: %w", err)
 	}
-	byName := make(map[string][]string, len(al.Areas))
+	byName := make(map[string]area, len(al.Areas))
 	pathArea := make(map[string]string)
 	var prev area
 	for _, a := range al.Areas {
-		if a.Name == "" || len(a.Paths) == 0 {
-			return nil, fmt.Errorf("area %+v: name and paths are required", a)
+		if a.Name == "" || a.EnforcedReview == nil || len(a.Paths) == 0 {
+			return nil, fmt.Errorf("area %+v: name, enforced_review and paths are required", a)
 		}
 		if a.Name <= prev.Name {
 			return nil, fmt.Errorf("areas must be sorted by name and unique: %q comes after %q", a.Name, prev.Name)
@@ -101,7 +101,7 @@ func parseAreas(yamlData []byte) (map[string][]string, error) {
 			}
 			pathArea[p] = a.Name
 		}
-		byName[a.Name] = a.Paths
+		byName[a.Name] = a
 	}
 	return byName, nil
 }
@@ -126,7 +126,7 @@ func parseStatus(status string) (string, string, error) {
 }
 
 // parseRoster parses and validates maintainers.yaml contents.
-func parseRoster(yamlData []byte, areasByName map[string][]string) (*roster, error) {
+func parseRoster(yamlData []byte, areasByName map[string]area) (*roster, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(yamlData))
 	dec.KnownFields(true)
 	var r roster
@@ -136,8 +136,8 @@ func parseRoster(yamlData []byte, areasByName map[string][]string) (*roster, err
 	seen := make(map[string]bool, len(r.Maintainers))
 	var prev maintainer
 	for _, m := range r.Maintainers {
-		if m.Name == "" || m.GitHub == "" || m.Affiliation == "" || m.Started == "" || m.Status == "" || m.Codeowner == nil {
-			return nil, fmt.Errorf("maintainer %+v: name, github, affiliation, started, status and codeowner are required", m)
+		if m.Name == "" || m.GitHub == "" || m.Affiliation == "" || m.Started == "" || m.Status == "" {
+			return nil, fmt.Errorf("maintainer %+v: name, github, affiliation, started and status are required", m)
 		}
 		if _, err := time.Parse("2006-01-02", m.Started); err != nil {
 			return nil, fmt.Errorf("maintainer %q: invalid started date %q", m.GitHub, m.Started)
@@ -162,7 +162,7 @@ func parseRoster(yamlData []byte, areasByName map[string][]string) (*roster, err
 				return nil, fmt.Errorf("maintainer %q: areas must be sorted and unique: %q comes after %q", m.GitHub, a, m.Areas[i-1])
 			}
 		}
-		if kind == "EMERITUS_SINCE" && (*m.Codeowner || len(m.Areas) > 0) {
+		if kind == "EMERITUS_SINCE" && len(m.Areas) > 0 {
 			return nil, fmt.Errorf("maintainer %q: emeritus maintainers may not own any path", m.GitHub)
 		}
 		if m.Started < prev.Started {
@@ -195,38 +195,39 @@ func generateReviewerJSON(r *roster) ([]byte, error) {
 }
 
 // generateCODEOWNERS renders `CODEOWNERS` contents. All area paths must
-// exist as directories under the repository root.
-func generateCODEOWNERS(r *roster, areasByName map[string][]string, root string) ([]byte, error) {
+// exist as directories under the repository root. Only areas with
+// enforced_review get a CODEOWNERS section.
+func generateCODEOWNERS(r *roster, areasByName map[string]area, root string) ([]byte, error) {
 	for _, name := range slices.Sorted(maps.Keys(areasByName)) {
-		for _, p := range areasByName[name] {
+		for _, p := range areasByName[name].Paths {
 			if st, err := os.Stat(filepath.Join(root, p)); err != nil || !st.IsDir() {
 				return nil, fmt.Errorf("area %q: path %q is not a directory under %q", name, p, root)
 			}
 		}
 	}
-	// gvisor-bot is not a maintainer but always owns the repository root.
 	ownersByArea := make(map[string][]string)
 	for _, m := range r.Maintainers {
-		if !*m.Codeowner {
-			continue
-		}
 		for _, a := range m.Areas {
 			ownersByArea[a] = append(ownersByArea[a], "@"+m.GitHub)
 		}
 	}
-	sortOwners := func(owners []string) {
-		slices.SortFunc(owners, func(a, b string) int {
-			return strings.Compare(strings.ToLower(a), strings.ToLower(b))
-		})
-	}
 	var b bytes.Buffer
 	b.WriteString("# Generated from governance/maintainers.yaml and governance/areas.yaml by\n")
 	b.WriteString("# //governance/tools/maintainers:maintainers_gen; do not edit directly.\n")
-	for _, a := range slices.Sorted(maps.Keys(ownersByArea)) {
-		owners := ownersByArea[a]
-		sortOwners(owners)
-		fmt.Fprintf(&b, "\n# Area: %s\n", a)
-		for _, p := range slices.Sorted(slices.Values(areasByName[a])) {
+	for _, name := range slices.Sorted(maps.Keys(areasByName)) {
+		a := areasByName[name]
+		if !*a.EnforcedReview {
+			continue
+		}
+		owners := ownersByArea[name]
+		if len(owners) == 0 {
+			return nil, fmt.Errorf("area %q: enforced_review requires at least one maintainer specialized in the area", name)
+		}
+		slices.SortFunc(owners, func(a, b string) int {
+			return strings.Compare(strings.ToLower(a), strings.ToLower(b))
+		})
+		fmt.Fprintf(&b, "\n# Area: %s\n", name)
+		for _, p := range slices.Sorted(slices.Values(a.Paths)) {
 			fmt.Fprintf(&b, "%s/ %s\n", p, strings.Join(owners, " "))
 		}
 	}

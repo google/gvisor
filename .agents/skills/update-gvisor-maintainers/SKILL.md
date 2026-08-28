@@ -32,9 +32,22 @@ Each entry under `maintainers:`:
         until: 2025-03-01
     started: 2018-05-08         # First contribution. The list is sorted by this.
     status: HIATUS_SINCE:2026-07-17
-    codeowner: true             # Required. Owns / in CODEOWNERS. false for emeritus.
     areas: [gpu, networking]    # Optional. Sorted area names from areas.yaml;
-                                # grants CODEOWNERS ownership of the areas' paths.
+                                # grants CODEOWNERS ownership of the paths of
+                                # areas with enforced_review. Not for emeritus.
+```
+
+Each entry under `areas:` in `areas.yaml`:
+
+```yaml
+  - name: gpu                   # Sorted by name.
+    enforced_review: false      # Required. `true` generates a CODEOWNERS
+                                # section for the area, making
+                                # specialized-maintainer review mandatory.
+                                # Needs at least one non-emeritus maintainer
+                                # with the area.
+    paths:                      # Repo-root-relative dirs (/like/this), no
+      - /images/gpu             # trailing slash. Each path in one area only.
 ```
 
 `status` is one of three, and it drives everything downstream:

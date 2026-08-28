@@ -3,11 +3,14 @@
 # Each area maps a name to the set of repository paths that it covers.
 #
 # Area fields:
-#   name:   Area name. Areas must be sorted by name.
-#   paths:  Repo-root-relative directories (each starting with a slash, no
-#           trailing slash) covered by the area.
+#   name:             Area name. Areas must be sorted by name.
+#   enforced_review:  Whether the area gets a CODEOWNERS section, making review
+#                     by one of its specialized maintainers mandatory.
+#   paths:            Repo-root-relative directories (each starting with a
+#                     slash, no trailing slash) covered by the area.
 areas:
   - name: benchmarks
+    enforced_review: false
     paths:
       - /images/benchmarks
       - /runsc/profile
@@ -17,9 +20,11 @@ areas:
       - /tools/parsers
       - /tools/profiletool
   - name: checklocks
+    enforced_review: false
     paths:
       - /tools/checklocks
   - name: checkpointing
+    enforced_review: false
     paths:
       - /pkg/aio
       - /pkg/compressio
@@ -30,15 +35,18 @@ areas:
       - /runsc/checkpointgofer
       - /tools/go_stateify
   - name: erofs
+    enforced_review: false
     paths:
       - /pkg/erofs
       - /pkg/sentry/fsimpl/erofs
   - name: fuse
+    enforced_review: false
     paths:
       - /images/fuse
       - /pkg/sentry/fsimpl/fuse
       - /test/fuse_host
   - name: gpu
+    enforced_review: false
     paths:
       - /images/gpu
       - /pkg/sentry/devices/nvproxy
@@ -47,11 +55,13 @@ areas:
       - /tools/ioctl_sniffer
       - /tools/nvidia_driver_differ
   - name: kubernetes
+    enforced_review: false
     paths:
       - /test/kubernetes
       - /tools/gvisor_k8s_tool
       - /webhook
   - name: metrics
+    enforced_review: false
     paths:
       - /pkg/metric
       - /pkg/prometheus
@@ -60,6 +70,7 @@ areas:
       - /test/metricclient
       - /test/metricsviz
   - name: mm
+    enforced_review: false
     paths:
       - /pkg/memutil
       - /pkg/safecopy
@@ -71,6 +82,7 @@ areas:
       - /pkg/sentry/usage
       - /pkg/usermem
   - name: networking
+    enforced_review: false
     paths:
       - /images/iptables
       - /images/nftables
@@ -90,33 +102,41 @@ areas:
       - /tools/gvisor2pcap
       - /tools/xdp
   - name: oci
+    enforced_review: false
     paths:
       - /pkg/shim
       - /runsc/container
       - /runsc/specutils
       - /shim
   - name: platform_kvm
+    enforced_review: false
     paths:
       - /pkg/sentry/platform/kvm
   - name: platform_ptrace
+    enforced_review: false
     paths:
       - /pkg/sentry/platform/ptrace
   - name: platform_slimvm
+    enforced_review: false
     paths:
       - /pkg/sentry/platform/slimvm
   - name: platform_systrap
+    enforced_review: false
     paths:
       - /pkg/sentry/platform/systrap
   - name: platforms
+    enforced_review: false
     paths:
       - /pkg/ring0
       - /pkg/sentry/platform
       - /pkg/sigframe
   - name: rdma
+    enforced_review: false
     paths:
       - /pkg/rdma
       - /pkg/sentry/devices/rdmaproxy
   - name: release_pipeline
+    enforced_review: true
     paths:
       - /.buildkite
       - /.github
@@ -124,9 +144,11 @@ areas:
       - /images/agent
       - /tools/github
   - name: runsc
+    enforced_review: false
     paths:
       - /runsc
   - name: runtime_monitoring
+    enforced_review: false
     paths:
       - /examples/seccheck
       - /pkg/eventchannel
@@ -135,10 +157,12 @@ areas:
       - /test/trace
       - /tools/tracereplay
   - name: sandboxexec
+    enforced_review: false
     paths:
       - /examples/sandboxexec
       - /sandboxexec
   - name: seccomp
+    enforced_review: true
     paths:
       - /pkg/bpf
       - /pkg/seccomp
@@ -147,16 +171,19 @@ areas:
       - /test/secbench
       - /test/secfuzz
   - name: sentry
+    enforced_review: false
     paths:
       - /pkg/sentry
       - /vdso
   - name: tpu
+    enforced_review: false
     paths:
       - /images/tpu
       - /pkg/sentry/devices/tpuproxy
       - /test/tpu
       - /tools/tpu
   - name: vfs
+    enforced_review: false
     paths:
       - /pkg/fspath
       - /pkg/lisafs
@@ -167,6 +194,7 @@ areas:
       - /runsc/fsgofer
       - /test/fsstress
   - name: website
+    enforced_review: false
     paths:
       - /g3doc
       - /images/jekyll
