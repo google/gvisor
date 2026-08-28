@@ -278,13 +278,35 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 					}
 				}
 				if vma.mappable == nil {
-					// Private anonymous mappings get pmas by allocating.
-					// The allocated range is limited to ar, expanded to
-					// hugepage alignment. This is done even if the allocation
-					// will not be hugepage-backed, in an attempt to reduce
-					// application page faults (that trap into the sentry) by
-					// creating AddressSpace mappings in advance.
+					// Private anonymous mappings get pmas from a span reserved
+					// at mmap time when the vma owns one, so adjacent guest
+					// pages get contiguous memfd offsets and the host can
+					// merge VMAs. Otherwise they Allocate from the global
+					// free list (forked children, COW leftovers).
 					allocAR := optAR.Intersect(hugeMaskAR)
+					if vma.memfileReserved {
+						off := vseg.fileOffsetAt(allocAR.Start)
+						fr := memmap.FileRange{Start: off, End: off + uint64(allocAR.Length())}
+						mm.mf.IncRef(fr, memCgID)
+						mm.addRSSLocked(allocAR)
+						// IsHugeChunk is required: a non-hugepage-aligned
+						// mmap still Reserves into small chunks, but off
+						// can be 0 (huge-aligned).
+						huge := mm.mf.HugepagesEnabled() && !vma.growsDown && !vma.isStack &&
+							allocAR.IsHugePageAligned() && hostarch.IsHugePageAligned(off) &&
+							mm.mf.IsHugeChunk(off)
+						pseg, pgap = mm.pmas.Insert(pgap, allocAR, pma{
+							file:           mm.mf,
+							off:            off,
+							translatePerms: hostarch.AnyAccess,
+							effectivePerms: vma.effectivePerms,
+							maxPerms:       vma.maxPerms,
+							private:        true,
+							huge:           huge,
+						}).NextNonEmpty()
+						pstart = pmaIterator{} // iterators invalidated
+						break
+					}
 					// Don't back stacks with huge pages due to low utilization
 					// and because they're often fragmented by copy-on-write.
 					mayHuge := mm.mf.HugepagesEnabled() && !vma.growsDown && !vma.isStack
@@ -644,7 +666,7 @@ func (mm *MemoryManager) isPMACopyOnWriteLocked(vseg vmaIterator, pseg pmaIterat
 	// ownership of it instead of copying. If we do hold the only reference,
 	// additional references can only be taken by mm.Fork(), which is excluded
 	// by mm.activeMu, so this isn't racy.
-	if mm.mf.HasUniqueRef(pseg.fileRange()) {
+	if mm.mf.HasExactRefs(pseg.fileRange(), mm.pmaRefBaseline(vseg, pseg)) {
 		pma.needCOW = false
 		// pma.private => pma.translatePerms == hostarch.AnyAccess
 		vma := vseg.ValuePtr()
@@ -653,6 +675,21 @@ func (mm *MemoryManager) isPMACopyOnWriteLocked(vseg vmaIterator, pseg pmaIterat
 		return false
 	}
 	return true
+}
+
+// pmaRefBaseline is the MemoryFile refcount this mm holds on pseg when no
+// other mm or pin shares the pages. A reservation-backed pma is unique at 2
+// (vma span + pma). A COW-allocated pma whose file offset is no longer the
+// reserved linear offset is unique at 1.
+func (mm *MemoryManager) pmaRefBaseline(vseg vmaIterator, pseg pmaIterator) uint64 {
+	v := vseg.ValuePtr()
+	if !v.memfileReserved {
+		return 1
+	}
+	if pseg.ValuePtr().off == vseg.fileOffsetAt(pseg.Start()) {
+		return 2
+	}
+	return 1
 }
 
 // Invalidate implements memmap.MappingSpace.Invalidate.
@@ -740,7 +777,8 @@ func (mm *MemoryManager) invalidateLocked(ar hostarch.AddrRange, invalidatePriva
 // pin_user_pages(FOLL_LONGTERM) in the Linux kernel. Like Linux, Pin breaks
 // copy-on-write on the pinned range (even if at.Write is false). This also
 // yields the invariant that pinned pages in private mappings live in non-CoW
-// pmas with >1 reference.
+// pmas with more references than the mm's baseline (1, or 2 when the pma is
+// backed by a vma reservation).
 //
 // Preconditions:
 //   - ar.Length() != 0.

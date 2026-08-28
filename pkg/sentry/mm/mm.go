@@ -241,9 +241,16 @@ type vma struct {
 	// nil, the vma represents an anonymous mapping.
 	mappable memmap.Mappable
 
-	// off is the offset into mappable at which this vma begins. If mappable is
-	// nil, off is meaningless.
+	// off is the offset into mappable at which this vma begins. If
+	// memfileReserved is true, off is the offset into mm.mf of this vma's
+	// start. Otherwise, if mappable is nil, off is meaningless.
 	off uint64
+
+	// memfileReserved is true if this anonymous vma holds one MemoryFile
+	// reference on a contiguous uncommitted span in mm.mf starting at off.
+	// Faults IncRef subranges of that span (RSS). removeVMAsLocked DecRefs
+	// the span after pmas for the same addresses have dropped their refs.
+	memfileReserved bool `state:"manual"`
 
 	// To speedup VMA save/restore, we group and save the following booleans
 	// as a single integer.
@@ -311,22 +318,23 @@ type vma struct {
 
 func (v *vma) copy() vma {
 	return vma{
-		mappable:       v.mappable,
-		off:            v.off,
-		realPerms:      v.realPerms,
-		effectivePerms: v.effectivePerms,
-		maxPerms:       v.maxPerms,
-		private:        v.private,
-		growsDown:      v.growsDown,
-		isStack:        v.isStack,
-		dontfork:       v.dontfork,
-		mlockMode:      v.mlockMode,
-		numaPolicy:     v.numaPolicy,
-		numaNodemask:   v.numaNodemask,
-		id:             v.id,
-		name:           v.name,
-		nameMut:        v.nameMut,
-		lastFault:      atomic.LoadUintptr(&v.lastFault),
+		mappable:        v.mappable,
+		off:             v.off,
+		memfileReserved: v.memfileReserved,
+		realPerms:       v.realPerms,
+		effectivePerms:  v.effectivePerms,
+		maxPerms:        v.maxPerms,
+		private:         v.private,
+		growsDown:       v.growsDown,
+		isStack:         v.isStack,
+		dontfork:        v.dontfork,
+		mlockMode:       v.mlockMode,
+		numaPolicy:      v.numaPolicy,
+		numaNodemask:    v.numaNodemask,
+		id:              v.id,
+		name:            v.name,
+		nameMut:         v.nameMut,
+		lastFault:       atomic.LoadUintptr(&v.lastFault),
 	}
 }
 
