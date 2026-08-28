@@ -166,3 +166,44 @@ same:
 	MOVB	R1, ret+0(FP)
 	RET
 
+// func flushICache(addr, length uintptr)
+// Cleans D-cache to PoU and invalidates I-cache to PoU for [addr, addr+length),
+// using the line sizes reported by CTR_EL0.
+TEXT ·flushICache(SB),NOSPLIT,$0-16
+	MOVD	addr+0(FP), R0
+	MOVD	length+8(FP), R1
+	ADD	R0, R1, R1		// R1 = end
+	MRS	CTR_EL0, R3
+
+	// D-cache line size is 4 << CTR_EL0.DminLine (bits [19:16]).
+	UBFX	$16, R3, $4, R4
+	MOVD	$4, R5
+	LSL	R4, R5, R4		// R4 = 4 << DminLine
+	SUB	$1, R4, R5
+	BIC	R5, R0, R2		// R2 = addr rounded down to a line
+dc_loop:
+	CMP	R1, R2
+	BHS	dc_done
+	WORD	$0xd50b7b22	// DC CVAU, R2
+	ADD	R4, R2, R2
+	B	dc_loop
+dc_done:
+	DSB	$11		// DSB ISH
+
+	// I-cache line size is 4 << CTR_EL0.IminLine (bits [3:0]).
+	AND	$15, R3, R4
+	MOVD	$4, R5
+	LSL	R4, R5, R4		// R4 = 4 << IminLine
+	SUB	$1, R4, R5
+	BIC	R5, R0, R2		// R2 = addr rounded down to a line
+ic_loop:
+	CMP	R1, R2
+	BHS	ic_done
+	WORD	$0xd50b7522	// IC IVAU, R2
+	ADD	R4, R2, R2
+	B	ic_loop
+ic_done:
+	DSB	$11		// DSB ISH
+	ISB	$15		// ISB SY
+	RET
+

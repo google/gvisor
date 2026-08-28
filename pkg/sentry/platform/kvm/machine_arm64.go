@@ -67,6 +67,33 @@ func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
 
 		return true // Keep iterating.
 	})
+	if len(m.shadowVDSO) > 0 {
+		shadowVirt := m.shadowVDSOVirt()
+		vdsoVirt := m.vdsoVirt
+		remaining := uintptr(len(m.shadowVDSO))
+		for remaining > 0 {
+			physical, length, ok := translateToPhysical(shadowVirt)
+			if !ok || length == 0 {
+				panic(fmt.Sprintf("impossible translation: shadowVirt %x remaining %x", shadowVirt, remaining))
+			}
+			if length > remaining {
+				length = remaining
+			}
+			pageTable.Map(
+				hostarch.Addr(ring0.KernelStartAddress|vdsoVirt),
+				length,
+				pagetables.MapOpts{AccessType: hostarch.ReadExecute, Global: true},
+				physical)
+			pageTable.Map(
+				hostarch.Addr(ring0.KernelStartAddress|shadowVirt),
+				length,
+				pagetables.MapOpts{AccessType: hostarch.Read, Global: true},
+				physical)
+			shadowVirt += length
+			vdsoVirt += length
+			remaining -= length
+		}
+	}
 }
 
 // archPhysicalRegions fills readOnlyGuestRegions and allocates separate
