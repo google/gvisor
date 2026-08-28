@@ -223,6 +223,7 @@ go_test(
         "//pkg/context",
         "//pkg/errors",
         "//pkg/errors/linuxerr",
+        "//pkg/fspath",
         "//pkg/sentry/contexttest",
         "//pkg/sentry/kernel/auth",
         "//pkg/sync",
