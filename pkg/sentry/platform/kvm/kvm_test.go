@@ -44,7 +44,14 @@ type testHarness interface {
 	Fatalf(format string, args ...any)
 }
 
+// kvmTest is kvmTestWithConfig with the default Config.
 func kvmTest(t testHarness, setup func(*KVM), fn func(*vCPU) bool) {
+	kvmTestWithConfig(t, Config{}, setup, fn)
+}
+
+// kvmTestWithConfig creates a KVM instance with config, calls setup on it if
+// non-nil, and then calls fn with a vCPU until fn returns false.
+func kvmTestWithConfig(t testHarness, config Config, setup func(*KVM), fn func(*vCPU) bool) {
 	// Create the machine.
 	desc, err := platformdesc.Lookup("kvm")
 	if err != nil {
@@ -54,7 +61,7 @@ func kvmTest(t testHarness, setup func(*KVM), fn func(*vCPU) bool) {
 	if err != nil {
 		t.Fatalf("error opening device file: %v", err)
 	}
-	k, err := New(deviceFile, Config{})
+	k, err := New(deviceFile, config)
 	if err != nil {
 		t.Fatalf("error creating KVM instance: %v", err)
 	}
@@ -470,6 +477,59 @@ func TestRdtsc(t *testing.T) {
 	})
 }
 
+func TestRdtscWithOffset(t *testing.T) {
+	const offset = uint64(10_000_000_000)
+	i := 0
+	kvmTestWithConfig(t, Config{TSCOffset: offset}, nil, func(c *vCPU) bool {
+		start := uint64(ktime.Rdtsc())
+		bluepill(c)
+		guest := uint64(ktime.Rdtsc())
+		redpill()
+		end := uint64(ktime.Rdtsc())
+		if start+offset > guest || guest > end+offset {
+			t.Errorf("inconsistent time with offset: start+offset=%d, guest=%d, end+offset=%d", start+offset, guest, end+offset)
+		}
+		i++
+		return i < 100
+	})
+}
+
+func TestTSCDomainWithOffset(t *testing.T) {
+	kvmTestWithConfig(t, Config{}, func(k *KVM) {
+		if k.machine.tscOffsetHostVA != 0 {
+			t.Errorf("machine without a TSC offset got tscOffsetHostVA %#x, want 0", k.machine.tscOffsetHostVA)
+		}
+	}, func(*vCPU) bool {
+		return false
+	})
+
+	const offset = uint64(1_000_000_000_000)
+	defer ktime.SetTSCOffset(0)
+	i := 0
+	kvmTestWithConfig(t, Config{TSCOffset: offset}, func(*KVM) {
+		if err := ktime.SetTSCOffset(int64(offset)); err != nil {
+			t.Fatalf("SetTSCOffset(%d) failed: %v", offset, err)
+		}
+	}, func(c *vCPU) bool {
+		start := ktime.TSC()
+		bluepill(c)
+		exitsBefore := c.guestExits.Load()
+		guest := ktime.TSC()
+		exitsAfter := c.guestExits.Load()
+		redpill()
+		end := ktime.TSC()
+
+		if exitsAfter != exitsBefore {
+			t.Fatalf("iter %d: TSC() in guest mode triggered a VM exit (exitsBefore=%d, exitsAfter=%d)", i, exitsBefore, exitsAfter)
+		}
+		if start > guest || guest > end {
+			t.Fatalf("iter %d: inconsistent TSC domains: start=%d, guest=%d, end=%d", i, start, guest, end)
+		}
+		i++
+		return i < 100
+	})
+}
+
 func TestKernelVDSO(t *testing.T) {
 	// Note that the target passed here is irrelevant, we never execute SwitchToUser.
 	applicationTest(t, true, testutil.AddrOfGetpid(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
@@ -484,6 +544,66 @@ func TestKernelVDSO(t *testing.T) {
 		}
 		return false
 	})
+}
+
+func TestKernelVDSOWithTSCOffset(t *testing.T) {
+	offsets := []struct {
+		name   string
+		offset uint64
+	}{
+		{"PositiveOffset", 1_000_000_000_000},
+		{"NegativeOffset", ^uint64(1_000_000_000_000) + 1},
+	}
+	for _, tc := range offsets {
+		t.Run(tc.name, func(t *testing.T) {
+			const n = 50
+			i, exited := 0, 0
+			kvmTestWithConfig(t, Config{TSCOffset: tc.offset}, nil, func(c *vCPU) bool {
+				tBefore := time.Now()
+				bluepill(c)
+				exitsBefore := c.guestExits.Load()
+				tGuest := time.Now()
+				exitsAfter := c.guestExits.Load()
+				// Classify the exit while the vCPU state still
+				// describes it.
+				var exitDesc string
+				var disallowed bool
+				if exitsAfter != exitsBefore {
+					exitDesc, disallowed = disallowedVDSOExit(c)
+				}
+				redpill()
+				tAfter := time.Now()
+
+				// time.Now must not fault or fall back to a time
+				// system call in guest mode. Other exits are
+				// tolerated: the Go scheduler may preempt the
+				// goroutine at a function prologue inside time.Now,
+				// and then makes system calls such as futex.
+				if exitsAfter != exitsBefore {
+					if disallowed {
+						t.Fatalf("iter %d: time.Now() in GR0 triggered VM-exit: %s", i, exitDesc)
+					}
+					t.Logf("iter %d: tolerated VM-exit during time.Now() in GR0: %s", i, exitDesc)
+					exited++
+				}
+				if tGuest.Before(tBefore) || tAfter.Before(tGuest) {
+					t.Fatalf("iter %d: GR0 time not monotonic with HR3: tBefore=%v, tGuest=%v, tAfter=%v", i, tBefore, tGuest, tAfter)
+				}
+				// Verify wall-clock time is also uncorrupted by the ~333s TSC offset.
+				wallDiff := tGuest.Round(0).Sub(tBefore.Round(0))
+				if wallDiff < 0 || wallDiff > time.Second {
+					t.Fatalf("iter %d: GR0 wall-clock time diverged from HR3: diff=%v (tBefore=%v, tGuest=%v)", i, wallDiff, tBefore, tGuest)
+				}
+				i++
+				return i < n
+			})
+			// A fault or fallback on every call is not tolerated,
+			// including ones that disallowedVDSOExit cannot identify.
+			if exited == n {
+				t.Errorf("time.Now() in GR0 triggered a VM-exit in all %d iterations", n)
+			}
+		})
+	}
 }
 
 func TestIoeventfd(t *testing.T) {
