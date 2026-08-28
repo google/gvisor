@@ -38,6 +38,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/proc"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
+	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/state"
 	"gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -62,6 +63,15 @@ const (
 	// ContainerSpecsKey is the key used to add and pop the container specs to the
 	// metadata during save/restore.
 	ContainerSpecsKey = "container_specs"
+
+	// TSC snapshot metadata keys. These are written by the save side in
+	// pkg/sentry/state and consumed by computeTSCOffset.
+	//
+	// The cycle is a raw host TSC value, i.e. it excludes any guest TSC
+	// offset applied by the platform.
+	metadataTSCSnapshotCycleKey        = "gvisor_tsc_snapshot_cycle"
+	metadataTSCSnapshotFrequencyKey    = "gvisor_tsc_snapshot_frequency"
+	metadataTSCSnapshotRealtimeNsecKey = "gvisor_tsc_snapshot_realtime_nsec"
 
 	annotationCheckpointPrefix = "dev.gvisor.internal.checkpoint."
 
@@ -373,9 +383,13 @@ func (r *restorer) restore(l *Loader) error {
 	}
 	r.timer.Reached("specs validated")
 
-	p, err := createPlatform(l.root.conf, l.root.applicationCores, r.deviceFile, l.sandboxID, r.timer, &l.pinRing)
+	tscOffset, willJumpBackwards := r.computeTSCOffset()
+	p, err := createPlatform(l.root.conf, l.root.applicationCores, r.deviceFile, l.sandboxID, r.timer, &l.pinRing, tscOffset)
 	if err != nil {
 		return fmt.Errorf("creating platform: %v", err)
+	}
+	if _, ok := p.(platform.TSCAdjustablePlatform); !ok && willJumpBackwards {
+		log.Warningf("Platform %q does not support TSC offsetting; host TSC is behind snapshot base cycle, timestamps will go backwards", l.root.conf.Platform)
 	}
 
 	// Start the old watchdog before replacing it with a new one below.
@@ -713,6 +727,59 @@ func (r *restorer) calculateWallTimeSavings(s *Savings) error {
 	s.WallTimeSaved = savedWt - wt
 	log.Infof("Walltime saved with restore: %v ms, restore walltime: %v ms", s.WallTimeSaved.Milliseconds(), wt.Milliseconds())
 	return nil
+}
+
+// computeTSCOffset returns the guest TSC offset to apply on restore, and whether
+// timestamps will go backwards if the offset is not applied (i.e. host TSC is
+// behind the snapshot base cycle).
+//
+// If the snapshot captured TSC timekeeping parameters and host timekeeping
+// parameters are available, the offset is computed based on elapsed real
+// time and host TSC cycle delta.
+func (r *restorer) computeTSCOffset() (uint64, bool) {
+	cycleStr, ok := r.metadata[metadataTSCSnapshotCycleKey]
+	if !ok {
+		return 0, false
+	}
+	freqStr, ok := r.metadata[metadataTSCSnapshotFrequencyKey]
+	if !ok {
+		return 0, false
+	}
+	realtimeStr, ok := r.metadata[metadataTSCSnapshotRealtimeNsecKey]
+	if !ok {
+		return 0, false
+	}
+
+	baseCycle, err := strconv.ParseUint(cycleStr, 10, 64)
+	if err != nil {
+		log.Warningf("Failed to parse snapshot TSC cycle %q: %v", cycleStr, err)
+		return 0, false
+	}
+	baseFreq, err := strconv.ParseUint(freqStr, 10, 64)
+	if err != nil {
+		log.Warningf("Failed to parse snapshot TSC frequency %q: %v", freqStr, err)
+		return 0, false
+	}
+	baseRealtime, err := strconv.ParseUint(realtimeStr, 10, 64)
+	if err != nil {
+		log.Warningf("Failed to parse snapshot TSC realtime %q: %v", realtimeStr, err)
+		return 0, false
+	}
+
+	curCycle, curRealtime, ok := hostTSCRealtime()
+	if !ok {
+		return 0, false
+	}
+
+	deltaNs := int64(curRealtime) - int64(baseRealtime)
+	if deltaNs < 0 {
+		deltaNs = 0
+	}
+	deltaCycles := (uint64(deltaNs) * baseFreq) / 1_000_000_000
+	oldMachineCycles := baseCycle + deltaCycles
+	offset := oldMachineCycles - curCycle
+	log.Infof("Computed snapshot TSC offset: %d", offset)
+	return offset, curCycle < baseCycle
 }
 
 func (l *Loader) save(o *control.SaveOpts) error {
