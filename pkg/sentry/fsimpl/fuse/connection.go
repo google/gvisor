@@ -261,6 +261,10 @@ type connection struct {
 	// noOpen if FUSE server doesn't support open operation.
 	// This flag only influences performance, not correctness of the program.
 	noOpen bool
+
+	// noCreate if FUSE server doesn't support the create operation. Files are
+	// then created with FUSE_MKNOD followed by FUSE_OPEN, as Linux does.
+	noCreate bool
 }
 
 func linuxError(err error) error {

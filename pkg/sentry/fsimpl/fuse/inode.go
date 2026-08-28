@@ -670,15 +670,31 @@ func (*inode) IterDirents(ctx context.Context, mnt *vfs.Mount, callback vfs.Iter
 func (i *inode) NewFile(ctx context.Context, name string, opts vfs.OpenOptions) (kernfs.Inode, error) {
 	opts.Flags &= linux.O_ACCMODE | linux.O_CREAT | linux.O_EXCL | linux.O_TRUNC |
 		linux.O_DIRECTORY | linux.O_NOFOLLOW | linux.O_NONBLOCK | linux.O_NOCTTY
-	in := linux.FUSECreateIn{
-		CreateMeta: linux.FUSECreateMeta{
-			Flags: opts.Flags,
+	if !i.fs.conn.noCreate {
+		in := linux.FUSECreateIn{
+			CreateMeta: linux.FUSECreateMeta{
+				Flags: opts.Flags,
+				Mode:  uint32(opts.Mode) | linux.S_IFREG,
+				Umask: umaskFromContext(ctx),
+			},
+			Name: linux.CString(name),
+		}
+		child, err := i.newEntry(ctx, name, linux.S_IFREG, linux.FUSE_CREATE, &in)
+		if err == nil || !linuxerr.Equals(linuxerr.ENOSYS, err) {
+			return child, err
+		}
+		i.fs.conn.noCreate = true
+	}
+	// The MKNOD reply carries no file handle, so Open() will issue a FUSE_OPEN.
+	in := linux.FUSEMknodIn{
+		MknodMeta: linux.FUSEMknodMeta{
 			Mode:  uint32(opts.Mode) | linux.S_IFREG,
+			Rdev:  0,
 			Umask: umaskFromContext(ctx),
 		},
 		Name: linux.CString(name),
 	}
-	return i.newEntry(ctx, name, linux.S_IFREG, linux.FUSE_CREATE, &in)
+	return i.newEntry(ctx, name, linux.S_IFREG, linux.FUSE_MKNOD, &in)
 }
 
 // NewNode implements kernfs.Inode.NewNode.
