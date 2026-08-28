@@ -62,7 +62,7 @@ const (
 	// enabled when enabling "all" capabilities is requested, which excludes
 	// "privileged" capabilities that are usually not intended. Similar to
 	// nvidia-container-toolkit/internal/config/image/capabilities.go:SupportedDriverCapabilities.
-	AllContainerDriverCaps = CapCompute | CapUtility | CapGraphics | CapVideo
+	AllContainerDriverCaps = CapCompute | CapUtility | CapGraphics | CapVideo | CapNGX
 
 	// DefaultDriverCaps is the set of driver capabilities that are enabled by
 	// default in the absence of any other configuration. See
