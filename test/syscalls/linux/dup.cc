@@ -19,9 +19,9 @@
 #include <cerrno>
 #include <memory>
 
-#include "gtest/gtest.h"
 #include "absl/memory/memory.h"
 #include "absl/strings/str_cat.h"
+#include "gtest/gtest.h"
 #include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"

@@ -30,9 +30,9 @@
 
 #include <string_view>
 
+#include "absl/strings/escaping.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/strings/escaping.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/capability_util.h"

@@ -16,8 +16,8 @@
 #include <sys/utsname.h>
 #include <unistd.h>
 
-#include "gtest/gtest.h"
 #include "absl/strings/string_view.h"
+#include "gtest/gtest.h"
 #include "test/util/capability_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"

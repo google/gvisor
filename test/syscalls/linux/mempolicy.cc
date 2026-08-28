@@ -17,8 +17,8 @@
 
 #include <memory>
 
-#include "gtest/gtest.h"
 #include "absl/memory/memory.h"
+#include "gtest/gtest.h"
 #include "test/util/cleanup.h"
 #include "test/util/memory_util.h"
 #include "test/util/test_util.h"

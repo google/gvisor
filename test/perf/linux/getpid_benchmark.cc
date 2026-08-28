@@ -15,8 +15,8 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
-#include "gtest/gtest.h"
 #include "benchmark/benchmark.h"
+#include "gtest/gtest.h"
 
 namespace gvisor {
 namespace testing {

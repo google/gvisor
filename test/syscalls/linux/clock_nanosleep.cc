@@ -17,8 +17,8 @@
 #include <atomic>
 #include <utility>
 
-#include "gtest/gtest.h"
 #include "absl/time/time.h"
+#include "gtest/gtest.h"
 #include "test/util/cleanup.h"
 #include "test/util/posix_error.h"
 #include "test/util/signal_util.h"

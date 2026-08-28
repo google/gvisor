@@ -36,11 +36,11 @@
 #include <string>
 #include <vector>
 
-#include "gmock/gmock.h"
-#include "gtest/gtest.h"
 #include "absl/cleanup/cleanup.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "test/util/cleanup.h"
 #include "test/util/logging.h"
 #include "test/util/memory_util.h"

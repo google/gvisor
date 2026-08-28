@@ -18,10 +18,10 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "gtest/gtest.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_join.h"
 #include "absl/strings/str_split.h"
+#include "gtest/gtest.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/test_util.h"

@@ -321,7 +321,7 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 	// current->signal->tty, which differs from the parent's under
 	// CLONE_PARENT.
 	if srcT != nil {
-		inhTTY = srcT.tg.GetTTY() // Takes a ref, balanced in defer, or transfered to tg.tty.
+		inhTTY = srcT.tg.GetTTY() // Takes a ref, balanced in defer, or transferred to tg.tty.
 	}
 
 	// For the standard, non-cloneIntoCgroup fork case, we have to do this

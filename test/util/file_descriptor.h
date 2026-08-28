@@ -24,9 +24,9 @@
 #include <cerrno>
 #include <string>
 
-#include "gmock/gmock.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
+#include "gmock/gmock.h"
 #include "test/util/logging.h"
 #include "test/util/posix_error.h"
 #include "test/util/save_util.h"

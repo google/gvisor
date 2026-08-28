@@ -38,10 +38,10 @@
 #include <utility>
 #include <vector>
 
-#include "gmock/gmock.h"
-#include "gtest/gtest.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "test/syscalls/linux/iptables_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/linux_capability_util.h"

@@ -24,11 +24,11 @@
 
 #include <atomic>
 
-#include "gtest/gtest.h"
 #include "absl/flags/flag.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "benchmark/benchmark.h"
+#include "gtest/gtest.h"
 #include "test/util/cleanup.h"
 #include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"

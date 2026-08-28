@@ -31,7 +31,7 @@ import (
 // CompatibilityInfo is the collection of all information.
 type CompatibilityInfo map[string]map[string]ArchInfo
 
-// ArchInfo is compatbility doc for an architecture.
+// ArchInfo is compatibility doc for an architecture.
 type ArchInfo struct {
 	// Syscalls maps syscall number for the architecture to the doc.
 	Syscalls map[uintptr]SyscallDoc `json:"syscalls"`

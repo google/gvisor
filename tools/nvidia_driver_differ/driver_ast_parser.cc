@@ -23,7 +23,6 @@
 
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/str_cat.h"
-#include "nlohmann/json.hpp"
 #include "clang/include/clang/AST/ASTContext.h"
 #include "clang/include/clang/AST/Decl.h"
 #include "clang/include/clang/AST/Expr.h"
@@ -35,6 +34,7 @@
 #include "llvm/include/llvm/Support/Casting.h"
 #include "llvm/include/llvm/Support/CommandLine.h"
 #include "llvm/include/llvm/Support/raw_ostream.h"
+#include "nlohmann/json.hpp"
 
 using clang::ast_matchers::allOf;
 using clang::ast_matchers::hasDeclaration;

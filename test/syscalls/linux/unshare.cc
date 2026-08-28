@@ -21,9 +21,9 @@
 #include <sys/mman.h>
 #include <sys/socket.h>
 
+#include "absl/synchronization/mutex.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/synchronization/mutex.h"
 #include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"

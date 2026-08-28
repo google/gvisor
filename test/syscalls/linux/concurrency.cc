@@ -17,11 +17,11 @@
 
 #include <atomic>
 
-#include "gtest/gtest.h"
 #include "absl/strings/string_view.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "benchmark/benchmark.h"
+#include "gtest/gtest.h"
 #include "test/util/platform_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"

@@ -18,10 +18,10 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "gtest/gtest.h"
 #include "absl/flags/flag.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
+#include "gtest/gtest.h"
 #include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/multiprocess_util.h"

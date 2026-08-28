@@ -141,7 +141,7 @@ func (r *reassembler) process(first, last uint16, more bool, proto uint8, pkt *s
 				return nil, 0, false, 0, ErrFragmentOverlap
 			}
 			// Incoming fragment is a duplicate.
-			// Not dropping packet incase of duplicates.
+			// Not dropping packet in case of duplicates.
 			continue
 		}
 

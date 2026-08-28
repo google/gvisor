@@ -23,8 +23,8 @@
 #include <string_view>
 #include <vector>
 
-#include "gmock/gmock.h"
 #include "absl/container/flat_hash_map.h"
+#include "gmock/gmock.h"
 #include "test/util/cleanup.h"
 #include "test/util/posix_error.h"
 #include "test/util/test_util.h"

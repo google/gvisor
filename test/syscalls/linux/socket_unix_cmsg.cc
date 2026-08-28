@@ -886,9 +886,7 @@ TEST_P(UnixSocketPairCmsgTest, SendNullCredsBeforeSoPassCredRecvEnd) {
 
   EXPECT_EQ(0, memcmp(sent_data, received_data, sizeof(sent_data)));
 
-  struct ucred want_creds {
-    0, 65534, 65534
-  };
+  struct ucred want_creds{0, 65534, 65534};
 
   EXPECT_EQ(want_creds.pid, received_creds.pid);
   EXPECT_EQ(want_creds.uid, received_creds.uid);
@@ -1009,9 +1007,7 @@ TEST_P(UnixSocketPairCmsgTest, WriteBeforeSoPassCredRecvEnd) {
 
   EXPECT_EQ(0, memcmp(sent_data, received_data, sizeof(sent_data)));
 
-  struct ucred want_creds {
-    0, 65534, 65534
-  };
+  struct ucred want_creds{0, 65534, 65534};
 
   EXPECT_EQ(want_creds.pid, received_creds.pid);
   EXPECT_EQ(want_creds.uid, received_creds.uid);
@@ -1461,9 +1457,7 @@ TEST_P(UnixSocketPairCmsgTest, FDPassBeforeSoPassCred) {
 
   EXPECT_EQ(0, memcmp(sent_data, received_data, sizeof(sent_data)));
 
-  struct ucred want_creds {
-    0, 65534, 65534
-  };
+  struct ucred want_creds{0, 65534, 65534};
 
   EXPECT_EQ(want_creds.pid, received_creds.pid);
   EXPECT_EQ(want_creds.uid, received_creds.uid);

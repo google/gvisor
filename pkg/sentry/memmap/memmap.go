@@ -264,7 +264,7 @@ type MappingIdentity interface {
 	// int64(mr.Start), int64(mr.End-1), fs.SyncData).
 	// (fs.FileOperations.Fsync() takes an inclusive end, but mr.End is
 	// exclusive, hence mr.End-1.) It is defined rather than Fsync so that
-	// implementors don't need to depend on the fs package for fs.SyncType.
+	// implementers don't need to depend on the fs package for fs.SyncType.
 	Msync(ctx context.Context, mr MappableRange) error
 }
 
@@ -454,7 +454,7 @@ type File interface {
 	//	* fr.Length() > 0.
 	//	* At least one reference must be held on all pages in fr. (The File
 	//		interface does not provide a way to acquire an initial reference;
-	//		implementors may define mechanisms for doing so.)
+	//		implementers may define mechanisms for doing so.)
 	IncRef(fr FileRange, memCgID uint32)
 
 	// DecRef decrements the reference count on all pages in fr.

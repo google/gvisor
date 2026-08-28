@@ -24,11 +24,11 @@
 #include <string>
 #include <vector>
 
-#include "gmock/gmock.h"
-#include "gtest/gtest.h"
 #include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "test/syscalls/linux/file_base.h"
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
@@ -471,7 +471,7 @@ TEST_F(StatTest, LinkCountsWithRegularFileChild) {
 //
 // It is marked NoSave because we don't support saving unlinked files.
 TEST_F(StatTest, ZeroLinksOpenFdRegularFileChild_NoSave) {
-  // Setting the enviornment variable GVISOR_GOFER_UNCACHED to any value
+  // Setting the environment variable GVISOR_GOFER_UNCACHED to any value
   // will prevent this test from running, see the tmpfs lifecycle.
   //
   // We need to support this because when a file is unlinked and we forward

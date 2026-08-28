@@ -30,9 +30,9 @@
 #include <cstdint>
 #include <iterator>
 
+#include "absl/base/macros.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/base/macros.h"
 #include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
 #include "test/util/memory_util.h"

@@ -14,8 +14,8 @@
 
 #include <signal.h>
 
-#include "gtest/gtest.h"
 #include "benchmark/benchmark.h"
+#include "gtest/gtest.h"
 #include "test/util/logging.h"
 
 namespace gvisor {

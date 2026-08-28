@@ -24,9 +24,9 @@
 
 #include <memory>
 
-#include "gtest/gtest.h"
 #include "absl/synchronization/mutex.h"
 #include "absl/time/time.h"
+#include "gtest/gtest.h"
 #include "test/util/logging.h"
 #include "test/util/signal_util.h"
 #include "test/util/thread_util.h"

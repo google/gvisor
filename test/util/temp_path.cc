@@ -20,9 +20,9 @@
 #include <cstdlib>
 #include <iostream>
 
-#include "gtest/gtest.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "gtest/gtest.h"
 #include "test/util/fs_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/test_util.h"

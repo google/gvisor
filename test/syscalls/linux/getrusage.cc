@@ -18,9 +18,9 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 
-#include "gtest/gtest.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "gtest/gtest.h"
 #include "test/util/logging.h"
 #include "test/util/memory_util.h"
 #include "test/util/multiprocess_util.h"

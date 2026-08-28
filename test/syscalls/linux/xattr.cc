@@ -27,10 +27,10 @@
 #include <string>
 #include <vector>
 
-#include "gmock/gmock.h"
-#include "gtest/gtest.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/string_view.h"
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "test/syscalls/linux/file_base.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
@@ -859,8 +859,7 @@ int main(int argc, char** argv) {
     if (arg == gvisor::testing::kUnshareAndSetTrustedXattrInNewUserns) {
       // The next argument is the path to set the trusted xattr on.
       if (i + 1 < argc) {
-        return gvisor::testing::UnshareAndSetxattrInNewUserns(
-            argv[i + 1]);
+        return gvisor::testing::UnshareAndSetxattrInNewUserns(argv[i + 1]);
       }
       return 4;
     }

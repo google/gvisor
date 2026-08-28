@@ -15,9 +15,9 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include "gtest/gtest.h"
 #include "absl/flags/flag.h"
 #include "absl/time/time.h"
+#include "gtest/gtest.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/test_util.h"

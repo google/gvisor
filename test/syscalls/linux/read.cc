@@ -19,8 +19,8 @@
 #include <iterator>
 #include <vector>
 
-#include "gtest/gtest.h"
 #include "absl/base/macros.h"
+#include "gtest/gtest.h"
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/temp_path.h"

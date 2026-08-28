@@ -17,8 +17,8 @@
 
 #include <string>
 
-#include "gtest/gtest.h"
 #include "absl/flags/flag.h"
+#include "gtest/gtest.h"
 #include "test/util/capability_util.h"
 #include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"

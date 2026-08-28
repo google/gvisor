@@ -24,11 +24,11 @@
 #include <memory>
 #include <stack>
 
-#include "gtest/gtest.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_split.h"
 #include "absl/time/clock.h"
 #include "absl/types/optional.h"
+#include "gtest/gtest.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
 #include "test/util/temp_path.h"

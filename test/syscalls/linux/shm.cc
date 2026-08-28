@@ -19,8 +19,8 @@
 #include <sys/shm.h>
 #include <sys/types.h>
 
-#include "gmock/gmock.h"
 #include "absl/time/clock.h"
+#include "gmock/gmock.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/temp_path.h"

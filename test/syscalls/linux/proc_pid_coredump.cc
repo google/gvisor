@@ -16,9 +16,9 @@
 
 #include <string>
 
+#include "absl/strings/numbers.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/strings/numbers.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/logging.h"

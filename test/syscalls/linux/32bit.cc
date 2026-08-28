@@ -15,8 +15,8 @@
 #include <string.h>
 #include <sys/mman.h>
 
-#include "gtest/gtest.h"
 #include "absl/base/macros.h"
+#include "gtest/gtest.h"
 #include "test/util/memory_util.h"
 #include "test/util/platform_util.h"
 #include "test/util/posix_error.h"

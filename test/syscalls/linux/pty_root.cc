@@ -15,8 +15,8 @@
 #include <sys/ioctl.h>
 #include <termios.h>
 
-#include "gtest/gtest.h"
 #include "absl/base/macros.h"
+#include "gtest/gtest.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"

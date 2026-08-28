@@ -25,8 +25,8 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "gtest/gtest.h"
 #include "absl/synchronization/mutex.h"
+#include "gtest/gtest.h"
 #include "test/util/epoll_util.h"
 #include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"

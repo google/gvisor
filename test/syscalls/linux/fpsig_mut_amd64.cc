@@ -23,8 +23,8 @@
 
 #include <cstdint>
 
-#include "gtest/gtest.h"
 #include "absl/log/log.h"
+#include "gtest/gtest.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 

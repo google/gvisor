@@ -59,7 +59,7 @@ func TestZeroWindowProbeUserTimeout(t *testing.T) {
 	// Test 1: Check for receive of a zero window probe, record the duration for
 	//         probe to be sent.
 	//
-	// Advertize zero window to the dut.
+	// Advertise zero window to the dut.
 	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), WindowSize: testbench.Uint16(0)})
 
 	// Expected sequence number of the zero window probe.
@@ -80,7 +80,7 @@ func TestZeroWindowProbeUserTimeout(t *testing.T) {
 	//
 	// Reduce the retransmit timeout.
 	dut.SetSockOptInt(t, acceptFd, unix.IPPROTO_TCP, unix.TCP_USER_TIMEOUT, int32(startProbeDuration.Milliseconds()))
-	// Advertize zero window again.
+	// Advertise zero window again.
 	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), WindowSize: testbench.Uint16(0)})
 	// Ask the dut to send out data that would trigger zero window probe retransmissions.
 	dut.Send(t, acceptFd, sampleData, 0)

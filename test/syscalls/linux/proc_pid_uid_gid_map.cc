@@ -27,10 +27,10 @@
 #include <utility>
 #include <vector>
 
-#include "gtest/gtest.h"
 #include "absl/strings/ascii.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_split.h"
+#include "gtest/gtest.h"
 #include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"

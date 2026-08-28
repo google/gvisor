@@ -16,8 +16,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "gtest/gtest.h"
 #include "absl/flags/flag.h"
+#include "gtest/gtest.h"
 #include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/fs_util.h"
