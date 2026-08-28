@@ -20,6 +20,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -40,6 +43,36 @@ var OpenPipeFile = func(path string, flag int) (*os.File, error) {
 	return os.OpenFile(path, flag, 0)
 }
 
+// Result holds the outcome of an operation on a single PID.
+type Result struct {
+	PID      int
+	Err      error
+	Duration time.Duration
+
+	// State is only set by GetState.
+	State tpupb.RuntimeState
+}
+
+// ParsePIDs parses a comma-separated list of PIDs.
+func ParsePIDs(arg string) ([]int, error) {
+	var pids []int
+	for _, s := range strings.Split(arg, ",") {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		pid, err := strconv.Atoi(s)
+		if err != nil || pid <= 0 {
+			return nil, fmt.Errorf("invalid PID: %q", s)
+		}
+		pids = append(pids, pid)
+	}
+	if len(pids) == 0 {
+		return nil, fmt.Errorf("no PIDs specified")
+	}
+	return pids, nil
+}
+
 // CheckProcessExists verifies that the target process is alive.
 func CheckProcessExists(pid int) error {
 	path := fmt.Sprintf("%s/%d", ProcRoot, pid)
@@ -49,19 +82,52 @@ func CheckProcessExists(pid int) error {
 	return nil
 }
 
-// Checkpoint sends ACTION_CHECKPOINT to all libtpu threads of the given PID.
-func Checkpoint(pid int, timeoutSecs int) error {
-	return controlAll(pid, tpupb.ControlAction_ACTION_CHECKPOINT, timeoutSecs)
+// Checkpoint sends ACTION_CHECKPOINT to all libtpu threads of every PID,
+// concurrently across PIDs. Results are indexed to match pids.
+func Checkpoint(pids []int, timeoutSecs int) []Result {
+	return forEachPID(pids, func(r *Result) {
+		r.Err = controlPid(r.PID, tpupb.ControlAction_ACTION_CHECKPOINT, timeoutSecs)
+	})
 }
 
-// Restore sends ACTION_RESTORE to all libtpu threads of the given PID.
-func Restore(pid int, timeoutSecs int) error {
-	return controlAll(pid, tpupb.ControlAction_ACTION_RESTORE, timeoutSecs)
+// Restore sends ACTION_RESTORE to all libtpu threads of every PID,
+// concurrently across PIDs. Results are indexed to match pids.
+func Restore(pids []int, timeoutSecs int) []Result {
+	return forEachPID(pids, func(r *Result) {
+		r.Err = controlPid(r.PID, tpupb.ControlAction_ACTION_RESTORE, timeoutSecs)
+	})
 }
 
-// GetState sends ACTION_GETSTATE to the first libtpu thread of the given
-// PID and returns the current runtime state.
-func GetState(pid int, timeoutSecs int) (tpupb.RuntimeState, error) {
+// GetState sends ACTION_GETSTATE to the first libtpu thread of every PID,
+// concurrently across PIDs. Results are indexed to match pids.
+func GetState(pids []int, timeoutSecs int) []Result {
+	return forEachPID(pids, func(r *Result) {
+		r.State, r.Err = getStatePid(r.PID, timeoutSecs)
+	})
+}
+
+// forEachPID runs op concurrently for every PID and returns the per-PID
+// results, indexed to match pids.
+func forEachPID(pids []int, op func(r *Result)) []Result {
+	results := make([]Result, len(pids))
+
+	var wg sync.WaitGroup
+	for i, pid := range pids {
+		results[i].PID = pid
+		wg.Add(1)
+		go func(r *Result) {
+			defer wg.Done()
+			start := time.Now()
+			op(r)
+			r.Duration = time.Since(start)
+		}(&results[i])
+	}
+	wg.Wait()
+
+	return results
+}
+
+func getStatePid(pid int, timeoutSecs int) (tpupb.RuntimeState, error) {
 	if err := CheckProcessExists(pid); err != nil {
 		return tpupb.RuntimeState_STATE_UNSPECIFIED, err
 	}
@@ -76,7 +142,7 @@ func GetState(pid int, timeoutSecs int) (tpupb.RuntimeState, error) {
 	return resp.GetCurrentState(), nil
 }
 
-func controlAll(pid int, action tpupb.ControlAction, timeoutSecs int) error {
+func controlPid(pid int, action tpupb.ControlAction, timeoutSecs int) error {
 	if err := CheckProcessExists(pid); err != nil {
 		return err
 	}

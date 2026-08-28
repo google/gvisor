@@ -13,9 +13,9 @@
 // limitations under the License.
 
 // tpucheckpoint drives the libtpu checkpoint/restore control protocol
-// against an unsandboxed process. It discovers the libtpu control threads
-// of a target PID by scanning /proc/<pid>/task/*/comm, opens the encoded
-// pipe FDs via /proc/<pid>/fd/, and sends ControlRequest messages.
+// against unsandboxed processes. It discovers the libtpu control threads
+// of each target PID by scanning /proc/<pid>/task/*/comm, opens the
+// encoded pipe FDs via /proc/<pid>/fd/, and sends ControlRequest messages.
 package main
 
 import (
@@ -23,28 +23,28 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"gvisor.dev/gvisor/tools/tpucheckpoint/tpucontrol"
 )
 
 func usage() {
-	fmt.Fprintf(os.Stderr, `tpucheckpoint: checkpoint and restore the TPU state of a process.
+	fmt.Fprintf(os.Stderr, `tpucheckpoint: checkpoint and restore the TPU state of processes.
 
 Discovers libtpu control pipes by scanning thread names in /proc/<pid>/task/,
 then sends control messages using the tpu_control protocol.
 
 Operations:
-  --action checkpoint | restore   --pid <pid> [--timeout <seconds>]
-        Checkpoint or restore the TPU runtime state of <pid>.
+  --action checkpoint | restore   --pid <pid>[,<pid>...] [--timeout <seconds>]
+        Checkpoint or restore the TPU runtime state of the given PIDs.
+        Multiple PIDs are processed concurrently.
 
-  --get-state --pid <pid>
-        Print the current TPU runtime state.
+  --get-state --pid <pid>[,<pid>...]
+        Print the current TPU runtime state of the given PIDs.
 
 Options:
-  --pid|-p <pid>           Target process PID.
-  --timeout|-t <seconds>   Operation timeout in seconds (default: 180).
-  --help|-h                Print this help message.
+  --pid|-p <pid>[,<pid>...]   Target process PIDs, comma-separated.
+  --timeout|-t <seconds>      Per-process operation timeout in seconds (default: 180).
+  --help|-h                   Print this help message.
 
 Discovery:
   Scans /proc/<pid>/task/*/comm for threads named "libtpu{XXXXYYYY}".
@@ -59,6 +59,26 @@ func fatal(format string, args ...any) {
 	os.Exit(1)
 }
 
+// report prints per-PID results and returns false if any operation failed.
+// line renders the success output for one result; for a single PID the
+// "pid N: " prefix is omitted, keeping the original single-PID output.
+func report(results []tpucontrol.Result, line func(r tpucontrol.Result) string) bool {
+	ok := true
+	for _, r := range results {
+		if r.Err != nil {
+			ok = false
+			fmt.Fprintf(os.Stderr, "tpucheckpoint: pid %d: %v\n", r.PID, r.Err)
+			continue
+		}
+		if len(results) == 1 {
+			fmt.Println(line(r))
+		} else {
+			fmt.Printf("pid %d: %s\n", r.PID, line(r))
+		}
+	}
+	return ok
+}
+
 func main() {
 	args := os.Args[1:]
 	if len(args) == 0 {
@@ -67,7 +87,7 @@ func main() {
 	}
 
 	var (
-		pid        = -1
+		pids       []int
 		action     string
 		getState   bool
 		timeoutSec = 180
@@ -83,10 +103,13 @@ func main() {
 			if i >= len(args) {
 				fatal("--pid requires a value")
 			}
+			if pids != nil {
+				fatal("--pid may be specified only once; use a comma-separated list")
+			}
 			var err error
-			pid, err = strconv.Atoi(args[i])
-			if err != nil || pid <= 0 {
-				fatal("invalid PID: %s", args[i])
+			pids, err = tpucontrol.ParsePIDs(args[i])
+			if err != nil {
+				fatal("%v", err)
 			}
 		case "--action":
 			i++
@@ -111,36 +134,35 @@ func main() {
 		}
 	}
 
-	if pid <= 0 {
+	if len(pids) == 0 {
 		fatal("--pid is required")
 	}
 
+	var ok bool
 	switch {
 	case getState:
-		state, err := tpucontrol.GetState(pid, timeoutSec)
-		if err != nil {
-			fatal("%v", err)
-		}
-		fmt.Println(state)
+		ok = report(tpucontrol.GetState(pids, timeoutSec), func(r tpucontrol.Result) string {
+			return r.State.String()
+		})
 
 	case action == "checkpoint":
-		start := time.Now()
-		if err := tpucontrol.Checkpoint(pid, timeoutSec); err != nil {
-			fatal("%v", err)
-		}
-		fmt.Printf("checkpoint complete (%.3fs)\n", time.Since(start).Seconds())
+		ok = report(tpucontrol.Checkpoint(pids, timeoutSec), func(r tpucontrol.Result) string {
+			return fmt.Sprintf("checkpoint complete (%.3fs)", r.Duration.Seconds())
+		})
 
 	case action == "restore":
-		start := time.Now()
-		if err := tpucontrol.Restore(pid, timeoutSec); err != nil {
-			fatal("%v", err)
-		}
-		fmt.Printf("restore complete (%.3fs)\n", time.Since(start).Seconds())
+		ok = report(tpucontrol.Restore(pids, timeoutSec), func(r tpucontrol.Result) string {
+			return fmt.Sprintf("restore complete (%.3fs)", r.Duration.Seconds())
+		})
 
 	case action != "":
 		fatal("unknown action: %s (supported: checkpoint, restore)", action)
 
 	default:
 		fatal("no operation specified (use --action checkpoint|restore or --get-state)\nrun 'tpucheckpoint --help' for usage")
+	}
+
+	if !ok {
+		os.Exit(1)
 	}
 }
