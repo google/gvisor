@@ -27,6 +27,7 @@ go_library(
         "//pkg/sentry/fsimpl/erofs",
         "//pkg/sentry/fsimpl/tmpfs",
         "//pkg/sentry/pgalloc",
+        "//pkg/sentry/state/checkpointfiles",
         "//pkg/sighandling",
         "//pkg/sync",
         "//pkg/unet",

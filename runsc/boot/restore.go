@@ -23,6 +23,7 @@ import (
 	time2 "time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
@@ -340,13 +341,14 @@ func (r *restorer) restoreContainerInfo(l *Loader, info *containerInfo) error {
 }
 
 type restoreMounts struct {
-	fdmap     map[checkpoint.ResourceID]int
-	mfmap     map[checkpoint.ResourceID]*pgalloc.MemoryFile
-	sharedMfs map[string]bool
+	fdmap             map[checkpoint.ResourceID]int
+	mfmap             map[checkpoint.ResourceID]*pgalloc.MemoryFile
+	sharedMfs         map[string]bool
+	fsCheckpointedMfs map[checkpoint.ResourceID]struct{}
 }
 
 func (r *restoreMounts) String() string {
-	return fmt.Sprintf("fdmap: %#v, mfmap: %v", r.fdmap, r.mfmap)
+	return fmt.Sprintf("fdmap: %#v, mfmap: %v, fsCheckpointedMfs: %v", r.fdmap, r.mfmap, r.fsCheckpointedMfs)
 }
 
 func (r *restorer) restore(l *Loader) error {
@@ -434,10 +436,39 @@ func (r *restorer) restore(l *Loader) error {
 	defer cu.Clean()
 
 	restoreMnts := restoreMounts{
-		fdmap:     make(map[checkpoint.ResourceID]int),
-		mfmap:     make(map[checkpoint.ResourceID]*pgalloc.MemoryFile),
-		sharedMfs: make(map[string]bool),
+		fdmap:             make(map[checkpoint.ResourceID]int),
+		mfmap:             make(map[checkpoint.ResourceID]*pgalloc.MemoryFile),
+		sharedMfs:         make(map[string]bool),
+		fsCheckpointedMfs: make(map[checkpoint.ResourceID]struct{}),
 	}
+	cleanMnts := cleanup.Make(func() {
+		cleanedMFs := make(map[*pgalloc.MemoryFile]struct{})
+		for _, mf := range restoreMnts.mfmap {
+			if _, ok := cleanedMFs[mf]; !ok {
+				cleanedMFs[mf] = struct{}{}
+				if !mf.IsAsyncLoading() {
+					mf.Destroy()
+				}
+			}
+		}
+		borrowedFDs := make(map[int]struct{})
+		for _, cont := range r.containers {
+			for _, customFD := range cont.passFDs {
+				borrowedFDs[customFD.host.FD()] = struct{}{}
+			}
+		}
+		closedFDs := make(map[int]struct{})
+		for _, rawFD := range restoreMnts.fdmap {
+			if _, borrowed := borrowedFDs[rawFD]; !borrowed {
+				if _, closed := closedFDs[rawFD]; !closed {
+					closedFDs[rawFD] = struct{}{}
+					_ = unix.Close(rawFD)
+				}
+			}
+		}
+	})
+	defer cleanMnts.Clean()
+
 	for _, cont := range r.containers {
 		// TODO(b/298078576): Need to process hints here probably
 		mntr := l.newContainerMounter(cont)
@@ -457,17 +488,21 @@ func (r *restorer) restore(l *Loader) error {
 
 	log.Debugf("Restore using mounts: %v", &restoreMnts)
 	ctx := l.k.SupervisorContext()
-	ctx = context.WithValues(ctx, map[any]any{
-		vfs.CtxRestoreFilesystemFDMap:     restoreMnts.fdmap,
-		pgalloc.CtxMemoryFileMap:          restoreMnts.mfmap,
-		devutil.CtxDevGoferClientProvider: l.k,
-	})
+	ctxValues := map[any]any{
+		vfs.CtxRestoreFilesystemFDMap:        restoreMnts.fdmap,
+		pgalloc.CtxMemoryFileMap:             restoreMnts.mfmap,
+		pgalloc.CtxFSCheckpointedMemoryFiles: restoreMnts.fsCheckpointedMfs,
+		devutil.CtxDevGoferClientProvider:    l.k,
+		kernel.CtxFSRestore:                  l.fsRestore != nil,
+	}
+	ctx = context.WithValues(ctx, ctxValues)
 
 	if r.asyncMFLoader != nil {
 		// Now that private memory files are known, kick off their loading in the
 		// background goroutine.
-		r.asyncMFLoader.KickoffPrivate(restoreMnts.mfmap)
+		r.asyncMFLoader.KickoffPrivate(ctx, restoreMnts.mfmap)
 	}
+	cleanMnts.Release()
 
 	ctx, err = r.prepareNvproxyRestoreContextLocked(ctx, l)
 	if err != nil {
@@ -679,9 +714,13 @@ func (r *restorer) calculateWallTimeSavings(s *Savings) error {
 	return nil
 }
 
-func (l *Loader) save(o *control.SaveOpts) (err error) {
+func (l *Loader) save(o *control.SaveOpts) error {
 	saveOpts, err := control.ConvertToStateSaveOpts(o)
 	if err != nil {
+		l.k.OnCheckpointAttempt(err)
+		if len(o.SplitFSCheckpointPaths) > 0 {
+			l.k.SignalAllFSSaveWaiters(err)
+		}
 		return err
 	}
 	defer saveOpts.Close()
@@ -691,9 +730,13 @@ func (l *Loader) save(o *control.SaveOpts) (err error) {
 
 // saveWithOpts saves the kernel with the given options.
 func (l *Loader) saveWithOpts(saveOpts *state.SaveOpts, execOpts *control.SaveRestoreExecOpts) (err error) {
+	hasFSSave := saveOpts.FSSaveOpts != nil
 	defer func() {
 		// This closure is required to capture the final value of err.
 		l.k.OnCheckpointAttempt(err)
+		if hasFSSave {
+			l.k.SignalAllFSSaveWaiters(err)
+		}
 	}()
 
 	if saveOpts.Metadata == nil {
