@@ -38,7 +38,7 @@ func TestNVIDIAFlagsSkipsPrivilegedCaps(t *testing.T) {
 		{
 			name: "all_plus_profiling",
 			caps: AllContainerDriverCaps | CapProfiling,
-			want: []string{"--compute", "--graphics", "--utility", "--video"},
+			want: []string{"--compute", "--graphics", "--ngx", "--utility", "--video"},
 		},
 		{
 			name: "profiling_only",
