@@ -737,7 +737,7 @@ func New(args Args) (*Loader, error) {
 
 	// Create kernel and platform.
 	l.pinRing.FD = args.PinRingFD
-	p, err := createPlatform(args.Conf, args.NumCPU, args.Device, args.ID, args.StartupTimer, &l.pinRing)
+	p, err := createPlatform(args.Conf, args.NumCPU, args.Device, args.ID, args.StartupTimer, &l.pinRing, 0)
 	if err != nil {
 		return nil, fmt.Errorf("creating platform: %w", err)
 	}
@@ -1094,7 +1094,7 @@ func (l *Loader) Destroy() {
 	refs.OnExit()
 }
 
-func createPlatform(conf *config.Config, numCPU int, deviceFile *fd.FD, sandboxID string, startupTimer *timing.Timer, pinRing *pinring.PinRing) (platform.Platform, error) {
+func createPlatform(conf *config.Config, numCPU int, deviceFile *fd.FD, sandboxID string, startupTimer *timing.Timer, pinRing *pinring.PinRing, tscOffset uint64) (platform.Platform, error) {
 	platformName := conf.Platform
 	p, err := platform.Lookup(conf.Platform)
 	if err != nil {
@@ -1102,16 +1102,24 @@ func createPlatform(conf *config.Config, numCPU int, deviceFile *fd.FD, sandboxI
 	}
 
 	log.Infof("Platform: %s", platformName)
-	return p.New(platform.Options{
+	plat, err := p.New(platform.Options{
 		DeviceFile:             deviceFile,
 		DisableSyscallPatching: platformName == "systrap" && conf.SystrapDisableSyscallPatching,
 		DisableFastPath:        platformName == "systrap" && conf.SystrapDisableFastPath,
 		ApplicationCores:       numCPU,
 		UseCPUNums:             platformName == "kvm" && conf.UseCPUNums,
+		TSCOffset:              tscOffset,
 		SandboxID:              sandboxID,
 		StartupTimer:           startupTimer,
 		PinRing:                pinRing,
 	})
+	if err != nil {
+		return nil, err
+	}
+	if top, ok := plat.(platform.TSCOffsetPlatform); ok {
+		time.SetTSCOffset(int64(top.TSCOffset()))
+	}
+	return plat, nil
 }
 
 func createMemoryFile(appHugePages bool, hostTHP HostTHP) (*pgalloc.MemoryFile, error) {
