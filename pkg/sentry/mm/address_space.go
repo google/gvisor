@@ -32,6 +32,12 @@ func (mm *MemoryManager) AddressSpace() platform.AddressSpace {
 	return mm.as
 }
 
+// UnpatchSyscalls unpatches any binary patched syscalls and disables future
+// syscall patching for this address space.
+func (mm *MemoryManager) UnpatchSyscalls(ctx context.Context) error {
+	return mm.AddressSpace().UnpatchSyscalls(ctx, mm)
+}
+
 // mapASLocked maps addresses in ar into mm.as.
 //
 // Preconditions:

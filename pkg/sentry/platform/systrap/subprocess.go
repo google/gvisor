@@ -24,6 +24,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	pkgcontext "gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/log"
@@ -1221,6 +1222,24 @@ func (s *subprocess) PreFork() {
 // PostFork implements platform.AddressSpace.PostFork.
 func (s *subprocess) PostFork() {
 	s.usertrap.PostFork() // +checklocksforce: PreFork acquires, above.
+}
+
+// InterruptAllSysmsgThreads sends an interrupt signal to all active sysmsg threads.
+func (s *subprocess) InterruptAllSysmsgThreads() {
+	s.sysmsgThreadsMu.RLock()
+	defer s.sysmsgThreadsMu.RUnlock()
+	for _, sysThread := range s.sysmsgThreads {
+		t := sysThread.thread
+		if e := hostsyscall.RawSyscallErrno(unix.SYS_TGKILL, uintptr(t.tgid), uintptr(t.tid), uintptr(platform.SignalInterrupt)); e != 0 {
+			log.Warningf("failed to interrupt sysmsg thread %d:%d: %v", t.tgid, t.tid, e)
+		}
+	}
+}
+
+// UnpatchSyscalls implements platform.AddressSpace.UnpatchSyscalls.
+func (s *subprocess) UnpatchSyscalls(ctx pkgcontext.Context, mm platform.MemoryManager) error {
+	s.InterruptAllSysmsgThreads()
+	return s.usertrap.UnpatchSyscalls(ctx, mm)
 }
 
 // activateContext activates the context in this subprocess.

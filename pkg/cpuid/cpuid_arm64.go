@@ -152,3 +152,8 @@ func (fs FeatureSet) AllowedHWCap2() uint64 {
 	allowed := 0
 	return fs.hwCap.hwCap2 & uint64(allowed)
 }
+
+// SanitizeGuest unsets features that should not be exposed to the guest workload.
+func (fs FeatureSet) SanitizeGuest() FeatureSet {
+	return fs
+}

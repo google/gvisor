@@ -69,11 +69,31 @@ type State struct {
 	mu        sync.RWMutex `state:"nosave"`
 	nextTrap  uint32
 	tableAddr hostarch.Addr
+	disabled  bool
+	// patches is a map of the patched syscall instruction address to its original syscall number.
+	// Used to revert the patches when patching is disabled dynamically.
+	patches map[hostarch.Addr]uint32
 }
 
 // New returns the new state structure.
 func New() *State {
-	return &State{}
+	return &State{
+		patches: make(map[hostarch.Addr]uint32),
+	}
+}
+
+// Disabled returns true if syscall patching has been disabled.
+func (s *State) Disabled() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.disabled
+}
+
+// Disable disables future syscall patching.
+func (s *State) Disable() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.disabled = true
 }
 
 // +marshal
@@ -200,6 +220,15 @@ func (s *State) PatchSyscall(ctx context.Context, ac *arch.Context64, mm memoryM
 		return fmt.Errorf("no task found")
 	}
 
+	// Check if syscall patching is disabled. This occurs if the user has disabled syscall patching
+	// by setting the GS register for their own uses, meaning we cannot safely use it to store the
+	// address of the usertrap table.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.disabled {
+		return nil
+	}
+
 	// Skip syscall patching when the task is being ptraced, because
 	// single-stepping and other debugger features are incompatible with
 	// the "syshandler" routine used to handle patched syscalls (see
@@ -209,8 +238,6 @@ func (s *State) PatchSyscall(ctx context.Context, ac *arch.Context64, mm memoryM
 	//     existing patched syscalls, in case the traced program was patched
 	//     before being traced (e.g. PTRACE_ATTACH on an already running
 	//     process).
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	if task.Tracer() != nil {
 		if s.nextTrap > 0 && tracerWarnLimiter.Allow() {
 			ctx.Warningf("LIKELY ERROR: Attached tracer to process with patched syscalls (traps %d)! Systrap is not fully compatible with ptrace/debuggers, program may die unexpectedly soon! Use `--systrap-disable-syscall-patching` as a workaround.", s.nextTrap)
@@ -292,7 +319,59 @@ func (s *State) PatchSyscall(ctx context.Context, ac *arch.Context64, mm memoryM
 		if _, err := primitive.CopyUint8SliceOut(ignorePermContext, hostarch.Addr(patchAddr), newCode[0:1]); err != nil {
 			return err
 		}
+
+		// s.patches is initialized in New(), but check it just in case.
+		if s.patches == nil {
+			s.patches = make(map[hostarch.Addr]uint32)
+		}
+		s.patches[hostarch.Addr(patchAddr)] = uint32(sysno)
 	}
+	return nil
+}
+
+// UnpatchSyscalls reverts all applied syscall patches to their original
+// instructions and disables future syscall patching.
+func (s *State) UnpatchSyscalls(ctx context.Context, mm memoryManager) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.disabled = true
+	if len(s.patches) == 0 {
+		return nil
+	}
+
+	if ctx == nil {
+		return fmt.Errorf("no context provided")
+	}
+	task := kernel.TaskFromContext(ctx)
+	if task == nil {
+		return fmt.Errorf("no task found")
+	}
+
+	ignorePermContext := task.OwnCopyContext(usermem.IOOpts{IgnorePermissions: true})
+
+	// We recreate the original instruction using the sysno stored in the
+	// patch map.
+	for patchAddr, sysno := range s.patches {
+		origCode := make([]byte, len(jmpInst))
+		// 0xb8 is the opcode for "mov sysno, %eax".
+		origCode[0] = 0xb8
+		// The next 4 bytes are the sysno.
+		binary.LittleEndian.PutUint32(origCode[1:5], sysno)
+		// 0x0f05 is the opcode for the syscall instruction.
+		origCode[5] = 0x0f
+		origCode[6] = 0x05
+
+		ctx.Debugf("Reverting binary patch addr %x (sysno %d)", patchAddr, sysno)
+		if _, err := primitive.CopyUint8SliceOut(ignorePermContext, patchAddr, origCode); err != nil {
+			ctx.Warningf("Failed to unpatch syscall at %x (sysno %d): %v", patchAddr, sysno, err)
+			return err
+		}
+	}
+
+	// Clear the patches map. This seems faster than iterating over the map
+	// and deleting each entry.
+	s.patches = make(map[hostarch.Addr]uint32)
 	return nil
 }
 
