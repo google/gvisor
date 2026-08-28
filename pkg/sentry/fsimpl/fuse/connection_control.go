@@ -42,7 +42,7 @@ const (
 
 	// The FUSE_INIT_IN flags sent to the daemon.
 	// TODO(gvisor.dev/issue/3199): complete the flags.
-	fuseDefaultInitFlags = linux.FUSE_MAX_PAGES
+	fuseDefaultInitFlags = linux.FUSE_MAX_PAGES | linux.FUSE_ATOMIC_O_TRUNC
 
 	// An INIT response needs to be at least this long.
 	minInitSize = 24
