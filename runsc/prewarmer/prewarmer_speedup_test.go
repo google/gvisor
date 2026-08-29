@@ -157,7 +157,7 @@ func runscDo(t *testing.T, runsc, sidecarDir, rootDir string) (time.Duration, st
 // remap timing from the logs, and verifies that this is faster with the
 // prewarmer in the startup path vs without the prewarmer.
 func TestPrewarmerSpeedsUpRealBoot(t *testing.T) {
-	runsc, err := testutil.FindFile("release/runsc")
+	runsc, err := testutil.FindRunsc()
 	if err != nil {
 		t.Fatalf("cannot find runsc binary in the release layout: %v", err)
 	}

@@ -135,16 +135,13 @@ endif
 $(RUNTIME_BIN): # See below.
 	@mkdir -p "$(RUNTIME_DIR)"
 ifeq (,$(STAGED_BINARIES))
-	@$(call copy,$(RUNSC_TARGET),$(RUNTIME_BIN))
-	@# Install sidecar binaries next to `RUNTIME_BIN`:
-	@$(call copy,//debian:gvisor-bin-tar,$(RUNTIME_DIR))
-	@tar -C "$(RUNTIME_DIR)" -xf "$(RUNTIME_DIR)/gvisor-bin-tar.tar"
-	@rm -f "$(RUNTIME_DIR)/gvisor-bin-tar.tar"
+	@$(call copy,//:release,$(RUNTIME_DIR))
+	@$(if $(filter-out //runsc,$(RUNSC_TARGET)),$(call copy,$(RUNSC_TARGET),$(RUNTIME_BIN)))
 	@$(if $(EXTRA_SIDECAR_TARGETS),$(call copy,$(EXTRA_SIDECAR_TARGETS),$(RUNTIME_DIR)/gvisor-bin))
 else
 	@gcloud storage cat "${STAGED_BINARIES}" | \
-	  tar -C "$(RUNTIME_DIR)" -zxvf - ./runsc ./gvisor-bin && \
-	  chmod -R a+rx "$(RUNTIME_BIN)" "$(RUNTIME_DIR)/gvisor-bin"
+	  tar -C "$(RUNTIME_DIR)" -zxvf - && \
+	  chmod -R a+rx "$(RUNTIME_DIR)"
 endif
 .PHONY: $(RUNTIME_BIN) # Real file, but force rebuild.
 
@@ -237,12 +234,13 @@ debian: ## Builds the debian packages.
 	@$(call build,-c opt //debian:debian)
 .PHONY: debian
 
-smoke-tests: ## Runs a simple smoke test after building runsc.
-	@$(call run,//runsc,--alsologtostderr --network none --debug --TESTONLY-unsafe-nonroot=true --rootless do true)
+smoke-tests: $(RUNTIME_BIN) ## Runs a simple smoke test after building runsc.
+	@$(RUNTIME_BIN) --alsologtostderr --network none --debug --TESTONLY-unsafe-nonroot=true --rootless do true
 .PHONY: smoke-tests
 
-smoke-race-tests: ## Runs a smoke test after build building runsc in race configuration.
-	@$(call run,$(RACE_FLAGS) //runsc:runsc-race,--alsologtostderr --network none --debug --TESTONLY-unsafe-nonroot=true --rootless do true)
+smoke-race-tests: RUNSC_TARGET = $(RACE_FLAGS) //runsc:runsc-race
+smoke-race-tests: $(RUNTIME_BIN) ## Runs a smoke test after build building runsc in race configuration.
+	@$(RUNTIME_BIN) --alsologtostderr --network none --debug --TESTONLY-unsafe-nonroot=true --rootless do true
 .PHONY: smoke-race-tests
 
 nogo-tests:
@@ -512,7 +510,7 @@ nftables-syscall-runc-tests: load-nftables
 	@sudo modprobe nfnetlink
 	@sudo modprobe nf_tables
 	@# Overrides the default `--user` flag of DOCKER_RUN_OPTIONS to run as root.
-	@$(call build_paths,//test/syscalls/linux:socket_netlink_netfilter_test,docker run $(DOCKER_RUN_OPTIONS) --user 0:0 --runtime runc --rm gvisor.dev/images/nftables {})
+	@$(call build_paths,//test/syscalls/linux:socket_netlink_netfilter_test,docker run $(DOCKER_RUN_OPTIONS) --user 0:0 --runtime runc --rm gvisor.dev/images/nftables "$$0")
 .PHONY: nftables-syscall-runc-tests
 
 bwrap-tests: $(RUNTIME_BIN)
@@ -544,13 +542,10 @@ containerd-test-%: load-basic_alpine load-basic_python load-basic_busybox load-b
 	@$(call install_runtime,$(RUNTIME),) # Clear flags.
 	@$(call install_containerd,$*)
 ifeq (,$(STAGED_BINARIES))
-	@(export T=$$(mktemp -d --tmpdir containerd.XXXXXX); \
-	$(call copy,//shim:containerd-shim-runsc-v1,$$T) && \
-	sudo mv $$T/containerd-shim-runsc-v1 "$$(dirname $$(which containerd))"; \
-	rm -rf $$T)
+	@sudo cp -fa "$(RUNTIME_DIR)"/* "$$(dirname $$(which containerd))/"
 else
-	gcloud storage cat "$(STAGED_BINARIES)" | \
-		sudo tar -C "$$(dirname $$(which containerd))" -zxvf - containerd-shim-runsc-v1
+	@gcloud storage cat "$(STAGED_BINARIES)" | \
+		sudo tar -C "$$(dirname $$(which containerd))" -zxvf -
 endif
 	@$(call sudo,test/root:root_test,--runtime=$(RUNTIME) -test.v)
 containerd-tests-min: containerd-test-1.7.31

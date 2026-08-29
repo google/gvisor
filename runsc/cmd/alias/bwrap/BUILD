@@ -42,7 +42,7 @@ go_test(
     name = "bwrap_integration_test",
     srcs = ["bwrap_integration_test.go"],
     data = [
-        "//runsc",
+        "//:release",
     ],
     library = ":bwrap",
     tags = [

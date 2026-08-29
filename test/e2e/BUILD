@@ -88,7 +88,7 @@ go_test(
         "podman_test.go",
     ],
     # runsc is needed to invalidate the bazel cache in case of any code changes.
-    data = ["//runsc"],
+    data = ["//:release"],
     library = ":integration",
     tags = [
         # Requires docker and runsc to be configured before the test runs.

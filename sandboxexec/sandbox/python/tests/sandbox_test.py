@@ -35,7 +35,7 @@ def find_runsc() -> str:
   for env_var in ["RUNFILES_DIR", "PYTHON_RUNFILES"]:
     runfiles_dir = os.environ.get(env_var)
     if runfiles_dir:
-      pattern = os.path.join(runfiles_dir, "**", "runsc/runsc")
+      pattern = os.path.join(runfiles_dir, "**", "release/runsc")
       matches = glob.glob(pattern, recursive=True)
       matches = [m for m in matches if os.path.isfile(m)]
       if matches:
@@ -49,11 +49,28 @@ def find_runsc() -> str:
   raise RuntimeError("runsc binary not found")
 
 
+def find_sidecars() -> str:
+  """Finds the sidecar binaries directory in the test environment."""
+  for env_var in ["RUNFILES_DIR", "PYTHON_RUNFILES"]:
+    runfiles_dir = os.environ.get(env_var)
+    if runfiles_dir:
+      pattern = os.path.join(runfiles_dir, "**", "release/gvisor-bin")
+      matches = glob.glob(pattern, recursive=True)
+      matches = [m for m in matches if os.path.isdir(m)]
+      if matches:
+        return matches[0]
+  return ""
+
+
 def setUpModule():
   try:
     os.environ["RUNSC_PATH"] = find_runsc()
   except RuntimeError as e:
     raise unittest.SkipTest(str(e))
+  if not os.environ.get("GVISOR_SIDECAR_BINARIES_DIR"):
+    sidecars = find_sidecars()
+    if sidecars:
+      os.environ["GVISOR_SIDECAR_BINARIES_DIR"] = sidecars
 
 
 class SandboxTest(unittest.TestCase):

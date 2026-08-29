@@ -48,7 +48,7 @@ func TestAll(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	runsc, err := testutil.FindFile("runsc/runsc")
+	runsc, err := testutil.FindRunsc()
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -143,15 +143,33 @@ func ImageByName(name string) string {
 	return fmt.Sprintf("gvisor.dev/images/%s", name)
 }
 
+// FindRunsc returns the path to the runsc binary.
+// As a side effect, it sets the GVISOR_SIDECAR_BINARIES_DIR environment
+// variable needed to properly aim `runsc` at its sidecar binaries in
+// environments like bazel where build artifacts are laid out by hash
+// which can use `runsc` to be placed in a far-away directory from the
+// rest of the sidecar binaries.
+func FindRunsc() (string, error) {
+	path, err := FindFile("release/runsc")
+	if err != nil {
+		return "", err
+	}
+	if os.Getenv("GVISOR_SIDECAR_BINARIES_DIR") == "" {
+		dir, err := FindFile("release/gvisor-bin")
+		if err != nil {
+			return "", fmt.Errorf("failed to find gvisor-bin directory: %w", err)
+		}
+		os.Setenv("GVISOR_SIDECAR_BINARIES_DIR", dir)
+	}
+	return path, nil
+}
+
 // ConfigureExePath configures the executable for runsc in the test environment.
 func ConfigureExePath() error {
 	if *runscPath == "" {
-		path, err := FindFile("release/runsc")
+		path, err := FindRunsc()
 		if err != nil {
-			path, err = FindFile("runsc/runsc")
-			if err != nil {
-				return err
-			}
+			return err
 		}
 		*runscPath = path
 	}

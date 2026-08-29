@@ -987,7 +987,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		log.Infof("Sidecar %q found: prepending Sentry boot command with %s", gvisorbinaries.GvisorSentryPrewarmer.Name, p)
 		cmd.Args = append([]string{p, cmd.Path}, cmd.Args[0:]...)
 		cmd.Path = p
-	} else if conf.SidecarUsagePolicy.AllowEmbeddedFallback() {
+	} else if conf.SidecarUsagePolicy != config.SidecarUsageStrict {
 		gvisorbinaries.GvisorSentryPrewarmer.WarnUnavailable(fmt.Sprintf("Sidecar %q not found or usable (%v). This slows down gVisor startup significantly", gvisorbinaries.GvisorSentryPrewarmer.Name, err))
 	} else {
 		return fmt.Errorf("sidecar %q not usable (%v) and --sidecar-usage-policy is set to STRICT", gvisorbinaries.GvisorSentryPrewarmer.Name, err)

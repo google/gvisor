@@ -9,7 +9,7 @@ go_test(
     name = "smoke_test",
     srcs = ["smoke_test.go"],
     # Needed to invalidate the bazel cache in case of any code changes.
-    data = ["//runsc"],
+    data = ["//:release"],
     tags = [
         "manual",
         "noguitar",
