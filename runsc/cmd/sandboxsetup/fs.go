@@ -124,15 +124,36 @@ func resolveSymlinksImpl(root, base, rel string, followCount uint) (string, erro
 	return base, nil
 }
 
+// optionsWithHostNoExec adds "noexec" when the host mount has ST_NOEXEC
+// and drops an explicit "exec". SetupMounts only applies MS_NOEXEC in
+// the gofer namespace. The Sentry reads specs.Mount.Options.
+func optionsWithHostNoExec(opts []string, noexec bool) []string {
+	rv := make([]string, 0, len(opts)+1)
+	hasNoExec := false
+	for _, o := range opts {
+		if noexec && o == "exec" {
+			continue
+		}
+		if o == "noexec" {
+			hasNoExec = true
+		}
+		rv = append(rv, o)
+	}
+	if noexec && !hasNoExec {
+		rv = append(rv, "noexec")
+	}
+	return rv
+}
+
 // AdjustMountOptions adds filesystem-specific gofer mount options.
 func AdjustMountOptions(conf *config.Config, path string, opts []string) ([]string, error) {
-	rv := make([]string, len(opts))
-	copy(rv, opts)
-
 	statfs := unix.Statfs_t{}
 	if err := unix.Statfs(path, &statfs); err != nil {
 		return nil, err
 	}
+
+	rv := optionsWithHostNoExec(opts, statfs.Flags&unix.ST_NOEXEC == unix.ST_NOEXEC)
+
 	switch statfs.Type {
 	case unix.OVERLAYFS_SUPER_MAGIC:
 		rv = append(rv, "overlayfs_stale_read")
