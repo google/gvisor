@@ -44,6 +44,25 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 )
 
+func TestClockResolution(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		got  time.Duration
+		want time.Duration
+	}{
+		{name: "default"},
+		{name: "positive", got: 500 * time.Microsecond, want: 500 * time.Microsecond},
+		{name: "negative", got: -time.Nanosecond},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{ClockResolution: test.got})
+			if got := s.ClockResolution(); got != test.want {
+				t.Errorf("ClockResolution() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
 const (
 	fakeNetNumber        tcpip.NetworkProtocolNumber = math.MaxUint32
 	fakeNetHeaderLen                                 = 12
