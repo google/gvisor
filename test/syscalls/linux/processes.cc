@@ -12,13 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <errno.h>
+#include <sched.h>
+#include <signal.h>
 #include <stdint.h>
 #include <sys/mman.h>
+#include <sys/ptrace.h>
 #include <sys/syscall.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <algorithm>
 #include <cstring>
+#include <functional>
 #include <memory>
 
 #include "gmock/gmock.h"
@@ -117,6 +123,262 @@ TEST(Processes, SetPGIDOfZombie) {
   ASSERT_THAT(RetryEINTR(waitpid)(pid, &status, 0),
               SyscallSucceedsWithValue(pid));
   EXPECT_EQ(status, 0);
+}
+
+// Clones fn as the init process of a new PID namespace and returns its pid.
+pid_t CloneNewPidNamespace(int (*fn)(void*)) {
+  // Reserve some space for clone() to locate arguments and retcode in this
+  // place. Some of the children below take a signal on this stack, so leave
+  // room for a signal frame.
+  static struct {
+    char stack[64 * 1024] __attribute__((aligned(16)));
+    char stack_ptr[0];
+  } ca;
+  return clone(fn, ca.stack_ptr, CLONE_NEWPID | SIGCHLD, nullptr);
+}
+
+// Runs fn as the init process of a new PID namespace and expects it to exit
+// with status 0.
+void RunInNewPidNamespace(int (*fn)(void*)) {
+  pid_t pid;
+  ASSERT_THAT(pid = CloneNewPidNamespace(fn), SyscallSucceeds());
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(pid, &status, 0),
+              SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << "status = " << status;
+}
+
+// Runs fn in a child of the calling init process and reaps it.
+void RunMemberAndReap(const std::function<void()>& fn) {
+  pid_t pid = fork();
+  if (pid == 0) {
+    fn();
+    _exit(0);
+  }
+  TEST_PCHECK(pid > 0);
+  int status;
+  TEST_PCHECK(RetryEINTR(waitpid)(pid, &status, 0) == pid);
+  TEST_PCHECK(status == 0);
+}
+
+sigset_t SignalMask(int sig) {
+  sigset_t mask;
+  sigemptyset(&mask);
+  sigaddset(&mask, sig);
+  return mask;
+}
+
+int testPidNsInitIgnoresSelfSentSignals(void* arg) {
+  TEST_PCHECK(getpid() == 1);
+  TEST_PCHECK(kill(1, SIGKILL) == 0);
+  TEST_PCHECK(kill(1, SIGTERM) == 0);
+  TEST_PCHECK(syscall(SYS_tkill, 1, SIGKILL) == 0);
+  _exit(0);
+}
+
+TEST(Processes, PidNamespaceInitIgnoresSelfSentSignals) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  RunInNewPidNamespace(testPidNsInitIgnoresSelfSentSignals);
+}
+
+int testPidNsInitIgnoresMemberSignals(void* arg) {
+  TEST_PCHECK(getpid() == 1);
+  RunMemberAndReap([] {
+    TEST_PCHECK(kill(1, SIGTERM) == 0);
+    TEST_PCHECK(kill(1, SIGSTOP) == 0);
+    TEST_PCHECK(kill(1, SIGKILL) == 0);
+  });
+  _exit(0);
+}
+
+TEST(Processes, PidNamespaceInitIgnoresMemberSignals) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  RunInNewPidNamespace(testPidNsInitIgnoresMemberSignals);
+}
+
+volatile sig_atomic_t signal_handled;
+
+void RecordSignalHandled(int sig) { signal_handled = 1; }
+
+int testPidNsInitReceivesHandledMemberSignal(void* arg) {
+  TEST_PCHECK(getpid() == 1);
+  signal_handled = 0;
+  struct sigaction sa = {};
+  sa.sa_handler = RecordSignalHandled;
+  TEST_PCHECK(sigaction(SIGTERM, &sa, nullptr) == 0);
+  sigset_t mask = SignalMask(SIGTERM);
+  TEST_PCHECK(sigprocmask(SIG_BLOCK, &mask, nullptr) == 0);
+  RunMemberAndReap([] { TEST_PCHECK(kill(1, SIGTERM) == 0); });
+  sigset_t suspend_mask;
+  TEST_PCHECK(sigprocmask(SIG_BLOCK, nullptr, &suspend_mask) == 0);
+  sigdelset(&suspend_mask, SIGTERM);
+  TEST_PCHECK(sigsuspend(&suspend_mask) == -1 && errno == EINTR);
+  TEST_PCHECK(signal_handled == 1);
+  _exit(0);
+}
+
+TEST(Processes, PidNamespaceInitReceivesHandledMemberSignal) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  RunInNewPidNamespace(testPidNsInitReceivesHandledMemberSignal);
+}
+
+int testPidNsInitDropsQueuedMemberSignalOnUnblock(void* arg) {
+  TEST_PCHECK(getpid() == 1);
+  sigset_t mask = SignalMask(SIGTERM);
+  TEST_PCHECK(sigprocmask(SIG_BLOCK, &mask, nullptr) == 0);
+  RunMemberAndReap([] { TEST_PCHECK(kill(1, SIGTERM) == 0); });
+  sigset_t pending;
+  TEST_PCHECK(sigpending(&pending) == 0);
+  TEST_PCHECK(sigismember(&pending, SIGTERM) == 1);
+  TEST_PCHECK(sigprocmask(SIG_UNBLOCK, &mask, nullptr) == 0);
+  _exit(0);
+}
+
+TEST(Processes, PidNamespaceInitDropsQueuedMemberSignalOnUnblock) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  RunInNewPidNamespace(testPidNsInitDropsQueuedMemberSignalOnUnblock);
+}
+
+int testPidNsInitSigwaitsMemberSignal(void* arg) {
+  TEST_PCHECK(getpid() == 1);
+  sigset_t mask = SignalMask(SIGTERM);
+  TEST_PCHECK(sigprocmask(SIG_BLOCK, &mask, nullptr) == 0);
+  RunMemberAndReap([] { TEST_PCHECK(kill(1, SIGTERM) == 0); });
+  struct timespec timeout = {.tv_sec = 30};
+  TEST_PCHECK(sigtimedwait(&mask, nullptr, &timeout) == SIGTERM);
+  _exit(0);
+}
+
+TEST(Processes, PidNamespaceInitSigwaitsMemberSignal) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  RunInNewPidNamespace(testPidNsInitSigwaitsMemberSignal);
+}
+
+void QueueSignalToInit(int code, pid_t sender) {
+  siginfo_t si = {};
+  si.si_signo = SIGKILL;
+  si.si_code = code;
+  si.si_pid = sender;
+  si.si_uid = getuid();
+  TEST_PCHECK(syscall(SYS_rt_sigqueueinfo, 1, SIGKILL, &si) == 0);
+}
+
+int testPidNsInitIgnoresOwnForgedSignal(void* arg) {
+  TEST_PCHECK(getpid() == 1);
+  QueueSignalToInit(SI_QUEUE, 1);
+  QueueSignalToInit(1, 1);
+  _exit(0);
+}
+
+TEST(Processes, PidNamespaceInitIgnoresOwnForgedSignal) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  RunInNewPidNamespace(testPidNsInitIgnoresOwnForgedSignal);
+}
+
+int testPidNsInitIgnoresForgedMemberSignal(void* arg) {
+  TEST_PCHECK(getpid() == 1);
+  RunMemberAndReap([] {
+    QueueSignalToInit(SI_QUEUE, getpid());
+    QueueSignalToInit(SI_QUEUE, 0);
+    QueueSignalToInit(SI_TIMER, getpid());
+    QueueSignalToInit(SI_SIGIO, getpid());
+  });
+  _exit(0);
+}
+
+TEST(Processes, PidNamespaceInitIgnoresForgedMemberSignal) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  RunInNewPidNamespace(testPidNsInitIgnoresForgedMemberSignal);
+}
+
+int testPidNsInitIgnoresMemberSignalWhileTraced(void* arg) {
+  TEST_PCHECK(getpid() == 1);
+  RunMemberAndReap([] {
+    TEST_PCHECK(ptrace(PTRACE_SEIZE, 1, nullptr, nullptr) == 0);
+    TEST_PCHECK(kill(1, SIGKILL) == 0);
+    TEST_PCHECK(kill(1, SIGTERM) == 0);
+    int status;
+    TEST_PCHECK(RetryEINTR(waitpid)(1, &status, WUNTRACED) == 1);
+    TEST_PCHECK(WIFSTOPPED(status));
+    // A tracer cannot make a member's signal look kernel-sent.
+    siginfo_t si = {};
+    TEST_PCHECK(ptrace(PTRACE_GETSIGINFO, 1, nullptr, &si) == 0);
+    si.si_code = SI_KERNEL;
+    TEST_PCHECK(ptrace(PTRACE_SETSIGINFO, 1, nullptr, &si) == 0);
+    TEST_PCHECK(ptrace(PTRACE_CONT, 1, nullptr, SIGTERM) == 0);
+  });
+  _exit(0);
+}
+
+TEST(Processes, PidNamespaceInitIgnoresMemberSignalWhileTraced) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_PTRACE)));
+  RunInNewPidNamespace(testPidNsInitIgnoresMemberSignalWhileTraced);
+}
+
+int testPidNsInitDiesOnFault(void* arg) {
+  TEST_PCHECK(getpid() == 1);
+  *reinterpret_cast<volatile int*>(0) = 1;
+  _exit(0);
+}
+
+TEST(Processes, PidNamespaceInitDiesOnFault) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  pid_t pid;
+  ASSERT_THAT(pid = CloneNewPidNamespace(testPidNsInitDiesOnFault),
+              SyscallSucceeds());
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(pid, &status, 0),
+              SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGSEGV)
+      << "status = " << status;
+}
+
+// Shared with the cloned init process, which needs them after clone().
+int toPidNsInit[2];
+int fromPidNsInit[2];
+
+int testPidNsInitEchoes(void* arg) {
+  TEST_PCHECK(getpid() == 1);
+  TEST_PCHECK(close(toPidNsInit[1]) == 0);
+  TEST_PCHECK(close(fromPidNsInit[0]) == 0);
+  char c = 0;
+  TEST_PCHECK(WriteFd(fromPidNsInit[1], &c, 1) == 1);
+  TEST_PCHECK(ReadFd(toPidNsInit[0], &c, 1) == 1);
+  TEST_PCHECK(WriteFd(fromPidNsInit[1], &c, 1) == 1);
+  while (true) {
+    pause();
+  }
+  return 0;
+}
+
+TEST(Processes, PidNamespaceInitSignaledFromParentNamespace) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  ASSERT_THAT(pipe(toPidNsInit), SyscallSucceeds());
+  ASSERT_THAT(pipe(fromPidNsInit), SyscallSucceeds());
+  pid_t pid;
+  ASSERT_THAT(pid = CloneNewPidNamespace(testPidNsInitEchoes),
+              SyscallSucceeds());
+  ASSERT_THAT(close(toPidNsInit[0]), SyscallSucceeds());
+  ASSERT_THAT(close(fromPidNsInit[1]), SyscallSucceeds());
+  char c = 0;
+  ASSERT_THAT(ReadFd(fromPidNsInit[0], &c, 1), SyscallSucceedsWithValue(1));
+
+  // Only SIGKILL and SIGSTOP reach an init process with no handler, even from
+  // the parent namespace.
+  ASSERT_THAT(kill(pid, SIGTERM), SyscallSucceeds());
+  ASSERT_THAT(WriteFd(toPidNsInit[1], &c, 1), SyscallSucceedsWithValue(1));
+  EXPECT_THAT(ReadFd(fromPidNsInit[0], &c, 1), SyscallSucceedsWithValue(1));
+
+  ASSERT_THAT(kill(pid, SIGKILL), SyscallSucceeds());
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(pid, &status, 0),
+              SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL)
+      << "status = " << status;
+  EXPECT_THAT(close(toPidNsInit[1]), SyscallSucceeds());
+  EXPECT_THAT(close(fromPidNsInit[0]), SyscallSucceeds());
 }
 
 void WritePIDToPipe(int* pipe_fds) {

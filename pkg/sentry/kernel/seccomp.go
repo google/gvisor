@@ -98,6 +98,7 @@ func (t *Task) checkSeccompSyscall(sysno int32, args arch.SyscallArguments, ip h
 	action := result & linux.SECCOMP_RET_ACTION
 	switch action {
 	case linux.SECCOMP_RET_TRAP:
+		t.clearUnkillableInit(linux.SIGSYS)
 		// "Results in the kernel sending a SIGSYS signal to the triggering
 		// task without executing the system call. ... The SECCOMP_RET_DATA
 		// portion of the return value will be passed as si_errno." -

@@ -494,6 +494,9 @@ func (ts *TaskSet) assignTIDsLocked(t *Task) error {
 		return err
 	}
 	t.tg.pidWithinNS.Store(int32(t.tg.pidns.tgids[t.tg]))
+	if t.tg.leader == nil && t.tg.isInitInLocked(t.tg.pidns) {
+		t.tg.unkillableInit.Store(true)
+	}
 	return nil
 }
 
