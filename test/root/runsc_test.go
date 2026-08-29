@@ -17,6 +17,7 @@ package root
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -28,6 +29,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+	"github.com/docker/docker/api/types/mount"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/testutil"
@@ -176,5 +178,52 @@ func TestSandboxProcessEnv(t *testing.T) {
 	got = regexp.MustCompile("(^|\x00)GVISOR_ENFORCE_RELEASE=[^\x00]*\x00").ReplaceAll(got, []byte("$1"))
 	if len(got) != 0 && string(got) != "GLIBC_TUNABLES=glibc.pthread.rseq=0\x00" {
 		t.Errorf("sandbox process's environment is not empty: got %s (%v)", string(got), got)
+	}
+}
+
+// TestHostNoExecBindMountExecReturnsEACCES bind-mounts a host noexec
+// tmpfs into a container without noexec in the OCI spec. Exec from that
+// volume must return EACCES, not SIGSEGV. See #14375.
+func TestHostNoExecBindMountExecReturnsEACCES(t *testing.T) {
+	dir := t.TempDir()
+	if err := unix.Mount("tmpfs", dir, "tmpfs", unix.MS_NOEXEC, ""); err != nil {
+		t.Fatalf("mount tmpfs noexec on %q: %v", dir, err)
+	}
+	t.Cleanup(func() {
+		if err := unix.Unmount(dir, unix.MNT_DETACH); err != nil {
+			t.Errorf("unmount %q: %v", dir, err)
+		}
+	})
+
+	script := filepath.Join(dir, "ok.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
+		t.Fatalf("write %q: %v", script, err)
+	}
+
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	opts := dockerutil.RunOpts{
+		Image: "basic/alpine",
+		Mounts: []mount.Mount{
+			{
+				Type:   mount.TypeBind,
+				Source: dir,
+				Target: "/noexecvol",
+			},
+		},
+	}
+	if err := d.Spawn(ctx, opts, "sleep", "infinity"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
+	_, err := d.Exec(ctx, dockerutil.ExecOpts{}, "/noexecvol/ok.sh")
+	if err == nil {
+		t.Fatal("exec of /noexecvol/ok.sh succeeded, want EACCES")
+	}
+	var ee *dockerutil.ExecError
+	if errors.As(err, &ee) && (ee.ExitStatus == 139 || ee.ExitStatus == int(unix.SIGSEGV)+128) {
+		t.Fatalf("exec segfaulted, want EACCES: %v", err)
 	}
 }
