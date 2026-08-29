@@ -1989,6 +1989,33 @@ TEST(MountTest, FailedBindDoesNotBreakPropagation) {
       << "mount under shared peer B did not propagate to slave A";
 }
 
+TEST(MountTest, MountMax) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  constexpr char kMountMax[] = "/proc/sys/fs/mount-max";
+  SKIP_IF(access(kMountMax, W_OK) != 0);
+
+  std::string const old_max = ASSERT_NO_ERRNO_AND_VALUE(GetContents(kMountMax));
+  auto const restore =
+      Cleanup([&]() { EXPECT_NO_ERRNO(SetContents(kMountMax, old_max)); });
+
+  // The limit must be at least 1 (Linux: proc_dointvec_minmax with
+  // extra1 == SYSCTL_ONE).
+  EXPECT_THAT(SetContents(kMountMax, "0"), PosixErrorIs(EINVAL));
+
+  // Lower the limit to the current number of mounts; any new mount must then
+  // fail with ENOSPC.
+  auto const mounts = ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountsEntries());
+  ASSERT_NO_ERRNO(SetContents(kMountMax, absl::StrCat(mounts.size())));
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  EXPECT_THAT(mount("", dir.path().c_str(), kTmpfs, 0, 0),
+              SyscallFailsWithErrno(ENOSPC));
+
+  // Mounting works again once the limit is restored.
+  ASSERT_NO_ERRNO(SetContents(kMountMax, old_max));
+  auto const mnt =
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir.path(), kTmpfs, 0, "", 0));
+}
+
 TEST(MountTest, MakeSharedSlave) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
