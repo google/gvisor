@@ -219,6 +219,7 @@ go_test(
         "cubic_test.go",
         "endpoint_test.go",
         "main_test.go",
+        "rack_test.go",
         "sack_scoreboard_test.go",
         "segment_test.go",
         "timer_test.go",
