@@ -382,13 +382,26 @@ func (rc *rackControl) detectLoss(rcvTime tcpip.MonotonicTime) int {
 		}
 
 		endSeq := seg.sequenceNumber.Add(seqnum.Size(seg.payloadSize()))
-		if seg.xmitTime.Before(rc.XmitTime) || (seg.xmitTime == rc.XmitTime && rc.EndSequence.LessThan(endSeq)) {
-			timeRemaining := seg.xmitTime.Sub(rcvTime) + rc.RTT + rc.ReoWnd
-			if timeRemaining <= 0 {
+		if seg.xmitTime.Before(rc.XmitTime) || (seg.xmitTime == rc.XmitTime && endSeq.LessThan(rc.EndSequence)) {
+			// Timestamp quantization can make two events less than one clock tick
+			// apart appear a full tick apart. Keep that uncertainty separate from
+			// the network reordering window, which RACK may intentionally reduce to
+			// zero during recovery.
+			clockResolution := rc.snd.ep.stack.ClockResolution()
+			timeRemaining := seg.xmitTime.Sub(rcvTime) + rc.RTT + rc.ReoWnd + clockResolution
+			if timeRemaining < 0 || (timeRemaining == 0 && clockResolution == 0) {
 				seg.lost = true
 				numLost++
-			} else if timeRemaining > timeout {
-				timeout = timeRemaining
+			} else {
+				if timeRemaining == 0 {
+					// At equality, quantization error may account for the whole
+					// observed interval. Wait for another clock tick. A positive
+					// timeout is also required to ensure loss is reconsidered.
+					timeRemaining = clockResolution
+				}
+				if timeRemaining > timeout {
+					timeout = timeRemaining
+				}
 			}
 		}
 	}
