@@ -15,7 +15,7 @@
 //go:build arm64
 // +build arm64
 
-package filter
+package config
 
 import (
 	"golang.org/x/sys/unix"

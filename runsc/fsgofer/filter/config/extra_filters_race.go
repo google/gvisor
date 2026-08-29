@@ -15,7 +15,7 @@
 //go:build race
 // +build race
 
-package filter
+package config
 
 import (
 	"golang.org/x/sys/unix"

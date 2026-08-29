@@ -15,7 +15,7 @@
 //go:build amd64
 // +build amd64
 
-package filter
+package config
 
 import (
 	"golang.org/x/sys/unix"

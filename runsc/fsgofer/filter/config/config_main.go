@@ -12,11 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package filter
+package config
 
 import (
-	"os"
-
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/seccomp"
@@ -206,11 +204,17 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		seccomp.EqualTo(unix.SOCK_SEQPACKET | unix.SOCK_CLOEXEC),
 		seccomp.EqualTo(0),
 	},
-	unix.SYS_TGKILL: seccomp.PerArg{
-		seccomp.EqualTo(uint64(os.Getpid())),
-	},
 	unix.SYS_WRITE: seccomp.MatchAll{},
 })
+
+// selfPIDFilters contains syscall filters that depend on the process's PID.
+func selfPIDFilters(pid uint64) seccomp.SyscallRules {
+	return seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
+		unix.SYS_TGKILL: seccomp.PerArg{
+			seccomp.EqualTo(pid),
+		},
+	})
+}
 
 var udsCommonSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 	unix.SYS_SOCKET: seccomp.Or{
