@@ -8,28 +8,60 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (r *dentryRefs) StateTypeName() string {
-	return "pkg/sentry/fsimpl/erofs.dentryRefs"
+func (l *dentryList) StateTypeName() string {
+	return "pkg/sentry/fsimpl/erofs.dentryList"
 }
 
-func (r *dentryRefs) StateFields() []string {
+func (l *dentryList) StateFields() []string {
 	return []string{
-		"refCount",
+		"head",
+		"tail",
 	}
 }
 
-func (r *dentryRefs) beforeSave() {}
+func (l *dentryList) beforeSave() {}
 
 // +checklocksignore
-func (r *dentryRefs) StateSave(stateSinkObject state.Sink) {
-	r.beforeSave()
-	stateSinkObject.Save(0, &r.refCount)
+func (l *dentryList) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.head)
+	stateSinkObject.Save(1, &l.tail)
 }
 
+func (l *dentryList) afterLoad(context.Context) {}
+
 // +checklocksignore
-func (r *dentryRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
+func (l *dentryList) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.head)
+	stateSourceObject.Load(1, &l.tail)
+}
+
+func (e *dentryEntry) StateTypeName() string {
+	return "pkg/sentry/fsimpl/erofs.dentryEntry"
+}
+
+func (e *dentryEntry) StateFields() []string {
+	return []string{
+		"next",
+		"prev",
+	}
+}
+
+func (e *dentryEntry) beforeSave() {}
+
+// +checklocksignore
+func (e *dentryEntry) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.next)
+	stateSinkObject.Save(1, &e.prev)
+}
+
+func (e *dentryEntry) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (e *dentryEntry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.next)
+	stateSourceObject.Load(1, &e.prev)
 }
 
 func (fd *directoryFD) StateTypeName() string {
@@ -99,6 +131,10 @@ func (fs *filesystem) StateFields() []string {
 		"mf",
 		"useReadForIO",
 		"inodeBuckets",
+		"cachedDentries",
+		"cachedDentriesLen",
+		"maxCachedDentries",
+		"released",
 	}
 }
 
@@ -116,6 +152,10 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &fs.mf)
 	stateSinkObject.Save(7, &fs.useReadForIO)
 	stateSinkObject.Save(8, &fs.inodeBuckets)
+	stateSinkObject.Save(9, &fs.cachedDentries)
+	stateSinkObject.Save(10, &fs.cachedDentriesLen)
+	stateSinkObject.Save(11, &fs.maxCachedDentries)
+	stateSinkObject.Save(12, &fs.released)
 }
 
 // +checklocksignore
@@ -129,6 +169,10 @@ func (fs *filesystem) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(6, &fs.mf)
 	stateSourceObject.Load(7, &fs.useReadForIO)
 	stateSourceObject.Load(8, &fs.inodeBuckets)
+	stateSourceObject.Load(9, &fs.cachedDentries)
+	stateSourceObject.Load(10, &fs.cachedDentriesLen)
+	stateSourceObject.Load(11, &fs.maxCachedDentries)
+	stateSourceObject.Load(12, &fs.released)
 	stateSourceObject.AfterLoad(func() { fs.afterLoad(ctx) })
 }
 
@@ -229,11 +273,13 @@ func (d *dentry) StateTypeName() string {
 func (d *dentry) StateFields() []string {
 	return []string{
 		"vfsd",
-		"dentryRefs",
+		"refs",
 		"parent",
 		"name",
 		"inode",
 		"childMap",
+		"cached",
+		"dentryEntry",
 	}
 }
 
@@ -246,22 +292,25 @@ func (d *dentry) StateSave(stateSinkObject state.Sink) {
 	_ = (*dentry)(parentValue)
 	stateSinkObject.SaveValue(2, parentValue)
 	stateSinkObject.Save(0, &d.vfsd)
-	stateSinkObject.Save(1, &d.dentryRefs)
+	stateSinkObject.Save(1, &d.refs)
 	stateSinkObject.Save(3, &d.name)
 	stateSinkObject.Save(4, &d.inode)
 	stateSinkObject.Save(5, &d.childMap)
+	stateSinkObject.Save(6, &d.cached)
+	stateSinkObject.Save(7, &d.dentryEntry)
 }
-
-func (d *dentry) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (d *dentry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.vfsd)
-	stateSourceObject.Load(1, &d.dentryRefs)
+	stateSourceObject.Load(1, &d.refs)
 	stateSourceObject.Load(3, &d.name)
 	stateSourceObject.Load(4, &d.inode)
 	stateSourceObject.Load(5, &d.childMap)
+	stateSourceObject.Load(6, &d.cached)
+	stateSourceObject.Load(7, &d.dentryEntry)
 	stateSourceObject.LoadValue(2, new(*dentry), func(y any) { d.loadParent(ctx, y.(*dentry)) })
+	stateSourceObject.AfterLoad(func() { d.afterLoad(ctx) })
 }
 
 func (fd *fileDescription) StateTypeName() string {
@@ -379,7 +428,8 @@ func (mf *imageMemmapFile) StateLoad(ctx context.Context, stateSourceObject stat
 }
 
 func init() {
-	state.Register((*dentryRefs)(nil))
+	state.Register((*dentryList)(nil))
+	state.Register((*dentryEntry)(nil))
 	state.Register((*directoryFD)(nil))
 	state.Register((*FilesystemType)(nil))
 	state.Register((*filesystem)(nil))

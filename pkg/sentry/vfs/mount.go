@@ -30,14 +30,13 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 )
 
-// MountMax is the maximum number of mounts allowed. In Linux this can be
-// configured by the user at /proc/sys/fs/mount-max, but the default is
-// 100,000. We set the gVisor limit to 10,000.
+// DefaultMountMax is the default maximum number of mounts allowed.
+// In Linux the default is 100,000, but we are a bit more conservative here.
 const (
-	MountMax      = 10000
-	nsfsName      = "nsfs"
-	cgroupFsName  = "cgroup"
-	cgroup2FsName = "cgroup2"
+	DefaultMountMax = 10000
+	nsfsName        = "nsfs"
+	cgroupFsName    = "cgroup"
+	cgroup2FsName   = "cgroup2"
 )
 
 // mountLockFlags records which of a Mount's flags a remount may not clear. It
