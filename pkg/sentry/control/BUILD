@@ -55,6 +55,7 @@ go_library(
         "//pkg/metric",
         "//pkg/metric:metric_go_proto",
         "//pkg/prometheus",
+        "//pkg/sentry/checkpoint",
         "//pkg/sentry/devices/memdev",
         "//pkg/sentry/devices/nvproxy",
         "//pkg/sentry/devices/tpuproxy/vfio",
@@ -96,6 +97,7 @@ go_test(
     srcs = [
         "fs_test.go",
         "proc_test.go",
+        "state_test.go",
     ],
     library = ":control",
     deps = [
@@ -103,11 +105,17 @@ go_test(
         "//pkg/context",
         "//pkg/errors/linuxerr",
         "//pkg/log",
+        "//pkg/sentry/checkpoint",
         "//pkg/sentry/contexttest",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/ktime",
+        "//pkg/sentry/state/checkpointfiles",
+        "//pkg/sentry/state/stateio",
+        "//pkg/sentry/state/stateipc",
         "//pkg/sentry/usage",
         "//pkg/sentry/vfs",
+        "//pkg/unet",
+        "//pkg/urpc",
         "//pkg/usermem",
     ],
 )

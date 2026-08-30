@@ -80,21 +80,46 @@ type SaveOpts struct {
 	// CudaCheckpointSequential indicates whether cuda-checkpoint should be run
 	// sequentially (rather than in parallel).
 	CudaCheckpointSequential bool
+
+	// FSSaveOpts contains options for filesystem checkpoint. If non-nil, we
+	// should split filesystem to separate pages from the full checkpoint.
+	FSSaveOpts *kernel.FSSaveOpts
 }
 
 // Close releases resources owned by opts.
 func (opts *SaveOpts) Close() error {
-	var dstErr, pmErr, pfErr error
+	var err error
 	if c, ok := opts.Destination.(io.Closer); ok {
-		dstErr = c.Close()
+		err = errors.Join(err, c.Close())
+		opts.Destination = nil
 	}
 	if opts.PagesMetadata != nil {
-		pmErr = opts.PagesMetadata.Close()
+		err = errors.Join(err, opts.PagesMetadata.Close())
+		opts.PagesMetadata = nil
 	}
 	if opts.PagesFile != nil {
-		pfErr = opts.PagesFile.Close()
+		err = errors.Join(err, opts.PagesFile.Close())
+		opts.PagesFile = nil
 	}
-	return errors.Join(dstErr, pmErr, pfErr)
+	if opts.FSSaveOpts != nil {
+		if opts.FSSaveOpts.ManifestFile != nil {
+			err = errors.Join(err, opts.FSSaveOpts.ManifestFile.Close())
+			opts.FSSaveOpts.ManifestFile = nil
+		}
+		if opts.FSSaveOpts.MultiTarFile != nil {
+			err = errors.Join(err, opts.FSSaveOpts.MultiTarFile.Close())
+			opts.FSSaveOpts.MultiTarFile = nil
+		}
+		if opts.FSSaveOpts.PagesMetadataFile != nil {
+			err = errors.Join(err, opts.FSSaveOpts.PagesMetadataFile.Close())
+			opts.FSSaveOpts.PagesMetadataFile = nil
+		}
+		if opts.FSSaveOpts.PagesFile != nil {
+			err = errors.Join(err, opts.FSSaveOpts.PagesFile.Close())
+			opts.FSSaveOpts.PagesFile = nil
+		}
+	}
+	return err
 }
 
 // Save saves the system state.
@@ -157,9 +182,10 @@ func (opts *SaveOpts) Save(ctx context.Context, k *kernel.Kernel, w *watchdog.Wa
 	} else {
 		opts.Destination = nil
 		// Save the kernel.
-		err = k.SaveTo(ctx, wc, opts.PagesMetadata, opts.PagesFile, opts.AppMFExcludeCommittedZeroPages, opts.Resume) // transfers ownership of wc, opts.PagesMetadata, opts.PagesFile
+		err = k.SaveTo(ctx, wc, opts.PagesMetadata, opts.PagesFile, opts.AppMFExcludeCommittedZeroPages, opts.Resume, opts.FSSaveOpts) // transfers ownership of wc, opts.PagesMetadata, opts.PagesFile, opts.FSSaveOpts
 		opts.PagesMetadata = nil
 		opts.PagesFile = nil
+		opts.FSSaveOpts = nil
 	}
 
 	t1, _ := CPUTime()
