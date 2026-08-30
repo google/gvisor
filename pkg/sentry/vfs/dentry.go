@@ -182,6 +182,11 @@ func (d *Dentry) isMounted() bool {
 	return d.mounts.Load() != 0
 }
 
+// IsMounted returns true if d is currently a mount point.
+func (d *Dentry) IsMounted() bool {
+	return d.isMounted()
+}
+
 // InotifyWithParent notifies all watches on the targets represented by d and
 // its parent of events.
 func (d *Dentry) InotifyWithParent(ctx context.Context, events, cookie uint32, et EventType) {
