@@ -129,6 +129,9 @@ type handshake struct {
 // processor if there are pending segments that need to be processed.
 //
 // NOTE: e.mu is held for the duration of the call to f().
+// The wrapper does not acquire a sender RTT mutex before calling f. checklocks
+// cannot recover f's captured sender to express that exclusion; the returned
+// callback runs later, so its lock state is not a precondition on timerHandler.
 func timerHandler(e *Endpoint, f func() tcpip.Error) func() {
 	return func() {
 		e.mu.Lock()
@@ -380,6 +383,9 @@ func (h *handshake) synSentState(s *segment) tcpip.Error {
 // synRcvdState handles a segment received when the TCP 3-way handshake is in
 // the SYN-RCVD state.
 // +checklocks:h.ep.mu
+// +checklocksexclude:h.ep.segmentQueue.mu
+// +checklocksexclude:h.ep.pendingProcessingMu
+// +checklocksexclude:h.listenEP.listenCtx.hasherMu
 func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 	if s.flags.Contains(header.TCPFlagRst) {
 		// RFC 793, page 37, states that in the SYN-RCVD state, a reset
@@ -514,6 +520,9 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 }
 
 // +checklocks:h.ep.mu
+// +checklocksexclude:h.ep.segmentQueue.mu
+// +checklocksexclude:h.ep.pendingProcessingMu
+// +checklocksexclude:h.listenEP.listenCtx.hasherMu
 func (h *handshake) handleSegment(s *segment) tcpip.Error {
 	h.sndWnd = s.window
 	if !s.flags.Contains(header.TCPFlagSyn) && h.sndWndScale > 0 {
@@ -532,6 +541,9 @@ func (h *handshake) handleSegment(s *segment) tcpip.Error {
 // processSegments goes through the segment queue and processes up to
 // maxSegmentsPerWake (if they're available).
 // +checklocks:h.ep.mu
+// +checklocksexclude:h.ep.segmentQueue.mu
+// +checklocksexclude:h.ep.pendingProcessingMu
+// +checklocksexclude:h.listenEP.listenCtx.hasherMu
 func (h *handshake) processSegments() tcpip.Error {
 	for i := 0; i < maxSegmentsPerWake; i++ {
 		s := h.ep.segmentQueue.dequeue()
@@ -981,6 +993,8 @@ func sendTCP(r *stack.Route, tf tcpFields, pkt *stack.PacketBuffer, gso stack.GS
 }
 
 // makeOptions makes an options slice.
+//
+// +checklocks:e.mu
 func (e *Endpoint) makeOptions(sackBlocks []header.SACKBlock) []byte {
 	options := getOptions()
 	offset := 0
@@ -1063,6 +1077,7 @@ func (e *Endpoint) sendRaw(pkt *stack.PacketBuffer, flags header.TCPFlags, seq, 
 }
 
 // +checklocks:e.mu
+// +checklocksexclude:e.snd.rtt.rttMutex
 func (e *Endpoint) sendData(next *segment) {
 	// Initialize the next segment to write if it's currently nil.
 	if e.snd.writeNext == nil {
@@ -1178,6 +1193,8 @@ func (e *Endpoint) tryDeliverSegmentFromClosedEndpoint(s *segment) {
 // Drain segment queue from the endpoint and try to re-match the segment to a
 // different endpoint. This is used when the current endpoint is transitioned to
 // StateClose and has been unregistered from the transport demuxer.
+//
+// +checklocksexclude:e.segmentQueue.mu
 func (e *Endpoint) drainClosingSegmentQueue() {
 	for {
 		s := e.segmentQueue.dequeue()
@@ -1250,6 +1267,8 @@ func (e *Endpoint) handleReset(s *segment) (ok bool, err tcpip.Error) {
 // handleSegments processes all inbound segments.
 //
 // +checklocks:e.mu
+// +checklocksexclude:e.segmentQueue.mu
+// +checklocksexclude:e.snd.rtt.rttMutex
 func (e *Endpoint) handleSegmentsLocked() tcpip.Error {
 	sndUna := e.snd.SndUna
 	for i := 0; i < maxSegmentsPerWake; i++ {
@@ -1292,6 +1311,7 @@ func (e *Endpoint) handleSegmentsLocked() tcpip.Error {
 }
 
 // +checklocks:e.mu
+// +checklocksexclude:e.snd.rtt.rttMutex
 func (e *Endpoint) probeSegmentLocked() {
 	if fn := e.probe; fn != nil {
 		var state TCPEndpointState
@@ -1304,6 +1324,7 @@ func (e *Endpoint) probeSegmentLocked() {
 // if the connection should be terminated.
 //
 // +checklocks:e.mu
+// +checklocksexclude:e.snd.rtt.rttMutex
 func (e *Endpoint) handleSegmentLocked(s *segment) (cont bool, err tcpip.Error) {
 	// Invoke the tcp probe if installed. The tcp probe function will update
 	// the TCPEndpointState after the segment is processed.
@@ -1444,6 +1465,8 @@ func (e *Endpoint) resetKeepaliveTimer(receivedData bool) {
 }
 
 // disableKeepaliveTimer stops the keepalive timer.
+//
+// +checklocks:e.mu
 func (e *Endpoint) disableKeepaliveTimer() {
 	e.keepalive.Lock()
 	e.keepalive.timer.disable()
@@ -1480,6 +1503,7 @@ func (e *Endpoint) handshakeFailed(err tcpip.Error) {
 // handleTimeWaitSegments processes segments received during TIME_WAIT
 // state.
 // +checklocks:e.mu
+// +checklocksexclude:e.segmentQueue.mu
 func (e *Endpoint) handleTimeWaitSegments() (extendTimeWait bool, reuseTW func()) {
 	for i := 0; i < maxSegmentsPerWake; i++ {
 		s := e.segmentQueue.dequeue()
@@ -1553,6 +1577,11 @@ func (e *Endpoint) timeWaitTimerExpired() {
 }
 
 // notifyProcessor queues this endpoint for processing to its TCP processor.
+//
+// The caller must not hold the selected processor's queue mutex. checklocks
+// cannot name that mutex through the dispatcher's indexed processor selection.
+//
+// +checklocksexclude:e.pendingProcessingMu
 func (e *Endpoint) notifyProcessor() {
 	// We use TryLock here to avoid deadlocks in cases where a listening endpoint that is being
 	// closed tries to abort half completed connections which in turn try to queue any segments
