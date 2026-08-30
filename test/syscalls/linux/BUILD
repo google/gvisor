@@ -2229,6 +2229,7 @@ cc_binary(
         "//test/util:multiprocess_util",
         "//test/util:posix_error",
         "//test/util:proc_util",
+        "//test/util:signal_util",
         "//test/util:temp_path",
         "//test/util:test_util",
         "//test/util:thread_util",

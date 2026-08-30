@@ -149,6 +149,17 @@ func (t *Task) PendingSignals() linux.SignalSet {
 	return linux.SignalSet(t.pendingSignals.pendingSet.Load() | t.tg.pendingSignals.pendingSet.Load())
 }
 
+// TaskPendingSignals returns the set of signals pending for t alone,
+// excluding its thread group's pending signals.
+func (t *Task) TaskPendingSignals() linux.SignalSet {
+	return linux.SignalSet(t.pendingSignals.pendingSet.Load())
+}
+
+// PendingSignals returns the set of signals pending for tg.
+func (tg *ThreadGroup) PendingSignals() linux.SignalSet {
+	return linux.SignalSet(tg.pendingSignals.pendingSet.Load())
+}
+
 // deliverSignal delivers the given signal and returns the following run state.
 func (t *Task) deliverSignal(info *linux.SignalInfo, act linux.SigAction) taskRunState {
 	sig := linux.Signal(info.Signo)
@@ -706,6 +717,24 @@ func (t *Task) SetSignalStack(alt linux.SignalStack) bool {
 		t.signalStack = alt
 	}
 	return true
+}
+
+// IgnoredAndCaughtSignals returns the sets of signals that tg ignores and
+// that tg has installed handlers for, respectively. This is analogous to
+// Linux's fs/proc/array.c:collect_sigign_sigcatch().
+func (tg *ThreadGroup) IgnoredAndCaughtSignals() (ignored, caught linux.SignalSet) {
+	sh := tg.signalLock()
+	defer sh.mu.Unlock()
+	for sig, act := range sh.actions {
+		switch act.Handler {
+		case linux.SIG_IGN:
+			ignored |= linux.SignalSetOf(sig)
+		case linux.SIG_DFL:
+		default:
+			caught |= linux.SignalSetOf(sig)
+		}
+	}
+	return ignored, caught
 }
 
 // SetSigAction atomically sets the thread group's signal action for signal sig

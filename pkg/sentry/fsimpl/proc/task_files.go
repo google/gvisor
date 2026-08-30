@@ -1041,6 +1041,15 @@ func (s *statusFD) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	fmt.Fprintf(buf, "VmData:\t%d kB\n", data>>10)
 
 	fmt.Fprintf(buf, "Threads:\t%d\n", s.task.ThreadGroup().Count())
+	// Signal masks are rendered as in Linux's fs/proc/array.c:task_sig().
+	// SigQ is omitted since the sentry does not account queued signals per
+	// user.
+	fmt.Fprintf(buf, "SigPnd:\t%016x\n", s.task.TaskPendingSignals())
+	fmt.Fprintf(buf, "ShdPnd:\t%016x\n", s.task.ThreadGroup().PendingSignals())
+	fmt.Fprintf(buf, "SigBlk:\t%016x\n", s.task.SignalMask())
+	ignored, caught := s.task.ThreadGroup().IgnoredAndCaughtSignals()
+	fmt.Fprintf(buf, "SigIgn:\t%016x\n", ignored)
+	fmt.Fprintf(buf, "SigCgt:\t%016x\n", caught)
 	fmt.Fprintf(buf, "CapInh:\t%016x\n", creds.InheritableCaps)
 	fmt.Fprintf(buf, "CapPrm:\t%016x\n", creds.PermittedCaps)
 	fmt.Fprintf(buf, "CapEff:\t%016x\n", creds.EffectiveCaps)
