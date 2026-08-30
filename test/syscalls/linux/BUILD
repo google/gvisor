@@ -662,6 +662,22 @@ cc_binary(
 )
 
 cc_binary(
+    name = "copy_file_range_test",
+    testonly = 1,
+    srcs = ["copy_file_range.cc"],
+    linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
+    deps = select_gtest() + [
+        "//test/util:file_descriptor",
+        "//test/util:posix_error",
+        "//test/util:temp_path",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_binary(
     name = "creat_test",
     testonly = 1,
     srcs = ["creat.cc"],
