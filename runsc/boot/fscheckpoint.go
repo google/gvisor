@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"path"
 	"strings"
 	"time"
 
@@ -97,7 +98,7 @@ func (l *Loader) FSSave() error {
 	if len(fsSaveFDs) == 0 {
 		return linuxerr.ENXIO
 	}
-	paths, err := parseFSCheckpointPaths(l.root.spec.Annotations[annotationFSCheckpointPaths])
+	paths, err := ParseFSCheckpointPaths(l.root.spec.Annotations[annotationFSCheckpointPaths])
 	if err != nil {
 		return err
 	}
@@ -117,7 +118,10 @@ func (l *Loader) FSSave() error {
 	return l.k.FSSave(context.Background(), &opts)
 }
 
-func parseFSCheckpointPaths(val string) ([]checkpoint.ResourceID, error) {
+// ParseFSCheckpointPaths parses a comma-separated list of container:path
+// checkpoint targets.
+func ParseFSCheckpointPaths(val string) ([]checkpoint.ResourceID, error) {
+	val = strings.TrimSpace(val)
 	if val == "" {
 		return nil, nil
 	}
@@ -127,21 +131,21 @@ func parseFSCheckpointPaths(val string) ([]checkpoint.ResourceID, error) {
 		if part == "" {
 			continue
 		}
+		var c, p string
 		subparts := strings.SplitN(part, ":", 2)
 		if len(subparts) == 1 {
-			p := strings.TrimSpace(subparts[0])
-			if p == "" {
-				return nil, fmt.Errorf("empty path in fscheckpoint paths: %q", val)
-			}
-			paths = append(paths, checkpoint.ResourceID{Path: p})
+			p = strings.TrimSpace(subparts[0])
 		} else {
-			c := strings.TrimSpace(subparts[0])
-			p := strings.TrimSpace(subparts[1])
-			if p == "" {
-				return nil, fmt.Errorf("empty path in fscheckpoint paths: %q", val)
-			}
-			paths = append(paths, checkpoint.ResourceID{ContainerName: c, Path: p})
+			c = strings.TrimSpace(subparts[0])
+			p = strings.TrimSpace(subparts[1])
 		}
+		if p == "" {
+			return nil, fmt.Errorf("empty path in fscheckpoint paths: %q", val)
+		}
+		if p != fscheckpoint.AllTmpfsPath && (!path.IsAbs(p) || path.Clean(p) != p) {
+			return nil, fmt.Errorf("checkpoint path must be an absolute, clean path or %q, got: %q", fscheckpoint.AllTmpfsPath, p)
+		}
+		paths = append(paths, checkpoint.ResourceID{ContainerName: c, Path: p})
 	}
 	return paths, nil
 }
@@ -399,6 +403,11 @@ func startFSRestore(opts *fsRestoreOpts) (*fsRestore, error) {
 	// adding a stateio.AsyncReader method to get file size.
 	//
 	// All of the above also applies to the multi-tar file.
+	//
+	// TODO(b/541219576): Instead of reading the full tar file into memory and
+	// retaining it via readOnce for the lifetime of the sandbox, read using
+	// offsets in the multi-tar file using TarStart and TarEnd from manifest,
+	// or release the cached multiTar slice once restore completes.
 	readOnce := func(desc string, optsR *io.ReadCloser) func() ([]byte, error) {
 		r := *optsR
 		*optsR = nil
@@ -508,6 +517,40 @@ func (c *fsRestoreContainer) setError(err error) error {
 	return err
 }
 
+// findByResourceID looks up a resource by exact ResourceID (ContainerName + Path).
+// If exact match fails, it attempts to match by Path alone as a fallback when
+// either the requested ID or the checkpointed entry has an empty ContainerName
+// (e.g. single-container vs multi-container checkpoint compatibility). Conflicting
+// non-empty container names are never matched across containers.
+// If multiple entries match the path fallback ambiguously, an error is returned.
+func findByResourceID[T any](m map[checkpoint.ResourceID]T, id checkpoint.ResourceID, getResourceID func(T) checkpoint.ResourceID, typeName string) (T, bool, error) {
+	if val, ok := m[id]; ok {
+		return val, true, nil
+	}
+	var (
+		match T
+		found bool
+	)
+	for _, val := range m {
+		valID := getResourceID(val)
+		matchingContainer := id.ContainerName == valID.ContainerName || id.ContainerName == "" || valID.ContainerName == ""
+		if valID.Path == id.Path && matchingContainer {
+			if found {
+				var zero T
+				return zero, false, fmt.Errorf("ambiguous %s match for ResourceID %v (matches both %v and %v)", typeName, id, getResourceID(match), valID)
+			}
+			match = val
+			found = true
+		}
+	}
+	if found {
+		log.Debugf("fsRestore: mapped %s ResourceID %v to %v by path matching", typeName, id, getResourceID(match))
+		return match, true, nil
+	}
+	var zero T
+	return zero, false, nil
+}
+
 func (fsr *fsRestore) memoryFileLoadArgs(id checkpoint.ResourceID, cid string) (io.Reader, uint64, func(error), error) {
 	if fsr == nil {
 		return nil, 0, func(error) {}, nil
@@ -517,8 +560,16 @@ func (fsr *fsRestore) memoryFileLoadArgs(id checkpoint.ResourceID, cid string) (
 	if fsr.manifestErr != nil {
 		return nil, 0, nil, fsr.manifestErr
 	}
-	mmf := fsr.mfs[id]
-	if mmf == nil {
+	mmf, ok, err := findByResourceID(fsr.mfs, id, func(m *fscheckpoint.MemoryFile) checkpoint.ResourceID {
+		return m.ResourceID
+	}, "MemoryFile")
+	if err != nil {
+		fsr.waitMu.Lock()
+		defer fsr.waitMu.Unlock()
+		c := fsr.ensureContainer(cid)
+		return nil, 0, nil, c.setError(err)
+	}
+	if !ok {
 		return nil, 0, func(error) {}, nil
 	}
 	pagesMetadata, err := fsr.getPagesMetadata()
@@ -526,11 +577,14 @@ func (fsr *fsRestore) memoryFileLoadArgs(id checkpoint.ResourceID, cid string) (
 	fsr.waitMu.Lock()
 	defer fsr.waitMu.Unlock()
 	c := fsr.ensureContainer(cid)
-	if mmf.PagesMetadataEnd > uint64(len(pagesMetadata)) {
-		if err != nil {
-			return nil, 0, nil, c.setError(fmt.Errorf("failed to read pages metadata: %w", err))
-		}
-		return nil, 0, nil, c.setError(fmt.Errorf("MemoryFile %q has pages metadata range [%d, %d) beyond pages metadata file size %d", mmf.ResourceID, mmf.PagesMetadataStart, mmf.PagesMetadataEnd, len(pagesMetadata)))
+	if err != nil {
+		return nil, 0, nil, c.setError(fmt.Errorf("failed to read pages metadata: %w", err))
+	}
+	if mmf.PagesMetadataStart > mmf.PagesMetadataEnd || mmf.PagesMetadataEnd > uint64(len(pagesMetadata)) {
+		return nil, 0, nil, c.setError(fmt.Errorf("MemoryFile %q has invalid pages metadata range [%d, %d) for file size %d", mmf.ResourceID, mmf.PagesMetadataStart, mmf.PagesMetadataEnd, len(pagesMetadata)))
+	}
+	if mmf.PagesStart%hostarch.PageSize != 0 {
+		return nil, 0, nil, c.setError(fmt.Errorf("MemoryFile %q pages offset %d is not page-aligned (page size %d)", mmf.ResourceID, mmf.PagesStart, hostarch.PageSize))
 	}
 	c.asyncLoads++
 	return bytes.NewReader(pagesMetadata[mmf.PagesMetadataStart:mmf.PagesMetadataEnd]), mmf.PagesStart, func(err error) {
@@ -558,22 +612,30 @@ func (fsr *fsRestore) tmpfsSourceTar(id checkpoint.ResourceID, cid string) (io.R
 	if fsr.manifestErr != nil {
 		return nil, fsr.manifestErr
 	}
-	mt := fsr.tmpfs[id]
-	if mt == nil {
+	mt, ok, err := findByResourceID(fsr.tmpfs, id, func(t *fscheckpoint.Tmpfs) checkpoint.ResourceID {
+		return t.ResourceID
+	}, "Tmpfs")
+	if err != nil {
+		fsr.waitMu.Lock()
+		defer fsr.waitMu.Unlock()
+		c := fsr.ensureContainer(cid)
+		return nil, c.setError(err)
+	}
+	if !ok {
 		return nil, nil
 	}
 	multiTar, err := fsr.getMultiTar()
 
 	fsr.waitMu.Lock()
 	defer fsr.waitMu.Unlock()
-	if mt.TarEnd <= uint64(len(multiTar)) {
-		return io.NopCloser(bytes.NewReader(multiTar[mt.TarStart:mt.TarEnd])), nil
-	}
 	c := fsr.ensureContainer(cid)
 	if err != nil {
 		return nil, c.setError(fmt.Errorf("failed to read tar archive: %w", err))
 	}
-	return nil, c.setError(fmt.Errorf("tmpfs %q has tar range [%d, %d) beyond multi-tar file size %d", mt.ResourceID, mt.TarStart, mt.TarEnd, len(multiTar)))
+	if mt.TarStart > mt.TarEnd || mt.TarEnd > uint64(len(multiTar)) {
+		return nil, c.setError(fmt.Errorf("tmpfs %q has invalid tar range [%d, %d) for multi-tar file size %d", mt.ResourceID, mt.TarStart, mt.TarEnd, len(multiTar)))
+	}
+	return io.NopCloser(bytes.NewReader(multiTar[mt.TarStart:mt.TarEnd])), nil
 }
 
 // wait blocks until either all filesystems have been restored for the
