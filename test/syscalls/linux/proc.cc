@@ -79,6 +79,7 @@
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/proc_util.h"
+#include "test/util/signal_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -1890,6 +1891,27 @@ TEST(ParseProcStatusTest, DetectsMissingTabs) {
                                                           Pair("Pid: 1", ""))));
 }
 
+// Returns the 64-bit signal mask rendered in the given /proc/[pid]/status
+// field.
+PosixErrorOr<uint64_t> ProcStatusSignalMask(
+    const absl::btree_map<std::string, std::string>& status,
+    const std::string& field) {
+  auto it = status.find(field);
+  if (it == status.end()) {
+    return PosixError(EINVAL, absl::StrCat("no \"", field, "\" line"));
+  }
+  if (it->second.size() != 16) {
+    return PosixError(EINVAL, absl::StrCat(field, " value \"", it->second,
+                                           "\" is not a 16-digit hex mask"));
+  }
+  uint64_t mask;
+  if (!absl::SimpleHexAtoi(it->second, &mask)) {
+    return PosixError(EINVAL, absl::StrCat("failed to parse ", field,
+                                           " value \"", it->second, "\""));
+  }
+  return mask;
+}
+
 TEST(ProcPidStatusTest, HasBasicFields) {
   // Do this on a separate thread since we want tgid != tid.
   ScopedThread([] {
@@ -1960,6 +1982,73 @@ TEST(ProcPidStatusTest, NoNewPrivs) {
     EXPECT_THAT(ParseProcStatus(status_str),
                 IsPosixErrorOkAndHolds(Contains(Pair("NoNewPrivs", "1"))));
   });
+}
+
+TEST(ProcPidStatusTest, SignalMasks) {
+  const uint64_t kHup = 1ULL << (SIGHUP - 1);
+  const uint64_t kUsr1 = 1ULL << (SIGUSR1 - 1);
+  const uint64_t kUsr2 = 1ULL << (SIGUSR2 - 1);
+  const uint64_t kTerm = 1ULL << (SIGTERM - 1);
+
+  // Signal handlers are process-wide, so restore them when done.
+  struct sigaction sa = {};
+  sa.sa_handler = +[](int signo) {};
+  const auto term_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGTERM, sa));
+  const auto hup_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGHUP, sa));
+  const auto usr1_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGUSR1, sa));
+  sa.sa_handler = SIG_IGN;
+  const auto usr2_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGUSR2, sa));
+
+  // Block SIGUSR1 and SIGHUP, then queue a thread-directed SIGUSR1 and a
+  // process-directed SIGHUP, so that each shows up only in its own pending
+  // mask.
+  sigset_t blocked;
+  sigemptyset(&blocked);
+  sigaddset(&blocked, SIGUSR1);
+  sigaddset(&blocked, SIGHUP);
+  const auto mask_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(ScopedSignalMask(SIG_BLOCK, blocked));
+  const pid_t pid = getpid();
+  const pid_t tid = syscall(SYS_gettid);
+  ASSERT_THAT(tgkill(pid, tid, SIGUSR1), SyscallSucceeds());
+  ASSERT_THAT(kill(pid, SIGHUP), SyscallSucceeds());
+
+  const std::string status_str = ASSERT_NO_ERRNO_AND_VALUE(
+      GetContents(absl::StrCat("/proc/", tid, "/status")));
+  const auto status = ASSERT_NO_ERRNO_AND_VALUE(ParseProcStatus(status_str));
+  const uint64_t sig_pnd =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcStatusSignalMask(status, "SigPnd"));
+  const uint64_t shd_pnd =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcStatusSignalMask(status, "ShdPnd"));
+  const uint64_t sig_blk =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcStatusSignalMask(status, "SigBlk"));
+  const uint64_t sig_ign =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcStatusSignalMask(status, "SigIgn"));
+  const uint64_t sig_cgt =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcStatusSignalMask(status, "SigCgt"));
+
+  EXPECT_EQ(sig_pnd & (kUsr1 | kHup), kUsr1);
+  EXPECT_EQ(shd_pnd & (kUsr1 | kHup), kHup);
+  EXPECT_EQ(sig_blk & (kUsr1 | kHup), kUsr1 | kHup);
+  EXPECT_EQ(sig_ign & kUsr2, kUsr2);
+  EXPECT_EQ(sig_cgt & (kUsr1 | kHup | kTerm), kUsr1 | kHup | kTerm);
+  EXPECT_EQ(sig_cgt & kUsr2, 0u);
+
+  // Consume both queued signals before the mask is restored.
+  sigset_t set;
+  sigemptyset(&set);
+  sigaddset(&set, SIGUSR1);
+  const struct timespec zero = {0, 0};
+  EXPECT_THAT(sigtimedwait(&set, nullptr, &zero),
+              SyscallSucceedsWithValue(SIGUSR1));
+  sigemptyset(&set);
+  sigaddset(&set, SIGHUP);
+  EXPECT_THAT(sigtimedwait(&set, nullptr, &zero),
+              SyscallSucceedsWithValue(SIGHUP));
 }
 
 TEST(ProcPidStatusTest, StateRunning) {
