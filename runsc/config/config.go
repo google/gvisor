@@ -1491,9 +1491,9 @@ func (p SidecarUsagePolicy) String() string {
 // if the on-disk sidecar binaries are not found.
 func (p SidecarUsagePolicy) AllowEmbeddedFallback() bool {
 	switch p {
-	case SidecarUsageDefault, SidecarUsageStrict:
+	case SidecarUsageStrict:
 		return false
-	case SidecarUsageLegacyEmbedded:
+	case SidecarUsageDefault, SidecarUsageLegacyEmbedded:
 		return true
 	default:
 		panic(fmt.Sprintf("invalid sidecar usage policy: %q", p))
