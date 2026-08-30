@@ -1,4 +1,5 @@
 load("//tools:defs.bzl", "go_library")
+load("//tools/nogo:defs.bzl", "nogo_config", "nogo_test")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -33,4 +34,22 @@ go_library(
     marshal = False,
     stateify = False,
     deps = ["//tools/checklocks/test/crosspkg"],
+)
+
+nogo_config(
+    name = "strict_config",
+    srcs = ["strict.yaml"],
+)
+
+# Production filters suppress inference hints and incompatible return states.
+# Check these fixtures without those filters so diagnostic regressions fail CI.
+nogo_test(
+    name = "strict_nogo",
+    srcs = [
+        "aliases.go",
+        "inferred.go",
+    ],
+    config = ":strict_config",
+    tags = ["nogo"],
+    deps = [":test"],
 )

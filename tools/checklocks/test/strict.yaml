@@ -1,0 +1,10 @@
+groups:
+  - name: fixtures
+    regex: '^tools/checklocks/test/(aliases|inferred)\.go:'
+    default: false
+  - name: other
+    regex: '.*'
+    default: false
+analyzers:
+  checklocks:
+    fixtures: # Enabled.
