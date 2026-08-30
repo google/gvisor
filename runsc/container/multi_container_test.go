@@ -4552,3 +4552,186 @@ func TestMultiContainerSharedVolumeCheckpointRestore(t *testing.T) {
 		c.Wait()
 	}
 }
+
+// TestMultiContainerChainedCheckpointRestore tests chained checkpoint and restore
+// (checkpoint -> restore -> checkpoint -> restore -> checkpoint -> restore) 3 times
+// with multiple containers in a sandbox.
+func TestMultiContainerChainedCheckpointRestore(t *testing.T) {
+	// Skip overlay because test requires writing to host file.
+	for name, conf := range configs(t, true /* noOverlay */) {
+		t.Run(name, func(t *testing.T) {
+			compressionLevels := []statefile.CompressionLevel{
+				statefile.CompressionLevelNone,
+				statefile.CompressionLevelFlateBestSpeed,
+			}
+			for _, compression := range compressionLevels {
+				t.Run(string(compression), func(t *testing.T) {
+					testMultiContainerChainedCheckpointRestore(t, conf, compression)
+				})
+			}
+		})
+	}
+}
+
+func testMultiContainerChainedCheckpointRestore(t *testing.T, conf *config.Config, compression statefile.CompressionLevel) {
+	rootDir, cleanup, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer cleanup()
+	conf.RootDir = rootDir
+
+	testDir, err := os.MkdirTemp(testutil.TmpDir(), "chained-checkpoint-test")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp() failed: %v", err)
+	}
+	defer os.RemoveAll(testDir)
+	if err := os.Chmod(testDir, 0777); err != nil {
+		t.Fatalf("error chmoding file: %q, %v", testDir, err)
+	}
+
+	outputPath1 := filepath.Join(testDir, "output1")
+	outputFile1, err := createWriteableOutputFile(outputPath1)
+	if err != nil {
+		t.Fatalf("error creating output file 1: %v", err)
+	}
+	defer outputFile1.Close()
+
+	outputPath2 := filepath.Join(testDir, "output2")
+	outputFile2, err := createWriteableOutputFile(outputPath2)
+	if err != nil {
+		t.Fatalf("error creating output file 2: %v", err)
+	}
+	defer outputFile2.Close()
+
+	script1 := fmt.Sprintf("for ((i=0; ;i++)); do echo $i >> %q; sleep 1; done", outputPath1)
+	script2 := fmt.Sprintf("for ((j=100; ;j++)); do echo $j >> %q; sleep 1; done", outputPath2)
+	testSpecs, ids := createSpecs(
+		sleepCmd,
+		[]string{"bash", "-c", script1},
+		[]string{"bash", "-c", script2},
+	)
+
+	currentConts, currentCleanup, err := startContainers(conf, testSpecs, ids)
+	if err != nil {
+		t.Fatalf("error starting containers: %v", err)
+	}
+	defer func() {
+		if currentCleanup != nil {
+			currentCleanup()
+		}
+	}()
+
+	// Wait until both applications have run and written initial output.
+	if err := waitForFileNotEmpty(outputFile1); err != nil {
+		t.Fatalf("Failed to wait for output file 1: %v", err)
+	}
+	if err := waitForFileNotEmpty(outputFile2); err != nil {
+		t.Fatalf("Failed to wait for output file 2: %v", err)
+	}
+
+	const iterations = 3
+	for iter := 0; iter < iterations; iter++ {
+		checkpointDir := filepath.Join(testDir, fmt.Sprintf("checkpoint-%d", iter))
+		if err := os.MkdirAll(checkpointDir, 0777); err != nil {
+			t.Fatalf("iter %d: os.MkdirAll failed: %v", iter, err)
+		}
+
+		checkpointWaiter := make(chan error, 1)
+		go func() {
+			checkpointWaiter <- currentConts[1].WaitCheckpoint()
+		}()
+
+		// Checkpoint root container; save state into new file.
+		if err := currentConts[0].Checkpoint(conf, checkpointDir, sandbox.CheckpointOpts{Compression: compression}); err != nil {
+			t.Fatalf("iter %d: error checkpointing container: %v", iter, err)
+		}
+
+		select {
+		case waitErr := <-checkpointWaiter:
+			if waitErr != nil {
+				t.Errorf("iter %d: error waiting for checkpoint to complete: %v", iter, waitErr)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatalf("iter %d: timed out waiting for checkpoint to complete", iter)
+		}
+
+		lastNum1, err := readOutputNum(outputPath1, -1)
+		if err != nil {
+			t.Fatalf("iter %d: error reading outputFile1: %v", iter, err)
+		}
+		lastNum2, err := readOutputNum(outputPath2, -1)
+		if err != nil {
+			t.Fatalf("iter %d: error reading outputFile2: %v", iter, err)
+		}
+
+		// Destroy the current containers before restoring so there is no identity or resource conflict.
+		currentCleanup()
+		currentCleanup = nil
+		currentConts = nil
+
+		// Delete and recreate output files before restoring.
+		if err := os.Remove(outputPath1); err != nil {
+			t.Fatalf("iter %d: error removing outputFile1: %v", iter, err)
+		}
+		outputFile1, err = createWriteableOutputFile(outputPath1)
+		if err != nil {
+			t.Fatalf("iter %d: error recreating outputFile1: %v", iter, err)
+		}
+		defer outputFile1.Close()
+
+		if err := os.Remove(outputPath2); err != nil {
+			t.Fatalf("iter %d: error removing outputFile2: %v", iter, err)
+		}
+		outputFile2, err = createWriteableOutputFile(outputPath2)
+		if err != nil {
+			t.Fatalf("iter %d: error recreating outputFile2: %v", iter, err)
+		}
+		defer outputFile2.Close()
+
+		// Restore into new containers with fresh IDs.
+		newIds := make([]string, 0, len(ids))
+		for range ids {
+			newIds = append(newIds, testutil.RandomContainerID())
+		}
+		for _, spec := range testSpecs[1:] {
+			spec.Annotations[specutils.ContainerdSandboxIDAnnotation] = newIds[0]
+		}
+
+		currentConts, currentCleanup, err = restoreContainers(conf, testSpecs, newIds, checkpointDir)
+		if err != nil {
+			t.Fatalf("iter %d: error restoring containers: %v", iter, err)
+		}
+
+		// Wait until both applications have run after restore.
+		if err := waitForFileNotEmpty(outputFile1); err != nil {
+			t.Fatalf("iter %d: failed to wait for outputFile1 after restore: %v", iter, err)
+		}
+		if err := waitForFileNotEmpty(outputFile2); err != nil {
+			t.Fatalf("iter %d: failed to wait for outputFile2 after restore: %v", iter, err)
+		}
+
+		firstNum1, err := readOutputNum(outputPath1, 0)
+		if err != nil {
+			t.Fatalf("iter %d: error reading outputFile1 first num: %v", iter, err)
+		}
+		firstNum2, err := readOutputNum(outputPath2, 0)
+		if err != nil {
+			t.Fatalf("iter %d: error reading outputFile2 first num: %v", iter, err)
+		}
+
+		if lastNum1+1 != firstNum1 {
+			t.Errorf("iter %d: container 1 numbers not in order, previous: %d, next: %d", iter, lastNum1, firstNum1)
+		}
+		if lastNum2+1 != firstNum2 {
+			t.Errorf("iter %d: container 2 numbers not in order, previous: %d, next: %d", iter, lastNum2, firstNum2)
+		}
+
+		for _, cont := range currentConts {
+			state := cont.State()
+			if state.Status != Running {
+				t.Fatalf("iter %d: container %v is not running: %v", iter, cont.ID, state.Status)
+			}
+		}
+	}
+}
