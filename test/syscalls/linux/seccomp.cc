@@ -218,6 +218,35 @@ TEST(SeccompTest, RetKillOnlyKillsOneThread) {
       << "status " << status;
 }
 
+TEST(SeccompTest, RetKillProcessKillsAllThreads) {
+  Mapping stack = ASSERT_NO_ERRNO_AND_VALUE(
+      MmapAnon(2 * kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE));
+
+  pid_t const pid = fork();
+  if (pid == 0) {
+    RegisterSignalHandler(SIGSYS, +[](int, siginfo_t*, void*) { _exit(1); });
+    ApplySeccompFilter(kFilteredSyscall, SECCOMP_RET_KILL_PROCESS);
+    clone(
+        +[](void* arg) {
+          syscall(kFilteredSyscall);  // should kill the entire process
+          _exit(1);                   // unreachable
+          return 2;
+        },
+        stack.endptr(),
+        CLONE_FILES | CLONE_FS | CLONE_SIGHAND | CLONE_THREAD | CLONE_VM |
+            CLONE_VFORK,
+        nullptr);
+    // If only the thread was killed instead of the process, this thread
+    // would wake up from CLONE_VFORK and exit with 0.
+    _exit(0);
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGSYS)
+      << "status " << status;
+}
+
 TEST(SeccompTest, RetTrapCausesSIGSYS) {
   pid_t const pid = fork();
   if (pid == 0) {
