@@ -6,11 +6,10 @@ package(
 )
 
 go_library(
-    name = "crosspkg",
-    srcs = ["crosspkg.go"],
-    # See next level up.
+    name = "atomicfields",
+    srcs = ["atomicfields.go"],
     marshal = False,
     stateify = False,
-    visibility = ["//tools/checklocks/test:__pkg__"],
-    deps = ["//tools/checklocks/test/atomicfields"],
+    visibility = ["//tools/checklocks/test/crosspkg:__pkg__"],
+    deps = ["//pkg/atomicbitops"],
 )
