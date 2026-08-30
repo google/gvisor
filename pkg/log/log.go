@@ -245,11 +245,13 @@ func (l *BasicLogger) SetLevel(level Level) {
 	atomic.StoreUint32((*uint32)(&l.Level), uint32(level))
 }
 
-// logMu protects Log below. We use atomic operations to read the value, but
-// updates require logMu to ensure consistency.
+// logMu serializes SetTarget's read-modify-write updates to log.
 var logMu sync.Mutex
 
 // log is the default logger.
+//
+// +checklocks:logMu
+// +checkatomic
 var log atomic.Pointer[BasicLogger]
 
 // Log retrieves the global logger.
@@ -263,6 +265,8 @@ func Log() *BasicLogger {
 // logging calls.
 //
 // SetTarget should be called before any instances of log.Log() to avoid race conditions
+//
+// +checklocksexclude:logMu
 func SetTarget(target Emitter) {
 	logMu.Lock()
 	defer logMu.Unlock()
@@ -394,8 +398,10 @@ func CopyStandardLogTo(l Level) error {
 }
 
 func init() {
-	// Store the initial value for the log.
-	log.Store(&BasicLogger{Level: Info, Emitter: GoogleEmitter{&Writer{Next: os.Stderr}}})
+	// This package starts no goroutines during initialization, and importers
+	// cannot use log until initialization completes. checklocks does not model
+	// this ordering.
+	log.Store(&BasicLogger{Level: Info, Emitter: GoogleEmitter{&Writer{Next: os.Stderr}}}) // +checklocksignore
 
 	warnedSet = make(map[string]struct{})
 }
