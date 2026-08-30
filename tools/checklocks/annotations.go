@@ -25,6 +25,7 @@ import (
 const (
 	checkLocksAnnotation     = "// +checklocks:"
 	checkLocksAnnotationRead = "// +checklocksread:"
+	checkLocksReadAny        = "// +checklocksreadany"
 	checkLocksAcquires       = "// +checklocksacquire:"
 	checkLocksAcquiresRead   = "// +checklocksacquireread:"
 	checkLocksReleases       = "// +checklocksrelease:"
