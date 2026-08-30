@@ -2857,10 +2857,14 @@ type ProtocolAddress struct {
 }
 
 var (
-	// danglingEndpointsMu protects access to danglingEndpoints.
+	// Public dangling-endpoint helpers acquire this mutex themselves. Their
+	// caller exclusions cannot be exported reliably by checklocks because
+	// the guard is rooted in a private package global.
 	danglingEndpointsMu sync.Mutex
 
 	// danglingEndpoints tracks all dangling endpoints no longer owned by the app.
+	//
+	// +checklocks:danglingEndpointsMu
 	danglingEndpoints = make(map[Endpoint]struct{})
 )
 

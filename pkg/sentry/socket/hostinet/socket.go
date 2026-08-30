@@ -129,9 +129,14 @@ type Socket struct {
 	// masks, as when e.g. applications repeatedly call poll() with the same
 	// event mask, or blocking accept() / read() / write() / recvmsg() /
 	// sendmsg() / etc., on the same socket.
-	persistentEventMu   sync.Mutex `state:"nosave"`
+	persistentEventMu sync.Mutex `state:"nosave"`
+
+	// +checklocks:persistentEventMu
+	// +checkatomic
 	persistentEventMask atomicbitops.Uint64
-	persistentEntry     waiter.Entry
+
+	// +checklocks:persistentEventMu
+	persistentEntry waiter.Entry
 
 	// fd is the host socket fd. It must have O_NONBLOCK, so that operations
 	// will return EWOULDBLOCK instead of blocking on the host. This allows us to
@@ -140,9 +145,13 @@ type Socket struct {
 
 	// recvClosed indicates that the socket has been shutdown for reading
 	// (SHUT_RD or SHUT_RDWR).
+	//
+	// +checkatomic
 	recvClosed atomicbitops.Bool
 
 	// listenBacklog is the backlog passed to the most recent listen(2).
+	//
+	// +checkatomic
 	listenBacklog atomicbitops.Int32
 
 	// savedListener is set by beforeSave if this socket is listening.
@@ -337,6 +346,8 @@ func (s *Socket) Readiness(mask waiter.EventMask) waiter.EventMask {
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
+//
+// +checklocksexclude:s.persistentEventMu
 func (s *Socket) EventRegister(e *waiter.Entry) error {
 	if s.fd < 0 {
 		s.queue.EventRegister(e)
@@ -460,6 +471,8 @@ func (s *Socket) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr
 }
 
 // Accept implements socket.Socket.Accept.
+//
+// +checklocksexclude:s.persistentEventMu
 func (s *Socket) Accept(t *kernel.Task, peerRequested bool, flags int, blocking bool) (int32, linux.SockAddr, uint32, *syserr.Error) {
 	if s.fd < 0 {
 		return 0, nil, 0, syserr.ErrConnectionAborted
@@ -606,6 +619,8 @@ const allowedRecvMsgFlags = unix.MSG_CTRUNC |
 	unix.MSG_WAITALL
 
 // RecvMsg implements socket.Socket.RecvMsg.
+//
+// +checklocksexclude:s.persistentEventMu
 func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlLen uint64) (int, int, linux.SockAddr, uint32, socket.ControlMessages, *syserr.Error) {
 	// Only allow known and safe flags.
 	if flags&^allowedRecvMsgFlags != 0 {
@@ -789,6 +804,8 @@ const allowedSendMsgFlags = unix.MSG_DONTWAIT |
 	unix.MSG_OOB
 
 // SendMsg implements socket.Socket.SendMsg.
+//
+// +checklocksexclude:s.persistentEventMu
 func (s *Socket) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, haveDeadline bool, deadline ktime.Time, controlMessages socket.ControlMessages) (int, *syserr.Error) {
 	if s.family == linux.AF_PACKET {
 		// Don't allow SendMesg for AF_PACKET.
