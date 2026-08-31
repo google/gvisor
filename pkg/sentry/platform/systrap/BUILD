@@ -111,9 +111,13 @@ go_library(
 go_test(
     name = "systrap_test",
     size = "small",
-    srcs = ["context_queue_test.go"],
+    srcs = [
+        "context_queue_test.go",
+        "shared_context_test.go",
+    ],
     library = ":systrap",
     deps = [
         "//pkg/hostarch",
+        "//pkg/sentry/platform/systrap/sysmsg",
     ],
 )

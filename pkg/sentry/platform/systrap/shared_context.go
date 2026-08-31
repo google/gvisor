@@ -121,8 +121,7 @@ func (sc *sharedContext) isActiveInSubprocess(s *subprocess) bool {
 	return sc.subprocess == s
 }
 
-// NotifyInterrupt implements interrupt.Receiver.NotifyInterrupt.
-func (sc *sharedContext) NotifyInterrupt() {
+func (sc *sharedContext) interruptStub() (*thread, error) {
 	// If this context is not being worked on right now we need to mark it as
 	// interrupted so the next executor does not start working on it.
 	atomic.StoreUint32(&sc.shared.Interrupt, 1)
@@ -130,7 +129,7 @@ func (sc *sharedContext) NotifyInterrupt() {
 	// shared memory between reads.
 	threadID := atomic.LoadUint32(&sc.shared.ThreadID)
 	if threadID == invalidThreadID {
-		return
+		return nil, errNoStubThread
 	}
 	s := sc.subprocess
 	s.sysmsgThreadsMu.RLock()
@@ -139,23 +138,39 @@ func (sc *sharedContext) NotifyInterrupt() {
 	if !ok {
 		// This is either an invalidThreadID or another garbage value; either way we
 		// don't know which thread to interrupt; best we can do is mark the context.
-		return
+		return nil, errNoStubThread
 	}
 
 	t := sysmsgThread.thread
-	if e := hostsyscall.RawSyscallErrno(unix.SYS_TGKILL, uintptr(t.tgid), uintptr(t.tid), uintptr(platform.SignalInterrupt)); e != 0 {
-		if e == unix.ESRCH { // Stub thread already killed?
-			s.dead.Store(true)
-			if !sc.shared.State.CompareAndSwap(sysmsg.ContextStateNone, sysmsg.ContextStateUnexpectedDeath) {
-				s.syscallThread.thread.Warningf("failed to set context state to ContextStateUnexpectedDeath; context state was %v", sc.state())
-			}
-			s.syscallThreadMu.Lock()
-			defer s.syscallThreadMu.Unlock()
-			s.syscallThread.thread.Warningf("Cannot interrupt stub thread %sas it no longer exists; killing syscall thread.", *t.loadLogPrefix())
-			s.syscallThread.thread.kill()
-		} else {
-			panic(fmt.Sprintf("failed to interrupt the child process %d: %v", t.tid, e))
-		}
+	errno := hostsyscall.RawSyscallErrno(unix.SYS_TGKILL, uintptr(t.tgid), uintptr(t.tid), uintptr(platform.SignalInterrupt))
+	switch errno {
+	case 0:
+		return t, nil
+	case unix.ESRCH:
+		return t, errStubThreadGone
+	default:
+		panic(fmt.Sprintf("failed to interrupt the child process %d: %v", t.tid, errno))
+	}
+}
+
+// killSubprocess marks the subprocess dead and kills its syscall thread.
+func (sc *sharedContext) killSubprocess() {
+	s := sc.subprocess
+	s.dead.Store(true)
+	if !sc.shared.State.CompareAndSwap(sysmsg.ContextStateNone, sysmsg.ContextStateUnexpectedDeath) {
+		s.syscallThread.thread.Warningf("failed to set context state to ContextStateUnexpectedDeath; context state was %v", sc.state())
+	}
+	s.syscallThreadMu.Lock()
+	defer s.syscallThreadMu.Unlock()
+	s.syscallThread.thread.kill()
+}
+
+// NotifyInterrupt implements interrupt.Receiver.NotifyInterrupt.
+func (sc *sharedContext) NotifyInterrupt() {
+	t, err := sc.interruptStub()
+	if err == errStubThreadGone {
+		sc.subprocess.syscallThread.thread.Warningf("Cannot interrupt stub thread %sas it no longer exists; killing syscall thread.", *t.loadLogPrefix())
+		sc.killSubprocess()
 	}
 }
 
@@ -233,20 +248,37 @@ func (sc *sharedContext) resetLatencyMeasures() {
 }
 
 const (
-	contextPreemptTimeoutNsec = 10 * 1000 * 1000 // 10ms
-	contextCheckupTimeoutSec  = 5
-	stuckContextTimeout       = 30 * time.Second
+	contextPreemptTimeout = 10 * time.Millisecond
+	contextCheckupTimeout = 5 * time.Second
+	stuckContextTimeout   = 30 * time.Second
 )
 
-var errDeadSubprocess = fmt.Errorf("subprocess died")
+var (
+	errDeadSubprocess = fmt.Errorf("subprocess died")
+	errNoStubThread   = fmt.Errorf("no stub thread to interrupt")
+	errStubThreadGone = fmt.Errorf("stub thread does not exist")
+	errStuckContext   = fmt.Errorf("systrap context is stuck")
+)
 
 func (sc *sharedContext) sleepOnState(state sysmsg.ContextState) error {
-	timeout := unix.Timespec{
-		Sec:  0,
-		Nsec: contextPreemptTimeoutNsec,
+	err := sc.sleepOnStateWithTimeout(state, stuckContextTimeout, contextCheckupTimeout)
+	switch err {
+	case errStuckContext:
+		log.TracebackAll(fmt.Sprintf("Systrap context is stuck; killing its subprocess. ThreadContext: %v", sc))
+		sc.killSubprocess()
+		return errDeadSubprocess
+	case errStubThreadGone, errNoStubThread:
+		log.Warningf("Stub thread no longer exists; killing syscall thread. ThreadContext: %v", sc)
+		sc.killSubprocess()
+		return errDeadSubprocess
 	}
-	sentInterruptOnce := false
-	deadline := time.Now().Add(stuckContextTimeout)
+	return err
+}
+
+func (sc *sharedContext) sleepOnStateWithTimeout(state sysmsg.ContextState, stuckTimeout, checkupTimeout time.Duration) error {
+	timeout := unix.NsecToTimespec(contextPreemptTimeout.Nanoseconds())
+	interruptsSent := 0
+	deadline := time.Now().Add(stuckTimeout)
 	for sc.state() == state {
 		errno := sc.shared.SleepOnState(state, &timeout)
 		if errno == 0 {
@@ -258,21 +290,34 @@ func (sc *sharedContext) sleepOnState(state sysmsg.ContextState) error {
 		if !sc.subprocess.alive() {
 			return errDeadSubprocess
 		}
-		if time.Now().After(deadline) {
-			log.Warningf("Systrap task goroutine has been waiting on ThreadContext.State futex too long. ThreadContext: %v", sc)
+		if interruptsSent > 0 && time.Now().After(deadline) {
+			// The context can recover between the futex timeout and here.
+			if sc.state() != state {
+				return nil
+			}
+			return errStuckContext
 		}
-		if sentInterruptOnce {
-			log.Warningf("The context is still running: %v", sc)
-			continue
-		}
-
 		if !sc.isAcked() || sc.subprocess.contextQueue.isEmpty() {
 			continue
 		}
-		sc.NotifyInterrupt()
-		sentInterruptOnce = true
-		timeout.Sec = contextCheckupTimeoutSec
-		timeout.Nsec = 0
+		if _, err := sc.interruptStub(); err != nil {
+			if sc.state() != state {
+				return nil
+			}
+			if err == errNoStubThread {
+				log.TracebackAll(fmt.Sprintf("Systrap context has no stub thread to interrupt. ThreadContext: %v", sc))
+			}
+			return err
+		}
+		if interruptsSent == 0 {
+			// Guarantee a full checkup interval if the first interrupt was
+			// sent close to the deadline.
+			if checkupDeadline := time.Now().Add(checkupTimeout); checkupDeadline.After(deadline) {
+				deadline = checkupDeadline
+			}
+			timeout = unix.NsecToTimespec(checkupTimeout.Nanoseconds())
+		}
+		interruptsSent++
 	}
 	return nil
 }
