@@ -609,7 +609,7 @@ func (r *restorer) restore(l *Loader) error {
 
 	l.k.RestoreContainerMapping(l.containerIDs)
 	l.k.SetSaver(l)
-	l.createRemappedNvproxyDeviceFiles(ctx)
+	l.createNvproxyDeviceFilesAfterRestore(ctx)
 
 	// Refresh the control server with the newly created kernel.
 	l.ctrl.refreshHandlers()
