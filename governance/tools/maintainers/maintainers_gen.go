@@ -12,13 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Command maintainers_gen generates the contents of .github/reviewer.json,
-// MAINTAINERS.md and CODEOWNERS.
+// Command maintainers_gen generates the contents of MAINTAINERS.md and
+// CODEOWNERS.
 package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"maps"
@@ -34,7 +33,7 @@ import (
 var (
 	input     = flag.String("input", "", "path to maintainers.yaml")
 	areasPath = flag.String("areas", "", "path to areas.yaml")
-	format    = flag.String("format", "reviewer.json", `output format: "reviewer.json", "MAINTAINERS.md" or "CODEOWNERS"`)
+	format    = flag.String("format", "MAINTAINERS.md", `output format: "MAINTAINERS.md" or "CODEOWNERS"`)
 	output    = flag.String("output", "", "path to write to; defaults to stdout")
 )
 
@@ -175,23 +174,6 @@ func parseRoster(yamlData []byte, areasByName map[string]area) (*roster, error) 
 		seen[m.GitHub] = true
 	}
 	return &r, nil
-}
-
-// generateReviewerJSON renders `reviewer.json` contents.
-func generateReviewerJSON(r *roster) ([]byte, error) {
-	reviewers := make(map[string]bool, len(r.Maintainers))
-	for _, m := range r.Maintainers {
-		kind, _, _ := parseStatus(m.Status)
-		if kind == "EMERITUS_SINCE" {
-			continue
-		}
-		reviewers[m.GitHub] = kind == "ACTIVE"
-	}
-	jsonData, err := json.MarshalIndent(reviewers, "", "  ")
-	if err != nil {
-		return nil, fmt.Errorf("cannot marshal reviewers: %w", err)
-	}
-	return append(jsonData, '\n'), nil
 }
 
 // generateCODEOWNERS renders `CODEOWNERS` contents. All area paths must
@@ -363,8 +345,6 @@ func main() {
 	}
 	var outData []byte
 	switch *format {
-	case "reviewer.json":
-		outData, err = generateReviewerJSON(r)
 	case "MAINTAINERS.md":
 		outData, err = generateMaintainersMD(r)
 	case "CODEOWNERS":
