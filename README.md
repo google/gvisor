@@ -101,7 +101,7 @@ to get started:
 After setting up dependencies, using Bazel is similar to the Makefile:
 
 ```sh
-bazel build -c opt //debian:gvisor-release-tar
+bazel build -c opt //debian:gvisor-release-tar-bz2
 ```
 
 ### Testing
