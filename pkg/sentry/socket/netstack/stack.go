@@ -483,6 +483,7 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 	})
 	if err != nil {
 		s.unlockSrcAndDst(ctx, dstNs)
+		peerEP.Close()
 		return syserr.TranslateNetstackError(err)
 	}
 	if err := s.setLinkLocked(ctx, id, linkAttrs, dstNs); err != nil {
