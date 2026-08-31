@@ -397,7 +397,8 @@ func (*constructor) OpenDevice(_ string) (*fd.FD, error) {
 // Requirements implements platform.Constructor.Requirements().
 func (*constructor) Requirements() platform.Requirements {
 	return platform.Requirements{
-		RequiresCapSysPtrace: true,
+		RequiresCapSysPtrace:      true,
+		FrequentHostThreadWakeups: true,
 	}
 }
 

@@ -10,6 +10,9 @@ go_library(
     srcs = [
         "caps.go",
         "caps_unsafe.go",
+        "cpu_dma_latency.go",
+        "cpu_dma_latency_amd64.go",
+        "cpu_dma_latency_arm64.go",
         "fdmappings.go",
         "flags.go",
         "fs.go",
@@ -18,8 +21,10 @@ go_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/cpuid",
         "//pkg/fd",
         "//pkg/log",
+        "//pkg/marshal/primitive",
         "//pkg/timing",
         "//pkg/unet",
         "//runsc/boot",
