@@ -42,14 +42,15 @@ export DEBIAN_FRONTEND=noninteractive
 # install_raw installs raw artifacts.
 install_raw() {
   for binary in "${binaries[@]}"; do
-    local arch name
+    local arch file_info name
     # Copy the raw file & generate a sha512sum, sorted by architecture.
-    if echo "${binary}" | grep -qF .tar.bz2; then
-      # Determine arch from the `runsc` within the tarball:
-      arch=$(tar -xjOf "${binary}" runsc | file - | cut -d',' -f2 | awk '{print $NF}' | tr '-' '_')
-    else
-      arch=$(file "${binary}" | cut -d',' -f2 | awk '{print $NF}' | tr '-' '_')
-    fi
+    # For tarballs, determine arch from the `runsc` within the tarball.
+    case "${binary}" in
+      *.tar.bz2)  file_info=$(tar -xjOf "${binary}" runsc | file -) ;;
+      *.tar.zstd) file_info=$(tar --zstd -xOf "${binary}" runsc | file -) ;;
+      *)          file_info=$(file "${binary}") ;;
+    esac
+    arch=$(echo "${file_info}" | cut -d',' -f2 | awk '{print $NF}' | tr '-' '_')
     name=$(basename "${binary}")
     mkdir -p "${root}/$1/${arch}"
     cp -f "${binary}" "${root}/$1/${arch}"

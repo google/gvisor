@@ -34,6 +34,7 @@ declare -ra ARCHS=(x86_64 aarch64)
 # signed release metadata and the upgrade path that a release asset cannot.
 declare -ra RAW_FILES=(
   gvisor.tar.bz2
+  gvisor.tar.zstd
 )
 
 # raw_url <version> <arch> <filename>
@@ -47,7 +48,8 @@ raw_url() {
 # have to carry the architecture in their name.
 asset_name() {
   case "$1" in
-    *.tar.bz2) echo "${1%.tar.bz2}-$2.tar.bz2" ;;
-    *)         echo "$1-$2" ;;
+    *.tar.bz2)  echo "${1%.tar.bz2}-$2.tar.bz2" ;;
+    *.tar.zstd) echo "${1%.tar.zstd}-$2.tar.zstd" ;;
+    *)          echo "$1-$2" ;;
   esac
 }
