@@ -17,7 +17,9 @@ package netfilter
 import (
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/syserr"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -30,23 +32,47 @@ func makeRule(target stack.Target, matchers ...stack.Matcher) stack.Rule {
 }
 
 func makeBuiltinChains(prerouting int) [stack.NumHooks]int {
-	return [stack.NumHooks]int{
-		stack.Prerouting:  prerouting,
-		stack.Input:       stack.HookUnset,
-		stack.Forward:     stack.HookUnset,
-		stack.Output:      stack.HookUnset,
-		stack.Postrouting: stack.HookUnset,
-	}
+	return makeHookEntries(map[stack.Hook]int{stack.Prerouting: prerouting})
 }
 
 func makeUnderflows(prerouting int) [stack.NumHooks]int {
-	return [stack.NumHooks]int{
-		stack.Prerouting:  prerouting,
+	return makeHookEntries(map[stack.Hook]int{stack.Prerouting: prerouting})
+}
+
+func makeHookEntries(entries map[stack.Hook]int) [stack.NumHooks]int {
+	hookEntries := [stack.NumHooks]int{
+		stack.Prerouting:  stack.HookUnset,
 		stack.Input:       stack.HookUnset,
 		stack.Forward:     stack.HookUnset,
 		stack.Output:      stack.HookUnset,
 		stack.Postrouting: stack.HookUnset,
 	}
+	for hook, ruleIdx := range entries {
+		hookEntries[hook] = ruleIdx
+	}
+	return hookEntries
+}
+
+func marshalEntries4(rules []stack.Rule) []byte {
+	entries, _ := getEntries4(stack.Table{Rules: rules}, linux.TableName{})
+	var buf []byte
+	for i := range entries.Entrytable {
+		entry := make([]byte, entries.Entrytable[i].SizeBytes())
+		entries.Entrytable[i].MarshalBytes(entry)
+		buf = append(buf, entry...)
+	}
+	return buf
+}
+
+func marshalEntries6(rules []stack.Rule) []byte {
+	entries, _ := getEntries6(stack.Table{Rules: rules}, linux.TableName{})
+	var buf []byte
+	for i := range entries.Entrytable {
+		entry := make([]byte, entries.Entrytable[i].SizeBytes())
+		entries.Entrytable[i].MarshalBytes(entry)
+		buf = append(buf, entry...)
+	}
+	return buf
 }
 
 func TestCheckLoopsAndChainsDirectLoop(t *testing.T) {
@@ -137,5 +163,262 @@ func TestCheckLoopsAndChainsValid(t *testing.T) {
 	}
 	if err := checkLoopsAndChains(table, false); err != nil {
 		t.Fatalf("checkLoopsAndChains expected nil for valid table, got %v", err)
+	}
+}
+
+func TestCheckTargetHooks(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		table stack.Table
+		want  *syserr.Error
+	}{
+		{
+			name: "redirect on postrouting",
+			table: stack.Table{
+				Rules: []stack.Rule{
+					makeRule(&redirectTarget{}), // Rule 0: Postrouting
+					makeRule(&acceptTarget{}),   // Rule 1: Postrouting underflow
+				},
+				BuiltinChains: makeHookEntries(map[stack.Hook]int{stack.Postrouting: 0}),
+				Underflows:    makeHookEntries(map[stack.Hook]int{stack.Postrouting: 1}),
+			},
+			want: syserr.ErrInvalidArgument,
+		},
+		{
+			name: "redirect on output",
+			table: stack.Table{
+				Rules: []stack.Rule{
+					makeRule(&redirectTarget{}), // Rule 0: Output
+					makeRule(&acceptTarget{}),   // Rule 1: Output underflow
+				},
+				BuiltinChains: makeHookEntries(map[stack.Hook]int{stack.Output: 0}),
+				Underflows:    makeHookEntries(map[stack.Hook]int{stack.Output: 1}),
+			},
+		},
+		{
+			name: "snat on output",
+			table: stack.Table{
+				Rules: []stack.Rule{
+					makeRule(&snatTarget{}),   // Rule 0: Output
+					makeRule(&acceptTarget{}), // Rule 1: Output underflow
+				},
+				BuiltinChains: makeHookEntries(map[stack.Hook]int{stack.Output: 0}),
+				Underflows:    makeHookEntries(map[stack.Hook]int{stack.Output: 1}),
+			},
+			want: syserr.ErrInvalidArgument,
+		},
+		{
+			name: "snat on postrouting",
+			table: stack.Table{
+				Rules: []stack.Rule{
+					makeRule(&snatTarget{}),   // Rule 0: Postrouting
+					makeRule(&acceptTarget{}), // Rule 1: Postrouting underflow
+				},
+				BuiltinChains: makeHookEntries(map[stack.Hook]int{stack.Postrouting: 0}),
+				Underflows:    makeHookEntries(map[stack.Hook]int{stack.Postrouting: 1}),
+			},
+		},
+		{
+			name: "snat on input",
+			table: stack.Table{
+				Rules: []stack.Rule{
+					makeRule(&snatTarget{}),   // Rule 0: Input
+					makeRule(&acceptTarget{}), // Rule 1: Input underflow
+				},
+				BuiltinChains: makeHookEntries(map[stack.Hook]int{stack.Input: 0}),
+				Underflows:    makeHookEntries(map[stack.Hook]int{stack.Input: 1}),
+			},
+		},
+		{
+			name: "redirect in user chain from postrouting",
+			table: stack.Table{
+				Rules: []stack.Rule{
+					makeRule(&JumpTarget{RuleNum: 3}), // Rule 0: Postrouting -> jump to Rule 3
+					makeRule(&acceptTarget{}),         // Rule 1: Postrouting underflow
+					makeRule(&userChainTarget{}),      // Rule 2: user chain header
+					makeRule(&redirectTarget{}),       // Rule 3: user chain rule
+				},
+				BuiltinChains: makeHookEntries(map[stack.Hook]int{stack.Postrouting: 0}),
+				Underflows:    makeHookEntries(map[stack.Hook]int{stack.Postrouting: 1}),
+			},
+			want: syserr.ErrInvalidArgument,
+		},
+		{
+			name: "redirect in user chain from output",
+			table: stack.Table{
+				Rules: []stack.Rule{
+					makeRule(&JumpTarget{RuleNum: 3}), // Rule 0: Output -> jump to Rule 3
+					makeRule(&acceptTarget{}),         // Rule 1: Output underflow
+					makeRule(&userChainTarget{}),      // Rule 2: user chain header
+					makeRule(&redirectTarget{}),       // Rule 3: user chain rule
+				},
+				BuiltinChains: makeHookEntries(map[stack.Hook]int{stack.Output: 0}),
+				Underflows:    makeHookEntries(map[stack.Hook]int{stack.Output: 1}),
+			},
+		},
+		{
+			name: "dnat in user chain from prerouting and postrouting",
+			table: stack.Table{
+				Rules: []stack.Rule{
+					makeRule(&JumpTarget{RuleNum: 5}), // Rule 0: Prerouting -> jump to Rule 5
+					makeRule(&acceptTarget{}),         // Rule 1: Prerouting underflow
+					makeRule(&JumpTarget{RuleNum: 5}), // Rule 2: Postrouting -> jump to Rule 5
+					makeRule(&acceptTarget{}),         // Rule 3: Postrouting underflow
+					makeRule(&userChainTarget{}),      // Rule 4: user chain header
+					makeRule(&dnatTarget{}),           // Rule 5: user chain rule
+				},
+				BuiltinChains: makeHookEntries(map[stack.Hook]int{stack.Prerouting: 0, stack.Postrouting: 2}),
+				Underflows:    makeHookEntries(map[stack.Hook]int{stack.Prerouting: 1, stack.Postrouting: 3}),
+			},
+			want: syserr.ErrInvalidArgument,
+		},
+		{
+			name: "dnat in user chain from prerouting and output",
+			table: stack.Table{
+				Rules: []stack.Rule{
+					makeRule(&JumpTarget{RuleNum: 5}), // Rule 0: Prerouting -> jump to Rule 5
+					makeRule(&acceptTarget{}),         // Rule 1: Prerouting underflow
+					makeRule(&JumpTarget{RuleNum: 5}), // Rule 2: Output -> jump to Rule 5
+					makeRule(&acceptTarget{}),         // Rule 3: Output underflow
+					makeRule(&userChainTarget{}),      // Rule 4: user chain header
+					makeRule(&dnatTarget{}),           // Rule 5: user chain rule
+				},
+				BuiltinChains: makeHookEntries(map[stack.Hook]int{stack.Prerouting: 0, stack.Output: 2}),
+				Underflows:    makeHookEntries(map[stack.Hook]int{stack.Prerouting: 1, stack.Output: 3}),
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := checkTargetHooks(test.table, false); err != test.want {
+				t.Fatalf("checkTargetHooks expected %v, got %v", test.want, err)
+			}
+		})
+	}
+}
+
+func TestParseTargetTable(t *testing.T) {
+	filter := emptyIPv4Filter
+	filter.Protocol = header.TCPProtocolNumber
+	for _, test := range []struct {
+		name      string
+		target    target
+		tableName string
+		want      *syserr.Error
+	}{
+		{
+			name: "redirect in the filter table",
+			target: &redirectTarget{RedirectTarget: stack.RedirectTarget{
+				NetworkProtocol: header.IPv4ProtocolNumber,
+				Port:            9999,
+			}},
+			tableName: filterTable,
+			want:      syserr.ErrInvalidArgument,
+		},
+		{
+			name: "redirect in the nat table",
+			target: &redirectTarget{RedirectTarget: stack.RedirectTarget{
+				NetworkProtocol: header.IPv4ProtocolNumber,
+				Port:            9999,
+			}},
+			tableName: natTable,
+		},
+		{
+			name: "dnat in the filter table",
+			target: &dnatTarget{DNATTarget: stack.DNATTarget{
+				NetworkProtocol: header.IPv4ProtocolNumber,
+				Port:            9999,
+				ChangePort:      true,
+			}},
+			tableName: filterTable,
+			want:      syserr.ErrInvalidArgument,
+		},
+		{
+			name:      "snat in the raw table",
+			target:    &snatTarget{SNATTarget: stack.SNATTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+			tableName: rawTable,
+			want:      syserr.ErrInvalidArgument,
+		},
+		{
+			name: "reject in the filter table",
+			target: &rejectIPv4Target{RejectIPv4Target: stack.RejectIPv4Target{
+				RejectWith: stack.RejectIPv4WithICMPPortUnreachable,
+			}},
+			tableName: filterTable,
+		},
+		{
+			name:      "ct in the raw table",
+			target:    &ctTarget{CTTarget: stack.CTTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+			tableName: rawTable,
+		},
+		{
+			name:      "accept in the filter table",
+			target:    &acceptTarget{AcceptTarget: stack.AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+			tableName: filterTable,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := parseTarget(filter, marshalTarget(test.target), false /* ipv6 */, test.tableName); err != test.want {
+				t.Fatalf("parseTarget expected %v, got %v", test.want, err)
+			}
+		})
+	}
+}
+
+func TestModifyEntriesTableOrder(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		rules     []stack.Rule
+		tableName string
+		ipv6      bool
+	}{
+		{
+			name: "unsupported reject type in the nat table",
+			rules: []stack.Rule{
+				makeRule(&rejectIPv4Target{RejectIPv4Target: stack.RejectIPv4Target{
+					RejectWith: stack.RejectIPv4WithICMPHostUnreachable,
+				}}),
+			},
+			tableName: natTable,
+		},
+		{
+			name: "ct before an unsupported reject type in the filter table",
+			rules: []stack.Rule{
+				makeRule(&ctTarget{CTTarget: stack.CTTarget{NetworkProtocol: header.IPv4ProtocolNumber}}),
+				makeRule(&rejectIPv4Target{RejectIPv4Target: stack.RejectIPv4Target{
+					RejectWith: stack.RejectIPv4WithICMPHostUnreachable,
+				}}),
+			},
+			tableName: filterTable,
+		},
+		{
+			name: "unsupported ipv6 reject type in the nat table",
+			rules: []stack.Rule{
+				{
+					Filter: emptyIPv6Filter,
+					Target: &rejectIPv6Target{RejectIPv6Target: stack.RejectIPv6Target{
+						RejectWith: stack.RejectIPv6WithICMPAdminProhibited,
+					}},
+				},
+			},
+			tableName: natTable,
+			ipv6:      true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var replace linux.IPTReplace
+			copy(replace.Name[:], test.tableName)
+			replace.NumEntries = uint32(len(test.rules))
+			stk := stack.New(stack.Options{})
+			var table stack.Table
+			var err *syserr.Error
+			if test.ipv6 {
+				_, err = modifyEntries6(nil /* mapper */, stk, marshalEntries6(test.rules), &replace, &table)
+			} else {
+				_, err = modifyEntries4(nil /* mapper */, stk, marshalEntries4(test.rules), &replace, &table)
+			}
+			if err != syserr.ErrInvalidArgument {
+				t.Fatalf("modifyEntries expected %v, got %v", syserr.ErrInvalidArgument, err)
+			}
+		})
 	}
 }

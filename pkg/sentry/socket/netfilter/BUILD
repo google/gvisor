@@ -69,6 +69,7 @@ go_test(
         "//pkg/abi/linux",
         "//pkg/marshal",
         "//pkg/syserr",
+        "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
     ],
 )

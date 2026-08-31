@@ -491,7 +491,7 @@ func translateToStandardTarget(val int32, netProto tcpip.NetworkProtocolNumber) 
 
 // parseTarget parses a target from optVal. optVal should contain only the
 // target.
-func parseTarget(filter stack.IPHeaderFilter, optVal []byte, ipv6 bool) (stack.Target, *syserr.Error) {
+func parseTarget(filter stack.IPHeaderFilter, optVal []byte, ipv6 bool, tableName string) (stack.Target, *syserr.Error) {
 	nflog("set entries: parsing target of size %d", len(optVal))
 	if len(optVal) < linux.SizeOfXTEntryTarget {
 		nflog("optVal has insufficient size for entry target %d", len(optVal))
@@ -501,6 +501,12 @@ func parseTarget(filter stack.IPHeaderFilter, optVal []byte, ipv6 bool) (stack.T
 	// Do not advance optVal as targetMake.unmarshal() may unmarshal
 	// XTEntryTarget again but with some added fields.
 	target.UnmarshalUnsafe(optVal)
+
+	name := target.Name.String()
+	if want := targetTable(name); want != "" && want != tableName {
+		nflog("target %q is only valid in the %s table, not %s", name, want, tableName)
+		return nil, syserr.ErrInvalidArgument
+	}
 
 	return unmarshalTarget(target, filter, optVal)
 }
