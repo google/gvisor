@@ -497,6 +497,7 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 	}
 	peerDstNs, sysErr := peerStack.lockSrcAndDst(ctx, peerLinkAttrs)
 	if sysErr != nil {
+		peerEP.Close()
 		return sysErr
 	}
 	defer peerStack.unlockSrcAndDst(ctx, peerDstNs)
