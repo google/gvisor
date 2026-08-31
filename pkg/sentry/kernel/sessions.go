@@ -232,8 +232,19 @@ func (pg *ProcessGroup) Session() *Session {
 }
 
 // SendSignal sends a signal to all processes inside the process group. It is
-// analogous to kernel/signal.c:kill_pgrp.
+// analogous to kernel/signal.c:kill_pgrp. The signal counts as sent by the
+// sentry; see Task.SendSignal.
 func (pg *ProcessGroup) SendSignal(info *linux.SignalInfo) error {
+	return pg.sendSignal(nil /* sender */, info)
+}
+
+// SendSignalFrom sends a signal to all processes inside the process group on
+// behalf of sender.
+func (pg *ProcessGroup) SendSignalFrom(sender *Task, info *linux.SignalInfo) error {
+	return pg.sendSignal(sender, info)
+}
+
+func (pg *ProcessGroup) sendSignal(sender *Task, info *linux.SignalInfo) error {
 	tasks := pg.originator.TaskSet()
 	tasks.mu.RLock()
 	defer tasks.mu.RUnlock()
@@ -241,9 +252,10 @@ func (pg *ProcessGroup) SendSignal(info *linux.SignalInfo) error {
 	var lastErr error
 	for tg := range tasks.Root.tgids {
 		if tg.processGroup == pg {
+			force := tg.pidns.signalForcedLocked(sender, info)
 			tg.signalHandlers.mu.Lock()
 			infoCopy := *info
-			if err := tg.leader.sendSignalLocked(&infoCopy, true /*group*/); err != nil {
+			if err := tg.leader.sendSignalTimerLocked(&infoCopy, true /* group */, force, nil /* timer */); err != nil {
 				lastErr = err
 			}
 			tg.signalHandlers.mu.Unlock()

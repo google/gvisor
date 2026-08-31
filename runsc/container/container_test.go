@@ -672,7 +672,7 @@ func TestLifecycle(t *testing.T) {
 					ch <- err
 					return
 				}
-				if got, want := ws.Signal(), unix.SIGTERM; got != want {
+				if got, want := ws.Signal(), unix.SIGKILL; got != want {
 					ch <- fmt.Errorf("got signal %v, want %v", got, want)
 					return
 				}
@@ -683,9 +683,11 @@ func TestLifecycle(t *testing.T) {
 			// the container before we signal.
 			time.Sleep(time.Second)
 
-			// Send the container a SIGTERM which will cause it to stop.
-			if err := c.SignalContainer(unix.SIGTERM, false); err != nil {
-				t.Fatalf("error sending signal %v to container: %v", unix.SIGTERM, err)
+			// Send the container a SIGKILL which will cause it to stop. An
+			// init process ignores signals it has no handler for, and sleep
+			// installs no SIGTERM handler.
+			if err := c.SignalContainer(unix.SIGKILL, false); err != nil {
+				t.Fatalf("error sending signal %v to container: %v", unix.SIGKILL, err)
 			}
 
 			// Wait for it to die.
@@ -725,6 +727,61 @@ func TestLifecycle(t *testing.T) {
 			// Loading the container by id should fail.
 			if _, err = Load(rootDir, fullID, LoadOpts{Exact: true}); err == nil {
 				t.Errorf("expected loading destroyed container to fail, but it did not")
+			}
+		})
+	}
+}
+
+// TestSignalHandledByInit tests that SIGTERM stops a container whose init
+// process handles it, even though an init process ignores signals it has no
+// handler for.
+func TestSignalHandledByInit(t *testing.T) {
+	for name, conf := range configs(t, false /* noOverlay */) {
+		t.Run(name, func(t *testing.T) {
+			spec := testutil.NewSpecWithArgs("sh", "-c", "trap 'exit 0' TERM; while true; do sleep 0.1; done")
+			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer cleanup()
+
+			args := Args{
+				ID:        testutil.RandomContainerID(),
+				Spec:      spec,
+				BundleDir: bundleDir,
+			}
+			c, err := New(conf, args)
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			defer c.Destroy()
+			if err := c.Start(conf); err != nil {
+				t.Fatalf("error starting container: %v", err)
+			}
+
+			ch := make(chan error)
+			go func() {
+				ws, err := c.Wait()
+				if err != nil {
+					ch <- err
+					return
+				}
+				if got := ws.ExitStatus(); got != 0 {
+					ch <- fmt.Errorf("got exit status %d, want 0", got)
+					return
+				}
+				ch <- nil
+			}()
+
+			// Wait for the trap to be installed before signaling.
+			if err := waitForProcessCount(c, 2); err != nil {
+				t.Fatalf("error waiting for container to start: %v", err)
+			}
+			if err := c.SignalContainer(unix.SIGTERM, false); err != nil {
+				t.Fatalf("error sending signal %v to container: %v", unix.SIGTERM, err)
+			}
+			if err := <-ch; err != nil {
+				t.Fatalf("error waiting for container: %v", err)
 			}
 		})
 	}

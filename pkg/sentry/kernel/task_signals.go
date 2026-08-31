@@ -154,6 +154,15 @@ func (t *Task) deliverSignal(info *linux.SignalInfo, act linux.SigAction) taskRu
 	sig := linux.Signal(info.Signo)
 	sigact := computeAction(sig, act)
 
+	// An unkillable init process discards signals it has no handler for
+	// instead of taking their default action, analogous to Linux's
+	// kernel/signal.c:get_signal().
+	if sigact != SignalActionHandler && linux.SignalSetOf(sig)&UnblockableSignals == 0 &&
+		t.tg.unkillableInit.Load() {
+		t.Debugf("Signal %d: ignored by init", info.Signo)
+		return (*runInterrupt)(nil)
+	}
+
 	if t.haveSyscallReturn {
 		if sre, ok := linuxerr.SyscallRestartErrorFromReturn(t.Arch().Return()); ok {
 			// Signals that are ignored, cause a thread group stop, or
@@ -365,7 +374,8 @@ func (t *Task) Sigtimedwait(set linux.SignalSet, timeout time.Duration) (*linux.
 	return nil, err
 }
 
-// SendSignal sends the given signal to t.
+// SendSignal sends the given signal to t. The signal counts as sent by the
+// sentry, not by a task. Use SendSignalFrom for a signal sent by a task.
 //
 // The following errors may be returned:
 //
@@ -378,15 +388,34 @@ func (t *Task) SendSignal(info *linux.SignalInfo) error {
 	return t.sendSignalLocked(info, false /* group */)
 }
 
-// SendGroupSignal sends the given signal to t's thread group.
+// SendSignalFrom sends the given signal to t on behalf of sender.
+func (t *Task) SendSignalFrom(sender *Task, info *linux.SignalInfo) error {
+	force := t.PIDNamespace().signalForced(sender, info)
+	sh := t.tg.signalLock()
+	defer sh.mu.Unlock()
+	return t.sendSignalTimerLocked(info, false /* group */, force, nil /* timer */)
+}
+
+// SendGroupSignal sends the given signal to t's thread group. The signal
+// counts as sent by the sentry; see SendSignal.
 func (t *Task) SendGroupSignal(info *linux.SignalInfo) error {
 	sh := t.tg.signalLock()
 	defer sh.mu.Unlock()
 	return t.sendSignalLocked(info, true /* group */)
 }
 
+// SendGroupSignalFrom sends the given signal to t's thread group on behalf of
+// sender.
+func (t *Task) SendGroupSignalFrom(sender *Task, info *linux.SignalInfo) error {
+	force := t.PIDNamespace().signalForced(sender, info)
+	sh := t.tg.signalLock()
+	defer sh.mu.Unlock()
+	return t.sendSignalTimerLocked(info, true /* group */, force, nil /* timer */)
+}
+
 // SendSignal sends the given signal to tg, using tg's leader to determine if
-// the signal is blocked.
+// the signal is blocked. The signal counts as sent by the sentry; see
+// Task.SendSignal.
 func (tg *ThreadGroup) SendSignal(info *linux.SignalInfo) error {
 	tg.pidns.owner.mu.RLock()
 	defer tg.pidns.owner.mu.RUnlock()
@@ -395,13 +424,37 @@ func (tg *ThreadGroup) SendSignal(info *linux.SignalInfo) error {
 	return tg.leader.sendSignalLocked(info, true /* group */)
 }
 
-// Preconditions: The signal mutex must be locked.
-func (t *Task) sendSignalLocked(info *linux.SignalInfo, group bool) error {
-	return t.sendSignalTimerLocked(info, group, nil)
+// SendSignalFrom sends the given signal to tg on behalf of sender.
+func (tg *ThreadGroup) SendSignalFrom(sender *Task, info *linux.SignalInfo) error {
+	tg.pidns.owner.mu.RLock()
+	defer tg.pidns.owner.mu.RUnlock()
+	force := tg.pidns.signalForcedLocked(sender, info)
+	tg.signalHandlers.mu.Lock()
+	defer tg.signalHandlers.mu.Unlock()
+	return tg.leader.sendSignalTimerLocked(info, true /* group */, force, nil /* timer */)
+}
+
+// signalForced returns true if the signal should be queued even if an init
+// process has no handler for it, analogous to the force argument in Linux's
+// kernel/signal.c:send_signal_locked(). A nil sender is the sentry.
+func (ns *PIDNamespace) signalForced(sender *Task, info *linux.SignalInfo) bool {
+	ns.owner.mu.RLock()
+	defer ns.owner.mu.RUnlock()
+	return ns.signalForcedLocked(sender, info)
+}
+
+// Preconditions: The TaskSet mutex must be locked.
+func (ns *PIDNamespace) signalForcedLocked(sender *Task, info *linux.SignalInfo) bool {
+	return info.Code == linux.SI_KERNEL || ns.tids[sender] == 0
 }
 
 // Preconditions: The signal mutex must be locked.
-func (t *Task) sendSignalTimerLocked(info *linux.SignalInfo, group bool, timer *IntervalTimer) error {
+func (t *Task) sendSignalLocked(info *linux.SignalInfo, group bool) error {
+	return t.sendSignalTimerLocked(info, group, true /* force */, nil /* timer */)
+}
+
+// Preconditions: The signal mutex must be locked.
+func (t *Task) sendSignalTimerLocked(info *linux.SignalInfo, group, force bool, timer *IntervalTimer) error {
 	if t.ExitState() == TaskExitDead {
 		return linuxerr.ESRCH
 	}
@@ -413,27 +466,25 @@ func (t *Task) sendSignalTimerLocked(info *linux.SignalInfo, group bool, timer *
 		return linuxerr.EINVAL
 	}
 
-	// Signal side effects apply even if the signal is ultimately discarded.
-	t.tg.applySignalSideEffectsLocked(sig)
-
-	// TODO: "Only signals for which the "init" process has established a
-	// signal handler can be sent to the "init" process by other members of the
-	// PID namespace. This restriction applies even to privileged processes,
-	// and prevents other members of the PID namespace from accidentally
-	// killing the "init" process." - pid_namespaces(7). We don't currently do
-	// this for child namespaces, though we should; we also don't do this for
-	// the root namespace (the same restriction applies to global init on
-	// Linux), where whether or not we should is much murkier. In practice,
-	// most sandboxed applications are not prepared to function as an init
-	// process.
-
 	// Unmasked, ignored signals are discarded without being queued, unless
-	// they will be visible to a tracer. Even for group signals, it's the
+	// they will be visible to a tracer. Signals an init process rejects go
+	// the same way. A tracer never sees SIGKILL, so a rejected SIGKILL is
+	// discarded anyway. Even for group signals, it's the
 	// originally-targeted task's signal mask and tracer that matter; compare
 	// Linux's kernel/signal.c:__send_signal() => prepare_signal() =>
 	// sig_ignored().
-	ignored := computeAction(sig, t.tg.signalHandlers.actions[sig]) == SignalActionIgnore
-	if sigset := linux.SignalSetOf(sig); sigset&linux.SignalSet(t.signalMask.RacyLoad()) == 0 && sigset&t.realSignalMask == 0 && ignored && !t.hasTracer() {
+	discard := false
+	if sigset := linux.SignalSetOf(sig); sigset&linux.SignalSet(t.signalMask.RacyLoad()) == 0 && sigset&t.realSignalMask == 0 && (!t.hasTracer() || sig == linux.SIGKILL) {
+		discard = computeAction(sig, t.tg.signalHandlers.actions[sig]) == SignalActionIgnore || t.initIgnoresSignalLocked(sig, force)
+	}
+
+	// Signal side effects apply even if the signal is ultimately discarded,
+	// except that a discarded SIGKILL must not terminate the thread group.
+	if !discard || sig != linux.SIGKILL {
+		t.tg.applySignalSideEffectsLocked(sig)
+	}
+
+	if discard {
 		t.Debugf("Discarding ignored signal %d", sig)
 		if timer != nil {
 			timer.signalRejectedLocked()
@@ -474,6 +525,22 @@ func (t *Task) sendSignalTimerLocked(info *linux.SignalInfo, group bool, timer *
 	}
 	t.Debugf("No task notified of signal %d", sig)
 	return nil
+}
+
+// initIgnoresSignalLocked is analogous to Linux's
+// kernel/signal.c:sig_task_ignored(). Linux additionally refuses SIGKILL and
+// SIGSTOP to global init, which we don't, so the sandbox can still be killed
+// externally.
+//
+// Preconditions: The signal mutex must be locked.
+func (t *Task) initIgnoresSignalLocked(sig linux.Signal, force bool) bool {
+	if !t.tg.unkillableInit.Load() {
+		return false
+	}
+	if force && linux.SignalSetOf(sig)&UnblockableSignals != 0 {
+		return false
+	}
+	return t.tg.signalHandlers.actions[sig].Handler == linux.SIG_DFL
 }
 
 // Preconditions: The signal mutex must be locked.
@@ -578,6 +645,24 @@ func (t *Task) forceSignalLocked(sig linux.Signal, unconditional bool) {
 		if blocked {
 			t.setSignalMaskLocked(linux.SignalSet(t.signalMask.RacyLoad()) &^ linux.SignalSetOf(sig))
 		}
+	}
+	t.clearUnkillableInitLocked(sig)
+}
+
+func (t *Task) clearUnkillableInit(sig linux.Signal) {
+	sh := t.tg.signalLock()
+	defer sh.mu.Unlock()
+	t.clearUnkillableInitLocked(sig)
+}
+
+// clearUnkillableInitLocked is analogous to Linux's
+// kernel/signal.c:force_sig_info_to_task(), so an init process is still
+// killed by its own faults.
+//
+// Preconditions: The signal mutex must be locked.
+func (t *Task) clearUnkillableInitLocked(sig linux.Signal) {
+	if t.tg.signalHandlers.actions[sig].Handler == linux.SIG_DFL && !t.hasTracer() {
+		t.tg.unkillableInit.Store(false)
 	}
 }
 

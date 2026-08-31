@@ -140,7 +140,7 @@ func (it *IntervalTimer) NotifyTimer(exp uint64) {
 	si.SetTimerID(it.id)
 	si.SetSigval(it.sigval)
 	// si_overrun is set when the signal is dequeued.
-	if err := it.target.sendSignalTimerLocked(si, it.group, it); err != nil {
+	if err := it.target.sendSignalTimerLocked(si, it.group, false /* force */, it); err != nil {
 		it.signalRejectedLocked()
 	}
 }
