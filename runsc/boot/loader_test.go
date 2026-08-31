@@ -152,6 +152,7 @@ func createLoader(conf *config.Config, spec *specs.Spec) (*Loader, func(), error
 		PodInitConfigFD:  -1,
 		ExecFD:           -1,
 		RootfsUpperTarFD: -1,
+		CPUDMALatencyFD:  -1,
 	}
 	l, err := New(args)
 	if err != nil {
@@ -287,6 +288,7 @@ func TestHostnetWithRawSockets(t *testing.T) {
 		DevGoferFD:      -1,
 		PodInitConfigFD: -1,
 		ExecFD:          -1,
+		CPUDMALatencyFD: -1,
 	})
 	if err == nil {
 		l.Destroy()
