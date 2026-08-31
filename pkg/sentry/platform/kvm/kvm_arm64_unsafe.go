@@ -30,6 +30,7 @@ import (
 var (
 	runDataSize  int
 	hasGuestPCID bool
+	hasPtrauth   bool
 )
 
 func updateSystemValues(fd int) error {
@@ -41,6 +42,15 @@ func updateSystemValues(fd int) error {
 	// Save the data.
 	runDataSize = int(sz)
 	hasGuestPCID = true
+
+	// Probe pointer authentication support. KVM requires the address and
+	// generic vCPU features to be enabled together, so require both
+	// capabilities.
+	pacAddress, addressErrno := hostsyscall.RawSyscall(
+		unix.SYS_IOCTL, uintptr(fd), KVM_CHECK_EXTENSION, _KVM_CAP_ARM_PTRAUTH_ADDRESS)
+	pacGeneric, genericErrno := hostsyscall.RawSyscall(
+		unix.SYS_IOCTL, uintptr(fd), KVM_CHECK_EXTENSION, _KVM_CAP_ARM_PTRAUTH_GENERIC)
+	hasPtrauth = addressErrno == 0 && genericErrno == 0 && pacAddress > 0 && pacGeneric > 0
 
 	// Success.
 	return nil
