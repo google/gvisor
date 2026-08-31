@@ -167,3 +167,25 @@ TEXT ·AddrOfTwiddleRegsFault(SB),NOSPLIT,$0-8
 	MOVD $·twiddleRegsFault(SB), R0
 	MOVD R0, ret+0(FP)
 	RET
+
+// pacLoop executes non-hint pointer authentication instructions
+// (FEAT_PAuth) and then performs a syscall, in a loop. Unlike the
+// HINT-space PAC instructions (e.g. PACIASP), the instructions below are
+// UNDEFINED if pointer authentication is not available, and KVM injects
+// an undefined instruction exception for them if pointer authentication
+// is not enabled on the vCPU. They are encoded as raw words because the
+// Go assembler does not support them.
+TEXT ·pacLoop(SB),NOSPLIT,$0
+start:
+	WORD $0xdac10020 // pacia x0, x1
+	WORD $0xdac11020 // autia x0, x1
+	WORD $0x9ac13002 // pacga x2, x0, x1
+	WORD $0xdac143e0 // xpaci x0
+	MOVD $SYS_GETPID, R8
+	SVC
+	B start
+
+TEXT ·AddrOfPACLoop(SB),NOSPLIT,$0-8
+	MOVD $·pacLoop(SB), R0
+	MOVD R0, ret+0(FP)
+	RET
