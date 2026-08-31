@@ -788,6 +788,15 @@ func (c *Container) TarRootfsUpperLayer(outFD *os.File) error {
 // TODO(b/113680494): Distinguish different error types.
 func (c *Container) SignalContainer(sig unix.Signal, all bool) error {
 	log.Debugf("Signal container, cid: %s, signal: %v (%d)", c.ID, sig, sig)
+	if c.Status == Created {
+		return c.signalCreated(sig, all)
+	}
+	return c.signalRunning(sig, all)
+}
+
+// signalRunning delivers a signal to the processes of a Running (or Stopped)
+// container via the sandbox.
+func (c *Container) signalRunning(sig unix.Signal, all bool) error {
 	// Signaling container in Stopped state is allowed. When all=false,
 	// an error will be returned anyway; when all=true, this allows
 	// sending signal to other processes inside the container even
@@ -800,6 +809,45 @@ func (c *Container) SignalContainer(sig unix.Signal, all bool) error {
 		return fmt.Errorf("sandbox is not running")
 	}
 	return c.Sandbox.SignalContainer(c.ID, sig, all)
+}
+
+// signalCreated handles a signal sent to a container that appears to be in the
+// Created state (start was never called). Such a container has no process to
+// receive the signal, so a terminating signal (SIGKILL/SIGTERM) is honored by
+// stopping the container.
+func (c *Container) signalCreated(sig unix.Signal, all bool) error {
+	if err := c.Saver.lock(BlockAcquire); err != nil {
+		return err
+	}
+	defer c.Saver.UnlockOrDie()
+	// The status read before acquiring the lock may be stale: a concurrent start
+	// could have moved the container to Running (or a kill/delete to Stopped).
+	// Re-read the persisted state under the lock before acting on it.
+	reloaded := &Container{}
+	if err := c.Saver.loadLocked(reloaded); err != nil {
+		return err
+	}
+	c.Status = reloaded.Status
+	if c.Status != Created {
+		// The container now has a process (or has already stopped), so deliver
+		// the signal normally.
+		return c.signalRunning(sig, all)
+	}
+	// Still Created: only a terminating signal is actionable; there is nothing
+	// to deliver other signals to, so drop them.
+	if sig != unix.SIGKILL && sig != unix.SIGTERM {
+		return nil
+	}
+	// Tear down the container. For the root container this SIGKILLs the sandbox
+	// (boot) process; for a subcontainer it destroys the not-yet-started
+	// container in the sentry.
+	if c.Sandbox != nil {
+		if err := c.Sandbox.DestroyContainer(c.ID); err != nil {
+			return fmt.Errorf("destroying created container %q: %w", c.ID, err)
+		}
+	}
+	c.changeStatus(Stopped)
+	return c.saveLocked()
 }
 
 // SignalProcess sends sig to a specific process in the container.
