@@ -188,6 +188,8 @@ func TestReassemblerProcess(t *testing.T) {
 			// after reassembler error or completion. Without release(), the
 			// reassembler will leak PacketBuffers.
 			defer func() {
+				r.mu.Lock()
+				defer r.mu.Unlock()
 				for _, h := range r.holes {
 					if h.pkt != nil {
 						h.pkt.DecRef()
@@ -221,6 +223,8 @@ func TestReassemblerProcess(t *testing.T) {
 				return bytes.Equal(a.Data().AsRange().ToSlice(), b.Data().AsRange().ToSlice())
 			}
 
+			r.mu.Lock()
+			defer r.mu.Unlock()
 			if isDone {
 				if diff := cmp.Diff(
 					test.want, r.holes,
