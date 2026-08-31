@@ -902,7 +902,7 @@ else
 endif
 .PHONY: staged-binaries-check
 
-tag: ## Creates and pushes a release tag.
+tag: ## Stages a release tag; the release pipeline publishes it once the artifacts are uploaded.
 	@tools/tag_release.sh "$(RELEASE_COMMIT)" "$(RELEASE_NAME)" "$(RELEASE_NOTES)"
 .PHONY: tag
 
