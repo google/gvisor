@@ -48,6 +48,7 @@ const (
 	flagQDiscTBFRate            = "qdisc-tbf-rate"
 	flagQDiscTBFBurst           = "qdisc-tbf-burst"
 	flagInSandboxCgroup         = "in-sandbox-cgroup"
+	flagTmpMount                = "tmp-mount"
 
 	maxQDiscTBFBurst     = uint64(1<<32 - 1)
 	defaultQDiscTBFRate  = uint64(0)
@@ -141,6 +142,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 		"    'mount' can be 'root' or 'all'\n"+
 		"    'medium' can be 'memory', 'self' or 'dir=/abs/dir/path' in which filestore will be created\n"+
 		"    'size' optional parameter overrides default overlay upper layer size\n")
+	flagSet.Var(tmpMountTypePtr(TmpMountAuto), flagTmpMount, "specifies how /tmp is mounted: auto (default), tmpfs, rootfs.")
 	flagSet.Var(hostUDSPtr(HostUDSNone), flagHostUDS, "controls permission to access host Unix-domain sockets. Values: none|open|create|all, default: none")
 	flagSet.Var(hostFifoPtr(HostFifoNone), "host-fifo", "controls permission to access host FIFOs (or named pipes). Values: none|open, default: none")
 	flagSet.Var(charDevicePolicyPtr(CharDevEmulatedOnly), "character-device-policy", "controls how character device files on gofer mounts (rootfs and bind mounts) are handled. 'emulated-only' serves devices implemented by the sentry and fails opens of other devices with ENXIO (default and more secure); 'prefer-emulated' serves sentry-implemented devices from the sentry and opens the rest through the host; 'passthrough' opens all of them through the host. Values: emulated-only|prefer-emulated|passthrough, default: emulated-only")
@@ -222,6 +224,7 @@ var overrideAllowlist = map[string]struct {
 	flagQDiscTBFRate:            {check: checkQDiscTBFRate},
 	flagQDiscTBFBurst:           {check: checkQDiscTBFBurst},
 	flagInSandboxCgroup:         {},
+	flagTmpMount:                {},
 }
 
 // checkOverlay2 ensures that overlay2 can only be enabled using "memory" or

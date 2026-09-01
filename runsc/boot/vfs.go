@@ -1275,6 +1275,11 @@ func (c *containerMounter) mountTmp(ctx context.Context, spec *specs.Spec, conf 
 		}
 	}
 
+	if conf.TmpMount == config.TmpMountRootfs {
+		log.Infof(`Skipping internal tmpfs mount for "/tmp" because tmp-mount is set to rootfs`)
+		return nil
+	}
+
 	root := mns.Root(ctx)
 	defer root.DecRef(ctx)
 	pop := vfs.PathOperation{
@@ -1287,22 +1292,26 @@ func (c *containerMounter) mountTmp(ctx context.Context, spec *specs.Spec, conf 
 	case err == nil:
 		defer fd.DecRef(ctx)
 
-		err := fd.IterDirents(ctx, vfs.IterDirentsCallbackFunc(func(dirent vfs.Dirent) error {
-			if dirent.Name != "." && dirent.Name != ".." {
-				return linuxerr.ENOTEMPTY
+		if conf.TmpMount != config.TmpMountTmpfs {
+			err := fd.IterDirents(ctx, vfs.IterDirentsCallbackFunc(func(dirent vfs.Dirent) error {
+				if dirent.Name != "." && dirent.Name != ".." {
+					return linuxerr.ENOTEMPTY
+				}
+				return nil
+			}))
+			switch {
+			case err == nil:
+				log.Infof(`Mounting internal tmpfs on top of empty "/tmp"`)
+			case linuxerr.Equals(linuxerr.ENOTEMPTY, err):
+				// If more than "." and ".." is found, skip internal tmpfs to prevent
+				// hiding existing files.
+				log.Infof(`Skipping internal tmpfs mount for "/tmp" because it's not empty`)
+				return nil
+			default:
+				return fmt.Errorf("fd.IterDirents failed: %v", err)
 			}
-			return nil
-		}))
-		switch {
-		case err == nil:
-			log.Infof(`Mounting internal tmpfs on top of empty "/tmp"`)
-		case linuxerr.Equals(linuxerr.ENOTEMPTY, err):
-			// If more than "." and ".." is found, skip internal tmpfs to prevent
-			// hiding existing files.
-			log.Infof(`Skipping internal tmpfs mount for "/tmp" because it's not empty`)
-			return nil
-		default:
-			return fmt.Errorf("fd.IterDirents failed: %v", err)
+		} else {
+			log.Infof(`Mounting internal tmpfs on top of "/tmp" because tmp-mount is set to tmpfs`)
 		}
 		fallthrough
 
