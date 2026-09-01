@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
+	"gvisor.dev/gvisor/sandboxexec/sandbox"
 )
 
 const (
@@ -219,7 +220,7 @@ func (c *Cli) getBwrapArgs(args []string) []string {
 }
 
 // Execute implements subcommands.Command.Execute.
-func (c *Cli) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
+func (c *Cli) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	conf := args[0].(*config.Config)
 	waitStatus := args[1].(*unix.WaitStatus)
 
@@ -231,7 +232,7 @@ func (c *Cli) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomman
 	}
 	cfg.runscConfig = conf
 	// When called as `runsc bwrap`, arguments start at index 2.
-	return do(cfg, waitStatus)
+	return do(ctx, cfg, waitStatus)
 }
 
 /*
@@ -242,7 +243,7 @@ func (c *bwrapConfig) parseBind(args []string, i int) (int, error) {
 	if i+2 >= len(args) {
 		return i, fmt.Errorf("bwrap: --%s takes 2 arguments", flagBind)
 	}
-	mnt, err := c.newMountOp(args[i+1], args[i+2], MountOpBind)
+	mnt, err := c.newMount(args[i+1], args[i+2], sandbox.MountTypeBind, false /* readOnly */)
 	if err != nil {
 		return i, err
 	}
@@ -254,7 +255,7 @@ func (c *bwrapConfig) parseRoBind(args []string, i int) (int, error) {
 	if i+2 >= len(args) {
 		return i, fmt.Errorf("bwrap: --%s takes 2 arguments", flagRoBind)
 	}
-	mnt, err := c.newMountOp(args[i+1], args[i+2], MountOpRoBind)
+	mnt, err := c.newMount(args[i+1], args[i+2], sandbox.MountTypeBind, true /* readOnly */)
 	if err != nil {
 		return i, err
 	}
@@ -266,7 +267,7 @@ func (c *bwrapConfig) parseTmpfs(args []string, i int) (int, error) {
 	if i+1 >= len(args) {
 		return i, fmt.Errorf("bwrap: --%s takes 1 argument", flagTmpfs)
 	}
-	mnt, err := c.newMountOp("", args[i+1], MountOpTmpfs)
+	mnt, err := c.newMount("", args[i+1], sandbox.MountTypeTmpfs, false /* readOnly */)
 	if err != nil {
 		return i, err
 	}
@@ -362,11 +363,11 @@ func (c *bwrapConfig) parseProc(args []string, i int) (int, error) {
 
 	dst := filepath.Clean(args[i+1])
 	for _, m := range c.Mounts {
-		if m.Type == MountOpProc && m.Dst == dst {
+		if m.Type == sandbox.MountTypeProc && m.Destination == dst {
 			return i + 2, nil
 		}
 	}
-	mnt, err := c.newMountOp("", dst, MountOpProc)
+	mnt, err := c.newMount("", dst, sandbox.MountTypeProc, false /* readOnly */)
 	if err != nil {
 		return i, err
 	}
