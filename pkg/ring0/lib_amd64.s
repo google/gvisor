@@ -184,28 +184,6 @@ TEXT ·readCR2(SB),NOSPLIT|NOFRAME,$0-8
 	MOVQ AX, ret+0(FP)
 	RET
 
-// fninit initializes the floating point unit.
-//
-// The code corresponds to:
-//
-// 	fninit
-TEXT ·fninit(SB),NOSPLIT|NOFRAME,$0
-	BYTE $0xdb; BYTE $0xe3;
-	RET
-
-// xsetbv writes to an extended control register.
-//
-// The code corresponds to:
-//
-// 	xsetbv
-//
-TEXT ·xsetbv(SB),NOSPLIT|NOFRAME,$0-16
-	MOVQ reg+0(FP), CX
-	MOVL value+8(FP), AX
-	MOVL value+12(FP), DX
-	BYTE $0x0f; BYTE $0x01; BYTE $0xd1;
-	RET
-
 // xgetbv reads an extended control register.
 //
 // The code corresponds to:
