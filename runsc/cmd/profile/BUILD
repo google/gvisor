@@ -8,9 +8,13 @@ package(
 go_library(
     name = "profile",
     srcs = [
+        "block.go",
         "cpu.go",
+        "goroutine.go",
         "heap.go",
+        "mutex.go",
         "profile.go",
+        "trace.go",
     ],
     visibility = [
         "//runsc:__subpackages__",
