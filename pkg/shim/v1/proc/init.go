@@ -44,6 +44,9 @@ import (
 
 const statusStopped = "stopped"
 
+// killTimeout bounds one `runsc kill`, so a wedged sandbox cannot hold p.mu forever.
+var killTimeout = 30 * time.Second
+
 // Init represents an initial process for a container.
 type Init struct {
 	wg        sync.WaitGroup
@@ -375,6 +378,8 @@ func (p *Init) Kill(ctx context.Context, signal uint32, all bool) error {
 }
 
 func (p *Init) kill(ctx context.Context, signal uint32, all bool) error {
+	ctx, cancel := context.WithTimeout(ctx, killTimeout)
+	defer cancel()
 	var (
 		killErr error
 		backoff = 100 * time.Millisecond
@@ -403,15 +408,31 @@ func (p *Init) kill(ctx context.Context, signal uint32, all bool) error {
 
 // KillAll kills all processes belonging to the init process. If
 // `runsc kill --all` returns error, assume the container has already stopped.
+// If the sandbox does not answer within killTimeout, the sandbox process
+// itself is killed.
 func (p *Init) KillAll(context context.Context) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.killAllLocked(context)
 }
 
-func (p *Init) killAllLocked(context context.Context) {
-	if err := p.runtime.Kill(context, p.id, int(unix.SIGKILL), &runsccmd.KillOpts{All: true}); err != nil {
+func (p *Init) killAllLocked(ctx context.Context) {
+	kctx, cancel := context.WithTimeout(ctx, killTimeout)
+	defer cancel()
+	err := p.runtime.Kill(kctx, p.id, int(unix.SIGKILL), &runsccmd.KillOpts{All: true})
+	if err == nil {
+		return
+	}
+	if kctx.Err() == nil || ctx.Err() != nil {
 		log.L.Warningf("Ignoring error killing container %q: %v", p.id, err)
+		return
+	}
+	// Sandbox did not answer within killTimeout: kill its process directly.
+	log.L.Warningf("`runsc kill` for container %q timed out after %v; killing sandbox process %d", p.id, killTimeout, p.pid)
+	if p.pid > 0 {
+		if err := unix.Kill(p.pid, unix.SIGKILL); err != nil && err != unix.ESRCH {
+			log.L.Warningf("Failed to kill sandbox process %d: %v", p.pid, err)
+		}
 	}
 }
 
