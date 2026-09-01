@@ -65,8 +65,9 @@ type Port struct {
 // NetDev is a network device associated with an RDMA device, with its
 // curated static attribute set.
 type NetDev struct {
-	Name  string            `json:"name"`
-	Attrs map[string]string `json:"attrs"`
+	Name     string            `json:"name"`
+	Attrs    map[string]string `json:"attrs"`
+	ErrAttrs map[string]int32  `json:"err_attrs,omitempty"`
 }
 
 // Device is one uverbs device and everything hanging off it.
