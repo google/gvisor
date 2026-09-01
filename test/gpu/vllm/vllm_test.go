@@ -37,13 +37,21 @@ func BenchmarkVLLM(b *testing.B) {
 }
 
 func doVLLMTest(b *testing.B) {
+	ctx := context.Background()
+	cudaVersion, err := dockerutil.MaxSuportedCUDAVersionWithImage(ctx, b, "gpu/vllm")
+	if err != nil {
+		b.Fatalf("failed to get CUDA version: %v", err)
+	}
+	if !cudaVersion.IsAtLeast(dockerutil.MustParseCudaVersion("12.8")) {
+		b.Skipf("CUDA version %s is not at least 12.8, skipping benchmark", cudaVersion)
+	}
+
 	serverMachine, err := harness.GetMachine()
 	if err != nil {
 		b.Fatalf("failed to get machine: %v", err)
 	}
 	defer serverMachine.CleanUp()
 
-	ctx := context.Background()
 	serverCtr := serverMachine.GetContainer(ctx, b)
 	defer serverCtr.CleanUp(ctx)
 	if err := harness.DropCaches(serverMachine); err != nil {
