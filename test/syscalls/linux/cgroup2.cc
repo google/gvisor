@@ -961,6 +961,57 @@ TEST_F(Cgroup2Test, PidsEnforcementLayered) {
   EXPECT_EQ(WEXITSTATUS(status), kCantForkSecondHalf);
 }
 
+// A task already in a cgroup when the pids controller is enabled over it must
+// be charged to the new controller, and migrating it away afterward must
+// drain pids.current to 0, not -1.
+TEST_F(Cgroup2Test, PidsChargesPreexistingTasksOnEnable) {
+  std::string controllers =
+      ASSERT_NO_ERRNO_AND_VALUE(c().ReadControlFile("cgroup.controllers"));
+  SKIP_IF(!absl::StrContains(controllers, "pids"));
+  ASSERT_NO_ERRNO(c().WriteControlFile("cgroup.subtree_control", "+pids"));
+
+  Cgroup parent = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("pids_pre"));
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(parent.CreateChild("child"));
+  Cgroup sibling = ASSERT_NO_ERRNO_AND_VALUE(parent.CreateChild("sibling"));
+
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  FileDescriptor rfd(fds[0]);
+  FileDescriptor wfd(fds[1]);
+  pid_t pid = fork();
+  if (pid == 0) {
+    close(wfd.get());
+    char token;
+    (void)read(rfd.get(), &token, 1);
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+  rfd.reset();
+
+  // The task enters child before child has a pids controller.
+  ASSERT_NO_ERRNO(child.Enter(pid));
+
+  // Enabling +pids must charge the pre-existing task to child's new
+  // controller.
+  ASSERT_NO_ERRNO(parent.WriteControlFile("cgroup.subtree_control", "+pids"));
+  EXPECT_THAT(child.ReadControlFile("pids.current"),
+              IsPosixErrorOkAndHolds("1\n"));
+  EXPECT_THAT(sibling.ReadControlFile("pids.current"),
+              IsPosixErrorOkAndHolds("0\n"));
+
+  // Migrating the task away must drain child to 0.
+  ASSERT_NO_ERRNO(sibling.Enter(pid));
+  EXPECT_THAT(child.ReadControlFile("pids.current"),
+              IsPosixErrorOkAndHolds("0\n"));
+  EXPECT_THAT(sibling.ReadControlFile("pids.current"),
+              IsPosixErrorOkAndHolds("1\n"));
+
+  wfd.reset();
+  int status;
+  ASSERT_EQ(waitpid(pid, &status, 0), pid);
+  EXPECT_TRUE(WIFEXITED(status));
+}
+
 TEST_F(Cgroup2Test, PidsMigrationAllowsBreaches) {
   std::string controllers =
       ASSERT_NO_ERRNO_AND_VALUE(c().ReadControlFile("cgroup.controllers"));
