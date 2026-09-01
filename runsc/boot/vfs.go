@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+
 	"gvisor.dev/gvisor/pkg/abi/ib"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
@@ -1292,7 +1293,7 @@ func (c *containerMounter) mountTmp(ctx context.Context, spec *specs.Spec, conf 
 	case err == nil:
 		defer fd.DecRef(ctx)
 
-		if conf.TmpMount != config.TmpMountTmpfs {
+		if conf.TmpMount == config.TmpMountAuto {
 			err := fd.IterDirents(ctx, vfs.IterDirentsCallbackFunc(func(dirent vfs.Dirent) error {
 				if dirent.Name != "." && dirent.Name != ".." {
 					return linuxerr.ENOTEMPTY
@@ -1310,7 +1311,7 @@ func (c *containerMounter) mountTmp(ctx context.Context, spec *specs.Spec, conf 
 			default:
 				return fmt.Errorf("fd.IterDirents failed: %v", err)
 			}
-		} else {
+		} else if conf.TmpMount == config.TmpMountTmpfs {
 			log.Infof(`Mounting internal tmpfs on top of "/tmp" because tmp-mount is set to tmpfs`)
 		}
 		fallthrough
