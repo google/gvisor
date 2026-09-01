@@ -34,6 +34,7 @@ TEST(GetcpuTest, IsValidCpuStress) {
   }
 }
 
+// Temporary trigger change for testing pipeline.
 TEST(GetcpuTest, IsValidCpu) {
   const int num_cpus = NumCPUs();
   cpu_set_t orig_set;
