@@ -2741,6 +2741,84 @@ TEST_F(Cgroup2Test, DetachedMountBindFails) {
               SyscallFailsWithErrno(EINVAL));
 }
 
+// An ancestor's cgroup.events must report "populated 1" while any descendant
+// has a live task, even after a mid-level cgroup's own tasks all leave.
+// Regression test for ancestor counters being decremented when a mid-level
+// cgroup drained while its child was still populated; the child's later
+// drain then decremented again, leaving the counter permanently negative.
+TEST_F(Cgroup2Test, PopulatedAccountsForDescendantsWhenMidLevelDrains) {
+  Cgroup w = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("pop_w"));
+  Cgroup a = ASSERT_NO_ERRNO_AND_VALUE(w.CreateChild("pop_a"));
+  Cgroup b = ASSERT_NO_ERRNO_AND_VALUE(a.CreateChild("pop_b"));
+  Cgroup drain = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("pop_drain"));
+
+  // Two children block on a pipe: one in a, one in a's child b.
+  int go_fds[2];
+  ASSERT_THAT(pipe(go_fds), SyscallSucceeds());
+  FileDescriptor go_r(go_fds[0]);
+  FileDescriptor go_w(go_fds[1]);
+
+  pid_t t1 = fork();
+  if (t1 == 0) {
+    go_w.reset();
+    char token;
+    TEST_PCHECK(read(go_r.get(), &token, 1) >= 0);
+    _exit(0);
+  }
+  ASSERT_GT(t1, 0);
+  pid_t t2 = fork();
+  if (t2 == 0) {
+    go_w.reset();
+    char token;
+    TEST_PCHECK(read(go_r.get(), &token, 1) >= 0);
+    _exit(0);
+  }
+  ASSERT_GT(t2, 0);
+  go_r.reset();
+
+  ASSERT_NO_ERRNO(a.Enter(t1));
+  ASSERT_NO_ERRNO(b.Enter(t2));
+  EXPECT_THAT(w.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("populated 1")));
+  EXPECT_THAT(a.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("populated 1")));
+  EXPECT_THAT(b.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("populated 1")));
+
+  // Drain a; b's task keeps a's subtree populated.
+  ASSERT_NO_ERRNO(drain.Enter(t1));
+  EXPECT_THAT(a.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("populated 1")))
+      << "mid-level cgroup reports populated 0 while its child has a task";
+  EXPECT_THAT(w.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("populated 1")))
+      << "ancestor reports populated 0 while a descendant has a task";
+
+  // Drain b; the subtree is now empty.
+  ASSERT_NO_ERRNO(drain.Enter(t2));
+  EXPECT_THAT(a.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("populated 0")));
+  EXPECT_THAT(w.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("populated 0")));
+
+  // Repopulate a; w must flip back to 1 (catches a negative counter).
+  ASSERT_NO_ERRNO(a.Enter(t1));
+  EXPECT_THAT(a.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("populated 1")));
+  EXPECT_THAT(w.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("populated 1")))
+      << "ancestor stuck at populated 0: populated-children counter went "
+         "negative when the mid-level cgroup and its child drained";
+
+  // Release and reap the children.
+  go_w.reset();
+  int status;
+  ASSERT_EQ(waitpid(t1, &status, 0), t1);
+  EXPECT_TRUE(WIFEXITED(status));
+  ASSERT_EQ(waitpid(t2, &status, 0), t2);
+  EXPECT_TRUE(WIFEXITED(status));
+}
+
 }  // namespace
 }  // namespace testing
 }  // namespace gvisor
