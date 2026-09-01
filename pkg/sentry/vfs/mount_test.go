@@ -158,6 +158,10 @@ func (d *mountTestDentry) Watches() *Watches {
 // OnZeroWatches implements DentryImpl.OnZeroWatches.
 func (d *mountTestDentry) OnZeroWatches(context.Context) {}
 
+func (d *mountTestDentry) InodeIdentity() InodeIdentity {
+	return InodeIdentity{}
+}
+
 // mountTestSystem is a VirtualFilesystem with a single mount namespace whose
 // root mount is a mountTestFilesystem.
 type mountTestSystem struct {

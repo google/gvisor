@@ -116,6 +116,18 @@ type MountOptions struct {
 	// Locked determines whether to lock this mount so it cannot be unmounted by
 	// normal user processes.
 	Locked bool
+
+	// InternalMount marks a mount that exists only to give sentry-internal
+	// files a place to live, and that is never reachable by mounting it. It is
+	// equivalent to Linux's MNT_INTERNAL together with SB_NOUSER: pipefs,
+	// sockfs, nsfs, anonfs, the internal shm mount, and the host mount holding
+	// donated host FDs. Files on such a mount are still reachable through
+	// /proc/[pid]/fd and /proc/[pid]/ns.
+	//
+	// This is a property of the resulting mount, and is distinct from
+	// GetFilesystemOptions.InternalMount, which says only that a particular
+	// GetFilesystem call did not originate from mount(2).
+	InternalMount bool
 }
 
 // OpenOptions contains options to VirtualFilesystem.OpenAt() and

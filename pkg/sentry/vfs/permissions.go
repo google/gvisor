@@ -166,6 +166,35 @@ func AccessTypesForOpenFlags(opts *OpenOptions) AccessTypes {
 	}
 }
 
+// CheckOpenFileType returns the error that an open with opts must fail with
+// because of the type of the file being opened, or nil if its type does not
+// prevent the open.
+//
+// Linux performs these rejections in [fs/namei.c]:do_open() and may_open(),
+// both of which run before the do_dentry_open() that calls
+// security_file_open(). A FilesystemImpl must therefore call this before
+// ResolvingPath.CheckLandlockOpen(), which matches that hook: otherwise a file
+// that cannot be opened at all reports EACCES to a sandboxed thread where Linux
+// reports why. Everything else an open can fail with stays where each
+// FilesystemImpl has it, including the rejections Linux makes after
+// security_file_open(), such as EINVAL for O_DIRECT on a directory.
+func CheckOpenFileType(mode linux.FileMode, opts *OpenOptions) error {
+	switch mode.FileType() {
+	case linux.S_IFLNK:
+		// Only reachable with O_NOFOLLOW and without O_PATH; VFS handles the
+		// rest before any FilesystemImpl sees the open.
+		return linuxerr.ELOOP
+	case linux.S_IFDIR:
+		if opts.Flags&linux.O_CREAT != 0 {
+			return linuxerr.EISDIR
+		}
+		if AccessTypesForOpenFlags(opts).MayWrite() {
+			return linuxerr.EISDIR
+		}
+	}
+	return nil
+}
+
 // MayReadFileWithOpenFlags returns true if a file with the given open flags
 // should be readable.
 func MayReadFileWithOpenFlags(flags uint32) bool {
@@ -358,4 +387,23 @@ func ClearSUIDAndSGID(mode uint32) uint32 {
 		mode &= ^uint32(linux.ModeSetGID)
 	}
 	return mode
+}
+
+// CheckRenameFlags returns EINVAL for renameat2(2) flags that Linux rejects
+// before it looks anything up: flags it does not know, and RENAME_EXCHANGE
+// combined with RENAME_NOREPLACE or RENAME_WHITEOUT. A FilesystemImpl that does
+// not implement RENAME_EXCHANGE or RENAME_WHITEOUT must still accept them here
+// and reject them only after ResolvingPath.CheckLandlockRefer(): Linux learns
+// that a filesystem lacks them from its rename operation, which vfs_rename()
+// calls after security_path_rename(), so a Landlock denial takes priority.
+//
+// Matches Linux [fs/namei.c]:do_renameat2()
+func CheckRenameFlags(flags uint32) error {
+	if flags&^(linux.RENAME_NOREPLACE|linux.RENAME_EXCHANGE|linux.RENAME_WHITEOUT) != 0 {
+		return linuxerr.EINVAL
+	}
+	if flags&linux.RENAME_EXCHANGE != 0 && flags&(linux.RENAME_NOREPLACE|linux.RENAME_WHITEOUT) != 0 {
+		return linuxerr.EINVAL
+	}
+	return nil
 }

@@ -140,6 +140,11 @@ type Mount struct {
 	// namespace. It is analogous to MNT_LOCKED in Linux.
 	locked bool
 
+	// internal is true if this mount exists only to hold sentry-internal
+	// files and is never reachable by mounting it. It is analogous to
+	// MNT_INTERNAL in Linux. internal is immutable.
+	internal bool
+
 	// lockedFlags contains the flags that RemountAt may not clear. lockedFlags
 	// is protected by VirtualFilesystem.mountMu.
 	lockedFlags mountLockFlags
@@ -160,6 +165,7 @@ func newMount(vfs *VirtualFilesystem, fs *Filesystem, root *Dentry, mntns *Mount
 		root:     root,
 		ns:       mntns,
 		locked:   opts.Locked,
+		internal: opts.InternalMount,
 		isShared: false,
 		refs:     atomicbitops.FromInt64(1),
 	}
@@ -468,6 +474,18 @@ func (vfs *VirtualFilesystem) ConnectMountAt(ctx context.Context, creds *auth.Cr
 //
 // Roughly analogous to Linux fs/namespace.c:do_move_mount().
 func (vfs *VirtualFilesystem) MoveMountAt(ctx context.Context, creds *auth.Credentials, taskMountNs *MountNamespace, source *PathOperation, target *PathOperation) error {
+	// Lookup the target path. It is resolved before the source, as Linux's
+	// SYSCALL_DEFINE5(move_mount, ...) does, so that when both paths are bad
+	// the target's error is the one reported.
+	targetVd, err := vfs.GetDentryAt(ctx, creds, target, &GetDentryOptions{CheckSearchable: true})
+	if err != nil {
+		return err
+	}
+	targetCleanup := cleanup.Make(func() {
+		targetVd.DecRef(ctx)
+	})
+	defer targetCleanup.Clean()
+
 	// Lookup the source path
 	sourceVd, err := vfs.GetDentryAt(ctx, creds, source, &GetDentryOptions{CheckSearchable: true})
 	if err != nil {
@@ -491,16 +509,6 @@ func (vfs *VirtualFilesystem) MoveMountAt(ctx context.Context, creds *auth.Crede
 	if err != nil {
 		return err
 	}
-
-	// Lookup the target path
-	targetVd, err := vfs.GetDentryAt(ctx, creds, target, &GetDentryOptions{CheckSearchable: true})
-	if err != nil {
-		return err
-	}
-	targetCleanup := cleanup.Make(func() {
-		targetVd.DecRef(ctx)
-	})
-	defer targetCleanup.Clean()
 
 	// Fetch target stat info
 	targetStat, err := vfs.StatAt(ctx, creds, &PathOperation{
@@ -901,6 +909,17 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 	}
 	if vd.mount == vd.mount.ns.root {
 		return linuxerr.EINVAL
+	}
+
+	// Landlock denies umount(2) outright, but only once the mount to unmount
+	// has been found: Linux runs the hook from [fs/namespace.c]:do_umount(),
+	// which can_umount() reaches only after rejecting a path that names no
+	// mount of ours. The denial does precede the busy check below, which
+	// do_umount() makes after calling the hook.
+	//
+	// Matches Linux [fs/namespace.c]:do_umount() calling security_sb_umount().
+	if err := CheckLandlockMount(LandlockDomainFromCredentials(creds)); err != nil {
+		return err
 	}
 
 	if opts.Flags&linux.MNT_DETACH == 0 && vfs.arePropMountsBusy(vd.mount) {
@@ -1342,10 +1361,29 @@ func (vfs *VirtualFilesystem) getMountpoint(ctx context.Context, creds *auth.Cre
 // mnt. It takes a reference on the returned VirtualDentry. If no such mount
 // point exists (i.e. mnt is a root mount), getMountpointAt returns (nil, nil).
 //
+// getMountpointAt also takes and drops references on intermediate mount points
+// and mounts while it walks a stack of mounts. If toDecRef is non-nil, those
+// references are appended to *toDecRef instead of dropped, for a caller that
+// holds locks under which it cannot drop them: dropping the last reference to
+// a mount point can release the filesystem it is on, which acquires that
+// filesystem's own locks, and a racing umount can make any reference taken
+// here the last one. Such a caller must drop them once it holds no locks.
+// References taken by an attempt that loses the race with a mount table
+// change and retries are deferred the same way rather than dropped, for the
+// same reason, so *toDecRef grows with each retry; the growth lasts only
+// until the caller drains it.
+//
 // Preconditions:
 //   - References are held on mnt and root.
 //   - vfsroot is not (mnt, mnt.root).
-func (vfs *VirtualFilesystem) getMountpointAt(ctx context.Context, mnt *Mount, vfsroot VirtualDentry) VirtualDentry {
+func (vfs *VirtualFilesystem) getMountpointAt(ctx context.Context, mnt *Mount, vfsroot VirtualDentry, toDecRef *[]refs.RefCounter) VirtualDentry {
+	decRef := func(rc refs.RefCounter) {
+		if toDecRef != nil {
+			*toDecRef = append(*toDecRef, rc)
+		} else {
+			rc.DecRef(ctx)
+		}
+	}
 	// The first mount is special-cased:
 	//
 	//	- The caller must have already checked mnt against vfsroot.
@@ -1369,12 +1407,12 @@ retryFirst:
 	if !point.TryIncRef() {
 		// Since Mount holds a reference on Mount.key.point, this can only
 		// happen due to a racing change to Mount.key.
-		parent.DecRef(ctx)
+		decRef(parent)
 		goto retryFirst
 	}
 	if !vfs.mounts.seq.ReadOk(epoch) {
-		point.DecRef(ctx)
-		parent.DecRef(ctx)
+		decRef(point)
+		decRef(parent)
 		goto retryFirst
 	}
 	mnt = parent
@@ -1396,16 +1434,16 @@ retryFirst:
 		if !point.TryIncRef() {
 			// Since Mount holds a reference on Mount.key.point, this can
 			// only happen due to a racing change to Mount.key.
-			parent.DecRef(ctx)
+			decRef(parent)
 			goto retryNotFirst
 		}
 		if !vfs.mounts.seq.ReadOk(epoch) {
-			point.DecRef(ctx)
-			parent.DecRef(ctx)
+			decRef(point)
+			decRef(parent)
 			goto retryNotFirst
 		}
-		d.DecRef(ctx)
-		mnt.DecRef(ctx)
+		decRef(d)
+		decRef(mnt)
 		mnt = parent
 		d = point
 	}
@@ -1573,6 +1611,13 @@ func (mnt *Mount) ReadOnlyLocked() bool {
 // the returned Filesystem.
 func (mnt *Mount) Filesystem() *Filesystem {
 	return mnt.fs
+}
+
+// Internal returns true if this mount only exists to hold sentry-internal
+// files, and so is never reachable through the mount tree. It is analogous to
+// MNT_INTERNAL in Linux.
+func (mnt *Mount) Internal() bool {
+	return mnt.internal
 }
 
 // submountsLocked returns this Mount and all Mounts that are descendents of

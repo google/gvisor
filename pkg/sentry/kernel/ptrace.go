@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -123,6 +124,10 @@ func (t *Task) CanTrace(target *Task, attach bool) bool {
 		return false
 	}
 
+	if !t.canTraceLandlock(target) {
+		return false
+	}
+
 	if attach && t.k.YAMAPtraceScope.Load() == linux.YAMA_SCOPE_RELATIONAL {
 		t.tg.pidns.owner.mu.RLock()
 		defer t.tg.pidns.owner.mu.RUnlock()
@@ -133,6 +138,19 @@ func (t *Task) CanTrace(target *Task, attach bool) bool {
 	return true
 }
 
+// canTraceLandlock implements the Landlock restriction on ptrace: a thread
+// confined by a Landlock domain may only trace a target confined by that same
+// domain or a descendant of it. Otherwise a sandboxed thread could escape its
+// sandbox by driving a less restricted one.
+//
+// Unlike the YAMA check, this applies to read access as well as attach, which
+// is what makes /proc/[pid]/mem of a less restricted thread inaccessible.
+//
+// Matches Linux [security/landlock/task.c]:hook_ptrace_access_check()
+func (t *Task) canTraceLandlock(target *Task) bool {
+	return auth.LandlockCanPtrace(t.Credentials().LandlockDomain, target.Credentials().LandlockDomain)
+}
+
 // canTraceLocked is the same as CanTrace, except the caller must already hold
 // the TaskSet mutex (for reading or writing).
 func (t *Task) canTraceLocked(target *Task, attach bool) bool {
@@ -141,6 +159,10 @@ func (t *Task) canTraceLocked(target *Task, attach bool) bool {
 	}
 
 	if !t.canTraceStandard(target, attach) {
+		return false
+	}
+
+	if !t.canTraceLandlock(target) {
 		return false
 	}
 
