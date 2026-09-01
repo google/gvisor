@@ -527,6 +527,7 @@ func (cm *containerManager) ExecuteAsync(args *control.ExecArgs, pid *int32) err
 // Checkpoint pauses a sandbox and saves its state.
 func (cm *containerManager) Checkpoint(o *control.SaveOpts, _ *struct{}) error {
 	log.Debugf("containerManager.Checkpoint")
+	o.RunscVersion = version.Version()
 	return cm.l.save(o)
 }
 
@@ -571,6 +572,14 @@ type RestoreOpts struct {
 	// RestoreOpts.HavePagesFile is unknown and must be determined by
 	// containerManager.Restore.
 	UseCheckpointGofer bool `json:"use_checkpoint_gofer"`
+
+	// SplitFSRestore indicates if we should restore the filesystem from a
+	// split filesystem checkpoint.
+	SplitFSRestore bool `json:"split_fsrestore"`
+
+	// CombinedFSRestore indicates if this is a combined restore, where the
+	// filesystem checkpoint should supersede the Sentry state.
+	CombinedFSRestore bool `json:"combined_fsrestore"`
 }
 
 // Restore loads a container from a statefile.
@@ -595,9 +604,17 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 			cm.onRestoreFailed(fmt.Errorf("Restore failed: %w", retErr))
 		}
 	}()
-	if cm.l.fsRestore != nil {
-		return fmt.Errorf("cannot restore sandbox when filesystem restore is enabled")
+
+	// If filesystem restore files were donated to the loader during sandbox
+	// creation, we must perform a split filesystem restore. Restoring a split
+	// checkpoint without split-fsrestore enabled is not supported.
+	if (cm.l.fsRestore != nil) != o.SplitFSRestore {
+		if o.SplitFSRestore {
+			return fmt.Errorf("split filesystem restore requested, but sandbox was created without filesystem restore files")
+		}
+		return fmt.Errorf("filesystem restore files were donated during sandbox creation, but split filesystem restore was not requested")
 	}
+
 	if len(o.Files) == 0 {
 		return fmt.Errorf("at least one file must be passed to Restore")
 	}
@@ -659,6 +676,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 			return err
 		}
 	}
+	cm.restorer.combinedFSRestore = o.CombinedFSRestore
 
 	// Pause the kernel while we build a new one.
 	cm.l.k.Pause()
@@ -691,6 +709,15 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 	currentVersion := version.Version()
 	if checkpointVersion != currentVersion {
 		return fmt.Errorf("runsc version does not match across checkpoint restore, checkpoint: %v current: %v", checkpointVersion, currentVersion)
+	}
+	if cm.l.fsRestore != nil {
+		cm.l.fsRestore.wg.Wait()
+		if cm.l.fsRestore.manifestErr != nil {
+			return cm.l.fsRestore.manifestErr
+		}
+		if cm.l.fsRestore.runscVersion != currentVersion {
+			return fmt.Errorf("runsc version does not match across filesystem checkpoint restore, checkpoint: %v current: %v", cm.l.fsRestore.runscVersion, currentVersion)
+		}
 	}
 	timer.Reached("restorer initialized")
 	return cm.restorer.restoreContainerInfo(cm.l, &cm.l.root)

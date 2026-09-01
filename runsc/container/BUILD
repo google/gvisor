@@ -27,6 +27,7 @@ go_library(
         "//pkg/sentry/fsimpl/erofs",
         "//pkg/sentry/fsimpl/tmpfs",
         "//pkg/sentry/pgalloc",
+        "//pkg/sentry/state/checkpointfiles",
         "//pkg/sighandling",
         "//pkg/sync",
         "//pkg/unet",
@@ -50,6 +51,7 @@ go_test(
     name = "container_test",
     size = "large",
     srcs = [
+        "combined_restore_test.go",
         "console_test.go",
         "container_test.go",
         "metric_server_test.go",
