@@ -477,6 +477,9 @@ func MaxSupportedCoresAcrossRuntimes() int {
 const (
 	microvmNodepoolKey  = "sandbox.gke.io/runtime"
 	microvmRuntimeClass = "microvm"
+	// sandboxConfigMicroVM corresponds to cspb.SandboxConfig_MICROVM (value 3),
+	// which is restricted to internal proto releases and not yet exposed in public genproto.
+	sandboxConfigMicroVM = cspb.SandboxConfig_Type(3)
 )
 
 // ApplyNodepool modifies the nodepool to configure it to use the runtime.
@@ -492,13 +495,10 @@ func (t RuntimeType) ApplyNodepool(nodepool *cspb.NodePool) {
 		}
 		nodepool.GetConfig().Labels[NodepoolRuntimeKey] = string(t)
 	case RuntimeTypeMicroVM:
-		nodepool.Config.Labels[microvmNodepoolKey] = microvmRuntimeClass
-		nodepool.Config.Labels[NodepoolRuntimeKey] = string(RuntimeTypeMicroVM)
-		nodepool.Config.Taints = append(nodepool.Config.Taints, &cspb.NodeTaint{
-			Key:    microvmNodepoolKey,
-			Value:  microvmRuntimeClass,
-			Effect: cspb.NodeTaint_NO_SCHEDULE,
-		})
+		nodepool.Config.SandboxConfig = &cspb.SandboxConfig{
+			Type: sandboxConfigMicroVM,
+		}
+		nodepool.GetConfig().Labels[NodepoolRuntimeKey] = string(RuntimeTypeMicroVM)
 	case RuntimeTypeUnsandboxed, RuntimeTypeUnsandboxedCapped:
 		nodepool.GetConfig().Labels[NodepoolRuntimeKey] = string(t)
 		// Do nothing.

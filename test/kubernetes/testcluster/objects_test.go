@@ -429,23 +429,10 @@ func TestRuntimeTypeMicroVM(t *testing.T) {
 		Config: &cspb.NodeConfig{},
 	}
 	rt.ApplyNodepool(np)
-	if np.Config.SandboxConfig != nil {
-		t.Errorf("expected SandboxConfig to be nil, got %v", np.Config.SandboxConfig)
-	}
-	if got := np.Config.Labels[microvmNodepoolKey]; got != microvmRuntimeClass {
-		t.Errorf("Labels[%q] = %q, want %q", microvmNodepoolKey, got, microvmRuntimeClass)
+	if np.Config.SandboxConfig == nil || np.Config.SandboxConfig.Type != sandboxConfigMicroVM {
+		t.Errorf("expected SandboxConfig.Type to be %v (MICROVM), got %v", sandboxConfigMicroVM, np.Config.SandboxConfig)
 	}
 	if got := np.Config.Labels[NodepoolRuntimeKey]; got != string(RuntimeTypeMicroVM) {
 		t.Errorf("Labels[%q] = %q, want %q", NodepoolRuntimeKey, got, string(RuntimeTypeMicroVM))
-	}
-	hasTaint := false
-	for _, taint := range np.Config.Taints {
-		if taint.Key == microvmNodepoolKey && taint.Value == microvmRuntimeClass && taint.Effect == cspb.NodeTaint_NO_SCHEDULE {
-			hasTaint = true
-			break
-		}
-	}
-	if !hasTaint {
-		t.Errorf("expected nodepool to have sandbox.gke.io/runtime=microvm:NoSchedule taint, got %v", np.Config.Taints)
 	}
 }
