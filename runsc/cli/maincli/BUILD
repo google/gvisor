@@ -19,6 +19,7 @@ go_library(
         "//runsc/cmd",
         "//runsc/cmd/alias",
         "//runsc/cmd/nvproxy",
+        "//runsc/cmd/profile",
         "//runsc/cmd/sentry/sentrycmd",
         "//runsc/cmd/trace",
         "//runsc/cmd/util",

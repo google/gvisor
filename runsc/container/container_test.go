@@ -4404,6 +4404,67 @@ func TestProfile(t *testing.T) {
 	}
 }
 
+// TestProfileLive checks that live CPU and Heap profiling on a running sandbox.
+func TestProfileLive(t *testing.T) {
+	spec, conf := sleepSpecConf(t)
+	conf.ProfileEnable = true
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	// Test live CPU profiling.
+	cpuFile, err := os.Create(filepath.Join(t.TempDir(), "live_cpu.pprof"))
+	if err != nil {
+		t.Fatalf("creating cpu file: %v", err)
+	}
+	defer cpuFile.Close()
+
+	if err := cont.Sandbox.CPUProfile(cpuFile, 500*time.Millisecond); err != nil {
+		t.Fatalf("CPUProfile: %v", err)
+	}
+	fi, err := cpuFile.Stat()
+	if err != nil {
+		t.Fatalf("stat cpu file: %v", err)
+	}
+	if fi.Size() == 0 {
+		t.Errorf("live CPU profile file is empty")
+	}
+
+	// Test live Heap profiling.
+	heapFile, err := os.Create(filepath.Join(t.TempDir(), "live_heap.pprof"))
+	if err != nil {
+		t.Fatalf("creating heap file: %v", err)
+	}
+	defer heapFile.Close()
+
+	if err := cont.Sandbox.HeapProfile(heapFile, 0); err != nil {
+		t.Fatalf("HeapProfile: %v", err)
+	}
+	fi, err = heapFile.Stat()
+	if err != nil {
+		t.Fatalf("stat heap file: %v", err)
+	}
+	if fi.Size() == 0 {
+		t.Errorf("live Heap profile file is empty")
+	}
+}
+
 // TestSaveSystemdCgroup emulates a sandbox saving while configured with the
 // systemd cgroup driver.
 func TestSaveSystemdCgroup(t *testing.T) {
