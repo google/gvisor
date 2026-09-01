@@ -383,6 +383,9 @@ func (c *cgroup) rebuildCtrlsLocked(ctx context.Context, cTypes []kernel.Cgroup2
 			ctrl := c.newController(cType)
 			c.ctrls[cType] = ctrl
 			c.populateInterfaceFiles(ctx, ctrl)
+			if newPids, ok := ctrl.(*pids); ok {
+				c.chargePidsForExistingTasksLocked(newPids)
+			}
 		} else if !c.parent.subtreeCtrls[cType] && c.ctrls[cType] != nil { // +checklocksforce: c.fs.treeMu is locked
 			ctrl := c.ctrls[cType]
 			c.ctrls[cType] = nil
@@ -411,6 +414,25 @@ func (c *cgroup) rebuildCtrlsLocked(ctx context.Context, cTypes []kernel.Cgroup2
 			c.fs.tasksMu.Unlock()
 		}
 	}
+}
+
+// chargePidsForExistingTasksLocked charges a newly instantiated pids
+// controller for the tasks already present in c's subtree. Those tasks were
+// charged to the controller's ancestors when they entered their cgroups, but
+// predate this controller, so nothing else accounts for them.
+// +checklocksread:c.fs.treeMu
+func (c *cgroup) chargePidsForExistingTasksLocked(p *pids) {
+	c.fs.tasksMu.RLock()
+	defer c.fs.tasksMu.RUnlock()
+	n := c.tasksCount.Load()
+	c.walkSubtreeLocked(func(child *cgroup) bool {
+		n += child.tasksCount.Load()
+		return true
+	})
+	if n == 0 {
+		return
+	}
+	p.charge(n)
 }
 
 // updateClosestCtrls updates the cached nearest active controller for the given types.
@@ -1099,6 +1121,9 @@ func (c *cgroup) returnController(ctx context.Context, cType kernel.Cgroup2Ctrl)
 	ctrl := c.newController(cType)
 	c.ctrls[cType] = ctrl
 	c.populateInterfaceFiles(ctx, ctrl)
+	if newPids, ok := ctrl.(*pids); ok {
+		c.chargePidsForExistingTasksLocked(newPids)
+	}
 
 	cTypes := []kernel.Cgroup2Ctrl{cType}
 	c.updateClosestCtrlsLocked(cTypes)
