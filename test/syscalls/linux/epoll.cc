@@ -88,12 +88,13 @@ TEST(EpollTest, LastReadable) {
   ASSERT_THAT(RetryEINTR(epoll_wait)(epollfd.get(), result, kFDsPerEpoll, -1),
               SyscallSucceedsWithValue(kFDsPerEpoll));
 
-  int i;
-  for (i = 0; i < kFDsPerEpoll - 1; i++) {
-    EXPECT_EQ(result[i].events, EPOLLOUT);
+  for (int i = 0; i < kFDsPerEpoll; i++) {
+    if (result[i].data.u64 == kMagicConstant + kFDsPerEpoll - 1) {
+      EXPECT_EQ(result[i].events, EPOLLOUT | EPOLLIN);
+    } else {
+      EXPECT_EQ(result[i].events, EPOLLOUT);
+    }
   }
-  EXPECT_EQ(result[i].events, EPOLLOUT | EPOLLIN);
-  EXPECT_EQ(result[i].data.u64, kMagicConstant + i);
 }
 
 TEST(EpollTest, LastNonWritable) {
@@ -115,17 +116,19 @@ TEST(EpollTest, LastNonWritable) {
   ASSERT_THAT(RetryEINTR(epoll_wait)(epollfd.get(), result, kFDsPerEpoll, -1),
               SyscallSucceedsWithValue(kFDsPerEpoll));
 
-  int i;
-  for (i = 0; i < kFDsPerEpoll - 1; i++) {
-    EXPECT_EQ(result[i].events, EPOLLOUT);
+  for (int i = 0; i < kFDsPerEpoll; i++) {
+    if (result[i].data.u64 == kMagicConstant + kFDsPerEpoll - 1) {
+      EXPECT_EQ(result[i].events, EPOLLIN);
+    } else {
+      EXPECT_EQ(result[i].events, EPOLLOUT);
+    }
   }
-  EXPECT_EQ(result[i].events, EPOLLIN);
   EXPECT_THAT(ReadFd(eventfds[kFDsPerEpoll - 1].get(), &tmp, sizeof(tmp)),
               sizeof(tmp));
   EXPECT_THAT(RetryEINTR(epoll_wait)(epollfd.get(), result, kFDsPerEpoll, -1),
               SyscallSucceedsWithValue(kFDsPerEpoll));
 
-  for (i = 0; i < kFDsPerEpoll; i++) {
+  for (int i = 0; i < kFDsPerEpoll; i++) {
     EXPECT_EQ(result[i].events, EPOLLOUT);
   }
 }
