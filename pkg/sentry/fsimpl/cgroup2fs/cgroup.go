@@ -312,6 +312,14 @@ func (c *cgroup) populated() bool {
 // its parent's populated child counters and triggers cgroup.events notifications.
 // +checklocks:c.fs.tasksMu
 func (c *cgroup) updatePopulated(ctx context.Context, populated bool) {
+	// c's own tasksCount just crossed the 0<->1 boundary (see callers). If
+	// c still has populated children, its populated() state did not change:
+	// notifying watchers or adjusting ancestor counters here would corrupt
+	// the accounting.
+	if c.nrPopulatedChildren.Load() > 0 {
+		return
+	}
+
 	diff := int64(-1)
 	if populated {
 		diff = 1
