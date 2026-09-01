@@ -64,7 +64,7 @@ loop:
 				// of FilesystemImpl.PrependPath() may return nil instead.
 				break loop
 			}
-			nextVD := vfs.getMountpointAt(ctx, vd.mount, vfsroot)
+			nextVD := vfs.getMountpointAt(ctx, vd.mount, vfsroot, nil)
 			if !nextVD.Ok() {
 				break loop
 			}
@@ -112,7 +112,7 @@ loop:
 			if vd.mount == vfsroot.mount && vd.mount.root == vfsroot.dentry {
 				break loop
 			}
-			nextVD := vfs.getMountpointAt(ctx, vd.mount, vfsroot)
+			nextVD := vfs.getMountpointAt(ctx, vd.mount, vfsroot, nil)
 			if !nextVD.Ok() {
 				return "", nil
 			}
@@ -180,7 +180,7 @@ loop:
 			if vd.mount == vfsroot.mount && vd.mount.root == vfsroot.dentry {
 				break loop
 			}
-			nextVD := vfs.getMountpointAt(ctx, vd.mount, vfsroot)
+			nextVD := vfs.getMountpointAt(ctx, vd.mount, vfsroot, nil)
 			if !nextVD.Ok() {
 				unreachable = true
 				break loop

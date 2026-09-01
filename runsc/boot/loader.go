@@ -887,13 +887,18 @@ func New(args Args) (*Loader, error) {
 	}
 	args.StartupTimer.Reached("mount hints parsed")
 
-	// Set up host mount that will be used for imported fds.
+	// Set up host mount that will be used for imported fds. It is internal in
+	// the sense of vfs.MountOptions.InternalMount: it exists only to give
+	// donated host FDs a place to live, is never reachable through the mount
+	// tree, and its files are unnamable by any path a Landlock rule could be
+	// added for, so Landlock exempts them the way Linux's MNT_INTERNAL exempts
+	// pipes, and landlock_add_rule(2) refuses them with EBADFD.
 	hostFilesystem, err := host.NewFilesystem(l.k.VFS())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create hostfs filesystem: %w", err)
 	}
 	defer hostFilesystem.DecRef(l.k.SupervisorContext())
-	l.k.SetHostMount(l.k.VFS().NewDisconnectedMount(hostFilesystem, nil, &vfs.MountOptions{}))
+	l.k.SetHostMount(l.k.VFS().NewDisconnectedMount(hostFilesystem, nil, &vfs.MountOptions{InternalMount: true}))
 	args.StartupTimer.Reached("host FS mount created")
 
 	if args.PodInitConfigFD >= 0 {

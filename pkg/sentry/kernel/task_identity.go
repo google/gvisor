@@ -19,6 +19,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
 // Credentials returns t's credentials.
@@ -484,6 +485,25 @@ func (t *Task) GetNoNewPrivs() bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.noNewPrivs
+}
+
+// LandlockDomain returns t's Landlock domain, or nil if t is not sandboxed. It
+// may be called from any goroutine.
+//
+// The domain is carried by t's credentials, so it is inherited across clone(2)
+// and preserved across a change of identity along with everything else in them.
+func (t *Task) LandlockDomain() *vfs.LandlockDomain {
+	return vfs.LandlockDomainFromCredentials(t.Credentials())
+}
+
+// SetLandlockDomain sets t's Landlock domain.
+//
+// Preconditions: The caller must be running on the task goroutine.
+func (t *Task) SetLandlockDomain(domain *vfs.LandlockDomain) {
+	// The credentials object is immutable. See doc for creds.
+	creds := t.Credentials().Fork()
+	creds.LandlockDomain = domain
+	t.creds.Store(creds)
 }
 
 // AmbientCapability returns whether the capability cp is in the ambient set.

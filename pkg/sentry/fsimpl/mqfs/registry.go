@@ -18,6 +18,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/mq"
@@ -149,12 +150,43 @@ func (r *RegistryImpl) newFD(ctx context.Context, q *mq.Queue, inode *queueInode
 	dentry.Init(&r.fs.Filesystem, inode)
 	defer dentry.DecRef(ctx)
 
+	if err := r.checkLandlock(ctx, &dentry, flags); err != nil {
+		return nil, err
+	}
+
 	fd := &queueFD{queue: view}
 	err = fd.Init(r.mount, &dentry, inode.queue, inode.Locks(), flags, auth.CredentialsFromContext(ctx))
 	if err != nil {
 		return nil, err
 	}
 	return &fd.vfsfd, nil
+}
+
+// checkLandlock applies the calling thread's Landlock domain to an open of the
+// queue named by dentry, which mq_open(2) performs without going through
+// VirtualFilesystem.OpenAt().
+//
+// dentry is parentless, so the ancestry is walked from the registry root
+// instead. The root is the root of a disconnected mount, so the walk ends
+// there: an open is allowed only by a rule naming the queue itself or the
+// mqueue root, which a thread can only add if mqueue is also mounted somewhere
+// it can name. Note that the registry's mount is deliberately not an internal
+// mount, which would exempt it from Landlock entirely.
+//
+// Matches Linux [ipc/mqueue.c]:do_open(), which reaches security_file_open()
+// through dentry_open(). Linux likewise stops the walk at the root of the IPC
+// namespace's mqueue mount, since that mount has no mount point to follow up
+// to; it does not reach the branch that allows disconnected roots on internal
+// mounts, and the mqueue superblock is mountable, so it is not SB_NOUSER
+// either.
+func (r *RegistryImpl) checkLandlock(ctx context.Context, dentry *kernfs.Dentry, flags uint32) error {
+	domain := vfs.LandlockDomainFromCredentials(auth.CredentialsFromContext(ctx))
+	var toDecRef []refs.RefCounter
+	err := domain.CheckAccessDetached(ctx, r.fs.VFSFilesystem().VirtualFilesystem(), dentry.VFSDentry().InodeIdentity(), vfs.MakeVirtualDentry(r.mount, r.root.VFSDentry()), vfs.LandlockOpenAccessRights(flags), &toDecRef)
+	for _, rc := range toDecRef {
+		rc.DecRef(ctx)
+	}
+	return err
 }
 
 // perm returns a permission mask created using given flags.

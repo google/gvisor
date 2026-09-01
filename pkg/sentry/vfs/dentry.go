@@ -132,6 +132,15 @@ type DentryImpl interface {
 	// The caller does not need to hold a reference on the dentry.
 	Watches() *Watches
 
+	// InodeIdentity returns a value identifying the file corresponding to the
+	// Dentry, such that Dentries that are hard links to the same underlying
+	// file, or that reach it through different mounts, return equal values. It
+	// returns the zero InodeIdentity if the filesystem cannot name the
+	// underlying file.
+	//
+	// The caller does not need to hold a reference on the dentry.
+	InodeIdentity() InodeIdentity
+
 	// OnZeroWatches is called whenever the number of watches on a dentry drops
 	// to zero. This is needed by some FilesystemImpls (e.g. gofer) to manage
 	// dentry lifetime.

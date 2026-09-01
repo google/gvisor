@@ -20,6 +20,7 @@
 #include <netinet/in.h>
 #include <signal.h>
 #include <sys/prctl.h>
+#include <sys/ptrace.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -60,6 +61,7 @@ struct landlock_net_port_attr {
 };
 
 constexpr uint32_t LANDLOCK_CREATE_RULESET_VERSION = (1U << 0);
+constexpr uint32_t LANDLOCK_CREATE_RULESET_ERRATA = (1U << 1);
 
 // Filesystem access rights.
 constexpr uint64_t LANDLOCK_ACCESS_FS_EXECUTE = (1ULL << 0);      // v1
@@ -134,6 +136,18 @@ inline int LandlockAbiVersion() {
   return landlock_create_ruleset(nullptr, 0, LANDLOCK_CREATE_RULESET_VERSION);
 }
 
+// LandlockErrataFixed reports whether the implementation says it has fixed
+// erratum number, which it reports as bit number-1 of the errata bitmask.
+// Implementations that predate the query report nothing as fixed.
+inline bool LandlockErratumFixed(int number) {
+  int errata =
+      landlock_create_ruleset(nullptr, 0, LANDLOCK_CREATE_RULESET_ERRATA);
+  if (errata < 0) {
+    return false;
+  }
+  return (errata & (1 << (number - 1))) != 0;
+}
+
 inline int CreateRuleset(uint64_t handled_fs, uint64_t handled_net = 0,
                          uint64_t scoped = 0) {
   landlock_ruleset_attr attr = {};
@@ -190,6 +204,12 @@ inline void ApplyFsPolicy(uint64_t handled_access,
   EnforceOrDie(fd);
 }
 
+// Enforces a domain that handles handled_access and grants it nowhere, so that
+// every operation needing one of those rights is denied.
+inline void ApplyFsPolicyDenyingAll(uint64_t handled_access) {
+  EnforceOrDie(CreateRuleset(handled_access));
+}
+
 inline ChildResult ClassifyFs(int rc) {
   if (rc >= 0) {
     return kAllowed;
@@ -221,6 +241,166 @@ inline ChildResult TryReadOpen(const std::string& path) {
     return kAllowed;
   }
   return errno == EACCES ? kDenied : kOther;
+}
+
+// Landlock ABI v1 has no LANDLOCK_ACCESS_FS_REFER right, so rename(2) and
+// link(2) between two directories are refused with EXDEV rather than EACCES.
+constexpr int kExdev = 103;
+
+// Landlock has no right that grants a change to the mount tree, so a thread
+// with a domain cannot make one however permissive its policy. These hooks
+// return EPERM rather than the EACCES the filesystem access hooks return.
+constexpr int kEperm = 104;
+
+inline int ClassifyRefer(int rc) {
+  if (rc == 0) {
+    return kAllowed;
+  }
+  if (errno == EACCES) {
+    return kDenied;
+  }
+  if (errno == EXDEV) {
+    return kExdev;
+  }
+  return kOther;
+}
+
+inline int ClassifyMount(int rc) {
+  if (rc == 0) {
+    return kAllowed;
+  }
+  return errno == EPERM ? kEperm : kOther;
+}
+
+// Exit codes that name the exact errno an operation produced, for the tests
+// that check where a Landlock denial sits among the other errors a syscall can
+// return.
+enum ErrnoResult {
+  kErrOk = 0,
+  kErrRofs = 110,
+  kErrNoent = 111,
+  kErrAcces = 112,
+  kErrPerm = 113,
+  kErrIsdir = 114,
+  kErrNotdir = 115,
+  kErrNotempty = 116,
+  kErrInval = 117,
+  kErrExist = 118,
+  kErrUnexpected = 119,
+  kErrExdev = 120,
+};
+
+inline int ClassifyErrno(int rc) {
+  if (rc >= 0) {
+    return kErrOk;
+  }
+  switch (errno) {
+    case EROFS:
+      return kErrRofs;
+    case ENOENT:
+      return kErrNoent;
+    case EACCES:
+      return kErrAcces;
+    case EPERM:
+      return kErrPerm;
+    case EISDIR:
+      return kErrIsdir;
+    case ENOTDIR:
+      return kErrNotdir;
+    case ENOTEMPTY:
+      return kErrNotempty;
+    case EINVAL:
+      return kErrInval;
+    case EEXIST:
+      return kErrExist;
+    case EXDEV:
+      return kErrExdev;
+    default:
+      return kErrUnexpected;
+  }
+}
+
+// Enforces a policy handling handled_access and granting access1 beneath dir1
+// and access2 beneath dir2. A zero access grants nothing for that directory.
+inline void ApplyTwoDirPolicy(uint64_t handled_access, const std::string& dir1,
+                              uint64_t access1, const std::string& dir2,
+                              uint64_t access2) {
+  int fd = CreateRuleset(handled_access);
+  if (access1 != 0) {
+    AddPathRule(fd, dir1, access1);
+  }
+  if (access2 != 0) {
+    AddPathRule(fd, dir2, access2);
+  }
+  EnforceOrDie(fd);
+}
+
+#ifndef SYS_move_mount
+#define SYS_move_mount 429
+#endif
+
+inline int PivotRoot(const std::string& new_root, const std::string& put_old) {
+  return syscall(SYS_pivot_root, new_root.c_str(), put_old.c_str());
+}
+
+inline int MoveMount(int from_dirfd, const std::string& from, int to_dirfd,
+                     const std::string& to, uint32_t flags) {
+  return syscall(SYS_move_mount, from_dirfd, from.c_str(), to_dirfd, to.c_str(),
+                 flags);
+}
+
+// ForkTracee forks a process that optionally stacks a second Landlock layer on
+// top of whatever it inherited, then blocks until *stop_fd is closed. It has
+// returned only once the tracee is ready to be traced. Must be called from a
+// forked test process: it exits the caller on failure.
+inline pid_t ForkTracee(bool extra_layer, int* stop_fd) {
+  int stop[2], ready[2];
+  if (pipe(stop) != 0 || pipe(ready) != 0) {
+    _exit(kSetup);
+  }
+  pid_t pid = fork();
+  if (pid < 0) {
+    _exit(kSetup);
+  }
+  if (pid == 0) {
+    close(stop[1]);
+    close(ready[0]);
+    if (extra_layer) {
+      EnforceOrDie(CreateRuleset(LANDLOCK_ACCESS_FS_MAKE_REG));
+    }
+    // Closing the write end reports readiness as EOF on the read end.
+    close(ready[1]);
+    char c;
+    while (read(stop[0], &c, 1) == -1 && errno == EINTR) {
+    }
+    _exit(0);
+  }
+  close(stop[0]);
+  close(ready[1]);
+  char c;
+  while (read(ready[0], &c, 1) == -1 && errno == EINTR) {
+  }
+  close(ready[0]);
+  *stop_fd = stop[1];
+  return pid;
+}
+
+// TryAttach attaches to tracee, detaches again if that succeeded, then reaps
+// it.
+inline ChildResult TryAttach(pid_t tracee, int stop_fd) {
+  int rc = ptrace(PTRACE_ATTACH, tracee, nullptr, nullptr);
+  int err = errno;
+  if (rc == 0) {
+    // PTRACE_ATTACH stops the tracee; wait for the stop before detaching.
+    waitpid(tracee, nullptr, 0);
+    ptrace(PTRACE_DETACH, tracee, nullptr, nullptr);
+  }
+  close(stop_fd);
+  waitpid(tracee, nullptr, 0);
+  if (rc == 0) {
+    return kAllowed;
+  }
+  return err == EPERM ? kDenied : kOther;
 }
 
 inline sockaddr_in LoopbackAddr(uint16_t port) {

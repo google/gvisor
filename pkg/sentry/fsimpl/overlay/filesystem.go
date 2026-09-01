@@ -501,10 +501,16 @@ const (
 // doCreateAt checks that creating a file at rp is permitted, then invokes
 // create to do so.
 //
+// checkLandlock is called with parent.dirMu held, once the file is known not to
+// exist and before the parent is copied up, so that the Landlock check and the
+// creation agree on what rp's final component names. Operations on the layers
+// are performed under fs.creds, which no domain restricts, so a check here is
+// the only one they get.
+//
 // Preconditions:
 //   - !rp.Done().
 //   - For the final path component in rp, !rp.ShouldFollowSymlink().
-func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, ct createType, create func(parent *dentry, name string, haveUpperWhiteout bool) error) error {
+func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, ct createType, checkLandlock func(parent *dentry) error, create func(parent *dentry, name string, haveUpperWhiteout bool) error) error {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
 	defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
@@ -553,6 +559,9 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, ct 
 	}
 	defer mnt.EndWrite()
 	if err := parent.checkPermissions(rp.Credentials(), vfs.MayWrite|vfs.MayExec); err != nil {
+		return err
+	}
+	if err := checkLandlock(parent); err != nil {
 		return err
 	}
 	// Ensure that the parent directory is copied-up so that we can create the
@@ -677,7 +686,36 @@ func (fs *filesystem) GetParentDentryAt(ctx context.Context, rp *vfs.ResolvingPa
 
 // LinkAt implements vfs.FilesystemImpl.LinkAt.
 func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.VirtualDentry) error {
-	return fs.doCreateAt(ctx, rp, createNonDirectory, func(parent *dentry, childName string, haveUpperWhiteout bool) error {
+	return fs.doCreateAt(ctx, rp, createNonDirectory, func(parent *dentry) error {
+		if rp.Mount() != vd.Mount() {
+			// Reported as EXDEV by the creation callback below.
+			return nil
+		}
+		old := vd.Dentry().Impl().(*dentry)
+		// old is a filesystem root if it has no parent, in which case oldParent
+		// is left nil and the link is treated as crossing directories.
+		var oldParent *vfs.Dentry
+		if p := old.parent.Load(); p != nil {
+			oldParent = &p.vfsd
+		}
+		// The layer's own LinkAt() below applies this too, but only after the
+		// hook. do_linkat() calls may_linkat() before security_path_link(), so a
+		// source the protected_hardlinks policy refuses is reported as EPERM even
+		// when the domain would also have denied the link.
+		mode := linux.FileMode(old.mode.Load())
+		if err := vfs.MayLink(rp.Credentials(), mode, old.accessACL.Load(), auth.KUID(old.uid.Load()), auth.KGID(old.gid.Load())); err != nil {
+			return err
+		}
+		return rp.CheckLandlockRefer(ctx, &vfs.LandlockReferOptions{
+			OldParent: oldParent,
+			NewParent: &parent.vfsd,
+			SrcMode:   mode,
+			// link(2) leaves the source where it is, and cannot replace an
+			// existing destination.
+			Removable: false,
+			DstExists: false,
+		})
+	}, func(parent *dentry, childName string, haveUpperWhiteout bool) error {
 		if rp.Mount() != vd.Mount() {
 			return linuxerr.EXDEV
 		}
@@ -720,7 +758,9 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 	if opts.ForSyntheticMountpoint {
 		ct = createSyntheticMountpoint
 	}
-	return fs.doCreateAt(ctx, rp, ct, func(parent *dentry, childName string, haveUpperWhiteout bool) error {
+	return fs.doCreateAt(ctx, rp, ct, func(parent *dentry) error {
+		return rp.CheckLandlockCreate(ctx, &parent.vfsd, linux.S_IFDIR)
+	}, func(parent *dentry, childName string, haveUpperWhiteout bool) error {
 		vfsObj := fs.vfsfs.VirtualFilesystem()
 		pop := vfs.PathOperation{
 			Root:  parent.upperVD,
@@ -779,7 +819,9 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 
 // MknodAt implements vfs.FilesystemImpl.MknodAt.
 func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.MknodOptions) error {
-	return fs.doCreateAt(ctx, rp, createNonDirectory, func(parent *dentry, childName string, haveUpperWhiteout bool) error {
+	return fs.doCreateAt(ctx, rp, createNonDirectory, func(parent *dentry) error {
+		return rp.CheckLandlockCreate(ctx, &parent.vfsd, opts.Mode)
+	}, func(parent *dentry, childName string, haveUpperWhiteout bool) error {
 		// Disallow attempts to create whiteouts.
 		if opts.Mode&linux.S_IFMT == linux.S_IFCHR && opts.DevMajor == 0 && opts.DevMinor == 0 {
 			return linuxerr.EPERM
@@ -899,6 +941,19 @@ func (d *dentry) ensureOpenableLocked(ctx context.Context, rp *vfs.ResolvingPath
 	if err := d.checkPermissions(rp.Credentials(), ats); err != nil {
 		return err
 	}
+	// Linux rejects these before the hook the Landlock check below matches, so
+	// a file that cannot be opened at all still reports why.
+	if err := vfs.CheckOpenFileType(linux.FileMode(d.mode.Load()), opts); err != nil {
+		return err
+	}
+	// d is the file the returned FileDescription will refer to, so this check
+	// cannot be raced past, and it precedes both the copy-up below and the
+	// O_TRUNC that the layer open performs. The layer is opened under
+	// filesystem credentials that no domain restricts, so this is the only
+	// check the open gets.
+	if err := rp.CheckLandlockOpen(ctx, &d.vfsd, opts, d.isDir()); err != nil {
+		return err
+	}
 	if d.isDir() {
 		if ats.MayWrite() {
 			return linuxerr.EISDIR
@@ -991,6 +1046,12 @@ func (fs *filesystem) createAndOpenLocked(ctx context.Context, rp *vfs.Resolving
 		return nil, err
 	}
 	defer mnt.EndWrite()
+
+	// parent.dirMu is held, so rp's final component still names nothing and
+	// this check is for the file created below.
+	if err := rp.CheckLandlockOpenCreate(ctx, &parent.vfsd, opts); err != nil {
+		return nil, err
+	}
 
 	if err := parent.copyUpLocked(ctx); err != nil {
 		return nil, err
@@ -1129,17 +1190,9 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	if err != nil {
 		return err
 	}
-	if err := oldParent.mayDelete(creds, renamed); err != nil {
-		return err
-	}
 	if renamed.isDir() {
 		if renamed == newParent || genericIsAncestorDentry(fs, renamed, newParent) {
 			return linuxerr.EINVAL
-		}
-		if oldParent != newParent {
-			if err := renamed.checkPermissions(creds, vfs.MayWrite); err != nil {
-				return err
-			}
 		}
 	} else {
 		if opts.MustBeDir || rp.MustBeDir() {
@@ -1148,9 +1201,6 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	}
 
 	if oldParent != newParent {
-		if err := newParent.checkPermissions(creds, vfs.MayWrite|vfs.MayExec); err != nil {
-			return err
-		}
 		newParent.dirMu.NestedLock(dirLockNew)
 		defer newParent.dirMu.NestedUnlock(dirLockNew)
 	}
@@ -1168,13 +1218,57 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		return err
 	}
 	if replaced != nil {
+		// Linux checks RENAME_NOREPLACE in __start_renaming(), before
+		// security_path_rename(); everything else the replaced file can fail is
+		// checked by vfs_rename(), after it. See below.
 		if opts.Flags&linux.RENAME_NOREPLACE != 0 {
 			return linuxerr.EEXIST
 		}
+		replacedVFSD = &replaced.vfsd
+	}
+
+	// Linux calls security_path_rename() from filename_renameat2() before
+	// vfs_rename(), so a denial precedes everything vfs_rename() checks: the
+	// permission and sticky-bit checks in may_delete(), and the type mismatches
+	// and non-empty destination below. The lookups, the RENAME_NOREPLACE EEXIST
+	// and the trailing-slash ENOTDIR above come before the hook there too. This
+	// is also before the copy-ups below, so that a denied rename(2) has no
+	// effect at all. Both parents' dirMu are held, so oldName and newName still
+	// name renamed and replaced. The layers are modified under filesystem
+	// credentials that no domain restricts, so this is the only check the rename
+	// gets.
+	referOpts := vfs.LandlockReferOptions{
+		OldParent:   &oldParent.vfsd,
+		NewParent:   &newParent.vfsd,
+		SrcMode:     linux.FileMode(renamed.mode.Load()),
+		DstExists:   replaced != nil,
+		Removable:   true,
+		RenameFlags: opts.Flags,
+	}
+	if replaced != nil {
+		referOpts.DstMode = linux.FileMode(replaced.mode.Load())
+	}
+	if err := rp.CheckLandlockRefer(ctx, &referOpts); err != nil {
+		return err
+	}
+
+	if err := oldParent.mayDelete(creds, renamed); err != nil {
+		return err
+	}
+	if renamed.isDir() && oldParent != newParent {
+		if err := renamed.checkPermissions(creds, vfs.MayWrite); err != nil {
+			return err
+		}
+	}
+	if oldParent != newParent {
+		if err := newParent.checkPermissions(creds, vfs.MayWrite|vfs.MayExec); err != nil {
+			return err
+		}
+	}
+	if replaced != nil {
 		if err := newParent.mayDelete(creds, replaced); err != nil {
 			return err
 		}
-		replacedVFSD = &replaced.vfsd
 		if replaced.isDir() {
 			if !renamed.isDir() {
 				return linuxerr.EISDIR
@@ -1388,24 +1482,36 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	parent.dirMu.Lock()
 	defer parent.dirMu.Unlock()
 
-	// Ensure that parent is copied-up before potentially holding child.copyMu
-	// below.
-	if err := parent.copyUpLocked(ctx); err != nil {
-		return err
-	}
-
 	// We need a dentry representing the child directory being removed in order
 	// to verify that it's empty.
 	child, _, err := fs.getChildLocked(ctx, parent, name, &ds)
 	if err != nil {
 		return err
 	}
-	if !child.isDir() {
-		return linuxerr.ENOTDIR
+
+	// Checked after the lookup above, since Linux's do_rmdir() only reaches
+	// security_path_rmdir() once it has a positive dentry, but before the
+	// copy-up below so that a denied rmdir(2) has no effect at all.
+	// parent.dirMu is held, so name still names child. The layers are modified
+	// under filesystem credentials that no domain restricts, so this is the
+	// only check the removal gets.
+	if err := rp.CheckLandlockRemove(ctx, &parent.vfsd, true); err != nil {
+		return err
 	}
+	// may_delete() runs inside vfs_rmdir(), after security_path_rmdir().
 	if err := parent.mayDelete(rp.Credentials(), child); err != nil {
 		return err
 	}
+	if !child.isDir() {
+		return linuxerr.ENOTDIR
+	}
+
+	// Ensure that parent is copied-up before potentially holding child.copyMu
+	// below.
+	if err := parent.copyUpLocked(ctx); err != nil {
+		return err
+	}
+
 	child.dirMu.NestedLock(dirLockChild)
 	defer child.dirMu.NestedUnlock(dirLockChild)
 	whiteouts, err := child.collectWhiteoutsForRmdirLocked(ctx)
@@ -1597,7 +1703,9 @@ func (fs *filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linu
 
 // SymlinkAt implements vfs.FilesystemImpl.SymlinkAt.
 func (fs *filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, target string) error {
-	return fs.doCreateAt(ctx, rp, createNonDirectory, func(parent *dentry, childName string, haveUpperWhiteout bool) error {
+	return fs.doCreateAt(ctx, rp, createNonDirectory, func(parent *dentry) error {
+		return rp.CheckLandlockCreate(ctx, &parent.vfsd, linux.S_IFLNK)
+	}, func(parent *dentry, childName string, haveUpperWhiteout bool) error {
 		vfsObj := fs.vfsfs.VirtualFilesystem()
 		pop := vfs.PathOperation{
 			Root:  parent.upperVD,
@@ -1650,20 +1758,11 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	if name == "." || name == ".." {
 		return linuxerr.EISDIR
 	}
-	if rp.MustBeDir() {
-		return linuxerr.ENOTDIR
-	}
 	vfsObj := rp.VirtualFilesystem()
 	mntns := vfs.MountNamespaceFromContext(ctx)
 	defer mntns.DecRef(ctx)
 	parent.dirMu.Lock()
 	defer parent.dirMu.Unlock()
-
-	// Ensure that parent is copied-up before potentially holding child.copyMu
-	// below.
-	if err := parent.copyUpLocked(ctx); err != nil {
-		return err
-	}
 
 	// We need a dentry representing the child being removed in order to verify
 	// that it's not a directory.
@@ -1671,12 +1770,41 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	if err != nil {
 		return err
 	}
-	if child.isDir() {
-		return linuxerr.EISDIR
+
+	// A trailing slash is rejected before the LSM hook by
+	// filename_unlinkat()'s "Why not before? Because we want correct error
+	// value" check, which needs the victim's type to choose the errno; the
+	// plain directory case is rejected after it, by may_delete().
+	if rp.MustBeDir() {
+		if child.isDir() {
+			return linuxerr.EISDIR
+		}
+		return linuxerr.ENOTDIR
 	}
+
+	// Checked after the lookup above, since Linux's do_unlinkat() only reaches
+	// security_path_unlink() once it has a positive dentry, but before the
+	// copy-up below so that a denied unlink(2) has no effect at all.
+	// parent.dirMu is held, so name still names child. The layers are modified
+	// under filesystem credentials that no domain restricts, so this is the
+	// only check the removal gets.
+	if err := rp.CheckLandlockRemove(ctx, &parent.vfsd, false); err != nil {
+		return err
+	}
+	// may_delete() runs inside vfs_unlink(), after security_path_unlink().
 	if err := parent.mayDelete(rp.Credentials(), child); err != nil {
 		return err
 	}
+	if child.isDir() {
+		return linuxerr.EISDIR
+	}
+
+	// Ensure that parent is copied-up before potentially holding child.copyMu
+	// below.
+	if err := parent.copyUpLocked(ctx); err != nil {
+		return err
+	}
+
 	// Hold child.copyMu to prevent it from being copied-up during
 	// deletion.
 	child.copyMu.RLock()
@@ -2006,6 +2134,11 @@ func (fs *filesystem) setPosixACLLocked(ctx context.Context, d *dentry, creds *a
 // PrependPath implements vfs.FilesystemImpl.PrependPath.
 func (fs *filesystem) PrependPath(ctx context.Context, vfsroot, vd vfs.VirtualDentry, b *fspath.Builder) error {
 	return genericPrependPath(fs, vfsroot, vd.Mount(), vd.Dentry().Impl().(*dentry), b)
+}
+
+// WalkAncestors implements vfs.FilesystemImpl.WalkAncestors.
+func (fs *filesystem) WalkAncestors(ctx context.Context, vd vfs.VirtualDentry, fn func(*vfs.Dentry) bool) {
+	genericWalkAncestors(fs, vd.Mount(), vd.Dentry().Impl().(*dentry), fn)
 }
 
 // IsDescendant implements vfs.FilesystemImpl.IsDescendant.

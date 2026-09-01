@@ -389,6 +389,9 @@ var AMD64 = &kernel.SyscallTable{
 		438: syscalls.Supported("pidfd_getfd", PIDFDGetFD),
 		439: syscalls.Supported("faccessat2", Faccessat2),
 		441: syscalls.Supported("epoll_pwait2", EpollPwait2),
+		444: syscalls.PartiallySupported("landlock_create_ruleset", LandlockCreateRuleset, "Only ABI version 1 is supported; network and IPC scoping restrictions are not.", nil),
+		445: syscalls.PartiallySupported("landlock_add_rule", LandlockAddRule, "Only LANDLOCK_RULE_PATH_BENEATH is supported. On gofer-backed filesystems, a rule can outlive a file whose deletion the sentry could not attribute to it (a host-side delete on a shared mount, or a delete through a different mount of the same host tree) and grant access to a later file that reuses its host inode number.", nil),
+		446: syscalls.PartiallySupported("landlock_restrict_self", LandlockRestrictSelf, "Only ABI version 1 filesystem access rights are enforced.", nil),
 	},
 	Emulate: map[hostarch.Addr]uintptr{
 		0xffffffffff600000: 96,  // vsyscall gettimeofday(2)
@@ -707,6 +710,9 @@ var ARM64 = &kernel.SyscallTable{
 		438: syscalls.Supported("pidfd_getfd", PIDFDGetFD),
 		439: syscalls.Supported("faccessat2", Faccessat2),
 		441: syscalls.Supported("epoll_pwait2", EpollPwait2),
+		444: syscalls.PartiallySupported("landlock_create_ruleset", LandlockCreateRuleset, "Only ABI version 1 is supported; network and IPC scoping restrictions are not.", nil),
+		445: syscalls.PartiallySupported("landlock_add_rule", LandlockAddRule, "Only LANDLOCK_RULE_PATH_BENEATH is supported. On gofer-backed filesystems, a rule can outlive a file whose deletion the sentry could not attribute to it (a host-side delete on a shared mount, or a delete through a different mount of the same host tree) and grant access to a later file that reuses its host inode number.", nil),
+		446: syscalls.PartiallySupported("landlock_restrict_self", LandlockRestrictSelf, "Only ABI version 1 filesystem access rights are enforced.", nil),
 	},
 	Emulate: map[hostarch.Addr]uintptr{},
 	Missing: func(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {

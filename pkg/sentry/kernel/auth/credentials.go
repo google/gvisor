@@ -21,6 +21,38 @@ import (
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 )
 
+// LandlockDomain is a Landlock domain, held opaquely by Credentials.
+//
+// Package vfs defines what a domain contains and how it is evaluated; this
+// package only carries it, so that a domain travels with the credentials an
+// operation is performed under. Compare Linux, which reaches a domain through
+// the LSM blob hanging off cred->security.
+type LandlockDomain interface {
+	// IsLandlockDomain has no behavior. It exists so that only the vfs domain
+	// type can be assigned to Credentials.LandlockDomain, which would otherwise
+	// have to be typed as an empty interface.
+	IsLandlockDomain()
+
+	// ScopeLE reports whether this domain is an ancestor of, or equal to,
+	// other; that is, whether other is at least as restricted as this domain.
+	// A nil receiver is an ancestor of everything, and no non-nil domain is an
+	// ancestor of a nil other.
+	ScopeLE(other LandlockDomain) bool
+}
+
+// LandlockCanPtrace reports whether a tracer restricted by the tracer domain may
+// ptrace a tracee restricted by the tracee domain. A tracer may only trace a
+// target that is confined by at least the tracer's own domain, so that a
+// sandboxed thread cannot escape by driving a less restricted one.
+//
+// Matches Linux [security/landlock/task.c]:domain_ptrace()
+func LandlockCanPtrace(tracer, tracee LandlockDomain) bool {
+	if tracer == nil {
+		return true
+	}
+	return tracer.ScopeLE(tracee)
+}
+
 // Credentials contains information required to authorize privileged operations
 // in a user namespace.
 //
@@ -58,6 +90,18 @@ type Credentials struct {
 
 	// The user namespace associated with the owner of the credentials.
 	UserNamespace *UserNamespace
+
+	// LandlockDomain is the Landlock domain restricting operations performed
+	// under these credentials, or nil if they are unrestricted. A domain is
+	// immutable and is only ever replaced, so forked credentials may share one.
+	//
+	// The domain belongs here rather than on the Task so that it is dropped
+	// along with the rest of the credentials when a filesystem substitutes
+	// them. Linux gets this for free by keeping the domain in cred->security:
+	// overlayfs accesses its layers under ovl_override_creds(), so copy-up runs
+	// outside the sandboxed task's domain rather than being checked against
+	// rules that could never name an upper-layer file.
+	LandlockDomain LandlockDomain
 }
 
 // NewAnonymousCredentials returns a set of credentials with no capabilities in

@@ -42,6 +42,11 @@ func (vfs *VirtualFilesystem) NewAnonVirtualDentry(name string) VirtualDentry {
 	}
 }
 
+// IsAnonVD returns true if vd belongs to anonfs.
+func (vfs *VirtualFilesystem) IsAnonVD(vd VirtualDentry) bool {
+	return vd.mount == vfs.anonMount
+}
+
 const (
 	anonfsBlockSize = hostarch.PageSize // via fs/libfs.c:pseudo_fs_fill_super()
 
@@ -319,6 +324,13 @@ func (fs *anonFilesystem) PrependPath(ctx context.Context, vfsroot, vd VirtualDe
 	return PrependPathSyntheticError{}
 }
 
+// WalkAncestors implements FilesystemImpl.WalkAncestors.
+//
+// anonDentries have no ancestors.
+func (fs *anonFilesystem) WalkAncestors(ctx context.Context, vd VirtualDentry, fn func(*Dentry) bool) {
+	fn(vd.Dentry())
+}
+
 // MountOptions implements FilesystemImpl.MountOptions.
 func (fs *anonFilesystem) MountOptions() string {
 	return ""
@@ -348,6 +360,14 @@ func (d *anonDentry) InotifyWithParent(ctx context.Context, events, cookie uint3
 // Watches implements DentryImpl.Watches.
 func (d *anonDentry) Watches() *Watches {
 	return &d.watches
+}
+
+// InodeIdentity implements DentryImpl.InodeIdentity.
+//
+// Anonymous inodes have no identity: no path names them, so they never appear
+// in a path walk.
+func (d *anonDentry) InodeIdentity() InodeIdentity {
+	return InodeIdentity{}
 }
 
 // OnZeroWatches implements Dentry.OnZeroWatches.

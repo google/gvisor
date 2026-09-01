@@ -1,5 +1,5 @@
 load("//pkg/sync/locking:locking.bzl", "declare_mutex", "declare_rwmutex")
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(default_applicable_licenses = ["//:license"])
@@ -30,6 +30,13 @@ declare_mutex(
     out = "dev_mutex.go",
     package = "overlay",
     prefix = "dev",
+)
+
+declare_mutex(
+    name = "identity_mutex",
+    out = "identity_mutex.go",
+    package = "overlay",
+    prefix = "identity",
 )
 
 declare_mutex(
@@ -107,6 +114,7 @@ go_library(
         "directory.go",
         "filesystem.go",
         "fstree.go",
+        "identity_mutex.go",
         "maps_mutex.go",
         "overlay.go",
         "regular_file.go",
@@ -139,5 +147,21 @@ go_library(
         "//pkg/sync/locking",
         "//pkg/usermem",
         "//pkg/waiter",
+    ],
+)
+
+go_test(
+    name = "overlay_test",
+    size = "small",
+    srcs = ["overlay_test.go"],
+    library = ":overlay",
+    deps = [
+        "//pkg/abi/linux",
+        "//pkg/context",
+        "//pkg/fspath",
+        "//pkg/sentry/contexttest",
+        "//pkg/sentry/fsimpl/tmpfs",
+        "//pkg/sentry/kernel/auth",
+        "//pkg/sentry/vfs",
     ],
 )
