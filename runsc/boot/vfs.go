@@ -89,6 +89,11 @@ func SelfFilestorePath(mountSrc, sandboxID string) string {
 	return path.Join(mountSrc, selfFilestoreName(sandboxID))
 }
 
+// SelfFilestoreName returns the name of the self filestore file for a given sandbox.
+func SelfFilestoreName(sandboxID string) string {
+	return selfFilestoreName(sandboxID)
+}
+
 func selfFilestoreName(sandboxID string) string {
 	return fsutil.SelfFilestorePrefix + sandboxID
 }
@@ -130,7 +135,7 @@ func registerFilesystems(k *kernel.Kernel, info *containerInfo, rdmaSnapshot *rd
 		AllowUserMount: true,
 		AllowUserList:  true,
 	})
-	if info.conf.MountCgroupV2 {
+	if info.conf.InSandboxCgroup == config.InSandboxCgroupV2 {
 		vfsObj.MustRegisterFilesystemType(cgroup2fs.Name, &cgroup2fs.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
 			AllowUserMount: true,
 			AllowUserList:  true,
@@ -284,7 +289,7 @@ func setupContainerVFS(ctx context.Context, info *containerInfo, mntr *container
 
 	// If cgroups are mounted, then only check for the cgroup mounts per
 	// container. Otherwise the root cgroups will be enabled.
-	if mntr.cgroupsMounted && !info.conf.MountCgroupV2 {
+	if mntr.cgroupsMounted && info.conf.InSandboxCgroup != config.InSandboxCgroupV2 {
 		cgroupRegistry := mntr.l.k.CgroupRegistry()
 		for _, ctrl := range kernel.CgroupCtrls {
 			cg, err := cgroupRegistry.FindCgroup(ctx, ctrl, "/"+mntr.containerID)
@@ -339,7 +344,7 @@ func compileMounts(spec *specs.Spec, conf *config.Config, containerID string) []
 
 	// Mount all submounts from the spec.
 	for _, m := range spec.Mounts {
-		if conf.MountCgroupV2 {
+		if conf.InSandboxCgroup == config.InSandboxCgroupV2 {
 			// Under this flag, we only want a single unified mount at
 			// /sys/fs/cgroup. Skip any legacy v1 controller sub-mounts
 			// (e.g., /sys/fs/cgroup/cpu) requested by the OCI spec.
@@ -424,6 +429,9 @@ func goferMountData(fd int, fa config.FileAccessType, conf *config.Config, suppr
 	}
 	if !conf.HostFifo.AllowOpen() {
 		opts = append(opts, "disable_fifo_open")
+	}
+	if conf.CharacterDevicePolicy.AllowsPassthrough() {
+		opts = append(opts, "char_device_policy="+conf.CharacterDevicePolicy.String())
 	}
 	return opts
 }
@@ -763,7 +771,7 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 	if filestoreFD != nil {
 		// Create memory file for disk-backed overlays.
 		resourceID := checkpoint.ResourceID{ContainerName: c.containerName, Path: dst}
-		mf, _, err := createPrivateMemoryFile(filestoreFD.ReleaseToFile("overlay-filestore"), resourceID, c.containerID, c.l.fsRestore)
+		mf, err := createPrivateMemoryFile(filestoreFD.ReleaseToFile("overlay-filestore"), resourceID, c.containerID, c.l.fsRestore)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create memory file for overlay: %v", err)
 		}
@@ -882,9 +890,9 @@ func (c *containerMounter) mountSubmounts(ctx context.Context, spec *specs.Spec,
 				return fmt.Errorf("mount shared mount %q to %q: %v", submount.hint.Name, submount.mount.Destination, err)
 			}
 		} else if submount.mount.Type == cgroupfs.Name || submount.mount.Type == cgroup2fs.Name {
-			if conf.MountCgroupV2 {
+			if conf.InSandboxCgroup == config.InSandboxCgroupV2 {
 				// There is no "type: cgroup2" defined in the OCI spec.
-				// So, when the runsc flag MountCgroupV2 is set, we honor the
+				// So, when the runsc flag InSandboxCgroup is set to v2, we honor the
 				// OCI request for "type: cgroupfs" by a v2 mount.
 				if submount.mount.Type == cgroupfs.Name {
 					submount.mount.Type = cgroup2fs.Name
@@ -1100,7 +1108,7 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 		}
 		if m.filestoreFD != nil {
 			resourceID := checkpoint.ResourceID{ContainerName: containerName, Path: m.mount.Destination}
-			mf, _, err := createPrivateMemoryFile(m.filestoreFD.ReleaseToFile("tmpfs-filestore"), resourceID, containerID, fsr)
+			mf, err := createPrivateMemoryFile(m.filestoreFD.ReleaseToFile("tmpfs-filestore"), resourceID, containerID, fsr)
 			if err != nil {
 				return "", nil, fmt.Errorf("failed to create memory file for tmpfs: %w", err)
 			}
@@ -1212,17 +1220,11 @@ func parseKeyValue(s string) (string, string, bool) {
 	return strings.TrimSpace(tokens[0]), strings.TrimSpace(tokens[1]), true
 }
 
-// createPrivateMemoryFile creates or loads a private memory file.
-// It returns:
-//   - The created pgalloc.MemoryFile.
-//   - A boolean indicating if the memory file was successfully loaded (restored) from the checkpoint.
-//   - An error if creation or restoration failed.
-func createPrivateMemoryFile(file *os.File, resourceID checkpoint.ResourceID, cid string, fsr *fsRestore) (*pgalloc.MemoryFile, bool, error) {
+func createPrivateMemoryFile(file *os.File, resourceID checkpoint.ResourceID, cid string, fsr *fsRestore) (*pgalloc.MemoryFile, error) {
 	pagesMetadataReader, pagesFileOffset, onLoadEnd, err := fsr.memoryFileLoadArgs(resourceID, cid)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
-	loaded := pagesMetadataReader != nil
 	mfOpts := pgalloc.MemoryFileOpts{
 		// Private memory files are usually backed by files on disk. Ideally we
 		// would confirm with fstatfs(2) but that is prohibited by seccomp.
@@ -1239,9 +1241,9 @@ func createPrivateMemoryFile(file *os.File, resourceID checkpoint.ResourceID, ci
 	mf, err := pgalloc.NewMemoryFile(file, mfOpts)
 	if err != nil {
 		onLoadEnd(err)
-		return nil, false, err
+		return mf, err
 	}
-	if loaded {
+	if pagesMetadataReader != nil {
 		log.Infof("Loading filesystem checkpoint data for %q", resourceID)
 		if err := mf.LoadFrom(context.Background(), pagesMetadataReader, &pgalloc.LoadOpts{
 			PagesFile:       fsr.apfl,
@@ -1249,10 +1251,10 @@ func createPrivateMemoryFile(file *os.File, resourceID checkpoint.ResourceID, ci
 			DoneCallback:    onLoadEnd,
 		}); err != nil {
 			mf.Destroy()
-			return nil, false, err
+			return nil, err
 		}
 	}
-	return mf, loaded, nil
+	return mf, nil
 }
 
 // mountTmp mounts an internal tmpfs at '/tmp' if it's safe to do so.
@@ -1793,14 +1795,11 @@ func (c *containerMounter) configureRestore(restoreMnts *restoreMounts) error {
 	restoreMnts.fdmap[rootKey] = c.goferFDs.remove()
 
 	if rootfsConf := c.goferMountConfs[0]; rootfsConf.IsFilestorePresent() {
-		mf, loaded, err := createPrivateMemoryFile(c.goferFilestoreFDs.removeAsFD().ReleaseToFile("overlay-filestore"), rootKey, c.containerID, c.l.fsRestore)
+		mf, err := createPrivateMemoryFile(c.goferFilestoreFDs.removeAsFD().ReleaseToFile("overlay-filestore"), rootKey, c.containerID, c.l.fsRestore)
 		if err != nil {
 			return fmt.Errorf("failed to create private memory file for mount rootfs: %w", err)
 		}
 		restoreMnts.mfmap[rootKey] = mf
-		if loaded {
-			restoreMnts.fsCheckpointedMfs[rootKey] = struct{}{}
-		}
 	}
 	// prepareMounts() consumes the remaining FDs for submounts.
 	mounts, err := c.prepareMounts()
@@ -1832,14 +1831,11 @@ func (c *containerMounter) configureRestore(restoreMnts *restoreMounts) error {
 		}
 		if submount.filestoreFD != nil {
 			key := checkpoint.ResourceID{ContainerName: c.containerName, Path: submount.mount.Destination}
-			mf, loaded, err := createPrivateMemoryFile(submount.filestoreFD.ReleaseToFile("overlay-filestore"), key, c.containerID, c.l.fsRestore)
+			mf, err := createPrivateMemoryFile(submount.filestoreFD.ReleaseToFile("overlay-filestore"), key, c.containerID, c.l.fsRestore)
 			if err != nil {
 				return fmt.Errorf("failed to create private memory file for mount %q: %w", submount.mount.Destination, err)
 			}
 			restoreMnts.mfmap[key] = mf
-			if loaded {
-				restoreMnts.fsCheckpointedMfs[key] = struct{}{}
-			}
 		}
 	}
 	return nil

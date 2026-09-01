@@ -330,6 +330,10 @@ func configureShm(s *specs.Spec) (bool, error) {
 		m := &s.Mounts[i]
 		if m.Destination == shmPath && m.Type == "bind" {
 			if IsSandbox(s) {
+				// IsSandbox is true for a spec without annotations.
+				if s.Annotations == nil {
+					s.Annotations = make(map[string]string)
+				}
 				s.Annotations[volumeKeyPrefix+devshmName+".source"] = m.Source
 				s.Annotations[volumeKeyPrefix+devshmName+".type"] = devshmType
 				s.Annotations[volumeKeyPrefix+devshmName+".share"] = "pod"

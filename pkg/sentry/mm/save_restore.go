@@ -19,7 +19,6 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 )
@@ -176,22 +175,4 @@ func (p *pma) loadFile(ctx goContext.Context, resourceID checkpoint.ResourceID) 
 		panic(fmt.Sprintf("can't restore pma because its MemoryFile's resource ID %q was not found in CtxMemoryFileMap", resourceID))
 	}
 	p.file = mf
-}
-
-// DiscardPMAsForFile removes all PMAs that point to the given MemoryFile
-// without calling DecRef on it.
-func (mm *MemoryManager) DiscardPMAsForFile(mf *pgalloc.MemoryFile) {
-	mm.mappingMu.Lock()
-	defer mm.mappingMu.Unlock()
-
-	pseg := mm.pmas.FirstSegment()
-	for pseg.Ok() {
-		pma := pseg.ValuePtr()
-		if pma.file == mf {
-			log.Debugf("DiscardPMAsForFile: removing pma segment %v pointing to %p", pseg.Range(), mf)
-			pseg = mm.pmas.Remove(pseg).NextSegment()
-		} else {
-			pseg = pseg.NextSegment()
-		}
-	}
 }

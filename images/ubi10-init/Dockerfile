@@ -1,0 +1,1 @@
+FROM redhat/ubi10-init@sha256:9aedd4bb69c2ba7a3fc0a1c78aa096bb6a21950cc326102a7c791118b5181191

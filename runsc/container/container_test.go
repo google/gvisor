@@ -43,13 +43,11 @@ import (
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/hostos"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
-	"gvisor.dev/gvisor/pkg/sentry/state/checkpointfiles"
 	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/test/testutil"
@@ -512,6 +510,44 @@ func configs(t *testing.T, noOverlay bool) map[string]*config.Config {
 // sleepSpec generates a spec with sleep 1000 and a conf.
 func sleepSpecConf(t *testing.T) (*specs.Spec, *config.Config) {
 	return testutil.NewSpecWithArgs("sleep", "1000"), testutil.TestConfig(t)
+}
+
+func TestPostStartHookFailure(t *testing.T) {
+	for name, conf := range configs(t, false /* noOverlay */) {
+		t.Run(name, func(t *testing.T) {
+			spec, _ := sleepSpecConf(t)
+			spec.Hooks = &specs.Hooks{
+				Poststart: []specs.Hook{{
+					Path: "/bin/sh",
+					Args: []string{"/bin/sh", "-c", "exit 1"},
+				}},
+			}
+			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer cleanup()
+
+			args := Args{
+				ID:        testutil.RandomContainerID(),
+				Spec:      spec,
+				BundleDir: bundleDir,
+			}
+			c, err := New(conf, args)
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			defer func() {
+				if c != nil {
+					_ = c.Destroy()
+				}
+			}()
+
+			if err := c.Start(conf); err == nil {
+				t.Fatal("container start succeeded with a failing poststart hook")
+			}
+		})
+	}
 }
 
 func TestGetNetworkConfig(t *testing.T) {
@@ -1296,7 +1332,7 @@ func testCheckpointRestore(t *testing.T, conf *config.Config, compression statef
 	}
 	defer cont2.Destroy()
 
-	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */, false /* splitFSRestore */, nil /* networkArgs */); err != nil {
+	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
 		t.Fatalf("error restoring container: %v", err)
 	}
 
@@ -1347,7 +1383,7 @@ func testCheckpointRestore(t *testing.T, conf *config.Config, compression statef
 	}
 	defer cont3.Destroy()
 
-	if err := cont3.Restore(conf, dir, false /* direct */, false /* background */, false /* splitFSRestore */, nil /* networkArgs */); err != nil {
+	if err := cont3.Restore(conf, dir, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
 		t.Fatalf("error restoring container: %v", err)
 	}
 
@@ -1480,7 +1516,7 @@ func TestCheckpointRestoreHostname(t *testing.T) {
 			}
 			defer cont2.Destroy()
 
-			if err := cont2.Restore(conf, dir, false, false, false, nil); err != nil {
+			if err := cont2.Restore(conf, dir, false, false, nil); err != nil {
 				t.Fatalf("error restoring: %v", err)
 			}
 
@@ -1609,7 +1645,7 @@ func testCheckpointRestoreHostinet(t *testing.T, conf *config.Config, app string
 		t.Fatalf("error creating container: %v", err)
 	}
 	defer cont2.Destroy()
-	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */, false /* splitFSRestore */, nil /* networkArgs */); err != nil {
+	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
 		t.Fatalf("error restoring container: %v", err)
 	}
 	if !cont2.Sandbox.Restored {
@@ -1771,7 +1807,7 @@ func TestCheckpointHostinetRestoreNetworkMismatch(t *testing.T) {
 		t.Fatalf("error creating container: %v", err)
 	}
 	defer cont2.Destroy()
-	err = cont2.Restore(&restoreConf, dir, false /* direct */, false /* background */, false /* splitFSRestore */, nil /* networkArgs */)
+	err = cont2.Restore(&restoreConf, dir, false /* direct */, false /* background */, nil /* networkArgs */)
 	if err == nil {
 		t.Fatalf("restore with mismatched network type succeeded, want error")
 	}
@@ -1977,7 +2013,7 @@ func TestCheckpointRestoreExecKilled(t *testing.T) {
 	}
 	defer cont2.Destroy()
 
-	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */, false /* splitFSRestore */, nil /* networkArgs */); err != nil {
+	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
 		t.Fatalf("error restoring container: %v", err)
 	}
 
@@ -2062,7 +2098,7 @@ func TestCheckpointRestoreCreateMountPoint(t *testing.T) {
 	}
 	defer cont2.Destroy()
 
-	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */, false /* splitFSRestore */, nil /* networkArgs */); err != nil {
+	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
 		t.Fatalf("error restoring container: %v", err)
 	}
 
@@ -2174,7 +2210,7 @@ func TestUnixDomainSockets(t *testing.T) {
 			}
 			defer contRestore.Destroy()
 
-			if err := contRestore.Restore(conf, dir, false /* direct */, false /* background */, false /* splitFSRestore */, nil /* networkArgs */); err != nil {
+			if err := contRestore.Restore(conf, dir, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
 				t.Fatalf("error restoring container: %v", err)
 			}
 
@@ -2492,6 +2528,95 @@ func TestMountNewDir(t *testing.T) {
 				t.Fatalf("error running sandbox: %v", err)
 			}
 		})
+	}
+}
+
+const (
+	unimplementedCharDevSrc  = "/dev/port"
+	unimplementedCharDevRdev = "1:4"
+)
+
+func TestBindMountCharDevice(t *testing.T) {
+	// Skip if the unimplemented device is not present in the test
+	// environment (e.g. a sandboxed /dev), since it cannot be bind-mounted then.
+	if _, err := os.Stat(unimplementedCharDevSrc); err != nil {
+		t.Skipf("%s not available to bind mount: %v", unimplementedCharDevSrc, err)
+	}
+	app, err := testutil.FindFile("test/cmd/test_app/test_app")
+	if err != nil {
+		t.Fatal("error finding test_app:", err)
+	}
+
+	// Overlay configs are excluded: with --overlay2=all, file mounts are
+	// wrapped in an overlay, which does not support device files as the
+	// lower layer's root (a pre-existing, separate limitation). Both gofer
+	// modes are covered: they cache the device numbers and open device files
+	// through independent code paths.
+	for name, conf := range configs(t, true /* noOverlay */) {
+		for _, directfs := range []bool{true, false} {
+			modeName := "lisafs"
+			if directfs {
+				modeName = "directfs"
+			}
+			for _, policy := range []config.CharacterDevicePolicy{
+				config.CharDevEmulatedOnly,
+				config.CharDevPreferEmulated,
+				config.CharDevPassthrough,
+			} {
+				t.Run(name+"/"+modeName+"/"+policy.String(), func(t *testing.T) {
+					conf.DirectFS = directfs
+					conf.CharacterDevicePolicy = policy
+					checkBindMountCharDevices(t, conf, app)
+				})
+			}
+		}
+	}
+}
+
+// checkBindMountCharDevices runs the container once per device, checking with
+// chardev-check that the bind-mounted node has the expected device numbers
+// and open behavior under conf's --character-device-policy.
+func checkBindMountCharDevices(t *testing.T, conf *config.Config, app string) {
+	// The mount destinations must be under a writable directory so that the
+	// gofer can create the mount point files (with docker, dockerd
+	// pre-creates the mount points in the container rootfs).
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "chardev-test")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp() failed: %v", err)
+	}
+
+	var wantUnimplementedOpen string
+	switch conf.CharacterDevicePolicy {
+	case config.CharDevEmulatedOnly:
+		wantUnimplementedOpen = "enxio"
+	case config.CharDevPreferEmulated:
+		wantUnimplementedOpen = "not-enxio"
+	case config.CharDevPassthrough:
+		wantUnimplementedOpen = "not-enxio"
+	default:
+		t.Fatalf("unexpected character device policy: %v", conf.CharacterDevicePolicy)
+	}
+	for _, check := range []struct {
+		src  string
+		args []string
+	}{
+		{
+			src:  "/dev/null",
+			args: []string{"--want-rdev=1:3", "--want-open=ok", "--check-null-rw"},
+		},
+		{
+			src:  unimplementedCharDevSrc,
+			args: []string{"--want-rdev=" + unimplementedCharDevRdev, "--want-open=" + wantUnimplementedOpen},
+		},
+	} {
+		dst := path.Join(dir, path.Base(check.src))
+		args := append([]string{app, "chardev-check", "--path=" + dst}, check.args...)
+		spec := testutil.NewSpecWithArgs(args...)
+		spec.Mounts = append(spec.Mounts,
+			specs.Mount{Destination: dst, Source: check.src, Type: "bind"})
+		if err := run(spec, conf); err != nil {
+			t.Fatalf("chardev-check of %s failed: %v", check.src, err)
+		}
 	}
 }
 
@@ -3558,6 +3683,47 @@ func TestDestroyNotStarted(t *testing.T) {
 	}
 }
 
+// TestSignalCreated verifies that a container that was created but never started
+// can be killed. Per the OCI runtime spec, kill must work on created containers;
+// otherwise a never-started sandbox becomes unkillable under containerd, whose
+// stop path (kill, wait, delete) never reaches delete if kill is rejected.
+func TestSignalCreated(t *testing.T) {
+	spec, conf := sleepSpecConf(t)
+	rootDir, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	// Create the container, but never call Start.
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	c, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer c.Destroy()
+	if got, want := c.Status, Created; got != want {
+		t.Fatalf("container status got %v, want %v", got, want)
+	}
+
+	// SIGKILL of a created container must succeed and leave it Stopped so that
+	// the containerd stop/wait/delete sequence can complete.
+	if err := c.SignalContainer(unix.SIGKILL, true /* all */); err != nil {
+		t.Fatalf("SignalContainer(SIGKILL) on created container failed: %v", err)
+	}
+	c, err = Load(rootDir, FullID{ContainerID: args.ID}, LoadOpts{})
+	if err != nil {
+		t.Fatalf("error loading container after kill: %v", err)
+	}
+	if got, want := c.Status, Stopped; got != want {
+		t.Errorf("container status after SIGKILL got %v, want %v", got, want)
+	}
+}
+
 // TestDestroyStarting attempts to force a race between start and destroy.
 func TestDestroyStarting(t *testing.T) {
 	for i := 0; i < 10; i++ {
@@ -4184,7 +4350,7 @@ func TestUsageFD(t *testing.T) {
 	}
 	defer cont2.Destroy()
 
-	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */, false /* splitFSRestore */, nil /* networkArgs */); err != nil {
+	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
 		t.Fatalf("error restoring container: %v", err)
 	}
 
@@ -5455,7 +5621,7 @@ func TestSpecValidation(t *testing.T) {
 			}
 			defer cont2.Destroy()
 
-			err = cont2.Restore(conf, dir, false /* direct */, false /* background */, false /* splitFSRestore */, nil /* networkArgs */)
+			err = cont2.Restore(conf, dir, false /* direct */, false /* background */, nil /* networkArgs */)
 			if err == nil {
 				if test.wantErr == "" {
 					return
@@ -6210,306 +6376,5 @@ func TestReadFile(t *testing.T) {
 	}
 	if string(content3) != "inux" {
 		t.Errorf("Got %q (%d bytes), want 'inux' (4 bytes)", string(content3), len(content3))
-	}
-}
-
-func TestSplitFSCheckpointRestore(t *testing.T) {
-	// We only run this test if checkpoint/restore is supported.
-	if !testutil.IsCheckpointSupported() {
-		t.Skip("Checkpoint not supported")
-	}
-
-	// We only test with overlay enabled.
-	conf := testutil.TestConfig(t)
-	overlayDir, err := os.MkdirTemp(testutil.TmpDir(), "overlay-dir")
-	if err != nil {
-		t.Fatalf("failed to create overlay directory: %v", err)
-	}
-	defer os.RemoveAll(overlayDir)
-	if err := os.Chmod(overlayDir, 0777); err != nil {
-		t.Fatalf("error chmoding overlay directory: %v", err)
-	}
-	conf.Overlay2.Set("all:dir=" + overlayDir)
-
-	dir, err := os.MkdirTemp(testutil.TmpDir(), "split-checkpoint-test")
-	if err != nil {
-		t.Fatalf("os.MkdirTemp failed: %v", err)
-	}
-	defer os.RemoveAll(dir)
-	if err := os.Chmod(dir, 0777); err != nil {
-		t.Fatalf("error chmoding file: %q, %v", dir, err)
-	}
-
-	// The file we will write to is in TmpDir() which is bind-mounted and overlay.
-	guestFile := filepath.Join(testutil.TmpDir(), "test_file")
-	script := "echo hello > '" + guestFile + "'; while true; do sleep 1; done"
-	spec := testutil.NewSpecWithArgs("bash", "-c", script)
-
-	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
-	if err != nil {
-		t.Fatalf("error setting up container: %v", err)
-	}
-	defer cleanup()
-
-	args := Args{
-		ID:        testutil.RandomContainerID(),
-		Spec:      spec,
-		BundleDir: bundleDir,
-	}
-	cont, err := New(conf, args)
-	if err != nil {
-		t.Fatalf("error creating container: %v", err)
-	}
-	defer cont.Destroy()
-	if err := cont.Start(conf); err != nil {
-		t.Fatalf("error starting container: %v", err)
-	}
-
-	// Wait for container to start and write the file.
-	err = testutil.Poll(func() error {
-		ws, err := execute(conf, cont, "/bin/bash", "-c", fmt.Sprintf("[ -s %q ]", guestFile))
-		if err != nil {
-			return err
-		}
-		if ws.ExitStatus() != 0 {
-			return fmt.Errorf("bash -c '[ -s %q ]' returned %d", guestFile, ws.ExitStatus())
-		}
-		return nil
-	}, 5*time.Second)
-	if err != nil {
-		t.Fatalf("Failed to wait for %q: %v", guestFile, err)
-	}
-
-	// Verify that the file does NOT exist on the host (because of overlay).
-	// guestFile path in host is the same because TmpDir() is bind-mounted to same path.
-	if _, err := os.Stat(guestFile); !os.IsNotExist(err) {
-		t.Errorf("File leaked to host! It should be in overlay only. Path: %q", guestFile)
-	}
-
-	// Checkpoint running container with SplitFSCheckpoint: true.
-	checkpointOpts := sandbox.CheckpointOpts{
-		SplitFSCheckpointPaths: []checkpoint.ResourceID{{Path: "all-tmpfs"}},
-	}
-	if err := cont.Checkpoint(conf, dir, checkpointOpts); err != nil {
-		t.Fatalf("error checkpointing container: %v", err)
-	}
-
-	// Verify that fs/ directory is created and contains the expected files.
-	fsDir := filepath.Join(dir, "fs")
-	if _, err := os.Stat(fsDir); os.IsNotExist(err) {
-		t.Fatalf("fs directory was not created")
-	}
-	for _, name := range []string{
-		checkpointfiles.FSCheckpointManifestFileName,
-		checkpointfiles.FSCheckpointMultiTarFileName,
-		checkpointfiles.PagesFileName,
-		checkpointfiles.PagesMetadataFileName,
-	} {
-		p := filepath.Join(fsDir, name)
-		if _, err := os.Stat(p); os.IsNotExist(err) {
-			t.Errorf("expected file %q was not created", p)
-		}
-	}
-
-	// Test validation failures before doing the actual successful restore.
-
-	// 1. Missing CheckpointDirPath
-	argsErr1 := Args{
-		ID:             testutil.RandomContainerID(),
-		Spec:           spec,
-		BundleDir:      bundleDir,
-		SplitFSRestore: true,
-	}
-	if _, err := New(conf, argsErr1); err == nil || !strings.Contains(err.Error(), "checkpoint directory path must be provided") {
-		t.Errorf("expected New to fail with checkpoint directory path must be provided, got: %v", err)
-	}
-
-	// 2. Default path does not exist
-	argsErr2 := Args{
-		ID:                testutil.RandomContainerID(),
-		Spec:              spec,
-		BundleDir:         bundleDir,
-		CheckpointDirPath: filepath.Join(dir, "non-existent"),
-		SplitFSRestore:    true,
-	}
-	if _, err := New(conf, argsErr2); err == nil || !strings.Contains(err.Error(), "default FS checkpoint directory") {
-		t.Errorf("expected New to fail with default FS checkpoint directory, got: %v", err)
-	}
-
-	// Restore into a new container with different ID.
-	args2 := Args{
-		ID:                testutil.RandomContainerID(),
-		Spec:              spec,
-		BundleDir:         bundleDir,
-		CheckpointDirPath: dir,
-		SplitFSRestore:    true,
-	}
-	cont2, err := New(conf, args2)
-	if err != nil {
-		t.Fatalf("error creating container: %v", err)
-	}
-	defer cont2.Destroy()
-
-	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */, true /* splitFSRestore */, nil /* networkArgs */); err != nil {
-		t.Fatalf("error restoring container: %v", err)
-	}
-
-	// Verify that the file exists and contains "hello" in the restored container.
-	stdout, err := executeCombinedOutput(conf, cont2, nil, "/bin/cat", guestFile)
-	if err != nil {
-		t.Fatalf("failed to execute cat %q: %v", guestFile, err)
-	}
-	if got := strings.TrimSpace(string(stdout)); got != "hello" {
-		t.Errorf("unexpected content of %q: got %q, want %q", guestFile, got, "hello")
-	}
-
-	// Verify again that host file still does not exist.
-	if _, err := os.Stat(guestFile); !os.IsNotExist(err) {
-		t.Errorf("File leaked to host after restore! Path: %q", guestFile)
-	}
-}
-
-func TestSplitFSCheckpointRestoreTmpfs(t *testing.T) {
-	// We only run this test if checkpoint/restore is supported.
-	if !testutil.IsCheckpointSupported() {
-		t.Skip("Checkpoint not supported")
-	}
-
-	conf := testutil.TestConfig(t)
-
-	// Enable overlay with a directory filestore for all gofer mounts.
-	overlayDir, err := os.MkdirTemp(testutil.TmpDir(), "overlay-dir")
-	if err != nil {
-		t.Fatalf("failed to create overlay directory: %v", err)
-	}
-	defer os.RemoveAll(overlayDir)
-	if err := os.Chmod(overlayDir, 0777); err != nil {
-		t.Fatalf("error chmoding overlay directory: %v", err)
-	}
-	conf.Overlay2.Set("all:dir=" + overlayDir)
-
-	dir, err := os.MkdirTemp(testutil.TmpDir(), "split-checkpoint-tmpfs-test")
-	if err != nil {
-		t.Fatalf("os.MkdirTemp failed: %v", err)
-	}
-	defer os.RemoveAll(dir)
-	if err := os.Chmod(dir, 0777); err != nil {
-		t.Fatalf("error chmoding file: %q, %v", dir, err)
-	}
-
-	// Create a host directory that will be bind-mounted and then turned into tmpfs via hint.
-	tmpfsSourceDir, err := os.MkdirTemp(testutil.TmpDir(), "tmpfs-source")
-	if err != nil {
-		t.Fatalf("failed to create tmpfs source directory: %v", err)
-	}
-	defer os.RemoveAll(tmpfsSourceDir)
-	if err := os.Chmod(tmpfsSourceDir, 0777); err != nil {
-		t.Fatalf("error chmoding tmpfs source directory: %v", err)
-	}
-
-	tmpfsMount := "/tmpfs-mount"
-	guestFile := filepath.Join(tmpfsMount, "test_file")
-	script := "echo hello > '" + guestFile + "'; while true; do sleep 1; done"
-	spec := testutil.NewSpecWithArgs("bash", "-c", script)
-
-	// Add bind mount.
-	spec.Mounts = append(spec.Mounts, specs.Mount{
-		Destination: tmpfsMount,
-		Type:        "bind",
-		Source:      tmpfsSourceDir,
-	})
-
-	// Add mount hints to turn it into tmpfs with private memory file (via overlay).
-	spec.Annotations = map[string]string{
-		"dev.gvisor.spec.mount.test-tmpfs.source": tmpfsSourceDir,
-		"dev.gvisor.spec.mount.test-tmpfs.type":   "tmpfs",
-		"dev.gvisor.spec.mount.test-tmpfs.share":  "container",
-	}
-
-	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
-	if err != nil {
-		t.Fatalf("error setting up container: %v", err)
-	}
-	defer cleanup()
-
-	args := Args{
-		ID:        testutil.RandomContainerID(),
-		Spec:      spec,
-		BundleDir: bundleDir,
-	}
-	cont, err := New(conf, args)
-	if err != nil {
-		t.Fatalf("error creating container: %v", err)
-	}
-	defer cont.Destroy()
-	if err := cont.Start(conf); err != nil {
-		t.Fatalf("error starting container: %v", err)
-	}
-
-	// Wait for container to start and write the file.
-	err = testutil.Poll(func() error {
-		ws, err := execute(conf, cont, "/bin/bash", "-c", fmt.Sprintf("[ -s %q ]", guestFile))
-		if err != nil {
-			return err
-		}
-		if ws.ExitStatus() != 0 {
-			return fmt.Errorf("bash -c '[ -s %q ]' returned %d", guestFile, ws.ExitStatus())
-		}
-		return nil
-	}, 5*time.Second)
-	if err != nil {
-		t.Fatalf("Failed to wait for %q: %v", guestFile, err)
-	}
-
-	// Checkpoint running container with SplitFSCheckpoint: true.
-	checkpointOpts := sandbox.CheckpointOpts{
-		SplitFSCheckpointPaths: []checkpoint.ResourceID{{Path: "all-tmpfs"}},
-	}
-	if err := cont.Checkpoint(conf, dir, checkpointOpts); err != nil {
-		t.Fatalf("error checkpointing container: %v", err)
-	}
-
-	// Verify that fs/ directory is created and contains the expected files.
-	fsDir := filepath.Join(dir, "fs")
-	if _, err := os.Stat(fsDir); os.IsNotExist(err) {
-		t.Fatalf("fs directory was not created")
-	}
-	for _, name := range []string{
-		checkpointfiles.FSCheckpointManifestFileName,
-		checkpointfiles.FSCheckpointMultiTarFileName,
-		checkpointfiles.PagesFileName,
-		checkpointfiles.PagesMetadataFileName,
-	} {
-		p := filepath.Join(fsDir, name)
-		if _, err := os.Stat(p); os.IsNotExist(err) {
-			t.Errorf("expected file %q was not created", p)
-		}
-	}
-
-	// Restore into a new container with different ID.
-	args2 := Args{
-		ID:                testutil.RandomContainerID(),
-		Spec:              spec,
-		BundleDir:         bundleDir,
-		CheckpointDirPath: dir,
-		SplitFSRestore:    true,
-	}
-	cont2, err := New(conf, args2)
-	if err != nil {
-		t.Fatalf("error creating container: %v", err)
-	}
-	defer cont2.Destroy()
-
-	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */, true /* splitFSRestore */, nil /* networkArgs */); err != nil {
-		t.Fatalf("error restoring container: %v", err)
-	}
-
-	// Verify that the file exists and contains "hello" in the restored container.
-	stdout, err := executeCombinedOutput(conf, cont2, nil, "/bin/cat", guestFile)
-	if err != nil {
-		t.Fatalf("failed to execute cat %q: %v", guestFile, err)
-	}
-	if got := strings.TrimSpace(string(stdout)); got != "hello" {
-		t.Errorf("unexpected content of %q: got %q, want %q", guestFile, got, "hello")
 	}
 }

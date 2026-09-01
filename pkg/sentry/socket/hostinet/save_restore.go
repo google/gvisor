@@ -48,8 +48,12 @@ type listenerState struct {
 	bindToDevice string
 }
 
+// The restore helpers acquire this mutex themselves. checklocks cannot export
+// that exclusion through Stack.Restore's private package-global guard.
 var restoredListeners struct {
-	mu      sync.Mutex
+	mu sync.Mutex
+
+	// +checklocks:mu
 	sockets []*Socket
 }
 
@@ -90,6 +94,8 @@ func (s *Socket) beforeSave() {
 }
 
 // afterLoad is invoked by stateify.
+//
+// +checklocksexclude:restoredListeners.mu
 func (s *Socket) afterLoad(context.Context) {
 	s.fd = -1
 	if s.savedListener != nil {
@@ -100,6 +106,8 @@ func (s *Socket) afterLoad(context.Context) {
 }
 
 // restoreListeners re-creates the host sockets for saved listening sockets.
+//
+// +checklocksexclude:restoredListeners.mu
 func restoreListeners() {
 	restoredListeners.mu.Lock()
 	sockets := restoredListeners.sockets

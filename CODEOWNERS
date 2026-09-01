@@ -1,0 +1,17 @@
+# Generated from governance/maintainers.yaml and governance/areas.yaml by
+# //governance/tools/maintainers:maintainers_gen; do not edit directly.
+
+# Area: release_pipeline
+/.buildkite/ @etienneperot @relkochta
+/.github/ @etienneperot @relkochta
+/debian/ @etienneperot @relkochta
+/images/agent/ @etienneperot @relkochta
+/tools/github/ @etienneperot @relkochta
+
+# Area: seccomp
+/pkg/bpf/ @etienneperot @fvoznika
+/pkg/seccomp/ @etienneperot @fvoznika
+/runsc/boot/filter/ @etienneperot @fvoznika
+/runsc/fsgofer/filter/ @etienneperot @fvoznika
+/test/secbench/ @etienneperot @fvoznika
+/test/secfuzz/ @etienneperot @fvoznika

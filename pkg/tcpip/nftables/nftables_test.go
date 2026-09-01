@@ -5754,6 +5754,26 @@ func TestCompatOperationDeepCopy(t *testing.T) {
 			opts: cmp.AllowUnexported(compatMASQTarget{}, masqTargetInfo{}),
 		},
 		{
+			name: "nat target",
+			op: &compatNATTarget{
+				name:     TargetSNAT,
+				revision: 1,
+				info: natTargetInfo{
+					netProto:      header.IPv4ProtocolNumber,
+					natType:       stack.SNAT,
+					address:       tcpip.AddrFrom4([4]byte{192, 168, 1, 1}),
+					changeAddress: true,
+					changePort:    true,
+					portsOrIdents: stack.PortOrIdentRange{
+						Start: 1024,
+						Size:  100,
+					},
+				},
+				infoData: []byte{1, 2, 3},
+			},
+			opts: cmp.AllowUnexported(compatNATTarget{}, natTargetInfo{}),
+		},
+		{
 			name: "noop match",
 			op: &compatNoopMatch{
 				name:     "tcp",
@@ -5777,6 +5797,8 @@ func TestCompatOpCompatibility(t *testing.T) {
 	addrtypeIn := &compatAddrtypeMatch{info: addrTypeMatchInfo{limitIfaceIn: true}}
 	addrtypeOut := &compatAddrtypeMatch{info: addrTypeMatchInfo{limitIfaceOut: true}}
 	masq := &compatMASQTarget{}
+	snat := &compatNATTarget{info: natTargetInfo{natType: stack.SNAT}}
+	dnat := &compatNATTarget{info: natTargetInfo{natType: stack.DNAT}}
 	noop := &compatNoopMatch{name: "tcp"}
 	const nonBaseChainType = BaseChainType(-1)
 
@@ -5842,6 +5864,44 @@ func TestCompatOpCompatibility(t *testing.T) {
 			name:    "MASQUERADE invalid on Filter chain",
 			op:      masq,
 			cCtx:    makeCtx(BaseChainTypeFilter, stack.NFPostrouting),
+			wantErr: true,
+		},
+
+		// SNAT
+		{
+			name: "SNAT valid on POSTROUTING NAT",
+			op:   snat,
+			cCtx: makeCtx(BaseChainTypeNat, stack.NFPostrouting),
+		},
+		{
+			name:    "SNAT invalid on PREROUTING NAT",
+			op:      snat,
+			cCtx:    makeCtx(BaseChainTypeNat, stack.NFPrerouting),
+			wantErr: true,
+		},
+		{
+			name:    "SNAT invalid on Filter chain",
+			op:      snat,
+			cCtx:    makeCtx(BaseChainTypeFilter, stack.NFPostrouting),
+			wantErr: true,
+		},
+
+		// DNAT
+		{
+			name: "DNAT valid on PREROUTING NAT",
+			op:   dnat,
+			cCtx: makeCtx(BaseChainTypeNat, stack.NFPrerouting),
+		},
+		{
+			name:    "DNAT invalid on POSTROUTING NAT",
+			op:      dnat,
+			cCtx:    makeCtx(BaseChainTypeNat, stack.NFPostrouting),
+			wantErr: true,
+		},
+		{
+			name:    "DNAT invalid on Filter chain",
+			op:      dnat,
+			cCtx:    makeCtx(BaseChainTypeFilter, stack.NFPrerouting),
 			wantErr: true,
 		},
 		{
@@ -6220,6 +6280,26 @@ func TestCompatMASQTargetEvaluation(t *testing.T) {
 		op := &compatMASQTarget{
 			info: masqTargetInfo{
 				netProto: header.IPv6ProtocolNumber,
+			},
+		}
+		regs := &registerSet{verdict: Verdict{Code: VC(linux.NFT_CONTINUE)}}
+		pkt := makeArbitraryIPv4Packet()
+		defer pkt.DecRef()
+
+		op.evaluate(regs, opEvalCtx{pkt: pkt})
+		if regs.verdict.Code != VC(linux.NFT_CONTINUE) {
+			t.Errorf("expected verdict to remain NFT_CONTINUE on protocol mismatch, got %d", regs.verdict.Code)
+		}
+	})
+}
+
+// TestCompatNATTargetEvaluation tests evaluation of compatNATTarget.
+func TestCompatNATTargetEvaluation(t *testing.T) {
+	t.Run("protocol mismatch skips NAT", func(t *testing.T) {
+		op := &compatNATTarget{
+			info: natTargetInfo{
+				netProto: header.IPv6ProtocolNumber,
+				natType:  stack.SNAT,
 			},
 		}
 		regs := &registerSet{verdict: Verdict{Code: VC(linux.NFT_CONTINUE)}}

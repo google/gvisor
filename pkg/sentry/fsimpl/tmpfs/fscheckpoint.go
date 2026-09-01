@@ -22,8 +22,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
-	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -151,141 +149,14 @@ func (cb *fsckptTarReaderCallbacks) regularFileSetContents(ctx context.Context, 
 	rf.dataMu.Lock()
 	defer rf.dataMu.Unlock()
 	rf.size.Store(uint64(crf.size))
-
-	// The regularFile object was restored from the sentry state file, which
-	// might contain outdated page mappings (in a mixed restore scenario
-	// where filesystem state is restored from a different/newer checkpoint
-	// than the sentry state). We must discard these old mappings to avoid
-	// overlap panics and data corruption (multiple files mapping to the
-	// same MemoryFile page) when we apply the new mappings from the
-	// filesystem tar.
-	//
-	// This unaccounting is a no-op when mixed restore is not done, as the
-	// restored mappings will already match the tar. If split checkpoint
-	// restore is not specified at all, CompleteRestore returns early, and
-	// this function is not called.
-	//
-	// Unaccount the pages used by the old mappings first.
-	oldPages := uint64(0)
-	for seg := rf.data.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
-		oldPages += seg.Range().Length() / hostarch.PageSize
-	}
-	cb.fs.unaccountPages(oldPages)
-
-	// Clear the old mappings. The new mappings from the filesystem tar will
-	// be applied below.
-	rf.data = fsutil.FileRangeSet{}
-
 	gap := rf.data.FirstGap()
 	n := uint64(0)
 	for _, rfseg := range crf.data {
-		gap = rf.data.Insert(gap, memmap.MappableRange{Start: rfseg.Start, End: rfseg.End}, rfseg.Value).NextGap()
+		gap = rf.data.Insert(gap, memmap.MappableRange{rfseg.Start, rfseg.End}, rfseg.Value).NextGap()
 		n += (rfseg.End - rfseg.Start) / hostarch.PageSize
 	}
 	if !cb.fs.accountPages(n) {
 		return fmt.Errorf("restored filesystem would exceed size limit of %d pages", cb.fs.maxSizeInPages)
 	}
 	return nil
-}
-
-// tarRestore restores the contents of regular files in the filesystem from a
-// tar stream containing split filesystem checkpoint data.
-//
-// Unlike tarRead, which creates new inodes, tarRestore assumes that the
-// directory structure and inodes have already been restored from the Sentry
-// state file, and only updates the data mappings of existing regular files.
-//
-// Preconditions: The kernel must be paused and quiesced.
-func (fs *filesystem) tarRestore(ctx context.Context, src io.Reader) error {
-	tr := tar.NewReader(src)
-	cb := &fsckptTarReaderCallbacks{
-		fs:           fs,
-		regularFiles: make(map[*tar.Header]*fsckptRegularFile),
-	}
-
-	fs.mu.Lock()
-	defer fs.mu.Unlock()
-
-	fs.clearAllFileMappingsLocked(ctx)
-
-	return fs.mergeFromTar(ctx, tr, cb)
-}
-
-// clearAllFileMappingsLocked recursively walks the filesystem starting from the
-// root and clears/invalidates mappings for all regular files.
-//
-// This is required for mixed restore scenarios where the sentry state is
-// restored from a different (older) checkpoint than the filesystem. In this
-// case:
-//  1. We must invalidate active process memory mappings (mmaps) to the old
-//     files so they don't point to stale pages.
-//  2. We must clear sentry internal data mappings (rf.data) for all files. If
-//     a file in the restored sentry state is not present in the new filesystem
-//     checkpoint, its mappings will remain empty (size 0). This prevents
-//     sentry from referencing unallocated or reallocated pages in the new
-//     MemoryFile, which would otherwise cause panics during cleanup or exit.
-//
-// Note: This function only clears mappings and resets file sizes to 0. During
-// combined restore, it does not delete inodes/dentries from the directory
-// structure if they are missing from the new FS checkpoint. Consequently, files
-// and directories that were deleted in the newer FS checkpoint will still exist
-// in the restored VFS (files will appear as empty, size 0). This is a known
-// fallback behavior to avoid breaking open FDs in restored processes.
-//
-// TODO(b/541219576): Investigate if this be done only for the files that have
-// open FD (rare), instead of all (a lot more common).
-func (fs *filesystem) clearAllFileMappingsLocked(ctx context.Context) {
-	log.Debugf("clearAllFileMappingsLocked start, fs.pagesUsed = %d", fs.pagesUsed.Load())
-	if fs.root == nil {
-		log.Debugf("clearAllFileMappingsLocked: root is nil")
-		return
-	}
-	fs.clearDentryMappingsLocked(ctx, fs.root)
-	log.Debugf("clearAllFileMappingsLocked done, fs.pagesUsed = %d", fs.pagesUsed.Load())
-}
-
-func (fs *filesystem) clearDentryMappingsLocked(ctx context.Context, d *dentry) {
-	if d == nil {
-		log.Debugf("clearDentryMappingsLocked: dentry is nil")
-		return
-	}
-	if d.inode == nil {
-		return
-	}
-	switch impl := d.inode.impl.(type) {
-	case *directory:
-		for _, child := range impl.childMap {
-			fs.clearDentryMappingsLocked(ctx, child)
-		}
-	case *regularFile:
-		impl.inode.mu.Lock()
-		impl.mapsMu.Lock()
-		oldSize := impl.size.Load()
-		log.Debugf("clearDentryMappingsLocked: regularFile ino %d, name %q, size %d", impl.inode.ino, d.name, oldSize)
-		for seg := impl.mappings.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
-			log.Debugf("  mapping segment: %v", seg.Range())
-			for m := range seg.Value() {
-				log.Debugf("    mapping: space %T (%p), range %v, writable %v", m.MappingSpace, m.MappingSpace, m.AddrRange, m.Writable)
-			}
-		}
-		if oldSize > 0 {
-			log.Debugf("clearDentryMappingsLocked: invalidating mappings for ino %d, size %d", impl.inode.ino, oldSize)
-			impl.mappings.Invalidate(memmap.MappableRange{Start: 0, End: offsetPageEnd(int64(oldSize))}, memmap.InvalidateOpts{
-				InvalidatePrivate: true,
-			})
-		}
-		impl.mapsMu.Unlock()
-
-		impl.dataMu.Lock()
-		pages := uint64(0)
-		for seg := impl.data.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
-			pages += seg.Range().Length() / hostarch.PageSize
-		}
-		log.Debugf("clearDentryMappingsLocked: regularFile ino %d, pages to unaccount %d, fs.pagesUsed = %d", impl.inode.ino, pages, fs.pagesUsed.Load())
-		fs.unaccountPages(pages)
-		impl.data = fsutil.FileRangeSet{}
-		impl.size.Store(0)
-		impl.dataMu.Unlock()
-		impl.inode.mu.Unlock()
-	}
 }

@@ -340,10 +340,9 @@ func (r *restorer) restoreContainerInfo(l *Loader, info *containerInfo) error {
 }
 
 type restoreMounts struct {
-	fdmap             map[checkpoint.ResourceID]int
-	mfmap             map[checkpoint.ResourceID]*pgalloc.MemoryFile
-	sharedMfs         map[string]bool
-	fsCheckpointedMfs map[checkpoint.ResourceID]struct{}
+	fdmap     map[checkpoint.ResourceID]int
+	mfmap     map[checkpoint.ResourceID]*pgalloc.MemoryFile
+	sharedMfs map[string]bool
 }
 
 func (r *restoreMounts) String() string {
@@ -372,7 +371,7 @@ func (r *restorer) restore(l *Loader) error {
 	}
 	r.timer.Reached("specs validated")
 
-	p, err := createPlatform(l.root.conf, l.root.applicationCores, r.deviceFile, l.sandboxID, r.timer)
+	p, err := createPlatform(l.root.conf, l.root.applicationCores, r.deviceFile, l.sandboxID, r.timer, &l.pinRing)
 	if err != nil {
 		return fmt.Errorf("creating platform: %v", err)
 	}
@@ -435,10 +434,9 @@ func (r *restorer) restore(l *Loader) error {
 	defer cu.Clean()
 
 	restoreMnts := restoreMounts{
-		fdmap:             make(map[checkpoint.ResourceID]int),
-		mfmap:             make(map[checkpoint.ResourceID]*pgalloc.MemoryFile),
-		sharedMfs:         make(map[string]bool),
-		fsCheckpointedMfs: make(map[checkpoint.ResourceID]struct{}),
+		fdmap:     make(map[checkpoint.ResourceID]int),
+		mfmap:     make(map[checkpoint.ResourceID]*pgalloc.MemoryFile),
+		sharedMfs: make(map[string]bool),
 	}
 	for _, cont := range r.containers {
 		// TODO(b/298078576): Need to process hints here probably
@@ -460,18 +458,15 @@ func (r *restorer) restore(l *Loader) error {
 	log.Debugf("Restore using mounts: %v", &restoreMnts)
 	ctx := l.k.SupervisorContext()
 	ctx = context.WithValues(ctx, map[any]any{
-		vfs.CtxRestoreFilesystemFDMap:        restoreMnts.fdmap,
-		pgalloc.CtxMemoryFileMap:             restoreMnts.mfmap,
-		pgalloc.CtxFSCheckpointedMemoryFiles: restoreMnts.fsCheckpointedMfs,
-		devutil.CtxDevGoferClientProvider:    l.k,
-		kernel.CtxFSRestore:                  l.fsRestore != nil,
-		vfs.CtxFSTarProvider:                 l.fsRestore,
+		vfs.CtxRestoreFilesystemFDMap:     restoreMnts.fdmap,
+		pgalloc.CtxMemoryFileMap:          restoreMnts.mfmap,
+		devutil.CtxDevGoferClientProvider: l.k,
 	})
 
 	if r.asyncMFLoader != nil {
 		// Now that private memory files are known, kick off their loading in the
 		// background goroutine.
-		r.asyncMFLoader.KickoffPrivate(ctx, restoreMnts.mfmap)
+		r.asyncMFLoader.KickoffPrivate(restoreMnts.mfmap)
 	}
 
 	ctx, err = r.prepareNvproxyRestoreContextLocked(ctx, l)
@@ -484,15 +479,16 @@ func (r *restorer) restore(l *Loader) error {
 	}
 
 	// Load the state.
+	clocks := time.NewCalibratedClocks(shouldEnableClockMonotonicRaw(l.root.spec, l.root.conf))
 	r.timer.Reached("loading kernel")
 	if r.extractRootFsMode {
-		if err := l.k.ExtractRootfsUpperLayer(ctx, r.stateFile, r.asyncMFLoader, nil, time.NewCalibratedClocks(), r.rootFsOutputTar); err != nil {
+		if err := l.k.ExtractRootfsUpperLayer(ctx, r.stateFile, r.asyncMFLoader, nil, clocks, r.rootFsOutputTar); err != nil {
 			return fmt.Errorf("failed to extract rootfs upper layer: %w", err)
 		}
 		r.timer.Reached("rootfs upper layer extracted")
 		return nil
 	}
-	if err := l.k.LoadFrom(ctx, r.stateFile, r.asyncMFLoader, nil, l, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}, r.timer.Fork("kernel load")); err != nil {
+	if err := l.k.LoadFrom(ctx, r.stateFile, r.asyncMFLoader, nil, l, clocks, &vfs.CompleteRestoreOptions{}, r.timer.Fork("kernel load")); err != nil {
 		return fmt.Errorf("failed to load kernel: %w", err)
 	}
 	r.timer.Reached("kernel loaded")
@@ -689,10 +685,6 @@ func (l *Loader) save(o *control.SaveOpts) (err error) {
 		return err
 	}
 	defer saveOpts.Close()
-
-	if saveOpts.FSSaveOpts != nil {
-		saveOpts.FSSaveOpts.RunscVersion = version.Version()
-	}
 
 	return l.saveWithOpts(saveOpts, &o.ExecOpts)
 }

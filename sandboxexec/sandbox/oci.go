@@ -19,65 +19,166 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
-// BundleConfig holds configuration for creating an OCI bundle.
-type BundleConfig struct {
-	ID               string
-	RuntimeDir       string
-	EnableNetworking bool
-	Mounts           []Mount
-	Env              []string
-	Annotations      map[string]string
-	WorkingDir       string
-	Hostname         string
+// defaultInitArgs is the placeholder init that keeps the sandbox alive for
+// Exec calls.
+var defaultInitArgs = []string{"/bin/sleep", "infinity"}
+
+// baseEnv is prepended to the process environment unless SkipBaseEnv is set.
+var baseEnv = []string{"PATH=/bin:/usr/bin:/usr/local/bin"}
+
+var hostBinaryDirs = []string{"/bin", "/usr", "/lib", "/lib64", "/etc/alternatives"}
+
+const defaultRootfsDir = "rootfs"
+
+// bundleConfig holds configuration for creating an OCI bundle. The zero value
+// of every field reproduces the default sandbox layout.
+type bundleConfig struct {
+	ID          string
+	RuntimeDir  string
+	Network     NetworkMode
+	Mounts      []Mount
+	Env         []string
+	Annotations map[string]string
+	WorkingDir  string
+	Hostname    string
+
+	// RootPath is the container's root filesystem.
+	RootPath string
+
+	// RootReadonly mounts the container's root filesystem read-only.
+	RootReadonly bool
+
+	// User is the user the init process runs as. Defaults to 0:0.
+	User *specs.User
+
+	// Capabilities is the capability set of the init process. When nil, the
+	// runtime applies its own default.
+	Capabilities *specs.LinuxCapabilities
+
+	// Namespaces are appended to the namespace set.
+	Namespaces []specs.LinuxNamespace
+
+	// UIDMappings and GIDMappings replace the default ID mappings when either
+	// is non-nil.
+	UIDMappings []specs.LinuxIDMapping
+	GIDMappings []specs.LinuxIDMapping
+
+	// SkipDefaultNamespaces omits the automatic namespaces and the ID
+	// mappings that come with them.
+	SkipDefaultNamespaces bool
+
+	// SkipLinuxSystemMounts omits the automatic /proc and /dev mounts.
+	SkipLinuxSystemMounts bool
+
+	// SkipHostBinaryMounts omits the read-only binds of the host's binary and
+	// library directories.
+	SkipHostBinaryMounts bool
+
+	// SkipBaseEnv omits the default PATH entry otherwise prepended to Env.
+	SkipBaseEnv bool
 }
 
-// NewBundle creates a temporary OCI bundle on the fly with the given configuration.
-func NewBundle(cfg BundleConfig) (string, error) {
-	// Create a bundle directory for the sandbox.
-	bundleDir := filepath.Join(cfg.RuntimeDir, cfg.ID)
-	rootfsDir := filepath.Join(bundleDir, "rootfs")
+// ociType returns the OCI filesystem type name for t.
+func (t MountType) ociType() (string, error) {
+	switch t {
+	case MountTypeBind:
+		return "bind", nil
+	case MountTypeTmpfs:
+		return "tmpfs", nil
+	case MountTypeProc:
+		return "proc", nil
+	case MountTypeSysfs:
+		return "sysfs", nil
+	case MountTypeDevtmpfs:
+		return "devtmpfs", nil
+	case MountTypeDevpts:
+		return "devpts", nil
+	case MountTypeCgroup:
+		return "cgroupfs", nil
+	}
+	return "", fmt.Errorf("unknown mount type %d", t)
+}
 
-	if err := os.MkdirAll(rootfsDir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create bundle directories: %w", err)
+// ociMount converts m into an OCI mount entry.
+func (m Mount) ociMount() (specs.Mount, error) {
+	fsType, err := m.Type.ociType()
+	if err != nil {
+		return specs.Mount{}, err
+	}
+	source := m.Source
+	if source != "" {
+		source = filepath.Clean(source)
+	}
+	var opts []string
+	for _, o := range []struct {
+		set  bool
+		name string
+	}{
+		{m.Recursive, "rbind"},
+		{m.Private, "rprivate"},
+		{m.NoSuid, "nosuid"},
+		{m.NoDev, "nodev"},
+		{m.ReadOnly, "ro"},
+	} {
+		if o.set {
+			opts = append(opts, o.name)
+		}
+	}
+	return specs.Mount{
+		Destination: filepath.Clean(m.Destination),
+		Source:      source,
+		Type:        fsType,
+		Options:     opts,
+	}, nil
+}
+
+// newSpec builds the OCI runtime specification described by cfg.
+func newSpec(cfg bundleConfig) (*specs.Spec, error) {
+	// Without an explicit root, the container gets an empty root filesystem.
+	rootPath := cfg.RootPath
+	if rootPath == "" {
+		rootPath = defaultRootfsDir
 	}
 
-	// Define the OCI Specification programmatically.
-	namespaces := []specs.LinuxNamespace{
-		{Type: specs.PIDNamespace},
-		{Type: specs.MountNamespace},
-		{Type: specs.UTSNamespace},
-		{Type: specs.IPCNamespace},
+	var namespaces []specs.LinuxNamespace
+	if !cfg.SkipDefaultNamespaces {
+		namespaces = []specs.LinuxNamespace{
+			{Type: specs.PIDNamespace},
+			{Type: specs.MountNamespace},
+			{Type: specs.UTSNamespace},
+			{Type: specs.IPCNamespace},
+		}
+		if os.Geteuid() != 0 {
+			namespaces = append(namespaces, specs.LinuxNamespace{Type: specs.UserNamespace})
+		}
+		if cfg.Network == NetworkModeSandbox {
+			namespaces = append(namespaces, specs.LinuxNamespace{Type: specs.NetworkNamespace})
+		}
 	}
+	namespaces = append(namespaces, cfg.Namespaces...)
 
-	if os.Geteuid() != 0 {
-		namespaces = append(namespaces, specs.LinuxNamespace{Type: specs.UserNamespace})
-	}
-	if cfg.EnableNetworking {
-		namespaces = append(namespaces, specs.LinuxNamespace{Type: specs.NetworkNamespace})
+	user := specs.User{UID: 0, GID: 0}
+	if cfg.User != nil {
+		user = *cfg.User
 	}
 
 	spec := &specs.Spec{
 		Version:     "1.0.0",
 		Annotations: cfg.Annotations,
 		Root: &specs.Root{
-			Path:     "rootfs",
-			Readonly: false,
+			Path:     rootPath,
+			Readonly: cfg.RootReadonly,
 		},
 		Process: &specs.Process{
-			Terminal: false,
-			User:     specs.User{UID: 0, GID: 0},
-			// Keeps the sandbox alive in the background.
-			Args: []string{"sleep", "infinity"},
-			Cwd:  cfg.WorkingDir,
-		},
-		Mounts: []specs.Mount{
-			// Mandatory Linux API Filesystems
-			{Destination: "/proc", Type: "proc", Source: "proc"},
-			{Destination: "/dev", Type: "tmpfs", Source: "tmpfs"},
+			User:         user,
+			Args:         defaultInitArgs,
+			Cwd:          cfg.WorkingDir,
+			Capabilities: cfg.Capabilities,
 		},
 		// enable basic namespaces for gVisor.
 		Linux: &specs.Linux{
@@ -86,10 +187,17 @@ func NewBundle(cfg BundleConfig) (string, error) {
 		Hostname: cfg.Hostname,
 	}
 
-	baseEnv := []string{"PATH=/bin:/usr/bin:/usr/local/bin"}
-	spec.Process.Env = append(baseEnv, cfg.Env...)
+	if cfg.SkipBaseEnv {
+		spec.Process.Env = cfg.Env
+	} else {
+		spec.Process.Env = slices.Concat(baseEnv, cfg.Env)
+	}
 
-	if os.Geteuid() != 0 {
+	switch {
+	case cfg.UIDMappings != nil || cfg.GIDMappings != nil:
+		spec.Linux.UIDMappings = cfg.UIDMappings
+		spec.Linux.GIDMappings = cfg.GIDMappings
+	case os.Geteuid() != 0 && !cfg.SkipDefaultNamespaces:
 		spec.Linux.UIDMappings = []specs.LinuxIDMapping{
 			{ContainerID: 0, HostID: uint32(os.Geteuid()), Size: 1},
 		}
@@ -98,53 +206,60 @@ func NewBundle(cfg BundleConfig) (string, error) {
 		}
 	}
 
+	if !cfg.SkipLinuxSystemMounts {
+		spec.Mounts = append(spec.Mounts,
+			specs.Mount{Destination: "/proc", Type: "proc", Source: "proc"},
+			specs.Mount{Destination: "/dev", Type: "tmpfs", Source: "tmpfs"},
+		)
+	}
+
 	// Map host binaries & libraries as readonly. The binaries will be
 	// executed in gVisor sandbox, not on the host.
-	for _, p := range []string{"/bin", "/usr", "/lib", "/lib64", "/etc/alternatives"} {
-		if _, err := os.Stat(p); err == nil {
-			opts := []string{"rbind", "ro", "nosuid", "nodev"}
-			if p == "/etc/alternatives" {
-				opts = []string{"rbind", "ro"}
+	if !cfg.SkipHostBinaryMounts {
+		for _, p := range hostBinaryDirs {
+			if _, err := os.Stat(p); err == nil {
+				opts := []string{"rbind", "ro", "nosuid", "nodev"}
+				if p == "/etc/alternatives" {
+					opts = []string{"rbind", "ro"}
+				}
+				spec.Mounts = append(spec.Mounts, specs.Mount{
+					Destination: p,
+					Type:        "bind",
+					Source:      p,
+					Options:     opts,
+				})
 			}
-			spec.Mounts = append(spec.Mounts, specs.Mount{
-				Destination: p,
-				Type:        "bind",
-				Source:      p,
-				Options:     opts,
-			})
 		}
 	}
 
 	// Add custom mounts. Custom mounts overriding default host mounts create duplicate OCI
 	// entries. The later entry overrides the earlier one, as expected by OCI specs.
 	for _, m := range cfg.Mounts {
-		switch m.Type {
-		case MountTypeBind:
-			opts := []string{"rbind"}
-			if m.ReadOnly {
-				opts = append(opts, "ro")
-			} else {
-				opts = append(opts, "rw")
-			}
-			spec.Mounts = append(spec.Mounts, specs.Mount{
-				Destination: filepath.Clean(m.Destination),
-				Source:      filepath.Clean(m.Source),
-				Type:        "bind",
-				Options:     opts,
-			})
-		case MountTypeTmpfs:
-			spec.Mounts = append(spec.Mounts, specs.Mount{
-				Destination: filepath.Clean(m.Destination),
-				Source:      "tmpfs",
-				Type:        "tmpfs",
-			})
-		case MountTypeProc:
-			spec.Mounts = append(spec.Mounts, specs.Mount{
-				Destination: filepath.Clean(m.Destination),
-				Source:      "proc",
-				Type:        "proc",
-			})
+		om, err := m.ociMount()
+		if err != nil {
+			return nil, err
 		}
+		spec.Mounts = append(spec.Mounts, om)
+	}
+
+	return spec, nil
+}
+
+// newBundle creates an OCI bundle on the fly with the given configuration and
+// returns its directory.
+func newBundle(cfg bundleConfig) (string, error) {
+	spec, err := newSpec(cfg)
+	if err != nil {
+		return "", err
+	}
+
+	bundleDir := filepath.Join(cfg.RuntimeDir, cfg.ID)
+	createDir := bundleDir
+	if cfg.RootPath == "" {
+		createDir = filepath.Join(bundleDir, defaultRootfsDir)
+	}
+	if err := os.MkdirAll(createDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create bundle directories: %w", err)
 	}
 
 	// Write the spec to config.json

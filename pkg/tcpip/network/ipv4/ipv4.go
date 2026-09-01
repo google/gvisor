@@ -558,6 +558,12 @@ func recalculateChecksum(pkt *stack.PacketBuffer, r *stack.Route) tcpip.Error {
 			csum = 0xFFFF
 		}
 		udp.SetChecksum(csum)
+	case header.ICMPv4ProtocolNumber:
+		if len(transportHeader) < header.ICMPv4MinimumSize {
+			return &tcpip.ErrMalformedHeader{}
+		}
+		icmp := header.ICMPv4(transportHeader)
+		icmp.SetChecksum(header.ICMPv4Checksum(icmp, pkt.Data().Checksum()))
 	}
 	return nil
 }
@@ -609,9 +615,9 @@ func (e *endpoint) writePacket(r *stack.Route, pkt *stack.PacketBuffer) tcpip.Er
 		// Similar to the `ip_route_me_harder` in the kernel,
 		// we need to find a new route for the packet.
 		// Implementation is similar to the func forwardUnicastPacket.
-		stk := e.protocol.stack
 		newRoute, err := stk.FindRoute(0 /* nic id */, netHeader.SourceAddress(), newDstAddr, header.IPv4ProtocolNumber, false /* multicastLoop */)
 		if err != nil {
+			e.stats.ip.OutgoingPacketErrors.Increment()
 			return err // Drop the packet
 		}
 		// Release the new route on exit.
@@ -623,6 +629,7 @@ func (e *endpoint) writePacket(r *stack.Route, pkt *stack.PacketBuffer) tcpip.Er
 		// done it.
 		if !r.RequiresTXTransportChecksum() && newRoute.RequiresTXTransportChecksum() {
 			if err := recalculateChecksum(pkt, newRoute); err != nil {
+				e.stats.ip.OutgoingPacketErrors.Increment()
 				return err // Drop the packet
 			}
 		}
@@ -633,6 +640,7 @@ func (e *endpoint) writePacket(r *stack.Route, pkt *stack.PacketBuffer) tcpip.Er
 		// Use the new endpoint to write the packet.
 		forwardToEp, ok := e.protocol.getEndpointForNIC(r.NICID())
 		if !ok {
+			e.stats.ip.OutgoingPacketErrors.Increment()
 			return &tcpip.ErrUnknownNICID{}
 		}
 		return forwardToEp.writePacketPostRouting(r, pkt, true /* headerIncluded */)

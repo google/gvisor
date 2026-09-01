@@ -35,6 +35,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/pinring"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
@@ -153,6 +154,16 @@ type Container struct {
 	// This field isn't saved to json, because only a creator of a gofer
 	// process will have it as a child process.
 	goferIsChild bool `nojson:"true"`
+
+	// sentryExitSock is the creator's end of the root gofer's
+	// `--sync-sentry-exit-fd` socket,
+	// A pidfd of the sandbox process is sent over it once the sandbox has been
+	// spawned, and then it is closed.
+	sentryExitSock *os.File `nojson:"true"`
+
+	// pinRingFile is the pin ring (see `//pkg/pinring`)
+	// It is held between the gofer and the boot process's spawn.
+	pinRingFile *os.File `nojson:"true"`
 }
 
 // Args is used to configure a new container.
@@ -197,13 +208,6 @@ type Args struct {
 	// for containers in a new Sandbox process.
 	FSRestoreImagePath string
 	FSRestoreDirect    bool
-
-	// CheckpointDirPath is the path to the sentry checkpoint directory.
-	// Used to default FSRestoreImagePath if it is empty and SplitFSRestore is true.
-	CheckpointDirPath string
-
-	// SplitFSRestore indicates that we are restoring from a split filesystem checkpoint.
-	SplitFSRestore bool
 }
 
 // New creates the container in a new Sandbox process, unless the metadata
@@ -211,21 +215,6 @@ type Args struct {
 // Destroy() on the container.
 func New(conf *config.Config, args Args) (*Container, error) {
 	log.Debugf("Create container, cid: %s, rootDir: %q", args.ID, conf.RootDir)
-
-	if args.FSRestoreImagePath == "" && args.SplitFSRestore {
-		if args.CheckpointDirPath == "" {
-			return nil, errors.New("checkpoint directory path must be provided for split FS restore")
-		}
-		defaultFSDir := path.Join(args.CheckpointDirPath, "fs")
-		if _, err := os.Stat(defaultFSDir); err != nil {
-			if os.IsNotExist(err) {
-				return nil, fmt.Errorf("split FS restore requested, but default FS checkpoint directory %q does not exist. Please specify FSRestoreImagePath", defaultFSDir)
-			}
-			return nil, fmt.Errorf("checking default FS checkpoint directory: %w", err)
-		}
-		args.FSRestoreImagePath = defaultFSDir
-	}
-
 	if err := validateID(args.ID); err != nil {
 		return nil, err
 	}
@@ -415,12 +404,23 @@ func (c *Container) createRoot(conf *config.Config, args Args, sandboxID string)
 			ExecFile:            args.ExecFile,
 			FSRestoreImagePath:  args.FSRestoreImagePath,
 			FSRestoreDirect:     args.FSRestoreDirect,
+			PinRingFile:         c.pinRingFile,
 		}
 		sand, err := sandbox.New(conf, sandArgs)
 		if err != nil {
 			return fmt.Errorf("cannot create sandbox: %w", err)
 		}
 		c.Sandbox = sand
+		c.pinRingFile = nil // Now owned by the sandbox's donation agency.
+		if c.sentryExitSock != nil {
+			// The gofer waits on this pidfd before exiting, so it is
+			// always the last holder of the pin ring.
+			if err := pinring.SendPidfd(c.sentryExitSock, sand.Pid.Load()); err != nil {
+				log.Warningf("Cannot send the sandbox's pidfd to the gofer (gofer exit may race the sandbox's): %v", err)
+			}
+			c.sentryExitSock.Close()
+			c.sentryExitSock = nil
+		}
 		return nil
 
 	}); err != nil {
@@ -464,11 +464,11 @@ func (c *Container) Start(conf *config.Config) error {
 
 // Restore takes a container and replaces its kernel and file system
 // to restore a container from its state file.
-func (c *Container) Restore(conf *config.Config, imagePath string, direct, background, splitFSRestore bool, networkArgs *boot.CreateLinksAndRoutesArgs) error {
+func (c *Container) Restore(conf *config.Config, imagePath string, direct, background bool, networkArgs *boot.CreateLinksAndRoutesArgs) error {
 	log.Debugf("Restore container, cid: %s", c.ID)
 
 	restore := func(conf *config.Config, spec *specs.Spec) error {
-		return c.Sandbox.Restore(conf, spec, c.ID, imagePath, direct, background, splitFSRestore, networkArgs)
+		return c.Sandbox.Restore(conf, spec, c.ID, imagePath, direct, background, networkArgs)
 	}
 	return c.startImpl(conf, "restore", restore, c.Sandbox.RestoreSubcontainer)
 }
@@ -539,11 +539,12 @@ func (c *Container) startImpl(conf *config.Config, action string, startRoot func
 		}
 	}
 
-	// "If any poststart hook fails, the runtime MUST log a warning, but
-	// the remaining hooks and lifecycle continue as if the hook had
-	// succeeded" -OCI spec.
+	// "If any poststart hook fails, the runtime MUST generate an error,
+	// stop the container, and continue the lifecycle at step 12" - OCI spec.
 	if c.Spec.Hooks != nil {
-		specutils.ExecuteHooksBestEffort(c.Spec.Hooks.Poststart, c.State())
+		if err := specutils.ExecuteHooks(c.Spec.Hooks.Poststart, c.State()); err != nil {
+			return err
+		}
 	}
 
 	c.changeStatus(Running)
@@ -787,6 +788,15 @@ func (c *Container) TarRootfsUpperLayer(outFD *os.File) error {
 // TODO(b/113680494): Distinguish different error types.
 func (c *Container) SignalContainer(sig unix.Signal, all bool) error {
 	log.Debugf("Signal container, cid: %s, signal: %v (%d)", c.ID, sig, sig)
+	if c.Status == Created {
+		return c.signalCreated(sig, all)
+	}
+	return c.signalRunning(sig, all)
+}
+
+// signalRunning delivers a signal to the processes of a Running (or Stopped)
+// container via the sandbox.
+func (c *Container) signalRunning(sig unix.Signal, all bool) error {
 	// Signaling container in Stopped state is allowed. When all=false,
 	// an error will be returned anyway; when all=true, this allows
 	// sending signal to other processes inside the container even
@@ -799,6 +809,45 @@ func (c *Container) SignalContainer(sig unix.Signal, all bool) error {
 		return fmt.Errorf("sandbox is not running")
 	}
 	return c.Sandbox.SignalContainer(c.ID, sig, all)
+}
+
+// signalCreated handles a signal sent to a container that appears to be in the
+// Created state (start was never called). Such a container has no process to
+// receive the signal, so a terminating signal (SIGKILL/SIGTERM) is honored by
+// stopping the container.
+func (c *Container) signalCreated(sig unix.Signal, all bool) error {
+	if err := c.Saver.lock(BlockAcquire); err != nil {
+		return err
+	}
+	defer c.Saver.UnlockOrDie()
+	// The status read before acquiring the lock may be stale: a concurrent start
+	// could have moved the container to Running (or a kill/delete to Stopped).
+	// Re-read the persisted state under the lock before acting on it.
+	reloaded := &Container{}
+	if err := c.Saver.loadLocked(reloaded); err != nil {
+		return err
+	}
+	c.Status = reloaded.Status
+	if c.Status != Created {
+		// The container now has a process (or has already stopped), so deliver
+		// the signal normally.
+		return c.signalRunning(sig, all)
+	}
+	// Still Created: only a terminating signal is actionable; there is nothing
+	// to deliver other signals to, so drop them.
+	if sig != unix.SIGKILL && sig != unix.SIGTERM {
+		return nil
+	}
+	// Tear down the container. For the root container this SIGKILLs the sandbox
+	// (boot) process; for a subcontainer it destroys the not-yet-started
+	// container in the sentry.
+	if c.Sandbox != nil {
+		if err := c.Sandbox.DestroyContainer(c.ID); err != nil {
+			return fmt.Errorf("destroying created container %q: %w", c.ID, err)
+		}
+	}
+	c.changeStatus(Stopped)
+	return c.saveLocked()
 }
 
 // SignalProcess sends sig to a specific process in the container.
@@ -1205,31 +1254,56 @@ func (c *Container) createGoferFilestore(goferRootfs string, ovlConf config.Over
 
 func (c *Container) createGoferFilestoreInSelf(goferRootfs string, mountSrc string, mountHints *boot.PodMountHints) (*os.File, error) {
 	// Create the self filestore file.
-	createFlags := unix.O_RDWR | unix.O_CREAT | unix.O_CLOEXEC
+	createFlags := unix.O_RDWR | unix.O_CREAT | unix.O_CLOEXEC | unix.O_NOFOLLOW | unix.O_NONBLOCK
 	if hint := mountHints.FindMount(mountSrc); hint == nil || !hint.ShouldShareMount() {
 		// Allow shared mounts to reuse existing filestore. A previous shared user
 		// may have already set up the filestore.
 		createFlags |= unix.O_EXCL
 	}
-	filestorePath := path.Join(goferRootfs, boot.SelfFilestorePath(mountSrc, c.sandboxID()))
-	filestoreFD, err := unix.Open(filestorePath, createFlags, 0666)
+	dirPath := path.Join(goferRootfs, mountSrc)
+	fileName := boot.SelfFilestoreName(c.sandboxID())
+
+	dirFD, err := unix.Open(dirPath, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open directory %q: %v", dirPath, err)
+	}
+	defer unix.Close(dirFD)
+
+	filestoreFD, err := unix.Openat2(dirFD, fileName, &unix.OpenHow{
+		Flags:   uint64(createFlags),
+		Mode:    0666,
+		Resolve: unix.RESOLVE_BENEATH | unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_NO_MAGICLINKS | unix.RESOLVE_NO_XDEV,
+	})
 	if err != nil {
 		if err == unix.EEXIST {
 			// Note that if the same submount is mounted multiple times within the
 			// same sandbox, and is not shared, then the overlay option doesn't work
 			// correctly. Because each overlay mount is independent and changes to
 			// one are not visible to the other.
-			return nil, fmt.Errorf("%q mount source already has a filestore file at %q; repeated submounts are not supported with overlay optimizations", mountSrc, filestorePath)
+			return nil, fmt.Errorf("%q mount source already has a filestore file %q; repeated submounts are not supported with overlay optimizations", mountSrc, fileName)
 		}
-		return nil, fmt.Errorf("failed to create filestore file inside %q: %v", mountSrc, err)
+		return nil, fmt.Errorf("failed to create filestore file %q inside %q: %v", fileName, mountSrc, err)
 	}
-	log.Debugf("Created filestore file at %q for mount source %q", filestorePath, mountSrc)
+	var stat unix.Stat_t
+	if err := unix.Fstat(filestoreFD, &stat); err != nil {
+		_ = unix.Close(filestoreFD)
+		return nil, fmt.Errorf("failed to stat filestore file %q inside %q: %v", fileName, mountSrc, err)
+	}
+	if (stat.Mode & unix.S_IFMT) != unix.S_IFREG {
+		_ = unix.Close(filestoreFD)
+		return nil, fmt.Errorf("filestore file %q inside %q is not a regular file (mode: %o)", fileName, mountSrc, stat.Mode)
+	}
+	if stat.Nlink != 1 {
+		_ = unix.Close(filestoreFD)
+		return nil, fmt.Errorf("filestore file %q inside %q has unexpected link count: %d", fileName, mountSrc, stat.Nlink)
+	}
+	log.Debugf("Created filestore file %q for mount source %q", fileName, mountSrc)
 	// Filestore in self should be a named path because it needs to be
 	// discoverable via path traversal so that k8s can scan the filesystem
 	// and apply any limits appropriately (like local ephemeral storage
 	// limits). So don't delete it. These files will be unlinked when the
 	// container is destroyed. This makes self medium appropriate for k8s.
-	return os.NewFile(uintptr(filestoreFD), filestorePath), nil
+	return os.NewFile(uintptr(filestoreFD), fileName), nil
 }
 
 func (c *Container) createGoferFilestoreInDir(goferRootfs string, filestoreDir string) (*os.File, error) {
@@ -1531,6 +1605,19 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 		s.Register(&goferToHostRPC{goferPID: pid})
 		s.StartHandling(rpcServ)
 	}()
+
+	if ring, err := pinring.NewDisabledIOURing(); err != nil {
+		log.Warningf("Cannot create disabled io_uring ring: %v. This slows down gVisor sandbox teardown.", err)
+	} else {
+		donations.Donate("pin-ring-fd", ring)
+		c.pinRingFile = ring
+		fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_SEQPACKET|unix.SOCK_CLOEXEC, 0)
+		if err != nil {
+			return nil, nil, nil, nil, err
+		}
+		donations.DonateAndClose("sync-sentry-exit-fd", os.NewFile(uintptr(fds[1]), "sentry exit sync gofer FD"))
+		c.sentryExitSock = os.NewFile(uintptr(fds[0]), "sentry exit sync runsc FD")
+	}
 
 	// Count the number of mounts that needs an IO file.
 	ioFileCount := 0

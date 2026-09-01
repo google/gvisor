@@ -70,6 +70,8 @@ go_library(
 go_test(
     name = "runsc_test",
     srcs = [
+        "debug_test.go",
+        "epoll_test.go",
         "oom_v2_test.go",
         "service_test.go",
         "state_test.go",
@@ -77,12 +79,15 @@ go_test(
     library = ":runsc",
     deps = [
         "//pkg/shim/v1/utils",
+        "@com_github_containerd_cgroups_v3//cgroup1:go_default_library",
         "@com_github_containerd_cgroups_v3//cgroup2:go_default_library",
+        "@com_github_containerd_containerd_api//events:go_default_library",
         "@com_github_containerd_containerd_api//runtime/task/v2:go_default_library",
         "@com_github_containerd_containerd_v2//core/events:go_default_library",
         "@com_github_containerd_containerd_v2//core/runtime:go_default_library",
         "@com_github_containerd_errdefs//:go_default_library",
         "@com_github_google_go_cmp//cmp:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )

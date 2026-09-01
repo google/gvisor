@@ -155,6 +155,8 @@ func (fs *filesystem) newDirectfsDentry(controlFD int) (*dentry, error) {
 					fs:        fs,
 					inoKey:    inoKey,
 					ino:       fs.inoFromKey(inoKey),
+					rdevMajor: stat.Rdev_major,
+					rdevMinor: stat.Rdev_minor,
 					mode:      atomicbitops.FromUint32(uint32(stat.Mode)),
 					uid:       atomicbitops.FromUint32(uint32(fs.opts.dfltuid)),
 					gid:       atomicbitops.FromUint32(uint32(fs.opts.dfltgid)),
@@ -212,6 +214,13 @@ func (fs *filesystem) newDirectfsDentry(controlFD int) (*dentry, error) {
 		})
 
 	temp.d.init()
+	// If this dentry adopted a cached inode that already carries a bound-socket
+	// endpoint (a hard link to, or re-walk of, an existing bound socket), hold
+	// the extra reference that dentry.refs keeps for endpoint-bearing dentries.
+	// The bind path takes this reference itself, over a fresh inode.
+	if temp.d.inode.endpoint != nil {
+		temp.d.IncRef()
+	}
 	fs.syncMu.Lock()
 	fs.syncableDentries.PushBack(&temp.d.syncableListEntry)
 	fs.syncMu.Unlock()

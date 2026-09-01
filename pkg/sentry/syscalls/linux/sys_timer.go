@@ -105,6 +105,12 @@ func TimerCreate(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uin
 	sevp := args[1].Pointer()
 	timerIDp := args[2].Pointer()
 
+	// Linux's clock_monotonic_raw k_clock only defines clock_getres and
+	// clock_get_timespec, so timer_create(CLOCK_MONOTONIC_RAW) is rejected.
+	if clockID == linux.CLOCK_MONOTONIC_RAW {
+		return 0, nil, linuxerr.EOPNOTSUPP
+	}
+
 	c, err := getClock(t, clockID)
 	if err != nil {
 		return 0, nil, err

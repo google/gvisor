@@ -760,12 +760,16 @@ func (s *Stack) NICMulticastForwarding(id tcpip.NICID, protocol tcpip.NetworkPro
 
 // PortRange returns the UDP and TCP inclusive range of ephemeral ports used in
 // both IPv4 and IPv6.
+//
+// +checklocksexclude:s.PortManager.ephemeralMu
 func (s *Stack) PortRange() (uint16, uint16) {
 	return s.PortManager.PortRange()
 }
 
 // SetPortRange sets the UDP and TCP IPv4 and IPv6 ephemeral port range
 // (inclusive).
+//
+// +checklocksexclude:s.PortManager.ephemeralMu
 func (s *Stack) SetPortRange(start uint16, end uint16) tcpip.Error {
 	return s.PortManager.SetPortRange(start, end)
 }

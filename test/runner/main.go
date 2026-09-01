@@ -79,7 +79,7 @@ var (
 	netstackSR       = flag.Bool("netstack-sr", false, "enables netstack s/r")
 	nftables         = flag.Bool("nftables", false, "enables nftables")
 	kvmUseCPUNums    = flag.Bool("kvm-use-cpu-nums", false, "use cpu numbers in kvm platform")
-	mountCgroupV2    = flag.Bool("mount-cgroup-v2", false, "mount cgroups v2")
+	inSandboxCgroup  = flag.String("in-sandbox-cgroup", "v1", "cgroup setup to use inside the sandbox (v1 or v2)")
 )
 
 const (
@@ -444,10 +444,8 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 	} else {
 		args = append(args, "-kvm-use-cpu-nums=false")
 	}
-	if *mountCgroupV2 {
-		args = append(args, "-mount-cgroup-v2=true")
-	} else {
-		args = append(args, "-mount-cgroup-v2=false")
+	if *inSandboxCgroup != "" {
+		args = append(args, "-in-sandbox-cgroup="+*inSandboxCgroup)
 	}
 
 	testLogDir := ""
@@ -755,7 +753,7 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 }
 
 // Regex matching some performance-related warnings that are safe to ignore in tests.
-var performanceWarningRegexp = regexp.MustCompile(`(?i).*(slows?|slowing).*startup.*`)
+var performanceWarningRegexp = regexp.MustCompile(`(?i).*(slows?|slowing).*(startup|teardown).*`)
 
 func isWarning(line string) bool {
 	if len(line) >= 5 && line[:5] == "panic" {

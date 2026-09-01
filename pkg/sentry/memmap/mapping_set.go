@@ -19,7 +19,6 @@ import (
 	"math"
 
 	"gvisor.dev/gvisor/pkg/hostarch"
-	"gvisor.dev/gvisor/pkg/log"
 )
 
 // MappingSet maps offsets into a Mappable to mappings of those offsets. It is
@@ -238,10 +237,6 @@ func (s *MappingSet) Invalidate(mr MappableRange, opts InvalidateOpts) {
 	for seg := s.LowerBoundSegment(mr.Start); seg.Ok() && seg.Start() < mr.End; seg = seg.NextSegment() {
 		segMR := seg.Range()
 		for m := range seg.Value() {
-			if m.MappingSpace == nil {
-				log.Warningf("MappingSpace is nil in Invalidate for range %v", segMR)
-				continue
-			}
 			region := subsetMapping(segMR, segMR.Intersect(mr), m.MappingSpace, m.AddrRange.Start, m.Writable)
 			region.invalidate(opts)
 		}

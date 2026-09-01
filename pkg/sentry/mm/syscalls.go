@@ -402,6 +402,14 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 		return 0, linuxerr.EFAULT
 	}
 
+	if vma := vseg.ValuePtr(); newSize > oldSize && vma.mappable != nil {
+		// Check that offset+length does not overflow.
+		offset := vseg.mappableOffsetAt(oldAddr)
+		if offset+newSize < offset {
+			return 0, linuxerr.EINVAL
+		}
+	}
+
 	// Behavior matrix:
 	//
 	// Move     | oldSize = 0 | oldSize < newSize | oldSize = newSize | oldSize > newSize
@@ -551,10 +559,6 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 	}
 
 	if vma := vseg.ValuePtr(); vma.mappable != nil {
-		// Check that offset+length does not overflow.
-		if vma.off+uint64(newAR.Length()) < vma.off {
-			return 0, linuxerr.EINVAL
-		}
 		// Inform the Mappable, if any, of the new mapping.
 		if err := vma.mappable.CopyMapping(ctx, mm, oldAR, newAR, vseg.mappableOffsetAt(oldAR.Start), vma.canWriteMappableLocked()); err != nil {
 			return 0, err
@@ -1132,9 +1136,10 @@ func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
 	//	- If at least one byte in ar is not covered by a vma, decommit the rest
 	//	but return ENOMEM.
 	//
-	//	- If we would invalidate only part of a huge page that we own (is not
-	//	copy-on-write), use MemoryFile.Decommit() instead to keep the allocated
-	//	huge page intact for future use.
+	//	- If we would invalidate only part of a huge page backing a private
+	//	anonymous mapping that we own (is not copy-on-write), use
+	//	MemoryFile.Decommit() instead to keep the allocated huge page intact for
+	//	future use.
 	didUnmapAS := false
 	pseg := mm.pmas.LowerBoundSegment(ar.Start)
 	vseg := mm.vmas.LowerBoundSegment(ar.Start)
@@ -1157,7 +1162,7 @@ func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
 		}
 		for pseg.Ok() && pseg.Start() < vsegAR.End {
 			pma := pseg.ValuePtr()
-			if pma.huge && !mm.isPMACopyOnWriteLocked(vseg, pseg) {
+			if vma.mappable == nil && pma.huge && !mm.isPMACopyOnWriteLocked(vseg, pseg) {
 				psegAR := pseg.Range().Intersect(vsegAR)
 				if !psegAR.IsHugePageAligned() {
 					firstHugeStart := psegAR.Start.HugeRoundDown()

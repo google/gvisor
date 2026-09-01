@@ -58,6 +58,9 @@ type rdmaSysfsDirs struct {
 	class map[string]kernfs.Inode
 	// busPCIDevices contains the /sys/bus/pci/devices symlinks.
 	busPCIDevices map[string]kernfs.Inode
+	// busPCIDrivers maps a kernel driver name to its
+	// /sys/bus/pci/drivers/<driver> directory of bound-device back-symlinks.
+	busPCIDrivers map[string]kernfs.Inode
 	// node is the /sys/devices/system/node subtree, or nil.
 	node kernfs.Inode
 }
@@ -105,6 +108,26 @@ func (fs *filesystem) newRDMASysfs(ctx context.Context, creds *auth.Credentials,
 	classNet := map[string]string{}    // netdev -> symlink target
 	classPCIBus := map[string]string{} // bus ("0000:0c") -> symlink target
 
+	// driverByLeaf maps a leaf PCI function path to its kernel driver name
+	// (from the DRIVER= line of the leaf's uevent). Used to synthesize the
+	// device/driver symlink and /sys/bus/pci/drivers tree that libfabric's
+	// EFA provider resolves during device discovery.
+	driverByLeaf := map[string]string{}
+	for i := range snap.Devices {
+		leaf := snap.Devices[i].LeafPCI
+		for _, n := range snap.PCINodes {
+			if n.Path != leaf {
+				continue
+			}
+			for _, line := range strings.Split(n.Attrs["uevent"], "\n") {
+				if drv, ok := strings.CutPrefix(line, "DRIVER="); ok && rdma.SafeName(drv) {
+					driverByLeaf[leaf] = drv
+				}
+			}
+		}
+	}
+	classPCIDrivers := map[string][]string{} // driver -> leaf PCI paths bound to it
+
 	// 1. The canonical PCI hierarchy with per-level static attributes, plus
 	// the "subsystem" symlink every PCI device carries. NCCL and other
 	// consumers classify a directory as a PCI device by following
@@ -135,12 +158,21 @@ func (fs *filesystem) newRDMASysfs(ctx context.Context, creds *auth.Credentials,
 		if _, ok := d.files["local_cpulist"]; ok {
 			d.files["local_cpulist"] = cpuListString(cores)
 		}
+		// Raw PCI config space (binary). hwloc reads it to rebuild the PCI
+		// bridge hierarchy; without it aws-ofi-nccl's NCCL topology write fails.
+		if n.Config != nil {
+			d.files["config"] = string(n.Config)
+		}
 		// Root complexes (pciXXXX:YY) carry no subsystem link and sit on
 		// no parent bus; only function directories (BDFs) do.
 		if rdma.IsBDF(path.Base(n.Path)) {
 			// depth of n.Path below /sys == number of "../" to reach /sys.
 			depth := strings.Count(n.Path, "/") + 1
 			d.symlinks["subsystem"] = strings.Repeat("../", depth) + "bus/pci"
+			if drv, ok := driverByLeaf[n.Path]; ok {
+				d.symlinks["driver"] = strings.Repeat("../", depth) + "bus/pci/drivers/" + drv
+				classPCIDrivers[drv] = append(classPCIDrivers[drv], n.Path)
+			}
 			fs.addPCIBus(root, n.Path, classPCIBus)
 		}
 	}
@@ -211,6 +243,7 @@ func (fs *filesystem) newRDMASysfs(ctx context.Context, creds *auth.Credentials,
 		devices:       map[string]kernfs.Inode{},
 		class:         map[string]kernfs.Inode{},
 		busPCIDevices: map[string]kernfs.Inode{},
+		busPCIDrivers: map[string]kernfs.Inode{},
 	}
 	devicesTree, ok := root.children["devices"]
 	if !ok {
@@ -238,6 +271,17 @@ func (fs *filesystem) newRDMASysfs(ctx context.Context, creds *auth.Credentials,
 		if rdma.IsBDF(base) {
 			out.busPCIDevices[base] = kernfs.NewStaticSymlink(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), "../../../"+n.Path)
 		}
+	}
+
+	// /sys/bus/pci/drivers/<driver>/<bdf> back-symlinks (the inverse of the
+	// device/driver links added above). libfabric's EFA provider realpath's
+	// the driver dir to confirm the bound driver during discovery.
+	for drv, leaves := range classPCIDrivers {
+		entries := map[string]kernfs.Inode{}
+		for _, leaf := range leaves {
+			entries[path.Base(leaf)] = kernfs.NewStaticSymlink(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), "../../../../"+leaf)
+		}
+		out.busPCIDrivers[drv] = fs.newDir(ctx, creds, defaultSysDirMode, entries)
 	}
 
 	if snap.NUMA != nil {

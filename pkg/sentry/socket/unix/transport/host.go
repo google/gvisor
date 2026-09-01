@@ -57,18 +57,18 @@ func (c *SCMRights) Release(ctx context.Context) {
 	c.FDs = nil
 }
 
-// HostConnectedEndpoint is an implementation of ConnectedEndpoint and
+// HostSender is an implementation of Sender and
 // Receiver. It is backed by a host fd that was imported at sentry startup.
 // This fd is shared with a hostfs inode, which retains ownership of it.
 //
-// HostConnectedEndpoint is saveable, since we expect that the host will
+// HostSender is saveable, since we expect that the host will
 // provide the same fd upon restore.
 //
 // As of this writing, we only allow Unix sockets to be imported.
 //
 // +stateify savable
-type HostConnectedEndpoint struct {
-	HostConnectedEndpointRefs
+type HostSender struct {
+	HostSenderRefs
 
 	// mu protects fd below.
 	mu sync.RWMutex `state:"nosave"`
@@ -90,24 +90,24 @@ type HostConnectedEndpoint struct {
 	// stype is the type of Unix socket.
 	stype linux.SockType
 
-	// rdShutdown is true if receptions have been shutdown with SHUT_RD.
-	rdShutdown atomicbitops.Bool
+	// recvShutdown is true if receptions have been shutdown with SHUT_RD.
+	recvShutdown atomicbitops.Bool
 
-	// wrShutdown is true if transmissions have been shutdown with SHUT_WR.
-	wrShutdown atomicbitops.Bool
+	// sendShutdown is true if transmissions have been shutdown with SHUT_WR.
+	sendShutdown atomicbitops.Bool
 
 	// passcred is true if SO_PASSCRED is enabled on the host socket.
 	passcred bool
 }
 
 // init performs initialization required for creating new
-// HostConnectedEndpoints and for restoring them.
-func (c *HostConnectedEndpoint) init() *syserr.Error {
+// HostSenders and for restoring them.
+func (c *HostSender) init() *syserr.Error {
 	c.InitRefs()
 	return c.initFromOptions()
 }
 
-func (c *HostConnectedEndpoint) initFromOptions() *syserr.Error {
+func (c *HostSender) initFromOptions() *syserr.Error {
 	if c.fd < 0 {
 		// There is no underlying FD to restore; nothing to do
 		return nil
@@ -149,14 +149,14 @@ func (c *HostConnectedEndpoint) initFromOptions() *syserr.Error {
 	return nil
 }
 
-// NewHostConnectedEndpoint creates a new HostConnectedEndpoint backed by a
+// NewHostSender creates a new HostSender backed by a
 // host fd imported at sentry startup.
 //
 // The caller is responsible for calling Init(). Additionally, Release needs to
-// be called twice because HostConnectedEndpoint is both a Receiver and
-// HostConnectedEndpoint.
-func NewHostConnectedEndpoint(hostFD int, addr string) (*HostConnectedEndpoint, *syserr.Error) {
-	e := HostConnectedEndpoint{
+// be called twice because HostSender is both a Receiver and
+// HostSender.
+func NewHostSender(hostFD int, addr string) (*HostSender, *syserr.Error) {
+	e := HostSender{
 		fd:   hostFD,
 		addr: addr,
 	}
@@ -165,18 +165,18 @@ func NewHostConnectedEndpoint(hostFD int, addr string) (*HostConnectedEndpoint, 
 		return nil, err
 	}
 
-	// HostConnectedEndpointRefs start off with a single reference. We need two.
+	// HostSenderRefs start off with a single reference. We need two.
 	e.IncRef()
 	return &e, nil
 }
 
 // SockType returns the underlying socket type.
-func (c *HostConnectedEndpoint) SockType() linux.SockType {
+func (c *HostSender) SockType() linux.SockType {
 	return c.stype
 }
 
-// Send implements ConnectedEndpoint.Send.
-func (c *HostConnectedEndpoint) Send(ctx context.Context, data [][]byte, controlMessages ControlMessages, from Address) (int64, bool, *syserr.Error) {
+// Send implements Sender.Send.
+func (c *HostSender) Send(ctx context.Context, data [][]byte, controlMessages ControlMessages, from Address) (int64, bool, *syserr.Error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -205,23 +205,23 @@ func (c *HostConnectedEndpoint) Send(ctx context.Context, data [][]byte, control
 		err = nil
 	}
 
-	// There is no need for the callee to call SendNotify because fdWriteVec
+	// There is no need for the callee to call NotifyDataReady because fdWriteVec
 	// uses the host's sendmsg(2) and the host kernel's queue.
 	return n, false, syserr.FromError(err)
 }
 
-// SendNotify implements ConnectedEndpoint.SendNotify.
-func (c *HostConnectedEndpoint) SendNotify() {}
+// NotifyDataReady implements Sender.NotifyDataReady.
+func (c *HostSender) NotifyDataReady() {}
 
-// CloseSend implements ConnectedEndpoint.CloseSend.
-func (c *HostConnectedEndpoint) CloseSend() {
+// CloseSend implements Sender.CloseSend.
+func (c *HostSender) CloseSend() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.closeSendLocked()
 }
 
 // Preconditions: c.mu must be held.
-func (c *HostConnectedEndpoint) closeSendLocked() {
+func (c *HostSender) closeSendLocked() {
 	if c.IsSendClosed() {
 		return
 	}
@@ -231,37 +231,37 @@ func (c *HostConnectedEndpoint) closeSendLocked() {
 		// net/unix/af_unix.c:unix_shutdown.
 		panic(fmt.Sprintf("failed write shutdown on host socket %+v: %v", c, err))
 	}
-	c.wrShutdown.Store(true)
+	c.sendShutdown.Store(true)
 }
 
-// CloseNotify implements ConnectedEndpoint.CloseNotify.
-func (c *HostConnectedEndpoint) CloseNotify() {}
+// NotifyStateChange implements Sender.NotifyStateChange.
+func (c *HostSender) NotifyStateChange() {}
 
-// IsSendClosed implements ConnectedEndpoint.IsSendClosed.
-func (c *HostConnectedEndpoint) IsSendClosed() bool {
-	return c.wrShutdown.Load()
+// IsSendClosed implements Sender.IsSendClosed.
+func (c *HostSender) IsSendClosed() bool {
+	return c.sendShutdown.Load()
 }
 
-// Writable implements ConnectedEndpoint.Writable.
-func (c *HostConnectedEndpoint) Writable() bool {
+// Writable implements Sender.Writable.
+func (c *HostSender) Writable() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	return fdnotifier.NonBlockingPoll(int32(c.fd), waiter.WritableEvents)&waiter.WritableEvents != 0
 }
 
-// Passcred implements ConnectedEndpoint.Passcred.
-func (c *HostConnectedEndpoint) Passcred() bool {
+// Passcred implements Sender.Passcred.
+func (c *HostSender) Passcred() bool {
 	return c.passcred
 }
 
-// GetLocalAddress implements ConnectedEndpoint.GetLocalAddress.
-func (c *HostConnectedEndpoint) GetLocalAddress() (Address, tcpip.Error) {
+// GetLocalAddress implements Sender.GetLocalAddress.
+func (c *HostSender) GetLocalAddress() (Address, tcpip.Error) {
 	return Address{Addr: c.addr}, nil
 }
 
-// EventUpdate implements ConnectedEndpoint.EventUpdate.
-func (c *HostConnectedEndpoint) EventUpdate() error {
+// EventUpdate implements Sender.EventUpdate.
+func (c *HostSender) EventUpdate() error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if c.fd != -1 {
@@ -273,7 +273,7 @@ func (c *HostConnectedEndpoint) EventUpdate() error {
 }
 
 // Recv implements Receiver.Recv.
-func (c *HostConnectedEndpoint) Recv(ctx context.Context, data [][]byte, args RecvArgs) (RecvOutput, bool, *syserr.Error) {
+func (c *HostSender) Recv(ctx context.Context, data [][]byte, args RecvArgs) (RecvOutput, bool, *syserr.Error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -303,7 +303,7 @@ func (c *HostConnectedEndpoint) Recv(ctx context.Context, data [][]byte, args Re
 		return RecvOutput{}, false, syserr.FromError(err)
 	}
 
-	// There is no need for the callee to call RecvNotify because fdReadVec uses
+	// There is no need for the callee to call NotifyWriteSpace because fdReadVec uses
 	// the host's recvmsg(2) and the host kernel's queue.
 
 	// Trim the control data if we received less than the full amount.
@@ -330,18 +330,18 @@ func (c *HostConnectedEndpoint) Recv(ctx context.Context, data [][]byte, args Re
 	return out, false, nil
 }
 
-// RecvNotify implements Receiver.RecvNotify.
-func (c *HostConnectedEndpoint) RecvNotify() {}
+// NotifyWriteSpace implements Receiver.NotifyWriteSpace.
+func (c *HostSender) NotifyWriteSpace() {}
 
 // CloseRecv implements Receiver.CloseRecv.
-func (c *HostConnectedEndpoint) CloseRecv() {
+func (c *HostSender) CloseRecv() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.closeRecvLocked()
 }
 
 // Preconditions: c.mu must be held.
-func (c *HostConnectedEndpoint) closeRecvLocked() {
+func (c *HostSender) closeRecvLocked() {
 	if c.IsRecvClosed() {
 		return
 	}
@@ -351,16 +351,26 @@ func (c *HostConnectedEndpoint) closeRecvLocked() {
 		// net/unix/af_unix.c:unix_shutdown.
 		panic(fmt.Sprintf("failed read shutdown on host socket %+v: %v", c, err))
 	}
-	c.rdShutdown.Store(true)
+	c.recvShutdown.Store(true)
 }
 
 // IsRecvClosed implements Receiver.IsRecvClosed.
-func (c *HostConnectedEndpoint) IsRecvClosed() bool {
-	return c.rdShutdown.Load()
+func (c *HostSender) IsRecvClosed() bool {
+	return c.recvShutdown.Load()
+}
+
+// HostReadiness implements HostReadiness.HostReadiness.
+func (c *HostSender) HostReadiness(mask waiter.EventMask) waiter.EventMask {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.fd < 0 {
+		return 0
+	}
+	return fdnotifier.NonBlockingPoll(int32(c.fd), mask)
 }
 
 // Readable implements Receiver.Readable.
-func (c *HostConnectedEndpoint) Readable() bool {
+func (c *HostSender) Readable() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -368,37 +378,37 @@ func (c *HostConnectedEndpoint) Readable() bool {
 }
 
 // SendQueuedSize implements Receiver.SendQueuedSize.
-func (c *HostConnectedEndpoint) SendQueuedSize() int64 {
+func (c *HostSender) SendQueuedSize() int64 {
 	// TODO(gvisor.dev/issue/273): SendQueuedSize isn't supported for host
 	// sockets because we don't allow the sentry to call ioctl(2).
 	return -1
 }
 
 // RecvQueuedSize implements Receiver.RecvQueuedSize.
-func (c *HostConnectedEndpoint) RecvQueuedSize() int64 {
+func (c *HostSender) RecvQueuedSize() int64 {
 	// TODO(gvisor.dev/issue/273): RecvQueuedSize isn't supported for host
 	// sockets because we don't allow the sentry to call ioctl(2).
 	return -1
 }
 
 // SendMaxQueueSize implements Receiver.SendMaxQueueSize.
-func (c *HostConnectedEndpoint) SendMaxQueueSize() int64 {
+func (c *HostSender) SendMaxQueueSize() int64 {
 	return c.sndbuf.Load()
 }
 
 // RecvMaxQueueSize implements Receiver.RecvMaxQueueSize.
-func (c *HostConnectedEndpoint) RecvMaxQueueSize() int64 {
+func (c *HostSender) RecvMaxQueueSize() int64 {
 	// N.B. Unix sockets don't use the receive buffer. We'll claim it is
 	// the same size as the send buffer.
 	return c.sndbuf.Load()
 }
 
-func (c *HostConnectedEndpoint) destroyLocked() {
+func (c *HostSender) destroyLocked() {
 	c.fd = -1
 }
 
-// Release implements ConnectedEndpoint.Release and Receiver.Release.
-func (c *HostConnectedEndpoint) Release(ctx context.Context) {
+// Release implements Sender.Release and Receiver.Release.
+func (c *HostSender) Release(ctx context.Context) {
 	c.DecRef(func() {
 		c.mu.Lock()
 		c.destroyLocked()
@@ -406,41 +416,41 @@ func (c *HostConnectedEndpoint) Release(ctx context.Context) {
 	})
 }
 
-// CloseUnread implements ConnectedEndpoint.CloseUnread.
-func (c *HostConnectedEndpoint) CloseUnread() {}
+// CloseUnread implements Sender.CloseUnread.
+func (c *HostSender) CloseUnread() {}
 
-// SetSendBufferSize implements ConnectedEndpoint.SetSendBufferSize.
-func (c *HostConnectedEndpoint) SetSendBufferSize(v int64) (newSz int64) {
+// SetSendBufferSize implements Sender.SetSendBufferSize.
+func (c *HostSender) SetSendBufferSize(v int64) (newSz int64) {
 	// gVisor does not permit setting of SO_SNDBUF for host backed unix
 	// domain sockets.
 	return c.sndbuf.Load()
 }
 
-// SetReceiveBufferSize implements ConnectedEndpoint.SetReceiveBufferSize.
-func (c *HostConnectedEndpoint) SetReceiveBufferSize(v int64) (newSz int64) {
+// SetReceiveBufferSize implements Sender.SetReceiveBufferSize.
+func (c *HostSender) SetReceiveBufferSize(v int64) (newSz int64) {
 	// gVisor does not permit setting of SO_RCVBUF for host backed unix
 	// domain sockets. Receive buffer does not have any effect for unix
 	// sockets and we claim to be the same as send buffer.
 	return c.sndbuf.Load()
 }
 
-// SCMConnectedEndpoint represents an endpoint backed by a host fd that was
-// passed through a gofer Unix socket. It resembles HostConnectedEndpoint, with the
+// SCMSender represents an endpoint backed by a host fd that was
+// passed through a gofer Unix socket. It resembles HostSender, with the
 // following differences:
-//   - SCMConnectedEndpoint is not saveable by default, because the host
+//   - SCMSender is not saveable by default, because the host
 //     cannot guarantee the same descriptor number across S/R.
 //     However, it can optionally be placed in a closed state before save.
-//   - SCMConnectedEndpoint holds ownership of its fd and notification queue.
+//   - SCMSender holds ownership of its fd and notification queue.
 //
 // +stateify savable
-type SCMConnectedEndpoint struct {
-	HostConnectedEndpoint
+type SCMSender struct {
+	HostSender
 
 	queue *waiter.Queue
 }
 
 // beforeSave is invoked by stateify.
-func (e *SCMConnectedEndpoint) beforeSave() {
+func (e *SCMSender) beforeSave() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	fdnotifier.RemoveFD(int32(e.fd))
@@ -453,12 +463,12 @@ func (e *SCMConnectedEndpoint) beforeSave() {
 }
 
 // Init will do the initialization required without holding other locks.
-func (e *SCMConnectedEndpoint) Init() error {
+func (e *SCMSender) Init() error {
 	return fdnotifier.AddFD(int32(e.fd), e.queue)
 }
 
-// Release implements ConnectedEndpoint.Release and Receiver.Release.
-func (e *SCMConnectedEndpoint) Release(ctx context.Context) {
+// Release implements Sender.Release and Receiver.Release.
+func (e *SCMSender) Release(ctx context.Context) {
 	e.DecRef(func() {
 		e.mu.Lock()
 		defer e.mu.Unlock()
@@ -475,15 +485,15 @@ func (e *SCMConnectedEndpoint) Release(ctx context.Context) {
 	})
 }
 
-// NewSCMEndpoint creates a new SCMConnectedEndpoint backed by a host fd that
+// NewSCMSender creates a new SCMSender backed by a host fd that
 // was passed through a Unix socket.
 //
 // The caller is responsible for calling Init(). Additionally, Release needs to
-// be called twice because ConnectedEndpoint is both a Receiver and
-// ConnectedEndpoint.
-func NewSCMEndpoint(hostFD int, queue *waiter.Queue, addr string) (*SCMConnectedEndpoint, *syserr.Error) {
-	e := SCMConnectedEndpoint{
-		HostConnectedEndpoint: HostConnectedEndpoint{
+// be called twice because Sender is both a Receiver and
+// Sender.
+func NewSCMSender(hostFD int, queue *waiter.Queue, addr string) (*SCMSender, *syserr.Error) {
+	e := SCMSender{
+		HostSender: HostSender{
 			fd:   hostFD,
 			addr: addr,
 		},

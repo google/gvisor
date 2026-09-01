@@ -35,11 +35,16 @@ import (
 //
 // +stateify savable
 type epQueue struct {
-	mu   epQueueMutex `state:"nosave"`
+	mu epQueueMutex `state:"nosave"`
+
+	// +checklocks:mu
 	list endpointList `state:"nosave"`
 }
 
 // enqueue adds e to the queue if the endpoint is not already on the queue.
+//
+// +checklocksexclude:q.mu
+// +checklocksexclude:e.pendingProcessingMu
 func (q *epQueue) enqueue(e *Endpoint) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -55,6 +60,11 @@ func (q *epQueue) enqueue(e *Endpoint) {
 
 // dequeue removes and returns the first element from the queue if available,
 // returns nil otherwise.
+//
+// The caller must not hold a queued endpoint's pendingProcessingMu. checklocks
+// cannot name that mutex through the endpoint obtained from the queue.
+//
+// +checklocksexclude:q.mu
 func (q *epQueue) dequeue() *Endpoint {
 	q.mu.Lock()
 	if e := q.list.Front(); e != nil {
@@ -70,6 +80,8 @@ func (q *epQueue) dequeue() *Endpoint {
 }
 
 // empty returns true if the queue is empty, false otherwise.
+//
+// +checklocksexclude:q.mu
 func (q *epQueue) empty() bool {
 	q.mu.Lock()
 	v := q.list.Empty()
@@ -94,6 +106,8 @@ func (p *processor) close() {
 	p.closeWaker.Assert()
 }
 
+// +checklocksexclude:p.epQ.mu
+// +checklocksexclude:ep.pendingProcessingMu
 func (p *processor) queueEndpoint(ep *Endpoint) {
 	// Queue an endpoint for processing by the processor goroutine.
 	p.epQ.enqueue(ep)
@@ -136,6 +150,9 @@ func deliverAccepted(ep *Endpoint) bool {
 
 // handleConnecting is responsible for TCP processing for an endpoint in one of
 // the connecting states.
+//
+// +checklocksexclude:ep.segmentQueue.mu
+// +checklocksexclude:ep.pendingProcessingMu
 func handleConnecting(ep *Endpoint) {
 	if !ep.TryLock() {
 		return
@@ -179,6 +196,8 @@ func handleConnecting(ep *Endpoint) {
 
 // handleConnected is responsible for TCP processing for an endpoint in one of
 // the connected states(StateEstablished, StateFinWait1 etc.)
+//
+// +checklocksexclude:ep.segmentQueue.mu
 func handleConnected(ep *Endpoint) {
 	if !ep.TryLock() {
 		return
@@ -228,6 +247,8 @@ func startTimeWait(ep *Endpoint) {
 
 // handleTimeWait is responsible for TCP processing for an endpoint in TIME-WAIT
 // state.
+//
+// +checklocksexclude:ep.segmentQueue.mu
 func handleTimeWait(ep *Endpoint) {
 	if !ep.TryLock() {
 		return
@@ -260,6 +281,8 @@ var warnRateLimiter = rate.NewLimiter(rate.Every(time.Second), 1)
 
 // handleListen is responsible for TCP processing for an endpoint in LISTEN
 // state.
+//
+// +checklocksexclude:ep.segmentQueue.mu
 func handleListen(ep *Endpoint) {
 	if !ep.TryLock() {
 		return
@@ -438,6 +461,11 @@ func (d *dispatcher) wait() {
 
 // queuePacket queues an incoming packet to the matching tcp endpoint and
 // also queues the endpoint to a processor queue for processing.
+//
+// The caller must not hold the target endpoint's segmentQueue.mu or
+// pendingProcessingMu, or the selected processor's queue mutex. checklocks
+// cannot name these locks through stackEP's interface type and the indexed
+// processor selection.
 func (d *dispatcher) queuePacket(stackEP stack.TransportEndpoint, id stack.TransportEndpointID, clock tcpip.Clock, pkt *stack.PacketBuffer) {
 	d.mu.Lock()
 	closed := d.closed

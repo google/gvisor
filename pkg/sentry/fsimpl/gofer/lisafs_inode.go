@@ -137,6 +137,8 @@ func (fs *filesystem) newLisafsDentry(ctx context.Context, ino *lisafs.Inode) (*
 					fs:        fs,
 					inoKey:    inoKey,
 					ino:       fs.inoFromKey(inoKey),
+					rdevMajor: ino.Stat.RdevMajor,
+					rdevMinor: ino.Stat.RdevMinor,
 					mode:      atomicbitops.FromUint32(uint32(ino.Stat.Mode)),
 					uid:       atomicbitops.FromUint32(uint32(fs.opts.dfltuid)),
 					gid:       atomicbitops.FromUint32(uint32(fs.opts.dfltgid)),
@@ -194,6 +196,13 @@ func (fs *filesystem) newLisafsDentry(ctx context.Context, ino *lisafs.Inode) (*
 		})
 
 	temp.d.init()
+	// If this dentry adopted a cached inode that already carries a bound-socket
+	// endpoint (a hard link to, or re-walk of, an existing bound socket), hold
+	// the extra reference that dentry.refs keeps for endpoint-bearing dentries.
+	// The bind path takes this reference itself, over a fresh inode.
+	if temp.d.inode.endpoint != nil {
+		temp.d.IncRef()
+	}
 	fs.syncMu.Lock()
 	fs.syncableDentries.PushBack(&temp.d.syncableListEntry)
 	fs.syncMu.Unlock()

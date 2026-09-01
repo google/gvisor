@@ -22,6 +22,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"sync"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/buffer"
@@ -323,6 +324,24 @@ func TestV4ReadOnV4(t *testing.T) {
 
 	// Test acceptance.
 	testRead(c, context.UnicastV4)
+
+	// Leave Resume and packet delivery unordered so race builds check thaw.
+	payload := []byte("resume")
+	packet := context.BuildUDPPacket(payload, context.UnicastV4, context.Incoming, testTOS, testTTL, false)
+	resumable := c.EP.(stack.ResumableEndpoint)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		<-start
+		resumable.Resume()
+	})
+	wg.Go(func() {
+		<-start
+		c.InjectPacket(ipv4.ProtocolNumber, packet)
+	})
+	close(start)
+	wg.Wait()
+	c.ReadFromEndpointExpectSuccess(payload, context.UnicastV4)
 }
 
 // TestV4ReadOnV4WithTrailingPadding tests that IP payload padding is trimmed

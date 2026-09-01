@@ -83,6 +83,7 @@ namespace {
 
 using ::testing::AnyOf;
 using ::testing::Contains;
+using ::testing::IsSupersetOf;
 using ::testing::Pair;
 
 constexpr char kTmpfs[] = "tmpfs";
@@ -820,6 +821,44 @@ TEST(MountTest, MountInfo) {
                                Contains(Pair("mode", "123"))));
     }
   }
+}
+
+TEST(MountTest, MountFlagsShownInProcMounts) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir.path(), kTmpfs,
+            MS_NOSUID | MS_NODEV | MS_NOEXEC | MS_NOATIME, "", 0));
+
+  // The per-mount flags must be reflected in both /proc/self/mounts and
+  // /proc/self/mountinfo: userspace (e.g. systemd) reads them back to
+  // preserve locked flags across bind-remounts in user namespaces.
+  bool found_mounts = false;
+  const std::vector<ProcMountsEntry> mounts =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountsEntries());
+  for (const auto& e : mounts) {
+    if (e.mount_point != dir.path()) continue;
+    found_mounts = true;
+    auto mopts = ParseMountOptions(e.mount_opts);
+    EXPECT_THAT(mopts, IsSupersetOf({Pair("nosuid", ""), Pair("nodev", ""),
+                                     Pair("noexec", ""), Pair("noatime", "")}))
+        << "/proc/self/mounts options: " << e.mount_opts;
+  }
+  EXPECT_TRUE(found_mounts);
+
+  bool found_mountinfo = false;
+  const std::vector<ProcMountInfoEntry> mountinfo =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
+  for (auto const& e : mountinfo) {
+    if (e.mount_point != dir.path()) continue;
+    found_mountinfo = true;
+    auto mopts = ParseMountOptions(e.mount_opts);
+    EXPECT_THAT(mopts, IsSupersetOf({Pair("nosuid", ""), Pair("nodev", ""),
+                                     Pair("noexec", ""), Pair("noatime", "")}))
+        << "/proc/self/mountinfo options: " << e.mount_opts;
+  }
+  EXPECT_TRUE(found_mountinfo);
 }
 
 TEST(MountTest, TmpfsSizeRoundUpSinglePageSize) {
@@ -1831,6 +1870,150 @@ TEST(MountTest, MakeSlave) {
   auto optionals = ASSERT_NO_ERRNO_AND_VALUE(MountOptionals());
   ASSERT_NE(optionals[dir1.path()][0].shared, 0);
   ASSERT_NE(optionals[dir2.path()][0].master, 0);
+}
+
+// Regression test: a bind mount that fails midway through attachment (e.g.
+// because the mount namespace is at its mount limit) must not leave its
+// half-constructed clone linked into the source's peer group. If it does, the
+// dead clone can later be selected as a slave's master, silently breaking
+// mount propagation to that slave.
+TEST(MountTest, FailedBindDoesNotBreakPropagation) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  // Mount A: a shared tmpfs.
+  auto const dir_a = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mnt_a = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir_a.path(), kTmpfs, 0, "", MNT_DETACH));
+  ASSERT_THAT(mount("", dir_a.path().c_str(), "", MS_SHARED, 0),
+              SyscallSucceeds());
+  // Create the future mountpoint inside A so that it exists in all of A's
+  // peers.
+  std::string const sub_a = JoinPath(dir_a.path(), "sub");
+  ASSERT_THAT(mkdir(sub_a.c_str(), 0755), SyscallSucceeds());
+
+  // Mount B: a bind of A, and its peer.
+  auto const dir_b = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mnt_b = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(dir_a.path(), dir_b.path(), "", MS_BIND, "", MNT_DETACH));
+
+  // The default mount limits (100k on Linux, 10k on gVisor) can make this test
+  // slow. Try and lower it if we're allowed to.
+  constexpr char kMountMax[] = "/proc/sys/fs/mount-max";
+  bool changed_mount_max = false;
+  int lower_mount_max = 100;
+  Cleanup restore_mount_max;
+  if (access(kMountMax, W_OK) == 0) {
+    std::string const old_max =
+        ASSERT_NO_ERRNO_AND_VALUE(GetContents(kMountMax));
+    ASSERT_NO_ERRNO(SetContents(kMountMax, absl::StrCat(lower_mount_max)));
+    changed_mount_max = true;
+    restore_mount_max = Cleanup([old_max, &kMountMax]() {
+      EXPECT_NO_ERRNO(SetContents(kMountMax, old_max));
+    });
+  }
+
+  // Fill the mount namespace up to its mount limit with private bind mounts,
+  // each on its own directory in the outer tmpfs. All of them are children of
+  // the outer mount, so detaching outer releases all of them with a single
+  // umount2() call.
+  auto const outer = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  ASSERT_THAT(mount("", outer.path().c_str(), kTmpfs, 0, 0), SyscallSucceeds());
+  auto outer_cleanup = Cleanup([&outer]() {
+    EXPECT_THAT(umount2(outer.path().c_str(), MNT_DETACH), SyscallSucceeds());
+  });
+  if (!changed_mount_max) {
+    // Repeatedly double the mounts in outer via recursive bind mounts of outer
+    // onto subdirectories within outer. Each successful step doubles the total
+    // number of mounts in outer.
+    std::vector<std::string> subdirs;
+    while (true) {
+      std::string const d = absl::StrCat(outer.path(), "/d", subdirs.size());
+      ASSERT_THAT(mkdir(d.c_str(), 0755), SyscallSucceeds());
+      if (mount(outer.path().c_str(), d.c_str(), nullptr, MS_BIND | MS_REC,
+                nullptr) != 0) {
+        break;
+      }
+      subdirs.push_back(d);
+    }
+
+    // Binary fill: try adding powers of 2 from largest to smallest to top off
+    // the namespace without exceeding the limit.
+    for (int i = static_cast<int>(subdirs.size()) - 1; i >= 0; i--) {
+      std::string const d = absl::StrCat(outer.path(), "/fill", i);
+      ASSERT_THAT(mkdir(d.c_str(), 0755), SyscallSucceeds());
+      mount(subdirs[i].c_str(), d.c_str(), nullptr, MS_BIND | MS_REC, nullptr);
+    }
+  }
+
+  bool full = false;
+  for (int i = 0; i < lower_mount_max; i++) {
+    std::string const d = absl::StrCat(outer.path(), "/single", i);
+    ASSERT_THAT(mkdir(d.c_str(), 0755), SyscallSucceeds());
+    if (mount(d.c_str(), d.c_str(), nullptr, MS_BIND, nullptr) != 0) {
+      const int err = errno;
+      ASSERT_EQ(err, ENOSPC) << strerror(err);
+      full = true;
+      break;
+    }
+  }
+  ASSERT_TRUE(full) << "couldn't fill up the mount namespace";
+
+  // Binding A while the namespace is at its mount limit must fail, and must
+  // not leave any trace of the aborted mount in A's peer group.
+  auto const dir_c = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  ASSERT_THAT(mount(dir_a.path().c_str(), dir_c.path().c_str(), nullptr,
+                    MS_BIND, nullptr),
+              SyscallFailsWithErrno(ENOSPC));
+
+  // Release the mount budget again.
+  outer_cleanup.Release()();
+
+  // Make A a slave. Its new master must be B, its only remaining peer.
+  ASSERT_THAT(mount("", dir_a.path().c_str(), 0, MS_SLAVE, 0),
+              SyscallSucceeds());
+
+  // A mount under the shared peer B must propagate to the slave A.
+  std::string const sub_b = JoinPath(dir_b.path(), "sub");
+  ASSERT_THAT(mount("", sub_b.c_str(), kTmpfs, 0, 0), SyscallSucceeds());
+  auto sub_cleanup = Cleanup([&sub_b, &sub_a]() {
+    EXPECT_THAT(umount2(sub_b.c_str(), MNT_DETACH), SyscallSucceeds());
+    // The umount of sub_b may or may not have propagated to sub_a depending
+    // on whether the mount propagated there in the first place.
+    umount2(sub_a.c_str(), MNT_DETACH);
+  });
+
+  struct stat st_a, st_b;
+  ASSERT_THAT(stat(sub_b.c_str(), &st_b), SyscallSucceeds());
+  ASSERT_THAT(stat(sub_a.c_str(), &st_a), SyscallSucceeds());
+  EXPECT_EQ(st_a.st_dev, st_b.st_dev)
+      << "mount under shared peer B did not propagate to slave A";
+}
+
+TEST(MountTest, MountMax) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  constexpr char kMountMax[] = "/proc/sys/fs/mount-max";
+  SKIP_IF(access(kMountMax, W_OK) != 0);
+
+  std::string const old_max = ASSERT_NO_ERRNO_AND_VALUE(GetContents(kMountMax));
+  auto const restore =
+      Cleanup([&]() { EXPECT_NO_ERRNO(SetContents(kMountMax, old_max)); });
+
+  // The limit must be at least 1 (Linux: proc_dointvec_minmax with
+  // extra1 == SYSCTL_ONE).
+  EXPECT_THAT(SetContents(kMountMax, "0"), PosixErrorIs(EINVAL));
+
+  // Lower the limit to the current number of mounts; any new mount must then
+  // fail with ENOSPC.
+  auto const mounts = ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountsEntries());
+  ASSERT_NO_ERRNO(SetContents(kMountMax, absl::StrCat(mounts.size())));
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  EXPECT_THAT(mount("", dir.path().c_str(), kTmpfs, 0, 0),
+              SyscallFailsWithErrno(ENOSPC));
+
+  // Mounting works again once the limit is restored.
+  ASSERT_NO_ERRNO(SetContents(kMountMax, old_max));
+  auto const mnt =
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir.path(), kTmpfs, 0, "", 0));
 }
 
 TEST(MountTest, MakeSharedSlave) {

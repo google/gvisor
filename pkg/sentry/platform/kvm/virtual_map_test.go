@@ -26,13 +26,15 @@ type checker struct {
 	accessType hostarch.AccessType
 }
 
-func (c *checker) Containing(addr uintptr) func(virtualRegion) {
+func (c *checker) Containing(addr uintptr) func(virtualRegion) bool {
 	c.ok = false // Reset for below calls.
-	return func(vr virtualRegion) {
+	return func(vr virtualRegion) bool {
 		if vr.virtual <= addr && addr < vr.virtual+vr.length {
 			c.ok = true
 			c.accessType = vr.accessType
+			return true
 		}
+		return false
 	}
 }
 

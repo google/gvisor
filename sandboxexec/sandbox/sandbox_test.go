@@ -26,18 +26,31 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	if path, err := testutil.FindFile("runsc/runsc"); err == nil {
+	if path, err := testutil.FindRunsc(); err == nil {
 		os.Setenv("RUNSC_PATH", path)
 	}
 	os.Exit(m.Run())
 }
 
+// execOutput runs argv in the sandbox and returns its standard output. It
+// fails the test if the command could not be run or exited non-zero.
+func execOutput(ctx context.Context, t *testing.T, sb *sandbox.Sandbox, argv ...string) string {
+	t.Helper()
+	res, err := sb.Exec(ctx, argv)
+	if err != nil {
+		t.Fatalf("failed to execute %v in sandbox: %v", argv, err)
+	}
+	if res.ExitCode != 0 {
+		t.Fatalf("%v exited with %d, stderr: %s", argv, res.ExitCode, res.Stderr)
+	}
+	return res.Stdout
+}
+
 func TestExecDmesg(t *testing.T) {
 	ctx := context.Background()
 
-	enableNetworking := os.Geteuid() == 0
-	// Create the background sandbox via subprocess
-	sb, err := sandbox.New(ctx, sandbox.WithNetworking(enableNetworking))
+	// Default network mode is NetworkModeNone which works in both root and rootless.
+	sb, err := sandbox.New(ctx)
 	if err != nil {
 		t.Fatalf("failed to create sandbox: %v", err)
 	}
@@ -49,10 +62,7 @@ func TestExecDmesg(t *testing.T) {
 	}()
 
 	// Execute dmesg in the gVisor sandbox.
-	output, _, err := sb.Exec(ctx, "dmesg")
-	if err != nil {
-		t.Fatalf("failed to execute command in sandbox: %v", err)
-	}
+	output := execOutput(ctx, t, sb, "dmesg")
 
 	if !strings.Contains(output, "Starting gVisor") {
 		t.Errorf("Exec(\"dmesg\") =  %v; wanted: %v", output, "Starting gVisor")
@@ -63,12 +73,11 @@ func TestSandboxOptions(t *testing.T) {
 	ctx := context.Background()
 	runtimeDir := t.TempDir()
 	id := "iwillbeasandbox"
-	enableNetworking := os.Geteuid() == 0
 
 	opts := []sandbox.Option{
 		sandbox.WithID(id),
 		sandbox.WithRuntimeDir(runtimeDir),
-		sandbox.WithNetworking(enableNetworking),
+		sandbox.WithNetwork(sandbox.NetworkModeHost),
 	}
 
 	sb, err := sandbox.New(ctx, opts...)
@@ -93,12 +102,24 @@ func TestNonRootNetworkingError(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	_, err := sandbox.New(ctx, sandbox.WithNetworking(true))
+	_, err := sandbox.New(ctx, sandbox.WithNetwork(sandbox.NetworkModeSandbox))
 	if err == nil {
-		t.Fatalf("sandbox.New succeeded as non-root with networking enabled; want error")
+		t.Fatalf("sandbox.New succeeded as non-root with sandbox network mode; want error")
 	}
 
-	expectedErr := "enabling networking requires running as root"
+	expectedErr := "sandbox networking requires running as root"
+	if !strings.Contains(err.Error(), expectedErr) {
+		t.Errorf("sandbox.New error = %v; want error containing %q", err, expectedErr)
+	}
+}
+
+func TestInvalidNetworkMode(t *testing.T) {
+	ctx := context.Background()
+	_, err := sandbox.New(ctx, sandbox.WithNetwork("invalid-mode"))
+	if err == nil {
+		t.Fatalf("sandbox.New succeeded with invalid network mode; want error")
+	}
+	expectedErr := "invalid network mode"
 	if !strings.Contains(err.Error(), expectedErr) {
 		t.Errorf("sandbox.New error = %v; want error containing %q", err, expectedErr)
 	}
@@ -116,8 +137,13 @@ func TestCustomBindMount(t *testing.T) {
 	}
 
 	sb, err := sandbox.New(ctx,
-		sandbox.WithNetworking(false),
-		sandbox.WithBindMount(tempHostDir, "/mnt/host_share", true),
+		sandbox.WithNetwork(sandbox.NetworkModeNone),
+		sandbox.WithMount(sandbox.Mount{
+			Type:        sandbox.MountTypeBind,
+			Source:      tempHostDir,
+			Destination: "/mnt/host_share",
+			ReadOnly:    true,
+		}),
 	)
 	if err != nil {
 		t.Fatalf("failed to start sandbox: %v", err)
@@ -129,10 +155,7 @@ func TestCustomBindMount(t *testing.T) {
 	}()
 
 	// Read witness inside container
-	output, _, err := sb.Exec(ctx, "cat", "/mnt/host_share/witness.txt")
-	if err != nil {
-		t.Fatalf("failed to exec read in sandbox: %v", err)
-	}
+	output := execOutput(ctx, t, sb, "cat", "/mnt/host_share/witness.txt")
 	if strings.TrimSpace(output) != expectedContent {
 		t.Errorf("got %q, want %q", output, expectedContent)
 	}
@@ -142,8 +165,12 @@ func TestCustomTmpfsMount(t *testing.T) {
 	ctx := context.Background()
 
 	sb, err := sandbox.New(ctx,
-		sandbox.WithNetworking(false),
-		sandbox.WithTmpfsMount("/mnt/scratch"),
+		sandbox.WithNetwork(sandbox.NetworkModeNone),
+		sandbox.WithMount(sandbox.Mount{
+			Type:        sandbox.MountTypeTmpfs,
+			Source:      "tmpfs",
+			Destination: "/mnt/scratch",
+		}),
 	)
 	if err != nil {
 		t.Fatalf("failed to start sandbox: %v", err)
@@ -155,15 +182,9 @@ func TestCustomTmpfsMount(t *testing.T) {
 	}()
 
 	// Write file to scratch space and cat it back
-	_, _, err = sb.Exec(ctx, "sh", "-c", "echo hello-tmpfs > /mnt/scratch/tmp.txt")
-	if err != nil {
-		t.Fatalf("failed to write inside tmpfs: %v", err)
-	}
+	execOutput(ctx, t, sb, "sh", "-c", "echo hello-tmpfs > /mnt/scratch/tmp.txt")
 
-	output, _, err := sb.Exec(ctx, "cat", "/mnt/scratch/tmp.txt")
-	if err != nil {
-		t.Fatalf("failed to read from tmpfs: %v", err)
-	}
+	output := execOutput(ctx, t, sb, "cat", "/mnt/scratch/tmp.txt")
 	if strings.TrimSpace(output) != "hello-tmpfs" {
 		t.Errorf("got %q, want %q", output, "hello-tmpfs")
 	}
@@ -174,8 +195,12 @@ func TestCustomBindMountWrite(t *testing.T) {
 	tempHostDir := t.TempDir()
 
 	sb, err := sandbox.New(ctx,
-		sandbox.WithNetworking(false),
-		sandbox.WithBindMount(tempHostDir, "/mnt/host_share", false),
+		sandbox.WithNetwork(sandbox.NetworkModeNone),
+		sandbox.WithMount(sandbox.Mount{
+			Type:        sandbox.MountTypeBind,
+			Source:      tempHostDir,
+			Destination: "/mnt/host_share",
+		}),
 	)
 	if err != nil {
 		t.Fatalf("failed to start sandbox: %v", err)
@@ -187,10 +212,7 @@ func TestCustomBindMountWrite(t *testing.T) {
 	}()
 
 	// Write file inside container
-	_, _, err = sb.Exec(ctx, "sh", "-c", "echo hello-write > /mnt/host_share/file.txt")
-	if err != nil {
-		t.Fatalf("failed to write inside sandbox: %v", err)
-	}
+	execOutput(ctx, t, sb, "sh", "-c", "echo hello-write > /mnt/host_share/file.txt")
 
 	// Verify file was written to the host
 	hostFile := filepath.Join(tempHostDir, "file.txt")
@@ -208,7 +230,7 @@ func TestSandboxEnv(t *testing.T) {
 	ctx := context.Background()
 
 	sb, err := sandbox.New(ctx,
-		sandbox.WithNetworking(false),
+		sandbox.WithNetwork(sandbox.NetworkModeNone),
 		sandbox.WithEnv(
 			"TEST_VAR=value1",
 			"TEST_VAR=value2", // Duplicate var to test append behavior
@@ -225,10 +247,7 @@ func TestSandboxEnv(t *testing.T) {
 	}()
 
 	// Read environment in the sandbox
-	output, _, err := sb.Exec(ctx, "env")
-	if err != nil {
-		t.Fatalf("failed to exec env in sandbox: %v", err)
-	}
+	output := execOutput(ctx, t, sb, "env")
 
 	lines := strings.Split(output, "\n")
 	envMap := make(map[string]string)
@@ -262,7 +281,7 @@ func TestSandboxInvalidEnvFormat(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := sandbox.New(ctx,
-		sandbox.WithNetworking(false),
+		sandbox.WithNetwork(sandbox.NetworkModeNone),
 		sandbox.WithEnv("MALFORMED_INPUT_NO_EQUALS"),
 	)
 	if err == nil {
@@ -287,20 +306,16 @@ func TestRootfsTarSnapshot(t *testing.T) {
 	}
 
 	runtimeDirA := filepath.Join(tempDir, "runtime-a")
-	enableNetworking := os.Geteuid() == 0
 	sbA, err := sandbox.New(ctx,
 		sandbox.WithRuntimeDir(runtimeDirA),
-		sandbox.WithNetworking(enableNetworking),
+		sandbox.WithNetwork(sandbox.NetworkModeNone),
 	)
 	if err != nil {
 		t.Fatalf("failed to start sandbox A: %v", err)
 	}
 	defer sbA.Close(ctx)
 
-	_, _, err = sbA.Exec(ctx, "sh", "-c", "echo 'hello' > /test.txt")
-	if err != nil {
-		t.Fatalf("failed to create file in sandbox A: %v", err)
-	}
+	execOutput(ctx, t, sbA, "sh", "-c", "echo 'hello' > /test.txt")
 
 	snapshot, err := sbA.Snapshot(ctx, sandbox.RootfsTarSnapshot, storage)
 	if err != nil {
@@ -310,7 +325,7 @@ func TestRootfsTarSnapshot(t *testing.T) {
 	runtimeDirB := filepath.Join(tempDir, "runtime-b")
 	sbB, err := sandbox.New(ctx,
 		sandbox.WithRuntimeDir(runtimeDirB),
-		sandbox.WithNetworking(enableNetworking),
+		sandbox.WithNetwork(sandbox.NetworkModeNone),
 		sandbox.WithSnapshot(snapshot),
 	)
 	if err != nil {
@@ -318,10 +333,7 @@ func TestRootfsTarSnapshot(t *testing.T) {
 	}
 	defer sbB.Close(ctx)
 
-	outB, _, err := sbB.Exec(ctx, "cat", "/test.txt")
-	if err != nil {
-		t.Fatalf("failed to cat file in sandbox B: %v", err)
-	}
+	outB := execOutput(ctx, t, sbB, "cat", "/test.txt")
 	if strings.TrimSpace(outB) != "hello" {
 		t.Errorf("unexpected content in B: got %q, want %q", outB, "hello")
 	}
@@ -332,10 +344,9 @@ func TestNoSnapshotStorageError(t *testing.T) {
 	tempDir := t.TempDir()
 
 	runtimeDir := filepath.Join(tempDir, "runtime")
-	enableNetworking := os.Geteuid() == 0
 	_, err := sandbox.New(ctx,
 		sandbox.WithRuntimeDir(runtimeDir),
-		sandbox.WithNetworking(enableNetworking),
+		sandbox.WithNetwork(sandbox.NetworkModeNone),
 		sandbox.WithSnapshot(&sandbox.Snapshot{ID: "some-snapshot-id"}),
 	)
 	if err == nil {
@@ -351,7 +362,7 @@ func TestSandboxWorkingDir(t *testing.T) {
 	ctx := context.Background()
 
 	sb, err := sandbox.New(ctx,
-		sandbox.WithNetworking(false),
+		sandbox.WithNetwork(sandbox.NetworkModeNone),
 		sandbox.WithWorkingDir("tmp/custom"),
 	)
 	if err != nil {
@@ -375,7 +386,7 @@ func TestSandboxBadWorkingDir(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := sandbox.New(ctx,
-		sandbox.WithNetworking(false),
+		sandbox.WithNetwork(sandbox.NetworkModeNone),
 		sandbox.WithWorkingDir(""),
 	)
 	if err == nil {
@@ -390,7 +401,7 @@ func TestSandboxHostname(t *testing.T) {
 	ctx := context.Background()
 
 	sb, err := sandbox.New(ctx,
-		sandbox.WithNetworking(false),
+		sandbox.WithNetwork(sandbox.NetworkModeNone),
 		sandbox.WithHostname("custom-sandbox-host"),
 	)
 	if err != nil {
@@ -398,10 +409,7 @@ func TestSandboxHostname(t *testing.T) {
 	}
 	defer sb.Close(ctx)
 
-	output, _, err := sb.Exec(ctx, "hostname")
-	if err != nil {
-		t.Fatalf("failed to exec hostname in sandbox: %v", err)
-	}
+	output := execOutput(ctx, t, sb, "hostname")
 
 	if got, want := strings.TrimSpace(output), "custom-sandbox-host"; got != want {
 		t.Errorf("Exec(\"hostname\") = %q, want %q", got, want)
@@ -412,8 +420,12 @@ func TestSandboxCustomProcMount(t *testing.T) {
 	ctx := context.Background()
 
 	sb, err := sandbox.New(ctx,
-		sandbox.WithNetworking(false),
-		sandbox.WithProcMount("/custom_proc"),
+		sandbox.WithNetwork(sandbox.NetworkModeNone),
+		sandbox.WithMount(sandbox.Mount{
+			Type:        sandbox.MountTypeProc,
+			Source:      "proc",
+			Destination: "/custom_proc",
+		}),
 	)
 	if err != nil {
 		t.Fatalf("failed to start sandbox: %v", err)
@@ -421,10 +433,7 @@ func TestSandboxCustomProcMount(t *testing.T) {
 	defer sb.Close(ctx)
 
 	// Double check that it contains process information (e.g. status)
-	output, _, err := sb.Exec(ctx, "cat", "/custom_proc/self/status")
-	if err != nil {
-		t.Fatalf("failed to cat /custom_proc/self/status: %v", err)
-	}
+	output := execOutput(ctx, t, sb, "cat", "/custom_proc/self/status")
 	if !strings.Contains(output, "Name:") {
 		t.Errorf("output of cat /custom_proc/self/status missing 'Name:', got: %v", output)
 	}

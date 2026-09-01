@@ -599,7 +599,6 @@ grouping = ` + strconv.FormatBool(enableGrouping) + `
 // cwd contains the given ID, and returns their PIDs.
 // If id is empty, it finds all shim processes.
 func getShimPIDs(id string) ([]string, error) {
-	const shimPath = "/usr/local/bin/containerd-shim-runsc-v1"
 	procDir, err := os.Open("/proc")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open /proc: %v", err)
@@ -624,7 +623,7 @@ func getShimPIDs(id string) ([]string, error) {
 			continue
 		}
 		cmdline := bytes.Split(cmdlineBytes, []byte{0})
-		if !(len(cmdline) > 0 && string(cmdline[0]) == shimPath) {
+		if len(cmdline) == 0 || !strings.HasSuffix(string(cmdline[0]), "containerd-shim-runsc-v1") {
 			continue
 		}
 

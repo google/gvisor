@@ -47,7 +47,7 @@ const (
 	flagQDisc                   = "qdisc"
 	flagQDiscTBFRate            = "qdisc-tbf-rate"
 	flagQDiscTBFBurst           = "qdisc-tbf-burst"
-	flagMountCgroupV2           = "mount-cgroup-v2"
+	flagInSandboxCgroup         = "in-sandbox-cgroup"
 
 	maxQDiscTBFBurst     = uint64(1<<32 - 1)
 	defaultQDiscTBFRate  = uint64(0)
@@ -117,8 +117,8 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("enable-core-tags", false, "enables core tagging. Requires host linux kernel >= 5.14.")
 	flagSet.String("pod-init-config", "", "path to configuration file with additional steps to take during pod creation.")
 	flagSet.Var(HostSettingsCheck.Ptr(), "host-settings", "how to handle non-optimal host kernel settings: check (default, advisory-only), ignore (do not check), adjust (best-effort auto-adjustment), or enforce (auto-adjustment must succeed).")
-	// TODO(gvisor.dev/issue/13718): flip default to `IF_RELEASE_BUILD`.
-	flagSet.Var(SidecarNever.Ptr(), "sidecar-release-enforcement-policy", "when spawned sidecar binaries must match runsc's release: NEVER, ALWAYS, or IF_RELEASE_BUILD. May be overridden by setting GVISOR_ENFORCE_RELEASE=SKIP as env var.")
+	flagSet.Var(SidecarReleaseIfReleaseBuild.Ptr(), "sidecar-release-enforcement-policy", "when spawned sidecar binaries must match runsc's release: NEVER, ALWAYS, or IF_RELEASE_BUILD. May be overridden by setting GVISOR_ENFORCE_RELEASE=SKIP as env var.")
+	flagSet.Var(SidecarUsageDefault.Ptr(), "sidecar-usage-policy", "policy for sidecar binaries: STRICT (sidecars must exist), LEGACY_DEPRECATED_SLOW_EMBEDDED_FALLBACK (use embedded fallbacks if sidecars are missing; will stop working after 2026-10). The DEFAULT policy will change to STRICT after 2026-09.")
 	flagSet.Var(RestoreSpecValidationEnforce.Ptr(), "restore-spec-validation", "how to handle spec validation during restore.")
 	flagSet.Bool("systrap-disable-syscall-patching", false, "disables syscall patching when using the Systrap platform. May be necessary to use in case the workload uses the GS register, or uses ptrace within gVisor. Has significant performance implications and is only recommended when the sandbox is known to run otherwise-incompatible workloads. Only relevant for x86.")
 	flagSet.Bool("systrap-disable-fast-path", false, "unconditionally disables the Systrap fast path.")
@@ -143,11 +143,12 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 		"    'size' optional parameter overrides default overlay upper layer size\n")
 	flagSet.Var(hostUDSPtr(HostUDSNone), flagHostUDS, "controls permission to access host Unix-domain sockets. Values: none|open|create|all, default: none")
 	flagSet.Var(hostFifoPtr(HostFifoNone), "host-fifo", "controls permission to access host FIFOs (or named pipes). Values: none|open, default: none")
+	flagSet.Var(charDevicePolicyPtr(CharDevEmulatedOnly), "character-device-policy", "controls how character device files on gofer mounts (rootfs and bind mounts) are handled. 'emulated-only' serves devices implemented by the sentry and fails opens of other devices with ENXIO (default and more secure); 'prefer-emulated' serves sentry-implemented devices from the sentry and opens the rest through the host; 'passthrough' opens all of them through the host. Values: emulated-only|prefer-emulated|passthrough, default: emulated-only")
 	flagSet.Bool("gvisor-marker-file", false, "enable the presence of the /proc/gvisor/kernel_is_gvisor file that can be used by applications to detect that gVisor is in use")
 	flagSet.String("override-procs", "", "comma-separated list of proc files to override with stubs (e.g. kallsyms)")
 
 	flagSet.Bool("ignore-cgroups", false, "don't configure cgroups.")
-	flagSet.Bool(flagMountCgroupV2, false, "EXPERIMENTAL. Mount cgroup v2 instead of cgroup v1 inside the sandbox. cgroup v2 support in gVisor is experimental and incomplete. Do not use for production workloads.")
+	flagSet.Var(inSandboxCgroupTypePtr(InSandboxCgroupV1), flagInSandboxCgroup, "cgroup setup to use inside the sandbox: v1 (default), v2.")
 	flagSet.Int("fdlimit", -1, "Specifies a limit on the number of host file descriptors that can be open. Applies separately to the sentry and gofer. Note: each file in the sandbox holds more than one host FD open.")
 	flagSet.Int("dcache", -1, "Set the global dentry cache size. This acts as a coarse-grained control on the number of host FDs simultaneously open by the sentry. If negative, per-mount caches are used.")
 	flagSet.Bool("iouring", false, "TEST ONLY; Enables io_uring syscalls in the sentry. Support is experimental and very limited.")
@@ -220,7 +221,7 @@ var overrideAllowlist = map[string]struct {
 	flagQDisc:                   {check: checkQDisc},
 	flagQDiscTBFRate:            {check: checkQDiscTBFRate},
 	flagQDiscTBFBurst:           {check: checkQDiscTBFBurst},
-	flagMountCgroupV2:           {},
+	flagInSandboxCgroup:         {},
 }
 
 // checkOverlay2 ensures that overlay2 can only be enabled using "memory" or

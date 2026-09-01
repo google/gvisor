@@ -23,8 +23,9 @@ type ClockID int32
 
 // These are the supported Linux clock identifiers.
 const (
-	Realtime ClockID = iota
-	Monotonic
+	Realtime     ClockID = 0
+	Monotonic    ClockID = 1
+	MonotonicRaw ClockID = 4
 )
 
 // String implements fmt.Stringer.String.
@@ -34,6 +35,8 @@ func (c ClockID) String() string {
 		return "Realtime"
 	case Monotonic:
 		return "Monotonic"
+	case MonotonicRaw:
+		return "MonotonicRaw"
 	default:
 		return strconv.Itoa(int(c))
 	}

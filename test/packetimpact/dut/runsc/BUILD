@@ -12,7 +12,7 @@ go_binary(
     srcs = ["main.go"],
     data = [
         ":devid",
-        "//runsc",
+        "//:release",
         "//test/packetimpact/dut:posix_server",
     ],
     deps = [

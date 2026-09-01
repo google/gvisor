@@ -654,12 +654,22 @@ func (s *runscService) getContainerPids(ctx context.Context, c *Container) ([]ui
 	return pids, nil
 }
 
+// publishFailureIsFatal reports whether a failure to publish an event is fatal.
+// An empty TTRPC_ADDRESS means no event sink is configured (as under CRI-O), so
+// the publisher can never connect and publish errors are expected.
+func publishFailureIsFatal() bool {
+	return os.Getenv("TTRPC_ADDRESS") != ""
+}
+
 func (s *runscService) forward(ctx context.Context, publisher shim.Publisher) {
+	isFatal := publishFailureIsFatal()
 	for e := range s.events {
-		err := publisher.Publish(ctx, getTopic(e), e)
-		if err != nil {
-			// Should not happen.
-			panic(fmt.Errorf("post event: %w", err))
+		if err := publisher.Publish(ctx, getTopic(e), e); err != nil {
+			if isFatal {
+				// Should not happen when an event sink is configured.
+				panic(fmt.Errorf("post event: %w", err))
+			}
+			log.L.Warningf("Failed to post event (no containerd event sink): %v", err)
 		}
 	}
 }

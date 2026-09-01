@@ -13,6 +13,29 @@
 // limitations under the License.
 
 // Package transport contains the implementation of Unix endpoints.
+//
+// The pieces fit together as follows:
+//
+//   - Endpoint is one end of a socket, in two flavors:
+//     connectionedEndpoint (stream and seqpacket sockets, and
+//     socketpairs of any type, including datagram) and connectionlessEndpoint
+//     (socket(2)-created datagram sockets).
+//   - Receiver is the read half of an endpoint: the consumer of its own
+//     queue. Its stream flavor additionally buffers the partially
+//     consumed message at the queue head.
+//   - Sender is the write half: the handle through which messages are
+//     sent into a destination socket's queue. A connected endpoint
+//     holds a Sender to the socket it is connected to in its peer field.
+//     Note the inversion this implies: closing a Sender's send side
+//     closes the queue that the destination socket reads from.
+//   - Endpoint.WaitQueue is the endpoint's waiter registry. A queue's
+//     readerWaiters is the WaitQueue of the endpoint that reads from it;
+//     its writerWaiters wakes senders blocked on a full queue.
+//   - The notification callbacks fan wakeups out to these waiter queues:
+//     NotifyDataReady wakes readers after a successful send,
+//     NotifyWriteSpace wakes writers after a receive frees space, and
+//     NotifyStateChange wakes waiters after a shutdown or close,
+//     including pollers waiting only for hangup events.
 package transport
 
 import (
@@ -207,7 +230,7 @@ type Endpoint interface {
 	// to an endpoint previously set to listen mode. This method does not
 	// block if no new connections are available.
 	//
-	// The returned Queue is the wait queue for the newly created endpoint.
+	// The returned WaitQueue is the wait queue for the newly created endpoint.
 	//
 	// peerAddr if not nil will be populated with the address of the connected
 	// peer on a successful accept.
@@ -276,7 +299,7 @@ type BoundEndpoint interface {
 	// with a BoundEndpoint, the endpoint calls the BidirectionalConnect method
 	// on the BoundEndpoint and sends a representation of itself (the
 	// ConnectingEndpoint) and a callback (returnConnect) to receive the
-	// connection information (Receiver and ConnectedEndpoint) upon a
+	// connection information (Receiver and Sender) upon a
 	// successful connect. The callback should only be called on a successful
 	// connect.
 	//
@@ -286,7 +309,7 @@ type BoundEndpoint interface {
 	//
 	// This method will return syserr.ErrConnectionRefused on endpoints with a
 	// type that isn't SockStream or SockSeqpacket.
-	BidirectionalConnect(ctx context.Context, ep ConnectingEndpoint, returnConnect func(Receiver, ConnectedEndpoint)) *syserr.Error
+	BidirectionalConnect(ctx context.Context, ep ConnectingEndpoint, returnConnect func(Receiver, Sender)) *syserr.Error
 
 	// UnidirectionalConnect establishes a write-only connection to a unix
 	// endpoint.
@@ -296,7 +319,7 @@ type BoundEndpoint interface {
 	//
 	// This method will return syserr.ErrConnectionRefused on a non-SockDgram
 	// endpoint.
-	UnidirectionalConnect(ctx context.Context) (ConnectedEndpoint, *syserr.Error)
+	UnidirectionalConnect(ctx context.Context) (Sender, *syserr.Error)
 
 	// Passcred returns whether or not the SO_PASSCRED socket option is
 	// enabled on this end.
@@ -386,21 +409,24 @@ func (m *message) Truncate(n int64) {
 type Receiver interface {
 	// Recv receives a single message. This method does not block.
 	//
-	// notify indicates if RecvNotify should be called.
+	// notify indicates if NotifyWriteSpace should be called.
 	Recv(ctx context.Context, data [][]byte, args RecvArgs) (out RecvOutput, notify bool, err *syserr.Error)
 
-	// RecvNotify notifies the Receiver of a successful Recv. This must not be
-	// called while holding any endpoint locks.
-	RecvNotify()
+	// NotifyWriteSpace wakes senders blocked on the queue this Receiver
+	// reads from: a successful Recv freed space. This must not be called
+	// while holding any endpoint locks.
+	NotifyWriteSpace()
 
 	// CloseRecv prevents the receiving of additional Messages.
 	//
-	// After CloseRecv is called, CloseNotify must also be called.
+	// After CloseRecv is called, NotifyStateChange must also be called.
 	CloseRecv()
 
-	// CloseNotify notifies the Receiver of recv being closed. This must not be
-	// called while holding any endpoint locks.
-	CloseNotify()
+	// NotifyStateChange wakes waiters after CloseRecv. It must wake
+	// pollers waiting only for hangup events, not just those interested
+	// in data events. This must not be called while holding any endpoint
+	// locks.
+	NotifyStateChange()
 
 	// IsRecvClosed returns true if reception of additional messages is closed.
 	IsRecvClosed() bool
@@ -420,6 +446,12 @@ type Receiver interface {
 	// Release releases any resources owned by the Receiver. It should be
 	// called before dropping all references to a Receiver.
 	Release(ctx context.Context)
+}
+
+// A HostReadiness is an optional interface implemented by endpoints backed by a
+// host file descriptor.
+type HostReadiness interface {
+	HostReadiness(mask waiter.EventMask) waiter.EventMask
 }
 
 // Address is a unix socket address.
@@ -465,15 +497,22 @@ func (q *queueReceiver) Recv(ctx context.Context, data [][]byte, args RecvArgs) 
 	return out, notify, nil
 }
 
-// RecvNotify implements Receiver.RecvNotify.
-func (q *queueReceiver) RecvNotify() {
-	q.readQueue.WriterQueue.Notify(waiter.WritableEvents)
+// NotifyWriteSpace implements Receiver.NotifyWriteSpace.
+func (q *queueReceiver) NotifyWriteSpace() {
+	q.readQueue.writerWaiters.Notify(waiter.WritableEvents)
 }
 
-// CloseNotify implements Receiver.CloseNotify.
-func (q *queueReceiver) CloseNotify() {
-	q.readQueue.ReaderQueue.Notify(waiter.ReadableEvents)
-	q.readQueue.WriterQueue.Notify(waiter.WritableEvents)
+// NotifyStateChange implements Receiver.NotifyStateChange.
+func (q *queueReceiver) NotifyStateChange() {
+	// Include the hangup events: this closure may newly satisfy
+	// EventRdHUp/EventHUp for pollers that requested no data events, and
+	// notifications are filtered against the waiter's mask, so data
+	// events alone would never wake them. Over-notifying is harmless
+	// (woken waiters re-check readiness and sleep again if unready) and
+	// is what Linux does: sk_state_change() wakes all waiters on every
+	// shutdown or close.
+	q.readQueue.readerWaiters.Notify(waiter.ReadableEvents | waiter.EventRdHUp | waiter.EventHUp)
+	q.readQueue.writerWaiters.Notify(waiter.WritableEvents | waiter.EventHUp)
 }
 
 // CloseRecv implements Receiver.CloseRecv.
@@ -690,8 +729,9 @@ func (q *streamQueueReceiver) Release(ctx context.Context) {
 	q.control.Release(ctx)
 }
 
-// A ConnectedEndpoint is an Endpoint that can be used to send Messages.
-type ConnectedEndpoint interface {
+// A Sender is the write half of a connection: messages sent through it
+// are enqueued onto the destination socket's receive queue.
+type Sender interface {
 	// Passcred implements Endpoint.Passcred.
 	Passcred() bool
 
@@ -700,7 +740,7 @@ type ConnectedEndpoint interface {
 
 	// Send sends a single message. This method does not block.
 	//
-	// notify indicates if SendNotify should be called.
+	// notify indicates if NotifyDataReady should be called.
 	//
 	// syserr.ErrWouldBlock can be returned along with a partial write if
 	// the caller should block to send the rest of the data.
@@ -709,18 +749,21 @@ type ConnectedEndpoint interface {
 	// transfers to the callee if and only if err is nil or n is non-zero.
 	Send(ctx context.Context, data [][]byte, c ControlMessages, from Address) (n int64, notify bool, err *syserr.Error)
 
-	// SendNotify notifies the ConnectedEndpoint of a successful Send. This
-	// must not be called while holding any endpoint locks.
-	SendNotify()
+	// NotifyDataReady wakes readers of the queue this Sender sends into:
+	// a successful Send made data available. This must not be called
+	// while holding any endpoint locks.
+	NotifyDataReady()
 
 	// CloseSend prevents the sending of additional Messages.
 	//
-	// After CloseSend is call, CloseNotify must also be called.
+	// After CloseSend is call, NotifyStateChange must also be called.
 	CloseSend()
 
-	// CloseNotify notifies the ConnectedEndpoint of send being closed. This
-	// must not be called while holding any endpoint locks.
-	CloseNotify()
+	// NotifyStateChange wakes waiters after CloseSend. It must wake
+	// pollers waiting only for hangup events, not just those interested
+	// in data events. This must not be called while holding any endpoint
+	// locks.
+	NotifyStateChange()
 
 	// IsSendClosed returns true if transmission of additional messages is closed.
 	IsSendClosed() bool
@@ -729,7 +772,7 @@ type ConnectedEndpoint interface {
 	// includes when write has been shutdown.
 	Writable() bool
 
-	// EventUpdate lets the ConnectedEndpoint know that event registrations
+	// EventUpdate lets the Sender know that event registrations
 	// have changed.
 	EventUpdate() error
 
@@ -742,8 +785,8 @@ type ConnectedEndpoint interface {
 	// SendMaxQueueSize should return -1 if the operation isn't supported.
 	SendMaxQueueSize() int64
 
-	// Release releases any resources owned by the ConnectedEndpoint. It should
-	// be called before dropping all references to a ConnectedEndpoint.
+	// Release releases any resources owned by the Sender. It should
+	// be called before dropping all references to a Sender.
 	Release(ctx context.Context)
 
 	// CloseUnread sets the fact that this end is closed with unread data to
@@ -756,9 +799,9 @@ type ConnectedEndpoint interface {
 }
 
 // +stateify savable
-type connectedEndpoint struct {
+type queueSender struct {
 	// endpoint represents the subset of the Endpoint functionality needed by
-	// the connectedEndpoint. It is implemented by both connectionedEndpoint
+	// the queueSender. It is implemented by both connectionedEndpoint
 	// and connectionlessEndpoint and allows the use of types which don't
 	// fully implement Endpoint.
 	endpoint interface {
@@ -775,18 +818,18 @@ type connectedEndpoint struct {
 	writeQueue *queue
 }
 
-// Passcred implements ConnectedEndpoint.Passcred.
-func (e *connectedEndpoint) Passcred() bool {
+// Passcred implements Sender.Passcred.
+func (e *queueSender) Passcred() bool {
 	return e.endpoint.Passcred()
 }
 
-// GetLocalAddress implements ConnectedEndpoint.GetLocalAddress.
-func (e *connectedEndpoint) GetLocalAddress() (Address, tcpip.Error) {
+// GetLocalAddress implements Sender.GetLocalAddress.
+func (e *queueSender) GetLocalAddress() (Address, tcpip.Error) {
 	return e.endpoint.GetLocalAddress()
 }
 
-// Send implements ConnectedEndpoint.Send.
-func (e *connectedEndpoint) Send(ctx context.Context, data [][]byte, c ControlMessages, from Address) (int64, bool, *syserr.Error) {
+// Send implements Sender.Send.
+func (e *queueSender) Send(ctx context.Context, data [][]byte, c ControlMessages, from Address) (int64, bool, *syserr.Error) {
 	discardEmpty := false
 	truncate := false
 	if e.endpoint.Type() == linux.SOCK_STREAM {
@@ -804,61 +847,63 @@ func (e *connectedEndpoint) Send(ctx context.Context, data [][]byte, c ControlMe
 	return e.writeQueue.Enqueue(ctx, data, c, from, discardEmpty, truncate)
 }
 
-// SendNotify implements ConnectedEndpoint.SendNotify.
-func (e *connectedEndpoint) SendNotify() {
-	e.writeQueue.ReaderQueue.Notify(waiter.ReadableEvents)
+// NotifyDataReady implements Sender.NotifyDataReady.
+func (e *queueSender) NotifyDataReady() {
+	e.writeQueue.readerWaiters.Notify(waiter.ReadableEvents)
 }
 
-// CloseNotify implements ConnectedEndpoint.CloseNotify.
-func (e *connectedEndpoint) CloseNotify() {
-	e.writeQueue.ReaderQueue.Notify(waiter.ReadableEvents)
-	e.writeQueue.WriterQueue.Notify(waiter.WritableEvents)
+// NotifyStateChange implements Sender.NotifyStateChange.
+func (e *queueSender) NotifyStateChange() {
+	// Include the hangup events for hangup-only pollers; over-notifying
+	// is harmless (see queueReceiver.NotifyStateChange).
+	e.writeQueue.readerWaiters.Notify(waiter.ReadableEvents | waiter.EventRdHUp | waiter.EventHUp)
+	e.writeQueue.writerWaiters.Notify(waiter.WritableEvents | waiter.EventHUp)
 }
 
-// CloseSend implements ConnectedEndpoint.CloseSend.
-func (e *connectedEndpoint) CloseSend() {
+// CloseSend implements Sender.CloseSend.
+func (e *queueSender) CloseSend() {
 	e.writeQueue.Close()
 }
 
-// IsSendClosed implements ConnectedEndpoint.IsSendClosed.
-func (e *connectedEndpoint) IsSendClosed() bool {
+// IsSendClosed implements Sender.IsSendClosed.
+func (e *queueSender) IsSendClosed() bool {
 	return e.writeQueue.isClosed()
 }
 
-// Writable implements ConnectedEndpoint.Writable.
-func (e *connectedEndpoint) Writable() bool {
+// Writable implements Sender.Writable.
+func (e *queueSender) Writable() bool {
 	return e.writeQueue.IsWritable()
 }
 
-// EventUpdate implements ConnectedEndpoint.EventUpdate.
-func (*connectedEndpoint) EventUpdate() error {
+// EventUpdate implements Sender.EventUpdate.
+func (*queueSender) EventUpdate() error {
 	return nil
 }
 
-// SendQueuedSize implements ConnectedEndpoint.SendQueuedSize.
-func (e *connectedEndpoint) SendQueuedSize() int64 {
+// SendQueuedSize implements Sender.SendQueuedSize.
+func (e *queueSender) SendQueuedSize() int64 {
 	return e.writeQueue.QueuedSize()
 }
 
-// SendMaxQueueSize implements ConnectedEndpoint.SendMaxQueueSize.
-func (e *connectedEndpoint) SendMaxQueueSize() int64 {
+// SendMaxQueueSize implements Sender.SendMaxQueueSize.
+func (e *queueSender) SendMaxQueueSize() int64 {
 	return e.writeQueue.MaxQueueSize()
 }
 
-// Release implements ConnectedEndpoint.Release.
-func (e *connectedEndpoint) Release(ctx context.Context) {
+// Release implements Sender.Release.
+func (e *queueSender) Release(ctx context.Context) {
 	e.writeQueue.DecRef(ctx)
 }
 
-// CloseUnread implements ConnectedEndpoint.CloseUnread.
-func (e *connectedEndpoint) CloseUnread() {
+// CloseUnread implements Sender.CloseUnread.
+func (e *queueSender) CloseUnread() {
 	e.writeQueue.CloseUnread()
 }
 
-// SetSendBufferSize implements ConnectedEndpoint.SetSendBufferSize.
+// SetSendBufferSize implements Sender.SetSendBufferSize.
 // SetSendBufferSize sets the send buffer size for the write queue to the
 // specified value.
-func (e *connectedEndpoint) SetSendBufferSize(v int64) (newSz int64) {
+func (e *queueSender) SetSendBufferSize(v int64) (newSz int64) {
 	e.writeQueue.SetMaxQueueSize(v)
 	return v
 }
@@ -870,7 +915,12 @@ func (e *connectedEndpoint) SetSendBufferSize(v int64) (newSz int64) {
 //
 // +stateify savable
 type baseEndpoint struct {
-	*waiter.Queue
+	// WaitQueue is this socket's waiter registry, the one place where its
+	// blocked readers and writers, pollers, and epoll entries register for
+	// events. The message queues wired to this endpoint hold aliases to it
+	// and deliver their wakeups through them.
+	WaitQueue *waiter.Queue
+
 	tcpip.DefaultSocketOptionsHandler
 
 	// Mutex protects the below fields.
@@ -882,19 +932,20 @@ type baseEndpoint struct {
 	// receiver allows Messages to be received.
 	receiver Receiver
 
-	// connected allows messages to be sent and state information about the
-	// connected endpoint to be read.
-	connected ConnectedEndpoint
+	// peer is the Sender through which this endpoint's sends reach its
+	// peer socket; it also exposes the send-side state (writability,
+	// shutdown) of that connection.
+	peer Sender
 
 	// path is not empty if the endpoint has been bound,
 	// or may be used if the endpoint is connected.
 	path string
 
-	// writeShutdown is true if the write side of the endpoint has been
+	// sendShutdown is true if the write side of the endpoint has been
 	// shut down without closing the peer's read side: sends fail with
 	// EPIPE, but the peer is unaffected. This is how shutdown(SHUT_WR)
 	// behaves on datagram sockets. Protected by endpointMutex.
-	writeShutdown bool
+	sendShutdown bool
 
 	// ops is used to get socket level options.
 	ops tcpip.SocketOptions
@@ -907,9 +958,9 @@ type baseEndpoint struct {
 
 // EventRegister implements waiter.Waitable.EventRegister.
 func (e *baseEndpoint) EventRegister(we *waiter.Entry) error {
-	e.Queue.EventRegister(we)
+	e.WaitQueue.EventRegister(we)
 	e.Lock()
-	c := e.connected
+	c := e.peer
 	e.Unlock()
 	if c != nil {
 		if err := c.EventUpdate(); err != nil {
@@ -921,9 +972,9 @@ func (e *baseEndpoint) EventRegister(we *waiter.Entry) error {
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
 func (e *baseEndpoint) EventUnregister(we *waiter.Entry) {
-	e.Queue.EventUnregister(we)
+	e.WaitQueue.EventUnregister(we)
 	e.Lock()
-	c := e.connected
+	c := e.peer
 	e.Unlock()
 	if c != nil {
 		c.EventUpdate()
@@ -939,14 +990,14 @@ func (e *baseEndpoint) Passcred() bool {
 func (e *baseEndpoint) ConnectedPasscred() bool {
 	e.Lock()
 	defer e.Unlock()
-	return e.connected != nil && e.connected.Passcred()
+	return e.peer != nil && e.peer.Passcred()
 }
 
 // Connected implements ConnectingEndpoint.Connected.
 //
 // Preconditions: e.mu must be held.
 func (e *baseEndpoint) Connected() bool {
-	return e.receiver != nil && e.connected != nil
+	return e.receiver != nil && e.peer != nil
 }
 
 // RecvMsg reads data and a control message from the endpoint.
@@ -971,7 +1022,7 @@ func (e *baseEndpoint) RecvMsg(ctx context.Context, data [][]byte, args RecvArgs
 	}
 
 	if notify {
-		return out, receiver.RecvNotify, nil
+		return out, receiver.NotifyWriteSpace, nil
 	}
 
 	return out, nil, nil
@@ -989,18 +1040,18 @@ func (e *baseEndpoint) SendMsg(ctx context.Context, data [][]byte, c ControlMess
 		e.Unlock()
 		return 0, nil, syserr.ErrAlreadyConnected
 	}
-	if e.writeShutdown {
+	if e.sendShutdown {
 		e.Unlock()
 		return 0, nil, syserr.ErrClosedForSend
 	}
 
-	connected := e.connected
-	n, notify, err := connected.Send(ctx, data, c, Address{Addr: e.path})
+	peer := e.peer
+	n, notify, err := peer.Send(ctx, data, c, Address{Addr: e.path})
 	e.Unlock()
 
 	var notifyFn func()
 	if notify {
-		notifyFn = connected.SendNotify
+		notifyFn = peer.NotifyDataReady
 	}
 
 	return n, notifyFn, err
@@ -1038,7 +1089,7 @@ func (e *baseEndpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 			e.Unlock()
 			return -1, &tcpip.ErrNotConnected{}
 		}
-		v := e.connected.SendQueuedSize()
+		v := e.peer.SendQueuedSize()
 		e.Unlock()
 		if v < 0 {
 			return -1, &tcpip.ErrQueueSizeNotSupported{}
@@ -1099,7 +1150,7 @@ func (e *baseEndpoint) shutdown(flags tcpip.ShutdownFlags, closePeerRead bool) *
 
 	var (
 		r             = e.receiver
-		c             = e.connected
+		c             = e.peer
 		shutdownRead  = flags&tcpip.ShutdownRead != 0
 		shutdownWrite = flags&tcpip.ShutdownWrite != 0
 	)
@@ -1107,23 +1158,28 @@ func (e *baseEndpoint) shutdown(flags tcpip.ShutdownFlags, closePeerRead bool) *
 		r.CloseRecv()
 	}
 	if shutdownWrite {
-		e.writeShutdown = true
-		if closePeerRead {
+		e.sendShutdown = true
+		// Host-backed endpoints have no shared queue to protect; mirror
+		// SHUT_WR onto the host fd.
+		if _, isHost := c.(HostReadiness); isHost || closePeerRead {
 			c.CloseSend()
 		}
 	}
 	e.Unlock()
 
-	// Don't hold e.Mutex while calling CloseNotify.
+	// Don't hold e.Mutex while calling NotifyStateChange.
 	if shutdownRead {
-		r.CloseNotify()
+		r.NotifyStateChange()
 	}
 	if shutdownWrite {
 		if closePeerRead {
-			c.CloseNotify()
+			c.NotifyStateChange()
 		} else {
-			// Wake up any local writers.
-			e.Queue.Notify(waiter.WritableEvents)
+			// Wake up any local writers, and hangup-only pollers in
+			// case this write shutdown completed EventHUp;
+			// over-notifying is harmless (see
+			// queueReceiver.NotifyStateChange).
+			e.WaitQueue.Notify(waiter.WritableEvents | waiter.EventHUp)
 		}
 	}
 
@@ -1141,7 +1197,7 @@ func (e *baseEndpoint) GetLocalAddress() (Address, tcpip.Error) {
 // available).
 func (e *baseEndpoint) GetRemoteAddress() (Address, tcpip.Error) {
 	e.Lock()
-	c := e.connected
+	c := e.peer
 	e.Unlock()
 	if c != nil {
 		return c.GetLocalAddress()

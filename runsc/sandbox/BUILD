@@ -57,7 +57,6 @@ go_library(
         "//runsc/sandbox/bpf",
         "//runsc/specutils",
         "//runsc/starttime",
-        "//runsc/version",
         "//tools/xdp/cmd",
         "@com_github_cilium_ebpf//:go_default_library",
         "@com_github_cilium_ebpf//link:go_default_library",

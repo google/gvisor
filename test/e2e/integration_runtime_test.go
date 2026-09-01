@@ -313,7 +313,7 @@ func TestOverlayCheckpointRestore(t *testing.T) {
 func TestPIDFDSelftests(t *testing.T) {
 	ctx := context.Background()
 	// pidfd_setns_test creates cgroup namespaces, which requires cgroup2fs to
-	// be mounted in the sandbox (--mount-cgroup-v2).
+	// be mounted in the sandbox (--in-sandbox-cgroup=v2).
 	d := dockerutil.MakeContainerWithRuntime(ctx, t, "-cgroupv2")
 	defer d.CleanUp(ctx)
 

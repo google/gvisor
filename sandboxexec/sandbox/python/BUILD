@@ -19,7 +19,7 @@ py_library(
 py_test(
     name = "sandbox_py_test",
     srcs = ["tests/sandbox_test.py"],
-    data = ["//runsc"],
+    data = ["//:release"],
     main = "tests/sandbox_test.py",
     tags = ["nogotsan"],
     deps = [

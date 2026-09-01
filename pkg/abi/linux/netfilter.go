@@ -380,10 +380,13 @@ const (
 	NF_NAT_RANGE_PROTO_RANDOM       = 1 << 2
 	NF_NAT_RANGE_PERSISTENT         = 1 << 3
 	NF_NAT_RANGE_PROTO_RANDOM_FULLY = 1 << 4
+	NF_NAT_RANGE_PROTO_OFFSET       = 1 << 5
+	NF_NAT_RANGE_NETMAP             = 1 << 6
 	NF_NAT_RANGE_PROTO_RANDOM_ALL   = (NF_NAT_RANGE_PROTO_RANDOM | NF_NAT_RANGE_PROTO_RANDOM_FULLY)
 	NF_NAT_RANGE_MASK               = (NF_NAT_RANGE_MAP_IPS |
 		NF_NAT_RANGE_PROTO_SPECIFIED | NF_NAT_RANGE_PROTO_RANDOM |
-		NF_NAT_RANGE_PERSISTENT | NF_NAT_RANGE_PROTO_RANDOM_FULLY)
+		NF_NAT_RANGE_PERSISTENT | NF_NAT_RANGE_PROTO_RANDOM_FULLY |
+		NF_NAT_RANGE_PROTO_OFFSET | NF_NAT_RANGE_NETMAP)
 )
 
 // NfNATIPV4Range corresponds to struct nf_nat_ipv4_range
@@ -457,10 +460,12 @@ type XTNATTargetV2 struct {
 	_      structs.HostLayout
 	Target XTEntryTarget
 	Range  NFNATRange2
+	// Padding for 8-byte alignment.
+	_ [4]byte
 }
 
 // SizeOfXTNATTargetV2 is the size of an XTNATTargetV2.
-const SizeOfXTNATTargetV2 = SizeOfXTEntryTarget + SizeOfNFNATRange2
+const SizeOfXTNATTargetV2 = SizeOfXTEntryTarget + SizeOfNFNATRange2 + 4
 
 // XTCTTargetInfoV0 corresponds to struct xt_ct_target_info (revision 0) in
 // include/uapi/linux/netfilter/xt_CT.h. The CT target is used in the raw

@@ -2,8 +2,7 @@
 
 [TOC]
 
-> Note: gVisor supports x86\_64 and ARM64, and requires Linux 4.14.77+
-> ([older Linux](./networking.md#gso)).
+> Note: gVisor supports x86\_64 and ARM64, and requires Linux 5.6+.
 
 ## Install from an `apt` repository {#apt}
 
@@ -50,17 +49,18 @@ To download and install the latest release manually follow these steps:
   set -e
   ARCH=$(uname -m)
   URL=https://storage.googleapis.com/gvisor/releases/release/latest/${ARCH}
-  wget ${URL}/gvisor.tar.bz2 ${URL}/gvisor.tar.bz2.sha512
-  sha512sum -c gvisor.tar.bz2.sha512
-  sudo tar -xjf gvisor.tar.bz2 -C /usr/local/bin
-  rm -f gvisor.tar.bz2 gvisor.tar.bz2.sha512
+  wget ${URL}/gvisor.tar.zstd ${URL}/gvisor.tar.zstd.sha512
+  sha512sum -c gvisor.tar.zstd.sha512
+  sudo tar --zstd -xf gvisor.tar.zstd -C /usr/local/bin
+  rm -f gvisor.tar.zstd gvisor.tar.zstd.sha512
 )
 ```
 
-The `gvisor.tar.bz2` tarball contains `runsc`, the `containerd-shim-runsc-v1`
+The `gvisor.tar.zstd` tarball contains `runsc`, the `containerd-shim-runsc-v1`
 containerd shim, and a `gvisor-bin/` directory with sidecar binaries that
 `runsc` executes at runtime. `runsc` looks for `gvisor-bin/` next to its own
-binary, so keep them together if you move them.
+binary, so keep them together if you move them. If you are running on a machine
+without `zstd` installed, you can use `gvisor.tar.bz2` instead.
 
 To install gVisor as a Docker runtime, run the following commands:
 
@@ -196,8 +196,13 @@ sudo add-apt-repository "deb [arch=amd64,arm64] https://storage.googleapis.com/g
 ### Point release
 
 Point releases correspond to
-[releases](https://github.com/google/gvisor/releases) tagged in the Github
-repository. A given point release is available at the following URL:
+[releases](https://github.com/google/gvisor/releases) tagged in the GitHub
+repository. Each release on GitHub includes release notes/changelogs and
+downloadable release tarballs for each architecture (`gvisor-x86_64.tar.bz2`,
+`gvisor-aarch64.tar.bz2`) alongside checksums (`SHA256SUMS`, `SHA512SUMS`).
+
+Point releases are also available directly from the release bucket at the
+following URL:
 
 `https://storage.googleapis.com/gvisor/releases/release/${yyyymmdd}.${rc}/${ARCH}`
 

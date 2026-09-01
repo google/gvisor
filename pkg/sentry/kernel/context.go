@@ -41,10 +41,6 @@ const (
 
 	// CtxCgroupNamespace is a Context.Value key for a CgroupNamespace.
 	CtxCgroupNamespace
-
-	// CtxFSRestore is a Context.Value key indicating if we are restoring from
-	// split checkpoint.
-	CtxFSRestore
 )
 
 // ContextCanTrace returns true if ctx is permitted to trace t, in the same sense
@@ -110,12 +106,4 @@ func TaskFromContext(ctx context.Context) *Task {
 		return v.(*Task)
 	}
 	return nil
-}
-
-// FSRestoreFromContext returns true if we are restoring from split checkpoint.
-func FSRestoreFromContext(ctx context.Context) bool {
-	if v := ctx.Value(CtxFSRestore); v != nil {
-		return v.(bool)
-	}
-	return false
 }

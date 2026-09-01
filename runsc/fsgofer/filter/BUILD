@@ -1,44 +1,34 @@
-load("//tools:defs.bzl", "go_library", "go_test")
+load("//pkg/seccomp/precompiledseccomp:defs.bzl", "precompiled_seccomp_rules")
+load("//tools:defs.bzl", "go_library")
 
 package(
     default_applicable_licenses = ["//:license"],
     licenses = ["notice"],
 )
 
+precompiled_seccomp_rules(
+    name = "filter_precompiled",
+    out = "filter_precompiled.go",
+    exclude_in_fastbuild = True,
+    out_package_name = "filter",
+    programs_to_compile_go_import = "gvisor.dev/gvisor/runsc/fsgofer/filter/config",
+    programs_to_compile_go_library = "//runsc/fsgofer/filter/config",
+)
+
 go_library(
     name = "filter",
     srcs = [
-        "config.go",
-        "config_amd64.go",
-        "config_arm64.go",
-        "config_cgo.go",
-        "config_profile.go",
-        "extra_filters.go",
-        "extra_filters_msan.go",
-        "extra_filters_race.go",
-        "extra_filters_race_amd64.go",
-        "extra_filters_race_arm64.go",
         "filter.go",
+        "filter_precompiled.go",
     ],
     visibility = [
         "//runsc:__subpackages__",
     ],
     deps = [
-        "//pkg/abi/linux",
-        "//pkg/flipcall",
         "//pkg/log",
         "//pkg/seccomp",
-        "@org_golang_x_sys//unix:go_default_library",
-    ],
-)
-
-go_test(
-    name = "filter_test",
-    size = "small",
-    srcs = ["filter_test.go"],
-    library = ":filter",
-    deps = [
-        "//pkg/seccomp",
-        "@org_golang_x_sys//unix:go_default_library",
+        "//pkg/seccomp/precompiledseccomp",
+        "//pkg/sync",
+        "//runsc/fsgofer/filter/config",
     ],
 )

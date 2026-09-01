@@ -879,7 +879,10 @@ func TestNeighborCacheAddStaticEntryThenOverflow(t *testing.T) {
 		State:     Static,
 		UpdatedAt: c.clock.NowMonotonic(),
 	}
-	if diff := cmp.Diff(want, e.mu.neigh, cmp.AllowUnexported(tcpip.MonotonicTime{})); diff != "" {
+	e.mu.RLock()
+	gotNeighbor := e.mu.neigh
+	e.mu.RUnlock()
+	if diff := cmp.Diff(want, gotNeighbor, cmp.AllowUnexported(tcpip.MonotonicTime{})); diff != "" {
 		t.Errorf("c.linkRes.neigh.entry(%s, \"\", nil) mismatch (-want, +got):\n%s", entry.Addr, diff)
 	}
 
@@ -1248,7 +1251,10 @@ func TestNeighborCacheReplace(t *testing.T) {
 			State:     Delay,
 			UpdatedAt: clock.NowMonotonic(),
 		}
-		if diff := cmp.Diff(want, e.mu.neigh, cmp.AllowUnexported(tcpip.MonotonicTime{})); diff != "" {
+		e.mu.RLock()
+		gotNeighbor := e.mu.neigh
+		e.mu.RUnlock()
+		if diff := cmp.Diff(want, gotNeighbor, cmp.AllowUnexported(tcpip.MonotonicTime{})); diff != "" {
 			t.Errorf("linkRes.neigh.entry(%s, '', nil) mismatch (-want, +got):\n%s", entry.Addr, diff)
 		}
 	}
@@ -1267,7 +1273,10 @@ func TestNeighborCacheReplace(t *testing.T) {
 			State:     Reachable,
 			UpdatedAt: clock.NowMonotonic(),
 		}
-		if diff := cmp.Diff(want, e.mu.neigh, cmp.AllowUnexported(tcpip.MonotonicTime{})); diff != "" {
+		e.mu.RLock()
+		gotNeighbor := e.mu.neigh
+		e.mu.RUnlock()
+		if diff := cmp.Diff(want, gotNeighbor, cmp.AllowUnexported(tcpip.MonotonicTime{})); diff != "" {
 			t.Errorf("linkRes.neigh.entry(%s, '', nil) mismatch (-want, +got):\n%s", entry.Addr, diff)
 		}
 	}
@@ -1305,7 +1314,10 @@ func TestNeighborCacheResolutionFailed(t *testing.T) {
 		State:     Reachable,
 		UpdatedAt: clock.NowMonotonic(),
 	}
-	if diff := cmp.Diff(want, got.mu.neigh, cmp.AllowUnexported(tcpip.MonotonicTime{})); diff != "" {
+	got.mu.RLock()
+	gotNeighbor := got.mu.neigh
+	got.mu.RUnlock()
+	if diff := cmp.Diff(want, gotNeighbor, cmp.AllowUnexported(tcpip.MonotonicTime{})); diff != "" {
 		t.Errorf("linkRes.neigh.entry(%s, '', nil) mismatch (-want, +got):\n%s", entry.Addr, diff)
 	}
 
@@ -1477,8 +1489,11 @@ func TestNeighborCacheRetryResolution(t *testing.T) {
 		if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
 			t.Fatalf("got linkRes.neigh.entry(%s, '', _) = %v, want = %s", entry.Addr, err, &tcpip.ErrWouldBlock{})
 		}
-		if incompleteEntry.mu.neigh.State != Incomplete {
-			t.Fatalf("got entry.State = %s, want = %s", incompleteEntry.mu.neigh.State, Incomplete)
+		incompleteEntry.mu.RLock()
+		gotState := incompleteEntry.mu.neigh.State
+		incompleteEntry.mu.RUnlock()
+		if gotState != Incomplete {
+			t.Fatalf("got entry.State = %s, want = %s", gotState, Incomplete)
 		}
 
 		{
@@ -1545,7 +1560,10 @@ func TestNeighborCacheRetryResolution(t *testing.T) {
 				State:     Reachable,
 				UpdatedAt: clock.NowMonotonic(),
 			}
-			if diff := cmp.Diff(gotEntry.mu.neigh, wantEntry, cmp.AllowUnexported(tcpip.MonotonicTime{})); diff != "" {
+			gotEntry.mu.RLock()
+			gotNeighbor := gotEntry.mu.neigh
+			gotEntry.mu.RUnlock()
+			if diff := cmp.Diff(gotNeighbor, wantEntry, cmp.AllowUnexported(tcpip.MonotonicTime{})); diff != "" {
 				t.Fatalf("neighbor entry mismatch (-got, +want):\n%s", diff)
 			}
 		}

@@ -28,6 +28,7 @@
 #define CPU_HAS_XSAVE    CPU_ARCH_STATE+48 // +checkoffset . CPUArchState.hasXSAVE
 #define CPU_HAS_XSAVEOPT CPU_ARCH_STATE+49 // +checkoffset . CPUArchState.hasXSAVEOPT
 #define CPU_HAS_FSGSBASE CPU_ARCH_STATE+50 // +checkoffset . CPUArchState.hasFSGSBASE
+#define CPU_XCR0         CPU_ARCH_STATE+52 // +checkoffset . CPUArchState.xcr0Eax
 
 #define ENTRY_SCRATCH0   256 // +checkoffset . kernelEntry.scratch0
 #define ENTRY_STACK_TOP  264 // +checkoffset . kernelEntry.stackTop
@@ -438,6 +439,19 @@ TEXT ·start(SB),NOSPLIT|NOFRAME,$0
 	POPQ BX
 	SWAP_GS()
 
+	// Initialize FPU state before calling any Go code.
+	BYTE $0xdb; BYTE $0xe3 // fninit
+
+	// Sync XCR0 if XSAVE is enabled.
+	MOVQ 0(SP), AX // Pointer to CPU.
+	CMPB CPU_HAS_XSAVE(AX), $0
+	JE no_xsetbv_start
+	MOVL CPU_XCR0(AX), AX
+	MOVL $0, DX
+	MOVL $0, CX
+	BYTE $0x0f; BYTE $0x01; BYTE $0xd1 // xsetbv
+no_xsetbv_start:
+
 	// First argument (CPU) already at bottom of stack.
 	CALL ·startGo(SB) // Call Go hook.
 	JMP ·resume(SB)   // Restore to registers.
@@ -584,6 +598,7 @@ fpsave_done:
 	LOAD_KERNEL_STACK(GS)
 	MOVQ ENTRY_CPU_SELF(GS), AX // AX contains the vCPU.
 	PUSHQ AX                    // First argument (vCPU).
+	CALL ·jumpToUser(SB)
 	CALL ·kernelSyscall(SB)     // Call the trampoline.
 	POPQ AX                     // Pop vCPU.
 
@@ -717,6 +732,7 @@ fpsave_done:
 	MOVQ ENTRY_CPU_SELF(GS), AX // AX contains the vCPU.
 	PUSHQ BX                    // Second argument (vector).
 	PUSHQ AX                    // First argument (vCPU).
+	CALL ·jumpToUser(SB)
 	CALL ·kernelException(SB)   // Call the trampoline.
 	POPQ BX                     // Pop vector.
 	POPQ AX                     // Pop vCPU.

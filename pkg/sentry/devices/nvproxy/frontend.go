@@ -1318,6 +1318,50 @@ func rmAllocNoParams(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETER
 	return rmAllocInvoke[byte](fi, ioctlParams, nil, isNVOS64, addSimpleObjDepParentLocked)
 }
 
+// rmAllocEventBuffer handles NV_EVENT_BUFFER allocation.
+func rmAllocEventBuffer(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
+	var allocParams nvgpu.NV_EVENT_BUFFER_ALLOC_PARAMETERS
+	if _, err := allocParams.CopyIn(fi.t, addrFromP64(ioctlParams.PAllocParms)); err != nil {
+		return 0, err
+	}
+	if allocParams.HBufferHeader.Val == 0 {
+		fi.ctx.Warningf("nvproxy: rejecting NV_EVENT_BUFFER allocation with HBufferHeader == 0 (no translation available)")
+		return 0, linuxerr.EINVAL
+	}
+
+	// notificationHandle is a frontend FD, which the driver translates for
+	// non-kernel clients; 0 leaves the event buffer without a notification
+	// handle. See
+	// src/nvidia/src/kernel/rmapi/event_buffer.c:eventbufferConstruct_IMPL()
+	// => osUserHandleToKernelPtr().
+	origNotificationHandle := allocParams.NotificationHandle
+	if origNotificationHandle != 0 {
+		eventFileGeneric, _ := fi.t.FDTable().Get(int32(origNotificationHandle))
+		if eventFileGeneric == nil {
+			return 0, linuxerr.EINVAL
+		}
+		defer eventFileGeneric.DecRef(fi.ctx)
+		eventFile, ok := eventFileGeneric.Impl().(*frontendFD)
+		if !ok {
+			return 0, linuxerr.EINVAL
+		}
+		allocParams.NotificationHandle = uint64(eventFile.hostFD)
+	}
+
+	n, err := rmAllocInvoke(fi, ioctlParams, &allocParams, isNVOS64, func(fi *frontendIoctlState, client *rootClient, ioctlParams *nvgpu.NVOS64_PARAMETERS, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.NV_EVENT_BUFFER_ALLOC_PARAMETERS) {
+		fi.fd.dev.nvp.objAdd(fi.ctx, client, ioctlParams.HObjectNew, ioctlParams.HClass, &miscObject{}, ioctlParams.HObjectParent, allocParams.HBufferHeader, allocParams.HRecordBuffer, allocParams.HVardataBuffer)
+	})
+	if err != nil {
+		return n, err
+	}
+
+	allocParams.NotificationHandle = origNotificationHandle
+	if _, err := allocParams.CopyOut(fi.t, addrFromP64(ioctlParams.PAllocParms)); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
 func rmAllocRootClient(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
 	if !ioctlParams.HClass.IsRootClient() {
 		panic(fmt.Sprintf("rmAllocRootClient() was invoked with HClass whose IsRootClient()==false: %#x", ioctlParams.HClass))

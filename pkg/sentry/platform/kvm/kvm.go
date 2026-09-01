@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"golang.org/x/sys/unix"
+
 	pkgcontext "gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -125,6 +126,9 @@ func New(deviceFile *fd.FD, config Config) (*KVM, error) {
 	// We are done with the device file.
 	deviceFile.Close()
 	config.StartupTimer.Reached("kvm VM created")
+
+	// `kvm_destroy_vm` costs tens of milliseconds. Do that async.
+	config.PinRing.Add(int(vm))
 
 	// Create a VM context.
 	machine, err := newMachine(int(vm), &config)
@@ -236,6 +240,7 @@ func (*constructor) New(opts platform.Options) (platform.Platform, error) {
 		ApplicationCores: opts.ApplicationCores,
 		UseCPUNums:       opts.UseCPUNums,
 		StartupTimer:     opts.StartupTimer,
+		PinRing:          opts.PinRing,
 	})
 }
 

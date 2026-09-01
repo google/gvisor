@@ -26,6 +26,7 @@ import (
 	cgroups "github.com/containerd/cgroups/v3/cgroup1"
 	"github.com/containerd/containerd/v2/core/events"
 	"github.com/containerd/containerd/v2/core/runtime"
+	"github.com/containerd/log"
 	"golang.org/x/sys/unix"
 )
 
@@ -129,8 +130,11 @@ func (e *epoller) process(ctx context.Context, fd uintptr) {
 	if err := e.publisher.Publish(ctx, runtime.TaskOOMEventTopic, &TaskOOM{
 		ContainerID: i.id,
 	}); err != nil {
-		// Should not happen.
-		panic(fmt.Errorf("publish OOM event: %w", err))
+		if publishFailureIsFatal() {
+			// Should not happen when an event sink is configured.
+			panic(fmt.Errorf("publish OOM event: %w", err))
+		}
+		log.L.Warningf("Failed to publish OOM event (no containerd event sink): %v", err)
 	}
 }
 
