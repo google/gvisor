@@ -145,6 +145,14 @@ func (c *CPU) init(cpuID int) {
 	c.hasXSAVE = hasXSAVE
 	c.hasXSAVEOPT = hasXSAVEOPT
 	c.hasFSGSBASE = hasFSGSBASE
+
+	// Need to sync XCR0 with the host, because xsave and xrstor can be
+	// called from different contexts.
+	if hasXSAVE {
+		// Exclude MPX bits. MPX has been deprecated and we have seen
+		// cases when it isn't supported in VM.
+		c.xcr0Eax = uint32(localXCR0 &^ (cpuid.XSAVEFeatureBNDCSR | cpuid.XSAVEFeatureBNDREGS))
+	}
 }
 
 // StackTop returns the kernel's stack address.
@@ -290,22 +298,6 @@ func doSwitchToUser(
 func startGo(c *CPU) {
 	// Save per-cpu.
 	writeGS(kernelAddr(c.kernelEntry))
-
-	//
-	// TODO(mpratt): Note that per the note above, this should be done
-	// before entering Go code. However for simplicity we leave it here for
-	// now, since the small critical sections with undefined FPU state
-	// should only contain very limited use of floating point instructions
-	// (notably, use of XMM15 as a zero register).
-	fninit()
-	// Need to sync XCR0 with the host, because xsave and xrstor can be
-	// called from different contexts.
-	if hasXSAVE {
-		// Exclude MPX bits. MPX has been deprecated and we have seen
-		// cases when it isn't supported in VM.
-		xcr0 := localXCR0 &^ (cpuid.XSAVEFeatureBNDCSR | cpuid.XSAVEFeatureBNDREGS)
-		xsetbv(0, xcr0)
-	}
 
 	// Set the syscall target.
 	wrmsr(_MSR_LSTAR, kernelFunc(addrOfSysenter()))
