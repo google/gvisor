@@ -1227,6 +1227,11 @@ func (fs *Filesystem) PrependPath(ctx context.Context, vfsroot, vd vfs.VirtualDe
 	return genericPrependPath(fs, vfsroot, vd.Mount(), vd.Dentry().Impl().(*Dentry), b)
 }
 
+// WalkAncestors implements vfs.FilesystemImpl.WalkAncestors.
+func (fs *Filesystem) WalkAncestors(ctx context.Context, vd vfs.VirtualDentry, fn func(*vfs.Dentry) bool) {
+	genericWalkAncestors(fs, vd.Mount(), vd.Dentry().Impl().(*Dentry), fn)
+}
+
 // IsDescendant implements vfs.FilesystemImpl.IsDescendant.
 func (fs *Filesystem) IsDescendant(vfsroot, vd vfs.VirtualDentry) bool {
 	return genericIsDescendant(fs, vfsroot.Dentry(), vd.Dentry().Impl().(*Dentry))

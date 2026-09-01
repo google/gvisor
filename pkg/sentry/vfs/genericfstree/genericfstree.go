@@ -124,6 +124,27 @@ func PrependPath(fs *Filesystem, vfsroot vfs.VirtualDentry, mnt *vfs.Mount, d *D
 	}
 }
 
+// WalkAncestors is a generic implementation of
+// FilesystemImpl.WalkAncestors(). It holds fs.ancestryMu for the duration of
+// the walk, so fn must not reenter fs.
+func WalkAncestors(fs *Filesystem, mnt *vfs.Mount, d *Dentry, fn func(*vfs.Dentry) bool) {
+	fs.ancestryMu.RLock()
+	defer fs.ancestryMu.RUnlock()
+	for {
+		if !fn(&d.vfsd) {
+			return
+		}
+		if mnt != nil && &d.vfsd == mnt.Root() {
+			return
+		}
+		parent := d.parent.Load()
+		if parent == nil {
+			return
+		}
+		d = parent
+	}
+}
+
 // DebugPathname returns a pathname to d relative to its filesystem root.
 // DebugPathname does not correspond to any Linux function; it's used to
 // generate dentry pathnames for debugging.

@@ -97,6 +97,12 @@ type VirtualFilesystem struct {
 	// using atomic memory operations.
 	lastMountID atomicbitops.Uint64
 
+	// lastFilesystemID is the last allocated Filesystem ID. Unlike device
+	// numbers, these are never reused, so that an InodeIdentity from a
+	// destroyed Filesystem can never compare equal to one from a live
+	// Filesystem. lastFilesystemID is accessed using atomic memory operations.
+	lastFilesystemID atomicbitops.Uint64
+
 	// lastMountNamespaceID is the last allocated mount namespace ID.
 	// lastMountNamespaceID is accessed using atomic memory operations.
 	lastMountNamespaceID atomicbitops.Uint64

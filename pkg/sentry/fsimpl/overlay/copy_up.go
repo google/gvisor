@@ -416,6 +416,20 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 		d.lowerMappings.RemoveAll()
 	}
 
+	// A dentry instantiated for this file from now on may find it in the upper
+	// layer and stop there, so it will not see the lower file that
+	// d.InodeIdentity() answers with. Record the correspondence, so that a
+	// caller that pinned the identity keeps getting the same answer. This is
+	// done only once the copy-up can no longer be undone, since the identity
+	// recorded is that of a file that would then be deleted.
+	//
+	// Directories need it too, even though a merged directory's dentry always
+	// has its lower layers: a rename happens on the upper layer only, so a
+	// lookup at the new name finds nothing below the upper file, and a dentry
+	// instantiated there is upper-only for directories and non-directories
+	// alike.
+	d.fs.recordCopyUpIdentityOrigin(d.lowerVDs[0].Dentry().InodeIdentity(), d.upperVD.Dentry().InodeIdentity())
+
 	d.copiedUp.Store(1)
 	return nil
 }

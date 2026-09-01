@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sync"
 )
@@ -56,6 +57,12 @@ type ResolvingPath struct {
 	nextMount        *Mount  // ref held if not nil
 	nextStart        *Dentry // ref held if not nil
 	absSymlinkTarget fspath.Path
+
+	// toDecRef holds references taken by Landlock checks that FilesystemImpls
+	// perform during resolution. They are dropped by Release(), which VFS calls
+	// after the FilesystemImpl has returned and so holds no filesystem locks;
+	// see VirtualFilesystem.WalkAncestors().
+	toDecRef []refs.RefCounter `state:"nosave"`
 
 	// ResolvingPath tracks relative paths, which is updated whenever a relative
 	// symlink is encountered.
@@ -215,6 +222,9 @@ func (rp *ResolvingPath) Copy() *ResolvingPath {
 	// Reset error state.
 	copy.nextStart = nil
 	copy.nextMount = nil
+	// References are owned by the ResolvingPath that took them, and each is
+	// released separately.
+	copy.toDecRef = nil
 	return copy
 }
 
@@ -225,6 +235,10 @@ func (rp *ResolvingPath) Release(ctx context.Context) {
 	rp.mount = nil
 	rp.start = nil
 	rp.releaseErrorState(ctx)
+	for _, ref := range rp.toDecRef {
+		ref.DecRef(ctx)
+	}
+	rp.toDecRef = nil
 	resolvingPathPool.Put(rp)
 }
 
@@ -368,7 +382,7 @@ func (rp *ResolvingPath) checkRoot(ctx context.Context, d *Dentry) (bool, error)
 		return true, nil
 	} else if d == rp.mount.root {
 		// At mount root ...
-		vd := rp.vfs.getMountpointAt(ctx, rp.mount, rp.root)
+		vd := rp.vfs.getMountpointAt(ctx, rp.mount, rp.root, nil)
 		if vd.Ok() {
 			// ... of non-root mount.
 			if rp.flags&rpflagsNoXDev != 0 {

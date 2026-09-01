@@ -155,6 +155,11 @@ func (d *mountTestDentry) Watches() *Watches {
 	return &d.watches
 }
 
+// InodeIdentity implements DentryImpl.InodeIdentity.
+func (d *mountTestDentry) InodeIdentity() InodeIdentity {
+	return InodeIdentity{}
+}
+
 // OnZeroWatches implements DentryImpl.OnZeroWatches.
 func (d *mountTestDentry) OnZeroWatches(context.Context) {}
 
