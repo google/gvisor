@@ -43,6 +43,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/bitmap"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
@@ -157,6 +158,26 @@ type VirtualFilesystem struct {
 	//
 	// +checklocks:mountMu
 	toDecRef map[refs.RefCounter]int
+
+	// renameState tracks rename operations anywhere in the VFS tree.
+	//
+	// The high 32 bits store a sequence counter that is incremented
+	// whenever a rename operation begins, successful or not.
+	// The low 32 bits store the number of currently in-progress renames
+	// VFS-wide.
+	renameState atomicbitops.Uint64
+}
+
+const renameInProgressMask = 1<<32 - 1
+
+func packRenameState(seq, inProgress uint32) uint64 {
+	return (uint64(seq) << 32) | uint64(inProgress)
+}
+
+func unpackRenameState(state uint64) (seq, inProgress uint32) {
+	seq = uint32(state >> 32)
+	inProgress = uint32(state & renameInProgressMask)
+	return
 }
 
 // Init initializes a new VirtualFilesystem with no mounts or FilesystemTypes.
@@ -218,14 +239,16 @@ type PathOperation struct {
 	// Root is the VFS root. References on Root are borrowed from the provider
 	// of the PathOperation.
 	//
-	// Invariants: Root.Ok().
+	// Invariants: Root.Ok(). If ResolveFlags contains RESOLVE_BENEATH,
+	// then !Path.Absolute.
 	Root VirtualDentry
 
 	// Start is the starting point for the path traversal. References on Start
 	// are borrowed from the provider of the PathOperation (i.e. the caller of
 	// the VFS method to which the PathOperation was passed).
 	//
-	// Invariants: Start.Ok(). If Path.Absolute, then Start == Root.
+	// Invariants: Start.Ok(). If Path.Absolute and ResolveFlags does not contain
+	// RESOLVE_IN_ROOT, then Start == Root.
 	Start VirtualDentry
 
 	// Path is the pathname traversed by this operation.
@@ -235,11 +258,24 @@ type PathOperation struct {
 	// path component represents a symbolic link, the symbolic link should be
 	// followed.
 	FollowFinalSymlink bool
+
+	// ResolveFlags specifies extra RESOLVE_* flags for the traversal.
+	ResolveFlags uint64
+}
+
+// scoped indicates whether pop represents a scoped path operation.
+func (pop *PathOperation) scoped() bool {
+	return pop.ResolveFlags&(linux.RESOLVE_BENEATH|linux.RESOLVE_IN_ROOT) != 0
 }
 
 // AccessAt checks whether a user with creds has access to the file at
 // the given path.
 func (vfs *VirtualFilesystem) AccessAt(ctx context.Context, creds *auth.Credentials, ats AccessTypes, pop *PathOperation) error {
+	if pop.scoped() {
+		// This method does not support scoped path resolution.
+		return linuxerr.EINVAL
+	}
+
 	rp := vfs.getResolvingPath(creds, pop)
 	defer rp.Release(ctx)
 	for {
@@ -271,6 +307,10 @@ func (vfs *VirtualFilesystem) GetDentryAt(ctx context.Context, creds *auth.Crede
 				mount:  rp.mount,
 				dentry: d,
 			}
+			if err := rp.finalizeScoped(ctx, vd); err != nil {
+				d.DecRef(ctx)
+				return VirtualDentry{}, err
+			}
 			rp.mount.IncRef()
 			return vd, nil
 		}
@@ -282,6 +322,11 @@ func (vfs *VirtualFilesystem) GetDentryAt(ctx context.Context, creds *auth.Crede
 
 // Preconditions: pop.Path.Begin.Ok().
 func (vfs *VirtualFilesystem) getParentDirAndName(ctx context.Context, creds *auth.Credentials, pop *PathOperation) (VirtualDentry, string, error) {
+	if pop.scoped() {
+		// This method does not support scoped path resolution.
+		return VirtualDentry{}, "", linuxerr.EINVAL
+	}
+
 	rp := vfs.getResolvingPath(creds, pop)
 	defer rp.Release(ctx)
 	for {
@@ -312,6 +357,11 @@ func (vfs *VirtualFilesystem) getParentDirAndName(ctx context.Context, creds *au
 // LinkAt creates a hard link at newpop representing the existing file at
 // oldpop.
 func (vfs *VirtualFilesystem) LinkAt(ctx context.Context, creds *auth.Credentials, oldpop, newpop *PathOperation) error {
+	if oldpop.scoped() || newpop.scoped() {
+		// This method does not support scoped path resolution.
+		return linuxerr.EINVAL
+	}
+
 	oldVD, err := vfs.GetDentryAt(ctx, creds, oldpop, &GetDentryOptions{})
 	if err != nil {
 		return err
@@ -355,6 +405,11 @@ func (vfs *VirtualFilesystem) LinkAt(ctx context.Context, creds *auth.Credential
 
 // MkdirAt creates a directory at the given path.
 func (vfs *VirtualFilesystem) MkdirAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *MkdirOptions) error {
+	if pop.scoped() {
+		// This method does not support scoped path resolution.
+		return linuxerr.EINVAL
+	}
+
 	if !pop.Path.Begin.Ok() {
 		// pop.Path should not be empty in operations that create/delete files.
 		// This is consistent with mkdirat(dirfd, "", mode).
@@ -395,6 +450,11 @@ func (vfs *VirtualFilesystem) MkdirAt(ctx context.Context, creds *auth.Credentia
 // MknodAt creates a file of the given mode at the given path. It returns an
 // error from the linuxerr package.
 func (vfs *VirtualFilesystem) MknodAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *MknodOptions) error {
+	if pop.scoped() {
+		// This method does not support scoped path resolution.
+		return linuxerr.EINVAL
+	}
+
 	if !pop.Path.Begin.Ok() {
 		// pop.Path should not be empty in operations that create/delete files.
 		// This is consistent with mknodat(dirfd, "", mode, dev).
@@ -440,7 +500,8 @@ func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credential
 	//		handled outside of VFS.
 	//
 	//	- Unknown flags.
-	opts.Flags &= linux.O_ACCMODE | linux.O_CREAT | linux.O_EXCL | linux.O_NOCTTY | linux.O_TRUNC | linux.O_APPEND | linux.O_NONBLOCK | linux.O_DSYNC | linux.O_ASYNC | linux.O_DIRECT | linux.O_LARGEFILE | linux.O_DIRECTORY | linux.O_NOFOLLOW | linux.O_NOATIME | linux.O_SYNC | linux.O_PATH | linux.O_TMPFILE
+	opts.Flags &^= linux.O_CLOEXEC
+	opts.Flags &= linux.ValidOpenFlags
 	// Linux's __O_SYNC (which we call linux.O_SYNC) implies O_DSYNC.
 	if opts.Flags&linux.O_SYNC != 0 {
 		opts.Flags |= linux.O_DSYNC
@@ -461,7 +522,7 @@ func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credential
 	}
 	// O_PATH causes most other flags to be ignored.
 	if opts.Flags&linux.O_PATH != 0 {
-		opts.Flags &= linux.O_DIRECTORY | linux.O_NOFOLLOW | linux.O_PATH
+		opts.Flags &= linux.ValidOPathFlags
 	}
 	// "On Linux, the following bits are also honored in mode: [S_ISUID,
 	// S_ISGID, S_ISVTX]" - open(2)
@@ -484,20 +545,26 @@ func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credential
 		}
 		fd, err := rp.mount.fs.impl.OpenAt(ctx, rp, *opts)
 		if err == nil {
+			fdCleanup := cleanup.Make(func() {
+				fd.DecRef(ctx)
+			})
+			defer fdCleanup.Clean()
+
+			if err := rp.finalizeScoped(ctx, fd.VirtualDentry()); err != nil {
+				return nil, err
+			}
+
 			if opts.FileExec {
 				if fd.Mount().Options().Flags.NoExec {
-					fd.DecRef(ctx)
 					return nil, linuxerr.EACCES
 				}
 
 				// Only a regular file can be executed.
 				stat, err := fd.Stat(ctx, StatOptions{Mask: linux.STATX_TYPE})
 				if err != nil {
-					fd.DecRef(ctx)
 					return nil, err
 				}
 				if stat.Mask&linux.STATX_TYPE == 0 || stat.Mode&linux.S_IFMT != linux.S_IFREG {
-					fd.DecRef(ctx)
 					return nil, linuxerr.EACCES
 				}
 			}
@@ -507,6 +574,7 @@ func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credential
 			// So the order is: IN_OPEN first, then IN_MODIFY.
 			// See https://github.com/torvalds/linux/commit/7b8c9d7bb4570ee4800642009c8f2d9756004552,
 			// merged in Linux 6.5.
+			fdCleanup.Release()
 			fd.Dentry().InotifyWithParent(ctx, linux.IN_OPEN, 0, PathEvent)
 			if opts.Flags&linux.O_TRUNC != 0 && !fd.IsCreated() {
 				fd.Dentry().InotifyWithParent(ctx, linux.IN_MODIFY, 0, PathEvent)
@@ -521,6 +589,11 @@ func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credential
 
 // ReadlinkAt returns the target of the symbolic link at the given path.
 func (vfs *VirtualFilesystem) ReadlinkAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation) (string, error) {
+	if pop.scoped() {
+		// This method does not support scoped path resolution.
+		return "", linuxerr.EINVAL
+	}
+
 	rp := vfs.getResolvingPath(creds, pop)
 	defer rp.Release(ctx)
 	for {
@@ -539,6 +612,11 @@ func (vfs *VirtualFilesystem) ReadlinkAt(ctx context.Context, creds *auth.Creden
 
 // RenameAt renames the file at oldpop to newpop.
 func (vfs *VirtualFilesystem) RenameAt(ctx context.Context, creds *auth.Credentials, oldpop, newpop *PathOperation, opts *RenameOptions) error {
+	if oldpop.scoped() || newpop.scoped() {
+		// This method does not support scoped path resolution.
+		return linuxerr.EINVAL
+	}
+
 	if !oldpop.Path.Begin.Ok() {
 		if oldpop.Path.Absolute {
 			return linuxerr.EBUSY
@@ -601,6 +679,11 @@ func (vfs *VirtualFilesystem) RenameAt(ctx context.Context, creds *auth.Credenti
 
 // RmdirAt removes the directory at the given path.
 func (vfs *VirtualFilesystem) RmdirAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation) error {
+	if pop.scoped() {
+		// This method does not support scoped path resolution.
+		return linuxerr.EINVAL
+	}
+
 	if !pop.Path.Begin.Ok() {
 		// pop.Path should not be empty in operations that create/delete files.
 		// This is consistent with unlinkat(dirfd, "", AT_REMOVEDIR).
@@ -637,6 +720,11 @@ func (vfs *VirtualFilesystem) RmdirAt(ctx context.Context, creds *auth.Credentia
 
 // SetStatAt changes metadata for the file at the given path.
 func (vfs *VirtualFilesystem) SetStatAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *SetStatOptions) error {
+	if pop.scoped() {
+		// This method does not support scoped path resolution.
+		return linuxerr.EINVAL
+	}
+
 	rp := vfs.getResolvingPath(creds, pop)
 	defer rp.Release(ctx)
 	for {
@@ -655,6 +743,11 @@ func (vfs *VirtualFilesystem) SetStatAt(ctx context.Context, creds *auth.Credent
 
 // StatAt returns metadata for the file at the given path.
 func (vfs *VirtualFilesystem) StatAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *StatOptions) (linux.Statx, error) {
+	if pop.scoped() {
+		// This method does not support scoped path resolution.
+		return linux.Statx{}, linuxerr.EINVAL
+	}
+
 	rp := vfs.getResolvingPath(creds, pop)
 	defer rp.Release(ctx)
 	for {
@@ -678,6 +771,11 @@ func (vfs *VirtualFilesystem) StatAt(ctx context.Context, creds *auth.Credential
 // StatFSAt returns metadata for the filesystem containing the file at the
 // given path.
 func (vfs *VirtualFilesystem) StatFSAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation) (linux.Statfs, error) {
+	if pop.scoped() {
+		// This method does not support scoped path resolution.
+		return linux.Statfs{}, linuxerr.EINVAL
+	}
+
 	rp := vfs.getResolvingPath(creds, pop)
 	defer rp.Release(ctx)
 	for {
@@ -697,6 +795,11 @@ func (vfs *VirtualFilesystem) StatFSAt(ctx context.Context, creds *auth.Credenti
 
 // SymlinkAt creates a symbolic link at the given path with the given target.
 func (vfs *VirtualFilesystem) SymlinkAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, target string) error {
+	if pop.scoped() {
+		// This method does not support scoped path resolution.
+		return linuxerr.EINVAL
+	}
+
 	if !pop.Path.Begin.Ok() {
 		// pop.Path should not be empty in operations that create/delete files.
 		// This is consistent with symlinkat(oldpath, newdirfd, "").
@@ -733,6 +836,11 @@ func (vfs *VirtualFilesystem) SymlinkAt(ctx context.Context, creds *auth.Credent
 
 // UnlinkAt deletes the non-directory file at the given path.
 func (vfs *VirtualFilesystem) UnlinkAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation) error {
+	if pop.scoped() {
+		// This method does not support scoped path resolution.
+		return linuxerr.EINVAL
+	}
+
 	if !pop.Path.Begin.Ok() {
 		// pop.Path should not be empty in operations that create/delete files.
 		// This is consistent with unlinkat(dirfd, "", 0).
@@ -769,6 +877,11 @@ func (vfs *VirtualFilesystem) UnlinkAt(ctx context.Context, creds *auth.Credenti
 
 // BoundEndpointAt gets the bound endpoint at the given path, if one exists.
 func (vfs *VirtualFilesystem) BoundEndpointAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *BoundEndpointOptions) (transport.BoundEndpoint, error) {
+	if pop.scoped() {
+		// This method does not support scoped path resolution.
+		return nil, linuxerr.EINVAL
+	}
+
 	rp := vfs.getResolvingPath(creds, pop)
 	defer rp.Release(ctx)
 	for {
@@ -793,6 +906,11 @@ func (vfs *VirtualFilesystem) BoundEndpointAt(ctx context.Context, creds *auth.C
 // ListXattrAt returns all extended attribute names for the file at the given
 // path.
 func (vfs *VirtualFilesystem) ListXattrAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, size uint64) ([]string, error) {
+	if pop.scoped() {
+		// This method does not support scoped path resolution.
+		return nil, linuxerr.EINVAL
+	}
+
 	rp := vfs.getResolvingPath(creds, pop)
 	defer rp.Release(ctx)
 	for {
@@ -819,6 +937,11 @@ func (vfs *VirtualFilesystem) ListXattrAt(ctx context.Context, creds *auth.Crede
 // GetXattrAt returns the value associated with the given extended attribute
 // for the file at the given path.
 func (vfs *VirtualFilesystem) GetXattrAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *GetXattrOptions) (string, error) {
+	if pop.scoped() {
+		// This method does not support scoped path resolution.
+		return "", linuxerr.EINVAL
+	}
+
 	rp := vfs.getResolvingPath(creds, pop)
 	defer rp.Release(ctx)
 	for {
@@ -838,6 +961,11 @@ func (vfs *VirtualFilesystem) GetXattrAt(ctx context.Context, creds *auth.Creden
 // SetXattrAt changes the value associated with the given extended attribute
 // for the file at the given path.
 func (vfs *VirtualFilesystem) SetXattrAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *SetXattrOptions) error {
+	if pop.scoped() {
+		// This method does not support scoped path resolution.
+		return linuxerr.EINVAL
+	}
+
 	rp := vfs.getResolvingPath(creds, pop)
 	defer rp.Release(ctx)
 	for {
@@ -856,6 +984,11 @@ func (vfs *VirtualFilesystem) SetXattrAt(ctx context.Context, creds *auth.Creden
 
 // RemoveXattrAt removes the given extended attribute from the file at rp.
 func (vfs *VirtualFilesystem) RemoveXattrAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, name string) error {
+	if pop.scoped() {
+		// This method does not support scoped path resolution.
+		return linuxerr.EINVAL
+	}
+
 	rp := vfs.getResolvingPath(creds, pop)
 	defer rp.Release(ctx)
 	for {
@@ -875,6 +1008,11 @@ func (vfs *VirtualFilesystem) RemoveXattrAt(ctx context.Context, creds *auth.Cre
 // GetPosixACLAt fetches the POSIX ACL from the file at rp.
 // No permission checks are performed.
 func (vfs *VirtualFilesystem) GetPosixACLAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, t ACLType) (*PosixACL, error) {
+	if pop.scoped() {
+		// This method does not support scoped path resolution.
+		return nil, linuxerr.EINVAL
+	}
+
 	rp := vfs.getResolvingPath(creds, pop)
 	defer rp.Release(ctx)
 	for {
@@ -896,6 +1034,11 @@ func (vfs *VirtualFilesystem) GetPosixACLAt(ctx context.Context, creds *auth.Cre
 //
 // The resulting ACL (which may be nil) and mode are returned.
 func (vfs *VirtualFilesystem) SetPosixACLAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, t ACLType, acl *PosixACL, clearSGID bool) (*PosixACL, linux.FileMode, error) {
+	if pop.scoped() {
+		// This method does not support scoped path resolution.
+		return nil, 0, linuxerr.EINVAL
+	}
+
 	rp := vfs.getResolvingPath(creds, pop)
 	defer rp.Release(ctx)
 	for {

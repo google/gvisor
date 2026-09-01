@@ -2081,6 +2081,8 @@ func (rp *ResolvingPath) StateFields() []string {
 		"nextStart",
 		"absSymlinkTarget",
 		"parts",
+		"mountSeq",
+		"renameState",
 	}
 }
 
@@ -2103,6 +2105,8 @@ func (rp *ResolvingPath) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(11, &rp.nextStart)
 	stateSinkObject.Save(12, &rp.absSymlinkTarget)
 	stateSinkObject.Save(13, &rp.parts)
+	stateSinkObject.Save(14, &rp.mountSeq)
+	stateSinkObject.Save(15, &rp.renameState)
 }
 
 func (rp *ResolvingPath) afterLoad(context.Context) {}
@@ -2123,6 +2127,8 @@ func (rp *ResolvingPath) StateLoad(ctx context.Context, stateSourceObject state.
 	stateSourceObject.Load(11, &rp.nextStart)
 	stateSourceObject.Load(12, &rp.absSymlinkTarget)
 	stateSourceObject.Load(13, &rp.parts)
+	stateSourceObject.Load(14, &rp.mountSeq)
+	stateSourceObject.Load(15, &rp.renameState)
 }
 
 func (r *resolveMountRootOrJumpError) StateTypeName() string {
@@ -2210,6 +2216,7 @@ func (vfs *VirtualFilesystem) StateFields() []string {
 		"groupIDBitmap",
 		"mountPromises",
 		"toDecRef",
+		"renameState",
 	}
 }
 
@@ -2238,6 +2245,7 @@ func (vfs *VirtualFilesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(12, &vfs.filesystems)
 	stateSinkObject.Save(13, &vfs.groupIDBitmap)
 	stateSinkObject.Save(15, &vfs.toDecRef)
+	stateSinkObject.Save(16, &vfs.renameState)
 }
 
 // +checklocksignore
@@ -2256,43 +2264,47 @@ func (vfs *VirtualFilesystem) StateLoad(ctx context.Context, stateSourceObject s
 	stateSourceObject.Load(12, &vfs.filesystems)
 	stateSourceObject.Load(13, &vfs.groupIDBitmap)
 	stateSourceObject.Load(15, &vfs.toDecRef)
+	stateSourceObject.Load(16, &vfs.renameState)
 	stateSourceObject.LoadValue(0, new([]*Mount), func(y any) { vfs.loadMounts(ctx, y.([]*Mount)) })
 	stateSourceObject.LoadValue(14, new(map[VirtualDentry]*mountPromise), func(y any) { vfs.loadMountPromises(ctx, y.(map[VirtualDentry]*mountPromise)) })
 	stateSourceObject.AfterLoad(func() { vfs.afterLoad(ctx) })
 }
 
-func (p *PathOperation) StateTypeName() string {
+func (pop *PathOperation) StateTypeName() string {
 	return "pkg/sentry/vfs.PathOperation"
 }
 
-func (p *PathOperation) StateFields() []string {
+func (pop *PathOperation) StateFields() []string {
 	return []string{
 		"Root",
 		"Start",
 		"Path",
 		"FollowFinalSymlink",
+		"ResolveFlags",
 	}
 }
 
-func (p *PathOperation) beforeSave() {}
+func (pop *PathOperation) beforeSave() {}
 
 // +checklocksignore
-func (p *PathOperation) StateSave(stateSinkObject state.Sink) {
-	p.beforeSave()
-	stateSinkObject.Save(0, &p.Root)
-	stateSinkObject.Save(1, &p.Start)
-	stateSinkObject.Save(2, &p.Path)
-	stateSinkObject.Save(3, &p.FollowFinalSymlink)
+func (pop *PathOperation) StateSave(stateSinkObject state.Sink) {
+	pop.beforeSave()
+	stateSinkObject.Save(0, &pop.Root)
+	stateSinkObject.Save(1, &pop.Start)
+	stateSinkObject.Save(2, &pop.Path)
+	stateSinkObject.Save(3, &pop.FollowFinalSymlink)
+	stateSinkObject.Save(4, &pop.ResolveFlags)
 }
 
-func (p *PathOperation) afterLoad(context.Context) {}
+func (pop *PathOperation) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (p *PathOperation) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &p.Root)
-	stateSourceObject.Load(1, &p.Start)
-	stateSourceObject.Load(2, &p.Path)
-	stateSourceObject.Load(3, &p.FollowFinalSymlink)
+func (pop *PathOperation) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &pop.Root)
+	stateSourceObject.Load(1, &pop.Start)
+	stateSourceObject.Load(2, &pop.Path)
+	stateSourceObject.Load(3, &pop.FollowFinalSymlink)
+	stateSourceObject.Load(4, &pop.ResolveFlags)
 }
 
 func (vd *VirtualDentry) StateTypeName() string {

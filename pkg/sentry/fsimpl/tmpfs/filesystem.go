@@ -66,17 +66,18 @@ func stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry) (*dentry,
 		return d, false, nil
 	}
 	if name == ".." {
+		parent := d.parent.Load()
 		if isRoot, err := rp.CheckRoot(ctx, &d.vfsd); err != nil {
 			return nil, false, err
-		} else if isRoot || d.parent.Load() == nil {
+		} else if isRoot || parent == nil {
 			rp.Advance()
 			return d, false, nil
 		}
-		if err := rp.CheckMount(ctx, &d.parent.Load().vfsd); err != nil {
+		if err := rp.CheckMount(ctx, &parent.vfsd); err != nil {
 			return nil, false, err
 		}
 		rp.Advance()
-		return d.parent.Load(), false, nil
+		return parent, false, nil
 	}
 	if len(name) > d.inode.fs.maxFilenameLen {
 		return nil, false, linuxerr.ENAMETOOLONG
@@ -667,9 +668,11 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	if replaced != nil {
 		replacedVFSD = &replaced.vfsd
 	}
-	if err := vfsObj.PrepareRenameDentry(mntns, &renamed.vfsd, replacedVFSD); err != nil {
+	handle, err := vfsObj.PrepareRenameDentry(mntns, &renamed.vfsd, replacedVFSD)
+	if err != nil {
 		return err
 	}
+	vfsObj.RenameBegin(&handle)
 	if replaced != nil {
 		newParentDir.removeChildLocked(replaced)
 		if replaced.inode.isDir() {
@@ -681,7 +684,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	}
 	oldParentDir.removeChildLocked(renamed)
 	newParentDir.insertChildLocked(renamed, newName)
-	toDecRef = vfsObj.CommitRenameReplaceDentry(ctx, &renamed.vfsd, replacedVFSD)
+	toDecRef = vfsObj.CommitRenameReplaceDentry(ctx, &handle, &renamed.vfsd, replacedVFSD)
 	oldParentDir.inode.touchCMtime()
 	if oldParentDir != newParentDir {
 		if renamed.inode.isDir() {

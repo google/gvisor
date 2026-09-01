@@ -192,17 +192,18 @@ func (fs *filesystem) stepLocked(ctx context.Context, rp resolvingPath, d *dentr
 		return d, false, nil
 	}
 	if name == ".." {
+		parent := d.parent.Load()
 		if isRoot, err := rp.CheckRoot(ctx, &d.vfsd); err != nil {
 			return nil, false, err
-		} else if isRoot || d.parent.Load() == nil {
+		} else if isRoot || parent == nil {
 			rp.Advance()
 			return d, false, nil
 		}
-		if err := rp.CheckMount(ctx, &d.parent.Load().vfsd); err != nil {
+		if err := rp.CheckMount(ctx, &parent.vfsd); err != nil {
 			return nil, false, err
 		}
 		rp.Advance()
-		return d.parent.Load(), false, nil
+		return parent, false, nil
 	}
 	child, err := fs.getChildAndWalkPathLocked(ctx, d, rp, ds)
 	if err != nil {
@@ -1552,14 +1553,15 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	}
 	mntns := vfs.MountNamespaceFromContext(ctx)
 	defer mntns.DecRef(ctx)
-	if err := vfsObj.PrepareRenameDentry(mntns, &renamed.vfsd, replacedVFSD); err != nil {
+	handle, err := vfsObj.PrepareRenameDentry(mntns, &renamed.vfsd, replacedVFSD)
+	if err != nil {
 		return err
 	}
 
 	// Update the remote filesystem.
 	if !renamed.inode.isSynthetic() {
 		if err := oldParent.inode.rename(ctx, oldName, newParent, newName, opts.Flags); err != nil {
-			vfsObj.AbortRenameDentry(&renamed.vfsd, replacedVFSD)
+			vfsObj.AbortRenameDentry(&handle, &renamed.vfsd, replacedVFSD)
 			return err
 		}
 	} else if replaced != nil && !replaced.inode.isSynthetic() && opts.Flags&linux.RENAME_EXCHANGE == 0 {
@@ -1570,7 +1572,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			flags = linux.AT_REMOVEDIR
 		}
 		if err := newParent.inode.unlink(ctx, newName, flags); err != nil {
-			vfsObj.AbortRenameDentry(&renamed.vfsd, replacedVFSD)
+			vfsObj.AbortRenameDentry(&handle, &renamed.vfsd, replacedVFSD)
 			return err
 		}
 	}
@@ -1583,11 +1585,8 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		defer oldParent.childrenMu.Unlock()
 	}
 
+	vfsObj.RenameBegin(&handle)
 	if opts.Flags&linux.RENAME_EXCHANGE != 0 {
-		if renamed != nil {
-			vfsObj.CommitRenameExchangeDentry(&renamed.vfsd, replacedVFSD)
-		}
-
 		if oldParent != newParent {
 			switch {
 			case replaced.inode.isSynthetic() && !renamed.inode.isSynthetic():
@@ -1604,6 +1603,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		replaced.name = oldName
 		newParent.children[newName] = renamed
 		oldParent.children[oldName] = replaced // +checklocksforce: oldParent.childrenMu is held if oldParent != newParent.
+		vfsObj.CommitRenameExchangeDentry(&handle, &renamed.vfsd, replacedVFSD)
 
 		// Update metadata.
 		if renamed.inode.cachedMetadataAuthoritative() {
@@ -1624,7 +1624,6 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		vfs.InotifyRename(ctx, &renamed.inode.watches, &oldParent.inode.watches, &newParent.inode.watches, oldName, newName, renamed.isDir())
 		vfs.InotifyRename(ctx, &replaced.inode.watches, &newParent.inode.watches, &oldParent.inode.watches, newName, oldName, replaced.isDir())
 	} else {
-		toDecRef = vfsObj.CommitRenameReplaceDentry(ctx, &renamed.vfsd, replacedVFSD)
 		if replaced != nil {
 			replaced.setDeleted()
 			// If an extra reference is held on replaced as described by the
@@ -1654,6 +1653,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			ds = appendDentry(ds, newParent)
 			ds = appendDentry(ds, oldParent)
 		}
+		toDecRef = vfsObj.CommitRenameReplaceDentry(ctx, &handle, &renamed.vfsd, replacedVFSD)
 
 		// Update metadata.
 		if renamed.inode.cachedMetadataAuthoritative() {
