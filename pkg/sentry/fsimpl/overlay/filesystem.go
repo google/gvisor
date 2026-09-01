@@ -139,17 +139,17 @@ func (fs *filesystem) stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *
 		return d, d.topLookupLayer(), false, nil
 	}
 	if name == ".." {
+		parent := d.parent.Load()
 		if isRoot, err := rp.CheckRoot(ctx, &d.vfsd); err != nil {
 			return nil, lookupLayerNone, false, err
-		} else if isRoot || d.parent.Load() == nil {
+		} else if isRoot || parent == nil {
 			rp.Advance()
 			return d, d.topLookupLayer(), false, nil
 		}
-		if err := rp.CheckMount(ctx, &d.parent.Load().vfsd); err != nil {
+		if err := rp.CheckMount(ctx, &parent.vfsd); err != nil {
 			return nil, lookupLayerNone, false, err
 		}
 		rp.Advance()
-		parent := d.parent.Load()
 		return parent, parent.topLookupLayer(), false, nil
 	}
 	if uint64(len(name)) > fs.maxFilenameLen {
@@ -1227,7 +1227,8 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	vfsObj := rp.VirtualFilesystem()
 	mntns := vfs.MountNamespaceFromContext(ctx)
 	defer mntns.DecRef(ctx)
-	if err := vfsObj.PrepareRenameDentry(mntns, &renamed.vfsd, replacedVFSD); err != nil {
+	handle, err := vfsObj.PrepareRenameDentry(mntns, &renamed.vfsd, replacedVFSD)
+	if err != nil {
 		return err
 	}
 
@@ -1268,7 +1269,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 					Start: replaced.upperVD,
 					Path:  fspath.Parse(whiteoutName),
 				}); err != nil {
-					vfsObj.AbortRenameDentry(&renamed.vfsd, replacedVFSD)
+					vfsObj.AbortRenameDentry(&handle, &renamed.vfsd, replacedVFSD)
 					cleanupRecreateWhiteouts()
 					return err
 				}
@@ -1277,7 +1278,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			// We need to explicitly remove the whiteout since otherwise rename
 			// on the upper layer will fail with ENOTDIR.
 			if err := vfsObj.UnlinkAt(ctx, fs.creds, &newpop); err != nil {
-				vfsObj.AbortRenameDentry(&renamed.vfsd, replacedVFSD)
+				vfsObj.AbortRenameDentry(&handle, &renamed.vfsd, replacedVFSD)
 				return err
 			}
 		}
@@ -1298,7 +1299,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		Path:  fspath.Parse(oldName),
 	}
 	if err := vfsObj.RenameAt(ctx, creds, &oldpop, &newpop, &opts); err != nil {
-		vfsObj.AbortRenameDentry(&renamed.vfsd, replacedVFSD)
+		vfsObj.AbortRenameDentry(&handle, &renamed.vfsd, replacedVFSD)
 		cleanupRecreateWhiteouts()
 		return err
 	}
@@ -1306,7 +1307,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	// Below this point, the renamed dentry is now at newpop, and anything we
 	// replaced is gone forever. Commit the rename, update the overlay
 	// filesystem tree, and abandon attempts to recover from errors.
-	toDecRef = vfsObj.CommitRenameReplaceDentry(ctx, &renamed.vfsd, replacedVFSD)
+	vfsObj.RenameBegin(&handle)
 	delete(oldParent.children, oldName)
 	if replaced != nil {
 		// Lower dentries of replaced are not reachable from the overlay anymore.
@@ -1331,6 +1332,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	}
 	newParent.children[newName] = renamed
 	oldParent.dirents = nil
+	toDecRef = vfsObj.CommitRenameReplaceDentry(ctx, &handle, &renamed.vfsd, replacedVFSD)
 
 	if err := CreateWhiteout(ctx, vfsObj, fs.creds, &oldpop); err != nil {
 		panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to create whiteout at origin after RenameAt: %v", err))

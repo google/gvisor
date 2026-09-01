@@ -58,7 +58,7 @@ func Mount(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 	if err != nil {
 		return 0, nil, err
 	}
-	target, err := getTaskPathOperation(t, linux.AT_FDCWD, targetPath, disallowEmptyPath, followFinalSymlink)
+	target, err := getTaskPathOperation(t, linux.AT_FDCWD, targetPath, disallowEmptyPath, followFinalSymlink, 0)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -104,7 +104,7 @@ func Mount(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 			return 0, nil, err
 		}
 		var sourceTpop taskPathOperation
-		sourceTpop, err = getTaskPathOperation(t, linux.AT_FDCWD, sourcePath, disallowEmptyPath, followFinalSymlink)
+		sourceTpop, err = getTaskPathOperation(t, linux.AT_FDCWD, sourcePath, disallowEmptyPath, followFinalSymlink, 0)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -118,7 +118,7 @@ func Mount(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 			return 0, nil, err
 		}
 		var sourceTpop taskPathOperation
-		sourceTpop, err = getTaskPathOperation(t, linux.AT_FDCWD, sourcePath, disallowEmptyPath, followFinalSymlink)
+		sourceTpop, err = getTaskPathOperation(t, linux.AT_FDCWD, sourcePath, disallowEmptyPath, followFinalSymlink, 0)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -165,7 +165,7 @@ func Umount2(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr
 	if err != nil {
 		return 0, nil, err
 	}
-	tpop, err := getTaskPathOperation(t, linux.AT_FDCWD, path, disallowEmptyPath, shouldFollowFinalSymlink(flags&linux.UMOUNT_NOFOLLOW == 0))
+	tpop, err := getTaskPathOperation(t, linux.AT_FDCWD, path, disallowEmptyPath, shouldFollowFinalSymlink(flags&linux.UMOUNT_NOFOLLOW == 0), 0)
 	if err != nil {
 		return 0, nil, err
 	}

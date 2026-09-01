@@ -15,6 +15,8 @@
 package vfs
 
 import (
+	"math"
+
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -254,11 +256,49 @@ func (vfs *VirtualFilesystem) InvalidateDentry(ctx context.Context, d *Dentry) [
 	return nil
 }
 
+// renameEnd updates vfs.renameState to account for a completed in-progress rename.
+func (vfs *VirtualFilesystem) renameEnd() {
+	for {
+		old := vfs.renameState.Load()
+		oldSeq, oldInProgress := unpackRenameState(old)
+		if oldInProgress == 0 {
+			// We were asked to end a rename operation, but no rename operations are currently
+			// in-progress.
+			//
+			// This is a violated invariant, and we can't recover.
+			panic("VirtualFilesystem.renameEnd: no renames currently in-progress")
+		}
+		// Decrement the in-progress counter, and leave the sequence counter alone.
+		new := packRenameState(oldSeq, oldInProgress-1)
+		if vfs.renameState.CompareAndSwap(old, new) {
+			break
+		}
+	}
+}
+
+// RenameHandle is returned by PrepareRenameDentry and allows VFS methods to track
+// state across calls to the below dentry methods.
+type RenameHandle struct {
+	flags uint8
+}
+
+// Flag constants for the above RenameHandle flags field.
+const (
+	// renameFlagRenameBegan indicates whether RenameBegin() has been called, which informs
+	// CommitRenameExchangeDentry, CommitRenameReplaceDentry, and AbortRenameDentry
+	// whether to decrement the VFS renames-in-progress counter or not.
+	renameFlagRenameBegan uint8 = 1 << iota
+)
+
 // PrepareRenameDentry must be called before attempting to rename the file
 // represented by from. If to is not nil, it represents the file that will be
 // replaced or exchanged by the rename. If PrepareRenameDentry succeeds, the
 // caller must call AbortRenameDentry, CommitRenameReplaceDentry, or
 // CommitRenameExchangeDentry depending on the rename's outcome.
+//
+// The RenameHandle returned by PrepareRenameDentry is an opaque type and must
+// be passed to subsequent calls to RenameBegin, CommitRenameExchangeDentry,
+// CommitRenameReplaceDentry, and AbortRenameDentry.
 //
 // Preconditions:
 //   - If to is not nil, it must be a child Dentry from the same Filesystem.
@@ -266,15 +306,15 @@ func (vfs *VirtualFilesystem) InvalidateDentry(ctx context.Context, d *Dentry) [
 //
 // +checklocksacquire:from.mu
 // +checklocksacquire:to.mu
-func (vfs *VirtualFilesystem) PrepareRenameDentry(mntns *MountNamespace, from, to *Dentry) error {
+func (vfs *VirtualFilesystem) PrepareRenameDentry(mntns *MountNamespace, from, to *Dentry) (RenameHandle, error) {
 	vfs.lockMounts()
 	defer vfs.unlockMounts(context.Background())
 	if mntns.mountpoints[from] != 0 {
-		return linuxerr.EBUSY // +checklocksforce: no locks acquired.
+		return RenameHandle{}, linuxerr.EBUSY // +checklocksforce: no locks acquired.
 	}
 	if to != nil {
 		if mntns.mountpoints[to] != 0 {
-			return linuxerr.EBUSY // +checklocksforce: no locks acquired.
+			return RenameHandle{}, linuxerr.EBUSY // +checklocksforce: no locks acquired.
 		}
 		to.mu.Lock()
 	}
@@ -282,14 +322,62 @@ func (vfs *VirtualFilesystem) PrepareRenameDentry(mntns *MountNamespace, from, t
 	// Return with from.mu and to.mu locked, which will be unlocked by
 	// AbortRenameDentry, CommitRenameReplaceDentry, or
 	// CommitRenameExchangeDentry.
-	return nil // +checklocksforce: to may not be acquired.
+	return RenameHandle{}, nil // +checklocksforce: to may not be acquired.
+}
+
+// RenameBegin must be called before applying any dentry tree mutations as part of a
+// rename operation. Dentry tree mutations include any modifications to a dentry, its
+// parent, or its children.
+//
+// The purpose of this method is to track in-progress rename operations that might affect
+// the result of a concurrent path traversal, as some path traversals would like to know
+// if they race with a rename or not.
+//
+// This functionality is split from PrepareRenameDentry to allow filesystems to perform
+// long, blocking operations that do not affect concurrent path traversals before
+// globally synchronizing with them. (This is primarily for goferfs, which needs to
+// communicate with an RPC server as part of filesystem operations).
+//
+// Filesystems should be careful with recursive operations occurring between a call to
+// RenameBegin() and one of the below abort/commit methods, since certain operations
+// (currently only scoped path traversals) may be rejected while a rename is in-progress,
+// resulting in EAGAIN.
+func (vfs *VirtualFilesystem) RenameBegin(handle *RenameHandle) {
+	if handle.flags&renameFlagRenameBegan != 0 {
+		panic("VirtualFilesystem.RenameBegin: called twice during the same rename operation")
+	}
+	handle.flags |= renameFlagRenameBegan
+
+	for {
+		old := vfs.renameState.Load()
+		oldSeq, oldInProgress := unpackRenameState(old)
+		if oldInProgress == math.MaxUint32 {
+			// There are already 2^32 renames in progress, so we cannot safely increment the
+			// in-progress counter.
+			//
+			// Returning an error here might confuse userspace, and spinning until renames are
+			// available might deadlock certain overlayfs cases. Since 2^32 renames is not realistic
+			// anyways, it is almost certainly indicative of a bug, so the most appropriate thing
+			// to do is panic.
+			panic("VirtualFilesystem.renameBegin: too many renames currently in-progress")
+		}
+		// Increment the lower 32 bits (in-progress rename counter) and the upper 32 bits
+		// (rename sequence counter). The rename sequence counter is allowed to overflow.
+		new := packRenameState(oldSeq+1, oldInProgress+1)
+		if vfs.renameState.CompareAndSwap(old, new) {
+			break
+		}
+	}
 }
 
 // AbortRenameDentry must be called after PrepareRenameDentry if the rename
 // fails.
 // +checklocksrelease:from.mu
 // +checklocksrelease:to.mu
-func (vfs *VirtualFilesystem) AbortRenameDentry(from, to *Dentry) {
+func (vfs *VirtualFilesystem) AbortRenameDentry(handle *RenameHandle, from, to *Dentry) {
+	if handle.flags&renameFlagRenameBegan != 0 {
+		vfs.renameEnd()
+	}
 	from.mu.Unlock()
 	if to != nil {
 		to.mu.Unlock()
@@ -304,7 +392,10 @@ func (vfs *VirtualFilesystem) AbortRenameDentry(from, to *Dentry) {
 // Preconditions: PrepareRenameDentry was previously called on from and to.
 // +checklocksrelease:from.mu
 // +checklocksrelease:to.mu
-func (vfs *VirtualFilesystem) CommitRenameReplaceDentry(ctx context.Context, from, to *Dentry) []refs.RefCounter {
+func (vfs *VirtualFilesystem) CommitRenameReplaceDentry(ctx context.Context, handle *RenameHandle, from, to *Dentry) []refs.RefCounter {
+	if handle.flags&renameFlagRenameBegan != 0 {
+		vfs.renameEnd()
+	}
 	from.mu.Unlock()
 	if to != nil {
 		to.dead = true
@@ -322,7 +413,10 @@ func (vfs *VirtualFilesystem) CommitRenameReplaceDentry(ctx context.Context, fro
 // Preconditions: PrepareRenameDentry was previously called on from and to.
 // +checklocksrelease:from.mu
 // +checklocksrelease:to.mu
-func (vfs *VirtualFilesystem) CommitRenameExchangeDentry(from, to *Dentry) {
+func (vfs *VirtualFilesystem) CommitRenameExchangeDentry(handle *RenameHandle, from, to *Dentry) {
+	if handle.flags&renameFlagRenameBegan != 0 {
+		vfs.renameEnd()
+	}
 	from.mu.Unlock()
 	to.mu.Unlock()
 }
