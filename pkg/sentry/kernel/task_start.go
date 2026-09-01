@@ -411,7 +411,7 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		// New thread group.
 		tg.leader = t
 		if parentPG := tg.parentPG(); parentPG == nil {
-			tg.createSession()
+			tg.createSession() // +checklocksforce: ts.mu is tg.pidns.owner.mu.
 		} else {
 			// Inherit the process group and terminal.
 			parentPG.incRefWithParent(parentPG)
