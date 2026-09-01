@@ -6378,3 +6378,111 @@ func TestReadFile(t *testing.T) {
 		t.Errorf("Got %q (%d bytes), want 'inux' (4 bytes)", string(content3), len(content3))
 	}
 }
+
+// createRootfsWithTmp creates a rootfs directory containing busybox and a /tmp directory.
+func createRootfsWithTmp(t *testing.T, empty bool) string {
+	t.Helper()
+	rootfsDir := filepath.Join(t.TempDir(), "rootfs")
+	if err := os.Mkdir(rootfsDir, 0755); err != nil {
+		t.Fatalf("os.Mkdir() failed: %v", err)
+	}
+	busybox, err := exec.LookPath("busybox")
+	if err != nil {
+		t.Skipf("busybox is not available: %v", err)
+	}
+	if err := testutil.Copy(busybox, filepath.Join(rootfsDir, "busybox")); err != nil {
+		t.Fatalf("failed to copy busybox: %v", err)
+	}
+	for _, dir := range []string{"proc", "tmp"} {
+		if err := os.Mkdir(filepath.Join(rootfsDir, dir), 0777); err != nil {
+			t.Fatalf("os.Mkdir(%q) failed: %v", dir, err)
+		}
+	}
+	if !empty {
+		if err := os.WriteFile(filepath.Join(rootfsDir, "tmp", ".keep"), []byte("keep"), 0644); err != nil {
+			t.Fatalf("os.WriteFile failed: %v", err)
+		}
+	}
+	return rootfsDir
+}
+
+// TestTmpMount tests the tmp-mount flag and annotations.
+func TestTmpMount(t *testing.T) {
+	for name, conf := range configs(t, false /* noOverlay */) {
+		t.Run(name, func(t *testing.T) {
+			for _, tc := range []struct {
+				name       string
+				tmpMount   config.TmpMountType
+				annotation map[string]string
+				emptyTmp   bool
+				wantLinkOk bool
+			}{
+				{
+					name:       "auto-empty",
+					tmpMount:   config.TmpMountAuto,
+					emptyTmp:   true,
+					wantLinkOk: false, // tmpfs mounted over empty /tmp, cross-device link fails
+				},
+				{
+					name:       "auto-nonempty",
+					tmpMount:   config.TmpMountAuto,
+					emptyTmp:   false,
+					wantLinkOk: true, // tmpfs skipped because /tmp is not empty
+				},
+				{
+					name:       "rootfs-empty",
+					tmpMount:   config.TmpMountRootfs,
+					emptyTmp:   true,
+					wantLinkOk: true, // tmpfs skipped because tmp-mount=rootfs
+				},
+				{
+					name:       "flag-annotation-rootfs",
+					annotation: map[string]string{"dev.gvisor.flag.tmp-mount": "rootfs"},
+					emptyTmp:   true,
+					wantLinkOk: true,
+				},
+				{
+					name:       "spec-annotation-rootfs",
+					annotation: map[string]string{specutils.AnnotationTmpMount: "rootfs"},
+					emptyTmp:   true,
+					wantLinkOk: true,
+				},
+				{
+					name:       "tmpfs-nonempty",
+					tmpMount:   config.TmpMountTmpfs,
+					emptyTmp:   false,
+					wantLinkOk: false, // tmpfs forced even though /tmp is not empty
+				},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					testConf := *conf
+					if tc.tmpMount != 0 {
+						testConf.TmpMount = tc.tmpMount
+					}
+
+					rootfsDir := createRootfsWithTmp(t, tc.emptyTmp)
+					spec := testutil.NewSpecWithArgs("/busybox", "sh", "-c", "echo x > /tmp/f && /busybox ln /tmp/f /f2")
+					spec.Root.Path = rootfsDir
+					spec.Root.Readonly = false
+					spec.Mounts = []specs.Mount{
+						{Destination: "/proc", Type: "proc", Source: "proc"},
+					}
+					if tc.annotation != nil {
+						spec.Annotations = tc.annotation
+						if err := specutils.FixConfig(&testConf, spec); err != nil {
+							t.Fatalf("FixConfig failed: %v", err)
+						}
+					}
+
+					err := run(spec, &testConf)
+					if tc.wantLinkOk && err != nil {
+						t.Errorf("expected link to succeed, got: %v", err)
+					} else if !tc.wantLinkOk && err == nil {
+						t.Errorf("expected link to fail with cross-device error, but succeeded")
+					}
+				})
+			}
+		})
+	}
+}
+

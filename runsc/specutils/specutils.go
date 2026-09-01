@@ -88,6 +88,9 @@ const (
 	// AnnotationCPUFeatures is the annotation used to control cpu features
 	// that exposed to user apps.
 	AnnotationCPUFeatures = "dev.gvisor.internal.cpufeatures"
+
+	// AnnotationTmpMount is the annotation used to configure how /tmp is mounted.
+	AnnotationTmpMount = "dev.gvisor.spec.tmp-mount"
 )
 
 // LINT.ThenChange(:Features)
@@ -328,6 +331,12 @@ func FixConfig(conf *config.Config, spec *specs.Spec) error {
 			if err := conf.Override(flag.CommandLine, name, val /* force= */, false); err != nil {
 				return err
 			}
+		}
+	}
+	if val, ok := spec.Annotations[AnnotationTmpMount]; ok {
+		log.Infof("Overriding flag from annotation %s=%q: --tmp-mount=%q", AnnotationTmpMount, val, val)
+		if err := conf.Override(flag.CommandLine, "tmp-mount", val /* force= */, false); err != nil {
+			return err
 		}
 	}
 	// Override does not validate the config. Validate once after all
@@ -1033,6 +1042,7 @@ func Features() *features.Features {
 		annotations["dev.gvisor.internal.seccomp.cont"] = "RuntimeDefault"
 		annotations[AnnotationTPU] = ""
 		annotations[AnnotationCPUFeatures] = ""
+		annotations[AnnotationTmpMount] = "auto"
 		// LINT.ThenChange(:features_annotations)
 		feat.Annotations = annotations
 

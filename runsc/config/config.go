@@ -104,6 +104,9 @@ type Config struct {
 	// DO NOT call it directly, use GetOverlay2() instead.
 	Overlay2 Overlay2 `flag:"overlay2"`
 
+	// TmpMount indicates how /tmp is mounted.
+	TmpMount TmpMountType `flag:"tmp-mount"`
+
 	// FSGoferHostUDS is deprecated: use host-uds=all.
 	FSGoferHostUDS bool `flag:"fsgofer-host-uds"`
 
@@ -1326,6 +1329,58 @@ func (o *Overlay2) SubMountOverlaySize() string {
 // Medium returns the overlay medium config.
 func (o Overlay2) Medium() OverlayMedium {
 	return o.medium
+}
+
+// TmpMountType tells how /tmp is mounted.
+type TmpMountType int
+
+const (
+	// TmpMountAuto mounts internal tmpfs at /tmp if /tmp is not explicitly mounted
+	// and is empty or doesn't exist.
+	TmpMountAuto TmpMountType = iota
+
+	// TmpMountTmpfs always mounts internal tmpfs at /tmp (unless /tmp is explicitly mounted).
+	TmpMountTmpfs
+
+	// TmpMountRootfs never mounts internal tmpfs at /tmp, keeping /tmp on the rootfs.
+	TmpMountRootfs
+)
+
+func tmpMountTypePtr(v TmpMountType) *TmpMountType {
+	return &v
+}
+
+// Set implements flag.Value. Set(String()) should be idempotent.
+func (t *TmpMountType) Set(v string) error {
+	switch v {
+	case "auto":
+		*t = TmpMountAuto
+	case "tmpfs":
+		*t = TmpMountTmpfs
+	case "rootfs":
+		*t = TmpMountRootfs
+	default:
+		return fmt.Errorf("invalid tmp-mount type %q", v)
+	}
+	return nil
+}
+
+// Get implements flag.Value.
+func (t *TmpMountType) Get() any {
+	return *t
+}
+
+// String implements flag.Value.
+func (t TmpMountType) String() string {
+	switch t {
+	case TmpMountAuto:
+		return "auto"
+	case TmpMountTmpfs:
+		return "tmpfs"
+	case TmpMountRootfs:
+		return "rootfs"
+	}
+	panic(fmt.Sprintf("Invalid tmp-mount type %d", t))
 }
 
 // HostSettingsPolicy dictates how host settings should be handled.
