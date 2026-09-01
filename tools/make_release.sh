@@ -46,11 +46,19 @@ install_raw() {
     # Copy the raw file & generate a sha512sum, sorted by architecture.
     # For tarballs, determine arch from the `runsc` within the tarball.
     case "${binary}" in
-      *.tar.bz2)  file_info=$(tar -xjOf "${binary}" runsc | file -) ;;
-      *.tar.zstd) file_info=$(tar --zstd -xOf "${binary}" runsc | file -) ;;
-      *)          file_info=$(file "${binary}") ;;
+      *.tar.bz2)
+        arch=$(tar -xjOf "${binary}" runsc | file - | cut -d',' -f2 | awk '{print $NF}' | tr '-' '_')
+        ;;
+      *.tar.zstd)
+        arch=$(tar --zstd -xOf "${binary}" runsc | file - | cut -d',' -f2 | awk '{print $NF}' | tr '-' '_')
+        ;;
+      *.whl|*.tar.gz)
+        arch="python"
+        ;;
+      *)
+        arch=$(file "${binary}" | cut -d',' -f2 | awk '{print $NF}' | tr '-' '_')
+        ;;
     esac
-    arch=$(echo "${file_info}" | cut -d',' -f2 | awk '{print $NF}' | tr '-' '_')
     name=$(basename "${binary}")
     mkdir -p "${root}/$1/${arch}"
     cp -f "${binary}" "${root}/$1/${arch}"
@@ -62,6 +70,8 @@ install_raw() {
 install_apt() {
   tools/make_apt.sh "${private_key}" "$1" "${root}" "${pkgs[@]}"
 }
+
+
 
 # If nightly, install only nightly artifacts.
 if [[ "${NIGHTLY:-false}" == "true" ]]; then
@@ -92,6 +102,7 @@ else
       # Install the "point release".
       # https://gvisor.dev/docs/user_guide/install/#point-release
       install_raw "release/${name}"
+      tools/make_python_release.sh upload-wheel "${root}/release/${name}/python"
       # Install the latest release.
       # https://gvisor.dev/docs/user_guide/install/#latest-release
       install_raw "release/latest"
