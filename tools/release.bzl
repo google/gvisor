@@ -6,6 +6,7 @@ SIDECARS = {
     "//runsc/checkpointgofer:checkpointgofer_binary": "checkpointgofer",
     "//runsc/cmd/metricserver:runsc-metric-server": "runsc-metric-server",
     "//runsc/cmd/sentry:gvisor_sentry": "gvisor_sentry",
+    "//runsc/fdparking:runsc-fd-parking": "runsc-fd-parking",
     "//runsc/prewarmer:gvisor-sentry-prewarmer": "gvisor-sentry-prewarmer",
 }
 
